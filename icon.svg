@@ -1,13 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#16203a"/>
-  <!-- Prozess-Linie -->
-  <line x1="150" y1="256" x2="392" y2="256" stroke="#9a3242" stroke-width="14" stroke-linecap="round"/>
-  <!-- offener Start-Knoten -->
-  <circle cx="150" cy="256" r="22" fill="#16203a" stroke="#b14457" stroke-width="14"/>
-  <!-- Zwischen-Knoten -->
-  <circle cx="238" cy="256" r="15" fill="#b14457"/>
-  <circle cx="312" cy="256" r="15" fill="#b14457"/>
-  <!-- Ziel: erledigt -->
-  <circle cx="392" cy="256" r="74" fill="#7c1d2c"/>
-  <path d="M360 258 l22 24 l44 -54" fill="none" stroke="#ffffff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="256" cy="256" r="248" fill="#7c1d2c"/>
+  <path d="M150 264 l72 78 l142 -170" fill="none" stroke="#ffffff" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

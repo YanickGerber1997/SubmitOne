@@ -87,30 +87,19 @@ button { font-family: inherit; cursor: pointer; }
 .brand-text strong { color: #fff; font-size: 15px; }
 .brand-text span { font-size: 11px; color: #7f8db0; }
 
-/* ===== Logo „submit one" (hell = Default, on-dark = Sidebar) ===== */
-.logo { --lg-ink:#232b35; --lg-accent:#7c1d2c; --lg-ringbg:#ffffff;
-        display:inline-flex; align-items:center; gap:7px; line-height:1; }
-.logo.on-dark { --lg-ink:#ffffff; --lg-accent:#cf6675; --lg-ringbg:#0f1830; }
-.logo-word { font-family:'Quicksand', system-ui, sans-serif; font-weight:600; letter-spacing:.3px;
-             font-size:25px; white-space:nowrap; }
-.logo-word .lw-a { color:var(--lg-ink); }
-.logo-word .lw-b { color:var(--lg-accent); margin-left:.2em; }
-.logo-tick { width:17px; height:17px; flex:none; }
-.logo .end { fill:var(--lg-accent); }
-.logo .chk { fill:none; stroke:#ffffff; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; }
-.logo-mark { display:none; }
-.logo-mark svg { width:30px; height:30px; }
-
-/* Voll-Logo (Login): Speed-Lines + Prozess-Track + Untertitel */
-.logo.full { flex-direction:column; align-items:center; gap:8px; }
-.logo.full .logo-top { display:flex; align-items:center; justify-content:space-between; width:100%; height:24px; }
-.logo.full .logo-word { font-size:46px; }
-.logo .ls line, .logo .lt line { stroke:var(--lg-accent); }
-.logo .lt .ring { fill:var(--lg-ringbg); stroke:var(--lg-accent); stroke-width:3; }
-.logo .lt .dot { fill:var(--lg-accent); }
-.logo.full .logo-sub { display:flex; align-items:center; gap:10px; width:100%; justify-content:center;
-  font-family:'Quicksand', system-ui, sans-serif; font-weight:600; font-size:10px; letter-spacing:2.5px; color:var(--lg-ink); white-space:nowrap; }
-.logo.full .logo-sub::before, .logo.full .logo-sub::after { content:''; height:2px; flex:1; background:var(--lg-accent); opacity:.85; border-radius:2px; }
+/* ===== Logo (Originaldatei logo.png) ===== */
+.brand-img { display:block; max-width:100%; max-height:48px; }
+.sidebar .brand-img { background:#fff; border-radius:10px; padding:6px 9px; }
+.brand-icon { display:none; width:34px; height:34px; }
+#app.collapsed .brand-img, #app.collapsed .brand-fallback { display:none !important; }
+#app.collapsed .brand-icon { display:block; }
+/* Text-Fallback, falls logo.png (noch) fehlt */
+.brand-fallback { font-family:'Quicksand', system-ui, sans-serif; font-weight:600; font-size:23px;
+  color:#fff; letter-spacing:.3px; align-items:center; line-height:1; }
+.brand-fallback b { color:#cf6675; font-weight:600; margin-left:.18em; }
+.brand-fallback.on-light { color:#232b35; font-size:30px; justify-content:center; display:none; }
+.brand-fallback.on-light b { color:#7c1d2c; }
+.login-logo { display:block; max-width:240px; max-height:130px; margin:0 auto 14px; }
 
 /* Angemeldeter Benutzer */
 .user-chip { display:flex; align-items:center; gap:9px; padding:8px 10px; margin-bottom:4px;

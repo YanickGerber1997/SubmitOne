@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v23';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v24';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -906,7 +906,11 @@ function viewKosten(id) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Baukostenübersicht nach BKP · Stand ${fmtDate(todayIso())}</div></div>
-      <button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">⬇ Kostenschätzung</button>
+        <button class="btn secondary" data-act="pdf-baukosten" data-pid="${p.id}">⬇ Baukostenübersicht</button>
+        <button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>
+      </div>
     </div>
     ${projektTabs(p, 'kosten')}
   `;
@@ -2578,6 +2582,15 @@ function viewVergabeDetail(pid, vid) {
       <div class="dstat"><div class="l">Offen</div><div class="v">${chf((isVergeben(v) ? schlussSumme(v) : 0) - rechnungBezahlt(v))}</div></div>
     </div>
 
+    <div class="card card-pad" style="margin-bottom:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <h2 style="margin:0;font-size:15px">Beschrieb &amp; Kostenschätzung</h2>
+        <button class="btn sm" data-act="ks-edit" data-pid="${p.id}" data-vid="${v.id}">✎ Kostenschätzung</button>
+      </div>
+      ${v.beschrieb ? `<p style="margin:8px 0 0;font-size:13.5px;white-space:pre-wrap">${esc(v.beschrieb)}</p>` : '<p class="muted" style="margin:8px 0 0;font-size:13px">Noch kein Beschrieb. Mit „✎ Kostenschätzung" erfassen (Beschrieb + Kalkulationshilfe).</p>'}
+      ${v.kalk ? `<p class="muted" style="font-size:11.5px;margin:8px 0 0">Kalkulation (intern): ${v.kalk.mann || 0} Mann · ${v.kalk.tage || 0} Tage · ${v.kalk.ansatz || 0} CHF/h · Material ${chf(v.kalk.material || 0)}${v.kalk.zuschlag ? ' · +' + v.kalk.zuschlag + '%' : ''} → KV ${chf(v.schaetzung)}</p>` : ''}
+    </div>
+
     <div class="two-col">
       <!-- Pipeline -->
       <div class="card card-pad">
@@ -3082,7 +3095,7 @@ function projColor(idx) { return PROJ_PALETTE[idx % PROJ_PALETTE.length]; }
 function viewKalenderGlobal() {
   const t = today();
   if (calGY == null) { calGY = t.getFullYear(); calGM = t.getMonth(); }
-  if (calHidden == null) calHidden = new Set();
+  if (calHidden == null) { try { calHidden = new Set(JSON.parse(localStorage.getItem('so_cal_hidden') || '[]')); } catch (_) { calHidden = new Set(); } }
   const projects = state.projekte || [];
   const todayI = todayIso();
 
@@ -3179,6 +3192,7 @@ function gcalNav(delta) {
 function gcalToggle(pid) {
   if (calHidden == null) calHidden = new Set();
   if (calHidden.has(pid)) calHidden.delete(pid); else calHidden.add(pid);
+  try { localStorage.setItem('so_cal_hidden', JSON.stringify([...calHidden])); } catch (_) {}
   viewKalenderGlobal();
 }
 
@@ -3456,7 +3470,9 @@ function saisonToIso(saison, jahr, ende) {
 function grobLabel(v) {
   const f = g => g && g.saison ? (SAISON_LABEL[g.saison] || g.saison) + ' ' + g.jahr : '';
   const a = f(v.grobVon), b = f(v.grobBis);
-  if (a || b) return (a || '?') + ' – ' + (b || '?');
+  if (a && b) return a + ' – ' + b;
+  if (a) return 'ab ' + a;
+  if (b) return 'bis ' + b;
   return '';
 }
 
@@ -3471,11 +3487,8 @@ function actNewVergabe(pid) {
       <label class="field">Gewerk / Arbeitsbeschrieb <input class="input" id="f_gewerk" placeholder="z.B. Baumeisterarbeiten"></label>
     </div>
     <label class="field">Kostenschätzung (CHF) <input class="input" type="number" id="f_schaetzung" placeholder="250000"></label>
-    <label class="field" style="margin-bottom:2px">Ausführung (grob)</label>
-    <div class="form-row">
-      <div><div class="muted" style="font-size:11px;margin-bottom:3px">von</div>${saisonSel('f_grobvon')}</div>
-      <div><div class="muted" style="font-size:11px;margin-bottom:3px">bis</div>${saisonSel('f_grobbis')}</div>
-    </div>
+    <label class="field" style="margin-bottom:2px">Grober Baubeginn</label>
+    ${saisonSel('f_grobvon')}
     <details style="margin-top:12px">
       <summary style="cursor:pointer;font-weight:600;font-size:13px;padding:4px 0">＋ Details &amp; Submittenten (optional, Power-User)</summary>
       <div style="margin-top:8px">
@@ -3514,12 +3527,12 @@ function saveVergabe(pid) {
   const gewerk = $('#f_gewerk').value.trim() || bkpParsed.label;
   if (!gewerk) { toast('Bitte ein Gewerk / einen Arbeitsbeschrieb eingeben', 'info'); return; }
 
-  // Grobe Saison → Daten (exakte Daten haben Vorrang)
-  const gvS = val('f_grobvon_s'), gvJ = val('f_grobvon_j'), gbS = val('f_grobbis_s'), gbJ = val('f_grobbis_j');
+  // Grober Baubeginn (Saison) → Datum (exakte Daten haben Vorrang)
+  const gvS = val('f_grobvon_s'), gvJ = val('f_grobvon_j');
   const grobVon = gvS ? { saison: gvS, jahr: Number(gvJ) } : null;
-  const grobBis = gbS ? { saison: gbS, jahr: Number(gbJ) } : null;
+  const grobBis = null;
   const bauStart = val('f_baustart') || (grobVon ? saisonToIso(gvS, gvJ, false) : '');
-  const bauEnde = val('f_bauende') || (grobBis ? saisonToIso(gbS, gbJ, true) : '');
+  const bauEnde = val('f_bauende') || '';
 
   let status = val('f_status') || 'ausschreibung';
   const fix = val('f_fix').trim();
@@ -3538,6 +3551,90 @@ function saveVergabe(pid) {
   p.vergaben.push(v);
   save(); closeModal(); go('#/projekt/' + p.id + '/vergabe/' + v.id);
   toast('Arbeitsbeschrieb erfasst');
+}
+
+/* --- Kostenschätzungs-Tool (Beschrieb + interne Kalkulation) --- */
+function kalkTotal(k) {
+  if (!k) return 0;
+  const std = (Number(k.mann) || 0) * (Number(k.tage) || 0) * (Number(k.stdTag) || 0);
+  const arbeit = std * (Number(k.ansatz) || 0);
+  const sub = arbeit + (Number(k.material) || 0);
+  return Math.round(sub * (1 + (Number(k.zuschlag) || 0) / 100));
+}
+function readKalk() {
+  return {
+    mann: Number($('#ks_mann').value) || 0, tage: Number($('#ks_tage').value) || 0,
+    stdTag: Number($('#ks_stdtag').value) || 0, ansatz: Number($('#ks_ansatz').value) || 0,
+    material: Number($('#ks_material').value) || 0, zuschlag: Number($('#ks_zuschlag').value) || 0,
+  };
+}
+function actKostenschaetzung(pid, vid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  const k = v.kalk || {};
+  openModal('Kostenschätzung – ' + (v.gewerk || ''), `
+    <label class="field">Was wird gemacht? (Beschrieb) <textarea class="input" id="ks_beschrieb" rows="3" placeholder="Kurzbeschrieb der Arbeiten – erscheint im Kostenschätzungs-PDF">${esc(v.beschrieb || '')}</textarea></label>
+    <div class="muted" style="font-size:12px;margin:8px 0 4px">Kalkulationshilfe <strong>(intern – erscheint NICHT in den Baukosten)</strong>:</div>
+    <div class="form-row">
+      <label class="field">Anzahl Mann <input class="input ks-in" type="number" id="ks_mann" value="${k.mann ?? ''}" placeholder="2"></label>
+      <label class="field">Dauer (Tage) <input class="input ks-in" type="number" id="ks_tage" value="${k.tage ?? ''}" placeholder="10"></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Stunden/Tag <input class="input ks-in" type="number" id="ks_stdtag" value="${k.stdTag ?? 8}" placeholder="8"></label>
+      <label class="field">Stundenansatz (CHF) <input class="input ks-in" type="number" id="ks_ansatz" value="${k.ansatz ?? ''}" placeholder="95"></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Material (CHF) <input class="input ks-in" type="number" id="ks_material" value="${k.material ?? ''}" placeholder="5000"></label>
+      <label class="field">Zuschlag % <input class="input ks-in" type="number" id="ks_zuschlag" value="${k.zuschlag ?? ''}" placeholder="10"></label>
+    </div>
+    <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:10px;margin-top:4px;font-size:15px"><strong>Geschätzte Kosten</strong><strong id="ks_total">–</strong></div>
+    <p class="muted" style="font-size:11.5px;margin:6px 0 0">Wird als Kostenschätzung (KV) übernommen. Lässt du die Kalkulation leer, bleibt die manuelle Schätzung.</p>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-ks" data-pid="${pid}" data-vid="${vid}">Übernehmen</button>`);
+  const upd = () => { const t = kalkTotal(readKalk()); const el = $('#ks_total'); if (el) el.textContent = t ? chf(t) : '–'; };
+  $$('.ks-in').forEach(i => i.addEventListener('input', upd)); upd();
+}
+function saveKostenschaetzung(pid, vid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  v.beschrieb = $('#ks_beschrieb').value.trim();
+  const k = readKalk();
+  const hasKalk = k.mann || k.tage || k.material || k.ansatz;
+  v.kalk = hasKalk ? k : null;
+  const t = kalkTotal(k);
+  if (t) v.schaetzung = t;
+  save(); closeModal(); router(); toast('Kostenschätzung übernommen');
+}
+
+function pdfKostenschaetzung(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const gw = gewerkeSorted(p); let tot = 0;
+  const rows = gw.length ? gw.map(v => { const kv = v.schaetzung || 0; tot += kv; return `<tr><td>${esc(v.bkp || '')}</td><td><b>${esc(v.gewerk || '')}</b>${v.beschrieb ? '<br><span style="color:#555">' + esc(v.beschrieb) + '</span>' : ''}</td><td class="num">${chf(kv)}</td></tr>`; }).join('')
+    : '<tr><td colspan="3" class="muted">Keine Positionen erfasst.</td></tr>';
+  const inner = `<table class="t"><thead><tr><th style="width:70px">BKP</th><th>Beschrieb / Arbeitsgattung</th><th class="num" style="width:150px">Kosten</th></tr></thead>
+    <tbody>${rows}<tr><td></td><td><b>Gesamtkosten (Kostenschätzung)</b></td><td class="num"><b>${chf(tot)}</b></td></tr></tbody></table>
+    <p class="muted" style="margin-top:12px;font-size:10.5px">Kostenschätzung – Genauigkeit gemäss Projektstand (Richtwert ± 15–25 %). Alle Beträge exkl. MwSt, sofern nicht anders vermerkt.</p>`;
+  openPrintDoc('Kostenschätzung', `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} · Stand ${fmtDate(todayIso())}`, inner);
+}
+
+function pdfBaukosten(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const vs = gewerkeSorted(p);
+  const groups = {}; vs.forEach(v => { const g = String(v.bkp || '0').trim()[0] || '0'; (groups[g] = groups[g] || []).push(v); });
+  const keys = Object.keys(groups).sort();
+  const tot = { kv: 0, rev: 0, wv: 0, nt: 0, prognose: 0, bezahlt: 0, offen: 0 };
+  let body = '';
+  keys.forEach(g => {
+    const sub = { kv: 0, rev: 0, wv: 0, nt: 0, prognose: 0, bezahlt: 0, offen: 0 };
+    groups[g].forEach(v => {
+      const z = kostenZeile(v);
+      ['kv', 'wv', 'nt', 'prognose', 'bezahlt', 'offen'].forEach(k => { sub[k] += z[k]; tot[k] += z[k]; });
+      sub.rev += (z.rev || 0); tot.rev += (z.rev || 0);
+      body += `<tr><td>${esc(v.bkp || '')}</td><td>${esc(v.gewerk || '')}</td><td class="num">${chf(z.kv)}</td><td class="num">${z.rev != null ? chf(z.rev) : '–'}</td><td class="num">${z.vergeben ? chf(z.wv) : '–'}</td><td class="num">${chf(z.nt)}</td><td class="num">${chf(z.prognose)}</td><td class="num">${chf(z.bezahlt)}</td><td class="num">${chf(z.offen)}</td></tr>`;
+    });
+    body += `<tr style="background:#f4f6f9"><td></td><td><b>Zwischentotal ${esc(BKP_GRUPPEN[g] || g)}</b></td><td class="num">${chf(sub.kv)}</td><td class="num">${chf(sub.rev)}</td><td class="num">${chf(sub.wv)}</td><td class="num">${chf(sub.nt)}</td><td class="num"><b>${chf(sub.prognose)}</b></td><td class="num">${chf(sub.bezahlt)}</td><td class="num">${chf(sub.offen)}</td></tr>`;
+  });
+  const inner = `<table class="t" style="font-size:11px"><thead><tr><th>BKP</th><th>Arbeitsgattung</th><th class="num">KV</th><th class="num">KV rev.</th><th class="num">WV</th><th class="num">NT</th><th class="num">Prognose</th><th class="num">Bezahlt</th><th class="num">Offen</th></tr></thead>
+    <tbody>${body}<tr><td></td><td><b>Total Baukosten</b></td><td class="num"><b>${chf(tot.kv)}</b></td><td class="num">${chf(tot.rev)}</td><td class="num">${chf(tot.wv)}</td><td class="num">${chf(tot.nt)}</td><td class="num"><b>${chf(tot.prognose)}</b></td><td class="num">${chf(tot.bezahlt)}</td><td class="num">${chf(tot.offen)}</td></tr></tbody></table>
+    <p class="muted" style="margin-top:10px;font-size:10px">KV = Kostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag · NT = Nachträge · Prognose = WV + NT + Rapporte + Budget-Differenz.</p>`;
+  openPrintDoc('Baukostenübersicht', `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} · Stand ${fmtDate(todayIso())}`, inner);
 }
 
 function advanceVergabe(pid, vid) {
@@ -4511,6 +4608,10 @@ document.addEventListener('click', e => {
     case 'rm-einheit':    removeEinheit(pid, gid, eid); break;
     case 'new-vergabe':  actNewVergabe(pid); break;
     case 'save-vergabe': saveVergabe(pid); break;
+    case 'ks-edit':      actKostenschaetzung(pid, vid); break;
+    case 'save-ks':      saveKostenschaetzung(pid, vid); break;
+    case 'pdf-kostenschaetzung': pdfKostenschaetzung(pid); break;
+    case 'pdf-baukosten':        pdfBaukosten(pid); break;
     case 'advance':      advanceVergabe(pid, vid); break;
     case 'invite':       actInvite(pid, vid); break;
     case 'save-invite':  saveInvite(pid, vid); break;

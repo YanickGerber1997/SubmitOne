@@ -1647,6 +1647,42 @@ const entStatus = e => (e.status === 'entschieden' ? 'gewaehlt' : (ENT_STATUS[e.
 
 function dl(id, items) { return `<datalist id="${id}">${items.map(x => `<option value="${esc(x)}">`).join('')}</datalist>`; }
 
+// Auswahlpunkt → passendes Gewerk/Unternehmer im Projekt automatisch vorschlagen
+const GEWERK_HINTS = {
+  'küche': ['küche', 'küchen'], 'küchengeräte': ['küche', 'apparate', 'elektro'],
+  'plättli': ['platten', 'plätt', 'fliesen', 'keramik'], 'fliesen': ['platten', 'plätt', 'fliesen', 'keramik'],
+  'parkett': ['parkett', 'boden'], 'bodenbeläge': ['parkett', 'boden', 'bodenbel'], 'boden': ['parkett', 'boden', 'bodenbel'],
+  'bad': ['sanitär', 'sanitaer', 'apparate'], 'sanitär': ['sanitär', 'sanitaer'], 'apparate': ['sanitär', 'apparate'], 'armatur': ['sanitär'],
+  'türen': ['schreiner', 'türen', 'holz'], 'innentüren': ['schreiner', 'türen', 'holz'],
+  'beleuchtung': ['elektro', 'beleucht'], 'elektro': ['elektro'],
+  'farben': ['maler', 'farb'], 'wandfarben': ['maler', 'farb', 'gips'],
+  'storen': ['storen', 'beschatt', 'sonnenschutz', 'metallbau'], 'schränke': ['schreiner', 'möbel', 'einbau'],
+};
+function matchVergabe(p, thema) {
+  const t = (thema || '').toLowerCase(); if (!t) return null;
+  const vs = p.vergaben || [];
+  for (const key in GEWERK_HINTS) {
+    if (t.includes(key)) { const hit = vs.find(v => GEWERK_HINTS[key].some(h => (v.gewerk || '').toLowerCase().includes(h))); if (hit) return hit; }
+  }
+  return vs.find(v => { const g = (v.gewerk || '').toLowerCase().split(/[ /]/)[0]; return g.length > 3 && t.includes(g); }) || null;
+}
+function vergabeLabel(v) { return `${v.bkp ? 'BKP ' + v.bkp + ' ' : ''}${v.gewerk || ''}${v.firma ? ' – ' + v.firma : (isVergeben(v) ? '' : ' (offen)')}`; }
+
+// Generische Live-Suche in Kontakten (für mehrere Dialoge)
+function kontaktPickButton(k) {
+  return `<button type="button" data-id="${k.id}" class="ks-hit" style="display:block;width:100%;text-align:left;padding:7px 9px;border:1px solid var(--border);border-radius:7px;margin-bottom:5px;background:var(--surface);cursor:pointer;font-size:13px"><strong>${esc(k.firma)}</strong>${k.kategorie ? ` <span class="muted">· ${esc(k.kategorie)}</span>` : ''}${k.ort ? ` <span class="muted">· ${esc(k.ort)}</span>` : ''}</button>`;
+}
+function attachKontaktSuche(searchId, resultsId, onPick) {
+  const sr = $('#' + searchId); if (!sr) return;
+  sr.addEventListener('input', () => {
+    const q = sr.value.trim().toLowerCase(); const box = $('#' + resultsId); if (!box) return;
+    if (!q) { box.innerHTML = ''; return; }
+    const hits = (state.kontakte || []).filter(k => (k.firma || '').toLowerCase().includes(q) || (k.kategorie || '').toLowerCase().includes(q) || (k.ort || '').toLowerCase().includes(q)).slice(0, 8);
+    box.innerHTML = hits.length ? hits.map(kontaktPickButton).join('') : '<div class="muted" style="font-size:12px;padding:2px 4px">Keine Treffer in den Kontakten.</div>';
+    box.querySelectorAll('.ks-hit').forEach(b => b.addEventListener('click', () => { const k = (state.kontakte || []).find(x => x.id === b.dataset.id); if (k) onPick(k, box); }));
+  });
+}
+
 function viewBauherr(pid) {
   const p = findProjekt(pid);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
@@ -1687,6 +1723,19 @@ function viewBauherr(pid) {
       </table>
     </div>`).join('') : emptyState('🏬', 'Noch keine Firmen erfasst.');
 
+  const meldenRows = ents.map(e => {
+    const v = e.vid ? findVergabe(p, e.vid) : matchVergabe(p, e.thema);
+    const k = v && v.firma ? kontaktByFirma(v.firma) : null;
+    const untTxt = v
+      ? `${esc(v.gewerk || '')}${v.firma ? `: <strong>${esc(v.firma)}</strong>` : ' <span class="muted">(noch nicht vergeben)</span>'}${k && (k.person || k.telefon) ? `<div class="muted" style="font-size:12px">${esc([k.person, k.telefon].filter(Boolean).join(' · '))}</div>` : ''}`
+      : '<span class="muted">–</span>';
+    const a = e.ausstellung;
+    const ausTxt = a && a.firma
+      ? `<strong>${esc(a.firma)}</strong>${a.ort ? ` · ${esc(a.ort)}` : ''}${a.telefon ? `<div class="muted" style="font-size:12px">${esc(a.telefon)}</div>` : ''}`
+      : '<span class="muted">–</span>';
+    return `<tr><td><strong>${esc(e.thema || '')}</strong></td><td>${untTxt}</td><td>${ausTxt}</td><td><span class="st ${ENT_STATUS[entStatus(e)].color}" style="font-size:10.5px;padding:2px 8px">${ENT_STATUS[entStatus(e)].label}</span></td></tr>`;
+  }).join('');
+
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Bauherr · Entscheide &amp; Auswahl-Firmen</div></div></div>
@@ -1701,6 +1750,11 @@ function viewBauherr(pid) {
     <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle Auswahlpunkte vollständig führen. Jeder Punkt: <strong>offen</strong> → <strong>gewählt</strong>, oder <strong>entfällt</strong> (mit Grund). „Standardliste" ergänzt die üblichen Punkte.</p>
     <div class="card">${entsTable}</div>
 
+    <div class="section-head" style="margin-top:26px"><h2>Bei wem melden <span class="muted" style="font-size:12px;font-weight:400">· Spiegelbild der Auswahlpunkte</span></h2>
+      <button class="btn sm secondary" data-act="pdf-melden" data-pid="${p.id}">⬇ PDF</button></div>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Pro Auswahlpunkt: ausführender Unternehmer (Werkvertrag, automatisch verknüpft) und – falls separat – die Ausstellung für die Materialauswahl.</p>
+    <div class="card">${ents.length ? `<table class="grid"><thead><tr><th>Auswahlpunkt</th><th>Unternehmer (Werkvertrag)</th><th>Ausstellung / Materialauswahl</th><th style="width:88px">Status</th></tr></thead><tbody>${meldenRows}</tbody></table>` : emptyState('🔗', 'Noch keine Auswahlpunkte – oben anlegen.')}</div>
+
     <div class="section-head" style="margin-top:26px"><h2>Auswahl-Firmen (Bemusterung)</h2>
       <div style="display:flex;gap:6px">
         <button class="btn sm secondary" data-act="pdf-bezugsfirmen" data-pid="${p.id}">⬇ PDF</button>
@@ -1714,18 +1768,45 @@ function viewBauherr(pid) {
 
 function actNewEntscheidung(pid, eid) {
   const p = findProjekt(pid); const e = eid ? (p.entscheidungen || []).find(x => x.id === eid) : null;
-  openModal(e ? 'Entscheidung bearbeiten' : 'Neue Entscheidung', `
+  const curVid = e ? (e.vid || '') : '';
+  const vopts = `<option value="">— kein / noch offen —</option>` + (p.vergaben || []).map(v => `<option value="${v.id}"${curVid === v.id ? ' selected' : ''}>${esc(vergabeLabel(v))}</option>`).join('');
+  const aus = (e && e.ausstellung) || {};
+  openModal(e ? 'Auswahlpunkt bearbeiten' : 'Neuer Auswahlpunkt', `
     <div class="form-row">
-      <label class="field">Datum <input class="input" type="date" id="en_datum" value="${e ? esc(e.datum || '') : todayIso()}"></label>
+      <label class="field">Datum <input class="input" type="date" id="en_datum" value="${e ? esc(e.datum || '') : ''}"></label>
       <label class="field">Bereich <input class="input" id="en_bereich" list="dl_bereich" value="${e ? esc(e.bereich || '') : ''}" placeholder="z.B. Küche">${dl('dl_bereich', ENTSCHEID_BEREICHE)}</label>
     </div>
-    <label class="field">Auswahlpunkt / Thema <input class="input" id="en_thema" value="${e ? esc(e.thema || '') : ''}" placeholder="z.B. Küchenfronten"></label>
-    <label class="field">Auswahl / Beschreibung / Grund (falls entfällt) <textarea class="input" id="en_text" rows="3" placeholder="Was wurde gewählt? Oder: warum entfällt es?">${e ? esc(e.entscheid || '') : ''}</textarea></label>
+    <label class="field">Auswahlpunkt / Thema <input class="input" id="en_thema" value="${e ? esc(e.thema || '') : ''}" placeholder="z.B. Plättli Bad"></label>
+    <label class="field">Auswahl / Beschreibung / Grund (falls entfällt) <textarea class="input" id="en_text" rows="2" placeholder="Was wurde gewählt? Oder: warum entfällt es?">${e ? esc(e.entscheid || '') : ''}</textarea></label>
     <label class="field">Status <select class="select" id="en_status">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${(e ? entStatus(e) : 'offen') === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></label>
+    <hr style="border:none;border-top:1px solid var(--border);margin:14px 0 10px">
+    <label class="field">Unternehmer aus Projekt (Werkvertrag)
+      <select class="select" id="en_vid">${vopts}</select>
+      <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Wer dieses Gewerk ausführt – erscheint im Spiegelbild „Bei wem melden".</span>
+    </label>
+    <label class="field">Ausstellung / Materialauswahl bei (optional) <input class="input" id="en_aussearch" placeholder="🔎 in Kontakten suchen…" autocomplete="off"></label>
+    <div id="en_ausresults" style="margin:-4px 0 8px"></div>
+    <div class="form-row">
+      <label class="field">Ausstellung-Firma <input class="input" id="en_ausfirma" value="${esc(aus.firma || '')}" placeholder="z.B. Plättli-Ausstellung XY"></label>
+      <label class="field">Ort <input class="input" id="en_ausort" value="${esc(aus.ort || '')}"></label>
+    </div>
+    <label class="field">Telefon Ausstellung <input class="input" id="en_austel" value="${esc(aus.telefon || '')}"></label>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="${e ? 'update-entscheidung' : 'save-entscheidung'}" data-pid="${pid}"${e ? ` data-eid="${eid}"` : ''}>${e ? 'Speichern' : 'Hinzufügen'}</button>`);
+  attachKontaktSuche('en_aussearch', 'en_ausresults', (k, box) => {
+    const set = (fid, val) => { const el = $('#' + fid); if (el && val != null) el.value = val; };
+    set('en_ausfirma', k.firma); set('en_ausort', k.ort); set('en_austel', k.telefon);
+    box.innerHTML = '<div class="muted" style="font-size:12px;padding:2px 4px">✓ aus Kontakt übernommen.</div>';
+  });
 }
 function readEntscheidung() {
-  return { datum: $('#en_datum').value, bereich: $('#en_bereich').value.trim(), thema: $('#en_thema').value.trim(), entscheid: $('#en_text').value.trim(), status: $('#en_status').value };
+  const ausFirma = $('#en_ausfirma') ? $('#en_ausfirma').value.trim() : '';
+  return {
+    datum: $('#en_datum').value, bereich: $('#en_bereich').value.trim(),
+    thema: $('#en_thema').value.trim(), entscheid: $('#en_text').value.trim(),
+    status: $('#en_status').value,
+    vid: $('#en_vid') ? $('#en_vid').value : '',
+    ausstellung: ausFirma ? { firma: ausFirma, ort: $('#en_ausort').value.trim(), telefon: $('#en_austel').value.trim() } : null,
+  };
 }
 function saveEntscheidung(pid) {
   const p = findProjekt(pid); const d = readEntscheidung();
@@ -1755,7 +1836,8 @@ function addStandardBemusterung(pid) {
   let n = 0;
   BEMUSTERUNG_STANDARD.forEach(name => {
     if (!vorhanden.has(name.toLowerCase())) {
-      p.entscheidungen.push({ id: uid('en'), datum: '', bereich: 'Bemusterung', thema: name, entscheid: '', status: 'offen' });
+      const v = matchVergabe(p, name);
+      p.entscheidungen.push({ id: uid('en'), datum: '', bereich: 'Bemusterung', thema: name, entscheid: '', status: 'offen', vid: v ? v.id : '', ausstellung: null });
       n++;
     }
   });
@@ -1782,28 +1864,13 @@ function actNewBezugsfirma(pid) {
     <label class="field">Web / Adresse <input class="input" id="bz_web" placeholder="www… oder Strasse / Ort"></label>
     <label class="field">Notiz <input class="input" id="bz_notiz" placeholder="z.B. Ausstellung nach Vereinbarung"></label>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-bezugsfirma" data-pid="${pid}">Hinzufügen</button>`);
-  const sr = $('#bz_search'); if (sr) sr.addEventListener('input', bzSearch);
-}
-
-function bzSearch() {
-  const q = ($('#bz_search') ? $('#bz_search').value : '').trim().toLowerCase();
-  const box = $('#bz_results'); if (!box) return;
-  if (!q) { box.innerHTML = ''; return; }
-  const hits = (state.kontakte || []).filter(k =>
-    (k.firma || '').toLowerCase().includes(q) || (k.kategorie || '').toLowerCase().includes(q) || (k.ort || '').toLowerCase().includes(q)
-  ).slice(0, 8);
-  box.innerHTML = hits.length
-    ? hits.map(k => `<button type="button" class="bz-hit" data-id="${k.id}" style="display:block;width:100%;text-align:left;padding:7px 9px;border:1px solid var(--border);border-radius:7px;margin-bottom:5px;background:var(--surface);cursor:pointer;font-size:13px"><strong>${esc(k.firma)}</strong>${k.kategorie ? ` <span class="muted">· ${esc(k.kategorie)}</span>` : ''}${k.ort ? ` <span class="muted">· ${esc(k.ort)}</span>` : ''}</button>`).join('')
-    : '<div class="muted" style="font-size:12px;padding:2px 4px">Keine Treffer in den Kontakten.</div>';
-  box.querySelectorAll('.bz-hit').forEach(b => b.addEventListener('click', () => bzFill(b.dataset.id)));
-}
-function bzFill(id) {
-  const k = (state.kontakte || []).find(x => x.id === id); if (!k) return;
-  const set = (fid, val) => { const el = $('#' + fid); if (el && val != null) el.value = val; };
-  set('bz_firma', k.firma); set('bz_ort', k.ort); set('bz_kontakt', k.person); set('bz_tel', k.telefon);
-  if (k.email) set('bz_web', k.email);
-  if (k.kategorie && $('#bz_kat') && !$('#bz_kat').value) set('bz_kat', k.kategorie);
-  const box = $('#bz_results'); if (box) box.innerHTML = '<div class="muted" style="font-size:12px;padding:2px 4px">✓ aus Kontakt übernommen – unten prüfen &amp; speichern.</div>';
+  attachKontaktSuche('bz_search', 'bz_results', (k, box) => {
+    const set = (fid, val) => { const el = $('#' + fid); if (el && val != null) el.value = val; };
+    set('bz_firma', k.firma); set('bz_ort', k.ort); set('bz_kontakt', k.person); set('bz_tel', k.telefon);
+    if (k.email) set('bz_web', k.email);
+    if (k.kategorie && $('#bz_kat') && !$('#bz_kat').value) set('bz_kat', k.kategorie);
+    box.innerHTML = '<div class="muted" style="font-size:12px;padding:2px 4px">✓ aus Kontakt übernommen – unten prüfen &amp; speichern.</div>';
+  });
 }
 function saveBezugsfirma(pid) {
   const p = findProjekt(pid); const firma = $('#bz_firma').value.trim();
@@ -1825,6 +1892,21 @@ function pdfEntscheidungen(pid) {
   const rows = ents.length ? ents.map(e => `<tr><td>${e.datum ? fmtDate(e.datum) : ''}</td><td>${esc(e.thema || e.bereich || '')}</td><td>${e.entscheid ? esc(e.entscheid) : ''}</td><td>${ENT_STATUS[entStatus(e)].label}</td></tr>`).join('') : '<tr><td colspan="4" class="muted">Keine Auswahlpunkte erfasst.</td></tr>';
   openPrintDoc('Entscheidungsliste', `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} · Stand ${fmtDate(todayIso())}`,
     `<table class="t"><thead><tr><th style="width:90px">Datum</th><th style="width:170px">Auswahlpunkt</th><th>Auswahl / Entscheid / Grund</th><th style="width:90px">Status</th></tr></thead><tbody>${rows}</tbody></table>`);
+}
+
+function pdfMelden(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const ents = (p.entscheidungen || []);
+  const rows = ents.length ? ents.map(e => {
+    const v = e.vid ? findVergabe(p, e.vid) : matchVergabe(p, e.thema);
+    const k = v && v.firma ? kontaktByFirma(v.firma) : null;
+    const unt = v ? `${esc(v.gewerk || '')}${v.firma ? ': <b>' + esc(v.firma) + '</b>' : ' (noch nicht vergeben)'}${k && (k.person || k.telefon) ? '<br>' + esc([k.person, k.telefon].filter(Boolean).join(' · ')) : ''}` : '';
+    const a = e.ausstellung;
+    const aus = a && a.firma ? `<b>${esc(a.firma)}</b>${a.ort ? ' · ' + esc(a.ort) : ''}${a.telefon ? '<br>' + esc(a.telefon) : ''}` : '';
+    return `<tr><td><b>${esc(e.thema || '')}</b></td><td>${unt}</td><td>${aus}</td><td>${ENT_STATUS[entStatus(e)].label}</td></tr>`;
+  }).join('') : '<tr><td colspan="4" class="muted">Keine Auswahlpunkte erfasst.</td></tr>';
+  openPrintDoc('Bemusterung – bei wem melden', `${esc(p.name)} · ${esc(p.ort)} · für die Bauherrschaft`,
+    `<table class="t"><thead><tr><th style="width:160px">Auswahlpunkt</th><th>Unternehmer (Werkvertrag)</th><th>Ausstellung / Materialauswahl</th><th style="width:80px">Status</th></tr></thead><tbody>${rows}</tbody></table>`);
 }
 
 function pdfBezugsfirmen(pid) {
@@ -3703,6 +3785,7 @@ document.addEventListener('click', e => {
     case 'rm-entscheidung':     removeEntscheidung(pid, eid); break;
     case 'standard-bemusterung':addStandardBemusterung(pid); break;
     case 'pdf-entscheidungen':  pdfEntscheidungen(pid); break;
+    case 'pdf-melden':          pdfMelden(pid); break;
     case 'new-bezugsfirma':     actNewBezugsfirma(pid); break;
     case 'save-bezugsfirma':    saveBezugsfirma(pid); break;
     case 'rm-bezugsfirma':      removeBezugsfirma(pid, fid); break;

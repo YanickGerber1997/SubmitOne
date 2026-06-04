@@ -87,6 +87,16 @@ button { font-family: inherit; cursor: pointer; }
 .brand-text strong { color: #fff; font-size: 15px; }
 .brand-text span { font-size: 11px; color: #7f8db0; }
 
+.sidebar-toggle {
+  align-self: flex-end;
+  width: 30px; height: 30px; margin: -6px 0 4px;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08);
+  color: #aab6cf; border-radius: var(--radius-sm); cursor: pointer;
+  font-size: 15px; line-height: 1; display: grid; place-items: center;
+  transition: background .12s, color .12s;
+}
+.sidebar-toggle:hover { background: rgba(255,255,255,.14); color: #fff; }
+
 .nav { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
 .nav a {
   display: flex; align-items: center; gap: 11px;
@@ -114,6 +124,15 @@ button { font-family: inherit; cursor: pointer; }
 .ver { color: #5f6e92; font-size: 11px; text-align: center; margin-top: 4px; }
 
 .content { padding: 26px 32px 60px; max-width: 1400px; width: 100%; }
+
+/* Eingeklappte Sidebar: nur Symbole */
+#app.collapsed { --sidebar-w: 68px; }
+#app.collapsed .brand { padding: 6px 0 18px; justify-content: center; }
+#app.collapsed .brand-text { display: none; }
+#app.collapsed .nav a { justify-content: center; gap: 0; padding: 10px 0; }
+#app.collapsed .nav-txt { display: none; }
+#app.collapsed .sidebar-toggle { align-self: center; }
+#app.collapsed .sidebar-foot { display: none; }
 
 /* ============================ Kopfzeile ============================ */
 

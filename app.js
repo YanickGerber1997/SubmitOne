@@ -255,12 +255,32 @@ async function startApp() {
   await db.init();
   $('#btnExport')?.addEventListener('click', exportData);
   $('#btnReset')?.addEventListener('click', resetDemo);
+  initSidebarCollapse();
   window.addEventListener('hashchange', router);
   router();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
   if (cloudEnabled) subscribeCloud();
+}
+
+// Sidebar ein-/ausklappen (nur Symbole) – Zustand browser-lokal gemerkt
+function initSidebarCollapse() {
+  const app = $('#app'); const btn = $('#btnCollapse');
+  if (!app || !btn) return;
+  const apply = on => {
+    app.classList.toggle('collapsed', on);
+    btn.textContent = on ? '»' : '«';
+    btn.title = on ? 'Menü ausklappen' : 'Menü einklappen';
+  };
+  let on = false;
+  try { on = localStorage.getItem('so_sidebar_collapsed') === '1'; } catch (_) {}
+  apply(on);
+  btn.addEventListener('click', () => {
+    on = !on;
+    apply(on);
+    try { localStorage.setItem('so_sidebar_collapsed', on ? '1' : '0'); } catch (_) {}
+  });
 }
 
 // Migriert ältere Datenstände auf das aktuelle Modell (offerten[] -> eingeladene[])
@@ -975,28 +995,31 @@ function viewTermine(id) {
   }
   const monthCells = months.map(m => `<div class="g-cell" style="width:${m.w}px">${m.label}</div>`).join('');
 
-  let subCells = '';
+  // Hintergrund-Gitter (vertikale Rasterlinien) – passend zum Zoom mitgebaut
+  const monthBg = months.map(m => `<div class="g-cell" style="width:${m.w}px"></div>`).join('');
+  let subCells = '', bgCells = monthBg;
   if (ganttZoom === 'woche') {
+    subCells = ''; bgCells = '';
     let d = new Date(rangeStart);
     while (d <= rangeEnd) {
       const wEnd = new Date(d); wEnd.setDate(d.getDate() + (7 - ((d.getDay() + 6) % 7)) - 1);
       const segEnd = wEnd > rangeEnd ? rangeEnd : wEnd;
-      const days = dayDiff(d, segEnd) + 1;
-      subCells += `<div class="g-cell" style="width:${days * pxPerDay}px">KW${isoWeek(d)}</div>`;
+      const w = (dayDiff(d, segEnd) + 1) * pxPerDay;
+      subCells += `<div class="g-cell" style="width:${w}px">KW${isoWeek(d)}</div>`;
+      bgCells  += `<div class="g-cell" style="width:${w}px"></div>`;
       d = new Date(segEnd); d.setDate(d.getDate() + 1);
     }
   } else if (ganttZoom === 'tag') {
+    subCells = ''; bgCells = '';
     let d = new Date(rangeStart);
     while (d <= rangeEnd) {
       const we = (d.getDay() === 0 || d.getDay() === 6);
       subCells += `<div class="g-cell day${we ? ' we' : ''}" style="width:${pxPerDay}px">${d.getDate()}</div>`;
+      bgCells  += `<div class="g-cell day${we ? ' we' : ''}" style="width:${pxPerDay}px"></div>`;
       d.setDate(d.getDate() + 1);
     }
   }
   const headH = subCells ? 56 : 38;
-
-  // Hintergrund-Gitter = Monatsspalten
-  const monthBg = months.map(m => `<div class="g-cell" style="width:${m.w}px"></div>`).join('');
 
   const t = today();
   const todayLeft = (t >= rangeStart && t <= rangeEnd) ? dayDiff(rangeStart, t) * pxPerDay : null;
@@ -1038,7 +1061,7 @@ function viewTermine(id) {
           ${subCells ? `<div class="g-headrow sub">${subCells}</div>` : ''}
         </div>
         <div class="g-rows">
-          <div class="g-bg">${monthBg}</div>
+          <div class="g-bg">${bgCells}</div>
           ${todayLeft != null ? `<div class="g-today" style="left:${todayLeft}px"></div>` : ''}
           ${barRows}
         </div>

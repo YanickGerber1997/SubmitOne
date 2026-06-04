@@ -445,7 +445,8 @@ function nachtragSumme(v){ return (v.nachtraege || []).filter(n => n.status === 
 function nachtragOffen(v){ return (v.nachtraege || []).filter(n => n.status === 'offen').reduce((a, n) => a + (n.betrag || 0), 0); }
 function rapportSumme(v) { return (v.rapporte || []).reduce((a, r) => a + (r.betrag || 0), 0); }
 function budgetSumme(v)  { return (v.budgetposten || []).reduce((a, b) => a + (b.betrag || 0), 0); }
-function schlussSumme(v) { return (v.betrag || 0) + nachtragSumme(v) + rapportSumme(v) + budgetSumme(v); }
+// Budgetpositionen sind bereits im WV/in der Offerte enthalten → NICHT zusätzlich aufrechnen
+function schlussSumme(v) { return (v.betrag || 0) + nachtragSumme(v) + rapportSumme(v); }
 
 /* --- Rechnungen / Kostenkontrolle --- */
 function rechnungBezahlt(v) { return (v.rechnungen || []).filter(r => r.bezahlt).reduce((a, r) => a + (r.betrag || 0), 0); }
@@ -459,9 +460,9 @@ function kostenZeile(v) {
   const wv = isVergeben(v) ? (v.betrag || 0) : 0;
   const nt = nachtragSumme(v);
   const rap = rapportSumme(v);
-  const budget = budgetSumme(v);
-  // Abrechnungsprognose: vergeben → WV + Nachträge + Rapporte; sonst beste bekannte Schätzung; immer + Budgetpositionen
-  const prognose = (isVergeben(v) ? (wv + nt + rap) : (rev != null ? rev : kv)) + budget;
+  const budget = budgetSumme(v);   // nur Info – steckt bereits im WV, wird NICHT aufgerechnet
+  // Abrechnungsprognose: vergeben → WV + Nachträge + Rapporte; sonst beste bekannte Schätzung
+  const prognose = isVergeben(v) ? (wv + nt + rap) : (rev != null ? rev : kv);
   const bezahlt = rechnungBezahlt(v);
   const fakturiert = rechnungTotal(v);
   const offen = prognose - bezahlt;
@@ -951,7 +952,7 @@ function viewKosten(id) {
         </tbody>
       </table>
     </div>
-    <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag/Vergabesumme · Prognose = WV + Nachträge + Rapporte + Budgetpositionen · Δ KV = Prognose gegen Schätzung (rot = Überschreitung). Zeile anklicken → Gewerk-Detail mit Rechnungserfassung.</p>
+    <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag/Vergabesumme · Prognose = WV + Nachträge + Rapporte (Budget steckt im WV) · Δ KV = Prognose gegen Schätzung (rot = Überschreitung). Zeile anklicken → Gewerk-Detail mit Rechnungserfassung.</p>
   `);
 }
 
@@ -1695,6 +1696,14 @@ function attachKontaktSuche(searchId, resultsId, onPick) {
 function viewBauherr(pid) {
   const p = findProjekt(pid);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  // Standard-Auswahlliste von Anfang an einblenden (einmalig, wenn noch leer)
+  if (!(p.entscheidungen || []).length) {
+    p.entscheidungen = BEMUSTERUNG_STANDARD.map(name => {
+      const v = matchVergabe(p, name);
+      return { id: uid('en'), datum: '', bereich: 'Bemusterung', thema: name, entscheid: '', status: 'offen', vid: v ? v.id : '', ausstellung: null };
+    });
+    save();
+  }
   const ents = (p.entscheidungen || []).slice().sort((a, b) => (b.datum || '').localeCompare(a.datum || ''));
   const offen = ents.filter(e => entStatus(e) === 'offen').length;
   const firms = (p.bezugsfirmen || []);
@@ -2442,7 +2451,7 @@ function viewVergabeDetail(pid, vid) {
       <div class="dstat"><div class="l">Kostenschätzung (KV)</div><div class="v">${chf(v.schaetzung)}</div></div>
       <div class="dstat"><div class="l">günstigste Offerte (KV rev.)</div><div class="v">${kvRev(v) != null ? chf(kvRev(v)) : '<span class="muted" style="font-size:14px">–</span>'}</div></div>
       <div class="dstat"><div class="l">Vergabesumme (WV)</div><div class="v">${isVergeben(v) ? chf(v.betrag) : '<span class="muted" style="font-size:14px">offen</span>'}</div></div>
-      <div class="dstat" style="border-color:var(--brand)"><div class="l">Auftragssumme inkl. NT/Regie/Budget</div><div class="v" style="color:var(--brand)">${isVergeben(v) ? chf(schlussSumme(v)) : '~' + chf((kvRev(v) != null ? kvRev(v) : (v.schaetzung || 0)) + budgetSumme(v))}</div></div>
+      <div class="dstat" style="border-color:var(--brand)"><div class="l">Auftragssumme inkl. NT/Regie</div><div class="v" style="color:var(--brand)">${isVergeben(v) ? chf(schlussSumme(v)) : '~' + chf(kvRev(v) != null ? kvRev(v) : (v.schaetzung || 0))}</div></div>
       <div class="dstat"><div class="l">Bezahlt</div><div class="v">${chf(rechnungBezahlt(v))}</div></div>
       <div class="dstat"><div class="l">Offen</div><div class="v">${chf((isVergeben(v) ? schlussSumme(v) : 0) - rechnungBezahlt(v))}</div></div>
     </div>

@@ -310,7 +310,15 @@ function migrate() {
     if (!p.protokolle) { p.protokolle = []; changed = true; }
     if (!p.entscheidungen) { p.entscheidungen = []; changed = true; }
     if (!p.bezugsfirmen) { p.bezugsfirmen = []; changed = true; }
-    for (const e of (p.entscheidungen || [])) { if (e.status === 'entschieden') { e.status = 'gewaehlt'; changed = true; } }
+    for (const e of (p.entscheidungen || [])) {
+      if (e.status === 'entschieden') { e.status = 'gewaehlt'; changed = true; }
+      if (!e.bkp) {
+        const t = (e.thema || '').toLowerCase();
+        const map = [[/küchenger/, '258'], [/küche/, '258'], [/sanitär|bad|apparat|armatur/, '250'], [/fliesen|plätt/, '282.4'], [/parkett|bodenbel|boden/, '281.7'], [/innentür|türen/, '273'], [/schränk|einbau/, '273'], [/wandfarb|anstrich|maler/, '285'], [/beleucht|elektro/, '230'], [/storen|beschatt|sonnenschutz/, '228']];
+        const hit = map.find(([re]) => re.test(t));
+        if (hit) { e.bkp = hit[1]; changed = true; }
+      }
+    }
     for (const pr of (p.protokolle || [])) {
       for (const tr of (pr.traktanden || [])) {
         for (const it of (tr.eintraege || [])) {
@@ -1645,12 +1653,17 @@ function pdfHonorar() {
 const ENTSCHEID_BEREICHE = ['Allgemein', 'Küche', 'Bad / Sanitär', 'Böden / Fliesen', 'Wände / Farben', 'Fenster / Türen', 'Elektro / Beleuchtung', 'Heizung / Lüftung', 'Aussenanlage', 'Material / Bemusterung'];
 const BEZUG_KATEGORIEN = ['Küche', 'Küchengeräte', 'Bad- / Sanitärapparate', 'Fliesen / Plättli', 'Parkett / Bodenbeläge', 'Teppich / Bodenbeläge', 'Innentüren', 'Beleuchtung', 'Storen / Beschattung', 'Garten / Aussenanlage'];
 
-// Standard-Bemusterungspunkte: das, was die Bauherrschaft typischerweise aussuchen muss
+// Standard-Bemusterungspunkte mit BKP (das, was die Bauherrschaft typischerweise aussucht)
 const BEMUSTERUNG_STANDARD = [
-  'Küche', 'Küchengeräte / Apparate', 'Badezimmer-Apparate (Sanitär)', 'Armaturen',
-  'Fliesen / Plättli Bad', 'Fliesen / Plättli Küche', 'Bodenbeläge / Parkett',
-  'Innentüren', 'Wandfarben / Anstrich', 'Beleuchtung / Elektro',
-  'Storen / Beschattung', 'Schränke / Einbauten',
+  { thema: 'Küche', bkp: '258' },
+  { thema: 'Sanitärapparate & Armaturen', bkp: '250' },
+  { thema: 'Fliesen / Plättli', bkp: '282.4' },
+  { thema: 'Parkett / Bodenbeläge', bkp: '281.7' },
+  { thema: 'Innentüren', bkp: '273' },
+  { thema: 'Schränke / Einbauten', bkp: '273' },
+  { thema: 'Wandfarben / Anstrich', bkp: '285' },
+  { thema: 'Beleuchtung / Elektro', bkp: '230' },
+  { thema: 'Storen / Beschattung', bkp: '228' },
 ];
 const ENT_STATUS = {
   offen:     { label: 'offen',   color: 'amber' },
@@ -1660,6 +1673,53 @@ const ENT_STATUS = {
 const entStatus = e => (e.status === 'entschieden' ? 'gewaehlt' : (ENT_STATUS[e.status] ? e.status : 'offen'));
 
 function dl(id, items) { return `<datalist id="${id}">${items.map(x => `<option value="${esc(x)}">`).join('')}</datalist>`; }
+
+// BKP-Katalog (Gebäude, BKP 2) – durchsuchbares Dropdown
+const BKP_KATALOG = [
+  ['20', 'Baugrube'], ['201', 'Baugrubenaushub'],
+  ['21', 'Rohbau 1'], ['211', 'Baumeisterarbeiten'], ['211.1', 'Gerüste'],
+  ['212', 'Montagebau in Beton / vorfab. Mauerwerk'], ['213', 'Montagebau in Stahl'], ['214', 'Montagebau in Holz'],
+  ['215', 'Montagebau Leichtkonstruktionen'], ['216', 'Natur- und Kunststeinarbeiten'], ['217', 'Schutzraumabschlüsse'],
+  ['22', 'Rohbau 2'], ['221', 'Fenster, Aussentüren, Tore'], ['222', 'Spenglerarbeiten'], ['223', 'Blitzschutz'],
+  ['224', 'Bedachungsarbeiten'], ['225', 'Spezielle Dichtungen und Dämmungen'], ['226', 'Fassadenputze'],
+  ['227', 'Äussere Oberflächenbehandlungen'], ['228', 'Äussere Abschlüsse, Sonnenschutz / Storen'],
+  ['23', 'Elektroanlagen'], ['231', 'Apparate Starkstrom'], ['232', 'Starkstrominstallationen'], ['233', 'Leuchten und Lampen'],
+  ['234', 'Energieverbraucher'], ['235', 'Apparate Schwachstrom'], ['236', 'Schwachstrominstallationen'], ['237', 'Gebäudeautomation'], ['238', 'Bauprovisorien'],
+  ['24', 'Heizungs-, Lüftungs-, Klimaanlagen'], ['241', 'Zulieferung Energieträger, Lagerung'], ['242', 'Wärmeerzeugung'], ['243', 'Wärmeverteilung'],
+  ['244', 'Lüftungsanlagen'], ['245', 'Klimaanlagen'], ['246', 'Kälteanlagen'], ['247', 'Spezialanlagen'], ['248', 'Dämmungen HLK-Installationen'],
+  ['25', 'Sanitäranlagen'], ['251', 'Allgemeine Sanitärapparate'], ['252', 'Spezielle Sanitärapparate'], ['253', 'Sanitäre Ver-/Entsorgungsapparate'],
+  ['254', 'Sanitärleitungen'], ['255', 'Dämmungen Sanitärinstallationen'], ['256', 'Sanitärinstallationselemente'], ['257', 'Elektro- und Pneumatiktafeln'], ['258', 'Kücheneinrichtungen'],
+  ['26', 'Transportanlagen'], ['261', 'Aufzüge'], ['262', 'Fahrtreppen, Fahrsteige'], ['263', 'Fassadenreinigungsanlagen'], ['264', 'Sonstige Förderanlagen'], ['265', 'Hebeeinrichtungen'], ['266', 'Parkieranlagen'],
+  ['27', 'Ausbau 1'], ['271', 'Gipserarbeiten'], ['272', 'Metallbauarbeiten'], ['273', 'Schreinerarbeiten'], ['274', 'Spezialverglasungen (innen)'], ['275', 'Schliessanlagen'], ['276', 'Innere Abschlüsse'], ['277', 'Elementwände'],
+  ['28', 'Ausbau 2'], ['281', 'Bodenbeläge'], ['281.0', 'Unterlagsböden'], ['281.1', 'Fugenlose Bodenbeläge'], ['281.2', 'Bodenbeläge Kunststoff/Textil'], ['281.4', 'Bodenbeläge Naturstein'], ['281.5', 'Bodenbeläge Kunststein'], ['281.6', 'Bodenbeläge Plattenarbeiten'], ['281.7', 'Bodenbeläge in Holz / Parkett'], ['281.8', 'Doppelböden'],
+  ['282', 'Wandbeläge, Wandbekleidungen'], ['282.0', 'Fugenlose Wandbeläge'], ['282.1', 'Tapezierarbeiten'], ['282.2', 'Wandverkleidung Naturstein'], ['282.3', 'Wandverkleidung Kunststein'], ['282.4', 'Wandbeläge Plattenarbeiten / Fliesen'], ['282.5', 'Wandverkleidung Holz'], ['282.6', 'Wandverkleidung Kunststoff/Textil'],
+  ['283', 'Deckenbekleidungen'], ['284', 'Hafnerarbeiten'], ['285', 'Innere Oberflächenbehandlungen / Maler'], ['286', 'Bauaustrocknung'], ['287', 'Baureinigung'], ['288', 'Gärtnerarbeiten (Gebäude)'],
+  ['29', 'Honorare'], ['291', 'Architekt'], ['292', 'Bauingenieur'], ['293', 'Elektroingenieur'], ['294', 'HLK-Ingenieur'], ['295', 'Sanitäringenieur'], ['296', 'Spezialisten'], ['296.2', 'Innenarchitekt'], ['298', 'Gebäudeautomationsingenieur'],
+].map(([code, label]) => ({ code, label }));
+
+function bkpDatalist(id) { return `<datalist id="${id}">${BKP_KATALOG.map(b => `<option value="${esc(b.code + ' ' + b.label)}">`).join('')}</datalist>`; }
+function parseBkp(val) {
+  const m = String(val || '').trim().match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
+  return m ? { code: m[1], label: (m[2] || '').trim() } : { code: String(val || '').trim(), label: '' };
+}
+function bkpLabel(code) { const b = BKP_KATALOG.find(x => x.code === String(code)); return b ? b.label : ''; }
+
+// Vergabe zu einem BKP-Code finden (exakt → 3-stellig → 2-stellige Gruppe)
+function matchVergabeByBkp(p, bkp) {
+  if (!bkp) return null;
+  const code = String(bkp); const vs = p.vergaben || [];
+  let v = vs.find(x => String(x.bkp || '') === code); if (v) return v;
+  const three = code.split('.')[0];
+  v = vs.find(x => String(x.bkp || '').split('.')[0] === three); if (v) return v;
+  const two = three.slice(0, 2);
+  return vs.find(x => String(x.bkp || '').slice(0, 2) === two && two.length === 2) || null;
+}
+// Beste Vergabe für einen Auswahlpunkt: explizit (vid) → BKP → Stichwort
+function vergabeForEnt(p, e) {
+  if (e.vid) { const v = findVergabe(p, e.vid); if (v) return v; }
+  if (e.bkp) { const v = matchVergabeByBkp(p, e.bkp); if (v) return v; }
+  return matchVergabe(p, e.thema);
+}
 
 // Auswahlpunkt → passendes Gewerk/Unternehmer im Projekt automatisch vorschlagen
 const GEWERK_HINTS = {
@@ -1702,14 +1762,14 @@ function viewBauherr(pid) {
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   // Standard-Auswahlliste von Anfang an einblenden (einmalig, wenn noch leer)
   if (!(p.entscheidungen || []).length) {
-    p.entscheidungen = BEMUSTERUNG_STANDARD.map(name => {
-      const v = matchVergabe(p, name);
-      return { id: uid('en'), datum: '', bereich: 'Bemusterung', thema: name, entscheid: '', status: 'offen', vid: v ? v.id : '', ausstellung: null };
+    p.entscheidungen = BEMUSTERUNG_STANDARD.map(s => {
+      const v = matchVergabeByBkp(p, s.bkp);
+      return { id: uid('en'), datum: '', bereich: 'Bemusterung', thema: s.thema, bkp: s.bkp, entscheid: '', status: 'offen', vid: v ? v.id : '', ausstellung: null };
     });
     save();
   }
-  const vergOf = e => e.vid ? findVergabe(p, e.vid) : matchVergabe(p, e.thema);
-  const bkpOf = e => { const v = vergOf(e); return v && v.bkp ? v.bkp : 'zzz'; };
+  const vergOf = e => vergabeForEnt(p, e);
+  const bkpOf = e => e.bkp || (vergOf(e) && vergOf(e).bkp) || 'zzz';
   const ents = (p.entscheidungen || []).slice().sort((a, b) => bkpOf(a).localeCompare(bkpOf(b)) || (a.thema || '').localeCompare(b.thema || ''));
   const offen = ents.filter(e => entStatus(e) === 'offen').length;
   const firms = (p.bezugsfirmen || []);
@@ -1722,7 +1782,7 @@ function viewBauherr(pid) {
       <thead><tr><th style="width:52px">BKP</th><th style="width:112px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:96px">Budget</th><th style="width:96px"></th></tr></thead>
       <tbody>${ents.map(e => { const v = vergOf(e); const bp = v ? (v.budgetposten || []).find(x => (x.text || '').toLowerCase() === (e.thema || '').toLowerCase()) : null; return `
         <tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
-          <td class="muted">${v && v.bkp ? esc(v.bkp) : '–'}</td>
+          <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
           <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">
             ${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}
           </select></td>
@@ -1752,7 +1812,7 @@ function viewBauherr(pid) {
     </div>`).join('') : emptyState('🏬', 'Noch keine Firmen erfasst.');
 
   const meldenRows = ents.map(e => {
-    const v = e.vid ? findVergabe(p, e.vid) : matchVergabe(p, e.thema);
+    const v = vergabeForEnt(p, e);
     const k = v && v.firma ? kontaktByFirma(v.firma) : null;
     const untTxt = v
       ? `${esc(v.gewerk || '')}${v.firma ? `: <strong>${esc(v.firma)}</strong>` : ' <span class="muted">(noch nicht vergeben)</span>'}${k && (k.person || k.telefon) ? `<div class="muted" style="font-size:12px">${esc([k.person, k.telefon].filter(Boolean).join(' · '))}</div>` : ''}`
@@ -1761,7 +1821,7 @@ function viewBauherr(pid) {
     const ausTxt = a && a.firma
       ? `<strong>${esc(a.firma)}</strong>${a.ort ? ` · ${esc(a.ort)}` : ''}${a.telefon ? `<div class="muted" style="font-size:12px">${esc(a.telefon)}</div>` : ''}`
       : '<span class="muted">–</span>';
-    return `<tr><td class="muted">${v && v.bkp ? esc(v.bkp) : '–'}</td><td><strong>${esc(e.thema || '')}</strong></td><td>${untTxt}</td><td>${ausTxt}</td><td><span class="st ${ENT_STATUS[entStatus(e)].color}" style="font-size:10.5px;padding:2px 8px">${ENT_STATUS[entStatus(e)].label}</span></td></tr>`;
+    return `<tr><td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td><td><strong>${esc(e.thema || '')}</strong></td><td>${untTxt}</td><td>${ausTxt}</td><td><span class="st ${ENT_STATUS[entStatus(e)].color}" style="font-size:10.5px;padding:2px 8px">${ENT_STATUS[entStatus(e)].label}</span></td></tr>`;
   }).join('');
 
   render(`
@@ -1800,11 +1860,11 @@ function actNewEntscheidung(pid, eid) {
   const vopts = `<option value="">— kein / noch offen —</option>` + (p.vergaben || []).map(v => `<option value="${v.id}"${curVid === v.id ? ' selected' : ''}>${esc(vergabeLabel(v))}</option>`).join('');
   const aus = (e && e.ausstellung) || {};
   openModal(e ? 'Auswahlpunkt bearbeiten' : 'Neuer Auswahlpunkt', `
+    <label class="field">BKP <input class="input" id="en_bkp" list="dl_enbkp" value="${e ? esc(e.bkp || '') : ''}" placeholder="tippen: z.B. 282 oder „Fliesen“ …">${bkpDatalist('dl_enbkp')}</label>
     <div class="form-row">
+      <label class="field">Auswahlpunkt / Thema <input class="input" id="en_thema" value="${e ? esc(e.thema || '') : ''}" placeholder="z.B. Plättli Bad"></label>
       <label class="field">Datum <input class="input" type="date" id="en_datum" value="${e ? esc(e.datum || '') : ''}"></label>
-      <label class="field">Bereich <input class="input" id="en_bereich" list="dl_bereich" value="${e ? esc(e.bereich || '') : ''}" placeholder="z.B. Küche">${dl('dl_bereich', ENTSCHEID_BEREICHE)}</label>
     </div>
-    <label class="field">Auswahlpunkt / Thema <input class="input" id="en_thema" value="${e ? esc(e.thema || '') : ''}" placeholder="z.B. Plättli Bad"></label>
     <label class="field">Auswahl / Beschreibung / Grund (falls entfällt) <textarea class="input" id="en_text" rows="2" placeholder="Was wurde gewählt? Oder: warum entfällt es?">${e ? esc(e.entscheid || '') : ''}</textarea></label>
     <label class="field">Status <select class="select" id="en_status">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${(e ? entStatus(e) : 'offen') === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></label>
     <hr style="border:none;border-top:1px solid var(--border);margin:14px 0 10px">
@@ -1825,11 +1885,19 @@ function actNewEntscheidung(pid, eid) {
     set('en_ausfirma', k.firma); set('en_ausort', k.ort); set('en_austel', k.telefon);
     box.innerHTML = '<div class="muted" style="font-size:12px;padding:2px 4px">✓ aus Kontakt übernommen.</div>';
   });
+  // BKP gewählt → Thema vorschlagen, falls noch leer
+  const bkpEl = $('#en_bkp');
+  if (bkpEl) bkpEl.addEventListener('change', () => {
+    const { label } = parseBkp(bkpEl.value);
+    const th = $('#en_thema');
+    if (th && !th.value.trim() && label) th.value = label;
+  });
 }
 function readEntscheidung() {
   const ausFirma = $('#en_ausfirma') ? $('#en_ausfirma').value.trim() : '';
   return {
-    datum: $('#en_datum').value, bereich: $('#en_bereich').value.trim(),
+    datum: $('#en_datum').value,
+    bkp: $('#en_bkp') ? parseBkp($('#en_bkp').value).code : '',
     thema: $('#en_thema').value.trim(), entscheid: $('#en_text').value.trim(),
     status: $('#en_status').value,
     vid: $('#en_vid') ? $('#en_vid').value : '',
@@ -1862,10 +1930,10 @@ function addStandardBemusterung(pid) {
   p.entscheidungen = p.entscheidungen || [];
   const vorhanden = new Set(p.entscheidungen.map(e => (e.thema || '').toLowerCase().trim()));
   let n = 0;
-  BEMUSTERUNG_STANDARD.forEach(name => {
-    if (!vorhanden.has(name.toLowerCase())) {
-      const v = matchVergabe(p, name);
-      p.entscheidungen.push({ id: uid('en'), datum: '', bereich: 'Bemusterung', thema: name, entscheid: '', status: 'offen', vid: v ? v.id : '', ausstellung: null });
+  BEMUSTERUNG_STANDARD.forEach(s => {
+    if (!vorhanden.has(s.thema.toLowerCase())) {
+      const v = matchVergabeByBkp(p, s.bkp);
+      p.entscheidungen.push({ id: uid('en'), datum: '', bereich: 'Bemusterung', thema: s.thema, bkp: s.bkp, entscheid: '', status: 'offen', vid: v ? v.id : '', ausstellung: null });
       n++;
     }
   });
@@ -2880,7 +2948,7 @@ function saveProjekt() {
 function actNewVergabe(pid) {
   openModal('Neue Vergabe', `
     <div class="form-row">
-      <label class="field">BKP-Nr. <input class="input" id="f_bkp" placeholder="211"></label>
+      <label class="field">BKP-Nr. <input class="input" id="f_bkp" list="dl_fbkp" placeholder="tippen: 211 oder Gewerk…">${bkpDatalist('dl_fbkp')}</label>
       <label class="field">Gewerk <input class="input" id="f_gewerk" placeholder="Baumeisterarbeiten"></label>
     </div>
     <div class="form-row">
@@ -2895,16 +2963,23 @@ function actNewVergabe(pid) {
       <label class="field">Ausführung bis (grob) <input class="input" type="date" id="f_bauende"></label>
     </div>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-vergabe" data-pid="${pid}">Vergabe anlegen</button>`);
+  const bkpEl = $('#f_bkp');
+  if (bkpEl) bkpEl.addEventListener('change', () => {
+    const { label } = parseBkp(bkpEl.value);
+    const g = $('#f_gewerk');
+    if (g && !g.value.trim() && label) g.value = label;
+  });
 }
 
 function saveVergabe(pid) {
   const p = findProjekt(pid);
   if (!p) return;
-  const gewerk = $('#f_gewerk').value.trim();
+  const bkpParsed = parseBkp($('#f_bkp').value);
+  const gewerk = $('#f_gewerk').value.trim() || bkpParsed.label;
   if (!gewerk) { toast('Bitte ein Gewerk eingeben', 'info'); return; }
   const v = {
     id: uid('v'),
-    bkp: $('#f_bkp').value.trim() || '000',
+    bkp: bkpParsed.code || '000',
     gewerk,
     schaetzung: Number($('#f_schaetzung').value) || 0,
     frist: $('#f_frist').value || '',

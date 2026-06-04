@@ -835,6 +835,7 @@ function viewProjektDetail(id) {
       </div>
       <div style="display:flex;gap:10px;align-items:center">
         ${phaseBadge(dominantPhase(p))}
+        <button class="btn secondary" data-act="edit-projekt" data-pid="${p.id}" title="Projekt &amp; Gebäudedaten bearbeiten">✎ Bearbeiten</button>
         <button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Vergabe</button>
       </div>
     </div>
@@ -847,7 +848,11 @@ function viewProjektDetail(id) {
     <div class="detail-stats">
       <div class="dstat"><div class="l">Fortschritt</div><div class="v">${pct}%</div>${progressBar(pct)}</div>
       <div class="dstat"><div class="l">Vergaben vergeben</div><div class="v">${projektVergebenAnzahl(p)} / ${vergaben.length}</div></div>
-      <div class="dstat"><div class="l">Volumen</div><div class="v">${chf(projektVolumen(p))}</div></div>
+      <div class="dstat"><div class="l">Volumen (Kosten)</div><div class="v">${chf(projektVolumen(p))}</div></div>
+      ${p.wohnungen ? `<div class="dstat"><div class="l">Wohnungen</div><div class="v">${p.wohnungen}</div></div>` : ''}
+      ${p.geschosse ? `<div class="dstat"><div class="l">Geschosse</div><div class="v">${p.geschosse}</div></div>` : ''}
+      ${p.flaeche ? `<div class="dstat"><div class="l">Fläche</div><div class="v">${p.flaeche.toLocaleString('de-CH')} m²</div></div>` : ''}
+      ${p.volumen ? `<div class="dstat"><div class="l">Volumen</div><div class="v">${p.volumen.toLocaleString('de-CH')} m³</div></div>` : ''}
       <div class="dstat"><div class="l">Termin</div><div class="v" style="font-size:15px">${fmtDate(p.start)} – ${fmtDate(p.ende)}</div></div>
     </div>
 
@@ -945,7 +950,10 @@ function viewKosten(id) {
       ${kpi('Abrechnungsprognose', money(tot.prognose))}
       ${kpi('Bezahlt', money(tot.bezahlt))}
       ${kpi('Offen', money(tot.offen))}
+      ${p.volumen ? kpi('Prognose / m³ (GV)', 'CHF ' + money(tot.prognose / p.volumen)) : ''}
+      ${p.flaeche ? kpi('Prognose / m² (BGF)', 'CHF ' + money(tot.prognose / p.flaeche)) : ''}
     </div>
+    ${(p.volumen || p.flaeche) ? `<p class="muted" style="font-size:12px;margin:-6px 0 14px">Kubische Kennzahlen für die Kostenschätzungs-Gegenüberstellung${p.volumen ? ` · GV ${p.volumen.toLocaleString('de-CH')} m³` : ''}${p.flaeche ? ` · BGF ${p.flaeche.toLocaleString('de-CH')} m²` : ''}. Gebäudedaten unter „Übersicht → ✎ Bearbeiten".</p>` : ''}
     <div class="card" style="overflow-x:auto">
       <table class="grid ktable">
         <thead><tr>
@@ -1757,6 +1765,8 @@ function attachKontaktSuche(searchId, resultsId, onPick) {
   });
 }
 
+let bauherrWohnung = 'alle';   // Wohnungs-Filter im Bauherr-Tab
+
 function viewBauherr(pid) {
   const p = findProjekt(pid);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
@@ -1764,14 +1774,25 @@ function viewBauherr(pid) {
   if (!(p.entscheidungen || []).length) {
     p.entscheidungen = BEMUSTERUNG_STANDARD.map(s => {
       const v = matchVergabeByBkp(p, s.bkp);
-      return { id: uid('en'), datum: '', bereich: 'Bemusterung', thema: s.thema, bkp: s.bkp, entscheid: '', status: 'offen', vid: v ? v.id : '', ausstellung: null };
+      return { id: uid('en'), datum: '', bereich: 'Bemusterung', thema: s.thema, bkp: s.bkp, entscheid: '', status: 'offen', vid: v ? v.id : '', ausstellung: null, wohnung: '' };
     });
     save();
   }
   const vergOf = e => vergabeForEnt(p, e);
   const bkpOf = e => e.bkp || (vergOf(e) && vergOf(e).bkp) || 'zzz';
-  const ents = (p.entscheidungen || []).slice().sort((a, b) => bkpOf(a).localeCompare(bkpOf(b)) || (a.thema || '').localeCompare(b.thema || ''));
-  const offen = ents.filter(e => entStatus(e) === 'offen').length;
+  const allEnts = (p.entscheidungen || []).slice().sort((a, b) => bkpOf(a).localeCompare(bkpOf(b)) || (a.thema || '').localeCompare(b.thema || ''));
+  const offen = allEnts.filter(e => entStatus(e) === 'offen').length;
+
+  // Wohnungs-Filter (nur bei Mehrfamilienhaus)
+  const hasWhg = (p.wohnungen || 0) >= 1;
+  const selW = hasWhg ? bauherrWohnung : 'alle';
+  const ents = selW === 'alle' ? allEnts : allEnts.filter(e => String(e.wohnung || '') === selW);
+  const whgLabel = w => w === '' ? 'Allgemein' : 'Whg ' + w;
+  const whgChips = hasWhg ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px">
+    <span class="chip ${selW === 'alle' ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="alle">Alle</span>
+    <span class="chip ${selW === '' ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="">Allgemein</span>
+    ${Array.from({ length: p.wohnungen }, (_, i) => `<span class="chip ${selW === String(i + 1) ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="${i + 1}">Whg ${i + 1}</span>`).join('')}
+  </div>` : '';
   const firms = (p.bezugsfirmen || []);
   const byKat = {};
   firms.forEach(f => { const k = f.kategorie || 'Übrige'; (byKat[k] = byKat[k] || []).push(f); });
@@ -1779,10 +1800,11 @@ function viewBauherr(pid) {
 
   const entsTable = ents.length ? `
     <table class="grid">
-      <thead><tr><th style="width:52px">BKP</th><th style="width:112px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:96px">Budget</th><th style="width:96px"></th></tr></thead>
+      <thead><tr><th style="width:52px">BKP</th>${hasWhg ? '<th style="width:78px">Wohnung</th>' : ''}<th style="width:112px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:96px">Budget</th><th style="width:96px"></th></tr></thead>
       <tbody>${ents.map(e => { const v = vergOf(e); const bp = v ? (v.budgetposten || []).find(x => (x.text || '').toLowerCase() === (e.thema || '').toLowerCase()) : null; return `
         <tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
           <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
+          ${hasWhg ? `<td class="muted" style="font-size:12px">${esc(whgLabel(e.wohnung || ''))}</td>` : ''}
           <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">
             ${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}
           </select></td>
@@ -1821,13 +1843,14 @@ function viewBauherr(pid) {
     const ausTxt = a && a.firma
       ? `<strong>${esc(a.firma)}</strong>${a.ort ? ` · ${esc(a.ort)}` : ''}${a.telefon ? `<div class="muted" style="font-size:12px">${esc(a.telefon)}</div>` : ''}`
       : '<span class="muted">–</span>';
-    return `<tr><td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td><td><strong>${esc(e.thema || '')}</strong></td><td>${untTxt}</td><td>${ausTxt}</td><td><span class="st ${ENT_STATUS[entStatus(e)].color}" style="font-size:10.5px;padding:2px 8px">${ENT_STATUS[entStatus(e)].label}</span></td></tr>`;
+    return `<tr><td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>${hasWhg ? `<td class="muted" style="font-size:12px">${esc(whgLabel(e.wohnung || ''))}</td>` : ''}<td><strong>${esc(e.thema || '')}</strong></td><td>${untTxt}</td><td>${ausTxt}</td><td><span class="st ${ENT_STATUS[entStatus(e)].color}" style="font-size:10.5px;padding:2px 8px">${ENT_STATUS[entStatus(e)].label}</span></td></tr>`;
   }).join('');
 
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Bauherr · Entscheide &amp; Auswahl-Firmen</div></div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Bauherr · Entscheide &amp; Auswahl-Firmen${hasWhg ? ` · ${p.wohnungen} Wohnungen` : ''}</div></div></div>
     ${projektTabs(p, 'bauherr')}
+    ${whgChips}
 
     <div class="section-head"><h2>Auswahl &amp; Entscheidungen${offen ? ` <span class="tab-badge">${offen} offen</span>` : ''}</h2>
       <div style="display:flex;gap:6px">
@@ -1841,7 +1864,7 @@ function viewBauherr(pid) {
     <div class="section-head" style="margin-top:26px"><h2>Bei wem melden <span class="muted" style="font-size:12px;font-weight:400">· Spiegelbild der Auswahlpunkte</span></h2>
       <button class="btn sm secondary" data-act="pdf-melden" data-pid="${p.id}">⬇ PDF</button></div>
     <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Pro Auswahlpunkt: ausführender Unternehmer (Werkvertrag, automatisch verknüpft) und – falls separat – die Ausstellung für die Materialauswahl.</p>
-    <div class="card">${ents.length ? `<table class="grid"><thead><tr><th style="width:52px">BKP</th><th>Auswahlpunkt</th><th>Unternehmer (Werkvertrag)</th><th>Ausstellung / Materialauswahl</th><th style="width:88px">Status</th></tr></thead><tbody>${meldenRows}</tbody></table>` : emptyState('🔗', 'Noch keine Auswahlpunkte – oben anlegen.')}</div>
+    <div class="card">${ents.length ? `<table class="grid"><thead><tr><th style="width:52px">BKP</th>${hasWhg ? '<th style="width:78px">Wohnung</th>' : ''}<th>Auswahlpunkt</th><th>Unternehmer (Werkvertrag)</th><th>Ausstellung / Materialauswahl</th><th style="width:88px">Status</th></tr></thead><tbody>${meldenRows}</tbody></table>` : emptyState('🔗', 'Noch keine Auswahlpunkte – oben anlegen.')}</div>
 
     <div class="section-head" style="margin-top:26px"><h2>Auswahl-Firmen (Bemusterung)</h2>
       <div style="display:flex;gap:6px">
@@ -1859,6 +1882,10 @@ function actNewEntscheidung(pid, eid) {
   const curVid = e ? (e.vid || '') : '';
   const vopts = `<option value="">— kein / noch offen —</option>` + (p.vergaben || []).map(v => `<option value="${v.id}"${curVid === v.id ? ' selected' : ''}>${esc(vergabeLabel(v))}</option>`).join('');
   const aus = (e && e.ausstellung) || {};
+  const curW = e ? String(e.wohnung || '') : (bauherrWohnung === 'alle' ? '' : bauherrWohnung);
+  const wohnungSelect = (p.wohnungen || 0) >= 1 ? `<label class="field">Wohnung
+      <select class="select" id="en_wohnung"><option value=""${curW === '' ? ' selected' : ''}>Allgemein (alle)</option>${Array.from({ length: p.wohnungen }, (_, i) => `<option value="${i + 1}"${curW === String(i + 1) ? ' selected' : ''}>Whg ${i + 1}</option>`).join('')}</select>
+    </label>` : '';
   openModal(e ? 'Auswahlpunkt bearbeiten' : 'Neuer Auswahlpunkt', `
     <label class="field">BKP <input class="input" id="en_bkp" list="dl_enbkp" value="${e ? esc(e.bkp || '') : ''}" placeholder="tippen: z.B. 282 oder „Fliesen“ …">${bkpDatalist('dl_enbkp')}</label>
     <div class="form-row">
@@ -1866,7 +1893,10 @@ function actNewEntscheidung(pid, eid) {
       <label class="field">Datum <input class="input" type="date" id="en_datum" value="${e ? esc(e.datum || '') : ''}"></label>
     </div>
     <label class="field">Auswahl / Beschreibung / Grund (falls entfällt) <textarea class="input" id="en_text" rows="2" placeholder="Was wurde gewählt? Oder: warum entfällt es?">${e ? esc(e.entscheid || '') : ''}</textarea></label>
-    <label class="field">Status <select class="select" id="en_status">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${(e ? entStatus(e) : 'offen') === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></label>
+    <div class="form-row">
+      <label class="field">Status <select class="select" id="en_status">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${(e ? entStatus(e) : 'offen') === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></label>
+      ${wohnungSelect || '<label class="field">&nbsp;</label>'}
+    </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:14px 0 10px">
     <label class="field">Unternehmer aus Projekt (Werkvertrag)
       <select class="select" id="en_vid">${vopts}</select>
@@ -1901,6 +1931,7 @@ function readEntscheidung() {
     thema: $('#en_thema').value.trim(), entscheid: $('#en_text').value.trim(),
     status: $('#en_status').value,
     vid: $('#en_vid') ? $('#en_vid').value : '',
+    wohnung: $('#en_wohnung') ? $('#en_wohnung').value : '',
     ausstellung: ausFirma ? { firma: ausFirma, ort: $('#en_ausort').value.trim(), telefon: $('#en_austel').value.trim() } : null,
   };
 }
@@ -1928,17 +1959,18 @@ function setEntscheidungStatus(pid, eid, status) {
 function addStandardBemusterung(pid) {
   const p = findProjekt(pid);
   p.entscheidungen = p.entscheidungen || [];
-  const vorhanden = new Set(p.entscheidungen.map(e => (e.thema || '').toLowerCase().trim()));
+  const w = bauherrWohnung === 'alle' ? '' : bauherrWohnung;
+  const vorhanden = new Set(p.entscheidungen.map(e => (e.thema || '').toLowerCase().trim() + '|' + (e.wohnung || '')));
   let n = 0;
   BEMUSTERUNG_STANDARD.forEach(s => {
-    if (!vorhanden.has(s.thema.toLowerCase())) {
+    if (!vorhanden.has(s.thema.toLowerCase() + '|' + w)) {
       const v = matchVergabeByBkp(p, s.bkp);
-      p.entscheidungen.push({ id: uid('en'), datum: '', bereich: 'Bemusterung', thema: s.thema, bkp: s.bkp, entscheid: '', status: 'offen', vid: v ? v.id : '', ausstellung: null });
+      p.entscheidungen.push({ id: uid('en'), datum: '', bereich: 'Bemusterung', thema: s.thema, bkp: s.bkp, entscheid: '', status: 'offen', vid: v ? v.id : '', ausstellung: null, wohnung: w });
       n++;
     }
   });
   save(); router();
-  toast(n ? `${n} Auswahlpunkte ergänzt` : 'Alle Standardpunkte bereits vorhanden', 'info');
+  toast(n ? `${n} Auswahlpunkte ergänzt${w ? ' (Whg ' + w + ')' : ''}` : 'Alle Standardpunkte bereits vorhanden', 'info');
 }
 function removeEntscheidung(pid, eid) {
   const p = findProjekt(pid); p.entscheidungen = (p.entscheidungen || []).filter(x => x.id !== eid); save(); router();
@@ -1985,7 +2017,7 @@ function removeBezugsfirma(pid, fid) {
 function pdfEntscheidungen(pid) {
   const p = findProjekt(pid); if (!p) return;
   const ents = (p.entscheidungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || ''));
-  const rows = ents.length ? ents.map(e => `<tr><td>${e.datum ? fmtDate(e.datum) : ''}</td><td>${esc(e.thema || e.bereich || '')}</td><td>${e.entscheid ? esc(e.entscheid) : ''}</td><td>${ENT_STATUS[entStatus(e)].label}</td></tr>`).join('') : '<tr><td colspan="4" class="muted">Keine Auswahlpunkte erfasst.</td></tr>';
+  const rows = ents.length ? ents.map(e => `<tr><td>${e.datum ? fmtDate(e.datum) : ''}</td><td>${e.wohnung ? '<b>[Whg ' + esc(e.wohnung) + ']</b> ' : ''}${esc(e.thema || e.bereich || '')}</td><td>${e.entscheid ? esc(e.entscheid) : ''}</td><td>${ENT_STATUS[entStatus(e)].label}</td></tr>`).join('') : '<tr><td colspan="4" class="muted">Keine Auswahlpunkte erfasst.</td></tr>';
   openPrintDoc('Entscheidungsliste', `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} · Stand ${fmtDate(todayIso())}`,
     `<table class="t"><thead><tr><th style="width:90px">Datum</th><th style="width:170px">Auswahlpunkt</th><th>Auswahl / Entscheid / Grund</th><th style="width:90px">Status</th></tr></thead><tbody>${rows}</tbody></table>`);
 }
@@ -1999,7 +2031,7 @@ function pdfMelden(pid) {
     const unt = v ? `${esc(v.gewerk || '')}${v.firma ? ': <b>' + esc(v.firma) + '</b>' : ' (noch nicht vergeben)'}${k && (k.person || k.telefon) ? '<br>' + esc([k.person, k.telefon].filter(Boolean).join(' · ')) : ''}` : '';
     const a = e.ausstellung;
     const aus = a && a.firma ? `<b>${esc(a.firma)}</b>${a.ort ? ' · ' + esc(a.ort) : ''}${a.telefon ? '<br>' + esc(a.telefon) : ''}` : '';
-    return `<tr><td><b>${esc(e.thema || '')}</b></td><td>${unt}</td><td>${aus}</td><td>${ENT_STATUS[entStatus(e)].label}</td></tr>`;
+    return `<tr><td>${e.wohnung ? '<b>[Whg ' + esc(e.wohnung) + ']</b> ' : ''}<b>${esc(e.thema || '')}</b></td><td>${unt}</td><td>${aus}</td><td>${ENT_STATUS[entStatus(e)].label}</td></tr>`;
   }).join('') : '<tr><td colspan="4" class="muted">Keine Auswahlpunkte erfasst.</td></tr>';
   openPrintDoc('Bemusterung – bei wem melden', `${esc(p.name)} · ${esc(p.ort)} · für die Bauherrschaft`,
     `<table class="t"><thead><tr><th style="width:160px">Auswahlpunkt</th><th>Unternehmer (Werkvertrag)</th><th>Ausstellung / Materialauswahl</th><th style="width:80px">Status</th></tr></thead><tbody>${rows}</tbody></table>`);
@@ -2905,6 +2937,26 @@ function onLogoPick(input) {
    15) Aktionen (Modals / Mutationen)
    --------------------------------------------------------------- */
 
+// Gebäudedaten-Felder (gemeinsam für Anlegen/Bearbeiten)
+function gebaeudeFelder(p) {
+  p = p || {};
+  return `
+    <div class="form-row">
+      <label class="field">Anzahl Wohnungen <input class="input" type="number" id="f_wohnungen" value="${p.wohnungen ?? ''}" placeholder="z.B. 6"></label>
+      <label class="field">Anzahl Geschosse <input class="input" type="number" id="f_geschosse" value="${p.geschosse ?? ''}" placeholder="z.B. 4"></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Fläche m² (BGF) <input class="input" type="number" id="f_flaeche" value="${p.flaeche ?? ''}" placeholder="z.B. 1200"></label>
+      <label class="field">Volumen m³ (GV) <input class="input" type="number" id="f_volumen" value="${p.volumen ?? ''}" placeholder="z.B. 4200"></label>
+    </div>`;
+}
+function readGebaeude(p) {
+  p.wohnungen = Number($('#f_wohnungen').value) || 0;
+  p.geschosse = Number($('#f_geschosse').value) || 0;
+  p.flaeche = Number($('#f_flaeche').value) || 0;
+  p.volumen = Number($('#f_volumen').value) || 0;
+}
+
 function actNewProjekt() {
   openModal('Neues Projekt', `
     <label class="field">Projektname <input class="input" id="f_name" placeholder="z.B. Neubau MFH Sonnenhof"></label>
@@ -2922,6 +2974,8 @@ function actNewProjekt() {
       <label class="field">Start <input class="input" type="date" id="f_start"></label>
       <label class="field">Ende <input class="input" type="date" id="f_ende"></label>
     </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 4px"><div class="muted" style="font-size:12px;margin-bottom:6px">Gebäudedaten (optional)</div>
+    ${gebaeudeFelder(null)}
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-projekt">Projekt anlegen</button>`);
 }
 
@@ -2940,9 +2994,43 @@ function saveProjekt() {
     vergaben: [],
     protokolle: [],
   };
+  readGebaeude(p);
   state.projekte.unshift(p);
   save(); closeModal(); go('#/projekt/' + p.id);
   toast('Projekt angelegt');
+}
+
+function actEditProjekt(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  openModal('Projekt bearbeiten', `
+    <label class="field">Projektname <input class="input" id="f_name" value="${esc(p.name)}"></label>
+    <div class="form-row">
+      <label class="field">Ort <input class="input" id="f_ort" value="${esc(p.ort || '')}"></label>
+      <label class="field">Bauherr <input class="input" id="f_bauherr" value="${esc(p.bauherr || '')}"></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Projektleitung <input class="input" id="f_pl" value="${esc(p.projektleiter || '')}"></label>
+      <label class="field">&nbsp;</label>
+    </div>
+    <div class="form-row">
+      <label class="field">Start <input class="input" type="date" id="f_start" value="${esc(p.start || '')}"></label>
+      <label class="field">Ende <input class="input" type="date" id="f_ende" value="${esc(p.ende || '')}"></label>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 4px"><div class="muted" style="font-size:12px;margin-bottom:6px">Gebäudedaten</div>
+    ${gebaeudeFelder(p)}
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-projekt-edit" data-pid="${pid}">Speichern</button>`);
+}
+function saveProjektEdit(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const name = $('#f_name').value.trim(); if (!name) { toast('Bitte einen Projektnamen eingeben', 'info'); return; }
+  p.name = name;
+  p.ort = $('#f_ort').value.trim() || '–';
+  p.bauherr = $('#f_bauherr').value.trim() || '–';
+  p.projektleiter = $('#f_pl').value.trim() || '–';
+  p.start = $('#f_start').value || '';
+  p.ende = $('#f_ende').value || '';
+  readGebaeude(p);
+  save(); closeModal(); router(); toast('Projekt gespeichert');
 }
 
 function actNewVergabe(pid) {
@@ -3941,6 +4029,8 @@ document.addEventListener('click', e => {
   switch (a) {
     case 'new-projekt':  actNewProjekt(); break;
     case 'save-projekt': saveProjekt(); break;
+    case 'edit-projekt': actEditProjekt(pid); break;
+    case 'save-projekt-edit': saveProjektEdit(pid); break;
     case 'new-vergabe':  actNewVergabe(pid); break;
     case 'save-vergabe': saveVergabe(pid); break;
     case 'advance':      advanceVergabe(pid, vid); break;
@@ -3960,6 +4050,7 @@ document.addEventListener('click', e => {
     case 'update-entscheidung': updateEntscheidung(pid, eid); break;
     case 'rm-entscheidung':     removeEntscheidung(pid, eid); break;
     case 'standard-bemusterung':addStandardBemusterung(pid); break;
+    case 'bauherr-wohnung':  bauherrWohnung = kind; viewBauherr(pid); break;
     case 'pdf-entscheidungen':  pdfEntscheidungen(pid); break;
     case 'pdf-melden':          pdfMelden(pid); break;
     case 'new-bezugsfirma':     actNewBezugsfirma(pid); break;

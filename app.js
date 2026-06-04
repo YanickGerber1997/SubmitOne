@@ -445,8 +445,11 @@ function nachtragSumme(v){ return (v.nachtraege || []).filter(n => n.status === 
 function nachtragOffen(v){ return (v.nachtraege || []).filter(n => n.status === 'offen').reduce((a, n) => a + (n.betrag || 0), 0); }
 function rapportSumme(v) { return (v.rapporte || []).reduce((a, r) => a + (r.betrag || 0), 0); }
 function budgetSumme(v)  { return (v.budgetposten || []).reduce((a, b) => a + (b.betrag || 0), 0); }
-// Budgetpositionen sind bereits im WV/in der Offerte enthalten → NICHT zusätzlich aufrechnen
-function schlussSumme(v) { return (v.betrag || 0) + nachtragSumme(v) + rapportSumme(v); }
+// Budget steckt im WV → nicht aufrechnen. ABER: ist eine Auswahl getroffen (ist gesetzt),
+// zählt die Differenz (tatsächlich − Budget): Budget wird durch den echten Betrag ersetzt.
+function hatIst(b)        { return b.ist != null && b.ist !== ''; }
+function budgetDelta(v)   { return (v.budgetposten || []).reduce((a, b) => a + (hatIst(b) ? (Number(b.ist) || 0) - (b.betrag || 0) : 0), 0); }
+function schlussSumme(v)  { return (v.betrag || 0) + nachtragSumme(v) + rapportSumme(v) + budgetDelta(v); }
 
 /* --- Rechnungen / Kostenkontrolle --- */
 function rechnungBezahlt(v) { return (v.rechnungen || []).filter(r => r.bezahlt).reduce((a, r) => a + (r.betrag || 0), 0); }
@@ -460,9 +463,10 @@ function kostenZeile(v) {
   const wv = isVergeben(v) ? (v.betrag || 0) : 0;
   const nt = nachtragSumme(v);
   const rap = rapportSumme(v);
-  const budget = budgetSumme(v);   // nur Info – steckt bereits im WV, wird NICHT aufgerechnet
-  // Abrechnungsprognose: vergeben → WV + Nachträge + Rapporte; sonst beste bekannte Schätzung
-  const prognose = isVergeben(v) ? (wv + nt + rap) : (rev != null ? rev : kv);
+  const budget = budgetSumme(v);   // Info – steckt im WV
+  const bdelta = budgetDelta(v);   // wirkt erst, wenn eine Auswahl getroffen wurde (Ist − Budget)
+  // Abrechnungsprognose: vergeben → WV + Nachträge + Rapporte; sonst beste bekannte Schätzung; + Budget-Differenz
+  const prognose = (isVergeben(v) ? (wv + nt + rap) : (rev != null ? rev : kv)) + bdelta;
   const bezahlt = rechnungBezahlt(v);
   const fakturiert = rechnungTotal(v);
   const offen = prognose - bezahlt;
@@ -1704,7 +1708,9 @@ function viewBauherr(pid) {
     });
     save();
   }
-  const ents = (p.entscheidungen || []).slice().sort((a, b) => (b.datum || '').localeCompare(a.datum || ''));
+  const vergOf = e => e.vid ? findVergabe(p, e.vid) : matchVergabe(p, e.thema);
+  const bkpOf = e => { const v = vergOf(e); return v && v.bkp ? v.bkp : 'zzz'; };
+  const ents = (p.entscheidungen || []).slice().sort((a, b) => bkpOf(a).localeCompare(bkpOf(b)) || (a.thema || '').localeCompare(b.thema || ''));
   const offen = ents.filter(e => entStatus(e) === 'offen').length;
   const firms = (p.bezugsfirmen || []);
   const byKat = {};
@@ -1713,17 +1719,21 @@ function viewBauherr(pid) {
 
   const entsTable = ents.length ? `
     <table class="grid">
-      <thead><tr><th style="width:118px">Status</th><th style="width:90px">Datum</th><th>Auswahlpunkt / Entscheid</th><th style="width:74px"></th></tr></thead>
-      <tbody>${ents.map(e => `
+      <thead><tr><th style="width:52px">BKP</th><th style="width:112px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:96px">Budget</th><th style="width:96px"></th></tr></thead>
+      <tbody>${ents.map(e => { const v = vergOf(e); const bp = v ? (v.budgetposten || []).find(x => (x.text || '').toLowerCase() === (e.thema || '').toLowerCase()) : null; return `
         <tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
+          <td class="muted">${v && v.bkp ? esc(v.bkp) : '–'}</td>
           <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">
             ${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}
           </select></td>
-          <td class="muted" style="white-space:nowrap">${e.datum ? fmtDate(e.datum) : '–'}</td>
           <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${e.entscheid ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${entStatus(e) === 'entfaellt' ? 'Grund: ' : ''}${esc(e.entscheid)}</div>` : ''}</td>
-          <td><button class="x-btn" data-act="edit-entscheidung" data-pid="${p.id}" data-eid="${e.id}" title="Bearbeiten">✏</button>
-              <button class="x-btn" data-act="rm-entscheidung" data-pid="${p.id}" data-eid="${e.id}">×</button></td>
-        </tr>`).join('')}</tbody>
+          <td class="num">${bp ? chf(bp.betrag) + (hatIst(bp) ? `<div class="muted" style="font-size:11.5px">Ist ${chf(Number(bp.ist) || 0)}</div>` : '') : '<span class="muted">–</span>'}</td>
+          <td>
+            <button class="x-btn" data-act="budget-auswahl" data-pid="${p.id}" data-eid="${e.id}" title="Budget erfassen/bearbeiten">💰</button>
+            <button class="x-btn" data-act="edit-entscheidung" data-pid="${p.id}" data-eid="${e.id}" title="Bearbeiten">✏</button>
+            <button class="x-btn" data-act="rm-entscheidung" data-pid="${p.id}" data-eid="${e.id}">×</button>
+          </td>
+        </tr>`; }).join('')}</tbody>
     </table>` : `<div class="card-pad" style="text-align:center">${emptyState('📋', 'Noch keine Auswahlpunkte erfasst.')}<button class="btn" data-act="standard-bemusterung" data-pid="${p.id}">＋ Standard-Auswahlliste einfügen</button></div>`;
 
   const firmsHtml = katKeys.length ? katKeys.map(k => `
@@ -1751,7 +1761,7 @@ function viewBauherr(pid) {
     const ausTxt = a && a.firma
       ? `<strong>${esc(a.firma)}</strong>${a.ort ? ` · ${esc(a.ort)}` : ''}${a.telefon ? `<div class="muted" style="font-size:12px">${esc(a.telefon)}</div>` : ''}`
       : '<span class="muted">–</span>';
-    return `<tr><td><strong>${esc(e.thema || '')}</strong></td><td>${untTxt}</td><td>${ausTxt}</td><td><span class="st ${ENT_STATUS[entStatus(e)].color}" style="font-size:10.5px;padding:2px 8px">${ENT_STATUS[entStatus(e)].label}</span></td></tr>`;
+    return `<tr><td class="muted">${v && v.bkp ? esc(v.bkp) : '–'}</td><td><strong>${esc(e.thema || '')}</strong></td><td>${untTxt}</td><td>${ausTxt}</td><td><span class="st ${ENT_STATUS[entStatus(e)].color}" style="font-size:10.5px;padding:2px 8px">${ENT_STATUS[entStatus(e)].label}</span></td></tr>`;
   }).join('');
 
   render(`
@@ -1771,7 +1781,7 @@ function viewBauherr(pid) {
     <div class="section-head" style="margin-top:26px"><h2>Bei wem melden <span class="muted" style="font-size:12px;font-weight:400">· Spiegelbild der Auswahlpunkte</span></h2>
       <button class="btn sm secondary" data-act="pdf-melden" data-pid="${p.id}">⬇ PDF</button></div>
     <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Pro Auswahlpunkt: ausführender Unternehmer (Werkvertrag, automatisch verknüpft) und – falls separat – die Ausstellung für die Materialauswahl.</p>
-    <div class="card">${ents.length ? `<table class="grid"><thead><tr><th>Auswahlpunkt</th><th>Unternehmer (Werkvertrag)</th><th>Ausstellung / Materialauswahl</th><th style="width:88px">Status</th></tr></thead><tbody>${meldenRows}</tbody></table>` : emptyState('🔗', 'Noch keine Auswahlpunkte – oben anlegen.')}</div>
+    <div class="card">${ents.length ? `<table class="grid"><thead><tr><th style="width:52px">BKP</th><th>Auswahlpunkt</th><th>Unternehmer (Werkvertrag)</th><th>Ausstellung / Materialauswahl</th><th style="width:88px">Status</th></tr></thead><tbody>${meldenRows}</tbody></table>` : emptyState('🔗', 'Noch keine Auswahlpunkte – oben anlegen.')}</div>
 
     <div class="section-head" style="margin-top:26px"><h2>Auswahl-Firmen (Bemusterung)</h2>
       <div style="display:flex;gap:6px">
@@ -2517,7 +2527,7 @@ function viewVergabeDetail(pid, vid) {
     <!-- Budgetpositionen -->
     <div class="section-head" style="margin-top:26px">
       <h2>Budgetpositionen</h2>
-      <span class="hint">Reserve-/Budgetbeträge im Werkvertrag bzw. der Offerte – fliessen in Prognose &amp; Auftragssumme</span>
+      <span class="hint">Budget steckt im WV (nicht aufgerechnet) · nach Auswahl zählt die Differenz (Ist − Budget)</span>
     </div>
     <div class="card">
       <div class="card-pad" style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0">
@@ -2526,19 +2536,21 @@ function viewVergabeDetail(pid, vid) {
       </div>
       ${(v.budgetposten || []).length ? `
       <table class="grid" style="margin-top:12px">
-        <thead><tr><th>Bezeichnung</th><th class="num">Budget</th><th></th></tr></thead>
+        <thead><tr><th>Bezeichnung</th><th class="num">Budget (im WV)</th><th class="num">Tatsächlich</th><th class="num">Δ Baukosten</th><th style="width:62px"></th></tr></thead>
         <tbody>
-          ${v.budgetposten.map(b => `
+          ${v.budgetposten.map(b => { const ist = hatIst(b); const d = ist ? (Number(b.ist) || 0) - (b.betrag || 0) : 0; return `
             <tr>
               <td><strong>${esc(b.text || 'Budgetposition')}</strong></td>
               <td class="num">${chf(b.betrag)}</td>
-              <td><button class="x-btn" data-act="rm-budget" data-pid="${p.id}" data-vid="${v.id}" data-bid="${b.id}">×</button></td>
-            </tr>`).join('')}
+              <td class="num">${ist ? chf(Number(b.ist) || 0) : '<span class="muted">offen</span>'}</td>
+              <td class="num" style="${d > 0 ? 'color:var(--s-red)' : (d < 0 ? 'color:var(--s-green)' : '')}">${ist ? (d > 0 ? '+' : '') + chf(d) : '–'}</td>
+              <td><button class="x-btn" data-act="new-budget" data-pid="${p.id}" data-vid="${v.id}" data-bid="${b.id}" title="Bearbeiten">✏</button><button class="x-btn" data-act="rm-budget" data-pid="${p.id}" data-vid="${v.id}" data-bid="${b.id}">×</button></td>
+            </tr>`; }).join('')}
         </tbody>
       </table>
       <div class="card-pad" style="display:flex;justify-content:space-between;border-top:1px solid var(--border)">
-        <span class="muted">Budget total</span>
-        <strong>${chf(budgetSumme(v))}</strong>
+        <span class="muted">Budget total ${chf(budgetSumme(v))} (im WV) · wirksame Differenz in Baukosten</span>
+        <strong style="${budgetDelta(v) > 0 ? 'color:var(--s-red)' : (budgetDelta(v) < 0 ? 'color:var(--s-green)' : '')}">${(budgetDelta(v) > 0 ? '+' : '') + chf(budgetDelta(v))}</strong>
       </div>` : `<div style="padding:0 0 8px">${emptyState('💰', 'Keine Budgetpositionen erfasst.')}</div>`}
     </div>
 
@@ -3189,23 +3201,45 @@ function extractAmounts(text) {
 
 /* --- Budgetpositionen --- */
 
-function actNewBudget(pid, vid) {
-  openModal('Budgetposition', `
-    <label class="field">Bezeichnung <input class="input" id="bp_text" placeholder="z.B. Reserve Sonderwünsche / Position noch offen"></label>
-    <label class="field">Budgetbetrag (CHF) <input class="input" type="number" id="bp_betrag" placeholder="z.B. 20000"></label>
-  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-budget" data-pid="${pid}" data-vid="${vid}">Hinzufügen</button>`);
+function actNewBudget(pid, vid, bid, prefillText) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid);
+  const b = bid ? (v.budgetposten || []).find(x => x.id === bid) : null;
+  openModal(b ? 'Budgetposition bearbeiten' : 'Budgetposition', `
+    <label class="field">Bezeichnung <input class="input" id="bp_text" value="${b ? esc(b.text || '') : esc(prefillText || '')}" placeholder="z.B. Küche (Budget im WV)"></label>
+    <div class="form-row">
+      <label class="field">Budget im WV (CHF) <input class="input" type="number" id="bp_betrag" value="${b ? (b.betrag ?? '') : ''}" placeholder="z.B. 25000"></label>
+      <label class="field">Tatsächlich gewählt (CHF) <input class="input" type="number" id="bp_ist" value="${b && b.ist != null ? b.ist : ''}" placeholder="leer = noch offen"></label>
+    </div>
+    <p class="muted" style="font-size:11.5px;margin:2px 0 0">Das Budget steckt im Werkvertrag (wird nicht zusätzlich aufgerechnet). Sobald „tatsächlich gewählt" gesetzt ist, fliesst die <strong>Differenz</strong> in die Baukosten.</p>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-budget" data-pid="${pid}" data-vid="${vid}"${b ? ` data-bid="${bid}"` : ''}>${b ? 'Speichern' : 'Hinzufügen'}</button>`);
 }
-function saveBudget(pid, vid) {
+function saveBudget(pid, vid, bid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   const betrag = Number($('#bp_betrag').value) || 0;
-  if (!betrag) { toast('Bitte einen Betrag eingeben', 'info'); return; }
-  (v.budgetposten = v.budgetposten || []).push({ id: uid('bp'), text: $('#bp_text').value.trim() || 'Budgetposition', betrag });
-  save(); closeModal(); router(); toast('Budgetposition erfasst');
+  const istRaw = $('#bp_ist').value;
+  const ist = (istRaw === '' || istRaw == null) ? null : (Number(istRaw) || 0);
+  const text = $('#bp_text').value.trim() || 'Budgetposition';
+  if (!betrag && ist == null) { toast('Bitte einen Budgetbetrag eingeben', 'info'); return; }
+  v.budgetposten = v.budgetposten || [];
+  const b = bid ? v.budgetposten.find(x => x.id === bid) : null;
+  if (b) { b.text = text; b.betrag = betrag; b.ist = ist; }
+  else v.budgetposten.push({ id: uid('bp'), text, betrag, ist });
+  save(); closeModal(); router(); toast('Budgetposition gespeichert');
 }
 function removeBudget(pid, vid, bid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   v.budgetposten = (v.budgetposten || []).filter(x => x.id !== bid);
   save(); router();
+}
+
+// Budget zu einem Bauherren-Auswahlpunkt erfassen/bearbeiten (auf der verknüpften Vergabe)
+function actBudgetForAuswahl(pid, eid) {
+  const p = findProjekt(pid); const e = (p.entscheidungen || []).find(x => x.id === eid); if (!e) return;
+  const v = e.vid ? findVergabe(p, e.vid) : matchVergabe(p, e.thema);
+  if (!v) { toast('Zuerst Unternehmer/Werkvertrag verknüpfen (✏)', 'info'); return; }
+  if (!e.vid) { e.vid = v.id; save(); }   // automatische Zuordnung übernehmen
+  const b = (v.budgetposten || []).find(x => (x.text || '').toLowerCase() === (e.thema || '').toLowerCase());
+  actNewBudget(pid, v.id, b ? b.id : null, e.thema);
 }
 
 /* --- Nachträge / Bestellungsänderungen --- */
@@ -3860,6 +3894,7 @@ document.addEventListener('click', e => {
     case 'new-budget':   actNewBudget(pid, vid); break;
     case 'save-budget':  saveBudget(pid, vid); break;
     case 'rm-budget':    removeBudget(pid, vid, bid); break;
+    case 'budget-auswahl': actBudgetForAuswahl(pid, eid); break;
     case 'new-nachtrag': actNewNachtrag(pid, vid); break;
     case 'save-nachtrag':saveNachtrag(pid, vid); break;
     case 'rm-nachtrag':  removeNachtrag(pid, vid, nid); break;

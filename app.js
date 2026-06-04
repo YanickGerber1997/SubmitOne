@@ -308,6 +308,8 @@ function migrate() {
   let changed = false;
   for (const p of state.projekte) {
     if (!p.protokolle) { p.protokolle = []; changed = true; }
+    if (!p.entscheidungen) { p.entscheidungen = []; changed = true; }
+    if (!p.bezugsfirmen) { p.bezugsfirmen = []; changed = true; }
     for (const pr of (p.protokolle || [])) {
       for (const tr of (pr.traktanden || [])) {
         for (const it of (tr.eintraege || [])) {
@@ -564,6 +566,7 @@ function projektTabs(p, active) {
     ${tab('protokolle', `#/projekt/${p.id}/protokolle`, 'Protokolle')}
     ${tab('pendenzen', `#/projekt/${p.id}/pendenzen`, 'Pendenzen' + pendBadge)}
     ${tab('listen', `#/projekt/${p.id}/listen`, 'Listen')}
+    ${tab('bauherr', `#/projekt/${p.id}/bauherr`, 'Bauherr')}
   </div>`;
 }
 
@@ -630,6 +633,7 @@ function router() {
       if (sub === 'protokolle') return viewProtokolle(a);
       if (sub === 'pendenzen') return viewPendenzen(a);
       if (sub === 'listen') return viewListen(a);
+      if (sub === 'bauherr') return viewBauherr(a);
       if (sub === 'protokoll' && b) return viewProtokollDetail(a, b);
       return viewProjektDetail(a);
     case 'honorar':       setActiveNav('honorar');       return viewHonorar();
@@ -1617,6 +1621,158 @@ function pdfHonorar() {
     <p class="muted" style="margin-top:14px;font-size:10.5px">Berechnung nach Baukosten gemäss Ordnung SIA 102 (2003). Z1/Z2 = SIA-Koeffizienten des gewählten Jahres. Ohne Gewähr.</p>`;
   const sub = `${d.projekt ? esc(d.projekt) + ' · ' : ''}Architektenhonorar nach Baukosten · SIA 102 (2003) · Stand ${fmtDate(todayIso())}`;
   openPrintDoc('Honorarberechnung', sub, inner);
+}
+
+/* ---------------------------------------------------------------
+   Bauherr: Entscheidungsliste + Auswahl-Firmen (Bemusterung)
+   --------------------------------------------------------------- */
+
+const ENTSCHEID_BEREICHE = ['Allgemein', 'Küche', 'Bad / Sanitär', 'Böden / Fliesen', 'Wände / Farben', 'Fenster / Türen', 'Elektro / Beleuchtung', 'Heizung / Lüftung', 'Aussenanlage', 'Material / Bemusterung'];
+const BEZUG_KATEGORIEN = ['Küche', 'Küchengeräte', 'Bad- / Sanitärapparate', 'Fliesen / Plättli', 'Parkett / Bodenbeläge', 'Teppich / Bodenbeläge', 'Innentüren', 'Beleuchtung', 'Storen / Beschattung', 'Garten / Aussenanlage'];
+
+function dl(id, items) { return `<datalist id="${id}">${items.map(x => `<option value="${esc(x)}">`).join('')}</datalist>`; }
+
+function viewBauherr(pid) {
+  const p = findProjekt(pid);
+  if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  const ents = (p.entscheidungen || []).slice().sort((a, b) => (b.datum || '').localeCompare(a.datum || ''));
+  const offen = ents.filter(e => e.status !== 'entschieden').length;
+  const firms = (p.bezugsfirmen || []);
+  const byKat = {};
+  firms.forEach(f => { const k = f.kategorie || 'Übrige'; (byKat[k] = byKat[k] || []).push(f); });
+  const katKeys = Object.keys(byKat).sort((a, b) => a.localeCompare(b));
+
+  const entsTable = ents.length ? `
+    <table class="grid">
+      <thead><tr><th style="width:36px"></th><th style="width:96px">Datum</th><th>Thema / Entscheid</th><th style="width:74px"></th></tr></thead>
+      <tbody>${ents.map(e => `
+        <tr class="${e.status === 'entschieden' ? 'done-row' : ''}">
+          <td><input type="checkbox" class="ent-check" ${e.status === 'entschieden' ? 'checked' : ''} data-pid="${p.id}" data-eid="${e.id}" title="entschieden"></td>
+          <td class="muted" style="white-space:nowrap">${e.datum ? fmtDate(e.datum) : '–'}</td>
+          <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${e.entscheid ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${esc(e.entscheid)}</div>` : ''}</td>
+          <td><button class="x-btn" data-act="edit-entscheidung" data-pid="${p.id}" data-eid="${e.id}" title="Bearbeiten">✏</button>
+              <button class="x-btn" data-act="rm-entscheidung" data-pid="${p.id}" data-eid="${e.id}">×</button></td>
+        </tr>`).join('')}</tbody>
+    </table>` : emptyState('📋', 'Noch keine Entscheidungen erfasst.');
+
+  const firmsHtml = katKeys.length ? katKeys.map(k => `
+    <div style="margin-bottom:14px">
+      <div style="font-weight:600;margin-bottom:5px">${esc(k)}</div>
+      <table class="grid"><thead><tr><th>Firma</th><th style="width:120px">Ort</th><th style="width:180px">Kontakt</th><th style="width:170px">Web / Adresse</th><th style="width:40px"></th></tr></thead>
+        <tbody>${byKat[k].map(f => `
+          <tr>
+            <td><strong>${esc(f.firma)}</strong>${f.notiz ? `<div class="muted" style="font-size:12px">${esc(f.notiz)}</div>` : ''}</td>
+            <td>${esc(f.ort || '')}</td>
+            <td>${esc([f.kontakt, f.telefon].filter(Boolean).join(' · '))}</td>
+            <td class="muted">${esc(f.web || '')}</td>
+            <td><button class="x-btn" data-act="rm-bezugsfirma" data-pid="${p.id}" data-fid="${f.id}">×</button></td>
+          </tr>`).join('')}</tbody>
+      </table>
+    </div>`).join('') : emptyState('🏬', 'Noch keine Firmen erfasst.');
+
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Bauherr · Entscheide &amp; Auswahl-Firmen</div></div></div>
+    ${projektTabs(p, 'bauherr')}
+
+    <div class="section-head"><h2>Entscheidungen${offen ? ` <span class="tab-badge">${offen} offen</span>` : ''}</h2>
+      <div style="display:flex;gap:6px">
+        <button class="btn sm secondary" data-act="pdf-entscheidungen" data-pid="${p.id}">⬇ PDF</button>
+        <button class="btn sm" data-act="new-entscheidung" data-pid="${p.id}">+ Entscheidung</button>
+      </div></div>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle wichtigen Bauherren-Entscheide festhalten (Bemusterung, Material, Varianten). Häkchen = entschieden.</p>
+    <div class="card">${entsTable}</div>
+
+    <div class="section-head" style="margin-top:26px"><h2>Auswahl-Firmen (Bemusterung)</h2>
+      <div style="display:flex;gap:6px">
+        <button class="btn sm secondary" data-act="pdf-bezugsfirmen" data-pid="${p.id}">⬇ PDF</button>
+        <button class="btn sm" data-act="new-bezugsfirma" data-pid="${p.id}">+ Firma</button>
+      </div></div>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Firmen / Ausstellungen, bei denen die Bauherrschaft auswählen kann (Küche, Bad, Fliesen, Parkett …) – zum Mitgeben.</p>
+    <div class="card card-pad">${firmsHtml}</div>
+  `);
+  $$('.ent-check').forEach(cb => cb.addEventListener('change', () => toggleEntscheidung(cb.dataset.pid, cb.dataset.eid)));
+}
+
+function actNewEntscheidung(pid, eid) {
+  const p = findProjekt(pid); const e = eid ? (p.entscheidungen || []).find(x => x.id === eid) : null;
+  openModal(e ? 'Entscheidung bearbeiten' : 'Neue Entscheidung', `
+    <div class="form-row">
+      <label class="field">Datum <input class="input" type="date" id="en_datum" value="${e ? esc(e.datum || '') : todayIso()}"></label>
+      <label class="field">Bereich <input class="input" id="en_bereich" list="dl_bereich" value="${e ? esc(e.bereich || '') : ''}" placeholder="z.B. Küche">${dl('dl_bereich', ENTSCHEID_BEREICHE)}</label>
+    </div>
+    <label class="field">Thema <input class="input" id="en_thema" value="${e ? esc(e.thema || '') : ''}" placeholder="z.B. Küchenfronten"></label>
+    <label class="field">Entscheid / Beschreibung <textarea class="input" id="en_text" rows="3" placeholder="Was wurde entschieden?">${e ? esc(e.entscheid || '') : ''}</textarea></label>
+    <label class="field">Status <select class="select" id="en_status"><option value="offen"${!e || e.status !== 'entschieden' ? ' selected' : ''}>offen</option><option value="entschieden"${e && e.status === 'entschieden' ? ' selected' : ''}>entschieden</option></select></label>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="${e ? 'update-entscheidung' : 'save-entscheidung'}" data-pid="${pid}"${e ? ` data-eid="${eid}"` : ''}>${e ? 'Speichern' : 'Hinzufügen'}</button>`);
+}
+function readEntscheidung() {
+  return { datum: $('#en_datum').value, bereich: $('#en_bereich').value.trim(), thema: $('#en_thema').value.trim(), entscheid: $('#en_text').value.trim(), status: $('#en_status').value };
+}
+function saveEntscheidung(pid) {
+  const p = findProjekt(pid); const d = readEntscheidung();
+  if (!d.thema) { toast('Bitte ein Thema eingeben', 'info'); return; }
+  (p.entscheidungen = p.entscheidungen || []).push({ id: uid('en'), ...d });
+  save(); closeModal(); router(); toast('Entscheidung erfasst');
+}
+function updateEntscheidung(pid, eid) {
+  const p = findProjekt(pid); const e = (p.entscheidungen || []).find(x => x.id === eid); if (!e) return;
+  Object.assign(e, readEntscheidung()); save(); closeModal(); router(); toast('Gespeichert');
+}
+function toggleEntscheidung(pid, eid) {
+  const p = findProjekt(pid); const e = (p.entscheidungen || []).find(x => x.id === eid); if (!e) return;
+  e.status = e.status === 'entschieden' ? 'offen' : 'entschieden'; save(); router();
+}
+function removeEntscheidung(pid, eid) {
+  const p = findProjekt(pid); p.entscheidungen = (p.entscheidungen || []).filter(x => x.id !== eid); save(); router();
+}
+
+function actNewBezugsfirma(pid) {
+  openModal('Auswahl-Firma hinzufügen', `
+    <label class="field">Kategorie <input class="input" id="bz_kat" list="dl_bzkat" placeholder="z.B. Küche">${dl('dl_bzkat', BEZUG_KATEGORIEN)}</label>
+    <div class="form-row">
+      <label class="field">Firma <input class="input" id="bz_firma" placeholder="Firmenname"></label>
+      <label class="field">Ort <input class="input" id="bz_ort"></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Ansprechperson <input class="input" id="bz_kontakt"></label>
+      <label class="field">Telefon <input class="input" id="bz_tel"></label>
+    </div>
+    <label class="field">Web / Adresse <input class="input" id="bz_web" placeholder="www… oder Strasse / Ort"></label>
+    <label class="field">Notiz <input class="input" id="bz_notiz" placeholder="z.B. Ausstellung nach Vereinbarung"></label>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-bezugsfirma" data-pid="${pid}">Hinzufügen</button>`);
+}
+function saveBezugsfirma(pid) {
+  const p = findProjekt(pid); const firma = $('#bz_firma').value.trim();
+  if (!firma) { toast('Bitte einen Firmennamen eingeben', 'info'); return; }
+  (p.bezugsfirmen = p.bezugsfirmen || []).push({
+    id: uid('bz'), kategorie: $('#bz_kat').value.trim() || 'Übrige', firma,
+    ort: $('#bz_ort').value.trim(), kontakt: $('#bz_kontakt').value.trim(),
+    telefon: $('#bz_tel').value.trim(), web: $('#bz_web').value.trim(), notiz: $('#bz_notiz').value.trim(),
+  });
+  save(); closeModal(); router(); toast('Firma hinzugefügt');
+}
+function removeBezugsfirma(pid, fid) {
+  const p = findProjekt(pid); p.bezugsfirmen = (p.bezugsfirmen || []).filter(x => x.id !== fid); save(); router();
+}
+
+function pdfEntscheidungen(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const ents = (p.entscheidungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || ''));
+  const rows = ents.length ? ents.map(e => `<tr><td>${e.datum ? fmtDate(e.datum) : ''}</td><td>${esc(e.bereich || '')}</td><td><b>${esc(e.thema || '')}</b>${e.entscheid ? '<br>' + esc(e.entscheid) : ''}</td><td>${e.status === 'entschieden' ? 'entschieden' : 'offen'}</td></tr>`).join('') : '<tr><td colspan="4" class="muted">Keine Entscheidungen erfasst.</td></tr>';
+  openPrintDoc('Entscheidungsliste', `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} · Stand ${fmtDate(todayIso())}`,
+    `<table class="t"><thead><tr><th style="width:90px">Datum</th><th style="width:130px">Bereich</th><th>Thema / Entscheid</th><th style="width:100px">Status</th></tr></thead><tbody>${rows}</tbody></table>`);
+}
+
+function pdfBezugsfirmen(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const firms = (p.bezugsfirmen || []); const byKat = {};
+  firms.forEach(f => { const k = f.kategorie || 'Übrige'; (byKat[k] = byKat[k] || []).push(f); });
+  const keys = Object.keys(byKat).sort((a, b) => a.localeCompare(b));
+  const inner = keys.length ? keys.map(k => `<div class="gw">${esc(k)}</div>
+    <table class="t"><thead><tr><th>Firma</th><th style="width:120px">Ort</th><th style="width:180px">Kontakt</th><th style="width:170px">Web / Adresse</th></tr></thead>
+      <tbody>${byKat[k].map(f => `<tr><td><b>${esc(f.firma)}</b>${f.notiz ? '<br><span style="color:#777">' + esc(f.notiz) + '</span>' : ''}</td><td>${esc(f.ort || '')}</td><td>${esc([f.kontakt, f.telefon].filter(Boolean).join(' · '))}</td><td>${esc(f.web || '')}</td></tr>`).join('')}</tbody></table>`).join('') : '<p class="muted">Keine Firmen erfasst.</p>';
+  openPrintDoc('Auswahl-Firmen für die Bauherrschaft', `${esc(p.name)} · ${esc(p.ort)} · Bemusterung / Materialauswahl`, inner);
 }
 
 let protokollFilter = '';
@@ -3460,7 +3616,7 @@ document.addEventListener('click', e => {
     if (goto) go(goto.dataset.goto);
     return;
   }
-  const { act: a, pid, vid, eid, nid, rid, oid, prid, tid, itemid, kind, idx, rgid } = act.dataset;
+  const { act: a, pid, vid, eid, nid, rid, oid, prid, tid, itemid, kind, idx, rgid, fid } = act.dataset;
   switch (a) {
     case 'new-projekt':  actNewProjekt(); break;
     case 'save-projekt': saveProjekt(); break;
@@ -3477,6 +3633,16 @@ document.addEventListener('click', e => {
     case 'pdf-unternehmer':  pdfUnternehmer(pid); break;
     case 'pdf-honorar':      pdfHonorar(); break;
     case 'honorar-detail':   honorarDetail = !honorarDetail; viewHonorar(); break;
+    case 'new-entscheidung':    actNewEntscheidung(pid); break;
+    case 'edit-entscheidung':   actNewEntscheidung(pid, eid); break;
+    case 'save-entscheidung':   saveEntscheidung(pid); break;
+    case 'update-entscheidung': updateEntscheidung(pid, eid); break;
+    case 'rm-entscheidung':     removeEntscheidung(pid, eid); break;
+    case 'pdf-entscheidungen':  pdfEntscheidungen(pid); break;
+    case 'new-bezugsfirma':     actNewBezugsfirma(pid); break;
+    case 'save-bezugsfirma':    saveBezugsfirma(pid); break;
+    case 'rm-bezugsfirma':      removeBezugsfirma(pid, fid); break;
+    case 'pdf-bezugsfirmen':    pdfBezugsfirmen(pid); break;
     case 'new-nachtrag': actNewNachtrag(pid, vid); break;
     case 'save-nachtrag':saveNachtrag(pid, vid); break;
     case 'rm-nachtrag':  removeNachtrag(pid, vid, nid); break;

@@ -310,6 +310,8 @@ function migrate() {
     if (!p.protokolle) { p.protokolle = []; changed = true; }
     if (!p.entscheidungen) { p.entscheidungen = []; changed = true; }
     if (!p.bezugsfirmen) { p.bezugsfirmen = []; changed = true; }
+    if (!p.geschosseListe) { p.geschosseListe = []; changed = true; }
+    if (!p.finanz) { p.finanz = { land: 0, honorare: 0, finanzierung: 0 }; changed = true; }
     for (const e of (p.entscheidungen || [])) {
       if (e.status === 'entschieden') { e.status = 'gewaehlt'; changed = true; }
       if (!e.bkp) {
@@ -583,6 +585,7 @@ function projektTabs(p, active) {
     { key: 'pendenzen', href: `#/projekt/${p.id}/pendenzen`, label: 'Pendenzen' + pendBadge },
     { key: 'listen', href: `#/projekt/${p.id}/listen`, label: 'Listen' },
     { key: 'bauherr', href: `#/projekt/${p.id}/bauherr`, label: 'Bauherr' },
+    { key: 'finanz', href: `#/projekt/${p.id}/finanz`, label: 'Finanzierung' },
   ];
   // Unterreiter auch in der Sidebar unter „Projekte" anzeigen
   const sub = $('#projSubnav');
@@ -657,6 +660,7 @@ function router() {
       if (sub === 'pendenzen') return viewPendenzen(a);
       if (sub === 'listen') return viewListen(a);
       if (sub === 'bauherr') return viewBauherr(a);
+      if (sub === 'finanz') return viewFinanz(a);
       if (sub === 'protokoll' && b) return viewProtokollDetail(a, b);
       return viewProjektDetail(a);
     case 'honorar':       setActiveNav('honorar');       return viewHonorar();
@@ -2937,6 +2941,170 @@ function onLogoPick(input) {
    15) Aktionen (Modals / Mutationen)
    --------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------
+   Finanzierung: Gebäudestruktur + Rentabilität (Miete & Verkauf)
+   --------------------------------------------------------------- */
+
+const GESCHOSS_TYPEN = ['Untergeschoss / Keller', 'Einstellhalle', 'Erdgeschoss', 'Obergeschoss', 'Attika', 'Dachgeschoss'];
+
+function finanzData(p) { p.finanz = p.finanz || { land: 0, honorare: 0, finanzierung: 0 }; return p.finanz; }
+function alleEinheiten(p) { return (p.geschosseListe || []).flatMap(g => (g.einheiten || []).map(u => ({ u, g }))); }
+function baukostenTotal(p) { return (p.vergaben || []).reduce((a, v) => a + kostenZeile(v).prognose, 0); }
+function flaecheTotalStruktur(p) { return alleEinheiten(p).reduce((a, x) => a + (Number(x.u.m2) || 0), 0); }
+function anlagekosten(p) { const f = finanzData(p); return (Number(f.land) || 0) + baukostenTotal(p) + (Number(f.honorare) || 0) + (Number(f.finanzierung) || 0); }
+function syncGebaeude(p) { const e = alleEinheiten(p); if (e.length) { p.wohnungen = e.length; const fl = flaecheTotalStruktur(p); if (fl) p.flaeche = fl; } }
+
+function viewFinanz(pid) {
+  const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  const f = finanzData(p);
+  const einh = alleEinheiten(p);
+  const flTot = flaecheTotalStruktur(p);
+  const bauk = baukostenTotal(p);
+  const anlage = anlagekosten(p);
+  const jahresMiete = einh.reduce((a, x) => a + (Number(x.u.miete) || 0), 0) * 12;
+  const verkaufTotal = einh.reduce((a, x) => a + (Number(x.u.verkauf) || 0), 0);
+  const bruttoRendite = anlage > 0 ? jahresMiete / anlage * 100 : 0;
+  const gewinn = verkaufTotal - anlage;
+  const margeKost = anlage > 0 ? gewinn / anlage * 100 : 0;
+  const kpiF = (l, v) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:20px">${v}</div></div>`;
+
+  const strukturHtml = (p.geschosseListe || []).length ? (p.geschosseListe).map(g => `
+    <div class="card card-pad" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div><strong>${esc(g.name || 'Geschoss')}</strong>${g.typ ? ` <span class="tag">${esc(g.typ)}</span>` : ''}</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn sm secondary" data-act="new-einheit" data-pid="${p.id}" data-gid="${g.id}">+ Einheit</button>
+          <button class="x-btn" data-act="edit-geschoss" data-pid="${p.id}" data-gid="${g.id}" title="Geschoss bearbeiten">✏</button>
+          <button class="x-btn" data-act="rm-geschoss" data-pid="${p.id}" data-gid="${g.id}" title="Geschoss löschen">×</button>
+        </div>
+      </div>
+      ${(g.einheiten || []).length ? `<table class="grid"><thead><tr><th>Einheit</th><th class="num">Zimmer</th><th class="num">m²</th><th class="num">Miete/Mt</th><th class="num">Verkaufspreis</th><th style="width:60px"></th></tr></thead>
+        <tbody>${g.einheiten.map(u => `<tr>
+          <td><strong>${esc(u.name || '')}</strong></td>
+          <td class="num">${u.zimmer ? esc(String(u.zimmer)) : '–'}</td>
+          <td class="num">${u.m2 ? Number(u.m2).toLocaleString('de-CH') : '–'}</td>
+          <td class="num">${u.miete ? chf(u.miete) : '–'}</td>
+          <td class="num">${u.verkauf ? chf(u.verkauf) : '–'}</td>
+          <td><button class="x-btn" data-act="edit-einheit" data-pid="${p.id}" data-gid="${g.id}" data-eid="${u.id}">✏</button><button class="x-btn" data-act="rm-einheit" data-pid="${p.id}" data-gid="${g.id}" data-eid="${u.id}">×</button></td>
+        </tr>`).join('')}</tbody></table>` : `<div class="muted" style="font-size:12.5px">Noch keine Einheiten – „+ Einheit".</div>`}
+    </div>`).join('') : emptyState('🏢', 'Noch keine Geschosse – oben „+ Geschoss".');
+
+  const unitRows = einh.map(x => {
+    const u = x.u; const m2 = Number(u.m2) || 0;
+    const anteil = flTot > 0 ? anlage * (m2 / flTot) : 0;
+    const rend = anteil > 0 ? (Number(u.miete) || 0) * 12 / anteil * 100 : 0;
+    const gew = (Number(u.verkauf) || 0) - anteil;
+    return `<tr><td><strong>${esc(u.name || '')}</strong><div class="muted" style="font-size:11.5px">${esc(x.g.name || '')}</div></td>
+      <td class="num">${m2 ? m2.toLocaleString('de-CH') : '–'}</td>
+      <td class="num">${chf(anteil)}</td>
+      <td class="num">${u.miete ? chf(u.miete) : '–'}</td>
+      <td class="num">${u.miete ? rend.toFixed(1) + '%' : '–'}</td>
+      <td class="num">${u.verkauf ? chf(u.verkauf) : '–'}</td>
+      <td class="num" style="${u.verkauf ? (gew >= 0 ? 'color:var(--s-green)' : 'color:var(--s-red)') : ''}">${u.verkauf ? chf(gew) : '–'}</td></tr>`;
+  }).join('');
+
+  const fin = (id, label, val) => `<label class="field">${label} <input class="input finanz-in" id="${id}" type="number" value="${val || ''}" inputmode="decimal"></label>`;
+
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Finanzierung &amp; Rentabilität</div></div>
+      <button class="btn" data-act="new-geschoss" data-pid="${p.id}">+ Geschoss</button></div>
+    ${projektTabs(p, 'finanz')}
+
+    <div class="kpi-row">
+      ${kpiF('Anlagekosten', chf(anlage))}
+      ${kpiF('Wohnungen / m²', einh.length + ' / ' + flTot.toLocaleString('de-CH'))}
+      ${kpiF('Bruttorendite (Miete)', anlage > 0 ? bruttoRendite.toFixed(2) + ' %' : '–')}
+      ${kpiF('Gewinn (Verkauf)', verkaufTotal > 0 ? chf(gewinn) : '–')}
+    </div>
+
+    <div class="section-head"><h2>Gebäudestruktur</h2><span class="hint">Geschosse → Wohnungen/Einheiten mit Zimmer, m², Miete &amp; Verkaufspreis</span></div>
+    ${strukturHtml}
+
+    <div class="section-head" style="margin-top:26px"><h2>Anlagekosten (vollumfänglich)</h2></div>
+    <div class="card card-pad" style="max-width:560px">
+      ${fin('fz_land', 'Landkosten / Grundstück (CHF)', f.land)}
+      <label class="field">Baukosten <span class="muted" style="font-weight:400;font-size:11px">(automatisch aus Kosten-Tab)</span> <input class="input" value="${chf(bauk)}" disabled></label>
+      ${fin('fz_honorare', 'Honorare / Baunebenkosten (CHF)', f.honorare)}
+      ${fin('fz_finanzierung', 'Finanzierung / Reserve (CHF)', f.finanzierung)}
+      <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:10px;margin-top:8px"><strong>Anlagekosten total</strong><strong>${chf(anlage)}</strong></div>
+    </div>
+
+    <div class="section-head" style="margin-top:26px"><h2>Rentabilität – Vergleich</h2></div>
+    <div class="two-col">
+      <div class="card card-pad">
+        <h3 style="margin:0 0 8px;font-size:14px">📈 Vermietung</h3>
+        <div style="display:flex;justify-content:space-between;font-size:13.5px;line-height:2.1"><span>Jahresmiete (Soll)</span><strong>${chf(jahresMiete)}</strong></div>
+        <div style="display:flex;justify-content:space-between;font-size:13.5px;line-height:2.1"><span>Bruttorendite</span><strong>${anlage > 0 ? bruttoRendite.toFixed(2) + ' %' : '–'}</strong></div>
+      </div>
+      <div class="card card-pad">
+        <h3 style="margin:0 0 8px;font-size:14px">🏷 Verkauf (Eigentum)</h3>
+        <div style="display:flex;justify-content:space-between;font-size:13.5px;line-height:2.1"><span>Verkaufstotal</span><strong>${chf(verkaufTotal)}</strong></div>
+        <div style="display:flex;justify-content:space-between;font-size:13.5px;line-height:2.1"><span>Gewinn / Marge</span><strong style="${gewinn >= 0 ? 'color:var(--s-green)' : 'color:var(--s-red)'}">${verkaufTotal > 0 ? chf(gewinn) + ' (' + margeKost.toFixed(1) + '%)' : '–'}</strong></div>
+      </div>
+    </div>
+
+    <div class="section-head" style="margin-top:26px"><h2>Pro Wohnung</h2><span class="hint">Kostenanteil nach m²-Anteil</span></div>
+    <div class="card">${einh.length ? `<table class="grid"><thead><tr><th>Wohnung</th><th class="num">m²</th><th class="num">Kostenanteil</th><th class="num">Miete/Mt</th><th class="num">Rendite</th><th class="num">Verkauf</th><th class="num">Gewinn</th></tr></thead><tbody>${unitRows}</tbody></table>` : emptyState('🏠', 'Noch keine Einheiten erfasst.')}</div>
+  `);
+  $$('.finanz-in').forEach(inp => inp.addEventListener('change', () => {
+    const fd = finanzData(p);
+    fd.land = Number($('#fz_land').value) || 0;
+    fd.honorare = Number($('#fz_honorare').value) || 0;
+    fd.finanzierung = Number($('#fz_finanzierung').value) || 0;
+    save(); viewFinanz(pid);
+  }));
+}
+
+function actNewGeschoss(pid, gid) {
+  const p = findProjekt(pid); const g = gid ? (p.geschosseListe || []).find(x => x.id === gid) : null;
+  openModal(g ? 'Geschoss bearbeiten' : 'Neues Geschoss', `
+    <div class="form-row">
+      <label class="field">Bezeichnung <input class="input" id="g_name" value="${g ? esc(g.name || '') : ''}" placeholder="z.B. EG, 1. OG, UG"></label>
+      <label class="field">Typ <input class="input" id="g_typ" list="dl_gtyp" value="${g ? esc(g.typ || '') : ''}" placeholder="z.B. Erdgeschoss">${dl('dl_gtyp', GESCHOSS_TYPEN)}</label>
+    </div>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-geschoss" data-pid="${pid}"${g ? ` data-gid="${gid}"` : ''}>${g ? 'Speichern' : 'Hinzufügen'}</button>`);
+}
+function saveGeschoss(pid, gid) {
+  const p = findProjekt(pid); p.geschosseListe = p.geschosseListe || [];
+  const name = $('#g_name').value.trim() || 'Geschoss'; const typ = $('#g_typ').value.trim();
+  const g = gid ? p.geschosseListe.find(x => x.id === gid) : null;
+  if (g) { g.name = name; g.typ = typ; } else p.geschosseListe.push({ id: uid('g'), name, typ, einheiten: [] });
+  save(); closeModal(); router();
+}
+function removeGeschoss(pid, gid) {
+  const p = findProjekt(pid); p.geschosseListe = (p.geschosseListe || []).filter(x => x.id !== gid);
+  syncGebaeude(p); save(); router();
+}
+function actNewEinheit(pid, gid, eid) {
+  const p = findProjekt(pid); const g = (p.geschosseListe || []).find(x => x.id === gid); if (!g) return;
+  const u = eid ? (g.einheiten || []).find(x => x.id === eid) : null;
+  openModal(u ? 'Einheit bearbeiten' : 'Neue Einheit / Wohnung', `
+    <div class="form-row">
+      <label class="field">Bezeichnung <input class="input" id="u_name" value="${u ? esc(u.name || '') : ''}" placeholder="z.B. Whg A, 3.5 Zi"></label>
+      <label class="field">Zimmer <input class="input" type="number" step="0.5" id="u_zimmer" value="${u ? (u.zimmer ?? '') : ''}" placeholder="3.5"></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Fläche m² <input class="input" type="number" id="u_m2" value="${u ? (u.m2 ?? '') : ''}" placeholder="95"></label>
+      <label class="field">Mietzins / Monat (CHF) <input class="input" type="number" id="u_miete" value="${u ? (u.miete ?? '') : ''}" placeholder="2200"></label>
+    </div>
+    <label class="field">Verkaufspreis (CHF) <input class="input" type="number" id="u_verkauf" value="${u ? (u.verkauf ?? '') : ''}" placeholder="850000"></label>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-einheit" data-pid="${pid}" data-gid="${gid}"${u ? ` data-eid="${eid}"` : ''}>${u ? 'Speichern' : 'Hinzufügen'}</button>`);
+}
+function saveEinheit(pid, gid, eid) {
+  const p = findProjekt(pid); const g = (p.geschosseListe || []).find(x => x.id === gid); if (!g) return;
+  g.einheiten = g.einheiten || [];
+  const data = { name: $('#u_name').value.trim() || 'Einheit', zimmer: Number($('#u_zimmer').value) || 0, m2: Number($('#u_m2').value) || 0, miete: Number($('#u_miete').value) || 0, verkauf: Number($('#u_verkauf').value) || 0 };
+  const u = eid ? g.einheiten.find(x => x.id === eid) : null;
+  if (u) Object.assign(u, data); else g.einheiten.push({ id: uid('u'), ...data });
+  syncGebaeude(p); save(); closeModal(); router();
+}
+function removeEinheit(pid, gid, eid) {
+  const p = findProjekt(pid); const g = (p.geschosseListe || []).find(x => x.id === gid); if (!g) return;
+  g.einheiten = (g.einheiten || []).filter(x => x.id !== eid);
+  syncGebaeude(p); save(); router();
+}
+
 // Gebäudedaten-Felder (gemeinsam für Anlegen/Bearbeiten)
 function gebaeudeFelder(p) {
   p = p || {};
@@ -4025,12 +4193,20 @@ document.addEventListener('click', e => {
     if (goto) go(goto.dataset.goto);
     return;
   }
-  const { act: a, pid, vid, eid, nid, rid, oid, prid, tid, itemid, kind, idx, rgid, fid, bid } = act.dataset;
+  const { act: a, pid, vid, eid, nid, rid, oid, prid, tid, itemid, kind, idx, rgid, fid, bid, gid } = act.dataset;
   switch (a) {
     case 'new-projekt':  actNewProjekt(); break;
     case 'save-projekt': saveProjekt(); break;
     case 'edit-projekt': actEditProjekt(pid); break;
     case 'save-projekt-edit': saveProjektEdit(pid); break;
+    case 'new-geschoss':  actNewGeschoss(pid); break;
+    case 'edit-geschoss': actNewGeschoss(pid, gid); break;
+    case 'save-geschoss': saveGeschoss(pid, gid); break;
+    case 'rm-geschoss':   removeGeschoss(pid, gid); break;
+    case 'new-einheit':   actNewEinheit(pid, gid); break;
+    case 'edit-einheit':  actNewEinheit(pid, gid, eid); break;
+    case 'save-einheit':  saveEinheit(pid, gid, eid); break;
+    case 'rm-einheit':    removeEinheit(pid, gid, eid); break;
     case 'new-vergabe':  actNewVergabe(pid); break;
     case 'save-vergabe': saveVergabe(pid); break;
     case 'advance':      advanceVergabe(pid, vid); break;

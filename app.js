@@ -1410,6 +1410,7 @@ const HONORAR_PHASEN = [
 function n2(x) { return Number(String(x ?? '').replace(/['’\s]/g, '').replace(',', '.')) || 0; }
 
 let honorarData = null;
+let honorarDetail = false;
 function honorarDefaults() {
   const pct = {}; HONORAR_PHASEN.forEach(p => pct[p.key] = p.pct);
   return { projekt: '', B: '', Z1: 0.062, Z2: 10.30, n: 1, r: 1, i: 1, s: 1, h: 135, mwst: 8.1, pct };
@@ -1459,52 +1460,76 @@ function viewHonorar() {
     </div>
 
     <div class="card card-pad" style="max-width:780px;margin-bottom:16px;background:var(--brand-soft);border-color:transparent">
-      <h2 style="margin-top:0;font-size:15px">So funktioniert's</h2>
-      <ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">
-        <li><strong>Baukosten B</strong> eingeben – die voraussichtlichen Kosten, auf die sich das Honorar bezieht (Bauwerkskosten, exkl. MwSt).</li>
-        <li><strong>Z1 / Z2</strong> des betreffenden Jahres eintragen (SIA-/KBOB-Tabelle). Daraus entsteht der Grundfaktor <em>p</em>.</li>
-        <li>Die Faktoren <strong>n, r, i, s</strong> im Normalfall auf <strong>1.0</strong> lassen. <strong>Stundenansatz h</strong> deines Büros setzen.</li>
-        <li><strong>Phasen-Anteile</strong> prüfen (Standard = volle 100 %). Honorar + Rechenweg erscheinen unten automatisch.</li>
+      <h2 style="margin-top:0;font-size:15px">In 3 Schritten zum Honorar</h2>
+      <ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.8">
+        <li>Ungefähre <strong>Baukosten</strong> eingeben.</li>
+        <li><strong>Schwierigkeit</strong> wählen (meistens „normal").</li>
+        <li><strong>Stundenansatz</strong> deines Büros eingeben (z.B. 140 CHF/h).</li>
       </ol>
+      <p style="margin:10px 0 0;font-size:13px">→ Das Honorar erscheint sofort unten. Mehr musst du nicht tun. Alles andere ist bereits sinnvoll voreingestellt.</p>
     </div>
 
+    <details style="max-width:780px;margin-bottom:16px">
+      <summary style="cursor:pointer;font-weight:600;font-size:13.5px;padding:6px 0">❓ Was bedeuten diese Fachbegriffe? (kurz erklärt)</summary>
+      <div class="card card-pad" style="font-size:13px;line-height:1.6;margin-top:8px">
+        <p style="margin:0 0 10px"><strong>Baukosten:</strong> Wie viel der Bau ungefähr kostet (ohne MwSt). Das Honorar wird als Anteil davon berechnet – grössere Bauten = mehr Arbeit = höheres Honorar.</p>
+        <p style="margin:0 0 10px"><strong>Schwierigkeit (Schwierigkeitsgrad):</strong> Wie aufwändig der Bau ist. Eine einfache Lagerhalle macht weniger Arbeit als eine anspruchsvolle Villa. Für die meisten Wohn- und Geschäftshäuser passt <strong>„normal"</strong>.</p>
+        <p style="margin:0 0 10px"><strong>SIA-Koeffizienten (Z1/Z2):</strong> Zwei feste Zahlen, die der Schweizer Architektenverband (SIA) jedes Jahr herausgibt. Sie sorgen dafür, dass das Honorar zur Teuerung passt. <strong>Für eine Schätzung lässt du die Standardwerte einfach stehen.</strong> Für eine exakte Abrechnung trägst du (unter „Detaileinstellungen") die aktuellen Werte des Jahres ein – die bekommst du beim SIA bzw. der KBOB.</p>
+        <p style="margin:0 0 10px"><strong>Anpassungs-, Team- und Sonderleistungs-Faktor:</strong> Feinjustierungen für Spezialfälle. <strong>Wenn du unsicher bist: nicht anfassen</strong> – sie stehen auf 1.0 und ändern dann nichts am Ergebnis.</p>
+        <p style="margin:0"><strong>Stundenansatz:</strong> Was dein Büro pro Arbeitsstunde verrechnet (oft 130–160 CHF/h).</p>
+      </div>
+    </details>
+
     <div class="card card-pad" style="max-width:780px;margin-bottom:16px">
-      <h2 style="margin-top:0;font-size:15px">Grunddaten</h2>
+      <h2 style="margin-top:0;font-size:15px">Deine Eingaben</h2>
       <label class="field">Projekt / Bezeichnung
         <input class="input hon-in" id="h_projekt" value="${esc(d.projekt)}" placeholder="z.B. Neubau MFH Bärenmätteli">
       </label>
-      <label class="field">Aufwandbestimmende Baukosten B (CHF)
+      <label class="field">1. Baukosten (CHF)
         <input class="input hon-in" id="h_B" value="${esc(String(d.B))}" inputmode="decimal" placeholder="z.B. 3350000">
-        <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px;line-height:1.4">Voraussichtliche Bauwerkskosten ohne MwSt, auf die das Honorar gerechnet wird.</span>
+        <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px;line-height:1.4">Wie viel kostet der Bau ungefähr? (ohne MwSt)</span>
       </label>
-      <div class="form-row">
-        ${fld('h_Z1', 'SIA-Koeffizient Z1', d.Z1, 'Jährlicher SIA-/KBOB-Wert (Konstante).')}
-        ${fld('h_Z2', 'SIA-Koeffizient Z2', d.Z2, 'Jährlicher SIA-/KBOB-Wert (durch ∛B geteilt).')}
-      </div>
-      <p class="muted" style="font-size:11.5px;margin:-2px 0 12px">→ Grundfaktor <strong>p = Z1 + Z2 / ∛B</strong>. Aktuelle Z-Werte des Vertragsjahres aus der SIA-/KBOB-Tabelle eintragen.</p>
-      <div class="form-row">
-        ${fld('h_n', 'Schwierigkeitsgrad n', d.n, 'Baukategorie I–VI: einfach→anspruchsvoll. Normale Wohn-/Geschäftsbauten (Kat. IV) ≈ 1.00.')}
-        ${fld('h_r', 'Anpassungsfaktor r', d.r, 'Besondere Umstände. Keine Abweichung = 1.00.')}
-      </div>
-      <div class="form-row">
-        ${fld('h_i', 'Teamfaktor i', d.i, 'Büro-/Teamgrösse. Standard = 1.00.')}
-        ${fld('h_s', 'Sonderleistungen s', d.s, 'Zuschlag für Sonderleistungen. Keine = 1.00.')}
-      </div>
-      <div class="form-row">
-        ${fld('h_h', 'Stundenansatz h (CHF/h)', d.h, 'Mittlerer Ansatz deines Büros, z.B. 130–160 CHF/h.')}
-        ${fld('h_mwst', 'MwSt %', d.mwst, 'Aktueller Satz – CH zurzeit 8.1 %.')}
-      </div>
-      <p class="muted" style="font-size:11.5px;margin:6px 0 0">💡 Tipp: <strong>n, r, i und s</strong> nur ändern, wenn du die SIA-Vorgaben dafür kennst – sonst auf 1.0 lassen.</p>
+      <label class="field">2. Schwierigkeit
+        <select class="select hon-in" id="h_n">
+          <option value="0.85"${n2(d.n) === 0.85 ? ' selected' : ''}>einfach – z.B. Lager-/Zweckbau</option>
+          <option value="1"${n2(d.n) !== 0.85 && n2(d.n) !== 1.15 ? ' selected' : ''}>normal – z.B. Wohn-/Geschäftshaus</option>
+          <option value="1.15"${n2(d.n) === 1.15 ? ' selected' : ''}>anspruchsvoll – z.B. aufwändiger Umbau / Villa</option>
+        </select>
+        <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px;line-height:1.4">Im Zweifel „normal" wählen.</span>
+      </label>
+      <label class="field">3. Stundenansatz (CHF pro Stunde)
+        <input class="input hon-in" id="h_h" value="${esc(String(d.h))}" inputmode="decimal" placeholder="z.B. 140">
+        <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px;line-height:1.4">Was dein Büro pro Arbeitsstunde verrechnet (oft 130–160).</span>
+      </label>
     </div>
 
+    <div style="max-width:780px;margin-bottom:16px">
+      <button class="btn secondary sm" data-act="honorar-detail">${honorarDetail ? '▲ Detaileinstellungen ausblenden' : '▼ Detaileinstellungen (SIA-Koeffizienten, Faktoren, Phasen) – optional'}</button>
+    </div>
+
+    ${honorarDetail ? `
     <div class="card card-pad" style="max-width:780px;margin-bottom:16px">
-      <h2 style="margin-top:0;font-size:15px">Leistungsphasen · Anteile</h2>
+      <h2 style="margin-top:0;font-size:15px">Detaileinstellungen <span class="muted" style="font-size:12px;font-weight:400">– nur für genaue Abrechnung, sonst so lassen</span></h2>
+      <div class="form-row">
+        ${fld('h_Z1', 'SIA-Koeffizient Z1', d.Z1, 'Jährlicher SIA-/KBOB-Wert.')}
+        ${fld('h_Z2', 'SIA-Koeffizient Z2', d.Z2, 'Jährlicher SIA-/KBOB-Wert.')}
+      </div>
+      <p class="muted" style="font-size:11.5px;margin:-2px 0 12px">Grundfaktor <strong>p = Z1 + Z2 / ∛B</strong>. Aktuelle Werte des Jahres beim SIA/KBOB nachschlagen.</p>
+      <div class="form-row">
+        ${fld('h_r', 'Anpassungsfaktor r', d.r, 'Besondere Umstände. Standard 1.0.')}
+        ${fld('h_i', 'Teamfaktor i', d.i, 'Büro-/Teamgrösse. Standard 1.0.')}
+      </div>
+      <div class="form-row">
+        ${fld('h_s', 'Sonderleistungen s', d.s, 'Zuschlag Sonderleistungen. Standard 1.0.')}
+        ${fld('h_mwst', 'MwSt %', d.mwst, 'CH zurzeit 8.1 %.')}
+      </div>
+      <h3 style="font-size:13.5px;margin:18px 0 6px">Leistungsphasen · Anteile</h3>
       <table class="grid">
         <thead><tr><th>Phase</th><th class="num" style="width:90px">Anteil %</th><th class="num" style="width:120px">Stunden</th><th class="num" style="width:150px">Honorar</th></tr></thead>
         <tbody>${phaseRows}</tbody>
       </table>
-      <p class="muted" style="font-size:11.5px;margin:8px 0 0">Standard = volle Grundleistungen (100 %). Anteile anpassen, falls Phasen entfallen oder geteilt sind (z. B. Vorprojekt durch anderes Büro).</p>
-    </div>
+      <p class="muted" style="font-size:11.5px;margin:8px 0 0">Standard = volle Grundleistungen (100 %). Anteile reduzieren, falls Phasen entfallen (z.B. Vorprojekt durch anderes Büro).</p>
+    </div>` : ''}
 
     <div class="card card-pad" style="max-width:780px" id="hon_out"></div>
   `);
@@ -1515,48 +1540,57 @@ function viewHonorar() {
 
 function honorarOnInput() {
   const d = loadHonorar();
-  const v = id => { const el = $('#' + id); return el ? el.value : ''; };
-  d.projekt = v('h_projekt'); d.B = v('h_B'); d.Z1 = v('h_Z1'); d.Z2 = v('h_Z2');
-  d.n = v('h_n'); d.r = v('h_r'); d.i = v('h_i'); d.s = v('h_s'); d.h = v('h_h'); d.mwst = v('h_mwst');
-  HONORAR_PHASEN.forEach(ph => d.pct[ph.key] = v('h_pct_' + ph.key));
+  // nur vorhandene Felder übernehmen (Detailfelder können ausgeblendet sein)
+  const set = (k, id) => { const el = $('#' + id); if (el) d[k] = el.value; };
+  set('projekt', 'h_projekt'); set('B', 'h_B'); set('Z1', 'h_Z1'); set('Z2', 'h_Z2');
+  set('n', 'h_n'); set('r', 'h_r'); set('i', 'h_i'); set('s', 'h_s'); set('h', 'h_h'); set('mwst', 'h_mwst');
+  HONORAR_PHASEN.forEach(ph => { const el = $('#h_pct_' + ph.key); if (el) d.pct[ph.key] = el.value; });
   saveHonorarData();
   honorarRenderResult();
 }
 
 function honorarRenderResult() {
-  const c = computeHonorar(loadHonorar());
+  const d = loadHonorar();
+  const c = computeHonorar(d);
   c.rows.forEach(row => {
     const tp = $('#hon_tp_' + row.key), hh = $('#hon_h_' + row.key);
     if (tp) tp.textContent = row.Tp ? row.Tp.toLocaleString('de-CH', { maximumFractionDigits: 0 }) + ' h' : '–';
     if (hh) hh.textContent = chf(row.H);
   });
   const out = $('#hon_out'); if (!out) return;
-  const qWarn = Math.abs(c.q - 100) > 0.001 ? ` <span class="muted" style="font-size:12px">(Σ ${c.q} %)</span>` : '';
   const fmt = (x, dec = 0) => (x || 0).toLocaleString('de-CH', { maximumFractionDigits: dec });
   const B = n2(d.B), cb = B > 0 ? Math.cbrt(B) : 0;
-  const rechenweg = B > 0 ? `
-    <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
-      <h3 style="font-size:13.5px;margin:0 0 8px">Rechenweg – mit deinen Zahlen</h3>
-      <div style="font-size:12.5px;line-height:1.95;font-variant-numeric:tabular-nums">
-        <div><strong>1.</strong> Grundfaktor &nbsp;p = Z1 + Z2 ∕ ∛B = ${esc(String(d.Z1))} + ${esc(String(d.Z2))} ∕ ${fmt(cb)} = <strong>${c.p.toFixed(4)}</strong></div>
-        <div><strong>2.</strong> Zeitaufwand = B · p∕100 · n · q∕100 · r · i<br>
-          &nbsp;&nbsp;&nbsp;= ${fmt(B)} · ${c.p.toFixed(4)}∕100 · ${esc(String(d.n))} · ${c.q}∕100 · ${esc(String(d.r))} · ${esc(String(d.i))} = <strong>${fmt(c.Tp)} h</strong></div>
-        <div><strong>3.</strong> Honorar = Zeitaufwand · h · s = ${fmt(c.Tp)} · ${esc(String(d.h))} · ${esc(String(d.s))} = <strong>${chf(c.H)}</strong></div>
-        <div><strong>4.</strong> inkl. MwSt ${c.mwst} % = <strong>${chf(c.Hmwst)}</strong></div>
-      </div>
-    </div>` : '<p class="muted" style="margin:8px 0 0">Baukosten B eingeben, dann erscheint hier der Rechenweg.</p>';
+
+  if (B <= 0 || n2(d.h) <= 0) {
+    out.innerHTML = `<h2 style="margin-top:0;font-size:15px">Dein Honorar</h2>
+      <p class="muted" style="margin:0">Gib oben die <strong>Baukosten</strong> und den <strong>Stundenansatz</strong> ein – das Honorar erscheint dann automatisch hier.</p>`;
+    return;
+  }
+  const pctOfB = c.H / B * 100;
   out.innerHTML = `
-    <h2 style="margin-top:0;font-size:15px">Ergebnis</h2>
+    <h2 style="margin-top:0;font-size:15px">Dein Honorar</h2>
     <div class="kpi-row" style="grid-template-columns:repeat(4,1fr)">
-      <div class="kpi"><div class="k-label">Grundfaktor p</div><div class="k-value" style="font-size:20px">${c.p ? c.p.toFixed(4) : '–'}</div></div>
-      <div class="kpi"><div class="k-label">Leistungsanteil q</div><div class="k-value" style="font-size:20px">${c.q} %${qWarn}</div></div>
-      <div class="kpi"><div class="k-label">Zeitaufwand</div><div class="k-value" style="font-size:20px">${fmt(c.Tp)} h</div></div>
+      <div class="kpi"><div class="k-label">Honorar inkl. MwSt</div><div class="k-value" style="font-size:21px">${chf(c.Hmwst)}</div></div>
       <div class="kpi"><div class="k-label">Honorar exkl. MwSt</div><div class="k-value" style="font-size:20px">${chf(c.H)}</div></div>
+      <div class="kpi"><div class="k-label">Geschätzte Stunden</div><div class="k-value" style="font-size:20px">${fmt(c.Tp)} h</div></div>
+      <div class="kpi"><div class="k-label">≈ Anteil der Baukosten</div><div class="k-value" style="font-size:20px">${pctOfB.toFixed(1)} %</div></div>
     </div>
-    <div style="margin-top:12px;display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:10px">
-      <span class="muted">inkl. MwSt ${c.mwst} %</span><strong style="font-size:17px">${chf(c.Hmwst)}</strong>
-    </div>
-    ${rechenweg}`;
+    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+      <h3 style="font-size:13.5px;margin:0 0 8px">So kommt diese Zahl zustande</h3>
+      <div style="font-size:13px;line-height:1.85">
+        <div><strong>1.</strong> Aus Baukosten und Schwierigkeit ergeben sich die geschätzten <strong>Arbeitsstunden: ≈ ${fmt(c.Tp)} h</strong>.</div>
+        <div><strong>2.</strong> Stunden × Stundenansatz: ${fmt(c.Tp)} h × ${esc(String(d.h))} CHF = <strong>${chf(c.H)}</strong> (ohne MwSt).</div>
+        <div><strong>3.</strong> + MwSt ${c.mwst} % = <strong>${chf(c.Hmwst)}</strong> &nbsp;← Endbetrag.</div>
+      </div>
+      <details style="margin-top:10px">
+        <summary style="cursor:pointer;font-size:12px;color:var(--text-soft)">Genaue SIA-Formel anzeigen</summary>
+        <div style="font-size:12px;line-height:1.9;font-variant-numeric:tabular-nums;margin-top:6px">
+          Grundfaktor p = Z1 + Z2 ∕ ∛B = ${esc(String(d.Z1))} + ${esc(String(d.Z2))} ∕ ${fmt(cb)} = ${c.p.toFixed(4)}<br>
+          Stunden = Baukosten · p∕100 · Schwierigkeit · Leistungsanteil(${c.q}%)∕100 · r · i = ${fmt(c.Tp)} h<br>
+          Honorar = Stunden · Stundenansatz · s = ${chf(c.H)}
+        </div>
+      </details>
+    </div>`;
 }
 
 function pdfHonorar() {
@@ -3442,6 +3476,7 @@ document.addEventListener('click', e => {
     case 'pdf-submittenten': pdfSubmittenten(pid); break;
     case 'pdf-unternehmer':  pdfUnternehmer(pid); break;
     case 'pdf-honorar':      pdfHonorar(); break;
+    case 'honorar-detail':   honorarDetail = !honorarDetail; viewHonorar(); break;
     case 'new-nachtrag': actNewNachtrag(pid, vid); break;
     case 'save-nachtrag':saveNachtrag(pid, vid); break;
     case 'rm-nachtrag':  removeNachtrag(pid, vid, nid); break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v21';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v22';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -669,6 +669,7 @@ function router() {
       if (sub === 'finanz') return viewFinanz(a);
       if (sub === 'protokoll' && b) return viewProtokollDetail(a, b);
       return viewProjektDetail(a);
+    case 'kalender':      setActiveNav('kalender');      return viewKalenderGlobal();
     case 'honorar':       setActiveNav('honorar');       return viewHonorar();
     case 'kontakte':      setActiveNav('kontakte');      return viewKontakte();
     case 'dokumente':     setActiveNav('dokumente');     return viewDokumente();
@@ -3072,6 +3073,114 @@ function kalNav(pid, delta) {
   viewKalender(pid);
 }
 
+/* --- Globaler Kalender (alle Projekte, ein-/ausblendbar) --- */
+const PROJ_PALETTE = ['blue', 'teal', 'green', 'amber', 'purple', 'red', 'grey'];
+let calGY = null, calGM = null, calHidden = null;
+function projColor(idx) { return PROJ_PALETTE[idx % PROJ_PALETTE.length]; }
+
+function viewKalenderGlobal() {
+  const t = today();
+  if (calGY == null) { calGY = t.getFullYear(); calGM = t.getMonth(); }
+  if (calHidden == null) calHidden = new Set();
+  const projects = state.projekte || [];
+  const todayI = todayIso();
+
+  const events = [];
+  projects.forEach((p, idx) => {
+    if (calHidden.has(p.id)) return;
+    const col = projColor(idx);
+    sammleTermine(p).forEach(e => events.push({ ...e, color: col, pid: p.id, projekt: p.name }));
+  });
+  const byDay = {};
+  events.forEach(e => { (byDay[e.datum] = byDay[e.datum] || []).push(e); });
+
+  const first = new Date(calGY, calGM, 1);
+  const lead = (first.getDay() + 6) % 7;
+  const start = new Date(calGY, calGM, 1 - lead);
+  let cells = '';
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    const iso = isoOf(d);
+    const other = d.getMonth() !== calGM;
+    const dayEv = byDay[iso] || [];
+    const chips = dayEv.slice(0, 4).map(e => `<div class="cal-ev ${e.color}"${e.manual ? ` data-act="kal-edit" data-pid="${e.pid}" data-tid="${e.id}"` : ''} title="${esc(e.projekt + ' · ' + (e.zeit ? e.zeit + ' ' : '') + e.titel)}">${e.zeit ? esc(e.zeit) + ' ' : ''}${esc(e.titel)}</div>`).join('');
+    const more = dayEv.length > 4 ? `<div class="cal-more">+${dayEv.length - 4} mehr</div>` : '';
+    cells += `<div class="cal-day${other ? ' other' : ''}${iso === todayI ? ' today' : ''}" data-act="gcal-add" data-kind="${iso}"><div class="d">${d.getDate()}</div>${chips}${more}</div>`;
+  }
+
+  const toggles = projects.length ? projects.map((p, idx) => `<span class="chip ${calHidden.has(p.id) ? '' : 'active'}" data-act="gcal-toggle" data-pid="${p.id}"><i class="cal-dot ${projColor(idx)}"></i>${esc(p.name)}</span>`).join('') : '<span class="muted" style="font-size:12.5px">Keine Projekte.</span>';
+
+  const upcoming = events.filter(e => e.datum >= todayI).sort((a, b) => a.datum.localeCompare(b.datum) || (a.zeit || '').localeCompare(b.zeit || '')).slice(0, 15);
+  const agenda = upcoming.length ? upcoming.map(e => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+    <i class="cal-dot ${e.color}"></i>
+    <span class="muted" style="min-width:118px;font-size:12.5px">${fmtDate(e.datum)}${e.zeit ? ' · ' + esc(e.zeit) : ''}</span>
+    <span style="font-size:13px">${esc(e.titel)}</span><span class="muted" style="font-size:11.5px;margin-left:auto">${esc(e.projekt)}</span></div>`).join('') : '<p class="muted" style="margin:0">Keine kommenden Termine.</p>';
+
+  render(`
+    <div class="page-head"><div><h1>Kalender</h1><div class="sub">Alle Projekte · Termine, Fristen &amp; Bauprogramm</div></div>
+      <button class="btn" data-act="gcal-add" data-kind="${todayI}">+ Termin</button></div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${toggles}</div>
+
+    <div class="cal-head">
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn sm secondary" data-act="gcal-prev" title="Vormonat">‹</button>
+        <button class="btn sm secondary" data-act="gcal-today">Heute</button>
+        <button class="btn sm secondary" data-act="gcal-next" title="Folgemonat">›</button>
+        <h2 style="margin:0 0 0 8px;font-size:17px">${MONATE[calGM]} ${calGY}</h2>
+      </div>
+      <div class="cal-legend muted" style="font-size:11.5px">Farbe = Projekt · Chips oben zum Ein-/Ausblenden</div>
+    </div>
+
+    <div class="cal">
+      ${DOW.map(d => `<div class="cal-dow">${d}</div>`).join('')}
+      ${cells}
+    </div>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Tag anklicken = Termin erfassen (Projekt wählen) · farbige Termine = manuell (anklicken zum Bearbeiten).</p>
+
+    <div class="section-head" style="margin-top:24px"><h2>Agenda</h2><span class="hint">nächste Termine über alle Projekte</span></div>
+    <div class="card card-pad">${agenda}</div>
+  `);
+}
+
+function actGlobalTermin(datum) {
+  const projects = state.projekte || [];
+  if (!projects.length) { toast('Zuerst ein Projekt anlegen', 'info'); return; }
+  openModal('Neuer Termin', `
+    <label class="field">Projekt <select class="select" id="kt_pid">${projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
+    <label class="field">Titel <input class="input" id="kt_titel" placeholder="z.B. Bauherrensitzung"></label>
+    <div class="form-row">
+      <label class="field">Datum <input class="input" type="date" id="kt_datum" value="${esc(datum || todayIso())}"></label>
+      <label class="field">Kategorie <input class="input" id="kt_kat" list="dl_ktkat" placeholder="Besprechung">${dl('dl_ktkat', TERMIN_KATEGORIEN)}</label>
+    </div>
+    <div class="form-row">
+      <label class="field">Von <input class="input" type="time" id="kt_zeit"></label>
+      <label class="field">Bis <input class="input" type="time" id="kt_ende"></label>
+    </div>
+    <label class="field">Ort <input class="input" id="kt_ort" placeholder="z.B. Baustelle / Büro"></label>
+    <label class="field">Notiz <textarea class="input" id="kt_notiz" rows="2"></textarea></label>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="gkal-save">Hinzufügen</button>`);
+}
+function saveGlobalTermin() {
+  const pid = $('#kt_pid').value; const p = findProjekt(pid); if (!p) return;
+  const titel = $('#kt_titel').value.trim(); const datum = $('#kt_datum').value;
+  if (!titel) { toast('Bitte einen Titel eingeben', 'info'); return; }
+  if (!datum) { toast('Bitte ein Datum wählen', 'info'); return; }
+  p.termine = p.termine || [];
+  p.termine.push({ id: uid('kt'), titel, datum, kategorie: $('#kt_kat').value.trim(), zeit: $('#kt_zeit').value, zeitEnde: $('#kt_ende').value, ort: $('#kt_ort').value.trim(), notiz: $('#kt_notiz').value.trim() });
+  save(); closeModal(); viewKalenderGlobal(); toast('Termin gespeichert');
+}
+function gcalNav(delta) {
+  if (delta === 0) { const t = today(); calGY = t.getFullYear(); calGM = t.getMonth(); }
+  else { calGM += delta; if (calGM < 0) { calGM = 11; calGY--; } else if (calGM > 11) { calGM = 0; calGY++; } }
+  viewKalenderGlobal();
+}
+function gcalToggle(pid) {
+  if (calHidden == null) calHidden = new Set();
+  if (calHidden.has(pid)) calHidden.delete(pid); else calHidden.add(pid);
+  viewKalenderGlobal();
+}
+
 /* ---------------------------------------------------------------
    Finanzierung: Gebäudestruktur + Rentabilität (Miete & Verkauf)
    --------------------------------------------------------------- */
@@ -4337,6 +4446,12 @@ document.addEventListener('click', e => {
     case 'kal-prev':     kalNav(pid, -1); break;
     case 'kal-next':     kalNav(pid, 1); break;
     case 'kal-today':    kalNav(pid, 0); break;
+    case 'gcal-add':     actGlobalTermin(kind); break;
+    case 'gkal-save':    saveGlobalTermin(); break;
+    case 'gcal-prev':    gcalNav(-1); break;
+    case 'gcal-next':    gcalNav(1); break;
+    case 'gcal-today':   gcalNav(0); break;
+    case 'gcal-toggle':  gcalToggle(pid); break;
     case 'new-geschoss':  actNewGeschoss(pid); break;
     case 'edit-geschoss': actNewGeschoss(pid, gid); break;
     case 'save-geschoss': saveGeschoss(pid, gid); break;

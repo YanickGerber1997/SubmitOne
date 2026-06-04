@@ -2327,11 +2327,20 @@ const FIRMEN_DB = [
   { name: 'Gartenbau Grün AG',      uid: 'CHE-124.777.888', rechtsform: 'AG',       plz: '6280', ort: 'Hochdorf',  kanton: 'LU', branche: 'Gartenbau' },
 ];
 
-function firmenSuche(q) {
-  const s = (q || '').trim().toLowerCase();
+async function firmenSuche(q) {
+  const s = (q || '').trim();
   if (s.length < 2) return [];
+  // Echtes Handelsregister über die Supabase-Edge-Function (Zefix-Proxy)
+  if (cloudEnabled && supa) {
+    try {
+      const { data, error } = await supa.functions.invoke('firmensuche', { body: { q: s } });
+      if (!error && Array.isArray(data)) return data;
+    } catch (e) { /* Fallback unten */ }
+  }
+  // Fallback: lokale Demo-Liste (wenn Proxy/Zugang noch nicht eingerichtet)
+  const ls = s.toLowerCase();
   return FIRMEN_DB
-    .filter(f => f.name.toLowerCase().includes(s) || f.ort.toLowerCase().includes(s) || f.branche.toLowerCase().includes(s))
+    .filter(f => f.name.toLowerCase().includes(ls) || f.ort.toLowerCase().includes(ls) || f.branche.toLowerCase().includes(ls))
     .slice(0, 8);
 }
 
@@ -2361,15 +2370,23 @@ function actNewKontakt() {
 
   const inp = $('#f_firma'), box = $('#firmaResults');
   let matches = [];
-  inp.addEventListener('input', () => {
-    matches = firmenSuche(inp.value);
+  let tmr = null;
+  const renderMatches = () => {
     if (!matches.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
     box.style.display = 'block';
     box.innerHTML = matches.map((f, i) => `
       <div class="ac-item" data-i="${i}">
-        <div><strong>${esc(f.name)}</strong> <span class="tag">${esc(f.rechtsform)}</span></div>
-        <div class="muted" style="font-size:12px">${esc(f.uid)} · ${esc(f.plz)} ${esc(f.ort)} · ${esc(f.branche)}</div>
+        <div><strong>${esc(f.name)}</strong>${f.rechtsform ? ` <span class="tag">${esc(f.rechtsform)}</span>` : ''}</div>
+        <div class="muted" style="font-size:12px">${esc(f.uid)}${f.ort ? ' · ' + (f.plz ? esc(f.plz) + ' ' : '') + esc(f.ort) : ''}${f.branche ? ' · ' + esc(f.branche) : ''}</div>
       </div>`).join('');
+  };
+  inp.addEventListener('input', () => {
+    const val = inp.value;
+    clearTimeout(tmr);
+    if (val.trim().length < 2) { matches = []; renderMatches(); return; }
+    box.style.display = 'block';
+    box.innerHTML = '<div class="ac-item muted">Suche im Handelsregister…</div>';
+    tmr = setTimeout(async () => { matches = await firmenSuche(val); renderMatches(); }, 300);
   });
   box.addEventListener('click', e => {
     const it = e.target.closest('.ac-item'); if (!it) return;

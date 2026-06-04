@@ -332,6 +332,7 @@ function migrate() {
       if (!v.rapporte)   { v.rapporte = [];   changed = true; }
       if (!v.vorgaenge)  { v.vorgaenge = [];  changed = true; }
       if (!v.rechnungen) { v.rechnungen = []; changed = true; }
+      if (!v.budgetposten) { v.budgetposten = []; changed = true; }
       if (v.bauStart === undefined) { v.bauStart = ''; changed = true; }
       if (v.bauEnde  === undefined) { v.bauEnde  = ''; changed = true; }
     }
@@ -443,7 +444,8 @@ function bestBetrag(v)  { const o = offertenOf(v); return o.length ? Math.min(..
 function nachtragSumme(v){ return (v.nachtraege || []).filter(n => n.status === 'genehmigt').reduce((a, n) => a + (n.betrag || 0), 0); }
 function nachtragOffen(v){ return (v.nachtraege || []).filter(n => n.status === 'offen').reduce((a, n) => a + (n.betrag || 0), 0); }
 function rapportSumme(v) { return (v.rapporte || []).reduce((a, r) => a + (r.betrag || 0), 0); }
-function schlussSumme(v) { return (v.betrag || 0) + nachtragSumme(v) + rapportSumme(v); }
+function budgetSumme(v)  { return (v.budgetposten || []).reduce((a, b) => a + (b.betrag || 0), 0); }
+function schlussSumme(v) { return (v.betrag || 0) + nachtragSumme(v) + rapportSumme(v) + budgetSumme(v); }
 
 /* --- Rechnungen / Kostenkontrolle --- */
 function rechnungBezahlt(v) { return (v.rechnungen || []).filter(r => r.bezahlt).reduce((a, r) => a + (r.betrag || 0), 0); }
@@ -457,12 +459,13 @@ function kostenZeile(v) {
   const wv = isVergeben(v) ? (v.betrag || 0) : 0;
   const nt = nachtragSumme(v);
   const rap = rapportSumme(v);
-  // Abrechnungsprognose: vergeben → WV + Nachträge + Rapporte; sonst beste bekannte Schätzung
-  const prognose = isVergeben(v) ? (wv + nt + rap) : (rev != null ? rev : kv);
+  const budget = budgetSumme(v);
+  // Abrechnungsprognose: vergeben → WV + Nachträge + Rapporte; sonst beste bekannte Schätzung; immer + Budgetpositionen
+  const prognose = (isVergeben(v) ? (wv + nt + rap) : (rev != null ? rev : kv)) + budget;
   const bezahlt = rechnungBezahlt(v);
   const fakturiert = rechnungTotal(v);
   const offen = prognose - bezahlt;
-  return { kv, rev, wv, nt, rap, prognose, bezahlt, fakturiert, offen, vergeben: isVergeben(v) };
+  return { kv, rev, wv, nt, rap, budget, prognose, bezahlt, fakturiert, offen, vergeben: isVergeben(v) };
 }
 
 // BKP-Hauptgruppen (erste Ziffer)
@@ -557,18 +560,22 @@ function phasenBar(p) {
 }
 
 function projektTabs(p, active) {
-  const tab = (key, href, label) => `<a class="ptab ${active === key ? 'active' : ''}" href="${href}">${label}</a>`;
   const openP = offenePendenzen(p).length;
   const pendBadge = openP ? ` <span class="tab-badge">${openP}</span>` : '';
-  return `<div class="ptabs">
-    ${tab('overview', `#/projekt/${p.id}`, 'Übersicht')}
-    ${tab('kosten', `#/projekt/${p.id}/kosten`, 'Kosten')}
-    ${tab('termine', `#/projekt/${p.id}/termine`, 'Termine / Gantt')}
-    ${tab('protokolle', `#/projekt/${p.id}/protokolle`, 'Protokolle')}
-    ${tab('pendenzen', `#/projekt/${p.id}/pendenzen`, 'Pendenzen' + pendBadge)}
-    ${tab('listen', `#/projekt/${p.id}/listen`, 'Listen')}
-    ${tab('bauherr', `#/projekt/${p.id}/bauherr`, 'Bauherr')}
-  </div>`;
+  const items = [
+    { key: 'overview', href: `#/projekt/${p.id}`, label: 'Übersicht' },
+    { key: 'kosten', href: `#/projekt/${p.id}/kosten`, label: 'Kosten' },
+    { key: 'termine', href: `#/projekt/${p.id}/termine`, label: 'Termine / Gantt' },
+    { key: 'protokolle', href: `#/projekt/${p.id}/protokolle`, label: 'Protokolle' },
+    { key: 'pendenzen', href: `#/projekt/${p.id}/pendenzen`, label: 'Pendenzen' + pendBadge },
+    { key: 'listen', href: `#/projekt/${p.id}/listen`, label: 'Listen' },
+    { key: 'bauherr', href: `#/projekt/${p.id}/bauherr`, label: 'Bauherr' },
+  ];
+  // Unterreiter auch in der Sidebar unter „Projekte" anzeigen
+  const sub = $('#projSubnav');
+  if (sub) sub.innerHTML = `<div class="subnav-title" title="${esc(p.name)}">${esc(p.name)}</div>` +
+    items.map(it => `<a class="subnav-link ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('');
+  return `<div class="ptabs">${items.map(it => `<a class="ptab ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')}</div>`;
 }
 
 function emptyState(ico, text) {
@@ -615,6 +622,8 @@ function parseHash() {
 
 function setActiveNav(key) {
   $$('#mainNav a').forEach(a => a.classList.toggle('active', a.dataset.nav === key));
+  // Projekt-Unterreiter leeren – Projekt-Detailansichten füllen sie via projektTabs neu
+  const sub = $('#projSubnav'); if (sub) sub.innerHTML = '';
 }
 
 function render(html) { $('#view').innerHTML = html; window.scrollTo(0, 0); }
@@ -942,7 +951,7 @@ function viewKosten(id) {
         </tbody>
       </table>
     </div>
-    <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag/Vergabesumme · Prognose = WV + Nachträge + Rapporte · Δ KV = Prognose gegen Schätzung (rot = Überschreitung). Zeile anklicken → Gewerk-Detail mit Rechnungserfassung.</p>
+    <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag/Vergabesumme · Prognose = WV + Nachträge + Rapporte + Budgetpositionen · Δ KV = Prognose gegen Schätzung (rot = Überschreitung). Zeile anklicken → Gewerk-Detail mit Rechnungserfassung.</p>
   `);
 }
 
@@ -2433,7 +2442,7 @@ function viewVergabeDetail(pid, vid) {
       <div class="dstat"><div class="l">Kostenschätzung (KV)</div><div class="v">${chf(v.schaetzung)}</div></div>
       <div class="dstat"><div class="l">günstigste Offerte (KV rev.)</div><div class="v">${kvRev(v) != null ? chf(kvRev(v)) : '<span class="muted" style="font-size:14px">–</span>'}</div></div>
       <div class="dstat"><div class="l">Vergabesumme (WV)</div><div class="v">${isVergeben(v) ? chf(v.betrag) : '<span class="muted" style="font-size:14px">offen</span>'}</div></div>
-      <div class="dstat" style="border-color:var(--brand)"><div class="l">Auftragssumme inkl. NT/Regie</div><div class="v" style="color:var(--brand)">${isVergeben(v) ? chf(schlussSumme(v)) : '~' + chf(kvRev(v) != null ? kvRev(v) : v.schaetzung)}</div></div>
+      <div class="dstat" style="border-color:var(--brand)"><div class="l">Auftragssumme inkl. NT/Regie/Budget</div><div class="v" style="color:var(--brand)">${isVergeben(v) ? chf(schlussSumme(v)) : '~' + chf((kvRev(v) != null ? kvRev(v) : (v.schaetzung || 0)) + budgetSumme(v))}</div></div>
       <div class="dstat"><div class="l">Bezahlt</div><div class="v">${chf(rechnungBezahlt(v))}</div></div>
       <div class="dstat"><div class="l">Offen</div><div class="v">${chf((isVergeben(v) ? schlussSumme(v) : 0) - rechnungBezahlt(v))}</div></div>
     </div>
@@ -2494,6 +2503,34 @@ function viewVergabeDetail(pid, vid) {
             </div>
           </div>`).join('') : emptyState('☎', 'Noch keine Unternehmer eingeladen.')}
       </div>
+    </div>
+
+    <!-- Budgetpositionen -->
+    <div class="section-head" style="margin-top:26px">
+      <h2>Budgetpositionen</h2>
+      <span class="hint">Reserve-/Budgetbeträge im Werkvertrag bzw. der Offerte – fliessen in Prognose &amp; Auftragssumme</span>
+    </div>
+    <div class="card">
+      <div class="card-pad" style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0">
+        <h2 style="margin:0;font-size:15px">${(v.budgetposten || []).length} Position${(v.budgetposten || []).length === 1 ? '' : 'en'}</h2>
+        <button class="btn sm secondary" data-act="new-budget" data-pid="${p.id}" data-vid="${v.id}">+ Budgetposition</button>
+      </div>
+      ${(v.budgetposten || []).length ? `
+      <table class="grid" style="margin-top:12px">
+        <thead><tr><th>Bezeichnung</th><th class="num">Budget</th><th></th></tr></thead>
+        <tbody>
+          ${v.budgetposten.map(b => `
+            <tr>
+              <td><strong>${esc(b.text || 'Budgetposition')}</strong></td>
+              <td class="num">${chf(b.betrag)}</td>
+              <td><button class="x-btn" data-act="rm-budget" data-pid="${p.id}" data-vid="${v.id}" data-bid="${b.id}">×</button></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+      <div class="card-pad" style="display:flex;justify-content:space-between;border-top:1px solid var(--border)">
+        <span class="muted">Budget total</span>
+        <strong>${chf(budgetSumme(v))}</strong>
+      </div>` : `<div style="padding:0 0 8px">${emptyState('💰', 'Keine Budgetpositionen erfasst.')}</div>`}
     </div>
 
     <!-- Nachträge & Rapporte (Ausführungsphase) -->
@@ -3141,6 +3178,27 @@ function extractAmounts(text) {
   return [...found].sort((a, b) => b - a);
 }
 
+/* --- Budgetpositionen --- */
+
+function actNewBudget(pid, vid) {
+  openModal('Budgetposition', `
+    <label class="field">Bezeichnung <input class="input" id="bp_text" placeholder="z.B. Reserve Sonderwünsche / Position noch offen"></label>
+    <label class="field">Budgetbetrag (CHF) <input class="input" type="number" id="bp_betrag" placeholder="z.B. 20000"></label>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-budget" data-pid="${pid}" data-vid="${vid}">Hinzufügen</button>`);
+}
+function saveBudget(pid, vid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid);
+  const betrag = Number($('#bp_betrag').value) || 0;
+  if (!betrag) { toast('Bitte einen Betrag eingeben', 'info'); return; }
+  (v.budgetposten = v.budgetposten || []).push({ id: uid('bp'), text: $('#bp_text').value.trim() || 'Budgetposition', betrag });
+  save(); closeModal(); router(); toast('Budgetposition erfasst');
+}
+function removeBudget(pid, vid, bid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid);
+  v.budgetposten = (v.budgetposten || []).filter(x => x.id !== bid);
+  save(); router();
+}
+
 /* --- Nachträge / Bestellungsänderungen --- */
 
 function actNewNachtrag(pid, vid) {
@@ -3761,7 +3819,7 @@ document.addEventListener('click', e => {
     if (goto) go(goto.dataset.goto);
     return;
   }
-  const { act: a, pid, vid, eid, nid, rid, oid, prid, tid, itemid, kind, idx, rgid, fid } = act.dataset;
+  const { act: a, pid, vid, eid, nid, rid, oid, prid, tid, itemid, kind, idx, rgid, fid, bid } = act.dataset;
   switch (a) {
     case 'new-projekt':  actNewProjekt(); break;
     case 'save-projekt': saveProjekt(); break;
@@ -3790,6 +3848,9 @@ document.addEventListener('click', e => {
     case 'save-bezugsfirma':    saveBezugsfirma(pid); break;
     case 'rm-bezugsfirma':      removeBezugsfirma(pid, fid); break;
     case 'pdf-bezugsfirmen':    pdfBezugsfirmen(pid); break;
+    case 'new-budget':   actNewBudget(pid, vid); break;
+    case 'save-budget':  saveBudget(pid, vid); break;
+    case 'rm-budget':    removeBudget(pid, vid, bid); break;
     case 'new-nachtrag': actNewNachtrag(pid, vid); break;
     case 'save-nachtrag':saveNachtrag(pid, vid); break;
     case 'rm-nachtrag':  removeNachtrag(pid, vid, nid); break;

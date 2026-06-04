@@ -632,6 +632,7 @@ function router() {
       if (sub === 'listen') return viewListen(a);
       if (sub === 'protokoll' && b) return viewProtokollDetail(a, b);
       return viewProjektDetail(a);
+    case 'honorar':       setActiveNav('honorar');       return viewHonorar();
     case 'kontakte':      setActiveNav('kontakte');      return viewKontakte();
     case 'dokumente':     setActiveNav('dokumente');     return viewDokumente();
     case 'einstellungen': setActiveNav('einstellungen'); return viewEinstellungen();
@@ -1390,6 +1391,154 @@ function pdfUnternehmer(pid) {
   const sub = `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} · Stand ${fmtDate(todayIso())}`;
   openPrintDoc('Unternehmerliste', sub,
     `<table class="t"><thead><tr><th style="width:60px">BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Kontakt</th></tr></thead><tbody>${rows}</tbody></table>`);
+}
+
+/* ---------------------------------------------------------------
+   Honorar-Rechner (Architektenhonorar nach Baukosten, SIA 102:2003)
+   --------------------------------------------------------------- */
+
+const HONORAR_PHASEN = [
+  { key: 'vorprojekt',    label: 'Vorprojekt',                    pct: 9 },
+  { key: 'bauprojekt',    label: 'Bauprojekt',                    pct: 21 },
+  { key: 'bewilligung',   label: 'Bewilligungsverfahren',         pct: 2 },
+  { key: 'ausschreibung', label: 'Ausschreibung / Vergabe',       pct: 18 },
+  { key: 'ausfplanung',   label: 'Ausführungsplanung',            pct: 16 },
+  { key: 'ausfuehrung',   label: 'Ausführung / Bauleitung',       pct: 30 },
+  { key: 'abschluss',     label: 'Inbetriebnahme, Abschluss',     pct: 4 },
+];
+
+function n2(x) { return Number(String(x ?? '').replace(/['’\s]/g, '').replace(',', '.')) || 0; }
+
+let honorarData = null;
+function honorarDefaults() {
+  const pct = {}; HONORAR_PHASEN.forEach(p => pct[p.key] = p.pct);
+  return { projekt: '', B: '', Z1: 0.062, Z2: 10.30, n: 1, r: 1, i: 1, s: 1, h: 135, mwst: 8.1, pct };
+}
+function loadHonorar() {
+  if (honorarData) return honorarData;
+  try { honorarData = JSON.parse(localStorage.getItem('so_honorar') || 'null'); } catch (_) {}
+  if (!honorarData) honorarData = honorarDefaults();
+  if (!honorarData.pct) honorarData.pct = honorarDefaults().pct;
+  return honorarData;
+}
+function saveHonorarData() { try { localStorage.setItem('so_honorar', JSON.stringify(honorarData)); } catch (_) {} }
+
+function computeHonorar(d) {
+  const B = n2(d.B);
+  const p = B > 0 ? (n2(d.Z1) + n2(d.Z2) / Math.cbrt(B)) : 0;
+  const n = n2(d.n), r = n2(d.r), i = n2(d.i), s = n2(d.s), h = n2(d.h);
+  const rows = HONORAR_PHASEN.map(ph => {
+    const pct = n2(d.pct[ph.key]);
+    const Tp = B * (p / 100) * n * (pct / 100) * r * i;   // prognostizierter Zeitaufwand (inkl. Teamfaktor)
+    return { key: ph.key, label: ph.label, pct, Tp, H: Tp * h * s };
+  });
+  const q = rows.reduce((a, x) => a + x.pct, 0);
+  const Tp = rows.reduce((a, x) => a + x.Tp, 0);
+  const H = rows.reduce((a, x) => a + x.H, 0);
+  const mwst = n2(d.mwst);
+  return { p, q, rows, Tp, H, mwst, Hmwst: H * (1 + mwst / 100) };
+}
+
+function viewHonorar() {
+  const d = loadHonorar();
+  const fld = (id, label, val, attrs = '') => `<label class="field">${label} <input class="input hon-in" id="${id}" value="${esc(String(val))}" inputmode="decimal" ${attrs}></label>`;
+  const phaseRows = HONORAR_PHASEN.map(ph => `
+    <tr>
+      <td>${esc(ph.label)}</td>
+      <td class="num"><input class="input hon-in" id="h_pct_${ph.key}" value="${esc(String(d.pct[ph.key] ?? ph.pct))}" inputmode="decimal" style="width:72px;text-align:right;padding:4px 6px"></td>
+      <td class="num" id="hon_tp_${ph.key}">–</td>
+      <td class="num" id="hon_h_${ph.key}">–</td>
+    </tr>`).join('');
+
+  render(`
+    <div class="page-head">
+      <div><h1>Honorar-Rechner</h1><div class="sub">Architektenhonorar nach Baukosten · SIA 102 (2003)</div></div>
+      <button class="btn" data-act="pdf-honorar">⬇ PDF</button>
+    </div>
+
+    <div class="card card-pad" style="max-width:780px;margin-bottom:16px">
+      <h2 style="margin-top:0;font-size:15px">Grunddaten</h2>
+      <label class="field">Projekt / Bezeichnung <input class="input hon-in" id="h_projekt" value="${esc(d.projekt)}" placeholder="z.B. Neubau MFH Bärenmätteli"></label>
+      <label class="field">Aufwandbestimmende Baukosten B (CHF) <input class="input hon-in" id="h_B" value="${esc(String(d.B))}" inputmode="decimal" placeholder="z.B. 3350000"></label>
+      <div class="form-row">${fld('h_Z1', 'SIA-Koeffizient Z1', d.Z1)}${fld('h_Z2', 'SIA-Koeffizient Z2', d.Z2)}</div>
+      <p class="muted" style="font-size:11.5px;margin:-4px 0 10px">Z1/Z2 = aktuelle SIA-/KBOB-Werte des betreffenden Jahres eintragen. Grundfaktor <strong>p = Z1 + Z2 / ∛B</strong>.</p>
+      <div class="form-row">${fld('h_n', 'Schwierigkeitsgrad n', d.n)}${fld('h_r', 'Anpassungsfaktor r', d.r)}</div>
+      <div class="form-row">${fld('h_i', 'Teamfaktor i', d.i)}${fld('h_s', 'Sonderleistungen s', d.s)}</div>
+      <div class="form-row">${fld('h_h', 'Stundenansatz h (CHF/h)', d.h)}${fld('h_mwst', 'MwSt %', d.mwst)}</div>
+    </div>
+
+    <div class="card card-pad" style="max-width:780px;margin-bottom:16px">
+      <h2 style="margin-top:0;font-size:15px">Leistungsphasen · Anteile</h2>
+      <table class="grid">
+        <thead><tr><th>Phase</th><th class="num" style="width:90px">Anteil %</th><th class="num" style="width:120px">Stunden</th><th class="num" style="width:150px">Honorar</th></tr></thead>
+        <tbody>${phaseRows}</tbody>
+      </table>
+      <p class="muted" style="font-size:11.5px;margin:8px 0 0">Standard = volle Grundleistungen (100 %). Anteile anpassen, falls Phasen entfallen oder geteilt sind (z. B. Vorprojekt durch anderes Büro).</p>
+    </div>
+
+    <div class="card card-pad" style="max-width:780px" id="hon_out"></div>
+  `);
+
+  $$('.hon-in').forEach(el => el.addEventListener('input', honorarOnInput));
+  honorarRenderResult();
+}
+
+function honorarOnInput() {
+  const d = loadHonorar();
+  const v = id => { const el = $('#' + id); return el ? el.value : ''; };
+  d.projekt = v('h_projekt'); d.B = v('h_B'); d.Z1 = v('h_Z1'); d.Z2 = v('h_Z2');
+  d.n = v('h_n'); d.r = v('h_r'); d.i = v('h_i'); d.s = v('h_s'); d.h = v('h_h'); d.mwst = v('h_mwst');
+  HONORAR_PHASEN.forEach(ph => d.pct[ph.key] = v('h_pct_' + ph.key));
+  saveHonorarData();
+  honorarRenderResult();
+}
+
+function honorarRenderResult() {
+  const c = computeHonorar(loadHonorar());
+  c.rows.forEach(row => {
+    const tp = $('#hon_tp_' + row.key), hh = $('#hon_h_' + row.key);
+    if (tp) tp.textContent = row.Tp ? row.Tp.toLocaleString('de-CH', { maximumFractionDigits: 0 }) + ' h' : '–';
+    if (hh) hh.textContent = chf(row.H);
+  });
+  const out = $('#hon_out'); if (!out) return;
+  const qWarn = Math.abs(c.q - 100) > 0.001 ? ` <span class="muted" style="font-size:12px">(Σ ${c.q} %)</span>` : '';
+  out.innerHTML = `
+    <h2 style="margin-top:0;font-size:15px">Ergebnis</h2>
+    <div class="kpi-row" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kpi"><div class="k-label">Grundfaktor p</div><div class="k-value" style="font-size:20px">${c.p ? c.p.toFixed(4) : '–'}</div></div>
+      <div class="kpi"><div class="k-label">Leistungsanteil q</div><div class="k-value" style="font-size:20px">${c.q} %${qWarn}</div></div>
+      <div class="kpi"><div class="k-label">Zeitaufwand</div><div class="k-value" style="font-size:20px">${c.Tp.toLocaleString('de-CH', { maximumFractionDigits: 0 })} h</div></div>
+      <div class="kpi"><div class="k-label">Honorar exkl. MwSt</div><div class="k-value" style="font-size:20px">${chf(c.H)}</div></div>
+    </div>
+    <div style="margin-top:12px;display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:10px">
+      <span class="muted">inkl. MwSt ${c.mwst} %</span><strong style="font-size:17px">${chf(c.Hmwst)}</strong>
+    </div>`;
+}
+
+function pdfHonorar() {
+  const d = loadHonorar(); const c = computeHonorar(d);
+  const rows = c.rows.map(r => `<tr><td>${esc(r.label)}</td><td class="num">${r.pct} %</td><td class="num">${r.Tp.toLocaleString('de-CH', { maximumFractionDigits: 0 })}</td><td class="num">${chf(r.H)}</td></tr>`).join('');
+  const inner = `
+    <table class="t" style="margin-bottom:14px">
+      <tr><td>Aufwandbestimmende Baukosten B</td><td class="num">${chf(n2(d.B))}</td></tr>
+      <tr><td>Grundfaktor p = Z1 + Z2 / ∛B&nbsp; (Z1 = ${esc(String(d.Z1))}, Z2 = ${esc(String(d.Z2))})</td><td class="num">${c.p.toFixed(4)}</td></tr>
+      <tr><td>Schwierigkeitsgrad n · Anpassung r · Team i · Sonderleist. s</td><td class="num">${esc(String(d.n))} · ${esc(String(d.r))} · ${esc(String(d.i))} · ${esc(String(d.s))}</td></tr>
+      <tr><td>Stundenansatz h</td><td class="num">CHF ${esc(String(d.h))}/h</td></tr>
+    </table>
+    <table class="t">
+      <thead><tr><th>Leistungsphase</th><th class="num" style="width:80px">Anteil</th><th class="num" style="width:100px">Stunden</th><th class="num" style="width:140px">Honorar</th></tr></thead>
+      <tbody>${rows}
+        <tr><td><b>Total Grundleistungen</b></td><td class="num"><b>${c.q} %</b></td><td class="num"><b>${c.Tp.toLocaleString('de-CH', { maximumFractionDigits: 0 })}</b></td><td class="num"><b>${chf(c.H)}</b></td></tr>
+      </tbody>
+    </table>
+    <table class="t" style="margin-top:12px;width:60%;margin-left:auto">
+      <tr><td>Honorar exkl. MwSt</td><td class="num">${chf(c.H)}</td></tr>
+      <tr><td>MwSt ${esc(String(d.mwst))} %</td><td class="num">${chf(c.Hmwst - c.H)}</td></tr>
+      <tr><td><b>Total inkl. MwSt</b></td><td class="num"><b>${chf(c.Hmwst)}</b></td></tr>
+    </table>
+    <p class="muted" style="margin-top:14px;font-size:10.5px">Berechnung nach Baukosten gemäss Ordnung SIA 102 (2003). Z1/Z2 = SIA-Koeffizienten des gewählten Jahres. Ohne Gewähr.</p>`;
+  const sub = `${d.projekt ? esc(d.projekt) + ' · ' : ''}Architektenhonorar nach Baukosten · SIA 102 (2003) · Stand ${fmtDate(todayIso())}`;
+  openPrintDoc('Honorarberechnung', sub, inner);
 }
 
 let protokollFilter = '';
@@ -3248,6 +3397,7 @@ document.addEventListener('click', e => {
     case 'ruecklese':    actRuecklese(pid, vid); break;
     case 'pdf-submittenten': pdfSubmittenten(pid); break;
     case 'pdf-unternehmer':  pdfUnternehmer(pid); break;
+    case 'pdf-honorar':      pdfHonorar(); break;
     case 'new-nachtrag': actNewNachtrag(pid, vid); break;
     case 'save-nachtrag':saveNachtrag(pid, vid); break;
     case 'rm-nachtrag':  removeNachtrag(pid, vid, nid); break;

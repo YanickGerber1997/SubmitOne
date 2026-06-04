@@ -1680,7 +1680,10 @@ function viewVergabeDetail(pid, vid) {
       <div class="card card-pad">
         <div class="section-head" style="margin-top:0">
           <h2>Unternehmer</h2>
-          <button class="btn sm" data-act="invite" data-pid="${p.id}" data-vid="${v.id}">+ Einladen</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn sm secondary" data-act="deckblatt-leer" data-pid="${p.id}" data-vid="${v.id}" title="Leeres Einladungs-Deckblatt (PDF)">📄 Vorlage</button>
+            <button class="btn sm" data-act="invite" data-pid="${p.id}" data-vid="${v.id}">+ Einladen</button>
+          </div>
         </div>
         <div class="muted" style="font-size:12.5px;margin-bottom:12px">
           ${eingeladene.length} eingeladen · ${offs.length} Offerte${offs.length === 1 ? '' : 'n'} erhalten
@@ -1700,6 +1703,7 @@ function viewVergabeDetail(pid, vid) {
               ${e.status === 'abgesagt'
                 ? `<span class="muted" style="font-size:12.5px">abgesagt</span>`
                 : `<input class="input betrag-input" type="number" placeholder="Betrag" value="${e.betrag ?? ''}" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">`}
+              <button class="x-btn" title="Deckblatt (Einladung)" data-act="deckblatt" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">📄</button>
               <button class="x-btn" title="Entfernen" data-act="rm-inv" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">×</button>
             </div>
           </div>`).join('') : emptyState('☎', 'Noch keine Unternehmer eingeladen.')}
@@ -2247,6 +2251,93 @@ function removeRechnung(pid, vid, rgid) {
   save(); router();
 }
 
+/* --- Deckblatt für Ausschreibung / Offerte (PDF) --- */
+
+// Absender/Büro (Eingabeadresse) – später in Einstellungen konfigurierbar
+const BUERO = {
+  firma: 'Gerber-Software – Bauadministration',
+  strasse: '',
+  plzort: '',
+  tel: '',
+  email: 'gerber.yanick1@gmail.com',
+};
+
+function pdfDeckblatt(pid, vid, eid, typ) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid);
+  const e = eid ? (v.eingeladene || []).find(x => x.id === eid) : null;
+  const istOfferte = typ === 'offerte';
+  const titel = istOfferte ? 'Offerte – äusserste Konditionen' : 'Submissionseinladung';
+  const fristJahr = (dISO(v.frist) || new Date()).getFullYear();
+  const termin = (v.bauStart && v.bauEnde) ? `${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}` : 'gem. Terminprogramm';
+  const line = '...........................................';
+
+  // Firma-Block: bei Offerte/known firma vorausgefüllt, sonst leer zum Ausfüllen
+  const firmaBlock = e
+    ? `<strong>${esc(e.firma)}</strong>${e.email ? '<br>' + esc(e.email) : ''}`
+    : `Unternehmer, Firma<br>Strasse<br>PLZ/Ort<br>Tel./E-Mail<br>Sachbearbeiter/in`;
+
+  const preisZeile = (label, fr) => `<tr><td>${label}</td><td class="pr">Fr.&nbsp; ${fr || line}</td></tr>`;
+  const vorOff = istOfferte && e && e.betrag != null;   // bei Offerte ggf. Betrag vorausfüllen
+
+  const html = `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>${esc(titel)} – ${esc(v.gewerk)}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #1b2533; margin: 26mm 22mm; font-size: 12.5px; line-height: 1.5; }
+    .lh { color: #444; font-size: 11px; margin-bottom: 26px; }
+    .lh .f { font-weight: 700; color: #1b2533; font-size: 14px; margin-bottom: 3px; }
+    table.kv { width: 100%; border-collapse: collapse; }
+    table.kv td { vertical-align: top; padding: 5px 0; }
+    table.kv td.l { width: 38%; }
+    .box { border: 1px solid #1b2533; padding: 7px 10px; margin: 2px 0; min-height: 22px; }
+    .box.firma { min-height: 90px; }
+    h1 { font-size: 16px; margin: 0 0 18px; }
+    table.preis { width: 100%; border-collapse: collapse; margin-top: 4px; }
+    table.preis td { padding: 6px 0; }
+    table.preis td.pr { text-align: left; font-variant-numeric: tabular-nums; }
+    .tot td { border-top: 2px solid #1b2533; font-weight: 700; }
+    .fest { font-weight: 700; text-decoration: underline; margin-top: 22px; }
+    .sig { display: flex; justify-content: space-between; margin-top: 40px; }
+    .sig div { border-top: 1px solid #1b2533; width: 44%; padding-top: 4px; font-size: 11px; }
+  </style></head><body>
+    <div class="lh">
+      <div class="f">${esc(BUERO.firma)}</div>
+      ${esc(BUERO.strasse)}${BUERO.strasse ? '<br>' : ''}${esc(BUERO.plzort)}${BUERO.plzort ? '<br>' : ''}
+      ${BUERO.tel ? 'Tel. ' + esc(BUERO.tel) + '<br>' : ''}${esc(BUERO.email)}
+    </div>
+
+    <h1>${esc(titel)}</h1>
+
+    <table class="kv">
+      <tr><td class="l"><strong>Objekt:</strong></td><td><strong>${esc(p.name)}</strong><br>${esc(p.ort)}</td></tr>
+      <tr><td class="l">Bauherr:</td><td>${esc(p.bauherr)}</td></tr>
+      <tr><td class="l">Eingabeadresse:</td><td>${esc(BUERO.firma)}${BUERO.plzort ? '<br>' + esc(BUERO.plzort) : ''}</td></tr>
+      <tr><td class="l">Angebot für:</td><td><div class="box"><strong>BKP ${esc(v.bkp)} – ${esc(v.gewerk)}</strong></div></td></tr>
+      <tr><td class="l">${istOfferte ? 'Unternehmer:' : 'Unternehmer, Firma:'}</td><td><div class="box firma">${firmaBlock}</div></td></tr>
+      <tr><td class="l">Eingabefrist:</td><td><div class="box"><strong>${v.frist ? fmtDate(v.frist) : '—'}</strong></div></td></tr>
+      <tr><td class="l">Voraussichtlicher Ausführungstermin:</td><td>${esc(termin)}</td></tr>
+    </table>
+
+    <table class="preis">
+      ${preisZeile('Betrag ohne MwSt:', vorOff ? money(e.betrag) : '')}
+      ${preisZeile('Rabatt&nbsp;&nbsp;.......... %', '')}
+      ${preisZeile('Skonto&nbsp;&nbsp;.......... %', '')}
+      ${preisZeile('Allg. Abzüge&nbsp;&nbsp;1 %', '')}
+      <tr><td>Netto</td><td class="pr">Fr.&nbsp; ${line}</td></tr>
+      ${preisZeile('MwSt&nbsp;&nbsp;8.1 %', '')}
+      <tr class="tot"><td>Nettobetrag inkl. MwSt</td><td class="pr">Fr.&nbsp; ${line}</td></tr>
+    </table>
+
+    <div class="fest">Preise fest bis 31.12.${fristJahr}</div>
+
+    <div class="sig"><div>Ort, Datum</div><div>Unterschrift</div></div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) { toast('Bitte Popups für PDF erlauben', 'info'); return; }
+  w.document.write(html); w.document.close();
+}
+
 /* --- Termine / Gantt --- */
 
 function actEditTermin(pid, vid) {
@@ -2504,6 +2595,8 @@ document.addEventListener('click', e => {
     case 'new-rechnung': actNewRechnung(pid, vid); break;
     case 'save-rechnung':saveRechnung(pid, vid); break;
     case 'rm-rechnung':  removeRechnung(pid, vid, rgid); break;
+    case 'deckblatt':      pdfDeckblatt(pid, vid, eid, 'einladung'); break;
+    case 'deckblatt-leer': pdfDeckblatt(pid, vid, null, 'einladung'); break;
     case 'edit-termin':  actEditTermin(pid, vid); break;
     case 'save-termin':  saveTermin(pid, vid); break;
     case 'gantt-zoom':   ganttZoom = kind; viewTermine(pid); break;

@@ -393,6 +393,11 @@ tr.done-row { background: #fbfdfb; }
 }
 .ptab:hover { color: var(--text); }
 .ptab.active { color: var(--brand); border-bottom-color: var(--brand); }
+.tab-badge {
+  display: inline-block; min-width: 18px; padding: 0 6px; margin-left: 4px;
+  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+  color: #fff; background: var(--s-amber); border-radius: 99px; vertical-align: middle;
+}
 
 /* ============================ Gantt / Terminprogramm ============================ */
 .gantt { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }

@@ -293,6 +293,7 @@ function migrate() {
       if (v.bauEnde  === undefined) { v.bauEnde  = ''; changed = true; }
     }
   }
+  if (!state.buero) { state.buero = { ...BUERO }; changed = true; }
   if (changed) save();
 }
 
@@ -514,11 +515,14 @@ function phasenBar(p) {
 
 function projektTabs(p, active) {
   const tab = (key, href, label) => `<a class="ptab ${active === key ? 'active' : ''}" href="${href}">${label}</a>`;
+  const openP = offenePendenzen(p).length;
+  const pendBadge = openP ? ` <span class="tab-badge">${openP}</span>` : '';
   return `<div class="ptabs">
     ${tab('overview', `#/projekt/${p.id}`, 'Übersicht')}
     ${tab('kosten', `#/projekt/${p.id}/kosten`, 'Kosten')}
     ${tab('termine', `#/projekt/${p.id}/termine`, 'Termine / Gantt')}
     ${tab('protokolle', `#/projekt/${p.id}/protokolle`, 'Protokolle')}
+    ${tab('pendenzen', `#/projekt/${p.id}/pendenzen`, 'Pendenzen' + pendBadge)}
   </div>`;
 }
 
@@ -583,6 +587,7 @@ function router() {
       if (sub === 'termine') return viewTermine(a);
       if (sub === 'kosten') return viewKosten(a);
       if (sub === 'protokolle') return viewProtokolle(a);
+      if (sub === 'pendenzen') return viewPendenzen(a);
       if (sub === 'protokoll' && b) return viewProtokollDetail(a, b);
       return viewProjektDetail(a);
     case 'kontakte':      setActiveNav('kontakte');      return viewKontakte();
@@ -1137,6 +1142,80 @@ function eintragBadge(it) {
     : `<span class="tag">Info</span>`;
 }
 
+// Alle erledigten (nicht übertragenen) Pendenzen projektweit – für den Pendenzen-Reiter
+function erledigtePendenzen(p) {
+  const out = [];
+  (p.protokolle || []).forEach(pr => (pr.traktanden || []).forEach(tr => (tr.eintraege || []).forEach(it => {
+    if (it.art === 'pendenz' && it.erledigt && !it.uebertragen) out.push({ it, pr, tr });
+  })));
+  out.sort((a, b) => (b.pr.datum || '').localeCompare(a.pr.datum || ''));
+  return out;
+}
+
+function viewPendenzen(pid) {
+  const p = findProjekt(pid);
+  if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  const offen = offenePendenzen(p);
+  const erledigt = erledigtePendenzen(p);
+  const ueberfaellig = offen.filter(x => x.it.termin && daysUntil(x.it.termin) < 0).length;
+
+  const kpi = (l, v, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:21px${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div></div>`;
+  const herkunft = x => `<a href="#/projekt/${p.id}/protokoll/${x.pr.id}">${esc(protokollTitel(x.pr))} · ${fmtDate(x.pr.datum)}</a>`;
+
+  const offenTable = offen.length ? `
+    <table class="grid">
+      <thead><tr><th style="width:36px"></th><th>Pendenz</th><th>Verantwortlich</th><th>Termin</th><th>Herkunft</th></tr></thead>
+      <tbody>
+        ${offen.map(x => `
+          <tr>
+            <td><input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr.id}" data-tid="${x.tr.id}" data-itemid="${x.it.id}" title="erledigt"></td>
+            <td>${esc(x.it.text)}</td>
+            <td>${esc(x.it.verantwortlich || '–')}</td>
+            <td class="muted frist ${fristClass(x.it.termin, false)}">${x.it.termin ? fristText(x.it.termin, false) : '–'}</td>
+            <td class="muted">${herkunft(x)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>` : emptyState('✓', 'Keine offenen Pendenzen — alles erledigt.');
+
+  const erledigtTable = erledigt.length ? `
+    <div class="section-head" style="margin-top:26px"><h2>Erledigt</h2><span class="hint">${erledigt.length} · Häkchen entfernen = wieder offen</span></div>
+    <div class="card">
+      <table class="grid">
+        <thead><tr><th style="width:36px"></th><th>Pendenz</th><th>Verantwortlich</th><th>Termin</th><th>Herkunft</th></tr></thead>
+        <tbody>
+          ${erledigt.map(x => `
+            <tr class="done-row">
+              <td><input type="checkbox" class="pend-check" checked data-pid="${p.id}" data-prid="${x.pr.id}" data-tid="${x.tr.id}" data-itemid="${x.it.id}" title="wieder offen"></td>
+              <td>${esc(x.it.text)}</td>
+              <td>${esc(x.it.verantwortlich || '–')}</td>
+              <td class="muted">${x.it.termin ? fmtDate(x.it.termin) : '–'}</td>
+              <td class="muted">${herkunft(x)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>` : '';
+
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
+    <div class="detail-head">
+      <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Pendenzen · projektweit aus allen Protokollen</div></div>
+    </div>
+    ${projektTabs(p, 'pendenzen')}
+
+    <div class="kpi-row">
+      ${kpi('Offen', offen.length)}
+      ${kpi('Überfällig', ueberfaellig, ueberfaellig ? 's-red' : '')}
+      ${kpi('Erledigt', erledigt.length)}
+    </div>
+
+    <div class="section-head"><h2>Offene Pendenzen</h2><span class="hint">nach Termin sortiert · abhaken = erledigt</span></div>
+    <div class="card">${offenTable}</div>
+    ${erledigtTable}
+  `);
+
+  $$('.pend-check').forEach(cb => cb.addEventListener('change', () => togglePendenz(cb.dataset.pid, cb.dataset.prid, cb.dataset.tid, cb.dataset.itemid)));
+}
+
 let protokollFilter = '';
 
 function viewProtokolle(pid) {
@@ -1681,7 +1760,9 @@ function viewVergabeDetail(pid, vid) {
         <div class="section-head" style="margin-top:0">
           <h2>Unternehmer</h2>
           <div style="display:flex;gap:6px">
-            <button class="btn sm secondary" data-act="deckblatt-leer" data-pid="${p.id}" data-vid="${v.id}" title="Leeres Einladungs-Deckblatt (PDF)">📄 Vorlage</button>
+            <button class="btn sm secondary" data-act="deckblatt-leer" data-pid="${p.id}" data-vid="${v.id}" title="Leeres Einladungs-Deckblatt (PDF)">📄 Einladung</button>
+            <button class="btn sm secondary" data-act="deckblatt-offerte-leer" data-pid="${p.id}" data-vid="${v.id}" title="Leeres Deckblatt „Äusserste Konditionen“ (PDF)">📑 Konditionen</button>
+            ${eingeladene.length ? `<button class="btn sm secondary" data-act="ruecklese" data-pid="${p.id}" data-vid="${v.id}" title="Offertbeträge nacheinander erfassen / scannen / bestätigen">📋 Rücklese</button>` : ''}
             <button class="btn sm" data-act="invite" data-pid="${p.id}" data-vid="${v.id}">+ Einladen</button>
           </div>
         </div>
@@ -1703,7 +1784,8 @@ function viewVergabeDetail(pid, vid) {
               ${e.status === 'abgesagt'
                 ? `<span class="muted" style="font-size:12.5px">abgesagt</span>`
                 : `<input class="input betrag-input" type="number" placeholder="Betrag" value="${e.betrag ?? ''}" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">`}
-              <button class="x-btn" title="Deckblatt (Einladung)" data-act="deckblatt" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">📄</button>
+              <button class="x-btn" title="Deckblatt: Submissionseinladung" data-act="deckblatt" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">📄</button>
+              <button class="x-btn" title="Deckblatt: Äusserste Konditionen" data-act="deckblatt-offerte" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">📑</button>
               <button class="x-btn" title="Entfernen" data-act="rm-inv" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">×</button>
             </div>
           </div>`).join('') : emptyState('☎', 'Noch keine Unternehmer eingeladen.')}
@@ -1783,7 +1865,10 @@ function viewVergabeDetail(pid, vid) {
     <div class="card">
       <div class="card-pad" style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0">
         <h2 style="margin:0;font-size:15px">${(v.rechnungen || []).length} Rechnung${(v.rechnungen || []).length === 1 ? '' : 'en'}</h2>
-        <button class="btn sm secondary" data-act="new-rechnung" data-pid="${p.id}" data-vid="${v.id}">+ Rechnung</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn sm secondary" data-act="scan-qr" data-pid="${p.id}" data-vid="${v.id}" title="Swiss-QR-Code aus Bild/PDF einlesen">🔎 QR scannen</button>
+          <button class="btn sm secondary" data-act="new-rechnung" data-pid="${p.id}" data-vid="${v.id}">+ Rechnung</button>
+        </div>
       </div>
       ${(v.rechnungen || []).length ? `
       <table class="grid" style="margin-top:12px">
@@ -1900,8 +1985,30 @@ function viewDokumente() {
    --------------------------------------------------------------- */
 
 function viewEinstellungen() {
+  const b = state.buero || BUERO;
   const html = `
     <div class="page-head"><div><h1>Einstellungen</h1><div class="sub">Prototyp-Konfiguration</div></div></div>
+    <div class="card card-pad" style="max-width:560px;margin-bottom:18px">
+      <h2 style="margin-top:0;font-size:15px">Büro / Absender</h2>
+      <p class="muted" style="font-size:13px">Erscheint als Briefkopf und Eingabeadresse auf dem Deckblatt (Ausschreibung).</p>
+      <label class="field">Logo
+        <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
+          ${b.logo
+            ? `<img src="${b.logo}" alt="Logo" style="max-height:54px;max-width:180px;border:1px solid var(--border);border-radius:6px;padding:4px;background:#fff">
+               <button class="btn sm ghost" data-act="rm-logo">Logo entfernen</button>`
+            : `<span class="muted" style="font-size:13px">Kein Logo</span>`}
+          <input type="file" id="b_logo" accept="image/*" style="font-size:13px">
+        </div>
+      </label>
+      <label class="field">Firma <input class="input" id="b_firma" value="${esc(b.firma)}" placeholder="Muster Bauadministration GmbH"></label>
+      <label class="field">Strasse <input class="input" id="b_strasse" value="${esc(b.strasse)}" placeholder="Musterstrasse 1"></label>
+      <label class="field">PLZ / Ort <input class="input" id="b_plzort" value="${esc(b.plzort)}" placeholder="6000 Luzern"></label>
+      <div class="form-row">
+        <label class="field">Telefon <input class="input" id="b_tel" value="${esc(b.tel)}" placeholder="041 000 00 00"></label>
+        <label class="field">E-Mail <input class="input" id="b_email" value="${esc(b.email)}" placeholder="info@…"></label>
+      </div>
+      <div style="margin-top:12px"><button class="btn" data-act="save-buero">Büro speichern</button></div>
+    </div>
     <div class="card card-pad" style="max-width:560px">
       <h2 style="margin-top:0;font-size:15px">Daten</h2>
       <p class="muted" style="font-size:13px">${cloudEnabled
@@ -1922,6 +2029,46 @@ function viewEinstellungen() {
     </div>
   `;
   render(html);
+  $('#b_logo')?.addEventListener('change', e => onLogoPick(e.target));
+}
+
+function saveBuero() {
+  const cur = state.buero || {};
+  state.buero = {
+    ...cur,
+    firma:   $('#b_firma').value.trim(),
+    strasse: $('#b_strasse').value.trim(),
+    plzort:  $('#b_plzort').value.trim(),
+    tel:     $('#b_tel').value.trim(),
+    email:   $('#b_email').value.trim(),
+  };
+  save();
+  toast('Büro-Daten gespeichert');
+}
+
+// Logo: hochladen → auf max. 600px Breite skalieren → als PNG-DataURL in state.buero.logo
+function onLogoPick(input) {
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const maxW = 600;
+      const scale = Math.min(1, maxW / img.width);
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      state.buero = { ...(state.buero || {}), logo: c.toDataURL('image/png') };
+      save();
+      toast('Logo gesetzt');
+      viewEinstellungen();
+    };
+    img.onerror = () => toast('Bild konnte nicht gelesen werden', 'info');
+    img.src = rd.result;
+  };
+  rd.readAsDataURL(f);
 }
 
 /* ---------------------------------------------------------------
@@ -2133,6 +2280,163 @@ function removeInvite(pid, vid, eid) {
   save(); router();
 }
 
+/* --- Rücklese-Flow: Offertbeträge je Unternehmer erfassen / scannen / bestätigen --- */
+
+let rlCtx = null;   // { pid, vid, ids:[eid…], idx }
+
+const RL_STATUS = ['angefragt', 'offeriert', 'abgesagt'];
+
+function actRuecklese(pid, vid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid);
+  const ids = (v.eingeladene || []).map(e => e.id);
+  if (!ids.length) { toast('Keine Unternehmer eingeladen', 'info'); return; }
+  rlCtx = { pid, vid, ids, idx: 0 };
+  rueckleseRender();
+}
+
+function rueckleseRender() {
+  const c = rlCtx; if (!c) return;
+  const p = findProjekt(c.pid); const v = findVergabe(p, c.vid);
+  const e = (v.eingeladene || []).find(x => x.id === c.ids[c.idx]);
+  if (!e) { rlCtx = null; closeModal(); return; }
+  const last = c.idx === c.ids.length - 1;
+  const statusSel = RL_STATUS.map(s => `<option value="${s}" ${e.status === s ? 'selected' : ''}>${INV_STATUS[s].label}</option>`).join('');
+
+  openModal(`Rücklese – ${c.idx + 1} / ${c.ids.length}`, `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <strong style="font-size:15px">${esc(e.firma)}</strong>
+      <span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:2px 8px;font-size:10.5px">${INV_STATUS[e.status]?.label || e.status}</span>
+    </div>
+    <div class="form-row">
+      <label class="field">Offertbetrag (CHF) <input class="input" type="number" id="rl_betrag" value="${e.betrag ?? ''}" placeholder="z.B. 198000"></label>
+      <label class="field">Status <select class="select" id="rl_status">${statusSel}</select></label>
+    </div>
+    <div style="margin:6px 0 2px">
+      <input type="file" id="rl_file" accept="image/*,application/pdf" style="display:none">
+      <button class="btn sm secondary" type="button" id="rl_scanbtn">📷 Betrag aus Offerte scannen</button>
+    </div>
+    <div id="rl_scanbox" class="muted" style="font-size:12.5px;min-height:18px;margin-top:6px"></div>
+  `, `
+    <button class="btn ghost" type="button" id="rl_prev" ${c.idx === 0 ? 'disabled' : ''}>‹ Zurück</button>
+    <button class="btn ghost" type="button" id="rl_skip">Überspringen</button>
+    <button class="btn" type="button" id="rl_next">${last ? '✓ Abschliessen' : 'Bestätigen & Weiter ›'}</button>
+  `);
+
+  $('#rl_scanbtn')?.addEventListener('click', () => $('#rl_file').click());
+  $('#rl_file')?.addEventListener('change', ev => rueckleseScan(ev.target.files && ev.target.files[0]));
+  $('#rl_prev')?.addEventListener('click', () => rueckleseNav(-1));
+  $('#rl_skip')?.addEventListener('click', () => rueckleseNav(1, true));
+  $('#rl_next')?.addEventListener('click', () => rueckleseNav(1));
+}
+
+// betrag/status des aktuellen Unternehmers speichern (ohne Re-Render)
+function rueckleseCommit() {
+  const c = rlCtx; if (!c) return;
+  const p = findProjekt(c.pid); const v = findVergabe(p, c.vid);
+  const e = (v.eingeladene || []).find(x => x.id === c.ids[c.idx]);
+  if (!e) return;
+  const raw = $('#rl_betrag') ? $('#rl_betrag').value : '';
+  const num = (raw === '' || raw == null) ? null : Number(raw);
+  e.betrag = num;
+  let st = $('#rl_status') ? $('#rl_status').value : e.status;
+  if (num != null && st === 'angefragt') st = 'offeriert';
+  e.status = st;
+  if (num != null && statusIdx(v) < STATUS_BY_KEY['offerten'].index) v.status = 'offerten';
+  save();
+}
+
+function rueckleseNav(dir, skip) {
+  const c = rlCtx; if (!c) return;
+  if (!skip) rueckleseCommit();
+  const next = c.idx + dir;
+  if (next < 0) return;
+  if (next >= c.ids.length) {
+    rlCtx = null; closeModal(); router();
+    toast('Rücklese abgeschlossen');
+    return;
+  }
+  c.idx = next;
+  rueckleseRender();
+}
+
+async function rueckleseScan(file) {
+  if (!file) return;
+  const box = $('#rl_scanbox');
+  const set = m => { if (box) box.innerHTML = m; };
+  set('⏳ Lade Texterkennung … (erster Scan kann etwas dauern)');
+  try {
+    const amounts = await ocrAmounts(file, pct => set(`⏳ Erkenne Text … ${Math.round(pct * 100)}%`));
+    if (!amounts.length) { set('⚠ Kein Betrag erkannt. Bitte manuell eingeben oder schärferes Bild.'); return; }
+    const fld = $('#rl_betrag');
+    if (fld && !fld.value) fld.value = amounts[0];   // grösster Betrag = wahrscheinlich Total
+    const chips = amounts.slice(0, 6).map(a =>
+      `<button class="chip" type="button" data-amount="${a}" style="margin:3px 4px 0 0">${chf(a)}</button>`).join('');
+    set(`Erkannte Beträge (anklicken zum Übernehmen):<div style="margin-top:4px">${chips}</div>`);
+    box.querySelectorAll('button[data-amount]').forEach(b =>
+      b.addEventListener('click', () => { if ($('#rl_betrag')) $('#rl_betrag').value = b.dataset.amount; }));
+  } catch (err) {
+    set('⚠ Fehler bei der Texterkennung: ' + ((err && err.message) || err));
+  }
+}
+
+let ocrLibP = null;
+function loadOcrLib() {
+  if (ocrLibP) return ocrLibP;
+  ocrLibP = (async () => {
+    if (typeof Tesseract === 'undefined') {
+      await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+    }
+    if (typeof pdfjsLib === 'undefined') {
+      await loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.min.js');
+      if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.worker.min.js';
+    }
+  })().catch(err => { ocrLibP = null; throw err; });
+  return ocrLibP;
+}
+
+// OCR-Quellen: Bild direkt an Tesseract; PDF → erste 2 Seiten als Canvas
+async function fileToOcrSources(file) {
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+  if (!isPdf) return [file];
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const out = [];
+  const n = Math.min(pdf.numPages, 2);
+  for (let i = 1; i <= n; i++) {
+    const page = await pdf.getPage(i);
+    const vp = page.getViewport({ scale: 2 });
+    const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+    await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    out.push(c);
+  }
+  return out;
+}
+
+async function ocrAmounts(file, onProgress) {
+  await loadOcrLib();
+  const sources = await fileToOcrSources(file);
+  let text = '';
+  for (const s of sources) {
+    const { data } = await Tesseract.recognize(s, 'deu+eng', {
+      logger: m => { if (m.status === 'recognizing text' && onProgress) onProgress(m.progress); },
+    });
+    text += '\n' + (data.text || '');
+  }
+  return extractAmounts(text);
+}
+
+// Beträge aus Text: Schweizer Format (1'234.55 / 1 234.55) + einfache Dezimalzahlen
+function extractAmounts(text) {
+  const re = /\d{1,3}(?:['’ ]\d{3})+(?:[.,]\d{2})?|\d+[.,]\d{2}/g;
+  const found = new Set();
+  let m;
+  while ((m = re.exec(text))) {
+    const num = Number(m[0].replace(/['’ ]/g, '').replace(',', '.'));
+    if (isFinite(num) && num >= 1) found.add(num);
+  }
+  return [...found].sort((a, b) => b - a);
+}
+
 /* --- Nachträge / Bestellungsänderungen --- */
 
 function actNewNachtrag(pid, vid) {
@@ -2213,6 +2517,7 @@ function removeRapport(pid, vid, rid) {
 /* --- Rechnungen / Zahlungen --- */
 
 function actNewRechnung(pid, vid) {
+  pendingQr = null;
   openModal('Neue Rechnung', `
     <label class="field">Bezeichnung <input class="input" id="rg_text" placeholder="z.B. Akontorechnung 1 / Schlussrechnung"></label>
     <div class="form-row">
@@ -2232,10 +2537,12 @@ function saveRechnung(pid, vid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   const betrag = Number($('#rg_betrag').value) || 0;
   if (!betrag) { toast('Bitte einen Betrag eingeben', 'info'); return; }
-  (v.rechnungen = v.rechnungen || []).push({
+  const rg = {
     id: uid('rg'), text: $('#rg_text').value.trim() || 'Rechnung', nr: $('#rg_nr').value.trim(),
     betrag, datum: $('#rg_datum').value || todayIso(), bezahlt: $('#rg_bezahlt').value === '1',
-  });
+  };
+  if (pendingQr) { rg.qr = pendingQr; pendingQr = null; }
+  (v.rechnungen = v.rechnungen || []).push(rg);
   save(); closeModal(); router(); toast('Rechnung erfasst');
 }
 
@@ -2251,9 +2558,169 @@ function removeRechnung(pid, vid, rgid) {
   save(); router();
 }
 
+/* --- QR-Rechnung einlesen (Swiss QR-Code aus Bild/PDF) --- */
+
+// Beim Speichern einer QR-Rechnung mitgegebene Metadaten (IBAN/Referenz) – sonst null
+let pendingQr = null;
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = () => rej(new Error('Konnte nicht laden: ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+let qrLibsP = null;
+function loadQrLibs() {
+  if (qrLibsP) return qrLibsP;
+  qrLibsP = (async () => {
+    if (typeof jsQR === 'undefined') {
+      await loadScript('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js');
+    }
+    if (typeof pdfjsLib === 'undefined') {
+      await loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.min.js');
+      if (window.pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.worker.min.js';
+      }
+    }
+  })().catch(err => { qrLibsP = null; throw err; });
+  return qrLibsP;
+}
+
+// Datei (Bild oder PDF) → Liste von ImageData (eine pro Seite, max. 3 Seiten bei PDF)
+function fileToImageDatas(file) {
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+  return isPdf ? pdfToImageDatas(file) : imageFileToImageData(file).then(d => [d]);
+}
+
+function imageFileToImageData(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const maxDim = 2200;
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(ctx.getImageData(0, 0, w, h));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Bild konnte nicht geladen werden')); };
+    img.src = url;
+  });
+}
+
+async function pdfToImageDatas(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const out = [];
+  const n = Math.min(pdf.numPages, 3);   // QR sitzt auf dem Zahlteil, i.d.R. erste/letzte Seite
+  for (let i = 1; i <= n; i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 2 });
+    const c = document.createElement('canvas'); c.width = viewport.width; c.height = viewport.height;
+    const ctx = c.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    out.push(ctx.getImageData(0, 0, c.width, c.height));
+  }
+  return out;
+}
+
+function scanQr(imageDatas) {
+  for (const d of imageDatas) {
+    const r = jsQR(d.data, d.width, d.height, { inversionAttempts: 'attemptBoth' });
+    if (r && r.data) return r.data;
+  }
+  return null;
+}
+
+// Swiss QR Code (SPC, Version 02xx) – feste Zeilenpositionen gem. Implementation Guidelines
+function parseSwissQr(text) {
+  const lines = text.split(/\r\n|\n|\r/);
+  if ((lines[0] || '').trim().toUpperCase() !== 'SPC') return null;
+  const g = i => (lines[i] || '').trim();
+  return {
+    iban:        g(3),
+    kreditor:    g(5),
+    betrag:      g(18) ? Number(g(18).replace(/'/g, '')) : null,
+    waehrung:    g(19) || 'CHF',
+    referenzTyp: g(27),
+    referenz:    g(28),
+    message:     g(29),
+  };
+}
+
+// QRR-Referenz (27 Stellen) in 5er-Blöcken von rechts darstellen
+function fmtQrRef(ref, typ) {
+  if (!ref) return '';
+  if (typ !== 'QRR') return ref;
+  let r = ref.replace(/\s/g, ''), out = '';
+  while (r.length > 5) { out = ' ' + r.slice(-5) + out; r = r.slice(0, -5); }
+  return (r + out).trim();
+}
+
+function actScanQrRechnung(pid, vid) {
+  pendingQr = null;
+  openModal('QR-Rechnung scannen', `
+    <p class="muted" style="font-size:13px;margin-top:0">Foto oder PDF der Rechnung mit Swiss-QR-Code wählen. Betrag, Kreditor und Referenz werden automatisch ausgelesen – du kannst sie danach prüfen.</p>
+    <label class="field">Bild oder PDF
+      <input class="input" type="file" id="qr_file" accept="image/*,application/pdf">
+    </label>
+    <div id="qr_status" class="muted" style="font-size:13px;min-height:20px"></div>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button>`);
+  $('#qr_file')?.addEventListener('change', e => handleQrFile(e.target.files && e.target.files[0], pid, vid));
+}
+
+async function handleQrFile(file, pid, vid) {
+  if (!file) return;
+  const st = $('#qr_status');
+  const set = m => { if (st) st.innerHTML = m; };
+  set('⏳ Lese QR-Code …');
+  try {
+    await loadQrLibs();
+    const datas = await fileToImageDatas(file);
+    const raw = scanQr(datas);
+    if (!raw) { set('⚠ Kein QR-Code gefunden. Schärferes Foto oder die ganze Zahlteil-Seite verwenden.'); return; }
+    const qr = parseSwissQr(raw);
+    if (!qr) { set('⚠ QR-Code gefunden, aber es ist kein Swiss-QR-Rechnungscode.'); return; }
+    openQrRechnungForm(pid, vid, qr);
+  } catch (err) {
+    set('⚠ Fehler beim Lesen: ' + ((err && err.message) || err));
+  }
+}
+
+function openQrRechnungForm(pid, vid, qr) {
+  pendingQr = { iban: qr.iban, kreditor: qr.kreditor, referenz: qr.referenz, referenzTyp: qr.referenzTyp };
+  const refDisp = fmtQrRef(qr.referenz, qr.referenzTyp);
+  const fremdWaehrung = qr.waehrung && qr.waehrung !== 'CHF';
+  openModal('Rechnung aus QR übernehmen', `
+    <div style="background:var(--brand-soft);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12.5px;line-height:1.6">
+      <strong>✓ Aus QR-Code gelesen</strong><br>
+      Kreditor: <strong>${esc(qr.kreditor || '–')}</strong><br>
+      IBAN: ${esc(qr.iban || '–')}<br>
+      ${refDisp ? 'Referenz: ' + esc(refDisp) + '<br>' : ''}
+      ${qr.message ? 'Mitteilung: ' + esc(qr.message) + '<br>' : ''}
+      ${fremdWaehrung ? '<span style="color:var(--s-red)">⚠ Währung ' + esc(qr.waehrung) + ' – Betrag prüfen (System rechnet in CHF).</span>' : ''}
+    </div>
+    <label class="field">Bezeichnung <input class="input" id="rg_text" value="${esc(qr.kreditor || 'Rechnung')}"></label>
+    <div class="form-row">
+      <label class="field">Rechnungs-Nr. / Referenz <input class="input" id="rg_nr" value="${esc(refDisp)}"></label>
+      <label class="field">Betrag (CHF) <input class="input" type="number" id="rg_betrag" value="${qr.betrag != null ? qr.betrag : ''}"></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Datum <input class="input" type="date" id="rg_datum" value="${todayIso()}"></label>
+      <label class="field">Status
+        <select class="select" id="rg_bezahlt"><option value="0">offen</option><option value="1">bezahlt</option></select>
+      </label>
+    </div>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-rechnung" data-pid="${pid}" data-vid="${vid}">Speichern</button>`);
+}
+
 /* --- Deckblatt für Ausschreibung / Offerte (PDF) --- */
 
-// Absender/Büro (Eingabeadresse) – später in Einstellungen konfigurierbar
+// Absender/Büro (Eingabeadresse) – Default/Fallback; editierbar via Einstellungen → state.buero
 const BUERO = {
   firma: 'Gerber-Software – Bauadministration',
   strasse: '',
@@ -2266,6 +2733,7 @@ function pdfDeckblatt(pid, vid, eid, typ) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   const e = eid ? (v.eingeladene || []).find(x => x.id === eid) : null;
   const istOfferte = typ === 'offerte';
+  const b = state.buero || BUERO;
   const titel = istOfferte ? 'Offerte – äusserste Konditionen' : 'Submissionseinladung';
   const fristJahr = (dISO(v.frist) || new Date()).getFullYear();
   const termin = (v.bauStart && v.bauEnde) ? `${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}` : 'gem. Terminprogramm';
@@ -2300,9 +2768,10 @@ function pdfDeckblatt(pid, vid, eid, typ) {
     .sig div { border-top: 1px solid #1b2533; width: 44%; padding-top: 4px; font-size: 11px; }
   </style></head><body>
     <div class="lh">
-      <div class="f">${esc(BUERO.firma)}</div>
-      ${esc(BUERO.strasse)}${BUERO.strasse ? '<br>' : ''}${esc(BUERO.plzort)}${BUERO.plzort ? '<br>' : ''}
-      ${BUERO.tel ? 'Tel. ' + esc(BUERO.tel) + '<br>' : ''}${esc(BUERO.email)}
+      ${b.logo ? `<img src="${b.logo}" alt="" style="max-height:64px;max-width:220px;display:block;margin-bottom:10px">` : ''}
+      <div class="f">${esc(b.firma)}</div>
+      ${esc(b.strasse)}${b.strasse ? '<br>' : ''}${esc(b.plzort)}${b.plzort ? '<br>' : ''}
+      ${b.tel ? 'Tel. ' + esc(b.tel) + '<br>' : ''}${esc(b.email)}
     </div>
 
     <h1>${esc(titel)}</h1>
@@ -2310,7 +2779,7 @@ function pdfDeckblatt(pid, vid, eid, typ) {
     <table class="kv">
       <tr><td class="l"><strong>Objekt:</strong></td><td><strong>${esc(p.name)}</strong><br>${esc(p.ort)}</td></tr>
       <tr><td class="l">Bauherr:</td><td>${esc(p.bauherr)}</td></tr>
-      <tr><td class="l">Eingabeadresse:</td><td>${esc(BUERO.firma)}${BUERO.plzort ? '<br>' + esc(BUERO.plzort) : ''}</td></tr>
+      <tr><td class="l">Eingabeadresse:</td><td>${esc(b.firma)}${b.plzort ? '<br>' + esc(b.plzort) : ''}</td></tr>
       <tr><td class="l">Angebot für:</td><td><div class="box"><strong>BKP ${esc(v.bkp)} – ${esc(v.gewerk)}</strong></div></td></tr>
       <tr><td class="l">${istOfferte ? 'Unternehmer:' : 'Unternehmer, Firma:'}</td><td><div class="box firma">${firmaBlock}</div></td></tr>
       <tr><td class="l">Eingabefrist:</td><td><div class="box"><strong>${v.frist ? fmtDate(v.frist) : '—'}</strong></div></td></tr>
@@ -2558,7 +3027,21 @@ function exportData() {
 }
 
 function resetDemo() {
-  state = demoData(); migrate(); save(); router();
+  const warn = cloudEnabled
+    ? `<div style="background:#fdecec;border:1px solid var(--s-red);border-radius:8px;padding:10px 12px;font-size:13px;color:#7a1d1d">
+         <strong>⚠ Cloud-Modus:</strong> Dies überschreibt den <strong>gemeinsamen Arbeitsbereich für alle</strong> mit den Demo-Daten. Alle bestehenden Projekte, Vergaben, Protokolle usw. gehen verloren und werden auf allen Geräten synchronisiert.
+       </div>`
+    : `<p class="muted" style="font-size:13px;margin-top:0">Dies ersetzt alle aktuellen Daten in diesem Browser durch die Demo-Daten.</p>`;
+  openModal('Demo-Daten neu laden?', `
+    ${warn}
+    <p style="font-size:13px;margin-bottom:0">Tipp: vorher <button class="btn sm secondary" type="button" id="reset_export">⬇ Daten exportieren</button> zur Sicherung.</p>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button>
+      <button class="btn danger" data-act="confirm-reset">Ja, Demo-Daten laden</button>`);
+  $('#reset_export')?.addEventListener('click', exportData);
+}
+
+function doResetDemo() {
+  state = demoData(); migrate(); save(); closeModal(); router();
   toast('Demo-Daten geladen', 'info');
 }
 
@@ -2586,6 +3069,7 @@ document.addEventListener('click', e => {
     case 'sendmail':     sendMail(pid, vid); break;
     case 'confirm-mail': confirmMail(pid, vid); break;
     case 'rm-inv':       removeInvite(pid, vid, eid); break;
+    case 'ruecklese':    actRuecklese(pid, vid); break;
     case 'new-nachtrag': actNewNachtrag(pid, vid); break;
     case 'save-nachtrag':saveNachtrag(pid, vid); break;
     case 'rm-nachtrag':  removeNachtrag(pid, vid, nid); break;
@@ -2595,8 +3079,11 @@ document.addEventListener('click', e => {
     case 'new-rechnung': actNewRechnung(pid, vid); break;
     case 'save-rechnung':saveRechnung(pid, vid); break;
     case 'rm-rechnung':  removeRechnung(pid, vid, rgid); break;
-    case 'deckblatt':      pdfDeckblatt(pid, vid, eid, 'einladung'); break;
-    case 'deckblatt-leer': pdfDeckblatt(pid, vid, null, 'einladung'); break;
+    case 'scan-qr':      actScanQrRechnung(pid, vid); break;
+    case 'deckblatt':              pdfDeckblatt(pid, vid, eid, 'einladung'); break;
+    case 'deckblatt-leer':         pdfDeckblatt(pid, vid, null, 'einladung'); break;
+    case 'deckblatt-offerte':      pdfDeckblatt(pid, vid, eid, 'offerte'); break;
+    case 'deckblatt-offerte-leer': pdfDeckblatt(pid, vid, null, 'offerte'); break;
     case 'edit-termin':  actEditTermin(pid, vid); break;
     case 'save-termin':  saveTermin(pid, vid); break;
     case 'gantt-zoom':   ganttZoom = kind; viewTermine(pid); break;
@@ -2624,8 +3111,11 @@ document.addEventListener('click', e => {
     case 'pdf-protokoll':   pdfProtokoll(pid, prid); break;
     case 'new-kontakt':  actNewKontakt(); break;
     case 'save-kontakt': saveKontakt(); break;
+    case 'save-buero':   saveBuero(); break;
+    case 'rm-logo':      state.buero = { ...(state.buero || {}), logo: '' }; save(); viewEinstellungen(); break;
     case 'export':       exportData(); break;
     case 'reset':        resetDemo(); break;
+    case 'confirm-reset':doResetDemo(); break;
     case 'logout':       logout(); break;
   }
 });

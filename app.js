@@ -563,6 +563,7 @@ function projektTabs(p, active) {
     ${tab('termine', `#/projekt/${p.id}/termine`, 'Termine / Gantt')}
     ${tab('protokolle', `#/projekt/${p.id}/protokolle`, 'Protokolle')}
     ${tab('pendenzen', `#/projekt/${p.id}/pendenzen`, 'Pendenzen' + pendBadge)}
+    ${tab('listen', `#/projekt/${p.id}/listen`, 'Listen')}
   </div>`;
 }
 
@@ -628,6 +629,7 @@ function router() {
       if (sub === 'kosten') return viewKosten(a);
       if (sub === 'protokolle') return viewProtokolle(a);
       if (sub === 'pendenzen') return viewPendenzen(a);
+      if (sub === 'listen') return viewListen(a);
       if (sub === 'protokoll' && b) return viewProtokollDetail(a, b);
       return viewProjektDetail(a);
     case 'kontakte':      setActiveNav('kontakte');      return viewKontakte();
@@ -1257,6 +1259,137 @@ function viewPendenzen(pid) {
   `);
 
   $$('.pend-check').forEach(cb => cb.addEventListener('change', () => togglePendenz(cb.dataset.pid, cb.dataset.prid, cb.dataset.tid, cb.dataset.itemid)));
+}
+
+/* ---------------------------------------------------------------
+   Listen: Submittentenliste (vertraulich) + Unternehmerliste (Baustelle)
+   --------------------------------------------------------------- */
+
+function gewerkeSorted(p) {
+  return (p.vergaben || []).slice().sort((a, b) =>
+    (a.bkp || '').localeCompare(b.bkp || '') || (a.gewerk || '').localeCompare(b.gewerk || ''));
+}
+
+function kontaktByFirma(firma) {
+  return (state.kontakte || []).find(k => k.firma === firma) || null;
+}
+
+function viewListen(pid) {
+  const p = findProjekt(pid);
+  if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  const gw = gewerkeSorted(p);
+
+  const submBlocks = gw.length ? gw.map(v => {
+    const eing = (v.eingeladene || []);
+    const rows = eing.length ? eing.map(e => `
+      <tr>
+        <td>${esc(e.firma)}</td>
+        <td><span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:2px 8px;font-size:10.5px">${INV_STATUS[e.status]?.label || esc(e.status)}</span></td>
+        <td class="num">${e.betrag != null ? chf(e.betrag) : '–'}</td>
+      </tr>`).join('') : `<tr><td colspan="3" class="muted">noch niemand eingeladen</td></tr>`;
+    return `
+      <div style="margin-bottom:14px">
+        <div style="font-weight:600;margin-bottom:5px"><span class="bkp-code">${esc(v.bkp)}</span> ${esc(v.gewerk)}</div>
+        <table class="grid"><thead><tr><th>Firma</th><th style="width:120px">Status</th><th class="num" style="width:130px">Betrag</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+      </div>`;
+  }).join('') : emptyState('◫', 'Keine Gewerke angelegt.');
+
+  const untRows = gw.map(v => {
+    const vergeben = isVergeben(v) && v.firma;
+    const k = vergeben ? kontaktByFirma(v.firma) : null;
+    return `<tr>
+      <td><span class="bkp-code">${esc(v.bkp)}</span></td>
+      <td>${esc(v.gewerk)}</td>
+      <td>${vergeben ? `<strong>${esc(v.firma)}</strong>` : '<span class="muted">noch nicht vergeben</span>'}</td>
+      <td class="muted">${vergeben && k ? esc([k.person, k.telefon].filter(Boolean).join(' · ')) : ''}</td>
+    </tr>`;
+  }).join('');
+
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
+    <div class="detail-head">
+      <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Listen · zum Drucken / als PDF</div></div>
+    </div>
+    ${projektTabs(p, 'listen')}
+
+    <div class="section-head"><h2>Submittentenliste <span class="st red" style="font-size:10.5px;padding:2px 8px;vertical-align:middle">vertraulich</span></h2>
+      <button class="btn sm" data-act="pdf-submittenten" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle eingeladenen Firmen je Gewerk – nur intern, <strong>nicht</strong> an die Baustelle.</p>
+    <div class="card card-pad">${submBlocks}</div>
+
+    <div class="section-head" style="margin-top:26px"><h2>Unternehmerliste <span class="tag">für Baustelle</span></h2>
+      <button class="btn sm" data-act="pdf-unternehmer" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle Gewerke mit vergebenem Unternehmer; offene zeigen „noch nicht vergeben" (verrät keine Submittenten).</p>
+    <div class="card">${gw.length ? `
+      <table class="grid"><thead><tr><th style="width:60px">BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Kontakt</th></tr></thead>
+        <tbody>${untRows}</tbody></table>` : emptyState('◫', 'Keine Gewerke angelegt.')}</div>
+  `);
+}
+
+// Gemeinsamer Druck-/PDF-Wrapper mit Büro-Briefkopf
+function openPrintDoc(title, subtitleHtml, inner) {
+  const b = state.buero || BUERO;
+  const logo = b.logo ? `<img src="${b.logo}" style="max-height:54px;max-width:210px;display:block;margin-bottom:8px">` : '';
+  const html = `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>${esc(title)}</title>
+  <style>
+    *{box-sizing:border-box;}
+    body{font-family:'Segoe UI',Arial,sans-serif;color:#1b2533;margin:26px 32px;font-size:12.5px;}
+    .lh{color:#444;font-size:11px;margin-bottom:18px;}
+    .lh .f{font-weight:700;color:#1b2533;font-size:14px;margin-bottom:2px;}
+    h1{font-size:19px;margin:0 0 2px;}
+    .sub{color:#5a6678;font-size:12px;margin-bottom:16px;}
+    table.t{width:100%;border-collapse:collapse;margin-bottom:10px;}
+    table.t th{background:#eef2f8;text-align:left;padding:7px 9px;font-size:11px;border:1px solid #d4dae3;}
+    table.t td{padding:7px 9px;border:1px solid #e4e8ee;vertical-align:top;}
+    table.t td.num{text-align:right;font-variant-numeric:tabular-nums;}
+    .gw{font-weight:700;margin:15px 0 5px;font-size:13px;}
+    .muted{color:#94a0b1;}
+    .conf{display:inline-block;background:#fbe9ea;color:#a01b2b;border:1px solid #e7b3ba;border-radius:5px;padding:2px 8px;font-size:10.5px;font-weight:700;}
+    .ft{margin-top:24px;border-top:1px solid #e4e8ee;padding-top:8px;color:#94a0b1;font-size:10px;}
+    @media print{body{margin:14mm;}}
+  </style></head><body>
+    <div class="lh">${logo}<div class="f">${esc(b.firma || '')}</div>
+      ${esc(b.strasse || '')}${b.strasse ? '<br>' : ''}${esc(b.plzort || '')}${b.plzort ? '<br>' : ''}
+      ${b.tel ? 'Tel. ' + esc(b.tel) + '<br>' : ''}${esc(b.email || '')}</div>
+    <h1>${esc(title)}</h1>
+    <div class="sub">${subtitleHtml}</div>
+    ${inner}
+    <div class="ft">Erstellt mit submit one · ${fmtDate(todayIso())}</div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
+  </body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { toast('Bitte Popups für PDF erlauben', 'info'); return; }
+  w.document.write(html); w.document.close();
+}
+
+function pdfSubmittenten(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const gw = gewerkeSorted(p);
+  const inner = gw.length ? gw.map(v => {
+    const eing = (v.eingeladene || []);
+    const rows = eing.length ? eing.map(e =>
+      `<tr><td>${esc(e.firma)}</td><td>${INV_STATUS[e.status]?.label || esc(e.status)}</td><td class="num">${e.betrag != null ? chf(e.betrag) : '–'}</td></tr>`).join('')
+      : `<tr><td colspan="3" class="muted">noch niemand eingeladen</td></tr>`;
+    return `<div class="gw">BKP ${esc(v.bkp)} – ${esc(v.gewerk)}</div>
+      <table class="t"><thead><tr><th>Firma</th><th style="width:130px">Status</th><th class="num" style="width:140px">Betrag</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }).join('') : '<p class="muted">Keine Gewerke angelegt.</p>';
+  const sub = `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} &nbsp; <span class="conf">VERTRAULICH – nicht an die Baustelle</span>`;
+  openPrintDoc('Submittentenliste', sub, inner);
+}
+
+function pdfUnternehmer(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const gw = gewerkeSorted(p);
+  const rows = gw.length ? gw.map(v => {
+    const vergeben = isVergeben(v) && v.firma;
+    const k = vergeben ? kontaktByFirma(v.firma) : null;
+    const kontakt = vergeben && k ? esc([k.person, k.telefon].filter(Boolean).join(' · ')) : '';
+    return `<tr><td>${esc(v.bkp)}</td><td>${esc(v.gewerk)}</td><td>${vergeben ? '<b>' + esc(v.firma) + '</b>' : '<span class="muted">noch nicht vergeben</span>'}</td><td>${kontakt}</td></tr>`;
+  }).join('') : '<tr><td colspan="4" class="muted">Keine Gewerke angelegt.</td></tr>';
+  const sub = `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} · Stand ${fmtDate(todayIso())}`;
+  openPrintDoc('Unternehmerliste', sub,
+    `<table class="t"><thead><tr><th style="width:60px">BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Kontakt</th></tr></thead><tbody>${rows}</tbody></table>`);
 }
 
 let protokollFilter = '';
@@ -3113,6 +3246,8 @@ document.addEventListener('click', e => {
     case 'confirm-mail': confirmMail(pid, vid); break;
     case 'rm-inv':       removeInvite(pid, vid, eid); break;
     case 'ruecklese':    actRuecklese(pid, vid); break;
+    case 'pdf-submittenten': pdfSubmittenten(pid); break;
+    case 'pdf-unternehmer':  pdfUnternehmer(pid); break;
     case 'new-nachtrag': actNewNachtrag(pid, vid); break;
     case 'save-nachtrag':saveNachtrag(pid, vid); break;
     case 'rm-nachtrag':  removeNachtrag(pid, vid, nid); break;

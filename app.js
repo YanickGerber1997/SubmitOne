@@ -5,6 +5,8 @@
 
 'use strict';
 
+const APP_VERSION = 'v20';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
    --------------------------------------------------------------- */
@@ -257,6 +259,7 @@ async function startApp() {
   $('#btnExport')?.addEventListener('click', exportData);
   $('#btnReset')?.addEventListener('click', resetDemo);
   initSidebarCollapse();
+  const ver = $('.ver'); if (ver) ver.textContent = 'Prototyp · ' + APP_VERSION;
   renderUserChip();
   window.addEventListener('hashchange', router);
   router();

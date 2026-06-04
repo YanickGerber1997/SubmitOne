@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v24';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v25';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1016,7 +1016,7 @@ function viewTermine(id) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm · grob (Monat) bis fein (Tag); Balken ziehen zum Verschieben, Ränder ziehen für Dauer</div></div>
-      <div style="display:flex;gap:10px;align-items:center">${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}${zoomCtrl}</div>
+      <div style="display:flex;gap:10px;align-items:center">${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}${zoomCtrl}<button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
     </div>
     ${projektTabs(p, 'termine')}
   `;
@@ -3637,6 +3637,32 @@ function pdfBaukosten(pid) {
   openPrintDoc('Baukostenübersicht', `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} · Stand ${fmtDate(todayIso())}`, inner);
 }
 
+// Bauprogramm / Gantt als saubere Monats-Tabelle (Querformat)
+const MON_KURZ = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+function pdfGantt(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const vs = gewerkeSorted(p).filter(v => v.bauStart && v.bauEnde);
+  if (!vs.length) { toast('Keine terminierten Gewerke vorhanden', 'info'); return; }
+  let min = null, max = null;
+  vs.forEach(v => { if (!min || v.bauStart < min) min = v.bauStart; if (!max || v.bauEnde > max) max = v.bauEnde; });
+  const ds = dISO(min), de = dISO(max);
+  const months = []; let cur = new Date(ds.getFullYear(), ds.getMonth(), 1); const end = new Date(de.getFullYear(), de.getMonth(), 1);
+  while (cur <= end) { months.push({ y: cur.getFullYear(), m: cur.getMonth() }); cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1); }
+  const mIdx = iso => { const d = dISO(iso); return months.findIndex(x => x.y === d.getFullYear() && x.m === d.getMonth()); };
+  const colorHex = { blue: '#1f6feb', teal: '#0d9488', purple: '#8b5cf6', green: '#16a34a', amber: '#e0930f', red: '#dc2626', grey: '#8a97a8' };
+  const headM = months.map(x => `<th style="text-align:center;font-size:9px;font-weight:600">${MON_KURZ[x.m]}<br>${String(x.y).slice(2)}</th>`).join('');
+  const rows = vs.map(v => {
+    const s = mIdx(v.bauStart), e = mIdx(v.bauEnde);
+    const col = colorHex[STATUS_BY_KEY[v.status] && STATUS_BY_KEY[v.status].color] || '#1f6feb';
+    const cells = months.map((_, i) => `<td style="padding:0;border:1px solid #eef1f5">${i >= s && i <= e ? `<div style="background:${col};height:13px;border-radius:3px;margin:1px"></div>` : ''}</td>`).join('');
+    return `<tr><td style="text-align:left;white-space:nowrap"><b>${esc(v.bkp || '')}</b> ${esc(v.gewerk || '')}</td><td style="white-space:nowrap;font-size:10px">${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}</td>${cells}</tr>`;
+  }).join('');
+  const inner = `<style>@page{size:A4 landscape;margin:12mm}</style>
+    <table class="t" style="font-size:11px"><thead><tr><th style="text-align:left">BKP / Gewerk</th><th>Termin</th>${headM}</tr></thead><tbody>${rows}</tbody></table>
+    <p class="muted" style="margin-top:10px;font-size:10px">Bauprogramm – Monatsraster. Balkenfarbe = Status des Gewerks. Querformat drucken.</p>`;
+  openPrintDoc('Bauprogramm / Terminprogramm', `${esc(p.name)} · ${esc(p.ort)} · Stand ${fmtDate(todayIso())}`, inner);
+}
+
 function advanceVergabe(pid, vid) {
   const p = findProjekt(pid);
   const v = p && findVergabe(p, vid);
@@ -4612,6 +4638,7 @@ document.addEventListener('click', e => {
     case 'save-ks':      saveKostenschaetzung(pid, vid); break;
     case 'pdf-kostenschaetzung': pdfKostenschaetzung(pid); break;
     case 'pdf-baukosten':        pdfBaukosten(pid); break;
+    case 'pdf-gantt':            pdfGantt(pid); break;
     case 'advance':      advanceVergabe(pid, vid); break;
     case 'invite':       actInvite(pid, vid); break;
     case 'save-invite':  saveInvite(pid, vid); break;

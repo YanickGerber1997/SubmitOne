@@ -1,7 +1,7 @@
 {
-  "name": "SubmitOne – Submissionsverwaltung",
-  "short_name": "SubmitOne",
-  "description": "Submissionsverwaltung für Bauprojekte – Vergaben, Kosten, Termine, Protokolle",
+  "name": "submit one – Bauprojektmanager",
+  "short_name": "submit one",
+  "description": "Bauprojektmanager – Submissionen, Vergaben, Kosten, Termine, Protokolle",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

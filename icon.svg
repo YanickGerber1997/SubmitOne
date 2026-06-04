@@ -1,11 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#1f6feb"/>
-      <stop offset="1" stop-color="#4f9bff"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="112" fill="#0f1830"/>
-  <rect x="96" y="96" width="320" height="320" rx="72" fill="url(#g)"/>
-  <text x="256" y="312" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="190" font-weight="700" fill="#ffffff" text-anchor="middle" letter-spacing="2">S1</text>
+  <rect width="512" height="512" rx="112" fill="#16203a"/>
+  <!-- Prozess-Linie -->
+  <line x1="150" y1="256" x2="392" y2="256" stroke="#9a3242" stroke-width="14" stroke-linecap="round"/>
+  <!-- offener Start-Knoten -->
+  <circle cx="150" cy="256" r="22" fill="#16203a" stroke="#b14457" stroke-width="14"/>
+  <!-- Zwischen-Knoten -->
+  <circle cx="238" cy="256" r="15" fill="#b14457"/>
+  <circle cx="312" cy="256" r="15" fill="#b14457"/>
+  <!-- Ziel: erledigt -->
+  <circle cx="392" cy="256" r="74" fill="#7c1d2c"/>
+  <path d="M360 258 l22 24 l44 -54" fill="none" stroke="#ffffff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

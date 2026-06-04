@@ -186,13 +186,39 @@ function nameCreds(vor, nach) {
   return { slug, email: slug + '@submitone.local', password: 'so_' + slug + '_pw' };
 }
 
+// Voll-Logo (submit one) als HTML – nutzt Quicksand + inline-SVG-Deko
+function fullLogoHtml(attr = '') {
+  return `<div class="logo full" ${attr}>
+    <div class="logo-top">
+      <svg class="ls" width="116" height="24" viewBox="0 0 116 24" aria-hidden="true">
+        <g stroke-width="3.4" stroke-linecap="round">
+          <line x1="30" y1="2"  x2="116" y2="2"/>
+          <line x1="14" y1="7"  x2="116" y2="7"/>
+          <line x1="2"  y1="12" x2="116" y2="12"/>
+          <line x1="14" y1="17" x2="116" y2="17"/>
+          <line x1="30" y1="22" x2="116" y2="22"/>
+        </g>
+      </svg>
+      <svg class="lt" width="150" height="24" viewBox="0 0 150 24" aria-hidden="true">
+        <line x1="9" y1="12" x2="120" y2="12" stroke-width="3"/>
+        <circle class="ring" cx="9" cy="12" r="5.5"/>
+        <circle class="dot" cx="46" cy="12" r="4.5"/>
+        <circle class="dot" cx="83" cy="12" r="4.5"/>
+        <circle class="end" cx="135" cy="12" r="12"/>
+        <path class="chk" d="M129 12.5 l4 4 l8 -9.6"/>
+      </svg>
+    </div>
+    <div class="logo-word"><span class="lw-a">submit</span><span class="lw-b">one</span></div>
+    <div class="logo-sub">BAUPROJEKTMANAGER</div>
+  </div>`;
+}
+
 function renderLogin(msg) {
   if ($('#loginOverlay')) $('#loginOverlay').remove();
   document.body.insertAdjacentHTML('beforeend', `
     <div id="loginOverlay" class="login-overlay">
       <div class="login-card">
-        <div class="brand-logo" style="margin:0 auto 14px;width:46px;height:46px">S1</div>
-        <h2 style="margin:0 0 4px">SubmitOne</h2>
+        ${fullLogoHtml('style="width:270px;margin:0 auto 20px"')}
         <p class="muted" style="margin:0 0 18px;font-size:13px">Mit Vor- und Nachname anmelden</p>
         <label class="field">Vorname <input class="input" id="lg_vor" type="text" autocapitalize="words" spellcheck="false"></label>
         <label class="field" style="margin-top:10px">Nachname <input class="input" id="lg_nach" type="text" autocapitalize="words" spellcheck="false"></label>
@@ -256,12 +282,31 @@ async function startApp() {
   $('#btnExport')?.addEventListener('click', exportData);
   $('#btnReset')?.addEventListener('click', resetDemo);
   initSidebarCollapse();
+  renderUserChip();
   window.addEventListener('hashchange', router);
   router();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
   if (cloudEnabled) subscribeCloud();
+}
+
+// Angemeldeten Benutzer in der Sidebar-Fusszeile anzeigen (nur Cloud-Modus)
+async function renderUserChip() {
+  const el = $('#userChip');
+  if (!el || !cloudEnabled || !supa) return;
+  try {
+    const { data } = await supa.auth.getUser();
+    const u = data && data.user;
+    if (!u) return;
+    const m = u.user_metadata || {};
+    const name = [m.vorname, m.nachname].filter(Boolean).join(' ').trim()
+      || (u.email ? u.email.split('@')[0] : 'Angemeldet');
+    const initials = (((m.vorname || '')[0] || '') + ((m.nachname || '')[0] || '')).toUpperCase()
+      || name.slice(0, 2).toUpperCase();
+    el.innerHTML = `<span class="uc-avatar">${esc(initials)}</span><span class="uc-name" title="${esc(name)}">${esc(name)}</span>`;
+    el.hidden = false;
+  } catch (_) {}
 }
 
 // Sidebar ein-/ausklappen (nur Symbole) – Zustand browser-lokal gemerkt

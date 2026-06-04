@@ -3,26 +3,35 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>SubmitOne – Submissionsverwaltung</title>
+  <title>submit one – Bauprojektmanager</title>
   <meta name="theme-color" content="#0f1830" />
   <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="SubmitOne" />
+  <meta name="apple-mobile-web-app-title" content="submit one" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div id="app">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-logo">S1</div>
-        <div class="brand-text">
-          <strong>SubmitOne</strong>
-          <span>Submissionsverwaltung</span>
-        </div>
+        <span class="logo on-dark compact">
+          <span class="logo-word"><span class="lw-a">submit</span><span class="lw-b">one</span></span>
+          <svg class="logo-tick" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="11" class="end"/>
+            <path d="M6.6 12.4 l3.4 3.6 l7-8.6" class="chk"/>
+          </svg>
+        </span>
+        <span class="logo on-dark logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="11" class="end"/>
+            <path d="M6.6 12.4 l3.4 3.6 l7-8.6" class="chk"/>
+          </svg>
+        </span>
       </div>
       <button class="sidebar-toggle" id="btnCollapse" title="Menü ein-/ausklappen" aria-label="Menü ein-/ausklappen">«</button>
       <nav class="nav" id="mainNav">
@@ -33,6 +42,7 @@
         <a href="#/einstellungen" data-nav="einstellungen" title="Einstellungen"><span class="nav-ico">⚙</span> <span class="nav-txt">Einstellungen</span></a>
       </nav>
       <div class="sidebar-foot">
+        <div class="user-chip" id="userChip" hidden></div>
         <button class="btn-ghost-sm" id="btnExport">Export</button>
         <button class="btn-ghost-sm" id="btnReset">Demo&nbsp;laden</button>
         <div class="ver">Prototyp · v0.1</div>

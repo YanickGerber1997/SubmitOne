@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v22';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v23';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -847,7 +847,7 @@ function viewProjektDetail(id) {
       <div style="display:flex;gap:10px;align-items:center">
         ${phaseBadge(dominantPhase(p))}
         <button class="btn secondary" data-act="edit-projekt" data-pid="${p.id}" title="Projekt &amp; Gebäudedaten bearbeiten">✎ Bearbeiten</button>
-        <button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Vergabe</button>
+        <button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>
       </div>
     </div>
 
@@ -906,10 +906,11 @@ function viewKosten(id) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Baukostenübersicht nach BKP · Stand ${fmtDate(todayIso())}</div></div>
+      <button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>
     </div>
     ${projektTabs(p, 'kosten')}
   `;
-  if (!vs.length) { render(head + emptyState('◫', 'Noch keine Vergaben/Gewerke. Lege im Tab „Übersicht" Gewerke mit Kostenschätzung an.')); return; }
+  if (!vs.length) { render(head + emptyState('◫', 'Noch keine Arbeitsbeschriebe / Kostenschätzungen. Mit „+ Arbeitsbeschrieb" erfassen.') + `<div style="text-align:center;margin-top:-10px"><button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb erfassen</button></div>`); return; }
 
   const groups = {};
   vs.forEach(v => { const g = String(v.bkp || '0').trim()[0] || '0'; (groups[g] = groups[g] || []).push(v); });
@@ -2560,7 +2561,7 @@ function viewVergabeDetail(pid, vid) {
     <div class="detail-head">
       <div>
         <h1 style="margin:0;font-size:22px"><span class="bkp-code" style="font-size:16px">${esc(v.bkp)}</span> ${esc(v.gewerk)}</h1>
-        <div class="sub" style="margin-top:5px">${v.firma ? 'Unternehmer: <strong>' + esc(v.firma) + '</strong>' : 'Noch kein Unternehmer'}</div>
+        <div class="sub" style="margin-top:5px">${v.firma ? 'Unternehmer: <strong>' + esc(v.firma) + '</strong>' : 'Noch kein Unternehmer'}${grobLabel(v) ? ' · Ausführung ' + esc(grobLabel(v)) : ''}</div>
       </div>
       <div style="display:flex;gap:10px;align-items:center">
         ${statusPill(v)}
@@ -3441,24 +3442,62 @@ function saveProjektEdit(pid) {
   save(); closeModal(); router(); toast('Projekt gespeichert');
 }
 
+// Grobe Saison-Termine ("Frühling 26 – Herbst 26") ↔ konkrete Daten (für Gantt/Kalender)
+const SAISONEN = [['fruehling', 'Frühling'], ['sommer', 'Sommer'], ['herbst', 'Herbst'], ['winter', 'Winter']];
+const SAISON_LABEL = Object.fromEntries(SAISONEN);
+function saisonToIso(saison, jahr, ende) {
+  const y = Number(jahr); if (!saison || !y) return '';
+  if (saison === 'winter') return ende ? isoOf(new Date(y + 1, 2, 0)) : isoOf(new Date(y, 11, 1));
+  const sm = { fruehling: 2, sommer: 5, herbst: 8 }[saison];
+  const em = { fruehling: 4, sommer: 7, herbst: 10 }[saison];
+  if (sm == null) return '';
+  return ende ? isoOf(new Date(y, em + 1, 0)) : isoOf(new Date(y, sm, 1));
+}
+function grobLabel(v) {
+  const f = g => g && g.saison ? (SAISON_LABEL[g.saison] || g.saison) + ' ' + g.jahr : '';
+  const a = f(v.grobVon), b = f(v.grobBis);
+  if (a || b) return (a || '?') + ' – ' + (b || '?');
+  return '';
+}
+
 function actNewVergabe(pid) {
-  openModal('Neue Vergabe', `
+  const yr = today().getFullYear();
+  const saisonSel = id => `<div style="display:flex;gap:6px">
+    <select class="select" id="${id}_s"><option value="">–</option>${SAISONEN.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+    <select class="select" id="${id}_j">${[0, 1, 2, 3].map(o => `<option value="${yr + o}">${yr + o}</option>`).join('')}</select></div>`;
+  openModal('Arbeitsbeschrieb / Kostenschätzung', `
     <div class="form-row">
       <label class="field">BKP-Nr. <input class="input" id="f_bkp" list="dl_fbkp" placeholder="tippen: 211 oder Gewerk…">${bkpDatalist('dl_fbkp')}</label>
-      <label class="field">Gewerk <input class="input" id="f_gewerk" placeholder="Baumeisterarbeiten"></label>
+      <label class="field">Gewerk / Arbeitsbeschrieb <input class="input" id="f_gewerk" placeholder="z.B. Baumeisterarbeiten"></label>
     </div>
+    <label class="field">Kostenschätzung (CHF) <input class="input" type="number" id="f_schaetzung" placeholder="250000"></label>
+    <label class="field" style="margin-bottom:2px">Ausführung (grob)</label>
     <div class="form-row">
-      <label class="field">Kostenschätzung (CHF) <input class="input" type="number" id="f_schaetzung" placeholder="250000"></label>
-      <label class="field">Eingabefrist <input class="input" type="date" id="f_frist"></label>
+      <div><div class="muted" style="font-size:11px;margin-bottom:3px">von</div>${saisonSel('f_grobvon')}</div>
+      <div><div class="muted" style="font-size:11px;margin-bottom:3px">bis</div>${saisonSel('f_grobbis')}</div>
     </div>
-    <label class="field">Status
-      <select class="select" id="f_status">${VERGABE_STATUS.map(s => `<option value="${s.key}">${esc(s.label)}</option>`).join('')}</select>
-    </label>
-    <div class="form-row">
-      <label class="field">Ausführung von (grob) <input class="input" type="date" id="f_baustart"></label>
-      <label class="field">Ausführung bis (grob) <input class="input" type="date" id="f_bauende"></label>
-    </div>
-  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-vergabe" data-pid="${pid}">Vergabe anlegen</button>`);
+    <details style="margin-top:12px">
+      <summary style="cursor:pointer;font-weight:600;font-size:13px;padding:4px 0">＋ Details &amp; Submittenten (optional, Power-User)</summary>
+      <div style="margin-top:8px">
+        <div class="form-row">
+          <label class="field">Status <select class="select" id="f_status">${VERGABE_STATUS.map(s => `<option value="${s.key}">${esc(s.label)}</option>`).join('')}</select></label>
+          <label class="field">Eingabefrist <input class="input" type="date" id="f_frist"></label>
+        </div>
+        <div class="form-row">
+          <label class="field">Ausführung von (exakt) <input class="input" type="date" id="f_baustart"></label>
+          <label class="field">bis (exakt) <input class="input" type="date" id="f_bauende"></label>
+        </div>
+        <p class="muted" style="font-size:11.5px;margin:0 0 10px">Exakte Daten überschreiben die grobe Saison-Angabe.</p>
+        <div class="form-row">
+          <label class="field">Direktvergabe an (fixer Unternehmer) <input class="input" id="f_fix" placeholder="leer = Ausschreibung"></label>
+          <label class="field">Vergabesumme (CHF) <input class="input" type="number" id="f_fixbetrag"></label>
+        </div>
+        <label class="field">Submittenten einladen <span class="muted" style="font-weight:400;font-size:11px">(eine Firma pro Zeile)</span>
+          <textarea class="input" id="f_subs" rows="3" placeholder="Hugentobler Bau AG&#10;Steiner & Co.&#10;BauKern AG"></textarea>
+        </label>
+      </div>
+    </details>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-vergabe" data-pid="${pid}">Erfassen</button>`);
   const bkpEl = $('#f_bkp');
   if (bkpEl) bkpEl.addEventListener('change', () => {
     const { label } = parseBkp(bkpEl.value);
@@ -3470,25 +3509,35 @@ function actNewVergabe(pid) {
 function saveVergabe(pid) {
   const p = findProjekt(pid);
   if (!p) return;
-  const bkpParsed = parseBkp($('#f_bkp').value);
+  const val = id => { const el = $('#' + id); return el ? el.value : ''; };
+  const bkpParsed = parseBkp(val('f_bkp'));
   const gewerk = $('#f_gewerk').value.trim() || bkpParsed.label;
-  if (!gewerk) { toast('Bitte ein Gewerk eingeben', 'info'); return; }
+  if (!gewerk) { toast('Bitte ein Gewerk / einen Arbeitsbeschrieb eingeben', 'info'); return; }
+
+  // Grobe Saison → Daten (exakte Daten haben Vorrang)
+  const gvS = val('f_grobvon_s'), gvJ = val('f_grobvon_j'), gbS = val('f_grobbis_s'), gbJ = val('f_grobbis_j');
+  const grobVon = gvS ? { saison: gvS, jahr: Number(gvJ) } : null;
+  const grobBis = gbS ? { saison: gbS, jahr: Number(gbJ) } : null;
+  const bauStart = val('f_baustart') || (grobVon ? saisonToIso(gvS, gvJ, false) : '');
+  const bauEnde = val('f_bauende') || (grobBis ? saisonToIso(gbS, gbJ, true) : '');
+
+  let status = val('f_status') || 'ausschreibung';
+  const fix = val('f_fix').trim();
+  const subs = val('f_subs').split('\n').map(s => s.trim()).filter(Boolean);
+  const mailOf = firma => (state.kontakte || []).find(k => k.firma === firma) || {};
+  const eingeladene = subs.map(firma => ({ id: uid('e'), firma, email: mailOf(firma).email || '', betrag: null, status: 'eingeladen', datumMail: '' }));
+  let firma = '', betrag = 0;
+  if (fix) { firma = fix; betrag = Number(val('f_fixbetrag')) || 0; if (status === 'ausschreibung') status = 'vergeben'; }
+
   const v = {
-    id: uid('v'),
-    bkp: bkpParsed.code || '000',
-    gewerk,
-    schaetzung: Number($('#f_schaetzung').value) || 0,
-    frist: $('#f_frist').value || '',
-    status: $('#f_status').value,
-    firma: '',
-    betrag: 0,
-    bauStart: $('#f_baustart').value || '',
-    bauEnde: $('#f_bauende').value || '',
-    eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [],
+    id: uid('v'), bkp: bkpParsed.code || '000', gewerk,
+    schaetzung: Number($('#f_schaetzung').value) || 0, frist: val('f_frist') || '',
+    status, firma, betrag, bauStart, bauEnde, grobVon, grobBis,
+    eingeladene, nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [],
   };
   p.vergaben.push(v);
-  save(); closeModal(); router();
-  toast('Vergabe angelegt');
+  save(); closeModal(); go('#/projekt/' + p.id + '/vergabe/' + v.id);
+  toast('Arbeitsbeschrieb erfasst');
 }
 
 function advanceVergabe(pid, vid) {

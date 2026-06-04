@@ -2327,17 +2327,54 @@ const FIRMEN_DB = [
   { name: 'Gartenbau Grün AG',      uid: 'CHE-124.777.888', rechtsform: 'AG',       plz: '6280', ort: 'Hochdorf',  kanton: 'LU', branche: 'Gartenbau' },
 ];
 
+// UID formatieren: CHE107930188 -> CHE-107.930.188
+function fmtUid(u) {
+  const m = (u || '').match(/CHE(\d{9})/);
+  return m ? `CHE-${m[1].slice(0, 3)}.${m[1].slice(3, 6)}.${m[1].slice(6, 9)}` : (u || '');
+}
+
+// Firmensuche live aus dem Schweizer Handelsregister (LINDAS/Zefix des Bundes, ohne Login)
 async function firmenSuche(q) {
   const s = (q || '').trim();
   if (s.length < 2) return [];
-  // Echtes Handelsregister über die Supabase-Edge-Function (Zefix-Proxy)
-  if (cloudEnabled && supa) {
-    try {
-      const { data, error } = await supa.functions.invoke('firmensuche', { body: { q: s } });
-      if (!error && Array.isArray(data)) return data;
-    } catch (e) { /* Fallback unten */ }
-  }
-  // Fallback: lokale Demo-Liste (wenn Proxy/Zugang noch nicht eingerichtet)
+  try {
+    const term = s.toLowerCase().replace(/[\\"]/g, ' ');   // für SPARQL-String entschärfen
+    const query =
+`PREFIX admin: <https://schema.ld.admin.ch/>
+PREFIX schema: <http://schema.org/>
+SELECT ?name ?type ?ort ?plz ?uid WHERE {
+  { SELECT ?uri ?name WHERE {
+      ?uri a admin:ZefixOrganisation ; schema:name ?name .
+      FILTER(CONTAINS(LCASE(STR(?name)), "${term}"))
+  } LIMIT 8 }
+  OPTIONAL { ?uri schema:additionalType ?t . ?t schema:name ?type . FILTER(langMatches(lang(?type),"de")) }
+  OPTIONAL { ?uri schema:address ?a . OPTIONAL { ?a schema:addressLocality ?ort } OPTIONAL { ?a schema:postalCode ?plz } }
+  OPTIONAL { ?uri schema:identifier ?id . FILTER(CONTAINS(STR(?id),"/UID/")) BIND(REPLACE(STR(?id),"^.*/UID/","") AS ?uid) }
+}`;
+    const r = await fetch('https://lindas.admin.ch/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/sparql-results+json' },
+      body: 'query=' + encodeURIComponent(query),
+    });
+    if (r.ok) {
+      const j = await r.json();
+      const seen = new Set(), out = [];
+      for (const b of (j.results?.bindings || [])) {
+        const row = {
+          name: b.name?.value || '',
+          uid: fmtUid(b.uid?.value || ''),
+          rechtsform: b.type?.value || '',
+          plz: b.plz?.value || '',
+          ort: b.ort?.value || '',
+          kanton: '', branche: '',
+        };
+        const key = row.name + row.uid;
+        if (row.name && !seen.has(key)) { seen.add(key); out.push(row); }
+      }
+      if (out.length) return out;
+    }
+  } catch (e) { /* Fallback unten */ }
+  // Fallback (offline / Dienst nicht erreichbar): lokale Demo-Liste
   const ls = s.toLowerCase();
   return FIRMEN_DB
     .filter(f => f.name.toLowerCase().includes(ls) || f.ort.toLowerCase().includes(ls) || f.branche.toLowerCase().includes(ls))

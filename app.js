@@ -1441,7 +1441,9 @@ function computeHonorar(d) {
 
 function viewHonorar() {
   const d = loadHonorar();
-  const fld = (id, label, val, attrs = '') => `<label class="field">${label} <input class="input hon-in" id="${id}" value="${esc(String(val))}" inputmode="decimal" ${attrs}></label>`;
+  const fld = (id, label, val, hint = '') => `<label class="field">${label}
+    <input class="input hon-in" id="${id}" value="${esc(String(val))}" inputmode="decimal">
+    ${hint ? `<span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px;line-height:1.4">${hint}</span>` : ''}</label>`;
   const phaseRows = HONORAR_PHASEN.map(ph => `
     <tr>
       <td>${esc(ph.label)}</td>
@@ -1456,15 +1458,43 @@ function viewHonorar() {
       <button class="btn" data-act="pdf-honorar">⬇ PDF</button>
     </div>
 
+    <div class="card card-pad" style="max-width:780px;margin-bottom:16px;background:var(--brand-soft);border-color:transparent">
+      <h2 style="margin-top:0;font-size:15px">So funktioniert's</h2>
+      <ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">
+        <li><strong>Baukosten B</strong> eingeben – die voraussichtlichen Kosten, auf die sich das Honorar bezieht (Bauwerkskosten, exkl. MwSt).</li>
+        <li><strong>Z1 / Z2</strong> des betreffenden Jahres eintragen (SIA-/KBOB-Tabelle). Daraus entsteht der Grundfaktor <em>p</em>.</li>
+        <li>Die Faktoren <strong>n, r, i, s</strong> im Normalfall auf <strong>1.0</strong> lassen. <strong>Stundenansatz h</strong> deines Büros setzen.</li>
+        <li><strong>Phasen-Anteile</strong> prüfen (Standard = volle 100 %). Honorar + Rechenweg erscheinen unten automatisch.</li>
+      </ol>
+    </div>
+
     <div class="card card-pad" style="max-width:780px;margin-bottom:16px">
       <h2 style="margin-top:0;font-size:15px">Grunddaten</h2>
-      <label class="field">Projekt / Bezeichnung <input class="input hon-in" id="h_projekt" value="${esc(d.projekt)}" placeholder="z.B. Neubau MFH Bärenmätteli"></label>
-      <label class="field">Aufwandbestimmende Baukosten B (CHF) <input class="input hon-in" id="h_B" value="${esc(String(d.B))}" inputmode="decimal" placeholder="z.B. 3350000"></label>
-      <div class="form-row">${fld('h_Z1', 'SIA-Koeffizient Z1', d.Z1)}${fld('h_Z2', 'SIA-Koeffizient Z2', d.Z2)}</div>
-      <p class="muted" style="font-size:11.5px;margin:-4px 0 10px">Z1/Z2 = aktuelle SIA-/KBOB-Werte des betreffenden Jahres eintragen. Grundfaktor <strong>p = Z1 + Z2 / ∛B</strong>.</p>
-      <div class="form-row">${fld('h_n', 'Schwierigkeitsgrad n', d.n)}${fld('h_r', 'Anpassungsfaktor r', d.r)}</div>
-      <div class="form-row">${fld('h_i', 'Teamfaktor i', d.i)}${fld('h_s', 'Sonderleistungen s', d.s)}</div>
-      <div class="form-row">${fld('h_h', 'Stundenansatz h (CHF/h)', d.h)}${fld('h_mwst', 'MwSt %', d.mwst)}</div>
+      <label class="field">Projekt / Bezeichnung
+        <input class="input hon-in" id="h_projekt" value="${esc(d.projekt)}" placeholder="z.B. Neubau MFH Bärenmätteli">
+      </label>
+      <label class="field">Aufwandbestimmende Baukosten B (CHF)
+        <input class="input hon-in" id="h_B" value="${esc(String(d.B))}" inputmode="decimal" placeholder="z.B. 3350000">
+        <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px;line-height:1.4">Voraussichtliche Bauwerkskosten ohne MwSt, auf die das Honorar gerechnet wird.</span>
+      </label>
+      <div class="form-row">
+        ${fld('h_Z1', 'SIA-Koeffizient Z1', d.Z1, 'Jährlicher SIA-/KBOB-Wert (Konstante).')}
+        ${fld('h_Z2', 'SIA-Koeffizient Z2', d.Z2, 'Jährlicher SIA-/KBOB-Wert (durch ∛B geteilt).')}
+      </div>
+      <p class="muted" style="font-size:11.5px;margin:-2px 0 12px">→ Grundfaktor <strong>p = Z1 + Z2 / ∛B</strong>. Aktuelle Z-Werte des Vertragsjahres aus der SIA-/KBOB-Tabelle eintragen.</p>
+      <div class="form-row">
+        ${fld('h_n', 'Schwierigkeitsgrad n', d.n, 'Baukategorie I–VI: einfach→anspruchsvoll. Normale Wohn-/Geschäftsbauten (Kat. IV) ≈ 1.00.')}
+        ${fld('h_r', 'Anpassungsfaktor r', d.r, 'Besondere Umstände. Keine Abweichung = 1.00.')}
+      </div>
+      <div class="form-row">
+        ${fld('h_i', 'Teamfaktor i', d.i, 'Büro-/Teamgrösse. Standard = 1.00.')}
+        ${fld('h_s', 'Sonderleistungen s', d.s, 'Zuschlag für Sonderleistungen. Keine = 1.00.')}
+      </div>
+      <div class="form-row">
+        ${fld('h_h', 'Stundenansatz h (CHF/h)', d.h, 'Mittlerer Ansatz deines Büros, z.B. 130–160 CHF/h.')}
+        ${fld('h_mwst', 'MwSt %', d.mwst, 'Aktueller Satz – CH zurzeit 8.1 %.')}
+      </div>
+      <p class="muted" style="font-size:11.5px;margin:6px 0 0">💡 Tipp: <strong>n, r, i und s</strong> nur ändern, wenn du die SIA-Vorgaben dafür kennst – sonst auf 1.0 lassen.</p>
     </div>
 
     <div class="card card-pad" style="max-width:780px;margin-bottom:16px">
@@ -1502,17 +1532,31 @@ function honorarRenderResult() {
   });
   const out = $('#hon_out'); if (!out) return;
   const qWarn = Math.abs(c.q - 100) > 0.001 ? ` <span class="muted" style="font-size:12px">(Σ ${c.q} %)</span>` : '';
+  const fmt = (x, dec = 0) => (x || 0).toLocaleString('de-CH', { maximumFractionDigits: dec });
+  const B = n2(d.B), cb = B > 0 ? Math.cbrt(B) : 0;
+  const rechenweg = B > 0 ? `
+    <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+      <h3 style="font-size:13.5px;margin:0 0 8px">Rechenweg – mit deinen Zahlen</h3>
+      <div style="font-size:12.5px;line-height:1.95;font-variant-numeric:tabular-nums">
+        <div><strong>1.</strong> Grundfaktor &nbsp;p = Z1 + Z2 ∕ ∛B = ${esc(String(d.Z1))} + ${esc(String(d.Z2))} ∕ ${fmt(cb)} = <strong>${c.p.toFixed(4)}</strong></div>
+        <div><strong>2.</strong> Zeitaufwand = B · p∕100 · n · q∕100 · r · i<br>
+          &nbsp;&nbsp;&nbsp;= ${fmt(B)} · ${c.p.toFixed(4)}∕100 · ${esc(String(d.n))} · ${c.q}∕100 · ${esc(String(d.r))} · ${esc(String(d.i))} = <strong>${fmt(c.Tp)} h</strong></div>
+        <div><strong>3.</strong> Honorar = Zeitaufwand · h · s = ${fmt(c.Tp)} · ${esc(String(d.h))} · ${esc(String(d.s))} = <strong>${chf(c.H)}</strong></div>
+        <div><strong>4.</strong> inkl. MwSt ${c.mwst} % = <strong>${chf(c.Hmwst)}</strong></div>
+      </div>
+    </div>` : '<p class="muted" style="margin:8px 0 0">Baukosten B eingeben, dann erscheint hier der Rechenweg.</p>';
   out.innerHTML = `
     <h2 style="margin-top:0;font-size:15px">Ergebnis</h2>
     <div class="kpi-row" style="grid-template-columns:repeat(4,1fr)">
       <div class="kpi"><div class="k-label">Grundfaktor p</div><div class="k-value" style="font-size:20px">${c.p ? c.p.toFixed(4) : '–'}</div></div>
       <div class="kpi"><div class="k-label">Leistungsanteil q</div><div class="k-value" style="font-size:20px">${c.q} %${qWarn}</div></div>
-      <div class="kpi"><div class="k-label">Zeitaufwand</div><div class="k-value" style="font-size:20px">${c.Tp.toLocaleString('de-CH', { maximumFractionDigits: 0 })} h</div></div>
+      <div class="kpi"><div class="k-label">Zeitaufwand</div><div class="k-value" style="font-size:20px">${fmt(c.Tp)} h</div></div>
       <div class="kpi"><div class="k-label">Honorar exkl. MwSt</div><div class="k-value" style="font-size:20px">${chf(c.H)}</div></div>
     </div>
     <div style="margin-top:12px;display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:10px">
       <span class="muted">inkl. MwSt ${c.mwst} %</span><strong style="font-size:17px">${chf(c.Hmwst)}</strong>
-    </div>`;
+    </div>
+    ${rechenweg}`;
 }
 
 function pdfHonorar() {

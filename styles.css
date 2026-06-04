@@ -156,6 +156,30 @@ button { font-family: inherit; cursor: pointer; }
 
 .content { padding: 26px 32px 60px; max-width: 1400px; width: 100%; }
 
+/* ===== Kalender (Outlook-ähnlich) ===== */
+.cal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.cal-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-soft); }
+.cal-legend i, .cal-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: middle; flex: none; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.cal-dow { background: var(--surface-2); text-align: center; font-size: 11px; font-weight: 700; color: var(--text-soft); padding: 7px 0; letter-spacing: .5px; }
+.cal-day { background: var(--surface); min-height: 104px; padding: 5px 6px 6px; cursor: pointer; overflow: hidden; }
+.cal-day:hover { background: var(--surface-2); }
+.cal-day.other { background: #fafbfd; }
+.cal-day.other .d { color: var(--text-faint); }
+.cal-day.today { box-shadow: inset 0 0 0 2px var(--brand); }
+.cal-day .d { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.cal-day.today .d { color: var(--brand); }
+.cal-ev { font-size: 10.5px; line-height: 1.4; padding: 1px 5px; border-radius: 4px; margin-top: 2px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.cal-more { font-size: 10px; color: var(--text-soft); margin-top: 2px; }
+.cal-ev.blue, .cal-dot.blue { background: var(--s-blue); }
+.cal-ev.red, .cal-dot.red { background: var(--s-red); }
+.cal-ev.green, .cal-dot.green { background: var(--s-green); }
+.cal-ev.teal, .cal-dot.teal { background: var(--s-teal); }
+.cal-ev.amber, .cal-dot.amber { background: var(--s-amber); }
+.cal-ev.grey, .cal-dot.grey { background: var(--s-grey); }
+.cal-ev.purple, .cal-dot.purple { background: var(--s-purple); }
+@media (max-width: 720px) { .cal-day { min-height: 70px; } .cal-ev { font-size: 9px; padding: 1px 3px; } }
+
 /* Eingeklappte Sidebar: nur Symbole */
 #app.collapsed { --sidebar-w: 68px; }
 #app.collapsed .brand { padding: 6px 0 18px; justify-content: center; }

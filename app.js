@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v20';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v21';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -315,6 +315,7 @@ function migrate() {
     if (!p.bezugsfirmen) { p.bezugsfirmen = []; changed = true; }
     if (!p.geschosseListe) { p.geschosseListe = []; changed = true; }
     if (!p.finanz) { p.finanz = { land: 0, honorare: 0, finanzierung: 0 }; changed = true; }
+    if (!p.termine) { p.termine = []; changed = true; }
     for (const e of (p.entscheidungen || [])) {
       if (e.status === 'entschieden') { e.status = 'gewaehlt'; changed = true; }
       if (!e.bkp) {
@@ -582,6 +583,7 @@ function projektTabs(p, active) {
   const pendBadge = openP ? ` <span class="tab-badge">${openP}</span>` : '';
   const items = [
     { key: 'overview', href: `#/projekt/${p.id}`, label: 'Übersicht' },
+    { key: 'kalender', href: `#/projekt/${p.id}/kalender`, label: 'Kalender' },
     { key: 'kosten', href: `#/projekt/${p.id}/kosten`, label: 'Kosten' },
     { key: 'termine', href: `#/projekt/${p.id}/termine`, label: 'Termine / Gantt' },
     { key: 'protokolle', href: `#/projekt/${p.id}/protokolle`, label: 'Protokolle' },
@@ -658,6 +660,7 @@ function router() {
       setActiveNav('projekte');
       if (sub === 'vergabe' && b) return viewVergabeDetail(a, b);
       if (sub === 'termine') return viewTermine(a);
+      if (sub === 'kalender') return viewKalender(a);
       if (sub === 'kosten') return viewKosten(a);
       if (sub === 'protokolle') return viewProtokolle(a);
       if (sub === 'pendenzen') return viewPendenzen(a);
@@ -2945,6 +2948,131 @@ function onLogoPick(input) {
    --------------------------------------------------------------- */
 
 /* ---------------------------------------------------------------
+   Kalender (Outlook-ähnlich): manuelle Termine + automatische Ereignisse
+   --------------------------------------------------------------- */
+
+const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+const DOW = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+const TERMIN_KATEGORIEN = ['Besprechung', 'Bauherrensitzung', 'Bausitzung', 'Baustellenbegehung', 'Abgabe / Frist', 'Bemusterung', 'Sonstiges'];
+let calY = null, calM = null;
+
+// Alle Termine eines Projekts (manuell + abgeleitet)
+function sammleTermine(p) {
+  const ev = [];
+  (p.termine || []).forEach(t => ev.push({ datum: t.datum, zeit: t.zeit || '', titel: t.titel || 'Termin', color: 'blue', manual: true, id: t.id }));
+  (p.vergaben || []).forEach(v => {
+    if (v.frist) ev.push({ datum: v.frist, titel: `Eingabefrist ${v.bkp || ''} ${v.gewerk || ''}`.trim(), color: 'red' });
+    if (v.bauStart) ev.push({ datum: v.bauStart, titel: `▶ ${v.gewerk || ''} (Start)`, color: 'teal' });
+    if (v.bauEnde) ev.push({ datum: v.bauEnde, titel: `■ ${v.gewerk || ''} (Ende)`, color: 'teal' });
+    (v.vorgaenge || []).forEach(o => { if (o.start) ev.push({ datum: o.start, titel: `▶ ${o.titel || ''}`, color: 'teal' }); });
+  });
+  (p.protokolle || []).forEach(pr => {
+    if (pr.datum) ev.push({ datum: pr.datum, titel: protokollTitel(pr), color: 'green' });
+    if (pr.naechste) ev.push({ datum: pr.naechste, titel: 'Nächste Sitzung', color: 'green' });
+  });
+  offenePendenzen(p).forEach(x => { if (x.it.termin) ev.push({ datum: x.it.termin, titel: 'Pendenz: ' + (x.it.text || '').slice(0, 40), color: 'amber' }); });
+  if (p.start) ev.push({ datum: p.start, titel: 'Projektstart', color: 'grey' });
+  if (p.ende) ev.push({ datum: p.ende, titel: 'Projektende', color: 'grey' });
+  return ev.filter(e => e.datum);
+}
+
+function viewKalender(pid) {
+  const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  const t = today();
+  if (calY == null) { calY = t.getFullYear(); calM = t.getMonth(); }
+  const events = sammleTermine(p);
+  const byDay = {};
+  events.forEach(e => { (byDay[e.datum] = byDay[e.datum] || []).push(e); });
+  const todayI = todayIso();
+
+  const first = new Date(calY, calM, 1);
+  const lead = (first.getDay() + 6) % 7;   // Montag = 0
+  const start = new Date(calY, calM, 1 - lead);
+  let cells = '';
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    const iso = isoOf(d);
+    const other = d.getMonth() !== calM;
+    const dayEv = byDay[iso] || [];
+    const chips = dayEv.slice(0, 4).map(e => `<div class="cal-ev ${e.color}"${e.manual ? ` data-act="kal-edit" data-pid="${p.id}" data-tid="${e.id}"` : ''} title="${esc((e.zeit ? e.zeit + ' ' : '') + e.titel)}">${e.zeit ? esc(e.zeit) + ' ' : ''}${esc(e.titel)}</div>`).join('');
+    const more = dayEv.length > 4 ? `<div class="cal-more">+${dayEv.length - 4} mehr</div>` : '';
+    cells += `<div class="cal-day${other ? ' other' : ''}${iso === todayI ? ' today' : ''}" data-act="kal-add" data-pid="${p.id}" data-kind="${iso}"><div class="d">${d.getDate()}</div>${chips}${more}</div>`;
+  }
+
+  const upcoming = events.filter(e => e.datum >= todayI).sort((a, b) => a.datum.localeCompare(b.datum) || (a.zeit || '').localeCompare(b.zeit || '')).slice(0, 12);
+  const agenda = upcoming.length ? upcoming.map(e => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+    <i class="cal-dot ${e.color}"></i>
+    <span class="muted" style="min-width:118px;font-size:12.5px">${fmtDate(e.datum)}${e.zeit ? ' · ' + esc(e.zeit) : ''}</span>
+    <span style="font-size:13px">${esc(e.titel)}</span></div>`).join('') : '<p class="muted" style="margin:0">Keine kommenden Termine.</p>';
+
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Kalender · alle Termine, Fristen &amp; Bauprogramm</div></div>
+      <button class="btn" data-act="kal-add" data-pid="${p.id}" data-kind="${todayI}">+ Termin</button></div>
+    ${projektTabs(p, 'kalender')}
+
+    <div class="cal-head">
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn sm secondary" data-act="kal-prev" data-pid="${p.id}" title="Vormonat">‹</button>
+        <button class="btn sm secondary" data-act="kal-today" data-pid="${p.id}">Heute</button>
+        <button class="btn sm secondary" data-act="kal-next" data-pid="${p.id}" title="Folgemonat">›</button>
+        <h2 style="margin:0 0 0 8px;font-size:17px">${MONATE[calM]} ${calY}</h2>
+      </div>
+      <div class="cal-legend">
+        <span><i class="cal-dot blue"></i>Termin</span><span><i class="cal-dot red"></i>Frist</span><span><i class="cal-dot teal"></i>Bauprogramm</span><span><i class="cal-dot green"></i>Sitzung</span><span><i class="cal-dot amber"></i>Pendenz</span>
+      </div>
+    </div>
+
+    <div class="cal">
+      ${DOW.map(d => `<div class="cal-dow">${d}</div>`).join('')}
+      ${cells}
+    </div>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Tag anklicken = Termin erfassen · farbige Termine = manuell (anklicken zum Bearbeiten).</p>
+
+    <div class="section-head" style="margin-top:24px"><h2>Agenda</h2><span class="hint">nächste Termine</span></div>
+    <div class="card card-pad">${agenda}</div>
+  `);
+}
+
+function actKalTermin(pid, tid, datum) {
+  const p = findProjekt(pid); const t = tid ? (p.termine || []).find(x => x.id === tid) : null;
+  openModal(t ? 'Termin bearbeiten' : 'Neuer Termin', `
+    <label class="field">Titel <input class="input" id="kt_titel" value="${t ? esc(t.titel || '') : ''}" placeholder="z.B. Bauherrensitzung"></label>
+    <div class="form-row">
+      <label class="field">Datum <input class="input" type="date" id="kt_datum" value="${t ? esc(t.datum || '') : esc(datum || todayIso())}"></label>
+      <label class="field">Kategorie <input class="input" id="kt_kat" list="dl_ktkat" value="${t ? esc(t.kategorie || '') : ''}" placeholder="Besprechung">${dl('dl_ktkat', TERMIN_KATEGORIEN)}</label>
+    </div>
+    <div class="form-row">
+      <label class="field">Von <input class="input" type="time" id="kt_zeit" value="${t ? esc(t.zeit || '') : ''}"></label>
+      <label class="field">Bis <input class="input" type="time" id="kt_ende" value="${t ? esc(t.zeitEnde || '') : ''}"></label>
+    </div>
+    <label class="field">Ort <input class="input" id="kt_ort" value="${t ? esc(t.ort || '') : ''}" placeholder="z.B. Baustelle / Büro"></label>
+    <label class="field">Notiz <textarea class="input" id="kt_notiz" rows="2">${t ? esc(t.notiz || '') : ''}</textarea></label>
+  `, `${t ? `<button class="btn danger" data-act="kal-del" data-pid="${pid}" data-tid="${tid}">Löschen</button>` : '<button class="btn ghost" data-close="1">Abbrechen</button>'}<button class="btn" data-act="kal-save" data-pid="${pid}"${t ? ` data-tid="${tid}"` : ''}>${t ? 'Speichern' : 'Hinzufügen'}</button>`);
+}
+function saveKalTermin(pid, tid) {
+  const p = findProjekt(pid);
+  const titel = $('#kt_titel').value.trim();
+  const datum = $('#kt_datum').value;
+  if (!titel) { toast('Bitte einen Titel eingeben', 'info'); return; }
+  if (!datum) { toast('Bitte ein Datum wählen', 'info'); return; }
+  const data = { titel, datum, kategorie: $('#kt_kat').value.trim(), zeit: $('#kt_zeit').value, zeitEnde: $('#kt_ende').value, ort: $('#kt_ort').value.trim(), notiz: $('#kt_notiz').value.trim() };
+  p.termine = p.termine || [];
+  const t = tid ? p.termine.find(x => x.id === tid) : null;
+  if (t) Object.assign(t, data); else p.termine.push({ id: uid('kt'), ...data });
+  save(); closeModal(); router(); toast('Termin gespeichert');
+}
+function removeKalTermin(pid, tid) {
+  const p = findProjekt(pid); p.termine = (p.termine || []).filter(x => x.id !== tid);
+  save(); closeModal(); router();
+}
+function kalNav(pid, delta) {
+  if (delta === 0) { const t = today(); calY = t.getFullYear(); calM = t.getMonth(); }
+  else { calM += delta; if (calM < 0) { calM = 11; calY--; } else if (calM > 11) { calM = 0; calY++; } }
+  viewKalender(pid);
+}
+
+/* ---------------------------------------------------------------
    Finanzierung: Gebäudestruktur + Rentabilität (Miete & Verkauf)
    --------------------------------------------------------------- */
 
@@ -4202,6 +4330,13 @@ document.addEventListener('click', e => {
     case 'save-projekt': saveProjekt(); break;
     case 'edit-projekt': actEditProjekt(pid); break;
     case 'save-projekt-edit': saveProjektEdit(pid); break;
+    case 'kal-add':      actKalTermin(pid, null, kind); break;
+    case 'kal-edit':     actKalTermin(pid, tid); break;
+    case 'kal-save':     saveKalTermin(pid, tid); break;
+    case 'kal-del':      removeKalTermin(pid, tid); break;
+    case 'kal-prev':     kalNav(pid, -1); break;
+    case 'kal-next':     kalNav(pid, 1); break;
+    case 'kal-today':    kalNav(pid, 0); break;
     case 'new-geschoss':  actNewGeschoss(pid); break;
     case 'edit-geschoss': actNewGeschoss(pid, gid); break;
     case 'save-geschoss': saveGeschoss(pid, gid); break;

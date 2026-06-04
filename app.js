@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v26';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v27';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -670,6 +670,7 @@ function router() {
       if (sub === 'protokoll' && b) return viewProtokollDetail(a, b);
       return viewProjektDetail(a);
     case 'kalender':      setActiveNav('kalender');      return viewKalenderGlobal();
+    case 'drucken':       setActiveNav('drucken');       return viewDrucken();
     case 'honorar':       setActiveNav('honorar');       return viewHonorar();
     case 'kontakte':      setActiveNav('kontakte');      return viewKontakte();
     case 'dokumente':     setActiveNav('dokumente');     return viewDokumente();
@@ -1380,35 +1381,41 @@ function viewListen(pid) {
 }
 
 // Gemeinsamer Druck-/PDF-Wrapper mit Büro-Briefkopf
-function openPrintDoc(title, subtitleHtml, inner) {
+function openPrintDoc(title, subtitleHtml, inner, opts) {
+  opts = opts || {};
   const b = state.buero || BUERO;
-  const logo = b.logo ? `<img src="${b.logo}" style="max-height:54px;max-width:210px;display:block;margin-bottom:8px">` : '';
+  const logo = b.logo
+    ? `<img src="${b.logo}" style="max-height:54px;max-width:220px;display:block">`
+    : `<div style="font-weight:800;font-size:18px;color:#1b2533;letter-spacing:.3px">${esc(b.firma || 'submit one')}</div>`;
+  const addr = [b.firma, b.strasse, b.plzort, b.tel ? 'Tel. ' + b.tel : '', b.email].filter(Boolean).map(esc).join(' · ');
   const html = `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>${esc(title)}</title>
   <style>
     *{box-sizing:border-box;}
-    body{font-family:'Segoe UI',Arial,sans-serif;color:#1b2533;margin:26px 32px;font-size:12.5px;}
-    .lh{color:#444;font-size:11px;margin-bottom:18px;}
-    .lh .f{font-weight:700;color:#1b2533;font-size:14px;margin-bottom:2px;}
-    h1{font-size:19px;margin:0 0 2px;}
-    .sub{color:#5a6678;font-size:12px;margin-bottom:16px;}
+    html,body{margin:0;padding:0;}
+    body{font-family:'Helvetica Neue','Segoe UI',Arial,sans-serif;color:#222b36;font-size:12px;line-height:1.45;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .page{padding:26px 30px;}
+    .lh{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;border-bottom:2px solid #7c1d2c;padding-bottom:12px;}
+    .lh .meta{text-align:right;font-size:10px;color:#6b7480;max-width:54%;line-height:1.5;}
+    h1{font-size:20px;margin:18px 0 0;letter-spacing:.2px;color:#1b2533;}
+    h1::after{content:"";display:block;width:44px;height:3px;background:#7c1d2c;margin-top:6px;border-radius:2px;}
+    .sub{color:#6b7480;font-size:11.5px;margin:9px 0 16px;}
     table.t{width:100%;border-collapse:collapse;margin-bottom:10px;}
-    table.t th{background:#eef2f8;text-align:left;padding:7px 9px;font-size:11px;border:1px solid #d4dae3;}
-    table.t td{padding:7px 9px;border:1px solid #e4e8ee;vertical-align:top;}
-    table.t td.num{text-align:right;font-variant-numeric:tabular-nums;}
-    .gw{font-weight:700;margin:15px 0 5px;font-size:13px;}
-    .muted{color:#94a0b1;}
-    .conf{display:inline-block;background:#fbe9ea;color:#a01b2b;border:1px solid #e7b3ba;border-radius:5px;padding:2px 8px;font-size:10.5px;font-weight:700;}
-    .ft{margin-top:24px;border-top:1px solid #e4e8ee;padding-top:8px;color:#94a0b1;font-size:10px;}
-    @media print{body{margin:14mm;}}
-  </style></head><body>
-    <div class="lh">${logo}<div class="f">${esc(b.firma || '')}</div>
-      ${esc(b.strasse || '')}${b.strasse ? '<br>' : ''}${esc(b.plzort || '')}${b.plzort ? '<br>' : ''}
-      ${b.tel ? 'Tel. ' + esc(b.tel) + '<br>' : ''}${esc(b.email || '')}</div>
+    table.t th{background:#f3f5f9;text-align:left;padding:7px 9px;font-size:10.5px;font-weight:700;color:#46505e;border-bottom:1.5px solid #c9d2de;}
+    table.t td{padding:6px 9px;border-bottom:1px solid #e7ebf1;vertical-align:top;}
+    table.t td.num,table.t th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+    .gw{font-weight:700;margin:15px 0 5px;font-size:13px;color:#1b2533;}
+    .muted{color:#9aa4b1;}
+    .conf{display:inline-block;background:#fbe9ea;color:#a01b2b;border:1px solid #e7b3ba;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;}
+    .ft{margin-top:22px;border-top:1px solid #e7ebf1;padding-top:8px;color:#9aa4b1;font-size:9.5px;display:flex;justify-content:space-between;}
+    @media print{.page{padding:0;}@page{size:${opts.landscape ? 'A4 landscape' : 'A4'};margin:14mm;}}
+  </style></head><body><div class="page">
+    <div class="lh"><div class="logo">${logo}</div><div class="meta">${addr}</div></div>
     <h1>${esc(title)}</h1>
     <div class="sub">${subtitleHtml}</div>
     ${inner}
-    <div class="ft">Erstellt mit submit one · ${fmtDate(todayIso())}</div>
-    <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
+    <div class="ft"><span>${esc(b.firma || 'submit one')}</span><span>Erstellt mit submit one · ${fmtDate(todayIso())}</span></div>
+  </div>
+  <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>
   </body></html>`;
   const w = window.open('', '_blank');
   if (!w) { toast('Bitte Popups für PDF erlauben', 'info'); return; }
@@ -3198,6 +3205,35 @@ function gcalToggle(pid) {
   viewKalenderGlobal();
 }
 
+/* --- Drucken: alle Dokumente direkt als PDF (Hauptreiter) --- */
+let druckPid = null;
+function viewDrucken() {
+  const projects = state.projekte || [];
+  if (druckPid == null || !findProjekt(druckPid)) druckPid = projects.length ? projects[0].id : '';
+  const p = findProjekt(druckPid);
+  const card = (act, label, desc) => `<button class="btn secondary" data-act="${act}" data-pid="${druckPid}" style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;height:auto;padding:13px 15px;white-space:normal"><span style="font-weight:700;font-size:13.5px">⬇ ${label}</span><span class="muted" style="font-size:11.5px;font-weight:400">${desc}</span></button>`;
+  render(`
+    <div class="page-head"><div><h1>Drucken</h1><div class="sub">Alle Dokumente – ein Klick, direkt als PDF</div></div></div>
+    ${projects.length ? `
+    <label class="field" style="max-width:440px">Projekt
+      <select class="select" id="druck_pid">${projects.map(x => `<option value="${x.id}"${x.id === druckPid ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
+    </label>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px;margin-top:16px">
+      ${card('pdf-kostenschaetzung', 'Kostenschätzung', 'Beschrieb · BKP · Kosten · Gesamttotal')}
+      ${card('pdf-baukosten', 'Baukostenübersicht', 'Volle BKP-Tabelle (KV/WV/Prognose)')}
+      ${card('pdf-gantt', 'Bauprogramm', 'Termin-/Gantt-Raster (Querformat, 1 Seite)')}
+      ${card('pdf-submittenten', 'Submittentenliste', 'Vertraulich · alle Eingeladenen je Gewerk')}
+      ${card('pdf-unternehmer', 'Unternehmerliste', 'Für die Baustelle · vergebene Unternehmer')}
+      ${card('pdf-entscheidungen', 'Entscheidungsliste', 'Bauherren-/Auswahlentscheide')}
+      ${card('pdf-melden', 'Bei wem melden', 'Bemusterung · Unternehmer + Ausstellung')}
+      ${card('pdf-bezugsfirmen', 'Auswahl-Firmen', 'Bemusterungs-/Bezugsfirmen je Kategorie')}
+    </div>
+    <p class="muted" style="font-size:12px;margin-top:14px">Deckblätter (pro Firma) und Protokoll-PDFs erstellst du direkt beim jeweiligen Gewerk bzw. Protokoll.</p>
+    ` : '<p class="muted" style="margin-top:14px">Noch kein Projekt vorhanden.</p>'}
+  `);
+  const sel = $('#druck_pid'); if (sel) sel.addEventListener('change', () => { druckPid = sel.value; viewDrucken(); });
+}
+
 /* ---------------------------------------------------------------
    Finanzierung: Gebäudestruktur + Rentabilität (Miete & Verkauf)
    --------------------------------------------------------------- */
@@ -3691,17 +3727,22 @@ function pdfGantt(pid) {
   while (cur <= end) { months.push({ y: cur.getFullYear(), m: cur.getMonth() }); cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1); }
   const mIdx = iso => { const d = dISO(iso); return months.findIndex(x => x.y === d.getFullYear() && x.m === d.getMonth()); };
   const colorHex = { blue: '#1f6feb', teal: '#0d9488', purple: '#8b5cf6', green: '#16a34a', amber: '#e0930f', red: '#dc2626', grey: '#8a97a8' };
-  const headM = months.map(x => `<th style="text-align:center;font-size:9px;font-weight:600">${MON_KURZ[x.m]}<br>${String(x.y).slice(2)}</th>`).join('');
+  // dynamische Höhe/Schrift, damit alles auf eine Seite passt
+  const n = vs.length;
+  const barH = n > 22 ? 9 : n > 14 ? 12 : 15;
+  const fs = months.length > 18 ? 8 : 9.5;
+  const headM = months.map(x => `<th style="text-align:center;font-size:${fs}px;font-weight:700;padding:5px 1px">${MON_KURZ[x.m]}<br><span style="color:#9aa4b1">${String(x.y).slice(2)}</span></th>`).join('');
   const rows = vs.map(v => {
     const s = mIdx(v.bauStart), e = mIdx(v.bauEnde);
     const col = colorHex[STATUS_BY_KEY[v.status] && STATUS_BY_KEY[v.status].color] || '#1f6feb';
-    const cells = months.map((_, i) => `<td style="padding:0;border:1px solid #eef1f5">${i >= s && i <= e ? `<div style="background:${col};height:13px;border-radius:3px;margin:1px"></div>` : ''}</td>`).join('');
-    return `<tr><td style="text-align:left;white-space:nowrap"><b>${esc(v.bkp || '')}</b> ${esc(v.gewerk || '')}</td><td style="white-space:nowrap;font-size:10px">${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}</td>${cells}</tr>`;
+    const cells = months.map((_, i) => `<td style="padding:0 1px;border-left:1px solid #eef1f5">${i >= s && i <= e ? `<div style="background:${col};height:${barH}px;border-radius:3px"></div>` : ''}</td>`).join('');
+    return `<tr><td style="font-size:${fs + 1.5}px;line-height:1.25"><b>${esc(v.bkp || '')}</b> ${esc(v.gewerk || '')}</td><td style="font-size:${fs}px;white-space:nowrap;color:#6b7480">${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}</td>${cells}</tr>`;
   }).join('');
-  const inner = `<style>@page{size:A4 landscape;margin:12mm}</style>
-    <table class="t" style="font-size:11px"><thead><tr><th style="text-align:left">BKP / Gewerk</th><th>Termin</th>${headM}</tr></thead><tbody>${rows}</tbody></table>
-    <p class="muted" style="margin-top:10px;font-size:10px">Bauprogramm – Monatsraster. Balkenfarbe = Status des Gewerks. Querformat drucken.</p>`;
-  openPrintDoc('Bauprogramm / Terminprogramm', `${esc(p.name)} · ${esc(p.ort)} · Stand ${fmtDate(todayIso())}`, inner);
+  const inner = `<table class="t" style="table-layout:fixed;width:100%">
+      <colgroup><col style="width:23%"><col style="width:13%">${months.map(() => '<col>').join('')}</colgroup>
+      <thead><tr><th>BKP / Gewerk</th><th>Termin</th>${headM}</tr></thead><tbody>${rows}</tbody></table>
+    <p class="muted" style="margin-top:10px;font-size:9.5px">Bauprogramm – Monatsraster. Balkenfarbe = Status des Gewerks.</p>`;
+  openPrintDoc('Bauprogramm / Terminprogramm', `${esc(p.name)} · ${esc(p.ort)} · Stand ${fmtDate(todayIso())}`, inner, { landscape: true });
 }
 
 function advanceVergabe(pid, vid) {

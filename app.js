@@ -421,6 +421,31 @@ function isoWeek(d) {
   const first = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
   return 1 + Math.round(((t - first) / 86400000 - 3 + ((first.getUTCDay() + 6) % 7)) / 7);
 }
+// Schweizer Feiertage (Oster-basiert + fix). Gauss-Algorithmus für Ostersonntag.
+function osterSonntag(y) {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4,
+    f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3),
+    h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4,
+    l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451),
+    mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(y, mo - 1, da);
+}
+function feiertageJahr(y) {
+  const o = osterSonntag(y), add = (base, n) => { const x = new Date(base); x.setDate(x.getDate() + n); return x; };
+  return [
+    { d: new Date(y, 0, 1), n: 'Neujahr' }, { d: new Date(y, 0, 2), n: 'Berchtoldstag' },
+    { d: add(o, -2), n: 'Karfreitag' }, { d: add(o, 1), n: 'Ostermontag' },
+    { d: add(o, 39), n: 'Auffahrt' }, { d: add(o, 50), n: 'Pfingstmontag' },
+    { d: new Date(y, 7, 1), n: '1. August' },
+    { d: new Date(y, 11, 25), n: 'Weihnachten' }, { d: new Date(y, 11, 26), n: 'Stephanstag' },
+  ];
+}
+function feiertageInRange(start, end) {
+  const out = [];
+  for (let y = start.getFullYear(); y <= end.getFullYear(); y++)
+    feiertageJahr(y).forEach(f => { if (f.d >= start && f.d <= end) out.push(f); });
+  return out;
+}
 
 function fristClass(iso, done) {
   if (done) return '';
@@ -1185,7 +1210,7 @@ function viewTermine(id) {
       const wEnd = new Date(d); wEnd.setDate(d.getDate() + (7 - ((d.getDay() + 6) % 7)) - 1);
       const segEnd = wEnd > rangeEnd ? rangeEnd : wEnd;
       const w = (dayDiff(d, segEnd) + 1) * pxPerDay;
-      subCells += `<div class="g-cell" style="width:${w}px">KW${isoWeek(d)}</div>`;
+      subCells += `<div class="g-cell" style="width:${w}px">${isoWeek(d)}</div>`;
       bgCells  += `<div class="g-cell" style="width:${w}px"></div>`;
       d = new Date(segEnd); d.setDate(d.getDate() + 1);
     }
@@ -1193,9 +1218,15 @@ function viewTermine(id) {
     subCells = ''; bgCells = '';
     let d = new Date(rangeStart);
     while (d <= rangeEnd) {
-      const we = (d.getDay() === 0 || d.getDay() === 6);
-      subCells += `<div class="g-cell day${we ? ' we' : ''}" style="width:${pxPerDay}px">${d.getDate()}</div>`;
-      bgCells  += `<div class="g-cell day${we ? ' we' : ''}" style="width:${pxPerDay}px"></div>`;
+      const dow = (d.getDay() + 6) % 7;                       // 0 = Mo … 6 = So
+      const we = dow >= 5, mon = dow === 0;
+      // Adaptiv: bei viel Platz jeder Tag, sonst nur Mo+Fr, ganz schmal nur Mo
+      let lbl = '';
+      if (pxPerDay >= 11) lbl = d.getDate();
+      else if (pxPerDay >= 5) { if (dow === 0 || dow === 4) lbl = d.getDate(); }
+      else if (pxPerDay >= 2.2) { if (mon) lbl = d.getDate(); }
+      subCells += `<div class="g-cell day${we ? ' we' : ''}${mon ? ' mon' : ''}" style="width:${pxPerDay}px">${lbl}</div>`;
+      bgCells  += `<div class="g-cell day${we ? ' we' : ''}${mon ? ' mon' : ''}" style="width:${pxPerDay}px"></div>`;
       d.setDate(d.getDate() + 1);
     }
   }
@@ -1203,6 +1234,11 @@ function viewTermine(id) {
 
   const t = today();
   const todayLeft = (t >= rangeStart && t <= rangeEnd) ? dayDiff(rangeStart, t) * pxPerDay : null;
+
+  // Feiertage als Bänder (mit vertikalem Label, sobald genug Platz)
+  const showHolLbl = pxPerDay >= 4;
+  const holBands = feiertageInRange(rangeStart, rangeEnd).map(f =>
+    `<div class="g-holiday" style="left:${dayDiff(rangeStart, f.d) * pxPerDay}px;width:${Math.max(pxPerDay, 2)}px" title="${esc(f.n)}">${showHolLbl ? `<span>${esc(f.n)}</span>` : ''}</div>`).join('');
 
   const ROW_H = 38;
   let sideRows = '', barRows = '', rowIdx = 0; const barMeta = {};
@@ -1262,6 +1298,7 @@ function viewTermine(id) {
         </div>
         <div class="g-rows">
           <div class="g-bg">${bgCells}</div>
+          ${holBands}
           ${todayLeft != null ? `<div class="g-today" style="left:${todayLeft}px"></div>` : ''}
           ${barRows}
           ${linkSvg}
@@ -4088,7 +4125,7 @@ function viewKalender(pid) {
     for (let i = 0; i < 42; i++) {
       const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
       const iso = isoOf(d); const other = d.getMonth() !== calM; const dayEv = byDay[iso] || [];
-      if (i % 7 === 0) cells += `<div class="cal-kw">KW<br>${isoWeek(d)}</div>`;
+      if (i % 7 === 0) cells += `<div class="cal-kw">${isoWeek(d)}</div>`;
       const chips = dayEv.slice(0, 4).map(e => `<div class="cal-ev ${e.color}"${e.manual ? ` data-act="kal-edit" data-ctx="termin" data-pid="${p.id}" data-tid="${e.id}"` : ''} title="${esc((e.zeit ? e.zeit + ' ' : '') + e.titel)}">${e.zeit ? esc(e.zeit) + ' ' : ''}${esc(e.titel)}</div>`).join('');
       const more = dayEv.length > 4 ? `<div class="cal-more">+${dayEv.length - 4} mehr</div>` : '';
       cells += `<div class="cal-day${other ? ' other' : ''}${iso === todayI ? ' today' : ''}" data-act="kal-add" data-pid="${p.id}" data-kind="${iso}"><div class="d">${d.getDate()}</div>${chips}${more}</div>`;
@@ -4309,7 +4346,7 @@ function viewKalenderGlobal() {
     const iso = isoOf(d);
     const other = d.getMonth() !== calGM;
     const dayEv = byDay[iso] || [];
-    if (i % 7 === 0) cells += `<div class="cal-kw">KW<br>${isoWeek(d)}</div>`;
+    if (i % 7 === 0) cells += `<div class="cal-kw">${isoWeek(d)}</div>`;
     const chips = dayEv.slice(0, 4).map(e => `<div class="cal-ev ${e.color}"${e.manual ? ` data-act="kal-edit" data-ctx="termin" data-pid="${e.pid}" data-tid="${e.id}"` : ''} title="${esc(e.projekt + ' · ' + (e.zeit ? e.zeit + ' ' : '') + e.titel)}">${e.zeit ? esc(e.zeit) + ' ' : ''}${esc(e.titel)}</div>`).join('');
     const more = dayEv.length > 4 ? `<div class="cal-more">+${dayEv.length - 4} mehr</div>` : '';
     cells += `<div class="cal-day${other ? ' other' : ''}${iso === todayI ? ' today' : ''}" data-act="gcal-add" data-kind="${iso}"><div class="d">${d.getDate()}</div>${chips}${more}</div>`;
@@ -5328,6 +5365,10 @@ function pdfGantt(pid) {
 
   const t = today();
   const todayLine = (t >= rangeStart && t <= rangeEnd) ? `<div class="pg-today" style="left:${pct(todayIso())}%"></div>` : '';
+  // Feiertage: Bänder (hinter Balken) + Labels (über Balken)
+  const hols = feiertageInRange(rangeStart, rangeEnd);
+  const holBands = hols.map(f => `<div class="pg-hol" style="left:${pct(isoOf(f.d))}%;width:${Math.max(100 / totalDays, 0.1)}%"></div>`).join('');
+  const holLabels = hols.map(f => `<div class="pg-hol-lbl" style="left:${pct(isoOf(f.d))}%"><span>${esc(f.n)}</span></div>`).join('');
   const sideHtml = vs.map(v => `<div class="pg-srow" style="height:${rowH}mm"><b>${esc(v.bkp || '')}</b>&nbsp;${esc(v.gewerk || '')}</div>`).join('');
   const rowsHtml = vs.map(v => `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar" style="left:${pct(v.bauStart)}%;width:${wpct(v.bauStart, v.bauEnde)}%;height:${barH}mm;background:${ganttColHex(v)}"></div></div>`).join('');
   const legend = GANTT_LEGEND.map(([k, l]) => `<span style="display:inline-block;margin-right:10px"><span style="display:inline-block;width:11px;height:8px;border-radius:2px;background:${GANTT_COLS[k]};vertical-align:middle;margin-right:3px"></span>${l}</span>`).join('');
@@ -5349,10 +5390,13 @@ function pdfGantt(pid) {
     .pg-we{position:absolute;top:0;bottom:0;background:#eaf0f7;}
     .pg-sub.we{background:#e7edf5;color:#9aa4b1;}
     .pg-today{position:absolute;top:0;bottom:0;width:1.2px;background:#dc2626;z-index:2;}
+    .pg-hol{position:absolute;top:0;bottom:0;background:rgba(220,38,38,.08);border-left:.5px solid rgba(220,38,38,.5);}
+    .pg-hol-lbl{position:absolute;top:0;bottom:0;z-index:3;}
+    .pg-hol-lbl span{position:absolute;top:.3mm;left:.3px;font-size:5px;line-height:1;color:#b91c1c;font-weight:600;writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;}
     .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;box-shadow:0 0 0 .3px rgba(0,0,0,.06);}`;
   const inner = `<div class="pg">
     <div class="pg-side"><div class="pg-shead">BKP / Gewerk</div>${sideHtml}</div>
-    <div class="pg-main"><div class="pg-head">${moBand}${subBand}</div><div class="pg-rows">${weBands}${gridV}${todayLine}${rowsHtml}</div></div>
+    <div class="pg-main"><div class="pg-head">${moBand}${subBand}</div><div class="pg-rows">${weBands}${holBands}${gridV}${todayLine}${rowsHtml}${holLabels}</div></div>
   </div>
   <div style="margin-top:3mm;font-size:8px;color:#6b7480">${legend}</div>`;
   const rasterTxt = ganttZoom === 'tag' ? 'Tage' : ganttZoom === 'woche' ? 'Wochen' : 'Monate';
@@ -6451,7 +6495,7 @@ document.addEventListener('click', e => {
     case 'save-termin':  saveTermin(pid, vid); break;
     case 'gantt-zoom':   ganttZoom = kind; ganttScale = 1; viewTermine(pid); break;
     case 'gantt-scale':
-      if (kind === 'out') ganttScale = Math.max(0.35, +(ganttScale * 0.8).toFixed(3));
+      if (kind === 'out') ganttScale = Math.max(0.12, +(ganttScale * 0.8).toFixed(3));
       else if (kind === 'in') ganttScale = Math.min(2.5, +(ganttScale * 1.25).toFixed(3));
       else ganttScale = 1;
       viewTermine(pid); break;

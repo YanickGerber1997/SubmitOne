@@ -636,7 +636,12 @@ tr.done-row { background: #fbfdfb; }
 .g-cell:first-child { border-left: none; }
 .g-cell.day { font-size: 9px; font-weight: 500; }
 .g-cell.day.we { background: #e7edf5; color: var(--text-faint); }
+.g-cell.day.mon { border-left: 1px solid #c3ccda; }
+.g-bg .g-cell.day.mon { border-left: 1px solid #dde3ec; }
 .g-headrow.sub .g-cell { font-size: 9px; padding: 0 1px; }
+/* Feiertage */
+.g-holiday { position: absolute; top: 0; bottom: 0; background: rgba(220,38,38,.09); border-left: 1px solid rgba(220,38,38,.5); z-index: 1; pointer-events: none; }
+.g-holiday span { position: absolute; top: 3px; left: 1px; font-size: 9px; line-height: 1; color: #b91c1c; font-weight: 600; writing-mode: vertical-rl; text-orientation: mixed; white-space: nowrap; }
 
 .g-rows { position: relative; }
 .g-bg { position: absolute; inset: 0; display: flex; z-index: 0; }

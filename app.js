@@ -1267,7 +1267,8 @@ function viewTermine(id) {
     <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie.</p>
   `);
 
-  $$('.g-bar').forEach(b => b.addEventListener('mousedown', onBarMouseDown));
+  $$('.g-bar').forEach(b => { b.addEventListener('mousedown', onBarMouseDown); b.addEventListener('contextmenu', e => ganttBarMenu(e, b)); });
+  $$('.g-edit[data-vid]').forEach(el => el.addEventListener('contextmenu', e => ganttBarMenu(e, el)));
   $$('.g-link-dot').forEach(d => d.addEventListener('mousedown', onLinkDotDown));
   $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
   $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) removeGanttLink(ganttPid, g.dataset.lid); }));
@@ -1275,6 +1276,7 @@ function viewTermine(id) {
 /* --- Gantt: Verbindungen (Abhängigkeiten) --- */
 let ganttLink = null, ganttGrip = null;
 function onLinkDotDown(e) {
+  if (e.button !== 0) return;
   e.stopPropagation(); e.preventDefault();
   const fromKey = e.currentTarget.dataset.key;
   const rows = e.currentTarget.closest('.g-rows'); const svg = rows.querySelector('.g-links');
@@ -1331,13 +1333,58 @@ function removeGanttLink(pid, lid) {
   p.ganttLinks = (p.ganttLinks || []).filter(l => l.id !== lid);
   save(); viewTermine(pid); toast('Verbindung entfernt', 'info');
 }
+/* --- Generisches Kontextmenü (Rechtsklick) --- */
+function openContextMenu(e, items) {
+  closeContextMenu(); e.preventDefault();
+  const menu = document.createElement('div'); menu.className = 'ctx-menu'; menu.id = 'ctxMenu';
+  menu.innerHTML = items.map((it, i) => it.sep ? '<div class="ctx-sep"></div>'
+    : `<button class="ctx-item${it.danger ? ' danger' : ''}" data-i="${i}"><span class="ctx-ico">${it.icon || ''}</span>${esc(it.label)}</button>`).join('');
+  document.body.appendChild(menu);
+  let x = e.clientX, y = e.clientY;
+  if (x + menu.offsetWidth > window.innerWidth - 6) x = window.innerWidth - menu.offsetWidth - 6;
+  if (y + menu.offsetHeight > window.innerHeight - 6) y = window.innerHeight - menu.offsetHeight - 6;
+  menu.style.left = Math.max(6, x) + 'px'; menu.style.top = Math.max(6, y) + 'px';
+  menu.querySelectorAll('.ctx-item').forEach(btn => btn.addEventListener('click', () => { const it = items[+btn.dataset.i]; closeContextMenu(); if (it && it.act) it.act(); }));
+  setTimeout(() => { document.addEventListener('mousedown', ctxAway); document.addEventListener('keydown', ctxEsc); document.addEventListener('scroll', closeContextMenu, true); }, 0);
+}
+function ctxAway(e) { if (!e.target.closest('#ctxMenu')) closeContextMenu(); }
+function ctxEsc(e) { if (e.key === 'Escape') closeContextMenu(); }
+function closeContextMenu() { const m = $('#ctxMenu'); if (m) m.remove(); document.removeEventListener('mousedown', ctxAway); document.removeEventListener('keydown', ctxEsc); document.removeEventListener('scroll', closeContextMenu, true); }
+// Rechtsklick auf einen Gantt-Balken → Power-User-Menü
+function ganttBarMenu(e, bar) {
+  const pid = bar.dataset.pid, vid = bar.dataset.vid, oid = bar.dataset.oid || null;
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const items = [{ icon: '↗', label: 'Gewerk öffnen (Übersicht)', act: () => go('#/projekt/' + pid + '/vergabe/' + vid) }];
+  if (oid) {
+    items.push({ sep: true }, { icon: '✕', label: 'Vorgang löschen', danger: true, act: () => removeVorgang(pid, vid, oid) });
+  } else {
+    items.push(
+      { icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) },
+      { icon: '＋', label: 'Vorgang hinzufügen', act: () => actNewVorgang(pid, vid) },
+      { icon: '→', label: 'Status: nächster Schritt', act: () => advanceVergabe(pid, vid) },
+      { sep: true },
+      { icon: '✉', label: 'Offertanfrage / Einladung senden', act: () => mailEinladung(pid, vid) },
+    );
+    if (isVergeben(v)) items.push(
+      { icon: '✉', label: 'Zuschlag-Mail an ' + (v.firma || 'Gewinner'), act: () => mailZuschlag(pid, vid) },
+      { icon: '✉', label: 'Absage an Unterlegene', act: () => mailAbsage(pid, vid) },
+    );
+    items.push(
+      { sep: true },
+      { icon: '💰', label: 'Kosten / Rechnungen', act: () => go('#/projekt/' + pid + '/kosten') },
+      { icon: '✎', label: 'Stammdaten bearbeiten', act: () => actEditVergabe(pid, vid) },
+      { icon: '🗑', label: 'Gewerk löschen', danger: true, act: () => rmVergabe(pid, vid) },
+    );
+  }
+  openContextMenu(e, items);
+}
 
 /* --- Gantt Drag & Drop --- */
 
 let ganttDrag = null;
 
 function onBarMouseDown(e) {
-  if (!ganttCtx) return;
+  if (!ganttCtx || e.button !== 0) return;
   const bar = e.currentTarget;
   const isHandle = e.target.classList.contains('g-h');
   const mode = isHandle ? (e.target.classList.contains('l') ? 'resize-l' : 'resize-r') : 'move';

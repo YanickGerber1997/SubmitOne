@@ -780,6 +780,15 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .login-card .field { text-align: left; }
 .login-card .brand-logo { font-size: 18px; }
 
+/* ============================ Kontextmenü (Rechtsklick) ============================ */
+.ctx-menu { position: fixed; z-index: 300; background: var(--surface); border: 1px solid var(--border-2); border-radius: 10px; box-shadow: 0 12px 34px rgba(0,0,0,.2); padding: 5px; min-width: 230px; }
+.ctx-item { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; background: none; border: none; padding: 8px 10px; border-radius: 7px; font-size: 13px; color: var(--text); cursor: pointer; }
+.ctx-item:hover { background: var(--surface-2); }
+.ctx-item.danger { color: var(--s-red); }
+.ctx-item.danger:hover { background: #fdeaea; }
+.ctx-ico { width: 18px; text-align: center; font-size: 13px; flex: none; }
+.ctx-sep { height: 1px; background: var(--border); margin: 5px 4px; }
+
 /* ============================ Toast ============================ */
 
 #toast-root { position: fixed; bottom: 22px; right: 22px; display: flex; flex-direction: column; gap: 10px; z-index: 200; }

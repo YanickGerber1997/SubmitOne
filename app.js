@@ -1081,6 +1081,7 @@ function viewKosten(id) {
    --------------------------------------------------------------- */
 
 let ganttZoom = 'monat';   // 'monat' | 'woche' | 'tag'
+let ganttScale = 1;        // stufenloser Breiten-Faktor auf pxPerDay
 let ganttSort = 'bkp';     // 'bkp' | 'start'
 const ZOOM = { monat: { px: 2.4, label: 'Monate' }, woche: { px: 4.6, label: 'Wochen' }, tag: { px: 13, label: 'Tage' } };
 // Gantt-Balkenfarbe je Status (über den Lebenszyklus differenziert)
@@ -1111,12 +1112,17 @@ function viewTermine(id) {
   const zoomCtrl = `<div class="g-zoom">
     ${Object.keys(ZOOM).map(z => `<button class="${ganttZoom === z ? 'active' : ''}" data-act="gantt-zoom" data-pid="${p.id}" data-kind="${z}">${ZOOM[z].label}</button>`).join('')}
   </div>`;
+  const scaleCtrl = `<div class="g-zoom" title="Breite feinjustieren">
+    <button data-act="gantt-scale" data-pid="${p.id}" data-kind="out" title="schmaler">−</button>
+    <button data-act="gantt-scale" data-pid="${p.id}" data-kind="reset" title="Standardbreite" style="min-width:42px">${Math.round(ganttScale * 100)}%</button>
+    <button data-act="gantt-scale" data-pid="${p.id}" data-kind="in" title="breiter">+</button>
+  </div>`;
 
   const head = `
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm · grob (Monat) bis fein (Tag); Balken ziehen zum Verschieben, Ränder ziehen für Dauer</div></div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}<span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}${zoomCtrl}<button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}<span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}${zoomCtrl}${scaleCtrl}<button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
     </div>
     ${projektTabs(p, 'termine')}
   `;
@@ -1152,7 +1158,7 @@ function viewTermine(id) {
   const rangeStartISO = isoOf(rangeStart);
   const totalDays = dayDiff(rangeStart, rangeEnd) + 1;
 
-  const pxPerDay = ZOOM[ganttZoom].px;
+  const pxPerDay = ZOOM[ganttZoom].px * ganttScale;
   const innerW = Math.round(totalDays * pxPerDay);
   ganttCtx = { rangeStartISO, pxPerDay };
 
@@ -6443,7 +6449,12 @@ document.addEventListener('click', e => {
     case 'deckblatt-offerte-leer': pdfDeckblatt(pid, vid, null, 'offerte'); break;
     case 'edit-termin':  actEditTermin(pid, vid); break;
     case 'save-termin':  saveTermin(pid, vid); break;
-    case 'gantt-zoom':   ganttZoom = kind; viewTermine(pid); break;
+    case 'gantt-zoom':   ganttZoom = kind; ganttScale = 1; viewTermine(pid); break;
+    case 'gantt-scale':
+      if (kind === 'out') ganttScale = Math.max(0.35, +(ganttScale * 0.8).toFixed(3));
+      else if (kind === 'in') ganttScale = Math.min(2.5, +(ganttScale * 1.25).toFixed(3));
+      else ganttScale = 1;
+      viewTermine(pid); break;
     case 'gantt-sort':   ganttSort = kind; viewTermine(pid); break;
     case 'new-vorgang':  actNewVorgang(pid, vid); break;
     case 'save-vorgang': saveVorgang(pid, vid); break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v34';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v35';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -259,6 +259,7 @@ async function startApp() {
   $('#btnExport')?.addEventListener('click', exportData);
   $('#btnReset')?.addEventListener('click', resetDemo);
   initSidebarCollapse();
+  document.addEventListener('keydown', planKeydown);
   const ver = $('.ver'); if (ver) ver.textContent = 'Prototyp · ' + APP_VERSION;
   renderUserChip();
   window.addEventListener('hashchange', router);
@@ -3007,7 +3008,7 @@ function calTimeGrid(events, dates, todayI, add) {
   events.forEach(e => { (byDay[e.datum] = byDay[e.datum] || []).push(e); });
   const dowF = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
   const pidAttr = add === 'plan' ? ' data-plan="1"' : (add ? ` data-pid="${add}"` : '');
-  const evEdit = e => e.plan ? ` data-act="plan-edit" data-bid="${e.id}"` : (e.manual && e.pid ? ` data-act="kal-edit" data-pid="${e.pid}" data-tid="${e.id}"` : '');
+  const evEdit = e => e.plan ? ` data-bid="${e.id}" draggable="true"` : (e.manual && e.pid ? ` data-act="kal-edit" data-pid="${e.pid}" data-tid="${e.id}"` : '');
   const dayAct = add === 'plan' ? `data-act="plan-day"` : (add ? `data-act="kal-day" data-pid="${add}"` : `data-act="gcal-day"`);
   const colHead = dates.map(iso => { const d = dISO(iso); return `<div class="cal-colhead${iso === todayI ? ' today' : ''}" ${dayAct} data-kind="${iso}">${dowF[(d.getDay() + 6) % 7]} ${d.getDate()}.${d.getMonth() + 1}.</div>`; }).join('');
   const adRow = dates.map(iso => { const ad = (byDay[iso] || []).filter(e => !e.zeit); return `<div class="cal-ad-cell" data-iso="${iso}"${pidAttr}>${ad.map(e => `<div class="cal-ev ${e.color}"${evEdit(e)} title="${esc(e.titel)}">${esc(e.titel)}</div>`).join('')}</div>`; }).join('');
@@ -3301,7 +3302,7 @@ const PLAN_TEMPLATES = [
   { label: 'Pause / Mittag', dauer: 60, color: 'amber' },
 ];
 const PLAN_FARBEN = [['blue', 'Blau'], ['teal', 'Petrol'], ['green', 'Grün'], ['amber', 'Gelb'], ['purple', 'Lila'], ['grey', 'Grau'], ['red', 'Rot']];
-let planView = 'woche', planRefIso = null, planArmed = null, planungData = null;
+let planView = 'woche', planRefIso = null, planArmed = null, planungData = null, planSel = null, planClip = null;
 function loadPlanung() { if (planungData) return planungData; try { planungData = JSON.parse(localStorage.getItem('so_planung') || '[]'); } catch (_) { planungData = []; } return planungData; }
 function savePlanung() { try { localStorage.setItem('so_planung', JSON.stringify(planungData)); } catch (_) {} }
 function min2hhmm(m) { m = Math.max(0, Math.min(24 * 60, Math.round(m))); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
@@ -3325,7 +3326,7 @@ function viewPlanung() {
   const body = calTimeGrid(events, dates, todayI, 'plan');
   const pvb = (v, t2) => `<button class="btn sm ${planView === v ? '' : 'secondary'}" data-act="plan-view" data-kind="${v}">${t2}</button>`;
   const toggles = projects.length ? projects.map((p, idx) => `<span class="chip ${calHidden.has(p.id) ? '' : 'active'}" data-act="plan-toggle" data-pid="${p.id}"><i class="cal-dot ${projColor(idx)}"></i>${esc(p.name)}</span>`).join('') : '';
-  const palette = PLAN_TEMPLATES.map((tp, i) => `<button class="chip ${planArmed === i ? 'active' : ''}" data-act="plan-arm" data-idx="${i}"><i class="cal-dot ${tp.color}"></i>${esc(tp.label)} · ${tp.dauer >= 60 ? (tp.dauer / 60) + 'h' : tp.dauer + 'min'}</button>`).join('');
+  const palette = PLAN_TEMPLATES.map((tp, i) => `<button class="chip ${planArmed === i ? 'active' : ''}" draggable="true" data-tpl="${i}" data-act="plan-arm" data-idx="${i}" title="Klicken oder in den Kalender ziehen"><i class="cal-dot ${tp.color}"></i>${esc(tp.label)} · ${tp.dauer >= 60 ? (tp.dauer / 60) + 'h' : tp.dauer + 'min'}</button>`).join('');
 
   // offene Pendenzen als „To-do"-Vorrat
   const pend = [];
@@ -3336,7 +3337,7 @@ function viewPlanung() {
     <div class="page-head"><div><h1>Arbeitsplanung</h1><div class="sub">Tag &amp; Woche · Termine der gewählten Projekte + eigene Zeitfenster</div></div></div>
     ${projects.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${toggles}</div>` : ''}
     <div class="card card-pad" style="margin-bottom:14px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">Zeitfenster ${planArmed != null ? '<span class="muted" style="font-weight:400">– jetzt in den Kalender klicken zum Platzieren (Esc/erneut klicken zum Abwählen)</span>' : '<span class="muted" style="font-weight:400">– anklicken, dann im Kalender platzieren</span>'}</div>
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px">Zeitfenster ${planArmed != null ? '<span class="muted" style="font-weight:400">– jetzt in den Kalender klicken zum Platzieren</span>' : '<span class="muted" style="font-weight:400">– in den Kalender ziehen, oder anklicken &amp; platzieren</span>'}</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">${palette}<button class="chip" data-act="plan-add" data-kind="${planRefIso}">+ eigener Block</button></div>
     </div>
 
@@ -3350,20 +3351,71 @@ function viewPlanung() {
       <div style="display:flex;gap:5px">${pvb('tag', 'Tag')}${pvb('woche', 'Woche')}</div>
     </div>
     ${body}
-    <p class="muted" style="font-size:12px;margin:8px 0 0">Zeitfenster wählen → in eine Stunde klicken zum Platzieren · eigene Blöcke anklicken = bearbeiten · Projekt-Termine sind grau/farbig hinterlegt.</p>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Zeitfenster <strong>reinziehen</strong> oder anklicken+platzieren · Block <strong>1× klicken = auswählen</strong>, dann <strong>Entf</strong> löschen, <strong>Strg+C/V</strong> kopieren · <strong>ziehen</strong> = verschieben · Doppelklick = bearbeiten.</p>
 
     <div class="section-head" style="margin-top:24px"><h2>Offene Pendenzen</h2><span class="hint">aus den gewählten Projekten – als To-do</span></div>
     <div class="card card-pad">${pendHtml}</div>
   `);
   bindCalCols();
+  bindPlanDnd();
 }
 function planSlotClick(iso, zeit) {
   const tpl = planArmed != null ? PLAN_TEMPLATES[planArmed] : null;
-  if (tpl) {
-    const [h, m] = (zeit || '08:00').split(':').map(Number); const start = h * 60 + (m || 0);
-    loadPlanung().push({ id: uid('pl'), datum: iso, zeit: zeit || '08:00', zeitEnde: min2hhmm(start + tpl.dauer), titel: tpl.label, color: tpl.color });
-    savePlanung(); planArmed = null; viewPlanung(); toast('Zeitfenster platziert');
-  } else { actPlanBlock(null, iso, zeit); }
+  if (tpl) { placePlanBlock(iso, zeit, tpl); planArmed = null; }
+  else if (planSel) { planSel = null; viewPlanung(); }   // leeres Klicken = Auswahl aufheben
+}
+function placePlanBlock(iso, zeit, tpl) {
+  const [h, m] = (zeit || '08:00').split(':').map(Number); const start = h * 60 + (m || 0);
+  const b = { id: uid('pl'), datum: iso, zeit: zeit || '08:00', zeitEnde: min2hhmm(start + tpl.dauer), titel: tpl.label, color: tpl.color };
+  loadPlanung().push(b); savePlanung(); planSel = b.id; viewPlanung(); toast('Zeitfenster platziert');
+}
+function movePlanBlock(bid, iso, zeit) {
+  const b = loadPlanung().find(x => x.id === bid); if (!b) return;
+  const dur = (() => { const s = b.zeit ? b.zeit.split(':').map(Number) : [8, 0]; const e = b.zeitEnde ? b.zeitEnde.split(':').map(Number) : [s[0] + 1, s[1]]; return (e[0] * 60 + e[1]) - (s[0] * 60 + s[1]) || 60; })();
+  const [h, m] = (zeit || '08:00').split(':').map(Number); const start = h * 60 + (m || 0);
+  b.datum = iso; b.zeit = zeit || '08:00'; b.zeitEnde = min2hhmm(start + dur);
+  savePlanung(); planSel = b.id; viewPlanung();
+}
+function planSelect(bid) { planSel = bid; viewPlanung(); }
+function planDelete() { if (!planSel) return; planungData = loadPlanung().filter(x => x.id !== planSel); savePlanung(); planSel = null; viewPlanung(); }
+function planCopy() { if (!planSel) return; const b = loadPlanung().find(x => x.id === planSel); if (b) { planClip = { ...b }; toast('Block kopiert'); } }
+function planPaste() {
+  if (!planClip) return;
+  const s = planClip.zeit ? planClip.zeit.split(':').map(Number) : [8, 0];
+  const e = planClip.zeitEnde ? planClip.zeitEnde.split(':').map(Number) : [s[0] + 1, s[1]];
+  const dur = (e[0] * 60 + e[1]) - (s[0] * 60 + s[1]) || 60;
+  const start = s[0] * 60 + s[1] + 30;   // 30 Min versetzt eingefügt
+  const b = { id: uid('pl'), datum: planClip.datum, zeit: min2hhmm(start), zeitEnde: min2hhmm(start + dur), titel: planClip.titel, color: planClip.color };
+  loadPlanung().push(b); savePlanung(); planSel = b.id; viewPlanung(); toast('Eingefügt');
+}
+// Drag-and-Drop + Auswahl-Klicks im Planungsraster
+function bindPlanDnd() {
+  $$('[data-tpl]').forEach(c => { c.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', 'tpl:' + c.dataset.tpl)); });
+  $$('.cal-tev.plan').forEach(el => {
+    if (el.dataset.bid === planSel) el.classList.add('sel');
+    el.addEventListener('dragstart', e => { e.stopPropagation(); e.dataTransfer.setData('text/plain', 'blk:' + el.dataset.bid); });
+    el.addEventListener('click', e => { e.stopPropagation(); planSelect(el.dataset.bid); });
+    el.addEventListener('dblclick', e => { e.stopPropagation(); actPlanBlock(el.dataset.bid); });
+  });
+  $$('.cal-col').forEach(col => {
+    col.addEventListener('dragover', e => e.preventDefault());
+    col.addEventListener('drop', e => {
+      e.preventDefault(); const d = e.dataTransfer.getData('text/plain'); if (!d) return;
+      const iso = col.dataset.iso; const y = e.clientY - col.getBoundingClientRect().top;
+      let hour = CAL_SH + Math.floor(y / CAL_HH); hour = Math.max(CAL_SH, Math.min(CAL_EH, hour));
+      const zeit = String(hour).padStart(2, '0') + ':00';
+      if (d.startsWith('tpl:')) placePlanBlock(iso, zeit, PLAN_TEMPLATES[+d.slice(4)]);
+      else if (d.startsWith('blk:')) movePlanBlock(d.slice(4), iso, zeit);
+    });
+  });
+}
+function planKeydown(e) {
+  if (location.hash !== '#/planung') return;
+  const tag = (e.target.tagName || '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && planSel) { e.preventDefault(); planDelete(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { planCopy(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); planPaste(); }
 }
 function actPlanBlock(bid, datum, zeit) {
   const b = bid ? loadPlanung().find(x => x.id === bid) : null;

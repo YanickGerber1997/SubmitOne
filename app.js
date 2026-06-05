@@ -1343,6 +1343,7 @@ function onBarMouseDown(e) {
   const mode = isHandle ? (e.target.classList.contains('l') ? 'resize-l' : 'resize-r') : 'move';
   ganttDrag = {
     bar, mode, moved: false, startX: e.clientX,
+    origLeft: parseFloat(bar.style.left) || 0, origWidth: parseFloat(bar.style.width) || 0,
     pid: bar.dataset.pid, vid: bar.dataset.vid, oid: bar.dataset.oid || null,
     origStart: bar.dataset.start, origEnde: bar.dataset.ende,
     newStart: bar.dataset.start, newEnde: bar.dataset.ende,
@@ -1354,15 +1355,23 @@ function onBarMouseDown(e) {
 
 function onGanttMove(e) {
   const d = ganttDrag; if (!d) return;
-  const dDays = Math.round((e.clientX - d.startX) / ganttCtx.pxPerDay);
-  if (dDays !== 0) d.moved = true;
+  const dxPx = e.clientX - d.startX;
+  if (Math.abs(dxPx) > 2) d.moved = true;
+  const dDays = Math.round(dxPx / ganttCtx.pxPerDay);   // für die Tage erst beim Loslassen gesnappt
   let s = d.origStart, en = d.origEnde;
-  if (d.mode === 'move') { s = addDays(d.origStart, dDays); en = addDays(d.origEnde, dDays); }
-  else if (d.mode === 'resize-l') { s = addDays(d.origStart, dDays); if (s > en) s = en; }
-  else { en = addDays(d.origEnde, dDays); if (en < s) en = s; }
+  // Visuell pixelgenau folgen (flüssig), Tage erst beim Commit snappen
+  if (d.mode === 'move') {
+    s = addDays(d.origStart, dDays); en = addDays(d.origEnde, dDays);
+    d.bar.style.left = (d.origLeft + dxPx) + 'px';
+  } else if (d.mode === 'resize-l') {
+    s = addDays(d.origStart, dDays); if (s > en) s = en;
+    d.bar.style.left = (d.origLeft + dxPx) + 'px';
+    d.bar.style.width = Math.max(d.origWidth - dxPx, 3) + 'px';
+  } else {
+    en = addDays(d.origEnde, dDays); if (en < s) en = s;
+    d.bar.style.width = Math.max(d.origWidth + dxPx, 3) + 'px';
+  }
   d.newStart = s; d.newEnde = en;
-  d.bar.style.left = Math.round(dayDiffISO(ganttCtx.rangeStartISO, s) * ganttCtx.pxPerDay) + 'px';
-  d.bar.style.width = Math.max(Math.round((dayDiffISO(s, en) + 1) * ganttCtx.pxPerDay), 3) + 'px';
   d.bar.title = `${fmtDate(s)} – ${fmtDate(en)}`;
 }
 
@@ -6238,7 +6247,14 @@ function demoData() {
           ] },
         { id: 'v4', bkp: '221', gewerk: 'Fenster & Aussentüren', status: 'bewertung', firma: '', betrag: 0, schaetzung: 320000, frist: '2026-06-08',
           bauStart: '2026-10-01', bauEnde: '2026-11-30',
-          eingeladene: einl(['Fensterwerk AG', 298000], ['Glas+Rahmen GmbH', 312000], ['Holz-Metall Fenster AG', 305000]), nachtraege: [], rapporte: [], vorgaenge: [] },
+          eingeladene: [
+            { id: uid('e'), firma: 'Fensterwerk AG', email: mailOf('Fensterwerk AG'), status: 'offeriert', betrag: null,
+              offerte: { brutto: 312000, rabatt: 3, skonto: 2, weitereAbz: 1 }, abgebot: { brutto: 305000, rabatt: 5, skonto: 2, weitereAbz: 1 } },
+            { id: uid('e'), firma: 'Glas+Rahmen GmbH', email: '', status: 'offeriert', betrag: null,
+              offerte: { brutto: 320000, rabatt: 2, skonto: 2, weitereAbz: 1 }, abgebot: { brutto: 314000, rabatt: 4, skonto: 2, weitereAbz: 1 } },
+            { id: uid('e'), firma: 'Holz-Metall Fenster AG', email: '', status: 'offeriert', betrag: null,
+              offerte: { brutto: 308000, rabatt: 1, skonto: 2, weitereAbz: 1 } },
+          ], nachtraege: [], rapporte: [], vorgaenge: [] },
         { id: 'v5', bkp: '230', gewerk: 'Elektroanlagen', status: 'offerten', firma: '', betrag: 0, schaetzung: 280000, frist: '2026-06-22',
           bauStart: '2026-09-01', bauEnde: '2027-02-28',
           eingeladene: einl(['Elektro Meyer AG', 271000], ['Volt & Co.', 289000], ['Stromwerk AG', null]), nachtraege: [], rapporte: [], vorgaenge: [] },
@@ -6249,6 +6265,23 @@ function demoData() {
           bauStart: '2026-11-01', bauEnde: '2027-02-28',
           eingeladene: einl(['WärmeTech GmbH', null], ['Heiztech AG', null]), nachtraege: [], rapporte: [], vorgaenge: [] },
       ],
+      ganttLinks: [
+        { id: uid('gl'), from: 'v1', to: 'v2', dx: null },
+        { id: uid('gl'), from: 'v2', to: 'v3', dx: null },
+        { id: uid('gl'), from: 'v3', to: 'v4', dx: -28 },
+      ],
+      pendenzen: [
+        { id: uid('pd'), art: 'pendenz', text: 'Werkpläne Bodenplatte zur Freigabe einreichen', verantwortlich: 'Bauleitung', termin: '2026-06-18', erledigt: false, uebertragen: false, erfasst: '2026-06-01', firmen: ['Hugentobler Bau AG'] },
+        { id: uid('pd'), art: 'pendenz', text: 'Nachtrag Mehraushub Fels abrechnen', verantwortlich: 'Tiefbau Zentral AG', termin: '2026-06-25', erledigt: false, uebertragen: false, erfasst: '2026-06-05', firmen: ['Tiefbau Zentral AG'] },
+        { id: uid('pd'), art: 'pendenz', text: 'Bemusterung Fenster mit Bauherrschaft', verantwortlich: 'M. Bühler', termin: '2026-06-30', erledigt: false, uebertragen: false, erfasst: '2026-06-08', firmen: [] },
+      ],
+      dossier: {
+        projektbeschrieb: { status: 'vorhanden', verweis: 'Projektbeschrieb_Sonnenhof.pdf', datum: '2026-02-05', notiz: '' },
+        baubewilligung: { status: 'vorhanden', verweis: 'Baubewilligung_2026-014.pdf', datum: '2026-03-20', notiz: '' },
+        grundbuch: { status: 'inArbeit', verweis: '', datum: '', notiz: 'beim Notariat angefordert' },
+        statik: { status: 'vorhanden', verweis: 'https://example.ch/statik-sonnenhof', datum: '2026-04-10', notiz: '' },
+        finanzierung: { status: 'abgegeben', verweis: 'Finanzierungsnachweis_Bank.pdf', datum: '2026-02-20', notiz: '' },
+      },
     },
     {
       id: 'p_schule', name: 'Sanierung Schulhaus Birch', ort: 'Zug', bauherr: 'Stadt Zug, Hochbauamt',
@@ -6361,5 +6394,10 @@ function demoData() {
     { id: 'd5', name: 'Vorlage Werkvertrag (SIA 118)', typ: 'Vorlage', projektId: null, datum: '2026-01-10' },
   ];
 
-  return { projekte, kontakte, dokumente };
+  const buero = {
+    firma: 'Gerber-Software – Bauadministration', strasse: 'Musterweg 1', plzort: '6000 Luzern',
+    tel: '041 000 00 00', email: 'gerber.yanick1@gmail.com', logo: '',
+    signatur: 'Freundliche Grüsse\nYanick Gerber\nGerber-Software – Bauadministration\nTel. 041 000 00 00', signaturAuto: true,
+  };
+  return { projekte, kontakte, dokumente, buero };
 }

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v31';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v32';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -672,6 +672,7 @@ function router() {
       if (sub === 'protokoll' && b) return viewProtokollDetail(a, b);
       return viewProjektDetail(a);
     case 'kalender':      setActiveNav('kalender');      return viewKalenderGlobal();
+    case 'planung':       setActiveNav('planung');       return viewPlanung();
     case 'drucken':       setActiveNav('drucken');       return viewDrucken();
     case 'honorar':       setActiveNav('honorar'); honorarPid = null; return viewHonorar();
     case 'kontakte':      setActiveNav('kontakte');      return viewKontakte();
@@ -3001,13 +3002,13 @@ function weekDates(iso) {
   return Array.from({ length: 7 }, (_, i) => isoOf(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i)));
 }
 // Tages-/Wochen-Raster mit Stunden (Outlook-Stil). events: [{datum,zeit,zeitEnde,titel,color,manual,id,pid}], addPid='' = global
-function calTimeGrid(events, dates, todayI, addPid) {
+function calTimeGrid(events, dates, todayI, add) {
   const byDay = {};
   events.forEach(e => { (byDay[e.datum] = byDay[e.datum] || []).push(e); });
   const dowF = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-  const pidAttr = addPid ? ` data-pid="${addPid}"` : '';
-  const evEdit = e => e.manual && e.pid ? ` data-act="kal-edit" data-pid="${e.pid}" data-tid="${e.id}"` : '';
-  const dayAct = addPid ? `data-act="kal-day" data-pid="${addPid}"` : `data-act="gcal-day"`;
+  const pidAttr = add === 'plan' ? ' data-plan="1"' : (add ? ` data-pid="${add}"` : '');
+  const evEdit = e => e.plan ? ` data-act="plan-edit" data-bid="${e.id}"` : (e.manual && e.pid ? ` data-act="kal-edit" data-pid="${e.pid}" data-tid="${e.id}"` : '');
+  const dayAct = add === 'plan' ? `data-act="plan-day"` : (add ? `data-act="kal-day" data-pid="${add}"` : `data-act="gcal-day"`);
   const colHead = dates.map(iso => { const d = dISO(iso); return `<div class="cal-colhead${iso === todayI ? ' today' : ''}" ${dayAct} data-kind="${iso}">${dowF[(d.getDay() + 6) % 7]} ${d.getDate()}.${d.getMonth() + 1}.</div>`; }).join('');
   const adRow = dates.map(iso => { const ad = (byDay[iso] || []).filter(e => !e.zeit); return `<div class="cal-ad-cell" data-iso="${iso}"${pidAttr}>${ad.map(e => `<div class="cal-ev ${e.color}"${evEdit(e)} title="${esc(e.titel)}">${esc(e.titel)}</div>`).join('')}</div>`; }).join('');
   let hours = ''; for (let h = CAL_SH; h <= CAL_EH; h++) hours += `<div class="cal-hour">${String(h).padStart(2, '0')}:00</div>`;
@@ -3017,7 +3018,7 @@ function calTimeGrid(events, dates, todayI, addPid) {
     const tev = (byDay[iso] || []).filter(e => e.zeit).map(e => {
       const sMin = toMin(e.zeit); let eMin = e.zeitEnde ? toMin(e.zeitEnde) : sMin + 60; if (eMin <= sMin) eMin = sMin + 60;
       const top = Math.max(0, (sMin - CAL_SH * 60) / 60 * CAL_HH); const h = Math.max((eMin - sMin) / 60 * CAL_HH, 20);
-      return `<div class="cal-tev ${e.color}"${evEdit(e)} style="top:${top}px;height:${h}px" title="${esc(e.zeit + ' ' + e.titel)}">${esc(e.zeit)} ${esc(e.titel)}</div>`;
+      return `<div class="cal-tev ${e.color}${e.plan ? ' plan' : ''}"${evEdit(e)} style="top:${top}px;height:${h}px" title="${esc(e.zeit + ' ' + e.titel)}">${esc(e.zeit)} ${esc(e.titel)}</div>`;
     }).join('');
     return `<div class="cal-col" data-iso="${iso}"${pidAttr} style="height:${(CAL_EH - CAL_SH) * CAL_HH}px">${lines}${tev}</div>`;
   }).join('');
@@ -3036,12 +3037,14 @@ function bindCalCols() {
     const y = e.clientY - col.getBoundingClientRect().top;
     let hour = CAL_SH + Math.floor(y / CAL_HH); hour = Math.max(CAL_SH, Math.min(CAL_EH, hour));
     const zeit = String(hour).padStart(2, '0') + ':00';
-    if (pid) actKalTermin(pid, null, iso, zeit); else actGlobalTermin(iso, zeit);
+    if (col.dataset.plan) planSlotClick(iso, zeit);
+    else if (pid) actKalTermin(pid, null, iso, zeit); else actGlobalTermin(iso, zeit);
   }));
   $$('.cal-ad-cell').forEach(cell => cell.addEventListener('click', e => {
     if (e.target.closest('.cal-ev')) return;
     const iso = cell.dataset.iso, pid = cell.dataset.pid;
-    if (pid) actKalTermin(pid, null, iso); else actGlobalTermin(iso);
+    if (cell.dataset.plan) planSlotClick(iso, '');
+    else if (pid) actKalTermin(pid, null, iso); else actGlobalTermin(iso);
   }));
 }
 
@@ -3287,6 +3290,115 @@ function gcalNav(delta) {
 }
 function gcalSetView(v) { calView = v; if (!calRefIso) calRefIso = todayIso(); viewKalenderGlobal(); }
 function gcalDay(iso) { calView = 'tag'; calRefIso = iso; viewKalenderGlobal(); }
+
+/* --- Arbeitsplanung: persönlicher Tages-/Wochenplaner (browser-lokal) --- */
+const PLAN_TEMPLATES = [
+  { label: 'Büro / Admin', dauer: 120, color: 'grey' },
+  { label: 'Baustelle', dauer: 180, color: 'teal' },
+  { label: 'Sitzung', dauer: 60, color: 'green' },
+  { label: 'Telefon / Mail', dauer: 45, color: 'blue' },
+  { label: 'Bemusterung', dauer: 90, color: 'purple' },
+  { label: 'Pause / Mittag', dauer: 60, color: 'amber' },
+];
+const PLAN_FARBEN = [['blue', 'Blau'], ['teal', 'Petrol'], ['green', 'Grün'], ['amber', 'Gelb'], ['purple', 'Lila'], ['grey', 'Grau'], ['red', 'Rot']];
+let planView = 'woche', planRefIso = null, planArmed = null, planungData = null;
+function loadPlanung() { if (planungData) return planungData; try { planungData = JSON.parse(localStorage.getItem('so_planung') || '[]'); } catch (_) { planungData = []; } return planungData; }
+function savePlanung() { try { localStorage.setItem('so_planung', JSON.stringify(planungData)); } catch (_) {} }
+function min2hhmm(m) { m = Math.max(0, Math.min(24 * 60, Math.round(m))); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+
+function viewPlanung() {
+  const t = today(); const todayI = todayIso();
+  if (planRefIso == null) planRefIso = todayI;
+  if (calHidden == null) { try { calHidden = new Set(JSON.parse(localStorage.getItem('so_cal_hidden') || '[]')); } catch (_) { calHidden = new Set(); } }
+  const projects = state.projekte || [];
+  const blocks = loadPlanung();
+
+  // Events: Projekt-Termine (sichtbar) + persönliche Plan-Blöcke
+  const events = [];
+  projects.forEach((p, idx) => { if (calHidden.has(p.id)) return; const col = projColor(idx); sammleTermine(p).forEach(e => events.push({ ...e, color: col, pid: p.id, projekt: p.name })); });
+  blocks.forEach(b => events.push({ datum: b.datum, zeit: b.zeit, zeitEnde: b.zeitEnde, titel: b.titel, color: b.color || 'purple', plan: true, id: b.id }));
+
+  const dates = planView === 'tag' ? [planRefIso] : weekDates(planRefIso);
+  const label = planView === 'tag'
+    ? (() => { const d = dISO(planRefIso); return `${['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'][(d.getDay() + 6) % 7]}, ${fmtDate(planRefIso)}`; })()
+    : `KW ${isoWeek(dISO(dates[0]))} · ${fmtDate(dates[0])} – ${fmtDate(dates[6])}`;
+  const body = calTimeGrid(events, dates, todayI, 'plan');
+  const pvb = (v, t2) => `<button class="btn sm ${planView === v ? '' : 'secondary'}" data-act="plan-view" data-kind="${v}">${t2}</button>`;
+  const toggles = projects.length ? projects.map((p, idx) => `<span class="chip ${calHidden.has(p.id) ? '' : 'active'}" data-act="plan-toggle" data-pid="${p.id}"><i class="cal-dot ${projColor(idx)}"></i>${esc(p.name)}</span>`).join('') : '';
+  const palette = PLAN_TEMPLATES.map((tp, i) => `<button class="chip ${planArmed === i ? 'active' : ''}" data-act="plan-arm" data-idx="${i}"><i class="cal-dot ${tp.color}"></i>${esc(tp.label)} · ${tp.dauer >= 60 ? (tp.dauer / 60) + 'h' : tp.dauer + 'min'}</button>`).join('');
+
+  // offene Pendenzen als „To-do"-Vorrat
+  const pend = [];
+  projects.forEach((p, idx) => { if (calHidden.has(p.id)) return; offenePendenzen(p).forEach(x => pend.push({ p, idx, it: x.it })); });
+  const pendHtml = pend.length ? pend.slice(0, 12).map(x => `<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:12.5px"><i class="cal-dot ${projColor(x.idx)}"></i><span style="flex:1">${esc(x.it.text || '')}</span><span class="muted">${x.it.termin ? fmtDate(x.it.termin) : ''}</span></div>`).join('') : '<p class="muted" style="margin:0;font-size:12.5px">Keine offenen Pendenzen.</p>';
+
+  render(`
+    <div class="page-head"><div><h1>Arbeitsplanung</h1><div class="sub">Tag &amp; Woche · Termine der gewählten Projekte + eigene Zeitfenster</div></div></div>
+    ${projects.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${toggles}</div>` : ''}
+    <div class="card card-pad" style="margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px">Zeitfenster ${planArmed != null ? '<span class="muted" style="font-weight:400">– jetzt in den Kalender klicken zum Platzieren (Esc/erneut klicken zum Abwählen)</span>' : '<span class="muted" style="font-weight:400">– anklicken, dann im Kalender platzieren</span>'}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${palette}<button class="chip" data-act="plan-add" data-kind="${planRefIso}">+ eigener Block</button></div>
+    </div>
+
+    <div class="cal-head">
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn sm secondary" data-act="plan-prev" title="zurück">‹</button>
+        <button class="btn sm secondary" data-act="plan-today">Heute</button>
+        <button class="btn sm secondary" data-act="plan-next" title="vor">›</button>
+        <h2 style="margin:0 0 0 8px;font-size:16px">${label}</h2>
+      </div>
+      <div style="display:flex;gap:5px">${pvb('tag', 'Tag')}${pvb('woche', 'Woche')}</div>
+    </div>
+    ${body}
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Zeitfenster wählen → in eine Stunde klicken zum Platzieren · eigene Blöcke anklicken = bearbeiten · Projekt-Termine sind grau/farbig hinterlegt.</p>
+
+    <div class="section-head" style="margin-top:24px"><h2>Offene Pendenzen</h2><span class="hint">aus den gewählten Projekten – als To-do</span></div>
+    <div class="card card-pad">${pendHtml}</div>
+  `);
+  bindCalCols();
+}
+function planSlotClick(iso, zeit) {
+  const tpl = planArmed != null ? PLAN_TEMPLATES[planArmed] : null;
+  if (tpl) {
+    const [h, m] = (zeit || '08:00').split(':').map(Number); const start = h * 60 + (m || 0);
+    loadPlanung().push({ id: uid('pl'), datum: iso, zeit: zeit || '08:00', zeitEnde: min2hhmm(start + tpl.dauer), titel: tpl.label, color: tpl.color });
+    savePlanung(); planArmed = null; viewPlanung(); toast('Zeitfenster platziert');
+  } else { actPlanBlock(null, iso, zeit); }
+}
+function actPlanBlock(bid, datum, zeit) {
+  const b = bid ? loadPlanung().find(x => x.id === bid) : null;
+  openModal(b ? 'Block bearbeiten' : 'Eigener Zeitblock', `
+    <label class="field">Titel <input class="input" id="pb_titel" value="${b ? esc(b.titel || '') : ''}" placeholder="z.B. Devis prüfen"></label>
+    <div class="form-row">
+      <label class="field">Datum <input class="input" type="date" id="pb_datum" value="${b ? esc(b.datum || '') : esc(datum || todayIso())}"></label>
+      <label class="field">Farbe <select class="select" id="pb_color">${PLAN_FARBEN.map(([k, l]) => `<option value="${k}"${b && b.color === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Von <input class="input" type="time" id="pb_zeit" value="${b ? esc(b.zeit || '') : esc(zeit || '08:00')}"></label>
+      <label class="field">Bis <input class="input" type="time" id="pb_ende" value="${b ? esc(b.zeitEnde || '') : ''}"></label>
+    </div>
+  `, `${b ? `<button class="btn danger" data-act="plan-del" data-bid="${bid}">Löschen</button>` : '<button class="btn ghost" data-close="1">Abbrechen</button>'}<button class="btn" data-act="plan-save"${b ? ` data-bid="${bid}"` : ''}>${b ? 'Speichern' : 'Hinzufügen'}</button>`);
+}
+function savePlanBlock(bid) {
+  const titel = $('#pb_titel').value.trim(); const datum = $('#pb_datum').value;
+  if (!titel) { toast('Bitte einen Titel eingeben', 'info'); return; }
+  if (!datum) { toast('Bitte ein Datum wählen', 'info'); return; }
+  let zeit = $('#pb_zeit').value || '08:00'; let ende = $('#pb_ende').value;
+  if (!ende) { const [h, m] = zeit.split(':').map(Number); ende = min2hhmm(h * 60 + (m || 0) + 60); }
+  const data = { datum, zeit, zeitEnde: ende, titel, color: $('#pb_color').value };
+  const list = loadPlanung(); const b = bid ? list.find(x => x.id === bid) : null;
+  if (b) Object.assign(b, data); else list.push({ id: uid('pl'), ...data });
+  savePlanung(); closeModal(); viewPlanung(); toast('Block gespeichert');
+}
+function removePlanBlock(bid) { planungData = loadPlanung().filter(x => x.id !== bid); savePlanung(); closeModal(); viewPlanung(); }
+function planNav(delta) {
+  if (delta === 0) { planRefIso = todayIso(); }
+  else { const step = planView === 'woche' ? 7 : 1; const d = dISO(planRefIso || todayIso()); planRefIso = isoOf(new Date(d.getFullYear(), d.getMonth(), d.getDate() + delta * step)); }
+  viewPlanung();
+}
+function planSetView(v) { planView = v; viewPlanung(); }
+function planToggle(pid) { if (calHidden == null) calHidden = new Set(); if (calHidden.has(pid)) calHidden.delete(pid); else calHidden.add(pid); try { localStorage.setItem('so_cal_hidden', JSON.stringify([...calHidden])); } catch (_) {} viewPlanung(); }
+function planArm(i) { planArmed = (planArmed === i) ? null : i; viewPlanung(); }
 function gcalToggle(pid) {
   if (calHidden == null) calHidden = new Set();
   if (calHidden.has(pid)) calHidden.delete(pid); else calHidden.add(pid);
@@ -4799,6 +4911,17 @@ document.addEventListener('click', e => {
     case 'gcal-toggle':  gcalToggle(pid); break;
     case 'gcal-view':    gcalSetView(kind); break;
     case 'gcal-day':     gcalDay(kind); break;
+    case 'plan-view':    planSetView(kind); break;
+    case 'plan-prev':    planNav(-1); break;
+    case 'plan-next':    planNav(1); break;
+    case 'plan-today':   planNav(0); break;
+    case 'plan-day':     planView = 'tag'; planRefIso = kind; viewPlanung(); break;
+    case 'plan-toggle':  planToggle(pid); break;
+    case 'plan-arm':     planArm(Number(idx)); break;
+    case 'plan-add':     actPlanBlock(null, kind, ''); break;
+    case 'plan-edit':    actPlanBlock(bid); break;
+    case 'plan-save':    savePlanBlock(bid); break;
+    case 'plan-del':     removePlanBlock(bid); break;
     case 'new-geschoss':  actNewGeschoss(pid); break;
     case 'edit-geschoss': actNewGeschoss(pid, gid); break;
     case 'save-geschoss': saveGeschoss(pid, gid); break;

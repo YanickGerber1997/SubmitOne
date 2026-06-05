@@ -634,8 +634,9 @@ tr.done-row { background: #fbfdfb; }
 .g-cell { flex: none; border-left: 1px solid var(--border); display: flex; align-items: center; justify-content: center;
           font-size: 11px; font-weight: 600; color: var(--text-soft); white-space: nowrap; overflow: hidden; height: 100%; }
 .g-cell:first-child { border-left: none; }
-.g-cell.day { font-size: 10px; font-weight: 500; }
-.g-cell.day.we { background: #eef2f7; color: var(--text-faint); }
+.g-cell.day { font-size: 9px; font-weight: 500; }
+.g-cell.day.we { background: #e7edf5; color: var(--text-faint); }
+.g-headrow.sub .g-cell { font-size: 9px; padding: 0 1px; }
 
 .g-rows { position: relative; }
 .g-bg { position: absolute; inset: 0; display: flex; z-index: 0; }

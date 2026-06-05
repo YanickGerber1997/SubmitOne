@@ -1081,7 +1081,7 @@ function viewKosten(id) {
 
 let ganttZoom = 'monat';   // 'monat' | 'woche' | 'tag'
 let ganttSort = 'bkp';     // 'bkp' | 'start'
-const ZOOM = { monat: { px: 2.4, label: 'Monate' }, woche: { px: 9, label: 'Wochen' }, tag: { px: 26, label: 'Tage' } };
+const ZOOM = { monat: { px: 2.4, label: 'Monate' }, woche: { px: 4.6, label: 'Wochen' }, tag: { px: 13, label: 'Tage' } };
 // Gantt-Balkenfarbe je Status (über den Lebenszyklus differenziert)
 const GANTT_PHASE = {
   ausschreibung: 'rot', versendet: 'orange', offerten: 'orange', angebot_vers: 'orange', angebot_erh: 'orange',
@@ -5212,7 +5212,7 @@ function pdfGantt(pid) {
   const moBand = months.map(m => `<div class="pg-mo" style="left:${m.l}%;width:${m.w}%">${m.label}</div>`).join('');
 
   // Sub-Band (KW oder Tag) + feinere Gridlines
-  let subBand = '';
+  let subBand = '', weBands = '';
   if (ganttZoom === 'woche') {
     let d = new Date(rangeStart); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
     while (d <= rangeEnd) {
@@ -5225,7 +5225,13 @@ function pdfGantt(pid) {
     }
   } else if (ganttZoom === 'tag') {
     let d = new Date(rangeStart);
-    while (d <= rangeEnd) { const iso = isoOf(d); const we = d.getDay() === 0 || d.getDay() === 6; gridV += `<div class="pg-grid${we ? ' we' : ''}" style="left:${pct(iso)}%"></div>`; subBand += `<div class="pg-sub" style="left:${pct(iso)}%;width:${100 / totalDays}%">${totalDays <= 70 ? d.getDate() : ''}</div>`; d.setDate(d.getDate() + 1); }
+    while (d <= rangeEnd) {
+      const iso = isoOf(d); const we = d.getDay() === 0 || d.getDay() === 6;
+      gridV += `<div class="pg-grid" style="left:${pct(iso)}%"></div>`;
+      if (we) weBands += `<div class="pg-we" style="left:${pct(iso)}%;width:${100 / totalDays}%"></div>`;
+      subBand += `<div class="pg-sub${we ? ' we' : ''}" style="left:${pct(iso)}%;width:${100 / totalDays}%">${totalDays <= 70 ? d.getDate() : ''}</div>`;
+      d.setDate(d.getDate() + 1);
+    }
   }
 
   const t = today();
@@ -5247,12 +5253,14 @@ function pdfGantt(pid) {
     .pg-rows{position:relative;}
     .pg-row{position:relative;border-bottom:1px solid #f2f4f8;box-sizing:border-box;}
     .pg-grid{position:absolute;top:0;bottom:0;width:1px;background:#eef1f5;}
-    .pg-grid.mo{background:#d3dae5;} .pg-grid.we{background:#eef2f7;}
+    .pg-grid.mo{background:#d3dae5;} .pg-grid.wk{background:#e7ebf1;}
+    .pg-we{position:absolute;top:0;bottom:0;background:#e7edf5;}
+    .pg-sub.we{background:#e7edf5;color:#9aa4b1;}
     .pg-today{position:absolute;top:0;bottom:0;width:1.2px;background:#dc2626;z-index:2;}
     .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;box-shadow:0 0 0 .3px rgba(0,0,0,.06);}`;
   const inner = `<div class="pg">
     <div class="pg-side"><div class="pg-shead">BKP / Gewerk</div>${sideHtml}</div>
-    <div class="pg-main"><div class="pg-head">${moBand}${subBand}</div><div class="pg-rows">${gridV}${todayLine}${rowsHtml}</div></div>
+    <div class="pg-main"><div class="pg-head">${moBand}${subBand}</div><div class="pg-rows">${weBands}${gridV}${todayLine}${rowsHtml}</div></div>
   </div>
   <div style="margin-top:3mm;font-size:8px;color:#6b7480">${legend}</div>`;
   const rasterTxt = ganttZoom === 'tag' ? 'Tage' : ganttZoom === 'woche' ? 'Wochen' : 'Monate';

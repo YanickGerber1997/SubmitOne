@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v46';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v47';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -767,6 +767,7 @@ function projektTabs(p, active) {
     { key: 'dossier', href: `#/projekt/${p.id}/dossier`, label: 'Dossier' + (dossierFehltCount(p) ? ` <span class="tab-badge">${dossierFehltCount(p)}</span>` : '') },
     { key: 'kalender', href: `#/projekt/${p.id}/kalender`, label: 'Kalender' },
     { key: 'kosten', href: `#/projekt/${p.id}/kosten`, label: 'Kosten' },
+    { key: 'solar', href: `#/projekt/${p.id}/solar`, label: 'Solar' },
     { key: 'termine', href: `#/projekt/${p.id}/termine`, label: 'Termine / Gantt' },
     { key: 'protokolle', href: `#/projekt/${p.id}/protokolle`, label: 'Protokolle' },
     { key: 'pendenzen', href: `#/projekt/${p.id}/pendenzen`, label: 'Pendenzen' + pendBadge },
@@ -866,6 +867,7 @@ function router() {
       if (sub === 'termine') return viewTermine(a);
       if (sub === 'kalender') return viewKalender(a);
       if (sub === 'kosten') return viewKosten(a);
+      if (sub === 'solar') return viewSolar(a);
       if (sub === 'protokolle') return viewProtokolle(a);
       if (sub === 'pendenzen') return viewPendenzen(a);
       if (sub === 'dossier') return viewDossier(a);
@@ -5984,6 +5986,112 @@ function saveBtOpt(pid) {
   p.bauteile = bts; p.optionen = ops;
   optSel = { pid: null, aus: new Set(), grp: {} };   // Auswahl-Zustand zurücksetzen (IDs könnten weg sein)
   save(); closeModal(); router(); toast('Bauteile & Optionen gespeichert');
+}
+
+/* ============================================================
+   Solarrechner (PV) – pro Projekt (A)
+   ------------------------------------------------------------
+   Richtwerte Schweiz. Förderung (Pronovo EIV) als editierbare
+   Defaults – aktuelle Tarife ändern sich, daher anpassbar.
+   ============================================================ */
+const SOLAR_ORIENT = { sued: ['Süd', 1.0], suedost: ['Südost', 0.96], suedwest: ['Südwest', 0.96], ost: ['Ost', 0.85], west: ['West', 0.85], nordost: ['Nordost', 0.72], nordwest: ['Nordwest', 0.72], nord: ['Nord', 0.6] };
+const SOLAR_NEIGUNG = { flach: ['Flachdach 0–10°', 0.90], opt: ['10–35° (optimal)', 1.0], steil: ['35–55°', 0.96], sehrsteil: ['über 55°', 0.86], fassade: ['Fassade 90°', 0.70] };
+const SOLAR_DEFAULT = { kwp: 10, ertrag: 950, orient: 'sued', neigung: 'opt', verbrauch: 4500, eigenanteil: 30, strompreis: 30, einspeise: 10, invest: '', eivGrund: 200, eivLeistung: 380 };
+
+function solarOf(p) { return Object.assign({}, SOLAR_DEFAULT, p.solar || {}); }
+function solarCalc(s) {
+  const n = x => Number(x) || 0;
+  const kwp = n(s.kwp);
+  const of = (SOLAR_ORIENT[s.orient] || SOLAR_ORIENT.sued)[1];
+  const nf = (SOLAR_NEIGUNG[s.neigung] || SOLAR_NEIGUNG.opt)[1];
+  const produktion = Math.round(kwp * n(s.ertrag) * of * nf);              // kWh/Jahr
+  const verbrauch = n(s.verbrauch);
+  const anteil = Math.min(100, Math.max(0, n(s.eigenanteil))) / 100;
+  let eigenverbrauch = Math.round(produktion * anteil);
+  if (verbrauch && eigenverbrauch > verbrauch) eigenverbrauch = verbrauch; // nicht mehr nutzen als verbraucht
+  const einspeisung = Math.max(0, produktion - eigenverbrauch);
+  const autarkie = verbrauch ? Math.round(eigenverbrauch / verbrauch * 100) : null;
+  const sparBezug = eigenverbrauch * n(s.strompreis) / 100;               // CHF (Rp → CHF)
+  const verguetung = einspeisung * n(s.einspeise) / 100;
+  const ertragJahr = Math.round(sparBezug + verguetung);
+  const invest = (s.invest !== '' && s.invest != null) ? n(s.invest) : Math.round(kwp * 1600);
+  const eiv = Math.round(n(s.eivGrund) + n(s.eivLeistung) * kwp);
+  const netto = Math.max(0, invest - eiv);
+  const amort = ertragJahr > 0 ? netto / ertragJahr : null;               // Jahre
+  const rendite = netto > 0 ? ertragJahr / netto * 100 : null;            // %/Jahr
+  const co2 = Math.round(produktion * 0.128);                            // kg CO₂/Jahr (verdrängter Strommix, Richtwert)
+  return { kwp, produktion, eigenverbrauch, einspeisung, autarkie, sparBezug, verguetung, ertragJahr, invest, eiv, netto, amort, rendite, co2 };
+}
+
+function solarRead() {
+  const g = id => { const el = $('#' + id); return el ? el.value : ''; };
+  return { kwp: g('s_kwp'), ertrag: g('s_ertrag'), orient: g('s_orient'), neigung: g('s_neigung'), verbrauch: g('s_verbrauch'), eigenanteil: g('s_eigen'), strompreis: g('s_preis'), einspeise: g('s_einsp'), invest: g('s_invest'), eivGrund: g('s_eivg'), eivLeistung: g('s_eivl') };
+}
+function solarUpdate(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  p.solar = solarRead(); save();
+  const out = $('#solarOut'); if (out) out.innerHTML = solarOutHtml(solarCalc(p.solar));
+}
+function solarOutHtml(r) {
+  const kwh = x => Math.round(x).toLocaleString('de-CH');
+  const kpi = (l, v, sub, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:20px${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div>${sub ? `<div class="muted" style="font-size:11.5px;margin-top:2px">${sub}</div>` : ''}</div>`;
+  return `
+    <div class="kpi-row">
+      ${kpi('Stromproduktion', kwh(r.produktion) + ' kWh', 'pro Jahr')}
+      ${kpi('Eigenverbrauch', kwh(r.eigenverbrauch) + ' kWh', r.autarkie != null ? 'Autarkie ' + r.autarkie + '%' : 'kein Verbrauch erfasst')}
+      ${kpi('Einspeisung', kwh(r.einspeisung) + ' kWh', 'ins Netz')}
+      ${kpi('CO₂ vermieden', kwh(r.co2) + ' kg', 'pro Jahr')}
+    </div>
+    <div class="kpi-row" style="margin-top:12px">
+      ${kpi('Ertrag pro Jahr', 'CHF ' + kwh(r.ertragJahr), 'Ersparnis ' + kwh(Math.round(r.sparBezug)) + ' + Vergütung ' + kwh(Math.round(r.verguetung)), 's-green')}
+      ${kpi('Investition', 'CHF ' + kwh(r.invest), '− Förderung ' + kwh(r.eiv) + ' = netto ' + kwh(r.netto))}
+      ${kpi('Amortisation', r.amort != null ? r.amort.toFixed(1) + ' Jahre' : '–', 'bis Anlage bezahlt', 'brand')}
+      ${kpi('Rendite', r.rendite != null ? r.rendite.toFixed(1) + ' %' : '–', 'pro Jahr auf Netto-Invest')}
+    </div>`;
+}
+
+function viewSolar(pid) {
+  const p = findProjekt(pid);
+  if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  const s = solarOf(p);
+  const optSel2 = (id, map, cur) => `<select class="select solar-in" id="${id}">${Object.entries(map).map(([k, v]) => `<option value="${k}"${cur === k ? ' selected' : ''}>${esc(v[0])}</option>`).join('')}</select>`;
+  const fld = (id, label, val, unit, ph) => `<label class="field">${label}${unit ? ` <span class="muted" style="font-weight:400;font-size:11px">(${unit})</span>` : ''} <input class="input solar-in" type="number" id="${id}" value="${val !== '' && val != null ? val : ''}"${ph ? ` placeholder="${ph}"` : ''}></label>`;
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Solar</div>
+    <div class="detail-head">
+      <div><h1 style="margin:0;font-size:23px">☀ Solarrechner</h1><div class="sub" style="margin-top:5px">Photovoltaik-Ertrag, Eigenverbrauch &amp; Wirtschaftlichkeit · ${esc(p.name)}</div></div>
+    </div>
+    ${projektTabs(p, 'solar')}
+
+    <div class="two-col">
+      <div class="card card-pad">
+        <h2 style="margin:0 0 10px;font-size:15px">Anlage</h2>
+        <div class="form-row">${fld('s_kwp', 'Leistung', s.kwp, 'kWp')}${fld('s_ertrag', 'Spez. Ertrag', s.ertrag, 'kWh/kWp·a')}</div>
+        <div class="form-row">
+          <label class="field">Ausrichtung ${optSel2('s_orient', SOLAR_ORIENT, s.orient)}</label>
+          <label class="field">Dachneigung ${optSel2('s_neigung', SOLAR_NEIGUNG, s.neigung)}</label>
+        </div>
+        <p class="muted" style="font-size:11.5px;margin:4px 0 0">Richtwert CH Mittelland: ~950–1050 kWh/kWp bei Südausrichtung, ~30° Neigung. Faustregel ~5 m² Dachfläche pro kWp.</p>
+
+        <h2 style="margin:16px 0 10px;font-size:15px">Verbrauch &amp; Tarife</h2>
+        <div class="form-row">${fld('s_verbrauch', 'Stromverbrauch', s.verbrauch, 'kWh/Jahr')}${fld('s_eigen', 'Eigenverbrauchsanteil', s.eigenanteil, '%')}</div>
+        <p class="muted" style="font-size:11.5px;margin:0 0 8px">Ohne Speicher typisch ~30 %, mit Batteriespeicher ~50–70 %.</p>
+        <div class="form-row">${fld('s_preis', 'Strompreis Bezug', s.strompreis, 'Rp/kWh')}${fld('s_einsp', 'Rückliefertarif', s.einspeise, 'Rp/kWh')}</div>
+
+        <h2 style="margin:16px 0 10px;font-size:15px">Investition &amp; Förderung</h2>
+        ${fld('s_invest', 'Investition', s.invest, 'CHF', 'leer = ~1600 CHF/kWp')}
+        <div class="form-row">${fld('s_eivg', 'EIV Grundbeitrag', s.eivGrund, 'CHF')}${fld('s_eivl', 'EIV Leistungsbeitrag', s.eivLeistung, 'CHF/kWp')}</div>
+        <p class="muted" style="font-size:11.5px;margin:4px 0 0">Pronovo Einmalvergütung (EIV) – Richtwerte, aktuelle Tarife auf pronovo.ch prüfen.</p>
+      </div>
+
+      <div class="card card-pad">
+        <h2 style="margin:0 0 12px;font-size:15px">Ergebnis</h2>
+        <div id="solarOut">${solarOutHtml(solarCalc(s))}</div>
+        <p class="muted" style="font-size:11.5px;margin:14px 0 0">Überschlagsrechnung ohne Degradation/Teuerung. Für eine verbindliche Auslegung Fachplaner beiziehen.</p>
+      </div>
+    </div>
+  `);
+  $$('.solar-in').forEach(el => el.addEventListener('input', () => solarUpdate(pid)));
 }
 
 function pdfKostenschaetzung(pid) {

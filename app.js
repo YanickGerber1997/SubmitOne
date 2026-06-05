@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v48';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v49';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -5996,66 +5996,125 @@ function saveBtOpt(pid) {
    ============================================================ */
 const SOLAR_ORIENT = { sued: ['Süd', 1.0], suedost: ['Südost', 0.96], suedwest: ['Südwest', 0.96], ost: ['Ost', 0.85], west: ['West', 0.85], nordost: ['Nordost', 0.72], nordwest: ['Nordwest', 0.72], nord: ['Nord', 0.6] };
 const SOLAR_NEIGUNG = { flach: ['Flachdach 0–10°', 0.90], opt: ['10–35° (optimal)', 1.0], steil: ['35–55°', 0.96], sehrsteil: ['über 55°', 0.86], fassade: ['Fassade 90°', 0.70] };
-const SOLAR_DEFAULT = { kwp: 10, ertrag: 950, orient: 'sued', neigung: 'opt', verbrauch: 4500, eigenanteil: 30, strompreis: 30, einspeise: 10, invest: '', eivGrund: 200, eivLeistung: 380 };
+const SOLAR_DEFAULT = { flaeche: 50, wpm2: 200, ertrag: 950, orient: 'sued', neigung: 'opt', verbrauch: 4500, eigenanteil: 30, strompreis: 30, einspeise: 10, anlagekosten: '', eivGrund: 200, eivLeistung: 380, bauseite: [] };
+const SOLAR_CHF_KWP = 1600;   // Richtwert Anlagekosten pro kWp, wenn nicht erfasst
 
-function solarOf(p) { return Object.assign({}, SOLAR_DEFAULT, p.solar || {}); }
+function solarOf(p) {
+  const s = Object.assign({}, SOLAR_DEFAULT, p.solar || {});
+  // Migration alter Stände (kWp direkt) → Dachfläche
+  if ((s.flaeche === '' || s.flaeche == null) && p.solar && p.solar.kwp) {
+    const w = Number(s.wpm2) || 200; s.flaeche = Math.round(Number(p.solar.kwp) * 1000 / w);
+  }
+  if (!Array.isArray(s.bauseite)) s.bauseite = [];
+  return s;
+}
 function solarCalc(s) {
   const n = x => Number(x) || 0;
-  const kwp = n(s.kwp);
+  const flaeche = n(s.flaeche), wpm2 = n(s.wpm2);
+  const kwp = flaeche * wpm2 / 1000;                                       // Dachfläche × Modulleistung → kWp
   const of = (SOLAR_ORIENT[s.orient] || SOLAR_ORIENT.sued)[1];
   const nf = (SOLAR_NEIGUNG[s.neigung] || SOLAR_NEIGUNG.opt)[1];
   const produktion = Math.round(kwp * n(s.ertrag) * of * nf);              // kWh/Jahr
   const verbrauch = n(s.verbrauch);
   const anteil = Math.min(100, Math.max(0, n(s.eigenanteil))) / 100;
   let eigenverbrauch = Math.round(produktion * anteil);
-  if (verbrauch && eigenverbrauch > verbrauch) eigenverbrauch = verbrauch; // nicht mehr nutzen als verbraucht
+  const gedeckelt = verbrauch && eigenverbrauch > verbrauch;
+  if (gedeckelt) eigenverbrauch = verbrauch;                              // nicht mehr nutzen als verbraucht
   const einspeisung = Math.max(0, produktion - eigenverbrauch);
   const autarkie = verbrauch ? Math.round(eigenverbrauch / verbrauch * 100) : null;
   const sparBezug = eigenverbrauch * n(s.strompreis) / 100;               // CHF (Rp → CHF)
   const verguetung = einspeisung * n(s.einspeise) / 100;
   const ertragJahr = Math.round(sparBezug + verguetung);
-  const invest = (s.invest !== '' && s.invest != null) ? n(s.invest) : Math.round(kwp * 1600);
+  // Stromkosten heute (ohne PV) vs. mit PV
+  const stromkostenJetzt = Math.round(verbrauch * n(s.strompreis) / 100);
+  const reststrombezug = Math.max(0, verbrauch - eigenverbrauch);          // kWh weiterhin ab Netz
+  const stromkostenNeu = Math.round(reststrombezug * n(s.strompreis) / 100 - verguetung);
+  const anlage = (s.anlagekosten !== '' && s.anlagekosten != null) ? n(s.anlagekosten) : Math.round(kwp * SOLAR_CHF_KWP);
+  const bauseiteSum = (s.bauseite || []).reduce((a, b) => a + (Number(b.betrag) || 0), 0);
+  const invest = anlage + bauseiteSum;
   const eiv = Math.round(n(s.eivGrund) + n(s.eivLeistung) * kwp);
   const netto = Math.max(0, invest - eiv);
   const amort = ertragJahr > 0 ? netto / ertragJahr : null;               // Jahre
   const rendite = netto > 0 ? ertragJahr / netto * 100 : null;            // %/Jahr
   const co2 = Math.round(produktion * 0.128);                            // kg CO₂/Jahr (verdrängter Strommix, Richtwert)
-  return { kwp, produktion, eigenverbrauch, einspeisung, autarkie, sparBezug, verguetung, ertragJahr, invest, eiv, netto, amort, rendite, co2 };
+  return { flaeche, wpm2, kwp, of, nf, produktion, verbrauch, anteil, gedeckelt, eigenverbrauch, einspeisung, autarkie, sparBezug, verguetung, ertragJahr, stromkostenJetzt, reststrombezug, stromkostenNeu, anlage, bauseiteSum, invest, eiv, netto, amort, rendite, co2 };
 }
 
 function solarRead() {
   const g = id => { const el = $('#' + id); return el ? el.value : ''; };
-  return { kwp: g('s_kwp'), ertrag: g('s_ertrag'), orient: g('s_orient'), neigung: g('s_neigung'), verbrauch: g('s_verbrauch'), eigenanteil: g('s_eigen'), strompreis: g('s_preis'), einspeise: g('s_einsp'), invest: g('s_invest'), eivGrund: g('s_eivg'), eivLeistung: g('s_eivl') };
+  const bauseite = $$('#s_bauseite .bsr').map(r => ({ text: r.querySelector('.bs-text').value.trim(), betrag: Number(r.querySelector('.bs-betrag').value) || 0 })).filter(b => b.text || b.betrag);
+  return { flaeche: g('s_flaeche'), wpm2: g('s_wpm2'), ertrag: g('s_ertrag'), orient: g('s_orient'), neigung: g('s_neigung'), verbrauch: g('s_verbrauch'), eigenanteil: g('s_eigen'), strompreis: g('s_preis'), einspeise: g('s_einsp'), anlagekosten: g('s_anlage'), eivGrund: g('s_eivg'), eivLeistung: g('s_eivl'), bauseite };
 }
 function solarUpdate(pid) {
   const p = findProjekt(pid); if (!p) return;
   p.solar = solarRead(); save();
-  const out = $('#solarOut'); if (out) out.innerHTML = solarOutHtml(solarCalc(p.solar));
+  const out = $('#solarOut'); if (out) out.innerHTML = solarOutHtml(solarCalc(p.solar), p.solar);
 }
-function solarOutHtml(r) {
+function solarOutHtml(r, s) {
   const kwh = x => Math.round(x).toLocaleString('de-CH');
+  const f1 = x => (Math.round(x * 10) / 10).toLocaleString('de-CH');
   const kpi = (l, v, sub, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:20px${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div>${sub ? `<div class="muted" style="font-size:11.5px;margin-top:2px">${sub}</div>` : ''}</div>`;
   return `
+    <div class="solar-hl">
+      <div class="solar-hl-item"><div class="k-label">Erwarteter Ertrag</div><div class="solar-hl-v">${kwh(r.produktion)} kWh<span class="solar-hl-u">/Jahr</span></div></div>
+      <div class="solar-hl-item"><div class="k-label">Stromkosten heute</div><div class="solar-hl-v">CHF ${kwh(r.stromkostenJetzt)}<span class="solar-hl-u">/Jahr</span></div></div>
+      <div class="solar-hl-item"><div class="k-label">Stromkosten mit PV</div><div class="solar-hl-v" style="color:var(--s-green)">CHF ${kwh(r.stromkostenNeu)}<span class="solar-hl-u">/Jahr</span></div></div>
+    </div>
+    <p class="muted" style="font-size:12px;margin:8px 0 14px">Ersparnis <b>CHF ${kwh(r.ertragJahr)}/Jahr</b> = Stromkosten heute ${kwh(r.stromkostenJetzt)} − mit PV ${kwh(r.stromkostenNeu)} (Eigenverbrauch gespart + Überschuss vergütet).</p>
     <div class="kpi-row">
-      ${kpi('Stromproduktion', kwh(r.produktion) + ' kWh', 'pro Jahr')}
-      ${kpi('Eigenverbrauch', kwh(r.eigenverbrauch) + ' kWh', r.autarkie != null ? 'Autarkie ' + r.autarkie + '%' : 'kein Verbrauch erfasst')}
+      ${kpi('Anlagenleistung', f1(r.kwp) + ' kWp', f1(r.flaeche) + ' m² Dach')}
+      ${kpi('Eigenverbrauch', kwh(r.eigenverbrauch) + ' kWh', r.autarkie != null ? 'Autarkie ' + r.autarkie + '%' : 'kein Verbrauch')}
       ${kpi('Einspeisung', kwh(r.einspeisung) + ' kWh', 'ins Netz')}
       ${kpi('CO₂ vermieden', kwh(r.co2) + ' kg', 'pro Jahr')}
     </div>
     <div class="kpi-row" style="margin-top:12px">
-      ${kpi('Ertrag pro Jahr', 'CHF ' + kwh(r.ertragJahr), 'Ersparnis ' + kwh(Math.round(r.sparBezug)) + ' + Vergütung ' + kwh(Math.round(r.verguetung)), 's-green')}
-      ${kpi('Investition', 'CHF ' + kwh(r.invest), '− Förderung ' + kwh(r.eiv) + ' = netto ' + kwh(r.netto))}
-      ${kpi('Amortisation', r.amort != null ? r.amort.toFixed(1) + ' Jahre' : '–', 'bis Anlage bezahlt', 'brand')}
-      ${kpi('Rendite', r.rendite != null ? r.rendite.toFixed(1) + ' %' : '–', 'pro Jahr auf Netto-Invest')}
-    </div>`;
+      ${kpi('Ertrag pro Jahr', 'CHF ' + kwh(r.ertragJahr), 'Ersparnis + Vergütung', 's-green')}
+      ${kpi('Investition', 'CHF ' + kwh(r.invest), 'netto ' + kwh(r.netto) + ' n. Förderung')}
+      ${kpi('Amortisation', r.amort != null ? f1(r.amort) + ' Jahre' : '–', 'bis bezahlt', 'brand')}
+      ${kpi('Rendite', r.rendite != null ? f1(r.rendite) + ' %' : '–', 'pro Jahr')}
+    </div>
+    ${solarRechenweg(r, s)}`;
+}
+function solarRechenweg(r, s) {
+  const kwh = x => Math.round(x).toLocaleString('de-CH');
+  const f1 = x => (Math.round(x * 10) / 10).toLocaleString('de-CH');
+  const fr = x => 'CHF ' + Math.round(x).toLocaleString('de-CH');
+  const oL = (SOLAR_ORIENT[s.orient] || SOLAR_ORIENT.sued);
+  const nL = (SOLAR_NEIGUNG[s.neigung] || SOLAR_NEIGUNG.opt);
+  const row = (f, e) => `<div class="rw-row"><span class="rw-f">${f}</span><span class="rw-e">${e}</span></div>`;
+  return `<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+    <div style="font-weight:600;font-size:13px;margin-bottom:8px">Rechenweg – Schritt für Schritt</div>
+    ${row(`Dachfläche ${f1(r.flaeche)} m² × ${kwh(r.wpm2)} Wp/m² ÷ 1000`, '<b>' + f1(r.kwp) + ' kWp</b>')}
+    ${row(`${f1(r.kwp)} kWp × ${kwh(s.ertrag)} kWh/kWp × ${oL[0]} (${oL[1].toFixed(2)}) × Neigung (${nL[1].toFixed(2)})`, '<b>' + kwh(r.produktion) + ' kWh/a</b>')}
+    ${row(`Eigenverbrauch: ${kwh(r.produktion)} × ${Math.round(r.anteil * 100)} %${r.gedeckelt ? ` → auf Verbrauch ${kwh(r.verbrauch)} begrenzt` : ''}`, kwh(r.eigenverbrauch) + ' kWh')}
+    ${row(`Einspeisung: ${kwh(r.produktion)} − ${kwh(r.eigenverbrauch)}`, kwh(r.einspeisung) + ' kWh')}
+    ${row(`Ersparnis: ${kwh(r.eigenverbrauch)} kWh × ${s.strompreis} Rp`, fr(r.sparBezug))}
+    ${row(`Einspeise-Vergütung: ${kwh(r.einspeisung)} kWh × ${s.einspeise} Rp`, fr(r.verguetung))}
+    ${row(`<b>Ertrag pro Jahr</b>`, '<b>' + fr(r.ertragJahr) + '</b>')}
+    <div style="height:6px"></div>
+    ${row(`PV-Anlagekosten${(s.anlagekosten === '' || s.anlagekosten == null) ? ` (${f1(r.kwp)} kWp × ${SOLAR_CHF_KWP})` : ''}`, fr(r.anlage))}
+    ${r.bauseiteSum ? row(`+ Bauseitige Kosten (Gerüst, Elektriker …)`, fr(r.bauseiteSum)) : ''}
+    ${row(`= Investition total`, '<b>' + fr(r.invest) + '</b>')}
+    ${row(`− Förderung EIV (${s.eivGrund} + ${s.eivLeistung} × ${f1(r.kwp)})`, '− ' + fr(r.eiv))}
+    ${row(`<b>= Netto-Investition</b>`, '<b>' + fr(r.netto) + '</b>')}
+    <div style="height:6px"></div>
+    ${row(`Amortisation: ${fr(r.netto)} ÷ ${fr(r.ertragJahr)}/Jahr`, '<b>' + (r.amort != null ? f1(r.amort) + ' Jahre' : '–') + '</b>')}
+  </div>`;
+}
+function bsRow(pid, text = '', betrag = '') {
+  return `<div class="bsr form-row" style="margin-bottom:6px;align-items:center;gap:6px">
+    <input class="input bs-text" placeholder="z.B. Gerüst, Elektriker, Netzanschluss" value="${esc(text)}" style="flex:2">
+    <input class="input bs-betrag" type="number" placeholder="CHF" value="${betrag !== '' && betrag != null ? betrag : ''}" style="flex:1;max-width:130px">
+    <button class="x-btn" data-act="solar-bs-del" data-pid="${pid}" type="button" title="entfernen">×</button>
+  </div>`;
 }
 
 function viewSolar(pid) {
   const p = findProjekt(pid);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const s = solarOf(p);
-  const optSel2 = (id, map, cur) => `<select class="select solar-in" id="${id}">${Object.entries(map).map(([k, v]) => `<option value="${k}"${cur === k ? ' selected' : ''}>${esc(v[0])}</option>`).join('')}</select>`;
-  const fld = (id, label, val, unit, ph) => `<label class="field">${label}${unit ? ` <span class="muted" style="font-weight:400;font-size:11px">(${unit})</span>` : ''} <input class="input solar-in" type="number" id="${id}" value="${val !== '' && val != null ? val : ''}"${ph ? ` placeholder="${ph}"` : ''}></label>`;
+  const sel = (id, map, cur) => `<select class="select" id="${id}">${Object.entries(map).map(([k, v]) => `<option value="${k}"${cur === k ? ' selected' : ''}>${esc(v[0])}</option>`).join('')}</select>`;
+  const fld = (id, label, val, unit, ph) => `<label class="field">${label}${unit ? ` <span class="muted" style="font-weight:400;font-size:11px">(${unit})</span>` : ''} <input class="input" type="number" id="${id}" value="${val !== '' && val != null ? val : ''}"${ph ? ` placeholder="${ph}"` : ''}></label>`;
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Solar</div>
     <div class="detail-head">
@@ -6064,14 +6123,15 @@ function viewSolar(pid) {
     ${projektTabs(p, 'solar')}
 
     <div class="two-col">
-      <div class="card card-pad">
-        <h2 style="margin:0 0 10px;font-size:15px">Anlage</h2>
-        <div class="form-row">${fld('s_kwp', 'Leistung', s.kwp, 'kWp')}${fld('s_ertrag', 'Spez. Ertrag', s.ertrag, 'kWh/kWp·a')}</div>
+      <div class="card card-pad" id="solarInputs">
+        <h2 style="margin:0 0 10px;font-size:15px">Anlage &amp; Dachfläche</h2>
+        <div class="form-row">${fld('s_flaeche', 'Dachfläche', s.flaeche, 'm²')}${fld('s_wpm2', 'Modulleistung', s.wpm2, 'Wp/m²')}</div>
         <div class="form-row">
-          <label class="field">Ausrichtung ${optSel2('s_orient', SOLAR_ORIENT, s.orient)}</label>
-          <label class="field">Dachneigung ${optSel2('s_neigung', SOLAR_NEIGUNG, s.neigung)}</label>
+          <label class="field">Ausrichtung ${sel('s_orient', SOLAR_ORIENT, s.orient)}</label>
+          <label class="field">Dachneigung ${sel('s_neigung', SOLAR_NEIGUNG, s.neigung)}</label>
         </div>
-        <p class="muted" style="font-size:11.5px;margin:4px 0 0">Richtwert CH Mittelland: ~950–1050 kWh/kWp bei Südausrichtung, ~30° Neigung. Faustregel ~5 m² Dachfläche pro kWp.</p>
+        ${fld('s_ertrag', 'Spezifischer Ertrag', s.ertrag, 'kWh/kWp·a')}
+        <p class="muted" style="font-size:11.5px;margin:4px 0 0">Modulleistung ~200 Wp/m² ≙ 20 % Wirkungsgrad (~5 m²/kWp). Spez. Ertrag CH Mittelland ~950–1050 kWh/kWp bei Süd, ~30°.</p>
 
         <h2 style="margin:16px 0 10px;font-size:15px">Verbrauch &amp; Tarife</h2>
         <div class="form-row">${fld('s_verbrauch', 'Stromverbrauch', s.verbrauch, 'kWh/Jahr')}${fld('s_eigen', 'Eigenverbrauchsanteil', s.eigenanteil, '%')}</div>
@@ -6079,19 +6139,23 @@ function viewSolar(pid) {
         <div class="form-row">${fld('s_preis', 'Strompreis Bezug', s.strompreis, 'Rp/kWh')}${fld('s_einsp', 'Rückliefertarif', s.einspeise, 'Rp/kWh')}</div>
 
         <h2 style="margin:16px 0 10px;font-size:15px">Investition &amp; Förderung</h2>
-        ${fld('s_invest', 'Investition', s.invest, 'CHF', 'leer = ~1600 CHF/kWp')}
-        <div class="form-row">${fld('s_eivg', 'EIV Grundbeitrag', s.eivGrund, 'CHF')}${fld('s_eivl', 'EIV Leistungsbeitrag', s.eivLeistung, 'CHF/kWp')}</div>
+        ${fld('s_anlage', 'PV-Anlagekosten', s.anlagekosten, 'CHF', 'leer = ~' + SOLAR_CHF_KWP + ' CHF/kWp')}
+        <div class="muted" style="font-size:12px;margin:12px 0 4px"><strong>Bauseitige Zusatzkosten</strong> – Gerüst, Elektriker, Netzanschluss …</div>
+        <div id="s_bauseite">${(s.bauseite || []).map(b => bsRow(p.id, b.text, b.betrag)).join('')}</div>
+        <button class="btn sm secondary" data-act="solar-bs-add" data-pid="${p.id}" type="button">+ Position</button>
+        <div class="form-row" style="margin-top:14px">${fld('s_eivg', 'EIV Grundbeitrag', s.eivGrund, 'CHF')}${fld('s_eivl', 'EIV Leistungsbeitrag', s.eivLeistung, 'CHF/kWp')}</div>
         <p class="muted" style="font-size:11.5px;margin:4px 0 0">Pronovo Einmalvergütung (EIV) – Richtwerte, aktuelle Tarife auf pronovo.ch prüfen.</p>
       </div>
 
       <div class="card card-pad">
         <h2 style="margin:0 0 12px;font-size:15px">Ergebnis</h2>
-        <div id="solarOut">${solarOutHtml(solarCalc(s))}</div>
+        <div id="solarOut">${solarOutHtml(solarCalc(s), s)}</div>
         <p class="muted" style="font-size:11.5px;margin:14px 0 0">Überschlagsrechnung ohne Degradation/Teuerung. Für eine verbindliche Auslegung Fachplaner beiziehen.</p>
       </div>
     </div>
   `);
-  $$('.solar-in').forEach(el => el.addEventListener('input', () => solarUpdate(pid)));
+  const inp = $('#solarInputs');
+  if (inp) { inp.addEventListener('input', () => solarUpdate(pid)); inp.addEventListener('change', () => solarUpdate(pid)); }
 }
 
 function pdfKostenschaetzung(pid) {
@@ -7420,6 +7484,8 @@ document.addEventListener('click', e => {
     case 'opt-toggle':   { optEnsure(findProjekt(pid)); const o = act.dataset.optid; if (optSel.aus.has(o)) optSel.aus.delete(o); else optSel.aus.add(o); router(); } break;
     case 'opt-variante': { optEnsure(findProjekt(pid)); optSel.grp[act.dataset.grp] = act.dataset.optid; router(); } break;
     case 'opt-manage':   actBauteileOptionen(pid); break;
+    case 'solar-bs-add': { const w = $('#s_bauseite'); if (w) { w.insertAdjacentHTML('beforeend', bsRow(pid)); solarUpdate(pid); } } break;
+    case 'solar-bs-del': { const r = act.closest('.bsr'); if (r) { r.remove(); solarUpdate(pid); } } break;
     case 'bt-add':       { const w = $('#bt_rows'); if (w) w.insertAdjacentHTML('beforeend', obtRow(null)); } break;
     case 'op-add':       { const w = $('#op_rows'); if (w) w.insertAdjacentHTML('beforeend', oopRow(findProjekt(pid), null)); } break;
     case 'row-del':      { const r = act.closest('.bt-row, .op-row'); if (r) r.remove(); } break;

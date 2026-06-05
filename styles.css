@@ -981,6 +981,16 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .opt-sum { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-soft); }
 .opt-sum:last-child { color: var(--text); }
 
+/* --- Solarrechner: Kernzahlen + Rechenweg --- */
+.solar-hl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.solar-hl-item { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.solar-hl-v { font-size: 21px; font-weight: 700; margin-top: 2px; line-height: 1.1; }
+.solar-hl-u { font-size: 12px; font-weight: 400; color: var(--text-soft); margin-left: 2px; }
+.rw-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 12.5px; border-bottom: 1px dotted var(--border); }
+.rw-row .rw-f { color: var(--text-soft); }
+.rw-row .rw-e { white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 680px) { .solar-hl { grid-template-columns: 1fr; } }
+
 /* --- Cloud-Bearbeitungskonflikt: nicht-zerstörerisches Banner --- */
 .cloud-conflict-bar {
   position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);

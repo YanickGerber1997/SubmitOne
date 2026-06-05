@@ -3408,19 +3408,38 @@ function planPaste() {
   loadPlanung().push(b); savePlanung(); planSel = b.id; viewPlanung(); toast('Eingefügt');
 }
 // Drag-and-Drop + Auswahl-Klicks im Planungsraster
+// Live-Vorschau-Block, der beim Ziehen Grösse & Zeitspanne im Kalender zeigt
+let planDrag = null, planGhostEl = null;
+function planGhostShow(col, e) {
+  if (!planDrag) return;
+  const y = e.clientY - col.getBoundingClientRect().top;
+  const startMin = planDrag.kind === 'blk'
+    ? snap30abs(CAL_SH * 60 + (y / CAL_HH * 60) - dragBlockOffsetMin)
+    : snap30(y);
+  const dur = planDrag.dur || 60;
+  const a = startMin, b = Math.min(CAL_EH * 60, startMin + dur);
+  if (!planGhostEl) planGhostEl = document.createElement('div');
+  planGhostEl.className = 'cal-tev plan ghost ' + (planDrag.color || 'blue');
+  planGhostEl.style.top = (a - CAL_SH * 60) / 60 * CAL_HH + 'px';
+  planGhostEl.style.height = Math.max((b - a) / 60 * CAL_HH, CAL_HH / 2) + 'px';
+  planGhostEl.textContent = min2hhmm(a) + '–' + min2hhmm(b) + (planDrag.label ? '  ' + planDrag.label : '');
+  if (planGhostEl.parentElement !== col) col.appendChild(planGhostEl);
+}
+function planGhostHide() { if (planGhostEl) planGhostEl.remove(); planGhostEl = null; planDrag = null; }
 function bindPlanDnd() {
-  $$('[data-tpl]').forEach(c => { c.addEventListener('dragstart', e => { dragBlockOffsetMin = 0; e.dataTransfer.setData('text/plain', 'tpl:' + c.dataset.tpl); }); });
-  $$('[data-pend]').forEach(c => { c.addEventListener('dragstart', e => { dragBlockOffsetMin = 0; e.dataTransfer.setData('text/plain', 'pend:' + c.dataset.pend); }); });
+  $$('[data-tpl]').forEach(c => { c.addEventListener('dragstart', e => { dragBlockOffsetMin = 0; const tp = PLAN_TEMPLATES[+c.dataset.tpl]; planDrag = { kind: 'tpl', dur: tp.dauer, color: tp.color, label: tp.label }; e.dataTransfer.setData('text/plain', 'tpl:' + c.dataset.tpl); }); c.addEventListener('dragend', planGhostHide); });
+  $$('[data-pend]').forEach(c => { c.addEventListener('dragstart', e => { dragBlockOffsetMin = 0; const pp = planPend[+c.dataset.pend]; planDrag = pp ? { kind: 'pend', dur: 60, color: pp.color, label: pp.titel } : null; e.dataTransfer.setData('text/plain', 'pend:' + c.dataset.pend); }); c.addEventListener('dragend', planGhostHide); });
   $$('.cal-tev.plan').forEach(el => {
     if (el.dataset.bid === planSel) el.classList.add('sel');
-    el.addEventListener('dragstart', e => { e.stopPropagation(); dragBlockOffsetMin = (e.offsetY || 0) / CAL_HH * 60; e.dataTransfer.setData('text/plain', 'blk:' + el.dataset.bid); });
+    el.addEventListener('dragstart', e => { e.stopPropagation(); dragBlockOffsetMin = (e.offsetY || 0) / CAL_HH * 60; const b = loadPlanung().find(x => x.id === el.dataset.bid); if (b) { const s = b.zeit ? b.zeit.split(':').map(Number) : [8, 0]; const en = b.zeitEnde ? b.zeitEnde.split(':').map(Number) : [s[0] + 1, s[1]]; planDrag = { kind: 'blk', dur: (en[0] * 60 + en[1]) - (s[0] * 60 + s[1]) || 60, color: b.color, label: b.titel }; } e.dataTransfer.setData('text/plain', 'blk:' + el.dataset.bid); });
+    el.addEventListener('dragend', planGhostHide);
     el.addEventListener('click', e => { e.stopPropagation(); planSelect(el.dataset.bid); });
     el.addEventListener('dblclick', e => { e.stopPropagation(); actPlanBlock(el.dataset.bid); });
   });
   $$('.cal-col').forEach(col => {
-    col.addEventListener('dragover', e => e.preventDefault());
+    col.addEventListener('dragover', e => { e.preventDefault(); planGhostShow(col, e); });
     col.addEventListener('drop', e => {
-      e.preventDefault(); const d = e.dataTransfer.getData('text/plain'); if (!d) return;
+      e.preventDefault(); planGhostHide(); const d = e.dataTransfer.getData('text/plain'); if (!d) return;
       const iso = col.dataset.iso; const y = e.clientY - col.getBoundingClientRect().top;
       if (d.startsWith('tpl:')) placePlanBlock(iso, min2hhmm(snap30(y)), PLAN_TEMPLATES[+d.slice(4)]);
       else if (d.startsWith('pend:')) { const pp = planPend[+d.slice(5)]; if (pp) placePlanBlock(iso, min2hhmm(snap30(y)), { label: pp.titel, dauer: 60, color: pp.color }); }

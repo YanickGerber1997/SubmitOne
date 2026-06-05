@@ -682,6 +682,7 @@ function router() {
     case 'kalender':      setActiveNav('kalender');      return viewKalenderGlobal();
     case 'pendenzen':     setActiveNav('pendenzen');     return viewPendenzenGlobal();
     case 'planung':       setActiveNav('planung');       return viewPlanung();
+    case 'erfassen':      setActiveNav('erfassen');      return viewErfassen();
     case 'drucken':       setActiveNav('drucken');       return viewDrucken();
     case 'honorar':       setActiveNav('honorar'); honorarPid = null; return viewHonorar();
     case 'kontakte':      setActiveNav('kontakte');      return viewKontakte();
@@ -3769,6 +3770,68 @@ function viewDrucken() {
   const sel = $('#druck_pid'); if (sel) sel.addEventListener('change', () => { druckPid = sel.value; viewDrucken(); });
 }
 
+/* --- Erfassen: zentraler Schnell-Erfassungs-Reiter (Gegenstück zu Drucken) --- */
+function viewErfassen() {
+  const card = (kind, ico, label, desc) => `<button class="btn secondary" data-act="erfassen" data-kind="${kind}" style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;height:auto;padding:13px 15px;white-space:normal"><span style="font-weight:700;font-size:13.5px">${ico} ${label}</span><span class="muted" style="font-size:11.5px;font-weight:400">${desc}</span></button>`;
+  render(`
+    <div class="page-head"><div><h1>Erfassen</h1><div class="sub">Schnell festhalten – Art wählen, Projekt angeben, fertig</div></div></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-top:6px">
+      ${card('pendenz', '📋', 'Pendenz', 'Aufgabe / To-do für ein Projekt')}
+      ${card('termin', '📅', 'Termin', 'Kalendereintrag mit Datum & Zeit')}
+      ${card('rechnung', '🧾', 'Rechnung', 'Teil-/Schlussrechnung zu einem Gewerk')}
+      ${card('protokoll', '📝', 'Protokoll / Aktennotiz', 'Sitzung oder Notiz festhalten')}
+      ${card('vergabe', '◫', 'Arbeitsbeschrieb', 'Gewerk / Kostenschätzung anlegen')}
+      ${card('kontakt', '👤', 'Kontakt', 'Firma / Person zur Adressliste')}
+      ${card('projekt', '➕', 'Neues Projekt', 'Bauprojekt anlegen')}
+    </div>
+    <p class="muted" style="font-size:12px;margin-top:14px">„Pendenz", „Termin" &amp; „Rechnung" fragen zuerst nach dem Projekt – so landet alles am richtigen Ort.</p>
+  `);
+}
+function vergabeOpts(p) {
+  const vs = (p && p.vergaben) || [];
+  if (!vs.length) return '<option value="">– noch keine Gewerke –</option>';
+  return vs.map(v => `<option value="${v.id}">${esc((v.bkp ? v.bkp + ' ' : '') + (v.gewerk || 'Gewerk'))}</option>`).join('');
+}
+function erfassen(kind) {
+  const projekte = state.projekte || [];
+  const needsProj = ['pendenz', 'termin', 'rechnung', 'protokoll', 'vergabe'].includes(kind);
+  if (needsProj && !projekte.length) { toast('Zuerst ein Projekt anlegen', 'info'); return actNewProjekt(); }
+  switch (kind) {
+    case 'pendenz': return actPendenz();
+    case 'projekt': return actNewProjekt();
+    case 'kontakt': return actNewKontakt();
+    case 'termin': case 'protokoll': case 'rechnung': case 'vergabe': return erfassenPick(kind);
+  }
+}
+// Projekt (+ ggf. Gewerk/Art) wählen, dann an den richtigen Ort führen und Erfassen-Dialog öffnen
+function erfassenPick(kind) {
+  const projekte = state.projekte || [];
+  const first = projekte[0];
+  const titel = { termin: 'Termin erfassen', protokoll: 'Protokoll / Aktennotiz', rechnung: 'Rechnung erfassen', vergabe: 'Arbeitsbeschrieb erfassen' }[kind];
+  const typSel = kind === 'protokoll' ? `<label class="field">Art <select class="select" id="ef_typ"><option value="sitzung">Sitzungsprotokoll</option><option value="aktennotiz">Aktennotiz</option></select></label>` : '';
+  const gewSel = kind === 'rechnung' ? `<label class="field">Gewerk / Arbeitsbeschrieb <select class="select" id="ef_vid">${vergabeOpts(first)}</select></label>` : '';
+  openModal(titel, `
+    <p class="muted" style="margin:0 0 10px;font-size:12.5px">Für welches Projekt?</p>
+    <label class="field">Projekt <select class="select" id="ef_pid">${projekte.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
+    ${typSel}${gewSel}
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="erfassen-go" data-kind="${kind}">Weiter</button>`);
+  if (kind === 'rechnung') { const ps = $('#ef_pid'); if (ps) ps.addEventListener('change', () => { const vsel = $('#ef_vid'); if (vsel) vsel.innerHTML = vergabeOpts(findProjekt(ps.value)); }); }
+}
+function erfassenGo(kind) {
+  const pid = $('#ef_pid') && $('#ef_pid').value;
+  if (!pid) { toast('Bitte ein Projekt wählen', 'info'); return; }
+  const typ = $('#ef_typ') && $('#ef_typ').value;
+  const vid = $('#ef_vid') && $('#ef_vid').value;
+  closeModal();
+  if (kind === 'termin') { go('#/projekt/' + pid + '/kalender'); actKalTermin(pid); }
+  else if (kind === 'protokoll') { go('#/projekt/' + pid + '/protokolle'); actNewProtokoll(pid, typ); }
+  else if (kind === 'vergabe') { go('#/projekt/' + pid); actNewVergabe(pid); }
+  else if (kind === 'rechnung') {
+    if (!vid) { toast('Dieses Projekt hat noch kein Gewerk – zuerst Arbeitsbeschrieb erfassen', 'info'); go('#/projekt/' + pid); return actNewVergabe(pid); }
+    go('#/projekt/' + pid + '/kosten'); actNewRechnung(pid, vid);
+  }
+}
+
 /* ---------------------------------------------------------------
    Finanzierung: Gebäudestruktur + Rentabilität (Miete & Verkauf)
    --------------------------------------------------------------- */
@@ -5234,6 +5297,8 @@ document.addEventListener('click', e => {
     case 'save-projekt': saveProjekt(); break;
     case 'edit-projekt': actEditProjekt(pid); break;
     case 'save-projekt-edit': saveProjektEdit(pid); break;
+    case 'erfassen':       erfassen(kind); break;
+    case 'erfassen-go':    erfassenGo(kind); break;
     case 'pend-proj-toggle': pendProjToggle(pid); break;
     case 'pend-add':       actPendenz(pid); break;
     case 'pend-edit':      actPendenz(pid, itemid); break;

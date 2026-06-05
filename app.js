@@ -1113,6 +1113,7 @@ let ganttZoom = 'monat';   // 'monat' | 'woche' | 'tag'
 let ganttScale = 1;        // stufenloser Breiten-Faktor auf pxPerDay
 let ganttChain = true;     // Verkettung: Nachfolger automatisch nachführen
 let ganttWorkdays = false; // Abstände/Verkettung in Arbeitstagen (Wochenende/Feiertage überspringen)
+let ganttSide = { gewerk: true, firma: false, person: false, natel: false }; // einblendbare Info-Spalte (BKP-Nr. immer)
 let ganttPendingScroll = null;  // {left, y} – nach In-Place-Rerender wiederherstellen
 // Gantt neu zeichnen ohne Scroll-Sprung (Seite + horizontaler Scroll bleiben)
 function rerenderGantt(pid) {
@@ -1146,7 +1147,8 @@ function viewTermine(id) {
     : ((a.bkp || '').localeCompare(b.bkp || '') || (a.gewerk || '').localeCompare(b.gewerk || '')));
   const offene = vs.filter(v => !(v.bauStart && v.bauEnde));
 
-  const sortCtrl = `<div class="g-zoom" title="Ansicht / Gruppierung"><button class="${ganttSort === 'bkp' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="bkp">BKP</button><button class="${ganttSort === 'start' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="start">Start</button><button class="${ganttSort === 'firma' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="firma" title="Pro Unternehmer eine Zeile">Firma</button></div>`;
+  const sortCtrl = `<div class="g-zoom" title="Sortierung"><button class="${ganttSort === 'bkp' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="bkp">BKP</button><button class="${ganttSort === 'start' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="start">Start</button></div>`;
+  const infoCtrl = `<div class="g-zoom" title="Info-Spalte einblenden (BKP-Nr. immer sichtbar)">${[['gewerk', 'Gewerk'], ['firma', 'Firma'], ['person', 'Person'], ['natel', 'Natel']].map(([key, lbl]) => `<button class="${ganttSide[key] ? 'active' : ''}" data-act="gantt-side" data-pid="${p.id}" data-kind="${key}">${lbl}</button>`).join('')}</div>`;
   const zoomCtrl = `<div class="g-zoom">
     ${Object.keys(ZOOM).map(z => `<button class="${ganttZoom === z ? 'active' : ''}" data-act="gantt-zoom" data-pid="${p.id}" data-kind="${z}">${ZOOM[z].label}</button>`).join('')}
   </div>`;
@@ -1160,7 +1162,7 @@ function viewTermine(id) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm · grob (Monat) bis fein (Tag); Balken ziehen zum Verschieben, Ränder ziehen für Dauer</div></div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}<span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}${zoomCtrl}${scaleCtrl}<button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button><button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button><button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button><button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}<span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}<span class="muted" style="font-size:12px">Info</span>${infoCtrl}${zoomCtrl}${scaleCtrl}<button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button><button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button><button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button><button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
     </div>
     ${projektTabs(p, 'termine')}
   `;
@@ -1291,37 +1293,19 @@ function viewTermine(id) {
   const warnBanner = conflicts.length ? `<div class="g-warn">⚠ Überschneidung – gleiche Firma gleichzeitig: ${conflicts.join(' · ')}</div>` : '';
 
   const ROW_H = 38;
+  const kontaktByFirma = f => (state.kontakte || []).find(k => k.firma === f);
   let sideRows = '', barRows = '', rowIdx = 0; const barMeta = {};
-  if (ganttSort === 'firma') {
-    // Unternehmer-Ansicht: pro Firma eine Zeile mit allen Balken (Vorgänge statt Gewerk, falls vorhanden)
-    const groups = {}, order = [];
-    vs.filter(v => v.bauStart && v.bauEnde).forEach(v => { const f = v.firma || '— ohne Firma —'; if (!groups[f]) { groups[f] = []; order.push(f); } groups[f].push(v); });
-    order.sort((a, b) => a === '— ohne Firma —' ? 1 : b === '— ohne Firma —' ? -1 : a.localeCompare(b));
-    order.forEach(f => {
-      const list = groups[f];
-      sideRows += `<div class="g-side-row"><span class="gewerk">${esc(f)}</span><span class="muted" style="margin-left:auto;font-size:11px">${list.length}</span></div>`;
-      let bars = '';
-      list.forEach(v => {
-        const colHex = ganttColHex(v), light = ganttColKey(v) === 'hgrau' ? ' g-light' : '';
-        const vorg = (v.vorgaenge || []).filter(o => o.start && o.ende);
-        const items = vorg.length
-          ? vorg.map(o => ({ key: v.id + '/' + o.id, s: o.start, e: o.ende, titel: v.gewerk + ' · ' + o.titel, vid: v.id, oid: o.id }))
-          : [{ key: v.id, s: v.bauStart, e: v.bauEnde, titel: v.gewerk, vid: v.id, oid: '' }];
-        items.forEach(it => {
-          barMeta[it.key] = { row: rowIdx, left: leftPx(it.s), width: widthPx(it.s, it.e) };
-          bars += `<div class="g-bar${light}" style="left:${leftPx(it.s)}px;width:${widthPx(it.s, it.e)}px;background:${colHex}" title="${esc(it.titel)}: ${fmtDate(it.s)} – ${fmtDate(it.e)}" data-pid="${p.id}" data-vid="${it.vid}"${it.oid ? ` data-oid="${it.oid}"` : ''} data-key="${it.key}" data-ctx="gantt" data-start="${it.s}" data-ende="${it.e}"><span class="g-h l"></span><span class="g-lbl">${esc(it.titel)}</span><span class="g-h r"></span><span class="g-link-dot" data-key="${it.key}" title="Verbindung ziehen"></span></div>`;
-        });
-      });
-      barRows += `<div class="g-row">${bars}</div>`;
-      rowIdx++;
-    });
-  } else {
   vs.forEach(v => {
     const colKey = ganttColKey(v), colHex = ganttColHex(v), light = colKey === 'hgrau' ? ' g-light' : '';
     const hatTermin = v.bauStart && v.bauEnde;
+    const k = (ganttSide.person || ganttSide.natel) && v.firma ? kontaktByFirma(v.firma) : null;
+    const extra = [];
+    if (ganttSide.firma && v.firma) extra.push(`<span class="g-si firma">${esc(v.firma)}</span>`);
+    if (ganttSide.person && k && k.person) extra.push(`<span class="g-si">${esc(k.person)}</span>`);
+    if (ganttSide.natel && k && k.telefon) extra.push(`<span class="g-si">☎ ${esc(k.telefon)}</span>`);
     sideRows += `<div class="g-side-row${hatTermin ? '' : ' offen'}">
-      <span class="g-edit" data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}" title="Termine bearbeiten (Rechtsklick: Menü)">
-        <span class="bkp-code">${esc(v.bkp)}</span> <span class="gewerk">${esc(v.gewerk)}</span>
+      <span class="g-edit" data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}" title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">
+        <span class="bkp-code">${esc(v.bkp)}</span>${ganttSide.gewerk ? ` <span class="gewerk">${esc(v.gewerk)}</span>` : ''}${extra.length ? `<span class="g-si-wrap">${extra.join('<span class="g-si-sep">·</span>')}</span>` : ''}
       </span>
       ${hatTermin ? `<button class="btn sm ghost add-vg" title="Vorgang hinzufügen" data-act="new-vorgang" data-pid="${p.id}" data-vid="${v.id}">＋</button>` : ''}
     </div>`;
@@ -1347,7 +1331,6 @@ function viewTermine(id) {
       rowIdx++;
     });
   });
-  }
   // Verbindungen (Abhängigkeiten) als SVG-Overlay
   const linkPaths = (p.ganttLinks || []).map(lk => {
     const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
@@ -1363,10 +1346,14 @@ function viewTermine(id) {
   }).join('');
   const linkSvg = `<svg class="g-links" width="${innerW}" height="${rowIdx * ROW_H}">${linkPaths}</svg>`;
 
+  const sideExtras = (ganttSide.firma ? 1 : 0) + (ganttSide.person ? 1 : 0) + (ganttSide.natel ? 1 : 0);
+  let sideW = ganttSide.gewerk ? 200 : 66;
+  if (sideExtras) sideW = Math.min(480, (ganttSide.gewerk ? 200 : 92) + sideExtras * 96);
+
   render(head + `
     ${warnBanner}
     <div class="gantt">
-      <div class="g-side"><div class="g-corner" style="height:${headH}px"></div>${sideRows}</div>
+      <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"></div>${sideRows}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
           <div class="g-headrow">${monthCells}</div>
@@ -1386,7 +1373,7 @@ function viewTermine(id) {
     <div class="g-legend">
       ${GANTT_LEGEND.map(([k, l]) => `<span><i style="background:${GANTT_COLS[k]}"></i>${l}</span>`).join('')}
     </div>
-    <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Rechtsklick → <b>Nachfolger verketten</b> hängt ein Gewerk direkt an · bei <b>🔗 Verkettung an</b> folgen verkettete Nachfolger automatisch · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie · <b>Strg + Mausrad</b> zoomt an der Cursor-Position · Ansicht <b>Firma</b> zeigt pro Unternehmer eine Zeile.</p>
+    <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Rechtsklick → <b>Nachfolger verketten</b> hängt ein Gewerk direkt an · bei <b>🔗 Verkettung an</b> folgen verkettete Nachfolger automatisch · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie · <b>Strg + Mausrad</b> zoomt an der Cursor-Position · mit <b>Info</b> (Gewerk/Firma/Person/Natel) blendest du die Seitenspalte ein – die BKP-Nr. bleibt immer.</p>
   `);
 
   $$('.g-bar').forEach(b => b.addEventListener('mousedown', onBarMouseDown));
@@ -6767,6 +6754,7 @@ document.addEventListener('click', e => {
       else ganttScale = 1;
       rerenderGantt(pid); break;
     case 'gantt-sort':   ganttSort = kind; rerenderGantt(pid); break;
+    case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; rerenderGantt(pid); break;
     case 'new-vorgang':  actNewVorgang(pid, vid); break;
     case 'save-vorgang': saveVorgang(pid, vid); break;
     case 'rm-vorgang':   removeVorgang(pid, vid, oid); break;

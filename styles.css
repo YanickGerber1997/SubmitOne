@@ -662,6 +662,11 @@ tr.done-row { background: #fbfdfb; }
               font-size: 12.5px; gap: 7px; }
 .g-side-row.sub { padding-left: 26px; background: var(--surface); }
 .g-side-row .gewerk { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g-side-row .g-edit { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1; overflow: hidden; }
+.g-si-wrap { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; }
+.g-si { font-size: 11px; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g-si.firma { font-weight: 600; color: var(--text); }
+.g-si-sep { color: var(--text-faint); font-size: 10px; }
 .g-side-row .add-vg { margin-left: auto; }
 .g-side-row.offen { background: repeating-linear-gradient(45deg, var(--surface), var(--surface) 6px, #fafbfd 6px, #fafbfd 12px); }
 .g-edit { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; min-width: 0; flex: 1; }

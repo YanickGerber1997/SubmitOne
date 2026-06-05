@@ -1462,38 +1462,76 @@ function savePendenz(pid, itemid) {
   else p.pendenzen.unshift({ id: uid('pd'), art: 'pendenz', erledigt: false, uebertragen: false, erfasst: todayIso(), ...data });
   save(); closeModal(); router(); toast(it ? 'Pendenz gespeichert' : 'Pendenz erfasst');
 }
-// Aus einer Pendenz eine saubere E-Mail an die zugewiesenen Firmen erzeugen
-function actPendenzMail(pid, itemid) {
-  const p = findProjekt(pid); if (!p) return;
-  const it = (p.pendenzen || []).find(x => x.id === itemid); if (!it) return;
-  const firmen = it.firmen || [];
-  const emails = firmen.map(f => firmaEmailOf(p, f)).filter(Boolean);
-  const ohneMail = firmen.filter(f => !firmaEmailOf(p, f));
-  const subj = `Pendenz – ${p.name}: ${it.text.slice(0, 60)}`;
+// Zentraler Mail-Dialog – überall genutzt (Pendenz, Einladung, Zuschlag, Absage …)
+// opts: { title, to (Array|String), subject, body, hint, onSend }
+let _mailOnSend = null;
+function mailCompose(opts) {
+  _mailOnSend = opts.onSend || null;
+  const to = (Array.isArray(opts.to) ? opts.to.filter(Boolean).join(', ') : (opts.to || ''));
   const sigText = (state.buero && state.buero.signatur || '').trim() || 'Freundliche Grüsse';
   const sigOn = !(state.buero && state.buero.signaturAuto === false);
-  // Grundtext OHNE Signatur – die Signatur hängt die Checkbox an
-  const L = ['Guten Tag', '', `betreffend das Projekt „${p.name}"${p.ort ? ', ' + p.ort : ''} bitten wir Sie um Folgendes:`, '', '• ' + it.text];
-  if (it.termin) L.push('  Termin bis: ' + fmtDate(it.termin));
-  L.push('', 'Bitte um kurze Rückmeldung. Besten Dank.');
-  openModal('Pendenz als E-Mail', `
-    <label class="field">An ${ohneMail.length ? `<span class="muted" style="font-size:11.5px">(${esc(ohneMail.join(', '))} ohne hinterlegte Mail)</span>` : ''}<input class="input" id="pm_to" value="${esc(emails.join(', '))}" placeholder="empfaenger@firma.ch"></label>
-    <label class="field">Betreff <input class="input" id="pm_subj" value="${esc(subj)}"></label>
-    <label class="field">Nachricht <textarea class="input" id="pm_body" rows="10">${esc(L.join('\n'))}</textarea></label>
+  openModal(opts.title || 'E-Mail', `
+    <label class="field">An <input class="input" id="pm_to" value="${esc(to)}" placeholder="empfaenger@firma.ch"></label>
+    <label class="field">Betreff <input class="input" id="pm_subj" value="${esc(opts.subject || '')}"></label>
+    <label class="field">Nachricht <textarea class="input" id="pm_body" rows="11">${esc(opts.body || '')}</textarea></label>
     <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;margin-top:2px"><input type="checkbox" id="pm_sig" ${sigOn ? 'checked' : ''}> Signatur anhängen <span class="muted" style="font-size:11.5px">(aus → du fügst sie selbst im Mail ein)</span></label>
+    ${opts.hint ? `<p class="muted" style="font-size:11.5px;margin:8px 0 0">${opts.hint}</p>` : ''}
   `, `<button class="btn ghost" data-act="pend-mail-copy">Text kopieren</button><button class="btn" data-act="pend-mail-open">Im Mail-Programm öffnen</button>`);
   const sigBlock = '\n\n' + sigText;
   const applySig = on => { const ta = $('#pm_body'); if (!ta) return; let v = ta.value; if (v.endsWith(sigBlock)) v = v.slice(0, -sigBlock.length); if (on) v += sigBlock; ta.value = v; };
   const cb = $('#pm_sig'); if (cb) cb.addEventListener('change', () => applySig(cb.checked));
   applySig(sigOn);
 }
+// Aus einer Pendenz eine E-Mail an die zugewiesenen Firmen
+function actPendenzMail(pid, itemid) {
+  const p = findProjekt(pid); if (!p) return;
+  const it = (p.pendenzen || []).find(x => x.id === itemid); if (!it) return;
+  const firmen = it.firmen || [];
+  const emails = firmen.map(f => firmaEmailOf(p, f)).filter(Boolean);
+  const ohneMail = firmen.filter(f => !firmaEmailOf(p, f));
+  const L = ['Guten Tag', '', `betreffend das Projekt „${p.name}"${p.ort ? ', ' + p.ort : ''} bitten wir Sie um Folgendes:`, '', '• ' + it.text];
+  if (it.termin) L.push('  Termin bis: ' + fmtDate(it.termin));
+  L.push('', 'Bitte um kurze Rückmeldung. Besten Dank.');
+  mailCompose({ title: 'Pendenz als E-Mail', to: emails, subject: `Pendenz – ${p.name}: ${it.text.slice(0, 60)}`, body: L.join('\n'), hint: ohneMail.length ? `Ohne hinterlegte Mail: ${esc(ohneMail.join(', '))}` : '' });
+}
+// Submissions-Mails
+function mailEinladung(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const offen = (v.eingeladene || []).filter(e => e.status === 'eingeladen');
+  const target = offen.length ? offen : (v.eingeladene || []).filter(e => e.status !== 'abgesagt');
+  if (!target.length) { toast('Keine Empfänger', 'info'); return; }
+  const body = `Sehr geehrte Damen und Herren\n\nfür das Bauvorhaben „${p.name}"${p.ort ? ' in ' + p.ort : ''} laden wir Sie ein, eine Offerte für folgendes Gewerk einzureichen:\n\n  Gewerk:        ${v.bkp || ''} ${v.gewerk || ''}\n  Eingabefrist:  ${v.frist ? fmtDate(v.frist) : '—'}\n\nDie Ausschreibungsunterlagen erhalten Sie im Anhang.`;
+  mailCompose({
+    title: 'Submissionseinladung', to: target.map(e => e.email).filter(Boolean),
+    subject: `Submissionseinladung – BKP ${v.bkp || ''} ${v.gewerk || ''} / ${p.name}`, body,
+    hint: 'Tipp: Einladungs-/Konditionen-Deckblatt als PDF erzeugen und dem Mail anhängen.',
+    onSend: () => { (v.eingeladene || []).forEach(e => { if (e.status === 'eingeladen') { e.status = 'angefragt'; e.datumMail = todayIso(); } }); save(); router(); },
+  });
+}
+function mailZuschlag(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v || !v.firma) return;
+  const body = `Sehr geehrte Damen und Herren\n\nfür das Bauvorhaben „${p.name}"${p.ort ? ' in ' + p.ort : ''} freut es uns, Ihnen den Zuschlag für folgendes Gewerk zu erteilen:\n\n  Gewerk:        ${v.bkp || ''} ${v.gewerk || ''}\n  Vergabesumme:  ${chf(v.betrag)} (exkl. MwSt)\n\nDer Werkvertrag folgt separat. Wir freuen uns auf die Zusammenarbeit.`;
+  mailCompose({ title: 'Zuschlag', to: [firmaEmailOf(p, v.firma)].filter(Boolean), subject: `Zuschlag – BKP ${v.bkp || ''} ${v.gewerk || ''} / ${p.name}`, body });
+}
+function mailAbsage(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const unter = (v.eingeladene || []).filter(e => e.firma !== v.firma && e.status !== 'abgesagt' && eOff(e) != null);
+  if (!unter.length) { toast('Keine unterlegenen Offerten', 'info'); return; }
+  const body = `Sehr geehrte Damen und Herren\n\nbesten Dank für Ihre Offerte zum Gewerk ${v.bkp || ''} ${v.gewerk || ''} beim Bauvorhaben „${p.name}".\nNach sorgfältiger Prüfung haben wir den Auftrag an einen anderen Anbieter vergeben.\n\nWir danken Ihnen für Ihre Bemühungen und Ihr Interesse.`;
+  mailCompose({
+    title: 'Absage an Unterlegene', to: unter.map(e => firmaEmailOf(p, e.firma) || e.email).filter(Boolean),
+    subject: `Submission – BKP ${v.bkp || ''} ${v.gewerk || ''} / ${p.name}`, body,
+    onSend: () => { unter.forEach(e => { e.status = 'abgesagt'; }); save(); router(); },
+  });
+}
 function pendMailOpen() {
   const to = ($('#pm_to').value || '').split(/[,;]\s*/).map(s => s.trim()).filter(Boolean).join(',');
   const subj = $('#pm_subj').value || '';
   const body = $('#pm_body').value || '';
-  // Text direkt ins Mail (mailto body); die Signatur ergänzt das Mailprogramm selbst.
   window.location.href = `mailto:${to}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+  const after = _mailOnSend; _mailOnSend = null;
   closeModal();
+  if (after) after();
 }
 function pendMailCopy() {
   const t = $('#pm_body').value || '';
@@ -2848,7 +2886,11 @@ function viewVergabeDetail(pid, vid) {
         <div class="muted" style="font-size:12.5px;margin-bottom:12px">
           ${eingeladene.length} eingeladen · ${offs.length} Offerte${offs.length === 1 ? '' : 'n'} erhalten
         </div>
-        ${ungesendet.length ? `<button class="btn secondary sm" style="width:100%;margin-bottom:14px" data-act="sendmail" data-pid="${p.id}" data-vid="${v.id}">✉ Einladung an ${ungesendet.length} Unternehmer versenden</button>` : ''}
+        ${ungesendet.length ? `<button class="btn secondary sm" style="width:100%;margin-bottom:10px" data-act="sendmail" data-pid="${p.id}" data-vid="${v.id}">✉ Einladung an ${ungesendet.length} Unternehmer versenden</button>` : ''}
+        ${isVergeben(v) && v.firma ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn sm secondary" data-act="mail-zuschlag" data-pid="${p.id}" data-vid="${v.id}">✉ Zuschlag an ${esc(v.firma)}</button>
+          ${(v.eingeladene || []).some(e => e.firma !== v.firma && e.status !== 'abgesagt' && eOff(e) != null) ? `<button class="btn sm secondary" data-act="mail-absage" data-pid="${p.id}" data-vid="${v.id}">✉ Absage an Unterlegene</button>` : ''}
+        </div>` : ''}
         ${eingeladene.length ? eingeladene.map(e => `
           <div class="inv-item">
             <div class="inv-info">
@@ -5840,8 +5882,9 @@ document.addEventListener('click', e => {
     case 'pdf-offertvergleich': pdfOffertvergleich(pid, vid); break;
     case 'invite':       actInvite(pid, vid); break;
     case 'save-invite':  saveInvite(pid, vid); break;
-    case 'sendmail':     sendMail(pid, vid); break;
-    case 'confirm-mail': confirmMail(pid, vid); break;
+    case 'sendmail':     mailEinladung(pid, vid); break;
+    case 'mail-zuschlag': mailZuschlag(pid, vid); break;
+    case 'mail-absage':   mailAbsage(pid, vid); break;
     case 'rm-inv':       removeInvite(pid, vid, eid); break;
     case 'ruecklese':    actRuecklese(pid, vid); break;
     case 'pdf-submittenten': pdfSubmittenten(pid); break;

@@ -3150,26 +3150,29 @@ function vergabeAntragTable(p, v) {
   });
   return html + `</table>`;
 }
+// Kompakte Druckregeln: passt auf EIN Blatt (A4 quer), nicht umbrechen
 const VA_PRINT_CSS = `
-  table.va{width:100%;border-collapse:collapse;font-size:10px;margin-top:6px;}
-  table.va td{border:1px solid #c9d2de;padding:3px 6px;text-align:right;font-variant-numeric:tabular-nums;}
-  table.va td.va-l{text-align:left;width:150px;color:#46505e;}
-  table.va .va-firms td{font-weight:700;text-align:center;background:#eef1f6;font-size:11px;}
-  table.va .va-mail{font-size:8.5px;}
-  table.va .va-pct{color:#8a97a8;font-size:8.5px;margin-right:4px;}
+  @page{size:A4 landscape;margin:8mm 10mm;}
+  .lh{padding-bottom:6px;}
+  h1{font-size:14px;margin:6px 0 0;}
+  h1::after{display:none;}
+  .sub{margin:3px 0 6px;font-size:9.5px;}
+  .ft{display:none;}
+  table.va{width:100%;border-collapse:collapse;font-size:8.5px;font-variant-numeric:tabular-nums;page-break-inside:avoid;table-layout:fixed;}
+  table.va td{border:1px solid #c9d2de;padding:1px 4px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  table.va td.va-l{text-align:left;width:120px;color:#46505e;}
+  table.va .va-firms td{font-weight:700;text-align:center;background:#eef1f6;font-size:9px;white-space:normal;}
+  table.va .va-mail{font-size:7px;}
+  table.va .va-pct{color:#8a97a8;font-size:7px;margin-right:3px;}
   table.va .va-stage td{background:#dfe6f5;font-weight:700;text-align:left;color:#1b2533;}
   table.va .va-brutto td{font-weight:600;}
   table.va .va-total td{font-weight:700;background:#f3f5f9;}
   table.va .va-diff td{font-style:italic;color:#6b7480;}
-  table.va .va-fav{font-size:8px;font-weight:700;color:#a01b2b;}`;
+  table.va .va-fav{font-size:7px;font-weight:700;color:#a01b2b;}`;
 function pdfVergabeantrag(pid, vid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
-  const inner = `<table class="t" style="margin-bottom:8px;width:auto"><tbody>
-    <tr><td><b>Objekt</b></td><td>${esc(p.name)}${p.ort ? ', ' + esc(p.ort) : ''}</td></tr>
-    <tr><td><b>BKP</b></td><td>${esc(v.bkp || '')} ${esc(v.gewerk || '')}</td></tr>
-    <tr><td><b>Eingabefrist</b></td><td>${v.frist ? fmtDate(v.frist) : '—'} · Kostenschätzung ${chf(v.schaetzung)}</td></tr>
-  </tbody></table>` + vergabeAntragTable(p, v);
-  openPrintDoc('Offertvergleich / Vergabeantrag', `${esc(p.name)} · BKP ${esc(v.bkp || '')} ${esc(v.gewerk || '')}`, inner, { landscape: true, extraCss: VA_PRINT_CSS });
+  const sub = `Objekt: ${esc(p.name)}${p.ort ? ', ' + esc(p.ort) : ''} · BKP ${esc(v.bkp || '')} ${esc(v.gewerk || '')} · Eingabefrist ${v.frist ? fmtDate(v.frist) : '—'} · Kostenschätzung ${chf(v.schaetzung)}`;
+  openPrintDoc('Offertvergleich / Vergabeantrag', sub, vergabeAntragTable(p, v), { landscape: true, extraCss: VA_PRINT_CSS });
 }
 function pdfVergabeantragAlle(pid) {
   const p = findProjekt(pid); if (!p) return;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v47';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v48';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3596,7 +3596,7 @@ function viewVergabeDetail(pid, vid) {
     <div class="detail-head">
       <div>
         <h1 style="margin:0;font-size:22px"><span class="bkp-code" style="font-size:16px">${esc(v.bkp)}</span> ${esc(v.gewerk)}</h1>
-        <div class="sub" style="margin-top:5px">${vergabeFirmaLabel(v)}${grobLabel(v) ? ' · Ausführung ' + esc(grobLabel(v)) : ''}</div>
+        <div class="sub" style="margin-top:5px">${vergabeFirmaLabel(v)}${grobLabel(v) ? ' · Ausführung ' + esc(grobLabel(v)) : ''}${posTagChips(p, v)}</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
         ${vergabeMarken(v)}
@@ -6284,6 +6284,12 @@ function actEditVergabe(pid, vid) {
       <label class="field">Eingabefrist <input class="input" type="date" id="fe_frist" value="${esc(v.frist || '')}"></label>
     </div>
     <label class="field">Status <select class="select" id="fe_status">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select></label>
+    ${((p.bauteile || []).length || (p.optionen || []).length) ? `
+    <div class="form-row">
+      <label class="field">Bauteil / Teilprojekt <select class="select" id="fe_bauteil"><option value="">–</option>${(p.bauteile || []).map(b => `<option value="${b.id}"${v.bauteil === b.id ? ' selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>
+      <label class="field">Option <select class="select" id="fe_option"><option value="">–</option>${(p.optionen || []).map(o => `<option value="${o.id}"${v.option === o.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
+    </div>
+    <p class="muted" style="font-size:11.5px;margin:2px 0 0">Gilt für das ganze Gewerk (v.a. Pauschal-Gewerke ohne Einzelpositionen). Positionen mit eigenem Etikett haben Vorrang.</p>` : ''}
     ${bkpKatalogPanel()}
     ${(v.ksPositionen && v.ksPositionen.length) ? '<p class="muted" style="font-size:11.5px;margin:8px 0 0">Hinweis: Die Kostenschätzung wird durch die Positionen im „✎ Kostenschätzung"-Editor überschrieben.</p>' : ''}
   `, `<button class="btn danger" data-act="rm-vergabe" data-pid="${pid}" data-vid="${vid}">Löschen</button><div class="spacer"></div><button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-vergabe-edit" data-pid="${pid}" data-vid="${vid}">Speichern</button>`);
@@ -6301,6 +6307,8 @@ function saveVergabeEdit(pid, vid) {
   v.schaetzung = Number($('#fe_schaetzung').value) || 0;
   v.frist = $('#fe_frist').value || '';
   v.status = $('#fe_status').value || v.status;
+  const bte = $('#fe_bauteil'); if (bte) v.bauteil = bte.value;
+  const ope = $('#fe_option'); if (ope) v.option = ope.value;
   save(); closeModal(); router(); toast('Arbeitsbeschrieb gespeichert');
 }
 /* --- Vergabe-Art: Einzelvergabe / ARGE / Teilvergabe --- */

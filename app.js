@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v30';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v31';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3000,13 +3000,16 @@ function weekDates(iso) {
   const mon = new Date(d.getFullYear(), d.getMonth(), d.getDate() - lead);
   return Array.from({ length: 7 }, (_, i) => isoOf(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i)));
 }
-// Tages-/Wochen-Raster mit Stunden (Outlook-Stil)
-function calTimeGrid(p, dates, todayI) {
-  const ev = sammleTermine(p); const byDay = {};
-  ev.forEach(e => { (byDay[e.datum] = byDay[e.datum] || []).push(e); });
+// Tages-/Wochen-Raster mit Stunden (Outlook-Stil). events: [{datum,zeit,zeitEnde,titel,color,manual,id,pid}], addPid='' = global
+function calTimeGrid(events, dates, todayI, addPid) {
+  const byDay = {};
+  events.forEach(e => { (byDay[e.datum] = byDay[e.datum] || []).push(e); });
   const dowF = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-  const colHead = dates.map(iso => { const d = dISO(iso); return `<div class="cal-colhead${iso === todayI ? ' today' : ''}" data-act="kal-day" data-pid="${p.id}" data-kind="${iso}">${dowF[(d.getDay() + 6) % 7]} ${d.getDate()}.${d.getMonth() + 1}.</div>`; }).join('');
-  const adRow = dates.map(iso => { const ad = (byDay[iso] || []).filter(e => !e.zeit); return `<div class="cal-ad-cell" data-act="kal-add" data-pid="${p.id}" data-kind="${iso}">${ad.map(e => `<div class="cal-ev ${e.color}"${e.manual ? ` data-act="kal-edit" data-pid="${p.id}" data-tid="${e.id}"` : ''} title="${esc(e.titel)}">${esc(e.titel)}</div>`).join('')}</div>`; }).join('');
+  const pidAttr = addPid ? ` data-pid="${addPid}"` : '';
+  const evEdit = e => e.manual && e.pid ? ` data-act="kal-edit" data-pid="${e.pid}" data-tid="${e.id}"` : '';
+  const dayAct = addPid ? `data-act="kal-day" data-pid="${addPid}"` : `data-act="gcal-day"`;
+  const colHead = dates.map(iso => { const d = dISO(iso); return `<div class="cal-colhead${iso === todayI ? ' today' : ''}" ${dayAct} data-kind="${iso}">${dowF[(d.getDay() + 6) % 7]} ${d.getDate()}.${d.getMonth() + 1}.</div>`; }).join('');
+  const adRow = dates.map(iso => { const ad = (byDay[iso] || []).filter(e => !e.zeit); return `<div class="cal-ad-cell" data-iso="${iso}"${pidAttr}>${ad.map(e => `<div class="cal-ev ${e.color}"${evEdit(e)} title="${esc(e.titel)}">${esc(e.titel)}</div>`).join('')}</div>`; }).join('');
   let hours = ''; for (let h = CAL_SH; h <= CAL_EH; h++) hours += `<div class="cal-hour">${String(h).padStart(2, '0')}:00</div>`;
   const toMin = s => { const [a, b] = String(s).split(':').map(Number); return a * 60 + (b || 0); };
   const cols = dates.map(iso => {
@@ -3014,9 +3017,9 @@ function calTimeGrid(p, dates, todayI) {
     const tev = (byDay[iso] || []).filter(e => e.zeit).map(e => {
       const sMin = toMin(e.zeit); let eMin = e.zeitEnde ? toMin(e.zeitEnde) : sMin + 60; if (eMin <= sMin) eMin = sMin + 60;
       const top = Math.max(0, (sMin - CAL_SH * 60) / 60 * CAL_HH); const h = Math.max((eMin - sMin) / 60 * CAL_HH, 20);
-      return `<div class="cal-tev ${e.color}"${e.manual ? ` data-act="kal-edit" data-pid="${p.id}" data-tid="${e.id}"` : ''} style="top:${top}px;height:${h}px" title="${esc(e.zeit + ' ' + e.titel)}">${esc(e.zeit)} ${esc(e.titel)}</div>`;
+      return `<div class="cal-tev ${e.color}"${evEdit(e)} style="top:${top}px;height:${h}px" title="${esc(e.zeit + ' ' + e.titel)}">${esc(e.zeit)} ${esc(e.titel)}</div>`;
     }).join('');
-    return `<div class="cal-col" data-act="kal-add" data-pid="${p.id}" data-kind="${iso}" style="height:${(CAL_EH - CAL_SH) * CAL_HH}px">${lines}${tev}</div>`;
+    return `<div class="cal-col" data-iso="${iso}"${pidAttr} style="height:${(CAL_EH - CAL_SH) * CAL_HH}px">${lines}${tev}</div>`;
   }).join('');
   const cstyle = `grid-template-columns:repeat(${dates.length},1fr)`;
   return `<div class="cal-tg">
@@ -3025,11 +3028,27 @@ function calTimeGrid(p, dates, todayI) {
     <div class="cal-tg-body"><div class="cal-hours">${hours}</div><div class="cal-tg-cols" style="${cstyle}">${cols}</div></div>
   </div>`;
 }
+// Klick auf Spalte/Stunde → Termin mit Startzeit; auf ganztägig-Zelle → ohne Zeit
+function bindCalCols() {
+  $$('.cal-col').forEach(col => col.addEventListener('click', e => {
+    if (e.target.closest('.cal-tev')) return;
+    const iso = col.dataset.iso, pid = col.dataset.pid;
+    const y = e.clientY - col.getBoundingClientRect().top;
+    let hour = CAL_SH + Math.floor(y / CAL_HH); hour = Math.max(CAL_SH, Math.min(CAL_EH, hour));
+    const zeit = String(hour).padStart(2, '0') + ':00';
+    if (pid) actKalTermin(pid, null, iso, zeit); else actGlobalTermin(iso, zeit);
+  }));
+  $$('.cal-ad-cell').forEach(cell => cell.addEventListener('click', e => {
+    if (e.target.closest('.cal-ev')) return;
+    const iso = cell.dataset.iso, pid = cell.dataset.pid;
+    if (pid) actKalTermin(pid, null, iso); else actGlobalTermin(iso);
+  }));
+}
 
 // Alle Termine eines Projekts (manuell + abgeleitet)
 function sammleTermine(p) {
   const ev = [];
-  (p.termine || []).forEach(t => ev.push({ datum: t.datum, zeit: t.zeit || '', titel: t.titel || 'Termin', color: 'blue', manual: true, id: t.id }));
+  (p.termine || []).forEach(t => ev.push({ datum: t.datum, zeit: t.zeit || '', zeitEnde: t.zeitEnde || '', titel: t.titel || 'Termin', color: 'blue', manual: true, id: t.id }));
   (p.vergaben || []).forEach(v => {
     if (v.frist) ev.push({ datum: v.frist, titel: `Eingabefrist ${v.bkp || ''} ${v.gewerk || ''}`.trim(), color: 'red' });
     if (v.bauStart) ev.push({ datum: v.bauStart, titel: `▶ ${v.gewerk || ''} (Start)`, color: 'teal' });
@@ -3071,12 +3090,12 @@ function viewKalender(pid) {
     label = `${MONATE[calM]} ${calY}`;
     body = `<div class="cal">${DOW.map(d => `<div class="cal-dow">${d}</div>`).join('')}${cells}</div>`;
   } else if (calView === 'woche') {
-    const wd = weekDates(calRefIso); const a = dISO(wd[0]), b = dISO(wd[6]);
+    const wd = weekDates(calRefIso); const a = dISO(wd[0]);
     label = `KW ${isoWeek(a)} · ${fmtDate(wd[0])} – ${fmtDate(wd[6])}`;
-    body = calTimeGrid(p, wd, todayI);
+    body = calTimeGrid(events.map(e => ({ ...e, pid: p.id })), wd, todayI, p.id);
   } else {
     const d = dISO(calRefIso); label = `${['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'][(d.getDay() + 6) % 7]}, ${fmtDate(calRefIso)}`;
-    body = calTimeGrid(p, [calRefIso], todayI);
+    body = calTimeGrid(events.map(e => ({ ...e, pid: p.id })), [calRefIso], todayI, p.id);
   }
   const vb = (v, t2) => `<button class="btn sm ${calView === v ? '' : 'secondary'}" data-act="kal-view" data-pid="${p.id}" data-kind="${v}">${t2}</button>`;
   const addDate = calView === 'monat' ? todayI : calRefIso;
@@ -3109,9 +3128,10 @@ function viewKalender(pid) {
     <div class="section-head" style="margin-top:24px"><h2>Agenda</h2><span class="hint">nächste Termine</span></div>
     <div class="card card-pad">${agenda}</div>
   `);
+  if (calView !== 'monat') bindCalCols();
 }
 
-function actKalTermin(pid, tid, datum) {
+function actKalTermin(pid, tid, datum, zeit) {
   const p = findProjekt(pid); const t = tid ? (p.termine || []).find(x => x.id === tid) : null;
   openModal(t ? 'Termin bearbeiten' : 'Neuer Termin', `
     <label class="field">Titel <input class="input" id="kt_titel" value="${t ? esc(t.titel || '') : ''}" placeholder="z.B. Bauherrensitzung"></label>
@@ -3120,7 +3140,7 @@ function actKalTermin(pid, tid, datum) {
       <label class="field">Kategorie <input class="input" id="kt_kat" list="dl_ktkat" value="${t ? esc(t.kategorie || '') : ''}" placeholder="Besprechung">${dl('dl_ktkat', TERMIN_KATEGORIEN)}</label>
     </div>
     <div class="form-row">
-      <label class="field">Von <input class="input" type="time" id="kt_zeit" value="${t ? esc(t.zeit || '') : ''}"></label>
+      <label class="field">Von <input class="input" type="time" id="kt_zeit" value="${t ? esc(t.zeit || '') : esc(zeit || '')}"></label>
       <label class="field">Bis <input class="input" type="time" id="kt_ende" value="${t ? esc(t.zeitEnde || '') : ''}"></label>
     </div>
     <label class="field">Ort <input class="input" id="kt_ort" value="${t ? esc(t.ort || '') : ''}" placeholder="z.B. Baustelle / Büro"></label>
@@ -3164,6 +3184,7 @@ function projColor(idx) { return PROJ_PALETTE[idx % PROJ_PALETTE.length]; }
 function viewKalenderGlobal() {
   const t = today();
   if (calGY == null) { calGY = t.getFullYear(); calGM = t.getMonth(); }
+  if (calRefIso == null) calRefIso = todayIso();
   if (calHidden == null) { try { calHidden = new Set(JSON.parse(localStorage.getItem('so_cal_hidden') || '[]')); } catch (_) { calHidden = new Set(); } }
   const projects = state.projekte || [];
   const todayI = todayIso();
@@ -3191,6 +3212,13 @@ function viewKalenderGlobal() {
     cells += `<div class="cal-day${other ? ' other' : ''}${iso === todayI ? ' today' : ''}" data-act="gcal-add" data-kind="${iso}"><div class="d">${d.getDate()}</div>${chips}${more}</div>`;
   }
 
+  let gLabel = `${MONATE[calGM]} ${calGY}`;
+  let gBody = `<div class="cal">${DOW.map(d => `<div class="cal-dow">${d}</div>`).join('')}${cells}</div>`;
+  if (calView === 'woche') { const wd = weekDates(calRefIso); gLabel = `KW ${isoWeek(dISO(wd[0]))} · ${fmtDate(wd[0])} – ${fmtDate(wd[6])}`; gBody = calTimeGrid(events, wd, todayI, ''); }
+  else if (calView === 'tag') { const d = dISO(calRefIso); gLabel = `${['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'][(d.getDay() + 6) % 7]}, ${fmtDate(calRefIso)}`; gBody = calTimeGrid(events, [calRefIso], todayI, ''); }
+  const gvb = (v, t2) => `<button class="btn sm ${calView === v ? '' : 'secondary'}" data-act="gcal-view" data-kind="${v}">${t2}</button>`;
+  const gAddDate = calView === 'monat' ? todayI : calRefIso;
+
   const toggles = projects.length ? projects.map((p, idx) => `<span class="chip ${calHidden.has(p.id) ? '' : 'active'}" data-act="gcal-toggle" data-pid="${p.id}"><i class="cal-dot ${projColor(idx)}"></i>${esc(p.name)}</span>`).join('') : '<span class="muted" style="font-size:12.5px">Keine Projekte.</span>';
 
   const upcoming = events.filter(e => e.datum >= todayI).sort((a, b) => a.datum.localeCompare(b.datum) || (a.zeit || '').localeCompare(b.zeit || '')).slice(0, 15);
@@ -3201,32 +3229,30 @@ function viewKalenderGlobal() {
 
   render(`
     <div class="page-head"><div><h1>Kalender</h1><div class="sub">Alle Projekte · Termine, Fristen &amp; Bauprogramm</div></div>
-      <button class="btn" data-act="gcal-add" data-kind="${todayI}">+ Termin</button></div>
+      <button class="btn" data-act="gcal-add" data-kind="${gAddDate}">+ Termin</button></div>
 
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${toggles}</div>
 
     <div class="cal-head">
       <div style="display:flex;gap:6px;align-items:center">
-        <button class="btn sm secondary" data-act="gcal-prev" title="Vormonat">‹</button>
+        <button class="btn sm secondary" data-act="gcal-prev" title="zurück">‹</button>
         <button class="btn sm secondary" data-act="gcal-today">Heute</button>
-        <button class="btn sm secondary" data-act="gcal-next" title="Folgemonat">›</button>
-        <h2 style="margin:0 0 0 8px;font-size:17px">${MONATE[calGM]} ${calGY}</h2>
+        <button class="btn sm secondary" data-act="gcal-next" title="vor">›</button>
+        <h2 style="margin:0 0 0 8px;font-size:16px">${gLabel}</h2>
       </div>
-      <div class="cal-legend muted" style="font-size:11.5px">Farbe = Projekt · Chips oben zum Ein-/Ausblenden</div>
+      <div style="display:flex;gap:5px">${gvb('tag', 'Tag')}${gvb('woche', 'Woche')}${gvb('monat', 'Monat')}</div>
     </div>
 
-    <div class="cal">
-      ${DOW.map(d => `<div class="cal-dow">${d}</div>`).join('')}
-      ${cells}
-    </div>
-    <p class="muted" style="font-size:12px;margin:8px 0 0">Tag anklicken = Termin erfassen (Projekt wählen) · farbige Termine = manuell (anklicken zum Bearbeiten).</p>
+    ${gBody}
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Farbe = Projekt · Chips zum Ein-/Ausblenden · Klick = Termin erfassen (Projekt wählen) · Termin anklicken = bearbeiten.</p>
 
     <div class="section-head" style="margin-top:24px"><h2>Agenda</h2><span class="hint">nächste Termine über alle Projekte</span></div>
     <div class="card card-pad">${agenda}</div>
   `);
+  if (calView !== 'monat') bindCalCols();
 }
 
-function actGlobalTermin(datum) {
+function actGlobalTermin(datum, zeit) {
   const projects = state.projekte || [];
   if (!projects.length) { toast('Zuerst ein Projekt anlegen', 'info'); return; }
   openModal('Neuer Termin', `
@@ -3237,7 +3263,7 @@ function actGlobalTermin(datum) {
       <label class="field">Kategorie <input class="input" id="kt_kat" list="dl_ktkat" placeholder="Besprechung">${dl('dl_ktkat', TERMIN_KATEGORIEN)}</label>
     </div>
     <div class="form-row">
-      <label class="field">Von <input class="input" type="time" id="kt_zeit"></label>
+      <label class="field">Von <input class="input" type="time" id="kt_zeit" value="${esc(zeit || '')}"></label>
       <label class="field">Bis <input class="input" type="time" id="kt_ende"></label>
     </div>
     <label class="field">Ort <input class="input" id="kt_ort" placeholder="z.B. Baustelle / Büro"></label>
@@ -3254,10 +3280,13 @@ function saveGlobalTermin() {
   save(); closeModal(); viewKalenderGlobal(); toast('Termin gespeichert');
 }
 function gcalNav(delta) {
-  if (delta === 0) { const t = today(); calGY = t.getFullYear(); calGM = t.getMonth(); }
-  else { calGM += delta; if (calGM < 0) { calGM = 11; calGY--; } else if (calGM > 11) { calGM = 0; calGY++; } }
+  if (delta === 0) { const t = today(); calGY = t.getFullYear(); calGM = t.getMonth(); calRefIso = todayIso(); }
+  else if (calView === 'monat') { calGM += delta; if (calGM < 0) { calGM = 11; calGY--; } else if (calGM > 11) { calGM = 0; calGY++; } }
+  else { const step = calView === 'woche' ? 7 : 1; const d = dISO(calRefIso || todayIso()); const nd = new Date(d.getFullYear(), d.getMonth(), d.getDate() + delta * step); calRefIso = isoOf(nd); calGY = nd.getFullYear(); calGM = nd.getMonth(); }
   viewKalenderGlobal();
 }
+function gcalSetView(v) { calView = v; if (!calRefIso) calRefIso = todayIso(); viewKalenderGlobal(); }
+function gcalDay(iso) { calView = 'tag'; calRefIso = iso; viewKalenderGlobal(); }
 function gcalToggle(pid) {
   if (calHidden == null) calHidden = new Set();
   if (calHidden.has(pid)) calHidden.delete(pid); else calHidden.add(pid);
@@ -4768,6 +4797,8 @@ document.addEventListener('click', e => {
     case 'gcal-next':    gcalNav(1); break;
     case 'gcal-today':   gcalNav(0); break;
     case 'gcal-toggle':  gcalToggle(pid); break;
+    case 'gcal-view':    gcalSetView(kind); break;
+    case 'gcal-day':     gcalDay(kind); break;
     case 'new-geschoss':  actNewGeschoss(pid); break;
     case 'edit-geschoss': actNewGeschoss(pid, gid); break;
     case 'save-geschoss': saveGeschoss(pid, gid); break;

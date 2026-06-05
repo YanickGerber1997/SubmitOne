@@ -2497,6 +2497,36 @@ const BKP_KATALOG = [
 ].map(([code, label]) => ({ code, label }));
 
 function bkpDatalist(id) { return `<datalist id="${id}">${BKP_KATALOG.map(b => `<option value="${esc(b.code + ' ' + b.label)}">`).join('')}</datalist>`; }
+// Durchsuchbarer Katalog zum Anklicken (Hauptgruppen als Überschrift, Positionen als Buttons)
+function bkpCatRows(filter) {
+  const q = (filter || '').trim().toLowerCase();
+  const rows = BKP_KATALOG.filter(b => !q || (b.code + ' ' + b.label).toLowerCase().includes(q)).map(b => {
+    if (/^\d{2}$/.test(b.code)) return `<div class="bkp-cat-grp">${esc(b.code)} · ${esc(b.label)}</div>`;
+    return `<button type="button" class="bkp-cat-item" data-code="${esc(b.code)}" data-label="${esc(b.label)}"><span class="bkp-code">${esc(b.code)}</span> ${esc(b.label)}</button>`;
+  }).join('');
+  return rows || '<div class="muted" style="padding:8px;font-size:12.5px">Kein Treffer.</div>';
+}
+function bkpKatalogPanel() {
+  return `<details id="bkpCat" style="margin-top:6px">
+    <summary style="cursor:pointer;font-weight:600;font-size:13px;padding:4px 0">📖 Kompletten BKP-Katalog durchsuchen &amp; auswählen</summary>
+    <input class="input" id="bkpCatSearch" placeholder="Code oder Gewerk filtern… (z.B. „Maler" oder „28")" style="margin:6px 0 4px" autocomplete="off">
+    <div id="bkpCatList" class="bkp-cat-list">${bkpCatRows('')}</div>
+  </details>`;
+}
+// Such-/Klick-Verhalten des Katalogs an die angegebenen Felder binden
+function wireBkpKatalog(bkpId, gewerkId) {
+  bkpId = bkpId || 'f_bkp'; gewerkId = gewerkId || 'f_gewerk';
+  const s = $('#bkpCatSearch'), list = $('#bkpCatList'); if (!list) return;
+  if (s) s.addEventListener('input', () => { list.innerHTML = bkpCatRows(s.value); });
+  list.addEventListener('click', e => {
+    const it = e.target.closest('.bkp-cat-item'); if (!it) return;
+    const bkp = document.getElementById(bkpId), g = document.getElementById(gewerkId);
+    if (bkp) bkp.value = it.dataset.code + ' ' + it.dataset.label;
+    if (g) g.value = it.dataset.label;
+    const det = $('#bkpCat'); if (det) det.open = false;
+    toast(it.dataset.code + ' ' + it.dataset.label + ' übernommen', 'info');
+  });
+}
 function parseBkp(val) {
   const m = String(val || '').trim().match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
   return m ? { code: m[1], label: (m[2] || '').trim() } : { code: String(val || '').trim(), label: '' };
@@ -5330,7 +5360,8 @@ function actNewVergabe(pid) {
       <label class="field">BKP-Nr. <input class="input" id="f_bkp" list="dl_fbkp" placeholder="tippen: 211 oder Gewerk…">${bkpDatalist('dl_fbkp')}</label>
       <label class="field">Gewerk / Arbeitsbeschrieb <input class="input" id="f_gewerk" placeholder="z.B. Baumeisterarbeiten"></label>
     </div>
-    <label class="field">Kostenschätzung (CHF) <input class="input" type="number" id="f_schaetzung" placeholder="250000"></label>
+    ${bkpKatalogPanel()}
+    <label class="field" style="margin-top:8px">Kostenschätzung (CHF) <input class="input" type="number" id="f_schaetzung" placeholder="250000"></label>
     <label class="field" style="margin-bottom:2px">Grober Baubeginn</label>
     ${saisonSel('f_grobvon')}
     <details style="margin-top:12px">
@@ -5361,6 +5392,7 @@ function actNewVergabe(pid) {
     const g = $('#f_gewerk');
     if (g && !g.value.trim() && label) g.value = label;
   });
+  wireBkpKatalog();
 }
 
 function saveVergabe(pid) {
@@ -5670,10 +5702,12 @@ function actEditVergabe(pid, vid) {
       <label class="field">Eingabefrist <input class="input" type="date" id="fe_frist" value="${esc(v.frist || '')}"></label>
     </div>
     <label class="field">Status <select class="select" id="fe_status">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select></label>
-    ${(v.ksPositionen && v.ksPositionen.length) ? '<p class="muted" style="font-size:11.5px;margin:0">Hinweis: Die Kostenschätzung wird durch die Positionen im „✎ Kostenschätzung"-Editor überschrieben.</p>' : ''}
+    ${bkpKatalogPanel()}
+    ${(v.ksPositionen && v.ksPositionen.length) ? '<p class="muted" style="font-size:11.5px;margin:8px 0 0">Hinweis: Die Kostenschätzung wird durch die Positionen im „✎ Kostenschätzung"-Editor überschrieben.</p>' : ''}
   `, `<button class="btn danger" data-act="rm-vergabe" data-pid="${pid}" data-vid="${vid}">Löschen</button><div class="spacer"></div><button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-vergabe-edit" data-pid="${pid}" data-vid="${vid}">Speichern</button>`);
   const bkpEl = $('#fe_bkp');
   if (bkpEl) bkpEl.addEventListener('change', () => { const { label } = parseBkp(bkpEl.value); const g = $('#fe_gewerk'); if (g && !g.value.trim() && label) g.value = label; });
+  wireBkpKatalog('fe_bkp', 'fe_gewerk');
 }
 function saveVergabeEdit(pid, vid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;

@@ -806,6 +806,14 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .ctx-ico { width: 18px; text-align: center; font-size: 13px; flex: none; }
 .ctx-sep { height: 1px; background: var(--border); margin: 5px 4px; }
 
+/* BKP-Katalog (durchsuchbar, anklickbar) */
+.bkp-cat-list { max-height: 240px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.bkp-cat-grp { position: sticky; top: 0; background: var(--surface-2); font-weight: 700; font-size: 11.5px; color: var(--text-soft); padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.bkp-cat-item { display: block; width: 100%; text-align: left; background: none; border: none; padding: 7px 10px; font-size: 13px; color: var(--text); cursor: pointer; border-bottom: 1px solid var(--border); }
+.bkp-cat-item:last-child { border-bottom: none; }
+.bkp-cat-item:hover { background: var(--surface-2); }
+.bkp-cat-item .bkp-code { margin-right: 6px; }
+
 /* ============================ Toast ============================ */
 
 #toast-root { position: fixed; bottom: 22px; right: 22px; display: flex; flex-direction: column; gap: 10px; z-index: 200; }

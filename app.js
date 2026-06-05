@@ -3118,6 +3118,7 @@ function viewDossier(pid) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Dossier · vollständige Projektunterlagen über alle Phasen</div></div>
+      <button class="btn secondary" data-act="pdf-dossier" data-pid="${p.id}" title="Statusbericht als PDF">⬇ PDF</button>
     </div>
     ${projektTabs(p, 'dossier')}
     <div class="kpi-row">

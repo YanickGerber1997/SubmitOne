@@ -3146,22 +3146,33 @@ function offertvergleichHtml(p, v, stage) {
       </tr>`; }).join('')}
     </tbody></table>`;
 }
-function pdfOffertvergleich(pid, vid) {
-  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+// Preisspiegel-Tabellen (alle Stufen mit Daten) für EIN Gewerk – PDF
+function vglTablesFor(v) {
   const kv = v.schaetzung || 0;
   const n0 = n => (n == null) ? '' : Number(n).toLocaleString('de-CH', { maximumFractionDigits: 0 });
   const stagesData = VGL_STAGES.filter(([st]) => (v.eingeladene || []).some(e => vglStageOf(e, st)));
   const tableFor = (st, label) => {
     const rows = vglRows(v, st); if (!rows.length) return '';
-    return `<div class="gw">${label} – Preisspiegel</div>
+    return `<div style="font-weight:700;margin:10px 0 4px;font-size:11.5px;color:#46505e">${esc(label)} – Preisspiegel</div>
       <table class="t"><thead><tr><th>#</th><th>Unternehmer</th><th class="num">Brutto</th><th class="num">./. Rabatt</th><th class="num">./. Allg.Abz.</th><th class="num">./. Pauschal</th><th class="num">./. Skonto</th><th class="num">Netto exkl.</th><th class="num">MwSt 8.1%</th><th class="num">inkl. MwSt</th><th class="num">Δ KV</th></tr></thead><tbody>
       ${rows.map((x, i) => { const r = x.parts; const d = kv ? r.netto - kv : null; const aw = v.firma && x.e.firma === v.firma;
         return `<tr><td>${i + 1}</td><td>${esc(x.e.firma)}${aw ? ' ★' : ''}</td><td class="num">${n0(r.brutto)}</td><td class="num">${r.rabattBetrag ? '−' + n0(r.rabattBetrag) : ''}</td><td class="num">${r.weitereBetrag ? '−' + n0(r.weitereBetrag) : ''}</td><td class="num">${r.pauschal ? '−' + n0(r.pauschal) : ''}</td><td class="num">${r.skontoBetrag ? '−' + n0(r.skontoBetrag) : ''}</td><td class="num"><b>${n0(r.netto)}</b></td><td class="num">${n0(r.mwst)}</td><td class="num">${n0(r.total)}</td><td class="num">${d != null ? (d > 0 ? '+' : '') + n0(d) : ''}</td></tr>`; }).join('')}
       </tbody></table>`;
   };
-  const inner = stagesData.length ? stagesData.map(([st, label]) => tableFor(st, label)).join('') : '<p class="muted">Noch keine Konditionen erfasst.</p>';
-  const sub = `${esc(p.name)} · BKP ${esc(v.bkp || '')} ${esc(v.gewerk || '')} · Kostenschätzung ${chf(kv)} · Beträge CHF, Netto exkl. MwSt · ★ = vergeben`;
+  return stagesData.map(([st, label]) => tableFor(st, label)).join('');
+}
+function pdfOffertvergleich(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const inner = vglTablesFor(v) || '<p class="muted">Noch keine Konditionen erfasst.</p>';
+  const sub = `${esc(p.name)} · BKP ${esc(v.bkp || '')} ${esc(v.gewerk || '')} · Kostenschätzung ${chf(v.schaetzung)} · Beträge CHF, Netto exkl. MwSt · ★ = vergeben`;
   openPrintDoc('Offertvergleich', sub, inner, { landscape: true });
+}
+function pdfOffertvergleichAlle(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const gw = (p.vergaben || []).filter(v => VGL_STAGES.some(([st]) => (v.eingeladene || []).some(e => vglStageOf(e, st))));
+  if (!gw.length) { toast('Noch keine Offerten/Konditionen erfasst', 'info'); return; }
+  const inner = gw.map(v => `<div class="gw" style="margin-top:16px">BKP ${esc(v.bkp || '')} ${esc(v.gewerk || '')} · Kostenschätzung ${chf(v.schaetzung)}</div>${vglTablesFor(v)}`).join('');
+  openPrintDoc('Offertvergleich – alle Gewerke', `${esc(p.name)}${p.ort ? ' · ' + esc(p.ort) : ''} · Beträge CHF, Netto exkl. MwSt · ★ = vergeben`, inner, { landscape: true });
 }
 
 /* ---------------------------------------------------------------
@@ -4286,6 +4297,7 @@ function viewDrucken() {
     </label>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px;margin-top:16px">
       ${card('pdf-dossier', 'Dossier / Unterlagenstatus', 'Alle 6 Phasen · Status je Position · Vollständigkeit')}
+      ${card('pdf-offertvergleich-alle', 'Offertvergleich', 'Preisspiegel aller Gewerke (Offerte/Abgebot/Vergabe)')}
       ${card('pdf-kostenschaetzung', 'Kostenschätzung', 'Beschrieb · BKP · Kosten · Gesamttotal')}
       ${card('pdf-baukosten', 'Baukostenübersicht', 'Volle BKP-Tabelle (KV/WV/Prognose)')}
       ${card('pdf-gantt', 'Bauprogramm', 'Termin-/Gantt-Raster (Querformat, 1 Seite)')}
@@ -5892,6 +5904,7 @@ document.addEventListener('click', e => {
     case 'ks-calc-add':  ksCalcAdd(); break;
     case 'save-ks':      saveKostenschaetzung(pid, vid); break;
     case 'pdf-dossier':          pdfDossier(pid); break;
+    case 'pdf-offertvergleich-alle': pdfOffertvergleichAlle(pid); break;
     case 'pdf-kostenschaetzung': pdfKostenschaetzung(pid); break;
     case 'pdf-baukosten':        pdfBaukosten(pid); break;
     case 'pdf-gantt':            pdfGantt(pid); break;

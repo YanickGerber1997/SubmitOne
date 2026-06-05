@@ -719,7 +719,20 @@ label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px
 .kond-wrap { display: flex; flex-direction: column; gap: 14px; }
 .kond-stage { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
 .kond-h { font-weight: 700; font-size: 13.5px; margin-bottom: 8px; }
-.kond-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.kond-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+/* Vergabeantrag / Offertvergleich (Firmen als Spalten) */
+.va-screen { padding: 0; }
+table.va { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+table.va td { border: 1px solid var(--border); padding: 4px 8px; text-align: right; white-space: nowrap; }
+table.va td.va-l { text-align: left; width: 160px; color: var(--text-soft); position: sticky; left: 0; background: var(--surface); }
+table.va .va-firms td { font-weight: 700; text-align: center; background: var(--surface-2); font-size: 12.5px; }
+table.va .va-mail { font-size: 10.5px; color: var(--text-soft); }
+table.va .va-pct { color: var(--text-faint); font-size: 10px; margin-right: 5px; }
+table.va .va-stage td { background: var(--brand-soft); font-weight: 700; text-align: left; color: var(--text); }
+table.va .va-brutto td { font-weight: 600; }
+table.va .va-total td { font-weight: 700; background: var(--surface-2); }
+table.va .va-diff td { color: var(--text-faint); font-style: italic; }
+table.va .va-fav { font-size: 10px; font-weight: 700; color: var(--s-red); }
 .kond-grid .field { font-size: 11px; gap: 3px; }
 .kond-grid .input { padding: 7px 8px; }
 .kond-res { margin-top: 8px; font-size: 12.5px; color: var(--text-soft); font-variant-numeric: tabular-nums; }

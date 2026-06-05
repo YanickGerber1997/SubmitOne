@@ -2842,8 +2842,9 @@ function viewVergabeDetail(pid, vid) {
         <div class="sub" style="margin-top:5px">${v.firma ? 'Unternehmer: <strong>' + esc(v.firma) + '</strong>' : 'Noch kein Unternehmer'}${grobLabel(v) ? ' · Ausführung ' + esc(grobLabel(v)) : ''}</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-        ${statusPill(v)}
         ${vergabeMarken(v)}
+        <select class="select vergabe-status-sel" data-pid="${p.id}" data-vid="${v.id}" title="Status setzen" style="padding:7px 10px">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select>
+        <button class="btn secondary" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}" title="Stammdaten bearbeiten (BKP, Gewerk, Frist, Schätzung)">✎ Bearbeiten</button>
         ${last ? '' : `<button class="btn" data-act="advance" data-pid="${p.id}" data-vid="${v.id}">Nächster Schritt →</button>`}
       </div>
     </div>
@@ -3073,6 +3074,7 @@ function viewVergabeDetail(pid, vid) {
   $$('.sm-select[data-act="nachtrag-status"]').forEach(sel => sel.addEventListener('change', () => {
     setNachtragStatus(sel.dataset.pid, sel.dataset.vid, sel.dataset.nid, sel.value);
   }));
+  $$('.vergabe-status-sel').forEach(sel => sel.addEventListener('change', () => setVergabeStatus(sel.dataset.pid, sel.dataset.vid, sel.value)));
 }
 
 // Preisspiegel-Konditionen je Unternehmer: Offerte / Abgebot / Vergabe (Brutto → Netto)
@@ -4909,6 +4911,53 @@ function advanceVergabe(pid, vid) {
   save(); router();
   toast('Status → ' + STATUS_BY_KEY[v.status].label);
 }
+// Status direkt setzen (vor/zurück) – mit Auto-Firma beim Zuschlag wie advanceVergabe
+function setVergabeStatus(pid, vid, status) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid);
+  if (!v || !STATUS_BY_KEY[status]) return;
+  v.status = status;
+  if (status === 'vergeben' && !v.firma) {
+    const offs = (v.eingeladene || []).filter(e => e.status !== 'abgesagt' && eOff(e) != null).sort((a, b) => eOff(a) - eOff(b));
+    if (offs.length) { v.firma = offs[0].firma; v.betrag = eOff(offs[0]); }
+  }
+  save(); router(); toast('Status → ' + STATUS_BY_KEY[status].label);
+}
+// Stammdaten bearbeiten / löschen
+function actEditVergabe(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  openModal('Arbeitsbeschrieb bearbeiten', `
+    <div class="form-row">
+      <label class="field">BKP-Nr. <input class="input" id="fe_bkp" list="dl_febkp" value="${esc(v.bkp || '')}">${bkpDatalist('dl_febkp')}</label>
+      <label class="field">Gewerk / Arbeitsbeschrieb <input class="input" id="fe_gewerk" value="${esc(v.gewerk || '')}"></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Kostenschätzung (CHF) <input class="input" type="number" id="fe_schaetzung" value="${v.schaetzung || ''}"></label>
+      <label class="field">Eingabefrist <input class="input" type="date" id="fe_frist" value="${esc(v.frist || '')}"></label>
+    </div>
+    <label class="field">Status <select class="select" id="fe_status">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select></label>
+    ${(v.ksPositionen && v.ksPositionen.length) ? '<p class="muted" style="font-size:11.5px;margin:0">Hinweis: Die Kostenschätzung wird durch die Positionen im „✎ Kostenschätzung"-Editor überschrieben.</p>' : ''}
+  `, `<button class="btn danger" data-act="rm-vergabe" data-pid="${pid}" data-vid="${vid}">Löschen</button><div class="spacer"></div><button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-vergabe-edit" data-pid="${pid}" data-vid="${vid}">Speichern</button>`);
+  const bkpEl = $('#fe_bkp');
+  if (bkpEl) bkpEl.addEventListener('change', () => { const { label } = parseBkp(bkpEl.value); const g = $('#fe_gewerk'); if (g && !g.value.trim() && label) g.value = label; });
+}
+function saveVergabeEdit(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const bkpParsed = parseBkp($('#fe_bkp').value);
+  const gewerk = $('#fe_gewerk').value.trim() || bkpParsed.label;
+  if (!gewerk) { toast('Bitte ein Gewerk / einen Arbeitsbeschrieb eingeben', 'info'); return; }
+  v.bkp = bkpParsed.code || v.bkp || '000';
+  v.gewerk = gewerk;
+  v.schaetzung = Number($('#fe_schaetzung').value) || 0;
+  v.frist = $('#fe_frist').value || '';
+  v.status = $('#fe_status').value || v.status;
+  save(); closeModal(); router(); toast('Arbeitsbeschrieb gespeichert');
+}
+function rmVergabe(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  if (!confirm(`Gewerk „${v.gewerk}" wirklich löschen? Offerten, Nachträge und Rechnungen dazu gehen verloren.`)) return;
+  p.vergaben = (p.vergaben || []).filter(x => x.id !== vid);
+  save(); closeModal(); go('#/projekt/' + pid); toast('Arbeitsbeschrieb gelöscht');
+}
 
 /* --- Unternehmer einladen --- */
 
@@ -5867,6 +5916,9 @@ document.addEventListener('click', e => {
     case 'pdf-baukosten':        pdfBaukosten(pid); break;
     case 'pdf-gantt':            pdfGantt(pid); break;
     case 'advance':      advanceVergabe(pid, vid); break;
+    case 'edit-vergabe':      actEditVergabe(pid, vid); break;
+    case 'save-vergabe-edit': saveVergabeEdit(pid, vid); break;
+    case 'rm-vergabe':        rmVergabe(pid, vid); break;
     case 'konditionen':      actKonditionen(pid, vid, eid); break;
     case 'konditionen-save': saveKonditionen(pid, vid, eid); break;
     case 'pdf-vergabeantrag': pdfVergabeantrag(pid, vid); break;

@@ -1524,6 +1524,25 @@ function mailAbsage(pid, vid) {
     onSend: () => { unter.forEach(e => { e.status = 'abgesagt'; }); save(); router(); },
   });
 }
+// Mail-Adresse zu einem Personen-/Firmennamen aus den Kontakten
+function personEmail(name) {
+  const n = (name || '').trim().toLowerCase(); if (!n) return '';
+  const ks = state.kontakte || [];
+  const k = ks.find(k => (k.person || '').toLowerCase() === n || (k.firma || '').toLowerCase() === n)
+    || ks.find(k => ((k.person || '').toLowerCase().includes(n) || (k.firma || '').toLowerCase().includes(n)) && k.email);
+  return (k && k.email) || '';
+}
+function mailProtokoll(pid, prid) {
+  const p = findProjekt(pid); const pr = p && findProtokoll(p, prid); if (!pr) return;
+  const seen = new Set();
+  const list = [...(pr.verteiler || []), ...(pr.teilnehmer || [])].filter(n => { const k = (n || '').toLowerCase(); if (!k || seen.has(k)) return false; seen.add(k); return true; });
+  const withMail = list.map(n => ({ n, m: personEmail(n) }));
+  const emails = withMail.map(x => x.m).filter(Boolean);
+  const ohne = withMail.filter(x => !x.m).map(x => x.n);
+  const titel = protokollTitel(pr);
+  const body = `Guten Tag\n\nanbei das Protokoll „${titel}" vom ${fmtDate(pr.datum)} zum Projekt „${p.name}"${p.ort ? ', ' + p.ort : ''}.\n\nDas vollständige Protokoll finden Sie im Anhang (PDF).${pr.naechste ? '\n\nNächste Sitzung: ' + fmtDate(pr.naechste) : ''}`;
+  mailCompose({ title: 'Protokoll an Verteiler', to: emails, subject: `${titel} – ${p.name}`, body, hint: (ohne.length ? `Ohne hinterlegte Mail: ${esc(ohne.join(', '))} · ` : '') + 'Tipp: Protokoll-PDF erzeugen und anhängen.' });
+}
 function pendMailOpen() {
   const to = ($('#pm_to').value || '').split(/[,;]\s*/).map(s => s.trim()).filter(Boolean).join(',');
   const subj = $('#pm_subj').value || '';
@@ -2427,6 +2446,7 @@ function viewProtokollDetail(pid, prid) {
       <div style="display:flex;gap:10px">
         <button class="btn secondary" data-act="copy-protokoll" data-pid="${p.id}" data-prid="${pr.id}">⧉ Kopieren</button>
         <button class="btn secondary" data-act="edit-protokoll" data-pid="${p.id}" data-prid="${pr.id}">Kopfdaten</button>
+        <button class="btn secondary" data-act="mail-protokoll" data-pid="${p.id}" data-prid="${pr.id}" title="Protokoll an Verteiler senden">✉ Verteiler</button>
         <button class="btn secondary" data-act="pdf-protokoll" data-pid="${p.id}" data-prid="${pr.id}">⬇ PDF</button>
         <button class="btn" data-act="new-traktandum" data-pid="${p.id}" data-prid="${pr.id}">+ Traktandum</button>
       </div>
@@ -5947,6 +5967,7 @@ document.addEventListener('click', e => {
     case 'save-eintrag':    saveEintrag(pid, prid, tid); break;
     case 'rm-eintrag':      rmEintrag(pid, prid, tid, itemid); break;
     case 'pdf-protokoll':   pdfProtokoll(pid, prid); break;
+    case 'mail-protokoll':  mailProtokoll(pid, prid); break;
     case 'new-kontakt':  actNewKontakt(); break;
     case 'save-kontakt': saveKontakt(); break;
     case 'save-buero':   saveBuero(); break;

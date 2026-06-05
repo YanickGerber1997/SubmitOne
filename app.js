@@ -1457,24 +1457,34 @@ function actPendenzMail(pid, itemid) {
   const firmen = it.firmen || [];
   const emails = firmen.map(f => firmaEmailOf(p, f)).filter(Boolean);
   const ohneMail = firmen.filter(f => !firmaEmailOf(p, f));
-  const b = state.buero || BUERO;
   const subj = `Pendenz – ${p.name}: ${it.text.slice(0, 60)}`;
+  // Keine Büro-Signatur im Text: die echte Signatur kommt aus dem Mailprogramm
   const L = ['Guten Tag', '', `betreffend das Projekt „${p.name}"${p.ort ? ', ' + p.ort : ''} bitten wir Sie um Folgendes:`, '', '• ' + it.text];
   if (it.termin) L.push('  Termin bis: ' + fmtDate(it.termin));
   L.push('', 'Bitte um kurze Rückmeldung. Besten Dank.', '', 'Freundliche Grüsse');
-  if (b.firma) L.push(b.firma);
-  if (b.tel) L.push('Tel. ' + b.tel);
-  if (b.email) L.push(b.email);
   openModal('Pendenz als E-Mail', `
+    <p class="muted" style="font-size:12px;margin:0 0 12px">Beim Öffnen wird ein <strong>leeres Mail</strong> mit deiner echten Signatur geladen und der Text in die <strong>Zwischenablage</strong> kopiert – im Mail oben mit <strong>Strg+V</strong> einfügen.</p>
     <label class="field">An ${ohneMail.length ? `<span class="muted" style="font-size:11.5px">(${esc(ohneMail.join(', '))} ohne hinterlegte Mail)</span>` : ''}<input class="input" id="pm_to" value="${esc(emails.join(', '))}" placeholder="empfaenger@firma.ch"></label>
     <label class="field">Betreff <input class="input" id="pm_subj" value="${esc(subj)}"></label>
-    <label class="field">Nachricht <textarea class="input" id="pm_body" rows="11">${esc(L.join('\n'))}</textarea></label>
-  `, `<button class="btn ghost" data-act="pend-mail-copy">Text kopieren</button><button class="btn" data-act="pend-mail-open">Im Mail-Programm öffnen</button>`);
+    <label class="field">Nachricht (wird kopiert) <textarea class="input" id="pm_body" rows="10">${esc(L.join('\n'))}</textarea></label>
+  `, `<button class="btn ghost" data-act="pend-mail-copy">Nur Text kopieren</button><button class="btn" data-act="pend-mail-open">Mail öffnen + Text kopieren</button>`);
 }
 function pendMailOpen() {
   const to = ($('#pm_to').value || '').split(/[,;]\s*/).map(s => s.trim()).filter(Boolean).join(',');
-  const url = `mailto:${to}?subject=${encodeURIComponent($('#pm_subj').value || '')}&body=${encodeURIComponent($('#pm_body').value || '')}`;
-  window.location.href = url; closeModal();
+  const subj = $('#pm_subj').value || '';
+  const body = $('#pm_body').value || '';
+  // Trick: leeres Mail (nur An + Betreff) öffnen, damit die Signatur des Mailprogramms geladen wird;
+  // den Text in die Zwischenablage legen → Nutzer fügt ihn oben mit Strg+V ein.
+  const openLeer = () => { window.location.href = `mailto:${to}?subject=${encodeURIComponent(subj)}`; };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(body).then(
+      () => { toast('Text kopiert – im Mail mit Strg+V einfügen'); openLeer(); },
+      () => { window.location.href = `mailto:${to}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`; }
+    );
+  } else {
+    window.location.href = `mailto:${to}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+  }
+  closeModal();
 }
 function pendMailCopy() {
   const t = $('#pm_body').value || '';

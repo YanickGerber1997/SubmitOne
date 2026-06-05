@@ -5053,25 +5053,71 @@ function pdfGantt(pid) {
   let min = null, max = null;
   vs.forEach(v => { if (!min || v.bauStart < min) min = v.bauStart; if (!max || v.bauEnde > max) max = v.bauEnde; });
   const ds = dISO(min), de = dISO(max);
-  const months = []; let cur = new Date(ds.getFullYear(), ds.getMonth(), 1); const end = new Date(de.getFullYear(), de.getMonth(), 1);
-  while (cur <= end) { months.push({ y: cur.getFullYear(), m: cur.getMonth() }); cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1); }
-  const mIdx = iso => { const d = dISO(iso); return months.findIndex(x => x.y === d.getFullYear() && x.m === d.getMonth()); };
-  // dynamische Höhe/Schrift, damit alles auf eine Seite passt
+  const rangeStart = new Date(ds.getFullYear(), ds.getMonth(), 1);
+  const rangeEnd = new Date(de.getFullYear(), de.getMonth() + 1, 0);
+  const totalDays = dayDiff(rangeStart, rangeEnd) + 1;
+  const pct = iso => dayDiff(rangeStart, dISO(iso)) / totalDays * 100;
+  const wpct = (s, e) => (dayDiff(dISO(s), dISO(e)) + 1) / totalDays * 100;
+  const subOn = ganttZoom !== 'monat';
   const n = vs.length;
-  const barH = n > 22 ? 9 : n > 14 ? 12 : 15;
-  const fs = months.length > 18 ? 8 : 9.5;
-  const headM = months.map(x => `<th style="text-align:center;font-size:${fs}px;font-weight:700;padding:5px 1px">${MON_KURZ[x.m]}<br><span style="color:#9aa4b1">${String(x.y).slice(2)}</span></th>`).join('');
-  const rows = vs.map(v => {
-    const s = mIdx(v.bauStart), e = mIdx(v.bauEnde);
-    const col = ganttColHex(v);
-    const cells = months.map((_, i) => `<td style="padding:0 1px;border-left:1px solid #eef1f5">${i >= s && i <= e ? `<div style="background:${col};height:${barH}px;border-radius:3px"></div>` : ''}</td>`).join('');
-    return `<tr><td style="font-size:${fs + 1.5}px;line-height:1.25"><b>${esc(v.bkp || '')}</b> ${esc(v.gewerk || '')}</td><td style="font-size:${fs}px;white-space:nowrap;color:#6b7480">${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}</td>${cells}</tr>`;
-  }).join('');
-  const inner = `<table class="t" style="table-layout:fixed;width:100%">
-      <colgroup><col style="width:23%"><col style="width:13%">${months.map(() => '<col>').join('')}</colgroup>
-      <thead><tr><th>BKP / Gewerk</th><th>Termin</th>${headM}</tr></thead><tbody>${rows}</tbody></table>
-    <p class="muted" style="margin-top:10px;font-size:9.5px">Bauprogramm – Monatsraster. Balkenfarbe = Status des Gewerks.</p>`;
-  openPrintDoc('Bauprogramm / Terminprogramm', `${esc(p.name)} · ${esc(p.ort)} · Stand ${fmtDate(todayIso())}`, inner, { landscape: true });
+  // Geometrie in mm – passt immer auf EINE A4-Querseite (Breite = %, Höhe gerechnet)
+  const SIDE_MM = 55, HEAD_MM = subOn ? 11 : 7;
+  const rowH = Math.max(3, Math.min(6.6, (152 - HEAD_MM) / n));
+  const barH = Math.max(2, rowH - 1.4);
+  const fs = rowH < 4 ? 6 : rowH < 5.2 ? 7 : 8;
+
+  // Monats-Band + Gridlines
+  const months = []; let cur = new Date(rangeStart);
+  while (cur <= rangeEnd) { const mEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0); const se = mEnd > rangeEnd ? rangeEnd : mEnd; const iso = isoOf(cur); months.push({ l: pct(iso), w: wpct(iso, isoOf(se)), label: MON_KURZ[cur.getMonth()] + ' ' + String(cur.getFullYear()).slice(2) }); cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1); }
+  let gridV = months.map(m => `<div class="pg-grid mo" style="left:${m.l}%"></div>`).join('');
+  const moBand = months.map(m => `<div class="pg-mo" style="left:${m.l}%;width:${m.w}%">${m.label}</div>`).join('');
+
+  // Sub-Band (KW oder Tag) + feinere Gridlines
+  let subBand = '';
+  if (ganttZoom === 'woche') {
+    let d = new Date(rangeStart); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    while (d <= rangeEnd) {
+      const iso = isoOf(d < rangeStart ? rangeStart : d); const l = Math.max(0, pct(isoOf(d)));
+      const wEnd = new Date(d); wEnd.setDate(d.getDate() + 6); const se = wEnd > rangeEnd ? rangeEnd : wEnd;
+      const r = Math.min(100, pct(isoOf(se)) + 100 / totalDays);
+      gridV += `<div class="pg-grid wk" style="left:${l}%"></div>`;
+      subBand += `<div class="pg-sub" style="left:${l}%;width:${Math.max(0, r - l)}%">${isoWeek(d)}</div>`;
+      d.setDate(d.getDate() + 7);
+    }
+  } else if (ganttZoom === 'tag') {
+    let d = new Date(rangeStart);
+    while (d <= rangeEnd) { const iso = isoOf(d); const we = d.getDay() === 0 || d.getDay() === 6; gridV += `<div class="pg-grid${we ? ' we' : ''}" style="left:${pct(iso)}%"></div>`; subBand += `<div class="pg-sub" style="left:${pct(iso)}%;width:${100 / totalDays}%">${totalDays <= 70 ? d.getDate() : ''}</div>`; d.setDate(d.getDate() + 1); }
+  }
+
+  const t = today();
+  const todayLine = (t >= rangeStart && t <= rangeEnd) ? `<div class="pg-today" style="left:${pct(todayIso())}%"></div>` : '';
+  const sideHtml = vs.map(v => `<div class="pg-srow" style="height:${rowH}mm"><b>${esc(v.bkp || '')}</b>&nbsp;${esc(v.gewerk || '')}</div>`).join('');
+  const rowsHtml = vs.map(v => `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar" style="left:${pct(v.bauStart)}%;width:${wpct(v.bauStart, v.bauEnde)}%;height:${barH}mm;background:${ganttColHex(v)}"></div></div>`).join('');
+  const legend = GANTT_LEGEND.map(([k, l]) => `<span style="display:inline-block;margin-right:10px"><span style="display:inline-block;width:11px;height:8px;border-radius:2px;background:${GANTT_COLS[k]};vertical-align:middle;margin-right:3px"></span>${l}</span>`).join('');
+
+  const css = `@page{size:A4 landscape;margin:8mm;}
+    .lh{padding-bottom:5px;} h1{font-size:14px;margin:5px 0 0;} h1::after{display:none;} .sub{margin:2px 0 6px;font-size:9.5px;} .ft{display:none;}
+    .pg{display:flex;border:1px solid #c9d2de;width:100%;box-sizing:border-box;}
+    .pg-side{flex:none;width:${SIDE_MM}mm;border-right:1px solid #c9d2de;box-sizing:border-box;}
+    .pg-shead{height:${HEAD_MM}mm;display:flex;align-items:flex-end;padding:0 1.5mm 0.5mm;font-weight:700;font-size:8px;border-bottom:1px solid #c9d2de;box-sizing:border-box;}
+    .pg-srow{display:flex;align-items:center;padding:0 1.5mm;font-size:${fs}px;border-bottom:1px solid #eef1f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box;}
+    .pg-main{flex:1;position:relative;min-width:0;}
+    .pg-head{position:relative;height:${HEAD_MM}mm;border-bottom:1px solid #c9d2de;box-sizing:border-box;}
+    .pg-mo{position:absolute;top:0;height:${subOn ? '50%' : '100%'};text-align:center;font-size:8px;font-weight:700;border-left:1px solid #d8dee8;color:#46505e;overflow:hidden;white-space:nowrap;}
+    .pg-sub{position:absolute;bottom:0;height:50%;text-align:center;font-size:6.5px;color:#6b7480;border-left:1px solid #eef1f5;overflow:hidden;white-space:nowrap;line-height:1;padding-top:.4mm;box-sizing:border-box;}
+    .pg-rows{position:relative;}
+    .pg-row{position:relative;border-bottom:1px solid #f2f4f8;box-sizing:border-box;}
+    .pg-grid{position:absolute;top:0;bottom:0;width:1px;background:#eef1f5;}
+    .pg-grid.mo{background:#d3dae5;} .pg-grid.we{background:#eef2f7;}
+    .pg-today{position:absolute;top:0;bottom:0;width:1.2px;background:#dc2626;z-index:2;}
+    .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;box-shadow:0 0 0 .3px rgba(0,0,0,.06);}`;
+  const inner = `<div class="pg">
+    <div class="pg-side"><div class="pg-shead">BKP / Gewerk</div>${sideHtml}</div>
+    <div class="pg-main"><div class="pg-head">${moBand}${subBand}</div><div class="pg-rows">${gridV}${todayLine}${rowsHtml}</div></div>
+  </div>
+  <div style="margin-top:3mm;font-size:8px;color:#6b7480">${legend}</div>`;
+  const rasterTxt = ganttZoom === 'tag' ? 'Tage' : ganttZoom === 'woche' ? 'Wochen' : 'Monate';
+  openPrintDoc('Bauprogramm / Terminprogramm', `${esc(p.name)} · ${esc(p.ort)} · ${fmtDate(min)} – ${fmtDate(max)} · Raster ${rasterTxt}`, inner, { landscape: true, extraCss: css });
 }
 
 function advanceVergabe(pid, vid) {

@@ -980,6 +980,8 @@ function viewProjektDetail(id) {
       <div class="dstat"><div class="l">Termin</div><div class="v" style="font-size:15px">${fmtDate(p.start)} – ${fmtDate(p.ende)}</div></div>
     </div>
 
+    ${projektNextStepsCard(p)}
+
     <!-- Vergaben-Tabelle -->
     <div class="section-head"><h2>Vergaben &amp; Gewerke</h2><div style="display:flex;gap:10px;align-items:center"><span class="hint">Klick = aufklappen mit nächsten Schritten</span>${katToggleBtn()}</div></div>
     <div class="card">
@@ -2546,33 +2548,58 @@ function quickAddVergabe(pid, code, label) {
 /* --- Geführtes Inline-Panel je Gewerk (phasengerechte nächste Schritte) --- */
 let gwOpen = new Set();
 function gewerkHatBeschrieb(v) { return !!((v.beschrieb && v.beschrieb.trim()) || (v.ksPositionen && v.ksPositionen.length) || v.schaetzung > 0); }
-function gewerkPanel(p, v) {
-  const st = STATUS_BY_KEY[v.status] || {};
-  const btn = (action, label, primary) => `<button class="btn sm ${primary ? '' : 'secondary'}" data-act="gw-action" data-pid="${p.id}" data-vid="${v.id}" data-action="${action}">${label}</button>`;
+// Phasengerechte nächste Schritte eines Gewerks: { hint, acts:[{action,label,primary}] }
+function gewerkSteps(v) {
+  const A = (action, label, primary) => ({ action, label, primary: !!primary });
   const s = v.status; let hint = '', acts = [];
   if (s === 'ausschreibung') {
-    if (!gewerkHatBeschrieb(v)) { hint = 'Noch kein Baubeschrieb / keine Kostenschätzung – jetzt erfassen.'; acts = [btn('ks', '✎ Beschrieb &amp; Kostenschätzung erfassen', true)]; }
-    else if (!v.beschriebOk) { hint = 'Beschrieb &amp; Schätzung stehen – vom Bauherrn genehmigen lassen.'; acts = [btn('genehmigt', '✓ Als genehmigt markieren', true), btn('ks', '✎ bearbeiten')]; }
-    else { hint = 'Genehmigt – jetzt die Ausschreibung an die Submittenten versenden.'; acts = [btn('ausschreiben', '✉ Ausschreibung versenden', true), btn('advance', '→ Status: versendet')]; }
+    if (!gewerkHatBeschrieb(v)) { hint = 'Noch kein Baubeschrieb / keine Kostenschätzung – jetzt erfassen.'; acts = [A('ks', '✎ Beschrieb &amp; Kostenschätzung erfassen', true)]; }
+    else if (!v.beschriebOk) { hint = 'Beschrieb &amp; Schätzung stehen – vom Bauherrn genehmigen lassen.'; acts = [A('genehmigt', '✓ Als genehmigt markieren', true), A('ks', '✎ bearbeiten')]; }
+    else { hint = 'Genehmigt – Ausschreibung an die Submittenten versenden.'; acts = [A('ausschreiben', '✉ Ausschreibung versenden', true), A('advance', '→ Status: versendet')]; }
   } else if (['versendet', 'offerten', 'angebot_vers', 'angebot_erh'].includes(s)) {
-    hint = 'Offerten / Abgebote erfassen und vergleichen.'; acts = [btn('vergabeantrag', '📄 Offertvergleich / Vergabeantrag', true), btn('advance', '→ nächster Schritt')];
+    hint = 'Offerten / Abgebote erfassen und vergleichen.'; acts = [A('vergabeantrag', '📄 Offertvergleich / Vergabeantrag', true), A('advance', '→ nächster Schritt')];
   } else if (s === 'bewertung' || s === 'verhandlung') {
-    hint = 'Offertvergleich vorhanden – Zuschlag vorbereiten.'; acts = [btn('vergabeantrag', '📄 Vergabeantrag'), btn('advance', '→ Zuschlag erteilen', true)];
+    hint = 'Offertvergleich vorhanden – Zuschlag vorbereiten.'; acts = [A('advance', '→ Zuschlag erteilen', true), A('vergabeantrag', '📄 Vergabeantrag')];
   } else if (s === 'vergeben') {
-    hint = 'Zuschlag erteilt – Firmen informieren, dann Werkvertrag.'; acts = [btn('zuschlag', '✉ Zuschlag-Mail', true), btn('absage', '✉ Absage Unterlegene'), btn('advance', '→ Werkvertrag')];
+    hint = 'Zuschlag erteilt – Firmen informieren, dann Werkvertrag.'; acts = [A('zuschlag', '✉ Zuschlag-Mail', true), A('absage', '✉ Absage Unterlegene'), A('advance', '→ Werkvertrag')];
   } else if (s === 'werkvertrag' || s === 'unterzeichnet') {
-    hint = 'Werkvertrag – bei Baustart in Ausführung setzen.'; acts = [btn('advance', '→ In Ausführung', true)];
+    hint = 'Werkvertrag – bei Baustart in Ausführung setzen.'; acts = [A('advance', '→ In Ausführung', true)];
   } else if (s === 'ausfuehrung') {
-    hint = 'In Ausführung – Rechnungen &amp; Nachträge laufend erfassen.'; acts = [btn('rechnung', '🧾 Rechnung erfassen', true), btn('nachtrag', '📐 Nachtrag'), btn('advance', '→ Schlussrechnung')];
+    hint = 'In Ausführung – Rechnungen &amp; Nachträge laufend erfassen.'; acts = [A('rechnung', '🧾 Rechnung erfassen', true), A('nachtrag', '📐 Nachtrag'), A('advance', '→ Schlussrechnung')];
   } else if (s === 'schlussrechnung') {
-    hint = 'Schlussrechnung in Prüfung.'; acts = [btn('rechnung', '🧾 Rechnung'), btn('advance', '→ weiter', true)];
+    hint = 'Schlussrechnung in Prüfung.'; acts = [A('advance', '→ weiter', true), A('rechnung', '🧾 Rechnung')];
   } else if (s === 'maengel') {
-    hint = 'Mängelbehebung – danach abschliessen.'; acts = [btn('advance', '→ Abschliessen', true)];
+    hint = 'Mängelbehebung – danach abschliessen.'; acts = [A('advance', '→ Abschliessen', true)];
   } else { hint = 'Gewerk abgeschlossen.'; }
+  return { hint, acts };
+}
+function gewerkPanel(p, v) {
+  const st = STATUS_BY_KEY[v.status] || {};
+  const { hint, acts } = gewerkSteps(v);
+  const btns = acts.map(a => `<button class="btn sm ${a.primary ? '' : 'secondary'}" data-act="gw-action" data-pid="${p.id}" data-vid="${v.id}" data-action="${a.action}">${a.label}</button>`).join('');
   return `<div class="gw-panel">
     <div class="gw-panel-top"><span class="st ${st.color || 'grey'}">${esc(st.label || v.status)}</span><span class="gw-hint">${hint}</span><a class="gw-open" href="#/projekt/${p.id}/vergabe/${v.id}">Vollständiges Detail öffnen ↗</a></div>
-    ${acts.length ? `<div class="gw-actions">${acts.join('')}</div>` : ''}
+    ${btns ? `<div class="gw-actions">${btns}</div>` : ''}
   </div>`;
+}
+// Projekt-Board: pro Gewerk die wichtigste anstehende Aktion (sortiert nach Phase)
+function projektNextStepsCard(p) {
+  const items = (p.vergaben || []).map(v => ({ v, st: gewerkSteps(v) })).filter(x => x.st.acts.length && x.v.status !== 'abgeschlossen');
+  if (!items.length) return '';
+  items.sort((a, b) => statusIdx(a.v) - statusIdx(b.v));
+  const rows = items.slice(0, 8).map(({ v, st }) => {
+    const a = st.acts.find(x => x.primary) || st.acts[0];
+    const stt = STATUS_BY_KEY[v.status] || {};
+    return `<div class="ns-row">
+      <span class="bkp-code">${esc(v.bkp)}</span>
+      <span class="ns-gewerk">${esc(v.gewerk)}</span>
+      <span class="st ${stt.color || 'grey'} ns-st">${esc(stt.kurz || v.status)}</span>
+      <span class="ns-hint muted">${st.hint}</span>
+      <button class="btn sm" data-act="gw-action" data-pid="${p.id}" data-vid="${v.id}" data-action="${a.action}">${a.label}</button>
+    </div>`;
+  }).join('');
+  return `<div class="section-head"><h2>Nächste Schritte</h2><span class="hint">${items.length} offen · sortiert nach Phase</span></div>
+    <div class="card card-pad ns-board">${rows}${items.length > 8 ? `<div class="muted" style="font-size:12px;margin-top:8px">+${items.length - 8} weitere – siehe Liste unten</div>` : ''}</div>`;
 }
 function gewerkAction(pid, vid, action) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;

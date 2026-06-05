@@ -837,6 +837,16 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .gw-open { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
 .gw-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
+/* Projekt-Board „Nächste Schritte" */
+.ns-board { display: flex; flex-direction: column; gap: 2px; }
+.ns-row { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-bottom: 1px solid var(--border); }
+.ns-row:last-child { border-bottom: none; }
+.ns-gewerk { font-weight: 600; min-width: 120px; }
+.ns-st { font-size: 10.5px; padding: 2px 8px; flex: none; }
+.ns-hint { flex: 1; font-size: 12.5px; min-width: 120px; }
+.ns-row .btn { flex: none; white-space: nowrap; }
+@media (max-width: 760px) { .ns-row { flex-wrap: wrap; } .ns-hint { width: 100%; order: 5; } }
+
 /* ============================ Toast ============================ */
 
 #toast-root { position: fixed; bottom: 22px; right: 22px; display: flex; flex-direction: column; gap: 10px; z-index: 200; }

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v40';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v41';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -651,7 +651,12 @@ function setActiveNav(key) {
   const sub = $('#projSubnav'); if (sub) sub.innerHTML = '';
 }
 
-function render(html) { $('#view').innerHTML = html; window.scrollTo(0, 0); }
+let _lastRenderHash = null;
+function render(html) {
+  $('#view').innerHTML = html;
+  // Nur bei echtem Seitenwechsel nach oben scrollen; In-Place-Updates (z.B. Block verschieben) behalten die Position
+  if (location.hash !== _lastRenderHash) { window.scrollTo(0, 0); _lastRenderHash = location.hash; }
+}
 
 function router() {
   const parts = parseHash();

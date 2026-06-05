@@ -227,8 +227,17 @@ button { font-family: inherit; cursor: pointer; }
 .plan-rail-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; color: var(--text-soft); }
 .plan-rail-hint { font-size: 11.5px; color: var(--text-faint); margin: 12px 0 0; line-height: 1.5; }
 .plan-pal { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
-.plan-pal .chip { width: 100%; text-align: left; cursor: grab; }
-.plan-pal .chip[draggable="true"]:active { cursor: grabbing; }
+.plan-pal .chip { width: 100%; text-align: left; }
+/* Vorlagen-Chip: Greiffläche + 30-Min-Stepper */
+.plan-tpl { display: flex; align-items: stretch; padding: 0; overflow: hidden; }
+.plan-tpl-grip { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 6px 11px; cursor: grab; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plan-tpl-grip:active { cursor: grabbing; }
+.plan-tpl.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.plan-tpl-step { display: flex; flex: none; }
+.plan-step { width: 26px; align-self: stretch; border: none; border-left: 1px solid var(--border-2); background: transparent; color: inherit; font-size: 16px; font-weight: 600; line-height: 1; cursor: pointer; }
+.plan-step:hover { background: rgba(0,0,0,.07); }
+.plan-tpl.active .plan-step { border-left-color: rgba(255,255,255,.3); }
+.plan-tpl.active .plan-step:hover { background: rgba(255,255,255,.18); }
 .plan-splitter { flex: none; width: 9px; cursor: col-resize; position: relative; align-self: stretch; }
 .plan-splitter::before { content: ''; position: absolute; left: 50%; top: 4px; bottom: 4px; width: 2px; transform: translateX(-50%); background: var(--border); border-radius: 2px; }
 .plan-splitter:hover::before, .plan-splitter.drag::before { background: var(--brand); width: 3px; }

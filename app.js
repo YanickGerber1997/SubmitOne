@@ -3314,10 +3314,16 @@ const PLAN_FARBEN = [['blue', 'Blau'], ['teal', 'Petrol'], ['green', 'Grün'], [
 let planView = 'woche', planRefIso = null, planArmed = null, planungData = null, planSel = null, planClip = null, planPend = [];
 function loadPlanung() { if (planungData) return planungData; try { planungData = JSON.parse(localStorage.getItem('so_planung') || '[]'); } catch (_) { planungData = []; } return planungData; }
 function savePlanung() { try { localStorage.setItem('so_planung', JSON.stringify(planungData)); } catch (_) {} }
+// Vordefinierte Zeitfenster-Dauern (per +/- in 30-Min-Schritten anpassbar, gespeichert)
+function loadPlanTplDur() { try { const a = JSON.parse(localStorage.getItem('so_plan_tpldur') || 'null'); if (Array.isArray(a)) a.forEach((d, i) => { if (PLAN_TEMPLATES[i] && d >= 30) PLAN_TEMPLATES[i].dauer = d; }); } catch (_) {} }
+function savePlanTplDur() { try { localStorage.setItem('so_plan_tpldur', JSON.stringify(PLAN_TEMPLATES.map(t => t.dauer))); } catch (_) {} }
+function planDurStep(i, delta) { const tp = PLAN_TEMPLATES[i]; if (!tp) return; tp.dauer = Math.max(30, Math.min(720, tp.dauer + delta * 30)); savePlanTplDur(); viewPlanung(); }
+function planDurTxt(d) { if (d < 60) return d + 'min'; const h = Math.floor(d / 60), m = d % 60; return h + 'h' + (m ? m : ''); }
 function min2hhmm(m) { m = Math.max(0, Math.min(24 * 60, Math.round(m))); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
 
 function viewPlanung() {
   const t = today(); const todayI = todayIso();
+  loadPlanTplDur();
   if (planRefIso == null) planRefIso = todayI;
   if (calHidden == null) { try { calHidden = new Set(JSON.parse(localStorage.getItem('so_cal_hidden') || '[]')); } catch (_) { calHidden = new Set(); } }
   const projects = state.projekte || [];
@@ -3335,7 +3341,7 @@ function viewPlanung() {
   const body = calTimeGrid(events, dates, todayI, 'plan');
   const pvb = (v, t2) => `<button class="btn sm ${planView === v ? '' : 'secondary'}" data-act="plan-view" data-kind="${v}">${t2}</button>`;
   const toggles = projects.length ? projects.map((p, idx) => `<span class="chip ${calHidden.has(p.id) ? '' : 'active'}" data-act="plan-toggle" data-pid="${p.id}"><i class="cal-dot ${projColor(idx)}"></i>${esc(p.name)}</span>`).join('') : '';
-  const palette = PLAN_TEMPLATES.map((tp, i) => `<button class="chip ${planArmed === i ? 'active' : ''}" draggable="true" data-tpl="${i}" data-act="plan-arm" data-idx="${i}" title="Klicken oder in den Kalender ziehen"><i class="cal-dot ${tp.color}"></i>${esc(tp.label)} · ${tp.dauer >= 60 ? (tp.dauer / 60) + 'h' : tp.dauer + 'min'}</button>`).join('');
+  const palette = PLAN_TEMPLATES.map((tp, i) => `<div class="chip plan-tpl ${planArmed === i ? 'active' : ''}"><span class="plan-tpl-grip" draggable="true" data-tpl="${i}" data-act="plan-arm" data-idx="${i}" title="Klicken oder in den Kalender ziehen"><i class="cal-dot ${tp.color}"></i>${esc(tp.label)} · ${planDurTxt(tp.dauer)}</span><span class="plan-tpl-step"><button class="plan-step" data-act="plan-dur" data-idx="${i}" data-d="-1" title="30 Min kürzer">−</button><button class="plan-step" data-act="plan-dur" data-idx="${i}" data-d="1" title="30 Min länger">+</button></span></div>`).join('');
 
   // offene Pendenzen als „To-do"-Vorrat (in den Kalender ziehbar)
   const pend = [];
@@ -5101,6 +5107,7 @@ document.addEventListener('click', e => {
     case 'plan-day':     planView = 'tag'; planRefIso = kind; viewPlanung(); break;
     case 'plan-toggle':  planToggle(pid); break;
     case 'plan-arm':     planArm(Number(idx)); break;
+    case 'plan-dur':     planDurStep(Number(idx), Number(act.dataset.d)); break;
     case 'plan-add':     actPlanBlock(null, kind, ''); break;
     case 'plan-edit':    actPlanBlock(bid); break;
     case 'plan-save':    savePlanBlock(bid); break;

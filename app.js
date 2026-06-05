@@ -6135,27 +6135,34 @@ function fmtUid(u) {
 }
 
 // Firmensuche live aus dem Schweizer Handelsregister (LINDAS/Zefix des Bundes, ohne Login)
+let firmenSucheCtrl = null;
 async function firmenSuche(q) {
   const s = (q || '').trim();
-  if (s.length < 2) return [];
+  if (s.length < 3) return [];
+  if (firmenSucheCtrl) firmenSucheCtrl.abort();      // vorherige (langsame) Anfrage abbrechen
+  firmenSucheCtrl = new AbortController();
   try {
     const term = s.toLowerCase().replace(/[\\"]/g, ' ');   // für SPARQL-String entschärfen
     const query =
 `PREFIX admin: <https://schema.ld.admin.ch/>
 PREFIX schema: <http://schema.org/>
-SELECT ?name ?type ?ort ?plz ?uid WHERE {
+SELECT ?name ?type ?ort ?plz ?str ?uid WHERE {
   { SELECT ?uri ?name WHERE {
       ?uri a admin:ZefixOrganisation ; schema:name ?name .
       FILTER(CONTAINS(LCASE(STR(?name)), "${term}"))
   } LIMIT 8 }
   OPTIONAL { ?uri schema:additionalType ?t . ?t schema:name ?type . FILTER(langMatches(lang(?type),"de")) }
-  OPTIONAL { ?uri schema:address ?a . OPTIONAL { ?a schema:addressLocality ?ort } OPTIONAL { ?a schema:postalCode ?plz } }
+  OPTIONAL { ?uri schema:address ?a .
+    OPTIONAL { ?a schema:addressLocality ?ort }
+    OPTIONAL { ?a schema:postalCode ?plz }
+    OPTIONAL { ?a schema:streetAddress ?str } }
   OPTIONAL { ?uri schema:identifier ?id . FILTER(CONTAINS(STR(?id),"/UID/")) BIND(REPLACE(STR(?id),"^.*/UID/","") AS ?uid) }
 }`;
     const r = await fetch('https://lindas.admin.ch/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/sparql-results+json' },
       body: 'query=' + encodeURIComponent(query),
+      signal: firmenSucheCtrl.signal,
     });
     if (r.ok) {
       const j = await r.json();
@@ -6167,6 +6174,7 @@ SELECT ?name ?type ?ort ?plz ?uid WHERE {
           rechtsform: b.type?.value || '',
           plz: b.plz?.value || '',
           ort: b.ort?.value || '',
+          strasse: b.str?.value || '',
           kanton: '', branche: '',
         };
         const key = row.name + row.uid;
@@ -6174,7 +6182,7 @@ SELECT ?name ?type ?ort ?plz ?uid WHERE {
       }
       if (out.length) return out;
     }
-  } catch (e) { /* Fallback unten */ }
+  } catch (e) { if (e.name === 'AbortError') return []; /* sonst Fallback unten */ }
   // Fallback (offline / Dienst nicht erreichbar): lokale Demo-Liste
   const ls = s.toLowerCase();
   return FIRMEN_DB
@@ -6209,10 +6217,18 @@ function actKontakt(kid) {
       <label class="field">E-Mail <input class="input" id="f_email" value="${val('email')}" placeholder="name@firma.ch"></label>
       <label class="field">Telefon <input class="input" id="f_tel" value="${val('telefon')}"></label>
     </div>
-    <label class="field">Website <input class="input" id="f_web" value="${val('website')}" placeholder="https://…"></label>
+    <label class="field">Website
+      <div style="display:flex;gap:6px"><input class="input" id="f_web" style="flex:1" value="${val('website')}" placeholder="https://…"><button class="btn secondary sm" type="button" id="f_web_search" title="Website im Web suchen">🔎 suchen</button></div>
+    </label>
     <label class="field">Notiz <textarea class="input" id="f_notiz" rows="2">${k ? esc(k.notiz || '') : ''}</textarea></label>
   `, `${k ? `<button class="btn danger" data-act="rm-kontakt" data-kid="${kid}">Löschen</button><div class="spacer"></div>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-kontakt"${k ? ` data-kid="${kid}"` : ''}>${k ? 'Speichern' : 'Hinzufügen'}</button>`);
   attachFirmaSuche();
+  const wb = $('#f_web_search');
+  if (wb) wb.addEventListener('click', () => {
+    const fn = ($('#f_firma').value || '').trim(); if (!fn) { toast('Zuerst Firma eingeben', 'info'); return; }
+    const ort = ($('#f_kort').value || '').trim();
+    window.open('https://www.google.com/search?q=' + encodeURIComponent(fn + ' ' + ort + ' offizielle Website'), '_blank');
+  });
 }
 function attachFirmaSuche() {
   const inp = $('#f_firma'), box = $('#firmaResults'); if (!inp || !box) return;
@@ -6228,14 +6244,15 @@ function attachFirmaSuche() {
   };
   inp.addEventListener('input', () => {
     const v = inp.value; clearTimeout(tmr);
-    if (v.trim().length < 2) { matches = []; renderMatches(); return; }
+    if (v.trim().length < 3) { matches = []; renderMatches(); return; }
     box.style.display = 'block'; box.innerHTML = '<div class="ac-item muted">Suche im Handelsregister…</div>';
-    tmr = setTimeout(async () => { matches = await firmenSuche(v); renderMatches(); }, 300);
+    tmr = setTimeout(async () => { const res = await firmenSuche(v); if (inp.value !== v) return; matches = res; renderMatches(); }, 400);
   });
   box.addEventListener('click', e => {
     const it = e.target.closest('.ac-item'); if (!it || it.dataset.i == null) return;
     const f = matches[+it.dataset.i];
     inp.value = f.name; $('#f_uid').value = f.uid || ''; $('#f_rf').value = f.rechtsform || '';
+    if (f.strasse && $('#f_str')) $('#f_str').value = f.strasse;
     $('#f_plz').value = f.plz || ''; $('#f_kort').value = f.ort || '';
     if (!$('#f_kat').value.trim()) $('#f_kat').value = f.branche || '';
     box.style.display = 'none'; box.innerHTML = '';

@@ -5301,13 +5301,22 @@ function pdfGantt(pid) {
       d.setDate(d.getDate() + 7);
     }
   } else if (ganttZoom === 'tag') {
-    let d = new Date(rangeStart);
-    while (d <= rangeEnd) {
-      const iso = isoOf(d); const we = d.getDay() === 0 || d.getDay() === 6;
-      gridV += `<div class="pg-grid" style="left:${pct(iso)}%"></div>`;
-      if (we) weBands += `<div class="pg-we" style="left:${pct(iso)}%;width:${100 / totalDays}%"></div>`;
-      subBand += `<div class="pg-sub${we ? ' we' : ''}" style="left:${pct(iso)}%;width:${100 / totalDays}%">${totalDays <= 70 ? d.getDate() : ''}</div>`;
-      d.setDate(d.getDate() + 1);
+    // Adaptiv: Tagsspalten-Breite (mm) bestimmt die Detailtiefe, damit nichts „verklebt"
+    const dayMm = (281 - SIDE_MM) / totalDays;
+    // Immer nur WOCHEN-Gitterlinien (Montag) – per-Tag-Linien wären bei langem Zeitraum eine graue Wand
+    let wk = new Date(rangeStart); wk.setDate(wk.getDate() - ((wk.getDay() + 6) % 7));
+    while (wk <= rangeEnd) { gridV += `<div class="pg-grid wk" style="left:${Math.max(0, pct(isoOf(wk)))}%"></div>`; wk.setDate(wk.getDate() + 7); }
+    // Feine Tageslinien nur, wenn Spalten breit genug
+    if (dayMm >= 4) { let d = new Date(rangeStart); while (d <= rangeEnd) { gridV += `<div class="pg-grid day" style="left:${pct(isoOf(d))}%"></div>`; d.setDate(d.getDate() + 1); } }
+    // Wochenend-Bänder nur, wenn sie als Block sichtbar (sonst zu fein)
+    if (dayMm >= 1.0) { let d = new Date(rangeStart); while (d <= rangeEnd) { if (d.getDay() === 0 || d.getDay() === 6) weBands += `<div class="pg-we" style="left:${pct(isoOf(d))}%;width:${100 / totalDays}%"></div>`; d.setDate(d.getDate() + 1); } }
+    // Sub-Band: Tageszahlen nur bei genügend Breite, sonst KW
+    if (dayMm >= 3) {
+      let d = new Date(rangeStart);
+      while (d <= rangeEnd) { const we = d.getDay() === 0 || d.getDay() === 6; subBand += `<div class="pg-sub${we ? ' we' : ''}" style="left:${pct(isoOf(d))}%;width:${100 / totalDays}%">${d.getDate()}</div>`; d.setDate(d.getDate() + 1); }
+    } else {
+      let w = new Date(rangeStart); w.setDate(w.getDate() - ((w.getDay() + 6) % 7));
+      while (w <= rangeEnd) { const l = Math.max(0, pct(isoOf(w))); const we2 = new Date(w); we2.setDate(w.getDate() + 6); const se = we2 > rangeEnd ? rangeEnd : we2; const r = Math.min(100, pct(isoOf(se)) + 100 / totalDays); subBand += `<div class="pg-sub" style="left:${l}%;width:${Math.max(0, r - l)}%">${isoWeek(w)}</div>`; w.setDate(w.getDate() + 7); }
     }
   }
 
@@ -5330,8 +5339,8 @@ function pdfGantt(pid) {
     .pg-rows{position:relative;}
     .pg-row{position:relative;border-bottom:1px solid #f2f4f8;box-sizing:border-box;}
     .pg-grid{position:absolute;top:0;bottom:0;width:1px;background:#eef1f5;}
-    .pg-grid.mo{background:#d3dae5;} .pg-grid.wk{background:#e7ebf1;}
-    .pg-we{position:absolute;top:0;bottom:0;background:#e7edf5;}
+    .pg-grid.mo{background:#cfd7e3;} .pg-grid.wk{background:#e3e8ef;} .pg-grid.day{background:#f1f4f8;}
+    .pg-we{position:absolute;top:0;bottom:0;background:#eaf0f7;}
     .pg-sub.we{background:#e7edf5;color:#9aa4b1;}
     .pg-today{position:absolute;top:0;bottom:0;width:1.2px;background:#dc2626;z-index:2;}
     .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;box-shadow:0 0 0 .3px rgba(0,0,0,.06);}`;

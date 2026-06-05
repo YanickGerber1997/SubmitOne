@@ -1113,6 +1113,13 @@ let ganttZoom = 'monat';   // 'monat' | 'woche' | 'tag'
 let ganttScale = 1;        // stufenloser Breiten-Faktor auf pxPerDay
 let ganttChain = true;     // Verkettung: Nachfolger automatisch nachführen
 let ganttWorkdays = false; // Abstände/Verkettung in Arbeitstagen (Wochenende/Feiertage überspringen)
+let ganttPendingScroll = null;  // {left, y} – nach In-Place-Rerender wiederherstellen
+// Gantt neu zeichnen ohne Scroll-Sprung (Seite + horizontaler Scroll bleiben)
+function rerenderGantt(pid) {
+  const gm = document.querySelector('.g-main');
+  ganttPendingScroll = { left: gm ? gm.scrollLeft : 0, y: window.scrollY };
+  viewTermine(pid);
+}
 let ganttSort = 'bkp';     // 'bkp' | 'start'
 const ZOOM = { monat: { px: 2.4, label: 'Monate' }, woche: { px: 4.6, label: 'Wochen' }, tag: { px: 13, label: 'Tage' } };
 // Gantt-Balkenfarbe je Status (über den Lebenszyklus differenziert)
@@ -1139,7 +1146,7 @@ function viewTermine(id) {
     : ((a.bkp || '').localeCompare(b.bkp || '') || (a.gewerk || '').localeCompare(b.gewerk || '')));
   const offene = vs.filter(v => !(v.bauStart && v.bauEnde));
 
-  const sortCtrl = `<div class="g-zoom" title="Sortierung"><button class="${ganttSort === 'bkp' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="bkp">BKP</button><button class="${ganttSort === 'start' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="start">Start</button></div>`;
+  const sortCtrl = `<div class="g-zoom" title="Ansicht / Gruppierung"><button class="${ganttSort === 'bkp' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="bkp">BKP</button><button class="${ganttSort === 'start' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="start">Start</button><button class="${ganttSort === 'firma' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="firma" title="Pro Unternehmer eine Zeile">Firma</button></div>`;
   const zoomCtrl = `<div class="g-zoom">
     ${Object.keys(ZOOM).map(z => `<button class="${ganttZoom === z ? 'active' : ''}" data-act="gantt-zoom" data-pid="${p.id}" data-kind="${z}">${ZOOM[z].label}</button>`).join('')}
   </div>`;
@@ -1285,6 +1292,30 @@ function viewTermine(id) {
 
   const ROW_H = 38;
   let sideRows = '', barRows = '', rowIdx = 0; const barMeta = {};
+  if (ganttSort === 'firma') {
+    // Unternehmer-Ansicht: pro Firma eine Zeile mit allen Balken (Vorgänge statt Gewerk, falls vorhanden)
+    const groups = {}, order = [];
+    vs.filter(v => v.bauStart && v.bauEnde).forEach(v => { const f = v.firma || '— ohne Firma —'; if (!groups[f]) { groups[f] = []; order.push(f); } groups[f].push(v); });
+    order.sort((a, b) => a === '— ohne Firma —' ? 1 : b === '— ohne Firma —' ? -1 : a.localeCompare(b));
+    order.forEach(f => {
+      const list = groups[f];
+      sideRows += `<div class="g-side-row"><span class="gewerk">${esc(f)}</span><span class="muted" style="margin-left:auto;font-size:11px">${list.length}</span></div>`;
+      let bars = '';
+      list.forEach(v => {
+        const colHex = ganttColHex(v), light = ganttColKey(v) === 'hgrau' ? ' g-light' : '';
+        const vorg = (v.vorgaenge || []).filter(o => o.start && o.ende);
+        const items = vorg.length
+          ? vorg.map(o => ({ key: v.id + '/' + o.id, s: o.start, e: o.ende, titel: v.gewerk + ' · ' + o.titel, vid: v.id, oid: o.id }))
+          : [{ key: v.id, s: v.bauStart, e: v.bauEnde, titel: v.gewerk, vid: v.id, oid: '' }];
+        items.forEach(it => {
+          barMeta[it.key] = { row: rowIdx, left: leftPx(it.s), width: widthPx(it.s, it.e) };
+          bars += `<div class="g-bar${light}" style="left:${leftPx(it.s)}px;width:${widthPx(it.s, it.e)}px;background:${colHex}" title="${esc(it.titel)}: ${fmtDate(it.s)} – ${fmtDate(it.e)}" data-pid="${p.id}" data-vid="${it.vid}"${it.oid ? ` data-oid="${it.oid}"` : ''} data-key="${it.key}" data-ctx="gantt" data-start="${it.s}" data-ende="${it.e}"><span class="g-h l"></span><span class="g-lbl">${esc(it.titel)}</span><span class="g-h r"></span><span class="g-link-dot" data-key="${it.key}" title="Verbindung ziehen"></span></div>`;
+        });
+      });
+      barRows += `<div class="g-row">${bars}</div>`;
+      rowIdx++;
+    });
+  } else {
   vs.forEach(v => {
     const colKey = ganttColKey(v), colHex = ganttColHex(v), light = colKey === 'hgrau' ? ' g-light' : '';
     const hatTermin = v.bauStart && v.bauEnde;
@@ -1316,6 +1347,7 @@ function viewTermine(id) {
       rowIdx++;
     });
   });
+  }
   // Verbindungen (Abhängigkeiten) als SVG-Overlay
   const linkPaths = (p.ganttLinks || []).map(lk => {
     const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
@@ -1354,7 +1386,7 @@ function viewTermine(id) {
     <div class="g-legend">
       ${GANTT_LEGEND.map(([k, l]) => `<span><i style="background:${GANTT_COLS[k]}"></i>${l}</span>`).join('')}
     </div>
-    <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Rechtsklick → <b>Nachfolger verketten</b> hängt ein Gewerk direkt an · bei <b>🔗 Verkettung an</b> folgen verkettete Nachfolger automatisch · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie.</p>
+    <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Rechtsklick → <b>Nachfolger verketten</b> hängt ein Gewerk direkt an · bei <b>🔗 Verkettung an</b> folgen verkettete Nachfolger automatisch · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie · <b>Strg + Mausrad</b> zoomt an der Cursor-Position · Ansicht <b>Firma</b> zeigt pro Unternehmer eine Zeile.</p>
   `);
 
   $$('.g-bar').forEach(b => b.addEventListener('mousedown', onBarMouseDown));
@@ -1362,6 +1394,28 @@ function viewTermine(id) {
   $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
   $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) removeGanttLink(ganttPid, g.dataset.lid); }));
   $$('.g-link').forEach(g => g.addEventListener('contextmenu', e => { e.preventDefault(); linkMenu(e, ganttPid, g.dataset.lid); }));
+
+  // Scroll nach In-Place-Rerender wiederherstellen (kein Sprung beim Resizen/Zoomen)
+  if (ganttPendingScroll) {
+    const ps = ganttPendingScroll; ganttPendingScroll = null;
+    const gm0 = document.querySelector('.g-main'); if (gm0) gm0.scrollLeft = ps.left;
+    window.scrollTo(0, ps.y);
+  }
+  // Cursor-Zoom: Strg + Mausrad zoomt dorthin, wo der Zeiger steht
+  const gMain = document.querySelector('.g-main');
+  if (gMain) gMain.addEventListener('wheel', e => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    const rect = gMain.getBoundingClientRect();
+    const viewX = e.clientX - rect.left;
+    const dayAtCursor = (gMain.scrollLeft + viewX) / pxPerDay;
+    const ns = Math.min(4, Math.max(0.1, +(ganttScale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)).toFixed(3)));
+    if (ns === ganttScale) return;
+    ganttScale = ns;
+    viewTermine(p.id);
+    const g2 = document.querySelector('.g-main');
+    if (g2) g2.scrollLeft = dayAtCursor * (ZOOM[ganttZoom].px * ganttScale) - viewX;
+  }, { passive: false });
 }
 /* --- Gantt: Verbindungen (Abhängigkeiten) --- */
 let ganttLink = null, ganttGrip = null;
@@ -1634,7 +1688,7 @@ function commitBarDates(pid, vid, oid, s, en) {
   else { v.bauStart = s; v.bauEnde = en; }
   let moved = 0;
   if (ganttChain) moved = rescheduleChain(p, oid ? vid + '/' + oid : vid);
-  save(); router();
+  save(); rerenderGantt(pid);
   toast('Termin: ' + fmtDate(s) + ' – ' + fmtDate(en) + (moved ? ` · ${moved} Nachfolger nachgeführt` : ''), 'info');
 }
 // Referenz auf die Termine eines Balkens (Vergabe oder Vorgang) per Schlüssel
@@ -6668,17 +6722,17 @@ document.addEventListener('click', e => {
     case 'edit-termin':  actEditTermin(pid, vid); break;
     case 'save-termin':  saveTermin(pid, vid); break;
     case 'gantt-zoom':   ganttZoom = kind; ganttScale = 1; viewTermine(pid); break;
-    case 'gantt-chain':  ganttChain = !ganttChain; toast('Verkettung ' + (ganttChain ? 'an' : 'aus'), 'info'); viewTermine(pid); break;
-    case 'gantt-workdays': ganttWorkdays = !ganttWorkdays; toast('Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus'), 'info'); viewTermine(pid); break;
+    case 'gantt-chain':  ganttChain = !ganttChain; toast('Verkettung ' + (ganttChain ? 'an' : 'aus'), 'info'); rerenderGantt(pid); break;
+    case 'gantt-workdays': ganttWorkdays = !ganttWorkdays; toast('Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus'), 'info'); rerenderGantt(pid); break;
     case 'bauablauf':    actBauablauf(pid); break;
     case 'bauablauf-go': applyBauablauf(pid); break;
     case 'link-succ-pick': linkSuccessorPick(pid, act.dataset.vid, act.dataset.tvid); break;
     case 'gantt-scale':
       if (kind === 'out') ganttScale = Math.max(0.12, +(ganttScale * 0.8).toFixed(3));
-      else if (kind === 'in') ganttScale = Math.min(2.5, +(ganttScale * 1.25).toFixed(3));
+      else if (kind === 'in') ganttScale = Math.min(4, +(ganttScale * 1.25).toFixed(3));
       else ganttScale = 1;
-      viewTermine(pid); break;
-    case 'gantt-sort':   ganttSort = kind; viewTermine(pid); break;
+      rerenderGantt(pid); break;
+    case 'gantt-sort':   ganttSort = kind; rerenderGantt(pid); break;
     case 'new-vorgang':  actNewVorgang(pid, vid); break;
     case 'save-vorgang': saveVorgang(pid, vid); break;
     case 'rm-vorgang':   removeVorgang(pid, vid, oid); break;

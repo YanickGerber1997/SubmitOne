@@ -733,6 +733,15 @@ table.va .va-brutto td { font-weight: 600; }
 table.va .va-total td { font-weight: 700; background: var(--surface-2); }
 table.va .va-diff td { color: var(--text-faint); font-style: italic; }
 table.va .va-fav { font-size: 10px; font-weight: 700; color: var(--s-red); }
+/* Editierbare Eingaben in der Tabelle (Live-Berechnung) */
+table.va .va-in { width: 100%; border: 1px solid var(--border-2); border-radius: 5px; padding: 3px 6px; font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; background: #fff; }
+table.va .va-in:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft); }
+table.va .va-pctin { width: 50px; }
+table.va .va-inp { display: inline-flex; align-items: center; gap: 1px; }
+table.va .va-pctsign { color: var(--text-faint); font-size: 11px; }
+table.va .va-c { color: var(--text-soft); }
+table.va input[type=number]::-webkit-inner-spin-button, table.va input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+table.va input[type=number] { -moz-appearance: textfield; }
 .kond-grid .field { font-size: 11px; gap: 3px; }
 .kond-grid .input { padding: 7px 8px; }
 .kond-res { margin-top: 8px; font-size: 12.5px; color: var(--text-soft); font-variant-numeric: tabular-nums; }

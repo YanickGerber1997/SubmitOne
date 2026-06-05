@@ -2934,8 +2934,8 @@ function viewVergabeDetail(pid, vid) {
     </div>
 
     <!-- Offertvergleich / Vergabeantrag (Firmen als Spalten, 3 Stufen) -->
-    <div class="section-head" style="margin-top:26px"><h2>Offertvergleich / Vergabeantrag</h2><button class="btn sm secondary" data-act="pdf-vergabeantrag" data-pid="${p.id}" data-vid="${v.id}">⬇ PDF</button></div>
-    <div class="card card-pad va-screen" style="overflow-x:auto;margin-bottom:8px">${vergabeAntragTable(p, v)}</div>
+    <div class="section-head" style="margin-top:26px"><h2>Offertvergleich / Vergabeantrag</h2><div style="display:flex;gap:8px;align-items:center"><span class="hint">direkt in der Tabelle erfassen – Summen rechnen live</span><button class="btn sm secondary" data-act="pdf-vergabeantrag" data-pid="${p.id}" data-vid="${v.id}">⬇ PDF</button></div></div>
+    <div class="card card-pad va-screen" style="overflow-x:auto;margin-bottom:8px">${vergabeAntragTable(p, v, true)}</div>
 
     <!-- Budgetpositionen -->
     <div class="section-head" style="margin-top:26px">
@@ -3075,6 +3075,7 @@ function viewVergabeDetail(pid, vid) {
     setNachtragStatus(sel.dataset.pid, sel.dataset.vid, sel.dataset.nid, sel.value);
   }));
   $$('.vergabe-status-sel').forEach(sel => sel.addEventListener('change', () => setVergabeStatus(sel.dataset.pid, sel.dataset.vid, sel.value)));
+  bindVergabeAntrag(p, v);
 }
 
 // Preisspiegel-Konditionen je Unternehmer: Offerte / Abgebot / Vergabe (Brutto → Netto)
@@ -3118,7 +3119,7 @@ function firmaKontakt(p, firma, eMail) {
   const k = (state.kontakte || []).find(k => k.firma === firma) || {};
   return { person: k.person || '', telefon: k.telefon || '', email: eMail || k.email || '' };
 }
-function vergabeAntragTable(p, v) {
+function vergabeAntragTable(p, v, editable) {
   const firms = v.eingeladene || [];
   if (!firms.length) return '<p class="muted" style="margin:0">Noch keine Unternehmer eingeladen – mit „+ Einladen" erfassen.</p>';
   const stages = [['offerte', 'Offerte'], ['abgebot', 'Abgebot'], ['vergabe', 'Verhandelt / Vergabe']];
@@ -3126,29 +3127,79 @@ function vergabeAntragTable(p, v) {
   const pf = n => Number(n || 0).toLocaleString('de-CH', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
   const cols = firms.length;
   const headRow = (lbl, fn) => `<tr><td class="va-l">${lbl}</td>${firms.map(fn).join('')}</tr>`;
+  const valOf = (e, key, f) => { const c = e[key] || (key === 'offerte' && e.betrag != null ? { brutto: e.betrag } : {}); return c[f] != null ? c[f] : ''; };
   let html = `<table class="va"><tr class="va-firms"><td class="va-l"></td>${firms.map(e => `<td>${esc(e.firma)}${v.firma === e.firma ? '<div class="va-fav">Favorit / Vergabe</div>' : ''}</td>`).join('')}</tr>`;
   html += headRow('Sachbearbeiter', e => `<td>${esc(firmaKontakt(p, e.firma, e.email).person)}</td>`);
   html += headRow('Tel.', e => `<td>${esc(firmaKontakt(p, e.firma, e.email).telefon)}</td>`);
   html += headRow('E-Mail', e => `<td class="va-mail">${esc(firmaKontakt(p, e.firma, e.email).email)}</td>`);
   stages.forEach(([key, label]) => {
-    const parts = firms.map(e => condParts(vglStageOf(e, key)));
-    const totals = parts.map(x => x ? x.total : null).filter(x => x != null);
-    const minT = totals.length ? Math.min(...totals) : null;
-    const numRow = (lbl, fn, cls) => `<tr${cls ? ` class="${cls}"` : ''}><td class="va-l">${lbl}</td>${parts.map(x => `<td class="num">${x ? fn(x) : ''}</td>`).join('')}</tr>`;
-    const pctRow = (lbl, pFld, bFld) => `<tr><td class="va-l">${lbl}</td>${parts.map(x => `<td class="num">${x ? `<span class="va-pct">${pf(x[pFld])}</span> ${nf(x[bFld])}` : ''}</td>`).join('')}</tr>`;
     html += `<tr class="va-stage"><td class="va-l" colspan="${cols + 1}">${label}</td></tr>`;
-    html += numRow('Offertsumme brutto', x => nf(x.brutto), 'va-brutto');
-    html += pctRow('Rabatt', 'rabattP', 'rabattBetrag');
-    html += numRow('Z.-Summe', x => nf(x.zsumme1));
-    html += pctRow('Skonto', 'skontoP', 'skontoBetrag');
-    html += numRow('Netto', x => nf(x.netto));
-    html += pctRow('Allg. Abz.', 'allgP', 'allgBetrag');
-    html += numRow('Z.-Summe', x => nf(x.zsumme2));
-    html += numRow('MWST 8.1%', x => nf(x.mwst));
-    html += numRow('Netto inkl. MWST', x => nf(x.total), 'va-total');
-    html += `<tr class="va-diff"><td class="va-l">Diff. zum günstigsten</td>${parts.map(x => `<td class="num">${(x && minT != null) ? (minT ? ((x.total - minT) / minT * 100) : 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : ''}</td>`).join('')}</tr>`;
+    if (editable) {
+      const bruttoRow = `<tr class="va-brutto"><td class="va-l">Offertsumme brutto</td>${firms.map(e => `<td class="num"><input class="va-in" type="number" step="0.01" data-va="${e.id}|${key}|brutto" value="${valOf(e, key, 'brutto')}"></td>`).join('')}</tr>`;
+      const pctRow = (lbl, f, bCell) => `<tr><td class="va-l">${lbl}</td>${firms.map(e => `<td class="num"><span class="va-inp"><input class="va-in va-pctin" type="number" step="0.01" data-va="${e.id}|${key}|${f}" value="${valOf(e, key, f)}"><span class="va-pctsign">%</span></span> <span class="va-c" data-vc="${e.id}|${key}|${bCell}"></span></td>`).join('')}</tr>`;
+      const compRow = (lbl, cell, cls) => `<tr${cls ? ` class="${cls}"` : ''}><td class="va-l">${lbl}</td>${firms.map(e => `<td class="num"><span class="va-c" data-vc="${e.id}|${key}|${cell}"></span></td>`).join('')}</tr>`;
+      html += bruttoRow;
+      html += pctRow('Rabatt', 'rabatt', 'rabattBetrag');
+      html += compRow('Z.-Summe', 'zsumme1');
+      html += pctRow('Skonto', 'skonto', 'skontoBetrag');
+      html += compRow('Netto', 'netto');
+      html += pctRow('Allg. Abz.', 'weitereAbz', 'allgBetrag');
+      html += compRow('Z.-Summe', 'zsumme2');
+      html += compRow('MWST 8.1%', 'mwst');
+      html += compRow('Netto inkl. MWST', 'total', 'va-total');
+      html += `<tr class="va-diff"><td class="va-l">Diff. zum günstigsten</td>${firms.map(e => `<td class="num"><span class="va-c" data-vd="${key}|${e.id}"></span></td>`).join('')}</tr>`;
+    } else {
+      const parts = firms.map(e => condParts(vglStageOf(e, key)));
+      const totals = parts.map(x => x ? x.total : null).filter(x => x != null);
+      const minT = totals.length ? Math.min(...totals) : null;
+      const numRow = (lbl, fn, cls) => `<tr${cls ? ` class="${cls}"` : ''}><td class="va-l">${lbl}</td>${parts.map(x => `<td class="num">${x ? fn(x) : ''}</td>`).join('')}</tr>`;
+      const pctRow = (lbl, pFld, bFld) => `<tr><td class="va-l">${lbl}</td>${parts.map(x => `<td class="num">${x ? `<span class="va-pct">${pf(x[pFld])}</span> ${nf(x[bFld])}` : ''}</td>`).join('')}</tr>`;
+      html += numRow('Offertsumme brutto', x => nf(x.brutto), 'va-brutto');
+      html += pctRow('Rabatt', 'rabattP', 'rabattBetrag');
+      html += numRow('Z.-Summe', x => nf(x.zsumme1));
+      html += pctRow('Skonto', 'skontoP', 'skontoBetrag');
+      html += numRow('Netto', x => nf(x.netto));
+      html += pctRow('Allg. Abz.', 'allgP', 'allgBetrag');
+      html += numRow('Z.-Summe', x => nf(x.zsumme2));
+      html += numRow('MWST 8.1%', x => nf(x.mwst));
+      html += numRow('Netto inkl. MWST', x => nf(x.total), 'va-total');
+      html += `<tr class="va-diff"><td class="va-l">Diff. zum günstigsten</td>${parts.map(x => `<td class="num">${(x && minT != null) ? (minT ? ((x.total - minT) / minT * 100) : 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : ''}</td>`).join('')}</tr>`;
+    }
   });
   return html + `</table>`;
+}
+// Live-Berechnung der editierbaren Vergabeantrag-Tabelle (Bildschirm)
+function bindVergabeAntrag(p, v) {
+  const firms = v.eingeladene || [];
+  const stages = ['offerte', 'abgebot', 'vergabe'];
+  const nf = n => (n == null || isNaN(n)) ? '' : Number(n).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const readC = (eid, stage) => { const g = f => { const el = document.querySelector(`[data-va="${eid}|${stage}|${f}"]`); return (el && el.value !== '') ? Number(el.value) : null; }; return { brutto: g('brutto'), rabatt: g('rabatt'), skonto: g('skonto'), weitereAbz: g('weitereAbz') }; };
+  const recalcRow = (eid, stage) => {
+    const r = condParts(readC(eid, stage));
+    ['rabattBetrag', 'zsumme1', 'skontoBetrag', 'netto', 'allgBetrag', 'zsumme2', 'mwst', 'total'].forEach(cell => {
+      const el = document.querySelector(`[data-vc="${eid}|${stage}|${cell}"]`); if (el) el.textContent = r ? nf(r[cell]) : '';
+    });
+  };
+  const recalcDiff = stage => {
+    const totals = firms.map(e => { const r = condParts(readC(e.id, stage)); return r ? r.total : null; });
+    const valid = totals.filter(x => x != null); const min = valid.length ? Math.min(...valid) : null;
+    firms.forEach((e, i) => { const el = document.querySelector(`[data-vd="${stage}|${e.id}"]`); if (el) el.textContent = (totals[i] != null && min != null) ? (min ? ((totals[i] - min) / min * 100) : 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : ''; });
+  };
+  const commit = (eid, stage) => {
+    const e = firms.find(x => x.id === eid); if (!e) return;
+    const c = readC(eid, stage);
+    e[stage] = (c.brutto != null) ? c : null;
+    if (stage === 'offerte' && e.offerte && e.offerte.brutto != null) { e.betrag = condNetto(e.offerte); if (e.status !== 'abgesagt') e.status = 'offeriert'; if (statusIdx(v) < STATUS_BY_KEY['offerten'].index) v.status = 'offerten'; }
+    if (v.firma && e.firma === v.firma) { const ver = eVer(e); const fall = ver != null ? ver : (eAbg(e) != null ? eAbg(e) : eOff(e)); if (fall != null) v.betrag = fall; }
+    save();
+  };
+  firms.forEach(e => stages.forEach(s => recalcRow(e.id, s)));
+  stages.forEach(s => recalcDiff(s));
+  $$('.va-in').forEach(inp => {
+    const parts = inp.dataset.va.split('|'); const eid = parts[0], stage = parts[1];
+    inp.addEventListener('input', () => { recalcRow(eid, stage); recalcDiff(stage); });
+    inp.addEventListener('change', () => commit(eid, stage));
+  });
 }
 // Kompakte Druckregeln: passt auf EIN Blatt (A4 quer), nicht umbrechen
 const VA_PRINT_CSS = `

@@ -1357,6 +1357,11 @@ function onGlobalContext(e) {
   else if (c === 'gantt') ganttBarMenu(e, el);
   else if (c === 'pendenz') pendenzMenu(e, el.dataset.pid, el.dataset.itemid);
   else if (c === 'projekt') projektMenu(e, el.dataset.pid);
+  else if (c === 'protokoll') protokollMenu(e, el.dataset.pid, el.dataset.prid);
+  else if (c === 'inv') invMenu(e, el.dataset.pid, el.dataset.vid, el.dataset.eid);
+  else if (c === 'termin') terminMenu(e, el.dataset.pid, el.dataset.tid);
+  else if (c === 'planblock') planBlockMenu(e, el.dataset.bid);
+  else if (c === 'kontakt') kontaktMenu(e, el.dataset.kid);
 }
 // Menü für ein Gewerk/Vergabe (Übersicht, Kosten, Gantt-Label …)
 function vergabeMenu(e, pid, vid, extraTop) {
@@ -1413,6 +1418,57 @@ function projektMenu(e, pid) {
     { icon: '＋', label: 'Arbeitsbeschrieb erfassen', act: () => actNewVergabe(pid) },
     { icon: '✎', label: 'Projekt bearbeiten', act: () => actEditProjekt(pid) },
   ]);
+}
+function protokollMenu(e, pid, prid) {
+  const p = findProjekt(pid); const pr = p && findProtokoll(p, prid); if (!pr) return;
+  openContextMenu(e, [
+    { icon: '↗', label: 'Protokoll öffnen', act: () => go('#/projekt/' + pid + '/protokoll/' + prid) },
+    { icon: '⬇', label: 'PDF erzeugen', act: () => pdfProtokoll(pid, prid) },
+    { icon: '✉', label: 'An Verteiler senden', act: () => mailProtokoll(pid, prid) },
+    { icon: '⧉', label: 'Kopieren (nächste Sitzung)', act: () => actCopyProtokoll(pid, prid) },
+    { sep: true },
+    { icon: '🗑', label: 'Löschen', danger: true, act: () => delProtokoll(pid, prid) },
+  ]);
+}
+function invMenu(e, pid, vid, eid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); const en = v && (v.eingeladene || []).find(x => x.id === eid); if (!en) return;
+  openContextMenu(e, [
+    { icon: '✎', label: 'Konditionen erfassen', act: () => actKonditionen(pid, vid, eid) },
+    { icon: '📄', label: 'Deckblatt Einladung', act: () => pdfDeckblatt(pid, vid, eid, 'einladung') },
+    { icon: '📑', label: 'Deckblatt Konditionen', act: () => pdfDeckblatt(pid, vid, eid, 'offerte') },
+    { sep: true },
+    { icon: '✕', label: 'Aus Liste entfernen', danger: true, act: () => removeInvite(pid, vid, eid) },
+  ]);
+}
+function terminMenu(e, pid, tid) {
+  openContextMenu(e, [
+    { icon: '✎', label: 'Termin bearbeiten', act: () => actKalTermin(pid, tid) },
+    { sep: true },
+    { icon: '🗑', label: 'Termin löschen', danger: true, act: () => removeKalTermin(pid, tid) },
+  ]);
+}
+function planBlockMenu(e, bid) {
+  const b = loadPlanung().find(x => x.id === bid); if (!b) return;
+  openContextMenu(e, [
+    { icon: '✎', label: 'Bearbeiten', act: () => actPlanBlock(bid) },
+    { icon: '⧉', label: 'Kopieren', act: () => { planClip = { ...b }; toast('Block kopiert'); } },
+    { sep: true },
+    { icon: '🗑', label: 'Löschen', danger: true, act: () => { planungData = loadPlanung().filter(x => x.id !== bid); savePlanung(); planSel = null; viewPlanung(); } },
+  ]);
+}
+function rmKontakt(kid) {
+  const k = (state.kontakte || []).find(x => x.id === kid); if (!k) return;
+  if (!confirm(`Kontakt „${k.firma}" wirklich löschen?`)) return;
+  state.kontakte = state.kontakte.filter(x => x.id !== kid); save(); viewKontakte(); toast('Kontakt gelöscht');
+}
+function kontaktMenu(e, kid) {
+  const k = (state.kontakte || []).find(x => x.id === kid); if (!k) return;
+  const items = [];
+  if (k.email) items.push({ icon: '✉', label: 'E-Mail schreiben', act: () => { window.location.href = 'mailto:' + k.email; } });
+  if (k.telefon) items.push({ icon: '☎', label: 'Anrufen', act: () => { window.location.href = 'tel:' + k.telefon.replace(/\s/g, ''); } });
+  if (items.length) items.push({ sep: true });
+  items.push({ icon: '🗑', label: 'Kontakt löschen', danger: true, act: () => rmKontakt(kid) });
+  openContextMenu(e, items);
 }
 
 /* --- Gantt Drag & Drop --- */
@@ -2553,7 +2609,7 @@ function viewProtokolle(pid) {
         <thead><tr><th>Typ</th><th>Titel</th><th>Datum</th><th class="num">Traktanden</th><th class="num">Teiln.</th><th></th></tr></thead>
         <tbody>
           ${list.map(pr => `
-            <tr class="clickable" data-goto="#/projekt/${p.id}/protokoll/${pr.id}">
+            <tr class="clickable" data-goto="#/projekt/${p.id}/protokoll/${pr.id}" data-ctx="protokoll" data-pid="${p.id}" data-prid="${pr.id}">
               <td><span class="st ${PROT_TYP[pr.typ].color}">${PROT_TYP[pr.typ].kurz}</span></td>
               <td><strong>${esc(protokollTitel(pr))}</strong></td>
               <td class="muted">${fmtDate(pr.datum)}</td>
@@ -3102,7 +3158,7 @@ function viewVergabeDetail(pid, vid) {
           ${(v.eingeladene || []).some(e => e.firma !== v.firma && e.status !== 'abgesagt' && eOff(e) != null) ? `<button class="btn sm secondary" data-act="mail-absage" data-pid="${p.id}" data-vid="${v.id}">✉ Absage an Unterlegene</button>` : ''}
         </div>` : ''}
         ${eingeladene.length ? eingeladene.map(e => `
-          <div class="inv-item">
+          <div class="inv-item" data-ctx="inv" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">
             <div class="inv-info">
               <div class="inv-firma">
                 ${esc(e.firma)}
@@ -3451,7 +3507,7 @@ function viewKontakte() {
         <thead><tr><th>Firma</th><th>Kategorie</th><th>Ansprechperson</th><th>Ort</th><th>Kontakt</th></tr></thead>
         <tbody>
           ${list.map(k => `
-            <tr>
+            <tr data-ctx="kontakt" data-kid="${k.id}">
               <td><div class="row-firma"><strong>${esc(k.firma)}</strong>${k.uid_nr ? `<span class="sub">${esc(k.uid_nr)}${k.rechtsform ? ' · ' + esc(k.rechtsform) : ''}</span>` : ''}</div></td>
               <td><span class="tag">${esc(k.kategorie)}</span></td>
               <td>${esc(k.person || '–')}</td>
@@ -3868,7 +3924,7 @@ function calTimeGrid(events, dates, todayI, add) {
   events.forEach(e => { (byDay[e.datum] = byDay[e.datum] || []).push(e); });
   const dowF = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
   const pidAttr = add === 'plan' ? ' data-plan="1"' : (add ? ` data-pid="${add}"` : '');
-  const evEdit = e => e.plan ? ` data-bid="${e.id}" draggable="true"` : (e.manual && e.pid ? ` data-act="kal-edit" data-pid="${e.pid}" data-tid="${e.id}"` : '');
+  const evEdit = e => e.plan ? ` data-bid="${e.id}" data-ctx="planblock" draggable="true"` : (e.manual && e.pid ? ` data-act="kal-edit" data-ctx="termin" data-pid="${e.pid}" data-tid="${e.id}"` : '');
   const dayAct = add === 'plan' ? `data-act="plan-day"` : (add ? `data-act="kal-day" data-pid="${add}"` : `data-act="gcal-day"`);
   const colHead = dates.map(iso => { const d = dISO(iso); return `<div class="cal-colhead${iso === todayI ? ' today' : ''}" ${dayAct} data-kind="${iso}">${dowF[(d.getDay() + 6) % 7]} ${d.getDate()}.${d.getMonth() + 1}.</div>`; }).join('');
   const adRow = dates.map(iso => { const ad = (byDay[iso] || []).filter(e => !e.zeit); return `<div class="cal-ad-cell" data-iso="${iso}"${pidAttr}>${ad.map(e => `<div class="cal-ev ${e.color}"${evEdit(e)} title="${esc(e.titel)}">${esc(e.titel)}</div>`).join('')}</div>`; }).join('');
@@ -3950,7 +4006,7 @@ function viewKalender(pid) {
       const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
       const iso = isoOf(d); const other = d.getMonth() !== calM; const dayEv = byDay[iso] || [];
       if (i % 7 === 0) cells += `<div class="cal-kw">KW<br>${isoWeek(d)}</div>`;
-      const chips = dayEv.slice(0, 4).map(e => `<div class="cal-ev ${e.color}"${e.manual ? ` data-act="kal-edit" data-pid="${p.id}" data-tid="${e.id}"` : ''} title="${esc((e.zeit ? e.zeit + ' ' : '') + e.titel)}">${e.zeit ? esc(e.zeit) + ' ' : ''}${esc(e.titel)}</div>`).join('');
+      const chips = dayEv.slice(0, 4).map(e => `<div class="cal-ev ${e.color}"${e.manual ? ` data-act="kal-edit" data-ctx="termin" data-pid="${p.id}" data-tid="${e.id}"` : ''} title="${esc((e.zeit ? e.zeit + ' ' : '') + e.titel)}">${e.zeit ? esc(e.zeit) + ' ' : ''}${esc(e.titel)}</div>`).join('');
       const more = dayEv.length > 4 ? `<div class="cal-more">+${dayEv.length - 4} mehr</div>` : '';
       cells += `<div class="cal-day${other ? ' other' : ''}${iso === todayI ? ' today' : ''}" data-act="kal-add" data-pid="${p.id}" data-kind="${iso}"><div class="d">${d.getDate()}</div>${chips}${more}</div>`;
     }
@@ -4171,7 +4227,7 @@ function viewKalenderGlobal() {
     const other = d.getMonth() !== calGM;
     const dayEv = byDay[iso] || [];
     if (i % 7 === 0) cells += `<div class="cal-kw">KW<br>${isoWeek(d)}</div>`;
-    const chips = dayEv.slice(0, 4).map(e => `<div class="cal-ev ${e.color}"${e.manual ? ` data-act="kal-edit" data-pid="${e.pid}" data-tid="${e.id}"` : ''} title="${esc(e.projekt + ' · ' + (e.zeit ? e.zeit + ' ' : '') + e.titel)}">${e.zeit ? esc(e.zeit) + ' ' : ''}${esc(e.titel)}</div>`).join('');
+    const chips = dayEv.slice(0, 4).map(e => `<div class="cal-ev ${e.color}"${e.manual ? ` data-act="kal-edit" data-ctx="termin" data-pid="${e.pid}" data-tid="${e.id}"` : ''} title="${esc(e.projekt + ' · ' + (e.zeit ? e.zeit + ' ' : '') + e.titel)}">${e.zeit ? esc(e.zeit) + ' ' : ''}${esc(e.titel)}</div>`).join('');
     const more = dayEv.length > 4 ? `<div class="cal-more">+${dayEv.length - 4} mehr</div>` : '';
     cells += `<div class="cal-day${other ? ' other' : ''}${iso === todayI ? ' today' : ''}" data-act="gcal-add" data-kind="${iso}"><div class="d">${d.getDate()}</div>${chips}${more}</div>`;
   }

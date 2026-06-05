@@ -571,7 +571,7 @@ function money(n) {
 function projektVergebenAnzahl(p) { return (p.vergaben || []).filter(isVergeben).length; }
 
 /* --- Phasen aus Vergaben-Status ableiten --- */
-const PHASE_COLOR = { planung: 'var(--s-grey)', ausschreibung: 'var(--brand)', vergabe: 'var(--s-purple)', ausfuehrung: 'var(--s-teal)', abschluss: 'var(--s-green)' };
+const PHASE_COLOR = { planung: '#f97316', ausschreibung: '#eab308', vergabe: '#16a34a', ausfuehrung: '#1f6feb', abschluss: '#8a97a8' };
 
 function statusToPhase(status) {
   const idx = STATUS_BY_KEY[status] ? STATUS_BY_KEY[status].index : null;

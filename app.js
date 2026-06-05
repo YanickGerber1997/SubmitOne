@@ -890,7 +890,7 @@ function projektCard(p) {
         </div>
       </div>
       <div class="pc-stats">
-        <div class="pc-stat"><span class="v">${vergeben}/${total}</span><span class="l">vergeben</span></div>
+        <div class="pc-stat"><span class="v">${vergeben}/${total}</span><span class="l">Zuschlag</span></div>
         <div class="pc-stat"><span class="v">${chfShort(projektVolumen(p))}</span><span class="l">Volumen</span></div>
         <div class="pc-stat"><span class="v">${frist ? fmtDate(frist).slice(0, 6) + '…' : '–'}</span><span class="l">nächste Frist</span></div>
       </div>
@@ -971,7 +971,7 @@ function viewProjektDetail(id) {
     <!-- Kennzahlen -->
     <div class="detail-stats">
       <div class="dstat"><div class="l">Fortschritt</div><div class="v">${pct}%</div>${progressBar(pct)}</div>
-      <div class="dstat"><div class="l">Vergaben vergeben</div><div class="v">${projektVergebenAnzahl(p)} / ${vergaben.length}</div></div>
+      <div class="dstat"><div class="l">Zuschlag erteilt</div><div class="v">${projektVergebenAnzahl(p)} / ${vergaben.length}</div></div>
       <div class="dstat"><div class="l">Volumen (Kosten)</div><div class="v">${chf(projektVolumen(p))}</div></div>
       ${p.wohnungen ? `<div class="dstat"><div class="l">Wohnungen</div><div class="v">${p.wohnungen}</div></div>` : ''}
       ${p.geschosse ? `<div class="dstat"><div class="l">Geschosse</div><div class="v">${p.geschosse}</div></div>` : ''}

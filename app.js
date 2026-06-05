@@ -508,6 +508,7 @@ function projektVergebenAnzahl(p) { return (p.vergaben || []).filter(isVergeben)
 const PHASE_COLOR = { planung: 'var(--s-grey)', ausschreibung: 'var(--brand)', vergabe: 'var(--s-purple)', ausfuehrung: 'var(--s-teal)', abschluss: 'var(--s-green)' };
 
 function statusToPhase(status) {
+  if (!STATUS_BY_KEY[status]) return 'ausschreibung';
   if (status === 'abgeschlossen') return 'abschluss';
   if (status === 'ausfuehrung') return 'ausfuehrung';
   if (STATUS_BY_KEY[status].index >= STATUS_BY_KEY['vergeben'].index) return 'vergabe';
@@ -522,12 +523,14 @@ function phasenVerteilung(p) {
   return { counts, total: vs.length, empty: false };
 }
 
+// Projektphase = am wenigsten fortgeschrittenes Gewerk (Engpass):
+// „Abschluss" erst, wenn ALLE Gewerke abgeschlossen sind – nicht schon bei der Mehrheit.
 function dominantPhase(p) {
-  const { counts, empty } = phasenVerteilung(p);
-  if (empty) return 'planung';
-  let best = 'ausschreibung', bestC = -1;
-  PHASEN.forEach(ph => { if (counts[ph.key] > bestC) { bestC = counts[ph.key]; best = ph.key; } });
-  return best;
+  const vs = p.vergaben || [];
+  if (!vs.length) return 'planung';
+  let minIdx = Infinity;
+  vs.forEach(v => { minIdx = Math.min(minIdx, PHASE_INDEX[statusToPhase(v.status)]); });
+  return PHASEN[minIdx].key;
 }
 
 function naechsteFrist(p) {

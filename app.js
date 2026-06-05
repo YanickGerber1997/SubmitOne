@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v49';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v50';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -5996,7 +5996,7 @@ function saveBtOpt(pid) {
    ============================================================ */
 const SOLAR_ORIENT = { sued: ['Süd', 1.0], suedost: ['Südost', 0.96], suedwest: ['Südwest', 0.96], ost: ['Ost', 0.85], west: ['West', 0.85], nordost: ['Nordost', 0.72], nordwest: ['Nordwest', 0.72], nord: ['Nord', 0.6] };
 const SOLAR_NEIGUNG = { flach: ['Flachdach 0–10°', 0.90], opt: ['10–35° (optimal)', 1.0], steil: ['35–55°', 0.96], sehrsteil: ['über 55°', 0.86], fassade: ['Fassade 90°', 0.70] };
-const SOLAR_DEFAULT = { flaeche: 50, wpm2: 200, ertrag: 950, orient: 'sued', neigung: 'opt', verbrauch: 4500, eigenanteil: 30, strompreis: 30, einspeise: 10, anlagekosten: '', eivGrund: 200, eivLeistung: 380, bauseite: [] };
+const SOLAR_DEFAULT = { flaeche: 50, belegung: 80, wpm2: 200, ertrag: 950, orient: 'sued', neigung: 'opt', verbrauch: 4500, eigenanteil: 30, strompreis: 30, einspeise: 10, anlagekosten: '', eivGrund: 200, eivLeistung: 380, bauseite: [] };
 const SOLAR_CHF_KWP = 1600;   // Richtwert Anlagekosten pro kWp, wenn nicht erfasst
 
 function solarOf(p) {
@@ -6011,7 +6011,9 @@ function solarOf(p) {
 function solarCalc(s) {
   const n = x => Number(x) || 0;
   const flaeche = n(s.flaeche), wpm2 = n(s.wpm2);
-  const kwp = flaeche * wpm2 / 1000;                                       // Dachfläche × Modulleistung → kWp
+  const belegung = (s.belegung === '' || s.belegung == null) ? 100 : Math.min(100, Math.max(0, n(s.belegung)));
+  const modulflaeche = flaeche * belegung / 100;                          // tatsächlich mit Modulen belegte Fläche
+  const kwp = modulflaeche * wpm2 / 1000;                                  // Modulfläche × Modulleistung → kWp
   const of = (SOLAR_ORIENT[s.orient] || SOLAR_ORIENT.sued)[1];
   const nf = (SOLAR_NEIGUNG[s.neigung] || SOLAR_NEIGUNG.opt)[1];
   const produktion = Math.round(kwp * n(s.ertrag) * of * nf);              // kWh/Jahr
@@ -6037,13 +6039,13 @@ function solarCalc(s) {
   const amort = ertragJahr > 0 ? netto / ertragJahr : null;               // Jahre
   const rendite = netto > 0 ? ertragJahr / netto * 100 : null;            // %/Jahr
   const co2 = Math.round(produktion * 0.128);                            // kg CO₂/Jahr (verdrängter Strommix, Richtwert)
-  return { flaeche, wpm2, kwp, of, nf, produktion, verbrauch, anteil, gedeckelt, eigenverbrauch, einspeisung, autarkie, sparBezug, verguetung, ertragJahr, stromkostenJetzt, reststrombezug, stromkostenNeu, anlage, bauseiteSum, invest, eiv, netto, amort, rendite, co2 };
+  return { flaeche, belegung, modulflaeche, wpm2, kwp, of, nf, produktion, verbrauch, anteil, gedeckelt, eigenverbrauch, einspeisung, autarkie, sparBezug, verguetung, ertragJahr, stromkostenJetzt, reststrombezug, stromkostenNeu, anlage, bauseiteSum, invest, eiv, netto, amort, rendite, co2 };
 }
 
 function solarRead() {
   const g = id => { const el = $('#' + id); return el ? el.value : ''; };
   const bauseite = $$('#s_bauseite .bsr').map(r => ({ text: r.querySelector('.bs-text').value.trim(), betrag: Number(r.querySelector('.bs-betrag').value) || 0 })).filter(b => b.text || b.betrag);
-  return { flaeche: g('s_flaeche'), wpm2: g('s_wpm2'), ertrag: g('s_ertrag'), orient: g('s_orient'), neigung: g('s_neigung'), verbrauch: g('s_verbrauch'), eigenanteil: g('s_eigen'), strompreis: g('s_preis'), einspeise: g('s_einsp'), anlagekosten: g('s_anlage'), eivGrund: g('s_eivg'), eivLeistung: g('s_eivl'), bauseite };
+  return { flaeche: g('s_flaeche'), belegung: g('s_belegung'), wpm2: g('s_wpm2'), ertrag: g('s_ertrag'), orient: g('s_orient'), neigung: g('s_neigung'), verbrauch: g('s_verbrauch'), eigenanteil: g('s_eigen'), strompreis: g('s_preis'), einspeise: g('s_einsp'), anlagekosten: g('s_anlage'), eivGrund: g('s_eivg'), eivLeistung: g('s_eivl'), bauseite };
 }
 function solarUpdate(pid) {
   const p = findProjekt(pid); if (!p) return;
@@ -6084,7 +6086,7 @@ function solarRechenweg(r, s) {
   const row = (f, e) => `<div class="rw-row"><span class="rw-f">${f}</span><span class="rw-e">${e}</span></div>`;
   return `<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
     <div style="font-weight:600;font-size:13px;margin-bottom:8px">Rechenweg – Schritt für Schritt</div>
-    ${row(`Dachfläche ${f1(r.flaeche)} m² × ${kwh(r.wpm2)} Wp/m² ÷ 1000`, '<b>' + f1(r.kwp) + ' kWp</b>')}
+    ${row(`Dachfläche ${f1(r.flaeche)} m² × ${Math.round(r.belegung)} % belegt = ${f1(r.modulflaeche)} m² × ${kwh(r.wpm2)} Wp/m²`, '<b>' + f1(r.kwp) + ' kWp</b>')}
     ${row(`${f1(r.kwp)} kWp × ${kwh(s.ertrag)} kWh/kWp × ${oL[0]} (${oL[1].toFixed(2)}) × Neigung (${nL[1].toFixed(2)})`, '<b>' + kwh(r.produktion) + ' kWh/a</b>')}
     ${row(`Eigenverbrauch: ${kwh(r.produktion)} × ${Math.round(r.anteil * 100)} %${r.gedeckelt ? ` → auf Verbrauch ${kwh(r.verbrauch)} begrenzt` : ''}`, kwh(r.eigenverbrauch) + ' kWh')}
     ${row(`Einspeisung: ${kwh(r.produktion)} − ${kwh(r.eigenverbrauch)}`, kwh(r.einspeisung) + ' kWh')}
@@ -6125,13 +6127,13 @@ function viewSolar(pid) {
     <div class="two-col">
       <div class="card card-pad" id="solarInputs">
         <h2 style="margin:0 0 10px;font-size:15px">Anlage &amp; Dachfläche</h2>
-        <div class="form-row">${fld('s_flaeche', 'Dachfläche', s.flaeche, 'm²')}${fld('s_wpm2', 'Modulleistung', s.wpm2, 'Wp/m²')}</div>
+        <div class="form-row">${fld('s_flaeche', 'Dachfläche', s.flaeche, 'm²')}${fld('s_belegung', 'davon belegbar', s.belegung, '%')}</div>
+        <div class="form-row">${fld('s_wpm2', 'Modulleistung', s.wpm2, 'Wp/m²')}${fld('s_ertrag', 'Spezifischer Ertrag', s.ertrag, 'kWh/kWp·a')}</div>
         <div class="form-row">
           <label class="field">Ausrichtung ${sel('s_orient', SOLAR_ORIENT, s.orient)}</label>
           <label class="field">Dachneigung ${sel('s_neigung', SOLAR_NEIGUNG, s.neigung)}</label>
         </div>
-        ${fld('s_ertrag', 'Spezifischer Ertrag', s.ertrag, 'kWh/kWp·a')}
-        <p class="muted" style="font-size:11.5px;margin:4px 0 0">Modulleistung ~200 Wp/m² ≙ 20 % Wirkungsgrad (~5 m²/kWp). Spez. Ertrag CH Mittelland ~950–1050 kWh/kWp bei Süd, ~30°.</p>
+        <p class="muted" style="font-size:11.5px;margin:4px 0 0">„belegbar" = Anteil der Dachfläche, der wirklich mit Modulen belegt wird (Abstände/Kamine; typ. 70–85 %). Modulleistung Standard ~200, Premium (z.B. AIKO) ~235 Wp/m². Spez. Ertrag CH Mittelland ~950–1050 kWh/kWp bei Süd.</p>
 
         <h2 style="margin:16px 0 10px;font-size:15px">Verbrauch &amp; Tarife</h2>
         <div class="form-row">${fld('s_verbrauch', 'Stromverbrauch', s.verbrauch, 'kWh/Jahr')}${fld('s_eigen', 'Eigenverbrauchsanteil', s.eigenanteil, '%')}</div>

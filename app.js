@@ -1183,9 +1183,16 @@ function viewTermine(id) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm · grob (Monat) bis fein (Tag); Balken ziehen zum Verschieben, Ränder ziehen für Dauer</div></div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}<span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}<span class="muted" style="font-size:12px">Info</span>${infoCtrl}${zoomCtrl}${scaleCtrl}<button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button><button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button><button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button><button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
+      ${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}
     </div>
     ${projektTabs(p, 'termine')}
+    <div class="g-toolbar">
+      <span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}<span class="muted" style="font-size:12px">Info</span>${infoCtrl}${zoomCtrl}${scaleCtrl}
+      <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
+      <button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button>
+      <button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button>
+      <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" style="margin-left:auto">⬇ Drucken / PDF</button>
+    </div>
   `;
 
   if (!vs.length) {

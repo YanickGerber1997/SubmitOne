@@ -639,6 +639,7 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-zoom button:first-child { border-left: none; }
 .g-zoom button:hover { background: var(--surface-2); }
 .g-zoom button.active { background: var(--brand); color: #fff; }
+.g-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: -4px 0 16px; }
 
 .g-corner { border-bottom: 1px solid var(--border); }
 .g-head { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); }

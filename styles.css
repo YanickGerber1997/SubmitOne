@@ -172,13 +172,13 @@ button { font-family: inherit; cursor: pointer; }
 .cal-day.today .d { color: var(--brand); }
 .cal-ev { font-size: 10.5px; line-height: 1.4; padding: 1px 5px; border-radius: 4px; margin-top: 2px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .cal-more { font-size: 10px; color: var(--text-soft); margin-top: 2px; }
-.cal-ev.blue, .cal-dot.blue { background: var(--s-blue); }
-.cal-ev.red, .cal-dot.red { background: var(--s-red); }
-.cal-ev.green, .cal-dot.green { background: var(--s-green); }
-.cal-ev.teal, .cal-dot.teal { background: var(--s-teal); }
-.cal-ev.amber, .cal-dot.amber { background: var(--s-amber); }
-.cal-ev.grey, .cal-dot.grey { background: var(--s-grey); }
-.cal-ev.purple, .cal-dot.purple { background: var(--s-purple); }
+.cal-ev.blue, .cal-dot.blue, .cal-tev.blue { background: var(--s-blue); }
+.cal-ev.red, .cal-dot.red, .cal-tev.red { background: var(--s-red); }
+.cal-ev.green, .cal-dot.green, .cal-tev.green { background: var(--s-green); }
+.cal-ev.teal, .cal-dot.teal, .cal-tev.teal { background: var(--s-teal); }
+.cal-ev.amber, .cal-dot.amber, .cal-tev.amber { background: var(--s-amber); }
+.cal-ev.grey, .cal-dot.grey, .cal-tev.grey { background: var(--s-grey); }
+.cal-ev.purple, .cal-dot.purple, .cal-tev.purple { background: var(--s-purple); }
 @media (max-width: 720px) { .cal-day { min-height: 70px; } .cal-ev { font-size: 9px; padding: 1px 3px; } }
 
 /* Tag-/Wochenansicht (Stunden-Raster) */

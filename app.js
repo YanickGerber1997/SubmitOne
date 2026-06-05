@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v42';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v44';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -378,6 +378,8 @@ function migrate() {
     if (!p.entscheidungen) { p.entscheidungen = []; changed = true; }
     if (!p.bezugsfirmen) { p.bezugsfirmen = []; changed = true; }
     if (!p.geschosseListe) { p.geschosseListe = []; changed = true; }
+    if (!p.bauteile) { p.bauteile = []; changed = true; }   // Teilprojekte/Bauteile (Trakt 1–3, Provisorium …)
+    if (!p.optionen) { p.optionen = []; changed = true; }    // optionale Bauteile (Erker, Lift …)
     if (!p.finanz) { p.finanz = { land: 0, honorare: 0, finanzierung: 0 }; changed = true; }
     if (!p.termine) { p.termine = []; changed = true; }
     for (const e of (p.entscheidungen || [])) {
@@ -3622,7 +3624,7 @@ function viewVergabeDetail(pid, vid) {
       </div>
       ${v.beschrieb ? `<p style="margin:8px 0 0;font-size:13.5px;white-space:pre-wrap">${esc(v.beschrieb)}</p>` : '<p class="muted" style="margin:8px 0 0;font-size:13px">Noch kein Beschrieb. Mit „✎ Kostenschätzung" erfassen (Beschrieb + Positionen).</p>'}
       ${(v.ksPositionen && v.ksPositionen.length) ? `<table class="grid" style="margin-top:10px"><thead><tr><th>Position</th><th class="num" style="width:140px">Kosten</th></tr></thead><tbody>
-        ${v.ksPositionen.map(pos => `<tr><td>${esc(pos.text || 'Position')}</td><td class="num">${chf(pos.betrag)}</td></tr>`).join('')}
+        ${v.ksPositionen.map(pos => { const info = kalkInfo(pos.kalk); return `<tr><td>${esc(pos.text || 'Position')}${posTagChips(p, pos)}${info ? `<div class="muted" style="font-size:11.5px">${info}</div>` : ''}</td><td class="num">${chf(pos.betrag)}</td></tr>`; }).join('')}
         <tr><td><b>Total Kostenschätzung</b></td><td class="num"><b>${chf(v.schaetzung)}</b></td></tr></tbody></table>` : ''}
     </div>
 
@@ -5657,25 +5659,35 @@ function saveVergabe(pid) {
 }
 
 /* --- Kostenschätzungs-Tool (Beschrieb + interne Kalkulation) --- */
+// Einheiten für die Ausmass-Kalkulation (Menge × Einheitspreis)
+const KALK_EINHEITEN = ['', 'm³', 'm²', 'm¹', 'lfm', 'Stk', 'kg', 't', 'h', 'pausch.'];
 function kalkTotal(k) {
   if (!k) return 0;
+  const menge = (Number(k.menge) || 0) * (Number(k.einheitspreis) || 0);   // Ausmass: Menge × EP
   const std = (Number(k.mann) || 0) * (Number(k.tage) || 0) * (Number(k.stdTag) || 0);
   const arbeit = std * (Number(k.ansatz) || 0);
-  const sub = arbeit + (Number(k.material) || 0);
+  const sub = menge + arbeit + (Number(k.material) || 0);
   return Math.round(sub * (1 + (Number(k.zuschlag) || 0) / 100));
 }
 function readKalk() {
+  const sv = id => { const el = $('#' + id); return el ? el.value : ''; };
   return {
-    mann: Number($('#ks_mann').value) || 0, tage: Number($('#ks_tage').value) || 0,
-    stdTag: Number($('#ks_stdtag').value) || 0, ansatz: Number($('#ks_ansatz').value) || 0,
-    material: Number($('#ks_material').value) || 0, zuschlag: Number($('#ks_zuschlag').value) || 0,
+    menge: Number(sv('ks_menge')) || 0, einheit: sv('ks_einheit') || '', einheitspreis: Number(sv('ks_ep')) || 0,
+    mann: Number(sv('ks_mann')) || 0, tage: Number(sv('ks_tage')) || 0,
+    stdTag: Number(sv('ks_stdtag')) || 0, ansatz: Number(sv('ks_ansatz')) || 0,
+    material: Number(sv('ks_material')) || 0, zuschlag: Number(sv('ks_zuschlag')) || 0,
   };
 }
 let ksCtx = null;   // Arbeits-Entwurf der Positionen während der Dialog offen ist
 function ksReadInputs() {
   if (!ksCtx) return;
   const bel = $('#ks_beschrieb'); if (bel) ksCtx.beschrieb = bel.value;
-  ksCtx.positionen.forEach(pos => { const t = $('#ks_t_' + pos.id), b = $('#ks_b_' + pos.id); if (t) pos.text = t.value; if (b) pos.betrag = Number(b.value) || 0; });
+  ksCtx.positionen.forEach(pos => {
+    const t = $('#ks_t_' + pos.id), b = $('#ks_b_' + pos.id); if (t) pos.text = t.value; if (b) pos.betrag = Number(b.value) || 0;
+    const bt = $('#ks_bt_' + pos.id), op = $('#ks_op_' + pos.id);
+    if (bt && bt.value !== '__new') pos.bauteil = bt.value;
+    if (op && op.value !== '__new') pos.option = op.value;
+  });
   if ($('#ks_mann')) ksCtx.calc = readKalk();
 }
 function ksTotal() { return (ksCtx ? ksCtx.positionen : []).reduce((a, p) => a + (Number(p.betrag) || 0), 0); }
@@ -5693,12 +5705,24 @@ function actKostenschaetzung(pid, vid) {
 }
 function ksRender() {
   const c = ksCtx; if (!c) return;
-  const v = findVergabe(findProjekt(c.pid), c.vid);
+  const p = findProjekt(c.pid);
+  const v = findVergabe(p, c.vid);
   const k = c.calc || {};
-  const rows = c.positionen.map((pos, i) => `<div class="form-row" style="gap:6px;margin-bottom:5px;align-items:center">
-    <input class="input ks-pos-t" id="ks_t_${pos.id}" value="${esc(pos.text || '')}" placeholder="Position (z.B. Aushub, Fundamente, Mauerwerk)" style="flex:2">
-    <input class="input ks-pos-b" id="ks_b_${pos.id}" type="number" value="${pos.betrag || ''}" placeholder="CHF" style="flex:1;max-width:130px">
-    <button class="x-btn" data-act="ks-pos-del" data-idx="${i}" title="Position entfernen">×</button>
+  const tagSel = (pos, f, label, list, newLabel) => `<select class="select ks-tag" id="ks_${f === 'bauteil' ? 'bt' : 'op'}_${pos.id}" data-pos="${pos.id}" data-f="${f}" style="font-size:12px;padding:5px 8px;flex:1">
+      <option value="">${label} –</option>
+      ${(list || []).map(o => `<option value="${o.id}"${pos[f] === o.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}
+      <option value="__new">${newLabel}</option>
+    </select>`;
+  const rows = c.positionen.map((pos, i) => `<div style="margin-bottom:9px">
+    <div class="form-row" style="gap:6px;align-items:center">
+      <input class="input ks-pos-t" id="ks_t_${pos.id}" value="${esc(pos.text || '')}" placeholder="Position (z.B. Aushub, Fundamente, Mauerwerk)" style="flex:2">
+      <input class="input ks-pos-b" id="ks_b_${pos.id}" type="number" value="${pos.betrag || ''}" placeholder="CHF" style="flex:1;max-width:130px">
+      <button class="x-btn" data-act="ks-pos-del" data-idx="${i}" title="Position entfernen">×</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:4px">
+      ${tagSel(pos, 'bauteil', 'Bauteil', p.bauteile, '➕ neues Bauteil…')}
+      ${tagSel(pos, 'option', 'Option', p.optionen, '➕ neue Option…')}
+    </div>
   </div>`).join('');
   openModal('Kostenschätzung – ' + esc(v && v.gewerk || ''), `
     <label class="field">Beschrieb (gesamtes Gewerk) <textarea class="input" id="ks_beschrieb" rows="2" placeholder="Was umfasst dieses Gewerk? – erscheint im Kostenschätzungs-PDF">${esc(c.beschrieb)}</textarea></label>
@@ -5708,26 +5732,76 @@ function ksRender() {
     <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:9px;margin-top:11px;font-size:15px"><strong>Total Kostenschätzung (KV)</strong><strong id="ks_postotal">${chf(ksTotal())}</strong></div>
     <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;font-size:13px;padding:4px 0">🧮 Kalkulationshilfe → als Position übernehmen</summary>
       <div style="margin-top:8px">
-        <div class="form-row"><label class="field">Bezeichnung <input class="input" id="ks_cname" placeholder="z.B. Aushub"></label><label class="field">Anzahl Mann <input class="input ks-calc" type="number" id="ks_mann" value="${k.mann ?? ''}"></label></div>
-        <div class="form-row"><label class="field">Dauer (Tage) <input class="input ks-calc" type="number" id="ks_tage" value="${k.tage ?? ''}"></label><label class="field">Stunden/Tag <input class="input ks-calc" type="number" id="ks_stdtag" value="${k.stdTag ?? 8}"></label></div>
-        <div class="form-row"><label class="field">Stundenansatz (CHF) <input class="input ks-calc" type="number" id="ks_ansatz" value="${k.ansatz ?? ''}"></label><label class="field">Material (CHF) <input class="input ks-calc" type="number" id="ks_material" value="${k.material ?? ''}"></label></div>
-        <div class="form-row"><label class="field">Zuschlag % <input class="input ks-calc" type="number" id="ks_zuschlag" value="${k.zuschlag ?? ''}"></label><label class="field">Berechnet<div style="padding-top:7px;font-weight:700" id="ks_calctotal">–</div></label></div>
-        <button class="btn sm" data-act="ks-calc-add" type="button">→ als Position übernehmen</button>
+        <label class="field">Bezeichnung <input class="input" id="ks_cname" placeholder="z.B. Beton Fundament / Aushub"></label>
+        <div class="muted" style="font-size:11.5px;margin:9px 0 3px"><strong>Ausmass</strong> – Menge × Einheitspreis (z.B. 120 m³ × 210.–)</div>
+        <div class="form-row">
+          <label class="field">Menge <input class="input ks-calc" type="number" id="ks_menge" value="${k.menge ?? ''}"></label>
+          <label class="field">Einheit <select class="select ks-calc" id="ks_einheit">${KALK_EINHEITEN.map(u => `<option value="${u}"${(k.einheit || '') === u ? ' selected' : ''}>${u || '–'}</option>`).join('')}</select></label>
+          <label class="field">Einheitspreis (CHF) <input class="input ks-calc" type="number" id="ks_ep" value="${k.einheitspreis ?? ''}"></label>
+        </div>
+        <div class="muted" style="font-size:11.5px;margin:10px 0 3px"><strong>Arbeit</strong> – Stundenkalkulation (optional, wird addiert)</div>
+        <div class="form-row"><label class="field">Anzahl Mann <input class="input ks-calc" type="number" id="ks_mann" value="${k.mann ?? ''}"></label><label class="field">Dauer (Tage) <input class="input ks-calc" type="number" id="ks_tage" value="${k.tage ?? ''}"></label></div>
+        <div class="form-row"><label class="field">Stunden/Tag <input class="input ks-calc" type="number" id="ks_stdtag" value="${k.stdTag ?? 8}"></label><label class="field">Stundenansatz (CHF) <input class="input ks-calc" type="number" id="ks_ansatz" value="${k.ansatz ?? ''}"></label></div>
+        <div class="form-row"><label class="field">Material (CHF, zusätzl.) <input class="input ks-calc" type="number" id="ks_material" value="${k.material ?? ''}"></label><label class="field">Zuschlag % <input class="input ks-calc" type="number" id="ks_zuschlag" value="${k.zuschlag ?? ''}"></label></div>
+        <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px;margin-top:8px;font-size:14px"><strong>Berechnet</strong><strong id="ks_calctotal">–</strong></div>
+        <button class="btn sm" data-act="ks-calc-add" type="button" style="margin-top:9px">→ als Position übernehmen</button>
       </div>
     </details>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-ks" data-pid="${c.pid}" data-vid="${c.vid}">Speichern</button>`);
   $$('.ks-pos-b').forEach(i => i.addEventListener('input', () => { let s = 0; $$('.ks-pos-b').forEach(x => s += Number(x.value) || 0); const el = $('#ks_postotal'); if (el) el.textContent = chf(s); }));
   const cupd = () => { const t = kalkTotal(readKalk()); const el = $('#ks_calctotal'); if (el) el.textContent = t ? chf(t) : '–'; };
   $$('.ks-calc').forEach(i => i.addEventListener('input', cupd)); cupd();
+  $$('.ks-tag').forEach(sel => sel.addEventListener('change', () => onKsTag(sel.dataset.pos, sel.dataset.f, sel.value)));
+}
+
+// Position einem Bauteil/einer Option zuordnen – „➕ neu" legt direkt ein neues an
+function onKsTag(posId, f, val) {
+  if (!ksCtx) return;
+  const pos = ksCtx.positionen.find(x => x.id === posId); if (!pos) return;
+  ksReadInputs();   // andere Eingaben sichern, bevor neu gerendert wird
+  if (val === '__new') {
+    const isBt = f === 'bauteil';
+    const name = (window.prompt(isBt ? 'Name des Bauteils (z.B. Trakt 1, Provisorium):' : 'Name der Option (z.B. Erker, Lift):') || '').trim();
+    if (name) {
+      const p = findProjekt(ksCtx.pid);
+      const id = uid(isBt ? 'bt' : 'op');
+      if (isBt) (p.bauteile = p.bauteile || []).push({ id, name });
+      else (p.optionen = p.optionen || []).push({ id, name, bauteilId: '', gruppe: '' });
+      pos[f] = id; save();
+    }
+  } else {
+    pos[f] = val;
+  }
+  ksRender();
 }
 function ksPosAdd() { ksReadInputs(); ksCtx.positionen.push({ id: uid('ks'), text: '', betrag: 0 }); ksRender(); }
 function ksPosDel(idx) { ksReadInputs(); ksCtx.positionen.splice(idx, 1); if (!ksCtx.positionen.length) ksCtx.positionen.push({ id: uid('ks'), text: '', betrag: 0 }); ksRender(); }
 function ksCalcAdd() {
-  ksReadInputs(); const t = kalkTotal(ksCtx.calc);
+  ksReadInputs(); const k = ksCtx.calc; const t = kalkTotal(k);
   if (!t) { toast('Kalkulation ergibt 0', 'info'); return; }
-  const name = ($('#ks_cname') ? $('#ks_cname').value.trim() : '') || 'Position';
-  ksCtx.positionen.push({ id: uid('ks'), text: name, betrag: t, kalk: ksCtx.calc });
+  let name = ($('#ks_cname') ? $('#ks_cname').value.trim() : '');
+  if (!name) name = (k.menge && k.einheit) ? `${k.menge} ${k.einheit}` : 'Position';
+  ksCtx.positionen.push({ id: uid('ks'), text: name, betrag: t, kalk: { ...k } });
   ksCtx.calc = {}; ksRender(); toast('Position aus Kalkulation hinzugefügt');
+}
+// Bauteil-/Options-Etikett einer Position als kleine Chips (für die Anzeige)
+function posTagChips(p, pos) {
+  if (!p || !pos) return '';
+  const bt = pos.bauteil && (p.bauteile || []).find(b => b.id === pos.bauteil);
+  const op = pos.option && (p.optionen || []).find(o => o.id === pos.option);
+  let out = '';
+  if (bt) out += `<span class="st grey" style="font-size:10px;padding:1px 6px;margin-left:6px">${esc(bt.name)}</span>`;
+  if (op) out += `<span class="st amber" style="font-size:10px;padding:1px 6px;margin-left:6px">opt: ${esc(op.name)}</span>`;
+  return out;
+}
+// Kurzbeschrieb der Ausmass-/Arbeitskalkulation einer Position (für die Anzeige)
+function kalkInfo(k) {
+  if (!k) return '';
+  const teile = [];
+  if (k.menge && k.einheitspreis) teile.push(`${k.menge} ${esc(k.einheit || '')} × ${chf(k.einheitspreis)}`);
+  if (k.mann && k.tage) teile.push(`${k.mann} Mann · ${k.tage} T Arbeit`);
+  if (k.zuschlag) teile.push(`+${k.zuschlag}%`);
+  return teile.join(' · ');
 }
 function saveKostenschaetzung(pid, vid) {
   ksReadInputs();

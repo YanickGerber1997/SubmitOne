@@ -742,6 +742,7 @@ function router() {
     case 'drucken':       setActiveNav('drucken');       return viewDrucken();
     case 'honorar':       setActiveNav('honorar'); honorarPid = null; return viewHonorar();
     case 'kontakte':      setActiveNav('kontakte');      return viewKontakte();
+    case 'kontakt':       setActiveNav('kontakte');      return viewKontaktDetail(a);
     case 'dokumente':     setActiveNav('dokumente');     return viewDokumente();
     case 'einstellungen': setActiveNav('einstellungen'); return viewEinstellungen();
     default:
@@ -1459,11 +1460,17 @@ function planBlockMenu(e, bid) {
 function rmKontakt(kid) {
   const k = (state.kontakte || []).find(x => x.id === kid); if (!k) return;
   if (!confirm(`Kontakt „${k.firma}" wirklich löschen?`)) return;
-  state.kontakte = state.kontakte.filter(x => x.id !== kid); save(); viewKontakte(); toast('Kontakt gelöscht');
+  state.kontakte = state.kontakte.filter(x => x.id !== kid); save(); closeModal();
+  if (location.hash.startsWith('#/kontakt/')) location.hash = '#/kontakte'; else viewKontakte();
+  toast('Kontakt gelöscht');
 }
 function kontaktMenu(e, kid) {
   const k = (state.kontakte || []).find(x => x.id === kid); if (!k) return;
-  const items = [];
+  const items = [
+    { icon: '↗', label: 'Kontakt öffnen', act: () => go('#/kontakt/' + kid) },
+    { icon: '✎', label: 'Bearbeiten', act: () => actKontakt(kid) },
+    { sep: true },
+  ];
   if (k.email) items.push({ icon: '✉', label: 'E-Mail schreiben', act: () => { window.location.href = 'mailto:' + k.email; } });
   if (k.telefon) items.push({ icon: '☎', label: 'Anrufen', act: () => { window.location.href = 'tel:' + k.telefon.replace(/\s/g, ''); } });
   if (items.length) items.push({ sep: true });
@@ -3484,44 +3491,114 @@ function pdfVergabeantragAlle(pid) {
    12) View: Kontakte
    --------------------------------------------------------------- */
 
-let kontaktFilter = '';
+let kontaktFilter = '', kontaktKat = '';
+
+// Beteiligung einer Firma über alle Projekte (eingeladen / offeriert / vergeben)
+function kontaktBeteiligung(firma) {
+  const out = [];
+  (state.projekte || []).forEach(p => (p.vergaben || []).forEach(v => {
+    const e = (v.eingeladene || []).find(x => x.firma === firma);
+    if (e) out.push({ p, v, e, won: v.firma === firma });
+  }));
+  return out;
+}
+function kontaktProjekte(firma) { return new Set(kontaktBeteiligung(firma).map(x => x.p.id)).size; }
+function kategorieDatalist(id) { const cats = [...new Set((state.kontakte || []).map(k => k.kategorie).filter(c => c && c !== '–'))].sort(); return `<datalist id="${id}">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>`; }
 
 function viewKontakte() {
-  let list = state.kontakte;
-  if (kontaktFilter) {
-    const q = kontaktFilter.toLowerCase();
-    list = list.filter(k => (k.firma + k.kategorie + k.ort + (k.person || '') + (k.uid_nr || '')).toLowerCase().includes(q));
-  }
+  const kats = [...new Set((state.kontakte || []).map(k => k.kategorie).filter(c => c && c !== '–'))].sort();
+  let list = (state.kontakte || []).slice().sort((a, b) => (a.firma || '').localeCompare(b.firma || ''));
+  if (kontaktKat) list = list.filter(k => k.kategorie === kontaktKat);
+  if (kontaktFilter) { const q = kontaktFilter.toLowerCase(); list = list.filter(k => (k.firma + k.kategorie + (k.ort || '') + (k.person || '') + (k.uid_nr || '')).toLowerCase().includes(q)); }
 
-  const html = `
+  const chips = `<span class="chip ${kontaktKat ? '' : 'active'}" data-act="kontakt-kat" data-kind="">Alle</span>` +
+    kats.map(c => `<span class="chip ${kontaktKat === c ? 'active' : ''}" data-act="kontakt-kat" data-kind="${esc(c)}">${esc(c)}</span>`).join('');
+
+  render(`
     <div class="page-head">
-      <div><h1>Kontakte</h1><div class="sub">${state.kontakte.length} Unternehmer &amp; Partner</div></div>
+      <div><h1>Kontakte</h1><div class="sub">${(state.kontakte || []).length} Unternehmer &amp; Partner · ${kats.length} Kategorien</div></div>
       <button class="btn" data-act="new-kontakt">+ Neuer Kontakt</button>
     </div>
-    <div class="toolbar">
-      <input class="input search" id="kSearch" placeholder="Firma, Gewerk oder Ort suchen…" value="${esc(kontaktFilter)}">
-    </div>
+    <div class="toolbar"><input class="input search" id="kSearch" placeholder="Firma, Gewerk, Person oder Ort suchen…" value="${esc(kontaktFilter)}"></div>
+    ${kats.length ? `<div class="chips" style="margin-bottom:14px">${chips}</div>` : ''}
     <div class="card">
       ${list.length ? `
       <table class="grid">
-        <thead><tr><th>Firma</th><th>Kategorie</th><th>Ansprechperson</th><th>Ort</th><th>Kontakt</th></tr></thead>
+        <thead><tr><th>Firma</th><th>Kategorie</th><th>Ansprechperson</th><th>Ort</th><th>Kontakt</th><th class="num">Projekte</th></tr></thead>
         <tbody>
-          ${list.map(k => `
-            <tr data-ctx="kontakt" data-kid="${k.id}">
+          ${list.map(k => { const n = kontaktProjekte(k.firma); return `
+            <tr class="clickable" data-goto="#/kontakt/${k.id}" data-ctx="kontakt" data-kid="${k.id}">
               <td><div class="row-firma"><strong>${esc(k.firma)}</strong>${k.uid_nr ? `<span class="sub">${esc(k.uid_nr)}${k.rechtsform ? ' · ' + esc(k.rechtsform) : ''}</span>` : ''}</div></td>
-              <td><span class="tag">${esc(k.kategorie)}</span></td>
-              <td>${esc(k.person || '–')}</td>
+              <td>${k.kategorie && k.kategorie !== '–' ? `<span class="tag">${esc(k.kategorie)}</span>` : '<span class="muted">–</span>'}</td>
+              <td>${esc(k.person || '–')}${k.funktion ? `<div class="muted" style="font-size:11.5px">${esc(k.funktion)}</div>` : ''}</td>
               <td>${k.plz ? esc(k.plz) + ' ' : ''}${esc(k.ort || '–')}</td>
               <td class="muted">${esc(k.email || k.telefon || '–')}</td>
-            </tr>`).join('')}
+              <td class="num">${n ? `<span class="tag">${n}</span>` : '<span class="muted">–</span>'}</td>
+            </tr>`; }).join('')}
         </tbody>
       </table>` : emptyState('☎', 'Keine Kontakte gefunden.')}
     </div>
-  `;
-  render(html);
+  `);
   const s = $('#kSearch');
   s.addEventListener('input', e => { kontaktFilter = e.target.value; viewKontakte(); });
   s.focus(); s.setSelectionRange(s.value.length, s.value.length);
+}
+function viewKontaktDetail(kid) {
+  const k = (state.kontakte || []).find(x => x.id === kid);
+  if (!k) { render(emptyState('⚠', 'Kontakt nicht gefunden.')); return; }
+  const bet = kontaktBeteiligung(k.firma).sort((a, b) => (a.p.name || '').localeCompare(b.p.name || ''));
+  const offerten = bet.filter(x => eOff(x.e) != null);
+  const zuschlaege = bet.filter(x => x.won);
+  const volumen = zuschlaege.reduce((a, x) => a + (isVergeben(x.v) ? schlussSumme(x.v) : (x.v.betrag || 0)), 0);
+  const kpi = (l, v) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:21px">${v}</div></div>`;
+  const adresse = [k.strasse, [k.plz, k.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const stamm = [
+    ['Adresse', adresse || '–'],
+    ['UID', k.uid_nr || '–'],
+    ['Rechtsform', k.rechtsform || '–'],
+    ['Ansprechperson', (k.person || '–') + (k.funktion ? ' · ' + esc(k.funktion) : '')],
+    ['E-Mail', k.email ? `<a href="mailto:${esc(k.email)}">${esc(k.email)}</a>` : '–'],
+    ['Telefon', k.telefon ? `<a href="tel:${esc(k.telefon.replace(/\s/g, ''))}">${esc(k.telefon)}</a>` : '–'],
+    ['Website', k.website ? `<a href="${esc(k.website)}" target="_blank" rel="noopener">${esc(k.website)}</a>` : '–'],
+  ];
+  const betTable = bet.length ? `<table class="grid">
+    <thead><tr><th>Projekt</th><th>Gewerk</th><th>Status</th><th class="num">Offerte</th><th></th></tr></thead>
+    <tbody>${bet.map(x => `
+      <tr class="clickable" data-goto="#/projekt/${x.p.id}/vergabe/${x.v.id}">
+        <td>${esc(x.p.name)}</td>
+        <td><span class="bkp-code">${esc(x.v.bkp || '')}</span> ${esc(x.v.gewerk || '')}</td>
+        <td>${x.won ? '<span class="st green" style="font-size:10.5px;padding:2px 8px">★ Zuschlag</span>' : `<span class="st ${INV_STATUS[x.e.status]?.color || 'grey'}" style="font-size:10.5px;padding:2px 8px">${INV_STATUS[x.e.status]?.label || esc(x.e.status)}</span>`}</td>
+        <td class="num">${eOff(x.e) != null ? chf(eOff(x.e)) : '–'}</td>
+        <td class="muted">›</td>
+      </tr>`).join('')}</tbody></table>` : emptyState('▤', 'Diese Firma ist noch keinem Gewerk zugeordnet.');
+
+  render(`
+    <div class="breadcrumb"><a href="#/kontakte">Kontakte</a> › ${esc(k.firma)}</div>
+    <div class="detail-head">
+      <div><h1 style="margin:0;font-size:23px">${esc(k.firma)}</h1><div class="sub" style="margin-top:5px">${k.kategorie && k.kategorie !== '–' ? esc(k.kategorie) : 'Kontakt'}${k.ort ? ' · ' + (k.plz ? esc(k.plz) + ' ' : '') + esc(k.ort) : ''}</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        ${k.email ? `<a class="btn secondary" href="mailto:${esc(k.email)}">✉ Mail</a>` : ''}
+        ${k.telefon ? `<a class="btn secondary" href="tel:${esc(k.telefon.replace(/\s/g, ''))}">☎ Anrufen</a>` : ''}
+        <button class="btn" data-act="edit-kontakt" data-kid="${kid}">✎ Bearbeiten</button>
+      </div>
+    </div>
+    <div class="kpi-row">
+      ${kpi('Angefragt', bet.length)}
+      ${kpi('Offerten', offerten.length)}
+      ${kpi('Zuschläge', zuschlaege.length)}
+      ${kpi('Auftragsvolumen', chfShort(volumen))}
+    </div>
+    <div class="two-col">
+      <div>
+        <div class="section-head"><h2>Beteiligung an Projekten</h2><span class="hint">über alle Projekte</span></div>
+        <div class="card">${betTable}</div>
+      </div>
+      <div>
+        <div class="section-head"><h2>Stammdaten</h2></div>
+        <div class="card card-pad">${stamm.map(([l, v]) => `<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span class="muted" style="min-width:110px">${l}</span><span style="flex:1">${v}</span></div>`).join('')}${k.notiz ? `<div style="padding:10px 0 0;font-size:13px"><span class="muted">Notiz</span><div style="margin-top:3px;white-space:pre-wrap">${esc(k.notiz)}</div></div>` : ''}</div>
+      </div>
+    </div>
+  `);
 }
 
 /* ---------------------------------------------------------------
@@ -4664,7 +4741,7 @@ function erfassen(kind) {
   switch (kind) {
     case 'pendenz': return actPendenz();
     case 'projekt': return actNewProjekt();
-    case 'kontakt': return actNewKontakt();
+    case 'kontakt': return actKontakt();
     case 'termin': case 'protokoll': case 'rechnung': case 'vergabe': return erfassenPick(kind);
   }
 }
@@ -6096,33 +6173,41 @@ SELECT ?name ?type ?ort ?plz ?uid WHERE {
     .slice(0, 8);
 }
 
-function actNewKontakt() {
-  openModal('Neuer Kontakt', `
-    <label class="field">Firma im Handelsregister suchen
-      <input class="input" id="f_firma" placeholder="Firmenname, Ort oder Branche eingeben…" autocomplete="off">
+function actKontakt(kid) {
+  const k = kid ? (state.kontakte || []).find(x => x.id === kid) : null;
+  const val = f => k && k[f] != null ? esc(k[f]) : '';
+  openModal(k ? 'Kontakt bearbeiten' : 'Neuer Kontakt', `
+    <label class="field">Firma ${k ? '' : '<span class="muted" style="font-weight:400;font-size:11.5px">– im Handelsregister suchbar</span>'}
+      <input class="input" id="f_firma" value="${val('firma')}" placeholder="Firmenname, Ort oder Branche…" autocomplete="off">
     </label>
     <div id="firmaResults" class="ac-list" style="display:none"></div>
     <div class="form-row">
-      <label class="field">UID <input class="input" id="f_uid" placeholder="CHE-…"></label>
-      <label class="field">Rechtsform <input class="input" id="f_rf"></label>
+      <label class="field">UID <input class="input" id="f_uid" value="${val('uid_nr')}" placeholder="CHE-…"></label>
+      <label class="field">Rechtsform <input class="input" id="f_rf" value="${val('rechtsform')}"></label>
     </div>
+    <label class="field">Kategorie / Gewerk <input class="input" id="f_kat" list="dl_kkat" value="${k && k.kategorie !== '–' ? val('kategorie') : ''}" placeholder="z.B. Baumeister">${kategorieDatalist('dl_kkat')}</label>
+    <label class="field">Strasse <input class="input" id="f_str" value="${val('strasse')}"></label>
     <div class="form-row">
-      <label class="field">PLZ <input class="input" id="f_plz"></label>
-      <label class="field">Ort <input class="input" id="f_kort"></label>
+      <label class="field">PLZ <input class="input" id="f_plz" value="${val('plz')}"></label>
+      <label class="field">Ort <input class="input" id="f_kort" value="${val('ort')}"></label>
     </div>
-    <label class="field">Kategorie / Gewerk <input class="input" id="f_kat" placeholder="z.B. Baumeister"></label>
     <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
-    <strong style="font-size:13px">Manuell ergänzen</strong>
-    <label class="field">Ansprechperson <input class="input" id="f_person" placeholder="Vor- und Nachname"></label>
     <div class="form-row">
-      <label class="field">E-Mail <input class="input" id="f_email" placeholder="name@firma.ch"></label>
-      <label class="field">Telefon <input class="input" id="f_tel"></label>
+      <label class="field">Ansprechperson <input class="input" id="f_person" value="${val('person')}" placeholder="Vor- und Nachname"></label>
+      <label class="field">Funktion <input class="input" id="f_funktion" value="${val('funktion')}" placeholder="z.B. Geschäftsführer"></label>
     </div>
-  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-kontakt">Speichern</button>`);
-
-  const inp = $('#f_firma'), box = $('#firmaResults');
-  let matches = [];
-  let tmr = null;
+    <div class="form-row">
+      <label class="field">E-Mail <input class="input" id="f_email" value="${val('email')}" placeholder="name@firma.ch"></label>
+      <label class="field">Telefon <input class="input" id="f_tel" value="${val('telefon')}"></label>
+    </div>
+    <label class="field">Website <input class="input" id="f_web" value="${val('website')}" placeholder="https://…"></label>
+    <label class="field">Notiz <textarea class="input" id="f_notiz" rows="2">${k ? esc(k.notiz || '') : ''}</textarea></label>
+  `, `${k ? `<button class="btn danger" data-act="rm-kontakt" data-kid="${kid}">Löschen</button><div class="spacer"></div>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-kontakt"${k ? ` data-kid="${kid}"` : ''}>${k ? 'Speichern' : 'Hinzufügen'}</button>`);
+  attachFirmaSuche();
+}
+function attachFirmaSuche() {
+  const inp = $('#f_firma'), box = $('#firmaResults'); if (!inp || !box) return;
+  let matches = [], tmr = null;
   const renderMatches = () => {
     if (!matches.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
     box.style.display = 'block';
@@ -6133,41 +6218,36 @@ function actNewKontakt() {
       </div>`).join('');
   };
   inp.addEventListener('input', () => {
-    const val = inp.value;
-    clearTimeout(tmr);
-    if (val.trim().length < 2) { matches = []; renderMatches(); return; }
-    box.style.display = 'block';
-    box.innerHTML = '<div class="ac-item muted">Suche im Handelsregister…</div>';
-    tmr = setTimeout(async () => { matches = await firmenSuche(val); renderMatches(); }, 300);
+    const v = inp.value; clearTimeout(tmr);
+    if (v.trim().length < 2) { matches = []; renderMatches(); return; }
+    box.style.display = 'block'; box.innerHTML = '<div class="ac-item muted">Suche im Handelsregister…</div>';
+    tmr = setTimeout(async () => { matches = await firmenSuche(v); renderMatches(); }, 300);
   });
   box.addEventListener('click', e => {
-    const it = e.target.closest('.ac-item'); if (!it) return;
+    const it = e.target.closest('.ac-item'); if (!it || it.dataset.i == null) return;
     const f = matches[+it.dataset.i];
-    inp.value = f.name;
-    $('#f_uid').value = f.uid; $('#f_rf').value = f.rechtsform;
-    $('#f_plz').value = f.plz; $('#f_kort').value = f.ort;
-    if (!$('#f_kat').value.trim()) $('#f_kat').value = f.branche;
+    inp.value = f.name; $('#f_uid').value = f.uid || ''; $('#f_rf').value = f.rechtsform || '';
+    $('#f_plz').value = f.plz || ''; $('#f_kort').value = f.ort || '';
+    if (!$('#f_kat').value.trim()) $('#f_kat').value = f.branche || '';
     box.style.display = 'none'; box.innerHTML = '';
-    $('#f_person').focus();
-    toast('Firmendaten aus Register übernommen', 'info');
+    $('#f_person').focus(); toast('Firmendaten aus Register übernommen', 'info');
   });
 }
-
-function saveKontakt() {
+function saveKontakt(kid) {
   const firma = $('#f_firma').value.trim();
   if (!firma) { toast('Bitte eine Firma eingeben', 'info'); return; }
-  state.kontakte.unshift({
-    id: uid('k'), firma,
-    uid_nr: $('#f_uid').value.trim() || '',
-    rechtsform: $('#f_rf').value.trim() || '',
-    plz: $('#f_plz').value.trim() || '',
-    kategorie: $('#f_kat').value.trim() || '–',
-    ort: $('#f_kort').value.trim() || '',
-    person: $('#f_person').value.trim() || '',
-    email: $('#f_email').value.trim() || '',
-    telefon: $('#f_tel').value.trim() || '',
-  });
-  save(); closeModal(); viewKontakte();
+  const data = {
+    firma, uid_nr: $('#f_uid').value.trim(), rechtsform: $('#f_rf').value.trim(),
+    kategorie: $('#f_kat').value.trim() || '–', strasse: $('#f_str').value.trim(),
+    plz: $('#f_plz').value.trim(), ort: $('#f_kort').value.trim(),
+    person: $('#f_person').value.trim(), funktion: $('#f_funktion').value.trim(),
+    email: $('#f_email').value.trim(), telefon: $('#f_tel').value.trim(),
+    website: $('#f_web').value.trim(), notiz: $('#f_notiz').value.trim(),
+  };
+  const k = kid ? (state.kontakte || []).find(x => x.id === kid) : null;
+  if (k) Object.assign(k, data); else state.kontakte.unshift({ id: uid('k'), ...data });
+  save(); closeModal();
+  if (kid) viewKontaktDetail(kid); else viewKontakte();
   toast('Kontakt gespeichert');
 }
 
@@ -6362,8 +6442,11 @@ document.addEventListener('click', e => {
     case 'rm-eintrag':      rmEintrag(pid, prid, tid, itemid); break;
     case 'pdf-protokoll':   pdfProtokoll(pid, prid); break;
     case 'mail-protokoll':  mailProtokoll(pid, prid); break;
-    case 'new-kontakt':  actNewKontakt(); break;
-    case 'save-kontakt': saveKontakt(); break;
+    case 'new-kontakt':  actKontakt(); break;
+    case 'edit-kontakt': actKontakt(act.dataset.kid); break;
+    case 'save-kontakt': saveKontakt(act.dataset.kid); break;
+    case 'rm-kontakt':   rmKontakt(act.dataset.kid); break;
+    case 'kontakt-kat':  kontaktKat = kind; viewKontakte(); break;
     case 'save-buero':   saveBuero(); break;
     case 'rm-logo':      state.buero = { ...(state.buero || {}), logo: '' }; save(); viewEinstellungen(); break;
     case 'export':       exportData(); break;

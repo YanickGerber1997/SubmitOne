@@ -609,6 +609,19 @@ tr.done-row { background: #fbfdfb; }
 }
 .ptab:hover { color: var(--text); }
 .ptab.active { color: var(--brand); border-bottom-color: var(--brand); }
+button.ptab { background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; font-family: inherit; }
+.ptab-more { position: relative; display: flex; }
+.ptab-menu { position: absolute; top: calc(100% + 2px); right: 0; background: var(--surface); border: 1px solid var(--border-2); border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.16); padding: 5px; min-width: 190px; z-index: 60; }
+.ptab-menu a { display: block; padding: 8px 11px; border-radius: 7px; font-size: 13px; font-weight: 600; color: var(--text-soft); }
+.ptab-menu a:hover { background: var(--surface-2); color: var(--text); }
+.ptab-menu a.active { color: var(--brand); }
+
+/* Gewerk-Umschalter (Detailseite) */
+.gw-switch { display: inline-flex; align-items: center; gap: 6px; }
+.gw-switch .select { padding: 5px 8px; font-size: 13px; max-width: 260px; }
+.gw-nav { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 28px; border: 1px solid var(--border-2); border-radius: 7px; color: var(--text-soft); font-size: 16px; font-weight: 700; cursor: pointer; }
+.gw-nav:hover { background: var(--surface-2); color: var(--text); }
+.gw-nav.disabled { opacity: .4; pointer-events: none; }
 .tab-badge {
   display: inline-block; min-width: 18px; padding: 0 6px; margin-left: 4px;
   font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;

@@ -680,11 +680,27 @@ function projektTabs(p, active) {
     { key: 'finanz', href: `#/projekt/${p.id}/finanz`, label: 'Finanzierung' },
     { key: 'honorar', href: `#/projekt/${p.id}/honorar`, label: 'Honorar' },
   ];
-  // Unterreiter auch in der Sidebar unter „Projekte" anzeigen
+  // Unterreiter auch in der Sidebar unter „Projekte" anzeigen (volle Liste)
   const sub = $('#projSubnav');
   if (sub) sub.innerHTML = `<div class="subnav-title" title="${esc(p.name)}">${esc(p.name)}</div>` +
     items.map(it => `<a class="subnav-link ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('');
-  return `<div class="ptabs">${items.map(it => `<a class="ptab ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')}</div>`;
+  // In-Page-Reiter: häufige primär, Rest unter „Mehr ▾" (kompakt, halbschirm-tauglich)
+  const primary = ['overview', 'kosten', 'termine', 'dossier', 'pendenzen'];
+  const prim = items.filter(it => primary.includes(it.key));
+  const more = items.filter(it => !primary.includes(it.key));
+  const moreActive = more.some(it => it.key === active);
+  return `<div class="ptabs">
+    ${prim.map(it => `<a class="ptab ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')}
+    <div class="ptab-more">
+      <button class="ptab ${moreActive ? 'active' : ''}" data-act="ptabs-more">${moreActive ? (more.find(it => it.key === active).label + ' ') : 'Mehr '}▾</button>
+      <div class="ptab-menu" id="ptabMenu" hidden>${more.map(it => `<a class="${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')}</div>
+    </div>
+  </div>`;
+}
+function ptabsMoreToggle() {
+  const m = document.getElementById('ptabMenu'); if (!m) return;
+  const show = m.hidden; m.hidden = !show;
+  if (show) { const away = e => { if (!e.target.closest('.ptab-more')) { m.hidden = true; document.removeEventListener('mousedown', away); } }; setTimeout(() => document.addEventListener('mousedown', away), 0); }
 }
 
 function emptyState(ico, text) {
@@ -3070,6 +3086,7 @@ function viewProtokollDetail(pid, prid) {
         <button class="btn" data-act="new-traktandum" data-pid="${p.id}" data-prid="${pr.id}">+ Traktandum</button>
       </div>
     </div>
+    ${projektTabs(p, 'protokolle')}
 
     <div class="detail-stats" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">
       ${personCard('Anwesend', 'anwesend', pr.teilnehmer, p.id, pr.id)}
@@ -3453,9 +3470,22 @@ function viewVergabeDetail(pid, vid) {
   const ungesendet = eingeladene.filter(e => e.status === 'eingeladen');
   const hasContract = isContract(v);
 
+  // Gewerk-Umschalter: direkt zwischen den Gewerken des Projekts springen
+  const gwList = gewerkeSorted(p);
+  const gIdx = gwList.findIndex(x => x.id === v.id);
+  const gPrev = gIdx > 0 ? gwList[gIdx - 1] : null;
+  const gNext = gIdx >= 0 && gIdx < gwList.length - 1 ? gwList[gIdx + 1] : null;
+  const gwSwitch = `<div class="gw-switch">
+    ${gPrev ? `<a class="gw-nav" href="#/projekt/${p.id}/vergabe/${gPrev.id}" title="${esc((gPrev.bkp ? gPrev.bkp + ' ' : '') + gPrev.gewerk)}">‹</a>` : '<span class="gw-nav disabled">‹</span>'}
+    <select class="select gewerk-switch" data-pid="${p.id}" title="Gewerk wechseln">${gwList.map(g => `<option value="${g.id}"${g.id === v.id ? ' selected' : ''}>${esc((g.bkp ? g.bkp + ' ' : '') + g.gewerk)}</option>`).join('')}</select>
+    ${gNext ? `<a class="gw-nav" href="#/projekt/${p.id}/vergabe/${gNext.id}" title="${esc((gNext.bkp ? gNext.bkp + ' ' : '') + gNext.gewerk)}">›</a>` : '<span class="gw-nav disabled">›</span>'}
+    <span class="muted" style="font-size:12px">${gIdx + 1} / ${gwList.length}</span>
+  </div>`;
+
   const html = `
-    <div class="breadcrumb">
-      <a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › ${esc(v.gewerk)}
+    <div class="breadcrumb" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › ${esc(v.gewerk)}</span>
+      ${gwSwitch}
     </div>
     <div class="detail-head">
       <div>
@@ -3469,6 +3499,7 @@ function viewVergabeDetail(pid, vid) {
         ${last ? '' : `<button class="btn" data-act="advance" data-pid="${p.id}" data-vid="${v.id}">Nächster Schritt →</button>`}
       </div>
     </div>
+    ${projektTabs(p, 'overview')}
 
     <div class="detail-stats">
       <div class="dstat"><div class="l">Kostenschätzung</div><div class="v">${chf(v.schaetzung)}</div></div>
@@ -3696,6 +3727,7 @@ function viewVergabeDetail(pid, vid) {
     setNachtragStatus(sel.dataset.pid, sel.dataset.vid, sel.dataset.nid, sel.value);
   }));
   $$('.vergabe-status-sel').forEach(sel => sel.addEventListener('change', () => setVergabeStatus(sel.dataset.pid, sel.dataset.vid, sel.value)));
+  $$('.gewerk-switch').forEach(sel => sel.addEventListener('change', () => go('#/projekt/' + sel.dataset.pid + '/vergabe/' + sel.value)));
   bindVergabeAntrag(p, v);
 }
 
@@ -6780,6 +6812,7 @@ document.addEventListener('click', e => {
     case 'quickadd-bkp': quickAddVergabe(pid, act.dataset.code, act.dataset.label); break;
     case 'gw-toggle':    { const y = window.scrollY; gwOpen.has(vid) ? gwOpen.delete(vid) : gwOpen.add(vid); router(); window.scrollTo(0, y); } break;
     case 'gw-action':    gewerkAction(pid, vid, act.dataset.action); break;
+    case 'ptabs-more':   ptabsMoreToggle(); break;
     case 'save-vergabe': saveVergabe(pid); break;
     case 'ks-edit':      actKostenschaetzung(pid, vid); break;
     case 'ks-pos-add':   ksPosAdd(); break;

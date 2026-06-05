@@ -192,7 +192,7 @@ button { font-family: inherit; cursor: pointer; }
 .cal-colhead:hover { background: var(--surface-2); }
 .cal-ad-cell { border-left: 1px solid var(--border); padding: 3px; min-height: 24px; cursor: pointer; }
 .cal-ad-cell .cal-ev { white-space: normal; }
-.cal-tg-body { display: flex; max-height: 560px; overflow-y: auto; }
+.cal-tg-body { display: flex; }
 .cal-hours { width: 50px; flex: none; }
 .cal-hour { height: 40px; font-size: 9.5px; color: var(--text-faint); text-align: right; padding: 0 5px 0 0; }
 .cal-col { position: relative; border-left: 1px solid var(--border); cursor: pointer; }

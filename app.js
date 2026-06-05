@@ -981,9 +981,9 @@ function viewProjektDetail(id) {
     </div>
 
     <!-- Vergaben-Tabelle -->
-    <div class="section-head"><h2>Vergaben &amp; Gewerke</h2><span class="hint">Klick auf eine Zeile für Details</span></div>
+    <div class="section-head"><h2>Vergaben &amp; Gewerke</h2><div style="display:flex;gap:10px;align-items:center"><span class="hint">Klick auf eine Zeile für Details</span>${katToggleBtn()}</div></div>
     <div class="card">
-      ${vergaben.length ? `
+      ${vergaben.length || katOpen ? `
       <table class="grid">
         <thead>
           <tr><th>BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Status</th><th>Fortschritt</th><th class="num">Betrag</th><th>Frist</th></tr>
@@ -999,6 +999,7 @@ function viewProjektDetail(id) {
               <td class="num">${isVergeben(v) ? chf(v.betrag) : `<span class="muted">~${chfShort(v.schaetzung)}</span>`}</td>
               <td class="frist ${fristClass(v.frist, isDone(v))}">${fristText(v.frist, isDone(v))}</td>
             </tr>`).join('')}
+          ${bkpGhostRows(p, 7)}
         </tbody>
       </table>` : emptyState('▤', 'Noch keine Vergaben angelegt.')}
     </div>
@@ -1022,6 +1023,7 @@ function viewKosten(id) {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">⬇ Kostenschätzung</button>
         <button class="btn secondary" data-act="pdf-baukosten" data-pid="${p.id}">⬇ Baukostenübersicht</button>
+        ${katToggleBtn()}
         <button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>
       </div>
     </div>
@@ -1062,6 +1064,7 @@ function viewKosten(id) {
     const dSub = sub.prognose - sub.kv;
     body += `<tr class="kgroup"><td>${esc(g)}</td><td colspan="10">${esc(BKP_GRUPPEN[g] || 'Übrige')}</td></tr>
       ${rows}
+      ${bkpGhostRows(p, 11, g)}
       <tr class="ksub">
         <td></td><td colspan="2">Zwischentotal</td>
         <td class="num">${money(sub.kv)}</td><td class="num">${money(sub.rev)}</td><td class="num">${money(sub.wv)}</td>
@@ -2519,6 +2522,26 @@ function parseBkp(val) {
   return m ? { code: m[1], label: (m[2] || '').trim() } : { code: String(val || '').trim(), label: '' };
 }
 function bkpLabel(code) { const b = BKP_KATALOG.find(x => x.code === String(code)); return b ? b.label : ''; }
+
+let katOpen = false;  // BKP-Katalog als Geister-Zeilen in der Liste ausgefahren
+// Schalter für die Liste
+function katToggleBtn() { return `<button class="btn sm ${katOpen ? '' : 'secondary'}" data-act="kat-toggle">📖 BKP-Katalog ${katOpen ? 'ausblenden' : 'einblenden'}</button>`; }
+// Geister-Zeilen: alle noch nicht erfassten BKP-Positionen (aufgehellt, klickbar = erfassen)
+function bkpGhostRows(p, totalCols, prefix) {
+  if (!katOpen) return '';
+  const have = new Set((p.vergaben || []).map(v => String(v.bkp)));
+  return BKP_KATALOG.filter(b => !/^\d{2}$/.test(b.code) && !have.has(b.code) && (!prefix || b.code.startsWith(prefix))).map(b =>
+    `<tr class="bkp-ghost" data-act="quickadd-bkp" data-pid="${p.id}" data-code="${esc(b.code)}" data-label="${esc(b.label)}" title="Klick = erfassen">
+      <td><span class="bkp-code">${esc(b.code)}</span></td>
+      <td>${esc(b.label)}</td>
+      <td colspan="${totalCols - 2}" class="ghost-add">＋ erfassen</td>
+    </tr>`).join('');
+}
+function quickAddVergabe(pid, code, label) {
+  const p = findProjekt(pid); if (!p) return;
+  (p.vergaben = p.vergaben || []).push({ id: uid('v'), bkp: code, gewerk: label, status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 0, frist: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] });
+  save(); router(); toast(code + ' ' + label + ' erfasst', 'ok');
+}
 
 // Vergabe zu einem BKP-Code finden (exakt → 3-stellig → 2-stellige Gruppe)
 function matchVergabeByBkp(p, bkp) {
@@ -6680,6 +6703,8 @@ document.addEventListener('click', e => {
     case 'save-einheit':  saveEinheit(pid, gid, eid); break;
     case 'rm-einheit':    removeEinheit(pid, gid, eid); break;
     case 'new-vergabe':  actNewVergabe(pid); break;
+    case 'kat-toggle':   katOpen = !katOpen; router(); break;
+    case 'quickadd-bkp': quickAddVergabe(pid, act.dataset.code, act.dataset.label); break;
     case 'save-vergabe': saveVergabe(pid); break;
     case 'ks-edit':      actKostenschaetzung(pid, vid); break;
     case 'ks-pos-add':   ksPosAdd(); break;

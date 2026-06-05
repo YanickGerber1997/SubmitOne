@@ -168,7 +168,7 @@ button { font-family: inherit; cursor: pointer; }
 .btn-ghost-sm:hover { background: rgba(255,255,255,.12); }
 .ver { color: #5f6e92; font-size: 11px; text-align: center; margin-top: 4px; }
 
-.content { padding: 26px 32px 60px; max-width: 1400px; width: 100%; }
+.content { padding: 26px 36px 60px; max-width: 1800px; width: 100%; margin: 0 auto; }
 
 /* ===== Kalender (Outlook-ähnlich) ===== */
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -818,6 +818,19 @@ table.va input[type=number] { -moz-appearance: textfield; }
   .two-col { grid-template-columns: 1fr; }
 }
 
+/* Mittlere Breiten (z.B. Fenster halb): Sidebar automatisch als Icon-Leiste → mehr Platz */
+@media (min-width: 761px) and (max-width: 1120px) {
+  #app { --sidebar-w: 66px; }
+  .sidebar { padding: 14px 8px; }
+  .brand { justify-content: center; padding: 6px 0 12px; }
+  .brand-img, .brand-fallback { display: none !important; }
+  .brand-icon { display: block; margin: 0 auto; }
+  .sidebar-toggle, .sidebar-foot, .subnav { display: none; }
+  .nav a { justify-content: center; gap: 0; padding: 11px 0; }
+  .nav a .nav-txt { display: none; }
+  .content { padding: 22px 22px 60px; }
+}
+
 /* ============================ Mobile (Handy) ============================ */
 @media (max-width: 760px) {
   #app { display: block; }
@@ -861,6 +874,14 @@ table.va input[type=number] { -moz-appearance: textfield; }
   .kpi-row { grid-template-columns: repeat(2,1fr); gap: 12px; }
   .kpi .k-value { font-size: 22px; }
   .proj-grid { grid-template-columns: 1fr; }
+
+  /* Detail-Statistiken kompakt 2-spaltig */
+  .detail-stats { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .dstat .v { font-size: 16px; }
+  /* Kontextmenü passt auf schmale Screens */
+  .ctx-menu { min-width: 0; width: calc(100vw - 24px); max-width: 280px; }
+  /* Editier-Tabelle (Vergabeantrag) nicht abgeschnitten */
+  .va-screen { -webkit-overflow-scrolling: touch; }
 
   /* Gantt: schmalere Gewerk-Spalte */
   .g-side { width: 140px; }

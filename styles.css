@@ -204,6 +204,19 @@ button { font-family: inherit; cursor: pointer; }
 .cal-tev.plan { box-shadow: inset 3px 0 0 rgba(255,255,255,.85), 0 1px 2px rgba(0,0,0,.18); font-weight: 600; }
 .cal-tev.sel { outline: 2px solid #fff; box-shadow: 0 0 0 2px var(--brand), 0 2px 6px rgba(0,0,0,.25); z-index: 3; }
 .cal-tev.ghost { pointer-events: none; opacity: .6; z-index: 5; outline: 2px dashed rgba(255,255,255,.92); font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+.cal-tev.plan { cursor: grab; }
+.cal-tev.plan:active { cursor: grabbing; }
+.cal-tev.dragging { opacity: .35; }
+.cal-tev.resizing { z-index: 6; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
+.cal-tev-lbl { display: block; }
+/* Resize-Griffe oben/unten am Block */
+.cal-rz { position: absolute; left: 0; right: 0; height: 7px; cursor: ns-resize; z-index: 4; }
+.cal-rz.top { top: 0; }
+.cal-rz.bottom { bottom: 0; }
+.cal-rz::after { content: ''; position: absolute; left: 50%; width: 18px; height: 2px; transform: translateX(-50%); border-radius: 2px; background: rgba(255,255,255,.7); opacity: 0; }
+.cal-tev.plan:hover .cal-rz::after { opacity: .9; }
+.cal-rz.top::after { top: 2px; }
+.cal-rz.bottom::after { bottom: 2px; }
 
 /* Planung: 3-Spalten-Layout mit ziehbaren Seitenleisten */
 .plan-layout { display: flex; align-items: stretch; }

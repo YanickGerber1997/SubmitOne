@@ -3026,7 +3026,8 @@ function calTimeGrid(events, dates, todayI, add) {
     const tev = (byDay[iso] || []).filter(e => e.zeit).map(e => {
       const sMin = toMin(e.zeit); let eMin = e.zeitEnde ? toMin(e.zeitEnde) : sMin + 60; if (eMin <= sMin) eMin = sMin + 60;
       const top = Math.max(0, (sMin - CAL_SH * 60) / 60 * CAL_HH); const h = Math.max((eMin - sMin) / 60 * CAL_HH, 20);
-      return `<div class="cal-tev ${e.color}${e.plan ? ' plan' : ''}"${evEdit(e)} style="top:${top}px;height:${h}px" title="${esc(e.zeit + ' ' + e.titel)}">${esc(e.zeit)} ${esc(e.titel)}</div>`;
+      const rz = e.plan ? '<span class="cal-rz top"></span><span class="cal-rz bottom"></span>' : '';
+      return `<div class="cal-tev ${e.color}${e.plan ? ' plan' : ''}"${evEdit(e)} style="top:${top}px;height:${h}px" title="${esc(e.zeit + ' ' + e.titel)}">${rz}<span class="cal-tev-lbl">${esc(e.zeit)} ${esc(e.titel)}</span></div>`;
     }).join('');
     return `<div class="cal-col" data-iso="${iso}"${pidAttr} style="height:${(CAL_EH - CAL_SH) * CAL_HH}px">${lines}${tev}</div>`;
   }).join('');
@@ -3360,7 +3361,7 @@ function viewPlanung() {
       <aside class="plan-rail plan-rail-left" id="planRailL">
         <div class="plan-rail-title">Zeitfenster ${planArmed != null ? '<span class="muted" style="font-weight:400">– in Kalender klicken</span>' : ''}</div>
         <div class="plan-pal">${palette}<button class="chip" data-act="plan-add" data-kind="${planRefIso}">+ eigener Block</button></div>
-        <p class="plan-rail-hint">In den Kalender <strong>ziehen</strong> oder anklicken &amp; platzieren. Block: 1× klick = auswählen (Entf löschen, Strg+C/V kopieren), ziehen = verschieben, Doppelklick = bearbeiten.</p>
+        <p class="plan-rail-hint">In den Kalender <strong>ziehen</strong> oder anklicken &amp; platzieren. Block: 1× klick = auswählen (Entf löschen, Strg+C/V kopieren), ziehen = verschieben, <strong>Ränder ziehen = Dauer ändern</strong>, Doppelklick = bearbeiten.</p>
       </aside>
       <div class="plan-splitter" data-rail="left" title="Breite ziehen"></div>
 
@@ -3376,6 +3377,7 @@ function viewPlanung() {
   bindCalCols();
   bindPlanDnd();
   bindPlanDragCreate();
+  bindPlanResize();
   bindPlanRails();
 }
 function planSlotClick(iso, zeit) {
@@ -3425,13 +3427,13 @@ function planGhostShow(col, e) {
   planGhostEl.textContent = min2hhmm(a) + '–' + min2hhmm(b) + (planDrag.label ? '  ' + planDrag.label : '');
   if (planGhostEl.parentElement !== col) col.appendChild(planGhostEl);
 }
-function planGhostHide() { if (planGhostEl) planGhostEl.remove(); planGhostEl = null; planDrag = null; }
+function planGhostHide() { if (planGhostEl) planGhostEl.remove(); planGhostEl = null; planDrag = null; $$('.cal-tev.dragging').forEach(x => x.classList.remove('dragging')); }
 function bindPlanDnd() {
   $$('[data-tpl]').forEach(c => { c.addEventListener('dragstart', e => { dragBlockOffsetMin = 0; const tp = PLAN_TEMPLATES[+c.dataset.tpl]; planDrag = { kind: 'tpl', dur: tp.dauer, color: tp.color, label: tp.label }; e.dataTransfer.setData('text/plain', 'tpl:' + c.dataset.tpl); }); c.addEventListener('dragend', planGhostHide); });
   $$('[data-pend]').forEach(c => { c.addEventListener('dragstart', e => { dragBlockOffsetMin = 0; const pp = planPend[+c.dataset.pend]; planDrag = pp ? { kind: 'pend', dur: 60, color: pp.color, label: pp.titel } : null; e.dataTransfer.setData('text/plain', 'pend:' + c.dataset.pend); }); c.addEventListener('dragend', planGhostHide); });
   $$('.cal-tev.plan').forEach(el => {
     if (el.dataset.bid === planSel) el.classList.add('sel');
-    el.addEventListener('dragstart', e => { e.stopPropagation(); dragBlockOffsetMin = (e.offsetY || 0) / CAL_HH * 60; const b = loadPlanung().find(x => x.id === el.dataset.bid); if (b) { const s = b.zeit ? b.zeit.split(':').map(Number) : [8, 0]; const en = b.zeitEnde ? b.zeitEnde.split(':').map(Number) : [s[0] + 1, s[1]]; planDrag = { kind: 'blk', dur: (en[0] * 60 + en[1]) - (s[0] * 60 + s[1]) || 60, color: b.color, label: b.titel }; } e.dataTransfer.setData('text/plain', 'blk:' + el.dataset.bid); });
+    el.addEventListener('dragstart', e => { e.stopPropagation(); dragBlockOffsetMin = (e.offsetY || 0) / CAL_HH * 60; const b = loadPlanung().find(x => x.id === el.dataset.bid); if (b) { const s = b.zeit ? b.zeit.split(':').map(Number) : [8, 0]; const en = b.zeitEnde ? b.zeitEnde.split(':').map(Number) : [s[0] + 1, s[1]]; planDrag = { kind: 'blk', dur: (en[0] * 60 + en[1]) - (s[0] * 60 + s[1]) || 60, color: b.color, label: b.titel }; } setTimeout(() => el.classList.add('dragging'), 0); e.dataTransfer.setData('text/plain', 'blk:' + el.dataset.bid); });
     el.addEventListener('dragend', planGhostHide);
     el.addEventListener('click', e => { e.stopPropagation(); planSelect(el.dataset.bid); });
     el.addEventListener('dblclick', e => { e.stopPropagation(); actPlanBlock(el.dataset.bid); });
@@ -3446,6 +3448,36 @@ function bindPlanDnd() {
       else if (d.startsWith('blk:')) { const absMin = CAL_SH * 60 + (y / CAL_HH * 60) - dragBlockOffsetMin; movePlanBlock(d.slice(4), iso, min2hhmm(snap30abs(absMin))); }
     });
   });
+}
+// Block-Ränder ziehen → Start-/Endzeit verlängern/kürzen (rastet auf 30 Min)
+function bindPlanResize() {
+  $$('.cal-tev.plan .cal-rz').forEach(h => h.addEventListener('mousedown', e => {
+    e.preventDefault(); e.stopPropagation();
+    const el = h.closest('.cal-tev.plan'); const col = el.closest('.cal-col'); if (!col) return;
+    const b = loadPlanung().find(x => x.id === el.dataset.bid); if (!b) return;
+    const rect = col.getBoundingClientRect();
+    const edge = h.classList.contains('top') ? 'top' : 'bottom';
+    const s = b.zeit ? b.zeit.split(':').map(Number) : [8, 0];
+    const en = b.zeitEnde ? b.zeitEnde.split(':').map(Number) : [s[0] + 1, s[1]];
+    let startMin = s[0] * 60 + s[1], endMin = en[0] * 60 + en[1];
+    const lbl = el.querySelector('.cal-tev-lbl');
+    el.draggable = false; el.classList.add('resizing');
+    document.body.style.userSelect = 'none'; document.body.style.cursor = 'ns-resize';
+    const onMove = ev => {
+      const m = snap30(ev.clientY - rect.top);
+      if (edge === 'top') startMin = Math.min(m, endMin - 30); else endMin = Math.max(m, startMin + 30);
+      el.style.top = (startMin - CAL_SH * 60) / 60 * CAL_HH + 'px';
+      el.style.height = (endMin - startMin) / 60 * CAL_HH + 'px';
+      if (lbl) lbl.textContent = min2hhmm(startMin) + '–' + min2hhmm(endMin) + ' ' + (b.titel || '');
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = ''; document.body.style.cursor = '';
+      b.zeit = min2hhmm(startMin); b.zeitEnde = min2hhmm(endMin);
+      savePlanung(); planSel = b.id; viewPlanung();
+    };
+    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+  }));
 }
 // Ziehbare Seitenleisten (Breite je gespeichert) – nur im breiten Layout aktiv
 function bindPlanRails() {

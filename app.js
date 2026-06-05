@@ -762,15 +762,17 @@ function viewDashboard() {
       <span class="frist ${fristClass(x.it.termin, false)}" style="font-size:11.5px;white-space:nowrap">${x.it.termin ? fristText(x.it.termin, false) : '–'}</span>
     </div>`).join('')}</div>${allPend.length > 8 ? `<a class="hint" href="#/pendenzen" style="display:inline-block;margin-top:10px">Alle ${allPend.length} anzeigen →</a>` : ''}` : emptyState('✓', 'Keine offenen Pendenzen.')}</div>`;
 
-  // Panel: Projekte (kompakt)
+  // Panel: Projekte (kompakt) + Dossier-Vollständigkeit
   const projList = (aktive.length ? aktive : projekte);
-  const projPanel = sect('Projekte', `<a class="hint" href="#/projekte">alle →</a>`) + `<div class="card card-pad">${projList.length ? `<div class="dash-list">${projList.map(p => `
+  const avgDoc = projList.length ? Math.round(projList.reduce((a, p) => a + dossierPct(p), 0) / projList.length) : 0;
+  const docCls = d => d >= 80 ? 's-green' : d >= 40 ? 's-amber' : 's-red';
+  const projPanel = sect('Projekte', projList.length ? `Ø Unterlagen ${avgDoc}% · <a class="hint" href="#/projekte" style="color:inherit">alle →</a>` : `<a class="hint" href="#/projekte">alle →</a>`) + `<div class="card card-pad">${projList.length ? `<div class="dash-list">${projList.map(p => { const dp = dossierPct(p); return `
     <div class="dash-row clickable" data-goto="#/projekt/${p.id}">
       <i class="cal-dot ${projColor(projekte.indexOf(p), p)}"></i>
-      <span class="dr-main">${esc(p.name)}<div class="dr-sub">${esc(p.ort || '')}</div></span>
+      <span class="dr-main">${esc(p.name)}<div class="dr-sub">${esc(p.ort || '')} · <a href="#/projekt/${p.id}/dossier" onclick="event.stopPropagation()">Unterlagen <span style="color:var(--${docCls(dp)});font-weight:600">${dp}%</span></a></div></span>
       ${phaseBadge(dominantPhase(p))}
-      <span class="dash-muted" style="font-size:12px;min-width:32px;text-align:right">${projektFortschritt(p)}%</span>
-    </div>`).join('')}</div>` : emptyState('▤', 'Noch keine Projekte.')}</div>`;
+      <span class="dash-muted" style="font-size:12px;min-width:32px;text-align:right" title="Bau-Fortschritt">${projektFortschritt(p)}%</span>
+    </div>`; }).join('')}</div>` : emptyState('▤', 'Noch keine Projekte.')}</div>`;
 
   render(`
     <div class="page-head"><div><h1>Dashboard</h1><div class="sub">Überblick · Fristen, Termine &amp; Pendenzen aller Projekte</div></div><button class="btn" data-act="new-projekt">+ Neues Projekt</button></div>
@@ -3070,6 +3072,7 @@ function dossierStats(p) {
   return s;
 }
 function dossierFehltCount(p) { return dossierStats(p).fehlt; }
+function dossierPct(p) { const s = dossierStats(p); const tot = s.ok + s.teil + s.fehlt; return tot ? Math.round((s.ok + s.teil * 0.5) / tot * 100) : 0; }
 function dosBadge(bucket, label) {
   const cls = bucket === 'ok' ? 'green' : bucket === 'teil' ? 'amber' : bucket === 'entf' ? 'grey' : 'red';
   const ico = bucket === 'ok' ? '✓' : bucket === 'teil' ? '◐' : bucket === 'entf' ? '–' : '○';

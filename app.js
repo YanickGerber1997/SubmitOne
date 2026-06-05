@@ -3310,7 +3310,7 @@ const PLAN_TEMPLATES = [
   { label: 'Pause / Mittag', dauer: 60, color: 'amber' },
 ];
 const PLAN_FARBEN = [['blue', 'Blau'], ['teal', 'Petrol'], ['green', 'Grün'], ['amber', 'Gelb'], ['purple', 'Lila'], ['grey', 'Grau'], ['red', 'Rot']];
-let planView = 'woche', planRefIso = null, planArmed = null, planungData = null, planSel = null, planClip = null;
+let planView = 'woche', planRefIso = null, planArmed = null, planungData = null, planSel = null, planClip = null, planPend = [];
 function loadPlanung() { if (planungData) return planungData; try { planungData = JSON.parse(localStorage.getItem('so_planung') || '[]'); } catch (_) { planungData = []; } return planungData; }
 function savePlanung() { try { localStorage.setItem('so_planung', JSON.stringify(planungData)); } catch (_) {} }
 function min2hhmm(m) { m = Math.max(0, Math.min(24 * 60, Math.round(m))); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
@@ -3336,18 +3336,15 @@ function viewPlanung() {
   const toggles = projects.length ? projects.map((p, idx) => `<span class="chip ${calHidden.has(p.id) ? '' : 'active'}" data-act="plan-toggle" data-pid="${p.id}"><i class="cal-dot ${projColor(idx)}"></i>${esc(p.name)}</span>`).join('') : '';
   const palette = PLAN_TEMPLATES.map((tp, i) => `<button class="chip ${planArmed === i ? 'active' : ''}" draggable="true" data-tpl="${i}" data-act="plan-arm" data-idx="${i}" title="Klicken oder in den Kalender ziehen"><i class="cal-dot ${tp.color}"></i>${esc(tp.label)} · ${tp.dauer >= 60 ? (tp.dauer / 60) + 'h' : tp.dauer + 'min'}</button>`).join('');
 
-  // offene Pendenzen als „To-do"-Vorrat
+  // offene Pendenzen als „To-do"-Vorrat (in den Kalender ziehbar)
   const pend = [];
   projects.forEach((p, idx) => { if (calHidden.has(p.id)) return; offenePendenzen(p).forEach(x => pend.push({ p, idx, it: x.it })); });
-  const pendHtml = pend.length ? pend.slice(0, 12).map(x => `<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:12.5px"><i class="cal-dot ${projColor(x.idx)}"></i><span style="flex:1">${esc(x.it.text || '')}</span><span class="muted">${x.it.termin ? fmtDate(x.it.termin) : ''}</span></div>`).join('') : '<p class="muted" style="margin:0;font-size:12.5px">Keine offenen Pendenzen.</p>';
+  planPend = pend.map(x => ({ titel: x.it.text || 'Pendenz', color: projColor(x.idx) }));
+  const pendHtml = pend.length ? pend.map((x, i) => `<div class="plan-pend-item" draggable="true" data-pend="${i}" title="In den Kalender ziehen"><i class="cal-dot ${projColor(x.idx)}"></i><span style="flex:1">${esc(x.it.text || '')}</span><span class="muted" style="font-size:11px">${x.it.termin ? fmtDate(x.it.termin) : ''}</span></div>`).join('') : '<p class="muted" style="margin:0;font-size:12.5px">Keine offenen Pendenzen.</p>';
 
   render(`
     <div class="page-head"><div><h1>Arbeitsplanung</h1><div class="sub">Tag &amp; Woche · Termine der gewählten Projekte + eigene Zeitfenster</div></div></div>
     ${projects.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${toggles}</div>` : ''}
-    <div class="card card-pad" style="margin-bottom:14px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">Zeitfenster ${planArmed != null ? '<span class="muted" style="font-weight:400">– jetzt in den Kalender klicken zum Platzieren</span>' : '<span class="muted" style="font-weight:400">– in den Kalender ziehen, oder anklicken &amp; platzieren</span>'}</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">${palette}<button class="chip" data-act="plan-add" data-kind="${planRefIso}">+ eigener Block</button></div>
-    </div>
 
     <div class="cal-head">
       <div style="display:flex;gap:6px;align-items:center">
@@ -3358,15 +3355,28 @@ function viewPlanung() {
       </div>
       <div style="display:flex;gap:5px">${pvb('tag', 'Tag')}${pvb('woche', 'Woche')}</div>
     </div>
-    ${body}
-    <p class="muted" style="font-size:12px;margin:8px 0 0">Zeitfenster <strong>reinziehen</strong> oder anklicken+platzieren · Block <strong>1× klicken = auswählen</strong>, dann <strong>Entf</strong> löschen, <strong>Strg+C/V</strong> kopieren · <strong>ziehen</strong> = verschieben · Doppelklick = bearbeiten.</p>
 
-    <div class="section-head" style="margin-top:24px"><h2>Offene Pendenzen</h2><span class="hint">aus den gewählten Projekten – als To-do</span></div>
-    <div class="card card-pad">${pendHtml}</div>
+    <div class="plan-layout" id="planLayout">
+      <aside class="plan-rail plan-rail-left" id="planRailL">
+        <div class="plan-rail-title">Zeitfenster ${planArmed != null ? '<span class="muted" style="font-weight:400">– in Kalender klicken</span>' : ''}</div>
+        <div class="plan-pal">${palette}<button class="chip" data-act="plan-add" data-kind="${planRefIso}">+ eigener Block</button></div>
+        <p class="plan-rail-hint">In den Kalender <strong>ziehen</strong> oder anklicken &amp; platzieren. Block: 1× klick = auswählen (Entf löschen, Strg+C/V kopieren), ziehen = verschieben, Doppelklick = bearbeiten.</p>
+      </aside>
+      <div class="plan-splitter" data-rail="left" title="Breite ziehen"></div>
+
+      <div class="plan-center">${body}</div>
+
+      <div class="plan-splitter" data-rail="right" title="Breite ziehen"></div>
+      <aside class="plan-rail plan-rail-right" id="planRailR">
+        <div class="plan-rail-title">Offene Pendenzen <span class="muted" style="font-weight:400">– in Kalender ziehen</span></div>
+        <div class="plan-pend">${pendHtml}</div>
+      </aside>
+    </div>
   `);
   bindCalCols();
   bindPlanDnd();
   bindPlanDragCreate();
+  bindPlanRails();
 }
 function planSlotClick(iso, zeit) {
   const tpl = planArmed != null ? PLAN_TEMPLATES[planArmed] : null;
@@ -3400,6 +3410,7 @@ function planPaste() {
 // Drag-and-Drop + Auswahl-Klicks im Planungsraster
 function bindPlanDnd() {
   $$('[data-tpl]').forEach(c => { c.addEventListener('dragstart', e => { dragBlockOffsetMin = 0; e.dataTransfer.setData('text/plain', 'tpl:' + c.dataset.tpl); }); });
+  $$('[data-pend]').forEach(c => { c.addEventListener('dragstart', e => { dragBlockOffsetMin = 0; e.dataTransfer.setData('text/plain', 'pend:' + c.dataset.pend); }); });
   $$('.cal-tev.plan').forEach(el => {
     if (el.dataset.bid === planSel) el.classList.add('sel');
     el.addEventListener('dragstart', e => { e.stopPropagation(); dragBlockOffsetMin = (e.offsetY || 0) / CAL_HH * 60; e.dataTransfer.setData('text/plain', 'blk:' + el.dataset.bid); });
@@ -3412,9 +3423,31 @@ function bindPlanDnd() {
       e.preventDefault(); const d = e.dataTransfer.getData('text/plain'); if (!d) return;
       const iso = col.dataset.iso; const y = e.clientY - col.getBoundingClientRect().top;
       if (d.startsWith('tpl:')) placePlanBlock(iso, min2hhmm(snap30(y)), PLAN_TEMPLATES[+d.slice(4)]);
+      else if (d.startsWith('pend:')) { const pp = planPend[+d.slice(5)]; if (pp) placePlanBlock(iso, min2hhmm(snap30(y)), { label: pp.titel, dauer: 60, color: pp.color }); }
       else if (d.startsWith('blk:')) { const absMin = CAL_SH * 60 + (y / CAL_HH * 60) - dragBlockOffsetMin; movePlanBlock(d.slice(4), iso, min2hhmm(snap30abs(absMin))); }
     });
   });
+}
+// Ziehbare Seitenleisten (Breite je gespeichert) – nur im breiten Layout aktiv
+function bindPlanRails() {
+  const L = $('#planRailL'), R = $('#planRailR');
+  try {
+    const lw = localStorage.getItem('so_plan_railL'); if (lw && L) L.style.width = lw + 'px';
+    const rw = localStorage.getItem('so_plan_railR'); if (rw && R) R.style.width = rw + 'px';
+  } catch (_) {}
+  $$('.plan-splitter').forEach(sp => sp.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const side = sp.dataset.rail; const rail = side === 'left' ? L : R; if (!rail) return;
+    const startX = e.clientX, startW = rail.getBoundingClientRect().width;
+    sp.classList.add('drag'); document.body.style.userSelect = 'none'; document.body.style.cursor = 'col-resize';
+    const onMove = ev => { const dx = ev.clientX - startX; let w = side === 'left' ? startW + dx : startW - dx; rail.style.width = Math.max(140, Math.min(480, w)) + 'px'; };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp);
+      sp.classList.remove('drag'); document.body.style.userSelect = ''; document.body.style.cursor = '';
+      try { localStorage.setItem(side === 'left' ? 'so_plan_railL' : 'so_plan_railR', String(Math.round(rail.getBoundingClientRect().width))); } catch (_) {}
+    };
+    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+  }));
 }
 // Outlook-Stil: in Spalte drücken & ziehen (30-Min-Raster) → Zeitspanne → Modal/Platzieren
 let dragCreate = null, dragBlockOffsetMin = 0;

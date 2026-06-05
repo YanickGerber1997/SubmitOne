@@ -1251,10 +1251,15 @@ function viewTermine(id) {
   const t = today();
   const todayLeft = (t >= rangeStart && t <= rangeEnd) ? dayDiff(rangeStart, t) * pxPerDay : null;
 
-  // Feiertage als Bänder mit Label (Woche: mit Datum); immer angeschrieben
+  // Feiertage als Bänder mit Label (Woche: mit Datum). Label nur, wenn genug Abstand → keine Überlappung
   const holLabel = f => ganttZoom === 'woche' ? `${f.n} ${f.d.getDate()}.${f.d.getMonth() + 1}.` : f.n;
-  const holBands = feiertageInRange(rangeStart, rangeEnd).map(f =>
-    `<div class="g-holiday" style="left:${dayDiff(rangeStart, f.d) * pxPerDay}px;width:${Math.max(pxPerDay, 2)}px" title="${esc(f.n)} ${fmtDate(isoOf(f.d))}"><span>${esc(holLabel(f))}</span></div>`).join('');
+  let lastHolLblX = -Infinity;
+  const holBands = feiertageInRange(rangeStart, rangeEnd).map(f => {
+    const x = dayDiff(rangeStart, f.d) * pxPerDay;
+    const showLbl = x - lastHolLblX >= 11;
+    if (showLbl) lastHolLblX = x;
+    return `<div class="g-holiday" style="left:${x}px;width:${Math.max(pxPerDay, 2)}px" title="${esc(f.n)} ${fmtDate(isoOf(f.d))}">${showLbl ? `<span>${esc(holLabel(f))}</span>` : ''}</div>`;
+  }).join('');
 
   // Projekt-Meilensteine: Baustart & Bezugstermin
   const projMarks = [];
@@ -5457,7 +5462,9 @@ function pdfGantt(pid) {
   // Feiertage: Bänder (hinter Balken) + Labels (über Balken)
   const hols = feiertageInRange(rangeStart, rangeEnd);
   const holBands = hols.map(f => `<div class="pg-hol" style="left:${pct(isoOf(f.d))}%;width:${Math.max(100 / totalDays, 0.1)}%"></div>`).join('');
-  const holLabels = hols.map(f => `<div class="pg-hol-lbl" style="left:${pct(isoOf(f.d))}%"><span>${esc(f.n)}</span></div>`).join('');
+  const holMinGap = 1.6 / (281 - SIDE_MM) * 100;   // ~Labelbreite in %, gegen Überlappung
+  let lastHolX = -Infinity;
+  const holLabels = hols.map(f => { const x = pct(isoOf(f.d)); if (x - lastHolX < holMinGap) return ''; lastHolX = x; return `<div class="pg-hol-lbl" style="left:${x}%"><span>${esc(f.n)}</span></div>`; }).join('');
   // Projekt-Meilensteine (Baustart / Bezug)
   const pMarks = [];
   if (p.baustart) pMarks.push({ iso: p.baustart, n: 'Baustart', c: '#16a34a' });

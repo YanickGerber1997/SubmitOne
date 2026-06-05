@@ -565,7 +565,6 @@ table.grid tbody tr.clickable:hover { background: var(--surface-2); }
 .inv-firma { font-weight: 600; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .inv-mail { font-size: 11.5px; margin-top: 2px; }
 .inv-action { display: flex; align-items: center; gap: 4px; flex: none; }
-.inv-action .betrag-input { width: 120px; text-align: right; }
 
 /* Auswahl-Picker im Einladen-Modal */
 .inv-pick { display: flex; align-items: center; gap: 11px; padding: 9px 8px; border-radius: var(--radius-sm); cursor: pointer; }

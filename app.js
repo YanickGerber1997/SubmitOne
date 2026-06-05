@@ -318,6 +318,9 @@ function initSidebarCollapse() {
 // Migriert ältere Datenstände auf das aktuelle Modell (offerten[] -> eingeladene[])
 function migrate() {
   let changed = false;
+  if (!Array.isArray(state.projekte)) { state.projekte = []; changed = true; }
+  if (!Array.isArray(state.kontakte)) { state.kontakte = []; changed = true; }
+  if (!Array.isArray(state.dokumente)) { state.dokumente = []; changed = true; }
   for (const p of state.projekte) {
     if (!p.protokolle) { p.protokolle = []; changed = true; }
     if (!p.entscheidungen) { p.entscheidungen = []; changed = true; }
@@ -482,7 +485,6 @@ function condNetto(c) { const r = condParts(c); return r ? r.netto : null; }
 function eOff(e) { if (e.offerte && e.offerte.brutto != null && e.offerte.brutto !== '') return condNetto(e.offerte); return e.betrag != null ? e.betrag : null; }
 function eAbg(e) { return (e.abgebot && e.abgebot.brutto != null && e.abgebot.brutto !== '') ? condNetto(e.abgebot) : null; }
 function eVer(e) { return (e.vergabe && e.vergabe.brutto != null && e.vergabe.brutto !== '') ? condNetto(e.vergabe) : null; }
-function eNetto(e) { const a = eVer(e); if (a != null) return a; const b = eAbg(e); if (b != null) return b; return eOff(e); }
 function offertenOf(v)  { return (v.eingeladene || []).filter(e => e.status === 'offeriert' && eOff(e) != null); }
 function bestBetrag(v)  { const xs = (v.eingeladene || []).filter(e => e.status !== 'abgesagt').map(eOff).filter(x => x != null); return xs.length ? Math.min(...xs) : null; }
 function bestAbgebot(v) { const xs = (v.eingeladene || []).filter(e => e.status !== 'abgesagt').map(eAbg).filter(x => x != null); return xs.length ? Math.min(...xs) : null; }
@@ -499,7 +501,6 @@ function vglRows(v, stage) {
     .filter(x => x && x.parts).sort((a, b) => a.parts.netto - b.parts.netto);
 }
 function nachtragSumme(v){ return (v.nachtraege || []).filter(n => n.status === 'genehmigt').reduce((a, n) => a + (n.betrag || 0), 0); }
-function nachtragOffen(v){ return (v.nachtraege || []).filter(n => n.status === 'offen').reduce((a, n) => a + (n.betrag || 0), 0); }
 function rapportSumme(v) { return (v.rapporte || []).reduce((a, r) => a + (r.betrag || 0), 0); }
 function budgetSumme(v)  { return (v.budgetposten || []).reduce((a, b) => a + (b.betrag || 0), 0); }
 // Budget steckt im WV → nicht aufrechnen. ABER: ist eine Auswahl getroffen (ist gesetzt),
@@ -921,7 +922,7 @@ function viewProjektDetail(id) {
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
 
   const pct = projektFortschritt(p);
-  const vergaben = (p.vergaben || []).slice().sort((a, b) => a.bkp.localeCompare(b.bkp));
+  const vergaben = (p.vergaben || []).slice().sort((a, b) => (a.bkp || '').localeCompare(b.bkp || ''));
 
   const html = `
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
@@ -1588,7 +1589,7 @@ function viewListen(pid) {
       <tr>
         <td>${esc(e.firma)}</td>
         <td><span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:2px 8px;font-size:10.5px">${INV_STATUS[e.status]?.label || esc(e.status)}</span></td>
-        <td class="num">${e.betrag != null ? chf(e.betrag) : '–'}</td>
+        <td class="num">${eOff(e) != null ? chf(eOff(e)) : '–'}</td>
       </tr>`).join('') : `<tr><td colspan="3" class="muted">noch niemand eingeladen</td></tr>`;
     return `
       <div style="margin-bottom:14px">
@@ -1678,7 +1679,7 @@ function pdfSubmittenten(pid) {
   const inner = gw.length ? gw.map(v => {
     const eing = (v.eingeladene || []);
     const rows = eing.length ? eing.map(e =>
-      `<tr><td>${esc(e.firma)}</td><td>${INV_STATUS[e.status]?.label || esc(e.status)}</td><td class="num">${e.betrag != null ? chf(e.betrag) : '–'}</td></tr>`).join('')
+      `<tr><td>${esc(e.firma)}</td><td>${INV_STATUS[e.status]?.label || esc(e.status)}</td><td class="num">${eOff(e) != null ? chf(eOff(e)) : '–'}</td></tr>`).join('')
       : `<tr><td colspan="3" class="muted">noch niemand eingeladen</td></tr>`;
     return `<div class="gw">BKP ${esc(v.bkp)} – ${esc(v.gewerk)}</div>
       <table class="t"><thead><tr><th>Firma</th><th style="width:130px">Status</th><th class="num" style="width:140px">Betrag</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -3076,10 +3077,6 @@ function viewVergabeDetail(pid, vid) {
 
   // Rechnungs-Häkchen verdrahten
   $$('.rg-check').forEach(cb => cb.addEventListener('change', () => toggleRechnung(cb.dataset.pid, cb.dataset.vid, cb.dataset.rgid)));
-  // Betrag-Eingaben verdrahten
-  $$('.betrag-input').forEach(inp => inp.addEventListener('change', () => {
-    setBetrag(inp.dataset.pid, inp.dataset.vid, inp.dataset.eid, inp.value);
-  }));
   // Nachtrag-Status-Dropdowns
   $$('.sm-select[data-act="nachtrag-status"]').forEach(sel => sel.addEventListener('change', () => {
     setNachtragStatus(sel.dataset.pid, sel.dataset.vid, sel.dataset.nid, sel.value);
@@ -4899,10 +4896,10 @@ function advanceVergabe(pid, vid) {
   const i = statusIdx(v);
   if (i >= VERGABE_STATUS.length - 1) return;
   v.status = VERGABE_STATUS[i + 1].key;
-  // Beim Zuschlag automatisch günstigste Offerte als Firma + Betrag übernehmen
+  // Beim Zuschlag automatisch günstigste Offerte als Firma + Betrag übernehmen (Netto via eOff)
   if (v.status === 'vergeben' && !v.firma) {
-    const offs = offertenOf(v).slice().sort((a, b) => a.betrag - b.betrag);
-    if (offs.length) { v.firma = offs[0].firma; v.betrag = offs[0].betrag; }
+    const offs = (v.eingeladene || []).filter(e => e.status !== 'abgesagt' && eOff(e) != null).sort((a, b) => eOff(a) - eOff(b));
+    if (offs.length) { v.firma = offs[0].firma; v.betrag = eOff(offs[0]); }
   }
   save(); router();
   toast('Status → ' + STATUS_BY_KEY[v.status].label);
@@ -4963,50 +4960,6 @@ function saveInvite(pid, vid) {
   toast(n + ' Unternehmer eingeladen');
 }
 
-function sendMail(pid, vid) {
-  const p = findProjekt(pid); const v = findVergabe(p, vid);
-  const empf = (v.eingeladene || []).filter(e => e.status === 'eingeladen');
-  if (!empf.length) { toast('Keine offenen Einladungen', 'info'); return; }
-  const to = empf.map(e => e.email || e.firma).join(', ');
-  const betreff = `Submissionseinladung – BKP ${v.bkp} ${v.gewerk} / ${p.name}`;
-  const body =
-`Sehr geehrte Damen und Herren
-
-Für das Bauvorhaben "${p.name}" in ${p.ort} laden wir Sie ein, eine Offerte für folgendes Gewerk einzureichen:
-
-  Gewerk:        ${v.bkp} ${v.gewerk}
-  Eingabefrist:  ${fmtDate(v.frist)}
-
-Die Ausschreibungsunterlagen finden Sie im Anhang.
-
-Freundliche Grüsse
-${p.projektleiter}`;
-  openModal('Einladung versenden', `
-    <label class="field">An (${empf.length} Empfänger)<input class="input" value="${esc(to)}" readonly></label>
-    <label class="field">Betreff<input class="input" value="${esc(betreff)}" readonly></label>
-    <label class="field">Nachricht<textarea class="input" rows="9" readonly style="resize:vertical;font-family:inherit;line-height:1.5">${esc(body)}</textarea></label>
-  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="confirm-mail" data-pid="${pid}" data-vid="${vid}">✉ Jetzt versenden</button>`);
-}
-
-function confirmMail(pid, vid) {
-  const p = findProjekt(pid); const v = findVergabe(p, vid);
-  let n = 0;
-  (v.eingeladene || []).forEach(e => { if (e.status === 'eingeladen') { e.status = 'angefragt'; e.datumMail = todayIso(); n++; } });
-  save(); closeModal(); router();
-  toast('Einladung an ' + n + ' Unternehmer versendet');
-}
-
-function setBetrag(pid, vid, eid, val) {
-  const p = findProjekt(pid); const v = findVergabe(p, vid);
-  const e = (v.eingeladene || []).find(x => x.id === eid); if (!e) return;
-  const num = (val === '' || val == null) ? null : Number(val);
-  e.betrag = num;
-  if (num != null) {
-    e.status = 'offeriert';
-    if (statusIdx(v) < STATUS_BY_KEY['offerten'].index) v.status = 'offerten';
-  }
-  save(); router();
-}
 
 function removeInvite(pid, vid, eid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);

@@ -1458,12 +1458,13 @@ function actPendenzMail(pid, itemid) {
   const emails = firmen.map(f => firmaEmailOf(p, f)).filter(Boolean);
   const ohneMail = firmen.filter(f => !firmaEmailOf(p, f));
   const subj = `Pendenz – ${p.name}: ${it.text.slice(0, 60)}`;
-  // Keine Büro-Signatur im Text: die echte Signatur kommt aus dem Mailprogramm
+  const sig = (state.buero && state.buero.signatur || '').trim();
   const L = ['Guten Tag', '', `betreffend das Projekt „${p.name}"${p.ort ? ', ' + p.ort : ''} bitten wir Sie um Folgendes:`, '', '• ' + it.text];
   if (it.termin) L.push('  Termin bis: ' + fmtDate(it.termin));
-  L.push('', 'Bitte um kurze Rückmeldung. Besten Dank.', '', 'Freundliche Grüsse');
+  L.push('', 'Bitte um kurze Rückmeldung. Besten Dank.', '');
+  L.push(sig || 'Freundliche Grüsse');
   openModal('Pendenz als E-Mail', `
-    <p class="muted" style="font-size:12px;margin:0 0 12px">Öffnet ein neues Mail mit Empfänger, Betreff &amp; Text. Deine <strong>Signatur</strong> ergänzt dein Mailprogramm automatisch darunter.</p>
+    <p class="muted" style="font-size:12px;margin:0 0 12px">Öffnet ein neues Mail mit Empfänger, Betreff &amp; Text inkl. deiner Signatur${(state.buero && state.buero.signatur || '').trim() ? '' : ' (Signatur unter Einstellungen → Büro hinterlegen)'}.</p>
     <label class="field">An ${ohneMail.length ? `<span class="muted" style="font-size:11.5px">(${esc(ohneMail.join(', '))} ohne hinterlegte Mail)</span>` : ''}<input class="input" id="pm_to" value="${esc(emails.join(', '))}" placeholder="empfaenger@firma.ch"></label>
     <label class="field">Betreff <input class="input" id="pm_subj" value="${esc(subj)}"></label>
     <label class="field">Nachricht <textarea class="input" id="pm_body" rows="10">${esc(L.join('\n'))}</textarea></label>
@@ -3370,6 +3371,9 @@ function viewEinstellungen() {
         <label class="field">Telefon <input class="input" id="b_tel" value="${esc(b.tel)}" placeholder="041 000 00 00"></label>
         <label class="field">E-Mail <input class="input" id="b_email" value="${esc(b.email)}" placeholder="info@…"></label>
       </div>
+      <label class="field">E-Mail-Signatur <span class="muted" style="font-weight:400;font-size:11.5px">– wird unter Pendenz-Mails angehängt</span>
+        <textarea class="input" id="b_signatur" rows="4" placeholder="Freundliche Grüsse&#10;Yanick Gerber&#10;Hefti Bauberatung · 041 000 00 00">${esc(b.signatur || '')}</textarea>
+      </label>
       <div style="margin-top:12px"><button class="btn" data-act="save-buero">Büro speichern</button></div>
     </div>
     <div class="card card-pad" style="max-width:560px">
@@ -3404,6 +3408,7 @@ function saveBuero() {
     plzort:  $('#b_plzort').value.trim(),
     tel:     $('#b_tel').value.trim(),
     email:   $('#b_email').value.trim(),
+    signatur: $('#b_signatur') ? $('#b_signatur').value : (cur.signatur || ''),
   };
   save();
   toast('Büro-Daten gespeichert');

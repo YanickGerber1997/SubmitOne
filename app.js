@@ -3190,9 +3190,40 @@ function kalSetView(pid, v) { calView = v; if (!calRefIso) calRefIso = todayIso(
 function kalDay(pid, iso) { calView = 'tag'; calRefIso = iso; viewKalender(pid); }
 
 /* --- Globaler Kalender (alle Projekte, ein-/ausblendbar) --- */
-const PROJ_PALETTE = ['blue', 'teal', 'green', 'amber', 'purple', 'red', 'grey'];
+// Frei wählbare Projektfarben (Key, Label) – Hex in CSS als --pc-<key>
+const PROJ_FARBEN = [
+  ['gelb', 'Gelb'], ['hellgruen', 'Hellgrün'], ['dunkelgruen', 'Dunkelgrün'],
+  ['hellblau', 'Hellblau'], ['dunkelblau', 'Dunkelblau'], ['violett', 'Violett'],
+  ['rot', 'Rot'], ['bordeaux', 'Bordeaux'], ['tuerkis', 'Türkis'],
+  ['orange', 'Orange'], ['grau', 'Grau'],
+];
+// Reihenfolge der automatischen Vergabe (erste Projekte möglichst kontrastreich)
+const PROJ_PALETTE = ['dunkelblau', 'rot', 'dunkelgruen', 'orange', 'violett', 'tuerkis', 'gelb', 'bordeaux', 'hellblau', 'hellgruen', 'grau'];
+const PROJ_FARB_KEYS = new Set(PROJ_FARBEN.map(f => f[0]));
 let calGY = null, calGM = null, calHidden = null;
-function projColor(idx) { return PROJ_PALETTE[idx % PROJ_PALETTE.length]; }
+// Projektfarbe: gewählte Farbe (p.farbe) oder automatisch nach Index
+function projColor(idx, p) { if (p && p.farbe && PROJ_FARB_KEYS.has(p.farbe)) return p.farbe; return PROJ_PALETTE[idx % PROJ_PALETTE.length]; }
+function farbePickerHtml(sel) {
+  return `<input type="hidden" id="f_farbe" value="${sel || ''}"><div class="farbe-row">${PROJ_FARBEN.map(([k, l]) => `<button type="button" class="farbe-sw${sel === k ? ' sel' : ''}" data-act="farbe-pick" data-k="${k}" title="${l}" style="background:var(--pc-${k})"></button>`).join('')}</div>`;
+}
+// Farb-Popover an der Legende
+function openFarbePopover(pid, anchor) {
+  closeFarbePopover();
+  const p = findProjekt(pid); if (!p) return;
+  const cur = p.farbe || projColor(state.projekte.indexOf(p));
+  const pop = document.createElement('div'); pop.className = 'farbe-pop'; pop.id = 'farbePop';
+  pop.innerHTML = PROJ_FARBEN.map(([k, l]) => `<button type="button" class="farbe-sw${cur === k ? ' sel' : ''}" data-act="proj-farbe-set" data-pid="${pid}" data-k="${k}" title="${l}" style="background:var(--pc-${k})"></button>`).join('');
+  document.body.appendChild(pop);
+  const r = anchor.getBoundingClientRect();
+  pop.style.top = (r.bottom + window.scrollY + 6) + 'px';
+  let left = r.left + window.scrollX;
+  const maxL = window.scrollX + document.documentElement.clientWidth - pop.offsetWidth - 8;
+  pop.style.left = Math.max(8, Math.min(left, maxL)) + 'px';
+  setTimeout(() => document.addEventListener('mousedown', farbePopAway), 0);
+}
+function farbePopAway(e) { if (!e.target.closest('#farbePop')) closeFarbePopover(); }
+function closeFarbePopover() { const el = $('#farbePop'); if (el) el.remove(); document.removeEventListener('mousedown', farbePopAway); }
+function setProjFarbe(pid, k) { const p = findProjekt(pid); if (!p) return; p.farbe = k; save(); closeFarbePopover(); router(); }
 
 function viewKalenderGlobal() {
   const t = today();
@@ -3205,7 +3236,7 @@ function viewKalenderGlobal() {
   const events = [];
   projects.forEach((p, idx) => {
     if (calHidden.has(p.id)) return;
-    const col = projColor(idx);
+    const col = projColor(idx, p);
     sammleTermine(p).forEach(e => events.push({ ...e, color: col, pid: p.id, projekt: p.name }));
   });
   const byDay = {};
@@ -3232,7 +3263,7 @@ function viewKalenderGlobal() {
   const gvb = (v, t2) => `<button class="btn sm ${calView === v ? '' : 'secondary'}" data-act="gcal-view" data-kind="${v}">${t2}</button>`;
   const gAddDate = calView === 'monat' ? todayI : calRefIso;
 
-  const toggles = projects.length ? projects.map((p, idx) => `<span class="chip ${calHidden.has(p.id) ? '' : 'active'}" data-act="gcal-toggle" data-pid="${p.id}"><i class="cal-dot ${projColor(idx)}"></i>${esc(p.name)}</span>`).join('') : '<span class="muted" style="font-size:12.5px">Keine Projekte.</span>';
+  const toggles = projects.length ? projects.map((p, idx) => `<span class="chip ${calHidden.has(p.id) ? '' : 'active'}" data-act="gcal-toggle" data-pid="${p.id}"><button type="button" class="cal-dot-btn" data-act="proj-farbe" data-pid="${p.id}" title="Farbe ändern"><i class="cal-dot ${projColor(idx, p)}"></i></button>${esc(p.name)}</span>`).join('') : '<span class="muted" style="font-size:12.5px">Keine Projekte.</span>';
 
   const upcoming = events.filter(e => e.datum >= todayI).sort((a, b) => a.datum.localeCompare(b.datum) || (a.zeit || '').localeCompare(b.zeit || '')).slice(0, 15);
   const agenda = upcoming.length ? upcoming.map(e => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
@@ -3331,7 +3362,7 @@ function viewPlanung() {
 
   // Events: Projekt-Termine (sichtbar) + persönliche Plan-Blöcke
   const events = [];
-  projects.forEach((p, idx) => { if (calHidden.has(p.id)) return; const col = projColor(idx); sammleTermine(p).forEach(e => events.push({ ...e, color: col, pid: p.id, projekt: p.name })); });
+  projects.forEach((p, idx) => { if (calHidden.has(p.id)) return; const col = projColor(idx, p); sammleTermine(p).forEach(e => events.push({ ...e, color: col, pid: p.id, projekt: p.name })); });
   blocks.forEach(b => events.push({ datum: b.datum, zeit: b.zeit, zeitEnde: b.zeitEnde, titel: b.titel, color: b.color || 'purple', plan: true, id: b.id }));
 
   const dates = planView === 'tag' ? [planRefIso] : weekDates(planRefIso);
@@ -3340,14 +3371,14 @@ function viewPlanung() {
     : `KW ${isoWeek(dISO(dates[0]))} · ${fmtDate(dates[0])} – ${fmtDate(dates[6])}`;
   const body = calTimeGrid(events, dates, todayI, 'plan');
   const pvb = (v, t2) => `<button class="btn sm ${planView === v ? '' : 'secondary'}" data-act="plan-view" data-kind="${v}">${t2}</button>`;
-  const toggles = projects.length ? projects.map((p, idx) => `<span class="chip ${calHidden.has(p.id) ? '' : 'active'}" data-act="plan-toggle" data-pid="${p.id}"><i class="cal-dot ${projColor(idx)}"></i>${esc(p.name)}</span>`).join('') : '';
+  const toggles = projects.length ? projects.map((p, idx) => `<span class="chip ${calHidden.has(p.id) ? '' : 'active'}" data-act="plan-toggle" data-pid="${p.id}"><button type="button" class="cal-dot-btn" data-act="proj-farbe" data-pid="${p.id}" title="Farbe ändern"><i class="cal-dot ${projColor(idx, p)}"></i></button>${esc(p.name)}</span>`).join('') : '';
   const palette = PLAN_TEMPLATES.map((tp, i) => `<div class="chip plan-tpl ${planArmed === i ? 'active' : ''}"><span class="plan-tpl-grip" draggable="true" data-tpl="${i}" data-act="plan-arm" data-idx="${i}" title="Klicken oder in den Kalender ziehen"><i class="cal-dot ${tp.color}"></i>${esc(tp.label)} · ${planDurTxt(tp.dauer)}</span><span class="plan-tpl-step"><button class="plan-step" data-act="plan-dur" data-idx="${i}" data-d="-1" title="30 Min kürzer">−</button><button class="plan-step" data-act="plan-dur" data-idx="${i}" data-d="1" title="30 Min länger">+</button></span></div>`).join('');
 
   // offene Pendenzen als „To-do"-Vorrat (in den Kalender ziehbar)
   const pend = [];
   projects.forEach((p, idx) => { if (calHidden.has(p.id)) return; offenePendenzen(p).forEach(x => pend.push({ p, idx, it: x.it })); });
-  planPend = pend.map(x => ({ titel: x.it.text || 'Pendenz', color: projColor(x.idx) }));
-  const pendHtml = pend.length ? pend.map((x, i) => `<div class="plan-pend-item" draggable="true" data-pend="${i}" title="In den Kalender ziehen"><i class="cal-dot ${projColor(x.idx)}"></i><span style="flex:1">${esc(x.it.text || '')}</span><span class="muted" style="font-size:11px">${x.it.termin ? fmtDate(x.it.termin) : ''}</span></div>`).join('') : '<p class="muted" style="margin:0;font-size:12.5px">Keine offenen Pendenzen.</p>';
+  planPend = pend.map(x => ({ titel: x.it.text || 'Pendenz', color: projColor(x.idx, x.p) }));
+  const pendHtml = pend.length ? pend.map((x, i) => `<div class="plan-pend-item" draggable="true" data-pend="${i}" title="In den Kalender ziehen"><i class="cal-dot ${projColor(x.idx, x.p)}"></i><span style="flex:1">${esc(x.it.text || '')}</span><span class="muted" style="font-size:11px">${x.it.termin ? fmtDate(x.it.termin) : ''}</span></div>`).join('') : '<p class="muted" style="margin:0;font-size:12.5px">Keine offenen Pendenzen.</p>';
 
   render(`
     <div class="page-head"><div><h1>Arbeitsplanung</h1><div class="sub">Tag &amp; Woche · Termine der gewählten Projekte + eigene Zeitfenster</div></div></div>
@@ -3825,6 +3856,8 @@ function actNewProjekt() {
       <label class="field">Start <input class="input" type="date" id="f_start"></label>
       <label class="field">Ende <input class="input" type="date" id="f_ende"></label>
     </div>
+    <label class="field" style="margin-bottom:2px">Projektfarbe (Kalender &amp; Planung)</label>
+    ${farbePickerHtml(projColor(state.projekte.length))}
     <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 4px"><div class="muted" style="font-size:12px;margin-bottom:6px">Gebäudedaten (optional)</div>
     ${gebaeudeFelder(null)}
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-projekt">Projekt anlegen</button>`);
@@ -3842,6 +3875,7 @@ function saveProjekt() {
     phase: $('#f_phase').value,
     start: $('#f_start').value || '',
     ende: $('#f_ende').value || '',
+    farbe: ($('#f_farbe') && $('#f_farbe').value) || '',
     vergaben: [],
     protokolle: [],
   };
@@ -3867,6 +3901,8 @@ function actEditProjekt(pid) {
       <label class="field">Start <input class="input" type="date" id="f_start" value="${esc(p.start || '')}"></label>
       <label class="field">Ende <input class="input" type="date" id="f_ende" value="${esc(p.ende || '')}"></label>
     </div>
+    <label class="field" style="margin-bottom:2px">Projektfarbe (Kalender &amp; Planung)</label>
+    ${farbePickerHtml(p.farbe || projColor(state.projekte.indexOf(p)))}
     <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 4px"><div class="muted" style="font-size:12px;margin-bottom:6px">Gebäudedaten</div>
     ${gebaeudeFelder(p)}
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-projekt-edit" data-pid="${pid}">Speichern</button>`);
@@ -3880,6 +3916,7 @@ function saveProjektEdit(pid) {
   p.projektleiter = $('#f_pl').value.trim() || '–';
   p.start = $('#f_start').value || '';
   p.ende = $('#f_ende').value || '';
+  if ($('#f_farbe')) p.farbe = $('#f_farbe').value || '';
   readGebaeude(p);
   save(); closeModal(); router(); toast('Projekt gespeichert');
 }
@@ -5083,6 +5120,9 @@ document.addEventListener('click', e => {
     case 'save-projekt': saveProjekt(); break;
     case 'edit-projekt': actEditProjekt(pid); break;
     case 'save-projekt-edit': saveProjektEdit(pid); break;
+    case 'proj-farbe':     openFarbePopover(pid, act); break;
+    case 'proj-farbe-set': setProjFarbe(pid, act.dataset.k); break;
+    case 'farbe-pick':     { const row = act.closest('.farbe-row'); if (row) row.querySelectorAll('.farbe-sw').forEach(s => s.classList.toggle('sel', s === act)); const hid = $('#f_farbe'); if (hid) hid.value = act.dataset.k; break; }
     case 'kal-add':      actKalTermin(pid, null, kind); break;
     case 'kal-edit':     actKalTermin(pid, tid); break;
     case 'kal-save':     saveKalTermin(pid, tid); break;

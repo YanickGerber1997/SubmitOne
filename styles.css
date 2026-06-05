@@ -26,6 +26,19 @@
   --s-green:  #16a34a;
   --s-red:    #dc2626;
 
+  /* Projektfarben (frei wählbar, 11 differenzierte Töne) */
+  --pc-gelb:        #eab308;
+  --pc-hellgruen:   #84cc16;
+  --pc-dunkelgruen: #15803d;
+  --pc-hellblau:    #38bdf8;
+  --pc-dunkelblau:  #1e40af;
+  --pc-violett:     #7c3aed;
+  --pc-rot:         #ef4444;
+  --pc-bordeaux:    #9f1239;
+  --pc-tuerkis:     #14b8a6;
+  --pc-orange:      #f97316;
+  --pc-grau:        #64748b;
+
   --radius:    12px;
   --radius-sm: 8px;
   --shadow:    0 1px 2px rgba(16,24,40,.04), 0 4px 16px rgba(16,24,40,.06);
@@ -179,6 +192,25 @@ button { font-family: inherit; cursor: pointer; }
 .cal-ev.amber, .cal-dot.amber, .cal-tev.amber { background: var(--s-amber); }
 .cal-ev.grey, .cal-dot.grey, .cal-tev.grey { background: var(--s-grey); }
 .cal-ev.purple, .cal-dot.purple, .cal-tev.purple { background: var(--s-purple); }
+/* Projektfarben */
+.cal-ev.gelb,        .cal-dot.gelb,        .cal-tev.gelb        { background: var(--pc-gelb); }
+.cal-ev.hellgruen,   .cal-dot.hellgruen,   .cal-tev.hellgruen   { background: var(--pc-hellgruen); }
+.cal-ev.dunkelgruen, .cal-dot.dunkelgruen, .cal-tev.dunkelgruen { background: var(--pc-dunkelgruen); }
+.cal-ev.hellblau,    .cal-dot.hellblau,    .cal-tev.hellblau    { background: var(--pc-hellblau); }
+.cal-ev.dunkelblau,  .cal-dot.dunkelblau,  .cal-tev.dunkelblau  { background: var(--pc-dunkelblau); }
+.cal-ev.violett,     .cal-dot.violett,     .cal-tev.violett     { background: var(--pc-violett); }
+.cal-ev.rot,         .cal-dot.rot,         .cal-tev.rot         { background: var(--pc-rot); }
+.cal-ev.bordeaux,    .cal-dot.bordeaux,    .cal-tev.bordeaux    { background: var(--pc-bordeaux); }
+.cal-ev.tuerkis,     .cal-dot.tuerkis,     .cal-tev.tuerkis     { background: var(--pc-tuerkis); }
+.cal-ev.orange,      .cal-dot.orange,      .cal-tev.orange      { background: var(--pc-orange); }
+.cal-ev.grau,        .cal-dot.grau,        .cal-tev.grau        { background: var(--pc-grau); }
+/* Farbauswahl: Swatches + Legenden-Punkt + Popover */
+.cal-dot-btn { border: none; background: none; padding: 2px; margin: 0 1px 0 0; cursor: pointer; line-height: 0; border-radius: 50%; }
+.cal-dot-btn:hover { box-shadow: 0 0 0 2px var(--border-2); }
+.farbe-row { display: flex; flex-wrap: wrap; gap: 7px; margin: 2px 0 4px; }
+.farbe-sw { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--border-2); cursor: pointer; padding: 0; }
+.farbe-sw.sel { box-shadow: 0 0 0 2px var(--brand); outline: 2px solid var(--brand); outline-offset: 1px; }
+.farbe-pop { position: absolute; z-index: 120; background: var(--surface); border: 1px solid var(--border-2); border-radius: 10px; padding: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.18); display: flex; flex-wrap: wrap; gap: 7px; width: 158px; }
 @media (max-width: 720px) { .cal-day { min-height: 70px; } .cal-ev { font-size: 9px; padding: 1px 3px; } }
 
 /* Tag-/Wochenansicht (Stunden-Raster) */

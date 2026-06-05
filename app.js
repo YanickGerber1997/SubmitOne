@@ -1080,17 +1080,23 @@ function viewKosten(id) {
    --------------------------------------------------------------- */
 
 let ganttZoom = 'monat';   // 'monat' | 'woche' | 'tag'
+let ganttSort = 'bkp';     // 'bkp' | 'start'
 const ZOOM = { monat: { px: 2.4, label: 'Monate' }, woche: { px: 9, label: 'Wochen' }, tag: { px: 26, label: 'Tage' } };
 let ganttCtx = null;       // { rangeStartISO, pxPerDay } – für Drag
+let ganttPid = null;       // aktuelles Projekt im Gantt (für Verbindungen)
 
 function viewTermine(id) {
   const p = findProjekt(id);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
 
-  // ALLE Vergaben (auch ohne Termin), sortiert nach BKP / Gewerk
-  const vs = (p.vergaben || []).slice().sort((a, b) => (a.bkp || '').localeCompare(b.bkp || '') || a.gewerk.localeCompare(b.gewerk));
+  ganttPid = p.id;
+  // ALLE Vergaben (auch ohne Termin), sortiert nach BKP/Gewerk ODER nach Baustart
+  const vs = (p.vergaben || []).slice().sort((a, b) => ganttSort === 'start'
+    ? ((a.bauStart || '9999-99-99').localeCompare(b.bauStart || '9999-99-99') || (a.bkp || '').localeCompare(b.bkp || ''))
+    : ((a.bkp || '').localeCompare(b.bkp || '') || (a.gewerk || '').localeCompare(b.gewerk || '')));
   const offene = vs.filter(v => !(v.bauStart && v.bauEnde));
 
+  const sortCtrl = `<div class="g-zoom" title="Sortierung"><button class="${ganttSort === 'bkp' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="bkp">BKP</button><button class="${ganttSort === 'start' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="start">Start</button></div>`;
   const zoomCtrl = `<div class="g-zoom">
     ${Object.keys(ZOOM).map(z => `<button class="${ganttZoom === z ? 'active' : ''}" data-act="gantt-zoom" data-pid="${p.id}" data-kind="${z}">${ZOOM[z].label}</button>`).join('')}
   </div>`;
@@ -1099,7 +1105,7 @@ function viewTermine(id) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm · grob (Monat) bis fein (Tag); Balken ziehen zum Verschieben, Ränder ziehen für Dauer</div></div>
-      <div style="display:flex;gap:10px;align-items:center">${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}${zoomCtrl}<button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}<span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}${zoomCtrl}<button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
     </div>
     ${projektTabs(p, 'termine')}
   `;
@@ -1181,7 +1187,8 @@ function viewTermine(id) {
   const t = today();
   const todayLeft = (t >= rangeStart && t <= rangeEnd) ? dayDiff(rangeStart, t) * pxPerDay : null;
 
-  let sideRows = '', barRows = '';
+  const ROW_H = 38;
+  let sideRows = '', barRows = '', rowIdx = 0; const barMeta = {};
   vs.forEach(v => {
     const col = STATUS_BY_KEY[v.status]?.color || 'blue';
     const hatTermin = v.bauStart && v.bauEnde;
@@ -1192,22 +1199,41 @@ function viewTermine(id) {
       ${hatTermin ? `<button class="btn sm ghost add-vg" title="Vorgang hinzufügen" data-act="new-vorgang" data-pid="${p.id}" data-vid="${v.id}">＋</button>` : ''}
     </div>`;
     if (hatTermin) {
+      barMeta[v.id] = { row: rowIdx, left: leftPx(v.bauStart), width: widthPx(v.bauStart, v.bauEnde) };
       barRows += `<div class="g-row"><div class="g-bar ${col}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px"
         title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}"
-        data-pid="${p.id}" data-vid="${v.id}" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
-        <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span><span class="g-h r"></span></div></div>`;
+        data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
+        <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span><span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
     } else {
       barRows += `<div class="g-row"><button class="g-set" data-act="edit-termin" data-pid="${p.id}" data-vid="${v.id}">＋ Termin setzen</button></div>`;
     }
+    rowIdx++;
     (v.vorgaenge || []).filter(o => o.start && o.ende).forEach(o => {
+      const key = v.id + '/' + o.id;
+      barMeta[key] = { row: rowIdx, left: leftPx(o.start), width: widthPx(o.start, o.ende) };
       sideRows += `<div class="g-side-row sub"><span class="gewerk" style="font-weight:500">${esc(o.titel)}</span>
         <button class="x-btn" title="Vorgang löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button></div>`;
       barRows += `<div class="g-row"><div class="g-bar sub ${col}" style="left:${leftPx(o.start)}px;width:${widthPx(o.start, o.ende)}px"
         title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
-        data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-start="${o.start}" data-ende="${o.ende}">
-        <span class="g-h l"></span><span class="g-lbl">${esc(o.titel)}</span><span class="g-h r"></span></div></div>`;
+        data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-start="${o.start}" data-ende="${o.ende}">
+        <span class="g-h l"></span><span class="g-lbl">${esc(o.titel)}</span><span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div></div>`;
+      rowIdx++;
     });
   });
+  // Verbindungen (Abhängigkeiten) als SVG-Overlay
+  const linkPaths = (p.ganttLinks || []).map(lk => {
+    const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
+    const ax = a.left + a.width, ay = a.row * ROW_H + 19, bx = b.left, by = b.row * ROW_H + 19;
+    const mx = bx + (lk.dx != null ? lk.dx : -16);
+    const d = `M ${ax} ${ay} H ${mx} V ${by} H ${bx}`;
+    return `<g class="g-link" data-lid="${lk.id}">
+      <path class="g-link-hit" d="${d}"></path>
+      <path class="g-link-line" d="${d}"></path>
+      <path class="g-link-arrow" d="M ${bx - 7} ${by - 4} L ${bx} ${by} L ${bx - 7} ${by + 4} Z"></path>
+      <rect class="g-link-grip" data-lid="${lk.id}" data-ax="${ax}" data-ay="${ay}" data-bx="${bx}" data-by="${by}" x="${mx - 4}" y="${(ay + by) / 2 - 7}" width="8" height="14"></rect>
+    </g>`;
+  }).join('');
+  const linkSvg = `<svg class="g-links" width="${innerW}" height="${rowIdx * ROW_H}">${linkPaths}</svg>`;
 
   render(head + `
     <div class="gantt">
@@ -1221,16 +1247,79 @@ function viewTermine(id) {
           <div class="g-bg">${bgCells}</div>
           ${todayLeft != null ? `<div class="g-today" style="left:${todayLeft}px"></div>` : ''}
           ${barRows}
+          ${linkSvg}
         </div>
       </div></div>
     </div>
     <div class="g-legend">
       ${VERGABE_STATUS.map(s => `<span><i style="background:var(--s-${s.color})"></i>${s.kurz}</span>`).join('')}
     </div>
-    <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · an den <b>Rändern ziehen</b> = Dauer ändern · Klick öffnet den Dialog · Zoom oben rechts (Monat → Tag).</p>
+    <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie.</p>
   `);
 
   $$('.g-bar').forEach(b => b.addEventListener('mousedown', onBarMouseDown));
+  $$('.g-link-dot').forEach(d => d.addEventListener('mousedown', onLinkDotDown));
+  $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
+  $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) removeGanttLink(ganttPid, g.dataset.lid); }));
+}
+/* --- Gantt: Verbindungen (Abhängigkeiten) --- */
+let ganttLink = null, ganttGrip = null;
+function onLinkDotDown(e) {
+  e.stopPropagation(); e.preventDefault();
+  const fromKey = e.currentTarget.dataset.key;
+  const rows = e.currentTarget.closest('.g-rows'); const svg = rows.querySelector('.g-links');
+  const rect = rows.getBoundingClientRect(); const brect = e.currentTarget.closest('.g-bar').getBoundingClientRect();
+  const temp = document.createElementNS('http://www.w3.org/2000/svg', 'path'); temp.setAttribute('class', 'g-link-temp'); svg.appendChild(temp);
+  ganttLink = { fromKey, rows, temp, fx: brect.right - rect.left, fy: brect.top - rect.top + brect.height / 2 };
+  document.addEventListener('mousemove', onLinkMove); document.addEventListener('mouseup', onLinkUp);
+}
+function onLinkMove(e) {
+  const g = ganttLink; if (!g) return;
+  const r = g.rows.getBoundingClientRect();
+  g.temp.setAttribute('d', `M ${g.fx} ${g.fy} L ${e.clientX - r.left} ${e.clientY - r.top}`);
+}
+function onLinkUp(e) {
+  const g = ganttLink; ganttLink = null;
+  document.removeEventListener('mousemove', onLinkMove); document.removeEventListener('mouseup', onLinkUp);
+  if (g.temp) g.temp.remove();
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const bar = el && el.closest ? el.closest('.g-bar') : null;
+  const toKey = bar && bar.dataset.key;
+  if (toKey && toKey !== g.fromKey) addGanttLink(ganttPid, g.fromKey, toKey);
+}
+function onLinkGripDown(e) {
+  e.stopPropagation(); e.preventDefault();
+  const grip = e.currentTarget; const lid = grip.dataset.lid;
+  const gEl = grip.closest('.g-link'); const rows = grip.closest('.g-rows'); const rect = rows.getBoundingClientRect();
+  const ax = +grip.dataset.ax, ay = +grip.dataset.ay, bx = +grip.dataset.bx, by = +grip.dataset.by;
+  ganttGrip = { lid, gEl, rect, ax, ay, bx, by, dx: 0 };
+  document.addEventListener('mousemove', onGripMove); document.addEventListener('mouseup', onGripUp);
+}
+function onGripMove(e) {
+  const g = ganttGrip; if (!g) return;
+  const mx = Math.round(e.clientX - g.rect.left); g.dx = mx - g.bx;
+  const d = `M ${g.ax} ${g.ay} H ${mx} V ${g.by} H ${g.bx}`;
+  g.gEl.querySelector('.g-link-hit').setAttribute('d', d);
+  g.gEl.querySelector('.g-link-line').setAttribute('d', d);
+  g.gEl.querySelector('.g-link-grip').setAttribute('x', mx - 4);
+}
+function onGripUp() {
+  const g = ganttGrip; ganttGrip = null;
+  document.removeEventListener('mousemove', onGripMove); document.removeEventListener('mouseup', onGripUp);
+  const p = findProjekt(ganttPid); const lk = p && (p.ganttLinks || []).find(l => l.id === g.lid);
+  if (lk) { lk.dx = g.dx; save(); }
+}
+function addGanttLink(pid, from, to) {
+  const p = findProjekt(pid); if (!p) return;
+  if (!p.ganttLinks) p.ganttLinks = [];
+  if (from === to || p.ganttLinks.some(l => l.from === from && l.to === to)) return;
+  p.ganttLinks.push({ id: uid('gl'), from, to, dx: null });
+  save(); viewTermine(pid); toast('Verbindung erstellt', 'info');
+}
+function removeGanttLink(pid, lid) {
+  const p = findProjekt(pid); if (!p) return;
+  p.ganttLinks = (p.ganttLinks || []).filter(l => l.id !== lid);
+  save(); viewTermine(pid); toast('Verbindung entfernt', 'info');
 }
 
 /* --- Gantt Drag & Drop --- */
@@ -6036,6 +6125,7 @@ document.addEventListener('click', e => {
     case 'edit-termin':  actEditTermin(pid, vid); break;
     case 'save-termin':  saveTermin(pid, vid); break;
     case 'gantt-zoom':   ganttZoom = kind; viewTermine(pid); break;
+    case 'gantt-sort':   ganttSort = kind; viewTermine(pid); break;
     case 'new-vorgang':  actNewVorgang(pid, vid); break;
     case 'save-vorgang': saveVorgang(pid, vid); break;
     case 'rm-vorgang':   removeVorgang(pid, vid, oid); break;

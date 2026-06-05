@@ -674,6 +674,18 @@ tr.done-row { background: #fbfdfb; }
 .g-bar.green  { background: var(--s-green); }
 .g-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--s-red); z-index: 2; }
 .g-today::after { content: 'heute'; position: absolute; top: -16px; left: -14px; font-size: 9.5px; color: var(--s-red); font-weight: 700; }
+/* Gantt-Verbindungen (Abhängigkeiten) */
+.g-bar { overflow: visible; }
+.g-link-dot { position: absolute; right: -6px; top: 50%; transform: translateY(-50%); width: 11px; height: 11px; border-radius: 50%; background: #fff; border: 2px solid var(--brand); cursor: crosshair; opacity: 0; z-index: 4; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.g-bar:hover .g-link-dot { opacity: 1; }
+.g-links { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 5; overflow: visible; }
+.g-link-line { fill: none; stroke: #94a3b8; stroke-width: 1.6; }
+.g-link-arrow { fill: #94a3b8; }
+.g-link-hit { fill: none; stroke: transparent; stroke-width: 10; pointer-events: stroke; cursor: pointer; }
+.g-link:hover .g-link-line, .g-link:hover .g-link-arrow { stroke: var(--brand); fill: var(--brand); }
+.g-link-grip { fill: transparent; pointer-events: all; cursor: ew-resize; }
+.g-link:hover .g-link-grip { fill: rgba(31,111,235,.18); rx: 3; }
+.g-link-temp { fill: none; stroke: var(--brand); stroke-width: 2; stroke-dasharray: 5 3; }
 .g-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--text-soft); }
 .g-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .g-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }

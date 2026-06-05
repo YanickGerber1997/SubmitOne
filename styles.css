@@ -196,7 +196,10 @@ button { font-family: inherit; cursor: pointer; }
 .cal-hours { width: 50px; flex: none; }
 .cal-hour { height: 40px; font-size: 9.5px; color: var(--text-faint); text-align: right; padding: 0 5px 0 0; }
 .cal-col { position: relative; border-left: 1px solid var(--border); cursor: pointer; }
-.cal-col .hl { position: absolute; left: 0; right: 0; border-top: 1px solid #eef1f5; }
+.cal-col .hl { position: absolute; left: 0; right: 0; border-top: 1px solid #e7ebf1; }
+.cal-col .hl.half { border-top: 1px dotted #f0f2f6; }
+.cal-col[data-plan] { cursor: cell; }
+.cal-tev.sel-create { background: var(--brand); opacity: .85; pointer-events: none; z-index: 4; font-weight: 600; }
 .cal-tev { position: absolute; left: 3px; right: 3px; border-radius: 5px; color: #fff; background: var(--s-blue); font-size: 10.5px; line-height: 1.25; padding: 2px 5px; overflow: hidden; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.12); z-index: 1; }
 .cal-tev.plan { box-shadow: inset 3px 0 0 rgba(255,255,255,.85), 0 1px 2px rgba(0,0,0,.18); font-weight: 600; }
 .cal-tev.sel { outline: 2px solid #fff; box-shadow: 0 0 0 2px var(--brand), 0 2px 6px rgba(0,0,0,.25); z-index: 3; }

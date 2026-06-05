@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v35';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v36';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -260,6 +260,8 @@ async function startApp() {
   $('#btnReset')?.addEventListener('click', resetDemo);
   initSidebarCollapse();
   document.addEventListener('keydown', planKeydown);
+  document.addEventListener('mousemove', planDragMove);
+  document.addEventListener('mouseup', planDragUp);
   const ver = $('.ver'); if (ver) ver.textContent = 'Prototyp · ' + APP_VERSION;
   renderUserChip();
   window.addEventListener('hashchange', router);
@@ -3015,7 +3017,7 @@ function calTimeGrid(events, dates, todayI, add) {
   let hours = ''; for (let h = CAL_SH; h <= CAL_EH; h++) hours += `<div class="cal-hour">${String(h).padStart(2, '0')}:00</div>`;
   const toMin = s => { const [a, b] = String(s).split(':').map(Number); return a * 60 + (b || 0); };
   const cols = dates.map(iso => {
-    let lines = ''; for (let h = CAL_SH; h <= CAL_EH; h++) lines += `<div class="hl" style="top:${(h - CAL_SH) * CAL_HH}px"></div>`;
+    let lines = ''; for (let h = CAL_SH; h <= CAL_EH; h++) { lines += `<div class="hl" style="top:${(h - CAL_SH) * CAL_HH}px"></div>`; if (h < CAL_EH) lines += `<div class="hl half" style="top:${(h - CAL_SH) * CAL_HH + CAL_HH / 2}px"></div>`; }
     const tev = (byDay[iso] || []).filter(e => e.zeit).map(e => {
       const sMin = toMin(e.zeit); let eMin = e.zeitEnde ? toMin(e.zeitEnde) : sMin + 60; if (eMin <= sMin) eMin = sMin + 60;
       const top = Math.max(0, (sMin - CAL_SH * 60) / 60 * CAL_HH); const h = Math.max((eMin - sMin) / 60 * CAL_HH, 20);
@@ -3033,6 +3035,7 @@ function calTimeGrid(events, dates, todayI, add) {
 // Klick auf Spalte/Stunde → Termin mit Startzeit; auf ganztägig-Zelle → ohne Zeit
 function bindCalCols() {
   $$('.cal-col').forEach(col => col.addEventListener('click', e => {
+    if (col.dataset.plan) return;   // Planung nutzt Drag-to-create (bindPlanDragCreate)
     if (e.target.closest('.cal-tev')) return;
     const iso = col.dataset.iso, pid = col.dataset.pid;
     const y = e.clientY - col.getBoundingClientRect().top;
@@ -3358,6 +3361,7 @@ function viewPlanung() {
   `);
   bindCalCols();
   bindPlanDnd();
+  bindPlanDragCreate();
 }
 function planSlotClick(iso, zeit) {
   const tpl = planArmed != null ? PLAN_TEMPLATES[planArmed] : null;
@@ -3409,6 +3413,43 @@ function bindPlanDnd() {
     });
   });
 }
+// Outlook-Stil: in Spalte drücken & ziehen (30-Min-Raster) → Zeitspanne → Modal/Platzieren
+let dragCreate = null;
+function snap30(y) { let m = CAL_SH * 60 + Math.round((y / CAL_HH * 60) / 30) * 30; return Math.max(CAL_SH * 60, Math.min(CAL_EH * 60, m)); }
+function bindPlanDragCreate() {
+  $$('.cal-col[data-plan]').forEach(col => col.addEventListener('mousedown', e => {
+    if (e.target.closest('.cal-tev')) return;   // auf Block → Auswahl/Drag, nicht create
+    e.preventDefault();
+    const rect = col.getBoundingClientRect();
+    const startMin = snap30(e.clientY - rect.top);
+    const sel = document.createElement('div'); sel.className = 'cal-tev sel-create';
+    col.appendChild(sel);
+    dragCreate = { iso: col.dataset.iso, rect, startMin, curMin: startMin + 60, el: sel, moved: false };
+    document.body.style.userSelect = 'none';
+    planDragRender();
+  }));
+}
+function planDragRender() {
+  const d = dragCreate; if (!d || !d.el) return;
+  const a = Math.min(d.startMin, d.curMin), b = Math.max(d.startMin, d.curMin);
+  d.el.style.top = (a - CAL_SH * 60) / 60 * CAL_HH + 'px';
+  d.el.style.height = Math.max((b - a) / 60 * CAL_HH, CAL_HH / 2) + 'px';
+  d.el.textContent = min2hhmm(a) + ' – ' + min2hhmm(b);
+}
+function planDragMove(e) {
+  const d = dragCreate; if (!d) return;
+  const m = snap30(e.clientY - d.rect.top);
+  if (m !== d.curMin) { d.curMin = m; d.moved = true; planDragRender(); }
+}
+function planDragUp() {
+  const d = dragCreate; if (!d) return;
+  dragCreate = null; document.body.style.userSelect = '';
+  if (d.el) d.el.remove();
+  let a = Math.min(d.startMin, d.curMin), b = Math.max(d.startMin, d.curMin);
+  if (planArmed != null) { placePlanBlock(d.iso, min2hhmm(a), PLAN_TEMPLATES[planArmed]); planArmed = null; return; }
+  if (d.moved && b - a >= 30) { actPlanBlock(null, d.iso, min2hhmm(a), min2hhmm(b)); }
+  else if (planSel) { planSel = null; viewPlanung(); }   // reiner Klick = Auswahl aufheben
+}
 function planKeydown(e) {
   if (location.hash !== '#/planung') return;
   const tag = (e.target.tagName || '').toUpperCase();
@@ -3417,7 +3458,7 @@ function planKeydown(e) {
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { planCopy(); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); planPaste(); }
 }
-function actPlanBlock(bid, datum, zeit) {
+function actPlanBlock(bid, datum, zeit, zeitEnde) {
   const b = bid ? loadPlanung().find(x => x.id === bid) : null;
   openModal(b ? 'Block bearbeiten' : 'Eigener Zeitblock', `
     <label class="field">Titel <input class="input" id="pb_titel" value="${b ? esc(b.titel || '') : ''}" placeholder="z.B. Devis prüfen"></label>
@@ -3427,7 +3468,7 @@ function actPlanBlock(bid, datum, zeit) {
     </div>
     <div class="form-row">
       <label class="field">Von <input class="input" type="time" id="pb_zeit" value="${b ? esc(b.zeit || '') : esc(zeit || '08:00')}"></label>
-      <label class="field">Bis <input class="input" type="time" id="pb_ende" value="${b ? esc(b.zeitEnde || '') : ''}"></label>
+      <label class="field">Bis <input class="input" type="time" id="pb_ende" value="${b ? esc(b.zeitEnde || '') : esc(zeitEnde || '')}"></label>
     </div>
   `, `${b ? `<button class="btn danger" data-act="plan-del" data-bid="${bid}">Löschen</button>` : '<button class="btn ghost" data-close="1">Abbrechen</button>'}<button class="btn" data-act="plan-save"${b ? ` data-bid="${bid}"` : ''}>${b ? 'Speichern' : 'Hinzufügen'}</button>`);
 }

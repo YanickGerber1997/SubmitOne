@@ -462,8 +462,30 @@ function projektVolumen(p) {
 }
 
 /* --- Offerten & Summen einer Vergabe --- */
-function offertenOf(v)  { return (v.eingeladene || []).filter(e => e.status === 'offeriert' && e.betrag != null); }
-function bestBetrag(v)  { const o = offertenOf(v); return o.length ? Math.min(...o.map(x => x.betrag)) : null; }
+// Preisspiegel-Rechnung (1:1 wie BkpTool): Brutto − Rabatt% − Allg.Abzüge% − Pauschal CHF − Skonto% = Netto; + MwSt 8.1%
+function condParts(c) {
+  if (!c) return null;
+  const b = (c.brutto != null && c.brutto !== '') ? Number(c.brutto) : null;
+  if (b == null || isNaN(b)) return null;
+  const rabattBetrag = b * ((Number(c.rabatt) || 0) / 100);
+  const nachRabatt = b - rabattBetrag;
+  const weitereBetrag = nachRabatt * ((Number(c.weitereAbz) || 0) / 100);
+  const nachWeitere = nachRabatt - weitereBetrag;
+  const nachPauschal = nachWeitere - (Number(c.pauschal) || 0);
+  const skontoBetrag = nachPauschal * ((Number(c.skonto) || 0) / 100);
+  const netto = nachPauschal - skontoBetrag;
+  const mwst = netto * 0.081;
+  return { brutto: b, rabattBetrag, weitereBetrag, pauschal: Number(c.pauschal) || 0, skontoBetrag, netto, mwst, total: netto + mwst };
+}
+function condNetto(c) { const r = condParts(c); return r ? r.netto : null; }
+// Netto je Stufe (Fallback: Legacy-Einzelbetrag e.betrag = Offerte)
+function eOff(e) { if (e.offerte && e.offerte.brutto != null && e.offerte.brutto !== '') return condNetto(e.offerte); return e.betrag != null ? e.betrag : null; }
+function eAbg(e) { return (e.abgebot && e.abgebot.brutto != null && e.abgebot.brutto !== '') ? condNetto(e.abgebot) : null; }
+function eVer(e) { return (e.vergabe && e.vergabe.brutto != null && e.vergabe.brutto !== '') ? condNetto(e.vergabe) : null; }
+function eNetto(e) { const a = eVer(e); if (a != null) return a; const b = eAbg(e); if (b != null) return b; return eOff(e); }
+function offertenOf(v)  { return (v.eingeladene || []).filter(e => e.status === 'offeriert' && eOff(e) != null); }
+function bestBetrag(v)  { const xs = (v.eingeladene || []).filter(e => e.status !== 'abgesagt').map(eOff).filter(x => x != null); return xs.length ? Math.min(...xs) : null; }
+function bestAbgebot(v) { const xs = (v.eingeladene || []).filter(e => e.status !== 'abgesagt').map(eAbg).filter(x => x != null); return xs.length ? Math.min(...xs) : null; }
 function nachtragSumme(v){ return (v.nachtraege || []).filter(n => n.status === 'genehmigt').reduce((a, n) => a + (n.betrag || 0), 0); }
 function nachtragOffen(v){ return (v.nachtraege || []).filter(n => n.status === 'offen').reduce((a, n) => a + (n.betrag || 0), 0); }
 function rapportSumme(v) { return (v.rapporte || []).reduce((a, r) => a + (r.betrag || 0), 0); }
@@ -2752,10 +2774,11 @@ function viewVergabeDetail(pid, vid) {
     </div>
 
     <div class="detail-stats">
-      <div class="dstat"><div class="l">Kostenschätzung (KV)</div><div class="v">${chf(v.schaetzung)}</div></div>
-      <div class="dstat"><div class="l">günstigste Offerte (KV rev.)</div><div class="v">${kvRev(v) != null ? chf(kvRev(v)) : '<span class="muted" style="font-size:14px">–</span>'}</div></div>
-      <div class="dstat"><div class="l">Vergabesumme (WV)</div><div class="v">${isVergeben(v) ? chf(v.betrag) : '<span class="muted" style="font-size:14px">offen</span>'}</div></div>
-      <div class="dstat" style="border-color:var(--brand)"><div class="l">Auftragssumme inkl. NT/Regie</div><div class="v" style="color:var(--brand)">${isVergeben(v) ? chf(schlussSumme(v)) : '~' + chf(kvRev(v) != null ? kvRev(v) : (v.schaetzung || 0))}</div></div>
+      <div class="dstat"><div class="l">Kostenschätzung</div><div class="v">${chf(v.schaetzung)}</div></div>
+      <div class="dstat"><div class="l">günstigste Offerte</div><div class="v">${bestBetrag(v) != null ? chf(bestBetrag(v)) : '<span class="muted" style="font-size:14px">–</span>'}</div></div>
+      <div class="dstat"><div class="l">nach Abgebot</div><div class="v">${bestAbgebot(v) != null ? chf(bestAbgebot(v)) : '<span class="muted" style="font-size:14px">–</span>'}</div></div>
+      <div class="dstat"><div class="l">Vergabesumme (n. Verhandlung)</div><div class="v">${isVergeben(v) ? chf(v.betrag) : '<span class="muted" style="font-size:14px">offen</span>'}</div></div>
+      <div class="dstat" style="border-color:var(--brand)"><div class="l">Auftragssumme inkl. NT/Regie</div><div class="v" style="color:var(--brand)">${isVergeben(v) ? chf(schlussSumme(v)) : '~' + chf(bestBetrag(v) != null ? bestBetrag(v) : (v.schaetzung || 0))}</div></div>
       <div class="dstat"><div class="l">Bezahlt</div><div class="v">${chf(rechnungBezahlt(v))}</div></div>
       <div class="dstat"><div class="l">Offen</div><div class="v">${chf((isVergeben(v) ? schlussSumme(v) : 0) - rechnungBezahlt(v))}</div></div>
     </div>
@@ -2813,14 +2836,15 @@ function viewVergabeDetail(pid, vid) {
               <div class="inv-firma">
                 ${esc(e.firma)}
                 <span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:2px 8px;font-size:10.5px">${INV_STATUS[e.status]?.label || e.status}</span>
-                ${e.betrag != null && e.betrag === best && offs.length > 1 ? '<span class="off-best">★ günstigste</span>' : ''}
+                ${eOff(e) != null && eOff(e) === best && offs.length > 1 ? '<span class="off-best">★ günstigste</span>' : ''}
               </div>
               ${e.email ? `<div class="inv-mail muted">${esc(e.email)}</div>` : ''}
             </div>
             <div class="inv-action">
               ${e.status === 'abgesagt'
                 ? `<span class="muted" style="font-size:12.5px">abgesagt</span>`
-                : `<input class="input betrag-input" type="number" placeholder="Betrag" value="${e.betrag ?? ''}" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">`}
+                : `<div class="inv-conds">${eOff(e) != null ? `<span title="Offerte (Netto)">O ${chfShort(eOff(e))}</span>` : ''}${eAbg(e) != null ? `<span title="Abgebot (Netto)">A ${chfShort(eAbg(e))}</span>` : ''}${eVer(e) != null ? `<span title="Vergabe (Netto)">V ${chfShort(eVer(e))}</span>` : ''}</div>
+                   <button class="btn sm secondary" data-act="konditionen" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">✎ Konditionen</button>`}
               <button class="x-btn" title="Deckblatt: Submissionseinladung" data-act="deckblatt" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">📄</button>
               <button class="x-btn" title="Deckblatt: Äusserste Konditionen" data-act="deckblatt-offerte" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">📑</button>
               <button class="x-btn" title="Entfernen" data-act="rm-inv" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">×</button>
@@ -2970,6 +2994,43 @@ function viewVergabeDetail(pid, vid) {
   $$('.sm-select[data-act="nachtrag-status"]').forEach(sel => sel.addEventListener('change', () => {
     setNachtragStatus(sel.dataset.pid, sel.dataset.vid, sel.dataset.nid, sel.value);
   }));
+}
+
+// Preisspiegel-Konditionen je Unternehmer: Offerte / Abgebot / Vergabe (Brutto → Netto)
+function actKonditionen(pid, vid, eid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); const e = v && (v.eingeladene || []).find(x => x.id === eid);
+  if (!e) return;
+  const stages = [['offerte', 'Offerte'], ['abgebot', 'Abgebot'], ['vergabe', 'Vergabe / Werkvertrag']];
+  const val = (key, f) => { const c = e[key] || (key === 'offerte' && e.betrag != null ? { brutto: e.betrag } : {}); return c[f] != null ? c[f] : ''; };
+  const stageHtml = stages.map(([key, label]) => `
+    <div class="kond-stage">
+      <div class="kond-h">${label}</div>
+      <div class="kond-grid">
+        <label class="field">Brutto (CHF)<input class="input kond-in" data-stage="${key}" data-f="brutto" type="number" value="${val(key, 'brutto')}"></label>
+        <label class="field">Rabatt (%)<input class="input kond-in" data-stage="${key}" data-f="rabatt" type="number" value="${val(key, 'rabatt')}"></label>
+        <label class="field">Allg. Abzüge (%)<input class="input kond-in" data-stage="${key}" data-f="weitereAbz" type="number" value="${val(key, 'weitereAbz')}"></label>
+        <label class="field">Pauschalabzug (CHF)<input class="input kond-in" data-stage="${key}" data-f="pauschal" type="number" value="${val(key, 'pauschal')}"></label>
+        <label class="field">Skonto (%)<input class="input kond-in" data-stage="${key}" data-f="skonto" type="number" value="${val(key, 'skonto')}"></label>
+      </div>
+      <div class="kond-res" id="kond_res_${key}"></div>
+    </div>`).join('');
+  openModal(`Konditionen – ${esc(e.firma)}`, `<div class="kond-wrap">${stageHtml}</div>`, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="konditionen-save" data-pid="${pid}" data-vid="${vid}" data-eid="${eid}">Speichern</button>`);
+  const recompute = () => stages.forEach(([key]) => { const r = condParts(kondReadStage(key)); const el = $('#kond_res_' + key); if (el) el.innerHTML = r ? `Netto <strong>${chf(r.netto)}</strong> &nbsp;·&nbsp; MwSt 8.1% ${chf(r.mwst)} &nbsp;·&nbsp; inkl. ${chf(r.total)}` : '<span class="muted">Brutto eingeben für Netto-Berechnung</span>'; });
+  $$('.kond-in').forEach(i => i.addEventListener('input', recompute));
+  recompute();
+}
+function kondReadStage(key) { const o = {}; $$('.kond-in[data-stage="' + key + '"]').forEach(i => { o[i.dataset.f] = i.value === '' ? null : Number(i.value); }); return o; }
+function saveKonditionen(pid, vid, eid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); const e = v && (v.eingeladene || []).find(x => x.id === eid);
+  if (!e) return;
+  ['offerte', 'abgebot', 'vergabe'].forEach(key => { const o = kondReadStage(key); e[key] = (o.brutto != null) ? o : null; });
+  if (e.offerte && e.offerte.brutto != null) {
+    e.betrag = condNetto(e.offerte);
+    if (e.status !== 'abgesagt') e.status = 'offeriert';
+    if (statusIdx(v) < STATUS_BY_KEY['offerten'].index) v.status = 'offerten';
+  }
+  if (v.firma && e.firma === v.firma) { const ver = eVer(e); const fall = ver != null ? ver : (eAbg(e) != null ? eAbg(e) : eOff(e)); if (fall != null) v.betrag = fall; }
+  save(); closeModal(); router(); toast('Konditionen gespeichert');
 }
 
 /* ---------------------------------------------------------------
@@ -5698,6 +5759,8 @@ document.addEventListener('click', e => {
     case 'pdf-baukosten':        pdfBaukosten(pid); break;
     case 'pdf-gantt':            pdfGantt(pid); break;
     case 'advance':      advanceVergabe(pid, vid); break;
+    case 'konditionen':      actKonditionen(pid, vid, eid); break;
+    case 'konditionen-save': saveKonditionen(pid, vid, eid); break;
     case 'invite':       actInvite(pid, vid); break;
     case 'save-invite':  saveInvite(pid, vid); break;
     case 'sendmail':     sendMail(pid, vid); break;

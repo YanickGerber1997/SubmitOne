@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v53';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v54';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -6003,8 +6003,13 @@ function solarTiltFactor(deg) {
   for (let i = 1; i < pts.length; i++) { if (deg <= pts[i][0]) { const a = pts[i - 1], b = pts[i]; return a[1] + (b[1] - a[1]) * (deg - a[0]) / (b[0] - a[0]); } }
   return pts[pts.length - 1][1];
 }
-const SOLAR_DEFAULT = { flaeche: 50, belegung: 80, wpm2: 200, ertrag: 950, orient: 'sued', neigung: 30, verbrauch: 4500, eigenanteil: 30, strompreis: 30, einspeise: 10, anlagekosten: '', speicher: '', speicherKosten: '', eivGrund: 200, eivLeistung: 380, bauseite: [] };
-const SOLAR_CHF_KWP = 1800;   // Richtwert Anlagekosten pro kWp (CH-Wohnbau, ohne Speicher), wenn nicht erfasst
+const SOLAR_DEFAULT = { flaeche: 50, belegung: 80, wpm2: 200, ertrag: 950, orient: 'sued', neigung: 30, verbrauch: 4500, eigenanteil: 30, strompreis: 30, einspeise: 10, anlagekosten: '', speicher: '', speicherKosten: '', eivGrund: '', eivLeistung: '', bauseite: [], wp: false, eauto: false, boiler: false };
+// Zusatzverbraucher als Schalter (an/aus), kWh/Jahr je
+const SOLAR_LOADS = [{ key: 'wp', label: 'Wärmepumpe', kwh: 5000 }, { key: 'eauto', label: 'E-Auto', kwh: 2500 }, { key: 'boiler', label: 'Boiler / Warmwasser', kwh: 3000 }];
+function solarZusatz(s) { return SOLAR_LOADS.reduce((a, l) => a + (s[l.key] ? l.kwh : 0), 0); }
+// Richtwerte für die Automatik (an realer CH-Offerte kalibriert) – immer überschreibbar
+const SOLAR_CHF_KWP = 2000;   // Anlagekosten pro kWp (brutto, inkl. Ausführung)
+const SOLAR_CHF_KWH = 450;    // Speicherkosten pro kWh
 
 function solarOf(p) {
   const s = Object.assign({}, SOLAR_DEFAULT, p.solar || {});
@@ -6027,7 +6032,9 @@ function solarCalc(s) {
   const oRaw = (SOLAR_ORIENT[s.orient] || SOLAR_ORIENT.sued)[1];
   const of = 1 - (1 - oRaw) * Math.min(1, tilt / 35);                     // Ausrichtung wirkt erst mit zunehmender Neigung
   const produktion = Math.round(kwp * n(s.ertrag) * nf * of);              // kWh/Jahr
-  const verbrauch = n(s.verbrauch);
+  const verbrauchBasis = n(s.verbrauch);                                  // Haushalt ohne Zusatzverbraucher
+  const zusatz = solarZusatz(s);                                          // Wärmepumpe/E-Auto/Boiler (Schalter)
+  const verbrauch = verbrauchBasis + zusatz;
   const anteil = Math.min(100, Math.max(0, n(s.eigenanteil))) / 100;
   let eigenverbrauch = Math.round(produktion * anteil);
   const gedeckelt = verbrauch && eigenverbrauch > verbrauch;
@@ -6041,17 +6048,21 @@ function solarCalc(s) {
   const stromkostenJetzt = Math.round(verbrauch * n(s.strompreis) / 100);
   const reststrombezug = Math.max(0, verbrauch - eigenverbrauch);          // kWh weiterhin ab Netz
   const stromkostenNeu = Math.round(reststrombezug * n(s.strompreis) / 100 - verguetung);
-  const anlage = (s.anlagekosten !== '' && s.anlagekosten != null) ? n(s.anlagekosten) : Math.round(kwp * SOLAR_CHF_KWP);
-  const speicher = n(s.speicher);                                         // kWh (Info / Eigenverbrauch erhöhen via Anteil)
-  const speicherKosten = n(s.speicherKosten);
+  // Automatik: leere Felder werden aus kWp / kWh geschätzt (immer überschreibbar)
+  const anlageAuto = !(s.anlagekosten !== '' && s.anlagekosten != null);
+  const anlage = anlageAuto ? Math.round(kwp * SOLAR_CHF_KWP) : n(s.anlagekosten);
+  const speicher = n(s.speicher);                                         // kWh
+  const speicherAuto = !(s.speicherKosten !== '' && s.speicherKosten != null);
+  const speicherKosten = speicherAuto ? Math.round(speicher * SOLAR_CHF_KWH) : n(s.speicherKosten);
   const bauseiteSum = (s.bauseite || []).reduce((a, b) => a + (Number(b.betrag) || 0), 0);
   const invest = anlage + speicherKosten + bauseiteSum;
-  const eiv = Math.round(n(s.eivGrund) + n(s.eivLeistung) * kwp);
+  const eivAuto = !(s.eivGrund !== '' && s.eivGrund != null) && !(s.eivLeistung !== '' && s.eivLeistung != null);
+  const eiv = Math.round((s.eivGrund === '' || s.eivGrund == null ? 200 : n(s.eivGrund)) + (s.eivLeistung === '' || s.eivLeistung == null ? 385 : n(s.eivLeistung)) * kwp);
   const netto = Math.max(0, invest - eiv);
   const amort = ertragJahr > 0 ? netto / ertragJahr : null;               // Jahre
   const rendite = netto > 0 ? ertragJahr / netto * 100 : null;            // %/Jahr
   const co2 = Math.round(produktion * 0.128);                            // kg CO₂/Jahr (verdrängter Strommix, Richtwert)
-  return { flaeche, belegung, modulflaeche, wpm2, kwp, tilt, of, nf, produktion, verbrauch, anteil, gedeckelt, eigenverbrauch, einspeisung, autarkie, sparBezug, verguetung, ertragJahr, stromkostenJetzt, reststrombezug, stromkostenNeu, anlage, speicher, speicherKosten, bauseiteSum, invest, eiv, netto, amort, rendite, co2 };
+  return { flaeche, belegung, modulflaeche, wpm2, kwp, tilt, of, nf, produktion, verbrauchBasis, zusatz, verbrauch, anteil, gedeckelt, eigenverbrauch, einspeisung, autarkie, sparBezug, verguetung, ertragJahr, stromkostenJetzt, reststrombezug, stromkostenNeu, anlage, anlageAuto, speicher, speicherKosten, speicherAuto, bauseiteSum, invest, eiv, eivAuto, netto, amort, rendite, co2 };
 }
 
 function solarRead() {
@@ -6059,10 +6070,23 @@ function solarRead() {
   const bauseite = $$('#s_bauseite .bsr').map(r => ({ text: r.querySelector('.bs-text').value.trim(), betrag: Number(r.querySelector('.bs-betrag').value) || 0 })).filter(b => b.text || b.betrag);
   return { flaeche: g('s_flaeche'), belegung: g('s_belegung'), wpm2: g('s_wpm2'), ertrag: g('s_ertrag'), orient: g('s_orient'), neigung: g('s_neigung'), verbrauch: g('s_verbrauch'), eigenanteil: g('s_eigen'), strompreis: g('s_preis'), einspeise: g('s_einsp'), anlagekosten: g('s_anlage'), speicher: g('s_speicher'), speicherKosten: g('s_speicherk'), eivGrund: g('s_eivg'), eivLeistung: g('s_eivl'), bauseite };
 }
+// Felder aus dem DOM lesen, Schalter-Zustände (Wärmepumpe …) aus p.solar erhalten
+function solarPreserve(p) {
+  const prev = p.solar || {};
+  const s = solarRead();
+  SOLAR_LOADS.forEach(l => { s[l.key] = !!prev[l.key]; });
+  return s;
+}
 function solarUpdate(pid) {
   const p = findProjekt(pid); if (!p) return;
-  p.solar = solarRead(); save();
+  p.solar = solarPreserve(p); save();
   const out = $('#solarOut'); if (out) out.innerHTML = solarOutHtml(solarCalc(p.solar), p.solar);
+}
+function solarToggle(pid, key) {
+  const p = findProjekt(pid); if (!p) return;
+  const s = solarPreserve(p);
+  s[key] = !s[key];
+  p.solar = s; save(); viewSolar(pid);   // neu rendern: Schalter-Optik + Gesamtverbrauch
 }
 function solarOutHtml(r, s) {
   const kwh = x => Math.round(x).toLocaleString('de-CH');
@@ -6099,17 +6123,18 @@ function solarRechenweg(r, s) {
     <div style="font-weight:600;font-size:13px;margin-bottom:8px">Rechenweg – Schritt für Schritt</div>
     ${row(`Dachfläche ${f1(r.flaeche)} m² × ${Math.round(r.belegung)} % belegt = ${f1(r.modulflaeche)} m² × ${kwh(r.wpm2)} Wp/m²`, '<b>' + f1(r.kwp) + ' kWp</b>')}
     ${row(`${f1(r.kwp)} kWp × ${kwh(s.ertrag)} kWh/kWp × ${oL[0]} (${r.of.toFixed(2)}) × ${f1(r.tilt)}° Neigung (${r.nf.toFixed(2)})`, '<b>' + kwh(r.produktion) + ' kWh/a</b>')}
+    ${r.zusatz ? row(`Verbrauch: Haushalt ${kwh(r.verbrauchBasis)} + Zusatz ${kwh(r.zusatz)}`, '<b>' + kwh(r.verbrauch) + ' kWh</b>') : ''}
     ${row(`Eigenverbrauch: ${kwh(r.produktion)} × ${Math.round(r.anteil * 100)} %${r.gedeckelt ? ` → auf Verbrauch ${kwh(r.verbrauch)} begrenzt` : ''}`, kwh(r.eigenverbrauch) + ' kWh')}
     ${row(`Einspeisung: ${kwh(r.produktion)} − ${kwh(r.eigenverbrauch)}`, kwh(r.einspeisung) + ' kWh')}
     ${row(`Ersparnis: ${kwh(r.eigenverbrauch)} kWh × ${s.strompreis} Rp`, fr(r.sparBezug))}
     ${row(`Einspeise-Vergütung: ${kwh(r.einspeisung)} kWh × ${s.einspeise} Rp`, fr(r.verguetung))}
     ${row(`<b>Ertrag pro Jahr</b>`, '<b>' + fr(r.ertragJahr) + '</b>')}
     <div style="height:6px"></div>
-    ${row(`PV-Anlagekosten${(s.anlagekosten === '' || s.anlagekosten == null) ? ` (${f1(r.kwp)} kWp × ${SOLAR_CHF_KWP})` : ''}`, fr(r.anlage))}
-    ${r.speicherKosten ? row(`+ Batteriespeicher${r.speicher ? ` (${f1(r.speicher)} kWh)` : ''}`, fr(r.speicherKosten)) : ''}
+    ${row(`PV-Anlagekosten${r.anlageAuto ? ` (${f1(r.kwp)} kWp × ${SOLAR_CHF_KWP}, automatisch)` : ''}`, fr(r.anlage))}
+    ${r.speicherKosten ? row(`+ Batteriespeicher${r.speicher ? ` (${f1(r.speicher)} kWh${r.speicherAuto ? ' × ' + SOLAR_CHF_KWH : ''})` : ''}`, fr(r.speicherKosten)) : ''}
     ${r.bauseiteSum ? row(`+ Bauseitige Kosten (Gerüst, Spengler …)`, fr(r.bauseiteSum)) : ''}
     ${row(`= Investition total`, '<b>' + fr(r.invest) + '</b>')}
-    ${row(`− Förderung EIV (${s.eivGrund} + ${s.eivLeistung} × ${f1(r.kwp)})`, '− ' + fr(r.eiv))}
+    ${row(`− Förderung EIV${r.eivAuto ? ' (automatisch)' : ''}`, '− ' + fr(r.eiv))}
     ${row(`<b>= Netto-Investition</b>`, '<b>' + fr(r.netto) + '</b>')}
     <div style="height:6px"></div>
     ${row(`Amortisation: ${fr(r.netto)} ÷ ${fr(r.ertragJahr)}/Jahr`, '<b>' + (r.amort != null ? f1(r.amort) + ' Jahre' : '–') + '</b>')}
@@ -6128,7 +6153,13 @@ function viewSolar(pid) {
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const s = solarOf(p);
   const sel = (id, map, cur) => `<select class="select" id="${id}">${Object.entries(map).map(([k, v]) => `<option value="${k}"${cur === k ? ' selected' : ''}>${esc(v[0])}</option>`).join('')}</select>`;
-  const fld = (id, label, val, unit, ph) => `<label class="field">${label}${unit ? ` <span class="muted" style="font-weight:400;font-size:11px">(${unit})</span>` : ''} <input class="input" type="number" id="${id}" value="${val !== '' && val != null ? val : ''}"${ph ? ` placeholder="${ph}"` : ''}></label>`;
+  // Feld mit Erklär-Zeile (wie Honorarrechner)
+  const fld = (id, label, val, unit, hint, ph) => `<label class="field">${label}${unit ? ` <span class="muted" style="font-weight:400;font-size:11px">(${unit})</span>` : ''}
+    <input class="input" type="number" id="${id}" value="${val !== '' && val != null ? val : ''}"${ph ? ` placeholder="${ph}"` : ''}>
+    ${hint ? `<span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px;line-height:1.4">${hint}</span>` : ''}</label>`;
+  const gesamtVerbrauch = (Number(s.verbrauch) || 0) + solarZusatz(s);
+  const loadBtns = SOLAR_LOADS.map(l => `<button class="btn xs ${s[l.key] ? '' : 'secondary'}" data-act="solar-load" data-pid="${p.id}" data-load="${l.key}" type="button">${s[l.key] ? '✓ ' : '+ '}${esc(l.label)} ${l.kwh.toLocaleString('de-CH')}</button>`).join('');
+
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Solar</div>
     <div class="detail-head">
@@ -6137,42 +6168,73 @@ function viewSolar(pid) {
     </div>
     ${projektTabs(p, 'solar')}
 
+    <div class="card card-pad" style="margin-bottom:16px;background:var(--brand-soft);border-color:transparent">
+      <h2 style="margin-top:0;font-size:15px">So funktioniert's</h2>
+      <ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.8">
+        <li><strong>Dachfläche</strong> (m²) und ungefähren Belegungs-Anteil eingeben.</li>
+        <li><strong>Ausrichtung &amp; Neigung</strong> des Daches wählen.</li>
+        <li><strong>Stromverbrauch</strong> erfassen – Wärmepumpe/E-Auto per Knopf dazu.</li>
+      </ol>
+      <p style="margin:10px 0 0;font-size:13px">→ <strong>Ertrag, Investition und Förderung rechnet der Rechner automatisch aus.</strong> Kosten-Felder leer lassen = geschätzt; eigene Zahlen (z.B. aus einer Offerte) überschreiben die Schätzung.</p>
+    </div>
+
+    <details style="margin-bottom:16px">
+      <summary style="cursor:pointer;font-weight:600;font-size:13.5px;padding:6px 0">❓ Was bedeuten diese Begriffe? (kurz erklärt)</summary>
+      <div class="card card-pad" style="font-size:13px;line-height:1.6;margin-top:8px">
+        <p style="margin:0 0 9px"><strong>Belegbare Fläche (%):</strong> Nicht das ganze Dach wird mit Modulen voll – Kamine, Fenster, Ränder bleiben frei. Üblich werden <strong>70–85 %</strong> der Fläche belegt.</p>
+        <p style="margin:0 0 9px"><strong>Modulleistung (Wp/m²):</strong> Wie viel Leistung ein Quadratmeter Modul liefert. Standardmodule ~<strong>200</strong>, moderne Premium-Module (z.B. AIKO) ~<strong>235</strong>. Mehr = effizienter = mehr Strom auf gleicher Fläche.</p>
+        <p style="margin:0 0 9px"><strong>Spezifischer Ertrag (kWh/kWp):</strong> Wie viel Strom 1 kWp Anlage pro Jahr liefert – hängt vom Standort/Wetter ab. Schweizer Mittelland ~<strong>950–1050</strong>. Im Zweifel <strong>1000</strong> stehen lassen.</p>
+        <p style="margin:0 0 9px"><strong>Ausrichtung &amp; Neigung:</strong> Himmelsrichtung (Süd = am meisten Ertrag) und Dachneigung in Grad (~30° ideal, Flachdach ~5–10°). Der Rechner zieht den Ertrag automatisch an/ab.</p>
+        <p style="margin:0 0 9px"><strong>Eigenverbrauchsanteil:</strong> Wie viel vom erzeugten Strom du <em>gleich selbst</em> brauchst (statt einzuspeisen). <strong>Ohne Speicher ~30 %, mit Batterie ~50–70 %.</strong> Höher = wirtschaftlicher, weil selbst genutzter Strom mehr spart als die Einspeisevergütung bringt. Eine Wärmepumpe erhöht ihn deutlich.</p>
+        <p style="margin:0"><strong>EIV (Förderung):</strong> Einmalvergütung des Bundes (Pronovo) – ein einmaliger Zuschuss, der die Investition senkt. Der Rechner schätzt ihn aus der Anlagengrösse; exakt bei pronovo.ch prüfen.</p>
+      </div>
+    </details>
+
     <div class="two-col">
       <div class="card card-pad" id="solarInputs">
-        <h2 style="margin:0 0 10px;font-size:15px">Anlage &amp; Dachfläche</h2>
-        <div class="form-row">${fld('s_flaeche', 'Dachfläche', s.flaeche, 'm²')}${fld('s_belegung', 'davon belegbar', s.belegung, '%')}</div>
-        <div class="form-row">${fld('s_wpm2', 'Modulleistung', s.wpm2, 'Wp/m²')}${fld('s_ertrag', 'Spezifischer Ertrag', s.ertrag, 'kWh/kWp·a')}</div>
+        <h2 style="margin:0 0 10px;font-size:15px">1 · Dach &amp; Anlage</h2>
         <div class="form-row">
-          <label class="field">Ausrichtung ${sel('s_orient', SOLAR_ORIENT, s.orient)}</label>
-          ${fld('s_neigung', 'Dachneigung', s.neigung, '°')}
+          ${fld('s_flaeche', 'Dachfläche', s.flaeche, 'm²', 'Geeignete Dachfläche gesamt.')}
+          ${fld('s_belegung', 'davon belegbar', s.belegung, '%', 'Wirklich mit Modulen belegt. Typ. 70–85 %.')}
         </div>
-        <p class="muted" style="font-size:11.5px;margin:4px 0 0">„belegbar" = Anteil der Dachfläche, der wirklich mit Modulen belegt wird (Abstände/Kamine; typ. 70–85 %). Modulleistung Standard ~200, Premium (z.B. AIKO) ~235 Wp/m². Spez. Ertrag CH Mittelland ~950–1050 kWh/kWp bei Süd.</p>
-
-        <h2 style="margin:16px 0 10px;font-size:15px">Verbrauch &amp; Tarife</h2>
-        <div class="form-row">${fld('s_verbrauch', 'Stromverbrauch', s.verbrauch, 'kWh/Jahr')}${fld('s_eigen', 'Eigenverbrauchsanteil', s.eigenanteil, '%')}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 4px">
-          <button class="btn xs secondary" data-act="solar-add-load" data-pid="${p.id}" data-kwh="5000" type="button">+ Wärmepumpe ~5'000</button>
-          <button class="btn xs secondary" data-act="solar-add-load" data-pid="${p.id}" data-kwh="2500" type="button">+ E-Auto ~2'500</button>
-          <button class="btn xs secondary" data-act="solar-add-load" data-pid="${p.id}" data-kwh="3000" type="button">+ Boiler/BWW ~3'000</button>
+        <div class="form-row">
+          ${fld('s_wpm2', 'Modulleistung', s.wpm2, 'Wp/m²', 'Standard ~200, Premium ~235.')}
+          ${fld('s_ertrag', 'Spez. Ertrag', s.ertrag, 'kWh/kWp', 'CH Mittelland ~1000. Im Zweifel so lassen.')}
         </div>
-        <p class="muted" style="font-size:11.5px;margin:0 0 8px">Haushalt allein ~4'500 kWh. <b>Mit Wärmepumpe ~+4'000–7'000</b>, E-Auto ~+2'500 – dann lohnt sich grosse PV + Speicher (viel Eigenverbrauch). Eigenverbrauchsanteil: ohne Speicher ~30 %, mit Speicher ~50–70 %.</p>
-        <div class="form-row">${fld('s_preis', 'Strompreis Bezug', s.strompreis, 'Rp/kWh')}${fld('s_einsp', 'Rückliefertarif', s.einspeise, 'Rp/kWh')}</div>
+        <div class="form-row">
+          <label class="field">Ausrichtung ${sel('s_orient', SOLAR_ORIENT, s.orient)}<span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Süd = bester Ertrag.</span></label>
+          ${fld('s_neigung', 'Dachneigung', s.neigung, '°', '~30° ideal, Flachdach ~5–10°.')}
+        </div>
 
-        <h2 style="margin:16px 0 10px;font-size:15px">Investition &amp; Förderung</h2>
-        ${fld('s_anlage', 'PV-Anlagekosten', s.anlagekosten, 'CHF', 'leer = ~' + SOLAR_CHF_KWP + ' CHF/kWp')}
-        <div class="form-row" style="margin-top:8px">${fld('s_speicher', 'Batteriespeicher', s.speicher, 'kWh')}${fld('s_speicherk', 'Speicherkosten', s.speicherKosten, 'CHF')}</div>
-        <p class="muted" style="font-size:11.5px;margin:2px 0 0">Mit Speicher den Eigenverbrauchsanteil oben höher setzen (~60–70 %). Beträge inkl. MwSt erfassen.</p>
-        <div class="muted" style="font-size:12px;margin:12px 0 4px"><strong>Bauseitige Zusatzkosten</strong> – Gerüst, Elektriker, Netzanschluss …</div>
+        <h2 style="margin:16px 0 10px;font-size:15px">2 · Verbrauch &amp; Tarife</h2>
+        ${fld('s_verbrauch', 'Haushalt-Stromverbrauch', s.verbrauch, 'kWh/Jahr', '1–2 Pers. ~2’500, Familie ~4’500. <b>Ohne</b> Wärmepumpe/E-Auto – die kommen per Knopf dazu:')}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px">${loadBtns}</div>
+        <div class="muted" style="font-size:12.5px;margin:0 0 10px">Gesamtverbrauch: <b style="color:var(--text)">${gesamtVerbrauch.toLocaleString('de-CH')} kWh/Jahr</b></div>
+        ${fld('s_eigen', 'Eigenverbrauchsanteil', s.eigenanteil, '%', 'Anteil, den du selbst brauchst. Ohne Speicher ~30 %, mit Batterie ~55–70 %. Mehr = wirtschaftlicher.')}
+        <div class="form-row">
+          ${fld('s_preis', 'Strompreis Bezug', s.strompreis, 'Rp/kWh', 'Was du heute pro kWh zahlst (~25–35).')}
+          ${fld('s_einsp', 'Rückliefertarif', s.einspeise, 'Rp/kWh', 'Vergütung für eingespeisten Strom (~6–14).')}
+        </div>
+
+        <h2 style="margin:16px 0 10px;font-size:15px">3 · Investition &amp; Förderung <span class="muted" style="font-size:12px;font-weight:400">– leer = automatisch</span></h2>
+        ${fld('s_anlage', 'PV-Anlagekosten', s.anlagekosten, 'CHF', 'Leer lassen = ~' + SOLAR_CHF_KWP + ' CHF/kWp geschätzt. Offertpreis hier überschreiben.')}
+        <div class="form-row" style="margin-top:8px">
+          ${fld('s_speicher', 'Batteriespeicher', s.speicher, 'kWh', 'Optional. Leer = kein Speicher.')}
+          ${fld('s_speicherk', 'Speicherkosten', s.speicherKosten, 'CHF', 'Leer = ~' + SOLAR_CHF_KWH + ' CHF/kWh geschätzt.')}
+        </div>
+        <div class="muted" style="font-size:12px;margin:12px 0 4px"><strong>Bauseitige Zusatzkosten</strong> – was die Offerte <em>nicht</em> enthält (Gerüst, Spengler, Netzanschluss …)</div>
         <div id="s_bauseite">${(s.bauseite || []).map(b => bsRow(p.id, b.text, b.betrag)).join('')}</div>
         <button class="btn sm secondary" data-act="solar-bs-add" data-pid="${p.id}" type="button">+ Position</button>
-        <div class="form-row" style="margin-top:14px">${fld('s_eivg', 'EIV Grundbeitrag', s.eivGrund, 'CHF')}${fld('s_eivl', 'EIV Leistungsbeitrag', s.eivLeistung, 'CHF/kWp')}</div>
-        <p class="muted" style="font-size:11.5px;margin:4px 0 0">Pronovo Einmalvergütung (EIV) – Richtwerte, aktuelle Tarife auf pronovo.ch prüfen.</p>
+        <div class="form-row" style="margin-top:14px">
+          ${fld('s_eivg', 'EIV Grundbeitrag', s.eivGrund, 'CHF', 'Leer = 200 (Standard).')}
+          ${fld('s_eivl', 'EIV Leistungsbeitrag', s.eivLeistung, 'CHF/kWp', 'Leer = 385/kWp geschätzt.')}
+        </div>
       </div>
 
       <div class="card card-pad">
         <h2 style="margin:0 0 12px;font-size:15px">Ergebnis</h2>
         <div id="solarOut">${solarOutHtml(solarCalc(s), s)}</div>
-        <p class="muted" style="font-size:11.5px;margin:14px 0 0">Überschlagsrechnung ohne Degradation/Teuerung. Für eine verbindliche Auslegung Fachplaner beiziehen.</p>
+        <p class="muted" style="font-size:11.5px;margin:14px 0 0">Überschlagsrechnung ohne Degradation/Teuerung. Förder-/Tarifwerte sind Richtwerte. Für eine verbindliche Auslegung Fachplaner beiziehen.</p>
       </div>
     </div>
   `);
@@ -7559,7 +7621,7 @@ document.addEventListener('click', e => {
     case 'opt-manage':   actBauteileOptionen(pid); break;
     case 'solar-bs-add': { const w = $('#s_bauseite'); if (w) { w.insertAdjacentHTML('beforeend', bsRow(pid)); solarUpdate(pid); } } break;
     case 'solar-bs-del': { const r = act.closest('.bsr'); if (r) { r.remove(); solarUpdate(pid); } } break;
-    case 'solar-add-load': { const el = $('#s_verbrauch'); if (el) { el.value = (Number(el.value) || 0) + (Number(act.dataset.kwh) || 0); solarUpdate(pid); } } break;
+    case 'solar-load':     solarToggle(pid, act.dataset.load); break;
     case 'bt-add':       { const w = $('#bt_rows'); if (w) w.insertAdjacentHTML('beforeend', obtRow(null)); } break;
     case 'op-add':       { const w = $('#op_rows'); if (w) w.insertAdjacentHTML('beforeend', oopRow(findProjekt(pid), null)); } break;
     case 'row-del':      { const r = act.closest('.bt-row, .op-row'); if (r) r.remove(); } break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v27';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v28';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -591,6 +591,7 @@ function projektTabs(p, active) {
     { key: 'listen', href: `#/projekt/${p.id}/listen`, label: 'Listen' },
     { key: 'bauherr', href: `#/projekt/${p.id}/bauherr`, label: 'Bauherr' },
     { key: 'finanz', href: `#/projekt/${p.id}/finanz`, label: 'Finanzierung' },
+    { key: 'honorar', href: `#/projekt/${p.id}/honorar`, label: 'Honorar' },
   ];
   // Unterreiter auch in der Sidebar unter „Projekte" anzeigen
   const sub = $('#projSubnav');
@@ -667,11 +668,12 @@ function router() {
       if (sub === 'listen') return viewListen(a);
       if (sub === 'bauherr') return viewBauherr(a);
       if (sub === 'finanz') return viewFinanz(a);
+      if (sub === 'honorar') { honorarPid = a; return viewHonorar(); }
       if (sub === 'protokoll' && b) return viewProtokollDetail(a, b);
       return viewProjektDetail(a);
     case 'kalender':      setActiveNav('kalender');      return viewKalenderGlobal();
     case 'drucken':       setActiveNav('drucken');       return viewDrucken();
-    case 'honorar':       setActiveNav('honorar');       return viewHonorar();
+    case 'honorar':       setActiveNav('honorar'); honorarPid = null; return viewHonorar();
     case 'kontakte':      setActiveNav('kontakte');      return viewKontakte();
     case 'dokumente':     setActiveNav('dokumente');     return viewDokumente();
     case 'einstellungen': setActiveNav('einstellungen'); return viewEinstellungen();
@@ -1469,18 +1471,25 @@ function n2(x) { return Number(String(x ?? '').replace(/['’\s]/g, '').replace(
 
 let honorarData = null;
 let honorarDetail = false;
+let honorarPid = null;   // gesetzt = Honorar des Projekts (p.honorar), sonst globaler Rechner (localStorage)
 function honorarDefaults() {
   const pct = {}; HONORAR_PHASEN.forEach(p => pct[p.key] = p.pct);
   return { projekt: '', B: '', Z1: 0.062, Z2: 10.30, n: 1, r: 1, i: 1, s: 1, h: 135, mwst: 8.1, pct };
 }
 function loadHonorar() {
-  if (honorarData) return honorarData;
-  try { honorarData = JSON.parse(localStorage.getItem('so_honorar') || 'null'); } catch (_) {}
+  if (honorarPid) {
+    const p = findProjekt(honorarPid);
+    if (p) { if (!p.honorar) { p.honorar = honorarDefaults(); p.honorar.projekt = p.name; } if (!p.honorar.pct) p.honorar.pct = honorarDefaults().pct; return p.honorar; }
+  }
+  if (!honorarData) { try { honorarData = JSON.parse(localStorage.getItem('so_honorar') || 'null'); } catch (_) {} }
   if (!honorarData) honorarData = honorarDefaults();
   if (!honorarData.pct) honorarData.pct = honorarDefaults().pct;
   return honorarData;
 }
-function saveHonorarData() { try { localStorage.setItem('so_honorar', JSON.stringify(honorarData)); } catch (_) {} }
+function saveHonorarData() {
+  if (honorarPid) { save(); return; }
+  try { localStorage.setItem('so_honorar', JSON.stringify(honorarData)); } catch (_) {}
+}
 
 function computeHonorar(d) {
   const B = n2(d.B);
@@ -1511,11 +1520,16 @@ function viewHonorar() {
       <td class="num" id="hon_h_${ph.key}">–</td>
     </tr>`).join('');
 
+  const pj = honorarPid ? findProjekt(honorarPid) : null;
+  const head = pj
+    ? `<div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(pj.name)}</div>
+       <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(pj.name)}</h1><div class="sub" style="margin-top:5px">Honorar-Rechner · SIA 102 (2003)</div></div>
+         <button class="btn" data-act="pdf-honorar">⬇ PDF</button></div>
+       ${projektTabs(pj, 'honorar')}`
+    : `<div class="page-head"><div><h1>Honorar-Rechner</h1><div class="sub">Architektenhonorar nach Baukosten · SIA 102 (2003)</div></div>
+         <button class="btn" data-act="pdf-honorar">⬇ PDF</button></div>`;
   render(`
-    <div class="page-head">
-      <div><h1>Honorar-Rechner</h1><div class="sub">Architektenhonorar nach Baukosten · SIA 102 (2003)</div></div>
-      <button class="btn" data-act="pdf-honorar">⬇ PDF</button>
-    </div>
+    ${head}
 
     <div class="card card-pad" style="max-width:780px;margin-bottom:16px;background:var(--brand-soft);border-color:transparent">
       <h2 style="margin-top:0;font-size:15px">In 3 Schritten zum Honorar</h2>

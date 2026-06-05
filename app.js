@@ -25,8 +25,8 @@ const VERGABE_STATUS = [
   { key: 'ausschreibung',   label: 'Ausschreibung erstellt',         kurz: 'Ausschreibung',   color: 'grey'   },
   { key: 'versendet',       label: 'Ausschreibung versendet',        kurz: 'Versendet',       color: 'blue'   },
   { key: 'offerten',        label: 'Offerten eingegangen',           kurz: 'Offerten',        color: 'blue'   },
-  { key: 'angebot_vers',    label: 'Angebot versendet',              kurz: 'Angebot vers.',   color: 'blue'   },
-  { key: 'angebot_erh',     label: 'Angebot erhalten',               kurz: 'Angebot erh.',    color: 'blue'   },
+  { key: 'angebot_vers',    label: 'Abgebot versendet',              kurz: 'Abgebot vers.',   color: 'blue'   },
+  { key: 'angebot_erh',     label: 'Abgebot erhalten',               kurz: 'Abgebot erh.',    color: 'blue'   },
   { key: 'bewertung',       label: 'Offertvergleich zugestellt',     kurz: 'Vergleich',       color: 'amber'  },
   { key: 'verhandlung',     label: 'Vergabeverhandlung organisiert', kurz: 'Verhandlung',     color: 'amber'  },
   { key: 'vergeben',        label: 'Zuschlag erteilt',               kurz: 'Vergeben',        color: 'purple' },
@@ -1082,6 +1082,16 @@ function viewKosten(id) {
 let ganttZoom = 'monat';   // 'monat' | 'woche' | 'tag'
 let ganttSort = 'bkp';     // 'bkp' | 'start'
 const ZOOM = { monat: { px: 2.4, label: 'Monate' }, woche: { px: 9, label: 'Wochen' }, tag: { px: 26, label: 'Tage' } };
+// Gantt-Balkenfarbe je Status (über den Lebenszyklus differenziert)
+const GANTT_PHASE = {
+  ausschreibung: 'rot', versendet: 'orange', offerten: 'orange', angebot_vers: 'orange', angebot_erh: 'orange',
+  bewertung: 'gelb', verhandlung: 'gelb', vergeben: 'gelb', werkvertrag: 'gruen', unterzeichnet: 'gruen',
+  ausfuehrung: 'blau', schlussrechnung: 'violett', maengel: 'dgrau', abgeschlossen: 'hgrau',
+};
+const GANTT_COLS = { rot: '#dc2626', orange: '#f97316', gelb: '#eab308', gruen: '#16a34a', blau: '#1f6feb', violett: '#7c3aed', dgrau: '#475569', hgrau: '#cbd5e1' };
+const GANTT_LEGEND = [['rot', 'angefragt'], ['orange', 'Offerte / Abgebot'], ['gelb', 'bis Vergabe'], ['gruen', 'Werkvertrag'], ['blau', 'Ausführung'], ['violett', 'Schlussrechnung'], ['dgrau', 'Mängel'], ['hgrau', 'abgeschlossen']];
+function ganttColKey(v) { return GANTT_PHASE[v.status] || 'dgrau'; }
+function ganttColHex(v) { return GANTT_COLS[ganttColKey(v)]; }
 let ganttCtx = null;       // { rangeStartISO, pxPerDay } – für Drag
 let ganttPid = null;       // aktuelles Projekt im Gantt (für Verbindungen)
 
@@ -1190,7 +1200,7 @@ function viewTermine(id) {
   const ROW_H = 38;
   let sideRows = '', barRows = '', rowIdx = 0; const barMeta = {};
   vs.forEach(v => {
-    const col = STATUS_BY_KEY[v.status]?.color || 'blue';
+    const colKey = ganttColKey(v), colHex = ganttColHex(v), light = colKey === 'hgrau' ? ' g-light' : '';
     const hatTermin = v.bauStart && v.bauEnde;
     sideRows += `<div class="g-side-row${hatTermin ? '' : ' offen'}">
       <span class="g-edit" data-act="edit-termin" data-pid="${p.id}" data-vid="${v.id}" title="Termine bearbeiten">
@@ -1200,8 +1210,8 @@ function viewTermine(id) {
     </div>`;
     if (hatTermin) {
       barMeta[v.id] = { row: rowIdx, left: leftPx(v.bauStart), width: widthPx(v.bauStart, v.bauEnde) };
-      barRows += `<div class="g-row"><div class="g-bar ${col}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px"
-        title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}"
+      barRows += `<div class="g-row"><div class="g-bar${light}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
+        title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)} · ${STATUS_BY_KEY[v.status]?.label || ''}"
         data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
         <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span><span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
     } else {
@@ -1213,7 +1223,7 @@ function viewTermine(id) {
       barMeta[key] = { row: rowIdx, left: leftPx(o.start), width: widthPx(o.start, o.ende) };
       sideRows += `<div class="g-side-row sub"><span class="gewerk" style="font-weight:500">${esc(o.titel)}</span>
         <button class="x-btn" title="Vorgang löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button></div>`;
-      barRows += `<div class="g-row"><div class="g-bar sub ${col}" style="left:${leftPx(o.start)}px;width:${widthPx(o.start, o.ende)}px"
+      barRows += `<div class="g-row"><div class="g-bar sub${light}" style="left:${leftPx(o.start)}px;width:${widthPx(o.start, o.ende)}px;background:${colHex}"
         title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
         data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-start="${o.start}" data-ende="${o.ende}">
         <span class="g-h l"></span><span class="g-lbl">${esc(o.titel)}</span><span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div></div>`;
@@ -1252,7 +1262,7 @@ function viewTermine(id) {
       </div></div>
     </div>
     <div class="g-legend">
-      ${VERGABE_STATUS.map(s => `<span><i style="background:var(--s-${s.color})"></i>${s.kurz}</span>`).join('')}
+      ${GANTT_LEGEND.map(([k, l]) => `<span><i style="background:${GANTT_COLS[k]}"></i>${l}</span>`).join('')}
     </div>
     <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie.</p>
   `);
@@ -3847,12 +3857,13 @@ function viewKalender(pid) {
     for (let i = 0; i < 42; i++) {
       const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
       const iso = isoOf(d); const other = d.getMonth() !== calM; const dayEv = byDay[iso] || [];
+      if (i % 7 === 0) cells += `<div class="cal-kw">KW<br>${isoWeek(d)}</div>`;
       const chips = dayEv.slice(0, 4).map(e => `<div class="cal-ev ${e.color}"${e.manual ? ` data-act="kal-edit" data-pid="${p.id}" data-tid="${e.id}"` : ''} title="${esc((e.zeit ? e.zeit + ' ' : '') + e.titel)}">${e.zeit ? esc(e.zeit) + ' ' : ''}${esc(e.titel)}</div>`).join('');
       const more = dayEv.length > 4 ? `<div class="cal-more">+${dayEv.length - 4} mehr</div>` : '';
       cells += `<div class="cal-day${other ? ' other' : ''}${iso === todayI ? ' today' : ''}" data-act="kal-add" data-pid="${p.id}" data-kind="${iso}"><div class="d">${d.getDate()}</div>${chips}${more}</div>`;
     }
     label = `${MONATE[calM]} ${calY}`;
-    body = `<div class="cal">${DOW.map(d => `<div class="cal-dow">${d}</div>`).join('')}${cells}</div>`;
+    body = `<div class="cal"><div class="cal-dow">KW</div>${DOW.map(d => `<div class="cal-dow">${d}</div>`).join('')}${cells}</div>`;
   } else if (calView === 'woche') {
     const wd = weekDates(calRefIso); const a = dISO(wd[0]);
     label = `KW ${isoWeek(a)} · ${fmtDate(wd[0])} – ${fmtDate(wd[6])}`;
@@ -4067,13 +4078,14 @@ function viewKalenderGlobal() {
     const iso = isoOf(d);
     const other = d.getMonth() !== calGM;
     const dayEv = byDay[iso] || [];
+    if (i % 7 === 0) cells += `<div class="cal-kw">KW<br>${isoWeek(d)}</div>`;
     const chips = dayEv.slice(0, 4).map(e => `<div class="cal-ev ${e.color}"${e.manual ? ` data-act="kal-edit" data-pid="${e.pid}" data-tid="${e.id}"` : ''} title="${esc(e.projekt + ' · ' + (e.zeit ? e.zeit + ' ' : '') + e.titel)}">${e.zeit ? esc(e.zeit) + ' ' : ''}${esc(e.titel)}</div>`).join('');
     const more = dayEv.length > 4 ? `<div class="cal-more">+${dayEv.length - 4} mehr</div>` : '';
     cells += `<div class="cal-day${other ? ' other' : ''}${iso === todayI ? ' today' : ''}" data-act="gcal-add" data-kind="${iso}"><div class="d">${d.getDate()}</div>${chips}${more}</div>`;
   }
 
   let gLabel = `${MONATE[calGM]} ${calGY}`;
-  let gBody = `<div class="cal">${DOW.map(d => `<div class="cal-dow">${d}</div>`).join('')}${cells}</div>`;
+  let gBody = `<div class="cal"><div class="cal-dow">KW</div>${DOW.map(d => `<div class="cal-dow">${d}</div>`).join('')}${cells}</div>`;
   if (calView === 'woche') { const wd = weekDates(calRefIso); gLabel = `KW ${isoWeek(dISO(wd[0]))} · ${fmtDate(wd[0])} – ${fmtDate(wd[6])}`; gBody = calTimeGrid(events, wd, todayI, ''); }
   else if (calView === 'tag') { const d = dISO(calRefIso); gLabel = `${['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'][(d.getDay() + 6) % 7]}, ${fmtDate(calRefIso)}`; gBody = calTimeGrid(events, [calRefIso], todayI, ''); }
   const gvb = (v, t2) => `<button class="btn sm ${calView === v ? '' : 'secondary'}" data-act="gcal-view" data-kind="${v}">${t2}</button>`;
@@ -5035,7 +5047,6 @@ function pdfGantt(pid) {
   const months = []; let cur = new Date(ds.getFullYear(), ds.getMonth(), 1); const end = new Date(de.getFullYear(), de.getMonth(), 1);
   while (cur <= end) { months.push({ y: cur.getFullYear(), m: cur.getMonth() }); cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1); }
   const mIdx = iso => { const d = dISO(iso); return months.findIndex(x => x.y === d.getFullYear() && x.m === d.getMonth()); };
-  const colorHex = { blue: '#1f6feb', teal: '#0d9488', purple: '#8b5cf6', green: '#16a34a', amber: '#e0930f', red: '#dc2626', grey: '#8a97a8' };
   // dynamische Höhe/Schrift, damit alles auf eine Seite passt
   const n = vs.length;
   const barH = n > 22 ? 9 : n > 14 ? 12 : 15;
@@ -5043,7 +5054,7 @@ function pdfGantt(pid) {
   const headM = months.map(x => `<th style="text-align:center;font-size:${fs}px;font-weight:700;padding:5px 1px">${MON_KURZ[x.m]}<br><span style="color:#9aa4b1">${String(x.y).slice(2)}</span></th>`).join('');
   const rows = vs.map(v => {
     const s = mIdx(v.bauStart), e = mIdx(v.bauEnde);
-    const col = colorHex[STATUS_BY_KEY[v.status] && STATUS_BY_KEY[v.status].color] || '#1f6feb';
+    const col = ganttColHex(v);
     const cells = months.map((_, i) => `<td style="padding:0 1px;border-left:1px solid #eef1f5">${i >= s && i <= e ? `<div style="background:${col};height:${barH}px;border-radius:3px"></div>` : ''}</td>`).join('');
     return `<tr><td style="font-size:${fs + 1.5}px;line-height:1.25"><b>${esc(v.bkp || '')}</b> ${esc(v.gewerk || '')}</td><td style="font-size:${fs}px;white-space:nowrap;color:#6b7480">${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}</td>${cells}</tr>`;
   }).join('');

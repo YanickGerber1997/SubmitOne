@@ -174,7 +174,8 @@ button { font-family: inherit; cursor: pointer; }
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .cal-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-soft); }
 .cal-legend i, .cal-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: middle; flex: none; }
-.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.cal { display: grid; grid-template-columns: 38px repeat(7, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.cal-kw { background: var(--surface-2); color: var(--text-faint); font-size: 10px; font-weight: 700; line-height: 1.15; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .cal-dow { background: var(--surface-2); text-align: center; font-size: 11px; font-weight: 700; color: var(--text-soft); padding: 7px 0; letter-spacing: .5px; }
 .cal-day { background: var(--surface); min-height: 104px; padding: 5px 6px 6px; cursor: pointer; overflow: hidden; }
 .cal-day:hover { background: var(--surface-2); }
@@ -666,6 +667,7 @@ tr.done-row { background: #fbfdfb; }
 .g-bar .g-h { flex: none; width: 7px; align-self: stretch; cursor: ew-resize; border-radius: 6px; }
 .g-bar:hover .g-h { background: rgba(255,255,255,.4); }
 .g-bar.sub { top: 11px; height: 16px; font-size: 10px; opacity: .94; }
+.g-bar.g-light, .g-bar.g-light .g-lbl { color: #334155; }
 .g-bar.grey   { background: var(--s-grey); }
 .g-bar.blue   { background: var(--brand); }
 .g-bar.amber  { background: var(--s-amber); }

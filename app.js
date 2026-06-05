@@ -586,6 +586,7 @@ function projektTabs(p, active) {
   const pendBadge = openP ? ` <span class="tab-badge">${openP}</span>` : '';
   const items = [
     { key: 'overview', href: `#/projekt/${p.id}`, label: 'Übersicht' },
+    { key: 'dossier', href: `#/projekt/${p.id}/dossier`, label: 'Dossier' + (dossierFehltCount(p) ? ` <span class="tab-badge">${dossierFehltCount(p)}</span>` : '') },
     { key: 'kalender', href: `#/projekt/${p.id}/kalender`, label: 'Kalender' },
     { key: 'kosten', href: `#/projekt/${p.id}/kosten`, label: 'Kosten' },
     { key: 'termine', href: `#/projekt/${p.id}/termine`, label: 'Termine / Gantt' },
@@ -673,6 +674,7 @@ function router() {
       if (sub === 'kosten') return viewKosten(a);
       if (sub === 'protokolle') return viewProtokolle(a);
       if (sub === 'pendenzen') return viewPendenzen(a);
+      if (sub === 'dossier') return viewDossier(a);
       if (sub === 'listen') return viewListen(a);
       if (sub === 'bauherr') return viewBauherr(a);
       if (sub === 'finanz') return viewFinanz(a);
@@ -2958,6 +2960,185 @@ function viewDokumente() {
     </div>
   `;
   render(html);
+}
+
+/* ---------------------------------------------------------------
+   Dossier: Projekt-Lebenszyklus (6 Phasen) – pro Position eigenes Verhalten
+   - quelle 'modul': von der App abgedeckt → Status AUTOMATISCH erkannt + „→ öffnen"
+   - quelle 'sammeln' (Standard): extern → Status/Verweis/Notiz manuell erfassen
+   --------------------------------------------------------------- */
+const DOS_ROUTE = { kosten: '/kosten', termine: '/termine', protokolle: '/protokolle', pendenzen: '/pendenzen', vergaben: '' };
+const DOS_STATUS = [['offen', 'Offen', 'fehlt'], ['inArbeit', 'In Arbeit', 'teil'], ['vorhanden', 'Vorhanden', 'ok'], ['abgegeben', 'Abgegeben', 'ok'], ['entfaellt', 'Entfällt', 'entf']];
+// Automatische Vollständigkeits-Erkennung je Thema (jedes anders)
+const DOS_CHECK = {
+  kostenschaetzung: p => (p.vergaben || []).some(v => v.schaetzung) ? 'ok' : 'fehlt',
+  termine:          p => ((p.vergaben || []).some(v => v.frist || v.bauStart || (v.vorgaenge || []).length) || (p.termine || []).length) ? 'ok' : 'fehlt',
+  protokolle:       p => (p.protokolle || []).length ? 'ok' : 'fehlt',
+  pendenzen:        p => ((p.pendenzen || []).length || (p.protokolle || []).some(pr => (pr.traktanden || []).some(t => (t.eintraege || []).some(it => it.art === 'pendenz')))) ? 'ok' : 'fehlt',
+  kostenkontrolle:  p => (p.vergaben || []).some(v => (v.rechnungen || []).length || v.schaetzung) ? 'ok' : 'fehlt',
+  nachtraege:       p => (p.vergaben || []).some(v => (v.nachtraege || []).length) ? 'ok' : 'fehlt',
+  rechnungen:       p => (p.vergaben || []).some(v => (v.rechnungen || []).length) ? 'ok' : 'fehlt',
+  ausschreibung:    p => (p.vergaben || []).length ? 'ok' : 'fehlt',
+  offerten:         p => (p.vergaben || []).some(v => (v.eingeladene || []).length) ? 'ok' : 'fehlt',
+  zuschlag:         p => (p.vergaben || []).some(v => ['vergeben', 'werkvertrag', 'unterzeichnet', 'ausfuehrung', 'abgeschlossen'].includes(v.status)) ? 'ok' : 'fehlt',
+  vertraege:        p => (p.vergaben || []).some(v => ['werkvertrag', 'unterzeichnet', 'ausfuehrung', 'abgeschlossen'].includes(v.status)) ? 'ok' : 'fehlt',
+};
+const DOSSIER_VORLAGE = [
+  { key: 'g1', label: '1 · Grundlagen', kategorien: [
+    { label: 'Projekt', positionen: [
+      { id: 'projektbeschrieb', label: 'Projektbeschrieb' }, { id: 'machbarkeit', label: 'Machbarkeitsstudie' },
+      { id: 'beduerfnis', label: 'Bedürfnisanalyse' }, { id: 'standort', label: 'Standortanalyse' }, { id: 'risiko', label: 'Risikoanalyse' },
+    ] },
+    { label: 'Kosten & Termine', positionen: [
+      { id: 'kostenschaetzung', label: 'Kostenschätzung', modul: 'kosten', auto: 'kostenschaetzung' },
+      { id: 'grobtermin', label: 'Terminplanung (Grobterminplan)', modul: 'termine', auto: 'termine' },
+      { id: 'finanzierung', label: 'Finanzierungsnachweis' },
+    ] },
+    { label: 'Grundstück', positionen: [
+      { id: 'grundbuch', label: 'Grundbuchauszug' }, { id: 'kataster', label: 'Katasterplan' }, { id: 'dienstbarkeiten', label: 'Dienstbarkeiten' },
+    ] },
+  ] },
+  { key: 'g2', label: '2 · Planung', kategorien: [
+    { label: 'Architektur', positionen: [
+      { id: 'vorprojekt', label: 'Vorprojektpläne' }, { id: 'entwurf', label: 'Entwurfspläne' }, { id: 'bauprojekt', label: 'Bauprojektpläne' },
+      { id: 'ausfuehrungsplaene', label: 'Ausführungspläne' }, { id: 'detailplaene', label: 'Detailpläne' }, { id: 'bim', label: '3D- / BIM-Modelle' },
+    ] },
+    { label: 'Fachplaner', positionen: [
+      { id: 'statik', label: 'Statikberechnungen' }, { id: 'tragwerk', label: 'Tragwerkspläne' }, { id: 'elektro', label: 'Elektroplanung' },
+      { id: 'sanitaer', label: 'Sanitärplanung' }, { id: 'heizung', label: 'Heizungsplanung' }, { id: 'lueftung', label: 'Lüftungsplanung' },
+      { id: 'brandschutz', label: 'Brandschutzkonzept' }, { id: 'energie', label: 'Energienachweis' },
+      { id: 'schallschutz', label: 'Schallschutznachweis' }, { id: 'waermeschutz', label: 'Wärmeschutznachweis' },
+    ] },
+  ] },
+  { key: 'g3', label: '3 · Bewilligungsverfahren', kategorien: [
+    { label: 'Baugesuch', positionen: [
+      { id: 'baugesuch', label: 'Baugesuch' }, { id: 'baugesuchsplaene', label: 'Baugesuchspläne' }, { id: 'baubeschrieb', label: 'Baubeschrieb' },
+      { id: 'situationsplan', label: 'Situationsplan' }, { id: 'nachweise_beh', label: 'Nachweise für Behörden' },
+    ] },
+    { label: 'Gutachten & Bewilligung', positionen: [
+      { id: 'umweltgutachten', label: 'Umweltgutachten (falls nötig)' }, { id: 'verkehrsgutachten', label: 'Verkehrsgutachten (falls nötig)' },
+      { id: 'stellungnahmen', label: 'Stellungnahmen Fachstellen' }, { id: 'baubewilligung', label: 'Baubewilligung' },
+    ] },
+  ] },
+  { key: 'g4', label: '4 · Ausschreibung & Vergabe', kategorien: [
+    { label: 'Vergabe (→ Vergaben-Modul)', positionen: [
+      { id: 'lv', label: 'Leistungsverzeichnisse & Ausschreibungsunterlagen', modul: 'vergaben', auto: 'ausschreibung' },
+      { id: 'offertanfragen', label: 'Offertanfragen & Unternehmerofferten', modul: 'vergaben', auto: 'offerten' },
+      { id: 'offertvergleich', label: 'Offertvergleich & Vergabeantrag', modul: 'vergaben', auto: 'zuschlag' },
+      { id: 'werkvertraege', label: 'Werk- & Lieferantenverträge', modul: 'vergaben', auto: 'vertraege' },
+    ] },
+  ] },
+  { key: 'g5', label: '5 · Ausführung', kategorien: [
+    { label: 'Organisation', positionen: [
+      { id: 'baustellenorg', label: 'Baustellenorganisation' }, { id: 'sicherheit', label: 'Sicherheitskonzept' },
+      { id: 'qm', label: 'Qualitätsmanagement-Dokumente' }, { id: 'journal', label: 'Baustellenjournal' },
+    ] },
+    { label: 'Technische Unterlagen', positionen: [
+      { id: 'werkplaene', label: 'Werkpläne' }, { id: 'montageplaene', label: 'Montagepläne' }, { id: 'revisionsplaene', label: 'Revisionspläne (laufend)' },
+      { id: 'materialfreigaben', label: 'Materialfreigaben' }, { id: 'pruefberichte', label: 'Prüfberichte' }, { id: 'kontrollberichte', label: 'Kontrollberichte' },
+    ] },
+    { label: 'Sitzungen & Kosten', positionen: [
+      { id: 'sitzungsprotokolle', label: 'Sitzungs- / Baustellenprotokolle', modul: 'protokolle', auto: 'protokolle' },
+      { id: 'kostenkontrolle', label: 'Kostenkontrolle', modul: 'kosten', auto: 'kostenkontrolle' },
+      { id: 'nachtrag', label: 'Nachtragsmanagement', modul: 'kosten', auto: 'nachtraege' },
+      { id: 'rechnungen', label: 'Rechnungen & Zahlungsfreigaben', modul: 'kosten', auto: 'rechnungen' },
+      { id: 'budgetberichte', label: 'Budgetberichte', modul: 'kosten', auto: 'kostenkontrolle' },
+    ] },
+  ] },
+  { key: 'g6', label: '6 · Bauabnahme', kategorien: [
+    { label: 'Abnahme', positionen: [
+      { id: 'abnahmeprotokolle', label: 'Abnahmeprotokolle' },
+      { id: 'maengelliste', label: 'Mängelliste (Pendenzen)', modul: 'pendenzen', auto: 'pendenzen' },
+      { id: 'funktionspruefung', label: 'Funktionsprüfungen' }, { id: 'inbetriebnahme', label: 'Inbetriebnahmeprotokolle' },
+      { id: 'behoerdenabnahme', label: 'Behördenabnahmen' }, { id: 'schlussabnahme', label: 'Schlussabnahme' },
+    ] },
+  ] },
+];
+const DOS_INDEX = {};
+DOSSIER_VORLAGE.forEach(ph => ph.kategorien.forEach(k => k.positionen.forEach(pos => { DOS_INDEX[pos.id] = pos; })));
+
+function dossierState(p, pos) {
+  if (pos.modul) { const b = DOS_CHECK[pos.auto] ? DOS_CHECK[pos.auto](p) : 'fehlt'; return { bucket: b, label: b === 'ok' ? 'Vorhanden' : b === 'teil' ? 'Teilweise' : 'Fehlt' }; }
+  const rec = (p.dossier || {})[pos.id];
+  const def = DOS_STATUS.find(s => s[0] === ((rec && rec.status) || 'offen')) || DOS_STATUS[0];
+  const note = rec ? [rec.verweis ? '📎 ' + rec.verweis : '', rec.notiz || ''].filter(Boolean).join(' · ') : '';
+  return { bucket: def[2], label: def[1], note };
+}
+function dossierStats(p) {
+  const s = { ok: 0, teil: 0, fehlt: 0, entf: 0 };
+  DOSSIER_VORLAGE.forEach(ph => ph.kategorien.forEach(k => k.positionen.forEach(pos => { s[dossierState(p, pos).bucket]++; })));
+  return s;
+}
+function dossierFehltCount(p) { return dossierStats(p).fehlt; }
+function dosBadge(bucket, label) {
+  const cls = bucket === 'ok' ? 'green' : bucket === 'teil' ? 'amber' : bucket === 'entf' ? 'grey' : 'red';
+  const ico = bucket === 'ok' ? '✓' : bucket === 'teil' ? '◐' : bucket === 'entf' ? '–' : '○';
+  return `<span class="st ${cls}" style="font-size:10.5px;padding:2px 8px">${ico} ${label}</span>`;
+}
+function viewDossier(pid) {
+  const p = findProjekt(pid);
+  if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  const s = dossierStats(p);
+  const kpi = (l, v, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:21px${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div></div>`;
+
+  const phasenHtml = DOSSIER_VORLAGE.map(ph => {
+    let ok = 0, tot = 0;
+    const kats = ph.kategorien.map(kat => {
+      const rows = kat.positionen.map(pos => {
+        const d = dossierState(p, pos);
+        if (d.bucket !== 'entf') { tot++; if (d.bucket === 'ok') ok++; }
+        const action = pos.modul
+          ? `<a class="btn sm secondary" href="#/projekt/${p.id}${DOS_ROUTE[pos.modul]}">→ öffnen</a>`
+          : `<button class="btn sm secondary" data-act="dossier-edit" data-pid="${p.id}" data-did="${pos.id}">erfassen</button>`;
+        return `<div class="dos-row">
+          <span class="dos-badge">${dosBadge(d.bucket, d.label)}</span>
+          <span class="dos-name">${esc(pos.label)}${pos.modul ? ' <span class="dos-auto">auto</span>' : ''}${d.note ? `<div class="dos-sub">${esc(d.note)}</div>` : ''}</span>
+          ${action}
+        </div>`;
+      }).join('');
+      return `<div class="dos-kat"><div class="dos-kat-h">${esc(kat.label)}</div>${rows}</div>`;
+    }).join('');
+    const pct = tot ? Math.round(ok / tot * 100) : 0;
+    return `<div class="card" style="margin-bottom:14px">
+      <div class="dos-phase-h"><span class="dos-phase-t">${esc(ph.label)}</span><span class="dos-phase-p">${ok}/${tot} ${progressBar(pct)}</span></div>
+      <div style="padding:4px 16px 14px">${kats}</div>
+    </div>`;
+  }).join('');
+
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
+    <div class="detail-head">
+      <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Dossier · vollständige Projektunterlagen über alle Phasen</div></div>
+    </div>
+    ${projektTabs(p, 'dossier')}
+    <div class="kpi-row">
+      ${kpi('Vorhanden', s.ok, s.ok ? 's-green' : '')}
+      ${kpi('In Arbeit', s.teil)}
+      ${kpi('Offen / fehlt', s.fehlt, s.fehlt ? 's-red' : '')}
+      ${kpi('Entfällt', s.entf)}
+    </div>
+    <p class="muted" style="font-size:12px;margin:0 0 16px"><span class="dos-auto">auto</span> = wird von der App automatisch erkannt (öffnen zum Bearbeiten) · übrige Positionen erfasst du extern (Status, Datei-Name/Link, Notiz).</p>
+    ${phasenHtml}
+  `);
+}
+function actDossier(pid, did) {
+  const p = findProjekt(pid); const pos = DOS_INDEX[did]; if (!p || !pos) return;
+  const rec = (p.dossier || {})[did] || {};
+  openModal(pos.label, `
+    <label class="field">Status <select class="select" id="ds_status">${DOS_STATUS.filter(s => s[0] !== undefined).map(s => `<option value="${s[0]}"${(rec.status || 'offen') === s[0] ? ' selected' : ''}>${s[1]}</option>`).join('')}</select></label>
+    <label class="field">Datei-Name / Link <input class="input" id="ds_verweis" value="${esc(rec.verweis || '')}" placeholder="z.B. Grundbuchauszug.pdf oder https://…"></label>
+    <div class="form-row">
+      <label class="field">Datum <input class="input" type="date" id="ds_datum" value="${esc(rec.datum || '')}"></label>
+      <label class="field">Verantwortlich <input class="input" id="ds_verant" value="${esc(rec.verant || '')}" placeholder="optional"></label>
+    </div>
+    <label class="field">Notiz <input class="input" id="ds_notiz" value="${esc(rec.notiz || '')}" placeholder="optional"></label>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="dossier-save" data-pid="${pid}" data-did="${did}">Speichern</button>`);
+}
+function saveDossier(pid, did) {
+  const p = findProjekt(pid); if (!p) return;
+  if (!p.dossier) p.dossier = {};
+  p.dossier[did] = { status: $('#ds_status').value, verweis: $('#ds_verweis').value.trim(), datum: $('#ds_datum').value, verant: $('#ds_verant').value.trim(), notiz: $('#ds_notiz').value.trim() };
+  save(); closeModal(); router(); toast('Dossier aktualisiert');
 }
 
 /* ---------------------------------------------------------------
@@ -5308,6 +5489,8 @@ document.addEventListener('click', e => {
     case 'save-projekt': saveProjekt(); break;
     case 'edit-projekt': actEditProjekt(pid); break;
     case 'save-projekt-edit': saveProjektEdit(pid); break;
+    case 'dossier-edit':   actDossier(pid, act.dataset.did); break;
+    case 'dossier-save':   saveDossier(pid, act.dataset.did); break;
     case 'erfassen':       erfassen(kind); break;
     case 'erfassen-go':    erfassenGo(kind); break;
     case 'pend-proj-toggle': pendProjToggle(pid); break;

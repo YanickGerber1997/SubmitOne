@@ -2973,13 +2973,13 @@ const DOS_ROUTE = { kosten: '/kosten', termine: '/termine', protokolle: '/protok
 const DOS_STATUS = [['offen', 'Offen', 'fehlt'], ['inArbeit', 'In Arbeit', 'teil'], ['vorhanden', 'Vorhanden', 'ok'], ['abgegeben', 'Abgegeben', 'ok'], ['entfaellt', 'Entfällt', 'entf']];
 // Automatische Vollständigkeits-Erkennung je Thema (jedes anders)
 const DOS_CHECK = {
-  kostenschaetzung: p => (p.vergaben || []).some(v => v.schaetzung) ? 'ok' : 'fehlt',
-  termine:          p => ((p.vergaben || []).some(v => v.frist || v.bauStart || (v.vorgaenge || []).length) || (p.termine || []).length) ? 'ok' : 'fehlt',
+  kostenschaetzung: p => { const vs = p.vergaben || []; if (!vs.some(v => v.schaetzung)) return 'fehlt'; return vs.every(v => v.schaetzung) ? 'ok' : 'teil'; },
+  termine:          p => { const vs = p.vergaben || []; const has = v => v.frist || v.bauStart || (v.vorgaenge || []).length; if (!vs.length) return (p.termine || []).length ? 'ok' : 'fehlt'; if (vs.every(has)) return 'ok'; return (vs.some(has) || (p.termine || []).length) ? 'teil' : 'fehlt'; },
   protokolle:       p => (p.protokolle || []).length ? 'ok' : 'fehlt',
   pendenzen:        p => ((p.pendenzen || []).length || (p.protokolle || []).some(pr => (pr.traktanden || []).some(t => (t.eintraege || []).some(it => it.art === 'pendenz')))) ? 'ok' : 'fehlt',
-  kostenkontrolle:  p => (p.vergaben || []).some(v => (v.rechnungen || []).length || v.schaetzung) ? 'ok' : 'fehlt',
+  kostenkontrolle:  p => { const vs = p.vergaben || []; if (vs.some(v => (v.rechnungen || []).length)) return 'ok'; return vs.some(v => v.schaetzung) ? 'teil' : 'fehlt'; },
   nachtraege:       p => (p.vergaben || []).some(v => (v.nachtraege || []).length) ? 'ok' : 'fehlt',
-  rechnungen:       p => (p.vergaben || []).some(v => (v.rechnungen || []).length) ? 'ok' : 'fehlt',
+  rechnungen:       p => { const all = (p.vergaben || []).flatMap(v => v.rechnungen || []); if (!all.length) return 'fehlt'; return all.every(r => r.bezahlt) ? 'ok' : 'teil'; },
   ausschreibung:    p => (p.vergaben || []).length ? 'ok' : 'fehlt',
   offerten:         p => { const vs = p.vergaben || []; if (!vs.some(v => (v.eingeladene || []).length)) return 'fehlt'; return vs.some(v => (v.eingeladene || []).some(e => e.status === 'offeriert')) ? 'ok' : 'teil'; },
   zuschlag:         p => { const vs = p.vergaben || []; if (vs.some(v => ['vergeben', 'werkvertrag', 'unterzeichnet', 'ausfuehrung', 'abgeschlossen'].includes(v.status))) return 'ok'; return vs.some(v => v.status === 'bewertung') ? 'teil' : 'fehlt'; },

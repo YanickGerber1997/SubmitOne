@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v44';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v45';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1217,6 +1217,8 @@ function viewKosten(id) {
         </tbody>
       </table>
     </div>
+    ${optionenCard(p, tot.kv)}
+    ${bauteilCard(p, tot.kv)}
     <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag/Vergabesumme · Prognose = WV + Nachträge + Rapporte (Budget steckt im WV) · Δ KV = Prognose gegen Schätzung (rot = Überschreitung). Zeile anklicken → Gewerk-Detail mit Rechnungserfassung.</p>
   `);
 }
@@ -5813,6 +5815,151 @@ function saveKostenschaetzung(pid, vid) {
   ksCtx = null; save(); closeModal(); router(); toast('Kostenschätzung gespeichert');
 }
 
+/* ============================================================
+   Optionen & Bauteile – Auswertung (B2) + Verwaltung
+   ------------------------------------------------------------
+   Optionen sind standardmässig EINGERECHNET; Ausblenden = Abzug.
+   Achsen: option (Add-on, ein-/ausblendbar bzw. Varianten-Gruppe),
+           bauteil (Teilprojekt-Partition, reines Auswertungs-Etikett).
+   ============================================================ */
+let optSel = { pid: null, aus: new Set(), grp: {} };   // Auswahl-Zustand der Auswertung
+function optEnsure(p) { if (p && optSel.pid !== p.id) optSel = { pid: p.id, aus: new Set(), grp: {} }; }
+
+// Summe aller einer Option zugeordneten Kostenpositionen (über alle Gewerke)
+function optionSumme(p, optId) {
+  let s = 0;
+  (p.vergaben || []).forEach(v => {
+    const pos = v.ksPositionen || [];
+    pos.forEach(x => { if (x.option === optId) s += Number(x.betrag) || 0; });
+    if (v.option === optId && !pos.length) s += Number(v.schaetzung) || 0;   // Gewerk-Fallback
+  });
+  return s;
+}
+function bauteilSumme(p, btId) {
+  let s = 0;
+  (p.vergaben || []).forEach(v => {
+    const pos = v.ksPositionen || [];
+    pos.forEach(x => { if (x.bauteil === btId) s += Number(x.betrag) || 0; });
+    if (v.bauteil === btId && !pos.length) s += Number(v.schaetzung) || 0;
+  });
+  return s;
+}
+function optGruppenListe(p) {
+  const order = [], map = {};
+  (p.optionen || []).forEach(o => { const g = o.gruppe || ''; if (g) { if (!map[g]) { map[g] = []; order.push(g); } map[g].push(o); } });
+  return order.map(g => ({ gruppe: g, optionen: map[g] }));
+}
+function optAktivVariante(p, gruppe) {
+  if (Object.prototype.hasOwnProperty.call(optSel.grp, gruppe)) return optSel.grp[gruppe];
+  const list = (p.optionen || []).filter(o => (o.gruppe || '') === gruppe);
+  return list.length ? list[0].id : '';   // Default: erste Variante aktiv
+}
+// Abzug/Aufschlag gegenüber „alles eingerechnet"
+function optDelta(p) {
+  let adj = 0;
+  (p.optionen || []).forEach(o => {
+    if (o.gruppe) { if (o.id !== optAktivVariante(p, o.gruppe)) adj -= optionSumme(p, o.id); }
+    else if (optSel.aus.has(o.id)) adj -= optionSumme(p, o.id);
+  });
+  return adj;
+}
+
+function optionenCard(p, kvTotal) {
+  if (!(p.optionen || []).length) return '';
+  optEnsure(p);
+  const btName = id => { const b = (p.bauteile || []).find(x => x.id === id); return b ? b.name : ''; };
+  const indep = (p.optionen || []).filter(o => !o.gruppe);
+  const gruppen = optGruppenListe(p);
+  let rows = '';
+  if (indep.length) {
+    rows += `<div class="muted" style="font-size:12px;margin:4px 0 2px"><strong>Optionen</strong> – Häkchen = eingerechnet, Klick blendet aus</div>`;
+    rows += indep.map(o => {
+      const on = !optSel.aus.has(o.id), sum = optionSumme(p, o.id);
+      return `<div class="opt-row" data-act="opt-toggle" data-pid="${p.id}" data-optid="${o.id}">
+        <span style="font-size:16px">${on ? '☑' : '☐'}</span>
+        <span style="flex:1">${esc(o.name)}${o.bauteilId ? ` <span class="st grey" style="font-size:10px;padding:1px 6px">${esc(btName(o.bauteilId))}</span>` : ''}</span>
+        <span class="num" style="${on ? '' : 'opacity:.4;text-decoration:line-through'}">${money(sum)}</span>
+      </div>`;
+    }).join('');
+  }
+  gruppen.forEach(g => {
+    const active = optAktivVariante(p, g.gruppe);
+    rows += `<div class="muted" style="font-size:12px;margin:12px 0 2px"><strong>Variante: ${esc(g.gruppe)}</strong> – genau eine wählen</div>`;
+    rows += g.optionen.map(o => {
+      const on = o.id === active, sum = optionSumme(p, o.id);
+      return `<div class="opt-row" data-act="opt-variante" data-pid="${p.id}" data-grp="${esc(g.gruppe)}" data-optid="${o.id}">
+        <span style="font-size:15px">${on ? '◉' : '○'}</span><span style="flex:1">${esc(o.name)}</span>
+        <span class="num" style="${on ? '' : 'opacity:.4'}">${money(sum)}</span></div>`;
+    }).join('');
+    rows += `<div class="opt-row" data-act="opt-variante" data-pid="${p.id}" data-grp="${esc(g.gruppe)}" data-optid="" style="color:var(--text-soft)">
+      <span style="font-size:15px">${active === '' ? '◉' : '○'}</span><span style="flex:1">keine</span><span class="num">–</span></div>`;
+  });
+  const delta = optDelta(p), bereinigt = kvTotal + delta;
+  return `<div class="card card-pad" style="margin-top:18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px">
+      <h2 style="margin:0;font-size:16px">Optionen &amp; Varianten</h2>
+      <button class="btn sm secondary" data-act="opt-manage" data-pid="${p.id}">⚙ Verwalten</button>
+    </div>
+    ${rows}
+    <div style="border-top:2px solid var(--border);margin-top:10px;padding-top:10px">
+      <div class="opt-sum"><span>Kostenschätzung inkl. aller Optionen</span><span class="num">${money(kvTotal)}</span></div>
+      <div class="opt-sum"><span>Optionen-Auswahl</span><span class="num">${delta ? money(delta) : '–'}</span></div>
+      <div class="opt-sum" style="font-size:16px;font-weight:700;margin-top:4px"><span>Bereinigte Kostenschätzung</span><span class="num">${money(bereinigt)}</span></div>
+    </div>
+  </div>`;
+}
+
+function bauteilCard(p, kvTotal) {
+  if (!(p.bauteile || []).length) return '';
+  let zugeordnet = 0;
+  const rows = (p.bauteile || []).map(b => { const s = bauteilSumme(p, b.id); zugeordnet += s; return `<tr><td>${esc(b.name)}</td><td class="num">${money(s)}</td></tr>`; }).join('');
+  const rest = kvTotal - zugeordnet;
+  return `<div class="card card-pad" style="margin-top:18px">
+    <h2 style="margin:0 0 8px;font-size:16px">Kosten je Bauteil / Teilprojekt</h2>
+    <table class="grid"><thead><tr><th>Bauteil</th><th class="num" style="width:170px">Kostenschätzung</th></tr></thead><tbody>
+      ${rows}
+      ${rest ? `<tr><td class="muted">nicht zugeordnet</td><td class="num muted">${money(rest)}</td></tr>` : ''}
+      <tr class="ksub"><td><b>Total</b></td><td class="num"><b>${money(kvTotal)}</b></td></tr>
+    </tbody></table>
+  </div>`;
+}
+
+/* --- Verwaltung Bauteile & Optionen --- */
+function obtRow(b) {
+  return `<div class="bt-row form-row" data-id="${b ? b.id : ''}" style="margin-bottom:6px;align-items:center">
+    <input class="input bt-name" placeholder="Bauteil (z.B. Trakt 1, Provisorium)" value="${b ? esc(b.name) : ''}">
+    <button class="x-btn" data-act="row-del" type="button" title="entfernen">×</button>
+  </div>`;
+}
+function oopRow(p, o) {
+  const bts = (p.bauteile || []);
+  return `<div class="op-row form-row" data-id="${o ? o.id : ''}" style="margin-bottom:6px;align-items:center;gap:6px">
+    <input class="input op-name" placeholder="Option (z.B. Erker, Lift)" value="${o ? esc(o.name) : ''}" style="flex:2">
+    <select class="select op-bt" style="flex:1"><option value="">– Bauteil –</option>${bts.map(b => `<option value="${b.id}"${o && o.bauteilId === b.id ? ' selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
+    <input class="input op-grp" placeholder="Variante (opt.)" value="${o ? esc(o.gruppe || '') : ''}" style="flex:1" title="Gleicher Variantenname = sich ausschliessende Gruppe">
+    <button class="x-btn" data-act="row-del" type="button" title="entfernen">×</button>
+  </div>`;
+}
+function actBauteileOptionen(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  openModal('Bauteile &amp; Optionen verwalten', `
+    <div class="muted" style="font-size:12px;margin-bottom:6px"><strong>Bauteile / Teilprojekte</strong> – z.B. Trakt 1–3, Provisorium</div>
+    <div id="bt_rows">${(p.bauteile || []).map(obtRow).join('')}</div>
+    <button class="btn sm secondary" data-act="bt-add" data-pid="${pid}" type="button" style="margin-bottom:16px">+ Bauteil</button>
+    <div class="muted" style="font-size:12px;margin-bottom:6px"><strong>Optionen</strong> – z.B. Erker, Lift. „Variante" füllen = sich ausschliessende Gruppe.</div>
+    <div id="op_rows">${(p.optionen || []).map(o => oopRow(p, o)).join('')}</div>
+    <button class="btn sm secondary" data-act="op-add" data-pid="${pid}" type="button">+ Option</button>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-bt-opt" data-pid="${pid}">Speichern</button>`);
+}
+function saveBtOpt(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const bts = $$('#bt_rows .bt-row').map(r => { const name = r.querySelector('.bt-name').value.trim(); return name ? { id: r.dataset.id || uid('bt'), name } : null; }).filter(Boolean);
+  const ops = $$('#op_rows .op-row').map(r => { const name = r.querySelector('.op-name').value.trim(); return name ? { id: r.dataset.id || uid('op'), name, bauteilId: r.querySelector('.op-bt').value || '', gruppe: r.querySelector('.op-grp').value.trim() } : null; }).filter(Boolean);
+  p.bauteile = bts; p.optionen = ops;
+  optSel = { pid: null, aus: new Set(), grp: {} };   // Auswahl-Zustand zurücksetzen (IDs könnten weg sein)
+  save(); closeModal(); router(); toast('Bauteile & Optionen gespeichert');
+}
+
 function pdfKostenschaetzung(pid) {
   const p = findProjekt(pid); if (!p) return;
   const gw = gewerkeSorted(p); let tot = 0;
@@ -7128,6 +7275,13 @@ document.addEventListener('click', e => {
     case 'rm-vergabe':        rmVergabe(pid, vid); break;
     case 'vergabe-art':       actVergabeArt(pid, vid); break;
     case 'save-vergabe-art':  saveVergabeArt(pid, vid); break;
+    case 'opt-toggle':   { optEnsure(findProjekt(pid)); const o = act.dataset.optid; if (optSel.aus.has(o)) optSel.aus.delete(o); else optSel.aus.add(o); router(); } break;
+    case 'opt-variante': { optEnsure(findProjekt(pid)); optSel.grp[act.dataset.grp] = act.dataset.optid; router(); } break;
+    case 'opt-manage':   actBauteileOptionen(pid); break;
+    case 'bt-add':       { const w = $('#bt_rows'); if (w) w.insertAdjacentHTML('beforeend', obtRow(null)); } break;
+    case 'op-add':       { const w = $('#op_rows'); if (w) w.insertAdjacentHTML('beforeend', oopRow(findProjekt(pid), null)); } break;
+    case 'row-del':      { const r = act.closest('.bt-row, .op-row'); if (r) r.remove(); } break;
+    case 'save-bt-opt':  saveBtOpt(pid); break;
     case 'tv-add':            tvAddRow(); break;
     case 'tv-del':            { const row = act.closest('.tv-row'); if (row) row.remove(); } break;
     case 'konditionen':      actKonditionen(pid, vid, eid); break;

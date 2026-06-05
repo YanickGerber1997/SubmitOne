@@ -975,6 +975,12 @@ table.va input[type=number] { -moz-appearance: textfield; }
 /* --- Vergabe-Art-Modal: Sektionen (Sichtbarkeit per JS) --- */
 .va-sec { margin-top: 10px; }
 
+/* --- Optionen-/Varianten-Auswertung --- */
+.opt-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; cursor: pointer; border-top: 1px solid var(--border); user-select: none; }
+.opt-row:hover { background: var(--surface-2); }
+.opt-sum { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-soft); }
+.opt-sum:last-child { color: var(--text); }
+
 /* --- Cloud-Bearbeitungskonflikt: nicht-zerstörerisches Banner --- */
 .cloud-conflict-bar {
   position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);

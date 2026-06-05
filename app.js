@@ -1166,6 +1166,8 @@ function viewTermine(id) {
   });
   if (p.start) allDates.push(p.start);
   if (p.ende) allDates.push(p.ende);
+  if (p.baustart) allDates.push(p.baustart);
+  if (p.bezug) allDates.push(p.bezug);
 
   let minS, maxS;
   if (allDates.length) {
@@ -1200,21 +1202,34 @@ function viewTermine(id) {
   }
   const monthCells = months.map(m => `<div class="g-cell" style="width:${m.w}px">${m.label}</div>`).join('');
 
+  // Wochen-Zeile (KW), für Woche- und Tag-Ansicht
+  let weekCells = '';
+  const buildWeeks = () => {
+    let s = '', d = new Date(rangeStart);
+    while (d <= rangeEnd) {
+      const wEnd = new Date(d); wEnd.setDate(d.getDate() + (7 - ((d.getDay() + 6) % 7)) - 1);
+      const segEnd = wEnd > rangeEnd ? rangeEnd : wEnd;
+      const w = (dayDiff(d, segEnd) + 1) * pxPerDay;
+      s += `<div class="g-cell" style="width:${w}px">${isoWeek(d)}</div>`;
+      d = new Date(segEnd); d.setDate(d.getDate() + 1);
+    }
+    return s;
+  };
   // Hintergrund-Gitter (vertikale Rasterlinien) – passend zum Zoom mitgebaut
   const monthBg = months.map(m => `<div class="g-cell" style="width:${m.w}px"></div>`).join('');
   let subCells = '', bgCells = monthBg;
   if (ganttZoom === 'woche') {
-    subCells = ''; bgCells = '';
+    subCells = buildWeeks(); bgCells = '';
     let d = new Date(rangeStart);
     while (d <= rangeEnd) {
       const wEnd = new Date(d); wEnd.setDate(d.getDate() + (7 - ((d.getDay() + 6) % 7)) - 1);
       const segEnd = wEnd > rangeEnd ? rangeEnd : wEnd;
       const w = (dayDiff(d, segEnd) + 1) * pxPerDay;
-      subCells += `<div class="g-cell" style="width:${w}px">${isoWeek(d)}</div>`;
       bgCells  += `<div class="g-cell" style="width:${w}px"></div>`;
       d = new Date(segEnd); d.setDate(d.getDate() + 1);
     }
   } else if (ganttZoom === 'tag') {
+    weekCells = buildWeeks();
     subCells = ''; bgCells = '';
     let d = new Date(rangeStart);
     while (d <= rangeEnd) {
@@ -1230,15 +1245,22 @@ function viewTermine(id) {
       d.setDate(d.getDate() + 1);
     }
   }
-  const headH = subCells ? 56 : 38;
+  const headH = ganttZoom === 'tag' ? 74 : (subCells ? 56 : 38);
 
   const t = today();
   const todayLeft = (t >= rangeStart && t <= rangeEnd) ? dayDiff(rangeStart, t) * pxPerDay : null;
 
-  // Feiertage als Bänder (mit vertikalem Label, sobald genug Platz)
-  const showHolLbl = pxPerDay >= 4;
+  // Feiertage als Bänder mit Label (Woche: mit Datum); immer angeschrieben
+  const holLabel = f => ganttZoom === 'woche' ? `${f.n} ${f.d.getDate()}.${f.d.getMonth() + 1}.` : f.n;
   const holBands = feiertageInRange(rangeStart, rangeEnd).map(f =>
-    `<div class="g-holiday" style="left:${dayDiff(rangeStart, f.d) * pxPerDay}px;width:${Math.max(pxPerDay, 2)}px" title="${esc(f.n)}">${showHolLbl ? `<span>${esc(f.n)}</span>` : ''}</div>`).join('');
+    `<div class="g-holiday" style="left:${dayDiff(rangeStart, f.d) * pxPerDay}px;width:${Math.max(pxPerDay, 2)}px" title="${esc(f.n)} ${fmtDate(isoOf(f.d))}"><span>${esc(holLabel(f))}</span></div>`).join('');
+
+  // Projekt-Meilensteine: Baustart & Bezugstermin
+  const projMarks = [];
+  if (p.baustart) projMarks.push({ iso: p.baustart, n: 'Baustart', cls: 'start' });
+  if (p.bezug) projMarks.push({ iso: p.bezug, n: 'Bezug', cls: 'bezug' });
+  const markBands = projMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; }).map(m =>
+    `<div class="g-mark ${m.cls}" style="left:${dayDiff(rangeStart, dISO(m.iso)) * pxPerDay}px" title="${m.n}: ${fmtDate(m.iso)}"><span>${m.n} ${fmtDate(m.iso)}</span></div>`).join('');
 
   const ROW_H = 38;
   let sideRows = '', barRows = '', rowIdx = 0; const barMeta = {};
@@ -1294,12 +1316,14 @@ function viewTermine(id) {
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
           <div class="g-headrow">${monthCells}</div>
+          ${weekCells ? `<div class="g-headrow wk">${weekCells}</div>` : ''}
           ${subCells ? `<div class="g-headrow sub">${subCells}</div>` : ''}
         </div>
         <div class="g-rows">
           <div class="g-bg">${bgCells}</div>
           ${holBands}
           ${todayLeft != null ? `<div class="g-today" style="left:${todayLeft}px"></div>` : ''}
+          ${markBands}
           ${barRows}
           ${linkSvg}
         </div>
@@ -5063,6 +5087,10 @@ function actEditProjekt(pid) {
       <label class="field">Start <input class="input" type="date" id="f_start" value="${esc(p.start || '')}"></label>
       <label class="field">Ende <input class="input" type="date" id="f_ende" value="${esc(p.ende || '')}"></label>
     </div>
+    <div class="form-row">
+      <label class="field">Baustart <span class="muted" style="font-weight:400;font-size:11px">(Meilenstein im Gantt)</span> <input class="input" type="date" id="f_baustart" value="${esc(p.baustart || '')}"></label>
+      <label class="field">Bezugstermin <span class="muted" style="font-weight:400;font-size:11px">(Meilenstein im Gantt)</span> <input class="input" type="date" id="f_bezug" value="${esc(p.bezug || '')}"></label>
+    </div>
     <label class="field" style="margin-bottom:2px">Projektfarbe (Kalender &amp; Planung)</label>
     ${farbePickerHtml(p.farbe || projColor(state.projekte.indexOf(p)))}
     <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 4px"><div class="muted" style="font-size:12px;margin-bottom:6px">Gebäudedaten</div>
@@ -5078,6 +5106,8 @@ function saveProjektEdit(pid) {
   p.projektleiter = $('#f_pl').value.trim() || '–';
   p.start = $('#f_start').value || '';
   p.ende = $('#f_ende').value || '';
+  p.baustart = $('#f_baustart').value || '';
+  p.bezug = $('#f_bezug').value || '';
   if ($('#f_farbe')) p.farbe = $('#f_farbe').value || '';
   readGebaeude(p);
   save(); closeModal(); router(); toast('Projekt gespeichert');
@@ -5369,6 +5399,12 @@ function pdfGantt(pid) {
   const hols = feiertageInRange(rangeStart, rangeEnd);
   const holBands = hols.map(f => `<div class="pg-hol" style="left:${pct(isoOf(f.d))}%;width:${Math.max(100 / totalDays, 0.1)}%"></div>`).join('');
   const holLabels = hols.map(f => `<div class="pg-hol-lbl" style="left:${pct(isoOf(f.d))}%"><span>${esc(f.n)}</span></div>`).join('');
+  // Projekt-Meilensteine (Baustart / Bezug)
+  const pMarks = [];
+  if (p.baustart) pMarks.push({ iso: p.baustart, n: 'Baustart', c: '#16a34a' });
+  if (p.bezug) pMarks.push({ iso: p.bezug, n: 'Bezug', c: '#1f6feb' });
+  const markLines = pMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; }).map(m =>
+    `<div class="pg-mark" style="left:${pct(m.iso)}%;background:${m.c}"></div><div class="pg-mark-lbl" style="left:${pct(m.iso)}%"><span style="color:${m.c}">${esc(m.n)} ${fmtDate(m.iso)}</span></div>`).join('');
   const sideHtml = vs.map(v => `<div class="pg-srow" style="height:${rowH}mm"><b>${esc(v.bkp || '')}</b>&nbsp;${esc(v.gewerk || '')}</div>`).join('');
   const rowsHtml = vs.map(v => `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar" style="left:${pct(v.bauStart)}%;width:${wpct(v.bauStart, v.bauEnde)}%;height:${barH}mm;background:${ganttColHex(v)}"></div></div>`).join('');
   const legend = GANTT_LEGEND.map(([k, l]) => `<span style="display:inline-block;margin-right:10px"><span style="display:inline-block;width:11px;height:8px;border-radius:2px;background:${GANTT_COLS[k]};vertical-align:middle;margin-right:3px"></span>${l}</span>`).join('');
@@ -5393,10 +5429,13 @@ function pdfGantt(pid) {
     .pg-hol{position:absolute;top:0;bottom:0;background:rgba(220,38,38,.08);border-left:.5px solid rgba(220,38,38,.5);}
     .pg-hol-lbl{position:absolute;top:0;bottom:0;z-index:3;}
     .pg-hol-lbl span{position:absolute;top:.3mm;left:.3px;font-size:5px;line-height:1;color:#b91c1c;font-weight:600;writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;}
+    .pg-mark{position:absolute;top:0;bottom:0;width:1.1px;z-index:2;}
+    .pg-mark-lbl{position:absolute;top:0;bottom:0;z-index:4;}
+    .pg-mark-lbl span{position:absolute;top:.3mm;left:.3px;font-size:5.5px;line-height:1;font-weight:700;writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;}
     .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;box-shadow:0 0 0 .3px rgba(0,0,0,.06);}`;
   const inner = `<div class="pg">
     <div class="pg-side"><div class="pg-shead">BKP / Gewerk</div>${sideHtml}</div>
-    <div class="pg-main"><div class="pg-head">${moBand}${subBand}</div><div class="pg-rows">${weBands}${holBands}${gridV}${todayLine}${rowsHtml}${holLabels}</div></div>
+    <div class="pg-main"><div class="pg-head">${moBand}${subBand}</div><div class="pg-rows">${weBands}${holBands}${gridV}${todayLine}${markLines}${rowsHtml}${holLabels}</div></div>
   </div>
   <div style="margin-top:3mm;font-size:8px;color:#6b7480">${legend}</div>`;
   const rasterTxt = ganttZoom === 'tag' ? 'Tage' : ganttZoom === 'woche' ? 'Wochen' : 'Monate';
@@ -6581,6 +6620,7 @@ function demoData() {
     {
       id: 'p_sonnen', name: 'Neubau MFH Sonnenhof', ort: 'Luzern', bauherr: 'Sonnenhof Immobilien AG',
       projektleiter: 'M. Bühler', phase: 'vergabe', start: '2026-02-01', ende: '2027-08-30',
+      baustart: '2026-03-01', bezug: '2027-07-15',
       vergaben: [
         { id: 'v1', bkp: '112', gewerk: 'Abbrucharbeiten', status: 'abgeschlossen', firma: 'Demowald Rückbau GmbH', betrag: 84000, schaetzung: 90000, frist: '2026-03-15',
           bauStart: '2026-03-01', bauEnde: '2026-03-25',

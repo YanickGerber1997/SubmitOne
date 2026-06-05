@@ -631,6 +631,8 @@ tr.done-row { background: #fbfdfb; }
 .g-head { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); }
 .g-headrow { display: flex; flex: 1; align-items: center; }
 .g-headrow.sub { border-top: 1px solid var(--border); }
+.g-headrow.wk { border-top: 1px solid var(--border); }
+.g-headrow.wk .g-cell { font-size: 9px; font-weight: 600; color: var(--text-soft); padding: 0 1px; }
 .g-cell { flex: none; border-left: 1px solid var(--border); display: flex; align-items: center; justify-content: center;
           font-size: 11px; font-weight: 600; color: var(--text-soft); white-space: nowrap; overflow: hidden; height: 100%; }
 .g-cell:first-child { border-left: none; }
@@ -642,6 +644,13 @@ tr.done-row { background: #fbfdfb; }
 /* Feiertage */
 .g-holiday { position: absolute; top: 0; bottom: 0; background: rgba(220,38,38,.09); border-left: 1px solid rgba(220,38,38,.5); z-index: 1; pointer-events: none; }
 .g-holiday span { position: absolute; top: 3px; left: 1px; font-size: 9px; line-height: 1; color: #b91c1c; font-weight: 600; writing-mode: vertical-rl; text-orientation: mixed; white-space: nowrap; }
+/* Projekt-Meilensteine (Baustart / Bezug) */
+.g-mark { position: absolute; top: 0; bottom: 0; width: 2px; z-index: 2; pointer-events: none; }
+.g-mark.start { background: #16a34a; }
+.g-mark.bezug { background: #1f6feb; }
+.g-mark span { position: absolute; top: 3px; left: 3px; font-size: 9px; line-height: 1; font-weight: 700; white-space: nowrap; writing-mode: vertical-rl; text-orientation: mixed; }
+.g-mark.start span { color: #15803d; }
+.g-mark.bezug span { color: #1d4ed8; }
 
 .g-rows { position: relative; }
 .g-bg { position: absolute; inset: 0; display: flex; z-index: 0; }

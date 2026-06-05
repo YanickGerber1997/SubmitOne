@@ -3337,7 +3337,7 @@ const PLAN_TEMPLATES = [
   { label: 'Büro / Admin', dauer: 120, color: 'grey' },
   { label: 'Baustelle', dauer: 180, color: 'teal' },
   { label: 'Sitzung', dauer: 60, color: 'green' },
-  { label: 'Telefon / Mail', dauer: 45, color: 'blue' },
+  { label: 'Telefon / Mail', dauer: 30, color: 'blue' },
   { label: 'Bemusterung', dauer: 90, color: 'purple' },
   { label: 'Pause / Mittag', dauer: 60, color: 'amber' },
 ];
@@ -3346,7 +3346,7 @@ let planView = 'woche', planRefIso = null, planArmed = null, planungData = null,
 function loadPlanung() { if (planungData) return planungData; try { planungData = JSON.parse(localStorage.getItem('so_planung') || '[]'); } catch (_) { planungData = []; } return planungData; }
 function savePlanung() { try { localStorage.setItem('so_planung', JSON.stringify(planungData)); } catch (_) {} }
 // Vordefinierte Zeitfenster-Dauern (per +/- in 30-Min-Schritten anpassbar, gespeichert)
-function loadPlanTplDur() { try { const a = JSON.parse(localStorage.getItem('so_plan_tpldur') || 'null'); if (Array.isArray(a)) a.forEach((d, i) => { if (PLAN_TEMPLATES[i] && d >= 30) PLAN_TEMPLATES[i].dauer = d; }); } catch (_) {} }
+function loadPlanTplDur() { try { const a = JSON.parse(localStorage.getItem('so_plan_tpldur') || 'null'); if (Array.isArray(a)) a.forEach((d, i) => { if (PLAN_TEMPLATES[i] && d >= 30) PLAN_TEMPLATES[i].dauer = Math.max(30, Math.floor(d / 30) * 30); }); } catch (_) {} }
 function savePlanTplDur() { try { localStorage.setItem('so_plan_tpldur', JSON.stringify(PLAN_TEMPLATES.map(t => t.dauer))); } catch (_) {} }
 function planDurStep(i, delta) { const tp = PLAN_TEMPLATES[i]; if (!tp) return; tp.dauer = Math.max(30, Math.min(720, tp.dauer + delta * 30)); savePlanTplDur(); viewPlanung(); }
 function planDurTxt(d) { if (d < 60) return d + 'min'; const h = Math.floor(d / 60), m = d % 60; return h + 'h' + (m ? m : ''); }

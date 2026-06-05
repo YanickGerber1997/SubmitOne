@@ -3061,14 +3061,14 @@ DOSSIER_VORLAGE.forEach(ph => ph.kategorien.forEach(k => k.positionen.forEach(po
 
 function dossierState(p, pos) {
   if (pos.modul) { const b = DOS_CHECK[pos.auto] ? DOS_CHECK[pos.auto](p) : 'fehlt'; return { bucket: b, label: b === 'ok' ? 'Vorhanden' : b === 'teil' ? 'Teilweise' : 'Fehlt' }; }
-  const rec = (p.dossier || {})[pos.id];
-  const def = DOS_STATUS.find(s => s[0] === ((rec && rec.status) || 'offen')) || DOS_STATUS[0];
-  const note = rec ? [rec.verweis ? '📎 ' + rec.verweis : '', rec.notiz || ''].filter(Boolean).join(' · ') : '';
-  return { bucket: def[2], label: def[1], note };
+  const rec = (p.dossier || {})[pos.id] || {};
+  const def = DOS_STATUS.find(s => s[0] === (rec.status || 'offen')) || DOS_STATUS[0];
+  return { bucket: def[2], label: def[1], verweis: rec.verweis || '', notiz: rec.notiz || '' };
 }
 function dossierStats(p) {
   const s = { ok: 0, teil: 0, fehlt: 0, entf: 0 };
   DOSSIER_VORLAGE.forEach(ph => ph.kategorien.forEach(k => k.positionen.forEach(pos => { s[dossierState(p, pos).bucket]++; })));
+  (p.dossierCustom || []).forEach(pos => { s[dossierState(p, pos).bucket]++; });
   return s;
 }
 function dossierFehltCount(p) { return dossierStats(p).fehlt; }
@@ -3086,27 +3086,31 @@ function viewDossier(pid) {
 
   const phasenHtml = DOSSIER_VORLAGE.map(ph => {
     let ok = 0, tot = 0;
-    const kats = ph.kategorien.map(kat => {
-      const rows = kat.positionen.map(pos => {
-        const d = dossierState(p, pos);
-        if (d.bucket !== 'entf') { tot++; if (d.bucket === 'ok') ok++; }
-        const action = pos.modul
-          ? ((d.bucket === 'fehlt' && pos.create)
-              ? `<button class="btn sm" data-act="dossier-create" data-pid="${p.id}" data-kind="${pos.create}">＋ erstellen</button>`
-              : `<a class="btn sm secondary" href="#/projekt/${p.id}${DOS_ROUTE[pos.modul]}">→ öffnen</a>`)
-          : `<button class="btn sm secondary" data-act="dossier-edit" data-pid="${p.id}" data-did="${pos.id}">erfassen</button>`;
-        return `<div class="dos-row">
-          <span class="dos-badge">${dosBadge(d.bucket, d.label)}</span>
-          <span class="dos-name">${esc(pos.label)}${pos.modul ? ' <span class="dos-auto">auto</span>' : ''}${d.note ? `<div class="dos-sub">${esc(d.note)}</div>` : ''}</span>
-          ${action}
-        </div>`;
-      }).join('');
-      return `<div class="dos-kat"><div class="dos-kat-h">${esc(kat.label)}</div>${rows}</div>`;
-    }).join('');
+    const renderRow = (pos, isCustom) => {
+      const d = dossierState(p, pos);
+      if (d.bucket !== 'entf') { tot++; if (d.bucket === 'ok') ok++; }
+      const action = pos.modul
+        ? ((d.bucket === 'fehlt' && pos.create)
+            ? `<button class="btn sm" data-act="dossier-create" data-pid="${p.id}" data-kind="${pos.create}">＋ erstellen</button>`
+            : `<a class="btn sm secondary" href="#/projekt/${p.id}${DOS_ROUTE[pos.modul]}">→ öffnen</a>`)
+        : `<button class="btn sm secondary" data-act="dossier-edit" data-pid="${p.id}" data-did="${pos.id}">erfassen</button>`;
+      const sub = [];
+      if (d.verweis) sub.push(/^https?:\/\//i.test(d.verweis) ? `<a href="${esc(d.verweis)}" target="_blank" rel="noopener">🔗 ${esc(d.verweis)}</a>` : '📎 ' + esc(d.verweis));
+      if (d.notiz) sub.push(esc(d.notiz));
+      const del = isCustom ? `<button class="ic-btn" data-act="dossier-del" data-pid="${p.id}" data-did="${pos.id}" title="Position entfernen">✕</button>` : '';
+      return `<div class="dos-row">
+        <span class="dos-badge">${dosBadge(d.bucket, d.label)}</span>
+        <span class="dos-name">${esc(pos.label)}${pos.modul ? ' <span class="dos-auto">auto</span>' : ''}${sub.length ? `<div class="dos-sub">${sub.join(' · ')}</div>` : ''}</span>
+        ${action}${del}
+      </div>`;
+    };
+    const kats = ph.kategorien.map(kat => `<div class="dos-kat"><div class="dos-kat-h">${esc(kat.label)}</div>${kat.positionen.map(pos => renderRow(pos, false)).join('')}</div>`).join('');
+    const custom = (p.dossierCustom || []).filter(c => c.phase === ph.key);
+    const customKat = custom.length ? `<div class="dos-kat"><div class="dos-kat-h">Weitere</div>${custom.map(pos => renderRow(pos, true)).join('')}</div>` : '';
     const pct = tot ? Math.round(ok / tot * 100) : 0;
     return `<div class="card" style="margin-bottom:14px">
       <div class="dos-phase-h"><span class="dos-phase-t">${esc(ph.label)}</span><span class="dos-phase-p">${ok}/${tot} ${progressBar(pct)}</span></div>
-      <div style="padding:4px 16px 14px">${kats}</div>
+      <div style="padding:4px 16px 14px">${kats}${customKat}<div style="margin-top:10px"><button class="btn sm secondary" data-act="dossier-add" data-pid="${p.id}" data-kind="${ph.key}">＋ Eigene Position</button></div></div>
     </div>`;
   }).join('');
 
@@ -3132,8 +3136,27 @@ function dossierCreate(pid, kind) {
   if (kind === 'protokoll') return actNewProtokoll(pid, 'sitzung');
   if (kind === 'pendenz') return actPendenz(pid);
 }
+function actDossierAdd(pid, phase) {
+  openModal('Eigene Position', `
+    <label class="field">Bezeichnung <input class="input" id="dc_label" placeholder="z.B. Baugrundgutachten / Vermessung"></label>
+    <p class="muted" style="font-size:12px;margin:0">Wird der gewählten Phase hinzugefügt und wie die übrigen Positionen erfasst (Status, Link, Notiz).</p>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="dossier-add-save" data-pid="${pid}" data-kind="${phase}">Hinzufügen</button>`);
+}
+function saveDossierAdd(pid, phase) {
+  const p = findProjekt(pid); if (!p) return;
+  const label = $('#dc_label').value.trim(); if (!label) { toast('Bitte eine Bezeichnung eingeben', 'info'); return; }
+  if (!p.dossierCustom) p.dossierCustom = [];
+  p.dossierCustom.push({ id: uid('dc'), phase, label });
+  save(); closeModal(); router(); toast('Position hinzugefügt');
+}
+function rmDossierCustom(pid, did) {
+  const p = findProjekt(pid); if (!p) return;
+  p.dossierCustom = (p.dossierCustom || []).filter(x => x.id !== did);
+  if (p.dossier) delete p.dossier[did];
+  save(); router(); toast('Position entfernt');
+}
 function actDossier(pid, did) {
-  const p = findProjekt(pid); const pos = DOS_INDEX[did]; if (!p || !pos) return;
+  const p = findProjekt(pid); const pos = DOS_INDEX[did] || (p && (p.dossierCustom || []).find(x => x.id === did)); if (!p || !pos) return;
   const rec = (p.dossier || {})[did] || {};
   openModal(pos.label, `
     <label class="field">Status <select class="select" id="ds_status">${DOS_STATUS.filter(s => s[0] !== undefined).map(s => `<option value="${s[0]}"${(rec.status || 'offen') === s[0] ? ' selected' : ''}>${s[1]}</option>`).join('')}</select></label>
@@ -5503,6 +5526,9 @@ document.addEventListener('click', e => {
     case 'dossier-edit':   actDossier(pid, act.dataset.did); break;
     case 'dossier-save':   saveDossier(pid, act.dataset.did); break;
     case 'dossier-create': dossierCreate(pid, kind); break;
+    case 'dossier-add':      actDossierAdd(pid, kind); break;
+    case 'dossier-add-save': saveDossierAdd(pid, kind); break;
+    case 'dossier-del':      rmDossierCustom(pid, act.dataset.did); break;
     case 'erfassen':       erfassen(kind); break;
     case 'erfassen-go':    erfassenGo(kind); break;
     case 'pend-proj-toggle': pendProjToggle(pid); break;

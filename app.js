@@ -22,7 +22,8 @@ const PHASEN = [
 
 // Lebenszyklus einer einzelnen Vergabe / eines Gewerks
 const VERGABE_STATUS = [
-  { key: 'ausschreibung', label: 'Ausschreibung',         kurz: 'Ausschreibung', color: 'blue'   },
+  { key: 'ausschreibung', label: 'Ausschreibung erstellt', kurz: 'Ausschreibung', color: 'grey'  },
+  { key: 'versendet',     label: 'Offertanfragen versendet', kurz: 'Versendet',   color: 'blue'   },
   { key: 'offerten',      label: 'Offerten eingegangen',  kurz: 'Offerten',      color: 'blue'   },
   { key: 'bewertung',     label: 'In Bewertung',          kurz: 'Bewertung',     color: 'amber'  },
   { key: 'vergeben',      label: 'Zuschlag erteilt',      kurz: 'Vergeben',      color: 'purple' },

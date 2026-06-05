@@ -486,6 +486,18 @@ function eNetto(e) { const a = eVer(e); if (a != null) return a; const b = eAbg(
 function offertenOf(v)  { return (v.eingeladene || []).filter(e => e.status === 'offeriert' && eOff(e) != null); }
 function bestBetrag(v)  { const xs = (v.eingeladene || []).filter(e => e.status !== 'abgesagt').map(eOff).filter(x => x != null); return xs.length ? Math.min(...xs) : null; }
 function bestAbgebot(v) { const xs = (v.eingeladene || []).filter(e => e.status !== 'abgesagt').map(eAbg).filter(x => x != null); return xs.length ? Math.min(...xs) : null; }
+// Offertvergleich (Preisspiegel)
+const VGL_STAGES = [['offerte', 'Offerte'], ['abgebot', 'Abgebot'], ['vergabe', 'Vergabe']];
+let vglStage = null;
+function vglStageOf(e, stage) {
+  if (e[stage] && e[stage].brutto != null && e[stage].brutto !== '') return e[stage];
+  if (stage === 'offerte' && e.betrag != null) return { brutto: e.betrag };
+  return null;
+}
+function vglRows(v, stage) {
+  return (v.eingeladene || []).map(e => { const c = vglStageOf(e, stage); return c ? { e, parts: condParts(c) } : null; })
+    .filter(x => x && x.parts).sort((a, b) => a.parts.netto - b.parts.netto);
+}
 function nachtragSumme(v){ return (v.nachtraege || []).filter(n => n.status === 'genehmigt').reduce((a, n) => a + (n.betrag || 0), 0); }
 function nachtragOffen(v){ return (v.nachtraege || []).filter(n => n.status === 'offen').reduce((a, n) => a + (n.betrag || 0), 0); }
 function rapportSumme(v) { return (v.rapporte || []).reduce((a, r) => a + (r.betrag || 0), 0); }
@@ -2860,6 +2872,15 @@ function viewVergabeDetail(pid, vid) {
       </div>
     </div>
 
+    <!-- Offertvergleich / Preisspiegel -->
+    ${(() => {
+      const stagesData = VGL_STAGES.filter(([st]) => (v.eingeladene || []).some(e => vglStageOf(e, st)));
+      const curStage = (vglStage && stagesData.some(s => s[0] === vglStage)) ? vglStage : (stagesData.length ? stagesData[stagesData.length - 1][0] : 'offerte');
+      const toggles = stagesData.map(([st, label]) => `<button class="btn sm ${curStage === st ? '' : 'secondary'}" data-act="vgl-stage" data-kind="${st}" data-pid="${p.id}" data-vid="${v.id}">${label}</button>`).join('');
+      return `<div class="section-head" style="margin-top:26px"><h2>Offertvergleich</h2><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${toggles}${stagesData.length ? `<button class="btn sm secondary" data-act="pdf-offertvergleich" data-pid="${p.id}" data-vid="${v.id}">⬇ PDF</button>` : ''}</div></div>
+      <div class="card" style="overflow-x:auto;margin-bottom:8px">${offertvergleichHtml(p, v, curStage)}</div>`;
+    })()}
+
     <!-- Budgetpositionen -->
     <div class="section-head" style="margin-top:26px">
       <h2>Budgetpositionen</h2>
@@ -3038,6 +3059,47 @@ function saveKonditionen(pid, vid, eid) {
   }
   if (v.firma && e.firma === v.firma) { const ver = eVer(e); const fall = ver != null ? ver : (eAbg(e) != null ? eAbg(e) : eOff(e)); if (fall != null) v.betrag = fall; }
   save(); closeModal(); router(); toast('Konditionen gespeichert');
+}
+// Offertvergleich-Tabelle (Bildschirm) für eine Stufe
+function offertvergleichHtml(p, v, stage) {
+  const rows = vglRows(v, stage);
+  if (!rows.length) return `<p class="muted" style="margin:0;padding:6px 2px">Noch keine Konditionen für diese Stufe. Bei den Unternehmern „✎ Konditionen" erfassen.</p>`;
+  const kv = v.schaetzung || 0;
+  const n0 = n => (n == null) ? '–' : Number(n).toLocaleString('de-CH', { maximumFractionDigits: 0 });
+  return `<table class="grid"><thead><tr>
+    <th style="width:30px">#</th><th>Unternehmer</th>
+    <th class="num">Brutto</th><th class="num">./. Rabatt</th><th class="num">./. Allg.Abz.</th><th class="num">./. Pauschal</th><th class="num">./. Skonto</th>
+    <th class="num">Netto CHF</th><th class="num">Δ KV</th></tr></thead><tbody>
+    ${rows.map((x, i) => { const r = x.parts; const d = kv ? r.netto - kv : null; const aw = v.firma && x.e.firma === v.firma;
+      return `<tr${i === 0 ? ' style="background:var(--brand-soft)"' : ''}>
+        <td>${i + 1}</td>
+        <td><strong>${esc(x.e.firma)}</strong>${aw ? ' <span class="off-best">★ vergeben</span>' : (i === 0 ? ' <span class="off-best">günstigste</span>' : '')}</td>
+        <td class="num">${n0(r.brutto)}</td>
+        <td class="num">${r.rabattBetrag ? '−' + n0(r.rabattBetrag) : '–'}</td>
+        <td class="num">${r.weitereBetrag ? '−' + n0(r.weitereBetrag) : '–'}</td>
+        <td class="num">${r.pauschal ? '−' + n0(r.pauschal) : '–'}</td>
+        <td class="num">${r.skontoBetrag ? '−' + n0(r.skontoBetrag) : '–'}</td>
+        <td class="num"><strong>${n0(r.netto)}</strong></td>
+        <td class="num"${d > 0 ? ' style="color:var(--s-red)"' : d < 0 ? ' style="color:var(--s-green)"' : ''}>${d != null ? (d > 0 ? '+' : '') + n0(d) : '–'}</td>
+      </tr>`; }).join('')}
+    </tbody></table>`;
+}
+function pdfOffertvergleich(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const kv = v.schaetzung || 0;
+  const n0 = n => (n == null) ? '' : Number(n).toLocaleString('de-CH', { maximumFractionDigits: 0 });
+  const stagesData = VGL_STAGES.filter(([st]) => (v.eingeladene || []).some(e => vglStageOf(e, st)));
+  const tableFor = (st, label) => {
+    const rows = vglRows(v, st); if (!rows.length) return '';
+    return `<div class="gw">${label} – Preisspiegel</div>
+      <table class="t"><thead><tr><th>#</th><th>Unternehmer</th><th class="num">Brutto</th><th class="num">./. Rabatt</th><th class="num">./. Allg.Abz.</th><th class="num">./. Pauschal</th><th class="num">./. Skonto</th><th class="num">Netto exkl.</th><th class="num">MwSt 8.1%</th><th class="num">inkl. MwSt</th><th class="num">Δ KV</th></tr></thead><tbody>
+      ${rows.map((x, i) => { const r = x.parts; const d = kv ? r.netto - kv : null; const aw = v.firma && x.e.firma === v.firma;
+        return `<tr><td>${i + 1}</td><td>${esc(x.e.firma)}${aw ? ' ★' : ''}</td><td class="num">${n0(r.brutto)}</td><td class="num">${r.rabattBetrag ? '−' + n0(r.rabattBetrag) : ''}</td><td class="num">${r.weitereBetrag ? '−' + n0(r.weitereBetrag) : ''}</td><td class="num">${r.pauschal ? '−' + n0(r.pauschal) : ''}</td><td class="num">${r.skontoBetrag ? '−' + n0(r.skontoBetrag) : ''}</td><td class="num"><b>${n0(r.netto)}</b></td><td class="num">${n0(r.mwst)}</td><td class="num">${n0(r.total)}</td><td class="num">${d != null ? (d > 0 ? '+' : '') + n0(d) : ''}</td></tr>`; }).join('')}
+      </tbody></table>`;
+  };
+  const inner = stagesData.length ? stagesData.map(([st, label]) => tableFor(st, label)).join('') : '<p class="muted">Noch keine Konditionen erfasst.</p>';
+  const sub = `${esc(p.name)} · BKP ${esc(v.bkp || '')} ${esc(v.gewerk || '')} · Kostenschätzung ${chf(kv)} · Beträge CHF, Netto exkl. MwSt · ★ = vergeben`;
+  openPrintDoc('Offertvergleich', sub, inner, { landscape: true });
 }
 
 /* ---------------------------------------------------------------
@@ -5774,6 +5836,8 @@ document.addEventListener('click', e => {
     case 'advance':      advanceVergabe(pid, vid); break;
     case 'konditionen':      actKonditionen(pid, vid, eid); break;
     case 'konditionen-save': saveKonditionen(pid, vid, eid); break;
+    case 'vgl-stage':        vglStage = kind; viewVergabeDetail(pid, vid); break;
+    case 'pdf-offertvergleich': pdfOffertvergleich(pid, vid); break;
     case 'invite':       actInvite(pid, vid); break;
     case 'save-invite':  saveInvite(pid, vid); break;
     case 'sendmail':     sendMail(pid, vid); break;

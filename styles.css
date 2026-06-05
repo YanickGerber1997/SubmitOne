@@ -826,6 +826,17 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .bkp-ghost .bkp-code { font-style: normal; }
 .bkp-ghost .ghost-add { color: var(--brand); font-weight: 600; font-style: normal; text-align: right; white-space: nowrap; }
 
+/* Geführtes Inline-Panel je Gewerk */
+.gw-chev { display: inline-block; width: 12px; color: var(--text-faint); font-size: 11px; }
+.gw-row.open { background: var(--surface-2); }
+.gw-row.open .gw-chev { color: var(--brand); }
+.gw-detail-row > td { padding: 0 !important; background: var(--surface-2); border-bottom: 2px solid var(--border); }
+.gw-panel { padding: 12px 16px 14px; }
+.gw-panel-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.gw-hint { font-size: 13px; color: var(--text-soft); flex: 1; min-width: 200px; }
+.gw-open { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.gw-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* ============================ Toast ============================ */
 
 #toast-root { position: fixed; bottom: 22px; right: 22px; display: flex; flex-direction: column; gap: 10px; z-index: 200; }

@@ -981,7 +981,7 @@ function viewProjektDetail(id) {
     </div>
 
     <!-- Vergaben-Tabelle -->
-    <div class="section-head"><h2>Vergaben &amp; Gewerke</h2><div style="display:flex;gap:10px;align-items:center"><span class="hint">Klick auf eine Zeile für Details</span>${katToggleBtn()}</div></div>
+    <div class="section-head"><h2>Vergaben &amp; Gewerke</h2><div style="display:flex;gap:10px;align-items:center"><span class="hint">Klick = aufklappen mit nächsten Schritten</span>${katToggleBtn()}</div></div>
     <div class="card">
       ${vergaben.length || katOpen ? `
       <table class="grid">
@@ -990,15 +990,15 @@ function viewProjektDetail(id) {
         </thead>
         <tbody>
           ${vergaben.map(v => `
-            <tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
-              <td><span class="bkp-code">${esc(v.bkp)}</span></td>
+            <tr class="clickable gw-row${gwOpen.has(v.id) ? ' open' : ''}" data-act="gw-toggle" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
+              <td><span class="gw-chev">${gwOpen.has(v.id) ? '▾' : '▸'}</span> <span class="bkp-code">${esc(v.bkp)}</span></td>
               <td><strong>${esc(v.gewerk)}</strong></td>
               <td>${v.firma ? `<div class="row-firma">${esc(v.firma)}</div>` : '<span class="muted">noch offen</span>'}</td>
               <td>${statusPill(v)}${vergabeMarken(v) ? `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${vergabeMarken(v)}</div>` : ''}</td>
               <td>${miniPipe(v)}</td>
               <td class="num">${isVergeben(v) ? chf(v.betrag) : `<span class="muted">~${chfShort(v.schaetzung)}</span>`}</td>
               <td class="frist ${fristClass(v.frist, isDone(v))}">${fristText(v.frist, isDone(v))}</td>
-            </tr>`).join('')}
+            </tr>${gwOpen.has(v.id) ? `<tr class="gw-detail-row"><td colspan="7">${gewerkPanel(p, v)}</td></tr>` : ''}`).join('')}
           ${bkpGhostRows(p, 7)}
         </tbody>
       </table>` : emptyState('▤', 'Noch keine Vergaben angelegt.')}
@@ -2541,6 +2541,52 @@ function quickAddVergabe(pid, code, label) {
   const p = findProjekt(pid); if (!p) return;
   (p.vergaben = p.vergaben || []).push({ id: uid('v'), bkp: code, gewerk: label, status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 0, frist: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] });
   save(); router(); toast(code + ' ' + label + ' erfasst', 'ok');
+}
+
+/* --- Geführtes Inline-Panel je Gewerk (phasengerechte nächste Schritte) --- */
+let gwOpen = new Set();
+function gewerkHatBeschrieb(v) { return !!((v.beschrieb && v.beschrieb.trim()) || (v.ksPositionen && v.ksPositionen.length) || v.schaetzung > 0); }
+function gewerkPanel(p, v) {
+  const st = STATUS_BY_KEY[v.status] || {};
+  const btn = (action, label, primary) => `<button class="btn sm ${primary ? '' : 'secondary'}" data-act="gw-action" data-pid="${p.id}" data-vid="${v.id}" data-action="${action}">${label}</button>`;
+  const s = v.status; let hint = '', acts = [];
+  if (s === 'ausschreibung') {
+    if (!gewerkHatBeschrieb(v)) { hint = 'Noch kein Baubeschrieb / keine Kostenschätzung – jetzt erfassen.'; acts = [btn('ks', '✎ Beschrieb &amp; Kostenschätzung erfassen', true)]; }
+    else if (!v.beschriebOk) { hint = 'Beschrieb &amp; Schätzung stehen – vom Bauherrn genehmigen lassen.'; acts = [btn('genehmigt', '✓ Als genehmigt markieren', true), btn('ks', '✎ bearbeiten')]; }
+    else { hint = 'Genehmigt – jetzt die Ausschreibung an die Submittenten versenden.'; acts = [btn('ausschreiben', '✉ Ausschreibung versenden', true), btn('advance', '→ Status: versendet')]; }
+  } else if (['versendet', 'offerten', 'angebot_vers', 'angebot_erh'].includes(s)) {
+    hint = 'Offerten / Abgebote erfassen und vergleichen.'; acts = [btn('vergabeantrag', '📄 Offertvergleich / Vergabeantrag', true), btn('advance', '→ nächster Schritt')];
+  } else if (s === 'bewertung' || s === 'verhandlung') {
+    hint = 'Offertvergleich vorhanden – Zuschlag vorbereiten.'; acts = [btn('vergabeantrag', '📄 Vergabeantrag'), btn('advance', '→ Zuschlag erteilen', true)];
+  } else if (s === 'vergeben') {
+    hint = 'Zuschlag erteilt – Firmen informieren, dann Werkvertrag.'; acts = [btn('zuschlag', '✉ Zuschlag-Mail', true), btn('absage', '✉ Absage Unterlegene'), btn('advance', '→ Werkvertrag')];
+  } else if (s === 'werkvertrag' || s === 'unterzeichnet') {
+    hint = 'Werkvertrag – bei Baustart in Ausführung setzen.'; acts = [btn('advance', '→ In Ausführung', true)];
+  } else if (s === 'ausfuehrung') {
+    hint = 'In Ausführung – Rechnungen &amp; Nachträge laufend erfassen.'; acts = [btn('rechnung', '🧾 Rechnung erfassen', true), btn('nachtrag', '📐 Nachtrag'), btn('advance', '→ Schlussrechnung')];
+  } else if (s === 'schlussrechnung') {
+    hint = 'Schlussrechnung in Prüfung.'; acts = [btn('rechnung', '🧾 Rechnung'), btn('advance', '→ weiter', true)];
+  } else if (s === 'maengel') {
+    hint = 'Mängelbehebung – danach abschliessen.'; acts = [btn('advance', '→ Abschliessen', true)];
+  } else { hint = 'Gewerk abgeschlossen.'; }
+  return `<div class="gw-panel">
+    <div class="gw-panel-top"><span class="st ${st.color || 'grey'}">${esc(st.label || v.status)}</span><span class="gw-hint">${hint}</span><a class="gw-open" href="#/projekt/${p.id}/vergabe/${v.id}">Vollständiges Detail öffnen ↗</a></div>
+    ${acts.length ? `<div class="gw-actions">${acts.join('')}</div>` : ''}
+  </div>`;
+}
+function gewerkAction(pid, vid, action) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  switch (action) {
+    case 'ks': return actKostenschaetzung(pid, vid);
+    case 'genehmigt': v.beschriebOk = true; save(); { const y = window.scrollY; router(); window.scrollTo(0, y); } toast('Beschrieb als genehmigt markiert', 'ok'); return;
+    case 'ausschreiben': return mailEinladung(pid, vid);
+    case 'advance': return advanceVergabe(pid, vid);
+    case 'vergabeantrag': return pdfVergabeantrag(pid, vid);
+    case 'zuschlag': return mailZuschlag(pid, vid);
+    case 'absage': return mailAbsage(pid, vid);
+    case 'rechnung': return actNewRechnung(pid, vid);
+    case 'nachtrag': return actNewNachtrag(pid, vid);
+  }
 }
 
 // Vergabe zu einem BKP-Code finden (exakt → 3-stellig → 2-stellige Gruppe)
@@ -6705,6 +6751,8 @@ document.addEventListener('click', e => {
     case 'new-vergabe':  actNewVergabe(pid); break;
     case 'kat-toggle':   katOpen = !katOpen; router(); break;
     case 'quickadd-bkp': quickAddVergabe(pid, act.dataset.code, act.dataset.label); break;
+    case 'gw-toggle':    { const y = window.scrollY; gwOpen.has(vid) ? gwOpen.delete(vid) : gwOpen.add(vid); router(); window.scrollTo(0, y); } break;
+    case 'gw-action':    gewerkAction(pid, vid, act.dataset.action); break;
     case 'save-vergabe': saveVergabe(pid); break;
     case 'ks-edit':      actKostenschaetzung(pid, vid); break;
     case 'ks-pos-add':   ksPosAdd(); break;

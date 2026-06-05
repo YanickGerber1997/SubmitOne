@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v45';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v46';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1217,7 +1217,7 @@ function viewKosten(id) {
         </tbody>
       </table>
     </div>
-    ${optionenCard(p, tot.kv)}
+    ${optionenCard(p, tot.kv, tot.prognose)}
     ${bauteilCard(p, tot.kv)}
     <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag/Vergabesumme · Prognose = WV + Nachträge + Rapporte (Budget steckt im WV) · Δ KV = Prognose gegen Schätzung (rot = Überschreitung). Zeile anklicken → Gewerk-Detail mit Rechnungserfassung.</p>
   `);
@@ -5854,22 +5854,35 @@ function optAktivVariante(p, gruppe) {
   const list = (p.optionen || []).filter(o => (o.gruppe || '') === gruppe);
   return list.length ? list[0].id : '';   // Default: erste Variante aktiv
 }
-// Abzug/Aufschlag gegenüber „alles eingerechnet"
+// Ist eine Option in der aktuellen Auswahl ausgeblendet/inaktiv?
+function optAusgeblendet(p, o) {
+  return o.gruppe ? (o.id !== optAktivVariante(p, o.gruppe)) : optSel.aus.has(o.id);
+}
+// Vertraglicher Abzug einer Option (Eventualposition; Fallback = Schätzwert der Positionen)
+function optAbzugVertrag(p, o) {
+  return (o.vertragsAbzug != null && o.vertragsAbzug !== '') ? (Number(o.vertragsAbzug) || 0) : optionSumme(p, o.id);
+}
+// Abzug gegenüber „alles eingerechnet" – auf Schätzungs-Basis (KV)
 function optDelta(p) {
   let adj = 0;
-  (p.optionen || []).forEach(o => {
-    if (o.gruppe) { if (o.id !== optAktivVariante(p, o.gruppe)) adj -= optionSumme(p, o.id); }
-    else if (optSel.aus.has(o.id)) adj -= optionSumme(p, o.id);
-  });
+  (p.optionen || []).forEach(o => { if (optAusgeblendet(p, o)) adj -= optionSumme(p, o.id); });
+  return adj;
+}
+// dito auf Vertrags-/Prognose-Basis (Offerte/Abgebot/WV)
+function optDeltaVertrag(p) {
+  let adj = 0;
+  (p.optionen || []).forEach(o => { if (optAusgeblendet(p, o)) adj -= optAbzugVertrag(p, o); });
   return adj;
 }
 
-function optionenCard(p, kvTotal) {
+function optionenCard(p, kvTotal, prognoseTotal) {
   if (!(p.optionen || []).length) return '';
   optEnsure(p);
   const btName = id => { const b = (p.bauteile || []).find(x => x.id === id); return b ? b.name : ''; };
   const indep = (p.optionen || []).filter(o => !o.gruppe);
   const gruppen = optGruppenListe(p);
+  // Vertrags-Abzug-Hinweis je Option, wenn er vom Schätzwert abweicht
+  const vNote = o => { const est = optionSumme(p, o.id); const v = optAbzugVertrag(p, o); return (o.vertragsAbzug != null && o.vertragsAbzug !== '' && v !== est) ? ` <span class="muted" style="font-size:10.5px">Vertrag ${money(v)}</span>` : ''; };
   let rows = '';
   if (indep.length) {
     rows += `<div class="muted" style="font-size:12px;margin:4px 0 2px"><strong>Optionen</strong> – Häkchen = eingerechnet, Klick blendet aus</div>`;
@@ -5877,7 +5890,7 @@ function optionenCard(p, kvTotal) {
       const on = !optSel.aus.has(o.id), sum = optionSumme(p, o.id);
       return `<div class="opt-row" data-act="opt-toggle" data-pid="${p.id}" data-optid="${o.id}">
         <span style="font-size:16px">${on ? '☑' : '☐'}</span>
-        <span style="flex:1">${esc(o.name)}${o.bauteilId ? ` <span class="st grey" style="font-size:10px;padding:1px 6px">${esc(btName(o.bauteilId))}</span>` : ''}</span>
+        <span style="flex:1">${esc(o.name)}${o.bauteilId ? ` <span class="st grey" style="font-size:10px;padding:1px 6px">${esc(btName(o.bauteilId))}</span>` : ''}${vNote(o)}</span>
         <span class="num" style="${on ? '' : 'opacity:.4;text-decoration:line-through'}">${money(sum)}</span>
       </div>`;
     }).join('');
@@ -5888,13 +5901,15 @@ function optionenCard(p, kvTotal) {
     rows += g.optionen.map(o => {
       const on = o.id === active, sum = optionSumme(p, o.id);
       return `<div class="opt-row" data-act="opt-variante" data-pid="${p.id}" data-grp="${esc(g.gruppe)}" data-optid="${o.id}">
-        <span style="font-size:15px">${on ? '◉' : '○'}</span><span style="flex:1">${esc(o.name)}</span>
+        <span style="font-size:15px">${on ? '◉' : '○'}</span><span style="flex:1">${esc(o.name)}${vNote(o)}</span>
         <span class="num" style="${on ? '' : 'opacity:.4'}">${money(sum)}</span></div>`;
     }).join('');
     rows += `<div class="opt-row" data-act="opt-variante" data-pid="${p.id}" data-grp="${esc(g.gruppe)}" data-optid="" style="color:var(--text-soft)">
       <span style="font-size:15px">${active === '' ? '◉' : '○'}</span><span style="flex:1">keine</span><span class="num">–</span></div>`;
   });
   const delta = optDelta(p), bereinigt = kvTotal + delta;
+  const deltaV = optDeltaVertrag(p), bereinigtV = (prognoseTotal || 0) + deltaV;
+  const zeigeVertrag = (prognoseTotal != null) && (deltaV !== 0 || prognoseTotal !== kvTotal);
   return `<div class="card card-pad" style="margin-top:18px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px">
       <h2 style="margin:0;font-size:16px">Optionen &amp; Varianten</h2>
@@ -5903,8 +5918,13 @@ function optionenCard(p, kvTotal) {
     ${rows}
     <div style="border-top:2px solid var(--border);margin-top:10px;padding-top:10px">
       <div class="opt-sum"><span>Kostenschätzung inkl. aller Optionen</span><span class="num">${money(kvTotal)}</span></div>
-      <div class="opt-sum"><span>Optionen-Auswahl</span><span class="num">${delta ? money(delta) : '–'}</span></div>
+      <div class="opt-sum"><span>Optionen-Auswahl (Schätzung)</span><span class="num">${delta ? money(delta) : '–'}</span></div>
       <div class="opt-sum" style="font-size:16px;font-weight:700;margin-top:4px"><span>Bereinigte Kostenschätzung</span><span class="num">${money(bereinigt)}</span></div>
+      ${zeigeVertrag ? `<div style="border-top:1px dashed var(--border);margin-top:10px;padding-top:10px">
+        <div class="opt-sum"><span>Abrechnungsprognose inkl. aller Optionen</span><span class="num">${money(prognoseTotal)}</span></div>
+        <div class="opt-sum"><span>Optionen-Auswahl (Vertrag/Offerte)</span><span class="num">${deltaV ? money(deltaV) : '–'}</span></div>
+        <div class="opt-sum" style="font-size:16px;font-weight:700;margin-top:4px;color:var(--brand)"><span>Bereinigte Prognose</span><span class="num">${money(bereinigtV)}</span></div>
+      </div>` : ''}
     </div>
   </div>`;
 }
@@ -5937,6 +5957,7 @@ function oopRow(p, o) {
     <input class="input op-name" placeholder="Option (z.B. Erker, Lift)" value="${o ? esc(o.name) : ''}" style="flex:2">
     <select class="select op-bt" style="flex:1"><option value="">– Bauteil –</option>${bts.map(b => `<option value="${b.id}"${o && o.bauteilId === b.id ? ' selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
     <input class="input op-grp" placeholder="Variante (opt.)" value="${o ? esc(o.gruppe || '') : ''}" style="flex:1" title="Gleicher Variantenname = sich ausschliessende Gruppe">
+    <input class="input op-abz" type="number" placeholder="Abzug Vertrag" value="${o && o.vertragsAbzug != null ? o.vertragsAbzug : ''}" style="flex:1;max-width:120px" title="Vertraglicher Abzug von Offert-/WV-Summe (Eventualposition). Leer = Schätzwert.">
     <button class="x-btn" data-act="row-del" type="button" title="entfernen">×</button>
   </div>`;
 }
@@ -5954,7 +5975,12 @@ function actBauteileOptionen(pid) {
 function saveBtOpt(pid) {
   const p = findProjekt(pid); if (!p) return;
   const bts = $$('#bt_rows .bt-row').map(r => { const name = r.querySelector('.bt-name').value.trim(); return name ? { id: r.dataset.id || uid('bt'), name } : null; }).filter(Boolean);
-  const ops = $$('#op_rows .op-row').map(r => { const name = r.querySelector('.op-name').value.trim(); return name ? { id: r.dataset.id || uid('op'), name, bauteilId: r.querySelector('.op-bt').value || '', gruppe: r.querySelector('.op-grp').value.trim() } : null; }).filter(Boolean);
+  const ops = $$('#op_rows .op-row').map(r => {
+    const name = r.querySelector('.op-name').value.trim();
+    if (!name) return null;
+    const abzEl = r.querySelector('.op-abz'); const abz = abzEl && abzEl.value !== '' ? Number(abzEl.value) : null;
+    return { id: r.dataset.id || uid('op'), name, bauteilId: r.querySelector('.op-bt').value || '', gruppe: r.querySelector('.op-grp').value.trim(), vertragsAbzug: abz };
+  }).filter(Boolean);
   p.bauteile = bts; p.optionen = ops;
   optSel = { pid: null, aus: new Set(), grp: {} };   // Auswahl-Zustand zurücksetzen (IDs könnten weg sein)
   save(); closeModal(); router(); toast('Bauteile & Optionen gespeichert');

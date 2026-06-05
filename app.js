@@ -3658,6 +3658,19 @@ function weekDates(iso) {
   const mon = new Date(d.getFullYear(), d.getMonth(), d.getDate() - lead);
   return Array.from({ length: 7 }, (_, i) => isoOf(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i)));
 }
+// Relative Distanz zu heute (für „in 2 Wochen / vor 1 Tag …")
+function relTxt(n, sing, plurDat) { if (!n) return ''; const a = Math.abs(n); return (n > 0 ? 'in ' : 'vor ') + a + ' ' + (a === 1 ? sing : plurDat); }
+function relDays(iso) { const a = dISO(iso); const b = today(); return Math.round((Date.UTC(a.getFullYear(), a.getMonth(), a.getDate()) - Date.UTC(b.getFullYear(), b.getMonth(), b.getDate())) / 86400000); }
+function relWeeks(iso) { const a = dISO(weekDates(iso)[0]); const b = dISO(weekDates(todayIso())[0]); return Math.round((Date.UTC(a.getFullYear(), a.getMonth(), a.getDate()) - Date.UTC(b.getFullYear(), b.getMonth(), b.getDate())) / (7 * 86400000)); }
+function relMonths(y, m) { const t = today(); return (y - t.getFullYear()) * 12 + (m - t.getMonth()); }
+function relBadge(kind, ref) {
+  let n, none, sing, plur;
+  if (kind === 'tag') { n = relDays(ref); none = 'heute'; sing = 'Tag'; plur = 'Tagen'; }
+  else if (kind === 'monat') { n = relMonths(ref[0], ref[1]); none = 'aktueller Monat'; sing = 'Monat'; plur = 'Monaten'; }
+  else { n = relWeeks(ref); none = 'diese Woche'; sing = 'Woche'; plur = 'Wochen'; }
+  const txt = n === 0 ? none : relTxt(n, sing, plur);
+  return `<span class="cal-rel${n === 0 ? ' now' : ''}">${txt}</span>`;
+}
 // Tages-/Wochen-Raster mit Stunden (Outlook-Stil). events: [{datum,zeit,zeitEnde,titel,color,manual,id,pid}], addPid='' = global
 function calTimeGrid(events, dates, todayI, add) {
   const byDay = {};
@@ -3678,7 +3691,7 @@ function calTimeGrid(events, dates, todayI, add) {
       const rz = e.plan ? '<span class="cal-rz top"></span><span class="cal-rz bottom"></span>' : '';
       return `<div class="cal-tev ${e.color}${e.plan ? ' plan' : ''}"${evEdit(e)} style="top:${top}px;height:${h}px" title="${esc(e.zeit + ' ' + e.titel)}">${rz}<span class="cal-tev-lbl">${esc(e.zeit)} ${esc(e.titel)}</span></div>`;
     }).join('');
-    return `<div class="cal-col" data-iso="${iso}"${pidAttr} style="height:${(CAL_EH - CAL_SH) * CAL_HH}px">${lines}${tev}</div>`;
+    return `<div class="cal-col${iso === todayI ? ' today' : ''}" data-iso="${iso}"${pidAttr} style="height:${(CAL_EH - CAL_SH) * CAL_HH}px">${lines}${tev}</div>`;
   }).join('');
   const cstyle = `grid-template-columns:repeat(${dates.length},1fr)`;
   return `<div class="cal-tg">
@@ -3997,6 +4010,7 @@ function viewKalenderGlobal() {
         <button class="btn sm secondary" data-act="gcal-today">Heute</button>
         <button class="btn sm secondary" data-act="gcal-next" title="vor">›</button>
         <h2 style="margin:0 0 0 8px;font-size:16px">${gLabel}</h2>
+        ${relBadge(calView, calView === 'monat' ? [calGY, calGM] : calRefIso)}
       </div>
       <div style="display:flex;gap:5px">${gvb('tag', 'Tag')}${gvb('woche', 'Woche')}${gvb('monat', 'Monat')}</div>
     </div>
@@ -4104,6 +4118,7 @@ function viewPlanung() {
         <button class="btn sm secondary" data-act="plan-today">Heute</button>
         <button class="btn sm secondary" data-act="plan-next" title="vor">›</button>
         <h2 style="margin:0 0 0 8px;font-size:16px">${label}</h2>
+        ${relBadge(planView, planRefIso)}
       </div>
       <div style="display:flex;gap:5px">${pvb('tag', 'Tag')}${pvb('woche', 'Woche')}</div>
     </div>

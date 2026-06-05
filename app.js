@@ -792,7 +792,7 @@ function viewDashboard() {
     <table class="grid">
       <thead><tr><th>Projekt</th><th>Gewerk</th><th>Status</th><th>Frist</th></tr></thead>
       <tbody>${fristTasks.slice(0, 6).map(({ v, p }) => `
-        <tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}">
+        <tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
           <td>${esc(p.name)}</td>
           <td><span class="bkp-code">${esc(v.bkp || '')}</span> ${esc(v.gewerk || '')}</td>
           <td>${statusPill(v)}</td>
@@ -821,7 +821,7 @@ function viewDashboard() {
   const avgDoc = projList.length ? Math.round(projList.reduce((a, p) => a + dossierPct(p), 0) / projList.length) : 0;
   const docCls = d => d >= 80 ? 's-green' : d >= 40 ? 's-amber' : 's-red';
   const projPanel = sect('Projekte', projList.length ? `Ø Unterlagen ${avgDoc}% · <a class="hint" href="#/projekte" style="color:inherit">alle →</a>` : `<a class="hint" href="#/projekte">alle →</a>`) + `<div class="card card-pad">${projList.length ? `<div class="dash-list">${projList.map(p => { const dp = dossierPct(p); return `
-    <div class="dash-row clickable" data-goto="#/projekt/${p.id}">
+    <div class="dash-row clickable" data-goto="#/projekt/${p.id}" data-ctx="projekt" data-pid="${p.id}">
       <i class="cal-dot ${projColor(projekte.indexOf(p), p)}"></i>
       <span class="dr-main">${esc(p.name)}<div class="dr-sub">${esc(p.ort || '')} · <a href="#/projekt/${p.id}/dossier" onclick="event.stopPropagation()">Unterlagen <span style="color:var(--${docCls(dp)});font-weight:600">${dp}%</span></a></div></span>
       ${phaseBadge(dominantPhase(p))}
@@ -845,7 +845,7 @@ function projektCard(p) {
   const vergeben = projektVergebenAnzahl(p);
   const frist = naechsteFrist(p);
   return `
-    <div class="proj-card" data-goto="#/projekt/${p.id}">
+    <div class="proj-card" data-goto="#/projekt/${p.id}" data-ctx="projekt" data-pid="${p.id}">
       <div class="pc-top">
         <div>
           <div class="pc-title">${esc(p.name)}</div>
@@ -960,7 +960,7 @@ function viewProjektDetail(id) {
         </thead>
         <tbody>
           ${vergaben.map(v => `
-            <tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}">
+            <tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
               <td><span class="bkp-code">${esc(v.bkp)}</span></td>
               <td><strong>${esc(v.gewerk)}</strong></td>
               <td>${v.firma ? `<div class="row-firma">${esc(v.firma)}</div>` : '<span class="muted">noch offen</span>'}</td>
@@ -1015,7 +1015,7 @@ function viewKosten(id) {
     groups[g].forEach(v => {
       const z = kostenZeile(v); add(sub, z); add(tot, z);
       const d = z.prognose - z.kv;
-      rows += `<tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}">
+      rows += `<tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
         <td class="bkp-code">${esc(v.bkp)}</td>
         <td><strong>${esc(v.gewerk)}</strong></td>
         <td>${v.firma ? esc(v.firma) : '<span class="muted">nicht vergeben</span>'}</td>
@@ -1203,7 +1203,7 @@ function viewTermine(id) {
     const colKey = ganttColKey(v), colHex = ganttColHex(v), light = colKey === 'hgrau' ? ' g-light' : '';
     const hatTermin = v.bauStart && v.bauEnde;
     sideRows += `<div class="g-side-row${hatTermin ? '' : ' offen'}">
-      <span class="g-edit" data-act="edit-termin" data-pid="${p.id}" data-vid="${v.id}" title="Termine bearbeiten">
+      <span class="g-edit" data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}" title="Termine bearbeiten (Rechtsklick: Menü)">
         <span class="bkp-code">${esc(v.bkp)}</span> <span class="gewerk">${esc(v.gewerk)}</span>
       </span>
       ${hatTermin ? `<button class="btn sm ghost add-vg" title="Vorgang hinzufügen" data-act="new-vorgang" data-pid="${p.id}" data-vid="${v.id}">＋</button>` : ''}
@@ -1212,7 +1212,7 @@ function viewTermine(id) {
       barMeta[v.id] = { row: rowIdx, left: leftPx(v.bauStart), width: widthPx(v.bauStart, v.bauEnde) };
       barRows += `<div class="g-row"><div class="g-bar${light}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
         title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)} · ${STATUS_BY_KEY[v.status]?.label || ''}"
-        data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
+        data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
         <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span><span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
     } else {
       barRows += `<div class="g-row"><button class="g-set" data-act="edit-termin" data-pid="${p.id}" data-vid="${v.id}">＋ Termin setzen</button></div>`;
@@ -1225,7 +1225,7 @@ function viewTermine(id) {
         <button class="x-btn" title="Vorgang löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button></div>`;
       barRows += `<div class="g-row"><div class="g-bar sub${light}" style="left:${leftPx(o.start)}px;width:${widthPx(o.start, o.ende)}px;background:${colHex}"
         title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
-        data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-start="${o.start}" data-ende="${o.ende}">
+        data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
         <span class="g-h l"></span><span class="g-lbl">${esc(o.titel)}</span><span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div></div>`;
       rowIdx++;
     });
@@ -1267,8 +1267,7 @@ function viewTermine(id) {
     <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie.</p>
   `);
 
-  $$('.g-bar').forEach(b => { b.addEventListener('mousedown', onBarMouseDown); b.addEventListener('contextmenu', e => ganttBarMenu(e, b)); });
-  $$('.g-edit[data-vid]').forEach(el => el.addEventListener('contextmenu', e => ganttBarMenu(e, el)));
+  $$('.g-bar').forEach(b => b.addEventListener('mousedown', onBarMouseDown));
   $$('.g-link-dot').forEach(d => d.addEventListener('mousedown', onLinkDotDown));
   $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
   $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) removeGanttLink(ganttPid, g.dataset.lid); }));
@@ -1350,33 +1349,70 @@ function openContextMenu(e, items) {
 function ctxAway(e) { if (!e.target.closest('#ctxMenu')) closeContextMenu(); }
 function ctxEsc(e) { if (e.key === 'Escape') closeContextMenu(); }
 function closeContextMenu() { const m = $('#ctxMenu'); if (m) m.remove(); document.removeEventListener('mousedown', ctxAway); document.removeEventListener('keydown', ctxEsc); document.removeEventListener('scroll', closeContextMenu, true); }
-// Rechtsklick auf einen Gantt-Balken → Power-User-Menü
+// Globales Rechtsklick-System: jedes Element mit data-ctx bekommt sein Menü
+function onGlobalContext(e) {
+  const el = e.target.closest('[data-ctx]'); if (!el) return;
+  const c = el.dataset.ctx;
+  if (c === 'vergabe') vergabeMenu(e, el.dataset.pid, el.dataset.vid);
+  else if (c === 'gantt') ganttBarMenu(e, el);
+  else if (c === 'pendenz') pendenzMenu(e, el.dataset.pid, el.dataset.itemid);
+  else if (c === 'projekt') projektMenu(e, el.dataset.pid);
+}
+// Menü für ein Gewerk/Vergabe (Übersicht, Kosten, Gantt-Label …)
+function vergabeMenu(e, pid, vid, extraTop) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const items = [{ icon: '↗', label: 'Gewerk öffnen', act: () => go('#/projekt/' + pid + '/vergabe/' + vid) }];
+  if (extraTop) items.push(...extraTop);
+  items.push(
+    { icon: '🗓', label: 'Termine / Gantt', act: () => go('#/projekt/' + pid + '/termine') },
+    { icon: '→', label: 'Status: nächster Schritt', act: () => advanceVergabe(pid, vid) },
+    { sep: true },
+    { icon: '✉', label: 'Offertanfrage / Einladung senden', act: () => mailEinladung(pid, vid) },
+  );
+  if (isVergeben(v)) items.push(
+    { icon: '✉', label: 'Zuschlag-Mail an ' + (v.firma || 'Gewinner'), act: () => mailZuschlag(pid, vid) },
+    { icon: '✉', label: 'Absage an Unterlegene', act: () => mailAbsage(pid, vid) },
+  );
+  items.push(
+    { sep: true },
+    { icon: '💰', label: 'Kosten / Rechnungen', act: () => go('#/projekt/' + pid + '/kosten') },
+    { icon: '🧾', label: '＋ Rechnung erfassen', act: () => actNewRechnung(pid, vid) },
+    { icon: '📐', label: '＋ Nachtrag erfassen', act: () => actNewNachtrag(pid, vid) },
+    { sep: true },
+    { icon: '✎', label: 'Stammdaten bearbeiten', act: () => actEditVergabe(pid, vid) },
+    { icon: '🗑', label: 'Gewerk löschen', danger: true, act: () => rmVergabe(pid, vid) },
+  );
+  openContextMenu(e, items);
+}
+// Rechtsklick auf einen Gantt-Balken (Vorgang oder Gewerk)
 function ganttBarMenu(e, bar) {
   const pid = bar.dataset.pid, vid = bar.dataset.vid, oid = bar.dataset.oid || null;
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
-  const items = [{ icon: '↗', label: 'Gewerk öffnen (Übersicht)', act: () => go('#/projekt/' + pid + '/vergabe/' + vid) }];
-  if (oid) {
-    items.push({ sep: true }, { icon: '✕', label: 'Vorgang löschen', danger: true, act: () => removeVorgang(pid, vid, oid) });
-  } else {
-    items.push(
-      { icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) },
-      { icon: '＋', label: 'Vorgang hinzufügen', act: () => actNewVorgang(pid, vid) },
-      { icon: '→', label: 'Status: nächster Schritt', act: () => advanceVergabe(pid, vid) },
-      { sep: true },
-      { icon: '✉', label: 'Offertanfrage / Einladung senden', act: () => mailEinladung(pid, vid) },
-    );
-    if (isVergeben(v)) items.push(
-      { icon: '✉', label: 'Zuschlag-Mail an ' + (v.firma || 'Gewinner'), act: () => mailZuschlag(pid, vid) },
-      { icon: '✉', label: 'Absage an Unterlegene', act: () => mailAbsage(pid, vid) },
-    );
-    items.push(
-      { sep: true },
-      { icon: '💰', label: 'Kosten / Rechnungen', act: () => go('#/projekt/' + pid + '/kosten') },
-      { icon: '✎', label: 'Stammdaten bearbeiten', act: () => actEditVergabe(pid, vid) },
-      { icon: '🗑', label: 'Gewerk löschen', danger: true, act: () => rmVergabe(pid, vid) },
-    );
-  }
+  if (oid) { openContextMenu(e, [{ icon: '↗', label: 'Gewerk öffnen', act: () => go('#/projekt/' + pid + '/vergabe/' + vid) }, { sep: true }, { icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '✕', label: 'Vorgang löschen', danger: true, act: () => removeVorgang(pid, vid, oid) }]); return; }
+  vergabeMenu(e, pid, vid, [{ icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '＋', label: 'Vorgang hinzufügen', act: () => actNewVorgang(pid, vid) }]);
+}
+function pendenzMenu(e, pid, itemid) {
+  const p = findProjekt(pid); const it = p && (p.pendenzen || []).find(x => x.id === itemid); if (!it) return;
+  const items = [
+    { icon: it.erledigt ? '↩' : '✓', label: it.erledigt ? 'Wieder offen' : 'Als erledigt markieren', act: () => togglePendenz(pid, '', '', itemid) },
+    { icon: '✎', label: 'Bearbeiten', act: () => actPendenz(pid, itemid) },
+  ];
+  if ((it.firmen || []).length) items.push({ icon: '✉', label: 'Als E-Mail an Firmen', act: () => actPendenzMail(pid, itemid) });
+  items.push({ sep: true }, { icon: '🗑', label: 'Löschen', danger: true, act: () => rmPendenz(pid, itemid) });
   openContextMenu(e, items);
+}
+function projektMenu(e, pid) {
+  const p = findProjekt(pid); if (!p) return;
+  openContextMenu(e, [
+    { icon: '↗', label: 'Projekt öffnen', act: () => go('#/projekt/' + pid) },
+    { icon: '🗂', label: 'Dossier', act: () => go('#/projekt/' + pid + '/dossier') },
+    { icon: '🗓', label: 'Termine / Gantt', act: () => go('#/projekt/' + pid + '/termine') },
+    { icon: '💰', label: 'Kosten', act: () => go('#/projekt/' + pid + '/kosten') },
+    { icon: '📋', label: 'Pendenzen', act: () => go('#/projekt/' + pid + '/pendenzen') },
+    { sep: true },
+    { icon: '＋', label: 'Arbeitsbeschrieb erfassen', act: () => actNewVergabe(pid) },
+    { icon: '✎', label: 'Projekt bearbeiten', act: () => actEditProjekt(pid) },
+  ]);
 }
 
 /* --- Gantt Drag & Drop --- */
@@ -1530,7 +1566,7 @@ function viewPendenzen(pid) {
       <thead><tr><th style="width:36px"></th><th>Pendenz</th><th>Verantwortlich</th><th>Termin</th><th>Herkunft</th><th style="width:62px"></th></tr></thead>
       <tbody>
         ${offen.map(x => `
-          <tr>
+          <tr${x.pr ? '' : ` data-ctx="pendenz" data-pid="${p.id}" data-itemid="${x.it.id}"`}>
             <td><input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="erledigt"></td>
             <td>${esc(x.it.text)}${pendFirmenChips(x.it)}</td>
             <td>${esc(x.it.verantwortlich || '–')}</td>
@@ -1548,7 +1584,7 @@ function viewPendenzen(pid) {
         <thead><tr><th style="width:36px"></th><th>Pendenz</th><th>Verantwortlich</th><th>Termin</th><th>Herkunft</th><th style="width:62px"></th></tr></thead>
         <tbody>
           ${erledigt.map(x => `
-            <tr class="done-row">
+            <tr class="done-row"${x.pr ? '' : ` data-ctx="pendenz" data-pid="${p.id}" data-itemid="${x.it.id}"`}>
               <td><input type="checkbox" class="pend-check" checked data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="wieder offen"></td>
               <td>${esc(x.it.text)}${pendFirmenChips(x.it)}</td>
               <td>${esc(x.it.verantwortlich || '–')}</td>
@@ -4066,7 +4102,7 @@ function viewPendenzenGlobal() {
     <table class="grid">
       <thead><tr><th style="width:36px"></th><th>Projekt</th><th>Pendenz</th><th>Verantwortlich</th><th>Termin</th><th>Herkunft</th><th style="width:62px"></th></tr></thead>
       <tbody>${offen.map(({ p, x }) => `
-        <tr>
+        <tr${x.pr ? '' : ` data-ctx="pendenz" data-pid="${p.id}" data-itemid="${x.it.id}"`}>
           <td><input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="erledigt"></td>
           <td>${projZelle(p)}</td>
           <td>${esc(x.it.text)}${pendFirmenChips(x.it)}</td>
@@ -4082,7 +4118,7 @@ function viewPendenzenGlobal() {
     <div class="card"><table class="grid">
       <thead><tr><th style="width:36px"></th><th>Projekt</th><th>Pendenz</th><th>Verantwortlich</th><th>Termin</th><th>Herkunft</th><th style="width:62px"></th></tr></thead>
       <tbody>${erledigt.map(({ p, x }) => `
-        <tr class="done-row">
+        <tr class="done-row"${x.pr ? '' : ` data-ctx="pendenz" data-pid="${p.id}" data-itemid="${x.it.id}"`}>
           <td><input type="checkbox" class="pend-check" checked data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="wieder offen"></td>
           <td>${projZelle(p)}</td>
           <td>${esc(x.it.text)}${pendFirmenChips(x.it)}</td>
@@ -6276,6 +6312,7 @@ document.addEventListener('click', e => {
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 document.addEventListener('mousemove', onGanttMove);
 document.addEventListener('mouseup', onGanttUp);
+document.addEventListener('contextmenu', onGlobalContext);
 
 // Sidebar-Footer-Buttons
 window.addEventListener('DOMContentLoaded', boot);

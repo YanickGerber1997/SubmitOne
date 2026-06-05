@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v52';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v53';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -6133,6 +6133,7 @@ function viewSolar(pid) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Solar</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">☀ Solarrechner</h1><div class="sub" style="margin-top:5px">Photovoltaik-Ertrag, Eigenverbrauch &amp; Wirtschaftlichkeit · ${esc(p.name)}</div></div>
+      <div><button class="btn secondary" data-act="pdf-solar" data-pid="${p.id}">⬇ Solar-PDF</button></div>
     </div>
     ${projektTabs(p, 'solar')}
 
@@ -6177,6 +6178,56 @@ function viewSolar(pid) {
   `);
   const inp = $('#solarInputs');
   if (inp) { inp.addEventListener('input', () => solarUpdate(pid)); inp.addEventListener('change', () => solarUpdate(pid)); }
+}
+
+function pdfSolar(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const s = solarOf(p);
+  const r = solarCalc(s);
+  const kwh = x => Math.round(x).toLocaleString('de-CH') + ' kWh';
+  const f1 = x => (Math.round(x * 10) / 10).toLocaleString('de-CH');
+  const fr = x => 'CHF ' + Math.round(x).toLocaleString('de-CH');
+  const oL = (SOLAR_ORIENT[s.orient] || SOLAR_ORIENT.sued);
+  const tr = (l, v) => `<tr><td>${l}</td><td class="num">${v}</td></tr>`;
+
+  const anlage = `<div class="gw">Anlage &amp; Dach</div><table class="t"><tbody>
+    ${tr('Dachfläche', f1(r.flaeche) + ' m²')}
+    ${tr('davon belegbar', Math.round(r.belegung) + ' %  =  ' + f1(r.modulflaeche) + ' m² Module')}
+    ${tr('Modulleistung', Math.round(r.wpm2) + ' Wp/m²')}
+    ${tr('<b>Anlagenleistung</b>', '<b>' + f1(r.kwp) + ' kWp</b>')}
+    ${tr('Ausrichtung', oL[0])}
+    ${tr('Dachneigung', f1(r.tilt) + '°')}
+    ${tr('Spezifischer Ertrag', Math.round(Number(s.ertrag)) + ' kWh/kWp·a')}
+  </tbody></table>`;
+
+  const ertrag = `<div class="gw">Ertrag &amp; Eigenverbrauch</div><table class="t"><tbody>
+    ${tr('<b>Stromproduktion</b>', '<b>' + kwh(r.produktion) + '</b> / Jahr')}
+    ${tr('Stromverbrauch', kwh(r.verbrauch) + ' / Jahr')}
+    ${tr('Eigenverbrauch', kwh(r.eigenverbrauch) + (r.autarkie != null ? '  ·  Autarkie ' + r.autarkie + ' %' : ''))}
+    ${tr('Einspeisung ins Netz', kwh(r.einspeisung))}
+    ${tr('CO₂ vermieden', Math.round(r.co2).toLocaleString('de-CH') + ' kg / Jahr')}
+  </tbody></table>`;
+
+  const wirt = `<div class="gw">Wirtschaftlichkeit</div><table class="t"><tbody>
+    ${tr('Stromkosten heute (ohne PV)', fr(r.stromkostenJetzt) + ' / Jahr')}
+    ${tr('Stromkosten mit PV', fr(r.stromkostenNeu) + ' / Jahr')}
+    ${tr('<b>Ersparnis pro Jahr</b>', '<b>' + fr(r.ertragJahr) + '</b>')}
+    ${tr('PV-Anlagekosten', fr(r.anlage))}
+    ${r.speicherKosten ? tr('Batteriespeicher' + (r.speicher ? ' (' + f1(r.speicher) + ' kWh)' : ''), fr(r.speicherKosten)) : ''}
+    ${r.bauseiteSum ? tr('Bauseitige Kosten', fr(r.bauseiteSum)) : ''}
+    ${tr('<b>Investition total</b>', '<b>' + fr(r.invest) + '</b>')}
+    ${tr('− Förderung (EIV)', '− ' + fr(r.eiv))}
+    ${tr('<b>Netto-Investition</b>', '<b>' + fr(r.netto) + '</b>')}
+    ${tr('Amortisation', r.amort != null ? f1(r.amort) + ' Jahre' : '–')}
+    ${tr('Rendite', r.rendite != null ? f1(r.rendite) + ' % / Jahr' : '–')}
+  </tbody></table>`;
+
+  const bsRows = (s.bauseite || []).filter(b => b.text || b.betrag).map(b => tr(esc(b.text || 'Position'), fr(Number(b.betrag) || 0))).join('');
+  const bsTable = bsRows ? `<div class="gw">Bauseitige Zusatzkosten</div><table class="t"><tbody>${bsRows}</tbody></table>` : '';
+
+  const sub = `${esc(p.name)}${p.ort ? ' · ' + esc(p.ort) : ''} · Stand ${fmtDate(todayIso())}`;
+  const note = `<p class="muted" style="margin-top:14px;font-size:10px">Überschlagsrechnung ohne Degradation/Teuerung. Förder- und Tarifwerte sind Richtwerte (Pronovo / lokales EW prüfen). Für eine verbindliche Auslegung Fachplaner beiziehen.</p>`;
+  openPrintDoc('Solarrechner – Photovoltaik', sub, anlage + ertrag + wirt + bsTable + note);
 }
 
 function pdfKostenschaetzung(pid) {
@@ -7494,6 +7545,7 @@ document.addEventListener('click', e => {
     case 'pdf-dossier':          pdfDossier(pid); break;
     case 'pdf-vergabeantrag-alle': pdfVergabeantragAlle(pid); break;
     case 'pdf-kostenschaetzung': pdfKostenschaetzung(pid); break;
+    case 'pdf-solar':            pdfSolar(pid); break;
     case 'pdf-baukosten':        pdfBaukosten(pid); break;
     case 'pdf-gantt':            pdfGantt(pid); break;
     case 'advance':      advanceVergabe(pid, vid); break;

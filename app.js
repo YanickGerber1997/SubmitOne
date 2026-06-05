@@ -2979,9 +2979,9 @@ const DOS_CHECK = {
   nachtraege:       p => (p.vergaben || []).some(v => (v.nachtraege || []).length) ? 'ok' : 'fehlt',
   rechnungen:       p => (p.vergaben || []).some(v => (v.rechnungen || []).length) ? 'ok' : 'fehlt',
   ausschreibung:    p => (p.vergaben || []).length ? 'ok' : 'fehlt',
-  offerten:         p => (p.vergaben || []).some(v => (v.eingeladene || []).length) ? 'ok' : 'fehlt',
-  zuschlag:         p => (p.vergaben || []).some(v => ['vergeben', 'werkvertrag', 'unterzeichnet', 'ausfuehrung', 'abgeschlossen'].includes(v.status)) ? 'ok' : 'fehlt',
-  vertraege:        p => (p.vergaben || []).some(v => ['werkvertrag', 'unterzeichnet', 'ausfuehrung', 'abgeschlossen'].includes(v.status)) ? 'ok' : 'fehlt',
+  offerten:         p => { const vs = p.vergaben || []; if (!vs.some(v => (v.eingeladene || []).length)) return 'fehlt'; return vs.some(v => (v.eingeladene || []).some(e => e.status === 'offeriert')) ? 'ok' : 'teil'; },
+  zuschlag:         p => { const vs = p.vergaben || []; if (vs.some(v => ['vergeben', 'werkvertrag', 'unterzeichnet', 'ausfuehrung', 'abgeschlossen'].includes(v.status))) return 'ok'; return vs.some(v => v.status === 'bewertung') ? 'teil' : 'fehlt'; },
+  vertraege:        p => { const vs = p.vergaben || []; if (vs.some(v => ['unterzeichnet', 'ausfuehrung', 'abgeschlossen'].includes(v.status))) return 'ok'; return vs.some(v => ['vergeben', 'werkvertrag'].includes(v.status)) ? 'teil' : 'fehlt'; },
 };
 const DOSSIER_VORLAGE = [
   { key: 'g1', label: '1 · Grundlagen', kategorien: [
@@ -2990,7 +2990,7 @@ const DOSSIER_VORLAGE = [
       { id: 'beduerfnis', label: 'Bedürfnisanalyse' }, { id: 'standort', label: 'Standortanalyse' }, { id: 'risiko', label: 'Risikoanalyse' },
     ] },
     { label: 'Kosten & Termine', positionen: [
-      { id: 'kostenschaetzung', label: 'Kostenschätzung', modul: 'kosten', auto: 'kostenschaetzung' },
+      { id: 'kostenschaetzung', label: 'Kostenschätzung', modul: 'kosten', auto: 'kostenschaetzung', create: 'vergabe' },
       { id: 'grobtermin', label: 'Terminplanung (Grobterminplan)', modul: 'termine', auto: 'termine' },
       { id: 'finanzierung', label: 'Finanzierungsnachweis' },
     ] },
@@ -3022,7 +3022,7 @@ const DOSSIER_VORLAGE = [
   ] },
   { key: 'g4', label: '4 · Ausschreibung & Vergabe', kategorien: [
     { label: 'Vergabe (→ Vergaben-Modul)', positionen: [
-      { id: 'lv', label: 'Leistungsverzeichnisse & Ausschreibungsunterlagen', modul: 'vergaben', auto: 'ausschreibung' },
+      { id: 'lv', label: 'Leistungsverzeichnisse & Ausschreibungsunterlagen', modul: 'vergaben', auto: 'ausschreibung', create: 'vergabe' },
       { id: 'offertanfragen', label: 'Offertanfragen & Unternehmerofferten', modul: 'vergaben', auto: 'offerten' },
       { id: 'offertvergleich', label: 'Offertvergleich & Vergabeantrag', modul: 'vergaben', auto: 'zuschlag' },
       { id: 'werkvertraege', label: 'Werk- & Lieferantenverträge', modul: 'vergaben', auto: 'vertraege' },
@@ -3038,7 +3038,7 @@ const DOSSIER_VORLAGE = [
       { id: 'materialfreigaben', label: 'Materialfreigaben' }, { id: 'pruefberichte', label: 'Prüfberichte' }, { id: 'kontrollberichte', label: 'Kontrollberichte' },
     ] },
     { label: 'Sitzungen & Kosten', positionen: [
-      { id: 'sitzungsprotokolle', label: 'Sitzungs- / Baustellenprotokolle', modul: 'protokolle', auto: 'protokolle' },
+      { id: 'sitzungsprotokolle', label: 'Sitzungs- / Baustellenprotokolle', modul: 'protokolle', auto: 'protokolle', create: 'protokoll' },
       { id: 'kostenkontrolle', label: 'Kostenkontrolle', modul: 'kosten', auto: 'kostenkontrolle' },
       { id: 'nachtrag', label: 'Nachtragsmanagement', modul: 'kosten', auto: 'nachtraege' },
       { id: 'rechnungen', label: 'Rechnungen & Zahlungsfreigaben', modul: 'kosten', auto: 'rechnungen' },
@@ -3048,7 +3048,7 @@ const DOSSIER_VORLAGE = [
   { key: 'g6', label: '6 · Bauabnahme', kategorien: [
     { label: 'Abnahme', positionen: [
       { id: 'abnahmeprotokolle', label: 'Abnahmeprotokolle' },
-      { id: 'maengelliste', label: 'Mängelliste (Pendenzen)', modul: 'pendenzen', auto: 'pendenzen' },
+      { id: 'maengelliste', label: 'Mängelliste (Pendenzen)', modul: 'pendenzen', auto: 'pendenzen', create: 'pendenz' },
       { id: 'funktionspruefung', label: 'Funktionsprüfungen' }, { id: 'inbetriebnahme', label: 'Inbetriebnahmeprotokolle' },
       { id: 'behoerdenabnahme', label: 'Behördenabnahmen' }, { id: 'schlussabnahme', label: 'Schlussabnahme' },
     ] },
@@ -3088,7 +3088,9 @@ function viewDossier(pid) {
         const d = dossierState(p, pos);
         if (d.bucket !== 'entf') { tot++; if (d.bucket === 'ok') ok++; }
         const action = pos.modul
-          ? `<a class="btn sm secondary" href="#/projekt/${p.id}${DOS_ROUTE[pos.modul]}">→ öffnen</a>`
+          ? ((d.bucket === 'fehlt' && pos.create)
+              ? `<button class="btn sm" data-act="dossier-create" data-pid="${p.id}" data-kind="${pos.create}">＋ erstellen</button>`
+              : `<a class="btn sm secondary" href="#/projekt/${p.id}${DOS_ROUTE[pos.modul]}">→ öffnen</a>`)
           : `<button class="btn sm secondary" data-act="dossier-edit" data-pid="${p.id}" data-did="${pos.id}">erfassen</button>`;
         return `<div class="dos-row">
           <span class="dos-badge">${dosBadge(d.bucket, d.label)}</span>
@@ -3120,6 +3122,12 @@ function viewDossier(pid) {
     <p class="muted" style="font-size:12px;margin:0 0 16px"><span class="dos-auto">auto</span> = wird von der App automatisch erkannt (öffnen zum Bearbeiten) · übrige Positionen erfasst du extern (Status, Datei-Name/Link, Notiz).</p>
     ${phasenHtml}
   `);
+}
+// Direkt aus dem Dossier das passende Modul-Objekt anlegen
+function dossierCreate(pid, kind) {
+  if (kind === 'vergabe') return actNewVergabe(pid);
+  if (kind === 'protokoll') return actNewProtokoll(pid, 'sitzung');
+  if (kind === 'pendenz') return actPendenz(pid);
 }
 function actDossier(pid, did) {
   const p = findProjekt(pid); const pos = DOS_INDEX[did]; if (!p || !pos) return;
@@ -5491,6 +5499,7 @@ document.addEventListener('click', e => {
     case 'save-projekt-edit': saveProjektEdit(pid); break;
     case 'dossier-edit':   actDossier(pid, act.dataset.did); break;
     case 'dossier-save':   saveDossier(pid, act.dataset.did); break;
+    case 'dossier-create': dossierCreate(pid, kind); break;
     case 'erfassen':       erfassen(kind); break;
     case 'erfassen-go':    erfassenGo(kind); break;
     case 'pend-proj-toggle': pendProjToggle(pid); break;

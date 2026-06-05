@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v39';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v40';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2997,7 +2997,7 @@ const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'A
 const DOW = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const TERMIN_KATEGORIEN = ['Besprechung', 'Bauherrensitzung', 'Bausitzung', 'Baustellenbegehung', 'Abgabe / Frist', 'Bemusterung', 'Sonstiges'];
 let calY = null, calM = null, calView = 'monat', calRefIso = null;
-const CAL_SH = 7, CAL_EH = 20, CAL_HH = 56;   // Tag/Woche: Stunden-Raster (Zeilenhöhe px)
+const CAL_SH = 5, CAL_EH = 20, CAL_HH = 56;   // Tag/Woche: Stunden-Raster (Zeilenhöhe px)
 
 function weekDates(iso) {
   const d = dISO(iso || todayIso()); const lead = (d.getDay() + 6) % 7;

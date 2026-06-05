@@ -182,7 +182,7 @@ button { font-family: inherit; cursor: pointer; }
 @media (max-width: 720px) { .cal-day { min-height: 70px; } .cal-ev { font-size: 9px; padding: 1px 3px; } }
 
 /* Tag-/Wochenansicht (Stunden-Raster) */
-.cal-tg { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.cal-tg { background: var(--surface); border-top: 1px solid var(--border); }
 .cal-tg-gutter { width: 50px; flex: none; font-size: 9.5px; color: var(--text-faint); }
 .cal-tg-gutter.ad { display: flex; align-items: center; justify-content: center; }
 .cal-tg-headrow, .cal-tg-adrow { display: flex; border-bottom: 1px solid var(--border); }

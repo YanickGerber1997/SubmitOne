@@ -718,6 +718,26 @@ function viewDashboard() {
     .sort((x, y) => x.v.frist.localeCompare(y.v.frist))
     .slice(0, 6);
 
+  // Offene Pendenzen über die gewählten Projekte
+  if (pendHidden == null) { try { pendHidden = new Set(JSON.parse(localStorage.getItem('so_pend_hidden') || '[]')); } catch (_) { pendHidden = new Set(); } }
+  const pendChips = projekte.length ? projekte.map((p, idx) => `<span class="chip ${pendHidden.has(p.id) ? '' : 'active'}" data-act="dash-pend-toggle" data-pid="${p.id}"><i class="cal-dot ${projColor(idx, p)}"></i>${esc(p.name)}</span>`).join('') : '';
+  const allPend = [];
+  projekte.forEach((p, idx) => { if (pendHidden.has(p.id)) return; offenePendenzen(p).forEach(x => allPend.push({ p, idx, x })); });
+  allPend.sort((a, b) => (a.x.it.termin || '9999-99-99').localeCompare(b.x.it.termin || '9999-99-99'));
+  const pendUeber = allPend.filter(o => o.x.it.termin && daysUntil(o.x.it.termin) < 0).length;
+  const pendBody = allPend.length ? `
+    <table class="grid">
+      <thead><tr><th style="width:36px"></th><th>Projekt</th><th>Pendenz</th><th>Verantwortlich</th><th>Termin</th></tr></thead>
+      <tbody>${allPend.map(({ p, idx, x }) => `
+        <tr>
+          <td><input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="erledigt"></td>
+          <td><i class="cal-dot ${projColor(idx, p)}" style="margin-right:6px;vertical-align:middle"></i><a href="#/projekt/${p.id}/pendenzen">${esc(p.name)}</a></td>
+          <td>${esc(x.it.text)}</td>
+          <td>${esc(x.it.verantwortlich || '–')}</td>
+          <td class="muted frist ${fristClass(x.it.termin, false)}">${x.it.termin ? fristText(x.it.termin, false) : '–'}</td>
+        </tr>`).join('')}</tbody>
+    </table>` : emptyState('✓', 'Keine offenen Pendenzen in den gewählten Projekten.');
+
   const html = `
     <div class="page-head">
       <div>
@@ -764,8 +784,16 @@ function viewDashboard() {
         </tbody>
       </table>` : emptyState('✓', 'Keine offenen Fristen.')}
     </div>
+
+    <div class="section-head" style="margin-top:28px">
+      <h2>Offene Pendenzen</h2>
+      <span class="hint">${allPend.length} offen${pendUeber ? ` · ${pendUeber} überfällig` : ''} · gewählte Projekte, nach Termin</span>
+    </div>
+    ${projekte.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${pendChips}</div>` : ''}
+    <div class="card">${pendBody}</div>
   `;
   render(html);
+  $$('.pend-check').forEach(cb => cb.addEventListener('change', () => togglePendenz(cb.dataset.pid, cb.dataset.prid, cb.dataset.tid, cb.dataset.itemid)));
 }
 
 function projektCard(p) {
@@ -1235,12 +1263,13 @@ function nextProtNr(p, typ) {
   return (ns.length ? Math.max(...ns) : 0) + 1;
 }
 
-// Alle offenen Pendenzen eines Projekts (über alle Protokolle), nach Termin sortiert
+// Alle offenen Pendenzen eines Projekts (Protokolle + direkt erfasste), nach Termin sortiert
 function offenePendenzen(p) {
   const out = [];
   (p.protokolle || []).forEach(pr => (pr.traktanden || []).forEach(tr => (tr.eintraege || []).forEach(it => {
     if (it.art === 'pendenz' && !it.erledigt && !it.uebertragen) out.push({ it, pr, tr });
   })));
+  (p.pendenzen || []).forEach(it => { if (!it.erledigt && !it.uebertragen) out.push({ it, pr: null, tr: null }); });
   out.sort((a, b) => (a.it.termin || '9999-99-99').localeCompare(b.it.termin || '9999-99-99'));
   return out;
 }
@@ -1257,7 +1286,8 @@ function erledigtePendenzen(p) {
   (p.protokolle || []).forEach(pr => (pr.traktanden || []).forEach(tr => (tr.eintraege || []).forEach(it => {
     if (it.art === 'pendenz' && it.erledigt && !it.uebertragen) out.push({ it, pr, tr });
   })));
-  out.sort((a, b) => (b.pr.datum || '').localeCompare(a.pr.datum || ''));
+  (p.pendenzen || []).forEach(it => { if (it.erledigt && !it.uebertragen) out.push({ it, pr: null, tr: null }); });
+  out.sort((a, b) => ((b.pr && b.pr.datum) || (b.it.erfasst) || '').localeCompare((a.pr && a.pr.datum) || (a.it.erfasst) || ''));
   return out;
 }
 
@@ -1269,36 +1299,41 @@ function viewPendenzen(pid) {
   const ueberfaellig = offen.filter(x => x.it.termin && daysUntil(x.it.termin) < 0).length;
 
   const kpi = (l, v, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:21px${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div></div>`;
-  const herkunft = x => `<a href="#/projekt/${p.id}/protokoll/${x.pr.id}">${esc(protokollTitel(x.pr))} · ${fmtDate(x.pr.datum)}</a>`;
+  const herkunft = x => x.pr
+    ? `<a href="#/projekt/${p.id}/protokoll/${x.pr.id}">${esc(protokollTitel(x.pr))} · ${fmtDate(x.pr.datum)}</a>`
+    : '<span class="muted">direkt erfasst</span>';
+  const pendActs = x => x.pr ? '' : `<button class="ic-btn" data-act="pend-edit" data-pid="${p.id}" data-itemid="${x.it.id}" title="Bearbeiten">✎</button><button class="ic-btn" data-act="pend-del" data-pid="${p.id}" data-itemid="${x.it.id}" title="Löschen">✕</button>`;
 
   const offenTable = offen.length ? `
     <table class="grid">
-      <thead><tr><th style="width:36px"></th><th>Pendenz</th><th>Verantwortlich</th><th>Termin</th><th>Herkunft</th></tr></thead>
+      <thead><tr><th style="width:36px"></th><th>Pendenz</th><th>Verantwortlich</th><th>Termin</th><th>Herkunft</th><th style="width:62px"></th></tr></thead>
       <tbody>
         ${offen.map(x => `
           <tr>
-            <td><input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr.id}" data-tid="${x.tr.id}" data-itemid="${x.it.id}" title="erledigt"></td>
+            <td><input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="erledigt"></td>
             <td>${esc(x.it.text)}</td>
             <td>${esc(x.it.verantwortlich || '–')}</td>
             <td class="muted frist ${fristClass(x.it.termin, false)}">${x.it.termin ? fristText(x.it.termin, false) : '–'}</td>
             <td class="muted">${herkunft(x)}</td>
+            <td class="row-act">${pendActs(x)}</td>
           </tr>`).join('')}
       </tbody>
-    </table>` : emptyState('✓', 'Keine offenen Pendenzen — alles erledigt.');
+    </table>` : emptyState('✓', 'Keine offenen Pendenzen — mit „+ Pendenz" erfassen.');
 
   const erledigtTable = erledigt.length ? `
     <div class="section-head" style="margin-top:26px"><h2>Erledigt</h2><span class="hint">${erledigt.length} · Häkchen entfernen = wieder offen</span></div>
     <div class="card">
       <table class="grid">
-        <thead><tr><th style="width:36px"></th><th>Pendenz</th><th>Verantwortlich</th><th>Termin</th><th>Herkunft</th></tr></thead>
+        <thead><tr><th style="width:36px"></th><th>Pendenz</th><th>Verantwortlich</th><th>Termin</th><th>Herkunft</th><th style="width:62px"></th></tr></thead>
         <tbody>
           ${erledigt.map(x => `
             <tr class="done-row">
-              <td><input type="checkbox" class="pend-check" checked data-pid="${p.id}" data-prid="${x.pr.id}" data-tid="${x.tr.id}" data-itemid="${x.it.id}" title="wieder offen"></td>
+              <td><input type="checkbox" class="pend-check" checked data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="wieder offen"></td>
               <td>${esc(x.it.text)}</td>
               <td>${esc(x.it.verantwortlich || '–')}</td>
               <td class="muted">${x.it.termin ? fmtDate(x.it.termin) : '–'}</td>
               <td class="muted">${herkunft(x)}</td>
+              <td class="row-act">${pendActs(x)}</td>
             </tr>`).join('')}
         </tbody>
       </table>
@@ -1317,12 +1352,41 @@ function viewPendenzen(pid) {
       ${kpi('Erledigt', erledigt.length)}
     </div>
 
-    <div class="section-head"><h2>Offene Pendenzen</h2><span class="hint">nach Termin sortiert · abhaken = erledigt</span></div>
+    <div class="section-head"><h2>Offene Pendenzen</h2><div style="display:flex;align-items:center;gap:12px"><span class="hint">nach Termin sortiert · abhaken = erledigt</span><button class="btn sm" data-act="pend-add" data-pid="${p.id}">+ Pendenz</button></div></div>
     <div class="card">${offenTable}</div>
     ${erledigtTable}
   `);
 
   $$('.pend-check').forEach(cb => cb.addEventListener('change', () => togglePendenz(cb.dataset.pid, cb.dataset.prid, cb.dataset.tid, cb.dataset.itemid)));
+}
+// Direkt erfasste Pendenz anlegen/bearbeiten (unabhängig von Protokollen)
+function actPendenz(pid, itemid) {
+  const p = findProjekt(pid); if (!p) return;
+  const it = itemid ? (p.pendenzen || []).find(x => x.id === itemid) : null;
+  openModal(it ? 'Pendenz bearbeiten' : 'Neue Pendenz', `
+    <label class="field">Pendenz / Aufgabe <input class="input" id="pd_text" value="${it ? esc(it.text || '') : ''}" placeholder="z.B. Devis Sanitär einholen"></label>
+    <div class="form-row">
+      <label class="field">Verantwortlich <input class="input" id="pd_verant" value="${it ? esc(it.verantwortlich || '') : ''}" placeholder="optional"></label>
+      <label class="field">Termin <input class="input" type="date" id="pd_termin" value="${it ? esc(it.termin || '') : ''}"></label>
+    </div>
+  `, `${it ? `<button class="btn danger" data-act="pend-del" data-pid="${pid}" data-itemid="${itemid}">Löschen</button>` : '<button class="btn ghost" data-close="1">Abbrechen</button>'}<button class="btn" data-act="pend-save" data-pid="${pid}"${it ? ` data-itemid="${itemid}"` : ''}>${it ? 'Speichern' : 'Hinzufügen'}</button>`);
+}
+function savePendenz(pid, itemid) {
+  const p = findProjekt(pid); if (!p) return;
+  const text = $('#pd_text').value.trim();
+  if (!text) { toast('Bitte einen Text eingeben', 'info'); return; }
+  const data = { text, verantwortlich: $('#pd_verant').value.trim(), termin: $('#pd_termin').value || '' };
+  if (!p.pendenzen) p.pendenzen = [];
+  const it = itemid ? p.pendenzen.find(x => x.id === itemid) : null;
+  if (it) Object.assign(it, data);
+  else p.pendenzen.unshift({ id: uid('pd'), art: 'pendenz', erledigt: false, uebertragen: false, erfasst: todayIso(), ...data });
+  save(); closeModal(); router(); toast(it ? 'Pendenz gespeichert' : 'Pendenz erfasst');
+}
+function rmPendenz(pid, itemid) {
+  const p = findProjekt(pid); if (!p) return;
+  if (!confirm('Diese Pendenz wirklich löschen?')) return;
+  p.pendenzen = (p.pendenzen || []).filter(x => x.id !== itemid);
+  save(); closeModal(); router(); toast('Pendenz gelöscht');
 }
 
 /* ---------------------------------------------------------------
@@ -2231,11 +2295,11 @@ function viewProtokollDetail(pid, prid) {
         <tbody>
           ${pend.map(x => `
             <tr>
-              <td><input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr.id}" data-tid="${x.tr.id}" data-itemid="${x.it.id}" title="erledigt"></td>
+              <td><input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="erledigt"></td>
               <td>${esc(x.it.text)}</td>
               <td>${esc(x.it.verantwortlich || '–')}</td>
               <td class="muted frist ${fristClass(x.it.termin, false)}">${x.it.termin ? fristText(x.it.termin, false) : '–'}</td>
-              <td class="muted">${esc(protokollTitel(x.pr))} · ${fmtDate(x.pr.datum)}</td>
+              <td class="muted">${x.pr ? esc(protokollTitel(x.pr)) + ' · ' + fmtDate(x.pr.datum) : 'direkt erfasst'}</td>
             </tr>`).join('')}
         </tbody>
       </table>` : emptyState('✓', 'Keine offenen Pendenzen — alles erledigt.')}
@@ -2486,9 +2550,15 @@ function saveEintrag(pid, prid, tid) {
 }
 
 function togglePendenz(pid, prid, tid, itemid) {
-  const p = findProjekt(pid); const pr = findProtokoll(p, prid);
-  const tr = (pr.traktanden || []).find(x => x.id === tid);
-  const it = tr && (tr.eintraege || []).find(x => x.id === itemid);
+  const p = findProjekt(pid); if (!p) return;
+  let it;
+  if (prid) {
+    const pr = findProtokoll(p, prid);
+    const tr = pr && (pr.traktanden || []).find(x => x.id === tid);
+    it = tr && (tr.eintraege || []).find(x => x.id === itemid);
+  } else {
+    it = (p.pendenzen || []).find(x => x.id === itemid);
+  }
   if (!it) return;
   it.erledigt = !it.erledigt;
   save(); router();
@@ -2517,7 +2587,7 @@ function pdfProtokoll(pid, prid) {
   const pendHtml = pend.length ? `
     <h3 style="margin-top:22px">Offene Pendenzen (projektweit)</h3>
     <table class="t"><thead><tr><th style="width:50%">Pendenz</th><th>Verantwortlich</th><th>Termin</th><th>Herkunft</th></tr></thead>
-    <tbody>${pend.map(x => `<tr><td>${esc(x.it.text)}</td><td>${esc(x.it.verantwortlich || '')}</td><td>${x.it.termin ? fmtDate(x.it.termin) : ''}</td><td>${esc(protokollTitel(x.pr))} · ${fmtDate(x.pr.datum)}</td></tr>`).join('')}</tbody></table>` : '';
+    <tbody>${pend.map(x => `<tr><td>${esc(x.it.text)}</td><td>${esc(x.it.verantwortlich || '')}</td><td>${x.it.termin ? fmtDate(x.it.termin) : ''}</td><td>${x.pr ? esc(protokollTitel(x.pr)) + ' · ' + fmtDate(x.pr.datum) : 'direkt erfasst'}</td></tr>`).join('')}</tbody></table>` : '';
 
   const html = `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>${esc(protokollTitel(pr))} – ${esc(p.name)}</title>
   <style>
@@ -3200,7 +3270,7 @@ const PROJ_FARBEN = [
 // Reihenfolge der automatischen Vergabe (erste Projekte möglichst kontrastreich)
 const PROJ_PALETTE = ['dunkelblau', 'rot', 'dunkelgruen', 'orange', 'violett', 'tuerkis', 'gelb', 'bordeaux', 'hellblau', 'hellgruen', 'grau'];
 const PROJ_FARB_KEYS = new Set(PROJ_FARBEN.map(f => f[0]));
-let calGY = null, calGM = null, calHidden = null;
+let calGY = null, calGM = null, calHidden = null, pendHidden = null;
 // Projektfarbe: gewählte Farbe (p.farbe) oder automatisch nach Index
 function projColor(idx, p) { if (p && p.farbe && PROJ_FARB_KEYS.has(p.farbe)) return p.farbe; return PROJ_PALETTE[idx % PROJ_PALETTE.length]; }
 function farbePickerHtml(sel) {
@@ -3224,6 +3294,7 @@ function openFarbePopover(pid, anchor) {
 function farbePopAway(e) { if (!e.target.closest('#farbePop')) closeFarbePopover(); }
 function closeFarbePopover() { const el = $('#farbePop'); if (el) el.remove(); document.removeEventListener('mousedown', farbePopAway); }
 function setProjFarbe(pid, k) { const p = findProjekt(pid); if (!p) return; p.farbe = k; save(); closeFarbePopover(); router(); }
+function dashPendToggle(pid) { if (pendHidden == null) pendHidden = new Set(); if (pendHidden.has(pid)) pendHidden.delete(pid); else pendHidden.add(pid); try { localStorage.setItem('so_pend_hidden', JSON.stringify([...pendHidden])); } catch (_) {} viewDashboard(); }
 
 function viewKalenderGlobal() {
   const t = today();
@@ -5120,6 +5191,11 @@ document.addEventListener('click', e => {
     case 'save-projekt': saveProjekt(); break;
     case 'edit-projekt': actEditProjekt(pid); break;
     case 'save-projekt-edit': saveProjektEdit(pid); break;
+    case 'dash-pend-toggle': dashPendToggle(pid); break;
+    case 'pend-add':       actPendenz(pid); break;
+    case 'pend-edit':      actPendenz(pid, itemid); break;
+    case 'pend-save':      savePendenz(pid, itemid); break;
+    case 'pend-del':       rmPendenz(pid, itemid); break;
     case 'proj-farbe':     openFarbePopover(pid, act); break;
     case 'proj-farbe-set': setProjFarbe(pid, act.dataset.k); break;
     case 'farbe-pick':     { const row = act.closest('.farbe-row'); if (row) row.querySelectorAll('.farbe-sw').forEach(s => s.classList.toggle('sel', s === act)); const hid = $('#f_farbe'); if (hid) hid.value = act.dataset.k; break; }

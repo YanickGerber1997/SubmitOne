@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v38';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v39';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3394,10 +3394,10 @@ function planPaste() {
 }
 // Drag-and-Drop + Auswahl-Klicks im Planungsraster
 function bindPlanDnd() {
-  $$('[data-tpl]').forEach(c => { c.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', 'tpl:' + c.dataset.tpl)); });
+  $$('[data-tpl]').forEach(c => { c.addEventListener('dragstart', e => { dragBlockOffsetMin = 0; e.dataTransfer.setData('text/plain', 'tpl:' + c.dataset.tpl); }); });
   $$('.cal-tev.plan').forEach(el => {
     if (el.dataset.bid === planSel) el.classList.add('sel');
-    el.addEventListener('dragstart', e => { e.stopPropagation(); e.dataTransfer.setData('text/plain', 'blk:' + el.dataset.bid); });
+    el.addEventListener('dragstart', e => { e.stopPropagation(); dragBlockOffsetMin = (e.offsetY || 0) / CAL_HH * 60; e.dataTransfer.setData('text/plain', 'blk:' + el.dataset.bid); });
     el.addEventListener('click', e => { e.stopPropagation(); planSelect(el.dataset.bid); });
     el.addEventListener('dblclick', e => { e.stopPropagation(); actPlanBlock(el.dataset.bid); });
   });
@@ -3405,15 +3405,16 @@ function bindPlanDnd() {
     col.addEventListener('dragover', e => e.preventDefault());
     col.addEventListener('drop', e => {
       e.preventDefault(); const d = e.dataTransfer.getData('text/plain'); if (!d) return;
-      const iso = col.dataset.iso; const zeit = min2hhmm(snap30(e.clientY - col.getBoundingClientRect().top));
-      if (d.startsWith('tpl:')) placePlanBlock(iso, zeit, PLAN_TEMPLATES[+d.slice(4)]);
-      else if (d.startsWith('blk:')) movePlanBlock(d.slice(4), iso, zeit);
+      const iso = col.dataset.iso; const y = e.clientY - col.getBoundingClientRect().top;
+      if (d.startsWith('tpl:')) placePlanBlock(iso, min2hhmm(snap30(y)), PLAN_TEMPLATES[+d.slice(4)]);
+      else if (d.startsWith('blk:')) { const absMin = CAL_SH * 60 + (y / CAL_HH * 60) - dragBlockOffsetMin; movePlanBlock(d.slice(4), iso, min2hhmm(snap30abs(absMin))); }
     });
   });
 }
 // Outlook-Stil: in Spalte drücken & ziehen (30-Min-Raster) → Zeitspanne → Modal/Platzieren
-let dragCreate = null;
+let dragCreate = null, dragBlockOffsetMin = 0;
 function snap30(y) { let m = CAL_SH * 60 + Math.round((y / CAL_HH * 60) / 30) * 30; return Math.max(CAL_SH * 60, Math.min(CAL_EH * 60, m)); }
+function snap30abs(absMin) { let m = CAL_SH * 60 + Math.round((absMin - CAL_SH * 60) / 30) * 30; return Math.max(CAL_SH * 60, Math.min(CAL_EH * 60, m)); }
 function bindPlanDragCreate() {
   $$('.cal-col[data-plan]').forEach(col => col.addEventListener('mousedown', e => {
     if (e.target.closest('.cal-tev')) return;   // auf Block → Auswahl/Drag, nicht create

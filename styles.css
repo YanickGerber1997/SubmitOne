@@ -354,6 +354,19 @@ button { font-family: inherit; cursor: pointer; }
 .section-head h2 { margin: 0; font-size: 16px; font-weight: 700; }
 .section-head .hint { color: var(--text-faint); font-size: 12.5px; }
 
+/* ============================ Dashboard-Listen (Cockpit) ============================ */
+.dash-list { display: flex; flex-direction: column; }
+.dash-row { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.dash-row:last-child { border-bottom: none; }
+.dash-row .dr-main { flex: 1; min-width: 0; line-height: 1.3; }
+.dash-row .dr-main > a { color: inherit; }
+.dash-row .dr-sub { color: var(--text-faint); font-size: 11.5px; margin-top: 1px; display: flex; align-items: center; gap: 5px; }
+.dash-row .dr-sub a { color: var(--text-faint); }
+.dash-row.clickable { cursor: pointer; border-radius: 7px; }
+.dash-row.clickable:hover { background: var(--surface-2); }
+.dash-muted { color: var(--text-faint); }
+.dash-row .pend-check { flex: none; }
+
 /* ============================ Projektkarten ============================ */
 
 .proj-grid {

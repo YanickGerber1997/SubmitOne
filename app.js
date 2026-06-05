@@ -700,74 +700,85 @@ function go(hash) { location.hash = hash; }
    --------------------------------------------------------------- */
 
 function viewDashboard() {
-  const projekte = state.projekte;
+  const projekte = state.projekte || [];
+  const todayI = todayIso();
   const aktive = projekte.filter(p => p.phase !== 'abschluss');
   const alleVergaben = projekte.flatMap(p => (p.vergaben || []).map(v => ({ v, p })));
   const offeneVergaben = alleVergaben.filter(x => !isDone(x.v));
-  const fristig = offeneVergaben.filter(x => { const d = daysUntil(x.v.frist); return d != null && d >= 0 && d <= 7; });
+  const fristTasks = offeneVergaben.filter(x => x.v.frist).sort((a, b) => a.v.frist.localeCompare(b.v.frist));
+  const fristig = fristTasks.filter(x => { const d = daysUntil(x.v.frist); return d != null && d >= 0 && d <= 7; });
   const volumen = projekte.reduce((a, p) => a + projektVolumen(p), 0);
 
+  // Anstehende Termine (projektübergreifend, ab heute)
+  const events = [];
+  projekte.forEach((p, idx) => sammleTermine(p).forEach(e => { if (e.datum >= todayI) events.push({ ...e, p, idx }); }));
+  events.sort((a, b) => a.datum.localeCompare(b.datum) || (a.zeit || '').localeCompare(b.zeit || ''));
+  const termine = events.slice(0, 7);
+
+  // Offene Pendenzen (projektübergreifend, nach Termin)
+  const allPend = [];
+  projekte.forEach((p, idx) => offenePendenzen(p).forEach(x => allPend.push({ p, idx, x })));
+  allPend.sort((a, b) => (a.x.it.termin || '9999-99-99').localeCompare(b.x.it.termin || '9999-99-99'));
+  const pendUeber = allPend.filter(o => o.x.it.termin && daysUntil(o.x.it.termin) < 0).length;
+
+  const kpi = (ico, cls, label, value, foot, footCls) => `<div class="kpi"><div class="k-label"><span class="k-ico ${cls}">${ico}</span>${label}</div><div class="k-value">${value}</div><div class="k-foot"${footCls ? ` style="color:var(--${footCls})"` : ''}>${foot}</div></div>`;
   const kpis = [
-    { ico: '▤', cls: 'blue',   label: 'Aktive Projekte',   value: aktive.length, foot: projekte.length + ' total' },
-    { ico: '◷', cls: 'amber',  label: 'Offene Vergaben',   value: offeneVergaben.length, foot: alleVergaben.length + ' Vergaben gesamt' },
-    { ico: '⚑', cls: 'purple', label: 'Frist ≤ 7 Tage',    value: fristig.length, foot: 'erfordern Aufmerksamkeit' },
-    { ico: '◫', cls: 'green',  label: 'Volumen',           value: chfShort(volumen), foot: 'Vergaben + Schätzung' },
-  ];
+    kpi('▤', 'blue', 'Aktive Projekte', aktive.length, projekte.length + ' total'),
+    kpi('◷', 'amber', 'Offene Vergaben', offeneVergaben.length, alleVergaben.length + ' gesamt · ' + chfShort(volumen)),
+    kpi('☑', 'green', 'Offene Pendenzen', allPend.length, pendUeber ? pendUeber + ' überfällig' : 'alle im Plan', pendUeber ? 's-red' : ''),
+    kpi('⚑', 'purple', 'Fristen ≤ 7 Tage', fristig.length, fristig.length ? 'bald fällig' : 'nichts dringend', fristig.length ? 's-red' : ''),
+  ].join('');
 
-  // Aufgaben/Fristen-Liste (nächste fällige, nicht abgeschlossene)
-  const tasks = offeneVergaben
-    .filter(x => x.v.frist)
-    .sort((x, y) => x.v.frist.localeCompare(y.v.frist))
-    .slice(0, 6);
+  const sect = (title, hint) => `<div class="section-head" style="margin:2px 0 12px"><h2>${title}</h2>${hint ? (hint.startsWith('<') ? hint : `<span class="hint">${hint}</span>`) : ''}</div>`;
 
-  const html = `
-    <div class="page-head">
-      <div>
-        <h1>Dashboard</h1>
-        <div class="sub">Überblick über alle laufenden Submissionen</div>
-      </div>
-      <button class="btn" data-act="new-projekt">+ Neues Projekt</button>
-    </div>
+  // Panel: Nächste Eingabefristen
+  const fristPanel = sect('Nächste Eingabefristen', 'Submissionen') + `<div class="card" style="margin-bottom:18px">${fristTasks.length ? `
+    <table class="grid">
+      <thead><tr><th>Projekt</th><th>Gewerk</th><th>Status</th><th>Frist</th></tr></thead>
+      <tbody>${fristTasks.slice(0, 6).map(({ v, p }) => `
+        <tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}">
+          <td>${esc(p.name)}</td>
+          <td><span class="bkp-code">${esc(v.bkp || '')}</span> ${esc(v.gewerk || '')}</td>
+          <td>${statusPill(v)}</td>
+          <td class="frist ${fristClass(v.frist, false)}">${fristText(v.frist, false)}</td>
+        </tr>`).join('')}</tbody>
+    </table>` : emptyState('✓', 'Keine offenen Eingabefristen.')}</div>`;
 
-    <div class="kpi-row">
-      ${kpis.map(k => `
-        <div class="kpi">
-          <div class="k-label"><span class="k-ico ${k.cls}">${k.ico}</span>${k.label}</div>
-          <div class="k-value">${k.value}</div>
-          <div class="k-foot">${k.foot}</div>
-        </div>`).join('')}
-    </div>
+  // Panel: Anstehende Termine
+  const terminePanel = sect('Anstehende Termine', 'alle Projekte') + `<div class="card card-pad" style="margin-bottom:18px">${termine.length ? `<div class="dash-list">${termine.map(e => `
+    <div class="dash-row">
+      <i class="cal-dot ${projColor(e.idx, e.p)}"></i>
+      <span class="dash-muted" style="min-width:92px;font-size:12px">${fmtDate(e.datum)}${e.zeit ? ' · ' + esc(e.zeit) : ''}</span>
+      <span class="dr-main">${esc(e.titel)}<div class="dr-sub">${esc(e.p.name)}</div></span>
+    </div>`).join('')}</div>` : '<p class="muted" style="margin:0;font-size:13px">Keine anstehenden Termine.</p>'}</div>`;
 
-    <div class="section-head">
-      <h2>Laufende Projekte</h2>
-      <a class="hint" href="#/projekte">Alle anzeigen →</a>
-    </div>
-    <div class="proj-grid">
-      ${aktive.length ? aktive.map(projektCard).join('') : emptyState('▤', 'Keine aktiven Projekte.')}
-    </div>
+  // Panel: Offene Pendenzen
+  const pendPanel = sect('Offene Pendenzen', allPend.length ? `${allPend.length}${pendUeber ? ` · ${pendUeber} überfällig` : ''}` : '') + `<div class="card card-pad" style="margin-bottom:18px">${allPend.length ? `<div class="dash-list">${allPend.slice(0, 8).map(({ p, idx, x }) => `
+    <div class="dash-row">
+      <input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="erledigt">
+      <span class="dr-main">${esc(x.it.text)}<div class="dr-sub"><i class="cal-dot ${projColor(idx, p)}" style="width:7px;height:7px"></i> <a href="#/projekt/${p.id}/pendenzen">${esc(p.name)}</a></div></span>
+      <span class="frist ${fristClass(x.it.termin, false)}" style="font-size:11.5px;white-space:nowrap">${x.it.termin ? fristText(x.it.termin, false) : '–'}</span>
+    </div>`).join('')}</div>${allPend.length > 8 ? `<a class="hint" href="#/pendenzen" style="display:inline-block;margin-top:10px">Alle ${allPend.length} anzeigen →</a>` : ''}` : emptyState('✓', 'Keine offenen Pendenzen.')}</div>`;
 
-    <div class="section-head" style="margin-top:28px">
-      <h2>Nächste Fristen</h2>
-      <span class="hint">Vergaben mit anstehendem Termin</span>
+  // Panel: Projekte (kompakt)
+  const projList = (aktive.length ? aktive : projekte);
+  const projPanel = sect('Projekte', `<a class="hint" href="#/projekte">alle →</a>`) + `<div class="card card-pad">${projList.length ? `<div class="dash-list">${projList.map(p => `
+    <div class="dash-row clickable" data-goto="#/projekt/${p.id}">
+      <i class="cal-dot ${projColor(projekte.indexOf(p), p)}"></i>
+      <span class="dr-main">${esc(p.name)}<div class="dr-sub">${esc(p.ort || '')}</div></span>
+      ${phaseBadge(dominantPhase(p))}
+      <span class="dash-muted" style="font-size:12px;min-width:32px;text-align:right">${projektFortschritt(p)}%</span>
+    </div>`).join('')}</div>` : emptyState('▤', 'Noch keine Projekte.')}</div>`;
+
+  render(`
+    <div class="page-head"><div><h1>Dashboard</h1><div class="sub">Überblick · Fristen, Termine &amp; Pendenzen aller Projekte</div></div><button class="btn" data-act="new-projekt">+ Neues Projekt</button></div>
+    <div class="kpi-row">${kpis}</div>
+    <div class="two-col">
+      <div>${fristPanel}${terminePanel}</div>
+      <div>${pendPanel}${projPanel}</div>
     </div>
-    <div class="card">
-      ${tasks.length ? `
-      <table class="grid">
-        <thead><tr><th>Projekt</th><th>Gewerk</th><th>Status</th><th>Frist</th><th></th></tr></thead>
-        <tbody>
-          ${tasks.map(({ v, p }) => `
-            <tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}">
-              <td>${esc(p.name)}</td>
-              <td><span class="bkp-code">${esc(v.bkp)}</span> ${esc(v.gewerk)}</td>
-              <td>${statusPill(v)}</td>
-              <td class="frist ${fristClass(v.frist, isDone(v))}">${fristText(v.frist, isDone(v))}</td>
-              <td class="muted">›</td>
-            </tr>`).join('')}
-        </tbody>
-      </table>` : emptyState('✓', 'Keine offenen Fristen.')}
-    </div>
-  `;
-  render(html);
+  `);
+  $$('.pend-check').forEach(cb => cb.addEventListener('change', () => togglePendenz(cb.dataset.pid, cb.dataset.prid, cb.dataset.tid, cb.dataset.itemid)));
 }
 
 function projektCard(p) {

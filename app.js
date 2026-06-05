@@ -22,15 +22,20 @@ const PHASEN = [
 
 // Lebenszyklus einer einzelnen Vergabe / eines Gewerks
 const VERGABE_STATUS = [
-  { key: 'ausschreibung', label: 'Ausschreibung erstellt', kurz: 'Ausschreibung', color: 'grey'  },
-  { key: 'versendet',     label: 'Offertanfragen versendet', kurz: 'Versendet',   color: 'blue'   },
-  { key: 'offerten',      label: 'Offerten eingegangen',  kurz: 'Offerten',      color: 'blue'   },
-  { key: 'bewertung',     label: 'In Bewertung',          kurz: 'Bewertung',     color: 'amber'  },
-  { key: 'vergeben',      label: 'Zuschlag erteilt',      kurz: 'Vergeben',      color: 'purple' },
-  { key: 'werkvertrag',   label: 'Werkvertrag erstellt',  kurz: 'Werkvertrag',   color: 'purple' },
-  { key: 'unterzeichnet', label: 'Vertrag unterzeichnet', kurz: 'Unterzeichnet', color: 'teal'   },
-  { key: 'ausfuehrung',   label: 'In Ausführung',         kurz: 'Ausführung',    color: 'teal'   },
-  { key: 'abgeschlossen', label: 'Abgeschlossen',         kurz: 'Abgeschlossen', color: 'green'  },
+  { key: 'ausschreibung',   label: 'Ausschreibung erstellt',         kurz: 'Ausschreibung',   color: 'grey'   },
+  { key: 'versendet',       label: 'Ausschreibung versendet',        kurz: 'Versendet',       color: 'blue'   },
+  { key: 'offerten',        label: 'Offerten eingegangen',           kurz: 'Offerten',        color: 'blue'   },
+  { key: 'angebot_vers',    label: 'Angebot versendet',              kurz: 'Angebot vers.',   color: 'blue'   },
+  { key: 'angebot_erh',     label: 'Angebot erhalten',               kurz: 'Angebot erh.',    color: 'blue'   },
+  { key: 'bewertung',       label: 'Offertvergleich zugestellt',     kurz: 'Vergleich',       color: 'amber'  },
+  { key: 'verhandlung',     label: 'Vergabeverhandlung organisiert', kurz: 'Verhandlung',     color: 'amber'  },
+  { key: 'vergeben',        label: 'Zuschlag erteilt',               kurz: 'Vergeben',        color: 'purple' },
+  { key: 'werkvertrag',     label: 'Werkvertrag erstellt',           kurz: 'Werkvertrag',     color: 'purple' },
+  { key: 'unterzeichnet',   label: 'Vertrag unterzeichnet',          kurz: 'Unterzeichnet',   color: 'teal'   },
+  { key: 'ausfuehrung',     label: 'In Ausführung',                  kurz: 'Ausführung',      color: 'teal'   },
+  { key: 'schlussrechnung', label: 'Schlussrechnung in Prüfung',     kurz: 'Schlussrechnung', color: 'amber'  },
+  { key: 'maengel',         label: 'Mängel behoben',                 kurz: 'Mängel',          color: 'teal'   },
+  { key: 'abgeschlossen',   label: 'Abgeschlossen',                  kurz: 'Abgeschlossen',   color: 'green'  },
 ];
 
 const STATUS_BY_KEY = Object.fromEntries(VERGABE_STATUS.map((s, i) => [s.key, { ...s, index: i }]));
@@ -509,10 +514,11 @@ function projektVergebenAnzahl(p) { return (p.vergaben || []).filter(isVergeben)
 const PHASE_COLOR = { planung: 'var(--s-grey)', ausschreibung: 'var(--brand)', vergabe: 'var(--s-purple)', ausfuehrung: 'var(--s-teal)', abschluss: 'var(--s-green)' };
 
 function statusToPhase(status) {
-  if (!STATUS_BY_KEY[status]) return 'ausschreibung';
-  if (status === 'abgeschlossen') return 'abschluss';
-  if (status === 'ausfuehrung') return 'ausfuehrung';
-  if (STATUS_BY_KEY[status].index >= STATUS_BY_KEY['vergeben'].index) return 'vergabe';
+  const idx = STATUS_BY_KEY[status] ? STATUS_BY_KEY[status].index : null;
+  if (idx == null) return 'ausschreibung';
+  if (idx >= STATUS_BY_KEY['abgeschlossen'].index) return 'abschluss';
+  if (idx >= STATUS_BY_KEY['ausfuehrung'].index) return 'ausfuehrung';
+  if (idx >= STATUS_BY_KEY['vergeben'].index) return 'vergabe';
   return 'ausschreibung';
 }
 
@@ -555,6 +561,19 @@ function phaseBadge(phaseKey) {
 function statusPill(v) {
   const s = STATUS_BY_KEY[v.status] || VERGABE_STATUS[0];
   return `<span class="st ${s.color}">${esc(s.label)}</span>`;
+}
+
+// Optionale Begleit-Markierungen eines Gewerks: erscheinen NUR wenn vorhanden,
+// und zeigen ihren Zustand (offen vs. erledigt) – macht sichtbar, was lief.
+function vergabeMarken(v) {
+  const m = [];
+  const nt = v.nachtraege || [];
+  if (nt.length) { const offen = nt.filter(n => n.status === 'offen').length; m.push(`<span class="st ${offen ? 'amber' : 'green'}" style="font-size:10px;padding:2px 7px">Nachträge ${nt.length}${offen ? ' · ' + offen + ' offen' : ' · erledigt'}</span>`); }
+  const rap = v.rapporte || [];
+  if (rap.length) m.push(`<span class="st teal" style="font-size:10px;padding:2px 7px">Regie ${rap.length}</span>`);
+  const rg = v.rechnungen || [];
+  if (rg.length) { const offen = rg.filter(r => !r.bezahlt).length; m.push(`<span class="st ${offen ? 'amber' : 'green'}" style="font-size:10px;padding:2px 7px">Rechnungen ${rg.length}${offen ? ' · ' + offen + ' offen' : ' · bezahlt'}</span>`); }
+  return m.join(' ');
 }
 
 // Mini-Pipeline (Balken) für Tabellenzeilen
@@ -914,7 +933,7 @@ function viewProjektDetail(id) {
               <td><span class="bkp-code">${esc(v.bkp)}</span></td>
               <td><strong>${esc(v.gewerk)}</strong></td>
               <td>${v.firma ? `<div class="row-firma">${esc(v.firma)}</div>` : '<span class="muted">noch offen</span>'}</td>
-              <td>${statusPill(v)}</td>
+              <td>${statusPill(v)}${vergabeMarken(v) ? `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${vergabeMarken(v)}</div>` : ''}</td>
               <td>${miniPipe(v)}</td>
               <td class="num">${isVergeben(v) ? chf(v.betrag) : `<span class="muted">~${chfShort(v.schaetzung)}</span>`}</td>
               <td class="frist ${fristClass(v.frist, isDone(v))}">${fristText(v.frist, isDone(v))}</td>
@@ -2666,8 +2685,9 @@ function viewVergabeDetail(pid, vid) {
         <h1 style="margin:0;font-size:22px"><span class="bkp-code" style="font-size:16px">${esc(v.bkp)}</span> ${esc(v.gewerk)}</h1>
         <div class="sub" style="margin-top:5px">${v.firma ? 'Unternehmer: <strong>' + esc(v.firma) + '</strong>' : 'Noch kein Unternehmer'}${grobLabel(v) ? ' · Ausführung ' + esc(grobLabel(v)) : ''}</div>
       </div>
-      <div style="display:flex;gap:10px;align-items:center">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
         ${statusPill(v)}
+        ${vergabeMarken(v)}
         ${last ? '' : `<button class="btn" data-act="advance" data-pid="${p.id}" data-vid="${v.id}">Nächster Schritt →</button>`}
       </div>
     </div>
@@ -2986,8 +3006,8 @@ const DOS_CHECK = {
   rechnungen:       p => { const all = (p.vergaben || []).flatMap(v => v.rechnungen || []); if (!all.length) return 'fehlt'; return all.every(r => r.bezahlt) ? 'ok' : 'teil'; },
   ausschreibung:    p => (p.vergaben || []).length ? 'ok' : 'fehlt',
   offerten:         p => { const vs = p.vergaben || []; if (!vs.some(v => (v.eingeladene || []).length)) return 'fehlt'; return vs.some(v => (v.eingeladene || []).some(e => e.status === 'offeriert')) ? 'ok' : 'teil'; },
-  zuschlag:         p => { const vs = p.vergaben || []; if (vs.some(v => ['vergeben', 'werkvertrag', 'unterzeichnet', 'ausfuehrung', 'abgeschlossen'].includes(v.status))) return 'ok'; return vs.some(v => v.status === 'bewertung') ? 'teil' : 'fehlt'; },
-  vertraege:        p => { const vs = p.vergaben || []; if (vs.some(v => ['unterzeichnet', 'ausfuehrung', 'abgeschlossen'].includes(v.status))) return 'ok'; return vs.some(v => ['vergeben', 'werkvertrag'].includes(v.status)) ? 'teil' : 'fehlt'; },
+  zuschlag:         p => { const vs = p.vergaben || []; if (vs.some(v => statusIdx(v) >= STATUS_BY_KEY['vergeben'].index)) return 'ok'; return vs.some(v => ['bewertung', 'verhandlung'].includes(v.status)) ? 'teil' : 'fehlt'; },
+  vertraege:        p => { const vs = p.vergaben || []; if (vs.some(v => statusIdx(v) >= STATUS_BY_KEY['unterzeichnet'].index)) return 'ok'; return vs.some(v => ['vergeben', 'werkvertrag'].includes(v.status)) ? 'teil' : 'fehlt'; },
 };
 const DOSSIER_VORLAGE = [
   { key: 'g1', label: '1 · Grundlagen', kategorien: [

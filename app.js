@@ -781,7 +781,7 @@ function viewDashboard() {
   const pendPanel = sect('Offene Pendenzen', allPend.length ? `${allPend.length}${pendUeber ? ` · ${pendUeber} überfällig` : ''}` : '') + `<div class="card card-pad" style="margin-bottom:18px">${allPend.length ? `<div class="dash-list">${allPend.slice(0, 8).map(({ p, idx, x }) => `
     <div class="dash-row">
       <input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="erledigt">
-      <span class="dr-main">${esc(x.it.text)}<div class="dr-sub"><i class="cal-dot ${projColor(idx, p)}" style="width:7px;height:7px"></i> <a href="#/projekt/${p.id}/pendenzen">${esc(p.name)}</a></div></span>
+      <span class="dr-main">${esc(x.it.text)}${pendFirmenChips(x.it)}<div class="dr-sub"><i class="cal-dot ${projColor(idx, p)}" style="width:7px;height:7px"></i> <a href="#/projekt/${p.id}/pendenzen">${esc(p.name)}</a></div></span>
       <span class="frist ${fristClass(x.it.termin, false)}" style="font-size:11.5px;white-space:nowrap">${x.it.termin ? fristText(x.it.termin, false) : '–'}</span>
     </div>`).join('')}</div>${allPend.length > 8 ? `<a class="hint" href="#/pendenzen" style="display:inline-block;margin-top:10px">Alle ${allPend.length} anzeigen →</a>` : ''}` : emptyState('✓', 'Keine offenen Pendenzen.')}</div>`;
 
@@ -1275,6 +1275,29 @@ function nextProtNr(p, typ) {
   return (ns.length ? Math.max(...ns) : 0) + 1;
 }
 
+// E-Mail einer Firma: aus den Offert-Einladungen (eingeladene) oder den Kontakten
+function firmaEmailOf(p, firma) {
+  for (const v of (p.vergaben || [])) { const e = (v.eingeladene || []).find(x => x.firma === firma && x.email); if (e) return e.email; }
+  const k = (state.kontakte || []).find(k => k.firma === firma);
+  return (k && k.email) || '';
+}
+// Firmen mit Vertrag (Werkvertrag erstellt oder später) – zuweisbar für Pendenzen/Mail
+function vertragsFirmen(p) {
+  const seen = new Map();
+  (p.vergaben || []).forEach(v => { if (isContract(v) && v.firma && !seen.has(v.firma)) seen.set(v.firma, { firma: v.firma, email: firmaEmailOf(p, v.firma), gewerk: v.gewerk, bkp: v.bkp }); });
+  return [...seen.values()];
+}
+function pendFirmenHtml(p, selected) {
+  selected = selected || [];
+  const fs = p ? vertragsFirmen(p) : [];
+  if (!fs.length) return '<p class="muted" style="font-size:12px;margin:0">Keine Firmen mit Vertrag in diesem Projekt.</p>';
+  return fs.map(f => `<label class="pd-firma"><input type="checkbox" class="pd-firma-cb" value="${esc(f.firma)}"${selected.includes(f.firma) ? ' checked' : ''}> <span>${esc(f.firma)}</span><span class="muted" style="font-size:11px">${esc((f.bkp ? f.bkp + ' ' : '') + (f.gewerk || ''))}${f.email ? '' : ' · ⚠ keine Mail'}</span></label>`).join('');
+}
+function pendFirmenChips(it) {
+  const fs = (it && it.firmen) || [];
+  return fs.length ? ' ' + fs.map(f => `<span class="tag" style="font-size:10px;padding:1px 6px">${esc(f)}</span>`).join(' ') : '';
+}
+
 // Alle offenen Pendenzen eines Projekts (Protokolle + direkt erfasste), nach Termin sortiert
 function offenePendenzen(p) {
   const out = [];
@@ -1314,7 +1337,7 @@ function viewPendenzen(pid) {
   const herkunft = x => x.pr
     ? `<a href="#/projekt/${p.id}/protokoll/${x.pr.id}">${esc(protokollTitel(x.pr))} · ${fmtDate(x.pr.datum)}</a>`
     : '<span class="muted">direkt erfasst</span>';
-  const pendActs = x => x.pr ? '' : `<button class="ic-btn" data-act="pend-edit" data-pid="${p.id}" data-itemid="${x.it.id}" title="Bearbeiten">✎</button><button class="ic-btn" data-act="pend-del" data-pid="${p.id}" data-itemid="${x.it.id}" title="Löschen">✕</button>`;
+  const pendActs = x => x.pr ? '' : `${(x.it.firmen || []).length ? `<button class="ic-btn" data-act="pend-mail" data-pid="${p.id}" data-itemid="${x.it.id}" title="Als E-Mail an Firmen">✉</button>` : ''}<button class="ic-btn" data-act="pend-edit" data-pid="${p.id}" data-itemid="${x.it.id}" title="Bearbeiten">✎</button><button class="ic-btn" data-act="pend-del" data-pid="${p.id}" data-itemid="${x.it.id}" title="Löschen">✕</button>`;
 
   const offenTable = offen.length ? `
     <table class="grid">
@@ -1323,7 +1346,7 @@ function viewPendenzen(pid) {
         ${offen.map(x => `
           <tr>
             <td><input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="erledigt"></td>
-            <td>${esc(x.it.text)}</td>
+            <td>${esc(x.it.text)}${pendFirmenChips(x.it)}</td>
             <td>${esc(x.it.verantwortlich || '–')}</td>
             <td class="muted frist ${fristClass(x.it.termin, false)}">${x.it.termin ? fristText(x.it.termin, false) : '–'}</td>
             <td class="muted">${herkunft(x)}</td>
@@ -1341,7 +1364,7 @@ function viewPendenzen(pid) {
           ${erledigt.map(x => `
             <tr class="done-row">
               <td><input type="checkbox" class="pend-check" checked data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="wieder offen"></td>
-              <td>${esc(x.it.text)}</td>
+              <td>${esc(x.it.text)}${pendFirmenChips(x.it)}</td>
               <td>${esc(x.it.verantwortlich || '–')}</td>
               <td class="muted">${x.it.termin ? fmtDate(x.it.termin) : '–'}</td>
               <td class="muted">${herkunft(x)}</td>
@@ -1379,26 +1402,62 @@ function actPendenz(pid, itemid) {
   const it = (p && itemid) ? (p.pendenzen || []).find(x => x.id === itemid) : null;
   const projekte = state.projekte || [];
   const projField = !pid ? `<label class="field">Projekt <select class="select" id="pd_pid">${projekte.map(pr => `<option value="${pr.id}">${esc(pr.name)}</option>`).join('')}</select></label>` : '';
+  const firmProj = p || projekte[0] || null;
   openModal(it ? 'Pendenz bearbeiten' : 'Neue Pendenz', `
     ${projField}
-    <label class="field">Pendenz / Aufgabe <input class="input" id="pd_text" value="${it ? esc(it.text || '') : ''}" placeholder="z.B. Devis Sanitär einholen"></label>
+    <label class="field">Pendenz / Aufgabe <input class="input" id="pd_text" value="${it ? esc(it.text || '') : ''}" placeholder="z.B. Mangel Fenster EG beheben"></label>
     <div class="form-row">
       <label class="field">Verantwortlich <input class="input" id="pd_verant" value="${it ? esc(it.verantwortlich || '') : ''}" placeholder="optional"></label>
       <label class="field">Termin <input class="input" type="date" id="pd_termin" value="${it ? esc(it.termin || '') : ''}"></label>
     </div>
+    <label class="field" style="margin-bottom:4px">Firmen mit Vertrag <span class="muted" style="font-weight:400;font-size:11.5px">– zuweisen für Mail</span></label>
+    <div id="pd_firmen" class="pd-firmen">${pendFirmenHtml(firmProj, it && it.firmen)}</div>
   `, `${it ? `<button class="btn danger" data-act="pend-del" data-pid="${pid}" data-itemid="${itemid}">Löschen</button>` : '<button class="btn ghost" data-close="1">Abbrechen</button>'}<button class="btn" data-act="pend-save" data-pid="${pid || ''}"${it ? ` data-itemid="${itemid}"` : ''}>${it ? 'Speichern' : 'Hinzufügen'}</button>`);
+  const ps = $('#pd_pid'); if (ps) ps.addEventListener('change', () => { const cont = $('#pd_firmen'); if (cont) cont.innerHTML = pendFirmenHtml(findProjekt(ps.value), []); });
 }
 function savePendenz(pid, itemid) {
   pid = pid || ($('#pd_pid') && $('#pd_pid').value);
   const p = findProjekt(pid); if (!p) { toast('Bitte ein Projekt wählen', 'info'); return; }
   const text = $('#pd_text').value.trim();
   if (!text) { toast('Bitte einen Text eingeben', 'info'); return; }
-  const data = { text, verantwortlich: $('#pd_verant').value.trim(), termin: $('#pd_termin').value || '' };
+  const firmen = $$('#pd_firmen .pd-firma-cb').filter(cb => cb.checked).map(cb => cb.value);
+  const data = { text, verantwortlich: $('#pd_verant').value.trim(), termin: $('#pd_termin').value || '', firmen };
   if (!p.pendenzen) p.pendenzen = [];
   const it = itemid ? p.pendenzen.find(x => x.id === itemid) : null;
   if (it) Object.assign(it, data);
   else p.pendenzen.unshift({ id: uid('pd'), art: 'pendenz', erledigt: false, uebertragen: false, erfasst: todayIso(), ...data });
   save(); closeModal(); router(); toast(it ? 'Pendenz gespeichert' : 'Pendenz erfasst');
+}
+// Aus einer Pendenz eine saubere E-Mail an die zugewiesenen Firmen erzeugen
+function actPendenzMail(pid, itemid) {
+  const p = findProjekt(pid); if (!p) return;
+  const it = (p.pendenzen || []).find(x => x.id === itemid); if (!it) return;
+  const firmen = it.firmen || [];
+  const emails = firmen.map(f => firmaEmailOf(p, f)).filter(Boolean);
+  const ohneMail = firmen.filter(f => !firmaEmailOf(p, f));
+  const b = state.buero || BUERO;
+  const subj = `Pendenz – ${p.name}: ${it.text.slice(0, 60)}`;
+  const L = ['Guten Tag', '', `betreffend das Projekt „${p.name}"${p.ort ? ', ' + p.ort : ''} bitten wir Sie um Folgendes:`, '', '• ' + it.text];
+  if (it.termin) L.push('  Termin bis: ' + fmtDate(it.termin));
+  L.push('', 'Bitte um kurze Rückmeldung. Besten Dank.', '', 'Freundliche Grüsse');
+  if (b.firma) L.push(b.firma);
+  if (b.tel) L.push('Tel. ' + b.tel);
+  if (b.email) L.push(b.email);
+  openModal('Pendenz als E-Mail', `
+    <label class="field">An ${ohneMail.length ? `<span class="muted" style="font-size:11.5px">(${esc(ohneMail.join(', '))} ohne hinterlegte Mail)</span>` : ''}<input class="input" id="pm_to" value="${esc(emails.join(', '))}" placeholder="empfaenger@firma.ch"></label>
+    <label class="field">Betreff <input class="input" id="pm_subj" value="${esc(subj)}"></label>
+    <label class="field">Nachricht <textarea class="input" id="pm_body" rows="11">${esc(L.join('\n'))}</textarea></label>
+  `, `<button class="btn ghost" data-act="pend-mail-copy">Text kopieren</button><button class="btn" data-act="pend-mail-open">Im Mail-Programm öffnen</button>`);
+}
+function pendMailOpen() {
+  const to = ($('#pm_to').value || '').split(/[,;]\s*/).map(s => s.trim()).filter(Boolean).join(',');
+  const url = `mailto:${to}?subject=${encodeURIComponent($('#pm_subj').value || '')}&body=${encodeURIComponent($('#pm_body').value || '')}`;
+  window.location.href = url; closeModal();
+}
+function pendMailCopy() {
+  const t = $('#pm_body').value || '';
+  if (navigator.clipboard) navigator.clipboard.writeText(t).then(() => toast('Text kopiert'), () => toast('Kopieren nicht möglich', 'info'));
+  else toast('Kopieren nicht möglich', 'info');
 }
 function rmPendenz(pid, itemid) {
   const p = findProjekt(pid); if (!p) return;
@@ -2314,7 +2373,7 @@ function viewProtokollDetail(pid, prid) {
           ${pend.map(x => `
             <tr>
               <td><input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="erledigt"></td>
-              <td>${esc(x.it.text)}</td>
+              <td>${esc(x.it.text)}${pendFirmenChips(x.it)}</td>
               <td>${esc(x.it.verantwortlich || '–')}</td>
               <td class="muted frist ${fristClass(x.it.termin, false)}">${x.it.termin ? fristText(x.it.termin, false) : '–'}</td>
               <td class="muted">${x.pr ? esc(protokollTitel(x.pr)) + ' · ' + fmtDate(x.pr.datum) : 'direkt erfasst'}</td>
@@ -3565,7 +3624,7 @@ function viewPendenzenGlobal() {
 
   const projZelle = p => `<i class="cal-dot ${projColor(idxOf(p), p)}" style="margin-right:6px;vertical-align:middle"></i><a href="#/projekt/${p.id}/pendenzen">${esc(p.name)}</a>`;
   const herk = (p, x) => x.pr ? `<a href="#/projekt/${p.id}/protokoll/${x.pr.id}">${esc(protokollTitel(x.pr))}</a>` : '<span class="muted">direkt erfasst</span>';
-  const acts = (p, x) => x.pr ? '' : `<button class="ic-btn" data-act="pend-edit" data-pid="${p.id}" data-itemid="${x.it.id}" title="Bearbeiten">✎</button><button class="ic-btn" data-act="pend-del" data-pid="${p.id}" data-itemid="${x.it.id}" title="Löschen">✕</button>`;
+  const acts = (p, x) => x.pr ? '' : `${(x.it.firmen || []).length ? `<button class="ic-btn" data-act="pend-mail" data-pid="${p.id}" data-itemid="${x.it.id}" title="Als E-Mail an Firmen">✉</button>` : ''}<button class="ic-btn" data-act="pend-edit" data-pid="${p.id}" data-itemid="${x.it.id}" title="Bearbeiten">✎</button><button class="ic-btn" data-act="pend-del" data-pid="${p.id}" data-itemid="${x.it.id}" title="Löschen">✕</button>`;
 
   const offenTable = offen.length ? `
     <table class="grid">
@@ -3574,7 +3633,7 @@ function viewPendenzenGlobal() {
         <tr>
           <td><input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="erledigt"></td>
           <td>${projZelle(p)}</td>
-          <td>${esc(x.it.text)}</td>
+          <td>${esc(x.it.text)}${pendFirmenChips(x.it)}</td>
           <td>${esc(x.it.verantwortlich || '–')}</td>
           <td class="muted frist ${fristClass(x.it.termin, false)}">${x.it.termin ? fristText(x.it.termin, false) : '–'}</td>
           <td class="muted">${herk(p, x)}</td>
@@ -3590,7 +3649,7 @@ function viewPendenzenGlobal() {
         <tr class="done-row">
           <td><input type="checkbox" class="pend-check" checked data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="wieder offen"></td>
           <td>${projZelle(p)}</td>
-          <td>${esc(x.it.text)}</td>
+          <td>${esc(x.it.text)}${pendFirmenChips(x.it)}</td>
           <td>${esc(x.it.verantwortlich || '–')}</td>
           <td class="muted">${x.it.termin ? fmtDate(x.it.termin) : '–'}</td>
           <td class="muted">${herk(p, x)}</td>
@@ -5581,6 +5640,9 @@ document.addEventListener('click', e => {
     case 'erfassen-go':    erfassenGo(kind); break;
     case 'pend-proj-toggle': pendProjToggle(pid); break;
     case 'pend-add':       actPendenz(pid); break;
+    case 'pend-mail':      actPendenzMail(pid, itemid); break;
+    case 'pend-mail-open': pendMailOpen(); break;
+    case 'pend-mail-copy': pendMailCopy(); break;
     case 'pend-edit':      actPendenz(pid, itemid); break;
     case 'pend-save':      savePendenz(pid, itemid); break;
     case 'pend-del':       rmPendenz(pid, itemid); break;

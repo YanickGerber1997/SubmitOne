@@ -1107,6 +1107,7 @@ function viewKosten(id) {
 
 let ganttZoom = 'monat';   // 'monat' | 'woche' | 'tag'
 let ganttScale = 1;        // stufenloser Breiten-Faktor auf pxPerDay
+let ganttChain = true;     // Verkettung: Nachfolger automatisch nachführen
 let ganttSort = 'bkp';     // 'bkp' | 'start'
 const ZOOM = { monat: { px: 2.4, label: 'Monate' }, woche: { px: 4.6, label: 'Wochen' }, tag: { px: 13, label: 'Tage' } };
 // Gantt-Balkenfarbe je Status (über den Lebenszyklus differenziert)
@@ -1147,7 +1148,7 @@ function viewTermine(id) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm · grob (Monat) bis fein (Tag); Balken ziehen zum Verschieben, Ränder ziehen für Dauer</div></div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}<span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}${zoomCtrl}${scaleCtrl}<button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}<span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}${zoomCtrl}${scaleCtrl}<button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button><button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
     </div>
     ${projektTabs(p, 'termine')}
   `;
@@ -1332,7 +1333,7 @@ function viewTermine(id) {
     <div class="g-legend">
       ${GANTT_LEGEND.map(([k, l]) => `<span><i style="background:${GANTT_COLS[k]}"></i>${l}</span>`).join('')}
     </div>
-    <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie.</p>
+    <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Rechtsklick → <b>Nachfolger verketten</b> hängt ein Gewerk direkt an · bei <b>🔗 Verkettung an</b> folgen verkettete Nachfolger automatisch · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie.</p>
   `);
 
   $$('.g-bar').forEach(b => b.addEventListener('mousedown', onBarMouseDown));
@@ -1392,7 +1393,9 @@ function addGanttLink(pid, from, to) {
   const p = findProjekt(pid); if (!p) return;
   if (!p.ganttLinks) p.ganttLinks = [];
   if (from === to || p.ganttLinks.some(l => l.from === from && l.to === to)) return;
-  p.ganttLinks.push({ id: uid('gl'), from, to, dx: null });
+  const fr = ganttBarRef(p, from), tr = ganttBarRef(p, to);
+  const lag = (fr && tr) ? dayDiffISO(fr.e, tr.s) : 1;   // aktuellen Abstand merken (keine Verschiebung beim Erstellen)
+  p.ganttLinks.push({ id: uid('gl'), from, to, dx: null, lag });
   save(); viewTermine(pid); toast('Verbindung erstellt', 'info');
 }
 function removeGanttLink(pid, lid) {
@@ -1438,6 +1441,9 @@ function vergabeMenu(e, pid, vid, extraTop) {
   if (extraTop) items.push(...extraTop);
   items.push(
     { icon: '🗓', label: 'Termine / Gantt', act: () => go('#/projekt/' + pid + '/termine') },
+  );
+  if (v.bauStart && v.bauEnde) items.push({ icon: '🔗', label: 'Nachfolger verketten …', act: () => actLinkSuccessor(pid, vid) });
+  items.push(
     { icon: '→', label: 'Status: nächster Schritt', act: () => advanceVergabe(pid, vid) },
     { sep: true },
     { icon: '✉', label: 'Offertanfrage / Einladung senden', act: () => mailEinladung(pid, vid) },
@@ -1604,7 +1610,60 @@ function commitBarDates(pid, vid, oid, s, en) {
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
   if (oid) { const o = (v.vorgaenge || []).find(x => x.id === oid); if (o) { o.start = s; o.ende = en; } }
   else { v.bauStart = s; v.bauEnde = en; }
-  save(); router(); toast('Termin: ' + fmtDate(s) + ' – ' + fmtDate(en), 'info');
+  let moved = 0;
+  if (ganttChain) moved = rescheduleChain(p, oid ? vid + '/' + oid : vid);
+  save(); router();
+  toast('Termin: ' + fmtDate(s) + ' – ' + fmtDate(en) + (moved ? ` · ${moved} Nachfolger nachgeführt` : ''), 'info');
+}
+// Referenz auf die Termine eines Balkens (Vergabe oder Vorgang) per Schlüssel
+function ganttBarRef(p, key) {
+  if (key.indexOf('/') >= 0) {
+    const [vid, oid] = key.split('/');
+    const v = findVergabe(p, vid); const o = v && (v.vorgaenge || []).find(x => x.id === oid);
+    if (!o || !o.start || !o.ende) return null;
+    return { get s() { return o.start; }, get e() { return o.ende; }, set: (s, e) => { o.start = s; o.ende = e; } };
+  }
+  const v = findVergabe(p, key);
+  if (!v || !v.bauStart || !v.bauEnde) return null;
+  return { get s() { return v.bauStart; }, get e() { return v.bauEnde; }, set: (s, e) => { v.bauStart = s; v.bauEnde = e; } };
+}
+// Verkettung nachführen: Nachfolger startet (Vorgänger-Ende + lag), Dauer bleibt erhalten
+function rescheduleChain(p, key, seen) {
+  seen = seen || new Set(); if (seen.has(key)) return 0; seen.add(key);
+  const from = ganttBarRef(p, key); if (!from) return 0;
+  let n = 0;
+  (p.ganttLinks || []).filter(l => l.from === key).forEach(l => {
+    const to = ganttBarRef(p, l.to); if (!to) return;
+    const lag = l.lag != null ? l.lag : 1;
+    const dur = dayDiffISO(to.s, to.e);
+    const ns = addDays(from.e, lag);
+    if (ns !== to.s) { to.set(ns, addDays(ns, dur)); n++; }
+    n += rescheduleChain(p, l.to, seen);
+  });
+  return n;
+}
+// Gewerk als Nachfolger anhängen (Rechtsklick → „Nachfolger verketten")
+function actLinkSuccessor(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  if (!(v.bauStart && v.bauEnde)) { toast('Dieses Gewerk hat noch keine Termine', 'info'); return; }
+  const others = gewerkeSorted(p).filter(x => x.id !== vid && x.bauStart && x.bauEnde && !(p.ganttLinks || []).some(l => l.from === vid && l.to === x.id));
+  if (!others.length) { toast('Keine weiteren terminierten Gewerke vorhanden', 'info'); return; }
+  openModal('Nachfolger verketten', `
+    <p class="muted" style="font-size:13px;margin-top:0">Welches Gewerk soll direkt nach <b>${esc(v.gewerk)}</b> starten? Es wird ans Ende angehängt und folgt künftig automatisch, wenn du <b>${esc(v.gewerk)}</b> verschiebst.</p>
+    <div style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto">
+      ${others.map(x => `<button class="btn secondary" style="justify-content:flex-start" data-act="link-succ-pick" data-pid="${pid}" data-vid="${vid}" data-tvid="${x.id}"><span class="bkp-code">${esc(x.bkp || '')}</span>&nbsp;${esc(x.gewerk)}</button>`).join('')}
+    </div>
+  `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
+}
+function linkSuccessorPick(pid, vid, tvid) {
+  const p = findProjekt(pid); const from = ganttBarRef(p, vid), to = ganttBarRef(p, tvid); if (!from || !to) return;
+  if (!p.ganttLinks) p.ganttLinks = [];
+  if (!p.ganttLinks.some(l => l.from === vid && l.to === tvid)) p.ganttLinks.push({ id: uid('gl'), from: vid, to: tvid, dx: null, lag: 1 });
+  const dur = dayDiffISO(to.s, to.e); const ns = addDays(from.e, 1);
+  to.set(ns, addDays(ns, dur));
+  rescheduleChain(p, vid);
+  save(); closeModal(); viewTermine(pid);
+  toast('Verkettet · „' + (findVergabe(p, tvid).gewerk) + '" folgt jetzt', 'info');
 }
 
 /* ---------------------------------------------------------------
@@ -6533,6 +6592,8 @@ document.addEventListener('click', e => {
     case 'edit-termin':  actEditTermin(pid, vid); break;
     case 'save-termin':  saveTermin(pid, vid); break;
     case 'gantt-zoom':   ganttZoom = kind; ganttScale = 1; viewTermine(pid); break;
+    case 'gantt-chain':  ganttChain = !ganttChain; toast('Verkettung ' + (ganttChain ? 'an' : 'aus'), 'info'); viewTermine(pid); break;
+    case 'link-succ-pick': linkSuccessorPick(pid, act.dataset.vid, act.dataset.tvid); break;
     case 'gantt-scale':
       if (kind === 'out') ganttScale = Math.max(0.12, +(ganttScale * 0.8).toFixed(3));
       else if (kind === 'in') ganttScale = Math.min(2.5, +(ganttScale * 1.25).toFixed(3));

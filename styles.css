@@ -129,7 +129,8 @@ button { font-family: inherit; cursor: pointer; }
 }
 .nav a:hover { background: rgba(255,255,255,.05); color: #fff; }
 .nav a.active { background: var(--brand); color: #fff; }
-.nav-ico { width: 18px; text-align: center; font-size: 15px; opacity: .9; }
+.nav-ico { width: 20px; display: inline-flex; align-items: center; justify-content: center; opacity: .92; flex: none; }
+.nav-ico svg { width: 18px; height: 18px; display: block; }
 
 /* Projekt-Unterreiter in der Sidebar */
 .subnav { display: flex; flex-direction: column; gap: 1px; margin: 3px 0 8px; }

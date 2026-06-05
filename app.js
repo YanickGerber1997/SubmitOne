@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v36';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v37';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2997,7 +2997,7 @@ const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'A
 const DOW = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const TERMIN_KATEGORIEN = ['Besprechung', 'Bauherrensitzung', 'Bausitzung', 'Baustellenbegehung', 'Abgabe / Frist', 'Bemusterung', 'Sonstiges'];
 let calY = null, calM = null, calView = 'monat', calRefIso = null;
-const CAL_SH = 7, CAL_EH = 20, CAL_HH = 40;   // Tag/Woche: Stunden-Raster
+const CAL_SH = 7, CAL_EH = 20, CAL_HH = 56;   // Tag/Woche: Stunden-Raster (Zeilenhöhe px)
 
 function weekDates(iso) {
   const d = dISO(iso || todayIso()); const lead = (d.getDay() + 6) % 7;
@@ -3014,7 +3014,7 @@ function calTimeGrid(events, dates, todayI, add) {
   const dayAct = add === 'plan' ? `data-act="plan-day"` : (add ? `data-act="kal-day" data-pid="${add}"` : `data-act="gcal-day"`);
   const colHead = dates.map(iso => { const d = dISO(iso); return `<div class="cal-colhead${iso === todayI ? ' today' : ''}" ${dayAct} data-kind="${iso}">${dowF[(d.getDay() + 6) % 7]} ${d.getDate()}.${d.getMonth() + 1}.</div>`; }).join('');
   const adRow = dates.map(iso => { const ad = (byDay[iso] || []).filter(e => !e.zeit); return `<div class="cal-ad-cell" data-iso="${iso}"${pidAttr}>${ad.map(e => `<div class="cal-ev ${e.color}"${evEdit(e)} title="${esc(e.titel)}">${esc(e.titel)}</div>`).join('')}</div>`; }).join('');
-  let hours = ''; for (let h = CAL_SH; h <= CAL_EH; h++) hours += `<div class="cal-hour">${String(h).padStart(2, '0')}:00</div>`;
+  let hours = ''; for (let h = CAL_SH; h <= CAL_EH; h++) hours += `<div class="cal-hour" style="height:${CAL_HH}px">${String(h).padStart(2, '0')}:00</div>`;
   const toMin = s => { const [a, b] = String(s).split(':').map(Number); return a * 60 + (b || 0); };
   const cols = dates.map(iso => {
     let lines = ''; for (let h = CAL_SH; h <= CAL_EH; h++) { lines += `<div class="hl" style="top:${(h - CAL_SH) * CAL_HH}px"></div>`; if (h < CAL_EH) lines += `<div class="hl half" style="top:${(h - CAL_SH) * CAL_HH + CAL_HH / 2}px"></div>`; }
@@ -3405,9 +3405,7 @@ function bindPlanDnd() {
     col.addEventListener('dragover', e => e.preventDefault());
     col.addEventListener('drop', e => {
       e.preventDefault(); const d = e.dataTransfer.getData('text/plain'); if (!d) return;
-      const iso = col.dataset.iso; const y = e.clientY - col.getBoundingClientRect().top;
-      let hour = CAL_SH + Math.floor(y / CAL_HH); hour = Math.max(CAL_SH, Math.min(CAL_EH, hour));
-      const zeit = String(hour).padStart(2, '0') + ':00';
+      const iso = col.dataset.iso; const zeit = min2hhmm(snap30(e.clientY - col.getBoundingClientRect().top));
       if (d.startsWith('tpl:')) placePlanBlock(iso, zeit, PLAN_TEMPLATES[+d.slice(4)]);
       else if (d.startsWith('blk:')) movePlanBlock(d.slice(4), iso, zeit);
     });
@@ -3424,7 +3422,7 @@ function bindPlanDragCreate() {
     const startMin = snap30(e.clientY - rect.top);
     const sel = document.createElement('div'); sel.className = 'cal-tev sel-create';
     col.appendChild(sel);
-    dragCreate = { iso: col.dataset.iso, rect, startMin, curMin: startMin + 60, el: sel, moved: false };
+    dragCreate = { iso: col.dataset.iso, rect, startMin, curMin: startMin, el: sel, moved: false };
     document.body.style.userSelect = 'none';
     planDragRender();
   }));
@@ -3447,14 +3445,16 @@ function planDragUp() {
   if (d.el) d.el.remove();
   let a = Math.min(d.startMin, d.curMin), b = Math.max(d.startMin, d.curMin);
   if (planArmed != null) { placePlanBlock(d.iso, min2hhmm(a), PLAN_TEMPLATES[planArmed]); planArmed = null; return; }
-  if (d.moved && b - a >= 30) { actPlanBlock(null, d.iso, min2hhmm(a), min2hhmm(b)); }
-  else if (planSel) { planSel = null; viewPlanung(); }   // reiner Klick = Auswahl aufheben
+  // gezogen → Spanne; reiner Klick → 30-Min-Termin an der Halbstunde
+  const ende = (d.moved && b - a >= 30) ? b : a + 30;
+  actPlanBlock(null, d.iso, min2hhmm(a), min2hhmm(ende));
 }
 function planKeydown(e) {
   if (location.hash !== '#/planung') return;
   const tag = (e.target.tagName || '').toUpperCase();
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-  if ((e.key === 'Delete' || e.key === 'Backspace') && planSel) { e.preventDefault(); planDelete(); }
+  if (e.key === 'Escape' && planSel) { planSel = null; viewPlanung(); }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && planSel) { e.preventDefault(); planDelete(); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') { planCopy(); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); planPaste(); }
 }

@@ -1458,17 +1458,22 @@ function actPendenzMail(pid, itemid) {
   const emails = firmen.map(f => firmaEmailOf(p, f)).filter(Boolean);
   const ohneMail = firmen.filter(f => !firmaEmailOf(p, f));
   const subj = `Pendenz – ${p.name}: ${it.text.slice(0, 60)}`;
-  const sig = (state.buero && state.buero.signatur || '').trim();
+  const sigText = (state.buero && state.buero.signatur || '').trim() || 'Freundliche Grüsse';
+  const sigOn = !(state.buero && state.buero.signaturAuto === false);
+  // Grundtext OHNE Signatur – die Signatur hängt die Checkbox an
   const L = ['Guten Tag', '', `betreffend das Projekt „${p.name}"${p.ort ? ', ' + p.ort : ''} bitten wir Sie um Folgendes:`, '', '• ' + it.text];
   if (it.termin) L.push('  Termin bis: ' + fmtDate(it.termin));
-  L.push('', 'Bitte um kurze Rückmeldung. Besten Dank.', '');
-  L.push(sig || 'Freundliche Grüsse');
+  L.push('', 'Bitte um kurze Rückmeldung. Besten Dank.');
   openModal('Pendenz als E-Mail', `
-    <p class="muted" style="font-size:12px;margin:0 0 12px">Öffnet ein neues Mail mit Empfänger, Betreff &amp; Text inkl. deiner Signatur${(state.buero && state.buero.signatur || '').trim() ? '' : ' (Signatur unter Einstellungen → Büro hinterlegen)'}.</p>
     <label class="field">An ${ohneMail.length ? `<span class="muted" style="font-size:11.5px">(${esc(ohneMail.join(', '))} ohne hinterlegte Mail)</span>` : ''}<input class="input" id="pm_to" value="${esc(emails.join(', '))}" placeholder="empfaenger@firma.ch"></label>
     <label class="field">Betreff <input class="input" id="pm_subj" value="${esc(subj)}"></label>
     <label class="field">Nachricht <textarea class="input" id="pm_body" rows="10">${esc(L.join('\n'))}</textarea></label>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;margin-top:2px"><input type="checkbox" id="pm_sig" ${sigOn ? 'checked' : ''}> Signatur anhängen <span class="muted" style="font-size:11.5px">(aus → du fügst sie selbst im Mail ein)</span></label>
   `, `<button class="btn ghost" data-act="pend-mail-copy">Text kopieren</button><button class="btn" data-act="pend-mail-open">Im Mail-Programm öffnen</button>`);
+  const sigBlock = '\n\n' + sigText;
+  const applySig = on => { const ta = $('#pm_body'); if (!ta) return; let v = ta.value; if (v.endsWith(sigBlock)) v = v.slice(0, -sigBlock.length); if (on) v += sigBlock; ta.value = v; };
+  const cb = $('#pm_sig'); if (cb) cb.addEventListener('change', () => applySig(cb.checked));
+  applySig(sigOn);
 }
 function pendMailOpen() {
   const to = ($('#pm_to').value || '').split(/[,;]\s*/).map(s => s.trim()).filter(Boolean).join(',');
@@ -3374,6 +3379,7 @@ function viewEinstellungen() {
       <label class="field">E-Mail-Signatur <span class="muted" style="font-weight:400;font-size:11.5px">– wird unter Pendenz-Mails angehängt</span>
         <textarea class="input" id="b_signatur" rows="4" placeholder="Freundliche Grüsse&#10;Yanick Gerber&#10;Hefti Bauberatung · 041 000 00 00">${esc(b.signatur || '')}</textarea>
       </label>
+      <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;margin-top:6px"><input type="checkbox" id="b_sig_auto" ${b.signaturAuto === false ? '' : 'checked'}> Signatur standardmässig an Mails anhängen</label>
       <div style="margin-top:12px"><button class="btn" data-act="save-buero">Büro speichern</button></div>
     </div>
     <div class="card card-pad" style="max-width:560px">
@@ -3409,6 +3415,7 @@ function saveBuero() {
     tel:     $('#b_tel').value.trim(),
     email:   $('#b_email').value.trim(),
     signatur: $('#b_signatur') ? $('#b_signatur').value : (cur.signatur || ''),
+    signaturAuto: $('#b_sig_auto') ? $('#b_sig_auto').checked : (cur.signaturAuto !== false),
   };
   save();
   toast('Büro-Daten gespeichert');

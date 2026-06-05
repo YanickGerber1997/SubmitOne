@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v41';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v42';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -160,6 +160,9 @@ const CloudAdapter = {
   },
 };
 
+// Offene Bearbeitungs-Konflikte: projektId -> Fremd-Version (data), solange ungelöst
+const cloudConflicts = new Map();
+
 function subscribeCloud() {
   supa.channel('entities-rt')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'entities' }, payload => {
@@ -168,15 +171,30 @@ function subscribeCloud() {
         const id = payload.old.id;
         state.projekte = state.projekte.filter(p => p.id !== id);
         CloudAdapter._snap.delete(id);
+        if (cloudConflicts.delete(id)) renderCloudConflictBanner();
         router();
         return;
       }
       const row = payload.new;
       if (!row) return;
-      CloudAdapter._snap.set(row.id, JSON.stringify(row.data));
-      if (row.updated_by === CLIENT_ID) return;   // eigener Schreibvorgang → kein Re-Render
+      const incomingJson = JSON.stringify(row.data);
+      const prevBase = CloudAdapter._snap.get(row.id);   // letzter gemeinsamer Stand – VOR dem Überschreiben merken
+      CloudAdapter._snap.set(row.id, incomingJson);
+      if (row.updated_by === CLIENT_ID) {                 // eigener Schreibvorgang landete → evtl. Konflikt aufgelöst
+        if (cloudConflicts.delete(row.id)) renderCloudConflictBanner();
+        return;
+      }
       if (row.typ === 'projekt') {
         const i = state.projekte.findIndex(p => p.id === row.id);
+        const localObj = i >= 0 ? state.projekte[i] : null;
+        // „dirty“ = lokale, noch nicht hochgeladene Änderung am selben Projekt
+        const localDirty = localObj && prevBase !== undefined && JSON.stringify(localObj) !== prevBase;
+        if (localDirty && JSON.stringify(localObj) !== incomingJson) {
+          // KONFLIKT: lokale Bearbeitung würde durch Fremdänderung still überschrieben → stattdessen fragen
+          cloudConflicts.set(row.id, row.data);
+          renderCloudConflictBanner();
+          return;   // lokale Version bleibt unangetastet
+        }
         if (i >= 0) state.projekte[i] = row.data; else state.projekte.push(row.data);
       } else if (row.typ === 'kontakte') state.kontakte = row.data || [];
       else if (row.typ === 'dokumente') state.dokumente = row.data || [];
@@ -184,6 +202,40 @@ function subscribeCloud() {
       router();
     })
     .subscribe();
+}
+
+// Nicht-zerstörerisches Banner: bei gleichzeitiger Bearbeitung entscheidet der Nutzer, statt Arbeit zu verlieren
+function renderCloudConflictBanner() {
+  let bar = $('#cloudConflictBar');
+  if (!cloudConflicts.size) { if (bar) bar.remove(); return; }
+  if (!bar) { bar = document.createElement('div'); bar.id = 'cloudConflictBar'; bar.className = 'cloud-conflict-bar'; document.body.appendChild(bar); }
+  const rows = [...cloudConflicts.entries()].map(([id, remote]) => {
+    const local = state.projekte.find(p => p.id === id);
+    const name = esc((local && local.name) || (remote && remote.name) || 'Projekt');
+    return `<div class="ccf-row">
+      <span class="ccf-txt">⚠ <strong>${name}</strong> wurde gerade auch von jemand anderem geändert. Deine Version ist noch nicht gespeichert.</span>
+      <span class="ccf-acts">
+        <button class="btn sm secondary" data-act="conflict-keep" data-pid="${id}">Meine behalten</button>
+        <button class="btn sm" data-act="conflict-take" data-pid="${id}">Andere laden</button>
+      </span></div>`;
+  }).join('');
+  bar.innerHTML = `<div class="ccf-inner">${rows}</div>`;
+}
+
+function resolveConflictTake(pid) {
+  const remote = cloudConflicts.get(pid); if (!remote) return;
+  const i = state.projekte.findIndex(p => p.id === pid);
+  if (i >= 0) state.projekte[i] = remote; else state.projekte.push(remote);
+  cloudConflicts.delete(pid);
+  migrate(); renderCloudConflictBanner(); router();
+  toast('Fremde Version geladen');
+}
+
+function resolveConflictKeep(pid) {
+  cloudConflicts.delete(pid);
+  renderCloudConflictBanner();
+  save();   // stösst Flush an → eigene Version überschreibt nun bewusst die fremde
+  toast('Deine Version bleibt – wird gespeichert');
 }
 
 /* ---- Login-Maske (nur Cloud-Modus) ---- */
@@ -535,8 +587,17 @@ function budgetDelta(v)   { return (v.budgetposten || []).reduce((a, b) => a + (
 function schlussSumme(v)  { return (v.betrag || 0) + nachtragSumme(v) + rapportSumme(v) + budgetDelta(v); }
 
 /* --- Rechnungen / Kostenkontrolle --- */
-function rechnungBezahlt(v) { return (v.rechnungen || []).filter(r => r.bezahlt).reduce((a, r) => a + (r.betrag || 0), 0); }
-function rechnungTotal(v)   { return (v.rechnungen || []).reduce((a, r) => a + (r.betrag || 0), 0); }
+const RG_ART = { akonto: 'Akonto', schluss: 'Schlussrechnung', gutschrift: 'Gutschrift' };
+// Vorzeichenbehafteter Rechnungsbetrag (Gutschrift zählt negativ)
+function rgSigned(r)     { const b = Number(r.betrag) || 0; return r.art === 'gutschrift' ? -Math.abs(b) : b; }
+function rgSkonto(r)     { return rgSigned(r) * ((Number(r.skontoP) || 0) / 100); }      // Skontoabzug bei Zahlung
+function rgRueckbehalt(r){ return rgSigned(r) * ((Number(r.rueckbehaltP) || 0) / 100); } // einbehaltene Garantiesumme
+// Tatsächlich ausbezahlt: Brutto − Skonto − (Rückbehalt, solange nicht freigegeben)
+function rgAuszahlung(r) { let a = rgSigned(r) - rgSkonto(r); if (!r.rbFrei) a -= rgRueckbehalt(r); return a; }
+function rechnungBezahlt(v)        { return (v.rechnungen || []).filter(r => r.bezahlt).reduce((a, r) => a + rgAuszahlung(r), 0); }
+function rechnungTotal(v)          { return (v.rechnungen || []).reduce((a, r) => a + rgSigned(r), 0); }
+// Noch einbehaltener Garantierückbehalt (bezahlte Rechnungen, Rückbehalt noch nicht freigegeben)
+function rechnungRueckbehalt(v)    { return (v.rechnungen || []).filter(r => r.bezahlt && !r.rbFrei).reduce((a, r) => a + rgRueckbehalt(r), 0); }
 function kvRev(v)           { return bestBetrag(v); }                 // günstigste Offerte (revidierter KV)
 
 // Eine Kostenzeile einer Vergabe (analog Baukostenübersicht)
@@ -569,6 +630,38 @@ function money(n) {
 }
 
 function projektVergebenAnzahl(p) { return (p.vergaben || []).filter(isVergeben).length; }
+
+/* --- Vergabe-Art: Einzelvergabe / ARGE / Teilvergabe --- */
+function teilSumme(v) { return (v.teilvergaben || []).reduce((a, t) => a + (Number(t.betrag) || 0), 0); }
+// Kopfzeile „Unternehmer: …“ je nach Vergabe-Art
+function vergabeFirmaLabel(v) {
+  if (v.teilvergaben && v.teilvergaben.length) {
+    const firmen = v.teilvergaben.map(t => t.firma).filter(Boolean);
+    return 'Teilvergabe an <strong>' + firmen.map(esc).join(', ') + '</strong>';
+  }
+  if (v.argePartner && v.argePartner.length) {
+    return 'ARGE: <strong>' + v.argePartner.map(esc).join(' · ') + '</strong>';
+  }
+  return v.firma ? 'Unternehmer: <strong>' + esc(v.firma) + '</strong>' : 'Noch kein Unternehmer';
+}
+// Detail-Karte mit der Aufteilung (nur bei ARGE / Teilvergabe sichtbar)
+function vergabeArtCard(v) {
+  if (v.teilvergaben && v.teilvergaben.length) {
+    return `<div class="card card-pad" style="margin-bottom:18px">
+      <h2 style="margin:0 0 8px;font-size:15px">Teilvergabe – ${v.teilvergaben.length} Firma${v.teilvergaben.length === 1 ? '' : 'en'}</h2>
+      <table class="grid"><thead><tr><th>Firma</th><th class="num" style="width:160px">Vergabesumme</th></tr></thead><tbody>
+        ${v.teilvergaben.map(t => `<tr><td>${esc(t.firma || '—')}</td><td class="num">${chf(t.betrag)}</td></tr>`).join('')}
+        <tr><td><b>Total</b></td><td class="num"><b>${chf(teilSumme(v))}</b></td></tr>
+      </tbody></table></div>`;
+  }
+  if (v.argePartner && v.argePartner.length) {
+    return `<div class="card card-pad" style="margin-bottom:18px">
+      <h2 style="margin:0 0 6px;font-size:15px">ARGE / Bietergemeinschaft</h2>
+      <div style="font-size:13.5px">${v.argePartner.map(p => `<span class="st blue" style="margin:0 6px 6px 0;display:inline-block">${esc(p)}</span>`).join('')}</div>
+      <p class="muted" style="font-size:12px;margin:6px 0 0">Ein gemeinsamer Werkvertrag, eine Vergabesumme. Federführung: <strong>${esc(v.firma || v.argePartner[0])}</strong></p></div>`;
+  }
+  return '';
+}
 
 /* --- Phasen aus Vergaben-Status ableiten --- */
 const PHASE_COLOR = { planung: '#f97316', ausschreibung: '#eab308', vergabe: '#16a34a', ausfuehrung: '#1f6feb', abschluss: '#8a97a8' };
@@ -3497,11 +3590,12 @@ function viewVergabeDetail(pid, vid) {
     <div class="detail-head">
       <div>
         <h1 style="margin:0;font-size:22px"><span class="bkp-code" style="font-size:16px">${esc(v.bkp)}</span> ${esc(v.gewerk)}</h1>
-        <div class="sub" style="margin-top:5px">${v.firma ? 'Unternehmer: <strong>' + esc(v.firma) + '</strong>' : 'Noch kein Unternehmer'}${grobLabel(v) ? ' · Ausführung ' + esc(grobLabel(v)) : ''}</div>
+        <div class="sub" style="margin-top:5px">${vergabeFirmaLabel(v)}${grobLabel(v) ? ' · Ausführung ' + esc(grobLabel(v)) : ''}</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
         ${vergabeMarken(v)}
         <select class="select vergabe-status-sel" data-pid="${p.id}" data-vid="${v.id}" title="Status setzen" style="padding:7px 10px">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select>
+        <button class="btn secondary" data-act="vergabe-art" data-pid="${p.id}" data-vid="${v.id}" title="Einzelvergabe / ARGE / Teilvergabe an mehrere Firmen">👥 Vergabe-Art</button>
         <button class="btn secondary" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}" title="Stammdaten bearbeiten (BKP, Gewerk, Frist, Schätzung)">✎ Bearbeiten</button>
         ${last ? '' : `<button class="btn" data-act="advance" data-pid="${p.id}" data-vid="${v.id}">Nächster Schritt →</button>`}
       </div>
@@ -3515,8 +3609,11 @@ function viewVergabeDetail(pid, vid) {
       <div class="dstat"><div class="l">Vergabesumme (n. Verhandlung)</div><div class="v">${isVergeben(v) ? chf(v.betrag) : '<span class="muted" style="font-size:14px">offen</span>'}</div></div>
       <div class="dstat" style="border-color:var(--brand)"><div class="l">Auftragssumme inkl. NT/Regie</div><div class="v" style="color:var(--brand)">${isVergeben(v) ? chf(schlussSumme(v)) : '~' + chf(bestBetrag(v) != null ? bestBetrag(v) : (v.schaetzung || 0))}</div></div>
       <div class="dstat"><div class="l">Bezahlt</div><div class="v">${chf(rechnungBezahlt(v))}</div></div>
-      <div class="dstat"><div class="l">Offen</div><div class="v">${chf((isVergeben(v) ? schlussSumme(v) : 0) - rechnungBezahlt(v))}</div></div>
+      ${rechnungRueckbehalt(v) ? `<div class="dstat"><div class="l">Rückbehalt einbehalten</div><div class="v">${chf(rechnungRueckbehalt(v))}</div></div>` : ''}
+      <div class="dstat"><div class="l">Offen</div><div class="v">${chf((isVergeben(v) ? schlussSumme(v) : 0) - rechnungBezahlt(v) - rechnungRueckbehalt(v))}</div></div>
     </div>
+
+    ${vergabeArtCard(v)}
 
     <div class="card card-pad" style="margin-bottom:18px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
@@ -3706,21 +3803,29 @@ function viewVergabeDetail(pid, vid) {
       </div>
       ${(v.rechnungen || []).length ? `
       <table class="grid" style="margin-top:12px">
-        <thead><tr><th style="width:36px"></th><th>Bezeichnung</th><th>Datum</th><th class="num">Betrag</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th style="width:36px"></th><th>Bezeichnung</th><th>Art</th><th>Datum</th><th class="num">Betrag</th><th class="num">Rückbehalt</th><th>Status</th><th></th></tr></thead>
         <tbody>
-          ${(v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => `
+          ${(v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => {
+            const rb = rgRueckbehalt(r);
+            return `
             <tr class="${r.bezahlt ? 'done-row' : ''}">
               <td><input type="checkbox" class="rg-check" ${r.bezahlt ? 'checked' : ''} data-pid="${p.id}" data-vid="${v.id}" data-rgid="${r.id}" title="bezahlt"></td>
-              <td><span class="etext">${esc(r.text || 'Rechnung')}</span>${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''}</td>
+              <td><span class="etext">${esc(r.text || 'Rechnung')}</span>${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''}${(r.skontoP ? ` <span class="muted" title="Skonto">−${r.skontoP}%</span>` : '')}</td>
+              <td class="muted">${RG_ART[r.art] || 'Rechnung'}</td>
               <td class="muted">${fmtDate(r.datum)}</td>
-              <td class="num">${chf(r.betrag)}</td>
+              <td class="num">${chf(rgSigned(r))}</td>
+              <td class="num">${rb ? (r.rbFrei
+                  ? `<span class="muted" title="freigegeben">${chf(rb)} ✓</span>`
+                  : `${chf(rb)}${r.bezahlt ? ` <button class="btn xs secondary" data-act="rb-frei" data-pid="${p.id}" data-vid="${v.id}" data-rgid="${r.id}" title="Garantierückbehalt freigeben / auszahlen">freigeben</button>` : ''}`)
+                : '<span class="muted">–</span>'}</td>
               <td>${r.bezahlt ? '<span class="st green">bezahlt</span>' : '<span class="st amber">offen</span>'}</td>
               <td><button class="x-btn" data-act="rm-rechnung" data-pid="${p.id}" data-vid="${v.id}" data-rgid="${r.id}">×</button></td>
-            </tr>`).join('')}
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
-      <div class="card-pad" style="display:flex;justify-content:space-between;border-top:1px solid var(--border)">
-        <span class="muted">Fakturiert ${chf(rechnungTotal(v))} · davon bezahlt</span>
+      <div class="card-pad" style="display:flex;justify-content:space-between;border-top:1px solid var(--border);flex-wrap:wrap;gap:6px">
+        <span class="muted">Fakturiert ${chf(rechnungTotal(v))}${rechnungRueckbehalt(v) ? ` · Rückbehalt einbehalten ${chf(rechnungRueckbehalt(v))}` : ''} · ausbezahlt</span>
         <strong>${chf(rechnungBezahlt(v))}</strong>
       </div>` : `<div style="padding:0 0 8px">${emptyState('🧾', 'Noch keine Rechnungen erfasst.')}</div>`}
     </div>
@@ -5843,6 +5948,89 @@ function saveVergabeEdit(pid, vid) {
   v.status = $('#fe_status').value || v.status;
   save(); closeModal(); router(); toast('Arbeitsbeschrieb gespeichert');
 }
+/* --- Vergabe-Art: Einzelvergabe / ARGE / Teilvergabe --- */
+function actVergabeArt(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const mode = (v.teilvergaben && v.teilvergaben.length) ? 'teil' : ((v.argePartner && v.argePartner.length) ? 'arge' : 'einzel');
+  const tvRows = (v.teilvergaben && v.teilvergaben.length ? v.teilvergaben : [{ firma: '', betrag: '' }]);
+  openModal('Vergabe-Art', `
+    <label class="field">Art der Vergabe
+      <select class="select" id="va_mode">
+        <option value="einzel"${mode === 'einzel' ? ' selected' : ''}>Einzelvergabe (eine Firma)</option>
+        <option value="arge"${mode === 'arge' ? ' selected' : ''}>ARGE / Bietergemeinschaft (ein Vertrag, mehrere Partner)</option>
+        <option value="teil"${mode === 'teil' ? ' selected' : ''}>Teilvergabe (Gewerk auf mehrere Firmen aufgeteilt)</option>
+      </select>
+    </label>
+    <div id="va_einzel" class="va-sec">
+      <div class="form-row">
+        <label class="field">Unternehmer <input class="input" id="va_firma" value="${esc(v.firma || '')}"></label>
+        <label class="field">Vergabesumme (CHF) <input class="input" type="number" id="va_betrag" value="${v.betrag || ''}"></label>
+      </div>
+    </div>
+    <div id="va_arge" class="va-sec">
+      <label class="field">Federführende Firma (Konsortialführer) <input class="input" id="va_argename" value="${esc((v.argePartner && v.argePartner.length) ? (v.firma || '') : '')}" placeholder="z.B. Hugentobler Bau AG"></label>
+      <label class="field" style="margin-top:8px">Partnerfirmen <span class="muted" style="font-weight:400;font-size:11px">(eine pro Zeile, inkl. Federführer)</span>
+        <textarea class="input" id="va_partner" rows="4" placeholder="Hugentobler Bau AG&#10;Steiner & Co.">${esc((v.argePartner || []).join('\n'))}</textarea>
+      </label>
+      <label class="field" style="margin-top:8px">Vergabesumme gesamt (CHF) <input class="input" type="number" id="va_argebetrag" value="${v.betrag || ''}"></label>
+    </div>
+    <div id="va_teil" class="va-sec">
+      <p class="muted" style="font-size:12px;margin:0 0 8px">Je Firma einen Teilbetrag. Die Summe wird zur Vergabesumme des Gewerks.</p>
+      <div id="va_teil_rows">
+        ${tvRows.map(t => tvRowHtml(t.firma, t.betrag)).join('')}
+      </div>
+      <button class="btn sm secondary" data-act="tv-add" type="button">+ Firma</button>
+    </div>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-vergabe-art" data-pid="${pid}" data-vid="${vid}">Speichern</button>`);
+  const sel = $('#va_mode');
+  const apply = () => { ['einzel', 'arge', 'teil'].forEach(m => { const el = $('#va_' + m); if (el) el.style.display = sel.value === m ? '' : 'none'; }); };
+  if (sel) { sel.addEventListener('change', apply); apply(); }
+}
+
+function tvRowHtml(firma = '', betrag = '') {
+  return `<div class="tv-row form-row" style="margin-bottom:8px">
+    <input class="input tv-firma" placeholder="Firma" value="${esc(firma)}">
+    <input class="input tv-betrag" type="number" placeholder="Betrag CHF" value="${betrag !== '' && betrag != null ? betrag : ''}" style="max-width:150px">
+    <button class="x-btn" data-act="tv-del" type="button" title="Zeile entfernen">×</button>
+  </div>`;
+}
+
+function tvAddRow() {
+  const wrap = $('#va_teil_rows'); if (!wrap) return;
+  wrap.insertAdjacentHTML('beforeend', tvRowHtml());
+}
+
+function saveVergabeArt(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const mode = $('#va_mode').value;
+  if (mode === 'einzel') {
+    delete v.argePartner; delete v.teilvergaben;
+    const f = $('#va_firma').value.trim(); v.firma = f;
+    v.betrag = Number($('#va_betrag').value) || 0;
+  } else if (mode === 'arge') {
+    delete v.teilvergaben;
+    const partner = $('#va_partner').value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!partner.length) { toast('Bitte mindestens eine Partnerfirma angeben', 'info'); return; }
+    v.argePartner = partner;
+    v.firma = $('#va_argename').value.trim() || partner[0];
+    v.betrag = Number($('#va_argebetrag').value) || v.betrag || 0;
+    if (statusIdx(v) < STATUS_BY_KEY['vergeben'].index) v.status = 'vergeben';
+  } else {
+    delete v.argePartner;
+    const rows = $$('#va_teil_rows .tv-row').map(row => ({
+      id: uid('tv'),
+      firma: row.querySelector('.tv-firma').value.trim(),
+      betrag: Number(row.querySelector('.tv-betrag').value) || 0,
+    })).filter(t => t.firma || t.betrag);
+    if (!rows.length) { toast('Bitte mindestens eine Firma mit Betrag angeben', 'info'); return; }
+    v.teilvergaben = rows;
+    v.betrag = rows.reduce((a, t) => a + t.betrag, 0);
+    v.firma = rows.map(t => t.firma).filter(Boolean).join(', ');
+    if (statusIdx(v) < STATUS_BY_KEY['vergeben'].index) v.status = 'vergeben';
+  }
+  save(); closeModal(); router(); toast('Vergabe-Art gespeichert');
+}
+
 function rmVergabe(pid, vid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
   if (!confirm(`Gewerk „${v.gewerk}" wirklich löschen? Offerten, Nachträge und Rechnungen dazu gehen verloren.`)) return;
@@ -6196,15 +6384,23 @@ function actNewRechnung(pid, vid) {
   openModal('Neue Rechnung', `
     <label class="field">Bezeichnung <input class="input" id="rg_text" placeholder="z.B. Akontorechnung 1 / Schlussrechnung"></label>
     <div class="form-row">
+      <label class="field">Art
+        <select class="select" id="rg_art"><option value="akonto">Akonto-/Teilrechnung</option><option value="schluss">Schlussrechnung</option><option value="gutschrift">Gutschrift</option></select>
+      </label>
       <label class="field">Rechnungs-Nr. <input class="input" id="rg_nr" placeholder="optional"></label>
-      <label class="field">Betrag (CHF) <input class="input" type="number" id="rg_betrag"></label>
     </div>
     <div class="form-row">
+      <label class="field">Betrag (CHF) <input class="input" type="number" id="rg_betrag"></label>
       <label class="field">Datum <input class="input" type="date" id="rg_datum" value="${todayIso()}"></label>
-      <label class="field">Status
-        <select class="select" id="rg_bezahlt"><option value="0">offen</option><option value="1">bezahlt</option></select>
-      </label>
     </div>
+    <div class="form-row">
+      <label class="field">Garantierückbehalt % <input class="input" type="number" id="rg_rueck" placeholder="z.B. 10" min="0" max="100"></label>
+      <label class="field">Skonto bei Zahlung % <input class="input" type="number" id="rg_skonto" placeholder="z.B. 2" min="0" max="100"></label>
+    </div>
+    <label class="field">Status
+      <select class="select" id="rg_bezahlt"><option value="0">offen</option><option value="1">bezahlt</option></select>
+    </label>
+    <p class="muted" style="font-size:11.5px;margin:6px 0 0">Rückbehalt = einbehaltene Garantiesumme (wird erst nach der Garantiefrist ausbezahlt). Skonto mindert die Auszahlung.</p>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-rechnung" data-pid="${pid}" data-vid="${vid}">Speichern</button>`);
 }
 
@@ -6212,8 +6408,12 @@ function saveRechnung(pid, vid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   const betrag = Number($('#rg_betrag').value) || 0;
   if (!betrag) { toast('Bitte einen Betrag eingeben', 'info'); return; }
+  const numv = id => { const el = $('#' + id); return el ? (Number(el.value) || 0) : 0; };
+  const artEl = $('#rg_art');
   const rg = {
     id: uid('rg'), text: $('#rg_text').value.trim() || 'Rechnung', nr: $('#rg_nr').value.trim(),
+    art: artEl ? artEl.value : 'akonto',
+    rueckbehaltP: numv('rg_rueck'), skontoP: numv('rg_skonto'), rbFrei: false,
     betrag, datum: $('#rg_datum').value || todayIso(), bezahlt: $('#rg_bezahlt').value === '1',
   };
   if (pendingQr) { rg.qr = pendingQr; pendingQr = null; }
@@ -6225,6 +6425,14 @@ function toggleRechnung(pid, vid, rgid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   const r = (v.rechnungen || []).find(x => x.id === rgid); if (!r) return;
   r.bezahlt = !r.bezahlt; save(); router();
+}
+
+// Garantierückbehalt freigeben (nach Garantiefrist ausbezahlt)
+function toggleRbFrei(pid, vid, rgid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid);
+  const r = (v.rechnungen || []).find(x => x.id === rgid); if (!r) return;
+  r.rbFrei = !r.rbFrei; save(); router();
+  toast(r.rbFrei ? 'Rückbehalt freigegeben' : 'Rückbehalt wieder einbehalten');
 }
 
 function removeRechnung(pid, vid, rgid) {
@@ -6385,11 +6593,18 @@ function openQrRechnungForm(pid, vid, qr) {
       <label class="field">Betrag (CHF) <input class="input" type="number" id="rg_betrag" value="${qr.betrag != null ? qr.betrag : ''}"></label>
     </div>
     <div class="form-row">
-      <label class="field">Datum <input class="input" type="date" id="rg_datum" value="${todayIso()}"></label>
-      <label class="field">Status
-        <select class="select" id="rg_bezahlt"><option value="0">offen</option><option value="1">bezahlt</option></select>
+      <label class="field">Art
+        <select class="select" id="rg_art"><option value="akonto">Akonto-/Teilrechnung</option><option value="schluss">Schlussrechnung</option><option value="gutschrift">Gutschrift</option></select>
       </label>
+      <label class="field">Datum <input class="input" type="date" id="rg_datum" value="${todayIso()}"></label>
     </div>
+    <div class="form-row">
+      <label class="field">Garantierückbehalt % <input class="input" type="number" id="rg_rueck" placeholder="z.B. 10" min="0" max="100"></label>
+      <label class="field">Skonto bei Zahlung % <input class="input" type="number" id="rg_skonto" placeholder="z.B. 2" min="0" max="100"></label>
+    </div>
+    <label class="field">Status
+      <select class="select" id="rg_bezahlt"><option value="0">offen</option><option value="1">bezahlt</option></select>
+    </label>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-rechnung" data-pid="${pid}" data-vid="${vid}">Speichern</button>`);
 }
 
@@ -6754,6 +6969,8 @@ document.addEventListener('click', e => {
   }
   const { act: a, pid, vid, eid, nid, rid, oid, prid, tid, itemid, kind, idx, rgid, fid, bid, gid } = act.dataset;
   switch (a) {
+    case 'conflict-keep': resolveConflictKeep(pid); break;
+    case 'conflict-take': resolveConflictTake(pid); break;
     case 'new-projekt':  actNewProjekt(); break;
     case 'save-projekt': saveProjekt(); break;
     case 'edit-projekt': actEditProjekt(pid); break;
@@ -6835,6 +7052,10 @@ document.addEventListener('click', e => {
     case 'edit-vergabe':      actEditVergabe(pid, vid); break;
     case 'save-vergabe-edit': saveVergabeEdit(pid, vid); break;
     case 'rm-vergabe':        rmVergabe(pid, vid); break;
+    case 'vergabe-art':       actVergabeArt(pid, vid); break;
+    case 'save-vergabe-art':  saveVergabeArt(pid, vid); break;
+    case 'tv-add':            tvAddRow(); break;
+    case 'tv-del':            { const row = act.closest('.tv-row'); if (row) row.remove(); } break;
     case 'konditionen':      actKonditionen(pid, vid, eid); break;
     case 'konditionen-save': saveKonditionen(pid, vid, eid); break;
     case 'pdf-vergabeantrag': pdfVergabeantrag(pid, vid); break;
@@ -6875,6 +7096,7 @@ document.addEventListener('click', e => {
     case 'new-rechnung': actNewRechnung(pid, vid); break;
     case 'save-rechnung':saveRechnung(pid, vid); break;
     case 'rm-rechnung':  removeRechnung(pid, vid, rgid); break;
+    case 'rb-frei':      toggleRbFrei(pid, vid, rgid); break;
     case 'scan-qr':      actScanQrRechnung(pid, vid); break;
     case 'deckblatt':              pdfDeckblatt(pid, vid, eid, 'einladung'); break;
     case 'deckblatt-leer':         pdfDeckblatt(pid, vid, null, 'einladung'); break;

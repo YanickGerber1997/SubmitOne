@@ -3136,6 +3136,28 @@ function dossierCreate(pid, kind) {
   if (kind === 'protokoll') return actNewProtokoll(pid, 'sitzung');
   if (kind === 'pendenz') return actPendenz(pid);
 }
+function pdfDossier(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const s = dossierStats(p);
+  const col = { ok: '#16a34a', teil: '#e0930f', fehlt: '#dc2626', entf: '#9aa4b1' };
+  const cell = d => `<span style="color:${col[d.bucket]};font-weight:700">${d.label}</span>`;
+  const refTxt = d => [d.verweis ? '🔗 ' + d.verweis : '', d.notiz || ''].filter(Boolean).join(' · ');
+  const phasen = DOSSIER_VORLAGE.map(ph => {
+    let ok = 0, tot = 0; const rows = [];
+    const add = (katLabel, pos, isCustom) => {
+      const d = dossierState(p, pos);
+      if (d.bucket !== 'entf') { tot++; if (d.bucket === 'ok') ok++; }
+      rows.push(`<tr><td>${esc(katLabel)}</td><td>${esc(pos.label)}${pos.modul ? ' <span class="muted">(auto)</span>' : ''}</td><td>${cell(d)}</td><td class="muted">${esc(refTxt(d))}</td></tr>`);
+    };
+    ph.kategorien.forEach(kat => kat.positionen.forEach(pos => add(kat.label, pos, false)));
+    (p.dossierCustom || []).filter(c => c.phase === ph.key).forEach(pos => add('Weitere', pos, true));
+    const pct = tot ? Math.round(ok / tot * 100) : 0;
+    return `<div class="gw">${esc(ph.label)} — ${ok}/${tot} (${pct}%)</div>
+      <table class="t"><thead><tr><th style="width:150px">Kategorie</th><th>Position</th><th style="width:96px">Status</th><th>Verweis / Notiz</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+  }).join('');
+  const sub = `${esc(p.name)} · ${esc(p.ort || '')}${p.bauherr ? ' · Bauherr: ' + esc(p.bauherr) : ''} &nbsp; Vollständigkeit <strong>${dossierPct(p)}%</strong> · Vorhanden ${s.ok} · Teilweise ${s.teil} · Offen ${s.fehlt} · Entfällt ${s.entf}`;
+  openPrintDoc('Dossier – Unterlagenstatus', sub, phasen);
+}
 function actDossierAdd(pid, phase) {
   openModal('Eigene Position', `
     <label class="field">Bezeichnung <input class="input" id="dc_label" placeholder="z.B. Baugrundgutachten / Vermessung"></label>
@@ -3981,6 +4003,7 @@ function viewDrucken() {
       <select class="select" id="druck_pid">${projects.map(x => `<option value="${x.id}"${x.id === druckPid ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
     </label>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px;margin-top:16px">
+      ${card('pdf-dossier', 'Dossier / Unterlagenstatus', 'Alle 6 Phasen · Status je Position · Vollständigkeit')}
       ${card('pdf-kostenschaetzung', 'Kostenschätzung', 'Beschrieb · BKP · Kosten · Gesamttotal')}
       ${card('pdf-baukosten', 'Baukostenübersicht', 'Volle BKP-Tabelle (KV/WV/Prognose)')}
       ${card('pdf-gantt', 'Bauprogramm', 'Termin-/Gantt-Raster (Querformat, 1 Seite)')}
@@ -5583,6 +5606,7 @@ document.addEventListener('click', e => {
     case 'ks-pos-del':   ksPosDel(Number(idx)); break;
     case 'ks-calc-add':  ksCalcAdd(); break;
     case 'save-ks':      saveKostenschaetzung(pid, vid); break;
+    case 'pdf-dossier':          pdfDossier(pid); break;
     case 'pdf-kostenschaetzung': pdfKostenschaetzung(pid); break;
     case 'pdf-baukosten':        pdfBaukosten(pid); break;
     case 'pdf-gantt':            pdfGantt(pid); break;

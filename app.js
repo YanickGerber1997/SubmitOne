@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v50';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v51';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -5996,8 +5996,8 @@ function saveBtOpt(pid) {
    ============================================================ */
 const SOLAR_ORIENT = { sued: ['Süd', 1.0], suedost: ['Südost', 0.96], suedwest: ['Südwest', 0.96], ost: ['Ost', 0.85], west: ['West', 0.85], nordost: ['Nordost', 0.72], nordwest: ['Nordwest', 0.72], nord: ['Nord', 0.6] };
 const SOLAR_NEIGUNG = { flach: ['Flachdach 0–10°', 0.90], opt: ['10–35° (optimal)', 1.0], steil: ['35–55°', 0.96], sehrsteil: ['über 55°', 0.86], fassade: ['Fassade 90°', 0.70] };
-const SOLAR_DEFAULT = { flaeche: 50, belegung: 80, wpm2: 200, ertrag: 950, orient: 'sued', neigung: 'opt', verbrauch: 4500, eigenanteil: 30, strompreis: 30, einspeise: 10, anlagekosten: '', eivGrund: 200, eivLeistung: 380, bauseite: [] };
-const SOLAR_CHF_KWP = 1600;   // Richtwert Anlagekosten pro kWp, wenn nicht erfasst
+const SOLAR_DEFAULT = { flaeche: 50, belegung: 80, wpm2: 200, ertrag: 950, orient: 'sued', neigung: 'opt', verbrauch: 4500, eigenanteil: 30, strompreis: 30, einspeise: 10, anlagekosten: '', speicher: '', speicherKosten: '', eivGrund: 200, eivLeistung: 380, bauseite: [] };
+const SOLAR_CHF_KWP = 1800;   // Richtwert Anlagekosten pro kWp (CH-Wohnbau, ohne Speicher), wenn nicht erfasst
 
 function solarOf(p) {
   const s = Object.assign({}, SOLAR_DEFAULT, p.solar || {});
@@ -6032,20 +6032,22 @@ function solarCalc(s) {
   const reststrombezug = Math.max(0, verbrauch - eigenverbrauch);          // kWh weiterhin ab Netz
   const stromkostenNeu = Math.round(reststrombezug * n(s.strompreis) / 100 - verguetung);
   const anlage = (s.anlagekosten !== '' && s.anlagekosten != null) ? n(s.anlagekosten) : Math.round(kwp * SOLAR_CHF_KWP);
+  const speicher = n(s.speicher);                                         // kWh (Info / Eigenverbrauch erhöhen via Anteil)
+  const speicherKosten = n(s.speicherKosten);
   const bauseiteSum = (s.bauseite || []).reduce((a, b) => a + (Number(b.betrag) || 0), 0);
-  const invest = anlage + bauseiteSum;
+  const invest = anlage + speicherKosten + bauseiteSum;
   const eiv = Math.round(n(s.eivGrund) + n(s.eivLeistung) * kwp);
   const netto = Math.max(0, invest - eiv);
   const amort = ertragJahr > 0 ? netto / ertragJahr : null;               // Jahre
   const rendite = netto > 0 ? ertragJahr / netto * 100 : null;            // %/Jahr
   const co2 = Math.round(produktion * 0.128);                            // kg CO₂/Jahr (verdrängter Strommix, Richtwert)
-  return { flaeche, belegung, modulflaeche, wpm2, kwp, of, nf, produktion, verbrauch, anteil, gedeckelt, eigenverbrauch, einspeisung, autarkie, sparBezug, verguetung, ertragJahr, stromkostenJetzt, reststrombezug, stromkostenNeu, anlage, bauseiteSum, invest, eiv, netto, amort, rendite, co2 };
+  return { flaeche, belegung, modulflaeche, wpm2, kwp, of, nf, produktion, verbrauch, anteil, gedeckelt, eigenverbrauch, einspeisung, autarkie, sparBezug, verguetung, ertragJahr, stromkostenJetzt, reststrombezug, stromkostenNeu, anlage, speicher, speicherKosten, bauseiteSum, invest, eiv, netto, amort, rendite, co2 };
 }
 
 function solarRead() {
   const g = id => { const el = $('#' + id); return el ? el.value : ''; };
   const bauseite = $$('#s_bauseite .bsr').map(r => ({ text: r.querySelector('.bs-text').value.trim(), betrag: Number(r.querySelector('.bs-betrag').value) || 0 })).filter(b => b.text || b.betrag);
-  return { flaeche: g('s_flaeche'), belegung: g('s_belegung'), wpm2: g('s_wpm2'), ertrag: g('s_ertrag'), orient: g('s_orient'), neigung: g('s_neigung'), verbrauch: g('s_verbrauch'), eigenanteil: g('s_eigen'), strompreis: g('s_preis'), einspeise: g('s_einsp'), anlagekosten: g('s_anlage'), eivGrund: g('s_eivg'), eivLeistung: g('s_eivl'), bauseite };
+  return { flaeche: g('s_flaeche'), belegung: g('s_belegung'), wpm2: g('s_wpm2'), ertrag: g('s_ertrag'), orient: g('s_orient'), neigung: g('s_neigung'), verbrauch: g('s_verbrauch'), eigenanteil: g('s_eigen'), strompreis: g('s_preis'), einspeise: g('s_einsp'), anlagekosten: g('s_anlage'), speicher: g('s_speicher'), speicherKosten: g('s_speicherk'), eivGrund: g('s_eivg'), eivLeistung: g('s_eivl'), bauseite };
 }
 function solarUpdate(pid) {
   const p = findProjekt(pid); if (!p) return;
@@ -6095,7 +6097,8 @@ function solarRechenweg(r, s) {
     ${row(`<b>Ertrag pro Jahr</b>`, '<b>' + fr(r.ertragJahr) + '</b>')}
     <div style="height:6px"></div>
     ${row(`PV-Anlagekosten${(s.anlagekosten === '' || s.anlagekosten == null) ? ` (${f1(r.kwp)} kWp × ${SOLAR_CHF_KWP})` : ''}`, fr(r.anlage))}
-    ${r.bauseiteSum ? row(`+ Bauseitige Kosten (Gerüst, Elektriker …)`, fr(r.bauseiteSum)) : ''}
+    ${r.speicherKosten ? row(`+ Batteriespeicher${r.speicher ? ` (${f1(r.speicher)} kWh)` : ''}`, fr(r.speicherKosten)) : ''}
+    ${r.bauseiteSum ? row(`+ Bauseitige Kosten (Gerüst, Spengler …)`, fr(r.bauseiteSum)) : ''}
     ${row(`= Investition total`, '<b>' + fr(r.invest) + '</b>')}
     ${row(`− Förderung EIV (${s.eivGrund} + ${s.eivLeistung} × ${f1(r.kwp)})`, '− ' + fr(r.eiv))}
     ${row(`<b>= Netto-Investition</b>`, '<b>' + fr(r.netto) + '</b>')}
@@ -6142,6 +6145,8 @@ function viewSolar(pid) {
 
         <h2 style="margin:16px 0 10px;font-size:15px">Investition &amp; Förderung</h2>
         ${fld('s_anlage', 'PV-Anlagekosten', s.anlagekosten, 'CHF', 'leer = ~' + SOLAR_CHF_KWP + ' CHF/kWp')}
+        <div class="form-row" style="margin-top:8px">${fld('s_speicher', 'Batteriespeicher', s.speicher, 'kWh')}${fld('s_speicherk', 'Speicherkosten', s.speicherKosten, 'CHF')}</div>
+        <p class="muted" style="font-size:11.5px;margin:2px 0 0">Mit Speicher den Eigenverbrauchsanteil oben höher setzen (~60–70 %). Beträge inkl. MwSt erfassen.</p>
         <div class="muted" style="font-size:12px;margin:12px 0 4px"><strong>Bauseitige Zusatzkosten</strong> – Gerüst, Elektriker, Netzanschluss …</div>
         <div id="s_bauseite">${(s.bauseite || []).map(b => bsRow(p.id, b.text, b.betrag)).join('')}</div>
         <button class="btn sm secondary" data-act="solar-bs-add" data-pid="${p.id}" type="button">+ Position</button>

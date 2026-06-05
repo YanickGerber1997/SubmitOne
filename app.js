@@ -446,6 +446,10 @@ function feiertageInRange(start, end) {
     feiertageJahr(y).forEach(f => { if (f.d >= start && f.d <= end) out.push(f); });
   return out;
 }
+function istFeiertag(d) { return feiertageJahr(d.getFullYear()).some(f => f.d.getMonth() === d.getMonth() && f.d.getDate() === d.getDate()); }
+function istArbeitstag(d) { const w = d.getDay(); return w !== 0 && w !== 6 && !istFeiertag(d); }
+function naechsterArbeitstag(iso) { const d = dISO(iso); while (!istArbeitstag(d)) d.setDate(d.getDate() + 1); return isoOf(d); }
+function addArbeitstage(iso, n) { const d = dISO(iso); let c = Math.abs(n), step = n < 0 ? -1 : 1; while (c > 0) { d.setDate(d.getDate() + step); if (istArbeitstag(d)) c--; } return isoOf(d); }
 
 function fristClass(iso, done) {
   if (done) return '';
@@ -1108,6 +1112,7 @@ function viewKosten(id) {
 let ganttZoom = 'monat';   // 'monat' | 'woche' | 'tag'
 let ganttScale = 1;        // stufenloser Breiten-Faktor auf pxPerDay
 let ganttChain = true;     // Verkettung: Nachfolger automatisch nachführen
+let ganttWorkdays = false; // Abstände/Verkettung in Arbeitstagen (Wochenende/Feiertage überspringen)
 let ganttSort = 'bkp';     // 'bkp' | 'start'
 const ZOOM = { monat: { px: 2.4, label: 'Monate' }, woche: { px: 4.6, label: 'Wochen' }, tag: { px: 13, label: 'Tage' } };
 // Gantt-Balkenfarbe je Status (über den Lebenszyklus differenziert)
@@ -1148,7 +1153,7 @@ function viewTermine(id) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm · grob (Monat) bis fein (Tag); Balken ziehen zum Verschieben, Ränder ziehen für Dauer</div></div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}<span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}${zoomCtrl}${scaleCtrl}<button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button><button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}<span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}${zoomCtrl}${scaleCtrl}<button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button><button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button><button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button><button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
     </div>
     ${projektTabs(p, 'termine')}
   `;
@@ -1268,6 +1273,16 @@ function viewTermine(id) {
   const markBands = projMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; }).map(m =>
     `<div class="g-mark ${m.cls}" style="left:${dayDiff(rangeStart, dISO(m.iso)) * pxPerDay}px" title="${m.n}: ${fmtDate(m.iso)}"><span>${m.n} ${fmtDate(m.iso)}</span></div>`).join('');
 
+  // Warnung: gleiche Firma in überlappenden Gewerken (Ressourcenkonflikt)
+  const firmaMap = {};
+  vs.filter(v => v.firma && v.bauStart && v.bauEnde).forEach(v => { (firmaMap[v.firma] = firmaMap[v.firma] || []).push(v); });
+  const conflicts = [];
+  Object.keys(firmaMap).forEach(firma => {
+    const list = firmaMap[firma].slice().sort((a, b) => a.bauStart < b.bauStart ? -1 : 1);
+    for (let i = 1; i < list.length; i++) if (list[i].bauStart <= list[i - 1].bauEnde) conflicts.push(`<b>${esc(firma)}</b>: „${esc(list[i - 1].gewerk)}" ↔ „${esc(list[i].gewerk)}"`);
+  });
+  const warnBanner = conflicts.length ? `<div class="g-warn">⚠ Überschneidung – gleiche Firma gleichzeitig: ${conflicts.join(' · ')}</div>` : '';
+
   const ROW_H = 38;
   let sideRows = '', barRows = '', rowIdx = 0; const barMeta = {};
   vs.forEach(v => {
@@ -1317,6 +1332,7 @@ function viewTermine(id) {
   const linkSvg = `<svg class="g-links" width="${innerW}" height="${rowIdx * ROW_H}">${linkPaths}</svg>`;
 
   render(head + `
+    ${warnBanner}
     <div class="gantt">
       <div class="g-side"><div class="g-corner" style="height:${headH}px"></div>${sideRows}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
@@ -1345,6 +1361,7 @@ function viewTermine(id) {
   $$('.g-link-dot').forEach(d => d.addEventListener('mousedown', onLinkDotDown));
   $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
   $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) removeGanttLink(ganttPid, g.dataset.lid); }));
+  $$('.g-link').forEach(g => g.addEventListener('contextmenu', e => { e.preventDefault(); linkMenu(e, ganttPid, g.dataset.lid); }));
 }
 /* --- Gantt: Verbindungen (Abhängigkeiten) --- */
 let ganttLink = null, ganttGrip = null;
@@ -1641,11 +1658,63 @@ function rescheduleChain(p, key, seen) {
     const to = ganttBarRef(p, l.to); if (!to) return;
     const lag = l.lag != null ? l.lag : 1;
     const dur = dayDiffISO(to.s, to.e);
-    const ns = addDays(from.e, lag);
+    // lag = Tage von Vorgänger-Ende bis Nachfolger-Start (1 = nächster Tag)
+    const ns = ganttWorkdays ? addArbeitstage(from.e, Math.max(1, lag)) : addDays(from.e, lag);
     if (ns !== to.s) { to.set(ns, addDays(ns, dur)); n++; }
     n += rescheduleChain(p, l.to, seen);
   });
   return n;
+}
+// 1-Klick-Bauablauf: terminierte Gewerke nach BKP verketten & ab Baustart sequenziell datieren
+function actBauablauf(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const term = (p.vergaben || []).filter(v => v.bauStart && v.bauEnde).length;
+  if (term < 2) { toast('Mindestens zwei terminierte Gewerke nötig', 'info'); return; }
+  const startIso = p.baustart || '';
+  openModal('Bauablauf erstellen', `
+    <p style="font-size:13px;margin-top:0">Die <b>${term} terminierten Gewerke</b> werden nach <b>BKP-Reihenfolge</b> verkettet und ab <b>${startIso ? fmtDate(startIso) : 'dem frühesten Termin'}</b> nacheinander datiert (Dauer je Gewerk bleibt erhalten).</p>
+    <p class="muted" style="font-size:12.5px">Bestehende Verbindungen werden durch die neue Kette ersetzt. Danach kannst du einzelne Balken verschieben – die Nachfolger laufen automatisch mit. Du kannst alles anschliessend frei anpassen.</p>
+    <label class="field" style="font-size:13px">Abstand zwischen den Gewerken
+      <select class="input" id="ba_lag">
+        <option value="1" selected>direkt anschliessend (nächster Tag)</option>
+        <option value="3">+3 Tage</option>
+        <option value="7">+1 Woche</option>
+      </select>
+    </label>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="bauablauf-go" data-pid="${pid}">Bauablauf erstellen</button>`);
+}
+function applyBauablauf(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const lag = Math.max(1, parseInt(($('#ba_lag') || {}).value, 10) || 1);
+  const ordered = (p.vergaben || []).filter(v => v.bauStart && v.bauEnde).sort((a, b) => (a.bkp || '').localeCompare(b.bkp || '') || (a.bauStart < b.bauStart ? -1 : 1));
+  if (ordered.length < 2) return;
+  let cursor = p.baustart || ordered.reduce((m, v) => v.bauStart < m ? v.bauStart : m, ordered[0].bauStart);
+  if (ganttWorkdays) cursor = naechsterArbeitstag(cursor);
+  p.ganttLinks = [];
+  let prev = null;
+  ordered.forEach(v => {
+    const dur = dayDiffISO(v.bauStart, v.bauEnde);
+    v.bauStart = cursor; v.bauEnde = addDays(cursor, dur);
+    if (prev) p.ganttLinks.push({ id: uid('gl'), from: prev.id, to: v.id, dx: null, lag });
+    prev = v;
+    cursor = ganttWorkdays ? addArbeitstage(v.bauEnde, lag) : addDays(v.bauEnde, lag);
+  });
+  save(); closeModal(); viewTermine(pid);
+  toast('Bauablauf erstellt · ' + ordered.length + ' Gewerke verkettet', 'ok');
+}
+// Rechtsklick auf eine Verbindung: Abstand (Lag) setzen / löschen
+function linkMenu(e, pid, lid) {
+  const p = findProjekt(pid); const l = p && (p.ganttLinks || []).find(x => x.id === lid); if (!l) return;
+  const setLag = days => { l.lag = days; rescheduleChain(p, l.from); save(); viewTermine(pid); toast('Abstand: ' + days + (ganttWorkdays ? ' Arbeitstage' : ' Tage'), 'info'); };
+  openContextMenu(e, [
+    { icon: '⏱', label: 'Direkt anschliessend (nächster Tag)', act: () => setLag(1) },
+    { icon: '⏱', label: '+1 Woche', act: () => setLag(7) },
+    { icon: '⏱', label: '+2 Wochen (z.B. Lieferfrist)', act: () => setLag(14) },
+    { icon: '⏱', label: '+4 Wochen', act: () => setLag(28) },
+    { icon: '✎', label: 'Benutzerdefiniert …', act: () => { const v = prompt('Abstand in Tagen (Vorgänger-Ende → Nachfolger-Start, 1 = nächster Tag):', l.lag != null ? l.lag : 1); if (v != null && v.trim() !== '' && !isNaN(+v)) setLag(Math.max(0, Math.round(+v))); } },
+    { sep: true },
+    { icon: '🗑', label: 'Verbindung löschen', danger: true, act: () => removeGanttLink(pid, lid) },
+  ]);
 }
 // Gewerk als Nachfolger anhängen (Rechtsklick → „Nachfolger verketten")
 function actLinkSuccessor(pid, vid) {
@@ -6600,6 +6669,9 @@ document.addEventListener('click', e => {
     case 'save-termin':  saveTermin(pid, vid); break;
     case 'gantt-zoom':   ganttZoom = kind; ganttScale = 1; viewTermine(pid); break;
     case 'gantt-chain':  ganttChain = !ganttChain; toast('Verkettung ' + (ganttChain ? 'an' : 'aus'), 'info'); viewTermine(pid); break;
+    case 'gantt-workdays': ganttWorkdays = !ganttWorkdays; toast('Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus'), 'info'); viewTermine(pid); break;
+    case 'bauablauf':    actBauablauf(pid); break;
+    case 'bauablauf-go': applyBauablauf(pid); break;
     case 'link-succ-pick': linkSuccessorPick(pid, act.dataset.vid, act.dataset.tvid); break;
     case 'gantt-scale':
       if (kind === 'out') ganttScale = Math.max(0.12, +(ganttScale * 0.8).toFixed(3));

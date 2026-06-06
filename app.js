@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v109';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v110';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -933,6 +933,14 @@ function condNetto(c) { const r = condParts(c); return r ? r.zsumme2 : null; }
 // Netto je Stufe (Fallback: Legacy-Einzelbetrag e.betrag = Offerte)
 function eOff(e) { if (e.offerte && e.offerte.brutto != null && e.offerte.brutto !== '') return condNetto(e.offerte); return e.betrag != null ? e.betrag : null; }
 function eAbg(e) { return (e.abgebot && e.abgebot.brutto != null && e.abgebot.brutto !== '') ? condNetto(e.abgebot) : null; }
+// Betrag + Grundlage (Werkvertrag > Abgebot > Offerte) im Kontext des Gewerks
+function eBetragQuelle(v, e) {
+  if (isVergeben(v) && v.firma && e.firma === v.firma && (v.betrag != null)) return { betrag: v.betrag, quelle: 'Werkvertrag' };
+  const ab = eAbg(e); if (ab != null) return { betrag: ab, quelle: 'Abgebot' };
+  if (e.offerte && e.offerte.brutto != null && e.offerte.brutto !== '') return { betrag: condNetto(e.offerte), quelle: 'Offerte' };
+  if (e.betrag != null) return { betrag: e.betrag, quelle: 'Offerte' };
+  return { betrag: null, quelle: '' };
+}
 function eVer(e) { return (e.vergabe && e.vergabe.brutto != null && e.vergabe.brutto !== '') ? condNetto(e.vergabe) : null; }
 function offertenOf(v)  { return (v.eingeladene || []).filter(e => e.status === 'offeriert' && eOff(e) != null); }
 function bestBetrag(v)  { const xs = (v.eingeladene || []).filter(e => e.status !== 'abgesagt').map(eOff).filter(x => x != null); return xs.length ? Math.min(...xs) : null; }
@@ -2723,11 +2731,13 @@ function pdfSubmittenten(pid) {
   const gw = gewerkeSorted(p);
   const inner = gw.length ? gw.map(v => {
     const eing = (v.eingeladene || []);
-    const rows = eing.length ? eing.map(e =>
-      `<tr><td>${esc(e.firma)}</td><td>${INV_STATUS[e.status]?.label || esc(e.status)}</td><td class="num">${eOff(e) != null ? chf(eOff(e)) : '–'}</td></tr>`).join('')
-      : `<tr><td colspan="3" class="muted">noch niemand eingeladen</td></tr>`;
+    const rows = eing.length ? eing.map(e => {
+      const bq = eBetragQuelle(v, e);
+      return `<tr><td>${esc(e.firma)}</td><td>${INV_STATUS[e.status]?.label || esc(e.status)}</td><td>${bq.quelle || '–'}</td><td class="num">${bq.betrag != null ? chf(bq.betrag) : '–'}</td></tr>`;
+    }).join('')
+      : `<tr><td colspan="4" class="muted">noch niemand eingeladen</td></tr>`;
     return `<div class="gw">BKP ${esc(v.bkp)} – ${esc(v.gewerk)}</div>
-      <table class="t"><thead><tr><th>Firma</th><th style="width:130px">Status</th><th class="num" style="width:140px">Betrag</th></tr></thead><tbody>${rows}</tbody></table>`;
+      <table class="t"><thead><tr><th>Firma</th><th style="width:120px">Status</th><th style="width:110px">Grundlage</th><th class="num" style="width:140px">Betrag</th></tr></thead><tbody>${rows}</tbody></table>`;
   }).join('') : '<p class="muted">Keine Gewerke angelegt.</p>';
   const sub = `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} &nbsp; <span class="conf">VERTRAULICH – nicht an die Baustelle</span>`;
   openPrintDoc('Submittentenliste', sub, inner);

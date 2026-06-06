@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v78';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v79';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -381,16 +381,22 @@ let currentUserId = null, currentUserSlug = '', currentUserVor = '', currentUser
 // Preis-Pakete (CHF/Monat, anpassbar) – Quelle für die Plan-Ansicht
 const PLANS = [
   { key: 'gratis',   name: 'Gratis',   preis: '0',  features: ['Alle Werkzeuge lokal nutzen', 'Drucken & PDF', '✗ kein Cloud-Speichern', '✗ kein Teilen'] },
-  { key: 'basis',    name: 'Basis',    preis: '15', features: ['Cloud-Speichern, mehrere Geräte', 'Projekte · Termine · Kosten', 'Team-Arbeitsbereich'] },
-  { key: 'komplett', name: 'Premium', preis: '25', features: ['Alles aus Basis', '+ alle Module', '+ Teilen / Veröffentlichen'] },
+  { key: 'basis',    name: 'Basic',    preis: '15', features: ['Cloud-Speichern, mehrere Geräte', 'Ausschreibung · Kosten · Termine', 'Pendenzen · Protokolle · Kontakte · Dossier', 'Team-Arbeitsbereich'] },
+  { key: 'komplett', name: 'Premium', preis: '25', features: ['Alles aus Basic', '+ Bauherr · Solar · Honorar', '+ Teilen / Veröffentlichen'] },
 ];
-// Einzeln freischaltbare Module (à la carte), CHF/Monat. Schlüssel = canModul()-Schlüssel.
+// Einzeln freischaltbare Module (à la carte), CHF/Monat. tier = in welchem Paket enthalten.
+// Schlüssel = canModul()-Schlüssel. Einzeln summiert teurer als das jeweilige Paket.
 const MODULES = [
-  { key: 'termine',    name: 'Terminprogramm / Gantt', preis: '5' },
-  { key: 'pendenzen',  name: 'Pendenzen',              preis: '5' },
-  { key: 'protokolle', name: 'Protokolle',             preis: '3' },
-  { key: 'solar',      name: 'Solarrechner',           preis: '2' },
-  { key: 'honorar',    name: 'Honorar-Rechner',        preis: '3' },
+  { key: 'submission', name: 'Ausschreibung & Vergabe (inkl. Versand, Offertvergleich)', preis: '8', tier: 'basic' },
+  { key: 'kosten',     name: 'Kostenführung / Baukosten (KV, Vergabe, Rechnungen)',      preis: '5', tier: 'basic' },
+  { key: 'termine',    name: 'Terminprogramm / Gantt',                                   preis: '5', tier: 'basic' },
+  { key: 'pendenzen',  name: 'Pendenzen',                                                preis: '5', tier: 'basic' },
+  { key: 'protokolle', name: 'Protokolle',                                               preis: '3', tier: 'basic' },
+  { key: 'kontakte',   name: 'Kontakte + Handelsregister-Suche',                         preis: '3', tier: 'basic' },
+  { key: 'dossier',    name: 'Dokumente / Dossier',                                      preis: '2', tier: 'basic' },
+  { key: 'bauherr',    name: 'Bauherr / Auswahlentscheide',                              preis: '3', tier: 'premium' },
+  { key: 'solar',      name: 'Solarrechner',                                             preis: '2', tier: 'premium' },
+  { key: 'honorar',    name: 'Honorar-Rechner (SIA)',                                    preis: '3', tier: 'premium' },
 ];
 async function loadEntitlements() {
   if (!cloudEnabled || !supa) { ent = null; return; }
@@ -401,7 +407,12 @@ async function loadEntitlements() {
 }
 function planAktiv() { return !!(ent && ent.plan && ent.plan !== 'free' && (!ent.aktiv_bis || new Date(ent.aktiv_bis) > new Date())); }
 function isPaid()    { return !cloudEnabled || ent === null || planAktiv(); }
-function canModul(m) { return !cloudEnabled || ent === null || ent.plan === 'komplett' || (ent.module || []).includes(m); }
+function canModul(m) {
+  if (!cloudEnabled || ent === null) return true;
+  if (ent.plan === 'komplett' || ent.plan === 'trial') return true;     // Premium/Test = alles
+  if (ent.plan === 'basis') { const mod = MODULES.find(x => x.key === m); if (mod && mod.tier === 'basic') return true; }
+  return (ent.module || []).includes(m);
+}
 const PLAN_LABELS = { free: 'Free', trial: 'Test', basis: 'Basic', komplett: 'Premium', modul: 'Individuell' };
 function planLabel() {
   if (!ent || !ent.plan) return '';
@@ -539,7 +550,7 @@ function actAbo() {
   const modRows = MODULES.map(m => {
     const hat = komplett || canModul(m.key);
     return `<div class="mod-row">
-      <span class="mod-name">${esc(m.name)}</span>
+      <span class="mod-name">${esc(m.name)} <span class="mod-tier mt-${m.tier}">${m.tier === 'basic' ? 'Basic' : 'Premium'}</span></span>
       <span class="mod-preis">CHF ${esc(m.preis)}<span style="font-size:10px;color:var(--text-soft)">/Mt</span></span>
       ${hat ? '<span class="st green" style="font-size:9.5px;padding:1px 7px">freigeschaltet</span>'
             : `<button class="btn xs" data-act="upgrade" data-plan="mod_${m.key}">freischalten</button>`}
@@ -550,7 +561,7 @@ function actAbo() {
     <div class="plan-grid">${cards}</div>
     <div style="margin-top:18px">
       <div style="font-weight:700;font-size:13px;margin-bottom:2px">Individuell – nur einzelne Module</div>
-      <div class="muted" style="font-size:11.5px;margin-bottom:8px">Alle Module sind im Free benutzbar; bezahlt wird fürs <b>Speichern</b>. „Individuell" = nur die gewünschten Module dauerhaft speichern (z.B. nur das Terminprogramm). In „Premium" ist alles enthalten.</div>
+      <div class="muted" style="font-size:11.5px;margin-bottom:8px">Alle Module sind im Free benutzbar; bezahlt wird fürs <b>Speichern</b>. Einzeln buchbar – in Summe aber <b>teurer als das passende Paket</b>. „Basic" enthält die Basis-Funktionen, „Premium" alles. Der Chip zeigt, in welchem Paket ein Modul steckt.</div>
       <div class="mod-list">${modRows}</div>
     </div>
     <p class="muted" style="font-size:11.5px;margin:14px 0 0">Preise CHF/Monat (Richtwerte, anpassbar). Bezahlung über Stripe – sobald die Zahlungslinks in config.js eingetragen sind, führt „freischalten" direkt zur Kasse.</p>

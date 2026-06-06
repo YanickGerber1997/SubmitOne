@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v54';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v55';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -6007,6 +6007,10 @@ const SOLAR_DEFAULT = { flaeche: 50, belegung: 80, wpm2: 200, ertrag: 950, orien
 // Zusatzverbraucher als Schalter (an/aus), kWh/Jahr je
 const SOLAR_LOADS = [{ key: 'wp', label: 'Wärmepumpe', kwh: 5000 }, { key: 'eauto', label: 'E-Auto', kwh: 2500 }, { key: 'boiler', label: 'Boiler / Warmwasser', kwh: 3000 }];
 function solarZusatz(s) { return SOLAR_LOADS.reduce((a, l) => a + (s[l.key] ? l.kwh : 0), 0); }
+// Standort/Lage → spezifischer Ertrag (kWh pro kWp und Jahr)
+const SOLAR_REGIONS = [{ label: 'Mittelland', v: 1000 }, { label: 'oft Nebel/Voralpen', v: 900 }, { label: 'sonnig/Berge/Tessin', v: 1100 }, { label: 'eher schattig', v: 850 }];
+// Batteriegrösse → kWh + empfohlener Eigenverbrauchsanteil (Nutzen)
+const SOLAR_BATTERIES = [{ key: '0', label: 'kein', kwh: 0, eigen: 30 }, { key: '5', label: 'klein ~5 kWh', kwh: 5, eigen: 50 }, { key: '10', label: 'mittel ~10 kWh', kwh: 10, eigen: 62 }, { key: '15', label: 'gross ~15 kWh', kwh: 15, eigen: 70 }];
 // Richtwerte für die Automatik (an realer CH-Offerte kalibriert) – immer überschreibbar
 const SOLAR_CHF_KWP = 2000;   // Anlagekosten pro kWp (brutto, inkl. Ausführung)
 const SOLAR_CHF_KWH = 450;    // Speicherkosten pro kWh
@@ -6080,13 +6084,38 @@ function solarPreserve(p) {
 function solarUpdate(pid) {
   const p = findProjekt(pid); if (!p) return;
   p.solar = solarPreserve(p); save();
-  const out = $('#solarOut'); if (out) out.innerHTML = solarOutHtml(solarCalc(p.solar), p.solar);
+  const r = solarCalc(p.solar);
+  const out = $('#solarOut'); if (out) out.innerHTML = solarOutHtml(r, p.solar);
+  const box = $('#solarInvestBox'); if (box) box.innerHTML = solarInvestHtml(r);
 }
 function solarToggle(pid, key) {
   const p = findProjekt(pid); if (!p) return;
   const s = solarPreserve(p);
   s[key] = !s[key];
   p.solar = s; save(); viewSolar(pid);   // neu rendern: Schalter-Optik + Gesamtverbrauch
+}
+// Batteriegrösse wählen: setzt kWh, Kosten zurück auf Auto, und hebt Eigenverbrauch (Nutzen)
+function solarBattery(pid, key) {
+  const b = SOLAR_BATTERIES.find(x => x.key === key); if (!b) return;
+  const p = findProjekt(pid); if (!p) return;
+  const s = solarPreserve(p);
+  s.speicher = b.kwh || ''; s.speicherKosten = ''; s.eigenanteil = b.eigen;
+  p.solar = s; save(); viewSolar(pid);
+}
+function solarRegion(pid, v) {
+  const p = findProjekt(pid); if (!p) return;
+  const s = solarPreserve(p); s.ertrag = v;
+  p.solar = s; save(); viewSolar(pid);
+}
+// Live-Box „Investition & Förderung" unter den Eingaben
+function solarInvestHtml(r) {
+  const fr = x => 'CHF ' + Math.round(x).toLocaleString('de-CH');
+  const f1 = x => (Math.round(x * 10) / 10).toLocaleString('de-CH');
+  return `<div class="opt-sum"><span>Anlagenleistung</span><span class="num">${f1(r.kwp)} kWp</span></div>
+    <div class="opt-sum"><span>Investition total${r.anlageAuto ? ' (geschätzt)' : ''}</span><span class="num">${fr(r.invest)}</span></div>
+    <div class="opt-sum"><span>− Förderung EIV${r.eivAuto ? ' (geschätzt)' : ''}</span><span class="num">− ${fr(r.eiv)}</span></div>
+    <div class="opt-sum" style="font-size:15px;font-weight:700;color:var(--brand)"><span>Netto-Investition</span><span class="num">${fr(r.netto)}</span></div>
+    <div class="opt-sum"><span>Amortisation</span><span class="num">${r.amort != null ? f1(r.amort) + ' Jahre' : '–'}</span></div>`;
 }
 function solarOutHtml(r, s) {
   const kwh = x => Math.round(x).toLocaleString('de-CH');
@@ -6159,6 +6188,10 @@ function viewSolar(pid) {
     ${hint ? `<span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px;line-height:1.4">${hint}</span>` : ''}</label>`;
   const gesamtVerbrauch = (Number(s.verbrauch) || 0) + solarZusatz(s);
   const loadBtns = SOLAR_LOADS.map(l => `<button class="btn xs ${s[l.key] ? '' : 'secondary'}" data-act="solar-load" data-pid="${p.id}" data-load="${l.key}" type="button">${s[l.key] ? '✓ ' : '+ '}${esc(l.label)} ${l.kwh.toLocaleString('de-CH')}</button>`).join('');
+  const regBtns = SOLAR_REGIONS.map(rg => `<button class="btn xs ${Number(s.ertrag) === rg.v ? '' : 'secondary'}" data-act="solar-region" data-pid="${p.id}" data-v="${rg.v}" type="button">${esc(rg.label)} ${rg.v}</button>`).join('');
+  const sp = Number(s.speicher) || 0;
+  const battKey = (SOLAR_BATTERIES.find(b => b.kwh === sp) || {}).key || (sp > 0 ? 'custom' : '0');
+  const battBtns = SOLAR_BATTERIES.map(b => `<button class="btn xs ${b.key === battKey ? '' : 'secondary'}" data-act="solar-batt" data-pid="${p.id}" data-key="${b.key}" type="button">${esc(b.label)}</button>`).join('');
 
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Solar</div>
@@ -6183,7 +6216,7 @@ function viewSolar(pid) {
       <div class="card card-pad" style="font-size:13px;line-height:1.6;margin-top:8px">
         <p style="margin:0 0 9px"><strong>Belegbare Fläche (%):</strong> Nicht das ganze Dach wird mit Modulen voll – Kamine, Fenster, Ränder bleiben frei. Üblich werden <strong>70–85 %</strong> der Fläche belegt.</p>
         <p style="margin:0 0 9px"><strong>Modulleistung (Wp/m²):</strong> Wie viel Leistung ein Quadratmeter Modul liefert. Standardmodule ~<strong>200</strong>, moderne Premium-Module (z.B. AIKO) ~<strong>235</strong>. Mehr = effizienter = mehr Strom auf gleicher Fläche.</p>
-        <p style="margin:0 0 9px"><strong>Spezifischer Ertrag (kWh/kWp):</strong> Wie viel Strom 1 kWp Anlage pro Jahr liefert – hängt vom Standort/Wetter ab. Schweizer Mittelland ~<strong>950–1050</strong>. Im Zweifel <strong>1000</strong> stehen lassen.</p>
+        <p style="margin:0 0 9px"><strong>Spezifischer Ertrag (kWh/kWp):</strong> Wie viel Strom <strong>1 kWp Anlage pro Jahr</strong> liefert. „kWp" ist die Anlagengrösse, „kWh" der tatsächlich erzeugte Strom – der spez. Ertrag verbindet beides. Beispiel: 14 kWp × 1000 = <strong>14’000 kWh/Jahr</strong>. Der Wert hängt von der Lage ab: viel Sonne (Berge, Tessin) → höher (~1100), oft Nebel oder schattige/städtische Lage → tiefer (~850–900). Schweizer Mittelland ~<strong>1000</strong>. Tipp: einfach die passende <strong>Lage anklicken</strong>, dann stimmt der Wert.</p>
         <p style="margin:0 0 9px"><strong>Ausrichtung &amp; Neigung:</strong> Himmelsrichtung (Süd = am meisten Ertrag) und Dachneigung in Grad (~30° ideal, Flachdach ~5–10°). Der Rechner zieht den Ertrag automatisch an/ab.</p>
         <p style="margin:0 0 9px"><strong>Eigenverbrauchsanteil:</strong> Wie viel vom erzeugten Strom du <em>gleich selbst</em> brauchst (statt einzuspeisen). <strong>Ohne Speicher ~30 %, mit Batterie ~50–70 %.</strong> Höher = wirtschaftlicher, weil selbst genutzter Strom mehr spart als die Einspeisevergütung bringt. Eine Wärmepumpe erhöht ihn deutlich.</p>
         <p style="margin:0"><strong>EIV (Förderung):</strong> Einmalvergütung des Bundes (Pronovo) – ein einmaliger Zuschuss, der die Investition senkt. Der Rechner schätzt ihn aus der Anlagengrösse; exakt bei pronovo.ch prüfen.</p>
@@ -6198,13 +6231,15 @@ function viewSolar(pid) {
           ${fld('s_belegung', 'davon belegbar', s.belegung, '%', 'Wirklich mit Modulen belegt. Typ. 70–85 %.')}
         </div>
         <div class="form-row">
-          ${fld('s_wpm2', 'Modulleistung', s.wpm2, 'Wp/m²', 'Standard ~200, Premium ~235.')}
-          ${fld('s_ertrag', 'Spez. Ertrag', s.ertrag, 'kWh/kWp', 'CH Mittelland ~1000. Im Zweifel so lassen.')}
-        </div>
-        <div class="form-row">
           <label class="field">Ausrichtung ${sel('s_orient', SOLAR_ORIENT, s.orient)}<span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Süd = bester Ertrag.</span></label>
           ${fld('s_neigung', 'Dachneigung', s.neigung, '°', '~30° ideal, Flachdach ~5–10°.')}
         </div>
+        <div class="form-row">
+          ${fld('s_wpm2', 'Modulleistung', s.wpm2, 'Wp/m²', 'Standard ~200, Premium ~235.')}
+          ${fld('s_ertrag', 'Spez. Ertrag', s.ertrag, 'kWh/kWp', 'Sonnenertrag je nach Lage – unten Lage wählen.')}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 0">${regBtns}</div>
+        <span class="muted" style="font-size:11px;display:block;margin-top:5px;line-height:1.4">Der <b>spezifische Ertrag</b> sagt, wie viele kWh Strom <b>1 kWp Anlage pro Jahr</b> liefert – abhängig von Sonne/Lage. Beispiel: 14 kWp × 1000 = 14’000 kWh/Jahr. Lage wählen oder Zahl eintragen.</span>
 
         <h2 style="margin:16px 0 10px;font-size:15px">2 · Verbrauch &amp; Tarife</h2>
         ${fld('s_verbrauch', 'Haushalt-Stromverbrauch', s.verbrauch, 'kWh/Jahr', '1–2 Pers. ~2’500, Familie ~4’500. <b>Ohne</b> Wärmepumpe/E-Auto – die kommen per Knopf dazu:')}
@@ -6218,9 +6253,14 @@ function viewSolar(pid) {
 
         <h2 style="margin:16px 0 10px;font-size:15px">3 · Investition &amp; Förderung <span class="muted" style="font-size:12px;font-weight:400">– leer = automatisch</span></h2>
         ${fld('s_anlage', 'PV-Anlagekosten', s.anlagekosten, 'CHF', 'Leer lassen = ~' + SOLAR_CHF_KWP + ' CHF/kWp geschätzt. Offertpreis hier überschreiben.')}
-        <div class="form-row" style="margin-top:8px">
-          ${fld('s_speicher', 'Batteriespeicher', s.speicher, 'kWh', 'Optional. Leer = kein Speicher.')}
-          ${fld('s_speicherk', 'Speicherkosten', s.speicherKosten, 'CHF', 'Leer = ~' + SOLAR_CHF_KWH + ' CHF/kWh geschätzt.')}
+        <div style="margin-top:12px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:5px">Batteriespeicher – Grösse wählen</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">${battBtns}</div>
+          <span class="muted" style="font-size:11px;display:block;margin-top:5px;line-height:1.4">Grösserer Speicher = <b>mehr Eigenverbrauch</b> (Nutzen, spart mehr) bei <b>mehr Kosten</b> (~${SOLAR_CHF_KWH} CHF/kWh). Beides wird automatisch eingerechnet. Für exakte Werte (z.B. Offerte) unten anpassen:</span>
+          <div class="form-row" style="margin-top:6px">
+            ${fld('s_speicher', 'Speicher genau', s.speicher, 'kWh', 'aus Auswahl, überschreibbar')}
+            ${fld('s_speicherk', 'Speicherkosten', s.speicherKosten, 'CHF', 'leer = automatisch')}
+          </div>
         </div>
         <div class="muted" style="font-size:12px;margin:12px 0 4px"><strong>Bauseitige Zusatzkosten</strong> – was die Offerte <em>nicht</em> enthält (Gerüst, Spengler, Netzanschluss …)</div>
         <div id="s_bauseite">${(s.bauseite || []).map(b => bsRow(p.id, b.text, b.betrag)).join('')}</div>
@@ -6228,6 +6268,11 @@ function viewSolar(pid) {
         <div class="form-row" style="margin-top:14px">
           ${fld('s_eivg', 'EIV Grundbeitrag', s.eivGrund, 'CHF', 'Leer = 200 (Standard).')}
           ${fld('s_eivl', 'EIV Leistungsbeitrag', s.eivLeistung, 'CHF/kWp', 'Leer = 385/kWp geschätzt.')}
+        </div>
+
+        <div style="background:var(--brand-soft);border-radius:10px;padding:12px 14px;margin-top:16px">
+          <div style="font-weight:700;font-size:13px;margin-bottom:6px">Investition &amp; Förderung – live</div>
+          <div id="solarInvestBox">${solarInvestHtml(solarCalc(s))}</div>
         </div>
       </div>
 
@@ -7622,6 +7667,8 @@ document.addEventListener('click', e => {
     case 'solar-bs-add': { const w = $('#s_bauseite'); if (w) { w.insertAdjacentHTML('beforeend', bsRow(pid)); solarUpdate(pid); } } break;
     case 'solar-bs-del': { const r = act.closest('.bsr'); if (r) { r.remove(); solarUpdate(pid); } } break;
     case 'solar-load':     solarToggle(pid, act.dataset.load); break;
+    case 'solar-batt':     solarBattery(pid, act.dataset.key); break;
+    case 'solar-region':   solarRegion(pid, Number(act.dataset.v)); break;
     case 'bt-add':       { const w = $('#bt_rows'); if (w) w.insertAdjacentHTML('beforeend', obtRow(null)); } break;
     case 'op-add':       { const w = $('#op_rows'); if (w) w.insertAdjacentHTML('beforeend', oopRow(findProjekt(pid), null)); } break;
     case 'row-del':      { const r = act.closest('.bt-row, .op-row'); if (r) r.remove(); } break;

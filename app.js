@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v105';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v106';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -9196,6 +9196,11 @@ function demoData() {
       baustart: '2026-03-01', bezug: '2027-07-15',
       finanz: { land: 1350000, honorare: 380000, finanzierung: 120000 },
       wohnungen: 6,
+      bauteile: [{ id: 'bt_carport', name: 'Unterstand / Carport (Nebenprojekt)' }],
+      optionen: [
+        { id: 'op_lift', name: 'Personenlift (optional)', bauteilId: '', gruppe: '', vertragsAbzug: null },
+        { id: 'op_pv', name: 'PV-Anlage auf Carport (optional)', bauteilId: 'bt_carport', gruppe: '', vertragsAbzug: null },
+      ],
       auflagen: [
         { id: uid('au'), titel: 'Baubeginn melden (Baustartanzeige an Gemeinde)', kat: 'Meldung', phase: 'vor Baubeginn', termin: '2026-02-20', zustaendig: 'Bauleitung', status: 'erledigt', bemerkung: 'Ziffer 1 der Bewilligung' },
         { id: uid('au'), titel: 'Schnurgerüst / Gebäudeprofil abstecken (Geometer)', kat: 'Abnahme', phase: 'vor Baubeginn', termin: '2026-02-25', zustaendig: 'Geometer Müller', status: 'erledigt', bemerkung: '' },
@@ -9294,6 +9299,15 @@ function demoData() {
         { id: 'v19', bkp: '258', gewerk: 'Küchengeräte / Apparate', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 90000, frist: '2026-08-10',
           bauStart: '2027-04-01', bauEnde: '2027-05-31',
           eingeladene: einl(['Elektro Meyer AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 'vc1', bkp: '211', gewerk: 'Unterstand / Carport – Baumeister', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 78000, frist: '2026-08-15',
+          bauStart: '2027-04-01', bauEnde: '2027-05-31', bauteil: 'bt_carport',
+          eingeladene: einl(['Hugentobler Bau AG', null, 'eingeladen'], ['Steiner & Co.', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 'vc2', bkp: '230', gewerk: 'PV-Anlage Carport', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 18000, frist: '2026-08-20',
+          bauStart: '2027-05-01', bauEnde: '2027-05-31', bauteil: 'bt_carport', option: 'op_pv',
+          eingeladene: einl(['Elektro Meyer AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 'vc3', bkp: '261', gewerk: 'Personenlift (Option)', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 62000, frist: '2026-08-25',
+          bauStart: '2027-01-15', bauEnde: '2027-03-31', option: 'op_lift',
+          eingeladene: einl(['Lift & Co. AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
       ],
       ganttLinks: [
         { id: uid('gl'), from: 'v1', to: 'v2', dx: null },

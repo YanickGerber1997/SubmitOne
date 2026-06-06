@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v134';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v135';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7411,28 +7411,45 @@ function pdfSolar(pid) {
   openPrintDoc('Solarrechner – Photovoltaik', sub, anlage + ertrag + wirt + bsTable + note);
 }
 
-// Solaranlage als Gewerk in die Baukosten übernehmen (erneut = aktualisieren)
+// Solaranlage als Gewerk in die Baukosten übernehmen: Baubeschrieb + Kostenschätzung (Positionen) aus der Auswahl.
 function solarToBaukosten(pid) {
   const p = findProjekt(pid); if (!p) return;
-  const r = solarCalc(solarOf(p));
+  const s = solarOf(p);
+  const r = solarCalc(s);
   if (!r.kwp) { toast('Erst die Anlage erfassen (Dachfläche)', 'info'); return; }
   const f1 = x => (Math.round(x * 10) / 10).toLocaleString('de-CH');
-  const beschrieb = `Photovoltaik-Anlage ${f1(r.kwp)} kWp · Produktion ~${Math.round(r.produktion).toLocaleString('de-CH')} kWh/Jahr\n`
-    + `Investition ${chf(r.invest)} − Förderung ${chf(r.eiv)} = netto ${chf(r.netto)}`
-    + (r.amort != null ? ` · Amortisation ${f1(r.amort)} Jahre` : '');
+  const nf = x => Math.round(x).toLocaleString('de-CH');
+  const oL = (SOLAR_ORIENT[s.orient] || SOLAR_ORIENT.sued)[0];
+  // --- Baubeschrieb aus den getroffenen Eingaben ---
+  const bl = [];
+  bl.push(`Photovoltaik-Anlage ${f1(r.kwp)} kWp auf ${f1(r.flaeche)} m² Dachfläche (Belegung ${Math.round(r.belegung)} % = ${f1(r.modulflaeche)} m² Module, ${Math.round(r.wpm2)} Wp/m²).`);
+  bl.push(`Ausrichtung ${oL}, Dachneigung ${f1(r.tilt)}°, spezifischer Ertrag ${Math.round(Number(s.ertrag))} kWh/kWp → Produktion ~${nf(r.produktion)} kWh/Jahr.`);
+  bl.push(`Eigenverbrauch ~${nf(r.eigenverbrauch)} kWh/Jahr${r.autarkie != null ? ` (Autarkiegrad ${r.autarkie} %)` : ''}, Netzeinspeisung ~${nf(r.einspeisung)} kWh/Jahr.`);
+  if (r.speicher) bl.push(`Batteriespeicher ${f1(r.speicher)} kWh.`);
+  const loads = SOLAR_LOADS.filter(l => s[l.key]).map(l => l.label);
+  if (loads.length) bl.push(`Berücksichtigte Verbraucher: ${loads.join(', ')}.`);
+  if ((s.bauseite || []).length) bl.push(`Bauseitige Leistungen: ${s.bauseite.map(b => `${b.text}${b.betrag ? ' (' + chf(b.betrag) + ')' : ''}`).join(', ')}.`);
+  bl.push('');
+  bl.push(`Investition ${chf(r.invest)} − Förderung EIV ${chf(r.eiv)} = netto ${chf(r.netto)}.${r.amort != null ? ` Amortisation ${f1(r.amort)} J. (ohne Förderung ${f1(r.amortBrutto)} J.).` : ''}`);
+  const beschrieb = bl.join('\n');
+  // --- Kostenschätzungs-Positionen (Betrag = brutto Investition) ---
+  const pos = [{ text: `PV-Anlage ${f1(r.kwp)} kWp (${f1(r.flaeche)} m² Dachfläche)`, betrag: r.anlage }];
+  if (r.speicherKosten) pos.push({ text: `Batteriespeicher ${f1(r.speicher)} kWh`, betrag: r.speicherKosten });
+  (s.bauseite || []).forEach(b => { if (Number(b.betrag)) pos.push({ text: 'Bauseitig: ' + (b.text || 'Position'), betrag: Number(b.betrag) }); });
+  const schaetzung = pos.reduce((a, x) => a + (Number(x.betrag) || 0), 0);
   p.vergaben = p.vergaben || [];
   let v = p.vergaben.find(x => x.solar);
   if (v) {
-    v.gewerk = 'Photovoltaik-Anlage'; v.schaetzung = r.invest; v.beschrieb = beschrieb;
+    v.gewerk = 'Photovoltaik-Anlage'; v.beschrieb = beschrieb; v.ksPositionen = pos; v.schaetzung = schaetzung;
     save(); toast('Solar in Baukosten aktualisiert');
   } else {
     p.vergaben.push({
       id: uid('v'), bkp: '245', gewerk: 'Photovoltaik-Anlage', solar: true,
-      schaetzung: r.invest, beschrieb, frist: '', status: 'ausschreibung', firma: '', betrag: 0,
+      schaetzung, beschrieb, ksPositionen: pos, frist: '', status: 'ausschreibung', firma: '', betrag: 0,
       bauStart: '', bauEnde: '', grobVon: null, grobBis: null,
       eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [],
     });
-    save(); toast('Solar als Gewerk in Baukosten übernommen');
+    save(); toast('Solar als Gewerk + Kostenschätzung in Baukosten übernommen');
   }
   go('#/projekt/' + pid + '/kosten');
 }

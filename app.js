@@ -4867,7 +4867,7 @@ function viewEinstellungen() {
         <label class="field">E-Mail <input class="input" id="b_email" value="${esc(b.email)}" placeholder="info@…"></label>
       </div>
       <label class="field">E-Mail-Signatur <span class="muted" style="font-weight:400;font-size:11.5px">– wird unter Pendenz-Mails angehängt</span>
-        <textarea class="input" id="b_signatur" rows="4" placeholder="Freundliche Grüsse&#10;Yanick Gerber&#10;Hefti Bauberatung · 041 000 00 00">${esc(b.signatur || '')}</textarea>
+        <textarea class="input" id="b_signatur" rows="4" placeholder="Freundliche Grüsse&#10;P. Hefti Bauberatung GmbH&#10;Bernstrasse 40, 3076 Worb · 031 839 00 77">${esc(b.signatur || '')}</textarea>
       </label>
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;margin-top:6px"><input type="checkbox" id="b_sig_auto" ${b.signaturAuto === false ? '' : 'checked'}> Signatur standardmässig an Mails anhängen</label>
       <div style="margin-top:12px"><button class="btn" data-act="save-buero">Büro speichern</button></div>

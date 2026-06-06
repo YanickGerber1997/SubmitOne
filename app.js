@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v150';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v151';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1000,7 +1000,7 @@ function kostenZeile(v) {
 // BKP-Hauptgruppen (erste Ziffer)
 const BKP_GRUPPEN = {
   '0': 'Grundstück', '1': 'Vorbereitungsarbeiten', '2': 'Gebäude', '3': 'Betriebseinrichtungen',
-  '4': 'Umgebung', '5': 'Baunebenkosten', '6': 'Reserve', '9': 'Ausstattung',
+  '4': 'Umgebung', '5': 'Baunebenkosten', '6': 'Vermietung / Verkauf', '9': 'Ausstattung',
 };
 
 // Schweizer Zahlenformat ohne Währung, 2 Dezimalstellen (wie im BKP-Sheet)
@@ -3304,7 +3304,32 @@ const BKP_KATALOG = [
   ['28', 'Ausbau 2'], ['281', 'Bodenbeläge'], ['281.0', 'Unterlagsböden'], ['281.1', 'Fugenlose Bodenbeläge'], ['281.2', 'Bodenbeläge Kunststoff/Textil'], ['281.4', 'Bodenbeläge Naturstein'], ['281.5', 'Bodenbeläge Kunststein'], ['281.6', 'Bodenbeläge Plattenarbeiten'], ['281.7', 'Bodenbeläge in Holz / Parkett'], ['281.8', 'Doppelböden'],
   ['282', 'Wandbeläge, Wandbekleidungen'], ['282.0', 'Fugenlose Wandbeläge'], ['282.1', 'Tapezierarbeiten'], ['282.2', 'Wandverkleidung Naturstein'], ['282.3', 'Wandverkleidung Kunststein'], ['282.4', 'Wandbeläge Plattenarbeiten / Fliesen'], ['282.5', 'Wandverkleidung Holz'], ['282.6', 'Wandverkleidung Kunststoff/Textil'],
   ['283', 'Deckenbekleidungen'], ['284', 'Hafnerarbeiten'], ['285', 'Innere Oberflächenbehandlungen / Maler'], ['286', 'Bauaustrocknung'], ['287', 'Baureinigung'], ['288', 'Gärtnerarbeiten (Gebäude)'],
-  ['29', 'Honorare'], ['291', 'Architekt'], ['292', 'Bauingenieur'], ['293', 'Elektroingenieur'], ['294', 'HLK-Ingenieur'], ['295', 'Sanitäringenieur'], ['296', 'Spezialisten'], ['296.2', 'Innenarchitekt'], ['298', 'Gebäudeautomationsingenieur'],
+  ['29', 'Honorare'], ['291', 'Architekt'], ['292', 'Bauingenieur'], ['293', 'Elektroingenieur'], ['294', 'HLK-Ingenieur'], ['295', 'Sanitäringenieur'], ['296', 'Spezialisten'], ['296.0', 'Geometer'], ['296.2', 'Innenarchitekt'], ['298', 'Gebäudeautomationsingenieur'],
+  ['299', 'Übriges / Diverses / Eigentümerwünsche'], ['299.1', 'Eigentümerwünsche'],
+  // Gruppe 0 – Grundstück
+  ['0', 'Grundstück'], ['01', 'Grundstück- / Baurechterwerb'], ['011', 'Grundstückerwerb'], ['02', 'Nebenkosten zum Grundstückerwerb'], ['022', 'Notariat, Handänderungssteuer, Grundbuch'],
+  ['04', 'Finanzierung vor Baubeginn'], ['044', 'Bankzinsen / Bankspesen'], ['046', 'Grundstücksteuern'], ['091', 'Architekt (Grundstück)'], ['099', 'Übriges / Diverses'],
+  // Gruppe 1 – Vorbereitungsarbeiten
+  ['1', 'Vorbereitungsarbeiten'], ['10', 'Bestandesaufnahmen'], ['102', 'Baugrunduntersuchung'], ['104', 'Baugespann / Schnurgerüst'],
+  ['11', 'Räumungen, Terrainvorbereitungen'], ['112', 'Terrainvorbereitungen'], ['113', 'Rückbau / Abbruch'], ['121', 'Sicherung vorhandener Anlagen'],
+  ['12', 'Sicherungen, Provisorien'], ['122', 'Provisorien'], ['13', 'Gemeinsame Baustellenerschliessung'], ['131', 'Abschrankungen / Bauzaun'],
+  ['17', 'Spezielle Fundationen, Baugrubensicherung'], ['171', 'Pfähle'], ['172', 'Baugrubenabschlüsse, Nagelwand'], ['176', 'Wasserhaltung'],
+  ['19', 'Honorare (Vorbereitung)'], ['191', 'Architekt'], ['199', 'Übriges / Diverses / Installationsplatz'],
+  // Gruppe 2 – Ergänzungen
+  ['201.1', 'Baugrubenaushub'], ['211.1', 'Gerüstungen'], ['212.2', 'Betonelemente (Treppenläufe)'], ['215.5', 'Fassadenverkleidung Holz'],
+  ['221.1', 'Holz-/Metallfenster'], ['221.5', 'Türen / Tore'], ['224.0', 'Steildach'], ['224.1', 'Flachdacharbeiten'], ['226.2', 'Verputzte Aussenwärmedämmung'],
+  ['271.0', 'Innere Verputzarbeiten'], ['271.1', 'Spezielle Gipserarbeiten'], ['272.2', 'Metallbauarbeiten (Geländer, Balkone)'], ['272.9', 'Briefkastenanlage'],
+  ['273.0', 'Innentüren in Holz'], ['273.1', 'Wandschränke und Gestelle'], ['273.3', 'Allgemeine Schreinerarbeiten'], ['281.6', 'Keramische Boden-/Wandbeläge'], ['285.1', 'Innere Malerarbeiten'], ['289', 'Baubetriebskosten'],
+  // Gruppe 4 – Umgebung
+  ['4', 'Umgebung'], ['41', 'Roh- und Ausbauarbeiten Umgebung'], ['411', 'Baumeister Umgebung'], ['42', 'Gartenanlagen'], ['421', 'Gärtnerarbeiten'],
+  ['45', 'Erschliessungen durch Leitungen'], ['455', 'Infrastruktur Erschliessung'], ['49', 'Honorare (Umgebung)'], ['491', 'Architekt'], ['499', 'Übriges / Diverses'],
+  // Gruppe 5 – Baunebenkosten
+  ['5', 'Baunebenkosten'], ['51', 'Bewilligungen, Gebühren'], ['511', 'Bewilligung, Baugespann, Gebühren'], ['512', 'Anschlussgebühren'], ['514', 'LS-Ersatzabgaben'],
+  ['52', 'Muster, Modelle, Vervielfältigungen'], ['524', 'Vervielfältigungen, Plankopien, Porto'], ['53', 'Versicherungen'], ['531', 'Bauzeitversicherungen'],
+  ['54', 'Finanzierung ab Baubeginn'], ['542', 'Baukreditzinsen'], ['56', 'Übrige Baunebenkosten'], ['563', 'Miete fremden Grundes'],
+  ['59', 'Honorare (Baunebenkosten)'], ['598', 'Bauherrenbegleitung'], ['598.1', 'Bautreuhand'], ['599', 'Übriges'],
+  // Gruppe 6 – Vermietung, Verkauf
+  ['6', 'Vermietung, Verkauf'], ['61', 'Verkauf'], ['612', 'Verkaufsprovision'], ['613', 'Inserate, Dokumentationen'],
 ].map(([code, label]) => ({ code, label }));
 
 function bkpDatalist(id) { return `<datalist id="${id}">${BKP_KATALOG.map(b => `<option value="${esc(b.code + ' ' + b.label)}">`).join('')}</datalist>`; }
@@ -3648,6 +3673,7 @@ function viewBauherr(pid) {
     <div class="section-head"><h2>${hasWhg && selW !== 'alle' ? (selW === '' ? 'Allgemein' : esc(whgLabel(selW))) : 'Auswahlentscheide'}${(() => { const o = ents.filter(e => entStatus(e) === 'offen').length; return o ? ` <span class="tab-badge">${o} offen</span>` : ''; })()}</h2>
       <div style="display:flex;gap:6px">
         <button class="btn sm secondary" data-act="pdf-entscheidungen" data-pid="${p.id}">⬇ PDF</button>
+        ${hasWhg ? `<button class="btn sm secondary" data-act="bauherr-bkp" data-pid="${p.id}" title="Je Einheit eine BKP-299.x-Position in den Baukosten anlegen/aktualisieren (Eigentümerwünsche)">→ BKP 299 Baukosten</button>` : ''}
         <button class="btn sm ghost" data-act="standard-bemusterung" data-pid="${p.id}" title="Übliche Auswahlpunkte für die gewählte Einheit ergänzen">＋ Standardliste</button>
         <button class="btn sm" data-act="new-entscheidung" data-pid="${p.id}">+ Eintrag</button>
       </div></div>
@@ -3751,6 +3777,26 @@ function setEntscheidungStatus(pid, eid, status) {
 }
 
 // Übliche Bemusterungspunkte ergänzen (nur fehlende, anhand des Themas)
+// Eigentümerwünsche je Einheit als BKP-299.x-Position in den Baukosten anlegen/aktualisieren (wie Hefti-Praxis)
+function bauherrToBaukosten(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const einh = alleEinheiten(p);
+  if (!einh.length) { toast('Keine Einheiten erfasst', 'info'); return; }
+  p.vergaben = p.vergaben || [];
+  let neu = 0;
+  einh.forEach((x, i) => {
+    const bkp = '299.' + (i + 1);
+    const gewerk = 'Eigentümerwünsche ' + (x.u.name || 'Einheit');
+    let v = p.vergaben.find(g => g.eigWohnung === x.u.id);
+    if (v) { v.bkp = bkp; v.gewerk = gewerk; if (x.u.eigentuemer) v.firma = x.u.eigentuemer; }
+    else {
+      p.vergaben.push({ id: uid('v'), bkp, gewerk, eigWohnung: x.u.id, status: 'ausschreibung', firma: x.u.eigentuemer || '', betrag: 0, schaetzung: 0, frist: '', bauStart: '', bauEnde: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
+      neu++;
+    }
+  });
+  save(); toast(neu ? `${neu} Eigentümerwünsche-Positionen (BKP 299.x) angelegt` : 'Eigentümerwünsche-Positionen aktualisiert');
+  go('#/projekt/' + pid + '/kosten');
+}
 function addStandardBemusterung(pid) {
   const p = findProjekt(pid);
   p.entscheidungen = p.entscheidungen || [];
@@ -9760,6 +9806,7 @@ document.addEventListener('click', e => {
     case 'update-entscheidung': updateEntscheidung(pid, eid); break;
     case 'rm-entscheidung':     removeEntscheidung(pid, eid); break;
     case 'standard-bemusterung':addStandardBemusterung(pid); break;
+    case 'bauherr-bkp':         bauherrToBaukosten(pid); break;
     case 'bauherr-wohnung':  bauherrWohnung = kind; viewBauherr(pid); break;
     case 'bauherr-acc':      { const u = act.dataset.uid; if (bauherrOpen.has(u)) bauherrOpen.delete(u); else bauherrOpen.add(u); viewBauherr(pid); } break;
     case 'bauherr-add':      bauherrWohnung = act.dataset.w; bauherrOpen.add(act.dataset.w); actNewEntscheidung(pid); break;

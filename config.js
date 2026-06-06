@@ -21,12 +21,10 @@ window.SUBMITONE_CONFIG = {
     basis: '',
     komplett: '',
     // Einzelne Module (à la carte) – Schlüssel: mod_<modulschlüssel>
-    mod_kontakte: '',
+    // (Kontakte/Kalender/Arbeitsplanung sind inklusive, nicht einzeln kaufbar)
     mod_submission: '',
     mod_kosten: '',
     mod_termine: '',
-    mod_kalender: '',
-    mod_planung: '',
     mod_protokolle: '',
     mod_pendenzen: '',
     mod_dossier: '',

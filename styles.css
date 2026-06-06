@@ -1062,6 +1062,7 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .mod-tier.mt-basic { background: linear-gradient(135deg,#f3f5f8,#cbd1d9); color: #33373d; }
 .mod-tier.mt-premium { background: linear-gradient(135deg,#f7e6a8,#e7c65f); color: #3a2f12; }
 .mod-tier.mt-neu { background: var(--s-green); color: #fff; }
+.mod-tier.mt-inkl { background: var(--s-teal, #0d9488); color: #fff; }
 .team-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); }
 
 /* Fusszeilen-Buttons: Icon + Text (Text wird eingeklappt versteckt) */

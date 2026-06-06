@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v82';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v83';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -387,13 +387,13 @@ const PLANS = [
 // Einzeln freischaltbare Module (à la carte), CHF/Monat. tier = in welchem Paket enthalten.
 // Schlüssel = canModul()-Schlüssel. Einzeln summiert teurer als das jeweilige Paket.
 const MODULES = [
-  { key: 'kontakte',   name: 'Kontakte',                 tier: 'basic',   preis: '3', feat: ['Adressbuch', 'Handelsregister-Suche (LINDAS)', 'Kategorien / Gewerke', 'E-Mail & Telefon'] },
+  { key: 'kontakte',   name: 'Kontakte',                 tier: 'basic',   inkl: true, feat: ['Adressbuch', 'Handelsregister-Suche (LINDAS)', 'Kategorien / Gewerke', 'E-Mail & Telefon'] },
+  { key: 'kalender',   name: 'Kalender',                 tier: 'basic',   inkl: true, feat: ['Projekt- & Gesamtkalender', 'Termine & Fristen', 'Tag / Woche / Monat'] },
+  { key: 'planung',    name: 'Arbeitsplanung',           tier: 'basic',   inkl: true, feat: ['Wochen-/Tagesplanung', 'Blöcke & Zuteilung'] },
   { key: 'submission', name: 'Ausschreibung & Vergabe',  tier: 'basic',   preis: '9', feat: ['Ausschreibung erstellen', 'Submittenten einladen + Versand', 'Offertvergleich / Abgebot', 'Vergabeantrag & Werkvertrag', 'Zuschlag / Absage'] },
   { key: 'kosten',     name: 'Kostenführung / Baukosten', tier: 'basic',  preis: '7', feat: ['Kostenschätzung (Positionen, Ausmass)', 'Baukostenübersicht nach BKP', 'Vergabesummen & Prognose', 'Rechnungen, Rückbehalt, QR-Scan'] },
   { key: 'termine',    name: 'Terminprogramm / Gantt',   tier: 'basic',   preis: '5', feat: ['Bauprogramm (Gantt)', 'Verkettung der Gewerke', 'Eingabefristen', 'Arbeitstage / Feiertage'] },
-  { key: 'kalender',   name: 'Kalender',                 tier: 'basic',   preis: '3', feat: ['Projekt- & Gesamtkalender', 'Termine & Fristen', 'Tag / Woche / Monat'] },
-  { key: 'planung',    name: 'Arbeitsplanung',           tier: 'basic',   preis: '3', feat: ['Wochen-/Tagesplanung', 'Blöcke & Zuteilung'] },
-  { key: 'protokolle', name: 'Protokolle',               tier: 'basic',   preis: '3', feat: ['Sitzungsprotokolle', 'Traktanden & Beschlüsse', 'Verteiler', 'Pendenzen aus Sitzung'] },
+  { key: 'protokolle', name: 'Protokolle',               tier: 'basic',   preis: '5', feat: ['Sitzungsprotokolle', 'Traktanden & Beschlüsse', 'Verteiler', 'Pendenzen aus Sitzung'] },
   { key: 'pendenzen',  name: 'Pendenzen',                tier: 'premium', preis: '5', feat: ['Aufgaben mit Verantwortlichen', 'Termine & Überfällig-Tracking', 'projektübergreifend'] },
   { key: 'dossier',    name: 'Dokumente / Dossier',      tier: 'premium', preis: '3', feat: ['Dossier-Checkliste', 'Dokumentenablage', 'Vorlagen'] },
   { key: 'bauherr',    name: 'Bauherr / Auswahlentscheide', tier: 'premium', preis: '3', feat: ['Bemusterung', 'Auswahlentscheide', 'Wohnungen / Einheiten'] },
@@ -413,7 +413,9 @@ function isPaid()    { return !cloudEnabled || ent === null || planAktiv(); }
 function canModul(m) {
   if (!cloudEnabled || ent === null) return true;
   if (ent.plan === 'komplett' || ent.plan === 'trial') return true;     // Premium/Test = alles
-  if (ent.plan === 'basis') { const mod = MODULES.find(x => x.key === m); if (mod && mod.tier === 'basic') return true; }
+  const mod = MODULES.find(x => x.key === m);
+  if (mod && mod.inkl) return isPaid();                                 // gratis sobald irgendein Modul/Plan bezahlt ist
+  if (ent.plan === 'basis' && mod && mod.tier === 'basic') return true;
   return (ent.module || []).includes(m);
 }
 const PLAN_LABELS = { free: 'Free', trial: 'Test', basis: 'Basic', komplett: 'Premium', modul: 'Individuell' };
@@ -552,13 +554,15 @@ function actAbo() {
   const komplett = plan === 'komplett' || istTest;
   const modRows = MODULES.map(m => {
     const hat = komplett || canModul(m.key);
+    const head = m.inkl
+      ? `<span class="mod-name">${esc(m.name)} <span class="mod-tier mt-inkl">inklusive</span></span>
+         <span class="muted" style="font-size:11px;white-space:nowrap">bei jedem Modul dabei</span>`
+      : `<span class="mod-name">${esc(m.name)} <span class="mod-tier mt-${m.tier}">${m.tier === 'basic' ? 'Basic' : 'Premium'}</span>${m.neu ? ' <span class="mod-tier mt-neu">neu</span>' : ''}</span>
+         <span class="mod-preis">CHF ${esc(m.preis)}<span style="font-size:10px;color:var(--text-soft)">/Mt</span></span>
+         ${hat ? '<span class="st green" style="font-size:9.5px;padding:1px 7px">freigeschaltet</span>'
+               : `<button class="btn xs" data-act="upgrade" data-plan="mod_${m.key}">freischalten</button>`}`;
     return `<div class="mod-row">
-      <div class="mod-head">
-        <span class="mod-name">${esc(m.name)} <span class="mod-tier mt-${m.tier}">${m.tier === 'basic' ? 'Basic' : 'Premium'}</span>${m.neu ? ' <span class="mod-tier mt-neu">neu</span>' : ''}</span>
-        <span class="mod-preis">CHF ${esc(m.preis)}<span style="font-size:10px;color:var(--text-soft)">/Mt</span></span>
-        ${hat ? '<span class="st green" style="font-size:9.5px;padding:1px 7px">freigeschaltet</span>'
-              : `<button class="btn xs" data-act="upgrade" data-plan="mod_${m.key}">freischalten</button>`}
-      </div>
+      <div class="mod-head">${head}</div>
       <div class="mod-feat">${(m.feat || []).map(esc).join(' · ')}</div>
     </div>`;
   }).join('');
@@ -567,7 +571,7 @@ function actAbo() {
     <div class="plan-grid">${cards}</div>
     <div style="margin-top:18px">
       <div style="font-weight:700;font-size:13px;margin-bottom:2px">Individuell – nur einzelne Module</div>
-      <div class="muted" style="font-size:11.5px;margin-bottom:8px">Alle Module sind im Free benutzbar; bezahlt wird fürs <b>Speichern</b>. Einzeln buchbar – in Summe aber <b>teurer als das passende Paket</b>. „Basic" enthält die Basis-Funktionen, „Premium" alles. Der Chip zeigt, in welchem Paket ein Modul steckt.</div>
+      <div class="muted" style="font-size:11.5px;margin-bottom:8px">Alle Module sind im Free benutzbar; bezahlt wird fürs <b>Speichern</b>. Einzeln buchbar – in Summe aber <b>teurer als das passende Paket</b>. <b>Kontakte, Kalender &amp; Arbeitsplanung sind gratis dabei</b>, sobald mindestens ein Modul gebucht ist. „Basic" enthält die Basis-Funktionen, „Premium" alles.</div>
       <div class="mod-list">${modRows}</div>
     </div>
     <p class="muted" style="font-size:11.5px;margin:14px 0 0">Preise CHF/Monat (Richtwerte, anpassbar). Bezahlung über Stripe – sobald die Zahlungslinks in config.js eingetragen sind, führt „freischalten" direkt zur Kasse.</p>

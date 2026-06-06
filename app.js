@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v147';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v148';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3503,7 +3503,14 @@ function attachKontaktSuche(searchId, resultsId, onPick) {
 
 let bauherrWohnung = 'alle';   // Wohnungs-Filter im Bauherr-Tab
 let bauherrOpen = new Set();    // aufgeklappte Eigentümer-Gruppen (Einheit-IDs, '' = Allgemein)
-// Eine Auswahlentscheid-Zeile (für Accordion je Eigentümer)
+// Entscheid-Deadline aus dem Terminprogramm: spätestens wählen = Einbau (bauStart) − Bestellfrist des Gewerks
+function entFaellig(p, e) {
+  const v = vergabeForEnt(p, e);
+  if (!v || !v.bauStart) return '';
+  const d = dISO(v.bauStart); const bf = Number(v.bestellfrist) || 0; if (bf > 0) d.setDate(d.getDate() - bf);
+  return isoOf(d);
+}
+// Auswahlentscheid-Zeile
 function entRowHtml(p, e, showWhg) {
   const v = vergabeForEnt(p, e);
   const bp = v ? (v.budgetposten || []).find(x => (x.text || '').toLowerCase() === (e.thema || '').toLowerCase()) : null;
@@ -3573,6 +3580,32 @@ function viewBauherr(pid) {
         </tr>`; }).join('')}</tbody>
     </table>` : `<div class="card-pad" style="text-align:center">${emptyState('📋', 'Noch keine Auswahlpunkte erfasst.')}<button class="btn" data-act="standard-bemusterung" data-pid="${p.id}">＋ Standard-Auswahlliste einfügen</button></div>`;
 
+  // „Alle": fälligkeitsgetrieben aus dem Terminprogramm (entscheiden bis = Einbau − Bestellfrist)
+  const t0 = todayIso();
+  const alleSorted = allEnts.slice().sort((a, b) => {
+    const oa = entStatus(a) === 'offen' ? 0 : 1, ob = entStatus(b) === 'offen' ? 0 : 1;
+    if (oa !== ob) return oa - ob;
+    return (entFaellig(p, a) || '9999-12-31').localeCompare(entFaellig(p, b) || '9999-12-31');
+  });
+  const faelligCell = e => {
+    const f = entFaellig(p, e); if (!f) return '<span class="muted">—</span>';
+    if (entStatus(e) !== 'offen') return `<span class="muted">${fmtDate(f)}</span>`;
+    const ueber = f < t0; const tage = Math.round((dISO(f) - today()) / 86400000);
+    const badge = ueber ? '<span class="st amber" style="font-size:9px;padding:1px 6px">überfällig</span>' : (tage <= 21 ? `<span class="st blue" style="font-size:9px;padding:1px 6px">in ${tage} T</span>` : '<span class="st green" style="font-size:9px;padding:1px 6px">ok</span>');
+    return `<b>${fmtDate(f)}</b> ${badge}`;
+  };
+  const alleTable = allEnts.length ? `<table class="grid t-compact">
+    <thead><tr><th style="width:140px">entscheiden bis</th><th style="width:46px">BKP</th><th style="width:120px">Einheit</th><th style="width:104px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:80px">Budget</th><th style="width:74px"></th></tr></thead>
+    <tbody>${alleSorted.map(e => { const v = vergOf(e); const bp = v ? (v.budgetposten || []).find(x => (x.text || '').toLowerCase() === (e.thema || '').toLowerCase()) : null; return `<tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
+      <td style="font-size:12px">${faelligCell(e)}</td>
+      <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
+      <td class="muted" style="font-size:12px">${esc(whgLabel(e.wohnung || ''))}</td>
+      <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></td>
+      <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${e.entscheid ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${esc(e.entscheid)}</div>` : ''}</td>
+      <td class="num">${bp ? chf(bp.betrag) : '<span class="muted">–</span>'}</td>
+      <td><button class="x-btn" data-act="budget-auswahl" data-pid="${p.id}" data-eid="${e.id}" title="Budget">💰</button><button class="x-btn" data-act="edit-entscheidung" data-pid="${p.id}" data-eid="${e.id}" title="Bearbeiten">✏</button><button class="x-btn" data-act="rm-entscheidung" data-pid="${p.id}" data-eid="${e.id}">×</button></td>
+    </tr>`; }).join('')}</tbody></table>` : entsTable;
+
   const firmsHtml = katKeys.length ? katKeys.map(k => `
     <div style="margin-bottom:14px">
       <div style="font-weight:600;margin-bottom:5px">${esc(k)}</div>
@@ -3613,8 +3646,8 @@ function viewBauherr(pid) {
         <button class="btn sm ghost" data-act="standard-bemusterung" data-pid="${p.id}" title="Übliche Auswahlpunkte für die gewählte Einheit ergänzen">＋ Standardliste</button>
         <button class="btn sm" data-act="new-entscheidung" data-pid="${p.id}">+ Eintrag</button>
       </div></div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 12px">${hasWhg ? 'Oben den Eigentümer/die Einheit wählen – „+ Eintrag" und „Standardliste" erfassen dann genau für diese Einheit. Jeder Punkt: offen → gewählt / entfällt.' : 'Auswahlpunkte führen: offen → gewählt, oder entfällt (mit Grund).'}</p>
-    <div class="card">${entsTable}</div>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 12px">${hasWhg && selW === 'alle' ? '„Alle" zeigt die Entscheide nach <strong>Fälligkeit aus dem Terminprogramm</strong> – offene zuerst (entscheiden bis = Einbau − Bestellfrist). Für die Erfassung oben den Eigentümer wählen.' : (hasWhg ? 'Oben den Eigentümer/die Einheit wählen – „+ Eintrag" und „Standardliste" erfassen dann genau für diese Einheit. Jeder Punkt: offen → gewählt / entfällt.' : 'Auswahlpunkte führen: offen → gewählt, oder entfällt (mit Grund).')}</p>
+    <div class="card">${hasWhg && selW === 'alle' ? alleTable : entsTable}</div>
 
     <div class="section-head" style="margin-top:26px"><h2>Auswahl-Firmen (Bemusterung)</h2>
       <div style="display:flex;gap:6px">

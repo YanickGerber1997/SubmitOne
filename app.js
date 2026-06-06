@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v133';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v134';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7090,20 +7090,21 @@ function solarCalc(s) {
   const stromkostenJetzt = Math.round(verbrauch * n(s.strompreis) / 100);
   const reststrombezug = Math.max(0, verbrauch - eigenverbrauch);          // kWh weiterhin ab Netz
   const stromkostenNeu = Math.round(reststrombezug * n(s.strompreis) / 100 - verguetung);
-  // Automatik: leere Felder werden aus kWp / kWh geschätzt (immer überschreibbar)
-  const anlageAuto = !(s.anlagekosten !== '' && s.anlagekosten != null);
+  // Automatik (m²/kWh). Manuell-Flag entscheidet (Fallback: alte Stände = nicht-leer galt als manuell).
+  const anlageAuto = s.anlageManual !== undefined ? !s.anlageManual : !(s.anlagekosten !== '' && s.anlagekosten != null);
   const anlage = anlageAuto ? Math.round(flaeche * SOLAR_CHF_M2) : n(s.anlagekosten);   // Kosten über Dachfläche (m²)
-  const speicherAuto = !(s.speicherKosten !== '' && s.speicherKosten != null);
+  const speicherAuto = s.speicherKManual !== undefined ? !s.speicherKManual : !(s.speicherKosten !== '' && s.speicherKosten != null);
   const speicherKosten = speicherAuto ? Math.round(speicher * SOLAR_CHF_KWH) : n(s.speicherKosten);
   const bauseiteSum = (s.bauseite || []).reduce((a, b) => a + (Number(b.betrag) || 0), 0);
   const invest = anlage + speicherKosten + bauseiteSum;
-  const eivAuto = (s.eivManual === '' || s.eivManual == null);
+  const eivAuto = s.eivSet !== undefined ? !s.eivSet : (s.eivManual === '' || s.eivManual == null);
   const eiv = eivAuto ? Math.round(flaeche * SOLAR_FOERDER_M2) : n(s.eivManual);   // Förderung über Dachfläche (m²)
   const netto = Math.max(0, invest - eiv);
-  const amort = ertragJahr > 0 ? netto / ertragJahr : null;               // Jahre
+  const amort = ertragJahr > 0 ? netto / ertragJahr : null;               // Jahre (mit Förderung)
+  const amortBrutto = ertragJahr > 0 ? invest / ertragJahr : null;        // Jahre (ohne Förderung)
   const rendite = netto > 0 ? ertragJahr / netto * 100 : null;            // %/Jahr
   const co2 = Math.round(produktion * 0.128);                            // kg CO₂/Jahr (verdrängter Strommix, Richtwert)
-  return { flaeche, belegung, modulflaeche, wpm2, kwp, tilt, of, nf, produktion, verbrauchBasis, zusatz, verbrauch, anteil, anteilAuto, gedeckelt, eigenverbrauch, einspeisung, autarkie, sparBezug, verguetung, ertragJahr, stromkostenJetzt, reststrombezug, stromkostenNeu, anlage, anlageAuto, speicher, speicherKosten, speicherAuto, bauseiteSum, invest, eiv, eivAuto, netto, amort, rendite, co2 };
+  return { flaeche, belegung, modulflaeche, wpm2, kwp, tilt, of, nf, produktion, verbrauchBasis, zusatz, verbrauch, anteil, anteilAuto, gedeckelt, eigenverbrauch, einspeisung, autarkie, sparBezug, verguetung, ertragJahr, stromkostenJetzt, reststrombezug, stromkostenNeu, anlage, anlageAuto, speicher, speicherKosten, speicherAuto, bauseiteSum, invest, eiv, eivAuto, netto, amort, amortBrutto, rendite, co2 };
 }
 
 function solarRead() {
@@ -7116,6 +7117,7 @@ function solarPreserve(p) {
   const prev = p.solar || {};
   const s = solarRead();
   SOLAR_LOADS.forEach(l => { s[l.key] = !!prev[l.key]; });
+  ['anlageManual', 'eivSet', 'speicherKManual'].forEach(k => { if (prev[k] !== undefined) s[k] = prev[k]; });   // Auto/Manuell-Flags erhalten
   return s;
 }
 function solarUpdate(pid) {
@@ -7124,6 +7126,10 @@ function solarUpdate(pid) {
   const r = solarCalc(p.solar);
   const out = $('#solarOut'); if (out) out.innerHTML = solarOutHtml(r, p.solar);
   const box = $('#solarInvestBox'); if (box) box.innerHTML = solarInvestHtml(r);
+  // Auto-Kostenfelder live mit dem geschätzten Wert füllen (nur solange nicht manuell überschrieben)
+  if (r.anlageAuto) { const el = $('#s_anlage'); if (el && document.activeElement !== el) el.value = r.anlage; }
+  if (r.eivAuto) { const el = $('#s_eivm'); if (el && document.activeElement !== el) el.value = r.eiv; }
+  if (r.speicherAuto) { const el = $('#s_speicherk'); if (el && document.activeElement !== el) el.value = r.speicherKosten; }
 }
 function solarToggle(pid, key) {
   const p = findProjekt(pid); if (!p) return;
@@ -7160,7 +7166,8 @@ function solarInvestHtml(r) {
     <div class="opt-sum"><span>Investition total${r.anlageAuto ? ' (geschätzt)' : ''}</span><span class="num">${fr(r.invest)}</span></div>
     <div class="opt-sum"><span>− Förderung EIV${r.eivAuto ? ' (geschätzt)' : ''}</span><span class="num">− ${fr(r.eiv)}</span></div>
     <div class="opt-sum" style="font-size:15px;font-weight:700;color:var(--brand)"><span>Netto-Investition</span><span class="num">${fr(r.netto)}</span></div>
-    <div class="opt-sum"><span>Amortisation</span><span class="num">${r.amort != null ? f1(r.amort) + ' Jahre' : '–'}</span></div>`;
+    <div class="opt-sum"><span>Amortisation (mit Förderung)</span><span class="num">${r.amort != null ? f1(r.amort) + ' Jahre' : '–'}</span></div>
+    <div class="opt-sum" style="color:var(--text-faint)"><span>Amortisation ohne Förderung</span><span class="num">${r.amortBrutto != null ? f1(r.amortBrutto) + ' Jahre' : '–'}</span></div>`;
 }
 function solarOutHtml(r, s) {
   const kwh = x => Math.round(x).toLocaleString('de-CH');
@@ -7182,7 +7189,7 @@ function solarOutHtml(r, s) {
     <div class="kpi-row" style="margin-top:12px">
       ${kpi('Ertrag pro Jahr', 'CHF ' + kwh(r.ertragJahr), 'Ersparnis + Vergütung', 's-green')}
       ${kpi('Investition', 'CHF ' + kwh(r.invest), 'netto ' + kwh(r.netto) + ' n. Förderung')}
-      ${kpi('Amortisation', r.amort != null ? f1(r.amort) + ' Jahre' : '–', 'bis bezahlt', 'brand')}
+      ${kpi('Amortisation', r.amort != null ? f1(r.amort) + ' Jahre' : '–', r.amortBrutto != null ? 'ohne Förderung ' + f1(r.amortBrutto) + ' J.' : 'bis bezahlt', 'brand')}
       ${kpi('Rendite', r.rendite != null ? f1(r.rendite) + ' %' : '–', 'pro Jahr')}
     </div>
     ${solarRechenweg(r, s)}`;
@@ -7226,6 +7233,7 @@ function viewSolar(pid) {
   const p = findProjekt(pid);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const s = solarOf(p);
+  const r0 = solarCalc(s);   // für live vorausgefüllte Auto-Kostenfelder
   const sel = (id, map, cur) => `<select class="select" id="${id}">${Object.entries(map).map(([k, v]) => `<option value="${k}"${cur === k ? ' selected' : ''}>${esc(v[0])}</option>`).join('')}</select>`;
   // Feld mit Erklär-Zeile (wie Honorarrechner)
   const fld = (id, label, val, unit, hint, ph) => `<label class="field">${label}${unit ? ` <span class="muted" style="font-weight:400;font-size:11px">(${unit})</span>` : ''}
@@ -7306,14 +7314,14 @@ function viewSolar(pid) {
         </div>
 
         <h2 style="margin:16px 0 10px;font-size:15px">3 · Investition &amp; Förderung <span class="muted" style="font-size:12px;font-weight:400">– leer = automatisch</span></h2>
-        ${fld('s_anlage', 'PV-Anlagekosten', s.anlagekosten, 'CHF', 'Leer lassen = ~' + Math.round(SOLAR_CHF_M2) + ' CHF/m² Dachfläche geschätzt (60 m² ≈ 34\'000). Offertpreis hier überschreiben.')}
+        ${fld('s_anlage', 'PV-Anlagekosten', r0.anlageAuto ? r0.anlage : s.anlagekosten, 'CHF', 'Auto = ~' + Math.round(SOLAR_CHF_M2) + ' CHF/m² Dachfläche (60 m² ≈ 34\'000) – passt sich live an. Eigenen Offertpreis eintragen; Feld leeren = wieder automatisch.')}
         <div style="margin-top:12px">
           <div style="font-size:13px;font-weight:600;margin-bottom:5px">Batteriespeicher – Grösse wählen</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">${battBtns}</div>
           <span class="muted" style="font-size:11px;display:block;margin-top:5px;line-height:1.4">Grösserer Speicher = <b>mehr Eigenverbrauch</b> (Nutzen, spart mehr) bei <b>mehr Kosten</b> (~${SOLAR_CHF_KWH} CHF/kWh). Beides wird automatisch eingerechnet. Für exakte Werte (z.B. Offerte) unten anpassen:</span>
           <div class="form-row" style="margin-top:6px">
             ${fld('s_speicher', 'Speicher genau', s.speicher, 'kWh', 'aus Auswahl, überschreibbar')}
-            ${fld('s_speicherk', 'Speicherkosten', s.speicherKosten, 'CHF', 'leer = automatisch')}
+            ${fld('s_speicherk', 'Speicherkosten', r0.speicherAuto ? r0.speicherKosten : s.speicherKosten, 'CHF', 'Auto = kWh × ' + SOLAR_CHF_KWH + '; Feld leeren = wieder automatisch')}
           </div>
         </div>
         <div class="muted" style="font-size:12px;margin:14px 0 4px"><strong>Bauseitige Zusatzkosten</strong> – was die Offerte <em>nicht</em> enthält. Anklicken = dazu/weg:</div>
@@ -7321,7 +7329,7 @@ function viewSolar(pid) {
         <div id="s_bauseite">${(s.bauseite || []).map(b => bsRow(p.id, b.text, b.betrag)).join('')}</div>
         <button class="btn sm secondary" data-act="solar-bs-add" data-pid="${p.id}" type="button">+ eigene Position</button>
         <div style="margin-top:14px">
-          ${fld('s_eivm', 'Förderung EIV / KLEIV', s.eivManual, 'CHF', 'Leer = <b>automatisch</b> ~' + SOLAR_FOERDER_M2 + ' CHF/m² Dachfläche (60 m² ≈ 6\'000). Eigenen Wert (z.B. Förderzusage) hier eintragen.')}
+          ${fld('s_eivm', 'Förderung EIV / KLEIV', r0.eivAuto ? r0.eiv : s.eivManual, 'CHF', 'Auto = ~' + SOLAR_FOERDER_M2 + ' CHF/m² Dachfläche (60 m² ≈ 6\'000) – passt sich live an. Eigenen Wert eintragen; Feld leeren = wieder automatisch.')}
         </div>
 
         <div style="background:var(--brand-soft);border-radius:10px;padding:12px 14px;margin-top:16px">
@@ -7338,7 +7346,18 @@ function viewSolar(pid) {
     </div>
   `);
   const inp = $('#solarInputs');
-  if (inp) { inp.addEventListener('input', () => solarUpdate(pid)); inp.addEventListener('change', () => solarUpdate(pid)); }
+  const setFlag = e => {
+    const id = e.target && e.target.id; if (!id) return;
+    const filled = (e.target.value || '').trim() !== '';
+    p.solar = p.solar || {};
+    if (id === 's_anlage') p.solar.anlageManual = filled;
+    else if (id === 's_eivm') p.solar.eivSet = filled;
+    else if (id === 's_speicherk') p.solar.speicherKManual = filled;
+  };
+  if (inp) {
+    inp.addEventListener('input', e => { setFlag(e); solarUpdate(pid); });
+    inp.addEventListener('change', e => { setFlag(e); solarUpdate(pid); });
+  }
 }
 
 function pdfSolar(pid) {
@@ -7379,7 +7398,8 @@ function pdfSolar(pid) {
     ${tr('<b>Investition total</b>', '<b>' + fr(r.invest) + '</b>')}
     ${tr('− Förderung (EIV)', '− ' + fr(r.eiv))}
     ${tr('<b>Netto-Investition</b>', '<b>' + fr(r.netto) + '</b>')}
-    ${tr('Amortisation', r.amort != null ? f1(r.amort) + ' Jahre' : '–')}
+    ${tr('Amortisation (mit Förderung)', r.amort != null ? f1(r.amort) + ' Jahre' : '–')}
+    ${tr('Amortisation ohne Förderung', r.amortBrutto != null ? f1(r.amortBrutto) + ' Jahre' : '–')}
     ${tr('Rendite', r.rendite != null ? f1(r.rendite) + ' % / Jahr' : '–')}
   </tbody></table>`;
 

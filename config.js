@@ -30,6 +30,7 @@ window.SUBMITONE_CONFIG = {
     mod_nachtraege: '',
     mod_optionen: '',
     mod_finanz: '',
+    mod_zahlungsplan: '',
     mod_dossier: '',
     mod_bauherr: '',
     mod_solar: '',

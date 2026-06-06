@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v88';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v89';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -382,7 +382,7 @@ let currentUserId = null, currentUserSlug = '', currentUserVor = '', currentUser
 const PLANS = [
   { key: 'gratis',   name: 'Gratis',   preis: '0',  features: ['Alle Werkzeuge lokal nutzen', 'Drucken & PDF', '✗ kein Cloud-Speichern', '✗ kein Teilen'] },
   { key: 'basis',    name: 'Basic',    preis: '15', features: ['Cloud-Speichern, mehrere Geräte', 'Kontakte · Ausschreibung · Kosten', 'Termine · Kalender · Planung · Protokolle', 'Team-Arbeitsbereich'] },
-  { key: 'komplett', name: 'Premium', preis: '25', features: ['Alles aus Basic', '+ Nachträge-Übersicht · Optionen · Finanzierung', '+ Pendenzen · Dossier · Bauherr', '+ Solar · U-Wert · Honorar', '+ Teilen / Veröffentlichen'] },
+  { key: 'komplett', name: 'Premium', preis: '25', features: ['Alles aus Basic', '+ Nachträge-Übersicht · Optionen · Finanzierung', '+ Zahlungsplan · Pendenzen · Dossier · Bauherr', '+ Solar · U-Wert · Honorar', '+ Teilen / Veröffentlichen'] },
 ];
 // Einzeln freischaltbare Module (à la carte), CHF/Monat. tier = in welchem Paket enthalten.
 // Schlüssel = canModul()-Schlüssel. Einzeln summiert teurer als das jeweilige Paket.
@@ -398,6 +398,7 @@ const MODULES = [
   { key: 'nachtraege', name: 'Nachträge-Übersicht (projektweit)', tier: 'premium', preis: '4', feat: ['Alle Nachträge über alle Gewerke', 'Status & Genehmigung zentral', 'Rapporte-Übersicht', 'Summen & Prognose', 'Pflege je Gewerk ist in Kosten enthalten'] },
   { key: 'optionen',   name: 'Optionale Bauteile & Teilprojekte', tier: 'premium', preis: '3', feat: ['Optionen ein-/ausblenden', 'Bauteile / Trakte', 'bereinigte Kostenschätzung'] },
   { key: 'finanz',     name: 'Finanzierung',             tier: 'premium', preis: '3', feat: ['Finanzierungsplan', 'Eigen- / Fremdkapital', 'Tranchen / Zahlungen'] },
+  { key: 'zahlungsplan', name: 'Zahlungsplan',           tier: 'premium', preis: '3', feat: ['Beträge nach SIA-Leistungsprozenten', 'Fälligkeiten aus dem Terminprogramm', 'pro Phase anpassbar'] },
   { key: 'dossier',    name: 'Dokumente / Dossier',      tier: 'premium', preis: '3', feat: ['Dossier-Checkliste', 'Dokumentenablage', 'Vorlagen'] },
   { key: 'bauherr',    name: 'Bauherr / Auswahlentscheide', tier: 'premium', preis: '3', feat: ['Bemusterung', 'Auswahlentscheide', 'Wohnungen / Einheiten'] },
   { key: 'solar',      name: 'Solarrechner',             tier: 'premium', preis: '2', feat: ['Ertrag & Eigenverbrauch', 'Wirtschaftlichkeit & EIV', 'PDF-Report'] },
@@ -437,7 +438,7 @@ function canModul(m) {
   return (ent.module || []).includes(m);
 }
 // Module mit EIGENEM, sauber trennbarem Projekt-Feld → können beim Speichern echt weggelassen werden.
-const MODUL_FELD = { pendenzen: 'pendenzen', protokolle: 'protokolle', solar: 'solar', uwert: 'uwert', honorar: 'honorar', dossier: 'dossier', bauherr: 'bauherr', optionen: ['optionen', 'bauteile'], finanz: 'finanz' };
+const MODUL_FELD = { pendenzen: 'pendenzen', protokolle: 'protokolle', solar: 'solar', uwert: 'uwert', honorar: 'honorar', dossier: 'dossier', bauherr: 'bauherr', optionen: ['optionen', 'bauteile'], finanz: 'finanz', zahlungsplan: 'zahlungsplan' };
 // „Gesperrt" = Cloud-Modus mit echten Berechtigungen UND Modul nicht freigeschaltet (lokal/permissiv → nie gesperrt).
 function modulGesperrt(key) { return cloudEnabled && ent !== null && !canModul(key); }
 // Klon des Projekts fürs Speichern, ohne die Daten gesperrter (nicht gekaufter) Module → ehrlich „nicht gespeichert".
@@ -1132,6 +1133,7 @@ function projektTabs(p, active) {
     { key: 'nachtraege', href: `#/projekt/${p.id}/nachtraege`, label: 'Nachträge' },
     { key: 'optionen', href: `#/projekt/${p.id}/optionen`, label: 'Optionen' },
     { key: 'finanz', href: `#/projekt/${p.id}/finanz`, label: 'Finanzierung' },
+    { key: 'zahlungsplan', href: `#/projekt/${p.id}/zahlungsplan`, label: 'Zahlungsplan' },
     { key: 'bauherr', href: `#/projekt/${p.id}/bauherr`, label: 'Bauherr' },
     { key: 'solar', href: `#/projekt/${p.id}/solar`, label: 'Solar' },
     { key: 'uwert', href: `#/projekt/${p.id}/uwert`, label: 'U-Wert' },
@@ -1232,6 +1234,7 @@ function router() {
       if (sub === 'nachtraege') return viewNachtraege(a);
       if (sub === 'solar') return viewSolar(a);
       if (sub === 'uwert') return viewUwert(a);
+      if (sub === 'zahlungsplan') return viewZahlungsplan(a);
       if (sub === 'protokolle') return viewProtokolle(a);
       if (sub === 'pendenzen') return viewPendenzen(a);
       if (sub === 'dossier') return viewDossier(a);
@@ -7016,6 +7019,87 @@ function viewUwert(pid) {
   $('#uw_name')?.addEventListener('change', e => { uwertActive(p).name = e.target.value.trim() || 'Bauteil'; save(); viewUwert(pid); });
 }
 
+/* ============================================================
+   Zahlungsplan (Premium): Betrag × SIA-Leistungs-% je Phase,
+   Fälligkeiten aus dem Terminprogramm-Zeitraum verteilt.
+   ============================================================ */
+function zahlungsplanOf(p) {
+  if (!p.zahlungsplan) p.zahlungsplan = {};
+  const z = p.zahlungsplan;
+  if (!Array.isArray(z.phasen) || !z.phasen.length) z.phasen = HONORAR_PHASEN.map(ph => ({ key: ph.key, label: ph.label, pct: ph.pct, datum: '' }));
+  if (z.betrag === undefined || z.betrag === null) z.betrag = Math.round(baukostenTotal(p)) || 0;
+  if (z.von === undefined) z.von = p.baustart || p.start || '';
+  if (z.bis === undefined) z.bis = p.ende || '';
+  return z;
+}
+function zahlungsplanCalc(z) {
+  const betrag = Number(z.betrag) || 0;
+  let cum = 0;
+  const rows = z.phasen.map(ph => { const pct = Number(ph.pct) || 0; cum += pct; return { ...ph, pct, betrag: betrag * pct / 100, cum }; });
+  const pctSum = rows.reduce((a, r) => a + r.pct, 0);
+  return { rows, betrag, pctSum, total: betrag * pctSum / 100 };
+}
+function zahlungsplanRead(pid) {
+  const p = findProjekt(pid); const z = zahlungsplanOf(p);
+  const b = $('#zp_betrag'), v = $('#zp_von'), bis = $('#zp_bis');
+  if (b) z.betrag = Number(b.value) || 0;
+  if (v) z.von = v.value;
+  if (bis) z.bis = bis.value;
+  z.phasen.forEach((ph, i) => { const pe = $('#zp_pct_' + i), de = $('#zp_dat_' + i); if (pe) ph.pct = Number(pe.value) || 0; if (de) ph.datum = de.value; });
+}
+function zahlungsplanUpdate(pid) {
+  const p = findProjekt(pid); zahlungsplanRead(pid); save();
+  const c = zahlungsplanCalc(zahlungsplanOf(p));
+  c.rows.forEach((r, i) => { const el = $('#zp_b_' + i); if (el) el.textContent = chf(r.betrag); });
+  const ts = $('#zp_total'); if (ts) ts.textContent = chf(c.total);
+  const ps = $('#zp_pctsum'); if (ps) { ps.textContent = (Math.round(c.pctSum * 10) / 10) + '%'; ps.style.color = Math.abs(c.pctSum - 100) < 0.05 ? 'var(--s-green)' : 'var(--s-red)'; }
+}
+function zahlungsplanVerteilen(pid) {
+  const p = findProjekt(pid); zahlungsplanRead(pid); const z = zahlungsplanOf(p);
+  const von = z.von ? new Date(z.von) : null, bis = z.bis ? new Date(z.bis) : null;
+  if (!von || !bis || isNaN(+von) || isNaN(+bis) || +bis <= +von) { toast('Bitte gültigen Zeitraum (von / bis) eingeben', 'info'); return; }
+  const span = +bis - +von; const tot = z.phasen.reduce((a, ph) => a + (Number(ph.pct) || 0), 0) || 100;
+  let cum = 0;
+  z.phasen.forEach(ph => { cum += Number(ph.pct) || 0; const d = new Date(+von + span * (cum / tot)); ph.datum = d.toISOString().slice(0, 10); });
+  save(); viewZahlungsplan(pid); toast('Fälligkeiten verteilt');
+}
+function viewZahlungsplan(pid) {
+  const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  const z = zahlungsplanOf(p); const c = zahlungsplanCalc(z);
+  const rows = c.rows.map((r, i) => `<tr>
+      <td>${esc(r.label)}</td>
+      <td class="num"><input class="input zp-in" id="zp_pct_${i}" type="number" step="0.1" value="${r.pct}" style="width:74px;text-align:right;padding:4px 6px"></td>
+      <td class="num" id="zp_b_${i}">${chf(r.betrag)}</td>
+      <td><input class="input zp-in" id="zp_dat_${i}" type="date" value="${esc(r.datum || '')}" style="width:150px;padding:4px 6px"></td>
+    </tr>`).join('');
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Zahlungsplan</div>
+    <div class="detail-head">
+      <div><h1 style="margin:0;font-size:23px">Zahlungsplan</h1><div class="sub" style="margin-top:5px">Beträge nach SIA-Leistungsprozenten · Fälligkeiten aus dem Terminprogramm</div></div>
+    </div>
+    ${projektTabs(p, 'zahlungsplan')}
+    ${demoBanner('zahlungsplan')}
+    <div class="card card-pad" style="max-width:840px">
+      <div class="form-row">
+        <label class="field">Gesamtbetrag (CHF)
+          <input class="input zp-in" id="zp_betrag" type="number" value="${z.betrag}">
+          <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">z.B. Werkvertragssumme, Honorar oder Baukosten · <button type="button" data-act="zp-baukosten" data-pid="${p.id}" style="background:none;border:none;color:var(--brand);cursor:pointer;padding:0;font-size:11px;text-decoration:underline">aus Baukosten (${chf(baukostenTotal(p))})</button></span></label>
+      </div>
+      <div class="form-row" style="margin-top:6px">
+        <label class="field">Zeitraum von <input class="input zp-in" id="zp_von" type="date" value="${esc(z.von || '')}"></label>
+        <label class="field">bis <input class="input zp-in" id="zp_bis" type="date" value="${esc(z.bis || '')}"></label>
+        <div style="display:flex;align-items:flex-end"><button class="btn secondary" data-act="zp-verteilen" data-pid="${p.id}" type="button">Fälligkeiten verteilen</button></div>
+      </div>
+      <table class="grid" style="margin-top:14px"><thead><tr><th>SIA-Phase</th><th class="num">Leistung %</th><th class="num">Betrag</th><th>Fälligkeit</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b id="zp_pctsum" style="color:${Math.abs(c.pctSum-100)<0.05?'var(--s-green)':'var(--s-red)'}">${Math.round(c.pctSum*10)/10}%</b></td><td class="num"><b id="zp_total">${chf(c.total)}</b></td><td></td></tr></tfoot>
+      </table>
+      <p class="muted" style="font-size:11.5px;margin:12px 0 0">Leistungsprozente nach SIA (anpassbar). „Fälligkeiten verteilen" legt die Daten anteilig in den Zeitraum (Ende jeder Phase). Summe sollte 100% ergeben.</p>
+    </div>
+  `);
+  $$('.zp-in').forEach(el => el.addEventListener('input', () => zahlungsplanUpdate(pid)));
+}
+
 function pdfKostenschaetzung(pid) {
   const p = findProjekt(pid); if (!p) return;
   const gw = gewerkeSorted(p); let tot = 0;
@@ -8412,6 +8496,8 @@ document.addEventListener('click', e => {
     case 'rm-budget':    removeBudget(pid, vid, bid); break;
     case 'budget-auswahl': actBudgetForAuswahl(pid, eid); break;
     case 'abo-open':     actAbo(); break;
+    case 'zp-verteilen': zahlungsplanVerteilen(pid); break;
+    case 'zp-baukosten': { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).betrag = Math.round(baukostenTotal(p2)); save(); viewZahlungsplan(pid); break; }
     case 'uw-pick':      uwertPick(pid, act.dataset.id); break;
     case 'uw-add':       uwertAddSchicht(pid); break;
     case 'uw-rm':        uwertRmSchicht(pid, Number(act.dataset.idx)); break;

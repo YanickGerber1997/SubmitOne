@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v148';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v149';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3544,16 +3544,19 @@ function viewBauherr(pid) {
   const einheiten = alleEinheiten(p);
   const hasWhg = einheiten.length >= 1;
   const selW = hasWhg ? bauherrWohnung : 'alle';
-  const ents = selW === 'alle' ? allEnts : allEnts.filter(e => String(e.wohnung || '') === selW);
+  const ents = selW === 'alle' ? allEnts
+    : selW === '' ? allEnts.filter(e => !e.wohnung)                                   // Zusätze: allgemeine + Mehrfach-Punkte
+      : allEnts.filter(e => String(e.wohnung || '') === selW || (e.wohnungen || []).includes(selW));
   const eigOf = id => { const h = einheiten.find(x => x.u.id === id); return h ? (h.u.eigentuemer || '') : ''; };
   const whgLabel = w => { const n = einheitName(p, w); const e = eigOf(w); return e ? `${n} · ${e}` : n; };
+  const entUnitLabel = e => (e.wohnungen && e.wohnungen.length) ? e.wohnungen.map(id => einheitName(p, id)).join(', ') : einheitName(p, e.wohnung || '');
   const selEig = (selW && selW !== 'alle' && selW !== '') ? eigOf(selW) : '';
   const selKontakt = (() => { const h = einheiten.find(x => x.u.id === selW); return h ? (h.u.eigKontakt || '') : ''; })();
   const segB = (kind, label, active) => `<button class="btn sm ${active ? '' : 'secondary'}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="${kind}" type="button" style="border:none">${label}</button>`;
   const whgChips = hasWhg ? `<div class="seg" style="display:inline-flex;gap:4px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:14px">
     ${segB('alle', 'Alle', selW === 'alle')}
     ${einheiten.map(x => segB(x.u.id, `${esc(x.u.name || 'Einheit')}${x.u.eigentuemer ? ' · ' + esc(x.u.eigentuemer) : ''}`, selW === x.u.id)).join('')}
-    ${segB('', 'Allgemein', selW === '')}
+    ${segB('', 'Zusätze', selW === '')}
   </div>${selEig || selKontakt ? `<div class="card card-pad" style="padding:8px 12px;margin:0 0 14px;background:var(--brand-soft);border-color:transparent;font-size:13px">👤 Eigentümer: <b>${esc(selEig || '—')}</b>${selKontakt ? ` · ${esc(selKontakt)}` : ''} <span class="muted">· <a href="#/projekt/${p.id}/listen">in Eigentümerliste bearbeiten</a></span></div>` : ''}` : '';
   const firms = (p.bezugsfirmen || []);
   const byKat = {};
@@ -3566,11 +3569,11 @@ function viewBauherr(pid) {
       <tbody>${ents.map(e => { const v = vergOf(e); const bp = v ? (v.budgetposten || []).find(x => (x.text || '').toLowerCase() === (e.thema || '').toLowerCase()) : null; return `
         <tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
           <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
-          ${hasWhg ? `<td class="muted" style="font-size:12px">${esc(whgLabel(e.wohnung || ''))}</td>` : ''}
+          ${hasWhg ? `<td class="muted" style="font-size:12px">${esc(entUnitLabel(e))}</td>` : ''}
           <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">
             ${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}
           </select></td>
-          <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${e.entscheid ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${entStatus(e) === 'entfaellt' ? 'Grund: ' : ''}${esc(e.entscheid)}</div>` : ''}</td>
+          <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${(e.wohnungen && e.wohnungen.length) ? ` <span class="st blue" style="font-size:9px;padding:1px 6px">Zusatz · ${e.wohnungen.length}</span>` : ''}${e.entscheid ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${entStatus(e) === 'entfaellt' ? 'Grund: ' : ''}${esc(e.entscheid)}</div>` : ''}</td>
           <td class="num">${bp ? chf(bp.betrag) + (hatIst(bp) ? `<div class="muted" style="font-size:11.5px">Ist ${chf(Number(bp.ist) || 0)}</div>` : '') : '<span class="muted">–</span>'}</td>
           <td>
             <button class="x-btn" data-act="budget-auswahl" data-pid="${p.id}" data-eid="${e.id}" title="Budget erfassen/bearbeiten">💰</button>
@@ -3599,7 +3602,7 @@ function viewBauherr(pid) {
     <tbody>${alleSorted.map(e => { const v = vergOf(e); const bp = v ? (v.budgetposten || []).find(x => (x.text || '').toLowerCase() === (e.thema || '').toLowerCase()) : null; return `<tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
       <td style="font-size:12px">${faelligCell(e)}</td>
       <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
-      <td class="muted" style="font-size:12px">${esc(whgLabel(e.wohnung || ''))}</td>
+      <td class="muted" style="font-size:12px">${esc(entUnitLabel(e))}${(e.wohnungen && e.wohnungen.length) ? ' <span class="st blue" style="font-size:8.5px;padding:0 5px">Zusatz</span>' : ''}</td>
       <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></td>
       <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${e.entscheid ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${esc(e.entscheid)}</div>` : ''}</td>
       <td class="num">${bp ? chf(bp.betrag) : '<span class="muted">–</span>'}</td>
@@ -3681,6 +3684,10 @@ function actNewEntscheidung(pid, eid) {
       <label class="field">Status <select class="select" id="en_status">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${(e ? entStatus(e) : 'offen') === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></label>
       ${wohnungSelect || '<label class="field">&nbsp;</label>'}
     </div>
+    ${einhListe.length ? `<label class="field" style="margin-top:2px">Zusatz – gilt für mehrere Eigentümer <span class="muted" style="font-weight:400;font-size:11px">(Mehrfachauswahl; erscheint dann bei jedem)</span>
+      <div style="display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:5px;padding:8px 10px;border:1px solid var(--border);border-radius:8px">${einhListe.map(x => `<label style="display:flex;gap:5px;align-items:center;font-size:12.5px;font-weight:400;cursor:pointer"><input type="checkbox" class="en-multi" value="${x.u.id}"${(e && (e.wohnungen || []).includes(x.u.id)) ? ' checked' : ''}> ${esc(x.u.name || 'Einheit')}${x.u.eigentuemer ? ' · ' + esc(x.u.eigentuemer) : ''}</label>`).join('')}</div>
+      <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Angekreuzt = der Punkt erscheint bei jedem dieser Eigentümer (überschreibt die einzelne Wohnung oben).</span>
+    </label>` : ''}
     <hr style="border:none;border-top:1px solid var(--border);margin:14px 0 10px">
     <label class="field">Unternehmer aus Projekt (Werkvertrag)
       <select class="select" id="en_vid">${vopts}</select>
@@ -3709,13 +3716,15 @@ function actNewEntscheidung(pid, eid) {
 }
 function readEntscheidung() {
   const ausFirma = $('#en_ausfirma') ? $('#en_ausfirma').value.trim() : '';
+  const multi = $$('.en-multi').filter(c => c.checked).map(c => c.value);
   return {
     datum: $('#en_datum').value,
     bkp: $('#en_bkp') ? parseBkp($('#en_bkp').value).code : '',
     thema: $('#en_thema').value.trim(), entscheid: $('#en_text').value.trim(),
     status: $('#en_status').value,
     vid: $('#en_vid') ? $('#en_vid').value : '',
-    wohnung: $('#en_wohnung') ? $('#en_wohnung').value : '',
+    wohnung: multi.length ? '' : ($('#en_wohnung') ? $('#en_wohnung').value : ''),
+    wohnungen: multi,   // Mehrfachauswahl (Zusatz); leer = keine
     ausstellung: ausFirma ? { firma: ausFirma, ort: $('#en_ausort').value.trim(), telefon: $('#en_austel').value.trim() } : null,
   };
 }

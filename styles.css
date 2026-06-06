@@ -1070,6 +1070,14 @@ table.va input[type=number] { -moz-appearance: textfield; }
   color: #cdd6e6; font-weight: 600; font-size: 12px; letter-spacing: .4px;
   max-height: 150px; overflow: hidden; white-space: nowrap; margin-top: 4px; }
 
+/* --- U-Wert-Rechner: Querschnitt --- */
+.uw-cut { display: flex; align-items: stretch; height: 96px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+.uw-end { display: flex; align-items: center; justify-content: center; padding: 0 6px; font-size: 10px; color: var(--text-soft); background: var(--surface-2); writing-mode: vertical-rl; }
+.uw-bars { display: flex; flex: 1; min-width: 0; }
+.uw-seg { display: flex; align-items: flex-end; justify-content: center; min-width: 5px; border-right: 1px solid rgba(0,0,0,.12); overflow: hidden; }
+.uw-seg:last-child { border-right: none; }
+.uw-seg span { font-size: 9px; color: rgba(0,0,0,.6); padding-bottom: 3px; }
+
 /* --- Eigener Menü-Tooltip (schöner/grösser als der native) --- */
 .app-tip {
   position: fixed; display: none; z-index: 500; transform: translateY(-50%);

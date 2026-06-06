@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v81';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v82';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1078,6 +1078,7 @@ function projektTabs(p, active) {
     { key: 'optionen', href: `#/projekt/${p.id}/optionen`, label: 'Optionen' },
     { key: 'nachtraege', href: `#/projekt/${p.id}/nachtraege`, label: 'Nachträge' },
     { key: 'solar', href: `#/projekt/${p.id}/solar`, label: 'Solar' },
+    { key: 'uwert', href: `#/projekt/${p.id}/uwert`, label: 'U-Wert' },
     { key: 'termine', href: `#/projekt/${p.id}/termine`, label: 'Termine / Gantt' },
     { key: 'protokolle', href: `#/projekt/${p.id}/protokolle`, label: 'Protokolle' },
     { key: 'pendenzen', href: `#/projekt/${p.id}/pendenzen`, label: 'Pendenzen' + pendBadge },
@@ -1180,6 +1181,7 @@ function router() {
       if (sub === 'optionen') return viewOptionen(a);
       if (sub === 'nachtraege') return viewNachtraege(a);
       if (sub === 'solar') return viewSolar(a);
+      if (sub === 'uwert') return viewUwert(a);
       if (sub === 'protokolle') return viewProtokolle(a);
       if (sub === 'pendenzen') return viewPendenzen(a);
       if (sub === 'dossier') return viewDossier(a);
@@ -6809,6 +6811,150 @@ function solarToBaukosten(pid) {
   go('#/projekt/' + pid + '/kosten');
 }
 
+/* ============================================================
+   U-Wert-Rechner (Bauteil-Schichten → U-Wert + Querschnitt)
+   ============================================================ */
+const UWERT_MAT = [
+  { n: 'Stahlbeton',          l: 2.3,   k: 'massiv' },
+  { n: 'Backstein/Mauerwerk', l: 0.8,   k: 'massiv' },
+  { n: 'Kalksandstein',       l: 1.0,   k: 'massiv' },
+  { n: 'Porenbeton',          l: 0.13,  k: 'massiv' },
+  { n: 'Zementestrich',       l: 1.4,   k: 'massiv' },
+  { n: 'Holz (Fichte)',       l: 0.13,  k: 'holz' },
+  { n: 'Brettschichtholz',    l: 0.13,  k: 'holz' },
+  { n: 'Holzfaserdämmung',    l: 0.045, k: 'daemmung' },
+  { n: 'Mineralwolle',        l: 0.035, k: 'daemmung' },
+  { n: 'Steinwolle',          l: 0.037, k: 'daemmung' },
+  { n: 'Glaswolle',           l: 0.035, k: 'daemmung' },
+  { n: 'EPS (Styropor)',      l: 0.035, k: 'daemmung' },
+  { n: 'XPS',                 l: 0.035, k: 'daemmung' },
+  { n: 'PUR/PIR',             l: 0.024, k: 'daemmung' },
+  { n: 'Zellulose',           l: 0.040, k: 'daemmung' },
+  { n: 'Gipskarton',          l: 0.25,  k: 'platte' },
+  { n: 'Zementputz',          l: 1.0,   k: 'putz' },
+  { n: 'Kalk-/Gipsputz',      l: 0.70,  k: 'putz' },
+];
+const UWERT_TYP = {
+  wand:  { label: 'Aussenwand',          rsi: 0.13, rse: 0.04, ref: 0.17 },
+  dach:  { label: 'Dach / Decke oben',   rsi: 0.10, rse: 0.04, ref: 0.17 },
+  boden: { label: 'Boden / Decke unten', rsi: 0.17, rse: 0.04, ref: 0.25 },
+};
+const UWERT_FARBE = { massiv: '#9aa3ad', holz: '#c89b6a', platte: '#d7dce2', putz: '#c2c8d0', daemmung: '#f2d058' };
+
+function uwertOf(p) {
+  if (!p.uwert || !Array.isArray(p.uwert.bauteile) || !p.uwert.bauteile.length) {
+    const b = { id: uid('uw'), name: 'Aussenwand', typ: 'wand', schichten: [] };
+    p.uwert = { bauteile: [b], aktiv: b.id };
+  }
+  if (!p.uwert.aktiv || !p.uwert.bauteile.find(b => b.id === p.uwert.aktiv)) p.uwert.aktiv = p.uwert.bauteile[0].id;
+  return p.uwert;
+}
+function uwertActive(p) { const u = uwertOf(p); return u.bauteile.find(b => b.id === u.aktiv); }
+function uwertCalc(bt) {
+  const typ = UWERT_TYP[bt.typ] || UWERT_TYP.wand;
+  const sch = (bt.schichten || []).map(s => { const l = Number(s.lambda) || 0, d = (Number(s.dicke) || 0) / 1000; return { ...s, R: l > 0 ? d / l : 0 }; });
+  const sumR = sch.reduce((a, s) => a + s.R, 0);
+  const Rtot = typ.rsi + sumR + typ.rse;
+  const U = Rtot > 0 ? 1 / Rtot : 0;
+  const dicke = sch.reduce((a, s) => a + (Number(s.dicke) || 0), 0);
+  return { typ, sch, sumR, Rtot, U, dicke, ref: typ.ref, pass: U <= typ.ref + 1e-9 };
+}
+function uwertOutHtml(bt) {
+  const r = uwertCalc(bt);
+  const f2 = x => (Math.round(x * 100) / 100).toLocaleString('de-CH');
+  const f3 = x => (Math.round(x * 1000) / 1000).toLocaleString('de-CH');
+  const total = r.sch.reduce((a, s) => a + (Number(s.dicke) || 0), 0) || 1;
+  const segs = r.sch.map(s => {
+    const w = Math.max(5, (Number(s.dicke) || 0) / total * 100);
+    return `<div class="uw-seg" style="flex:${w} 1 0;background:${UWERT_FARBE[s.k] || '#cbd5e1'}" title="${esc(s.name || '')} · ${Number(s.dicke) || 0} mm · λ ${s.lambda}"><span>${Number(s.dicke) || 0}</span></div>`;
+  }).join('');
+  return `
+    <div class="uw-cut">
+      <div class="uw-end">aussen</div>
+      <div class="uw-bars">${segs || '<div class="muted" style="padding:14px;font-size:12px">Schichten links hinzufügen …</div>'}</div>
+      <div class="uw-end">innen</div>
+    </div>
+    <div class="kpi-row" style="margin-top:14px">
+      <div class="kpi"><div class="k-label">U-Wert</div><div class="k-value" style="color:var(--${r.pass ? 's-green' : 's-red'})">${f3(r.U)}</div><div class="muted" style="font-size:11px">W/(m²·K)</div></div>
+      <div class="kpi"><div class="k-label">R total</div><div class="k-value" style="font-size:20px">${f2(r.Rtot)}</div><div class="muted" style="font-size:11px">m²·K/W</div></div>
+      <div class="kpi"><div class="k-label">Bauteildicke</div><div class="k-value" style="font-size:20px">${r.dicke} mm</div></div>
+      <div class="kpi"><div class="k-label">Richtwert (CH)</div><div class="k-value" style="font-size:20px">≤ ${f2(r.ref)}</div><div class="muted" style="font-size:11px;color:var(--${r.pass ? 's-green' : 's-red'})">${r.pass ? '✓ erfüllt' : '✗ überschritten'}</div></div>
+    </div>
+    <p class="muted" style="font-size:11.5px;margin:12px 0 0">R = Dicke ÷ λ je Schicht; + Rsi ${r.typ.rsi} (innen) + Rse ${r.typ.rse} (aussen). U = 1 ÷ R total. Richtwerte: Wand/Dach 0.17, Boden 0.25 W/(m²·K).</p>`;
+}
+function uwertRead(pid) {
+  const p = findProjekt(pid); const bt = uwertActive(p); if (!bt) return;
+  (bt.schichten || []).forEach((s, i) => { const l = $('#uw_lambda_' + i), d = $('#uw_dicke_' + i); if (l) s.lambda = Number(l.value) || 0; if (d) s.dicke = Number(d.value) || 0; });
+}
+function uwertUpdate(pid) {
+  const p = findProjekt(pid); uwertRead(pid); save();
+  const out = $('#uwertOut'); if (out) out.innerHTML = uwertOutHtml(uwertActive(p));
+}
+function uwertSetMat(pid, idx, name) {
+  const p = findProjekt(pid); uwertRead(pid); const bt = uwertActive(p); const m = UWERT_MAT.find(x => x.n === name); const s = bt.schichten[idx];
+  if (s && m) { s.name = m.n; s.lambda = m.l; s.k = m.k; }
+  save(); viewUwert(pid);
+}
+function uwertAddSchicht(pid) {
+  const p = findProjekt(pid); uwertRead(pid); const bt = uwertActive(p); const m = UWERT_MAT.find(x => x.k === 'daemmung');
+  bt.schichten = bt.schichten || []; bt.schichten.push({ name: m.n, lambda: m.l, k: m.k, dicke: 100 });
+  save(); viewUwert(pid);
+}
+function uwertRmSchicht(pid, idx) {
+  const p = findProjekt(pid); uwertRead(pid); const bt = uwertActive(p); bt.schichten.splice(idx, 1); save(); viewUwert(pid);
+}
+function uwertAddBauteil(pid) {
+  const p = findProjekt(pid); const u = uwertOf(p); const b = { id: uid('uw'), name: 'Bauteil ' + (u.bauteile.length + 1), typ: 'wand', schichten: [] };
+  u.bauteile.push(b); u.aktiv = b.id; save(); viewUwert(pid);
+}
+function uwertDelBauteil(pid) {
+  const p = findProjekt(pid); const u = uwertOf(p);
+  if (u.bauteile.length <= 1) { toast('Mindestens ein Bauteil', 'info'); return; }
+  if (!confirm('Bauteil löschen?')) return;
+  u.bauteile = u.bauteile.filter(b => b.id !== u.aktiv); u.aktiv = u.bauteile[0].id; save(); viewUwert(pid);
+}
+function uwertPick(pid, id) { const p = findProjekt(pid); uwertRead(pid); uwertOf(p).aktiv = id; save(); viewUwert(pid); }
+function viewUwert(pid) {
+  const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  const u = uwertOf(p); const bt = uwertActive(p);
+  const matOpts = sel => UWERT_MAT.map(m => `<option value="${esc(m.n)}"${sel === m.n ? ' selected' : ''}>${esc(m.n)} (λ ${m.l})</option>`).join('');
+  const chips = u.bauteile.map(b => `<button class="btn xs ${b.id === u.aktiv ? '' : 'secondary'}" data-act="uw-pick" data-pid="${p.id}" data-id="${b.id}" type="button">${esc(b.name || 'Bauteil')}</button>`).join('');
+  const rows = (bt.schichten || []).map((s, i) => `<div class="form-row" style="gap:6px;align-items:center;margin-bottom:5px">
+      <select class="select uw-mat" data-pid="${p.id}" data-idx="${i}" style="flex:2;min-width:0">${matOpts(s.name)}</select>
+      <input class="input uw-in" id="uw_lambda_${i}" type="number" step="0.001" value="${s.lambda ?? ''}" title="λ in W/(m·K)" style="max-width:84px">
+      <input class="input uw-in" id="uw_dicke_${i}" type="number" value="${s.dicke ?? ''}" placeholder="mm" title="Dicke in mm" style="max-width:84px">
+      <button class="x-btn" data-act="uw-rm" data-pid="${p.id}" data-idx="${i}" type="button">×</button>
+    </div>`).join('');
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › U-Wert</div>
+    <div class="detail-head">
+      <div><h1 style="margin:0;font-size:23px">U-Wert-Rechner</h1><div class="sub" style="margin-top:5px">Wärmedämmung von Bauteilen – Schichten, U-Wert &amp; Querschnitt</div></div>
+    </div>
+    ${projektTabs(p, 'uwert')}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${chips}<button class="btn xs secondary" data-act="uw-newbt" data-pid="${p.id}" type="button">+ Bauteil</button></div>
+    <div class="two-col">
+      <div class="card card-pad" id="uwertInputs">
+        <div class="form-row">
+          <label class="field">Bezeichnung <input class="input" id="uw_name" value="${esc(bt.name || '')}"></label>
+          <label class="field">Bauteil-Typ <select class="select" id="uw_typ">${Object.entries(UWERT_TYP).map(([k, v]) => `<option value="${k}"${bt.typ === k ? ' selected' : ''}>${esc(v.label)}</option>`).join('')}</select></label>
+        </div>
+        <div class="muted" style="font-size:12px;margin:10px 0 6px"><strong>Schichten</strong> – von <b>aussen</b> (oben) nach <b>innen</b> (unten): Material · λ · Dicke (mm)</div>
+        ${rows || '<p class="muted" style="font-size:12.5px;padding:4px 0">Noch keine Schichten.</p>'}
+        <button class="btn sm secondary" data-act="uw-add" data-pid="${p.id}" type="button" style="margin-top:4px">+ Schicht</button>
+        <div style="margin-top:14px"><button class="btn ghost sm danger" data-act="uw-delbt" data-pid="${p.id}" type="button">Bauteil löschen</button></div>
+      </div>
+      <div class="card card-pad">
+        <h2 style="margin:0 0 12px;font-size:15px">Querschnitt &amp; Ergebnis</h2>
+        <div id="uwertOut">${uwertOutHtml(bt)}</div>
+      </div>
+    </div>
+  `);
+  $$('.uw-in').forEach(el => el.addEventListener('input', () => uwertUpdate(pid)));
+  $$('.uw-mat').forEach(sel => sel.addEventListener('change', () => uwertSetMat(pid, Number(sel.dataset.idx), sel.value)));
+  $('#uw_typ')?.addEventListener('change', e => { uwertRead(pid); uwertActive(p).typ = e.target.value; save(); const out = $('#uwertOut'); if (out) out.innerHTML = uwertOutHtml(uwertActive(p)); });
+  $('#uw_name')?.addEventListener('change', e => { uwertActive(p).name = e.target.value.trim() || 'Bauteil'; save(); viewUwert(pid); });
+}
+
 function pdfKostenschaetzung(pid) {
   const p = findProjekt(pid); if (!p) return;
   const gw = gewerkeSorted(p); let tot = 0;
@@ -8204,6 +8350,11 @@ document.addEventListener('click', e => {
     case 'save-budget':  saveBudget(pid, vid); break;
     case 'rm-budget':    removeBudget(pid, vid, bid); break;
     case 'budget-auswahl': actBudgetForAuswahl(pid, eid); break;
+    case 'uw-pick':      uwertPick(pid, act.dataset.id); break;
+    case 'uw-add':       uwertAddSchicht(pid); break;
+    case 'uw-rm':        uwertRmSchicht(pid, Number(act.dataset.idx)); break;
+    case 'uw-newbt':     uwertAddBauteil(pid); break;
+    case 'uw-delbt':     uwertDelBauteil(pid); break;
     case 'nt-pick':      actNachtragPick(pid, act.dataset.kind); break;
     case 'np-nachtrag':  actNewNachtrag(pid, vid); break;
     case 'np-rapport':   actNewRapport(pid, vid); break;

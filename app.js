@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v162';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v163';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -4519,21 +4519,16 @@ function viewVergabeDetail(pid, vid) {
   const ungesendet = eingeladene.filter(e => e.status === 'eingeladen');
   const hasContract = isContract(v);
 
-  // Gewerk-Navigation: horizontale, scrollbare Leiste (jede Breite), aktuelles hervorgehoben, 1-Klick
+  // Gewerk-Navigation: vertikale Liste (BKP-Katalog) neben dem Inhalt, gruppiert nach BKP-Hauptgruppe
   const gwList = gewerkeSorted(p);
-  const gIdx = gwList.findIndex(x => x.id === v.id);
-  const gPrev = gIdx > 0 ? gwList[gIdx - 1] : null;
-  const gNext = gIdx >= 0 && gIdx < gwList.length - 1 ? gwList[gIdx + 1] : null;
-  const gwBar = `<div class="gw-bar-wrap">
-    ${gPrev ? `<a class="gw-nav" href="#/projekt/${p.id}/vergabe/${gPrev.id}" title="${esc((gPrev.bkp ? gPrev.bkp + ' ' : '') + gPrev.gewerk)}">‹</a>` : '<span class="gw-nav disabled">‹</span>'}
-    <div class="gw-bar">${gwList.map(g => { const stt = STATUS_BY_KEY[g.status] || {}; return `<a class="gw-chip${g.id === v.id ? ' active' : ''}" href="#/projekt/${p.id}/vergabe/${g.id}" title="${esc(stt.label || g.status || '')}"><span class="st-dot ${stt.color || 'grey'}"></span><span class="gw-chip-bkp">${esc(g.bkp || '')}</span> ${esc(g.gewerk || '')}</a>`; }).join('')}</div>
-    ${gNext ? `<a class="gw-nav" href="#/projekt/${p.id}/vergabe/${gNext.id}" title="${esc((gNext.bkp ? gNext.bkp + ' ' : '') + gNext.gewerk)}">›</a>` : '<span class="gw-nav disabled">›</span>'}
-    <span class="gw-bar-count muted">${gIdx + 1} / ${gwList.length}</span>
-  </div>`;
+  const gwGroups = {};
+  gwList.forEach(g => { const k = String(g.bkp || '0').trim()[0] || '0'; (gwGroups[k] = gwGroups[k] || []).push(g); });
+  const gwSide = `<aside class="gw-side">
+    <div class="gw-side-head">Gewerke · ${gwList.length}</div>
+    <div class="gw-side-list">${Object.keys(gwGroups).sort().map(k => `<div class="gw-side-grp">${esc(k)} · ${esc(BKP_GRUPPEN[k] || 'Übrige')}</div>${gwGroups[k].map(g => { const stt = STATUS_BY_KEY[g.status] || {}; return `<a class="gw-side-item${g.id === v.id ? ' active' : ''}" href="#/projekt/${p.id}/vergabe/${g.id}" title="${esc(stt.label || g.status || '')}"><span class="st-dot ${stt.color || 'grey'}"></span><span class="gw-side-bkp">${esc(g.bkp || '')}</span><span class="gw-side-name">${esc(g.gewerk || '')}</span></a>`; }).join('')}`).join('')}</div>
+  </aside>`;
 
   const html = `
-    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › ${esc(v.gewerk)}</div>
-    ${gwBar}
     <div class="detail-head">
       <div>
         <h1 style="margin:0;font-size:22px"><span class="bkp-code" style="font-size:16px">${esc(v.bkp)}</span> ${esc(v.gewerk)}</h1>
@@ -4778,8 +4773,10 @@ function viewVergabeDetail(pid, vid) {
       </div>` : `<div style="padding:0 0 8px">${emptyState('🧾', 'Noch keine Rechnungen erfasst.')}</div>`}
     </div>
   `;
-  render(html);
-  document.querySelector('.gw-chip.active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › ${esc(v.gewerk)}</div>
+    <div class="gw-detail-grid">${gwSide}<div class="gw-detail-content">${html}</div></div>`);
+  document.querySelector('.gw-side-item.active')?.scrollIntoView({ block: 'nearest' });
 
   // Rechnungs-Häkchen verdrahten
   $$('.rg-check').forEach(cb => cb.addEventListener('change', () => toggleRechnung(cb.dataset.pid, cb.dataset.vid, cb.dataset.rgid)));

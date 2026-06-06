@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v137';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v138';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1602,11 +1602,10 @@ function viewKosten(id) {
     <div class="kpi-row">
       ${kpi('Kostenschätzung (KV)', money(tot.kv))}
       ${kpi('Abrechnungsprognose', money(tot.endsumme))}
-      ${kpi('Rechnungen', money(tot.fakturiert))}
+      ${kpi(preiseInkl() ? 'Prognose (inkl. MwSt)' : 'Prognose inkl. ' + mwstSatz() + '% MwSt', 'CHF ' + money(inklMwst(tot.endsumme)), 'brand')}
       ${kpi('Offen', money(tot.offenRg))}
-      ${p.volumen ? kpi('Prognose / m³ (GV)', 'CHF ' + money(tot.endsumme / p.volumen)) : ''}
-      ${p.flaeche ? kpi('Prognose / m² (BGF)', 'CHF ' + money(tot.endsumme / p.flaeche)) : ''}
     </div>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 14px"><span class="tag" style="background:#eef2f8;color:#46505e;font-weight:600">${esc(mwstNote())}</span> – alle Beträge in dieser Übersicht.${preiseInkl() ? '' : ` Total inkl. MwSt: <b>${chf(inklMwst(tot.endsumme))}</b>.`}</p>
     ${(p.volumen || p.flaeche) ? `<p class="muted" style="font-size:12px;margin:-6px 0 14px">Kubische Kennzahlen für die Kostenschätzungs-Gegenüberstellung${p.volumen ? ` · GV ${p.volumen.toLocaleString('de-CH')} m³` : ''}${p.flaeche ? ` · BGF ${p.flaeche.toLocaleString('de-CH')} m²` : ''}. Gebäudedaten unter „Übersicht → ✎ Bearbeiten".</p>` : ''}
     <div class="card ktable-wrap">
       <table class="grid ktable">
@@ -2750,8 +2749,8 @@ function openPrintDoc(title, subtitleHtml, inner, opts) {
     table.t thead{display:table-header-group;} table.t tr{page-break-inside:avoid;}
     @media print{${pg}}`;
   const footer = design === 'modern'
-    ? `<div class="ft"><span><b>${esc(b.firma || '')}</b>${b.email ? ' · ' + esc(b.email) : ''}</span><span>${fmtDate(todayIso())}</span></div>`
-    : `<div class="ft"><span>${esc(b.firma || 'submit one')}</span><span>Erstellt mit submit one · ${fmtDate(todayIso())}</span></div>`;
+    ? `<div class="ft"><span><b>${esc(b.firma || '')}</b> · ${esc(mwstNote())}</span><span>${fmtDate(todayIso())}</span></div>`
+    : `<div class="ft"><span>${esc(b.firma || 'submit one')} · ${esc(mwstNote())}</span><span>${fmtDate(todayIso())}</span></div>`;
   const html = `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>${esc(title)}</title>
   <style>${design === 'modern' ? styleModern : styleStandard}${opts.extraCss || ''}</style></head><body><div class="page">
     ${design === 'modern' ? '<div class="accent-top"></div>' : ''}
@@ -2891,7 +2890,7 @@ function openSheetDoc(opts) {
   const ft = pg => `<div class="sh-ft"><span>${esc(b.firma || '')}</span><span>Seite ${pg} / ${total}</span></div>`;
   let pages = `<div class="sheet cover">
     <div class="cv-head">${logo}<div class="cv-addr">${addr}</div></div>
-    <div class="cv-mid"><div class="cv-kick">${esc(opts.kicker || '')}</div><h1 class="cv-title">${esc(opts.title || '')}</h1>${opts.objekt ? `<div class="cv-obj">${esc(opts.objekt)}</div>` : ''}<div class="cv-date">Stand: ${esc(datum)}</div>${opts.freitext ? `<div class="cv-text">${esc(opts.freitext).replace(/\n/g, '<br>')}</div>` : ''}</div>
+    <div class="cv-mid"><div class="cv-kick">${esc(opts.kicker || '')}</div><h1 class="cv-title">${esc(opts.title || '')}</h1>${opts.objekt ? `<div class="cv-obj">${esc(opts.objekt)}</div>` : ''}<div class="cv-date">Stand: ${esc(datum)} &nbsp;·&nbsp; ${esc(mwstNote())}</div>${opts.freitext ? `<div class="cv-text">${esc(opts.freitext).replace(/\n/g, '<br>')}</div>` : ''}</div>
     <div class="cv-foot">${esc(b.firma || '')}${b.email ? ' &nbsp;·&nbsp; ' + esc(b.email) : ''}</div>
   </div>`;
   if (hasToc) {
@@ -5113,6 +5112,15 @@ function viewEinstellungen() {
         <textarea class="input" id="b_signatur" rows="4" placeholder="Freundliche Grüsse&#10;P. Hefti Bauberatung GmbH&#10;Bernstrasse 40, 3076 Worb · 031 839 00 77">${esc(b.signatur || '')}</textarea>
       </label>
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;margin-top:6px"><input type="checkbox" id="b_sig_auto" ${b.signaturAuto === false ? '' : 'checked'}> Signatur standardmässig an Mails anhängen</label>
+      <div class="form-row" style="margin-top:12px">
+        <label class="field">MwSt-Satz <span class="muted" style="font-weight:400;font-size:11.5px">(%)</span><input class="input" type="number" step="0.1" id="b_mwst" value="${b.mwst != null ? b.mwst : 8.1}"></label>
+        <label class="field">Beträge sind <span class="muted" style="font-weight:400;font-size:11.5px">– gilt überall (App + PDFs)</span>
+          <select class="select" id="b_preise">
+            <option value="exkl"${b.preiseInkl ? '' : ' selected'}>exkl. MwSt (netto)</option>
+            <option value="inkl"${b.preiseInkl ? ' selected' : ''}>inkl. MwSt (brutto)</option>
+          </select>
+        </label>
+      </div>
       <label class="field" style="margin-top:12px">Druck-Design <span class="muted" style="font-weight:400;font-size:11.5px">– Layout aller PDFs / Drucke</span>
         <select class="select" id="b_design">
           <option value="standard"${(b.druckDesign === 'modern') ? '' : ' selected'}>Standard (klassisch)</option>
@@ -5156,6 +5164,8 @@ function saveBuero() {
     signatur: $('#b_signatur') ? $('#b_signatur').value : (cur.signatur || ''),
     signaturAuto: $('#b_sig_auto') ? $('#b_sig_auto').checked : (cur.signaturAuto !== false),
     druckDesign: $('#b_design') ? $('#b_design').value : (cur.druckDesign || 'standard'),
+    mwst: $('#b_mwst') ? (Number($('#b_mwst').value) || 0) : (cur.mwst != null ? cur.mwst : 8.1),
+    preiseInkl: $('#b_preise') ? ($('#b_preise').value === 'inkl') : !!cur.preiseInkl,
   };
   save();
   toast('Büro-Daten gespeichert');
@@ -8186,7 +8196,8 @@ function pdfBaukosten(pid, mode) {
     const kuTable = `<table class="t" style="font-size:10.5px"><thead><tr>${th('BKP / Hauptgruppe')}${th('KV', '(Schätzung)', 1)}${th('KV rev.', '(Offerte/Stand)', 1)}${th('KV +/−', '(Schätzung/Offerte)', 1)}${th('WV', '(verhandelt)', 1)}${th('Prognose', '(WV+NT / Schluss)', 1)}${th('Rechnung', '(bisher bezahlt)', 1)}${th('offen', '(noch nicht bez.)', 1)}${th('+/−', '(WV → Endsumme)', 1)}</tr></thead>
         <tbody>${kuRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total Baukosten</b></td><td class="num"><b>${f2(tot.kv)}</b></td><td class="num"><b>${f2(tot.rev)}</b></td>${diffTd(tot.rev - tot.kv)}<td class="num"><b>${f2(tot.wv)}</b></td><td class="num"><b>${f2(tot.prognose)}</b></td><td class="num"><b>${f2(tot.rechnung)}</b></td><td class="num"><b>${f2(tot.offen)}</b></td>${diffTd(tot.dWvEnd)}</tbody></table>`;
     const legende = `<p class="muted" style="margin-top:10px;font-size:8.5px">KV (Schätzung) · KV rev. (Offerte, sonst Schätzung) · KV +/− (Schätzung gegen Offerte) · WV (verhandelte Vergabesumme) · Prognose (WV + Nachträge; <b>SR</b> = Schlussrechnung → Endsumme = effektive Rechnungssumme, offen = 0) · Rechnung (Summe eingetragener Rechnungen) · offen (Endsumme − Rechnungen) · +/− (WV gegen Endsumme). ↳ = Nachträge &amp; Rechnungen je eigene Zeile. Grün = Einsparung (tiefer), rot = Überschreitung (höher).</p>`;
-    sheets.push({ secTitle: 'Kostenübersicht', html: kuTable + legende });
+    const inklZeile = preiseInkl() ? '' : `<p style="text-align:right;margin:8px 0 0;font-size:12px"><b>Total inkl. ${mwstSatz()}% MwSt: ${f2(inklMwst(tot.prognose))}</b></p>`;
+    sheets.push({ secTitle: 'Kostenübersicht', html: kuTable + inklZeile + legende });
     openSheetDoc({ title: 'Baukostenübersicht', kicker: 'Kostenkontrolle', objekt: `${p.name}, ${p.ort}`, freitext: p.deckblatt || '', toc: true, landscape: true, sheets });
     return;
   }
@@ -8228,7 +8239,8 @@ function pdfBaukosten(pid, mode) {
   const zusTable = `<table class="t"><thead><tr><th>Hauptgruppe</th><th class="num">Kostenschätzung</th><th class="num">Prognose</th><th class="num">Rechnung</th></tr></thead>
       <tbody>${zRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total</b></td><td class="num"><b>${chf(teil.kv)}</b></td><td class="num"><b>${chf(teil.prognose)}</b></td><td class="num"><b>${chf(teil.bezahlt)}</b></td></tr></tbody></table>`;
   const legende = `<p class="muted" style="margin-top:10px;font-size:9.5px">KV = Kostenschätzung · KV rev. = günstigste Offerte (sonst Schätzung) · WV = Werkvertrag · NT = Nachträge · Prognose = Endsumme (WV+NT bzw. Schlussrechnung) · Bezahlt = eingetragene Rechnungen · Offen = Endsumme − Rechnungen. „Übertrag" = laufende Summe je Seite.</p>`;
-  sheets.push({ secTitle: 'Kostenübersicht (Zusammenzug)', html: zusTable + legende });
+  const inklZeile = preiseInkl() ? '' : `<p style="text-align:right;margin:8px 0 0;font-size:12px"><b>Total inkl. ${mwstSatz()}% MwSt: ${chf(inklMwst(teil.prognose))}</b></p>`;
+  sheets.push({ secTitle: 'Kostenübersicht (Zusammenzug)', html: zusTable + inklZeile + legende });
   openSheetDoc({ title: 'Baukostenübersicht', kicker: 'Kostenkontrolle', objekt: `${p.name}, ${p.ort}`, freitext: p.deckblatt || '', toc: true, landscape: true, sheets });
 }
 
@@ -9110,7 +9122,14 @@ const BUERO = {
   plzort: '3076 Worb',
   tel: '031 839 00 77',
   email: 'info@heftibb.ch',
+  mwst: 8.1,            // MwSt-Satz in %
+  preiseInkl: false,    // false = Beträge netto (exkl. MwSt), true = inkl.
 };
+// MwSt-Konvention (global, aus den Büro-Einstellungen)
+function mwstSatz() { const v = Number((state.buero || BUERO).mwst); return (isFinite(v) && v >= 0) ? v : 8.1; }
+function preiseInkl() { return !!((state.buero || BUERO).preiseInkl); }
+function mwstNote() { return preiseInkl() ? `inkl. ${mwstSatz()} % MwSt` : `Beträge exkl. MwSt (zzgl. ${mwstSatz()} %)`; }
+function inklMwst(netto) { return preiseInkl() ? (Number(netto) || 0) : (Number(netto) || 0) * (1 + mwstSatz() / 100); }
 
 function pdfDeckblatt(pid, vid, eid, typ) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
@@ -10069,7 +10088,7 @@ function demoData() {
 
   const buero = {
     firma: 'P. Hefti Bauberatung GmbH', strasse: 'Bernstrasse 40', plzort: '3076 Worb',
-    tel: '031 839 00 77', email: 'info@heftibb.ch', logo: '',
+    tel: '031 839 00 77', email: 'info@heftibb.ch', logo: '', mwst: 8.1, preiseInkl: false,
     signatur: 'Freundliche Grüsse\nP. Hefti Bauberatung GmbH\nBernstrasse 40, 3076 Worb\nTel. 031 839 00 77', signaturAuto: true,
   };
   return { projekte, kontakte, dokumente, buero };

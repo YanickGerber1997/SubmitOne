@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v86';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v87';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -382,7 +382,7 @@ let currentUserId = null, currentUserSlug = '', currentUserVor = '', currentUser
 const PLANS = [
   { key: 'gratis',   name: 'Gratis',   preis: '0',  features: ['Alle Werkzeuge lokal nutzen', 'Drucken & PDF', '✗ kein Cloud-Speichern', '✗ kein Teilen'] },
   { key: 'basis',    name: 'Basic',    preis: '15', features: ['Cloud-Speichern, mehrere Geräte', 'Kontakte · Ausschreibung · Kosten', 'Termine · Kalender · Planung · Protokolle', 'Team-Arbeitsbereich'] },
-  { key: 'komplett', name: 'Premium', preis: '25', features: ['Alles aus Basic', '+ Nachträge · Optionen · Finanzierung', '+ Pendenzen · Dossier · Bauherr', '+ Solar · U-Wert · Honorar', '+ Teilen / Veröffentlichen'] },
+  { key: 'komplett', name: 'Premium', preis: '25', features: ['Alles aus Basic', '+ Optionen · Finanzierung', '+ Pendenzen · Dossier · Bauherr', '+ Solar · U-Wert · Honorar', '+ Teilen / Veröffentlichen'] },
 ];
 // Einzeln freischaltbare Module (à la carte), CHF/Monat. tier = in welchem Paket enthalten.
 // Schlüssel = canModul()-Schlüssel. Einzeln summiert teurer als das jeweilige Paket.
@@ -391,11 +391,10 @@ const MODULES = [
   { key: 'kalender',   name: 'Kalender',                 tier: 'basic',   inkl: true, feat: ['Projekt- & Gesamtkalender', 'Termine & Fristen', 'Tag / Woche / Monat'] },
   { key: 'planung',    name: 'Arbeitsplanung',           tier: 'basic',   inkl: true, feat: ['Wochen-/Tagesplanung', 'Blöcke & Zuteilung'] },
   { key: 'submission', name: 'Ausschreibung & Vergabe',  tier: 'basic',   preis: '9', feat: ['Ausschreibung erstellen', 'Submittenten einladen + Versand', 'Offertvergleich / Abgebot', 'Vergabeantrag & Werkvertrag', 'Zuschlag / Absage'] },
-  { key: 'kosten',     name: 'Kostenführung / Baukosten', tier: 'basic',  preis: '7', feat: ['Kostenschätzung (Positionen, Ausmass)', 'Baukostenübersicht nach BKP', 'Vergabesummen & Prognose', 'Rechnungen, Rückbehalt, QR-Scan'] },
+  { key: 'kosten',     name: 'Kostenführung / Baukosten', tier: 'basic',  preis: '7', feat: ['Kostenschätzung (Positionen, Ausmass)', 'Objektgliederung / Baukosten nach BKP', 'Vergabesummen & Prognose', 'Nachträge & Rapporte je Gewerk', 'Rechnungen, Rückbehalt, QR-Scan'] },
   { key: 'termine',    name: 'Terminprogramm / Gantt',   tier: 'basic',   preis: '5', feat: ['Bauprogramm (Gantt)', 'Verkettung der Gewerke', 'Eingabefristen', 'Arbeitstage / Feiertage'] },
   { key: 'protokolle', name: 'Protokolle',               tier: 'basic',   preis: '5', feat: ['Sitzungsprotokolle', 'Traktanden & Beschlüsse', 'Verteiler', 'Pendenzen aus Sitzung'] },
   { key: 'pendenzen',  name: 'Pendenzen',                tier: 'premium', preis: '5', feat: ['Aufgaben mit Verantwortlichen', 'Termine & Überfällig-Tracking', 'projektübergreifend'] },
-  { key: 'nachtraege', name: 'Nachträge & Rapporte',     tier: 'premium', preis: '4', feat: ['Nachtragspflege je Gewerk', 'Status & Genehmigung', 'Rapporte / Regie', 'projektweite Übersicht'] },
   { key: 'optionen',   name: 'Optionale Bauteile & Teilprojekte', tier: 'premium', preis: '3', feat: ['Optionen ein-/ausblenden', 'Bauteile / Trakte', 'bereinigte Kostenschätzung'] },
   { key: 'finanz',     name: 'Finanzierung',             tier: 'premium', preis: '3', feat: ['Finanzierungsplan', 'Eigen- / Fremdkapital', 'Tranchen / Zahlungen'] },
   { key: 'dossier',    name: 'Dokumente / Dossier',      tier: 'premium', preis: '3', feat: ['Dossier-Checkliste', 'Dokumentenablage', 'Vorlagen'] },
@@ -447,10 +446,6 @@ function projektFuerCloud(p) {
   for (const key in MODUL_FELD) {
     if (!modulGesperrt(key)) continue;
     [].concat(MODUL_FELD[key]).forEach(feld => { if (p[feld] !== undefined) delete ensure()[feld]; });
-  }
-  // Nachträge/Rapporte liegen je Gewerk in `vergaben` → bei gesperrtem Modul dort entfernen
-  if (modulGesperrt('nachtraege') && Array.isArray(p.vergaben)) {
-    ensure().vergaben = p.vergaben.map(v => { const c = { ...v }; delete c.nachtraege; delete c.rapporte; return c; });
   }
   return clone || p;
 }
@@ -6380,7 +6375,6 @@ function viewNachtraege(pid) {
       </div>
     </div>
     ${projektTabs(p, 'nachtraege')}
-    ${demoBanner('nachtraege')}
 
     <div class="section-head"><h2>Nachträge</h2><span class="hint">Nur genehmigte zählen in die Abrechnungsprognose</span></div>
     <div class="card" style="overflow-x:auto">

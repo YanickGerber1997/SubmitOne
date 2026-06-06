@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v132';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v133';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7045,8 +7045,10 @@ const SOLAR_BATTERIES = [{ key: '0', label: 'kein', kwh: 0, eigen: 30 }, { key: 
 // Bauseitige Zusatzarbeiten als Schnellauswahl (Richtwerte CHF)
 const SOLAR_BAUSEITE = [{ label: 'Baumeister', chf: 2000 }, { label: 'Gerüst', chf: 5000 }, { label: 'Elektriker', chf: 2000 }, { label: 'Spengler', chf: 2000 }];
 // Richtwerte für die Automatik (an realer CH-Offerte kalibriert) – immer überschreibbar
-const SOLAR_CHF_KWP = 2000;   // Anlagekosten pro kWp (brutto, inkl. Ausführung)
-const SOLAR_CHF_KWH = 450;    // Speicherkosten pro kWh
+// Anlagekosten & Förderung pro m² Dachfläche (kalibriert: 60 m² → 34'000 / Förderung 6'000)
+const SOLAR_CHF_M2 = 34000 / 60;   // ≈ 567 CHF/m² (brutto, inkl. Ausführung)
+const SOLAR_FOERDER_M2 = 100;      // 6'000 / 60 m² = 100 CHF/m²
+const SOLAR_CHF_KWH = 450;         // Speicherkosten pro kWh
 
 function solarOf(p) {
   const s = Object.assign({}, SOLAR_DEFAULT, p.solar || {});
@@ -7090,13 +7092,13 @@ function solarCalc(s) {
   const stromkostenNeu = Math.round(reststrombezug * n(s.strompreis) / 100 - verguetung);
   // Automatik: leere Felder werden aus kWp / kWh geschätzt (immer überschreibbar)
   const anlageAuto = !(s.anlagekosten !== '' && s.anlagekosten != null);
-  const anlage = anlageAuto ? Math.round(kwp * SOLAR_CHF_KWP) : n(s.anlagekosten);
+  const anlage = anlageAuto ? Math.round(flaeche * SOLAR_CHF_M2) : n(s.anlagekosten);   // Kosten über Dachfläche (m²)
   const speicherAuto = !(s.speicherKosten !== '' && s.speicherKosten != null);
   const speicherKosten = speicherAuto ? Math.round(speicher * SOLAR_CHF_KWH) : n(s.speicherKosten);
   const bauseiteSum = (s.bauseite || []).reduce((a, b) => a + (Number(b.betrag) || 0), 0);
   const invest = anlage + speicherKosten + bauseiteSum;
   const eivAuto = (s.eivManual === '' || s.eivManual == null);
-  const eiv = eivAuto ? solarKLEIV(kwp) : n(s.eivManual);                 // KLEIV mit Stufen (Auto) oder manuell
+  const eiv = eivAuto ? Math.round(flaeche * SOLAR_FOERDER_M2) : n(s.eivManual);   // Förderung über Dachfläche (m²)
   const netto = Math.max(0, invest - eiv);
   const amort = ertragJahr > 0 ? netto / ertragJahr : null;               // Jahre
   const rendite = netto > 0 ? ertragJahr / netto * 100 : null;            // %/Jahr
@@ -7202,11 +7204,11 @@ function solarRechenweg(r, s) {
     ${row(`Einspeise-Vergütung: ${kwh(r.einspeisung)} kWh × ${s.einspeise} Rp`, fr(r.verguetung))}
     ${row(`<b>Ertrag pro Jahr</b>`, '<b>' + fr(r.ertragJahr) + '</b>')}
     <div style="height:6px"></div>
-    ${row(`PV-Anlagekosten${r.anlageAuto ? ` (${f1(r.kwp)} kWp × ${SOLAR_CHF_KWP}, automatisch)` : ''}`, fr(r.anlage))}
+    ${row(`PV-Anlagekosten${r.anlageAuto ? ` (${kwh(r.flaeche)} m² × ~${Math.round(SOLAR_CHF_M2)} CHF/m², automatisch)` : ''}`, fr(r.anlage))}
     ${r.speicherKosten ? row(`+ Batteriespeicher${r.speicher ? ` (${f1(r.speicher)} kWh${r.speicherAuto ? ' × ' + SOLAR_CHF_KWH : ''})` : ''}`, fr(r.speicherKosten)) : ''}
     ${r.bauseiteSum ? row(`+ Bauseitige Kosten (Gerüst, Spengler …)`, fr(r.bauseiteSum)) : ''}
     ${row(`= Investition total`, '<b>' + fr(r.invest) + '</b>')}
-    ${row(`− Förderung EIV${r.eivAuto ? ' (automatisch)' : ''}`, '− ' + fr(r.eiv))}
+    ${row(`− Förderung EIV${r.eivAuto ? ` (${kwh(r.flaeche)} m² × ${SOLAR_FOERDER_M2} CHF/m², automatisch)` : ''}`, '− ' + fr(r.eiv))}
     ${row(`<b>= Netto-Investition</b>`, '<b>' + fr(r.netto) + '</b>')}
     <div style="height:6px"></div>
     ${row(`Amortisation: ${fr(r.netto)} ÷ ${fr(r.ertragJahr)}/Jahr`, '<b>' + (r.amort != null ? f1(r.amort) + ' Jahre' : '–') + '</b>')}
@@ -7304,7 +7306,7 @@ function viewSolar(pid) {
         </div>
 
         <h2 style="margin:16px 0 10px;font-size:15px">3 · Investition &amp; Förderung <span class="muted" style="font-size:12px;font-weight:400">– leer = automatisch</span></h2>
-        ${fld('s_anlage', 'PV-Anlagekosten', s.anlagekosten, 'CHF', 'Leer lassen = ~' + SOLAR_CHF_KWP + ' CHF/kWp geschätzt. Offertpreis hier überschreiben.')}
+        ${fld('s_anlage', 'PV-Anlagekosten', s.anlagekosten, 'CHF', 'Leer lassen = ~' + Math.round(SOLAR_CHF_M2) + ' CHF/m² Dachfläche geschätzt (60 m² ≈ 34\'000). Offertpreis hier überschreiben.')}
         <div style="margin-top:12px">
           <div style="font-size:13px;font-weight:600;margin-bottom:5px">Batteriespeicher – Grösse wählen</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">${battBtns}</div>
@@ -7319,7 +7321,7 @@ function viewSolar(pid) {
         <div id="s_bauseite">${(s.bauseite || []).map(b => bsRow(p.id, b.text, b.betrag)).join('')}</div>
         <button class="btn sm secondary" data-act="solar-bs-add" data-pid="${p.id}" type="button">+ eigene Position</button>
         <div style="margin-top:14px">
-          ${fld('s_eivm', 'Förderung EIV / KLEIV', s.eivManual, 'CHF', 'Leer = <b>automatisch</b> nach Pronovo-Leistungsstufen geschätzt. Eigenen Wert (z.B. aus Offerte) hier eintragen.')}
+          ${fld('s_eivm', 'Förderung EIV / KLEIV', s.eivManual, 'CHF', 'Leer = <b>automatisch</b> ~' + SOLAR_FOERDER_M2 + ' CHF/m² Dachfläche (60 m² ≈ 6\'000). Eigenen Wert (z.B. Förderzusage) hier eintragen.')}
         </div>
 
         <div style="background:var(--brand-soft);border-radius:10px;padding:12px 14px;margin-top:16px">

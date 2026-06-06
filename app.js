@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v135';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v136';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -4972,10 +4972,23 @@ function viewDossier(pid) {
     </div>
     <p class="muted" style="font-size:12px;margin:0 0 16px"><span class="dos-auto">auto</span> = wird von der App automatisch erkannt (öffnen zum Bearbeiten) · übrige Positionen erfasst du extern (Status, Datei-Name/Link, Notiz).</p>
     ${dossierZahlungsplanCard(p)}
+    ${dossierSolarCard(p)}
     ${phasenHtml}
   `);
 }
 // Zahlungsplan-Status fürs Dossier (Versionen + abgeschlossen/in Arbeit) – ohne den Plan zu erzwingen
+function dossierSolarCard(p) {
+  const st = p.solar; if (!st || !Array.isArray(st.varianten)) return '';
+  const gv = st.varianten.find(v => v.id === st.gewaehlt);
+  const status = st.gesperrt
+    ? `Variante „${esc((gv || st.varianten[0]).name || '')}" <span class="st green" style="font-size:9px;padding:1px 6px">freigegeben</span> ${fmtDate(st.freigabeDatum)}`
+    : (gv ? `Variante „${esc(gv.name || '')}" gewählt <span class="st amber" style="font-size:9px;padding:1px 6px">noch nicht freigegeben</span>`
+      : `${st.varianten.length} Variante${st.varianten.length > 1 ? 'n' : ''} <span class="st grey" style="font-size:9px;padding:1px 6px">noch nicht entschieden</span>`);
+  return `<div class="card card-pad" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div><strong>☀ Solaranlage</strong><div class="muted" style="font-size:12px;margin-top:3px">${status}</div></div>
+      <a class="btn sm secondary" href="#/projekt/${p.id}/solar">öffnen ↗</a>
+    </div>`;
+}
 function dossierZahlungsplanCard(p) {
   const zpL = Array.isArray(p.zahlungsplaene) ? p.zahlungsplaene : (p.zahlungsplan ? [Object.assign({ name: 'Version 1' }, p.zahlungsplan)] : []);
   const aktivIdx = zpL.findIndex(z => z.id === p.zpAktiv);
@@ -7050,16 +7063,29 @@ const SOLAR_CHF_M2 = 34000 / 60;   // ≈ 567 CHF/m² (brutto, inkl. Ausführung
 const SOLAR_FOERDER_M2 = 100;      // 6'000 / 60 m² = 100 CHF/m²
 const SOLAR_CHF_KWH = 450;         // Speicherkosten pro kWh
 
-function solarOf(p) {
-  const s = Object.assign({}, SOLAR_DEFAULT, p.solar || {});
-  // Migration alter Stände (kWp direkt) → Dachfläche
-  if ((s.flaeche === '' || s.flaeche == null) && p.solar && p.solar.kwp) {
-    const w = Number(s.wpm2) || 200; s.flaeche = Math.round(Number(p.solar.kwp) * 1000 / w);
-  }
-  if (typeof s.neigung === 'string' && SOLAR_NEIGUNG_ALT[s.neigung] != null) s.neigung = SOLAR_NEIGUNG_ALT[s.neigung];   // alte Auswahl → Grad
+// Eine Variante (roher Speicher) → Konfig mit Defaults/Migration
+function solarMigrateVar(v) {
+  const s = Object.assign({}, SOLAR_DEFAULT, v || {});
+  if ((s.flaeche === '' || s.flaeche == null) && v && v.kwp) { const w = Number(s.wpm2) || 200; s.flaeche = Math.round(Number(v.kwp) * 1000 / w); }
+  if (typeof s.neigung === 'string' && SOLAR_NEIGUNG_ALT[s.neigung] != null) s.neigung = SOLAR_NEIGUNG_ALT[s.neigung];
   if (!Array.isArray(s.bauseite)) s.bauseite = [];
   return s;
 }
+// p.solar = { varianten:[{id,name,...config}], aktiv, gewaehlt, gesperrt, freigabeDatum }
+function solarStore(p) {
+  let st = p.solar;
+  if (!st || !Array.isArray(st.varianten)) {
+    const flat = (st && typeof st === 'object') ? st : {};
+    const v = Object.assign({ id: uid('sv'), name: 'Variante 1' }, flat);
+    st = { varianten: [v], aktiv: v.id, gewaehlt: null, gesperrt: false, freigabeDatum: '' };
+    p.solar = st;
+  }
+  if (!st.aktiv || !st.varianten.find(v => v.id === st.aktiv)) st.aktiv = st.varianten[0].id;
+  return st;
+}
+function solarActiveVar(p) { const st = solarStore(p); return st.varianten.find(v => v.id === st.aktiv) || st.varianten[0]; }
+function solarOf(p) { return solarMigrateVar(solarActiveVar(p)); }            // aktive Variante (für Calc/Render)
+function solarApplyDom(p) { Object.assign(solarActiveVar(p), solarRead()); }  // DOM-Felder → aktive Variante (Loads/Flags/Name bleiben)
 function solarCalc(s) {
   const n = x => Number(x) || 0;
   const flaeche = n(s.flaeche), wpm2 = n(s.wpm2);
@@ -7112,20 +7138,13 @@ function solarRead() {
   const bauseite = $$('#s_bauseite .bsr').map(r => ({ text: r.querySelector('.bs-text').value.trim(), betrag: Number(r.querySelector('.bs-betrag').value) || 0 })).filter(b => b.text || b.betrag);
   return { flaeche: g('s_flaeche'), belegung: g('s_belegung'), wpm2: g('s_wpm2'), ertrag: g('s_ertrag'), orient: g('s_orient'), neigung: g('s_neigung'), verbrauch: g('s_verbrauch'), eigenanteil: g('s_eigen'), strompreis: g('s_preis'), einspeise: g('s_einsp'), anlagekosten: g('s_anlage'), speicher: g('s_speicher'), speicherKosten: g('s_speicherk'), eivManual: g('s_eivm'), bauseite };
 }
-// Felder aus dem DOM lesen, Schalter-Zustände (Wärmepumpe …) aus p.solar erhalten
-function solarPreserve(p) {
-  const prev = p.solar || {};
-  const s = solarRead();
-  SOLAR_LOADS.forEach(l => { s[l.key] = !!prev[l.key]; });
-  ['anlageManual', 'eivSet', 'speicherKManual'].forEach(k => { if (prev[k] !== undefined) s[k] = prev[k]; });   // Auto/Manuell-Flags erhalten
-  return s;
-}
 function solarUpdate(pid) {
   const p = findProjekt(pid); if (!p) return;
-  p.solar = solarPreserve(p); save();
-  const r = solarCalc(p.solar);
-  const out = $('#solarOut'); if (out) out.innerHTML = solarOutHtml(r, p.solar);
+  solarApplyDom(p); save();
+  const r = solarCalc(solarOf(p));
+  const out = $('#solarOut'); if (out) out.innerHTML = solarOutHtml(r, solarOf(p));
   const box = $('#solarInvestBox'); if (box) box.innerHTML = solarInvestHtml(r);
+  const cmp = $('#solarCompare'); if (cmp) cmp.innerHTML = solarCompareHtml(p);
   // Auto-Kostenfelder live mit dem geschätzten Wert füllen (nur solange nicht manuell überschrieben)
   if (r.anlageAuto) { const el = $('#s_anlage'); if (el && document.activeElement !== el) el.value = r.anlage; }
   if (r.eivAuto) { const el = $('#s_eivm'); if (el && document.activeElement !== el) el.value = r.eiv; }
@@ -7133,30 +7152,83 @@ function solarUpdate(pid) {
 }
 function solarToggle(pid, key) {
   const p = findProjekt(pid); if (!p) return;
-  const s = solarPreserve(p);
-  s[key] = !s[key];
-  p.solar = s; save(); viewSolar(pid);   // neu rendern: Schalter-Optik + Gesamtverbrauch
+  solarApplyDom(p); const v = solarActiveVar(p); v[key] = !v[key];
+  save(); viewSolar(pid);
 }
 // Batteriegrösse wählen: setzt kWh, Kosten zurück auf Auto, und hebt Eigenverbrauch (Nutzen)
 function solarBattery(pid, key) {
   const b = SOLAR_BATTERIES.find(x => x.key === key); if (!b) return;
   const p = findProjekt(pid); if (!p) return;
-  const s = solarPreserve(p);
-  s.speicher = b.kwh || ''; s.speicherKosten = '';   // Eigenverbrauch wird automatisch berechnet
-  p.solar = s; save(); viewSolar(pid);
+  solarApplyDom(p); const v = solarActiveVar(p); v.speicher = b.kwh || ''; v.speicherKosten = ''; v.speicherKManual = false;
+  save(); viewSolar(pid);
 }
-function solarRegion(pid, v) {
+function solarRegion(pid, val) {
   const p = findProjekt(pid); if (!p) return;
-  const s = solarPreserve(p); s.ertrag = v;
-  p.solar = s; save(); viewSolar(pid);
+  solarApplyDom(p); solarActiveVar(p).ertrag = val; save(); viewSolar(pid);
 }
 // Bauseitige Zusatzarbeit an-/abwählen (wie Verbraucher-Schalter)
 function solarBauseite(pid, label, chf) {
   const p = findProjekt(pid); if (!p) return;
-  const s = solarPreserve(p); s.bauseite = s.bauseite || [];
-  const i = s.bauseite.findIndex(b => (b.text || '').toLowerCase() === label.toLowerCase());
-  if (i >= 0) s.bauseite.splice(i, 1); else s.bauseite.push({ text: label, betrag: chf });
-  p.solar = s; save(); viewSolar(pid);
+  solarApplyDom(p); const v = solarActiveVar(p); v.bauseite = v.bauseite || [];
+  const i = v.bauseite.findIndex(b => (b.text || '').toLowerCase() === label.toLowerCase());
+  if (i >= 0) v.bauseite.splice(i, 1); else v.bauseite.push({ text: label, betrag: chf });
+  save(); viewSolar(pid);
+}
+// --- Varianten-Verwaltung + Gegenüberstellung + Bauherren-Freigabe ---
+function solarPickVar(pid, id) { const p = findProjekt(pid); solarApplyDom(p); solarStore(p).aktiv = id; save(); viewSolar(pid); }
+function solarAddVar(pid, dup) {
+  const p = findProjekt(pid); solarApplyDom(p); const st = solarStore(p);
+  const base = dup ? Object.assign({}, solarActiveVar(p)) : {};
+  const v = Object.assign({}, base, { id: uid('sv'), name: 'Variante ' + (st.varianten.length + 1) });
+  st.varianten.push(v); st.aktiv = v.id; save(); viewSolar(pid);
+}
+function solarDelVar(pid) {
+  const p = findProjekt(pid); const st = solarStore(p);
+  if (st.varianten.length <= 1) { toast('Mindestens eine Variante', 'info'); return; }
+  if (!confirm('Variante löschen?')) return;
+  st.varianten = st.varianten.filter(v => v.id !== st.aktiv);
+  if (st.gewaehlt && !st.varianten.find(v => v.id === st.gewaehlt)) st.gewaehlt = null;
+  st.aktiv = st.varianten[0].id; save(); viewSolar(pid);
+}
+function solarRenameVar(pid, name) { const p = findProjekt(pid); const v = solarActiveVar(p); v.name = (name || '').trim() || 'Variante'; save(); }
+function solarChoose(pid) { const p = findProjekt(pid); const st = solarStore(p); st.gewaehlt = (st.gewaehlt === st.aktiv) ? null : st.aktiv; save(); viewSolar(pid); }
+function solarChooseId(pid, id) { const p = findProjekt(pid); const st = solarStore(p); st.gewaehlt = (st.gewaehlt === id) ? null : id; save(); viewSolar(pid); }
+function pdfSolarVergleich(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const st = solarStore(p);
+  const f1 = x => (Math.round(x * 10) / 10).toLocaleString('de-CH');
+  const rows = st.varianten.map(v => {
+    const r = solarCalc(solarMigrateVar(v)); const g = st.gewaehlt === v.id;
+    return `<tr${g ? ' style="background:#eaf6ee"' : ''}><td><b>${esc(v.name || 'Variante')}</b>${g ? ' ★' : ''}</td><td class="num">${f1(r.kwp)} kWp</td><td class="num">${f1(r.flaeche)} m²</td><td class="num">${chf(r.invest)}</td><td class="num">− ${chf(r.eiv)}</td><td class="num"><b>${chf(r.netto)}</b></td><td class="num">${r.amort != null ? f1(r.amort) + ' J.' : '–'}</td><td class="num">${r.amortBrutto != null ? f1(r.amortBrutto) + ' J.' : '–'}</td><td class="num">${r.rendite != null ? f1(r.rendite) + ' %' : '–'}</td></tr>`;
+  }).join('');
+  const gv = st.varianten.find(v => v.id === st.gewaehlt);
+  const inner = `<table class="t"><thead><tr><th>Variante</th><th class="num">Leistung</th><th class="num">Dachfläche</th><th class="num">Investition</th><th class="num">Förderung</th><th class="num">Netto</th><th class="num">Amortisation</th><th class="num">ohne Förderung</th><th class="num">Rendite</th></tr></thead><tbody>${rows}</tbody></table>
+    ${gv ? `<p style="margin-top:14px;font-size:12.5px"><b>Empfehlung / gewählt:</b> ${esc(gv.name || '')}${st.gesperrt ? ` — vom Bauherrn freigegeben am ${fmtDate(st.freigabeDatum)}` : ''}.</p>` : ''}
+    <p class="muted" style="margin-top:8px;font-size:10px">Überschlagsrechnung (Richtwerte). Investition/Förderung über Dachfläche; Amortisation = Netto ÷ Jahresertrag, „ohne Förderung" über die Bruttoinvestition.</p>`;
+  openPrintDoc('Solar – Variantenvergleich', `${esc(p.name)}${p.ort ? ' · ' + esc(p.ort) : ''} · Stand ${fmtDate(todayIso())}`, inner, { landscape: true });
+}
+function solarFreigabe(pid) {
+  const p = findProjekt(pid); const st = solarStore(p);
+  if (!st.gesperrt) { if (!st.gewaehlt) st.gewaehlt = st.aktiv; st.gesperrt = true; st.freigabeDatum = todayIso(); }
+  else { if (!confirm('Freigabe aufheben und wieder bearbeitbar machen?')) return; st.gesperrt = false; st.freigabeDatum = ''; }
+  save(); viewSolar(pid);
+}
+// Gegenüberstellung der Varianten (Kosten + Wirtschaftlichkeit + Empfehlung)
+function solarCompareHtml(p) {
+  const st = solarStore(p);
+  const f1 = x => (Math.round(x * 10) / 10).toLocaleString('de-CH');
+  const fr = x => 'CHF ' + Math.round(x).toLocaleString('de-CH');
+  const rows = st.varianten.map(v => {
+    const r = solarCalc(solarMigrateVar(v)); const gew = st.gewaehlt === v.id; const akt = st.aktiv === v.id;
+    return `<tr${gew ? ' style="background:#eaf6ee"' : ''}>
+      <td><b>${esc(v.name || 'Variante')}</b>${gew ? ' <span class="st green" style="font-size:9px;padding:1px 6px">★ gewählt</span>' : ''}${akt && !gew ? ' <span class="muted" style="font-size:10px">(in Bearbeitung)</span>' : ''}<div class="muted" style="font-size:10.5px">${f1(r.kwp)} kWp · ${f1(r.flaeche)} m²</div></td>
+      <td class="num">${fr(r.invest)}</td><td class="num">− ${fr(r.eiv)}</td><td class="num"><b>${fr(r.netto)}</b></td>
+      <td class="num">${r.amort != null ? f1(r.amort) + ' J.' : '–'}</td><td class="num">${r.amortBrutto != null ? f1(r.amortBrutto) + ' J.' : '–'}</td>
+      <td class="num">${r.rendite != null ? f1(r.rendite) + ' %' : '–'}</td>
+      <td style="white-space:nowrap">${gew ? '' : `<button class="btn xs secondary" data-act="solar-pickvar" data-pid="${p.id}" data-id="${v.id}" type="button">öffnen</button> <button class="btn xs" data-act="solar-choose-id" data-pid="${p.id}" data-id="${v.id}" type="button">★ wählen</button>`}</td>
+    </tr>`;
+  }).join('');
+  return `<table class="grid" style="font-size:13px"><thead><tr><th>Variante</th><th class="num">Investition</th><th class="num">Förderung</th><th class="num">netto</th><th class="num">Amort.</th><th class="num">ohne Förd.</th><th class="num">Rendite</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 // Live-Box „Investition & Förderung" unter den Eingaben
 function solarInvestHtml(r) {
@@ -7233,6 +7305,9 @@ function viewSolar(pid) {
   const p = findProjekt(pid);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const s = solarOf(p);
+  const st = solarStore(p);
+  const aktVar = solarActiveVar(p);
+  const gewVar = st.varianten.find(v => v.id === st.gewaehlt);
   const r0 = solarCalc(s);   // für live vorausgefüllte Auto-Kostenfelder
   const sel = (id, map, cur) => `<select class="select" id="${id}">${Object.entries(map).map(([k, v]) => `<option value="${k}"${cur === k ? ' selected' : ''}>${esc(v[0])}</option>`).join('')}</select>`;
   // Feld mit Erklär-Zeile (wie Honorarrechner)
@@ -7254,12 +7329,23 @@ function viewSolar(pid) {
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">☀ Solarrechner</h1><div class="sub" style="margin-top:5px">Photovoltaik-Ertrag, Eigenverbrauch &amp; Wirtschaftlichkeit · ${esc(p.name)}</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn ${st.gesperrt ? 'secondary' : ''}" data-act="solar-freigabe" data-pid="${p.id}" title="Gewählte Variante für den Bauherrn freigeben/sperren">${st.gesperrt ? '🔓 Freigabe aufheben' : '🔒 Bauherr-Freigabe'}</button>
         <button class="btn secondary" data-act="solar-baukosten" data-pid="${p.id}" title="Investition als Gewerk in die Baukostenübersicht übernehmen">➕ in Baukosten</button>
         <button class="btn secondary" data-act="pdf-solar" data-pid="${p.id}">⬇ Solar-PDF</button>
       </div>
     </div>
     ${projektTabs(p, 'solar')}
     ${demoBanner('solar')}
+    ${st.gesperrt ? `<div class="card card-pad" style="background:#eaf6ee;border-color:#bfe6cb;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px"><div style="font-size:13.5px">✓ <b>Vom Bauherrn freigegeben</b> – Variante „${esc((gewVar || aktVar).name || 'Variante')}" am ${fmtDate(st.freigabeDatum)}. Eingaben gesperrt (zum Ändern Freigabe aufheben).</div></div>` : ''}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+      <span class="muted" style="font-size:12px;font-weight:600;margin-right:2px">Varianten:</span>
+      ${st.varianten.map(v => `<button class="btn xs ${v.id === st.aktiv ? '' : 'secondary'}" data-act="solar-pickvar" data-pid="${p.id}" data-id="${v.id}" type="button">${st.gewaehlt === v.id ? '★ ' : ''}${esc(v.name || 'Variante')}</button>`).join('')}
+      <button class="btn xs secondary" data-act="solar-addvar" data-pid="${p.id}" type="button" title="leere Variante">+ neu</button>
+      <button class="btn xs secondary" data-act="solar-dupvar" data-pid="${p.id}" type="button" title="aktive Variante duplizieren">⎘ duplizieren</button>
+      ${st.gesperrt ? '' : `<input class="input" id="s_varname" value="${esc(aktVar.name || '')}" title="Name der aktiven Variante" style="max-width:190px;height:30px;font-size:12px;margin-left:auto">
+      <button class="btn xs ${st.gewaehlt === st.aktiv ? '' : 'secondary'}" data-act="solar-choose" data-pid="${p.id}" type="button" title="diese Variante als gewählt markieren">★ als gewählt</button>
+      <button class="btn xs secondary danger" data-act="solar-delvar" data-pid="${p.id}" type="button">löschen</button>`}
+    </div>
 
     <div class="card card-pad" style="margin-bottom:16px;background:var(--brand-soft);border-color:transparent">
       <h2 style="margin-top:0;font-size:15px">So funktioniert's</h2>
@@ -7284,7 +7370,7 @@ function viewSolar(pid) {
     </details>
 
     <div class="two-col">
-      <div class="card card-pad" id="solarInputs">
+      <div class="card card-pad" id="solarInputs"${st.gesperrt ? ' style="pointer-events:none;opacity:.6"' : ''}>
         <h2 style="margin:0 0 10px;font-size:15px">1 · Dach &amp; Anlage</h2>
         <div class="form-row">
           ${fld('s_flaeche', 'Dachfläche', s.flaeche, 'm²', 'Geeignete Dachfläche gesamt.')}
@@ -7344,15 +7430,23 @@ function viewSolar(pid) {
         <p class="muted" style="font-size:11.5px;margin:14px 0 0">Überschlagsrechnung ohne Degradation/Teuerung. Förder-/Tarifwerte sind Richtwerte. Für eine verbindliche Auslegung Fachplaner beiziehen.</p>
       </div>
     </div>
+    <div class="card card-pad" style="margin-top:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <h2 style="margin:0;font-size:15px">Gegenüberstellung der Varianten <span class="muted" style="font-size:12px;font-weight:400">– Entscheidungsgrundlage Bauherr</span></h2>
+        <button class="btn secondary sm" data-act="pdf-solar-vergleich" data-pid="${p.id}" type="button">⬇ Vergleich-PDF</button>
+      </div>
+      <div id="solarCompare" style="overflow-x:auto">${solarCompareHtml(p)}</div>
+    </div>
   `);
+  $('#s_varname')?.addEventListener('change', e => solarRenameVar(pid, e.target.value));
   const inp = $('#solarInputs');
   const setFlag = e => {
     const id = e.target && e.target.id; if (!id) return;
     const filled = (e.target.value || '').trim() !== '';
-    p.solar = p.solar || {};
-    if (id === 's_anlage') p.solar.anlageManual = filled;
-    else if (id === 's_eivm') p.solar.eivSet = filled;
-    else if (id === 's_speicherk') p.solar.speicherKManual = filled;
+    const av = solarActiveVar(p);
+    if (id === 's_anlage') av.anlageManual = filled;
+    else if (id === 's_eivm') av.eivSet = filled;
+    else if (id === 's_speicherk') av.speicherKManual = filled;
   };
   if (inp) {
     inp.addEventListener('input', e => { setFlag(e); solarUpdate(pid); });
@@ -9450,7 +9544,15 @@ document.addEventListener('click', e => {
     case 'pdf-vergabeantrag-alle': pdfVergabeantragAlle(pid); break;
     case 'pdf-kostenschaetzung': pdfKostenschaetzung(pid); break;
     case 'pdf-solar':            pdfSolar(pid); break;
+    case 'pdf-solar-vergleich':  pdfSolarVergleich(pid); break;
     case 'solar-baukosten':      solarToBaukosten(pid); break;
+    case 'solar-pickvar':        solarPickVar(pid, act.dataset.id); break;
+    case 'solar-addvar':         solarAddVar(pid, false); break;
+    case 'solar-dupvar':         solarAddVar(pid, true); break;
+    case 'solar-delvar':         solarDelVar(pid); break;
+    case 'solar-choose':         solarChoose(pid); break;
+    case 'solar-choose-id':      solarChooseId(pid, act.dataset.id); break;
+    case 'solar-freigabe':       solarFreigabe(pid); break;
     case 'pdf-baukosten':        actPdfBaukosten(pid); break;
     case 'pdf-baukosten-mode': { const pp = findProjekt(pid); const ta = $('#bk_einleitung'); if (pp && ta) { pp.deckblatt = ta.value; save(); } closeModal(); pdfBaukosten(pid, act.dataset.mode); break; }
     case 'pdf-gantt':            pdfGantt(pid); break;
@@ -9470,7 +9572,7 @@ document.addEventListener('click', e => {
     case 'solar-load':     solarToggle(pid, act.dataset.load); break;
     case 'solar-batt':     solarBattery(pid, act.dataset.key); break;
     case 'solar-region':   solarRegion(pid, Number(act.dataset.v)); break;
-    case 'solar-persons':  { const pp = findProjekt(pid); if (pp) { const ss = solarPreserve(pp); ss.verbrauch = Number(act.dataset.v); pp.solar = ss; save(); viewSolar(pid); } } break;
+    case 'solar-persons':  { const pp = findProjekt(pid); if (pp) { solarApplyDom(pp); solarActiveVar(pp).verbrauch = Number(act.dataset.v); save(); viewSolar(pid); } } break;
     case 'solar-bauseite': solarBauseite(pid, act.dataset.label, Number(act.dataset.chf)); break;
     case 'bt-add':       { const w = $('#bt_rows'); if (w) w.insertAdjacentHTML('beforeend', obtRow(null)); } break;
     case 'op-add':       { const w = $('#op_rows'); if (w) w.insertAdjacentHTML('beforeend', oopRow(findProjekt(pid), null)); } break;

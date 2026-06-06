@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v141';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v142';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -5288,20 +5288,21 @@ function bindCalCols() {
 // Alle Termine eines Projekts (manuell + abgeleitet)
 function sammleTermine(p) {
   const ev = [];
-  (p.termine || []).forEach(t => ev.push({ datum: t.datum, zeit: t.zeit || '', zeitEnde: t.zeitEnde || '', titel: t.titel || 'Termin', color: 'blue', manual: true, id: t.id }));
+  (p.termine || []).forEach(t => ev.push({ datum: t.datum, zeit: t.zeit || '', zeitEnde: t.zeitEnde || '', titel: t.titel || 'Termin', color: 'blue', manual: true, id: t.id, quelle: t.kategorie || 'Termin' }));
   (p.vergaben || []).forEach(v => {
-    if (v.frist) ev.push({ datum: v.frist, titel: `Eingabefrist ${v.bkp || ''} ${v.gewerk || ''}`.trim(), color: 'red' });
-    if (v.bauStart) ev.push({ datum: v.bauStart, titel: `▶ ${v.gewerk || ''} (Start)`, color: 'teal' });
-    if (v.bauEnde) ev.push({ datum: v.bauEnde, titel: `■ ${v.gewerk || ''} (Ende)`, color: 'teal' });
-    (v.vorgaenge || []).forEach(o => { if (o.start) ev.push({ datum: o.start, titel: `▶ ${o.titel || ''}`, color: 'teal' }); });
+    if (v.frist) ev.push({ datum: v.frist, titel: `Eingabefrist ${v.bkp || ''} ${v.gewerk || ''}`.trim(), color: 'red', quelle: 'Eingabefrist' });
+    if (v.bauStart && Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); ev.push({ datum: isoOf(d), titel: `🛒 bestellen: ${v.gewerk || ''}`.trim(), color: 'orange', quelle: 'Bestellfrist' }); }
+    if (v.bauStart) ev.push({ datum: v.bauStart, titel: `▶ ${v.gewerk || ''} (Start)`, color: 'teal', quelle: 'Terminprogramm' });
+    if (v.bauEnde) ev.push({ datum: v.bauEnde, titel: `■ ${v.gewerk || ''} (Ende)`, color: 'teal', quelle: 'Terminprogramm' });
+    (v.vorgaenge || []).forEach(o => { if (o.start) ev.push({ datum: o.start, titel: `▶ ${o.titel || ''}`, color: 'teal', quelle: 'Terminprogramm' }); });
   });
   (p.protokolle || []).forEach(pr => {
-    if (pr.datum) ev.push({ datum: pr.datum, titel: protokollTitel(pr), color: 'green' });
-    if (pr.naechste) ev.push({ datum: pr.naechste, titel: 'Nächste Sitzung', color: 'green' });
+    if (pr.datum) ev.push({ datum: pr.datum, titel: protokollTitel(pr), color: 'green', quelle: 'Sitzung' });
+    if (pr.naechste) ev.push({ datum: pr.naechste, titel: 'Nächste Sitzung', color: 'green', quelle: 'Sitzung' });
   });
-  offenePendenzen(p).forEach(x => { if (x.it.termin) ev.push({ datum: x.it.termin, titel: 'Pendenz: ' + (x.it.text || '').slice(0, 40), color: 'amber' }); });
-  if (p.start) ev.push({ datum: p.start, titel: 'Projektstart', color: 'grey' });
-  if (p.ende) ev.push({ datum: p.ende, titel: 'Projektende', color: 'grey' });
+  offenePendenzen(p).forEach(x => { if (x.it.termin) ev.push({ datum: x.it.termin, titel: 'Pendenz: ' + (x.it.text || '').slice(0, 40), color: 'amber', quelle: 'Pendenz' }); });
+  if (p.start) ev.push({ datum: p.start, titel: 'Projektstart', color: 'grey', quelle: 'Projekt' });
+  if (p.ende) ev.push({ datum: p.ende, titel: 'Projektende', color: 'grey', quelle: 'Projekt' });
   return ev.filter(e => e.datum);
 }
 
@@ -5349,7 +5350,7 @@ function viewKalender(pid) {
   const agRow = e => `<div class="ag-row${e.manual ? ' clickable' : ''}"${e.manual ? ` data-act="kal-edit" data-ctx="termin" data-pid="${p.id}" data-tid="${e.id}"` : ''} style="display:flex;gap:10px;align-items:baseline;padding:6px 2px;border-bottom:1px solid var(--border)">
       <span class="muted" style="min-width:60px;text-align:right;font-size:12px">${e.zeit ? esc(e.zeit) : 'ganzt.'}</span>
       <i class="cal-dot ${e.color}" style="position:relative;top:3px"></i>
-      <span style="flex:1;font-size:13px">${esc(e.titel)}${e.kategorie ? ` <span class="tag" style="font-size:9.5px">${esc(e.kategorie)}</span>` : ''}</span></div>`;
+      <span style="flex:1;font-size:13px">${esc(e.titel)}</span>${e.quelle ? `<span class="tag" style="font-size:9.5px;flex:none">${esc(e.quelle)}</span>` : ''}</div>`;
   const dayHead = iso => { const tage = Math.round((dISO(iso) - today()) / 86400000); const wd = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][dISO(iso).getDay()]; const rel = iso === todayI ? 'heute' : (tage === 1 ? 'morgen' : (tage > 1 ? `in ${tage} Tagen` : '')); return `${wd} · ${fmtDate(iso)}${rel ? ` <span style="color:var(--brand);font-weight:600">${rel}</span>` : ''}`; };
   const groups = [];
   fut.forEach(e => { let g = groups[groups.length - 1]; if (!g || g.iso !== e.datum) { g = { iso: e.datum, items: [] }; groups.push(g); } g.items.push(e); });

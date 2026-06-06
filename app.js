@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v146';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v147';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3542,11 +3542,12 @@ function viewBauherr(pid) {
   const whgLabel = w => { const n = einheitName(p, w); const e = eigOf(w); return e ? `${n} · ${e}` : n; };
   const selEig = (selW && selW !== 'alle' && selW !== '') ? eigOf(selW) : '';
   const selKontakt = (() => { const h = einheiten.find(x => x.u.id === selW); return h ? (h.u.eigKontakt || '') : ''; })();
-  const whgChips = hasWhg ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px">
-    <span class="chip ${selW === 'alle' ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="alle">Alle</span>
-    <span class="chip ${selW === '' ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="">Allgemein</span>
-    ${einheiten.map(x => `<span class="chip ${selW === x.u.id ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="${x.u.id}">${esc(x.u.name || 'Wohnung')}${x.u.eigentuemer ? ` · ${esc(x.u.eigentuemer)}` : ''}</span>`).join('')}
-  </div>${selEig || selKontakt ? `<div class="card card-pad" style="padding:8px 12px;margin:-6px 0 14px;background:var(--brand-soft);border-color:transparent;font-size:13px">👤 Eigentümer: <b>${esc(selEig || '—')}</b>${selKontakt ? ` · ${esc(selKontakt)}` : ''} <span class="muted">· <a href="#/projekt/${p.id}/listen">in Eigentümerliste bearbeiten</a></span></div>` : ''}` : '';
+  const segB = (kind, label, active) => `<button class="btn sm ${active ? '' : 'secondary'}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="${kind}" type="button" style="border:none">${label}</button>`;
+  const whgChips = hasWhg ? `<div class="seg" style="display:inline-flex;gap:4px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:14px">
+    ${segB('alle', 'Alle', selW === 'alle')}
+    ${einheiten.map(x => segB(x.u.id, `${esc(x.u.name || 'Einheit')}${x.u.eigentuemer ? ' · ' + esc(x.u.eigentuemer) : ''}`, selW === x.u.id)).join('')}
+    ${segB('', 'Allgemein', selW === '')}
+  </div>${selEig || selKontakt ? `<div class="card card-pad" style="padding:8px 12px;margin:0 0 14px;background:var(--brand-soft);border-color:transparent;font-size:13px">👤 Eigentümer: <b>${esc(selEig || '—')}</b>${selKontakt ? ` · ${esc(selKontakt)}` : ''} <span class="muted">· <a href="#/projekt/${p.id}/listen">in Eigentümerliste bearbeiten</a></span></div>` : ''}` : '';
   const firms = (p.bezugsfirmen || []);
   const byKat = {};
   firms.forEach(f => { const k = f.kategorie || 'Übrige'; (byKat[k] = byKat[k] || []).push(f); });
@@ -3600,36 +3601,20 @@ function viewBauherr(pid) {
     return `<tr><td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>${hasWhg ? `<td class="muted" style="font-size:12px">${esc(whgLabel(e.wohnung || ''))}</td>` : ''}<td><strong>${esc(e.thema || '')}</strong></td><td>${untTxt}</td><td>${ausTxt}</td><td><span class="st ${ENT_STATUS[entStatus(e)].color}" style="font-size:10.5px;padding:2px 8px">${ENT_STATUS[entStatus(e)].label}</span></td></tr>`;
   }).join('');
 
-  // Accordion: je Eigentümer/Einheit eine ausklappbare Gruppe
-  const grpTable = rows => `<table class="grid t-compact"><thead><tr><th style="width:52px">BKP</th><th style="width:108px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:92px">Budget</th><th style="width:92px"></th></tr></thead><tbody>${rows}</tbody></table>`;
-  const groupCard = (key, titel, owner, kontakt, list) => {
-    const offenN = list.filter(e => entStatus(e) === 'offen').length;
-    const open = bauherrOpen.has(key);
-    return `<div class="card" style="margin-bottom:10px">
-      <div data-act="bauherr-acc" data-pid="${p.id}" data-uid="${key}" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 14px;cursor:pointer">
-        <div><span style="color:var(--text-faint);margin-right:6px">${open ? '▾' : '▸'}</span><span style="font-weight:700">${esc(titel)}</span>${owner ? ` · 👤 <span>${esc(owner)}</span>` : ''}${kontakt ? ` <span class="muted" style="font-size:12px">· ${esc(kontakt)}</span>` : ''}</div>
-        <span class="muted" style="font-size:12px">${offenN ? `<span class="st amber" style="font-size:9.5px;padding:1px 7px">${offenN} offen</span> ` : ''}${list.length} Pkt.</span>
-      </div>
-      ${open ? `<div style="padding:0 8px 10px">${list.length ? grpTable(list.map(e => entRowHtml(p, e, false)).join('')) : '<p class="muted" style="padding:4px 8px;font-size:12.5px">Noch keine Einträge für diesen Eigentümer.</p>'}
-        <div style="display:flex;gap:6px;padding:8px 8px 2px"><button class="btn xs" data-act="bauherr-add" data-pid="${p.id}" data-w="${key}" type="button">+ Eintrag</button><button class="btn xs ghost" data-act="bauherr-std" data-pid="${p.id}" data-w="${key}" type="button">＋ Standardliste</button></div>
-      </div>` : ''}</div>`;
-  };
-  const unitIds = new Set(einheiten.map(x => x.u.id));
-  const accordion = einheiten.map(x => groupCard(x.u.id, x.u.name || 'Einheit', x.u.eigentuemer || '', x.u.eigKontakt || '', allEnts.filter(e => String(e.wohnung || '') === x.u.id))).join('')
-    + groupCard('', 'Allgemein (alle Einheiten)', '', '', allEnts.filter(e => !e.wohnung || !unitIds.has(String(e.wohnung))));
-
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Eigentümerwünsche · Auswahlentscheide je Eigentümer/Einheit${hasWhg ? ` · ${einheiten.length} Einheiten` : ''}</div></div></div>
     ${projektTabs(p, 'bauherr')}
     ${demoBanner('bauherr')}
-    <div class="section-head"><h2>Auswahlentscheide je Eigentümer${offen ? ` <span class="tab-badge">${offen} offen</span>` : ''}</h2>
+    ${whgChips}
+    <div class="section-head"><h2>${hasWhg && selW !== 'alle' ? (selW === '' ? 'Allgemein' : esc(whgLabel(selW))) : 'Auswahlentscheide'}${(() => { const o = ents.filter(e => entStatus(e) === 'offen').length; return o ? ` <span class="tab-badge">${o} offen</span>` : ''; })()}</h2>
       <div style="display:flex;gap:6px">
         <button class="btn sm secondary" data-act="pdf-entscheidungen" data-pid="${p.id}">⬇ PDF</button>
-        ${hasWhg ? '' : `<button class="btn sm ghost" data-act="standard-bemusterung" data-pid="${p.id}">＋ Standardliste</button><button class="btn sm" data-act="new-entscheidung" data-pid="${p.id}">+ Eintrag</button>`}
+        <button class="btn sm ghost" data-act="standard-bemusterung" data-pid="${p.id}" title="Übliche Auswahlpunkte für die gewählte Einheit ergänzen">＋ Standardliste</button>
+        <button class="btn sm" data-act="new-entscheidung" data-pid="${p.id}">+ Eintrag</button>
       </div></div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 12px">${hasWhg ? 'Jede Einheit/jeden Eigentümer aufklappen und die Auswahlpunkte einzeln führen (offen → gewählt / entfällt). „Standardliste" je Eigentümer ergänzt die üblichen Punkte.' : 'Auswahlpunkte führen: offen → gewählt, oder entfällt (mit Grund).'}</p>
-    ${hasWhg ? accordion : `<div class="card">${entsTable}</div>`}
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 12px">${hasWhg ? 'Oben den Eigentümer/die Einheit wählen – „+ Eintrag" und „Standardliste" erfassen dann genau für diese Einheit. Jeder Punkt: offen → gewählt / entfällt.' : 'Auswahlpunkte führen: offen → gewählt, oder entfällt (mit Grund).'}</p>
+    <div class="card">${entsTable}</div>
 
     <div class="section-head" style="margin-top:26px"><h2>Auswahl-Firmen (Bemusterung)</h2>
       <div style="display:flex;gap:6px">

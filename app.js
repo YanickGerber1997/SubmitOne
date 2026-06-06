@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v59';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v60';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -46,6 +46,9 @@ const PHASE_INDEX   = Object.fromEntries(PHASEN.map((p, i) => [p.key, i]));
    --------------------------------------------------------------- */
 
 let state = { projekte: [], kontakte: [], dokumente: [] };
+
+// --- Undo/Redo: Schnappschüsse des ganzen Zustands ---
+let undoStack = [], redoStack = [], lastSnap = null, lastSnapAt = 0, undoing = false;
 
 /* ============================================================
    Datenschicht (austauschbar)
@@ -103,7 +106,48 @@ const db = {
 };
 
 // Kompatibilitäts-Wrapper: bestehende save()-Aufrufe gehen über den Adapter
-function save() { db.commit(); }
+function save() { snapshotForUndo(); db.commit(); }
+
+// Vor jeder Änderung den vorigen Stand für Undo sichern; schnelle Folgeänderungen (Tippen) werden zu einem Schritt zusammengefasst
+function snapshotForUndo() {
+  if (undoing || lastSnap === null) return;
+  const cur = JSON.stringify(state);
+  if (cur === lastSnap) return;
+  const t = Date.now();
+  if (t - lastSnapAt > 700) { undoStack.push(lastSnap); if (undoStack.length > 40) undoStack.shift(); redoStack = []; }
+  lastSnap = cur; lastSnapAt = t;
+  updateUndoButtons();
+}
+function updateUndoButtons() {
+  const u = $('#btnUndo'), r = $('#btnRedo');
+  if (u) u.disabled = !undoStack.length;
+  if (r) { r.disabled = !redoStack.length; r.hidden = !redoStack.length; }
+}
+function undo() {
+  if (!undoStack.length) { toast('Nichts zum Rückgängigmachen', 'info'); return; }
+  undoing = true;
+  redoStack.push(lastSnap);
+  const prev = undoStack.pop();
+  state = JSON.parse(prev); lastSnap = prev; lastSnapAt = Date.now();
+  db.commit(); undoing = false;
+  updateUndoButtons(); router(); toast('Rückgängig gemacht');
+}
+function redo() {
+  if (!redoStack.length) { toast('Nichts zum Wiederholen', 'info'); return; }
+  undoing = true;
+  undoStack.push(lastSnap);
+  const next = redoStack.pop();
+  state = JSON.parse(next); lastSnap = next; lastSnapAt = Date.now();
+  db.commit(); undoing = false;
+  updateUndoButtons(); router(); toast('Wiederhergestellt');
+}
+function undoKeydown(e) {
+  if (e.target && /^(input|textarea|select)$/i.test(e.target.tagName)) return;   // im Eingabefeld: normales Text-Undo
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const k = (e.key || '').toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+}
 
 /* ============================================================
    Cloud-Modus (Supabase) – aktiv, sobald config.js ausgefüllt ist
@@ -199,6 +243,7 @@ function subscribeCloud() {
       } else if (row.typ === 'kontakte') state.kontakte = row.data || [];
       else if (row.typ === 'dokumente') state.dokumente = row.data || [];
       migrate();
+      lastSnap = JSON.stringify(state); lastSnapAt = Date.now();   // Undo-Basis nachführen (Fremdänderung)
       router();
     })
     .subscribe();
@@ -339,9 +384,14 @@ function renderPlanBanner() {
 
 async function startApp() {
   await db.init();
+  lastSnap = JSON.stringify(state); lastSnapAt = Date.now();   // Undo-Ausgangspunkt
   if (cloudEnabled) await loadEntitlements();
   $('#btnExport')?.addEventListener('click', exportData);
   $('#btnReset')?.addEventListener('click', resetDemo);
+  $('#btnUndo')?.addEventListener('click', undo);
+  $('#btnRedo')?.addEventListener('click', redo);
+  document.addEventListener('keydown', undoKeydown);
+  updateUndoButtons();
   initSidebarCollapse();
   document.addEventListener('keydown', planKeydown);
   document.addEventListener('mousemove', planDragMove);

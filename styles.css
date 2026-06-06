@@ -1023,3 +1023,8 @@ table.va input[type=number] { -moz-appearance: textfield; }
   border-radius: 10px; background: var(--brand-soft); color: var(--brand);
   white-space: nowrap;
 }
+
+/* --- Undo/Redo in der Sidebar-Fusszeile --- */
+.foot-row { display: flex; gap: 6px; }
+.foot-row .btn-ghost-sm { flex: 1; }
+.foot-row .btn-ghost-sm:disabled { opacity: .4; cursor: default; }

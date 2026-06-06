@@ -710,6 +710,14 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
   white-space: nowrap; overflow: hidden; cursor: grab; box-shadow: 0 1px 2px rgba(0,0,0,.15); user-select: none;
 }
 .g-bar.dragging { cursor: grabbing; opacity: .9; z-index: 6; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
+/* Bestellfrist: heller, dezenter Balken vor dem Hauptbalken (Verbindungen gehen NICHT hierauf) */
+.g-bestell {
+  position: absolute; top: 12px; height: 14px; border-radius: 5px; z-index: 2;
+  background: repeating-linear-gradient(45deg, rgba(120,140,170,.14), rgba(120,140,170,.14) 5px, rgba(120,140,170,.26) 5px, rgba(120,140,170,.26) 10px);
+  border: 1px dashed rgba(110,130,160,.5);
+  display: flex; align-items: center; overflow: hidden; pointer-events: auto;
+}
+.g-bestell span { font-size: 9px; color: #5b6573; padding: 0 4px; white-space: nowrap; opacity: .85; }
 .g-bar .g-lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 7px; pointer-events: none; }
 .g-bar .g-h { flex: none; width: 7px; align-self: stretch; cursor: ew-resize; border-radius: 6px; }
 .g-bar:hover .g-h { background: rgba(255,255,255,.4); }

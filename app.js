@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v97';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v98';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1678,6 +1678,7 @@ function viewTermine(id) {
   vs.forEach(v => {
     if (v.bauStart) allDates.push(v.bauStart);
     if (v.bauEnde) allDates.push(v.bauEnde);
+    if (v.bauStart && Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); allDates.push(isoOf(d)); }
     (v.vorgaenge || []).forEach(o => { if (o.start) allDates.push(o.start); if (o.ende) allDates.push(o.ende); });
   });
   if (p.start) allDates.push(p.start);
@@ -1812,7 +1813,13 @@ function viewTermine(id) {
     </div>`;
     if (hatTermin) {
       barMeta[v.id] = { row: rowIdx, left: leftPx(v.bauStart), width: widthPx(v.bauStart, v.bauEnde) };
-      barRows += `<div class="g-row"><div class="g-bar${light}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
+      let bestellBar = '';
+      if (Number(v.bestellfrist) > 0) {
+        const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); const bsISO = isoOf(d);
+        const bl = leftPx(bsISO), bw = Math.max(leftPx(v.bauStart) - bl, 3);
+        bestellBar = `<div class="g-bestell" style="left:${bl}px;width:${bw}px" title="Bestellfrist ${v.bestellfrist} Tage – bestellen bis ${fmtDate(bsISO)}, Einbau ab ${fmtDate(v.bauStart)}"><span>🛒 ${v.bestellfrist}T</span></div>`;
+      }
+      barRows += `<div class="g-row">${bestellBar}<div class="g-bar${light}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
         title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)} · ${STATUS_BY_KEY[v.status]?.label || ''}"
         data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
         <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span><span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
@@ -8336,6 +8343,8 @@ function actEditTermin(pid, vid) {
       <label class="field">Ausführung von <input class="input" type="date" id="t_start" value="${esc(v.bauStart || '')}"></label>
       <label class="field">Ausführung bis <input class="input" type="date" id="t_ende" value="${esc(v.bauEnde || '')}"></label>
     </div>
+    <label class="field" style="margin-top:8px">Bestellfrist / Vorlauf <input class="input" type="number" id="t_bestell" value="${v.bestellfrist ?? ''}" placeholder="z.B. 30" min="0">
+      <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Tage <b>vor</b> Ausführungsbeginn (Material bestellen, Vorlaufzeit). Erscheint im Gantt als heller Balken vor dem Hauptbalken.</span></label>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-termin" data-pid="${pid}" data-vid="${vid}">Speichern</button>`);
 }
 
@@ -8344,6 +8353,7 @@ function saveTermin(pid, vid) {
   const s = $('#t_start').value, e = $('#t_ende').value;
   if (s && e && e < s) { toast('Ende liegt vor dem Start', 'info'); return; }
   v.bauStart = s; v.bauEnde = e;
+  const bf = $('#t_bestell'); if (bf) v.bestellfrist = Number(bf.value) || 0;
   save(); closeModal(); router();
   toast('Termine aktualisiert');
 }
@@ -8930,7 +8940,7 @@ function demoData() {
             { id: uid('o'), titel: 'Rohbau Attika & Dach', start: '2026-11-02', ende: '2026-12-20' },
           ] },
         { id: 'v4', bkp: '221', gewerk: 'Fenster & Aussentüren', status: 'bewertung', firma: '', betrag: 0, schaetzung: 320000, frist: '2026-06-08',
-          bauStart: '2026-10-01', bauEnde: '2026-11-30',
+          bauStart: '2026-10-01', bauEnde: '2026-11-30', bestellfrist: 70,
           eingeladene: [
             { id: uid('e'), firma: 'Fensterwerk AG', email: mailOf('Fensterwerk AG'), status: 'offeriert', betrag: null,
               offerte: { brutto: 312000, rabatt: 3, skonto: 2, weitereAbz: 1 }, abgebot: { brutto: 305000, rabatt: 5, skonto: 2, weitereAbz: 1 } },
@@ -8949,7 +8959,7 @@ function demoData() {
           bauStart: '2026-11-01', bauEnde: '2027-02-28',
           eingeladene: einl(['WärmeTech GmbH', null], ['Heiztech AG', null]), nachtraege: [], rapporte: [], vorgaenge: [] },
         { id: 'v8', bkp: '224', gewerk: 'Spenglerarbeiten / Bedachung', status: 'vergeben', firma: 'Dach & Blech AG', betrag: 165000, schaetzung: 175000, frist: '2026-07-15',
-          bauStart: '2026-12-01', bauEnde: '2027-02-15',
+          bauStart: '2026-12-01', bauEnde: '2027-02-15', bestellfrist: 25,
           eingeladene: einl(['Dach & Blech AG', 165000], ['Spengler Meier GmbH', 172000]), nachtraege: [], rapporte: [], vorgaenge: [] },
         { id: 'v9', bkp: '271', gewerk: 'Gipser- / Verputzarbeiten', status: 'vergeben', firma: 'Gipsotech AG', betrag: 142000, schaetzung: 150000, frist: '2026-07-20',
           bauStart: '2027-01-05', bauEnde: '2027-04-30',

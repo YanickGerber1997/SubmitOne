@@ -1052,13 +1052,16 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .plan-feat { list-style: none; margin: 0 0 10px; padding: 0; font-size: 12px; line-height: 1.55; color: var(--text-soft); flex: 1; }
 .plan-card .btn { margin-top: auto; }
 @media (max-width: 600px) { .plan-grid { grid-template-columns: 1fr; } }
-.mod-list { display: flex; flex-direction: column; gap: 2px; }
-.mod-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--border); }
-.mod-row .mod-name { flex: 1; font-size: 13px; }
-.mod-row .mod-preis { font-weight: 700; font-size: 13px; white-space: nowrap; }
+.mod-list { display: flex; flex-direction: column; }
+.mod-row { padding: 8px 0; border-top: 1px solid var(--border); }
+.mod-head { display: flex; align-items: center; gap: 10px; }
+.mod-head .mod-name { flex: 1; font-size: 13px; }
+.mod-head .mod-preis { font-weight: 700; font-size: 13px; white-space: nowrap; }
+.mod-feat { font-size: 11px; color: var(--text-soft); margin-top: 2px; line-height: 1.45; }
 .mod-tier { font-size: 9px; font-weight: 800; padding: 1px 7px; border-radius: 999px; letter-spacing: .3px; white-space: nowrap; }
 .mod-tier.mt-basic { background: linear-gradient(135deg,#f3f5f8,#cbd1d9); color: #33373d; }
 .mod-tier.mt-premium { background: linear-gradient(135deg,#f7e6a8,#e7c65f); color: #3a2f12; }
+.mod-tier.mt-neu { background: var(--s-green); color: #fff; }
 .team-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); }
 
 /* Fusszeilen-Buttons: Icon + Text (Text wird eingeklappt versteckt) */

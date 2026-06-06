@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v80';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v81';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -381,22 +381,25 @@ let currentUserId = null, currentUserSlug = '', currentUserVor = '', currentUser
 // Preis-Pakete (CHF/Monat, anpassbar) – Quelle für die Plan-Ansicht
 const PLANS = [
   { key: 'gratis',   name: 'Gratis',   preis: '0',  features: ['Alle Werkzeuge lokal nutzen', 'Drucken & PDF', '✗ kein Cloud-Speichern', '✗ kein Teilen'] },
-  { key: 'basis',    name: 'Basic',    preis: '15', features: ['Cloud-Speichern, mehrere Geräte', 'Ausschreibung · Kosten · Termine', 'Pendenzen · Protokolle · Kontakte · Dossier', 'Team-Arbeitsbereich'] },
-  { key: 'komplett', name: 'Premium', preis: '25', features: ['Alles aus Basic', '+ Bauherr · Solar · Honorar', '+ Teilen / Veröffentlichen'] },
+  { key: 'basis',    name: 'Basic',    preis: '15', features: ['Cloud-Speichern, mehrere Geräte', 'Kontakte · Ausschreibung · Kosten', 'Termine · Kalender · Planung · Protokolle', 'Team-Arbeitsbereich'] },
+  { key: 'komplett', name: 'Premium', preis: '25', features: ['Alles aus Basic', '+ Pendenzen · Dossier · Bauherr', '+ Solar · U-Wert · Honorar', '+ Teilen / Veröffentlichen'] },
 ];
 // Einzeln freischaltbare Module (à la carte), CHF/Monat. tier = in welchem Paket enthalten.
 // Schlüssel = canModul()-Schlüssel. Einzeln summiert teurer als das jeweilige Paket.
 const MODULES = [
-  { key: 'submission', name: 'Ausschreibung & Vergabe (inkl. Versand, Offertvergleich)', preis: '8', tier: 'basic' },
-  { key: 'kosten',     name: 'Kostenführung / Baukosten (KV, Vergabe, Rechnungen)',      preis: '5', tier: 'basic' },
-  { key: 'termine',    name: 'Terminprogramm / Gantt',                                   preis: '5', tier: 'basic' },
-  { key: 'pendenzen',  name: 'Pendenzen',                                                preis: '5', tier: 'basic' },
-  { key: 'protokolle', name: 'Protokolle',                                               preis: '3', tier: 'basic' },
-  { key: 'kontakte',   name: 'Kontakte + Handelsregister-Suche',                         preis: '3', tier: 'basic' },
-  { key: 'dossier',    name: 'Dokumente / Dossier',                                      preis: '2', tier: 'basic' },
-  { key: 'bauherr',    name: 'Bauherr / Auswahlentscheide',                              preis: '3', tier: 'premium' },
-  { key: 'solar',      name: 'Solarrechner',                                             preis: '2', tier: 'premium' },
-  { key: 'honorar',    name: 'Honorar-Rechner (SIA)',                                    preis: '3', tier: 'premium' },
+  { key: 'kontakte',   name: 'Kontakte',                 tier: 'basic',   preis: '3', feat: ['Adressbuch', 'Handelsregister-Suche (LINDAS)', 'Kategorien / Gewerke', 'E-Mail & Telefon'] },
+  { key: 'submission', name: 'Ausschreibung & Vergabe',  tier: 'basic',   preis: '9', feat: ['Ausschreibung erstellen', 'Submittenten einladen + Versand', 'Offertvergleich / Abgebot', 'Vergabeantrag & Werkvertrag', 'Zuschlag / Absage'] },
+  { key: 'kosten',     name: 'Kostenführung / Baukosten', tier: 'basic',  preis: '7', feat: ['Kostenschätzung (Positionen, Ausmass)', 'Baukostenübersicht nach BKP', 'Vergabesummen & Prognose', 'Rechnungen, Rückbehalt, QR-Scan'] },
+  { key: 'termine',    name: 'Terminprogramm / Gantt',   tier: 'basic',   preis: '5', feat: ['Bauprogramm (Gantt)', 'Verkettung der Gewerke', 'Eingabefristen', 'Arbeitstage / Feiertage'] },
+  { key: 'kalender',   name: 'Kalender',                 tier: 'basic',   preis: '3', feat: ['Projekt- & Gesamtkalender', 'Termine & Fristen', 'Tag / Woche / Monat'] },
+  { key: 'planung',    name: 'Arbeitsplanung',           tier: 'basic',   preis: '3', feat: ['Wochen-/Tagesplanung', 'Blöcke & Zuteilung'] },
+  { key: 'protokolle', name: 'Protokolle',               tier: 'basic',   preis: '3', feat: ['Sitzungsprotokolle', 'Traktanden & Beschlüsse', 'Verteiler', 'Pendenzen aus Sitzung'] },
+  { key: 'pendenzen',  name: 'Pendenzen',                tier: 'premium', preis: '5', feat: ['Aufgaben mit Verantwortlichen', 'Termine & Überfällig-Tracking', 'projektübergreifend'] },
+  { key: 'dossier',    name: 'Dokumente / Dossier',      tier: 'premium', preis: '3', feat: ['Dossier-Checkliste', 'Dokumentenablage', 'Vorlagen'] },
+  { key: 'bauherr',    name: 'Bauherr / Auswahlentscheide', tier: 'premium', preis: '3', feat: ['Bemusterung', 'Auswahlentscheide', 'Wohnungen / Einheiten'] },
+  { key: 'solar',      name: 'Solarrechner',             tier: 'premium', preis: '2', feat: ['Ertrag & Eigenverbrauch', 'Wirtschaftlichkeit & EIV', 'PDF-Report'] },
+  { key: 'uwert',      name: 'U-Wert-Rechner',           tier: 'premium', preis: '4', feat: ['Bauteil-Schichten & λ-Werte', 'U-Wert-Berechnung', 'grafischer Querschnitt'], neu: true },
+  { key: 'honorar',    name: 'Honorar-Rechner (SIA)',    tier: 'premium', preis: '3', feat: ['SIA 102', 'Baukosten → Honorar', 'Leistungsphasen'] },
 ];
 async function loadEntitlements() {
   if (!cloudEnabled || !supa) { ent = null; return; }
@@ -550,10 +553,13 @@ function actAbo() {
   const modRows = MODULES.map(m => {
     const hat = komplett || canModul(m.key);
     return `<div class="mod-row">
-      <span class="mod-name">${esc(m.name)} <span class="mod-tier mt-${m.tier}">${m.tier === 'basic' ? 'Basic' : 'Premium'}</span></span>
-      <span class="mod-preis">CHF ${esc(m.preis)}<span style="font-size:10px;color:var(--text-soft)">/Mt</span></span>
-      ${hat ? '<span class="st green" style="font-size:9.5px;padding:1px 7px">freigeschaltet</span>'
-            : `<button class="btn xs" data-act="upgrade" data-plan="mod_${m.key}">freischalten</button>`}
+      <div class="mod-head">
+        <span class="mod-name">${esc(m.name)} <span class="mod-tier mt-${m.tier}">${m.tier === 'basic' ? 'Basic' : 'Premium'}</span>${m.neu ? ' <span class="mod-tier mt-neu">neu</span>' : ''}</span>
+        <span class="mod-preis">CHF ${esc(m.preis)}<span style="font-size:10px;color:var(--text-soft)">/Mt</span></span>
+        ${hat ? '<span class="st green" style="font-size:9.5px;padding:1px 7px">freigeschaltet</span>'
+              : `<button class="btn xs" data-act="upgrade" data-plan="mod_${m.key}">freischalten</button>`}
+      </div>
+      <div class="mod-feat">${(m.feat || []).map(esc).join(' · ')}</div>
     </div>`;
   }).join('');
   openModal('Dein Plan', `

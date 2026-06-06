@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v159';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v160';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -960,6 +960,32 @@ function budgetSumme(v)  { return (v.budgetposten || []).reduce((a, b) => a + (b
 function hatIst(b)        { return b.ist != null && b.ist !== ''; }
 function budgetDelta(v)   { return (v.budgetposten || []).reduce((a, b) => a + (hatIst(b) ? (Number(b.ist) || 0) - (b.betrag || 0) : 0), 0); }
 function schlussSumme(v)  { return (v.betrag || 0) + nachtragSumme(v) + rapportSumme(v) + budgetDelta(v); }
+// Volle Aufstellung einer Budgetposition: Offerte-Brutto → −Rabatt −Skonto −Abzüge → Netto, vs Budget WV, Δ, +Architekt +MwSt → Brutto
+function budgetBreakdownHtml(p, b) {
+  const hasOffer = b.brutto != null && b.brutto !== '';
+  const cp = hasOffer ? condParts({ brutto: b.brutto, rabatt: b.rabatt, skonto: b.skonto, weitereAbz: b.weitereAbz, mwst: mwstSatz() }) : null;
+  const netto = cp ? cp.zsumme2 : ((b.ist != null && b.ist !== '') ? (Number(b.ist) || 0) : null);
+  const budgetWV = Number(b.betrag) || 0;
+  const delta = netto != null ? netto - budgetWV : null;
+  const z = archZuschlagP(), mw = mwstSatz();
+  const zB = delta != null ? delta * z / 100 : null, dz = delta != null ? delta + zB : null;
+  const mwB = dz != null ? dz * mw / 100 : null, endB = dz != null ? dz + mwB : null;
+  const r = (lbl, val, st) => `<div style="display:flex;justify-content:space-between;gap:18px;${st || ''}"><span>${lbl}</span><span style="white-space:nowrap">${val}</span></div>`;
+  const dcol = delta == null ? '' : (delta > 0.5 ? 'color:var(--s-red)' : (delta < -0.5 ? 'color:var(--s-green)' : ''));
+  return `<div style="padding:11px 16px;background:var(--surface-2);font-size:12.5px;line-height:1.85;max-width:460px">
+    ${cp ? `${r('Offerte Brutto', chf(cp.brutto))}
+      ${r(`− Rabatt ${cp.rabattP}%`, '− ' + chf(cp.rabattBetrag), 'color:var(--text-soft)')}
+      ${r(`− Skonto ${cp.skontoP}%`, '− ' + chf(cp.skontoBetrag), 'color:var(--text-soft)')}
+      ${r(`− Allg. Abzüge ${cp.allgP}%`, '− ' + chf(cp.allgBetrag), 'color:var(--text-soft)')}
+      ${r('= Netto (nach Auswahl)', '<b>' + chf(cp.zsumme2) + '</b>', 'border-top:1px solid var(--border);padding-top:3px')}`
+      : (netto != null ? r('Netto (nach Auswahl)', '<b>' + chf(netto) + '</b>') : '<div class="muted">Noch keine Auswahl / Offerte erfasst.</div>')}
+    ${r('Budget im Werkvertrag', chf(budgetWV), 'color:var(--text-soft)')}
+    ${delta != null ? r('= Mehr-/Minderkosten', (delta > 0 ? '+' : '') + chf(delta), 'font-weight:700;border-top:1px solid var(--border);padding-top:3px;' + dcol) : ''}
+    ${delta != null ? r(`+ Architektenzuschlag ${z}%`, (zB > 0 ? '+' : '') + chf(zB), 'color:var(--text-soft)') : ''}
+    ${delta != null ? r(`+ MwSt ${mw}%`, (mwB > 0 ? '+' : '') + chf(mwB), 'color:var(--text-soft)') : ''}
+    ${endB != null ? r('= vom Eigentümer (Brutto)', (endB > 0 ? '+' : '') + chf(endB), 'font-weight:700;border-top:2px solid #7c1d2c;padding-top:3px') : ''}
+  </div>`;
+}
 
 /* --- Rechnungen / Kostenkontrolle --- */
 const RG_ART = { akonto: 'Akonto', schluss: 'Schlussrechnung', gutschrift: 'Gutschrift' };
@@ -3543,6 +3569,7 @@ function attachKontaktSuche(searchId, resultsId, onPick) {
 let bauherrWohnung = 'alle';   // Wohnungs-Filter im Bauherr-Tab
 let bauherrOpen = new Set();    // aufgeklappte Eigentümer-Gruppen (Einheit-IDs, '' = Zusätze/Allgemein)
 let bauherrView = 'eig';        // 'eig' = Eigentümer-Accordion | 'termine' = Fälligkeitsliste
+let budgetOpen = new Set();     // aufgeklappte Budgetpositionen (Aufstellung) in der Gewerk-Detailansicht
 // Entscheid-Deadline aus dem Terminprogramm: spätestens wählen = Einbau (bauStart) − Bestellfrist des Gewerks
 function entFaellig(p, e) {
   const v = vergabeForEnt(p, e);
@@ -3853,7 +3880,7 @@ function syncEntBudgetposten(p, e) {
   if (!budget && ist == null) return;                 // nichts zu verknüpfen
   const v = vergabeForEnt(p, e); if (!v) return;       // kein Gewerk verknüpft (vid/BKP/Thema)
   v.budgetposten = v.budgetposten || [];
-  const bp = { id: uid('bp'), enId: e.id, eig: true, text: e.thema || 'Eigentümerwunsch', betrag: budget, ist, wohnung: e.wohnung || ((e.wohnungen && e.wohnungen.length === 1) ? e.wohnungen[0] : '') };
+  const bp = { id: uid('bp'), enId: e.id, eig: true, text: e.thema || 'Eigentümerwunsch', betrag: budget, ist, wohnung: e.wohnung || ((e.wohnungen && e.wohnungen.length === 1) ? e.wohnungen[0] : ''), brutto: e.brutto, rabatt: e.rabatt, skonto: e.skonto, weitereAbz: e.weitereAbz };
   v.budgetposten.push(bp); e.bpId = bp.id;
 }
 // Alle Eigentümerwünsche eines Projekts mit den Baukosten abgleichen (für globale Konsistenz, z.B. bei Migration)
@@ -4627,15 +4654,15 @@ function viewVergabeDetail(pid, vid) {
       <table class="grid" style="margin-top:12px">
         <thead><tr><th>Bezeichnung</th>${alleEinheiten(p).length ? '<th>Wohnung / Eigentümer</th>' : ''}<th class="num">Budget (im WV)</th><th class="num">Tatsächlich</th><th class="num">Δ Baukosten</th><th style="width:62px"></th></tr></thead>
         <tbody>
-          ${v.budgetposten.map(b => { const ist = hatIst(b); const d = ist ? (Number(b.ist) || 0) - (b.betrag || 0) : 0; return `
+          ${v.budgetposten.map(b => { const ist = hatIst(b); const d = ist ? (Number(b.ist) || 0) - (b.betrag || 0) : 0; const cols = alleEinheiten(p).length ? 6 : 5; const open = budgetOpen.has(b.id); return `
             <tr>
-              <td><strong>${esc(b.text || 'Budgetposition')}</strong></td>
+              <td><button class="x-btn" data-act="budget-detail" data-pid="${p.id}" data-vid="${v.id}" data-bid="${b.id}" title="Aufstellung anzeigen" style="margin-right:2px">${open ? '▾' : '▸'}</button><strong>${esc(b.text || 'Budgetposition')}</strong>${b.eig ? ' <span class="st blue" style="font-size:8.5px;padding:0 5px">Eigentümerwunsch</span>' : ''}</td>
               ${alleEinheiten(p).length ? `<td class="muted" style="font-size:12.5px">${b.wohnung ? esc(einheitName(p, b.wohnung)) + (eigOfP(p, b.wohnung) ? ' · ' + esc(eigOfP(p, b.wohnung)) : '') : '<span class="muted">Allgemein</span>'}</td>` : ''}
               <td class="num">${chf(b.betrag)}</td>
               <td class="num">${ist ? chf(Number(b.ist) || 0) : '<span class="muted">offen</span>'}</td>
               <td class="num" style="${d > 0 ? 'color:var(--s-red)' : (d < 0 ? 'color:var(--s-green)' : '')}">${ist ? (d > 0 ? '+' : '') + chf(d) : '–'}</td>
               <td><button class="x-btn" data-act="new-budget" data-pid="${p.id}" data-vid="${v.id}" data-bid="${b.id}" title="Bearbeiten">✏</button><button class="x-btn" data-act="rm-budget" data-pid="${p.id}" data-vid="${v.id}" data-bid="${b.id}">×</button></td>
-            </tr>`; }).join('')}
+            </tr>${open ? `<tr><td colspan="${cols}" style="padding:0;background:var(--surface-2)">${budgetBreakdownHtml(p, b)}</td></tr>` : ''}`; }).join('')}
         </tbody>
       </table>
       <div class="card-pad" style="display:flex;justify-content:space-between;border-top:1px solid var(--border)">
@@ -9038,23 +9065,35 @@ function actNewBudget(pid, vid, bid, prefillText) {
     ${whgSel}
     <div class="form-row">
       <label class="field">Budget im WV (CHF) <input class="input" type="number" id="bp_betrag" value="${b ? (b.betrag ?? '') : ''}" placeholder="z.B. 25000"></label>
-      <label class="field">Tatsächlich gewählt (CHF) <input class="input" type="number" id="bp_ist" value="${b && b.ist != null ? b.ist : ''}" placeholder="leer = noch offen"></label>
+      <label class="field">Tatsächlich gewählt (CHF) <span class="muted" style="font-weight:400;font-size:11px">netto</span> <input class="input" type="number" id="bp_ist" value="${b && b.ist != null ? b.ist : ''}" placeholder="leer = noch offen"></label>
     </div>
-    <p class="muted" style="font-size:11.5px;margin:2px 0 0">Das Budget steckt im Werkvertrag (wird nicht zusätzlich aufgerechnet). Sobald „tatsächlich gewählt" gesetzt ist, fliesst die <strong>Differenz</strong> in die Baukosten.</p>
+    <hr style="border:none;border-top:1px solid var(--border);margin:12px 0 8px">
+    <div class="muted" style="font-size:11.5px;margin-bottom:6px">Optionale Offerte-Aufstellung – wenn „Brutto" gesetzt ist, wird „tatsächlich gewählt" automatisch als <b>Netto</b> (nach Rabatt/Skonto/Abzügen) berechnet:</div>
+    <div class="form-row">
+      <label class="field">Offerte Brutto (CHF) <input class="input" type="number" id="bp_brutto" value="${b && b.brutto != null ? b.brutto : ''}" placeholder="optional"></label>
+      <label class="field">Rabatt % <input class="input" type="number" id="bp_rabatt" value="${b && b.rabatt != null ? b.rabatt : ''}" placeholder="0"></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Skonto % <input class="input" type="number" id="bp_skonto" value="${b && b.skonto != null ? b.skonto : ''}" placeholder="0"></label>
+      <label class="field">Allg. Abzüge % <input class="input" type="number" id="bp_abz" value="${b && b.weitereAbz != null ? b.weitereAbz : ''}" placeholder="0"></label>
+    </div>
+    <p class="muted" style="font-size:11.5px;margin:2px 0 0">Das Budget steckt im Werkvertrag (wird nicht zusätzlich aufgerechnet). Die <strong>Differenz</strong> (Netto − Budget) fliesst in die Baukosten; in der Aufstellung kommen +${archZuschlagP()}% Architekt und MwSt dazu.</p>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-budget" data-pid="${pid}" data-vid="${vid}"${b ? ` data-bid="${bid}"` : ''}>${b ? 'Speichern' : 'Hinzufügen'}</button>`);
 }
 function saveBudget(pid, vid, bid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   const betrag = Number($('#bp_betrag').value) || 0;
-  const istRaw = $('#bp_ist').value;
-  const ist = (istRaw === '' || istRaw == null) ? null : (Number(istRaw) || 0);
+  const num = id => { const el = $(id); if (!el || el.value === '' || el.value == null) return null; return Number(el.value) || 0; };
+  const brutto = num('#bp_brutto'), rabatt = num('#bp_rabatt'), skonto = num('#bp_skonto'), weitereAbz = num('#bp_abz');
+  let ist = num('#bp_ist');
+  if (brutto != null) ist = condNetto({ brutto, rabatt, skonto, weitereAbz });   // Brutto gesetzt → Netto automatisch
   const text = $('#bp_text').value.trim() || 'Budgetposition';
   if (!betrag && ist == null) { toast('Bitte einen Budgetbetrag eingeben', 'info'); return; }
   const wohnung = $('#bp_wohnung') ? $('#bp_wohnung').value : '';
   v.budgetposten = v.budgetposten || [];
   const b = bid ? v.budgetposten.find(x => x.id === bid) : null;
-  if (b) { b.text = text; b.betrag = betrag; b.ist = ist; b.wohnung = wohnung; }
-  else v.budgetposten.push({ id: uid('bp'), text, betrag, ist, wohnung });
+  if (b) { b.text = text; b.betrag = betrag; b.ist = ist; b.wohnung = wohnung; b.brutto = brutto; b.rabatt = rabatt; b.skonto = skonto; b.weitereAbz = weitereAbz; }
+  else v.budgetposten.push({ id: uid('bp'), text, betrag, ist, wohnung, brutto, rabatt, skonto, weitereAbz });
   save(); closeModal(); router(); toast('Budgetposition gespeichert');
 }
 function removeBudget(pid, vid, bid) {
@@ -9937,6 +9976,7 @@ document.addEventListener('click', e => {
     case 'new-budget':   actNewBudget(pid, vid); break;
     case 'save-budget':  saveBudget(pid, vid); break;
     case 'rm-budget':    removeBudget(pid, vid, bid); break;
+    case 'budget-detail': { if (budgetOpen.has(bid)) budgetOpen.delete(bid); else budgetOpen.add(bid); viewVergabeDetail(pid, vid); } break;
     case 'budget-auswahl': actBudgetForAuswahl(pid, eid); break;
     case 'abo-open':     actAbo(); break;
     case 'new-auflage':      actNewAuflage(pid); break;

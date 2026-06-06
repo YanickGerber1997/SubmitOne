@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v125';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v126';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1541,8 +1541,8 @@ function viewKosten(id) {
   vs.forEach(v => { const g = String(v.bkp || '0').trim()[0] || '0'; (groups[g] = groups[g] || []).push(v); });
   const gKeys = Object.keys(groups).sort();
 
-  const blank = () => ({ kv: 0, rev: 0, wv: 0, nt: 0, prognose: 0, endsumme: 0, bezahlt: 0, fakturiert: 0, offen: 0, offenRg: 0 });
-  const add = (acc, z) => { acc.kv += z.kv; acc.rev += (z.rev || 0); acc.wv += z.wv; acc.nt += z.nt; acc.prognose += z.prognose; acc.endsumme += z.endsumme; acc.bezahlt += z.bezahlt; acc.fakturiert += z.fakturiert; acc.offen += z.offen; acc.offenRg += z.offenRg; };
+  const blank = () => ({ kv: 0, rev: 0, wv: 0, nt: 0, prognose: 0, endsumme: 0, bezahlt: 0, fakturiert: 0, offen: 0, offenRg: 0, dWvEnd: 0 });
+  const add = (acc, z) => { acc.kv += z.kv; acc.rev += (z.rev != null ? z.rev : z.kv); acc.wv += z.wv; acc.nt += z.nt; acc.prognose += z.prognose; acc.endsumme += z.endsumme; acc.bezahlt += z.bezahlt; acc.fakturiert += z.fakturiert; acc.offen += z.offen; acc.offenRg += z.offenRg; acc.dWvEnd += (z.vergeben ? z.endsumme - z.wv : 0); };
   const dCls = d => d > 0.5 ? 'over' : (d < -0.5 ? 'under' : '');
   const sh = t => `<div style="font-weight:400;font-size:9px;color:#9aa4b1;margin-top:1px">${t}</div>`;
   const tot = blank();
@@ -1561,7 +1561,7 @@ function viewKosten(id) {
         <td><strong>${esc(v.gewerk)}</strong>${btSel}</td>
         <td>${v.firma ? esc(v.firma) : '<span class="muted">nicht vergeben</span>'}</td>
         <td class="num">${money(z.kv)}</td>
-        <td class="num">${z.rev != null ? money(z.rev) : '–'}</td>
+        <td class="num">${z.rev != null ? money(z.rev) : `<span class="muted">${money(z.kv)}</span>`}</td>
         <td class="num">${z.vergeben ? money(z.wv) : '–'}</td>
         <td class="num">${z.nt ? money(z.nt) : '–'}</td>
         <td class="num"><strong>${money(z.endsumme)}</strong>${z.hatSchluss ? ' <span class="muted" style="font-size:9px">SR</span>' : ''}</td>
@@ -1583,7 +1583,7 @@ function viewKosten(id) {
         <td></td><td></td>
       </tr>`).join('');
     });
-    const dSub = sub.endsumme - sub.wv;
+    const dSub = sub.dWvEnd;
     body += `<tr class="kgroup"><td>${esc(g)}</td><td colspan="10">${esc(BKP_GRUPPEN[g] || 'Übrige')}</td></tr>
       ${rows}
       ${bkpGhostRows(p, 11, g)}
@@ -1594,7 +1594,7 @@ function viewKosten(id) {
         <td class="num">${money(sub.offenRg)}</td><td class="num ${dCls(dSub)}">${money(dSub)}</td>
       </tr>`;
   });
-  const dTot = tot.endsumme - tot.wv;
+  const dTot = tot.dWvEnd;
 
   const kpi = (l, v, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:21px${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div></div>`;
 
@@ -1612,7 +1612,7 @@ function viewKosten(id) {
       <table class="grid ktable">
         <thead><tr>
           <th>BKP</th><th>Arbeitsgattung</th><th>Unternehmer</th>
-          <th class="num">KV${sh('Schätzung')}</th><th class="num">KV rev.${sh('günst. Offerte')}</th><th class="num">WV${sh('verhandelt')}</th>
+          <th class="num">KV${sh('Schätzung')}</th><th class="num">KV rev.${sh('Offerte/Stand')}</th><th class="num">WV${sh('verhandelt')}</th>
           <th class="num">Nachträge${sh('genehmigt')}</th><th class="num">Prognose${sh('WV+NT / Schluss')}</th><th class="num">Rechnung${sh('bisher bezahlt')}</th><th class="num">Offen${sh('noch nicht bez.')}</th><th class="num">+/−${sh('WV→Endsumme')}</th>
         </tr></thead>
         <tbody>
@@ -7860,26 +7860,28 @@ function pdfBaukosten(pid, mode) {
   if (detail) {
     // ===== Detailliert (Hefti-Stil) – Nachträge & Rechnungen als eigene Zeilen, wie in der App =====
     const th = (name, sub, num) => `<th${num ? ' class="num"' : ''}>${name}${sub ? `<div style="color:#9aa4b1;font-weight:400;font-size:7.5px;text-transform:none;letter-spacing:0;margin-top:1px">${sub}</div>` : ''}</th>`;
-    const THEAD = `<tr>${th('BKP')}${th('Arbeitsgattung')}${th('Unternehmer')}${th('KV', '(Schätzung)', 1)}${th('KV rev.', '(günstige Offerte)', 1)}${th('KV +/−', '(Schätzung/Offerte)', 1)}${th('WV', '(verhandelt)', 1)}${th('Prognose', '(WV+NT / Schluss)', 1)}${th('Rechnung', '(bisher bezahlt)', 1)}${th('offen', '(noch nicht bez.)', 1)}${th('+/−', '(WV → Endsumme)', 1)}</tr>`;
+    const THEAD = `<tr>${th('BKP')}${th('Arbeitsgattung')}${th('Unternehmer')}${th('KV', '(Schätzung)', 1)}${th('KV rev.', '(Offerte/Stand)', 1)}${th('KV +/−', '(Schätzung/Offerte)', 1)}${th('WV', '(verhandelt)', 1)}${th('Prognose', '(WV+NT / Schluss)', 1)}${th('Rechnung', '(bisher bezahlt)', 1)}${th('offen', '(noch nicht bez.)', 1)}${th('+/−', '(WV → Endsumme)', 1)}</tr>`;
     const sumRow = (label, S, italic, total) => {
       const w = s => italic ? `<i>${s}</i>` : s;
-      return `<tr style="${total ? 'border-top:2px solid #7c1d2c' : 'background:' + (italic ? '#f3eedd' : '#f1eef0')}"><td></td><td>${w('<b>' + esc(label) + '</b>')}</td><td></td><td class="num">${w(f2(S.kv))}</td><td class="num">${w(f2(S.rev))}</td>${diffTd(S.rev - S.kv)}<td class="num">${w(f2(S.wv))}</td><td class="num">${w('<b>' + f2(S.prognose) + '</b>')}</td><td class="num">${w(f2(S.rechnung))}</td><td class="num">${w(f2(S.offen))}</td>${diffTd(S.prognose - S.wv)}</tr>`;
+      return `<tr style="${total ? 'border-top:2px solid #7c1d2c' : 'background:' + (italic ? '#f3eedd' : '#f1eef0')}"><td></td><td>${w('<b>' + esc(label) + '</b>')}</td><td></td><td class="num">${w(f2(S.kv))}</td><td class="num">${w(f2(S.rev))}</td>${diffTd(S.rev - S.kv)}<td class="num">${w(f2(S.wv))}</td><td class="num">${w('<b>' + f2(S.prognose) + '</b>')}</td><td class="num">${w(f2(S.rechnung))}</td><td class="num">${w(f2(S.offen))}</td>${diffTd(S.dWvEnd)}</tr>`;
     };
     const subNT = (label, betrag) => `<tr><td></td><td colspan="6" style="font-size:8.5px;color:#5a6472;padding:3px 11px">${label}</td><td class="num" style="font-size:8.5px;color:#5a6472">${f2(betrag)}</td><td></td><td></td><td></td></tr>`;
     const subRG = (label, betrag) => `<tr><td></td><td colspan="7" style="font-size:8.5px;color:#5a6472;padding:3px 11px">${label}</td><td class="num" style="font-size:8.5px;color:#5a6472">${f2(betrag)}</td><td></td><td></td></tr>`;
-    tot.rechnung = 0; tot.offen = 0;   // Fix: diese Summen initialisieren (sonst NaN im Total)
+    tot.rechnung = 0; tot.offen = 0; tot.dWvEnd = 0;   // Fix: diese Summen initialisieren (sonst NaN/falsch im Total)
     const lines = [];
     keys.forEach(g => {
-      const sub = { kv: 0, rev: 0, wv: 0, prognose: 0, rechnung: 0, offen: 0 };
+      const sub = { kv: 0, rev: 0, wv: 0, prognose: 0, rechnung: 0, offen: 0, dWvEnd: 0 };
       lines.push({ html: `<tr style="background:#f7eff0"><td style="color:#7c1d2c"><b>${esc(g)}</b></td><td colspan="10" style="color:#7c1d2c"><b>${esc(BKP_GRUPPEN[g] || 'Übrige')}</b></td></tr>` });
       groups[g].forEach(v => {
         const z = kostenZeile(v); const kv = z.kv, rev = z.rev, wv = z.vergeben ? z.wv : null, fak = z.fakturiert;
         const endsumme = z.endsumme, off = z.offenRg, hatSchluss = z.hatSchluss;   // zentral aus kostenZeile
-        sub.kv += kv; sub.rev += (rev || 0); sub.wv += (wv || 0); sub.prognose += endsumme; sub.rechnung += fak; sub.offen += off;
-        tot.kv += kv; tot.rev += (rev || 0); tot.wv += (wv || 0); tot.prognose += endsumme; tot.rechnung += fak; tot.offen += off;
+        const revEff = rev != null ? rev : kv;            // revidierter KV: ohne Offerte gilt die Schätzung
+        const dWv = wv != null ? endsumme - wv : 0;       // +/− nur bei vergebenen Gewerken
+        sub.kv += kv; sub.rev += revEff; sub.wv += (wv || 0); sub.prognose += endsumme; sub.rechnung += fak; sub.offen += off; sub.dWvEnd += dWv;
+        tot.kv += kv; tot.rev += revEff; tot.wv += (wv || 0); tot.prognose += endsumme; tot.rechnung += fak; tot.offen += off; tot.dWvEnd += dWv;
         const note = v.notiz ? `<div style="color:#7c1d2c;font-size:8.5px;font-weight:700;line-height:1.3">${esc(v.notiz)}</div>` : '';
         const btTag = hatBt && v.bauteil ? ` <span style="color:#9aa4b1;font-size:8px">[${esc(bauteilName(p, v.bauteil))}]</span>` : '';
-        lines.push({ html: `<tr><td>${esc(v.bkp || '')}</td><td>${esc(v.gewerk || '')}${btTag}${note}</td><td style="font-size:9px">${v.firma ? esc(v.firma) : '<span style="color:#aab2bd">nicht vergeben</span>'}</td><td class="num">${f2(kv)}</td><td class="num">${rev != null ? f2(rev) : '–'}</td>${diffTd(rev != null ? rev - kv : null)}<td class="num">${wv != null ? f2(wv) : '–'}</td><td class="num"><b>${f2(endsumme)}</b>${hatSchluss ? ' <span style="color:#7c1d2c;font-size:7px">SR</span>' : ''}</td><td class="num">${fak ? f2(fak) : '–'}</td><td class="num">${f2(off)}</td>${diffTd(wv != null ? endsumme - wv : null)}</tr>` });
+        lines.push({ html: `<tr><td>${esc(v.bkp || '')}</td><td>${esc(v.gewerk || '')}${btTag}${note}</td><td style="font-size:9px">${v.firma ? esc(v.firma) : '<span style="color:#aab2bd">nicht vergeben</span>'}</td><td class="num">${f2(kv)}</td><td class="num">${rev != null ? f2(rev) : `<span style="color:#aab2bd">${f2(kv)}</span>`}</td>${diffTd(rev != null ? rev - kv : null)}<td class="num">${wv != null ? f2(wv) : '–'}</td><td class="num"><b>${f2(endsumme)}</b>${hatSchluss ? ' <span style="color:#7c1d2c;font-size:7px">SR</span>' : ''}</td><td class="num">${fak ? f2(fak) : '–'}</td><td class="num">${f2(off)}</td>${diffTd(wv != null ? endsumme - wv : null)}</tr>` });
         (v.nachtraege || []).forEach(n => lines.push({ html: subNT(`↳ Nachtrag${n.nr ? ' ' + esc(n.nr) : ''}: ${esc(n.titel || '')} <span style="color:#9aa4b1">(${esc(n.status || 'offen')})</span>${hatBt && n.bauteil ? ' [' + esc(bauteilName(p, n.bauteil)) + ']' : ''}`, n.betrag) }));
         (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).forEach(r => lines.push({ html: subRG(`↳ Rechnung ${r.datum ? fmtDate(r.datum) : '—'} · ${esc(r.text || '')}${r.nr ? ' ' + esc(r.nr) : ''}${hatBt ? ' [' + esc(bauteilName(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)) + ']' : ''}`, rgSigned(r)) }));
       });
@@ -7887,10 +7889,10 @@ function pdfBaukosten(pid, mode) {
       lines.push({ html: sumRow('Total ' + (BKP_GRUPPEN[g] || g), sub) });
     });
     const out = `<table class="t" style="font-size:10px"><thead>${THEAD}</thead><tbody>${lines.map(l => l.html).join('')}${sumRow('Total Baukosten', tot, false, true)}</tbody></table>`;
-    const zRow = (lbl, S) => `<tr><td>${esc(lbl)}</td><td class="num">${f2(S.kv)}</td><td class="num">${f2(S.rev)}</td>${diffTd(S.rev - S.kv)}<td class="num">${f2(S.wv)}</td><td class="num"><b>${f2(S.prognose)}</b></td><td class="num">${f2(S.rechnung)}</td><td class="num">${f2(S.offen)}</td>${diffTd(S.prognose - S.wv)}</tr>`;
+    const zRow = (lbl, S) => `<tr><td>${esc(lbl)}</td><td class="num">${f2(S.kv)}</td><td class="num">${f2(S.rev)}</td>${diffTd(S.rev - S.kv)}<td class="num">${f2(S.wv)}</td><td class="num"><b>${f2(S.prognose)}</b></td><td class="num">${f2(S.rechnung)}</td><td class="num">${f2(S.offen)}</td>${diffTd(S.dWvEnd)}</tr>`;
     const kuRows = keys.map(g => zRow(g + ' ' + (BKP_GRUPPEN[g] || 'Übrige'), gtot[g])).join('');
-    const kuTable = `<table class="t" style="font-size:10.5px"><thead><tr>${th('BKP / Hauptgruppe')}${th('KV', '(Schätzung)', 1)}${th('KV rev.', '(günstige Offerte)', 1)}${th('KV +/−', '(Schätzung/Offerte)', 1)}${th('WV', '(verhandelt)', 1)}${th('Prognose', '(WV+NT / Schluss)', 1)}${th('Rechnung', '(bisher bezahlt)', 1)}${th('offen', '(noch nicht bez.)', 1)}${th('+/−', '(WV → Endsumme)', 1)}</tr></thead>
-        <tbody>${kuRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total Baukosten</b></td><td class="num"><b>${f2(tot.kv)}</b></td><td class="num"><b>${f2(tot.rev)}</b></td>${diffTd(tot.rev - tot.kv)}<td class="num"><b>${f2(tot.wv)}</b></td><td class="num"><b>${f2(tot.prognose)}</b></td><td class="num"><b>${f2(tot.rechnung)}</b></td><td class="num"><b>${f2(tot.offen)}</b></td>${diffTd(tot.prognose - tot.wv)}</tbody></table>`;
+    const kuTable = `<table class="t" style="font-size:10.5px"><thead><tr>${th('BKP / Hauptgruppe')}${th('KV', '(Schätzung)', 1)}${th('KV rev.', '(Offerte/Stand)', 1)}${th('KV +/−', '(Schätzung/Offerte)', 1)}${th('WV', '(verhandelt)', 1)}${th('Prognose', '(WV+NT / Schluss)', 1)}${th('Rechnung', '(bisher bezahlt)', 1)}${th('offen', '(noch nicht bez.)', 1)}${th('+/−', '(WV → Endsumme)', 1)}</tr></thead>
+        <tbody>${kuRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total Baukosten</b></td><td class="num"><b>${f2(tot.kv)}</b></td><td class="num"><b>${f2(tot.rev)}</b></td>${diffTd(tot.rev - tot.kv)}<td class="num"><b>${f2(tot.wv)}</b></td><td class="num"><b>${f2(tot.prognose)}</b></td><td class="num"><b>${f2(tot.rechnung)}</b></td><td class="num"><b>${f2(tot.offen)}</b></td>${diffTd(tot.dWvEnd)}</tbody></table>`;
     const legende = `<p class="muted" style="margin-top:10px;font-size:8.5px">KV (Schätzung) · KV rev. (günstige Offerte) · KV +/− (Schätzung gegen Offerte) · WV (verhandelte Vergabesumme) · Prognose (WV + Nachträge; <b>SR</b> = Schlussrechnung liegt vor → Endsumme = effektive Rechnungssumme, offen = 0) · Rechnung (Summe eingetragener Rechnungen) · offen (Endsumme − Rechnungen) · +/− (WV gegen Endsumme). ↳ = Nachträge &amp; Rechnungen je eigene Zeile. Grün = Einsparung (tiefer), rot = Überschreitung (höher).</p>`;
     openPagedDoc({
       title: 'Baukostenübersicht', kicker: 'Kostenkontrolle', objekt: `${p.name}, ${p.ort}`,

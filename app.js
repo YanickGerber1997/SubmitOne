@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v124';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v125';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7848,7 +7848,8 @@ function pdfBaukosten(pid, mode) {
   const detail = mode === 'detail';
   const hatBt = (p.bauteile || []).length;
   const f2 = n => (Number(n) || 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const diffTd = d => d == null ? '<td class="num">–</td>' : `<td class="num" style="background:${d > 0.005 ? '#e4f5ea' : (d < -0.005 ? '#fbe7e9' : 'transparent')}">${f2(d)}</td>`;
+  // Kostenanstieg = rot, Einsparung = grün (gilt für KV +/− wie WV→Endsumme)
+  const diffTd = d => d == null ? '<td class="num">–</td>' : `<td class="num" style="${d > 0.005 ? 'background:#fbe7e9;color:#a01b2b' : (d < -0.005 ? 'background:#e4f5ea;color:#1a7a3a' : '')}">${f2(d)}</td>`;
   const vs = gewerkeSorted(p);
   const groups = {}; vs.forEach(v => { const g = String(v.bkp || '0').trim()[0] || '0'; (groups[g] = groups[g] || []).push(v); });
   const keys = Object.keys(groups).sort();
@@ -7890,7 +7891,7 @@ function pdfBaukosten(pid, mode) {
     const kuRows = keys.map(g => zRow(g + ' ' + (BKP_GRUPPEN[g] || 'Übrige'), gtot[g])).join('');
     const kuTable = `<table class="t" style="font-size:10.5px"><thead><tr>${th('BKP / Hauptgruppe')}${th('KV', '(Schätzung)', 1)}${th('KV rev.', '(günstige Offerte)', 1)}${th('KV +/−', '(Schätzung/Offerte)', 1)}${th('WV', '(verhandelt)', 1)}${th('Prognose', '(WV+NT / Schluss)', 1)}${th('Rechnung', '(bisher bezahlt)', 1)}${th('offen', '(noch nicht bez.)', 1)}${th('+/−', '(WV → Endsumme)', 1)}</tr></thead>
         <tbody>${kuRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total Baukosten</b></td><td class="num"><b>${f2(tot.kv)}</b></td><td class="num"><b>${f2(tot.rev)}</b></td>${diffTd(tot.rev - tot.kv)}<td class="num"><b>${f2(tot.wv)}</b></td><td class="num"><b>${f2(tot.prognose)}</b></td><td class="num"><b>${f2(tot.rechnung)}</b></td><td class="num"><b>${f2(tot.offen)}</b></td>${diffTd(tot.prognose - tot.wv)}</tbody></table>`;
-    const legende = `<p class="muted" style="margin-top:10px;font-size:8.5px">KV (Schätzung) · KV rev. (günstige Offerte) · KV +/− (Schätzung gegen Offerte) · WV (verhandelte Vergabesumme) · Prognose (WV + Nachträge; <b>SR</b> = Schlussrechnung liegt vor → Endsumme = effektive Rechnungssumme, offen = 0) · Rechnung (Summe eingetragener Rechnungen) · offen (Endsumme − Rechnungen) · +/− (WV gegen Endsumme). ↳ = Nachträge &amp; Rechnungen je eigene Zeile. Grün = höher, rot = tiefer.</p>`;
+    const legende = `<p class="muted" style="margin-top:10px;font-size:8.5px">KV (Schätzung) · KV rev. (günstige Offerte) · KV +/− (Schätzung gegen Offerte) · WV (verhandelte Vergabesumme) · Prognose (WV + Nachträge; <b>SR</b> = Schlussrechnung liegt vor → Endsumme = effektive Rechnungssumme, offen = 0) · Rechnung (Summe eingetragener Rechnungen) · offen (Endsumme − Rechnungen) · +/− (WV gegen Endsumme). ↳ = Nachträge &amp; Rechnungen je eigene Zeile. Grün = Einsparung (tiefer), rot = Überschreitung (höher).</p>`;
     openPagedDoc({
       title: 'Baukostenübersicht', kicker: 'Kostenkontrolle', objekt: `${p.name}, ${p.ort}`,
       freitext: p.deckblatt || '', toc: true, landscape: true,

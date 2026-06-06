@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v170';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v171';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1546,6 +1546,7 @@ function viewProjektDetail(id) {
     </div>
 
     ${projektNextStepsCard(p)}
+    ${erinnerungenCard(p)}
 
     <!-- Vergaben-Tabelle -->
     <div class="section-head"><h2>Vergaben &amp; Gewerke</h2><div style="display:flex;gap:10px;align-items:center"><span class="hint">Klick = aufklappen mit nächsten Schritten</span>${katToggleBtn()}</div></div>
@@ -3644,6 +3645,66 @@ function gewerkPanel(p, v) {
 }
 // Projekt-Board: pro Gewerk die wichtigste anstehende Aktion (sortiert nach Phase)
 // Top 5 noch nicht vergebene Ausschreibungen – am nächsten an der Ausführung (Einbau − Bestellfrist)
+const ERIN_ART = { anruf: { icon: '📞', label: 'Anruf' }, mail: { icon: '✉', label: 'E-Mail' }, bestellung: { icon: '🛒', label: 'Bestellung / Abruf' }, sonstiges: { icon: '🔔', label: 'Sonstiges' } };
+// Erinnerungen / Wiedervorlagen: Unternehmer frühzeitig kontaktieren (Anruf/Mail/Bestellung)
+function erinnerungenCard(p) {
+  const t0 = todayIso();
+  const list = (p.erinnerungen || []).slice().sort((a, b) => (a.erledigt ? 1 : 0) - (b.erledigt ? 1 : 0) || (a.datum || '').localeCompare(b.datum || ''));
+  const offen = list.filter(r => !r.erledigt).length;
+  return `<div class="card card-pad" style="margin-bottom:22px">
+    <div class="section-head" style="margin-top:0"><h2>🔔 Erinnerungen / Wiedervorlagen${offen ? ` <span class="tab-badge">${offen}</span>` : ''}</h2>
+      <button class="btn sm" data-act="erinnerung-add" data-pid="${p.id}">+ Erinnerung</button></div>
+    ${list.length ? `<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">${list.slice(0, 14).map(r => {
+      const ueber = !r.erledigt && r.datum && r.datum < t0;
+      const bald = !r.erledigt && r.datum && r.datum >= t0 && (dISO(r.datum) - today()) / 86400000 <= 7;
+      return `<div style="display:flex;align-items:center;gap:10px;padding:7px 11px;border:1px solid var(--border);border-radius:9px;${r.erledigt ? 'opacity:.55' : ''}">
+        <input type="checkbox" data-act="erinnerung-done" data-pid="${p.id}" data-rid="${r.id}"${r.erledigt ? ' checked' : ''} title="erledigt">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;${r.erledigt ? 'text-decoration:line-through' : ''}">${ERIN_ART[r.art]?.icon || '🔔'} ${esc(r.titel || 'Erinnerung')}</div>
+          <div class="muted" style="font-size:12px">${r.datum ? esc(fmtDate(r.datum)) : ''}${r.firma ? ' · ' + esc(r.firma) : ''}${r.notiz ? ' · ' + esc(r.notiz) : ''}</div>
+        </div>
+        ${ueber ? '<span class="st amber" style="font-size:9px;padding:1px 6px">überfällig</span>' : (bald ? '<span class="st blue" style="font-size:9px;padding:1px 6px">bald</span>' : '')}
+        <button class="x-btn" data-act="erinnerung-edit" data-pid="${p.id}" data-rid="${r.id}" title="Bearbeiten">✏</button>
+        <button class="x-btn" data-act="erinnerung-rm" data-pid="${p.id}" data-rid="${r.id}">×</button>
+      </div>`;
+    }).join('')}</div>` : `<p class="muted" style="font-size:12.5px;margin:6px 0 0">Noch keine Erinnerungen – z.B. „Maler 2 Wochen vor Start anrufen" oder „Fenster rechtzeitig abrufen".</p>`}
+  </div>`;
+}
+function actErinnerung(pid, rid) {
+  const p = findProjekt(pid); const r = rid ? (p.erinnerungen || []).find(x => x.id === rid) : null;
+  const gw = gewerkeSorted(p);
+  openModal(r ? 'Erinnerung bearbeiten' : 'Erinnerung', `
+    <label class="field">Was ist zu tun? <input class="input" id="er_titel" value="${r ? esc(r.titel || '') : ''}" placeholder="z.B. Gerüstbauer anrufen wegen Termin"></label>
+    <div class="form-row">
+      <label class="field">Fällig am <input class="input" type="date" id="er_datum" value="${r ? esc(r.datum || '') : todayIso()}"></label>
+      <label class="field">Art <select class="select" id="er_art">${Object.keys(ERIN_ART).map(k => `<option value="${k}"${(r ? r.art : 'anruf') === k ? ' selected' : ''}>${ERIN_ART[k].icon} ${ERIN_ART[k].label}</option>`).join('')}</select></label>
+    </div>
+    <label class="field">Unternehmer / Gewerk (optional) <select class="select" id="er_gewerk"><option value="">–</option>${gw.map(v => `<option value="${v.id}"${r && r.vid === v.id ? ' selected' : ''} data-firma="${esc(v.firma || '')}">${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)}${v.firma ? ' · ' + esc(v.firma) : ''}</option>`).join('')}</select></label>
+    <label class="field" style="margin-top:8px">Firma (frei) <input class="input" id="er_firma" value="${r ? esc(r.firma || '') : ''}" placeholder="optional, sonst aus Gewerk"></label>
+    <label class="field" style="margin-top:8px">Notiz <textarea class="input" id="er_notiz" rows="2" placeholder="optional">${r ? esc(r.notiz || '') : ''}</textarea></label>
+  `, `${r ? `<button class="btn ghost danger" data-act="erinnerung-rm" data-pid="${pid}" data-rid="${rid}">Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="erinnerung-save" data-pid="${pid}"${r ? ` data-rid="${rid}"` : ''}>${r ? 'Speichern' : 'Hinzufügen'}</button>`);
+  const gsel = $('#er_gewerk'); if (gsel) gsel.addEventListener('change', () => { const o = gsel.options[gsel.selectedIndex]; const f = o ? o.getAttribute('data-firma') : ''; if (f && !$('#er_firma').value) $('#er_firma').value = f; });
+}
+function saveErinnerung(pid, rid) {
+  const p = findProjekt(pid);
+  const vid = $('#er_gewerk').value;
+  let firma = $('#er_firma').value.trim();
+  if (!firma && vid) { const v = findVergabe(p, vid); if (v && v.firma) firma = v.firma; }
+  const d = { titel: $('#er_titel').value.trim(), datum: $('#er_datum').value, art: $('#er_art').value, vid, firma, notiz: $('#er_notiz').value.trim() };
+  if (!d.titel) { toast('Bitte angeben, was zu tun ist', 'info'); return; }
+  p.erinnerungen = p.erinnerungen || [];
+  const r = rid ? p.erinnerungen.find(x => x.id === rid) : null;
+  if (r) Object.assign(r, d); else p.erinnerungen.push({ id: uid('er'), erledigt: false, ...d });
+  save(); closeModal(); router(); toast('Erinnerung gespeichert');
+}
+function toggleErinnerung(pid, rid) {
+  const p = findProjekt(pid); const r = (p.erinnerungen || []).find(x => x.id === rid); if (!r) return;
+  r.erledigt = !r.erledigt; save(); router();
+}
+function removeErinnerung(pid, rid) {
+  const p = findProjekt(pid); p.erinnerungen = (p.erinnerungen || []).filter(x => x.id !== rid);
+  save(); closeModal(); router();
+}
 function projektNextStepsCard(p) {
   const t0 = todayIso();
   const wvIdx = (STATUS_BY_KEY['werkvertrag'] || {}).index ?? 99;
@@ -5735,6 +5796,7 @@ function sammleTermine(p) {
     if (pr.naechste) ev.push({ datum: pr.naechste, titel: 'Nächste Sitzung', color: 'green', quelle: 'Sitzung' });
   });
   offenePendenzen(p).forEach(x => { if (x.it.termin) ev.push({ datum: x.it.termin, titel: 'Pendenz: ' + (x.it.text || '').slice(0, 40), color: 'amber', quelle: 'Pendenz' }); });
+  (p.erinnerungen || []).forEach(r => { if (!r.erledigt && r.datum) ev.push({ datum: r.datum, zeit: r.zeit || '', titel: `${ERIN_ART[r.art]?.icon || '🔔'} ${r.titel || 'Erinnerung'}${r.firma ? ' (' + r.firma + ')' : ''}`, color: 'amber', quelle: 'Erinnerung' }); });
   if (p.start) ev.push({ datum: p.start, titel: 'Projektstart', color: 'grey', quelle: 'Projekt' });
   if (p.ende) ev.push({ datum: p.ende, titel: 'Projektende', color: 'grey', quelle: 'Projekt' });
   return ev.filter(e => e.datum);
@@ -10218,6 +10280,11 @@ document.addEventListener('click', e => {
     case 'fein-edit':    actFeinBlock(pid, bid); break;
     case 'save-fein':    saveFeinBlock(pid, bid); break;
     case 'fein-rm':      removeFeinBlock(pid, bid); break;
+    case 'erinnerung-add':  actErinnerung(pid); break;
+    case 'erinnerung-edit': actErinnerung(pid, rid); break;
+    case 'erinnerung-save': saveErinnerung(pid, rid); break;
+    case 'erinnerung-done': toggleErinnerung(pid, rid); break;
+    case 'erinnerung-rm':   removeErinnerung(pid, rid); break;
     case 'new-vorgang':  actNewVorgang(pid, vid); break;
     case 'save-vorgang': saveVorgang(pid, vid); break;
     case 'rm-vorgang':   removeVorgang(pid, vid, oid); break;

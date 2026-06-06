@@ -103,18 +103,20 @@ button { font-family: inherit; cursor: pointer; }
 /* ===== Logo „submitone" (gezeichnet; hell = Default, on-dark = Sidebar) ===== */
 .logo { --lg-ink:#232b35; --lg-accent:#7c1d2c; display:inline-flex; align-items:center; gap:7px; line-height:1; }
 .logo.on-dark { --lg-ink:#ffffff; --lg-accent:#cf6675; }
-.logo-word { font-family:'Quicksand', system-ui, sans-serif; font-weight:600; font-size:23px; letter-spacing:.3px; }
-.logo-word .lw-a { color:var(--lg-ink); }
-.logo-word .lw-b { color:var(--lg-accent); margin-left:.2em; }
+.logo-word { font-family:'Quicksand', system-ui, sans-serif; font-weight:600; font-size:22px; letter-spacing:.2px; }
+.logo .lw-a { color:var(--lg-ink); }
+.logo .lw-b { color:var(--lg-accent); }
 .logo-tick { width:17px; height:17px; flex:none; }
 .logo .end { fill:var(--lg-accent); }
 .logo .chk { fill:none; stroke:#ffffff; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; }
-.logo-mark { display:none; }
-.logo-mark svg { width:30px; height:30px; }
+.logo-mark { display:none; flex-direction:column; align-items:center; gap:3px; }
+.logo-mark svg { width:28px; height:28px; }
+.logo-mark-name { font-family:'Quicksand', system-ui, sans-serif; font-weight:700; font-size:8.5px; letter-spacing:.2px; line-height:1; white-space:nowrap; }
 .logo.big .logo-word { font-size:30px; }
 .logo.big .logo-tick { width:22px; height:22px; }
 #app.collapsed .logo.compact { display:none; }
 #app.collapsed .logo-mark { display:inline-flex; }
+#app.collapsed .brand { padding-top:10px; }
 
 /* Angemeldeter Benutzer */
 .user-chip { display:flex; align-items:center; gap:9px; padding:8px 10px; margin-bottom:4px;

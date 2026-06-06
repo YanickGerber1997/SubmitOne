@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v72';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v73';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -298,7 +298,7 @@ function renderLogin(msg, mode) {
     <div id="loginOverlay" class="login-overlay">
       <div class="login-card">
         <div class="logo big" style="justify-content:center;margin:0 auto 16px">
-          <span class="logo-word"><span class="lw-a">submit</span><span class="lw-b">one</span></span>
+          <span class="logo-word"><span class="lw-a">Submit</span><span class="lw-b">One</span></span>
           <svg class="logo-tick" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" class="end"/><path d="M6.6 12.4 l3.4 3.6 l7-8.6" class="chk"/></svg>
         </div>
         <p class="muted" style="margin:0 0 16px;font-size:13px">${mode === 'up' ? 'Neues Konto erstellen' : 'Mit E-Mail anmelden'}</p>

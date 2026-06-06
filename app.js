@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v152';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v153';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3599,7 +3599,7 @@ function viewBauherr(pid) {
 
   const entsTable = ents.length ? `
     <table class="grid">
-      <thead><tr><th style="width:50px">BKP</th>${hasWhg ? '<th style="width:78px">Wohnung</th>' : ''}<th style="width:108px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:96px">Budget</th><th class="num" style="width:96px">Tatsächlich</th><th class="num" style="width:88px">Δ</th><th style="width:52px"></th></tr></thead>
+      <thead><tr><th style="width:50px">BKP</th>${hasWhg ? '<th style="width:78px">Wohnung</th>' : ''}<th style="width:108px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:96px">Budget<div style="font-weight:400;font-size:9px;color:var(--text-faint)">netto · Planwert</div></th><th class="num" style="width:96px">Tatsächlich<div style="font-weight:400;font-size:9px;color:var(--text-faint)">netto · n. Rabatt/Skonto</div></th><th class="num" style="width:88px">Δ</th><th style="width:52px"></th></tr></thead>
       <tbody>${ents.map(e => { const v = vergOf(e); const istSet = (e.ist != null && e.ist !== ''); const d = istSet ? (Number(e.ist) || 0) - (Number(e.budget) || 0) : null; const bdgIn = (feld, val, ph) => `<input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="${feld}" type="number" value="${val != null && val !== '' ? val : ''}" placeholder="${ph}" style="width:90px;height:26px;font-size:12px;text-align:right">`; return `
         <tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
           <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
@@ -3687,7 +3687,7 @@ function viewBauherr(pid) {
         <button class="btn sm ghost" data-act="standard-bemusterung" data-pid="${p.id}" title="Übliche Auswahlpunkte für die gewählte Einheit ergänzen">＋ Standardliste</button>
         <button class="btn sm" data-act="new-entscheidung" data-pid="${p.id}">+ Eintrag</button>
       </div></div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 12px">${hasWhg && selW === 'alle' ? '„Alle" zeigt die Entscheide nach <strong>Fälligkeit aus dem Terminprogramm</strong> – offene zuerst (entscheiden bis = Einbau − Bestellfrist). Für die Erfassung oben den Eigentümer wählen.' : (hasWhg ? 'Oben den Eigentümer/die Einheit wählen – „+ Eintrag" und „Standardliste" erfassen dann genau für diese Einheit. Jeder Punkt: offen → gewählt / entfällt.' : 'Auswahlpunkte führen: offen → gewählt, oder entfällt (mit Grund).')}</p>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 12px">${hasWhg && selW === 'alle' ? '„Alle" zeigt die Entscheide nach <strong>Fälligkeit aus dem Terminprogramm</strong> – offene zuerst (entscheiden bis = Einbau − Bestellfrist). Für die Erfassung oben den Eigentümer wählen.' : (hasWhg ? 'Oben den Eigentümer/die Einheit wählen – „+ Eintrag" und „Standardliste" erfassen dann genau für diese Einheit. Jeder Punkt: offen → gewählt / entfällt.' : 'Auswahlpunkte führen: offen → gewählt, oder entfällt (mit Grund).')} <span style="display:block;margin-top:3px"><b>Budget</b> = dein Planwert; <b>Tatsächlich</b> = effektiv gewählt. Beide <b>netto</b> (exkl. MwSt, nach Rabatt/Skonto) – wie WV/Baukosten.</span></p>
     <div class="card">${hasWhg && selW === 'alle' ? alleTable : entsTable}</div>
 
     <div class="section-head" style="margin-top:26px"><h2>Auswahl-Firmen (Bemusterung)</h2>

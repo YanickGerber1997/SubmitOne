@@ -66,7 +66,7 @@ button { font-family: inherit; cursor: pointer; }
 
 #app {
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -172,7 +172,8 @@ button { font-family: inherit; cursor: pointer; }
 .btn-ghost-sm:hover { background: rgba(255,255,255,.12); }
 .ver { color: #5f6e92; font-size: 11px; text-align: center; margin-top: 4px; }
 
-.content { padding: 26px 36px 60px; max-width: 1800px; width: 100%; margin: 0 auto; }
+.content { padding: 26px 36px 60px; max-width: 1800px; width: 100%; min-width: 0; margin: 0 auto; }
+#view { min-width: 0; }
 
 /* ===== Kalender (Outlook-ähnlich) ===== */
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }

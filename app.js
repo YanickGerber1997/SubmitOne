@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v55';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v56';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -6011,6 +6011,8 @@ function solarZusatz(s) { return SOLAR_LOADS.reduce((a, l) => a + (s[l.key] ? l.
 const SOLAR_REGIONS = [{ label: 'Mittelland', v: 1000 }, { label: 'oft Nebel/Voralpen', v: 900 }, { label: 'sonnig/Berge/Tessin', v: 1100 }, { label: 'eher schattig', v: 850 }];
 // Batteriegrösse → kWh + empfohlener Eigenverbrauchsanteil (Nutzen)
 const SOLAR_BATTERIES = [{ key: '0', label: 'kein', kwh: 0, eigen: 30 }, { key: '5', label: 'klein ~5 kWh', kwh: 5, eigen: 50 }, { key: '10', label: 'mittel ~10 kWh', kwh: 10, eigen: 62 }, { key: '15', label: 'gross ~15 kWh', kwh: 15, eigen: 70 }];
+// Bauseitige Zusatzarbeiten als Schnellauswahl (Richtwerte CHF)
+const SOLAR_BAUSEITE = [{ label: 'Baumeister', chf: 2000 }, { label: 'Gerüst', chf: 5000 }, { label: 'Elektriker', chf: 2000 }, { label: 'Spengler', chf: 2000 }];
 // Richtwerte für die Automatik (an realer CH-Offerte kalibriert) – immer überschreibbar
 const SOLAR_CHF_KWP = 2000;   // Anlagekosten pro kWp (brutto, inkl. Ausführung)
 const SOLAR_CHF_KWH = 450;    // Speicherkosten pro kWh
@@ -6107,6 +6109,14 @@ function solarRegion(pid, v) {
   const s = solarPreserve(p); s.ertrag = v;
   p.solar = s; save(); viewSolar(pid);
 }
+// Bauseitige Zusatzarbeit an-/abwählen (wie Verbraucher-Schalter)
+function solarBauseite(pid, label, chf) {
+  const p = findProjekt(pid); if (!p) return;
+  const s = solarPreserve(p); s.bauseite = s.bauseite || [];
+  const i = s.bauseite.findIndex(b => (b.text || '').toLowerCase() === label.toLowerCase());
+  if (i >= 0) s.bauseite.splice(i, 1); else s.bauseite.push({ text: label, betrag: chf });
+  p.solar = s; save(); viewSolar(pid);
+}
 // Live-Box „Investition & Förderung" unter den Eingaben
 function solarInvestHtml(r) {
   const fr = x => 'CHF ' + Math.round(x).toLocaleString('de-CH');
@@ -6192,6 +6202,8 @@ function viewSolar(pid) {
   const sp = Number(s.speicher) || 0;
   const battKey = (SOLAR_BATTERIES.find(b => b.kwh === sp) || {}).key || (sp > 0 ? 'custom' : '0');
   const battBtns = SOLAR_BATTERIES.map(b => `<button class="btn xs ${b.key === battKey ? '' : 'secondary'}" data-act="solar-batt" data-pid="${p.id}" data-key="${b.key}" type="button">${esc(b.label)}</button>`).join('');
+  const bsActive = label => (s.bauseite || []).some(b => (b.text || '').toLowerCase() === label.toLowerCase());
+  const bauBtns = SOLAR_BAUSEITE.map(b => `<button class="btn xs ${bsActive(b.label) ? '' : 'secondary'}" data-act="solar-bauseite" data-pid="${p.id}" data-label="${esc(b.label)}" data-chf="${b.chf}" type="button">${bsActive(b.label) ? '✓ ' : '+ '}${esc(b.label)} ${b.chf.toLocaleString('de-CH')}</button>`).join('');
 
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Solar</div>
@@ -6262,9 +6274,10 @@ function viewSolar(pid) {
             ${fld('s_speicherk', 'Speicherkosten', s.speicherKosten, 'CHF', 'leer = automatisch')}
           </div>
         </div>
-        <div class="muted" style="font-size:12px;margin:12px 0 4px"><strong>Bauseitige Zusatzkosten</strong> – was die Offerte <em>nicht</em> enthält (Gerüst, Spengler, Netzanschluss …)</div>
+        <div class="muted" style="font-size:12px;margin:14px 0 4px"><strong>Bauseitige Zusatzkosten</strong> – was die Offerte <em>nicht</em> enthält. Anklicken = dazu/weg:</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px">${bauBtns}</div>
         <div id="s_bauseite">${(s.bauseite || []).map(b => bsRow(p.id, b.text, b.betrag)).join('')}</div>
-        <button class="btn sm secondary" data-act="solar-bs-add" data-pid="${p.id}" type="button">+ Position</button>
+        <button class="btn sm secondary" data-act="solar-bs-add" data-pid="${p.id}" type="button">+ eigene Position</button>
         <div class="form-row" style="margin-top:14px">
           ${fld('s_eivg', 'EIV Grundbeitrag', s.eivGrund, 'CHF', 'Leer = 200 (Standard).')}
           ${fld('s_eivl', 'EIV Leistungsbeitrag', s.eivLeistung, 'CHF/kWp', 'Leer = 385/kWp geschätzt.')}
@@ -7669,6 +7682,7 @@ document.addEventListener('click', e => {
     case 'solar-load':     solarToggle(pid, act.dataset.load); break;
     case 'solar-batt':     solarBattery(pid, act.dataset.key); break;
     case 'solar-region':   solarRegion(pid, Number(act.dataset.v)); break;
+    case 'solar-bauseite': solarBauseite(pid, act.dataset.label, Number(act.dataset.chf)); break;
     case 'bt-add':       { const w = $('#bt_rows'); if (w) w.insertAdjacentHTML('beforeend', obtRow(null)); } break;
     case 'op-add':       { const w = $('#op_rows'); if (w) w.insertAdjacentHTML('beforeend', oopRow(findProjekt(pid), null)); } break;
     case 'row-del':      { const r = act.closest('.bt-row, .op-row'); if (r) r.remove(); } break;

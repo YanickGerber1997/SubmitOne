@@ -505,10 +505,11 @@ table.grid tbody tr.clickable:hover { background: var(--surface-2); }
 .ktable tr.ktotal td { background: #0f1830; color: #fff; font-weight: 700; font-size: 13.5px; }
 .ktable tr.ktotal td.over { color: #ff9a9a; }
 .ktable tr.ktotal td.under { color: #9ae6b4; }
-/* Sticky: Spaltenkopf klebt oben, aktuelle Hauptgruppe darunter (Scroll-Fläche = .ktable-wrap) */
-.ktable-wrap { overflow: auto; max-height: 78vh; }
+/* Sticky: Spaltenkopf + aktuelle Hauptgruppe kleben beim Seiten-Scroll am Fensterrand.
+   .card hat overflow:hidden → hier aufheben, sonst greift position:sticky nicht. */
+.ktable-wrap { overflow: visible; }
 .ktable thead th { position: sticky; top: 0; z-index: 6; box-shadow: inset 0 -1px 0 var(--border); }
-.ktable tr.kgroup td { position: sticky; top: 44px; z-index: 5; box-shadow: inset 0 -1px 0 var(--border); }
+.ktable tr.kgroup td { position: sticky; top: 43px; z-index: 5; box-shadow: inset 0 -1px 0 var(--border); }
 .ktable td.over { color: var(--s-red); font-weight: 600; }
 .ktable td.under { color: var(--s-green); font-weight: 600; }
 

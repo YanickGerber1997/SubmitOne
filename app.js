@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v144';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v145';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1155,7 +1155,7 @@ function projektTabs(p, active) {
     { key: 'optionen', href: `#/projekt/${p.id}/optionen`, label: 'Optionen' },
     { key: 'finanz', href: `#/projekt/${p.id}/finanz`, label: 'Finanzierung' },
     { key: 'zahlungsplan', href: `#/projekt/${p.id}/zahlungsplan`, label: 'Zahlungsplan' },
-    { key: 'bauherr', href: `#/projekt/${p.id}/bauherr`, label: 'Bauherr' },
+    { key: 'bauherr', href: `#/projekt/${p.id}/bauherr`, label: 'Eigentümerwünsche' },
     { key: 'solar', href: `#/projekt/${p.id}/solar`, label: 'Solar' },
     { key: 'uwert', href: `#/projekt/${p.id}/uwert`, label: 'U-Wert' },
     { key: 'honorar', href: `#/projekt/${p.id}/honorar`, label: 'Honorar' },
@@ -3522,12 +3522,15 @@ function viewBauherr(pid) {
   const hasWhg = einheiten.length >= 1;
   const selW = hasWhg ? bauherrWohnung : 'alle';
   const ents = selW === 'alle' ? allEnts : allEnts.filter(e => String(e.wohnung || '') === selW);
-  const whgLabel = w => einheitName(p, w);
+  const eigOf = id => { const h = einheiten.find(x => x.u.id === id); return h ? (h.u.eigentuemer || '') : ''; };
+  const whgLabel = w => { const n = einheitName(p, w); const e = eigOf(w); return e ? `${n} · ${e}` : n; };
+  const selEig = (selW && selW !== 'alle' && selW !== '') ? eigOf(selW) : '';
+  const selKontakt = (() => { const h = einheiten.find(x => x.u.id === selW); return h ? (h.u.eigKontakt || '') : ''; })();
   const whgChips = hasWhg ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px">
     <span class="chip ${selW === 'alle' ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="alle">Alle</span>
     <span class="chip ${selW === '' ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="">Allgemein</span>
-    ${einheiten.map(x => `<span class="chip ${selW === x.u.id ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="${x.u.id}">${esc(x.u.name || 'Wohnung')}${x.u.m2 ? ` · ${Number(x.u.m2)}m²` : ''}</span>`).join('')}
-  </div>` : '';
+    ${einheiten.map(x => `<span class="chip ${selW === x.u.id ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="${x.u.id}">${esc(x.u.name || 'Wohnung')}${x.u.eigentuemer ? ` · ${esc(x.u.eigentuemer)}` : ''}</span>`).join('')}
+  </div>${selEig || selKontakt ? `<div class="card card-pad" style="padding:8px 12px;margin:-6px 0 14px;background:var(--brand-soft);border-color:transparent;font-size:13px">👤 Eigentümer: <b>${esc(selEig || '—')}</b>${selKontakt ? ` · ${esc(selKontakt)}` : ''} <span class="muted">· <a href="#/projekt/${p.id}/listen">in Eigentümerliste bearbeiten</a></span></div>` : ''}` : '';
   const firms = (p.bezugsfirmen || []);
   const byKat = {};
   firms.forEach(f => { const k = f.kategorie || 'Übrige'; (byKat[k] = byKat[k] || []).push(f); });
@@ -3583,7 +3586,7 @@ function viewBauherr(pid) {
 
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Bauherr · Entscheide &amp; Auswahl-Firmen${hasWhg ? ` · ${p.wohnungen} Wohnungen` : ''}</div></div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Eigentümerwünsche · Auswahlentscheide je Eigentümer/Einheit${hasWhg ? ` · ${einheiten.length} Einheiten` : ''}</div></div></div>
     ${projektTabs(p, 'bauherr')}
     ${demoBanner('bauherr')}
     ${whgChips}
@@ -3707,7 +3710,7 @@ function addStandardBemusterung(pid) {
     }
   });
   save(); router();
-  toast(n ? `${n} Auswahlpunkte ergänzt${w ? ' (Whg ' + w + ')' : ''}` : 'Alle Standardpunkte bereits vorhanden', 'info');
+  toast(n ? `${n} Auswahlpunkte ergänzt${w ? ' (' + einheitName(p, w) + ')' : ''}` : 'Alle Standardpunkte bereits vorhanden', 'info');
 }
 function removeEntscheidung(pid, eid) {
   const p = findProjekt(pid); p.entscheidungen = (p.entscheidungen || []).filter(x => x.id !== eid); save(); router();

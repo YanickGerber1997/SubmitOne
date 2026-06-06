@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v126';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v127';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2808,17 +2808,17 @@ function openPagedDoc(opts) {
       @bottom-right{ content:"Seite " counter(page) " / " counter(pages); font-size:7.5px; color:#9aa4b1; }
       @bottom-left{ content:${cssStr(b.firma || '')}; font-size:7.5px; color:#c9ced6; } }
     @page cover{ margin:24mm; @top-left{content:none} @top-right{content:none} @bottom-left{content:none} @bottom-right{content:none} }
-    .cover{ page:cover; break-after:page; display:flex; flex-direction:column; min-height:230mm; }
+    .cover{ page:cover; break-after:page; }
     .cv-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:18px; border-bottom:2px solid #7c1d2c; padding-bottom:16px; }
     .cv-addr{ text-align:right; font-size:9px; color:#6b7480; line-height:1.6; max-width:55%; }
-    .cv-mid{ margin-top:auto; margin-bottom:auto; }
+    .cv-mid{ margin-top:60px; }
     .cv-kick{ text-transform:uppercase; letter-spacing:2px; font-size:11px; color:#7c1d2c; font-weight:700; }
     .cv-title{ font-family:Georgia,'Times New Roman',serif; font-weight:400; font-size:40px; color:#1b2230; margin:10px 0 0; letter-spacing:.5px; }
     .cv-title::after{ content:""; display:block; width:70px; height:3px; background:#7c1d2c; margin-top:16px; }
     .cv-obj{ font-size:16px; color:#46505e; margin-top:18px; }
     .cv-date{ font-size:12px; color:#9aa4b1; margin-top:6px; }
     .cv-text{ margin-top:26px; font-size:12px; color:#3a424d; line-height:1.7; max-width:150mm; white-space:normal; }
-    .cv-foot{ margin-top:auto; border-top:1px solid #e7ebf1; padding-top:9px; font-size:9px; color:#9aa4b1; }
+    .cv-foot{ margin-top:70px; border-top:1px solid #e7ebf1; padding-top:9px; font-size:9px; color:#9aa4b1; }
     .toc{ break-after:page; }
     .toc h2{ font-family:Georgia,serif; font-weight:400; font-size:22px; color:#1b2230; margin:0 0 18px; }
     .toc ul{ list-style:none; margin:0; padding:0; }
@@ -2833,14 +2833,49 @@ function openPagedDoc(opts) {
     table.t th{ background:#f3f5f9; text-align:left; padding:7px 9px; font-size:9px; font-weight:700; color:#46505e; border-bottom:1.5px solid #c9d2de; }
     table.t td{ padding:6px 9px; border-bottom:1px solid #e7ebf1; vertical-align:top; }
     table.t td.num,table.t th.num{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
-    table.t thead{ display:table-header-group; } table.t tr{ break-inside:avoid; }
+    table.t thead{ display:table-header-group; } table.t tfoot{ display:table-footer-group; } table.t tr{ break-inside:avoid; }
+    tr.uev-in td, tr.uev-out td{ background:#f3eedd; color:#6b5a2a; font-style:italic; border-top:1px solid #e3d3a8; border-bottom:1px solid #e3d3a8; }
     .gw{ font-weight:700; margin:16px 0 6px; font-size:13px; color:#1b2230; }
     .muted{ color:#9aa4b1; } .conf{ display:inline-block; background:#fbe9ea; color:#a01b2b; border:1px solid #e7b3ba; border-radius:5px; padding:2px 8px; font-size:10px; font-weight:700; }
     ${opts.extraCss || ''}
   </style></head><body>
   ${cover}${toc}${body}
-  <script>window.PagedConfig={ auto:true, after:function(){ setTimeout(function(){ try{window.focus();}catch(e){} window.print(); }, 350); } };<\/script>
+  <script>window.PagedConfig={ auto:false };<\/script>
   <script src="${pagedUrl}"><\/script>
+  <script>
+  (function(){
+    function fmt(n){ return (Math.round(n*100)/100).toLocaleString('de-CH',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    function setNum(td,v){ if(td) td.textContent=fmt(v); }
+    function setDiff(td,v){ if(!td) return; td.textContent=fmt(v); var pos=v>0.005,neg=v<-0.005; td.style.background=pos?'#fbe7e9':(neg?'#e4f5ea':''); td.style.color=pos?'#a01b2b':(neg?'#1a7a3a':''); }
+    // Zeile (11 Zellen) mit Übertragswerten füllen: [.,Label,.,KV,KVrev,±,WV,Prognose,Rechnung,offen,±]
+    function fillRow(row,c){ if(!row) return; var t=row.querySelectorAll('td');
+      setNum(t[3],c[0]); setNum(t[4],c[1]); setDiff(t[5],c[1]-c[0]); setNum(t[6],c[2]); setNum(t[7],c[3]); setNum(t[8],c[4]); setNum(t[9],c[5]); setDiff(t[10],c[6]); }
+    function start(){
+      try{
+        if(window.Paged && Paged.registerHandlers){
+          var carry=[0,0,0,0,0,0,0];
+          Paged.registerHandlers(class extends Paged.Handler{
+            afterPageLayout(pageEl){
+              try{
+                var tbl=pageEl.querySelector('table.uev'); if(!tbl){ return; }
+                var rows=tbl.querySelectorAll('tbody tr[data-uev]'); var ps=[0,0,0,0,0,0,0];
+                rows.forEach(function(r){ var v=r.getAttribute('data-uev').split(';'); for(var i=0;i<7;i++) ps[i]+=parseFloat(v[i])||0; });
+                var inC=carry.slice(); for(var i=0;i<7;i++) carry[i]+=ps[i];
+                var inRow=tbl.querySelector('thead tr.uev-in'); var outRow=tbl.querySelector('tfoot tr.uev-out');
+                var firstHasData = inC.every(function(x){return Math.abs(x)<0.005;});
+                if(inRow){ if(firstHasData){ inRow.style.display='none'; } else { inRow.style.display=''; fillRow(inRow,inC); } }
+                var hasTotal=tbl.querySelector('tbody tr.uev-total');
+                if(outRow){ if(hasTotal || rows.length===0){ outRow.style.display='none'; } else { outRow.style.display=''; fillRow(outRow,carry); } }
+              }catch(e){}
+            }
+          });
+        }
+      }catch(e){}
+      new Paged.Previewer().preview().then(function(){ setTimeout(function(){ try{window.focus();}catch(e){} window.print(); }, 350); });
+    }
+    if(window.Paged){ start(); } else { window.addEventListener('load', start); }
+  })();
+  <\/script>
   </body></html>`;
   const w = window.open('', '_blank');
   if (!w) { toast('Bitte Popups für PDF erlauben', 'info'); return; }
@@ -7863,8 +7898,9 @@ function pdfBaukosten(pid, mode) {
     const THEAD = `<tr>${th('BKP')}${th('Arbeitsgattung')}${th('Unternehmer')}${th('KV', '(Schätzung)', 1)}${th('KV rev.', '(Offerte/Stand)', 1)}${th('KV +/−', '(Schätzung/Offerte)', 1)}${th('WV', '(verhandelt)', 1)}${th('Prognose', '(WV+NT / Schluss)', 1)}${th('Rechnung', '(bisher bezahlt)', 1)}${th('offen', '(noch nicht bez.)', 1)}${th('+/−', '(WV → Endsumme)', 1)}</tr>`;
     const sumRow = (label, S, italic, total) => {
       const w = s => italic ? `<i>${s}</i>` : s;
-      return `<tr style="${total ? 'border-top:2px solid #7c1d2c' : 'background:' + (italic ? '#f3eedd' : '#f1eef0')}"><td></td><td>${w('<b>' + esc(label) + '</b>')}</td><td></td><td class="num">${w(f2(S.kv))}</td><td class="num">${w(f2(S.rev))}</td>${diffTd(S.rev - S.kv)}<td class="num">${w(f2(S.wv))}</td><td class="num">${w('<b>' + f2(S.prognose) + '</b>')}</td><td class="num">${w(f2(S.rechnung))}</td><td class="num">${w(f2(S.offen))}</td>${diffTd(S.dWvEnd)}</tr>`;
+      return `<tr${total ? ' class="uev-total"' : ''} style="${total ? 'border-top:2px solid #7c1d2c' : 'background:' + (italic ? '#f3eedd' : '#f1eef0')}"><td></td><td>${w('<b>' + esc(label) + '</b>')}</td><td></td><td class="num">${w(f2(S.kv))}</td><td class="num">${w(f2(S.rev))}</td>${diffTd(S.rev - S.kv)}<td class="num">${w(f2(S.wv))}</td><td class="num">${w('<b>' + f2(S.prognose) + '</b>')}</td><td class="num">${w(f2(S.rechnung))}</td><td class="num">${w(f2(S.offen))}</td>${diffTd(S.dWvEnd)}</tr>`;
     };
+    const uevTpl = (cls, label) => `<tr class="${cls}"><td></td><td><b>${label}</b></td><td></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td></tr>`;
     const subNT = (label, betrag) => `<tr><td></td><td colspan="6" style="font-size:8.5px;color:#5a6472;padding:3px 11px">${label}</td><td class="num" style="font-size:8.5px;color:#5a6472">${f2(betrag)}</td><td></td><td></td><td></td></tr>`;
     const subRG = (label, betrag) => `<tr><td></td><td colspan="7" style="font-size:8.5px;color:#5a6472;padding:3px 11px">${label}</td><td class="num" style="font-size:8.5px;color:#5a6472">${f2(betrag)}</td><td></td><td></td></tr>`;
     tot.rechnung = 0; tot.offen = 0; tot.dWvEnd = 0;   // Fix: diese Summen initialisieren (sonst NaN/falsch im Total)
@@ -7881,14 +7917,14 @@ function pdfBaukosten(pid, mode) {
         tot.kv += kv; tot.rev += revEff; tot.wv += (wv || 0); tot.prognose += endsumme; tot.rechnung += fak; tot.offen += off; tot.dWvEnd += dWv;
         const note = v.notiz ? `<div style="color:#7c1d2c;font-size:8.5px;font-weight:700;line-height:1.3">${esc(v.notiz)}</div>` : '';
         const btTag = hatBt && v.bauteil ? ` <span style="color:#9aa4b1;font-size:8px">[${esc(bauteilName(p, v.bauteil))}]</span>` : '';
-        lines.push({ html: `<tr><td>${esc(v.bkp || '')}</td><td>${esc(v.gewerk || '')}${btTag}${note}</td><td style="font-size:9px">${v.firma ? esc(v.firma) : '<span style="color:#aab2bd">nicht vergeben</span>'}</td><td class="num">${f2(kv)}</td><td class="num">${rev != null ? f2(rev) : `<span style="color:#aab2bd">${f2(kv)}</span>`}</td>${diffTd(rev != null ? rev - kv : null)}<td class="num">${wv != null ? f2(wv) : '–'}</td><td class="num"><b>${f2(endsumme)}</b>${hatSchluss ? ' <span style="color:#7c1d2c;font-size:7px">SR</span>' : ''}</td><td class="num">${fak ? f2(fak) : '–'}</td><td class="num">${f2(off)}</td>${diffTd(wv != null ? endsumme - wv : null)}</tr>` });
+        lines.push({ html: `<tr data-uev="${kv};${revEff};${wv || 0};${endsumme};${fak};${off};${dWv}"><td>${esc(v.bkp || '')}</td><td>${esc(v.gewerk || '')}${btTag}${note}</td><td style="font-size:9px">${v.firma ? esc(v.firma) : '<span style="color:#aab2bd">nicht vergeben</span>'}</td><td class="num">${f2(kv)}</td><td class="num">${rev != null ? f2(rev) : `<span style="color:#aab2bd">${f2(kv)}</span>`}</td>${diffTd(rev != null ? rev - kv : null)}<td class="num">${wv != null ? f2(wv) : '–'}</td><td class="num"><b>${f2(endsumme)}</b>${hatSchluss ? ' <span style="color:#7c1d2c;font-size:7px">SR</span>' : ''}</td><td class="num">${fak ? f2(fak) : '–'}</td><td class="num">${f2(off)}</td>${diffTd(wv != null ? endsumme - wv : null)}</tr>` });
         (v.nachtraege || []).forEach(n => lines.push({ html: subNT(`↳ Nachtrag${n.nr ? ' ' + esc(n.nr) : ''}: ${esc(n.titel || '')} <span style="color:#9aa4b1">(${esc(n.status || 'offen')})</span>${hatBt && n.bauteil ? ' [' + esc(bauteilName(p, n.bauteil)) + ']' : ''}`, n.betrag) }));
         (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).forEach(r => lines.push({ html: subRG(`↳ Rechnung ${r.datum ? fmtDate(r.datum) : '—'} · ${esc(r.text || '')}${r.nr ? ' ' + esc(r.nr) : ''}${hatBt ? ' [' + esc(bauteilName(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)) + ']' : ''}`, rgSigned(r)) }));
       });
       gtot[g] = sub;
       lines.push({ html: sumRow('Total ' + (BKP_GRUPPEN[g] || g), sub) });
     });
-    const out = `<table class="t" style="font-size:10px"><thead>${THEAD}</thead><tbody>${lines.map(l => l.html).join('')}${sumRow('Total Baukosten', tot, false, true)}</tbody></table>`;
+    const out = `<table class="t uev" style="font-size:10px"><thead>${THEAD}${uevTpl('uev-in', 'Übertrag von Vorseite')}</thead><tfoot>${uevTpl('uev-out', 'Übertrag')}</tfoot><tbody>${lines.map(l => l.html).join('')}${sumRow('Total Baukosten', tot, false, true)}</tbody></table>`;
     const zRow = (lbl, S) => `<tr><td>${esc(lbl)}</td><td class="num">${f2(S.kv)}</td><td class="num">${f2(S.rev)}</td>${diffTd(S.rev - S.kv)}<td class="num">${f2(S.wv)}</td><td class="num"><b>${f2(S.prognose)}</b></td><td class="num">${f2(S.rechnung)}</td><td class="num">${f2(S.offen)}</td>${diffTd(S.dWvEnd)}</tr>`;
     const kuRows = keys.map(g => zRow(g + ' ' + (BKP_GRUPPEN[g] || 'Übrige'), gtot[g])).join('');
     const kuTable = `<table class="t" style="font-size:10.5px"><thead><tr>${th('BKP / Hauptgruppe')}${th('KV', '(Schätzung)', 1)}${th('KV rev.', '(Offerte/Stand)', 1)}${th('KV +/−', '(Schätzung/Offerte)', 1)}${th('WV', '(verhandelt)', 1)}${th('Prognose', '(WV+NT / Schluss)', 1)}${th('Rechnung', '(bisher bezahlt)', 1)}${th('offen', '(noch nicht bez.)', 1)}${th('+/−', '(WV → Endsumme)', 1)}</tr></thead>

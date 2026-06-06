@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v77';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v78';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -410,22 +410,22 @@ function planLabel() {
 }
 // Aktuelles Tier + Speicher-Status für die dauerhafte Anzeige auf jeder Seite
 function tierInfo() {
-  if (!cloudEnabled) return { label: 'Lokal', cls: 'grey', save: 'nur in diesem Browser' };
+  if (!cloudEnabled) return { label: 'Lokal', cls: 'grey', save: 'nur lokal', saved: false };
   const p = (ent && ent.plan) ? ent.plan : 'free';
   const hatModule = ent && Array.isArray(ent.module) && ent.module.length;
-  if (p === 'trial')    return { label: 'Test',        cls: 'amber',  save: 'wird gespeichert' };
-  if (p === 'basis')    return { label: 'Basic',       cls: 'silber', save: 'wird gespeichert' };
-  if (p === 'komplett') return { label: 'Premium',     cls: 'gold',   save: 'wird gespeichert' };
-  if (p === 'modul' || hatModule) return { label: 'Individuell', cls: 'platin', save: 'wird gespeichert' };
-  return { label: 'Free', cls: 'bronze', save: 'nicht gespeichert' };
+  if (p === 'trial')    return { label: 'Test',        cls: 'amber',  save: 'gespeichert', saved: true };
+  if (p === 'basis')    return { label: 'Basic',       cls: 'silber', save: 'gespeichert', saved: true };
+  if (p === 'komplett') return { label: 'Premium',     cls: 'gold',   save: 'gespeichert', saved: true };
+  if (p === 'modul' || hatModule) return { label: 'Individuell', cls: 'platin', save: 'gespeichert', saved: true };
+  return { label: 'Free', cls: 'bronze', save: 'nicht gespeichert', saved: false };
 }
 function renderTierBadge() {
   let b = $('#tierBadge');
   if (!b) { b = document.createElement('button'); b.id = 'tierBadge'; b.type = 'button'; b.onclick = actAbo; document.body.appendChild(b); }
   const t = tierInfo();
-  b.className = 'tier-badge t-' + t.cls;
-  b.title = 'Plan ansehen';
-  b.innerHTML = `<span class="tier-gem"></span><b>${esc(t.label)}</b><span class="tier-save">· ${esc(t.save)}</span>`;
+  b.className = 'tier-badge';
+  b.title = 'Plan ansehen & ändern';
+  b.innerHTML = `<span class="tier-chip t-${t.cls}">${esc(t.label)}</span><span class="tier-state ${t.saved ? 'ok' : 'warn'}">${esc(t.save)}</span>`;
 }
 
 /* ---- Mitglieder & Rollen pro Projekt (Schritt 1: Verwaltung; Sichtbarkeits-Gating folgt) ---- */

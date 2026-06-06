@@ -126,14 +126,14 @@ button { font-family: inherit; cursor: pointer; }
 .user-chip .uc-name { font-weight:600; font-size:12.5px; color:#dbe3f1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 .sidebar-toggle {
-  width: 100%; height: 30px; margin: -4px 0 6px;
-  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07);
-  color: #8595b8; border-radius: var(--radius-sm); cursor: pointer;
-  font-size: 14px; line-height: 1;
-  display: flex; align-items: center; justify-content: flex-end; padding: 0 12px;
-  transition: background .12s, color .12s;
+  width: 30px; height: 30px; margin: 0 0 8px auto;   /* rechtsbündig */
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09);
+  color: #9aa7c4; border-radius: 50%; cursor: pointer;
+  font-size: 15px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s, border-color .15s;
 }
-.sidebar-toggle:hover { background: rgba(255,255,255,.1); color: #fff; }
+.sidebar-toggle:hover { background: rgba(255,255,255,.13); color: #fff; border-color: rgba(255,255,255,.22); }
 
 .nav { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
 .nav a {
@@ -304,7 +304,7 @@ button { font-family: inherit; cursor: pointer; }
 #app.collapsed .logo-mark { display: inline-flex; }
 #app.collapsed .nav a { justify-content: center; gap: 0; padding: 8px 0; }
 #app.collapsed .nav-txt { display: none; }
-#app.collapsed .sidebar-toggle { justify-content: center; padding: 0; }
+#app.collapsed .sidebar-toggle { margin: 0 auto 8px; }
 /* Eingeklappte Fusszeile: Undo + Export als Icons, Name vertikal von unten nach oben */
 #app.collapsed .sidebar-foot { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 8px 2px; }
 #app.collapsed .user-chip, #app.collapsed .ver { display: none; }
@@ -1076,26 +1076,28 @@ table.va input[type=number] { -moz-appearance: textfield; }
   border: 6px solid transparent; border-right-color: #1b2533;
 }
 
-/* --- Dauerhafte Tier-Anzeige (auf jeder Seite, Metalloptik) --- */
+/* --- Dauerhafte Tier-Anzeige (auf jeder Seite) – schlankes Pill mit Metall-Chip + Speicher-Status --- */
 .tier-badge {
   position: fixed; top: 10px; right: 14px; z-index: 300;
-  display: inline-flex; align-items: center; gap: 8px;
-  border: 1px solid rgba(0,0,0,.14); border-radius: 999px;
-  padding: 5px 13px 5px 9px; font-size: 12px; cursor: pointer; color: #2a2622;
-  box-shadow: 0 2px 9px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.55);
+  display: inline-flex; align-items: center; gap: 9px;
+  background: var(--surface); border: 1px solid var(--border-2); border-radius: 999px;
+  padding: 4px 13px 4px 5px; cursor: pointer; font-size: 12px;
+  box-shadow: 0 3px 12px rgba(0,0,0,.12);
 }
-.tier-badge b { font-weight: 800; letter-spacing: .2px; }
-.tier-badge .tier-save { font-weight: 500; opacity: .72; font-size: 11px; }
-/* kleiner glänzender „Edelstein" links */
-.tier-badge .tier-gem {
-  width: 11px; height: 11px; border-radius: 3px; flex: none; transform: rotate(45deg);
-  background: rgba(255,255,255,.65); box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), 0 1px 2px rgba(0,0,0,.25);
+.tier-badge:hover { border-color: var(--border-2); box-shadow: 0 4px 16px rgba(0,0,0,.18); }
+.tier-chip {
+  font-weight: 800; font-size: 10.5px; letter-spacing: .5px; text-transform: uppercase;
+  padding: 3px 11px; border-radius: 999px; color: #3a2f12; border: 1px solid rgba(0,0,0,.08);
 }
-.tier-badge.t-gold   { background: linear-gradient(135deg, #fdf0c2 0%, #f2cf63 45%, #d4af37 100%); }
-.tier-badge.t-silber { background: linear-gradient(135deg, #ffffff 0%, #e1e5ea 45%, #b4bcc6 100%); }
-.tier-badge.t-bronze { background: linear-gradient(135deg, #f3d0a8 0%, #d18a4e 50%, #a86a2c 100%); color: #3a2410; }
-.tier-badge.t-platin { background: linear-gradient(135deg, #f0f4ff 0%, #c7d2ee 45%, #9aa9d8 100%); }
-.tier-badge.t-amber  { background: linear-gradient(135deg, #fff4d9 0%, #ffd886 50%, #f0b94a 100%); }
-.tier-badge.t-grey   { background: linear-gradient(135deg, #f6f7f9 0%, #dde0e5 50%, #c3c8cf 100%); }
-@media (max-width: 680px) { .tier-badge .tier-save { display: none; } .tier-badge { top: 8px; right: 8px; } }
+.tier-chip.t-gold   { background: linear-gradient(135deg,#f7e6a8,#e7c65f); }
+.tier-chip.t-silber { background: linear-gradient(135deg,#f3f5f8,#cbd1d9); color:#33373d; }
+.tier-chip.t-bronze { background: linear-gradient(135deg,#eccaa3,#cf935f); color:#3a2410; }
+.tier-chip.t-platin { background: linear-gradient(135deg,#eef3ff,#c4cfee); color:#2c3550; }
+.tier-chip.t-amber  { background: linear-gradient(135deg,#ffe9b8,#ffd279); color:#5a4209; }
+.tier-chip.t-grey   { background: linear-gradient(135deg,#eef0f3,#d6dae0); color:#3a3f47; }
+.tier-state { display: inline-flex; align-items: center; gap: 6px; color: var(--text-soft); font-weight: 500; font-size: 11.5px; }
+.tier-state::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--s-green); }
+.tier-state.warn { color: var(--s-red); }
+.tier-state.warn::before { background: var(--s-red); }
+@media (max-width: 680px) { .tier-state { display: none; } .tier-badge { top: 8px; right: 8px; gap: 0; padding: 4px 5px; } }
 @media print { .tier-badge, .plan-banner, #planBanner { display: none !important; } }

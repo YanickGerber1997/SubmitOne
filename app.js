@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v96';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v97';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3185,15 +3185,16 @@ function viewBauherr(pid) {
   const allEnts = (p.entscheidungen || []).slice().sort((a, b) => bkpOf(a).localeCompare(bkpOf(b)) || (a.thema || '').localeCompare(b.thema || ''));
   const offen = allEnts.filter(e => entStatus(e) === 'offen').length;
 
-  // Wohnungs-Filter (nur bei Mehrfamilienhaus)
-  const hasWhg = (p.wohnungen || 0) >= 1;
+  // Wohnungs-Filter – an die ECHTEN Einheiten geknüpft (EG links 70m² …), nicht an generische Nummern
+  const einheiten = alleEinheiten(p);
+  const hasWhg = einheiten.length >= 1;
   const selW = hasWhg ? bauherrWohnung : 'alle';
   const ents = selW === 'alle' ? allEnts : allEnts.filter(e => String(e.wohnung || '') === selW);
-  const whgLabel = w => w === '' ? 'Allgemein' : 'Whg ' + w;
+  const whgLabel = w => einheitName(p, w);
   const whgChips = hasWhg ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px">
     <span class="chip ${selW === 'alle' ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="alle">Alle</span>
     <span class="chip ${selW === '' ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="">Allgemein</span>
-    ${Array.from({ length: p.wohnungen }, (_, i) => `<span class="chip ${selW === String(i + 1) ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="${i + 1}">Whg ${i + 1}</span>`).join('')}
+    ${einheiten.map(x => `<span class="chip ${selW === x.u.id ? 'active' : ''}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="${x.u.id}">${esc(x.u.name || 'Wohnung')}${x.u.m2 ? ` · ${Number(x.u.m2)}m²` : ''}</span>`).join('')}
   </div>` : '';
   const firms = (p.bezugsfirmen || []);
   const byKat = {};
@@ -3286,8 +3287,9 @@ function actNewEntscheidung(pid, eid) {
   const vopts = `<option value="">— kein / noch offen —</option>` + (p.vergaben || []).map(v => `<option value="${v.id}"${curVid === v.id ? ' selected' : ''}>${esc(vergabeLabel(v))}</option>`).join('');
   const aus = (e && e.ausstellung) || {};
   const curW = e ? String(e.wohnung || '') : (bauherrWohnung === 'alle' ? '' : bauherrWohnung);
-  const wohnungSelect = (p.wohnungen || 0) >= 1 ? `<label class="field">Wohnung
-      <select class="select" id="en_wohnung"><option value=""${curW === '' ? ' selected' : ''}>Allgemein (alle)</option>${Array.from({ length: p.wohnungen }, (_, i) => `<option value="${i + 1}"${curW === String(i + 1) ? ' selected' : ''}>Whg ${i + 1}</option>`).join('')}</select>
+  const einhListe = alleEinheiten(p);
+  const wohnungSelect = einhListe.length >= 1 ? `<label class="field">Wohnung
+      <select class="select" id="en_wohnung"><option value=""${curW === '' ? ' selected' : ''}>Allgemein (alle)</option>${einhListe.map(x => `<option value="${x.u.id}"${curW === x.u.id ? ' selected' : ''}>${esc(x.u.name || 'Wohnung')}${x.u.m2 ? ` · ${Number(x.u.m2)} m²` : ''}</option>`).join('')}</select>
     </label>` : '';
   openModal(e ? 'Auswahlpunkt bearbeiten' : 'Neuer Auswahlpunkt', `
     <label class="field">BKP <input class="input" id="en_bkp" list="dl_enbkp" value="${e ? esc(e.bkp || '') : ''}" placeholder="tippen: z.B. 282 oder „Fliesen“ …">${bkpDatalist('dl_enbkp')}</label>
@@ -5683,6 +5685,12 @@ const GESCHOSS_TYPEN = ['Untergeschoss / Keller', 'Einstellhalle', 'Erdgeschoss'
 
 function finanzData(p) { p.finanz = p.finanz || { land: 0, honorare: 0, finanzierung: 0 }; return p.finanz; }
 function alleEinheiten(p) { return (p.geschosseListe || []).flatMap(g => (g.einheiten || []).map(u => ({ u, g }))); }
+// Wohnungs-/Einheiten-Label: löst eine Einheit-ID zur echten Bezeichnung auf (Rückwärtskompat: alte Nummern → „Whg N")
+function einheitName(p, id) {
+  if (!id) return 'Allgemein';
+  const hit = alleEinheiten(p).find(x => x.u.id === id);
+  return hit ? (hit.u.name || 'Wohnung') : ('Whg ' + id);
+}
 function baukostenTotal(p) { return (p.vergaben || []).reduce((a, v) => a + kostenZeile(v).prognose, 0); }
 function flaecheTotalStruktur(p) { return alleEinheiten(p).reduce((a, x) => a + (Number(x.u.m2) || 0), 0); }
 function anlagekosten(p) { const f = finanzData(p); return (Number(f.land) || 0) + baukostenTotal(p) + (Number(f.honorare) || 0) + (Number(f.finanzierung) || 0); }
@@ -8872,6 +8880,27 @@ function demoData() {
       projektleiter: 'M. Bühler', phase: 'vergabe', start: '2026-02-01', ende: '2027-08-30',
       baustart: '2026-03-01', bezug: '2027-07-15',
       finanz: { land: 1350000, honorare: 380000, finanzierung: 120000 },
+      wohnungen: 6,
+      geschosseListe: [
+        { id: 'g_eg', name: 'Erdgeschoss', typ: 'Wohnen', einheiten: [
+          { id: 'u_egl', name: 'EG links', zimmer: 3.5, m2: 70, miete: 1950, verkauf: 720000 },
+          { id: 'u_egr', name: 'EG rechts', zimmer: 4.5, m2: 80, miete: 2250, verkauf: 850000 },
+        ] },
+        { id: 'g_og1', name: '1. Obergeschoss', typ: 'Wohnen', einheiten: [
+          { id: 'u_1ogl', name: '1.OG links', zimmer: 3.5, m2: 72, miete: 2050, verkauf: 760000 },
+          { id: 'u_1ogr', name: '1.OG rechts', zimmer: 4.5, m2: 82, miete: 2350, verkauf: 880000 },
+        ] },
+        { id: 'g_og2', name: '2. OG / Attika', typ: 'Wohnen', einheiten: [
+          { id: 'u_2ogl', name: '2.OG links', zimmer: 3.5, m2: 74, miete: 2150, verkauf: 790000 },
+          { id: 'u_att', name: 'Attika', zimmer: 5.5, m2: 130, miete: 3600, verkauf: 1450000 },
+        ] },
+      ],
+      entscheidungen: [
+        { id: uid('en'), datum: '2026-05-10', bereich: 'Bemusterung', thema: 'Plättli Bad', bkp: '282', entscheid: 'Feinsteinzeug 60×60 anthrazit', status: 'offen', vid: '', ausstellung: { firma: 'Plättli-Welt', ort: 'Luzern', telefon: '041 200 00 00' }, wohnung: 'u_att' },
+        { id: uid('en'), datum: '', bereich: 'Bemusterung', thema: 'Küche', bkp: '258', entscheid: '', status: 'offen', vid: '', ausstellung: null, wohnung: 'u_egr' },
+        { id: uid('en'), datum: '', bereich: 'Bemusterung', thema: 'Parkett', bkp: '281', entscheid: '', status: 'offen', vid: '', ausstellung: null, wohnung: 'u_1ogr' },
+        { id: uid('en'), datum: '', bereich: 'Allgemein', thema: 'Briefkastenanlage', bkp: '', entscheid: '', status: 'offen', vid: '', ausstellung: null, wohnung: '' },
+      ],
       vergaben: [
         { id: 'v1', bkp: '112', gewerk: 'Abbrucharbeiten', status: 'abgeschlossen', firma: 'Demowald Rückbau GmbH', betrag: 84000, schaetzung: 90000, frist: '2026-03-15',
           bauStart: '2026-03-01', bauEnde: '2026-03-25',

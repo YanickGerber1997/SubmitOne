@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v100';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v101';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1892,6 +1892,7 @@ function viewTermine(id) {
       ${GANTT_LEGEND.map(([k, l]) => `<span><i style="background:${GANTT_COLS[k]}"></i>${l}</span>`).join('')}
     </div>
     <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Rechtsklick → <b>Nachfolger verketten</b> hängt ein Gewerk direkt an · bei <b>🔗 Verkettung an</b> folgen verkettete Nachfolger automatisch · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie · <b>Strg + Mausrad</b> zoomt an der Cursor-Position · mit <b>Info</b> (Gewerk/Firma/Person/Natel) blendest du die Seitenspalte ein – die BKP-Nr. bleibt immer.</p>
+    ${bestellListeHtml(p)}
   `);
 
   $$('.g-bar').forEach(b => b.addEventListener('mousedown', onBarMouseDown));
@@ -7519,12 +7520,32 @@ function pdfBaukosten(pid) {
 
 // Bauprogramm / Gantt als saubere Monats-Tabelle (Querformat)
 const MON_KURZ = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+// Bestell-/Vorlaufliste: was muss wann bestellt werden (aus den Bestellfristen je Gewerk)
+function bestellListeHtml(p) {
+  const items = gewerkeSorted(p).filter(v => v.bauStart && Number(v.bestellfrist) > 0).map(v => {
+    const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); return { v, bis: isoOf(d) };
+  }).sort((a, b) => a.bis.localeCompare(b.bis));
+  if (!items.length) return '';
+  const t0 = todayIso();
+  const rows = items.map(({ v, bis }) => {
+    const ueber = bis < t0;
+    const tageBis = Math.round((dISO(bis) - today()) / 86400000);
+    const stat = ueber ? '<span class="st amber">überfällig</span>' : (tageBis <= 21 ? `<span class="st blue">in ${tageBis} T</span>` : '<span class="st green">ok</span>');
+    return `<tr><td><span class="bkp-code">${esc(v.bkp || '')}</span> ${esc(v.gewerk)}<div class="muted" style="font-size:11px">${esc(v.firma || '—')}</div></td>
+      <td><strong>${fmtDate(bis)}</strong></td>
+      <td class="muted">${v.bestellfrist} T vor Einbau</td>
+      <td class="muted">${fmtDate(v.bauStart)}</td>
+      <td>${stat}</td></tr>`;
+  }).join('');
+  return `<div class="section-head" style="margin-top:22px"><h2>🛒 Bestellfristen / Vorlauf</h2><span class="hint">Was muss wann bestellt werden, damit der Einbau pünktlich startet</span></div>
+    <div class="card" style="overflow-x:auto"><table class="grid"><thead><tr><th>Gewerk / Firma</th><th>bestellen bis</th><th>Vorlauf</th><th>Einbau ab</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
 function pdfGantt(pid) {
   const p = findProjekt(pid); if (!p) return;
   const vs = gewerkeSorted(p).filter(v => v.bauStart && v.bauEnde);
   if (!vs.length) { toast('Keine terminierten Gewerke vorhanden', 'info'); return; }
   let min = null, max = null;
-  vs.forEach(v => { if (!min || v.bauStart < min) min = v.bauStart; if (!max || v.bauEnde > max) max = v.bauEnde; });
+  vs.forEach(v => { if (!min || v.bauStart < min) min = v.bauStart; if (!max || v.bauEnde > max) max = v.bauEnde; if (Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); const b = isoOf(d); if (b < min) min = b; } });
   const ds = dISO(min), de = dISO(max);
   const rangeStart = new Date(ds.getFullYear(), ds.getMonth(), 1);
   const rangeEnd = new Date(de.getFullYear(), de.getMonth() + 1, 0);
@@ -7592,7 +7613,11 @@ function pdfGantt(pid) {
   const markLines = pMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; }).map(m =>
     `<div class="pg-mark" style="left:${pct(m.iso)}%;background:${m.c}"></div><div class="pg-mark-lbl" style="left:${pct(m.iso)}%"><span style="color:${m.c}">${esc(m.n)} ${fmtDate(m.iso)}</span></div>`).join('');
   const sideHtml = vs.map(v => `<div class="pg-srow" style="height:${rowH}mm"><b>${esc(v.bkp || '')}</b>&nbsp;${esc(v.gewerk || '')}</div>`).join('');
-  const rowsHtml = vs.map(v => `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar" style="left:${pct(v.bauStart)}%;width:${wpct(v.bauStart, v.bauEnde)}%;height:${barH}mm;background:${ganttColHex(v)}"></div></div>`).join('');
+  const rowsHtml = vs.map(v => {
+    let bestell = '';
+    if (Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); const bs = isoOf(d); bestell = `<div class="pg-bestell" style="left:${Math.max(0, pct(bs))}%;width:${wpct(bs, v.bauStart)}%;height:${barH}mm"></div>`; }
+    return `<div class="pg-row" style="height:${rowH}mm">${bestell}<div class="pg-bar" style="left:${pct(v.bauStart)}%;width:${wpct(v.bauStart, v.bauEnde)}%;height:${barH}mm;background:${ganttColHex(v)}"></div></div>`;
+  }).join('');
   const legend = GANTT_LEGEND.map(([k, l]) => `<span style="display:inline-block;margin-right:10px"><span style="display:inline-block;width:11px;height:8px;border-radius:2px;background:${GANTT_COLS[k]};vertical-align:middle;margin-right:3px"></span>${l}</span>`).join('');
 
   const css = `@page{size:A4 landscape;margin:8mm;}
@@ -7618,7 +7643,8 @@ function pdfGantt(pid) {
     .pg-mark{position:absolute;top:0;bottom:0;width:1.1px;z-index:2;}
     .pg-mark-lbl{position:absolute;top:0;bottom:0;z-index:4;}
     .pg-mark-lbl span{position:absolute;top:.3mm;left:.3px;font-size:5.5px;line-height:1;font-weight:700;writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;}
-    .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;box-shadow:0 0 0 .3px rgba(0,0,0,.06);}`;
+    .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;box-shadow:0 0 0 .3px rgba(0,0,0,.06);}
+    .pg-bestell{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;background:repeating-linear-gradient(45deg,rgba(120,140,170,.18),rgba(120,140,170,.18) 3px,rgba(120,140,170,.32) 3px,rgba(120,140,170,.32) 6px);border:.4px dashed rgba(110,130,160,.6);}`;
   const inner = `<div class="pg">
     <div class="pg-side"><div class="pg-shead">BKP / Gewerk</div>${sideHtml}</div>
     <div class="pg-main"><div class="pg-head">${moBand}${subBand}</div><div class="pg-rows">${weBands}${holBands}${gridV}${todayLine}${markLines}${rowsHtml}${holLabels}</div></div>

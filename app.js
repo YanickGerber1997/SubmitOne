@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v89';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v90';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1126,6 +1126,7 @@ function projektTabs(p, active) {
     { key: 'kalender', href: `#/projekt/${p.id}/kalender`, label: 'Kalender' },
     { key: 'listen', href: `#/projekt/${p.id}/listen`, label: 'Kontakte' },
     { key: 'kosten', href: `#/projekt/${p.id}/kosten`, label: 'Kosten' },
+    { key: 'rechnungen', href: `#/projekt/${p.id}/rechnungen`, label: 'Rechnungskontrolle' },
     { key: 'termine', href: `#/projekt/${p.id}/termine`, label: 'Termine / Gantt' },
     { key: 'pendenzen', href: `#/projekt/${p.id}/pendenzen`, label: 'Pendenzen' + pendBadge },
     { key: 'dossier', href: `#/projekt/${p.id}/dossier`, label: 'Dossier' + (dossierFehltCount(p) ? ` <span class="tab-badge">${dossierFehltCount(p)}</span>` : '') },
@@ -1230,6 +1231,7 @@ function router() {
       if (sub === 'termine') return viewTermine(a);
       if (sub === 'kalender') return viewKalender(a);
       if (sub === 'kosten') return viewKosten(a);
+      if (sub === 'rechnungen') return viewRechnungen(a);
       if (sub === 'optionen') return viewOptionen(a);
       if (sub === 'nachtraege') return viewNachtraege(a);
       if (sub === 'solar') return viewSolar(a);
@@ -6322,6 +6324,90 @@ function bauteilCard(p, kvTotal) {
   </div>`;
 }
 
+// Rechnungskontrolle: pro BKP/Gewerk Soll (Vergabe) vs. verrechnet vs. bezahlt + „Platz" + Überschreitung.
+function viewRechnungen(pid) {
+  const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  const gw = gewerkeSorted(p).filter(v => isVergeben(v) || (v.rechnungen || []).length);
+  let tSoll = 0, tFak = 0, tBez = 0, tPlatz = 0;
+  const rows = gw.map(v => {
+    const z = kostenZeile(v);
+    const platz = z.prognose - z.fakturiert;
+    const over = z.fakturiert > z.prognose + 0.5;
+    tSoll += z.prognose; tFak += z.fakturiert; tBez += z.bezahlt; tPlatz += platz;
+    const offenRg = (v.rechnungen || []).filter(r => !r.bezahlt).length;
+    const chip = over ? '<span class="st amber">⚠ überschritten</span>'
+      : (Math.abs(platz) < 0.5 && z.fakturiert > 0 ? '<span class="st green">fakturiert</span>'
+        : (z.fakturiert > 0 ? '<span class="st blue">in Abrechnung</span>' : '<span class="st grey">offen</span>'));
+    return `<tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}">
+      <td><span class="bkp-code">${esc(v.bkp || '')}</span></td>
+      <td>${esc(v.gewerk)}<div class="muted" style="font-size:11px">${esc(v.firma || '—')}${offenRg ? ` · ${offenRg} offen` : ''}</div></td>
+      <td class="num">${chf(z.prognose)}</td>
+      <td class="num">${chf(z.fakturiert)}</td>
+      <td class="num">${chf(z.bezahlt)}</td>
+      <td class="num" style="font-weight:600;color:${over ? 'var(--s-red)' : (platz < 0.5 ? 'var(--text-soft)' : 'var(--s-green)')}">${chf(platz)}</td>
+      <td>${chip}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="muted" style="padding:12px">Noch keine vergebenen Gewerke / Rechnungen.</td></tr>';
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Rechnungskontrolle</div>
+    <div class="detail-head">
+      <div><h1 style="margin:0;font-size:23px">Rechnungskontrolle</h1><div class="sub" style="margin-top:5px">Pro BKP: vergeben · verrechnet · bezahlt · noch „Platz"</div></div>
+      <div><button class="btn" data-act="sammelrg" data-pid="${p.id}">+ Sammelrechnung (mehrere BKP)</button></div>
+    </div>
+    ${projektTabs(p, 'rechnungen')}
+    <div class="card" style="overflow-x:auto">
+      <table class="grid"><thead><tr><th>BKP</th><th>Gewerk / Firma</th><th class="num">Vergabe (Soll)</th><th class="num">Verrechnet</th><th class="num">Bezahlt</th><th class="num">Platz</th><th>Status</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr style="border-top:2px solid var(--border)"><td colspan="2"><b>Total</b></td><td class="num"><b>${chf(tSoll)}</b></td><td class="num"><b>${chf(tFak)}</b></td><td class="num"><b>${chf(tBez)}</b></td><td class="num"><b style="color:${tPlatz < -0.5 ? 'var(--s-red)' : 'inherit'}">${chf(tPlatz)}</b></td><td></td></tr></tfoot>
+      </table>
+    </div>
+    <p class="muted" style="font-size:11.5px;margin-top:10px"><b>Platz</b> = Vergabe-Soll (WV + genehmigte Nachträge) − bereits verrechnet. Negativ/rot = Überschreitung (Rechnung hat keinen Platz mehr). Zeile anklicken → Gewerk mit allen Rechnungen. „Sammelrechnung" verteilt eine Rechnung (z.B. Maler = auch Gipser) auf mehrere BKP.</p>
+  `);
+}
+// Eine Rechnung auf mehrere BKP/Gewerke aufteilen (z.B. Maler/Gipser)
+function actSammelrechnung(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const gw = gewerkeSorted(p).filter(isVergeben);
+  if (!gw.length) { toast('Keine vergebenen Gewerke vorhanden', 'info'); return; }
+  openModal('Sammelrechnung – auf mehrere BKP aufteilen', `
+    <div class="form-row">
+      <label class="field">Lieferant / Firma <input class="input" id="sr_firma" placeholder="z.B. Farbwerk Maler AG"></label>
+      <label class="field">Rechnungs-Nr. <input class="input" id="sr_nr" placeholder="optional"></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Bezeichnung <input class="input" id="sr_text" placeholder="z.B. Maler & Gipser SR1"></label>
+      <label class="field">Datum <input class="input" type="date" id="sr_datum" value="${todayIso()}"></label>
+    </div>
+    <div class="muted" style="font-size:12px;margin:8px 0 4px">Betrag je BKP eintragen – nur Beträge &gt; 0 werden verbucht. „Platz" = noch nicht verrechnet.</div>
+    <div style="max-height:300px;overflow:auto">
+      ${gw.map(v => { const z = kostenZeile(v); const platz = z.prognose - z.fakturiert; return `<div class="form-row" style="align-items:center;gap:8px;margin-bottom:4px">
+        <span style="flex:1;font-size:13px;min-width:0"><span class="bkp-code">${esc(v.bkp || '')}</span> ${esc(v.gewerk)} <span class="muted">· Platz ${chf(platz)}</span></span>
+        <input class="input sr-betrag" data-vid="${v.id}" type="number" placeholder="0" style="max-width:120px">
+      </div>`; }).join('')}
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:10px;font-weight:700;border-top:1px solid var(--border);padding-top:8px"><span>Summe Rechnung</span><span id="sr_sum">CHF 0</span></div>
+    <label class="field" style="margin-top:8px">Status <select class="select" id="sr_bezahlt"><option value="0">offen</option><option value="1">bezahlt</option></select></label>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-sammelrg" data-pid="${pid}">Verbuchen</button>`);
+  $$('.sr-betrag').forEach(el => el.addEventListener('input', () => { const s = $$('.sr-betrag').reduce((a, e) => a + (Number(e.value) || 0), 0); $('#sr_sum').textContent = chf(s); }));
+}
+function saveSammelrechnung(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const firma = $('#sr_firma').value.trim(), nr = $('#sr_nr').value.trim(), datum = $('#sr_datum').value;
+  const text = $('#sr_text').value.trim() || ('Sammelrechnung' + (firma ? ' ' + firma : ''));
+  const bezahlt = $('#sr_bezahlt').value === '1';
+  const gruppe = uid('srg');
+  let n = 0, summe = 0;
+  $$('.sr-betrag').forEach(el => {
+    const betrag = Number(el.value) || 0; if (betrag <= 0) return;
+    const v = (p.vergaben || []).find(x => x.id === el.dataset.vid); if (!v) return;
+    v.rechnungen = v.rechnungen || [];
+    v.rechnungen.push({ id: uid('rg'), gruppe, firma, text, nr, art: 'akonto', betrag, datum, bezahlt });
+    n++; summe += betrag;
+  });
+  if (!n) { toast('Bitte mindestens einen Betrag eingeben', 'info'); return; }
+  save(); closeModal(); router(); toast(`Sammelrechnung ${chf(summe)} auf ${n} BKP verbucht`);
+}
+
 // Eigener Reiter: Optionale Bauteile & Teilprojekte sauber pflegen + Auswertung
 function viewOptionen(pid) {
   const p = findProjekt(pid);
@@ -8496,6 +8582,8 @@ document.addEventListener('click', e => {
     case 'rm-budget':    removeBudget(pid, vid, bid); break;
     case 'budget-auswahl': actBudgetForAuswahl(pid, eid); break;
     case 'abo-open':     actAbo(); break;
+    case 'sammelrg':     actSammelrechnung(pid); break;
+    case 'save-sammelrg': saveSammelrechnung(pid); break;
     case 'zp-verteilen': zahlungsplanVerteilen(pid); break;
     case 'zp-baukosten': { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).betrag = Math.round(baukostenTotal(p2)); save(); viewZahlungsplan(pid); break; }
     case 'uw-pick':      uwertPick(pid, act.dataset.id); break;
@@ -8621,7 +8709,8 @@ function demoData() {
       vergaben: [
         { id: 'v1', bkp: '112', gewerk: 'Abbrucharbeiten', status: 'abgeschlossen', firma: 'Demowald Rückbau GmbH', betrag: 84000, schaetzung: 90000, frist: '2026-03-15',
           bauStart: '2026-03-01', bauEnde: '2026-03-25',
-          eingeladene: einl(['Demowald Rückbau GmbH', 84000], ['Frei Abbruch AG', 91500]), nachtraege: [], rapporte: [], vorgaenge: [] },
+          eingeladene: einl(['Demowald Rückbau GmbH', 84000], ['Frei Abbruch AG', 91500]), nachtraege: [], rapporte: [], vorgaenge: [],
+          rechnungen: [{ id: uid('rg'), text: 'Schlussrechnung', nr: 'RG-2026-009', art: 'schluss', betrag: 90000, datum: '2026-04-02', bezahlt: true }] },
         { id: 'v2', bkp: '201', gewerk: 'Baugrubenaushub', status: 'ausfuehrung', firma: 'Tiefbau Zentral AG', betrag: 198000, schaetzung: 210000, frist: '2026-05-20',
           bauStart: '2026-04-15', bauEnde: '2026-06-20',
           eingeladene: einl(['Tiefbau Zentral AG', 198000], ['ErdWerk GmbH', 205000], ['Aushub Plus AG', 221000]),
@@ -8635,7 +8724,12 @@ function demoData() {
           bauStart: '2026-06-22', bauEnde: '2026-12-20',
           eingeladene: einl(['Hugentobler Bau AG', 1450000], ['Steiner & Co.', 1495000], ['BauKern AG', 1560000]),
           nachtraege: [{ id: uid('n'), titel: 'Zusätzliche Bodenplatte Velokeller', nr: 'NT-01', betrag: 38000, datum: '2026-06-01', status: 'offen' }],
-          rapporte: [], vorgaenge: [
+          rapporte: [],
+          rechnungen: [
+            { id: uid('rg'), text: 'Akontorechnung 1', nr: 'RG-2026-040', betrag: 600000, datum: '2026-08-10', bezahlt: true },
+            { id: uid('rg'), text: 'Akontorechnung 2', nr: 'RG-2026-061', betrag: 400000, datum: '2026-10-05', bezahlt: false },
+          ],
+          vorgaenge: [
             { id: uid('o'), titel: 'Fundament & Bodenplatte', start: '2026-06-22', ende: '2026-07-31' },
             { id: uid('o'), titel: 'Rohbau EG–2.OG', start: '2026-08-03', ende: '2026-10-30' },
             { id: uid('o'), titel: 'Rohbau Attika & Dach', start: '2026-11-02', ende: '2026-12-20' },

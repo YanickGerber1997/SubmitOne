@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v95';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v96';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -507,7 +507,9 @@ function meineRolle(p) {
   return m ? m.rolle : null;
 }
 // Projekte, in denen der aktuelle Nutzer Mitglied ist (alte/leere Liste + lokal = sichtbar)
-function sichtbareProjekte() { return (state.projekte || []).filter(p => meineRolle(p) !== null); }
+// Sichtbarkeit: vorerst ALLE Projekte zeigen (client-seitiges Verstecken hat zu Selbst-Aussperrung geführt).
+// Die echte, fälschungssichere Pro-Projekt-Sichtbarkeit kommt serverseitig mit RLS (Schritt 4d).
+function sichtbareProjekte() { return state.projekte || []; }
 
 // Rechte-Matrix: welche Reiter je Rolle AUSGEBLENDET werden (anpassbar)
 const ROLLE_VERSTECKT = {
@@ -517,7 +519,7 @@ const ROLLE_VERSTECKT = {
   administration: ['pendenzen', 'termine', 'solar', 'honorar', 'bauherr', 'finanz'],
 };
 function versteckteTabs(p) { const r = meineRolle(p); return (r && ROLLE_VERSTECKT[r]) ? ROLLE_VERSTECKT[r] : []; }
-function istInhaber(p)     { return meineRolle(p) === 'inhaber'; }
+function istInhaber(p)     { const r = meineRolle(p); return r === 'inhaber' || r === null; }   // null = (noch) nicht gelistet → trotzdem verwalten dürfen (Recovery)
 function darfStammdaten(p) { const r = meineRolle(p); return r === null || r === 'inhaber' || r === 'projektleitung'; }
 function darfVergeben(p)   { return meineRolle(p) !== 'bauleitung'; }   // alle ausser Bauleitung
 const teamKey = m => (m.email || m.slug || '');
@@ -556,6 +558,8 @@ function teamAdd(pid) {
   if (!/.+@.+\..+/.test(email)) { toast('Bitte eine gültige E-Mail eingeben', 'info'); return; }
   const vor = $('#tm_vor').value.trim(), nach = $('#tm_nach').value.trim();
   p.mitglieder = p.mitglieder || [];
+  // Dich selbst NIE aussperren: wenn die Liste leer ist, zuerst dich als Inhaber eintragen
+  if (!p.mitglieder.length && currentUserEmail) p.mitglieder.push({ email: currentUserEmail, vorname: currentUserVor, nachname: currentUserNach, slug: currentUserSlug, rolle: 'inhaber' });
   if (p.mitglieder.some(m => (m.email || '').toLowerCase() === email)) { toast('Diese E-Mail ist bereits Mitglied', 'info'); return; }
   p.mitglieder.push({ email, vorname: vor, nachname: nach, slug: (vor && nach) ? slugVon(vor, nach) : '', rolle: $('#tm_rolle').value });
   save(); actTeam(pid); toast('Mitglied eingeladen');
@@ -8867,7 +8871,7 @@ function demoData() {
       id: 'p_sonnen', name: 'Neubau MFH Sonnenhof', ort: 'Luzern', bauherr: 'Sonnenhof Immobilien AG',
       projektleiter: 'M. Bühler', phase: 'vergabe', start: '2026-02-01', ende: '2027-08-30',
       baustart: '2026-03-01', bezug: '2027-07-15',
-      finanz: { land: 0, honorare: 380000, finanzierung: 0 },
+      finanz: { land: 1350000, honorare: 380000, finanzierung: 120000 },
       vergaben: [
         { id: 'v1', bkp: '112', gewerk: 'Abbrucharbeiten', status: 'abgeschlossen', firma: 'Demowald Rückbau GmbH', betrag: 84000, schaetzung: 90000, frist: '2026-03-15',
           bauStart: '2026-03-01', bauEnde: '2026-03-25',

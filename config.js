@@ -36,5 +36,6 @@ window.SUBMITONE_CONFIG = {
     mod_solar: '',
     mod_uwert: '',
     mod_honorar: '',
+    mod_design: '',
   },
 };

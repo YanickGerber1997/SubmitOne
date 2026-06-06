@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v112';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v113';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -404,6 +404,7 @@ const MODULES = [
   { key: 'solar',      name: 'Solarrechner',             tier: 'premium', preis: '2', feat: ['Ertrag & Eigenverbrauch', 'Wirtschaftlichkeit & EIV', 'PDF-Report'] },
   { key: 'uwert',      name: 'U-Wert-Rechner',           tier: 'premium', preis: '4', feat: ['Bauteil-Schichten & λ-Werte', 'U-Wert-Berechnung', 'grafischer Querschnitt'], neu: true },
   { key: 'honorar',    name: 'Honorar-Rechner (SIA)',    tier: 'premium', preis: '3', feat: ['SIA 102', 'Baukosten → Honorar', 'Leistungsphasen'] },
+  { key: 'design',     name: 'Druck-Designs',            tier: 'premium', preis: '3', feat: ['Mehrere PDF-Layouts global wählbar', 'Eleganter Akzent-Kopf', 'damit nicht alles gleich aussieht'] },
 ];
 async function loadEntitlements() {
   if (!cloudEnabled || !supa) { ent = null; return; }
@@ -2684,21 +2685,27 @@ function viewListen(pid) {
 }
 
 // Gemeinsamer Druck-/PDF-Wrapper mit Büro-Briefkopf
+function druckDesign() {
+  const b = state.buero || BUERO;
+  let d = (b.druckDesign === 'modern') ? 'modern' : 'standard';
+  if (d === 'modern' && cloudEnabled && ent !== null && !canModul('design')) d = 'standard';   // Premium-Gating
+  return d;
+}
 function openPrintDoc(title, subtitleHtml, inner, opts) {
   opts = opts || {};
   const b = state.buero || BUERO;
+  const design = druckDesign();
   const logo = b.logo
-    ? `<img src="${b.logo}" style="max-height:54px;max-width:220px;display:block">`
-    : `<div style="font-weight:800;font-size:18px;color:#1b2533;letter-spacing:.3px">${esc(b.firma || 'submit one')}</div>`;
+    ? `<img src="${b.logo}" class="lg-img" style="max-height:54px;max-width:220px;display:block">`
+    : `<div class="lg-name">${esc(b.firma || 'submit one')}</div>`;
   const addr = [b.firma, b.strasse, b.plzort, b.tel ? 'Tel. ' + b.tel : '', b.email].filter(Boolean).map(esc).join(' · ');
-  const html = `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>${esc(title)}</title>
-  <style>
-    *{box-sizing:border-box;}
-    html,body{margin:0;padding:0;}
+  const pg = `@page{size:${opts.landscape ? 'A4 landscape' : 'A4'};margin:14mm;}`;
+  const styleStandard = `
+    *{box-sizing:border-box;} html,body{margin:0;padding:0;}
     body{font-family:'Helvetica Neue','Segoe UI',Arial,sans-serif;color:#222b36;font-size:12px;line-height:1.45;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .page{padding:26px 30px;}
     .lh{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;border-bottom:2px solid #7c1d2c;padding-bottom:12px;}
-    .lh .meta{text-align:right;font-size:10px;color:#6b7480;max-width:54%;line-height:1.5;}
+    .lh .meta{text-align:right;font-size:10px;color:#6b7480;max-width:54%;line-height:1.5;} .lg-name{font-weight:800;font-size:18px;color:#1b2533;letter-spacing:.3px;}
     h1{font-size:20px;margin:18px 0 0;letter-spacing:.2px;color:#1b2533;}
     h1::after{content:"";display:block;width:44px;height:3px;background:#7c1d2c;margin-top:6px;border-radius:2px;}
     .sub{color:#6b7480;font-size:11.5px;margin:9px 0 16px;}
@@ -2710,14 +2717,38 @@ function openPrintDoc(title, subtitleHtml, inner, opts) {
     .muted{color:#9aa4b1;}
     .conf{display:inline-block;background:#fbe9ea;color:#a01b2b;border:1px solid #e7b3ba;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;}
     .ft{margin-top:22px;border-top:1px solid #e7ebf1;padding-top:8px;color:#9aa4b1;font-size:9.5px;display:flex;justify-content:space-between;}
-    @media print{.page{padding:0;}@page{size:${opts.landscape ? 'A4 landscape' : 'A4'};margin:14mm;}}
-    ${opts.extraCss || ''}
-  </style></head><body><div class="page">
+    @media print{.page{padding:0;}${pg}}`;
+  // „Modern" (Premium): vollflächiger Akzent-Kopf, grosse Typo, ruhige Tabellen mit Zebra
+  const styleModern = `
+    *{box-sizing:border-box;} html,body{margin:0;padding:0;}
+    body{font-family:'Helvetica Neue','Segoe UI',Arial,sans-serif;color:#2a2f3a;font-size:12px;line-height:1.5;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .page{padding:0;}
+    .lh{background:#7c1d2c;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 20px;margin:-14mm -14mm 0;}
+    .lh .meta{text-align:right;font-size:9.5px;color:rgba(255,255,255,.88);line-height:1.6;}
+    .lg-name{font-weight:800;font-size:22px;color:#fff;letter-spacing:.5px;} .lg-img{filter:brightness(0) invert(1);}
+    h1{font-size:28px;margin:28px 0 0;letter-spacing:.3px;color:#1b2533;font-weight:800;}
+    h1::after{content:"";display:block;width:64px;height:4px;background:#7c1d2c;margin-top:9px;border-radius:3px;}
+    .sub{color:#7a828f;font-size:12px;margin:11px 0 22px;}
+    table.t{width:100%;border-collapse:collapse;margin-bottom:16px;}
+    table.t th{background:transparent;text-align:left;padding:8px 10px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#7c1d2c;border-bottom:2px solid #7c1d2c;}
+    table.t td{padding:8px 10px;border-bottom:1px solid #eef1f5;vertical-align:top;}
+    table.t tbody tr:nth-child(even){background:#faf6f7;}
+    table.t td.num,table.t th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+    .gw{font-weight:800;margin:22px 0 8px;font-size:14px;color:#1b2533;border-left:4px solid #7c1d2c;padding-left:10px;}
+    .muted{color:#aab2bd;}
+    .conf{display:inline-block;background:#7c1d2c;color:#fff;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;letter-spacing:.3px;}
+    .ft{margin-top:32px;border-top:2px solid #7c1d2c;padding-top:10px;color:#9aa4b1;font-size:9.5px;display:flex;justify-content:space-between;}
+    @media print{${pg}}`;
+  const footer = design === 'modern'
+    ? `<div class="ft"><span><b>${esc(b.firma || '')}</b>${b.email ? ' · ' + esc(b.email) : ''}</span><span>${fmtDate(todayIso())}</span></div>`
+    : `<div class="ft"><span>${esc(b.firma || 'submit one')}</span><span>Erstellt mit submit one · ${fmtDate(todayIso())}</span></div>`;
+  const html = `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>${esc(title)}</title>
+  <style>${design === 'modern' ? styleModern : styleStandard}${opts.extraCss || ''}</style></head><body><div class="page">
     <div class="lh"><div class="logo">${logo}</div><div class="meta">${addr}</div></div>
     <h1>${esc(title)}</h1>
     <div class="sub">${subtitleHtml}</div>
     ${inner}
-    <div class="ft"><span>${esc(b.firma || 'submit one')}</span><span>Erstellt mit submit one · ${fmtDate(todayIso())}</span></div>
+    ${footer}
   </div>
   <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>
   </body></html>`;
@@ -4870,6 +4901,12 @@ function viewEinstellungen() {
         <textarea class="input" id="b_signatur" rows="4" placeholder="Freundliche Grüsse&#10;P. Hefti Bauberatung GmbH&#10;Bernstrasse 40, 3076 Worb · 031 839 00 77">${esc(b.signatur || '')}</textarea>
       </label>
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;margin-top:6px"><input type="checkbox" id="b_sig_auto" ${b.signaturAuto === false ? '' : 'checked'}> Signatur standardmässig an Mails anhängen</label>
+      <label class="field" style="margin-top:12px">Druck-Design <span class="muted" style="font-weight:400;font-size:11.5px">– Layout aller PDFs / Drucke</span>
+        <select class="select" id="b_design">
+          <option value="standard"${(b.druckDesign === 'modern') ? '' : ' selected'}>Standard (klassisch)</option>
+          <option value="modern"${(b.druckDesign === 'modern') ? ' selected' : ''}>Modern – eleganter Akzent-Kopf (Premium)</option>
+        </select>
+      </label>
       <div style="margin-top:12px"><button class="btn" data-act="save-buero">Büro speichern</button></div>
     </div>
     <div class="card card-pad" style="max-width:560px">
@@ -4906,6 +4943,7 @@ function saveBuero() {
     email:   $('#b_email').value.trim(),
     signatur: $('#b_signatur') ? $('#b_signatur').value : (cur.signatur || ''),
     signaturAuto: $('#b_sig_auto') ? $('#b_sig_auto').checked : (cur.signaturAuto !== false),
+    druckDesign: $('#b_design') ? $('#b_design').value : (cur.druckDesign || 'standard'),
   };
   save();
   toast('Büro-Daten gespeichert');

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v108';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v109';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1562,7 +1562,7 @@ function viewKosten(id) {
       </tr>`; }).join('');
       rows += (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => `<tr class="rg-sub">
         <td></td>
-        <td colspan="6"><span class="muted">↳ ${r.datum ? fmtDate(r.datum) : '—'}</span> ${esc(r.text || (r.art === 'gutschrift' ? 'Gutschrift' : 'Rechnung'))}${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''} · ${money(rgSigned(r))}</td>
+        <td colspan="6"><span class="muted">↳ ${r.datum ? fmtDate(r.datum) : '—'}</span> ${esc(r.text || (r.art === 'gutschrift' ? 'Gutschrift' : 'Rechnung'))}${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''} · ${money(rgSigned(r))}${hatBt ? ` · <select class="bt-rg" data-pid="${p.id}" data-vid="${v.id}" data-rgid="${r.id}" title="Teilprojekt der Rechnung" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius:4px">${bauteilOptionsHtml(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)}</select>` : ''}</td>
         <td></td>
         <td class="num">${r.bezahlt ? money(rgAuszahlung(r)) : '<span class="muted" style="font-size:10px">offen</span>'}</td>
         <td></td><td></td>
@@ -6318,21 +6318,29 @@ function teilprojektSummary(p) {
   });
   return map;
 }
+// Bezahlt je Teilprojekt (Rechnung → eigenes Bauteil, sonst das des Gewerks)
+function teilprojektBezahlt(p) {
+  const map = {}; const add = (bt, x) => { const k = bt || ''; map[k] = (map[k] || 0) + x; };
+  (p.vergaben || []).forEach(v => (v.rechnungen || []).filter(r => r.bezahlt).forEach(r => add(r.bauteil !== undefined ? r.bauteil : v.bauteil, rgAuszahlung(r))));
+  return map;
+}
 function teilprojektCard(p, prognoseTotal) {
   if (!(p.bauteile || []).length) return '';
-  const map = teilprojektSummary(p);
+  const mapP = teilprojektSummary(p), mapB = teilprojektBezahlt(p);
   const list = [{ id: '', name: 'Hauptgebäude', std: true }].concat((p.bauteile || []).map(b => ({ id: b.id, name: b.name })));
-  const rows = list.map(t => `<tr><td>${esc(t.name)}${t.std ? ' <span class="muted" style="font-size:11px">(Standard)</span>' : ''}</td><td class="num">${money(map[t.id] || 0)}</td></tr>`).join('');
-  return `<div class="card card-pad" style="margin-top:18px;max-width:560px">
-    <h2 style="margin:0 0 8px;font-size:16px">Kosten je Teilprojekt (Prognose)</h2>
-    <table class="grid"><thead><tr><th>Teilprojekt</th><th class="num" style="width:170px">Prognose</th></tr></thead><tbody>
+  const rows = list.map(t => `<tr><td>${esc(t.name)}${t.std ? ' <span class="muted" style="font-size:11px">(Standard)</span>' : ''}</td><td class="num">${money(mapP[t.id] || 0)}</td><td class="num">${money(mapB[t.id] || 0)}</td></tr>`).join('');
+  const totB = Object.values(mapB).reduce((a, b) => a + b, 0);
+  return `<div class="card card-pad" style="margin-top:18px;max-width:620px">
+    <h2 style="margin:0 0 8px;font-size:16px">Kosten je Teilprojekt</h2>
+    <table class="grid"><thead><tr><th>Teilprojekt</th><th class="num">Prognose</th><th class="num">Bezahlt</th></tr></thead><tbody>
       ${rows}
-      <tr class="ksub"><td><b>Total</b></td><td class="num"><b>${money(prognoseTotal)}</b></td></tr>
+      <tr class="ksub"><td><b>Total</b></td><td class="num"><b>${money(prognoseTotal)}</b></td><td class="num"><b>${money(totB)}</b></td></tr>
     </tbody></table>
   </div>`;
 }
 function setGewerkBauteil(pid, vid, btId) { const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return; v.bauteil = btId; save(); if (location.hash.includes('/kosten')) viewKosten(pid); }
 function setNachtragBauteil(pid, vid, nid, btId) { const p = findProjekt(pid); const v = p && findVergabe(p, vid); const n = v && (v.nachtraege || []).find(x => x.id === nid); if (!n) return; n.bauteil = btId; save(); if (location.hash.includes('/kosten')) viewKosten(pid); }
+function setRechnungBauteil(pid, vid, rgid, btId) { const p = findProjekt(pid); const v = p && findVergabe(p, vid); const r = v && (v.rechnungen || []).find(x => x.id === rgid); if (!r) return; r.bauteil = btId; save(); if (location.hash.includes('/kosten')) viewKosten(pid); }
 function optGruppenListe(p) {
   const order = [], map = {};
   (p.optionen || []).forEach(o => { const g = o.gruppe || ''; if (g) { if (!map[g]) { map[g] = []; order.push(g); } map[g].push(o); } });
@@ -9196,6 +9204,7 @@ document.addEventListener('change', e => {
   const mon = t.closest('.zp-mon'); if (mon) { setMonatOverride(mon.dataset.pid, mon.dataset.key, mon.value); return; }
   const gw = t.closest('.bt-gw'); if (gw) { setGewerkBauteil(gw.dataset.pid, gw.dataset.vid, gw.value); return; }
   const nt = t.closest('.bt-nt'); if (nt) { setNachtragBauteil(nt.dataset.pid, nt.dataset.vid, nt.dataset.nid, nt.value); return; }
+  const rg = t.closest('.bt-rg'); if (rg) { setRechnungBauteil(rg.dataset.pid, rg.dataset.vid, rg.dataset.rgid, rg.value); return; }
 });
 
 // Sidebar-Footer-Buttons

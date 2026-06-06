@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v154';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v155';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3716,20 +3716,18 @@ function viewBauherr(pid) {
     <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Eigentümerwünsche · Auswahlentscheide je Eigentümer/Einheit${hasWhg ? ` · ${einheiten.length} Einheiten` : ''}</div></div></div>
     ${projektTabs(p, 'bauherr')}
     ${demoBanner('bauherr')}
-    <div class="section-head"><h2>Eigentümerwünsche${(() => { const o = allEnts.filter(e => entStatus(e) === 'offen').length; return o ? ` <span class="tab-badge">${o} offen</span>` : ''; })()}</h2>
+    ${whgChips}
+    <div class="section-head"><h2>${hasWhg && selW !== 'alle' ? (selW === '' ? 'Zusätze / Allgemein' : esc(whgLabel(selW))) : 'Auswahlentscheide'}${(() => { const o = ents.filter(e => entStatus(e) === 'offen').length; return o ? ` <span class="tab-badge">${o} offen</span>` : ''; })()}</h2>
       <div style="display:flex;gap:6px">
         <button class="btn sm secondary" data-act="pdf-entscheidungen" data-pid="${p.id}">⬇ PDF</button>
         ${hasWhg ? `<button class="btn sm secondary" data-act="bauherr-bkp" data-pid="${p.id}" title="Je Einheit eine BKP-299.x-Position in den Baukosten anlegen/aktualisieren">→ BKP 299 Baukosten</button>` : ''}
+        <button class="btn sm ghost" data-act="standard-bemusterung" data-pid="${p.id}" title="Übliche Auswahlpunkte für die gewählte Einheit ergänzen">＋ Standardliste</button>
         <button class="btn sm" data-act="new-entscheidung" data-pid="${p.id}">+ Eintrag</button>
       </div></div>
-    ${hasWhg ? `<div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">
-      <button class="btn sm ${bauherrView !== 'termine' ? '' : 'secondary'}" data-act="bauherr-view" data-pid="${p.id}" data-v="eig" type="button" style="border:none">👤 Eigentümer</button>
-      <button class="btn sm ${bauherrView === 'termine' ? '' : 'secondary'}" data-act="bauherr-view" data-pid="${p.id}" data-v="termine" type="button" style="border:none">📋 Termine (Alle)</button>
-    </div>` : ''}
-    <p class="muted" style="font-size:12px;margin:-2px 0 12px">Beträge <b>netto</b> (exkl. MwSt, nach Rabatt/Skonto). Üblich: Architekt rechnet <b>+ Zuschlag</b> auf den Nettobetrag vor MwSt: <input class="input arch-z" type="number" value="${archZuschlagP()}" style="width:54px;height:24px;font-size:12px;text-align:right"> % · danach MwSt ${mwstSatz()} % → Brutto.</p>
-    ${!hasWhg ? `<div class="card">${entsTable}</div>`
-      : (bauherrView === 'termine' ? `<div class="card">${alleTable}</div>`
-        : `${accordion}<div class="card card-pad" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;font-weight:700;background:var(--brand-soft);border-color:transparent"><span>Total Brutto · alle Eigentümer (netto ${chf(totalK.netto)} + ${totalK.z}% Architekt + ${totalK.mw}% MwSt)</span><span style="font-size:16px">${chf(totalK.brutto)}</span></div>`)}
+    <p class="muted" style="font-size:12px;margin:-2px 0 12px">${hasWhg && selW === 'alle' ? '„Alle" = Entscheide nach <b>Fälligkeit</b> aus dem Terminprogramm (entscheiden bis = Einbau − Bestellfrist).' : (hasWhg ? 'Oben den Eigentümer wählen – „+ Eintrag"/„Standardliste" erfassen für diese Einheit.' : 'Auswahlpunkte führen: offen → gewählt / entfällt.')} Beträge <b>netto</b> (exkl. MwSt, n. Rabatt/Skonto). Architektenzuschlag: <input class="input arch-z" type="number" value="${archZuschlagP()}" style="width:50px;height:24px;font-size:12px;text-align:right"> % auf netto vor MwSt ${mwstSatz()} %.</p>
+    ${hasWhg && selW === 'alle'
+      ? `<div class="card">${alleTable}</div>${allEnts.length ? kostenBox(eigKosten(allEnts)) : ''}`
+      : `<div class="card">${entsTable}</div>${ents.length ? kostenBox(eigKosten(ents)) : ''}`}
 
     <div class="section-head" style="margin-top:26px"><h2>Auswahl-Firmen (Bemusterung)</h2>
       <div style="display:flex;gap:6px">

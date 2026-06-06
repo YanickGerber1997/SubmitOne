@@ -717,7 +717,9 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
   border: 1px dashed rgba(110,130,160,.5);
   display: flex; align-items: center; overflow: hidden; pointer-events: auto;
 }
-.g-bestell span { font-size: 9px; color: #5b6573; padding: 0 4px; white-space: nowrap; opacity: .85; }
+.g-bestell span { font-size: 9px; color: #5b6573; padding: 0 4px; white-space: nowrap; opacity: .85; pointer-events: none; }
+.g-bestell { cursor: ew-resize; }
+.g-bestell:hover { border-color: rgba(90,110,150,.85); box-shadow: inset 2px 0 0 rgba(90,110,150,.6); }
 .g-bar .g-lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 7px; pointer-events: none; }
 .g-bar .g-h { flex: none; width: 7px; align-self: stretch; cursor: ew-resize; border-radius: 6px; }
 .g-bar:hover .g-h { background: rgba(255,255,255,.4); }

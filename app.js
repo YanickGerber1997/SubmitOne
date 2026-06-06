@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v101';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v102';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1827,7 +1827,7 @@ function viewTermine(id) {
       if (Number(v.bestellfrist) > 0) {
         const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); const bsISO = isoOf(d);
         const bl = leftPx(bsISO), bw = Math.max(leftPx(v.bauStart) - bl, 3);
-        bestellBar = `<div class="g-bestell" style="left:${bl}px;width:${bw}px" title="Bestellfrist ${v.bestellfrist} Tage – bestellen bis ${fmtDate(bsISO)}, Einbau ab ${fmtDate(v.bauStart)}"><span>🛒 ${v.bestellfrist}T</span></div>`;
+        bestellBar = `<div class="g-bestell" data-pid="${p.id}" data-vid="${v.id}" data-ctx="gantt" data-right="${leftPx(v.bauStart)}" style="left:${bl}px;width:${bw}px" title="Bestellfrist ${v.bestellfrist} Tage – bestellen bis ${fmtDate(bsISO)}, Einbau ab ${fmtDate(v.bauStart)} · ziehen = Vorlauf ändern · Klick = bearbeiten · Rechtsklick = Menü"><span>🛒 ${v.bestellfrist}T</span></div>`;
       }
       barRows += `<div class="g-row">${bestellBar}<div class="g-bar${light}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
         title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)} · ${STATUS_BY_KEY[v.status]?.label || ''}"
@@ -1896,6 +1896,7 @@ function viewTermine(id) {
   `);
 
   $$('.g-bar').forEach(b => b.addEventListener('mousedown', onBarMouseDown));
+  $$('.g-bestell').forEach(b => b.addEventListener('mousedown', onBestellDown));
   $$('.g-link-dot').forEach(d => d.addEventListener('mousedown', onLinkDotDown));
   $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
   $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) removeGanttLink(ganttPid, g.dataset.lid); }));
@@ -2152,6 +2153,30 @@ function onBarMouseDown(e) {
   bar.classList.add('dragging');
   document.body.style.userSelect = 'none';
   e.preventDefault();
+}
+
+// Bestellfrist-Balken: linke Kante ziehen = Vorlauf ändern (rechte Kante = Ausführungsbeginn, fix); ohne Bewegung = bearbeiten
+function onBestellDown(e) {
+  if (e.button !== 0 || !ganttCtx) return;
+  e.preventDefault(); e.stopPropagation();
+  const el = e.currentTarget, pid = el.dataset.pid, vid = el.dataset.vid;
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const startX = e.clientX, origFrist = Number(v.bestellfrist) || 0, px = ganttCtx.pxPerDay, right = Number(el.dataset.right) || 0;
+  let frist = origFrist, moved = false;
+  const onMove = ev => {
+    const dx = ev.clientX - startX; if (Math.abs(dx) > 2) moved = true;
+    frist = Math.max(0, origFrist - Math.round(dx / px));       // nach links ziehen = mehr Vorlauf
+    const w = Math.max(frist * px, 1); el.style.width = w + 'px'; el.style.left = (right - w) + 'px';
+  };
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp);
+    document.body.style.userSelect = '';
+    if (!moved) { actEditTermin(pid, vid); return; }
+    if (frist !== origFrist) { v.bestellfrist = frist; save(); }
+    rerenderGantt(pid);
+  };
+  document.body.style.userSelect = 'none';
+  document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
 }
 
 function onGanttMove(e) {

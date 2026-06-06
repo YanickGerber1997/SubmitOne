@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v64';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v65';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -426,6 +426,8 @@ function meineRolle(p) {
   const m = mit.find(x => x.slug === currentUserSlug);
   return m ? m.rolle : null;
 }
+// Projekte, in denen der aktuelle Nutzer Mitglied ist (alte/leere Liste + lokal = sichtbar)
+function sichtbareProjekte() { return (state.projekte || []).filter(p => meineRolle(p) !== null); }
 function actTeam(pid) {
   const p = findProjekt(pid); if (!p) return;
   const mit = p.mitglieder || [];
@@ -1129,7 +1131,7 @@ function go(hash) { location.hash = hash; }
    --------------------------------------------------------------- */
 
 function viewDashboard() {
-  const projekte = state.projekte || [];
+  const projekte = sichtbareProjekte();
   const todayI = todayIso();
   const aktive = projekte.filter(p => p.phase !== 'abschluss');
   const alleVergaben = projekte.flatMap(p => (p.vergaben || []).map(v => ({ v, p })));
@@ -1247,7 +1249,7 @@ function projektCard(p) {
 let projektFilter = { q: '', phase: '' };
 
 function viewProjekte() {
-  let list = state.projekte;
+  let list = sichtbareProjekte();
   if (projektFilter.phase) list = list.filter(p => dominantPhase(p) === projektFilter.phase);
   if (projektFilter.q) {
     const q = projektFilter.q.toLowerCase();
@@ -1256,7 +1258,7 @@ function viewProjekte() {
 
   const html = `
     <div class="page-head">
-      <div><h1>Projekte</h1><div class="sub">${state.projekte.length} Projekte insgesamt</div></div>
+      <div><h1>Projekte</h1><div class="sub">${sichtbareProjekte().length} Projekte</div></div>
       <button class="btn" data-act="new-projekt">+ Neues Projekt</button>
     </div>
 

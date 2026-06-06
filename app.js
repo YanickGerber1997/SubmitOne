@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v140';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v141';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2651,9 +2651,9 @@ function viewListen(pid) {
         <td class="num">${eOff(e) != null ? chf(eOff(e)) : '–'}</td>
       </tr>`).join('') : `<tr><td colspan="3" class="muted">noch niemand eingeladen</td></tr>`;
     return `
-      <div style="margin-bottom:14px">
-        <div style="font-weight:600;margin-bottom:5px"><span class="bkp-code">${esc(v.bkp)}</span> ${esc(v.gewerk)}</div>
-        <table class="grid"><thead><tr><th>Firma</th><th style="width:120px">Status</th><th class="num" style="width:130px">Betrag</th></tr></thead>
+      <div style="margin-bottom:9px">
+        <div style="font-weight:600;margin-bottom:2px;font-size:13px"><span class="bkp-code">${esc(v.bkp)}</span> ${esc(v.gewerk)}</div>
+        <table class="grid t-compact"><thead><tr><th>Firma</th><th style="width:120px">Status</th><th class="num" style="width:130px">Betrag</th></tr></thead>
           <tbody>${rows}</tbody></table>
       </div>`;
   }).join('') : emptyState('◫', 'Keine Gewerke angelegt.');
@@ -2691,7 +2691,7 @@ function viewListen(pid) {
       <button class="btn sm" data-act="pdf-unternehmer" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
     <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle Gewerke mit vergebenem Unternehmer; offene zeigen „noch nicht vergeben" (verrät keine Submittenten).</p>
     <div class="card">${gw.length ? `
-      <table class="grid"><thead><tr><th style="width:60px">BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Kontakt</th></tr></thead>
+      <table class="grid t-compact"><thead><tr><th style="width:60px">BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Kontakt</th></tr></thead>
         <tbody>${untRows}</tbody></table>` : emptyState('◫', 'Keine Gewerke angelegt.')}</div>
     `}
   `);

@@ -493,6 +493,9 @@ table.grid tr:last-child td { border-bottom: none; }
 table.grid tbody tr { transition: background .1s; }
 table.grid tbody tr.clickable { cursor: pointer; }
 table.grid tbody tr.clickable:hover { background: var(--surface-2); }
+/* Kompakte Tabellen (z.B. Submittenten-/Unternehmerliste) */
+.t-compact th { padding: 6px 10px; font-size: 10.5px; }
+.t-compact td { padding: 4px 10px; font-size: 12.5px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .muted { color: var(--text-faint); }
 .bkp-code { font-variant-numeric: tabular-nums; color: var(--text-soft); font-weight: 600; font-size: 12.5px; }

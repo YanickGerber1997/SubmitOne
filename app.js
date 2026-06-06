@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v79';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v80';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1069,6 +1069,8 @@ function projektTabs(p, active) {
     { key: 'dossier', href: `#/projekt/${p.id}/dossier`, label: 'Dossier' + (dossierFehltCount(p) ? ` <span class="tab-badge">${dossierFehltCount(p)}</span>` : '') },
     { key: 'kalender', href: `#/projekt/${p.id}/kalender`, label: 'Kalender' },
     { key: 'kosten', href: `#/projekt/${p.id}/kosten`, label: 'Kosten' },
+    { key: 'optionen', href: `#/projekt/${p.id}/optionen`, label: 'Optionen' },
+    { key: 'nachtraege', href: `#/projekt/${p.id}/nachtraege`, label: 'Nachträge' },
     { key: 'solar', href: `#/projekt/${p.id}/solar`, label: 'Solar' },
     { key: 'termine', href: `#/projekt/${p.id}/termine`, label: 'Termine / Gantt' },
     { key: 'protokolle', href: `#/projekt/${p.id}/protokolle`, label: 'Protokolle' },
@@ -1169,6 +1171,8 @@ function router() {
       if (sub === 'termine') return viewTermine(a);
       if (sub === 'kalender') return viewKalender(a);
       if (sub === 'kosten') return viewKosten(a);
+      if (sub === 'optionen') return viewOptionen(a);
+      if (sub === 'nachtraege') return viewNachtraege(a);
       if (sub === 'solar') return viewSolar(a);
       if (sub === 'protokolle') return viewProtokolle(a);
       if (sub === 'pendenzen') return viewPendenzen(a);
@@ -6250,6 +6254,96 @@ function bauteilCard(p, kvTotal) {
   </div>`;
 }
 
+// Eigener Reiter: Optionale Bauteile & Teilprojekte sauber pflegen + Auswertung
+function viewOptionen(pid) {
+  const p = findProjekt(pid);
+  if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  let kv = 0, prog = 0;
+  (p.vergaben || []).forEach(v => { const z = kostenZeile(v); kv += z.kv; prog += z.prognose; });
+  const leer = !(p.optionen || []).length && !(p.bauteile || []).length;
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Optionen</div>
+    <div class="detail-head">
+      <div><h1 style="margin:0;font-size:23px">Optionen &amp; Bauteile</h1><div class="sub" style="margin-top:5px">Optionale Bauteile (ein-/ausblenden) &amp; Teilprojekte (Trakt 1–3, Provisorium …)</div></div>
+      <div><button class="btn" data-act="opt-manage" data-pid="${p.id}">⚙ Verwalten</button></div>
+    </div>
+    ${projektTabs(p, 'optionen')}
+    ${leer ? emptyState('🧩', 'Noch keine Optionen oder Bauteile angelegt. Mit „⚙ Verwalten" beginnen – danach im jeweiligen Gewerk (Reiter „Kosten" → Gewerk → „✎ Kostenschätzung") die Positionen mit Bauteil/Option etikettieren.') : ''}
+    ${optionenCard(p, kv, prog)}
+    ${bauteilCard(p, kv)}
+    ${leer ? '' : '<p class="muted" style="font-size:12px;margin-top:14px">Positionen etikettierst du im Gewerk („✎ Kostenschätzung"); hier siehst du die Auswertung und kannst Optionen ein-/ausblenden.</p>'}
+  `);
+}
+
+// Eigener Reiter: alle Nachträge & Rapporte projektweit (über alle Gewerke)
+function viewNachtraege(pid) {
+  const p = findProjekt(pid);
+  if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  const gw = gewerkeSorted(p);
+  const nts = [], raps = [];
+  gw.forEach(v => { (v.nachtraege || []).forEach(n => nts.push({ v, n })); (v.rapporte || []).forEach(r => raps.push({ v, r })); });
+  nts.sort((a, b) => (a.n.datum || '').localeCompare(b.n.datum || ''));
+  raps.sort((a, b) => (a.r.datum || '').localeCompare(b.r.datum || ''));
+  const ntGen = nts.filter(x => x.n.status === 'genehmigt').reduce((a, x) => a + (x.n.betrag || 0), 0);
+  const ntAll = nts.reduce((a, x) => a + (x.n.betrag || 0), 0);
+  const rapSum = raps.reduce((a, x) => a + (x.r.betrag || 0), 0);
+  const rapStd = raps.reduce((a, x) => a + (Number(x.r.stunden) || 0), 0);
+  const stOpt = s => ['offen', 'genehmigt', 'abgelehnt'].map(o => `<option value="${o}"${s === o ? ' selected' : ''}>${o.charAt(0).toUpperCase() + o.slice(1)}</option>`).join('');
+  const ntRows = nts.length ? nts.map(({ v, n }) => `<tr>
+      <td><span class="bkp-code">${esc(v.bkp || '')}</span> ${esc(v.gewerk)}</td>
+      <td><strong>${esc(n.titel || 'Nachtrag')}</strong>${n.nr ? ` <span class="muted">${esc(n.nr)}</span>` : ''}</td>
+      <td class="muted">${fmtDate(n.datum)}</td>
+      <td class="num">${chf(n.betrag)}</td>
+      <td><select class="sm-select nt-status" data-pid="${pid}" data-vid="${v.id}" data-nid="${n.id}">${stOpt(n.status)}</select></td>
+      <td><button class="x-btn" data-act="rm-nachtrag" data-pid="${pid}" data-vid="${v.id}" data-nid="${n.id}">×</button></td>
+    </tr>`).join('') : '<tr><td colspan="6" class="muted" style="padding:10px">Keine Nachträge erfasst.</td></tr>';
+  const rapRows = raps.length ? raps.map(({ v, r }) => `<tr>
+      <td><span class="bkp-code">${esc(v.bkp || '')}</span> ${esc(v.gewerk)}</td>
+      <td><strong>${esc(r.titel || 'Rapport')}</strong></td>
+      <td class="muted">${fmtDate(r.datum)}</td>
+      <td class="num">${r.stunden ? esc(r.stunden) + ' h' : '–'}</td>
+      <td class="num">${chf(r.betrag)}</td>
+      <td><button class="x-btn" data-act="rm-rapport" data-pid="${pid}" data-vid="${v.id}" data-rid="${r.id}">×</button></td>
+    </tr>`).join('') : '<tr><td colspan="6" class="muted" style="padding:10px">Keine Rapporte erfasst.</td></tr>';
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Nachträge</div>
+    <div class="detail-head">
+      <div><h1 style="margin:0;font-size:23px">Nachträge &amp; Rapporte</h1><div class="sub" style="margin-top:5px">Projektweite Übersicht über alle Gewerke</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn secondary" data-act="nt-pick" data-pid="${p.id}" data-kind="rapport">+ Rapport</button>
+        <button class="btn" data-act="nt-pick" data-pid="${p.id}" data-kind="nachtrag">+ Nachtrag</button>
+      </div>
+    </div>
+    ${projektTabs(p, 'nachtraege')}
+
+    <div class="section-head"><h2>Nachträge</h2><span class="hint">Nur genehmigte zählen in die Abrechnungsprognose</span></div>
+    <div class="card" style="overflow-x:auto">
+      <table class="grid"><thead><tr><th>Gewerk</th><th>Bezeichnung</th><th>Datum</th><th class="num">Betrag</th><th style="width:130px">Status</th><th></th></tr></thead>
+        <tbody>${ntRows}</tbody></table>
+      <div class="card-pad" style="display:flex;justify-content:space-between;border-top:1px solid var(--border)"><span class="muted">erfasst total ${chf(ntAll)} · davon genehmigt</span><strong>${chf(ntGen)}</strong></div>
+    </div>
+
+    <div class="section-head" style="margin-top:22px"><h2>Rapporte / Regie</h2></div>
+    <div class="card" style="overflow-x:auto">
+      <table class="grid"><thead><tr><th>Gewerk</th><th>Bezeichnung</th><th>Datum</th><th class="num">Stunden</th><th class="num">Betrag</th><th></th></tr></thead>
+        <tbody>${rapRows}</tbody></table>
+      <div class="card-pad" style="display:flex;justify-content:space-between;border-top:1px solid var(--border)"><span class="muted">${rapStd ? rapStd + ' Std · ' : ''}total</span><strong>${chf(rapSum)}</strong></div>
+    </div>
+  `);
+  $$('.nt-status').forEach(sel => sel.addEventListener('change', () => setNachtragStatus(sel.dataset.pid, sel.dataset.vid, sel.dataset.nid, sel.value)));
+}
+// Gewerk wählen, dann Nachtrag/Rapport dort erfassen
+function actNachtragPick(pid, kind) {
+  const p = findProjekt(pid); if (!p) return;
+  const gw = gewerkeSorted(p);
+  if (!gw.length) { toast('Zuerst ein Gewerk anlegen', 'info'); return; }
+  openModal((kind === 'rapport' ? 'Rapport' : 'Nachtrag') + ' – für welches Gewerk?', `
+    <div style="display:flex;flex-direction:column;gap:3px;max-height:360px;overflow:auto">
+      ${gw.map(v => `<button class="btn ghost" style="justify-content:flex-start;text-align:left" data-act="${kind === 'rapport' ? 'np-rapport' : 'np-nachtrag'}" data-pid="${pid}" data-vid="${v.id}" type="button"><span class="bkp-code">${esc(v.bkp || '')}</span>&nbsp; ${esc(v.gewerk)}</button>`).join('')}
+    </div>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button>`);
+}
+
 /* --- Verwaltung Bauteile & Optionen --- */
 function obtRow(b) {
   return `<div class="bt-row form-row" data-id="${b ? b.id : ''}" style="margin-bottom:6px;align-items:center">
@@ -8104,6 +8198,9 @@ document.addEventListener('click', e => {
     case 'save-budget':  saveBudget(pid, vid); break;
     case 'rm-budget':    removeBudget(pid, vid, bid); break;
     case 'budget-auswahl': actBudgetForAuswahl(pid, eid); break;
+    case 'nt-pick':      actNachtragPick(pid, act.dataset.kind); break;
+    case 'np-nachtrag':  actNewNachtrag(pid, vid); break;
+    case 'np-rapport':   actNewRapport(pid, vid); break;
     case 'new-nachtrag': actNewNachtrag(pid, vid); break;
     case 'save-nachtrag':saveNachtrag(pid, vid); break;
     case 'rm-nachtrag':  removeNachtrag(pid, vid, nid); break;

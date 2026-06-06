@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v149';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v150';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2666,13 +2666,15 @@ function viewListen(pid) {
     </tr>`;
   }).join('');
 
-  // Eigentümerliste (Einheiten + Eigentümer/Kontakt, inline editierbar)
+  // Eigentümerliste (Einheiten + Eigentümer/Kontakt, inline editierbar + Budget-Sonderwünsche je Wohnung)
   const einh = alleEinheiten(p);
+  const eigBudget = uid => (p.vergaben || []).reduce((a, v) => a + (v.budgetposten || []).filter(b => b.wohnung === uid).reduce((s, b) => s + (hatIst(b) ? (Number(b.ist) || 0) : (Number(b.betrag) || 0)), 0), 0);
   const eigBody = einh.map(({ u, g }) => `<tr>
       <td class="muted" style="font-size:12px">${esc(g.name || '')}</td>
       <td><strong>${esc(u.name || 'Einheit')}</strong>${u.zimmer ? ` <span class="muted">${u.zimmer} Zi</span>` : ''}${u.m2 ? ` <span class="muted">· ${Number(u.m2)} m²</span>` : ''}</td>
       <td><input class="input eig-in" data-pid="${p.id}" data-uid="${u.id}" data-feld="eigentuemer" value="${esc(u.eigentuemer || '')}" placeholder="Eigentümer / Käufer" style="height:28px;font-size:12.5px"></td>
       <td><input class="input eig-in" data-pid="${p.id}" data-uid="${u.id}" data-feld="eigKontakt" value="${esc(u.eigKontakt || '')}" placeholder="Tel. / E-Mail" style="height:28px;font-size:12.5px"></td>
+      <td class="num">${eigBudget(u.id) ? chf(eigBudget(u.id)) : '<span class="muted">–</span>'}</td>
     </tr>`).join('');
   // Bemusterung (allgemeine Liste: Auswahlpunkt → Unternehmer → Ausstellung; OHNE Wohnung, dedupliziert)
   const ents = p.entscheidungen || [];
@@ -2697,7 +2699,7 @@ function viewListen(pid) {
   } else if (listenTab === 'eig') {
     bodyHtml = `<div class="section-head"><h2>Eigentümerliste</h2></div>
     <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Einheiten mit Eigentümer/Käufer &amp; Kontakt – direkt hier ausfüllen (wird automatisch gespeichert).</p>
-    <div class="card">${einh.length ? `<table class="grid t-compact"><thead><tr><th style="width:130px">Geschoss</th><th>Einheit</th><th style="width:34%">Eigentümer / Käufer</th><th style="width:26%">Kontakt</th></tr></thead><tbody>${eigBody}</tbody></table>` : emptyState('🏠', 'Noch keine Einheiten – unter „Bauherr → Wohnungen / Geschosse" anlegen.')}</div>`;
+    <div class="card">${einh.length ? `<table class="grid t-compact"><thead><tr><th style="width:120px">Geschoss</th><th>Einheit</th><th style="width:30%">Eigentümer / Käufer</th><th style="width:22%">Kontakt</th><th class="num" style="width:130px">Budget Sonderwünsche</th></tr></thead><tbody>${eigBody}</tbody></table>` : emptyState('🏠', 'Noch keine Einheiten – unter „Eigentümerwünsche / Geschosse" anlegen.')}</div>`;
   } else if (listenTab === 'bem') {
     bodyHtml = `<div class="section-head"><h2>Bemusterung <span class="muted" style="font-size:12px;font-weight:400">· bei wem aussuchen</span></h2>
       <a class="btn sm secondary" href="#/projekt/${p.id}/bauherr">Eigentümerwünsche-Reiter ↗</a></div>
@@ -4480,11 +4482,12 @@ function viewVergabeDetail(pid, vid) {
       </div>
       ${(v.budgetposten || []).length ? `
       <table class="grid" style="margin-top:12px">
-        <thead><tr><th>Bezeichnung</th><th class="num">Budget (im WV)</th><th class="num">Tatsächlich</th><th class="num">Δ Baukosten</th><th style="width:62px"></th></tr></thead>
+        <thead><tr><th>Bezeichnung</th>${alleEinheiten(p).length ? '<th>Wohnung / Eigentümer</th>' : ''}<th class="num">Budget (im WV)</th><th class="num">Tatsächlich</th><th class="num">Δ Baukosten</th><th style="width:62px"></th></tr></thead>
         <tbody>
           ${v.budgetposten.map(b => { const ist = hatIst(b); const d = ist ? (Number(b.ist) || 0) - (b.betrag || 0) : 0; return `
             <tr>
               <td><strong>${esc(b.text || 'Budgetposition')}</strong></td>
+              ${alleEinheiten(p).length ? `<td class="muted" style="font-size:12.5px">${b.wohnung ? esc(einheitName(p, b.wohnung)) + (eigOfP(p, b.wohnung) ? ' · ' + esc(eigOfP(p, b.wohnung)) : '') : '<span class="muted">Allgemein</span>'}</td>` : ''}
               <td class="num">${chf(b.betrag)}</td>
               <td class="num">${ist ? chf(Number(b.ist) || 0) : '<span class="muted">offen</span>'}</td>
               <td class="num" style="${d > 0 ? 'color:var(--s-red)' : (d < 0 ? 'color:var(--s-green)' : '')}">${ist ? (d > 0 ? '+' : '') + chf(d) : '–'}</td>
@@ -6133,6 +6136,7 @@ const GESCHOSS_TYPEN = ['Untergeschoss / Keller', 'Einstellhalle', 'Erdgeschoss'
 
 function finanzData(p) { p.finanz = p.finanz || { land: 0, honorare: 0, finanzierung: 0 }; return p.finanz; }
 function alleEinheiten(p) { return (p.geschosseListe || []).flatMap(g => (g.einheiten || []).map(u => ({ u, g }))); }
+function eigOfP(p, uid) { const h = alleEinheiten(p).find(x => x.u.id === uid); return h ? (h.u.eigentuemer || '') : ''; }
 // Wohnungs-/Einheiten-Label: löst eine Einheit-ID zur echten Bezeichnung auf (Rückwärtskompat: alte Nummern → „Whg N")
 function einheitName(p, id) {
   if (!id) return 'Allgemein';
@@ -8881,8 +8885,13 @@ function extractAmounts(text) {
 function actNewBudget(pid, vid, bid, prefillText) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   const b = bid ? (v.budgetposten || []).find(x => x.id === bid) : null;
+  const einhListe = alleEinheiten(p);
+  const whgSel = einhListe.length ? `<label class="field">Wohnung / Eigentümer <span class="muted" style="font-weight:400;font-size:11px">– Budget dieser Position zuordnen</span>
+      <select class="select" id="bp_wohnung"><option value=""${!(b && b.wohnung) ? ' selected' : ''}>Allgemein (ganzes Gewerk)</option>${einhListe.map(x => `<option value="${x.u.id}"${b && b.wohnung === x.u.id ? ' selected' : ''}>${esc(x.u.name || 'Wohnung')}${x.u.eigentuemer ? ' · ' + esc(x.u.eigentuemer) : ''}</option>`).join('')}</select>
+    </label>` : '';
   openModal(b ? 'Budgetposition bearbeiten' : 'Budgetposition', `
     <label class="field">Bezeichnung <input class="input" id="bp_text" value="${b ? esc(b.text || '') : esc(prefillText || '')}" placeholder="z.B. Küche (Budget im WV)"></label>
+    ${whgSel}
     <div class="form-row">
       <label class="field">Budget im WV (CHF) <input class="input" type="number" id="bp_betrag" value="${b ? (b.betrag ?? '') : ''}" placeholder="z.B. 25000"></label>
       <label class="field">Tatsächlich gewählt (CHF) <input class="input" type="number" id="bp_ist" value="${b && b.ist != null ? b.ist : ''}" placeholder="leer = noch offen"></label>
@@ -8897,10 +8906,11 @@ function saveBudget(pid, vid, bid) {
   const ist = (istRaw === '' || istRaw == null) ? null : (Number(istRaw) || 0);
   const text = $('#bp_text').value.trim() || 'Budgetposition';
   if (!betrag && ist == null) { toast('Bitte einen Budgetbetrag eingeben', 'info'); return; }
+  const wohnung = $('#bp_wohnung') ? $('#bp_wohnung').value : '';
   v.budgetposten = v.budgetposten || [];
   const b = bid ? v.budgetposten.find(x => x.id === bid) : null;
-  if (b) { b.text = text; b.betrag = betrag; b.ist = ist; }
-  else v.budgetposten.push({ id: uid('bp'), text, betrag, ist });
+  if (b) { b.text = text; b.betrag = betrag; b.ist = ist; b.wohnung = wohnung; }
+  else v.budgetposten.push({ id: uid('bp'), text, betrag, ist, wohnung });
   save(); closeModal(); router(); toast('Budgetposition gespeichert');
 }
 function removeBudget(pid, vid, bid) {

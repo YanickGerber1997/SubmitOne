@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v84';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v85';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -410,12 +410,27 @@ async function loadEntitlements() {
 }
 function planAktiv() { return !!(ent && ent.plan && ent.plan !== 'free' && (!ent.aktiv_bis || new Date(ent.aktiv_bis) > new Date())); }
 function isPaid()    { return !cloudEnabled || ent === null || planAktiv(); }
+function modulPreis(key) { const m = MODULES.find(x => x.key === key); return (m && m.preis) ? Number(m.preis) : 0; }
+// Fair-Preis: nie mehr zahlen als das Paket. Ab 15.- Basic-Module → Basic; ab 25.- total → Premium (alles inkl.).
+function effektivPlan(e) {
+  if (!e || !e.plan) return 'free';
+  if (e.plan === 'komplett') return 'komplett';
+  const mods = Array.isArray(e.module) ? e.module : [];
+  const basicSum = mods.filter(k => { const m = MODULES.find(x => x.key === k); return m && m.tier === 'basic' && !m.inkl; }).reduce((a, k) => a + modulPreis(k), 0);
+  const totalSum = (e.plan === 'basis' ? 15 : 0) + mods.reduce((a, k) => a + modulPreis(k), 0);
+  if (totalSum >= 25) return 'komplett';                 // genug fürs Voll-Paket → alles
+  if (e.plan === 'basis' || basicSum >= 15) return 'basis'; // genug Basic-Module → ganzes Basic
+  if (e.plan === 'trial') return 'trial';
+  if (mods.length) return 'modul';
+  return e.plan;
+}
 function canModul(m) {
   if (!cloudEnabled || ent === null) return true;
-  if (ent.plan === 'komplett' || ent.plan === 'trial') return true;     // Premium/Test = alles
+  const plan = effektivPlan(ent);                                      // berücksichtigt Fair-Preis-Upgrade
+  if (plan === 'komplett' || plan === 'trial') return true;            // Premium/Test = alles
   const mod = MODULES.find(x => x.key === m);
   if (mod && mod.inkl) return isPaid();                                 // gratis sobald irgendein Modul/Plan bezahlt ist
-  if (ent.plan === 'basis' && mod && mod.tier === 'basic') return true;
+  if (plan === 'basis' && mod && mod.tier === 'basic') return true;
   return (ent.module || []).includes(m);
 }
 // Module mit EIGENEM, sauber trennbarem Projekt-Feld → können beim Speichern echt weggelassen werden.
@@ -442,12 +457,13 @@ const PLAN_LABELS = { free: 'Free', trial: 'Test', basis: 'Basic', komplett: 'Pr
 function planLabel() {
   if (!ent || !ent.plan) return '';
   if (ent.plan === 'trial') { const d = ent.aktiv_bis ? Math.max(0, Math.ceil((new Date(ent.aktiv_bis) - new Date()) / 86400000)) : 0; return 'Test · ' + d + ' Tg'; }
-  return PLAN_LABELS[ent.plan] || (ent.plan.charAt(0).toUpperCase() + ent.plan.slice(1));
+  const p = effektivPlan(ent);
+  return PLAN_LABELS[p] || (p.charAt(0).toUpperCase() + p.slice(1));
 }
 // Aktuelles Tier + Speicher-Status für die dauerhafte Anzeige auf jeder Seite
 function tierInfo() {
   if (!cloudEnabled) return { label: 'Lokal', cls: 'grey', save: 'nur lokal', saved: false };
-  const p = (ent && ent.plan) ? ent.plan : 'free';
+  const p = effektivPlan(ent);
   const hatModule = ent && Array.isArray(ent.module) && ent.module.length;
   if (p === 'trial')    return { label: 'Test',        cls: 'amber',  save: 'gespeichert', saved: true };
   if (p === 'basis')    return { label: 'Basic',       cls: 'silber', save: 'gespeichert', saved: true };
@@ -592,6 +608,7 @@ function actAbo() {
     <div style="margin-top:18px">
       <div style="font-weight:700;font-size:13px;margin-bottom:2px">Individuell – nur einzelne Module</div>
       <div class="muted" style="font-size:11.5px;margin-bottom:8px">Alle Module sind im Free benutzbar; bezahlt wird fürs <b>Speichern</b>. Einzeln buchbar – in Summe aber <b>teurer als das passende Paket</b>. <b>Kontakte, Kalender &amp; Arbeitsplanung sind gratis dabei</b>, sobald mindestens ein Modul gebucht ist. „Basic" enthält die Basis-Funktionen, „Premium" alles.</div>
+      <div class="muted" style="font-size:11.5px;margin:-2px 0 10px;padding:7px 10px;background:#eefaf2;border:1px solid #bfe6cd;border-radius:8px;color:#1d6b3a">✓ <b>Fair-Preis:</b> Du zahlst nie mehr als das Paket. Ab <b>15.– Basic-Modulen</b> bekommst du automatisch <b>ganz Basic</b>, ab <b>25.– total</b> automatisch <b>Premium (alles)</b>.</div>
       <div class="mod-list">${modRows}</div>
     </div>
     <p class="muted" style="font-size:11.5px;margin:14px 0 0">Preise CHF/Monat (Richtwerte, anpassbar). Bezahlung über Stripe – sobald die Zahlungslinks in config.js eingetragen sind, führt „freischalten" direkt zur Kasse.</p>

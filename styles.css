@@ -347,7 +347,7 @@ button { font-family: inherit; cursor: pointer; }
 
 .kpi-row {
   display: grid; gap: 16px; margin-bottom: 24px;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
 }
 .kpi {
   background: var(--surface); border: 1px solid var(--border);
@@ -513,6 +513,10 @@ table.grid tbody tr.clickable:hover { background: var(--surface-2); }
 .ktable-wrap { overflow: visible; }
 .ktable thead th { position: sticky; top: 0; z-index: 6; box-shadow: inset 0 -1px 0 var(--border); }
 .ktable tr.kgroup td { position: sticky; top: 43px; z-index: 5; box-shadow: inset 0 -1px 0 var(--border); }
+/* Schmal (halber Bildschirm / Laptop): breite Tabelle in der Karte horizontal scrollen statt die ganze Seite zu sprengen */
+@media (max-width: 1280px) {
+  .ktable-wrap { overflow-x: auto; overflow-y: visible; -webkit-overflow-scrolling: touch; }
+}
 .ktable td.over { color: var(--s-red); font-weight: 600; }
 .ktable td.under { color: var(--s-green); font-weight: 600; }
 

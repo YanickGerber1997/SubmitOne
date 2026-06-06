@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v104';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v105';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -438,7 +438,7 @@ function canModul(m) {
   return (ent.module || []).includes(m);
 }
 // Module mit EIGENEM, sauber trennbarem Projekt-Feld → können beim Speichern echt weggelassen werden.
-const MODUL_FELD = { pendenzen: 'pendenzen', protokolle: 'protokolle', solar: 'solar', uwert: 'uwert', honorar: 'honorar', dossier: 'dossier', bauherr: 'bauherr', optionen: ['optionen', 'bauteile'], finanz: 'finanz', zahlungsplan: 'zahlungsplan' };
+const MODUL_FELD = { pendenzen: 'pendenzen', protokolle: 'protokolle', solar: 'solar', uwert: 'uwert', honorar: 'honorar', dossier: 'dossier', bauherr: 'bauherr', optionen: ['optionen', 'bauteile'], finanz: 'finanz', zahlungsplan: ['zahlungsplan', 'zahlungsplaene'] };
 // „Gesperrt" = Cloud-Modus mit echten Berechtigungen UND Modul nicht freigeschaltet (lokal/permissiv → nie gesperrt).
 function modulGesperrt(key) { return cloudEnabled && ent !== null && !canModul(key); }
 // Klon des Projekts fürs Speichern, ohne die Daten gesperrter (nicht gekaufter) Module → ehrlich „nicht gespeichert".
@@ -4738,8 +4738,21 @@ function viewDossier(pid) {
       ${kpi('Entfällt', s.entf)}
     </div>
     <p class="muted" style="font-size:12px;margin:0 0 16px"><span class="dos-auto">auto</span> = wird von der App automatisch erkannt (öffnen zum Bearbeiten) · übrige Positionen erfasst du extern (Status, Datei-Name/Link, Notiz).</p>
+    ${dossierZahlungsplanCard(p)}
     ${phasenHtml}
   `);
+}
+// Zahlungsplan-Status fürs Dossier (Versionen + abgeschlossen/in Arbeit) – ohne den Plan zu erzwingen
+function dossierZahlungsplanCard(p) {
+  const zpL = Array.isArray(p.zahlungsplaene) ? p.zahlungsplaene : (p.zahlungsplan ? [Object.assign({ name: 'Version 1' }, p.zahlungsplan)] : []);
+  const aktivIdx = zpL.findIndex(z => z.id === p.zpAktiv);
+  const status = !zpL.length ? '<span class="st grey" style="font-size:9.5px;padding:1px 7px">noch nicht erstellt</span>'
+    : zpL.map((z, i) => `${esc(z.name || ('Version ' + (i + 1)))} ${z.gesperrt ? '<span class="st green" style="font-size:9px;padding:1px 6px">abgeschlossen</span>' : '<span class="st amber" style="font-size:9px;padding:1px 6px">in Arbeit</span>'}`).join(' &nbsp;·&nbsp; ');
+  const head = zpL.length > 1 ? `Zahlungsplan – aktuell <b>Version ${aktivIdx >= 0 ? aktivIdx + 1 : zpL.length}</b> von ${zpL.length}` : 'Zahlungsplan';
+  return `<div class="card card-pad" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div><strong>💰 ${head}</strong><div class="muted" style="font-size:12px;margin-top:3px">${status}</div></div>
+      <a class="btn sm secondary" href="#/projekt/${p.id}/zahlungsplan">öffnen ↗</a>
+    </div>`;
 }
 // Direkt aus dem Dossier das passende Modul-Objekt anlegen
 function dossierCreate(pid, kind) {
@@ -7290,9 +7303,22 @@ function zahlungsplanZeitraum(p) {
   if (!bis && be.length) bis = be.reduce((a, b) => a > b ? a : b);
   return { von, bis };
 }
+// Mehrere Versionen je Projekt (unterschriebener v1 sperrbar, v2 als Revision …)
+function zahlungsplaeneOf(p) {
+  if (!Array.isArray(p.zahlungsplaene)) {
+    p.zahlungsplaene = [];
+    if (p.zahlungsplan && typeof p.zahlungsplan === 'object' && Object.keys(p.zahlungsplan).length) {
+      p.zahlungsplaene.push(Object.assign({ id: uid('zp'), name: 'Version 1', gesperrt: false }, p.zahlungsplan));
+    }
+    delete p.zahlungsplan;
+  }
+  if (!p.zahlungsplaene.length) p.zahlungsplaene.push({ id: uid('zp'), name: 'Version 1', gesperrt: false });
+  if (!p.zpAktiv || !p.zahlungsplaene.find(z => z.id === p.zpAktiv)) p.zpAktiv = p.zahlungsplaene[0].id;
+  return p.zahlungsplaene;
+}
 function zahlungsplanOf(p) {
-  if (!p.zahlungsplan) p.zahlungsplan = {};
-  const z = p.zahlungsplan;
+  const list = zahlungsplaeneOf(p);
+  const z = list.find(x => x.id === p.zpAktiv) || list[0];
   if (z.modus === undefined) z.modus = 'bauherr';   // 'bauherr' (Werkverträge) | 'honorar' (SIA)
   if (z.honMode === undefined) z.honMode = 'phasen';  // 'phasen' (SIA, Beginn/Ende je Phase) | 'flat' (gleichmässig über Laufzeit)
   if (!Array.isArray(z.phasen) || !z.phasen.length) z.phasen = HONORAR_PHASEN.map(ph => ({ key: ph.key, label: ph.label, pct: ph.pct, beginn: '', ende: '' }));
@@ -7301,8 +7327,26 @@ function zahlungsplanOf(p) {
   const zr = zahlungsplanZeitraum(p);
   if (!z.von) z.von = zr.von;   // automatisch aus dem Ausführungs-/Projektzeitraum
   if (!z.bis) z.bis = zr.bis;
+  if (!z.overrides) z.overrides = {};   // manuell angepasste Monatsbeträge {YYYY-MM: betrag}
+  if (z.gesperrt === undefined) z.gesperrt = false;
   return z;
 }
+// Versions-/Sperr-/Override-Aktionen
+function zpVersion(pid, vid) { const p = findProjekt(pid); p.zpAktiv = vid; save(); viewZahlungsplan(pid); }
+function zpVersionNeu(pid) {
+  const p = findProjekt(pid); const list = zahlungsplaeneOf(p); const cur = list.find(x => x.id === p.zpAktiv) || list[0];
+  const klon = JSON.parse(JSON.stringify(cur)); klon.id = uid('zp'); klon.gesperrt = false; klon.name = 'Version ' + (list.length + 1);
+  list.push(klon); p.zpAktiv = klon.id; save(); viewZahlungsplan(pid); toast('Neue Version als Kopie angelegt');
+}
+function zpLock(pid) { const p = findProjekt(pid); const z = zahlungsplanOf(p); z.gesperrt = !z.gesperrt; save(); viewZahlungsplan(pid); toast(z.gesperrt ? '🔒 Version gesperrt' : '🔓 entsperrt'); }
+function zpRename(pid) { const p = findProjekt(pid); const z = zahlungsplanOf(p); const n = window.prompt('Name der Version:', z.name || 'Version'); if (n != null) { z.name = n.trim() || z.name; save(); viewZahlungsplan(pid); } }
+function setMonatOverride(pid, key, val) {
+  const p = findProjekt(pid); const z = zahlungsplanOf(p); if (z.gesperrt) return;
+  z.overrides = z.overrides || {};
+  if (val === '' || val == null) delete z.overrides[key]; else z.overrides[key] = Number(val) || 0;
+  save(); viewZahlungsplan(pid);
+}
+function zpMonReset(pid) { const p = findProjekt(pid); const z = zahlungsplanOf(p); if (z.gesperrt) return; z.overrides = {}; save(); viewZahlungsplan(pid); toast('Monatsbeträge auf Auto zurückgesetzt'); }
 // Bauherren-Zahlungsplan: jeder vergebene Werkvertrag über seine Bauzeit (Unternehmer-Termine) verteilt
 function bauherrPlan(p) {
   const gw = gewerkeSorted(p).filter(isVergeben);
@@ -7322,14 +7366,13 @@ function bauherrPlan(p) {
   return { rows, monate, total, fehlend: rows.filter(r => r.ohneTermin) };
 }
 function zpBauherrHtml(p) {
-  const r = bauherrPlan(p);
+  const r = bauherrPlan(p); const z = zahlungsplanOf(p);
   if (!r.rows.length) return `<div class="card card-pad">${emptyState('🧾', 'Noch keine vergebenen Werkverträge. Sobald Gewerke vergeben + im Reiter „Termine" terminiert sind, erscheint hier der Bauherren-Zahlungsplan.')}</div>`;
   const wvRows = r.rows.map(x => `<tr>
       <td><span class="bkp-code">${esc(x.v.bkp || '')}</span> ${esc(x.v.gewerk)}<div class="muted" style="font-size:11px">${esc(x.v.firma || '—')}</div></td>
       <td class="num">${chf(x.betrag)}</td>
       <td>${x.ohneTermin ? '<span class="st amber">Termine fehlen</span>' : fmtDate(x.von) + ' – ' + fmtDate(x.bis)}</td>
     </tr>`).join('');
-  const monRows = r.monate.map(m => `<tr><td>${zpMonLabel(m.key)}</td><td class="num">${chf(m.betrag)}</td><td class="num muted">${chf(m.cum)}</td></tr>`).join('');
   return `
     <div class="card card-pad" style="max-width:840px">
       <h2 style="margin:0 0 8px;font-size:15px">Werkverträge (Grundlage)</h2>
@@ -7340,10 +7383,7 @@ function zpBauherrHtml(p) {
     </div>
     <div class="card card-pad" style="max-width:840px;margin-top:16px">
       <h2 style="margin:0 0 10px;font-size:15px">Zahlungen Bauherr – pro Monat</h2>
-      ${r.monate.length ? `<table class="grid"><thead><tr><th>Monat</th><th class="num">fällig</th><th class="num">kumuliert</th></tr></thead>
-        <tbody>${monRows}</tbody>
-        <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b>${chf(r.total)}</b></td><td></td></tr></tfoot></table>
-        <p class="muted" style="font-size:11.5px;margin:8px 0 0">Jeder Werkvertrag wird gleichmässig über seine Bauzeit (Start–Ende des Unternehmers) verteilt, pro Monat summiert. Grundlage: vergebene WV + genehmigte Nachträge.</p>` : '<p class="muted" style="font-size:12.5px;margin:0">Noch keine Bautermine gesetzt.</p>'}
+      <div id="zpMonate">${zpMonateTabelleHtml(r.monate, z, p.id, 'Noch keine Bautermine gesetzt.')}</div>
     </div>`;
 }
 function zpHonorarHtml(p, z) {
@@ -7403,7 +7443,7 @@ function zpHonorarHtml(p, z) {
     </div>
     <div class="card card-pad" style="max-width:900px;margin-top:16px">
       <h2 style="margin:0 0 10px;font-size:15px">Monatsrechnungen</h2>
-      <div id="zpMonate">${zahlungsplanMonateHtml(z)}</div>
+      <div id="zpMonate">${zahlungsplanMonateHtml(z, p.id)}</div>
     </div>`;
 }
 function zahlungsplanCalc(z) {
@@ -7427,7 +7467,7 @@ function zahlungsplanUpdate(pid) {
   c.rows.forEach((r, i) => { const el = $('#zp_b_' + i); if (el) el.textContent = chf(r.betrag); });
   const ts = $('#zp_total'); if (ts) ts.textContent = chf(c.total);
   const ps = $('#zp_pctsum'); if (ps) { ps.textContent = (Math.round(c.pctSum * 10) / 10) + '%'; ps.style.color = Math.abs(c.pctSum - 100) < 0.05 ? 'var(--s-green)' : 'var(--s-red)'; }
-  const mc = $('#zpMonate'); if (mc) mc.innerHTML = zahlungsplanMonateHtml(z);
+  const mc = $('#zpMonate'); if (mc) mc.innerHTML = zahlungsplanMonateHtml(z, pid);
 }
 // Jede SIA-Phase über ihre Monate verteilen (Phasenbeginn = Ende der Vorphase) → Monatsrechnungen aggregiert
 const ZP_MONATE = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
@@ -7460,13 +7500,31 @@ function zahlungsplanMonate(z) {
   let cum = 0;
   return { ok, monate: sorted.map(([k, b]) => { cum += b; return { key: k, betrag: b, cum }; }), total: cum };
 }
-function zahlungsplanMonateHtml(z) {
-  const r = zahlungsplanMonate(z);
-  if (!r.ok || !r.monate.length) return `<p class="muted" style="font-size:12.5px;margin:0">${z.honMode === 'flat' ? 'Zeitraum (von/bis) setzen – dann wird das Honorar gleichmässig über die Laufzeit verteilt.' : 'Zuerst Zeitraum setzen und „Phasen verteilen" klicken (oder Beginn/Ende je Phase eintragen) – dann erscheinen hier die Monatsrechnungen.'}</p>`;
-  const rows = r.monate.map(m => `<tr><td>${zpMonLabel(m.key)}</td><td class="num">${chf(m.betrag)}</td><td class="num muted">${chf(m.cum)}</td></tr>`).join('');
-  return `<table class="grid"><thead><tr><th>Monat</th><th class="num">Rechnung</th><th class="num">kumuliert</th></tr></thead><tbody>${rows}</tbody>
-    <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b>${chf(r.total)}</b></td><td></td></tr></tfoot></table>
-    <p class="muted" style="font-size:11.5px;margin:8px 0 0">${r.monate.length} Monatsrechnungen. ${z.honMode === 'flat' ? 'Honorar gleichmässig über die ganze Laufzeit verteilt.' : 'Jede Phase über ihren eigenen Beginn–Ende verteilt; überlappende Phasen summieren sich pro Monat.'}</p>`;
+// Manuelle Monats-Overrides auf eine Auto-Verteilung legen
+function zpApplyOverrides(baseMonate, z) {
+  const ov = z.overrides || {};
+  let cum = 0;
+  const monate = baseMonate.map(m => { const has = ov[m.key] !== undefined && ov[m.key] !== '' && ov[m.key] !== null; const betrag = has ? Number(ov[m.key]) : m.betrag; cum += betrag; return { key: m.key, betrag, auto: m.betrag, ueber: has, cum }; });
+  return { monate, total: cum, hatOverrides: Object.keys(ov).length > 0 };
+}
+// Gemeinsame Monats-Tabelle (editierbar, ausser gesperrt) für Honorar- UND Bauherr-Modus
+function zpMonateTabelleHtml(baseMonate, z, pid, hinweis) {
+  if (!baseMonate || !baseMonate.length) return `<p class="muted" style="font-size:12.5px;margin:0">${hinweis || 'Noch keine Monatsrechnungen.'}</p>`;
+  const r = zpApplyOverrides(baseMonate, z); const locked = z.gesperrt;
+  const rows = r.monate.map(m => `<tr>
+      <td>${zpMonLabel(m.key)}</td>
+      <td class="num">${locked ? chf(m.betrag) : `<input class="input zp-mon" data-key="${m.key}" data-pid="${pid}" type="number" value="${Math.round(m.betrag)}" style="width:118px;text-align:right;padding:3px 6px${m.ueber ? ';border-color:var(--s-amber);font-weight:700' : ''}">`}</td>
+      <td class="num muted">${chf(m.cum)}</td>
+      <td>${m.ueber ? '<span class="st amber" style="font-size:9px;padding:1px 6px">manuell</span>' : ''}</td>
+    </tr>`).join('');
+  return `<table class="grid"><thead><tr><th>Monat</th><th class="num">Rechnung</th><th class="num">kumuliert</th><th></th></tr></thead><tbody>${rows}</tbody>
+    <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b>${chf(r.total)}</b></td><td colspan="2"></td></tr></tfoot></table>
+    <p class="muted" style="font-size:11.5px;margin:8px 0 0">${r.monate.length} Monatsrechnungen.${locked ? ' 🔒 gesperrt – zum Ändern entsperren.' : ' Beträge einzeln überschreibbar.'}${r.hatOverrides && !locked ? ` <button type="button" data-act="zp-mon-reset" data-pid="${pid}" style="background:none;border:none;color:var(--brand);cursor:pointer;text-decoration:underline;font-size:11px">↺ alle auf Auto</button>` : ''}</p>`;
+}
+function zahlungsplanMonateHtml(z, pid) {
+  const base = zahlungsplanMonate(z);
+  if (!base.ok || !base.monate.length) return `<p class="muted" style="font-size:12.5px;margin:0">${z.honMode === 'flat' ? 'Zeitraum (von/bis) setzen – dann wird das Honorar gleichmässig über die Laufzeit verteilt.' : 'Zuerst Zeitraum setzen und „Phasen verteilen" klicken (oder Beginn/Ende je Phase eintragen) – dann erscheinen hier die Monatsrechnungen.'}</p>`;
+  return zpMonateTabelleHtml(base.monate, z, pid);
 }
 function zahlungsplanVerteilen(pid) {
   const p = findProjekt(pid); zahlungsplanRead(pid); const z = zahlungsplanOf(p);
@@ -7484,7 +7542,16 @@ function zahlungsplanVerteilen(pid) {
 function viewZahlungsplan(pid) {
   const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const z = zahlungsplanOf(p); const modus = z.modus || 'bauherr';
+  const list = zahlungsplaeneOf(p);
   const sub = modus === 'bauherr' ? 'Bauherr – Fälligkeiten aus Werkverträgen + Unternehmer-Terminen' : 'Unser Honorar – SIA-Leistungsprozente, Betrag aus Honorarrechner/Baukosten';
+  const versionsBar = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+      ${list.map(v => `<button class="btn xs ${v.id === p.zpAktiv ? '' : 'secondary'}" data-act="zp-version" data-pid="${p.id}" data-vid="${v.id}" type="button">${esc(v.name || 'Version')}${v.gesperrt ? ' 🔒' : ''}</button>`).join('')}
+      <button class="btn xs secondary" data-act="zp-version-neu" data-pid="${p.id}" type="button">+ Neue Version</button>
+      <span style="flex:1"></span>
+      <button class="btn xs secondary" data-act="zp-rename" data-pid="${p.id}" type="button" title="Version umbenennen">✎</button>
+      <button class="btn xs ${z.gesperrt ? '' : 'secondary'}" data-act="zp-lock" data-pid="${p.id}" type="button">${z.gesperrt ? '🔒 gesperrt – entsperren' : '🔓 abschliessen / sperren'}</button>
+    </div>`;
+  const lockBanner = z.gesperrt ? `<div class="demo-bar" style="background:#eef4ff;border-color:#bcd2f5;color:#1d3a6b">🔒 <b>Abgeschlossen &amp; gesperrt</b> – diese Version ist fix (z.B. vom Bauherrn unterschrieben). Zum Ändern oben „entsperren" oder „+ Neue Version" als Revision anlegen.</div>` : '';
   const head = `
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Zahlungsplan</div>
     <div class="detail-head">
@@ -7493,12 +7560,18 @@ function viewZahlungsplan(pid) {
     </div>
     ${projektTabs(p, 'zahlungsplan')}
     ${demoBanner('zahlungsplan')}
+    ${versionsBar}
+    ${lockBanner}
     <div style="display:flex;gap:6px;margin-bottom:14px">
       <button class="btn xs ${modus === 'bauherr' ? '' : 'secondary'}" data-act="zp-modus" data-pid="${p.id}" data-modus="bauherr" type="button">Bauherr (Werkverträge)</button>
       <button class="btn xs ${modus === 'honorar' ? '' : 'secondary'}" data-act="zp-modus" data-pid="${p.id}" data-modus="honorar" type="button">Unser Honorar (SIA)</button>
     </div>`;
   render(head + (modus === 'bauherr' ? zpBauherrHtml(p) : zpHonorarHtml(p, z)));
-  if (modus === 'honorar') $$('.zp-in').forEach(el => el.addEventListener('input', () => zahlungsplanUpdate(pid)));
+  if (modus === 'honorar' && !z.gesperrt) $$('.zp-in').forEach(el => el.addEventListener('input', () => zahlungsplanUpdate(pid)));
+  if (z.gesperrt) {
+    $$('.zp-in').forEach(el => el.disabled = true);
+    $$('[data-act^="zp-"]').forEach(b => { if (!['zp-version', 'zp-version-neu', 'zp-lock', 'zp-rename'].includes(b.dataset.act)) b.disabled = true; });
+  }
 }
 function pdfZahlungsplan(pid) {
   const p = findProjekt(pid); if (!p) return;
@@ -8990,6 +9063,11 @@ document.addEventListener('click', e => {
     case 'zp-verteilen': zahlungsplanVerteilen(pid); break;
     case 'zp-zeitraum':  { const p2 = findProjekt(pid); zahlungsplanRead(pid); const zr = zahlungsplanZeitraum(p2); const z2 = zahlungsplanOf(p2); z2.von = zr.von; z2.bis = zr.bis; save(); viewZahlungsplan(pid); toast('Zeitraum übernommen'); break; }
     case 'zp-honmode':   { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).honMode = act.dataset.mode; save(); viewZahlungsplan(pid); break; }
+    case 'zp-version':     zpVersion(pid, act.dataset.vid); break;
+    case 'zp-version-neu': zpVersionNeu(pid); break;
+    case 'zp-lock':        zpLock(pid); break;
+    case 'zp-rename':      zpRename(pid); break;
+    case 'zp-mon-reset':   zpMonReset(pid); break;
     case 'zp-modus':     { const p2 = findProjekt(pid); zahlungsplanOf(p2).modus = act.dataset.modus; save(); viewZahlungsplan(pid); break; }
     case 'zp-baukosten': { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).betrag = Math.round(baukostenTotal(p2)); save(); viewZahlungsplan(pid); break; }
     case 'zp-honorar':   { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).betrag = p2.honorar ? Math.round(computeHonorar(p2.honorar).H) : 0; save(); viewZahlungsplan(pid); break; }
@@ -9073,6 +9151,8 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal()
 document.addEventListener('mousemove', onGanttMove);
 document.addEventListener('mouseup', onGanttUp);
 document.addEventListener('contextmenu', onGlobalContext);
+// Manuelle Monatsbeträge im Zahlungsplan (delegiert, überlebt Teil-Rerender)
+document.addEventListener('change', e => { const el = e.target.closest && e.target.closest('.zp-mon'); if (el) setMonatOverride(el.dataset.pid, el.dataset.key, el.value); });
 
 // Sidebar-Footer-Buttons
 window.addEventListener('DOMContentLoaded', boot);

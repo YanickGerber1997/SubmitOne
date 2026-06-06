@@ -759,6 +759,9 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-set:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
 
 .g-row { height: 38px; position: relative; border-bottom: 1px solid var(--border); z-index: 1; }
+.g-date { position: absolute; top: 50%; transform: translateY(-50%); font-size: 9.5px; font-variant-numeric: tabular-nums; color: var(--text-soft); white-space: nowrap; pointer-events: none; z-index: 2; }
+.g-date.l { transform: translate(-100%, -50%); padding-right: 5px; }
+.g-date.r { padding-left: 5px; }
 .g-bar {
   position: absolute; top: 8px; height: 22px; border-radius: 6px; min-width: 3px;
   display: flex; align-items: center; font-size: 11px; font-weight: 600; color: #fff;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v167';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v168';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1716,6 +1716,12 @@ let ganttScale = 1;        // stufenloser Breiten-Faktor auf pxPerDay
 let ganttChain = true;     // Verkettung: Nachfolger automatisch nachführen
 let ganttWorkdays = false; // Abstände/Verkettung in Arbeitstagen (Wochenende/Feiertage überspringen)
 let ganttSide = { gewerk: true, firma: false, person: false, natel: false }; // einblendbare Info-Spalte (BKP-Nr. immer)
+let ganttDates = 'off';   // Datum am Balken: 'off' | 'full' (26.06.26) | 'short' (26.06.)
+function gdFmt(iso) { if (!iso || ganttDates === 'off') return ''; const d = dISO(iso); const dd = String(d.getDate()).padStart(2, '0'), mm = String(d.getMonth() + 1).padStart(2, '0'); return ganttDates === 'short' ? `${dd}.${mm}.` : `${dd}.${mm}.${String(d.getFullYear()).slice(2)}`; }
+function gdLabels(startIso, endIso, x0, x1) {
+  if (ganttDates === 'off') return '';
+  return `<span class="g-date l" style="left:${x0}px">${gdFmt(startIso)}</span><span class="g-date r" style="left:${x1}px">${gdFmt(endIso)}</span>`;
+}
 let ganttPendingScroll = null;  // {left, y} – nach In-Place-Rerender wiederherstellen
 // Gantt neu zeichnen ohne Scroll-Sprung (Seite + horizontaler Scroll bleiben)
 function rerenderGantt(pid) {
@@ -1751,6 +1757,8 @@ function viewTermine(id) {
 
   const sortCtrl = `<div class="g-zoom" title="Sortierung"><button class="${ganttSort === 'bkp' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="bkp">BKP</button><button class="${ganttSort === 'start' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="start">Start</button></div>`;
   const infoCtrl = `<div class="g-zoom" title="Info-Spalte einblenden (BKP-Nr. immer sichtbar)">${[['gewerk', 'Gewerk'], ['firma', 'Firma'], ['person', 'Person'], ['natel', 'Natel']].map(([key, lbl]) => `<button class="${ganttSide[key] ? 'active' : ''}" data-act="gantt-side" data-pid="${p.id}" data-kind="${key}">${lbl}</button>`).join('')}</div>`;
+  const dateLbl = ganttDates === 'off' ? 'Datum aus' : (ganttDates === 'full' ? 'Datum 26.06.26' : 'Datum 26.06.');
+  const dateCtrl = `<button class="btn sm ${ganttDates === 'off' ? 'secondary' : ''}" data-act="gantt-dates" data-pid="${p.id}" title="Start-/Enddatum an den Balken einblenden (umschalten: aus → mit Jahr → ohne Jahr)">📅 ${dateLbl}</button>`;
   const zoomCtrl = `<div class="g-zoom">
     ${Object.keys(ZOOM).map(z => `<button class="${ganttZoom === z ? 'active' : ''}" data-act="gantt-zoom" data-pid="${p.id}" data-kind="${z}">${ZOOM[z].label}</button>`).join('')}
   </div>`;
@@ -1772,6 +1780,7 @@ function viewTermine(id) {
       <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
       <button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button>
       <button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button>
+      ${dateCtrl}
       <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" style="margin-left:auto">⬇ Drucken / PDF</button>
     </div>
   `;
@@ -1927,7 +1936,7 @@ function viewTermine(id) {
         const bl = leftPx(bsISO), bw = Math.max(leftPx(v.bauStart) - bl, 3);
         bestellBar = `<div class="g-bestell" data-pid="${p.id}" data-vid="${v.id}" data-ctx="gantt" data-right="${leftPx(v.bauStart)}" style="left:${bl}px;width:${bw}px" title="Bestellfrist ${v.bestellfrist} Tage – bestellen bis ${fmtDate(bsISO)}, Einbau ab ${fmtDate(v.bauStart)} · ziehen = Vorlauf ändern · Klick = bearbeiten · Rechtsklick = Menü"><span>🛒 ${v.bestellfrist}T</span></div>`;
       }
-      barRows += `<div class="g-row">${bestellBar}<div class="g-bar${light}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
+      barRows += `<div class="g-row">${bestellBar}${gdLabels(v.bauStart, v.bauEnde, leftPx(v.bauStart), leftPx(v.bauStart) + widthPx(v.bauStart, v.bauEnde))}<div class="g-bar${light}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
         title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)} · ${STATUS_BY_KEY[v.status]?.label || ''}"
         data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
         <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span><span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
@@ -1940,7 +1949,7 @@ function viewTermine(id) {
       barMeta[key] = { row: rowIdx, left: leftPx(o.start), width: widthPx(o.start, o.ende) };
       sideRows += `<div class="g-side-row sub"><span class="gewerk" style="font-weight:500">${esc(o.titel)}</span>
         <button class="x-btn" title="Vorgang löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button></div>`;
-      barRows += `<div class="g-row"><div class="g-bar sub${light}" style="left:${leftPx(o.start)}px;width:${widthPx(o.start, o.ende)}px;background:${colHex}"
+      barRows += `<div class="g-row">${gdLabels(o.start, o.ende, leftPx(o.start), leftPx(o.start) + widthPx(o.start, o.ende))}<div class="g-bar sub${light}" style="left:${leftPx(o.start)}px;width:${widthPx(o.start, o.ende)}px;background:${colHex}"
         title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
         data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
         <span class="g-h l"></span><span class="g-lbl">${esc(o.titel)}</span><span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div></div>`;
@@ -10072,6 +10081,7 @@ document.addEventListener('click', e => {
       rerenderGantt(pid); break;
     case 'gantt-sort':   ganttSort = kind; rerenderGantt(pid); break;
     case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; rerenderGantt(pid); break;
+    case 'gantt-dates':  ganttDates = ganttDates === 'off' ? 'full' : (ganttDates === 'full' ? 'short' : 'off'); rerenderGantt(pid); break;
     case 'new-vorgang':  actNewVorgang(pid, vid); break;
     case 'save-vorgang': saveVorgang(pid, vid); break;
     case 'rm-vorgang':   removeVorgang(pid, vid, oid); break;

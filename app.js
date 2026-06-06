@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v93';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v94';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7113,12 +7113,19 @@ function viewUwert(pid) {
    Zahlungsplan (Premium): Betrag × SIA-Leistungs-% je Phase,
    Fälligkeiten aus dem Terminprogramm-Zeitraum verteilt.
    ============================================================ */
+// Sinnvoller Honorar-Richtwert: 1) früh abgegebenes Honorar (Schätzung/Finanzierung), 2) sonst SIA-Honorarberechnung
+function honorarRichtwert(p) {
+  const manuell = Math.round(Number(finanzData(p).honorare) || 0);
+  if (manuell > 0) return manuell;
+  if (p.honorar) { const H = computeHonorar(p.honorar).H; if (H > 0) return Math.round(H); }
+  return 0;
+}
 function zahlungsplanOf(p) {
   if (!p.zahlungsplan) p.zahlungsplan = {};
   const z = p.zahlungsplan;
   if (z.modus === undefined) z.modus = 'bauherr';   // 'bauherr' (Werkverträge) | 'honorar' (SIA)
   if (!Array.isArray(z.phasen) || !z.phasen.length) z.phasen = HONORAR_PHASEN.map(ph => ({ key: ph.key, label: ph.label, pct: ph.pct, datum: '' }));
-  if (z.betrag === undefined || z.betrag === null) z.betrag = Math.round(baukostenTotal(p)) || 0;
+  if (z.betrag === undefined || z.betrag === null) z.betrag = honorarRichtwert(p);   // Honorar, NICHT die vollen Baukosten
   if (z.von === undefined) z.von = p.baustart || p.start || '';
   if (z.bis === undefined) z.bis = p.ende || '';
   return z;
@@ -7169,6 +7176,9 @@ function zpBauherrHtml(p) {
 function zpHonorarHtml(p, z) {
   const c = zahlungsplanCalc(z);
   const honT = p.honorar ? Math.round(computeHonorar(p.honorar).H) : 0;
+  const offerte = Math.round(Number(finanzData(p).honorare) || 0);
+  const lnk = (act, label) => `<button type="button" data-act="${act}" data-pid="${p.id}" style="background:none;border:none;color:var(--brand);cursor:pointer;padding:0;font-size:11px;text-decoration:underline">${label}</button>`;
+  const quellen = [offerte ? lnk('zp-honofferte', `aus Schätzung/Offerte (${chf(offerte)})`) : '', honT ? lnk('zp-honorar', `aus Honorarrechner (${chf(honT)})`) : ''].filter(Boolean).join(' · ');
   const rows = c.rows.map((r, i) => `<tr>
       <td>${esc(r.label)}</td>
       <td class="num"><input class="input zp-in" id="zp_pct_${i}" type="number" step="0.1" value="${r.pct}" style="width:74px;text-align:right;padding:4px 6px"></td>
@@ -7180,7 +7190,7 @@ function zpHonorarHtml(p, z) {
       <div class="form-row">
         <label class="field">Honorar-Betrag (CHF)
           <input class="input zp-in" id="zp_betrag" type="number" value="${z.betrag}">
-          <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Unser Honorar · ${honT ? `<button type="button" data-act="zp-honorar" data-pid="${p.id}" style="background:none;border:none;color:var(--brand);cursor:pointer;padding:0;font-size:11px;text-decoration:underline">aus Honorarrechner (${chf(honT)})</button> · ` : ''}<button type="button" data-act="zp-baukosten" data-pid="${p.id}" style="background:none;border:none;color:var(--brand);cursor:pointer;padding:0;font-size:11px;text-decoration:underline">aus Baukosten (${chf(baukostenTotal(p))})</button></span></label>
+          <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Unser Honorar${quellen ? ' · ' + quellen : ' · (bei der Schätzung abgeben oder im Honorarrechner berechnen)'}</span></label>
       </div>
       <div class="form-row" style="margin-top:6px">
         <label class="field">Zeitraum von <input class="input zp-in" id="zp_von" type="date" value="${esc(z.von || '')}"></label>
@@ -8736,6 +8746,7 @@ document.addEventListener('click', e => {
     case 'zp-modus':     { const p2 = findProjekt(pid); zahlungsplanOf(p2).modus = act.dataset.modus; save(); viewZahlungsplan(pid); break; }
     case 'zp-baukosten': { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).betrag = Math.round(baukostenTotal(p2)); save(); viewZahlungsplan(pid); break; }
     case 'zp-honorar':   { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).betrag = p2.honorar ? Math.round(computeHonorar(p2.honorar).H) : 0; save(); viewZahlungsplan(pid); break; }
+    case 'zp-honofferte': { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).betrag = Math.round(Number(finanzData(p2).honorare) || 0); save(); viewZahlungsplan(pid); break; }
     case 'uw-pick':      uwertPick(pid, act.dataset.id); break;
     case 'uw-add':       uwertAddSchicht(pid); break;
     case 'uw-rm':        uwertRmSchicht(pid, Number(act.dataset.idx)); break;
@@ -8856,6 +8867,7 @@ function demoData() {
       id: 'p_sonnen', name: 'Neubau MFH Sonnenhof', ort: 'Luzern', bauherr: 'Sonnenhof Immobilien AG',
       projektleiter: 'M. Bühler', phase: 'vergabe', start: '2026-02-01', ende: '2027-08-30',
       baustart: '2026-03-01', bezug: '2027-07-15',
+      finanz: { land: 0, honorare: 380000, finanzierung: 0 },
       vergaben: [
         { id: 'v1', bkp: '112', gewerk: 'Abbrucharbeiten', status: 'abgeschlossen', firma: 'Demowald Rückbau GmbH', betrag: 84000, schaetzung: 90000, frist: '2026-03-15',
           bauStart: '2026-03-01', bauEnde: '2026-03-25',

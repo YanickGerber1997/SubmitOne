@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v117';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v118';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2717,6 +2717,7 @@ function openPrintDoc(title, subtitleHtml, inner, opts) {
     .muted{color:#9aa4b1;}
     .conf{display:inline-block;background:#fbe9ea;color:#a01b2b;border:1px solid #e7b3ba;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;}
     .ft{margin-top:22px;border-top:1px solid #e7ebf1;padding-top:8px;color:#9aa4b1;font-size:9.5px;display:flex;justify-content:space-between;}
+    table.t thead{display:table-header-group;} table.t tr{page-break-inside:avoid;}
     @media print{.page{padding:0;}${pg}}`;
   // „Modern" (Premium): edel & ruhig – Serifen-Typografie, Haarlinien, viel Weissraum, dezenter Akzentstreifen
   const styleModern = `
@@ -2740,6 +2741,7 @@ function openPrintDoc(title, subtitleHtml, inner, opts) {
     .muted{color:#b4bac1;}
     .conf{display:inline-block;border:1px solid #7c1d2c;color:#7c1d2c;border-radius:2px;padding:2px 10px;font-size:8.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;}
     .ft{margin-top:36px;border-top:1px solid #e6e9ed;padding-top:11px;color:#aab2bd;font-size:8.5px;display:flex;justify-content:space-between;letter-spacing:.5px;text-transform:uppercase;}
+    table.t thead{display:table-header-group;} table.t tr{page-break-inside:avoid;}
     @media print{${pg}}`;
   const footer = design === 'modern'
     ? `<div class="ft"><span><b>${esc(b.firma || '')}</b>${b.email ? ' · ' + esc(b.email) : ''}</span><span>${fmtDate(todayIso())}</span></div>`
@@ -7791,23 +7793,14 @@ function pdfBaukosten(pid, mode) {
       gtot[g] = sub;
       lines.push({ html: sumRow('Total ' + (BKP_GRUPPEN[g] || g), sub) });
     });
-    const perPage = 18; const carry = {}; base.forEach(c => carry[c] = 0); let count = 0, page = 1;
-    let out = `<table class="t" style="font-size:10px"><thead>${THEAD}</thead><tbody>`;
-    lines.forEach(ln => {
-      if (count >= perPage) {
-        out += sumRow('Übertrag', carry, true) + `</tbody></table><div style="page-break-after:always"></div><table class="t" style="font-size:10px"><thead>${THEAD}</thead><tbody>`;
-        page++; count = 0; out += sumRow('Übertrag von Seite ' + (page - 1), carry, true);
-      }
-      out += ln.html; if (ln.vals) base.forEach(c => carry[c] += ln.vals[c] || 0); count++;
-    });
-    out += sumRow('Total Baukosten', tot, false, true) + `</tbody></table>`;
+    const out = `<table class="t" style="font-size:10px"><thead>${THEAD}</thead><tbody>${lines.map(l => l.html).join('')}${sumRow('Total Baukosten', tot, false, true)}</tbody></table>`;
     // Kostenübersicht (Zusammenzug)
     const zRow = (lbl, S) => `<tr><td>${esc(lbl)}</td><td class="num">${f2(S.kv)}</td><td class="num">${f2(S.rev)}</td>${diffTd(S.rev - S.kv)}<td class="num">${f2(S.wv)}</td><td class="num">${f2(S.bezahlt)}</td><td class="num"><b>${f2(S.prognose)}</b></td>${diffTd(S.prognose - S.kv)}</tr>`;
     const kuRows = keys.map(g => zRow(g + ' ' + (BKP_GRUPPEN[g] || 'Übrige'), gtot[g])).join('');
     const ku = `<div class="gw" style="margin-top:22px">Kostenübersicht</div>
       <table class="t" style="font-size:10.5px"><thead><tr><th>BKP / Hauptgruppe</th><th class="num">KV</th><th class="num">KV rev.</th><th class="num">±KV→rev</th><th class="num">WV</th><th class="num">bezahlt</th><th class="num">Prognose</th><th class="num">±Prog</th></tr></thead>
         <tbody>${kuRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total Baukosten</b></td><td class="num"><b>${f2(tot.kv)}</b></td><td class="num"><b>${f2(tot.rev)}</b></td>${diffTd(tot.rev - tot.kv)}<td class="num"><b>${f2(tot.wv)}</b></td><td class="num"><b>${f2(tot.bezahlt)}</b></td><td class="num"><b>${f2(tot.prognose)}</b></td>${diffTd(tot.prognose - tot.kv)}</tbody></table>`;
-    const inner = out + ku + `<p class="muted" style="margin-top:10px;font-size:8.5px">KV = Kostenschätzung · KV rev. = günstigste Offerte/Stand · ±KV→rev = Über-/Unterschreitung KV zu KV rev. · WV = Werkvertrag · Zahlungen = bezahlte Rechnungen (Datum / Betrag) · ±Prog = Prognose gegen KV. Grün = höher, rot = tiefer. „Übertrag" = laufende Summe je Seite.</p>`;
+    const inner = out + ku + `<p class="muted" style="margin-top:10px;font-size:8.5px">KV = Kostenschätzung · KV rev. = günstigste Offerte/Stand · ±KV→rev = Über-/Unterschreitung KV zu KV rev. · WV = Werkvertrag · Zahlungen = bezahlte Rechnungen (Datum / Betrag) · ±Prog = Prognose gegen KV. Grün = höher, rot = tiefer. Spaltenkopf wiederholt sich auf jeder Seite; Zwischentotale je Hauptgruppe.</p>`;
     openPrintDoc('Baukostenübersicht', `Objekt: ${esc(p.name)}, ${esc(p.ort)}&nbsp;&nbsp;·&nbsp;&nbsp;akt. ${fmtDate(todayIso())}&nbsp;&nbsp;·&nbsp;&nbsp;Preise inkl. MwSt.`, inner, { landscape: true });
     return;
   }
@@ -7830,22 +7823,12 @@ function pdfBaukosten(pid, mode) {
     lines.push({ html: `<tr style="background:#eef1f5"><td></td><td><b>Zwischentotal ${esc(BKP_GRUPPEN[g] || g)}</b></td>${cols.map(c => `<td class="num">${c === 'prognose' ? '<b>' + chf(sub[c]) + '</b>' : chf(sub[c])}</td>`).join('')}</tr>` });
   });
   const totalRow = `<tr style="border-top:2px solid #7c1d2c"><td></td><td><b>Total Baukosten</b></td>${cols.map(c => `<td class="num"><b>${chf(teil[c])}</b></td>`).join('')}</tr>`;
-  const perPage = 26; const carry = {}; cols.forEach(c => carry[c] = 0); let count = 0, page = 1;
-  const ueRow = label => `<tr style="background:#f3eedd;color:#6b5a2a"><td></td><td><i>${label}</i></td>${cols.map(c => `<td class="num"><i>${chf(carry[c])}</i></td>`).join('')}</tr>`;
-  let out = `<table class="t" style="font-size:11px"><thead>${THEAD}</thead><tbody>`;
-  lines.forEach(ln => {
-    if (count >= perPage) {
-      out += ueRow('Übertrag') + `</tbody></table><div style="page-break-after:always"></div><table class="t" style="font-size:11px"><thead>${THEAD}</thead><tbody>`;
-      page++; count = 0; out += ueRow('Übertrag von Seite ' + (page - 1));
-    }
-    out += ln.html; if (ln.vals) cols.forEach(c => carry[c] += ln.vals[c] || 0); count++;
-  });
-  out += totalRow + `</tbody></table>`;
+  const out = `<table class="t" style="font-size:11px"><thead>${THEAD}</thead><tbody>${lines.map(l => l.html).join('')}${totalRow}</tbody></table>`;
   const zRows = keys.map(g => `<tr><td>BKP ${esc(g)} – ${esc(BKP_GRUPPEN[g] || 'Übrige')}</td><td class="num">${chf(gtot[g].kv)}</td><td class="num">${chf(gtot[g].prognose)}</td><td class="num">${chf(gtot[g].bezahlt)}</td></tr>`).join('');
   const zusammenzug = `<div class="gw" style="margin-top:18px">Kostenübersicht (Zusammenzug nach Hauptgruppe)</div>
     <table class="t"><thead><tr><th>Hauptgruppe</th><th class="num">Kostenschätzung</th><th class="num">Prognose</th><th class="num">Bezahlt</th></tr></thead>
       <tbody>${zRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total</b></td><td class="num"><b>${chf(teil.kv)}</b></td><td class="num"><b>${chf(teil.prognose)}</b></td><td class="num"><b>${chf(teil.bezahlt)}</b></td></tr></tbody></table>`;
-  openPrintDoc('Baukostenübersicht', `Objekt: ${esc(p.name)}, ${esc(p.ort)} · akt. ${fmtDate(todayIso())}`, out + zusammenzug + `<p class="muted" style="margin-top:10px;font-size:9.5px">KV = Kostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag · NT = Nachträge · Prognose = WV + NT + Rapporte. „Übertrag" = laufende Summe je Seite.</p>`, { landscape: true });
+  openPrintDoc('Baukostenübersicht', `Objekt: ${esc(p.name)}, ${esc(p.ort)} · akt. ${fmtDate(todayIso())}`, out + zusammenzug + `<p class="muted" style="margin-top:10px;font-size:9.5px">KV = Kostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag · NT = Nachträge · Prognose = WV + NT + Rapporte. Spaltenkopf wiederholt sich auf jeder Seite; Zwischentotale je Hauptgruppe.</p>`, { landscape: true });
 }
 
 // Bauprogramm / Gantt als saubere Monats-Tabelle (Querformat)
@@ -9497,6 +9480,54 @@ function demoData() {
         { id: 'vc3', bkp: '261', gewerk: 'Personenlift (Option)', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 62000, frist: '2026-08-25',
           bauStart: '2027-01-15', bauEnde: '2027-03-31', option: 'op_lift',
           eingeladene: einl(['Lift & Co. AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
+        // --- Restliche BKP-Positionen (Vollständigkeit nach Standard-Gliederung) ---
+        { id: 's104', bkp: '104', gewerk: 'Baugespann / Schnurgerüst', status: 'abgeschlossen', firma: 'Geomatik Zentral AG', betrag: 2400, schaetzung: 2500, frist: '2026-02-20', bauStart: '2026-02-20', bauEnde: '2026-02-25',
+          eingeladene: einl(['Geomatik Zentral AG', 2400]), nachtraege: [], rapporte: [], vorgaenge: [],
+          rechnungen: [{ id: uid('rg'), text: 'Schlussrechnung', nr: 'RG-2026-003', betrag: 2400, datum: '2026-03-01', bezahlt: true }] },
+        { id: 's121', bkp: '121', gewerk: 'Sicherung vorhandener Anlagen', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 8000, frist: '2026-07-01', bauStart: '2026-03-01', bauEnde: '2026-03-20',
+          eingeladene: einl(['Tiefbau Zentral AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's191', bkp: '191', gewerk: 'Architekt – Vor-/Bauprojekt', status: 'abgeschlossen', firma: 'P. Hefti Bauberatung GmbH', betrag: 38000, schaetzung: 38000, frist: '2026-01-15', bauStart: '2026-01-05', bauEnde: '2026-04-30',
+          eingeladene: einl(['P. Hefti Bauberatung GmbH', 38000]), nachtraege: [], rapporte: [], vorgaenge: [],
+          rechnungen: [{ id: uid('rg'), text: 'Honorar Vorprojekt', nr: 'HON-01', betrag: 38000, datum: '2026-03-05', bezahlt: true }] },
+        { id: 's199', bkp: '199', gewerk: 'Übriges Vorbereitung', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 5000, frist: '2026-07-01', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's2111', bkp: '211.1', gewerk: 'Gerüstungen', status: 'vergeben', firma: 'Gerüstbau Meier AG', betrag: 95000, schaetzung: 100000, frist: '2026-06-12', bauStart: '2026-06-15', bauEnde: '2026-12-15',
+          eingeladene: einl(['Gerüstbau Meier AG', 95000], ['Allround Gerüst GmbH', 102000]), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's214', bkp: '214', gewerk: 'Holzbau', status: 'offerten', firma: '', betrag: 0, schaetzung: 320000, frist: '2026-06-28', bauStart: '2026-11-01', bauEnde: '2027-01-31',
+          eingeladene: einl(['Holzbau Suter AG', 312000], ['Timbertech GmbH', 331000]), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's215', bkp: '215', gewerk: 'Ingenieur Holzbau', status: 'vergeben', firma: 'Holzplan Ingenieure', betrag: 48000, schaetzung: 50000, frist: '2026-05-20', bauStart: '2026-05-01', bauEnde: '2027-01-31',
+          eingeladene: einl(['Holzplan Ingenieure', 48000]), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's2216', bkp: '221.6', gewerk: 'Türen + Tore', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 95000, frist: '2026-07-20', bauStart: '2026-12-01', bauEnde: '2027-02-28',
+          eingeladene: einl(['Türenwerk AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's225', bkp: '225', gewerk: 'Dichtungen / Dämmungen', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 60000, frist: '2026-07-25', bauStart: '2026-10-01', bauEnde: '2026-12-31',
+          eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's226', bkp: '226', gewerk: 'Fassadendämmung verputzt', status: 'offerten', firma: '', betrag: 0, schaetzung: 280000, frist: '2026-07-15', bauStart: '2027-01-05', bauEnde: '2027-04-30',
+          eingeladene: einl(['Fassaden Profi AG', 272000], ['IsolierBau GmbH', 289000]), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's228', bkp: '228', gewerk: 'Sonnen- und Wetterschutz (Storen)', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 85000, frist: '2026-08-01', bauStart: '2027-03-01', bauEnde: '2027-04-30',
+          eingeladene: einl(['Storen Tech AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's237', bkp: '237', gewerk: 'PV-Anlage (Dach)', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 95000, frist: '2026-08-05', bauStart: '2027-02-01', bauEnde: '2027-03-15',
+          eingeladene: einl(['Elektro Meyer AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's272', bkp: '272', gewerk: 'Metallbauarbeiten (Geländer)', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 75000, frist: '2026-08-10', bauStart: '2027-02-01', bauEnde: '2027-04-15',
+          eingeladene: einl(['Metallbau Frei AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's2816', bkp: '281.6', gewerk: 'Wand- und Bodenbeläge (Platten)', status: 'offerten', firma: '', betrag: 0, schaetzung: 145000, frist: '2026-07-30', bauStart: '2027-03-01', bauEnde: '2027-05-15',
+          eingeladene: einl(['Plattenwelt AG', 141000], ['Keramik Plus GmbH', 149000]), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's287', bkp: '287', gewerk: 'Baureinigung', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 22000, frist: '2026-08-15', bauStart: '2027-05-15', bauEnde: '2027-06-15',
+          eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's289', bkp: '289', gewerk: 'Baubetriebskosten', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 35000, frist: '2026-06-01', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's291', bkp: '291', gewerk: 'Honorar Architekt – Ausführung', status: 'vergeben', firma: 'P. Hefti Bauberatung GmbH', betrag: 342000, schaetzung: 342000, frist: '2026-05-01', bauStart: '2026-03-01', bauEnde: '2027-08-30',
+          eingeladene: einl(['P. Hefti Bauberatung GmbH', 342000]), nachtraege: [], rapporte: [], vorgaenge: [],
+          rechnungen: [{ id: uid('rg'), text: 'Honorar Akonto 1', nr: 'HON-02', betrag: 60000, datum: '2026-06-30', bezahlt: true }, { id: uid('rg'), text: 'Honorar Akonto 2', nr: 'HON-03', betrag: 45000, datum: '2026-10-31', bezahlt: false }] },
+        { id: 's292', bkp: '292', gewerk: 'Bauingenieur', status: 'vergeben', firma: 'Statik & Partner AG', betrag: 55000, schaetzung: 60000, frist: '2026-04-20', bauStart: '2026-03-01', bauEnde: '2026-12-31',
+          eingeladene: einl(['Statik & Partner AG', 55000]), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's296', bkp: '296', gewerk: 'Schadstoff-Untersuchung', status: 'abgeschlossen', firma: 'Bautox AG', betrag: 4500, schaetzung: 4500, frist: '2026-02-10', bauStart: '2026-02-10', bauEnde: '2026-02-20',
+          eingeladene: einl(['Bautox AG', 4500]), nachtraege: [], rapporte: [], vorgaenge: [],
+          rechnungen: [{ id: uid('rg'), text: 'Gutachten', nr: 'BX-01', betrag: 4500, datum: '2026-02-25', bezahlt: true }] },
+        { id: 's299', bkp: '299', gewerk: 'Reserve', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 120000, frist: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's421', bkp: '421', gewerk: 'Gärtner- / Umgebungsarbeiten', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 160000, frist: '2026-09-01', bauStart: '2027-04-01', bauEnde: '2027-06-30',
+          eingeladene: einl(['GartenBau AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 's511', bkp: '511', gewerk: 'Bewilligungen / Gebühren', status: 'abgeschlossen', firma: 'Gemeinde / Geomatik', betrag: 6500, schaetzung: 6000, frist: '2026-01-30', bauStart: '2026-01-10', bauEnde: '2026-02-15',
+          eingeladene: einl(['Gemeinde / Geomatik', 6500]), nachtraege: [], rapporte: [], vorgaenge: [],
+          rechnungen: [{ id: uid('rg'), text: 'Baubewilligung + Gebühren', nr: 'GEB-01', betrag: 6500, datum: '2026-02-20', bezahlt: true }] },
+        { id: 's531', bkp: '531', gewerk: 'Bauzeit-/Bauwesenversicherung', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 12000, frist: '2026-05-01', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] },
       ],
       ganttLinks: [
         { id: uid('gl'), from: 'v1', to: 'v2', dx: null },

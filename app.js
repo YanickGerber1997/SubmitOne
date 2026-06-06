@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v139';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v140';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -5215,7 +5215,7 @@ function onLogoPick(input) {
 const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 const DOW = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const TERMIN_KATEGORIEN = ['Besprechung', 'Bauherrensitzung', 'Bausitzung', 'Baustellenbegehung', 'Abgabe / Frist', 'Bemusterung', 'Sonstiges'];
-let calY = null, calM = null, calView = 'monat', calRefIso = null;
+let calY = null, calM = null, calView = 'monat', calRefIso = null, kalMode = 'kalender';
 const CAL_SH = 5, CAL_EH = 20, CAL_HH = 56;   // Tag/Woche: Stunden-Raster (Zeilenhöhe px)
 
 function weekDates(iso) {
@@ -5341,11 +5341,20 @@ function viewKalender(pid) {
   const vb = (v, t2) => `<button class="btn sm ${calView === v ? '' : 'secondary'}" data-act="kal-view" data-pid="${p.id}" data-kind="${v}">${t2}</button>`;
   const addDate = calView === 'monat' ? todayI : calRefIso;
 
-  const upcoming = events.filter(e => e.datum >= todayI).sort((a, b) => a.datum.localeCompare(b.datum) || (a.zeit || '').localeCompare(b.zeit || '')).slice(0, 12);
-  const agenda = upcoming.length ? upcoming.map(e => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
-    <i class="cal-dot ${e.color}"></i>
-    <span class="muted" style="min-width:118px;font-size:12.5px">${fmtDate(e.datum)}${e.zeit ? ' · ' + esc(e.zeit) : ''}</span>
-    <span style="font-size:13px">${esc(e.titel)}</span></div>`).join('') : '<p class="muted" style="margin:0">Keine kommenden Termine.</p>';
+  // --- Agenda (gruppiert nach Tag, relative Angaben, überfällige separat) ---
+  const cut = (() => { const d = today(); d.setDate(d.getDate() - 30); return isoOf(d); })();
+  const byDT = (a, b) => a.datum.localeCompare(b.datum) || (a.zeit || '').localeCompare(b.zeit || '');
+  const fut = events.filter(e => e.datum >= todayI).sort(byDT);
+  const past = events.filter(e => e.datum < todayI && e.datum >= cut).sort((a, b) => byDT(b, a));
+  const agRow = e => `<div class="ag-row${e.manual ? ' clickable' : ''}"${e.manual ? ` data-act="kal-edit" data-ctx="termin" data-pid="${p.id}" data-tid="${e.id}"` : ''} style="display:flex;gap:10px;align-items:baseline;padding:6px 2px;border-bottom:1px solid var(--border)">
+      <span class="muted" style="min-width:60px;text-align:right;font-size:12px">${e.zeit ? esc(e.zeit) : 'ganzt.'}</span>
+      <i class="cal-dot ${e.color}" style="position:relative;top:3px"></i>
+      <span style="flex:1;font-size:13px">${esc(e.titel)}${e.kategorie ? ` <span class="tag" style="font-size:9.5px">${esc(e.kategorie)}</span>` : ''}</span></div>`;
+  const dayHead = iso => { const tage = Math.round((dISO(iso) - today()) / 86400000); const wd = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][dISO(iso).getDay()]; const rel = iso === todayI ? 'heute' : (tage === 1 ? 'morgen' : (tage > 1 ? `in ${tage} Tagen` : '')); return `${wd} · ${fmtDate(iso)}${rel ? ` <span style="color:var(--brand);font-weight:600">${rel}</span>` : ''}`; };
+  const groups = [];
+  fut.forEach(e => { let g = groups[groups.length - 1]; if (!g || g.iso !== e.datum) { g = { iso: e.datum, items: [] }; groups.push(g); } g.items.push(e); });
+  const futHtml = groups.length ? groups.map(g => `<div style="margin-bottom:14px"><div style="font-weight:700;font-size:12.5px;color:var(--text-soft);border-bottom:2px solid var(--border);padding-bottom:4px;margin-bottom:2px">${dayHead(g.iso)} <span class="muted" style="font-weight:400">· ${g.items.length}</span></div>${g.items.map(agRow).join('')}</div>`).join('') : '<p class="muted" style="margin:0">Keine kommenden Termine.</p>';
+  const pastHtml = past.length ? `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12.5px;color:var(--s-red);font-weight:600">⚠ ${past.length} vergangene / überfällige (letzte 30 Tage)</summary><div style="margin-top:8px;opacity:.8">${past.map(agRow).join('')}</div></details>` : '';
 
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
@@ -5353,6 +5362,12 @@ function viewKalender(pid) {
       <button class="btn" data-act="kal-add" data-pid="${p.id}" data-kind="${addDate}">+ Termin</button></div>
     ${projektTabs(p, 'kalender')}
 
+    <div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:16px">
+      <button class="btn sm ${kalMode === 'kalender' ? '' : 'secondary'}" data-act="kal-mode" data-pid="${p.id}" data-mode="kalender" type="button" style="border:none">📅 Kalender</button>
+      <button class="btn sm ${kalMode === 'agenda' ? '' : 'secondary'}" data-act="kal-mode" data-pid="${p.id}" data-mode="agenda" type="button" style="border:none">📋 Agenda${fut.length ? ' (' + fut.length + ')' : ''}</button>
+    </div>
+
+    ${kalMode === 'kalender' ? `
     <div class="cal-head">
       <div style="display:flex;gap:6px;align-items:center">
         <button class="btn sm secondary" data-act="kal-prev" data-pid="${p.id}" title="zurück">‹</button>
@@ -5362,14 +5377,14 @@ function viewKalender(pid) {
       </div>
       <div style="display:flex;gap:5px">${vb('tag', 'Tag')}${vb('woche', 'Woche')}${vb('monat', 'Monat')}</div>
     </div>
-
     ${body}
     <p class="muted" style="font-size:12px;margin:8px 0 0">Klick auf Tag/Spalte = Termin erfassen · farbige Termine anklicken = bearbeiten.</p>
-
-    <div class="section-head" style="margin-top:24px"><h2>Agenda</h2><span class="hint">nächste Termine</span></div>
-    <div class="card card-pad">${agenda}</div>
+    ` : `
+    <div class="section-head"><h2>Agenda</h2><span class="hint">${fut.length} kommende Termine · nach Tag gruppiert</span></div>
+    <div class="card card-pad">${futHtml}${pastHtml}</div>
+    `}
   `);
-  if (calView !== 'monat') bindCalCols();
+  if (kalMode === 'kalender' && calView !== 'monat') bindCalCols();
 }
 
 function actKalTermin(pid, tid, datum, zeit) {
@@ -9541,6 +9556,7 @@ document.addEventListener('click', e => {
     case 'kal-next':     kalNav(pid, 1); break;
     case 'kal-today':    kalNav(pid, 0); break;
     case 'kal-view':     kalSetView(pid, kind); break;
+    case 'kal-mode':     kalMode = act.dataset.mode; viewKalender(pid); break;
     case 'kal-day':      kalDay(pid, kind); break;
     case 'gcal-add':     actGlobalTermin(kind); break;
     case 'gkal-save':    saveGlobalTermin(); break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v163';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v164';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1258,8 +1258,40 @@ function setActiveNav(key) {
 }
 
 let _lastRenderHash = null;
-function render(html) {
-  $('#view').innerHTML = html;
+const SUB_LABELS = { kosten: 'Kosten', termine: 'Termine / Gantt', kalender: 'Kalender', rechnungen: 'Rechnungen', auflagen: 'Auflagen', optionen: 'Optionen', nachtraege: 'Nachträge', solar: 'Solar', uwert: 'U-Wert', zahlungsplan: 'Zahlungsplan', protokolle: 'Protokolle', protokoll: 'Protokoll', pendenzen: 'Pendenzen', dossier: 'Dossier', listen: 'Kontakte', bauherr: 'Eigentümerwünsche', finanz: 'Finanzen', honorar: 'Honorar', vergabe: 'Gewerk' };
+const ROOT_LABELS = { dashboard: 'Dashboard', projekte: 'Projekte', kalender: 'Kalender', pendenzen: 'Pendenzen', planung: 'Arbeitsplanung', erfassen: 'Erfassen', drucken: 'Drucken', honorar: 'Honorar', kontakte: 'Kontakte', kontakt: 'Kontakt', dokumente: 'Dokumente', einstellungen: 'Einstellungen' };
+// Globaler Kopf: links Vor/Zurück, Kontext-Breadcrumb (Projekt · Kapitel), rechts seitenspezifische Buttons + Undo/Redo
+function topbar(actions) {
+  const [root, a, sub, b] = parseHash();
+  const cr = [];
+  if (root === 'projekt') {
+    const pr = findProjekt(a);
+    cr.push({ t: 'Projekte', h: '#/projekte' });
+    cr.push({ t: pr ? pr.name : 'Projekt', h: '#/projekt/' + a });
+    if (sub === 'vergabe' && b) { const vv = pr && findVergabe(pr, b); cr.push({ t: 'Kosten', h: '#/projekt/' + a + '/kosten' }); cr.push({ t: vv ? ((vv.bkp ? vv.bkp + ' ' : '') + vv.gewerk) : 'Gewerk' }); }
+    else if (sub === 'protokoll' && b) { cr.push({ t: 'Protokolle', h: '#/projekt/' + a + '/protokolle' }); cr.push({ t: 'Protokoll' }); }
+    else if (sub) cr.push({ t: SUB_LABELS[sub] || sub });
+  } else if (root === 'kontakt') {
+    cr.push({ t: 'Kontakte', h: '#/kontakte' }); cr.push({ t: 'Kontakt' });
+  } else {
+    cr.push({ t: ROOT_LABELS[root] || 'Start' });
+  }
+  const crumbs = cr.map((c, i) => `${i ? '<span class="tb-sep">›</span>' : ''}${c.h ? `<a href="${c.h}">${esc(c.t)}</a>` : `<span class="tb-cur">${esc(c.t)}</span>`}`).join('');
+  return `<div class="topbar">
+    <div class="tb-nav">
+      <button class="tb-btn" data-act="hist-back" title="Zurück">‹</button>
+      <button class="tb-btn" data-act="hist-fwd" title="Vorwärts">›</button>
+    </div>
+    <div class="tb-crumbs">${crumbs}</div>
+    <div class="tb-actions">${actions || ''}</div>
+    <div class="tb-undo">
+      <button class="tb-btn" data-act="g-undo" title="Rückgängig (Strg+Z)"${undoStack.length ? '' : ' disabled'}>↶</button>
+      <button class="tb-btn" data-act="g-redo" title="Wiederholen (Strg+Y)"${redoStack.length ? '' : ' disabled'}>↷</button>
+    </div>
+  </div>`;
+}
+function render(html, actions) {
+  $('#view').innerHTML = topbar(actions) + html;
   // Nur bei echtem Seitenwechsel nach oben scrollen; In-Place-Updates (z.B. Block verschieben) behalten die Position
   if (location.hash !== _lastRenderHash) { window.scrollTo(0, 0); _lastRenderHash = location.hash; }
 }
@@ -9889,6 +9921,10 @@ document.addEventListener('click', e => {
     case 'new-vergabe':  actNewVergabe(pid); break;
     case 'kat-toggle':   katOpen = !katOpen; router(); break;
     case 'kosten-brutto': kostenBrutto = !kostenBrutto; viewKosten(pid); break;
+    case 'hist-back':    history.back(); break;
+    case 'hist-fwd':     history.forward(); break;
+    case 'g-undo':       undo(); break;
+    case 'g-redo':       redo(); break;
     case 'quickadd-bkp': quickAddVergabe(pid, act.dataset.code, act.dataset.label); break;
     case 'gw-toggle':    { const y = window.scrollY; gwOpen.has(vid) ? gwOpen.delete(vid) : gwOpen.add(vid); router(); window.scrollTo(0, y); } break;
     case 'gw-action':    gewerkAction(pid, vid, act.dataset.action); break;

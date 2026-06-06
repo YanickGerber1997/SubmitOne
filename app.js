@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v131';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v132';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7444,6 +7444,30 @@ const UWERT_TYP = {
   boden: { label: 'Boden / Decke unten', rsi: 0.17, rse: 0.04, ref: 0.25 },
 };
 const UWERT_FARBE = { massiv: '#9aa3ad', holz: '#c89b6a', platte: '#d7dce2', putz: '#c2c8d0', daemmung: '#f2d058' };
+// Vorgespeicherte Norm-Aufbauten (Schichten von AUSSEN → INNEN). l = λ, d = Dicke mm.
+const UWERT_PRESETS = [
+  { name: 'Aussenwand – Backstein + Aussendämmung (verputzt)', typ: 'wand', schichten: [
+    { name: 'Zementputz', l: 1.0, k: 'putz', d: 10 }, { name: 'Mineralwolle', l: 0.035, k: 'daemmung', d: 180 },
+    { name: 'Backstein/Mauerwerk', l: 0.8, k: 'massiv', d: 175 }, { name: 'Kalk-/Gipsputz', l: 0.70, k: 'putz', d: 15 } ] },
+  { name: 'Aussenwand – Stahlbeton + Aussendämmung', typ: 'wand', schichten: [
+    { name: 'Zementputz', l: 1.0, k: 'putz', d: 10 }, { name: 'EPS (Styropor)', l: 0.035, k: 'daemmung', d: 200 },
+    { name: 'Stahlbeton', l: 2.3, k: 'massiv', d: 200 }, { name: 'Kalk-/Gipsputz', l: 0.70, k: 'putz', d: 15 } ] },
+  { name: 'Aussenwand – Holzelementbau (gedämmt)', typ: 'wand', schichten: [
+    { name: 'Holzfaserdämmung', l: 0.045, k: 'daemmung', d: 60 }, { name: 'Mineralwolle', l: 0.035, k: 'daemmung', d: 220 },
+    { name: 'Holz (Fichte)', l: 0.13, k: 'holz', d: 27 }, { name: 'Gipskarton', l: 0.25, k: 'platte', d: 25 } ] },
+  { name: 'Flachdach – Stahlbeton + Dämmung', typ: 'dach', schichten: [
+    { name: 'XPS', l: 0.035, k: 'daemmung', d: 220 }, { name: 'Stahlbeton', l: 2.3, k: 'massiv', d: 240 },
+    { name: 'Kalk-/Gipsputz', l: 0.70, k: 'putz', d: 10 } ] },
+  { name: 'Steildach – Sparren gedämmt', typ: 'dach', schichten: [
+    { name: 'Holzfaserdämmung', l: 0.045, k: 'daemmung', d: 60 }, { name: 'Mineralwolle', l: 0.035, k: 'daemmung', d: 220 },
+    { name: 'Gipskarton', l: 0.25, k: 'platte', d: 25 } ] },
+  { name: 'Bodenplatte gegen Erdreich', typ: 'boden', schichten: [
+    { name: 'XPS', l: 0.035, k: 'daemmung', d: 160 }, { name: 'Stahlbeton', l: 2.3, k: 'massiv', d: 250 },
+    { name: 'Zementestrich', l: 1.4, k: 'massiv', d: 80 } ] },
+  { name: 'Kellerdecke – Dämmung unten', typ: 'boden', schichten: [
+    { name: 'Mineralwolle', l: 0.035, k: 'daemmung', d: 120 }, { name: 'Stahlbeton', l: 2.3, k: 'massiv', d: 240 },
+    { name: 'Zementestrich', l: 1.4, k: 'massiv', d: 80 } ] },
+];
 
 function uwertOf(p) {
   if (!p.uwert || !Array.isArray(p.uwert.bauteile) || !p.uwert.bauteile.length) {
@@ -7518,6 +7542,12 @@ function uwertDelBauteil(pid) {
   u.bauteile = u.bauteile.filter(b => b.id !== u.aktiv); u.aktiv = u.bauteile[0].id; save(); viewUwert(pid);
 }
 function uwertPick(pid, id) { const p = findProjekt(pid); uwertRead(pid); uwertOf(p).aktiv = id; save(); viewUwert(pid); }
+function uwertLoadPreset(pid, idx) {
+  const p = findProjekt(pid); const pr = UWERT_PRESETS[idx]; if (!pr) return;
+  uwertRead(pid); const u = uwertOf(p);
+  const b = { id: uid('uw'), name: pr.name, typ: pr.typ, schichten: pr.schichten.map(s => ({ name: s.name, lambda: s.l, k: s.k, dicke: s.d })) };
+  u.bauteile.push(b); u.aktiv = b.id; save(); viewUwert(pid); toast('Norm-Aufbau geladen – Werte frei anpassbar');
+}
 function viewUwert(pid) {
   const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const u = uwertOf(p); const bt = uwertActive(p);
@@ -7536,7 +7566,9 @@ function viewUwert(pid) {
     </div>
     ${projektTabs(p, 'uwert')}
     ${demoBanner('uwert')}
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${chips}<button class="btn xs secondary" data-act="uw-newbt" data-pid="${p.id}" type="button">+ Bauteil</button></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px">${chips}<button class="btn xs secondary" data-act="uw-newbt" data-pid="${p.id}" type="button">+ Bauteil</button>
+      <select class="select" id="uw_preset" style="margin-left:auto;max-width:330px"><option value="">📋 Norm-Aufbau laden …</option>${UWERT_PRESETS.map((pr, i) => `<option value="${i}">${esc(pr.name)}</option>`).join('')}</select>
+    </div>
     <div class="two-col">
       <div class="card card-pad" id="uwertInputs">
         <div class="form-row">
@@ -7558,6 +7590,7 @@ function viewUwert(pid) {
   $$('.uw-mat').forEach(sel => sel.addEventListener('change', () => uwertSetMat(pid, Number(sel.dataset.idx), sel.value)));
   $('#uw_typ')?.addEventListener('change', e => { uwertRead(pid); uwertActive(p).typ = e.target.value; save(); const out = $('#uwertOut'); if (out) out.innerHTML = uwertOutHtml(uwertActive(p)); });
   $('#uw_name')?.addEventListener('change', e => { uwertActive(p).name = e.target.value.trim() || 'Bauteil'; save(); viewUwert(pid); });
+  $('#uw_preset')?.addEventListener('change', e => { if (e.target.value !== '') uwertLoadPreset(pid, Number(e.target.value)); });
 }
 
 /* ============================================================

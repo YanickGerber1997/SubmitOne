@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v68';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v69';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -457,49 +457,54 @@ function versteckteTabs(p) { const r = meineRolle(p); return (r && ROLLE_VERSTEC
 function istInhaber(p)     { return meineRolle(p) === 'inhaber'; }
 function darfStammdaten(p) { const r = meineRolle(p); return r === null || r === 'inhaber' || r === 'projektleitung'; }
 function darfVergeben(p)   { return meineRolle(p) !== 'bauleitung'; }   // alle ausser Bauleitung
+const teamKey = m => (m.email || m.slug || '');
 function actTeam(pid) {
   const p = findProjekt(pid); if (!p) return;
   const mit = p.mitglieder || [];
-  const rows = mit.length ? mit.map(m => `
-    <div class="team-row">
-      <div style="flex:1"><div style="font-weight:600">${esc(((m.vorname || '') + ' ' + (m.nachname || '')).trim()) || esc(m.slug)}</div>${m.slug === currentUserSlug ? '<div class="muted" style="font-size:11px">du</div>' : ''}</div>
-      <select class="select team-rolle" data-slug="${esc(m.slug)}" style="width:160px;padding:5px 8px">${MITGLIED_ROLLEN.map(r => `<option value="${r.key}"${m.rolle === r.key ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}</select>
-      <button class="x-btn" data-act="team-rm" data-pid="${pid}" data-slug="${esc(m.slug)}" title="entfernen">×</button>
-    </div>`).join('') : '<p class="muted" style="font-size:13px;padding:6px 0">Noch keine Mitglieder – unten jemanden hinzufügen.</p>';
+  const meKey = currentUserEmail || currentUserSlug;
+  const rows = mit.length ? mit.map(m => {
+    const nm = ((m.vorname || '') + ' ' + (m.nachname || '')).trim();
+    return `<div class="team-row">
+      <div style="flex:1"><div style="font-weight:600">${esc(nm || m.email || m.slug)}</div><div class="muted" style="font-size:11px">${esc(m.email || m.slug)}${teamKey(m) === meKey ? ' · du' : ''}</div></div>
+      <select class="select team-rolle" data-key="${esc(teamKey(m))}" style="width:160px;padding:5px 8px">${MITGLIED_ROLLEN.map(r => `<option value="${r.key}"${m.rolle === r.key ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}</select>
+      <button class="x-btn" data-act="team-rm" data-pid="${pid}" data-key="${esc(teamKey(m))}" title="entfernen">×</button>
+    </div>`;
+  }).join('') : '<p class="muted" style="font-size:13px;padding:6px 0">Noch keine Mitglieder – unten jemanden einladen.</p>';
   openModal('Team – ' + esc(p.name), `
-    <div class="muted" style="font-size:12px;margin:-4px 0 8px">Wer am Projekt mitarbeitet und mit welcher Rolle. <b>Hinweis:</b> die Person meldet sich mit genau diesem Vor- und Nachnamen an. (Sichtbarkeit/Sperren je Rolle kommen im nächsten Schritt.)</div>
+    <div class="muted" style="font-size:12px;margin:-4px 0 8px">Wer am Projekt mitarbeitet (per E-Mail) und mit welcher Rolle. <b>Hinweis:</b> die Person muss sich mit genau dieser E-Mail registrieren/anmelden, dann sieht sie das Projekt.</div>
     <div id="teamRows">${rows}</div>
     <hr style="border:none;border-top:1px solid var(--border);margin:10px 0 8px">
-    <div style="font-weight:600;font-size:13px;margin-bottom:6px">Mitglied hinzufügen</div>
-    <div class="form-row">
-      <label class="field">Vorname <input class="input" id="tm_vor"></label>
-      <label class="field">Nachname <input class="input" id="tm_nach"></label>
+    <div style="font-weight:600;font-size:13px;margin-bottom:6px">Mitglied einladen</div>
+    <label class="field">E-Mail <input class="input" id="tm_email" type="email" placeholder="name@firma.ch"></label>
+    <div class="form-row" style="margin-top:6px">
+      <label class="field">Vorname <span class="muted" style="font-weight:400;font-size:11px">(optional)</span> <input class="input" id="tm_vor"></label>
+      <label class="field">Nachname <span class="muted" style="font-weight:400;font-size:11px">(optional)</span> <input class="input" id="tm_nach"></label>
     </div>
     <div class="form-row">
       <label class="field">Rolle <select class="select" id="tm_rolle">${MITGLIED_ROLLEN.map(r => `<option value="${r.key}"${r.key === 'bauleitung' ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}</select></label>
-      <div style="display:flex;align-items:flex-end"><button class="btn" data-act="team-add" data-pid="${pid}" type="button">+ Hinzufügen</button></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn" data-act="team-add" data-pid="${pid}" type="button">+ Einladen</button></div>
     </div>
   `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
-  $$('.team-rolle').forEach(sel => sel.addEventListener('change', () => teamSetRolle(pid, sel.dataset.slug, sel.value)));
+  $$('.team-rolle').forEach(sel => sel.addEventListener('change', () => teamSetRolle(pid, sel.dataset.key, sel.value)));
 }
 function teamAdd(pid) {
   const p = findProjekt(pid); if (!p) return;
+  const email = ($('#tm_email').value || '').trim().toLowerCase();
+  if (!/.+@.+\..+/.test(email)) { toast('Bitte eine gültige E-Mail eingeben', 'info'); return; }
   const vor = $('#tm_vor').value.trim(), nach = $('#tm_nach').value.trim();
-  if (!vor || !nach) { toast('Vor- und Nachname eingeben', 'info'); return; }
-  const slug = slugVon(vor, nach);
   p.mitglieder = p.mitglieder || [];
-  if (p.mitglieder.some(m => m.slug === slug)) { toast('Ist bereits Mitglied', 'info'); return; }
-  p.mitglieder.push({ vorname: vor, nachname: nach, slug, rolle: $('#tm_rolle').value });
-  save(); actTeam(pid); toast('Mitglied hinzugefügt');
+  if (p.mitglieder.some(m => (m.email || '').toLowerCase() === email)) { toast('Diese E-Mail ist bereits Mitglied', 'info'); return; }
+  p.mitglieder.push({ email, vorname: vor, nachname: nach, slug: (vor && nach) ? slugVon(vor, nach) : '', rolle: $('#tm_rolle').value });
+  save(); actTeam(pid); toast('Mitglied eingeladen');
 }
-function teamSetRolle(pid, slug, rolle) {
+function teamSetRolle(pid, key, rolle) {
   const p = findProjekt(pid); if (!p) return;
-  const m = (p.mitglieder || []).find(x => x.slug === slug); if (!m) return;
+  const m = (p.mitglieder || []).find(x => teamKey(x) === key); if (!m) return;
   m.rolle = rolle; save();
 }
-function teamRemove(pid, slug) {
+function teamRemove(pid, key) {
   const p = findProjekt(pid); if (!p) return;
-  p.mitglieder = (p.mitglieder || []).filter(x => x.slug !== slug);
+  p.mitglieder = (p.mitglieder || []).filter(x => teamKey(x) !== key);
   save(); actTeam(pid); toast('Mitglied entfernt');
 }
 function renderPlanBanner() {
@@ -5777,7 +5782,7 @@ function saveProjekt() {
     farbe: ($('#f_farbe') && $('#f_farbe').value) || '',
     vergaben: [],
     protokolle: [],
-    mitglieder: currentUserSlug ? [{ vorname: currentUserVor, nachname: currentUserNach, slug: currentUserSlug, rolle: 'inhaber' }] : [],
+    mitglieder: currentUserEmail ? [{ email: currentUserEmail, vorname: currentUserVor, nachname: currentUserNach, slug: currentUserSlug, rolle: 'inhaber' }] : [],
   };
   readGebaeude(p);
   state.projekte.unshift(p);
@@ -7931,7 +7936,7 @@ document.addEventListener('click', e => {
     case 'upgrade':      openCheckout(act.dataset.plan); break;
     case 'team':         actTeam(pid); break;
     case 'team-add':     teamAdd(pid); break;
-    case 'team-rm':      teamRemove(pid, act.dataset.slug); break;
+    case 'team-rm':      teamRemove(pid, act.dataset.key); break;
     case 'new-projekt':  actNewProjekt(); break;
     case 'save-projekt': saveProjekt(); break;
     case 'edit-projekt': actEditProjekt(pid); break;

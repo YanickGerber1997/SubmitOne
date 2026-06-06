@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v143';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v144';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2666,6 +2666,48 @@ function viewListen(pid) {
     </tr>`;
   }).join('');
 
+  // Eigentümerliste (Einheiten + Eigentümer/Kontakt, inline editierbar)
+  const einh = alleEinheiten(p);
+  const eigBody = einh.map(({ u, g }) => `<tr>
+      <td class="muted" style="font-size:12px">${esc(g.name || '')}</td>
+      <td><strong>${esc(u.name || 'Einheit')}</strong>${u.zimmer ? ` <span class="muted">${u.zimmer} Zi</span>` : ''}${u.m2 ? ` <span class="muted">· ${Number(u.m2)} m²</span>` : ''}</td>
+      <td><input class="input eig-in" data-pid="${p.id}" data-uid="${u.id}" data-feld="eigentuemer" value="${esc(u.eigentuemer || '')}" placeholder="Eigentümer / Käufer" style="height:28px;font-size:12.5px"></td>
+      <td><input class="input eig-in" data-pid="${p.id}" data-uid="${u.id}" data-feld="eigKontakt" value="${esc(u.eigKontakt || '')}" placeholder="Tel. / E-Mail" style="height:28px;font-size:12.5px"></td>
+    </tr>`).join('');
+  // Bemusterung (Spiegel der Auswahlpunkte aus dem Bauherr-Reiter)
+  const ents = p.entscheidungen || [];
+  const hasWhg2 = einh.length >= 1;
+  const bemBody = ents.map(e => {
+    const v = vergabeForEnt(p, e);
+    const unt = v ? `${esc(v.gewerk || '')}${v.firma ? ': <strong>' + esc(v.firma) + '</strong>' : ' <span class="muted">(offen)</span>'}` : '<span class="muted">–</span>';
+    const a = e.ausstellung;
+    const aus = a && a.firma ? `<strong>${esc(a.firma)}</strong>${a.ort ? ' · ' + esc(a.ort) : ''}${a.telefon ? ' · ' + esc(a.telefon) : ''}` : '<span class="muted">–</span>';
+    return `<tr><td class="muted">${esc(e.bkp || (v && v.bkp) || '–')}</td>${hasWhg2 ? `<td class="muted" style="font-size:12px">${esc(einheitName(p, e.wohnung || ''))}</td>` : ''}<td><strong>${esc(e.thema || '')}</strong></td><td>${unt}</td><td>${aus}</td><td><span class="st ${ENT_STATUS[entStatus(e)].color}" style="font-size:10px;padding:1px 7px">${ENT_STATUS[entStatus(e)].label}</span></td></tr>`;
+  }).join('');
+  const tabBtn = (key, label) => `<button class="btn sm ${listenTab === key ? '' : 'secondary'}" data-act="listen-tab" data-tab="${key}" data-pid="${p.id}" type="button" style="border:none">${label}</button>`;
+
+  let bodyHtml;
+  if (listenTab === 'unt') {
+    bodyHtml = `<div class="section-head"><h2>Unternehmerliste <span class="tag">für Baustelle</span></h2>
+      <button class="btn sm" data-act="pdf-unternehmer" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle Gewerke mit vergebenem Unternehmer; offene zeigen „noch nicht vergeben".</p>
+    <div class="card">${gw.length ? `<table class="grid t-compact"><thead><tr><th style="width:60px">BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Kontakt</th></tr></thead><tbody>${untRows}</tbody></table>` : emptyState('◫', 'Keine Gewerke angelegt.')}</div>`;
+  } else if (listenTab === 'eig') {
+    bodyHtml = `<div class="section-head"><h2>Eigentümerliste</h2></div>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Einheiten mit Eigentümer/Käufer &amp; Kontakt – direkt hier ausfüllen (wird automatisch gespeichert).</p>
+    <div class="card">${einh.length ? `<table class="grid t-compact"><thead><tr><th style="width:130px">Geschoss</th><th>Einheit</th><th style="width:34%">Eigentümer / Käufer</th><th style="width:26%">Kontakt</th></tr></thead><tbody>${eigBody}</tbody></table>` : emptyState('🏠', 'Noch keine Einheiten – unter „Bauherr → Wohnungen / Geschosse" anlegen.')}</div>`;
+  } else if (listenTab === 'bem') {
+    bodyHtml = `<div class="section-head"><h2>Bemusterung <span class="muted" style="font-size:12px;font-weight:400">· bei wem aussuchen</span></h2>
+      <a class="btn sm secondary" href="#/projekt/${p.id}/bauherr">im Bauherr-Reiter bearbeiten ↗</a></div>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Auswahlpunkte mit ausführendem Unternehmer und – falls separat – der Ausstellung für die Materialauswahl.</p>
+    <div class="card">${ents.length ? `<table class="grid t-compact"><thead><tr><th style="width:52px">BKP</th>${hasWhg2 ? '<th style="width:90px">Wohnung</th>' : ''}<th>Auswahlpunkt</th><th>Unternehmer</th><th>Ausstellung / Materialauswahl</th><th style="width:84px">Status</th></tr></thead><tbody>${bemBody}</tbody></table>` : `<div class="card-pad" style="text-align:center">${emptyState('🎨', 'Noch keine Auswahlpunkte.')}<a class="btn" href="#/projekt/${p.id}/bauherr">zum Bauherr-Reiter</a></div>`}</div>`;
+  } else {
+    bodyHtml = `<div class="section-head"><h2>Submittentenliste <span class="st red" style="font-size:10.5px;padding:2px 8px;vertical-align:middle">vertraulich</span></h2>
+      <button class="btn sm" data-act="pdf-submittenten" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle eingeladenen Firmen je Gewerk – nur intern, <strong>nicht</strong> an die Baustelle.</p>
+    <div class="card card-pad">${submBlocks}</div>`;
+  }
+
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
@@ -2673,25 +2715,18 @@ function viewListen(pid) {
     </div>
     ${projektTabs(p, 'listen')}
 
-    <div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:16px">
-      <button class="btn sm ${listenTab === 'subm' ? '' : 'secondary'}" data-act="listen-tab" data-tab="subm" data-pid="${p.id}" type="button" style="border:none">Submittentenliste</button>
-      <button class="btn sm ${listenTab === 'unt' ? '' : 'secondary'}" data-act="listen-tab" data-tab="unt" data-pid="${p.id}" type="button" style="border:none">Unternehmerliste</button>
+    <div class="seg" style="display:inline-flex;gap:4px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:16px">
+      ${tabBtn('subm', 'Submittentenliste')}${tabBtn('unt', 'Unternehmerliste')}${tabBtn('eig', 'Eigentümerliste')}${tabBtn('bem', 'Bemusterung')}
     </div>
 
-    ${listenTab === 'subm' ? `
-    <div class="section-head"><h2>Submittentenliste <span class="st red" style="font-size:10.5px;padding:2px 8px;vertical-align:middle">vertraulich</span></h2>
-      <button class="btn sm" data-act="pdf-submittenten" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle eingeladenen Firmen je Gewerk – nur intern, <strong>nicht</strong> an die Baustelle.</p>
-    <div class="card card-pad">${submBlocks}</div>
-    ` : `
-    <div class="section-head"><h2>Unternehmerliste <span class="tag">für Baustelle</span></h2>
-      <button class="btn sm" data-act="pdf-unternehmer" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle Gewerke mit vergebenem Unternehmer; offene zeigen „noch nicht vergeben" (verrät keine Submittenten).</p>
-    <div class="card">${gw.length ? `
-      <table class="grid t-compact"><thead><tr><th style="width:60px">BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Kontakt</th></tr></thead>
-        <tbody>${untRows}</tbody></table>` : emptyState('◫', 'Keine Gewerke angelegt.')}</div>
-    `}
+    ${bodyHtml}
   `);
+  $$('.eig-in').forEach(el => el.addEventListener('change', () => setEinheitEig(el.dataset.pid, el.dataset.uid, el.dataset.feld, el.value)));
+}
+function setEinheitEig(pid, uid, feld, val) {
+  const p = findProjekt(pid); if (!p) return;
+  const hit = alleEinheiten(p).find(x => x.u.id === uid); if (!hit) return;
+  hit.u[feld] = (val || '').trim(); save();
 }
 
 // Gemeinsamer Druck-/PDF-Wrapper mit Büro-Briefkopf
@@ -9836,8 +9871,8 @@ function demoData() {
       ],
       geschosseListe: [
         { id: 'g_eg', name: 'Erdgeschoss', typ: 'Wohnen', einheiten: [
-          { id: 'u_egl', name: 'EG links', zimmer: 3.5, m2: 70, miete: 1950, verkauf: 720000 },
-          { id: 'u_egr', name: 'EG rechts', zimmer: 4.5, m2: 80, miete: 2250, verkauf: 850000 },
+          { id: 'u_egl', name: 'EG links', zimmer: 3.5, m2: 70, miete: 1950, verkauf: 720000, eigentuemer: 'Fam. Meier', eigKontakt: '079 111 22 33' },
+          { id: 'u_egr', name: 'EG rechts', zimmer: 4.5, m2: 80, miete: 2250, verkauf: 850000, eigentuemer: 'M. Keller', eigKontakt: 'keller@example.ch' },
         ] },
         { id: 'g_og1', name: '1. Obergeschoss', typ: 'Wohnen', einheiten: [
           { id: 'u_1ogl', name: '1.OG links', zimmer: 3.5, m2: 72, miete: 2050, verkauf: 760000 },

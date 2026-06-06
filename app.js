@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v113';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v114';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7759,7 +7759,7 @@ function pdfBaukosten(pid) {
   const inner = `<table class="t" style="font-size:11px"><thead><tr><th>BKP</th><th>Arbeitsgattung</th><th class="num">KV</th><th class="num">KV rev.</th><th class="num">WV</th><th class="num">NT</th><th class="num">Prognose</th><th class="num">Bezahlt</th><th class="num">Offen</th></tr></thead>
     <tbody>${body}<tr><td></td><td><b>Total Baukosten</b></td><td class="num"><b>${chf(tot.kv)}</b></td><td class="num">${chf(tot.rev)}</td><td class="num">${chf(tot.wv)}</td><td class="num">${chf(tot.nt)}</td><td class="num"><b>${chf(tot.prognose)}</b></td><td class="num">${chf(tot.bezahlt)}</td><td class="num">${chf(tot.offen)}</td></tr></tbody></table>
     <p class="muted" style="margin-top:10px;font-size:10px">KV = Kostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag · NT = Nachträge · Prognose = WV + NT + Rapporte + Budget-Differenz.</p>`;
-  openPrintDoc('Baukostenübersicht', `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} · Stand ${fmtDate(todayIso())}`, inner);
+  openPrintDoc('Baukostenübersicht', `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} · Stand ${fmtDate(todayIso())}`, inner, { landscape: true });
 }
 
 // Bauprogramm / Gantt als saubere Monats-Tabelle (Querformat)

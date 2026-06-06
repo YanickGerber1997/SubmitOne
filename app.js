@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v102';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v103';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7281,14 +7281,24 @@ function honorarRichtwert(p) {
   if (p.honorar) { const H = computeHonorar(p.honorar).H; if (H > 0) return Math.round(H); }
   return 0;
 }
+// Projekt-/Ausführungszeitraum: Projektdaten, sonst aus den Gewerk-Terminen
+function zahlungsplanZeitraum(p) {
+  let von = p.start || p.baustart || '', bis = p.ende || p.bezug || '';
+  const bs = (p.vergaben || []).filter(v => v.bauStart).map(v => v.bauStart);
+  const be = (p.vergaben || []).filter(v => v.bauEnde).map(v => v.bauEnde);
+  if (!von && bs.length) von = bs.reduce((a, b) => a < b ? a : b);
+  if (!bis && be.length) bis = be.reduce((a, b) => a > b ? a : b);
+  return { von, bis };
+}
 function zahlungsplanOf(p) {
   if (!p.zahlungsplan) p.zahlungsplan = {};
   const z = p.zahlungsplan;
   if (z.modus === undefined) z.modus = 'bauherr';   // 'bauherr' (Werkverträge) | 'honorar' (SIA)
   if (!Array.isArray(z.phasen) || !z.phasen.length) z.phasen = HONORAR_PHASEN.map(ph => ({ key: ph.key, label: ph.label, pct: ph.pct, datum: '' }));
   if (z.betrag === undefined || z.betrag === null) z.betrag = honorarRichtwert(p);   // Honorar, NICHT die vollen Baukosten
-  if (z.von === undefined) z.von = p.baustart || p.start || '';
-  if (z.bis === undefined) z.bis = p.ende || '';
+  const zr = zahlungsplanZeitraum(p);
+  if (!z.von) z.von = zr.von;   // automatisch aus dem Ausführungs-/Projektzeitraum
+  if (!z.bis) z.bis = zr.bis;
   return z;
 }
 // Bauherren-Zahlungsplan: jeder vergebene Werkvertrag über seine Bauzeit (Unternehmer-Termine) verteilt
@@ -7356,7 +7366,7 @@ function zpHonorarHtml(p, z) {
       <div class="form-row" style="margin-top:6px">
         <label class="field">Zeitraum von <input class="input zp-in" id="zp_von" type="date" value="${esc(z.von || '')}"></label>
         <label class="field">bis <input class="input zp-in" id="zp_bis" type="date" value="${esc(z.bis || '')}"></label>
-        <div style="display:flex;align-items:flex-end"><button class="btn secondary" data-act="zp-verteilen" data-pid="${p.id}" type="button">Fälligkeiten verteilen</button></div>
+        <div style="display:flex;align-items:flex-end;gap:6px"><button class="btn secondary" data-act="zp-zeitraum" data-pid="${p.id}" type="button" title="von/bis aus dem Ausführungs-/Projektzeitraum übernehmen">↻ aus Ausführung</button><button class="btn secondary" data-act="zp-verteilen" data-pid="${p.id}" type="button">Fälligkeiten verteilen</button></div>
       </div>
       <table class="grid" style="margin-top:14px"><thead><tr><th>SIA-Phase</th><th class="num">Leistung %</th><th class="num">Betrag</th><th>Fälligkeit</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -8937,6 +8947,7 @@ document.addEventListener('click', e => {
     case 'sammelrg':     actSammelrechnung(pid); break;
     case 'save-sammelrg': saveSammelrechnung(pid); break;
     case 'zp-verteilen': zahlungsplanVerteilen(pid); break;
+    case 'zp-zeitraum':  { const p2 = findProjekt(pid); zahlungsplanRead(pid); const zr = zahlungsplanZeitraum(p2); const z2 = zahlungsplanOf(p2); z2.von = zr.von; z2.bis = zr.bis; save(); viewZahlungsplan(pid); toast('Zeitraum übernommen'); break; }
     case 'zp-modus':     { const p2 = findProjekt(pid); zahlungsplanOf(p2).modus = act.dataset.modus; save(); viewZahlungsplan(pid); break; }
     case 'zp-baukosten': { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).betrag = Math.round(baukostenTotal(p2)); save(); viewZahlungsplan(pid); break; }
     case 'zp-honorar':   { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).betrag = p2.honorar ? Math.round(computeHonorar(p2.honorar).H) : 0; save(); viewZahlungsplan(pid); break; }

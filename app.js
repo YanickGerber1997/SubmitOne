@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v155';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v156';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3598,23 +3598,26 @@ function viewBauherr(pid) {
   const sumIst = ents.reduce((a, e) => a + (istSetOf(e) ? (Number(e.ist) || 0) : 0), 0);
   const sumDiff = ents.reduce((a, e) => a + (istSetOf(e) ? ((Number(e.ist) || 0) - (Number(e.budget) || 0)) : 0), 0);
 
+  const showWhgCol = (selW === '');                                   // Wohnungen nur in „Zusätze" zeigen
+  const sumNetto = ents.reduce((a, e) => a + entNetto(e), 0);
+  const thSub = (t, s) => `${t}<div style="font-weight:400;font-size:8.5px;color:var(--text-faint)">${s}</div>`;
   const entsTable = ents.length ? `
-    <table class="grid">
-      <thead><tr><th style="width:50px">BKP</th>${hasWhg ? '<th style="width:78px">Wohnung</th>' : ''}<th style="width:108px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:96px">Budget<div style="font-weight:400;font-size:9px;color:var(--text-faint)">netto · Planwert</div></th><th class="num" style="width:96px">Tatsächlich<div style="font-weight:400;font-size:9px;color:var(--text-faint)">netto · n. Rabatt/Skonto</div></th><th class="num" style="width:88px">Δ</th><th style="width:52px"></th></tr></thead>
-      <tbody>${ents.map(e => { const v = vergOf(e); const istSet = (e.ist != null && e.ist !== ''); const d = istSet ? (Number(e.ist) || 0) - (Number(e.budget) || 0) : null; const bdgIn = (feld, val, ph) => `<input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="${feld}" type="number" value="${val != null && val !== '' ? val : ''}" placeholder="${ph}" style="width:90px;height:26px;font-size:12px;text-align:right">`; return `
+    <table class="grid t-compact">
+      <thead><tr><th style="width:46px">BKP</th>${showWhgCol ? '<th style="width:90px">Wohnungen</th>' : ''}<th style="width:100px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:80px">${thSub('Budget', 'netto')}</th><th class="num" style="width:84px">${thSub('Offerte', 'Brutto')}</th><th class="num" style="width:58px">${thSub('Rabatt', '%')}</th><th class="num" style="width:58px">${thSub('Skonto', '%')}</th><th class="num" style="width:92px">${thSub('Netto', 'n. Abzügen')}</th><th style="width:48px"></th></tr></thead>
+      <tbody>${ents.map(e => { const v = vergOf(e); const num = (feld, val, ph, w) => `<input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="${feld}" type="number" value="${val != null && val !== '' ? val : ''}" placeholder="${ph}" style="width:${w}px;height:26px;font-size:12px;text-align:right">`; return `
         <tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
           <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
-          ${hasWhg ? `<td class="muted" style="font-size:12px">${esc(entUnitLabel(e))}</td>` : ''}
-          <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">
-            ${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}
-          </select></td>
-          <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${(e.wohnungen && e.wohnungen.length) ? ` <span class="st blue" style="font-size:9px;padding:1px 6px">Zusatz · ${e.wohnungen.length}</span>` : ''}${e.entscheid ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${entStatus(e) === 'entfaellt' ? 'Grund: ' : ''}${esc(e.entscheid)}</div>` : ''}</td>
-          <td class="num">${bdgIn('budget', e.budget, '–')}</td>
-          <td class="num">${bdgIn('ist', e.ist, 'offen')}</td>
-          <td class="num ${dC(d || 0)}">${d != null && Math.abs(d) > 0.5 ? (d > 0 ? '+' : '') + chf(d) : '–'}</td>
+          ${showWhgCol ? `<td class="muted" style="font-size:11.5px">${esc(entUnitLabel(e))}</td>` : ''}
+          <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></td>
+          <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${(e.wohnungen && e.wohnungen.length) ? ` <span class="st blue" style="font-size:9px;padding:1px 6px">Zusatz · ${e.wohnungen.length}</span>` : ''}${e.entscheid ? `<div class="muted" style="font-size:12px;margin-top:2px">${entStatus(e) === 'entfaellt' ? 'Grund: ' : ''}${esc(e.entscheid)}</div>` : ''}</td>
+          <td class="num">${num('budget', e.budget, '–', 76)}</td>
+          <td class="num">${num('brutto', e.brutto, '–', 80)}</td>
+          <td class="num">${num('rabatt', e.rabatt, '0', 48)}</td>
+          <td class="num">${num('skonto', e.skonto, '0', 48)}</td>
+          <td class="num"><b>${entHasIst(e) ? chf(entNetto(e)) : '<span class="muted">–</span>'}</b></td>
           <td><button class="x-btn" data-act="edit-entscheidung" data-pid="${p.id}" data-eid="${e.id}" title="Bearbeiten">✏</button><button class="x-btn" data-act="rm-entscheidung" data-pid="${p.id}" data-eid="${e.id}">×</button></td>
         </tr>`; }).join('')}
-        <tr style="background:var(--surface-2);font-weight:700"><td colspan="${hasWhg ? 4 : 3}">Total Budget${selEig ? ' · ' + esc(selEig) : ''}</td><td class="num">${chf(sumBudget)}</td><td class="num">${chf(sumIst)}</td><td class="num ${dC(sumDiff)}">${(sumDiff > 0 ? '+' : '') + chf(sumDiff)}</td><td></td></tr>
+        <tr style="background:var(--surface-2);font-weight:700"><td colspan="${showWhgCol ? 4 : 3}">Total${selEig ? ' · ' + esc(selEig) : ''}</td><td class="num">${chf(sumBudget)}</td><td></td><td></td><td></td><td class="num">${chf(sumNetto)}</td><td></td></tr>
       </tbody>
     </table>` : `<div class="card-pad" style="text-align:center">${emptyState('📋', 'Noch keine Auswahlpunkte erfasst.')}<button class="btn" data-act="standard-bemusterung" data-pid="${p.id}">＋ Standard-Auswahlliste einfügen</button></div>`;
 
@@ -3633,7 +3636,7 @@ function viewBauherr(pid) {
     return `<b>${fmtDate(f)}</b> ${badge}`;
   };
   const alleTable = allEnts.length ? `<table class="grid t-compact">
-    <thead><tr><th style="width:132px">entscheiden bis</th><th style="width:44px">BKP</th><th style="width:118px">Einheit</th><th style="width:100px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:90px">Budget</th><th class="num" style="width:90px">Tatsächlich</th><th style="width:52px"></th></tr></thead>
+    <thead><tr><th style="width:132px">entscheiden bis</th><th style="width:44px">BKP</th><th style="width:118px">Einheit</th><th style="width:100px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:90px">Budget</th><th class="num" style="width:96px">Netto</th><th style="width:52px"></th></tr></thead>
     <tbody>${alleSorted.map(e => { const v = vergOf(e); const bp = v ? (v.budgetposten || []).find(x => (x.text || '').toLowerCase() === (e.thema || '').toLowerCase()) : null; return `<tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
       <td style="font-size:12px">${faelligCell(e)}</td>
       <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
@@ -3641,10 +3644,10 @@ function viewBauherr(pid) {
       <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></td>
       <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${e.entscheid ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${esc(e.entscheid)}</div>` : ''}</td>
       <td class="num"><input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="budget" type="number" value="${e.budget != null && e.budget !== '' ? e.budget : ''}" placeholder="–" style="width:82px;height:24px;font-size:11.5px;text-align:right"></td>
-      <td class="num"><input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="ist" type="number" value="${e.ist != null && e.ist !== '' ? e.ist : ''}" placeholder="offen" style="width:82px;height:24px;font-size:11.5px;text-align:right"></td>
+      <td class="num"><b>${entHasIst(e) ? chf(entNetto(e)) : '<span class="muted">–</span>'}</b></td>
       <td><button class="x-btn" data-act="edit-entscheidung" data-pid="${p.id}" data-eid="${e.id}" title="Bearbeiten">✏</button><button class="x-btn" data-act="rm-entscheidung" data-pid="${p.id}" data-eid="${e.id}">×</button></td>
     </tr>`; }).join('')}
-      <tr style="background:var(--surface-2);font-weight:700"><td colspan="4"></td><td style="text-align:right">Total Budget / Ist</td><td class="num">${chf(allEnts.reduce((a, e) => a + (Number(e.budget) || 0), 0))}</td><td class="num">${chf(allEnts.reduce((a, e) => a + (istSetOf(e) ? (Number(e.ist) || 0) : 0), 0))}</td><td></td></tr>
+      <tr style="background:var(--surface-2);font-weight:700"><td colspan="4"></td><td style="text-align:right">Total Budget / Netto</td><td class="num">${chf(allEnts.reduce((a, e) => a + (Number(e.budget) || 0), 0))}</td><td class="num">${chf(allEnts.reduce((a, e) => a + entNetto(e), 0))}</td><td></td></tr>
     </tbody></table>` : entsTable;
 
   const firmsHtml = katKeys.length ? katKeys.map(k => `
@@ -9355,10 +9358,16 @@ const BUERO = {
 // MwSt-Konvention (global, aus den Büro-Einstellungen)
 function mwstSatz() { const v = Number((state.buero || BUERO).mwst); return (isFinite(v) && v >= 0) ? v : 8.1; }
 function archZuschlagP() { const v = Number((state.buero || BUERO).archZuschlag); return (isFinite(v) && v >= 0) ? v : 15; }
+// Netto eines Auswahlentscheids: aus Offerte-Brutto − Rabatt − Skonto, sonst altes Ist-Feld
+function entHasIst(e) { return (e.brutto != null && e.brutto !== '') || (e.ist != null && e.ist !== ''); }
+function entNetto(e) {
+  if (e.brutto != null && e.brutto !== '') { const n = condNetto({ brutto: e.brutto, rabatt: e.rabatt, skonto: e.skonto, weitereAbz: 0 }); return n || 0; }
+  if (e.ist != null && e.ist !== '') return Number(e.ist) || 0;
+  return 0;
+}
 // Kostenaufbau netto → +Architektenzuschlag → +MwSt → Brutto für eine Menge Auswahlentscheide
 function eigKosten(ents) {
-  const istSet = e => (e.ist != null && e.ist !== '');
-  const netto = ents.reduce((a, e) => a + (istSet(e) ? (Number(e.ist) || 0) : (Number(e.budget) || 0)), 0);
+  const netto = ents.reduce((a, e) => a + (entHasIst(e) ? entNetto(e) : (Number(e.budget) || 0)), 0);
   const budget = ents.reduce((a, e) => a + (Number(e.budget) || 0), 0);
   const z = archZuschlagP(), mw = mwstSatz();
   const zBetrag = netto * z / 100, nettoZ = netto + zBetrag, mwBetrag = nettoZ * mw / 100, brutto = nettoZ + mwBetrag;

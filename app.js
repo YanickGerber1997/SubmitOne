@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v169';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v170';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1717,13 +1717,17 @@ let ganttChain = true;     // Verkettung: Nachfolger automatisch nachführen
 let ganttWorkdays = false; // Abstände/Verkettung in Arbeitstagen (Wochenende/Feiertage überspringen)
 let ganttSide = { gewerk: true, firma: false, person: false, natel: false }; // einblendbare Info-Spalte (BKP-Nr. immer)
 let ganttDates = 'off';   // Datum am Balken: 'off' | 'full' (26.06.26) | 'short' (26.06.)
-let ganttMode = 'detail'; // 'detail' = Termin-Gantt (Tage) | 'grob' = Grobplanung nach Phasen (Saison/Jahr)
+let ganttMode = 'detail'; // 'detail' = Termin-Gantt (Tage) | 'grob' = Grobplanung (Phasen) | 'fein' = Feinprogramm (Stunden)
+const FEIN_H0 = 6, FEIN_H1 = 20;   // Stunden-Achse Feinprogramm (06:00–20:00)
+function feinH(t) { const [h, m] = String(t || '0:0').split(':').map(Number); return (h || 0) + (m || 0) / 60; }
+function wochentag(iso) { if (!iso) return ''; try { return dISO(iso).toLocaleDateString('de-CH', { weekday: 'long' }); } catch (_) { return ''; } }
 const GROB_SAISON = [['FS', 'Frühling'], ['SO', 'Sommer'], ['HE', 'Herbst'], ['WI', 'Winter']];
 function grobIdx(s) { if (!s) return null; const [y, c] = String(s).split('-'); const si = GROB_SAISON.findIndex(x => x[0] === c); if (si < 0 || !y) return null; return Number(y) * 4 + si; }
 function ganttModeToggle(p) {
   return `<div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">
     <button class="btn sm ${ganttMode === 'detail' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="detail" type="button" style="border:none">📋 Detailprogramm (Tage)</button>
     <button class="btn sm ${ganttMode === 'grob' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="grob" type="button" style="border:none">🗓 Grobplanung (Phasen)</button>
+    <button class="btn sm ${ganttMode === 'fein' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="fein" type="button" style="border:none">⏱ Feinprogramm (Stunden)</button>
   </div>`;
 }
 // Grob-Gantt: pro Gewerk eine grobe Start-/End-Phase (Saison + Jahr), als eigenständiges, grobes Balkendiagramm
@@ -1776,6 +1780,71 @@ function setGrobPhase(pid, vid, feld, val) {
   if (feld === 'grobEnde' && val) { const a = grobIdx(v.grobStart), b = grobIdx(val); if (a != null && b < a) v.grobEnde = v.grobStart; }
   save(); viewGrobGantt(p);
 }
+// Feinprogramm: stunden-/tagweise Detailanweisungen (z.B. 08:00–09:00 …, Pause 12–13) für kurze Programme
+function viewFeinGantt(p) {
+  const bloecke = (p.feinbloecke || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '') || feinH(a.von) - feinH(b.von));
+  const colW = 58, hours = FEIN_H1 - FEIN_H0, trackW = hours * colW;
+  const hourHead = Array.from({ length: hours + 1 }, (_, i) => `<span class="fein-hr" style="left:${i * colW}px">${String(FEIN_H0 + i).padStart(2, '0')}</span>`).join('');
+  const grid = Array.from({ length: hours }, (_, i) => `<span class="fein-cell" style="left:${i * colW}px;width:${colW}px"></span>`).join('');
+  const days = [];
+  bloecke.forEach(b => { const d = days.find(x => x.datum === b.datum); if (d) d.items.push(b); else days.push({ datum: b.datum, items: [b] }); });
+  const dayHtml = days.map(d => {
+    const bars = d.items.map(b => {
+      const x0 = Math.max(FEIN_H0, feinH(b.von)), x1 = Math.min(FEIN_H1, feinH(b.bis || b.von));
+      const left = (x0 - FEIN_H0) * colW, w = Math.max((x1 - x0) * colW, 26);
+      const col = b.pause ? '#9aa4b1' : ganttColForGewerk(p, b.gewerk);
+      return `<div class="fein-bar${b.pause ? ' pause' : ''}" style="left:${left}px;width:${w - 3}px;background:${col}" data-act="fein-edit" data-pid="${p.id}" data-bid="${b.id}" title="${esc(b.von)}–${esc(b.bis || '')} ${esc(b.titel || '')}"><b>${esc(b.von)}</b> ${esc(b.titel || (b.pause ? 'Pause' : ''))}</div>`;
+    }).join('');
+    return `<div class="fein-day">
+      <div class="fein-date">${esc(fmtDate(d.datum))}<span class="muted" style="font-weight:400;font-size:11px"> · ${esc(wochentag(d.datum))}</span></div>
+      <div class="fein-track" style="width:${trackW}px">${grid}${bars}</div>
+    </div>`;
+  }).join('');
+  const head = `
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Feinprogramm · stunden-/tagweise Detailanweisungen (06:00–20:00)</div></div></div>
+    ${projektTabs(p, 'termine')}
+    ${ganttModeToggle(p)}`;
+  render(head + `
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <p class="muted" style="font-size:12.5px;margin:0">Zeitblöcke pro Tag (von–bis Uhr, Tätigkeit, optional Gewerk; „Pause" für Unterbrüche). Block anklicken = bearbeiten.</p>
+      <button class="btn sm" data-act="fein-add" data-pid="${p.id}">+ Zeitblock</button>
+    </div>
+    ${days.length ? `<div class="card" style="padding:0;overflow:auto"><div class="fein-wrap" style="min-width:${150 + trackW}px">
+      <div class="fein-day fein-headrow"><div class="fein-date">Tag</div><div class="fein-track" style="width:${trackW}px">${hourHead}</div></div>
+      ${dayHtml}
+    </div></div>` : emptyState('⏱', 'Noch keine Zeitblöcke. Mit „+ Zeitblock" das Tagesprogramm aufbauen.')}`);
+}
+function ganttColForGewerk(p, vid) { const v = vid ? findVergabe(p, vid) : null; return v ? ganttColHex(v) : 'var(--brand)'; }
+function actFeinBlock(pid, bid) {
+  const p = findProjekt(pid); const b = bid ? (p.feinbloecke || []).find(x => x.id === bid) : null;
+  const gw = gewerkeSorted(p);
+  openModal(b ? 'Zeitblock bearbeiten' : 'Zeitblock', `
+    <div class="form-row">
+      <label class="field">Datum <input class="input" type="date" id="fb_datum" value="${b ? esc(b.datum || '') : todayIso()}"></label>
+      <label class="field">Gewerk (optional) <select class="select" id="fb_gewerk"><option value="">–</option>${gw.map(v => `<option value="${v.id}"${b && b.gewerk === v.id ? ' selected' : ''}>${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)}</option>`).join('')}</select></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Von <input class="input" type="time" id="fb_von" value="${b ? esc(b.von || '08:00') : '08:00'}"></label>
+      <label class="field">Bis <input class="input" type="time" id="fb_bis" value="${b ? esc(b.bis || '09:00') : '09:00'}"></label>
+    </div>
+    <label class="field">Tätigkeit / Anweisung <input class="input" id="fb_titel" value="${b ? esc(b.titel || '') : ''}" placeholder="z.B. Schalung Decke EG"></label>
+    <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px"><input type="checkbox" id="fb_pause"${b && b.pause ? ' checked' : ''}> Pause / Unterbruch</label>
+    <label class="field" style="margin-top:8px">Notiz <textarea class="input" id="fb_notiz" rows="2" placeholder="optional">${b ? esc(b.notiz || '') : ''}</textarea></label>
+  `, `${b ? `<button class="btn ghost danger" data-act="fein-rm" data-pid="${pid}" data-bid="${bid}">Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-fein" data-pid="${pid}"${b ? ` data-bid="${bid}"` : ''}>${b ? 'Speichern' : 'Hinzufügen'}</button>`);
+}
+function saveFeinBlock(pid, bid) {
+  const p = findProjekt(pid);
+  const d = { datum: $('#fb_datum').value, von: $('#fb_von').value, bis: $('#fb_bis').value, titel: $('#fb_titel').value.trim(), gewerk: $('#fb_gewerk').value, pause: $('#fb_pause').checked, notiz: $('#fb_notiz').value.trim() };
+  if (!d.datum || !d.von) { toast('Datum und Von-Zeit angeben', 'info'); return; }
+  p.feinbloecke = p.feinbloecke || [];
+  const b = bid ? p.feinbloecke.find(x => x.id === bid) : null;
+  if (b) Object.assign(b, d); else p.feinbloecke.push({ id: uid('fb'), ...d });
+  save(); closeModal(); viewFeinGantt(p); toast('Zeitblock gespeichert');
+}
+function removeFeinBlock(pid, bid) {
+  const p = findProjekt(pid); p.feinbloecke = (p.feinbloecke || []).filter(x => x.id !== bid);
+  save(); closeModal(); viewFeinGantt(p);
+}
 function gdFmt(iso) { if (!iso || ganttDates === 'off') return ''; const d = dISO(iso); const dd = String(d.getDate()).padStart(2, '0'), mm = String(d.getMonth() + 1).padStart(2, '0'); return ganttDates === 'short' ? `${dd}.${mm}.` : `${dd}.${mm}.${String(d.getFullYear()).slice(2)}`; }
 function gdLabels(startIso, endIso, x0, x1) {
   if (ganttDates === 'off') return '';
@@ -1809,6 +1878,7 @@ function viewTermine(id) {
 
   ganttPid = p.id;
   if (ganttMode === 'grob') return viewGrobGantt(p);
+  if (ganttMode === 'fein') return viewFeinGantt(p);
   // ALLE Vergaben (auch ohne Termin), sortiert nach BKP/Gewerk ODER nach Baustart
   const vs = (p.vergaben || []).slice().sort((a, b) => ganttSort === 'start'
     ? ((a.bauStart || '9999-99-99').localeCompare(b.bauStart || '9999-99-99') || (a.bkp || '').localeCompare(b.bkp || ''))
@@ -10144,6 +10214,10 @@ document.addEventListener('click', e => {
     case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; rerenderGantt(pid); break;
     case 'gantt-dates':  ganttDates = ganttDates === 'off' ? 'full' : (ganttDates === 'full' ? 'short' : 'off'); rerenderGantt(pid); break;
     case 'gantt-mode':   ganttMode = kind; viewTermine(pid); break;
+    case 'fein-add':     actFeinBlock(pid); break;
+    case 'fein-edit':    actFeinBlock(pid, bid); break;
+    case 'save-fein':    saveFeinBlock(pid, bid); break;
+    case 'fein-rm':      removeFeinBlock(pid, bid); break;
     case 'new-vorgang':  actNewVorgang(pid, vid); break;
     case 'save-vorgang': saveVorgang(pid, vid); break;
     case 'rm-vorgang':   removeVorgang(pid, vid, oid); break;

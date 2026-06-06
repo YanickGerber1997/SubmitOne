@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v70';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v71';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -297,9 +297,10 @@ function renderLogin(msg, mode) {
   document.body.insertAdjacentHTML('beforeend', `
     <div id="loginOverlay" class="login-overlay">
       <div class="login-card">
-        <img class="login-logo" src="logo.png" alt="submit one"
-             onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
-        <div class="brand-fallback on-light" style="display:none;margin:0 auto 14px">submit<b>one</b></div>
+        <div class="logo big" style="justify-content:center;margin:0 auto 16px">
+          <span class="logo-word"><span class="lw-a">submit</span><span class="lw-b">one</span></span>
+          <svg class="logo-tick" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" class="end"/><path d="M6.6 12.4 l3.4 3.6 l7-8.6" class="chk"/></svg>
+        </div>
         <p class="muted" style="margin:0 0 16px;font-size:13px">${mode === 'up' ? 'Neues Konto erstellen' : 'Mit E-Mail anmelden'}</p>
         ${mode === 'up' ? `<div class="form-row" style="margin-bottom:10px">
           <label class="field">Vorname <input class="input" id="lg_vor" autocapitalize="words" spellcheck="false"></label>

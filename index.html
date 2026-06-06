@@ -19,10 +19,16 @@
   <div id="app">
     <aside class="sidebar">
       <div class="brand">
-        <img class="brand-img" src="logo.png" alt="submit one"
-             onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
-        <span class="brand-fallback" style="display:none">submit<b>one</b></span>
-        <img class="brand-icon" src="icon.svg" alt="submit one" />
+        <span class="logo on-dark compact">
+          <span class="logo-word"><span class="lw-a">submit</span><span class="lw-b">one</span></span>
+          <svg class="logo-tick" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="11" class="end"/>
+            <path d="M6.6 12.4 l3.4 3.6 l7-8.6" class="chk"/>
+          </svg>
+        </span>
+        <span class="logo on-dark logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" class="end"/><path d="M6.6 12.4 l3.4 3.6 l7-8.6" class="chk"/></svg>
+        </span>
       </div>
       <button class="sidebar-toggle" id="btnCollapse" title="Menü ein-/ausklappen" aria-label="Menü ein-/ausklappen">«</button>
       <nav class="nav" id="mainNav">

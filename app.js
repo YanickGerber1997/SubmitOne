@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v153';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v154';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3529,7 +3529,8 @@ function attachKontaktSuche(searchId, resultsId, onPick) {
 }
 
 let bauherrWohnung = 'alle';   // Wohnungs-Filter im Bauherr-Tab
-let bauherrOpen = new Set();    // aufgeklappte Eigentümer-Gruppen (Einheit-IDs, '' = Allgemein)
+let bauherrOpen = new Set();    // aufgeklappte Eigentümer-Gruppen (Einheit-IDs, '' = Zusätze/Allgemein)
+let bauherrView = 'eig';        // 'eig' = Eigentümer-Accordion | 'termine' = Fälligkeitsliste
 // Entscheid-Deadline aus dem Terminprogramm: spätestens wählen = Einbau (bauStart) − Bestellfrist des Gewerks
 function entFaellig(p, e) {
   const v = vergabeForEnt(p, e);
@@ -3674,21 +3675,61 @@ function viewBauherr(pid) {
     return `<tr><td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>${hasWhg ? `<td class="muted" style="font-size:12px">${esc(whgLabel(e.wohnung || ''))}</td>` : ''}<td><strong>${esc(e.thema || '')}</strong></td><td>${untTxt}</td><td>${ausTxt}</td><td><span class="st ${ENT_STATUS[entStatus(e)].color}" style="font-size:10.5px;padding:2px 8px">${ENT_STATUS[entStatus(e)].label}</span></td></tr>`;
   }).join('');
 
+  // Kompaktes Eigentümer-Accordion: je Einheit eine Zeile, aufklappbar mit Detail + Kostenaufbau
+  const entRowFull = e => {
+    const v = vergOf(e); const istSet = (e.ist != null && e.ist !== ''); const d = istSet ? (Number(e.ist) || 0) - (Number(e.budget) || 0) : null;
+    const bdgIn = (feld, val, ph) => `<input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="${feld}" type="number" value="${val != null && val !== '' ? val : ''}" placeholder="${ph}" style="width:86px;height:26px;font-size:12px;text-align:right">`;
+    return `<tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
+      <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
+      <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></td>
+      <td><strong>${esc(e.thema || '')}</strong>${(e.wohnungen && e.wohnungen.length) ? ` <span class="st blue" style="font-size:9px;padding:1px 6px">Zusatz</span>` : ''}${e.entscheid ? `<div class="muted" style="font-size:12px;margin-top:2px">${entStatus(e) === 'entfaellt' ? 'Grund: ' : ''}${esc(e.entscheid)}</div>` : ''}</td>
+      <td class="num">${bdgIn('budget', e.budget, '–')}</td>
+      <td class="num">${bdgIn('ist', e.ist, 'offen')}</td>
+      <td class="num ${dC(d || 0)}">${d != null && Math.abs(d) > 0.5 ? (d > 0 ? '+' : '') + chf(d) : '–'}</td>
+      <td><button class="x-btn" data-act="edit-entscheidung" data-pid="${p.id}" data-eid="${e.id}" title="Bearbeiten">✏</button><button class="x-btn" data-act="rm-entscheidung" data-pid="${p.id}" data-eid="${e.id}">×</button></td>
+    </tr>`;
+  };
+  const detailTable = list => `<table class="grid t-compact"><thead><tr><th style="width:50px">BKP</th><th style="width:104px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:92px">Budget</th><th class="num" style="width:92px">Tatsächlich</th><th class="num" style="width:78px">Δ</th><th style="width:50px"></th></tr></thead><tbody>${list.map(entRowFull).join('')}</tbody></table>`;
+  const kostenBox = k => `<div style="margin-top:8px;padding:8px 11px;background:var(--surface-2);border-radius:8px;font-size:12.5px;line-height:1.8;max-width:420px;margin-left:auto">
+    <div style="display:flex;justify-content:space-between"><span class="muted">Tatsächlich netto (Budget ${chf(k.budget)})</span><b>${chf(k.netto)}</b></div>
+    <div style="display:flex;justify-content:space-between;color:var(--text-soft)"><span>+ Architektenzuschlag ${k.z}%</span>${chf(k.zBetrag)}</div>
+    <div style="display:flex;justify-content:space-between"><span>= netto inkl. Zuschlag</span>${chf(k.nettoZ)}</div>
+    <div style="display:flex;justify-content:space-between;color:var(--text-soft)"><span>+ MwSt ${k.mw}%</span>${chf(k.mwBetrag)}</div>
+    <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid var(--border);margin-top:3px;padding-top:3px"><span>= Brutto (Eigentümer)</span>${chf(k.brutto)}</div></div>`;
+  const grpCard = (key, titel, owner, kontakt, list) => {
+    const k = eigKosten(list); const offenN = list.filter(e => entStatus(e) === 'offen').length; const open = bauherrOpen.has(key);
+    return `<div class="card" style="margin-bottom:10px">
+      <div data-act="bauherr-acc" data-pid="${p.id}" data-uid="${key}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 14px;cursor:pointer">
+        <div style="min-width:0"><span style="color:var(--text-faint);margin-right:6px">${open ? '▾' : '▸'}</span><b>${esc(titel)}</b>${owner ? ` · 👤 ${esc(owner)}` : ''}${kontakt ? ` <span class="muted" style="font-size:12px">· ${esc(kontakt)}</span>` : ''}</div>
+        <div style="display:flex;align-items:center;gap:14px;white-space:nowrap;font-size:12.5px"><span class="muted">${offenN ? `<span class="st amber" style="font-size:9px;padding:1px 6px">${offenN} offen</span> ` : ''}${list.length} Pkt.</span><span class="muted">netto ${chf(k.netto)}</span><span><b>Brutto ${chf(k.brutto)}</b></span></div>
+      </div>
+      ${open ? `<div style="padding:0 8px 10px">${list.length ? detailTable(list) : '<p class="muted" style="padding:4px 8px;font-size:12.5px">Noch keine Einträge.</p>'}${list.length ? kostenBox(k) : ''}
+        <div style="display:flex;gap:6px;padding:8px 8px 2px"><button class="btn xs" data-act="bauherr-add" data-pid="${p.id}" data-w="${key}" type="button">+ Eintrag</button><button class="btn xs ghost" data-act="bauherr-std" data-pid="${p.id}" data-w="${key}" type="button">＋ Standardliste</button></div>
+      </div>` : ''}</div>`;
+  };
+  const accordion = einheiten.map(x => grpCard(x.u.id, x.u.name || 'Einheit', x.u.eigentuemer || '', x.u.eigKontakt || '', allEnts.filter(e => String(e.wohnung || '') === x.u.id || (e.wohnungen || []).includes(x.u.id)))).join('')
+    + grpCard('', 'Zusätze / Allgemein', '', '', allEnts.filter(e => !e.wohnung));
+  const totalK = eigKosten(allEnts);
+
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Eigentümerwünsche · Auswahlentscheide je Eigentümer/Einheit${hasWhg ? ` · ${einheiten.length} Einheiten` : ''}</div></div></div>
     ${projektTabs(p, 'bauherr')}
     ${demoBanner('bauherr')}
-    ${whgChips}
-    <div class="section-head"><h2>${hasWhg && selW !== 'alle' ? (selW === '' ? 'Allgemein' : esc(whgLabel(selW))) : 'Auswahlentscheide'}${(() => { const o = ents.filter(e => entStatus(e) === 'offen').length; return o ? ` <span class="tab-badge">${o} offen</span>` : ''; })()}</h2>
+    <div class="section-head"><h2>Eigentümerwünsche${(() => { const o = allEnts.filter(e => entStatus(e) === 'offen').length; return o ? ` <span class="tab-badge">${o} offen</span>` : ''; })()}</h2>
       <div style="display:flex;gap:6px">
         <button class="btn sm secondary" data-act="pdf-entscheidungen" data-pid="${p.id}">⬇ PDF</button>
-        ${hasWhg ? `<button class="btn sm secondary" data-act="bauherr-bkp" data-pid="${p.id}" title="Je Einheit eine BKP-299.x-Position in den Baukosten anlegen/aktualisieren (Eigentümerwünsche)">→ BKP 299 Baukosten</button>` : ''}
-        <button class="btn sm ghost" data-act="standard-bemusterung" data-pid="${p.id}" title="Übliche Auswahlpunkte für die gewählte Einheit ergänzen">＋ Standardliste</button>
+        ${hasWhg ? `<button class="btn sm secondary" data-act="bauherr-bkp" data-pid="${p.id}" title="Je Einheit eine BKP-299.x-Position in den Baukosten anlegen/aktualisieren">→ BKP 299 Baukosten</button>` : ''}
         <button class="btn sm" data-act="new-entscheidung" data-pid="${p.id}">+ Eintrag</button>
       </div></div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 12px">${hasWhg && selW === 'alle' ? '„Alle" zeigt die Entscheide nach <strong>Fälligkeit aus dem Terminprogramm</strong> – offene zuerst (entscheiden bis = Einbau − Bestellfrist). Für die Erfassung oben den Eigentümer wählen.' : (hasWhg ? 'Oben den Eigentümer/die Einheit wählen – „+ Eintrag" und „Standardliste" erfassen dann genau für diese Einheit. Jeder Punkt: offen → gewählt / entfällt.' : 'Auswahlpunkte führen: offen → gewählt, oder entfällt (mit Grund).')} <span style="display:block;margin-top:3px"><b>Budget</b> = dein Planwert; <b>Tatsächlich</b> = effektiv gewählt. Beide <b>netto</b> (exkl. MwSt, nach Rabatt/Skonto) – wie WV/Baukosten.</span></p>
-    <div class="card">${hasWhg && selW === 'alle' ? alleTable : entsTable}</div>
+    ${hasWhg ? `<div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">
+      <button class="btn sm ${bauherrView !== 'termine' ? '' : 'secondary'}" data-act="bauherr-view" data-pid="${p.id}" data-v="eig" type="button" style="border:none">👤 Eigentümer</button>
+      <button class="btn sm ${bauherrView === 'termine' ? '' : 'secondary'}" data-act="bauherr-view" data-pid="${p.id}" data-v="termine" type="button" style="border:none">📋 Termine (Alle)</button>
+    </div>` : ''}
+    <p class="muted" style="font-size:12px;margin:-2px 0 12px">Beträge <b>netto</b> (exkl. MwSt, nach Rabatt/Skonto). Üblich: Architekt rechnet <b>+ Zuschlag</b> auf den Nettobetrag vor MwSt: <input class="input arch-z" type="number" value="${archZuschlagP()}" style="width:54px;height:24px;font-size:12px;text-align:right"> % · danach MwSt ${mwstSatz()} % → Brutto.</p>
+    ${!hasWhg ? `<div class="card">${entsTable}</div>`
+      : (bauherrView === 'termine' ? `<div class="card">${alleTable}</div>`
+        : `${accordion}<div class="card card-pad" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;font-weight:700;background:var(--brand-soft);border-color:transparent"><span>Total Brutto · alle Eigentümer (netto ${chf(totalK.netto)} + ${totalK.z}% Architekt + ${totalK.mw}% MwSt)</span><span style="font-size:16px">${chf(totalK.brutto)}</span></div>`)}
 
     <div class="section-head" style="margin-top:26px"><h2>Auswahl-Firmen (Bemusterung)</h2>
       <div style="display:flex;gap:6px">
@@ -3700,6 +3741,7 @@ function viewBauherr(pid) {
   `);
   $$('.ent-status').forEach(sel => sel.addEventListener('change', () => setEntscheidungStatus(sel.dataset.pid, sel.dataset.eid, sel.value)));
   $$('.ent-bdg').forEach(el => el.addEventListener('change', () => setEntBudget(el.dataset.pid, el.dataset.eid, el.dataset.feld, el.value)));
+  $('.arch-z')?.addEventListener('change', e => { state.buero = state.buero || Object.assign({}, BUERO); state.buero.archZuschlag = Number(e.target.value) || 0; save(); viewBauherr(pid); });
 }
 
 function actNewEntscheidung(pid, eid) {
@@ -9310,9 +9352,20 @@ const BUERO = {
   email: 'info@heftibb.ch',
   mwst: 8.1,            // MwSt-Satz in %
   preiseInkl: false,    // false = Beträge netto (exkl. MwSt), true = inkl.
+  archZuschlag: 15,     // üblicher Architekten-/Bauleitungszuschlag in % auf den Nettobetrag vor MwSt
 };
 // MwSt-Konvention (global, aus den Büro-Einstellungen)
 function mwstSatz() { const v = Number((state.buero || BUERO).mwst); return (isFinite(v) && v >= 0) ? v : 8.1; }
+function archZuschlagP() { const v = Number((state.buero || BUERO).archZuschlag); return (isFinite(v) && v >= 0) ? v : 15; }
+// Kostenaufbau netto → +Architektenzuschlag → +MwSt → Brutto für eine Menge Auswahlentscheide
+function eigKosten(ents) {
+  const istSet = e => (e.ist != null && e.ist !== '');
+  const netto = ents.reduce((a, e) => a + (istSet(e) ? (Number(e.ist) || 0) : (Number(e.budget) || 0)), 0);
+  const budget = ents.reduce((a, e) => a + (Number(e.budget) || 0), 0);
+  const z = archZuschlagP(), mw = mwstSatz();
+  const zBetrag = netto * z / 100, nettoZ = netto + zBetrag, mwBetrag = nettoZ * mw / 100, brutto = nettoZ + mwBetrag;
+  return { netto, budget, z, zBetrag, nettoZ, mw, mwBetrag, brutto };
+}
 function preiseInkl() { return !!((state.buero || BUERO).preiseInkl); }
 function mwstNote() { return preiseInkl() ? `inkl. ${mwstSatz()} % MwSt` : `Beträge exkl. MwSt (zzgl. ${mwstSatz()} %)`; }
 function inklMwst(netto) { return preiseInkl() ? (Number(netto) || 0) : (Number(netto) || 0) * (1 + mwstSatz() / 100); }
@@ -9825,6 +9878,7 @@ document.addEventListener('click', e => {
     case 'bauherr-bkp':         bauherrToBaukosten(pid); break;
     case 'bauherr-wohnung':  bauherrWohnung = kind; viewBauherr(pid); break;
     case 'bauherr-acc':      { const u = act.dataset.uid; if (bauherrOpen.has(u)) bauherrOpen.delete(u); else bauherrOpen.add(u); viewBauherr(pid); } break;
+    case 'bauherr-view':     bauherrView = act.dataset.v; viewBauherr(pid); break;
     case 'bauherr-add':      bauherrWohnung = act.dataset.w; bauherrOpen.add(act.dataset.w); actNewEntscheidung(pid); break;
     case 'bauherr-std':      bauherrWohnung = act.dataset.w; bauherrOpen.add(act.dataset.w); addStandardBemusterung(pid); break;
     case 'pdf-entscheidungen':  pdfEntscheidungen(pid); break;

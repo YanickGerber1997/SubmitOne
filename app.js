@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v129';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v130';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1608,7 +1608,7 @@ function viewKosten(id) {
       ${p.flaeche ? kpi('Prognose / m² (BGF)', 'CHF ' + money(tot.endsumme / p.flaeche)) : ''}
     </div>
     ${(p.volumen || p.flaeche) ? `<p class="muted" style="font-size:12px;margin:-6px 0 14px">Kubische Kennzahlen für die Kostenschätzungs-Gegenüberstellung${p.volumen ? ` · GV ${p.volumen.toLocaleString('de-CH')} m³` : ''}${p.flaeche ? ` · BGF ${p.flaeche.toLocaleString('de-CH')} m²` : ''}. Gebäudedaten unter „Übersicht → ✎ Bearbeiten".</p>` : ''}
-    <div class="card" style="overflow-x:auto">
+    <div class="card ktable-wrap">
       <table class="grid ktable">
         <thead><tr>
           <th>BKP</th><th>Arbeitsgattung</th><th>Unternehmer</th>

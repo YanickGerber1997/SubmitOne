@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v116';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v117';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7756,58 +7756,96 @@ function pdfBaukosten(pid, mode) {
   const p = findProjekt(pid); if (!p) return;
   const detail = mode === 'detail';
   const hatBt = (p.bauteile || []).length;
-  const cols = ['kv', 'rev', 'wv', 'nt', 'prognose', 'bezahlt', 'offen'];
-  const THEAD = `<tr><th>BKP</th><th>Arbeitsgattung</th><th class="num">KV</th><th class="num">KV rev.</th><th class="num">WV</th><th class="num">NT</th><th class="num">Prognose</th><th class="num">Bezahlt</th><th class="num">Offen</th></tr>`;
+  const f2 = n => (Number(n) || 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const diffTd = d => d == null ? '<td class="num">–</td>' : `<td class="num" style="background:${d > 0.005 ? '#e4f5ea' : (d < -0.005 ? '#fbe7e9' : 'transparent')}">${f2(d)}</td>`;
   const vs = gewerkeSorted(p);
   const groups = {}; vs.forEach(v => { const g = String(v.bkp || '0').trim()[0] || '0'; (groups[g] = groups[g] || []).push(v); });
   const keys = Object.keys(groups).sort();
-  const tot = {}; cols.forEach(c => tot[c] = 0);
+  const base = ['kv', 'rev', 'wv', 'bezahlt', 'prognose'];
+  const tot = {}; base.forEach(c => tot[c] = 0);
   const gtot = {};
-  const lines = []; let detailBody = '';
+
+  if (detail) {
+    // ===== Detailliert (Hefti-Stil) =====
+    const THEAD = `<tr><th>BKP</th><th>Arbeitsgattung</th><th>Unternehmer</th><th class="num">KV</th><th class="num">KV rev.</th><th class="num">±KV→rev</th><th class="num">WV</th><th>Zahlungen</th><th class="num">bezahlt</th><th class="num">Prognose</th><th class="num">±Prog</th></tr>`;
+    const sumRow = (label, S, italic, total) => {
+      const w = s => italic ? `<i>${s}</i>` : s;
+      return `<tr style="${total ? 'border-top:2px solid #7c1d2c' : 'background:' + (italic ? '#f3eedd' : '#f1eef0')}"><td></td><td>${w('<b>' + esc(label) + '</b>')}</td><td></td><td class="num">${w(f2(S.kv))}</td><td class="num">${w(f2(S.rev))}</td>${diffTd(S.rev - S.kv)}<td class="num">${w(f2(S.wv))}</td><td></td><td class="num">${w(f2(S.bezahlt))}</td><td class="num">${w('<b>' + f2(S.prognose) + '</b>')}</td>${diffTd(S.prognose - S.kv)}</tr>`;
+    };
+    const lines = [];
+    keys.forEach(g => {
+      const sub = {}; base.forEach(c => sub[c] = 0);
+      lines.push({ html: `<tr style="background:#f7eff0"><td style="color:#7c1d2c"><b>${esc(g)}</b></td><td colspan="10" style="color:#7c1d2c"><b>${esc(BKP_GRUPPEN[g] || 'Übrige')}</b></td></tr>` });
+      groups[g].forEach(v => {
+        const z = kostenZeile(v); const kv = z.kv, rev = z.rev, wv = z.vergeben ? z.wv : null, bez = z.bezahlt, prog = z.prognose;
+        sub.kv += kv; sub.rev += (rev || 0); sub.wv += (wv || 0); sub.bezahlt += bez; sub.prognose += prog;
+        tot.kv += kv; tot.rev += (rev || 0); tot.wv += (wv || 0); tot.bezahlt += bez; tot.prognose += prog;
+        const zahl = (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => `${r.datum ? fmtDate(r.datum) : '—'}&nbsp;&nbsp;${f2(rgSigned(r))}`).join('<br>');
+        const note = v.notiz ? `<div style="color:#7c1d2c;font-size:8.5px;font-weight:700;line-height:1.3">${esc(v.notiz)}</div>` : '';
+        const btTag = hatBt && v.bauteil ? ` <span style="color:#9aa4b1;font-size:8px">[${esc(bauteilName(p, v.bauteil))}]</span>` : '';
+        lines.push({
+          vals: { kv, rev: rev || 0, wv: wv || 0, bezahlt: bez, prognose: prog },
+          html: `<tr><td>${esc(v.bkp || '')}</td><td>${esc(v.gewerk || '')}${btTag}${note}</td><td style="font-size:9px">${v.firma ? esc(v.firma) : '<span style="color:#aab2bd">nicht vergeben</span>'}</td><td class="num">${f2(kv)}</td><td class="num">${rev != null ? f2(rev) : '–'}</td>${diffTd(rev != null ? rev - kv : null)}<td class="num">${wv != null ? f2(wv) : '–'}</td><td style="font-size:8.5px;color:#46505e">${zahl}</td><td class="num">${f2(bez)}</td><td class="num"><b>${f2(prog)}</b></td>${diffTd(prog - kv)}</tr>`
+        });
+      });
+      gtot[g] = sub;
+      lines.push({ html: sumRow('Total ' + (BKP_GRUPPEN[g] || g), sub) });
+    });
+    const perPage = 18; const carry = {}; base.forEach(c => carry[c] = 0); let count = 0, page = 1;
+    let out = `<table class="t" style="font-size:10px"><thead>${THEAD}</thead><tbody>`;
+    lines.forEach(ln => {
+      if (count >= perPage) {
+        out += sumRow('Übertrag', carry, true) + `</tbody></table><div style="page-break-after:always"></div><table class="t" style="font-size:10px"><thead>${THEAD}</thead><tbody>`;
+        page++; count = 0; out += sumRow('Übertrag von Seite ' + (page - 1), carry, true);
+      }
+      out += ln.html; if (ln.vals) base.forEach(c => carry[c] += ln.vals[c] || 0); count++;
+    });
+    out += sumRow('Total Baukosten', tot, false, true) + `</tbody></table>`;
+    // Kostenübersicht (Zusammenzug)
+    const zRow = (lbl, S) => `<tr><td>${esc(lbl)}</td><td class="num">${f2(S.kv)}</td><td class="num">${f2(S.rev)}</td>${diffTd(S.rev - S.kv)}<td class="num">${f2(S.wv)}</td><td class="num">${f2(S.bezahlt)}</td><td class="num"><b>${f2(S.prognose)}</b></td>${diffTd(S.prognose - S.kv)}</tr>`;
+    const kuRows = keys.map(g => zRow(g + ' ' + (BKP_GRUPPEN[g] || 'Übrige'), gtot[g])).join('');
+    const ku = `<div class="gw" style="margin-top:22px">Kostenübersicht</div>
+      <table class="t" style="font-size:10.5px"><thead><tr><th>BKP / Hauptgruppe</th><th class="num">KV</th><th class="num">KV rev.</th><th class="num">±KV→rev</th><th class="num">WV</th><th class="num">bezahlt</th><th class="num">Prognose</th><th class="num">±Prog</th></tr></thead>
+        <tbody>${kuRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total Baukosten</b></td><td class="num"><b>${f2(tot.kv)}</b></td><td class="num"><b>${f2(tot.rev)}</b></td>${diffTd(tot.rev - tot.kv)}<td class="num"><b>${f2(tot.wv)}</b></td><td class="num"><b>${f2(tot.bezahlt)}</b></td><td class="num"><b>${f2(tot.prognose)}</b></td>${diffTd(tot.prognose - tot.kv)}</tbody></table>`;
+    const inner = out + ku + `<p class="muted" style="margin-top:10px;font-size:8.5px">KV = Kostenschätzung · KV rev. = günstigste Offerte/Stand · ±KV→rev = Über-/Unterschreitung KV zu KV rev. · WV = Werkvertrag · Zahlungen = bezahlte Rechnungen (Datum / Betrag) · ±Prog = Prognose gegen KV. Grün = höher, rot = tiefer. „Übertrag" = laufende Summe je Seite.</p>`;
+    openPrintDoc('Baukostenübersicht', `Objekt: ${esc(p.name)}, ${esc(p.ort)}&nbsp;&nbsp;·&nbsp;&nbsp;akt. ${fmtDate(todayIso())}&nbsp;&nbsp;·&nbsp;&nbsp;Preise inkl. MwSt.`, inner, { landscape: true });
+    return;
+  }
+
+  // ===== Einfach (kompakt, mit Übertrag + Zusammenzug) =====
+  const cols = ['kv', 'rev', 'wv', 'nt', 'prognose', 'bezahlt', 'offen'];
+  const teil = {}; cols.forEach(c => teil[c] = 0);
+  const THEAD = `<tr><th>BKP</th><th>Arbeitsgattung</th><th class="num">KV</th><th class="num">KV rev.</th><th class="num">WV</th><th class="num">NT</th><th class="num">Prognose</th><th class="num">Bezahlt</th><th class="num">Offen</th></tr>`;
+  const lines = [];
   keys.forEach(g => {
     const sub = {}; cols.forEach(c => sub[c] = 0);
-    const ghead = `<tr style="background:#f4f6f9"><td><b>${esc(g)}</b></td><td colspan="8"><b>${esc(BKP_GRUPPEN[g] || 'Übrige')}</b></td></tr>`;
-    lines.push({ html: ghead }); if (detail) detailBody += ghead;
+    lines.push({ html: `<tr style="background:#f4f6f9"><td><b>${esc(g)}</b></td><td colspan="8"><b>${esc(BKP_GRUPPEN[g] || 'Übrige')}</b></td></tr>` });
     groups[g].forEach(v => {
       const z = kostenZeile(v);
       const vals = { kv: z.kv, rev: z.rev || 0, wv: z.vergeben ? z.wv : 0, nt: z.nt, prognose: z.prognose, bezahlt: z.bezahlt, offen: z.offen };
-      cols.forEach(c => { sub[c] += vals[c]; tot[c] += vals[c]; });
-      const rowHtml = `<tr><td>${esc(v.bkp || '')}</td><td>${esc(v.gewerk || '')}${hatBt && v.bauteil ? ` <span style="color:#9aa4b1;font-size:9px">[${esc(bauteilName(p, v.bauteil))}]</span>` : ''}</td><td class="num">${chf(z.kv)}</td><td class="num">${z.rev != null ? chf(z.rev) : '–'}</td><td class="num">${z.vergeben ? chf(z.wv) : '–'}</td><td class="num">${chf(z.nt)}</td><td class="num">${chf(z.prognose)}</td><td class="num">${chf(z.bezahlt)}</td><td class="num">${chf(z.offen)}</td></tr>`;
-      lines.push({ html: rowHtml, vals });
-      if (detail) {
-        detailBody += rowHtml;
-        (v.nachtraege || []).forEach(n => { detailBody += `<tr><td></td><td colspan="5" style="color:#6b7480;font-size:10px">↳ Nachtrag${n.nr ? ' ' + esc(n.nr) : ''}: ${esc(n.titel || '')} (${esc(n.status || 'offen')})${hatBt && n.bauteil ? ' [' + esc(bauteilName(p, n.bauteil)) + ']' : ''}</td><td class="num" style="font-size:10px">${chf(n.betrag)}</td><td colspan="3"></td></tr>`; });
-        (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).forEach(r => { detailBody += `<tr><td></td><td colspan="6" style="color:#6b7480;font-size:10px">↳ ${r.datum ? fmtDate(r.datum) : '—'} · ${esc(r.text || 'Rechnung')}${r.nr ? ' ' + esc(r.nr) : ''}${hatBt ? ' [' + esc(bauteilName(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)) + ']' : ''}${r.bezahlt ? ' · bezahlt' : ' · offen'} · ${chf(rgSigned(r))}</td><td class="num" style="font-size:10px">${r.bezahlt ? chf(rgAuszahlung(r)) : '–'}</td><td colspan="2"></td></tr>`; });
-      }
+      cols.forEach(c => { sub[c] += vals[c]; teil[c] += vals[c]; });
+      lines.push({ vals, html: `<tr><td>${esc(v.bkp || '')}</td><td>${esc(v.gewerk || '')}</td><td class="num">${chf(z.kv)}</td><td class="num">${z.rev != null ? chf(z.rev) : '–'}</td><td class="num">${z.vergeben ? chf(z.wv) : '–'}</td><td class="num">${chf(z.nt)}</td><td class="num">${chf(z.prognose)}</td><td class="num">${chf(z.bezahlt)}</td><td class="num">${chf(z.offen)}</td></tr>` });
     });
     gtot[g] = sub;
-    const subHtml = `<tr style="background:#eef1f5"><td></td><td><b>Zwischentotal ${esc(BKP_GRUPPEN[g] || g)}</b></td>${cols.map(c => `<td class="num">${c === 'prognose' ? '<b>' + chf(sub[c]) + '</b>' : chf(sub[c])}</td>`).join('')}</tr>`;
-    lines.push({ html: subHtml }); if (detail) detailBody += subHtml;
+    lines.push({ html: `<tr style="background:#eef1f5"><td></td><td><b>Zwischentotal ${esc(BKP_GRUPPEN[g] || g)}</b></td>${cols.map(c => `<td class="num">${c === 'prognose' ? '<b>' + chf(sub[c]) + '</b>' : chf(sub[c])}</td>`).join('')}</tr>` });
   });
-  const totalRow = `<tr style="border-top:2px solid #7c1d2c"><td></td><td><b>Total Baukosten</b></td>${cols.map(c => `<td class="num"><b>${chf(tot[c])}</b></td>`).join('')}</tr>`;
+  const totalRow = `<tr style="border-top:2px solid #7c1d2c"><td></td><td><b>Total Baukosten</b></td>${cols.map(c => `<td class="num"><b>${chf(teil[c])}</b></td>`).join('')}</tr>`;
+  const perPage = 26; const carry = {}; cols.forEach(c => carry[c] = 0); let count = 0, page = 1;
+  const ueRow = label => `<tr style="background:#f3eedd;color:#6b5a2a"><td></td><td><i>${label}</i></td>${cols.map(c => `<td class="num"><i>${chf(carry[c])}</i></td>`).join('')}</tr>`;
+  let out = `<table class="t" style="font-size:11px"><thead>${THEAD}</thead><tbody>`;
+  lines.forEach(ln => {
+    if (count >= perPage) {
+      out += ueRow('Übertrag') + `</tbody></table><div style="page-break-after:always"></div><table class="t" style="font-size:11px"><thead>${THEAD}</thead><tbody>`;
+      page++; count = 0; out += ueRow('Übertrag von Seite ' + (page - 1));
+    }
+    out += ln.html; if (ln.vals) cols.forEach(c => carry[c] += ln.vals[c] || 0); count++;
+  });
+  out += totalRow + `</tbody></table>`;
   const zRows = keys.map(g => `<tr><td>BKP ${esc(g)} – ${esc(BKP_GRUPPEN[g] || 'Übrige')}</td><td class="num">${chf(gtot[g].kv)}</td><td class="num">${chf(gtot[g].prognose)}</td><td class="num">${chf(gtot[g].bezahlt)}</td></tr>`).join('');
-  const zusammenzug = `<div class="gw" style="margin-top:18px">Zusammenzug nach Hauptgruppe (BKP)</div>
+  const zusammenzug = `<div class="gw" style="margin-top:18px">Kostenübersicht (Zusammenzug nach Hauptgruppe)</div>
     <table class="t"><thead><tr><th>Hauptgruppe</th><th class="num">Kostenschätzung</th><th class="num">Prognose</th><th class="num">Bezahlt</th></tr></thead>
-      <tbody>${zRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total</b></td><td class="num"><b>${chf(tot.kv)}</b></td><td class="num"><b>${chf(tot.prognose)}</b></td><td class="num"><b>${chf(tot.bezahlt)}</b></td></tr></tbody></table>`;
-  const hinweis = `<p class="muted" style="margin-top:10px;font-size:9.5px">KV = Kostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag · NT = Nachträge · Prognose = WV + NT + Rapporte.${detail ? ' ↳ = Nachträge &amp; Rechnungen (mit Datum) je Gewerk.' : ' „Übertrag" = laufende Summe je Seite.'}</p>`;
-  let inner;
-  if (detail) {
-    inner = `<table class="t" style="font-size:11px"><thead>${THEAD}</thead><tbody>${detailBody}${totalRow}</tbody></table>${zusammenzug}${hinweis}`;
-  } else {
-    const perPage = 26; const carry = {}; cols.forEach(c => carry[c] = 0); let count = 0, page = 1;
-    const ueRow = label => `<tr style="background:#f3eedd;color:#6b5a2a"><td></td><td><i>${label}</i></td>${cols.map(c => `<td class="num"><i>${chf(carry[c])}</i></td>`).join('')}</tr>`;
-    let out = `<table class="t" style="font-size:11px"><thead>${THEAD}</thead><tbody>`;
-    lines.forEach(ln => {
-      if (count >= perPage) {
-        out += ueRow('Übertrag') + `</tbody></table><div style="page-break-after:always"></div><table class="t" style="font-size:11px"><thead>${THEAD}</thead><tbody>`;
-        page++; count = 0; out += ueRow('Übertrag von Seite ' + (page - 1));
-      }
-      out += ln.html; if (ln.vals) cols.forEach(c => carry[c] += ln.vals[c] || 0); count++;
-    });
-    out += totalRow + `</tbody></table>`;
-    inner = out + zusammenzug + hinweis;
-  }
-  openPrintDoc('Baukostenübersicht' + (detail ? ' – detailliert' : ''), `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} · Stand ${fmtDate(todayIso())}`, inner, { landscape: true });
+      <tbody>${zRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total</b></td><td class="num"><b>${chf(teil.kv)}</b></td><td class="num"><b>${chf(teil.prognose)}</b></td><td class="num"><b>${chf(teil.bezahlt)}</b></td></tr></tbody></table>`;
+  openPrintDoc('Baukostenübersicht', `Objekt: ${esc(p.name)}, ${esc(p.ort)} · akt. ${fmtDate(todayIso())}`, out + zusammenzug + `<p class="muted" style="margin-top:10px;font-size:9.5px">KV = Kostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag · NT = Nachträge · Prognose = WV + NT + Rapporte. „Übertrag" = laufende Summe je Seite.</p>`, { landscape: true });
 }
 
 // Bauprogramm / Gantt als saubere Monats-Tabelle (Querformat)

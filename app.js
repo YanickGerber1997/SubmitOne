@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v151';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v152';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3590,10 +3590,17 @@ function viewBauherr(pid) {
   firms.forEach(f => { const k = f.kategorie || 'Übrige'; (byKat[k] = byKat[k] || []).push(f); });
   const katKeys = Object.keys(byKat).sort((a, b) => a.localeCompare(b));
 
+  // Budget-Kontrolle: Summen über die aktuell gezeigten Auswahlentscheide
+  const dC = d => d > 0.5 ? 'over' : (d < -0.5 ? 'under' : '');
+  const istSetOf = e => (e.ist != null && e.ist !== '');
+  const sumBudget = ents.reduce((a, e) => a + (Number(e.budget) || 0), 0);
+  const sumIst = ents.reduce((a, e) => a + (istSetOf(e) ? (Number(e.ist) || 0) : 0), 0);
+  const sumDiff = ents.reduce((a, e) => a + (istSetOf(e) ? ((Number(e.ist) || 0) - (Number(e.budget) || 0)) : 0), 0);
+
   const entsTable = ents.length ? `
     <table class="grid">
-      <thead><tr><th style="width:52px">BKP</th>${hasWhg ? '<th style="width:78px">Wohnung</th>' : ''}<th style="width:112px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:96px">Budget</th><th style="width:96px"></th></tr></thead>
-      <tbody>${ents.map(e => { const v = vergOf(e); const bp = v ? (v.budgetposten || []).find(x => (x.text || '').toLowerCase() === (e.thema || '').toLowerCase()) : null; return `
+      <thead><tr><th style="width:50px">BKP</th>${hasWhg ? '<th style="width:78px">Wohnung</th>' : ''}<th style="width:108px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:96px">Budget</th><th class="num" style="width:96px">Tatsächlich</th><th class="num" style="width:88px">Δ</th><th style="width:52px"></th></tr></thead>
+      <tbody>${ents.map(e => { const v = vergOf(e); const istSet = (e.ist != null && e.ist !== ''); const d = istSet ? (Number(e.ist) || 0) - (Number(e.budget) || 0) : null; const bdgIn = (feld, val, ph) => `<input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="${feld}" type="number" value="${val != null && val !== '' ? val : ''}" placeholder="${ph}" style="width:90px;height:26px;font-size:12px;text-align:right">`; return `
         <tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
           <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
           ${hasWhg ? `<td class="muted" style="font-size:12px">${esc(entUnitLabel(e))}</td>` : ''}
@@ -3601,13 +3608,13 @@ function viewBauherr(pid) {
             ${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}
           </select></td>
           <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${(e.wohnungen && e.wohnungen.length) ? ` <span class="st blue" style="font-size:9px;padding:1px 6px">Zusatz · ${e.wohnungen.length}</span>` : ''}${e.entscheid ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${entStatus(e) === 'entfaellt' ? 'Grund: ' : ''}${esc(e.entscheid)}</div>` : ''}</td>
-          <td class="num">${bp ? chf(bp.betrag) + (hatIst(bp) ? `<div class="muted" style="font-size:11.5px">Ist ${chf(Number(bp.ist) || 0)}</div>` : '') : '<span class="muted">–</span>'}</td>
-          <td>
-            <button class="x-btn" data-act="budget-auswahl" data-pid="${p.id}" data-eid="${e.id}" title="Budget erfassen/bearbeiten">💰</button>
-            <button class="x-btn" data-act="edit-entscheidung" data-pid="${p.id}" data-eid="${e.id}" title="Bearbeiten">✏</button>
-            <button class="x-btn" data-act="rm-entscheidung" data-pid="${p.id}" data-eid="${e.id}">×</button>
-          </td>
-        </tr>`; }).join('')}</tbody>
+          <td class="num">${bdgIn('budget', e.budget, '–')}</td>
+          <td class="num">${bdgIn('ist', e.ist, 'offen')}</td>
+          <td class="num ${dC(d || 0)}">${d != null && Math.abs(d) > 0.5 ? (d > 0 ? '+' : '') + chf(d) : '–'}</td>
+          <td><button class="x-btn" data-act="edit-entscheidung" data-pid="${p.id}" data-eid="${e.id}" title="Bearbeiten">✏</button><button class="x-btn" data-act="rm-entscheidung" data-pid="${p.id}" data-eid="${e.id}">×</button></td>
+        </tr>`; }).join('')}
+        <tr style="background:var(--surface-2);font-weight:700"><td colspan="${hasWhg ? 4 : 3}">Total Budget${selEig ? ' · ' + esc(selEig) : ''}</td><td class="num">${chf(sumBudget)}</td><td class="num">${chf(sumIst)}</td><td class="num ${dC(sumDiff)}">${(sumDiff > 0 ? '+' : '') + chf(sumDiff)}</td><td></td></tr>
+      </tbody>
     </table>` : `<div class="card-pad" style="text-align:center">${emptyState('📋', 'Noch keine Auswahlpunkte erfasst.')}<button class="btn" data-act="standard-bemusterung" data-pid="${p.id}">＋ Standard-Auswahlliste einfügen</button></div>`;
 
   // „Alle": fälligkeitsgetrieben aus dem Terminprogramm (entscheiden bis = Einbau − Bestellfrist)
@@ -3625,16 +3632,19 @@ function viewBauherr(pid) {
     return `<b>${fmtDate(f)}</b> ${badge}`;
   };
   const alleTable = allEnts.length ? `<table class="grid t-compact">
-    <thead><tr><th style="width:140px">entscheiden bis</th><th style="width:46px">BKP</th><th style="width:120px">Einheit</th><th style="width:104px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:80px">Budget</th><th style="width:74px"></th></tr></thead>
+    <thead><tr><th style="width:132px">entscheiden bis</th><th style="width:44px">BKP</th><th style="width:118px">Einheit</th><th style="width:100px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:90px">Budget</th><th class="num" style="width:90px">Tatsächlich</th><th style="width:52px"></th></tr></thead>
     <tbody>${alleSorted.map(e => { const v = vergOf(e); const bp = v ? (v.budgetposten || []).find(x => (x.text || '').toLowerCase() === (e.thema || '').toLowerCase()) : null; return `<tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
       <td style="font-size:12px">${faelligCell(e)}</td>
       <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
       <td class="muted" style="font-size:12px">${esc(entUnitLabel(e))}${(e.wohnungen && e.wohnungen.length) ? ' <span class="st blue" style="font-size:8.5px;padding:0 5px">Zusatz</span>' : ''}</td>
       <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></td>
       <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${e.entscheid ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${esc(e.entscheid)}</div>` : ''}</td>
-      <td class="num">${bp ? chf(bp.betrag) : '<span class="muted">–</span>'}</td>
-      <td><button class="x-btn" data-act="budget-auswahl" data-pid="${p.id}" data-eid="${e.id}" title="Budget">💰</button><button class="x-btn" data-act="edit-entscheidung" data-pid="${p.id}" data-eid="${e.id}" title="Bearbeiten">✏</button><button class="x-btn" data-act="rm-entscheidung" data-pid="${p.id}" data-eid="${e.id}">×</button></td>
-    </tr>`; }).join('')}</tbody></table>` : entsTable;
+      <td class="num"><input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="budget" type="number" value="${e.budget != null && e.budget !== '' ? e.budget : ''}" placeholder="–" style="width:82px;height:24px;font-size:11.5px;text-align:right"></td>
+      <td class="num"><input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="ist" type="number" value="${e.ist != null && e.ist !== '' ? e.ist : ''}" placeholder="offen" style="width:82px;height:24px;font-size:11.5px;text-align:right"></td>
+      <td><button class="x-btn" data-act="edit-entscheidung" data-pid="${p.id}" data-eid="${e.id}" title="Bearbeiten">✏</button><button class="x-btn" data-act="rm-entscheidung" data-pid="${p.id}" data-eid="${e.id}">×</button></td>
+    </tr>`; }).join('')}
+      <tr style="background:var(--surface-2);font-weight:700"><td colspan="4"></td><td style="text-align:right">Total Budget / Ist</td><td class="num">${chf(allEnts.reduce((a, e) => a + (Number(e.budget) || 0), 0))}</td><td class="num">${chf(allEnts.reduce((a, e) => a + (istSetOf(e) ? (Number(e.ist) || 0) : 0), 0))}</td><td></td></tr>
+    </tbody></table>` : entsTable;
 
   const firmsHtml = katKeys.length ? katKeys.map(k => `
     <div style="margin-bottom:14px">
@@ -3689,6 +3699,7 @@ function viewBauherr(pid) {
     <div class="card card-pad">${firmsHtml}</div>
   `);
   $$('.ent-status').forEach(sel => sel.addEventListener('change', () => setEntscheidungStatus(sel.dataset.pid, sel.dataset.eid, sel.value)));
+  $$('.ent-bdg').forEach(el => el.addEventListener('change', () => setEntBudget(el.dataset.pid, el.dataset.eid, el.dataset.feld, el.value)));
 }
 
 function actNewEntscheidung(pid, eid) {
@@ -3765,6 +3776,11 @@ function saveEntscheidung(pid) {
 function updateEntscheidung(pid, eid) {
   const p = findProjekt(pid); const e = (p.entscheidungen || []).find(x => x.id === eid); if (!e) return;
   Object.assign(e, readEntscheidung()); save(); closeModal(); router(); toast('Gespeichert');
+}
+function setEntBudget(pid, eid, feld, val) {
+  const p = findProjekt(pid); const e = (p.entscheidungen || []).find(x => x.id === eid); if (!e) return;
+  e[feld] = (val === '' || val == null) ? '' : (Number(val) || 0);
+  save(); viewBauherr(pid);   // Δ + Summen aktualisieren
 }
 function setEntscheidungStatus(pid, eid, status) {
   const p = findProjekt(pid); const e = (p.entscheidungen || []).find(x => x.id === eid); if (!e) return;

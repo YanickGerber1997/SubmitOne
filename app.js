@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v85';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v86';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -382,7 +382,7 @@ let currentUserId = null, currentUserSlug = '', currentUserVor = '', currentUser
 const PLANS = [
   { key: 'gratis',   name: 'Gratis',   preis: '0',  features: ['Alle Werkzeuge lokal nutzen', 'Drucken & PDF', '✗ kein Cloud-Speichern', '✗ kein Teilen'] },
   { key: 'basis',    name: 'Basic',    preis: '15', features: ['Cloud-Speichern, mehrere Geräte', 'Kontakte · Ausschreibung · Kosten', 'Termine · Kalender · Planung · Protokolle', 'Team-Arbeitsbereich'] },
-  { key: 'komplett', name: 'Premium', preis: '25', features: ['Alles aus Basic', '+ Pendenzen · Dossier · Bauherr', '+ Solar · U-Wert · Honorar', '+ Teilen / Veröffentlichen'] },
+  { key: 'komplett', name: 'Premium', preis: '25', features: ['Alles aus Basic', '+ Nachträge · Optionen · Finanzierung', '+ Pendenzen · Dossier · Bauherr', '+ Solar · U-Wert · Honorar', '+ Teilen / Veröffentlichen'] },
 ];
 // Einzeln freischaltbare Module (à la carte), CHF/Monat. tier = in welchem Paket enthalten.
 // Schlüssel = canModul()-Schlüssel. Einzeln summiert teurer als das jeweilige Paket.
@@ -395,6 +395,9 @@ const MODULES = [
   { key: 'termine',    name: 'Terminprogramm / Gantt',   tier: 'basic',   preis: '5', feat: ['Bauprogramm (Gantt)', 'Verkettung der Gewerke', 'Eingabefristen', 'Arbeitstage / Feiertage'] },
   { key: 'protokolle', name: 'Protokolle',               tier: 'basic',   preis: '5', feat: ['Sitzungsprotokolle', 'Traktanden & Beschlüsse', 'Verteiler', 'Pendenzen aus Sitzung'] },
   { key: 'pendenzen',  name: 'Pendenzen',                tier: 'premium', preis: '5', feat: ['Aufgaben mit Verantwortlichen', 'Termine & Überfällig-Tracking', 'projektübergreifend'] },
+  { key: 'nachtraege', name: 'Nachträge & Rapporte',     tier: 'premium', preis: '4', feat: ['Nachtragspflege je Gewerk', 'Status & Genehmigung', 'Rapporte / Regie', 'projektweite Übersicht'] },
+  { key: 'optionen',   name: 'Optionale Bauteile & Teilprojekte', tier: 'premium', preis: '3', feat: ['Optionen ein-/ausblenden', 'Bauteile / Trakte', 'bereinigte Kostenschätzung'] },
+  { key: 'finanz',     name: 'Finanzierung',             tier: 'premium', preis: '3', feat: ['Finanzierungsplan', 'Eigen- / Fremdkapital', 'Tranchen / Zahlungen'] },
   { key: 'dossier',    name: 'Dokumente / Dossier',      tier: 'premium', preis: '3', feat: ['Dossier-Checkliste', 'Dokumentenablage', 'Vorlagen'] },
   { key: 'bauherr',    name: 'Bauherr / Auswahlentscheide', tier: 'premium', preis: '3', feat: ['Bemusterung', 'Auswahlentscheide', 'Wohnungen / Einheiten'] },
   { key: 'solar',      name: 'Solarrechner',             tier: 'premium', preis: '2', feat: ['Ertrag & Eigenverbrauch', 'Wirtschaftlichkeit & EIV', 'PDF-Report'] },
@@ -434,15 +437,20 @@ function canModul(m) {
   return (ent.module || []).includes(m);
 }
 // Module mit EIGENEM, sauber trennbarem Projekt-Feld → können beim Speichern echt weggelassen werden.
-const MODUL_FELD = { pendenzen: 'pendenzen', protokolle: 'protokolle', solar: 'solar', uwert: 'uwert', honorar: 'honorar', dossier: 'dossier', bauherr: 'bauherr' };
+const MODUL_FELD = { pendenzen: 'pendenzen', protokolle: 'protokolle', solar: 'solar', uwert: 'uwert', honorar: 'honorar', dossier: 'dossier', bauherr: 'bauherr', optionen: ['optionen', 'bauteile'], finanz: 'finanz' };
 // „Gesperrt" = Cloud-Modus mit echten Berechtigungen UND Modul nicht freigeschaltet (lokal/permissiv → nie gesperrt).
 function modulGesperrt(key) { return cloudEnabled && ent !== null && !canModul(key); }
 // Klon des Projekts fürs Speichern, ohne die Daten gesperrter (nicht gekaufter) Module → ehrlich „nicht gespeichert".
 function projektFuerCloud(p) {
   let clone = null;
+  const ensure = () => { if (!clone) clone = { ...p }; return clone; };
   for (const key in MODUL_FELD) {
-    const feld = MODUL_FELD[key];
-    if (modulGesperrt(key) && p[feld] !== undefined) { if (!clone) clone = { ...p }; delete clone[feld]; }
+    if (!modulGesperrt(key)) continue;
+    [].concat(MODUL_FELD[key]).forEach(feld => { if (p[feld] !== undefined) delete ensure()[feld]; });
+  }
+  // Nachträge/Rapporte liegen je Gewerk in `vergaben` → bei gesperrtem Modul dort entfernen
+  if (modulGesperrt('nachtraege') && Array.isArray(p.vergaben)) {
+    ensure().vergaben = p.vergaben.map(v => { const c = { ...v }; delete c.nachtraege; delete c.rapporte; return c; });
   }
   return clone || p;
 }
@@ -1113,19 +1121,19 @@ function projektTabs(p, active) {
   const pendBadge = openP ? ` <span class="tab-badge">${openP}</span>` : '';
   const items = [
     { key: 'overview', href: `#/projekt/${p.id}`, label: 'Übersicht' },
-    { key: 'dossier', href: `#/projekt/${p.id}/dossier`, label: 'Dossier' + (dossierFehltCount(p) ? ` <span class="tab-badge">${dossierFehltCount(p)}</span>` : '') },
     { key: 'kalender', href: `#/projekt/${p.id}/kalender`, label: 'Kalender' },
+    { key: 'listen', href: `#/projekt/${p.id}/listen`, label: 'Kontakte' },
     { key: 'kosten', href: `#/projekt/${p.id}/kosten`, label: 'Kosten' },
-    { key: 'optionen', href: `#/projekt/${p.id}/optionen`, label: 'Optionen' },
+    { key: 'termine', href: `#/projekt/${p.id}/termine`, label: 'Termine / Gantt' },
+    { key: 'pendenzen', href: `#/projekt/${p.id}/pendenzen`, label: 'Pendenzen' + pendBadge },
+    { key: 'dossier', href: `#/projekt/${p.id}/dossier`, label: 'Dossier' + (dossierFehltCount(p) ? ` <span class="tab-badge">${dossierFehltCount(p)}</span>` : '') },
+    { key: 'protokolle', href: `#/projekt/${p.id}/protokolle`, label: 'Protokolle' },
     { key: 'nachtraege', href: `#/projekt/${p.id}/nachtraege`, label: 'Nachträge' },
+    { key: 'optionen', href: `#/projekt/${p.id}/optionen`, label: 'Optionen' },
+    { key: 'finanz', href: `#/projekt/${p.id}/finanz`, label: 'Finanzierung' },
+    { key: 'bauherr', href: `#/projekt/${p.id}/bauherr`, label: 'Bauherr' },
     { key: 'solar', href: `#/projekt/${p.id}/solar`, label: 'Solar' },
     { key: 'uwert', href: `#/projekt/${p.id}/uwert`, label: 'U-Wert' },
-    { key: 'termine', href: `#/projekt/${p.id}/termine`, label: 'Termine / Gantt' },
-    { key: 'protokolle', href: `#/projekt/${p.id}/protokolle`, label: 'Protokolle' },
-    { key: 'pendenzen', href: `#/projekt/${p.id}/pendenzen`, label: 'Pendenzen' + pendBadge },
-    { key: 'listen', href: `#/projekt/${p.id}/listen`, label: 'Listen' },
-    { key: 'bauherr', href: `#/projekt/${p.id}/bauherr`, label: 'Bauherr' },
-    { key: 'finanz', href: `#/projekt/${p.id}/finanz`, label: 'Finanzierung' },
     { key: 'honorar', href: `#/projekt/${p.id}/honorar`, label: 'Honorar' },
   ].filter(it => !versteckteTabs(p).includes(it.key));   // Rollen-Matrix: ausgeblendete Reiter weglassen
   // Unterreiter auch in der Sidebar unter „Projekte" anzeigen (volle Liste)
@@ -1133,7 +1141,7 @@ function projektTabs(p, active) {
   if (sub) sub.innerHTML = `<div class="subnav-title" title="${esc(p.name)}">${esc(p.name)}</div>` +
     items.map(it => `<a class="subnav-link ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('');
   // In-Page-Reiter: häufige primär, Rest unter „Mehr ▾" (kompakt, halbschirm-tauglich)
-  const primary = ['overview', 'kosten', 'termine', 'dossier', 'pendenzen'];
+  const primary = ['overview', 'kalender', 'listen', 'kosten', 'termine', 'pendenzen'];
   const prim = items.filter(it => primary.includes(it.key));
   const more = items.filter(it => !primary.includes(it.key));
   const moreActive = more.some(it => it.key === active);
@@ -5722,6 +5730,7 @@ function viewFinanz(pid) {
     <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Finanzierung &amp; Rentabilität</div></div>
       <button class="btn" data-act="new-geschoss" data-pid="${p.id}">+ Geschoss</button></div>
     ${projektTabs(p, 'finanz')}
+    ${demoBanner('finanz')}
 
     <div class="kpi-row">
       ${kpiF('Anlagekosten', chf(anlage))}
@@ -6323,6 +6332,7 @@ function viewOptionen(pid) {
       <div><button class="btn" data-act="opt-manage" data-pid="${p.id}">⚙ Verwalten</button></div>
     </div>
     ${projektTabs(p, 'optionen')}
+    ${demoBanner('optionen')}
     ${leer ? emptyState('🧩', 'Noch keine Optionen oder Bauteile angelegt. Mit „⚙ Verwalten" beginnen – danach im jeweiligen Gewerk (Reiter „Kosten" → Gewerk → „✎ Kostenschätzung") die Positionen mit Bauteil/Option etikettieren.') : ''}
     ${optionenCard(p, kv, prog)}
     ${bauteilCard(p, kv)}
@@ -6370,6 +6380,7 @@ function viewNachtraege(pid) {
       </div>
     </div>
     ${projektTabs(p, 'nachtraege')}
+    ${demoBanner('nachtraege')}
 
     <div class="section-head"><h2>Nachträge</h2><span class="hint">Nur genehmigte zählen in die Abrechnungsprognose</span></div>
     <div class="card" style="overflow-x:auto">

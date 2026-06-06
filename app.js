@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v161';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v162';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1543,6 +1543,7 @@ function viewProjektDetail(id) {
    10a) View: Kosten / Baukostenübersicht
    --------------------------------------------------------------- */
 
+let kostenBrutto = false;   // Baukostenübersicht: false = netto (exkl. MwSt), true = brutto (inkl.)
 function viewKosten(id) {
   const p = findProjekt(id);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
@@ -1555,6 +1556,7 @@ function viewKosten(id) {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">⬇ Kostenschätzung</button>
         <button class="btn secondary" data-act="pdf-baukosten" data-pid="${p.id}">⬇ Baukostenübersicht</button>
+        <button class="btn ${kostenBrutto ? '' : 'secondary'}" data-act="kosten-brutto" data-pid="${p.id}" title="Beträge netto (exkl.) oder brutto (inkl. ${mwstSatz()}% MwSt) anzeigen">${kostenBrutto ? `Brutto (inkl. ${mwstSatz()}%)` : 'Netto (exkl. MwSt)'}</button>
         ${katToggleBtn()}
         <button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>
       </div>
@@ -1571,6 +1573,9 @@ function viewKosten(id) {
   const add = (acc, z) => { acc.kv += z.kv; acc.rev += (z.rev != null ? z.rev : z.kv); acc.wv += z.wv; acc.nt += z.nt; acc.prognose += z.prognose; acc.endsumme += z.endsumme; acc.bezahlt += z.bezahlt; acc.fakturiert += z.fakturiert; acc.offen += z.offen; acc.offenRg += z.offenRg; acc.dWvEnd += (z.vergeben ? z.endsumme - z.wv : 0); };
   const dCls = d => d > 0.5 ? 'over' : (d < -0.5 ? 'under' : '');
   const sh = t => `<div style="font-weight:400;font-size:9px;color:#9aa4b1;margin-top:1px">${t}</div>`;
+  const mw = mwstSatz();
+  // Netto/Brutto-Anzeige: in Brutto den Bruttobetrag gross, darunter klein/ausgegraut Netto + MwSt-%
+  const mB = n => kostenBrutto ? `${money(n * (1 + mw / 100))}<div class="kb-net">${money(n)} <span style="opacity:.65">+${mw}%</span></div>` : money(n);
   const tot = blank();
 
   let body = '';
@@ -1586,26 +1591,26 @@ function viewKosten(id) {
         <td class="bkp-code">${esc(v.bkp)}</td>
         <td><strong>${esc(v.gewerk)}</strong>${btSel}</td>
         <td>${v.firma ? esc(v.firma) : '<span class="muted">nicht vergeben</span>'}</td>
-        <td class="num">${money(z.kv)}</td>
-        <td class="num">${z.rev != null ? money(z.rev) : `<span class="muted">${money(z.kv)}</span>`}</td>
-        <td class="num">${z.vergeben ? money(z.wv) : '–'}</td>
-        <td class="num">${z.nt ? money(z.nt) : '–'}</td>
-        <td class="num"><strong>${money(z.endsumme)}</strong>${z.hatSchluss ? ' <span class="muted" style="font-size:9px">SR</span>' : ''}</td>
-        <td class="num">${z.fakturiert ? money(z.fakturiert) : '–'}</td>
-        <td class="num">${z.offenRg ? money(z.offenRg) : '–'}</td>
-        <td class="num ${dCls(d || 0)}">${d != null && Math.abs(d) > 0.5 ? money(d) : '–'}</td>
+        <td class="num">${mB(z.kv)}</td>
+        <td class="num">${z.rev != null ? mB(z.rev) : `<span class="muted">${mB(z.kv)}</span>`}</td>
+        <td class="num">${z.vergeben ? mB(z.wv) : '–'}</td>
+        <td class="num">${z.nt ? mB(z.nt) : '–'}</td>
+        <td class="num"><strong>${mB(z.endsumme)}</strong>${z.hatSchluss ? ' <span class="muted" style="font-size:9px">SR</span>' : ''}</td>
+        <td class="num">${z.fakturiert ? mB(z.fakturiert) : '–'}</td>
+        <td class="num">${z.offenRg ? mB(z.offenRg) : '–'}</td>
+        <td class="num ${dCls(d || 0)}">${d != null && Math.abs(d) > 0.5 ? mB(d) : '–'}</td>
       </tr>`;
       rows += (v.nachtraege || []).map(n => { const nc = n.status === 'genehmigt' ? 'green' : (n.status === 'abgelehnt' ? 'grey' : 'amber'); return `<tr class="rg-sub">
         <td></td>
         <td colspan="5"><span class="muted">↳ Nachtrag${n.nr ? ' ' + esc(n.nr) : ''}:</span> ${esc(n.titel || '')} <span class="st ${nc}" style="font-size:9px;padding:1px 6px">${esc(n.status || 'offen')}</span>${hatBt ? ` · <select class="bt-nt" data-pid="${p.id}" data-vid="${v.id}" data-nid="${n.id}" title="Teilprojekt des Nachtrags" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius:4px">${bauteilOptionsHtml(p, n.bauteil)}</select>` : ''}</td>
-        <td class="num">${money(n.betrag)}</td>
+        <td class="num">${mB(n.betrag)}</td>
         <td colspan="4"></td>
       </tr>`; }).join('');
       rows += (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => `<tr class="rg-sub">
         <td></td>
         <td colspan="6"><span class="muted">↳ ${r.datum ? fmtDate(r.datum) : '—'}</span> ${esc(r.text || (r.art === 'gutschrift' ? 'Gutschrift' : 'Rechnung'))}${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''} · ${money(rgSigned(r))}${hatBt ? ` · <select class="bt-rg" data-pid="${p.id}" data-vid="${v.id}" data-rgid="${r.id}" title="Teilprojekt der Rechnung" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius:4px">${bauteilOptionsHtml(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)}</select>` : ''}</td>
         <td></td>
-        <td class="num">${money(rgSigned(r))}</td>
+        <td class="num">${mB(rgSigned(r))}</td>
         <td></td><td></td>
       </tr>`).join('');
       rows += (v.budgetposten || []).map(b => {
@@ -1616,7 +1621,7 @@ function viewKosten(id) {
           <td></td>
           <td colspan="6"><span class="muted">↳ Budget${b.eig ? ' (Eigentümerwunsch)' : ''}:</span> ${esc(b.text || 'Position')}${b.wohnung ? ` <span class="muted">[${esc(einheitName(p, b.wohnung))}]</span>` : ''} <span class="st ${sc}" style="font-size:9px;padding:1px 6px">${src}</span> · WV ${money(b.betrag)}${b.ist != null && b.ist !== '' ? ` · nach Auswahl ${money(b.ist)}` : ''}</td>
           <td></td>
-          <td class="num ${dlt ? (dlt > 0 ? 'over' : 'under') : ''}">${dlt ? (dlt > 0 ? '+' : '') + money(dlt) : ''}</td>
+          <td class="num ${dlt ? (dlt > 0 ? 'over' : 'under') : ''}">${dlt ? (dlt > 0 ? '+' : '') + mB(dlt) : ''}</td>
           <td></td><td></td>
         </tr>`;
       }).join('');
@@ -1627,9 +1632,9 @@ function viewKosten(id) {
       ${bkpGhostRows(p, 11, g)}
       <tr class="ksub">
         <td></td><td colspan="2">Zwischentotal</td>
-        <td class="num">${money(sub.kv)}</td><td class="num">${money(sub.rev)}</td><td class="num">${money(sub.wv)}</td>
-        <td class="num">${money(sub.nt)}</td><td class="num">${money(sub.endsumme)}</td><td class="num">${money(sub.fakturiert)}</td>
-        <td class="num">${money(sub.offenRg)}</td><td class="num ${dCls(dSub)}">${money(dSub)}</td>
+        <td class="num">${mB(sub.kv)}</td><td class="num">${mB(sub.rev)}</td><td class="num">${mB(sub.wv)}</td>
+        <td class="num">${mB(sub.nt)}</td><td class="num">${mB(sub.endsumme)}</td><td class="num">${mB(sub.fakturiert)}</td>
+        <td class="num">${mB(sub.offenRg)}</td><td class="num ${dCls(dSub)}">${mB(dSub)}</td>
       </tr>`;
   });
   const dTot = tot.dWvEnd;
@@ -1656,9 +1661,9 @@ function viewKosten(id) {
           ${body}
           <tr class="ktotal">
             <td></td><td colspan="2">Total Baukosten</td>
-            <td class="num">${money(tot.kv)}</td><td class="num">${money(tot.rev)}</td><td class="num">${money(tot.wv)}</td>
-            <td class="num">${money(tot.nt)}</td><td class="num">${money(tot.endsumme)}</td><td class="num">${money(tot.fakturiert)}</td>
-            <td class="num">${money(tot.offenRg)}</td><td class="num ${dCls(dTot)}">${money(dTot)}</td>
+            <td class="num">${mB(tot.kv)}</td><td class="num">${mB(tot.rev)}</td><td class="num">${mB(tot.wv)}</td>
+            <td class="num">${mB(tot.nt)}</td><td class="num">${mB(tot.endsumme)}</td><td class="num">${mB(tot.fakturiert)}</td>
+            <td class="num">${mB(tot.offenRg)}</td><td class="num ${dCls(dTot)}">${mB(dTot)}</td>
           </tr>
         </tbody>
       </table>
@@ -9886,6 +9891,7 @@ document.addEventListener('click', e => {
     case 'rm-einheit':    removeEinheit(pid, gid, eid); break;
     case 'new-vergabe':  actNewVergabe(pid); break;
     case 'kat-toggle':   katOpen = !katOpen; router(); break;
+    case 'kosten-brutto': kostenBrutto = !kostenBrutto; viewKosten(pid); break;
     case 'quickadd-bkp': quickAddVergabe(pid, act.dataset.code, act.dataset.label); break;
     case 'gw-toggle':    { const y = window.scrollY; gwOpen.has(vid) ? gwOpen.delete(vid) : gwOpen.add(vid); router(); window.scrollTo(0, y); } break;
     case 'gw-action':    gewerkAction(pid, vid, act.dataset.action); break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v62';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v63';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -364,7 +364,15 @@ let currentUserId = null;
 const PLANS = [
   { key: 'gratis',   name: 'Gratis',   preis: '0',  features: ['Alle Werkzeuge lokal nutzen', 'Drucken & PDF', '✗ kein Cloud-Speichern', '✗ kein Teilen'] },
   { key: 'basis',    name: 'Basis',    preis: '15', features: ['Cloud-Speichern, mehrere Geräte', 'Projekte · Termine · Kosten', 'Team-Arbeitsbereich'] },
-  { key: 'komplett', name: 'Komplett', preis: '25', features: ['Alles aus Basis', '+ Solarrechner, Pendenzen, Honorar', '+ Teilen / Veröffentlichen'] },
+  { key: 'komplett', name: 'Premium', preis: '25', features: ['Alles aus Basis', '+ alle Module', '+ Teilen / Veröffentlichen'] },
+];
+// Einzeln freischaltbare Module (à la carte), CHF/Monat. Schlüssel = canModul()-Schlüssel.
+const MODULES = [
+  { key: 'termine',    name: 'Terminprogramm / Gantt', preis: '5' },
+  { key: 'pendenzen',  name: 'Pendenzen',              preis: '5' },
+  { key: 'protokolle', name: 'Protokolle',             preis: '3' },
+  { key: 'solar',      name: 'Solarrechner',           preis: '2' },
+  { key: 'honorar',    name: 'Honorar-Rechner',        preis: '3' },
 ];
 async function loadEntitlements() {
   if (!cloudEnabled || !supa) { ent = null; return; }
@@ -376,11 +384,30 @@ async function loadEntitlements() {
 function planAktiv() { return !!(ent && ent.plan && ent.plan !== 'free' && (!ent.aktiv_bis || new Date(ent.aktiv_bis) > new Date())); }
 function isPaid()    { return !cloudEnabled || ent === null || planAktiv(); }
 function canModul(m) { return !cloudEnabled || ent === null || ent.plan === 'komplett' || (ent.module || []).includes(m); }
+const PLAN_LABELS = { free: 'Free', trial: 'Test', basis: 'Basic', komplett: 'Premium', modul: 'Individuell' };
 function planLabel() {
   if (!ent || !ent.plan) return '';
   if (ent.plan === 'trial') { const d = ent.aktiv_bis ? Math.max(0, Math.ceil((new Date(ent.aktiv_bis) - new Date()) / 86400000)) : 0; return 'Test · ' + d + ' Tg'; }
-  if (ent.plan === 'free') return 'Gratis';
-  return ent.plan.charAt(0).toUpperCase() + ent.plan.slice(1);
+  return PLAN_LABELS[ent.plan] || (ent.plan.charAt(0).toUpperCase() + ent.plan.slice(1));
+}
+// Aktuelles Tier + Speicher-Status für die dauerhafte Anzeige auf jeder Seite
+function tierInfo() {
+  if (!cloudEnabled) return { label: 'Lokal', cls: 'grey', save: 'nur in diesem Browser' };
+  const p = (ent && ent.plan) ? ent.plan : 'free';
+  const hatModule = ent && Array.isArray(ent.module) && ent.module.length;
+  if (p === 'trial')    return { label: 'Test',        cls: 'amber',  save: 'wird gespeichert' };
+  if (p === 'basis')    return { label: 'Basic',       cls: 'blue',   save: 'wird gespeichert' };
+  if (p === 'komplett') return { label: 'Premium',     cls: 'green',  save: 'wird gespeichert' };
+  if (p === 'modul' || hatModule) return { label: 'Individuell', cls: 'purple', save: 'wird gespeichert' };
+  return { label: 'Free', cls: 'grey', save: 'nicht gespeichert' };
+}
+function renderTierBadge() {
+  let b = $('#tierBadge');
+  if (!b) { b = document.createElement('button'); b.id = 'tierBadge'; b.type = 'button'; b.onclick = actAbo; document.body.appendChild(b); }
+  const t = tierInfo();
+  b.className = 'tier-badge t-' + t.cls;
+  b.title = 'Plan ansehen';
+  b.innerHTML = `<span class="tier-dot"></span><b>${esc(t.label)}</b><span class="tier-save">· ${esc(t.save)}</span>`;
 }
 function renderPlanBanner() {
   let bar = $('#planBanner');
@@ -396,8 +423,8 @@ function actAbo() {
   const istTest = plan === 'trial';
   const status = plan === 'lokal' ? 'Lokaler Modus – ohne Konto, Daten nur in diesem Browser.'
     : istTest ? ('Testphase aktiv – noch ' + planLabel().replace('Test · ', '') + '. Danach ist Speichern gesperrt, bis du upgradest.')
-    : plan === 'komplett' ? 'Aktiv: Komplett – alle Module, Cloud, Teilen.'
-    : plan === 'basis' ? 'Aktiv: Basis – Cloud-Speichern & Kernmodule.'
+    : plan === 'komplett' ? 'Aktiv: Premium – alle Module, Cloud, Teilen.'
+    : plan === 'basis' ? 'Aktiv: Basic – Cloud-Speichern & Kernmodule.'
     : 'Gratis – arbeiten ja, Cloud-Speichern gesperrt.';
   const cards = PLANS.map(pl => {
     const aktiv = (plan === pl.key) || (istTest && pl.key === 'komplett');
@@ -409,10 +436,25 @@ function actAbo() {
       ${upgrade ? `<button class="btn sm" data-act="upgrade" data-plan="${pl.key}">Upgraden</button>` : '<div style="height:4px"></div>'}
     </div>`;
   }).join('');
+  const komplett = plan === 'komplett' || istTest;
+  const modRows = MODULES.map(m => {
+    const hat = komplett || canModul(m.key);
+    return `<div class="mod-row">
+      <span class="mod-name">${esc(m.name)}</span>
+      <span class="mod-preis">CHF ${esc(m.preis)}<span style="font-size:10px;color:var(--text-soft)">/Mt</span></span>
+      ${hat ? '<span class="st green" style="font-size:9.5px;padding:1px 7px">freigeschaltet</span>'
+            : `<button class="btn xs" data-act="upgrade" data-plan="mod_${m.key}">freischalten</button>`}
+    </div>`;
+  }).join('');
   openModal('Dein Plan', `
     <div class="muted" style="margin:-4px 0 14px;font-size:13px">${esc(status)}</div>
     <div class="plan-grid">${cards}</div>
-    <p class="muted" style="font-size:11.5px;margin:14px 0 0">Preise CHF/Monat (Richtwerte, anpassbar). Bezahlung über Stripe – sobald die Zahlungslinks eingetragen sind, führt „Upgraden" direkt zur Kasse.</p>
+    <div style="margin-top:18px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:2px">Individuell – nur einzelne Module</div>
+      <div class="muted" style="font-size:11.5px;margin-bottom:8px">Alle Module sind im Free benutzbar; bezahlt wird fürs <b>Speichern</b>. „Individuell" = nur die gewünschten Module dauerhaft speichern (z.B. nur das Terminprogramm). In „Premium" ist alles enthalten.</div>
+      <div class="mod-list">${modRows}</div>
+    </div>
+    <p class="muted" style="font-size:11.5px;margin:14px 0 0">Preise CHF/Monat (Richtwerte, anpassbar). Bezahlung über Stripe – sobald die Zahlungslinks in config.js eingetragen sind, führt „freischalten" direkt zur Kasse.</p>
   `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
 }
 function openCheckout(plan) {
@@ -440,6 +482,7 @@ async function startApp() {
   const ver = $('.ver'); if (ver) ver.textContent = 'Prototyp · ' + APP_VERSION;
   renderUserChip();
   renderPlanBanner();
+  renderTierBadge();
   window.addEventListener('hashchange', router);
   router();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {

@@ -14,10 +14,17 @@ window.SUBMITONE_CONFIG = {
   SUPABASE_URL: 'https://gxrrbultujwsmzthkqwl.supabase.co',
   SUPABASE_ANON_KEY: 'sb_publishable_WTv4Uwm5HSq3254yGoW-Mg_6go9STTK',
 
-  // Stripe-Zahlungslinks (Payment Links) – später hier eintragen, dann funktioniert „Upgraden".
+  // Stripe-Zahlungslinks (Payment Links) – später hier eintragen, dann funktioniert „Upgraden"/„freischalten".
   // Die App hängt automatisch ?client_reference_id=<user> an, damit der Webhook das Konto kennt.
   STRIPE_LINKS: {
+    // Pakete
     basis: '',
     komplett: '',
+    // Einzelne Module (à la carte) – Schlüssel: mod_<modulschlüssel>
+    mod_termine: '',
+    mod_pendenzen: '',
+    mod_protokolle: '',
+    mod_solar: '',
+    mod_honorar: '',
   },
 };

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v158';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v159';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -4499,6 +4499,9 @@ function viewVergabeDetail(pid, vid) {
     <span class="muted" style="font-size:12px">${gIdx + 1} / ${gwList.length}</span>
   </div>`;
 
+  // Sichtbare Gewerk-Leiste (Übersicht + 1-Klick-Wechsel)
+  const rail = `<aside class="gw-rail"><div class="gw-rail-head">Gewerke · ${gwList.length}</div><div class="gw-rail-list">${gwList.map(g => { const stt = STATUS_BY_KEY[g.status] || {}; return `<a class="gw-rail-item${g.id === v.id ? ' active' : ''}" href="#/projekt/${p.id}/vergabe/${g.id}" title="${esc(stt.label || g.status || '')}"><span class="bkp-code" style="font-size:10.5px">${esc(g.bkp || '')}</span><span class="gw-rail-name">${esc(g.gewerk || '')}</span><span class="st-dot ${stt.color || 'grey'}"></span></a>`; }).join('')}</div></aside>`;
+
   const html = `
     <div class="breadcrumb" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <span><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › ${esc(v.gewerk)}</span>
@@ -4748,7 +4751,7 @@ function viewVergabeDetail(pid, vid) {
       </div>` : `<div style="padding:0 0 8px">${emptyState('🧾', 'Noch keine Rechnungen erfasst.')}</div>`}
     </div>
   `;
-  render(html);
+  render(`<div class="gw-rail-wrap">${rail}<div class="gw-rail-main">${html}</div></div>`);
 
   // Rechnungs-Häkchen verdrahten
   $$('.rg-check').forEach(cb => cb.addEventListener('change', () => toggleRechnung(cb.dataset.pid, cb.dataset.vid, cb.dataset.rgid)));

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v92';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v93';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -398,7 +398,7 @@ const MODULES = [
   { key: 'nachtraege', name: 'Nachträge-Übersicht (projektweit)', tier: 'premium', preis: '4', feat: ['Alle Nachträge über alle Gewerke', 'Status & Genehmigung zentral', 'Rapporte-Übersicht', 'Summen & Prognose', 'Pflege je Gewerk ist in Kosten enthalten'] },
   { key: 'optionen',   name: 'Optionale Bauteile & Teilprojekte', tier: 'premium', preis: '3', feat: ['Optionen ein-/ausblenden', 'Bauteile / Trakte', 'bereinigte Kostenschätzung'] },
   { key: 'finanz',     name: 'Finanzierung',             tier: 'premium', preis: '3', feat: ['Finanzierungsplan', 'Eigen- / Fremdkapital', 'Tranchen / Zahlungen'] },
-  { key: 'zahlungsplan', name: 'Zahlungsplan',           tier: 'premium', preis: '3', feat: ['Beträge nach SIA-Leistungsprozenten', 'Fälligkeiten aus dem Terminprogramm', 'pro Phase anpassbar'] },
+  { key: 'zahlungsplan', name: 'Zahlungsplan',           tier: 'premium', preis: '3', feat: ['Bauherr: aus Werkverträgen + Unternehmer-Terminen', 'Honorar: SIA-Leistungsprozente', 'Verteilung auf Monatsrechnungen'] },
   { key: 'dossier',    name: 'Dokumente / Dossier',      tier: 'premium', preis: '3', feat: ['Dossier-Checkliste', 'Dokumentenablage', 'Vorlagen'] },
   { key: 'bauherr',    name: 'Bauherr / Auswahlentscheide', tier: 'premium', preis: '3', feat: ['Bemusterung', 'Auswahlentscheide', 'Wohnungen / Einheiten'] },
   { key: 'solar',      name: 'Solarrechner',             tier: 'premium', preis: '2', feat: ['Ertrag & Eigenverbrauch', 'Wirtschaftlichkeit & EIV', 'PDF-Report'] },
@@ -7116,11 +7116,87 @@ function viewUwert(pid) {
 function zahlungsplanOf(p) {
   if (!p.zahlungsplan) p.zahlungsplan = {};
   const z = p.zahlungsplan;
+  if (z.modus === undefined) z.modus = 'bauherr';   // 'bauherr' (Werkverträge) | 'honorar' (SIA)
   if (!Array.isArray(z.phasen) || !z.phasen.length) z.phasen = HONORAR_PHASEN.map(ph => ({ key: ph.key, label: ph.label, pct: ph.pct, datum: '' }));
   if (z.betrag === undefined || z.betrag === null) z.betrag = Math.round(baukostenTotal(p)) || 0;
   if (z.von === undefined) z.von = p.baustart || p.start || '';
   if (z.bis === undefined) z.bis = p.ende || '';
   return z;
+}
+// Bauherren-Zahlungsplan: jeder vergebene Werkvertrag über seine Bauzeit (Unternehmer-Termine) verteilt
+function bauherrPlan(p) {
+  const gw = gewerkeSorted(p).filter(isVergeben);
+  const map = new Map(); const rows = [];
+  gw.forEach(v => {
+    const betrag = kostenZeile(v).prognose;
+    const s = v.bauStart ? new Date(v.bauStart) : null, e = v.bauEnde ? new Date(v.bauEnde) : null;
+    const months = [];
+    if (s && e && !isNaN(+s) && !isNaN(+e) && +e >= +s) { let y = s.getFullYear(), m = s.getMonth(); const ey = e.getFullYear(), em = e.getMonth(); while (y < ey || (y === ey && m <= em)) { months.push(y + '-' + String(m + 1).padStart(2, '0')); m++; if (m > 11) { m = 0; y++; } } }
+    const per = months.length ? betrag / months.length : 0;
+    months.forEach(mk => map.set(mk, (map.get(mk) || 0) + per));
+    rows.push({ v, betrag, von: v.bauStart, bis: v.bauEnde, ohneTermin: !months.length });
+  });
+  const sorted = [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  let cum = 0; const monate = sorted.map(([k, b]) => { cum += b; return { key: k, betrag: b, cum }; });
+  const total = rows.filter(r => !r.ohneTermin).reduce((a, r) => a + r.betrag, 0);
+  return { rows, monate, total, fehlend: rows.filter(r => r.ohneTermin) };
+}
+function zpBauherrHtml(p) {
+  const r = bauherrPlan(p);
+  if (!r.rows.length) return `<div class="card card-pad">${emptyState('🧾', 'Noch keine vergebenen Werkverträge. Sobald Gewerke vergeben + im Reiter „Termine" terminiert sind, erscheint hier der Bauherren-Zahlungsplan.')}</div>`;
+  const wvRows = r.rows.map(x => `<tr>
+      <td><span class="bkp-code">${esc(x.v.bkp || '')}</span> ${esc(x.v.gewerk)}<div class="muted" style="font-size:11px">${esc(x.v.firma || '—')}</div></td>
+      <td class="num">${chf(x.betrag)}</td>
+      <td>${x.ohneTermin ? '<span class="st amber">Termine fehlen</span>' : fmtDate(x.von) + ' – ' + fmtDate(x.bis)}</td>
+    </tr>`).join('');
+  const monRows = r.monate.map(m => `<tr><td>${zpMonLabel(m.key)}</td><td class="num">${chf(m.betrag)}</td><td class="num muted">${chf(m.cum)}</td></tr>`).join('');
+  return `
+    <div class="card card-pad" style="max-width:840px">
+      <h2 style="margin:0 0 8px;font-size:15px">Werkverträge (Grundlage)</h2>
+      <div class="card" style="overflow-x:auto"><table class="grid"><thead><tr><th>Gewerk / Firma</th><th class="num">Summe (WV + gen. NT)</th><th>Bauzeitraum (Unternehmer)</th></tr></thead>
+        <tbody>${wvRows}</tbody>
+        <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b>${chf(r.total)}</b></td><td></td></tr></tfoot></table></div>
+      ${r.fehlend.length ? `<p class="muted" style="font-size:11.5px;margin:8px 0 0">⚠ ${r.fehlend.length} Gewerk(e) ohne Bautermine – im Reiter „Termine" Start/Ende setzen, dann zählen sie mit.</p>` : ''}
+    </div>
+    <div class="card card-pad" style="max-width:840px;margin-top:16px">
+      <h2 style="margin:0 0 10px;font-size:15px">Zahlungen Bauherr – pro Monat</h2>
+      ${r.monate.length ? `<table class="grid"><thead><tr><th>Monat</th><th class="num">fällig</th><th class="num">kumuliert</th></tr></thead>
+        <tbody>${monRows}</tbody>
+        <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b>${chf(r.total)}</b></td><td></td></tr></tfoot></table>
+        <p class="muted" style="font-size:11.5px;margin:8px 0 0">Jeder Werkvertrag wird gleichmässig über seine Bauzeit (Start–Ende des Unternehmers) verteilt, pro Monat summiert. Grundlage: vergebene WV + genehmigte Nachträge.</p>` : '<p class="muted" style="font-size:12.5px;margin:0">Noch keine Bautermine gesetzt.</p>'}
+    </div>`;
+}
+function zpHonorarHtml(p, z) {
+  const c = zahlungsplanCalc(z);
+  const honT = p.honorar ? Math.round(computeHonorar(p.honorar).H) : 0;
+  const rows = c.rows.map((r, i) => `<tr>
+      <td>${esc(r.label)}</td>
+      <td class="num"><input class="input zp-in" id="zp_pct_${i}" type="number" step="0.1" value="${r.pct}" style="width:74px;text-align:right;padding:4px 6px"></td>
+      <td class="num" id="zp_b_${i}">${chf(r.betrag)}</td>
+      <td><input class="input zp-in" id="zp_dat_${i}" type="date" value="${esc(r.datum || '')}" style="width:150px;padding:4px 6px"></td>
+    </tr>`).join('');
+  return `
+    <div class="card card-pad" style="max-width:840px">
+      <div class="form-row">
+        <label class="field">Honorar-Betrag (CHF)
+          <input class="input zp-in" id="zp_betrag" type="number" value="${z.betrag}">
+          <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Unser Honorar · ${honT ? `<button type="button" data-act="zp-honorar" data-pid="${p.id}" style="background:none;border:none;color:var(--brand);cursor:pointer;padding:0;font-size:11px;text-decoration:underline">aus Honorarrechner (${chf(honT)})</button> · ` : ''}<button type="button" data-act="zp-baukosten" data-pid="${p.id}" style="background:none;border:none;color:var(--brand);cursor:pointer;padding:0;font-size:11px;text-decoration:underline">aus Baukosten (${chf(baukostenTotal(p))})</button></span></label>
+      </div>
+      <div class="form-row" style="margin-top:6px">
+        <label class="field">Zeitraum von <input class="input zp-in" id="zp_von" type="date" value="${esc(z.von || '')}"></label>
+        <label class="field">bis <input class="input zp-in" id="zp_bis" type="date" value="${esc(z.bis || '')}"></label>
+        <div style="display:flex;align-items:flex-end"><button class="btn secondary" data-act="zp-verteilen" data-pid="${p.id}" type="button">Fälligkeiten verteilen</button></div>
+      </div>
+      <table class="grid" style="margin-top:14px"><thead><tr><th>SIA-Phase</th><th class="num">Leistung %</th><th class="num">Betrag</th><th>Fälligkeit</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b id="zp_pctsum" style="color:${Math.abs(c.pctSum - 100) < 0.05 ? 'var(--s-green)' : 'var(--s-red)'}">${Math.round(c.pctSum * 10) / 10}%</b></td><td class="num"><b id="zp_total">${chf(c.total)}</b></td><td></td></tr></tfoot>
+      </table>
+      <p class="muted" style="font-size:11.5px;margin:12px 0 0">1. Honorar-Betrag (aus Honorarrechner oder manuell). 2. „Fälligkeiten verteilen" legt die Phasenenden in den Zeitraum. 3. Unten je Phase auf Monatsrechnungen verteilt.</p>
+    </div>
+    <div class="card card-pad" style="max-width:840px;margin-top:16px">
+      <h2 style="margin:0 0 10px;font-size:15px">Monatsrechnungen</h2>
+      <div id="zpMonate">${zahlungsplanMonateHtml(z)}</div>
+    </div>`;
 }
 function zahlungsplanCalc(z) {
   const betrag = Number(z.betrag) || 0;
@@ -7187,63 +7263,58 @@ function zahlungsplanVerteilen(pid) {
 }
 function viewZahlungsplan(pid) {
   const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
-  const z = zahlungsplanOf(p); const c = zahlungsplanCalc(z);
-  const rows = c.rows.map((r, i) => `<tr>
-      <td>${esc(r.label)}</td>
-      <td class="num"><input class="input zp-in" id="zp_pct_${i}" type="number" step="0.1" value="${r.pct}" style="width:74px;text-align:right;padding:4px 6px"></td>
-      <td class="num" id="zp_b_${i}">${chf(r.betrag)}</td>
-      <td><input class="input zp-in" id="zp_dat_${i}" type="date" value="${esc(r.datum || '')}" style="width:150px;padding:4px 6px"></td>
-    </tr>`).join('');
-  render(`
+  const z = zahlungsplanOf(p); const modus = z.modus || 'bauherr';
+  const sub = modus === 'bauherr' ? 'Bauherr – Fälligkeiten aus Werkverträgen + Unternehmer-Terminen' : 'Unser Honorar – SIA-Leistungsprozente, Betrag aus Honorarrechner/Baukosten';
+  const head = `
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Zahlungsplan</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">Zahlungsplan</h1><div class="sub" style="margin-top:5px">Beträge nach SIA-Leistungsprozenten · Fälligkeiten aus dem Terminprogramm</div></div>
+      <div><h1 style="margin:0;font-size:23px">Zahlungsplan</h1><div class="sub" style="margin-top:5px">${sub}</div></div>
       <div><button class="btn" data-act="pdf-zahlungsplan" data-pid="${p.id}">⬇ PDF</button></div>
     </div>
     ${projektTabs(p, 'zahlungsplan')}
     ${demoBanner('zahlungsplan')}
-    <div class="card card-pad" style="max-width:840px">
-      <div class="form-row">
-        <label class="field">Gesamtbetrag (CHF)
-          <input class="input zp-in" id="zp_betrag" type="number" value="${z.betrag}">
-          <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">z.B. Werkvertragssumme, Honorar oder Baukosten · <button type="button" data-act="zp-baukosten" data-pid="${p.id}" style="background:none;border:none;color:var(--brand);cursor:pointer;padding:0;font-size:11px;text-decoration:underline">aus Baukosten (${chf(baukostenTotal(p))})</button></span></label>
-      </div>
-      <div class="form-row" style="margin-top:6px">
-        <label class="field">Zeitraum von <input class="input zp-in" id="zp_von" type="date" value="${esc(z.von || '')}"></label>
-        <label class="field">bis <input class="input zp-in" id="zp_bis" type="date" value="${esc(z.bis || '')}"></label>
-        <div style="display:flex;align-items:flex-end"><button class="btn secondary" data-act="zp-verteilen" data-pid="${p.id}" type="button">Fälligkeiten verteilen</button></div>
-      </div>
-      <table class="grid" style="margin-top:14px"><thead><tr><th>SIA-Phase</th><th class="num">Leistung %</th><th class="num">Betrag</th><th>Fälligkeit</th></tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b id="zp_pctsum" style="color:${Math.abs(c.pctSum-100)<0.05?'var(--s-green)':'var(--s-red)'}">${Math.round(c.pctSum*10)/10}%</b></td><td class="num"><b id="zp_total">${chf(c.total)}</b></td><td></td></tr></tfoot>
-      </table>
-      <p class="muted" style="font-size:11.5px;margin:12px 0 0">1. Betrag nach SIA-Leistungsprozenten je Phase. 2. „Fälligkeiten verteilen" legt die Phasenenden in den Zeitraum. 3. Unten wird jede Phase auf Monatsrechnungen verteilt.</p>
-    </div>
-    <div class="card card-pad" style="max-width:840px;margin-top:16px">
-      <h2 style="margin:0 0 10px;font-size:15px">Monatsrechnungen</h2>
-      <div id="zpMonate">${zahlungsplanMonateHtml(z)}</div>
-    </div>
-  `);
-  $$('.zp-in').forEach(el => el.addEventListener('input', () => zahlungsplanUpdate(pid)));
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      <button class="btn xs ${modus === 'bauherr' ? '' : 'secondary'}" data-act="zp-modus" data-pid="${p.id}" data-modus="bauherr" type="button">Bauherr (Werkverträge)</button>
+      <button class="btn xs ${modus === 'honorar' ? '' : 'secondary'}" data-act="zp-modus" data-pid="${p.id}" data-modus="honorar" type="button">Unser Honorar (SIA)</button>
+    </div>`;
+  render(head + (modus === 'bauherr' ? zpBauherrHtml(p) : zpHonorarHtml(p, z)));
+  if (modus === 'honorar') $$('.zp-in').forEach(el => el.addEventListener('input', () => zahlungsplanUpdate(pid)));
 }
 function pdfZahlungsplan(pid) {
   const p = findProjekt(pid); if (!p) return;
-  const z = zahlungsplanOf(p); const c = zahlungsplanCalc(z); const mo = zahlungsplanMonate(z);
-  const phaseRows = c.rows.map(r => `<tr><td>${esc(r.label)}</td><td class="num">${r.pct}%</td><td class="num">${money(r.betrag)}</td><td class="num">${r.datum ? fmtDate(r.datum) : '–'}</td></tr>`).join('');
-  const inner = `
-    <table class="t" style="max-width:480px"><tbody>
-      <tr><td>Gesamtbetrag</td><td class="num"><b>${money(z.betrag)}</b></td></tr>
-      <tr><td>Zeitraum</td><td class="num">${z.von ? fmtDate(z.von) : '–'} – ${z.bis ? fmtDate(z.bis) : '–'}</td></tr>
-    </tbody></table>
-    <div class="gw">Verteilung nach SIA-Leistungsprozenten</div>
-    <table class="t"><thead><tr><th>SIA-Phase</th><th class="num">Leistung %</th><th class="num">Betrag</th><th class="num">Fälligkeit</th></tr></thead>
-      <tbody>${phaseRows}</tbody>
-      <tfoot><tr><td><b>Total</b></td><td class="num"><b>${Math.round(c.pctSum * 10) / 10}%</b></td><td class="num"><b>${money(c.total)}</b></td><td></td></tr></tfoot></table>
-    ${mo.ok ? `<div class="gw">Monatsrechnungen</div>
-    <table class="t"><thead><tr><th>Monat</th><th class="num">Rechnung</th><th class="num">kumuliert</th></tr></thead>
-      <tbody>${mo.monate.map(m => `<tr><td>${zpMonLabel(m.key)}</td><td class="num">${money(m.betrag)}</td><td class="num muted">${money(m.cum)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td><b>Total</b></td><td class="num"><b>${money(mo.total)}</b></td><td></td></tr></tfoot></table>` : ''}`;
-  openPrintDoc('Zahlungsplan', `${esc(p.name)}${p.ort ? ' · ' + esc(p.ort) : ''}`, inner);
+  const z = zahlungsplanOf(p); const modus = z.modus || 'bauherr';
+  let inner, title;
+  if (modus === 'bauherr') {
+    title = 'Zahlungsplan Bauherr';
+    const r = bauherrPlan(p);
+    const wvRows = r.rows.map(x => `<tr><td>${esc(x.v.bkp || '')} ${esc(x.v.gewerk)}<br><span class="muted">${esc(x.v.firma || '')}</span></td><td class="num">${money(x.betrag)}</td><td>${x.ohneTermin ? 'Termine fehlen' : fmtDate(x.von) + ' – ' + fmtDate(x.bis)}</td></tr>`).join('');
+    inner = `<div class="gw">Werkverträge (Grundlage)</div>
+      <table class="t"><thead><tr><th>Gewerk / Firma</th><th class="num">Summe (WV + gen. NT)</th><th>Bauzeitraum</th></tr></thead>
+        <tbody>${wvRows || '<tr><td colspan="3" class="muted">Keine vergebenen Werkverträge</td></tr>'}</tbody>
+        <tfoot><tr><td><b>Total</b></td><td class="num"><b>${money(r.total)}</b></td><td></td></tr></tfoot></table>
+      ${r.monate.length ? `<div class="gw">Zahlungen Bauherr – pro Monat</div>
+      <table class="t"><thead><tr><th>Monat</th><th class="num">fällig</th><th class="num">kumuliert</th></tr></thead>
+        <tbody>${r.monate.map(m => `<tr><td>${zpMonLabel(m.key)}</td><td class="num">${money(m.betrag)}</td><td class="num muted">${money(m.cum)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td><b>Total</b></td><td class="num"><b>${money(r.total)}</b></td><td></td></tr></tfoot></table>` : ''}`;
+  } else {
+    title = 'Zahlungsplan Honorar';
+    const c = zahlungsplanCalc(z); const mo = zahlungsplanMonate(z);
+    const phaseRows = c.rows.map(r => `<tr><td>${esc(r.label)}</td><td class="num">${r.pct}%</td><td class="num">${money(r.betrag)}</td><td class="num">${r.datum ? fmtDate(r.datum) : '–'}</td></tr>`).join('');
+    inner = `
+      <table class="t" style="max-width:480px"><tbody>
+        <tr><td>Honorar-Betrag</td><td class="num"><b>${money(z.betrag)}</b></td></tr>
+        <tr><td>Zeitraum</td><td class="num">${z.von ? fmtDate(z.von) : '–'} – ${z.bis ? fmtDate(z.bis) : '–'}</td></tr>
+      </tbody></table>
+      <div class="gw">Verteilung nach SIA-Leistungsprozenten</div>
+      <table class="t"><thead><tr><th>SIA-Phase</th><th class="num">Leistung %</th><th class="num">Betrag</th><th class="num">Fälligkeit</th></tr></thead>
+        <tbody>${phaseRows}</tbody>
+        <tfoot><tr><td><b>Total</b></td><td class="num"><b>${Math.round(c.pctSum * 10) / 10}%</b></td><td class="num"><b>${money(c.total)}</b></td><td></td></tr></tfoot></table>
+      ${mo.ok ? `<div class="gw">Monatsrechnungen</div>
+      <table class="t"><thead><tr><th>Monat</th><th class="num">Rechnung</th><th class="num">kumuliert</th></tr></thead>
+        <tbody>${mo.monate.map(m => `<tr><td>${zpMonLabel(m.key)}</td><td class="num">${money(m.betrag)}</td><td class="num muted">${money(m.cum)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td><b>Total</b></td><td class="num"><b>${money(mo.total)}</b></td><td></td></tr></tfoot></table>` : ''}`;
+  }
+  openPrintDoc(title, `${esc(p.name)}${p.ort ? ' · ' + esc(p.ort) : ''}`, inner);
 }
 function pdfRechnungskontrolle(pid) {
   const p = findProjekt(pid); if (!p) return;
@@ -8662,7 +8733,9 @@ document.addEventListener('click', e => {
     case 'sammelrg':     actSammelrechnung(pid); break;
     case 'save-sammelrg': saveSammelrechnung(pid); break;
     case 'zp-verteilen': zahlungsplanVerteilen(pid); break;
+    case 'zp-modus':     { const p2 = findProjekt(pid); zahlungsplanOf(p2).modus = act.dataset.modus; save(); viewZahlungsplan(pid); break; }
     case 'zp-baukosten': { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).betrag = Math.round(baukostenTotal(p2)); save(); viewZahlungsplan(pid); break; }
+    case 'zp-honorar':   { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).betrag = p2.honorar ? Math.round(computeHonorar(p2.honorar).H) : 0; save(); viewZahlungsplan(pid); break; }
     case 'uw-pick':      uwertPick(pid, act.dataset.id); break;
     case 'uw-add':       uwertAddSchicht(pid); break;
     case 'uw-rm':        uwertRmSchicht(pid, Number(act.dataset.idx)); break;

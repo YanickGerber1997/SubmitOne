@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v111';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v112';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -4866,7 +4866,7 @@ function viewEinstellungen() {
         <label class="field">Telefon <input class="input" id="b_tel" value="${esc(b.tel)}" placeholder="041 000 00 00"></label>
         <label class="field">E-Mail <input class="input" id="b_email" value="${esc(b.email)}" placeholder="info@…"></label>
       </div>
-      <label class="field">E-Mail-Signatur <span class="muted" style="font-weight:400;font-size:11.5px">– wird unter Pendenz-Mails angehängt</span>
+      <label class="field">E-Mail-Signatur <span class="muted" style="font-weight:400;font-size:11.5px">– wird unter Pendenz-Mails angehängt</span> · <button type="button" class="btn-ghost-sm" data-act="sig-from-buero" style="font-size:11px;text-decoration:underline">↻ aus Büro-Daten erzeugen</button>
         <textarea class="input" id="b_signatur" rows="4" placeholder="Freundliche Grüsse&#10;P. Hefti Bauberatung GmbH&#10;Bernstrasse 40, 3076 Worb · 031 839 00 77">${esc(b.signatur || '')}</textarea>
       </label>
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;margin-top:6px"><input type="checkbox" id="b_sig_auto" ${b.signaturAuto === false ? '' : 'checked'}> Signatur standardmässig an Mails anhängen</label>
@@ -9195,6 +9195,7 @@ document.addEventListener('click', e => {
     case 'save-kontakt': saveKontakt(act.dataset.kid); break;
     case 'rm-kontakt':   rmKontakt(act.dataset.kid); break;
     case 'kontakt-kat':  kontaktKat = kind; viewKontakte(); break;
+    case 'sig-from-buero': { const f = $('#b_firma').value.trim(), s = $('#b_strasse').value.trim(), pz = $('#b_plzort').value.trim(), t = $('#b_tel').value.trim(); const sig = 'Freundliche Grüsse\n' + [f, [s, pz].filter(Boolean).join(', '), t ? 'Tel. ' + t : ''].filter(Boolean).join('\n'); const el = $('#b_signatur'); if (el) el.value = sig; toast('Signatur erzeugt – „Büro speichern" nicht vergessen'); break; }
     case 'save-buero':   saveBuero(); break;
     case 'rm-logo':      state.buero = { ...(state.buero || {}), logo: '' }; save(); viewEinstellungen(); break;
     case 'export':       exportData(); break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v123';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v124';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -989,7 +989,12 @@ function kostenZeile(v) {
   const bezahlt = rechnungBezahlt(v);
   const fakturiert = rechnungTotal(v);
   const offen = prognose - bezahlt;
-  return { kv, rev, wv, nt, rap, budget, prognose, bezahlt, fakturiert, offen, vergeben: isVergeben(v) };
+  // Endsumme = effektive Schlusssumme: liegt eine Schlussrechnung vor → Rechnungssumme;
+  // sonst der höhere Wert aus Prognose/bereits fakturiert (über-fakturiert hebt die Prognose).
+  const hatSchluss = (v.rechnungen || []).some(r => r.art === 'schluss');
+  const endsumme = hatSchluss ? fakturiert : Math.max(prognose, fakturiert);
+  const offenRg = endsumme - fakturiert;   // nie negativ; bei Schlussrechnung / über-fakturiert = 0
+  return { kv, rev, wv, nt, rap, budget, prognose, endsumme, bezahlt, fakturiert, offen, offenRg, hatSchluss, vergeben: isVergeben(v) };
 }
 
 // BKP-Hauptgruppen (erste Ziffer)
@@ -1536,9 +1541,10 @@ function viewKosten(id) {
   vs.forEach(v => { const g = String(v.bkp || '0').trim()[0] || '0'; (groups[g] = groups[g] || []).push(v); });
   const gKeys = Object.keys(groups).sort();
 
-  const blank = () => ({ kv: 0, rev: 0, wv: 0, nt: 0, prognose: 0, bezahlt: 0, offen: 0 });
-  const add = (acc, z) => { acc.kv += z.kv; acc.rev += (z.rev || 0); acc.wv += z.wv; acc.nt += z.nt; acc.prognose += z.prognose; acc.bezahlt += z.bezahlt; acc.offen += z.offen; };
+  const blank = () => ({ kv: 0, rev: 0, wv: 0, nt: 0, prognose: 0, endsumme: 0, bezahlt: 0, fakturiert: 0, offen: 0, offenRg: 0 });
+  const add = (acc, z) => { acc.kv += z.kv; acc.rev += (z.rev || 0); acc.wv += z.wv; acc.nt += z.nt; acc.prognose += z.prognose; acc.endsumme += z.endsumme; acc.bezahlt += z.bezahlt; acc.fakturiert += z.fakturiert; acc.offen += z.offen; acc.offenRg += z.offenRg; };
   const dCls = d => d > 0.5 ? 'over' : (d < -0.5 ? 'under' : '');
+  const sh = t => `<div style="font-weight:400;font-size:9px;color:#9aa4b1;margin-top:1px">${t}</div>`;
   const tot = blank();
 
   let body = '';
@@ -1547,7 +1553,7 @@ function viewKosten(id) {
     let rows = '';
     groups[g].forEach(v => {
       const z = kostenZeile(v); add(sub, z); add(tot, z);
-      const d = z.prognose - z.kv;
+      const d = z.vergeben ? (z.endsumme - z.wv) : null;   // +/− = WV → Endsumme
       const hatBt = (p.bauteile || []).length;
       const btSel = hatBt ? `<div style="margin-top:3px"><select class="bt-gw" data-pid="${p.id}" data-vid="${v.id}" onclick="event.stopPropagation()" title="Teilprojekt" style="font-size:11px;padding:1px 5px;border:1px solid var(--border);border-radius:4px;max-width:200px">${bauteilOptionsHtml(p, v.bauteil)}</select></div>` : '';
       rows += `<tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
@@ -1558,10 +1564,10 @@ function viewKosten(id) {
         <td class="num">${z.rev != null ? money(z.rev) : '–'}</td>
         <td class="num">${z.vergeben ? money(z.wv) : '–'}</td>
         <td class="num">${z.nt ? money(z.nt) : '–'}</td>
-        <td class="num"><strong>${money(z.prognose)}</strong></td>
-        <td class="num">${money(z.bezahlt)}</td>
-        <td class="num">${z.offen ? money(z.offen) : '–'}</td>
-        <td class="num ${dCls(d)}">${d ? money(d) : '–'}</td>
+        <td class="num"><strong>${money(z.endsumme)}</strong>${z.hatSchluss ? ' <span class="muted" style="font-size:9px">SR</span>' : ''}</td>
+        <td class="num">${z.fakturiert ? money(z.fakturiert) : '–'}</td>
+        <td class="num">${z.offenRg ? money(z.offenRg) : '–'}</td>
+        <td class="num ${dCls(d || 0)}">${d != null && Math.abs(d) > 0.5 ? money(d) : '–'}</td>
       </tr>`;
       rows += (v.nachtraege || []).map(n => { const nc = n.status === 'genehmigt' ? 'green' : (n.status === 'abgelehnt' ? 'grey' : 'amber'); return `<tr class="rg-sub">
         <td></td>
@@ -1573,56 +1579,56 @@ function viewKosten(id) {
         <td></td>
         <td colspan="6"><span class="muted">↳ ${r.datum ? fmtDate(r.datum) : '—'}</span> ${esc(r.text || (r.art === 'gutschrift' ? 'Gutschrift' : 'Rechnung'))}${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''} · ${money(rgSigned(r))}${hatBt ? ` · <select class="bt-rg" data-pid="${p.id}" data-vid="${v.id}" data-rgid="${r.id}" title="Teilprojekt der Rechnung" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius:4px">${bauteilOptionsHtml(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)}</select>` : ''}</td>
         <td></td>
-        <td class="num">${r.bezahlt ? money(rgAuszahlung(r)) : '<span class="muted" style="font-size:10px">offen</span>'}</td>
+        <td class="num">${money(rgSigned(r))}</td>
         <td></td><td></td>
       </tr>`).join('');
     });
-    const dSub = sub.prognose - sub.kv;
+    const dSub = sub.endsumme - sub.wv;
     body += `<tr class="kgroup"><td>${esc(g)}</td><td colspan="10">${esc(BKP_GRUPPEN[g] || 'Übrige')}</td></tr>
       ${rows}
       ${bkpGhostRows(p, 11, g)}
       <tr class="ksub">
         <td></td><td colspan="2">Zwischentotal</td>
         <td class="num">${money(sub.kv)}</td><td class="num">${money(sub.rev)}</td><td class="num">${money(sub.wv)}</td>
-        <td class="num">${money(sub.nt)}</td><td class="num">${money(sub.prognose)}</td><td class="num">${money(sub.bezahlt)}</td>
-        <td class="num">${money(sub.offen)}</td><td class="num ${dCls(dSub)}">${money(dSub)}</td>
+        <td class="num">${money(sub.nt)}</td><td class="num">${money(sub.endsumme)}</td><td class="num">${money(sub.fakturiert)}</td>
+        <td class="num">${money(sub.offenRg)}</td><td class="num ${dCls(dSub)}">${money(dSub)}</td>
       </tr>`;
   });
-  const dTot = tot.prognose - tot.kv;
+  const dTot = tot.endsumme - tot.wv;
 
   const kpi = (l, v, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:21px${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div></div>`;
 
   render(head + `
     <div class="kpi-row">
       ${kpi('Kostenschätzung (KV)', money(tot.kv))}
-      ${kpi('Abrechnungsprognose', money(tot.prognose))}
-      ${kpi('Bezahlt', money(tot.bezahlt))}
-      ${kpi('Offen', money(tot.offen))}
-      ${p.volumen ? kpi('Prognose / m³ (GV)', 'CHF ' + money(tot.prognose / p.volumen)) : ''}
-      ${p.flaeche ? kpi('Prognose / m² (BGF)', 'CHF ' + money(tot.prognose / p.flaeche)) : ''}
+      ${kpi('Abrechnungsprognose', money(tot.endsumme))}
+      ${kpi('Rechnungen', money(tot.fakturiert))}
+      ${kpi('Offen', money(tot.offenRg))}
+      ${p.volumen ? kpi('Prognose / m³ (GV)', 'CHF ' + money(tot.endsumme / p.volumen)) : ''}
+      ${p.flaeche ? kpi('Prognose / m² (BGF)', 'CHF ' + money(tot.endsumme / p.flaeche)) : ''}
     </div>
     ${(p.volumen || p.flaeche) ? `<p class="muted" style="font-size:12px;margin:-6px 0 14px">Kubische Kennzahlen für die Kostenschätzungs-Gegenüberstellung${p.volumen ? ` · GV ${p.volumen.toLocaleString('de-CH')} m³` : ''}${p.flaeche ? ` · BGF ${p.flaeche.toLocaleString('de-CH')} m²` : ''}. Gebäudedaten unter „Übersicht → ✎ Bearbeiten".</p>` : ''}
     <div class="card" style="overflow-x:auto">
       <table class="grid ktable">
         <thead><tr>
           <th>BKP</th><th>Arbeitsgattung</th><th>Unternehmer</th>
-          <th class="num">KV</th><th class="num">KV rev.</th><th class="num">WV</th>
-          <th class="num">Nachträge</th><th class="num">Prognose</th><th class="num">Bezahlt</th><th class="num">Offen</th><th class="num">Δ KV</th>
+          <th class="num">KV${sh('Schätzung')}</th><th class="num">KV rev.${sh('günst. Offerte')}</th><th class="num">WV${sh('verhandelt')}</th>
+          <th class="num">Nachträge${sh('genehmigt')}</th><th class="num">Prognose${sh('WV+NT / Schluss')}</th><th class="num">Rechnung${sh('bisher bezahlt')}</th><th class="num">Offen${sh('noch nicht bez.')}</th><th class="num">+/−${sh('WV→Endsumme')}</th>
         </tr></thead>
         <tbody>
           ${body}
           <tr class="ktotal">
             <td></td><td colspan="2">Total Baukosten</td>
             <td class="num">${money(tot.kv)}</td><td class="num">${money(tot.rev)}</td><td class="num">${money(tot.wv)}</td>
-            <td class="num">${money(tot.nt)}</td><td class="num">${money(tot.prognose)}</td><td class="num">${money(tot.bezahlt)}</td>
-            <td class="num">${money(tot.offen)}</td><td class="num ${dCls(dTot)}">${money(dTot)}</td>
+            <td class="num">${money(tot.nt)}</td><td class="num">${money(tot.endsumme)}</td><td class="num">${money(tot.fakturiert)}</td>
+            <td class="num">${money(tot.offenRg)}</td><td class="num ${dCls(dTot)}">${money(dTot)}</td>
           </tr>
         </tbody>
       </table>
     </div>
     ${optionenCard(p, tot.kv, tot.prognose)}
     ${teilprojektCard(p, tot.prognose)}
-    <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag/Vergabesumme · Prognose = WV + Nachträge + Rapporte (Budget steckt im WV) · Δ KV = Prognose gegen Schätzung (rot = Überschreitung). Unter jedem Gewerk: Nachträge (mit Status) &amp; Rechnungen; Teilprojekt-Dropdown je Gewerk/Nachtrag. Zeile anklicken → Gewerk-Detail.</p>
+    <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = verhandelte Vergabesumme · Prognose = WV + Nachträge (bei Schlussrechnung „SR" = effektive Endsumme) · Rechnung = Summe eingetragener Rechnungen · Offen = Endsumme − Rechnungen (nie negativ) · +/− = WV gegen Endsumme (rot = Überschreitung). Unter jedem Gewerk: Nachträge (mit Status) &amp; Rechnungen; Teilprojekt-Dropdown je Gewerk/Nachtrag. Zeile anklicken → Gewerk-Detail.</p>
   `);
 }
 
@@ -7867,10 +7873,7 @@ function pdfBaukosten(pid, mode) {
       lines.push({ html: `<tr style="background:#f7eff0"><td style="color:#7c1d2c"><b>${esc(g)}</b></td><td colspan="10" style="color:#7c1d2c"><b>${esc(BKP_GRUPPEN[g] || 'Übrige')}</b></td></tr>` });
       groups[g].forEach(v => {
         const z = kostenZeile(v); const kv = z.kv, rev = z.rev, wv = z.vergeben ? z.wv : null, fak = z.fakturiert;
-        // Schlussrechnung vorhanden → Endsumme = tatsächliche Rechnungssumme, nichts mehr offen
-        const hatSchluss = (v.rechnungen || []).some(r => r.art === 'schluss');
-        const endsumme = hatSchluss ? fak : z.prognose;
-        const off = endsumme - fak;   // bei Schlussrechnung = 0
+        const endsumme = z.endsumme, off = z.offenRg, hatSchluss = z.hatSchluss;   // zentral aus kostenZeile
         sub.kv += kv; sub.rev += (rev || 0); sub.wv += (wv || 0); sub.prognose += endsumme; sub.rechnung += fak; sub.offen += off;
         tot.kv += kv; tot.rev += (rev || 0); tot.wv += (wv || 0); tot.prognose += endsumme; tot.rechnung += fak; tot.offen += off;
         const note = v.notiz ? `<div style="color:#7c1d2c;font-size:8.5px;font-weight:700;line-height:1.3">${esc(v.notiz)}</div>` : '';

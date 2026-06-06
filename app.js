@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v127';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v128';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2827,7 +2827,7 @@ function openPagedDoc(opts) {
     .toc-pg{ text-decoration:none; color:#7c1d2c; font-weight:700; font-size:12px; }
     .toc-pg::after{ content: target-counter(attr(href), page); }
     .doc-sec.brk{ break-before:page; }
-    .sec-h{ font-family:Georgia,'Times New Roman',serif; font-weight:400; font-size:20px; color:#1b2230; margin:0 0 12px; letter-spacing:.3px; }
+    .sec-h{ font-family:Georgia,'Times New Roman',serif; font-weight:400; font-size:20px; color:#1b2230; margin:0 0 12px; letter-spacing:.3px; break-after:avoid; }
     .sec-h::after{ content:""; display:block; width:44px; height:2px; background:#7c1d2c; margin-top:8px; }
     table.t{ width:100%; border-collapse:collapse; margin:0 0 10px; }
     table.t th{ background:#f3f5f9; text-align:left; padding:7px 9px; font-size:9px; font-weight:700; color:#46505e; border-bottom:1.5px solid #c9d2de; }
@@ -2840,42 +2840,32 @@ function openPagedDoc(opts) {
     ${opts.extraCss || ''}
   </style></head><body>
   ${cover}${toc}${body}
-  <script>window.PagedConfig={ auto:false };<\/script>
-  <script src="${pagedUrl}"><\/script>
   <script>
-  (function(){
-    function fmt(n){ return (Math.round(n*100)/100).toLocaleString('de-CH',{minimumFractionDigits:2,maximumFractionDigits:2}); }
-    function setNum(td,v){ if(td) td.textContent=fmt(v); }
-    function setDiff(td,v){ if(!td) return; td.textContent=fmt(v); var pos=v>0.005,neg=v<-0.005; td.style.background=pos?'#fbe7e9':(neg?'#e4f5ea':''); td.style.color=pos?'#a01b2b':(neg?'#1a7a3a':''); }
-    // Zeile (11 Zellen) mit Übertragswerten füllen: [.,Label,.,KV,KVrev,±,WV,Prognose,Rechnung,offen,±]
-    function fillRow(row,c){ if(!row) return; var t=row.querySelectorAll('td');
-      setNum(t[3],c[0]); setNum(t[4],c[1]); setDiff(t[5],c[1]-c[0]); setNum(t[6],c[2]); setNum(t[7],c[3]); setNum(t[8],c[4]); setNum(t[9],c[5]); setDiff(t[10],c[6]); }
-    function start(){
-      try{
-        if(window.Paged && Paged.registerHandlers){
-          var carry=[0,0,0,0,0,0,0];
-          Paged.registerHandlers(class extends Paged.Handler{
-            afterPageLayout(pageEl){
-              try{
-                var tbl=pageEl.querySelector('table.uev'); if(!tbl){ return; }
-                var rows=tbl.querySelectorAll('tbody tr[data-uev]'); var ps=[0,0,0,0,0,0,0];
-                rows.forEach(function(r){ var v=r.getAttribute('data-uev').split(';'); for(var i=0;i<7;i++) ps[i]+=parseFloat(v[i])||0; });
-                var inC=carry.slice(); for(var i=0;i<7;i++) carry[i]+=ps[i];
-                var inRow=tbl.querySelector('thead tr.uev-in'); var outRow=tbl.querySelector('tfoot tr.uev-out');
-                var firstHasData = inC.every(function(x){return Math.abs(x)<0.005;});
-                if(inRow){ if(firstHasData){ inRow.style.display='none'; } else { inRow.style.display=''; fillRow(inRow,inC); } }
-                var hasTotal=tbl.querySelector('tbody tr.uev-total');
-                if(outRow){ if(hasTotal || rows.length===0){ outRow.style.display='none'; } else { outRow.style.display=''; fillRow(outRow,carry); } }
-              }catch(e){}
-            }
-          });
-        }
-      }catch(e){}
-      new Paged.Previewer().preview().then(function(){ setTimeout(function(){ try{window.focus();}catch(e){} window.print(); }, 350); });
-    }
-    if(window.Paged){ start(); } else { window.addEventListener('load', start); }
-  })();
+  window.PagedConfig = { auto: true, after: function(){
+    try{
+      function fmt(n){ return (Math.round(n*100)/100).toLocaleString('de-CH',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+      function setNum(td,v){ if(td){ td.textContent=fmt(v); } }
+      function setDiff(td,v){ if(!td)return; td.textContent=fmt(v); var p=v>0.005,n=v<-0.005; td.style.background=p?'#fbe7e9':(n?'#e4f5ea':''); td.style.color=p?'#a01b2b':(n?'#1a7a3a':''); }
+      // Übertrags-Zeile (11 Zellen) füllen: [.,Label,.,KV,KVrev,±,WV,Prognose,Rechnung,offen,±]
+      function fillRow(row,c){ if(!row)return; var t=row.querySelectorAll('td'); setNum(t[3],c[0]); setNum(t[4],c[1]); setDiff(t[5],c[1]-c[0]); setNum(t[6],c[2]); setNum(t[7],c[3]); setNum(t[8],c[4]); setNum(t[9],c[5]); setDiff(t[10],c[6]); }
+      var carry=[0,0,0,0,0,0,0];
+      document.querySelectorAll('.pagedjs_page').forEach(function(pageEl){
+        var tbl=pageEl.querySelector('table.uev'); if(!tbl)return;
+        var rows=tbl.querySelectorAll('tbody tr[data-uev]');
+        var ps=[0,0,0,0,0,0,0];
+        rows.forEach(function(r){ var v=r.getAttribute('data-uev').split(';'); for(var i=0;i<7;i++) ps[i]+=parseFloat(v[i])||0; });
+        var inC=carry.slice(); for(var i=0;i<7;i++) carry[i]+=ps[i];
+        var inRow=tbl.querySelector('thead tr.uev-in'), outRow=tbl.querySelector('tfoot tr.uev-out');
+        var firstNoCarry=inC.every(function(x){return Math.abs(x)<0.005;});
+        if(inRow){ if(firstNoCarry||rows.length===0){ inRow.style.display='none'; } else { fillRow(inRow,inC); } }
+        var hasTotal=tbl.querySelector('tbody tr.uev-total');
+        if(outRow){ if(hasTotal||rows.length===0){ outRow.style.display='none'; } else { fillRow(outRow,carry); } }
+      });
+    }catch(e){}
+    setTimeout(function(){ try{window.focus();}catch(e){} window.print(); }, 400);
+  } };
   <\/script>
+  <script src="${pagedUrl}"><\/script>
   </body></html>`;
   const w = window.open('', '_blank');
   if (!w) { toast('Bitte Popups für PDF erlauben', 'info'); return; }

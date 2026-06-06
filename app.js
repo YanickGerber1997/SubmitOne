@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v60';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v61';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -359,6 +359,13 @@ async function boot() {
 
 /* ---- Berechtigungen / Abo (nur Cloud) – Default permissiv, bis es eine entitlements-Zeile gibt ---- */
 let ent = null;   // null = keine Sperre aktiv (Tabelle/Zeile fehlt) → alles erlaubt
+let currentUserId = null;
+// Preis-Pakete (CHF/Monat, anpassbar) – Quelle für die Plan-Ansicht
+const PLANS = [
+  { key: 'gratis',   name: 'Gratis',   preis: '0',  features: ['Alle Werkzeuge lokal nutzen', 'Drucken & PDF', '✗ kein Cloud-Speichern', '✗ kein Teilen'] },
+  { key: 'basis',    name: 'Basis',    preis: '15', features: ['Cloud-Speichern, mehrere Geräte', 'Projekte · Termine · Kosten', 'Team-Arbeitsbereich'] },
+  { key: 'komplett', name: 'Komplett', preis: '25', features: ['Alles aus Basis', '+ Solarrechner, Pendenzen, Honorar', '+ Teilen / Veröffentlichen'] },
+];
 async function loadEntitlements() {
   if (!cloudEnabled || !supa) { ent = null; return; }
   try {
@@ -379,7 +386,41 @@ function renderPlanBanner() {
   let bar = $('#planBanner');
   if (isPaid()) { if (bar) bar.remove(); return; }
   if (!bar) { bar = document.createElement('div'); bar.id = 'planBanner'; bar.className = 'plan-banner'; document.body.appendChild(bar); }
-  bar.innerHTML = `<span>🔒 <strong>Speichern gesperrt</strong> – im Gratis-Modus kannst du arbeiten, aber nicht in der Cloud speichern. Für dauerhaftes Speichern ein Abo aktivieren.</span>`;
+  bar.innerHTML = `<span>🔒 <strong>Speichern gesperrt</strong> – im Gratis-Modus kannst du arbeiten, aber nicht in der Cloud speichern.</span> <button class="btn sm" data-act="abo">Plan ansehen &amp; upgraden</button>`;
+}
+
+// Plan-/Abo-Ansicht: aktueller Plan + Pakete + Upgrade
+function aktuellerPlan() { return (cloudEnabled && ent && ent.plan) ? ent.plan : (cloudEnabled ? 'gratis' : 'lokal'); }
+function actAbo() {
+  const plan = aktuellerPlan();
+  const istTest = plan === 'trial';
+  const status = plan === 'lokal' ? 'Lokaler Modus – ohne Konto, Daten nur in diesem Browser.'
+    : istTest ? ('Testphase aktiv – noch ' + planLabel().replace('Test · ', '') + '. Danach ist Speichern gesperrt, bis du upgradest.')
+    : plan === 'komplett' ? 'Aktiv: Komplett – alle Module, Cloud, Teilen.'
+    : plan === 'basis' ? 'Aktiv: Basis – Cloud-Speichern & Kernmodule.'
+    : 'Gratis – arbeiten ja, Cloud-Speichern gesperrt.';
+  const cards = PLANS.map(pl => {
+    const aktiv = (plan === pl.key) || (istTest && pl.key === 'komplett');
+    const upgrade = !aktiv && pl.key !== 'gratis' && plan !== 'komplett';
+    return `<div class="plan-card${aktiv ? ' aktiv' : ''}">
+      <div class="plan-name">${esc(pl.name)}${aktiv ? ' <span class="st green" style="font-size:9.5px;padding:1px 6px">aktiv</span>' : ''}</div>
+      <div class="plan-preis">${pl.preis === '0' ? 'gratis' : 'CHF ' + pl.preis + '<span>/Mt</span>'}</div>
+      <ul class="plan-feat">${pl.features.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+      ${upgrade ? `<button class="btn sm" data-act="upgrade" data-plan="${pl.key}">Upgraden</button>` : '<div style="height:4px"></div>'}
+    </div>`;
+  }).join('');
+  openModal('Dein Plan', `
+    <div class="muted" style="margin:-4px 0 14px;font-size:13px">${esc(status)}</div>
+    <div class="plan-grid">${cards}</div>
+    <p class="muted" style="font-size:11.5px;margin:14px 0 0">Preise CHF/Monat (Richtwerte, anpassbar). Bezahlung über Stripe – sobald die Zahlungslinks eingetragen sind, führt „Upgraden" direkt zur Kasse.</p>
+  `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
+}
+function openCheckout(plan) {
+  const url = (CFG.STRIPE_LINKS || {})[plan];
+  if (!url) { toast('Bezahlung wird in Kürze aktiviert – Zahlungslink noch nicht hinterlegt.', 'info'); return; }
+  const sep = url.includes('?') ? '&' : '?';
+  const full = currentUserId ? url + sep + 'client_reference_id=' + encodeURIComponent(currentUserId) : url;
+  window.open(full, '_blank');
 }
 
 async function startApp() {
@@ -415,14 +456,17 @@ async function renderUserChip() {
     const { data } = await supa.auth.getUser();
     const u = data && data.user;
     if (!u) return;
+    currentUserId = u.id;
     const m = u.user_metadata || {};
     const name = [m.vorname, m.nachname].filter(Boolean).join(' ').trim()
       || (u.email ? u.email.split('@')[0] : 'Angemeldet');
     const initials = (((m.vorname || '')[0] || '') + ((m.nachname || '')[0] || '')).toUpperCase()
       || name.slice(0, 2).toUpperCase();
     const pl = planLabel();
-    el.innerHTML = `<span class="uc-avatar">${esc(initials)}</span><span class="uc-name" title="${esc(name)}">${esc(name)}</span>${pl ? `<span class="uc-plan">${esc(pl)}</span>` : ''}`;
+    el.innerHTML = `<span class="uc-avatar">${esc(initials)}</span><span class="uc-name" title="${esc(name)}">${esc(name)}</span><span class="uc-plan">${esc(pl || 'Plan')}</span>`;
     el.hidden = false;
+    el.style.cursor = 'pointer'; el.title = 'Plan ansehen & upgraden';
+    el.onclick = actAbo;
   } catch (_) {}
 }
 
@@ -7723,6 +7767,8 @@ document.addEventListener('click', e => {
   switch (a) {
     case 'conflict-keep': resolveConflictKeep(pid); break;
     case 'conflict-take': resolveConflictTake(pid); break;
+    case 'abo':          actAbo(); break;
+    case 'upgrade':      openCheckout(act.dataset.plan); break;
     case 'new-projekt':  actNewProjekt(); break;
     case 'save-projekt': saveProjekt(); break;
     case 'edit-projekt': actEditProjekt(pid); break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v58';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v59';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -156,7 +156,7 @@ const CloudAdapter = {
     try {
       if (ups.length) { const { error } = await supa.from('entities').upsert(ups); if (error) throw error; }
       for (const id of del) { await supa.from('entities').delete().eq('id', id); this._snap.delete(id); }
-    } catch (e) { console.warn('Cloud-Speichern fehlgeschlagen:', e); toast('Speichern fehlgeschlagen – offline?', 'info'); }
+    } catch (e) { console.warn('Cloud-Speichern fehlgeschlagen:', e); toast(isPaid() ? 'Speichern fehlgeschlagen – offline?' : '🔒 Zum Speichern ist ein Abo nötig', 'info'); }
   },
 };
 
@@ -312,8 +312,34 @@ async function boot() {
   await startApp();
 }
 
+/* ---- Berechtigungen / Abo (nur Cloud) – Default permissiv, bis es eine entitlements-Zeile gibt ---- */
+let ent = null;   // null = keine Sperre aktiv (Tabelle/Zeile fehlt) → alles erlaubt
+async function loadEntitlements() {
+  if (!cloudEnabled || !supa) { ent = null; return; }
+  try {
+    const { data, error } = await supa.from('entitlements').select('plan,module,aktiv_bis').maybeSingle();
+    ent = error ? null : (data || null);   // Fehler / keine Tabelle / keine Zeile → permissiv
+  } catch (_) { ent = null; }
+}
+function planAktiv() { return !!(ent && ent.plan && ent.plan !== 'free' && (!ent.aktiv_bis || new Date(ent.aktiv_bis) > new Date())); }
+function isPaid()    { return !cloudEnabled || ent === null || planAktiv(); }
+function canModul(m) { return !cloudEnabled || ent === null || ent.plan === 'komplett' || (ent.module || []).includes(m); }
+function planLabel() {
+  if (!ent || !ent.plan) return '';
+  if (ent.plan === 'trial') { const d = ent.aktiv_bis ? Math.max(0, Math.ceil((new Date(ent.aktiv_bis) - new Date()) / 86400000)) : 0; return 'Test · ' + d + ' Tg'; }
+  if (ent.plan === 'free') return 'Gratis';
+  return ent.plan.charAt(0).toUpperCase() + ent.plan.slice(1);
+}
+function renderPlanBanner() {
+  let bar = $('#planBanner');
+  if (isPaid()) { if (bar) bar.remove(); return; }
+  if (!bar) { bar = document.createElement('div'); bar.id = 'planBanner'; bar.className = 'plan-banner'; document.body.appendChild(bar); }
+  bar.innerHTML = `<span>🔒 <strong>Speichern gesperrt</strong> – im Gratis-Modus kannst du arbeiten, aber nicht in der Cloud speichern. Für dauerhaftes Speichern ein Abo aktivieren.</span>`;
+}
+
 async function startApp() {
   await db.init();
+  if (cloudEnabled) await loadEntitlements();
   $('#btnExport')?.addEventListener('click', exportData);
   $('#btnReset')?.addEventListener('click', resetDemo);
   initSidebarCollapse();
@@ -322,6 +348,7 @@ async function startApp() {
   document.addEventListener('mouseup', planDragUp);
   const ver = $('.ver'); if (ver) ver.textContent = 'Prototyp · ' + APP_VERSION;
   renderUserChip();
+  renderPlanBanner();
   window.addEventListener('hashchange', router);
   router();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
@@ -343,7 +370,8 @@ async function renderUserChip() {
       || (u.email ? u.email.split('@')[0] : 'Angemeldet');
     const initials = (((m.vorname || '')[0] || '') + ((m.nachname || '')[0] || '')).toUpperCase()
       || name.slice(0, 2).toUpperCase();
-    el.innerHTML = `<span class="uc-avatar">${esc(initials)}</span><span class="uc-name" title="${esc(name)}">${esc(name)}</span>`;
+    const pl = planLabel();
+    el.innerHTML = `<span class="uc-avatar">${esc(initials)}</span><span class="uc-name" title="${esc(name)}">${esc(name)}</span>${pl ? `<span class="uc-plan">${esc(pl)}</span>` : ''}`;
     el.hidden = false;
   } catch (_) {}
 }

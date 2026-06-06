@@ -1010,3 +1010,16 @@ table.va input[type=number] { -moz-appearance: textfield; }
 @media (max-width: 680px) {
   .cloud-conflict-bar { left: 12px; right: 12px; transform: none; width: auto; }
 }
+
+/* --- Abo/Plan: Speicher-Sperre-Banner + Plan-Chip --- */
+.plan-banner {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 350;
+  background: #fff7ed; border-top: 2px solid var(--s-amber);
+  color: #7c4a03; font-size: 13px; line-height: 1.4;
+  padding: 10px 16px; text-align: center;
+}
+.uc-plan {
+  margin-left: auto; font-size: 10px; font-weight: 700; padding: 2px 7px;
+  border-radius: 10px; background: var(--brand-soft); color: var(--brand);
+  white-space: nowrap;
+}

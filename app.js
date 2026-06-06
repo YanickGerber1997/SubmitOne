@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v114';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v115';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2718,32 +2718,35 @@ function openPrintDoc(title, subtitleHtml, inner, opts) {
     .conf{display:inline-block;background:#fbe9ea;color:#a01b2b;border:1px solid #e7b3ba;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;}
     .ft{margin-top:22px;border-top:1px solid #e7ebf1;padding-top:8px;color:#9aa4b1;font-size:9.5px;display:flex;justify-content:space-between;}
     @media print{.page{padding:0;}${pg}}`;
-  // „Modern" (Premium): vollflächiger Akzent-Kopf, grosse Typo, ruhige Tabellen mit Zebra
+  // „Modern" (Premium): edel & ruhig – Serifen-Typografie, Haarlinien, viel Weissraum, dezenter Akzentstreifen
   const styleModern = `
     *{box-sizing:border-box;} html,body{margin:0;padding:0;}
-    body{font-family:'Helvetica Neue','Segoe UI',Arial,sans-serif;color:#2a2f3a;font-size:12px;line-height:1.5;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    body{font-family:'Helvetica Neue','Segoe UI',Arial,sans-serif;color:#33373d;font-size:11px;line-height:1.6;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .page{padding:0;}
-    .lh{background:#7c1d2c;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 20px;margin:-14mm -14mm 0;}
-    .lh .meta{text-align:right;font-size:9.5px;color:rgba(255,255,255,.88);line-height:1.6;}
-    .lg-name{font-weight:800;font-size:22px;color:#fff;letter-spacing:.5px;} .lg-img{filter:brightness(0) invert(1);}
-    h1{font-size:28px;margin:28px 0 0;letter-spacing:.3px;color:#1b2533;font-weight:800;}
-    h1::after{content:"";display:block;width:64px;height:4px;background:#7c1d2c;margin-top:9px;border-radius:3px;}
-    .sub{color:#7a828f;font-size:12px;margin:11px 0 22px;}
-    table.t{width:100%;border-collapse:collapse;margin-bottom:16px;}
-    table.t th{background:transparent;text-align:left;padding:8px 10px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#7c1d2c;border-bottom:2px solid #7c1d2c;}
-    table.t td{padding:8px 10px;border-bottom:1px solid #eef1f5;vertical-align:top;}
-    table.t tbody tr:nth-child(even){background:#faf6f7;}
+    .accent-top{height:3px;background:#7c1d2c;margin:-14mm -14mm 20px;}
+    .lh{display:flex;justify-content:space-between;align-items:flex-end;gap:22px;padding-bottom:15px;border-bottom:1px solid #e3d6d9;}
+    .lg-name{font-family:Georgia,'Times New Roman',serif;font-weight:400;font-size:23px;color:#1b2230;letter-spacing:1.4px;}
+    .lg-img{max-height:50px;}
+    .lh .meta{text-align:right;font-size:8.5px;color:#8d949d;line-height:1.85;letter-spacing:.5px;text-transform:uppercase;}
+    h1{font-family:Georgia,'Times New Roman',serif;font-weight:400;font-size:27px;margin:30px 0 0;letter-spacing:.6px;color:#1b2230;}
+    h1::after{content:"";display:block;width:40px;height:1.5px;background:#7c1d2c;margin-top:11px;}
+    .sub{color:#8d949d;font-size:11px;margin:11px 0 24px;letter-spacing:.3px;}
+    table.t{width:100%;border-collapse:collapse;margin-bottom:20px;}
+    table.t th{text-align:left;padding:9px 11px;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:1.1px;color:#7c1d2c;border-bottom:1px solid #7c1d2c;}
+    table.t td{padding:9px 11px;border-bottom:1px solid #ededed;vertical-align:top;}
     table.t td.num,table.t th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
-    .gw{font-weight:800;margin:22px 0 8px;font-size:14px;color:#1b2533;border-left:4px solid #7c1d2c;padding-left:10px;}
-    .muted{color:#aab2bd;}
-    .conf{display:inline-block;background:#7c1d2c;color:#fff;border-radius:5px;padding:3px 10px;font-size:10px;font-weight:700;letter-spacing:.3px;}
-    .ft{margin-top:32px;border-top:2px solid #7c1d2c;padding-top:10px;color:#9aa4b1;font-size:9.5px;display:flex;justify-content:space-between;}
+    .gw{font-family:Georgia,'Times New Roman',serif;font-weight:400;margin:24px 0 9px;font-size:14.5px;color:#1b2230;letter-spacing:.5px;}
+    .gw::before{content:"";display:inline-block;width:16px;height:1.5px;background:#7c1d2c;vertical-align:middle;margin-right:9px;margin-bottom:3px;}
+    .muted{color:#b4bac1;}
+    .conf{display:inline-block;border:1px solid #7c1d2c;color:#7c1d2c;border-radius:2px;padding:2px 10px;font-size:8.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;}
+    .ft{margin-top:36px;border-top:1px solid #e6e9ed;padding-top:11px;color:#aab2bd;font-size:8.5px;display:flex;justify-content:space-between;letter-spacing:.5px;text-transform:uppercase;}
     @media print{${pg}}`;
   const footer = design === 'modern'
     ? `<div class="ft"><span><b>${esc(b.firma || '')}</b>${b.email ? ' · ' + esc(b.email) : ''}</span><span>${fmtDate(todayIso())}</span></div>`
     : `<div class="ft"><span>${esc(b.firma || 'submit one')}</span><span>Erstellt mit submit one · ${fmtDate(todayIso())}</span></div>`;
   const html = `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>${esc(title)}</title>
   <style>${design === 'modern' ? styleModern : styleStandard}${opts.extraCss || ''}</style></head><body><div class="page">
+    ${design === 'modern' ? '<div class="accent-top"></div>' : ''}
     <div class="lh"><div class="logo">${logo}</div><div class="meta">${addr}</div></div>
     <h1>${esc(title)}</h1>
     <div class="sub">${subtitleHtml}</div>

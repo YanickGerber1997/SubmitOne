@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v94';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v95';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -8915,6 +8915,29 @@ function demoData() {
         { id: 'v7', bkp: '252', gewerk: 'Heizungsanlagen', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 195000, frist: '2026-07-05',
           bauStart: '2026-11-01', bauEnde: '2027-02-28',
           eingeladene: einl(['WärmeTech GmbH', null], ['Heiztech AG', null]), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 'v8', bkp: '224', gewerk: 'Spenglerarbeiten / Bedachung', status: 'vergeben', firma: 'Dach & Blech AG', betrag: 165000, schaetzung: 175000, frist: '2026-07-15',
+          bauStart: '2026-12-01', bauEnde: '2027-02-15',
+          eingeladene: einl(['Dach & Blech AG', 165000], ['Spengler Meier GmbH', 172000]), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 'v9', bkp: '271', gewerk: 'Gipser- / Verputzarbeiten', status: 'vergeben', firma: 'Gipsotech AG', betrag: 142000, schaetzung: 150000, frist: '2026-07-20',
+          bauStart: '2027-01-05', bauEnde: '2027-04-30',
+          eingeladene: einl(['Gipsotech AG', 142000], ['Verputz Profi GmbH', 149000]),
+          nachtraege: [{ id: uid('n'), titel: 'Zusätzliche Glättung Treppenhaus', nr: 'NT-01', betrag: 6500, datum: '2027-02-10', status: 'genehmigt' }], rapporte: [], vorgaenge: [],
+          rechnungen: [{ id: uid('rg'), text: 'Akontorechnung 1', nr: 'RG-2027-004', betrag: 70000, datum: '2027-02-20', bezahlt: true }] },
+        { id: 'v15', bkp: '285', gewerk: 'Malerarbeiten', status: 'vergeben', firma: 'Farbwerk Maler AG', betrag: 98000, schaetzung: 105000, frist: '2026-07-22',
+          bauStart: '2027-03-01', bauEnde: '2027-05-31',
+          eingeladene: einl(['Farbwerk Maler AG', 98000], ['Pinsel & Co.', 104000]), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 'v16', bkp: '281', gewerk: 'Bodenbeläge (Parkett)', status: 'bewertung', firma: '', betrag: 0, schaetzung: 168000, frist: '2026-07-25',
+          bauStart: '2027-03-15', bauEnde: '2027-05-31',
+          eingeladene: einl(['Bodenhaus AG', 162000], ['Parkett Plus GmbH', 171000]), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 'v17', bkp: '273', gewerk: 'Schreinerarbeiten / Küchen', status: 'offerten', firma: '', betrag: 0, schaetzung: 240000, frist: '2026-07-30',
+          bauStart: '2027-02-01', bauEnde: '2027-05-15',
+          eingeladene: einl(['Holzwerk Seebli AG', 232000], ['Küchen & Co.', null]), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 'v18', bkp: '244', gewerk: 'Lüftungsanlagen', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 185000, frist: '2026-08-05',
+          bauStart: '2026-12-01', bauEnde: '2027-04-30',
+          eingeladene: einl(['Klima Nord AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
+        { id: 'v19', bkp: '258', gewerk: 'Küchengeräte / Apparate', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 90000, frist: '2026-08-10',
+          bauStart: '2027-04-01', bauEnde: '2027-05-31',
+          eingeladene: einl(['Elektro Meyer AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
       ],
       ganttLinks: [
         { id: uid('gl'), from: 'v1', to: 'v2', dx: null },

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v61';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v62';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -6858,16 +6858,23 @@ function actInvite(pid, vid) {
     </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:6px 0">
     <strong style="font-size:13px">Weitere Firma (nicht in Kontakten)</strong>
-    <div class="form-row">
-      <label class="field">Firma <input class="input" id="cust_firma" placeholder="Firmenname"></label>
-      <label class="field">E-Mail <input class="input" id="cust_email" placeholder="optional"></label>
-    </div>
+    <span class="muted" style="font-size:11.5px"> – im Handelsregister suchen</span>
+    <label class="field" style="margin-top:6px">Firma
+      <div style="display:flex;gap:6px"><input class="input" id="cust_firma" style="flex:1" placeholder="Firmenname, Ort oder Branche…" autocomplete="off"><button class="btn secondary sm" type="button" id="cust_firma_btn">🔎 Suchen</button></div>
+    </label>
+    <div id="custFirmaResults" class="ac-list" style="display:none"></div>
+    <label class="field">E-Mail <input class="input" id="cust_email" placeholder="optional"></label>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-invite" data-pid="${pid}" data-vid="${vid}">Einladen</button>`);
 
   $('#invSearch')?.addEventListener('input', e => {
     const q = e.target.value.toLowerCase();
     $$('#invList .inv-pick').forEach(row => { row.style.display = row.dataset.search.includes(q) ? '' : 'none'; });
   });
+  attachFirmaRegisterSuche('cust_firma', 'custFirmaResults', f => {
+    $('#cust_firma').value = f.name;
+    $('#cust_email')?.focus();
+    toast('Firma aus Register übernommen – E-Mail noch ergänzen', 'info');
+  }, 'cust_firma_btn');
 }
 
 function saveInvite(pid, vid) {
@@ -7639,8 +7646,8 @@ function actKontakt(kid) {
   const k = kid ? (state.kontakte || []).find(x => x.id === kid) : null;
   const val = f => k && k[f] != null ? esc(k[f]) : '';
   openModal(k ? 'Kontakt bearbeiten' : 'Neuer Kontakt', `
-    <label class="field">Firma ${k ? '' : '<span class="muted" style="font-weight:400;font-size:11.5px">– im Handelsregister suchbar</span>'}
-      <input class="input" id="f_firma" value="${val('firma')}" placeholder="Firmenname, Ort oder Branche…" autocomplete="off">
+    <label class="field">Firma ${k ? '' : '<span class="muted" style="font-weight:400;font-size:11.5px">– im Handelsregister suchen</span>'}
+      <div style="display:flex;gap:6px"><input class="input" id="f_firma" style="flex:1" value="${val('firma')}" placeholder="Firmenname, Ort oder Branche…" autocomplete="off"><button class="btn secondary sm" type="button" id="f_firma_btn">🔎 Suchen</button></div>
     </label>
     <div id="firmaResults" class="ac-list" style="display:none"></div>
     <div class="form-row">
@@ -7675,34 +7682,45 @@ function actKontakt(kid) {
     window.open('https://www.google.com/search?q=' + encodeURIComponent(fn + ' ' + ort + ' offizielle Website'), '_blank');
   });
 }
-function attachFirmaSuche() {
-  const inp = $('#f_firma'), box = $('#firmaResults'); if (!inp || !box) return;
-  let matches = [], tmr = null;
-  const renderMatches = () => {
-    if (!matches.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+// Generische Handelsregister-Suche (LINDAS): Eingabe + „Suchen"-Knopf → Loader → Ergebnisse; onPick(f) bei Auswahl
+function attachFirmaRegisterSuche(inputId, boxId, onPick, btnId) {
+  const inp = $('#' + inputId), box = $('#' + boxId), btn = btnId ? $('#' + btnId) : null;
+  if (!inp || !box) return;
+  let matches = [];
+  const renderResults = () => {
     box.style.display = 'block';
+    if (!matches.length) { box.innerHTML = '<div class="ac-item muted">Keine Treffer im Handelsregister.</div>'; return; }
     box.innerHTML = matches.map((f, i) => `
       <div class="ac-item" data-i="${i}">
         <div><strong>${esc(f.name)}</strong>${f.rechtsform ? ` <span class="tag">${esc(f.rechtsform)}</span>` : ''}</div>
         <div class="muted" style="font-size:12px">${esc(f.uid)}${f.ort ? ' · ' + (f.plz ? esc(f.plz) + ' ' : '') + esc(f.ort) : ''}${f.branche ? ' · ' + esc(f.branche) : ''}</div>
       </div>`).join('');
   };
-  inp.addEventListener('input', () => {
-    const v = inp.value; clearTimeout(tmr);
-    if (v.trim().length < 3) { matches = []; renderMatches(); return; }
-    box.style.display = 'block'; box.innerHTML = '<div class="ac-item muted">Suche im Handelsregister…</div>';
-    tmr = setTimeout(async () => { const res = await firmenSuche(v); if (inp.value !== v) return; matches = res; renderMatches(); }, 400);
-  });
+  const runSearch = async () => {
+    const v = inp.value.trim();
+    box.style.display = 'block';
+    if (v.length < 3) { box.innerHTML = '<div class="ac-item muted">Bitte mindestens 3 Zeichen eingeben.</div>'; return; }
+    box.innerHTML = `<div class="hr-loader"><span class="hr-spin"></span><span>Durchsuche das Handelsregister<span class="hr-dots"><i>.</i><i>.</i><i>.</i></span></span></div>`;
+    const res = await firmenSuche(v);
+    if (inp.value.trim() !== v) return;   // Eingabe hat sich geändert → Ergebnis verwerfen
+    matches = res; renderResults();
+  };
+  if (btn) btn.addEventListener('click', runSearch);
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); runSearch(); } });
   box.addEventListener('click', e => {
     const it = e.target.closest('.ac-item'); if (!it || it.dataset.i == null) return;
-    const f = matches[+it.dataset.i];
-    inp.value = f.name; $('#f_uid').value = f.uid || ''; $('#f_rf').value = f.rechtsform || '';
+    box.style.display = 'none'; box.innerHTML = '';
+    onPick(matches[+it.dataset.i]);
+  });
+}
+function attachFirmaSuche() {
+  attachFirmaRegisterSuche('f_firma', 'firmaResults', f => {
+    $('#f_firma').value = f.name; $('#f_uid').value = f.uid || ''; $('#f_rf').value = f.rechtsform || '';
     if (f.strasse && $('#f_str')) $('#f_str').value = f.strasse;
     $('#f_plz').value = f.plz || ''; $('#f_kort').value = f.ort || '';
     if (!$('#f_kat').value.trim()) $('#f_kat').value = f.branche || '';
-    box.style.display = 'none'; box.innerHTML = '';
-    $('#f_person').focus(); toast('Firmendaten aus Register übernommen', 'info');
-  });
+    $('#f_person')?.focus(); toast('Firmendaten aus Register übernommen', 'info');
+  }, 'f_firma_btn');
 }
 function saveKontakt(kid) {
   const firma = $('#f_firma').value.trim();

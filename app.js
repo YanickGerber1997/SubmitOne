@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v136';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v137';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3357,23 +3357,38 @@ function gewerkPanel(p, v) {
   </div>`;
 }
 // Projekt-Board: pro Gewerk die wichtigste anstehende Aktion (sortiert nach Phase)
+// Top 5 noch nicht vergebene Ausschreibungen – am nächsten an der Ausführung (Einbau − Bestellfrist)
 function projektNextStepsCard(p) {
-  const items = (p.vergaben || []).map(v => ({ v, st: gewerkSteps(v) })).filter(x => x.st.acts.length && x.v.status !== 'abgeschlossen');
-  if (!items.length) return '';
-  items.sort((a, b) => statusIdx(a.v) - statusIdx(b.v));
-  const rows = items.slice(0, 8).map(({ v, st }) => {
-    const a = st.acts.find(x => x.primary) || st.acts[0];
+  const t0 = todayIso();
+  const wvIdx = (STATUS_BY_KEY['werkvertrag'] || {}).index ?? 99;
+  const offen = (p.vergaben || []).filter(v => statusIdx(v) < wvIdx && v.status !== 'abgeschlossen');
+  const withDate = offen.map(v => {
+    const einbau = v.bauStart || '';
+    let bestellBis = '';
+    if (einbau && Number(v.bestellfrist) > 0) { const d = dISO(einbau); d.setDate(d.getDate() - Number(v.bestellfrist)); bestellBis = isoOf(d); }
+    const sortKey = bestellBis || einbau || v.frist || '9999-12-31';
+    return { v, einbau, bestellBis, sortKey };
+  }).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  if (!withDate.length) return '';
+  const rows = withDate.slice(0, 5).map(({ v, einbau, bestellBis }) => {
     const stt = STATUS_BY_KEY[v.status] || {};
+    const ref = bestellBis || einbau;
+    const ueber = ref && ref < t0;
+    const tage = ref ? Math.round((dISO(ref) - today()) / 86400000) : null;
+    const badge = !ref ? '' : (ueber ? '<span class="st amber">überfällig</span>' : (tage <= 30 ? `<span class="st blue">in ${tage} T</span>` : '<span class="st green">ok</span>'));
+    const info = einbau ? `Einbau ab <b>${fmtDate(einbau)}</b>${bestellBis ? ` · bestellen bis <b>${fmtDate(bestellBis)}</b>` : ''}` : (v.frist ? `Eingabefrist ${fmtDate(v.frist)}` : '<span class="muted">noch kein Einbautermin</span>');
+    const stp = gewerkSteps(v); const a = stp.acts && (stp.acts.find(x => x.primary) || stp.acts[0]);
     return `<div class="ns-row">
       <span class="bkp-code">${esc(v.bkp)}</span>
       <span class="ns-gewerk">${esc(v.gewerk)}</span>
       <span class="st ${stt.color || 'grey'} ns-st">${esc(stt.kurz || v.status)}</span>
-      <span class="ns-hint muted">${st.hint}</span>
-      <button class="btn sm" data-act="gw-action" data-pid="${p.id}" data-vid="${v.id}" data-action="${a.action}">${a.label}</button>
+      <span class="ns-hint muted">${info} ${badge}</span>
+      ${a ? `<button class="btn sm" data-act="gw-action" data-pid="${p.id}" data-vid="${v.id}" data-action="${a.action}">${a.label}</button>`
+          : `<a class="btn sm secondary" href="#/projekt/${p.id}/vergabe/${v.id}">öffnen</a>`}
     </div>`;
   }).join('');
-  return `<div class="section-head"><h2>Nächste Schritte</h2><span class="hint">${items.length} offen · sortiert nach Phase</span></div>
-    <div class="card card-pad ns-board">${rows}${items.length > 8 ? `<div class="muted" style="font-size:12px;margin-top:8px">+${items.length - 8} weitere – siehe Liste unten</div>` : ''}</div>`;
+  return `<div class="section-head"><h2>Top 5 – nächste Ausschreibungen</h2><span class="hint">am nächsten an der Ausführung · ${withDate.length} noch offen</span></div>
+    <div class="card card-pad ns-board">${rows}</div>`;
 }
 function gewerkAction(pid, vid, action) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;

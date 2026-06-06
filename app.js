@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v57';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v58';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -6234,7 +6234,10 @@ function viewSolar(pid) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Solar</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">☀ Solarrechner</h1><div class="sub" style="margin-top:5px">Photovoltaik-Ertrag, Eigenverbrauch &amp; Wirtschaftlichkeit · ${esc(p.name)}</div></div>
-      <div><button class="btn secondary" data-act="pdf-solar" data-pid="${p.id}">⬇ Solar-PDF</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn secondary" data-act="solar-baukosten" data-pid="${p.id}" title="Investition als Gewerk in die Baukostenübersicht übernehmen">➕ in Baukosten</button>
+        <button class="btn secondary" data-act="pdf-solar" data-pid="${p.id}">⬇ Solar-PDF</button>
+      </div>
     </div>
     ${projektTabs(p, 'solar')}
 
@@ -6374,6 +6377,32 @@ function pdfSolar(pid) {
   const sub = `${esc(p.name)}${p.ort ? ' · ' + esc(p.ort) : ''} · Stand ${fmtDate(todayIso())}`;
   const note = `<p class="muted" style="margin-top:14px;font-size:10px">Überschlagsrechnung ohne Degradation/Teuerung. Förder- und Tarifwerte sind Richtwerte (Pronovo / lokales EW prüfen). Für eine verbindliche Auslegung Fachplaner beiziehen.</p>`;
   openPrintDoc('Solarrechner – Photovoltaik', sub, anlage + ertrag + wirt + bsTable + note);
+}
+
+// Solaranlage als Gewerk in die Baukosten übernehmen (erneut = aktualisieren)
+function solarToBaukosten(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const r = solarCalc(solarOf(p));
+  if (!r.kwp) { toast('Erst die Anlage erfassen (Dachfläche)', 'info'); return; }
+  const f1 = x => (Math.round(x * 10) / 10).toLocaleString('de-CH');
+  const beschrieb = `Photovoltaik-Anlage ${f1(r.kwp)} kWp · Produktion ~${Math.round(r.produktion).toLocaleString('de-CH')} kWh/Jahr\n`
+    + `Investition ${chf(r.invest)} − Förderung ${chf(r.eiv)} = netto ${chf(r.netto)}`
+    + (r.amort != null ? ` · Amortisation ${f1(r.amort)} Jahre` : '');
+  p.vergaben = p.vergaben || [];
+  let v = p.vergaben.find(x => x.solar);
+  if (v) {
+    v.gewerk = 'Photovoltaik-Anlage'; v.schaetzung = r.invest; v.beschrieb = beschrieb;
+    save(); toast('Solar in Baukosten aktualisiert');
+  } else {
+    p.vergaben.push({
+      id: uid('v'), bkp: '245', gewerk: 'Photovoltaik-Anlage', solar: true,
+      schaetzung: r.invest, beschrieb, frist: '', status: 'ausschreibung', firma: '', betrag: 0,
+      bauStart: '', bauEnde: '', grobVon: null, grobBis: null,
+      eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [],
+    });
+    save(); toast('Solar als Gewerk in Baukosten übernommen');
+  }
+  go('#/projekt/' + pid + '/kosten');
 }
 
 function pdfKostenschaetzung(pid) {
@@ -7692,6 +7721,7 @@ document.addEventListener('click', e => {
     case 'pdf-vergabeantrag-alle': pdfVergabeantragAlle(pid); break;
     case 'pdf-kostenschaetzung': pdfKostenschaetzung(pid); break;
     case 'pdf-solar':            pdfSolar(pid); break;
+    case 'solar-baukosten':      solarToBaukosten(pid); break;
     case 'pdf-baukosten':        pdfBaukosten(pid); break;
     case 'pdf-gantt':            pdfGantt(pid); break;
     case 'advance':      advanceVergabe(pid, vid); break;

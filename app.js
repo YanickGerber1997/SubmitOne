@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v168';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v169';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1717,6 +1717,65 @@ let ganttChain = true;     // Verkettung: Nachfolger automatisch nachführen
 let ganttWorkdays = false; // Abstände/Verkettung in Arbeitstagen (Wochenende/Feiertage überspringen)
 let ganttSide = { gewerk: true, firma: false, person: false, natel: false }; // einblendbare Info-Spalte (BKP-Nr. immer)
 let ganttDates = 'off';   // Datum am Balken: 'off' | 'full' (26.06.26) | 'short' (26.06.)
+let ganttMode = 'detail'; // 'detail' = Termin-Gantt (Tage) | 'grob' = Grobplanung nach Phasen (Saison/Jahr)
+const GROB_SAISON = [['FS', 'Frühling'], ['SO', 'Sommer'], ['HE', 'Herbst'], ['WI', 'Winter']];
+function grobIdx(s) { if (!s) return null; const [y, c] = String(s).split('-'); const si = GROB_SAISON.findIndex(x => x[0] === c); if (si < 0 || !y) return null; return Number(y) * 4 + si; }
+function ganttModeToggle(p) {
+  return `<div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">
+    <button class="btn sm ${ganttMode === 'detail' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="detail" type="button" style="border:none">📋 Detailprogramm (Tage)</button>
+    <button class="btn sm ${ganttMode === 'grob' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="grob" type="button" style="border:none">🗓 Grobplanung (Phasen)</button>
+  </div>`;
+}
+// Grob-Gantt: pro Gewerk eine grobe Start-/End-Phase (Saison + Jahr), als eigenständiges, grobes Balkendiagramm
+function viewGrobGantt(p) {
+  const vs = gewerkeSorted(p);
+  const all = [];
+  vs.forEach(v => { const a = grobIdx(v.grobStart), b = grobIdx(v.grobEnde || v.grobStart); if (a != null) all.push(a); if (b != null) all.push(b); });
+  const curY = Number(todayIso().slice(0, 4));
+  let lo = all.length ? Math.min(...all) : curY * 4;
+  let hi = all.length ? Math.max(...all) : curY * 4 + 5;
+  hi = Math.max(hi, lo + 3) + 1;   // etwas Luft rechts
+  const colW = 74;
+  const cols = [];
+  for (let i = lo; i <= hi; i++) { const y = Math.floor(i / 4), c = GROB_SAISON[((i % 4) + 4) % 4]; cols.push({ i, code: c[0], label: `${c[0]} ${String(y).slice(2)}`, jahr: y }); }
+  const trackW = cols.length * colW;
+  const optList = [];
+  for (let i = lo; i <= hi + 4; i++) { const y = Math.floor(i / 4), c = GROB_SAISON[((i % 4) + 4) % 4]; optList.push({ val: `${y}-${c[0]}`, label: `${c[1]} ${y}` }); }
+  const sel = (v, feld) => `<select class="grob-sel" data-pid="${p.id}" data-vid="${v.id}" data-feld="${feld}"><option value="">–</option>${optList.map(o => `<option value="${o.val}"${(v[feld] || '') === o.val ? ' selected' : ''}>${o.label}</option>`).join('')}</select>`;
+  const headerCols = cols.map(c => `<div class="grob-col${c.code === 'WI' ? ' wi' : ''}${c.code === 'FS' && c.jahr !== cols[0].jahr ? ' yr' : ''}" style="width:${colW}px">${esc(c.label)}</div>`).join('');
+  const rows = vs.map(v => {
+    const a = grobIdx(v.grobStart); let b = grobIdx(v.grobEnde || v.grobStart);
+    if (a != null && (b == null || b < a)) b = a;
+    let bar = '';
+    if (a != null) { const left = (a - lo) * colW; const w = (b - a + 1) * colW; bar = `<div class="grob-bar" style="left:${left}px;width:${Math.max(w - 4, 18)}px;background:${ganttColHex(v)}" title="${esc(v.gewerk)}">${esc(v.gewerk)}</div>`; }
+    return `<div class="grob-row">
+      <div class="grob-name"><span class="bkp-code">${esc(v.bkp || '')}</span> <span class="gnm">${esc(v.gewerk || '')}</span></div>
+      <div class="grob-sels">${sel(v, 'grobStart')}<span class="grob-arrow">→</span>${sel(v, 'grobEnde')}</div>
+      <div class="grob-track" style="width:${trackW}px">${cols.map((c, ci) => `<span class="grob-cell${c.code === 'WI' ? ' wi' : ''}" style="left:${ci * colW}px;width:${colW}px"></span>`).join('')}${bar}</div>
+    </div>`;
+  }).join('');
+  const head = `
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Grobplanung nach Phasen · grobe Start-/End-Saison je Gewerk (für die frühe Planung)</div></div></div>
+    ${projektTabs(p, 'termine')}
+    ${ganttModeToggle(p)}`;
+  render(head + `
+    <p class="muted" style="font-size:12.5px;margin:-2px 0 12px">Pro Gewerk eine grobe <b>Start-</b> und optionale <b>End-Phase</b> wählen (z.B. Frühling 25 → Herbst 26). Für die Feinplanung auf „Detailprogramm" wechseln.</p>
+    <div class="card" style="padding:0;overflow:auto">
+      <div class="grob-wrap" style="min-width:${190 + 170 + trackW}px">
+        <div class="grob-row grob-headrow"><div class="grob-name">Gewerk</div><div class="grob-sels">Start → Ende</div><div class="grob-track" style="width:${trackW}px">${headerCols}</div></div>
+        ${rows || `<div class="grob-row"><div class="muted" style="padding:14px">Noch keine Gewerke. Im Tab „Übersicht" anlegen.</div></div>`}
+      </div>
+    </div>`);
+  $$('.grob-sel').forEach(s => s.addEventListener('change', () => setGrobPhase(s.dataset.pid, s.dataset.vid, s.dataset.feld, s.value)));
+}
+function setGrobPhase(pid, vid, feld, val) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  v[feld] = val || '';
+  // Ende nicht vor Start
+  if (feld === 'grobStart' && val) { const a = grobIdx(val), b = grobIdx(v.grobEnde); if (b != null && b < a) v.grobEnde = ''; }
+  if (feld === 'grobEnde' && val) { const a = grobIdx(v.grobStart), b = grobIdx(val); if (a != null && b < a) v.grobEnde = v.grobStart; }
+  save(); viewGrobGantt(p);
+}
 function gdFmt(iso) { if (!iso || ganttDates === 'off') return ''; const d = dISO(iso); const dd = String(d.getDate()).padStart(2, '0'), mm = String(d.getMonth() + 1).padStart(2, '0'); return ganttDates === 'short' ? `${dd}.${mm}.` : `${dd}.${mm}.${String(d.getFullYear()).slice(2)}`; }
 function gdLabels(startIso, endIso, x0, x1) {
   if (ganttDates === 'off') return '';
@@ -1749,6 +1808,7 @@ function viewTermine(id) {
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
 
   ganttPid = p.id;
+  if (ganttMode === 'grob') return viewGrobGantt(p);
   // ALLE Vergaben (auch ohne Termin), sortiert nach BKP/Gewerk ODER nach Baustart
   const vs = (p.vergaben || []).slice().sort((a, b) => ganttSort === 'start'
     ? ((a.bauStart || '9999-99-99').localeCompare(b.bauStart || '9999-99-99') || (a.bkp || '').localeCompare(b.bkp || ''))
@@ -1775,6 +1835,7 @@ function viewTermine(id) {
       ${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}
     </div>
     ${projektTabs(p, 'termine')}
+    ${ganttModeToggle(p)}
     <div class="g-toolbar">
       <span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}<span class="muted" style="font-size:12px">Info</span>${infoCtrl}${zoomCtrl}${scaleCtrl}
       <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
@@ -10082,6 +10143,7 @@ document.addEventListener('click', e => {
     case 'gantt-sort':   ganttSort = kind; rerenderGantt(pid); break;
     case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; rerenderGantt(pid); break;
     case 'gantt-dates':  ganttDates = ganttDates === 'off' ? 'full' : (ganttDates === 'full' ? 'short' : 'off'); rerenderGantt(pid); break;
+    case 'gantt-mode':   ganttMode = kind; viewTermine(pid); break;
     case 'new-vorgang':  actNewVorgang(pid, vid); break;
     case 'save-vorgang': saveVorgang(pid, vid); break;
     case 'rm-vorgang':   removeVorgang(pid, vid, oid); break;

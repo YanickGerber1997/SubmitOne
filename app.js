@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v106';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v107';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7361,7 +7361,7 @@ function bauherrPlan(p) {
     rows.push({ v, betrag, von: v.bauStart, bis: v.bauEnde, ohneTermin: !months.length });
   });
   const sorted = [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  let cum = 0; const monate = sorted.map(([k, b]) => { cum += b; return { key: k, betrag: b, cum }; });
+  let cum = 0; const monate = sorted.map(([k, b]) => { const betrag = rp5(b); cum += betrag; return { key: k, betrag, cum }; });
   const total = rows.filter(r => !r.ohneTermin).reduce((a, r) => a + r.betrag, 0);
   return { rows, monate, total, fehlend: rows.filter(r => r.ohneTermin) };
 }
@@ -7446,12 +7446,14 @@ function zpHonorarHtml(p, z) {
       <div id="zpMonate">${zahlungsplanMonateHtml(z, p.id)}</div>
     </div>`;
 }
+// Schweizer Rappenrundung: auf 0.05 runden (Beträge, die aus Verteilungen entstehen)
+function rp5(x) { return Math.round((Number(x) || 0) * 20) / 20; }
 function zahlungsplanCalc(z) {
   const betrag = Number(z.betrag) || 0;
   let cum = 0;
-  const rows = z.phasen.map(ph => { const pct = Number(ph.pct) || 0; cum += pct; return { ...ph, pct, betrag: betrag * pct / 100, cum }; });
+  const rows = z.phasen.map(ph => { const pct = Number(ph.pct) || 0; cum += pct; return { ...ph, pct, betrag: rp5(betrag * pct / 100), cum }; });
   const pctSum = rows.reduce((a, r) => a + r.pct, 0);
-  return { rows, betrag, pctSum, total: betrag * pctSum / 100 };
+  return { rows, betrag, pctSum, total: rp5(betrag * pctSum / 100) };
 }
 function zahlungsplanRead(pid) {
   const p = findProjekt(pid); const z = zahlungsplanOf(p);
@@ -7498,7 +7500,7 @@ function zahlungsplanMonate(z) {
   }
   const sorted = [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   let cum = 0;
-  return { ok, monate: sorted.map(([k, b]) => { cum += b; return { key: k, betrag: b, cum }; }), total: cum };
+  return { ok, monate: sorted.map(([k, b]) => { const betrag = rp5(b); cum += betrag; return { key: k, betrag, cum }; }), total: cum };
 }
 // Manuelle Monats-Overrides auf eine Auto-Verteilung legen
 function zpApplyOverrides(baseMonate, z) {
@@ -7513,7 +7515,7 @@ function zpMonateTabelleHtml(baseMonate, z, pid, hinweis) {
   const r = zpApplyOverrides(baseMonate, z); const locked = z.gesperrt;
   const rows = r.monate.map(m => `<tr>
       <td>${zpMonLabel(m.key)}</td>
-      <td class="num">${locked ? chf(m.betrag) : `<input class="input zp-mon" data-key="${m.key}" data-pid="${pid}" type="number" value="${Math.round(m.betrag)}" style="width:118px;text-align:right;padding:3px 6px${m.ueber ? ';border-color:var(--s-amber);font-weight:700' : ''}">`}</td>
+      <td class="num">${locked ? chf(m.betrag) : `<input class="input zp-mon" data-key="${m.key}" data-pid="${pid}" type="number" step="0.05" value="${m.betrag}" style="width:118px;text-align:right;padding:3px 6px${m.ueber ? ';border-color:var(--s-amber);font-weight:700' : ''}">`}</td>
       <td class="num muted">${chf(m.cum)}</td>
       <td>${m.ueber ? '<span class="st amber" style="font-size:9px;padding:1px 6px">manuell</span>' : ''}</td>
     </tr>`).join('');

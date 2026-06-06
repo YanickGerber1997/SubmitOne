@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v91';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v92';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -5592,7 +5592,11 @@ function viewDrucken() {
       ${card('pdf-vergabeantrag-alle', 'Offertvergleich / Vergabeantrag', 'Preisspiegel aller Gewerke (Firmen-Spalten, 3 Stufen)')}
       ${card('pdf-kostenschaetzung', 'Kostenschätzung', 'Beschrieb · BKP · Kosten · Gesamttotal')}
       ${card('pdf-baukosten', 'Baukostenübersicht', 'Volle BKP-Tabelle (KV/WV/Prognose)')}
+      ${card('pdf-rechnungen', 'Rechnungskontrolle', 'Pro BKP: vergeben · verrechnet · bezahlt · Platz')}
+      ${card('pdf-zahlungsplan', 'Zahlungsplan', 'SIA-Phasen + Monatsrechnungen')}
       ${card('pdf-gantt', 'Bauprogramm', 'Termin-/Gantt-Raster (Querformat, 1 Seite)')}
+      ${card('pdf-honorar', 'Honorar-Berechnung', 'SIA 102 · Phasen · Stundenansatz')}
+      ${card('pdf-solar', 'Solar-Bericht', 'Ertrag · Eigenverbrauch · Wirtschaftlichkeit')}
       ${card('pdf-submittenten', 'Submittentenliste', 'Vertraulich · alle Eingeladenen je Gewerk')}
       ${card('pdf-unternehmer', 'Unternehmerliste', 'Für die Baustelle · vergebene Unternehmer')}
       ${card('pdf-entscheidungen', 'Entscheidungsliste', 'Bauherren-/Auswahlentscheide')}
@@ -6352,7 +6356,7 @@ function viewRechnungen(pid) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Rechnungskontrolle</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">Rechnungskontrolle</h1><div class="sub" style="margin-top:5px">Pro BKP: vergeben · verrechnet · bezahlt · noch „Platz"</div></div>
-      <div><button class="btn" data-act="sammelrg" data-pid="${p.id}">+ Sammelrechnung (mehrere BKP)</button></div>
+      <div style="display:flex;gap:8px"><button class="btn secondary" data-act="pdf-rechnungen" data-pid="${p.id}">⬇ PDF</button><button class="btn" data-act="sammelrg" data-pid="${p.id}">+ Sammelrechnung (mehrere BKP)</button></div>
     </div>
     ${projektTabs(p, 'rechnungen')}
     <div class="card" style="overflow-x:auto">
@@ -7194,6 +7198,7 @@ function viewZahlungsplan(pid) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Zahlungsplan</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">Zahlungsplan</h1><div class="sub" style="margin-top:5px">Beträge nach SIA-Leistungsprozenten · Fälligkeiten aus dem Terminprogramm</div></div>
+      <div><button class="btn" data-act="pdf-zahlungsplan" data-pid="${p.id}">⬇ PDF</button></div>
     </div>
     ${projektTabs(p, 'zahlungsplan')}
     ${demoBanner('zahlungsplan')}
@@ -7220,6 +7225,40 @@ function viewZahlungsplan(pid) {
     </div>
   `);
   $$('.zp-in').forEach(el => el.addEventListener('input', () => zahlungsplanUpdate(pid)));
+}
+function pdfZahlungsplan(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const z = zahlungsplanOf(p); const c = zahlungsplanCalc(z); const mo = zahlungsplanMonate(z);
+  const phaseRows = c.rows.map(r => `<tr><td>${esc(r.label)}</td><td class="num">${r.pct}%</td><td class="num">${money(r.betrag)}</td><td class="num">${r.datum ? fmtDate(r.datum) : '–'}</td></tr>`).join('');
+  const inner = `
+    <table class="t" style="max-width:480px"><tbody>
+      <tr><td>Gesamtbetrag</td><td class="num"><b>${money(z.betrag)}</b></td></tr>
+      <tr><td>Zeitraum</td><td class="num">${z.von ? fmtDate(z.von) : '–'} – ${z.bis ? fmtDate(z.bis) : '–'}</td></tr>
+    </tbody></table>
+    <div class="gw">Verteilung nach SIA-Leistungsprozenten</div>
+    <table class="t"><thead><tr><th>SIA-Phase</th><th class="num">Leistung %</th><th class="num">Betrag</th><th class="num">Fälligkeit</th></tr></thead>
+      <tbody>${phaseRows}</tbody>
+      <tfoot><tr><td><b>Total</b></td><td class="num"><b>${Math.round(c.pctSum * 10) / 10}%</b></td><td class="num"><b>${money(c.total)}</b></td><td></td></tr></tfoot></table>
+    ${mo.ok ? `<div class="gw">Monatsrechnungen</div>
+    <table class="t"><thead><tr><th>Monat</th><th class="num">Rechnung</th><th class="num">kumuliert</th></tr></thead>
+      <tbody>${mo.monate.map(m => `<tr><td>${zpMonLabel(m.key)}</td><td class="num">${money(m.betrag)}</td><td class="num muted">${money(m.cum)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td><b>Total</b></td><td class="num"><b>${money(mo.total)}</b></td><td></td></tr></tfoot></table>` : ''}`;
+  openPrintDoc('Zahlungsplan', `${esc(p.name)}${p.ort ? ' · ' + esc(p.ort) : ''}`, inner);
+}
+function pdfRechnungskontrolle(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const gw = gewerkeSorted(p).filter(v => isVergeben(v) || (v.rechnungen || []).length);
+  let tSoll = 0, tFak = 0, tBez = 0, tPlatz = 0;
+  const rows = gw.map(v => {
+    const z = kostenZeile(v); const platz = z.prognose - z.fakturiert; const over = z.fakturiert > z.prognose + 0.5;
+    tSoll += z.prognose; tFak += z.fakturiert; tBez += z.bezahlt; tPlatz += platz;
+    return `<tr><td>${esc(v.bkp || '')}</td><td>${esc(v.gewerk)}<br><span class="muted">${esc(v.firma || '')}</span></td><td class="num">${money(z.prognose)}</td><td class="num">${money(z.fakturiert)}</td><td class="num">${money(z.bezahlt)}</td><td class="num"${over ? ' style="color:#a01b2b;font-weight:700"' : ''}>${money(platz)}</td></tr>`;
+  }).join('');
+  const inner = `<table class="t"><thead><tr><th>BKP</th><th>Gewerk / Firma</th><th class="num">Vergabe (Soll)</th><th class="num">Verrechnet</th><th class="num">Bezahlt</th><th class="num">Platz</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="6" class="muted">Keine Daten</td></tr>'}</tbody>
+    <tfoot><tr><td colspan="2"><b>Total</b></td><td class="num"><b>${money(tSoll)}</b></td><td class="num"><b>${money(tFak)}</b></td><td class="num"><b>${money(tBez)}</b></td><td class="num"><b>${money(tPlatz)}</b></td></tr></tfoot></table>
+    <p class="muted" style="font-size:10.5px;margin-top:8px">Platz = Vergabe-Soll (WV + genehmigte Nachträge) − bereits verrechnet. Rot = Überschreitung (keine Platz mehr).</p>`;
+  openPrintDoc('Rechnungskontrolle', `${esc(p.name)} · Stand ${fmtDate(todayIso())}`, inner);
 }
 
 function pdfKostenschaetzung(pid) {
@@ -8564,6 +8603,8 @@ document.addEventListener('click', e => {
     case 'solar-baukosten':      solarToBaukosten(pid); break;
     case 'pdf-baukosten':        pdfBaukosten(pid); break;
     case 'pdf-gantt':            pdfGantt(pid); break;
+    case 'pdf-zahlungsplan':     pdfZahlungsplan(pid); break;
+    case 'pdf-rechnungen':       pdfRechnungskontrolle(pid); break;
     case 'advance':      advanceVergabe(pid, vid); break;
     case 'edit-vergabe':      actEditVergabe(pid, vid); break;
     case 'save-vergabe-edit': saveVergabeEdit(pid, vid); break;
@@ -8598,7 +8639,7 @@ document.addEventListener('click', e => {
     case 'ruecklese':    actRuecklese(pid, vid); break;
     case 'pdf-submittenten': pdfSubmittenten(pid); break;
     case 'pdf-unternehmer':  pdfUnternehmer(pid); break;
-    case 'pdf-honorar':      pdfHonorar(); break;
+    case 'pdf-honorar':      if (pid) honorarPid = pid; pdfHonorar(); break;
     case 'honorar-detail':   honorarDetail = !honorarDetail; viewHonorar(); break;
     case 'new-entscheidung':    actNewEntscheidung(pid); break;
     case 'edit-entscheidung':   actNewEntscheidung(pid, eid); break;

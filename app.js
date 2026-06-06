@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v99';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v100';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -740,6 +740,7 @@ function migrate() {
     if (!p.entscheidungen) { p.entscheidungen = []; changed = true; }
     if (!p.bezugsfirmen) { p.bezugsfirmen = []; changed = true; }
     if (!p.geschosseListe) { p.geschosseListe = []; changed = true; }
+    if (!p.auflagen) { p.auflagen = []; changed = true; }
     if (!p.mitglieder) { p.mitglieder = []; changed = true; }   // Team/Rollen pro Projekt
     if (!p.bauteile) { p.bauteile = []; changed = true; }   // Teilprojekte/Bauteile (Trakt 1–3, Provisorium …)
     if (!p.optionen) { p.optionen = []; changed = true; }    // optionale Bauteile (Erker, Lift …)
@@ -1134,6 +1135,7 @@ function projektTabs(p, active) {
     { key: 'termine', href: `#/projekt/${p.id}/termine`, label: 'Termine / Gantt' },
     { key: 'pendenzen', href: `#/projekt/${p.id}/pendenzen`, label: 'Pendenzen' + pendBadge },
     { key: 'dossier', href: `#/projekt/${p.id}/dossier`, label: 'Dossier' + (dossierFehltCount(p) ? ` <span class="tab-badge">${dossierFehltCount(p)}</span>` : '') },
+    { key: 'auflagen', href: `#/projekt/${p.id}/auflagen`, label: 'Auflagen' + ((p.auflagen || []).filter(a => a.status !== 'erledigt').length ? ` <span class="tab-badge">${(p.auflagen || []).filter(a => a.status !== 'erledigt').length}</span>` : '') },
     { key: 'protokolle', href: `#/projekt/${p.id}/protokolle`, label: 'Protokolle' },
     { key: 'nachtraege', href: `#/projekt/${p.id}/nachtraege`, label: 'Nachträge' },
     { key: 'optionen', href: `#/projekt/${p.id}/optionen`, label: 'Optionen' },
@@ -1236,6 +1238,7 @@ function router() {
       if (sub === 'kalender') return viewKalender(a);
       if (sub === 'kosten') return viewKosten(a);
       if (sub === 'rechnungen') return viewRechnungen(a);
+      if (sub === 'auflagen') return viewAuflagen(a);
       if (sub === 'optionen') return viewOptionen(a);
       if (sub === 'nachtraege') return viewNachtraege(a);
       if (sub === 'solar') return viewSolar(a);
@@ -6355,6 +6358,102 @@ function bauteilCard(p, kvTotal) {
 }
 
 // Rechnungskontrolle: pro BKP/Gewerk Soll (Vergabe) vs. verrechnet vs. bezahlt + „Platz" + Überschreitung.
+/* ============================================================
+   Baubewilligungsauflagen – Standard-Auflagen + Spezielles tracken
+   ============================================================ */
+const AUFLAGE_STATUS = {
+  offen:       { label: 'offen',       color: 'grey' },
+  arbeit:      { label: 'in Arbeit',   color: 'amber' },
+  eingereicht: { label: 'eingereicht', color: 'blue' },
+  erledigt:    { label: 'erledigt',    color: 'green' },
+};
+const AUFLAGEN_PHASEN = ['vor Baubeginn', 'während Bau', 'vor Bezug', 'sonstige'];
+// Smarte Standard-Auflagen (CH-typisch). „immer" = praktisch jedes Projekt.
+const AUFLAGEN_STANDARD = [
+  { titel: 'Baubeginn melden (Baustartanzeige an Gemeinde)', kat: 'Meldung',    phase: 'vor Baubeginn' },
+  { titel: 'Schnurgerüst / Gebäudeprofil abstecken (Geometer)', kat: 'Abnahme', phase: 'vor Baubeginn' },
+  { titel: 'Baugespann entfernen',                          kat: 'Meldung',    phase: 'vor Baubeginn' },
+  { titel: 'Energie-/Wärmedämmnachweis einreichen',         kat: 'Nachweis',   phase: 'vor Baubeginn' },
+  { titel: 'Schadstoff-/Asbestabklärung (bei Umbau)',       kat: 'Schadstoffe',phase: 'vor Baubeginn' },
+  { titel: 'Entsorgungsnachweis Aushub / Altlasten',        kat: 'Umwelt',     phase: 'während Bau' },
+  { titel: 'Kanalisations-/Werkleitungsabnahme',            kat: 'Abnahme',    phase: 'während Bau' },
+  { titel: 'Rohbau-/Schnurgerüstabnahme',                   kat: 'Abnahme',    phase: 'während Bau' },
+  { titel: 'Brandschutzabnahme (Feuerpolizei)',             kat: 'Abnahme',    phase: 'vor Bezug' },
+  { titel: 'Schutzraum-/Zivilschutzabnahme',                kat: 'Abnahme',    phase: 'vor Bezug' },
+  { titel: 'Schlussabnahme / Bezugsbewilligung',            kat: 'Abnahme',    phase: 'vor Bezug' },
+  { titel: 'Umgebung / Baumschutz, Ersatzpflanzungen',      kat: 'Umwelt',     phase: 'vor Bezug' },
+];
+function viewAuflagen(pid) {
+  const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  const list = p.auflagen || [];
+  const offen = list.filter(a => a.status !== 'erledigt').length;
+  const stOpt = s => Object.keys(AUFLAGE_STATUS).map(k => `<option value="${k}"${s === k ? ' selected' : ''}>${AUFLAGE_STATUS[k].label}</option>`).join('');
+  const row = a => `<tr>
+      <td><strong>${esc(a.titel)}</strong>${a.bemerkung ? `<div class="muted" style="font-size:11px">${esc(a.bemerkung)}</div>` : ''}</td>
+      <td>${a.kat ? `<span class="tag">${esc(a.kat)}</span>` : '–'}</td>
+      <td class="muted">${a.termin ? fmtDate(a.termin) : '–'}</td>
+      <td class="muted">${esc(a.zustaendig || '–')}</td>
+      <td><select class="select au-status" data-pid="${p.id}" data-aid="${a.id}" style="padding:4px 8px;min-width:120px">${stOpt(a.status || 'offen')}</select></td>
+      <td style="white-space:nowrap"><button class="x-btn" data-act="edit-auflage" data-pid="${p.id}" data-aid="${a.id}" title="bearbeiten">✏</button><button class="x-btn" data-act="rm-auflage" data-pid="${p.id}" data-aid="${a.id}" title="löschen">×</button></td>
+    </tr>`;
+  const sections = AUFLAGEN_PHASEN.map(ph => {
+    const items = list.filter(a => (a.phase || 'sonstige') === ph);
+    if (!items.length) return '';
+    return `<div class="section-head" style="margin-top:18px"><h2>${esc(ph)}</h2><span class="hint">${items.filter(a => a.status !== 'erledigt').length} offen</span></div>
+      <div class="card" style="overflow-x:auto"><table class="grid"><thead><tr><th>Auflage</th><th>Kategorie</th><th>Frist</th><th>Zuständig</th><th style="width:130px">Status</th><th></th></tr></thead><tbody>${items.map(row).join('')}</tbody></table></div>`;
+  }).join('');
+  render(`
+    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Auflagen</div>
+    <div class="detail-head">
+      <div><h1 style="margin:0;font-size:23px">Baubewilligungsauflagen</h1><div class="sub" style="margin-top:5px">Auflagen aus der Baubewilligung tracken${list.length ? ` · ${offen} offen` : ''}</div></div>
+      <div style="display:flex;gap:8px">${list.length ? '' : `<button class="btn secondary" data-act="auflage-standard" data-pid="${p.id}">★ Standard-Auflagen einfügen</button>`}<button class="btn" data-act="new-auflage" data-pid="${p.id}">+ Auflage</button></div>
+    </div>
+    ${projektTabs(p, 'auflagen')}
+    ${list.length ? sections + `<div style="margin-top:16px"><button class="btn sm secondary" data-act="auflage-standard" data-pid="${p.id}">★ Standard-Auflagen ergänzen</button></div>`
+      : emptyState('📋', 'Noch keine Auflagen. „★ Standard-Auflagen einfügen" legt die üblichen an (Baustartmeldung, Abnahmen, Energienachweis …) – Spezielles wie Schadstoffe ergänzt du mit „+ Auflage".')}
+    <p class="muted" style="font-size:11.5px;margin-top:12px">Tipp: Frist setzen + „Zuständig" eintragen; Status von „offen" über „eingereicht" bis „erledigt" führen. Offene Auflagen erscheinen oben in der Zählung.</p>
+  `);
+  $$('.au-status').forEach(sel => sel.addEventListener('change', () => setAuflageStatus(sel.dataset.pid, sel.dataset.aid, sel.value)));
+}
+function actNewAuflage(pid, aid) {
+  const p = findProjekt(pid); const a = aid ? (p.auflagen || []).find(x => x.id === aid) : null;
+  openModal(a ? 'Auflage bearbeiten' : 'Neue Auflage', `
+    <label class="field">Auflage / Bezeichnung <input class="input" id="au_titel" value="${a ? esc(a.titel || '') : ''}" placeholder="z.B. Schadstoffsanierungskonzept einreichen"></label>
+    <div class="form-row">
+      <label class="field">Kategorie <input class="input" id="au_kat" list="dl_aukat" value="${a ? esc(a.kat || '') : ''}" placeholder="z.B. Abnahme">
+        <datalist id="dl_aukat"><option>Meldung</option><option>Abnahme</option><option>Nachweis</option><option>Schadstoffe</option><option>Umwelt</option><option>Gewässerschutz</option><option>Brandschutz</option></datalist></label>
+      <label class="field">Phase <select class="select" id="au_phase">${AUFLAGEN_PHASEN.map(ph => `<option value="${ph}"${(a ? a.phase : 'vor Baubeginn') === ph ? ' selected' : ''}>${esc(ph)}</option>`).join('')}</select></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Frist / Termin <input class="input" type="date" id="au_termin" value="${a ? esc(a.termin || '') : ''}"></label>
+      <label class="field">Zuständig <input class="input" id="au_zust" value="${a ? esc(a.zustaendig || '') : ''}" placeholder="z.B. Bauleitung / Geometer"></label>
+    </div>
+    <label class="field">Status <select class="select" id="au_status">${Object.keys(AUFLAGE_STATUS).map(k => `<option value="${k}"${(a ? a.status : 'offen') === k ? ' selected' : ''}>${AUFLAGE_STATUS[k].label}</option>`).join('')}</select></label>
+    <label class="field">Bemerkung <textarea class="input" id="au_bem" rows="2" placeholder="Bezug zu Bewilligungs-Ziffer, Nachweis, Behörde …">${a ? esc(a.bemerkung || '') : ''}</textarea></label>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-auflage" data-pid="${pid}"${a ? ` data-aid="${aid}"` : ''}>${a ? 'Speichern' : 'Hinzufügen'}</button>`);
+}
+function saveAuflage(pid, aid) {
+  const p = findProjekt(pid); p.auflagen = p.auflagen || [];
+  const data = { titel: $('#au_titel').value.trim() || 'Auflage', kat: $('#au_kat').value.trim(), phase: $('#au_phase').value, termin: $('#au_termin').value, zustaendig: $('#au_zust').value.trim(), status: $('#au_status').value, bemerkung: $('#au_bem').value.trim() };
+  const a = aid ? p.auflagen.find(x => x.id === aid) : null;
+  if (a) Object.assign(a, data); else p.auflagen.push({ id: uid('au'), ...data });
+  save(); closeModal(); router();
+}
+function setAuflageStatus(pid, aid, status) {
+  const p = findProjekt(pid); const a = (p.auflagen || []).find(x => x.id === aid); if (!a) return;
+  a.status = status; save();
+}
+function removeAuflage(pid, aid) {
+  const p = findProjekt(pid); p.auflagen = (p.auflagen || []).filter(x => x.id !== aid); save(); router();
+}
+function addStandardAuflagen(pid) {
+  const p = findProjekt(pid); p.auflagen = p.auflagen || [];
+  const vorhanden = new Set(p.auflagen.map(a => a.titel));
+  let n = 0;
+  AUFLAGEN_STANDARD.forEach(s => { if (!vorhanden.has(s.titel)) { p.auflagen.push({ id: uid('au'), titel: s.titel, kat: s.kat, phase: s.phase, termin: '', zustaendig: '', status: 'offen', bemerkung: '' }); n++; } });
+  save(); router(); toast(n ? n + ' Standard-Auflagen eingefügt' : 'Alle Standard-Auflagen bereits vorhanden');
+}
+
 function viewRechnungen(pid) {
   const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const gw = gewerkeSorted(p).filter(v => isVergeben(v) || (v.rechnungen || []).length);
@@ -8779,6 +8878,11 @@ document.addEventListener('click', e => {
     case 'rm-budget':    removeBudget(pid, vid, bid); break;
     case 'budget-auswahl': actBudgetForAuswahl(pid, eid); break;
     case 'abo-open':     actAbo(); break;
+    case 'new-auflage':      actNewAuflage(pid); break;
+    case 'edit-auflage':     actNewAuflage(pid, act.dataset.aid); break;
+    case 'save-auflage':     saveAuflage(pid, act.dataset.aid); break;
+    case 'rm-auflage':       removeAuflage(pid, act.dataset.aid); break;
+    case 'auflage-standard': addStandardAuflagen(pid); break;
     case 'sammelrg':     actSammelrechnung(pid); break;
     case 'save-sammelrg': saveSammelrechnung(pid); break;
     case 'zp-verteilen': zahlungsplanVerteilen(pid); break;
@@ -8908,6 +9012,14 @@ function demoData() {
       baustart: '2026-03-01', bezug: '2027-07-15',
       finanz: { land: 1350000, honorare: 380000, finanzierung: 120000 },
       wohnungen: 6,
+      auflagen: [
+        { id: uid('au'), titel: 'Baubeginn melden (Baustartanzeige an Gemeinde)', kat: 'Meldung', phase: 'vor Baubeginn', termin: '2026-02-20', zustaendig: 'Bauleitung', status: 'erledigt', bemerkung: 'Ziffer 1 der Bewilligung' },
+        { id: uid('au'), titel: 'Schnurgerüst / Gebäudeprofil abstecken (Geometer)', kat: 'Abnahme', phase: 'vor Baubeginn', termin: '2026-02-25', zustaendig: 'Geometer Müller', status: 'erledigt', bemerkung: '' },
+        { id: uid('au'), titel: 'Energie-/Wärmedämmnachweis einreichen', kat: 'Nachweis', phase: 'vor Baubeginn', termin: '2026-02-28', zustaendig: 'Bauphysik', status: 'eingereicht', bemerkung: 'GEAK + Wärmedämmnachweis' },
+        { id: uid('au'), titel: 'Asbest-/Schadstoffabklärung Bestand', kat: 'Schadstoffe', phase: 'vor Baubeginn', termin: '', zustaendig: 'Schadstoff-Gutachter', status: 'offen', bemerkung: 'Auflage Ziffer 7 – vor Rückbau' },
+        { id: uid('au'), titel: 'Brandschutzabnahme (Feuerpolizei)', kat: 'Abnahme', phase: 'vor Bezug', termin: '2027-06-30', zustaendig: 'Feuerpolizei', status: 'offen', bemerkung: '' },
+        { id: uid('au'), titel: 'Schlussabnahme / Bezugsbewilligung', kat: 'Abnahme', phase: 'vor Bezug', termin: '2027-07-10', zustaendig: 'Gemeinde Bauamt', status: 'offen', bemerkung: '' },
+      ],
       geschosseListe: [
         { id: 'g_eg', name: 'Erdgeschoss', typ: 'Wohnen', einheiten: [
           { id: 'u_egl', name: 'EG links', zimmer: 3.5, m2: 70, miete: 1950, verkauf: 720000 },

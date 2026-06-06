@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v166';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v167';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1163,7 +1163,7 @@ function phasenBar(p) {
   </div>`;
 }
 
-function projektTabs(p, active) {
+function projektTabs(p, active, toolbar) {
   const openP = offenePendenzen(p).length;
   const pendBadge = openP ? ` <span class="tab-badge">${openP}</span>` : '';
   const items = [
@@ -1195,12 +1195,15 @@ function projektTabs(p, active) {
   const prim = items.filter(it => primary.includes(it.key));
   const more = items.filter(it => !primary.includes(it.key));
   const moreActive = more.some(it => it.key === active);
-  return `<div class="ptabs">
-    ${prim.map(it => `<a class="ptab ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')}
-    <div class="ptab-more">
-      <button class="ptab ${moreActive ? 'active' : ''}" data-act="ptabs-more">${moreActive ? (more.find(it => it.key === active).label + ' ') : 'Mehr '}▾</button>
-      <div class="ptab-menu" id="ptabMenu" hidden>${more.map(it => `<a class="${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')}</div>
+  return `<div class="proj-sticky">
+    <div class="ptabs">
+      ${prim.map(it => `<a class="ptab ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')}
+      <div class="ptab-more">
+        <button class="ptab ${moreActive ? 'active' : ''}" data-act="ptabs-more">${moreActive ? (more.find(it => it.key === active).label + ' ') : 'Mehr '}▾</button>
+        <div class="ptab-menu" id="ptabMenu" hidden>${more.map(it => `<a class="${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')}</div>
+      </div>
     </div>
+    ${toolbar ? `<div class="page-toolbar">${toolbar}</div>` : ''}
   </div>`;
 }
 function ptabsMoreToggle() {
@@ -1581,19 +1584,17 @@ function viewKosten(id) {
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const vs = (p.vergaben || []).slice().sort((a, b) => (a.bkp || '').localeCompare(b.bkp || ''));
 
+  const toolbar = `
+    <button class="btn sm secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">⬇ Kostenschätzung</button>
+    <button class="btn sm secondary" data-act="pdf-baukosten" data-pid="${p.id}">⬇ Baukostenübersicht</button>
+    <button class="btn sm ${kostenBrutto ? '' : 'secondary'}" data-act="kosten-brutto" data-pid="${p.id}" title="Beträge netto (exkl.) oder brutto (inkl. ${mwstSatz()}% MwSt) anzeigen">${kostenBrutto ? `Brutto (inkl. ${mwstSatz()}%)` : 'Netto (exkl. MwSt)'}</button>
+    ${katToggleBtn()}
+    <button class="btn sm" data-act="new-vergabe" data-pid="${p.id}" style="margin-left:auto">+ Arbeitsbeschrieb</button>`;
   const head = `
-    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Baukostenübersicht nach BKP · Stand ${fmtDate(todayIso())}</div></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">⬇ Kostenschätzung</button>
-        <button class="btn secondary" data-act="pdf-baukosten" data-pid="${p.id}">⬇ Baukostenübersicht</button>
-        <button class="btn ${kostenBrutto ? '' : 'secondary'}" data-act="kosten-brutto" data-pid="${p.id}" title="Beträge netto (exkl.) oder brutto (inkl. ${mwstSatz()}% MwSt) anzeigen">${kostenBrutto ? `Brutto (inkl. ${mwstSatz()}%)` : 'Netto (exkl. MwSt)'}</button>
-        ${katToggleBtn()}
-        <button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>
-      </div>
     </div>
-    ${projektTabs(p, 'kosten')}
+    ${projektTabs(p, 'kosten', toolbar)}
   `;
   if (!vs.length) { render(head + emptyState('◫', 'Noch keine Arbeitsbeschriebe / Kostenschätzungen. Mit „+ Arbeitsbeschrieb" erfassen.') + `<div style="text-align:center;margin-top:-10px"><button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb erfassen</button></div>`); return; }
 

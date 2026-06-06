@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v107';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v108';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1539,9 +1539,11 @@ function viewKosten(id) {
     groups[g].forEach(v => {
       const z = kostenZeile(v); add(sub, z); add(tot, z);
       const d = z.prognose - z.kv;
+      const hatBt = (p.bauteile || []).length;
+      const btSel = hatBt ? `<div style="margin-top:3px"><select class="bt-gw" data-pid="${p.id}" data-vid="${v.id}" onclick="event.stopPropagation()" title="Teilprojekt" style="font-size:11px;padding:1px 5px;border:1px solid var(--border);border-radius:4px;max-width:200px">${bauteilOptionsHtml(p, v.bauteil)}</select></div>` : '';
       rows += `<tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
         <td class="bkp-code">${esc(v.bkp)}</td>
-        <td><strong>${esc(v.gewerk)}</strong></td>
+        <td><strong>${esc(v.gewerk)}</strong>${btSel}</td>
         <td>${v.firma ? esc(v.firma) : '<span class="muted">nicht vergeben</span>'}</td>
         <td class="num">${money(z.kv)}</td>
         <td class="num">${z.rev != null ? money(z.rev) : '–'}</td>
@@ -1552,6 +1554,12 @@ function viewKosten(id) {
         <td class="num">${z.offen ? money(z.offen) : '–'}</td>
         <td class="num ${dCls(d)}">${d ? money(d) : '–'}</td>
       </tr>`;
+      rows += (v.nachtraege || []).map(n => { const nc = n.status === 'genehmigt' ? 'green' : (n.status === 'abgelehnt' ? 'grey' : 'amber'); return `<tr class="rg-sub">
+        <td></td>
+        <td colspan="5"><span class="muted">↳ Nachtrag${n.nr ? ' ' + esc(n.nr) : ''}:</span> ${esc(n.titel || '')} <span class="st ${nc}" style="font-size:9px;padding:1px 6px">${esc(n.status || 'offen')}</span>${hatBt ? ` · <select class="bt-nt" data-pid="${p.id}" data-vid="${v.id}" data-nid="${n.id}" title="Teilprojekt des Nachtrags" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius:4px">${bauteilOptionsHtml(p, n.bauteil)}</select>` : ''}</td>
+        <td class="num">${money(n.betrag)}</td>
+        <td colspan="4"></td>
+      </tr>`; }).join('');
       rows += (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => `<tr class="rg-sub">
         <td></td>
         <td colspan="6"><span class="muted">↳ ${r.datum ? fmtDate(r.datum) : '—'}</span> ${esc(r.text || (r.art === 'gutschrift' ? 'Gutschrift' : 'Rechnung'))}${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''} · ${money(rgSigned(r))}</td>
@@ -1604,8 +1612,8 @@ function viewKosten(id) {
       </table>
     </div>
     ${optionenCard(p, tot.kv, tot.prognose)}
-    ${bauteilCard(p, tot.kv)}
-    <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag/Vergabesumme · Prognose = WV + Nachträge + Rapporte (Budget steckt im WV) · Δ KV = Prognose gegen Schätzung (rot = Überschreitung). Zeile anklicken → Gewerk-Detail mit Rechnungserfassung.</p>
+    ${teilprojektCard(p, tot.prognose)}
+    <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = Werkvertrag/Vergabesumme · Prognose = WV + Nachträge + Rapporte (Budget steckt im WV) · Δ KV = Prognose gegen Schätzung (rot = Überschreitung). Unter jedem Gewerk: Nachträge (mit Status) &amp; Rechnungen; Teilprojekt-Dropdown je Gewerk/Nachtrag. Zeile anklicken → Gewerk-Detail.</p>
   `);
 }
 
@@ -6296,6 +6304,35 @@ function bauteilSumme(p, btId) {
   });
   return s;
 }
+// Teilprojekt-Name (leer/unbekannt = Default „Hauptgebäude")
+function bauteilName(p, id) { if (!id) return 'Hauptgebäude'; const b = (p.bauteile || []).find(x => x.id === id); return b ? b.name : 'Hauptgebäude'; }
+// <option>-Liste mit „Hauptgebäude" als Default zuoberst
+function bauteilOptionsHtml(p, sel) { return `<option value=""${!sel ? ' selected' : ''}>Hauptgebäude</option>` + (p.bauteile || []).map(b => `<option value="${b.id}"${sel === b.id ? ' selected' : ''}>${esc(b.name)}</option>`).join(''); }
+// Prognose je Teilprojekt (Gewerk → sein Bauteil = „Hauptgebäude" wenn leer; Nachträge mit eigenem Bauteil zählen dort)
+function teilprojektSummary(p) {
+  const map = {}; const add = (bt, x) => { const k = bt || ''; map[k] = (map[k] || 0) + x; };
+  (p.vergaben || []).forEach(v => {
+    const z = kostenZeile(v); let base = z.prognose;
+    (v.nachtraege || []).forEach(n => { if (n.status === 'genehmigt' && n.bauteil) { const b = Number(n.betrag) || 0; base -= b; add(n.bauteil, b); } });
+    add(v.bauteil, base);
+  });
+  return map;
+}
+function teilprojektCard(p, prognoseTotal) {
+  if (!(p.bauteile || []).length) return '';
+  const map = teilprojektSummary(p);
+  const list = [{ id: '', name: 'Hauptgebäude', std: true }].concat((p.bauteile || []).map(b => ({ id: b.id, name: b.name })));
+  const rows = list.map(t => `<tr><td>${esc(t.name)}${t.std ? ' <span class="muted" style="font-size:11px">(Standard)</span>' : ''}</td><td class="num">${money(map[t.id] || 0)}</td></tr>`).join('');
+  return `<div class="card card-pad" style="margin-top:18px;max-width:560px">
+    <h2 style="margin:0 0 8px;font-size:16px">Kosten je Teilprojekt (Prognose)</h2>
+    <table class="grid"><thead><tr><th>Teilprojekt</th><th class="num" style="width:170px">Prognose</th></tr></thead><tbody>
+      ${rows}
+      <tr class="ksub"><td><b>Total</b></td><td class="num"><b>${money(prognoseTotal)}</b></td></tr>
+    </tbody></table>
+  </div>`;
+}
+function setGewerkBauteil(pid, vid, btId) { const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return; v.bauteil = btId; save(); if (location.hash.includes('/kosten')) viewKosten(pid); }
+function setNachtragBauteil(pid, vid, nid, btId) { const p = findProjekt(pid); const v = p && findVergabe(p, vid); const n = v && (v.nachtraege || []).find(x => x.id === nid); if (!n) return; n.bauteil = btId; save(); if (location.hash.includes('/kosten')) viewKosten(pid); }
 function optGruppenListe(p) {
   const order = [], map = {};
   (p.optionen || []).forEach(o => { const g = o.gruppe || ''; if (g) { if (!map[g]) { map[g] = []; order.push(g); } map[g].push(o); } });
@@ -6389,8 +6426,8 @@ function bauteilCard(p, kvTotal) {
   return `<div class="card card-pad" style="margin-top:18px">
     <h2 style="margin:0 0 8px;font-size:16px">Kosten je Bauteil / Teilprojekt</h2>
     <table class="grid"><thead><tr><th>Bauteil</th><th class="num" style="width:170px">Kostenschätzung</th></tr></thead><tbody>
+      <tr><td>Hauptgebäude <span class="muted" style="font-size:11px">(Standard)</span></td><td class="num">${money(rest)}</td></tr>
       ${rows}
-      ${rest ? `<tr><td class="muted">nicht zugeordnet</td><td class="num muted">${money(rest)}</td></tr>` : ''}
       <tr class="ksub"><td><b>Total</b></td><td class="num"><b>${money(kvTotal)}</b></td></tr>
     </tbody></table>
   </div>`;
@@ -7846,7 +7883,7 @@ function actEditVergabe(pid, vid) {
     <label class="field">Status <select class="select" id="fe_status">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select></label>
     ${((p.bauteile || []).length || (p.optionen || []).length) ? `
     <div class="form-row">
-      <label class="field">Bauteil / Teilprojekt <select class="select" id="fe_bauteil"><option value="">–</option>${(p.bauteile || []).map(b => `<option value="${b.id}"${v.bauteil === b.id ? ' selected' : ''}>${esc(b.name)}</option>`).join('')}</select></label>
+      <label class="field">Bauteil / Teilprojekt <select class="select" id="fe_bauteil">${bauteilOptionsHtml(p, v.bauteil)}</select></label>
       <label class="field">Option <select class="select" id="fe_option"><option value="">–</option>${(p.optionen || []).map(o => `<option value="${o.id}"${v.option === o.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
     </div>
     <p class="muted" style="font-size:11.5px;margin:2px 0 0">Gilt für das ganze Gewerk (v.a. Pauschal-Gewerke ohne Einzelpositionen). Positionen mit eigenem Etikett haben Vorrang.</p>` : ''}
@@ -9153,8 +9190,13 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal()
 document.addEventListener('mousemove', onGanttMove);
 document.addEventListener('mouseup', onGanttUp);
 document.addEventListener('contextmenu', onGlobalContext);
-// Manuelle Monatsbeträge im Zahlungsplan (delegiert, überlebt Teil-Rerender)
-document.addEventListener('change', e => { const el = e.target.closest && e.target.closest('.zp-mon'); if (el) setMonatOverride(el.dataset.pid, el.dataset.key, el.value); });
+// Delegierte change-Handler: Monatsbeträge + Teilprojekt-Zuordnung in der Baukostenübersicht
+document.addEventListener('change', e => {
+  const t = e.target; if (!t.closest) return;
+  const mon = t.closest('.zp-mon'); if (mon) { setMonatOverride(mon.dataset.pid, mon.dataset.key, mon.value); return; }
+  const gw = t.closest('.bt-gw'); if (gw) { setGewerkBauteil(gw.dataset.pid, gw.dataset.vid, gw.value); return; }
+  const nt = t.closest('.bt-nt'); if (nt) { setNachtragBauteil(nt.dataset.pid, nt.dataset.vid, nt.dataset.nid, nt.value); return; }
+});
 
 // Sidebar-Footer-Buttons
 window.addEventListener('DOMContentLoaded', boot);

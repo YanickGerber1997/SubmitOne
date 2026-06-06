@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v110';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v111';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -8597,11 +8597,11 @@ function openQrRechnungForm(pid, vid, qr) {
 
 // Absender/Büro (Eingabeadresse) – Default/Fallback; editierbar via Einstellungen → state.buero
 const BUERO = {
-  firma: 'Gerber-Software – Bauadministration',
-  strasse: '',
-  plzort: '',
-  tel: '',
-  email: 'gerber.yanick1@gmail.com',
+  firma: 'P. Hefti Bauberatung GmbH',
+  strasse: 'Bernstrasse 40',
+  plzort: '3076 Worb',
+  tel: '031 839 00 77',
+  email: 'info@heftibb.ch',
 };
 
 function pdfDeckblatt(pid, vid, eid, typ) {
@@ -9502,9 +9502,9 @@ function demoData() {
   ];
 
   const buero = {
-    firma: 'Gerber-Software – Bauadministration', strasse: 'Musterweg 1', plzort: '6000 Luzern',
-    tel: '041 000 00 00', email: 'gerber.yanick1@gmail.com', logo: '',
-    signatur: 'Freundliche Grüsse\nYanick Gerber\nGerber-Software – Bauadministration\nTel. 041 000 00 00', signaturAuto: true,
+    firma: 'P. Hefti Bauberatung GmbH', strasse: 'Bernstrasse 40', plzort: '3076 Worb',
+    tel: '031 839 00 77', email: 'info@heftibb.ch', logo: '',
+    signatur: 'Freundliche Grüsse\nP. Hefti Bauberatung GmbH\nBernstrasse 40, 3076 Worb\nTel. 031 839 00 77', signaturAuto: true,
   };
   return { projekte, kontakte, dokumente, buero };
 }

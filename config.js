@@ -27,6 +27,7 @@ window.SUBMITONE_CONFIG = {
     mod_termine: '',
     mod_protokolle: '',
     mod_pendenzen: '',
+    mod_nachtraege: '',
     mod_optionen: '',
     mod_finanz: '',
     mod_dossier: '',

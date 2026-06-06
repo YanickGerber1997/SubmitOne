@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v87';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v88';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -382,7 +382,7 @@ let currentUserId = null, currentUserSlug = '', currentUserVor = '', currentUser
 const PLANS = [
   { key: 'gratis',   name: 'Gratis',   preis: '0',  features: ['Alle Werkzeuge lokal nutzen', 'Drucken & PDF', '✗ kein Cloud-Speichern', '✗ kein Teilen'] },
   { key: 'basis',    name: 'Basic',    preis: '15', features: ['Cloud-Speichern, mehrere Geräte', 'Kontakte · Ausschreibung · Kosten', 'Termine · Kalender · Planung · Protokolle', 'Team-Arbeitsbereich'] },
-  { key: 'komplett', name: 'Premium', preis: '25', features: ['Alles aus Basic', '+ Optionen · Finanzierung', '+ Pendenzen · Dossier · Bauherr', '+ Solar · U-Wert · Honorar', '+ Teilen / Veröffentlichen'] },
+  { key: 'komplett', name: 'Premium', preis: '25', features: ['Alles aus Basic', '+ Nachträge-Übersicht · Optionen · Finanzierung', '+ Pendenzen · Dossier · Bauherr', '+ Solar · U-Wert · Honorar', '+ Teilen / Veröffentlichen'] },
 ];
 // Einzeln freischaltbare Module (à la carte), CHF/Monat. tier = in welchem Paket enthalten.
 // Schlüssel = canModul()-Schlüssel. Einzeln summiert teurer als das jeweilige Paket.
@@ -395,6 +395,7 @@ const MODULES = [
   { key: 'termine',    name: 'Terminprogramm / Gantt',   tier: 'basic',   preis: '5', feat: ['Bauprogramm (Gantt)', 'Verkettung der Gewerke', 'Eingabefristen', 'Arbeitstage / Feiertage'] },
   { key: 'protokolle', name: 'Protokolle',               tier: 'basic',   preis: '5', feat: ['Sitzungsprotokolle', 'Traktanden & Beschlüsse', 'Verteiler', 'Pendenzen aus Sitzung'] },
   { key: 'pendenzen',  name: 'Pendenzen',                tier: 'premium', preis: '5', feat: ['Aufgaben mit Verantwortlichen', 'Termine & Überfällig-Tracking', 'projektübergreifend'] },
+  { key: 'nachtraege', name: 'Nachträge-Übersicht (projektweit)', tier: 'premium', preis: '4', feat: ['Alle Nachträge über alle Gewerke', 'Status & Genehmigung zentral', 'Rapporte-Übersicht', 'Summen & Prognose', 'Pflege je Gewerk ist in Kosten enthalten'] },
   { key: 'optionen',   name: 'Optionale Bauteile & Teilprojekte', tier: 'premium', preis: '3', feat: ['Optionen ein-/ausblenden', 'Bauteile / Trakte', 'bereinigte Kostenschätzung'] },
   { key: 'finanz',     name: 'Finanzierung',             tier: 'premium', preis: '3', feat: ['Finanzierungsplan', 'Eigen- / Fremdkapital', 'Tranchen / Zahlungen'] },
   { key: 'dossier',    name: 'Dokumente / Dossier',      tier: 'premium', preis: '3', feat: ['Dossier-Checkliste', 'Dokumentenablage', 'Vorlagen'] },
@@ -450,11 +451,16 @@ function projektFuerCloud(p) {
   return clone || p;
 }
 // Dezenter Demo-Hinweis (nur wenn das Modul wirklich gesperrt ist), sonst leer.
+// Trennbare Module (eigenes Feld) → „wird nicht gespeichert"; reine Übersichten (Daten liegen woanders) → „Premium-Funktion".
 function demoBanner(key) {
   if (!modulGesperrt(key)) return '';
   const m = MODULES.find(x => x.key === key);
   const preis = (m && m.preis) ? ' · CHF ' + m.preis + '/Mt' : '';
-  return `<div class="demo-bar">🔓 <b>Demo:</b> „${esc(m ? m.name : key)}" ist nicht in deinem Plan – ausprobieren ja, <b>wird aber nicht gespeichert</b>. <button class="btn xs" data-act="abo-open" type="button">Freischalten${preis}</button></div>`;
+  const name = esc(m ? m.name : key);
+  const text = (MODUL_FELD[key] !== undefined)
+    ? `🔓 <b>Demo:</b> „${name}" ist nicht in deinem Plan – ausprobieren ja, <b>wird aber nicht gespeichert</b>.`
+    : `🔓 <b>Premium:</b> „${name}" ist eine Premium-Funktion (die Daten dazu bleiben erhalten).`;
+  return `<div class="demo-bar">${text} <button class="btn xs" data-act="abo-open" type="button">Freischalten${preis}</button></div>`;
 }
 const PLAN_LABELS = { free: 'Free', trial: 'Test', basis: 'Basic', komplett: 'Premium', modul: 'Individuell' };
 function planLabel() {
@@ -6375,6 +6381,7 @@ function viewNachtraege(pid) {
       </div>
     </div>
     ${projektTabs(p, 'nachtraege')}
+    ${demoBanner('nachtraege')}
 
     <div class="section-head"><h2>Nachträge</h2><span class="hint">Nur genehmigte zählen in die Abrechnungsprognose</span></div>
     <div class="card" style="overflow-x:auto">

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v138';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v139';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2636,6 +2636,7 @@ function kontaktByFirma(firma) {
   return (state.kontakte || []).find(k => k.firma === firma) || null;
 }
 
+let listenTab = 'subm';   // 'subm' | 'unt' – welche Liste im Listen-Reiter angezeigt wird
 function viewListen(pid) {
   const p = findProjekt(pid);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
@@ -2675,17 +2676,24 @@ function viewListen(pid) {
     </div>
     ${projektTabs(p, 'listen')}
 
+    <div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:16px">
+      <button class="btn sm ${listenTab === 'subm' ? '' : 'secondary'}" data-act="listen-tab" data-tab="subm" data-pid="${p.id}" type="button" style="border:none">Submittentenliste</button>
+      <button class="btn sm ${listenTab === 'unt' ? '' : 'secondary'}" data-act="listen-tab" data-tab="unt" data-pid="${p.id}" type="button" style="border:none">Unternehmerliste</button>
+    </div>
+
+    ${listenTab === 'subm' ? `
     <div class="section-head"><h2>Submittentenliste <span class="st red" style="font-size:10.5px;padding:2px 8px;vertical-align:middle">vertraulich</span></h2>
       <button class="btn sm" data-act="pdf-submittenten" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
     <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle eingeladenen Firmen je Gewerk – nur intern, <strong>nicht</strong> an die Baustelle.</p>
     <div class="card card-pad">${submBlocks}</div>
-
-    <div class="section-head" style="margin-top:26px"><h2>Unternehmerliste <span class="tag">für Baustelle</span></h2>
+    ` : `
+    <div class="section-head"><h2>Unternehmerliste <span class="tag">für Baustelle</span></h2>
       <button class="btn sm" data-act="pdf-unternehmer" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
     <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle Gewerke mit vergebenem Unternehmer; offene zeigen „noch nicht vergeben" (verrät keine Submittenten).</p>
     <div class="card">${gw.length ? `
       <table class="grid"><thead><tr><th style="width:60px">BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Kontakt</th></tr></thead>
         <tbody>${untRows}</tbody></table>` : emptyState('◫', 'Keine Gewerke angelegt.')}</div>
+    `}
   `);
 }
 
@@ -9624,6 +9632,7 @@ document.addEventListener('click', e => {
     case 'mail-absage':   mailAbsage(pid, vid); break;
     case 'rm-inv':       removeInvite(pid, vid, eid); break;
     case 'ruecklese':    actRuecklese(pid, vid); break;
+    case 'listen-tab':           listenTab = act.dataset.tab; viewListen(act.dataset.pid || pid); break;
     case 'pdf-submittenten': pdfSubmittenten(pid); break;
     case 'pdf-unternehmer':  pdfUnternehmer(pid); break;
     case 'pdf-honorar':      if (pid) honorarPid = pid; pdfHonorar(); break;

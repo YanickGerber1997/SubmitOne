@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v63';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v64';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -359,7 +359,7 @@ async function boot() {
 
 /* ---- Berechtigungen / Abo (nur Cloud) – Default permissiv, bis es eine entitlements-Zeile gibt ---- */
 let ent = null;   // null = keine Sperre aktiv (Tabelle/Zeile fehlt) → alles erlaubt
-let currentUserId = null;
+let currentUserId = null, currentUserSlug = '', currentUserVor = '', currentUserNach = '';
 // Preis-Pakete (CHF/Monat, anpassbar) – Quelle für die Plan-Ansicht
 const PLANS = [
   { key: 'gratis',   name: 'Gratis',   preis: '0',  features: ['Alle Werkzeuge lokal nutzen', 'Drucken & PDF', '✗ kein Cloud-Speichern', '✗ kein Teilen'] },
@@ -408,6 +408,68 @@ function renderTierBadge() {
   b.className = 'tier-badge t-' + t.cls;
   b.title = 'Plan ansehen';
   b.innerHTML = `<span class="tier-dot"></span><b>${esc(t.label)}</b><span class="tier-save">· ${esc(t.save)}</span>`;
+}
+
+/* ---- Mitglieder & Rollen pro Projekt (Schritt 1: Verwaltung; Sichtbarkeits-Gating folgt) ---- */
+const MITGLIED_ROLLEN = [
+  { key: 'inhaber', label: 'Inhaber' },
+  { key: 'projektleitung', label: 'Projektleitung' },
+  { key: 'bauleitung', label: 'Bauleitung' },
+  { key: 'administration', label: 'Administration' },
+];
+function slugVon(vor, nach) { return nameCreds(vor, nach).slug; }
+// Rolle des aktuellen Nutzers im Projekt. Lokal/ohne Mitgliederliste = volle Rechte (Inhaber); kein Mitglied = null.
+function meineRolle(p) {
+  if (!cloudEnabled) return 'inhaber';
+  const mit = p.mitglieder || [];
+  if (!mit.length) return 'inhaber';
+  const m = mit.find(x => x.slug === currentUserSlug);
+  return m ? m.rolle : null;
+}
+function actTeam(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const mit = p.mitglieder || [];
+  const rows = mit.length ? mit.map(m => `
+    <div class="team-row">
+      <div style="flex:1"><div style="font-weight:600">${esc(((m.vorname || '') + ' ' + (m.nachname || '')).trim()) || esc(m.slug)}</div>${m.slug === currentUserSlug ? '<div class="muted" style="font-size:11px">du</div>' : ''}</div>
+      <select class="select team-rolle" data-slug="${esc(m.slug)}" style="width:160px;padding:5px 8px">${MITGLIED_ROLLEN.map(r => `<option value="${r.key}"${m.rolle === r.key ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}</select>
+      <button class="x-btn" data-act="team-rm" data-pid="${pid}" data-slug="${esc(m.slug)}" title="entfernen">×</button>
+    </div>`).join('') : '<p class="muted" style="font-size:13px;padding:6px 0">Noch keine Mitglieder – unten jemanden hinzufügen.</p>';
+  openModal('Team – ' + esc(p.name), `
+    <div class="muted" style="font-size:12px;margin:-4px 0 8px">Wer am Projekt mitarbeitet und mit welcher Rolle. <b>Hinweis:</b> die Person meldet sich mit genau diesem Vor- und Nachnamen an. (Sichtbarkeit/Sperren je Rolle kommen im nächsten Schritt.)</div>
+    <div id="teamRows">${rows}</div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:10px 0 8px">
+    <div style="font-weight:600;font-size:13px;margin-bottom:6px">Mitglied hinzufügen</div>
+    <div class="form-row">
+      <label class="field">Vorname <input class="input" id="tm_vor"></label>
+      <label class="field">Nachname <input class="input" id="tm_nach"></label>
+    </div>
+    <div class="form-row">
+      <label class="field">Rolle <select class="select" id="tm_rolle">${MITGLIED_ROLLEN.map(r => `<option value="${r.key}"${r.key === 'bauleitung' ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}</select></label>
+      <div style="display:flex;align-items:flex-end"><button class="btn" data-act="team-add" data-pid="${pid}" type="button">+ Hinzufügen</button></div>
+    </div>
+  `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
+  $$('.team-rolle').forEach(sel => sel.addEventListener('change', () => teamSetRolle(pid, sel.dataset.slug, sel.value)));
+}
+function teamAdd(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const vor = $('#tm_vor').value.trim(), nach = $('#tm_nach').value.trim();
+  if (!vor || !nach) { toast('Vor- und Nachname eingeben', 'info'); return; }
+  const slug = slugVon(vor, nach);
+  p.mitglieder = p.mitglieder || [];
+  if (p.mitglieder.some(m => m.slug === slug)) { toast('Ist bereits Mitglied', 'info'); return; }
+  p.mitglieder.push({ vorname: vor, nachname: nach, slug, rolle: $('#tm_rolle').value });
+  save(); actTeam(pid); toast('Mitglied hinzugefügt');
+}
+function teamSetRolle(pid, slug, rolle) {
+  const p = findProjekt(pid); if (!p) return;
+  const m = (p.mitglieder || []).find(x => x.slug === slug); if (!m) return;
+  m.rolle = rolle; save();
+}
+function teamRemove(pid, slug) {
+  const p = findProjekt(pid); if (!p) return;
+  p.mitglieder = (p.mitglieder || []).filter(x => x.slug !== slug);
+  save(); actTeam(pid); toast('Mitglied entfernt');
 }
 function renderPlanBanner() {
   let bar = $('#planBanner');
@@ -501,6 +563,8 @@ async function renderUserChip() {
     if (!u) return;
     currentUserId = u.id;
     const m = u.user_metadata || {};
+    currentUserVor = m.vorname || ''; currentUserNach = m.nachname || '';
+    currentUserSlug = (m.vorname && m.nachname) ? slugVon(m.vorname, m.nachname) : (u.email ? u.email.split('@')[0] : '');
     const name = [m.vorname, m.nachname].filter(Boolean).join(' ').trim()
       || (u.email ? u.email.split('@')[0] : 'Angemeldet');
     const initials = (((m.vorname || '')[0] || '') + ((m.nachname || '')[0] || '')).toUpperCase()
@@ -543,6 +607,7 @@ function migrate() {
     if (!p.entscheidungen) { p.entscheidungen = []; changed = true; }
     if (!p.bezugsfirmen) { p.bezugsfirmen = []; changed = true; }
     if (!p.geschosseListe) { p.geschosseListe = []; changed = true; }
+    if (!p.mitglieder) { p.mitglieder = []; changed = true; }   // Team/Rollen pro Projekt
     if (!p.bauteile) { p.bauteile = []; changed = true; }   // Teilprojekte/Bauteile (Trakt 1–3, Provisorium …)
     if (!p.optionen) { p.optionen = []; changed = true; }    // optionale Bauteile (Erker, Lift …)
     if (!p.finanz) { p.finanz = { land: 0, honorare: 0, finanzierung: 0 }; changed = true; }
@@ -1237,6 +1302,7 @@ function viewProjektDetail(id) {
       </div>
       <div style="display:flex;gap:10px;align-items:center">
         ${phaseBadge(dominantPhase(p))}
+        <button class="btn secondary" data-act="team" data-pid="${p.id}" title="Mitglieder &amp; Rollen">👥 Team</button>
         <button class="btn secondary" data-act="edit-projekt" data-pid="${p.id}" title="Projekt &amp; Gebäudedaten bearbeiten">✎ Bearbeiten</button>
         <button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>
       </div>
@@ -5679,6 +5745,7 @@ function saveProjekt() {
     farbe: ($('#f_farbe') && $('#f_farbe').value) || '',
     vergaben: [],
     protokolle: [],
+    mitglieder: currentUserSlug ? [{ vorname: currentUserVor, nachname: currentUserNach, slug: currentUserSlug, rolle: 'inhaber' }] : [],
   };
   readGebaeude(p);
   state.projekte.unshift(p);
@@ -7830,6 +7897,9 @@ document.addEventListener('click', e => {
     case 'conflict-take': resolveConflictTake(pid); break;
     case 'abo':          actAbo(); break;
     case 'upgrade':      openCheckout(act.dataset.plan); break;
+    case 'team':         actTeam(pid); break;
+    case 'team-add':     teamAdd(pid); break;
+    case 'team-rm':      teamRemove(pid, act.dataset.slug); break;
     case 'new-projekt':  actNewProjekt(); break;
     case 'save-projekt': saveProjekt(); break;
     case 'edit-projekt': actEditProjekt(pid); break;

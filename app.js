@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v66';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v67';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2298,7 +2298,7 @@ function actPendenz(pid, itemid) {
   const p = pid ? findProjekt(pid) : null;
   if (pid && !p) return;
   const it = (p && itemid) ? (p.pendenzen || []).find(x => x.id === itemid) : null;
-  const projekte = state.projekte || [];
+  const projekte = sichtbareProjekte();
   const projField = !pid ? `<label class="field">Projekt <select class="select" id="pd_pid">${projekte.map(pr => `<option value="${pr.id}">${esc(pr.name)}</option>`).join('')}</select></label>` : '';
   const firmProj = p || projekte[0] || null;
   openModal(it ? 'Pendenz bearbeiten' : 'Neue Pendenz', `
@@ -4976,7 +4976,7 @@ function setProjFarbe(pid, k) { const p = findProjekt(pid); if (!p) return; p.fa
 function pendProjToggle(pid) { if (pendHidden == null) pendHidden = new Set(); if (pendHidden.has(pid)) pendHidden.delete(pid); else pendHidden.add(pid); try { localStorage.setItem('so_pend_hidden', JSON.stringify([...pendHidden])); } catch (_) {} router(); }
 // Projektübergreifender Pendenzen-Reiter (oberste Ebene)
 function viewPendenzenGlobal() {
-  const projekte = state.projekte || [];
+  const projekte = sichtbareProjekte();
   if (pendHidden == null) { try { pendHidden = new Set(JSON.parse(localStorage.getItem('so_pend_hidden') || '[]')); } catch (_) { pendHidden = new Set(); } }
   const sel = projekte.filter(p => !pendHidden.has(p.id));
   const idxOf = p => projekte.indexOf(p);
@@ -5044,7 +5044,7 @@ function viewKalenderGlobal() {
   if (calGY == null) { calGY = t.getFullYear(); calGM = t.getMonth(); }
   if (calRefIso == null) calRefIso = todayIso();
   if (calHidden == null) { try { calHidden = new Set(JSON.parse(localStorage.getItem('so_cal_hidden') || '[]')); } catch (_) { calHidden = new Set(); } }
-  const projects = state.projekte || [];
+  const projects = sichtbareProjekte();
   const todayI = todayIso();
 
   const events = [];
@@ -5113,7 +5113,7 @@ function viewKalenderGlobal() {
 }
 
 function actGlobalTermin(datum, zeit) {
-  const projects = state.projekte || [];
+  const projects = sichtbareProjekte();
   if (!projects.length) { toast('Zuerst ein Projekt anlegen', 'info'); return; }
   openModal('Neuer Termin', `
     <label class="field">Projekt <select class="select" id="kt_pid">${projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
@@ -5173,7 +5173,7 @@ function viewPlanung() {
   loadPlanTplDur();
   if (planRefIso == null) planRefIso = todayI;
   if (calHidden == null) { try { calHidden = new Set(JSON.parse(localStorage.getItem('so_cal_hidden') || '[]')); } catch (_) { calHidden = new Set(); } }
-  const projects = state.projekte || [];
+  const projects = sichtbareProjekte();
   const blocks = loadPlanung();
 
   // Events: Projekt-Termine (sichtbar) + persönliche Plan-Blöcke
@@ -5446,7 +5446,7 @@ function gcalToggle(pid) {
 /* --- Drucken: alle Dokumente direkt als PDF (Hauptreiter) --- */
 let druckPid = null;
 function viewDrucken() {
-  const projects = state.projekte || [];
+  const projects = sichtbareProjekte();
   if (druckPid == null || !findProjekt(druckPid)) druckPid = projects.length ? projects[0].id : '';
   const p = findProjekt(druckPid);
   const card = (act, label, desc) => `<button class="btn secondary" data-act="${act}" data-pid="${druckPid}" style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;height:auto;padding:13px 15px;white-space:normal"><span style="font-weight:700;font-size:13.5px">⬇ ${label}</span><span class="muted" style="font-size:11.5px;font-weight:400">${desc}</span></button>`;
@@ -5497,7 +5497,7 @@ function vergabeOpts(p) {
   return vs.map(v => `<option value="${v.id}">${esc((v.bkp ? v.bkp + ' ' : '') + (v.gewerk || 'Gewerk'))}</option>`).join('');
 }
 function erfassen(kind) {
-  const projekte = state.projekte || [];
+  const projekte = sichtbareProjekte();
   const needsProj = ['pendenz', 'termin', 'rechnung', 'protokoll', 'vergabe'].includes(kind);
   if (needsProj && !projekte.length) { toast('Zuerst ein Projekt anlegen', 'info'); return actNewProjekt(); }
   switch (kind) {
@@ -5509,7 +5509,7 @@ function erfassen(kind) {
 }
 // Projekt (+ ggf. Gewerk/Art) wählen, dann an den richtigen Ort führen und Erfassen-Dialog öffnen
 function erfassenPick(kind) {
-  const projekte = state.projekte || [];
+  const projekte = sichtbareProjekte();
   const first = projekte[0];
   const titel = { termin: 'Termin erfassen', protokoll: 'Protokoll / Aktennotiz', rechnung: 'Rechnung erfassen', vergabe: 'Arbeitsbeschrieb erfassen' }[kind];
   const typSel = kind === 'protokoll' ? `<label class="field">Art <select class="select" id="ef_typ"><option value="sitzung">Sitzungsprotokoll</option><option value="aktennotiz">Aktennotiz</option></select></label>` : '';

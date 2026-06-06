@@ -1065,6 +1065,12 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .mod-tier.mt-inkl { background: var(--s-teal, #0d9488); color: #fff; }
 .team-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); }
 
+/* Dezenter Demo-Hinweis (nicht gekauftes Modul: nutzbar, aber wird nicht gespeichert) */
+.demo-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 14px;
+  padding: 9px 13px; border-radius: 9px; font-size: 12.5px;
+  background: #fff7e6; border: 1px solid #f0d9a8; color: #7a5a18; }
+.demo-bar .btn { margin-left: auto; }
+
 /* Fusszeilen-Buttons: Icon + Text (Text wird eingeklappt versteckt) */
 .sidebar-foot .btn-ghost-sm .fi { margin-right: 5px; }
 .user-vert { display: none; writing-mode: vertical-rl; transform: rotate(180deg);

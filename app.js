@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v83';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v84';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -192,7 +192,7 @@ const CloudAdapter = {
     const s = this._pending; if (!s || !supa) return;
     const ups = [], seen = new Set();
     const changed = (id, obj) => { const j = JSON.stringify(obj); if (this._snap.get(id) !== j) { this._snap.set(id, j); return true; } return false; };
-    for (const p of s.projekte) { seen.add(p.id); if (changed(p.id, p)) ups.push({ id: p.id, typ: 'projekt', data: p, updated_by: CLIENT_ID }); }
+    for (const p of s.projekte) { seen.add(p.id); const payload = projektFuerCloud(p); if (changed(p.id, payload)) ups.push({ id: p.id, typ: 'projekt', data: payload, updated_by: CLIENT_ID }); }
     if (changed('kontakte', s.kontakte)) ups.push({ id: 'kontakte', typ: 'kontakte', data: s.kontakte, updated_by: CLIENT_ID });
     if (changed('dokumente', s.dokumente)) ups.push({ id: 'dokumente', typ: 'dokumente', data: s.dokumente, updated_by: CLIENT_ID });
     const del = [];
@@ -417,6 +417,26 @@ function canModul(m) {
   if (mod && mod.inkl) return isPaid();                                 // gratis sobald irgendein Modul/Plan bezahlt ist
   if (ent.plan === 'basis' && mod && mod.tier === 'basic') return true;
   return (ent.module || []).includes(m);
+}
+// Module mit EIGENEM, sauber trennbarem Projekt-Feld → können beim Speichern echt weggelassen werden.
+const MODUL_FELD = { pendenzen: 'pendenzen', protokolle: 'protokolle', solar: 'solar', uwert: 'uwert', honorar: 'honorar', dossier: 'dossier', bauherr: 'bauherr' };
+// „Gesperrt" = Cloud-Modus mit echten Berechtigungen UND Modul nicht freigeschaltet (lokal/permissiv → nie gesperrt).
+function modulGesperrt(key) { return cloudEnabled && ent !== null && !canModul(key); }
+// Klon des Projekts fürs Speichern, ohne die Daten gesperrter (nicht gekaufter) Module → ehrlich „nicht gespeichert".
+function projektFuerCloud(p) {
+  let clone = null;
+  for (const key in MODUL_FELD) {
+    const feld = MODUL_FELD[key];
+    if (modulGesperrt(key) && p[feld] !== undefined) { if (!clone) clone = { ...p }; delete clone[feld]; }
+  }
+  return clone || p;
+}
+// Dezenter Demo-Hinweis (nur wenn das Modul wirklich gesperrt ist), sonst leer.
+function demoBanner(key) {
+  if (!modulGesperrt(key)) return '';
+  const m = MODULES.find(x => x.key === key);
+  const preis = (m && m.preis) ? ' · CHF ' + m.preis + '/Mt' : '';
+  return `<div class="demo-bar">🔓 <b>Demo:</b> „${esc(m ? m.name : key)}" ist nicht in deinem Plan – ausprobieren ja, <b>wird aber nicht gespeichert</b>. <button class="btn xs" data-act="abo-open" type="button">Freischalten${preis}</button></div>`;
 }
 const PLAN_LABELS = { free: 'Free', trial: 'Test', basis: 'Basic', komplett: 'Premium', modul: 'Individuell' };
 function planLabel() {
@@ -2352,6 +2372,7 @@ function viewPendenzen(pid) {
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Pendenzen · projektweit aus allen Protokollen</div></div>
     </div>
     ${projektTabs(p, 'pendenzen')}
+    ${demoBanner('pendenzen')}
 
     <div class="kpi-row">
       ${kpi('Offen', offen.length)}
@@ -2717,6 +2738,7 @@ function viewHonorar() {
          <button class="btn" data-act="pdf-honorar">⬇ PDF</button></div>`;
   render(`
     ${head}
+    ${demoBanner('honorar')}
 
     <div class="card card-pad" style="max-width:780px;margin-bottom:16px;background:var(--brand-soft);border-color:transparent">
       <h2 style="margin-top:0;font-size:15px">In 3 Schritten zum Honorar</h2>
@@ -3195,6 +3217,7 @@ function viewBauherr(pid) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Bauherr · Entscheide &amp; Auswahl-Firmen${hasWhg ? ` · ${p.wohnungen} Wohnungen` : ''}</div></div></div>
     ${projektTabs(p, 'bauherr')}
+    ${demoBanner('bauherr')}
     ${whgChips}
 
     <div class="section-head"><h2>Auswahl &amp; Entscheidungen${offen ? ` <span class="tab-badge">${offen} offen</span>` : ''}</h2>
@@ -3411,6 +3434,7 @@ function viewProtokolle(pid) {
       </div>
     </div>
     ${projektTabs(p, 'protokolle')}
+    ${demoBanner('protokolle')}
     <div class="toolbar">
       <div class="chips">
         <span class="chip ${!protokollFilter ? 'active' : ''}" data-act="filter-prot" data-pid="${p.id}" data-kind="">Alle</span>
@@ -3512,6 +3536,7 @@ function viewProtokollDetail(pid, prid) {
       </div>
     </div>
     ${projektTabs(p, 'protokolle')}
+    ${demoBanner('protokolle')}
 
     <div class="detail-stats" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">
       ${personCard('Anwesend', 'anwesend', pr.teilnehmer, p.id, pr.id)}
@@ -4625,6 +4650,7 @@ function viewDossier(pid) {
       <button class="btn secondary" data-act="pdf-dossier" data-pid="${p.id}" title="Statusbericht als PDF">⬇ PDF</button>
     </div>
     ${projektTabs(p, 'dossier')}
+    ${demoBanner('dossier')}
     <div class="kpi-row">
       ${kpi('Vorhanden', s.ok, s.ok ? 's-green' : '')}
       ${kpi('In Arbeit', s.teil)}
@@ -6650,6 +6676,7 @@ function viewSolar(pid) {
       </div>
     </div>
     ${projektTabs(p, 'solar')}
+    ${demoBanner('solar')}
 
     <div class="card card-pad" style="margin-bottom:16px;background:var(--brand-soft);border-color:transparent">
       <h2 style="margin-top:0;font-size:15px">So funktioniert's</h2>
@@ -6935,6 +6962,7 @@ function viewUwert(pid) {
       <div><h1 style="margin:0;font-size:23px">U-Wert-Rechner</h1><div class="sub" style="margin-top:5px">Wärmedämmung von Bauteilen – Schichten, U-Wert &amp; Querschnitt</div></div>
     </div>
     ${projektTabs(p, 'uwert')}
+    ${demoBanner('uwert')}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${chips}<button class="btn xs secondary" data-act="uw-newbt" data-pid="${p.id}" type="button">+ Bauteil</button></div>
     <div class="two-col">
       <div class="card card-pad" id="uwertInputs">
@@ -8354,6 +8382,7 @@ document.addEventListener('click', e => {
     case 'save-budget':  saveBudget(pid, vid); break;
     case 'rm-budget':    removeBudget(pid, vid, bid); break;
     case 'budget-auswahl': actBudgetForAuswahl(pid, eid); break;
+    case 'abo-open':     actAbo(); break;
     case 'uw-pick':      uwertPick(pid, act.dataset.id); break;
     case 'uw-add':       uwertAddSchicht(pid); break;
     case 'uw-rm':        uwertRmSchicht(pid, Number(act.dataset.idx)); break;

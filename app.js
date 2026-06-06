@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v103';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v104';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7294,7 +7294,9 @@ function zahlungsplanOf(p) {
   if (!p.zahlungsplan) p.zahlungsplan = {};
   const z = p.zahlungsplan;
   if (z.modus === undefined) z.modus = 'bauherr';   // 'bauherr' (Werkverträge) | 'honorar' (SIA)
-  if (!Array.isArray(z.phasen) || !z.phasen.length) z.phasen = HONORAR_PHASEN.map(ph => ({ key: ph.key, label: ph.label, pct: ph.pct, datum: '' }));
+  if (z.honMode === undefined) z.honMode = 'phasen';  // 'phasen' (SIA, Beginn/Ende je Phase) | 'flat' (gleichmässig über Laufzeit)
+  if (!Array.isArray(z.phasen) || !z.phasen.length) z.phasen = HONORAR_PHASEN.map(ph => ({ key: ph.key, label: ph.label, pct: ph.pct, beginn: '', ende: '' }));
+  z.phasen.forEach(ph => { if (ph.ende === undefined) ph.ende = ph.datum || ''; if (ph.beginn === undefined) ph.beginn = ''; });   // Migration alt: datum = Ende
   if (z.betrag === undefined || z.betrag === null) z.betrag = honorarRichtwert(p);   // Honorar, NICHT die vollen Baukosten
   const zr = zahlungsplanZeitraum(p);
   if (!z.von) z.von = zr.von;   // automatisch aus dem Ausführungs-/Projektzeitraum
@@ -7346,18 +7348,16 @@ function zpBauherrHtml(p) {
 }
 function zpHonorarHtml(p, z) {
   const c = zahlungsplanCalc(z);
+  const flat = z.honMode === 'flat';
   const honT = p.honorar ? Math.round(computeHonorar(p.honorar).H) : 0;
   const offerte = Math.round(Number(finanzData(p).honorare) || 0);
   const lnk = (act, label) => `<button type="button" data-act="${act}" data-pid="${p.id}" style="background:none;border:none;color:var(--brand);cursor:pointer;padding:0;font-size:11px;text-decoration:underline">${label}</button>`;
   const quellen = [offerte ? lnk('zp-honofferte', `aus Schätzung/Offerte (${chf(offerte)})`) : '', honT ? lnk('zp-honorar', `aus Honorarrechner (${chf(honT)})`) : ''].filter(Boolean).join(' · ');
-  const rows = c.rows.map((r, i) => `<tr>
-      <td>${esc(r.label)}</td>
-      <td class="num"><input class="input zp-in" id="zp_pct_${i}" type="number" step="0.1" value="${r.pct}" style="width:74px;text-align:right;padding:4px 6px"></td>
-      <td class="num" id="zp_b_${i}">${chf(r.betrag)}</td>
-      <td><input class="input zp-in" id="zp_dat_${i}" type="date" value="${esc(r.datum || '')}" style="width:150px;padding:4px 6px"></td>
-    </tr>`).join('');
-  return `
-    <div class="card card-pad" style="max-width:840px">
+  const subToggle = `<div style="display:flex;gap:6px;margin-bottom:12px">
+    <button class="btn xs ${flat ? 'secondary' : ''}" data-act="zp-honmode" data-pid="${p.id}" data-mode="phasen" type="button">nach SIA-Phasen</button>
+    <button class="btn xs ${flat ? '' : 'secondary'}" data-act="zp-honmode" data-pid="${p.id}" data-mode="flat" type="button">gleichmässig über Laufzeit</button>
+  </div>`;
+  const kopf = `
       <div class="form-row">
         <label class="field">Honorar-Betrag (CHF)
           <input class="input zp-in" id="zp_betrag" type="number" value="${z.betrag}">
@@ -7366,15 +7366,42 @@ function zpHonorarHtml(p, z) {
       <div class="form-row" style="margin-top:6px">
         <label class="field">Zeitraum von <input class="input zp-in" id="zp_von" type="date" value="${esc(z.von || '')}"></label>
         <label class="field">bis <input class="input zp-in" id="zp_bis" type="date" value="${esc(z.bis || '')}"></label>
-        <div style="display:flex;align-items:flex-end;gap:6px"><button class="btn secondary" data-act="zp-zeitraum" data-pid="${p.id}" type="button" title="von/bis aus dem Ausführungs-/Projektzeitraum übernehmen">↻ aus Ausführung</button><button class="btn secondary" data-act="zp-verteilen" data-pid="${p.id}" type="button">Fälligkeiten verteilen</button></div>
+        <div style="display:flex;align-items:flex-end;gap:6px"><button class="btn secondary" data-act="zp-zeitraum" data-pid="${p.id}" type="button" title="von/bis aus dem Ausführungs-/Projektzeitraum übernehmen">↻ aus Ausführung</button>${flat ? '' : `<button class="btn secondary" data-act="zp-verteilen" data-pid="${p.id}" type="button">Phasen verteilen</button>`}</div>
+      </div>`;
+  let detail;
+  if (flat) {
+    const mo = zahlungsplanMonate(z);
+    detail = `<div class="kpi-row" style="margin-top:14px">
+        <div class="kpi"><div class="k-label">Honorar total</div><div class="k-value" style="font-size:20px">${chf(c.total)}</div></div>
+        <div class="kpi"><div class="k-label">Laufzeit</div><div class="k-value" style="font-size:20px">${mo.ok ? mo.monate.length + ' Mt' : '–'}</div></div>
+        <div class="kpi"><div class="k-label">pro Monat</div><div class="k-value" style="font-size:20px">${mo.ok ? chf(c.total / (mo.monate.length || 1)) : '–'}</div></div>
       </div>
-      <table class="grid" style="margin-top:14px"><thead><tr><th>SIA-Phase</th><th class="num">Leistung %</th><th class="num">Betrag</th><th>Fälligkeit</th></tr></thead>
+      <p class="muted" style="font-size:11.5px;margin:12px 0 0">Das Honorar wird gleichmässig auf jeden Monat der Laufzeit (von–bis) verteilt – ohne Phasengewichtung.</p>`;
+  } else {
+    const rows = c.rows.map((r, i) => {
+      const dauer = (r.beginn && r.ende) ? zpMonthsBetween(new Date(r.beginn), new Date(r.ende)).length : 0;
+      return `<tr>
+        <td>${esc(r.label)}</td>
+        <td class="num"><input class="input zp-in" id="zp_pct_${i}" type="number" step="0.1" value="${r.pct}" style="width:64px;text-align:right;padding:4px 6px"></td>
+        <td class="num" id="zp_b_${i}">${chf(r.betrag)}</td>
+        <td><input class="input zp-in" id="zp_beg_${i}" type="date" value="${esc(r.beginn || '')}" style="width:140px;padding:4px 6px"></td>
+        <td><input class="input zp-in" id="zp_end_${i}" type="date" value="${esc(r.ende || '')}" style="width:140px;padding:4px 6px"></td>
+        <td class="num muted">${dauer ? dauer + ' Mt' : '–'}</td>
+      </tr>`;
+    }).join('');
+    detail = `<table class="grid" style="margin-top:14px"><thead><tr><th>SIA-Phase</th><th class="num">Leistung %</th><th class="num">Betrag</th><th>Beginn</th><th>Ende (fällig)</th><th class="num">Dauer</th></tr></thead>
         <tbody>${rows}</tbody>
-        <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b id="zp_pctsum" style="color:${Math.abs(c.pctSum - 100) < 0.05 ? 'var(--s-green)' : 'var(--s-red)'}">${Math.round(c.pctSum * 10) / 10}%</b></td><td class="num"><b id="zp_total">${chf(c.total)}</b></td><td></td></tr></tfoot>
+        <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b id="zp_pctsum" style="color:${Math.abs(c.pctSum - 100) < 0.05 ? 'var(--s-green)' : 'var(--s-red)'}">${Math.round(c.pctSum * 10) / 10}%</b></td><td class="num"><b id="zp_total">${chf(c.total)}</b></td><td colspan="3"></td></tr></tfoot>
       </table>
-      <p class="muted" style="font-size:11.5px;margin:12px 0 0">1. Honorar-Betrag (aus Honorarrechner oder manuell). 2. „Fälligkeiten verteilen" legt die Phasenenden in den Zeitraum. 3. Unten je Phase auf Monatsrechnungen verteilt.</p>
+      <p class="muted" style="font-size:11.5px;margin:12px 0 0">Jede Phase hat <b>Beginn &amp; Ende</b> – sie dürfen sich <b>überschneiden</b> (z.B. Ausschreibung &amp; Ausführung parallel): einfach die Daten anpassen. „Phasen verteilen" legt sie sequenziell als Startpunkt; unten siehst du die Monatsrechnungen (Überschneidungen summieren sich).</p>`;
+  }
+  return `
+    <div class="card card-pad" style="max-width:900px">
+      ${subToggle}
+      ${kopf}
+      ${detail}
     </div>
-    <div class="card card-pad" style="max-width:840px;margin-top:16px">
+    <div class="card card-pad" style="max-width:900px;margin-top:16px">
       <h2 style="margin:0 0 10px;font-size:15px">Monatsrechnungen</h2>
       <div id="zpMonate">${zahlungsplanMonateHtml(z)}</div>
     </div>`;
@@ -7392,7 +7419,7 @@ function zahlungsplanRead(pid) {
   if (b) z.betrag = Number(b.value) || 0;
   if (v) z.von = v.value;
   if (bis) z.bis = bis.value;
-  z.phasen.forEach((ph, i) => { const pe = $('#zp_pct_' + i), de = $('#zp_dat_' + i); if (pe) ph.pct = Number(pe.value) || 0; if (de) ph.datum = de.value; });
+  z.phasen.forEach((ph, i) => { const pe = $('#zp_pct_' + i), be = $('#zp_beg_' + i), ee = $('#zp_end_' + i); if (pe) ph.pct = Number(pe.value) || 0; if (be) ph.beginn = be.value; if (ee) ph.ende = ee.value; });
 }
 function zahlungsplanUpdate(pid) {
   const p = findProjekt(pid); zahlungsplanRead(pid); save();
@@ -7405,33 +7432,41 @@ function zahlungsplanUpdate(pid) {
 // Jede SIA-Phase über ihre Monate verteilen (Phasenbeginn = Ende der Vorphase) → Monatsrechnungen aggregiert
 const ZP_MONATE = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 function zpMonLabel(key) { const [y, m] = key.split('-'); return ZP_MONATE[Number(m) - 1] + ' ' + y; }
+function zpMonthsBetween(s, e) {
+  const months = []; let y = s.getFullYear(), m = s.getMonth(); const ey = e.getFullYear(), em = e.getMonth();
+  while (y < ey || (y === ey && m <= em)) { months.push(y + '-' + String(m + 1).padStart(2, '0')); m++; if (m > 11) { m = 0; y++; } }
+  return months;
+}
 function zahlungsplanMonate(z) {
   const c = zahlungsplanCalc(z);
-  const von = z.von ? new Date(z.von) : null;
   const map = new Map();
-  let prevEnd = (von && !isNaN(+von)) ? von : null, ok = true;
-  c.rows.forEach(r => {
-    const end = r.datum ? new Date(r.datum) : null;
-    const start = prevEnd || (end && !isNaN(+end) ? end : null);
-    if (!end || isNaN(+end) || !start || isNaN(+start) || +end < +start) { ok = false; return; }
-    const months = [];
-    let y = start.getFullYear(), m = start.getMonth(); const ey = end.getFullYear(), em = end.getMonth();
-    while (y < ey || (y === ey && m <= em)) { months.push(y + '-' + String(m + 1).padStart(2, '0')); m++; if (m > 11) { m = 0; y++; } }
-    const per = r.betrag / (months.length || 1);
-    months.forEach(mk => map.set(mk, (map.get(mk) || 0) + per));
-    prevEnd = end;
-  });
+  let ok = false;
+  if (z.honMode === 'flat') {
+    const von = z.von ? new Date(z.von) : null, bis = z.bis ? new Date(z.bis) : null;
+    if (von && bis && !isNaN(+von) && !isNaN(+bis) && +bis >= +von) {
+      const months = zpMonthsBetween(von, bis); const per = c.total / (months.length || 1);
+      months.forEach(mk => map.set(mk, (map.get(mk) || 0) + per)); ok = months.length > 0;
+    }
+  } else {
+    // Je Phase über ihren EIGENEN Beginn..Ende verteilen – Überschneidungen summieren sich
+    c.rows.forEach(r => {
+      const s = r.beginn ? new Date(r.beginn) : null, e = r.ende ? new Date(r.ende) : null;
+      if (!s || !e || isNaN(+s) || isNaN(+e) || +e < +s) return;
+      const months = zpMonthsBetween(s, e); const per = r.betrag / (months.length || 1);
+      months.forEach(mk => map.set(mk, (map.get(mk) || 0) + per)); ok = true;
+    });
+  }
   const sorted = [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   let cum = 0;
   return { ok, monate: sorted.map(([k, b]) => { cum += b; return { key: k, betrag: b, cum }; }), total: cum };
 }
 function zahlungsplanMonateHtml(z) {
   const r = zahlungsplanMonate(z);
-  if (!r.ok || !r.monate.length) return '<p class="muted" style="font-size:12.5px;margin:0">Zuerst oben den Zeitraum setzen und „Fälligkeiten verteilen" klicken – dann erscheinen hier die Monatsrechnungen.</p>';
+  if (!r.ok || !r.monate.length) return `<p class="muted" style="font-size:12.5px;margin:0">${z.honMode === 'flat' ? 'Zeitraum (von/bis) setzen – dann wird das Honorar gleichmässig über die Laufzeit verteilt.' : 'Zuerst Zeitraum setzen und „Phasen verteilen" klicken (oder Beginn/Ende je Phase eintragen) – dann erscheinen hier die Monatsrechnungen.'}</p>`;
   const rows = r.monate.map(m => `<tr><td>${zpMonLabel(m.key)}</td><td class="num">${chf(m.betrag)}</td><td class="num muted">${chf(m.cum)}</td></tr>`).join('');
   return `<table class="grid"><thead><tr><th>Monat</th><th class="num">Rechnung</th><th class="num">kumuliert</th></tr></thead><tbody>${rows}</tbody>
     <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b>${chf(r.total)}</b></td><td></td></tr></tfoot></table>
-    <p class="muted" style="font-size:11.5px;margin:8px 0 0">${r.monate.length} Monatsrechnungen. Jede SIA-Phase wird gleichmässig über ihre Monate verteilt (Phasenbeginn = Ende der Vorphase), pro Monat summiert.</p>`;
+    <p class="muted" style="font-size:11.5px;margin:8px 0 0">${r.monate.length} Monatsrechnungen. ${z.honMode === 'flat' ? 'Honorar gleichmässig über die ganze Laufzeit verteilt.' : 'Jede Phase über ihren eigenen Beginn–Ende verteilt; überlappende Phasen summieren sich pro Monat.'}</p>`;
 }
 function zahlungsplanVerteilen(pid) {
   const p = findProjekt(pid); zahlungsplanRead(pid); const z = zahlungsplanOf(p);
@@ -7439,8 +7474,12 @@ function zahlungsplanVerteilen(pid) {
   if (!von || !bis || isNaN(+von) || isNaN(+bis) || +bis <= +von) { toast('Bitte gültigen Zeitraum (von / bis) eingeben', 'info'); return; }
   const span = +bis - +von; const tot = z.phasen.reduce((a, ph) => a + (Number(ph.pct) || 0), 0) || 100;
   let cum = 0;
-  z.phasen.forEach(ph => { cum += Number(ph.pct) || 0; const d = new Date(+von + span * (cum / tot)); ph.datum = d.toISOString().slice(0, 10); });
-  save(); viewZahlungsplan(pid); toast('Fälligkeiten verteilt');
+  z.phasen.forEach(ph => {
+    const begFrac = cum / tot; cum += Number(ph.pct) || 0; const endFrac = cum / tot;
+    ph.beginn = new Date(+von + span * begFrac).toISOString().slice(0, 10);
+    ph.ende = new Date(+von + span * endFrac).toISOString().slice(0, 10);
+  });
+  save(); viewZahlungsplan(pid); toast('Phasen sequenziell verteilt – Beginn/Ende für Überschneidungen anpassbar');
 }
 function viewZahlungsplan(pid) {
   const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
@@ -7478,18 +7517,20 @@ function pdfZahlungsplan(pid) {
         <tbody>${r.monate.map(m => `<tr><td>${zpMonLabel(m.key)}</td><td class="num">${money(m.betrag)}</td><td class="num muted">${money(m.cum)}</td></tr>`).join('')}</tbody>
         <tfoot><tr><td><b>Total</b></td><td class="num"><b>${money(r.total)}</b></td><td></td></tr></tfoot></table>` : ''}`;
   } else {
+    const flat = z.honMode === 'flat';
     title = 'Zahlungsplan Honorar';
     const c = zahlungsplanCalc(z); const mo = zahlungsplanMonate(z);
-    const phaseRows = c.rows.map(r => `<tr><td>${esc(r.label)}</td><td class="num">${r.pct}%</td><td class="num">${money(r.betrag)}</td><td class="num">${r.datum ? fmtDate(r.datum) : '–'}</td></tr>`).join('');
+    const phaseRows = c.rows.map(r => `<tr><td>${esc(r.label)}</td><td class="num">${r.pct}%</td><td class="num">${money(r.betrag)}</td><td>${r.beginn ? fmtDate(r.beginn) : '–'}</td><td>${r.ende ? fmtDate(r.ende) : '–'}</td></tr>`).join('');
     inner = `
       <table class="t" style="max-width:480px"><tbody>
         <tr><td>Honorar-Betrag</td><td class="num"><b>${money(z.betrag)}</b></td></tr>
         <tr><td>Zeitraum</td><td class="num">${z.von ? fmtDate(z.von) : '–'} – ${z.bis ? fmtDate(z.bis) : '–'}</td></tr>
+        <tr><td>Modus</td><td class="num">${flat ? 'gleichmässig über Laufzeit' : 'nach SIA-Phasen'}</td></tr>
       </tbody></table>
-      <div class="gw">Verteilung nach SIA-Leistungsprozenten</div>
-      <table class="t"><thead><tr><th>SIA-Phase</th><th class="num">Leistung %</th><th class="num">Betrag</th><th class="num">Fälligkeit</th></tr></thead>
+      ${flat ? '' : `<div class="gw">Verteilung nach SIA-Leistungsprozenten</div>
+      <table class="t"><thead><tr><th>SIA-Phase</th><th class="num">Leistung %</th><th class="num">Betrag</th><th>Beginn</th><th>Ende (fällig)</th></tr></thead>
         <tbody>${phaseRows}</tbody>
-        <tfoot><tr><td><b>Total</b></td><td class="num"><b>${Math.round(c.pctSum * 10) / 10}%</b></td><td class="num"><b>${money(c.total)}</b></td><td></td></tr></tfoot></table>
+        <tfoot><tr><td><b>Total</b></td><td class="num"><b>${Math.round(c.pctSum * 10) / 10}%</b></td><td class="num"><b>${money(c.total)}</b></td><td colspan="2"></td></tr></tfoot></table>`}
       ${mo.ok ? `<div class="gw">Monatsrechnungen</div>
       <table class="t"><thead><tr><th>Monat</th><th class="num">Rechnung</th><th class="num">kumuliert</th></tr></thead>
         <tbody>${mo.monate.map(m => `<tr><td>${zpMonLabel(m.key)}</td><td class="num">${money(m.betrag)}</td><td class="num muted">${money(m.cum)}</td></tr>`).join('')}</tbody>
@@ -8948,6 +8989,7 @@ document.addEventListener('click', e => {
     case 'save-sammelrg': saveSammelrechnung(pid); break;
     case 'zp-verteilen': zahlungsplanVerteilen(pid); break;
     case 'zp-zeitraum':  { const p2 = findProjekt(pid); zahlungsplanRead(pid); const zr = zahlungsplanZeitraum(p2); const z2 = zahlungsplanOf(p2); z2.von = zr.von; z2.bis = zr.bis; save(); viewZahlungsplan(pid); toast('Zeitraum übernommen'); break; }
+    case 'zp-honmode':   { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).honMode = act.dataset.mode; save(); viewZahlungsplan(pid); break; }
     case 'zp-modus':     { const p2 = findProjekt(pid); zahlungsplanOf(p2).modus = act.dataset.modus; save(); viewZahlungsplan(pid); break; }
     case 'zp-baukosten': { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).betrag = Math.round(baukostenTotal(p2)); save(); viewZahlungsplan(pid); break; }
     case 'zp-honorar':   { const p2 = findProjekt(pid); zahlungsplanRead(pid); zahlungsplanOf(p2).betrag = p2.honorar ? Math.round(computeHonorar(p2.honorar).H) : 0; save(); viewZahlungsplan(pid); break; }

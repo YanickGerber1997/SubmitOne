@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v65';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v66';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -428,6 +428,18 @@ function meineRolle(p) {
 }
 // Projekte, in denen der aktuelle Nutzer Mitglied ist (alte/leere Liste + lokal = sichtbar)
 function sichtbareProjekte() { return (state.projekte || []).filter(p => meineRolle(p) !== null); }
+
+// Rechte-Matrix: welche Reiter je Rolle AUSGEBLENDET werden (anpassbar)
+const ROLLE_VERSTECKT = {
+  inhaber:        [],
+  projektleitung: [],
+  bauleitung:     ['solar', 'honorar', 'finanz'],
+  administration: ['pendenzen', 'termine', 'solar', 'honorar', 'bauherr', 'finanz'],
+};
+function versteckteTabs(p) { const r = meineRolle(p); return (r && ROLLE_VERSTECKT[r]) ? ROLLE_VERSTECKT[r] : []; }
+function istInhaber(p)     { return meineRolle(p) === 'inhaber'; }
+function darfStammdaten(p) { const r = meineRolle(p); return r === null || r === 'inhaber' || r === 'projektleitung'; }
+function darfVergeben(p)   { return meineRolle(p) !== 'bauleitung'; }   // alle ausser Bauleitung
 function actTeam(pid) {
   const p = findProjekt(pid); if (!p) return;
   const mit = p.mitglieder || [];
@@ -1007,7 +1019,7 @@ function projektTabs(p, active) {
     { key: 'bauherr', href: `#/projekt/${p.id}/bauherr`, label: 'Bauherr' },
     { key: 'finanz', href: `#/projekt/${p.id}/finanz`, label: 'Finanzierung' },
     { key: 'honorar', href: `#/projekt/${p.id}/honorar`, label: 'Honorar' },
-  ];
+  ].filter(it => !versteckteTabs(p).includes(it.key));   // Rollen-Matrix: ausgeblendete Reiter weglassen
   // Unterreiter auch in der Sidebar unter „Projekte" anzeigen (volle Liste)
   const sub = $('#projSubnav');
   if (sub) sub.innerHTML = `<div class="subnav-title" title="${esc(p.name)}">${esc(p.name)}</div>` +
@@ -1304,9 +1316,9 @@ function viewProjektDetail(id) {
       </div>
       <div style="display:flex;gap:10px;align-items:center">
         ${phaseBadge(dominantPhase(p))}
-        <button class="btn secondary" data-act="team" data-pid="${p.id}" title="Mitglieder &amp; Rollen">👥 Team</button>
-        <button class="btn secondary" data-act="edit-projekt" data-pid="${p.id}" title="Projekt &amp; Gebäudedaten bearbeiten">✎ Bearbeiten</button>
-        <button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>
+        ${istInhaber(p) ? `<button class="btn secondary" data-act="team" data-pid="${p.id}" title="Mitglieder &amp; Rollen">👥 Team</button>` : ''}
+        ${darfStammdaten(p) ? `<button class="btn secondary" data-act="edit-projekt" data-pid="${p.id}" title="Projekt &amp; Gebäudedaten bearbeiten">✎ Bearbeiten</button>` : ''}
+        ${darfVergeben(p) ? `<button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>` : ''}
       </div>
     </div>
 

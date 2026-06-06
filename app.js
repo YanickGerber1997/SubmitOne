@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v90';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v91';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7135,10 +7135,42 @@ function zahlungsplanRead(pid) {
 }
 function zahlungsplanUpdate(pid) {
   const p = findProjekt(pid); zahlungsplanRead(pid); save();
-  const c = zahlungsplanCalc(zahlungsplanOf(p));
+  const z = zahlungsplanOf(p); const c = zahlungsplanCalc(z);
   c.rows.forEach((r, i) => { const el = $('#zp_b_' + i); if (el) el.textContent = chf(r.betrag); });
   const ts = $('#zp_total'); if (ts) ts.textContent = chf(c.total);
   const ps = $('#zp_pctsum'); if (ps) { ps.textContent = (Math.round(c.pctSum * 10) / 10) + '%'; ps.style.color = Math.abs(c.pctSum - 100) < 0.05 ? 'var(--s-green)' : 'var(--s-red)'; }
+  const mc = $('#zpMonate'); if (mc) mc.innerHTML = zahlungsplanMonateHtml(z);
+}
+// Jede SIA-Phase über ihre Monate verteilen (Phasenbeginn = Ende der Vorphase) → Monatsrechnungen aggregiert
+const ZP_MONATE = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+function zpMonLabel(key) { const [y, m] = key.split('-'); return ZP_MONATE[Number(m) - 1] + ' ' + y; }
+function zahlungsplanMonate(z) {
+  const c = zahlungsplanCalc(z);
+  const von = z.von ? new Date(z.von) : null;
+  const map = new Map();
+  let prevEnd = (von && !isNaN(+von)) ? von : null, ok = true;
+  c.rows.forEach(r => {
+    const end = r.datum ? new Date(r.datum) : null;
+    const start = prevEnd || (end && !isNaN(+end) ? end : null);
+    if (!end || isNaN(+end) || !start || isNaN(+start) || +end < +start) { ok = false; return; }
+    const months = [];
+    let y = start.getFullYear(), m = start.getMonth(); const ey = end.getFullYear(), em = end.getMonth();
+    while (y < ey || (y === ey && m <= em)) { months.push(y + '-' + String(m + 1).padStart(2, '0')); m++; if (m > 11) { m = 0; y++; } }
+    const per = r.betrag / (months.length || 1);
+    months.forEach(mk => map.set(mk, (map.get(mk) || 0) + per));
+    prevEnd = end;
+  });
+  const sorted = [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  let cum = 0;
+  return { ok, monate: sorted.map(([k, b]) => { cum += b; return { key: k, betrag: b, cum }; }), total: cum };
+}
+function zahlungsplanMonateHtml(z) {
+  const r = zahlungsplanMonate(z);
+  if (!r.ok || !r.monate.length) return '<p class="muted" style="font-size:12.5px;margin:0">Zuerst oben den Zeitraum setzen und „Fälligkeiten verteilen" klicken – dann erscheinen hier die Monatsrechnungen.</p>';
+  const rows = r.monate.map(m => `<tr><td>${zpMonLabel(m.key)}</td><td class="num">${chf(m.betrag)}</td><td class="num muted">${chf(m.cum)}</td></tr>`).join('');
+  return `<table class="grid"><thead><tr><th>Monat</th><th class="num">Rechnung</th><th class="num">kumuliert</th></tr></thead><tbody>${rows}</tbody>
+    <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b>${chf(r.total)}</b></td><td></td></tr></tfoot></table>
+    <p class="muted" style="font-size:11.5px;margin:8px 0 0">${r.monate.length} Monatsrechnungen. Jede SIA-Phase wird gleichmässig über ihre Monate verteilt (Phasenbeginn = Ende der Vorphase), pro Monat summiert.</p>`;
 }
 function zahlungsplanVerteilen(pid) {
   const p = findProjekt(pid); zahlungsplanRead(pid); const z = zahlungsplanOf(p);
@@ -7180,7 +7212,11 @@ function viewZahlungsplan(pid) {
         <tbody>${rows}</tbody>
         <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b id="zp_pctsum" style="color:${Math.abs(c.pctSum-100)<0.05?'var(--s-green)':'var(--s-red)'}">${Math.round(c.pctSum*10)/10}%</b></td><td class="num"><b id="zp_total">${chf(c.total)}</b></td><td></td></tr></tfoot>
       </table>
-      <p class="muted" style="font-size:11.5px;margin:12px 0 0">Leistungsprozente nach SIA (anpassbar). „Fälligkeiten verteilen" legt die Daten anteilig in den Zeitraum (Ende jeder Phase). Summe sollte 100% ergeben.</p>
+      <p class="muted" style="font-size:11.5px;margin:12px 0 0">1. Betrag nach SIA-Leistungsprozenten je Phase. 2. „Fälligkeiten verteilen" legt die Phasenenden in den Zeitraum. 3. Unten wird jede Phase auf Monatsrechnungen verteilt.</p>
+    </div>
+    <div class="card card-pad" style="max-width:840px;margin-top:16px">
+      <h2 style="margin:0 0 10px;font-size:15px">Monatsrechnungen</h2>
+      <div id="zpMonate">${zahlungsplanMonateHtml(z)}</div>
     </div>
   `);
   $$('.zp-in').forEach(el => el.addEventListener('input', () => zahlungsplanUpdate(pid)));

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v75';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v76';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -575,6 +575,7 @@ async function startApp() {
   document.addEventListener('keydown', undoKeydown);
   updateUndoButtons();
   initSidebarCollapse();
+  initTooltips();
   document.addEventListener('keydown', planKeydown);
   document.addEventListener('mousemove', planDragMove);
   document.addEventListener('mouseup', planDragUp);
@@ -616,6 +617,25 @@ async function renderUserChip() {
 }
 
 // Sidebar ein-/ausklappen (nur Symbole) – Zustand browser-lokal gemerkt
+// Eigener, schönerer Tooltip für die Menü-Symbole (ersetzt den nativen title-Tooltip, v.a. eingeklappt)
+function initTooltips() {
+  const nav = $('#mainNav'), app = $('#app'); if (!nav || !app) return;
+  let tip = null;
+  nav.addEventListener('mouseover', e => {
+    const a = e.target.closest('a'); if (!a) return;
+    const t = a.getAttribute('title'); if (t) { a.dataset.tip = t; a.removeAttribute('title'); }   // nativen Tooltip abschalten
+    if (!app.classList.contains('collapsed')) return;   // ausgeklappt: Beschriftung ist sichtbar
+    const txt = a.dataset.tip; if (!txt) return;
+    if (!tip) { tip = document.createElement('div'); tip.className = 'app-tip'; document.body.appendChild(tip); }
+    tip.textContent = txt;
+    const r = a.getBoundingClientRect();
+    tip.style.display = 'block';
+    tip.style.left = (r.right + 12) + 'px';
+    tip.style.top = (r.top + r.height / 2) + 'px';
+  });
+  nav.addEventListener('mouseout', () => { if (tip) tip.style.display = 'none'; });
+}
+
 function initSidebarCollapse() {
   const app = $('#app'); const btn = $('#btnCollapse');
   if (!app || !btn) return;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v71';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v72';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -414,10 +414,10 @@ function tierInfo() {
   const p = (ent && ent.plan) ? ent.plan : 'free';
   const hatModule = ent && Array.isArray(ent.module) && ent.module.length;
   if (p === 'trial')    return { label: 'Test',        cls: 'amber',  save: 'wird gespeichert' };
-  if (p === 'basis')    return { label: 'Basic',       cls: 'blue',   save: 'wird gespeichert' };
-  if (p === 'komplett') return { label: 'Premium',     cls: 'green',  save: 'wird gespeichert' };
-  if (p === 'modul' || hatModule) return { label: 'Individuell', cls: 'purple', save: 'wird gespeichert' };
-  return { label: 'Free', cls: 'grey', save: 'nicht gespeichert' };
+  if (p === 'basis')    return { label: 'Basic',       cls: 'silber', save: 'wird gespeichert' };
+  if (p === 'komplett') return { label: 'Premium',     cls: 'gold',   save: 'wird gespeichert' };
+  if (p === 'modul' || hatModule) return { label: 'Individuell', cls: 'platin', save: 'wird gespeichert' };
+  return { label: 'Free', cls: 'bronze', save: 'nicht gespeichert' };
 }
 function renderTierBadge() {
   let b = $('#tierBadge');
@@ -425,7 +425,7 @@ function renderTierBadge() {
   const t = tierInfo();
   b.className = 'tier-badge t-' + t.cls;
   b.title = 'Plan ansehen';
-  b.innerHTML = `<span class="tier-dot"></span><b>${esc(t.label)}</b><span class="tier-save">· ${esc(t.save)}</span>`;
+  b.innerHTML = `<span class="tier-gem"></span><b>${esc(t.label)}</b><span class="tier-save">· ${esc(t.save)}</span>`;
 }
 
 /* ---- Mitglieder & Rollen pro Projekt (Schritt 1: Verwaltung; Sichtbarkeits-Gating folgt) ---- */
@@ -624,8 +624,10 @@ function initSidebarCollapse() {
     btn.textContent = on ? '»' : '«';
     btn.title = on ? 'Menü ausklappen' : 'Menü einklappen';
   };
-  let on = false;
-  try { on = localStorage.getItem('so_sidebar_collapsed') === '1'; } catch (_) {}
+  // Keine gespeicherte Wahl → bei mittlerer Breite (Fenster halb) eingeklappt starten, sonst offen
+  let on;
+  try { const v = localStorage.getItem('so_sidebar_collapsed'); on = (v === null) ? (window.innerWidth <= 1120) : (v === '1'); }
+  catch (_) { on = window.innerWidth <= 1120; }
   apply(on);
   btn.addEventListener('click', () => {
     on = !on;

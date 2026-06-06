@@ -892,16 +892,9 @@ table.va input[type=number] { -moz-appearance: textfield; }
   .two-col { grid-template-columns: 1fr; }
 }
 
-/* Mittlere Breiten (z.B. Fenster halb): Sidebar automatisch als Icon-Leiste → mehr Platz */
+/* Mittlere Breiten (z.B. Fenster halb): Sidebar standardmässig eingeklappt (per JS),
+   aber mit Ausklapp-Knopf bedienbar – Steuerung läuft über #app.collapsed. */
 @media (min-width: 761px) and (max-width: 1120px) {
-  #app { --sidebar-w: 66px; }
-  .sidebar { padding: 14px 8px; }
-  .brand { justify-content: center; padding: 6px 0 12px; }
-  .brand-img, .brand-fallback { display: none !important; }
-  .brand-icon { display: block; margin: 0 auto; }
-  .sidebar-toggle, .sidebar-foot, .subnav { display: none; }
-  .nav a { justify-content: center; gap: 0; padding: 11px 0; }
-  .nav a .nav-txt { display: none; }
   .content { padding: 22px 22px 60px; }
 }
 
@@ -1056,24 +1049,26 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .mod-row .mod-preis { font-weight: 700; font-size: 13px; white-space: nowrap; }
 .team-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); }
 
-/* --- Dauerhafte Tier-Anzeige (auf jeder Seite) --- */
+/* --- Dauerhafte Tier-Anzeige (auf jeder Seite, Metalloptik) --- */
 .tier-badge {
   position: fixed; top: 10px; right: 14px; z-index: 300;
-  display: inline-flex; align-items: center; gap: 7px;
-  border: 1px solid var(--border-2); border-radius: 999px;
-  background: var(--surface); color: var(--text);
-  padding: 5px 12px; font-size: 12px; cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 1px solid rgba(0,0,0,.14); border-radius: 999px;
+  padding: 5px 13px 5px 9px; font-size: 12px; cursor: pointer; color: #2a2622;
+  box-shadow: 0 2px 9px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.55);
 }
-.tier-badge b { font-weight: 700; }
-.tier-badge .tier-save { color: var(--text-soft); font-weight: 400; }
-.tier-badge .tier-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--s-grey); flex: none; }
-.tier-badge.t-grey   .tier-dot { background: var(--s-grey); }
-.tier-badge.t-amber  .tier-dot { background: var(--s-amber); }
-.tier-badge.t-blue   .tier-dot { background: var(--s-blue); }
-.tier-badge.t-green  .tier-dot { background: var(--s-green); }
-.tier-badge.t-purple .tier-dot { background: var(--s-purple); }
-.tier-badge.t-green  { border-color: var(--s-green); }
-.tier-badge.t-blue   { border-color: var(--s-blue); }
+.tier-badge b { font-weight: 800; letter-spacing: .2px; }
+.tier-badge .tier-save { font-weight: 500; opacity: .72; font-size: 11px; }
+/* kleiner glänzender „Edelstein" links */
+.tier-badge .tier-gem {
+  width: 11px; height: 11px; border-radius: 3px; flex: none; transform: rotate(45deg);
+  background: rgba(255,255,255,.65); box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), 0 1px 2px rgba(0,0,0,.25);
+}
+.tier-badge.t-gold   { background: linear-gradient(135deg, #fdf0c2 0%, #f2cf63 45%, #d4af37 100%); }
+.tier-badge.t-silber { background: linear-gradient(135deg, #ffffff 0%, #e1e5ea 45%, #b4bcc6 100%); }
+.tier-badge.t-bronze { background: linear-gradient(135deg, #f3d0a8 0%, #d18a4e 50%, #a86a2c 100%); color: #3a2410; }
+.tier-badge.t-platin { background: linear-gradient(135deg, #f0f4ff 0%, #c7d2ee 45%, #9aa9d8 100%); }
+.tier-badge.t-amber  { background: linear-gradient(135deg, #fff4d9 0%, #ffd886 50%, #f0b94a 100%); }
+.tier-badge.t-grey   { background: linear-gradient(135deg, #f6f7f9 0%, #dde0e5 50%, #c3c8cf 100%); }
 @media (max-width: 680px) { .tier-badge .tier-save { display: none; } .tier-badge { top: 8px; right: 8px; } }
 @media print { .tier-badge, .plan-banner, #planBanner { display: none !important; } }

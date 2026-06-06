@@ -305,7 +305,14 @@ button { font-family: inherit; cursor: pointer; }
 #app.collapsed .nav a { justify-content: center; gap: 0; padding: 8px 0; }
 #app.collapsed .nav-txt { display: none; }
 #app.collapsed .sidebar-toggle { justify-content: center; padding: 0; }
-#app.collapsed .sidebar-foot { display: none; }
+/* Eingeklappte Fusszeile: Undo + Export als Icons, Name vertikal von unten nach oben */
+#app.collapsed .sidebar-foot { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 8px 2px; }
+#app.collapsed .user-chip, #app.collapsed .ver { display: none; }
+#app.collapsed .foot-row { flex-direction: column; gap: 6px; width: 100%; align-items: center; }
+#app.collapsed .sidebar-foot .btn-ghost-sm { width: 38px; padding: 7px 0; display: flex; justify-content: center; }
+#app.collapsed .sidebar-foot .ft { display: none; }
+#app.collapsed .sidebar-foot .fi { font-size: 16px; }
+#app.collapsed .user-vert { display: block; }
 
 /* ============================ Kopfzeile ============================ */
 
@@ -1050,6 +1057,12 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .mod-row .mod-name { flex: 1; font-size: 13px; }
 .mod-row .mod-preis { font-weight: 700; font-size: 13px; white-space: nowrap; }
 .team-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); }
+
+/* Fusszeilen-Buttons: Icon + Text (Text wird eingeklappt versteckt) */
+.sidebar-foot .btn-ghost-sm .fi { margin-right: 5px; }
+.user-vert { display: none; writing-mode: vertical-rl; transform: rotate(180deg);
+  color: #cdd6e6; font-weight: 600; font-size: 12px; letter-spacing: .4px;
+  max-height: 150px; overflow: hidden; white-space: nowrap; margin-top: 4px; }
 
 /* --- Eigener Menü-Tooltip (schöner/grösser als der native) --- */
 .app-tip {

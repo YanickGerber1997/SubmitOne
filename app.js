@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v76';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v77';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -613,6 +613,7 @@ async function renderUserChip() {
     el.hidden = false;
     el.style.cursor = 'pointer'; el.title = 'Plan ansehen & upgraden';
     el.onclick = actAbo;
+    const uv = $('#userVert'); if (uv) { uv.textContent = name; uv.title = name; }
   } catch (_) {}
 }
 

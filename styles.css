@@ -1073,6 +1073,10 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .mod-tier.mt-inkl { background: var(--s-teal, #0d9488); color: #fff; }
 .team-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); }
 
+/* Rechnungs-Unterzeilen (Rechnungskontrolle + Baukostenübersicht): dezent, eingerückt */
+tr.rg-sub td { border-top: none; padding-top: 3px; padding-bottom: 3px; font-size: 11.5px; color: var(--text-soft); background: rgba(0,0,0,.015); }
+tr.rg-sub:hover td { background: rgba(0,0,0,.03); }
+
 /* Dezenter Demo-Hinweis (nicht gekauftes Modul: nutzbar, aber wird nicht gespeichert) */
 .demo-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 14px;
   padding: 9px 13px; border-radius: 9px; font-size: 12.5px;

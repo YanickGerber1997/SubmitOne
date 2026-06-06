@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v98';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v99';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1549,6 +1549,13 @@ function viewKosten(id) {
         <td class="num">${z.offen ? money(z.offen) : '–'}</td>
         <td class="num ${dCls(d)}">${d ? money(d) : '–'}</td>
       </tr>`;
+      rows += (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => `<tr class="rg-sub">
+        <td></td>
+        <td colspan="6"><span class="muted">↳ ${r.datum ? fmtDate(r.datum) : '—'}</span> ${esc(r.text || (r.art === 'gutschrift' ? 'Gutschrift' : 'Rechnung'))}${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''} · ${money(rgSigned(r))}</td>
+        <td></td>
+        <td class="num">${r.bezahlt ? money(rgAuszahlung(r)) : '<span class="muted" style="font-size:10px">offen</span>'}</td>
+        <td></td><td></td>
+      </tr>`).join('');
     });
     const dSub = sub.prognose - sub.kv;
     body += `<tr class="kgroup"><td>${esc(g)}</td><td colspan="10">${esc(BKP_GRUPPEN[g] || 'Übrige')}</td></tr>
@@ -6361,7 +6368,7 @@ function viewRechnungen(pid) {
     const chip = over ? '<span class="st amber">⚠ überschritten</span>'
       : (Math.abs(platz) < 0.5 && z.fakturiert > 0 ? '<span class="st green">fakturiert</span>'
         : (z.fakturiert > 0 ? '<span class="st blue">in Abrechnung</span>' : '<span class="st grey">offen</span>'));
-    return `<tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}">
+    const mainRow = `<tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}">
       <td><span class="bkp-code">${esc(v.bkp || '')}</span></td>
       <td>${esc(v.gewerk)}<div class="muted" style="font-size:11px">${esc(v.firma || '—')}${offenRg ? ` · ${offenRg} offen` : ''}</div></td>
       <td class="num">${chf(z.prognose)}</td>
@@ -6370,6 +6377,16 @@ function viewRechnungen(pid) {
       <td class="num" style="font-weight:600;color:${over ? 'var(--s-red)' : (platz < 0.5 ? 'var(--text-soft)' : 'var(--s-green)')}">${chf(platz)}</td>
       <td>${chip}</td>
     </tr>`;
+    const rgSub = (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => `<tr class="rg-sub">
+      <td></td>
+      <td><span class="muted">↳ ${r.datum ? fmtDate(r.datum) : '—'}</span> ${esc(r.text || (r.art === 'gutschrift' ? 'Gutschrift' : 'Rechnung'))}${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''}${r.firma ? ` <span class="muted">· ${esc(r.firma)}</span>` : ''}</td>
+      <td></td>
+      <td class="num">${chf(rgSigned(r))}</td>
+      <td class="num">${r.bezahlt ? chf(rgAuszahlung(r)) : '–'}</td>
+      <td></td>
+      <td>${r.bezahlt ? '<span class="st green" style="font-size:9px;padding:1px 6px">bezahlt</span>' : '<span class="st amber" style="font-size:9px;padding:1px 6px">offen</span>'}</td>
+    </tr>`).join('');
+    return mainRow + rgSub;
   }).join('') || '<tr><td colspan="7" class="muted" style="padding:12px">Noch keine vergebenen Gewerke / Rechnungen.</td></tr>';
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Rechnungskontrolle</div>

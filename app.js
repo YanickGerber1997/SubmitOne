@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v157';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v158';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1582,6 +1582,18 @@ function viewKosten(id) {
         <td class="num">${money(rgSigned(r))}</td>
         <td></td><td></td>
       </tr>`).join('');
+      rows += (v.budgetposten || []).map(b => {
+        const src = !isVergeben(v) ? 'Schätzung' : (b.ist != null && b.ist !== '' ? 'nach Auswahl' : 'WV');
+        const sc = src === 'nach Auswahl' ? 'green' : (src === 'WV' ? 'blue' : 'grey');
+        const dlt = (b.ist != null && b.ist !== '') ? (Number(b.ist) || 0) - (Number(b.betrag) || 0) : null;
+        return `<tr class="rg-sub">
+          <td></td>
+          <td colspan="6"><span class="muted">↳ Budget${b.eig ? ' (Eigentümerwunsch)' : ''}:</span> ${esc(b.text || 'Position')}${b.wohnung ? ` <span class="muted">[${esc(einheitName(p, b.wohnung))}]</span>` : ''} <span class="st ${sc}" style="font-size:9px;padding:1px 6px">${src}</span> · WV ${money(b.betrag)}${b.ist != null && b.ist !== '' ? ` · nach Auswahl ${money(b.ist)}` : ''}</td>
+          <td></td>
+          <td class="num ${dlt ? (dlt > 0 ? 'over' : 'under') : ''}">${dlt ? (dlt > 0 ? '+' : '') + money(dlt) : ''}</td>
+          <td></td><td></td>
+        </tr>`;
+      }).join('');
     });
     const dSub = sub.dWvEnd;
     body += `<tr class="kgroup"><td>${esc(g)}</td><td colspan="10">${esc(BKP_GRUPPEN[g] || 'Übrige')}</td></tr>
@@ -3816,12 +3828,14 @@ function readEntscheidung() {
 function saveEntscheidung(pid) {
   const p = findProjekt(pid); const d = readEntscheidung();
   if (!d.thema) { toast('Bitte ein Thema eingeben', 'info'); return; }
-  (p.entscheidungen = p.entscheidungen || []).push({ id: uid('en'), ...d });
+  const ne = { id: uid('en'), ...d };
+  (p.entscheidungen = p.entscheidungen || []).push(ne);
+  syncEntBudgetposten(p, ne);
   save(); closeModal(); router(); toast('Entscheidung erfasst');
 }
 function updateEntscheidung(pid, eid) {
   const p = findProjekt(pid); const e = (p.entscheidungen || []).find(x => x.id === eid); if (!e) return;
-  Object.assign(e, readEntscheidung()); save(); closeModal(); router(); toast('Gespeichert');
+  Object.assign(e, readEntscheidung()); syncEntBudgetposten(p, e); save(); closeModal(); router(); toast('Gespeichert');
 }
 function setEntBudget(pid, eid, feld, val) {
   const p = findProjekt(pid); const e = (p.entscheidungen || []).find(x => x.id === eid); if (!e) return;
@@ -3830,17 +3844,20 @@ function setEntBudget(pid, eid, feld, val) {
   save(); viewBauherr(pid);    // Δ + Summen aktualisieren
 }
 // Eigentümerwunsch ⇄ Baukosten: eine Budgetposition im verknüpften Gewerk pflegen (Budget = WV, Ist = nach Auswahl netto)
+// Eigentümerwunsch ⇄ Baukosten: automatisch konsistent. Alte verknüpfte Position überall entfernen, dann im aktuellen Gewerk neu setzen.
 function syncEntBudgetposten(p, e) {
-  const v = vergabeForEnt(p, e); if (!v) return;
-  v.budgetposten = v.budgetposten || [];
+  (p.vergaben || []).forEach(v => { if (v.budgetposten && v.budgetposten.length) v.budgetposten = v.budgetposten.filter(b => b.enId !== e.id); });
+  e.bpId = null;
   const budget = Number(e.budget) || 0;
   const ist = entHasIst(e) ? entNetto(e) : null;
-  let bp = e.bpId ? v.budgetposten.find(x => x.id === e.bpId) : v.budgetposten.find(x => x.enId === e.id);
-  if (!budget && ist == null) { if (bp) v.budgetposten = v.budgetposten.filter(x => x !== bp); e.bpId = null; return; }
-  if (!bp) { bp = { id: uid('bp'), enId: e.id }; v.budgetposten.push(bp); e.bpId = bp.id; }
-  bp.text = e.thema || 'Eigentümerwunsch'; bp.betrag = budget; bp.ist = ist;
-  bp.wohnung = e.wohnung || ((e.wohnungen && e.wohnungen.length === 1) ? e.wohnungen[0] : '');
+  if (!budget && ist == null) return;                 // nichts zu verknüpfen
+  const v = vergabeForEnt(p, e); if (!v) return;       // kein Gewerk verknüpft (vid/BKP/Thema)
+  v.budgetposten = v.budgetposten || [];
+  const bp = { id: uid('bp'), enId: e.id, eig: true, text: e.thema || 'Eigentümerwunsch', betrag: budget, ist, wohnung: e.wohnung || ((e.wohnungen && e.wohnungen.length === 1) ? e.wohnungen[0] : '') };
+  v.budgetposten.push(bp); e.bpId = bp.id;
 }
+// Alle Eigentümerwünsche eines Projekts mit den Baukosten abgleichen (für globale Konsistenz, z.B. bei Migration)
+function syncAllEntBudget(p) { (p.entscheidungen || []).forEach(e => syncEntBudgetposten(p, e)); }
 function setEntscheidungStatus(pid, eid, status) {
   const p = findProjekt(pid); const e = (p.entscheidungen || []).find(x => x.id === eid); if (!e) return;
   e.status = status;
@@ -3889,7 +3906,9 @@ function addStandardBemusterung(pid) {
   toast(n ? `${n} Auswahlpunkte ergänzt${w ? ' (' + einheitName(p, w) + ')' : ''}` : 'Alle Standardpunkte bereits vorhanden', 'info');
 }
 function removeEntscheidung(pid, eid) {
-  const p = findProjekt(pid); p.entscheidungen = (p.entscheidungen || []).filter(x => x.id !== eid); save(); router();
+  const p = findProjekt(pid);
+  (p.vergaben || []).forEach(v => { if (v.budgetposten && v.budgetposten.length) v.budgetposten = v.budgetposten.filter(b => b.enId !== eid); });   // verknüpfte Budgetposition mitlöschen
+  p.entscheidungen = (p.entscheidungen || []).filter(x => x.id !== eid); save(); router();
 }
 
 function actNewBezugsfirma(pid) {
@@ -8409,6 +8428,7 @@ function pdfBaukosten(pid, mode) {
         lines.push({ u: 1, vals: [kv, revEff, wv || 0, endsumme, fak, off, dWv], html: `<tr><td>${esc(v.bkp || '')}</td><td>${esc(v.gewerk || '')}${btTag}${note}</td><td style="font-size:9px">${v.firma ? esc(v.firma) : '<span style="color:#aab2bd">nicht vergeben</span>'}</td><td class="num">${f2(kv)}</td><td class="num">${rev != null ? f2(rev) : `<span style="color:#aab2bd">${f2(kv)}</span>`}</td>${diffTd(rev != null ? rev - kv : null)}<td class="num">${wv != null ? f2(wv) : '–'}</td><td class="num"><b>${f2(endsumme)}</b>${hatSchluss ? ' <span style="color:#7c1d2c;font-size:7px">SR</span>' : ''}</td><td class="num">${fak ? f2(fak) : '–'}</td><td class="num">${f2(off)}</td>${diffTd(wv != null ? endsumme - wv : null)}</tr>` });
         (v.nachtraege || []).forEach(n => lines.push({ u: 0.7, html: subNT(`↳ Nachtrag${n.nr ? ' ' + esc(n.nr) : ''}: ${esc(n.titel || '')} <span style="color:#9aa4b1">(${esc(n.status || 'offen')})</span>${hatBt && n.bauteil ? ' [' + esc(bauteilName(p, n.bauteil)) + ']' : ''}`, n.betrag) }));
         (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).forEach(r => lines.push({ u: 0.7, html: subRG(`↳ Rechnung ${r.datum ? fmtDate(r.datum) : '—'} · ${esc(r.text || '')}${r.nr ? ' ' + esc(r.nr) : ''}${hatBt ? ' [' + esc(bauteilName(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)) + ']' : ''}`, rgSigned(r)) }));
+        (v.budgetposten || []).forEach(b => { const src = !z.vergeben ? 'Schätzung' : (b.ist != null && b.ist !== '' ? 'nach Auswahl' : 'WV'); lines.push({ u: 0.7, html: subNT(`↳ Budget (${src})${b.eig ? ' · Eigentümerwunsch' : ''}: ${esc(b.text || 'Position')}${hatBt && b.wohnung ? ' [' + esc(einheitName(p, b.wohnung)) + ']' : ''}${b.ist != null && b.ist !== '' ? ' · nach Auswahl ' + f2(Number(b.ist) || 0) : ''}`, b.betrag) }); });
       });
       gtot[g] = sub;
       lines.push({ u: 1.1, html: sumRow('Total ' + (BKP_GRUPPEN[g] || g), sub) });

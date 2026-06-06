@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v142';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v143';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2642,21 +2642,18 @@ function viewListen(pid) {
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const gw = gewerkeSorted(p);
 
-  const submBlocks = gw.length ? gw.map(v => {
+  const submBody = gw.map(v => {
     const eing = (v.eingeladene || []);
-    const rows = eing.length ? eing.map(e => `
-      <tr>
+    const rows = eing.length ? eing.map(e => `<tr>
         <td>${esc(e.firma)}</td>
-        <td><span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:2px 8px;font-size:10.5px">${INV_STATUS[e.status]?.label || esc(e.status)}</span></td>
+        <td><span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:1px 7px;font-size:10px">${INV_STATUS[e.status]?.label || esc(e.status)}</span></td>
         <td class="num">${eOff(e) != null ? chf(eOff(e)) : '–'}</td>
-      </tr>`).join('') : `<tr><td colspan="3" class="muted">noch niemand eingeladen</td></tr>`;
-    return `
-      <div style="margin-bottom:9px">
-        <div style="font-weight:600;margin-bottom:2px;font-size:13px"><span class="bkp-code">${esc(v.bkp)}</span> ${esc(v.gewerk)}</div>
-        <table class="grid t-compact"><thead><tr><th>Firma</th><th style="width:120px">Status</th><th class="num" style="width:130px">Betrag</th></tr></thead>
-          <tbody>${rows}</tbody></table>
-      </div>`;
-  }).join('') : emptyState('◫', 'Keine Gewerke angelegt.');
+      </tr>`).join('') : `<tr><td colspan="3" class="muted" style="font-size:11.5px">noch niemand eingeladen</td></tr>`;
+    return `<tr><td colspan="3" style="background:#f4f6f9;font-weight:700;font-size:11.5px;padding:4px 10px"><span class="bkp-code">${esc(v.bkp)}</span> ${esc(v.gewerk)}</td></tr>${rows}`;
+  }).join('');
+  const submBlocks = gw.length
+    ? `<table class="grid t-compact"><thead><tr><th>Firma</th><th style="width:120px">Status</th><th class="num" style="width:130px">Betrag</th></tr></thead><tbody>${submBody}</tbody></table>`
+    : emptyState('◫', 'Keine Gewerke angelegt.');
 
   const untRows = gw.map(v => {
     const vergeben = isVergeben(v) && v.firma;
@@ -2951,16 +2948,18 @@ function openSheetDoc(opts) {
 function pdfSubmittenten(pid) {
   const p = findProjekt(pid); if (!p) return;
   const gw = gewerkeSorted(p);
-  const inner = gw.length ? gw.map(v => {
+  const body = gw.map(v => {
     const eing = (v.eingeladene || []);
     const rows = eing.length ? eing.map(e => {
       const bq = eBetragQuelle(v, e);
       return `<tr><td>${esc(e.firma)}</td><td>${INV_STATUS[e.status]?.label || esc(e.status)}</td><td>${bq.quelle || '–'}</td><td class="num">${bq.betrag != null ? chf(bq.betrag) : '–'}</td></tr>`;
     }).join('')
       : `<tr><td colspan="4" class="muted">noch niemand eingeladen</td></tr>`;
-    return `<div class="gw">BKP ${esc(v.bkp)} – ${esc(v.gewerk)}</div>
-      <table class="t"><thead><tr><th>Firma</th><th style="width:120px">Status</th><th style="width:110px">Grundlage</th><th class="num" style="width:140px">Betrag</th></tr></thead><tbody>${rows}</tbody></table>`;
-  }).join('') : '<p class="muted">Keine Gewerke angelegt.</p>';
+    return `<tr><td colspan="4" style="background:#f3f5f9;font-weight:700">BKP ${esc(v.bkp)} – ${esc(v.gewerk)}</td></tr>${rows}`;
+  }).join('');
+  const inner = gw.length
+    ? `<table class="t"><thead><tr><th>Firma</th><th style="width:120px">Status</th><th style="width:110px">Grundlage</th><th class="num" style="width:140px">Betrag</th></tr></thead><tbody>${body}</tbody></table>`
+    : '<p class="muted">Keine Gewerke angelegt.</p>';
   const sub = `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} &nbsp; <span class="conf">VERTRAULICH – nicht an die Baustelle</span>`;
   openPrintDoc('Submittentenliste', sub, inner);
 }

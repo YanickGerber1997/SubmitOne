@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v67';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v68';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -291,7 +291,8 @@ function nameCreds(vor, nach) {
   return { slug, email: slug + '@submitone.local', password: 'so_' + slug + '_pw' };
 }
 
-function renderLogin(msg) {
+function renderLogin(msg, mode) {
+  mode = mode || 'in';   // 'in' = Anmelden, 'up' = Registrieren
   if ($('#loginOverlay')) $('#loginOverlay').remove();
   document.body.insertAdjacentHTML('beforeend', `
     <div id="loginOverlay" class="login-overlay">
@@ -299,45 +300,51 @@ function renderLogin(msg) {
         <img class="login-logo" src="logo.png" alt="submit one"
              onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
         <div class="brand-fallback on-light" style="display:none;margin:0 auto 14px">submit<b>one</b></div>
-        <p class="muted" style="margin:0 0 18px;font-size:13px">Mit Vor- und Nachname anmelden</p>
-        <label class="field">Vorname <input class="input" id="lg_vor" type="text" autocapitalize="words" spellcheck="false"></label>
-        <label class="field" style="margin-top:10px">Nachname <input class="input" id="lg_nach" type="text" autocapitalize="words" spellcheck="false"></label>
+        <p class="muted" style="margin:0 0 16px;font-size:13px">${mode === 'up' ? 'Neues Konto erstellen' : 'Mit E-Mail anmelden'}</p>
+        ${mode === 'up' ? `<div class="form-row" style="margin-bottom:10px">
+          <label class="field">Vorname <input class="input" id="lg_vor" autocapitalize="words" spellcheck="false"></label>
+          <label class="field">Nachname <input class="input" id="lg_nach" autocapitalize="words" spellcheck="false"></label>
+        </div>` : ''}
+        <label class="field">E-Mail <input class="input" id="lg_email" type="email" autocomplete="username" spellcheck="false"></label>
+        <label class="field" style="margin-top:10px">Passwort <input class="input" id="lg_pw" type="password" autocomplete="${mode === 'up' ? 'new-password' : 'current-password'}"></label>
         <div id="lg_msg" style="min-height:18px;font-size:12.5px;color:var(--s-red);margin:8px 0">${msg ? esc(msg) : ''}</div>
-        <button class="btn" id="lg_in" style="width:100%">Anmelden</button>
-        <div class="muted" style="font-size:12px;margin:14px 0 6px">Noch kein Konto?</div>
-        <button class="btn secondary" id="lg_up" style="width:100%">Neues Konto erstellen</button>
+        <button class="btn" id="lg_go" style="width:100%">${mode === 'up' ? 'Konto erstellen' : 'Anmelden'}</button>
+        ${mode === 'in' ? `<button class="btn-ghost-sm" id="lg_forgot" style="width:100%;margin-top:8px">Passwort vergessen?</button>` : ''}
+        <div class="muted" style="font-size:12px;margin:14px 0 6px">${mode === 'up' ? 'Schon ein Konto?' : 'Noch kein Konto?'}</div>
+        <button class="btn secondary" id="lg_switch" style="width:100%">${mode === 'up' ? 'Zur Anmeldung' : 'Neues Konto erstellen'}</button>
       </div>
     </div>`);
-  const vor = () => $('#lg_vor').value.trim();
-  const nach = () => $('#lg_nach').value.trim();
+  const email = () => $('#lg_email').value.trim();
+  const pw = () => $('#lg_pw').value;
   const setMsg = (m, ok) => { const el = $('#lg_msg'); el.textContent = m; el.style.color = ok ? 'var(--s-green)' : 'var(--s-red)'; };
-  const ok = () => { if (!vor() || !nach()) { setMsg('Bitte Vor- und Nachname eingeben'); return false; } return true; };
 
-  // Anmelden: NUR einloggen, niemals ein Konto anlegen
-  $('#lg_in').onclick = async () => {
-    if (!ok()) return;
-    const { email, password } = nameCreds(vor(), nach());
-    setMsg('Anmelden…', true);
-    const { error } = await supa.auth.signInWithPassword({ email, password });
-    if (error) { setMsg('Kein Konto mit diesem Namen gefunden. Tippfehler? Sonst unten „Neues Konto erstellen".'); return; }
-    $('#loginOverlay').remove(); startApp();
-  };
+  $('#lg_switch').onclick = () => renderLogin('', mode === 'up' ? 'in' : 'up');
 
-  // Konto nur auf ausdrücklichen Klick anlegen
-  $('#lg_up').onclick = async () => {
-    if (!ok()) return;
-    const { email, password } = nameCreds(vor(), nach());
-    setMsg('Konto wird erstellt…', true);
-    const r = await supa.auth.signUp({ email, password, options: { data: { vorname: vor(), nachname: nach() } } });
-    if (r.error) {
-      setMsg(/registered|exist/i.test(r.error.message) ? 'Konto existiert bereits – bitte oben „Anmelden".' : r.error.message);
-      return;
+  $('#lg_go').onclick = async () => {
+    if (!email() || !pw()) { setMsg('Bitte E-Mail und Passwort eingeben'); return; }
+    if (mode === 'up') {
+      const vor = $('#lg_vor').value.trim(), nach = $('#lg_nach').value.trim();
+      if (!vor || !nach) { setMsg('Bitte Vor- und Nachname eingeben'); return; }
+      setMsg('Konto wird erstellt…', true);
+      const r = await supa.auth.signUp({ email: email(), password: pw(), options: { data: { vorname: vor, nachname: nach } } });
+      if (r.error) { setMsg(/registered|exist/i.test(r.error.message) ? 'Konto existiert bereits – bitte anmelden.' : r.error.message); return; }
+      if (r.data.session) { $('#loginOverlay').remove(); startApp(); }
+      else setMsg('Bestätigungs-Mail gesendet. Bitte E-Mail bestätigen, dann anmelden. (Oder in Supabase „Confirm email" ausschalten.)', true);
+    } else {
+      setMsg('Anmelden…', true);
+      const { error } = await supa.auth.signInWithPassword({ email: email(), password: pw() });
+      if (error) { setMsg('Anmeldung fehlgeschlagen – E-Mail oder Passwort falsch.'); return; }
+      $('#loginOverlay').remove(); startApp();
     }
-    if (r.data.session) { $('#loginOverlay').remove(); startApp(); }
-    else setMsg('In Supabase „Confirm email" ausschalten, dann „Anmelden".');
   };
 
-  $('#lg_nach').addEventListener('keydown', e => { if (e.key === 'Enter') $('#lg_in').click(); });
+  if (mode === 'in') $('#lg_forgot').onclick = async () => {
+    if (!email()) { setMsg('Zum Zurücksetzen zuerst die E-Mail eingeben'); return; }
+    const { error } = await supa.auth.resetPasswordForEmail(email(), { redirectTo: location.origin + location.pathname });
+    setMsg(error ? error.message : 'Falls ein Konto existiert, wurde eine E-Mail zum Zurücksetzen gesendet.', !error);
+  };
+
+  $('#lg_pw').addEventListener('keydown', e => { if (e.key === 'Enter') $('#lg_go').click(); });
 }
 
 async function logout() {
@@ -351,6 +358,16 @@ async function boot() {
   if (cloudEnabled) {
     supa = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
     db.use(CloudAdapter);
+    // Passwort zurücksetzen: nach Klick auf den Reset-Link kommt der Nutzer im Recovery-Modus zurück
+    supa.auth.onAuthStateChange(async (event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        const np = window.prompt('Neues Passwort eingeben (mindestens 6 Zeichen):');
+        if (np && np.length >= 6) {
+          const { error } = await supa.auth.updateUser({ password: np });
+          toast(error ? ('Fehler: ' + error.message) : 'Passwort geändert – du bist angemeldet.', error ? 'info' : 'ok');
+        }
+      }
+    });
     const { data } = await supa.auth.getSession();
     if (!data.session) { renderLogin(); return; }
   }
@@ -359,7 +376,7 @@ async function boot() {
 
 /* ---- Berechtigungen / Abo (nur Cloud) – Default permissiv, bis es eine entitlements-Zeile gibt ---- */
 let ent = null;   // null = keine Sperre aktiv (Tabelle/Zeile fehlt) → alles erlaubt
-let currentUserId = null, currentUserSlug = '', currentUserVor = '', currentUserNach = '';
+let currentUserId = null, currentUserSlug = '', currentUserVor = '', currentUserNach = '', currentUserEmail = '';
 // Preis-Pakete (CHF/Monat, anpassbar) – Quelle für die Plan-Ansicht
 const PLANS = [
   { key: 'gratis',   name: 'Gratis',   preis: '0',  features: ['Alle Werkzeuge lokal nutzen', 'Drucken & PDF', '✗ kein Cloud-Speichern', '✗ kein Teilen'] },
@@ -423,7 +440,7 @@ function meineRolle(p) {
   if (!cloudEnabled) return 'inhaber';
   const mit = p.mitglieder || [];
   if (!mit.length) return 'inhaber';
-  const m = mit.find(x => x.slug === currentUserSlug);
+  const m = mit.find(x => (x.email && x.email.toLowerCase() === currentUserEmail) || (x.slug && x.slug === currentUserSlug));
   return m ? m.rolle : null;
 }
 // Projekte, in denen der aktuelle Nutzer Mitglied ist (alte/leere Liste + lokal = sichtbar)
@@ -576,6 +593,7 @@ async function renderUserChip() {
     const u = data && data.user;
     if (!u) return;
     currentUserId = u.id;
+    currentUserEmail = (u.email || '').toLowerCase();
     const m = u.user_metadata || {};
     currentUserVor = m.vorname || ''; currentUserNach = m.nachname || '';
     currentUserSlug = (m.vorname && m.nachname) ? slugVon(m.vorname, m.nachname) : (u.email ? u.email.split('@')[0] : '');

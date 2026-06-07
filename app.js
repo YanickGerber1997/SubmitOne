@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v278';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v279';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1803,6 +1803,7 @@ const G_ICONS = {
   swatch: '<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.4"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.4"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.4"/><rect x="13" y="13" width="7.5" height="7.5" rx="1.4"/>',
   focus: '<rect x="9" y="3.5" width="6" height="17" rx="1.4"/><path d="M4.5 3.5v17M19.5 3.5v17"/>',
   ends: '<line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="7" x2="4" y2="17"/><line x1="20" y1="7" x2="20" y2="17"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.3V12l3.2 2"/>',
 };
 function gIcon(name) { return `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
 function bigBtn(act, icon, label, o) { o = o || {}; return `<button class="g-bigbtn${o.on ? ' on' : ''}" data-act="${act}" data-pid="${o.pid}"${o.kind != null ? ` data-kind="${o.kind}"` : ''} title="${esc(o.title || label)}"><span class="bb-ico">${gIcon(icon)}</span><span class="bb-lbl">${esc(label)}</span></button>`; }
@@ -1822,6 +1823,34 @@ function ganttModeToggle(p) {
     </div>
     ${ganttVersionBar(p)}
   </div>`;
+}
+// Office-artige Reiter: Reiterleiste + Inhalt des aktiven Reiters (alle Optionen direkt anklickbar)
+function ganttRibbonTabs(p) {
+  const TABS = [['ansicht', 'Ansicht'], ['beschriftung', 'Beschriftung'], ['datum', 'Datum'], ['zeit', 'Zeit'], ['mehr', 'Mehr'], ['datei', 'Datei']];
+  const bar = `<div class="g-ribtabs">${TABS.map(([k, l]) => `<button class="g-ribtab${ganttTab === k ? ' active' : ''}" data-act="gantt-tab" data-pid="${p.id}" data-kind="${k}" type="button">${l}</button>`).join('')}</div>`;
+  let b = '';
+  if (ganttTab === 'ansicht') b =
+    rgroup('Farbe nach', optBtns('gantt-color', p.id, [['status', 'Status'], ['firma', 'Firma'], ['phase', 'Phase']], ganttColorMode)) +
+    rgroup('Kräftigkeit', optBtns('gantt-strength', p.id, [['voll', 'Voll'], ['mittel', 'Mittel'], ['hell', 'Hell'], ['pastell', 'Pastell']], ganttColorStrength)) +
+    rgroup('Farben', bigBtn('gantt-colors-open', 'swatch', 'Anpassen', { pid: p.id, on: !!state.ganttColors, title: 'Farben je Status/Unternehmer/Phase anpassen' })) +
+    rgroup('Balken', bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) + bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' }));
+  else if (ganttTab === 'beschriftung') b =
+    rgroup('Beschriftung', optBtns('gantt-labelmode', p.id, [['auto', 'Auto'], ['above', 'Oben'], ['below', 'Unten'], ['before', 'Vor'], ['clip', 'Innen'], ['over', 'Über']], ganttLabelMode));
+  else if (ganttTab === 'datum') b =
+    rgroup('Format', optBtns('gantt-dates', p.id, [['off', 'Aus'], ['datum', 'Datum'], ['kw', 'KW'], ['grob', 'Einordnung']], ganttDates)) +
+    (ganttDates !== 'off' ? rgroup('Seite', optBtns('gantt-datepos', p.id, [['beide', 'Beide'], ['start', 'Vorne'], ['ende', 'Hinten']], ganttDatePos)) : '') +
+    rgroup('Dauer', bigBtn('gantt-duration', 'clock', 'Dauer', { pid: p.id, on: ganttDuration, title: 'Dauer der Arbeiten am Balken anzeigen' }));
+  else if (ganttTab === 'zeit') b =
+    rgroup('Sortierung', optBtns('gantt-sort', p.id, [['bkp', 'BKP'], ['start', 'Start']], ganttSort)) +
+    rgroup('Abhängigkeit', bigBtn('gantt-chain', 'chain', 'Verkettung', { pid: p.id, on: ganttChain, title: 'Verkettung ' + (ganttChain ? 'an' : 'aus') }) + bigBtn('gantt-workdays', 'calCheck', 'Arbeitstage', { pid: p.id, on: ganttWorkdays, title: 'Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus') }) + ((p.sitzungsraster && p.sitzungsraster.aktiv) ? bigBtn('gantt-raster', 'calendar', 'Sitzungen', { pid: p.id, on: ganttRaster, title: 'Sitzungslinien ' + (ganttRaster ? 'an' : 'aus') }) : '')) +
+    rgroup('Rand', bigBtn('gantt-pad', 'rand', 'Rand ' + ganttPad + 'M', { pid: p.id, kind: 'cycle', title: 'Rand (Monate) links/rechts – klicken erhöht (0–6)' }));
+  else if (ganttTab === 'mehr') b =
+    rgroup('Eckdaten', bigBtn('eckdaten', 'flag', 'Baustart', { pid: p.id, on: !!(p.baustart || p.bauende), title: 'Baustart / Bauende / Bezug' }) + bigBtn('feiertage', 'star', 'Feiertage', { pid: p.id, on: !!p.kanton, title: 'Feiertage / Kanton' + (p.kanton ? ' ' + p.kanton : '') })) +
+    rgroup('Prüfen', bigBtn('regeln-open', 'ruler', 'Regeln' + ((p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''), { pid: p.id, on: (p.regeln || []).length > 0, title: 'Regeln / Abhängigkeiten' }) + bigBtn('ress-config', 'warn', 'Ressourcen', { pid: p.id, on: !(p.ressCheck && p.ressCheck.aktiv === false), title: 'Ressourcen-Hinweis' })) +
+    rgroup('Ablauf', bigBtn('bauablauf', 'gear', 'Bauablauf', { pid: p.id, title: 'Gewerke nach BKP verketten und ab Baustart datieren' }));
+  else if (ganttTab === 'datei') b =
+    rgroup('Ausgabe', bigBtn('pdf-gantt', 'print', 'Drucken', { pid: p.id, title: 'Drucken / PDF – Format automatisch' }) + bigBtn('gerber-termin', 'save', 'Speichern', { pid: p.id, title: 'Terminprogramm als .gerber-Datei herunterladen' }));
+  return `${bar}<div class="g-ribbon">${b}</div>`;
 }
 // Grobe Bauphasen – BKP-Gruppen werden zu groben Phasen zusammengefasst
 const BAU_PHASEN = [
@@ -2308,6 +2337,13 @@ function gdLabels(startIso, endIso, x0, x1, endShift) {
   if (ganttDatePos !== 'start') s += `<span class="g-date r" style="left:${x1 + (endShift || 0)}px">${gdFmt(endIso)}</span>`;
   return s;
 }
+// Dauer der Arbeiten (Kalendertage inkl.) – mittig auf dem Balken
+let ganttDuration = false;
+function gDauerTxt(startIso, endIso) { if (!startIso || !endIso) return ''; const days = dayDiffISO(startIso, endIso) + 1; if (days <= 0) return ''; return days >= 14 ? Math.round(days / 7) + ' Wo' : days + ' T'; }
+function gDauerLabel(startIso, endIso, x0, x1, sub) { if (!ganttDuration) return ''; const t = gDauerTxt(startIso, endIso); if (!t) return ''; return `<span class="g-dauer${sub ? ' sub' : ''}" style="left:${Math.round((x0 + x1) / 2)}px">${t}</span>`; }
+// Office-artige Reiter über den Icons + Optionssatz (alle Möglichkeiten direkt anklickbar)
+let ganttTab = 'ansicht';   // datei | ansicht | beschriftung | datum | zeit | mehr
+function optBtns(act, pid, opts, current) { return `<div class="g-optset">${opts.map(([val, lbl]) => `<button class="g-opt${val === current ? ' active' : ''}" data-act="${act}" data-pid="${pid}" data-kind="${val}" type="button">${esc(lbl)}</button>`).join('')}</div>`; }
 // Passt das Balken-Label in den Balken? sonst rechts daneben anzeigen
 function barLabelFits(text, wpx) { return wpx >= String(text || '').length * 6.4 + 18; }
 function barLabelW(text) { return String(text || '').length * 6.4 + 8; }
@@ -2488,32 +2524,7 @@ function viewTermine(id) {
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm</div></div>
       ${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}
     </div>
-    ${projektTabs(p, 'termine', `${ganttModeToggle(p)}${ganttRibbon ? `<div class="g-ribbon">
-      <button class="g-ribbon-toggle" data-act="gantt-ribbon" data-pid="${p.id}" title="Werkzeuge einklappen">⌃</button>
-      ${rgroup('Datei', bigBtn('pdf-gantt', 'print', 'Drucken', { pid: p.id, title: 'Drucken / PDF – Format automatisch' }) + bigBtn('gerber-termin', 'save', 'Speichern', { pid: p.id, title: 'Terminprogramm als .gerber-Datei herunterladen' }))}
-      ${rgroup('Sortierung', bigBtn('gantt-sort', 'sort', ganttSort === 'bkp' ? 'BKP' : 'Start', { pid: p.id, kind: ganttSort === 'bkp' ? 'start' : 'bkp', title: 'Sortierung: BKP / Startdatum (umschalten)' }))}
-      ${rgroup('Darstellung',
-        bigBtn('gantt-color', 'palette', ganttColorMode === 'status' ? 'Status' : (ganttColorMode === 'firma' ? 'Firma' : 'Phase'), { pid: p.id, kind: ganttColorMode === 'status' ? 'firma' : (ganttColorMode === 'firma' ? 'phase' : 'status'), title: 'Balkenfarbe: Status / Firma / Phase (umschalten)' }) +
-        bigBtn('gantt-colors-open', 'swatch', 'Farben', { pid: p.id, on: !!state.ganttColors, title: 'Vordefinierte Farben anpassen (je Status/Unternehmer/Phase)' }) +
-        bigBtn('gantt-dates', 'tag', DATE_NAMES[ganttDates], { pid: p.id, on: ganttDates !== 'off', title: 'Anschrift am Balken: aus → Datum → KW (Kalenderwoche) → Einordnung (Anfang/Mitte/Ende Monat)' }) +
-        (ganttDates !== 'off' ? bigBtn('gantt-datepos', 'ends', DATEPOS_NAMES[ganttDatePos], { pid: p.id, on: ganttDatePos !== 'beide', title: 'Position der Anschrift: beide Enden → nur vorne → nur hinten' }) : '') +
-        bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) +
-        bigBtn('gantt-labelmode', 'label', LABEL_NAMES[ganttLabelMode], { pid: p.id, on: ganttLabelMode !== 'auto', title: 'Balken-Beschriftung: Auto → Oben → Unten → Vor → Innen (abgeschnitten) → Über (läuft über)' }) +
-        bigBtn('gantt-strength', 'drop', STRENGTH_NAMES[ganttColorStrength], { pid: p.id, on: ganttColorStrength !== 'voll', title: 'Farbkräftigkeit: Voll → Mittel → Hell → Pastell (heller/herbstlicher)' }))}
-      ${rgroup('Kalender',
-        bigBtn('eckdaten', 'flag', 'Baustart', { pid: p.id, on: !!(p.baustart || p.bauende), title: 'Baustart / Bauende / Bezug (Meilensteine)' }) +
-        bigBtn('feiertage', 'star', 'Feiertage', { pid: p.id, on: !!p.kanton, title: 'Feiertage / Kanton' + (p.kanton ? ' ' + p.kanton : '') }) +
-        bigBtn('gantt-pad', 'rand', 'Rand ' + ganttPad + 'M', { pid: p.id, kind: 'cycle', title: 'Rand links/rechts (Monate) – klicken erhöht (0–6)' }))}
-      ${rgroup('Werkzeuge',
-        bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur Zeilen mit Aktivität im sichtbaren Zeitausschnitt – live beim Scrollen' }) +
-        bigBtn('gantt-chain', 'chain', 'Verkettung', { pid: p.id, on: ganttChain, title: 'Verkettung ' + (ganttChain ? 'an' : 'aus') }) +
-        bigBtn('gantt-workdays', 'calCheck', 'Arbeitstage', { pid: p.id, on: ganttWorkdays, title: 'Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus') }) +
-        ((p.sitzungsraster && p.sitzungsraster.aktiv) ? bigBtn('gantt-raster', 'calendar', 'Sitzungen', { pid: p.id, on: ganttRaster, title: 'Sitzungslinien ' + (ganttRaster ? 'an' : 'aus') }) : ''))}
-      ${rgroup('Hilfen',
-        bigBtn('regeln-open', 'ruler', 'Regeln' + ((p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''), { pid: p.id, on: (p.regeln || []).length > 0, title: 'Regeln / Abhängigkeiten' }) +
-        bigBtn('ress-config', 'warn', 'Ressourcen', { pid: p.id, on: !(p.ressCheck && p.ressCheck.aktiv === false), title: 'Ressourcen-Hinweis' }) +
-        bigBtn('bauablauf', 'gear', 'Bauablauf', { pid: p.id, title: 'Gewerke nach BKP verketten und ab Baustart datieren' }))}
-    </div>` : `<button class="btn sm secondary" data-act="gantt-ribbon" data-pid="${p.id}" style="margin-bottom:12px" title="Werkzeuge ausklappen">⌄ Werkzeuge</button>`}`)}
+    ${projektTabs(p, 'termine', `${ganttModeToggle(p)}${ganttRibbonTabs(p)}`)}
     ${gespr ? `<div class="g-warn g-warn-lock">🔒 <b>Version „${esc(terminVersAktiv(p).name)}" ist gesperrt.</b> Änderungen blockiert – andere Version wählen oder oben „🔓" entsperren / „+ Version".</div>` : ''}
   `;
 
@@ -2721,7 +2732,7 @@ function viewTermine(id) {
         barRows += `<div class="g-row">${preBars}${gdLabels(v.bauStart, v.bauEnde, gL, gL + gW, gLab.gdOff)}<div class="g-bar${light}${isAuto ? ' summary' : ''}" style="left:${gL}px;width:${gW}px;background:${colHex}"
           title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}"
           data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
-          <span class="g-h l"></span><span class="g-lbl">${gLab.inner}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div>${gLab.outer}</div>`;
+          <span class="g-h l"></span><span class="g-lbl">${gLab.inner}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div>${gLab.outer}${gDauerLabel(v.bauStart, v.bauEnde, gL, gL + gW, false)}</div>`;
       }
     } else {
       barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw" data-pid="${p.id}" data-vid="${v.id}"><span class="g-draw-hint">ziehen = Termin zeichnen · Klick = Dialog</span></div>`;
@@ -2737,7 +2748,7 @@ function viewTermine(id) {
         barRows += `<div class="g-row">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOff)}<div class="g-bar sub${light}" style="left:${oL}px;width:${oW}px;background:${colHex}"
           title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
           data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
-          <span class="g-h l"></span><span class="g-lbl">${oLab.inner}</span>${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div>${oLab.outer}</div>`;
+          <span class="g-h l"></span><span class="g-lbl">${oLab.inner}</span>${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div>${oLab.outer}${gDauerLabel(o.start, o.ende, oL, oL + oW, true)}</div>`;
       } else {
         barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw sub" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}"><span class="g-draw-hint">ziehen = Untertermin zeichnen</span></div>`;
       }
@@ -11587,8 +11598,10 @@ document.addEventListener('click', e => {
       rerenderGantt(pid); break;
     case 'gantt-sort':   ganttSort = kind; rerenderGantt(pid); break;
     case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; rerenderGantt(pid); break;
-    case 'gantt-dates':  ganttDates = DATE_MODES[(DATE_MODES.indexOf(ganttDates) + 1) % DATE_MODES.length]; rerenderGantt(pid); break;
-    case 'gantt-datepos': ganttDatePos = DATEPOS_MODES[(DATEPOS_MODES.indexOf(ganttDatePos) + 1) % DATEPOS_MODES.length]; rerenderGantt(pid); break;
+    case 'gantt-dates':  ganttDates = kind || DATE_MODES[(DATE_MODES.indexOf(ganttDates) + 1) % DATE_MODES.length]; rerenderGantt(pid); break;
+    case 'gantt-datepos': ganttDatePos = kind || DATEPOS_MODES[(DATEPOS_MODES.indexOf(ganttDatePos) + 1) % DATEPOS_MODES.length]; rerenderGantt(pid); break;
+    case 'gantt-tab':    ganttTab = kind || 'ansicht'; rerenderGantt(pid); break;
+    case 'gantt-duration': ganttDuration = !ganttDuration; rerenderGantt(pid); break;
     case 'gantt-mode':   ganttMode = kind; viewTermine(pid); break;
     case 'gantt-color':  ganttColorMode = kind; rerenderGantt(pid); break;
     case 'grob-zoom':    { grobZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.4, +(grobZoom + (kind === 'in' ? 0.2 : -0.2)).toFixed(2))); viewGrobGantt(findProjekt(pid)); } break;
@@ -11634,8 +11647,8 @@ document.addEventListener('click', e => {
     case 'gantt-rowh':      { ganttRowH = kind === 'reset' ? 38 : Math.max(26, Math.min(60, ganttRowH + (kind === 'in' ? 6 : -6))); rerenderGantt(pid); } break;
     case 'gantt-pad':       { ganttPad = kind === 'reset' ? 1 : (kind === 'cycle' ? (ganttPad + 1) % 7 : Math.max(0, Math.min(12, ganttPad + (kind === 'in' ? 1 : -1)))); rerenderGantt(pid); } break;
     case 'gantt-ribbon':    ganttRibbon = !ganttRibbon; rerenderGantt(pid); break;
-    case 'gantt-labelmode': ganttLabelMode = LABEL_MODES[(LABEL_MODES.indexOf(ganttLabelMode) + 1) % LABEL_MODES.length]; rerenderGantt(pid); break;
-    case 'gantt-strength':  ganttColorStrength = STRENGTH_MODES[(STRENGTH_MODES.indexOf(ganttColorStrength) + 1) % STRENGTH_MODES.length]; rerenderGantt(pid); break;
+    case 'gantt-labelmode': ganttLabelMode = kind || LABEL_MODES[(LABEL_MODES.indexOf(ganttLabelMode) + 1) % LABEL_MODES.length]; rerenderGantt(pid); break;
+    case 'gantt-strength':  ganttColorStrength = kind || STRENGTH_MODES[(STRENGTH_MODES.indexOf(ganttColorStrength) + 1) % STRENGTH_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-focus':     ganttFocus = !ganttFocus; rerenderGantt(pid); break;
     case 'gantt-colors-open': actGanttColors(pid); break;
     case 'gantt-colors-reset': { if (state.ganttColors) delete state.ganttColors[act.dataset.kind]; save(); rerenderGantt(pid); closeModal(); actGanttColors(pid); } break;

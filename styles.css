@@ -791,6 +791,18 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-rgroup:last-child { border-right: none; }
 .g-rgroup-btns { display: flex; gap: 4px; }
 .g-rgroup-lbl { font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
+/* Office-artige Reiterleiste über den Icons */
+.g-ribtabs { display: flex; gap: 2px; flex-wrap: nowrap; overflow-x: auto; border-bottom: 1px solid var(--border); margin-bottom: 8px; scrollbar-width: none; }
+.g-ribtabs::-webkit-scrollbar { display: none; height: 0; }
+.g-ribtab { border: none; background: none; padding: 6px 12px; font-size: 12.5px; font-weight: 600; color: var(--text-soft); cursor: pointer; border-radius: 7px 7px 0 0; white-space: nowrap; flex: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.g-ribtab:hover { background: var(--surface-2); color: var(--text); }
+.g-ribtab.active { color: var(--brand); border-bottom-color: var(--brand); }
+/* Optionssatz – alle Möglichkeiten direkt anklickbar (segmentiert) */
+.g-optset { display: inline-flex; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+.g-opt { border: none; background: none; padding: 6px 10px; font-size: 12px; font-weight: 600; color: var(--text-soft); cursor: pointer; border-radius: 6px; white-space: nowrap; }
+.g-opt:hover { color: var(--text); }
+.g-opt.active { background: var(--brand); color: #fff; }
+.page-toolbar .g-ribtabs { flex: 1 1 100%; min-width: 0; }
 /* Scrollbalken ausblenden – Inhalt bleibt per Wisch/Drag scrollbar (kein hässlicher Balken) */
 .g-topbox, .g-ribbon, .g-footer { scrollbar-width: none; -ms-overflow-style: none; }
 .g-topbox::-webkit-scrollbar, .g-ribbon::-webkit-scrollbar, .g-footer::-webkit-scrollbar { display: none; width: 0; height: 0; }
@@ -920,6 +932,9 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 /* Beschriftung ab Start, läuft über den Balken (dunkel + heller Saum für Lesbarkeit) */
 .g-lbl-over { position: absolute; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 600; color: #1f2937; white-space: nowrap; pointer-events: none; z-index: 5; text-shadow: 0 0 2px rgba(255,255,255,.85), 0 0 2px rgba(255,255,255,.85); }
 .g-lbl-over.sub { font-size: 10px; font-weight: 500; }
+/* Dauer der Arbeiten – mittig auf dem Balken */
+.g-dauer { position: absolute; top: 50%; transform: translate(-50%, -50%); font-size: 10px; font-weight: 700; color: #1f2937; white-space: nowrap; pointer-events: none; z-index: 5; text-shadow: 0 0 2px rgba(255,255,255,.9), 0 0 2px rgba(255,255,255,.9); }
+.g-dauer.sub { font-size: 9px; }
 /* Grob-Gantt (Phasen) */
 .grob-wrap { font-size: 13px; }
 .grob-row { display: flex; align-items: center; border-bottom: 1px solid var(--border); min-height: 40px; }

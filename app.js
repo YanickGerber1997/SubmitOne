@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v223';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v224';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2337,7 +2337,7 @@ function viewTermine(id) {
       <button class="btn sm ${(p.regeln || []).length ? '' : 'secondary'}" data-act="regeln-open" data-pid="${p.id}" title="Feste Regeln/Abhängigkeiten – warnen bei Verstoss (z.B. Gerüst vor Wände)">📐 Regeln${(p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''}</button>
       <button class="btn sm ${(p.ressCheck && p.ressCheck.aktiv === false) ? 'secondary' : ''}" data-act="ress-config" data-pid="${p.id}" title="Ressourcen-Hinweis (gleiche Firma überlappend) einstellen">⚠ Ressourcen</button>
       <button class="btn sm ${gespr ? '' : 'secondary'}" data-act="termin-versionen" data-pid="${p.id}" title="Programm abgeben/sperren · Versionen" style="margin-left:auto">${gespr ? '🔒 Abgegeben V' + (p.terminVersNr || 1) : '🏁 Abgeben / Versionen'}</button>
-      <button class="btn sm secondary" data-act="pdf-gantt-menu" data-pid="${p.id}" title="Drucken / PDF – Format wählen (A4 / A3 / A2 quer)">⬇ PDF</button>
+      <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" title="Drucken / PDF – Format wird automatisch gewählt (A4→A3→A2…), Ansicht bleibt erhalten">⬇ PDF</button>
     </div>
     ${gespr ? `<div class="g-warn g-warn-lock">🔒 <b>Terminprogramm Version ${p.terminVersNr || 1} ist abgegeben &amp; gesperrt.</b> Änderungen sind blockiert. <button class="btn sm" data-act="termin-versionen" data-pid="${p.id}">Neue Version erstellen</button></div>` : ''}
   `;
@@ -9665,25 +9665,23 @@ function bestellListeHtml(p) {
   return `<div class="section-head" style="margin-top:22px"><h2>🛒 Bestellfristen / Vorlauf</h2><span class="hint">Was muss wann bestellt werden, damit der Einbau pünktlich startet</span></div>
     <div class="card" style="overflow-x:auto"><table class="grid"><thead><tr><th>Gewerk / Firma</th><th>bestellen bis</th><th>Vorlauf</th><th>Einbau ab</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
-// Papierformate (Querformat, mm) – A2 ist kein CSS-Standardname → explizite Masse
-const PAPER = { A4: { w: 297, h: 210 }, A3: { w: 420, h: 297 }, A2: { w: 594, h: 420 } };
-function actGanttPrint(pid) {
-  const grob = ganttMode === 'grob';
-  openModal('Drucken / PDF – ' + (grob ? 'Grobplanung' : 'Terminprogramm'), `
-    <p class="muted" style="font-size:12.5px;margin-top:0">Papierformat (immer Querformat). Grössere Formate = mehr Zeilen pro Blatt &amp; breitere Zeitachse. Im Druckdialog „Als PDF speichern" und dasselbe Format wählen.</p>
-    <div style="display:flex;flex-direction:column;gap:8px">
-      <button class="btn secondary" style="justify-content:flex-start" data-act="pdf-gantt" data-pid="${pid}" data-kind="A4">📄 A4 quer – Standard</button>
-      <button class="btn secondary" style="justify-content:flex-start" data-act="pdf-gantt" data-pid="${pid}" data-kind="A3">📃 A3 quer – grosse Programme</button>
-      <button class="btn secondary" style="justify-content:flex-start" data-act="pdf-gantt" data-pid="${pid}" data-kind="A2">🗺 A2 quer – sehr grosse Programme (Plot)</button>
-    </div>
-  `, `<button class="btn ghost" data-close="1">Abbrechen</button>`);
+// Papierformate (Querformat, mm) – A2/A1/A0 sind keine CSS-Standardnamen → explizite Masse
+const PAPER = { A4: { w: 297, h: 210 }, A3: { w: 420, h: 297 }, A2: { w: 594, h: 420 }, A1: { w: 841, h: 594 }, A0: { w: 1189, h: 841 } };
+const PAPER_LADDER = ['A4', 'A3', 'A2', 'A1', 'A0'];
+// Automatisch das kleinste Format, das die ganze Zeitachse in der aktuellen Ansicht lesbar fasst
+function autoPaperFor(zoom, totalDays, sideMm) {
+  let needW;
+  if (zoom === 'tag') needW = sideMm + totalDays * 3.4;          // ~Tageszahlen lesbar
+  else if (zoom === 'woche') needW = sideMm + Math.ceil(totalDays / 7) * 4;
+  else needW = sideMm + (totalDays / 30.4) * 8;                   // Monate
+  for (const k of PAPER_LADDER) { if (PAPER[k].w - 16 >= needW) return k; }
+  return 'A0';
 }
 function pdfGantt(pid, paper) {
   const p = findProjekt(pid); if (!p) return;
   closeModal();
   setFeierCtx(p);
   if (ganttMode === 'grob') return pdfGrobGantt(p, paper);
-  const PD = PAPER[paper] || PAPER.A4;
   const vs = gewerkeSorted(p).filter(v => v.bauStart && v.bauEnde);
   if (!vs.length) { toast('Keine terminierten Gewerke vorhanden', 'info'); return; }
   // Druckzeilen: jedes Gewerk + seine datierten Untertermine (eingerückt)
@@ -9705,6 +9703,8 @@ function pdfGantt(pid, paper) {
   const rangeStart = new Date(ds.getFullYear(), ds.getMonth(), 1);
   const rangeEnd = new Date(de.getFullYear(), de.getMonth() + 1, 0);
   const totalDays = dayDiff(rangeStart, rangeEnd) + 1;
+  const PDkey = paper || autoPaperFor(ganttZoom, totalDays, 58);   // 58 = Seitenspalte
+  const PD = PAPER[PDkey] || PAPER.A4;
   const pct = iso => dayDiff(rangeStart, dISO(iso)) / totalDays * 100;
   const wpct = (s, e) => (dayDiff(dISO(s), dISO(e)) + 1) / totalDays * 100;
   const subOn = ganttZoom !== 'monat';
@@ -9845,11 +9845,11 @@ function pdfGantt(pid, paper) {
   const inner = `${pagesHtml}
   <div style="margin-top:3mm;font-size:8px;color:#6b7480">${legend} &nbsp;·&nbsp; <span style="opacity:.8">🟫 Bestellfrist · Nachlauf (schraffiert) · ↳ Untertermin</span></div>`;
   const rasterTxt = ganttZoom === 'tag' ? 'Tage' : ganttZoom === 'woche' ? 'Wochen' : 'Monate';
-  openPrintDoc('Bauprogramm / Terminprogramm', `${esc(p.name)} · ${esc(p.ort)} · ${fmtDate(min)} – ${fmtDate(max)} · Raster ${rasterTxt} · ${items.length} Zeilen`, inner, { landscape: true, extraCss: css });
+  openPrintDoc('Bauprogramm / Terminprogramm', `${esc(p.name)} · ${esc(p.ort)} · ${fmtDate(min)} – ${fmtDate(max)} · Raster ${rasterTxt} · ${items.length} Zeilen · ${PDkey} quer`, inner, { landscape: true, extraCss: css });
+  toast('PDF im Format ' + PDkey + ' quer – im Druckdialog „' + PDkey + '" wählen', 'info');
 }
 // Grobplanung (Phasen) drucken – wenige Zeilen, eine Querseite
 function pdfGrobGantt(p, paper) {
-  const PD = PAPER[paper] || PAPER.A4;
   const vs = gewerkeSorted(p).filter(v => v.bauStart && v.bauEnde);
   if (!vs.length) { toast('Keine datierten Gewerke vorhanden', 'info'); return; }
   const map = {}; vs.forEach(v => { const k = phaseOf(v); (map[k] = map[k] || []).push(v); });
@@ -9858,6 +9858,8 @@ function pdfGrobGantt(p, paper) {
   const ds = dISO(min), de = dISO(max);
   const rangeStart = new Date(ds.getFullYear(), ds.getMonth(), 1), rangeEnd = new Date(de.getFullYear(), de.getMonth() + 1, 0);
   const totalDays = dayDiff(rangeStart, rangeEnd) + 1;
+  const PDkey = paper || autoPaperFor('monat', totalDays, 62);
+  const PD = PAPER[PDkey] || PAPER.A4;
   const pct = iso => dayDiff(rangeStart, dISO(iso)) / totalDays * 100;
   const wpct = (s, e) => (dayDiff(dISO(s), dISO(e)) + 1) / totalDays * 100;
   const SIDE_MM = 62, HEAD_MM = 7, rowH = 9, barH = 6;
@@ -11210,7 +11212,6 @@ document.addEventListener('click', e => {
     case 'pdf-baukosten':        actPdfBaukosten(pid); break;
     case 'pdf-baukosten-mode': { const pp = findProjekt(pid); const ta = $('#bk_einleitung'); if (pp && ta) { pp.deckblatt = ta.value; save(); } closeModal(); pdfBaukosten(pid, act.dataset.mode); break; }
     case 'pdf-gantt':            pdfGantt(pid, kind); break;
-    case 'pdf-gantt-menu':       actGanttPrint(pid); break;
     case 'pdf-zahlungsplan':     pdfZahlungsplan(pid); break;
     case 'pdf-rechnungen':       pdfRechnungskontrolle(pid); break;
     case 'advance':      advanceVergabe(pid, vid); break;

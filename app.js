@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v198';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v199';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2240,7 +2240,14 @@ const GANTT_PHASE = {
 const GANTT_COLS = { rot: '#dc2626', orange: '#f97316', gelb: '#eab308', gruen: '#16a34a', blau: '#1f6feb', violett: '#7c3aed', dgrau: '#475569', hgrau: '#cbd5e1' };
 const GANTT_LEGEND = [['rot', 'angefragt'], ['orange', 'Offerte / Abgebot'], ['gelb', 'bis Vergabe'], ['gruen', 'Werkvertrag'], ['blau', 'Ausführung'], ['violett', 'Schlussrechnung'], ['dgrau', 'Mängel'], ['hgrau', 'abgeschlossen']];
 function ganttColKey(v) { return GANTT_PHASE[v.status] || 'dgrau'; }
-function ganttColHex(v) { return GANTT_COLS[ganttColKey(v)]; }
+let ganttColorMode = 'status';   // 'status' | 'firma' (je Unternehmer) | 'phase' (Grobphase)
+const GANTT_FIRMA_PALETTE = ['#1f6feb', '#16a34a', '#ea7a3c', '#7c3aed', '#0d9488', '#dc2626', '#a16207', '#db2777', '#0891b2', '#65a30d', '#9333ea', '#0f766e', '#b45309', '#2563eb'];
+function firmaColHex(name) { if (!name) return '#94a3b8'; let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return GANTT_FIRMA_PALETTE[h % GANTT_FIRMA_PALETTE.length]; }
+function ganttColHex(v) {
+  if (ganttColorMode === 'phase') return phaseColOf(v);
+  if (ganttColorMode === 'firma') return firmaColHex(v.firma);
+  return GANTT_COLS[ganttColKey(v)];
+}
 let ganttCtx = null;       // { rangeStartISO, pxPerDay } – für Drag
 let ganttPid = null;       // aktuelles Projekt im Gantt (für Verbindungen)
 
@@ -2279,7 +2286,7 @@ function viewTermine(id) {
     ${projektTabs(p, 'termine')}
     ${ganttModeToggle(p)}
     <div class="g-toolbar">
-      <span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}<span class="muted" style="font-size:12px">Info</span>${infoCtrl}${zoomCtrl}${scaleCtrl}
+      <span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}<span class="muted" style="font-size:12px">Info</span>${infoCtrl}<span class="muted" style="font-size:12px">Farbe</span><div class="g-zoom" title="Balkenfarbe">${[['status', 'Status'], ['firma', 'Unternehmer'], ['phase', 'Phase']].map(([k, l]) => `<button class="${ganttColorMode === k ? 'active' : ''}" data-act="gantt-color" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>${zoomCtrl}${scaleCtrl}
       <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
       <button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button>
       <button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button>
@@ -2418,7 +2425,7 @@ function viewTermine(id) {
   const kontaktByFirma = f => (state.kontakte || []).find(k => k.firma === f);
   let sideRows = '', barRows = '', rowIdx = 0; const barMeta = {};
   vs.forEach(v => {
-    const colKey = ganttColKey(v), colHex = ganttColHex(v), light = colKey === 'hgrau' ? ' g-light' : '';
+    const colKey = ganttColKey(v), colHex = ganttColHex(v), light = (ganttColorMode === 'status' && colKey === 'hgrau') ? ' g-light' : '';
     const hatTermin = v.bauStart && v.bauEnde;
     const k = (ganttSide.person || ganttSide.natel) && v.firma ? kontaktByFirma(v.firma) : null;
     const extra = [];
@@ -2500,7 +2507,11 @@ function viewTermine(id) {
       </div></div>
     </div>
     <div class="g-legend">
-      ${GANTT_LEGEND.map(([k, l]) => `<span><i style="background:${GANTT_COLS[k]}"></i>${l}</span>`).join('')}
+      ${(() => {
+        if (ganttColorMode === 'firma') { const seen = []; vs.forEach(v => { const f = v.firma || 'nicht vergeben'; if (!seen.includes(f)) seen.push(f); }); return seen.map(f => `<span><i style="background:${firmaColHex(f === 'nicht vergeben' ? '' : f)}"></i>${esc(f)}</span>`).join(''); }
+        if (ganttColorMode === 'phase') { const used = new Set(vs.map(v => phaseOf(v))); return BAU_PHASEN.filter(ph => used.has(ph.key)).map(ph => `<span><i style="background:${ph.col}"></i>${esc(ph.label)}</span>`).join(''); }
+        return GANTT_LEGEND.map(([k, l]) => `<span><i style="background:${GANTT_COLS[k]}"></i>${l}</span>`).join('');
+      })()}
     </div>
     <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Rechtsklick → <b>Nachfolger verketten</b> hängt ein Gewerk direkt an · bei <b>🔗 Verkettung an</b> folgen verkettete Nachfolger automatisch · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie · <b>Strg + Mausrad</b> zoomt an der Cursor-Position · mit <b>Info</b> (Gewerk/Firma/Person/Natel) blendest du die Seitenspalte ein – die BKP-Nr. bleibt immer.</p>
     ${bestellListeHtml(p)}
@@ -10742,6 +10753,7 @@ document.addEventListener('click', e => {
     case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; rerenderGantt(pid); break;
     case 'gantt-dates':  ganttDates = ganttDates === 'off' ? 'full' : (ganttDates === 'full' ? 'short' : 'off'); rerenderGantt(pid); break;
     case 'gantt-mode':   ganttMode = kind; viewTermine(pid); break;
+    case 'gantt-color':  ganttColorMode = kind; rerenderGantt(pid); break;
     case 'grob-zoom':    { grobZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.4, +(grobZoom + (kind === 'in' ? 0.2 : -0.2)).toFixed(2))); viewGrobGantt(findProjekt(pid)); } break;
     case 'grob-phase':   actGrobPhase(e, pid, vid); break;
     case 'fein-add':     actFeinBlock(pid); break;

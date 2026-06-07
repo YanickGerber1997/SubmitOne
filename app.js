@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v259';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v260';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2636,8 +2636,10 @@ function viewTermine(id) {
     const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
     const hh = Math.round(ROW_H / 2);
     const ax = Math.round(a.left + a.width), ay = a.row * ROW_H + hh, bx = Math.round(b.left), by = b.row * ROW_H + hh;
-    const dx = Math.max(16, Math.min(48, Math.abs(bx - ax) * 0.5 + 12));   // Stärke des seitlichen Aus-/Eintritts
-    const d = `M ${ax} ${ay} C ${ax + dx} ${ay} ${bx - dx} ${by} ${bx} ${by}`;
+    // kurzes gerades Stück (Stub) an beiden Enden → horizontaler Aus-/Eintritt, dann weiche Kurve
+    const stub = 12, sx = ax + stub, tx = Math.max(ax + stub + 2, bx - stub);
+    const dx = Math.max(16, Math.min(46, Math.abs(tx - sx) * 0.6 + 12));
+    const d = `M ${ax} ${ay} L ${sx} ${ay} C ${Math.round(sx + dx)} ${ay} ${Math.round(tx - dx)} ${by} ${tx} ${by} L ${bx} ${by}`;
     return `<g class="g-link${ganttLinkSel === lk.id ? ' g-sel' : ''}" data-lid="${lk.id}">
       <path class="g-link-hit" d="${d}"></path>
       <path class="g-link-line" d="${d}"></path>

@@ -791,6 +791,20 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-rgroup:last-child { border-right: none; }
 .g-rgroup-btns { display: flex; gap: 4px; }
 .g-rgroup-lbl { font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
+/* Scrollbalken ausblenden – Inhalt bleibt per Wisch/Drag scrollbar (kein hässlicher Balken) */
+.g-topbox, .g-ribbon, .g-footer { scrollbar-width: none; -ms-overflow-style: none; }
+.g-topbox::-webkit-scrollbar, .g-ribbon::-webkit-scrollbar, .g-footer::-webkit-scrollbar { display: none; width: 0; height: 0; }
+/* Schmale Schirme / halber Bildschirm: kompakter, damit möglichst ohne Scrollen alles passt */
+@media (max-width: 760px) {
+  .g-rgroup-lbl { display: none; }
+  .g-rgroup { padding: 0 5px; }
+  .g-bigbtn { width: 42px; height: 42px; gap: 1px; }
+  .g-bigbtn .bb-lbl { font-size: 8px; }
+  .g-topbox .g-verbar > .muted { display: none; }
+  /* Topbox darf hier umbrechen (kein Scroll), das einzeilige Ribbon scrollt versteckt */
+  .g-topbox { gap: 6px 8px; flex-wrap: wrap; overflow-x: visible; }
+  .g-ribbon-toggle { padding: 0 4px; }
+}
 .g-head { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); background: var(--surface); }
 /* Mitlaufender Kopf (Overlay) beim Scrollen – nur Anzeige, klickt nicht */
 .gantt-stickyhead { position: fixed; z-index: 50; display: none; box-shadow: 0 3px 7px rgba(15,24,48,.10); pointer-events: none; }

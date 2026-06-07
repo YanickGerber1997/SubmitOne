@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v264';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v265';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1794,6 +1794,7 @@ const G_ICONS = {
   tag: '<path d="M3.5 4.5h7l9.5 9.5-7 7-9.5-9.5z"/><circle cx="8" cy="9" r="1.2"/>',
   palette: '<path d="M12 3.2a8.8 8.8 0 1 0 0 17.6c1 0 1.7-.8 1.7-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.4-.6-.4-1 0-1 .8-1.7 1.7-1.7H16a4.8 4.8 0 0 0 4.8-4.8c0-4.4-3.9-7.3-8.8-7.3z"/><circle cx="7.6" cy="12.2" r="1"/><circle cx="9.6" cy="8.2" r="1"/><circle cx="14" cy="7.6" r="1"/>',
   sort: '<path d="M7.5 4v16M7.5 4l-2.6 2.8M7.5 4l2.6 2.8"/><path d="M16.5 20V4M16.5 20l-2.6-2.8M16.5 20l2.6 2.8"/>',
+  save: '<path d="M5 3.5h11l3 3V20.5H5z"/><path d="M8 3.5v5h7v-5"/><rect x="8" y="12" width="8" height="6"/>',
 };
 function gIcon(name) { return `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
 function bigBtn(act, icon, label, o) { o = o || {}; return `<button class="g-bigbtn${o.on ? ' on' : ''}" data-act="${act}" data-pid="${o.pid}"${o.kind != null ? ` data-kind="${o.kind}"` : ''} title="${esc(o.title || label)}"><span class="bb-ico">${gIcon(icon)}</span><span class="bb-lbl">${esc(label)}</span></button>`; }
@@ -2387,7 +2388,7 @@ function viewTermine(id) {
     </div>
     ${projektTabs(p, 'termine', `${ganttModeToggle(p)}${ganttRibbon ? `<div class="g-ribbon">
       <button class="g-ribbon-toggle" data-act="gantt-ribbon" data-pid="${p.id}" title="Werkzeuge einklappen">⌃</button>
-      ${rgroup('Drucken', bigBtn('pdf-gantt', 'print', 'Drucken', { pid: p.id, title: 'Drucken / PDF – Format automatisch' }))}
+      ${rgroup('Datei', bigBtn('pdf-gantt', 'print', 'Drucken', { pid: p.id, title: 'Drucken / PDF – Format automatisch' }) + bigBtn('gerber-termin', 'save', 'Speichern', { pid: p.id, title: 'Terminprogramm als .gerber-Datei herunterladen' }))}
       ${rgroup('Sortierung', bigBtn('gantt-sort', 'sort', ganttSort === 'bkp' ? 'BKP' : 'Start', { pid: p.id, kind: ganttSort === 'bkp' ? 'start' : 'bkp', title: 'Sortierung: BKP / Startdatum (umschalten)' }))}
       ${rgroup('Darstellung',
         bigBtn('gantt-color', 'palette', ganttColorMode === 'status' ? 'Status' : (ganttColorMode === 'firma' ? 'Firma' : 'Phase'), { pid: p.id, kind: ganttColorMode === 'status' ? 'firma' : (ganttColorMode === 'firma' ? 'phase' : 'status'), title: 'Balkenfarbe: Status / Firma / Phase (umschalten)' }) +
@@ -11204,6 +11205,20 @@ async function openGerber() {
     inp.click();
   });
 }
+function exportTerminGerber(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const data = {
+    format: 'gerber', formatVersion: 1, typ: 'terminprogramm', app: 'SubmitOne ' + APP_VERSION, exportiert: todayIso(),
+    projekt: p.name || '', ort: p.ort || '', baustart: p.baustart || '', bauende: p.bauende || '', bezug: p.bezug || '',
+    gewerke: (p.vergaben || []).map(v => ({ id: v.id, bkp: v.bkp || '', gewerk: v.gewerk || '', firma: v.firma || '', bauStart: v.bauStart || '', bauEnde: v.bauEnde || '', bestellfrist: v.bestellfrist || 0, nachfrist: v.nachfrist || 0, nachfristLabel: v.nachfristLabel || '', autoBalken: !!v.autoBalken, bauPhase: v.bauPhase || '', vorab: v.vorab ? { ...v.vorab } : null, vorgaenge: (v.vorgaenge || []).map(o => ({ id: o.id, titel: o.titel, start: o.start || '', ende: o.ende || '' })) })),
+    ganttLinks: JSON.parse(JSON.stringify(p.ganttLinks || [])),
+    regeln: JSON.parse(JSON.stringify(p.regeln || [])),
+    sitzungsraster: p.sitzungsraster ? JSON.parse(JSON.stringify(p.sitzungsraster)) : null,
+    feiertage: { kanton: p.kanton || '', brueckenAuffahrt: !!p.brueckenAuffahrt, extra: p.feiertageExtra || [], aus: p.feiertageAus || [] },
+  };
+  const safe = (p.name || 'terminprogramm').replace(/[^\w\-]+/g, '_').slice(0, 50);
+  saveGerber(safe + '_terminprogramm.gerber', data);
+}
 function exportProjektGerber(pid) {
   const p = findProjekt(pid); if (!p) return;
   const data = { format: 'gerber', formatVersion: 1, typ: 'projekt', app: 'SubmitOne ' + APP_VERSION, exportiert: todayIso(), projekt: JSON.parse(JSON.stringify(p)) };
@@ -11573,6 +11588,7 @@ document.addEventListener('click', e => {
     case 'export':       exportData(); break;
     case 'gerber-import': importProjektGerber(); break;
     case 'gerber-export': exportProjektGerber(pid); break;
+    case 'gerber-termin': exportTerminGerber(pid); break;
     case 'reset':        resetDemo(); break;
     case 'confirm-reset':doResetDemo(); break;
     case 'logout':       logout(); break;

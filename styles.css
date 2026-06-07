@@ -813,6 +813,27 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .ft-cell:hover { background: var(--brand-soft); }
 .ft-step { background: var(--surface); border: 1px solid var(--border-2); border-radius: 5px; padding: 2px 5px; font-size: 10.5px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
 .ft-step:hover { border-color: var(--brand); }
+/* Feinprogramm „Vierteltag" – Detailprogramm + Zusatzbalken zeichnen */
+.qv-wrap { font-size: 12px; }
+.qv-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
+.qv-row.qv-headrow { background: var(--surface-2); font-weight: 700; font-size: 11px; color: var(--text-soft); position: sticky; top: 0; z-index: 3; }
+.qv-name { flex: none; padding: 7px 11px; border-right: 1px solid var(--border-2); display: flex; flex-direction: column; justify-content: center; }
+.qv-head { flex: none; }
+.qv-dcol { flex: none; text-align: center; padding: 3px 0; border-left: 1px solid var(--border-2); }
+.qv-dcol.we { background: rgba(15,24,48,.04); color: var(--text-faint); }
+.qv-dcol.today { box-shadow: inset 0 -2px 0 var(--brand); }
+.qv-dcol .qv-wd { font-size: 10px; white-space: nowrap; }
+.qv-dcol .qv-qs { display: flex; margin-top: 2px; }
+.qv-dcol .qv-qs span { flex: 1; height: 4px; border-left: 1px solid var(--border); }
+.qv-dcol .qv-qs span:first-child { border-left: none; }
+.qv-track { position: relative; height: 38px; flex: none; cursor: crosshair;
+  background-image:
+    repeating-linear-gradient(to right, transparent 0 calc(var(--qw) - 1px), var(--border) calc(var(--qw) - 1px) var(--qw)),
+    repeating-linear-gradient(to right, transparent 0 calc(var(--dayw) - 1px), var(--border-2) calc(var(--dayw) - 1px) var(--dayw)); }
+.qv-band { position: absolute; top: 3px; bottom: 3px; border: 1px dashed; border-radius: 5px; opacity: .8; pointer-events: none; }
+.qv-bar { position: absolute; top: 50%; transform: translateY(-50%); height: 22px; border-radius: 5px; color: #fff; font-size: 10.5px; font-weight: 600; display: flex; align-items: center; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.25); z-index: 2; }
+.qv-bar.draft { opacity: .55; pointer-events: none; }
+.qv-bar:hover { filter: brightness(1.1); }
 .g-bar {
   position: absolute; top: 8px; height: 22px; border-radius: 6px; min-width: 3px;
   display: flex; align-items: center; font-size: 11px; font-weight: 600; color: #fff;

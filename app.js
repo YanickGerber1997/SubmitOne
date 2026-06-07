@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v178';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v179';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1738,11 +1738,13 @@ let ganttSide = { gewerk: true, firma: false, person: false, natel: false }; // 
 let ganttDates = 'off';   // Datum am Balken: 'off' | 'full' (26.06.26) | 'short' (26.06.)
 let ganttMode = 'detail'; // 'detail' = Termin-Gantt (Tage) | 'grob' = Grobplanung (Phasen) | 'fein' = Feinprogramm (Stunden)
 const FEIN_H0 = 6, FEIN_H1 = 20;   // Stunden-Achse Feinprogramm (06:00–20:00)
-let feinSub = 'tage';   // Feinprogramm-Unteransicht: 'tage' (4-Wochen-Raster je Unternehmer) | 'stunden' (Tagesablauf)
-let feinAnchor = null;  // ISO des Montags der ersten sichtbaren Woche (4-Wochen-Fenster)
+let feinSub = 'viertel';  // Feinprogramm-Unteransicht: 'viertel' (Detail in Vierteltagen + Zusatzbalken) | 'stunden' (Tagesablauf)
+let feinAnchor = null;    // ISO des Montags der ersten sichtbaren Woche
+const FEIN_WIN = 14;      // sichtbare Tage im Vierteltag-Raster
+let _feinDays = [], _feinQW = 15;   // Laufzeit-Kontext fürs Zeichnen
 function feinSubToggle(p) {
   return `<div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">
-    <button class="btn sm ${feinSub === 'tage' ? '' : 'secondary'}" data-act="fein-sub" data-pid="${p.id}" data-kind="tage" type="button" style="border:none">📅 Tage (4 Wochen · je Unternehmer)</button>
+    <button class="btn sm ${feinSub === 'viertel' ? '' : 'secondary'}" data-act="fein-sub" data-pid="${p.id}" data-kind="viertel" type="button" style="border:none">📐 Vierteltag (Detail + Zusatzbalken)</button>
     <button class="btn sm ${feinSub === 'stunden' ? '' : 'secondary'}" data-act="fein-sub" data-pid="${p.id}" data-kind="stunden" type="button" style="border:none">⏱ Stunden (Tagesablauf)</button>
   </div>`;
 }
@@ -1826,7 +1828,7 @@ function setGrobPhase(pid, vid, feld, val) {
 // Feinprogramm: stunden-/tagweise Detailanweisungen (z.B. 08:00–09:00 …, Pause 12–13) für kurze Programme
 function viewFeinGantt(p) {
   if (feinSub === 'stunden') return viewFeinStunden(p);
-  return viewFeinTage(p);
+  return viewFeinViertel(p);
 }
 function viewFeinStunden(p) {
   const bloecke = (p.feinbloecke || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '') || feinH(a.von) - feinH(b.von));
@@ -1893,71 +1895,95 @@ function removeFeinBlock(pid, bid) {
   const p = findProjekt(pid); p.feinbloecke = (p.feinbloecke || []).filter(x => x.id !== bid);
   save(); closeModal(); viewFeinGantt(p);
 }
-// Feinprogramm „Tage": 4-Wochen-Raster je Unternehmer/Gewerk (aus Detailprogramm), pro Tag Text-Schritte
-function viewFeinTage(p) {
+// Feinprogramm „Vierteltag": Detailprogramm in Vierteltag-Auflösung; zusätzliche Balken zeichnen (nur hier sichtbar)
+function viewFeinViertel(p) {
   const head = `
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Feinprogramm · 4-Wochen-Fenster je Unternehmer – pro Tag Schritte erfassen (aus dem Detailprogramm)</div></div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Feinprogramm · Detailprogramm in Vierteltagen – zusätzliche Balken zeichnen (im Detailprogramm nicht sichtbar)</div></div></div>
     ${projektTabs(p, 'termine')}
     ${ganttModeToggle(p)}
     ${feinSubToggle(p)}`;
   const vs = gewerkeSorted(p);
-  if (!vs.length) { render(head + emptyState('📅', 'Noch keine Gewerke. Im Tab „Übersicht" anlegen.')); return; }
+  if (!vs.length) { render(head + emptyState('📐', 'Noch keine Gewerke. Im Tab „Übersicht" anlegen.')); return; }
   const anchor = feinAnchor || mondayOf(todayIso());
-  const days = [];
-  const d0 = dISO(anchor);
-  for (let i = 0; i < 28; i++) { const d = new Date(d0); d.setDate(d.getDate() + i); days.push(isoOf(d)); }
-  const von = days[0], bis = days[27], t0 = todayIso();
+  const days = []; const d0 = dISO(anchor);
+  for (let i = 0; i < FEIN_WIN; i++) { const d = new Date(d0); d.setDate(d.getDate() + i); days.push(isoOf(d)); }
+  _feinDays = days; const qW = 15; _feinQW = qW;
+  const von = days[0], bis = days[FEIN_WIN - 1], t0 = todayIso();
   const MON = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-  const colW = 60, nameW = 188, trackW = 28 * colW;
-  const schritte = p.feinschritte || [];
-  // Tageskopf (mit Wochentrennern)
-  const headerCells = days.map((iso, i) => { const d = dISO(iso); const wd = (d.getDay() + 6) % 7; const we = wd >= 5; return `<div class="ft-col${we ? ' we' : ''}${i % 7 === 0 ? ' wk' : ''}" style="width:${colW}px"><div class="ft-wd">${MON[wd]}</div><div class="ft-dt">${d.getDate()}.${d.getMonth() + 1}.</div></div>`; }).join('');
+  const nameW = 176, dayW = qW * 4, trackW = FEIN_WIN * dayW;
+  const dayIdx = iso => days.indexOf(iso);
+  const balken = p.feinbalken || [];
+  const headerCells = days.map(iso => { const d = dISO(iso); const wd = (d.getDay() + 6) % 7; const we = wd >= 5; return `<div class="qv-dcol${we ? ' we' : ''}${iso === t0 ? ' today' : ''}" style="width:${dayW}px"><div class="qv-wd">${MON[wd]} ${d.getDate()}.${d.getMonth() + 1}.</div><div class="qv-qs">${[0, 1, 2, 3].map(() => '<span></span>').join('')}</div></div>`; }).join('');
   const rows = vs.map(v => {
-    const aktiv = (iso) => v.bauStart && v.bauEnde && iso >= v.bauStart && iso <= v.bauEnde;
-    const cells = days.map((iso, i) => {
-      const wd = (dISO(iso).getDay() + 6) % 7, we = wd >= 5;
-      const items = schritte.filter(s => s.vid === v.id && s.datum === iso);
-      const chips = items.map(s => `<div class="ft-step" data-act="fein-schritt-edit" data-pid="${p.id}" data-vid="${v.id}" data-sid="${s.id}" title="${esc(s.text)}">${esc(s.text)}</div>`).join('');
-      return `<div class="ft-cell${we ? ' we' : ''}${i % 7 === 0 ? ' wk' : ''}${aktiv(iso) ? ' on' : ''}${iso === t0 ? ' today' : ''}" style="width:${colW}px" data-act="fein-schritt-add" data-pid="${p.id}" data-vid="${v.id}" data-datum="${iso}" title="Schritt hinzufügen (${esc(fmtDate(iso))})">${chips}</div>`;
+    let band = '';
+    if (v.bauStart && v.bauEnde && v.bauStart <= bis && v.bauEnde >= von) {
+      const s = v.bauStart < von ? von : v.bauStart, e = v.bauEnde > bis ? bis : v.bauEnde;
+      const x0 = dayIdx(s) * dayW, x1 = (dayIdx(e) + 1) * dayW, col = ganttColHex(v);
+      band = `<div class="qv-band" style="left:${x0}px;width:${x1 - x0}px;background:${col}22;border-color:${col}" title="Detailprogramm: ${esc(fmtDate(v.bauStart))} – ${esc(fmtDate(v.bauEnde))}"></div>`;
+    }
+    const bars = balken.filter(b => b.vid === v.id && b.ed >= von && b.sd <= bis).map(b => {
+      const sQ = b.sd < von ? 0 : dayIdx(b.sd) * 4 + (b.sq || 0);
+      const eQ = b.ed > bis ? FEIN_WIN * 4 - 1 : dayIdx(b.ed) * 4 + (b.eq || 0);
+      const x0 = Math.max(0, sQ) * qW, x1 = (Math.min(FEIN_WIN * 4 - 1, eQ) + 1) * qW;
+      return `<div class="qv-bar" style="left:${x0}px;width:${Math.max(x1 - x0, 9)}px;background:${b.col || '#0f1830'}" data-act="fein-balken-edit" data-pid="${p.id}" data-bid="${b.id}" title="${esc(b.titel || '')}">${esc(b.titel || '')}</div>`;
     }).join('');
-    return `<div class="ft-row">
-      <div class="ft-name" style="width:${nameW}px"><span class="bkp-code">${esc(v.bkp || '')}</span> <b>${esc(v.firma || v.gewerk)}</b><div class="muted" style="font-size:10.5px">${esc(v.firma ? v.gewerk : 'noch nicht vergeben')}</div></div>
-      <div class="ft-track" style="width:${trackW}px;display:flex">${cells}</div>
-    </div>`;
+    return `<div class="qv-row" data-pid="${p.id}" data-vid="${v.id}"><div class="qv-name" style="width:${nameW}px"><span class="bkp-code">${esc(v.bkp || '')}</span> <b>${esc(v.firma || v.gewerk)}</b><div class="muted" style="font-size:10.5px">${esc(v.firma ? v.gewerk : 'noch nicht vergeben')}</div></div><div class="qv-track" style="width:${trackW}px;--dayw:${dayW}px;--qw:${qW}px">${band}${bars}</div></div>`;
   }).join('');
   render(head + `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="prev">‹ Woche</button>
       <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="today">Heute</button>
       <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="next">Woche ›</button>
-      <span class="muted" style="font-size:12.5px">${esc(fmtDate(von))} – ${esc(fmtDate(bis))}</span>
-      <span class="muted" style="font-size:12px;margin-left:auto">Zelle anklicken = Schritt hinzufügen · farbig hinterlegt = Bauzeit aus dem Detailprogramm</span>
+      <span class="muted" style="font-size:12.5px">${esc(fmtDate(von))} – ${esc(fmtDate(bis))} · Vierteltage</span>
+      <span class="muted" style="font-size:12px;margin-left:auto">In einer Zeile <b>ziehen</b> = Zusatzbalken zeichnen (vierteltag-genau) · Balken anklicken = bearbeiten · hinterlegt = Bauzeit aus dem Detailprogramm</span>
     </div>
-    <div class="card" style="padding:0;overflow:auto"><div class="ft-wrap" style="min-width:${nameW + trackW}px">
-      <div class="ft-row ft-headrow"><div class="ft-name" style="width:${nameW}px">Unternehmer / Gewerk</div><div class="ft-track" style="width:${trackW}px;display:flex">${headerCells}</div></div>
+    <div class="card" style="padding:0;overflow:auto"><div class="qv-wrap" style="min-width:${nameW + trackW}px">
+      <div class="qv-row qv-headrow"><div class="qv-name" style="width:${nameW}px">Unternehmer / Gewerk</div><div class="qv-head" style="width:${trackW}px;display:flex">${headerCells}</div></div>
       ${rows}
     </div></div>`);
+  $$('.qv-track').forEach(t => t.addEventListener('mousedown', onQvDraw));
 }
-function actFeinSchritt(pid, vid, datum, sid) {
-  const p = findProjekt(pid); const s = sid ? (p.feinschritte || []).find(x => x.id === sid) : null;
-  const v = findVergabe(p, vid);
-  openModal(s ? 'Schritt bearbeiten' : 'Schritt am ' + fmtDate(datum), `
-    <div class="muted" style="font-size:12px;margin-bottom:8px">${esc((v && (v.firma || v.gewerk)) || '')} · ${esc(fmtDate(s ? s.datum : datum))}</div>
-    <label class="field">Anweisung / Schritt <textarea class="input" id="fs_text" rows="3" placeholder="z.B. Schalung Decke EG, Material anliefern …">${s ? esc(s.text || '') : ''}</textarea></label>
-  `, `${s ? `<button class="btn ghost danger" data-act="fein-schritt-rm" data-pid="${pid}" data-sid="${sid}">Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fein-schritt-save" data-pid="${pid}" data-vid="${vid}" data-datum="${s ? s.datum : datum}"${s ? ` data-sid="${sid}"` : ''}>${s ? 'Speichern' : 'Hinzufügen'}</button>`);
-  setTimeout(() => $('#fs_text')?.focus(), 30);
+function onQvDraw(e) {
+  if (e.target.closest('.qv-bar')) return;   // Balken-Klick → Bearbeiten
+  const track = e.currentTarget, row = track.closest('.qv-row');
+  const pid = row.dataset.pid, vid = row.dataset.vid, qW = _feinQW, maxQi = FEIN_WIN * 4 - 1;
+  const rect = track.getBoundingClientRect();
+  const qiAt = cx => Math.max(0, Math.min(maxQi, Math.floor((cx - rect.left) / qW)));
+  const start = qiAt(e.clientX);
+  const temp = document.createElement('div'); temp.className = 'qv-bar draft'; track.appendChild(temp);
+  const upd = cur => { const lo = Math.min(start, cur), hi = Math.max(start, cur); temp.style.left = (lo * qW) + 'px'; temp.style.width = ((hi - lo + 1) * qW) + 'px'; };
+  upd(start);
+  const move = ev => upd(qiAt(ev.clientX));
+  const up = ev => {
+    document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+    const cur = qiAt(ev.clientX), lo = Math.min(start, cur), hi = Math.max(start, cur);
+    temp.remove();
+    actFeinBalken(pid, vid, _feinDays[Math.floor(lo / 4)], lo % 4, _feinDays[Math.floor(hi / 4)], hi % 4);
+  };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  e.preventDefault();
 }
-function saveFeinSchritt(pid, vid, datum, sid) {
-  const p = findProjekt(pid); const text = $('#fs_text').value.trim();
-  if (!text) { toast('Bitte einen Text eingeben', 'info'); return; }
-  p.feinschritte = p.feinschritte || [];
-  const s = sid ? p.feinschritte.find(x => x.id === sid) : null;
-  if (s) s.text = text; else p.feinschritte.push({ id: uid('fs'), vid, datum, text });
-  save(); closeModal(); viewFeinTage(p);
+function actFeinBalken(pid, vid, sd, sq, ed, eq, bid) {
+  const p = findProjekt(pid); const b = bid ? (p.feinbalken || []).find(x => x.id === bid) : null;
+  const v = findVergabe(p, b ? b.vid : vid);
+  const VQ = ['Morgen', 'Vormittag', 'Nachmittag', 'Abend'];
+  const spanTxt = `${fmtDate(b ? b.sd : sd)} ${VQ[b ? b.sq : sq]} – ${fmtDate(b ? b.ed : ed)} ${VQ[b ? b.eq : eq]}`;
+  openModal(b ? 'Zusatzbalken bearbeiten' : 'Zusatzbalken zeichnen', `
+    <div class="muted" style="font-size:12px;margin-bottom:8px">${esc((v && (v.firma || v.gewerk)) || '')} · ${esc(spanTxt)}</div>
+    <label class="field">Bezeichnung <input class="input" id="qb_titel" value="${b ? esc(b.titel || '') : ''}" placeholder="z.B. Kran, Lieferung, Etappe A, Übergabe …"></label>
+  `, `${b ? `<button class="btn ghost danger" data-act="fein-balken-rm" data-pid="${pid}" data-bid="${bid}">Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fein-balken-save" data-pid="${pid}" data-vid="${b ? b.vid : vid}" data-sd="${b ? b.sd : sd}" data-sq="${b ? b.sq : sq}" data-ed="${b ? b.ed : ed}" data-eq="${b ? b.eq : eq}"${b ? ` data-bid="${bid}"` : ''}>${b ? 'Speichern' : 'Hinzufügen'}</button>`);
+  setTimeout(() => $('#qb_titel')?.focus(), 30);
 }
-function removeFeinSchritt(pid, sid) {
-  const p = findProjekt(pid); p.feinschritte = (p.feinschritte || []).filter(x => x.id !== sid);
-  save(); closeModal(); viewFeinTage(p);
+function saveFeinBalken(pid, vid, sd, sq, ed, eq, bid) {
+  const p = findProjekt(pid); const titel = $('#qb_titel').value.trim();
+  p.feinbalken = p.feinbalken || [];
+  const b = bid ? p.feinbalken.find(x => x.id === bid) : null;
+  if (b) b.titel = titel; else p.feinbalken.push({ id: uid('qb'), vid, sd, sq: Number(sq), ed, eq: Number(eq), titel, col: '#0f1830' });
+  save(); closeModal(); viewFeinViertel(p);
+}
+function removeFeinBalken(pid, bid) {
+  const p = findProjekt(pid); p.feinbalken = (p.feinbalken || []).filter(x => x.id !== bid);
+  save(); closeModal(); viewFeinViertel(p);
 }
 function gdFmt(iso) { if (!iso || ganttDates === 'off') return ''; const d = dISO(iso); const dd = String(d.getDate()).padStart(2, '0'), mm = String(d.getMonth() + 1).padStart(2, '0'); return ganttDates === 'short' ? `${dd}.${mm}.` : `${dd}.${mm}.${String(d.getFullYear()).slice(2)}`; }
 function gdLabels(startIso, endIso, x0, x1) {
@@ -10399,11 +10425,10 @@ document.addEventListener('click', e => {
     case 'save-fein':    saveFeinBlock(pid, bid); break;
     case 'fein-rm':      removeFeinBlock(pid, bid); break;
     case 'fein-sub':     feinSub = kind; viewFeinGantt(findProjekt(pid)); break;
-    case 'fein-week':    { feinAnchor = kind === 'today' ? null : (() => { const base = feinAnchor || mondayOf(todayIso()); const d = dISO(base); d.setDate(d.getDate() + (kind === 'next' ? 7 : -7)); return isoOf(d); })(); viewFeinTage(findProjekt(pid)); } break;
-    case 'fein-schritt-add':  actFeinSchritt(pid, act.dataset.vid, act.dataset.datum); break;
-    case 'fein-schritt-edit': actFeinSchritt(pid, act.dataset.vid, act.dataset.datum, act.dataset.sid); break;
-    case 'fein-schritt-save': saveFeinSchritt(pid, act.dataset.vid, act.dataset.datum, act.dataset.sid); break;
-    case 'fein-schritt-rm':   removeFeinSchritt(pid, act.dataset.sid); break;
+    case 'fein-week':    { feinAnchor = kind === 'today' ? null : (() => { const base = feinAnchor || mondayOf(todayIso()); const d = dISO(base); d.setDate(d.getDate() + (kind === 'next' ? 7 : -7)); return isoOf(d); })(); viewFeinGantt(findProjekt(pid)); } break;
+    case 'fein-balken-edit': actFeinBalken(pid, null, null, null, null, null, bid); break;
+    case 'fein-balken-save': saveFeinBalken(pid, act.dataset.vid, act.dataset.sd, act.dataset.sq, act.dataset.ed, act.dataset.eq, bid); break;
+    case 'fein-balken-rm':   removeFeinBalken(pid, bid); break;
     case 'erinnerung-add':  actErinnerung(pid); break;
     case 'erinnerung-edit': actErinnerung(pid, rid); break;
     case 'erinnerung-save': saveErinnerung(pid, rid); break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v176';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v177';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1749,47 +1749,62 @@ function ganttModeToggle(p) {
     <button class="btn sm ${ganttMode === 'fein' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="fein" type="button" style="border:none">⏱ Feinprogramm (Stunden)</button>
   </div>`;
 }
-// Grob-Gantt: pro Gewerk eine grobe Start-/End-Phase (Saison + Jahr), als eigenständiges, grobes Balkendiagramm
+// Grobe Bauphasen – BKP-Gruppen werden zu groben Phasen zusammengefasst
+const BAU_PHASEN = [
+  { key: 'vorber', label: 'Planung / Vorbereitung', grp: ['0', '1'], col: '#94a3b8' },
+  { key: 'aushub', label: 'Baugrube / Aushub', grp: ['20'], col: '#a16207' },
+  { key: 'rohbau1', label: 'Rohbau 1 (Baumeister)', grp: ['21'], col: '#1f6feb' },
+  { key: 'rohbau2', label: 'Rohbau 2 (Hülle / Dach / Fenster)', grp: ['22'], col: '#0d9488' },
+  { key: 'technik', label: 'Gebäudetechnik (Elektro / HLKS)', grp: ['23', '24', '25', '26'], col: '#7c3aed' },
+  { key: 'ausbau', label: 'Innenausbau', grp: ['27', '28'], col: '#ea7a3c' },
+  { key: 'umgebung', label: 'Umgebung', grp: ['4'], col: '#16a34a' },
+  { key: 'rest', label: 'Honorare / Übriges', grp: ['29', '3', '5', '6', '9'], col: '#64748b' },
+];
+function bauPhaseKey(bkp) {
+  const b = String(bkp || '').replace(/[^0-9]/g, ''); const g2 = b.slice(0, 2), g1 = b[0] || '0';
+  for (const ph of BAU_PHASEN) { if (ph.grp.includes(g2)) return ph.key; }
+  for (const ph of BAU_PHASEN) { if (ph.grp.includes(g1)) return ph.key; }
+  return 'rest';
+}
+// Grobplanung: BKP-Gewerke aus dem Detailprogramm zu groben Bauphasen zusammengefasst (Spanne aus Bau-Terminen)
 function viewGrobGantt(p) {
-  const vs = gewerkeSorted(p);
-  const all = [];
-  vs.forEach(v => { const a = grobIdx(v.grobStart), b = grobIdx(v.grobEnde || v.grobStart); if (a != null) all.push(a); if (b != null) all.push(b); });
-  const curY = Number(todayIso().slice(0, 4));
-  let lo = all.length ? Math.min(...all) : curY * 4;
-  let hi = all.length ? Math.max(...all) : curY * 4 + 5;
-  hi = Math.max(hi, lo + 3) + 1;   // etwas Luft rechts
-  const colW = 74;
-  const cols = [];
-  for (let i = lo; i <= hi; i++) { const y = Math.floor(i / 4), c = GROB_SAISON[((i % 4) + 4) % 4]; cols.push({ i, code: c[0], label: `${c[0]} ${String(y).slice(2)}`, jahr: y }); }
-  const trackW = cols.length * colW;
-  const optList = [];
-  for (let i = lo; i <= hi + 4; i++) { const y = Math.floor(i / 4), c = GROB_SAISON[((i % 4) + 4) % 4]; optList.push({ val: `${y}-${c[0]}`, label: `${c[1]} ${y}` }); }
-  const sel = (v, feld) => `<select class="grob-sel" data-pid="${p.id}" data-vid="${v.id}" data-feld="${feld}"><option value="">–</option>${optList.map(o => `<option value="${o.val}"${(v[feld] || '') === o.val ? ' selected' : ''}>${o.label}</option>`).join('')}</select>`;
-  const headerCols = cols.map(c => `<div class="grob-col${c.code === 'WI' ? ' wi' : ''}${c.code === 'FS' && c.jahr !== cols[0].jahr ? ' yr' : ''}" style="width:${colW}px">${esc(c.label)}</div>`).join('');
-  const rows = vs.map(v => {
-    const a = grobIdx(v.grobStart); let b = grobIdx(v.grobEnde || v.grobStart);
-    if (a != null && (b == null || b < a)) b = a;
-    let bar = '';
-    if (a != null) { const left = (a - lo) * colW; const w = (b - a + 1) * colW; bar = `<div class="grob-bar" style="left:${left}px;width:${Math.max(w - 4, 18)}px;background:${ganttColHex(v)}" title="${esc(v.gewerk)}">${esc(v.gewerk)}</div>`; }
-    return `<div class="grob-row">
-      <div class="grob-name"><span class="bkp-code">${esc(v.bkp || '')}</span> <span class="gnm">${esc(v.gewerk || '')}</span></div>
-      <div class="grob-sels">${sel(v, 'grobStart')}<span class="grob-arrow">→</span>${sel(v, 'grobEnde')}</div>
-      <div class="grob-track" style="width:${trackW}px">${cols.map((c, ci) => `<span class="grob-cell${c.code === 'WI' ? ' wi' : ''}" style="left:${ci * colW}px;width:${colW}px"></span>`).join('')}${bar}</div>
-    </div>`;
-  }).join('');
   const head = `
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Grobplanung nach Phasen · grobe Start-/End-Saison je Gewerk (für die frühe Planung)</div></div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Grobplanung · Bauphasen aus dem Detailprogramm (Planung, Rohbau, Innenausbau …)</div></div></div>
     ${projektTabs(p, 'termine')}
     ${ganttModeToggle(p)}`;
+  const vs = gewerkeSorted(p).filter(v => v.bauStart && v.bauEnde);
+  if (!vs.length) {
+    render(head + `<p class="muted" style="font-size:12.5px;margin:-2px 0 12px">Die Grobphasen entstehen <b>automatisch aus dem Detailprogramm</b>: setze im „📋 Detailprogramm" die Bau-Termine (Start/Ende) der Gewerke – sie werden hier zu groben Bauphasen zusammengefasst.</p>` + emptyState('🗓', 'Noch keine datierten Gewerke im Detailprogramm.'));
+    return;
+  }
+  const map = {};
+  vs.forEach(v => { const k = bauPhaseKey(v.bkp); (map[k] = map[k] || []).push(v); });
+  const phases = BAU_PHASEN.filter(ph => map[ph.key]).map(ph => {
+    let s = '', e = ''; map[ph.key].forEach(v => { if (!s || v.bauStart < s) s = v.bauStart; if (!e || v.bauEnde > e) e = v.bauEnde; });
+    return { ph, items: map[ph.key], start: s, ende: e };
+  });
+  const minISO = phases.reduce((a, x) => !a || x.start < a ? x.start : a, '');
+  const maxISO = phases.reduce((a, x) => !a || x.ende > a ? x.ende : a, '');
+  const d0 = dISO(minISO), d1 = dISO(maxISO), y0 = d0.getFullYear(), m0 = d0.getMonth();
+  const nMon = (d1.getFullYear() - y0) * 12 + (d1.getMonth() - m0) + 1;
+  const colW = 66, trackW = nMon * colW, MON = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+  const months = Array.from({ length: nMon }, (_, i) => { const mo = (m0 + i) % 12, yr = y0 + Math.floor((m0 + i) / 12); return { label: `${MON[mo]} ${String(yr).slice(2)}`, jan: mo === 0 }; });
+  const dim = (y, m) => new Date(y, m + 1, 0).getDate();
+  const xOf = iso => { const d = dISO(iso); const mi = (d.getFullYear() - y0) * 12 + (d.getMonth() - m0); return mi * colW + (d.getDate() - 1) / dim(d.getFullYear(), d.getMonth()) * colW; };
+  const headerCols = months.map(c => `<div class="grob-col${c.jan ? ' yr' : ''}" style="width:${colW}px">${esc(c.label)}</div>`).join('');
+  const rows = phases.map(x => {
+    const left = xOf(x.start), w = Math.max(xOf(x.ende) - left, 22);
+    return `<div class="grob-row">
+      <div class="grob-name" style="width:210px"><span class="gnm">${esc(x.ph.label)}</span><div class="muted" style="font-size:11px">${x.items.length} Gewerke · ${esc(fmtDate(x.start))} – ${esc(fmtDate(x.ende))}</div></div>
+      <div class="grob-track" style="width:${trackW}px">${months.map((c, ci) => `<span class="grob-cell" style="left:${ci * colW}px;width:${colW}px"></span>`).join('')}<div class="grob-bar" style="left:${left}px;width:${w - 3}px;background:${x.ph.col}" title="${esc(x.ph.label)} · ${x.items.map(v => (v.bkp ? v.bkp + ' ' : '') + v.gewerk).join(', ')}">${esc(x.ph.label)}</div></div>
+    </div>`;
+  }).join('');
   render(head + `
-    <p class="muted" style="font-size:12.5px;margin:-2px 0 12px">Pro Gewerk eine grobe <b>Start-</b> und optionale <b>End-Phase</b> wählen (z.B. Frühling 25 → Herbst 26). Für die Feinplanung auf „Detailprogramm" wechseln.</p>
-    <div class="card" style="padding:0;overflow:auto">
-      <div class="grob-wrap" style="min-width:${190 + 170 + trackW}px">
-        <div class="grob-row grob-headrow"><div class="grob-name">Gewerk</div><div class="grob-sels">Start → Ende</div><div class="grob-track" style="width:${trackW}px">${headerCols}</div></div>
-        ${rows || `<div class="grob-row"><div class="muted" style="padding:14px">Noch keine Gewerke. Im Tab „Übersicht" anlegen.</div></div>`}
-      </div>
-    </div>`);
-  $$('.grob-sel').forEach(s => s.addEventListener('change', () => setGrobPhase(s.dataset.pid, s.dataset.vid, s.dataset.feld, s.value)));
+    <p class="muted" style="font-size:12.5px;margin:-2px 0 12px">Automatisch aus dem <b>Detailprogramm</b>: die BKP-Gewerke sind zu groben <b>Bauphasen</b> zusammengefasst – die Spanne reicht vom frühesten Start bis zum spätesten Ende je Phase. Termine im „Detailprogramm" ändern → Phasen aktualisieren sich.</p>
+    <div class="card" style="padding:0;overflow:auto"><div class="grob-wrap" style="min-width:${210 + trackW}px">
+      <div class="grob-row grob-headrow"><div class="grob-name" style="width:210px">Bauphase</div><div class="grob-track" style="width:${trackW}px">${headerCols}</div></div>
+      ${rows}
+    </div></div>`);
 }
 function setGrobPhase(pid, vid, feld, val) {
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;

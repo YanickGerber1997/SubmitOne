@@ -838,6 +838,20 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .qv-komm { position: absolute; bottom: 1px; max-width: 160px; background: #fff8e1; border: 1px solid #f0d27a; border-radius: 5px; padding: 1px 6px; font-size: 10px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.12); z-index: 3; }
 .qv-komm:hover { border-color: var(--brand); }
 .qv-komm-d { font-weight: 700; color: #a16207; }
+.qv-shade { position: absolute; top: 0; bottom: 0; z-index: 0; pointer-events: none; }
+.qv-shade.we { background: rgba(15,24,48,.055); }
+.qv-shade.fe { background: rgba(234,122,60,.16); }
+.qv-dcol.fe { background: rgba(234,122,60,.16); color: #b4541e; }
+.qv-clane, .qv-blane { z-index: 1; }
+.qv-row.qv-kwrow { background: var(--surface); font-size: 10.5px; color: var(--text-faint); border-bottom: 1px solid var(--border); }
+.qv-kw { flex: none; text-align: center; padding: 3px 0; border-left: 2px solid var(--border-2); font-weight: 700; }
+/* Mini-Gesamtübersicht mit Ausschnitt */
+.mm-wrap { margin-bottom: 12px; }
+.mm { position: relative; height: 34px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; cursor: pointer; }
+.mm-bar { position: absolute; top: 50%; transform: translateY(-50%); height: 5px; border-radius: 2px; opacity: .55; }
+.mm-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--s-red); }
+.mm-win { position: absolute; top: 0; bottom: 0; background: rgba(15,24,48,.10); border: 2px solid var(--text-soft); border-radius: 4px; }
+.mm-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-soft); margin-top: 3px; }
 .g-bar {
   position: absolute; top: 8px; height: 22px; border-radius: 6px; min-width: 3px;
   display: flex; align-items: center; font-size: 11px; font-weight: 600; color: #fff;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v242';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v243';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1985,7 +1985,7 @@ function actFeinBlock(pid, bid, prefill) {
     <label class="field">Aufgabe / Tätigkeit <input class="input" id="fb_titel" value="${b ? esc(b.titel || '') : ''}" placeholder="z.B. Schalung Decke EG, Lieferung Beton"></label>
     <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px"><input type="checkbox" id="fb_pause"${b && b.pause ? ' checked' : ''}> Pause / Unterbruch</label>
     <label class="field" style="margin-top:8px">Notiz <textarea class="input" id="fb_notiz" rows="2" placeholder="optional">${b ? esc(b.notiz || '') : ''}</textarea></label>
-  `, `${b ? `<button class="btn ghost danger" data-act="fein-rm" data-pid="${pid}" data-bid="${bid}">Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-fein" data-pid="${pid}"${b ? ` data-bid="${bid}"` : ''}>${b ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
+  `, `${b ? `<button class="btn ghost danger" data-act="fein-rm" data-pid="${pid}" data-bid="${bid}">🗑 Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-fein" data-pid="${pid}"${b ? ` data-bid="${bid}"` : ''}>${b ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
   setTimeout(() => $('#fb_titel')?.focus(), 30);
 }
 function saveFeinBlock(pid, bid) {
@@ -2212,7 +2212,7 @@ function actFeinKommentar(pid, vid, oid, datum, kid) {
   openModal(k ? 'Kommentar bearbeiten' : 'Kommentar ab ' + fmtDate(k ? k.datum : datum), `
     <div class="muted" style="font-size:12px;margin-bottom:8px">${esc(wer)} · ab ${esc(fmtDate(k ? k.datum : datum))}</div>
     <label class="field">Anweisung <input class="input" id="qk_text" value="${k ? esc(k.text || '') : ''}" placeholder="z.B. ab hier 2. Etappe, Material liefern, anderer Bereich …"></label>
-  `, `${k ? `<button class="btn ghost danger" data-act="fein-komm-rm" data-pid="${pid}" data-kid="${kid}">Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fein-komm-save" data-pid="${pid}" data-vid="${k ? k.vid : vid}" data-oid="${k ? (k.oid || '') : (oid || '')}" data-datum="${k ? k.datum : datum}"${k ? ` data-kid="${kid}"` : ''}>${k ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
+  `, `${k ? `<button class="btn ghost danger" data-act="fein-komm-rm" data-pid="${pid}" data-kid="${kid}">🗑 Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fein-komm-save" data-pid="${pid}" data-vid="${k ? k.vid : vid}" data-oid="${k ? (k.oid || '') : (oid || '')}" data-datum="${k ? k.datum : datum}"${k ? ` data-kid="${kid}"` : ''}>${k ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
   setTimeout(() => $('#qk_text')?.focus(), 30);
 }
 function saveFeinKommentar(pid, vid, oid, datum, kid) {
@@ -2231,7 +2231,7 @@ function actFeinVorgang(pid, vid, oid) {
       <label class="field">Von <input class="input" type="date" id="o_start" value="${esc(o.start || '')}"></label>
       <label class="field">Bis <input class="input" type="date" id="o_ende" value="${esc(o.ende || '')}"></label>
     </div>
-  `, `<button class="btn ghost danger" data-act="fein-vorgang-rm" data-pid="${pid}" data-vid="${vid}" data-oid="${oid}">Löschen</button><button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fein-vorgang-save" data-pid="${pid}" data-vid="${vid}" data-oid="${oid}">💾 Speichern</button>`);
+  `, `<button class="btn ghost danger" data-act="fein-vorgang-rm" data-pid="${pid}" data-vid="${vid}" data-oid="${oid}">🗑 Löschen</button><button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fein-vorgang-save" data-pid="${pid}" data-vid="${vid}" data-oid="${oid}">💾 Speichern</button>`);
 }
 function saveFeinVorgang(pid, vid, oid) {
   if (gesperrt(pid)) { closeModal(); return; }
@@ -2847,7 +2847,7 @@ function vergabeMenu(e, pid, vid, extraTop, opts) {
 function ganttBarMenu(e, bar) {
   const pid = bar.dataset.pid, vid = bar.dataset.vid, oid = bar.dataset.oid || null;
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
-  if (oid) { openContextMenu(e, [{ icon: '↗', label: 'Gewerk öffnen', act: () => go('#/projekt/' + pid + '/vergabe/' + vid) }, { sep: true }, { icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '✕', label: 'Vorgang löschen', danger: true, act: () => removeVorgang(pid, vid, oid) }]); return; }
+  if (oid) { openContextMenu(e, [{ icon: '↗', label: 'Gewerk öffnen', act: () => go('#/projekt/' + pid + '/vergabe/' + vid) }, { sep: true }, { icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '🗑', label: 'Untertermin löschen', danger: true, act: () => removeVorgang(pid, vid, oid) }]); return; }
   const extras = [{ icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '＋', label: 'Untertermin hinzufügen', act: () => addEmptyVorgangDetail(pid, vid) }];
   if (v.bauStart && v.bauEnde) extras.push({ icon: '✕', label: 'Termin entfernen', danger: true, act: () => clearTermin(pid, vid) });
   vergabeMenu(e, pid, vid, extras, { noDelete: true });   // im Terminprogramm kein Gewerk-Löschen
@@ -3548,7 +3548,7 @@ function actPendenz(pid, itemid) {
     </div>
     <label class="field" style="margin-bottom:4px">Firmen mit Vertrag <span class="muted" style="font-weight:400;font-size:11.5px">– zuweisen für Mail</span></label>
     <div id="pd_firmen" class="pd-firmen">${pendFirmenHtml(firmProj, it && it.firmen)}</div>
-  `, `${it ? `<button class="btn danger" data-act="pend-del" data-pid="${pid}" data-itemid="${itemid}">Löschen</button>` : '<button class="btn ghost" data-close="1">Abbrechen</button>'}<button class="btn" data-act="pend-save" data-pid="${pid || ''}"${it ? ` data-itemid="${itemid}"` : ''}>${it ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
+  `, `${it ? `<button class="btn danger" data-act="pend-del" data-pid="${pid}" data-itemid="${itemid}">🗑 Löschen</button>` : '<button class="btn ghost" data-close="1">Abbrechen</button>'}<button class="btn" data-act="pend-save" data-pid="${pid || ''}"${it ? ` data-itemid="${itemid}"` : ''}>${it ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
   const ps = $('#pd_pid'); if (ps) ps.addEventListener('change', () => { const cont = $('#pd_firmen'); if (cont) cont.innerHTML = pendFirmenHtml(findProjekt(ps.value), []); });
 }
 function savePendenz(pid, itemid) {
@@ -4508,7 +4508,7 @@ function actErinnerung(pid, rid) {
     <label class="field">Unternehmer / Gewerk (optional) <select class="select" id="er_gewerk"><option value="">–</option>${gw.map(v => `<option value="${v.id}"${r && r.vid === v.id ? ' selected' : ''} data-firma="${esc(v.firma || '')}">${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)}${v.firma ? ' · ' + esc(v.firma) : ''}</option>`).join('')}</select></label>
     <label class="field" style="margin-top:8px">Firma (frei) <input class="input" id="er_firma" value="${r ? esc(r.firma || '') : ''}" placeholder="optional, sonst aus Gewerk"></label>
     <label class="field" style="margin-top:8px">Notiz <textarea class="input" id="er_notiz" rows="2" placeholder="optional">${r ? esc(r.notiz || '') : ''}</textarea></label>
-  `, `${r ? `<button class="btn ghost danger" data-act="erinnerung-rm" data-pid="${pid}" data-rid="${rid}">Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="erinnerung-save" data-pid="${pid}"${r ? ` data-rid="${rid}"` : ''}>${r ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
+  `, `${r ? `<button class="btn ghost danger" data-act="erinnerung-rm" data-pid="${pid}" data-rid="${rid}">🗑 Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="erinnerung-save" data-pid="${pid}"${r ? ` data-rid="${rid}"` : ''}>${r ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
   const gsel = $('#er_gewerk'); if (gsel) gsel.addEventListener('change', () => { const o = gsel.options[gsel.selectedIndex]; const f = o ? o.getAttribute('data-firma') : ''; if (f && !$('#er_firma').value) $('#er_firma').value = f; });
 }
 function saveErinnerung(pid, rid) {
@@ -5100,7 +5100,7 @@ function viewProtokolle(pid) {
       const next = rasterDaten(p, todayIso(), addDays(todayIso(), 400), 10);
       const protBy = {}; (p.protokolle || []).forEach(pr => { if (pr.datum) protBy[pr.datum] = pr; });
       return `<div class="card card-pad" style="margin-bottom:14px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap"><b>🗓 ${esc(r.label || 'Sitzung')} · alle ${r.intervallWochen || 1} Wo</b><button class="btn sm ghost" data-act="sr-config" data-pid="${p.id}">Raster bearbeiten</button></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap"><b>🗓 ${esc(r.label || 'Sitzung')} · alle ${r.intervallWochen || 1} Wo</b><button class="btn sm ghost" data-act="sr-config" data-pid="${p.id}">✎ Raster bearbeiten</button></div>
         <div style="display:flex;flex-wrap:wrap;gap:6px">${next.length ? next.map(d => { const pr = protBy[d]; return pr ? `<a class="chip active" href="#/projekt/${p.id}/protokoll/${pr.id}" title="Protokoll öffnen">${fmtDate(d)} ✓</a>` : `<button class="chip" data-act="new-protokoll" data-pid="${p.id}" data-kind="sitzung" data-datum="${d}" title="Protokoll für diesen Termin anlegen">${fmtDate(d)} +</button>`; }).join('') : '<span class="muted" style="font-size:12.5px">Keine kommenden Termine.</span>'}</div>
       </div>`;
     })()}
@@ -5321,7 +5321,7 @@ function actEditProtokoll(pid, prid) {
       <label class="field">Leitung <input class="input" id="pr_leitung" value="${esc(pr.leitung || '')}"></label>
     </div>
     <label class="field">Nächste Sitzung <input class="input" type="date" id="pr_naechste" value="${esc(pr.naechste || '')}"></label>
-  `, `<button class="btn danger" data-act="del-protokoll" data-pid="${pid}" data-prid="${prid}">Löschen</button>
+  `, `<button class="btn danger" data-act="del-protokoll" data-pid="${pid}" data-prid="${prid}">🗑 Löschen</button>
       <div class="spacer"></div>
       <button class="btn ghost" data-close="1">Abbrechen</button>
       <button class="btn" data-act="update-protokoll" data-pid="${pid}" data-prid="${prid}">💾 Speichern</button>`);
@@ -6826,7 +6826,7 @@ function actKalTermin(pid, tid, datum, zeit) {
     </div>
     <label class="field">Ort <input class="input" id="kt_ort" value="${t ? esc(t.ort || '') : ''}" placeholder="z.B. Baustelle / Büro"></label>
     <label class="field">Notiz <textarea class="input" id="kt_notiz" rows="2">${t ? esc(t.notiz || '') : ''}</textarea></label>
-  `, `${t ? `<button class="btn danger" data-act="kal-del" data-pid="${pid}" data-tid="${tid}">Löschen</button>` : '<button class="btn ghost" data-close="1">Abbrechen</button>'}<button class="btn" data-act="kal-save" data-pid="${pid}"${t ? ` data-tid="${tid}"` : ''}>${t ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
+  `, `${t ? `<button class="btn danger" data-act="kal-del" data-pid="${pid}" data-tid="${tid}">🗑 Löschen</button>` : '<button class="btn ghost" data-close="1">Abbrechen</button>'}<button class="btn" data-act="kal-save" data-pid="${pid}"${t ? ` data-tid="${tid}"` : ''}>${t ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
 }
 function saveKalTermin(pid, tid) {
   const p = findProjekt(pid);
@@ -7368,7 +7368,7 @@ function actPlanBlock(bid, datum, zeit, zeitEnde) {
       <label class="field">Von <input class="input" type="time" id="pb_zeit" value="${b ? esc(b.zeit || '') : esc(zeit || '08:00')}"></label>
       <label class="field">Bis <input class="input" type="time" id="pb_ende" value="${b ? esc(b.zeitEnde || '') : esc(zeitEnde || '')}"></label>
     </div>
-  `, `${b ? `<button class="btn danger" data-act="plan-del" data-bid="${bid}">Löschen</button>` : '<button class="btn ghost" data-close="1">Abbrechen</button>'}<button class="btn" data-act="plan-save"${b ? ` data-bid="${bid}"` : ''}>${b ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
+  `, `${b ? `<button class="btn danger" data-act="plan-del" data-bid="${bid}">🗑 Löschen</button>` : '<button class="btn ghost" data-close="1">Abbrechen</button>'}<button class="btn" data-act="plan-save"${b ? ` data-bid="${bid}"` : ''}>${b ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
 }
 function savePlanBlock(bid) {
   const titel = $('#pb_titel').value.trim(); const datum = $('#pb_datum').value;
@@ -9220,7 +9220,7 @@ function viewUwert(pid) {
         <div class="muted" style="font-size:12px;margin:10px 0 6px"><strong>Schichten</strong> – von <b>aussen</b> (oben) nach <b>innen</b> (unten): Material · λ · Dicke (mm)</div>
         ${rows || '<p class="muted" style="font-size:12.5px;padding:4px 0">Noch keine Schichten.</p>'}
         <button class="btn sm secondary" data-act="uw-add" data-pid="${p.id}" type="button" style="margin-top:4px">+ Schicht</button>
-        <div style="margin-top:14px"><button class="btn ghost sm danger" data-act="uw-delbt" data-pid="${p.id}" type="button">Bauteil löschen</button></div>
+        <div style="margin-top:14px"><button class="btn ghost sm danger" data-act="uw-delbt" data-pid="${p.id}" type="button">🗑 Bauteil löschen</button></div>
       </div>
       <div class="card card-pad">
         <h2 style="margin:0 0 12px;font-size:15px">Querschnitt &amp; Ergebnis</h2>
@@ -10034,7 +10034,7 @@ function actEditVergabe(pid, vid) {
     <p class="muted" style="font-size:11.5px;margin:2px 0 0">Gilt für das ganze Gewerk (v.a. Pauschal-Gewerke ohne Einzelpositionen). Positionen mit eigenem Etikett haben Vorrang.</p>` : ''}
     ${bkpKatalogPanel()}
     ${(v.ksPositionen && v.ksPositionen.length) ? '<p class="muted" style="font-size:11.5px;margin:8px 0 0">Hinweis: Die Kostenschätzung wird durch die Positionen im „✎ Kostenschätzung"-Editor überschrieben.</p>' : ''}
-  `, `<button class="btn danger" data-act="rm-vergabe" data-pid="${pid}" data-vid="${vid}">Löschen</button><div class="spacer"></div><button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-vergabe-edit" data-pid="${pid}" data-vid="${vid}">💾 Speichern</button>`);
+  `, `<button class="btn danger" data-act="rm-vergabe" data-pid="${pid}" data-vid="${vid}">🗑 Löschen</button><div class="spacer"></div><button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-vergabe-edit" data-pid="${pid}" data-vid="${vid}">💾 Speichern</button>`);
   const bkpEl = $('#fe_bkp');
   if (bkpEl) bkpEl.addEventListener('change', () => { const { label } = parseBkp(bkpEl.value); const g = $('#fe_gewerk'); if (g && !g.value.trim() && label) g.value = label; });
   wireBkpKatalog('fe_bkp', 'fe_gewerk');
@@ -11050,7 +11050,7 @@ function actKontakt(kid) {
       <div style="display:flex;gap:6px"><input class="input" id="f_web" style="flex:1" value="${val('website')}" placeholder="https://…"><button class="btn secondary sm" type="button" id="f_web_search" title="Website im Web suchen">🔎 suchen</button></div>
     </label>
     <label class="field">Notiz <textarea class="input" id="f_notiz" rows="2">${k ? esc(k.notiz || '') : ''}</textarea></label>
-  `, `${k ? `<button class="btn danger" data-act="rm-kontakt" data-kid="${kid}">Löschen</button><div class="spacer"></div>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-kontakt"${k ? ` data-kid="${kid}"` : ''}>${k ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
+  `, `${k ? `<button class="btn danger" data-act="rm-kontakt" data-kid="${kid}">🗑 Löschen</button><div class="spacer"></div>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-kontakt"${k ? ` data-kid="${kid}"` : ''}>${k ? '💾 Speichern' : '＋ Hinzufügen'}</button>`);
   attachFirmaSuche();
   const wb = $('#f_web_search');
   if (wb) wb.addEventListener('click', () => {

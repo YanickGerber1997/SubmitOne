@@ -932,9 +932,15 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 /* Beschriftung ab Start, läuft über den Balken (dunkel + heller Saum für Lesbarkeit) */
 .g-lbl-over { position: absolute; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 600; color: #1f2937; white-space: nowrap; pointer-events: none; z-index: 5; text-shadow: 0 0 2px rgba(255,255,255,.85), 0 0 2px rgba(255,255,255,.85); }
 .g-lbl-over.sub { font-size: 10px; font-weight: 500; }
-/* Dauer der Arbeiten – mittig auf dem Balken */
-.g-dauer { position: absolute; top: 50%; transform: translate(-50%, -50%); font-size: 10px; font-weight: 700; color: #1f2937; white-space: nowrap; pointer-events: none; z-index: 5; text-shadow: 0 0 2px rgba(255,255,255,.9), 0 0 2px rgba(255,255,255,.9); }
+/* Dauer der Arbeiten – Platzierung innen/oben/unten (horizontal mittig) */
+.g-dauer { position: absolute; transform: translateX(-50%); font-size: 10px; font-weight: 700; color: #1f2937; white-space: nowrap; pointer-events: none; z-index: 5; text-shadow: 0 0 2px rgba(255,255,255,.9), 0 0 2px rgba(255,255,255,.9); }
+.g-dauer.innen { top: 50%; transform: translate(-50%, -50%); }
+.g-dauer.oben { top: 1px; }
+.g-dauer.unten { bottom: 1px; }
 .g-dauer.sub { font-size: 9px; }
+/* Innen-Ausrichtung der Balken-Beschriftung */
+.g-bar.align-mitte .g-lbl { text-align: center; }
+.g-bar.align-rechts .g-lbl { text-align: right; }
 /* Schriftgrösse im Gantt einstellbar (--gfont) – Balken-Labels, Daten, Dauer */
 .gantt .g-bar { font-size: var(--gfont, 11px); }
 .gantt .g-bar.sub { font-size: calc(var(--gfont, 11px) - 1px); }

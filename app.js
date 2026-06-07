@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v220';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v221';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -9667,10 +9667,25 @@ function bestellListeHtml(p) {
 }
 function pdfGantt(pid) {
   const p = findProjekt(pid); if (!p) return;
+  setFeierCtx(p);
+  if (ganttMode === 'grob') return pdfGrobGantt(p);
   const vs = gewerkeSorted(p).filter(v => v.bauStart && v.bauEnde);
   if (!vs.length) { toast('Keine terminierten Gewerke vorhanden', 'info'); return; }
+  // Druckzeilen: jedes Gewerk + seine datierten Untertermine (eingerückt)
+  const items = [];
+  vs.forEach(v => {
+    items.push({ v, sub: false });
+    (v.vorgaenge || []).filter(o => o.start && o.ende).forEach(o => items.push({ v, o, sub: true }));
+  });
   let min = null, max = null;
-  vs.forEach(v => { if (!min || v.bauStart < min) min = v.bauStart; if (!max || v.bauEnde > max) max = v.bauEnde; if (Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); const b = isoOf(d); if (b < min) min = b; } });
+  const ext = iso => { if (!iso) return; if (!min || iso < min) min = iso; if (!max || iso > max) max = iso; };
+  vs.forEach(v => {
+    ext(v.bauStart); ext(v.bauEnde);
+    if (Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); ext(isoOf(d)); }
+    if (Number(v.nachfrist) > 0) ext(addDays(v.bauEnde, Number(v.nachfrist)));
+    if (v.vorab && v.vorab.tageVor != null) ext(addDays(v.bauStart, -Math.abs(Number(v.vorab.tageVor) || 0)));
+    (v.vorgaenge || []).forEach(o => { ext(o.start); ext(o.ende); });
+  });
   const ds = dISO(min), de = dISO(max);
   const rangeStart = new Date(ds.getFullYear(), ds.getMonth(), 1);
   const rangeEnd = new Date(de.getFullYear(), de.getMonth() + 1, 0);
@@ -9678,12 +9693,9 @@ function pdfGantt(pid) {
   const pct = iso => dayDiff(rangeStart, dISO(iso)) / totalDays * 100;
   const wpct = (s, e) => (dayDiff(dISO(s), dISO(e)) + 1) / totalDays * 100;
   const subOn = ganttZoom !== 'monat';
-  const n = vs.length;
-  // Geometrie in mm – passt immer auf EINE A4-Querseite (Breite = %, Höhe gerechnet)
-  const SIDE_MM = 55, HEAD_MM = subOn ? 11 : 7;
-  const rowH = Math.max(3, Math.min(6.6, (152 - HEAD_MM) / n));
-  const barH = Math.max(2, rowH - 1.4);
-  const fs = rowH < 4 ? 6 : rowH < 5.2 ? 7 : 8;
+  // Geometrie in mm – Breite = % (passt immer auf die Seitenbreite), Höhe FEST & lesbar → mehrseitig
+  const SIDE_MM = 58, HEAD_MM = subOn ? 11 : 7;
+  const rowH = 6, barH = 4.2, fs = 8;
 
   // Monats-Band + Gridlines
   const months = []; let cur = new Date(rangeStart);
@@ -9731,17 +9743,39 @@ function pdfGantt(pid) {
   const holMinGap = 1.6 / (281 - SIDE_MM) * 100;   // ~Labelbreite in %, gegen Überlappung
   let lastHolX = -Infinity;
   const holLabels = hols.map(f => { const x = pct(isoOf(f.d)); if (x - lastHolX < holMinGap) return ''; lastHolX = x; return `<div class="pg-hol-lbl" style="left:${x}%"><span>${esc(f.n)}</span></div>`; }).join('');
-  // Projekt-Meilensteine (Baustart / Bezug)
+  // Projekt-Meilensteine (Baustart / Bauende / Bezug – automatisch)
+  const ek = eckDaten(p);
   const pMarks = [];
-  if (p.baustart) pMarks.push({ iso: p.baustart, n: 'Baustart', c: '#16a34a' });
-  if (p.bezug) pMarks.push({ iso: p.bezug, n: 'Bezug', c: '#1f6feb' });
+  if (ek.baustart) pMarks.push({ iso: ek.baustart, n: 'Baustart', c: '#16a34a' });
+  if (ek.bauende) pMarks.push({ iso: ek.bauende, n: 'Bauende', c: '#dc2626' });
+  if (ek.bezug && ek.bezug !== ek.bauende) pMarks.push({ iso: ek.bezug, n: 'Bezug', c: '#1f6feb' });
   const markLines = pMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; }).map(m =>
     `<div class="pg-mark" style="left:${pct(m.iso)}%;background:${m.c}"></div><div class="pg-mark-lbl" style="left:${pct(m.iso)}%"><span style="color:${m.c}">${esc(m.n)} ${fmtDate(m.iso)}</span></div>`).join('');
-  const sideHtml = vs.map(v => `<div class="pg-srow" style="height:${rowH}mm"><b>${esc(v.bkp || '')}</b>&nbsp;${esc(v.gewerk || '')}</div>`).join('');
-  const rowsHtml = vs.map(v => {
-    let bestell = '';
-    if (Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); const bs = isoOf(d); bestell = `<div class="pg-bestell" style="left:${Math.max(0, pct(bs))}%;width:${wpct(bs, v.bauStart)}%;height:${barH}mm"></div>`; }
-    return `<div class="pg-row" style="height:${rowH}mm">${bestell}<div class="pg-bar" style="left:${pct(v.bauStart)}%;width:${wpct(v.bauStart, v.bauEnde)}%;height:${barH}mm;background:${ganttColHex(v)}"></div></div>`;
+  // Pro Druckzeile: Seiten-Label + Balken (Gewerk inkl. Bestellfrist/Nachlauf, oder eingerückter Untertermin)
+  const sideArr = items.map(it => it.sub
+    ? `<div class="pg-srow sub" style="height:${rowH}mm">↳&nbsp;${esc(it.o.titel || '')}</div>`
+    : `<div class="pg-srow" style="height:${rowH}mm"><b>${esc(it.v.bkp || '')}</b>&nbsp;${esc(it.v.gewerk || '')}</div>`);
+  const mainArr = items.map(it => {
+    const v = it.v;
+    if (it.sub) { const o = it.o; return `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar sub" style="left:${pct(o.start)}%;width:${wpct(o.start, o.ende)}%;height:${barH - 1.2}mm;background:${ganttColHex(v)}"></div></div>`; }
+    let pre = '';
+    if (Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); const bs = isoOf(d); pre += `<div class="pg-bestell" style="left:${Math.max(0, pct(bs))}%;width:${wpct(bs, v.bauStart)}%;height:${barH}mm"></div>`; }
+    if (Number(v.nachfrist) > 0) { const ne = addDays(v.bauEnde, Number(v.nachfrist)); pre += `<div class="pg-nach" style="left:${pct(addDays(v.bauEnde, 1))}%;width:${wpct(addDays(v.bauEnde, 1), ne)}%;height:${barH}mm"></div>`; }
+    return `<div class="pg-row" style="height:${rowH}mm">${pre}<div class="pg-bar" style="left:${pct(v.bauStart)}%;width:${wpct(v.bauStart, v.bauEnde)}%;height:${barH}mm;background:${ganttColHex(v)}"></div></div>`;
+  });
+  // Mehrseitig: feste Zeilenhöhe → so viele Zeilen wie auf eine Querseite passen, Achs-Kopf je Seite
+  const usableP1 = 168, usablePn = 188;   // mm nutzbare Höhe (Seite 1 mit Titelblock / Folgeseiten)
+  const rowsP1 = Math.max(1, Math.floor((usableP1 - HEAD_MM) / rowH));
+  const rowsPn = Math.max(1, Math.floor((usablePn - HEAD_MM) / rowH));
+  const chunks = []; let idx = 0;
+  while (idx < items.length) { const take = idx === 0 ? rowsP1 : rowsPn; chunks.push([idx, idx + take]); idx += take; }
+  const deco = `${weBands}${holBands}${gridV}${todayLine}${markLines}`;   // volle Höhe via top/bottom
+  const pagesHtml = chunks.map(([a, b], pi) => {
+    const rows = Math.min(b, items.length) - a, hmm = rows * rowH;
+    return `<div class="pg${pi > 0 ? ' brk' : ''}">
+      <div class="pg-side"><div class="pg-shead">BKP / Gewerk / Untertermin</div>${sideArr.slice(a, b).join('')}</div>
+      <div class="pg-main"><div class="pg-head">${moBand}${subBand}</div><div class="pg-rows" style="height:${hmm}mm">${deco}${mainArr.slice(a, b).join('')}${holLabels}</div></div>
+    </div>`;
   }).join('');
   const legend = GANTT_LEGEND.map(([k, l]) => `<span style="display:inline-block;margin-right:10px"><span style="display:inline-block;width:11px;height:8px;border-radius:2px;background:${GANTT_COLS[k]};vertical-align:middle;margin-right:3px"></span>${l}</span>`).join('');
 
@@ -9769,14 +9803,50 @@ function pdfGantt(pid) {
     .pg-mark-lbl{position:absolute;top:0;bottom:0;z-index:4;}
     .pg-mark-lbl span{position:absolute;top:.3mm;left:.3px;font-size:5.5px;line-height:1;font-weight:700;writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;}
     .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;box-shadow:0 0 0 .3px rgba(0,0,0,.06);}
-    .pg-bestell{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;background:repeating-linear-gradient(45deg,rgba(120,140,170,.18),rgba(120,140,170,.18) 3px,rgba(120,140,170,.32) 3px,rgba(120,140,170,.32) 6px);border:.4px dashed rgba(110,130,160,.6);}`;
-  const inner = `<div class="pg">
-    <div class="pg-side"><div class="pg-shead">BKP / Gewerk</div>${sideHtml}</div>
-    <div class="pg-main"><div class="pg-head">${moBand}${subBand}</div><div class="pg-rows">${weBands}${holBands}${gridV}${todayLine}${markLines}${rowsHtml}${holLabels}</div></div>
-  </div>
-  <div style="margin-top:3mm;font-size:8px;color:#6b7480">${legend}</div>`;
+    .pg-bar.sub{opacity:.8;border-radius:1.5px;}
+    .pg-srow.sub{color:#5b6573;padding-left:5mm;font-size:${fs - 0.5}px;}
+    .pg-bestell{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;background:repeating-linear-gradient(45deg,rgba(120,140,170,.18),rgba(120,140,170,.18) 3px,rgba(120,140,170,.32) 3px,rgba(120,140,170,.32) 6px);border:.4px dashed rgba(110,130,160,.6);}
+    .pg-nach{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;background:repeating-linear-gradient(-45deg,rgba(180,140,90,.18),rgba(180,140,90,.18) 3px,rgba(180,140,90,.34) 3px,rgba(180,140,90,.34) 6px);border:.4px dashed rgba(170,130,80,.6);}
+    .pg{break-inside:avoid;margin-bottom:4mm;} .pg.brk{break-before:page;}`;
+  const inner = `${pagesHtml}
+  <div style="margin-top:3mm;font-size:8px;color:#6b7480">${legend} &nbsp;·&nbsp; <span style="opacity:.8">🟫 Bestellfrist · Nachlauf (schraffiert) · ↳ Untertermin</span></div>`;
   const rasterTxt = ganttZoom === 'tag' ? 'Tage' : ganttZoom === 'woche' ? 'Wochen' : 'Monate';
-  openPrintDoc('Bauprogramm / Terminprogramm', `${esc(p.name)} · ${esc(p.ort)} · ${fmtDate(min)} – ${fmtDate(max)} · Raster ${rasterTxt}`, inner, { landscape: true, extraCss: css });
+  openPrintDoc('Bauprogramm / Terminprogramm', `${esc(p.name)} · ${esc(p.ort)} · ${fmtDate(min)} – ${fmtDate(max)} · Raster ${rasterTxt} · ${items.length} Zeilen`, inner, { landscape: true, extraCss: css });
+}
+// Grobplanung (Phasen) drucken – wenige Zeilen, eine Querseite
+function pdfGrobGantt(p) {
+  const vs = gewerkeSorted(p).filter(v => v.bauStart && v.bauEnde);
+  if (!vs.length) { toast('Keine datierten Gewerke vorhanden', 'info'); return; }
+  const map = {}; vs.forEach(v => { const k = phaseOf(v); (map[k] = map[k] || []).push(v); });
+  const phases = BAU_PHASEN.filter(ph => map[ph.key]).map(ph => { let s = '', e = ''; map[ph.key].forEach(v => { if (!s || v.bauStart < s) s = v.bauStart; if (!e || v.bauEnde > e) e = v.bauEnde; }); return { ph, items: map[ph.key], start: s, ende: e }; });
+  let min = '', max = ''; phases.forEach(x => { if (!min || x.start < min) min = x.start; if (!max || x.ende > max) max = x.ende; });
+  const ds = dISO(min), de = dISO(max);
+  const rangeStart = new Date(ds.getFullYear(), ds.getMonth(), 1), rangeEnd = new Date(de.getFullYear(), de.getMonth() + 1, 0);
+  const totalDays = dayDiff(rangeStart, rangeEnd) + 1;
+  const pct = iso => dayDiff(rangeStart, dISO(iso)) / totalDays * 100;
+  const wpct = (s, e) => (dayDiff(dISO(s), dISO(e)) + 1) / totalDays * 100;
+  const SIDE_MM = 62, HEAD_MM = 7, rowH = 9, barH = 6;
+  const months = []; let cur = new Date(rangeStart);
+  while (cur <= rangeEnd) { const mEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0); const se = mEnd > rangeEnd ? rangeEnd : mEnd; const iso = isoOf(cur); months.push({ l: pct(iso), w: wpct(iso, isoOf(se)), label: MON_KURZ[cur.getMonth()] + ' ' + String(cur.getFullYear()).slice(2) }); cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1); }
+  const gridV = months.map(m => `<div class="pg-grid mo" style="left:${m.l}%"></div>`).join('');
+  const moBand = months.map(m => `<div class="pg-mo" style="left:${m.l}%;width:${m.w}%">${m.label}</div>`).join('');
+  const sideHtml = phases.map(x => `<div class="pg-srow" style="height:${rowH}mm"><b>${esc(x.ph.label)}</b></div>`).join('');
+  const rowsHtml = phases.map(x => `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar" style="left:${pct(x.start)}%;width:${wpct(x.start, x.ende)}%;height:${barH}mm;background:${x.ph.col}"></div></div>`).join('');
+  const css = `@page{size:A4 landscape;margin:8mm;}
+    .lh{padding-bottom:5px;} h1{font-size:14px;margin:5px 0 0;} h1::after{display:none;} .sub{margin:2px 0 6px;font-size:9.5px;} .ft{display:none;}
+    .pg{display:flex;border:1px solid #c9d2de;width:100%;box-sizing:border-box;}
+    .pg-side{flex:none;width:${SIDE_MM}mm;border-right:1px solid #c9d2de;box-sizing:border-box;}
+    .pg-shead{height:${HEAD_MM}mm;display:flex;align-items:flex-end;padding:0 1.5mm 0.5mm;font-weight:700;font-size:8px;border-bottom:1px solid #c9d2de;}
+    .pg-srow{display:flex;align-items:center;padding:0 1.5mm;font-size:9px;border-bottom:1px solid #eef1f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .pg-main{flex:1;position:relative;min-width:0;}
+    .pg-head{position:relative;height:${HEAD_MM}mm;border-bottom:1px solid #c9d2de;}
+    .pg-mo{position:absolute;top:0;height:100%;text-align:center;font-size:8px;font-weight:700;border-left:1px solid #d8dee8;color:#46505e;overflow:hidden;white-space:nowrap;}
+    .pg-rows{position:relative;}
+    .pg-row{position:relative;border-bottom:1px solid #f2f4f8;}
+    .pg-grid{position:absolute;top:0;bottom:0;width:1px;background:#eef1f5;} .pg-grid.mo{background:#cfd7e3;}
+    .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:3px;color:#fff;font-size:8px;font-weight:600;display:flex;align-items:center;padding:0 2mm;overflow:hidden;white-space:nowrap;}`;
+  const inner = `<div class="pg"><div class="pg-side"><div class="pg-shead">Bauphase</div>${sideHtml}</div><div class="pg-main"><div class="pg-head">${moBand}</div><div class="pg-rows">${gridV}${rowsHtml}</div></div></div>`;
+  openPrintDoc('Grobplanung / Bauphasen', `${esc(p.name)} · ${esc(p.ort)} · ${fmtDate(min)} – ${fmtDate(max)}`, inner, { landscape: true, extraCss: css });
 }
 
 function advanceVergabe(pid, vid) {

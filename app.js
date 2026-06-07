@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v219';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v220';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -123,6 +123,8 @@ function updateUndoButtons() {
   if (u) u.disabled = !undoStack.length;
   if (r) { r.disabled = !redoStack.length; r.hidden = !redoStack.length; }
 }
+// Vor Undo/Redo die Gantt-Scrollposition sichern, damit es nicht an den Anfang springt
+function keepGanttScroll() { const gm = document.querySelector('.g-main'); if (gm) ganttPendingScroll = { left: gm.scrollLeft, y: window.scrollY }; }
 function undo() {
   if (!undoStack.length) { toast('Nichts zum Rückgängigmachen', 'info'); return; }
   undoing = true;
@@ -130,6 +132,7 @@ function undo() {
   const prev = undoStack.pop();
   state = JSON.parse(prev); lastSnap = prev; lastSnapAt = Date.now();
   db.commit(); undoing = false;
+  keepGanttScroll();
   updateUndoButtons(); router(); toast('Rückgängig gemacht');
 }
 function redo() {
@@ -139,6 +142,7 @@ function redo() {
   const next = redoStack.pop();
   state = JSON.parse(next); lastSnap = next; lastSnapAt = Date.now();
   db.commit(); undoing = false;
+  keepGanttScroll();
   updateUndoButtons(); router(); toast('Wiederhergestellt');
 }
 function undoKeydown(e) {

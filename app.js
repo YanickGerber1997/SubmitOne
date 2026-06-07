@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v226';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v227';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -9707,47 +9707,35 @@ function pdfGantt(pid, paper) {
   const PD = PAPER[PDkey] || PAPER.A4;
   const pct = iso => dayDiff(rangeStart, dISO(iso)) / totalDays * 100;
   const wpct = (s, e) => (dayDiff(dISO(s), dISO(e)) + 1) / totalDays * 100;
-  const subOn = ganttZoom !== 'monat';
-  // Geometrie in mm – Breite = % (passt immer auf die Seitenbreite), Höhe FEST & lesbar → mehrseitig
-  const SIDE_MM = 58, HEAD_MM = subOn ? 11 : 7;
-  const rowH = 6, barH = 4.2, fs = 8;
+  // Kopf-Bänder: Monat (immer) · KW (Woche/Tag) · Tageszahlen (Tag) – je eigenes Band
+  const bandsN = ganttZoom === 'tag' ? 3 : ganttZoom === 'woche' ? 2 : 1;
+  const HEAD_MM = bandsN === 3 ? 13.5 : bandsN === 2 ? 11 : 7;
+  const bh = HEAD_MM / bandsN, kwY = bh, dayY = 2 * bh;
+  const SIDE_MM = 58, rowH = 6, barH = 4.2, fs = 8;
 
-  // Monats-Band + Gridlines
+  // Monats-Band + Monats-Gridlines (oberstes Band)
   const months = []; let cur = new Date(rangeStart);
   while (cur <= rangeEnd) { const mEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0); const se = mEnd > rangeEnd ? rangeEnd : mEnd; const iso = isoOf(cur); months.push({ l: pct(iso), w: wpct(iso, isoOf(se)), label: MON_KURZ[cur.getMonth()] + ' ' + String(cur.getFullYear()).slice(2) }); cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1); }
   let gridV = months.map(m => `<div class="pg-grid mo" style="left:${m.l}%"></div>`).join('');
-  const moBand = months.map(m => `<div class="pg-mo" style="left:${m.l}%;width:${m.w}%">${m.label}</div>`).join('');
+  const moBand = months.map(m => `<div class="pg-mo" style="left:${m.l}%;width:${m.w}%;top:0;height:${bh}mm">${esc(m.label)}</div>`).join('');
 
-  // Sub-Band (KW oder Tag) + feinere Gridlines
-  let subBand = '', weBands = '';
+  let kwBand = '', dayBand = '', weBands = '';
+  const mondayOfD = d => { const x = new Date(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+  const kwCell = (w, topMm) => { const l = Math.max(0, pct(isoOf(w))); const we = new Date(w); we.setDate(w.getDate() + 6); const se = we > rangeEnd ? rangeEnd : we; const r = Math.min(100, pct(isoOf(se)) + 100 / totalDays); return `<div class="pg-sub" style="left:${l}%;width:${Math.max(0, r - l)}%;top:${topMm}mm;height:${bh}mm">KW&nbsp;${isoWeek(w)}</div>`; };
   if (ganttZoom === 'woche') {
-    let d = new Date(rangeStart); d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    while (d <= rangeEnd) {
-      const iso = isoOf(d < rangeStart ? rangeStart : d); const l = Math.max(0, pct(isoOf(d)));
-      const wEnd = new Date(d); wEnd.setDate(d.getDate() + 6); const se = wEnd > rangeEnd ? rangeEnd : wEnd;
-      const r = Math.min(100, pct(isoOf(se)) + 100 / totalDays);
-      gridV += `<div class="pg-grid wk" style="left:${l}%"></div>`;
-      subBand += `<div class="pg-sub" style="left:${l}%;width:${Math.max(0, r - l)}%">KW&nbsp;${isoWeek(d)}</div>`;
-      d.setDate(d.getDate() + 7);
-    }
+    let w = mondayOfD(rangeStart);
+    while (w <= rangeEnd) { gridV += `<div class="pg-grid wk" style="left:${Math.max(0, pct(isoOf(w)))}%"></div>`; kwBand += kwCell(w, kwY); w.setDate(w.getDate() + 7); }
   } else if (ganttZoom === 'tag') {
-    const dayMm = (PD.w - 16 - SIDE_MM) / totalDays;
-    // Wochen-Gitterlinien (Montag, kräftiger)
-    let wk = new Date(rangeStart); wk.setDate(wk.getDate() - ((wk.getDay() + 6) % 7));
-    while (wk <= rangeEnd) { gridV += `<div class="pg-grid wk" style="left:${Math.max(0, pct(isoOf(wk)))}%"></div>`; wk.setDate(wk.getDate() + 7); }
-    // Tageslinien: in der Tagesansicht IMMER (bis ~800 Tage, sonst zu viele Elemente)
+    // Gitterlinien: Wochen (Montag) + jeder Tag (bis 800), Wochenend-Bänder
+    let wk = mondayOfD(rangeStart);
+    while (wk <= rangeEnd) { gridV += `<div class="pg-grid wk" style="left:${Math.max(0, pct(isoOf(wk)))}%"></div>`; kwBand += kwCell(wk, kwY); wk.setDate(wk.getDate() + 7); }
     if (totalDays <= 800) { let d = new Date(rangeStart); while (d <= rangeEnd) { gridV += `<div class="pg-grid day" style="left:${pct(isoOf(d))}%"></div>`; d.setDate(d.getDate() + 1); } }
-    // Wochenend-Bänder immer
     { let d = new Date(rangeStart); while (d <= rangeEnd) { if (d.getDay() === 0 || d.getDay() === 6) weBands += `<div class="pg-we" style="left:${pct(isoOf(d))}%;width:${100 / totalDays}%"></div>`; d.setDate(d.getDate() + 1); } }
-    // Sub-Band: Tageszahlen wenn breit genug, sonst KW
-    if (dayMm >= 2.6) {
-      let d = new Date(rangeStart);
-      while (d <= rangeEnd) { const we = d.getDay() === 0 || d.getDay() === 6; subBand += `<div class="pg-sub${we ? ' we' : ''}" style="left:${pct(isoOf(d))}%;width:${100 / totalDays}%">${d.getDate()}</div>`; d.setDate(d.getDate() + 1); }
-    } else {
-      let w = new Date(rangeStart); w.setDate(w.getDate() - ((w.getDay() + 6) % 7));
-      while (w <= rangeEnd) { const l = Math.max(0, pct(isoOf(w))); const we2 = new Date(w); we2.setDate(w.getDate() + 6); const se = we2 > rangeEnd ? rangeEnd : we2; const r = Math.min(100, pct(isoOf(se)) + 100 / totalDays); subBand += `<div class="pg-sub" style="left:${l}%;width:${Math.max(0, r - l)}%">KW&nbsp;${isoWeek(w)}</div>`; w.setDate(w.getDate() + 7); }
-    }
+    // Tages-Band: Zahlen 1,2,3 … IMMER (unterstes Band)
+    let d = new Date(rangeStart);
+    while (d <= rangeEnd) { const we = d.getDay() === 0 || d.getDay() === 6; dayBand += `<div class="pg-day${we ? ' we' : ''}" style="left:${pct(isoOf(d))}%;width:${100 / totalDays}%;top:${dayY}mm;height:${bh}mm">${d.getDate()}</div>`; d.setDate(d.getDate() + 1); }
   }
+  const headBands = moBand + kwBand + dayBand;
 
   const t = today();
   const todayLine = (t >= rangeStart && t <= rangeEnd) ? `<div class="pg-today" style="left:${pct(todayIso())}%"></div>` : '';
@@ -9802,7 +9790,7 @@ function pdfGantt(pid, paper) {
     const rows = Math.min(b, items.length) - a, hmm = rows * rowH;
     return `<div class="pg${pi > 0 ? ' brk' : ''}">
       <div class="pg-side"><div class="pg-shead">BKP / Gewerk / Untertermin</div>${sideArr.slice(a, b).join('')}</div>
-      <div class="pg-main"><div class="pg-head">${moBand}${subBand}</div><div class="pg-rows" style="height:${hmm}mm">${deco}${mainArr.slice(a, b).join('')}${linkLayer(a, b)}${holLabels}</div></div>
+      <div class="pg-main"><div class="pg-head">${headBands}</div><div class="pg-rows" style="height:${hmm}mm">${deco}${mainArr.slice(a, b).join('')}${linkLayer(a, b)}${holLabels}</div></div>
     </div>`;
   }).join('');
   const legend = GANTT_LEGEND.map(([k, l]) => `<span style="display:inline-block;margin-right:10px"><span style="display:inline-block;width:11px;height:8px;border-radius:2px;background:${GANTT_COLS[k]};vertical-align:middle;margin-right:3px"></span>${l}</span>`).join('');
@@ -9815,8 +9803,10 @@ function pdfGantt(pid, paper) {
     .pg-srow{display:flex;align-items:center;padding:0 1.5mm;font-size:${fs}px;border-bottom:1px solid #eef1f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box;}
     .pg-main{flex:1;position:relative;min-width:0;}
     .pg-head{position:relative;height:${HEAD_MM}mm;border-bottom:1px solid #c9d2de;box-sizing:border-box;}
-    .pg-mo{position:absolute;top:0;height:${subOn ? '50%' : '100%'};text-align:center;font-size:8px;font-weight:700;border-left:1px solid #d8dee8;color:#46505e;overflow:hidden;white-space:nowrap;}
-    .pg-sub{position:absolute;bottom:0;height:50%;text-align:center;font-size:6.5px;color:#6b7480;border-left:1px solid #eef1f5;overflow:hidden;white-space:nowrap;line-height:1;padding-top:.4mm;box-sizing:border-box;}
+    .pg-mo{position:absolute;text-align:center;font-size:8px;font-weight:700;border-left:1px solid #d8dee8;color:#46505e;overflow:hidden;white-space:nowrap;box-sizing:border-box;display:flex;align-items:center;justify-content:center;}
+    .pg-sub{position:absolute;text-align:center;font-size:6.5px;color:#6b7480;border-left:1px solid #e3e8ef;overflow:hidden;white-space:nowrap;line-height:1;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-top:1px solid #eef1f5;}
+    .pg-day{position:absolute;text-align:center;font-size:5px;color:#7b8492;border-left:1px solid #f1f4f8;overflow:hidden;white-space:nowrap;line-height:1;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-top:1px solid #eef1f5;}
+    .pg-day.we{background:#eef3f9;color:#9aa4b1;}
     .pg-rows{position:relative;}
     .pg-row{position:relative;border-bottom:1px solid #f2f4f8;box-sizing:border-box;}
     .pg-grid{position:absolute;top:0;bottom:0;width:1px;background:#eef1f5;}

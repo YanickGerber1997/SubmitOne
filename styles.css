@@ -773,7 +773,8 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 /* Grosser Outlook-Stil-Button: Symbol gross oben, Text klein unten, höher als breit */
 .g-bigbtn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; width: 76px; height: 80px; flex: none; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); cursor: pointer; color: var(--text); }
 .g-bigbtn:hover { background: var(--brand-soft); border-color: var(--brand); }
-.g-bigbtn .bb-ico { font-size: 34px; line-height: 1; }
+.g-bigbtn .bb-ico { display: flex; align-items: center; justify-content: center; color: var(--brand); }
+.g-bigbtn:hover .bb-ico { color: var(--brand-dark, var(--brand)); }
 .g-bigbtn .bb-lbl { font-size: 12px; font-weight: 600; color: var(--text-soft); }
 .g-head { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); background: var(--surface); }
 /* Mitlaufender Kopf (Overlay) beim Scrollen – nur Anzeige, klickt nicht */

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v253';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v254';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2366,7 +2366,7 @@ function viewTermine(id) {
       ${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}
     </div>
     ${projektTabs(p, 'termine', `${ganttModeToggle(p)}<div class="g-toolbar">
-      <button class="g-bigbtn" data-act="pdf-gantt" data-pid="${p.id}" title="Drucken / PDF – Format automatisch (A4→A3→A2…)"><span class="bb-ico">🖨</span><span class="bb-lbl">Drucken</span></button>
+      <button class="g-bigbtn" data-act="pdf-gantt" data-pid="${p.id}" title="Drucken / PDF – Format automatisch (A4→A3→A2…)"><span class="bb-ico"><svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 8.5V3.5h11v5"/><rect x="3.5" y="8.5" width="17" height="8" rx="1.6"/><path d="M6.5 14.5h11v6h-11z"/><line x1="9" y1="17.5" x2="15" y2="17.5"/><circle cx="17" cy="11.4" r=".9" fill="currentColor" stroke="none"/></svg></span><span class="bb-lbl">Drucken</span></button>
       <span class="g-tb-sep"></span>
       ${sortCtrl}${dateCtrl}
       <span class="g-tb-sep"></span>

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v222';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v223';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -9732,7 +9732,7 @@ function pdfGantt(pid, paper) {
     }
   } else if (ganttZoom === 'tag') {
     // Adaptiv: Tagsspalten-Breite (mm) bestimmt die Detailtiefe, damit nichts „verklebt"
-    const dayMm = (281 - SIDE_MM) / totalDays;
+    const dayMm = (PD.w - 16 - SIDE_MM) / totalDays;
     // Immer nur WOCHEN-Gitterlinien (Montag) – per-Tag-Linien wären bei langem Zeitraum eine graue Wand
     let wk = new Date(rangeStart); wk.setDate(wk.getDate() - ((wk.getDay() + 6) % 7));
     while (wk <= rangeEnd) { gridV += `<div class="pg-grid wk" style="left:${Math.max(0, pct(isoOf(wk)))}%"></div>`; wk.setDate(wk.getDate() + 7); }
@@ -9755,7 +9755,7 @@ function pdfGantt(pid, paper) {
   // Feiertage: Bänder (hinter Balken) + Labels (über Balken)
   const hols = feiertageInRange(rangeStart, rangeEnd);
   const holBands = hols.map(f => `<div class="pg-hol" style="left:${pct(isoOf(f.d))}%;width:${Math.max(100 / totalDays, 0.1)}%"></div>`).join('');
-  const holMinGap = 1.6 / (281 - SIDE_MM) * 100;   // ~Labelbreite in %, gegen Überlappung
+  const holMinGap = 1.6 / (PD.w - 16 - SIDE_MM) * 100;   // ~Labelbreite in %, gegen Überlappung
   let lastHolX = -Infinity;
   const holLabels = hols.map(f => { const x = pct(isoOf(f.d)); if (x - lastHolX < holMinGap) return ''; lastHolX = x; return `<div class="pg-hol-lbl" style="left:${x}%"><span>${esc(f.n)}</span></div>`; }).join('');
   // Projekt-Meilensteine (Baustart / Bauende / Bezug – automatisch)

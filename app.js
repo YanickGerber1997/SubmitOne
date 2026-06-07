@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v235';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v236';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1837,6 +1837,9 @@ function viewGrobGantt(p) {
   const dim = (y, m) => new Date(y, m + 1, 0).getDate();
   const xOf = iso => { const d = dISO(iso); const mi = (d.getFullYear() - y0) * 12 + (d.getMonth() - m0); return mi * colW + (d.getDate() - 1) / dim(d.getFullYear(), d.getMonth()) * colW; };
   const headerCols = months.map(c => `<div class="grob-col${c.jan ? ' yr' : ''}" style="width:${colW}px">${esc(c.label)}</div>`).join('');
+  // Jahres-Band über den Monaten
+  const yearGroupsG = []; months.forEach((c, i) => { const yr = y0 + Math.floor((m0 + i) / 12); const last = yearGroupsG[yearGroupsG.length - 1]; if (last && last.year === yr) last.w += colW; else yearGroupsG.push({ year: yr, w: colW }); });
+  const yearColsG = yearGroupsG.map(g => `<div class="grob-col yrband" style="width:${g.w}px">${g.year}</div>`).join('');
   const rows = phases.map(x => {
     const left = xOf(x.start), w = Math.max(xOf(x.ende) - left, 22);
     return `<div class="grob-row">
@@ -1850,6 +1853,7 @@ function viewGrobGantt(p) {
       <div class="g-zoom" title="Zoom"><button data-act="grob-zoom" data-pid="${p.id}" data-kind="out" title="schmaler">−</button><button data-act="grob-zoom" data-pid="${p.id}" data-kind="reset" style="min-width:46px">${Math.round(grobZoom * 100)}%</button><button data-act="grob-zoom" data-pid="${p.id}" data-kind="in" title="breiter">+</button></div>
     </div>
     <div class="card" style="padding:0;overflow:auto"><div class="grob-wrap" style="min-width:${210 + trackW}px">
+      <div class="grob-row grob-yearrow"><div class="grob-name" style="width:210px"></div><div class="grob-track" style="width:${trackW}px">${yearColsG}</div></div>
       <div class="grob-row grob-headrow"><div class="grob-name" style="width:210px">Bauphase</div><div class="grob-track" style="width:${trackW}px">${headerCols}</div></div>
       ${rows}
     </div></div>`);
@@ -2425,10 +2429,14 @@ function viewTermine(id) {
   let cur = new Date(rangeStart);
   while (cur <= rangeEnd) {
     const mEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
-    months.push({ label: cur.toLocaleDateString('de-CH', { month: 'short' }) + ' ' + String(cur.getFullYear()).slice(2), w: (dayDiff(cur, mEnd) + 1) * pxPerDay });
+    months.push({ label: cur.toLocaleDateString('de-CH', { month: 'short' }) + ' ' + String(cur.getFullYear()).slice(2), w: (dayDiff(cur, mEnd) + 1) * pxPerDay, year: cur.getFullYear() });
     cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
   }
   const monthCells = months.map(m => `<div class="g-cell" style="width:${m.w}px">${m.label}</div>`).join('');
+  // Jahres-Band – nur in der Monatsansicht
+  const yearGroups = []; months.forEach(m => { const last = yearGroups[yearGroups.length - 1]; if (last && last.year === m.year) last.w += m.w; else yearGroups.push({ year: m.year, w: m.w }); });
+  const yearCells = ganttZoom === 'monat' ? yearGroups.map(g => `<div class="g-cell yr" style="width:${g.w}px">${g.year}</div>`).join('') : '';
+  const yearBandH = ganttZoom === 'monat' ? 18 : 0;
 
   // Wochen-Zeile (KW), für Woche- und Tag-Ansicht
   let weekCells = '';
@@ -2507,7 +2515,7 @@ function viewTermine(id) {
   const evLineH = 13, eventBandH = evItems.length ? Math.max(1, rowEnds.length) * evLineH + 5 : 0;
   const evCells = evItems.map(e => `<span class="g-ev ${e.cls}"${e.mark ? ` data-act="eckdaten" data-pid="${p.id}"` : ''} style="left:${e.x}px;top:${e.row * evLineH + 2}px" title="${esc(e.t)}">${esc(e.n)}</span>`).join('');
   const eventBand = eventBandH ? `<div class="g-evband" style="height:${eventBandH}px">${evCells}</div>` : '';
-  const headH = (ganttZoom === 'tag' ? 74 : (subCells ? 56 : 38)) + eventBandH;
+  const headH = (ganttZoom === 'tag' ? 74 : (subCells ? 56 : 38)) + eventBandH + yearBandH;
 
   // Ressourcen-Hinweis (einstellbar): gleiche Firma in Gewerken ohne genügend Abstand
   const rc = p.ressCheck || { aktiv: true, minGap: 0 };
@@ -2644,6 +2652,7 @@ function viewTermine(id) {
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
           ${eventBand}
+          ${yearCells ? `<div class="g-headrow yr">${yearCells}</div>` : ''}
           <div class="g-headrow">${monthCells}</div>
           ${weekCells ? `<div class="g-headrow wk">${weekCells}</div>` : ''}
           ${subCells ? `<div class="g-headrow sub">${subCells}</div>` : ''}

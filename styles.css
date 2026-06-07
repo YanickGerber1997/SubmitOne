@@ -770,6 +770,9 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-headrow { display: flex; flex: 1; align-items: center; }
 .g-headrow.sub { border-top: 1px solid var(--border); }
 .g-headrow.wk { border-top: 1px solid var(--border); }
+.g-headrow.yr { border-bottom: 1px solid var(--border); flex: none; height: 18px; }
+.g-headrow.yr .g-cell { font-size: 11px; font-weight: 800; color: var(--text-soft); letter-spacing: .5px; border-left: 1px solid var(--border-2); background: var(--surface-2); }
+.g-headrow.yr .g-cell.yr { overflow: visible; }
 .g-headrow.wk .g-cell { font-size: 9px; font-weight: 600; color: var(--text-soft); padding: 0 1px; }
 .g-cell { flex: none; border-left: 1px solid var(--border); display: flex; align-items: center; justify-content: center;
           font-size: 11px; font-weight: 600; color: var(--text-soft); white-space: nowrap; overflow: hidden; height: 100%; }
@@ -857,6 +860,9 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .grob-wrap { font-size: 13px; }
 .grob-row { display: flex; align-items: center; border-bottom: 1px solid var(--border); min-height: 40px; }
 .grob-row.grob-headrow { background: var(--surface-2); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; color: var(--text-soft); position: sticky; top: 0; z-index: 2; }
+.grob-row.grob-yearrow { min-height: 22px; background: var(--surface-2); border-bottom: none; }
+.grob-yearrow .grob-track { height: 22px; }
+.grob-col.yrband { display: inline-flex; align-items: center; justify-content: center; height: 22px; box-sizing: border-box; border-left: 1px solid var(--border-2); font-size: 11.5px; font-weight: 800; color: var(--text-soft); letter-spacing: .5px; }
 .grob-name { width: 190px; flex: none; padding: 8px 12px; overflow: hidden; }
 .grob-name .gnm { font-weight: 600; }
 .grob-sels { width: 170px; flex: none; display: flex; align-items: center; gap: 4px; padding: 6px 10px; }

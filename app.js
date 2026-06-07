@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v217';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v218';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -851,15 +851,35 @@ function osterSonntag(y) {
     mo = Math.floor((h + l - 7 * m + 114) / 31), da = ((h + l - 7 * m + 114) % 31) + 1;
   return new Date(y, mo - 1, da);
 }
+const KANTONE = ['ZH', 'BE', 'LU', 'UR', 'SZ', 'OW', 'NW', 'GL', 'ZG', 'FR', 'SO', 'BS', 'BL', 'SH', 'AR', 'AI', 'SG', 'GR', 'AG', 'TG', 'TI', 'VD', 'VS', 'NE', 'GE', 'JU'];
+// Optionale (kantonale) Feiertage – je nach Kanton. e(n)=Ostern+n
+const OPT_FEIERTAGE = [
+  { n: 'Heilige Drei Könige', md: [0, 6], ktn: ['UR', 'SZ', 'TI', 'GR'] },
+  { n: 'Josephstag', md: [2, 19], ktn: ['UR', 'SZ', 'NW', 'TI', 'VS', 'GR'] },
+  { n: 'Tag der Arbeit (1. Mai)', md: [4, 1], ktn: ['ZH', 'BL', 'BS', 'SH', 'TG', 'AG', 'JU', 'NE', 'SO', 'TI'] },
+  { n: 'Fronleichnam', e: 60, ktn: ['LU', 'UR', 'SZ', 'OW', 'NW', 'ZG', 'FR', 'SO', 'AG', 'TI', 'VS', 'JU', 'AI'] },
+  { n: 'Peter und Paul', md: [5, 29], ktn: ['TI'] },
+  { n: 'Mariä Himmelfahrt', md: [7, 15], ktn: ['LU', 'UR', 'SZ', 'OW', 'NW', 'ZG', 'FR', 'SO', 'AI', 'AG', 'TI', 'VS', 'JU'] },
+  { n: 'Bruder Klaus', md: [8, 25], ktn: ['OW'] },
+  { n: 'Allerheiligen', md: [10, 1], ktn: ['LU', 'UR', 'SZ', 'OW', 'NW', 'ZG', 'FR', 'SO', 'AG', 'TI', 'VS', 'JU', 'AI', 'GL', 'SG'] },
+  { n: 'Mariä Empfängnis', md: [11, 8], ktn: ['LU', 'UR', 'SZ', 'OW', 'NW', 'ZG', 'FR', 'TI', 'VS', 'AI', 'AG'] },
+];
+let feierCtx = { kanton: '', brueckenAuffahrt: false, extra: [], aus: [] };   // aktueller Projekt-Kontext für Feiertage
+function setFeierCtx(p) { feierCtx = { kanton: (p && p.kanton) || '', brueckenAuffahrt: !!(p && p.brueckenAuffahrt), extra: (p && p.feiertageExtra) || [], aus: (p && p.feiertageAus) || [] }; }
 function feiertageJahr(y) {
   const o = osterSonntag(y), add = (base, n) => { const x = new Date(base); x.setDate(x.getDate() + n); return x; };
-  return [
+  let list = [
     { d: new Date(y, 0, 1), n: 'Neujahr' }, { d: new Date(y, 0, 2), n: 'Berchtoldstag' },
     { d: add(o, -2), n: 'Karfreitag' }, { d: add(o, 1), n: 'Ostermontag' },
     { d: add(o, 39), n: 'Auffahrt' }, { d: add(o, 50), n: 'Pfingstmontag' },
     { d: new Date(y, 7, 1), n: '1. August' },
     { d: new Date(y, 11, 25), n: 'Weihnachten' }, { d: new Date(y, 11, 26), n: 'Stephanstag' },
   ];
+  if (feierCtx.kanton) OPT_FEIERTAGE.forEach(f => { if (f.ktn.includes(feierCtx.kanton)) list.push({ d: f.e != null ? add(o, f.e) : new Date(y, f.md[0], f.md[1]), n: f.n }); });
+  if (feierCtx.brueckenAuffahrt) list.push({ d: add(o, 40), n: 'Brückentag (Fr nach Auffahrt)' });
+  (feierCtx.extra || []).forEach(x => { if (x && x.datum) { const d = dISO(x.datum); if (d.getFullYear() === y) list.push({ d, n: x.n || 'Frei' }); } });
+  if ((feierCtx.aus || []).length) list = list.filter(f => !feierCtx.aus.includes(f.n));
+  return list;
 }
 function feiertageInRange(start, end) {
   const out = [];
@@ -2266,6 +2286,7 @@ function viewTermine(id) {
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
 
   ganttPid = p.id;
+  setFeierCtx(p);
   const gespr = terminGesperrt(p);
   if (ganttMode === 'grob') return viewGrobGantt(p);
   if (ganttMode === 'fein') return viewFeinGantt(p);
@@ -2304,6 +2325,7 @@ function viewTermine(id) {
       <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
       <button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button>
       <button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">📅 Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button>
+      <button class="btn sm secondary" data-act="feiertage" data-pid="${p.id}" title="Kanton, Brückentage & eigene freie Tage festlegen">🎌 Feiertage${p.kanton ? ' ' + p.kanton : ''}</button>
       <button class="btn sm ${ganttFenster ? '' : 'secondary'}" data-act="gantt-fenster" data-pid="${p.id}" title="Auto-Oberbalken als grosses Fenster über die Unterbalken zeichnen">🪟 Fenster ${ganttFenster ? 'an' : 'aus'}</button>
       ${(p.sitzungsraster && p.sitzungsraster.aktiv) ? `<button class="btn sm ${ganttRaster ? '' : 'secondary'}" data-act="gantt-raster" data-pid="${p.id}" title="Sitzungsraster-Linien ein-/ausblenden">🗓 Sitzungen ${ganttRaster ? 'an' : 'aus'}</button>` : ''}
       <button class="btn sm ${(p.regeln || []).length ? '' : 'secondary'}" data-act="regeln-open" data-pid="${p.id}" title="Feste Regeln/Abhängigkeiten – warnen bei Verstoss (z.B. Gerüst vor Wände)">📐 Regeln${(p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''}</button>
@@ -2778,6 +2800,58 @@ function saveEckdaten(pid) {
   p.bauende = $('#ek_bauende').value || '';
   p.bezug = $('#ek_bezug').value || '';
   save(); closeModal(); rerenderGantt(pid); toast('Eckdaten gespeichert');
+}
+// Feiertage / Arbeitstage je Projekt: Kanton-Auswahl, Brückentage, eigene freie Tage, einzelne abschalten
+function actFeiertage(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  setFeierCtx(p);
+  const y = today().getFullYear();
+  const aus = new Set(p.feiertageAus || []);
+  // Basisliste (ohne aus-Filter) für die Abschalt-Checkboxen
+  const prevAus = feierCtx.aus; feierCtx.aus = [];
+  const liste = feiertageJahr(y).slice().sort((a, b) => a.d - b.d);
+  feierCtx.aus = prevAus;
+  const ktnOpts = ['<option value="">— kein Kanton (nur national) —</option>'].concat(KANTONE.map(k => `<option value="${k}"${p.kanton === k ? ' selected' : ''}>${k}</option>`)).join('');
+  const holRows = liste.map(f => `<label class="regel-row" style="cursor:pointer"><span>${esc(f.n)} <span class="muted">· ${fmtDate(isoOf(f.d))}</span></span><span style="font-size:11.5px;color:${aus.has(f.n) ? 'var(--s-red)' : 'var(--s-green)'}"><input type="checkbox" class="fei-aus" data-n="${esc(f.n)}"${aus.has(f.n) ? '' : ' checked'}> frei</span></label>`).join('');
+  const extraRows = (p.feiertageExtra || []).length ? (p.feiertageExtra || []).map(x => `<div class="regel-row"><span>${esc(x.n || 'Frei')} <span class="muted">· ${fmtDate(x.datum)}</span></span><button class="x-btn" data-act="fei-extra-del" data-pid="${pid}" data-datum="${esc(x.datum)}" title="entfernen">×</button></div>`).join('') : '<span class="muted" style="font-size:12.5px">Keine eigenen freien Tage.</span>';
+  openModal('Feiertage / Arbeitstage', `
+    <p class="muted" style="font-size:12.5px;margin-top:0">Gilt für dieses Projekt (wirkt bei „Arbeitstage an": Wochenende + Feiertage werden übersprungen).</p>
+    <label class="field">Kanton (ergänzt kantonale Feiertage) <select class="select" id="fei_kanton">${ktnOpts}</select></label>
+    <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px"><input type="checkbox" id="fei_brueckeAuffahrt"${p.brueckenAuffahrt ? ' checked' : ''}> Freitag nach Auffahrt frei (Brückentag, jedes Jahr)</label>
+    <div class="section-head" style="margin-top:14px"><h2 style="font-size:14px">Feiertage ${y} (Häkchen = frei)</h2></div>
+    <div style="display:flex;flex-direction:column;gap:5px;max-height:34vh;overflow:auto">${holRows}</div>
+    <div class="section-head" style="margin-top:14px"><h2 style="font-size:14px">Eigene freie Tage / Betriebsferien</h2></div>
+    <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px">${extraRows}</div>
+    <div class="card card-pad" style="background:var(--surface-2)">
+      <div class="form-row" style="align-items:end">
+        <label class="field">Datum <input class="input" type="date" id="fei_xd"></label>
+        <label class="field">Bezeichnung <input class="input" id="fei_xn" placeholder="z.B. Betriebsferien"></label>
+      </div>
+      <button class="btn sm" data-act="fei-extra-add" data-pid="${pid}" style="margin-top:8px">+ freien Tag hinzufügen</button>
+    </div>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fei-save" data-pid="${pid}">Speichern</button>`);
+}
+function saveFeiertage(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  p.kanton = $('#fei_kanton').value || '';
+  p.brueckenAuffahrt = $('#fei_brueckeAuffahrt').checked;
+  const aus = []; $$('.fei-aus').forEach(cb => { if (!cb.checked) aus.push(cb.dataset.n); });
+  p.feiertageAus = aus;
+  save(); closeModal(); setFeierCtx(p); rerenderGantt(pid); toast('Feiertage gespeichert');
+}
+function addFeiertagExtra(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const d = $('#fei_xd').value; if (!d) { toast('Bitte ein Datum wählen', 'info'); return; }
+  // erst aktuelle Kanton/Brücke/aus-Auswahl behalten
+  p.kanton = $('#fei_kanton').value || ''; p.brueckenAuffahrt = $('#fei_brueckeAuffahrt').checked;
+  const aus = []; $$('.fei-aus').forEach(cb => { if (!cb.checked) aus.push(cb.dataset.n); }); p.feiertageAus = aus;
+  p.feiertageExtra = p.feiertageExtra || []; p.feiertageExtra.push({ datum: d, n: ($('#fei_xn').value || '').trim() || 'Frei' });
+  save(); actFeiertage(pid);
+}
+function delFeiertagExtra(pid, datum) {
+  const p = findProjekt(pid); if (!p) return;
+  p.feiertageExtra = (p.feiertageExtra || []).filter(x => x.datum !== datum);
+  save(); actFeiertage(pid);
 }
 /* --- Terminprogramm: Versionierung & Sperre (Abgabe) --- */
 function terminGesperrt(p) { return !!(p && p.terminLocked); }
@@ -6565,6 +6639,7 @@ function sammleTermine(p) {
 
 function viewKalender(pid) {
   const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  setFeierCtx(p);
   const t = today(); const todayI = todayIso();
   if (calY == null) { calY = t.getFullYear(); calM = t.getMonth(); }
   if (calRefIso == null) calRefIso = todayI;
@@ -6814,6 +6889,7 @@ function miniMonths(refIso) {
 function gcalPick(iso) { calRefIso = iso; const d = dISO(iso); calGY = d.getFullYear(); calGM = d.getMonth(); if (calView === 'monat') calView = 'woche'; viewKalenderGlobal(); }
 function gcalMonthNav(delta) { const d = dISO(calRefIso || todayIso()); const nd = new Date(d.getFullYear(), d.getMonth() + delta, Math.min(d.getDate(), 28)); calRefIso = isoOf(nd); calGY = nd.getFullYear(); calGM = nd.getMonth(); viewKalenderGlobal(); }
 function viewKalenderGlobal() {
+  setFeierCtx(null);   // projektübergreifend: nationale Feiertage
   const t = today();
   if (calGY == null) { calGY = t.getFullYear(); calGM = t.getMonth(); }
   if (calRefIso == null) calRefIso = todayIso();
@@ -11191,6 +11267,10 @@ document.addEventListener('click', e => {
     case 'gantt-raster':    ganttRaster = !ganttRaster; rerenderGantt(pid); break;
     case 'eckdaten':        actEckdaten(pid); break;
     case 'eckdaten-save':   saveEckdaten(pid); break;
+    case 'feiertage':       actFeiertage(pid); break;
+    case 'fei-save':        saveFeiertage(pid); break;
+    case 'fei-extra-add':   addFeiertagExtra(pid); break;
+    case 'fei-extra-del':   delFeiertagExtra(pid, act.dataset.datum); break;
     case 'termin-versionen': actTerminVersionen(pid); break;
     case 'tv-abgeben':      terminAbgeben(pid); break;
     case 'tv-neu':          terminNeueVersion(pid); break;

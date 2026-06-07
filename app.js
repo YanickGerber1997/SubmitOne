@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v171';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v172';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1168,11 +1168,12 @@ function projektTabs(p, active, toolbar) {
   const pendBadge = openP ? ` <span class="tab-badge">${openP}</span>` : '';
   const items = [
     { key: 'overview', href: `#/projekt/${p.id}`, label: 'Übersicht' },
+    { key: 'gewerke', href: `#/projekt/${p.id}/gewerke`, label: 'Gewerke' },
     { key: 'kalender', href: `#/projekt/${p.id}/kalender`, label: 'Kalender' },
     { key: 'listen', href: `#/projekt/${p.id}/listen`, label: 'Kontakte' },
     { key: 'kosten', href: `#/projekt/${p.id}/kosten`, label: 'Kosten' },
     { key: 'rechnungen', href: `#/projekt/${p.id}/rechnungen`, label: 'Rechnungskontrolle' },
-    { key: 'termine', href: `#/projekt/${p.id}/termine`, label: 'Termine / Gantt' },
+    { key: 'termine', href: `#/projekt/${p.id}/termine`, label: 'Termine' },
     { key: 'pendenzen', href: `#/projekt/${p.id}/pendenzen`, label: 'Pendenzen' + pendBadge },
     { key: 'dossier', href: `#/projekt/${p.id}/dossier`, label: 'Dossier' + (dossierFehltCount(p) ? ` <span class="tab-badge">${dossierFehltCount(p)}</span>` : '') },
     { key: 'auflagen', href: `#/projekt/${p.id}/auflagen`, label: 'Auflagen' + ((p.auflagen || []).filter(a => a.status !== 'erledigt').length ? ` <span class="tab-badge">${(p.auflagen || []).filter(a => a.status !== 'erledigt').length}</span>` : '') },
@@ -1191,7 +1192,7 @@ function projektTabs(p, active, toolbar) {
   if (sub) sub.innerHTML = `<div class="subnav-title" title="${esc(p.name)}">${esc(p.name)}</div>` +
     items.map(it => `<a class="subnav-link ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('');
   // In-Page-Reiter: häufige primär, Rest unter „Mehr ▾" (kompakt, halbschirm-tauglich)
-  const primary = ['overview', 'kalender', 'listen', 'kosten', 'termine', 'pendenzen'];
+  const primary = ['overview', 'gewerke', 'kalender', 'listen', 'kosten', 'termine'];
   const prim = items.filter(it => primary.includes(it.key));
   const more = items.filter(it => !primary.includes(it.key));
   const moreActive = more.some(it => it.key === active);
@@ -1261,7 +1262,7 @@ function setActiveNav(key) {
 }
 
 let _lastRenderHash = null;
-const SUB_LABELS = { kosten: 'Kosten', termine: 'Termine / Gantt', kalender: 'Kalender', rechnungen: 'Rechnungen', auflagen: 'Auflagen', optionen: 'Optionen', nachtraege: 'Nachträge', solar: 'Solar', uwert: 'U-Wert', zahlungsplan: 'Zahlungsplan', protokolle: 'Protokolle', protokoll: 'Protokoll', pendenzen: 'Pendenzen', dossier: 'Dossier', listen: 'Kontakte', bauherr: 'Eigentümerwünsche', finanz: 'Finanzen', honorar: 'Honorar', vergabe: 'Gewerk' };
+const SUB_LABELS = { gewerke: 'Gewerke', kosten: 'Kosten', termine: 'Termine', kalender: 'Kalender', rechnungen: 'Rechnungen', auflagen: 'Auflagen', optionen: 'Optionen', nachtraege: 'Nachträge', solar: 'Solar', uwert: 'U-Wert', zahlungsplan: 'Zahlungsplan', protokolle: 'Protokolle', protokoll: 'Protokoll', pendenzen: 'Pendenzen', dossier: 'Dossier', listen: 'Kontakte', bauherr: 'Eigentümerwünsche', finanz: 'Finanzen', honorar: 'Honorar', vergabe: 'Gewerk' };
 const ROOT_LABELS = { dashboard: 'Dashboard', projekte: 'Projekte', kalender: 'Kalender', pendenzen: 'Pendenzen', planung: 'Arbeitsplanung', erfassen: 'Erfassen', drucken: 'Drucken', honorar: 'Honorar', kontakte: 'Kontakte', kontakt: 'Kontakt', dokumente: 'Dokumente', einstellungen: 'Einstellungen' };
 // Globaler Kopf: links Vor/Zurück, Kontext-Breadcrumb (Projekt · Kapitel), rechts seitenspezifische Buttons + Undo/Redo
 function topbar(actions) {
@@ -1271,7 +1272,7 @@ function topbar(actions) {
     const pr = findProjekt(a);
     cr.push({ t: 'Projekte', h: '#/projekte' });
     cr.push({ t: pr ? pr.name : 'Projekt', h: '#/projekt/' + a });
-    if (sub === 'vergabe' && b) { const vv = pr && findVergabe(pr, b); cr.push({ t: 'Kosten', h: '#/projekt/' + a + '/kosten' }); cr.push({ t: vv ? ((vv.bkp ? vv.bkp + ' ' : '') + vv.gewerk) : 'Gewerk' }); }
+    if (sub === 'vergabe' && b) { const vv = pr && findVergabe(pr, b); cr.push({ t: 'Gewerke', h: '#/projekt/' + a + '/gewerke' }); cr.push({ t: vv ? ((vv.bkp ? vv.bkp + ' ' : '') + vv.gewerk) : 'Gewerk' }); }
     else if (sub === 'protokoll' && b) { cr.push({ t: 'Protokolle', h: '#/projekt/' + a + '/protokolle' }); cr.push({ t: 'Protokoll' }); }
     else if (sub) cr.push({ t: SUB_LABELS[sub] || sub });
   } else if (root === 'kontakt') {
@@ -1311,6 +1312,7 @@ function router() {
       if (sub === 'vergabe' && b) return viewVergabeDetail(a, b);
       if (sub === 'termine') return viewTermine(a);
       if (sub === 'kalender') return viewKalender(a);
+      if (sub === 'gewerke') return viewGewerke(a);
       if (sub === 'kosten') return viewKosten(a);
       if (sub === 'rechnungen') return viewRechnungen(a);
       if (sub === 'auflagen') return viewAuflagen(a);
@@ -1579,6 +1581,38 @@ function viewProjektDetail(id) {
    10a) View: Kosten / Baukostenübersicht
    --------------------------------------------------------------- */
 
+// Gewerke-Reiter: Heimat der BKP-Detailansichten – Liste aller Gewerke je BKP-Gruppe, Klick öffnet das Detail
+function viewGewerke(pid) {
+  const p = findProjekt(pid);
+  if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  const vs = gewerkeSorted(p);
+  const toolbar = `<button class="btn sm secondary" data-act="pdf-baukosten" data-pid="${p.id}">⬇ Baukostenübersicht</button><button class="btn sm" data-act="new-vergabe" data-pid="${p.id}" style="margin-left:auto">+ Arbeitsbeschrieb</button>`;
+  const head = `
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Gewerke · BKP-Detailansichten – Gewerk anklicken öffnet die Detailansicht</div></div></div>
+    ${projektTabs(p, 'gewerke', toolbar)}`;
+  if (!vs.length) { render(head + emptyState('◫', 'Noch keine Gewerke. Mit „+ Arbeitsbeschrieb" anlegen.')); return; }
+  const groups = {};
+  vs.forEach(v => { const g = String(v.bkp || '0').trim()[0] || '0'; (groups[g] = groups[g] || []).push(v); });
+  let body = '';
+  Object.keys(groups).sort().forEach(g => {
+    body += `<tr class="kgroup"><td>${esc(g)}</td><td colspan="5">${esc(BKP_GRUPPEN[g] || 'Übrige')}</td></tr>`;
+    groups[g].forEach(v => {
+      body += `<tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
+        <td class="bkp-code">${esc(v.bkp)}</td>
+        <td><strong>${esc(v.gewerk)}</strong></td>
+        <td>${v.firma ? `<div class="row-firma">${esc(v.firma)}</div>` : '<span class="muted">noch offen</span>'}</td>
+        <td>${statusPill(v)}${vergabeMarken(v) ? `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${vergabeMarken(v)}</div>` : ''}</td>
+        <td class="num">${isVergeben(v) ? chf(v.betrag) : `<span class="muted">~${chfShort(v.schaetzung)}</span>`}</td>
+        <td style="text-align:center;color:var(--text-faint)">›</td>
+      </tr>`;
+    });
+  });
+  render(head + `
+    <div class="card"><table class="grid">
+      <thead><tr><th style="width:60px">BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Status</th><th class="num">Betrag</th><th style="width:36px"></th></tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>`);
+}
 let kostenBrutto = false;   // Baukostenübersicht: false = netto (exkl. MwSt), true = brutto (inkl.)
 function viewKosten(id) {
   const p = findProjekt(id);

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v271';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v272';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2696,8 +2696,8 @@ function viewTermine(id) {
           ${todayLeft != null ? `<div class="g-today" style="left:${todayLeft}px"></div>` : ''}
           ${markBands}
           ${fensterLayer}
-          ${barRows}
           ${linkSvg}
+          ${barRows}
         </div>
       </div></div>
     </div>

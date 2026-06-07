@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v187';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v188';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1991,7 +1991,8 @@ function viewFeinViertel(p) {
       bar = '';
     }
     bar += hmarks;
-    const gName = `<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;min-width:0"><span class="bkp-code">${esc(v.bkp || '')}</span> <b>${esc(v.firma || v.gewerk)}</b><div class="muted" style="font-size:10.5px">${esc(v.firma ? v.gewerk : 'noch nicht vergeben')}</div></div><button class="x-btn" data-act="fein-add-vorgang" data-pid="${p.id}" data-vid="${v.id}" title="Unterzeile (Untertermin) hinzufügen">＋</button></div>`;
+    const insertStrip = (kind, vid) => `<div class="qv-insert" data-act="fein-insert" data-pid="${p.id}" data-kind="${kind}" data-vid="${vid}" title="Neue ${kind === 'gewerk' ? 'Hauptzeile (Gewerk)' : 'Unterzeile (Untertermin)'} einfügen"><span>+ ${kind === 'gewerk' ? 'Gewerk' : 'Untertermin'}</span></div>`;
+    const gName = `<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;min-width:0"><span class="bkp-code">${esc(v.bkp || '')}</span> <b data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}" style="cursor:pointer" title="Gewerk bearbeiten / umbenennen">${esc(v.firma || v.gewerk)}</b><div class="muted" style="font-size:10.5px">${esc(v.firma ? v.gewerk : 'noch nicht vergeben')}</div></div><button class="x-btn" data-act="fein-add-vorgang" data-pid="${p.id}" data-vid="${v.id}" title="Unterzeile (Untertermin) hinzufügen">＋</button></div>`;
     let out = trackRow(v.id, '', gName, bar, false, !gDated);
     (v.vorgaenge || []).forEach(o => {
       const oDated = o.start && o.ende;
@@ -2002,7 +2003,9 @@ function viewFeinViertel(p) {
         obar = `<div class="qv-bar vg${o.start < von ? ' cutl' : ''}${o.ende > bis ? ' cutr' : ''}" style="left:${x0}px;width:${x1 - x0}px;background:${ganttColHex(v)}" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="${esc(o.titel || '')} · ${esc(fmtDate(o.start))} – ${esc(fmtDate(o.ende))} · Klick = bearbeiten">${esc(o.titel || '')}</div>`;
       }
       out += trackRow(v.id, o.id, `<span class="qv-sub-name" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" style="cursor:pointer" title="Untertermin bearbeiten">↳ ${esc(o.titel || 'Untertermin')}</span>`, obar, true, !oDated);
+      out += insertStrip('vorgang', v.id);
     });
+    out += insertStrip('gewerk', v.id);
     return out;
   }).join('');
   render(head + `
@@ -2065,6 +2068,12 @@ function addEmptyVorgang(pid, vid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
   (v.vorgaenge = v.vorgaenge || []).push({ id: uid('o'), titel: 'Untertermin', start: '', ende: '' });
   save(); viewFeinViertel(p); toast('Unterzeile angelegt – jetzt Balken ziehen oder „↳" zum Benennen');
+}
+function addEmptyGewerk(pid) {
+  const p = findProjekt(pid);
+  p.vergaben = p.vergaben || [];
+  p.vergaben.push({ id: uid('v'), bkp: '', gewerk: 'Neues Gewerk', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 0, frist: '', bauStart: '', bauEnde: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
+  save(); viewFeinViertel(p); toast('Hauptzeile angelegt – Name anklicken zum Benennen, Zeile ziehen zum Datieren');
 }
 // Flache Gesamtübersicht Baustart→Bauende mit markiertem aktuellem 3-Wochen-Ausschnitt
 function feinMiniMap(p, vs, von, bis) {
@@ -10589,6 +10598,7 @@ document.addEventListener('click', e => {
     case 'fein-komm-save': saveFeinKommentar(pid, act.dataset.vid, act.dataset.oid, act.dataset.datum, act.dataset.kid); break;
     case 'fein-komm-rm':   removeFeinKommentar(pid, act.dataset.kid); break;
     case 'fein-add-vorgang': addEmptyVorgang(pid, vid); break;
+    case 'fein-insert':      kind === 'gewerk' ? addEmptyGewerk(pid) : addEmptyVorgang(pid, vid); break;
     case 'fein-vorgang-edit': actFeinVorgang(pid, vid, oid); break;
     case 'fein-vorgang-save': saveFeinVorgang(pid, vid, oid); break;
     case 'fein-vorgang-rm':   removeFeinVorgang(pid, vid, oid); break;

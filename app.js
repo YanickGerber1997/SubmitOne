@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v206';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v207';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -650,6 +650,7 @@ async function startApp() {
   initSidebarCollapse();
   initTooltips();
   document.addEventListener('keydown', planKeydown);
+  document.addEventListener('keydown', ganttKeydown);
   document.addEventListener('mousemove', planDragMove);
   document.addEventListener('mouseup', planDragUp);
   const ver = $('.ver'); if (ver) ver.textContent = 'Prototyp · ' + APP_VERSION;
@@ -2527,8 +2528,10 @@ function viewTermine(id) {
     ${bestellListeHtml(p)}
   `);
 
-  $$('.g-bar').forEach(b => b.addEventListener('mousedown', onBarMouseDown));
+  $$('.g-bar').forEach(b => { b.addEventListener('mousedown', onBarMouseDown); b.addEventListener('dblclick', onGanttBarDbl); });
   $$('.g-row.g-draw').forEach(r => r.addEventListener('mousedown', onGanttDraw));
+  { const gr = document.querySelector('.g-rows'); if (gr) gr.addEventListener('mousedown', e => { if (!e.target.closest('.g-bar') && !e.target.closest('.g-link') && !e.target.closest('.g-bestell')) deselectGanttBar(); }); }
+  if (ganttSel) { const b = document.querySelector(`.g-bar[data-key="${ganttSel}"]`); if (b) b.classList.add('g-sel'); else ganttSel = null; }
   $$('.g-bestell').forEach(b => b.addEventListener('mousedown', onBestellDown));
   $$('.g-link-dot').forEach(d => d.addEventListener('mousedown', onLinkDotDown));
   $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
@@ -2835,6 +2838,7 @@ function onGanttMove(e) {
   d.bar.title = `${fmtDate(s)} – ${fmtDate(en)}`;
 }
 
+let ganttSel = null;   // data-key des aktuell ausgewählten Balkens
 function onGanttUp() {
   const d = ganttDrag; if (!d) return;
   ganttDrag = null;
@@ -2842,9 +2846,26 @@ function onGanttUp() {
   d.bar.classList.remove('dragging');
   if (d.moved && (d.newStart !== d.origStart || d.newEnde !== d.origEnde)) {
     commitBarDates(d.pid, d.vid, d.oid, d.newStart, d.newEnde);
-  } else if (!d.oid) {
-    actEditTermin(d.pid, d.vid); // reiner Klick auf Vergabe-Balken öffnet Dialog
+  } else {
+    selectGanttBar(d.bar);   // reiner Klick = Balken auswählen (bleibt markiert, Ränder sichtbar)
   }
+}
+function selectGanttBar(bar) {
+  document.querySelectorAll('.g-bar.g-sel').forEach(x => x.classList.remove('g-sel'));
+  if (bar) { bar.classList.add('g-sel'); ganttSel = bar.dataset.key; }
+}
+function deselectGanttBar() { document.querySelectorAll('.g-bar.g-sel').forEach(x => x.classList.remove('g-sel')); ganttSel = null; }
+function onGanttBarDbl(e) { const b = e.currentTarget; if (b.dataset.oid) actFeinVorgang(b.dataset.pid, b.dataset.vid, b.dataset.oid); else actEditTermin(b.dataset.pid, b.dataset.vid); }
+function ganttKeydown(e) {
+  if (!ganttSel) return;
+  if (e.target && /^(input|textarea|select)$/i.test(e.target.tagName)) return;
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+  const bar = document.querySelector('.g-bar.g-sel'); if (!bar) { ganttSel = null; return; }   // nicht (mehr) im Gantt
+  e.preventDefault();
+  const pid = bar.dataset.pid, vid = bar.dataset.vid, oid = bar.dataset.oid || null;
+  ganttSel = null;
+  if (oid) { removeVorgang(pid, vid, oid); }
+  else { const p = findProjekt(pid); const v = findVergabe(p, vid); if (v) { v.bauStart = ''; v.bauEnde = ''; save(); rerenderGantt(pid); toast('Termin entfernt – Zeile bleibt (Balken neu zeichnen möglich)', 'info'); } }
 }
 
 // Oberbalken (Gewerk) optional automatisch aus den Unterterminen umspannen (min Start – max Ende)

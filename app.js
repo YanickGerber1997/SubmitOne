@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v183';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v184';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1955,35 +1955,37 @@ function viewFeinViertel(p) {
   let kwCells = '';
   for (let w = 0; w * 7 < FEIN_WIN; w++) { const span = Math.min(7, FEIN_WIN - w * 7); kwCells += `<div class="qv-kw" style="width:${span * dayW}px">KW ${isoWeek(dISO(days[w * 7]))}</div>`; }
   const chipsFor = (vid, oid) => komm.filter(k => k.vid === vid && (k.oid || '') === (oid || '') && days.includes(k.datum)).map(k => `<div class="qv-komm" style="left:${dayIdx(k.datum) * dayW}px" data-act="fein-komm-edit" data-pid="${p.id}" data-kid="${k.id}" title="ab ${esc(fmtDate(k.datum))}: ${esc(k.text)}"><span class="qv-komm-d">${dISO(k.datum).getDate()}.${dISO(k.datum).getMonth() + 1}.</span> ${esc(k.text)}</div>`).join('');
-  const trackRow = (vid, oid, nameHtml, barHtml, sub) => `<div class="qv-row${sub ? ' sub' : ''}" data-pid="${p.id}" data-vid="${vid}">
+  const trackRow = (vid, oid, nameHtml, barHtml, sub, empty) => `<div class="qv-row${sub ? ' sub' : ''}" data-pid="${p.id}" data-vid="${vid}" data-oid="${oid || ''}">
       <div class="qv-name" style="width:${nameW}px">${nameHtml}</div>
       <div class="qv-track" style="width:${trackW}px;--dayw:${dayW}px;--qw:${qW}px">
         ${shadeHtml}
         <div class="qv-clane" data-pid="${p.id}" data-vid="${vid}" data-oid="${oid || ''}" title="Hier oben klicken = Kommentar ab diesem Tag">${chipsFor(vid, oid)}</div>
-        <div class="qv-blane">${barHtml}</div>
+        <div class="qv-blane${empty ? ' empty' : ''}">${barHtml}${empty ? '<span class="qv-draw-hint">ziehen = Balken zeichnen</span>' : ''}</div>
       </div>
     </div>`;
   const rows = vs.map(v => {
+    const gDated = v.bauStart && v.bauEnde;
     let bar;
-    if (v.bauStart && v.bauEnde && v.bauStart <= bis && v.bauEnde >= von) {
+    if (gDated && v.bauStart <= bis && v.bauEnde >= von) {
       const s = v.bauStart < von ? von : v.bauStart, e = v.bauEnde > bis ? bis : v.bauEnde;
       const x0 = dayIdx(s) * dayW, x1 = (dayIdx(e) + 1) * dayW;
       bar = `<div class="qv-bar real${v.bauStart < von ? ' cutl' : ''}${v.bauEnde > bis ? ' cutr' : ''}" style="left:${x0}px;width:${x1 - x0}px;background:${ganttColHex(v)}" data-act="edit-termin" data-pid="${p.id}" data-vid="${v.id}" title="Detailprogramm ${esc(fmtDate(v.bauStart))} – ${esc(fmtDate(v.bauEnde))} · Klick = echte Termine ändern">${esc(v.gewerk)}</div>`;
+    } else if (gDated) {
+      bar = `<div class="qv-noterm" data-act="edit-termin" data-pid="${p.id}" data-vid="${v.id}" title="Termine ändern">ausserhalb des Fensters</div>`;
     } else {
-      bar = `<div class="qv-noterm" data-act="edit-termin" data-pid="${p.id}" data-vid="${v.id}" title="Termine setzen">${v.bauStart || v.bauEnde ? 'ausserhalb des Fensters' : '+ Termin setzen'}</div>`;
+      bar = '';
     }
-    const gName = `<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;min-width:0"><span class="bkp-code">${esc(v.bkp || '')}</span> <b>${esc(v.firma || v.gewerk)}</b><div class="muted" style="font-size:10.5px">${esc(v.firma ? v.gewerk : 'noch nicht vergeben')}</div></div><button class="x-btn" data-act="new-vorgang" data-pid="${p.id}" data-vid="${v.id}" title="Untertermin hinzufügen">＋</button></div>`;
-    let out = trackRow(v.id, '', gName, bar, false);
-    (v.vorgaenge || []).filter(o => o.start && o.ende).forEach(o => {
-      let obar;
-      if (o.start <= bis && o.ende >= von) {
+    const gName = `<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;min-width:0"><span class="bkp-code">${esc(v.bkp || '')}</span> <b>${esc(v.firma || v.gewerk)}</b><div class="muted" style="font-size:10.5px">${esc(v.firma ? v.gewerk : 'noch nicht vergeben')}</div></div><button class="x-btn" data-act="fein-add-vorgang" data-pid="${p.id}" data-vid="${v.id}" title="Unterzeile (Untertermin) hinzufügen">＋</button></div>`;
+    let out = trackRow(v.id, '', gName, bar, false, !gDated);
+    (v.vorgaenge || []).forEach(o => {
+      const oDated = o.start && o.ende;
+      let obar = '';
+      if (oDated && o.start <= bis && o.ende >= von) {
         const s = o.start < von ? von : o.start, e = o.ende > bis ? bis : o.ende;
         const x0 = dayIdx(s) * dayW, x1 = (dayIdx(e) + 1) * dayW;
         obar = `<div class="qv-bar vg${o.start < von ? ' cutl' : ''}${o.ende > bis ? ' cutr' : ''}" style="left:${x0}px;width:${x1 - x0}px;background:${ganttColHex(v)}" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="${esc(o.titel || '')} · ${esc(fmtDate(o.start))} – ${esc(fmtDate(o.ende))} · Klick = bearbeiten">${esc(o.titel || '')}</div>`;
-      } else {
-        obar = '';
       }
-      out += trackRow(v.id, o.id, `<span class="qv-sub-name">↳ ${esc(o.titel || 'Untertermin')}</span>`, obar, true);
+      out += trackRow(v.id, o.id, `<span class="qv-sub-name" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" style="cursor:pointer" title="Untertermin bearbeiten">↳ ${esc(o.titel || 'Untertermin')}</span>`, obar, true, !oDated);
     });
     return out;
   }).join('');
@@ -1992,8 +1994,9 @@ function viewFeinViertel(p) {
       <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="prev">‹ Woche</button>
       <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="today">Heute</button>
       <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="next">Woche ›</button>
-      <span class="muted" style="font-size:12.5px">${esc(fmtDate(von))} – ${esc(fmtDate(bis))}</span>
-      <span class="muted" style="font-size:12px;margin-left:auto"><b>Balken</b> anklicken = echte Termine ändern · <b>oben in die Zeile</b> klicken = Kommentar ab diesem Tag</span>
+      <span class="muted" style="font-size:12.5px">${esc(fmtDate(von))} – ${esc(fmtDate(bis))} · <b>KW ${isoWeek(dISO(von))}–${isoWeek(dISO(bis))}</b></span>
+      <button class="btn sm secondary" data-act="new-vergabe" data-pid="${p.id}">+ Gewerk (Hauptzeile)</button>
+      <span class="muted" style="font-size:12px;margin-left:auto">Leere Zeile <b>ziehen</b> = Balken zeichnen · Balken anklicken = ändern · oben klicken = Kommentar</span>
     </div>
     ${feinMiniMap(p, vs, von, bis)}
     <div class="card" style="padding:0;overflow:auto"><div class="qv-wrap" style="min-width:${nameW + trackW}px">
@@ -2002,7 +2005,39 @@ function viewFeinViertel(p) {
       ${rows}
     </div></div>`);
   $$('.qv-clane').forEach(c => c.addEventListener('click', onKommLane));
+  $$('.qv-blane.empty').forEach(b => b.addEventListener('mousedown', onBlaneDraw));
   const mm = document.querySelector('.mm'); if (mm) mm.addEventListener('click', onFeinMini);
+}
+// Leere Zeile: Balken durch Ziehen zeichnen → setzt die Termine (Gewerk = Detailprogramm, Vorgang = Untertermin)
+function onBlaneDraw(e) {
+  if (e.target.closest('.qv-bar') || e.target.closest('.qv-noterm')) return;
+  const blane = e.currentTarget, row = blane.closest('.qv-row');
+  const pid = row.dataset.pid, vid = row.dataset.vid, oid = row.dataset.oid || '';
+  const rect = blane.getBoundingClientRect(), dayW = _feinQW, maxI = _feinDays.length - 1;
+  const iAt = cx => Math.max(0, Math.min(maxI, Math.floor((cx - rect.left) / dayW)));
+  const start = iAt(e.clientX);
+  const temp = document.createElement('div'); temp.className = 'qv-bar real draft'; blane.appendChild(temp);
+  const upd = cur => { const lo = Math.min(start, cur), hi = Math.max(start, cur); temp.style.left = (lo * dayW) + 'px'; temp.style.width = ((hi - lo + 1) * dayW) + 'px'; };
+  upd(start);
+  const move = ev => upd(iAt(ev.clientX));
+  const up = ev => {
+    document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+    const cur = iAt(ev.clientX), lo = Math.min(start, cur), hi = Math.max(start, cur); temp.remove();
+    setFeinDates(pid, vid, oid, _feinDays[lo], _feinDays[hi]);
+  };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  e.preventDefault();
+}
+function setFeinDates(pid, vid, oid, sd, ed) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  if (oid) { const o = (v.vorgaenge || []).find(x => x.id === oid); if (o) { o.start = sd; o.ende = ed; } }
+  else { v.bauStart = sd; v.bauEnde = ed; }
+  save(); viewFeinViertel(p);
+}
+function addEmptyVorgang(pid, vid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  (v.vorgaenge = v.vorgaenge || []).push({ id: uid('o'), titel: 'Untertermin', start: '', ende: '' });
+  save(); viewFeinViertel(p); toast('Unterzeile angelegt – jetzt Balken ziehen oder „↳" zum Benennen');
 }
 // Flache Gesamtübersicht Baustart→Bauende mit markiertem aktuellem 3-Wochen-Ausschnitt
 function feinMiniMap(p, vs, von, bis) {
@@ -10524,6 +10559,7 @@ document.addEventListener('click', e => {
     case 'fein-komm-edit': actFeinKommentar(pid, null, null, null, act.dataset.kid); break;
     case 'fein-komm-save': saveFeinKommentar(pid, act.dataset.vid, act.dataset.oid, act.dataset.datum, act.dataset.kid); break;
     case 'fein-komm-rm':   removeFeinKommentar(pid, act.dataset.kid); break;
+    case 'fein-add-vorgang': addEmptyVorgang(pid, vid); break;
     case 'fein-vorgang-edit': actFeinVorgang(pid, vid, oid); break;
     case 'fein-vorgang-save': saveFeinVorgang(pid, vid, oid); break;
     case 'fein-vorgang-rm':   removeFeinVorgang(pid, vid, oid); break;

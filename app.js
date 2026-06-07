@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v181';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v182';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1920,6 +1920,15 @@ function viewFeinViertel(p) {
   // Kalenderwochen (je 7 Tage ab Montag)
   let kwCells = '';
   for (let w = 0; w * 7 < FEIN_WIN; w++) { const span = Math.min(7, FEIN_WIN - w * 7); kwCells += `<div class="qv-kw" style="width:${span * dayW}px">KW ${isoWeek(dISO(days[w * 7]))}</div>`; }
+  const chipsFor = (vid, oid) => komm.filter(k => k.vid === vid && (k.oid || '') === (oid || '') && days.includes(k.datum)).map(k => `<div class="qv-komm" style="left:${dayIdx(k.datum) * dayW}px" data-act="fein-komm-edit" data-pid="${p.id}" data-kid="${k.id}" title="ab ${esc(fmtDate(k.datum))}: ${esc(k.text)}"><span class="qv-komm-d">${dISO(k.datum).getDate()}.${dISO(k.datum).getMonth() + 1}.</span> ${esc(k.text)}</div>`).join('');
+  const trackRow = (vid, oid, nameHtml, barHtml, sub) => `<div class="qv-row${sub ? ' sub' : ''}" data-pid="${p.id}" data-vid="${vid}">
+      <div class="qv-name" style="width:${nameW}px">${nameHtml}</div>
+      <div class="qv-track" style="width:${trackW}px;--dayw:${dayW}px;--qw:${qW}px">
+        ${shadeHtml}
+        <div class="qv-clane" data-pid="${p.id}" data-vid="${vid}" data-oid="${oid || ''}" title="Hier oben klicken = Kommentar ab diesem Tag">${chipsFor(vid, oid)}</div>
+        <div class="qv-blane">${barHtml}</div>
+      </div>
+    </div>`;
   const rows = vs.map(v => {
     let bar;
     if (v.bauStart && v.bauEnde && v.bauStart <= bis && v.bauEnde >= von) {
@@ -1929,15 +1938,20 @@ function viewFeinViertel(p) {
     } else {
       bar = `<div class="qv-noterm" data-act="edit-termin" data-pid="${p.id}" data-vid="${v.id}" title="Termine setzen">${v.bauStart || v.bauEnde ? 'ausserhalb des Fensters' : '+ Termin setzen'}</div>`;
     }
-    const chips = komm.filter(k => k.vid === v.id && days.includes(k.datum)).map(k => `<div class="qv-komm" style="left:${dayIdx(k.datum) * dayW}px" data-act="fein-komm-edit" data-pid="${p.id}" data-kid="${k.id}" title="ab ${esc(fmtDate(k.datum))}: ${esc(k.text)}"><span class="qv-komm-d">${dISO(k.datum).getDate()}.${dISO(k.datum).getMonth() + 1}.</span> ${esc(k.text)}</div>`).join('');
-    return `<div class="qv-row" data-pid="${p.id}" data-vid="${v.id}">
-      <div class="qv-name" style="width:${nameW}px"><span class="bkp-code">${esc(v.bkp || '')}</span> <b>${esc(v.firma || v.gewerk)}</b><div class="muted" style="font-size:10.5px">${esc(v.firma ? v.gewerk : 'noch nicht vergeben')}</div></div>
-      <div class="qv-track" style="width:${trackW}px;--dayw:${dayW}px;--qw:${qW}px">
-        ${shadeHtml}
-        <div class="qv-clane" data-pid="${p.id}" data-vid="${v.id}" title="Hier oben klicken = Kommentar ab diesem Tag">${chips}</div>
-        <div class="qv-blane">${bar}</div>
-      </div>
-    </div>`;
+    const gName = `<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;min-width:0"><span class="bkp-code">${esc(v.bkp || '')}</span> <b>${esc(v.firma || v.gewerk)}</b><div class="muted" style="font-size:10.5px">${esc(v.firma ? v.gewerk : 'noch nicht vergeben')}</div></div><button class="x-btn" data-act="new-vorgang" data-pid="${p.id}" data-vid="${v.id}" title="Untertermin hinzufügen">＋</button></div>`;
+    let out = trackRow(v.id, '', gName, bar, false);
+    (v.vorgaenge || []).filter(o => o.start && o.ende).forEach(o => {
+      let obar;
+      if (o.start <= bis && o.ende >= von) {
+        const s = o.start < von ? von : o.start, e = o.ende > bis ? bis : o.ende;
+        const x0 = dayIdx(s) * dayW, x1 = (dayIdx(e) + 1) * dayW;
+        obar = `<div class="qv-bar vg${o.start < von ? ' cutl' : ''}${o.ende > bis ? ' cutr' : ''}" style="left:${x0}px;width:${x1 - x0}px;background:${ganttColHex(v)}" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="${esc(o.titel || '')} · ${esc(fmtDate(o.start))} – ${esc(fmtDate(o.ende))} · Klick = bearbeiten">${esc(o.titel || '')}</div>`;
+      } else {
+        obar = '';
+      }
+      out += trackRow(v.id, o.id, `<span class="qv-sub-name">↳ ${esc(o.titel || 'Untertermin')}</span>`, obar, true);
+    });
+    return out;
   }).join('');
   render(head + `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
@@ -1983,23 +1997,48 @@ function onKommLane(e) {
   if (e.target.closest('.qv-komm')) return;   // vorhandenen Kommentar anklicken → bearbeiten
   const lane = e.currentTarget, rect = lane.getBoundingClientRect();
   const di = Math.max(0, Math.min(_feinDays.length - 1, Math.floor((e.clientX - rect.left) / _feinQW)));
-  actFeinKommentar(lane.dataset.pid, lane.dataset.vid, _feinDays[di]);
+  actFeinKommentar(lane.dataset.pid, lane.dataset.vid, lane.dataset.oid || '', _feinDays[di]);
 }
-function actFeinKommentar(pid, vid, datum, kid) {
+function actFeinKommentar(pid, vid, oid, datum, kid) {
   const p = findProjekt(pid); const k = kid ? (p.feinkommentare || []).find(x => x.id === kid) : null;
   const v = findVergabe(p, k ? k.vid : vid);
+  const og = (k ? k.oid : oid) ? (v && (v.vorgaenge || []).find(x => x.id === (k ? k.oid : oid))) : null;
+  const wer = (og && og.titel) || (v && (v.firma || v.gewerk)) || '';
   openModal(k ? 'Kommentar bearbeiten' : 'Kommentar ab ' + fmtDate(k ? k.datum : datum), `
-    <div class="muted" style="font-size:12px;margin-bottom:8px">${esc((v && (v.firma || v.gewerk)) || '')} · ab ${esc(fmtDate(k ? k.datum : datum))}</div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">${esc(wer)} · ab ${esc(fmtDate(k ? k.datum : datum))}</div>
     <label class="field">Anweisung <input class="input" id="qk_text" value="${k ? esc(k.text || '') : ''}" placeholder="z.B. ab hier 2. Etappe, Material liefern, anderer Bereich …"></label>
-  `, `${k ? `<button class="btn ghost danger" data-act="fein-komm-rm" data-pid="${pid}" data-kid="${kid}">Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fein-komm-save" data-pid="${pid}" data-vid="${k ? k.vid : vid}" data-datum="${k ? k.datum : datum}"${k ? ` data-kid="${kid}"` : ''}>${k ? 'Speichern' : 'Hinzufügen'}</button>`);
+  `, `${k ? `<button class="btn ghost danger" data-act="fein-komm-rm" data-pid="${pid}" data-kid="${kid}">Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fein-komm-save" data-pid="${pid}" data-vid="${k ? k.vid : vid}" data-oid="${k ? (k.oid || '') : (oid || '')}" data-datum="${k ? k.datum : datum}"${k ? ` data-kid="${kid}"` : ''}>${k ? 'Speichern' : 'Hinzufügen'}</button>`);
   setTimeout(() => $('#qk_text')?.focus(), 30);
 }
-function saveFeinKommentar(pid, vid, datum, kid) {
+function saveFeinKommentar(pid, vid, oid, datum, kid) {
   const p = findProjekt(pid); const text = $('#qk_text').value.trim();
   if (!text) { toast('Bitte einen Text eingeben', 'info'); return; }
   p.feinkommentare = p.feinkommentare || [];
   const k = kid ? p.feinkommentare.find(x => x.id === kid) : null;
-  if (k) k.text = text; else p.feinkommentare.push({ id: uid('qk'), vid, datum, text });
+  if (k) k.text = text; else p.feinkommentare.push({ id: uid('qk'), vid, oid: oid || '', datum, text });
+  save(); closeModal(); viewFeinViertel(p);
+}
+function actFeinVorgang(pid, vid, oid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); const o = (v.vorgaenge || []).find(x => x.id === oid); if (!o) return;
+  openModal('Untertermin – ' + (v.gewerk || ''), `
+    <label class="field">Bezeichnung <input class="input" id="o_titel" value="${esc(o.titel || '')}" placeholder="z.B. Bodenplatte, Rohbau EG"></label>
+    <div class="form-row">
+      <label class="field">Von <input class="input" type="date" id="o_start" value="${esc(o.start || '')}"></label>
+      <label class="field">Bis <input class="input" type="date" id="o_ende" value="${esc(o.ende || '')}"></label>
+    </div>
+  `, `<button class="btn ghost danger" data-act="fein-vorgang-rm" data-pid="${pid}" data-vid="${vid}" data-oid="${oid}">Löschen</button><button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fein-vorgang-save" data-pid="${pid}" data-vid="${vid}" data-oid="${oid}">Speichern</button>`);
+}
+function saveFeinVorgang(pid, vid, oid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); const o = (v.vorgaenge || []).find(x => x.id === oid); if (!o) return;
+  const titel = $('#o_titel').value.trim(), s = $('#o_start').value, e = $('#o_ende').value;
+  if (!titel) { toast('Bitte eine Bezeichnung eingeben', 'info'); return; }
+  if (!s || !e) { toast('Bitte Start und Ende setzen', 'info'); return; }
+  if (e < s) { toast('Ende liegt vor dem Start', 'info'); return; }
+  o.titel = titel; o.start = s; o.ende = e;
+  save(); closeModal(); viewFeinViertel(p);
+}
+function removeFeinVorgang(pid, vid, oid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (v) v.vorgaenge = (v.vorgaenge || []).filter(x => x.id !== oid);
   save(); closeModal(); viewFeinViertel(p);
 }
 function removeFeinKommentar(pid, kid) {
@@ -10447,9 +10486,12 @@ document.addEventListener('click', e => {
     case 'fein-rm':      removeFeinBlock(pid, bid); break;
     case 'fein-sub':     feinSub = kind; viewFeinGantt(findProjekt(pid)); break;
     case 'fein-week':    { feinAnchor = kind === 'today' ? null : (() => { const base = feinAnchor || mondayOf(todayIso()); const d = dISO(base); d.setDate(d.getDate() + (kind === 'next' ? 7 : -7)); return isoOf(d); })(); viewFeinGantt(findProjekt(pid)); } break;
-    case 'fein-komm-edit': actFeinKommentar(pid, null, null, act.dataset.kid); break;
-    case 'fein-komm-save': saveFeinKommentar(pid, act.dataset.vid, act.dataset.datum, act.dataset.kid); break;
+    case 'fein-komm-edit': actFeinKommentar(pid, null, null, null, act.dataset.kid); break;
+    case 'fein-komm-save': saveFeinKommentar(pid, act.dataset.vid, act.dataset.oid, act.dataset.datum, act.dataset.kid); break;
     case 'fein-komm-rm':   removeFeinKommentar(pid, act.dataset.kid); break;
+    case 'fein-vorgang-edit': actFeinVorgang(pid, vid, oid); break;
+    case 'fein-vorgang-save': saveFeinVorgang(pid, vid, oid); break;
+    case 'fein-vorgang-rm':   removeFeinVorgang(pid, vid, oid); break;
     case 'erinnerung-add':  actErinnerung(pid); break;
     case 'erinnerung-edit': actErinnerung(pid, rid); break;
     case 'erinnerung-save': saveErinnerung(pid, rid); break;

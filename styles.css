@@ -835,6 +835,14 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .qv-bar.real.cutr { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .qv-bar.real:hover { filter: brightness(1.08); }
 .qv-noterm { position: absolute; top: 50%; transform: translateY(-50%); left: 6px; font-size: 11px; color: var(--text-faint); border: 1px dashed var(--border-2); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+.qv-row.sub { background: rgba(15,24,48,.015); }
+.qv-row.sub .qv-track { height: 40px; }
+.qv-row.sub .qv-name { padding-left: 20px; }
+.qv-sub-name { font-size: 11.5px; color: var(--text-soft); }
+.qv-bar.vg { position: absolute; top: 50%; transform: translateY(-50%); height: 14px; border-radius: 4px; color: #fff; font-size: 9.5px; font-weight: 600; display: flex; align-items: center; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; opacity: .92; box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+.qv-bar.vg.cutl { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.qv-bar.vg.cutr { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.qv-bar.vg:hover { filter: brightness(1.1); }
 .qv-komm { position: absolute; bottom: 1px; max-width: 160px; background: #fff8e1; border: 1px solid #f0d27a; border-radius: 5px; padding: 1px 6px; font-size: 10px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.12); z-index: 3; }
 .qv-komm:hover { border-color: var(--brand); }
 .qv-komm-d { font-weight: 700; color: #a16207; }

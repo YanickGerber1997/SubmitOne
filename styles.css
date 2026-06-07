@@ -791,6 +791,15 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-side-row.sub { padding-left: 14px; background: var(--surface); }
 .g-rownum { flex: none; width: 18px; text-align: right; font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .g-rownum.sub { width: 26px; font-size: 9.5px; }
+.g-side { position: relative; }
+.g-insert { position: absolute; left: 0; right: 0; height: 10px; z-index: 6; cursor: pointer; }
+.g-insert span { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 10px; font-weight: 700; color: #fff; background: var(--brand); border-radius: 9px; padding: 1px 7px; opacity: 0; box-shadow: 0 1px 4px rgba(0,0,0,.25); white-space: nowrap; }
+.g-insert::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: var(--brand); opacity: 0; }
+.g-insert:hover span, .g-insert:hover::before { opacity: 1; }
+.g-row.g-draw { cursor: crosshair; }
+.g-draw-hint { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 10px; color: var(--text-faint); opacity: 0; pointer-events: none; }
+.g-row.g-draw:hover .g-draw-hint { opacity: 1; }
+.g-bar.g-draft { opacity: .5; pointer-events: none; }
 .g-side-row .gewerk { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g-side-row .g-edit { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1; overflow: hidden; }
 .g-si-wrap { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; }

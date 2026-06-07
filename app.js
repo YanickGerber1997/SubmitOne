@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v203';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v204';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2423,7 +2423,7 @@ function viewTermine(id) {
 
   const ROW_H = 38;
   const kontaktByFirma = f => (state.kontakte || []).find(k => k.firma === f);
-  let sideRows = '', barRows = '', rowIdx = 0, gNr = 0; const barMeta = {};
+  let sideRows = '', barRows = '', rowIdx = 0, gNr = 0; const barMeta = {}; const inserts = [];
   vs.forEach(v => {
     recalcAutoBalken(v);   // Oberbalken ggf. aus Unterterminen umspannen
     const colKey = ganttColKey(v), colHex = ganttColHex(v), light = (ganttColorMode === 'status' && colKey === 'hgrau') ? ' g-light' : '';
@@ -2441,7 +2441,7 @@ function viewTermine(id) {
       <span class="g-edit" data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}" title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">
         <span class="bkp-code">${esc(v.bkp)}</span>${ganttSide.gewerk ? ` <span class="gewerk">${esc(v.gewerk)}</span>` : ''}${extra.length ? `<span class="g-si-wrap">${extra.join('<span class="g-si-sep">·</span>')}</span>` : ''}
       </span>
-      ${hatTermin ? `<button class="btn sm ghost add-vg" title="Vorgang hinzufügen" data-act="new-vorgang" data-pid="${p.id}" data-vid="${v.id}">＋</button>` : ''}
+      <button class="btn sm ghost add-vg" title="Untertermin hinzufügen (leer – dann Balken ziehen)" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${v.id}">＋</button>
     </div>`;
     if (hatTermin) {
       barMeta[v.id] = { row: rowIdx, left: leftPx(v.bauStart), width: widthPx(v.bauStart, v.bauEnde) };
@@ -2456,21 +2456,27 @@ function viewTermine(id) {
         data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
         <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
     } else {
-      barRows += `<div class="g-row"><button class="g-set" data-act="edit-termin" data-pid="${p.id}" data-vid="${v.id}">＋ Termin setzen</button></div>`;
+      barRows += `<div class="g-row g-draw" data-pid="${p.id}" data-vid="${v.id}"><span class="g-draw-hint">ziehen = Termin zeichnen · Klick = Dialog</span></div>`;
     }
-    rowIdx++;
-    (v.vorgaenge || []).filter(o => o.start && o.ende).forEach(o => {
-      const key = v.id + '/' + o.id;
-      barMeta[key] = { row: rowIdx, left: leftPx(o.start), width: widthPx(o.start, o.ende) };
-      sideRows += `<div class="g-side-row sub"><span class="g-rownum sub">${gnr}.${++oNr}</span><span class="gewerk" style="font-weight:500">${esc(o.titel)}</span>
-        <button class="x-btn" title="Vorgang löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button></div>`;
-      barRows += `<div class="g-row">${gdLabels(o.start, o.ende, leftPx(o.start), leftPx(o.start) + widthPx(o.start, o.ende))}<div class="g-bar sub${light}" style="left:${leftPx(o.start)}px;width:${widthPx(o.start, o.ende)}px;background:${colHex}"
-        title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
-        data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
-        <span class="g-h l"></span><span class="g-lbl">${esc(o.titel)}</span>${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div></div>`;
-      rowIdx++;
+    rowIdx++; inserts.push({ y: headH + rowIdx * ROW_H, vid: v.id });
+    (v.vorgaenge || []).forEach(o => {
+      const key = v.id + '/' + o.id; const oDated = o.start && o.ende;
+      sideRows += `<div class="g-side-row sub"><span class="g-rownum sub">${gnr}.${++oNr}</span><span class="gewerk" style="font-weight:500;cursor:pointer" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="Untertermin bearbeiten">${esc(o.titel)}</span>
+        <button class="x-btn" title="Untertermin löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button></div>`;
+      if (oDated) {
+        barMeta[key] = { row: rowIdx, left: leftPx(o.start), width: widthPx(o.start, o.ende) };
+        barRows += `<div class="g-row">${gdLabels(o.start, o.ende, leftPx(o.start), leftPx(o.start) + widthPx(o.start, o.ende))}<div class="g-bar sub${light}" style="left:${leftPx(o.start)}px;width:${widthPx(o.start, o.ende)}px;background:${colHex}"
+          title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
+          data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
+          <span class="g-h l"></span><span class="g-lbl">${esc(o.titel)}</span>${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div></div>`;
+      } else {
+        barRows += `<div class="g-row g-draw sub" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}"><span class="g-draw-hint">ziehen = Untertermin zeichnen</span></div>`;
+      }
+      rowIdx++; inserts.push({ y: headH + rowIdx * ROW_H, vid: v.id });
     });
   });
+  // Einfüge-Streifen zwischen den Zeilen (Hover-Plus) – legt eine leere Unterzeile für das Gewerk darüber an
+  const insertStrips = inserts.map(it => `<div class="g-insert" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${it.vid}" style="top:${it.y - 5}px" title="Untertermin einfügen (leer – dann Balken ziehen)"><span>+ Untertermin</span></div>`).join('');
   // Verbindungen (Abhängigkeiten) als SVG-Overlay
   const linkPaths = (p.ganttLinks || []).map(lk => {
     const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
@@ -2493,7 +2499,7 @@ function viewTermine(id) {
   render(head + `
     ${warnBanner}
     <div class="gantt">
-      <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"></div>${sideRows}</div>
+      <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"></div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
           <div class="g-headrow">${monthCells}</div>
@@ -2522,6 +2528,7 @@ function viewTermine(id) {
   `);
 
   $$('.g-bar').forEach(b => b.addEventListener('mousedown', onBarMouseDown));
+  $$('.g-row.g-draw').forEach(r => r.addEventListener('mousedown', onGanttDraw));
   $$('.g-bestell').forEach(b => b.addEventListener('mousedown', onBestellDown));
   $$('.g-link-dot').forEach(d => d.addEventListener('mousedown', onLinkDotDown));
   $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
@@ -2850,6 +2857,30 @@ function recalcAutoBalken(v) {
   v.bauStart = s; v.bauEnde = e; return true;
 }
 function autoSpanned(v) { return v.autoBalken && (v.vorgaenge || []).some(o => o.start && o.ende); }
+// Leere Zeile (Gewerk/Untertermin ohne Datum): Balken durch Ziehen zeichnen statt Dialog
+function onGanttDraw(e) {
+  if (!ganttCtx || e.button !== 0) return;
+  const row = e.currentTarget, pid = row.dataset.pid, vid = row.dataset.vid, oid = row.dataset.oid || null;
+  const rows = row.closest('.g-rows'); if (!rows) return;
+  const px = ganttCtx.pxPerDay;
+  const dayAt = cx => Math.max(0, Math.round((cx - rows.getBoundingClientRect().left) / px));
+  const start = dayAt(e.clientX), startX = e.clientX; let lo = start, hi = start, moved = false;
+  const temp = document.createElement('div'); temp.className = 'g-bar g-draft' + (oid ? ' sub' : ''); row.appendChild(temp);
+  const upd = () => { temp.style.left = (lo * px) + 'px'; temp.style.width = Math.max((hi - lo + 1) * px, 3) + 'px'; };
+  upd();
+  const move = ev => { if (Math.abs(ev.clientX - startX) > 3) moved = true; const cur = dayAt(ev.clientX); lo = Math.min(start, cur); hi = Math.max(start, cur); upd(); };
+  const up = () => {
+    document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); temp.remove();
+    if (!moved) { if (oid) actFeinVorgang(pid, vid, oid); else actEditTermin(pid, vid); return; }
+    commitBarDates(pid, vid, oid, addDays(ganttCtx.rangeStartISO, lo), addDays(ganttCtx.rangeStartISO, hi));
+  };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); e.preventDefault();
+}
+function addEmptyVorgangDetail(pid, vid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  (v.vorgaenge = v.vorgaenge || []).push({ id: uid('o'), titel: 'Untertermin', start: '', ende: '' });
+  save(); rerenderGantt(pid); toast('Unterzeile angelegt – jetzt Balken ziehen', 'info');
+}
 function commitBarDates(pid, vid, oid, s, en) {
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
   if (oid) { const o = (v.vorgaenge || []).find(x => x.id === oid); if (o) { o.start = s; o.ende = en; } recalcAutoBalken(v); }
@@ -10776,6 +10807,7 @@ document.addEventListener('click', e => {
     case 'gantt-color':  ganttColorMode = kind; rerenderGantt(pid); break;
     case 'grob-zoom':    { grobZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.4, +(grobZoom + (kind === 'in' ? 0.2 : -0.2)).toFixed(2))); viewGrobGantt(findProjekt(pid)); } break;
     case 'grob-phase':   actGrobPhase(e, pid, vid); break;
+    case 'gantt-add-vorgang': addEmptyVorgangDetail(pid, vid); break;
     case 'fein-add':     actFeinBlock(pid); break;
     case 'fein-edit':    actFeinBlock(pid, bid); break;
     case 'save-fein':    saveFeinBlock(pid, bid); break;

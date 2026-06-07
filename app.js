@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v184';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v185';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1741,7 +1741,8 @@ const FEIN_H0 = 6, FEIN_H1 = 20;   // Stunden-Achse Feinprogramm (06:00–20:00)
 let feinSub = 'viertel';  // Feinprogramm-Unteransicht: 'viertel' (Detail in Vierteltagen + Zusatzbalken) | 'stunden' (Tagesablauf)
 let feinAnchor = null;    // ISO des Montags der ersten sichtbaren Woche
 let feinDay = null;       // ausgewählter Tag in der Stunden-Tagesansicht
-const FEIN_WIN = 21;      // sichtbare Tage (3 Wochen) im Feinprogramm-Zoom
+let feinWeeks = 4;        // sichtbare Wochen im Vierteltag-Zoom (einstellbar)
+let feinZoom = 1;         // Tagesbreiten-Faktor (Zoom)
 let _feinDays = [], _feinQW = 15;   // Laufzeit-Kontext fürs Zeichnen
 function feinSubToggle(p) {
   return `<div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">
@@ -1938,13 +1939,14 @@ function viewFeinViertel(p) {
     ${feinSubToggle(p)}`;
   const vs = gewerkeSorted(p);
   if (!vs.length) { render(head + emptyState('📐', 'Noch keine Gewerke. Im Tab „Übersicht" anlegen.')); return; }
+  const WIN = feinWeeks * 7;
   const anchor = feinAnchor || mondayOf(todayIso());
   const days = []; const d0 = dISO(anchor);
-  for (let i = 0; i < FEIN_WIN; i++) { const d = new Date(d0); d.setDate(d.getDate() + i); days.push(isoOf(d)); }
-  _feinDays = days; const dayW = 48; _feinQW = dayW;
-  const von = days[0], bis = days[FEIN_WIN - 1], t0 = todayIso();
+  for (let i = 0; i < WIN; i++) { const d = new Date(d0); d.setDate(d.getDate() + i); days.push(isoOf(d)); }
+  _feinDays = days; const dayW = Math.round(48 * feinZoom); _feinQW = dayW;
+  const von = days[0], bis = days[WIN - 1], t0 = todayIso();
   const MON = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-  const nameW = 176, qW = dayW / 4, trackW = FEIN_WIN * dayW;
+  const nameW = 176, qW = dayW / 4, trackW = WIN * dayW;
   const dayIdx = iso => days.indexOf(iso);
   const komm = p.feinkommentare || [];
   const feName = d => { const f = feiertageJahr(d.getFullYear()).find(x => x.d.getMonth() === d.getMonth() && x.d.getDate() === d.getDate()); return f ? f.n : ''; };
@@ -1953,7 +1955,7 @@ function viewFeinViertel(p) {
   const shadeHtml = days.map((iso, i) => { const d = dISO(iso); const wd = (d.getDay() + 6) % 7; const we = wd >= 5; const fe = istFeiertag(d); return (we || fe) ? `<div class="qv-shade ${fe ? 'fe' : 'we'}" style="left:${i * dayW}px;width:${dayW}px"${fe ? ` title="${esc(feName(d))}"` : ''}></div>` : ''; }).join('');
   // Kalenderwochen (je 7 Tage ab Montag)
   let kwCells = '';
-  for (let w = 0; w * 7 < FEIN_WIN; w++) { const span = Math.min(7, FEIN_WIN - w * 7); kwCells += `<div class="qv-kw" style="width:${span * dayW}px">KW ${isoWeek(dISO(days[w * 7]))}</div>`; }
+  for (let w = 0; w * 7 < WIN; w++) { const span = Math.min(7, WIN - w * 7); kwCells += `<div class="qv-kw" style="width:${span * dayW}px">KW ${isoWeek(dISO(days[w * 7]))}</div>`; }
   const chipsFor = (vid, oid) => komm.filter(k => k.vid === vid && (k.oid || '') === (oid || '') && days.includes(k.datum)).map(k => `<div class="qv-komm" style="left:${dayIdx(k.datum) * dayW}px" data-act="fein-komm-edit" data-pid="${p.id}" data-kid="${k.id}" title="ab ${esc(fmtDate(k.datum))}: ${esc(k.text)}"><span class="qv-komm-d">${dISO(k.datum).getDate()}.${dISO(k.datum).getMonth() + 1}.</span> ${esc(k.text)}</div>`).join('');
   const trackRow = (vid, oid, nameHtml, barHtml, sub, empty) => `<div class="qv-row${sub ? ' sub' : ''}" data-pid="${p.id}" data-vid="${vid}" data-oid="${oid || ''}">
       <div class="qv-name" style="width:${nameW}px">${nameHtml}</div>
@@ -1995,7 +1997,9 @@ function viewFeinViertel(p) {
       <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="today">Heute</button>
       <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="next">Woche ›</button>
       <span class="muted" style="font-size:12.5px">${esc(fmtDate(von))} – ${esc(fmtDate(bis))} · <b>KW ${isoWeek(dISO(von))}–${isoWeek(dISO(bis))}</b></span>
-      <button class="btn sm secondary" data-act="new-vergabe" data-pid="${p.id}">+ Gewerk (Hauptzeile)</button>
+      <div class="g-zoom" title="Anzahl Wochen"><button data-act="fein-weeks" data-pid="${p.id}" data-kind="out" title="weniger Wochen">−</button><button data-act="fein-weeks" data-pid="${p.id}" data-kind="reset" style="min-width:52px">${feinWeeks} Wo.</button><button data-act="fein-weeks" data-pid="${p.id}" data-kind="in" title="mehr Wochen">+</button></div>
+      <div class="g-zoom" title="Zoom (Tagesbreite)"><button data-act="fein-zoom" data-pid="${p.id}" data-kind="out" title="schmaler">−</button><button data-act="fein-zoom" data-pid="${p.id}" data-kind="reset" style="min-width:46px">${Math.round(feinZoom * 100)}%</button><button data-act="fein-zoom" data-pid="${p.id}" data-kind="in" title="breiter">+</button></div>
+      <button class="btn sm secondary" data-act="new-vergabe" data-pid="${p.id}">+ Gewerk</button>
       <span class="muted" style="font-size:12px;margin-left:auto">Leere Zeile <b>ziehen</b> = Balken zeichnen · Balken anklicken = ändern · oben klicken = Kommentar</span>
     </div>
     ${feinMiniMap(p, vs, von, bis)}
@@ -10556,6 +10560,8 @@ document.addEventListener('click', e => {
     case 'fein-sub':     feinSub = kind; viewFeinGantt(findProjekt(pid)); break;
     case 'fein-week':    { feinAnchor = kind === 'today' ? null : (() => { const base = feinAnchor || mondayOf(todayIso()); const d = dISO(base); d.setDate(d.getDate() + (kind === 'next' ? 7 : -7)); return isoOf(d); })(); viewFeinGantt(findProjekt(pid)); } break;
     case 'fein-day':     { feinDay = kind === 'today' ? null : (() => { const d = dISO(feinDay || todayIso()); d.setDate(d.getDate() + (kind === 'next' ? 1 : -1)); return isoOf(d); })(); viewFeinStunden(findProjekt(pid)); } break;
+    case 'fein-weeks':   { feinWeeks = kind === 'reset' ? 4 : Math.max(1, Math.min(16, feinWeeks + (kind === 'in' ? 1 : -1))); viewFeinViertel(findProjekt(pid)); } break;
+    case 'fein-zoom':    { feinZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.2, +(feinZoom + (kind === 'in' ? 0.15 : -0.15)).toFixed(2))); viewFeinViertel(findProjekt(pid)); } break;
     case 'fein-komm-edit': actFeinKommentar(pid, null, null, null, act.dataset.kid); break;
     case 'fein-komm-save': saveFeinKommentar(pid, act.dataset.vid, act.dataset.oid, act.dataset.datum, act.dataset.kid); break;
     case 'fein-komm-rm':   removeFeinKommentar(pid, act.dataset.kid); break;

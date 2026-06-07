@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v233';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v234';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -124,7 +124,7 @@ function updateUndoButtons() {
   if (r) { r.disabled = !redoStack.length; r.hidden = !redoStack.length; }
 }
 // Vor Undo/Redo die Gantt-Scrollposition sichern, damit es nicht an den Anfang springt
-function keepGanttScroll() { const gm = document.querySelector('.gantt'); if (gm) ganttPendingScroll = { left: gm.scrollLeft, top: gm.scrollTop }; }
+function keepGanttScroll() { const gm = document.querySelector('.g-main'); if (gm) ganttPendingScroll = { left: gm.scrollLeft, y: window.scrollY }; }
 function undo() {
   if (!undoStack.length) { toast('Nichts zum Rückgängigmachen', 'info'); return; }
   undoing = true;
@@ -2256,11 +2256,41 @@ function gdLabels(startIso, endIso, x0, x1, endShift) {
 // Passt das Balken-Label in den Balken? sonst rechts daneben anzeigen
 function barLabelFits(text, wpx) { return wpx >= String(text || '').length * 6.4 + 18; }
 function barLabelW(text) { return String(text || '').length * 6.4 + 8; }
+// Mitlaufender Gantt-Kopf: fixes Overlay des Monats-/KW-Kopfes beim Scrollen (kein eigener Scrollbalken)
+let _gshRefs = null, _gshBound = false;
+function _gshUpdate() {
+  const R = _gshRefs; if (!R || !R.ov) return;
+  const gantt = document.querySelector('.gantt');
+  if (!gantt || !document.body.contains(gantt)) { R.ov.style.display = 'none'; return; }
+  const st = document.querySelector('.proj-sticky');
+  const top = st ? Math.max(0, st.getBoundingClientRect().bottom) : 0;
+  const r = gantt.getBoundingClientRect(), headH = R.head.offsetHeight;
+  if (r.top < top - 1 && r.bottom > top + headH) {
+    R.ov.style.display = 'flex'; R.ov.style.top = top + 'px'; R.ov.style.left = r.left + 'px'; R.ov.style.width = r.width + 'px';
+    R.hInner.style.transform = 'translateX(' + (-R.gMain.scrollLeft) + 'px)';
+  } else R.ov.style.display = 'none';
+}
+function setupGanttStickyHead() {
+  const gantt = document.querySelector('.gantt'); let ov = document.getElementById('ganttStickyHead');
+  if (!gantt) { if (ov) ov.style.display = 'none'; return; }
+  const side = gantt.querySelector('.g-side'), head = gantt.querySelector('.g-head'), corner = gantt.querySelector('.g-corner'), gMain = gantt.querySelector('.g-main'), inner = gantt.querySelector('.g-inner');
+  if (!side || !head || !corner || !gMain || !inner) return;
+  if (!ov) { ov = document.createElement('div'); ov.id = 'ganttStickyHead'; ov.className = 'gantt-stickyhead'; document.body.appendChild(ov); }
+  ov.innerHTML = ''; ov.style.display = 'none';
+  const cWrap = document.createElement('div'); cWrap.className = 'gsh-side'; cWrap.style.width = side.offsetWidth + 'px'; cWrap.appendChild(corner.cloneNode(true));
+  const hWrap = document.createElement('div'); hWrap.className = 'gsh-main';
+  const hInner = document.createElement('div'); hInner.className = 'gsh-inner'; hInner.style.width = inner.offsetWidth + 'px'; hInner.appendChild(head.cloneNode(true));
+  hWrap.appendChild(hInner); ov.appendChild(cWrap); ov.appendChild(hWrap);
+  _gshRefs = { head, gMain, hInner, ov };
+  gMain.addEventListener('scroll', () => { if (ov.style.display !== 'none') hInner.style.transform = 'translateX(' + (-gMain.scrollLeft) + 'px)'; }, { passive: true });
+  if (!_gshBound) { _gshBound = true; window.addEventListener('scroll', _gshUpdate, { passive: true }); window.addEventListener('resize', _gshUpdate); }
+  _gshUpdate();
+}
 let ganttPendingScroll = null;  // {left, y} – nach In-Place-Rerender wiederherstellen
 // Gantt neu zeichnen ohne Scroll-Sprung (Seite + horizontaler Scroll bleiben)
 function rerenderGantt(pid) {
-  const gm = document.querySelector('.gantt');
-  ganttPendingScroll = { left: gm ? gm.scrollLeft : 0, top: gm ? gm.scrollTop : 0 };
+  const gm = document.querySelector('.g-main');
+  ganttPendingScroll = { left: gm ? gm.scrollLeft : 0, y: window.scrollY };
   viewTermine(pid);
 }
 let ganttSort = 'bkp';     // 'bkp' | 'start'
@@ -2652,24 +2682,26 @@ function viewTermine(id) {
   // Scroll nach In-Place-Rerender wiederherstellen (kein Sprung beim Resizen/Zoomen)
   if (ganttPendingScroll) {
     const ps = ganttPendingScroll; ganttPendingScroll = null;
-    const gm0 = document.querySelector('.gantt'); if (gm0) { gm0.scrollLeft = ps.left; if (ps.top != null) gm0.scrollTop = ps.top; }
+    const gm0 = document.querySelector('.g-main'); if (gm0) gm0.scrollLeft = ps.left;
+    if (ps.y != null) window.scrollTo(0, ps.y);
   }
-  // Cursor-Zoom: Strg + Mausrad zoomt dorthin, wo der Zeiger steht (Zeitbereich beginnt nach der Gewerk-Spalte)
-  const gMain = document.querySelector('.gantt');
+  // Cursor-Zoom: Strg + Mausrad zoomt dorthin, wo der Zeiger steht
+  const gMain = document.querySelector('.g-main');
   if (gMain) gMain.addEventListener('wheel', e => {
     if (!e.ctrlKey) return;
     e.preventDefault();
     const rect = gMain.getBoundingClientRect();
-    const viewX = e.clientX - rect.left - sideW;   // x im Zeitbereich
+    const viewX = e.clientX - rect.left;
     const dayAtCursor = (gMain.scrollLeft + viewX) / pxPerDay;
     const ns = Math.min(4, Math.max(0.1, +(ganttScale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)).toFixed(3)));
     if (ns === ganttScale) return;
     ganttScale = ns;
-    keepGanttScroll();
     viewTermine(p.id);
-    const g2 = document.querySelector('.gantt');
+    const g2 = document.querySelector('.g-main');
     if (g2) g2.scrollLeft = dayAtCursor * (ZOOM[ganttZoom].px * ganttScale) - viewX;
   }, { passive: false });
+  // Mitlaufender Kopf: beim Scrollen bleibt die Monats-/KW-Zeile oben sichtbar (Overlay, kein eigener Scrollbalken)
+  setupGanttStickyHead();
 }
 /* --- Gantt: Verbindungen (Abhängigkeiten) --- */
 let ganttLink = null, ganttGrip = null;

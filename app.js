@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v229';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v230';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2566,16 +2566,23 @@ function viewTermine(id) {
   // Einfüge-Streifen zwischen den Zeilen (Hover-Plus) – legt eine leere Unterzeile für das Gewerk darüber an
   const insertStrips = gespr ? '' : inserts.map(it => `<div class="g-insert" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${it.vid}" style="top:${it.y - 5}px" title="Untertermin einfügen (leer – dann Balken ziehen)"><span>+ Untertermin</span></div>`).join('');
   // Verbindungen (Abhängigkeiten) als SVG-Overlay
+  const linkVerts = [];   // belegte vertikale Spuren {x,y0,y1} – gegen Überlagerung
   const linkPaths = (p.ganttLinks || []).map(lk => {
     const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
-    const ax = a.left + a.width, ay = a.row * ROW_H + 19, bx = b.left, by = b.row * ROW_H + 19;
-    const mx = bx + (lk.dx != null ? lk.dx : -16);
+    const hh = ROW_H / 2;
+    const ax = a.left + a.width, ay = a.row * ROW_H + hh, bx = b.left, by = b.row * ROW_H + hh;
+    let mx = bx + (lk.dx != null ? lk.dx : -16);
+    if (lk.dx == null) {   // automatische Spur: nach links ausweichen, bis frei
+      const y0 = Math.min(ay, by), y1 = Math.max(ay, by); let guard = 0;
+      while (linkVerts.some(pp => Math.abs(pp.x - mx) < 7 && !(y1 < pp.y0 - 1 || y0 > pp.y1 + 1)) && guard++ < 50) mx -= 7;
+      linkVerts.push({ x: mx, y0, y1 });
+    }
     const d = `M ${ax} ${ay} H ${mx} V ${by} H ${bx}`;
-    return `<g class="g-link" data-lid="${lk.id}">
+    return `<g class="g-link${ganttLinkSel === lk.id ? ' g-sel' : ''}" data-lid="${lk.id}">
       <path class="g-link-hit" d="${d}"></path>
       <path class="g-link-line" d="${d}"></path>
-      <path class="g-link-arrow" d="M ${bx - 7} ${by - 4} L ${bx} ${by} L ${bx - 7} ${by + 4} Z"></path>
-      <rect class="g-link-grip" data-lid="${lk.id}" data-ax="${ax}" data-ay="${ay}" data-bx="${bx}" data-by="${by}" x="${mx - 4}" y="${(ay + by) / 2 - 7}" width="8" height="14"></rect>
+      <path class="g-link-arrow" d="M ${bx - 6} ${by - 3.5} L ${bx} ${by} L ${bx - 6} ${by + 3.5} Z"></path>
+      <rect class="g-link-grip" data-lid="${lk.id}" data-ax="${ax}" data-ay="${ay}" data-bx="${bx}" data-by="${by}" x="${mx - 3}" y="${(ay + by) / 2 - 6}" width="6" height="12"></rect>
     </g>`;
   }).join('');
   const linkSvg = `<svg class="g-links" width="${innerW}" height="${rowIdx * ROW_H}">${linkPaths}</svg>`;
@@ -2620,12 +2627,12 @@ function viewTermine(id) {
   if (!gespr) {
     $$('.g-bar').forEach(b => { b.addEventListener('mousedown', onBarMouseDown); b.addEventListener('dblclick', onGanttBarDbl); });
     $$('.g-row.g-draw').forEach(r => r.addEventListener('mousedown', onGanttDraw));
-    { const gr = document.querySelector('.g-rows'); if (gr) gr.addEventListener('mousedown', e => { if (!e.target.closest('.g-bar') && !e.target.closest('.g-link') && !e.target.closest('.g-bestell')) deselectGanttBar(); }); }
+    { const gr = document.querySelector('.g-rows'); if (gr) gr.addEventListener('mousedown', e => { if (!e.target.closest('.g-bar') && !e.target.closest('.g-link') && !e.target.closest('.g-bestell')) { deselectGanttBar(); deselectGanttLink(); } }); }
     if (ganttSel) { const b = document.querySelector(`.g-bar[data-key="${ganttSel}"]`); if (b) b.classList.add('g-sel'); else ganttSel = null; }
     $$('.g-bestell').forEach(b => b.addEventListener('mousedown', onBestellDown));
     $$('.g-link-dot').forEach(d => d.addEventListener('mousedown', onLinkDotDown));
     $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
-    $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) removeGanttLink(ganttPid, g.dataset.lid); }));
+    $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) selectGanttLink(g.dataset.lid); }));
     $$('.g-link').forEach(g => g.addEventListener('contextmenu', e => { e.preventDefault(); linkMenu(e, ganttPid, g.dataset.lid); }));
   } else {
     $$('.g-bar').forEach(b => b.classList.add('g-locked'));
@@ -3141,16 +3148,30 @@ function onGanttUp() {
     selectGanttBar(d.bar);   // reiner Klick = Balken auswählen (bleibt markiert, Ränder sichtbar)
   }
 }
+let ganttLinkSel = null;   // lid der ausgewählten Verbindung
 function selectGanttBar(bar) {
   document.querySelectorAll('.g-bar.g-sel').forEach(x => x.classList.remove('g-sel'));
+  deselectGanttLink();
   if (bar) { bar.classList.add('g-sel'); ganttSel = bar.dataset.key; }
 }
 function deselectGanttBar() { document.querySelectorAll('.g-bar.g-sel').forEach(x => x.classList.remove('g-sel')); ganttSel = null; }
+function selectGanttLink(lid) {
+  document.querySelectorAll('.g-bar.g-sel').forEach(x => x.classList.remove('g-sel')); ganttSel = null;
+  document.querySelectorAll('.g-link.g-sel').forEach(x => x.classList.remove('g-sel'));
+  const g = document.querySelector(`.g-link[data-lid="${lid}"]`); if (g) { g.classList.add('g-sel'); ganttLinkSel = lid; }
+}
+function deselectGanttLink() { document.querySelectorAll('.g-link.g-sel').forEach(x => x.classList.remove('g-sel')); ganttLinkSel = null; }
 function onGanttBarDbl(e) { const b = e.currentTarget; if (b.dataset.oid) actFeinVorgang(b.dataset.pid, b.dataset.vid, b.dataset.oid); else actEditTermin(b.dataset.pid, b.dataset.vid); }
 function ganttKeydown(e) {
-  if (!ganttSel) return;
+  if (!ganttSel && !ganttLinkSel) return;
   if (e.target && /^(input|textarea|select)$/i.test(e.target.tagName)) return;
   if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+  if (ganttLinkSel) {   // ausgewählte Verbindung löschen
+    const g = document.querySelector('.g-link.g-sel'); const lid = ganttLinkSel; ganttLinkSel = null;
+    if (!g) return; e.preventDefault();
+    if (gesperrt(ganttPid)) return;
+    removeGanttLink(ganttPid, lid); return;
+  }
   const bar = document.querySelector('.g-bar.g-sel'); if (!bar) { ganttSel = null; return; }   // nicht (mehr) im Gantt
   e.preventDefault();
   const pid = bar.dataset.pid, vid = bar.dataset.vid, oid = bar.dataset.oid || null;
@@ -9778,14 +9799,21 @@ function pdfGantt(pid, paper) {
   });
   // Verbindungslinien (Abhängigkeiten) – nur innerhalb derselben Seite gezeichnet
   const links = (p.ganttLinks || []).map(l => { const f = geoByKey[l.from], t = geoByKey[l.to]; return (f && t) ? { f, t } : null; }).filter(Boolean);
-  const linkLayer = (a, b) => links.filter(L => L.f.row >= a && L.f.row < b && L.t.row >= a && L.t.row < b).map(L => {
-    const y1 = (L.f.row - a + 0.5) * rowH, y2 = (L.t.row - a + 0.5) * rowH;
-    const x1 = L.f.x1, x2 = L.t.x0; const lo = Math.min(x1, x2), w = Math.abs(x2 - x1);
-    const v1 = `<div class="pg-lk h" style="left:${lo}%;width:${w}%;top:${y1}mm"></div>`;
-    const v2 = `<div class="pg-lk v" style="left:${x2}%;top:${Math.min(y1, y2)}mm;height:${Math.abs(y2 - y1)}mm"></div>`;
-    const ar = `<div class="pg-lk a" style="left:${x2}%;top:${y2}mm"></div>`;
-    return v1 + v2 + ar;
-  }).join('');
+  const linkLayer = (a, b) => {
+    const placed = [], gap = Math.max(0.45, 100 / totalDays);   // Spur-Abstand in %
+    return links.filter(L => L.f.row >= a && L.f.row < b && L.t.row >= a && L.t.row < b).map(L => {
+      const y1 = (L.f.row - a + 0.5) * rowH, y2 = (L.t.row - a + 0.5) * rowH;
+      const x1 = L.f.x1, tx = L.t.x0; let mx = tx - gap * 1.2;   // Knie vor dem Ziel
+      const ylo = Math.min(y1, y2), yhi = Math.max(y1, y2); let guard = 0;
+      while (placed.some(pp => Math.abs(pp.x - mx) < gap && !(yhi < pp.y0 - 0.4 || ylo > pp.y1 + 0.4)) && guard++ < 60) mx -= gap;
+      placed.push({ x: mx, y0: ylo, y1: yhi });
+      const seg1 = `<div class="pg-lk h" style="left:${Math.min(x1, mx)}%;width:${Math.abs(mx - x1)}%;top:${y1}mm"></div>`;
+      const segV = `<div class="pg-lk v" style="left:${mx}%;top:${ylo}mm;height:${yhi - ylo}mm"></div>`;
+      const seg2 = `<div class="pg-lk h" style="left:${Math.min(mx, tx)}%;width:${Math.abs(tx - mx)}%;top:${y2}mm"></div>`;
+      const ar = `<div class="pg-lk a" style="left:${tx}%;top:${y2}mm"></div>`;
+      return seg1 + segV + seg2 + ar;
+    }).join('');
+  };
   // Mehrseitig: feste Zeilenhöhe → so viele Zeilen wie aufs gewählte Format passen, Achs-Kopf je Seite
   const pageH = PD.h - 16;
   const rowsP1 = Math.max(1, Math.floor((pageH - 22 - HEAD_MM) / rowH));

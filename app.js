@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v266';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v267';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2643,11 +2643,11 @@ function viewTermine(id) {
     const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
     const hh = Math.round(ROW_H / 2);
     const ax = Math.round(a.left + a.width), ay = a.row * ROW_H + hh, bx = Math.round(b.left), by = b.row * ROW_H + hh;
-    const dxV = Math.abs(by - ay) * 0.55 + 16;   // Schwung-Stärke (an die Höhe gekoppelt → flacher rein/raus)
-    const gap = bx - ax;                          // horizontaler Abstand Vorgänger-Ende → Ziel-Start
-    // bei Ziel rechts und nah: Tangente begrenzen, damit die Kurve nicht in den Ziel-Balken bauscht; bei Überlappung (gap<=0) voller Bogen
-    const dx = gap > 0 ? Math.min(dxV, Math.max(8, gap - 4)) : dxV;
-    const d = `M ${ax} ${ay} C ${Math.round(ax + dx)} ${ay} ${Math.round(bx - dx)} ${by} ${bx} ${by}`;
+    // erst ein Stück gerade vom Balken weg (Austritts-Stub), dann kräftiger Bogen; Eintritt sauber von links vorne
+    const sout = 14, sx = ax + sout;
+    const dx1 = Math.abs(by - ay) * 0.5 + 24;                          // kräftiger Austritts-Bogen
+    const dx2 = Math.max(16, Math.min(dx1, (bx - ax) * 0.5 + 18));      // Eintritts-Tangente von links (kein Überschiessen)
+    const d = `M ${ax} ${ay} L ${sx} ${ay} C ${Math.round(sx + dx1)} ${ay} ${Math.round(bx - dx2)} ${by} ${bx} ${by}`;
     return `<g class="g-link${ganttLinkSel === lk.id ? ' g-sel' : ''}" data-lid="${lk.id}">
       <path class="g-link-hit" d="${d}"></path>
       <path class="g-link-line" d="${d}"></path>

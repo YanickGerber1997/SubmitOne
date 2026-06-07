@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v224';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v225';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -9671,7 +9671,7 @@ const PAPER_LADDER = ['A4', 'A3', 'A2', 'A1', 'A0'];
 // Automatisch das kleinste Format, das die ganze Zeitachse in der aktuellen Ansicht lesbar fasst
 function autoPaperFor(zoom, totalDays, sideMm) {
   let needW;
-  if (zoom === 'tag') needW = sideMm + totalDays * 3.4;          // ~Tageszahlen lesbar
+  if (zoom === 'tag') needW = sideMm + totalDays * 3.0;          // ~Tageszahlen lesbar (sonst KW + Tageslinien)
   else if (zoom === 'woche') needW = sideMm + Math.ceil(totalDays / 7) * 4;
   else needW = sideMm + (totalDays / 30.4) * 8;                   // Monate
   for (const k of PAPER_LADDER) { if (PAPER[k].w - 16 >= needW) return k; }
@@ -9731,17 +9731,16 @@ function pdfGantt(pid, paper) {
       d.setDate(d.getDate() + 7);
     }
   } else if (ganttZoom === 'tag') {
-    // Adaptiv: Tagsspalten-Breite (mm) bestimmt die Detailtiefe, damit nichts „verklebt"
     const dayMm = (PD.w - 16 - SIDE_MM) / totalDays;
-    // Immer nur WOCHEN-Gitterlinien (Montag) – per-Tag-Linien wären bei langem Zeitraum eine graue Wand
+    // Wochen-Gitterlinien (Montag, kräftiger)
     let wk = new Date(rangeStart); wk.setDate(wk.getDate() - ((wk.getDay() + 6) % 7));
     while (wk <= rangeEnd) { gridV += `<div class="pg-grid wk" style="left:${Math.max(0, pct(isoOf(wk)))}%"></div>`; wk.setDate(wk.getDate() + 7); }
-    // Feine Tageslinien nur, wenn Spalten breit genug
-    if (dayMm >= 4) { let d = new Date(rangeStart); while (d <= rangeEnd) { gridV += `<div class="pg-grid day" style="left:${pct(isoOf(d))}%"></div>`; d.setDate(d.getDate() + 1); } }
-    // Wochenend-Bänder nur, wenn sie als Block sichtbar (sonst zu fein)
-    if (dayMm >= 1.0) { let d = new Date(rangeStart); while (d <= rangeEnd) { if (d.getDay() === 0 || d.getDay() === 6) weBands += `<div class="pg-we" style="left:${pct(isoOf(d))}%;width:${100 / totalDays}%"></div>`; d.setDate(d.getDate() + 1); } }
-    // Sub-Band: Tageszahlen nur bei genügend Breite, sonst KW
-    if (dayMm >= 3) {
+    // Tageslinien: in der Tagesansicht IMMER (bis ~800 Tage, sonst zu viele Elemente)
+    if (totalDays <= 800) { let d = new Date(rangeStart); while (d <= rangeEnd) { gridV += `<div class="pg-grid day" style="left:${pct(isoOf(d))}%"></div>`; d.setDate(d.getDate() + 1); } }
+    // Wochenend-Bänder immer
+    { let d = new Date(rangeStart); while (d <= rangeEnd) { if (d.getDay() === 0 || d.getDay() === 6) weBands += `<div class="pg-we" style="left:${pct(isoOf(d))}%;width:${100 / totalDays}%"></div>`; d.setDate(d.getDate() + 1); } }
+    // Sub-Band: Tageszahlen wenn breit genug, sonst KW
+    if (dayMm >= 2.6) {
       let d = new Date(rangeStart);
       while (d <= rangeEnd) { const we = d.getDay() === 0 || d.getDay() === 6; subBand += `<div class="pg-sub${we ? ' we' : ''}" style="left:${pct(isoOf(d))}%;width:${100 / totalDays}%">${d.getDate()}</div>`; d.setDate(d.getDate() + 1); }
     } else {
@@ -9821,7 +9820,7 @@ function pdfGantt(pid, paper) {
     .pg-rows{position:relative;}
     .pg-row{position:relative;border-bottom:1px solid #f2f4f8;box-sizing:border-box;}
     .pg-grid{position:absolute;top:0;bottom:0;width:1px;background:#eef1f5;}
-    .pg-grid.mo{background:#cfd7e3;} .pg-grid.wk{background:#e3e8ef;} .pg-grid.day{background:#f1f4f8;}
+    .pg-grid.mo{background:#cfd7e3;} .pg-grid.wk{background:#dde3ec;} .pg-grid.day{background:#eaeff6;}
     .pg-we{position:absolute;top:0;bottom:0;background:#eaf0f7;}
     .pg-sub.we{background:#e7edf5;color:#9aa4b1;}
     .pg-today{position:absolute;top:0;bottom:0;width:1.2px;background:#dc2626;z-index:2;}

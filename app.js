@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v211';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v212';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2467,12 +2467,23 @@ function viewTermine(id) {
         const bl = leftPx(bsISO), bw = Math.max(leftPx(v.bauStart) - bl, 3);
         bestellBar = `<div class="g-bestell" data-pid="${p.id}" data-vid="${v.id}" data-ctx="gantt" data-right="${leftPx(v.bauStart)}" style="left:${bl}px;width:${bw}px" title="Bestellfrist ${v.bestellfrist} Tage – bestellen bis ${fmtDate(bsISO)}, Einbau ab ${fmtDate(v.bauStart)} · ziehen = Vorlauf ändern · Klick = bearbeiten · Rechtsklick = Menü"><span>🛒 ${v.bestellfrist}T</span></div>`;
       }
+      let nachBar = '';   // Nachlauf nach dem Balken (z.B. Austrocknung Unterlagsboden)
+      if (Number(v.nachfrist) > 0) {
+        const nl = leftPx(addDays(v.bauEnde, 1)), nw = Math.max(widthPx(addDays(v.bauEnde, 1), addDays(v.bauEnde, Number(v.nachfrist))), 3);
+        nachBar = `<div class="g-nach" style="left:${nl}px;width:${nw}px" title="${esc(v.nachfristLabel || 'Nachlauf')} ${v.nachfrist} Tage nach ${fmtDate(v.bauEnde)} (z.B. Austrocknung) – frei erst ab ${fmtDate(addDays(v.bauEnde, Number(v.nachfrist)))}"><span>⏳ ${esc(v.nachfristLabel || '')} ${v.nachfrist}T</span></div>`;
+      }
+      let vorabM = '';   // Vorab-Termin mit Unternehmer (Begehung/Startsitzung X Tage vor Start)
+      if (v.vorab && v.vorab.tageVor != null) {
+        const vd = addDays(v.bauStart, -Math.abs(Number(v.vorab.tageVor) || 0));
+        vorabM = `<div class="g-vorab" style="left:${leftPx(vd)}px" title="${esc(v.vorab.label || 'Vorab-Termin')} mit ${esc(v.firma || 'Unternehmer')} – ${fmtDate(vd)} (${v.vorab.tageVor} Tage vor Ausführungsbeginn)">📌<span class="g-vorab-lbl">${esc(v.vorab.label || 'Vorab')}</span></div>`;
+      }
+      const preBars = bestellBar + nachBar + vorabM;
       barMeta[v.id] = { row: rowIdx, left: leftPx(v.bauStart), width: widthPx(v.bauStart, v.bauEnde) };
       if (fenster) {
         // Gewerk-Zeile bleibt leer – das grosse Fenster (unten) repräsentiert den Oberbalken
-        barRows += `<div class="g-row">${bestellBar}</div>`;
+        barRows += `<div class="g-row">${preBars}</div>`;
       } else {
-        barRows += `<div class="g-row">${bestellBar}${gdLabels(v.bauStart, v.bauEnde, leftPx(v.bauStart), leftPx(v.bauStart) + widthPx(v.bauStart, v.bauEnde))}<div class="g-bar${light}${isAuto ? ' summary' : ''}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
+        barRows += `<div class="g-row">${preBars}${gdLabels(v.bauStart, v.bauEnde, leftPx(v.bauStart), leftPx(v.bauStart) + widthPx(v.bauStart, v.bauEnde))}<div class="g-bar${light}${isAuto ? ' summary' : ''}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
           title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}"
           data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
           <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
@@ -6379,6 +6390,8 @@ function sammleTermine(p) {
   (p.vergaben || []).forEach(v => {
     if (v.frist) ev.push({ datum: v.frist, titel: `Eingabefrist ${v.bkp || ''} ${v.gewerk || ''}`.trim(), color: 'red', quelle: 'Eingabefrist' });
     if (v.bauStart && Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); ev.push({ datum: isoOf(d), titel: `🛒 bestellen: ${v.gewerk || ''}`.trim(), color: 'orange', quelle: 'Bestellfrist' }); }
+    if (v.bauStart && v.vorab && v.vorab.tageVor != null) ev.push({ datum: isoOf((() => { const d = dISO(v.bauStart); d.setDate(d.getDate() - Math.abs(Number(v.vorab.tageVor) || 0)); return d; })()), titel: `📌 ${v.vorab.label || 'Vorab-Termin'}: ${v.gewerk || ''}${v.firma ? ' · ' + v.firma : ''}`.trim(), color: 'purple', quelle: 'Vorab-Termin' });
+    if (v.bauEnde && Number(v.nachfrist) > 0) ev.push({ datum: addDays(v.bauEnde, Number(v.nachfrist)), titel: `⏳ ${v.nachfristLabel || 'Nachlauf'} fertig: ${v.gewerk || ''}`.trim(), color: 'grey', quelle: v.nachfristLabel || 'Nachlauf' });
     if (v.bauStart) ev.push({ datum: v.bauStart, titel: `▶ ${v.gewerk || ''} (Start)`, color: 'teal', quelle: 'Terminprogramm' });
     if (v.bauEnde) ev.push({ datum: v.bauEnde, titel: `■ ${v.gewerk || ''} (Ende)`, color: 'teal', quelle: 'Terminprogramm' });
     (v.vorgaenge || []).forEach(o => { if (o.start) ev.push({ datum: o.start, titel: `▶ ${o.titel || ''}`, color: 'teal', quelle: 'Terminprogramm' }); });
@@ -10402,8 +10415,18 @@ function actEditTermin(pid, vid) {
       <label class="field">Ausführung von <input class="input" type="date" id="t_start" value="${esc(v.bauStart || '')}"></label>
       <label class="field">Ausführung bis <input class="input" type="date" id="t_ende" value="${esc(v.bauEnde || '')}"></label>
     </div>
-    <label class="field" style="margin-top:8px">Bestellfrist / Vorlauf <input class="input" type="number" id="t_bestell" value="${v.bestellfrist ?? ''}" placeholder="z.B. 30" min="0">
-      <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Tage <b>vor</b> Ausführungsbeginn (Material bestellen, Vorlaufzeit). Erscheint im Gantt als heller Balken vor dem Hauptbalken.</span></label>
+    <div class="form-row" style="margin-top:8px">
+      <label class="field">Bestellfrist / Vorlauf (Tage <b>vor</b> Start) <input class="input" type="number" id="t_bestell" value="${v.bestellfrist ?? ''}" placeholder="z.B. 30" min="0">
+        <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Material bestellen, Lieferfrist – heller Balken <b>vor</b> dem Hauptbalken.</span></label>
+      <label class="field">Nachlauf / Austrocknung (Tage <b>nach</b> Ende) <input class="input" type="number" id="t_nach" value="${v.nachfrist ?? ''}" placeholder="z.B. 21" min="0">
+        <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">z.B. Unterlagsboden trocknen – Balken <b>nach</b> dem Hauptbalken (Fläche erst danach frei).</span></label>
+    </div>
+    <label class="field" style="margin-top:4px">Bezeichnung Nachlauf <input class="input" id="t_nachlbl" value="${esc(v.nachfristLabel || '')}" placeholder="z.B. Austrocknung"></label>
+    <div class="form-row" style="margin-top:12px">
+      <label class="field">Vorab-Termin mit Unternehmer <input class="input" id="t_vlabel" value="${esc((v.vorab && v.vorab.label) || '')}" placeholder="z.B. Begehung / Startsitzung"></label>
+      <label class="field">Tage vor Start <input class="input" type="number" id="t_vtage" value="${(v.vorab && v.vorab.tageVor != null) ? v.vorab.tageVor : ''}" placeholder="z.B. 7" min="0"></label>
+    </div>
+    <span class="muted" style="font-size:11px;display:block;margin-top:2px">Markiert im Gantt einen 📌 Vorab-Termin (Begehung/Kickoff) und erscheint im Kalender. Leer = kein Vorab-Termin.</span>
     ${(v.vorgaenge || []).length ? `<label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px"><input type="checkbox" id="t_auto"${v.autoBalken ? ' checked' : ''}> Dauer <b>automatisch aus den Unterterminen</b> (Oberbalken umspannt sie)</label>` : ''}
   `, `${(v.bauStart && v.bauEnde) ? `<button class="btn ghost danger" data-act="termin-clear" data-pid="${pid}" data-vid="${vid}">Termin entfernen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-termin" data-pid="${pid}" data-vid="${vid}">Speichern</button>`);
 }
@@ -10418,6 +10441,10 @@ function saveTermin(pid, vid) {
     v.bauStart = s; v.bauEnde = e;
   } else { recalcAutoBalken(v); }
   const bf = $('#t_bestell'); if (bf) v.bestellfrist = Number(bf.value) || 0;
+  const nf = $('#t_nach'); if (nf) v.nachfrist = Number(nf.value) || 0;
+  const nl = $('#t_nachlbl'); if (nl) v.nachfristLabel = nl.value.trim();
+  const vl = $('#t_vlabel'), vt = $('#t_vtage');
+  if (vl && vt) { const tage = vt.value.trim(); if (tage !== '' && !isNaN(+tage)) v.vorab = { label: vl.value.trim() || 'Vorab-Termin', tageVor: Math.max(0, Math.round(+tage)) }; else v.vorab = null; }
   save(); closeModal(); rerenderGantt(pid);
   toast('Termine aktualisiert');
 }

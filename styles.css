@@ -760,6 +760,7 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-corner .g-zoom { border-radius: 6px; align-self: flex-start; max-width: 100%; }
 .g-corner .g-zoom button { padding: 2px 6px; font-size: 10px; }
 .g-tb-sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 4px; }
+.btn.sm.ico { padding: 4px 8px; font-size: 13.5px; line-height: 1; }
 .g-head { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 4; background: var(--surface); }
 .g-headrow { display: flex; flex: 1; align-items: center; }
 .g-headrow.sub { border-top: 1px solid var(--border); }

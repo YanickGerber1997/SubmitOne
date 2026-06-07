@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v231';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v232';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2326,21 +2326,24 @@ function viewTermine(id) {
     ${projektTabs(p, 'termine')}
     ${ganttModeToggle(p)}
     <div class="g-toolbar">
-      <span class="muted" style="font-size:12px">Ansicht</span>${zoomCtrl}${scaleCtrl}${sortCtrl}${dateCtrl}
+      ${zoomCtrl}${scaleCtrl}${sortCtrl}
       <div class="g-zoom" title="Zeilenhöhe"><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="out" title="flacher">≡</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="reset" style="min-width:30px" title="Standard">${ganttRowH}</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="in" title="höher">☰</button></div>
-      <button class="btn sm secondary" data-act="eckdaten" data-pid="${p.id}" title="Baustart / Bauende / Bezug setzen (Meilensteine)">📍 Eckdaten</button>
-      <span class="muted" style="font-size:12px;margin-left:6px">Farbe</span><div class="g-zoom" title="Balkenfarbe">${[['status', 'Status'], ['firma', 'Unternehmer'], ['phase', 'Phase']].map(([k, l]) => `<button class="${ganttColorMode === k ? 'active' : ''}" data-act="gantt-color" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>
+      ${dateCtrl}
       <span class="g-tb-sep"></span>
-      <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
-      <button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button>
-      <button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">📅 Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button>
-      <button class="btn sm secondary" data-act="feiertage" data-pid="${p.id}" title="Kanton, Brückentage & eigene freie Tage festlegen">🎌 Feiertage${p.kanton ? ' ' + p.kanton : ''}</button>
-      <button class="btn sm ${ganttFenster ? '' : 'secondary'}" data-act="gantt-fenster" data-pid="${p.id}" title="Auto-Oberbalken als grosses Fenster über die Unterbalken zeichnen">🪟 Fenster ${ganttFenster ? 'an' : 'aus'}</button>
-      ${(p.sitzungsraster && p.sitzungsraster.aktiv) ? `<button class="btn sm ${ganttRaster ? '' : 'secondary'}" data-act="gantt-raster" data-pid="${p.id}" title="Sitzungsraster-Linien ein-/ausblenden">🗓 Sitzungen ${ganttRaster ? 'an' : 'aus'}</button>` : ''}
-      <button class="btn sm ${(p.regeln || []).length ? '' : 'secondary'}" data-act="regeln-open" data-pid="${p.id}" title="Feste Regeln/Abhängigkeiten – warnen bei Verstoss (z.B. Gerüst vor Wände)">📐 Regeln${(p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''}</button>
-      <button class="btn sm ${(p.ressCheck && p.ressCheck.aktiv === false) ? 'secondary' : ''}" data-act="ress-config" data-pid="${p.id}" title="Ressourcen-Hinweis (gleiche Firma überlappend) einstellen">⚠ Ressourcen</button>
-      <button class="btn sm ${gespr ? '' : 'secondary'}" data-act="termin-versionen" data-pid="${p.id}" title="Programm abgeben/sperren · Versionen" style="margin-left:auto">${gespr ? '🔒 Abgegeben V' + (p.terminVersNr || 1) : '🏁 Abgeben / Versionen'}</button>
-      <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" title="Drucken / PDF – Format wird automatisch gewählt (A4→A3→A2…), Ansicht bleibt erhalten">⬇ PDF</button>
+      <div class="g-zoom" title="Balkenfarbe: Status / Unternehmer / Phase">${[['status', 'Status'], ['firma', 'Firma'], ['phase', 'Phase']].map(([k, l]) => `<button class="${ganttColorMode === k ? 'active' : ''}" data-act="gantt-color" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>
+      <span class="g-tb-sep"></span>
+      <button class="btn sm ico ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Verkettung ${ganttChain ? 'an' : 'aus'} – verkettete Nachfolger folgen beim Verschieben">🔗</button>
+      <button class="btn sm ico ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Arbeitstage ${ganttWorkdays ? 'an' : 'aus'} – Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">🛠</button>
+      <button class="btn sm ico ${ganttFenster ? '' : 'secondary'}" data-act="gantt-fenster" data-pid="${p.id}" title="Fenster ${ganttFenster ? 'an' : 'aus'} – Auto-Oberbalken als grosses Fenster">🪟</button>
+      ${(p.sitzungsraster && p.sitzungsraster.aktiv) ? `<button class="btn sm ico ${ganttRaster ? '' : 'secondary'}" data-act="gantt-raster" data-pid="${p.id}" title="Sitzungslinien ${ganttRaster ? 'an' : 'aus'}">🗓</button>` : ''}
+      <button class="btn sm ${p.kanton ? '' : 'secondary'}" data-act="feiertage" data-pid="${p.id}" title="Feiertage: Kanton, Brückentage & eigene freie Tage">🎌${p.kanton ? ' ' + p.kanton : ''}</button>
+      <button class="btn sm ${(p.regeln || []).length ? '' : 'secondary'}" data-act="regeln-open" data-pid="${p.id}" title="Regeln / feste Abhängigkeiten (warnen bei Verstoss)">📐${(p.regeln || []).length ? ' ' + p.regeln.length : ''}</button>
+      <button class="btn sm ico ${(p.ressCheck && p.ressCheck.aktiv === false) ? 'secondary' : ''}" data-act="ress-config" data-pid="${p.id}" title="Ressourcen-Hinweis (gleiche Firma überlappend)">⚠</button>
+      <span class="g-tb-sep"></span>
+      <button class="btn sm secondary" data-act="eckdaten" data-pid="${p.id}" title="Eckdaten: Baustart / Bauende / Bezug (Meilensteine)">📍 Eckdaten</button>
+      <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Bauablauf: Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
+      <button class="btn sm ${gespr ? '' : 'secondary'}" data-act="termin-versionen" data-pid="${p.id}" title="Programm abgeben/sperren · Versionen" style="margin-left:auto">${gespr ? '🔒 V' + (p.terminVersNr || 1) : '🏁 Abgeben'}</button>
+      <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" title="Drucken / PDF – Format automatisch (A4→A3→A2…)">⬇ PDF</button>
     </div>
     ${gespr ? `<div class="g-warn g-warn-lock">🔒 <b>Terminprogramm Version ${p.terminVersNr || 1} ist abgegeben &amp; gesperrt.</b> Änderungen sind blockiert. <button class="btn sm" data-act="termin-versionen" data-pid="${p.id}">Neue Version erstellen</button></div>` : ''}
   `;

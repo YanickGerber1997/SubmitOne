@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v199';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v200';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1856,7 +1856,7 @@ function actGrobPhase(e, pid, vid) {
 }
 function setVergPhase(pid, vid, key) {
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
-  v.bauPhase = key || ''; save(); viewTermine(pid);
+  v.bauPhase = key || ''; save(); rerenderGantt(pid);
 }
 function setGrobPhase(pid, vid, feld, val) {
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
@@ -2601,12 +2601,12 @@ function addGanttLink(pid, from, to) {
   const fr = ganttBarRef(p, from), tr = ganttBarRef(p, to);
   const lag = (fr && tr) ? dayDiffISO(fr.e, tr.s) : 1;   // aktuellen Abstand merken (keine Verschiebung beim Erstellen)
   p.ganttLinks.push({ id: uid('gl'), from, to, dx: null, lag });
-  save(); viewTermine(pid); toast('Verbindung erstellt', 'info');
+  save(); rerenderGantt(pid); toast('Verbindung erstellt', 'info');
 }
 function removeGanttLink(pid, lid) {
   const p = findProjekt(pid); if (!p) return;
   p.ganttLinks = (p.ganttLinks || []).filter(l => l.id !== lid);
-  save(); viewTermine(pid); toast('Verbindung entfernt', 'info');
+  save(); rerenderGantt(pid); toast('Verbindung entfernt', 'info');
 }
 /* --- Generisches Kontextmenü (Rechtsklick) --- */
 function openContextMenu(e, items) {
@@ -2906,13 +2906,13 @@ function applyBauablauf(pid) {
     prev = v;
     cursor = ganttWorkdays ? addArbeitstage(v.bauEnde, lag) : addDays(v.bauEnde, lag);
   });
-  save(); closeModal(); viewTermine(pid);
+  save(); closeModal(); rerenderGantt(pid);
   toast('Bauablauf erstellt · ' + ordered.length + ' Gewerke verkettet', 'ok');
 }
 // Rechtsklick auf eine Verbindung: Abstand (Lag) setzen / löschen
 function linkMenu(e, pid, lid) {
   const p = findProjekt(pid); const l = p && (p.ganttLinks || []).find(x => x.id === lid); if (!l) return;
-  const setLag = days => { l.lag = days; rescheduleChain(p, l.from); save(); viewTermine(pid); toast('Abstand: ' + days + (ganttWorkdays ? ' Arbeitstage' : ' Tage'), 'info'); };
+  const setLag = days => { l.lag = days; rescheduleChain(p, l.from); save(); rerenderGantt(pid); toast('Abstand: ' + days + (ganttWorkdays ? ' Arbeitstage' : ' Tage'), 'info'); };
   openContextMenu(e, [
     { icon: '⏱', label: 'Direkt anschliessend (nächster Tag)', act: () => setLag(1) },
     { icon: '⏱', label: '+1 Woche', act: () => setLag(7) },
@@ -2943,7 +2943,7 @@ function linkSuccessorPick(pid, vid, tvid) {
   const dur = dayDiffISO(to.s, to.e); const ns = addDays(from.e, 1);
   to.set(ns, addDays(ns, dur));
   rescheduleChain(p, vid);
-  save(); closeModal(); viewTermine(pid);
+  save(); closeModal(); rerenderGantt(pid);
   toast('Verkettet · „' + (findVergabe(p, tvid).gewerk) + '" folgt jetzt', 'info');
 }
 

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v245';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v246';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2376,10 +2376,17 @@ function viewTermine(id) {
       <span class="g-tb-sep"></span>
       <button class="btn sm secondary" data-act="eckdaten" data-pid="${p.id}" title="Eckdaten: Baustart / Bauende / Bezug (Meilensteine)">📍 Eckdaten</button>
       <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Bauablauf: Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
-      <button class="btn sm ${gespr ? '' : 'secondary'}" data-act="termin-versionen" data-pid="${p.id}" title="Programm abgeben/sperren · Versionen" style="margin-left:auto">${gespr ? '🔒 V' + (p.terminVersNr || 1) : '🏁 Abgeben'}</button>
+      <span class="g-tb-sep" style="margin-left:auto"></span>
+      <span class="muted" style="font-size:11.5px">Version</span>
+      ${terminVersList(p).map(v => `<button class="btn sm ${v.id === p.terminVersAktiv ? '' : 'secondary'}" data-act="tv-switch" data-pid="${p.id}" data-vid="${v.id}" title="Zu dieser Version wechseln">${esc(v.name || 'Version')}${v.gesperrt ? ' 🔒' : ''}</button>`).join('')}
+      <button class="btn sm secondary" data-act="tv-new" data-pid="${p.id}" title="Neue Version (Kopie der aktuellen)">+ Version</button>
+      <button class="btn sm ico secondary" data-act="tv-rename" data-pid="${p.id}" title="Version umbenennen">✎</button>
+      <button class="btn sm ico secondary" data-act="tv-del" data-pid="${p.id}" title="Version löschen">🗑</button>
+      <button class="btn sm ico ${gespr ? '' : 'secondary'}" data-act="tv-lock" data-pid="${p.id}" title="${gespr ? 'Version entsperren' : 'Version sperren (abschliessen)'}">${gespr ? '🔒' : '🔓'}</button>
+      <span class="g-tb-sep"></span>
       <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" title="Drucken / PDF – Format automatisch (A4→A3→A2…)">🖨 Drucken</button>
     </div>`)}
-    ${gespr ? `<div class="g-warn g-warn-lock">🔒 <b>Terminprogramm Version ${p.terminVersNr || 1} ist abgegeben &amp; gesperrt.</b> Änderungen sind blockiert. <button class="btn sm" data-act="termin-versionen" data-pid="${p.id}">Neue Version erstellen</button></div>` : ''}
+    ${gespr ? `<div class="g-warn g-warn-lock">🔒 <b>Version „${esc(terminVersAktiv(p).name)}" ist gesperrt.</b> Änderungen blockiert – andere Version wählen oder oben „🔓" entsperren / „+ Version".</div>` : ''}
   `;
 
   if (!vs.length) {
@@ -2931,60 +2938,70 @@ function delFeiertagExtra(pid, datum) {
   p.feiertageExtra = (p.feiertageExtra || []).filter(x => x.datum !== datum);
   save(); actFeiertage(pid);
 }
-/* --- Terminprogramm: Versionierung & Sperre (Abgabe) --- */
-function terminGesperrt(p) { return !!(p && p.terminLocked); }
-function gesperrt(pid) { const p = findProjekt(pid); if (p && p.terminLocked) { toast('Terminprogramm ist abgegeben (gesperrt) – für Änderungen „Neue Version" erstellen', 'info'); return true; } return false; }
+/* --- Terminprogramm: umschaltbare Versionen (wie Zahlungsplan) --- */
 function terminSnapshot(p) {
   return {
-    vergaben: (p.vergaben || []).map(v => ({ id: v.id, gewerk: v.gewerk, bkp: v.bkp, bauStart: v.bauStart || '', bauEnde: v.bauEnde || '', bestellfrist: v.bestellfrist || 0, nachfrist: v.nachfrist || 0, nachfristLabel: v.nachfristLabel || '', autoBalken: !!v.autoBalken, bauPhase: v.bauPhase || '', vorab: v.vorab ? { label: v.vorab.label, tageVor: v.vorab.tageVor } : null, vorgaenge: (v.vorgaenge || []).map(o => ({ id: o.id, titel: o.titel, start: o.start || '', ende: o.ende || '' })) })),
+    vergaben: (p.vergaben || []).map(v => ({ id: v.id, bauStart: v.bauStart || '', bauEnde: v.bauEnde || '', bestellfrist: v.bestellfrist || 0, nachfrist: v.nachfrist || 0, nachfristLabel: v.nachfristLabel || '', autoBalken: !!v.autoBalken, bauPhase: v.bauPhase || '', vorab: v.vorab ? { label: v.vorab.label, tageVor: v.vorab.tageVor } : null, vorgaenge: (v.vorgaenge || []).map(o => ({ id: o.id, titel: o.titel, start: o.start || '', ende: o.ende || '' })) })),
     ganttLinks: JSON.parse(JSON.stringify(p.ganttLinks || [])),
     regeln: JSON.parse(JSON.stringify(p.regeln || [])),
     sitzungsraster: p.sitzungsraster ? JSON.parse(JSON.stringify(p.sitzungsraster)) : null,
+    baustart: p.baustart || '', bauende: p.bauende || '', bezug: p.bezug || '',
   };
 }
-function actTerminVersionen(pid) {
-  const p = findProjekt(pid); if (!p) return;
-  const nr = p.terminVersNr || 1; const locked = terminGesperrt(p);
-  const versList = (p.terminVersionen || []).slice().sort((a, b) => b.nr - a.nr);
-  const rows = versList.length ? versList.map(ver => `<div class="regel-row"><span><b>Version ${ver.nr}</b> · ${esc(ver.label || '')} <span class="muted">· abgegeben ${fmtDate(ver.datum)} · ${(ver.snapshot && ver.snapshot.vergaben || []).filter(v => v.bauStart).length} datierte Gewerke</span></span><button class="btn sm ghost" data-act="tv-restore" data-pid="${pid}" data-nr="${ver.nr}" title="Diesen Stand als neue Arbeitsversion zurückholen">↩ wiederherstellen</button></div>`).join('') : '<p class="muted" style="font-size:12.5px">Noch keine Version abgegeben.</p>';
-  openModal('Terminprogramm – Versionen', `
-    <div class="card card-pad" style="margin-bottom:12px;background:${locked ? '#ecfdf5' : 'var(--surface-2)'}">
-      <b>Status:</b> ${locked ? `🔒 <b>Version ${nr} abgegeben &amp; gesperrt</b>. Änderungen erst über eine neue Version.` : `✏️ <b>Version ${nr} – Entwurf (offen)</b>. Du kannst frei planen.`}
-    </div>
-    ${locked
-      ? `<button class="btn" data-act="tv-neu" data-pid="${pid}">+ Neue Version erstellen (entsperren)</button>`
-      : `<label class="field">Versions-Bezeichnung (optional) <input class="input" id="tv_label" placeholder="z.B. Bauprogramm Eingabe Baubewilligung"></label>
-         <button class="btn" data-act="tv-abgeben" data-pid="${pid}" style="margin-top:8px">🔒 Programm abgeben &amp; sperren (Version ${nr})</button>`}
-    <p class="muted" style="font-size:11.5px;margin-top:6px">Beim Abgeben wird der aktuelle Stand als Version festgehalten (eingefroren). Das laufende Programm bleibt die einzige „Wahrheit" (verknüpft mit Kosten/Kalender) – Versionen sind Schnappschüsse fürs Protokoll. „Neue Version" entsperrt zum Weiterplanen.</p>
-    <div class="section-head" style="margin-top:16px"><h2 style="font-size:15px">Abgegebene Versionen</h2></div>
-    <div style="display:flex;flex-direction:column;gap:6px">${rows}</div>
-  `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
-}
-function terminAbgeben(pid) {
-  const p = findProjekt(pid); if (!p) return;
-  const nr = p.terminVersNr || 1;
-  const label = ($('#tv_label') && $('#tv_label').value.trim()) || ('Version ' + nr);
-  p.terminVersionen = p.terminVersionen || [];
-  p.terminVersionen.push({ nr, datum: todayIso(), label, snapshot: terminSnapshot(p) });
-  p.terminLocked = true; p.terminVersNr = nr;
-  save(); closeModal(); router(); toast('Terminprogramm Version ' + nr + ' abgegeben & gesperrt', 'ok');
-}
-function terminNeueVersion(pid) {
-  const p = findProjekt(pid); if (!p) return;
-  p.terminVersNr = (p.terminVersNr || 1) + 1; p.terminLocked = false;
-  save(); closeModal(); router(); toast('Version ' + p.terminVersNr + ' – offen zum Bearbeiten', 'info');
-}
-function terminRestoreVersion(pid, nr) {
-  const p = findProjekt(pid); if (!p) return;
-  const ver = (p.terminVersionen || []).find(v => v.nr === Number(nr)); if (!ver || !ver.snapshot) return;
-  if (!confirm('Stand von Version ' + nr + ' als neue Arbeitsversion zurückholen? Die aktuellen Termine werden überschrieben.')) return;
-  const snap = ver.snapshot;
+function applyTerminSnapshot(p, snap) {
+  if (!snap) return;
   (snap.vergaben || []).forEach(sv => { const v = findVergabe(p, sv.id); if (!v) return; v.bauStart = sv.bauStart; v.bauEnde = sv.bauEnde; v.bestellfrist = sv.bestellfrist; v.nachfrist = sv.nachfrist; v.nachfristLabel = sv.nachfristLabel; v.autoBalken = sv.autoBalken; v.bauPhase = sv.bauPhase; v.vorab = sv.vorab ? { ...sv.vorab } : null; v.vorgaenge = (sv.vorgaenge || []).map(o => ({ ...o })); });
   p.ganttLinks = JSON.parse(JSON.stringify(snap.ganttLinks || []));
   p.regeln = JSON.parse(JSON.stringify(snap.regeln || []));
   if (snap.sitzungsraster) p.sitzungsraster = JSON.parse(JSON.stringify(snap.sitzungsraster));
-  p.terminVersNr = (p.terminVersNr || 1) + 1; p.terminLocked = false;
-  save(); closeModal(); router(); toast('Version ' + nr + ' wiederhergestellt als V' + p.terminVersNr, 'ok');
+  if (snap.baustart !== undefined) { p.baustart = snap.baustart; p.bauende = snap.bauende; p.bezug = snap.bezug; }
+}
+// Versionsliste sicherstellen (Migration: alte terminLocked/terminVersionen-Snapshots -> Liste)
+function terminVersList(p) {
+  if (!Array.isArray(p.terminVersionen) || !p.terminVersionen.length || p.terminVersionen[0].snapshot && p.terminVersionen[0].id === undefined) {
+    const alt = Array.isArray(p.terminVersionen) ? p.terminVersionen : [];
+    p.terminVersionen = [{ id: uid('tv'), name: 'Version 1', datum: todayIso(), gesperrt: false, snapshot: terminSnapshot(p) }];
+    alt.forEach(o => { if (o && o.snapshot) p.terminVersionen.push({ id: uid('tv'), name: o.label || ('Version ' + (o.nr || '')), datum: o.datum || todayIso(), gesperrt: true, snapshot: o.snapshot }); });
+    p.terminVersAktiv = p.terminVersionen[0].id;
+  }
+  if (!p.terminVersAktiv || !p.terminVersionen.some(v => v.id === p.terminVersAktiv)) p.terminVersAktiv = p.terminVersionen[0].id;
+  return p.terminVersionen;
+}
+function terminVersAktiv(p) { terminVersList(p); return p.terminVersionen.find(v => v.id === p.terminVersAktiv) || p.terminVersionen[0]; }
+function terminGesperrt(p) { const v = p && terminVersAktiv(p); return !!(v && v.gesperrt); }
+function gesperrt(pid) { const p = findProjekt(pid); if (terminGesperrt(p)) { toast('Diese Version ist gesperrt – andere Version wählen oder „+ Version"', 'info'); return true; } return false; }
+function tvSyncAktiv(p) { const v = terminVersAktiv(p); if (v && !v.gesperrt) v.snapshot = terminSnapshot(p); }   // aktuelle Edits in die aktive Version sichern
+function tvSwitch(pid, vid) {
+  const p = findProjekt(pid); if (!p) return; terminVersList(p);
+  if (vid === p.terminVersAktiv) return;
+  tvSyncAktiv(p);
+  const target = p.terminVersionen.find(v => v.id === vid); if (!target) return;
+  applyTerminSnapshot(p, target.snapshot); p.terminVersAktiv = vid;
+  save(); rerenderGantt(pid); toast('Version: ' + (target.name || ''), 'info');
+}
+function tvNew(pid) {
+  const p = findProjekt(pid); if (!p) return; terminVersList(p);
+  tvSyncAktiv(p);
+  const nv = { id: uid('tv'), name: 'Version ' + (p.terminVersionen.length + 1), datum: todayIso(), gesperrt: false, snapshot: terminSnapshot(p) };
+  p.terminVersionen.push(nv); p.terminVersAktiv = nv.id;
+  save(); rerenderGantt(pid); toast('Neue Version (Kopie): ' + nv.name, 'ok');
+}
+function tvRename(pid) {
+  const p = findProjekt(pid); const v = terminVersAktiv(p); if (!v) return;
+  const name = prompt('Versions-Bezeichnung:', v.name || ''); if (name == null) return;
+  v.name = name.trim() || v.name; save(); rerenderGantt(pid);
+}
+function tvLock(pid) {
+  const p = findProjekt(pid); const v = terminVersAktiv(p); if (!v) return;
+  if (!v.gesperrt) { tvSyncAktiv(p); v.gesperrt = true; toast(v.name + ' gesperrt', 'ok'); }
+  else { v.gesperrt = false; toast(v.name + ' entsperrt', 'info'); }
+  save(); rerenderGantt(pid);
+}
+function tvDelete(pid) {
+  const p = findProjekt(pid); terminVersList(p); if (p.terminVersionen.length <= 1) { toast('Mindestens eine Version nötig', 'info'); return; }
+  const v = terminVersAktiv(p); if (!confirm('Version „' + v.name + '" löschen? (Die aktuell angezeigten Termine bleiben; nur die gespeicherte Version wird entfernt.)')) return;
+  p.terminVersionen = p.terminVersionen.filter(x => x.id !== v.id); p.terminVersAktiv = p.terminVersionen[0].id;
+  applyTerminSnapshot(p, p.terminVersionen[0].snapshot); save(); rerenderGantt(pid);
 }
 function actRessConfig(pid) {
   const p = findProjekt(pid); if (!p) return; const rc = p.ressCheck || { aktiv: true, minGap: 0 };
@@ -11485,10 +11502,11 @@ document.addEventListener('click', e => {
     case 'fei-save':        saveFeiertage(pid); break;
     case 'fei-extra-add':   addFeiertagExtra(pid); break;
     case 'fei-extra-del':   delFeiertagExtra(pid, act.dataset.datum); break;
-    case 'termin-versionen': actTerminVersionen(pid); break;
-    case 'tv-abgeben':      terminAbgeben(pid); break;
-    case 'tv-neu':          terminNeueVersion(pid); break;
-    case 'tv-restore':      terminRestoreVersion(pid, act.dataset.nr); break;
+    case 'tv-switch':       tvSwitch(pid, act.dataset.vid); break;
+    case 'tv-new':          tvNew(pid); break;
+    case 'tv-rename':       tvRename(pid); break;
+    case 'tv-del':          tvDelete(pid); break;
+    case 'tv-lock':         tvLock(pid); break;
     case 'save-protokoll':  saveProtokoll(pid); break;
     case 'filter-prot':     protokollFilter = kind; viewProtokolle(pid); break;
     case 'edit-protokoll':  actEditProtokoll(pid, prid); break;

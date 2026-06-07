@@ -1068,6 +1068,7 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-link:hover .g-link-grip { fill: rgba(31,111,235,.22); rx: 2.5; }
 .g-link.g-sel .g-link-grip { fill: var(--brand); rx: 2.5; }
 .g-link-temp { fill: none; stroke: var(--brand); stroke-width: 2; stroke-dasharray: 5 3; }
+.g-footer { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: -1px; padding: 6px 8px; border: 1px solid var(--border); border-top: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); background: var(--surface-2); }
 .g-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--text-soft); }
 .g-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .g-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }

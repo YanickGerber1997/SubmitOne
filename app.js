@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v270';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v271';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1796,6 +1796,9 @@ const G_ICONS = {
   sort: '<path d="M7.5 4v16M7.5 4l-2.6 2.8M7.5 4l2.6 2.8"/><path d="M16.5 20V4M16.5 20l-2.6-2.8M16.5 20l2.6 2.8"/>',
   save: '<path d="M5 3.5h11l3 3V20.5H5z"/><path d="M8 3.5v5h7v-5"/><rect x="8" y="12" width="8" height="6"/>',
   label: '<rect x="3" y="6" width="18" height="12" rx="2"/><line x1="6.5" y1="10" x2="14" y2="10"/><line x1="6.5" y1="14" x2="11" y2="14"/>',
+  flag: '<path d="M6 21V3.5"/><path d="M6 4.5h11l-2.4 3.2L17 11H6z"/>',
+  star: '<path d="M12 3.8l2.3 4.7 5.2.8-3.75 3.65.9 5.15L12 15.6l-4.65 2.45.9-5.15L4.5 9.3l5.2-.8z"/>',
+  rand: '<line x1="3" y1="12" x2="21" y2="12"/><path d="M7.5 7.5L3 12l4.5 4.5"/><path d="M16.5 7.5L21 12l-4.5 4.5"/>',
 };
 function gIcon(name) { return `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
 function bigBtn(act, icon, label, o) { o = o || {}; return `<button class="g-bigbtn${o.on ? ' on' : ''}" data-act="${act}" data-pid="${o.pid}"${o.kind != null ? ` data-kind="${o.kind}"` : ''} title="${esc(o.title || label)}"><span class="bb-ico">${gIcon(icon)}</span><span class="bb-lbl">${esc(label)}</span></button>`; }
@@ -2406,10 +2409,15 @@ function viewTermine(id) {
         bigBtn('gantt-dates', 'tag', ganttDates === 'off' ? 'Datum' : (ganttDates === 'full' ? 'Datum J' : 'Datum'), { pid: p.id, on: ganttDates !== 'off', title: 'Start-/Enddatum am Balken (aus → mit Jahr → ohne)' }) +
         bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) +
         bigBtn('gantt-labelmode', 'label', ganttLabelMode === 'auto' ? 'Auto' : (ganttLabelMode === 'above' ? 'Oben' : (ganttLabelMode === 'clip' ? 'Innen' : 'Über')), { pid: p.id, on: ganttLabelMode !== 'auto', title: 'Balken-Beschriftung: Auto → Oben (über dem Balken) → Innen (abgeschnitten) → Über (läuft über den Balken)' }))}
+      ${rgroup('Kalender',
+        bigBtn('eckdaten', 'flag', 'Baustart', { pid: p.id, on: !!(p.baustart || p.bauende), title: 'Baustart / Bauende / Bezug (Meilensteine)' }) +
+        bigBtn('feiertage', 'star', 'Feiertage', { pid: p.id, on: !!p.kanton, title: 'Feiertage / Kanton' + (p.kanton ? ' ' + p.kanton : '') }) +
+        bigBtn('gantt-pad', 'rand', 'Rand ' + ganttPad + 'M', { pid: p.id, kind: 'cycle', title: 'Rand links/rechts (Monate) – klicken erhöht (0–6)' }))}
       ${rgroup('Werkzeuge',
         bigBtn('gantt-chain', 'chain', 'Verkettung', { pid: p.id, on: ganttChain, title: 'Verkettung ' + (ganttChain ? 'an' : 'aus') }) +
         bigBtn('gantt-workdays', 'calCheck', 'Arbeitstage', { pid: p.id, on: ganttWorkdays, title: 'Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus') }) +
-        ((p.sitzungsraster && p.sitzungsraster.aktiv) ? bigBtn('gantt-raster', 'calendar', 'Sitzungen', { pid: p.id, on: ganttRaster, title: 'Sitzungslinien ' + (ganttRaster ? 'an' : 'aus') }) : '') +
+        ((p.sitzungsraster && p.sitzungsraster.aktiv) ? bigBtn('gantt-raster', 'calendar', 'Sitzungen', { pid: p.id, on: ganttRaster, title: 'Sitzungslinien ' + (ganttRaster ? 'an' : 'aus') }) : ''))}
+      ${rgroup('Hilfen',
         bigBtn('regeln-open', 'ruler', 'Regeln' + ((p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''), { pid: p.id, on: (p.regeln || []).length > 0, title: 'Regeln / Abhängigkeiten' }) +
         bigBtn('ress-config', 'warn', 'Ressourcen', { pid: p.id, on: !(p.ressCheck && p.ressCheck.aktiv === false), title: 'Ressourcen-Hinweis' }) +
         bigBtn('bauablauf', 'gear', 'Bauablauf', { pid: p.id, title: 'Gewerke nach BKP verketten und ab Baustart datieren' }))}
@@ -2672,7 +2680,7 @@ function viewTermine(id) {
   render(head + `
     ${warnBanner}${regelBanner}
     <div class="gantt" style="--rowh:${ROW_H}px">
-      <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div><div class="g-corner-bot"><button class="btn sm ${p.kanton ? '' : 'secondary'}" data-act="feiertage" data-pid="${p.id}" title="Feiertage: Kanton, Brückentage & eigene freie Tage">Feiertage${p.kanton ? ' ' + p.kanton : ''}</button><button class="btn sm secondary" data-act="eckdaten" data-pid="${p.id}" title="Baustart / Bauende / Bezug setzen">Baustart / Bauende</button><div class="g-zoom g-corner-rand" title="Rand links/rechts (Monate)"><button data-act="gantt-pad" data-pid="${p.id}" data-kind="out" title="weniger Rand">−</button><button data-act="gantt-pad" data-pid="${p.id}" data-kind="reset" title="Standard 1 Monat">Rand ${ganttPad}M</button><button data-act="gantt-pad" data-pid="${p.id}" data-kind="in" title="mehr Rand">+</button></div></div></div>${sideRows}${insertStrips}</div>
+      <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div></div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
           ${yearCells ? `<div class="g-headrow yr">${yearCells}</div>` : ''}
@@ -11531,7 +11539,7 @@ document.addEventListener('click', e => {
     case 'sr-save':         saveSitzungsraster(pid); break;
     case 'gantt-raster':    ganttRaster = !ganttRaster; rerenderGantt(pid); break;
     case 'gantt-rowh':      { ganttRowH = kind === 'reset' ? 38 : Math.max(26, Math.min(60, ganttRowH + (kind === 'in' ? 6 : -6))); rerenderGantt(pid); } break;
-    case 'gantt-pad':       { ganttPad = kind === 'reset' ? 1 : Math.max(0, Math.min(12, ganttPad + (kind === 'in' ? 1 : -1))); rerenderGantt(pid); } break;
+    case 'gantt-pad':       { ganttPad = kind === 'reset' ? 1 : (kind === 'cycle' ? (ganttPad + 1) % 7 : Math.max(0, Math.min(12, ganttPad + (kind === 'in' ? 1 : -1)))); rerenderGantt(pid); } break;
     case 'gantt-ribbon':    ganttRibbon = !ganttRibbon; rerenderGantt(pid); break;
     case 'gantt-labelmode': ganttLabelMode = ganttLabelMode === 'auto' ? 'above' : (ganttLabelMode === 'above' ? 'clip' : (ganttLabelMode === 'clip' ? 'over' : 'auto')); rerenderGantt(pid); break;
     case 'eckdaten':        actEckdaten(pid); break;

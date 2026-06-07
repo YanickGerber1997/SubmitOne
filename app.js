@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v238';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v239';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2500,22 +2500,13 @@ function viewTermine(id) {
   const inMarks = projMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; });
   const markBands = inMarks.map(m => `<div class="g-mark ${m.cls}" data-act="eckdaten" data-pid="${p.id}" style="left:${dayDiff(rangeStart, dISO(m.iso)) * pxPerDay}px" title="${m.n}: ${fmtDate(m.iso)}${m.auto ? ' (automatisch)' : ' (manuell)'} – klicken zum Bearbeiten"></div>`).join('');
 
-  // Kopf-Band: Feiertags- & Meilenstein-Beschriftungen HORIZONTAL; bei Überlappung gestapelt (mehrere Zeilen)
+  // Feiertage/Meilensteine: vertikale Beschriftungen werden IM Programm platziert (freier Platz auf ihrer Linie),
+  // damit der Kopf nicht aufgebläht wird. Datenliste sammeln – Rendering nach dem Balken-Loop (braucht barMeta).
   const evItems = [];
-  hols.forEach(f => evItems.push({ x: dayDiff(rangeStart, f.d) * pxPerDay, n: f.n, cls: 'hol', t: `${f.n} ${fmtDate(isoOf(f.d))}` }));
   inMarks.forEach(m => evItems.push({ x: dayDiff(rangeStart, dISO(m.iso)) * pxPerDay, n: `${m.n} ${fmtDate(m.iso)}`, cls: 'mark ' + m.cls, t: `${m.n}: ${fmtDate(m.iso)}`, mark: true }));
-  evItems.sort((a, b) => a.x - b.x);
-  const rowEnds = [];   // rechter Rand je Zeile → Greedy First-Fit-Stapelung
-  evItems.forEach(e => {
-    const w = String(e.n).length * 5.3 + 12;
-    let row = rowEnds.findIndex(end => e.x >= end + 4);
-    if (row < 0) { row = rowEnds.length; rowEnds.push(0); }
-    rowEnds[row] = e.x + w; e.row = row;
-  });
-  const evLineH = 13, eventBandH = evItems.length ? Math.max(1, rowEnds.length) * evLineH + 5 : 0;
-  const evCells = evItems.map(e => `<span class="g-ev ${e.cls}"${e.mark ? ` data-act="eckdaten" data-pid="${p.id}"` : ''} style="left:${e.x}px;top:${e.row * evLineH + 2}px" title="${esc(e.t)}">${esc(e.n)}</span>`).join('');
-  const eventBand = eventBandH ? `<div class="g-evband" style="height:${eventBandH}px">${evCells}</div>` : '';
-  const headH = (ganttZoom === 'tag' ? 74 : (subCells ? 56 : 38)) + eventBandH + yearBandH;
+  hols.forEach(f => evItems.push({ x: dayDiff(rangeStart, f.d) * pxPerDay, n: f.n, cls: 'hol', t: `${f.n} ${fmtDate(isoOf(f.d))}` }));
+  const eventBand = '';
+  const headH = (ganttZoom === 'tag' ? 74 : (subCells ? 56 : 38)) + yearBandH;
 
   // Ressourcen-Hinweis (einstellbar): gleiche Firma in Gewerken ohne genügend Abstand
   const rc = p.ressCheck || { aktiv: true, minGap: 0 };
@@ -2613,6 +2604,19 @@ function viewTermine(id) {
     if (fenster) windows.push({ top: rowStart * ROW_H, height: (rowIdx - rowStart) * ROW_H, left: leftPx(v.bauStart), width: widthPx(v.bauStart, v.bauEnde), col: colHex, label: v.gewerk, pid: p.id, vid: v.id });
   });
   const fensterLayer = windows.map(w => `<div class="g-fenster" style="top:${w.top + 2}px;height:${w.height - 4}px;left:${w.left}px;width:${w.width}px;background:${hexA(w.col, .1)};border-color:${hexA(w.col, .5)}"><span class="g-fenster-lbl" style="color:${w.col}">${esc(w.label)}</span></div>`).join('');
+  // Feiertags-/Meilenstein-Beschriftungen vertikal im Programm – jede sucht sich freie Zeilen auf ihrer Linie
+  const totalRows = rowIdx || 1;
+  const occ = [];   // belegte x-Bereiche je Zeile (Balken + bereits platzierte Labels)
+  Object.values(barMeta).forEach(m => { (occ[m.row] = occ[m.row] || []).push([m.left, m.left + m.width]); });
+  const xFree = (row, x) => !(occ[row] || []).some(([l, r]) => x >= l - 5 && x <= r + 5);
+  const evvLayer = evItems.map(e => {
+    const need = Math.max(1, Math.ceil((String(e.n).length * 6.6 + 6) / ROW_H));
+    let found = -1;
+    for (let r = 0; r + need <= totalRows; r++) { let ok = true; for (let k = 0; k < need; k++) if (!xFree(r + k, e.x)) { ok = false; break; } if (ok) { found = r; break; } }
+    if (found < 0) found = 0;
+    for (let k = 0; k < need; k++) (occ[found + k] = occ[found + k] || []).push([e.x - 8, e.x + 4]);
+    return `<div class="g-evv ${e.cls}"${e.mark ? ` data-act="eckdaten" data-pid="${p.id}"` : ''} style="left:${e.x}px;top:${found * ROW_H + 3}px;max-height:${need * ROW_H - 5}px" title="${esc(e.t)}">${esc(e.n)}</div>`;
+  }).join('');
   // Einfüge-Streifen zwischen den Zeilen (Hover-Plus) – legt eine leere Unterzeile für das Gewerk darüber an
   const insertStrips = gespr ? '' : inserts.map(it => `<div class="g-insert" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${it.vid}" style="top:${it.y - 5}px" title="Untertermin einfügen (leer – dann Balken ziehen)"><span>+ Untertermin</span></div>`).join('');
   // Verbindungen (Abhängigkeiten) als SVG-Overlay
@@ -2665,6 +2669,7 @@ function viewTermine(id) {
           ${markBands}
           ${fensterLayer}
           ${barRows}
+          ${evvLayer}
           ${linkSvg}
         </div>
       </div></div>

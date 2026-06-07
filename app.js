@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v277';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v278';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1761,7 +1761,7 @@ let ganttScale = 1;        // stufenloser Breiten-Faktor auf pxPerDay
 let ganttChain = true;     // Verkettung: Nachfolger automatisch nachführen
 let ganttWorkdays = false; // Abstände/Verkettung in Arbeitstagen (Wochenende/Feiertage überspringen)
 let ganttSide = { gewerk: true, firma: false, person: false, natel: false }; // einblendbare Info-Spalte (BKP-Nr. immer)
-let ganttDates = 'off';   // Datum am Balken: 'off' | 'full' (26.06.26) | 'short' (26.06.)
+let ganttDates = 'off';   // Anschrift am Balken: 'off' | 'datum' (dd.mm.yy) | 'kw' (Kalenderwoche) | 'grob' (Anfang/Mitte/Ende Monat)
 let ganttMode = 'detail'; // 'detail' = Termin-Gantt (Tage) | 'grob' = Grobplanung (Phasen) | 'fein' = Feinprogramm (Stunden)
 const FEIN_H0 = 6, FEIN_H1 = 20;   // Stunden-Achse Feinprogramm (06:00–20:00)
 let feinSub = 'viertel';  // Feinprogramm-Unteransicht: 'viertel' (Detail in Vierteltagen + Zusatzbalken) | 'stunden' (Tagesablauf)
@@ -1802,6 +1802,7 @@ const G_ICONS = {
   drop: '<path d="M12 3.2c3.2 4.2 5.6 7 5.6 9.8a5.6 5.6 0 0 1-11.2 0c0-2.8 2.4-5.6 5.6-9.8z"/><path d="M9.2 14.5a2.8 2.8 0 0 0 2.8 2.5"/>',
   swatch: '<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.4"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.4"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.4"/><rect x="13" y="13" width="7.5" height="7.5" rx="1.4"/>',
   focus: '<rect x="9" y="3.5" width="6" height="17" rx="1.4"/><path d="M4.5 3.5v17M19.5 3.5v17"/>',
+  ends: '<line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="7" x2="4" y2="17"/><line x1="20" y1="7" x2="20" y2="17"/>',
 };
 function gIcon(name) { return `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
 function bigBtn(act, icon, label, o) { o = o || {}; return `<button class="g-bigbtn${o.on ? ' on' : ''}" data-act="${act}" data-pid="${o.pid}"${o.kind != null ? ` data-kind="${o.kind}"` : ''} title="${esc(o.title || label)}"><span class="bb-ico">${gIcon(icon)}</span><span class="bb-lbl">${esc(label)}</span></button>`; }
@@ -2286,10 +2287,26 @@ function removeFeinKommentar(pid, kid) {
   const p = findProjekt(pid); p.feinkommentare = (p.feinkommentare || []).filter(x => x.id !== kid);
   save(); closeModal(); viewFeinViertel(p);
 }
-function gdFmt(iso) { if (!iso || ganttDates === 'off') return ''; const d = dISO(iso); const dd = String(d.getDate()).padStart(2, '0'), mm = String(d.getMonth() + 1).padStart(2, '0'); return ganttDates === 'short' ? `${dd}.${mm}.` : `${dd}.${mm}.${String(d.getFullYear()).slice(2)}`; }
+// Datums-Anschrift: Format ('datum' | 'kw' | 'grob' = Anfang/Mitte/Ende Monat) + Position (beide/vorne/hinten)
+let ganttDatePos = 'beide';   // 'beide' | 'start' | 'ende'
+const DATE_MODES = ['off', 'datum', 'kw', 'grob'];
+const DATE_NAMES = { off: 'Datum', datum: 'Datum', kw: 'KW', grob: 'Einord.' };
+const DATEPOS_MODES = ['beide', 'start', 'ende'];
+const DATEPOS_NAMES = { beide: 'Beide', start: 'Vorne', ende: 'Hinten' };
+function gdFmt(iso) {
+  if (!iso || ganttDates === 'off') return '';
+  const d = dISO(iso);
+  if (ganttDates === 'kw') return 'KW ' + isoWeek(d);
+  if (ganttDates === 'grob') { const day = d.getDate(), teil = day <= 10 ? 'Anf.' : (day <= 20 ? 'Mitte' : 'Ende'); return teil + ' ' + MON_KURZ[d.getMonth()]; }
+  const dd = String(d.getDate()).padStart(2, '0'), mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}.${mm}.${String(d.getFullYear()).slice(2)}`;   // 'datum'
+}
 function gdLabels(startIso, endIso, x0, x1, endShift) {
   if (ganttDates === 'off') return '';
-  return `<span class="g-date l" style="left:${x0}px">${gdFmt(startIso)}</span><span class="g-date r" style="left:${x1 + (endShift || 0)}px">${gdFmt(endIso)}</span>`;
+  let s = '';
+  if (ganttDatePos !== 'ende') s += `<span class="g-date l" style="left:${x0}px">${gdFmt(startIso)}</span>`;
+  if (ganttDatePos !== 'start') s += `<span class="g-date r" style="left:${x1 + (endShift || 0)}px">${gdFmt(endIso)}</span>`;
+  return s;
 }
 // Passt das Balken-Label in den Balken? sonst rechts daneben anzeigen
 function barLabelFits(text, wpx) { return wpx >= String(text || '').length * 6.4 + 18; }
@@ -2478,7 +2495,8 @@ function viewTermine(id) {
       ${rgroup('Darstellung',
         bigBtn('gantt-color', 'palette', ganttColorMode === 'status' ? 'Status' : (ganttColorMode === 'firma' ? 'Firma' : 'Phase'), { pid: p.id, kind: ganttColorMode === 'status' ? 'firma' : (ganttColorMode === 'firma' ? 'phase' : 'status'), title: 'Balkenfarbe: Status / Firma / Phase (umschalten)' }) +
         bigBtn('gantt-colors-open', 'swatch', 'Farben', { pid: p.id, on: !!state.ganttColors, title: 'Vordefinierte Farben anpassen (je Status/Unternehmer/Phase)' }) +
-        bigBtn('gantt-dates', 'tag', ganttDates === 'off' ? 'Datum' : (ganttDates === 'full' ? 'Datum J' : 'Datum'), { pid: p.id, on: ganttDates !== 'off', title: 'Start-/Enddatum am Balken (aus → mit Jahr → ohne)' }) +
+        bigBtn('gantt-dates', 'tag', DATE_NAMES[ganttDates], { pid: p.id, on: ganttDates !== 'off', title: 'Anschrift am Balken: aus → Datum → KW (Kalenderwoche) → Einordnung (Anfang/Mitte/Ende Monat)' }) +
+        (ganttDates !== 'off' ? bigBtn('gantt-datepos', 'ends', DATEPOS_NAMES[ganttDatePos], { pid: p.id, on: ganttDatePos !== 'beide', title: 'Position der Anschrift: beide Enden → nur vorne → nur hinten' }) : '') +
         bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) +
         bigBtn('gantt-labelmode', 'label', LABEL_NAMES[ganttLabelMode], { pid: p.id, on: ganttLabelMode !== 'auto', title: 'Balken-Beschriftung: Auto → Oben → Unten → Vor → Innen (abgeschnitten) → Über (läuft über)' }) +
         bigBtn('gantt-strength', 'drop', STRENGTH_NAMES[ganttColorStrength], { pid: p.id, on: ganttColorStrength !== 'voll', title: 'Farbkräftigkeit: Voll → Mittel → Hell → Pastell (heller/herbstlicher)' }))}
@@ -11569,7 +11587,8 @@ document.addEventListener('click', e => {
       rerenderGantt(pid); break;
     case 'gantt-sort':   ganttSort = kind; rerenderGantt(pid); break;
     case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; rerenderGantt(pid); break;
-    case 'gantt-dates':  ganttDates = ganttDates === 'off' ? 'full' : (ganttDates === 'full' ? 'short' : 'off'); rerenderGantt(pid); break;
+    case 'gantt-dates':  ganttDates = DATE_MODES[(DATE_MODES.indexOf(ganttDates) + 1) % DATE_MODES.length]; rerenderGantt(pid); break;
+    case 'gantt-datepos': ganttDatePos = DATEPOS_MODES[(DATEPOS_MODES.indexOf(ganttDatePos) + 1) % DATEPOS_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-mode':   ganttMode = kind; viewTermine(pid); break;
     case 'gantt-color':  ganttColorMode = kind; rerenderGantt(pid); break;
     case 'grob-zoom':    { grobZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.4, +(grobZoom + (kind === 'in' ? 0.2 : -0.2)).toFixed(2))); viewGrobGantt(findProjekt(pid)); } break;

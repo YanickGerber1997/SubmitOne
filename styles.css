@@ -865,6 +865,8 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .qv-draw-hint { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 10px; color: var(--text-faint); opacity: 0; pointer-events: none; transition: opacity .12s; }
 .qv-blane.empty:hover .qv-draw-hint { opacity: 1; }
 .qv-row:hover { background: rgba(31,111,235,.03); }
+.qv-hmark { position: absolute; bottom: 0; transform: translateX(-50%); font-size: 9px; line-height: 1; z-index: 2; pointer-events: none; }
+.g-note { color: #ffd34d; font-size: 11px; margin: 0 2px; flex: none; text-shadow: 0 0 2px rgba(0,0,0,.35); }
 .qv-komm { position: absolute; bottom: 1px; max-width: 160px; background: #fff8e1; border: 1px solid #f0d27a; border-radius: 5px; padding: 1px 6px; font-size: 10px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.12); z-index: 3; }
 .qv-komm:hover { border-color: var(--brand); }
 .qv-komm-d { font-weight: 700; color: #a16207; }

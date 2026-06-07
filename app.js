@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v185';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v186';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1965,18 +1965,22 @@ function viewFeinViertel(p) {
         <div class="qv-blane${empty ? ' empty' : ''}">${barHtml}${empty ? '<span class="qv-draw-hint">ziehen = Balken zeichnen</span>' : ''}</div>
       </div>
     </div>`;
-  const rows = vs.map(v => {
+  const bloecke = p.feinbloecke || [];
+  // Nur Unternehmer, die im Fenster auf der Baustelle sind – plus noch undatierte (zum Zeichnen)
+  const vsShown = vs.filter(v => (!(v.bauStart && v.bauEnde)) || (v.bauStart <= bis && v.bauEnde >= von));
+  const rows = vsShown.map(v => {
     const gDated = v.bauStart && v.bauEnde;
+    // ⏱-Marker: Tage mit Stundenablauf-Aufgaben für dieses Gewerk
+    const hmarks = [...new Set(bloecke.filter(b => b.gewerk === v.id && days.includes(b.datum)).map(b => b.datum))].map(dt => `<div class="qv-hmark" style="left:${dayIdx(dt) * dayW + dayW / 2}px" title="Stundenablauf am ${esc(fmtDate(dt))}">⏱</div>`).join('');
     let bar;
     if (gDated && v.bauStart <= bis && v.bauEnde >= von) {
       const s = v.bauStart < von ? von : v.bauStart, e = v.bauEnde > bis ? bis : v.bauEnde;
       const x0 = dayIdx(s) * dayW, x1 = (dayIdx(e) + 1) * dayW;
       bar = `<div class="qv-bar real${v.bauStart < von ? ' cutl' : ''}${v.bauEnde > bis ? ' cutr' : ''}" style="left:${x0}px;width:${x1 - x0}px;background:${ganttColHex(v)}" data-act="edit-termin" data-pid="${p.id}" data-vid="${v.id}" title="Detailprogramm ${esc(fmtDate(v.bauStart))} – ${esc(fmtDate(v.bauEnde))} · Klick = echte Termine ändern">${esc(v.gewerk)}</div>`;
-    } else if (gDated) {
-      bar = `<div class="qv-noterm" data-act="edit-termin" data-pid="${p.id}" data-vid="${v.id}" title="Termine ändern">ausserhalb des Fensters</div>`;
     } else {
       bar = '';
     }
+    bar += hmarks;
     const gName = `<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;min-width:0"><span class="bkp-code">${esc(v.bkp || '')}</span> <b>${esc(v.firma || v.gewerk)}</b><div class="muted" style="font-size:10.5px">${esc(v.firma ? v.gewerk : 'noch nicht vergeben')}</div></div><button class="x-btn" data-act="fein-add-vorgang" data-pid="${p.id}" data-vid="${v.id}" title="Unterzeile (Untertermin) hinzufügen">＋</button></div>`;
     let out = trackRow(v.id, '', gName, bar, false, !gDated);
     (v.vorgaenge || []).forEach(o => {
@@ -2343,7 +2347,7 @@ function viewTermine(id) {
       barRows += `<div class="g-row">${bestellBar}${gdLabels(v.bauStart, v.bauEnde, leftPx(v.bauStart), leftPx(v.bauStart) + widthPx(v.bauStart, v.bauEnde))}<div class="g-bar${light}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
         title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)} · ${STATUS_BY_KEY[v.status]?.label || ''}"
         data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
-        <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span><span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
+        <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
     } else {
       barRows += `<div class="g-row"><button class="g-set" data-act="edit-termin" data-pid="${p.id}" data-vid="${v.id}">＋ Termin setzen</button></div>`;
     }
@@ -2356,7 +2360,7 @@ function viewTermine(id) {
       barRows += `<div class="g-row">${gdLabels(o.start, o.ende, leftPx(o.start), leftPx(o.start) + widthPx(o.start, o.ende))}<div class="g-bar sub${light}" style="left:${leftPx(o.start)}px;width:${widthPx(o.start, o.ende)}px;background:${colHex}"
         title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
         data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
-        <span class="g-h l"></span><span class="g-lbl">${esc(o.titel)}</span><span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div></div>`;
+        <span class="g-h l"></span><span class="g-lbl">${esc(o.titel)}</span>${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div></div>`;
       rowIdx++;
     });
   });

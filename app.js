@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v189';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v190';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2005,7 +2005,7 @@ function viewFeinViertel(p) {
       out += trackRow(v.id, o.id, `<span class="qv-sub-name" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" style="cursor:pointer" title="Untertermin bearbeiten">↳ ${esc(o.titel || 'Untertermin')}</span>`, obar, true, !oDated);
       out += insertStrip('vorgang', v.id);
     });
-    out += insertStrip('gewerk', v.id);
+    out += insertStrip('vorgang', v.id);
     return out;
   }).join('');
   render(head + `

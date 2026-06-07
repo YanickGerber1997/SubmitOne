@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v269';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v270';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1795,6 +1795,7 @@ const G_ICONS = {
   palette: '<path d="M12 3.2a8.8 8.8 0 1 0 0 17.6c1 0 1.7-.8 1.7-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.4-.6-.4-1 0-1 .8-1.7 1.7-1.7H16a4.8 4.8 0 0 0 4.8-4.8c0-4.4-3.9-7.3-8.8-7.3z"/><circle cx="7.6" cy="12.2" r="1"/><circle cx="9.6" cy="8.2" r="1"/><circle cx="14" cy="7.6" r="1"/>',
   sort: '<path d="M7.5 4v16M7.5 4l-2.6 2.8M7.5 4l2.6 2.8"/><path d="M16.5 20V4M16.5 20l-2.6-2.8M16.5 20l2.6 2.8"/>',
   save: '<path d="M5 3.5h11l3 3V20.5H5z"/><path d="M8 3.5v5h7v-5"/><rect x="8" y="12" width="8" height="6"/>',
+  label: '<rect x="3" y="6" width="18" height="12" rx="2"/><line x1="6.5" y1="10" x2="14" y2="10"/><line x1="6.5" y1="14" x2="11" y2="14"/>',
 };
 function gIcon(name) { return `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
 function bigBtn(act, icon, label, o) { o = o || {}; return `<button class="g-bigbtn${o.on ? ' on' : ''}" data-act="${act}" data-pid="${o.pid}"${o.kind != null ? ` data-kind="${o.kind}"` : ''} title="${esc(o.title || label)}"><span class="bb-ico">${gIcon(icon)}</span><span class="bb-lbl">${esc(label)}</span></button>`; }
@@ -2287,6 +2288,16 @@ function gdLabels(startIso, endIso, x0, x1, endShift) {
 // Passt das Balken-Label in den Balken? sonst rechts daneben anzeigen
 function barLabelFits(text, wpx) { return wpx >= String(text || '').length * 6.4 + 18; }
 function barLabelW(text) { return String(text || '').length * 6.4 + 8; }
+// Balken-Beschriftungs-Modus: 'auto' (innen, sonst rechts daneben) | 'above' (über dem Balken, linksbündig zum Start) | 'clip' (innen, abgeschnitten) | 'over' (innen ab Start, läuft über den Balken)
+let ganttLabelMode = 'auto';
+function gBarLabel(text, gL, gW, sub, isAuto) {
+  const m = ganttLabelMode, sc = sub ? ' sub' : '';
+  if (m === 'above') return { inner: '', outer: `<span class="g-lbl-above${sc}" style="left:${gL}px">${esc(text)}</span>`, gdOff: 0 };
+  if (m === 'over') return { inner: '', outer: `<span class="g-lbl-over${sc}" style="left:${gL + 6}px">${esc(text)}</span>`, gdOff: 0 };
+  if (m === 'clip') return { inner: esc(text), outer: '', gdOff: 0 };
+  const fits = isAuto ? true : barLabelFits(text, gW);   // 'auto'
+  return fits ? { inner: esc(text), outer: '', gdOff: 0 } : { inner: '', outer: `<span class="g-lbl-out${sc}" style="left:${gL + gW + 5}px">${esc(text)}</span>`, gdOff: barLabelW(text) + 5 };
+}
 // Mitlaufender Gantt-Kopf: fixes Overlay des Monats-/KW-Kopfes beim Scrollen (kein eigener Scrollbalken)
 let _gshRefs = null, _gshBound = false;
 function _gshUpdate() {
@@ -2393,7 +2404,8 @@ function viewTermine(id) {
       ${rgroup('Darstellung',
         bigBtn('gantt-color', 'palette', ganttColorMode === 'status' ? 'Status' : (ganttColorMode === 'firma' ? 'Firma' : 'Phase'), { pid: p.id, kind: ganttColorMode === 'status' ? 'firma' : (ganttColorMode === 'firma' ? 'phase' : 'status'), title: 'Balkenfarbe: Status / Firma / Phase (umschalten)' }) +
         bigBtn('gantt-dates', 'tag', ganttDates === 'off' ? 'Datum' : (ganttDates === 'full' ? 'Datum J' : 'Datum'), { pid: p.id, on: ganttDates !== 'off', title: 'Start-/Enddatum am Balken (aus → mit Jahr → ohne)' }) +
-        bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }))}
+        bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) +
+        bigBtn('gantt-labelmode', 'label', ganttLabelMode === 'auto' ? 'Auto' : (ganttLabelMode === 'above' ? 'Oben' : (ganttLabelMode === 'clip' ? 'Innen' : 'Über')), { pid: p.id, on: ganttLabelMode !== 'auto', title: 'Balken-Beschriftung: Auto → Oben (über dem Balken) → Innen (abgeschnitten) → Über (läuft über den Balken)' }))}
       ${rgroup('Werkzeuge',
         bigBtn('gantt-chain', 'chain', 'Verkettung', { pid: p.id, on: ganttChain, title: 'Verkettung ' + (ganttChain ? 'an' : 'aus') }) +
         bigBtn('gantt-workdays', 'calCheck', 'Arbeitstage', { pid: p.id, on: ganttWorkdays, title: 'Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus') }) +
@@ -2605,12 +2617,11 @@ function viewTermine(id) {
         // Gewerk-Zeile bleibt leer – das grosse Fenster (unten) repräsentiert den Oberbalken
         barRows += `<div class="g-row">${preBars}</div>`;
       } else {
-        const gL = leftPx(v.bauStart), gW = widthPx(v.bauStart, v.bauEnde), gFits = isAuto ? true : barLabelFits(v.gewerk, gW);
-        const gOut = gFits ? '' : `<span class="g-lbl-out" style="left:${gL + gW + 5}px">${esc(v.gewerk)}</span>`;
-        barRows += `<div class="g-row">${preBars}${gdLabels(v.bauStart, v.bauEnde, gL, gL + gW, gFits ? 0 : barLabelW(v.gewerk) + 5)}<div class="g-bar${light}${isAuto ? ' summary' : ''}" style="left:${gL}px;width:${gW}px;background:${colHex}"
+        const gL = leftPx(v.bauStart), gW = widthPx(v.bauStart, v.bauEnde), gLab = gBarLabel(v.gewerk, gL, gW, false, isAuto);
+        barRows += `<div class="g-row">${preBars}${gdLabels(v.bauStart, v.bauEnde, gL, gL + gW, gLab.gdOff)}<div class="g-bar${light}${isAuto ? ' summary' : ''}" style="left:${gL}px;width:${gW}px;background:${colHex}"
           title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}"
           data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
-          <span class="g-h l"></span><span class="g-lbl">${gFits ? esc(v.gewerk) : ''}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div>${gOut}</div>`;
+          <span class="g-h l"></span><span class="g-lbl">${gLab.inner}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div>${gLab.outer}</div>`;
       }
     } else {
       barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw" data-pid="${p.id}" data-vid="${v.id}"><span class="g-draw-hint">ziehen = Termin zeichnen · Klick = Dialog</span></div>`;
@@ -2621,13 +2632,12 @@ function viewTermine(id) {
       sideRows += `<div class="g-side-row sub"><span class="g-rownum sub">${gnr}.${++oNr}</span><span class="gewerk" style="font-weight:500;cursor:pointer" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="Untertermin bearbeiten">${esc(o.titel)}</span>
         ${gespr ? '' : `<button class="x-btn" title="Untertermin löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button>`}</div>`;
       if (oDated) {
-        const oL = leftPx(o.start), oW = widthPx(o.start, o.ende), oFits = barLabelFits(o.titel, oW);
-        const oOut = oFits ? '' : `<span class="g-lbl-out sub" style="left:${oL + oW + 5}px">${esc(o.titel)}</span>`;
+        const oL = leftPx(o.start), oW = widthPx(o.start, o.ende), oLab = gBarLabel(o.titel, oL, oW, true, false);
         barMeta[key] = { row: rowIdx, left: oL, width: oW };
-        barRows += `<div class="g-row">${gdLabels(o.start, o.ende, oL, oL + oW, oFits ? 0 : barLabelW(o.titel) + 5)}<div class="g-bar sub${light}" style="left:${oL}px;width:${oW}px;background:${colHex}"
+        barRows += `<div class="g-row">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOff)}<div class="g-bar sub${light}" style="left:${oL}px;width:${oW}px;background:${colHex}"
           title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
           data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
-          <span class="g-h l"></span><span class="g-lbl">${oFits ? esc(o.titel) : ''}</span>${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div>${oOut}</div>`;
+          <span class="g-h l"></span><span class="g-lbl">${oLab.inner}</span>${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div>${oLab.outer}</div>`;
       } else {
         barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw sub" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}"><span class="g-draw-hint">ziehen = Untertermin zeichnen</span></div>`;
       }
@@ -11523,6 +11533,7 @@ document.addEventListener('click', e => {
     case 'gantt-rowh':      { ganttRowH = kind === 'reset' ? 38 : Math.max(26, Math.min(60, ganttRowH + (kind === 'in' ? 6 : -6))); rerenderGantt(pid); } break;
     case 'gantt-pad':       { ganttPad = kind === 'reset' ? 1 : Math.max(0, Math.min(12, ganttPad + (kind === 'in' ? 1 : -1))); rerenderGantt(pid); } break;
     case 'gantt-ribbon':    ganttRibbon = !ganttRibbon; rerenderGantt(pid); break;
+    case 'gantt-labelmode': ganttLabelMode = ganttLabelMode === 'auto' ? 'above' : (ganttLabelMode === 'above' ? 'clip' : (ganttLabelMode === 'clip' ? 'over' : 'auto')); rerenderGantt(pid); break;
     case 'eckdaten':        actEckdaten(pid); break;
     case 'eckdaten-save':   saveEckdaten(pid); break;
     case 'feiertage':       actFeiertage(pid); break;

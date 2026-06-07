@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v186';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v187';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1743,7 +1743,7 @@ let feinAnchor = null;    // ISO des Montags der ersten sichtbaren Woche
 let feinDay = null;       // ausgewählter Tag in der Stunden-Tagesansicht
 let feinWeeks = 4;        // sichtbare Wochen im Vierteltag-Zoom (einstellbar)
 let feinZoom = 1;         // Tagesbreiten-Faktor (Zoom)
-let _feinDays = [], _feinQW = 15;   // Laufzeit-Kontext fürs Zeichnen
+let _feinDays = [], _feinQW = 15, _feinViewStart = null;   // Laufzeit-Kontext fürs Zeichnen/Scrollen
 function feinSubToggle(p) {
   return `<div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">
     <button class="btn sm ${feinSub === 'viertel' ? '' : 'secondary'}" data-act="fein-sub" data-pid="${p.id}" data-kind="viertel" type="button" style="border:none">📐 Vierteltag (Detail + Zusatzbalken)</button>
@@ -1939,20 +1939,30 @@ function viewFeinViertel(p) {
     ${feinSubToggle(p)}`;
   const vs = gewerkeSorted(p);
   if (!vs.length) { render(head + emptyState('📐', 'Noch keine Gewerke. Im Tab „Übersicht" anlegen.')); return; }
-  const WIN = feinWeeks * 7;
-  const anchor = feinAnchor || mondayOf(todayIso());
-  const days = []; const d0 = dISO(anchor);
+  // Ganzes Projekt anzeigen: von frühestem Baustart bis spätestem Bauende (Montag-ausgerichtet), frei scrollbar
+  const dated = vs.filter(v => v.bauStart && v.bauEnde);
+  let minISO = '', maxISO = '';
+  dated.forEach(v => { if (!minISO || v.bauStart < minISO) minISO = v.bauStart; if (!maxISO || v.bauEnde > maxISO) maxISO = v.bauEnde; });
+  const tIso = todayIso();
+  if (!minISO) { minISO = mondayOf(tIso); const e = dISO(minISO); e.setDate(e.getDate() + 27); maxISO = isoOf(e); }
+  if (tIso < minISO) minISO = tIso; if (tIso > maxISO) maxISO = tIso;
+  const startISO = mondayOf(minISO);
+  const endD = dISO(maxISO); endD.setDate(endD.getDate() + (6 - ((endD.getDay() + 6) % 7)) + 7);   // bis Sonntag + 1 Woche Luft
+  const WIN = Math.min(800, Math.max(28, Math.round((endD - dISO(startISO)) / 86400000) + 1));
+  const days = []; const d0 = dISO(startISO);
   for (let i = 0; i < WIN; i++) { const d = new Date(d0); d.setDate(d.getDate() + i); days.push(isoOf(d)); }
   _feinDays = days; const dayW = Math.round(48 * feinZoom); _feinQW = dayW;
-  const von = days[0], bis = days[WIN - 1], t0 = todayIso();
+  const von = days[0], bis = days[WIN - 1], t0 = tIso;
   const MON = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
   const nameW = 176, qW = dayW / 4, trackW = WIN * dayW;
   const dayIdx = iso => days.indexOf(iso);
   const komm = p.feinkommentare || [];
   const feName = d => { const f = feiertageJahr(d.getFullYear()).find(x => x.d.getMonth() === d.getMonth() && x.d.getDate() === d.getDate()); return f ? f.n : ''; };
   const headerCells = days.map(iso => { const d = dISO(iso); const wd = (d.getDay() + 6) % 7; const we = wd >= 5; const fe = istFeiertag(d); return `<div class="qv-dcol${we ? ' we' : ''}${fe ? ' fe' : ''}${iso === t0 ? ' today' : ''}" style="width:${dayW}px"${fe ? ` title="${esc(feName(d))}"` : ''}><div class="qv-wd">${MON[wd]}</div><div class="qv-dt">${d.getDate()}.${d.getMonth() + 1}.</div></div>`; }).join('');
-  // Wochenenden grau + Feiertage markiert (Hintergrund-Bänder, in jeder Zeile)
-  const shadeHtml = days.map((iso, i) => { const d = dISO(iso); const wd = (d.getDay() + 6) % 7; const we = wd >= 5; const fe = istFeiertag(d); return (we || fe) ? `<div class="qv-shade ${fe ? 'fe' : 'we'}" style="left:${i * dayW}px;width:${dayW}px"${fe ? ` title="${esc(feName(d))}"` : ''}></div>` : ''; }).join('');
+  // Wochenenden via CSS-Muster (qv-track), nur Feiertage als Bänder rendern
+  const holiHtml = days.map((iso, i) => istFeiertag(dISO(iso)) ? `<div class="qv-shade fe" style="left:${i * dayW}px;width:${dayW}px" title="${esc(feName(dISO(iso)))}"></div>` : '').join('');
+  const todayBar = (t0 >= von && t0 <= bis) ? `<div class="qv-todaybar" style="left:${dayIdx(t0) * dayW}px;width:${dayW}px"></div>` : '';
+  const shadeHtml = holiHtml + todayBar;
   // Kalenderwochen (je 7 Tage ab Montag)
   let kwCells = '';
   for (let w = 0; w * 7 < WIN; w++) { const span = Math.min(7, WIN - w * 7); kwCells += `<div class="qv-kw" style="width:${span * dayW}px">KW ${isoWeek(dISO(days[w * 7]))}</div>`; }
@@ -1997,17 +2007,14 @@ function viewFeinViertel(p) {
   }).join('');
   render(head + `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-      <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="prev">‹ Woche</button>
-      <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="today">Heute</button>
-      <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="next">Woche ›</button>
-      <span class="muted" style="font-size:12.5px">${esc(fmtDate(von))} – ${esc(fmtDate(bis))} · <b>KW ${isoWeek(dISO(von))}–${isoWeek(dISO(bis))}</b></span>
-      <div class="g-zoom" title="Anzahl Wochen"><button data-act="fein-weeks" data-pid="${p.id}" data-kind="out" title="weniger Wochen">−</button><button data-act="fein-weeks" data-pid="${p.id}" data-kind="reset" style="min-width:52px">${feinWeeks} Wo.</button><button data-act="fein-weeks" data-pid="${p.id}" data-kind="in" title="mehr Wochen">+</button></div>
+      <button class="btn sm secondary" data-act="fein-scroll-today" data-pid="${p.id}">→ Heute</button>
+      <span class="muted" style="font-size:12.5px">${esc(fmtDate(von))} – ${esc(fmtDate(bis))} · ganzes Projekt</span>
       <div class="g-zoom" title="Zoom (Tagesbreite)"><button data-act="fein-zoom" data-pid="${p.id}" data-kind="out" title="schmaler">−</button><button data-act="fein-zoom" data-pid="${p.id}" data-kind="reset" style="min-width:46px">${Math.round(feinZoom * 100)}%</button><button data-act="fein-zoom" data-pid="${p.id}" data-kind="in" title="breiter">+</button></div>
       <button class="btn sm secondary" data-act="new-vergabe" data-pid="${p.id}">+ Gewerk</button>
-      <span class="muted" style="font-size:12px;margin-left:auto">Leere Zeile <b>ziehen</b> = Balken zeichnen · Balken anklicken = ändern · oben klicken = Kommentar</span>
+      <span class="muted" style="font-size:12px;margin-left:auto">Frei horizontal scrollen · leere Zeile <b>ziehen</b> = Balken · Balken anklicken = ändern · oben klicken = Kommentar</span>
     </div>
     ${feinMiniMap(p, vs, von, bis)}
-    <div class="card" style="padding:0;overflow:auto"><div class="qv-wrap" style="min-width:${nameW + trackW}px">
+    <div class="card qv-scroll" style="padding:0;overflow:auto"><div class="qv-wrap" style="min-width:${nameW + trackW}px">
       <div class="qv-row qv-kwrow"><div class="qv-name" style="width:${nameW}px">Kalenderwoche</div><div class="qv-head" style="width:${trackW}px;display:flex">${kwCells}</div></div>
       <div class="qv-row qv-headrow"><div class="qv-name" style="width:${nameW}px">Unternehmer / Gewerk</div><div class="qv-head" style="width:${trackW}px;display:flex">${headerCells}</div></div>
       ${rows}
@@ -2015,6 +2022,18 @@ function viewFeinViertel(p) {
   $$('.qv-clane').forEach(c => c.addEventListener('click', onKommLane));
   $$('.qv-blane.empty').forEach(b => b.addEventListener('mousedown', onBlaneDraw));
   const mm = document.querySelector('.mm'); if (mm) mm.addEventListener('click', onFeinMini);
+  _feinViewStart = von;
+  const scr = document.querySelector('.qv-scroll');
+  if (scr) {
+    const ti = days.indexOf(t0); scr.scrollLeft = ti >= 0 ? Math.max(0, ti * dayW - 260) : 0;
+    const win = document.querySelector('.mm-win');
+    if (win) { const upd = () => { const sw = scr.scrollWidth || 1; win.style.left = (scr.scrollLeft / sw * 100) + '%'; win.style.width = Math.min(scr.clientWidth / sw * 100, 100) + '%'; }; scr.addEventListener('scroll', upd); upd(); }
+  }
+}
+function feinScrollTo(iso) {
+  const scr = document.querySelector('.qv-scroll'); if (!scr || !_feinViewStart) return;
+  const off = Math.round((dISO(iso) - dISO(_feinViewStart)) / 86400000);
+  scr.scrollTo({ left: Math.max(0, off * _feinQW - scr.clientWidth / 2), behavior: 'smooth' });
 }
 // Leere Zeile: Balken durch Ziehen zeichnen → setzt die Termine (Gewerk = Detailprogramm, Vorgang = Untertermin)
 function onBlaneDraw(e) {
@@ -2057,18 +2076,17 @@ function feinMiniMap(p, vs, von, bis) {
   const wPct = (a, b) => Math.max(((dISO(b) - dISO(a)) / 86400000 + 1) / totalD * 100, 0.4);
   const bars = dated.map(v => `<div class="mm-bar" style="left:${xPct(v.bauStart)}%;width:${wPct(v.bauStart, v.bauEnde)}%;background:${ganttColHex(v)}"></div>`).join('');
   const tIso = todayIso(); const todayMark = (tIso >= s && tIso <= e) ? `<div class="mm-today" style="left:${xPct(tIso)}%"></div>` : '';
-  const winL = xPct(von < s ? s : von), winR = xPct(bis > e ? e : bis) + (1 / totalD * 100);
   return `<div class="mm-wrap">
-    <div class="mm" data-pid="${p.id}" data-s="${s}" data-e="${e}" title="Klicken = 3-Wochen-Fenster dorthin verschieben">${bars}${todayMark}<div class="mm-win" style="left:${winL}%;width:${Math.max(winR - winL, 1.2)}%"></div></div>
-    <div class="mm-labels"><span>${esc(fmtDate(s))}</span><span class="muted">Gesamtprogramm – grauer Rahmen = aktueller Ausschnitt</span><span>${esc(fmtDate(e))}</span></div>
+    <div class="mm" data-pid="${p.id}" data-s="${s}" data-e="${e}" title="Klicken = dorthin scrollen">${bars}${todayMark}<div class="mm-win"></div></div>
+    <div class="mm-labels"><span>${esc(fmtDate(s))}</span><span class="muted">Gesamtprogramm – Rahmen = sichtbarer Ausschnitt · Klick = hinscrollen</span><span>${esc(fmtDate(e))}</span></div>
   </div>`;
 }
 function onFeinMini(e) {
   const el = e.currentTarget, rect = el.getBoundingClientRect();
   const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
   const s = el.dataset.s, totalD = (dISO(el.dataset.e) - dISO(s)) / 86400000 + 1;
-  const d = new Date(dISO(s)); d.setDate(d.getDate() + Math.round(frac * totalD) - 7);   // Ausschnitt etwa um den Klick zentrieren
-  feinAnchor = mondayOf(isoOf(d)); viewFeinViertel(findProjekt(el.dataset.pid));
+  const d = new Date(dISO(s)); d.setDate(d.getDate() + Math.round(frac * totalD));
+  feinScrollTo(isoOf(d));   // ganzes Projekt sichtbar → nur scrollen
 }
 function onKommLane(e) {
   if (e.target.closest('.qv-komm')) return;   // vorhandenen Kommentar anklicken → bearbeiten
@@ -10566,6 +10584,7 @@ document.addEventListener('click', e => {
     case 'fein-day':     { feinDay = kind === 'today' ? null : (() => { const d = dISO(feinDay || todayIso()); d.setDate(d.getDate() + (kind === 'next' ? 1 : -1)); return isoOf(d); })(); viewFeinStunden(findProjekt(pid)); } break;
     case 'fein-weeks':   { feinWeeks = kind === 'reset' ? 4 : Math.max(1, Math.min(16, feinWeeks + (kind === 'in' ? 1 : -1))); viewFeinViertel(findProjekt(pid)); } break;
     case 'fein-zoom':    { feinZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.2, +(feinZoom + (kind === 'in' ? 0.15 : -0.15)).toFixed(2))); viewFeinViertel(findProjekt(pid)); } break;
+    case 'fein-scroll-today': feinScrollTo(todayIso()); break;
     case 'fein-komm-edit': actFeinKommentar(pid, null, null, null, act.dataset.kid); break;
     case 'fein-komm-save': saveFeinKommentar(pid, act.dataset.vid, act.dataset.oid, act.dataset.datum, act.dataset.kid); break;
     case 'fein-komm-rm':   removeFeinKommentar(pid, act.dataset.kid); break;

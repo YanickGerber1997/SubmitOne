@@ -844,8 +844,10 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .qv-dcol .qv-dt { font-size: 9.5px; font-weight: 400; color: var(--text-faint); }
 .qv-track { position: relative; height: 54px; flex: none;
   background-image:
+    repeating-linear-gradient(to right, transparent 0 calc(var(--dayw) * 5), rgba(15,24,48,.05) calc(var(--dayw) * 5) calc(var(--dayw) * 7)),
     repeating-linear-gradient(to right, transparent 0 calc(var(--qw) - 1px), var(--border) calc(var(--qw) - 1px) var(--qw)),
     repeating-linear-gradient(to right, transparent 0 calc(var(--dayw) - 1px), var(--border-2) calc(var(--dayw) - 1px) var(--dayw)); }
+.qv-todaybar { position: absolute; top: 0; bottom: 0; z-index: 0; background: rgba(220,38,38,.07); border-left: 2px solid var(--s-red); pointer-events: none; }
 .qv-clane { position: absolute; top: 0; left: 0; right: 0; height: 28px; cursor: copy; }
 .qv-blane { position: absolute; bottom: 0; left: 0; right: 0; height: 26px; }
 .qv-bar.real { position: absolute; top: 50%; transform: translateY(-50%); height: 20px; border-radius: 5px; color: #fff; font-size: 10.5px; font-weight: 600; display: flex; align-items: center; padding: 0 7px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.22); }

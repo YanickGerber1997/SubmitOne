@@ -810,6 +810,8 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-draw-hint { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 10px; color: var(--text-faint); opacity: 0; pointer-events: none; }
 .g-row.g-draw:hover .g-draw-hint { opacity: 1; }
 .g-bar.g-draft { opacity: .5; pointer-events: none; }
+.g-fenster { position: absolute; border: 1.5px solid; border-radius: 8px; z-index: 1; pointer-events: none; }
+.g-fenster-lbl { position: absolute; top: 3px; left: 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,.78); border-radius: 5px; padding: 1px 7px; white-space: nowrap; max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; }
 .g-side-row .gewerk { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g-side-row .g-edit { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1; overflow: hidden; }
 .g-si-wrap { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; }

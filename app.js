@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v210';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v211';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2242,6 +2242,8 @@ const GANTT_COLS = { rot: '#dc2626', orange: '#f97316', gelb: '#eab308', gruen: 
 const GANTT_LEGEND = [['rot', 'angefragt'], ['orange', 'Offerte / Abgebot'], ['gelb', 'bis Vergabe'], ['gruen', 'Werkvertrag'], ['blau', 'Ausführung'], ['violett', 'Schlussrechnung'], ['dgrau', 'Mängel'], ['hgrau', 'abgeschlossen']];
 function ganttColKey(v) { return GANTT_PHASE[v.status] || 'dgrau'; }
 let ganttColorMode = 'status';   // 'status' | 'firma' (je Unternehmer) | 'phase' (Grobphase)
+let ganttFenster = true;         // Auto-Oberbalken als grosses Fenster über die Unterbalken
+function hexA(hex, a) { const h = String(hex).replace('#', ''); if (h.length < 6) return hex; return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`; }
 const GANTT_FIRMA_PALETTE = ['#1f6feb', '#16a34a', '#ea7a3c', '#7c3aed', '#0d9488', '#dc2626', '#a16207', '#db2777', '#0891b2', '#65a30d', '#9333ea', '#0f766e', '#b45309', '#2563eb'];
 function firmaColHex(name) { if (!name) return '#94a3b8'; let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return GANTT_FIRMA_PALETTE[h % GANTT_FIRMA_PALETTE.length]; }
 function ganttColHex(v) {
@@ -2293,6 +2295,7 @@ function viewTermine(id) {
       <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
       <button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button>
       <button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">📅 Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button>
+      <button class="btn sm ${ganttFenster ? '' : 'secondary'}" data-act="gantt-fenster" data-pid="${p.id}" title="Auto-Oberbalken als grosses Fenster über die Unterbalken zeichnen">🪟 Fenster ${ganttFenster ? 'an' : 'aus'}</button>
       <button class="btn sm ${(p.regeln || []).length ? '' : 'secondary'}" data-act="regeln-open" data-pid="${p.id}" title="Feste Regeln/Abhängigkeiten – warnen bei Verstoss (z.B. Gerüst vor Wände)">📐 Regeln${(p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''}</button>
       <button class="btn sm ${(p.ressCheck && p.ressCheck.aktiv === false) ? 'secondary' : ''}" data-act="ress-config" data-pid="${p.id}" title="Ressourcen-Hinweis (gleiche Firma überlappend) einstellen">⚠ Ressourcen</button>
       <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" style="margin-left:auto">⬇ PDF</button>
@@ -2435,11 +2438,13 @@ function viewTermine(id) {
 
   const ROW_H = 38;
   const kontaktByFirma = f => (state.kontakte || []).find(k => k.firma === f);
-  let sideRows = '', barRows = '', rowIdx = 0, gNr = 0; const barMeta = {}; const inserts = [];
+  let sideRows = '', barRows = '', rowIdx = 0, gNr = 0; const barMeta = {}; const inserts = []; const windows = [];
   vs.forEach(v => {
     recalcAutoBalken(v);   // Oberbalken ggf. aus Unterterminen umspannen
+    const rowStart = rowIdx;
     const colKey = ganttColKey(v), colHex = ganttColHex(v), light = (ganttColorMode === 'status' && colKey === 'hgrau') ? ' g-light' : '';
     const isAuto = autoSpanned(v);
+    const fenster = isAuto && ganttFenster;   // grosses Hintergrund-Fenster statt dünnem Oberbalken
     const hatTermin = v.bauStart && v.bauEnde;
     const k = (ganttSide.person || ganttSide.natel) && v.firma ? kontaktByFirma(v.firma) : null;
     const extra = [];
@@ -2456,17 +2461,22 @@ function viewTermine(id) {
       <button class="btn sm ghost add-vg" title="Untertermin hinzufügen (leer – dann Balken ziehen)" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${v.id}">＋</button>
     </div>`;
     if (hatTermin) {
-      barMeta[v.id] = { row: rowIdx, left: leftPx(v.bauStart), width: widthPx(v.bauStart, v.bauEnde) };
       let bestellBar = '';
       if (Number(v.bestellfrist) > 0) {
         const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); const bsISO = isoOf(d);
         const bl = leftPx(bsISO), bw = Math.max(leftPx(v.bauStart) - bl, 3);
         bestellBar = `<div class="g-bestell" data-pid="${p.id}" data-vid="${v.id}" data-ctx="gantt" data-right="${leftPx(v.bauStart)}" style="left:${bl}px;width:${bw}px" title="Bestellfrist ${v.bestellfrist} Tage – bestellen bis ${fmtDate(bsISO)}, Einbau ab ${fmtDate(v.bauStart)} · ziehen = Vorlauf ändern · Klick = bearbeiten · Rechtsklick = Menü"><span>🛒 ${v.bestellfrist}T</span></div>`;
       }
-      barRows += `<div class="g-row">${bestellBar}${gdLabels(v.bauStart, v.bauEnde, leftPx(v.bauStart), leftPx(v.bauStart) + widthPx(v.bauStart, v.bauEnde))}<div class="g-bar${light}${isAuto ? ' summary' : ''}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
-        title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}"
-        data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
-        <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
+      barMeta[v.id] = { row: rowIdx, left: leftPx(v.bauStart), width: widthPx(v.bauStart, v.bauEnde) };
+      if (fenster) {
+        // Gewerk-Zeile bleibt leer – das grosse Fenster (unten) repräsentiert den Oberbalken
+        barRows += `<div class="g-row">${bestellBar}</div>`;
+      } else {
+        barRows += `<div class="g-row">${bestellBar}${gdLabels(v.bauStart, v.bauEnde, leftPx(v.bauStart), leftPx(v.bauStart) + widthPx(v.bauStart, v.bauEnde))}<div class="g-bar${light}${isAuto ? ' summary' : ''}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
+          title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}"
+          data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
+          <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
+      }
     } else {
       barRows += `<div class="g-row g-draw" data-pid="${p.id}" data-vid="${v.id}"><span class="g-draw-hint">ziehen = Termin zeichnen · Klick = Dialog</span></div>`;
     }
@@ -2486,7 +2496,9 @@ function viewTermine(id) {
       }
       rowIdx++; inserts.push({ y: headH + rowIdx * ROW_H, vid: v.id });
     });
+    if (fenster) windows.push({ top: rowStart * ROW_H, height: (rowIdx - rowStart) * ROW_H, left: leftPx(v.bauStart), width: widthPx(v.bauStart, v.bauEnde), col: colHex, label: v.gewerk, pid: p.id, vid: v.id });
   });
+  const fensterLayer = windows.map(w => `<div class="g-fenster" style="top:${w.top + 2}px;height:${w.height - 4}px;left:${w.left}px;width:${w.width}px;background:${hexA(w.col, .1)};border-color:${hexA(w.col, .5)}"><span class="g-fenster-lbl" style="color:${w.col}">${esc(w.label)}</span></div>`).join('');
   // Einfüge-Streifen zwischen den Zeilen (Hover-Plus) – legt eine leere Unterzeile für das Gewerk darüber an
   const insertStrips = inserts.map(it => `<div class="g-insert" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${it.vid}" style="top:${it.y - 5}px" title="Untertermin einfügen (leer – dann Balken ziehen)"><span>+ Untertermin</span></div>`).join('');
   // Verbindungen (Abhängigkeiten) als SVG-Overlay
@@ -2523,6 +2535,7 @@ function viewTermine(id) {
           ${holBands}
           ${todayLeft != null ? `<div class="g-today" style="left:${todayLeft}px"></div>` : ''}
           ${markBands}
+          ${fensterLayer}
           ${barRows}
           ${linkSvg}
         </div>
@@ -10901,6 +10914,7 @@ document.addEventListener('click', e => {
     case 'grob-zoom':    { grobZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.4, +(grobZoom + (kind === 'in' ? 0.2 : -0.2)).toFixed(2))); viewGrobGantt(findProjekt(pid)); } break;
     case 'grob-phase':   actGrobPhase(e, pid, vid); break;
     case 'gantt-add-vorgang': addEmptyVorgangDetail(pid, vid); break;
+    case 'gantt-fenster': ganttFenster = !ganttFenster; rerenderGantt(pid); break;
     case 'ress-config':  actRessConfig(pid); break;
     case 'ress-save':    saveRessConfig(pid); break;
     case 'regeln-open':  actRegeln(pid); break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v244';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v245';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1630,8 +1630,8 @@ function viewKosten(id) {
   const vs = (p.vergaben || []).slice().sort((a, b) => (a.bkp || '').localeCompare(b.bkp || ''));
 
   const toolbar = `
-    <button class="btn sm secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">⬇ Kostenschätzung</button>
-    <button class="btn sm secondary" data-act="pdf-baukosten" data-pid="${p.id}">⬇ Baukostenübersicht</button>
+    <button class="btn sm secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">🖨 Kostenschätzung</button>
+    <button class="btn sm secondary" data-act="pdf-baukosten" data-pid="${p.id}">🖨 Baukostenübersicht</button>
     <button class="btn sm ${kostenBrutto ? '' : 'secondary'}" data-act="kosten-brutto" data-pid="${p.id}" title="Beträge netto (exkl.) oder brutto (inkl. ${mwstSatz()}% MwSt) anzeigen">${kostenBrutto ? `Brutto (inkl. ${mwstSatz()}%)` : 'Netto (exkl. MwSt)'}</button>
     ${katToggleBtn()}
     <button class="btn sm" data-act="new-vergabe" data-pid="${p.id}" style="margin-left:auto">+ Arbeitsbeschrieb</button>`;
@@ -5087,13 +5087,11 @@ function viewProtokolle(pid) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Protokolle &amp; Aktennotizen</div></div>
-      <div style="display:flex;gap:10px">
-        <button class="btn secondary" data-act="sr-config" data-pid="${p.id}" title="Wiederkehrende Sitzungen einrichten">🗓 Sitzungsraster</button>
-        <button class="btn secondary" data-act="new-protokoll" data-pid="${p.id}" data-kind="aktennotiz">+ Aktennotiz</button>
-        <button class="btn" data-act="new-protokoll" data-pid="${p.id}" data-kind="sitzung">+ Sitzungsprotokoll</button>
-      </div>
     </div>
-    ${projektTabs(p, 'protokolle')}
+    ${projektTabs(p, 'protokolle', `
+      <button class="btn sm secondary" data-act="sr-config" data-pid="${p.id}" title="Wiederkehrende Sitzungen einrichten">🗓 Sitzungsraster</button>
+      <button class="btn sm secondary" data-act="new-protokoll" data-pid="${p.id}" data-kind="aktennotiz">+ Aktennotiz</button>
+      <button class="btn sm" data-act="new-protokoll" data-pid="${p.id}" data-kind="sitzung" style="margin-left:auto">+ Sitzungsprotokoll</button>`)}
     ${demoBanner('protokolle')}
     ${(() => {
       const r = p.sitzungsraster; if (!r || !r.aktiv || !r.startIso) return '';

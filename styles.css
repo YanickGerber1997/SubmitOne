@@ -835,7 +835,9 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .qv-wrap { font-size: 12px; }
 .qv-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
 .qv-row.qv-headrow { background: var(--surface-2); font-weight: 700; font-size: 11px; color: var(--text-soft); position: sticky; top: 0; z-index: 3; }
-.qv-name { flex: none; padding: 7px 11px; border-right: 1px solid var(--border-2); display: flex; flex-direction: column; justify-content: center; }
+.qv-name { flex: none; padding: 7px 11px; border-right: 1px solid var(--border-2); display: flex; flex-direction: column; justify-content: center; position: sticky; left: 0; z-index: 2; background: var(--surface); }
+.qv-row.qv-headrow .qv-name, .qv-row.qv-kwrow .qv-name { z-index: 4; background: var(--surface-2); }
+.qv-row.sub .qv-name { background: var(--surface); }
 .qv-head { flex: none; }
 .qv-dcol { flex: none; text-align: center; padding: 3px 0; border-left: 1px solid var(--border-2); }
 .qv-dcol.we { background: rgba(15,24,48,.04); color: var(--text-faint); }
@@ -845,8 +847,10 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .qv-track { position: relative; height: 54px; flex: none;
   background-image:
     repeating-linear-gradient(to right, transparent 0 calc(var(--dayw) * 5), rgba(15,24,48,.05) calc(var(--dayw) * 5) calc(var(--dayw) * 7)),
-    repeating-linear-gradient(to right, transparent 0 calc(var(--qw) - 1px), var(--border) calc(var(--qw) - 1px) var(--qw)),
-    repeating-linear-gradient(to right, transparent 0 calc(var(--dayw) - 1px), var(--border-2) calc(var(--dayw) - 1px) var(--dayw)); }
+    repeating-linear-gradient(to right, transparent 0 calc(var(--qw) - 1px), rgba(15,24,48,.06) calc(var(--qw) - 1px) var(--qw)),
+    repeating-linear-gradient(to right, transparent 0 calc(var(--dayw) - 1.5px), rgba(15,24,48,.22) calc(var(--dayw) - 1.5px) var(--dayw)); }
+.qv-bar.real, .qv-bar.vg { cursor: grab; }
+.qv-bar.drag { cursor: grabbing; opacity: .9; z-index: 5; box-shadow: 0 3px 10px rgba(0,0,0,.3); }
 .qv-todaybar { position: absolute; top: 0; bottom: 0; z-index: 0; background: rgba(220,38,38,.07); border-left: 2px solid var(--s-red); pointer-events: none; }
 .qv-clane { position: absolute; top: 0; left: 0; right: 0; height: 28px; cursor: copy; }
 .qv-blane { position: absolute; bottom: 0; left: 0; right: 0; height: 26px; }

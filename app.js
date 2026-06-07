@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v188';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v189';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1986,7 +1986,7 @@ function viewFeinViertel(p) {
     if (gDated && v.bauStart <= bis && v.bauEnde >= von) {
       const s = v.bauStart < von ? von : v.bauStart, e = v.bauEnde > bis ? bis : v.bauEnde;
       const x0 = dayIdx(s) * dayW, x1 = (dayIdx(e) + 1) * dayW;
-      bar = `<div class="qv-bar real${v.bauStart < von ? ' cutl' : ''}${v.bauEnde > bis ? ' cutr' : ''}" style="left:${x0}px;width:${x1 - x0}px;background:${ganttColHex(v)}" data-act="edit-termin" data-pid="${p.id}" data-vid="${v.id}" title="Detailprogramm ${esc(fmtDate(v.bauStart))} – ${esc(fmtDate(v.bauEnde))} · Klick = echte Termine ändern">${esc(v.gewerk)}</div>`;
+      bar = `<div class="qv-bar real" style="left:${x0}px;width:${x1 - x0}px;background:${ganttColHex(v)}" data-pid="${p.id}" data-vid="${v.id}" data-sd="${v.bauStart}" data-ed="${v.bauEnde}" title="${esc(v.gewerk)} · ${esc(fmtDate(v.bauStart))} – ${esc(fmtDate(v.bauEnde))} · ziehen = verschieben · Ränder = Dauer · Klick = Dialog">${esc(v.gewerk)}</div>`;
     } else {
       bar = '';
     }
@@ -2000,7 +2000,7 @@ function viewFeinViertel(p) {
       if (oDated && o.start <= bis && o.ende >= von) {
         const s = o.start < von ? von : o.start, e = o.ende > bis ? bis : o.ende;
         const x0 = dayIdx(s) * dayW, x1 = (dayIdx(e) + 1) * dayW;
-        obar = `<div class="qv-bar vg${o.start < von ? ' cutl' : ''}${o.ende > bis ? ' cutr' : ''}" style="left:${x0}px;width:${x1 - x0}px;background:${ganttColHex(v)}" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="${esc(o.titel || '')} · ${esc(fmtDate(o.start))} – ${esc(fmtDate(o.ende))} · Klick = bearbeiten">${esc(o.titel || '')}</div>`;
+        obar = `<div class="qv-bar vg" style="left:${x0}px;width:${x1 - x0}px;background:${ganttColHex(v)}" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-sd="${o.start}" data-ed="${o.ende}" title="${esc(o.titel || '')} · ${esc(fmtDate(o.start))} – ${esc(fmtDate(o.ende))} · ziehen = verschieben · Ränder = Dauer · Klick = bearbeiten">${esc(o.titel || '')}</div>`;
       }
       out += trackRow(v.id, o.id, `<span class="qv-sub-name" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" style="cursor:pointer" title="Untertermin bearbeiten">↳ ${esc(o.titel || 'Untertermin')}</span>`, obar, true, !oDated);
       out += insertStrip('vorgang', v.id);
@@ -2024,6 +2024,7 @@ function viewFeinViertel(p) {
     </div></div>`);
   $$('.qv-clane').forEach(c => c.addEventListener('click', onKommLane));
   $$('.qv-blane.empty').forEach(b => b.addEventListener('mousedown', onBlaneDraw));
+  $$('.qv-bar.real, .qv-bar.vg').forEach(b => b.addEventListener('mousedown', onBarDrag));
   const mm = document.querySelector('.mm'); if (mm) mm.addEventListener('click', onFeinMini);
   _feinViewStart = von;
   const scr = document.querySelector('.qv-scroll');
@@ -2057,6 +2058,32 @@ function onBlaneDraw(e) {
   };
   document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
   e.preventDefault();
+}
+// Balken im Vierteltag wie im Detailprogramm bearbeiten: ziehen = verschieben, Ränder = Dauer; Klick (ohne Ziehen) = Dialog
+function onBarDrag(e) {
+  const bar = e.currentTarget, row = bar.closest('.qv-row');
+  const pid = row.dataset.pid, vid = row.dataset.vid, oid = row.dataset.oid || '';
+  const sIdx0 = _feinDays.indexOf(bar.dataset.sd), eIdx0 = _feinDays.indexOf(bar.dataset.ed);
+  if (sIdx0 < 0 || eIdx0 < 0) { if (oid) actFeinVorgang(pid, vid, oid); else actEditTermin(pid, vid); return; }
+  const dayW = _feinQW, len = _feinDays.length, w = bar.getBoundingClientRect().width;
+  const mode = e.offsetX < 8 ? 'l' : (e.offsetX > w - 8 ? 'r' : 'move');
+  const startX = e.clientX; let moved = false, nS = sIdx0, nE = eIdx0;
+  bar.classList.add('drag');
+  const move = ev => {
+    if (Math.abs(ev.clientX - startX) > 3) moved = true;
+    const delta = Math.round((ev.clientX - startX) / dayW);
+    if (mode === 'move') { nS = Math.max(0, Math.min(len - 1 - (eIdx0 - sIdx0), sIdx0 + delta)); nE = nS + (eIdx0 - sIdx0); }
+    else if (mode === 'l') { nS = Math.max(0, Math.min(eIdx0, sIdx0 + delta)); nE = eIdx0; }
+    else { nE = Math.max(sIdx0, Math.min(len - 1, eIdx0 + delta)); nS = sIdx0; }
+    bar.style.left = (nS * dayW) + 'px'; bar.style.width = ((nE - nS + 1) * dayW) + 'px';
+  };
+  const up = () => {
+    document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+    bar.classList.remove('drag');
+    if (!moved) { if (oid) actFeinVorgang(pid, vid, oid); else actEditTermin(pid, vid); return; }
+    setFeinDates(pid, vid, oid, _feinDays[nS], _feinDays[nE]);
+  };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); e.preventDefault();
 }
 function setFeinDates(pid, vid, oid, sd, ed) {
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;

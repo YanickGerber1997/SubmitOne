@@ -786,9 +786,11 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-bg { position: absolute; inset: 0; display: flex; z-index: 0; }
 .g-bg .g-cell { border-bottom: none; }
 
-.g-side-row { height: 38px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid var(--border);
-              font-size: 12.5px; gap: 7px; }
-.g-side-row.sub { padding-left: 26px; background: var(--surface); }
+.g-side-row { height: 38px; display: flex; align-items: center; padding: 0 10px 0 6px; border-bottom: 1px solid var(--border);
+              font-size: 12.5px; gap: 6px; }
+.g-side-row.sub { padding-left: 14px; background: var(--surface); }
+.g-rownum { flex: none; width: 18px; text-align: right; font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.g-rownum.sub { width: 26px; font-size: 9.5px; }
 .g-side-row .gewerk { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g-side-row .g-edit { display: flex; align-items: center; gap: 5px; min-width: 0; flex: 1; overflow: hidden; }
 .g-si-wrap { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; }

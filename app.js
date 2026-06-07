@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v201';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v202';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2423,7 +2423,7 @@ function viewTermine(id) {
 
   const ROW_H = 38;
   const kontaktByFirma = f => (state.kontakte || []).find(k => k.firma === f);
-  let sideRows = '', barRows = '', rowIdx = 0; const barMeta = {};
+  let sideRows = '', barRows = '', rowIdx = 0, gNr = 0; const barMeta = {};
   vs.forEach(v => {
     const colKey = ganttColKey(v), colHex = ganttColHex(v), light = (ganttColorMode === 'status' && colKey === 'hgrau') ? ' g-light' : '';
     const hatTermin = v.bauStart && v.bauEnde;
@@ -2432,7 +2432,9 @@ function viewTermine(id) {
     if (ganttSide.firma && v.firma) extra.push(`<span class="g-si firma">${esc(v.firma)}</span>`);
     if (ganttSide.person && k && k.person) extra.push(`<span class="g-si">${esc(k.person)}</span>`);
     if (ganttSide.natel && k && k.telefon) extra.push(`<span class="g-si">☎ ${esc(k.telefon)}</span>`);
+    const gnr = ++gNr; let oNr = 0;
     sideRows += `<div class="g-side-row${hatTermin ? '' : ' offen'}">
+      <span class="g-rownum">${gnr}</span>
       <button class="g-phase-dot" data-act="grob-phase" data-pid="${p.id}" data-vid="${v.id}" style="background:${phaseColOf(v)}" title="Bauphase (Grobplanung): ${esc((BAU_PHASEN.find(x => x.key === phaseOf(v)) || {}).label || '')}${v.bauPhase ? ' · manuell' : ''} – klicken zum Ändern"></button>
       <span class="g-edit" data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}" title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">
         <span class="bkp-code">${esc(v.bkp)}</span>${ganttSide.gewerk ? ` <span class="gewerk">${esc(v.gewerk)}</span>` : ''}${extra.length ? `<span class="g-si-wrap">${extra.join('<span class="g-si-sep">·</span>')}</span>` : ''}
@@ -2458,7 +2460,7 @@ function viewTermine(id) {
     (v.vorgaenge || []).filter(o => o.start && o.ende).forEach(o => {
       const key = v.id + '/' + o.id;
       barMeta[key] = { row: rowIdx, left: leftPx(o.start), width: widthPx(o.start, o.ende) };
-      sideRows += `<div class="g-side-row sub"><span class="gewerk" style="font-weight:500">${esc(o.titel)}</span>
+      sideRows += `<div class="g-side-row sub"><span class="g-rownum sub">${gnr}.${++oNr}</span><span class="gewerk" style="font-weight:500">${esc(o.titel)}</span>
         <button class="x-btn" title="Vorgang löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button></div>`;
       barRows += `<div class="g-row">${gdLabels(o.start, o.ende, leftPx(o.start), leftPx(o.start) + widthPx(o.start, o.ende))}<div class="g-bar sub${light}" style="left:${leftPx(o.start)}px;width:${widthPx(o.start, o.ende)}px;background:${colHex}"
         title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"

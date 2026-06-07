@@ -771,10 +771,10 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-tb-sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 4px; }
 .btn.sm.ico { padding: 4px 8px; font-size: 13.5px; line-height: 1; }
 /* Grosser Outlook-Stil-Button: Symbol gross oben, Text klein unten, höher als breit */
-.g-bigbtn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; width: 50px; height: 52px; flex: none; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); cursor: pointer; color: var(--text); }
+.g-bigbtn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; width: 76px; height: 80px; flex: none; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); cursor: pointer; color: var(--text); }
 .g-bigbtn:hover { background: var(--brand-soft); border-color: var(--brand); }
-.g-bigbtn .bb-ico { font-size: 22px; line-height: 1; }
-.g-bigbtn .bb-lbl { font-size: 10px; font-weight: 600; color: var(--text-soft); }
+.g-bigbtn .bb-ico { font-size: 34px; line-height: 1; }
+.g-bigbtn .bb-lbl { font-size: 12px; font-weight: 600; color: var(--text-soft); }
 .g-head { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); background: var(--surface); }
 /* Mitlaufender Kopf (Overlay) beim Scrollen – nur Anzeige, klickt nicht */
 .gantt-stickyhead { position: fixed; z-index: 50; display: none; box-shadow: 0 3px 7px rgba(15,24,48,.10); pointer-events: none; }

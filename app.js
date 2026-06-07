@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v225';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v226';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -9727,7 +9727,7 @@ function pdfGantt(pid, paper) {
       const wEnd = new Date(d); wEnd.setDate(d.getDate() + 6); const se = wEnd > rangeEnd ? rangeEnd : wEnd;
       const r = Math.min(100, pct(isoOf(se)) + 100 / totalDays);
       gridV += `<div class="pg-grid wk" style="left:${l}%"></div>`;
-      subBand += `<div class="pg-sub" style="left:${l}%;width:${Math.max(0, r - l)}%">${isoWeek(d)}</div>`;
+      subBand += `<div class="pg-sub" style="left:${l}%;width:${Math.max(0, r - l)}%">KW&nbsp;${isoWeek(d)}</div>`;
       d.setDate(d.getDate() + 7);
     }
   } else if (ganttZoom === 'tag') {
@@ -9745,7 +9745,7 @@ function pdfGantt(pid, paper) {
       while (d <= rangeEnd) { const we = d.getDay() === 0 || d.getDay() === 6; subBand += `<div class="pg-sub${we ? ' we' : ''}" style="left:${pct(isoOf(d))}%;width:${100 / totalDays}%">${d.getDate()}</div>`; d.setDate(d.getDate() + 1); }
     } else {
       let w = new Date(rangeStart); w.setDate(w.getDate() - ((w.getDay() + 6) % 7));
-      while (w <= rangeEnd) { const l = Math.max(0, pct(isoOf(w))); const we2 = new Date(w); we2.setDate(w.getDate() + 6); const se = we2 > rangeEnd ? rangeEnd : we2; const r = Math.min(100, pct(isoOf(se)) + 100 / totalDays); subBand += `<div class="pg-sub" style="left:${l}%;width:${Math.max(0, r - l)}%">${isoWeek(w)}</div>`; w.setDate(w.getDate() + 7); }
+      while (w <= rangeEnd) { const l = Math.max(0, pct(isoOf(w))); const we2 = new Date(w); we2.setDate(w.getDate() + 6); const se = we2 > rangeEnd ? rangeEnd : we2; const r = Math.min(100, pct(isoOf(se)) + 100 / totalDays); subBand += `<div class="pg-sub" style="left:${l}%;width:${Math.max(0, r - l)}%">KW&nbsp;${isoWeek(w)}</div>`; w.setDate(w.getDate() + 7); }
     }
   }
 

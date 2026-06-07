@@ -927,6 +927,8 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-lbl-below.sub { font-size: 9px; font-weight: 500; color: var(--text-soft); }
 .gantt.lbl-below .g-bar:not(.sub) { top: 2px; }
 .gantt.lbl-below .g-bar.sub { top: 2px; }
+/* Auto: einzelner Balken rutscht runter, damit der Name darüber Platz hat */
+.g-bar.bar-low { top: auto; bottom: 2px; }
 /* Beschriftung vor/links des Balkens (rechtsbündig, endet kurz vor dem Start) */
 .g-lbl-before { position: absolute; top: 50%; transform: translate(-100%, -50%); font-size: 11px; font-weight: 600; color: var(--text); white-space: nowrap; pointer-events: none; z-index: 5; }
 .g-lbl-before.sub { font-size: 10px; font-weight: 500; color: var(--text-soft); }

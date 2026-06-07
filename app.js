@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v286';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v287';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2331,7 +2331,7 @@ let ganttAuto = false;
 let ganttDurAlign = 'mitte';   // 'links' | 'mitte' | 'rechts'
 let _eLabel = 'auto', _eDur = 'off', _eDates = 'off', _eDatesBelow = false, _eAlign = 'links', _eDurAlign = 'mitte';
 function ganttEffective() {
-  if (ganttAuto) { _eLabel = 'auto'; _eDur = 'oben'; _eDates = (ganttDates === 'off' ? 'kurz' : ganttDates); _eDatesBelow = true; _eAlign = 'links'; _eDurAlign = 'mitte'; }
+  if (ganttAuto) { _eLabel = 'auto'; _eDur = ganttDurMode; _eDates = (ganttDates === 'off' ? 'kurz' : ganttDates); _eDatesBelow = false; _eAlign = 'links'; _eDurAlign = ganttDurAlign; }
   else { _eLabel = ganttLabelMode; _eDur = ganttDurMode; _eDates = ganttDates; _eDatesBelow = false; _eAlign = ganttLabelAlign; _eDurAlign = ganttDurAlign; }
 }
 function gdFmt(iso) {
@@ -2374,11 +2374,13 @@ const LABEL_MODES = ['auto', 'above', 'below', 'before', 'after', 'clip', 'over'
 const LABEL_NAMES = { auto: 'Auto', above: 'Oben', below: 'Unten', before: 'Vor', after: 'Nach', clip: 'Innen', over: 'Über' };
 function gBarLabel(text, gL, gW, sub, isAuto, chartW, hasOutLink, hasInLink) {
   const m = _eLabel, sc = sub ? ' sub' : '', gR = gL + gW, lblW = barLabelW(text);
-  const base = { inner: '', outer: '', gdOffStart: 0, gdOffEnd: 0 };
+  const base = { inner: '', outer: '', gdOffStart: 0, gdOffEnd: 0, barLow: false };
   const inside = () => ({ ...base, inner: esc(text) });
   const after = () => ({ ...base, outer: `<span class="g-lbl-out${sc}" style="left:${gR + 5}px">${esc(text)}</span>`, gdOffEnd: lblW + 5 });
   const before = () => ({ ...base, outer: `<span class="g-lbl-before${sc}" style="left:${gL - 5}px">${esc(text)}</span>`, gdOffStart: -(lblW + 8) });
   const over = () => ({ ...base, outer: `<span class="g-lbl-over${sc}" style="left:${gL + 6}px">${esc(text)}</span>` });
+  // Auto-Oben: Name über DIESEN Balken (nur dieser Balken rutscht runter, kein Rauslaufen hinten)
+  const aboveOne = () => ({ ...base, outer: `<span class="g-lbl-above${sc}" style="left:${gL}px">${esc(text)}</span>`, barLow: true });
   const alignPos = () => _eAlign === 'mitte' ? `left:${Math.round((gL + gR) / 2)}px;transform:translateX(-50%)` : (_eAlign === 'rechts' ? `left:${gR}px;transform:translateX(-100%)` : `left:${gL}px`);
   if (m === 'above') return { ...base, outer: `<span class="g-lbl-above${sc}" style="${alignPos()}">${esc(text)}</span>` };
   if (m === 'below') return { ...base, outer: `<span class="g-lbl-below${sc}" style="${alignPos()}">${esc(text)}</span>` };
@@ -2386,11 +2388,9 @@ function gBarLabel(text, gL, gW, sub, isAuto, chartW, hasOutLink, hasInLink) {
   if (m === 'after') return after();
   if (m === 'over') return over();
   if (m === 'clip') return { ...base, inner: esc(text) };
-  // 'auto' = Priorität: drinnen → dahinter → davor → drüber; Verknüpfungen am Ein-/Ausgang werden gemieden
+  // 'auto' = Priorität: drinnen → sonst über DIESEN Balken (Balken rutscht runter); nur wenn das nicht geht hinten/vorne/drüber
   if (isAuto || barLabelFits(text, gW)) return inside();
-  if (!hasOutLink && gR + 5 + lblW <= (chartW || Infinity)) return after();   // dahinter (nur wenn am Ende keine Verbindung)
-  if (!hasInLink && gL - 5 - lblW >= 0) return before();                       // davor (nur wenn am Start keine Verbindung)
-  return over();                                                               // sonst drüber (auf dem Balken)
+  return aboveOne();
 }
 // Mitlaufender Gantt-Kopf: fixes Overlay des Monats-/KW-Kopfes beim Scrollen (kein eigener Scrollbalken)
 let _gshRefs = null, _gshBound = false;
@@ -2464,6 +2464,21 @@ function updateGanttFocus() {
   });
 }
 function scheduleGanttFocus() { if (!ganttFocus) return; if (_focusRaf) return; _focusRaf = requestAnimationFrame(() => { _focusRaf = 0; updateGanttFocus(); }); }
+// Fokus: Gewerk in den aktuell sichtbaren Zeitausschnitt einplanen
+function actFocusAdd(e, pid) {
+  const p = findProjekt(pid); if (!p) return; if (gesperrt(pid)) return;
+  const main = document.querySelector('.g-main');
+  let startIso = ganttCtx && ganttCtx.rangeStartISO;
+  if (main && ganttCtx && ganttCtx.pxPerDay) startIso = addDays(ganttCtx.rangeStartISO, Math.round((main.scrollLeft + 12) / ganttCtx.pxPerDay));
+  const vs = gewerkeSorted(p).slice().sort((a, b) => (a.bauStart ? 1 : 0) - (b.bauStart ? 1 : 0));   // ohne Termin zuerst
+  const items = vs.map(v => ({
+    icon: v.bauStart ? '🗓' : '＋',
+    label: esc(v.gewerk || v.bkp || 'Gewerk') + (v.bauStart ? ` · ${fmtDate(v.bauStart)}` : ' · noch kein Termin'),
+    act: () => actEditTermin(pid, v.id, startIso),
+  }));
+  if (!items.length) { toast('Keine Gewerke vorhanden', 'info'); return; }
+  openContextMenu(e, items);
+}
 function hexA(hex, a) { const h = String(hex).replace('#', ''); if (h.length < 6) return hex; return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`; }
 const GANTT_FIRMA_PALETTE = ['#1f6feb', '#16a34a', '#ea7a3c', '#7c3aed', '#0d9488', '#dc2626', '#a16207', '#db2777', '#0891b2', '#65a30d', '#9333ea', '#0f766e', '#b45309', '#2563eb'];
 function firmaColHex(name) { if (!name) return '#94a3b8'; let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return GANTT_FIRMA_PALETTE[h % GANTT_FIRMA_PALETTE.length]; }
@@ -2765,7 +2780,7 @@ function viewTermine(id) {
       } else {
         const gOut = (p.ganttLinks || []).some(lk => lk.from === v.id), gIn = (p.ganttLinks || []).some(lk => lk.to === v.id);
         const gL = leftPx(v.bauStart), gW = widthPx(v.bauStart, v.bauEnde), gLab = gBarLabel(v.gewerk, gL, gW, false, isAuto, innerW, gOut, gIn);
-        barRows += `<div class="g-row" data-x0="${gx0}" data-x1="${gx1}">${preBars}${gdLabels(v.bauStart, v.bauEnde, gL, gL + gW, gLab.gdOffStart, gLab.gdOffEnd)}<div class="g-bar${light}${isAuto ? ' summary' : ''} align-${_eAlign}" style="left:${gL}px;width:${gW}px;background:${colHex}"
+        barRows += `<div class="g-row" data-x0="${gx0}" data-x1="${gx1}">${preBars}${gdLabels(v.bauStart, v.bauEnde, gL, gL + gW, gLab.gdOffStart, gLab.gdOffEnd)}<div class="g-bar${light}${isAuto ? ' summary' : ''} align-${_eAlign}${gLab.barLow ? ' bar-low' : ''}" style="left:${gL}px;width:${gW}px;background:${colHex}"
           title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}"
           data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
           <span class="g-h l"></span><span class="g-lbl">${gLab.inner}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div>${gLab.outer}${gDauerLabel(v.bauStart, v.bauEnde, gL, gL + gW, false)}</div>`;
@@ -2782,7 +2797,7 @@ function viewTermine(id) {
         const oOut = (p.ganttLinks || []).some(lk => lk.from === key), oIn = (p.ganttLinks || []).some(lk => lk.to === key);
         const oL = leftPx(o.start), oW = widthPx(o.start, o.ende), oLab = gBarLabel(o.titel, oL, oW, true, false, innerW, oOut, oIn);
         barMeta[key] = { row: rowIdx, left: oL, width: oW };
-        barRows += `<div class="g-row" data-x0="${oL}" data-x1="${oL + oW}">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOffStart, oLab.gdOffEnd)}<div class="g-bar sub${light} align-${_eAlign}" style="left:${oL}px;width:${oW}px;background:${colHex}"
+        barRows += `<div class="g-row" data-x0="${oL}" data-x1="${oL + oW}">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOffStart, oLab.gdOffEnd)}<div class="g-bar sub${light} align-${_eAlign}${oLab.barLow ? ' bar-low' : ''}" style="left:${oL}px;width:${oW}px;background:${colHex}"
           title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
           data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
           <span class="g-h l"></span><span class="g-lbl">${oLab.inner}</span>${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div>${oLab.outer}${gDauerLabel(o.start, o.ende, oL, oL + oW, true)}</div>`;
@@ -2843,6 +2858,7 @@ function viewTermine(id) {
       </div></div>
     </div>
     <div class="g-footer">
+      ${ganttFocus ? `<button class="btn sm" data-act="focus-add" data-pid="${p.id}" title="Gewerk in den aktuell sichtbaren Zeitausschnitt einplanen">+ Gewerk hier</button><span class="g-tb-sep"></span>` : ''}
       ${zoomCtrl}${scaleCtrl}
       <span class="g-tb-sep"></span>
       <div class="g-zoom" title="Zeilenhöhe"><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="out" title="flacher">≡</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="reset" style="min-width:30px" title="Standard">${ganttRowH}</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="in" title="höher">☰</button></div>
@@ -11041,12 +11057,13 @@ function pdfDeckblatt(pid, vid, eid, typ) {
 
 /* --- Termine / Gantt --- */
 
-function actEditTermin(pid, vid) {
+function actEditTermin(pid, vid, defStart) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
+  const sV = v.bauStart || defStart || '', eV = v.bauEnde || (defStart ? addDays(defStart, 5) : '');
   openModal('Grobtermine – ' + v.gewerk, `
     <div class="form-row">
-      <label class="field">Ausführung von <input class="input" type="date" id="t_start" value="${esc(v.bauStart || '')}"></label>
-      <label class="field">Ausführung bis <input class="input" type="date" id="t_ende" value="${esc(v.bauEnde || '')}"></label>
+      <label class="field">Ausführung von <input class="input" type="date" id="t_start" value="${esc(sV)}"></label>
+      <label class="field">Ausführung bis <input class="input" type="date" id="t_ende" value="${esc(eV)}"></label>
     </div>
     <div class="form-row" style="margin-top:8px">
       <label class="field">Bestellfrist / Vorlauf (Tage <b>vor</b> Start) <input class="input" type="number" id="t_bestell" value="${v.bestellfrist ?? ''}" placeholder="z.B. 30" min="0">
@@ -11694,6 +11711,7 @@ document.addEventListener('click', e => {
     case 'gantt-labelmode': ganttLabelMode = kind || LABEL_MODES[(LABEL_MODES.indexOf(ganttLabelMode) + 1) % LABEL_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-strength':  ganttColorStrength = kind || STRENGTH_MODES[(STRENGTH_MODES.indexOf(ganttColorStrength) + 1) % STRENGTH_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-focus':     ganttFocus = !ganttFocus; rerenderGantt(pid); break;
+    case 'focus-add':       actFocusAdd(e, pid); break;
     case 'gantt-colors-open': actGanttColors(pid); break;
     case 'gantt-colors-reset': { if (state.ganttColors) delete state.ganttColors[act.dataset.kind]; save(); rerenderGantt(pid); closeModal(); actGanttColors(pid); } break;
     case 'eckdaten':        actEckdaten(pid); break;

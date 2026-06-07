@@ -1087,8 +1087,8 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
   white-space: nowrap; overflow: hidden; cursor: grab; box-shadow: 0 1px 2px rgba(0,0,0,.15); user-select: none;
   z-index: 4; pointer-events: auto;   /* Balken + Text über den Verbindungslinien (Linien-SVG liegt davor im DOM) */
 }
-/* Leere Zeilenflächen lassen Klicks zur dahinterliegenden Linien-SVG durch (Auswahl/Löschen); Balken & Zeichnen bleiben klickbar */
-.g-rows .g-row { pointer-events: none; }
+/* Hinter-Modus: leere Zeilenflächen lassen Klicks zur dahinterliegenden Linien-SVG durch (Auswahl/Löschen); Balken & Zeichnen bleiben klickbar */
+.gantt.links-behind .g-rows .g-row { pointer-events: none; }
 .g-rows .g-row.g-draw { pointer-events: auto; }
 /* Fokus-Modus: Zeilen ohne Aktivität im sichtbaren Zeitausschnitt ausblenden → aktive rücken zusammen (live beim Scrollen) */
 .g-row.g-hide, .g-side-row.g-hide { display: none; }

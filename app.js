@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v283';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v284';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1845,6 +1845,7 @@ function ganttRibbonTabs(p) {
     rgroup('Dauer anzeigen', optBtns('gantt-durmode', p.id, [['off', 'Aus'], ['innen', 'Innen'], ['oben', 'Oben'], ['unten', 'Unten']], ganttDurMode));
   else if (ganttTab === 'zeit') b =
     rgroup('Abhängigkeit', bigBtn('gantt-chain', 'chain', 'Verkettung', { pid: p.id, on: ganttChain, title: 'Verkettung ' + (ganttChain ? 'an' : 'aus') }) + bigBtn('gantt-workdays', 'calCheck', 'Arbeitstage', { pid: p.id, on: ganttWorkdays, title: 'Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus') }) + ((p.sitzungsraster && p.sitzungsraster.aktiv) ? bigBtn('gantt-raster', 'calendar', 'Sitzungen', { pid: p.id, on: ganttRaster, title: 'Sitzungslinien ' + (ganttRaster ? 'an' : 'aus') }) : '')) +
+    rgroup('Linien', optBtns('gantt-linkpos', p.id, [['behind', 'Hinter'], ['front', 'Über']], ganttLinkFront ? 'front' : 'behind')) +
     rgroup('Rand', bigBtn('gantt-pad', 'rand', 'Rand ' + ganttPad + 'M', { pid: p.id, kind: 'cycle', title: 'Rand (Monate) links/rechts – klicken erhöht (0–6)' }));
   else if (ganttTab === 'mehr') b =
     rgroup('Eckdaten', bigBtn('eckdaten', 'flag', 'Baustart', { pid: p.id, on: !!(p.baustart || p.bauende), title: 'Baustart / Bauende / Bezug' }) + bigBtn('feiertage', 'star', 'Feiertage', { pid: p.id, on: !!p.kanton, title: 'Feiertage / Kanton' + (p.kanton ? ' ' + p.kanton : '') })) +
@@ -2356,7 +2357,7 @@ function barLabelW(text) { return String(text || '').length * 6.4 + 8; }
 let ganttLabelMode = 'auto';
 const LABEL_MODES = ['auto', 'above', 'below', 'before', 'after', 'clip', 'over'];
 const LABEL_NAMES = { auto: 'Auto', above: 'Oben', below: 'Unten', before: 'Vor', after: 'Nach', clip: 'Innen', over: 'Über' };
-function gBarLabel(text, gL, gW, sub, isAuto, chartW) {
+function gBarLabel(text, gL, gW, sub, isAuto, chartW, hasOutLink) {
   const m = ganttLabelMode, sc = sub ? ' sub' : '', gR = gL + gW, lblW = barLabelW(text);
   const base = { inner: '', outer: '', gdOffStart: 0, gdOffEnd: 0 };
   const inside = () => ({ ...base, inner: esc(text) });
@@ -2370,8 +2371,9 @@ function gBarLabel(text, gL, gW, sub, isAuto, chartW) {
   if (m === 'after') return after();
   if (m === 'over') return over();
   if (m === 'clip') return { ...base, inner: esc(text) };
-  // 'auto' = Optimum: am besten sichtbar – innen wenn's passt, sonst hinten, sonst vorne, sonst auf dem Balken
+  // 'auto' = Optimum: am besten sichtbar – innen wenn's passt; sonst je nach Platz; bei Verknüpfung am Ende lieber auf den Balken
   if (isAuto || barLabelFits(text, gW)) return inside();
+  if (hasOutLink) return over();                               // hinten läuft eine Verbindung raus → auf den Balken (nicht überschreiben)
   if (gR + 5 + lblW <= (chartW || Infinity)) return after();   // passt rechts noch ins Diagramm
   if (gL - 5 - lblW >= 0) return before();                      // sonst links davor
   return over();                                                // sonst lesbar auf den Balken
@@ -2433,6 +2435,7 @@ let ganttFont = 11;              // Schriftgrösse im Gantt (Balken-Labels, px; 
 let ganttPad = 1;                // Rand (Monate) links/rechts um das Programm (Scroll-Spielraum)
 let ganttRibbon = true;          // Werkzeug-Leiste (Kategorien) ein-/ausgeklappt
 let ganttFocus = false;          // Fokus: nur Zeilen mit Aktivität im sichtbaren Zeitausschnitt hervorheben (live beim Scrollen)
+let ganttLinkFront = false;      // Verbindungslinien über (true) oder hinter (false) den Balken
 let _focusRaf = 0;
 function updateGanttFocus() {
   const main = document.querySelector('.g-main'); const rowsC = main && main.querySelector('.g-rows'); if (!main || !rowsC) return;
@@ -2745,7 +2748,8 @@ function viewTermine(id) {
         // Gewerk-Zeile bleibt leer – das grosse Fenster (unten) repräsentiert den Oberbalken
         barRows += `<div class="g-row" data-x0="${gx0}" data-x1="${gx1}">${preBars}</div>`;
       } else {
-        const gL = leftPx(v.bauStart), gW = widthPx(v.bauStart, v.bauEnde), gLab = gBarLabel(v.gewerk, gL, gW, false, isAuto, innerW);
+        const gOut = (p.ganttLinks || []).some(lk => lk.from === v.id);
+        const gL = leftPx(v.bauStart), gW = widthPx(v.bauStart, v.bauEnde), gLab = gBarLabel(v.gewerk, gL, gW, false, isAuto, innerW, gOut);
         barRows += `<div class="g-row" data-x0="${gx0}" data-x1="${gx1}">${preBars}${gdLabels(v.bauStart, v.bauEnde, gL, gL + gW, gLab.gdOffStart, gLab.gdOffEnd)}<div class="g-bar${light}${isAuto ? ' summary' : ''} align-${ganttLabelAlign}" style="left:${gL}px;width:${gW}px;background:${colHex}"
           title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}"
           data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
@@ -2760,7 +2764,8 @@ function viewTermine(id) {
       sideRows += `<div class="g-side-row sub"><span class="g-rownum sub">${gnr}.${++oNr}</span><span class="gewerk" style="font-weight:500;cursor:pointer" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="Untertermin bearbeiten">${esc(o.titel)}</span>
         ${gespr ? '' : `<button class="x-btn" title="Untertermin löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button>`}</div>`;
       if (oDated) {
-        const oL = leftPx(o.start), oW = widthPx(o.start, o.ende), oLab = gBarLabel(o.titel, oL, oW, true, false, innerW);
+        const oOut = (p.ganttLinks || []).some(lk => lk.from === key);
+        const oL = leftPx(o.start), oW = widthPx(o.start, o.ende), oLab = gBarLabel(o.titel, oL, oW, true, false, innerW, oOut);
         barMeta[key] = { row: rowIdx, left: oL, width: oW };
         barRows += `<div class="g-row" data-x0="${oL}" data-x1="${oL + oW}">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOffStart, oLab.gdOffEnd)}<div class="g-bar sub${light} align-${ganttLabelAlign}" style="left:${oL}px;width:${oW}px;background:${colHex}"
           title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
@@ -2799,7 +2804,7 @@ function viewTermine(id) {
 
   render(head + `
     ${warnBanner}${regelBanner}
-    <div class="gantt lbl-${ganttLabelMode}${ganttFocus ? ' focus-on' : ''}" style="--rowh:${ROW_H}px;--gfont:${ganttFont}px">
+    <div class="gantt lbl-${ganttLabelMode}${ganttFocus ? ' focus-on' : ''}${ganttLinkFront ? ' links-front' : ' links-behind'}" style="--rowh:${ROW_H}px;--gfont:${ganttFont}px">
       <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div></div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
@@ -2816,8 +2821,9 @@ function viewTermine(id) {
           ${todayLeft != null ? `<div class="g-today" style="left:${todayLeft}px"></div>` : ''}
           ${markBands}
           ${fensterLayer}
-          ${linkSvg}
+          ${ganttLinkFront ? '' : linkSvg}
           ${barRows}
+          ${ganttLinkFront ? linkSvg : ''}
         </div>
       </div></div>
     </div>
@@ -11621,6 +11627,7 @@ document.addEventListener('click', e => {
     case 'gantt-tab':    ganttTab = kind || 'ansicht'; rerenderGantt(pid); break;
     case 'gantt-durmode': ganttDurMode = kind || 'off'; rerenderGantt(pid); break;
     case 'gantt-align':  ganttLabelAlign = kind || 'links'; rerenderGantt(pid); break;
+    case 'gantt-linkpos': ganttLinkFront = (kind === 'front'); rerenderGantt(pid); break;
     case 'gantt-mode':   ganttMode = kind; viewTermine(pid); break;
     case 'gantt-color':  ganttColorMode = kind; rerenderGantt(pid); break;
     case 'grob-zoom':    { grobZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.4, +(grobZoom + (kind === 'in' ? 0.2 : -0.2)).toFixed(2))); viewGrobGantt(findProjekt(pid)); } break;

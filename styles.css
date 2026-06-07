@@ -957,8 +957,9 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-bestell { cursor: ew-resize; }
 .g-bestell:hover { border-color: rgba(90,110,150,.85); box-shadow: inset 2px 0 0 rgba(90,110,150,.6); }
 .g-bar .g-lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 7px; pointer-events: none; }
-.g-bar .g-h { flex: none; width: 7px; align-self: stretch; cursor: ew-resize; border-radius: 6px; }
-.g-bar:hover .g-h { background: rgba(255,255,255,.4); }
+.g-bar .g-h { flex: none; width: 10px; align-self: stretch; cursor: ew-resize; border-radius: 6px; position: relative; }
+.g-bar:hover .g-h { background: rgba(255,255,255,.45); }
+.g-bar:hover .g-h::after { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 2px; height: 11px; border-radius: 2px; background: rgba(255,255,255,.85); box-shadow: 3px 0 0 -1px rgba(255,255,255,.55), -3px 0 0 -1px rgba(255,255,255,.55); }
 .g-bar.sub { top: 11px; height: 16px; font-size: 10px; opacity: .94; }
 .g-bar.g-light, .g-bar.g-light .g-lbl { color: #334155; }
 .g-bar.grey   { background: var(--s-grey); }
@@ -971,13 +972,15 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-today::after { content: 'heute'; position: absolute; top: -16px; left: -14px; font-size: 9.5px; color: var(--s-red); font-weight: 700; }
 /* Gantt-Verbindungen (Abhängigkeiten) */
 .g-bar { overflow: visible; }
-.g-link-dot { position: absolute; right: -6px; top: 50%; transform: translateY(-50%); width: 11px; height: 11px; border-radius: 50%; background: #fff; border: 2px solid var(--brand); cursor: crosshair; opacity: 0; z-index: 4; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
-.g-bar:hover .g-link-dot { opacity: 1; }
+.g-link-dot { position: absolute; right: -18px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; border-radius: 50%; background: var(--brand); border: 2px solid #fff; cursor: crosshair; opacity: 0; z-index: 6; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.g-link-dot::after { content: '⛓'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #fff; }
+.g-bar:hover .g-link-dot { opacity: .92; }
+.g-link-dot:hover { opacity: 1; transform: translateY(-50%) scale(1.18); }
 .g-links { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 5; overflow: visible; }
-.g-link-line { fill: none; stroke: #94a3b8; stroke-width: 1.6; }
+.g-link-line { fill: none; stroke: #94a3b8; stroke-width: 1.8; }
 .g-link-arrow { fill: #94a3b8; }
-.g-link-hit { fill: none; stroke: transparent; stroke-width: 10; pointer-events: stroke; cursor: pointer; }
-.g-link:hover .g-link-line, .g-link:hover .g-link-arrow { stroke: var(--brand); fill: var(--brand); }
+.g-link-hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: pointer; }
+.g-link:hover .g-link-line, .g-link:hover .g-link-arrow { stroke: var(--brand); fill: var(--brand); stroke-width: 2.6; }
 .g-link-grip { fill: transparent; pointer-events: all; cursor: ew-resize; }
 .g-link:hover .g-link-grip { fill: rgba(31,111,235,.18); rx: 3; }
 .g-link-temp { fill: none; stroke: var(--brand); stroke-width: 2; stroke-dasharray: 5 3; }

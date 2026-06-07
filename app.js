@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v216';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v217';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2427,13 +2427,14 @@ function viewTermine(id) {
     return `<div class="g-holiday" style="left:${x}px;width:${Math.max(pxPerDay, 2)}px" title="${esc(f.n)} ${fmtDate(isoOf(f.d))}">${showLbl ? `<span>${esc(holLabel(f))}</span>` : ''}</div>`;
   }).join('');
 
-  // Projekt-Meilensteine: Baustart, Bauende & Bezug (im Gantt anklickbar zum Bearbeiten)
+  // Projekt-Meilensteine: Baustart/Bauende automatisch aus den Gewerken (manuell überschreibbar), Bezug = Bauende
+  const ek = eckDaten(p);
   const projMarks = [];
-  if (p.baustart) projMarks.push({ iso: p.baustart, n: 'Baustart', cls: 'start' });
-  if (p.bauende) projMarks.push({ iso: p.bauende, n: 'Bauende', cls: 'ende' });
-  if (p.bezug) projMarks.push({ iso: p.bezug, n: 'Bezug', cls: 'bezug' });
+  if (ek.baustart) projMarks.push({ iso: ek.baustart, n: 'Baustart', cls: 'start', auto: ek.autoS });
+  if (ek.bauende) projMarks.push({ iso: ek.bauende, n: 'Bauende', cls: 'ende', auto: ek.autoE });
+  if (ek.bezug) projMarks.push({ iso: ek.bezug, n: 'Bezug', cls: 'bezug', auto: ek.autoB });
   const markBands = projMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; }).map(m =>
-    `<div class="g-mark ${m.cls}" data-act="eckdaten" data-pid="${p.id}" style="left:${dayDiff(rangeStart, dISO(m.iso)) * pxPerDay}px" title="${m.n}: ${fmtDate(m.iso)} – klicken zum Bearbeiten"><span>${m.n} ${fmtDate(m.iso)}</span></div>`).join('');
+    `<div class="g-mark ${m.cls}" data-act="eckdaten" data-pid="${p.id}" style="left:${dayDiff(rangeStart, dISO(m.iso)) * pxPerDay}px" title="${m.n}: ${fmtDate(m.iso)}${m.auto ? ' (automatisch)' : ' (manuell)'} – klicken zum Bearbeiten"><span>${m.n} ${fmtDate(m.iso)}</span></div>`).join('');
 
   // Ressourcen-Hinweis (einstellbar): gleiche Firma in Gewerken ohne genügend Abstand
   const rc = p.ressCheck || { aktiv: true, minGap: 0 };
@@ -2752,14 +2753,22 @@ function ganttBarMenu(e, bar) {
   vergabeMenu(e, pid, vid, extras, { noDelete: true });   // im Terminprogramm kein Gewerk-Löschen
 }
 function clearTermin(pid, vid) { if (gesperrt(pid)) return; const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return; v.bauStart = ''; v.bauEnde = ''; save(); rerenderGantt(pid); toast('Termin entfernt', 'info'); }
-// Eckdaten / Meilensteine im Gantt bearbeiten (Baustart, Bauende, Bezug)
+// Eckdaten: Baustart/Bauende automatisch aus den Gewerken (frühester Start / spätestes Ende), Bezug = Bauende; manuell überschreibbar
+function eckDaten(p) {
+  let s = '', e = '';
+  (p.vergaben || []).forEach(v => { if (v.bauStart && (!s || v.bauStart < s)) s = v.bauStart; if (v.bauEnde && (!e || v.bauEnde > e)) e = v.bauEnde; });
+  const baustart = p.baustart || s, bauende = p.bauende || e, bezug = p.bezug || bauende;
+  return { baustart, bauende, bezug, autoS: !p.baustart, autoE: !p.bauende, autoB: !p.bezug, calcS: s, calcE: e };
+}
 function actEckdaten(pid) {
-  const p = findProjekt(pid); if (!p) return;
+  const p = findProjekt(pid); if (!p) return; const ek = eckDaten(p);
+  const hint = (auto, calc, alt) => auto ? `<span class="muted" style="font-size:11px;font-weight:400">automatisch: ${calc ? fmtDate(calc) : (alt || '–')}</span>` : `<span class="muted" style="font-size:11px;font-weight:400">manuell gesetzt</span>`;
   openModal('Eckdaten / Meilensteine', `
-    <p class="muted" style="font-size:12.5px;margin-top:0">Vertikale Markierungen im Terminprogramm. Leer = keine Markierung.</p>
-    <label class="field">📍 Baustart <input class="input" type="date" id="ek_baustart" value="${esc(p.baustart || '')}"></label>
-    <label class="field" style="margin-top:8px">🏁 Bauende <input class="input" type="date" id="ek_bauende" value="${esc(p.bauende || '')}"></label>
-    <label class="field" style="margin-top:8px">🔑 Bezug / Übergabe <input class="input" type="date" id="ek_bezug" value="${esc(p.bezug || '')}"></label>
+    <p class="muted" style="font-size:12.5px;margin-top:0"><b>Baustart</b> &amp; <b>Bauende</b> werden automatisch aus den Gewerken berechnet (frühester Start / spätestes Ende), <b>Bezug</b> = Bauende. Feld leer lassen = automatisch; ein Datum eintragen = fixe Vorgabe.</p>
+    <label class="field">📍 Baustart ${hint(ek.autoS, ek.calcS)} <input class="input" type="date" id="ek_baustart" value="${esc(p.baustart || '')}"></label>
+    <label class="field" style="margin-top:8px">🏁 Bauende ${hint(ek.autoE, ek.calcE)} <input class="input" type="date" id="ek_bauende" value="${esc(p.bauende || '')}"></label>
+    <label class="field" style="margin-top:8px">🔑 Bezug / Übergabe ${hint(ek.autoB, ek.bauende, 'wie Bauende')} <input class="input" type="date" id="ek_bezug" value="${esc(p.bezug || '')}"></label>
+    <p class="muted" style="font-size:11px;margin-top:8px">Tipp: einzelnes Feld leeren stellt es wieder auf automatisch.</p>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="eckdaten-save" data-pid="${pid}">Speichern</button>`);
 }
 function saveEckdaten(pid) {

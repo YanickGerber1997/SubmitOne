@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v250';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v251';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2366,9 +2366,7 @@ function viewTermine(id) {
       ${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}
     </div>
     ${projektTabs(p, 'termine', `${ganttModeToggle(p)}<div class="g-toolbar">
-      ${zoomCtrl}${scaleCtrl}${sortCtrl}
-      <div class="g-zoom" title="Zeilenhöhe"><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="out" title="flacher">≡</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="reset" style="min-width:30px" title="Standard">${ganttRowH}</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="in" title="höher">☰</button></div>
-      ${dateCtrl}
+      ${sortCtrl}${dateCtrl}
       <span class="g-tb-sep"></span>
       <div class="g-zoom" title="Balkenfarbe: Status / Unternehmer / Phase">${[['status', 'Status'], ['firma', 'Firma'], ['phase', 'Phase']].map(([k, l]) => `<button class="${ganttColorMode === k ? 'active' : ''}" data-act="gantt-color" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>
       <span class="g-tb-sep"></span>
@@ -2675,7 +2673,7 @@ function viewTermine(id) {
     <div class="g-footer">
       ${zoomCtrl}${scaleCtrl}
       <span class="g-tb-sep"></span>
-      <span class="muted" style="font-size:11px">Spalten</span>${infoCtrl}
+      <div class="g-zoom" title="Zeilenhöhe"><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="out" title="flacher">≡</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="reset" style="min-width:30px" title="Standard">${ganttRowH}</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="in" title="höher">☰</button></div>
     </div>
     <div class="g-legend">
       ${(() => {

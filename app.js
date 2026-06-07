@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v228';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v229';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2249,10 +2249,13 @@ function removeFeinKommentar(pid, kid) {
   save(); closeModal(); viewFeinViertel(p);
 }
 function gdFmt(iso) { if (!iso || ganttDates === 'off') return ''; const d = dISO(iso); const dd = String(d.getDate()).padStart(2, '0'), mm = String(d.getMonth() + 1).padStart(2, '0'); return ganttDates === 'short' ? `${dd}.${mm}.` : `${dd}.${mm}.${String(d.getFullYear()).slice(2)}`; }
-function gdLabels(startIso, endIso, x0, x1) {
+function gdLabels(startIso, endIso, x0, x1, endShift) {
   if (ganttDates === 'off') return '';
-  return `<span class="g-date l" style="left:${x0}px">${gdFmt(startIso)}</span><span class="g-date r" style="left:${x1}px">${gdFmt(endIso)}</span>`;
+  return `<span class="g-date l" style="left:${x0}px">${gdFmt(startIso)}</span><span class="g-date r" style="left:${x1 + (endShift || 0)}px">${gdFmt(endIso)}</span>`;
 }
+// Passt das Balken-Label in den Balken? sonst rechts daneben anzeigen
+function barLabelFits(text, wpx) { return wpx >= String(text || '').length * 6.4 + 18; }
+function barLabelW(text) { return String(text || '').length * 6.4 + 8; }
 let ganttPendingScroll = null;  // {left, y} – nach In-Place-Rerender wiederherstellen
 // Gantt neu zeichnen ohne Scroll-Sprung (Seite + horizontaler Scroll bleiben)
 function rerenderGantt(pid) {
@@ -2529,10 +2532,12 @@ function viewTermine(id) {
         // Gewerk-Zeile bleibt leer – das grosse Fenster (unten) repräsentiert den Oberbalken
         barRows += `<div class="g-row">${preBars}</div>`;
       } else {
-        barRows += `<div class="g-row">${preBars}${gdLabels(v.bauStart, v.bauEnde, leftPx(v.bauStart), leftPx(v.bauStart) + widthPx(v.bauStart, v.bauEnde))}<div class="g-bar${light}${isAuto ? ' summary' : ''}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
+        const gL = leftPx(v.bauStart), gW = widthPx(v.bauStart, v.bauEnde), gFits = isAuto ? true : barLabelFits(v.gewerk, gW);
+        const gOut = gFits ? '' : `<span class="g-lbl-out" style="left:${gL + gW + 5}px">${esc(v.gewerk)}</span>`;
+        barRows += `<div class="g-row">${preBars}${gdLabels(v.bauStart, v.bauEnde, gL, gL + gW, gFits ? 0 : barLabelW(v.gewerk) + 5)}<div class="g-bar${light}${isAuto ? ' summary' : ''}" style="left:${gL}px;width:${gW}px;background:${colHex}"
           title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}"
           data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
-          <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
+          <span class="g-h l"></span><span class="g-lbl">${gFits ? esc(v.gewerk) : ''}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div>${gOut}</div>`;
       }
     } else {
       barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw" data-pid="${p.id}" data-vid="${v.id}"><span class="g-draw-hint">ziehen = Termin zeichnen · Klick = Dialog</span></div>`;
@@ -2543,11 +2548,13 @@ function viewTermine(id) {
       sideRows += `<div class="g-side-row sub"><span class="g-rownum sub">${gnr}.${++oNr}</span><span class="gewerk" style="font-weight:500;cursor:pointer" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="Untertermin bearbeiten">${esc(o.titel)}</span>
         ${gespr ? '' : `<button class="x-btn" title="Untertermin löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button>`}</div>`;
       if (oDated) {
-        barMeta[key] = { row: rowIdx, left: leftPx(o.start), width: widthPx(o.start, o.ende) };
-        barRows += `<div class="g-row">${gdLabels(o.start, o.ende, leftPx(o.start), leftPx(o.start) + widthPx(o.start, o.ende))}<div class="g-bar sub${light}" style="left:${leftPx(o.start)}px;width:${widthPx(o.start, o.ende)}px;background:${colHex}"
+        const oL = leftPx(o.start), oW = widthPx(o.start, o.ende), oFits = barLabelFits(o.titel, oW);
+        const oOut = oFits ? '' : `<span class="g-lbl-out sub" style="left:${oL + oW + 5}px">${esc(o.titel)}</span>`;
+        barMeta[key] = { row: rowIdx, left: oL, width: oW };
+        barRows += `<div class="g-row">${gdLabels(o.start, o.ende, oL, oL + oW, oFits ? 0 : barLabelW(o.titel) + 5)}<div class="g-bar sub${light}" style="left:${oL}px;width:${oW}px;background:${colHex}"
           title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
           data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
-          <span class="g-h l"></span><span class="g-lbl">${esc(o.titel)}</span>${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div></div>`;
+          <span class="g-h l"></span><span class="g-lbl">${oFits ? esc(o.titel) : ''}</span>${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div>${oOut}</div>`;
       } else {
         barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw sub" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}"><span class="g-draw-hint">ziehen = Untertermin zeichnen</span></div>`;
       }

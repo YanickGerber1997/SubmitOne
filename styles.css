@@ -838,6 +838,8 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-date { position: absolute; top: 50%; transform: translateY(-50%); font-size: 9.5px; font-variant-numeric: tabular-nums; color: var(--text-soft); white-space: nowrap; pointer-events: none; z-index: 2; }
 .g-date.l { transform: translate(-100%, -50%); padding-right: 5px; }
 .g-date.r { padding-left: 5px; }
+.g-lbl-out { position: absolute; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 600; color: var(--text); white-space: nowrap; pointer-events: none; z-index: 2; }
+.g-lbl-out.sub { font-size: 10px; font-weight: 500; color: var(--text-soft); }
 /* Grob-Gantt (Phasen) */
 .grob-wrap { font-size: 13px; }
 .grob-row { display: flex; align-items: center; border-bottom: 1px solid var(--border); min-height: 40px; }

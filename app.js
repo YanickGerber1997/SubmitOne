@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v256';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v257';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2642,13 +2642,20 @@ function viewTermine(id) {
     }
     const e = pts[pts.length - 1]; d += ` L ${e[0]} ${e[1]}`; return d;
   };
-  const STUB = 13;   // erst gerade nach rechts raus, bevor die Linie abbiegt
+  const STUB = 13, LGAP = 6;   // Stub-Länge, Spur-Abstand gegen Überlagerung
+  const usedEx = [], usedEn = [], usedMid = [];
+  const vFree = (arr, x, y0, y1) => !arr.some(s => Math.abs(s.x - x) < LGAP && !(y1 < s.y0 - 1 || y0 > s.y1 + 1));
+  const hFree = (arr, y, x0, x1) => !arr.some(s => Math.abs(s.y - y) < LGAP && !(x1 < s.x0 - 1 || x0 > s.x1 + 1));
   const linkPaths = (p.ganttLinks || []).map(lk => {
     const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
     const hh = ROW_H / 2;
     const ax = a.left + a.width, ay = a.row * ROW_H + hh, bx = b.left, by = b.row * ROW_H + hh;
-    // Einheitlich: raus nach rechts (ex) → runter zum Zeilenumbruch (midY) → zurück (en) → runter → vorne ins Ziel
-    const ex = ax + STUB, en = Math.max(2, bx - STUB), midY = ay + (by - ay) / 2;
+    const ylo = Math.min(ay, by), yhi = Math.max(ay, by);
+    // raus nach rechts (eigene Spur) → runter zum Zeilenumbruch (eigene Spur) → zurück vor das Ziel (eigene Spur) → runter → vorne ins Ziel
+    let ex = ax + STUB, g = 0; while (!vFree(usedEx, ex, ylo, yhi) && g++ < 40) ex += LGAP;
+    let en = Math.max(2, bx - STUB); g = 0; while (!vFree(usedEn, en, ylo, yhi) && g++ < 40) en = Math.max(2, en - LGAP);
+    let midY = ay + (by - ay) / 2; g = 0; while (!hFree(usedMid, midY, Math.min(ex, en), Math.max(ex, en)) && g++ < 40) midY += LGAP;
+    usedEx.push({ x: ex, y0: ylo, y1: yhi }); usedEn.push({ x: en, y0: ylo, y1: yhi }); usedMid.push({ y: midY, x0: Math.min(ex, en), x1: Math.max(ex, en) });
     const d = orthPath([[ax, ay], [ex, ay], [ex, midY], [en, midY], [en, by], [bx, by]], 4);
     return `<g class="g-link${ganttLinkSel === lk.id ? ' g-sel' : ''}" data-lid="${lk.id}">
       <path class="g-link-hit" d="${d}"></path>

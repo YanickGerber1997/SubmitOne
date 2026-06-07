@@ -755,6 +755,7 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-zoom button.active { background: var(--brand); color: #fff; }
 .g-toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: -4px 0 16px; }
 .page-toolbar .g-toolbar { margin: 0; flex: 1 1 100%; }
+.page-toolbar .g-topbox, .page-toolbar .g-ribbon { flex: 1 1 100%; min-width: 0; }
 .page-toolbar .g-tb-sep { margin: 2px 3px; }
 .g-verbar { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 4px 8px; margin-bottom: 8px; }
 
@@ -777,18 +778,19 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-bigbtn .bb-lbl { font-size: 9px; font-weight: 600; color: var(--text-soft); white-space: nowrap; }
 .g-bigbtn.on { background: var(--brand); border-color: var(--brand); }
 .g-bigbtn.on .bb-ico, .g-bigbtn.on .bb-lbl { color: #fff; }
-/* Kompakte Kopf-Box: Modus + Version */
-.g-topbox { display: inline-flex; flex-direction: column; gap: 6px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); margin-bottom: 10px; }
-.g-topbox .seg { display: inline-flex; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 3px; align-self: flex-start; }
-.g-topbox .g-verbar { margin-bottom: 0; border: none; background: transparent; padding: 0; }
-/* Ribbon mit Kategorien (einklappbar) */
-.g-ribbon { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin-bottom: 12px; }
-.g-ribbon-toggle { align-self: center; border: none; background: none; cursor: pointer; color: var(--text-faint); font-size: 14px; padding: 0 8px; }
+/* Kompakte Kopf-Box: Modus + Version auf EINER Zeile */
+.g-topbox { display: flex; flex-direction: row; align-items: center; gap: 8px; flex-wrap: nowrap; overflow-x: auto; padding: 4px 8px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); margin-bottom: 7px; }
+.g-topbox .seg { display: inline-flex; gap: 3px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 2px; flex: none; }
+.g-topbox .seg .btn { white-space: nowrap; }
+.g-topbox .g-verbar { margin-bottom: 0; border: none; background: transparent; padding: 0; flex-wrap: nowrap; flex: none; }
+/* Ribbon mit Kategorien – NIE zweizeilig: bei wenig Platz horizontal scrollen */
+.g-ribbon { display: flex; align-items: stretch; gap: 0; flex-wrap: nowrap; overflow-x: auto; margin-bottom: 8px; padding-bottom: 2px; }
+.g-ribbon-toggle { align-self: center; border: none; background: none; cursor: pointer; color: var(--text-faint); font-size: 14px; padding: 0 6px; flex: none; }
 .g-ribbon-toggle:hover { color: var(--brand); }
-.g-rgroup { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0 9px; border-right: 1px solid var(--border); }
+.g-rgroup { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0 7px; border-right: 1px solid var(--border); flex: none; }
 .g-rgroup:last-child { border-right: none; }
 .g-rgroup-btns { display: flex; gap: 4px; }
-.g-rgroup-lbl { font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .4px; }
+.g-rgroup-lbl { font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
 .g-head { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); background: var(--surface); }
 /* Mitlaufender Kopf (Overlay) beim Scrollen – nur Anzeige, klickt nicht */
 .gantt-stickyhead { position: fixed; z-index: 50; display: none; box-shadow: 0 3px 7px rgba(15,24,48,.10); pointer-events: none; }
@@ -1097,7 +1099,7 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-link:hover .g-link-grip { fill: rgba(31,111,235,.22); rx: 2.5; }
 .g-link.g-sel .g-link-grip { fill: var(--brand); rx: 2.5; }
 .g-link-temp { fill: none; stroke: var(--brand); stroke-width: 2; stroke-dasharray: 5 3; }
-.g-footer { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); position: sticky; bottom: 8px; z-index: 30; box-shadow: 0 -3px 8px -4px rgba(15,24,48,.18); margin-top: 8px; }
+.g-footer { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; overflow-x: auto; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); position: sticky; bottom: 8px; z-index: 30; box-shadow: 0 -3px 8px -4px rgba(15,24,48,.18); margin-top: 8px; }
 .g-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--text-soft); }
 .g-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .g-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }

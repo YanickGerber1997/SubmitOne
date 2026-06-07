@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v234';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v235';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2492,14 +2492,20 @@ function viewTermine(id) {
   const inMarks = projMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; });
   const markBands = inMarks.map(m => `<div class="g-mark ${m.cls}" data-act="eckdaten" data-pid="${p.id}" style="left:${dayDiff(rangeStart, dISO(m.iso)) * pxPerDay}px" title="${m.n}: ${fmtDate(m.iso)}${m.auto ? ' (automatisch)' : ' (manuell)'} – klicken zum Bearbeiten"></div>`).join('');
 
-  // Kopf-Band: Feiertags- & Meilenstein-Beschriftungen (vertikal, oben im klebrigen Kopf)
+  // Kopf-Band: Feiertags- & Meilenstein-Beschriftungen HORIZONTAL; bei Überlappung gestapelt (mehrere Zeilen)
   const evItems = [];
   hols.forEach(f => evItems.push({ x: dayDiff(rangeStart, f.d) * pxPerDay, n: f.n, cls: 'hol', t: `${f.n} ${fmtDate(isoOf(f.d))}` }));
   inMarks.forEach(m => evItems.push({ x: dayDiff(rangeStart, dISO(m.iso)) * pxPerDay, n: `${m.n} ${fmtDate(m.iso)}`, cls: 'mark ' + m.cls, t: `${m.n}: ${fmtDate(m.iso)}`, mark: true }));
   evItems.sort((a, b) => a.x - b.x);
-  let lastEvX = -Infinity;
-  const evCells = evItems.map(e => { if (!e.mark && e.x - lastEvX < 9) return ''; lastEvX = e.x; return `<span class="g-ev ${e.cls}"${e.mark ? ` data-act="eckdaten" data-pid="${p.id}"` : ''} style="left:${e.x}px" title="${esc(e.t)}">${esc(e.n)}</span>`; }).join('');
-  const eventBandH = evItems.length ? 56 : 0;
+  const rowEnds = [];   // rechter Rand je Zeile → Greedy First-Fit-Stapelung
+  evItems.forEach(e => {
+    const w = String(e.n).length * 5.3 + 12;
+    let row = rowEnds.findIndex(end => e.x >= end + 4);
+    if (row < 0) { row = rowEnds.length; rowEnds.push(0); }
+    rowEnds[row] = e.x + w; e.row = row;
+  });
+  const evLineH = 13, eventBandH = evItems.length ? Math.max(1, rowEnds.length) * evLineH + 5 : 0;
+  const evCells = evItems.map(e => `<span class="g-ev ${e.cls}"${e.mark ? ` data-act="eckdaten" data-pid="${p.id}"` : ''} style="left:${e.x}px;top:${e.row * evLineH + 2}px" title="${esc(e.t)}">${esc(e.n)}</span>`).join('');
   const eventBand = eventBandH ? `<div class="g-evband" style="height:${eventBandH}px">${evCells}</div>` : '';
   const headH = (ganttZoom === 'tag' ? 74 : (subCells ? 56 : 38)) + eventBandH;
 

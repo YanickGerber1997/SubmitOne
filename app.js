@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v202';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v203';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2128,7 +2128,7 @@ function onBarDrag(e) {
 }
 function setFeinDates(pid, vid, oid, sd, ed) {
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
-  if (oid) { const o = (v.vorgaenge || []).find(x => x.id === oid); if (o) { o.start = sd; o.ende = ed; } }
+  if (oid) { const o = (v.vorgaenge || []).find(x => x.id === oid); if (o) { o.start = sd; o.ende = ed; } recalcAutoBalken(v); }
   else { v.bauStart = sd; v.bauEnde = ed; }
   save(); viewFeinViertel(p);
 }
@@ -2206,11 +2206,11 @@ function saveFeinVorgang(pid, vid, oid) {
   if (!titel) { toast('Bitte eine Bezeichnung eingeben', 'info'); return; }
   if (!s || !e) { toast('Bitte Start und Ende setzen', 'info'); return; }
   if (e < s) { toast('Ende liegt vor dem Start', 'info'); return; }
-  o.titel = titel; o.start = s; o.ende = e;
+  o.titel = titel; o.start = s; o.ende = e; recalcAutoBalken(v);
   save(); closeModal(); viewFeinViertel(p);
 }
 function removeFeinVorgang(pid, vid, oid) {
-  const p = findProjekt(pid); const v = findVergabe(p, vid); if (v) v.vorgaenge = (v.vorgaenge || []).filter(x => x.id !== oid);
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (v) { v.vorgaenge = (v.vorgaenge || []).filter(x => x.id !== oid); recalcAutoBalken(v); }
   save(); closeModal(); viewFeinViertel(p);
 }
 function removeFeinKommentar(pid, kid) {
@@ -2425,7 +2425,9 @@ function viewTermine(id) {
   const kontaktByFirma = f => (state.kontakte || []).find(k => k.firma === f);
   let sideRows = '', barRows = '', rowIdx = 0, gNr = 0; const barMeta = {};
   vs.forEach(v => {
+    recalcAutoBalken(v);   // Oberbalken ggf. aus Unterterminen umspannen
     const colKey = ganttColKey(v), colHex = ganttColHex(v), light = (ganttColorMode === 'status' && colKey === 'hgrau') ? ' g-light' : '';
+    const isAuto = autoSpanned(v);
     const hatTermin = v.bauStart && v.bauEnde;
     const k = (ganttSide.person || ganttSide.natel) && v.firma ? kontaktByFirma(v.firma) : null;
     const extra = [];
@@ -2449,8 +2451,8 @@ function viewTermine(id) {
         const bl = leftPx(bsISO), bw = Math.max(leftPx(v.bauStart) - bl, 3);
         bestellBar = `<div class="g-bestell" data-pid="${p.id}" data-vid="${v.id}" data-ctx="gantt" data-right="${leftPx(v.bauStart)}" style="left:${bl}px;width:${bw}px" title="Bestellfrist ${v.bestellfrist} Tage – bestellen bis ${fmtDate(bsISO)}, Einbau ab ${fmtDate(v.bauStart)} · ziehen = Vorlauf ändern · Klick = bearbeiten · Rechtsklick = Menü"><span>🛒 ${v.bestellfrist}T</span></div>`;
       }
-      barRows += `<div class="g-row">${bestellBar}${gdLabels(v.bauStart, v.bauEnde, leftPx(v.bauStart), leftPx(v.bauStart) + widthPx(v.bauStart, v.bauEnde))}<div class="g-bar${light}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
-        title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)} · ${STATUS_BY_KEY[v.status]?.label || ''}"
+      barRows += `<div class="g-row">${bestellBar}${gdLabels(v.bauStart, v.bauEnde, leftPx(v.bauStart), leftPx(v.bauStart) + widthPx(v.bauStart, v.bauEnde))}<div class="g-bar${light}${isAuto ? ' summary' : ''}" style="left:${leftPx(v.bauStart)}px;width:${widthPx(v.bauStart, v.bauEnde)}px;background:${colHex}"
+        title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}"
         data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
         <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
     } else {
@@ -2766,7 +2768,8 @@ function onBarMouseDown(e) {
   if (!ganttCtx || e.button !== 0) return;
   const bar = e.currentTarget;
   const isHandle = e.target.classList.contains('g-h');
-  const mode = isHandle ? (e.target.classList.contains('l') ? 'resize-l' : 'resize-r') : 'move';
+  let mode = isHandle ? (e.target.classList.contains('l') ? 'resize-l' : 'resize-r') : 'move';
+  if (!bar.dataset.oid) { const p2 = findProjekt(bar.dataset.pid), v2 = p2 && findVergabe(p2, bar.dataset.vid); if (v2 && autoSpanned(v2)) mode = 'lock'; }   // Auto-Oberbalken: nicht ziehbar (Klick = Dialog)
   ganttDrag = {
     bar, mode, moved: false, startX: e.clientX,
     origLeft: parseFloat(bar.style.left) || 0, origWidth: parseFloat(bar.style.width) || 0,
@@ -2804,7 +2807,7 @@ function onBestellDown(e) {
 }
 
 function onGanttMove(e) {
-  const d = ganttDrag; if (!d) return;
+  const d = ganttDrag; if (!d || d.mode === 'lock') return;
   const dxPx = e.clientX - d.startX;
   if (Math.abs(dxPx) > 2) d.moved = true;
   const dDays = Math.round(dxPx / ganttCtx.pxPerDay);   // für die Tage erst beim Loslassen gesnappt
@@ -2837,9 +2840,19 @@ function onGanttUp() {
   }
 }
 
+// Oberbalken (Gewerk) optional automatisch aus den Unterterminen umspannen (min Start – max Ende)
+function recalcAutoBalken(v) {
+  if (!v || !v.autoBalken) return false;
+  const subs = (v.vorgaenge || []).filter(o => o.start && o.ende);
+  if (!subs.length) return false;
+  let s = '', e = ''; subs.forEach(o => { if (!s || o.start < s) s = o.start; if (!e || o.ende > e) e = o.ende; });
+  if (v.bauStart === s && v.bauEnde === e) return false;
+  v.bauStart = s; v.bauEnde = e; return true;
+}
+function autoSpanned(v) { return v.autoBalken && (v.vorgaenge || []).some(o => o.start && o.ende); }
 function commitBarDates(pid, vid, oid, s, en) {
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
-  if (oid) { const o = (v.vorgaenge || []).find(x => x.id === oid); if (o) { o.start = s; o.ende = en; } }
+  if (oid) { const o = (v.vorgaenge || []).find(x => x.id === oid); if (o) { o.start = s; o.ende = en; } recalcAutoBalken(v); }
   else { v.bauStart = s; v.bauEnde = en; }
   let moved = 0;
   if (ganttChain) moved = rescheduleChain(p, oid ? vid + '/' + oid : vid);
@@ -10254,16 +10267,21 @@ function actEditTermin(pid, vid) {
     </div>
     <label class="field" style="margin-top:8px">Bestellfrist / Vorlauf <input class="input" type="number" id="t_bestell" value="${v.bestellfrist ?? ''}" placeholder="z.B. 30" min="0">
       <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Tage <b>vor</b> Ausführungsbeginn (Material bestellen, Vorlaufzeit). Erscheint im Gantt als heller Balken vor dem Hauptbalken.</span></label>
+    ${(v.vorgaenge || []).length ? `<label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px"><input type="checkbox" id="t_auto"${v.autoBalken ? ' checked' : ''}> Dauer <b>automatisch aus den Unterterminen</b> (Oberbalken umspannt sie)</label>` : ''}
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-termin" data-pid="${pid}" data-vid="${vid}">Speichern</button>`);
 }
 
 function saveTermin(pid, vid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
-  const s = $('#t_start').value, e = $('#t_ende').value;
-  if (s && e && e < s) { toast('Ende liegt vor dem Start', 'info'); return; }
-  v.bauStart = s; v.bauEnde = e;
+  const auto = $('#t_auto') ? $('#t_auto').checked : v.autoBalken;
+  v.autoBalken = !!auto;
+  if (!auto) {
+    const s = $('#t_start').value, e = $('#t_ende').value;
+    if (s && e && e < s) { toast('Ende liegt vor dem Start', 'info'); return; }
+    v.bauStart = s; v.bauEnde = e;
+  } else { recalcAutoBalken(v); }
   const bf = $('#t_bestell'); if (bf) v.bestellfrist = Number(bf.value) || 0;
-  save(); closeModal(); router();
+  save(); closeModal(); rerenderGantt(pid);
   toast('Termine aktualisiert');
 }
 
@@ -10286,14 +10304,14 @@ function saveVorgang(pid, vid) {
   if (!s || !e) { toast('Bitte Start und Ende setzen', 'info'); return; }
   if (e < s) { toast('Ende liegt vor dem Start', 'info'); return; }
   (v.vorgaenge = v.vorgaenge || []).push({ id: uid('o'), titel, start: s, ende: e });
-  save(); closeModal(); router();
+  recalcAutoBalken(v); save(); closeModal(); rerenderGantt(pid);
   toast('Vorgang hinzugefügt');
 }
 
 function removeVorgang(pid, vid, oid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   v.vorgaenge = (v.vorgaenge || []).filter(x => x.id !== oid);
-  save(); router();
+  recalcAutoBalken(v); save(); router();
 }
 
 /* --- Firmen-Register-Suche (Demo) ---

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v175';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v176';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -4796,16 +4796,7 @@ function viewVergabeDetail(pid, vid) {
     ${projektTabs(p, 'gewerke', gwToolbar)}`;
 
   const html = `
-    <div class="detail-stats">
-      <div class="dstat"><div class="l">Kostenschätzung</div><div class="v">${chf(v.schaetzung)}</div></div>
-      <div class="dstat"><div class="l">günstigste Offerte</div><div class="v">${bestBetrag(v) != null ? chf(bestBetrag(v)) : '<span class="muted" style="font-size:14px">–</span>'}</div></div>
-      <div class="dstat"><div class="l">nach Abgebot</div><div class="v">${bestAbgebot(v) != null ? chf(bestAbgebot(v)) : '<span class="muted" style="font-size:14px">–</span>'}</div></div>
-      <div class="dstat"><div class="l">Vergabesumme (n. Verhandlung)</div><div class="v">${isVergeben(v) ? chf(v.betrag) : '<span class="muted" style="font-size:14px">offen</span>'}</div></div>
-      <div class="dstat" style="border-color:var(--brand)"><div class="l">Auftragssumme inkl. NT/Regie</div><div class="v" style="color:var(--brand)">${isVergeben(v) ? chf(schlussSumme(v)) : '~' + chf(bestBetrag(v) != null ? bestBetrag(v) : (v.schaetzung || 0))}</div></div>
-      <div class="dstat"><div class="l">Bezahlt</div><div class="v">${chf(rechnungBezahlt(v))}</div></div>
-      ${rechnungRueckbehalt(v) ? `<div class="dstat"><div class="l">Rückbehalt einbehalten</div><div class="v">${chf(rechnungRueckbehalt(v))}</div></div>` : ''}
-      <div class="dstat"><div class="l">Offen</div><div class="v">${chf((isVergeben(v) ? schlussSumme(v) : 0) - rechnungBezahlt(v) - rechnungRueckbehalt(v))}</div></div>
-    </div>
+    ${rechnungRueckbehalt(v) ? `<div class="detail-stats"><div class="dstat"><div class="l">Rückbehalt einbehalten</div><div class="v">${chf(rechnungRueckbehalt(v))}</div></div></div>` : ''}
 
     ${vergabeArtCard(v)}
 
@@ -4823,21 +4814,35 @@ function viewVergabeDetail(pid, vid) {
     <div class="two-col">
       <!-- Pipeline -->
       <div class="card card-pad">
-        <div class="section-head" style="margin-top:0"><h2>Ablauf</h2></div>
+        <div class="section-head" style="margin-top:0"><h2>Ablauf &amp; Beträge</h2></div>
         <div class="vpipe">
-          ${VERGABE_STATUS.map((s, i) => {
-            const cls = i < cur ? 'done' : (i === cur ? 'current' : '');
-            const mark = i < cur ? '✓' : (i + 1);
-            const line = i < VERGABE_STATUS.length - 1 ? '<div class="vp-line"></div>' : '';
-            let sub = '';
-            if (i < cur) sub = 'erledigt';
-            else if (i === cur) sub = 'aktueller Schritt';
-            return `
-              <div class="vp-step ${cls}">
-                <div class="vp-rail"><div class="vp-dot">${mark}</div>${line}</div>
-                <div class="vp-body"><div class="vp-title">${esc(s.label)}</div>${sub ? `<div class="vp-sub">${sub}</div>` : ''}</div>
-              </div>`;
-          }).join('')}
+          ${(() => {
+            const offenB = (isVergeben(v) ? schlussSumme(v) : 0) - rechnungBezahlt(v) - rechnungRueckbehalt(v);
+            const stepVal = {
+              ausschreibung: ['KV / Schätzung', chf(v.schaetzung)],
+              versendet: eingeladene.length ? ['eingeladen', eingeladene.length + ' Firmen'] : null,
+              offerten: ['günstigste Offerte', bestBetrag(v) != null ? chf(bestBetrag(v)) : '–'],
+              angebot_erh: ['nach Abgebot', bestAbgebot(v) != null ? chf(bestAbgebot(v)) : '–'],
+              vergeben: ['Vergabesumme (n. Verh.)', isVergeben(v) ? chf(v.betrag) : 'offen'],
+              werkvertrag: ['Auftragssumme inkl. NT', isVergeben(v) ? chf(schlussSumme(v)) : '–'],
+              ausfuehrung: ['bezahlt', chf(rechnungBezahlt(v))],
+              schlussrechnung: ['noch offen', chf(offenB)],
+              abgeschlossen: ['noch offen', chf(offenB)],
+            };
+            return VERGABE_STATUS.map((s, i) => {
+              const cls = i < cur ? 'done' : (i === cur ? 'current' : '');
+              const mark = i < cur ? '✓' : (i + 1);
+              const line = i < VERGABE_STATUS.length - 1 ? '<div class="vp-line"></div>' : '';
+              const sub = i < cur ? 'erledigt' : (i === cur ? 'aktueller Schritt' : '');
+              const sv = stepVal[s.key];
+              return `
+                <div class="vp-step ${cls}">
+                  <div class="vp-rail"><div class="vp-dot">${mark}</div>${line}</div>
+                  <div class="vp-body"><div class="vp-title">${esc(s.label)}</div>${sub ? `<div class="vp-sub">${sub}</div>` : ''}</div>
+                  ${sv ? `<div class="vp-val${s.key === 'werkvertrag' ? ' brand' : ''}"><span class="vl">${sv[0]}</span><span class="vv">${sv[1]}</span></div>` : ''}
+                </div>`;
+            }).join('');
+          })()}
         </div>
       </div>
 

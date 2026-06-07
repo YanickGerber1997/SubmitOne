@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v192';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v193';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -6119,9 +6119,16 @@ function bindCalCols() {
   }));
 }
 
-// Globaler Kalender: Termin per Ziehen erstellen (Halbstunden-Raster) + Titel inline schreiben
+// Globaler Kalender (Outlook-Stil): Ziehen markiert nur (blau); erstellen per Doppelklick oder Rechtsklick
+let calSel = null;   // { iso, von (Min), bis (Min) }
 function bindGlobalCal() {
-  $$('.cal-col').forEach(col => { if (col.dataset.pid || col.dataset.plan) return; col.addEventListener('mousedown', onGlobalColDraw); });
+  $$('.cal-col').forEach(col => {
+    if (col.dataset.pid || col.dataset.plan) return;
+    col.addEventListener('mousedown', onGlobalColSelect);
+    col.addEventListener('dblclick', onGlobalColDbl);
+    col.addEventListener('contextmenu', onGlobalColMenu);
+  });
+  if (calSel) { const col = document.querySelector(`.cal-col[data-iso="${calSel.iso}"]`); if (col && !col.dataset.pid) renderSel(col, calSel.von, calSel.bis); }
   $$('.cal-tev-lbl.gedit').forEach(el => {
     el.addEventListener('mousedown', ev => ev.stopPropagation());
     el.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); el.blur(); } });
@@ -6129,29 +6136,28 @@ function bindGlobalCal() {
   });
   if (_focusGTerm) { const el = document.querySelector(`.cal-tev-lbl.gedit[data-id="${_focusGTerm}"]`); _focusGTerm = null; if (el) { el.focus(); const r = document.createRange(); r.selectNodeContents(el); r.collapse(false); const s = getSelection(); s.removeAllRanges(); s.addRange(r); } }
 }
-function onGlobalColDraw(e) {
+function renderSel(col, von, bis) { document.querySelectorAll('.cal-sel').forEach(x => x.remove()); const sel = document.createElement('div'); sel.className = 'cal-sel'; sel.style.top = ((von - CAL_SH * 60) / 60 * CAL_HH) + 'px'; sel.style.height = Math.max((bis - von) / 60 * CAL_HH, CAL_HH / 2) + 'px'; col.appendChild(sel); }
+function colMinAt(col, cy, round) { const rect = col.getBoundingClientRect(); let m = CAL_SH * 60 + (round ? Math.round : Math.floor)(((cy - rect.top) / CAL_HH * 60) / 30) * 30; return Math.max(CAL_SH * 60, Math.min(CAL_EH * 60, m)); }
+function onGlobalColSelect(e) {
   if (e.target.closest('.cal-tev')) return;
-  const col = e.currentTarget, iso = col.dataset.iso, rect = col.getBoundingClientRect();
-  const minAt = cy => { let m = CAL_SH * 60 + Math.round(((cy - rect.top) / CAL_HH * 60) / 30) * 30; return Math.max(CAL_SH * 60, Math.min(CAL_EH * 60, m)); };
-  const start = minAt(e.clientY);
-  const prev = document.createElement('div'); prev.className = 'cal-tev brand draft'; col.appendChild(prev);
-  const upd = cur => { const lo = Math.min(start, cur), hi = Math.max(start, cur); prev.style.top = ((lo - CAL_SH * 60) / 60 * CAL_HH) + 'px'; prev.style.height = Math.max((hi - lo) / 60 * CAL_HH, 14) + 'px'; };
-  upd(start + 30);
-  const move = ev => upd(minAt(ev.clientY));
-  const up = ev => {
-    document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
-    let cur = minAt(ev.clientY); if (Math.abs(cur - start) < 20) cur = Math.min(CAL_EH * 60, start + 60);
-    const lo = Math.min(start, cur), hi = Math.max(start, cur); prev.remove();
-    createGlobalTermin(iso, m2t(lo), m2t(hi));
-  };
+  const col = e.currentTarget, iso = col.dataset.iso, start = colMinAt(col, e.clientY, true);
+  let lo = start, hi = start + 30; renderSel(col, lo, hi);
+  const move = ev => { const cur = colMinAt(col, ev.clientY, true); lo = Math.min(start, cur); hi = Math.max(start + 30, Math.max(start, cur)); renderSel(col, lo, hi); };
+  const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); calSel = { iso, von: lo, bis: hi }; };
   document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); e.preventDefault();
 }
-function m2t(min) { return String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0'); }
-function createGlobalTermin(datum, von, bis) {
-  state.termine = state.termine || []; const id = uid('gt');
-  state.termine.push({ id, datum, zeit: von, zeitEnde: bis, titel: '' });
-  _focusGTerm = id; save(); viewKalenderGlobal();
+function selOrSlot(col, cy) { const iso = col.dataset.iso; if (calSel && calSel.iso === iso) return { iso, von: calSel.von, bis: calSel.bis }; const m = colMinAt(col, cy, false); return { iso, von: m, bis: Math.min(CAL_EH * 60, m + 30) }; }
+function onGlobalColDbl(e) { if (e.target.closest('.cal-tev')) return; const s = selOrSlot(e.currentTarget, e.clientY); actGlobalTermin(s.iso, m2t(s.von), m2t(s.bis)); }
+function onGlobalColMenu(e) {
+  if (e.target.closest('.cal-tev')) return; e.preventDefault();
+  const s = selOrSlot(e.currentTarget, e.clientY);
+  openContextMenu(e, [
+    { icon: '＋', label: `Termin erstellen (${m2t(s.von)}–${m2t(s.bis)})`, act: () => actGlobalTermin(s.iso, m2t(s.von), m2t(s.bis)) },
+    { sep: true },
+    { icon: '✕', label: 'Auswahl aufheben', act: () => { calSel = null; document.querySelectorAll('.cal-sel').forEach(x => x.remove()); } },
+  ]);
 }
+function m2t(min) { return String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0'); }
 function saveGTermTitle(id, text) { const t = (state.termine || []).find(x => x.id === id); if (!t || t.titel === text) return; t.titel = text; save(); }
 function removeGlobalTermin(id) { state.termine = (state.termine || []).filter(x => x.id !== id); save(); viewKalenderGlobal(); }
 // Alle Termine eines Projekts (manuell + abgeleitet)
@@ -6405,6 +6411,17 @@ function viewPendenzenGlobal() {
   $$('.pend-check').forEach(cb => cb.addEventListener('change', () => togglePendenz(cb.dataset.pid, cb.dataset.prid, cb.dataset.tid, cb.dataset.itemid)));
 }
 
+// Mini-Monat (Outlook-Stil) für die Kalender-Seitenleiste: aktuelle Woche hervorgehoben, Klick = Tag öffnen
+function miniMonth(refIso) {
+  const d = dISO(refIso || todayIso()), y = d.getFullYear(), m = d.getMonth();
+  const first = new Date(y, m, 1), lead = (first.getDay() + 6) % 7, start = new Date(y, m, 1 - lead);
+  const wkMon = mondayOf(refIso || todayIso()); const we = dISO(wkMon); we.setDate(we.getDate() + 6); const wkEnd = isoOf(we);
+  const todayI = todayIso();
+  let cells = '';
+  for (let i = 0; i < 42; i++) { const dd = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i); const iso = isoOf(dd); const other = dd.getMonth() !== m; cells += `<button class="mm2-d${other ? ' o' : ''}${iso === todayI ? ' t' : ''}${iso >= wkMon && iso <= wkEnd ? ' wk' : ''}${iso === refIso ? ' sel' : ''}" data-act="gcal-pick" data-kind="${iso}">${dd.getDate()}</button>`; }
+  return `<div class="mm2"><div class="mm2-head"><button class="mm2-nav" data-act="gcal-prev" title="zurück">‹</button><b>${MONATE[m]} ${y}</b><button class="mm2-nav" data-act="gcal-next" title="vor">›</button></div><div class="mm2-grid">${['M', 'D', 'M', 'D', 'F', 'S', 'S'].map(x => `<span class="h">${x}</span>`).join('')}${cells}</div></div>`;
+}
+function gcalPick(iso) { calRefIso = iso; const d = dISO(iso); calGY = d.getFullYear(); calGM = d.getMonth(); if (calView === 'monat') calView = 'woche'; viewKalenderGlobal(); }
 function viewKalenderGlobal() {
   const t = today();
   if (calGY == null) { calGY = t.getFullYear(); calGM = t.getMonth(); }
@@ -6419,7 +6436,7 @@ function viewKalenderGlobal() {
     const col = projColor(idx, p);
     sammleTermine(p).forEach(e => events.push({ ...e, color: col, pid: p.id, projekt: p.name }));
   });
-  (state.termine || []).forEach(t => { if (t.datum) events.push({ datum: t.datum, zeit: t.zeit || '', zeitEnde: t.zeitEnde || '', titel: t.titel || '', color: 'brand', manual: true, global: true, id: t.id, pid: null, projekt: 'Allgemein' }); });
+  if (!calHidden.has('__global__')) (state.termine || []).forEach(t => { if (t.datum) events.push({ datum: t.datum, zeit: t.zeit || '', zeitEnde: t.zeitEnde || '', titel: t.titel || '', color: 'brand', manual: true, global: true, id: t.id, pid: null, projekt: 'Allgemein' }); });
   const byDay = {};
   events.forEach(e => { (byDay[e.datum] = byDay[e.datum] || []).push(e); });
 
@@ -6453,11 +6470,13 @@ function viewKalenderGlobal() {
     <span class="muted" style="min-width:118px;font-size:12.5px">${fmtDate(e.datum)}${e.zeit ? ' · ' + esc(e.zeit) : ''}</span>
     <span style="font-size:13px">${esc(e.titel)}</span><span class="muted" style="font-size:11.5px;margin-left:auto">${esc(e.projekt)}</span></div>`).join('') : '<p class="muted" style="margin:0">Keine kommenden Termine.</p>';
 
+  const mini = miniMonth(calRefIso || todayI);
+  const calItem = (pid, label, idx, p) => `<label class="cal-listitem"><input type="checkbox" data-act="gcal-toggle" data-pid="${pid}"${calHidden.has(pid) ? '' : ' checked'}><button type="button" class="cal-dot-btn" data-act="proj-farbe" data-pid="${pid}" title="Farbe ändern"><i class="cal-dot ${p ? projColor(idx, p) : 'brand'}"></i></button><span>${esc(label)}</span></label>`;
+  const calList = `<div class="cal-listcard">${calItem('__global__', 'Allgemein', 0, null)}${projects.map((p, idx) => calItem(p.id, p.name, idx, p)).join('') || '<span class="muted" style="font-size:12px">Keine Projekte.</span>'}</div>`;
+
   render(`
     <div class="page-head"><div><h1>Kalender</h1><div class="sub">Alle Projekte · Termine, Fristen &amp; Bauprogramm</div></div>
       <button class="btn" data-act="gcal-add" data-kind="${gAddDate}">+ Termin</button></div>
-
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${toggles}</div>
 
     <div class="cal-head">
       <div style="display:flex;gap:6px;align-items:center">
@@ -6470,20 +6489,23 @@ function viewKalenderGlobal() {
       <div style="display:flex;gap:5px">${gvb('tag', 'Tag')}${gvb('woche', 'Woche')}${gvb('monat', 'Monat')}</div>
     </div>
 
-    ${gBody}
-    <p class="muted" style="font-size:12px;margin:8px 0 0">Farbe = Projekt · Chips zum Ein-/Ausblenden · Klick = Termin erfassen (Projekt wählen) · Termin anklicken = bearbeiten.</p>
-
-    <div class="section-head" style="margin-top:24px"><h2>Agenda</h2><span class="hint">nächste Termine über alle Projekte</span></div>
-    <div class="card card-pad">${agenda}</div>
+    <div class="cal-layout">
+      <aside class="cal-rail">${mini}${calList}</aside>
+      <div class="cal-main">
+        ${gBody}
+        <p class="muted" style="font-size:12px;margin:8px 0 0">${calView === 'monat' ? 'Tag anklicken = öffnen · Tag/Woche-Ansicht zum Einteilen' : 'Ziehen = Zeit markieren · Doppelklick oder Rechtsklick = Termin erstellen · Termin anklicken = bearbeiten'}.</p>
+        <div class="section-head" style="margin-top:20px"><h2>Agenda</h2><span class="hint">nächste Termine</span></div>
+        <div class="card card-pad">${agenda}</div>
+      </div>
+    </div>
   `);
   if (calView !== 'monat') { bindCalCols(); bindGlobalCal(); }
 }
 
-function actGlobalTermin(datum, zeit) {
+function actGlobalTermin(datum, zeit, zeitEnde) {
   const projects = sichtbareProjekte();
-  if (!projects.length) { toast('Zuerst ein Projekt anlegen', 'info'); return; }
   openModal('Neuer Termin', `
-    <label class="field">Projekt <select class="select" id="kt_pid">${projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
+    <label class="field">Kalender <select class="select" id="kt_pid"><option value="__global__">Allgemein (kein Projekt)</option>${projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
     <label class="field">Titel <input class="input" id="kt_titel" placeholder="z.B. Bauherrensitzung"></label>
     <div class="form-row">
       <label class="field">Datum <input class="input" type="date" id="kt_datum" value="${esc(datum || todayIso())}"></label>
@@ -6491,20 +6513,22 @@ function actGlobalTermin(datum, zeit) {
     </div>
     <div class="form-row">
       <label class="field">Von <input class="input" type="time" id="kt_zeit" value="${esc(zeit || '')}"></label>
-      <label class="field">Bis <input class="input" type="time" id="kt_ende"></label>
+      <label class="field">Bis <input class="input" type="time" id="kt_ende" value="${esc(zeitEnde || '')}"></label>
     </div>
     <label class="field">Ort <input class="input" id="kt_ort" placeholder="z.B. Baustelle / Büro"></label>
     <label class="field">Notiz <textarea class="input" id="kt_notiz" rows="2"></textarea></label>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="gkal-save">Hinzufügen</button>`);
+  setTimeout(() => $('#kt_titel')?.focus(), 30);
 }
 function saveGlobalTermin() {
-  const pid = $('#kt_pid').value; const p = findProjekt(pid); if (!p) return;
+  const pid = $('#kt_pid').value;
   const titel = $('#kt_titel').value.trim(); const datum = $('#kt_datum').value;
   if (!titel) { toast('Bitte einen Titel eingeben', 'info'); return; }
   if (!datum) { toast('Bitte ein Datum wählen', 'info'); return; }
-  p.termine = p.termine || [];
-  p.termine.push({ id: uid('kt'), titel, datum, kategorie: $('#kt_kat').value.trim(), zeit: $('#kt_zeit').value, zeitEnde: $('#kt_ende').value, ort: $('#kt_ort').value.trim(), notiz: $('#kt_notiz').value.trim() });
-  save(); closeModal(); viewKalenderGlobal(); toast('Termin gespeichert');
+  const d = { titel, datum, kategorie: $('#kt_kat').value.trim(), zeit: $('#kt_zeit').value, zeitEnde: $('#kt_ende').value, ort: $('#kt_ort').value.trim(), notiz: $('#kt_notiz').value.trim() };
+  if (pid === '__global__') { state.termine = state.termine || []; state.termine.push({ id: uid('gt'), ...d }); }
+  else { const p = findProjekt(pid); if (!p) return; p.termine = p.termine || []; p.termine.push({ id: uid('kt'), ...d }); }
+  calSel = null; save(); closeModal(); viewKalenderGlobal(); toast('Termin gespeichert');
 }
 function gcalNav(delta) {
   if (delta === 0) { const t = today(); calGY = t.getFullYear(); calGM = t.getMonth(); calRefIso = todayIso(); }
@@ -10638,6 +10662,7 @@ document.addEventListener('click', e => {
     case 'edit-termin':  actEditTermin(pid, vid); break;
     case 'save-termin':  saveTermin(pid, vid); break;
     case 'gterm-del':    removeGlobalTermin(act.dataset.id); break;
+    case 'gcal-pick':    gcalPick(kind); break;
     case 'gantt-zoom':   ganttZoom = kind; ganttScale = 1; viewTermine(pid); break;
     case 'gantt-chain':  ganttChain = !ganttChain; toast('Verkettung ' + (ganttChain ? 'an' : 'aus'), 'info'); rerenderGantt(pid); break;
     case 'gantt-workdays': ganttWorkdays = !ganttWorkdays; toast('Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus'), 'info'); rerenderGantt(pid); break;

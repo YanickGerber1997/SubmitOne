@@ -260,6 +260,27 @@ button { font-family: inherit; cursor: pointer; }
 .cal-tev.gterm .cal-tev-lbl.gedit:empty::before { content: attr(data-ph); color: rgba(255,255,255,.65); }
 .cal-tev.gterm .cal-tev-x { margin-left: auto; flex: none; background: none; border: none; color: #fff; opacity: .65; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 1px; }
 .cal-tev.gterm .cal-tev-x:hover { opacity: 1; }
+.cal-sel { position: absolute; left: 2px; right: 2px; background: rgba(31,111,235,.22); border: 1px solid var(--brand); border-radius: 4px; z-index: 4; pointer-events: none; }
+/* Kalender-Seitenleiste (Mini-Monat + Kalenderliste, Outlook-Stil) */
+.cal-layout { display: grid; grid-template-columns: 212px minmax(0, 1fr); gap: 16px; align-items: start; }
+.cal-rail { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 12px; }
+.mm2 { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px; }
+.mm2-head { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; font-weight: 700; margin-bottom: 6px; }
+.mm2-nav { background: none; border: none; cursor: pointer; color: var(--text-soft); font-size: 15px; padding: 0 6px; }
+.mm2-nav:hover { color: var(--brand); }
+.mm2-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
+.mm2-grid .h { font-size: 9px; color: var(--text-faint); text-align: center; padding-bottom: 2px; }
+.mm2-d { border: none; background: none; font-size: 11px; aspect-ratio: 1; border-radius: 5px; cursor: pointer; color: var(--text); padding: 0; }
+.mm2-d.o { color: var(--text-faint); }
+.mm2-d.wk { background: var(--brand-soft); }
+.mm2-d.t { outline: 1.5px solid var(--brand); }
+.mm2-d.sel { background: var(--brand); color: #fff; font-weight: 700; }
+.mm2-d:hover { background: var(--surface-2); }
+.cal-listcard { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px; }
+.cal-listitem { display: flex; align-items: center; gap: 7px; padding: 4px 6px; font-size: 12.5px; border-radius: 6px; cursor: pointer; }
+.cal-listitem:hover { background: var(--surface-2); }
+.cal-listitem span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 820px) { .cal-layout { grid-template-columns: 1fr; } .cal-rail { flex-direction: row; flex-wrap: wrap; position: static; } .mm2, .cal-listcard { flex: 1; min-width: 210px; } }
 /* Resize-Griffe oben/unten am Block */
 .cal-rz { position: absolute; left: 0; right: 0; height: 7px; cursor: ns-resize; z-index: 4; }
 .cal-rz.top { top: 0; }

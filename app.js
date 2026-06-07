@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v275';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v276';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1799,6 +1799,7 @@ const G_ICONS = {
   flag: '<path d="M6 21V3.5"/><path d="M6 4.5h11l-2.4 3.2L17 11H6z"/>',
   star: '<path d="M12 3.8l2.3 4.7 5.2.8-3.75 3.65.9 5.15L12 15.6l-4.65 2.45.9-5.15L4.5 9.3l5.2-.8z"/>',
   rand: '<line x1="3" y1="12" x2="21" y2="12"/><path d="M7.5 7.5L3 12l4.5 4.5"/><path d="M16.5 7.5L21 12l-4.5 4.5"/>',
+  drop: '<path d="M12 3.2c3.2 4.2 5.6 7 5.6 9.8a5.6 5.6 0 0 1-11.2 0c0-2.8 2.4-5.6 5.6-9.8z"/><path d="M9.2 14.5a2.8 2.8 0 0 0 2.8 2.5"/>',
 };
 function gIcon(name) { return `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
 function bigBtn(act, icon, label, o) { o = o || {}; return `<button class="g-bigbtn${o.on ? ' on' : ''}" data-act="${act}" data-pid="${o.pid}"${o.kind != null ? ` data-kind="${o.kind}"` : ''} title="${esc(o.title || label)}"><span class="bb-ico">${gIcon(icon)}</span><span class="bb-lbl">${esc(label)}</span></button>`; }
@@ -2367,6 +2368,19 @@ function ganttColHex(v) {
   if (ganttColorMode === 'firma') return firmaColHex(v.firma);
   return GANTT_COLS[ganttColKey(v)];
 }
+// Farbkräftigkeit: Balkenfarben Richtung warmes Creme aufhellen (herbstlich)
+let ganttColorStrength = 'voll';   // 'voll' | 'mittel' | 'hell' | 'pastell'
+const STRENGTH_MIX = { voll: 0, mittel: 0.32, hell: 0.52, pastell: 0.7 };
+const STRENGTH_NAMES = { voll: 'Voll', mittel: 'Mittel', hell: 'Hell', pastell: 'Pastell' };
+const STRENGTH_MODES = ['voll', 'mittel', 'hell', 'pastell'];
+function softHex(hex) {
+  const t = STRENGTH_MIX[ganttColorStrength] || 0; if (!t) return hex;
+  const h = String(hex).replace('#', ''); if (h.length < 6) return hex;
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  const mix = (c, tc) => Math.round(c + (tc - c) * t), to2 = n => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
+  return '#' + to2(mix(r, 246)) + to2(mix(g, 238)) + to2(mix(b, 224));   // Ziel: warmes Creme
+}
+function ganttSoftLight() { return (STRENGTH_MIX[ganttColorStrength] || 0) >= 0.5; }   // hell genug → dunkle Schrift
 let ganttCtx = null;       // { rangeStartISO, pxPerDay } – für Drag
 let ganttPid = null;       // aktuelles Projekt im Gantt (für Verbindungen)
 
@@ -2412,7 +2426,8 @@ function viewTermine(id) {
         bigBtn('gantt-color', 'palette', ganttColorMode === 'status' ? 'Status' : (ganttColorMode === 'firma' ? 'Firma' : 'Phase'), { pid: p.id, kind: ganttColorMode === 'status' ? 'firma' : (ganttColorMode === 'firma' ? 'phase' : 'status'), title: 'Balkenfarbe: Status / Firma / Phase (umschalten)' }) +
         bigBtn('gantt-dates', 'tag', ganttDates === 'off' ? 'Datum' : (ganttDates === 'full' ? 'Datum J' : 'Datum'), { pid: p.id, on: ganttDates !== 'off', title: 'Start-/Enddatum am Balken (aus → mit Jahr → ohne)' }) +
         bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) +
-        bigBtn('gantt-labelmode', 'label', LABEL_NAMES[ganttLabelMode], { pid: p.id, on: ganttLabelMode !== 'auto', title: 'Balken-Beschriftung: Auto → Oben → Unten → Vor → Innen (abgeschnitten) → Über (läuft über)' }))}
+        bigBtn('gantt-labelmode', 'label', LABEL_NAMES[ganttLabelMode], { pid: p.id, on: ganttLabelMode !== 'auto', title: 'Balken-Beschriftung: Auto → Oben → Unten → Vor → Innen (abgeschnitten) → Über (läuft über)' }) +
+        bigBtn('gantt-strength', 'drop', STRENGTH_NAMES[ganttColorStrength], { pid: p.id, on: ganttColorStrength !== 'voll', title: 'Farbkräftigkeit: Voll → Mittel → Hell → Pastell (heller/herbstlicher)' }))}
       ${rgroup('Kalender',
         bigBtn('eckdaten', 'flag', 'Baustart', { pid: p.id, on: !!(p.baustart || p.bauende), title: 'Baustart / Bauende / Bezug (Meilensteine)' }) +
         bigBtn('feiertage', 'star', 'Feiertage', { pid: p.id, on: !!p.kanton, title: 'Feiertage / Kanton' + (p.kanton ? ' ' + p.kanton : '') }) +
@@ -2588,7 +2603,7 @@ function viewTermine(id) {
   vs.forEach(v => {
     recalcAutoBalken(v);   // Oberbalken ggf. aus Unterterminen umspannen
     const rowStart = rowIdx;
-    const colKey = ganttColKey(v), colHex = ganttColHex(v), light = (ganttColorMode === 'status' && colKey === 'hgrau') ? ' g-light' : '';
+    const colKey = ganttColKey(v), colHex = softHex(ganttColHex(v)), light = ((ganttColorMode === 'status' && colKey === 'hgrau') || ganttSoftLight()) ? ' g-light' : '';
     const isAuto = autoSpanned(v);
     const fenster = isAuto && ganttFenster;   // grosses Hintergrund-Fenster statt dünnem Oberbalken
     const hatTermin = v.bauStart && v.bauEnde;
@@ -2712,9 +2727,9 @@ function viewTermine(id) {
     </div>
     <div class="g-legend">
       ${(() => {
-        if (ganttColorMode === 'firma') { const seen = []; vs.forEach(v => { const f = v.firma || 'nicht vergeben'; if (!seen.includes(f)) seen.push(f); }); return seen.map(f => `<span><i style="background:${firmaColHex(f === 'nicht vergeben' ? '' : f)}"></i>${esc(f)}</span>`).join(''); }
-        if (ganttColorMode === 'phase') { const used = new Set(vs.map(v => phaseOf(v))); return BAU_PHASEN.filter(ph => used.has(ph.key)).map(ph => `<span><i style="background:${ph.col}"></i>${esc(ph.label)}</span>`).join(''); }
-        return GANTT_LEGEND.map(([k, l]) => `<span><i style="background:${GANTT_COLS[k]}"></i>${l}</span>`).join('');
+        if (ganttColorMode === 'firma') { const seen = []; vs.forEach(v => { const f = v.firma || 'nicht vergeben'; if (!seen.includes(f)) seen.push(f); }); return seen.map(f => `<span><i style="background:${softHex(firmaColHex(f === 'nicht vergeben' ? '' : f))}"></i>${esc(f)}</span>`).join(''); }
+        if (ganttColorMode === 'phase') { const used = new Set(vs.map(v => phaseOf(v))); return BAU_PHASEN.filter(ph => used.has(ph.key)).map(ph => `<span><i style="background:${softHex(ph.col)}"></i>${esc(ph.label)}</span>`).join(''); }
+        return GANTT_LEGEND.map(([k, l]) => `<span><i style="background:${softHex(GANTT_COLS[k])}"></i>${l}</span>`).join('');
       })()}
     </div>
     <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Rechtsklick → <b>Nachfolger verketten</b> hängt ein Gewerk direkt an · bei <b>🔗 Verkettung an</b> folgen verkettete Nachfolger automatisch · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie · <b>Strg + Mausrad</b> zoomt an der Cursor-Position · mit <b>Info</b> (Gewerk/Firma/Person/Natel) blendest du die Seitenspalte ein – die BKP-Nr. bleibt immer.</p>
@@ -11546,6 +11561,7 @@ document.addEventListener('click', e => {
     case 'gantt-pad':       { ganttPad = kind === 'reset' ? 1 : (kind === 'cycle' ? (ganttPad + 1) % 7 : Math.max(0, Math.min(12, ganttPad + (kind === 'in' ? 1 : -1)))); rerenderGantt(pid); } break;
     case 'gantt-ribbon':    ganttRibbon = !ganttRibbon; rerenderGantt(pid); break;
     case 'gantt-labelmode': ganttLabelMode = LABEL_MODES[(LABEL_MODES.indexOf(ganttLabelMode) + 1) % LABEL_MODES.length]; rerenderGantt(pid); break;
+    case 'gantt-strength':  ganttColorStrength = STRENGTH_MODES[(STRENGTH_MODES.indexOf(ganttColorStrength) + 1) % STRENGTH_MODES.length]; rerenderGantt(pid); break;
     case 'eckdaten':        actEckdaten(pid); break;
     case 'eckdaten-save':   saveEckdaten(pid); break;
     case 'feiertage':       actFeiertage(pid); break;

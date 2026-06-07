@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v255';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v256';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2631,27 +2631,29 @@ function viewTermine(id) {
   // Einfüge-Streifen zwischen den Zeilen (Hover-Plus) – legt eine leere Unterzeile für das Gewerk darüber an
   const insertStrips = gespr ? '' : inserts.map(it => `<div class="g-insert" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${it.vid}" style="top:${it.y - 5}px" title="Untertermin einfügen (leer – dann Balken ziehen)"><span>+ Untertermin</span></div>`).join('');
   // Verbindungen (Abhängigkeiten) als SVG-Overlay
-  const linkVerts = [];   // belegte vertikale Spuren {x,y0,y1} – gegen Überlagerung
-  const STUB = 13;   // Stück gerade hinter dem Balkenende, bevor die Linie abbiegt
+  // Orthogonaler Pfad mit abgerundeten Ecken aus Stützpunkten
+  const orthPath = (pts, r) => {
+    let d = `M ${pts[0][0]} ${pts[0][1]}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const px = pts[i - 1][0], py = pts[i - 1][1], cx = pts[i][0], cy = pts[i][1], nx = pts[i + 1][0], ny = pts[i + 1][1];
+      const inDx = Math.sign(cx - px), inDy = Math.sign(cy - py), outDx = Math.sign(nx - cx), outDy = Math.sign(ny - cy);
+      const rr = Math.max(0, Math.min(r, Math.abs(cx - px) / 2, Math.abs(cy - py) / 2, Math.abs(nx - cx) / 2, Math.abs(ny - cy) / 2));
+      d += ` L ${cx - inDx * rr} ${cy - inDy * rr} Q ${cx} ${cy} ${cx + outDx * rr} ${cy + outDy * rr}`;
+    }
+    const e = pts[pts.length - 1]; d += ` L ${e[0]} ${e[1]}`; return d;
+  };
+  const STUB = 13;   // erst gerade nach rechts raus, bevor die Linie abbiegt
   const linkPaths = (p.ganttLinks || []).map(lk => {
     const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
     const hh = ROW_H / 2;
     const ax = a.left + a.width, ay = a.row * ROW_H + hh, bx = b.left, by = b.row * ROW_H + hh;
-    // Knie: erst nach rechts weg vom Balken (Stub), dann runter, dann ins Ziel
-    let mx = (lk.dx != null) ? bx + lk.dx : Math.max(ax + STUB, bx - STUB);
-    if (lk.dx == null) {   // Spur-Versatz gegen Überlagerung, Stub bleibt erhalten
-      const y0 = Math.min(ay, by), y1 = Math.max(ay, by), base = mx;
-      for (const off of [0, 7, -7, 14, -14, 21, -21, 28, -28, 35]) { const cand = Math.max(ax + STUB, base + off); if (!linkVerts.some(pp => Math.abs(pp.x - cand) < 7 && !(y1 < pp.y0 - 1 || y0 > pp.y1 + 1))) { mx = cand; break; } }
-      linkVerts.push({ x: mx, y0, y1 });
-    }
-    const vdir = by >= ay ? 1 : -1, hdir = bx >= mx ? 1 : -1;
-    const r = Math.max(0, Math.min(5, (mx - ax) / 2, Math.abs(by - ay) / 2, Math.abs(bx - mx) / 2 || 5));
-    const d = `M ${ax} ${ay} H ${mx - r} Q ${mx} ${ay} ${mx} ${ay + vdir * r} V ${by - vdir * r} Q ${mx} ${by} ${mx + hdir * r} ${by} H ${bx}`;
+    // Einheitlich: raus nach rechts (ex) → runter zum Zeilenumbruch (midY) → zurück (en) → runter → vorne ins Ziel
+    const ex = ax + STUB, en = Math.max(2, bx - STUB), midY = ay + (by - ay) / 2;
+    const d = orthPath([[ax, ay], [ex, ay], [ex, midY], [en, midY], [en, by], [bx, by]], 4);
     return `<g class="g-link${ganttLinkSel === lk.id ? ' g-sel' : ''}" data-lid="${lk.id}">
       <path class="g-link-hit" d="${d}"></path>
       <path class="g-link-line" d="${d}"></path>
       <path class="g-link-arrow" d="M ${bx - 6} ${by - 3.5} L ${bx} ${by} L ${bx - 6} ${by + 3.5} Z"></path>
-      <rect class="g-link-grip" data-lid="${lk.id}" data-ax="${ax}" data-ay="${ay}" data-bx="${bx}" data-by="${by}" x="${mx - 3}" y="${(ay + by) / 2 - 6}" width="6" height="12"></rect>
     </g>`;
   }).join('');
   const linkSvg = `<svg class="g-links" width="${innerW}" height="${rowIdx * ROW_H}">${linkPaths}</svg>`;

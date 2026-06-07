@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v205';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v206';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -10342,7 +10342,7 @@ function saveVorgang(pid, vid) {
 function removeVorgang(pid, vid, oid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   v.vorgaenge = (v.vorgaenge || []).filter(x => x.id !== oid);
-  recalcAutoBalken(v); save(); router();
+  recalcAutoBalken(v); save(); rerenderGantt(pid);
 }
 
 /* --- Firmen-Register-Suche (Demo) ---

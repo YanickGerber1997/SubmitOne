@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v276';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v277';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1800,6 +1800,8 @@ const G_ICONS = {
   star: '<path d="M12 3.8l2.3 4.7 5.2.8-3.75 3.65.9 5.15L12 15.6l-4.65 2.45.9-5.15L4.5 9.3l5.2-.8z"/>',
   rand: '<line x1="3" y1="12" x2="21" y2="12"/><path d="M7.5 7.5L3 12l4.5 4.5"/><path d="M16.5 7.5L21 12l-4.5 4.5"/>',
   drop: '<path d="M12 3.2c3.2 4.2 5.6 7 5.6 9.8a5.6 5.6 0 0 1-11.2 0c0-2.8 2.4-5.6 5.6-9.8z"/><path d="M9.2 14.5a2.8 2.8 0 0 0 2.8 2.5"/>',
+  swatch: '<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.4"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.4"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.4"/><rect x="13" y="13" width="7.5" height="7.5" rx="1.4"/>',
+  focus: '<rect x="9" y="3.5" width="6" height="17" rx="1.4"/><path d="M4.5 3.5v17M19.5 3.5v17"/>',
 };
 function gIcon(name) { return `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
 function bigBtn(act, icon, label, o) { o = o || {}; return `<button class="g-bigbtn${o.on ? ' on' : ''}" data-act="${act}" data-pid="${o.pid}"${o.kind != null ? ` data-kind="${o.kind}"` : ''} title="${esc(o.title || label)}"><span class="bb-ico">${gIcon(icon)}</span><span class="bb-lbl">${esc(label)}</span></button>`; }
@@ -2332,9 +2334,10 @@ function setupGanttStickyHead() {
   const hInner = document.createElement('div'); hInner.className = 'gsh-inner'; hInner.style.width = inner.offsetWidth + 'px'; hInner.appendChild(head.cloneNode(true));
   hWrap.appendChild(hInner); ov.appendChild(cWrap); ov.appendChild(hWrap);
   _gshRefs = { head, gMain, hInner, ov };
-  gMain.addEventListener('scroll', () => { if (ov.style.display !== 'none') hInner.style.transform = 'translateX(' + (-gMain.scrollLeft) + 'px)'; }, { passive: true });
+  gMain.addEventListener('scroll', () => { if (ov.style.display !== 'none') hInner.style.transform = 'translateX(' + (-gMain.scrollLeft) + 'px)'; scheduleGanttFocus(); }, { passive: true });
   if (!_gshBound) { _gshBound = true; window.addEventListener('scroll', _gshUpdate, { passive: true }); window.addEventListener('resize', _gshUpdate); }
   _gshUpdate();
+  if (ganttFocus) updateGanttFocus();
 }
 let ganttPendingScroll = null;  // {left, y} – nach In-Place-Rerender wiederherstellen
 // Gantt neu zeichnen ohne Scroll-Sprung (Seite + horizontaler Scroll bleiben)
@@ -2360,13 +2363,63 @@ let ganttRaster = true;          // Sitzungsraster-Linien im Gantt einblenden
 let ganttRowH = 38;              // Zeilenhöhe im Gantt (26–60, lesbar begrenzt)
 let ganttPad = 1;                // Rand (Monate) links/rechts um das Programm (Scroll-Spielraum)
 let ganttRibbon = true;          // Werkzeug-Leiste (Kategorien) ein-/ausgeklappt
+let ganttFocus = false;          // Fokus: nur Zeilen mit Aktivität im sichtbaren Zeitausschnitt hervorheben (live beim Scrollen)
+let _focusRaf = 0;
+function updateGanttFocus() {
+  const main = document.querySelector('.g-main'); const rowsC = main && main.querySelector('.g-rows'); if (!main || !rowsC) return;
+  const x0 = main.scrollLeft, x1 = x0 + main.clientWidth;
+  const rows = rowsC.querySelectorAll(':scope > .g-row');
+  const side = document.querySelectorAll('.g-side .g-side-row');
+  rows.forEach((row, i) => {
+    let active = false;
+    row.querySelectorAll('.g-bar').forEach(b => { const bl = b.offsetLeft, bw = b.offsetWidth; if (!(bl + bw < x0 || bl > x1)) active = true; });
+    row.classList.toggle('g-dim', !active);
+    if (side[i]) side[i].classList.toggle('g-dim', !active);
+  });
+}
+function scheduleGanttFocus() { if (!ganttFocus) return; if (_focusRaf) return; _focusRaf = requestAnimationFrame(() => { _focusRaf = 0; updateGanttFocus(); }); }
 function hexA(hex, a) { const h = String(hex).replace('#', ''); if (h.length < 6) return hex; return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`; }
 const GANTT_FIRMA_PALETTE = ['#1f6feb', '#16a34a', '#ea7a3c', '#7c3aed', '#0d9488', '#dc2626', '#a16207', '#db2777', '#0891b2', '#65a30d', '#9333ea', '#0f766e', '#b45309', '#2563eb'];
 function firmaColHex(name) { if (!name) return '#94a3b8'; let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return GANTT_FIRMA_PALETTE[h % GANTT_FIRMA_PALETTE.length]; }
 function ganttColHex(v) {
-  if (ganttColorMode === 'phase') return phaseColOf(v);
-  if (ganttColorMode === 'firma') return firmaColHex(v.firma);
-  return GANTT_COLS[ganttColKey(v)];
+  const ov = state.ganttColors || {};
+  if (ganttColorMode === 'phase') { const k = phaseOf(v); return (ov.phase && ov.phase[k]) || phaseColOf(v); }
+  if (ganttColorMode === 'firma') { const f = v.firma || 'nicht vergeben'; return (ov.firma && ov.firma[f]) || firmaColHex(v.firma); }
+  const k = ganttColKey(v); return (ov.status && ov.status[k]) || GANTT_COLS[k];
+}
+// Farb-Editor: vordefinierte Farben (Status/Gewerke, Unternehmer, Phasen) überschreiben
+function colorRow(group, key, label, cur) {
+  return `<label class="field" style="flex-direction:row;align-items:center;gap:10px;justify-content:space-between;font-weight:500">
+    <span style="display:flex;align-items:center;gap:8px"><span style="width:14px;height:14px;border-radius:3px;background:${cur};display:inline-block"></span>${esc(label)}</span>
+    <input type="color" value="${cur}" data-act="gantt-color-set" data-group="${group}" data-ckey="${esc(key)}" style="width:48px;height:30px;border:none;background:none;cursor:pointer;padding:0">
+  </label>`;
+}
+function actGanttColors(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const ov = state.ganttColors = state.ganttColors || {};
+  let rows = '', kind = '', titel = '';
+  if (ganttColorMode === 'firma') {
+    kind = 'firma'; titel = 'Unternehmer';
+    const seen = []; (p.vergaben || []).forEach(v => { const f = v.firma || 'nicht vergeben'; if (!seen.includes(f)) seen.push(f); });
+    rows = seen.map(f => colorRow('firma', f, f, (ov.firma && ov.firma[f]) || firmaColHex(f === 'nicht vergeben' ? '' : f))).join('');
+  } else if (ganttColorMode === 'phase') {
+    kind = 'phase'; titel = 'Phasen';
+    rows = BAU_PHASEN.map(ph => colorRow('phase', ph.key, ph.label, (ov.phase && ov.phase[ph.key]) || ph.col)).join('');
+  } else {
+    kind = 'status'; titel = 'Status / Gewerke';
+    rows = GANTT_LEGEND.map(([k, l]) => colorRow('status', k, l, (ov.status && ov.status[k]) || GANTT_COLS[k])).join('');
+  }
+  openModal('Farben anpassen – ' + titel, `
+    <p class="muted" style="font-size:12px;margin:0 0 12px">Farbe je Eintrag wählen – gilt für den aktuell gewählten Farbmodus (oben „Farbe"-Knopf). Die Kräftigkeit stellst du separat ein.</p>
+    <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
+  `, `<button class="btn ghost" data-act="gantt-colors-reset" data-pid="${pid}" data-kind="${kind}">Auf Standard zurück</button><button class="btn" data-close="1">Fertig</button>`);
+  $$('input[data-act="gantt-color-set"]').forEach(inp => inp.addEventListener('input', () => setGanttColor(inp.dataset.group, inp.dataset.ckey, inp.value)));
+}
+function setGanttColor(group, key, value) {
+  state.ganttColors = state.ganttColors || {};
+  state.ganttColors[group] = state.ganttColors[group] || {};
+  state.ganttColors[group][key] = value;
+  save(); rerenderGantt(ganttPid);
 }
 // Farbkräftigkeit: Balkenfarben Richtung warmes Creme aufhellen (herbstlich)
 let ganttColorStrength = 'voll';   // 'voll' | 'mittel' | 'hell' | 'pastell'
@@ -2424,6 +2477,7 @@ function viewTermine(id) {
       ${rgroup('Sortierung', bigBtn('gantt-sort', 'sort', ganttSort === 'bkp' ? 'BKP' : 'Start', { pid: p.id, kind: ganttSort === 'bkp' ? 'start' : 'bkp', title: 'Sortierung: BKP / Startdatum (umschalten)' }))}
       ${rgroup('Darstellung',
         bigBtn('gantt-color', 'palette', ganttColorMode === 'status' ? 'Status' : (ganttColorMode === 'firma' ? 'Firma' : 'Phase'), { pid: p.id, kind: ganttColorMode === 'status' ? 'firma' : (ganttColorMode === 'firma' ? 'phase' : 'status'), title: 'Balkenfarbe: Status / Firma / Phase (umschalten)' }) +
+        bigBtn('gantt-colors-open', 'swatch', 'Farben', { pid: p.id, on: !!state.ganttColors, title: 'Vordefinierte Farben anpassen (je Status/Unternehmer/Phase)' }) +
         bigBtn('gantt-dates', 'tag', ganttDates === 'off' ? 'Datum' : (ganttDates === 'full' ? 'Datum J' : 'Datum'), { pid: p.id, on: ganttDates !== 'off', title: 'Start-/Enddatum am Balken (aus → mit Jahr → ohne)' }) +
         bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) +
         bigBtn('gantt-labelmode', 'label', LABEL_NAMES[ganttLabelMode], { pid: p.id, on: ganttLabelMode !== 'auto', title: 'Balken-Beschriftung: Auto → Oben → Unten → Vor → Innen (abgeschnitten) → Über (läuft über)' }) +
@@ -2433,6 +2487,7 @@ function viewTermine(id) {
         bigBtn('feiertage', 'star', 'Feiertage', { pid: p.id, on: !!p.kanton, title: 'Feiertage / Kanton' + (p.kanton ? ' ' + p.kanton : '') }) +
         bigBtn('gantt-pad', 'rand', 'Rand ' + ganttPad + 'M', { pid: p.id, kind: 'cycle', title: 'Rand links/rechts (Monate) – klicken erhöht (0–6)' }))}
       ${rgroup('Werkzeuge',
+        bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur Zeilen mit Aktivität im sichtbaren Zeitausschnitt – live beim Scrollen' }) +
         bigBtn('gantt-chain', 'chain', 'Verkettung', { pid: p.id, on: ganttChain, title: 'Verkettung ' + (ganttChain ? 'an' : 'aus') }) +
         bigBtn('gantt-workdays', 'calCheck', 'Arbeitstage', { pid: p.id, on: ganttWorkdays, title: 'Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus') }) +
         ((p.sitzungsraster && p.sitzungsraster.aktiv) ? bigBtn('gantt-raster', 'calendar', 'Sitzungen', { pid: p.id, on: ganttRaster, title: 'Sitzungslinien ' + (ganttRaster ? 'an' : 'aus') }) : ''))}
@@ -11562,6 +11617,9 @@ document.addEventListener('click', e => {
     case 'gantt-ribbon':    ganttRibbon = !ganttRibbon; rerenderGantt(pid); break;
     case 'gantt-labelmode': ganttLabelMode = LABEL_MODES[(LABEL_MODES.indexOf(ganttLabelMode) + 1) % LABEL_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-strength':  ganttColorStrength = STRENGTH_MODES[(STRENGTH_MODES.indexOf(ganttColorStrength) + 1) % STRENGTH_MODES.length]; rerenderGantt(pid); break;
+    case 'gantt-focus':     ganttFocus = !ganttFocus; rerenderGantt(pid); break;
+    case 'gantt-colors-open': actGanttColors(pid); break;
+    case 'gantt-colors-reset': { if (state.ganttColors) delete state.ganttColors[act.dataset.kind]; save(); rerenderGantt(pid); closeModal(); actGanttColors(pid); } break;
     case 'eckdaten':        actEckdaten(pid); break;
     case 'eckdaten-save':   saveEckdaten(pid); break;
     case 'feiertage':       actFeiertage(pid); break;

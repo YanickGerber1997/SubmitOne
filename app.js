@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v214';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v215';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -651,6 +651,7 @@ async function startApp() {
   initTooltips();
   document.addEventListener('keydown', planKeydown);
   document.addEventListener('keydown', ganttKeydown);
+  initGerberLaunch();
   document.addEventListener('mousemove', planDragMove);
   document.addEventListener('mouseup', planDragUp);
   const ver = $('.ver'); if (ver) ver.textContent = 'Prototyp · ' + APP_VERSION;
@@ -2882,6 +2883,7 @@ function projektMenu(e, pid) {
     { sep: true },
     { icon: '＋', label: 'Arbeitsbeschrieb erfassen', act: () => actNewVergabe(pid) },
     { icon: '✎', label: 'Projekt bearbeiten', act: () => actEditProjekt(pid) },
+    { icon: '⬇', label: 'Als .gerber speichern', act: () => exportProjektGerber(pid) },
   ]);
 }
 function protokollMenu(e, pid, prid) {
@@ -6308,9 +6310,11 @@ function viewEinstellungen() {
         : '💾 <strong>Lokaler Modus</strong> – Daten nur in diesem Browser. Cloud aktivierst du in <code>config.js</code>.'}</p>
       <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
         <button class="btn secondary" data-act="export">⬇ Daten exportieren (JSON)</button>
+        <button class="btn secondary" data-act="gerber-import">📂 Projekt aus .gerber öffnen</button>
         <button class="btn secondary" data-act="reset">↻ Demo-Daten neu laden</button>
         ${cloudEnabled ? '<button class="btn secondary" data-act="logout">⎋ Abmelden</button>' : ''}
       </div>
+      <p class="muted" style="font-size:11.5px;margin-top:8px">Einzelne Projekte speicherst/teilst du als <b>.gerber</b>-Datei (Rechtsklick auf ein Projekt → „Als .gerber speichern"). Hier importierst du eine .gerber-Datei als neues Projekt.</p>
       <hr style="border:none;border-top:1px solid var(--border);margin:22px 0">
       <h2 style="font-size:15px">Über</h2>
       <p class="muted" style="font-size:13px">
@@ -10803,6 +10807,58 @@ function exportData() {
   toast('Export erstellt');
 }
 
+// --- .gerber Dateien: speichern/öffnen (File System Access API mit Download/Upload-Fallback) ---
+async function saveGerber(filename, dataObj) {
+  const json = JSON.stringify(dataObj, null, 2);
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({ suggestedName: filename, types: [{ description: 'Gerber Datei', accept: { 'application/json': ['.gerber'] } }] });
+      const w = await handle.createWritable(); await w.write(json); await w.close();
+      toast('Gespeichert: ' + handle.name, 'ok'); return;
+    } catch (err) { if (err && err.name === 'AbortError') return; }
+  }
+  const blob = new Blob([json], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href);
+  toast('Datei heruntergeladen', 'ok');
+}
+async function openGerber() {
+  if (window.showOpenFilePicker) {
+    try {
+      const [handle] = await window.showOpenFilePicker({ types: [{ description: 'Gerber / JSON', accept: { 'application/json': ['.gerber', '.json'] } }] });
+      const file = await handle.getFile(); return JSON.parse(await file.text());
+    } catch (err) { if (err && err.name === 'AbortError') return null; toast('Datei nicht lesbar', 'info'); return null; }
+  }
+  return new Promise(resolve => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.gerber,.json';
+    inp.onchange = () => { const f = inp.files[0]; if (!f) return resolve(null); const r = new FileReader(); r.onload = () => { try { resolve(JSON.parse(r.result)); } catch (_) { toast('Datei nicht lesbar', 'info'); resolve(null); } }; r.readAsText(f); };
+    inp.click();
+  });
+}
+function exportProjektGerber(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const data = { format: 'gerber', formatVersion: 1, typ: 'projekt', app: 'SubmitOne ' + APP_VERSION, exportiert: todayIso(), projekt: JSON.parse(JSON.stringify(p)) };
+  const safe = (p.name || 'projekt').replace(/[^\w\-]+/g, '_').slice(0, 50);
+  saveGerber(safe + '.gerber', data);
+}
+function addProjektFromGerber(data) {
+  const proj = (data && data.typ === 'projekt' && data.projekt) ? data.projekt : ((data && data.id && data.vergaben) ? data : null);
+  if (!proj) { toast('Keine gültige .gerber-Projektdatei', 'info'); return; }
+  const np = JSON.parse(JSON.stringify(proj)); np.id = uid('p'); np.name = (np.name || 'Projekt') + ' (importiert)';
+  state.projekte = state.projekte || []; state.projekte.push(np);
+  save(); toast('Projekt importiert: ' + np.name, 'ok'); go('#/projekt/' + np.id);
+}
+async function importProjektGerber() { const data = await openGerber(); if (data) addProjektFromGerber(data); }
+// Per Doppelklick geöffnete .gerber-Datei (installierte PWA) übernehmen
+function initGerberLaunch() {
+  if (!('launchQueue' in window)) return;
+  try {
+    window.launchQueue.setConsumer(async params => {
+      if (!params || !params.files || !params.files.length) return;
+      try { const file = await params.files[0].getFile(); addProjektFromGerber(JSON.parse(await file.text())); } catch (_) { toast('Datei nicht lesbar', 'info'); }
+    });
+  } catch (_) {}
+}
+
 function resetDemo() {
   const warn = cloudEnabled
     ? `<div style="background:#fdecec;border:1px solid var(--s-red);border-radius:8px;padding:10px 12px;font-size:13px;color:#7a1d1d">
@@ -11135,6 +11191,8 @@ document.addEventListener('click', e => {
     case 'save-buero':   saveBuero(); break;
     case 'rm-logo':      state.buero = { ...(state.buero || {}), logo: '' }; save(); viewEinstellungen(); break;
     case 'export':       exportData(); break;
+    case 'gerber-import': importProjektGerber(); break;
+    case 'gerber-export': exportProjektGerber(pid); break;
     case 'reset':        resetDemo(); break;
     case 'confirm-reset':doResetDemo(); break;
     case 'logout':       logout(); break;

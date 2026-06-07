@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v190';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v191';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2008,6 +2008,7 @@ function viewFeinViertel(p) {
     out += insertStrip('vorgang', v.id);
     return out;
   }).join('');
+  const prevScroll = (() => { const s = document.querySelector('.qv-scroll'); return s ? s.scrollLeft : null; })();   // Position bewahren bei In-Place-Update
   render(head + `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <button class="btn sm secondary" data-act="fein-scroll-today" data-pid="${p.id}">→ Heute</button>
@@ -2029,7 +2030,8 @@ function viewFeinViertel(p) {
   _feinViewStart = von;
   const scr = document.querySelector('.qv-scroll');
   if (scr) {
-    const ti = days.indexOf(t0); scr.scrollLeft = ti >= 0 ? Math.max(0, ti * dayW - 260) : 0;
+    if (prevScroll != null) { scr.scrollLeft = prevScroll; }   // beim Neurendern (Ziehen/Zoom) Position halten
+    else { const ti = days.indexOf(t0); scr.scrollLeft = ti >= 0 ? Math.max(0, ti * dayW - 260) : 0; }   // nur beim Öffnen zu heute
     const win = document.querySelector('.mm-win');
     if (win) { const upd = () => { const sw = scr.scrollWidth || 1; win.style.left = (scr.scrollLeft / sw * 100) + '%'; win.style.width = Math.min(scr.clientWidth / sw * 100, 100) + '%'; }; scr.addEventListener('scroll', upd); upd(); }
   }

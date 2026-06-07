@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v261';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v262';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2636,9 +2636,10 @@ function viewTermine(id) {
     const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
     const hh = Math.round(ROW_H / 2);
     const ax = Math.round(a.left + a.width), ay = a.row * ROW_H + hh, bx = Math.round(b.left), by = b.row * ROW_H + hh;
-    // kurzes gerades Stück (Stub) an beiden Enden → flacher horizontaler Aus-/Eintritt; Tangente an die Höhe gekoppelt → bleibt länger waagrecht
-    const stub = 12, sx = ax + stub, tx = Math.max(ax + stub + 2, bx - stub);
-    const dx = Math.max(22, Math.min(70, Math.abs(by - ay) * 0.6 + 18));
+    // kurzes gerades Stück (Stub) an beiden Enden → flacher horizontaler Aus-/Eintritt; Tangente an Höhe UND verfügbaren Platz gekoppelt → kein Bogen in den Balken bei nahen Balken
+    const stub = 10, sx = ax + stub, tx = Math.max(sx + 4, bx - stub);
+    const room = tx - sx;
+    const dx = Math.max(6, Math.min(64, Math.abs(by - ay) * 0.6 + 16, room * 0.7));
     const d = `M ${ax} ${ay} L ${sx} ${ay} C ${Math.round(sx + dx)} ${ay} ${Math.round(tx - dx)} ${by} ${tx} ${by} L ${bx} ${by}`;
     return `<g class="g-link${ganttLinkSel === lk.id ? ' g-sel' : ''}" data-lid="${lk.id}">
       <path class="g-link-hit" d="${d}"></path>

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v207';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v208';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2287,12 +2287,13 @@ function viewTermine(id) {
     ${projektTabs(p, 'termine')}
     ${ganttModeToggle(p)}
     <div class="g-toolbar">
-      <span class="muted" style="font-size:12px">Sortieren</span>${sortCtrl}<span class="muted" style="font-size:12px">Info</span>${infoCtrl}<span class="muted" style="font-size:12px">Farbe</span><div class="g-zoom" title="Balkenfarbe">${[['status', 'Status'], ['firma', 'Unternehmer'], ['phase', 'Phase']].map(([k, l]) => `<button class="${ganttColorMode === k ? 'active' : ''}" data-act="gantt-color" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>${zoomCtrl}${scaleCtrl}
+      <span class="muted" style="font-size:12px">Ansicht</span>${zoomCtrl}${scaleCtrl}${sortCtrl}${dateCtrl}
+      <span class="muted" style="font-size:12px;margin-left:6px">Farbe</span><div class="g-zoom" title="Balkenfarbe">${[['status', 'Status'], ['firma', 'Unternehmer'], ['phase', 'Phase']].map(([k, l]) => `<button class="${ganttColorMode === k ? 'active' : ''}" data-act="gantt-color" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>
+      <span class="g-tb-sep"></span>
       <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
       <button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button>
-      <button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button>
-      ${dateCtrl}
-      <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" style="margin-left:auto">⬇ Drucken / PDF</button>
+      <button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">📅 Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button>
+      <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" style="margin-left:auto">⬇ PDF</button>
     </div>
   `;
 
@@ -2500,7 +2501,7 @@ function viewTermine(id) {
   render(head + `
     ${warnBanner}
     <div class="gantt">
-      <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"></div>${sideRows}${insertStrips}</div>
+      <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
           <div class="g-headrow">${monthCells}</div>
@@ -2687,8 +2688,11 @@ function ganttBarMenu(e, bar) {
   const pid = bar.dataset.pid, vid = bar.dataset.vid, oid = bar.dataset.oid || null;
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
   if (oid) { openContextMenu(e, [{ icon: '↗', label: 'Gewerk öffnen', act: () => go('#/projekt/' + pid + '/vergabe/' + vid) }, { sep: true }, { icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '✕', label: 'Vorgang löschen', danger: true, act: () => removeVorgang(pid, vid, oid) }]); return; }
-  vergabeMenu(e, pid, vid, [{ icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '＋', label: 'Vorgang hinzufügen', act: () => actNewVorgang(pid, vid) }]);
+  const extras = [{ icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '＋', label: 'Untertermin hinzufügen', act: () => addEmptyVorgangDetail(pid, vid) }];
+  if (v.bauStart && v.bauEnde) extras.push({ icon: '✕', label: 'Termin entfernen', danger: true, act: () => clearTermin(pid, vid) });
+  vergabeMenu(e, pid, vid, extras);
 }
+function clearTermin(pid, vid) { const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return; v.bauStart = ''; v.bauEnde = ''; save(); rerenderGantt(pid); toast('Termin entfernt', 'info'); }
 function pendenzMenu(e, pid, itemid) {
   const p = findProjekt(pid); const it = p && (p.pendenzen || []).find(x => x.id === itemid); if (!it) return;
   const items = [
@@ -10320,7 +10324,7 @@ function actEditTermin(pid, vid) {
     <label class="field" style="margin-top:8px">Bestellfrist / Vorlauf <input class="input" type="number" id="t_bestell" value="${v.bestellfrist ?? ''}" placeholder="z.B. 30" min="0">
       <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Tage <b>vor</b> Ausführungsbeginn (Material bestellen, Vorlaufzeit). Erscheint im Gantt als heller Balken vor dem Hauptbalken.</span></label>
     ${(v.vorgaenge || []).length ? `<label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px"><input type="checkbox" id="t_auto"${v.autoBalken ? ' checked' : ''}> Dauer <b>automatisch aus den Unterterminen</b> (Oberbalken umspannt sie)</label>` : ''}
-  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-termin" data-pid="${pid}" data-vid="${vid}">Speichern</button>`);
+  `, `${(v.bauStart && v.bauEnde) ? `<button class="btn ghost danger" data-act="termin-clear" data-pid="${pid}" data-vid="${vid}">Termin entfernen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-termin" data-pid="${pid}" data-vid="${vid}">Speichern</button>`);
 }
 
 function saveTermin(pid, vid) {
@@ -10829,6 +10833,7 @@ document.addEventListener('click', e => {
     case 'grob-zoom':    { grobZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.4, +(grobZoom + (kind === 'in' ? 0.2 : -0.2)).toFixed(2))); viewGrobGantt(findProjekt(pid)); } break;
     case 'grob-phase':   actGrobPhase(e, pid, vid); break;
     case 'gantt-add-vorgang': addEmptyVorgangDetail(pid, vid); break;
+    case 'termin-clear':      closeModal(); clearTermin(pid, vid); break;
     case 'fein-add':     actFeinBlock(pid); break;
     case 'fein-edit':    actFeinBlock(pid, bid); break;
     case 'save-fein':    saveFeinBlock(pid, bid); break;

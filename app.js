@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v263';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v264';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2637,17 +2637,39 @@ function viewTermine(id) {
   const fensterLayer = windows.map(w => `<div class="g-fenster" style="top:${w.top + 2}px;height:${w.height - 4}px;left:${w.left}px;width:${w.width}px;background:${hexA(w.col, .1)};border-color:${hexA(w.col, .5)}"><span class="g-fenster-lbl" style="color:${w.col}">${esc(w.label)}</span></div>`).join('');
   // Einfüge-Streifen zwischen den Zeilen (Hover-Plus) – legt eine leere Unterzeile für das Gewerk darüber an
   const insertStrips = gespr ? '' : inserts.map(it => `<div class="g-insert" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${it.vid}" style="top:${it.y - 5}px" title="Untertermin einfügen (leer – dann Balken ziehen)"><span>+ Untertermin</span></div>`).join('');
-  // Verbindungen (Abhängigkeiten) als SVG-Overlay
-  // Geschwungene Verbinder (Bézier-S): organisch, tritt rechts aus dem Balken aus und vorne ins Ziel ein
+  // Verbindungen: orthogonal mit abgerundeten Ecken – steigt IMMER links vom Ziel herab und kommt vorne (links) horizontal rein
+  const orthPath = (pts, r) => {
+    const R = n => Math.round(n);
+    let d = `M ${R(pts[0][0])} ${R(pts[0][1])}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const px = pts[i - 1][0], py = pts[i - 1][1], cx = pts[i][0], cy = pts[i][1], nx = pts[i + 1][0], ny = pts[i + 1][1];
+      const inDx = Math.sign(cx - px), inDy = Math.sign(cy - py), outDx = Math.sign(nx - cx), outDy = Math.sign(ny - cy);
+      const rr = Math.max(0, Math.min(r, Math.abs(cx - px) / 2, Math.abs(cy - py) / 2, Math.abs(nx - cx) / 2, Math.abs(ny - cy) / 2));
+      d += ` L ${R(cx - inDx * rr)} ${R(cy - inDy * rr)} Q ${R(cx)} ${R(cy)} ${R(cx + outDx * rr)} ${R(cy + outDy * rr)}`;
+    }
+    const e = pts[pts.length - 1]; d += ` L ${R(e[0])} ${R(e[1])}`; return d;
+  };
+  const STUB = 12, LGAP = 5;
+  const usedV = [];
+  const vFree = (x, y0, y1) => !usedV.some(s => Math.abs(s.x - x) < LGAP && !(y1 < s.y0 - 1 || y0 > s.y1 - 1));
   const linkPaths = (p.ganttLinks || []).map(lk => {
     const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
     const hh = Math.round(ROW_H / 2);
     const ax = Math.round(a.left + a.width), ay = a.row * ROW_H + hh, bx = Math.round(b.left), by = b.row * ROW_H + hh;
-    // kurzes gerades Stück (Stub) an beiden Enden → flacher horizontaler Aus-/Eintritt; Tangente an Höhe UND verfügbaren Platz gekoppelt → kein Bogen in den Balken bei nahen Balken
-    const stub = 10, sx = ax + stub, tx = Math.max(sx + 4, bx - stub);
-    const room = tx - sx;
-    const dx = Math.max(6, Math.min(64, Math.abs(by - ay) * 0.6 + 16, room * 0.7));
-    const d = `M ${ax} ${ay} L ${sx} ${ay} C ${Math.round(sx + dx)} ${ay} ${Math.round(tx - dx)} ${by} ${tx} ${by} L ${bx} ${by}`;
+    const ex = ax + STUB; let pts;
+    if (bx - STUB >= ex) {
+      // genug Platz: links vor dem Ziel herab (eigene Spur), dann vorne rein
+      let dnx = bx - STUB, g = 0; while (!vFree(dnx, Math.min(ay, by), Math.max(ay, by)) && g++ < 30) dnx -= LGAP; dnx = Math.max(ex, dnx);
+      usedV.push({ x: dnx, y0: Math.min(ay, by), y1: Math.max(ay, by) });
+      pts = [[ax, ay], [dnx, ay], [dnx, by], [bx, by]];
+    } else {
+      // Bogen zurück: rechts raus → runter zum Zeilenumbruch → links zurück vor das Ziel → runter → vorne rein
+      const midY = ay + (by - ay) / 2;
+      let dnx = bx - STUB, g = 0; while (!vFree(dnx, Math.min(midY, by), Math.max(midY, by)) && g++ < 30) dnx -= LGAP;
+      usedV.push({ x: dnx, y0: Math.min(midY, by), y1: Math.max(midY, by) });
+      pts = [[ax, ay], [ex, ay], [ex, midY], [dnx, midY], [dnx, by], [bx, by]];
+    }
+    const d = orthPath(pts, 5);
     return `<g class="g-link${ganttLinkSel === lk.id ? ' g-sel' : ''}" data-lid="${lk.id}">
       <path class="g-link-hit" d="${d}"></path>
       <path class="g-link-line" d="${d}"></path>

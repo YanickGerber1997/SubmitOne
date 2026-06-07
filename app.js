@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v212';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v213';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2243,6 +2243,7 @@ const GANTT_LEGEND = [['rot', 'angefragt'], ['orange', 'Offerte / Abgebot'], ['g
 function ganttColKey(v) { return GANTT_PHASE[v.status] || 'dgrau'; }
 let ganttColorMode = 'status';   // 'status' | 'firma' (je Unternehmer) | 'phase' (Grobphase)
 let ganttFenster = true;         // Auto-Oberbalken als grosses Fenster über die Unterbalken
+let ganttRaster = true;          // Sitzungsraster-Linien im Gantt einblenden
 function hexA(hex, a) { const h = String(hex).replace('#', ''); if (h.length < 6) return hex; return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`; }
 const GANTT_FIRMA_PALETTE = ['#1f6feb', '#16a34a', '#ea7a3c', '#7c3aed', '#0d9488', '#dc2626', '#a16207', '#db2777', '#0891b2', '#65a30d', '#9333ea', '#0f766e', '#b45309', '#2563eb'];
 function firmaColHex(name) { if (!name) return '#94a3b8'; let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return GANTT_FIRMA_PALETTE[h % GANTT_FIRMA_PALETTE.length]; }
@@ -2296,6 +2297,7 @@ function viewTermine(id) {
       <button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button>
       <button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">📅 Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button>
       <button class="btn sm ${ganttFenster ? '' : 'secondary'}" data-act="gantt-fenster" data-pid="${p.id}" title="Auto-Oberbalken als grosses Fenster über die Unterbalken zeichnen">🪟 Fenster ${ganttFenster ? 'an' : 'aus'}</button>
+      ${(p.sitzungsraster && p.sitzungsraster.aktiv) ? `<button class="btn sm ${ganttRaster ? '' : 'secondary'}" data-act="gantt-raster" data-pid="${p.id}" title="Sitzungsraster-Linien ein-/ausblenden">🗓 Sitzungen ${ganttRaster ? 'an' : 'aus'}</button>` : ''}
       <button class="btn sm ${(p.regeln || []).length ? '' : 'secondary'}" data-act="regeln-open" data-pid="${p.id}" title="Feste Regeln/Abhängigkeiten – warnen bei Verstoss (z.B. Gerüst vor Wände)">📐 Regeln${(p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''}</button>
       <button class="btn sm ${(p.ressCheck && p.ressCheck.aktiv === false) ? 'secondary' : ''}" data-act="ress-config" data-pid="${p.id}" title="Ressourcen-Hinweis (gleiche Firma überlappend) einstellen">⚠ Ressourcen</button>
       <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" style="margin-left:auto">⬇ PDF</button>
@@ -2400,6 +2402,9 @@ function viewTermine(id) {
 
   const t = today();
   const todayLeft = (t >= rangeStart && t <= rangeEnd) ? dayDiff(rangeStart, t) * pxPerDay : null;
+  // Sitzungsraster-Linien
+  const rasterLabel = (p.sitzungsraster && p.sitzungsraster.label) || 'Sitzung';
+  const sitzLayer = (ganttRaster ? rasterDaten(p, rangeStartISO, isoOf(rangeEnd)) : []).map(d => `<div class="g-sitzung" style="left:${leftPx(d)}px" title="${esc(rasterLabel)} · ${fmtDate(d)}"></div>`).join('');
 
   // Feiertage als Bänder mit Label (Woche: mit Datum). Label nur, wenn genug Abstand → keine Überlappung
   const holLabel = f => ganttZoom === 'woche' ? `${f.n} ${f.d.getDate()}.${f.d.getMonth() + 1}.` : f.n;
@@ -2544,6 +2549,7 @@ function viewTermine(id) {
         <div class="g-rows">
           <div class="g-bg">${bgCells}</div>
           ${holBands}
+          ${sitzLayer}
           ${todayLeft != null ? `<div class="g-today" style="left:${todayLeft}px"></div>` : ''}
           ${markBands}
           ${fensterLayer}
@@ -4808,12 +4814,22 @@ function viewProtokolle(pid) {
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Protokolle &amp; Aktennotizen</div></div>
       <div style="display:flex;gap:10px">
+        <button class="btn secondary" data-act="sr-config" data-pid="${p.id}" title="Wiederkehrende Sitzungen einrichten">🗓 Sitzungsraster</button>
         <button class="btn secondary" data-act="new-protokoll" data-pid="${p.id}" data-kind="aktennotiz">+ Aktennotiz</button>
         <button class="btn" data-act="new-protokoll" data-pid="${p.id}" data-kind="sitzung">+ Sitzungsprotokoll</button>
       </div>
     </div>
     ${projektTabs(p, 'protokolle')}
     ${demoBanner('protokolle')}
+    ${(() => {
+      const r = p.sitzungsraster; if (!r || !r.aktiv || !r.startIso) return '';
+      const next = rasterDaten(p, todayIso(), addDays(todayIso(), 400), 10);
+      const protBy = {}; (p.protokolle || []).forEach(pr => { if (pr.datum) protBy[pr.datum] = pr; });
+      return `<div class="card card-pad" style="margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap"><b>🗓 ${esc(r.label || 'Sitzung')} · alle ${r.intervallWochen || 1} Wo</b><button class="btn sm ghost" data-act="sr-config" data-pid="${p.id}">Raster bearbeiten</button></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${next.length ? next.map(d => { const pr = protBy[d]; return pr ? `<a class="chip active" href="#/projekt/${p.id}/protokoll/${pr.id}" title="Protokoll öffnen">${fmtDate(d)} ✓</a>` : `<button class="chip" data-act="new-protokoll" data-pid="${p.id}" data-kind="sitzung" data-datum="${d}" title="Protokoll für diesen Termin anlegen">${fmtDate(d)} +</button>`; }).join('') : '<span class="muted" style="font-size:12.5px">Keine kommenden Termine.</span>'}</div>
+      </div>`;
+    })()}
     <div class="toolbar">
       <div class="chips">
         <span class="chip ${!protokollFilter ? 'active' : ''}" data-act="filter-prot" data-pid="${p.id}" data-kind="">Alle</span>
@@ -4958,7 +4974,33 @@ function viewProtokollDetail(pid, prid) {
 
 /* --- Protokoll-Aktionen --- */
 
-function actNewProtokoll(pid, typ) {
+// Sitzungsraster: wiederkehrende Sitzungstermine (für Gantt-Linien, Protokoll-Liste, Kalender)
+function rasterDaten(p, fromIso, toIso, max) {
+  const r = p.sitzungsraster; if (!r || !r.aktiv || !r.startIso) return [];
+  const step = Math.max(1, Number(r.intervallWochen) || 1) * 7;
+  const out = []; let d = r.startIso, guard = 0;
+  while (d < fromIso && guard++ < 3000) d = addDays(d, step);
+  while (d <= toIso && guard++ < 6000) { out.push(d); if (max && out.length >= max) break; d = addDays(d, step); }
+  return out;
+}
+function actSitzungsraster(pid) {
+  const p = findProjekt(pid); if (!p) return; const r = p.sitzungsraster || { aktiv: true, startIso: '', intervallWochen: 1, label: 'Bausitzung' };
+  openModal('Sitzungsraster', `
+    <p class="muted" style="font-size:12.5px;margin-top:0">Wiederkehrende Sitzungen (z.B. wöchentliche Bausitzung). Erscheinen als Linien im Terminprogramm, als Liste hier und im Kalender – pro Termin kannst du direkt ein Protokoll anlegen.</p>
+    <label class="field" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="sr_aktiv"${r.aktiv !== false ? ' checked' : ''}> Sitzungsraster aktiv (ein-/ausblenden)</label>
+    <label class="field" style="margin-top:10px">Bezeichnung <input class="input" id="sr_label" value="${esc(r.label || 'Bausitzung')}" placeholder="z.B. Bausitzung"></label>
+    <div class="form-row" style="margin-top:8px">
+      <label class="field">Erste Sitzung <input class="input" type="date" id="sr_start" value="${esc(r.startIso || todayIso())}"></label>
+      <label class="field">Alle … Wochen <input class="input" type="number" id="sr_int" min="1" value="${r.intervallWochen || 1}"></label>
+    </div>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="sr-save" data-pid="${pid}">Speichern</button>`);
+}
+function saveSitzungsraster(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  p.sitzungsraster = { aktiv: $('#sr_aktiv').checked, label: $('#sr_label').value.trim() || 'Bausitzung', startIso: $('#sr_start').value, intervallWochen: Math.max(1, Number($('#sr_int').value) || 1) };
+  save(); closeModal(); router();
+}
+function actNewProtokoll(pid, typ, datum) {
   typ = (typ === 'aktennotiz') ? 'aktennotiz' : 'sitzung';
   const p = findProjekt(pid);
   const t = PROT_TYP[typ];
@@ -4967,7 +5009,7 @@ function actNewProtokoll(pid, typ) {
     <label class="field">Titel <span class="muted">(optional, sonst „${t.voll} Nr. ${nextProtNr(p, typ)}")</span>
       <input class="input" id="pr_titel" placeholder="${typ === 'sitzung' ? 'z.B. Bausitzung' : 'z.B. Absprache Fassadenfarbe'}"></label>
     <div class="form-row">
-      <label class="field">Datum <input class="input" type="date" id="pr_datum" value="${todayIso()}"></label>
+      <label class="field">Datum <input class="input" type="date" id="pr_datum" value="${esc(datum || todayIso())}"></label>
       <label class="field">Zeit <input class="input" id="pr_zeit" placeholder="14:00–15:30"></label>
     </div>
     <div class="form-row">
@@ -6400,6 +6442,10 @@ function sammleTermine(p) {
     if (pr.datum) ev.push({ datum: pr.datum, titel: protokollTitel(pr), color: 'green', quelle: 'Sitzung' });
     if (pr.naechste) ev.push({ datum: pr.naechste, titel: 'Nächste Sitzung', color: 'green', quelle: 'Sitzung' });
   });
+  if (p.sitzungsraster && p.sitzungsraster.aktiv && p.sitzungsraster.startIso) {
+    const protDates = new Set((p.protokolle || []).map(pr => pr.datum));
+    rasterDaten(p, addDays(todayIso(), -60), addDays(todayIso(), 365)).forEach(d => { if (!protDates.has(d)) ev.push({ datum: d, titel: `🗓 ${p.sitzungsraster.label || 'Sitzung'}`, color: 'green', quelle: 'Sitzungsraster' }); });
+  }
   offenePendenzen(p).forEach(x => { if (x.it.termin) ev.push({ datum: x.it.termin, titel: 'Pendenz: ' + (x.it.text || '').slice(0, 40), color: 'amber', quelle: 'Pendenz' }); });
   (p.erinnerungen || []).forEach(r => { if (!r.erledigt && r.datum) ev.push({ datum: r.datum, zeit: r.zeit || '', titel: `${ERIN_ART[r.art]?.icon || '🔔'} ${r.titel || 'Erinnerung'}${r.firma ? ' (' + r.firma + ')' : ''}`, color: 'amber', quelle: 'Erinnerung' }); });
   if (p.start) ev.push({ datum: p.start, titel: 'Projektstart', color: 'grey', quelle: 'Projekt' });
@@ -10974,7 +11020,10 @@ document.addEventListener('click', e => {
     case 'new-vorgang':  actNewVorgang(pid, vid); break;
     case 'save-vorgang': saveVorgang(pid, vid); break;
     case 'rm-vorgang':   removeVorgang(pid, vid, oid); break;
-    case 'new-protokoll':   actNewProtokoll(pid, kind); break;
+    case 'new-protokoll':   actNewProtokoll(pid, kind, act.dataset.datum); break;
+    case 'sr-config':       actSitzungsraster(pid); break;
+    case 'sr-save':         saveSitzungsraster(pid); break;
+    case 'gantt-raster':    ganttRaster = !ganttRaster; rerenderGantt(pid); break;
     case 'save-protokoll':  saveProtokoll(pid); break;
     case 'filter-prot':     protokollFilter = kind; viewProtokolle(pid); break;
     case 'edit-protokoll':  actEditProtokoll(pid, prid); break;

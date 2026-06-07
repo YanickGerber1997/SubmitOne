@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v280';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v281';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2417,6 +2417,7 @@ let ganttColorMode = 'status';   // 'status' | 'firma' (je Unternehmer) | 'phase
 let ganttFenster = true;         // Auto-Oberbalken als grosses Fenster über die Unterbalken
 let ganttRaster = true;          // Sitzungsraster-Linien im Gantt einblenden
 let ganttRowH = 38;              // Zeilenhöhe im Gantt (26–60, lesbar begrenzt)
+let ganttFont = 11;              // Schriftgrösse im Gantt (Balken-Labels, px; 8–16)
 let ganttPad = 1;                // Rand (Monate) links/rechts um das Programm (Scroll-Spielraum)
 let ganttRibbon = true;          // Werkzeug-Leiste (Kategorien) ein-/ausgeklappt
 let ganttFocus = false;          // Fokus: nur Zeilen mit Aktivität im sichtbaren Zeitausschnitt hervorheben (live beim Scrollen)
@@ -2785,7 +2786,7 @@ function viewTermine(id) {
 
   render(head + `
     ${warnBanner}${regelBanner}
-    <div class="gantt lbl-${ganttLabelMode}" style="--rowh:${ROW_H}px">
+    <div class="gantt lbl-${ganttLabelMode}" style="--rowh:${ROW_H}px;--gfont:${ganttFont}px">
       <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div></div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
@@ -2811,6 +2812,7 @@ function viewTermine(id) {
       ${zoomCtrl}${scaleCtrl}
       <span class="g-tb-sep"></span>
       <div class="g-zoom" title="Zeilenhöhe"><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="out" title="flacher">≡</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="reset" style="min-width:30px" title="Standard">${ganttRowH}</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="in" title="höher">☰</button></div>
+      <div class="g-zoom" title="Schriftgrösse"><button data-act="gantt-font" data-pid="${p.id}" data-kind="out" title="kleiner" style="font-size:11px">A</button><button data-act="gantt-font" data-pid="${p.id}" data-kind="reset" style="min-width:30px" title="Standard">${ganttFont}</button><button data-act="gantt-font" data-pid="${p.id}" data-kind="in" title="grösser" style="font-size:15px">A</button></div>
     </div>
     <div class="g-legend">
       ${(() => {
@@ -11648,6 +11650,7 @@ document.addEventListener('click', e => {
     case 'sr-save':         saveSitzungsraster(pid); break;
     case 'gantt-raster':    ganttRaster = !ganttRaster; rerenderGantt(pid); break;
     case 'gantt-rowh':      { ganttRowH = kind === 'reset' ? 38 : Math.max(26, Math.min(60, ganttRowH + (kind === 'in' ? 6 : -6))); rerenderGantt(pid); } break;
+    case 'gantt-font':      { ganttFont = kind === 'reset' ? 11 : Math.max(8, Math.min(16, ganttFont + (kind === 'in' ? 1 : -1))); rerenderGantt(pid); } break;
     case 'gantt-pad':       { ganttPad = kind === 'reset' ? 1 : (kind === 'cycle' ? (ganttPad + 1) % 7 : Math.max(0, Math.min(12, ganttPad + (kind === 'in' ? 1 : -1)))); rerenderGantt(pid); } break;
     case 'gantt-ribbon':    ganttRibbon = !ganttRibbon; rerenderGantt(pid); break;
     case 'gantt-labelmode': ganttLabelMode = kind || LABEL_MODES[(LABEL_MODES.indexOf(ganttLabelMode) + 1) % LABEL_MODES.length]; rerenderGantt(pid); break;

@@ -935,6 +935,13 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 /* Dauer der Arbeiten – mittig auf dem Balken */
 .g-dauer { position: absolute; top: 50%; transform: translate(-50%, -50%); font-size: 10px; font-weight: 700; color: #1f2937; white-space: nowrap; pointer-events: none; z-index: 5; text-shadow: 0 0 2px rgba(255,255,255,.9), 0 0 2px rgba(255,255,255,.9); }
 .g-dauer.sub { font-size: 9px; }
+/* Schriftgrösse im Gantt einstellbar (--gfont) – Balken-Labels, Daten, Dauer */
+.gantt .g-bar { font-size: var(--gfont, 11px); }
+.gantt .g-bar.sub { font-size: calc(var(--gfont, 11px) - 1px); }
+.gantt .g-lbl-out, .gantt .g-lbl-above, .gantt .g-lbl-below, .gantt .g-lbl-before, .gantt .g-lbl-over { font-size: var(--gfont, 11px); }
+.gantt .g-lbl-out.sub, .gantt .g-lbl-above.sub, .gantt .g-lbl-below.sub, .gantt .g-lbl-before.sub, .gantt .g-lbl-over.sub { font-size: calc(var(--gfont, 11px) - 1px); }
+.gantt .g-date { font-size: calc(var(--gfont, 11px) - 1.5px); }
+.gantt .g-dauer { font-size: calc(var(--gfont, 11px) - 1px); }
 /* Grob-Gantt (Phasen) */
 .grob-wrap { font-size: 13px; }
 .grob-row { display: flex; align-items: center; border-bottom: 1px solid var(--border); min-height: 40px; }

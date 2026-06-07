@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v279';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v280';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1835,7 +1835,7 @@ function ganttRibbonTabs(p) {
     rgroup('Farben', bigBtn('gantt-colors-open', 'swatch', 'Anpassen', { pid: p.id, on: !!state.ganttColors, title: 'Farben je Status/Unternehmer/Phase anpassen' })) +
     rgroup('Balken', bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) + bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' }));
   else if (ganttTab === 'beschriftung') b =
-    rgroup('Beschriftung', optBtns('gantt-labelmode', p.id, [['auto', 'Auto'], ['above', 'Oben'], ['below', 'Unten'], ['before', 'Vor'], ['clip', 'Innen'], ['over', 'Über']], ganttLabelMode));
+    rgroup('Beschriftung', optBtns('gantt-labelmode', p.id, [['auto', 'Auto'], ['above', 'Oben'], ['below', 'Unten'], ['before', 'Vor'], ['after', 'Nach'], ['clip', 'Innen'], ['over', 'Über']], ganttLabelMode));
   else if (ganttTab === 'datum') b =
     rgroup('Format', optBtns('gantt-dates', p.id, [['off', 'Aus'], ['datum', 'Datum'], ['kw', 'KW'], ['grob', 'Einordnung']], ganttDates)) +
     (ganttDates !== 'off' ? rgroup('Seite', optBtns('gantt-datepos', p.id, [['beide', 'Beide'], ['start', 'Vorne'], ['ende', 'Hinten']], ganttDatePos)) : '') +
@@ -2330,11 +2330,11 @@ function gdFmt(iso) {
   const dd = String(d.getDate()).padStart(2, '0'), mm = String(d.getMonth() + 1).padStart(2, '0');
   return `${dd}.${mm}.${String(d.getFullYear()).slice(2)}`;   // 'datum'
 }
-function gdLabels(startIso, endIso, x0, x1, endShift) {
+function gdLabels(startIso, endIso, x0, x1, shiftStart, shiftEnd) {
   if (ganttDates === 'off') return '';
   let s = '';
-  if (ganttDatePos !== 'ende') s += `<span class="g-date l" style="left:${x0}px">${gdFmt(startIso)}</span>`;
-  if (ganttDatePos !== 'start') s += `<span class="g-date r" style="left:${x1 + (endShift || 0)}px">${gdFmt(endIso)}</span>`;
+  if (ganttDatePos !== 'ende') s += `<span class="g-date l" style="left:${x0 + (shiftStart || 0)}px">${gdFmt(startIso)}</span>`;
+  if (ganttDatePos !== 'start') s += `<span class="g-date r" style="left:${x1 + (shiftEnd || 0)}px">${gdFmt(endIso)}</span>`;
   return s;
 }
 // Dauer der Arbeiten (Kalendertage inkl.) – mittig auf dem Balken
@@ -2349,17 +2349,20 @@ function barLabelFits(text, wpx) { return wpx >= String(text || '').length * 6.4
 function barLabelW(text) { return String(text || '').length * 6.4 + 8; }
 // Balken-Beschriftungs-Modus: 'auto' (innen, sonst rechts) | 'above' (über dem Balken, Balken rutscht runter) | 'below' (unter dem Balken, Balken rutscht hoch) | 'before' (vor/links des Balkens) | 'clip' (innen, abgeschnitten) | 'over' (innen ab Start, läuft über)
 let ganttLabelMode = 'auto';
-const LABEL_MODES = ['auto', 'above', 'below', 'before', 'clip', 'over'];
-const LABEL_NAMES = { auto: 'Auto', above: 'Oben', below: 'Unten', before: 'Vor', clip: 'Innen', over: 'Über' };
+const LABEL_MODES = ['auto', 'above', 'below', 'before', 'after', 'clip', 'over'];
+const LABEL_NAMES = { auto: 'Auto', above: 'Oben', below: 'Unten', before: 'Vor', after: 'Nach', clip: 'Innen', over: 'Über' };
 function gBarLabel(text, gL, gW, sub, isAuto) {
-  const m = ganttLabelMode, sc = sub ? ' sub' : '';
-  if (m === 'above') return { inner: '', outer: `<span class="g-lbl-above${sc}" style="left:${gL}px">${esc(text)}</span>`, gdOff: 0 };
-  if (m === 'below') return { inner: '', outer: `<span class="g-lbl-below${sc}" style="left:${gL}px">${esc(text)}</span>`, gdOff: 0 };
-  if (m === 'before') return { inner: '', outer: `<span class="g-lbl-before${sc}" style="left:${gL - 5}px">${esc(text)}</span>`, gdOff: 0 };
-  if (m === 'over') return { inner: '', outer: `<span class="g-lbl-over${sc}" style="left:${gL + 6}px">${esc(text)}</span>`, gdOff: 0 };
-  if (m === 'clip') return { inner: esc(text), outer: '', gdOff: 0 };
-  const fits = isAuto ? true : barLabelFits(text, gW);   // 'auto'
-  return fits ? { inner: esc(text), outer: '', gdOff: 0 } : { inner: '', outer: `<span class="g-lbl-out${sc}" style="left:${gL + gW + 5}px">${esc(text)}</span>`, gdOff: barLabelW(text) + 5 };
+  const m = ganttLabelMode, sc = sub ? ' sub' : '', gR = gL + gW;
+  const base = { inner: '', outer: '', gdOffStart: 0, gdOffEnd: 0 };
+  if (m === 'above') return { ...base, outer: `<span class="g-lbl-above${sc}" style="left:${gL}px">${esc(text)}</span>` };
+  if (m === 'below') return { ...base, outer: `<span class="g-lbl-below${sc}" style="left:${gL}px">${esc(text)}</span>` };
+  if (m === 'before') return { ...base, outer: `<span class="g-lbl-before${sc}" style="left:${gL - 5}px">${esc(text)}</span>`, gdOffStart: -(barLabelW(text) + 8) };
+  if (m === 'after') return { ...base, outer: `<span class="g-lbl-out${sc}" style="left:${gR + 5}px">${esc(text)}</span>`, gdOffEnd: barLabelW(text) + 5 };
+  if (m === 'over') return { ...base, outer: `<span class="g-lbl-over${sc}" style="left:${gL + 6}px">${esc(text)}</span>` };
+  if (m === 'clip') return { ...base, inner: esc(text) };
+  // 'auto' = Optimum: passt es rein → innen; sonst hinter den Balken (rechts), Enddatum rückt entsprechend raus
+  const fits = isAuto ? true : barLabelFits(text, gW);
+  return fits ? { ...base, inner: esc(text) } : { ...base, outer: `<span class="g-lbl-out${sc}" style="left:${gR + 5}px">${esc(text)}</span>`, gdOffEnd: barLabelW(text) + 5 };
 }
 // Mitlaufender Gantt-Kopf: fixes Overlay des Monats-/KW-Kopfes beim Scrollen (kein eigener Scrollbalken)
 let _gshRefs = null, _gshBound = false;
@@ -2729,7 +2732,7 @@ function viewTermine(id) {
         barRows += `<div class="g-row">${preBars}</div>`;
       } else {
         const gL = leftPx(v.bauStart), gW = widthPx(v.bauStart, v.bauEnde), gLab = gBarLabel(v.gewerk, gL, gW, false, isAuto);
-        barRows += `<div class="g-row">${preBars}${gdLabels(v.bauStart, v.bauEnde, gL, gL + gW, gLab.gdOff)}<div class="g-bar${light}${isAuto ? ' summary' : ''}" style="left:${gL}px;width:${gW}px;background:${colHex}"
+        barRows += `<div class="g-row">${preBars}${gdLabels(v.bauStart, v.bauEnde, gL, gL + gW, gLab.gdOffStart, gLab.gdOffEnd)}<div class="g-bar${light}${isAuto ? ' summary' : ''}" style="left:${gL}px;width:${gW}px;background:${colHex}"
           title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}"
           data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
           <span class="g-h l"></span><span class="g-lbl">${gLab.inner}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div>${gLab.outer}${gDauerLabel(v.bauStart, v.bauEnde, gL, gL + gW, false)}</div>`;
@@ -2745,7 +2748,7 @@ function viewTermine(id) {
       if (oDated) {
         const oL = leftPx(o.start), oW = widthPx(o.start, o.ende), oLab = gBarLabel(o.titel, oL, oW, true, false);
         barMeta[key] = { row: rowIdx, left: oL, width: oW };
-        barRows += `<div class="g-row">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOff)}<div class="g-bar sub${light}" style="left:${oL}px;width:${oW}px;background:${colHex}"
+        barRows += `<div class="g-row">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOffStart, oLab.gdOffEnd)}<div class="g-bar sub${light}" style="left:${oL}px;width:${oW}px;background:${colHex}"
           title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
           data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
           <span class="g-h l"></span><span class="g-lbl">${oLab.inner}</span>${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div>${oLab.outer}${gDauerLabel(o.start, o.ende, oL, oL + oW, true)}</div>`;

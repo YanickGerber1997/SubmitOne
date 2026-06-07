@@ -793,6 +793,24 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .fein-bar { position: absolute; top: 50%; transform: translateY(-50%); height: 30px; border-radius: 6px; color: #fff; font-size: 11px; display: flex; align-items: center; gap: 4px; padding: 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
 .fein-bar.pause { color: #fff; opacity: .9; font-style: italic; }
 .fein-bar:hover { filter: brightness(1.05); }
+/* Feinprogramm „Stunden" – Outlook-Tagesansicht */
+.od-wrap { display: flex; min-width: 100%; }
+.od-gutter { flex: none; border-right: 1px solid var(--border); }
+.od-cols { display: flex; flex: 1; min-width: 0; }
+.od-col { flex: 1; min-width: 150px; border-right: 1px solid var(--border); }
+.od-colhead { padding: 6px 9px; min-height: 40px; border-bottom: 1px solid var(--border); background: var(--surface-2); position: sticky; top: 0; z-index: 2; }
+.od-gutter .od-colhead { background: var(--surface-2); }
+.od-komms { margin-top: 3px; display: flex; flex-direction: column; gap: 2px; }
+.od-komm { background: #fff8e1; border: 1px solid #f0d27a; border-radius: 4px; padding: 0 5px; font-size: 9.5px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #7a5b12; }
+.od-body { position: relative; cursor: copy; }
+.od-line { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--border); }
+.od-hr { position: absolute; right: 6px; transform: translateY(-50%); font-size: 10px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.od-now { position: absolute; left: 0; right: 0; height: 0; border-top: 2px solid var(--s-red); z-index: 3; }
+.od-ev { position: absolute; left: 3px; right: 3px; border-radius: 5px; color: #fff; font-size: 10.5px; line-height: 1.25; padding: 2px 6px; overflow: hidden; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.22); z-index: 2; }
+.od-ev b { font-weight: 700; }
+.od-ev.pause { font-style: italic; }
+.od-ev.draft { opacity: .55; pointer-events: none; left: 3px; right: 3px; }
+.od-ev:hover { filter: brightness(1.08); }
 /* Feinprogramm „Tage" – 4-Wochen-Raster je Unternehmer */
 .ft-wrap { font-size: 12px; }
 .ft-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }

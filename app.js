@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v182';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v183';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1740,6 +1740,7 @@ let ganttMode = 'detail'; // 'detail' = Termin-Gantt (Tage) | 'grob' = Grobplanu
 const FEIN_H0 = 6, FEIN_H1 = 20;   // Stunden-Achse Feinprogramm (06:00–20:00)
 let feinSub = 'viertel';  // Feinprogramm-Unteransicht: 'viertel' (Detail in Vierteltagen + Zusatzbalken) | 'stunden' (Tagesablauf)
 let feinAnchor = null;    // ISO des Montags der ersten sichtbaren Woche
+let feinDay = null;       // ausgewählter Tag in der Stunden-Tagesansicht
 const FEIN_WIN = 21;      // sichtbare Tage (3 Wochen) im Feinprogramm-Zoom
 let _feinDays = [], _feinQW = 15;   // Laufzeit-Kontext fürs Zeichnen
 function feinSubToggle(p) {
@@ -1830,57 +1831,90 @@ function viewFeinGantt(p) {
   if (feinSub === 'stunden') return viewFeinStunden(p);
   return viewFeinViertel(p);
 }
+// Stunden-Tagesablauf als Outlook-Tagesansicht: Spalten = anwesende Unternehmer (Terminprogramm), Aufgaben per Ziehen
 function viewFeinStunden(p) {
-  const bloecke = (p.feinbloecke || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '') || feinH(a.von) - feinH(b.von));
-  const colW = 58, hours = FEIN_H1 - FEIN_H0, trackW = hours * colW;
-  const hourHead = Array.from({ length: hours + 1 }, (_, i) => `<span class="fein-hr" style="left:${i * colW}px">${String(FEIN_H0 + i).padStart(2, '0')}</span>`).join('');
-  const grid = Array.from({ length: hours }, (_, i) => `<span class="fein-cell" style="left:${i * colW}px;width:${colW}px"></span>`).join('');
-  const days = [];
-  bloecke.forEach(b => { const d = days.find(x => x.datum === b.datum); if (d) d.items.push(b); else days.push({ datum: b.datum, items: [b] }); });
-  const dayHtml = days.map(d => {
-    const bars = d.items.map(b => {
-      const x0 = Math.max(FEIN_H0, feinH(b.von)), x1 = Math.min(FEIN_H1, feinH(b.bis || b.von));
-      const left = (x0 - FEIN_H0) * colW, w = Math.max((x1 - x0) * colW, 26);
-      const col = b.pause ? '#9aa4b1' : ganttColForGewerk(p, b.gewerk);
-      return `<div class="fein-bar${b.pause ? ' pause' : ''}" style="left:${left}px;width:${w - 3}px;background:${col}" data-act="fein-edit" data-pid="${p.id}" data-bid="${b.id}" title="${esc(b.von)}–${esc(b.bis || '')} ${esc(b.titel || '')}"><b>${esc(b.von)}</b> ${esc(b.titel || (b.pause ? 'Pause' : ''))}</div>`;
+  const day = feinDay || todayIso();
+  const vs = gewerkeSorted(p);
+  const onsite = vs.filter(v => v.bauStart && v.bauEnde && day >= v.bauStart && day <= v.bauEnde);
+  const cols = onsite.map(v => ({ vid: v.id, label: v.firma || v.gewerk, sub: v.firma ? v.gewerk : '', col: ganttColHex(v) }));
+  cols.push({ vid: '', label: 'Allgemein / weitere', sub: '', col: '#64748b' });
+  const H0 = FEIN_H0, H1 = FEIN_H1, hourPx = 46, nH = H1 - H0, totalH = nH * hourPx, gutterW = 50;
+  const hourLabels = Array.from({ length: nH + 1 }, (_, i) => `<div class="od-hr" style="top:${i * hourPx}px">${String(H0 + i).padStart(2, '0')}:00</div>`).join('');
+  const gridLines = Array.from({ length: nH + 1 }, (_, i) => `<div class="od-line" style="top:${i * hourPx}px"></div>`).join('');
+  const blocks = (p.feinbloecke || []).filter(b => b.datum === day);
+  const komm = (p.feinkommentare || []).filter(k => k.datum === day);
+  const nowMark = (day === todayIso()) ? (() => { const n = new Date(); const t = n.getHours() + n.getMinutes() / 60; return (t >= H0 && t <= H1) ? `<div class="od-now" style="top:${(t - H0) * hourPx}px"></div>` : ''; })() : '';
+  const colHtml = cols.map(c => {
+    const evs = blocks.filter(b => (b.gewerk || '') === c.vid).map(b => {
+      const y0 = (feinH(b.von) - H0) * hourPx, y1 = (feinH(b.bis || b.von) - H0) * hourPx, h = Math.max(y1 - y0, 20);
+      return `<div class="od-ev${b.pause ? ' pause' : ''}" style="top:${y0}px;height:${h - 2}px;background:${b.pause ? '#9aa4b1' : c.col}" data-act="fein-edit" data-pid="${p.id}" data-bid="${b.id}" title="${esc(b.von)}–${esc(b.bis || '')} ${esc(b.titel || '')}"><b>${esc(b.von)}–${esc(b.bis || '')}</b> ${esc(b.titel || (b.pause ? 'Pause' : ''))}</div>`;
     }).join('');
-    return `<div class="fein-day">
-      <div class="fein-date">${esc(fmtDate(d.datum))}<span class="muted" style="font-weight:400;font-size:11px"> · ${esc(wochentag(d.datum))}</span></div>
-      <div class="fein-track" style="width:${trackW}px">${grid}${bars}</div>
+    const kchips = (c.vid ? komm.filter(k => k.vid === c.vid) : []).map(k => `<div class="od-komm" title="${esc(k.text)}">▸ ${esc(k.text)}</div>`).join('');
+    return `<div class="od-col" data-pid="${p.id}" data-vid="${c.vid}" data-h0="${H0}" data-hpx="${hourPx}">
+      <div class="od-colhead" style="border-top:3px solid ${c.col}"><b>${esc(c.label)}</b>${c.sub ? `<div class="muted" style="font-size:10.5px">${esc(c.sub)}</div>` : ''}${kchips ? `<div class="od-komms">${kchips}</div>` : ''}</div>
+      <div class="od-body" style="height:${totalH}px">${gridLines}${nowMark}${evs}</div>
     </div>`;
   }).join('');
   const head = `
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Feinprogramm · Tagesablauf in Stunden (06:00–20:00)</div></div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Feinprogramm · Tagesablauf (Outlook-Stil) – Unternehmer vor Ort, Aufgaben einteilen</div></div></div>
     ${projektTabs(p, 'termine')}
     ${ganttModeToggle(p)}
     ${feinSubToggle(p)}`;
   render(head + `
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <p class="muted" style="font-size:12.5px;margin:0">Zeitblöcke pro Tag (von–bis Uhr, Tätigkeit, optional Gewerk; „Pause" für Unterbrüche). Block anklicken = bearbeiten.</p>
-      <button class="btn sm" data-act="fein-add" data-pid="${p.id}">+ Zeitblock</button>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn sm secondary" data-act="fein-day" data-pid="${p.id}" data-kind="prev">‹ Tag</button>
+      <button class="btn sm secondary" data-act="fein-day" data-pid="${p.id}" data-kind="today">Heute</button>
+      <button class="btn sm secondary" data-act="fein-day" data-pid="${p.id}" data-kind="next">Tag ›</button>
+      <input class="input" type="date" id="fein-day-pick" value="${day}" style="width:150px;height:30px">
+      <b style="font-size:14px">${esc(wochentag(day))}, ${esc(fmtDate(day))}</b>
+      <span class="muted" style="font-size:12px;margin-left:auto">${onsite.length} Unternehmer vor Ort · in einer Spalte <b>ziehen</b> = Aufgabe einteilen</span>
     </div>
-    ${days.length ? `<div class="card" style="padding:0;overflow:auto"><div class="fein-wrap" style="min-width:${150 + trackW}px">
-      <div class="fein-day fein-headrow"><div class="fein-date">Tag</div><div class="fein-track" style="width:${trackW}px">${hourHead}</div></div>
-      ${dayHtml}
-    </div></div>` : emptyState('⏱', 'Noch keine Zeitblöcke. Mit „+ Zeitblock" das Tagesprogramm aufbauen.')}`);
+    <div class="card" style="padding:0;overflow:auto"><div class="od-wrap">
+      <div class="od-gutter" style="width:${gutterW}px"><div class="od-colhead"></div><div class="od-body" style="height:${totalH}px">${hourLabels}</div></div>
+      <div class="od-cols">${colHtml}</div>
+    </div></div>`);
+  $$('.od-col').forEach(c => c.addEventListener('mousedown', onDayDraw));
+  $('#fein-day-pick')?.addEventListener('change', e => { feinDay = e.target.value || todayIso(); viewFeinStunden(p); });
+}
+function feinTimeStr(t) { const h = Math.floor(t), m = Math.round((t - h) * 60); return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; }
+function onDayDraw(e) {
+  if (e.target.closest('.od-ev')) return;
+  const col = e.currentTarget, body = col.querySelector('.od-body'); if (!body) return;
+  const rect = body.getBoundingClientRect(), hpx = Number(col.dataset.hpx), H0 = Number(col.dataset.h0);
+  const tAt = cy => Math.max(H0, Math.min(FEIN_H1, Math.round((H0 + (cy - rect.top) / hpx) * 4) / 4));
+  const start = tAt(e.clientY);
+  const temp = document.createElement('div'); temp.className = 'od-ev draft'; body.appendChild(temp);
+  const upd = cur => { const lo = Math.min(start, cur), hi = Math.max(start, cur); temp.style.top = ((lo - H0) * hpx) + 'px'; temp.style.height = (Math.max((hi - lo) * hpx, 12)) + 'px'; };
+  upd(start + 0.5);
+  const move = ev => upd(tAt(ev.clientY));
+  const up = ev => {
+    document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+    let cur = tAt(ev.clientY); if (Math.abs(cur - start) < 0.24) cur = Math.min(FEIN_H1, start + 1);   // Klick = 1 Stunde
+    const lo = Math.min(start, cur), hi = Math.max(start, cur); temp.remove();
+    actFeinBlock(col.dataset.pid, null, { datum: feinDay || todayIso(), gewerk: col.dataset.vid, von: feinTimeStr(lo), bis: feinTimeStr(hi) });
+  };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+  e.preventDefault();
 }
 function ganttColForGewerk(p, vid) { const v = vid ? findVergabe(p, vid) : null; return v ? ganttColHex(v) : 'var(--brand)'; }
-function actFeinBlock(pid, bid) {
+function actFeinBlock(pid, bid, prefill) {
   const p = findProjekt(pid); const b = bid ? (p.feinbloecke || []).find(x => x.id === bid) : null;
-  const gw = gewerkeSorted(p);
-  openModal(b ? 'Zeitblock bearbeiten' : 'Zeitblock', `
+  const gw = gewerkeSorted(p); const pf = prefill || {};
+  const vd = b ? (b.datum || '') : (pf.datum || todayIso()), vg = b ? (b.gewerk || '') : (pf.gewerk || ''), vv = b ? (b.von || '08:00') : (pf.von || '08:00'), vb = b ? (b.bis || '09:00') : (pf.bis || '09:00');
+  openModal(b ? 'Aufgabe bearbeiten' : 'Aufgabe einteilen', `
     <div class="form-row">
-      <label class="field">Datum <input class="input" type="date" id="fb_datum" value="${b ? esc(b.datum || '') : todayIso()}"></label>
-      <label class="field">Gewerk (optional) <select class="select" id="fb_gewerk"><option value="">–</option>${gw.map(v => `<option value="${v.id}"${b && b.gewerk === v.id ? ' selected' : ''}>${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)}</option>`).join('')}</select></label>
+      <label class="field">Datum <input class="input" type="date" id="fb_datum" value="${esc(vd)}"></label>
+      <label class="field">Unternehmer / Gewerk <select class="select" id="fb_gewerk"><option value="">Allgemein</option>${gw.map(v => `<option value="${v.id}"${vg === v.id ? ' selected' : ''}>${esc((v.bkp ? v.bkp + ' ' : '') + (v.firma || v.gewerk))}</option>`).join('')}</select></label>
     </div>
     <div class="form-row">
-      <label class="field">Von <input class="input" type="time" id="fb_von" value="${b ? esc(b.von || '08:00') : '08:00'}"></label>
-      <label class="field">Bis <input class="input" type="time" id="fb_bis" value="${b ? esc(b.bis || '09:00') : '09:00'}"></label>
+      <label class="field">Von <input class="input" type="time" id="fb_von" value="${esc(vv)}"></label>
+      <label class="field">Bis <input class="input" type="time" id="fb_bis" value="${esc(vb)}"></label>
     </div>
-    <label class="field">Tätigkeit / Anweisung <input class="input" id="fb_titel" value="${b ? esc(b.titel || '') : ''}" placeholder="z.B. Schalung Decke EG"></label>
+    <label class="field">Aufgabe / Tätigkeit <input class="input" id="fb_titel" value="${b ? esc(b.titel || '') : ''}" placeholder="z.B. Schalung Decke EG, Lieferung Beton"></label>
     <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px"><input type="checkbox" id="fb_pause"${b && b.pause ? ' checked' : ''}> Pause / Unterbruch</label>
     <label class="field" style="margin-top:8px">Notiz <textarea class="input" id="fb_notiz" rows="2" placeholder="optional">${b ? esc(b.notiz || '') : ''}</textarea></label>
   `, `${b ? `<button class="btn ghost danger" data-act="fein-rm" data-pid="${pid}" data-bid="${bid}">Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-fein" data-pid="${pid}"${b ? ` data-bid="${bid}"` : ''}>${b ? 'Speichern' : 'Hinzufügen'}</button>`);
+  setTimeout(() => $('#fb_titel')?.focus(), 30);
 }
 function saveFeinBlock(pid, bid) {
   const p = findProjekt(pid);
@@ -10486,6 +10520,7 @@ document.addEventListener('click', e => {
     case 'fein-rm':      removeFeinBlock(pid, bid); break;
     case 'fein-sub':     feinSub = kind; viewFeinGantt(findProjekt(pid)); break;
     case 'fein-week':    { feinAnchor = kind === 'today' ? null : (() => { const base = feinAnchor || mondayOf(todayIso()); const d = dISO(base); d.setDate(d.getDate() + (kind === 'next' ? 7 : -7)); return isoOf(d); })(); viewFeinGantt(findProjekt(pid)); } break;
+    case 'fein-day':     { feinDay = kind === 'today' ? null : (() => { const d = dISO(feinDay || todayIso()); d.setDate(d.getDate() + (kind === 'next' ? 1 : -1)); return isoOf(d); })(); viewFeinStunden(findProjekt(pid)); } break;
     case 'fein-komm-edit': actFeinKommentar(pid, null, null, null, act.dataset.kid); break;
     case 'fein-komm-save': saveFeinKommentar(pid, act.dataset.vid, act.dataset.oid, act.dataset.datum, act.dataset.kid); break;
     case 'fein-komm-rm':   removeFeinKommentar(pid, act.dataset.kid); break;

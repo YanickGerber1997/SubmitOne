@@ -823,17 +823,21 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .qv-dcol.we { background: rgba(15,24,48,.04); color: var(--text-faint); }
 .qv-dcol.today { box-shadow: inset 0 -2px 0 var(--brand); }
 .qv-dcol .qv-wd { font-size: 10px; white-space: nowrap; }
-.qv-dcol .qv-qs { display: flex; margin-top: 2px; }
-.qv-dcol .qv-qs span { flex: 1; height: 4px; border-left: 1px solid var(--border); }
-.qv-dcol .qv-qs span:first-child { border-left: none; }
-.qv-track { position: relative; height: 38px; flex: none; cursor: crosshair;
+.qv-dcol .qv-dt { font-size: 9.5px; font-weight: 400; color: var(--text-faint); }
+.qv-track { position: relative; height: 54px; flex: none;
   background-image:
     repeating-linear-gradient(to right, transparent 0 calc(var(--qw) - 1px), var(--border) calc(var(--qw) - 1px) var(--qw)),
     repeating-linear-gradient(to right, transparent 0 calc(var(--dayw) - 1px), var(--border-2) calc(var(--dayw) - 1px) var(--dayw)); }
-.qv-band { position: absolute; top: 3px; bottom: 3px; border: 1px dashed; border-radius: 5px; opacity: .8; pointer-events: none; }
-.qv-bar { position: absolute; top: 50%; transform: translateY(-50%); height: 22px; border-radius: 5px; color: #fff; font-size: 10.5px; font-weight: 600; display: flex; align-items: center; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.25); z-index: 2; }
-.qv-bar.draft { opacity: .55; pointer-events: none; }
-.qv-bar:hover { filter: brightness(1.1); }
+.qv-clane { position: absolute; top: 0; left: 0; right: 0; height: 28px; cursor: copy; }
+.qv-blane { position: absolute; bottom: 0; left: 0; right: 0; height: 26px; }
+.qv-bar.real { position: absolute; top: 50%; transform: translateY(-50%); height: 20px; border-radius: 5px; color: #fff; font-size: 10.5px; font-weight: 600; display: flex; align-items: center; padding: 0 7px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.22); }
+.qv-bar.real.cutl { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.qv-bar.real.cutr { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.qv-bar.real:hover { filter: brightness(1.08); }
+.qv-noterm { position: absolute; top: 50%; transform: translateY(-50%); left: 6px; font-size: 11px; color: var(--text-faint); border: 1px dashed var(--border-2); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+.qv-komm { position: absolute; bottom: 1px; max-width: 160px; background: #fff8e1; border: 1px solid #f0d27a; border-radius: 5px; padding: 1px 6px; font-size: 10px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.12); z-index: 3; }
+.qv-komm:hover { border-color: var(--brand); }
+.qv-komm-d { font-weight: 700; color: #a16207; }
 .g-bar {
   position: absolute; top: 8px; height: 22px; border-radius: 6px; min-width: 3px;
   display: flex; align-items: center; font-size: 11px; font-weight: 600; color: #fff;

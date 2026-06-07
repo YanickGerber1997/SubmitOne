@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v193';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v194';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1779,6 +1779,11 @@ function bauPhaseKey(bkp) {
   for (const ph of BAU_PHASEN) { if (ph.grp.includes(g1)) return ph.key; }
   return 'rest';
 }
+// Phase eines Gewerks: manuelle Zuordnung (v.bauPhase) hat Vorrang, sonst nach BKP
+function phaseOf(v) { return (v.bauPhase && BAU_PHASEN.some(ph => ph.key === v.bauPhase)) ? v.bauPhase : bauPhaseKey(v.bkp); }
+function phaseColOf(v) { const ph = BAU_PHASEN.find(x => x.key === phaseOf(v)); return ph ? ph.col : '#64748b'; }
+let grobZoom = 1;   // Grobplanung: Monatsbreiten-Faktor (Zoom)
+let _grobPxPerDay = 2;
 // Grobplanung: BKP-Gewerke aus dem Detailprogramm zu groben Bauphasen zusammengefasst (Spanne aus Bau-Terminen)
 function viewGrobGantt(p) {
   const head = `
@@ -1791,7 +1796,7 @@ function viewGrobGantt(p) {
     return;
   }
   const map = {};
-  vs.forEach(v => { const k = bauPhaseKey(v.bkp); (map[k] = map[k] || []).push(v); });
+  vs.forEach(v => { const k = phaseOf(v); (map[k] = map[k] || []).push(v); });
   const phases = BAU_PHASEN.filter(ph => map[ph.key]).map(ph => {
     let s = '', e = ''; map[ph.key].forEach(v => { if (!s || v.bauStart < s) s = v.bauStart; if (!e || v.bauEnde > e) e = v.bauEnde; });
     return { ph, items: map[ph.key], start: s, ende: e };
@@ -1800,7 +1805,8 @@ function viewGrobGantt(p) {
   const maxISO = phases.reduce((a, x) => !a || x.ende > a ? x.ende : a, '');
   const d0 = dISO(minISO), d1 = dISO(maxISO), y0 = d0.getFullYear(), m0 = d0.getMonth();
   const nMon = (d1.getFullYear() - y0) * 12 + (d1.getMonth() - m0) + 1;
-  const colW = 66, trackW = nMon * colW, MON = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+  const colW = Math.round(66 * grobZoom), trackW = nMon * colW, MON = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+  _grobPxPerDay = colW / 30.44;   // für Drag (Tage aus px)
   const months = Array.from({ length: nMon }, (_, i) => { const mo = (m0 + i) % 12, yr = y0 + Math.floor((m0 + i) / 12); return { label: `${MON[mo]} ${String(yr).slice(2)}`, jan: mo === 0 }; });
   const dim = (y, m) => new Date(y, m + 1, 0).getDate();
   const xOf = iso => { const d = dISO(iso); const mi = (d.getFullYear() - y0) * 12 + (d.getMonth() - m0); return mi * colW + (d.getDate() - 1) / dim(d.getFullYear(), d.getMonth()) * colW; };
@@ -1808,16 +1814,49 @@ function viewGrobGantt(p) {
   const rows = phases.map(x => {
     const left = xOf(x.start), w = Math.max(xOf(x.ende) - left, 22);
     return `<div class="grob-row">
-      <div class="grob-name" style="width:210px"><span class="gnm">${esc(x.ph.label)}</span><div class="muted" style="font-size:11px">${x.items.length} Gewerke · ${esc(fmtDate(x.start))} – ${esc(fmtDate(x.ende))}</div></div>
-      <div class="grob-track" style="width:${trackW}px">${months.map((c, ci) => `<span class="grob-cell" style="left:${ci * colW}px;width:${colW}px"></span>`).join('')}<div class="grob-bar" style="left:${left}px;width:${w - 3}px;background:${x.ph.col}" title="${esc(x.ph.label)} · ${x.items.map(v => (v.bkp ? v.bkp + ' ' : '') + v.gewerk).join(', ')}">${esc(x.ph.label)}</div></div>
+      <div class="grob-name" style="width:210px"><span class="p-dot" style="background:${x.ph.col}"></span><span class="gnm">${esc(x.ph.label)}</span><div class="muted" style="font-size:11px">${x.items.length} Gewerke · ${esc(fmtDate(x.start))} – ${esc(fmtDate(x.ende))}</div></div>
+      <div class="grob-track" style="width:${trackW}px">${months.map((c, ci) => `<span class="grob-cell" style="left:${ci * colW}px;width:${colW}px"></span>`).join('')}<div class="grob-bar" data-pid="${p.id}" data-phase="${x.ph.key}" style="left:${left}px;width:${w - 3}px;background:${x.ph.col}" title="${esc(x.ph.label)} · ziehen = ganze Phase verschieben · ${x.items.map(v => (v.bkp ? v.bkp + ' ' : '') + v.gewerk).join(', ')}">${esc(x.ph.label)}</div></div>
     </div>`;
   }).join('');
   render(head + `
-    <p class="muted" style="font-size:12.5px;margin:-2px 0 12px">Automatisch aus dem <b>Detailprogramm</b>: die BKP-Gewerke sind zu groben <b>Bauphasen</b> zusammengefasst – die Spanne reicht vom frühesten Start bis zum spätesten Ende je Phase. Termine im „Detailprogramm" ändern → Phasen aktualisieren sich.</p>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-2px 0 10px">
+      <p class="muted" style="font-size:12.5px;margin:0;flex:1;min-width:240px">Bauphasen aus dem <b>Detailprogramm</b> (Spanne = frühester Start bis spätestes Ende). <b>Phase ziehen</b> = alle ihre Gewerke verschieben${ganttChain ? ' (verkettete Nachfolger laufen mit)' : ''}. Zuordnung im Detailprogramm ändern (Phasen-Punkt).</p>
+      <div class="g-zoom" title="Zoom"><button data-act="grob-zoom" data-pid="${p.id}" data-kind="out" title="schmaler">−</button><button data-act="grob-zoom" data-pid="${p.id}" data-kind="reset" style="min-width:46px">${Math.round(grobZoom * 100)}%</button><button data-act="grob-zoom" data-pid="${p.id}" data-kind="in" title="breiter">+</button></div>
+    </div>
     <div class="card" style="padding:0;overflow:auto"><div class="grob-wrap" style="min-width:${210 + trackW}px">
       <div class="grob-row grob-headrow"><div class="grob-name" style="width:210px">Bauphase</div><div class="grob-track" style="width:${trackW}px">${headerCols}</div></div>
       ${rows}
     </div></div>`);
+  $$('.grob-bar').forEach(b => b.addEventListener('mousedown', onGrobBarDrag));
+}
+function onGrobBarDrag(e) {
+  const bar = e.currentTarget, pid = bar.dataset.pid, phase = bar.dataset.phase;
+  const startX = e.clientX, left0 = parseFloat(bar.style.left) || 0; let moved = false, deltaDays = 0;
+  bar.classList.add('drag');
+  const move = ev => { const dx = ev.clientX - startX; if (Math.abs(dx) > 3) moved = true; deltaDays = Math.round(dx / _grobPxPerDay); bar.style.left = (left0 + deltaDays * _grobPxPerDay) + 'px'; };
+  const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); bar.classList.remove('drag'); if (moved && deltaDays !== 0) shiftPhase(pid, phase, deltaDays); else viewGrobGantt(findProjekt(pid)); };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); e.preventDefault();
+}
+function shiftPhase(pid, phase, deltaDays) {
+  const p = findProjekt(pid); if (!p) return;
+  const moved = (p.vergaben || []).filter(v => v.bauStart && v.bauEnde && phaseOf(v) === phase);
+  moved.forEach(v => { v.bauStart = addDays(v.bauStart, deltaDays); v.bauEnde = addDays(v.bauEnde, deltaDays); });
+  if (ganttChain) moved.forEach(v => rescheduleChain(p, v.id));   // verkettete Nachfolger nachführen
+  save(); viewGrobGantt(p);
+}
+// Bauphase eines Gewerks manuell zuordnen (im Detailprogramm, Phasen-Punkt)
+function actGrobPhase(e, pid, vid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  const cur = phaseOf(v), dot = c => `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${c}"></span>`;
+  openContextMenu(e, [
+    { icon: '↺', label: 'Automatisch (nach BKP)' + (!v.bauPhase ? '  ✓' : ''), act: () => setVergPhase(pid, vid, '') },
+    { sep: true },
+    ...BAU_PHASEN.map(ph => ({ icon: dot(ph.col), label: ph.label + (cur === ph.key ? '  ✓' : ''), act: () => setVergPhase(pid, vid, ph.key) })),
+  ]);
+}
+function setVergPhase(pid, vid, key) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  v.bauPhase = key || ''; save(); viewTermine(pid);
 }
 function setGrobPhase(pid, vid, feld, val) {
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
@@ -2387,6 +2426,7 @@ function viewTermine(id) {
     if (ganttSide.person && k && k.person) extra.push(`<span class="g-si">${esc(k.person)}</span>`);
     if (ganttSide.natel && k && k.telefon) extra.push(`<span class="g-si">☎ ${esc(k.telefon)}</span>`);
     sideRows += `<div class="g-side-row${hatTermin ? '' : ' offen'}">
+      <button class="g-phase-dot" data-act="grob-phase" data-pid="${p.id}" data-vid="${v.id}" style="background:${phaseColOf(v)}" title="Bauphase (Grobplanung): ${esc((BAU_PHASEN.find(x => x.key === phaseOf(v)) || {}).label || '')}${v.bauPhase ? ' · manuell' : ''} – klicken zum Ändern"></button>
       <span class="g-edit" data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}" title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">
         <span class="bkp-code">${esc(v.bkp)}</span>${ganttSide.gewerk ? ` <span class="gewerk">${esc(v.gewerk)}</span>` : ''}${extra.length ? `<span class="g-si-wrap">${extra.join('<span class="g-si-sep">·</span>')}</span>` : ''}
       </span>
@@ -10678,6 +10718,8 @@ document.addEventListener('click', e => {
     case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; rerenderGantt(pid); break;
     case 'gantt-dates':  ganttDates = ganttDates === 'off' ? 'full' : (ganttDates === 'full' ? 'short' : 'off'); rerenderGantt(pid); break;
     case 'gantt-mode':   ganttMode = kind; viewTermine(pid); break;
+    case 'grob-zoom':    { grobZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.4, +(grobZoom + (kind === 'in' ? 0.2 : -0.2)).toFixed(2))); viewGrobGantt(findProjekt(pid)); } break;
+    case 'grob-phase':   actGrobPhase(e, pid, vid); break;
     case 'fein-add':     actFeinBlock(pid); break;
     case 'fein-edit':    actFeinBlock(pid, bid); break;
     case 'save-fein':    saveFeinBlock(pid, bid); break;

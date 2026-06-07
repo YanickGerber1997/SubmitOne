@@ -1,5 +1,5 @@
 /* SubmitOne – Service Worker (Network-first: online immer aktuell, offline aus Cache) */
-const CACHE = 'submitone-v215';
+const CACHE = 'submitone-v216';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js',
   './paged.polyfill.js',

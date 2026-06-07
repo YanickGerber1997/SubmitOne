@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v215';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v216';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2298,6 +2298,7 @@ function viewTermine(id) {
     ${ganttModeToggle(p)}
     <div class="g-toolbar">
       <span class="muted" style="font-size:12px">Ansicht</span>${zoomCtrl}${scaleCtrl}${sortCtrl}${dateCtrl}
+      <button class="btn sm secondary" data-act="eckdaten" data-pid="${p.id}" title="Baustart / Bauende / Bezug setzen (Meilensteine)">📍 Eckdaten</button>
       <span class="muted" style="font-size:12px;margin-left:6px">Farbe</span><div class="g-zoom" title="Balkenfarbe">${[['status', 'Status'], ['firma', 'Unternehmer'], ['phase', 'Phase']].map(([k, l]) => `<button class="${ganttColorMode === k ? 'active' : ''}" data-act="gantt-color" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>
       <span class="g-tb-sep"></span>
       <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
@@ -2329,6 +2330,7 @@ function viewTermine(id) {
   if (p.start) allDates.push(p.start);
   if (p.ende) allDates.push(p.ende);
   if (p.baustart) allDates.push(p.baustart);
+  if (p.bauende) allDates.push(p.bauende);
   if (p.bezug) allDates.push(p.bezug);
 
   let minS, maxS;
@@ -2425,12 +2427,13 @@ function viewTermine(id) {
     return `<div class="g-holiday" style="left:${x}px;width:${Math.max(pxPerDay, 2)}px" title="${esc(f.n)} ${fmtDate(isoOf(f.d))}">${showLbl ? `<span>${esc(holLabel(f))}</span>` : ''}</div>`;
   }).join('');
 
-  // Projekt-Meilensteine: Baustart & Bezugstermin
+  // Projekt-Meilensteine: Baustart, Bauende & Bezug (im Gantt anklickbar zum Bearbeiten)
   const projMarks = [];
   if (p.baustart) projMarks.push({ iso: p.baustart, n: 'Baustart', cls: 'start' });
+  if (p.bauende) projMarks.push({ iso: p.bauende, n: 'Bauende', cls: 'ende' });
   if (p.bezug) projMarks.push({ iso: p.bezug, n: 'Bezug', cls: 'bezug' });
   const markBands = projMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; }).map(m =>
-    `<div class="g-mark ${m.cls}" style="left:${dayDiff(rangeStart, dISO(m.iso)) * pxPerDay}px" title="${m.n}: ${fmtDate(m.iso)}"><span>${m.n} ${fmtDate(m.iso)}</span></div>`).join('');
+    `<div class="g-mark ${m.cls}" data-act="eckdaten" data-pid="${p.id}" style="left:${dayDiff(rangeStart, dISO(m.iso)) * pxPerDay}px" title="${m.n}: ${fmtDate(m.iso)} – klicken zum Bearbeiten"><span>${m.n} ${fmtDate(m.iso)}</span></div>`).join('');
 
   // Ressourcen-Hinweis (einstellbar): gleiche Firma in Gewerken ohne genügend Abstand
   const rc = p.ressCheck || { aktiv: true, minGap: 0 };
@@ -2749,6 +2752,24 @@ function ganttBarMenu(e, bar) {
   vergabeMenu(e, pid, vid, extras, { noDelete: true });   // im Terminprogramm kein Gewerk-Löschen
 }
 function clearTermin(pid, vid) { if (gesperrt(pid)) return; const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return; v.bauStart = ''; v.bauEnde = ''; save(); rerenderGantt(pid); toast('Termin entfernt', 'info'); }
+// Eckdaten / Meilensteine im Gantt bearbeiten (Baustart, Bauende, Bezug)
+function actEckdaten(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  openModal('Eckdaten / Meilensteine', `
+    <p class="muted" style="font-size:12.5px;margin-top:0">Vertikale Markierungen im Terminprogramm. Leer = keine Markierung.</p>
+    <label class="field">📍 Baustart <input class="input" type="date" id="ek_baustart" value="${esc(p.baustart || '')}"></label>
+    <label class="field" style="margin-top:8px">🏁 Bauende <input class="input" type="date" id="ek_bauende" value="${esc(p.bauende || '')}"></label>
+    <label class="field" style="margin-top:8px">🔑 Bezug / Übergabe <input class="input" type="date" id="ek_bezug" value="${esc(p.bezug || '')}"></label>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="eckdaten-save" data-pid="${pid}">Speichern</button>`);
+}
+function saveEckdaten(pid) {
+  if (gesperrt(pid)) { closeModal(); return; }
+  const p = findProjekt(pid); if (!p) return;
+  p.baustart = $('#ek_baustart').value || '';
+  p.bauende = $('#ek_bauende').value || '';
+  p.bezug = $('#ek_bezug').value || '';
+  save(); closeModal(); rerenderGantt(pid); toast('Eckdaten gespeichert');
+}
 /* --- Terminprogramm: Versionierung & Sperre (Abgabe) --- */
 function terminGesperrt(p) { return !!(p && p.terminLocked); }
 function gesperrt(pid) { const p = findProjekt(pid); if (p && p.terminLocked) { toast('Terminprogramm ist abgegeben (gesperrt) – für Änderungen „Neue Version" erstellen', 'info'); return true; } return false; }
@@ -11159,6 +11180,8 @@ document.addEventListener('click', e => {
     case 'sr-config':       actSitzungsraster(pid); break;
     case 'sr-save':         saveSitzungsraster(pid); break;
     case 'gantt-raster':    ganttRaster = !ganttRaster; rerenderGantt(pid); break;
+    case 'eckdaten':        actEckdaten(pid); break;
+    case 'eckdaten-save':   saveEckdaten(pid); break;
     case 'termin-versionen': actTerminVersionen(pid); break;
     case 'tv-abgeben':      terminAbgeben(pid); break;
     case 'tv-neu':          terminNeueVersion(pid); break;

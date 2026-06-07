@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v246';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v247';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1781,8 +1781,15 @@ function feinH(t) { const [h, m] = String(t || '0:0').split(':').map(Number); re
 function wochentag(iso) { if (!iso) return ''; try { return dISO(iso).toLocaleDateString('de-CH', { weekday: 'long' }); } catch (_) { return ''; } }
 const GROB_SAISON = [['FS', 'Frühling'], ['SO', 'Sommer'], ['HE', 'Herbst'], ['WI', 'Winter']];
 function grobIdx(s) { if (!s) return null; const [y, c] = String(s).split('-'); const si = GROB_SAISON.findIndex(x => x[0] === c); if (si < 0 || !y) return null; return Number(y) * 4 + si; }
+// Versionsleiste (wie Zahlungsplan): Versionen umschalten / neu / umbenennen / löschen / sperren
+function ganttVersionBar(p) {
+  const gespr = terminGesperrt(p);
+  return `<div class="g-verbar"><span class="muted" style="font-size:11px">Version</span>${terminVersList(p).map(v => `<button class="btn sm ${v.id === p.terminVersAktiv ? '' : 'secondary'}" data-act="tv-switch" data-pid="${p.id}" data-vid="${v.id}" title="Zu dieser Version wechseln">${esc(v.name || 'Version')}${v.gesperrt ? ' 🔒' : ''}</button>`).join('')}<button class="btn sm secondary" data-act="tv-new" data-pid="${p.id}" title="Neue Version (Kopie der aktuellen)">+ Version</button><button class="btn sm ico secondary" data-act="tv-rename" data-pid="${p.id}" title="Version umbenennen">✎</button><button class="btn sm ico secondary" data-act="tv-del" data-pid="${p.id}" title="Version löschen">🗑</button><button class="btn sm ico ${gespr ? '' : 'secondary'}" data-act="tv-lock" data-pid="${p.id}" title="${gespr ? 'Version entsperren' : 'Version sperren (abschliessen)'}">${gespr ? '🔒' : '🔓'}</button></div>`;
+}
+// Oben: Versionsleiste (volle Breite, wie Zahlungsplan) – darunter der Modus-Umschalter (Detail/Grob/Fein), knapp über dem Gantt
 function ganttModeToggle(p) {
-  return `<div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">
+  return `${ganttVersionBar(p)}
+  <div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">
     <button class="btn sm ${ganttMode === 'detail' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="detail" type="button" style="border:none">📋 Detailprogramm (Tage)</button>
     <button class="btn sm ${ganttMode === 'grob' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="grob" type="button" style="border:none">🗓 Grobplanung (Phasen)</button>
     <button class="btn sm ${ganttMode === 'fein' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="fein" type="button" style="border:none">⏱ Feinprogramm (Stunden)</button>
@@ -2376,15 +2383,7 @@ function viewTermine(id) {
       <span class="g-tb-sep"></span>
       <button class="btn sm secondary" data-act="eckdaten" data-pid="${p.id}" title="Eckdaten: Baustart / Bauende / Bezug (Meilensteine)">📍 Eckdaten</button>
       <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Bauablauf: Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
-      <span class="g-tb-sep" style="margin-left:auto"></span>
-      <span class="muted" style="font-size:11.5px">Version</span>
-      ${terminVersList(p).map(v => `<button class="btn sm ${v.id === p.terminVersAktiv ? '' : 'secondary'}" data-act="tv-switch" data-pid="${p.id}" data-vid="${v.id}" title="Zu dieser Version wechseln">${esc(v.name || 'Version')}${v.gesperrt ? ' 🔒' : ''}</button>`).join('')}
-      <button class="btn sm secondary" data-act="tv-new" data-pid="${p.id}" title="Neue Version (Kopie der aktuellen)">+ Version</button>
-      <button class="btn sm ico secondary" data-act="tv-rename" data-pid="${p.id}" title="Version umbenennen">✎</button>
-      <button class="btn sm ico secondary" data-act="tv-del" data-pid="${p.id}" title="Version löschen">🗑</button>
-      <button class="btn sm ico ${gespr ? '' : 'secondary'}" data-act="tv-lock" data-pid="${p.id}" title="${gespr ? 'Version entsperren' : 'Version sperren (abschliessen)'}">${gespr ? '🔒' : '🔓'}</button>
-      <span class="g-tb-sep"></span>
-      <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" title="Drucken / PDF – Format automatisch (A4→A3→A2…)">🖨 Drucken</button>
+      <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" title="Drucken / PDF – Format automatisch (A4→A3→A2…)" style="margin-left:auto">🖨 Drucken</button>
     </div>`)}
     ${gespr ? `<div class="g-warn g-warn-lock">🔒 <b>Version „${esc(terminVersAktiv(p).name)}" ist gesperrt.</b> Änderungen blockiert – andere Version wählen oder oben „🔓" entsperren / „+ Version".</div>` : ''}
   `;

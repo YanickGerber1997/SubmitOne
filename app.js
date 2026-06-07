@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v227';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v228';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2402,7 +2402,7 @@ function viewTermine(id) {
       const wEnd = new Date(d); wEnd.setDate(d.getDate() + (7 - ((d.getDay() + 6) % 7)) - 1);
       const segEnd = wEnd > rangeEnd ? rangeEnd : wEnd;
       const w = (dayDiff(d, segEnd) + 1) * pxPerDay;
-      s += `<div class="g-cell" style="width:${w}px">${isoWeek(d)}</div>`;
+      s += `<div class="g-cell" style="width:${w}px">${w >= 26 ? 'KW ' : ''}${isoWeek(d)}</div>`;
       d = new Date(segEnd); d.setDate(d.getDate() + 1);
     }
     return s;

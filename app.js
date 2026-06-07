@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v213';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v214';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1839,6 +1839,7 @@ function onGrobBarDrag(e) {
   document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); e.preventDefault();
 }
 function shiftPhase(pid, phase, deltaDays) {
+  if (gesperrt(pid)) { viewGrobGantt(findProjekt(pid)); return; }
   const p = findProjekt(pid); if (!p) return;
   const moved = (p.vergaben || []).filter(v => v.bauStart && v.bauEnde && phaseOf(v) === phase);
   moved.forEach(v => { v.bauStart = addDays(v.bauStart, deltaDays); v.bauEnde = addDays(v.bauEnde, deltaDays); });
@@ -1856,6 +1857,7 @@ function actGrobPhase(e, pid, vid) {
   ]);
 }
 function setVergPhase(pid, vid, key) {
+  if (gesperrt(pid)) return;
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
   v.bauPhase = key || ''; save(); rerenderGantt(pid);
 }
@@ -2128,6 +2130,7 @@ function onBarDrag(e) {
   document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); e.preventDefault();
 }
 function setFeinDates(pid, vid, oid, sd, ed) {
+  if (gesperrt(pid)) return;
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
   if (oid) { const o = (v.vorgaenge || []).find(x => x.id === oid); if (o) { o.start = sd; o.ende = ed; } recalcAutoBalken(v); }
   else { v.bauStart = sd; v.bauEnde = ed; }
@@ -2202,6 +2205,7 @@ function actFeinVorgang(pid, vid, oid) {
   `, `<button class="btn ghost danger" data-act="fein-vorgang-rm" data-pid="${pid}" data-vid="${vid}" data-oid="${oid}">Löschen</button><button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fein-vorgang-save" data-pid="${pid}" data-vid="${vid}" data-oid="${oid}">Speichern</button>`);
 }
 function saveFeinVorgang(pid, vid, oid) {
+  if (gesperrt(pid)) { closeModal(); return; }
   const p = findProjekt(pid); const v = findVergabe(p, vid); const o = (v.vorgaenge || []).find(x => x.id === oid); if (!o) return;
   const titel = $('#o_titel').value.trim(), s = $('#o_start').value, e = $('#o_ende').value;
   if (!titel) { toast('Bitte eine Bezeichnung eingeben', 'info'); return; }
@@ -2211,6 +2215,7 @@ function saveFeinVorgang(pid, vid, oid) {
   save(); closeModal(); viewFeinViertel(p);
 }
 function removeFeinVorgang(pid, vid, oid) {
+  if (gesperrt(pid)) return;
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (v) { v.vorgaenge = (v.vorgaenge || []).filter(x => x.id !== oid); recalcAutoBalken(v); }
   save(); closeModal(); viewFeinViertel(p);
 }
@@ -2260,6 +2265,7 @@ function viewTermine(id) {
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
 
   ganttPid = p.id;
+  const gespr = terminGesperrt(p);
   if (ganttMode === 'grob') return viewGrobGantt(p);
   if (ganttMode === 'fein') return viewFeinGantt(p);
   // ALLE Vergaben (auch ohne Termin), sortiert nach BKP/Gewerk ODER nach Baustart
@@ -2300,8 +2306,10 @@ function viewTermine(id) {
       ${(p.sitzungsraster && p.sitzungsraster.aktiv) ? `<button class="btn sm ${ganttRaster ? '' : 'secondary'}" data-act="gantt-raster" data-pid="${p.id}" title="Sitzungsraster-Linien ein-/ausblenden">🗓 Sitzungen ${ganttRaster ? 'an' : 'aus'}</button>` : ''}
       <button class="btn sm ${(p.regeln || []).length ? '' : 'secondary'}" data-act="regeln-open" data-pid="${p.id}" title="Feste Regeln/Abhängigkeiten – warnen bei Verstoss (z.B. Gerüst vor Wände)">📐 Regeln${(p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''}</button>
       <button class="btn sm ${(p.ressCheck && p.ressCheck.aktiv === false) ? 'secondary' : ''}" data-act="ress-config" data-pid="${p.id}" title="Ressourcen-Hinweis (gleiche Firma überlappend) einstellen">⚠ Ressourcen</button>
-      <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" style="margin-left:auto">⬇ PDF</button>
+      <button class="btn sm ${gespr ? '' : 'secondary'}" data-act="termin-versionen" data-pid="${p.id}" title="Programm abgeben/sperren · Versionen" style="margin-left:auto">${gespr ? '🔒 Abgegeben V' + (p.terminVersNr || 1) : '🏁 Abgeben / Versionen'}</button>
+      <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ PDF</button>
     </div>
+    ${gespr ? `<div class="g-warn g-warn-lock">🔒 <b>Terminprogramm Version ${p.terminVersNr || 1} ist abgegeben &amp; gesperrt.</b> Änderungen sind blockiert. <button class="btn sm" data-act="termin-versionen" data-pid="${p.id}">Neue Version erstellen</button></div>` : ''}
   `;
 
   if (!vs.length) {
@@ -2463,7 +2471,7 @@ function viewTermine(id) {
       <span class="g-edit" data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}" title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">
         <span class="bkp-code">${esc(v.bkp)}</span>${ganttSide.gewerk ? ` <span class="gewerk">${esc(v.gewerk)}</span>` : ''}${extra.length ? `<span class="g-si-wrap">${extra.join('<span class="g-si-sep">·</span>')}</span>` : ''}
       </span>
-      <button class="btn sm ghost add-vg" title="Untertermin hinzufügen (leer – dann Balken ziehen)" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${v.id}">＋</button>
+      ${gespr ? '' : `<button class="btn sm ghost add-vg" title="Untertermin hinzufügen (leer – dann Balken ziehen)" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${v.id}">＋</button>`}
     </div>`;
     if (hatTermin) {
       let bestellBar = '';
@@ -2494,13 +2502,13 @@ function viewTermine(id) {
           <span class="g-h l"></span><span class="g-lbl">${esc(v.gewerk)}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div></div>`;
       }
     } else {
-      barRows += `<div class="g-row g-draw" data-pid="${p.id}" data-vid="${v.id}"><span class="g-draw-hint">ziehen = Termin zeichnen · Klick = Dialog</span></div>`;
+      barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw" data-pid="${p.id}" data-vid="${v.id}"><span class="g-draw-hint">ziehen = Termin zeichnen · Klick = Dialog</span></div>`;
     }
     rowIdx++; inserts.push({ y: headH + rowIdx * ROW_H, vid: v.id });
     (v.vorgaenge || []).forEach(o => {
       const key = v.id + '/' + o.id; const oDated = o.start && o.ende;
       sideRows += `<div class="g-side-row sub"><span class="g-rownum sub">${gnr}.${++oNr}</span><span class="gewerk" style="font-weight:500;cursor:pointer" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="Untertermin bearbeiten">${esc(o.titel)}</span>
-        <button class="x-btn" title="Untertermin löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button></div>`;
+        ${gespr ? '' : `<button class="x-btn" title="Untertermin löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button>`}</div>`;
       if (oDated) {
         barMeta[key] = { row: rowIdx, left: leftPx(o.start), width: widthPx(o.start, o.ende) };
         barRows += `<div class="g-row">${gdLabels(o.start, o.ende, leftPx(o.start), leftPx(o.start) + widthPx(o.start, o.ende))}<div class="g-bar sub${light}" style="left:${leftPx(o.start)}px;width:${widthPx(o.start, o.ende)}px;background:${colHex}"
@@ -2508,7 +2516,7 @@ function viewTermine(id) {
           data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
           <span class="g-h l"></span><span class="g-lbl">${esc(o.titel)}</span>${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div></div>`;
       } else {
-        barRows += `<div class="g-row g-draw sub" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}"><span class="g-draw-hint">ziehen = Untertermin zeichnen</span></div>`;
+        barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw sub" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}"><span class="g-draw-hint">ziehen = Untertermin zeichnen</span></div>`;
       }
       rowIdx++; inserts.push({ y: headH + rowIdx * ROW_H, vid: v.id });
     });
@@ -2516,7 +2524,7 @@ function viewTermine(id) {
   });
   const fensterLayer = windows.map(w => `<div class="g-fenster" style="top:${w.top + 2}px;height:${w.height - 4}px;left:${w.left}px;width:${w.width}px;background:${hexA(w.col, .1)};border-color:${hexA(w.col, .5)}"><span class="g-fenster-lbl" style="color:${w.col}">${esc(w.label)}</span></div>`).join('');
   // Einfüge-Streifen zwischen den Zeilen (Hover-Plus) – legt eine leere Unterzeile für das Gewerk darüber an
-  const insertStrips = inserts.map(it => `<div class="g-insert" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${it.vid}" style="top:${it.y - 5}px" title="Untertermin einfügen (leer – dann Balken ziehen)"><span>+ Untertermin</span></div>`).join('');
+  const insertStrips = gespr ? '' : inserts.map(it => `<div class="g-insert" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${it.vid}" style="top:${it.y - 5}px" title="Untertermin einfügen (leer – dann Balken ziehen)"><span>+ Untertermin</span></div>`).join('');
   // Verbindungen (Abhängigkeiten) als SVG-Overlay
   const linkPaths = (p.ganttLinks || []).map(lk => {
     const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
@@ -2569,15 +2577,19 @@ function viewTermine(id) {
     ${bestellListeHtml(p)}
   `);
 
-  $$('.g-bar').forEach(b => { b.addEventListener('mousedown', onBarMouseDown); b.addEventListener('dblclick', onGanttBarDbl); });
-  $$('.g-row.g-draw').forEach(r => r.addEventListener('mousedown', onGanttDraw));
-  { const gr = document.querySelector('.g-rows'); if (gr) gr.addEventListener('mousedown', e => { if (!e.target.closest('.g-bar') && !e.target.closest('.g-link') && !e.target.closest('.g-bestell')) deselectGanttBar(); }); }
-  if (ganttSel) { const b = document.querySelector(`.g-bar[data-key="${ganttSel}"]`); if (b) b.classList.add('g-sel'); else ganttSel = null; }
-  $$('.g-bestell').forEach(b => b.addEventListener('mousedown', onBestellDown));
-  $$('.g-link-dot').forEach(d => d.addEventListener('mousedown', onLinkDotDown));
-  $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
-  $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) removeGanttLink(ganttPid, g.dataset.lid); }));
-  $$('.g-link').forEach(g => g.addEventListener('contextmenu', e => { e.preventDefault(); linkMenu(e, ganttPid, g.dataset.lid); }));
+  if (!gespr) {
+    $$('.g-bar').forEach(b => { b.addEventListener('mousedown', onBarMouseDown); b.addEventListener('dblclick', onGanttBarDbl); });
+    $$('.g-row.g-draw').forEach(r => r.addEventListener('mousedown', onGanttDraw));
+    { const gr = document.querySelector('.g-rows'); if (gr) gr.addEventListener('mousedown', e => { if (!e.target.closest('.g-bar') && !e.target.closest('.g-link') && !e.target.closest('.g-bestell')) deselectGanttBar(); }); }
+    if (ganttSel) { const b = document.querySelector(`.g-bar[data-key="${ganttSel}"]`); if (b) b.classList.add('g-sel'); else ganttSel = null; }
+    $$('.g-bestell').forEach(b => b.addEventListener('mousedown', onBestellDown));
+    $$('.g-link-dot').forEach(d => d.addEventListener('mousedown', onLinkDotDown));
+    $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
+    $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) removeGanttLink(ganttPid, g.dataset.lid); }));
+    $$('.g-link').forEach(g => g.addEventListener('contextmenu', e => { e.preventDefault(); linkMenu(e, ganttPid, g.dataset.lid); }));
+  } else {
+    $$('.g-bar').forEach(b => b.classList.add('g-locked'));
+  }
 
   // Scroll nach In-Place-Rerender wiederherstellen (kein Sprung beim Resizen/Zoomen)
   if (ganttPendingScroll) {
@@ -2650,6 +2662,7 @@ function onGripUp() {
   if (lk) { lk.dx = g.dx; save(); }
 }
 function addGanttLink(pid, from, to) {
+  if (gesperrt(pid)) return;
   const p = findProjekt(pid); if (!p) return;
   if (!p.ganttLinks) p.ganttLinks = [];
   if (from === to || p.ganttLinks.some(l => l.from === from && l.to === to)) return;
@@ -2659,6 +2672,7 @@ function addGanttLink(pid, from, to) {
   save(); rerenderGantt(pid); toast('Verbindung erstellt', 'info');
 }
 function removeGanttLink(pid, lid) {
+  if (gesperrt(pid)) return;
   const p = findProjekt(pid); if (!p) return;
   p.ganttLinks = (p.ganttLinks || []).filter(l => l.id !== lid);
   save(); rerenderGantt(pid); toast('Verbindung entfernt', 'info');
@@ -2695,7 +2709,7 @@ function onGlobalContext(e) {
   else if (c === 'kontakt') kontaktMenu(e, el.dataset.kid);
 }
 // Menü für ein Gewerk/Vergabe (Übersicht, Kosten, Gantt-Label …)
-function vergabeMenu(e, pid, vid, extraTop) {
+function vergabeMenu(e, pid, vid, extraTop, opts) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
   const items = [{ icon: '↗', label: 'Gewerk öffnen', act: () => go('#/projekt/' + pid + '/vergabe/' + vid) }];
   if (extraTop) items.push(...extraTop);
@@ -2719,8 +2733,9 @@ function vergabeMenu(e, pid, vid, extraTop) {
     { icon: '📐', label: '＋ Nachtrag erfassen', act: () => actNewNachtrag(pid, vid) },
     { sep: true },
     { icon: '✎', label: 'Stammdaten bearbeiten', act: () => actEditVergabe(pid, vid) },
-    { icon: '🗑', label: 'Gewerk löschen', danger: true, act: () => rmVergabe(pid, vid) },
   );
+  // Gewerk löschen NICHT aus dem Terminprogramm (zu fehleranfällig) – nur in der Übersicht
+  if (!(opts && opts.noDelete)) items.push({ icon: '🗑', label: 'Gewerk löschen', danger: true, act: () => rmVergabe(pid, vid) });
   openContextMenu(e, items);
 }
 // Rechtsklick auf einen Gantt-Balken (Vorgang oder Gewerk)
@@ -2730,9 +2745,64 @@ function ganttBarMenu(e, bar) {
   if (oid) { openContextMenu(e, [{ icon: '↗', label: 'Gewerk öffnen', act: () => go('#/projekt/' + pid + '/vergabe/' + vid) }, { sep: true }, { icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '✕', label: 'Vorgang löschen', danger: true, act: () => removeVorgang(pid, vid, oid) }]); return; }
   const extras = [{ icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '＋', label: 'Untertermin hinzufügen', act: () => addEmptyVorgangDetail(pid, vid) }];
   if (v.bauStart && v.bauEnde) extras.push({ icon: '✕', label: 'Termin entfernen', danger: true, act: () => clearTermin(pid, vid) });
-  vergabeMenu(e, pid, vid, extras);
+  vergabeMenu(e, pid, vid, extras, { noDelete: true });   // im Terminprogramm kein Gewerk-Löschen
 }
-function clearTermin(pid, vid) { const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return; v.bauStart = ''; v.bauEnde = ''; save(); rerenderGantt(pid); toast('Termin entfernt', 'info'); }
+function clearTermin(pid, vid) { if (gesperrt(pid)) return; const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return; v.bauStart = ''; v.bauEnde = ''; save(); rerenderGantt(pid); toast('Termin entfernt', 'info'); }
+/* --- Terminprogramm: Versionierung & Sperre (Abgabe) --- */
+function terminGesperrt(p) { return !!(p && p.terminLocked); }
+function gesperrt(pid) { const p = findProjekt(pid); if (p && p.terminLocked) { toast('Terminprogramm ist abgegeben (gesperrt) – für Änderungen „Neue Version" erstellen', 'info'); return true; } return false; }
+function terminSnapshot(p) {
+  return {
+    vergaben: (p.vergaben || []).map(v => ({ id: v.id, gewerk: v.gewerk, bkp: v.bkp, bauStart: v.bauStart || '', bauEnde: v.bauEnde || '', bestellfrist: v.bestellfrist || 0, nachfrist: v.nachfrist || 0, nachfristLabel: v.nachfristLabel || '', autoBalken: !!v.autoBalken, bauPhase: v.bauPhase || '', vorab: v.vorab ? { label: v.vorab.label, tageVor: v.vorab.tageVor } : null, vorgaenge: (v.vorgaenge || []).map(o => ({ id: o.id, titel: o.titel, start: o.start || '', ende: o.ende || '' })) })),
+    ganttLinks: JSON.parse(JSON.stringify(p.ganttLinks || [])),
+    regeln: JSON.parse(JSON.stringify(p.regeln || [])),
+    sitzungsraster: p.sitzungsraster ? JSON.parse(JSON.stringify(p.sitzungsraster)) : null,
+  };
+}
+function actTerminVersionen(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const nr = p.terminVersNr || 1; const locked = terminGesperrt(p);
+  const versList = (p.terminVersionen || []).slice().sort((a, b) => b.nr - a.nr);
+  const rows = versList.length ? versList.map(ver => `<div class="regel-row"><span><b>Version ${ver.nr}</b> · ${esc(ver.label || '')} <span class="muted">· abgegeben ${fmtDate(ver.datum)} · ${(ver.snapshot && ver.snapshot.vergaben || []).filter(v => v.bauStart).length} datierte Gewerke</span></span><button class="btn sm ghost" data-act="tv-restore" data-pid="${pid}" data-nr="${ver.nr}" title="Diesen Stand als neue Arbeitsversion zurückholen">↩ wiederherstellen</button></div>`).join('') : '<p class="muted" style="font-size:12.5px">Noch keine Version abgegeben.</p>';
+  openModal('Terminprogramm – Versionen', `
+    <div class="card card-pad" style="margin-bottom:12px;background:${locked ? '#ecfdf5' : 'var(--surface-2)'}">
+      <b>Status:</b> ${locked ? `🔒 <b>Version ${nr} abgegeben &amp; gesperrt</b>. Änderungen erst über eine neue Version.` : `✏️ <b>Version ${nr} – Entwurf (offen)</b>. Du kannst frei planen.`}
+    </div>
+    ${locked
+      ? `<button class="btn" data-act="tv-neu" data-pid="${pid}">+ Neue Version erstellen (entsperren)</button>`
+      : `<label class="field">Versions-Bezeichnung (optional) <input class="input" id="tv_label" placeholder="z.B. Bauprogramm Eingabe Baubewilligung"></label>
+         <button class="btn" data-act="tv-abgeben" data-pid="${pid}" style="margin-top:8px">🔒 Programm abgeben &amp; sperren (Version ${nr})</button>`}
+    <p class="muted" style="font-size:11.5px;margin-top:6px">Beim Abgeben wird der aktuelle Stand als Version festgehalten (eingefroren). Das laufende Programm bleibt die einzige „Wahrheit" (verknüpft mit Kosten/Kalender) – Versionen sind Schnappschüsse fürs Protokoll. „Neue Version" entsperrt zum Weiterplanen.</p>
+    <div class="section-head" style="margin-top:16px"><h2 style="font-size:15px">Abgegebene Versionen</h2></div>
+    <div style="display:flex;flex-direction:column;gap:6px">${rows}</div>
+  `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
+}
+function terminAbgeben(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const nr = p.terminVersNr || 1;
+  const label = ($('#tv_label') && $('#tv_label').value.trim()) || ('Version ' + nr);
+  p.terminVersionen = p.terminVersionen || [];
+  p.terminVersionen.push({ nr, datum: todayIso(), label, snapshot: terminSnapshot(p) });
+  p.terminLocked = true; p.terminVersNr = nr;
+  save(); closeModal(); router(); toast('Terminprogramm Version ' + nr + ' abgegeben & gesperrt', 'ok');
+}
+function terminNeueVersion(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  p.terminVersNr = (p.terminVersNr || 1) + 1; p.terminLocked = false;
+  save(); closeModal(); router(); toast('Version ' + p.terminVersNr + ' – offen zum Bearbeiten', 'info');
+}
+function terminRestoreVersion(pid, nr) {
+  const p = findProjekt(pid); if (!p) return;
+  const ver = (p.terminVersionen || []).find(v => v.nr === Number(nr)); if (!ver || !ver.snapshot) return;
+  if (!confirm('Stand von Version ' + nr + ' als neue Arbeitsversion zurückholen? Die aktuellen Termine werden überschrieben.')) return;
+  const snap = ver.snapshot;
+  (snap.vergaben || []).forEach(sv => { const v = findVergabe(p, sv.id); if (!v) return; v.bauStart = sv.bauStart; v.bauEnde = sv.bauEnde; v.bestellfrist = sv.bestellfrist; v.nachfrist = sv.nachfrist; v.nachfristLabel = sv.nachfristLabel; v.autoBalken = sv.autoBalken; v.bauPhase = sv.bauPhase; v.vorab = sv.vorab ? { ...sv.vorab } : null; v.vorgaenge = (sv.vorgaenge || []).map(o => ({ ...o })); });
+  p.ganttLinks = JSON.parse(JSON.stringify(snap.ganttLinks || []));
+  p.regeln = JSON.parse(JSON.stringify(snap.regeln || []));
+  if (snap.sitzungsraster) p.sitzungsraster = JSON.parse(JSON.stringify(snap.sitzungsraster));
+  p.terminVersNr = (p.terminVersNr || 1) + 1; p.terminLocked = false;
+  save(); closeModal(); router(); toast('Version ' + nr + ' wiederhergestellt als V' + p.terminVersNr, 'ok');
+}
 function actRessConfig(pid) {
   const p = findProjekt(pid); if (!p) return; const rc = p.ressCheck || { aktiv: true, minGap: 0 };
   openModal('Ressourcen-Hinweis', `
@@ -2965,6 +3035,7 @@ function ganttKeydown(e) {
   const bar = document.querySelector('.g-bar.g-sel'); if (!bar) { ganttSel = null; return; }   // nicht (mehr) im Gantt
   e.preventDefault();
   const pid = bar.dataset.pid, vid = bar.dataset.vid, oid = bar.dataset.oid || null;
+  if (gesperrt(pid)) return;
   ganttSel = null;
   if (oid) { removeVorgang(pid, vid, oid); }
   else { const p = findProjekt(pid); const v = findVergabe(p, vid); if (v) { v.bauStart = ''; v.bauEnde = ''; save(); rerenderGantt(pid); toast('Termin entfernt – Zeile bleibt (Balken neu zeichnen möglich)', 'info'); } }
@@ -2984,6 +3055,7 @@ function autoSpanned(v) { return v.autoBalken && (v.vorgaenge || []).some(o => o
 function onGanttDraw(e) {
   if (!ganttCtx || e.button !== 0) return;
   const row = e.currentTarget, pid = row.dataset.pid, vid = row.dataset.vid, oid = row.dataset.oid || null;
+  if (gesperrt(pid)) return;
   const rows = row.closest('.g-rows'); if (!rows) return;
   const px = ganttCtx.pxPerDay;
   const dayAt = cx => Math.max(0, Math.round((cx - rows.getBoundingClientRect().left) / px));
@@ -3000,11 +3072,13 @@ function onGanttDraw(e) {
   document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); e.preventDefault();
 }
 function addEmptyVorgangDetail(pid, vid) {
+  if (gesperrt(pid)) return;
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
   (v.vorgaenge = v.vorgaenge || []).push({ id: uid('o'), titel: 'Untertermin', start: '', ende: '' });
   save(); rerenderGantt(pid); toast('Unterzeile angelegt – jetzt Balken ziehen', 'info');
 }
 function commitBarDates(pid, vid, oid, s, en) {
+  if (gesperrt(pid)) { rerenderGantt(pid); return; }
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
   if (oid) { const o = (v.vorgaenge || []).find(x => x.id === oid); if (o) { o.start = s; o.ende = en; } recalcAutoBalken(v); }
   else { v.bauStart = s; v.bauEnde = en; }
@@ -3043,6 +3117,7 @@ function rescheduleChain(p, key, seen) {
 }
 // 1-Klick-Bauablauf: terminierte Gewerke nach BKP verketten & ab Baustart sequenziell datieren
 function actBauablauf(pid) {
+  if (gesperrt(pid)) return;
   const p = findProjekt(pid); if (!p) return;
   const term = (p.vergaben || []).filter(v => v.bauStart && v.bauEnde).length;
   if (term < 2) { toast('Mindestens zwei terminierte Gewerke nötig', 'info'); return; }
@@ -3081,7 +3156,7 @@ function applyBauablauf(pid) {
 // Rechtsklick auf eine Verbindung: Abstand (Lag) setzen / löschen
 function linkMenu(e, pid, lid) {
   const p = findProjekt(pid); const l = p && (p.ganttLinks || []).find(x => x.id === lid); if (!l) return;
-  const setLag = days => { l.lag = days; rescheduleChain(p, l.from); save(); rerenderGantt(pid); toast('Abstand: ' + days + (ganttWorkdays ? ' Arbeitstage' : ' Tage'), 'info'); };
+  const setLag = days => { if (gesperrt(pid)) return; l.lag = days; rescheduleChain(p, l.from); save(); rerenderGantt(pid); toast('Abstand: ' + days + (ganttWorkdays ? ' Arbeitstage' : ' Tage'), 'info'); };
   openContextMenu(e, [
     { icon: '⏱', label: 'Direkt anschliessend (nächster Tag)', act: () => setLag(1) },
     { icon: '⏱', label: '+1 Woche', act: () => setLag(7) },
@@ -3106,6 +3181,7 @@ function actLinkSuccessor(pid, vid) {
   `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
 }
 function linkSuccessorPick(pid, vid, tvid) {
+  if (gesperrt(pid)) { closeModal(); return; }
   const p = findProjekt(pid); const from = ganttBarRef(p, vid), to = ganttBarRef(p, tvid); if (!from || !to) return;
   if (!p.ganttLinks) p.ganttLinks = [];
   if (!p.ganttLinks.some(l => l.from === vid && l.to === tvid)) p.ganttLinks.push({ id: uid('gl'), from: vid, to: tvid, dx: null, lag: 1 });
@@ -10478,6 +10554,7 @@ function actEditTermin(pid, vid) {
 }
 
 function saveTermin(pid, vid) {
+  if (gesperrt(pid)) { closeModal(); return; }
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   const auto = $('#t_auto') ? $('#t_auto').checked : v.autoBalken;
   v.autoBalken = !!auto;
@@ -10507,6 +10584,7 @@ function actNewVorgang(pid, vid) {
 }
 
 function saveVorgang(pid, vid) {
+  if (gesperrt(pid)) { closeModal(); return; }
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   const titel = $('#o_titel').value.trim();
   const s = $('#o_start').value, e = $('#o_ende').value;
@@ -10519,6 +10597,7 @@ function saveVorgang(pid, vid) {
 }
 
 function removeVorgang(pid, vid, oid) {
+  if (gesperrt(pid)) return;
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   v.vorgaenge = (v.vorgaenge || []).filter(x => x.id !== oid);
   recalcAutoBalken(v); save(); rerenderGantt(pid);
@@ -11024,6 +11103,10 @@ document.addEventListener('click', e => {
     case 'sr-config':       actSitzungsraster(pid); break;
     case 'sr-save':         saveSitzungsraster(pid); break;
     case 'gantt-raster':    ganttRaster = !ganttRaster; rerenderGantt(pid); break;
+    case 'termin-versionen': actTerminVersionen(pid); break;
+    case 'tv-abgeben':      terminAbgeben(pid); break;
+    case 'tv-neu':          terminNeueVersion(pid); break;
+    case 'tv-restore':      terminRestoreVersion(pid, act.dataset.nr); break;
     case 'save-protokoll':  saveProtokoll(pid); break;
     case 'filter-prot':     protokollFilter = kind; viewProtokolle(pid); break;
     case 'edit-protokoll':  actEditProtokoll(pid, prid); break;

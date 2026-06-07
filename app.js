@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v196';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v197';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -6117,7 +6117,14 @@ function calTimeGrid(events, dates, todayI, add) {
   const evEdit = e => e.plan ? ` data-bid="${e.id}" data-ctx="planblock" draggable="true"` : (e.manual && e.pid ? ` data-act="kal-edit" data-ctx="termin" data-pid="${e.pid}" data-tid="${e.id}"` : '');
   const dayAct = add === 'plan' ? `data-act="plan-day"` : (add ? `data-act="kal-day" data-pid="${add}"` : `data-act="gcal-day"`);
   const colHead = dates.map(iso => { const d = dISO(iso); return `<div class="cal-colhead${iso === todayI ? ' today' : ''}" ${dayAct} data-kind="${iso}">${dowF[(d.getDay() + 6) % 7]} ${d.getDate()}.${d.getMonth() + 1}.</div>`; }).join('');
-  const adRow = dates.map(iso => { const ad = (byDay[iso] || []).filter(e => !e.zeit); return `<div class="cal-ad-cell" data-iso="${iso}"${pidAttr}>${ad.map(e => `<div class="cal-ev ${e.color}"${evEdit(e)} title="${esc(e.titel)}">${esc(e.titel)}</div>`).join('')}</div>`; }).join('');
+  const adRow = dates.map(iso => {
+    const ad = (byDay[iso] || []).filter(e => !e.zeit);
+    return `<div class="cal-ad-cell" data-iso="${iso}"${pidAttr}>${ad.map(e => {
+      if (e.manual || e.plan) return `<div class="cal-ev ${e.color}"${evEdit(e)} title="${esc(e.titel)}">${esc(e.titel)}</div>`;
+      // Abgeleitete Ereignisse (Terminprogramm, Eingabefrist, Sitzung, Pendenz …) = ruhige Info-Zeile mit Quelle
+      return `<div class="cal-info ${e.color}" title="${esc((e.projekt ? e.projekt + ' · ' : '') + (e.quelle ? e.quelle + ': ' : '') + e.titel)}"><i class="cal-dot ${e.color}"></i>${e.quelle ? `<span class="ci-src">${esc(e.quelle)}</span>` : ''}<span class="ci-txt">${esc(e.titel)}</span></div>`;
+    }).join('')}</div>`;
+  }).join('');
   let hours = ''; for (let h = CAL_SH; h <= CAL_EH; h++) hours += `<div class="cal-hour" style="height:${CAL_HH}px">${String(h).padStart(2, '0')}:00</div>`;
   const toMin = s => { const [a, b] = String(s).split(':').map(Number); return a * 60 + (b || 0); };
   const cols = dates.map(iso => {

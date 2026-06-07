@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v254';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v255';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1781,6 +1781,22 @@ function feinH(t) { const [h, m] = String(t || '0:0').split(':').map(Number); re
 function wochentag(iso) { if (!iso) return ''; try { return dISO(iso).toLocaleDateString('de-CH', { weekday: 'long' }); } catch (_) { return ''; } }
 const GROB_SAISON = [['FS', 'Frühling'], ['SO', 'Sommer'], ['HE', 'Herbst'], ['WI', 'Winter']];
 function grobIdx(s) { if (!s) return null; const [y, c] = String(s).split('-'); const si = GROB_SAISON.findIndex(x => x[0] === c); if (si < 0 || !y) return null; return Number(y) * 4 + si; }
+// Gezeichnete Linien-Icons (SVG) für die grossen Toolbar-Buttons
+const G_ICONS = {
+  print: '<path d="M6.5 8.5V3.5h11v5"/><rect x="3.5" y="8.5" width="17" height="8" rx="1.6"/><path d="M6.5 14.5h11v6h-11z"/><line x1="9" y1="17.5" x2="15" y2="17.5"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.6v2.8M12 18.6v2.8M2.6 12h2.8M18.6 12h2.8M5.3 5.3l2 2M16.7 16.7l2 2M5.3 18.7l2-2M16.7 7.3l2-2"/>',
+  chain: '<rect x="2.5" y="8.8" width="11.5" height="6.4" rx="3.2"/><rect x="10" y="8.8" width="11.5" height="6.4" rx="3.2"/>',
+  calCheck: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.2h17M8 3v3.2M16 3v3.2"/><path d="M9 14.2l2 2 4-4"/>',
+  window: '<rect x="3.5" y="4.2" width="17" height="15.6" rx="2"/><path d="M3.5 9.2h17M9.2 9.2v10.6"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.2h17M8 3v3.2M16 3v3.2"/>',
+  ruler: '<rect x="3" y="8" width="18" height="8" rx="1.4"/><path d="M7 8v3.2M11 8v4.2M15 8v3.2M19 8v4.2"/>',
+  warn: '<path d="M12 4.2l8.6 15.3H3.4z"/><line x1="12" y1="10" x2="12" y2="14.4"/><circle cx="12" cy="16.8" r=".7" fill="currentColor" stroke="none"/>',
+  tag: '<path d="M3.5 4.5h7l9.5 9.5-7 7-9.5-9.5z"/><circle cx="8" cy="9" r="1.2"/>',
+  palette: '<path d="M12 3.2a8.8 8.8 0 1 0 0 17.6c1 0 1.7-.8 1.7-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.4-.6-.4-1 0-1 .8-1.7 1.7-1.7H16a4.8 4.8 0 0 0 4.8-4.8c0-4.4-3.9-7.3-8.8-7.3z"/><circle cx="7.6" cy="12.2" r="1"/><circle cx="9.6" cy="8.2" r="1"/><circle cx="14" cy="7.6" r="1"/>',
+  sort: '<path d="M7.5 4v16M7.5 4l-2.6 2.8M7.5 4l2.6 2.8"/><path d="M16.5 20V4M16.5 20l-2.6-2.8M16.5 20l2.6 2.8"/>',
+};
+function gIcon(name) { return `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
+function bigBtn(act, icon, label, o) { o = o || {}; return `<button class="g-bigbtn${o.on ? ' on' : ''}" data-act="${act}" data-pid="${o.pid}"${o.kind != null ? ` data-kind="${o.kind}"` : ''} title="${esc(o.title || label)}"><span class="bb-ico">${gIcon(icon)}</span><span class="bb-lbl">${esc(label)}</span></button>`; }
 // Versionsleiste (wie Zahlungsplan): Versionen umschalten / neu / umbenennen / löschen / sperren
 function ganttVersionBar(p) {
   const gespr = terminGesperrt(p);
@@ -2365,21 +2381,18 @@ function viewTermine(id) {
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm</div></div>
       ${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}
     </div>
-    ${projektTabs(p, 'termine', `${ganttModeToggle(p)}<div class="g-toolbar">
-      <button class="g-bigbtn" data-act="pdf-gantt" data-pid="${p.id}" title="Drucken / PDF – Format automatisch (A4→A3→A2…)"><span class="bb-ico"><svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 8.5V3.5h11v5"/><rect x="3.5" y="8.5" width="17" height="8" rx="1.6"/><path d="M6.5 14.5h11v6h-11z"/><line x1="9" y1="17.5" x2="15" y2="17.5"/><circle cx="17" cy="11.4" r=".9" fill="currentColor" stroke="none"/></svg></span><span class="bb-lbl">Drucken</span></button>
-      <span class="g-tb-sep"></span>
-      ${sortCtrl}${dateCtrl}
-      <span class="g-tb-sep"></span>
-      <div class="g-zoom" title="Balkenfarbe: Status / Unternehmer / Phase">${[['status', 'Status'], ['firma', 'Firma'], ['phase', 'Phase']].map(([k, l]) => `<button class="${ganttColorMode === k ? 'active' : ''}" data-act="gantt-color" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>
-      <span class="g-tb-sep"></span>
-      <button class="btn sm ico ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Verkettung ${ganttChain ? 'an' : 'aus'} – verkettete Nachfolger folgen beim Verschieben">🔗</button>
-      <button class="btn sm ico ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Arbeitstage ${ganttWorkdays ? 'an' : 'aus'} – Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">🛠</button>
-      <button class="btn sm ico ${ganttFenster ? '' : 'secondary'}" data-act="gantt-fenster" data-pid="${p.id}" title="Fenster ${ganttFenster ? 'an' : 'aus'} – Auto-Oberbalken als grosses Fenster">🪟</button>
-      ${(p.sitzungsraster && p.sitzungsraster.aktiv) ? `<button class="btn sm ico ${ganttRaster ? '' : 'secondary'}" data-act="gantt-raster" data-pid="${p.id}" title="Sitzungslinien ${ganttRaster ? 'an' : 'aus'}">🗓</button>` : ''}
-      <button class="btn sm ${(p.regeln || []).length ? '' : 'secondary'}" data-act="regeln-open" data-pid="${p.id}" title="Regeln / feste Abhängigkeiten (warnen bei Verstoss)">📐${(p.regeln || []).length ? ' ' + p.regeln.length : ''}</button>
-      <button class="btn sm ico ${(p.ressCheck && p.ressCheck.aktiv === false) ? 'secondary' : ''}" data-act="ress-config" data-pid="${p.id}" title="Ressourcen-Hinweis (gleiche Firma überlappend)">⚠</button>
-      <span class="g-tb-sep"></span>
-      <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Bauablauf: Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
+    ${projektTabs(p, 'termine', `${ganttModeToggle(p)}<div class="g-toolbar gbtns">
+      ${bigBtn('pdf-gantt', 'print', 'Drucken', { pid: p.id, title: 'Drucken / PDF – Format automatisch' })}
+      ${bigBtn('gantt-sort', 'sort', ganttSort === 'bkp' ? 'BKP' : 'Start', { pid: p.id, kind: ganttSort === 'bkp' ? 'start' : 'bkp', title: 'Sortierung: BKP / Startdatum (umschalten)' })}
+      ${bigBtn('gantt-dates', 'tag', ganttDates === 'off' ? 'Datum' : (ganttDates === 'full' ? 'Datum J' : 'Datum'), { pid: p.id, on: ganttDates !== 'off', title: 'Start-/Enddatum am Balken (aus → mit Jahr → ohne)' })}
+      ${bigBtn('gantt-color', 'palette', ganttColorMode === 'status' ? 'Status' : (ganttColorMode === 'firma' ? 'Firma' : 'Phase'), { pid: p.id, kind: ganttColorMode === 'status' ? 'firma' : (ganttColorMode === 'firma' ? 'phase' : 'status'), title: 'Balkenfarbe: Status / Firma / Phase (umschalten)' })}
+      ${bigBtn('gantt-chain', 'chain', 'Verkettung', { pid: p.id, on: ganttChain, title: 'Verkettung ' + (ganttChain ? 'an' : 'aus') })}
+      ${bigBtn('gantt-workdays', 'calCheck', 'Arbeitstage', { pid: p.id, on: ganttWorkdays, title: 'Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus') })}
+      ${bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') })}
+      ${(p.sitzungsraster && p.sitzungsraster.aktiv) ? bigBtn('gantt-raster', 'calendar', 'Sitzungen', { pid: p.id, on: ganttRaster, title: 'Sitzungslinien ' + (ganttRaster ? 'an' : 'aus') }) : ''}
+      ${bigBtn('regeln-open', 'ruler', 'Regeln' + ((p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''), { pid: p.id, on: (p.regeln || []).length > 0, title: 'Regeln / Abhängigkeiten' })}
+      ${bigBtn('ress-config', 'warn', 'Ressourcen', { pid: p.id, on: !(p.ressCheck && p.ressCheck.aktiv === false), title: 'Ressourcen-Hinweis' })}
+      ${bigBtn('bauablauf', 'gear', 'Bauablauf', { pid: p.id, title: 'Gewerke nach BKP verketten und ab Baustart datieren' })}
     </div>`)}
     ${gespr ? `<div class="g-warn g-warn-lock">🔒 <b>Version „${esc(terminVersAktiv(p).name)}" ist gesperrt.</b> Änderungen blockiert – andere Version wählen oder oben „🔓" entsperren / „+ Version".</div>` : ''}
   `;

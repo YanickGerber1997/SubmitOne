@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v208';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v209';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2293,6 +2293,7 @@ function viewTermine(id) {
       <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
       <button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button>
       <button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">📅 Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button>
+      <button class="btn sm ${(p.ressCheck && p.ressCheck.aktiv === false) ? 'secondary' : ''}" data-act="ress-config" data-pid="${p.id}" title="Ressourcen-Hinweis (gleiche Firma überlappend) einstellen">⚠ Ressourcen</button>
       <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" style="margin-left:auto">⬇ PDF</button>
     </div>
   `;
@@ -2413,15 +2414,19 @@ function viewTermine(id) {
   const markBands = projMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; }).map(m =>
     `<div class="g-mark ${m.cls}" style="left:${dayDiff(rangeStart, dISO(m.iso)) * pxPerDay}px" title="${m.n}: ${fmtDate(m.iso)}"><span>${m.n} ${fmtDate(m.iso)}</span></div>`).join('');
 
-  // Warnung: gleiche Firma in überlappenden Gewerken (Ressourcenkonflikt)
-  const firmaMap = {};
-  vs.filter(v => v.firma && v.bauStart && v.bauEnde).forEach(v => { (firmaMap[v.firma] = firmaMap[v.firma] || []).push(v); });
-  const conflicts = [];
-  Object.keys(firmaMap).forEach(firma => {
-    const list = firmaMap[firma].slice().sort((a, b) => a.bauStart < b.bauStart ? -1 : 1);
-    for (let i = 1; i < list.length; i++) if (list[i].bauStart <= list[i - 1].bauEnde) conflicts.push(`<b>${esc(firma)}</b>: „${esc(list[i - 1].gewerk)}" ↔ „${esc(list[i].gewerk)}"`);
-  });
-  const warnBanner = conflicts.length ? `<div class="g-warn">⚠ Überschneidung – gleiche Firma gleichzeitig: ${conflicts.join(' · ')}</div>` : '';
+  // Ressourcen-Hinweis (einstellbar): gleiche Firma in Gewerken ohne genügend Abstand
+  const rc = p.ressCheck || { aktiv: true, minGap: 0 };
+  let warnBanner = '';
+  if (rc.aktiv) {
+    const firmaMap = {};
+    vs.filter(v => v.firma && v.bauStart && v.bauEnde).forEach(v => { (firmaMap[v.firma] = firmaMap[v.firma] || []).push(v); });
+    const conflicts = [];
+    Object.keys(firmaMap).forEach(firma => {
+      const list = firmaMap[firma].slice().sort((a, b) => a.bauStart < b.bauStart ? -1 : 1);
+      for (let i = 1; i < list.length; i++) { const gap = dayDiffISO(list[i - 1].bauEnde, list[i].bauStart) - 1; if (gap < (rc.minGap || 0)) conflicts.push(`<b>${esc(firma)}</b>: „${esc(list[i - 1].gewerk)}" ↔ „${esc(list[i].gewerk)}"${gap < 0 ? ' (überlappend)' : ` (${gap} T Abstand)`}`); }
+    });
+    warnBanner = conflicts.length ? `<div class="g-warn">⚠ <b>Ressourcen-Hinweis</b>${rc.minGap ? ` (min. ${rc.minGap} T Abstand)` : ''}: ${conflicts.join(' · ')}<button class="g-warn-x" data-act="ress-config" data-pid="${p.id}" title="Hinweis einstellen / ausschalten">⚙</button></div>` : '';
+  }
 
   const ROW_H = 38;
   const kontaktByFirma = f => (state.kontakte || []).find(k => k.firma === f);
@@ -2693,6 +2698,21 @@ function ganttBarMenu(e, bar) {
   vergabeMenu(e, pid, vid, extras);
 }
 function clearTermin(pid, vid) { const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return; v.bauStart = ''; v.bauEnde = ''; save(); rerenderGantt(pid); toast('Termin entfernt', 'info'); }
+function actRessConfig(pid) {
+  const p = findProjekt(pid); if (!p) return; const rc = p.ressCheck || { aktiv: true, minGap: 0 };
+  openModal('Ressourcen-Hinweis', `
+    <p class="muted" style="font-size:12.5px;margin-top:0">Warnt, wenn <b>dieselbe Firma</b> in zwei Gewerken eingeplant ist, die sich zeitlich zu nah sind – sie müsste dann gleichzeitig an zwei Orten sein.</p>
+    <label class="field" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="rc_aktiv"${rc.aktiv !== false ? ' checked' : ''}> Hinweis anzeigen</label>
+    <label class="field" style="margin-top:10px">Mindest-Abstand zwischen Gewerken derselben Firma (Tage)
+      <input class="input" type="number" id="rc_gap" min="0" value="${rc.minGap || 0}">
+      <span class="muted" style="font-size:11.5px;font-weight:400;display:block;margin-top:3px">0 = nur bei echter Überschneidung warnen. Z.B. 2 = warnt auch, wenn weniger als 2 Tage Pause zwischen den Einsätzen liegen.</span></label>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="ress-save" data-pid="${pid}">Speichern</button>`);
+}
+function saveRessConfig(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  p.ressCheck = { aktiv: $('#rc_aktiv').checked, minGap: Math.max(0, Number($('#rc_gap').value) || 0) };
+  save(); closeModal(); rerenderGantt(pid);
+}
 function pendenzMenu(e, pid, itemid) {
   const p = findProjekt(pid); const it = p && (p.pendenzen || []).find(x => x.id === itemid); if (!it) return;
   const items = [
@@ -10833,6 +10853,8 @@ document.addEventListener('click', e => {
     case 'grob-zoom':    { grobZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.4, +(grobZoom + (kind === 'in' ? 0.2 : -0.2)).toFixed(2))); viewGrobGantt(findProjekt(pid)); } break;
     case 'grob-phase':   actGrobPhase(e, pid, vid); break;
     case 'gantt-add-vorgang': addEmptyVorgangDetail(pid, vid); break;
+    case 'ress-config':  actRessConfig(pid); break;
+    case 'ress-save':    saveRessConfig(pid); break;
     case 'termin-clear':      closeModal(); clearTermin(pid, vid); break;
     case 'fein-add':     actFeinBlock(pid); break;
     case 'fein-edit':    actFeinBlock(pid, bid); break;

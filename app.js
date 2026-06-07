@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v285';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v286';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2331,7 +2331,7 @@ let ganttAuto = false;
 let ganttDurAlign = 'mitte';   // 'links' | 'mitte' | 'rechts'
 let _eLabel = 'auto', _eDur = 'off', _eDates = 'off', _eDatesBelow = false, _eAlign = 'links', _eDurAlign = 'mitte';
 function ganttEffective() {
-  if (ganttAuto) { _eLabel = 'above'; _eDur = 'innen'; _eDates = (ganttDates === 'off' ? 'kurz' : ganttDates); _eDatesBelow = true; _eAlign = 'links'; _eDurAlign = 'mitte'; }
+  if (ganttAuto) { _eLabel = 'auto'; _eDur = 'oben'; _eDates = (ganttDates === 'off' ? 'kurz' : ganttDates); _eDatesBelow = true; _eAlign = 'links'; _eDurAlign = 'mitte'; }
   else { _eLabel = ganttLabelMode; _eDur = ganttDurMode; _eDates = ganttDates; _eDatesBelow = false; _eAlign = ganttLabelAlign; _eDurAlign = ganttDurAlign; }
 }
 function gdFmt(iso) {
@@ -2372,7 +2372,7 @@ function barLabelW(text) { return String(text || '').length * 6.4 + 8; }
 let ganttLabelMode = 'auto';
 const LABEL_MODES = ['auto', 'above', 'below', 'before', 'after', 'clip', 'over'];
 const LABEL_NAMES = { auto: 'Auto', above: 'Oben', below: 'Unten', before: 'Vor', after: 'Nach', clip: 'Innen', over: 'Über' };
-function gBarLabel(text, gL, gW, sub, isAuto, chartW, hasOutLink) {
+function gBarLabel(text, gL, gW, sub, isAuto, chartW, hasOutLink, hasInLink) {
   const m = _eLabel, sc = sub ? ' sub' : '', gR = gL + gW, lblW = barLabelW(text);
   const base = { inner: '', outer: '', gdOffStart: 0, gdOffEnd: 0 };
   const inside = () => ({ ...base, inner: esc(text) });
@@ -2386,12 +2386,11 @@ function gBarLabel(text, gL, gW, sub, isAuto, chartW, hasOutLink) {
   if (m === 'after') return after();
   if (m === 'over') return over();
   if (m === 'clip') return { ...base, inner: esc(text) };
-  // 'auto' = Optimum: am besten sichtbar – innen wenn's passt; sonst je nach Platz; bei Verknüpfung am Ende lieber auf den Balken
+  // 'auto' = Priorität: drinnen → dahinter → davor → drüber; Verknüpfungen am Ein-/Ausgang werden gemieden
   if (isAuto || barLabelFits(text, gW)) return inside();
-  if (hasOutLink) return over();                               // hinten läuft eine Verbindung raus → auf den Balken (nicht überschreiben)
-  if (gR + 5 + lblW <= (chartW || Infinity)) return after();   // passt rechts noch ins Diagramm
-  if (gL - 5 - lblW >= 0) return before();                      // sonst links davor
-  return over();                                                // sonst lesbar auf den Balken
+  if (!hasOutLink && gR + 5 + lblW <= (chartW || Infinity)) return after();   // dahinter (nur wenn am Ende keine Verbindung)
+  if (!hasInLink && gL - 5 - lblW >= 0) return before();                       // davor (nur wenn am Start keine Verbindung)
+  return over();                                                               // sonst drüber (auf dem Balken)
 }
 // Mitlaufender Gantt-Kopf: fixes Overlay des Monats-/KW-Kopfes beim Scrollen (kein eigener Scrollbalken)
 let _gshRefs = null, _gshBound = false;
@@ -2764,8 +2763,8 @@ function viewTermine(id) {
         // Gewerk-Zeile bleibt leer – das grosse Fenster (unten) repräsentiert den Oberbalken
         barRows += `<div class="g-row" data-x0="${gx0}" data-x1="${gx1}">${preBars}</div>`;
       } else {
-        const gOut = (p.ganttLinks || []).some(lk => lk.from === v.id);
-        const gL = leftPx(v.bauStart), gW = widthPx(v.bauStart, v.bauEnde), gLab = gBarLabel(v.gewerk, gL, gW, false, isAuto, innerW, gOut);
+        const gOut = (p.ganttLinks || []).some(lk => lk.from === v.id), gIn = (p.ganttLinks || []).some(lk => lk.to === v.id);
+        const gL = leftPx(v.bauStart), gW = widthPx(v.bauStart, v.bauEnde), gLab = gBarLabel(v.gewerk, gL, gW, false, isAuto, innerW, gOut, gIn);
         barRows += `<div class="g-row" data-x0="${gx0}" data-x1="${gx1}">${preBars}${gdLabels(v.bauStart, v.bauEnde, gL, gL + gW, gLab.gdOffStart, gLab.gdOffEnd)}<div class="g-bar${light}${isAuto ? ' summary' : ''} align-${_eAlign}" style="left:${gL}px;width:${gW}px;background:${colHex}"
           title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}"
           data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
@@ -2780,8 +2779,8 @@ function viewTermine(id) {
       sideRows += `<div class="g-side-row sub"><span class="g-rownum sub">${gnr}.${++oNr}</span><span class="gewerk" style="font-weight:500;cursor:pointer" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="Untertermin bearbeiten">${esc(o.titel)}</span>
         ${gespr ? '' : `<button class="x-btn" title="Untertermin löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button>`}</div>`;
       if (oDated) {
-        const oOut = (p.ganttLinks || []).some(lk => lk.from === key);
-        const oL = leftPx(o.start), oW = widthPx(o.start, o.ende), oLab = gBarLabel(o.titel, oL, oW, true, false, innerW, oOut);
+        const oOut = (p.ganttLinks || []).some(lk => lk.from === key), oIn = (p.ganttLinks || []).some(lk => lk.to === key);
+        const oL = leftPx(o.start), oW = widthPx(o.start, o.ende), oLab = gBarLabel(o.titel, oL, oW, true, false, innerW, oOut, oIn);
         barMeta[key] = { row: rowIdx, left: oL, width: oW };
         barRows += `<div class="g-row" data-x0="${oL}" data-x1="${oL + oW}">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOffStart, oLab.gdOffEnd)}<div class="g-bar sub${light} align-${_eAlign}" style="left:${oL}px;width:${oW}px;background:${colHex}"
           title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"

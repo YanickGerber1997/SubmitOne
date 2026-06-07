@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v237';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v238';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2312,6 +2312,7 @@ let ganttColorMode = 'status';   // 'status' | 'firma' (je Unternehmer) | 'phase
 let ganttFenster = true;         // Auto-Oberbalken als grosses Fenster über die Unterbalken
 let ganttRaster = true;          // Sitzungsraster-Linien im Gantt einblenden
 let ganttRowH = 38;              // Zeilenhöhe im Gantt (26–60, lesbar begrenzt)
+let ganttPad = 1;                // Rand (Monate) links/rechts um das Programm (Scroll-Spielraum)
 function hexA(hex, a) { const h = String(hex).replace('#', ''); if (h.length < 6) return hex; return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`; }
 const GANTT_FIRMA_PALETTE = ['#1f6feb', '#16a34a', '#ea7a3c', '#7c3aed', '#0d9488', '#dc2626', '#a16207', '#db2777', '#0891b2', '#65a30d', '#9333ea', '#0f766e', '#b45309', '#2563eb'];
 function firmaColHex(name) { if (!name) return '#94a3b8'; let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return GANTT_FIRMA_PALETTE[h % GANTT_FIRMA_PALETTE.length]; }
@@ -2360,6 +2361,7 @@ function viewTermine(id) {
     ${projektTabs(p, 'termine', `${ganttModeToggle(p)}<div class="g-toolbar">
       ${zoomCtrl}${scaleCtrl}${sortCtrl}
       <div class="g-zoom" title="Zeilenhöhe"><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="out" title="flacher">≡</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="reset" style="min-width:30px" title="Standard">${ganttRowH}</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="in" title="höher">☰</button></div>
+      <div class="g-zoom" title="Rand links/rechts (Monate) – Scroll-Spielraum vor/nach dem Programm"><button data-act="gantt-pad" data-pid="${p.id}" data-kind="out" title="weniger Rand">⇤⇥</button><button data-act="gantt-pad" data-pid="${p.id}" data-kind="reset" style="min-width:54px" title="Standard 1 Monat">Rand ${ganttPad}M</button><button data-act="gantt-pad" data-pid="${p.id}" data-kind="in" title="mehr Rand">⇥⇤</button></div>
       ${dateCtrl}
       <span class="g-tb-sep"></span>
       <div class="g-zoom" title="Balkenfarbe: Status / Unternehmer / Phase">${[['status', 'Status'], ['firma', 'Firma'], ['phase', 'Phase']].map(([k, l]) => `<button class="${ganttColorMode === k ? 'active' : ''}" data-act="gantt-color" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>
@@ -2408,8 +2410,8 @@ function viewTermine(id) {
     const d = dISO(minS); maxS = `${d.getFullYear() + 1}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
   }
   const min = dISO(minS), max = dISO(maxS);
-  const rangeStart = new Date(min.getFullYear(), min.getMonth(), 1);
-  let rangeEnd = new Date(max.getFullYear(), max.getMonth() + 1, 0);
+  const rangeStart = new Date(min.getFullYear(), min.getMonth() - ganttPad, 1);   // Rand links
+  let rangeEnd = new Date(max.getFullYear(), max.getMonth() + 1 + ganttPad, 0);    // Rand rechts
   const minEnd = new Date(rangeStart.getFullYear(), rangeStart.getMonth() + 4, 0);
   if (rangeEnd < minEnd) rangeEnd = minEnd;
   const rangeStartISO = isoOf(rangeStart);
@@ -9784,8 +9786,8 @@ function pdfGantt(pid, paper) {
     (v.vorgaenge || []).forEach(o => { ext(o.start); ext(o.ende); });
   });
   const ds = dISO(min), de = dISO(max);
-  const rangeStart = new Date(ds.getFullYear(), ds.getMonth(), 1);
-  const rangeEnd = new Date(de.getFullYear(), de.getMonth() + 1, 0);
+  const rangeStart = new Date(ds.getFullYear(), ds.getMonth() - ganttPad, 1);
+  const rangeEnd = new Date(de.getFullYear(), de.getMonth() + 1 + ganttPad, 0);
   const totalDays = dayDiff(rangeStart, rangeEnd) + 1;
   const SIDE_MM = 56 + ((ganttSide.firma ? 1 : 0) + (ganttSide.person ? 1 : 0) + (ganttSide.natel ? 1 : 0)) * 22;   // Info-Spalten brauchen Platz
   const PDkey = paper || autoPaperFor(ganttZoom, totalDays, SIDE_MM);
@@ -11478,6 +11480,7 @@ document.addEventListener('click', e => {
     case 'sr-save':         saveSitzungsraster(pid); break;
     case 'gantt-raster':    ganttRaster = !ganttRaster; rerenderGantt(pid); break;
     case 'gantt-rowh':      { ganttRowH = kind === 'reset' ? 38 : Math.max(26, Math.min(60, ganttRowH + (kind === 'in' ? 6 : -6))); rerenderGantt(pid); } break;
+    case 'gantt-pad':       { ganttPad = kind === 'reset' ? 1 : Math.max(0, Math.min(12, ganttPad + (kind === 'in' ? 1 : -1))); rerenderGantt(pid); } break;
     case 'eckdaten':        actEckdaten(pid); break;
     case 'eckdaten-save':   saveEckdaten(pid); break;
     case 'feiertage':       actFeiertage(pid); break;

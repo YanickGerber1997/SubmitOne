@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v218';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v219';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2270,6 +2270,7 @@ function ganttColKey(v) { return GANTT_PHASE[v.status] || 'dgrau'; }
 let ganttColorMode = 'status';   // 'status' | 'firma' (je Unternehmer) | 'phase' (Grobphase)
 let ganttFenster = true;         // Auto-Oberbalken als grosses Fenster über die Unterbalken
 let ganttRaster = true;          // Sitzungsraster-Linien im Gantt einblenden
+let ganttRowH = 38;              // Zeilenhöhe im Gantt (26–60, lesbar begrenzt)
 function hexA(hex, a) { const h = String(hex).replace('#', ''); if (h.length < 6) return hex; return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`; }
 const GANTT_FIRMA_PALETTE = ['#1f6feb', '#16a34a', '#ea7a3c', '#7c3aed', '#0d9488', '#dc2626', '#a16207', '#db2777', '#0891b2', '#65a30d', '#9333ea', '#0f766e', '#b45309', '#2563eb'];
 function firmaColHex(name) { if (!name) return '#94a3b8'; let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return GANTT_FIRMA_PALETTE[h % GANTT_FIRMA_PALETTE.length]; }
@@ -2319,6 +2320,7 @@ function viewTermine(id) {
     ${ganttModeToggle(p)}
     <div class="g-toolbar">
       <span class="muted" style="font-size:12px">Ansicht</span>${zoomCtrl}${scaleCtrl}${sortCtrl}${dateCtrl}
+      <div class="g-zoom" title="Zeilenhöhe"><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="out" title="flacher">≡</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="reset" style="min-width:30px" title="Standard">${ganttRowH}</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="in" title="höher">☰</button></div>
       <button class="btn sm secondary" data-act="eckdaten" data-pid="${p.id}" title="Baustart / Bauende / Bezug setzen (Meilensteine)">📍 Eckdaten</button>
       <span class="muted" style="font-size:12px;margin-left:6px">Farbe</span><div class="g-zoom" title="Balkenfarbe">${[['status', 'Status'], ['firma', 'Unternehmer'], ['phase', 'Phase']].map(([k, l]) => `<button class="${ganttColorMode === k ? 'active' : ''}" data-act="gantt-color" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>
       <span class="g-tb-sep"></span>
@@ -2476,7 +2478,7 @@ function viewTermine(id) {
   (p.regeln || []).filter(r => r.aktiv !== false).forEach(r => { const a = findVergabe(p, r.aVid), b = findVergabe(p, r.bVid); const msg = regelVerletzt(a, b, r.rel); if (a && b && msg) rViol.push(`<b>${esc(a.gewerk)}</b> ${msg}`); });
   const regelBanner = rViol.length ? `<div class="g-warn g-warn-rule">📐 <b>Regel-Hinweis:</b> ${rViol.join(' · ')}<button class="g-warn-x" data-act="regeln-open" data-pid="${p.id}" title="Regeln bearbeiten">⚙</button></div>` : '';
 
-  const ROW_H = 38;
+  const ROW_H = ganttRowH;
   const kontaktByFirma = f => (state.kontakte || []).find(k => k.firma === f);
   let sideRows = '', barRows = '', rowIdx = 0, gNr = 0; const barMeta = {}; const inserts = []; const windows = [];
   vs.forEach(v => {
@@ -2573,7 +2575,7 @@ function viewTermine(id) {
 
   render(head + `
     ${warnBanner}${regelBanner}
-    <div class="gantt">
+    <div class="gantt" style="--rowh:${ROW_H}px">
       <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
@@ -11265,6 +11267,7 @@ document.addEventListener('click', e => {
     case 'sr-config':       actSitzungsraster(pid); break;
     case 'sr-save':         saveSitzungsraster(pid); break;
     case 'gantt-raster':    ganttRaster = !ganttRaster; rerenderGantt(pid); break;
+    case 'gantt-rowh':      { ganttRowH = kind === 'reset' ? 38 : Math.max(26, Math.min(60, ganttRowH + (kind === 'in' ? 6 : -6))); rerenderGantt(pid); } break;
     case 'eckdaten':        actEckdaten(pid); break;
     case 'eckdaten-save':   saveEckdaten(pid); break;
     case 'feiertage':       actFeiertage(pid); break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v177';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v178';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1738,6 +1738,15 @@ let ganttSide = { gewerk: true, firma: false, person: false, natel: false }; // 
 let ganttDates = 'off';   // Datum am Balken: 'off' | 'full' (26.06.26) | 'short' (26.06.)
 let ganttMode = 'detail'; // 'detail' = Termin-Gantt (Tage) | 'grob' = Grobplanung (Phasen) | 'fein' = Feinprogramm (Stunden)
 const FEIN_H0 = 6, FEIN_H1 = 20;   // Stunden-Achse Feinprogramm (06:00–20:00)
+let feinSub = 'tage';   // Feinprogramm-Unteransicht: 'tage' (4-Wochen-Raster je Unternehmer) | 'stunden' (Tagesablauf)
+let feinAnchor = null;  // ISO des Montags der ersten sichtbaren Woche (4-Wochen-Fenster)
+function feinSubToggle(p) {
+  return `<div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">
+    <button class="btn sm ${feinSub === 'tage' ? '' : 'secondary'}" data-act="fein-sub" data-pid="${p.id}" data-kind="tage" type="button" style="border:none">📅 Tage (4 Wochen · je Unternehmer)</button>
+    <button class="btn sm ${feinSub === 'stunden' ? '' : 'secondary'}" data-act="fein-sub" data-pid="${p.id}" data-kind="stunden" type="button" style="border:none">⏱ Stunden (Tagesablauf)</button>
+  </div>`;
+}
+function mondayOf(iso) { const d = dISO(iso); const wd = (d.getDay() + 6) % 7; d.setDate(d.getDate() - wd); return isoOf(d); }
 function feinH(t) { const [h, m] = String(t || '0:0').split(':').map(Number); return (h || 0) + (m || 0) / 60; }
 function wochentag(iso) { if (!iso) return ''; try { return dISO(iso).toLocaleDateString('de-CH', { weekday: 'long' }); } catch (_) { return ''; } }
 const GROB_SAISON = [['FS', 'Frühling'], ['SO', 'Sommer'], ['HE', 'Herbst'], ['WI', 'Winter']];
@@ -1816,6 +1825,10 @@ function setGrobPhase(pid, vid, feld, val) {
 }
 // Feinprogramm: stunden-/tagweise Detailanweisungen (z.B. 08:00–09:00 …, Pause 12–13) für kurze Programme
 function viewFeinGantt(p) {
+  if (feinSub === 'stunden') return viewFeinStunden(p);
+  return viewFeinTage(p);
+}
+function viewFeinStunden(p) {
   const bloecke = (p.feinbloecke || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '') || feinH(a.von) - feinH(b.von));
   const colW = 58, hours = FEIN_H1 - FEIN_H0, trackW = hours * colW;
   const hourHead = Array.from({ length: hours + 1 }, (_, i) => `<span class="fein-hr" style="left:${i * colW}px">${String(FEIN_H0 + i).padStart(2, '0')}</span>`).join('');
@@ -1835,9 +1848,10 @@ function viewFeinGantt(p) {
     </div>`;
   }).join('');
   const head = `
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Feinprogramm · stunden-/tagweise Detailanweisungen (06:00–20:00)</div></div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Feinprogramm · Tagesablauf in Stunden (06:00–20:00)</div></div></div>
     ${projektTabs(p, 'termine')}
-    ${ganttModeToggle(p)}`;
+    ${ganttModeToggle(p)}
+    ${feinSubToggle(p)}`;
   render(head + `
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
       <p class="muted" style="font-size:12.5px;margin:0">Zeitblöcke pro Tag (von–bis Uhr, Tätigkeit, optional Gewerk; „Pause" für Unterbrüche). Block anklicken = bearbeiten.</p>
@@ -1878,6 +1892,72 @@ function saveFeinBlock(pid, bid) {
 function removeFeinBlock(pid, bid) {
   const p = findProjekt(pid); p.feinbloecke = (p.feinbloecke || []).filter(x => x.id !== bid);
   save(); closeModal(); viewFeinGantt(p);
+}
+// Feinprogramm „Tage": 4-Wochen-Raster je Unternehmer/Gewerk (aus Detailprogramm), pro Tag Text-Schritte
+function viewFeinTage(p) {
+  const head = `
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Feinprogramm · 4-Wochen-Fenster je Unternehmer – pro Tag Schritte erfassen (aus dem Detailprogramm)</div></div></div>
+    ${projektTabs(p, 'termine')}
+    ${ganttModeToggle(p)}
+    ${feinSubToggle(p)}`;
+  const vs = gewerkeSorted(p);
+  if (!vs.length) { render(head + emptyState('📅', 'Noch keine Gewerke. Im Tab „Übersicht" anlegen.')); return; }
+  const anchor = feinAnchor || mondayOf(todayIso());
+  const days = [];
+  const d0 = dISO(anchor);
+  for (let i = 0; i < 28; i++) { const d = new Date(d0); d.setDate(d.getDate() + i); days.push(isoOf(d)); }
+  const von = days[0], bis = days[27], t0 = todayIso();
+  const MON = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+  const colW = 60, nameW = 188, trackW = 28 * colW;
+  const schritte = p.feinschritte || [];
+  // Tageskopf (mit Wochentrennern)
+  const headerCells = days.map((iso, i) => { const d = dISO(iso); const wd = (d.getDay() + 6) % 7; const we = wd >= 5; return `<div class="ft-col${we ? ' we' : ''}${i % 7 === 0 ? ' wk' : ''}" style="width:${colW}px"><div class="ft-wd">${MON[wd]}</div><div class="ft-dt">${d.getDate()}.${d.getMonth() + 1}.</div></div>`; }).join('');
+  const rows = vs.map(v => {
+    const aktiv = (iso) => v.bauStart && v.bauEnde && iso >= v.bauStart && iso <= v.bauEnde;
+    const cells = days.map((iso, i) => {
+      const wd = (dISO(iso).getDay() + 6) % 7, we = wd >= 5;
+      const items = schritte.filter(s => s.vid === v.id && s.datum === iso);
+      const chips = items.map(s => `<div class="ft-step" data-act="fein-schritt-edit" data-pid="${p.id}" data-vid="${v.id}" data-sid="${s.id}" title="${esc(s.text)}">${esc(s.text)}</div>`).join('');
+      return `<div class="ft-cell${we ? ' we' : ''}${i % 7 === 0 ? ' wk' : ''}${aktiv(iso) ? ' on' : ''}${iso === t0 ? ' today' : ''}" style="width:${colW}px" data-act="fein-schritt-add" data-pid="${p.id}" data-vid="${v.id}" data-datum="${iso}" title="Schritt hinzufügen (${esc(fmtDate(iso))})">${chips}</div>`;
+    }).join('');
+    return `<div class="ft-row">
+      <div class="ft-name" style="width:${nameW}px"><span class="bkp-code">${esc(v.bkp || '')}</span> <b>${esc(v.firma || v.gewerk)}</b><div class="muted" style="font-size:10.5px">${esc(v.firma ? v.gewerk : 'noch nicht vergeben')}</div></div>
+      <div class="ft-track" style="width:${trackW}px;display:flex">${cells}</div>
+    </div>`;
+  }).join('');
+  render(head + `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="prev">‹ Woche</button>
+      <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="today">Heute</button>
+      <button class="btn sm secondary" data-act="fein-week" data-pid="${p.id}" data-kind="next">Woche ›</button>
+      <span class="muted" style="font-size:12.5px">${esc(fmtDate(von))} – ${esc(fmtDate(bis))}</span>
+      <span class="muted" style="font-size:12px;margin-left:auto">Zelle anklicken = Schritt hinzufügen · farbig hinterlegt = Bauzeit aus dem Detailprogramm</span>
+    </div>
+    <div class="card" style="padding:0;overflow:auto"><div class="ft-wrap" style="min-width:${nameW + trackW}px">
+      <div class="ft-row ft-headrow"><div class="ft-name" style="width:${nameW}px">Unternehmer / Gewerk</div><div class="ft-track" style="width:${trackW}px;display:flex">${headerCells}</div></div>
+      ${rows}
+    </div></div>`);
+}
+function actFeinSchritt(pid, vid, datum, sid) {
+  const p = findProjekt(pid); const s = sid ? (p.feinschritte || []).find(x => x.id === sid) : null;
+  const v = findVergabe(p, vid);
+  openModal(s ? 'Schritt bearbeiten' : 'Schritt am ' + fmtDate(datum), `
+    <div class="muted" style="font-size:12px;margin-bottom:8px">${esc((v && (v.firma || v.gewerk)) || '')} · ${esc(fmtDate(s ? s.datum : datum))}</div>
+    <label class="field">Anweisung / Schritt <textarea class="input" id="fs_text" rows="3" placeholder="z.B. Schalung Decke EG, Material anliefern …">${s ? esc(s.text || '') : ''}</textarea></label>
+  `, `${s ? `<button class="btn ghost danger" data-act="fein-schritt-rm" data-pid="${pid}" data-sid="${sid}">Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fein-schritt-save" data-pid="${pid}" data-vid="${vid}" data-datum="${s ? s.datum : datum}"${s ? ` data-sid="${sid}"` : ''}>${s ? 'Speichern' : 'Hinzufügen'}</button>`);
+  setTimeout(() => $('#fs_text')?.focus(), 30);
+}
+function saveFeinSchritt(pid, vid, datum, sid) {
+  const p = findProjekt(pid); const text = $('#fs_text').value.trim();
+  if (!text) { toast('Bitte einen Text eingeben', 'info'); return; }
+  p.feinschritte = p.feinschritte || [];
+  const s = sid ? p.feinschritte.find(x => x.id === sid) : null;
+  if (s) s.text = text; else p.feinschritte.push({ id: uid('fs'), vid, datum, text });
+  save(); closeModal(); viewFeinTage(p);
+}
+function removeFeinSchritt(pid, sid) {
+  const p = findProjekt(pid); p.feinschritte = (p.feinschritte || []).filter(x => x.id !== sid);
+  save(); closeModal(); viewFeinTage(p);
 }
 function gdFmt(iso) { if (!iso || ganttDates === 'off') return ''; const d = dISO(iso); const dd = String(d.getDate()).padStart(2, '0'), mm = String(d.getMonth() + 1).padStart(2, '0'); return ganttDates === 'short' ? `${dd}.${mm}.` : `${dd}.${mm}.${String(d.getFullYear()).slice(2)}`; }
 function gdLabels(startIso, endIso, x0, x1) {
@@ -10318,6 +10398,12 @@ document.addEventListener('click', e => {
     case 'fein-edit':    actFeinBlock(pid, bid); break;
     case 'save-fein':    saveFeinBlock(pid, bid); break;
     case 'fein-rm':      removeFeinBlock(pid, bid); break;
+    case 'fein-sub':     feinSub = kind; viewFeinGantt(findProjekt(pid)); break;
+    case 'fein-week':    { feinAnchor = kind === 'today' ? null : (() => { const base = feinAnchor || mondayOf(todayIso()); const d = dISO(base); d.setDate(d.getDate() + (kind === 'next' ? 7 : -7)); return isoOf(d); })(); viewFeinTage(findProjekt(pid)); } break;
+    case 'fein-schritt-add':  actFeinSchritt(pid, act.dataset.vid, act.dataset.datum); break;
+    case 'fein-schritt-edit': actFeinSchritt(pid, act.dataset.vid, act.dataset.datum, act.dataset.sid); break;
+    case 'fein-schritt-save': saveFeinSchritt(pid, act.dataset.vid, act.dataset.datum, act.dataset.sid); break;
+    case 'fein-schritt-rm':   removeFeinSchritt(pid, act.dataset.sid); break;
     case 'erinnerung-add':  actErinnerung(pid); break;
     case 'erinnerung-edit': actErinnerung(pid, rid); break;
     case 'erinnerung-save': saveErinnerung(pid, rid); break;

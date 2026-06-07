@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v240';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v241';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2355,7 +2355,7 @@ function viewTermine(id) {
   const head = `
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm · grob (Monat) bis fein (Tag); Balken ziehen zum Verschieben, Ränder ziehen für Dauer</div></div>
+      <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm</div></div>
       ${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}
     </div>
     ${projektTabs(p, 'termine', `${ganttModeToggle(p)}<div class="g-toolbar">
@@ -2377,7 +2377,7 @@ function viewTermine(id) {
       <button class="btn sm secondary" data-act="eckdaten" data-pid="${p.id}" title="Eckdaten: Baustart / Bauende / Bezug (Meilensteine)">📍 Eckdaten</button>
       <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Bauablauf: Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
       <button class="btn sm ${gespr ? '' : 'secondary'}" data-act="termin-versionen" data-pid="${p.id}" title="Programm abgeben/sperren · Versionen" style="margin-left:auto">${gespr ? '🔒 V' + (p.terminVersNr || 1) : '🏁 Abgeben'}</button>
-      <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" title="Drucken / PDF – Format automatisch (A4→A3→A2…)">⬇ PDF</button>
+      <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" title="Drucken / PDF – Format automatisch (A4→A3→A2…)">🖨 Drucken</button>
     </div>`)}
     ${gespr ? `<div class="g-warn g-warn-lock">🔒 <b>Terminprogramm Version ${p.terminVersNr || 1} ist abgegeben &amp; gesperrt.</b> Änderungen sind blockiert. <button class="btn sm" data-act="termin-versionen" data-pid="${p.id}">Neue Version erstellen</button></div>` : ''}
   `;
@@ -3072,7 +3072,7 @@ function protokollMenu(e, pid, prid) {
   const p = findProjekt(pid); const pr = p && findProtokoll(p, prid); if (!pr) return;
   openContextMenu(e, [
     { icon: '↗', label: 'Protokoll öffnen', act: () => go('#/projekt/' + pid + '/protokoll/' + prid) },
-    { icon: '⬇', label: 'PDF erzeugen', act: () => pdfProtokoll(pid, prid) },
+    { icon: '🖨', label: 'Drucken / PDF', act: () => pdfProtokoll(pid, prid) },
     { icon: '✉', label: 'An Verteiler senden', act: () => mailProtokoll(pid, prid) },
     { icon: '⧉', label: 'Kopieren (nächste Sitzung)', act: () => actCopyProtokoll(pid, prid) },
     { sep: true },
@@ -3736,7 +3736,7 @@ function viewListen(pid) {
   let bodyHtml;
   if (listenTab === 'unt') {
     bodyHtml = `<div class="section-head"><h2>Unternehmerliste <span class="tag">für Baustelle</span></h2>
-      <button class="btn sm" data-act="pdf-unternehmer" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
+      <button class="btn sm" data-act="pdf-unternehmer" data-pid="${p.id}">🖨 Drucken</button></div>
     <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle Gewerke mit vergebenem Unternehmer; offene zeigen „noch nicht vergeben".</p>
     <div class="card">${gw.length ? `<table class="grid t-compact"><thead><tr><th style="width:60px">BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Kontakt</th></tr></thead><tbody>${untRows}</tbody></table>` : emptyState('◫', 'Keine Gewerke angelegt.')}</div>`;
   } else if (listenTab === 'eig') {
@@ -3750,7 +3750,7 @@ function viewListen(pid) {
     <div class="card">${bemUnique.length ? `<table class="grid t-compact"><thead><tr><th style="width:52px">BKP</th><th>Auswahlpunkt</th><th>Unternehmer</th><th>Ausstellung / Materialauswahl</th></tr></thead><tbody>${bemBody}</tbody></table>` : `<div class="card-pad" style="text-align:center">${emptyState('🎨', 'Noch keine Auswahlpunkte.')}<a class="btn" href="#/projekt/${p.id}/bauherr">zu Eigentümerwünsche</a></div>`}</div>`;
   } else {
     bodyHtml = `<div class="section-head"><h2>Submittentenliste <span class="st red" style="font-size:10.5px;padding:2px 8px;vertical-align:middle">vertraulich</span></h2>
-      <button class="btn sm" data-act="pdf-submittenten" data-pid="${p.id}">⬇ Drucken / PDF</button></div>
+      <button class="btn sm" data-act="pdf-submittenten" data-pid="${p.id}">🖨 Drucken</button></div>
     <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle eingeladenen Firmen je Gewerk – nur intern, <strong>nicht</strong> an die Baustelle.</p>
     <div class="card card-pad">${submBlocks}</div>`;
   }
@@ -4131,10 +4131,10 @@ function viewHonorar() {
   const head = pj
     ? `<div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(pj.name)}</div>
        <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(pj.name)}</h1><div class="sub" style="margin-top:5px">Honorar-Rechner · SIA 102 (2003)</div></div>
-         <button class="btn" data-act="pdf-honorar">⬇ PDF</button></div>
+         <button class="btn" data-act="pdf-honorar">🖨 Drucken</button></div>
        ${projektTabs(pj, 'honorar')}`
     : `<div class="page-head"><div><h1>Honorar-Rechner</h1><div class="sub">Architektenhonorar nach Baukosten · SIA 102 (2003)</div></div>
-         <button class="btn" data-act="pdf-honorar">⬇ PDF</button></div>`;
+         <button class="btn" data-act="pdf-honorar">🖨 Drucken</button></div>`;
   render(`
     ${head}
     ${demoBanner('honorar')}
@@ -4829,7 +4829,7 @@ function viewBauherr(pid) {
     ${whgChips}
     <div class="section-head"><h2>${hasWhg && selW !== 'alle' ? (selW === '' ? 'Zusätze / Allgemein' : esc(whgLabel(selW))) : 'Auswahlentscheide'}${(() => { const o = ents.filter(e => entStatus(e) === 'offen').length; return o ? ` <span class="tab-badge">${o} offen</span>` : ''; })()}</h2>
       <div style="display:flex;gap:6px">
-        <button class="btn sm secondary" data-act="pdf-entscheidungen" data-pid="${p.id}">⬇ PDF</button>
+        <button class="btn sm secondary" data-act="pdf-entscheidungen" data-pid="${p.id}">🖨 Drucken</button>
         ${hasWhg ? `<button class="btn sm secondary" data-act="bauherr-bkp" data-pid="${p.id}" title="Je Einheit eine BKP-299.x-Position in den Baukosten anlegen/aktualisieren">→ BKP 299 Baukosten</button>` : ''}
         <button class="btn sm ghost" data-act="standard-bemusterung" data-pid="${p.id}" title="Übliche Auswahlpunkte für die gewählte Einheit ergänzen">＋ Standardliste</button>
         <button class="btn sm" data-act="new-entscheidung" data-pid="${p.id}">+ Eintrag</button>
@@ -4841,7 +4841,7 @@ function viewBauherr(pid) {
 
     <div class="section-head" style="margin-top:26px"><h2>Auswahl-Firmen (Bemusterung)</h2>
       <div style="display:flex;gap:6px">
-        <button class="btn sm secondary" data-act="pdf-bezugsfirmen" data-pid="${p.id}">⬇ PDF</button>
+        <button class="btn sm secondary" data-act="pdf-bezugsfirmen" data-pid="${p.id}">🖨 Drucken</button>
         <button class="btn sm" data-act="new-bezugsfirma" data-pid="${p.id}">+ Firma</button>
       </div></div>
     <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Firmen / Ausstellungen, bei denen die Bauherrschaft auswählen kann (Küche, Bad, Fliesen, Parkett …) – zum Mitgeben.</p>
@@ -5125,7 +5125,7 @@ function viewProtokolle(pid) {
               <td class="num">${(pr.teilnehmer || []).length}</td>
               <td style="white-space:nowrap;text-align:right">
                 <button class="btn sm ghost" data-act="copy-protokoll" data-pid="${p.id}" data-prid="${pr.id}">⧉ Kopieren</button>
-                <button class="btn sm secondary" data-act="pdf-protokoll" data-pid="${p.id}" data-prid="${pr.id}">PDF</button>
+                <button class="btn sm secondary" data-act="pdf-protokoll" data-pid="${p.id}" data-prid="${pr.id}">🖨 Drucken</button>
               </td>
             </tr>`).join('')}
         </tbody>
@@ -5200,7 +5200,7 @@ function viewProtokollDetail(pid, prid) {
         <button class="btn secondary" data-act="copy-protokoll" data-pid="${p.id}" data-prid="${pr.id}">⧉ Kopieren</button>
         <button class="btn secondary" data-act="edit-protokoll" data-pid="${p.id}" data-prid="${pr.id}">Kopfdaten</button>
         <button class="btn secondary" data-act="mail-protokoll" data-pid="${p.id}" data-prid="${pr.id}" title="Protokoll an Verteiler senden">✉ Verteiler</button>
-        <button class="btn secondary" data-act="pdf-protokoll" data-pid="${p.id}" data-prid="${pr.id}">⬇ PDF</button>
+        <button class="btn secondary" data-act="pdf-protokoll" data-pid="${p.id}" data-prid="${pr.id}">🖨 Drucken</button>
         <button class="btn" data-act="new-traktandum" data-pid="${p.id}" data-prid="${pr.id}">+ Traktandum</button>
       </div>
     </div>
@@ -5733,7 +5733,7 @@ function viewVergabeDetail(pid, vid) {
     </div>
 
     <!-- Offertvergleich / Vergabeantrag (Firmen als Spalten, 3 Stufen) -->
-    <div class="section-head" style="margin-top:26px"><h2>Offertvergleich / Vergabeantrag</h2><div style="display:flex;gap:8px;align-items:center"><span class="hint">direkt in der Tabelle erfassen – Summen rechnen live</span><button class="btn sm secondary" data-act="pdf-vergabeantrag" data-pid="${p.id}" data-vid="${v.id}">⬇ PDF</button></div></div>
+    <div class="section-head" style="margin-top:26px"><h2>Offertvergleich / Vergabeantrag</h2><div style="display:flex;gap:8px;align-items:center"><span class="hint">direkt in der Tabelle erfassen – Summen rechnen live</span><button class="btn sm secondary" data-act="pdf-vergabeantrag" data-pid="${p.id}" data-vid="${v.id}">🖨 Drucken</button></div></div>
     <div class="card card-pad va-screen" style="overflow-x:auto;margin-bottom:8px">${vergabeAntragTable(p, v, true)}</div>
 
     <!-- Budgetpositionen -->
@@ -6344,7 +6344,7 @@ function viewDossier(pid) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Dossier · vollständige Projektunterlagen über alle Phasen</div></div>
-      <button class="btn secondary" data-act="pdf-dossier" data-pid="${p.id}" title="Statusbericht als PDF">⬇ PDF</button>
+      <button class="btn secondary" data-act="pdf-dossier" data-pid="${p.id}" title="Statusbericht als PDF">🖨 Drucken</button>
     </div>
     ${projektTabs(p, 'dossier')}
     ${demoBanner('dossier')}
@@ -7403,7 +7403,7 @@ function viewDrucken() {
   const projects = sichtbareProjekte();
   if (druckPid == null || !findProjekt(druckPid)) druckPid = projects.length ? projects[0].id : '';
   const p = findProjekt(druckPid);
-  const card = (act, label, desc) => `<button class="btn secondary" data-act="${act}" data-pid="${druckPid}" style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;height:auto;padding:13px 15px;white-space:normal"><span style="font-weight:700;font-size:13.5px">⬇ ${label}</span><span class="muted" style="font-size:11.5px;font-weight:400">${desc}</span></button>`;
+  const card = (act, label, desc) => `<button class="btn secondary" data-act="${act}" data-pid="${druckPid}" style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;height:auto;padding:13px 15px;white-space:normal"><span style="font-weight:700;font-size:13.5px">🖨 ${label}</span><span class="muted" style="font-size:11.5px;font-weight:400">${desc}</span></button>`;
   render(`
     <div class="page-head"><div><h1>Drucken</h1><div class="sub">Alle Dokumente – ein Klick, direkt als PDF</div></div></div>
     ${projects.length ? `
@@ -8329,7 +8329,7 @@ function viewRechnungen(pid) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Rechnungskontrolle</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">Rechnungskontrolle</h1><div class="sub" style="margin-top:5px">Pro BKP: vergeben · verrechnet · bezahlt · noch „Platz"</div></div>
-      <div style="display:flex;gap:8px"><button class="btn secondary" data-act="pdf-rechnungen" data-pid="${p.id}">⬇ PDF</button><button class="btn" data-act="sammelrg" data-pid="${p.id}">+ Sammelrechnung (mehrere BKP)</button></div>
+      <div style="display:flex;gap:8px"><button class="btn secondary" data-act="pdf-rechnungen" data-pid="${p.id}">🖨 Drucken</button><button class="btn" data-act="sammelrg" data-pid="${p.id}">+ Sammelrechnung (mehrere BKP)</button></div>
     </div>
     ${projektTabs(p, 'rechnungen')}
     <div class="card" style="overflow-x:auto">
@@ -8840,7 +8840,7 @@ function viewSolar(pid) {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn ${st.gesperrt ? 'secondary' : ''}" data-act="solar-freigabe" data-pid="${p.id}" title="Gewählte Variante für den Bauherrn freigeben/sperren">${st.gesperrt ? '🔓 Freigabe aufheben' : '🔒 Bauherr-Freigabe'}</button>
         <button class="btn secondary" data-act="solar-baukosten" data-pid="${p.id}" title="Investition als Gewerk in die Baukostenübersicht übernehmen">➕ in Baukosten</button>
-        <button class="btn secondary" data-act="pdf-solar" data-pid="${p.id}">⬇ Solar-PDF</button>
+        <button class="btn secondary" data-act="pdf-solar" data-pid="${p.id}">🖨 Solar-PDF</button>
       </div>
     </div>
     ${projektTabs(p, 'solar')}
@@ -8942,7 +8942,7 @@ function viewSolar(pid) {
     <div class="card card-pad" style="margin-top:18px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
         <h2 style="margin:0;font-size:15px">Gegenüberstellung der Varianten <span class="muted" style="font-size:12px;font-weight:400">– Entscheidungsgrundlage Bauherr</span></h2>
-        <button class="btn secondary sm" data-act="pdf-solar-vergleich" data-pid="${p.id}" type="button">⬇ Vergleich-PDF</button>
+        <button class="btn secondary sm" data-act="pdf-solar-vergleich" data-pid="${p.id}" type="button">🖨 Vergleich-PDF</button>
       </div>
       <div id="solarCompare" style="overflow-x:auto">${solarCompareHtml(p)}</div>
     </div>
@@ -9510,7 +9510,7 @@ function viewZahlungsplan(pid) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Zahlungsplan</div>
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">Zahlungsplan</h1><div class="sub" style="margin-top:5px">${sub}</div></div>
-      <div><button class="btn" data-act="pdf-zahlungsplan" data-pid="${p.id}">⬇ PDF</button></div>
+      <div><button class="btn" data-act="pdf-zahlungsplan" data-pid="${p.id}">🖨 Drucken</button></div>
     </div>
     ${projektTabs(p, 'zahlungsplan')}
     ${demoBanner('zahlungsplan')}

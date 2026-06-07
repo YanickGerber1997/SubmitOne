@@ -771,13 +771,24 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-tb-sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 4px; }
 .btn.sm.ico { padding: 4px 8px; font-size: 13.5px; line-height: 1; }
 /* Grosser Outlook-Stil-Button: Symbol gross oben, Text klein unten, höher als breit */
-.g-bigbtn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 62px; height: 64px; flex: none; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); cursor: pointer; color: var(--text); }
+.g-bigbtn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 50px; height: 50px; flex: none; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; color: var(--text); }
 .g-bigbtn:hover { background: var(--brand-soft); border-color: var(--brand); }
 .g-bigbtn .bb-ico { display: flex; align-items: center; justify-content: center; color: var(--brand); }
-.g-bigbtn .bb-lbl { font-size: 10.5px; font-weight: 600; color: var(--text-soft); white-space: nowrap; }
+.g-bigbtn .bb-lbl { font-size: 9px; font-weight: 600; color: var(--text-soft); white-space: nowrap; }
 .g-bigbtn.on { background: var(--brand); border-color: var(--brand); }
 .g-bigbtn.on .bb-ico, .g-bigbtn.on .bb-lbl { color: #fff; }
-.g-toolbar.gbtns { gap: 7px; }
+/* Kompakte Kopf-Box: Modus + Version */
+.g-topbox { display: inline-flex; flex-direction: column; gap: 6px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); margin-bottom: 10px; }
+.g-topbox .seg { display: inline-flex; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 3px; align-self: flex-start; }
+.g-topbox .g-verbar { margin-bottom: 0; border: none; background: transparent; padding: 0; }
+/* Ribbon mit Kategorien (einklappbar) */
+.g-ribbon { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin-bottom: 12px; }
+.g-ribbon-toggle { align-self: center; border: none; background: none; cursor: pointer; color: var(--text-faint); font-size: 14px; padding: 0 8px; }
+.g-ribbon-toggle:hover { color: var(--brand); }
+.g-rgroup { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0 9px; border-right: 1px solid var(--border); }
+.g-rgroup:last-child { border-right: none; }
+.g-rgroup-btns { display: flex; gap: 4px; }
+.g-rgroup-lbl { font-size: 9px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .4px; }
 .g-head { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); background: var(--surface); }
 /* Mitlaufender Kopf (Overlay) beim Scrollen – nur Anzeige, klickt nicht */
 .gantt-stickyhead { position: fixed; z-index: 50; display: none; box-shadow: 0 3px 7px rgba(15,24,48,.10); pointer-events: none; }

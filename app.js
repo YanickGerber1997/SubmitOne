@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v262';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v263';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1795,20 +1795,23 @@ const G_ICONS = {
   palette: '<path d="M12 3.2a8.8 8.8 0 1 0 0 17.6c1 0 1.7-.8 1.7-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.4-.6-.4-1 0-1 .8-1.7 1.7-1.7H16a4.8 4.8 0 0 0 4.8-4.8c0-4.4-3.9-7.3-8.8-7.3z"/><circle cx="7.6" cy="12.2" r="1"/><circle cx="9.6" cy="8.2" r="1"/><circle cx="14" cy="7.6" r="1"/>',
   sort: '<path d="M7.5 4v16M7.5 4l-2.6 2.8M7.5 4l2.6 2.8"/><path d="M16.5 20V4M16.5 20l-2.6-2.8M16.5 20l2.6 2.8"/>',
 };
-function gIcon(name) { return `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
+function gIcon(name) { return `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
 function bigBtn(act, icon, label, o) { o = o || {}; return `<button class="g-bigbtn${o.on ? ' on' : ''}" data-act="${act}" data-pid="${o.pid}"${o.kind != null ? ` data-kind="${o.kind}"` : ''} title="${esc(o.title || label)}"><span class="bb-ico">${gIcon(icon)}</span><span class="bb-lbl">${esc(label)}</span></button>`; }
+const rgroup = (label, btns) => `<div class="g-rgroup"><div class="g-rgroup-btns">${btns}</div><div class="g-rgroup-lbl">${esc(label)}</div></div>`;
 // Versionsleiste (wie Zahlungsplan): Versionen umschalten / neu / umbenennen / löschen / sperren
 function ganttVersionBar(p) {
   const gespr = terminGesperrt(p);
   return `<div class="g-verbar"><span class="muted" style="font-size:11px">Version</span>${terminVersList(p).map(v => `<button class="btn sm ${v.id === p.terminVersAktiv ? '' : 'secondary'}" data-act="tv-switch" data-pid="${p.id}" data-vid="${v.id}" title="Zu dieser Version wechseln">${esc(v.name || 'Version')}${v.gesperrt ? ' 🔒' : ''}</button>`).join('')}<button class="btn sm secondary" data-act="tv-new" data-pid="${p.id}" title="Neue Version (Kopie der aktuellen)">+ Version</button><button class="btn sm ico secondary" data-act="tv-rename" data-pid="${p.id}" title="Version umbenennen">✎</button><button class="btn sm ico secondary" data-act="tv-del" data-pid="${p.id}" title="Version löschen">🗑</button><button class="btn sm ico ${gespr ? '' : 'secondary'}" data-act="tv-lock" data-pid="${p.id}" title="${gespr ? 'Version entsperren' : 'Version sperren (abschliessen)'}">${gespr ? '🔒' : '🔓'}</button></div>`;
 }
-// Oben: Versionsleiste (volle Breite, wie Zahlungsplan) – darunter der Modus-Umschalter (Detail/Grob/Fein), knapp über dem Gantt
+// Kompakte Box ganz oben: Modus (Detail/Grob/Fein) + darunter die Versionsleiste
 function ganttModeToggle(p) {
-  return `${ganttVersionBar(p)}
-  <div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">
-    <button class="btn sm ${ganttMode === 'detail' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="detail" type="button" style="border:none">📋 Detailprogramm (Tage)</button>
-    <button class="btn sm ${ganttMode === 'grob' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="grob" type="button" style="border:none">🗓 Grobplanung (Phasen)</button>
-    <button class="btn sm ${ganttMode === 'fein' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="fein" type="button" style="border:none">⏱ Feinprogramm (Stunden)</button>
+  return `<div class="g-topbox">
+    <div class="seg">
+      <button class="btn sm ${ganttMode === 'detail' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="detail" type="button" style="border:none">📋 Detail</button>
+      <button class="btn sm ${ganttMode === 'grob' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="grob" type="button" style="border:none">🗓 Grob</button>
+      <button class="btn sm ${ganttMode === 'fein' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="fein" type="button" style="border:none">⏱ Fein</button>
+    </div>
+    ${ganttVersionBar(p)}
   </div>`;
 }
 // Grobe Bauphasen – BKP-Gruppen werden zu groben Phasen zusammengefasst
@@ -2336,6 +2339,7 @@ let ganttFenster = true;         // Auto-Oberbalken als grosses Fenster über di
 let ganttRaster = true;          // Sitzungsraster-Linien im Gantt einblenden
 let ganttRowH = 38;              // Zeilenhöhe im Gantt (26–60, lesbar begrenzt)
 let ganttPad = 1;                // Rand (Monate) links/rechts um das Programm (Scroll-Spielraum)
+let ganttRibbon = true;          // Werkzeug-Leiste (Kategorien) ein-/ausgeklappt
 function hexA(hex, a) { const h = String(hex).replace('#', ''); if (h.length < 6) return hex; return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`; }
 const GANTT_FIRMA_PALETTE = ['#1f6feb', '#16a34a', '#ea7a3c', '#7c3aed', '#0d9488', '#dc2626', '#a16207', '#db2777', '#0891b2', '#65a30d', '#9333ea', '#0f766e', '#b45309', '#2563eb'];
 function firmaColHex(name) { if (!name) return '#94a3b8'; let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return GANTT_FIRMA_PALETTE[h % GANTT_FIRMA_PALETTE.length]; }
@@ -2381,19 +2385,22 @@ function viewTermine(id) {
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm</div></div>
       ${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}
     </div>
-    ${projektTabs(p, 'termine', `${ganttModeToggle(p)}<div class="g-toolbar gbtns">
-      ${bigBtn('pdf-gantt', 'print', 'Drucken', { pid: p.id, title: 'Drucken / PDF – Format automatisch' })}
-      ${bigBtn('gantt-sort', 'sort', ganttSort === 'bkp' ? 'BKP' : 'Start', { pid: p.id, kind: ganttSort === 'bkp' ? 'start' : 'bkp', title: 'Sortierung: BKP / Startdatum (umschalten)' })}
-      ${bigBtn('gantt-dates', 'tag', ganttDates === 'off' ? 'Datum' : (ganttDates === 'full' ? 'Datum J' : 'Datum'), { pid: p.id, on: ganttDates !== 'off', title: 'Start-/Enddatum am Balken (aus → mit Jahr → ohne)' })}
-      ${bigBtn('gantt-color', 'palette', ganttColorMode === 'status' ? 'Status' : (ganttColorMode === 'firma' ? 'Firma' : 'Phase'), { pid: p.id, kind: ganttColorMode === 'status' ? 'firma' : (ganttColorMode === 'firma' ? 'phase' : 'status'), title: 'Balkenfarbe: Status / Firma / Phase (umschalten)' })}
-      ${bigBtn('gantt-chain', 'chain', 'Verkettung', { pid: p.id, on: ganttChain, title: 'Verkettung ' + (ganttChain ? 'an' : 'aus') })}
-      ${bigBtn('gantt-workdays', 'calCheck', 'Arbeitstage', { pid: p.id, on: ganttWorkdays, title: 'Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus') })}
-      ${bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') })}
-      ${(p.sitzungsraster && p.sitzungsraster.aktiv) ? bigBtn('gantt-raster', 'calendar', 'Sitzungen', { pid: p.id, on: ganttRaster, title: 'Sitzungslinien ' + (ganttRaster ? 'an' : 'aus') }) : ''}
-      ${bigBtn('regeln-open', 'ruler', 'Regeln' + ((p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''), { pid: p.id, on: (p.regeln || []).length > 0, title: 'Regeln / Abhängigkeiten' })}
-      ${bigBtn('ress-config', 'warn', 'Ressourcen', { pid: p.id, on: !(p.ressCheck && p.ressCheck.aktiv === false), title: 'Ressourcen-Hinweis' })}
-      ${bigBtn('bauablauf', 'gear', 'Bauablauf', { pid: p.id, title: 'Gewerke nach BKP verketten und ab Baustart datieren' })}
-    </div>`)}
+    ${projektTabs(p, 'termine', `${ganttModeToggle(p)}${ganttRibbon ? `<div class="g-ribbon">
+      <button class="g-ribbon-toggle" data-act="gantt-ribbon" data-pid="${p.id}" title="Werkzeuge einklappen">⌃</button>
+      ${rgroup('Drucken', bigBtn('pdf-gantt', 'print', 'Drucken', { pid: p.id, title: 'Drucken / PDF – Format automatisch' }))}
+      ${rgroup('Sortierung', bigBtn('gantt-sort', 'sort', ganttSort === 'bkp' ? 'BKP' : 'Start', { pid: p.id, kind: ganttSort === 'bkp' ? 'start' : 'bkp', title: 'Sortierung: BKP / Startdatum (umschalten)' }))}
+      ${rgroup('Darstellung',
+        bigBtn('gantt-color', 'palette', ganttColorMode === 'status' ? 'Status' : (ganttColorMode === 'firma' ? 'Firma' : 'Phase'), { pid: p.id, kind: ganttColorMode === 'status' ? 'firma' : (ganttColorMode === 'firma' ? 'phase' : 'status'), title: 'Balkenfarbe: Status / Firma / Phase (umschalten)' }) +
+        bigBtn('gantt-dates', 'tag', ganttDates === 'off' ? 'Datum' : (ganttDates === 'full' ? 'Datum J' : 'Datum'), { pid: p.id, on: ganttDates !== 'off', title: 'Start-/Enddatum am Balken (aus → mit Jahr → ohne)' }) +
+        bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }))}
+      ${rgroup('Werkzeuge',
+        bigBtn('gantt-chain', 'chain', 'Verkettung', { pid: p.id, on: ganttChain, title: 'Verkettung ' + (ganttChain ? 'an' : 'aus') }) +
+        bigBtn('gantt-workdays', 'calCheck', 'Arbeitstage', { pid: p.id, on: ganttWorkdays, title: 'Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus') }) +
+        ((p.sitzungsraster && p.sitzungsraster.aktiv) ? bigBtn('gantt-raster', 'calendar', 'Sitzungen', { pid: p.id, on: ganttRaster, title: 'Sitzungslinien ' + (ganttRaster ? 'an' : 'aus') }) : '') +
+        bigBtn('regeln-open', 'ruler', 'Regeln' + ((p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''), { pid: p.id, on: (p.regeln || []).length > 0, title: 'Regeln / Abhängigkeiten' }) +
+        bigBtn('ress-config', 'warn', 'Ressourcen', { pid: p.id, on: !(p.ressCheck && p.ressCheck.aktiv === false), title: 'Ressourcen-Hinweis' }) +
+        bigBtn('bauablauf', 'gear', 'Bauablauf', { pid: p.id, title: 'Gewerke nach BKP verketten und ab Baustart datieren' }))}
+    </div>` : `<button class="btn sm secondary" data-act="gantt-ribbon" data-pid="${p.id}" style="margin-bottom:12px" title="Werkzeuge ausklappen">⌄ Werkzeuge</button>`}`)}
     ${gespr ? `<div class="g-warn g-warn-lock">🔒 <b>Version „${esc(terminVersAktiv(p).name)}" ist gesperrt.</b> Änderungen blockiert – andere Version wählen oder oben „🔓" entsperren / „+ Version".</div>` : ''}
   `;
 
@@ -11502,6 +11509,7 @@ document.addEventListener('click', e => {
     case 'gantt-raster':    ganttRaster = !ganttRaster; rerenderGantt(pid); break;
     case 'gantt-rowh':      { ganttRowH = kind === 'reset' ? 38 : Math.max(26, Math.min(60, ganttRowH + (kind === 'in' ? 6 : -6))); rerenderGantt(pid); } break;
     case 'gantt-pad':       { ganttPad = kind === 'reset' ? 1 : Math.max(0, Math.min(12, ganttPad + (kind === 'in' ? 1 : -1))); rerenderGantt(pid); } break;
+    case 'gantt-ribbon':    ganttRibbon = !ganttRibbon; rerenderGantt(pid); break;
     case 'eckdaten':        actEckdaten(pid); break;
     case 'eckdaten-save':   saveEckdaten(pid); break;
     case 'feiertage':       actFeiertage(pid); break;

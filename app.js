@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v232';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v233';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2573,17 +2573,21 @@ function viewTermine(id) {
   const insertStrips = gespr ? '' : inserts.map(it => `<div class="g-insert" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${it.vid}" style="top:${it.y - 5}px" title="Untertermin einfügen (leer – dann Balken ziehen)"><span>+ Untertermin</span></div>`).join('');
   // Verbindungen (Abhängigkeiten) als SVG-Overlay
   const linkVerts = [];   // belegte vertikale Spuren {x,y0,y1} – gegen Überlagerung
+  const STUB = 13;   // Stück gerade hinter dem Balkenende, bevor die Linie abbiegt
   const linkPaths = (p.ganttLinks || []).map(lk => {
     const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
     const hh = ROW_H / 2;
     const ax = a.left + a.width, ay = a.row * ROW_H + hh, bx = b.left, by = b.row * ROW_H + hh;
-    let mx = bx + (lk.dx != null ? lk.dx : -16);
-    if (lk.dx == null) {   // automatische Spur: nach links ausweichen, bis frei
-      const y0 = Math.min(ay, by), y1 = Math.max(ay, by); let guard = 0;
-      while (linkVerts.some(pp => Math.abs(pp.x - mx) < 7 && !(y1 < pp.y0 - 1 || y0 > pp.y1 + 1)) && guard++ < 50) mx -= 7;
+    // Knie: erst nach rechts weg vom Balken (Stub), dann runter, dann ins Ziel
+    let mx = (lk.dx != null) ? bx + lk.dx : Math.max(ax + STUB, bx - STUB);
+    if (lk.dx == null) {   // Spur-Versatz gegen Überlagerung, Stub bleibt erhalten
+      const y0 = Math.min(ay, by), y1 = Math.max(ay, by), base = mx;
+      for (const off of [0, 7, -7, 14, -14, 21, -21, 28, -28, 35]) { const cand = Math.max(ax + STUB, base + off); if (!linkVerts.some(pp => Math.abs(pp.x - cand) < 7 && !(y1 < pp.y0 - 1 || y0 > pp.y1 + 1))) { mx = cand; break; } }
       linkVerts.push({ x: mx, y0, y1 });
     }
-    const d = `M ${ax} ${ay} H ${mx} V ${by} H ${bx}`;
+    const vdir = by >= ay ? 1 : -1, hdir = bx >= mx ? 1 : -1;
+    const r = Math.max(0, Math.min(5, (mx - ax) / 2, Math.abs(by - ay) / 2, Math.abs(bx - mx) / 2 || 5));
+    const d = `M ${ax} ${ay} H ${mx - r} Q ${mx} ${ay} ${mx} ${ay + vdir * r} V ${by - vdir * r} Q ${mx} ${by} ${mx + hdir * r} ${by} H ${bx}`;
     return `<g class="g-link${ganttLinkSel === lk.id ? ' g-sel' : ''}" data-lid="${lk.id}">
       <path class="g-link-hit" d="${d}"></path>
       <path class="g-link-line" d="${d}"></path>
@@ -9738,7 +9742,8 @@ function pdfGantt(pid, paper) {
   const rangeStart = new Date(ds.getFullYear(), ds.getMonth(), 1);
   const rangeEnd = new Date(de.getFullYear(), de.getMonth() + 1, 0);
   const totalDays = dayDiff(rangeStart, rangeEnd) + 1;
-  const PDkey = paper || autoPaperFor(ganttZoom, totalDays, 58);   // 58 = Seitenspalte
+  const SIDE_MM = 56 + ((ganttSide.firma ? 1 : 0) + (ganttSide.person ? 1 : 0) + (ganttSide.natel ? 1 : 0)) * 22;   // Info-Spalten brauchen Platz
+  const PDkey = paper || autoPaperFor(ganttZoom, totalDays, SIDE_MM);
   const PD = PAPER[PDkey] || PAPER.A4;
   const pct = iso => dayDiff(rangeStart, dISO(iso)) / totalDays * 100;
   const wpct = (s, e) => (dayDiff(dISO(s), dISO(e)) + 1) / totalDays * 100;
@@ -9746,7 +9751,7 @@ function pdfGantt(pid, paper) {
   const bandsN = ganttZoom === 'tag' ? 3 : ganttZoom === 'woche' ? 2 : 1;
   const HEAD_MM = bandsN === 3 ? 13.5 : bandsN === 2 ? 11 : 7;
   const bh = HEAD_MM / bandsN, kwY = bh, dayY = 2 * bh;
-  const SIDE_MM = 58, rowH = 6, barH = 4.2, fs = 8;
+  const rowH = 6, barH = 4.4, fs = 8;
 
   // Monats-Band + Monats-Gridlines (oberstes Band)
   const months = []; let cur = new Date(rangeStart);
@@ -9788,21 +9793,34 @@ function pdfGantt(pid, paper) {
   if (ek.bezug && ek.bezug !== ek.bauende) pMarks.push({ iso: ek.bezug, n: 'Bezug', c: '#1f6feb' });
   const markLines = pMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; }).map(m =>
     `<div class="pg-mark" style="left:${pct(m.iso)}%;background:${m.c}"></div><div class="pg-mark-lbl" style="left:${pct(m.iso)}%"><span style="color:${m.c}">${esc(m.n)} ${fmtDate(m.iso)}</span></div>`).join('');
-  // Pro Druckzeile: Seiten-Label + Balken (Gewerk inkl. Bestellfrist/Nachlauf, oder eingerückter Untertermin)
-  const sideArr = items.map(it => it.sub
-    ? `<div class="pg-srow sub" style="height:${rowH}mm">↳&nbsp;${esc(it.o.titel || '')}</div>`
-    : `<div class="pg-srow" style="height:${rowH}mm"><b>${esc(it.v.bkp || '')}</b>&nbsp;${esc(it.v.gewerk || '')}</div>`);
-  // Balken inkl. Text + Geometrie (für Verbindungslinien) merken
+  // Pro Druckzeile: Seiten-Label (inkl. Firma/Person/Natel wie in der App) + Balken
+  const kontaktByFirma = f => (state.kontakte || []).find(k => k.firma === f);
+  const sideArr = items.map(it => {
+    if (it.sub) return `<div class="pg-srow sub" style="height:${rowH}mm">↳&nbsp;${esc(it.o.titel || '')}</div>`;
+    const v = it.v; const k = (ganttSide.person || ganttSide.natel) && v.firma ? kontaktByFirma(v.firma) : null;
+    const ex = [];
+    if (ganttSide.firma && v.firma) ex.push(esc(v.firma));
+    if (ganttSide.person && k && k.person) ex.push(esc(k.person));
+    if (ganttSide.natel && k && k.telefon) ex.push('☎ ' + esc(k.telefon));
+    return `<div class="pg-srow" style="height:${rowH}mm"><b>${esc(v.bkp || '')}</b>${ganttSide.gewerk ? '&nbsp;' + esc(v.gewerk || '') : ''}${ex.length ? ` <span class="pg-si">${ex.join(' · ')}</span>` : ''}</div>`;
+  });
+  // Balken inkl. Text + Geometrie (für Verbindungslinien) merken; Text aussen, wenn Balken zu kurz
+  const mainWmm = Math.max(40, PD.w - 16 - SIDE_MM);
+  const fitsBar = (text, wpc) => (wpc / 100 * mainWmm) >= String(text || '').length * 1.35 + 2;
   const geoByKey = {};
   const mainArr = items.map((it, ri) => {
     const v = it.v;
-    if (it.sub) { const o = it.o; const x0 = pct(o.start), w = wpct(o.start, o.ende); geoByKey[v.id + '/' + o.id] = { row: ri, x0, x1: x0 + w };
-      return `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar sub" style="left:${x0}%;width:${w}%;height:${barH - 1.2}mm;background:${ganttColHex(v)}"><span class="pgb-l">${esc(o.titel || '')}</span></div></div>`; }
+    if (it.sub) {
+      const o = it.o; const x0 = pct(o.start), w = wpct(o.start, o.ende); geoByKey[v.id + '/' + o.id] = { row: ri, x0, x1: x0 + w };
+      const fit = fitsBar(o.titel, w);
+      return `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar sub" style="left:${x0}%;width:${w}%;height:${barH - 1.2}mm;background:${ganttColHex(v)}">${fit ? `<span class="pgb-l">${esc(o.titel || '')}</span>` : ''}</div>${fit ? '' : `<span class="pgb-out sub" style="left:${x0 + w}%">${esc(o.titel || '')}</span>`}</div>`;
+    }
     let pre = '';
     if (Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); const bs = isoOf(d); pre += `<div class="pg-bestell" style="left:${Math.max(0, pct(bs))}%;width:${wpct(bs, v.bauStart)}%;height:${barH}mm"></div>`; }
     if (Number(v.nachfrist) > 0) { const ne = addDays(v.bauEnde, Number(v.nachfrist)); pre += `<div class="pg-nach" style="left:${pct(addDays(v.bauEnde, 1))}%;width:${wpct(addDays(v.bauEnde, 1), ne)}%;height:${barH}mm"></div>`; }
     const x0 = pct(v.bauStart), w = wpct(v.bauStart, v.bauEnde); geoByKey[v.id] = { row: ri, x0, x1: x0 + w };
-    return `<div class="pg-row" style="height:${rowH}mm">${pre}<div class="pg-bar" style="left:${x0}%;width:${w}%;height:${barH}mm;background:${ganttColHex(v)}"><span class="pgb-l">${esc(v.gewerk || '')}</span></div></div>`;
+    const fit = fitsBar(v.gewerk, w);
+    return `<div class="pg-row" style="height:${rowH}mm">${pre}<div class="pg-bar" style="left:${x0}%;width:${w}%;height:${barH}mm;background:${ganttColHex(v)}">${fit ? `<span class="pgb-l">${esc(v.gewerk || '')}</span>` : ''}</div>${fit ? '' : `<span class="pgb-out" style="left:${x0 + w}%">${esc(v.gewerk || '')}</span>`}</div>`;
   });
   // Verbindungslinien (Abhängigkeiten) – nur innerhalb derselben Seite gezeichnet
   const links = (p.ganttLinks || []).map(l => { const f = geoByKey[l.from], t = geoByKey[l.to]; return (f && t) ? { f, t } : null; }).filter(Boolean);
@@ -9810,9 +9828,11 @@ function pdfGantt(pid, paper) {
     const placed = [], gap = Math.max(0.45, 100 / totalDays);   // Spur-Abstand in %
     return links.filter(L => L.f.row >= a && L.f.row < b && L.t.row >= a && L.t.row < b).map(L => {
       const y1 = (L.f.row - a + 0.5) * rowH, y2 = (L.t.row - a + 0.5) * rowH;
-      const x1 = L.f.x1, tx = L.t.x0; let mx = tx - gap * 1.2;   // Knie vor dem Ziel
+      const x1 = L.f.x1, tx = L.t.x0; const stub = Math.max(0.5, 100 / totalDays);   // Stub hinter dem Balken
+      let mx = Math.max(x1 + stub, tx - gap * 1.2);   // erst rechts weg, dann runter, dann ins Ziel
       const ylo = Math.min(y1, y2), yhi = Math.max(y1, y2); let guard = 0;
-      while (placed.some(pp => Math.abs(pp.x - mx) < gap && !(yhi < pp.y0 - 0.4 || ylo > pp.y1 + 0.4)) && guard++ < 60) mx -= gap;
+      while (placed.some(pp => Math.abs(pp.x - mx) < gap && !(yhi < pp.y0 - 0.4 || ylo > pp.y1 + 0.4)) && guard++ < 60) mx += gap;
+      mx = Math.max(mx, x1 + stub);
       placed.push({ x: mx, y0: ylo, y1: yhi });
       const seg1 = `<div class="pg-lk h" style="left:${Math.min(x1, mx)}%;width:${Math.abs(mx - x1)}%;top:${y1}mm"></div>`;
       const segV = `<div class="pg-lk v" style="left:${mx}%;top:${ylo}mm;height:${yhi - ylo}mm"></div>`;
@@ -9862,9 +9882,12 @@ function pdfGantt(pid, paper) {
     .pg-mark{position:absolute;top:0;bottom:0;width:1.1px;z-index:2;}
     .pg-mark-lbl{position:absolute;top:0;bottom:0;z-index:4;}
     .pg-mark-lbl span{position:absolute;top:.3mm;left:.3px;font-size:5.5px;line-height:1;font-weight:700;writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;}
-    .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;box-shadow:0 0 0 .3px rgba(0,0,0,.06);display:flex;align-items:center;overflow:hidden;}
-    .pgb-l{color:#fff;font-size:6.6px;font-weight:600;line-height:1;padding:0 1mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .pg-bar.sub{opacity:.85;border-radius:1.5px;} .pg-bar.sub .pgb-l{font-size:6px;}
+    .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:1.4mm;box-shadow:inset 0 0 0 .2px rgba(0,0,0,.08), 0 .2px .4px rgba(0,0,0,.12);display:flex;align-items:center;overflow:hidden;}
+    .pgb-l{color:#fff;font-size:6.6px;font-weight:600;line-height:1;padding:0 1.2mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .pgb-out{position:absolute;top:50%;transform:translateY(-50%);font-size:6.6px;font-weight:600;color:#222b36;white-space:nowrap;padding-left:1mm;}
+    .pgb-out.sub{font-size:6px;font-weight:500;color:#5b6573;}
+    .pg-si{color:#6b7480;font-weight:400;font-size:7px;}
+    .pg-bar.sub{opacity:.9;border-radius:1mm;} .pg-bar.sub .pgb-l{font-size:6px;}
     .pg-lk{position:absolute;z-index:3;}
     .pg-lk.h{height:0;border-top:.4mm solid #8a93a0;}
     .pg-lk.v{width:0;border-left:.4mm solid #8a93a0;}

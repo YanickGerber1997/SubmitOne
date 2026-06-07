@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v273';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v274';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2291,11 +2291,15 @@ function gdLabels(startIso, endIso, x0, x1, endShift) {
 // Passt das Balken-Label in den Balken? sonst rechts daneben anzeigen
 function barLabelFits(text, wpx) { return wpx >= String(text || '').length * 6.4 + 18; }
 function barLabelW(text) { return String(text || '').length * 6.4 + 8; }
-// Balken-Beschriftungs-Modus: 'auto' (innen, sonst rechts daneben) | 'above' (über dem Balken, linksbündig zum Start) | 'clip' (innen, abgeschnitten) | 'over' (innen ab Start, läuft über den Balken)
+// Balken-Beschriftungs-Modus: 'auto' (innen, sonst rechts) | 'above' (über dem Balken, Balken rutscht runter) | 'below' (unter dem Balken, Balken rutscht hoch) | 'before' (vor/links des Balkens) | 'clip' (innen, abgeschnitten) | 'over' (innen ab Start, läuft über)
 let ganttLabelMode = 'auto';
+const LABEL_MODES = ['auto', 'above', 'below', 'before', 'clip', 'over'];
+const LABEL_NAMES = { auto: 'Auto', above: 'Oben', below: 'Unten', before: 'Vor', clip: 'Innen', over: 'Über' };
 function gBarLabel(text, gL, gW, sub, isAuto) {
   const m = ganttLabelMode, sc = sub ? ' sub' : '';
   if (m === 'above') return { inner: '', outer: `<span class="g-lbl-above${sc}" style="left:${gL}px">${esc(text)}</span>`, gdOff: 0 };
+  if (m === 'below') return { inner: '', outer: `<span class="g-lbl-below${sc}" style="left:${gL}px">${esc(text)}</span>`, gdOff: 0 };
+  if (m === 'before') return { inner: '', outer: `<span class="g-lbl-before${sc}" style="left:${gL - 5}px">${esc(text)}</span>`, gdOff: 0 };
   if (m === 'over') return { inner: '', outer: `<span class="g-lbl-over${sc}" style="left:${gL + 6}px">${esc(text)}</span>`, gdOff: 0 };
   if (m === 'clip') return { inner: esc(text), outer: '', gdOff: 0 };
   const fits = isAuto ? true : barLabelFits(text, gW);   // 'auto'
@@ -2408,7 +2412,7 @@ function viewTermine(id) {
         bigBtn('gantt-color', 'palette', ganttColorMode === 'status' ? 'Status' : (ganttColorMode === 'firma' ? 'Firma' : 'Phase'), { pid: p.id, kind: ganttColorMode === 'status' ? 'firma' : (ganttColorMode === 'firma' ? 'phase' : 'status'), title: 'Balkenfarbe: Status / Firma / Phase (umschalten)' }) +
         bigBtn('gantt-dates', 'tag', ganttDates === 'off' ? 'Datum' : (ganttDates === 'full' ? 'Datum J' : 'Datum'), { pid: p.id, on: ganttDates !== 'off', title: 'Start-/Enddatum am Balken (aus → mit Jahr → ohne)' }) +
         bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) +
-        bigBtn('gantt-labelmode', 'label', ganttLabelMode === 'auto' ? 'Auto' : (ganttLabelMode === 'above' ? 'Oben' : (ganttLabelMode === 'clip' ? 'Innen' : 'Über')), { pid: p.id, on: ganttLabelMode !== 'auto', title: 'Balken-Beschriftung: Auto → Oben (über dem Balken) → Innen (abgeschnitten) → Über (läuft über den Balken)' }))}
+        bigBtn('gantt-labelmode', 'label', LABEL_NAMES[ganttLabelMode], { pid: p.id, on: ganttLabelMode !== 'auto', title: 'Balken-Beschriftung: Auto → Oben → Unten → Vor → Innen (abgeschnitten) → Über (läuft über)' }))}
       ${rgroup('Kalender',
         bigBtn('eckdaten', 'flag', 'Baustart', { pid: p.id, on: !!(p.baustart || p.bauende), title: 'Baustart / Bauende / Bezug (Meilensteine)' }) +
         bigBtn('feiertage', 'star', 'Feiertage', { pid: p.id, on: !!p.kanton, title: 'Feiertage / Kanton' + (p.kanton ? ' ' + p.kanton : '') }) +
@@ -2679,7 +2683,7 @@ function viewTermine(id) {
 
   render(head + `
     ${warnBanner}${regelBanner}
-    <div class="gantt" style="--rowh:${ROW_H}px">
+    <div class="gantt lbl-${ganttLabelMode}" style="--rowh:${ROW_H}px">
       <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div></div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
@@ -11541,7 +11545,7 @@ document.addEventListener('click', e => {
     case 'gantt-rowh':      { ganttRowH = kind === 'reset' ? 38 : Math.max(26, Math.min(60, ganttRowH + (kind === 'in' ? 6 : -6))); rerenderGantt(pid); } break;
     case 'gantt-pad':       { ganttPad = kind === 'reset' ? 1 : (kind === 'cycle' ? (ganttPad + 1) % 7 : Math.max(0, Math.min(12, ganttPad + (kind === 'in' ? 1 : -1)))); rerenderGantt(pid); } break;
     case 'gantt-ribbon':    ganttRibbon = !ganttRibbon; rerenderGantt(pid); break;
-    case 'gantt-labelmode': ganttLabelMode = ganttLabelMode === 'auto' ? 'above' : (ganttLabelMode === 'above' ? 'clip' : (ganttLabelMode === 'clip' ? 'over' : 'auto')); rerenderGantt(pid); break;
+    case 'gantt-labelmode': ganttLabelMode = LABEL_MODES[(LABEL_MODES.indexOf(ganttLabelMode) + 1) % LABEL_MODES.length]; rerenderGantt(pid); break;
     case 'eckdaten':        actEckdaten(pid); break;
     case 'eckdaten-save':   saveEckdaten(pid); break;
     case 'feiertage':       actFeiertage(pid); break;

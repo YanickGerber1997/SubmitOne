@@ -890,9 +890,19 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-date.r { padding-left: 5px; }
 .g-lbl-out { position: absolute; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 600; color: var(--text); white-space: nowrap; pointer-events: none; z-index: 5; }
 .g-lbl-out.sub { font-size: 10px; font-weight: 500; color: var(--text-soft); }
-/* Beschriftung über dem Balken (linksbündig zum Start) */
+/* Beschriftung über dem Balken (linksbündig zum Start) – Balken rutscht runter */
 .g-lbl-above { position: absolute; top: 1px; font-size: 10px; font-weight: 600; color: var(--text); white-space: nowrap; pointer-events: none; z-index: 5; }
 .g-lbl-above.sub { font-size: 9px; font-weight: 500; color: var(--text-soft); }
+.gantt.lbl-above .g-bar:not(.sub) { top: auto; bottom: 2px; }
+.gantt.lbl-above .g-bar.sub { top: auto; bottom: 2px; }
+/* Beschriftung unter dem Balken – Balken rutscht hoch */
+.g-lbl-below { position: absolute; bottom: 1px; font-size: 10px; font-weight: 600; color: var(--text); white-space: nowrap; pointer-events: none; z-index: 5; }
+.g-lbl-below.sub { font-size: 9px; font-weight: 500; color: var(--text-soft); }
+.gantt.lbl-below .g-bar:not(.sub) { top: 2px; }
+.gantt.lbl-below .g-bar.sub { top: 2px; }
+/* Beschriftung vor/links des Balkens (rechtsbündig, endet kurz vor dem Start) */
+.g-lbl-before { position: absolute; top: 50%; transform: translate(-100%, -50%); font-size: 11px; font-weight: 600; color: var(--text); white-space: nowrap; pointer-events: none; z-index: 5; }
+.g-lbl-before.sub { font-size: 10px; font-weight: 500; color: var(--text-soft); }
 /* Beschriftung ab Start, läuft über den Balken (dunkel + heller Saum für Lesbarkeit) */
 .g-lbl-over { position: absolute; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 600; color: #1f2937; white-space: nowrap; pointer-events: none; z-index: 5; text-shadow: 0 0 2px rgba(255,255,255,.85), 0 0 2px rgba(255,255,255,.85); }
 .g-lbl-over.sub { font-size: 10px; font-weight: 500; }

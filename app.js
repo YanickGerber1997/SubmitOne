@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v248';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v249';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2368,7 +2368,6 @@ function viewTermine(id) {
     ${projektTabs(p, 'termine', `${ganttModeToggle(p)}<div class="g-toolbar">
       ${zoomCtrl}${scaleCtrl}${sortCtrl}
       <div class="g-zoom" title="Zeilenhöhe"><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="out" title="flacher">≡</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="reset" style="min-width:30px" title="Standard">${ganttRowH}</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="in" title="höher">☰</button></div>
-      <div class="g-zoom" title="Rand links/rechts (Monate) – Scroll-Spielraum vor/nach dem Programm"><button data-act="gantt-pad" data-pid="${p.id}" data-kind="out" title="weniger Rand">⇤⇥</button><button data-act="gantt-pad" data-pid="${p.id}" data-kind="reset" style="min-width:54px" title="Standard 1 Monat">Rand ${ganttPad}M</button><button data-act="gantt-pad" data-pid="${p.id}" data-kind="in" title="mehr Rand">⇥⇤</button></div>
       ${dateCtrl}
       <span class="g-tb-sep"></span>
       <div class="g-zoom" title="Balkenfarbe: Status / Unternehmer / Phase">${[['status', 'Status'], ['firma', 'Firma'], ['phase', 'Phase']].map(([k, l]) => `<button class="${ganttColorMode === k ? 'active' : ''}" data-act="gantt-color" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>
@@ -2652,7 +2651,7 @@ function viewTermine(id) {
   render(head + `
     ${warnBanner}${regelBanner}
     <div class="gantt" style="--rowh:${ROW_H}px">
-      <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div><div class="g-corner-bot"><button class="btn sm ico ${p.kanton ? '' : 'secondary'}" data-act="feiertage" data-pid="${p.id}" title="Feiertage: Kanton, Brückentage & eigene freie Tage">🎌${p.kanton ? ' ' + p.kanton : ''}</button><button class="btn sm ico secondary" data-act="eckdaten" data-pid="${p.id}" title="Eckdaten: Baustart / Bauende / Bezug">📍 Eckdaten</button></div></div>${sideRows}${insertStrips}</div>
+      <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div><div class="g-corner-bot"><button class="btn sm ${p.kanton ? '' : 'secondary'}" data-act="feiertage" data-pid="${p.id}" title="Feiertage: Kanton, Brückentage & eigene freie Tage">Feiertage${p.kanton ? ' ' + p.kanton : ''}</button><button class="btn sm secondary" data-act="eckdaten" data-pid="${p.id}" title="Baustart / Bauende / Bezug setzen">Baustart / Bauende</button><div class="g-zoom g-corner-rand" title="Rand links/rechts (Monate)"><button data-act="gantt-pad" data-pid="${p.id}" data-kind="out" title="weniger Rand">−</button><button data-act="gantt-pad" data-pid="${p.id}" data-kind="reset" title="Standard 1 Monat">Rand ${ganttPad}M</button><button data-act="gantt-pad" data-pid="${p.id}" data-kind="in" title="mehr Rand">+</button></div></div></div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
           ${yearCells ? `<div class="g-headrow yr">${yearCells}</div>` : ''}

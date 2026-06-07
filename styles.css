@@ -223,7 +223,7 @@ button { font-family: inherit; cursor: pointer; }
 /* Tag-/Wochenansicht (Stunden-Raster) */
 .cal-tg { background: var(--surface); border-top: 1px solid var(--border); }
 .cal-tg-gutter { width: 50px; flex: none; font-size: 9.5px; color: var(--text-faint); }
-.cal-tg-gutter.ad { display: flex; align-items: center; justify-content: center; }
+.cal-tg-gutter.ad { display: flex; align-items: flex-start; justify-content: center; padding-top: 6px; }
 .cal-tg-headrow, .cal-tg-adrow { display: flex; border-bottom: 1px solid var(--border); }
 .cal-tg-cols { display: grid; flex: 1; }
 .cal-colhead { padding: 7px 4px; text-align: center; font-size: 12px; font-weight: 600; color: var(--text-soft); border-left: 1px solid var(--border); cursor: pointer; }
@@ -268,8 +268,11 @@ button { font-family: inherit; cursor: pointer; }
 .mm2-head { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; font-weight: 700; margin-bottom: 6px; }
 .mm2-nav { background: none; border: none; cursor: pointer; color: var(--text-soft); font-size: 15px; padding: 0 6px; }
 .mm2-nav:hover { color: var(--brand); }
-.mm2-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
+.mm2-grid { display: grid; grid-template-columns: 18px repeat(7, 1fr); gap: 1px; align-items: center; }
 .mm2-grid .h { font-size: 9px; color: var(--text-faint); text-align: center; padding-bottom: 2px; }
+.mm2-grid .h.kw { font-weight: 700; }
+.mm2-kw { font-size: 9px; color: var(--text-faint); text-align: center; }
+.cal-rail { gap: 10px; }
 .mm2-d { border: none; background: none; font-size: 11px; aspect-ratio: 1; border-radius: 5px; cursor: pointer; color: var(--text); padding: 0; }
 .mm2-d.o { color: var(--text-faint); }
 .mm2-d.wk { background: var(--brand-soft); }
@@ -281,6 +284,11 @@ button { font-family: inherit; cursor: pointer; }
 .cal-listitem:hover { background: var(--surface-2); }
 .cal-listitem span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 820px) { .cal-layout { grid-template-columns: 1fr; } .cal-rail { flex-direction: row; flex-wrap: wrap; position: static; } .mm2, .cal-listcard { flex: 1; min-width: 210px; } }
+.cal-gridwrap { position: relative; }
+.cal-side-nav { position: absolute; top: 30px; bottom: 8px; width: 20px; border: none; background: rgba(15,24,48,.03); color: var(--text-faint); font-size: 18px; font-weight: 700; cursor: pointer; opacity: 0; transition: opacity .12s; z-index: 5; }
+.cal-side-nav.left { left: 0; } .cal-side-nav.right { right: 0; }
+.cal-gridwrap:hover .cal-side-nav { opacity: 1; }
+.cal-side-nav:hover { background: var(--brand-soft); color: var(--brand); }
 /* Resize-Griffe oben/unten am Block */
 .cal-rz { position: absolute; left: 0; right: 0; height: 7px; cursor: ns-resize; z-index: 4; }
 .cal-rz.top { top: 0; }

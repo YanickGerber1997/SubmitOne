@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v209';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v210';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2293,6 +2293,7 @@ function viewTermine(id) {
       <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
       <button class="btn sm ${ganttChain ? '' : 'secondary'}" data-act="gantt-chain" data-pid="${p.id}" title="Wenn an: verkettete Nachfolger folgen automatisch beim Verschieben">🔗 Verkettung ${ganttChain ? 'an' : 'aus'}</button>
       <button class="btn sm ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">📅 Arbeitstage ${ganttWorkdays ? 'an' : 'aus'}</button>
+      <button class="btn sm ${(p.regeln || []).length ? '' : 'secondary'}" data-act="regeln-open" data-pid="${p.id}" title="Feste Regeln/Abhängigkeiten – warnen bei Verstoss (z.B. Gerüst vor Wände)">📐 Regeln${(p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''}</button>
       <button class="btn sm ${(p.ressCheck && p.ressCheck.aktiv === false) ? 'secondary' : ''}" data-act="ress-config" data-pid="${p.id}" title="Ressourcen-Hinweis (gleiche Firma überlappend) einstellen">⚠ Ressourcen</button>
       <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" style="margin-left:auto">⬇ PDF</button>
     </div>
@@ -2427,6 +2428,10 @@ function viewTermine(id) {
     });
     warnBanner = conflicts.length ? `<div class="g-warn">⚠ <b>Ressourcen-Hinweis</b>${rc.minGap ? ` (min. ${rc.minGap} T Abstand)` : ''}: ${conflicts.join(' · ')}<button class="g-warn-x" data-act="ress-config" data-pid="${p.id}" title="Hinweis einstellen / ausschalten">⚙</button></div>` : '';
   }
+  // Regel-Hinweise: feste Abhängigkeiten (z.B. „Gerüst muss vor Wände EG") – warnt bei Verstoss
+  const rViol = [];
+  (p.regeln || []).filter(r => r.aktiv !== false).forEach(r => { const a = findVergabe(p, r.aVid), b = findVergabe(p, r.bVid); const msg = regelVerletzt(a, b, r.rel); if (a && b && msg) rViol.push(`<b>${esc(a.gewerk)}</b> ${msg}`); });
+  const regelBanner = rViol.length ? `<div class="g-warn g-warn-rule">📐 <b>Regel-Hinweis:</b> ${rViol.join(' · ')}<button class="g-warn-x" data-act="regeln-open" data-pid="${p.id}" title="Regeln bearbeiten">⚙</button></div>` : '';
 
   const ROW_H = 38;
   const kontaktByFirma = f => (state.kontakte || []).find(k => k.firma === f);
@@ -2504,7 +2509,7 @@ function viewTermine(id) {
   if (sideExtras) sideW = Math.min(480, (ganttSide.gewerk ? 200 : 92) + sideExtras * 96);
 
   render(head + `
-    ${warnBanner}
+    ${warnBanner}${regelBanner}
     <div class="gantt">
       <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
@@ -2713,6 +2718,49 @@ function saveRessConfig(pid) {
   p.ressCheck = { aktiv: $('#rc_aktiv').checked, minGap: Math.max(0, Number($('#rc_gap').value) || 0) };
   save(); closeModal(); rerenderGantt(pid);
 }
+// Feste Regeln/Abhängigkeiten (Logik-Hinweise beim Umplanen)
+const REGEL_REL = {
+  davor: 'muss fertig sein, bevor … beginnt',
+  beginntvor: 'muss beginnen, bevor … beginnt',
+  parallel: 'muss sich überschneiden mit …',
+  danach: 'darf erst beginnen, wenn … fertig ist',
+};
+function regelVerletzt(a, b, rel) {
+  if (!a || !b || !a.bauStart || !a.bauEnde || !b.bauStart || !b.bauEnde) return null;
+  if (rel === 'davor') return a.bauEnde > b.bauStart ? `endet ${fmtDate(a.bauEnde)}, „${esc(b.gewerk)}" beginnt aber schon ${fmtDate(b.bauStart)}` : null;
+  if (rel === 'beginntvor') return a.bauStart > b.bauStart ? `beginnt ${fmtDate(a.bauStart)} – „${esc(b.gewerk)}" beginnt früher (${fmtDate(b.bauStart)})` : null;
+  if (rel === 'danach') return a.bauStart < b.bauEnde ? `beginnt ${fmtDate(a.bauStart)}, „${esc(b.gewerk)}" ist erst ${fmtDate(b.bauEnde)} fertig` : null;
+  if (rel === 'parallel') return (a.bauStart <= b.bauEnde && b.bauStart <= a.bauEnde) ? null : `überschneidet sich nicht mit „${esc(b.gewerk)}"`;
+  return null;
+}
+function regelText(p, r) { const a = findVergabe(p, r.aVid), b = findVergabe(p, r.bVid); return `<b>${a ? esc(a.gewerk) : '?'}</b> ${REGEL_REL[r.rel] || r.rel} <b>${b ? esc(b.gewerk) : '?'}</b>`; }
+function actRegeln(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const list = gewerkeSorted(p);
+  const opts = list.map(v => `<option value="${v.id}">${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)}</option>`).join('');
+  const relOpts = Object.entries(REGEL_REL).map(([k, l]) => `<option value="${k}">${l.replace(' …', ' B').replace('…', 'B')}</option>`).join('');
+  const rows = (p.regeln || []).length ? (p.regeln || []).map(r => { const a = findVergabe(p, r.aVid), b = findVergabe(p, r.bVid); const bad = a && b && regelVerletzt(a, b, r.rel); return `<div class="regel-row${bad ? ' bad' : ''}"><span>${regelText(p, r)}${bad ? ` <span class="regel-bad">⚠ ${bad}</span>` : ''}</span><button class="x-btn" data-act="regel-del" data-pid="${pid}" data-rid="${r.id}" title="Regel löschen">×</button></div>`; }).join('') : '<p class="muted" style="font-size:12.5px">Noch keine Regeln. Lege z.B. fest: „Gerüst" <i>muss beginnen bevor</i> „Wände EG".</p>';
+  openModal('Regeln / Logik-Hinweise', `
+    <p class="muted" style="font-size:12.5px;margin-top:0">Feste Abhängigkeiten, die normalerweise gelten. Beim Verschieben im Terminprogramm <b>warnt</b> dich das Programm, wenn du dagegen verstösst (es ändert nichts automatisch).</p>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">${rows}</div>
+    <div class="card card-pad" style="background:var(--surface-2)">
+      <div class="form-row" style="align-items:end">
+        <label class="field">Gewerk A <select class="select" id="rg_a">${opts}</select></label>
+        <label class="field">Regel <select class="select" id="rg_rel">${relOpts}</select></label>
+        <label class="field">Gewerk B <select class="select" id="rg_b">${opts}</select></label>
+      </div>
+      <button class="btn sm" data-act="regel-add" data-pid="${pid}" style="margin-top:8px">+ Regel hinzufügen</button>
+    </div>
+  `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
+}
+function addRegel(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const a = $('#rg_a').value, rel = $('#rg_rel').value, b = $('#rg_b').value;
+  if (a === b) { toast('Bitte zwei verschiedene Gewerke wählen', 'info'); return; }
+  (p.regeln = p.regeln || []).push({ id: uid('rg'), aVid: a, rel, bVid: b, aktiv: true });
+  save(); rerenderGantt(pid); actRegeln(pid);
+}
+function delRegel(pid, rid) { const p = findProjekt(pid); if (!p) return; p.regeln = (p.regeln || []).filter(r => r.id !== rid); save(); rerenderGantt(pid); actRegeln(pid); }
 function pendenzMenu(e, pid, itemid) {
   const p = findProjekt(pid); const it = p && (p.pendenzen || []).find(x => x.id === itemid); if (!it) return;
   const items = [
@@ -10855,6 +10903,9 @@ document.addEventListener('click', e => {
     case 'gantt-add-vorgang': addEmptyVorgangDetail(pid, vid); break;
     case 'ress-config':  actRessConfig(pid); break;
     case 'ress-save':    saveRessConfig(pid); break;
+    case 'regeln-open':  actRegeln(pid); break;
+    case 'regel-add':    addRegel(pid); break;
+    case 'regel-del':    delRegel(pid, act.dataset.rid); break;
     case 'termin-clear':      closeModal(); clearTermin(pid, vid); break;
     case 'fein-add':     actFeinBlock(pid); break;
     case 'fein-edit':    actFeinBlock(pid, bid); break;

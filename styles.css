@@ -1084,9 +1084,9 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 /* Leere Zeilenflächen lassen Klicks zur dahinterliegenden Linien-SVG durch (Auswahl/Löschen); Balken & Zeichnen bleiben klickbar */
 .g-rows .g-row { pointer-events: none; }
 .g-rows .g-row.g-draw { pointer-events: auto; }
-/* Fokus-Modus: Zeilen ohne Aktivität im sichtbaren Zeitausschnitt ausgrauen (live beim Scrollen) */
-.g-row.g-dim { opacity: .14; transition: opacity .12s; }
-.g-side-row.g-dim { opacity: .3; transition: opacity .12s; }
+/* Fokus-Modus: Zeilen ohne Aktivität im sichtbaren Zeitausschnitt ausblenden → aktive rücken zusammen (live beim Scrollen) */
+.g-row.g-hide, .g-side-row.g-hide { display: none; }
+.gantt.focus-on .g-links { display: none; }   /* Verbindungslinien im Fokus aus (Zeilen sind umgeordnet) */
 .g-bar.dragging { cursor: grabbing; opacity: .9; z-index: 6; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
 /* Bestellfrist: heller, dezenter Balken vor dem Hauptbalken (Verbindungen gehen NICHT hierauf) */
 .g-bestell {

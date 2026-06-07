@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v172';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v173';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -4796,22 +4796,22 @@ function viewVergabeDetail(pid, vid) {
     <div class="gw-side-list">${Object.keys(gwGroups).sort().map(k => `<div class="gw-side-grp">${esc(k)} · ${esc(BKP_GRUPPEN[k] || 'Übrige')}</div>${gwGroups[k].map(g => { const stt = STATUS_BY_KEY[g.status] || {}; return `<a class="gw-side-item${g.id === v.id ? ' active' : ''}" href="#/projekt/${p.id}/vergabe/${g.id}" title="${esc(stt.label || g.status || '')}"><span class="st-dot ${stt.color || 'grey'}"></span><span class="gw-side-bkp">${esc(g.bkp || '')}</span><span class="gw-side-name">${esc(g.gewerk || '')}</span></a>`; }).join('')}`).join('')}</div>
   </aside>`;
 
-  const html = `
+  const gwToolbar = `
+    ${vergabeMarken(v)}
+    <select class="select vergabe-status-sel" data-pid="${p.id}" data-vid="${v.id}" title="Status setzen" style="padding:6px 9px;font-size:13px">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select>
+    <button class="btn sm secondary" data-act="vergabe-art" data-pid="${p.id}" data-vid="${v.id}" title="Einzelvergabe / ARGE / Teilvergabe an mehrere Firmen">👥 Vergabe-Art</button>
+    <button class="btn sm secondary" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}" title="Stammdaten bearbeiten (BKP, Gewerk, Frist, Schätzung)">✎ Bearbeiten</button>
+    ${last ? '' : `<button class="btn sm" data-act="advance" data-pid="${p.id}" data-vid="${v.id}" style="margin-left:auto">Nächster Schritt →</button>`}`;
+  const header = `
     <div class="detail-head">
       <div>
         <h1 style="margin:0;font-size:22px"><span class="bkp-code" style="font-size:16px">${esc(v.bkp)}</span> ${esc(v.gewerk)}</h1>
         <div class="sub" style="margin-top:5px">${vergabeFirmaLabel(v)}${grobLabel(v) ? ' · Ausführung ' + esc(grobLabel(v)) : ''}${posTagChips(p, v)}</div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-        ${vergabeMarken(v)}
-        <select class="select vergabe-status-sel" data-pid="${p.id}" data-vid="${v.id}" title="Status setzen" style="padding:7px 10px">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select>
-        <button class="btn secondary" data-act="vergabe-art" data-pid="${p.id}" data-vid="${v.id}" title="Einzelvergabe / ARGE / Teilvergabe an mehrere Firmen">👥 Vergabe-Art</button>
-        <button class="btn secondary" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}" title="Stammdaten bearbeiten (BKP, Gewerk, Frist, Schätzung)">✎ Bearbeiten</button>
-        ${last ? '' : `<button class="btn" data-act="advance" data-pid="${p.id}" data-vid="${v.id}">Nächster Schritt →</button>`}
-      </div>
     </div>
-    ${projektTabs(p, 'overview')}
+    ${projektTabs(p, 'gewerke', gwToolbar)}`;
 
+  const html = `
     <div class="detail-stats">
       <div class="dstat"><div class="l">Kostenschätzung</div><div class="v">${chf(v.schaetzung)}</div></div>
       <div class="dstat"><div class="l">günstigste Offerte</div><div class="v">${bestBetrag(v) != null ? chf(bestBetrag(v)) : '<span class="muted" style="font-size:14px">–</span>'}</div></div>
@@ -5042,7 +5042,7 @@ function viewVergabeDetail(pid, vid) {
     </div>
   `;
   render(`
-    <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › ${esc(v.gewerk)}</div>
+    ${header}
     <div class="gw-detail-grid">${gwSide}<div class="gw-detail-content">${html}</div></div>`);
   document.querySelector('.gw-side-item.active')?.scrollIntoView({ block: 'nearest' });
 

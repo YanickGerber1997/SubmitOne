@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v247';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v248';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2377,11 +2377,9 @@ function viewTermine(id) {
       <button class="btn sm ico ${ganttWorkdays ? '' : 'secondary'}" data-act="gantt-workdays" data-pid="${p.id}" title="Arbeitstage ${ganttWorkdays ? 'an' : 'aus'} – Abstände in Arbeitstagen (Wochenende + Feiertage überspringen)">🛠</button>
       <button class="btn sm ico ${ganttFenster ? '' : 'secondary'}" data-act="gantt-fenster" data-pid="${p.id}" title="Fenster ${ganttFenster ? 'an' : 'aus'} – Auto-Oberbalken als grosses Fenster">🪟</button>
       ${(p.sitzungsraster && p.sitzungsraster.aktiv) ? `<button class="btn sm ico ${ganttRaster ? '' : 'secondary'}" data-act="gantt-raster" data-pid="${p.id}" title="Sitzungslinien ${ganttRaster ? 'an' : 'aus'}">🗓</button>` : ''}
-      <button class="btn sm ${p.kanton ? '' : 'secondary'}" data-act="feiertage" data-pid="${p.id}" title="Feiertage: Kanton, Brückentage & eigene freie Tage">🎌${p.kanton ? ' ' + p.kanton : ''}</button>
       <button class="btn sm ${(p.regeln || []).length ? '' : 'secondary'}" data-act="regeln-open" data-pid="${p.id}" title="Regeln / feste Abhängigkeiten (warnen bei Verstoss)">📐${(p.regeln || []).length ? ' ' + p.regeln.length : ''}</button>
       <button class="btn sm ico ${(p.ressCheck && p.ressCheck.aktiv === false) ? 'secondary' : ''}" data-act="ress-config" data-pid="${p.id}" title="Ressourcen-Hinweis (gleiche Firma überlappend)">⚠</button>
       <span class="g-tb-sep"></span>
-      <button class="btn sm secondary" data-act="eckdaten" data-pid="${p.id}" title="Eckdaten: Baustart / Bauende / Bezug (Meilensteine)">📍 Eckdaten</button>
       <button class="btn sm secondary" data-act="bauablauf" data-pid="${p.id}" title="Bauablauf: Gewerke nach BKP verketten und ab Baustart datieren">⚙ Bauablauf</button>
       <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}" title="Drucken / PDF – Format automatisch (A4→A3→A2…)" style="margin-left:auto">🖨 Drucken</button>
     </div>`)}
@@ -2654,7 +2652,7 @@ function viewTermine(id) {
   render(head + `
     ${warnBanner}${regelBanner}
     <div class="gantt" style="--rowh:${ROW_H}px">
-      <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div>${sideRows}${insertStrips}</div>
+      <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div><div class="g-corner-bot"><button class="btn sm ico ${p.kanton ? '' : 'secondary'}" data-act="feiertage" data-pid="${p.id}" title="Feiertage: Kanton, Brückentage & eigene freie Tage">🎌${p.kanton ? ' ' + p.kanton : ''}</button><button class="btn sm ico secondary" data-act="eckdaten" data-pid="${p.id}" title="Eckdaten: Baustart / Bauende / Bezug">📍 Eckdaten</button></div></div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
           ${yearCells ? `<div class="g-headrow yr">${yearCells}</div>` : ''}

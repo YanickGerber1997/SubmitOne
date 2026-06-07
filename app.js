@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v191';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v192';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -6086,6 +6086,7 @@ function calTimeGrid(events, dates, todayI, add) {
       const sMin = toMin(e.zeit); let eMin = e.zeitEnde ? toMin(e.zeitEnde) : sMin + 60; if (eMin <= sMin) eMin = sMin + 60;
       const top = Math.max(0, (sMin - CAL_SH * 60) / 60 * CAL_HH); const h = Math.max((eMin - sMin) / 60 * CAL_HH, 20);
       const rz = e.plan ? '<span class="cal-rz top"></span><span class="cal-rz bottom"></span>' : '';
+      if (e.global) return `<div class="cal-tev ${e.color} gterm" style="top:${top}px;height:${h}px" title="${esc(e.zeit)} – ${esc(e.zeitEnde || '')}"><span class="cal-tev-time">${esc(e.zeit)}</span><span class="cal-tev-lbl gedit" contenteditable="true" data-id="${e.id}" data-ph="(Titel eingeben)">${esc(e.titel || '')}</span><button class="cal-tev-x" data-act="gterm-del" data-id="${e.id}" title="Löschen">×</button></div>`;
       return `<div class="cal-tev ${e.color}${e.plan ? ' plan' : ''}"${evEdit(e)} style="top:${top}px;height:${h}px" title="${esc(e.zeit + ' ' + e.titel)}">${rz}<span class="cal-tev-lbl">${esc(e.zeit)} ${esc(e.titel)}</span></div>`;
     }).join('');
     return `<div class="cal-col${iso === todayI ? ' today' : ''}" data-iso="${iso}"${pidAttr} style="height:${(CAL_EH - CAL_SH) * CAL_HH}px">${lines}${tev}</div>`;
@@ -6101,6 +6102,7 @@ function calTimeGrid(events, dates, todayI, add) {
 function bindCalCols() {
   $$('.cal-col').forEach(col => col.addEventListener('click', e => {
     if (col.dataset.plan) return;   // Planung nutzt Drag-to-create (bindPlanDragCreate)
+    if (!col.dataset.pid) return;   // globaler Kalender nutzt Drag-to-create (bindGlobalCal)
     if (e.target.closest('.cal-tev')) return;
     const iso = col.dataset.iso, pid = col.dataset.pid;
     const y = e.clientY - col.getBoundingClientRect().top;
@@ -6117,6 +6119,41 @@ function bindCalCols() {
   }));
 }
 
+// Globaler Kalender: Termin per Ziehen erstellen (Halbstunden-Raster) + Titel inline schreiben
+function bindGlobalCal() {
+  $$('.cal-col').forEach(col => { if (col.dataset.pid || col.dataset.plan) return; col.addEventListener('mousedown', onGlobalColDraw); });
+  $$('.cal-tev-lbl.gedit').forEach(el => {
+    el.addEventListener('mousedown', ev => ev.stopPropagation());
+    el.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); el.blur(); } });
+    el.addEventListener('blur', () => saveGTermTitle(el.dataset.id, el.textContent.trim()));
+  });
+  if (_focusGTerm) { const el = document.querySelector(`.cal-tev-lbl.gedit[data-id="${_focusGTerm}"]`); _focusGTerm = null; if (el) { el.focus(); const r = document.createRange(); r.selectNodeContents(el); r.collapse(false); const s = getSelection(); s.removeAllRanges(); s.addRange(r); } }
+}
+function onGlobalColDraw(e) {
+  if (e.target.closest('.cal-tev')) return;
+  const col = e.currentTarget, iso = col.dataset.iso, rect = col.getBoundingClientRect();
+  const minAt = cy => { let m = CAL_SH * 60 + Math.round(((cy - rect.top) / CAL_HH * 60) / 30) * 30; return Math.max(CAL_SH * 60, Math.min(CAL_EH * 60, m)); };
+  const start = minAt(e.clientY);
+  const prev = document.createElement('div'); prev.className = 'cal-tev brand draft'; col.appendChild(prev);
+  const upd = cur => { const lo = Math.min(start, cur), hi = Math.max(start, cur); prev.style.top = ((lo - CAL_SH * 60) / 60 * CAL_HH) + 'px'; prev.style.height = Math.max((hi - lo) / 60 * CAL_HH, 14) + 'px'; };
+  upd(start + 30);
+  const move = ev => upd(minAt(ev.clientY));
+  const up = ev => {
+    document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+    let cur = minAt(ev.clientY); if (Math.abs(cur - start) < 20) cur = Math.min(CAL_EH * 60, start + 60);
+    const lo = Math.min(start, cur), hi = Math.max(start, cur); prev.remove();
+    createGlobalTermin(iso, m2t(lo), m2t(hi));
+  };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); e.preventDefault();
+}
+function m2t(min) { return String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0'); }
+function createGlobalTermin(datum, von, bis) {
+  state.termine = state.termine || []; const id = uid('gt');
+  state.termine.push({ id, datum, zeit: von, zeitEnde: bis, titel: '' });
+  _focusGTerm = id; save(); viewKalenderGlobal();
+}
+function saveGTermTitle(id, text) { const t = (state.termine || []).find(x => x.id === id); if (!t || t.titel === text) return; t.titel = text; save(); }
+function removeGlobalTermin(id) { state.termine = (state.termine || []).filter(x => x.id !== id); save(); viewKalenderGlobal(); }
 // Alle Termine eines Projekts (manuell + abgeleitet)
 function sammleTermine(p) {
   const ev = [];
@@ -6278,6 +6315,7 @@ const PROJ_FARBEN = [
 const PROJ_PALETTE = ['dunkelblau', 'rot', 'dunkelgruen', 'orange', 'violett', 'tuerkis', 'gelb', 'bordeaux', 'hellblau', 'hellgruen', 'grau'];
 const PROJ_FARB_KEYS = new Set(PROJ_FARBEN.map(f => f[0]));
 let calGY = null, calGM = null, calHidden = null, pendHidden = null;
+let _focusGTerm = null;   // frisch per Ziehen erstellter globaler Termin → Titel-Feld fokussieren
 // Projektfarbe: gewählte Farbe (p.farbe) oder automatisch nach Index
 function projColor(idx, p) { if (p && p.farbe && PROJ_FARB_KEYS.has(p.farbe)) return p.farbe; return PROJ_PALETTE[idx % PROJ_PALETTE.length]; }
 function farbePickerHtml(sel) {
@@ -6381,6 +6419,7 @@ function viewKalenderGlobal() {
     const col = projColor(idx, p);
     sammleTermine(p).forEach(e => events.push({ ...e, color: col, pid: p.id, projekt: p.name }));
   });
+  (state.termine || []).forEach(t => { if (t.datum) events.push({ datum: t.datum, zeit: t.zeit || '', zeitEnde: t.zeitEnde || '', titel: t.titel || '', color: 'brand', manual: true, global: true, id: t.id, pid: null, projekt: 'Allgemein' }); });
   const byDay = {};
   events.forEach(e => { (byDay[e.datum] = byDay[e.datum] || []).push(e); });
 
@@ -6437,7 +6476,7 @@ function viewKalenderGlobal() {
     <div class="section-head" style="margin-top:24px"><h2>Agenda</h2><span class="hint">nächste Termine über alle Projekte</span></div>
     <div class="card card-pad">${agenda}</div>
   `);
-  if (calView !== 'monat') bindCalCols();
+  if (calView !== 'monat') { bindCalCols(); bindGlobalCal(); }
 }
 
 function actGlobalTermin(datum, zeit) {
@@ -10598,6 +10637,7 @@ document.addEventListener('click', e => {
     case 'deckblatt-offerte-leer': pdfDeckblatt(pid, vid, null, 'offerte'); break;
     case 'edit-termin':  actEditTermin(pid, vid); break;
     case 'save-termin':  saveTermin(pid, vid); break;
+    case 'gterm-del':    removeGlobalTermin(act.dataset.id); break;
     case 'gantt-zoom':   ganttZoom = kind; ganttScale = 1; viewTermine(pid); break;
     case 'gantt-chain':  ganttChain = !ganttChain; toast('Verkettung ' + (ganttChain ? 'an' : 'aus'), 'info'); rerenderGantt(pid); break;
     case 'gantt-workdays': ganttWorkdays = !ganttWorkdays; toast('Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus'), 'info'); rerenderGantt(pid); break;

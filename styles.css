@@ -252,6 +252,14 @@ button { font-family: inherit; cursor: pointer; }
 .cal-tev.dragging { opacity: .35; }
 .cal-tev.resizing { z-index: 6; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
 .cal-tev-lbl { display: block; }
+.cal-tev.brand { background: var(--brand); }
+.cal-tev.draft { opacity: .5; pointer-events: none; z-index: 6; outline: 1px dashed rgba(255,255,255,.9); }
+.cal-tev.gterm { display: flex; align-items: flex-start; gap: 4px; cursor: default; }
+.cal-tev.gterm .cal-tev-time { font-weight: 700; flex: none; }
+.cal-tev.gterm .cal-tev-lbl.gedit { flex: 1; min-width: 12px; outline: none; cursor: text; white-space: pre-wrap; }
+.cal-tev.gterm .cal-tev-lbl.gedit:empty::before { content: attr(data-ph); color: rgba(255,255,255,.65); }
+.cal-tev.gterm .cal-tev-x { margin-left: auto; flex: none; background: none; border: none; color: #fff; opacity: .65; cursor: pointer; font-size: 13px; line-height: 1; padding: 0 1px; }
+.cal-tev.gterm .cal-tev-x:hover { opacity: 1; }
 /* Resize-Griffe oben/unten am Block */
 .cal-rz { position: absolute; left: 0; right: 0; height: 7px; cursor: ns-resize; z-index: 4; }
 .cal-rz.top { top: 0; }

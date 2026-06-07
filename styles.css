@@ -914,6 +914,7 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-date { position: absolute; top: 50%; transform: translateY(-50%); font-size: 9.5px; font-variant-numeric: tabular-nums; color: var(--text-soft); white-space: nowrap; pointer-events: none; z-index: 2; }
 .g-date.l { transform: translate(-100%, -50%); padding-right: 5px; }
 .g-date.r { padding-left: 5px; }
+.g-date.below { top: auto; bottom: 0; transform: none; }
 .g-lbl-out { position: absolute; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 600; color: var(--text); white-space: nowrap; pointer-events: none; z-index: 5; }
 .g-lbl-out.sub { font-size: 10px; font-weight: 500; color: var(--text-soft); }
 /* Beschriftung über dem Balken (linksbündig zum Start) – Balken rutscht runter */
@@ -937,6 +938,10 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-dauer.innen { top: 50%; transform: translate(-50%, -50%); }
 .g-dauer.oben { top: 1px; }
 .g-dauer.unten { bottom: 1px; }
+.g-dauer.a-links { transform: translateX(0); }
+.g-dauer.a-rechts { transform: translateX(-100%); }
+.g-dauer.innen.a-links { transform: translateY(-50%); }
+.g-dauer.innen.a-rechts { transform: translate(-100%, -50%); }
 .g-dauer.sub { font-size: 9px; }
 /* Innen-Ausrichtung der Balken-Beschriftung */
 .g-bar.align-mitte .g-lbl { text-align: center; }

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v221';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v222';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2337,7 +2337,7 @@ function viewTermine(id) {
       <button class="btn sm ${(p.regeln || []).length ? '' : 'secondary'}" data-act="regeln-open" data-pid="${p.id}" title="Feste Regeln/Abhängigkeiten – warnen bei Verstoss (z.B. Gerüst vor Wände)">📐 Regeln${(p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''}</button>
       <button class="btn sm ${(p.ressCheck && p.ressCheck.aktiv === false) ? 'secondary' : ''}" data-act="ress-config" data-pid="${p.id}" title="Ressourcen-Hinweis (gleiche Firma überlappend) einstellen">⚠ Ressourcen</button>
       <button class="btn sm ${gespr ? '' : 'secondary'}" data-act="termin-versionen" data-pid="${p.id}" title="Programm abgeben/sperren · Versionen" style="margin-left:auto">${gespr ? '🔒 Abgegeben V' + (p.terminVersNr || 1) : '🏁 Abgeben / Versionen'}</button>
-      <button class="btn sm secondary" data-act="pdf-gantt" data-pid="${p.id}">⬇ PDF</button>
+      <button class="btn sm secondary" data-act="pdf-gantt-menu" data-pid="${p.id}" title="Drucken / PDF – Format wählen (A4 / A3 / A2 quer)">⬇ PDF</button>
     </div>
     ${gespr ? `<div class="g-warn g-warn-lock">🔒 <b>Terminprogramm Version ${p.terminVersNr || 1} ist abgegeben &amp; gesperrt.</b> Änderungen sind blockiert. <button class="btn sm" data-act="termin-versionen" data-pid="${p.id}">Neue Version erstellen</button></div>` : ''}
   `;
@@ -9665,10 +9665,25 @@ function bestellListeHtml(p) {
   return `<div class="section-head" style="margin-top:22px"><h2>🛒 Bestellfristen / Vorlauf</h2><span class="hint">Was muss wann bestellt werden, damit der Einbau pünktlich startet</span></div>
     <div class="card" style="overflow-x:auto"><table class="grid"><thead><tr><th>Gewerk / Firma</th><th>bestellen bis</th><th>Vorlauf</th><th>Einbau ab</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
-function pdfGantt(pid) {
+// Papierformate (Querformat, mm) – A2 ist kein CSS-Standardname → explizite Masse
+const PAPER = { A4: { w: 297, h: 210 }, A3: { w: 420, h: 297 }, A2: { w: 594, h: 420 } };
+function actGanttPrint(pid) {
+  const grob = ganttMode === 'grob';
+  openModal('Drucken / PDF – ' + (grob ? 'Grobplanung' : 'Terminprogramm'), `
+    <p class="muted" style="font-size:12.5px;margin-top:0">Papierformat (immer Querformat). Grössere Formate = mehr Zeilen pro Blatt &amp; breitere Zeitachse. Im Druckdialog „Als PDF speichern" und dasselbe Format wählen.</p>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn secondary" style="justify-content:flex-start" data-act="pdf-gantt" data-pid="${pid}" data-kind="A4">📄 A4 quer – Standard</button>
+      <button class="btn secondary" style="justify-content:flex-start" data-act="pdf-gantt" data-pid="${pid}" data-kind="A3">📃 A3 quer – grosse Programme</button>
+      <button class="btn secondary" style="justify-content:flex-start" data-act="pdf-gantt" data-pid="${pid}" data-kind="A2">🗺 A2 quer – sehr grosse Programme (Plot)</button>
+    </div>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button>`);
+}
+function pdfGantt(pid, paper) {
   const p = findProjekt(pid); if (!p) return;
+  closeModal();
   setFeierCtx(p);
-  if (ganttMode === 'grob') return pdfGrobGantt(p);
+  if (ganttMode === 'grob') return pdfGrobGantt(p, paper);
+  const PD = PAPER[paper] || PAPER.A4;
   const vs = gewerkeSorted(p).filter(v => v.bauStart && v.bauEnde);
   if (!vs.length) { toast('Keine terminierten Gewerke vorhanden', 'info'); return; }
   // Druckzeilen: jedes Gewerk + seine datierten Untertermine (eingerückt)
@@ -9755,18 +9770,32 @@ function pdfGantt(pid) {
   const sideArr = items.map(it => it.sub
     ? `<div class="pg-srow sub" style="height:${rowH}mm">↳&nbsp;${esc(it.o.titel || '')}</div>`
     : `<div class="pg-srow" style="height:${rowH}mm"><b>${esc(it.v.bkp || '')}</b>&nbsp;${esc(it.v.gewerk || '')}</div>`);
-  const mainArr = items.map(it => {
+  // Balken inkl. Text + Geometrie (für Verbindungslinien) merken
+  const geoByKey = {};
+  const mainArr = items.map((it, ri) => {
     const v = it.v;
-    if (it.sub) { const o = it.o; return `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar sub" style="left:${pct(o.start)}%;width:${wpct(o.start, o.ende)}%;height:${barH - 1.2}mm;background:${ganttColHex(v)}"></div></div>`; }
+    if (it.sub) { const o = it.o; const x0 = pct(o.start), w = wpct(o.start, o.ende); geoByKey[v.id + '/' + o.id] = { row: ri, x0, x1: x0 + w };
+      return `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar sub" style="left:${x0}%;width:${w}%;height:${barH - 1.2}mm;background:${ganttColHex(v)}"><span class="pgb-l">${esc(o.titel || '')}</span></div></div>`; }
     let pre = '';
     if (Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); const bs = isoOf(d); pre += `<div class="pg-bestell" style="left:${Math.max(0, pct(bs))}%;width:${wpct(bs, v.bauStart)}%;height:${barH}mm"></div>`; }
     if (Number(v.nachfrist) > 0) { const ne = addDays(v.bauEnde, Number(v.nachfrist)); pre += `<div class="pg-nach" style="left:${pct(addDays(v.bauEnde, 1))}%;width:${wpct(addDays(v.bauEnde, 1), ne)}%;height:${barH}mm"></div>`; }
-    return `<div class="pg-row" style="height:${rowH}mm">${pre}<div class="pg-bar" style="left:${pct(v.bauStart)}%;width:${wpct(v.bauStart, v.bauEnde)}%;height:${barH}mm;background:${ganttColHex(v)}"></div></div>`;
+    const x0 = pct(v.bauStart), w = wpct(v.bauStart, v.bauEnde); geoByKey[v.id] = { row: ri, x0, x1: x0 + w };
+    return `<div class="pg-row" style="height:${rowH}mm">${pre}<div class="pg-bar" style="left:${x0}%;width:${w}%;height:${barH}mm;background:${ganttColHex(v)}"><span class="pgb-l">${esc(v.gewerk || '')}</span></div></div>`;
   });
-  // Mehrseitig: feste Zeilenhöhe → so viele Zeilen wie auf eine Querseite passen, Achs-Kopf je Seite
-  const usableP1 = 168, usablePn = 188;   // mm nutzbare Höhe (Seite 1 mit Titelblock / Folgeseiten)
-  const rowsP1 = Math.max(1, Math.floor((usableP1 - HEAD_MM) / rowH));
-  const rowsPn = Math.max(1, Math.floor((usablePn - HEAD_MM) / rowH));
+  // Verbindungslinien (Abhängigkeiten) – nur innerhalb derselben Seite gezeichnet
+  const links = (p.ganttLinks || []).map(l => { const f = geoByKey[l.from], t = geoByKey[l.to]; return (f && t) ? { f, t } : null; }).filter(Boolean);
+  const linkLayer = (a, b) => links.filter(L => L.f.row >= a && L.f.row < b && L.t.row >= a && L.t.row < b).map(L => {
+    const y1 = (L.f.row - a + 0.5) * rowH, y2 = (L.t.row - a + 0.5) * rowH;
+    const x1 = L.f.x1, x2 = L.t.x0; const lo = Math.min(x1, x2), w = Math.abs(x2 - x1);
+    const v1 = `<div class="pg-lk h" style="left:${lo}%;width:${w}%;top:${y1}mm"></div>`;
+    const v2 = `<div class="pg-lk v" style="left:${x2}%;top:${Math.min(y1, y2)}mm;height:${Math.abs(y2 - y1)}mm"></div>`;
+    const ar = `<div class="pg-lk a" style="left:${x2}%;top:${y2}mm"></div>`;
+    return v1 + v2 + ar;
+  }).join('');
+  // Mehrseitig: feste Zeilenhöhe → so viele Zeilen wie aufs gewählte Format passen, Achs-Kopf je Seite
+  const pageH = PD.h - 16;
+  const rowsP1 = Math.max(1, Math.floor((pageH - 22 - HEAD_MM) / rowH));
+  const rowsPn = Math.max(1, Math.floor((pageH - 6 - HEAD_MM) / rowH));
   const chunks = []; let idx = 0;
   while (idx < items.length) { const take = idx === 0 ? rowsP1 : rowsPn; chunks.push([idx, idx + take]); idx += take; }
   const deco = `${weBands}${holBands}${gridV}${todayLine}${markLines}`;   // volle Höhe via top/bottom
@@ -9774,12 +9803,12 @@ function pdfGantt(pid) {
     const rows = Math.min(b, items.length) - a, hmm = rows * rowH;
     return `<div class="pg${pi > 0 ? ' brk' : ''}">
       <div class="pg-side"><div class="pg-shead">BKP / Gewerk / Untertermin</div>${sideArr.slice(a, b).join('')}</div>
-      <div class="pg-main"><div class="pg-head">${moBand}${subBand}</div><div class="pg-rows" style="height:${hmm}mm">${deco}${mainArr.slice(a, b).join('')}${holLabels}</div></div>
+      <div class="pg-main"><div class="pg-head">${moBand}${subBand}</div><div class="pg-rows" style="height:${hmm}mm">${deco}${mainArr.slice(a, b).join('')}${linkLayer(a, b)}${holLabels}</div></div>
     </div>`;
   }).join('');
   const legend = GANTT_LEGEND.map(([k, l]) => `<span style="display:inline-block;margin-right:10px"><span style="display:inline-block;width:11px;height:8px;border-radius:2px;background:${GANTT_COLS[k]};vertical-align:middle;margin-right:3px"></span>${l}</span>`).join('');
 
-  const css = `@page{size:A4 landscape;margin:8mm;}
+  const css = `@page{size:${PD.w}mm ${PD.h}mm;margin:8mm;}
     .lh{padding-bottom:5px;} h1{font-size:14px;margin:5px 0 0;} h1::after{display:none;} .sub{margin:2px 0 6px;font-size:9.5px;} .ft{display:none;}
     .pg{display:flex;border:1px solid #c9d2de;width:100%;box-sizing:border-box;}
     .pg-side{flex:none;width:${SIDE_MM}mm;border-right:1px solid #c9d2de;box-sizing:border-box;}
@@ -9802,8 +9831,13 @@ function pdfGantt(pid) {
     .pg-mark{position:absolute;top:0;bottom:0;width:1.1px;z-index:2;}
     .pg-mark-lbl{position:absolute;top:0;bottom:0;z-index:4;}
     .pg-mark-lbl span{position:absolute;top:.3mm;left:.3px;font-size:5.5px;line-height:1;font-weight:700;writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;}
-    .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;box-shadow:0 0 0 .3px rgba(0,0,0,.06);}
-    .pg-bar.sub{opacity:.8;border-radius:1.5px;}
+    .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;box-shadow:0 0 0 .3px rgba(0,0,0,.06);display:flex;align-items:center;overflow:hidden;}
+    .pgb-l{color:#fff;font-size:6.6px;font-weight:600;line-height:1;padding:0 1mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .pg-bar.sub{opacity:.85;border-radius:1.5px;} .pg-bar.sub .pgb-l{font-size:6px;}
+    .pg-lk{position:absolute;z-index:3;}
+    .pg-lk.h{height:0;border-top:.4mm solid #8a93a0;}
+    .pg-lk.v{width:0;border-left:.4mm solid #8a93a0;}
+    .pg-lk.a{width:0;height:0;border-left:1.4mm solid #8a93a0;border-top:1mm solid transparent;border-bottom:1mm solid transparent;margin-left:-1.4mm;margin-top:-1mm;}
     .pg-srow.sub{color:#5b6573;padding-left:5mm;font-size:${fs - 0.5}px;}
     .pg-bestell{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;background:repeating-linear-gradient(45deg,rgba(120,140,170,.18),rgba(120,140,170,.18) 3px,rgba(120,140,170,.32) 3px,rgba(120,140,170,.32) 6px);border:.4px dashed rgba(110,130,160,.6);}
     .pg-nach{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;background:repeating-linear-gradient(-45deg,rgba(180,140,90,.18),rgba(180,140,90,.18) 3px,rgba(180,140,90,.34) 3px,rgba(180,140,90,.34) 6px);border:.4px dashed rgba(170,130,80,.6);}
@@ -9814,7 +9848,8 @@ function pdfGantt(pid) {
   openPrintDoc('Bauprogramm / Terminprogramm', `${esc(p.name)} · ${esc(p.ort)} · ${fmtDate(min)} – ${fmtDate(max)} · Raster ${rasterTxt} · ${items.length} Zeilen`, inner, { landscape: true, extraCss: css });
 }
 // Grobplanung (Phasen) drucken – wenige Zeilen, eine Querseite
-function pdfGrobGantt(p) {
+function pdfGrobGantt(p, paper) {
+  const PD = PAPER[paper] || PAPER.A4;
   const vs = gewerkeSorted(p).filter(v => v.bauStart && v.bauEnde);
   if (!vs.length) { toast('Keine datierten Gewerke vorhanden', 'info'); return; }
   const map = {}; vs.forEach(v => { const k = phaseOf(v); (map[k] = map[k] || []).push(v); });
@@ -9832,7 +9867,7 @@ function pdfGrobGantt(p) {
   const moBand = months.map(m => `<div class="pg-mo" style="left:${m.l}%;width:${m.w}%">${m.label}</div>`).join('');
   const sideHtml = phases.map(x => `<div class="pg-srow" style="height:${rowH}mm"><b>${esc(x.ph.label)}</b></div>`).join('');
   const rowsHtml = phases.map(x => `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar" style="left:${pct(x.start)}%;width:${wpct(x.start, x.ende)}%;height:${barH}mm;background:${x.ph.col}"></div></div>`).join('');
-  const css = `@page{size:A4 landscape;margin:8mm;}
+  const css = `@page{size:${PD.w}mm ${PD.h}mm;margin:8mm;}
     .lh{padding-bottom:5px;} h1{font-size:14px;margin:5px 0 0;} h1::after{display:none;} .sub{margin:2px 0 6px;font-size:9.5px;} .ft{display:none;}
     .pg{display:flex;border:1px solid #c9d2de;width:100%;box-sizing:border-box;}
     .pg-side{flex:none;width:${SIDE_MM}mm;border-right:1px solid #c9d2de;box-sizing:border-box;}
@@ -11174,7 +11209,8 @@ document.addEventListener('click', e => {
     case 'solar-freigabe':       solarFreigabe(pid); break;
     case 'pdf-baukosten':        actPdfBaukosten(pid); break;
     case 'pdf-baukosten-mode': { const pp = findProjekt(pid); const ta = $('#bk_einleitung'); if (pp && ta) { pp.deckblatt = ta.value; save(); } closeModal(); pdfBaukosten(pid, act.dataset.mode); break; }
-    case 'pdf-gantt':            pdfGantt(pid); break;
+    case 'pdf-gantt':            pdfGantt(pid, kind); break;
+    case 'pdf-gantt-menu':       actGanttPrint(pid); break;
     case 'pdf-zahlungsplan':     pdfZahlungsplan(pid); break;
     case 'pdf-rechnungen':       pdfRechnungskontrolle(pid); break;
     case 'advance':      advanceVergabe(pid, vid); break;

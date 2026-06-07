@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v230';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v231';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -124,7 +124,7 @@ function updateUndoButtons() {
   if (r) { r.disabled = !redoStack.length; r.hidden = !redoStack.length; }
 }
 // Vor Undo/Redo die Gantt-Scrollposition sichern, damit es nicht an den Anfang springt
-function keepGanttScroll() { const gm = document.querySelector('.g-main'); if (gm) ganttPendingScroll = { left: gm.scrollLeft, y: window.scrollY }; }
+function keepGanttScroll() { const gm = document.querySelector('.gantt'); if (gm) ganttPendingScroll = { left: gm.scrollLeft, top: gm.scrollTop }; }
 function undo() {
   if (!undoStack.length) { toast('Nichts zum Rückgängigmachen', 'info'); return; }
   undoing = true;
@@ -2259,8 +2259,8 @@ function barLabelW(text) { return String(text || '').length * 6.4 + 8; }
 let ganttPendingScroll = null;  // {left, y} – nach In-Place-Rerender wiederherstellen
 // Gantt neu zeichnen ohne Scroll-Sprung (Seite + horizontaler Scroll bleiben)
 function rerenderGantt(pid) {
-  const gm = document.querySelector('.g-main');
-  ganttPendingScroll = { left: gm ? gm.scrollLeft : 0, y: window.scrollY };
+  const gm = document.querySelector('.gantt');
+  ganttPendingScroll = { left: gm ? gm.scrollLeft : 0, top: gm ? gm.scrollTop : 0 };
   viewTermine(pid);
 }
 let ganttSort = 'bkp';     // 'bkp' | 'start'
@@ -2440,32 +2440,35 @@ function viewTermine(id) {
       d.setDate(d.getDate() + 1);
     }
   }
-  const headH = ganttZoom === 'tag' ? 74 : (subCells ? 56 : 38);
-
   const t = today();
   const todayLeft = (t >= rangeStart && t <= rangeEnd) ? dayDiff(rangeStart, t) * pxPerDay : null;
   // Sitzungsraster-Linien
   const rasterLabel = (p.sitzungsraster && p.sitzungsraster.label) || 'Sitzung';
   const sitzLayer = (ganttRaster ? rasterDaten(p, rangeStartISO, isoOf(rangeEnd)) : []).map(d => `<div class="g-sitzung" style="left:${leftPx(d)}px" title="${esc(rasterLabel)} · ${fmtDate(d)}"></div>`).join('');
 
-  // Feiertage als Bänder mit Label (Woche: mit Datum). Label nur, wenn genug Abstand → keine Überlappung
-  const holLabel = f => ganttZoom === 'woche' ? `${f.n} ${f.d.getDate()}.${f.d.getMonth() + 1}.` : f.n;
-  let lastHolLblX = -Infinity;
-  const holBands = feiertageInRange(rangeStart, rangeEnd).map(f => {
-    const x = dayDiff(rangeStart, f.d) * pxPerDay;
-    const showLbl = x - lastHolLblX >= 11;
-    if (showLbl) lastHolLblX = x;
-    return `<div class="g-holiday" style="left:${x}px;width:${Math.max(pxPerDay, 2)}px" title="${esc(f.n)} ${fmtDate(isoOf(f.d))}">${showLbl ? `<span>${esc(holLabel(f))}</span>` : ''}</div>`;
-  }).join('');
+  // Feiertage: nur Bänder (Schattierung) – die Beschriftung kommt ins Kopf-Band, NICHT über die Balken
+  const hols = feiertageInRange(rangeStart, rangeEnd);
+  const holBands = hols.map(f => `<div class="g-holiday" style="left:${dayDiff(rangeStart, f.d) * pxPerDay}px;width:${Math.max(pxPerDay, 2)}px" title="${esc(f.n)} ${fmtDate(isoOf(f.d))}"></div>`).join('');
 
-  // Projekt-Meilensteine: Baustart/Bauende automatisch aus den Gewerken (manuell überschreibbar), Bezug = Bauende
+  // Meilensteine: nur Linien (klickbar) – Beschriftung ins Kopf-Band
   const ek = eckDaten(p);
   const projMarks = [];
   if (ek.baustart) projMarks.push({ iso: ek.baustart, n: 'Baustart', cls: 'start', auto: ek.autoS });
   if (ek.bauende) projMarks.push({ iso: ek.bauende, n: 'Bauende', cls: 'ende', auto: ek.autoE });
   if (ek.bezug) projMarks.push({ iso: ek.bezug, n: 'Bezug', cls: 'bezug', auto: ek.autoB });
-  const markBands = projMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; }).map(m =>
-    `<div class="g-mark ${m.cls}" data-act="eckdaten" data-pid="${p.id}" style="left:${dayDiff(rangeStart, dISO(m.iso)) * pxPerDay}px" title="${m.n}: ${fmtDate(m.iso)}${m.auto ? ' (automatisch)' : ' (manuell)'} – klicken zum Bearbeiten"><span>${m.n} ${fmtDate(m.iso)}</span></div>`).join('');
+  const inMarks = projMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; });
+  const markBands = inMarks.map(m => `<div class="g-mark ${m.cls}" data-act="eckdaten" data-pid="${p.id}" style="left:${dayDiff(rangeStart, dISO(m.iso)) * pxPerDay}px" title="${m.n}: ${fmtDate(m.iso)}${m.auto ? ' (automatisch)' : ' (manuell)'} – klicken zum Bearbeiten"></div>`).join('');
+
+  // Kopf-Band: Feiertags- & Meilenstein-Beschriftungen (vertikal, oben im klebrigen Kopf)
+  const evItems = [];
+  hols.forEach(f => evItems.push({ x: dayDiff(rangeStart, f.d) * pxPerDay, n: f.n, cls: 'hol', t: `${f.n} ${fmtDate(isoOf(f.d))}` }));
+  inMarks.forEach(m => evItems.push({ x: dayDiff(rangeStart, dISO(m.iso)) * pxPerDay, n: `${m.n} ${fmtDate(m.iso)}`, cls: 'mark ' + m.cls, t: `${m.n}: ${fmtDate(m.iso)}`, mark: true }));
+  evItems.sort((a, b) => a.x - b.x);
+  let lastEvX = -Infinity;
+  const evCells = evItems.map(e => { if (!e.mark && e.x - lastEvX < 9) return ''; lastEvX = e.x; return `<span class="g-ev ${e.cls}"${e.mark ? ` data-act="eckdaten" data-pid="${p.id}"` : ''} style="left:${e.x}px" title="${esc(e.t)}">${esc(e.n)}</span>`; }).join('');
+  const eventBandH = evItems.length ? 56 : 0;
+  const eventBand = eventBandH ? `<div class="g-evband" style="height:${eventBandH}px">${evCells}</div>` : '';
+  const headH = (ganttZoom === 'tag' ? 74 : (subCells ? 56 : 38)) + eventBandH;
 
   // Ressourcen-Hinweis (einstellbar): gleiche Firma in Gewerken ohne genügend Abstand
   const rc = p.ressCheck || { aktiv: true, minGap: 0 };
@@ -2597,6 +2600,7 @@ function viewTermine(id) {
       <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
+          ${eventBand}
           <div class="g-headrow">${monthCells}</div>
           ${weekCells ? `<div class="g-headrow wk">${weekCells}</div>` : ''}
           ${subCells ? `<div class="g-headrow sub">${subCells}</div>` : ''}
@@ -2641,22 +2645,22 @@ function viewTermine(id) {
   // Scroll nach In-Place-Rerender wiederherstellen (kein Sprung beim Resizen/Zoomen)
   if (ganttPendingScroll) {
     const ps = ganttPendingScroll; ganttPendingScroll = null;
-    const gm0 = document.querySelector('.g-main'); if (gm0) gm0.scrollLeft = ps.left;
-    window.scrollTo(0, ps.y);
+    const gm0 = document.querySelector('.gantt'); if (gm0) { gm0.scrollLeft = ps.left; if (ps.top != null) gm0.scrollTop = ps.top; }
   }
-  // Cursor-Zoom: Strg + Mausrad zoomt dorthin, wo der Zeiger steht
-  const gMain = document.querySelector('.g-main');
+  // Cursor-Zoom: Strg + Mausrad zoomt dorthin, wo der Zeiger steht (Zeitbereich beginnt nach der Gewerk-Spalte)
+  const gMain = document.querySelector('.gantt');
   if (gMain) gMain.addEventListener('wheel', e => {
     if (!e.ctrlKey) return;
     e.preventDefault();
     const rect = gMain.getBoundingClientRect();
-    const viewX = e.clientX - rect.left;
+    const viewX = e.clientX - rect.left - sideW;   // x im Zeitbereich
     const dayAtCursor = (gMain.scrollLeft + viewX) / pxPerDay;
     const ns = Math.min(4, Math.max(0.1, +(ganttScale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)).toFixed(3)));
     if (ns === ganttScale) return;
     ganttScale = ns;
+    keepGanttScroll();
     viewTermine(p.id);
-    const g2 = document.querySelector('.g-main');
+    const g2 = document.querySelector('.gantt');
     if (g2) g2.scrollLeft = dayAtCursor * (ZOOM[ganttZoom].px * ganttScale) - viewX;
   }, { passive: false });
 }

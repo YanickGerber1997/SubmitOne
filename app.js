@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v173';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v174';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1581,37 +1581,21 @@ function viewProjektDetail(id) {
    10a) View: Kosten / Baukostenübersicht
    --------------------------------------------------------------- */
 
-// Gewerke-Reiter: Heimat der BKP-Detailansichten – Liste aller Gewerke je BKP-Gruppe, Klick öffnet das Detail
+// Gewerke-Reiter: zeigt direkt das erste Gewerk-Detail (mit der Gewerk-Liste links zum Wechseln)
 function viewGewerke(pid) {
   const p = findProjekt(pid);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const vs = gewerkeSorted(p);
-  const toolbar = `<button class="btn sm secondary" data-act="pdf-baukosten" data-pid="${p.id}">⬇ Baukostenübersicht</button><button class="btn sm" data-act="new-vergabe" data-pid="${p.id}" style="margin-left:auto">+ Arbeitsbeschrieb</button>`;
-  const head = `
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Gewerke · BKP-Detailansichten – Gewerk anklicken öffnet die Detailansicht</div></div></div>
-    ${projektTabs(p, 'gewerke', toolbar)}`;
-  if (!vs.length) { render(head + emptyState('◫', 'Noch keine Gewerke. Mit „+ Arbeitsbeschrieb" anlegen.')); return; }
-  const groups = {};
-  vs.forEach(v => { const g = String(v.bkp || '0').trim()[0] || '0'; (groups[g] = groups[g] || []).push(v); });
-  let body = '';
-  Object.keys(groups).sort().forEach(g => {
-    body += `<tr class="kgroup"><td>${esc(g)}</td><td colspan="5">${esc(BKP_GRUPPEN[g] || 'Übrige')}</td></tr>`;
-    groups[g].forEach(v => {
-      body += `<tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
-        <td class="bkp-code">${esc(v.bkp)}</td>
-        <td><strong>${esc(v.gewerk)}</strong></td>
-        <td>${v.firma ? `<div class="row-firma">${esc(v.firma)}</div>` : '<span class="muted">noch offen</span>'}</td>
-        <td>${statusPill(v)}${vergabeMarken(v) ? `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${vergabeMarken(v)}</div>` : ''}</td>
-        <td class="num">${isVergeben(v) ? chf(v.betrag) : `<span class="muted">~${chfShort(v.schaetzung)}</span>`}</td>
-        <td style="text-align:center;color:var(--text-faint)">›</td>
-      </tr>`;
-    });
-  });
-  render(head + `
-    <div class="card"><table class="grid">
-      <thead><tr><th style="width:60px">BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Status</th><th class="num">Betrag</th><th style="width:36px"></th></tr></thead>
-      <tbody>${body}</tbody>
-    </table></div>`);
+  if (vs.length) {
+    const h = '#/projekt/' + pid + '/vergabe/' + vs[0].id;
+    if (location.hash !== h) history.replaceState(null, '', h);   // URL aufs erste Gewerk, ohne Extra-Verlaufseintrag
+    return viewVergabeDetail(pid, vs[0].id);
+  }
+  const toolbar = `<button class="btn sm" data-act="new-vergabe" data-pid="${p.id}" style="margin-left:auto">+ Arbeitsbeschrieb</button>`;
+  render(`
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Gewerke · BKP-Detailansichten</div></div></div>
+    ${projektTabs(p, 'gewerke', toolbar)}
+    ${emptyState('◫', 'Noch keine Gewerke. Mit „+ Arbeitsbeschrieb" anlegen.')}`);
 }
 let kostenBrutto = false;   // Baukostenübersicht: false = netto (exkl. MwSt), true = brutto (inkl.)
 function viewKosten(id) {

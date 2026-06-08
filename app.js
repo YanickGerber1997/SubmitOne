@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v288';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v289';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -11784,6 +11784,7 @@ window.addEventListener('DOMContentLoaded', boot);
 
 function demoData() {
   const V = (bkp, gewerk, s, e) => ({ id: uid('v'), bkp, gewerk, status: 'werkvertrag', firma: '', betrag: 0, schaetzung: 0, frist: '', bauStart: s, bauEnde: e, eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
+  const K = (bkp, gewerk, schaetzung) => ({ id: uid('v'), bkp, gewerk, status: 'ausschreibung', firma: '', betrag: 0, schaetzung, frist: '', bauStart: '', bauEnde: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
   const vergaben = [
     V('112', 'Abbrüche', '2026-06-08', '2026-07-03'),
     V('211.3', 'Baumeisteraushub / Hinterfüllung', '2026-06-08', '2026-07-03'),
@@ -11795,12 +11796,12 @@ function demoData() {
     V('222', 'Spenglerarbeiten', '2026-08-24', '2026-09-04'),
     V('230', 'PV-Anlage Montage', '2026-08-31', '2026-09-11'),
     V('271.1', 'Trockenbau', '2026-09-21', '2026-10-09'),
-    V('281', 'Unterlagsböden', '2026-09-28', '2026-10-09'),
+    V('281.0', 'Unterlagsböden', '2026-09-28', '2026-10-09'),
     V('272.2', 'Türeneinbau Metallbau', '2026-10-05', '2026-10-16'),
     V('271.0', 'Grundputz', '2026-10-12', '2026-10-23'),
     V('226.2', 'Aussenwärmedämmung', '2026-10-05', '2026-10-23'),
     V('281.6', 'Keramische Platten', '2026-10-19', '2026-10-30'),
-    V('281.2', 'Parkett', '2026-10-26', '2026-11-06'),
+    V('281.7', 'Parkett', '2026-10-26', '2026-11-06'),
     V('225.1', 'Fugendichtungen', '2026-10-26', '2026-11-06'),
     V('228', 'Sonnen- & Wetterschutz', '2026-10-26', '2026-11-13'),
     V('258', 'Kücheneinbau', '2026-11-09', '2026-11-13'),
@@ -11815,10 +11816,34 @@ function demoData() {
     V('421', 'Umgebungsgestaltung', '2026-11-23', '2026-12-11'),
     V('', 'Bezug & Inbetriebnahme', '2026-12-14', '2026-12-14'),
   ];
+  const kunoweg = [
+    K('112', 'Abbrüche / Demontagen', 8000),
+    K('113', 'Schadstoffuntersuchung + Altlastensanierung', 8500),
+    K('211', 'Baumeisterarbeiten', 5000),
+    K('221.0', 'Fenster aus Holz', 2000),
+    K('230', 'Elektroinstallationen', 7000),
+    K('240', 'Heizung', 2500),
+    K('250', 'Sanitäranlagen', 18000),
+    K('258', 'Kücheneinrichtung', 22000),
+    K('271', 'Gipserarbeiten', 10000),
+    K('273', 'Innentüren', 2500),
+    K('273.3', 'Allg. Schreinerarbeiten', 3000),
+    K('281.2', 'Bodenbeläge', 3000),
+    K('282.4', 'Keramische Wandbeläge', 5600),
+    K('283.4', 'Deckenbekleidung aus Holz', 3500),
+    K('285.1', 'Malerarbeiten', 4000),
+    K('286', 'Baureinigung', 1200),
+    K('291.0', 'Honorar Architekt', 10000),
+    K('299', 'Übriges / Diverses (Reserve)', 10200),
+  ];
   const projekte = [{
     id: uid('p'), name: 'Umbau EFH Römerstrasse 31', ort: '', bauherr: '', projektleiter: '',
     phase: 'ausfuehrung', start: '2026-06-08', ende: '2026-12-14', baustart: '2026-06-08', bezug: '2026-12-14',
     vergaben,
+  }, {
+    id: uid('p'), name: 'Umbau EFH Kunoweg 20', ort: 'Bremgarten', bauherr: 'Spori-Tritten', projektleiter: 'P. Hefti Bauberatung GmbH',
+    phase: 'planung', start: '', ende: '', baustart: '', bezug: '',
+    vergaben: kunoweg,
   }];
   return { projekte, kontakte: [], dokumente: [], buero: { ...BUERO } };
 }

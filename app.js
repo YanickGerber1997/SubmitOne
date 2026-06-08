@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v313';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v314';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1917,7 +1917,7 @@ function ganttRibbonTabs(p) {
     rgroup('Kräftigkeit', optBtns('gantt-strength', p.id, [['voll', 'Voll'], ['mittel', 'Mittel'], ['hell', 'Hell'], ['pastell', 'Pastell']], ganttColorStrength)) +
     rgroup('Farben', bigBtn('gantt-colors-open', 'swatch', 'Anpassen', { pid: p.id, on: !!state.ganttColors, title: 'Farben je Status/Unternehmer/Phase anpassen' })) +
     rgroup('Sortierung', optBtns('gantt-sort', p.id, [['bkp', 'BKP'], ['start', 'Startdatum']], ganttSort)) +
-    rgroup('Balken', bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) + bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' }) + bigBtn('gantt-hideundated', 'calCheck', 'Nur Termin', { pid: p.id, on: ganttHideUndated, title: 'Nur Gewerke mit Termin anzeigen (termin-lose wie Reserve ausblenden)' }) + bigBtn('gantt-done', 'calCheck', 'Erfüllt: ' + DONE_NAMES[ganttDone], { pid: p.id, on: ganttDone !== 'show', title: 'Erfüllte Termine: Zeigen → Ausgrauen → Ausblenden' }) + bigBtn('gantt-basecmp', 'clock', 'Δ Version', { pid: p.id, on: ganttBaseCompare, title: 'Abweichung je Balken gegenüber der zuletzt abgegebenen (gesperrten) Version – ⟳ am Balken zeigt „war → jetzt"' }));
+    rgroup('Balken', bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) + bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' }) + bigBtn('gantt-hideundated', 'calCheck', 'Nur Termin', { pid: p.id, on: ganttHideUndated, title: 'Nur Gewerke mit Termin anzeigen (termin-lose wie Reserve ausblenden)' }) + bigBtn('gantt-done', 'calCheck', 'Erfüllt: ' + DONE_NAMES[ganttDone], { pid: p.id, on: ganttDone !== 'show', title: 'Erfüllte Termine: Zeigen → Ausgrauen → Ausblenden' }) + bigBtn('gantt-basecmp', 'clock', ganttBaseCompare && ganttBaselineVer(p) ? 'Δ ' + ganttBaselineVer(p).name : 'Δ Version', { pid: p.id, on: ganttBaseCompare, title: 'Vergleichsversion wählen – ⟳ am Balken zeigt „war → jetzt"; im Menü auch „Verschiebungen anzeigen"' }));
   else if (ganttTab === 'beschriftung') b =
     rgroup('Beschriftung', optBtns('gantt-labelmode', p.id, [['auto', 'Auto'], ['above', 'Oben'], ['below', 'Unten'], ['before', 'Vor'], ['after', 'Nach'], ['clip', 'Innen'], ['over', 'Über']], ganttLabelMode)) +
     rgroup('Ausrichtung', optBtns('gantt-align', p.id, [['links', 'Links'], ['mitte', 'Mitte'], ['rechts', 'Rechts']], ganttLabelAlign));
@@ -2536,6 +2536,7 @@ let ganttFocus = false;          // Fokus: nur Zeilen mit Aktivität im sichtbar
 let ganttLinkFront = false;      // Verbindungslinien über (true) oder hinter (false) den Balken
 let ganttHideUndated = false;    // termin-lose Gewerke (z.B. Reserve) im Gantt ausblenden
 let ganttBaseCompare = false;    // pro Balken Abweichung gegenüber Baseline-Version (war → jetzt) anzeigen
+let ganttBaseVid = '';           // gewählte Vergleichsversion ('' = zuletzt gesperrte/letzte)
 let ganttDone = 'show';          // erfüllte Termine: 'show' | 'dim' (ausgrauen) | 'hide' (ausblenden)
 const DONE_MODES = ['show', 'dim', 'hide'];
 const DONE_NAMES = { show: 'Zeigen', dim: 'Ausgrauen', hide: 'Ausblenden' };
@@ -2683,8 +2684,7 @@ function viewTermine(id) {
   // Baseline-Vergleich: Abweichung je Balken gegenüber einer Version (zuletzt gesperrte, sonst letzte ≠ aktive)
   let baseVer = null; const baseById = {};
   if (ganttBaseCompare && Array.isArray(p.terminVersionen)) {
-    const arr = p.terminVersionen.filter(x => x.id !== p.terminVersAktiv);
-    baseVer = [...arr].reverse().find(x => x.gesperrt) || arr[arr.length - 1] || null;
+    baseVer = ganttBaselineVer(p);
     if (baseVer) (baseVer.snapshot.vergaben || []).forEach(s => baseById[s.id] = s);
   }
   const dRange = (s, e) => s ? fmtDate(s) + '–' + fmtDate(e) : 'kein Datum';
@@ -3172,6 +3172,67 @@ function toggleErfuellt(pid, vid, oid) {
   if (oid) { const o = (v.vorgaenge || []).find(x => x.id === oid); if (o) o.erfuellt = !o.erfuellt; }
   else v.erfuellt = !v.erfuellt;
   save(); rerenderGantt(pid);
+}
+// Baseline-Version für den Vergleich: gewählte (ganttBaseVid) sonst zuletzt gesperrte, sonst letzte ≠ aktive
+function ganttBaselineVer(p) {
+  terminVersList(p);
+  if (ganttBaseVid) { const v = p.terminVersionen.find(x => x.id === ganttBaseVid); if (v) return v; }
+  const arr = p.terminVersionen.filter(x => x.id !== p.terminVersAktiv);
+  return [...arr].reverse().find(x => x.gesperrt) || arr[arr.length - 1] || null;
+}
+// Picker: gegen welche Version vergleichen (Klick auf „Δ Version")
+function actBaselinePick(e, pid) {
+  const p = findProjekt(pid); if (!p) return; terminVersList(p);
+  const items = [{ icon: !ganttBaseCompare ? '✓' : '', label: 'Vergleich aus', act: () => { ganttBaseCompare = false; rerenderGantt(pid); } }, { sep: true }];
+  const others = p.terminVersionen.filter(x => x.id !== p.terminVersAktiv);
+  if (!others.length) items.push({ icon: 'ℹ', label: 'Noch keine andere Version – zuerst eine Version abgeben/sperren', act: () => { } });
+  [...others].reverse().forEach(ver => {
+    const active = ganttBaseCompare && (ganttBaseVid ? ganttBaseVid === ver.id : ganttBaselineVer(p) === ver);
+    items.push({ icon: active ? '✓' : (ver.gesperrt ? '🔒' : '·'), label: 'vs. ' + ver.name + (ver.datum ? '  (' + fmtDate(ver.datum) + ')' : ''), act: () => { ganttBaseVid = ver.id; ganttBaseCompare = true; rerenderGantt(pid); } });
+  });
+  if (others.length) { items.push({ sep: true }, { icon: '📋', label: 'Verschiebungen anzeigen…', act: () => actVerschiebungen(pid) }); }
+  openContextMenu(e, items);
+}
+// Liste aller Balken, die sich gegenüber der Baseline bewegt/geändert haben (war → jetzt)
+function verschiebungenRows(p, base) {
+  const snapById = {}; (base.snapshot.vergaben || []).forEach(s => snapById[s.id] = s);
+  const liveById = {}; (p.vergaben || []).forEach(v => liveById[v.id] = v);
+  const dd = (s, e) => s ? fmtDate(s) + '–' + fmtDate(e) : 'kein Datum';
+  const rows = [];
+  (p.vergaben || []).forEach(v => {
+    const s = snapById[v.id];
+    const lh = v.bauStart && v.bauEnde, sh = s && s.bauStart && s.bauEnde;
+    if (!s) { if (lh) rows.push({ bkp: v.bkp || '', gewerk: v.gewerk || '', was: '(nicht in Version)', jetzt: dd(v.bauStart, v.bauEnde), delta: null, kind: 'neues Gewerk' }); }
+    else if (lh && sh && (v.bauStart !== s.bauStart || v.bauEnde !== s.bauEnde)) rows.push({ bkp: v.bkp || '', gewerk: v.gewerk || '', was: dd(s.bauStart, s.bauEnde), jetzt: dd(v.bauStart, v.bauEnde), delta: dayDiffISO(s.bauStart, v.bauStart), kind: 'verschoben' });
+    else if (lh && !sh) rows.push({ bkp: v.bkp || '', gewerk: v.gewerk || '', was: 'kein Datum', jetzt: dd(v.bauStart, v.bauEnde), delta: null, kind: 'neu datiert' });
+    else if (!lh && sh) rows.push({ bkp: v.bkp || '', gewerk: v.gewerk || '', was: dd(s.bauStart, s.bauEnde), jetzt: 'kein Datum', delta: null, kind: 'Datum entfernt' });
+    // zusätzlich Untertermine vergleichen
+    if (s) (v.vorgaenge || []).forEach(o => {
+      const so = (s.vorgaenge || []).find(x => x.id === o.id); if (!so) return;
+      if (o.start && o.ende && so.start && so.ende && (o.start !== so.start || o.ende !== so.ende)) rows.push({ bkp: (v.bkp || '') + ' ▸', gewerk: o.titel || '(Untertermin)', was: dd(so.start, so.ende), jetzt: dd(o.start, o.ende), delta: dayDiffISO(so.start, o.start), kind: 'verschoben' });
+    });
+  });
+  (base.snapshot.vergaben || []).forEach(s => { if (!liveById[s.id] && s.bauStart && s.bauEnde) rows.push({ bkp: '', gewerk: '(Gewerk entfernt)', was: dd(s.bauStart, s.bauEnde), jetzt: '–', delta: null, kind: 'entfernt' }); });
+  rows.sort((a, b) => (a.bkp || '').localeCompare(b.bkp || '') || (a.gewerk || '').localeCompare(b.gewerk || ''));
+  return rows;
+}
+function verschiebTableHtml(rows, base) {
+  if (!rows.length) return '<p class="muted">Keine Abweichungen gegenüber dieser Version.</p>';
+  return `<table class="grid"><thead><tr><th>BKP</th><th>Gewerk / Termin</th><th>war <span class="muted">(${esc(base.name)})</span></th><th>jetzt</th><th style="text-align:right">Δ Tage</th><th>Art</th></tr></thead><tbody>${rows.map(r => `<tr><td style="white-space:nowrap">${esc(r.bkp)}</td><td>${esc(r.gewerk)}</td><td class="muted">${esc(r.was)}</td><td><b>${esc(r.jetzt)}</b></td><td style="text-align:right;font-weight:700;color:${r.delta > 0 ? '#b91c1c' : (r.delta < 0 ? '#15803d' : '#777')}">${r.delta != null ? (r.delta > 0 ? '+' : '') + r.delta : '–'}</td><td>${esc(r.kind)}</td></tr>`).join('')}</tbody></table>`;
+}
+function actVerschiebungen(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const base = ganttBaselineVer(p);
+  if (!base) { toast('Keine Vergleichsversion vorhanden – zuerst eine Version abgeben/sperren', 'info'); return; }
+  const rows = verschiebungenRows(p, base);
+  openModal('Verschiebungen seit „' + esc(base.name) + '"',
+    `<p class="muted" style="font-size:12.5px;margin-top:0"><b>${rows.length}</b> Balken bewegt/geändert gegenüber Version „<b>${esc(base.name)}</b>"${base.datum ? ' vom ' + fmtDate(base.datum) : ''}. <span style="color:#b91c1c">+Tage = später</span>, <span style="color:#15803d">−Tage = früher</span>.</p><div style="max-height:56vh;overflow:auto">${verschiebTableHtml(rows, base)}</div>`,
+    `<button class="btn ghost" data-close="1">Schliessen</button><button class="btn" data-act="verschieb-print" data-pid="${pid}">🖨 Drucken</button>`);
+}
+function pdfVerschiebungen(pid) {
+  const p = findProjekt(pid); if (!p) return; const base = ganttBaselineVer(p); if (!base) return;
+  const rows = verschiebungenRows(p, base);
+  openPrintDoc('Verschiebungen seit „' + esc(base.name) + '"', esc(p.name) + (p.ort ? ' · ' + esc(p.ort) : ''), `<p style="font-size:12px;color:#555">${rows.length} Balken bewegt/geändert gegenüber Version „${esc(base.name)}"${base.datum ? ' vom ' + fmtDate(base.datum) : ''}.</p>${verschiebTableHtml(rows, base)}`, {});
 }
 // Eckdaten: Baustart/Bauende automatisch aus den Gewerken (frühester Start / spätestes Ende), Bezug = Bauende; manuell überschreibbar
 function eckDaten(p) {
@@ -11989,7 +12050,8 @@ document.addEventListener('click', e => {
     case 'gantt-focus':     ganttFocus = !ganttFocus; rerenderGantt(pid); break;
     case 'gantt-hideundated': ganttHideUndated = !ganttHideUndated; rerenderGantt(pid); break;
     case 'gantt-done':   ganttDone = DONE_MODES[(DONE_MODES.indexOf(ganttDone) + 1) % DONE_MODES.length]; rerenderGantt(pid); break;
-    case 'gantt-basecmp': ganttBaseCompare = !ganttBaseCompare; rerenderGantt(pid); break;
+    case 'gantt-basecmp': actBaselinePick(e, pid); break;
+    case 'verschieb-print': pdfVerschiebungen(pid); break;
     case 'focus-add':       actFocusAdd(e, pid); break;
     case 'gantt-colors-open': actGanttColors(pid); break;
     case 'gantt-colors-reset': { if (state.ganttColors) delete state.ganttColors[act.dataset.kind]; save(); rerenderGantt(pid); closeModal(); actGanttColors(pid); } break;

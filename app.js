@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v312';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v313';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1917,7 +1917,7 @@ function ganttRibbonTabs(p) {
     rgroup('Kräftigkeit', optBtns('gantt-strength', p.id, [['voll', 'Voll'], ['mittel', 'Mittel'], ['hell', 'Hell'], ['pastell', 'Pastell']], ganttColorStrength)) +
     rgroup('Farben', bigBtn('gantt-colors-open', 'swatch', 'Anpassen', { pid: p.id, on: !!state.ganttColors, title: 'Farben je Status/Unternehmer/Phase anpassen' })) +
     rgroup('Sortierung', optBtns('gantt-sort', p.id, [['bkp', 'BKP'], ['start', 'Startdatum']], ganttSort)) +
-    rgroup('Balken', bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) + bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' }) + bigBtn('gantt-hideundated', 'calCheck', 'Nur Termin', { pid: p.id, on: ganttHideUndated, title: 'Nur Gewerke mit Termin anzeigen (termin-lose wie Reserve ausblenden)' }) + bigBtn('gantt-done', 'calCheck', 'Erfüllt: ' + DONE_NAMES[ganttDone], { pid: p.id, on: ganttDone !== 'show', title: 'Erfüllte Termine: Zeigen → Ausgrauen → Ausblenden' }));
+    rgroup('Balken', bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) + bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' }) + bigBtn('gantt-hideundated', 'calCheck', 'Nur Termin', { pid: p.id, on: ganttHideUndated, title: 'Nur Gewerke mit Termin anzeigen (termin-lose wie Reserve ausblenden)' }) + bigBtn('gantt-done', 'calCheck', 'Erfüllt: ' + DONE_NAMES[ganttDone], { pid: p.id, on: ganttDone !== 'show', title: 'Erfüllte Termine: Zeigen → Ausgrauen → Ausblenden' }) + bigBtn('gantt-basecmp', 'clock', 'Δ Version', { pid: p.id, on: ganttBaseCompare, title: 'Abweichung je Balken gegenüber der zuletzt abgegebenen (gesperrten) Version – ⟳ am Balken zeigt „war → jetzt"' }));
   else if (ganttTab === 'beschriftung') b =
     rgroup('Beschriftung', optBtns('gantt-labelmode', p.id, [['auto', 'Auto'], ['above', 'Oben'], ['below', 'Unten'], ['before', 'Vor'], ['after', 'Nach'], ['clip', 'Innen'], ['over', 'Über']], ganttLabelMode)) +
     rgroup('Ausrichtung', optBtns('gantt-align', p.id, [['links', 'Links'], ['mitte', 'Mitte'], ['rechts', 'Rechts']], ganttLabelAlign));
@@ -2535,6 +2535,7 @@ let ganttRibbon = true;          // Werkzeug-Leiste (Kategorien) ein-/ausgeklapp
 let ganttFocus = false;          // Fokus: nur Zeilen mit Aktivität im sichtbaren Zeitausschnitt hervorheben (live beim Scrollen)
 let ganttLinkFront = false;      // Verbindungslinien über (true) oder hinter (false) den Balken
 let ganttHideUndated = false;    // termin-lose Gewerke (z.B. Reserve) im Gantt ausblenden
+let ganttBaseCompare = false;    // pro Balken Abweichung gegenüber Baseline-Version (war → jetzt) anzeigen
 let ganttDone = 'show';          // erfüllte Termine: 'show' | 'dim' (ausgrauen) | 'hide' (ausblenden)
 const DONE_MODES = ['show', 'dim', 'hide'];
 const DONE_NAMES = { show: 'Zeigen', dim: 'Ausgrauen', hide: 'Ausblenden' };
@@ -2678,6 +2679,17 @@ function viewTermine(id) {
     render(head + emptyState('🗓', 'Noch keine Vergaben angelegt. Lege im Tab „Übersicht" Vergaben an.'));
     return;
   }
+
+  // Baseline-Vergleich: Abweichung je Balken gegenüber einer Version (zuletzt gesperrte, sonst letzte ≠ aktive)
+  let baseVer = null; const baseById = {};
+  if (ganttBaseCompare && Array.isArray(p.terminVersionen)) {
+    const arr = p.terminVersionen.filter(x => x.id !== p.terminVersAktiv);
+    baseVer = [...arr].reverse().find(x => x.gesperrt) || arr[arr.length - 1] || null;
+    if (baseVer) (baseVer.snapshot.vergaben || []).forEach(s => baseById[s.id] = s);
+  }
+  const dRange = (s, e) => s ? fmtDate(s) + '–' + fmtDate(e) : 'kein Datum';
+  const shiftMarkV = (id, curS, curE) => { if (!baseVer) return ''; const b = baseById[id]; if (!b || (b.bauStart === curS && b.bauEnde === curE)) return ''; return `<span class="g-shift" title="${esc(baseVer.name)}: ${dRange(b.bauStart, b.bauEnde)} → jetzt: ${dRange(curS, curE)}">⟳</span>`; };
+  const shiftMarkO = (vid, oid, curS, curE) => { if (!baseVer) return ''; const bv = baseById[vid]; const b = bv && (bv.vorgaenge || []).find(x => x.id === oid); if (!b || (b.start === curS && b.ende === curE)) return ''; return `<span class="g-shift" title="${esc(baseVer.name)}: ${dRange(b.start, b.ende)} → jetzt: ${dRange(curS, curE)}">⟳</span>`; };
 
   // Zeitspanne aus vorhandenen Terminen; Fallback auf Projektdaten / 12 Monate
   const allDates = [];
@@ -2885,7 +2897,7 @@ function viewTermine(id) {
         barRows += `<div class="g-row" data-x0="${gx0}" data-x1="${gx1}">${preBars}${gdLabels(v.bauStart, v.bauEnde, gL, gL + gW, gLab.gdOffStart, gLab.gdOffEnd)}<div class="g-bar${light}${isAuto ? ' summary' : ''} align-${_eAlign}${gLab.barLow ? ' bar-low' : ''}${v.erfuellt ? ' g-done' : ''}" style="left:${gL}px;width:${gW}px;background:${colHex}"
           title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}${v.erfuellt ? ' · ✓ erfüllt' : ''}${v.notiz ? ' · 📝 ' + esc(v.notiz) : ''}"
           data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
-          <span class="g-h l"></span>${v.erfuellt ? '<span class="g-check">✓</span>' : ''}<span class="g-lbl">${gLab.inner}</span>${v.notiz ? `<span class="g-tnote" title="${esc(v.notiz)}">📝</span>` : ''}${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div>${gLab.outer}${gDauerLabel(v.bauStart, v.bauEnde, gL, gL + gW, false)}</div>`;
+          <span class="g-h l"></span>${v.erfuellt ? '<span class="g-check">✓</span>' : ''}<span class="g-lbl">${gLab.inner}</span>${shiftMarkV(v.id, v.bauStart, v.bauEnde)}${v.notiz ? `<span class="g-tnote" title="${esc(v.notiz)}">📝</span>` : ''}${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div>${gLab.outer}${gDauerLabel(v.bauStart, v.bauEnde, gL, gL + gW, false)}</div>`;
       }
     } else {
       barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw" data-pid="${p.id}" data-vid="${v.id}"><span class="g-draw-hint">ziehen = Termin zeichnen · Klick = Dialog</span></div>`;
@@ -2903,7 +2915,7 @@ function viewTermine(id) {
         barRows += `<div class="g-row" data-x0="${oL}" data-x1="${oL + oW}">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOffStart, oLab.gdOffEnd)}<div class="g-bar sub${light} align-${_eAlign}${oLab.barLow ? ' bar-low' : ''}${o.erfuellt ? ' g-done' : ''}" style="left:${oL}px;width:${oW}px;background:${colHex}"
           title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}${o.erfuellt ? ' · ✓ erfüllt' : ''}${o.notiz ? ' · 📝 ' + esc(o.notiz) : ''}"
           data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
-          <span class="g-h l"></span>${o.erfuellt ? '<span class="g-check">✓</span>' : ''}<span class="g-lbl">${oLab.inner}</span>${o.notiz ? `<span class="g-tnote" title="${esc(o.notiz)}">📝</span>` : ''}${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div>${oLab.outer}${gDauerLabel(o.start, o.ende, oL, oL + oW, true)}</div>`;
+          <span class="g-h l"></span>${o.erfuellt ? '<span class="g-check">✓</span>' : ''}<span class="g-lbl">${oLab.inner}</span>${shiftMarkO(v.id, o.id, o.start, o.ende)}${o.notiz ? `<span class="g-tnote" title="${esc(o.notiz)}">📝</span>` : ''}${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div>${oLab.outer}${gDauerLabel(o.start, o.ende, oL, oL + oW, true)}</div>`;
       } else {
         barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw sub" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}"><span class="g-draw-hint">ziehen = Untertermin zeichnen</span></div>`;
       }
@@ -11977,6 +11989,7 @@ document.addEventListener('click', e => {
     case 'gantt-focus':     ganttFocus = !ganttFocus; rerenderGantt(pid); break;
     case 'gantt-hideundated': ganttHideUndated = !ganttHideUndated; rerenderGantt(pid); break;
     case 'gantt-done':   ganttDone = DONE_MODES[(DONE_MODES.indexOf(ganttDone) + 1) % DONE_MODES.length]; rerenderGantt(pid); break;
+    case 'gantt-basecmp': ganttBaseCompare = !ganttBaseCompare; rerenderGantt(pid); break;
     case 'focus-add':       actFocusAdd(e, pid); break;
     case 'gantt-colors-open': actGanttColors(pid); break;
     case 'gantt-colors-reset': { if (state.ganttColors) delete state.ganttColors[act.dataset.kind]; save(); rerenderGantt(pid); closeModal(); actGanttColors(pid); } break;

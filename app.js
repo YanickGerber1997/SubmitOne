@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v314';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v315';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1949,9 +1949,11 @@ const BAU_PHASEN = [
   { key: 'ausbau', label: 'Innenausbau', grp: ['27', '28'], col: '#ea7a3c' },
   { key: 'umgebung', label: 'Umgebung', grp: ['4'], col: '#16a34a' },
   { key: 'rest', label: 'Honorare / Übriges', grp: ['29', '3', '5', '6', '9'], col: '#64748b' },
+  { key: 'abschluss', label: 'Bezug / Inbetriebnahme / Abschluss', grp: [], col: '#475569' },
 ];
 function bauPhaseKey(bkp) {
-  const b = String(bkp || '').replace(/[^0-9]/g, ''); const g2 = b.slice(0, 2), g1 = b[0] || '0';
+  const b = String(bkp || '').replace(/[^0-9]/g, ''); if (!b) return 'abschluss';   // ohne BKP = Endphase (Bezug/Inbetriebnahme/Mängel)
+  const g2 = b.slice(0, 2), g1 = b[0] || '0';
   for (const ph of BAU_PHASEN) { if (ph.grp.includes(g2)) return ph.key; }
   for (const ph of BAU_PHASEN) { if (ph.grp.includes(g1)) return ph.key; }
   return 'rest';
@@ -4100,8 +4102,12 @@ function rmPendenz(pid, itemid) {
    --------------------------------------------------------------- */
 
 function gewerkeSorted(p) {
-  return (p.vergaben || []).slice().sort((a, b) =>
-    (a.bkp || '').localeCompare(b.bkp || '') || (a.gewerk || '').localeCompare(b.gewerk || ''));
+  return (p.vergaben || []).slice().sort((a, b) => {
+    const ka = (a.bkp || '').trim(), kb = (b.bkp || '').trim();
+    if (!ka && kb) return 1;    // ohne BKP (Bezug/Inbetriebnahme/Mängel) ans Ende
+    if (ka && !kb) return -1;
+    return ka.localeCompare(kb) || (a.gewerk || '').localeCompare(b.gewerk || '');
+  });
 }
 
 function kontaktByFirma(firma) {

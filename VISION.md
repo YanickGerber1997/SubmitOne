@@ -75,17 +75,18 @@ So bleibt der **Komfort** (online, überall) **mit** der **Robustheit** (offline
 
 **Online-Ablage = Supabase** (Entscheid): managed (wenig Aufwand), skaliert zum **SaaS** (Verkauf an andere Firmen), Konten + **Rollen via RLS**, Echtzeit-Abgleich, Stripe-fähig (Abo schon begonnen). **EU-Region** für Datenschutz. Free-Tier zum Start. **Kein Lock-in**, weil Offline-Modus + Datei-Export bleiben — Supabase ist die bequeme Online-Schicht, nicht der einzige Ort. (Sync-Logik offline↔online ist echte Arbeit, schrittweise gebaut.)
 
-## Dokumente & Bilder — per ID, getrennte Speicher (NICHT per Pfad, NICHT in Supabase)
-Dokumente/Fotos werden **per fester ID** referenziert (nie per zerbrechlichem Pfad) → keine gebrochenen Verweise, alles online + Handy + offline erreichbar. **Daten und Dateien sind getrennt gespeichert** (damit es bezahlbar bleibt):
-- **Supabase = das Gehirn:** nur **strukturierte Daten + Metadaten + IDs + Konten/Rollen/Sync**. Winzig → bleibt günstig.
-- **Grosse Dateien (PDFs/Fotos/Pläne) NICHT in Supabase** (sprengt den Speicher) → in **günstigem Massenspeicher** (Cloudflare R2 / Backblaze B2 — ~1–1,5 Cent/GB·Monat, R2 ohne Egress; 1 TB ≈ 15 $/Mt., im SaaS via Abo gedeckt) **und/oder auf dem eigenen NAS** (fürs eigene Büro gratis/riesig, nur Metadaten in Supabase).
-- **Komprimieren + Vorschaubilder** (Thumbnails) für schnelle Anzeige; Originale nur bei Bedarf.
+## Dokumente & Bilder — Ordner deiner Wahl + Index in der App
+**Du wählst einen Ordner** (PC, NAS, OneDrive, Dropbox). Die App **legt Dateien dort in einer festen Struktur ab** und **liest sie von dort** (wenn die Struktur passt). Beispiel: `…/Projekt/211 Baumeister/Rechnungen/2026-05_Akonto1.pdf`.
+- **Die Struktur/Übersicht („Ablage") lebt IN der App** (kleiner Index, immer da, online abgeglichen) → du siehst **immer**, welche Dokumente es gibt und wo sie hingehören.
+- **Keine Verbindung zum Ordner** (z. B. NAS offline) → die App zeigt die **komplette Struktur**, nur die Datei meldet „**keine Verbindung**". Sie öffnet/kommt, sobald wieder Verbindung da ist.
+- **Drag & Drop** aufs Gewerk/die Pendenz → Typ-Frage („Was ist das?") → Datei wird **an die richtige Stelle der Struktur** geschrieben + passendes Formular öffnet sich (Rechnung → QR/manuell).
+- **Eigener Speicher/Sync:** OneDrive/Dropbox/NAS machen **Backup + Sync + Fernzugriff** schon selbst → **kein** separater Speicher-Vertrag, **keine** Extra-Kosten. Im **SaaS**: **jeder Kunde verbindet seinen eigenen Ordner** → der Anbieter zahlt **nie** für deren Datei-Speicher.
 
-**Drag & Drop:** Dokument (Rechnung/Offerte/Nachtrag/Rapport, egal welcher Name) **aufs Gewerk** ziehen (Terminbalken ODER Kostenübersicht) → Popup „Was ist das?" → wird **per ID abgelegt** + passendes **Formular öffnet sich** (Rechnung → QR/manuell). Optionaler **NAS-Spiegel** (echte Dateien im Explorer durchblätterbar) bleibt als Bonus.
+**Rolle von Supabase:** hält die **kleinen Projektdaten + den Ablage-Index + Konten/Rollen/Sync** — **nicht** die Dateien.
 
-**Handy / Baustelle:** sehr einfach, **offline**. Pendenz + Foto aufnehmen → komprimiert, in **Warteschlange** → lädt in den Massenspeicher, sobald online → erscheint am PC bei der Pendenz. **Kein Pfad, kein Bruch.**
+**Technik ehrlich:** glatt in der **Desktop-App (Tauri)** (voller Ordner-/NAS-Zugriff — der ideale Ort dafür); im **Browser/PWA** Ordner **einmal freigeben** (Berechtigung); am **Handy** über OneDrive/Dropbox-App bzw. NAS-Fernzugriff (etwas mehr Umstand). Modell bleibt gleich.
 
-**Import in ein Projekt:** Bilder werden in den Speicher des Zielprojekts **übernommen + dedupliziert** (Inhalts-Prüfsumme), Verweise zeigen auf den gemeinsamen Speicher → nichts verloren. Zum **Versenden** wird ein Modul in **eine** selbst-enthaltene Datei (Daten + Bilder) gebündelt.
+**Handy / Baustelle:** Pendenz + Foto offline aufnehmen → in **Warteschlange** → wird in den gewählten Ordner geschrieben, sobald Verbindung da ist. **Import** in ein Projekt: Struktur/Dateien werden übernommen (gleiche Dateien dedupliziert); **Versenden**: Modul + seine Dateien in **eine** Datei gebündelt.
 
 ## Rollen & vereinfachte Ansichten (zentral!)
 Jede Person bekommt eine **passende, vereinfachte Ansicht** — **umschaltbar**. Die Rolle steuert **beides**: *was man sieht* (weniger Knöpfe, nur das Nötige) und *was man darf* (kann nichts kaputtmachen). Die Tabelle zeigt **Standard-Vorgaben** — **die Rechte sind pro Rolle einstellbar** (Rechte-Matrix, vom Chef verwaltet).

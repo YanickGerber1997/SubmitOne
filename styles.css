@@ -819,6 +819,22 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
   .g-topbox { gap: 6px 8px; flex-wrap: wrap; overflow-x: visible; }
   .g-ribbon-toggle { padding: 0 4px; }
 }
+/* Handy quer (wenig Höhe): Kopf radikal verschlanken, damit man das Programm sieht.
+   max-height 600 trifft Handys im Querformat, nicht Tablets (>600 hoch). */
+@media (orientation: landscape) and (max-height: 600px) {
+  .detail-head { display: none; }                 /* grosser Titel weg */
+  .proj-sticky { position: static; box-shadow: none; margin-bottom: 5px; }   /* Toolbar scrollt mit weg → volle Höhe fürs Gantt */
+  .page-toolbar { padding: 3px 0; gap: 5px; }
+  .ptabs { margin-bottom: 4px; }
+  .g-topbox { margin-bottom: 4px; padding: 2px 6px; gap: 5px 7px; flex-wrap: nowrap; overflow-x: auto; }
+  .g-ribtabs { margin-bottom: 4px; }
+  .g-ribbon { margin-bottom: 4px; }
+  .g-rgroup-lbl { display: none; }
+  .g-rgroup { padding: 0 4px; }
+  .g-bigbtn { width: 38px; height: 34px; }
+  .g-bigbtn .bb-lbl { display: none; }            /* Icon-only spart Höhe; Beschriftung im Tooltip */
+  .g-footer { padding: 3px 8px; position: static; box-shadow: none; margin-top: 5px; }
+}
 .g-head { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); background: var(--surface); }
 /* Mitlaufender Kopf (Overlay) beim Scrollen – nur Anzeige, klickt nicht */
 .gantt-stickyhead { position: fixed; z-index: 50; display: none; box-shadow: 0 3px 7px rgba(15,24,48,.10); pointer-events: none; }

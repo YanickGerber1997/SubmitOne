@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v303';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v304';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3177,13 +3177,50 @@ function terminVersAktiv(p) { terminVersList(p); return p.terminVersionen.find(v
 function terminGesperrt(p) { const v = p && terminVersAktiv(p); return !!(v && v.gesperrt); }
 function gesperrt(pid) { const p = findProjekt(pid); if (terminGesperrt(p)) { toast('Diese Version ist gesperrt – andere Version wählen oder „+ Version"', 'info'); return true; } return false; }
 function tvSyncAktiv(p) { const v = terminVersAktiv(p); if (v && !v.gesperrt) v.snapshot = terminSnapshot(p); }   // aktuelle Edits in die aktive Version sichern
+// Vergleich: was ändert sich, wenn snap (Zielversion) übernommen wird – gegenüber aktuellem Stand?
+function terminVersDiff(p, snap) {
+  const snapById = {}; (snap.vergaben || []).forEach(s => snapById[s.id] = s);
+  const liveById = {}; (p.vergaben || []).forEach(v => liveById[v.id] = v);
+  const lostDate = [], gainDate = [], changed = [], notInVersion = [], ghost = [];
+  (p.vergaben || []).forEach(v => {
+    const s = snapById[v.id]; const liveHas = !!(v.bauStart && v.bauEnde);
+    if (!s) { if (liveHas) notInVersion.push(v); return; }
+    const snapHas = !!(s.bauStart && s.bauEnde);
+    if (liveHas && !snapHas) lostDate.push(v);
+    else if (!liveHas && snapHas) gainDate.push({ v, s });
+    else if (liveHas && snapHas && (v.bauStart !== s.bauStart || v.bauEnde !== s.bauEnde)) changed.push({ v, s });
+  });
+  (snap.vergaben || []).forEach(s => { if (!liveById[s.id]) ghost.push(s); });
+  return { lostDate, gainDate, changed, notInVersion, ghost, liveLinks: (p.ganttLinks || []).length, snapLinks: (snap.ganttLinks || []).length };
+}
 function tvSwitch(pid, vid) {
   const p = findProjekt(pid); if (!p) return; terminVersList(p);
   if (vid === p.terminVersAktiv) return;
+  const target = p.terminVersionen.find(v => v.id === vid); if (!target) return;
+  const d = terminVersDiff(p, target.snapshot);
+  const li = arr => arr.slice(0, 25).map(x => { const v = x.v || x; return `<li>${esc((v.bkp ? v.bkp + ' ' : '') + (v.gewerk || ''))}${x.s ? ` <span class="muted">${v.bauStart ? fmtDate(v.bauStart) + '–' + fmtDate(v.bauEnde) : 'kein Datum'} → ${x.s.bauStart ? fmtDate(x.s.bauStart) + '–' + fmtDate(x.s.bauEnde) : 'kein Datum'}</span>` : ''}</li>`; }).join('') + (arr.length > 25 ? `<li class="muted">… +${arr.length - 25} weitere</li>` : '');
+  const warnN = d.lostDate.length + d.notInVersion.length;
+  const block = (title, arr, cls) => arr.length ? `<div style="margin-top:10px"><div style="font-weight:600;font-size:12.5px;color:${cls}">${title} (${arr.length})</div><ul style="margin:4px 0 0;padding-left:18px;font-size:12px;line-height:1.5">${li(arr)}</ul></div>` : '';
+  openModal('Version übernehmen: ' + esc(target.name || ''), `
+    <div class="card card-pad" style="background:${warnN ? '#fff7ed' : '#ecfdf5'};border:1px solid ${warnN ? '#fdba74' : '#a7f3d0'};margin-bottom:6px;font-size:13px">
+      ${warnN
+      ? `⚠ <b>Achtung – Auswirkungen:</b> ${d.lostDate.length ? `<b>${d.lostDate.length}</b> Gewerk(e) verlieren ihr Datum` : ''}${d.lostDate.length && d.notInVersion.length ? ' · ' : ''}${d.notInVersion.length ? `<b>${d.notInVersion.length}</b> Gewerk(e) sind in dieser Version <b>nicht enthalten</b> (bleiben ohne Termin)` : ''}.`
+      : '✓ <b>Keine kritischen Auswirkungen.</b> Es gehen keine Termine verloren.'}
+    </div>
+    ${block('🔴 Verlieren ihr Datum (kein Balken mehr)', d.lostDate, '#b91c1c')}
+    ${block('🟠 Nicht in dieser Version (bleiben ohne Termin)', d.notInVersion, '#c2410c')}
+    ${block('🔵 Termin ändert sich', d.changed, '#1d4ed8')}
+    ${block('🟢 Bekommen (wieder) ein Datum', d.gainDate, '#15803d')}
+    ${d.ghost.length ? `<p class="muted" style="font-size:11.5px;margin-top:10px">Hinweis: ${d.ghost.length} Position(en) der Version existieren nicht mehr als Gewerk – werden ignoriert.</p>` : ''}
+    <p class="muted" style="font-size:11.5px;margin-top:12px">Verknüpfungen: ${d.liveLinks} (aktuell) → ${d.snapLinks} (Version). <b>Baukosten bleiben unverändert</b> – Versionen betreffen nur den Zeitplan.</p>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn${warnN ? ' danger' : ''}" data-act="tv-switch-do" data-pid="${pid}" data-vid="${vid}">Version übernehmen</button>`);
+}
+function tvSwitchDo(pid, vid) {
+  const p = findProjekt(pid); if (!p) return; terminVersList(p);
   tvSyncAktiv(p);
   const target = p.terminVersionen.find(v => v.id === vid); if (!target) return;
   applyTerminSnapshot(p, target.snapshot); p.terminVersAktiv = vid;
-  save(); rerenderGantt(pid); toast('Version: ' + (target.name || ''), 'info');
+  save(); closeModal(); rerenderGantt(pid); toast('Version übernommen: ' + (target.name || ''), 'ok');
 }
 function tvNew(pid) {
   const p = findProjekt(pid); if (!p) return; terminVersList(p);
@@ -11810,6 +11847,7 @@ document.addEventListener('click', e => {
     case 'fei-extra-add':   addFeiertagExtra(pid); break;
     case 'fei-extra-del':   delFeiertagExtra(pid, act.dataset.datum); break;
     case 'tv-switch':       tvSwitch(pid, act.dataset.vid); break;
+    case 'tv-switch-do':    tvSwitchDo(pid, act.dataset.vid); break;
     case 'tv-new':          tvNew(pid); break;
     case 'tv-rename':       tvRename(pid); break;
     case 'tv-del':          tvDelete(pid); break;

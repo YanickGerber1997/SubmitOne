@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v290';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v291';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -11783,46 +11783,54 @@ window.addEventListener('DOMContentLoaded', boot);
    --------------------------------------------------------------- */
 
 function demoData() {
-  // R = Kostenposition Römerstrasse: schaetzung = revidierter KV (aktuelle Prognose) + zugeordnete Termine
-  const R = (bkp, gewerk, kv, firma, s, e) => ({ id: uid('v'), bkp, gewerk, status: 'ausschreibung', firma: firma || '', betrag: 0, schaetzung: kv || 0, frist: '', bauStart: s || '', bauEnde: e || '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
+  // R = Kostenposition Römerstrasse: schaetzung = Erst-KV; rev (angepasste Offerte) = revidierter KV; paid = geleistete Zahlung
+  const R = (bkp, gewerk, kv, rev, firma, s, e, paid) => ({
+    id: uid('v'), bkp, gewerk, status: 'ausschreibung', firma: firma || '', betrag: 0, schaetzung: kv || 0, frist: '', bauStart: s || '', bauEnde: e || '',
+    eingeladene: (rev != null ? [{ id: uid('eo'), firma: firma || 'angepasste Offerte', email: '', betrag: rev, status: 'offeriert', datumMail: '' }] : []),
+    nachtraege: [], rapporte: [],
+    rechnungen: (paid ? [{ id: uid('rg'), gruppe: '', firma: firma || '', text: 'geleistete Zahlung (Stand 20.04.2026)', nr: '', art: 'akonto', betrag: paid, datum: '', bezahlt: true }] : []),
+    vorgaenge: [], budgetposten: [],
+  });
   const K = (bkp, gewerk, schaetzung) => ({ id: uid('v'), bkp, gewerk, status: 'ausschreibung', firma: '', betrag: 0, schaetzung, frist: '', bauStart: '', bauEnde: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
   const vergaben = [
-    R('104', 'Baugespann', 500, '', '', ''),
-    R('121', 'Sicherung vorhandener Anlagen', 4000, '', '', ''),
-    R('191', 'Architekt (Vorbereitung)', 3794.90, 'P. Hefti Bauberatung', '', ''),
-    R('211', 'Baumeisterarbeiten', 94397.75, 'Kilchherr', '2026-06-08', '2026-07-17'),
-    R('211.1', 'Gerüstungen', 6771.35, '', '2026-06-29', '2026-11-20'),
-    R('214', 'Holzbau', 64322.30, '', '2026-08-03', '2026-08-28'),
-    R('221', 'Kunststoff-Metallfenster', 44220.75, '', '', ''),
-    R('221.6', 'Türen + Tore', 13900.00, '', '', ''),
-    R('222.0', 'Spenglerarbeiten', 13230.60, '', '2026-08-24', '2026-09-04'),
-    R('224.0', 'Steildach', 24812.40, '', '2026-07-13', '2026-07-17'),
-    R('225', 'Dichtungen / Dämmungen', 5000.00, '', '2026-10-26', '2026-11-06'),
-    R('226.2', 'Fassadendämmung verputzt', 52281.20, '', '2026-10-05', '2026-10-23'),
-    R('228', 'Sonnen- und Wetterschutz', 12258.40, '', '2026-10-26', '2026-11-13'),
-    R('230', 'Elektroanlagen', 29314.55, '', '', ''),
-    R('237', 'PV-Anlage', 32608.35, '', '2026-08-31', '2026-09-11'),
-    R('240', 'Heizungsanlagen', 47986.00, '', '', ''),
-    R('250', 'Sanitäranlagen', 35303.50, '', '', ''),
-    R('258', 'Kücheneinrichtung', 44300.00, '', '2026-11-09', '2026-11-13'),
-    R('271', 'Gipserarbeiten', 13253.65, '', '2026-09-21', '2026-10-23'),
-    R('272', 'Metallbauarbeiten', 16855.50, '', '2026-10-05', '2026-11-27'),
-    R('273', 'Schreinerarbeiten', 15000.00, '', '2026-11-09', '2026-11-27'),
-    R('281', 'Unterlagsböden', 5000.00, '', '2026-09-28', '2026-10-09'),
-    R('281.6', 'Wand- und Bodenbeläge / Parkett EG', 30000.00, '', '2026-10-19', '2026-11-06'),
-    R('285.1', 'Malerarbeiten', 16440.75, '', '2026-11-02', '2026-11-27'),
-    R('287', 'Baureinigung', 3210.55, '', '2026-11-30', '2026-12-04'),
-    R('289', 'Baubetriebskosten', 5000.00, '', '', ''),
-    R('291', 'Honorar Architekt', 78000.00, 'P. Hefti Bauberatung', '', ''),
-    R('292', 'Ingenieur', 3200.00, '', '', ''),
-    R('296', 'Schadstoff-Untersuchung', 1856.60, 'Bautox', '', ''),
-    R('299', 'Reserve', 20000.00, '', '', ''),
-    R('421', 'Gärtnerarbeiten / Umgebung', 10000.00, '', '2026-11-23', '2026-12-11'),
-    R('511.0', 'Bewilligungen, Gebühren', 3546.75, 'BBP Geomatik', '', ''),
-    R('52', 'Baunebenkosten (Budget)', 10000.00, '', '', ''),
-    R('275', 'Schliessanlage', 0, '', '2026-11-16', '2026-11-27'),
-    R('', 'Mängelbehebung', 0, '', '2026-11-23', '2026-12-11'),
-    R('', 'Bezug & Inbetriebnahme', 0, '', '2026-12-14', '2026-12-14'),
+    R('104', 'Baugespann', 0, 500, '', '', '', 486.45),
+    R('121', 'Sicherung vorhandener Anlagen', 3000, 4000, '', '', ''),
+    R('191', 'Architekt (Vorbereitung)', 3520, 3794.90, 'P. Hefti Bauberatung', '', '', 3794.90),
+    R('199', 'Übriges', 500, 0, '', '', ''),
+    R('211', 'Baumeisterarbeiten', 75000, 94397.75, 'Kilchherr', '2026-06-08', '2026-07-17', 1179.90),
+    R('211.1', 'Gerüstungen', 6000, 6771.35, '', '2026-06-29', '2026-11-20'),
+    R('214', 'Holzbau', 11000, 64322.30, '', '2026-08-03', '2026-08-28'),
+    R('215', 'Ing. Holzbau', 9000, 0, '', '', ''),
+    R('221', 'Kunststoff-Metallfenster', 35000, 44220.75, '', '', ''),
+    R('221.6', 'Türen + Tore', 8500, 13900.00, '', '', ''),
+    R('222.0', 'Spenglerarbeiten', 12000, 13230.60, '', '2026-08-24', '2026-09-04'),
+    R('224.0', 'Steildach', 8000, 24812.40, '', '2026-07-13', '2026-07-17'),
+    R('225', 'Dichtungen / Dämmungen', 5000, 5000.00, '', '2026-10-26', '2026-11-06'),
+    R('226.2', 'Fassadendämmung verputzt', 28500, 52281.20, '', '2026-10-05', '2026-10-23'),
+    R('228', 'Sonnen- und Wetterschutz', 8500, 12258.40, '', '2026-10-26', '2026-11-13'),
+    R('230', 'Elektroanlagen', 22000, 29314.55, '', '', ''),
+    R('237', 'PV-Anlage', 30000, 32608.35, '', '2026-08-31', '2026-09-11'),
+    R('240', 'Heizungsanlagen', 20000, 47986.00, '', '', ''),
+    R('250', 'Sanitäranlagen', 49000, 35303.50, '', '', ''),
+    R('258', 'Kücheneinrichtung', 30000, 44300.00, '', '2026-11-09', '2026-11-13'),
+    R('271', 'Gipserarbeiten', 8000, 13253.65, '', '2026-09-21', '2026-10-23'),
+    R('272', 'Metallbauarbeiten', 5500, 16855.50, '', '2026-10-05', '2026-11-27'),
+    R('273', 'Schreinerarbeiten', 5500, 15000.00, '', '2026-11-09', '2026-11-27'),
+    R('281', 'Unterlagsböden', 3500, 5000.00, '', '2026-09-28', '2026-10-09'),
+    R('281.6', 'Wand- und Bodenbeläge / Parkett EG', 23000, 30000.00, '', '2026-10-19', '2026-11-06'),
+    R('285.1', 'Malerarbeiten', 8000, 16440.75, '', '2026-11-02', '2026-11-27'),
+    R('287', 'Baureinigung', 2000, 3210.55, '', '2026-11-30', '2026-12-04'),
+    R('289', 'Baubetriebskosten', 5000, 5000.00, '', '', ''),
+    R('291', 'Honorar Architekt', 78000, 78000.00, 'P. Hefti Bauberatung', '', '', 25403.50),
+    R('292', 'Ingenieur', 4000, 3200.00, '', '', ''),
+    R('296', 'Schadstoff-Untersuchung', 0, 1856.60, 'Bautox', '', '', 1856.60),
+    R('299', 'Reserve', 50000, 20000.00, '', '', ''),
+    R('421', 'Gärtnerarbeiten / Umgebung', 25000, 10000.00, '', '2026-11-23', '2026-12-11'),
+    R('511.0', 'Bewilligungen, Gebühren', 0, 3546.75, 'BBP Geomatik', '', '', 3546.75),
+    R('52', 'Baunebenkosten (Budget)', 40000, 10000.00, '', '', ''),
+    R('275', 'Schliessanlage', 0, null, '', '2026-11-16', '2026-11-27'),
+    R('', 'Mängelbehebung', 0, null, '', '2026-11-23', '2026-12-11'),
+    R('', 'Bezug & Inbetriebnahme', 0, null, '', '2026-12-14', '2026-12-14'),
   ];
   const kunoweg = [
     K('112', 'Abbrüche / Demontagen', 8000),

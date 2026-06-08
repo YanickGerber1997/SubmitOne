@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v302';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v303';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1804,6 +1804,7 @@ const G_ICONS = {
   focus: '<rect x="9" y="3.5" width="6" height="17" rx="1.4"/><path d="M4.5 3.5v17M19.5 3.5v17"/>',
   ends: '<line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="7" x2="4" y2="17"/><line x1="20" y1="7" x2="20" y2="17"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.3V12l3.2 2"/>',
+  folder: '<path d="M3.5 7a1.2 1.2 0 0 1 1.2-1.2h4l2 2h8a1.2 1.2 0 0 1 1.2 1.2v8.6a1.2 1.2 0 0 1-1.2 1.2H4.7a1.2 1.2 0 0 1-1.2-1.2z"/>',
 };
 function gIcon(name) { return `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
 function bigBtn(act, icon, label, o) { o = o || {}; return `<button class="g-bigbtn${o.on ? ' on' : ''}" data-act="${act}" data-pid="${o.pid}"${o.kind != null ? ` data-kind="${o.kind}"` : ''} title="${esc(o.title || label)}"><span class="bb-ico">${gIcon(icon)}</span><span class="bb-lbl">${esc(label)}</span></button>`; }
@@ -1854,7 +1855,7 @@ function ganttRibbonTabs(p) {
     rgroup('Prüfen', bigBtn('regeln-open', 'ruler', 'Regeln' + ((p.regeln || []).length ? ' (' + p.regeln.length + ')' : ''), { pid: p.id, on: (p.regeln || []).length > 0, title: 'Regeln / Abhängigkeiten' }) + bigBtn('ress-config', 'warn', 'Ressourcen', { pid: p.id, on: !(p.ressCheck && p.ressCheck.aktiv === false), title: 'Ressourcen-Hinweis' })) +
     rgroup('Ablauf', bigBtn('bauablauf', 'gear', 'Bauablauf', { pid: p.id, title: 'Gewerke nach BKP verketten und ab Baustart datieren' }));
   else if (ganttTab === 'datei') b =
-    rgroup('Ausgabe', bigBtn('gantt-print', 'print', 'Drucken', { pid: p.id, title: 'Drucken / PDF – ganzes Programm oder pro Jahr' }) + bigBtn('gerber-termin', 'save', 'Speichern', { pid: p.id, title: 'Terminprogramm als .gerber-Datei herunterladen' }));
+    rgroup('Ausgabe', bigBtn('gantt-print', 'print', 'Drucken', { pid: p.id, title: 'Drucken / PDF – ganzes Programm oder pro Jahr' }) + bigBtn('gerber-termin', 'save', 'Speichern', { pid: p.id, title: 'Terminprogramm als .gerber-Datei speichern' }) + bigBtn('gerber-termin-import', 'folder', 'Öffnen', { pid: p.id, title: 'Terminprogramm aus .gerber einlesen – wird als neue Version übernommen' }));
   return `${bar}<div class="g-ribbon">${b}</div>`;
 }
 // Grobe Bauphasen – BKP-Gruppen werden zu groben Phasen zusammengefasst
@@ -11432,6 +11433,31 @@ function exportTerminGerber(pid) {
   const safe = (p.name || 'terminprogramm').replace(/[^\w\-]+/g, '_').slice(0, 50);
   saveGerber(safe + '_terminprogramm.gerber', data);
 }
+// Terminprogramm aus .gerber einlesen → IMMER als neue Version (Snapshot inkl. Verknüpfungen); Gewerke werden über id bzw. BKP+Bezeichnung zugeordnet
+async function importTerminGerber(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const data = await openGerber(); if (!data) return;
+  if (data.typ !== 'terminprogramm' || !Array.isArray(data.gewerke)) { toast('Keine Terminprogramm-Datei (.gerber)', 'info'); return; }
+  terminVersList(p);
+  const byId = {}, byKey = {};
+  (p.vergaben || []).forEach(v => { byId[v.id] = v; byKey[(v.bkp || '') + '|' + (v.gewerk || '')] = v; });
+  const idMap = {}; const snapV = [];
+  (data.gewerke || []).forEach(g => {
+    const m = byId[g.id] || byKey[(g.bkp || '') + '|' + (g.gewerk || '')]; if (!m) return;
+    idMap[g.id] = m.id;
+    snapV.push({ id: m.id, bauStart: g.bauStart || '', bauEnde: g.bauEnde || '', bestellfrist: g.bestellfrist || 0, nachfrist: g.nachfrist || 0, nachfristLabel: g.nachfristLabel || '', autoBalken: !!g.autoBalken, bauPhase: g.bauPhase || '', vorab: g.vorab ? { ...g.vorab } : null, vorgaenge: (g.vorgaenge || []).map(o => ({ id: o.id, titel: o.titel, start: o.start || '', ende: o.ende || '' })) });
+  });
+  if (!snapV.length) { toast('Keine passenden Gewerke gefunden (BKP/Bezeichnung stimmen nicht überein)', 'info'); return; }
+  const remapKey = k => { if (idMap[k]) return idMap[k]; const i = String(k).indexOf('/'); if (i > 0 && idMap[k.slice(0, i)]) return idMap[k.slice(0, i)] + k.slice(i); return idMap[k] === undefined && byId[k] ? k : null; };
+  const links = (data.ganttLinks || []).map(l => { const f = remapKey(l.from), t = remapKey(l.to); return (f && t) ? { ...l, from: f, to: t } : null; }).filter(Boolean);
+  const snapshot = { vergaben: snapV, ganttLinks: links, regeln: JSON.parse(JSON.stringify(data.regeln || [])), sitzungsraster: data.sitzungsraster ? JSON.parse(JSON.stringify(data.sitzungsraster)) : null, baustart: data.baustart || '', bauende: data.bauende || '', bezug: data.bezug || '' };
+  tvSyncAktiv(p);   // aktuellen Stand in der aktiven Version sichern, bevor umgeschaltet wird
+  const nv = { id: uid('tv'), name: 'Import ' + fmtDate(todayIso()), datum: todayIso(), gesperrt: false, snapshot };
+  p.terminVersionen.push(nv); p.terminVersAktiv = nv.id;
+  applyTerminSnapshot(p, snapshot);
+  save(); rerenderGantt(pid);
+  toast('Importiert als neue Version „' + nv.name + '" (' + snapV.length + ' Gewerke, ' + links.length + ' Verknüpfungen)', 'ok');
+}
 function exportProjektGerber(pid) {
   const p = findProjekt(pid); if (!p) return;
   const data = { format: 'gerber', formatVersion: 1, typ: 'projekt', app: 'SubmitOne ' + APP_VERSION, exportiert: todayIso(), projekt: JSON.parse(JSON.stringify(p)) };
@@ -11820,6 +11846,7 @@ document.addEventListener('click', e => {
     case 'gerber-import': importProjektGerber(); break;
     case 'gerber-export': exportProjektGerber(pid); break;
     case 'gerber-termin': exportTerminGerber(pid); break;
+    case 'gerber-termin-import': importTerminGerber(pid); break;
     case 'reset':        resetDemo(); break;
     case 'confirm-reset':doResetDemo(); break;
     case 'logout':       logout(); break;

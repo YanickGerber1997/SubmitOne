@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v296';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v297';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -4550,10 +4550,16 @@ function dl(id, items) { return `<datalist id="${id}">${items.map(x => `<option 
 // BKP-Katalog (Gebäude, BKP 2) – durchsuchbares Dropdown
 const BKP_KATALOG = [
   ['20', 'Baugrube'], ['201', 'Baugrubenaushub'],
-  ['21', 'Rohbau 1'], ['211', 'Baumeisterarbeiten'], ['211.1', 'Gerüste'],
+  ['21', 'Rohbau 1'], ['211', 'Baumeisterarbeiten'],
+  ['211.0', 'Baustelleneinrichtung'], ['211.1', 'Gerüstungen'], ['211.3', 'Baumeisteraushub'], ['211.4', 'Kanalisationen im Gebäude'],
+  ['211.5', 'Beton- und Stahlbetonarbeiten'], ['211.6', 'Maurerarbeiten'], ['211.7', 'Instandsetzungsarbeiten'],
   ['212', 'Montagebau in Beton / vorfab. Mauerwerk'], ['213', 'Montagebau in Stahl'], ['214', 'Montagebau in Holz'],
   ['215', 'Montagebau Leichtkonstruktionen'], ['216', 'Natur- und Kunststeinarbeiten'], ['217', 'Schutzraumabschlüsse'],
-  ['22', 'Rohbau 2'], ['221', 'Fenster, Aussentüren, Tore'], ['222', 'Spenglerarbeiten'], ['223', 'Blitzschutz'],
+  ['22', 'Rohbau 2'], ['221', 'Fenster, Aussentüren, Tore'],
+  ['221.0', 'Fenster in Holz'], ['221.1', 'Fenster in Holz-Metall'], ['221.2', 'Fenster in Kunststoff'], ['221.3', 'Fenster in Stahl'],
+  ['221.4', 'Fenster in Leichtmetall'], ['221.5', 'Aussentüren, Tore in Holz'], ['221.6', 'Aussentüren, Tore in Metall'],
+  ['221.7', 'Schaufensteranlagen'], ['221.8', 'Spezielle lichtdurchlässige Bauteile (äussere)'], ['221.9', 'Metallbaufertigteile'],
+  ['222', 'Spenglerarbeiten'], ['223', 'Blitzschutz'],
   ['224', 'Bedachungsarbeiten'], ['225', 'Spezielle Dichtungen und Dämmungen'], ['226', 'Fassadenputze'],
   ['227', 'Äussere Oberflächenbehandlungen'], ['228', 'Äussere Abschlüsse, Sonnenschutz / Storen'],
   ['23', 'Elektroanlagen'], ['231', 'Apparate Starkstrom'], ['232', 'Starkstrominstallationen'], ['233', 'Leuchten und Lampen'],

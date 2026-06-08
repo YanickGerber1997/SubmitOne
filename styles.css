@@ -899,6 +899,12 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-si { font-size: 11px; color: var(--text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g-si.firma { font-weight: 600; color: var(--text); }
 .g-si-sep { color: var(--text-faint); font-size: 10px; }
+/* Editierbare Start-/Ende-Datumsspalten + Dauer in der linken Gantt-Leiste */
+.g-si-cols { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex: none; }
+.g-si-date { font-size: 10.5px; padding: 2px 4px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--surface); color: var(--text); width: 108px; }
+.g-si-date:focus { border-color: var(--brand); outline: none; }
+.g-si-date:disabled { background: var(--surface-2); color: var(--text-soft); }
+.g-si-dauer { font-size: 10.5px; color: var(--text-soft); white-space: nowrap; min-width: 40px; text-align: right; }
 .g-side-row .add-vg { margin-left: auto; }
 .g-side-row.offen { background: repeating-linear-gradient(45deg, var(--surface), var(--surface) 6px, #fafbfd 6px, #fafbfd 12px); }
 .g-edit { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; min-width: 0; flex: 1; }

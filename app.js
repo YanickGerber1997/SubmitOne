@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v293';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v294';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1760,7 +1760,7 @@ let ganttZoom = 'monat';   // 'monat' | 'woche' | 'tag'
 let ganttScale = 1;        // stufenloser Breiten-Faktor auf pxPerDay
 let ganttChain = true;     // Verkettung: Nachfolger automatisch nachführen
 let ganttWorkdays = false; // Abstände/Verkettung in Arbeitstagen (Wochenende/Feiertage überspringen)
-let ganttSide = { gewerk: true, firma: false, person: false, natel: false }; // einblendbare Info-Spalte (BKP-Nr. immer)
+let ganttSide = { gewerk: true, firma: false, person: false, natel: false, start: false, ende: false, dauer: false }; // einblendbare Info-Spalten (BKP-Nr. immer); start/ende = editierbare Datumsfelder
 let ganttDates = 'off';   // Anschrift am Balken: 'off' | 'datum' (dd.mm.yy) | 'kw' (Kalenderwoche) | 'grob' (Anfang/Mitte/Ende Monat)
 let ganttMode = 'detail'; // 'detail' = Termin-Gantt (Tage) | 'grob' = Grobplanung (Phasen) | 'fein' = Feinprogramm (Stunden)
 const FEIN_H0 = 6, FEIN_H1 = 20;   // Stunden-Achse Feinprogramm (06:00–20:00)
@@ -2464,6 +2464,13 @@ function updateGanttFocus() {
   });
 }
 function scheduleGanttFocus() { if (!ganttFocus) return; if (_focusRaf) return; _focusRaf = requestAnimationFrame(() => { _focusRaf = 0; updateGanttFocus(); }); }
+// Start-/Endtermin direkt aus der linken Spalte setzen (editierbares Datumsfeld)
+function sideSetDate(pid, vid, field, val) {
+  if (gesperrt(pid)) return;
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  v[field] = val || '';
+  save(); rerenderGantt(pid);
+}
 // Fokus: Gewerk in den aktuell sichtbaren Zeitausschnitt einplanen
 function actFocusAdd(e, pid) {
   const p = findProjekt(pid); if (!p) return; if (gesperrt(pid)) return;
@@ -2555,7 +2562,7 @@ function viewTermine(id) {
   const offene = vs.filter(v => !(v.bauStart && v.bauEnde));
 
   const sortCtrl = `<div class="g-zoom" title="Sortierung"><button class="${ganttSort === 'bkp' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="bkp">BKP</button><button class="${ganttSort === 'start' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="start">Start</button></div>`;
-  const infoCtrl = `<div class="g-zoom" title="Info-Spalte einblenden (BKP-Nr. immer sichtbar)">${[['gewerk', 'Gewerk'], ['firma', 'Firma'], ['person', 'Person'], ['natel', 'Natel']].map(([key, lbl]) => `<button class="${ganttSide[key] ? 'active' : ''}" data-act="gantt-side" data-pid="${p.id}" data-kind="${key}">${lbl}</button>`).join('')}</div>`;
+  const infoCtrl = `<div class="g-zoom" title="Info-Spalten einblenden (BKP-Nr. immer sichtbar); Start/Ende sind editierbar">${[['gewerk', 'Gewerk'], ['firma', 'Firma'], ['person', 'Person'], ['natel', 'Natel'], ['start', 'Start'], ['ende', 'Ende'], ['dauer', 'Dauer']].map(([key, lbl]) => `<button class="${ganttSide[key] ? 'active' : ''}" data-act="gantt-side" data-pid="${p.id}" data-kind="${key}">${lbl}</button>`).join('')}</div>`;
   const dateLbl = ganttDates === 'off' ? 'Datum aus' : (ganttDates === 'full' ? 'Datum 26.06.26' : 'Datum 26.06.');
   const dateCtrl = `<button class="btn sm ${ganttDates === 'off' ? 'secondary' : ''}" data-act="gantt-dates" data-pid="${p.id}" title="Start-/Enddatum an den Balken einblenden (umschalten: aus → mit Jahr → ohne Jahr)">📅 ${dateLbl}</button>`;
   const zoomCtrl = `<div class="g-zoom">
@@ -2745,6 +2752,10 @@ function viewTermine(id) {
     if (ganttSide.firma && v.firma) extra.push(`<span class="g-si firma">${esc(v.firma)}</span>`);
     if (ganttSide.person && k && k.person) extra.push(`<span class="g-si">${esc(k.person)}</span>`);
     if (ganttSide.natel && k && k.telefon) extra.push(`<span class="g-si">☎ ${esc(k.telefon)}</span>`);
+    const dcols = [];
+    if (ganttSide.start) dcols.push(`<input type="date" class="g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-field="bauStart" value="${esc(v.bauStart || '')}"${gespr ? ' disabled' : ''} title="Starttermin">`);
+    if (ganttSide.ende) dcols.push(`<input type="date" class="g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-field="bauEnde" value="${esc(v.bauEnde || '')}"${gespr ? ' disabled' : ''} title="Endtermin">`);
+    if (ganttSide.dauer) dcols.push(`<span class="g-si-dauer" title="Dauer der Arbeiten (Kalendertage)">${esc(gDauerTxt(v.bauStart, v.bauEnde) || '–')}</span>`);
     const gnr = ++gNr; let oNr = 0;
     sideRows += `<div class="g-side-row${hatTermin ? '' : ' offen'}">
       <span class="g-rownum">${gnr}</span>
@@ -2752,6 +2763,7 @@ function viewTermine(id) {
       <span class="g-edit" data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}" title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">
         <span class="bkp-code">${esc(v.bkp)}</span>${ganttSide.gewerk ? ` <span class="gewerk">${esc(v.gewerk)}</span>` : ''}${extra.length ? `<span class="g-si-wrap">${extra.join('<span class="g-si-sep">·</span>')}</span>` : ''}
       </span>
+      ${dcols.length ? `<span class="g-si-cols">${dcols.join('')}</span>` : ''}
       ${gespr ? '' : `<button class="btn sm ghost add-vg" title="Untertermin hinzufügen (leer – dann Balken ziehen)" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${v.id}">＋</button>`}
     </div>`;
     if (hatTermin) {
@@ -2829,8 +2841,10 @@ function viewTermine(id) {
   const linkSvg = `<svg class="g-links" width="${innerW}" height="${rowIdx * ROW_H}">${linkPaths}</svg>`;
 
   const sideExtras = (ganttSide.firma ? 1 : 0) + (ganttSide.person ? 1 : 0) + (ganttSide.natel ? 1 : 0);
+  const dateColsW = (ganttSide.start ? 116 : 0) + (ganttSide.ende ? 116 : 0) + (ganttSide.dauer ? 52 : 0);
   let sideW = ganttSide.gewerk ? 200 : 66;
   if (sideExtras) sideW = Math.min(480, (ganttSide.gewerk ? 200 : 92) + sideExtras * 96);
+  sideW = Math.min(680, sideW + dateColsW);
 
   render(head + `
     ${warnBanner}${regelBanner}
@@ -2885,6 +2899,7 @@ function viewTermine(id) {
     $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
     $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) selectGanttLink(g.dataset.lid); }));
     $$('.g-link').forEach(g => g.addEventListener('contextmenu', e => { e.preventDefault(); linkMenu(e, ganttPid, g.dataset.lid); }));
+    $$('.g-si-date').forEach(inp => { inp.addEventListener('change', () => sideSetDate(inp.dataset.pid, inp.dataset.vid, inp.dataset.field, inp.value)); inp.addEventListener('mousedown', e => e.stopPropagation()); });
   } else {
     $$('.g-bar').forEach(b => b.classList.add('g-locked'));
   }
@@ -11654,6 +11669,7 @@ document.addEventListener('click', e => {
       rerenderGantt(pid); break;
     case 'gantt-sort':   ganttSort = kind; rerenderGantt(pid); break;
     case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; rerenderGantt(pid); break;
+    case 'side-date':    break;   // wird über change-Listener (sideSetDate) behandelt
     case 'gantt-dates':  ganttDates = kind || DATE_MODES[(DATE_MODES.indexOf(ganttDates) + 1) % DATE_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-datepos': ganttDatePos = kind || DATEPOS_MODES[(DATEPOS_MODES.indexOf(ganttDatePos) + 1) % DATEPOS_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-tab':    ganttTab = kind || 'ansicht'; rerenderGantt(pid); break;

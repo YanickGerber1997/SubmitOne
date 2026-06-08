@@ -65,15 +65,18 @@ Ein Projekt ist eine **Datei/ein Ordner** → man legt es ab, **wohin man will**
 Extrem einfache Bedienung, volle Kontrolle, **offline**. Man nimmt unterwegs eine **Pendenz + Foto** auf → Bild komprimiert. Übertragung zum PC-Projekt über die **Supabase-Poststelle** (Transport der strukturierten Aufnahme); am PC wird das Foto als **echte Datei in den Projektordner** (z. B. auf dem NAS) abgelegt und mit Pendenz/Gewerk verknüpft.
 
 ## Rollen & vereinfachte Ansichten (zentral!)
-Jede Person bekommt eine **passende, vereinfachte Ansicht** — **umschaltbar**. Die Rolle steuert **beides**: *was man sieht* (weniger Knöpfe, nur das Nötige) und *was man darf* (kann nichts kaputtmachen).
+Jede Person bekommt eine **passende, vereinfachte Ansicht** — **umschaltbar**. Die Rolle steuert **beides**: *was man sieht* (weniger Knöpfe, nur das Nötige) und *was man darf* (kann nichts kaputtmachen). Die Tabelle zeigt **Standard-Vorgaben** — **die Rechte sind pro Rolle einstellbar** (Rechte-Matrix, vom Chef verwaltet).
 
-| Rolle | Sieht / darf | Ansicht |
+| Rolle | Standard: sieht / darf | Ansicht |
 |---|---|---|
-| **Chef / Bauleiter** | alles, volle Kontrolle | Power-Modus (wie heute) |
-| **Hilfsbauleiter** | Bauprogramm ansehen, Termine **abhaken** (erfüllt), Notiz/Verschiebung, **Pendenz + Foto** erfassen; **keine** Struktur/Verknüpfungen umbauen | schlanke Gantt-Ansicht |
-| **Sekretärin** | Kontakte, Submittenten, **Dokumente ablegen** (Drag&Drop Rechnungen), Einladungen/Mail, Fristen; **keine** Terminlogik | Formular-/Listen-Ansicht |
-| **Bauherr** | nur **ansehen** (Bauprogramm, Kosten-Übersicht, Meilensteine), optional kommentieren/freigeben | Präsentations-/Lese-Ansicht |
+| **Chef / Bauleiter** | alles, volle Kontrolle; **verwaltet die Rechte der anderen Rollen** | Power-Modus (wie heute) |
+| **Planer / Architekt** | Termine, Pendenzen, Entscheide planen/kommentieren; **nicht** Vergabe-/Kosten-Hoheit | Fachplaner-Ansicht |
+| **Hilfsbauleiter** | Programm ansehen, Termine **abhaken**, Notiz/Verschiebung, **Pendenz + Foto**; **kein** Struktur-Umbau | schlanke Gantt-Ansicht |
+| **Sekretärin** | Kontakte, Submittenten, **Dokumente ablegen** (Drag&Drop), Mail, Fristen; **keine** Terminlogik | Formular-/Listen-Ansicht |
+| **Unternehmer / Handwerker** | nur das **eigene Gewerk** (Termine + Pendenzen dazu), Rückmeldung/Status; **kein** Zugriff auf andere/Kosten | Mini-Ansicht (nur sein Gewerk) |
+| **Bauherr** | nur **ansehen** (Programm, Kosten-Übersicht, Meilensteine), optional kommentieren/freigeben | Präsentations-/Lese-Ansicht |
 
+- **Rechte pro Rolle einstellbar:** Vorgaben sind sinnvoll voreingestellt; der Chef feintunt je Rolle, was erlaubt ist (vereinfachen **+** schützen, aber flexibel).
 - Funktioniert **mit mehreren Konten** (echte Rechte) **UND** **solo umschaltbar** — z. B. der Chef gibt den Laptop dem Hilfsbauleiter im einfachen Modus, oder schaltet zum Präsentieren in die **„Bauherr-Ansicht"**.
 - Baut direkt auf **„nicht kaputtbar"** auf: tiefere Rollen sind **sicher per Default** und sehen eine **aufgeräumte** Oberfläche statt der vollen Werkzeugleiste.
 

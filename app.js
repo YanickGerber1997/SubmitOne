@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v311';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v312';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1917,7 +1917,7 @@ function ganttRibbonTabs(p) {
     rgroup('Kräftigkeit', optBtns('gantt-strength', p.id, [['voll', 'Voll'], ['mittel', 'Mittel'], ['hell', 'Hell'], ['pastell', 'Pastell']], ganttColorStrength)) +
     rgroup('Farben', bigBtn('gantt-colors-open', 'swatch', 'Anpassen', { pid: p.id, on: !!state.ganttColors, title: 'Farben je Status/Unternehmer/Phase anpassen' })) +
     rgroup('Sortierung', optBtns('gantt-sort', p.id, [['bkp', 'BKP'], ['start', 'Startdatum']], ganttSort)) +
-    rgroup('Balken', bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) + bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' }) + bigBtn('gantt-hideundated', 'calCheck', 'Nur Termin', { pid: p.id, on: ganttHideUndated, title: 'Nur Gewerke mit Termin anzeigen (termin-lose wie Reserve ausblenden)' }));
+    rgroup('Balken', bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) + bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' }) + bigBtn('gantt-hideundated', 'calCheck', 'Nur Termin', { pid: p.id, on: ganttHideUndated, title: 'Nur Gewerke mit Termin anzeigen (termin-lose wie Reserve ausblenden)' }) + bigBtn('gantt-done', 'calCheck', 'Erfüllt: ' + DONE_NAMES[ganttDone], { pid: p.id, on: ganttDone !== 'show', title: 'Erfüllte Termine: Zeigen → Ausgrauen → Ausblenden' }));
   else if (ganttTab === 'beschriftung') b =
     rgroup('Beschriftung', optBtns('gantt-labelmode', p.id, [['auto', 'Auto'], ['above', 'Oben'], ['below', 'Unten'], ['before', 'Vor'], ['after', 'Nach'], ['clip', 'Innen'], ['over', 'Über']], ganttLabelMode)) +
     rgroup('Ausrichtung', optBtns('gantt-align', p.id, [['links', 'Links'], ['mitte', 'Mitte'], ['rechts', 'Rechts']], ganttLabelAlign));
@@ -2535,6 +2535,9 @@ let ganttRibbon = true;          // Werkzeug-Leiste (Kategorien) ein-/ausgeklapp
 let ganttFocus = false;          // Fokus: nur Zeilen mit Aktivität im sichtbaren Zeitausschnitt hervorheben (live beim Scrollen)
 let ganttLinkFront = false;      // Verbindungslinien über (true) oder hinter (false) den Balken
 let ganttHideUndated = false;    // termin-lose Gewerke (z.B. Reserve) im Gantt ausblenden
+let ganttDone = 'show';          // erfüllte Termine: 'show' | 'dim' (ausgrauen) | 'hide' (ausblenden)
+const DONE_MODES = ['show', 'dim', 'hide'];
+const DONE_NAMES = { show: 'Zeigen', dim: 'Ausgrauen', hide: 'Ausblenden' };
 let _focusRaf = 0;
 function updateGanttFocus() {
   const main = document.querySelector('.g-main'); const rowsC = main && main.querySelector('.g-rows'); if (!main || !rowsC) return;
@@ -2646,6 +2649,7 @@ function viewTermine(id) {
     : ((a.bkp || '').localeCompare(b.bkp || '') || (a.gewerk || '').localeCompare(b.gewerk || '')));
   const offene = vs.filter(v => !(v.bauStart && v.bauEnde));
   if (ganttHideUndated) vs = vs.filter(v => (v.bauStart && v.bauEnde) || (v.vorgaenge || []).some(o => o.start && o.ende));   // termin-lose Gewerke (z.B. Reserve) ausblenden
+  if (ganttDone === 'hide') vs = vs.filter(v => !v.erfuellt);   // erfüllte Gewerke ausblenden
 
   const sortCtrl = `<div class="g-zoom" title="Sortierung"><button class="${ganttSort === 'bkp' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="bkp">BKP</button><button class="${ganttSort === 'start' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="start">Start</button></div>`;
   const infoCtrl = `<div class="g-zoom" title="Info-Spalten einblenden (BKP-Nr. immer sichtbar); Start/Ende sind editierbar">${[['gewerk', 'Gewerk'], ['firma', 'Firma'], ['person', 'Person'], ['natel', 'Natel'], ['start', 'Start'], ['ende', 'Ende'], ['dauer', 'Dauer']].map(([key, lbl]) => `<button class="${ganttSide[key] ? 'active' : ''}" data-act="gantt-side" data-pid="${p.id}" data-kind="${key}">${lbl}</button>`).join('')}</div>`;
@@ -2888,6 +2892,7 @@ function viewTermine(id) {
     }
     rowIdx++; inserts.push({ y: headH + rowIdx * ROW_H, vid: v.id });
     (v.vorgaenge || []).forEach(o => {
+      if (ganttDone === 'hide' && o.erfuellt) return;   // erfüllte Untertermine ausblenden
       const key = v.id + '/' + o.id; const oDated = o.start && o.ende;
       sideRows += `<div class="g-side-row sub"><span class="g-rownum sub">${gnr}.${++oNr}</span><span class="gewerk" style="font-weight:500;cursor:pointer" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="Untertermin bearbeiten">${esc(o.titel)}</span>
         ${gespr ? '' : `<button class="x-btn" title="Untertermin löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button>`}</div>`;
@@ -2934,7 +2939,7 @@ function viewTermine(id) {
 
   render(head + `
     ${warnBanner}${regelBanner}
-    <div class="gantt lbl-${ganttLabelMode}${ganttFocus ? ' focus-on' : ''}${ganttLinkFront ? ' links-front' : ' links-behind'}" style="--rowh:${ROW_H}px;--gfont:${ganttFont}px">
+    <div class="gantt lbl-${ganttLabelMode}${ganttFocus ? ' focus-on' : ''}${ganttLinkFront ? ' links-front' : ' links-behind'}${ganttDone === 'dim' ? ' done-dim' : ''}" style="--rowh:${ROW_H}px;--gfont:${ganttFont}px">
       <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div></div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
@@ -3143,12 +3148,19 @@ function vergabeMenu(e, pid, vid, extraTop, opts) {
 function ganttBarMenu(e, bar) {
   const pid = bar.dataset.pid, vid = bar.dataset.vid, oid = bar.dataset.oid || null;
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
-  if (oid) { openContextMenu(e, [{ icon: '↗', label: 'Gewerk öffnen', act: () => go('#/projekt/' + pid + '/vergabe/' + vid) }, { sep: true }, { icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '🗑', label: 'Untertermin löschen', danger: true, act: () => removeVorgang(pid, vid, oid) }]); return; }
-  const extras = [{ icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '＋', label: 'Untertermin hinzufügen', act: () => addEmptyVorgangDetail(pid, vid) }];
+  if (oid) { const o = (v.vorgaenge || []).find(x => x.id === oid); openContextMenu(e, [{ icon: '↗', label: 'Gewerk öffnen', act: () => go('#/projekt/' + pid + '/vergabe/' + vid) }, { sep: true }, { icon: o && o.erfuellt ? '↩' : '✓', label: o && o.erfuellt ? 'als offen markieren' : 'als erfüllt markieren', act: () => toggleErfuellt(pid, vid, oid) }, { icon: '🗓', label: 'Termin bearbeiten', act: () => actFeinVorgang(pid, vid, oid) }, { icon: '🗑', label: 'Untertermin löschen', danger: true, act: () => removeVorgang(pid, vid, oid) }]); return; }
+  const extras = [{ icon: v.erfuellt ? '↩' : '✓', label: v.erfuellt ? 'als offen markieren' : 'als erfüllt markieren', act: () => toggleErfuellt(pid, vid, null) }, { icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '＋', label: 'Untertermin hinzufügen', act: () => addEmptyVorgangDetail(pid, vid) }];
   if (v.bauStart && v.bauEnde) extras.push({ icon: '✕', label: 'Termin entfernen', danger: true, act: () => clearTermin(pid, vid) });
   vergabeMenu(e, pid, vid, extras, { noDelete: true });   // im Terminprogramm kein Gewerk-Löschen
 }
 function clearTermin(pid, vid) { if (gesperrt(pid)) return; const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return; v.bauStart = ''; v.bauEnde = ''; save(); rerenderGantt(pid); toast('Termin entfernt', 'info'); }
+function toggleErfuellt(pid, vid, oid) {
+  if (gesperrt(pid)) return;
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  if (oid) { const o = (v.vorgaenge || []).find(x => x.id === oid); if (o) o.erfuellt = !o.erfuellt; }
+  else v.erfuellt = !v.erfuellt;
+  save(); rerenderGantt(pid);
+}
 // Eckdaten: Baustart/Bauende automatisch aus den Gewerken (frühester Start / spätestes Ende), Bezug = Bauende; manuell überschreibbar
 function eckDaten(p) {
   let s = '', e = '';
@@ -11964,6 +11976,7 @@ document.addEventListener('click', e => {
     case 'gantt-strength':  ganttColorStrength = kind || STRENGTH_MODES[(STRENGTH_MODES.indexOf(ganttColorStrength) + 1) % STRENGTH_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-focus':     ganttFocus = !ganttFocus; rerenderGantt(pid); break;
     case 'gantt-hideundated': ganttHideUndated = !ganttHideUndated; rerenderGantt(pid); break;
+    case 'gantt-done':   ganttDone = DONE_MODES[(DONE_MODES.indexOf(ganttDone) + 1) % DONE_MODES.length]; rerenderGantt(pid); break;
     case 'focus-add':       actFocusAdd(e, pid); break;
     case 'gantt-colors-open': actGanttColors(pid); break;
     case 'gantt-colors-reset': { if (state.ganttColors) delete state.ganttColors[act.dataset.kind]; save(); rerenderGantt(pid); closeModal(); actGanttColors(pid); } break;

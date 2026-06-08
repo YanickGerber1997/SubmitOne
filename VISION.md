@@ -31,6 +31,8 @@ Man startet ein Werkzeug, baut frei ein Dokument, speichert es als Datei auf dem
 
 ## Desktop-App wie Word
 Eine echte Windows-Anwendung: doppelklicken, öffnen/speichern wie gewohnt, mehrere Fenster gleichzeitig, Datei-Verknüpfung (Doppelklick auf `.subtermin` öffnet SubTermin).
+- **Gestalt vs. Speicher getrennt:** *Wie* man öffnet (Browser / PWA / Desktop-App) ist die **Hülle**; *wo* die Daten liegen (NAS/Datei/Sync) ist der **Speicher**. Beides unabhängig austauschbar.
+- **Stand heute:** bereits **PWA-fähig** (manifest + Service Worker); Speicher hängt schon hinter einem **austauschbaren Adapter**. → Weg: **PWA jetzt → Datei/NAS-Adapter → Tauri-Hülle** (echtes `.exe`, voller NAS-Zugriff). Der Wechsel ist **klein**, die Features bleiben unberührt.
 
 ## Module greifen ineinander (die Mappe)
 Module sind **verschiedene Werkzeuge auf denselben Projektdaten**. Ein Gewerk (z. B. BKP 211) ist **ein** Ding: SubTermin zeigt den Balken, SubKosten die Zahlen. Beim Öffnen der **Mappe** werden alle Module zusammen geladen → das gewohnte **Rechtsklick-Springen** (z. B. vom Terminbalken „zu Kosten") bleibt 1:1 erhalten. Die einzelne `.subtermin`-Datei ist die portable Kopie; die lebendige Verzahnung lebt in der Mappe.
@@ -46,18 +48,21 @@ Danach **gleicht sie die Gewerke ab** (nach BKP + Name) und zeigt eine **Vorscha
 **Oberste Regel: alles so weit wie möglich offline nutzbar.** Daten leben auf den eigenen Geräten (lokale Dateien) — das ist die Wahrheit, immer verfügbar. Cloud/Sync ist immer **optional**, nie Voraussetzung zum Öffnen einer Datei.
 
 Zwei getrennte Wege (bewusst):
-- **Dokumente (Rechnungen/Offerten/Fotos) = echte Dateien auf PC/OneDrive** → siehe Ablage.
+- **Dokumente (Rechnungen/Offerten/Fotos) = echte Dateien am frei gewählten Ort** (z. B. **NAS**, lokale Platte, OneDrive, USB) → siehe Ablage.
 - **App-Datenabgleich + Handy-Aufnahmen = Supabase-Poststelle** → nur Transport/Abgleich der strukturierten Daten, kein Archiv.
 
-## Dokumente ablegen — echte Dateien auf PC/OneDrive
+## Speicherort = frei wählbar
+Ein Projekt ist eine **Datei/ein Ordner** → man legt es ab, **wohin man will**: **NAS** (bevorzugt: eigene Ablage, im Büro geteilt, eigenes Backup), lokale Platte, USB, OneDrive. Die App fragt nicht „welche Cloud", sondern „welcher Ordner" — wie Word.
+
+## Dokumente ablegen — echte Dateien
 **Standard: referenzierte echte Dateien.** Eingehende Dokumente (Rechnung, Offerte, Nachtrag, Rapport — egal welcher Dateiname) zieht man **auf das Gewerk** (Terminbalken ODER Kostenübersicht, egal wo). Popup fragt **„Was ist das?"** → die Datei wird in einen **organisierten Ordner neben dem Projekt** abgelegt und gleich das passende **Formular geöffnet** (neue Rechnung → QR-Code scannen oder selbst eingeben).
 - Beispiel: `…/Projekte/Römerstrasse/211 Baumeister/Rechnungen/2026-05_Akonto1.pdf`
 - Das Projekt merkt sich nur den **relativen Verweis** → kein Link-Bruch beim Verschieben des Projektordners.
-- **OneDrive** macht damit automatisch **Backup + Sync + Handy-Zugriff** (eigene Ablage, kein fremder Anbieter); Rechnungen bleiben auch **ausserhalb der App** im Explorer auffindbar.
+- Liegt der Ordner auf **NAS/OneDrive**, übernimmt der automatisch **Backup + Sync + Zugriff von anderen Geräten** (eigene Ablage, kein fremder Anbieter); Rechnungen bleiben auch **ausserhalb der App** im Explorer auffindbar.
 - **Bündeln optional:** zum Archivieren/Teilen lässt sich ein Projekt inkl. aller Dokumente in **eine** selbst-enthaltene Datei packen.
 
 ## Handy / Baustelle
-Extrem einfache Bedienung, volle Kontrolle, **offline**. Man nimmt unterwegs eine **Pendenz + Foto** auf → Bild komprimiert. Übertragung zum PC-Projekt über die **Supabase-Poststelle** (Transport der strukturierten Aufnahme); am PC wird das Foto als **echte Datei in den OneDrive-Projektordner** abgelegt und mit Pendenz/Gewerk verknüpft.
+Extrem einfache Bedienung, volle Kontrolle, **offline**. Man nimmt unterwegs eine **Pendenz + Foto** auf → Bild komprimiert. Übertragung zum PC-Projekt über die **Supabase-Poststelle** (Transport der strukturierten Aufnahme); am PC wird das Foto als **echte Datei in den Projektordner** (z. B. auf dem NAS) abgelegt und mit Pendenz/Gewerk verknüpft.
 
 ## Mehrbenutzer & Rollen
 Von Anfang an mitgedacht (jedes Objekt mit ID, Zeitstempel, Herkunft). Arbeitsmodell: **einer bearbeitet, andere sehen zu, Änderungen werden zusammengeführt** (kaum Konflikte, voll offline-tauglich). Echtes Live-Gleichzeitig später optional. Rollen kommen sauber dazu: z. B. **Sekretärin = sicher ansehen + Bestimmtes bearbeiten**, ohne etwas kaputtmachen zu können.

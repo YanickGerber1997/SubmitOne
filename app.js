@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v301';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v302';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -6731,12 +6731,13 @@ function viewEinstellungen() {
         ? '☁ <strong>Cloud-Modus (Supabase)</strong> – gemeinsamer Arbeitsbereich, auf allen Geräten synchron.'
         : '💾 <strong>Lokaler Modus</strong> – Daten nur in diesem Browser. Cloud aktivierst du in <code>config.js</code>.'}</p>
       <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
-        <button class="btn secondary" data-act="export">⬇ Daten exportieren (JSON)</button>
+        <button class="btn secondary" data-act="export">⬇ Voll-Backup speichern (JSON)</button>
+        <button class="btn secondary" data-act="import-data">📥 Backup einlesen (JSON)</button>
         <button class="btn secondary" data-act="gerber-import">📂 Projekt aus .gerber öffnen</button>
         <button class="btn secondary" data-act="reset">↻ Daten zurücksetzen (Römerstrasse 31)</button>
         ${cloudEnabled ? '<button class="btn secondary" data-act="logout">⎋ Abmelden</button>' : ''}
       </div>
-      <p class="muted" style="font-size:11.5px;margin-top:8px">Einzelne Projekte speicherst/teilst du als <b>.gerber</b>-Datei (Rechtsklick auf ein Projekt → „Als .gerber speichern"). Hier importierst du eine .gerber-Datei als neues Projekt.</p>
+      <p class="muted" style="font-size:11.5px;margin-top:8px"><b>Voll-Backup (JSON):</b> sichert ALLE Projekte + Kontakte in eine Datei – „Backup einlesen" stellt diesen Stand wieder her (ersetzt alles). <b>Einzelnes Projekt (.gerber):</b> Rechtsklick auf ein Projekt → „Als .gerber speichern" zum Sichern/Teilen; „Projekt aus .gerber öffnen" liest es als zusätzliches Projekt ein (ideal zum Weitergeben/Weiterbearbeiten).</p>
       <hr style="border:none;border-top:1px solid var(--border);margin:22px 0">
       <h2 style="font-size:15px">Über</h2>
       <p class="muted" style="font-size:13px">
@@ -11377,6 +11378,18 @@ function exportData() {
   URL.revokeObjectURL(a.href);
   toast('Export erstellt');
 }
+// Voll-Backup wieder einlesen (ersetzt ALLE Daten) – oder einzelnes .gerber-Projekt
+async function importData() {
+  const data = await openGerber(); if (!data) return;
+  if (Array.isArray(data.projekte)) {
+    if (!confirm('Backup einlesen?\n\nErsetzt ALLE aktuellen Daten in diesem Browser (' + data.projekte.length + ' Projekte, ' + (data.kontakte || []).length + ' Kontakte). Aktueller Stand geht verloren.')) return;
+    state = { projekte: data.projekte, kontakte: data.kontakte || [], dokumente: data.dokumente || [], buero: data.buero || state.buero };
+    migrate(); save(); closeModal(); router();
+    toast('Backup eingelesen (' + state.projekte.length + ' Projekte)', 'ok');
+  } else if (data.typ === 'projekt' || data.format === 'gerber' || data.name || data.projekt) {
+    addProjektFromGerber(data);   // einzelnes Projekt
+  } else { toast('Keine gültige Backup- oder Projektdatei', 'info'); }
+}
 
 // --- .gerber Dateien: speichern/öffnen (File System Access API mit Download/Upload-Fallback) ---
 async function saveGerber(filename, dataObj) {
@@ -11803,6 +11816,7 @@ document.addEventListener('click', e => {
     case 'save-buero':   saveBuero(); break;
     case 'rm-logo':      state.buero = { ...(state.buero || {}), logo: '' }; save(); viewEinstellungen(); break;
     case 'export':       exportData(); break;
+    case 'import-data':  importData(); break;
     case 'gerber-import': importProjektGerber(); break;
     case 'gerber-export': exportProjektGerber(pid); break;
     case 'gerber-termin': exportTerminGerber(pid); break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v319';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v320';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1898,6 +1898,21 @@ const G_ICONS = {
   ends: '<line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="7" x2="4" y2="17"/><line x1="20" y1="7" x2="20" y2="17"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.3V12l3.2 2"/>',
   folder: '<path d="M3.5 7a1.2 1.2 0 0 1 1.2-1.2h4l2 2h8a1.2 1.2 0 0 1 1.2 1.2v8.6a1.2 1.2 0 0 1-1.2 1.2H4.7a1.2 1.2 0 0 1-1.2-1.2z"/>',
+  wand: '<line x1="4.5" y1="19.5" x2="14" y2="10"/><path d="M17 3.2l.85 2.05L19.9 6.1l-2.05.85L17 9l-.85-2.05L14.1 6.1l2.05-.85z"/><circle cx="6.5" cy="6" r=".6" fill="currentColor" stroke="none"/><circle cx="20" cy="14" r=".6" fill="currentColor" stroke="none"/>',
+  filter: '<path d="M3.5 5h17l-6.4 7.6v5.1l-4.2 2.1v-7.2z"/>',
+  check: '<circle cx="12" cy="12" r="8.5"/><path d="M8 12.3l2.6 2.6L16 9.4"/>',
+  delta: '<path d="M12 4.5l7.5 14.5H4.5z"/>',
+  alignL: '<line x1="4" y1="6.5" x2="20" y2="6.5"/><line x1="4" y1="12" x2="13" y2="12"/><line x1="4" y1="17.5" x2="16" y2="17.5"/>',
+  alignC: '<line x1="4" y1="6.5" x2="20" y2="6.5"/><line x1="7.5" y1="12" x2="16.5" y2="12"/><line x1="5.5" y1="17.5" x2="18.5" y2="17.5"/>',
+  alignR: '<line x1="4" y1="6.5" x2="20" y2="6.5"/><line x1="11" y1="12" x2="20" y2="12"/><line x1="8" y1="17.5" x2="20" y2="17.5"/>',
+  arrUp: '<line x1="12" y1="20" x2="12" y2="5"/><path d="M6 11l6-6 6 6"/>',
+  arrDown: '<line x1="12" y1="4" x2="12" y2="19"/><path d="M6 13l6 6 6-6"/>',
+  arrLeft: '<line x1="20" y1="12" x2="5" y2="12"/><path d="M11 6l-6 6 6 6"/>',
+  arrRight: '<line x1="4" y1="12" x2="19" y2="12"/><path d="M13 6l6 6-6 6"/>',
+  arrBoth: '<line x1="3.5" y1="12" x2="20.5" y2="12"/><path d="M8 7l-5 5 5 5"/><path d="M16 7l5 5-5 5"/>',
+  layers: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>',
+  hourglass: '<path d="M6.5 3h11M6.5 21h11"/><path d="M7.5 3c0 4.5 4.5 5 4.5 9s-4.5 4.5-4.5 9M16.5 3c0 4.5-4.5 5-4.5 9s4.5 4.5 4.5 9"/>',
+  inside: '<rect x="3.5" y="8" width="17" height="8" rx="1.4"/><line x1="7" y1="12" x2="13" y2="12"/>',
 };
 function gIcon(name) { return `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
 function bigBtn(act, icon, label, o) { o = o || {}; return `<button class="g-bigbtn${o.on ? ' on' : ''}" data-act="${act}" data-pid="${o.pid}"${o.kind != null ? ` data-kind="${o.kind}"` : ''} title="${esc(o.title || label)}"><span class="bb-ico">${gIcon(icon)}</span><span class="bb-lbl">${esc(label)}</span></button>`; }
@@ -1928,20 +1943,20 @@ function ganttRibbonTabs(p) {
     rgroup('Farbe nach', optBtns('gantt-color', p.id, [['status', 'Status'], ['firma', 'Firma'], ['phase', 'Phase']], ganttColorMode)) +
     rgroup('Kräftigkeit', optBtns('gantt-strength', p.id, [['voll', 'Voll'], ['mittel', 'Mittel'], ['hell', 'Hell'], ['pastell', 'Pastell']], ganttColorStrength)) +
     rgroup('Farben', bigBtn('gantt-colors-open', 'swatch', 'Anpassen', { pid: p.id, on: !!state.ganttColors, title: 'Farben je Status/Unternehmer/Phase anpassen' })) +
-    rgroup('Sortierung', optBtns('gantt-sort', p.id, [['bkp', 'BKP'], ['start', 'Startdatum']], ganttSort)) +
+    rgroup('Sortierung', optBtns('gantt-sort', p.id, [['bkp', 'BKP', 'sort'], ['start', 'Startdatum', 'clock']], ganttSort)) +
     rgroup('Balken', bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }));
   else if (ganttTab === 'beschriftung') b =
-    rgroup('Auto-Layout', bigBtn('gantt-auto', 'focus', 'Auto', { pid: p.id, on: ganttAuto, title: 'Auto: Beschriftung + Datum + Dauer automatisch sauber & einheitlich platzieren (berücksichtigt Verknüpfungen)' })) +
-    rgroup('Position', optBtns('gantt-labelmode', p.id, [['auto', 'Auto'], ['above', 'Oben'], ['below', 'Unten'], ['before', 'Vor'], ['after', 'Nach'], ['clip', 'Innen'], ['over', 'Über']], ganttLabelMode)) +
-    rgroup('Ausrichtung', optBtns('gantt-align', p.id, [['links', 'Links'], ['mitte', 'Mitte'], ['rechts', 'Rechts']], ganttLabelAlign)) +
+    rgroup('Auto-Layout', bigBtn('gantt-auto', 'wand', 'Auto', { pid: p.id, on: ganttAuto, title: 'Auto: Beschriftung + Datum + Dauer automatisch sauber & einheitlich platzieren (berücksichtigt Verknüpfungen)' })) +
+    rgroup('Position', optBtns('gantt-labelmode', p.id, [['auto', 'Auto', 'wand'], ['above', 'Oben', 'arrUp'], ['below', 'Unten', 'arrDown'], ['before', 'Vor', 'arrLeft'], ['after', 'Nach', 'arrRight'], ['clip', 'Innen', 'inside'], ['over', 'Über', 'layers']], ganttLabelMode)) +
+    rgroup('Ausrichtung', optBtns('gantt-align', p.id, [['links', 'Links', 'alignL'], ['mitte', 'Mitte', 'alignC'], ['rechts', 'Rechts', 'alignR']], ganttLabelAlign)) +
     rgroup('Datum', optBtns('gantt-dates', p.id, [['off', 'Aus'], ['kurz', 'Kurz'], ['lang', 'Lang'], ['kw', 'KW'], ['monat', 'Monat'], ['saison', 'Saison']], ganttDates)) +
-    (ganttDates !== 'off' ? rgroup('Datum-Seite', optBtns('gantt-datepos', p.id, [['beide', 'Beide'], ['start', 'Vorne'], ['ende', 'Hinten']], ganttDatePos)) : '') +
-    rgroup('Dauer', optBtns('gantt-durmode', p.id, [['off', 'Aus'], ['innen', 'Innen'], ['oben', 'Oben'], ['unten', 'Unten']], ganttDurMode)) +
-    (ganttDurMode !== 'off' ? rgroup('Dauer-Ausr.', optBtns('gantt-duralign', p.id, [['links', 'Links'], ['mitte', 'Mitte'], ['rechts', 'Rechts']], ganttDurAlign)) : '');
+    (ganttDates !== 'off' ? rgroup('Datum-Seite', optBtns('gantt-datepos', p.id, [['beide', 'Beide', 'arrBoth'], ['start', 'Vorne', 'arrLeft'], ['ende', 'Hinten', 'arrRight']], ganttDatePos)) : '') +
+    rgroup('Dauer', optBtns('gantt-durmode', p.id, [['off', 'Aus'], ['innen', 'Innen', 'inside'], ['oben', 'Oben', 'arrUp'], ['unten', 'Unten', 'arrDown']], ganttDurMode)) +
+    (ganttDurMode !== 'off' ? rgroup('Dauer-Ausr.', optBtns('gantt-duralign', p.id, [['links', 'Links', 'alignL'], ['mitte', 'Mitte', 'alignC'], ['rechts', 'Rechts', 'alignR']], ganttDurAlign)) : '');
   else if (ganttTab === 'anzeige') b =
     rgroup('Fokus', bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' })) +
-    rgroup('Filter', bigBtn('gantt-hideundated', 'calCheck', 'Nur Termin', { pid: p.id, on: ganttHideUndated, title: 'Nur Gewerke mit Termin anzeigen (termin-lose wie Reserve ausblenden)' }) + bigBtn('gantt-done', 'calCheck', 'Erfüllt: ' + DONE_NAMES[ganttDone], { pid: p.id, on: ganttDone !== 'show', title: 'Erfüllte Termine: Zeigen → Ausgrauen → Ausblenden' })) +
-    rgroup('Vergleich', bigBtn('gantt-basecmp', 'clock', ganttBaseCompare && ganttBaselineVer(p) ? 'Δ ' + ganttBaselineVer(p).name : 'Δ Version', { pid: p.id, on: ganttBaseCompare, title: 'Vergleichsversion wählen – ⟳ am Balken zeigt „war → jetzt"; im Menü auch „Verschiebungen anzeigen"' }));
+    rgroup('Filter', bigBtn('gantt-hideundated', 'filter', 'Nur Termin', { pid: p.id, on: ganttHideUndated, title: 'Nur Gewerke mit Termin anzeigen (termin-lose wie Reserve ausblenden)' }) + bigBtn('gantt-done', 'check', 'Erfüllt: ' + DONE_NAMES[ganttDone], { pid: p.id, on: ganttDone !== 'show', title: 'Erfüllte Termine: Zeigen → Ausgrauen → Ausblenden' })) +
+    rgroup('Vergleich', bigBtn('gantt-basecmp', 'delta', ganttBaseCompare && ganttBaselineVer(p) ? 'Δ ' + ganttBaselineVer(p).name : 'Δ Version', { pid: p.id, on: ganttBaseCompare, title: 'Vergleichsversion wählen – ⟳ am Balken zeigt „war → jetzt"; im Menü auch „Verschiebungen anzeigen"' }));
   else if (ganttTab === 'ablauf') b =
     rgroup('Eckdaten', bigBtn('eckdaten', 'flag', 'Baustart', { pid: p.id, on: !!(p.baustart || p.bauende), title: 'Baustart / Bauende / Bezug' }) + bigBtn('feiertage', 'star', 'Feiertage', { pid: p.id, on: !!p.kanton, title: 'Feiertage / Kanton' + (p.kanton ? ' ' + p.kanton : '') })) +
     rgroup('Abhängigkeit', bigBtn('gantt-chain', 'chain', 'Verkettung', { pid: p.id, on: ganttChain, title: 'Verkettung ' + (ganttChain ? 'an' : 'aus') }) + bigBtn('gantt-workdays', 'calCheck', 'Arbeitstage', { pid: p.id, on: ganttWorkdays, title: 'Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus') }) + ((p.sitzungsraster && p.sitzungsraster.aktiv) ? bigBtn('gantt-raster', 'calendar', 'Sitzungen', { pid: p.id, on: ganttRaster, title: 'Sitzungslinien ' + (ganttRaster ? 'an' : 'aus') }) : '')) +
@@ -2463,7 +2478,8 @@ function gDauerLabel(startIso, endIso, x0, x1, sub) {
 let ganttLabelAlign = 'links';   // 'links' | 'mitte' | 'rechts'
 // Office-artige Reiter über den Icons + Optionssatz (alle Möglichkeiten direkt anklickbar)
 let ganttTab = 'ansicht';   // ansicht | beschriftung | datum | dauer | zeit | mehr | datei
-function optBtns(act, pid, opts, current) { return `<div class="g-optset">${opts.map(([val, lbl]) => `<button class="g-opt${val === current ? ' active' : ''}" data-act="${act}" data-pid="${pid}" data-kind="${val}" type="button">${esc(lbl)}</button>`).join('')}</div>`; }
+function gIconSm(name) { return `<svg class="g-opt-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
+function optBtns(act, pid, opts, current) { return `<div class="g-optset">${opts.map(([val, lbl, ic]) => `<button class="g-opt${val === current ? ' active' : ''}" data-act="${act}" data-pid="${pid}" data-kind="${val}" type="button">${ic ? gIconSm(ic) : ''}${esc(lbl)}</button>`).join('')}</div>`; }
 // Passt das Balken-Label in den Balken? sonst rechts daneben anzeigen
 function barLabelFits(text, wpx) { return wpx >= String(text || '').length * 6.4 + 18; }
 function barLabelW(text) { return String(text || '').length * 6.4 + 8; }

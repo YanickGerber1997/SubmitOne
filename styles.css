@@ -799,9 +799,11 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-ribtab.active { color: var(--brand); border-bottom-color: var(--brand); }
 /* Optionssatz – alle Möglichkeiten direkt anklickbar (segmentiert) */
 .g-optset { display: inline-flex; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
-.g-opt { border: none; background: none; padding: 6px 10px; font-size: 12px; font-weight: 600; color: var(--text-soft); cursor: pointer; border-radius: 6px; white-space: nowrap; }
+.g-opt { display: inline-flex; align-items: center; gap: 4px; border: none; background: none; padding: 6px 10px; font-size: 12px; font-weight: 600; color: var(--text-soft); cursor: pointer; border-radius: 6px; white-space: nowrap; }
 .g-opt:hover { color: var(--text); }
 .g-opt.active { background: var(--brand); color: #fff; }
+.g-opt-ico { flex: none; opacity: .85; }
+.g-opt.active .g-opt-ico { opacity: 1; }
 .page-toolbar .g-ribtabs { flex: 1 1 100%; min-width: 0; }
 /* Scrollbalken ausblenden – Inhalt bleibt per Wisch/Drag scrollbar (kein hässlicher Balken) */
 .g-topbox, .g-ribbon, .g-footer { scrollbar-width: none; -ms-overflow-style: none; }

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v305';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v306';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -11569,12 +11569,12 @@ async function importTerminGerber(pid) {
   const remapKey = k => { if (idMap[k]) return idMap[k]; const i = String(k).indexOf('/'); if (i > 0 && idMap[k.slice(0, i)]) return idMap[k.slice(0, i)] + k.slice(i); return idMap[k] === undefined && byId[k] ? k : null; };
   const links = (data.ganttLinks || []).map(l => { const f = remapKey(l.from), t = remapKey(l.to); return (f && t) ? { ...l, from: f, to: t } : null; }).filter(Boolean);
   const snapshot = { vergaben: snapV, ganttLinks: links, regeln: JSON.parse(JSON.stringify(data.regeln || [])), sitzungsraster: data.sitzungsraster ? JSON.parse(JSON.stringify(data.sitzungsraster)) : null, baustart: data.baustart || '', bauende: data.bauende || '', bezug: data.bezug || '' };
-  tvSyncAktiv(p);   // aktuellen Stand in der aktiven Version sichern, bevor umgeschaltet wird
+  tvSyncAktiv(p);   // aktuellen Stand in der aktiven Version sichern
   const nv = { id: uid('tv'), name: 'Import ' + fmtDate(todayIso()), datum: todayIso(), gesperrt: false, snapshot };
-  p.terminVersionen.push(nv); p.terminVersAktiv = nv.id;
-  applyTerminSnapshot(p, snapshot);
+  p.terminVersionen.push(nv);   // als neue Version anlegen, aber NICHT sofort aktivieren
   save(); rerenderGantt(pid);
-  toast('Importiert als neue Version „' + nv.name + '" (' + snapV.length + ' Gewerke, ' + links.length + ' Verknüpfungen)', 'ok');
+  toast('Importiert als Version „' + nv.name + '" (' + snapV.length + ' Gewerke, ' + links.length + ' Verknüpfungen) – Vergleich wird gezeigt', 'info');
+  tvSwitch(pid, nv.id);   // zeigt den Vergleich/Achtung-Dialog – übernommen erst nach Bestätigung
 }
 function exportProjektGerber(pid) {
   const p = findProjekt(pid); if (!p) return;

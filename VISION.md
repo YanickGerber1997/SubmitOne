@@ -66,22 +66,17 @@ So bleibt der **Komfort** (online, überall) **mit** der **Robustheit** (offline
 
 **Online-Ablage = Supabase** (Entscheid): managed (wenig Aufwand), skaliert zum **SaaS** (Verkauf an andere Firmen), Konten + **Rollen via RLS**, Echtzeit-Abgleich, Stripe-fähig (Abo schon begonnen). **EU-Region** für Datenschutz. Free-Tier zum Start. **Kein Lock-in**, weil Offline-Modus + Datei-Export bleiben — Supabase ist die bequeme Online-Schicht, nicht der einzige Ort. (Sync-Logik offline↔online ist echte Arbeit, schrittweise gebaut.)
 
-Getrennt davon weiterhin:
-- **Dokumente (Rechnungen/Offerten/Fotos) = echte Dateien am frei gewählten Ort** (z. B. **NAS**, lokal, USB) → siehe Ablage.
-- **Handy-Aufnahmen** → Transport über die Poststelle/Online-Schicht.
+## Dokumente & Bilder — per ID, getrennte Speicher (NICHT per Pfad, NICHT in Supabase)
+Dokumente/Fotos werden **per fester ID** referenziert (nie per zerbrechlichem Pfad) → keine gebrochenen Verweise, alles online + Handy + offline erreichbar. **Daten und Dateien sind getrennt gespeichert** (damit es bezahlbar bleibt):
+- **Supabase = das Gehirn:** nur **strukturierte Daten + Metadaten + IDs + Konten/Rollen/Sync**. Winzig → bleibt günstig.
+- **Grosse Dateien (PDFs/Fotos/Pläne) NICHT in Supabase** (sprengt den Speicher) → in **günstigem Massenspeicher** (Cloudflare R2 / Backblaze B2 — ~1–1,5 Cent/GB·Monat, R2 ohne Egress; 1 TB ≈ 15 $/Mt., im SaaS via Abo gedeckt) **und/oder auf dem eigenen NAS** (fürs eigene Büro gratis/riesig, nur Metadaten in Supabase).
+- **Komprimieren + Vorschaubilder** (Thumbnails) für schnelle Anzeige; Originale nur bei Bedarf.
 
-## Speicherort = frei wählbar
-Ein Projekt ist eine **Datei/ein Ordner** → man legt es ab, **wohin man will**: **NAS** (bevorzugt: eigene Ablage, im Büro geteilt, eigenes Backup), lokale Platte, USB, OneDrive. Die App fragt nicht „welche Cloud", sondern „welcher Ordner" — wie Word.
+**Drag & Drop:** Dokument (Rechnung/Offerte/Nachtrag/Rapport, egal welcher Name) **aufs Gewerk** ziehen (Terminbalken ODER Kostenübersicht) → Popup „Was ist das?" → wird **per ID abgelegt** + passendes **Formular öffnet sich** (Rechnung → QR/manuell). Optionaler **NAS-Spiegel** (echte Dateien im Explorer durchblätterbar) bleibt als Bonus.
 
-## Dokumente ablegen — echte Dateien
-**Standard: referenzierte echte Dateien.** Eingehende Dokumente (Rechnung, Offerte, Nachtrag, Rapport — egal welcher Dateiname) zieht man **auf das Gewerk** (Terminbalken ODER Kostenübersicht, egal wo). Popup fragt **„Was ist das?"** → die Datei wird in einen **organisierten Ordner neben dem Projekt** abgelegt und gleich das passende **Formular geöffnet** (neue Rechnung → QR-Code scannen oder selbst eingeben).
-- Beispiel: `…/Projekte/Römerstrasse/211 Baumeister/Rechnungen/2026-05_Akonto1.pdf`
-- Das Projekt merkt sich nur den **relativen Verweis** → kein Link-Bruch beim Verschieben des Projektordners.
-- Liegt der Ordner auf **NAS/OneDrive**, übernimmt der automatisch **Backup + Sync + Zugriff von anderen Geräten** (eigene Ablage, kein fremder Anbieter); Rechnungen bleiben auch **ausserhalb der App** im Explorer auffindbar.
-- **Bündeln optional:** zum Archivieren/Teilen lässt sich ein Projekt inkl. aller Dokumente in **eine** selbst-enthaltene Datei packen.
+**Handy / Baustelle:** sehr einfach, **offline**. Pendenz + Foto aufnehmen → komprimiert, in **Warteschlange** → lädt in den Massenspeicher, sobald online → erscheint am PC bei der Pendenz. **Kein Pfad, kein Bruch.**
 
-## Handy / Baustelle
-Extrem einfache Bedienung, volle Kontrolle, **offline**. Man nimmt unterwegs eine **Pendenz + Foto** auf → Bild komprimiert. Übertragung zum PC-Projekt über die **Supabase-Poststelle** (Transport der strukturierten Aufnahme); am PC wird das Foto als **echte Datei in den Projektordner** (z. B. auf dem NAS) abgelegt und mit Pendenz/Gewerk verknüpft.
+**Import in ein Projekt:** Bilder werden in den Speicher des Zielprojekts **übernommen + dedupliziert** (Inhalts-Prüfsumme), Verweise zeigen auf den gemeinsamen Speicher → nichts verloren. Zum **Versenden** wird ein Modul in **eine** selbst-enthaltene Datei (Daten + Bilder) gebündelt.
 
 ## Rollen & vereinfachte Ansichten (zentral!)
 Jede Person bekommt eine **passende, vereinfachte Ansicht** — **umschaltbar**. Die Rolle steuert **beides**: *was man sieht* (weniger Knöpfe, nur das Nötige) und *was man darf* (kann nichts kaputtmachen). Die Tabelle zeigt **Standard-Vorgaben** — **die Rechte sind pro Rolle einstellbar** (Rechte-Matrix, vom Chef verwaltet).

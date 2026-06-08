@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v324';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v325';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -985,13 +985,6 @@ function condNetto(c) { const r = condParts(c); return r ? r.zsumme2 : null; }
 function eOff(e) { if (e.offerte && e.offerte.brutto != null && e.offerte.brutto !== '') return condNetto(e.offerte); return e.betrag != null ? e.betrag : null; }
 function eAbg(e) { return (e.abgebot && e.abgebot.brutto != null && e.abgebot.brutto !== '') ? condNetto(e.abgebot) : null; }
 // Betrag + Grundlage (Werkvertrag > Abgebot > Offerte) im Kontext des Gewerks
-function eBetragQuelle(v, e) {
-  if (isVergeben(v) && v.firma && e.firma === v.firma && (v.betrag != null)) return { betrag: v.betrag, quelle: 'Werkvertrag' };
-  const ab = eAbg(e); if (ab != null) return { betrag: ab, quelle: 'Abgebot' };
-  if (e.offerte && e.offerte.brutto != null && e.offerte.brutto !== '') return { betrag: condNetto(e.offerte), quelle: 'Offerte' };
-  if (e.betrag != null) return { betrag: e.betrag, quelle: 'Offerte' };
-  return { betrag: null, quelle: '' };
-}
 function eVer(e) { return (e.vergabe && e.vergabe.brutto != null && e.vergabe.brutto !== '') ? condNetto(e.vergabe) : null; }
 function offertenOf(v)  { return (v.eingeladene || []).filter(e => e.status === 'offeriert' && eOff(e) != null); }
 function bestBetrag(v)  { const xs = (v.eingeladene || []).filter(e => e.status !== 'abgesagt').map(eOff).filter(x => x != null); return xs.length ? Math.min(...xs) : null; }
@@ -2103,14 +2096,6 @@ function setVergPhase(pid, vid, key) {
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
   v.bauPhase = key || ''; save(); rerenderGantt(pid);
 }
-function setGrobPhase(pid, vid, feld, val) {
-  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
-  v[feld] = val || '';
-  // Ende nicht vor Start
-  if (feld === 'grobStart' && val) { const a = grobIdx(val), b = grobIdx(v.grobEnde); if (b != null && b < a) v.grobEnde = ''; }
-  if (feld === 'grobEnde' && val) { const a = grobIdx(v.grobStart), b = grobIdx(val); if (a != null && b < a) v.grobEnde = v.grobStart; }
-  save(); viewGrobGantt(p);
-}
 // Feinprogramm: stunden-/tagweise Detailanweisungen (z.B. 08:00–09:00 …, Pause 12–13) für kurze Programme
 function viewFeinGantt(p) {
   if (feinSub === 'stunden') return viewFeinStunden(p);
@@ -2181,7 +2166,6 @@ function onDayDraw(e) {
   document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
   e.preventDefault();
 }
-function ganttColForGewerk(p, vid) { const v = vid ? findVergabe(p, vid) : null; return v ? ganttColHex(v) : 'var(--brand)'; }
 function actFeinBlock(pid, bid, prefill) {
   const p = findProjekt(pid); const b = bid ? (p.feinbloecke || []).find(x => x.id === bid) : null;
   const gw = gewerkeSorted(p); const pf = prefill || {};
@@ -4417,107 +4401,6 @@ function openPrintDoc(title, subtitleHtml, inner, opts) {
 
 // Profi-Druck via Paged.js: echtes Deckblatt, Inhaltsverzeichnis, „Seite X / Y", laufende Kopf-/Fusszeile.
 // opts: { title, kicker, objekt, datum, freitext, toc, landscape, sections:[{id,title,html}] }
-function openPagedDoc(opts) {
-  opts = opts || {};
-  const b = state.buero || BUERO;
-  const land = !!opts.landscape;
-  const cssStr = s => '"' + String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
-  const logo = b.logo
-    ? `<img src="${b.logo}" style="max-height:64px;max-width:260px">`
-    : `<div style="font-family:Georgia,'Times New Roman',serif;font-size:27px;letter-spacing:1px;color:#1b2230">${esc(b.firma || 'submit one')}</div>`;
-  const addr = [b.firma, b.strasse, b.plzort, b.tel ? 'Tel. ' + b.tel : '', b.email].filter(Boolean).map(esc).join(' &nbsp;·&nbsp; ');
-  const datum = opts.datum || fmtDate(todayIso());
-  const pagedUrl = new URL('paged.polyfill.js', location.href).href;   // absolut, da Druckfenster = about:blank
-  const sections = opts.sections || [];
-  const showToc = opts.toc && sections.length > 1;
-  const headL = opts.title || '';
-  const headR = opts.objekt || '';
-  const cover = `<section class="cover">
-    <div class="cv-head">${logo}<div class="cv-addr">${addr}</div></div>
-    <div class="cv-mid">
-      <div class="cv-kick">${esc(opts.kicker || '')}</div>
-      <h1 class="cv-title">${esc(opts.title || '')}</h1>
-      ${opts.objekt ? `<div class="cv-obj">${esc(opts.objekt)}</div>` : ''}
-      <div class="cv-date">Stand: ${esc(datum)}</div>
-      ${opts.freitext ? `<div class="cv-text">${esc(opts.freitext).replace(/\n/g, '<br>')}</div>` : ''}
-    </div>
-    <div class="cv-foot">${esc(b.firma || '')}${b.email ? ' &nbsp;·&nbsp; ' + esc(b.email) : ''}</div>
-  </section>`;
-  const toc = showToc ? `<section class="toc"><h2>Inhalt</h2><ul>${sections.map(s => `<li><span class="toc-t">${esc(s.title)}</span><a class="toc-pg" href="#${s.id}"></a></li>`).join('')}</ul></section>` : '';
-  const body = sections.map((s, i) => `<section class="doc-sec${i > 0 ? ' brk' : ''}" id="${s.id}"><h2 class="sec-h">${esc(s.title)}</h2>${s.html}</section>`).join('');
-  const html = `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>${esc(opts.title || 'Dokument')}</title>
-  <style>
-    *{box-sizing:border-box;} html,body{margin:0;padding:0;}
-    body{font-family:'Helvetica Neue','Segoe UI',Arial,sans-serif;color:#222b36;font-size:11px;line-height:1.5;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    @page{ size:${land ? 'A4 landscape' : 'A4'}; margin:20mm 14mm 15mm;
-      @top-left{ content:${cssStr(headL)}; font-size:7.5px; color:#9aa4b1; }
-      @top-right{ content:${cssStr(headR)}; font-size:7.5px; color:#9aa4b1; }
-      @bottom-right{ content:"Seite " counter(page) " / " counter(pages); font-size:7.5px; color:#9aa4b1; }
-      @bottom-left{ content:${cssStr(b.firma || '')}; font-size:7.5px; color:#c9ced6; } }
-    @page cover{ margin:24mm; @top-left{content:none} @top-right{content:none} @bottom-left{content:none} @bottom-right{content:none} }
-    .cover{ page:cover; break-after:page; }
-    .cv-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:18px; border-bottom:2px solid #7c1d2c; padding-bottom:16px; }
-    .cv-addr{ text-align:right; font-size:9px; color:#6b7480; line-height:1.6; max-width:55%; }
-    .cv-mid{ margin-top:60px; }
-    .cv-kick{ text-transform:uppercase; letter-spacing:2px; font-size:11px; color:#7c1d2c; font-weight:700; }
-    .cv-title{ font-family:Georgia,'Times New Roman',serif; font-weight:400; font-size:40px; color:#1b2230; margin:10px 0 0; letter-spacing:.5px; }
-    .cv-title::after{ content:""; display:block; width:70px; height:3px; background:#7c1d2c; margin-top:16px; }
-    .cv-obj{ font-size:16px; color:#46505e; margin-top:18px; }
-    .cv-date{ font-size:12px; color:#9aa4b1; margin-top:6px; }
-    .cv-text{ margin-top:26px; font-size:12px; color:#3a424d; line-height:1.7; max-width:150mm; white-space:normal; }
-    .cv-foot{ margin-top:70px; border-top:1px solid #e7ebf1; padding-top:9px; font-size:9px; color:#9aa4b1; }
-    .toc{ break-after:page; }
-    .toc h2{ font-family:Georgia,serif; font-weight:400; font-size:22px; color:#1b2230; margin:0 0 18px; }
-    .toc ul{ list-style:none; margin:0; padding:0; }
-    .toc li{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin:9px 0; border-bottom:1px dotted #cfd6df; padding-bottom:4px; }
-    .toc-t{ font-size:13px; color:#222b36; }
-    .toc-pg{ text-decoration:none; color:#7c1d2c; font-weight:700; font-size:12px; }
-    .toc-pg::after{ content: target-counter(attr(href), page); }
-    .doc-sec.brk{ break-before:page; }
-    .sec-h{ font-family:Georgia,'Times New Roman',serif; font-weight:400; font-size:20px; color:#1b2230; margin:0 0 12px; letter-spacing:.3px; break-after:avoid; }
-    .sec-h::after{ content:""; display:block; width:44px; height:2px; background:#7c1d2c; margin-top:8px; }
-    table.t{ width:100%; border-collapse:collapse; margin:0 0 10px; }
-    table.t th{ background:#f3f5f9; text-align:left; padding:7px 9px; font-size:9px; font-weight:700; color:#46505e; border-bottom:1.5px solid #c9d2de; }
-    table.t td{ padding:6px 9px; border-bottom:1px solid #e7ebf1; vertical-align:top; }
-    table.t td.num,table.t th.num{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
-    table.t thead{ display:table-header-group; } table.t tfoot{ display:table-footer-group; } table.t tr{ break-inside:avoid; }
-    tr.uev-in td, tr.uev-out td{ background:#f3eedd; color:#6b5a2a; font-style:italic; border-top:1px solid #e3d3a8; border-bottom:1px solid #e3d3a8; }
-    .gw{ font-weight:700; margin:16px 0 6px; font-size:13px; color:#1b2230; }
-    .muted{ color:#9aa4b1; } .conf{ display:inline-block; background:#fbe9ea; color:#a01b2b; border:1px solid #e7b3ba; border-radius:5px; padding:2px 8px; font-size:10px; font-weight:700; }
-    ${opts.extraCss || ''}
-  </style></head><body>
-  ${cover}${toc}${body}
-  <script>
-  window.PagedConfig = { auto: true, after: function(){
-    try{
-      function fmt(n){ return (Math.round(n*100)/100).toLocaleString('de-CH',{minimumFractionDigits:2,maximumFractionDigits:2}); }
-      function setNum(td,v){ if(td){ td.textContent=fmt(v); } }
-      function setDiff(td,v){ if(!td)return; td.textContent=fmt(v); var p=v>0.005,n=v<-0.005; td.style.background=p?'#fbe7e9':(n?'#e4f5ea':''); td.style.color=p?'#a01b2b':(n?'#1a7a3a':''); }
-      // Übertrags-Zeile (11 Zellen) füllen: [.,Label,.,KV,KVrev,±,WV,Prognose,Rechnung,offen,±]
-      function fillRow(row,c){ if(!row)return; var t=row.querySelectorAll('td'); setNum(t[3],c[0]); setNum(t[4],c[1]); setDiff(t[5],c[1]-c[0]); setNum(t[6],c[2]); setNum(t[7],c[3]); setNum(t[8],c[4]); setNum(t[9],c[5]); setDiff(t[10],c[6]); }
-      var carry=[0,0,0,0,0,0,0];
-      document.querySelectorAll('.pagedjs_page').forEach(function(pageEl){
-        var tbl=pageEl.querySelector('table.uev'); if(!tbl)return;
-        var rows=tbl.querySelectorAll('tbody tr[data-uev]');
-        var ps=[0,0,0,0,0,0,0];
-        rows.forEach(function(r){ var v=r.getAttribute('data-uev').split(';'); for(var i=0;i<7;i++) ps[i]+=parseFloat(v[i])||0; });
-        var inC=carry.slice(); for(var i=0;i<7;i++) carry[i]+=ps[i];
-        var inRow=tbl.querySelector('thead tr.uev-in'), outRow=tbl.querySelector('tfoot tr.uev-out');
-        var firstNoCarry=inC.every(function(x){return Math.abs(x)<0.005;});
-        if(inRow){ if(firstNoCarry||rows.length===0){ inRow.style.display='none'; } else { fillRow(inRow,inC); } }
-        var hasTotal=tbl.querySelector('tbody tr.uev-total');
-        if(outRow){ if(hasTotal||rows.length===0){ outRow.style.display='none'; } else { fillRow(outRow,carry); } }
-      });
-    }catch(e){}
-    setTimeout(function(){ try{window.focus();}catch(e){} window.print(); }, 400);
-  } };
-  <\/script>
-  <script src="${pagedUrl}"><\/script>
-  </body></html>`;
-  const w = window.open('', '_blank');
-  if (!w) { toast('Bitte Popups für PDF erlauben', 'info'); return; }
-  w.document.write(html); w.document.close();
-}
 
 // Deterministischer Seiten-Druck (ohne Paged.js): feste A4-Seiten, Deckblatt, Inhaltsverzeichnis,
 // laufende Kopf-/Fusszeile + „Seite X / Y". opts: { title, kicker, objekt, datum, freitext, toc, landscape, sheets:[{secTitle?, html}] }
@@ -4968,7 +4851,6 @@ function parseBkp(val) {
   const m = String(val || '').trim().match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
   return m ? { code: m[1], label: (m[2] || '').trim() } : { code: String(val || '').trim(), label: '' };
 }
-function bkpLabel(code) { const b = BKP_KATALOG.find(x => x.code === String(code)); return b ? b.label : ''; }
 
 let katOpen = false;  // BKP-Katalog als Geister-Zeilen in der Liste ausgefahren
 // Schalter für die Liste
@@ -5201,18 +5083,6 @@ function entFaellig(p, e) {
   return isoOf(d);
 }
 // Auswahlentscheid-Zeile
-function entRowHtml(p, e, showWhg) {
-  const v = vergabeForEnt(p, e);
-  const bp = v ? (v.budgetposten || []).find(x => (x.text || '').toLowerCase() === (e.thema || '').toLowerCase()) : null;
-  return `<tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
-    <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
-    ${showWhg ? `<td class="muted" style="font-size:12px">${esc(einheitName(p, e.wohnung || ''))}</td>` : ''}
-    <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></td>
-    <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${e.entscheid ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${entStatus(e) === 'entfaellt' ? 'Grund: ' : ''}${esc(e.entscheid)}</div>` : ''}</td>
-    <td class="num">${bp ? chf(bp.betrag) + (hatIst(bp) ? `<div class="muted" style="font-size:11.5px">Ist ${chf(Number(bp.ist) || 0)}</div>` : '') : '<span class="muted">–</span>'}</td>
-    <td><button class="x-btn" data-act="budget-auswahl" data-pid="${p.id}" data-eid="${e.id}" title="Budget">💰</button><button class="x-btn" data-act="edit-entscheidung" data-pid="${p.id}" data-eid="${e.id}" title="Bearbeiten">✏</button><button class="x-btn" data-act="rm-entscheidung" data-pid="${p.id}" data-eid="${e.id}">×</button></td>
-  </tr>`;
-}
 
 function viewBauherr(pid) {
   const p = findProjekt(pid);
@@ -5507,7 +5377,6 @@ function syncEntBudgetposten(p, e) {
   v.budgetposten.push(bp); e.bpId = bp.id;
 }
 // Alle Eigentümerwünsche eines Projekts mit den Baukosten abgleichen (für globale Konsistenz, z.B. bei Migration)
-function syncAllEntBudget(p) { (p.entscheidungen || []).forEach(e => syncEntBudgetposten(p, e)); }
 function setEntscheidungStatus(pid, eid, status) {
   const p = findProjekt(pid); const e = (p.entscheidungen || []).find(x => x.id === eid); if (!e) return;
   e.status = status;
@@ -9105,12 +8974,6 @@ const SOLAR_LOADS = [{ key: 'wp', label: 'Wärmepumpe', kwh: 5000 }, { key: 'eau
 function solarZusatz(s) { return SOLAR_LOADS.reduce((a, l) => a + (s[l.key] ? l.kwh : 0), 0); }
 // KLEIV-Förderung (Pronovo) mit Leistungsstufen – an offiziellen Werten kalibriert
 // (14.25 kWp → ~5'700, 19.3 kWp → ~6'965)
-function solarKLEIV(kwp) {
-  const tiers = [[15, 380], [15, 250], [Infinity, 170]];   // [kWp-Breite, CHF/kWp]
-  let beitrag = 0, rem = kwp;
-  for (const [w, rate] of tiers) { const t = Math.min(rem, w); beitrag += t * rate; rem -= t; if (rem <= 0) break; }
-  return Math.round(200 + beitrag);                        // 200 = Grundbeitrag
-}
 // Eigenverbrauchsanteil automatisch: sinkt bei überdimensionierter Anlage, steigt mit Speicher
 function solarEVQ(produktion, verbrauch, batteryKwh) {
   if (!produktion || !verbrauch) return 0.30;

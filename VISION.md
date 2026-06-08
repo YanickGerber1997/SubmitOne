@@ -34,6 +34,13 @@ Eine echte Windows-Anwendung: doppelklicken, öffnen/speichern wie gewohnt, mehr
 - **Gestalt vs. Speicher getrennt:** *Wie* man öffnet (Browser / PWA / Desktop-App) ist die **Hülle**; *wo* die Daten liegen (NAS/Datei/Sync) ist der **Speicher**. Beides unabhängig austauschbar.
 - **Stand heute:** bereits **PWA-fähig** (manifest + Service Worker); Speicher hängt schon hinter einem **austauschbaren Adapter**. → Weg: **PWA jetzt → Datei/NAS-Adapter → Tauri-Hülle** (echtes `.exe`, voller NAS-Zugriff). Der Wechsel ist **klein**, die Features bleiben unberührt.
 
+## Maximale Arbeitsfläche — fokussierte Module (Office-Look)
+Ein Hauptgrund für eigene Fenster/PWA: **mehr Platz für den eigentlichen Inhalt** (Baukosten, Gantt). Zwei Platzfresser fallen weg:
+- **Browser-Leisten** (Adresszeile/Tabs) → weg dank **PWA-Standalone** (im Manifest schon gesetzt) bzw. Desktop-Fenster.
+- **Projekt-Navigation** (Reiter Übersicht/Gewerke/… + Kopf) → im **Modul-Fokus** ausgeblendet: nur die Werkzeugleiste des Moduls + grosse Inhaltsfläche.
+
+Look wie **Word/Excel** (dünne Ribbon-Leiste, riesige Arbeitsfläche). Das Layout-Muster ist **erlaubt**; nur keine Original-Icons/Schrift/Marke kopieren (eigene Icons haben wir schon).
+
 ## Module greifen ineinander (die Mappe)
 Module sind **verschiedene Werkzeuge auf denselben Projektdaten**. Ein Gewerk (z. B. BKP 211) ist **ein** Ding: SubTermin zeigt den Balken, SubKosten die Zahlen. Beim Öffnen der **Mappe** werden alle Module zusammen geladen → das gewohnte **Rechtsklick-Springen** (z. B. vom Terminbalken „zu Kosten") bleibt 1:1 erhalten. Die einzelne `.subtermin`-Datei ist die portable Kopie; die lebendige Verzahnung lebt in der Mappe.
 

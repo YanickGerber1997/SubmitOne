@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v308';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v309';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -4022,23 +4022,40 @@ function kontaktByFirma(firma) {
 }
 
 let listenTab = 'subm';   // 'subm' | 'unt' – welche Liste im Listen-Reiter angezeigt wird
+// Submittentenliste als Arbeitsliste: ein-/ausblendbare Spalten
+let submCols = { frist: true, versendet: true, status: true, offerte: true, abgebot: false, werkvertrag: true, kontakt: false };
+const SUBM_COLS = [['frist', 'Eingabefrist', 0], ['versendet', 'Versendet', 0], ['status', 'Status', 0], ['offerte', 'Offerte', 1], ['abgebot', 'Abgebot', 1], ['werkvertrag', 'Werkvertrag', 1], ['kontakt', 'Kontakt', 0]];
+function submCell(p, v, e, key) {
+  const wv = isVergeben(v) && v.firma && e.firma === v.firma;
+  if (key === 'frist') { const f = e.frist || v.frist; return f ? fmtDate(f) : '–'; }
+  if (key === 'versendet') return e.datumMail ? fmtDate(e.datumMail) : (e.status === 'eingeladen' ? '<span class="muted">noch nicht</span>' : '–');
+  if (key === 'status') return `<span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:1px 7px;font-size:10px">${INV_STATUS[e.status]?.label || esc(e.status)}</span>`;
+  if (key === 'offerte') return eOff(e) != null ? chf(eOff(e)) : '–';
+  if (key === 'abgebot') return eAbg(e) != null ? chf(eAbg(e)) : '–';
+  if (key === 'werkvertrag') return wv ? `<strong>✓ ${eVer(e) != null ? chf(eVer(e)) : (v.betrag ? chf(v.betrag) : 'WV')}</strong>` : '<span class="muted">–</span>';
+  if (key === 'kontakt') { const k = (state.kontakte || []).find(x => x.firma === e.firma); return esc([e.email, k && k.telefon].filter(Boolean).join(' · ')) || '–'; }
+  return '';
+}
+function submTableHtml(p, cols, compact) {
+  const gw = gewerkeSorted(p); if (!gw.length) return '';
+  const heads = SUBM_COLS.filter(c => cols.includes(c[0]));
+  const ncol = 1 + heads.length;
+  const body = gw.map(v => {
+    const eing = (v.eingeladene || []);
+    const rows = eing.length ? eing.map(e => `<tr><td>${esc(e.firma)}</td>${heads.map(([k, , num]) => `<td${num ? ' class="num"' : ''}>${submCell(p, v, e, k)}</td>`).join('')}</tr>`).join('')
+      : `<tr><td colspan="${ncol}" class="muted" style="font-size:11.5px">noch niemand eingeladen</td></tr>`;
+    return `<tr><td colspan="${ncol}" style="background:#f4f6f9;font-weight:700;font-size:11.5px;padding:4px 10px"><span class="bkp-code">${esc(v.bkp)}</span> ${esc(v.gewerk)}</td></tr>${rows}`;
+  }).join('');
+  return `<table class="${compact ? 'grid t-compact' : 't'}"><thead><tr><th>Firma</th>${heads.map(([, l, num]) => `<th${num ? ' class="num"' : ''}>${l}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`;
+}
 function viewListen(pid) {
   const p = findProjekt(pid);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const gw = gewerkeSorted(p);
 
-  const submBody = gw.map(v => {
-    const eing = (v.eingeladene || []);
-    const rows = eing.length ? eing.map(e => `<tr>
-        <td>${esc(e.firma)}</td>
-        <td><span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:1px 7px;font-size:10px">${INV_STATUS[e.status]?.label || esc(e.status)}</span></td>
-        <td class="num">${eOff(e) != null ? chf(eOff(e)) : '–'}</td>
-      </tr>`).join('') : `<tr><td colspan="3" class="muted" style="font-size:11.5px">noch niemand eingeladen</td></tr>`;
-    return `<tr><td colspan="3" style="background:#f4f6f9;font-weight:700;font-size:11.5px;padding:4px 10px"><span class="bkp-code">${esc(v.bkp)}</span> ${esc(v.gewerk)}</td></tr>${rows}`;
-  }).join('');
-  const submBlocks = gw.length
-    ? `<table class="grid t-compact"><thead><tr><th>Firma</th><th style="width:120px">Status</th><th class="num" style="width:130px">Betrag</th></tr></thead><tbody>${submBody}</tbody></table>`
-    : emptyState('◫', 'Keine Gewerke angelegt.');
+  const submActive = SUBM_COLS.filter(c => submCols[c[0]]).map(c => c[0]);
+  const submBlocks = gw.length ? submTableHtml(p, submActive, true) : emptyState('◫', 'Keine Gewerke angelegt.');
+  const submColChips = `<div class="chips" style="margin:-2px 0 10px"><span class="muted" style="font-size:11px;align-self:center;margin-right:2px">Spalten:</span>${SUBM_COLS.map(([k, l]) => `<span class="chip ${submCols[k] ? 'active' : ''}" data-act="subm-col" data-kind="${k}" data-pid="${p.id}">${l}</span>`).join('')}</div>`;
 
   const untRows = gw.map(v => {
     const vergeben = isVergeben(v) && v.firma;
@@ -4092,8 +4109,9 @@ function viewListen(pid) {
     <div class="card">${bemUnique.length ? `<table class="grid t-compact"><thead><tr><th style="width:52px">BKP</th><th>Auswahlpunkt</th><th>Unternehmer</th><th>Ausstellung / Materialauswahl</th></tr></thead><tbody>${bemBody}</tbody></table>` : `<div class="card-pad" style="text-align:center">${emptyState('🎨', 'Noch keine Auswahlpunkte.')}<a class="btn" href="#/projekt/${p.id}/bauherr">zu Eigentümerwünsche</a></div>`}</div>`;
   } else {
     bodyHtml = `<div class="section-head"><h2>Submittentenliste <span class="st red" style="font-size:10.5px;padding:2px 8px;vertical-align:middle">vertraulich</span></h2>
-      <span style="display:inline-flex;gap:6px"><button class="btn sm" data-act="pdf-submittenten" data-pid="${p.id}">🖨 mit Beträgen</button><button class="btn sm secondary" data-act="pdf-submittenten-ob" data-pid="${p.id}">🖨 ohne Beträge</button></span></div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle eingeladenen Firmen je Gewerk – nur intern, <strong>nicht</strong> an die Baustelle.</p>
+      <span style="display:inline-flex;gap:6px"><button class="btn sm" data-act="pdf-submittenten" data-pid="${p.id}" title="Druckt die aktuell sichtbaren Spalten">🖨 Drucken</button><button class="btn sm secondary" data-act="pdf-submittenten-ob" data-pid="${p.id}" title="Ohne Betrags-Spalten">🖨 ohne Beträge</button></span></div>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Arbeitsliste je Gewerk: an wen versendet, Status, Offerte/Abgebot, mit wem der Werkvertrag … – Spalten ein-/ausblenden. Nur intern, <strong>nicht</strong> an die Baustelle.</p>
+    ${submColChips}
     <div class="card card-pad">${submBlocks}</div>`;
   }
 
@@ -4370,23 +4388,11 @@ function openSheetDoc(opts) {
 }
 
 function pdfSubmittenten(pid, mitBetrag) {
-  mitBetrag = mitBetrag !== false;   // Standard: mit Beträgen
+  mitBetrag = mitBetrag !== false;   // false = Betrags-Spalten ausblenden
   const p = findProjekt(pid); if (!p) return;
-  const gw = gewerkeSorted(p);
-  const cols = mitBetrag ? 5 : 4;
-  const body = gw.map(v => {
-    const eing = (v.eingeladene || []);
-    const rows = eing.length ? eing.map(e => {
-      const bq = eBetragQuelle(v, e);
-      const frist = (e.frist || v.frist);
-      return `<tr><td>${esc(e.firma)}</td><td>${frist ? fmtDate(frist) : '–'}</td><td>${INV_STATUS[e.status]?.label || esc(e.status)}</td>${mitBetrag ? `<td>${bq.quelle || '–'}</td><td class="num">${bq.betrag != null ? chf(bq.betrag) : '–'}</td>` : ''}</tr>`;
-    }).join('')
-      : `<tr><td colspan="${cols}" class="muted">noch niemand eingeladen</td></tr>`;
-    return `<tr><td colspan="${cols}" style="background:#f3f5f9;font-weight:700">BKP ${esc(v.bkp)} – ${esc(v.gewerk)}</td></tr>${rows}`;
-  }).join('');
-  const inner = gw.length
-    ? `<table class="t"><thead><tr><th>Firma</th><th style="width:110px">Eingabefrist</th><th style="width:120px">Status</th>${mitBetrag ? '<th style="width:110px">Grundlage</th><th class="num" style="width:140px">Betrag</th>' : ''}</tr></thead><tbody>${body}</tbody></table>`
-    : '<p class="muted">Keine Gewerke angelegt.</p>';
+  let cols = SUBM_COLS.filter(c => submCols[c[0]]).map(c => c[0]);
+  if (!mitBetrag) cols = cols.filter(k => k !== 'offerte' && k !== 'abgebot' && k !== 'werkvertrag');
+  const inner = submTableHtml(p, cols, false) || '<p class="muted">Keine Gewerke angelegt.</p>';
   const sub = `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)}${mitBetrag ? ' &nbsp; <span class="conf">VERTRAULICH – nicht an die Baustelle</span>' : ''}`;
   openPrintDoc('Submittentenliste' + (mitBetrag ? '' : ' (ohne Beträge)'), sub, inner);
 }
@@ -11788,6 +11794,7 @@ document.addEventListener('click', e => {
     case 'rm-inv':       removeInvite(pid, vid, eid); break;
     case 'ruecklese':    actRuecklese(pid, vid); break;
     case 'listen-tab':           listenTab = act.dataset.tab; viewListen(act.dataset.pid || pid); break;
+    case 'subm-col':     submCols[kind] = !submCols[kind]; viewListen(pid); break;
     case 'pdf-submittenten': pdfSubmittenten(pid, true); break;
     case 'pdf-submittenten-ob': pdfSubmittenten(pid, false); break;
     case 'pdf-unternehmer':  pdfUnternehmer(pid); break;

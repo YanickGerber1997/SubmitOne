@@ -36,16 +36,21 @@ Eine echte Windows-Anwendung: doppelklicken, öffnen/speichern wie gewohnt, mehr
 Module sind **verschiedene Werkzeuge auf denselben Projektdaten**. Ein Gewerk (z. B. BKP 211) ist **ein** Ding: SubTermin zeigt den Balken, SubKosten die Zahlen. Beim Öffnen der **Mappe** werden alle Module zusammen geladen → das gewohnte **Rechtsklick-Springen** (z. B. vom Terminbalken „zu Kosten") bleibt 1:1 erhalten. Die einzelne `.subtermin`-Datei ist die portable Kopie; die lebendige Verzahnung lebt in der Mappe.
 
 ## Offline-first — keine Cloud als Zwang
-**Oberste Regel: alles so weit wie möglich offline nutzbar.** Daten leben auf den eigenen Geräten (lokale Dateien) — das ist die Wahrheit, immer verfügbar.
-- **Supabase Free dient nur als „Poststelle"** (kurzer Austausch Handy↔PC, optionaler Abgleich) — **nicht als Archiv**. Fällt sie aus/pausiert, arbeitet man lokal ungestört weiter.
-- Fotos werden komprimiert über die Poststelle geschickt und am PC **ins Projekt eingebettet**; die Kopie in der Poststelle kann danach weg (bleibt schlank).
-- Cloud/Sync ist immer **optional**, nie Voraussetzung zum Öffnen einer Datei.
+**Oberste Regel: alles so weit wie möglich offline nutzbar.** Daten leben auf den eigenen Geräten (lokale Dateien) — das ist die Wahrheit, immer verfügbar. Cloud/Sync ist immer **optional**, nie Voraussetzung zum Öffnen einer Datei.
 
-## Dokumente per Drag & Drop ablegen
-Eingehende Dokumente (Rechnung, Offerte, Nachtrag, Rapport — egal welcher Dateiname) zieht man **auf das Gewerk** (Terminbalken ODER Kostenübersicht, egal wo). Popup fragt **„Was ist das?"** → es wird beim richtigen Gewerk **abgelegt** und gleich das passende **Formular geöffnet** (neue Rechnung → QR-Code scannen oder selbst eingeben). Die Datei wird **im Projekt-Container eingebettet** (reist mit, offline, geht nie verloren).
+Zwei getrennte Wege (bewusst):
+- **Dokumente (Rechnungen/Offerten/Fotos) = echte Dateien auf PC/OneDrive** → siehe Ablage.
+- **App-Datenabgleich + Handy-Aufnahmen = Supabase-Poststelle** → nur Transport/Abgleich der strukturierten Daten, kein Archiv.
+
+## Dokumente ablegen — echte Dateien auf PC/OneDrive
+**Standard: referenzierte echte Dateien.** Eingehende Dokumente (Rechnung, Offerte, Nachtrag, Rapport — egal welcher Dateiname) zieht man **auf das Gewerk** (Terminbalken ODER Kostenübersicht, egal wo). Popup fragt **„Was ist das?"** → die Datei wird in einen **organisierten Ordner neben dem Projekt** abgelegt und gleich das passende **Formular geöffnet** (neue Rechnung → QR-Code scannen oder selbst eingeben).
+- Beispiel: `…/Projekte/Römerstrasse/211 Baumeister/Rechnungen/2026-05_Akonto1.pdf`
+- Das Projekt merkt sich nur den **relativen Verweis** → kein Link-Bruch beim Verschieben des Projektordners.
+- **OneDrive** macht damit automatisch **Backup + Sync + Handy-Zugriff** (eigene Ablage, kein fremder Anbieter); Rechnungen bleiben auch **ausserhalb der App** im Explorer auffindbar.
+- **Bündeln optional:** zum Archivieren/Teilen lässt sich ein Projekt inkl. aller Dokumente in **eine** selbst-enthaltene Datei packen.
 
 ## Handy / Baustelle
-Extrem einfache Bedienung, volle Kontrolle, **offline**. Man nimmt unterwegs eine **Pendenz + Foto** auf → Bild komprimiert, ins Projekt eingebettet, mit Pendenz/Gewerk verknüpft. Austausch zum PC über die **Poststelle** (Supabase Free) oder lokales WLAN.
+Extrem einfache Bedienung, volle Kontrolle, **offline**. Man nimmt unterwegs eine **Pendenz + Foto** auf → Bild komprimiert. Übertragung zum PC-Projekt über die **Supabase-Poststelle** (Transport der strukturierten Aufnahme); am PC wird das Foto als **echte Datei in den OneDrive-Projektordner** abgelegt und mit Pendenz/Gewerk verknüpft.
 
 ## Mehrbenutzer & Rollen
 Von Anfang an mitgedacht (jedes Objekt mit ID, Zeitstempel, Herkunft). Arbeitsmodell: **einer bearbeitet, andere sehen zu, Änderungen werden zusammengeführt** (kaum Konflikte, voll offline-tauglich). Echtes Live-Gleichzeitig später optional. Rollen kommen sauber dazu: z. B. **Sekretärin = sicher ansehen + Bestimmtes bearbeiten**, ohne etwas kaputtmachen zu können.

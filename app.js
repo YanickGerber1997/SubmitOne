@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v316';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v317';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2928,7 +2928,7 @@ function viewTermine(id) {
   });
   const fensterLayer = windows.map(w => `<div class="g-fenster" style="top:${w.top + 2}px;height:${w.height - 4}px;left:${w.left}px;width:${w.width}px;background:${hexA(w.col, .1)};border-color:${hexA(w.col, .5)}"><span class="g-fenster-lbl" style="color:${w.col}">${esc(w.label)}</span></div>`).join('');
   // Einfüge-Streifen zwischen den Zeilen (Hover-Plus) – legt eine leere Unterzeile für das Gewerk darüber an
-  const insertStrips = gespr ? '' : inserts.map(it => `<div class="g-insert" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${it.vid}" style="top:${it.y - 5}px" title="Untertermin einfügen (leer – dann Balken ziehen)"><span>+ Untertermin</span></div>`).join('');
+  const insertStrips = gespr ? '' : inserts.map(it => `<div class="g-insert" style="top:${it.y - 5}px"><button class="g-ins-btn blue" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${it.vid}" title="Untertermin zu diesem Gewerk einfügen (leer – dann Balken ziehen)">+ Untertermin</button><button class="g-ins-btn green" data-act="gantt-add-gewerk" data-pid="${p.id}" data-vid="${it.vid}" title="Neues Gewerk hier einfügen">+ Gewerk</button></div>`).join('');
   // Verbindungen: weiche Bézier-Biegung; Austritts-/Eintritts-Tangente nur bei NAHEM Ziel begrenzt → kein Reinbauchen, aber weiter Bogen bleibt
   const linkPaths = (p.ganttLinks || []).map(lk => {
     const a = barMeta[lk.from], b = barMeta[lk.to]; if (!a || !b) return '';
@@ -3705,6 +3705,15 @@ function addEmptyVorgangDetail(pid, vid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
   (v.vorgaenge = v.vorgaenge || []).push({ id: uid('o'), titel: 'Untertermin', start: '', ende: '' });
   save(); rerenderGantt(pid); toast('Unterzeile angelegt – jetzt Balken ziehen', 'info');
+}
+// Neues Gewerk an der Einfügestelle (nach vid) anlegen – BKP vom Vorgänger vorbelegt, damit es dort einsortiert; gleich benennen/datieren
+function addGewerkAfter(pid, vid) {
+  if (gesperrt(pid)) return;
+  const p = findProjekt(pid); p.vergaben = p.vergaben || [];
+  const idx = p.vergaben.findIndex(x => x.id === vid); const prev = idx >= 0 ? p.vergaben[idx] : null;
+  const nv = { id: uid('v'), bkp: prev ? (prev.bkp || '') : '', gewerk: 'Neues Gewerk', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 0, frist: '', bauStart: '', bauEnde: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] };
+  p.vergaben.splice(idx >= 0 ? idx + 1 : p.vergaben.length, 0, nv);
+  save(); rerenderGantt(pid); actEditVergabe(pid, nv.id);   // sofort BKP + Name setzen
 }
 function commitBarDates(pid, vid, oid, s, en) {
   if (gesperrt(pid)) { rerenderGantt(pid); return; }
@@ -12014,6 +12023,7 @@ document.addEventListener('click', e => {
     case 'grob-zoom':    { grobZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.4, +(grobZoom + (kind === 'in' ? 0.2 : -0.2)).toFixed(2))); viewGrobGantt(findProjekt(pid)); } break;
     case 'grob-phase':   actGrobPhase(e, pid, vid); break;
     case 'gantt-add-vorgang': addEmptyVorgangDetail(pid, vid); break;
+    case 'gantt-add-gewerk': addGewerkAfter(pid, vid); break;
     case 'gantt-fenster': ganttFenster = !ganttFenster; rerenderGantt(pid); break;
     case 'ress-config':  actRessConfig(pid); break;
     case 'ress-save':    saveRessConfig(pid); break;

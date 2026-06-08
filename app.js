@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v306';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v307';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3943,7 +3943,8 @@ function mailEinladung(pid, vid) {
   const offen = (v.eingeladene || []).filter(e => e.status === 'eingeladen');
   const target = offen.length ? offen : (v.eingeladene || []).filter(e => e.status !== 'abgesagt');
   if (!target.length) { toast('Keine Empfänger', 'info'); return; }
-  const body = `Sehr geehrte Damen und Herren\n\nfür das Bauvorhaben „${p.name}"${p.ort ? ' in ' + p.ort : ''} laden wir Sie ein, eine Offerte für folgendes Gewerk einzureichen:\n\n  Gewerk:        ${v.bkp || ''} ${v.gewerk || ''}\n  Eingabefrist:  ${v.frist ? fmtDate(v.frist) : '—'}\n\nDie Ausschreibungsunterlagen erhalten Sie im Anhang.`;
+  const ausfTxt = v.ausfuehrung || ((v.bauStart && v.bauEnde) ? `${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}` : 'gem. Terminprogramm');
+  const body = `Sehr geehrte Damen und Herren\n\nfür das Bauvorhaben „${p.name}"${p.ort ? ' in ' + p.ort : ''} laden wir Sie ein, eine Offerte für folgendes Gewerk einzureichen:\n\n  Gewerk:        ${v.bkp || ''} ${v.gewerk || ''}\n  Eingabefrist:  ${v.frist ? fmtDate(v.frist) : '—'}\n  Ausführung:    ${ausfTxt}\n\nDie Ausschreibungsunterlagen (Einladungs-Deckblatt zum Ausfüllen) erhalten Sie im Anhang.`;
   mailCompose({
     title: 'Submissionseinladung', to: target.map(e => e.email).filter(Boolean),
     subject: `Submissionseinladung – BKP ${v.bkp || ''} ${v.gewerk || ''} / ${p.name}`, body,
@@ -10395,6 +10396,8 @@ function actEditVergabe(pid, vid) {
       <label class="field">Kostenschätzung (CHF) <input class="input" type="number" id="fe_schaetzung" value="${v.schaetzung || ''}"></label>
       <label class="field">Eingabefrist <input class="input" type="date" id="fe_frist" value="${esc(v.frist || '')}"></label>
     </div>
+    <label class="field">Ausführung (Text, falls kein Termin) <input class="input" id="fe_ausf" value="${esc(v.ausfuehrung || '')}" placeholder="z.B. ab Herbst 2026">
+      <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Erscheint auf dem Einladungs-Deckblatt unter „Ausführung". Leer = Terminprogramm bzw. „gem. Terminprogramm".</span></label>
     <label class="field">Status <select class="select" id="fe_status">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select></label>
     ${((p.bauteile || []).length || (p.optionen || []).length) ? `
     <div class="form-row">
@@ -10418,6 +10421,7 @@ function saveVergabeEdit(pid, vid) {
   v.gewerk = gewerk;
   v.schaetzung = Number($('#fe_schaetzung').value) || 0;
   v.frist = $('#fe_frist').value || '';
+  { const a = $('#fe_ausf'); if (a) v.ausfuehrung = a.value.trim(); }
   v.status = $('#fe_status').value || v.status;
   const bte = $('#fe_bauteil'); if (bte) v.bauteil = bte.value;
   const ope = $('#fe_option'); if (ope) v.option = ope.value;
@@ -11151,7 +11155,7 @@ function pdfDeckblatt(pid, vid, eid, typ) {
   const b = state.buero || BUERO;
   const titel = istOfferte ? 'Offerte – äusserste Konditionen' : 'Submissionseinladung';
   const fristJahr = (dISO(v.frist) || new Date()).getFullYear();
-  const termin = (v.bauStart && v.bauEnde) ? `${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}` : 'gem. Terminprogramm';
+  const termin = v.ausfuehrung ? v.ausfuehrung : ((v.bauStart && v.bauEnde) ? `${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}` : 'gem. Terminprogramm');
   const line = '...........................................';
 
   // Firma-Block: bei Offerte/known firma vorausgefüllt, sonst leer zum Ausfüllen

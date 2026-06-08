@@ -1,6 +1,15 @@
 # SubmitOne — Vision (1 Seite)
 
-*Stand: 8. Juni 2026. Dieses Dokument hält fest, WIE das Ganze nachher funktioniert. Es ist die Grundlage für alles Weitere.*
+*Stand: 9. Juni 2026. Dieses Dokument hält fest, WIE das Ganze nachher funktioniert. Es ist die Grundlage für alles Weitere.*
+
+## In einfach (der Anker — Technik darunter ist „Maschinenraum")
+SubmitOne ist **eine App**, in der du ein **ganzes Projekt zentral** steuerst: Termine · Baukosten · Ausschreibung · Ausführung · **Pendenzen/Mängel** (mit Fotos, Plänen, kleinem **Planviewer mit Markierungen**) · Dokumente. **Alles an einem Ort, alles verknüpft.**
+- **Online oder offline — egal:** die App läuft **immer** und gleicht sich **von selbst ab**, sobald Internet da ist (wie das Handy). Kein „online- vs. offline-Version" — es ist **eine** App.
+- **Dateien ablegen:** Rechnung/Plan/Foto **auf ein Gewerk oder eine Pendenz ziehen** → ist dort. Anklicken → ist da. **Wo es gespeichert liegt, muss man nie wissen** (macht die App, wie WhatsApp Fotos).
+- **Frei starten:** einfach ein **Terminprogramm** machen, ohne den Rest. Mit Kosten verknüpfen = **in ein Projekt holen**.
+- **Senden/Empfangen:** ab und zu etwas **als Datei** raus/rein — ein **einzelner Knopf** (Export/Import), kein Alltag.
+
+*Der gefühlte Widerspruch „immer online ↔ alles offline" löst sich: es ist **dieselbe App**, offline lauffähig + automatischer Abgleich. Import/Export ist nur der seltene „Kopie geben/holen"-Fall.*
 
 ## Die Grundidee — wie Word
 **Das Dokument ist der Star, das Programm nur der Stift.**

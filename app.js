@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v287';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v288';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -6710,7 +6710,7 @@ function viewEinstellungen() {
       <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
         <button class="btn secondary" data-act="export">⬇ Daten exportieren (JSON)</button>
         <button class="btn secondary" data-act="gerber-import">📂 Projekt aus .gerber öffnen</button>
-        <button class="btn secondary" data-act="reset">↻ Demo-Daten neu laden</button>
+        <button class="btn secondary" data-act="reset">↻ Daten zurücksetzen (Römerstrasse 31)</button>
         ${cloudEnabled ? '<button class="btn secondary" data-act="logout">⎋ Abmelden</button>' : ''}
       </div>
       <p class="muted" style="font-size:11.5px;margin-top:8px">Einzelne Projekte speicherst/teilst du als <b>.gerber</b>-Datei (Rechtsklick auf ein Projekt → „Als .gerber speichern"). Hier importierst du eine .gerber-Datei als neues Projekt.</p>
@@ -11400,20 +11400,20 @@ function initGerberLaunch() {
 function resetDemo() {
   const warn = cloudEnabled
     ? `<div style="background:#fdecec;border:1px solid var(--s-red);border-radius:8px;padding:10px 12px;font-size:13px;color:#7a1d1d">
-         <strong>⚠ Cloud-Modus:</strong> Dies überschreibt den <strong>gemeinsamen Arbeitsbereich für alle</strong> mit den Demo-Daten. Alle bestehenden Projekte, Vergaben, Protokolle usw. gehen verloren und werden auf allen Geräten synchronisiert.
+         <strong>⚠ Cloud-Modus:</strong> Dies überschreibt den <strong>gemeinsamen Arbeitsbereich für alle</strong> mit dem Projekt Römerstrasse 31. Alle bestehenden Projekte, Vergaben, Protokolle usw. gehen verloren und werden auf allen Geräten synchronisiert.
        </div>`
-    : `<p class="muted" style="font-size:13px;margin-top:0">Dies ersetzt alle aktuellen Daten in diesem Browser durch die Demo-Daten.</p>`;
-  openModal('Demo-Daten neu laden?', `
+    : `<p class="muted" style="font-size:13px;margin-top:0">Dies ersetzt alle aktuellen Daten in diesem Browser durch das Projekt Römerstrasse 31.</p>`;
+  openModal('Daten zurücksetzen?', `
     ${warn}
     <p style="font-size:13px;margin-bottom:0">Tipp: vorher <button class="btn sm secondary" type="button" id="reset_export">⬇ Daten exportieren</button> zur Sicherung.</p>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button>
-      <button class="btn danger" data-act="confirm-reset">Ja, Demo-Daten laden</button>`);
+      <button class="btn danger" data-act="confirm-reset">Ja, zurücksetzen</button>`);
   $('#reset_export')?.addEventListener('click', exportData);
 }
 
 function doResetDemo() {
   state = demoData(); migrate(); save(); closeModal(); router();
-  toast('Demo-Daten geladen', 'info');
+  toast('Projekt geladen', 'info');
 }
 
 /* ---------------------------------------------------------------
@@ -11783,334 +11783,42 @@ window.addEventListener('DOMContentLoaded', boot);
    --------------------------------------------------------------- */
 
 function demoData() {
-  const kontakte = [
-    { id: 'k1', firma: 'Hugentobler Bau AG', kategorie: 'Baumeister', ort: 'Luzern', person: 'P. Hugentobler', email: 'info@hugentobler-bau.ch', telefon: '041 000 00 00' },
-    { id: 'k2', firma: 'Steiner & Co.', kategorie: 'Baumeister', ort: 'Zug', person: 'R. Steiner', email: 'kontakt@steiner-co.ch', telefon: '041 111 11 11' },
-    { id: 'k3', firma: 'BauKern AG', kategorie: 'Baumeister', ort: 'Aarau', person: 'T. Kern', email: 'offerte@baukern.ch', telefon: '062 222 22 22' },
-    { id: 'k4', firma: 'Tiefbau Zentral AG', kategorie: 'Tiefbau', ort: 'Emmen', person: 'A. Lustenberger', email: 'info@tiefbau-zentral.ch', telefon: '041 333 33 33' },
-    { id: 'k5', firma: 'Elektro Meyer AG', kategorie: 'Elektro', ort: 'Luzern', person: 'D. Meyer', email: 'info@elektro-meyer.ch', telefon: '041 444 44 44' },
-    { id: 'k6', firma: 'Volt & Co.', kategorie: 'Elektro', ort: 'Zug', person: 'J. Voltz', email: 'mail@voltco.ch', telefon: '041 555 55 55' },
-    { id: 'k7', firma: 'Fensterwerk AG', kategorie: 'Fenster', ort: 'Sursee', person: 'B. Glaser', email: 'info@fensterwerk.ch', telefon: '041 666 66 66' },
-    { id: 'k8', firma: 'Fassaden Profi AG', kategorie: 'Fassade', ort: 'Zürich', person: 'M. Profi', email: 'kontakt@fassaden-profi.ch', telefon: '044 777 77 77' },
-    { id: 'k9', firma: 'Farbwerk Maler AG', kategorie: 'Maler', ort: 'Luzern', person: 'C. Farb', email: 'info@farbwerk.ch', telefon: '041 888 88 88' },
-    { id: 'k10', firma: 'Bodenhaus AG', kategorie: 'Bodenbeläge', ort: 'Cham', person: 'S. Boden', email: 'info@bodenhaus.ch', telefon: '041 999 99 99' },
-    { id: 'k11', firma: 'Sanitär Wyss AG', kategorie: 'Sanitär', ort: 'Luzern', person: 'H. Wyss', email: 'info@sanitaer-wyss.ch', telefon: '041 121 21 21' },
-    { id: 'k12', firma: 'WärmeTech GmbH', kategorie: 'Heizung', ort: 'Zug', person: 'L. Thermo', email: 'info@waermetech.ch', telefon: '041 131 31 31' },
-    { id: 'k13', firma: 'Klima Nord AG', kategorie: 'Lüftung', ort: 'Emmen', person: 'F. Luft', email: 'info@klima-nord.ch', telefon: '041 141 41 41' },
-    { id: 'k14', firma: 'Holzwerk Seebli AG', kategorie: 'Schreiner', ort: 'Küsnacht', person: 'U. Holz', email: 'info@holzwerk-seebli.ch', telefon: '044 151 51 51' },
+  const V = (bkp, gewerk, s, e) => ({ id: uid('v'), bkp, gewerk, status: 'werkvertrag', firma: '', betrag: 0, schaetzung: 0, frist: '', bauStart: s, bauEnde: e, eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
+  const vergaben = [
+    V('112', 'Abbrüche', '2026-06-08', '2026-07-03'),
+    V('211.3', 'Baumeisteraushub / Hinterfüllung', '2026-06-08', '2026-07-03'),
+    V('211.4', 'Regenwasserleitung', '2026-06-08', '2026-06-12'),
+    V('211.5', 'Beton- und Stahlbeton', '2026-06-22', '2026-07-17'),
+    V('211.1', 'Gerüst stellen', '2026-06-29', '2026-07-03'),
+    V('224', 'Steildach Demontage', '2026-07-13', '2026-07-17'),
+    V('214.6', 'Dach Sparren / Dämmung / Unterdach', '2026-08-03', '2026-08-28'),
+    V('222', 'Spenglerarbeiten', '2026-08-24', '2026-09-04'),
+    V('230', 'PV-Anlage Montage', '2026-08-31', '2026-09-11'),
+    V('271.1', 'Trockenbau', '2026-09-21', '2026-10-09'),
+    V('281', 'Unterlagsböden', '2026-09-28', '2026-10-09'),
+    V('272.2', 'Türeneinbau Metallbau', '2026-10-05', '2026-10-16'),
+    V('271.0', 'Grundputz', '2026-10-12', '2026-10-23'),
+    V('226.2', 'Aussenwärmedämmung', '2026-10-05', '2026-10-23'),
+    V('281.6', 'Keramische Platten', '2026-10-19', '2026-10-30'),
+    V('281.2', 'Parkett', '2026-10-26', '2026-11-06'),
+    V('225.1', 'Fugendichtungen', '2026-10-26', '2026-11-06'),
+    V('228', 'Sonnen- & Wetterschutz', '2026-10-26', '2026-11-13'),
+    V('258', 'Kücheneinbau', '2026-11-09', '2026-11-13'),
+    V('273', 'Innentüren', '2026-11-09', '2026-11-20'),
+    V('273.1', 'Schreinerarbeiten', '2026-11-09', '2026-11-27'),
+    V('285', 'Malerarbeiten', '2026-11-02', '2026-11-27'),
+    V('211.1', 'Gerüstabbau', '2026-11-09', '2026-11-20'),
+    V('272.2', 'Geländer', '2026-11-23', '2026-11-27'),
+    V('275', 'Schliessanlage', '2026-11-16', '2026-11-27'),
+    V('287', 'Baureinigung', '2026-11-30', '2026-12-04'),
+    V('299', 'Mängelbehebung', '2026-11-23', '2026-12-11'),
+    V('421', 'Umgebungsgestaltung', '2026-11-23', '2026-12-11'),
+    V('', 'Bezug & Inbetriebnahme', '2026-12-14', '2026-12-14'),
   ];
-  const mailOf = f => (kontakte.find(k => k.firma === f) || {}).email || '';
-
-  // Eingeladene Unternehmer: [firma, betrag|null, statusOverride?]
-  // betrag != null -> 'offeriert', sonst 'angefragt'; 'eingeladen' = Mail noch nicht versendet
-  const einl = (...rows) => rows.map(([firma, betrag, st]) => ({
-    id: uid('e'), firma, email: mailOf(firma),
-    betrag: betrag ?? null,
-    status: st || (betrag != null ? 'offeriert' : 'angefragt'),
-    datumMail: st === 'eingeladen' ? '' : '2026-04-20',
-  }));
-
-  const projekte = [
-    {
-      id: 'p_sonnen', name: 'Neubau MFH Sonnenhof', ort: 'Luzern', bauherr: 'Sonnenhof Immobilien AG',
-      projektleiter: 'M. Bühler', phase: 'vergabe', start: '2026-02-01', ende: '2027-08-30',
-      baustart: '2026-03-01', bezug: '2027-07-15',
-      finanz: { land: 1350000, honorare: 380000, finanzierung: 120000 },
-      wohnungen: 6,
-      bauteile: [{ id: 'bt_carport', name: 'Unterstand / Carport (Nebenprojekt)' }],
-      optionen: [
-        { id: 'op_lift', name: 'Personenlift (optional)', bauteilId: '', gruppe: '', vertragsAbzug: null },
-        { id: 'op_pv', name: 'PV-Anlage auf Carport (optional)', bauteilId: 'bt_carport', gruppe: '', vertragsAbzug: null },
-      ],
-      auflagen: [
-        { id: uid('au'), titel: 'Baubeginn melden (Baustartanzeige an Gemeinde)', kat: 'Meldung', phase: 'vor Baubeginn', termin: '2026-02-20', zustaendig: 'Bauleitung', status: 'erledigt', bemerkung: 'Ziffer 1 der Bewilligung' },
-        { id: uid('au'), titel: 'Schnurgerüst / Gebäudeprofil abstecken (Geometer)', kat: 'Abnahme', phase: 'vor Baubeginn', termin: '2026-02-25', zustaendig: 'Geometer Müller', status: 'erledigt', bemerkung: '' },
-        { id: uid('au'), titel: 'Energie-/Wärmedämmnachweis einreichen', kat: 'Nachweis', phase: 'vor Baubeginn', termin: '2026-02-28', zustaendig: 'Bauphysik', status: 'eingereicht', bemerkung: 'GEAK + Wärmedämmnachweis' },
-        { id: uid('au'), titel: 'Asbest-/Schadstoffabklärung Bestand', kat: 'Schadstoffe', phase: 'vor Baubeginn', termin: '', zustaendig: 'Schadstoff-Gutachter', status: 'offen', bemerkung: 'Auflage Ziffer 7 – vor Rückbau' },
-        { id: uid('au'), titel: 'Brandschutzabnahme (Feuerpolizei)', kat: 'Abnahme', phase: 'vor Bezug', termin: '2027-06-30', zustaendig: 'Feuerpolizei', status: 'offen', bemerkung: '' },
-        { id: uid('au'), titel: 'Schlussabnahme / Bezugsbewilligung', kat: 'Abnahme', phase: 'vor Bezug', termin: '2027-07-10', zustaendig: 'Gemeinde Bauamt', status: 'offen', bemerkung: '' },
-      ],
-      geschosseListe: [
-        { id: 'g_eg', name: 'Erdgeschoss', typ: 'Wohnen', einheiten: [
-          { id: 'u_egl', name: 'EG links', zimmer: 3.5, m2: 70, miete: 1950, verkauf: 720000, eigentuemer: 'Fam. Meier', eigKontakt: '079 111 22 33' },
-          { id: 'u_egr', name: 'EG rechts', zimmer: 4.5, m2: 80, miete: 2250, verkauf: 850000, eigentuemer: 'M. Keller', eigKontakt: 'keller@example.ch' },
-        ] },
-        { id: 'g_og1', name: '1. Obergeschoss', typ: 'Wohnen', einheiten: [
-          { id: 'u_1ogl', name: '1.OG links', zimmer: 3.5, m2: 72, miete: 2050, verkauf: 760000 },
-          { id: 'u_1ogr', name: '1.OG rechts', zimmer: 4.5, m2: 82, miete: 2350, verkauf: 880000 },
-        ] },
-        { id: 'g_og2', name: '2. OG / Attika', typ: 'Wohnen', einheiten: [
-          { id: 'u_2ogl', name: '2.OG links', zimmer: 3.5, m2: 74, miete: 2150, verkauf: 790000 },
-          { id: 'u_att', name: 'Attika', zimmer: 5.5, m2: 130, miete: 3600, verkauf: 1450000 },
-        ] },
-      ],
-      entscheidungen: [
-        { id: uid('en'), datum: '2026-05-10', bereich: 'Bemusterung', thema: 'Plättli Bad', bkp: '282', entscheid: 'Feinsteinzeug 60×60 anthrazit', status: 'offen', vid: '', ausstellung: { firma: 'Plättli-Welt', ort: 'Luzern', telefon: '041 200 00 00' }, wohnung: 'u_att' },
-        { id: uid('en'), datum: '', bereich: 'Bemusterung', thema: 'Küche', bkp: '258', entscheid: '', status: 'offen', vid: '', ausstellung: null, wohnung: 'u_egr' },
-        { id: uid('en'), datum: '', bereich: 'Bemusterung', thema: 'Parkett', bkp: '281', entscheid: '', status: 'offen', vid: '', ausstellung: null, wohnung: 'u_1ogr' },
-        { id: uid('en'), datum: '', bereich: 'Allgemein', thema: 'Briefkastenanlage', bkp: '', entscheid: '', status: 'offen', vid: '', ausstellung: null, wohnung: '' },
-      ],
-      vergaben: [
-        { id: 'v1', bkp: '112', gewerk: 'Abbrucharbeiten', status: 'abgeschlossen', firma: 'Demowald Rückbau GmbH', betrag: 84000, schaetzung: 90000, frist: '2026-03-15',
-          bauStart: '2026-03-01', bauEnde: '2026-03-25',
-          eingeladene: einl(['Demowald Rückbau GmbH', 84000], ['Frei Abbruch AG', 91500]), nachtraege: [], rapporte: [], vorgaenge: [],
-          rechnungen: [{ id: uid('rg'), text: 'Schlussrechnung', nr: 'RG-2026-009', art: 'schluss', betrag: 90000, datum: '2026-04-02', bezahlt: true }] },
-        { id: 'v2', bkp: '201', gewerk: 'Baugrubenaushub', status: 'ausfuehrung', firma: 'Tiefbau Zentral AG', betrag: 198000, schaetzung: 210000, frist: '2026-05-20',
-          bauStart: '2026-04-15', bauEnde: '2026-06-20',
-          eingeladene: einl(['Tiefbau Zentral AG', 198000], ['ErdWerk GmbH', 205000], ['Aushub Plus AG', 221000]),
-          nachtraege: [{ id: uid('n'), titel: 'Mehraushub Fels', nr: 'NT-01', betrag: 24000, datum: '2026-05-10', status: 'genehmigt' }],
-          rapporte: [{ id: uid('r'), titel: 'Regie Hangsicherung KW 19', stunden: 36, betrag: 5400, datum: '2026-05-08' }], vorgaenge: [],
-          rechnungen: [
-            { id: uid('rg'), text: 'Akontorechnung 1', nr: 'RG-2026-014', betrag: 120000, datum: '2026-05-15', bezahlt: true },
-            { id: uid('rg'), text: 'Akontorechnung 2', nr: 'RG-2026-031', betrag: 80000, datum: '2026-06-01', bezahlt: false },
-          ] },
-        { id: 'v3', bkp: '211', gewerk: 'Baumeisterarbeiten', status: 'werkvertrag', firma: 'Hugentobler Bau AG', betrag: 1450000, schaetzung: 1500000, frist: '2026-06-10',
-          bauStart: '2026-06-22', bauEnde: '2026-12-20',
-          eingeladene: einl(['Hugentobler Bau AG', 1450000], ['Steiner & Co.', 1495000], ['BauKern AG', 1560000]),
-          nachtraege: [{ id: uid('n'), titel: 'Zusätzliche Bodenplatte Velokeller', nr: 'NT-01', betrag: 38000, datum: '2026-06-01', status: 'offen' }],
-          rapporte: [],
-          rechnungen: [
-            { id: uid('rg'), text: 'Akontorechnung 1', nr: 'RG-2026-040', betrag: 600000, datum: '2026-08-10', bezahlt: true },
-            { id: uid('rg'), text: 'Akontorechnung 2', nr: 'RG-2026-061', betrag: 400000, datum: '2026-10-05', bezahlt: false },
-          ],
-          vorgaenge: [
-            { id: uid('o'), titel: 'Fundament & Bodenplatte', start: '2026-06-22', ende: '2026-07-31' },
-            { id: uid('o'), titel: 'Rohbau EG–2.OG', start: '2026-08-03', ende: '2026-10-30' },
-            { id: uid('o'), titel: 'Rohbau Attika & Dach', start: '2026-11-02', ende: '2026-12-20' },
-          ] },
-        { id: 'v4', bkp: '221', gewerk: 'Fenster & Aussentüren', status: 'bewertung', firma: '', betrag: 0, schaetzung: 320000, frist: '2026-06-08',
-          bauStart: '2026-10-01', bauEnde: '2026-11-30', bestellfrist: 70,
-          eingeladene: [
-            { id: uid('e'), firma: 'Fensterwerk AG', email: mailOf('Fensterwerk AG'), status: 'offeriert', betrag: null,
-              offerte: { brutto: 312000, rabatt: 3, skonto: 2, weitereAbz: 1 }, abgebot: { brutto: 305000, rabatt: 5, skonto: 2, weitereAbz: 1 } },
-            { id: uid('e'), firma: 'Glas+Rahmen GmbH', email: '', status: 'offeriert', betrag: null,
-              offerte: { brutto: 320000, rabatt: 2, skonto: 2, weitereAbz: 1 }, abgebot: { brutto: 314000, rabatt: 4, skonto: 2, weitereAbz: 1 } },
-            { id: uid('e'), firma: 'Holz-Metall Fenster AG', email: '', status: 'offeriert', betrag: null,
-              offerte: { brutto: 308000, rabatt: 1, skonto: 2, weitereAbz: 1 } },
-          ], nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v5', bkp: '230', gewerk: 'Elektroanlagen', status: 'offerten', firma: '', betrag: 0, schaetzung: 280000, frist: '2026-06-22',
-          bauStart: '2026-09-01', bauEnde: '2027-02-28',
-          eingeladene: einl(['Elektro Meyer AG', 271000], ['Volt & Co.', 289000], ['Stromwerk AG', null]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v6', bkp: '250', gewerk: 'Sanitäranlagen', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 240000, frist: '2026-07-01',
-          bauStart: '2026-11-01', bauEnde: '2027-03-31',
-          eingeladene: einl(['Sanitär Wyss AG', null, 'eingeladen'], ['Aqua Plus GmbH', null, 'eingeladen'], ['Rohr & Co.', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v7', bkp: '252', gewerk: 'Heizungsanlagen', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 195000, frist: '2026-07-05',
-          bauStart: '2026-11-01', bauEnde: '2027-02-28',
-          eingeladene: einl(['WärmeTech GmbH', null], ['Heiztech AG', null]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v8', bkp: '224', gewerk: 'Spenglerarbeiten / Bedachung', status: 'vergeben', firma: 'Dach & Blech AG', betrag: 165000, schaetzung: 175000, frist: '2026-07-15',
-          bauStart: '2026-12-01', bauEnde: '2027-02-15', bestellfrist: 25,
-          eingeladene: einl(['Dach & Blech AG', 165000], ['Spengler Meier GmbH', 172000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v9', bkp: '271', gewerk: 'Gipser- / Verputzarbeiten', status: 'vergeben', firma: 'Gipsotech AG', betrag: 142000, schaetzung: 150000, frist: '2026-07-20',
-          bauStart: '2027-01-05', bauEnde: '2027-04-30',
-          eingeladene: einl(['Gipsotech AG', 142000], ['Verputz Profi GmbH', 149000]),
-          nachtraege: [{ id: uid('n'), titel: 'Zusätzliche Glättung Treppenhaus', nr: 'NT-01', betrag: 6500, datum: '2027-02-10', status: 'genehmigt' }], rapporte: [], vorgaenge: [],
-          rechnungen: [{ id: uid('rg'), text: 'Akontorechnung 1', nr: 'RG-2027-004', betrag: 70000, datum: '2027-02-20', bezahlt: true }] },
-        { id: 'v15', bkp: '285', gewerk: 'Malerarbeiten', status: 'vergeben', firma: 'Farbwerk Maler AG', betrag: 98000, schaetzung: 105000, frist: '2026-07-22',
-          bauStart: '2027-03-01', bauEnde: '2027-05-31',
-          eingeladene: einl(['Farbwerk Maler AG', 98000], ['Pinsel & Co.', 104000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v16', bkp: '281', gewerk: 'Bodenbeläge (Parkett)', status: 'bewertung', firma: '', betrag: 0, schaetzung: 168000, frist: '2026-07-25',
-          bauStart: '2027-03-15', bauEnde: '2027-05-31',
-          eingeladene: einl(['Bodenhaus AG', 162000], ['Parkett Plus GmbH', 171000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v17', bkp: '273', gewerk: 'Schreinerarbeiten / Küchen', status: 'offerten', firma: '', betrag: 0, schaetzung: 240000, frist: '2026-07-30',
-          bauStart: '2027-02-01', bauEnde: '2027-05-15',
-          eingeladene: einl(['Holzwerk Seebli AG', 232000], ['Küchen & Co.', null]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v18', bkp: '244', gewerk: 'Lüftungsanlagen', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 185000, frist: '2026-08-05',
-          bauStart: '2026-12-01', bauEnde: '2027-04-30',
-          eingeladene: einl(['Klima Nord AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v19', bkp: '258', gewerk: 'Küchengeräte / Apparate', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 90000, frist: '2026-08-10',
-          bauStart: '2027-04-01', bauEnde: '2027-05-31',
-          eingeladene: einl(['Elektro Meyer AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'vc1', bkp: '211', gewerk: 'Unterstand / Carport – Baumeister', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 78000, frist: '2026-08-15',
-          bauStart: '2027-04-01', bauEnde: '2027-05-31', bauteil: 'bt_carport',
-          eingeladene: einl(['Hugentobler Bau AG', null, 'eingeladen'], ['Steiner & Co.', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'vc2', bkp: '230', gewerk: 'PV-Anlage Carport', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 18000, frist: '2026-08-20',
-          bauStart: '2027-05-01', bauEnde: '2027-05-31', bauteil: 'bt_carport', option: 'op_pv',
-          eingeladene: einl(['Elektro Meyer AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'vc3', bkp: '261', gewerk: 'Personenlift (Option)', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 62000, frist: '2026-08-25',
-          bauStart: '2027-01-15', bauEnde: '2027-03-31', option: 'op_lift',
-          eingeladene: einl(['Lift & Co. AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-        // --- Restliche BKP-Positionen (Vollständigkeit nach Standard-Gliederung) ---
-        { id: 's104', bkp: '104', gewerk: 'Baugespann / Schnurgerüst', status: 'abgeschlossen', firma: 'Geomatik Zentral AG', betrag: 2400, schaetzung: 2500, frist: '2026-02-20', bauStart: '2026-02-20', bauEnde: '2026-02-25',
-          eingeladene: einl(['Geomatik Zentral AG', 2400]), nachtraege: [], rapporte: [], vorgaenge: [],
-          rechnungen: [{ id: uid('rg'), text: 'Schlussrechnung', nr: 'RG-2026-003', betrag: 2400, datum: '2026-03-01', bezahlt: true }] },
-        { id: 's121', bkp: '121', gewerk: 'Sicherung vorhandener Anlagen', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 8000, frist: '2026-07-01', bauStart: '2026-03-01', bauEnde: '2026-03-20',
-          eingeladene: einl(['Tiefbau Zentral AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's191', bkp: '191', gewerk: 'Architekt – Vor-/Bauprojekt', status: 'abgeschlossen', firma: 'P. Hefti Bauberatung GmbH', betrag: 38000, schaetzung: 38000, frist: '2026-01-15', bauStart: '2026-01-05', bauEnde: '2026-04-30',
-          eingeladene: einl(['P. Hefti Bauberatung GmbH', 38000]), nachtraege: [], rapporte: [], vorgaenge: [],
-          rechnungen: [{ id: uid('rg'), text: 'Honorar Vorprojekt', nr: 'HON-01', betrag: 38000, datum: '2026-03-05', bezahlt: true }] },
-        { id: 's199', bkp: '199', gewerk: 'Übriges Vorbereitung', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 5000, frist: '2026-07-01', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's2111', bkp: '211.1', gewerk: 'Gerüstungen', status: 'vergeben', firma: 'Gerüstbau Meier AG', betrag: 95000, schaetzung: 100000, frist: '2026-06-12', bauStart: '2026-06-15', bauEnde: '2026-12-15',
-          eingeladene: einl(['Gerüstbau Meier AG', 95000], ['Allround Gerüst GmbH', 102000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's214', bkp: '214', gewerk: 'Holzbau', status: 'offerten', firma: '', betrag: 0, schaetzung: 320000, frist: '2026-06-28', bauStart: '2026-11-01', bauEnde: '2027-01-31',
-          eingeladene: einl(['Holzbau Suter AG', 312000], ['Timbertech GmbH', 331000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's215', bkp: '215', gewerk: 'Ingenieur Holzbau', status: 'vergeben', firma: 'Holzplan Ingenieure', betrag: 48000, schaetzung: 50000, frist: '2026-05-20', bauStart: '2026-05-01', bauEnde: '2027-01-31',
-          eingeladene: einl(['Holzplan Ingenieure', 48000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's2216', bkp: '221.6', gewerk: 'Türen + Tore', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 95000, frist: '2026-07-20', bauStart: '2026-12-01', bauEnde: '2027-02-28',
-          eingeladene: einl(['Türenwerk AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's225', bkp: '225', gewerk: 'Dichtungen / Dämmungen', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 60000, frist: '2026-07-25', bauStart: '2026-10-01', bauEnde: '2026-12-31',
-          eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's226', bkp: '226', gewerk: 'Fassadendämmung verputzt', status: 'offerten', firma: '', betrag: 0, schaetzung: 280000, frist: '2026-07-15', bauStart: '2027-01-05', bauEnde: '2027-04-30',
-          eingeladene: einl(['Fassaden Profi AG', 272000], ['IsolierBau GmbH', 289000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's228', bkp: '228', gewerk: 'Sonnen- und Wetterschutz (Storen)', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 85000, frist: '2026-08-01', bauStart: '2027-03-01', bauEnde: '2027-04-30',
-          eingeladene: einl(['Storen Tech AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's237', bkp: '237', gewerk: 'PV-Anlage (Dach)', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 95000, frist: '2026-08-05', bauStart: '2027-02-01', bauEnde: '2027-03-15',
-          eingeladene: einl(['Elektro Meyer AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's272', bkp: '272', gewerk: 'Metallbauarbeiten (Geländer)', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 75000, frist: '2026-08-10', bauStart: '2027-02-01', bauEnde: '2027-04-15',
-          eingeladene: einl(['Metallbau Frei AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's2816', bkp: '281.6', gewerk: 'Wand- und Bodenbeläge (Platten)', status: 'offerten', firma: '', betrag: 0, schaetzung: 145000, frist: '2026-07-30', bauStart: '2027-03-01', bauEnde: '2027-05-15',
-          eingeladene: einl(['Plattenwelt AG', 141000], ['Keramik Plus GmbH', 149000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's287', bkp: '287', gewerk: 'Baureinigung', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 22000, frist: '2026-08-15', bauStart: '2027-05-15', bauEnde: '2027-06-15',
-          eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's289', bkp: '289', gewerk: 'Baubetriebskosten', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 35000, frist: '2026-06-01', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's291', bkp: '291', gewerk: 'Honorar Architekt – Ausführung', status: 'vergeben', firma: 'P. Hefti Bauberatung GmbH', betrag: 342000, schaetzung: 342000, frist: '2026-05-01', bauStart: '2026-03-01', bauEnde: '2027-08-30',
-          eingeladene: einl(['P. Hefti Bauberatung GmbH', 342000]), nachtraege: [], rapporte: [], vorgaenge: [],
-          rechnungen: [{ id: uid('rg'), text: 'Honorar Akonto 1', nr: 'HON-02', betrag: 60000, datum: '2026-06-30', bezahlt: true }, { id: uid('rg'), text: 'Honorar Akonto 2', nr: 'HON-03', betrag: 45000, datum: '2026-10-31', bezahlt: false }] },
-        { id: 's292', bkp: '292', gewerk: 'Bauingenieur', status: 'vergeben', firma: 'Statik & Partner AG', betrag: 55000, schaetzung: 60000, frist: '2026-04-20', bauStart: '2026-03-01', bauEnde: '2026-12-31',
-          eingeladene: einl(['Statik & Partner AG', 55000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's296', bkp: '296', gewerk: 'Schadstoff-Untersuchung', status: 'abgeschlossen', firma: 'Bautox AG', betrag: 4500, schaetzung: 4500, frist: '2026-02-10', bauStart: '2026-02-10', bauEnde: '2026-02-20',
-          eingeladene: einl(['Bautox AG', 4500]), nachtraege: [], rapporte: [], vorgaenge: [],
-          rechnungen: [{ id: uid('rg'), text: 'Gutachten', nr: 'BX-01', betrag: 4500, datum: '2026-02-25', bezahlt: true }] },
-        { id: 's299', bkp: '299', gewerk: 'Reserve', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 120000, frist: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's421', bkp: '421', gewerk: 'Gärtner- / Umgebungsarbeiten', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 160000, frist: '2026-09-01', bauStart: '2027-04-01', bauEnde: '2027-06-30',
-          eingeladene: einl(['GartenBau AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 's511', bkp: '511', gewerk: 'Bewilligungen / Gebühren', status: 'abgeschlossen', firma: 'Gemeinde / Geomatik', betrag: 6500, schaetzung: 6000, frist: '2026-01-30', bauStart: '2026-01-10', bauEnde: '2026-02-15',
-          eingeladene: einl(['Gemeinde / Geomatik', 6500]), nachtraege: [], rapporte: [], vorgaenge: [],
-          rechnungen: [{ id: uid('rg'), text: 'Baubewilligung + Gebühren', nr: 'GEB-01', betrag: 6500, datum: '2026-02-20', bezahlt: true }] },
-        { id: 's531', bkp: '531', gewerk: 'Bauzeit-/Bauwesenversicherung', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 12000, frist: '2026-05-01', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [] },
-      ],
-      ganttLinks: [
-        { id: uid('gl'), from: 'v1', to: 'v2', dx: null },
-        { id: uid('gl'), from: 'v2', to: 'v3', dx: null },
-        { id: uid('gl'), from: 'v3', to: 'v4', dx: -28 },
-      ],
-      pendenzen: [
-        { id: uid('pd'), art: 'pendenz', text: 'Werkpläne Bodenplatte zur Freigabe einreichen', verantwortlich: 'Bauleitung', termin: '2026-06-18', erledigt: false, uebertragen: false, erfasst: '2026-06-01', firmen: ['Hugentobler Bau AG'] },
-        { id: uid('pd'), art: 'pendenz', text: 'Nachtrag Mehraushub Fels abrechnen', verantwortlich: 'Tiefbau Zentral AG', termin: '2026-06-25', erledigt: false, uebertragen: false, erfasst: '2026-06-05', firmen: ['Tiefbau Zentral AG'] },
-        { id: uid('pd'), art: 'pendenz', text: 'Bemusterung Fenster mit Bauherrschaft', verantwortlich: 'M. Bühler', termin: '2026-06-30', erledigt: false, uebertragen: false, erfasst: '2026-06-08', firmen: [] },
-      ],
-      dossier: {
-        projektbeschrieb: { status: 'vorhanden', verweis: 'Projektbeschrieb_Sonnenhof.pdf', datum: '2026-02-05', notiz: '' },
-        baubewilligung: { status: 'vorhanden', verweis: 'Baubewilligung_2026-014.pdf', datum: '2026-03-20', notiz: '' },
-        grundbuch: { status: 'inArbeit', verweis: '', datum: '', notiz: 'beim Notariat angefordert' },
-        statik: { status: 'vorhanden', verweis: 'https://example.ch/statik-sonnenhof', datum: '2026-04-10', notiz: '' },
-        finanzierung: { status: 'abgegeben', verweis: 'Finanzierungsnachweis_Bank.pdf', datum: '2026-02-20', notiz: '' },
-      },
-    },
-    {
-      id: 'p_schule', name: 'Sanierung Schulhaus Birch', ort: 'Zug', bauherr: 'Stadt Zug, Hochbauamt',
-      projektleiter: 'S. Frei', phase: 'ausfuehrung', start: '2025-09-01', ende: '2026-12-15',
-      vergaben: [
-        { id: 'v10', bkp: '211', gewerk: 'Baumeisterarbeiten', status: 'abgeschlossen', firma: 'Steiner & Co.', betrag: 620000, schaetzung: 640000, frist: '2025-10-01',
-          bauStart: '2025-10-15', bauEnde: '2026-02-28',
-          eingeladene: einl(['Steiner & Co.', 620000], ['Hugentobler Bau AG', 651000]),
-          nachtraege: [{ id: uid('n'), titel: 'Asbestsanierung Sockel', nr: 'NT-01', betrag: 42000, datum: '2025-11-20', status: 'genehmigt' }],
-          rapporte: [{ id: uid('r'), titel: 'Regie Winterschutz', stunden: 24, betrag: 3600, datum: '2026-01-15' }], vorgaenge: [] },
-        { id: 'v11', bkp: '226', gewerk: 'Fassade & Aussenwärmedämmung', status: 'ausfuehrung', firma: 'Fassaden Profi AG', betrag: 410000, schaetzung: 400000, frist: '2026-06-30',
-          bauStart: '2026-03-15', bauEnde: '2026-08-31',
-          eingeladene: einl(['Fassaden Profi AG', 410000], ['IsolierBau GmbH', 428000]),
-          nachtraege: [{ id: uid('n'), titel: 'Ersatz morsche Holzfenster-Stürze', nr: 'NT-01', betrag: 18500, datum: '2026-05-22', status: 'offen' }],
-          rapporte: [{ id: uid('r'), titel: 'Regie Gerüst-Umbau', stunden: 18, betrag: 2700, datum: '2026-05-18' }], vorgaenge: [] },
-        { id: 'v12', bkp: '230', gewerk: 'Elektroanlagen', status: 'unterzeichnet', firma: 'Volt & Co.', betrag: 188000, schaetzung: 200000, frist: '2026-06-12',
-          bauStart: '2026-06-01', bauEnde: '2026-10-31',
-          eingeladene: einl(['Volt & Co.', 188000], ['Elektro Meyer AG', 199000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v13', bkp: '285', gewerk: 'Malerarbeiten', status: 'vergeben', firma: 'Farbwerk Maler AG', betrag: 96000, schaetzung: 100000, frist: '2026-06-18',
-          bauStart: '2026-09-01', bauEnde: '2026-11-30',
-          eingeladene: einl(['Farbwerk Maler AG', 96000], ['Pinsel & Co.', 103000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v14', bkp: '281', gewerk: 'Bodenbeläge', status: 'bewertung', firma: '', betrag: 0, schaetzung: 130000, frist: '2026-06-06',
-          bauStart: '2026-09-15', bauEnde: '2026-11-15',
-          eingeladene: einl(['Bodenhaus AG', 121000], ['Parkett Plus GmbH', 134000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-      ],
-      protokolle: [
-        { id: 'pr1', typ: 'sitzung', nr: 4, titel: '', datum: '2026-05-26', zeit: '09:00–10:30', ort: 'Baubüro Schulhaus Birch', leitung: 'S. Frei',
-          teilnehmer: ['S. Frei (Bauleitung)', 'R. Steiner (Baumeister)', 'M. Profi (Fassade)', 'Bauherr-Vertretung'],
-          abwesende: ['D. Meyer (Elektro, entschuldigt)'], verteiler: ['alle Anwesenden', 'Architekt', 'Bauherrschaft'],
-          naechste: '2026-06-02',
-          traktanden: [
-            { id: 't1', nr: 1, titel: 'Pendenzen letzte Sitzung', eintraege: [
-              { id: 'it1', art: 'pendenz', erledigt: true, text: 'Asbestsanierung Sockel abgeschlossen und freigegeben.', verantwortlich: 'R. Steiner', termin: '2026-05-20' },
-            ] },
-            { id: 't2', nr: 2, titel: 'Stand Fassade', eintraege: [
-              { id: 'it2', art: 'info', erledigt: false, text: 'Gerüst steht, Wärmedämmung EG–2.OG montiert. Termin im Soll.', verantwortlich: '', termin: '' },
-              { id: 'it3', art: 'pendenz', erledigt: false, text: 'Nachtrag morsche Fenster-Stürze geprüft – Freigabe Bauherr einholen.', verantwortlich: 'S. Frei', termin: '2026-06-02' },
-            ] },
-            { id: 't3', nr: 3, titel: 'Termine / nächste Schritte', eintraege: [
-              { id: 'it4', art: 'pendenz', erledigt: false, text: 'Verputzarbeiten starten KW 24 – Materialbestellung auslösen.', verantwortlich: 'M. Profi', termin: '2026-06-08' },
-            ] },
-          ] },
-        { id: 'pr2', typ: 'aktennotiz', nr: 1, titel: 'Absprache Farbkonzept Fassade', datum: '2026-05-29', zeit: '', ort: 'Telefon', leitung: 'S. Frei',
-          teilnehmer: ['S. Frei', 'M. Profi'], abwesende: [], verteiler: ['Architekt'], naechste: '',
-          traktanden: [
-            { id: 't4', nr: 1, titel: 'Farbton', eintraege: [
-              { id: 'it5', art: 'pendenz', erledigt: true, text: 'Farbton NCS S 2005-Y20R bemustert und freigegeben.', verantwortlich: 'M. Profi', termin: '2026-06-05' },
-              { id: 'it6', art: 'pendenz', erledigt: false, text: 'Musterfläche 1 m² an Fassade Nord erstellen zur Bauherr-Freigabe.', verantwortlich: 'M. Profi', termin: '2026-06-10' },
-            ] },
-          ] },
-      ],
-    },
-    {
-      id: 'p_gewerbe', name: 'Gewerbehaus Industrie Nord', ort: 'Emmen', bauherr: 'NordInvest AG',
-      projektleiter: 'M. Bühler', phase: 'ausschreibung', start: '2026-04-01', ende: '2027-11-30',
-      vergaben: [
-        { id: 'v20', bkp: '201', gewerk: 'Baugrube & Spezialtiefbau', status: 'vergeben', firma: 'Tiefbau Zentral AG', betrag: 540000, schaetzung: 560000, frist: '2026-06-15',
-          bauStart: '2026-06-15', bauEnde: '2026-09-30',
-          eingeladene: einl(['Tiefbau Zentral AG', 540000], ['ErdWerk GmbH', 558000], ['Aushub Plus AG', 572000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v21', bkp: '211', gewerk: 'Baumeisterarbeiten', status: 'offerten', firma: '', betrag: 0, schaetzung: 2200000, frist: '2026-06-28',
-          bauStart: '2026-09-01', bauEnde: '2027-06-30',
-          eingeladene: einl(['Hugentobler Bau AG', 2150000], ['BauKern AG', 2240000], ['Steiner & Co.', null]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v22', bkp: '244', gewerk: 'Lüftungsanlagen', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 380000, frist: '2026-07-10',
-          bauStart: '2027-01-01', bauEnde: '2027-06-30',
-          eingeladene: einl(['Klima Nord AG', null]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v23', bkp: '230', gewerk: 'Elektroanlagen', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 450000, frist: '2026-07-12',
-          bauStart: '2027-02-01', bauEnde: '2027-08-31',
-          eingeladene: einl(['Elektro Meyer AG', null, 'eingeladen'], ['Volt & Co.', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-      ],
-    },
-    {
-      id: 'p_villa', name: 'Umbau Villa Seeblick', ort: 'Küsnacht', bauherr: 'Privat (Fam. R.)',
-      projektleiter: 'S. Frei', phase: 'planung', start: '2026-07-01', ende: '2027-04-30',
-      vergaben: [
-        { id: 'v30', bkp: '113', gewerk: 'Rückbau Innenausbau', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 70000, frist: '2026-07-20',
-          bauStart: '2026-08-01', bauEnde: '2026-08-31',
-          eingeladene: einl(['Demowald Rückbau GmbH', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v31', bkp: '273', gewerk: 'Schreinerarbeiten', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 180000, frist: '2026-08-01',
-          bauStart: '2026-11-01', bauEnde: '2027-02-28',
-          eingeladene: einl(['Holzwerk Seebli AG', null, 'eingeladen']), nachtraege: [], rapporte: [], vorgaenge: [] },
-      ],
-    },
-    {
-      id: 'p_park', name: 'Parkhaus Bahnhof West', ort: 'Olten', bauherr: 'SBB Immobilien',
-      projektleiter: 'M. Bühler', phase: 'abschluss', start: '2024-05-01', ende: '2026-04-30',
-      vergaben: [
-        { id: 'v40', bkp: '211', gewerk: 'Baumeisterarbeiten', status: 'abgeschlossen', firma: 'BauKern AG', betrag: 3100000, schaetzung: 3200000, frist: '2024-07-01',
-          bauStart: '2024-07-15', bauEnde: '2025-06-30',
-          eingeladene: einl(['BauKern AG', 3100000], ['Hugentobler Bau AG', 3250000]),
-          nachtraege: [{ id: uid('n'), titel: 'Verstärkung Decke UG2', nr: 'NT-01', betrag: 145000, datum: '2024-12-10', status: 'genehmigt' }],
-          rapporte: [{ id: uid('r'), titel: 'Regie Wassereinbruch', stunden: 120, betrag: 18000, datum: '2025-02-20' }], vorgaenge: [],
-          rechnungen: [
-            { id: uid('rg'), text: 'Schlussrechnung Baumeister', nr: 'RG-3201', betrag: 3263000, datum: '2025-07-15', bezahlt: true },
-          ] },
-        { id: 'v41', bkp: '230', gewerk: 'Elektroanlagen', status: 'abgeschlossen', firma: 'Elektro Meyer AG', betrag: 420000, schaetzung: 430000, frist: '2025-02-01',
-          bauStart: '2025-02-15', bauEnde: '2025-08-31',
-          eingeladene: einl(['Elektro Meyer AG', 420000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-        { id: 'v42', bkp: '285', gewerk: 'Markierungen & Malerei', status: 'abgeschlossen', firma: 'Farbwerk Maler AG', betrag: 88000, schaetzung: 90000, frist: '2025-11-01',
-          bauStart: '2025-09-01', bauEnde: '2025-12-31',
-          eingeladene: einl(['Farbwerk Maler AG', 88000]), nachtraege: [], rapporte: [], vorgaenge: [] },
-      ],
-    },
-  ];
-
-  const dokumente = [
-    { id: 'd1', name: 'Werkvertrag Baumeister – Sonnenhof', typ: 'Werkvertrag', projektId: 'p_sonnen', datum: '2026-05-28' },
-    { id: 'd2', name: 'Offertvergleich Fenster – Sonnenhof', typ: 'Vergleich', projektId: 'p_sonnen', datum: '2026-05-30' },
-    { id: 'd3', name: 'Zuschlagsschreiben Elektro – Schulhaus Birch', typ: 'Zuschlag', projektId: 'p_schule', datum: '2026-05-15' },
-    { id: 'd4', name: 'Ausschreibung Lüftung – Industrie Nord', typ: 'Ausschreibung', projektId: 'p_gewerbe', datum: '2026-05-20' },
-    { id: 'd5', name: 'Vorlage Werkvertrag (SIA 118)', typ: 'Vorlage', projektId: null, datum: '2026-01-10' },
-  ];
-
-  const buero = {
-    firma: 'P. Hefti Bauberatung GmbH', strasse: 'Bernstrasse 40', plzort: '3076 Worb',
-    tel: '031 839 00 77', email: 'info@heftibb.ch', logo: '', mwst: 8.1, preiseInkl: false,
-    signatur: 'Freundliche Grüsse\nP. Hefti Bauberatung GmbH\nBernstrasse 40, 3076 Worb\nTel. 031 839 00 77', signaturAuto: true,
-  };
-  return { projekte, kontakte, dokumente, buero };
+  const projekte = [{
+    id: uid('p'), name: 'Umbau EFH Römerstrasse 31', ort: '', bauherr: '', projektleiter: '',
+    phase: 'ausfuehrung', start: '2026-06-08', ende: '2026-12-14', baustart: '2026-06-08', bezug: '2026-12-14',
+    vergaben,
+  }];
+  return { projekte, kontakte: [], dokumente: [], buero: { ...BUERO } };
 }

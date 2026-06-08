@@ -595,7 +595,7 @@ table.grid tbody tr.clickable:hover { background: var(--surface-2); }
 
 .detail-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .detail-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(124px,1fr)); gap: 9px; margin-bottom: 16px; }
 .dstat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px 11px; }
@@ -675,9 +675,9 @@ tr.done-row { background: #fbfdfb; }
 
 /* ============================ Projekt-Tabs ============================ */
 /* Tab-/Toolbar-Zone bleibt beim Scrollen sichtbar (unter dem globalen Kopf) */
-.proj-sticky { position: sticky; top: 47px; z-index: 20; background: var(--bg); margin-bottom: 18px; box-shadow: 0 6px 8px -8px rgba(15,24,48,.25); }
+.proj-sticky { position: sticky; top: 47px; z-index: 20; background: var(--bg); margin-bottom: 10px; box-shadow: 0 6px 8px -8px rgba(15,24,48,.25); }
 .proj-sticky .ptabs { margin-bottom: 0; }
-.page-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 9px 0 9px; }
+.page-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 5px 0; }
 .ptabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; flex-wrap: wrap; }
 .ptab {
   padding: 9px 16px; font-size: 13.5px; font-weight: 600; color: var(--text-soft);
@@ -772,7 +772,7 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-tb-sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 4px; }
 .btn.sm.ico { padding: 4px 8px; font-size: 13.5px; line-height: 1; }
 /* Grosser Outlook-Stil-Button: Symbol gross oben, Text klein unten, höher als breit */
-.g-bigbtn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 50px; height: 50px; flex: none; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; color: var(--text); }
+.g-bigbtn { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 48px; height: 44px; flex: none; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; color: var(--text); }
 .g-bigbtn:hover { background: var(--brand-soft); border-color: var(--brand); }
 .g-bigbtn .bb-ico { display: flex; align-items: center; justify-content: center; color: var(--brand); }
 .g-bigbtn .bb-lbl { font-size: 9px; font-weight: 600; color: var(--text-soft); white-space: nowrap; }
@@ -783,8 +783,16 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-topbox .seg { display: inline-flex; gap: 3px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 2px; flex: none; }
 .g-topbox .seg .btn { white-space: nowrap; }
 .g-topbox .g-verbar { margin-bottom: 0; border: none; background: transparent; padding: 0; flex-wrap: nowrap; flex: none; }
+/* EINE kompakte Kopfzeile: Modus + Reiter + Version nebeneinander (spart eine ganze Zeile) */
+.g-tabrow { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; overflow-x: auto; border-bottom: 1px solid var(--border); margin-bottom: 5px; scrollbar-width: none; }
+.g-tabrow::-webkit-scrollbar { display: none; height: 0; }
+.page-toolbar .g-tabrow { flex: 1 1 100%; min-width: 0; }
+.g-tabrow .g-ribtabs { flex: 1 1 auto; min-width: 0; border-bottom: none; margin-bottom: 0; }
+.g-tabrow .g-verbar { flex: none; margin: 0 0 0 auto; border: none; background: transparent; padding: 0; flex-wrap: nowrap; }
+.g-modeseg { flex: none; display: inline-flex; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+.g-modeseg .btn { padding: 4px 8px; font-size: 14px; white-space: nowrap; line-height: 1; }
 /* Ribbon mit Kategorien – NIE zweizeilig: bei wenig Platz horizontal scrollen */
-.g-ribbon { display: flex; align-items: stretch; gap: 0; flex-wrap: nowrap; overflow-x: auto; margin-bottom: 8px; padding-bottom: 2px; }
+.g-ribbon { display: flex; align-items: stretch; gap: 0; flex-wrap: nowrap; overflow-x: auto; margin-bottom: 4px; padding-bottom: 2px; }
 .g-ribbon-toggle { align-self: center; border: none; background: none; cursor: pointer; color: var(--text-faint); font-size: 14px; padding: 0 6px; flex: none; }
 .g-ribbon-toggle:hover { color: var(--brand); }
 .g-rgroup { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0 7px; border-right: 1px solid var(--border); flex: none; }

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v322';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v323';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1937,7 +1937,14 @@ function ganttModeToggle(p) {
 function ganttRibbonTabs(p) {
   const TABS = [['ansicht', 'Ansicht'], ['beschriftung', 'Beschriftung'], ['anzeige', 'Anzeige'], ['ablauf', 'Ablauf'], ['datei', 'Datei']];
   if (!TABS.some(t => t[0] === ganttTab)) ganttTab = 'ansicht';   // alte Reiter-Keys (datum/dauer/zeit/mehr) auffangen
-  const bar = `<div class="g-ribtabs">${TABS.map(([k, l]) => `<button class="g-ribtab${ganttTab === k ? ' active' : ''}" data-act="gantt-tab" data-pid="${p.id}" data-kind="${k}" type="button">${l}</button>`).join('')}</div>`;
+  // EINE kompakte Kopfzeile: Modus (Detail/Grob/Fein) + Reiter + Version – spart eine ganze Zeile Höhe
+  const modeSeg = `<div class="seg g-modeseg">
+      <button class="btn sm ${ganttMode === 'detail' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="detail" type="button" style="border:none" title="Detailprogramm">📋</button>
+      <button class="btn sm ${ganttMode === 'grob' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="grob" type="button" style="border:none" title="Grobplanung">🗓</button>
+      <button class="btn sm ${ganttMode === 'fein' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="fein" type="button" style="border:none" title="Feinprogramm">⏱</button>
+    </div>`;
+  const tabBtns = `<div class="g-ribtabs">${TABS.map(([k, l]) => `<button class="g-ribtab${ganttTab === k ? ' active' : ''}" data-act="gantt-tab" data-pid="${p.id}" data-kind="${k}" type="button">${l}</button>`).join('')}</div>`;
+  const bar = `<div class="g-tabrow">${modeSeg}${tabBtns}${ganttVersionBar(p)}</div>`;
   let b = '';
   if (ganttTab === 'ansicht') b =
     rgroup('Farbe nach', optBtns('gantt-color', p.id, [['status', 'Status'], ['firma', 'Firma'], ['phase', 'Phase']], ganttColorMode)) +
@@ -2705,7 +2712,7 @@ function viewTermine(id) {
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm</div></div>
       ${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}
     </div>
-    ${projektTabs(p, 'termine', `${ganttModeToggle(p)}${ganttRibbonTabs(p)}`)}
+    ${projektTabs(p, 'termine', ganttRibbonTabs(p))}
     ${gespr ? `<div class="g-warn g-warn-lock">🔒 <b>Version „${esc(terminVersAktiv(p).name)}" ist gesperrt.</b> Änderungen blockiert – andere Version wählen oder oben „🔓" entsperren / „+ Version".</div>` : ''}
   `;
 

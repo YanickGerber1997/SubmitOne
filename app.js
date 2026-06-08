@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v304';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v305';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1049,6 +1049,86 @@ function kostenZeile(v) {
   return { kv, rev, wv, nt, rap, budget, prognose, endsumme, bezahlt, fakturiert, offen, offenRg, hatSchluss, vergeben: isVergeben(v) };
 }
 
+/* --- Baukosten-Versionen: Stände sichern & vergleichen (z.B. monatliche Abgaben) --- */
+function kostenSnapshot(p) {
+  return {
+    datum: todayIso(),
+    positionen: (p.vergaben || []).map(v => { const z = kostenZeile(v); return { id: v.id, bkp: v.bkp || '', gewerk: v.gewerk || '', firma: v.firma || '', kv: z.kv, rev: z.rev, prognose: z.prognose, bezahlt: z.bezahlt, endsumme: z.endsumme }; }),
+  };
+}
+function kostenDiff(snapA, snapB) {
+  const aById = {}, bById = {};
+  (snapA.positionen || []).forEach(x => aById[x.id] = x);
+  (snapB.positionen || []).forEach(x => bById[x.id] = x);
+  const ids = new Set([...(snapA.positionen || []).map(x => x.id), ...(snapB.positionen || []).map(x => x.id)]);
+  const rows = [];
+  ids.forEach(id => {
+    const a = aById[id], b = bById[id];
+    if (a && b) {
+      const dProg = (b.prognose || 0) - (a.prognose || 0), dBez = (b.bezahlt || 0) - (a.bezahlt || 0);
+      if (Math.abs(dProg) > 0.5 || Math.abs(dBez) > 0.5 || a.gewerk !== b.gewerk) rows.push({ bkp: b.bkp, gewerk: b.gewerk, a, b, dProg, dBez, status: 'changed' });
+    } else if (b) rows.push({ bkp: b.bkp, gewerk: b.gewerk, a: null, b, dProg: b.prognose || 0, status: 'new' });
+    else rows.push({ bkp: a.bkp, gewerk: a.gewerk, a, b: null, dProg: -(a.prognose || 0), status: 'removed' });
+  });
+  rows.sort((x, y) => (x.bkp || '').localeCompare(y.bkp || ''));
+  const totA = (snapA.positionen || []).reduce((s, x) => s + (x.prognose || 0), 0);
+  const totB = (snapB.positionen || []).reduce((s, x) => s + (x.prognose || 0), 0);
+  return { rows, totA, totB, dTot: totB - totA };
+}
+function actKostenVersionen(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  p.kostenVersionen = p.kostenVersionen || [];
+  const cur = kostenSnapshot(p); const curTot = cur.positionen.reduce((s, x) => s + (x.prognose || 0), 0);
+  const list = p.kostenVersionen.slice().reverse();
+  const rows = list.length ? list.map(ver => {
+    const tot = (ver.snapshot.positionen || []).reduce((s, x) => s + (x.prognose || 0), 0);
+    return `<div class="regel-row"><span><b>${esc(ver.name)}</b> <span class="muted">· ${fmtDate(ver.datum)} · Prognose ${money(tot)}</span></span>
+      <span style="display:flex;gap:6px"><button class="btn sm ghost" data-act="kosten-vgl" data-pid="${pid}" data-vid="${ver.id}" data-mode="cur" title="Mit aktuellem Stand vergleichen">↔ aktuell</button><button class="btn sm ghost danger" data-act="kosten-vers-del" data-pid="${pid}" data-vid="${ver.id}" title="Version löschen">🗑</button></span></div>`;
+  }).join('') : '<p class="muted" style="font-size:12.5px">Noch keine Version gesichert.</p>';
+  const lastVer = p.kostenVersionen[p.kostenVersionen.length - 1];
+  openModal('Baukosten – Versionen & Vergleich', `
+    <div class="card card-pad" style="margin-bottom:12px;background:var(--surface-2)"><b>Aktueller Stand:</b> Prognose <b>${money(curTot)}</b> · ${cur.positionen.length} Positionen
+      ${lastVer ? ` &nbsp;·&nbsp; <button class="btn sm" data-act="kosten-vgl" data-pid="${pid}" data-vid="${lastVer.id}" data-mode="cur">📋 Was hat sich seit „${esc(lastVer.name)}" geändert?</button>` : ''}</div>
+    <label class="field">Neuen Stand sichern als <input class="input" id="kv_name" placeholder="z.B. Abgabe ${MON_KURZ[dISO(todayIso()).getMonth()]} ${dISO(todayIso()).getFullYear()}"></label>
+    <button class="btn" data-act="kosten-vers-neu" data-pid="${pid}" style="margin-top:8px">+ Aktuellen Stand als Version sichern</button>
+    <div class="section-head" style="margin-top:16px"><h2 style="font-size:15px">Gesicherte Stände</h2></div>
+    <div style="display:flex;flex-direction:column;gap:6px">${rows}</div>
+    <p class="muted" style="font-size:11.5px;margin-top:8px">Tipp: vor jeder Abgabe „Stand sichern". Dann kannst du jederzeit zwei Stände vergleichen und siehst genau, was sich geändert hat (Prognose, Zahlungen, neue/entfallene Positionen).</p>
+  `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
+}
+function kostenVersNeu(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  p.kostenVersionen = p.kostenVersionen || [];
+  const name = ($('#kv_name') && $('#kv_name').value.trim()) || ('Stand ' + fmtDate(todayIso()));
+  p.kostenVersionen.push({ id: uid('kv'), name, datum: todayIso(), snapshot: kostenSnapshot(p) });
+  save(); closeModal(); actKostenVersionen(pid); toast('Kostenstand „' + name + '" gesichert', 'ok');
+}
+function kostenVersDel(pid, vid) {
+  const p = findProjekt(pid); if (!p || !p.kostenVersionen) return;
+  p.kostenVersionen = p.kostenVersionen.filter(v => v.id !== vid); save(); actKostenVersionen(pid);
+}
+function actKostenVergleich(pid, vid, mode) {
+  const p = findProjekt(pid); const ver = (p.kostenVersionen || []).find(v => v.id === vid); if (!ver) return;
+  const snapA = ver.snapshot, snapB = mode === 'cur' ? kostenSnapshot(p) : ver.snapshot;
+  const labelA = ver.name + ' (' + fmtDate(ver.datum) + ')', labelB = 'Aktueller Stand';
+  const d = kostenDiff(snapA, snapB);
+  const fmt = n => (n > 0 ? '+' : '') + money(n);
+  const cls = n => n > 0.5 ? 'style="color:#b91c1c;font-weight:600"' : (n < -0.5 ? 'style="color:#15803d;font-weight:600"' : 'class="muted"');
+  const stTxt = { changed: '~ geändert', new: '🟢 neu', removed: '🔴 entfällt' };
+  const body = d.rows.length ? d.rows.map(r => `<tr>
+      <td class="bkp-code">${esc(r.bkp)}</td><td>${esc(r.gewerk)} <span class="muted" style="font-size:10px">${stTxt[r.status]}</span></td>
+      <td class="num">${r.a ? money(r.a.prognose) : '–'}</td>
+      <td class="num">${r.b ? money(r.b.prognose) : '–'}</td>
+      <td class="num" ${cls(r.dProg)}>${fmt(r.dProg)}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="muted" style="text-align:center;padding:14px">Keine Änderungen.</td></tr>';
+  openModal('Vergleich: ' + esc(labelA) + ' → ' + esc(labelB), `
+    <div class="card card-pad" style="margin-bottom:10px;background:${Math.abs(d.dTot) > 0.5 ? '#fff7ed' : '#ecfdf5'};border:1px solid ${Math.abs(d.dTot) > 0.5 ? '#fdba74' : '#a7f3d0'};font-size:13px">
+      <b>Total Prognose:</b> ${money(d.totA)} → ${money(d.totB)} &nbsp; <b ${cls(d.dTot)}>(${fmt(d.dTot)})</b> &nbsp;·&nbsp; ${d.rows.length} Änderung(en)
+    </div>
+    <div style="max-height:55vh;overflow:auto"><table class="grid" style="font-size:12.5px"><thead><tr><th>BKP</th><th>Position</th><th class="num">${esc(labelA.split(' (')[0])}</th><th class="num">${esc(labelB)}</th><th class="num">Δ</th></tr></thead><tbody>${body}</tbody></table></div>
+  `, `<button class="btn" data-close="1">Schliessen</button>`);
+}
+
 // BKP-Hauptgruppen (erste Ziffer)
 const BKP_GRUPPEN = {
   '0': 'Grundstück', '1': 'Vorbereitungsarbeiten', '2': 'Gebäude', '3': 'Betriebseinrichtungen',
@@ -1634,7 +1714,8 @@ function viewKosten(id) {
     <button class="btn sm secondary" data-act="pdf-baukosten" data-pid="${p.id}">🖨 Baukostenübersicht</button>
     <button class="btn sm ${kostenBrutto ? '' : 'secondary'}" data-act="kosten-brutto" data-pid="${p.id}" title="Beträge netto (exkl.) oder brutto (inkl. ${mwstSatz()}% MwSt) anzeigen">${kostenBrutto ? `Brutto (inkl. ${mwstSatz()}%)` : 'Netto (exkl. MwSt)'}</button>
     ${katToggleBtn()}
-    <button class="btn sm" data-act="new-vergabe" data-pid="${p.id}" style="margin-left:auto">+ Arbeitsbeschrieb</button>`;
+    <button class="btn sm secondary" data-act="kosten-versionen" data-pid="${p.id}" title="Kostenstände sichern & vergleichen (z.B. monatliche Abgaben)" style="margin-left:auto">📊 Versionen${(p.kostenVersionen || []).length ? ' (' + p.kostenVersionen.length + ')' : ''}</button>
+    <button class="btn sm" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>`;
   const head = `
     <div class="detail-head">
       <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Baukostenübersicht nach BKP · Stand ${fmtDate(todayIso())}</div></div>
@@ -11624,6 +11705,10 @@ document.addEventListener('click', e => {
     case 'new-vergabe':  actNewVergabe(pid); break;
     case 'kat-toggle':   katOpen = !katOpen; router(); break;
     case 'kosten-brutto': kostenBrutto = !kostenBrutto; viewKosten(pid); break;
+    case 'kosten-versionen': actKostenVersionen(pid); break;
+    case 'kosten-vers-neu': kostenVersNeu(pid); break;
+    case 'kosten-vers-del': kostenVersDel(pid, act.dataset.vid); break;
+    case 'kosten-vgl':    actKostenVergleich(pid, act.dataset.vid, act.dataset.mode); break;
     case 'hist-back':    history.back(); break;
     case 'hist-fwd':     history.forward(); break;
     case 'g-undo':       undo(); break;

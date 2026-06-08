@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v323';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v324';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -641,6 +641,29 @@ function openCheckout(plan) {
   window.open(full, '_blank');
 }
 
+// Modul-Fokus (Navigation/Kopf weg → maximale Fläche) + Vollbild (Fullscreen-API)
+function initFokusbar() {
+  const bFokus = $('#btnFocus'), bFull = $('#btnFullscreen');
+  if (bFokus) {
+    try { if (localStorage.getItem('so_modul_fokus') === '1') document.body.classList.add('modul-fokus'); } catch (_) {}
+    const sync = () => bFokus.classList.toggle('on', document.body.classList.contains('modul-fokus'));
+    sync();
+    bFokus.addEventListener('click', () => {
+      const on = document.body.classList.toggle('modul-fokus');
+      try { localStorage.setItem('so_modul_fokus', on ? '1' : '0'); } catch (_) {}
+      sync();
+      const gp = (typeof ganttPid !== 'undefined') ? ganttPid : null; if (gp && document.querySelector('.gantt')) rerenderGantt(gp);   // nur wenn Gantt sichtbar: Breite neu berechnen
+    });
+  }
+  if (bFull) {
+    const syncF = () => bFull.classList.toggle('on', !!document.fullscreenElement);
+    bFull.addEventListener('click', () => {
+      if (!document.fullscreenElement) (document.documentElement.requestFullscreen ? document.documentElement.requestFullscreen() : Promise.resolve()).catch(() => {});
+      else if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    });
+    document.addEventListener('fullscreenchange', syncF);
+  }
+}
 async function startApp() {
   await db.init();
   lastSnap = JSON.stringify(state); lastSnapAt = Date.now();   // Undo-Ausgangspunkt
@@ -656,6 +679,7 @@ async function startApp() {
   document.addEventListener('keydown', planKeydown);
   document.addEventListener('keydown', ganttKeydown);
   initGerberLaunch();
+  initFokusbar();
   document.addEventListener('mousemove', planDragMove);
   document.addEventListener('mouseup', planDragUp);
   const ver = $('.ver'); if (ver) ver.textContent = 'Prototyp · ' + APP_VERSION;

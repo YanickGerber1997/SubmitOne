@@ -175,6 +175,21 @@ button { font-family: inherit; cursor: pointer; }
 .content { padding: 20px 26px 56px; max-width: 1800px; width: 100%; min-width: 0; margin: 0 auto; }
 #view { min-width: 0; }
 
+/* Modul-Fokus + Vollbild: kleine, immer erreichbare Schaltleiste */
+.focusbar { position: fixed; top: 8px; right: 12px; z-index: 70; display: flex; gap: 6px; opacity: .5; transition: opacity .15s; }
+.focusbar:hover { opacity: 1; }
+.fb-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; cursor: pointer; box-shadow: 0 2px 8px rgba(15,24,48,.18); }
+.fb-btn:hover { border-color: var(--brand); color: var(--brand); }
+.fb-btn.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+/* Modul-Fokus aktiv: Sidebar, Projekt-Reiter & Titel weg → fast der ganze Schirm = Inhalt */
+body.modul-fokus #app { grid-template-columns: 1fr; }
+body.modul-fokus .sidebar { display: none; }
+body.modul-fokus .detail-head { display: none; }
+body.modul-fokus .ptabs { display: none; }
+body.modul-fokus .content { padding: 6px 12px 24px; max-width: none; }
+body.modul-fokus .proj-sticky { top: 0; }
+@media (max-width: 760px) { .focusbar .fb-t { display: none; } }
+
 /* ===== Kalender (Outlook-ähnlich) ===== */
 .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .cal-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-soft); }

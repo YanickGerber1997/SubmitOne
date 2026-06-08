@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v307';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v308';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -4092,7 +4092,7 @@ function viewListen(pid) {
     <div class="card">${bemUnique.length ? `<table class="grid t-compact"><thead><tr><th style="width:52px">BKP</th><th>Auswahlpunkt</th><th>Unternehmer</th><th>Ausstellung / Materialauswahl</th></tr></thead><tbody>${bemBody}</tbody></table>` : `<div class="card-pad" style="text-align:center">${emptyState('🎨', 'Noch keine Auswahlpunkte.')}<a class="btn" href="#/projekt/${p.id}/bauherr">zu Eigentümerwünsche</a></div>`}</div>`;
   } else {
     bodyHtml = `<div class="section-head"><h2>Submittentenliste <span class="st red" style="font-size:10.5px;padding:2px 8px;vertical-align:middle">vertraulich</span></h2>
-      <button class="btn sm" data-act="pdf-submittenten" data-pid="${p.id}">🖨 Drucken</button></div>
+      <span style="display:inline-flex;gap:6px"><button class="btn sm" data-act="pdf-submittenten" data-pid="${p.id}">🖨 mit Beträgen</button><button class="btn sm secondary" data-act="pdf-submittenten-ob" data-pid="${p.id}">🖨 ohne Beträge</button></span></div>
     <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle eingeladenen Firmen je Gewerk – nur intern, <strong>nicht</strong> an die Baustelle.</p>
     <div class="card card-pad">${submBlocks}</div>`;
   }
@@ -4369,23 +4369,26 @@ function openSheetDoc(opts) {
   w.document.write(html); w.document.close();
 }
 
-function pdfSubmittenten(pid) {
+function pdfSubmittenten(pid, mitBetrag) {
+  mitBetrag = mitBetrag !== false;   // Standard: mit Beträgen
   const p = findProjekt(pid); if (!p) return;
   const gw = gewerkeSorted(p);
+  const cols = mitBetrag ? 5 : 4;
   const body = gw.map(v => {
     const eing = (v.eingeladene || []);
     const rows = eing.length ? eing.map(e => {
       const bq = eBetragQuelle(v, e);
-      return `<tr><td>${esc(e.firma)}</td><td>${INV_STATUS[e.status]?.label || esc(e.status)}</td><td>${bq.quelle || '–'}</td><td class="num">${bq.betrag != null ? chf(bq.betrag) : '–'}</td></tr>`;
+      const frist = (e.frist || v.frist);
+      return `<tr><td>${esc(e.firma)}</td><td>${frist ? fmtDate(frist) : '–'}</td><td>${INV_STATUS[e.status]?.label || esc(e.status)}</td>${mitBetrag ? `<td>${bq.quelle || '–'}</td><td class="num">${bq.betrag != null ? chf(bq.betrag) : '–'}</td>` : ''}</tr>`;
     }).join('')
-      : `<tr><td colspan="4" class="muted">noch niemand eingeladen</td></tr>`;
-    return `<tr><td colspan="4" style="background:#f3f5f9;font-weight:700">BKP ${esc(v.bkp)} – ${esc(v.gewerk)}</td></tr>${rows}`;
+      : `<tr><td colspan="${cols}" class="muted">noch niemand eingeladen</td></tr>`;
+    return `<tr><td colspan="${cols}" style="background:#f3f5f9;font-weight:700">BKP ${esc(v.bkp)} – ${esc(v.gewerk)}</td></tr>${rows}`;
   }).join('');
   const inner = gw.length
-    ? `<table class="t"><thead><tr><th>Firma</th><th style="width:120px">Status</th><th style="width:110px">Grundlage</th><th class="num" style="width:140px">Betrag</th></tr></thead><tbody>${body}</tbody></table>`
+    ? `<table class="t"><thead><tr><th>Firma</th><th style="width:110px">Eingabefrist</th><th style="width:120px">Status</th>${mitBetrag ? '<th style="width:110px">Grundlage</th><th class="num" style="width:140px">Betrag</th>' : ''}</tr></thead><tbody>${body}</tbody></table>`
     : '<p class="muted">Keine Gewerke angelegt.</p>';
-  const sub = `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} &nbsp; <span class="conf">VERTRAULICH – nicht an die Baustelle</span>`;
-  openPrintDoc('Submittentenliste', sub, inner);
+  const sub = `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)}${mitBetrag ? ' &nbsp; <span class="conf">VERTRAULICH – nicht an die Baustelle</span>' : ''}`;
+  openPrintDoc('Submittentenliste' + (mitBetrag ? '' : ' (ohne Beträge)'), sub, inner);
 }
 
 function pdfUnternehmer(pid) {
@@ -6064,6 +6067,7 @@ function viewVergabeDetail(pid, vid) {
                 ${eOff(e) != null && eOff(e) === best && offs.length > 1 ? '<span class="off-best">★ günstigste</span>' : ''}
               </div>
               ${e.email ? `<div class="inv-mail muted">${esc(e.email)}</div>` : ''}
+              ${e.frist ? `<div class="inv-mail muted">⏱ Eingabefrist ${fmtDate(e.frist)}</div>` : ''}
             </div>
             <div class="inv-action">
               ${e.status === 'abgesagt'
@@ -6253,7 +6257,10 @@ function actKonditionen(pid, vid, eid) {
       </div>
       <div class="kond-res" id="kond_res_${key}"></div>
     </div>`).join('');
-  openModal(`Konditionen – ${esc(e.firma)}`, `<div class="kond-wrap">${stageHtml}</div>`, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="konditionen-save" data-pid="${pid}" data-vid="${vid}" data-eid="${eid}">💾 Speichern</button>`);
+  openModal(`Konditionen – ${esc(e.firma)}`, `
+    <label class="field" style="margin-bottom:10px">Eingabefrist (für diesen Unternehmer) <input class="input" type="date" id="kond_frist" value="${esc(e.frist || '')}">
+      <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Eigene Frist je Unternehmer (überschreibt die Gewerk-Frist ${v.frist ? '· Gewerk: ' + fmtDate(v.frist) : ''}). Erscheint auf dessen Deckblatt + in der Submittentenliste.</span></label>
+    <div class="kond-wrap">${stageHtml}</div>`, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="konditionen-save" data-pid="${pid}" data-vid="${vid}" data-eid="${eid}">💾 Speichern</button>`);
   const recompute = () => stages.forEach(([key]) => { const r = condParts(kondReadStage(key)); const el = $('#kond_res_' + key); if (el) el.innerHTML = r ? `Netto <strong>${chf(r.zsumme2)}</strong> &nbsp;·&nbsp; MwSt 8.1% ${chf(r.mwst)} &nbsp;·&nbsp; inkl. ${chf(r.total)}` : '<span class="muted">Brutto eingeben für Berechnung</span>'; });
   $$('.kond-in').forEach(i => i.addEventListener('input', recompute));
   recompute();
@@ -6262,6 +6269,7 @@ function kondReadStage(key) { const o = {}; $$('.kond-in[data-stage="' + key + '
 function saveKonditionen(pid, vid, eid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); const e = v && (v.eingeladene || []).find(x => x.id === eid);
   if (!e) return;
+  { const kf = $('#kond_frist'); if (kf) e.frist = kf.value || ''; }
   ['offerte', 'abgebot', 'vergabe'].forEach(key => { const o = kondReadStage(key); e[key] = (o.brutto != null) ? o : null; });
   if (e.offerte && e.offerte.brutto != null) {
     e.betrag = condNetto(e.offerte);
@@ -11154,7 +11162,8 @@ function pdfDeckblatt(pid, vid, eid, typ) {
   const istOfferte = typ === 'offerte';
   const b = state.buero || BUERO;
   const titel = istOfferte ? 'Offerte – äusserste Konditionen' : 'Submissionseinladung';
-  const fristJahr = (dISO(v.frist) || new Date()).getFullYear();
+  const frist = (e && e.frist) || v.frist;   // Unternehmer-Frist hat Vorrang
+  const fristJahr = (dISO(frist) || new Date()).getFullYear();
   const termin = v.ausfuehrung ? v.ausfuehrung : ((v.bauStart && v.bauEnde) ? `${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}` : 'gem. Terminprogramm');
   const line = '...........................................';
 
@@ -11201,7 +11210,7 @@ function pdfDeckblatt(pid, vid, eid, typ) {
       <tr><td class="l">Eingabeadresse:</td><td>${esc(b.firma)}${b.plzort ? '<br>' + esc(b.plzort) : ''}</td></tr>
       <tr><td class="l">Angebot für:</td><td><div class="box"><strong>BKP ${esc(v.bkp)} – ${esc(v.gewerk)}</strong></div></td></tr>
       <tr><td class="l">${istOfferte ? 'Unternehmer:' : 'Unternehmer, Firma:'}</td><td><div class="box firma">${firmaBlock}</div></td></tr>
-      <tr><td class="l">Eingabefrist:</td><td><div class="box"><strong>${v.frist ? fmtDate(v.frist) : '—'}</strong></div></td></tr>
+      <tr><td class="l">Eingabefrist:</td><td><div class="box"><strong>${frist ? fmtDate(frist) : '—'}</strong></div></td></tr>
       <tr><td class="l">Voraussichtlicher Ausführungstermin:</td><td>${esc(termin)}</td></tr>
     </table>
 
@@ -11779,7 +11788,8 @@ document.addEventListener('click', e => {
     case 'rm-inv':       removeInvite(pid, vid, eid); break;
     case 'ruecklese':    actRuecklese(pid, vid); break;
     case 'listen-tab':           listenTab = act.dataset.tab; viewListen(act.dataset.pid || pid); break;
-    case 'pdf-submittenten': pdfSubmittenten(pid); break;
+    case 'pdf-submittenten': pdfSubmittenten(pid, true); break;
+    case 'pdf-submittenten-ob': pdfSubmittenten(pid, false); break;
     case 'pdf-unternehmer':  pdfUnternehmer(pid); break;
     case 'pdf-honorar':      if (pid) honorarPid = pid; pdfHonorar(); break;
     case 'honorar-detail':   honorarDetail = !honorarDetail; viewHonorar(); break;

@@ -47,4 +47,25 @@ Fehlerjagd, Onboarding für Neue, „absolut online".
 
 ---
 
-*Reihenfolge 3–8 ist anpassbar; 0–2 sind gesetzt (deine Priorität + sichere Grundlage).*
+## Terminplan mit Daten (Entwicklung bis Release)
+*Annahme: stetiges Tempo ab jetzt (KW24 / Juni 2026). Aufwand = grobe Spanne; echte Daten hängen vom Tempo (wie oft wir arbeiten) ab. Anpassbar.*
+
+| Etappe | Aufwand | Ziel-Zeitraum (bei stetigem Tempo) |
+|---|---|---|
+| **0 · Gründlicher Struktur-Pass** *(zuerst, dein Wunsch)* | ~2–3 Wochen | bis **Ende Juni 2026** |
+| **1 · Zahlungspläne + Terminverknüpfung** | ~1–2 Wochen | bis **Mitte Juli 2026** |
+| **2 · Ausschreibung end-to-end** | ~1–2 Wochen | bis **Anfang August 2026** |
+| 🏁 **Meilenstein M1 — „intern nutzbar für uns"** | | **~Anfang August 2026** |
+| 3 · „Nicht kaputtbar" | ~1–2 Wochen | bis Mitte August |
+| 4 · Dateiformat + Ordner-Ablage | ~2–3 Wochen | bis Anfang September |
+| 5 · Tauri-Desktop + Modul-Fenster | ~2–3 Wochen | bis Ende September |
+| 6 · Online + Konten + Rollen *(grösster Block)* | ~3–5 Wochen | bis Ende Oktober |
+| 7 · Handy / Pendenzen / Planviewer / Mängel | ~3–4 Wochen | bis Ende November |
+| 8 · Politur & Launch | ~2–3 Wochen | bis **Ende 2026** |
+| 🏁 **Meilenstein M2 — „Release"** | | **~Dezember 2026** |
+
+**Zwei klare Ziele:**
+- **M1 (≈ August 2026):** aufgeräumt + Zahlungspläne + Ausschreibung → **für euch im Alltag nutzbar**.
+- **M2 (≈ Dezember 2026):** Desktop + Online + Rollen + Mobile → **Release**.
+
+*Reihenfolge 3–8 ist anpassbar; 0–2 sind gesetzt (Struktur-Pass zuerst + deine Priorität). Daten verschieben sich mit dem Tempo — der Plan zeigt die Abfolge, nicht den Stein.*

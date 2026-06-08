@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v299';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v300';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1835,7 +1835,7 @@ function ganttRibbonTabs(p) {
     rgroup('Kräftigkeit', optBtns('gantt-strength', p.id, [['voll', 'Voll'], ['mittel', 'Mittel'], ['hell', 'Hell'], ['pastell', 'Pastell']], ganttColorStrength)) +
     rgroup('Farben', bigBtn('gantt-colors-open', 'swatch', 'Anpassen', { pid: p.id, on: !!state.ganttColors, title: 'Farben je Status/Unternehmer/Phase anpassen' })) +
     rgroup('Sortierung', optBtns('gantt-sort', p.id, [['bkp', 'BKP'], ['start', 'Startdatum']], ganttSort)) +
-    rgroup('Balken', bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) + bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' }));
+    rgroup('Balken', bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }) + bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' }) + bigBtn('gantt-hideundated', 'calCheck', 'Nur Termin', { pid: p.id, on: ganttHideUndated, title: 'Nur Gewerke mit Termin anzeigen (termin-lose wie Reserve ausblenden)' }));
   else if (ganttTab === 'beschriftung') b =
     rgroup('Beschriftung', optBtns('gantt-labelmode', p.id, [['auto', 'Auto'], ['above', 'Oben'], ['below', 'Unten'], ['before', 'Vor'], ['after', 'Nach'], ['clip', 'Innen'], ['over', 'Über']], ganttLabelMode)) +
     rgroup('Ausrichtung', optBtns('gantt-align', p.id, [['links', 'Links'], ['mitte', 'Mitte'], ['rechts', 'Rechts']], ganttLabelAlign));
@@ -2450,6 +2450,7 @@ let ganttPad = 1;                // Rand (Monate) links/rechts um das Programm (
 let ganttRibbon = true;          // Werkzeug-Leiste (Kategorien) ein-/ausgeklappt
 let ganttFocus = false;          // Fokus: nur Zeilen mit Aktivität im sichtbaren Zeitausschnitt hervorheben (live beim Scrollen)
 let ganttLinkFront = false;      // Verbindungslinien über (true) oder hinter (false) den Balken
+let ganttHideUndated = false;    // termin-lose Gewerke (z.B. Reserve) im Gantt ausblenden
 let _focusRaf = 0;
 function updateGanttFocus() {
   const main = document.querySelector('.g-main'); const rowsC = main && main.querySelector('.g-rows'); if (!main || !rowsC) return;
@@ -2556,10 +2557,11 @@ function viewTermine(id) {
   if (ganttMode === 'grob') return viewGrobGantt(p);
   if (ganttMode === 'fein') return viewFeinGantt(p);
   // ALLE Vergaben (auch ohne Termin), sortiert nach BKP/Gewerk ODER nach Baustart
-  const vs = (p.vergaben || []).slice().sort((a, b) => ganttSort === 'start'
+  let vs = (p.vergaben || []).slice().sort((a, b) => ganttSort === 'start'
     ? ((a.bauStart || '9999-99-99').localeCompare(b.bauStart || '9999-99-99') || (a.bkp || '').localeCompare(b.bkp || ''))
     : ((a.bkp || '').localeCompare(b.bkp || '') || (a.gewerk || '').localeCompare(b.gewerk || '')));
   const offene = vs.filter(v => !(v.bauStart && v.bauEnde));
+  if (ganttHideUndated) vs = vs.filter(v => (v.bauStart && v.bauEnde) || (v.vorgaenge || []).some(o => o.start && o.ende));   // termin-lose Gewerke (z.B. Reserve) ausblenden
 
   const sortCtrl = `<div class="g-zoom" title="Sortierung"><button class="${ganttSort === 'bkp' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="bkp">BKP</button><button class="${ganttSort === 'start' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="start">Start</button></div>`;
   const infoCtrl = `<div class="g-zoom" title="Info-Spalten einblenden (BKP-Nr. immer sichtbar); Start/Ende sind editierbar">${[['gewerk', 'Gewerk'], ['firma', 'Firma'], ['person', 'Person'], ['natel', 'Natel'], ['start', 'Start'], ['ende', 'Ende'], ['dauer', 'Dauer']].map(([key, lbl]) => `<button class="${ganttSide[key] ? 'active' : ''}" data-act="gantt-side" data-pid="${p.id}" data-kind="${key}">${lbl}</button>`).join('')}</div>`;
@@ -11755,6 +11757,7 @@ document.addEventListener('click', e => {
     case 'gantt-labelmode': ganttLabelMode = kind || LABEL_MODES[(LABEL_MODES.indexOf(ganttLabelMode) + 1) % LABEL_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-strength':  ganttColorStrength = kind || STRENGTH_MODES[(STRENGTH_MODES.indexOf(ganttColorStrength) + 1) % STRENGTH_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-focus':     ganttFocus = !ganttFocus; rerenderGantt(pid); break;
+    case 'gantt-hideundated': ganttHideUndated = !ganttHideUndated; rerenderGantt(pid); break;
     case 'focus-add':       actFocusAdd(e, pid); break;
     case 'gantt-colors-open': actGanttColors(pid); break;
     case 'gantt-colors-reset': { if (state.ganttColors) delete state.ganttColors[act.dataset.kind]; save(); rerenderGantt(pid); closeModal(); actGanttColors(pid); } break;

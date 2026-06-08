@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v297';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v298';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -11845,7 +11845,7 @@ function demoData() {
     R('211.1', 'Gerüstungen', 6000, 6771.35, '', '2026-06-29', '2026-11-20'),
     R('214', 'Holzbau', 11000, 64322.30, '', '2026-08-03', '2026-08-28'),
     R('215', 'Ing. Holzbau', 9000, 0, '', '', ''),
-    R('221', 'Kunststoff-Metallfenster', 35000, 44220.75, '', '', ''),
+    { ...R('221.2', 'Fenster (Kunststoff-Metall)', 35000, 44220.75, '', '', ''), beschrieb: 'Variantenänderung: in der Kostenschätzung als Holz-Metall-Fenster geschätzt (KV 35\'000, BKP 221.1). Auf Wunsch der Bauherrschaft auf Kunststoff-Metall geändert – revidierter KV 44\'220.75 (BKP 221.2). Mehrkosten +9\'221 (in der Über-/Unterschreitung sichtbar).' },
     R('221.6', 'Türen + Tore', 8500, 13900.00, '', '', ''),
     R('222.0', 'Spenglerarbeiten', 12000, 13230.60, '', '2026-08-24', '2026-09-04'),
     R('224.0', 'Steildach', 8000, 24812.40, '', '2026-07-13', '2026-07-17'),

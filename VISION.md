@@ -15,12 +15,14 @@ Man startet ein Werkzeug, baut frei ein Dokument, speichert es als Datei auf dem
   - **SubKalender** — Termine / Sitzungen
   - **SubMail** — Korrespondenz
 
-## Wie die Dateien geschnitten sind
-**Beides — Modul-Dateien + Mappe:**
-- Jedes Modul speichert seine **eigene Datei**: `Römerstrasse.subtermin`, `Römerstrasse.subkosten` …
-  → Jede läuft **eigenständig**, losgelöst, für immer.
-- **SubmitOne** ist eine **Mappe**, die mehrere Modul-Dateien zu einem Projekt **bündelt/verknüpft** (wie ein ZIP/Ordner).
-  → Man kann das ganze Projekt als ein Stück teilen — oder eine einzelne Modul-Datei für sich.
+## Die drei Ebenen (Kernmodell)
+1. **SubmitOne / Projekt — maximale Bearbeitbarkeit.** Das Dach hält **ganze Projekte** mit **vollem Kontext** (Termin ↔ Kosten ↔ Ausschreibung verknüpft). **Online** (von überall verfügbar) **UND** als **Offline-SubmitOne** (ganze Projekte auch ohne Netz).
+2. **Modul-Datei** (`.subtermin`, `.subkosten` …) — **jederzeit ablösbar** aus einem Projekt: eine **portable Datei zum Versenden/Einlesen**, selbstbeschreibend (Stammdaten-Kopf), läuft eigenständig, für immer.
+3. **Unterprogramm** (SubTermin …) — fokussierter Editor für eine Modul-Datei. **Standalone bearbeitbar, aber mit reduziertem Kontext** (keine Verknüpfung zu Kosten etc.).
+
+**Leitsatz:** *Maximale Bearbeitbarkeit = im Projekt (voller Kontext). Die abgelöste Datei ist für Transport/Weitergabe — volle Kraft zurück, sobald sie wieder **in ein Projekt eingelesen** ist.*
+
+**SubmitOne = Mappe**, die mehrere Modul-Dateien zu einem Projekt bündelt/verknüpft (wie ZIP/Ordner): ganzes Projekt als ein Stück teilen — oder eine einzelne Modul-Datei für sich.
 
 ## Projekt-Stammdaten (auch standalone editierbar)
 Jede Modul-Datei trägt einen kleinen **Projekt-Kopf**: **Projektname, Bauherr, Ort, Bauleitung …** → auch in einer **einzelnen** `.subtermin` direkt änderbar (die Datei ist selbstbeschreibend). In der **Mappe** sind die Stammdaten **geteilt** (einmal ändern → alle Module zeigen es); beim Bündeln/Importieren werden sie **abgeglichen**.
@@ -54,12 +56,17 @@ Ein eigenständig gebautes Modul (z. B. ein `.subtermin`) lässt sich in ein bes
 
 Danach **gleicht sie die Gewerke ab** (nach BKP + Name) und zeigt eine **Vorschau** (passt / neu / ohne Termin) zum Bestätigen → anschliessend sind die Balken mit den Projekt-/Kosten-Gewerken **verknüpft**. **Round-Trip:** ein Modul aus dem Projekt als eigene Datei **herauslösen**, extern bearbeiten, **zurückholen** (gleicher Abgleich). Heute schon teils vorhanden: `.gerber`-Import als neue Version mit Vergleichs-/Achtung-Dialog.
 
-## Offline-first — keine Cloud als Zwang
-**Oberste Regel: alles so weit wie möglich offline nutzbar.** Daten leben auf den eigenen Geräten (lokale Dateien) — das ist die Wahrheit, immer verfügbar. Cloud/Sync ist immer **optional**, nie Voraussetzung zum Öffnen einer Datei.
+## Online + Offline (Hybrid)
+**Beides, bewusst:**
+- **Online:** Projekte sind **von überall** verfügbar (Login → meine Projekte da). Bequemlichkeit + Zugriff auf jedem Gerät.
+- **Offline:** ein **vollwertiges Offline-SubmitOne** arbeitet an **ganzen Projekten** ohne Netz.
+- **Datei-Export** (Modul ablösen) bleibt jederzeit möglich — zum Versenden **und** als **Sicherheit/Langlebigkeit** (kein Lock-in: deine Daten gehen nie nur „in der Cloud" verloren).
 
-Zwei getrennte Wege (bewusst):
-- **Dokumente (Rechnungen/Offerten/Fotos) = echte Dateien am frei gewählten Ort** (z. B. **NAS**, lokale Platte, OneDrive, USB) → siehe Ablage.
-- **App-Datenabgleich + Handy-Aufnahmen = Supabase-Poststelle** → nur Transport/Abgleich der strukturierten Daten, kein Archiv.
+So bleibt der **Komfort** (online, überall) **mit** der **Robustheit** (offline + eigene Datei) verbunden. Wo genau die Online-Projekte liegen (eigener Server / Supabase / NAS-Fernzugriff) ist ein **Detail für später** — das Modell steht: *online haben, offline können, als Datei besitzen.*
+
+Getrennt davon weiterhin:
+- **Dokumente (Rechnungen/Offerten/Fotos) = echte Dateien am frei gewählten Ort** (z. B. **NAS**, lokal, USB) → siehe Ablage.
+- **Handy-Aufnahmen** → Transport über die Poststelle/Online-Schicht.
 
 ## Speicherort = frei wählbar
 Ein Projekt ist eine **Datei/ein Ordner** → man legt es ab, **wohin man will**: **NAS** (bevorzugt: eigene Ablage, im Büro geteilt, eigenes Backup), lokale Platte, USB, OneDrive. Die App fragt nicht „welche Cloud", sondern „welcher Ordner" — wie Word.

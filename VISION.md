@@ -35,6 +35,13 @@ Eine echte Windows-Anwendung: doppelklicken, öffnen/speichern wie gewohnt, mehr
 ## Module greifen ineinander (die Mappe)
 Module sind **verschiedene Werkzeuge auf denselben Projektdaten**. Ein Gewerk (z. B. BKP 211) ist **ein** Ding: SubTermin zeigt den Balken, SubKosten die Zahlen. Beim Öffnen der **Mappe** werden alle Module zusammen geladen → das gewohnte **Rechtsklick-Springen** (z. B. vom Terminbalken „zu Kosten") bleibt 1:1 erhalten. Die einzelne `.subtermin`-Datei ist die portable Kopie; die lebendige Verzahnung lebt in der Mappe.
 
+## Modul-Dateien importieren / einhängen
+Ein eigenständig gebautes Modul (z. B. ein `.subtermin`) lässt sich in ein bestehendes Projekt holen. **Beim Import fragt die App, was gemeint ist:**
+- **Einhängen** als Modul des Projekts, oder
+- **als neue Version** des vorhandenen Moduls (vergleichen/umschalten).
+
+Danach **gleicht sie die Gewerke ab** (nach BKP + Name) und zeigt eine **Vorschau** (passt / neu / ohne Termin) zum Bestätigen → anschliessend sind die Balken mit den Projekt-/Kosten-Gewerken **verknüpft**. **Round-Trip:** ein Modul aus dem Projekt als eigene Datei **herauslösen**, extern bearbeiten, **zurückholen** (gleicher Abgleich). Heute schon teils vorhanden: `.gerber`-Import als neue Version mit Vergleichs-/Achtung-Dialog.
+
 ## Offline-first — keine Cloud als Zwang
 **Oberste Regel: alles so weit wie möglich offline nutzbar.** Daten leben auf den eigenen Geräten (lokale Dateien) — das ist die Wahrheit, immer verfügbar. Cloud/Sync ist immer **optional**, nie Voraussetzung zum Öffnen einer Datei.
 

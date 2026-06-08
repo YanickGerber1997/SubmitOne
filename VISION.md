@@ -22,6 +22,9 @@ Man startet ein Werkzeug, baut frei ein Dokument, speichert es als Datei auf dem
 - **SubmitOne** ist eine **Mappe**, die mehrere Modul-Dateien zu einem Projekt **bündelt/verknüpft** (wie ein ZIP/Ordner).
   → Man kann das ganze Projekt als ein Stück teilen — oder eine einzelne Modul-Datei für sich.
 
+## Projekt-Stammdaten (auch standalone editierbar)
+Jede Modul-Datei trägt einen kleinen **Projekt-Kopf**: **Projektname, Bauherr, Ort, Bauleitung …** → auch in einer **einzelnen** `.subtermin` direkt änderbar (die Datei ist selbstbeschreibend). In der **Mappe** sind die Stammdaten **geteilt** (einmal ändern → alle Module zeigen es); beim Bündeln/Importieren werden sie **abgeglichen**.
+
 ## „Für immer nutzbar" — als Bauregel, nicht als Hoffnung
 1. **Simples, lesbares Format** (JSON-Text) — kein Geheim-Binärformat; im Notfall sogar mit Notepad lesbar.
 2. **Format-Versionsnummer** in jeder Datei.

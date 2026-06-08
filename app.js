@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v291';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v292';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -11852,6 +11852,21 @@ function demoData() {
     K('291.0', 'Honorar Architekt', 10000),
     K('299', 'Übriges / Diverses (Reserve)', 10200),
   ];
+  const G = (bkp, gewerk) => ({ id: uid('v'), bkp, gewerk, status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 0, frist: '', bauStart: '', bauEnde: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
+  const kinderheim = [
+    G('172', 'Baugrubenabschlüsse'), G('201', 'Aushub'), G('211.1', 'Baustelleneinrichtung'),
+    G('211.3', 'Baumeisteraushub'), G('211.4', 'Kanalisationen im Gebäude'), G('211.5', 'Beton- und Stahlbeton'),
+    G('211.6', 'Maurerarbeiten'), G('211.1', 'Gerüstungen'), G('212', 'Betonelemente'), G('214', 'Montagebau in Holz'),
+    G('221', 'Fenster'), G('221.6', 'Aussentüren'), G('222', 'Spenglerarbeiten'), G('224.1', 'Flachdach'),
+    G('225.1', 'Fugendichtungen'), G('226', 'Fassadenputz'), G('227', 'Äussere Malerarbeiten'), G('228', 'Sonnen- & Wetterschutz'),
+    G('230', 'Elektroinstallationen'), G('230', 'PV-Anlage'), G('242.1', 'Erdsondenbohrung'), G('242', 'Heizung'),
+    G('244', 'Lüftungsanlagen'), G('250', 'Sanitäranlagen'), G('258', 'Küchen'), G('261', 'Liftanlagen'),
+    G('271', 'Gipserarbeiten'), G('271.1', 'Spez. Gipserarbeiten'), G('272.2', 'Allg. Metallbauarbeiten'),
+    G('273', 'Innentüren'), G('273.1', 'Allg. Schreinerarbeiten / Inneneinrichtung'), G('275', 'Schliessanlage'),
+    G('281', 'Unterlagsböden'), G('281.2', 'Bodenbeläge'), G('282.4', 'Keramische Wand- und Bodenbeläge'),
+    G('283', 'Deckenbekleidungen'), G('285', 'Innere Malerarbeiten'), G('287', 'Baureinigung'),
+    G('299', 'Mängelbehebung & Fertigstellung'), G('421', 'Umgebungsgestaltung'), G('', 'Bezug & Inbetriebnahme'),
+  ];
   const projekte = [{
     id: uid('p'), name: 'Umbau EFH Römerstrasse 31', ort: '', bauherr: '', projektleiter: '',
     phase: 'ausfuehrung', start: '2026-06-08', ende: '2026-12-14', baustart: '2026-06-08', bezug: '2026-12-14',
@@ -11860,6 +11875,10 @@ function demoData() {
     id: uid('p'), name: 'Umbau EFH Kunoweg 20', ort: 'Bremgarten', bauherr: 'Spori-Tritten', projektleiter: 'P. Hefti Bauberatung GmbH',
     phase: 'planung', start: '', ende: '', baustart: '', bezug: '',
     vergaben: kunoweg,
+  }, {
+    id: uid('p'), name: 'Neubau Kinderheim Heimelig', ort: 'Kerzers', bauherr: 'Stiftung Heimelig (Erich Hirt, Stiftungsratspräsident)', projektleiter: '',
+    phase: 'ausfuehrung', start: '2026-02-03', ende: '2027-11-30', baustart: '2026-02-03', bezug: '2027-11-30',
+    vergaben: kinderheim,
   }];
   return { projekte, kontakte: [], dokumente: [], buero: { ...BUERO } };
 }

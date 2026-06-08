@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v298';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v299';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1667,10 +1667,10 @@ function viewKosten(id) {
       const btSel = hatBt ? `<div style="margin-top:3px"><select class="bt-gw" data-pid="${p.id}" data-vid="${v.id}" onclick="event.stopPropagation()" title="Teilprojekt" style="font-size:11px;padding:1px 5px;border:1px solid var(--border);border-radius:4px;max-width:200px">${bauteilOptionsHtml(p, v.bauteil)}</select></div>` : '';
       rows += `<tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
         <td class="bkp-code">${esc(v.bkp)}</td>
-        <td><strong>${esc(v.gewerk)}</strong>${btSel}</td>
+        <td><strong>${esc(v.gewerk)}</strong>${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
         <td>${v.firma ? esc(v.firma) : '<span class="muted">nicht vergeben</span>'}</td>
         <td class="num">${mB(z.kv)}</td>
-        <td class="num">${z.rev != null ? mB(z.rev) : `<span class="muted">${mB(z.kv)}</span>`}</td>
+        <td class="num">${z.rev != null && Math.abs(z.rev - z.kv) > 0.5 ? `${mB(z.rev)} <span class="chg-delta ${z.rev > z.kv ? 'up' : 'dn'}" title="Änderung gegenüber Erst-KV">${z.rev > z.kv ? '▲' : '▼'}</span>` : (z.rev != null ? mB(z.rev) : `<span class="muted">${mB(z.kv)}</span>`)}</td>
         <td class="num">${z.vergeben ? mB(z.wv) : '–'}</td>
         <td class="num">${z.nt ? mB(z.nt) : '–'}</td>
         <td class="num"><strong>${mB(z.endsumme)}</strong>${z.hatSchluss ? ' <span class="muted" style="font-size:9px">SR</span>' : ''}</td>

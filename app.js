@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v315';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v316';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2648,9 +2648,10 @@ function viewTermine(id) {
   if (ganttMode === 'grob') return viewGrobGantt(p);
   if (ganttMode === 'fein') return viewFeinGantt(p);
   // ALLE Vergaben (auch ohne Termin), sortiert nach BKP/Gewerk ODER nach Baustart
-  let vs = (p.vergaben || []).slice().sort((a, b) => ganttSort === 'start'
-    ? ((a.bauStart || '9999-99-99').localeCompare(b.bauStart || '9999-99-99') || (a.bkp || '').localeCompare(b.bkp || ''))
-    : ((a.bkp || '').localeCompare(b.bkp || '') || (a.gewerk || '').localeCompare(b.gewerk || '')));
+  let vs = (p.vergaben || []).slice().sort((a, b) => {
+    if (ganttSort === 'start') return (a.bauStart || '9999-99-99').localeCompare(b.bauStart || '9999-99-99') || bkpCmp(a.bkp, b.bkp);
+    return bkpCmp(a.bkp, b.bkp) || (a.gewerk || '').localeCompare(b.gewerk || '');
+  });
   const offene = vs.filter(v => !(v.bauStart && v.bauEnde));
   if (ganttHideUndated) vs = vs.filter(v => (v.bauStart && v.bauEnde) || (v.vorgaenge || []).some(o => o.start && o.ende));   // termin-lose Gewerke (z.B. Reserve) ausblenden
   if (ganttDone === 'hide') vs = vs.filter(v => !v.erfuellt);   // erfüllte Gewerke ausblenden
@@ -4101,13 +4102,16 @@ function rmPendenz(pid, itemid) {
    Listen: Submittentenliste (vertraulich) + Unternehmerliste (Baustelle)
    --------------------------------------------------------------- */
 
+// BKP-Vergleich: leeres BKP (Bezug/Inbetriebnahme/Mängel) immer ans Ende
+function bkpCmp(a, b) {
+  const ka = (a || '').trim(), kb = (b || '').trim();
+  if (!ka && kb) return 1;
+  if (ka && !kb) return -1;
+  return ka.localeCompare(kb);
+}
 function gewerkeSorted(p) {
-  return (p.vergaben || []).slice().sort((a, b) => {
-    const ka = (a.bkp || '').trim(), kb = (b.bkp || '').trim();
-    if (!ka && kb) return 1;    // ohne BKP (Bezug/Inbetriebnahme/Mängel) ans Ende
-    if (ka && !kb) return -1;
-    return ka.localeCompare(kb) || (a.gewerk || '').localeCompare(b.gewerk || '');
-  });
+  return (p.vergaben || []).slice().sort((a, b) =>
+    bkpCmp(a.bkp, b.bkp) || (a.gewerk || '').localeCompare(b.gewerk || ''));
 }
 
 function kontaktByFirma(firma) {

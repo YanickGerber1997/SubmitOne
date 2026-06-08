@@ -62,7 +62,9 @@ Danach **gleicht sie die Gewerke ab** (nach BKP + Name) und zeigt eine **Vorscha
 - **Offline:** ein **vollwertiges Offline-SubmitOne** arbeitet an **ganzen Projekten** ohne Netz.
 - **Datei-Export** (Modul ablösen) bleibt jederzeit möglich — zum Versenden **und** als **Sicherheit/Langlebigkeit** (kein Lock-in: deine Daten gehen nie nur „in der Cloud" verloren).
 
-So bleibt der **Komfort** (online, überall) **mit** der **Robustheit** (offline + eigene Datei) verbunden. Wo genau die Online-Projekte liegen (eigener Server / Supabase / NAS-Fernzugriff) ist ein **Detail für später** — das Modell steht: *online haben, offline können, als Datei besitzen.*
+So bleibt der **Komfort** (online, überall) **mit** der **Robustheit** (offline + eigene Datei) verbunden. *online haben, offline können, als Datei besitzen.*
+
+**Online-Ablage = Supabase** (Entscheid): managed (wenig Aufwand), skaliert zum **SaaS** (Verkauf an andere Firmen), Konten + **Rollen via RLS**, Echtzeit-Abgleich, Stripe-fähig (Abo schon begonnen). **EU-Region** für Datenschutz. Free-Tier zum Start. **Kein Lock-in**, weil Offline-Modus + Datei-Export bleiben — Supabase ist die bequeme Online-Schicht, nicht der einzige Ort. (Sync-Logik offline↔online ist echte Arbeit, schrittweise gebaut.)
 
 Getrennt davon weiterhin:
 - **Dokumente (Rechnungen/Offerten/Fotos) = echte Dateien am frei gewählten Ort** (z. B. **NAS**, lokal, USB) → siehe Ablage.

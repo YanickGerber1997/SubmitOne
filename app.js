@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v309';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v310';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -4025,28 +4025,42 @@ let listenTab = 'subm';   // 'subm' | 'unt' – welche Liste im Listen-Reiter an
 // Submittentenliste als Arbeitsliste: ein-/ausblendbare Spalten
 let submCols = { frist: true, versendet: true, status: true, offerte: true, abgebot: false, werkvertrag: true, kontakt: false };
 const SUBM_COLS = [['frist', 'Eingabefrist', 0], ['versendet', 'Versendet', 0], ['status', 'Status', 0], ['offerte', 'Offerte', 1], ['abgebot', 'Abgebot', 1], ['werkvertrag', 'Werkvertrag', 1], ['kontakt', 'Kontakt', 0]];
-function submCell(p, v, e, key) {
+function submCell(p, v, e, key, edit) {
   const wv = isVergeben(v) && v.firma && e.firma === v.firma;
-  if (key === 'frist') { const f = e.frist || v.frist; return f ? fmtDate(f) : '–'; }
-  if (key === 'versendet') return e.datumMail ? fmtDate(e.datumMail) : (e.status === 'eingeladen' ? '<span class="muted">noch nicht</span>' : '–');
-  if (key === 'status') return `<span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:1px 7px;font-size:10px">${INV_STATUS[e.status]?.label || esc(e.status)}</span>`;
+  const dd = (field, val, ph) => `<input type="date" class="subm-in" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}" data-field="${field}" value="${esc(val || '')}" style="height:25px;font-size:11.5px;padding:1px 4px"${ph ? ` title="${esc(ph)}"` : ''}>`;
+  if (key === 'frist') { const f = e.frist || v.frist; return edit ? dd('frist', e.frist, v.frist ? 'Gewerk-Frist: ' + fmtDate(v.frist) : 'Eingabefrist') : (f ? fmtDate(f) : '–'); }
+  if (key === 'versendet') return edit ? dd('datumMail', e.datumMail, 'Versendet am – setzen = Status „angefragt"') : (e.datumMail ? fmtDate(e.datumMail) : (e.status === 'eingeladen' ? '<span class="muted">noch nicht</span>' : '–'));
+  if (key === 'status') return edit
+    ? `<select class="subm-st" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}" style="height:25px;font-size:11.5px;padding:0 2px">${Object.entries(INV_STATUS).map(([k, s]) => `<option value="${k}"${e.status === k ? ' selected' : ''}>${s.label}</option>`).join('')}</select>`
+    : `<span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:1px 7px;font-size:10px">${INV_STATUS[e.status]?.label || esc(e.status)}</span>`;
   if (key === 'offerte') return eOff(e) != null ? chf(eOff(e)) : '–';
   if (key === 'abgebot') return eAbg(e) != null ? chf(eAbg(e)) : '–';
   if (key === 'werkvertrag') return wv ? `<strong>✓ ${eVer(e) != null ? chf(eVer(e)) : (v.betrag ? chf(v.betrag) : 'WV')}</strong>` : '<span class="muted">–</span>';
   if (key === 'kontakt') { const k = (state.kontakte || []).find(x => x.firma === e.firma); return esc([e.email, k && k.telefon].filter(Boolean).join(' · ')) || '–'; }
   return '';
 }
-function submTableHtml(p, cols, compact) {
+function submTableHtml(p, cols, compact, edit) {
   const gw = gewerkeSorted(p); if (!gw.length) return '';
   const heads = SUBM_COLS.filter(c => cols.includes(c[0]));
   const ncol = 1 + heads.length;
   const body = gw.map(v => {
     const eing = (v.eingeladene || []);
-    const rows = eing.length ? eing.map(e => `<tr><td>${esc(e.firma)}</td>${heads.map(([k, , num]) => `<td${num ? ' class="num"' : ''}>${submCell(p, v, e, k)}</td>`).join('')}</tr>`).join('')
+    const rows = eing.length ? eing.map(e => `<tr><td>${esc(e.firma)}</td>${heads.map(([k, , num]) => `<td${num ? ' class="num"' : ''}>${submCell(p, v, e, k, edit)}</td>`).join('')}</tr>`).join('')
       : `<tr><td colspan="${ncol}" class="muted" style="font-size:11.5px">noch niemand eingeladen</td></tr>`;
-    return `<tr><td colspan="${ncol}" style="background:#f4f6f9;font-weight:700;font-size:11.5px;padding:4px 10px"><span class="bkp-code">${esc(v.bkp)}</span> ${esc(v.gewerk)}</td></tr>${rows}`;
+    const addBtn = edit ? ` <button class="btn xs" data-act="invite" data-pid="${p.id}" data-vid="${v.id}" style="float:right;margin-top:-2px">+ einladen</button>` : '';
+    return `<tr><td colspan="${ncol}" style="background:#f4f6f9;font-weight:700;font-size:11.5px;padding:4px 10px"><span class="bkp-code">${esc(v.bkp)}</span> ${esc(v.gewerk)}${addBtn}</td></tr>${rows}`;
   }).join('');
   return `<table class="${compact ? 'grid t-compact' : 't'}"><thead><tr><th>Firma</th>${heads.map(([, l, num]) => `<th${num ? ' class="num"' : ''}>${l}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`;
+}
+function submSet(pid, vid, eid, field, val) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); const e = v && (v.eingeladene || []).find(x => x.id === eid); if (!e) return;
+  e[field] = val || '';
+  if (field === 'datumMail' && val && e.status === 'eingeladen') e.status = 'angefragt';   // versendet → angefragt
+  save(); viewListen(pid);
+}
+function submSetStatus(pid, vid, eid, val) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); const e = v && (v.eingeladene || []).find(x => x.id === eid); if (!e) return;
+  e.status = val; save(); viewListen(pid);
 }
 function viewListen(pid) {
   const p = findProjekt(pid);
@@ -4054,7 +4068,7 @@ function viewListen(pid) {
   const gw = gewerkeSorted(p);
 
   const submActive = SUBM_COLS.filter(c => submCols[c[0]]).map(c => c[0]);
-  const submBlocks = gw.length ? submTableHtml(p, submActive, true) : emptyState('◫', 'Keine Gewerke angelegt.');
+  const submBlocks = gw.length ? submTableHtml(p, submActive, true, true) : emptyState('◫', 'Keine Gewerke angelegt.');
   const submColChips = `<div class="chips" style="margin:-2px 0 10px"><span class="muted" style="font-size:11px;align-self:center;margin-right:2px">Spalten:</span>${SUBM_COLS.map(([k, l]) => `<span class="chip ${submCols[k] ? 'active' : ''}" data-act="subm-col" data-kind="${k}" data-pid="${p.id}">${l}</span>`).join('')}</div>`;
 
   const untRows = gw.map(v => {
@@ -4129,6 +4143,8 @@ function viewListen(pid) {
     ${bodyHtml}
   `);
   $$('.eig-in').forEach(el => el.addEventListener('change', () => setEinheitEig(el.dataset.pid, el.dataset.uid, el.dataset.feld, el.value)));
+  $$('.subm-in').forEach(el => el.addEventListener('change', () => submSet(el.dataset.pid, el.dataset.vid, el.dataset.eid, el.dataset.field, el.value)));
+  $$('.subm-st').forEach(el => el.addEventListener('change', () => submSetStatus(el.dataset.pid, el.dataset.vid, el.dataset.eid, el.value)));
 }
 function setEinheitEig(pid, uid, feld, val) {
   const p = findProjekt(pid); if (!p) return;
@@ -4392,7 +4408,7 @@ function pdfSubmittenten(pid, mitBetrag) {
   const p = findProjekt(pid); if (!p) return;
   let cols = SUBM_COLS.filter(c => submCols[c[0]]).map(c => c[0]);
   if (!mitBetrag) cols = cols.filter(k => k !== 'offerte' && k !== 'abgebot' && k !== 'werkvertrag');
-  const inner = submTableHtml(p, cols, false) || '<p class="muted">Keine Gewerke angelegt.</p>';
+  const inner = submTableHtml(p, cols, false, false) || '<p class="muted">Keine Gewerke angelegt.</p>';
   const sub = `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)}${mitBetrag ? ' &nbsp; <span class="conf">VERTRAULICH – nicht an die Baustelle</span>' : ''}`;
   openPrintDoc('Submittentenliste' + (mitBetrag ? '' : ' (ohne Beträge)'), sub, inner);
 }

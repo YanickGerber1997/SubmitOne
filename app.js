@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v310';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v311';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2377,11 +2377,13 @@ function saveFeinKommentar(pid, vid, oid, datum, kid) {
 function actFeinVorgang(pid, vid, oid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid); const o = (v.vorgaenge || []).find(x => x.id === oid); if (!o) return;
   openModal('Untertermin – ' + (v.gewerk || ''), `
-    <label class="field">Bezeichnung <input class="input" id="o_titel" value="${esc(o.titel || '')}" placeholder="z.B. Bodenplatte, Rohbau EG"></label>
+    <label class="field">Bezeichnung <input class="input" id="o_titel" value="${esc(o.titel || '')}" placeholder="z.B. Gebäude stromlos/wasserlos machen"></label>
     <div class="form-row">
       <label class="field">Von <input class="input" type="date" id="o_start" value="${esc(o.start || '')}"></label>
       <label class="field">Bis <input class="input" type="date" id="o_ende" value="${esc(o.ende || '')}"></label>
     </div>
+    <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:4px"><input type="checkbox" id="o_erf"${o.erfuellt ? ' checked' : ''}> <b>Erfüllt / erledigt</b> (Häkchen im Balken)</label>
+    <label class="field" style="margin-top:6px">Notiz / Terminänderung <input class="input" id="o_notiz" value="${esc(o.notiz || '')}" placeholder="z.B. verschoben auf KW26 · stromlos abgehakt 04.06."></label>
   `, `<button class="btn ghost danger" data-act="fein-vorgang-rm" data-pid="${pid}" data-vid="${vid}" data-oid="${oid}">🗑 Löschen</button><button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fein-vorgang-save" data-pid="${pid}" data-vid="${vid}" data-oid="${oid}">💾 Speichern</button>`);
 }
 function saveFeinVorgang(pid, vid, oid) {
@@ -2391,8 +2393,8 @@ function saveFeinVorgang(pid, vid, oid) {
   if (!titel) { toast('Bitte eine Bezeichnung eingeben', 'info'); return; }
   if (!s || !e) { toast('Bitte Start und Ende setzen', 'info'); return; }
   if (e < s) { toast('Ende liegt vor dem Start', 'info'); return; }
-  o.titel = titel; o.start = s; o.ende = e; recalcAutoBalken(v);
-  save(); closeModal(); viewFeinViertel(p);
+  o.titel = titel; o.start = s; o.ende = e; o.erfuellt = $('#o_erf').checked; o.notiz = $('#o_notiz').value.trim(); recalcAutoBalken(v);
+  save(); closeModal(); rerenderGantt(pid);
 }
 function removeFeinVorgang(pid, vid, oid) {
   if (gesperrt(pid)) return;
@@ -2876,10 +2878,10 @@ function viewTermine(id) {
       } else {
         const gOut = (p.ganttLinks || []).some(lk => lk.from === v.id), gIn = (p.ganttLinks || []).some(lk => lk.to === v.id);
         const gL = leftPx(v.bauStart), gW = widthPx(v.bauStart, v.bauEnde), gLab = gBarLabel(v.gewerk, gL, gW, false, isAuto, innerW, gOut, gIn);
-        barRows += `<div class="g-row" data-x0="${gx0}" data-x1="${gx1}">${preBars}${gdLabels(v.bauStart, v.bauEnde, gL, gL + gW, gLab.gdOffStart, gLab.gdOffEnd)}<div class="g-bar${light}${isAuto ? ' summary' : ''} align-${_eAlign}${gLab.barLow ? ' bar-low' : ''}" style="left:${gL}px;width:${gW}px;background:${colHex}"
-          title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}"
+        barRows += `<div class="g-row" data-x0="${gx0}" data-x1="${gx1}">${preBars}${gdLabels(v.bauStart, v.bauEnde, gL, gL + gW, gLab.gdOffStart, gLab.gdOffEnd)}<div class="g-bar${light}${isAuto ? ' summary' : ''} align-${_eAlign}${gLab.barLow ? ' bar-low' : ''}${v.erfuellt ? ' g-done' : ''}" style="left:${gL}px;width:${gW}px;background:${colHex}"
+          title="${esc(v.gewerk)}: ${fmtDate(v.bauStart)} – ${fmtDate(v.bauEnde)}${isAuto ? ' · Dauer automatisch aus Unterterminen' : ' · ' + (STATUS_BY_KEY[v.status]?.label || '')}${v.erfuellt ? ' · ✓ erfüllt' : ''}${v.notiz ? ' · 📝 ' + esc(v.notiz) : ''}"
           data-pid="${p.id}" data-vid="${v.id}" data-key="${v.id}" data-ctx="gantt" data-start="${v.bauStart}" data-ende="${v.bauEnde}">
-          <span class="g-h l"></span><span class="g-lbl">${gLab.inner}</span>${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div>${gLab.outer}${gDauerLabel(v.bauStart, v.bauEnde, gL, gL + gW, false)}</div>`;
+          <span class="g-h l"></span>${v.erfuellt ? '<span class="g-check">✓</span>' : ''}<span class="g-lbl">${gLab.inner}</span>${v.notiz ? `<span class="g-tnote" title="${esc(v.notiz)}">📝</span>` : ''}${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div>${gLab.outer}${gDauerLabel(v.bauStart, v.bauEnde, gL, gL + gW, false)}</div>`;
       }
     } else {
       barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw" data-pid="${p.id}" data-vid="${v.id}"><span class="g-draw-hint">ziehen = Termin zeichnen · Klick = Dialog</span></div>`;
@@ -2893,10 +2895,10 @@ function viewTermine(id) {
         const oOut = (p.ganttLinks || []).some(lk => lk.from === key), oIn = (p.ganttLinks || []).some(lk => lk.to === key);
         const oL = leftPx(o.start), oW = widthPx(o.start, o.ende), oLab = gBarLabel(o.titel, oL, oW, true, false, innerW, oOut, oIn);
         barMeta[key] = { row: rowIdx, left: oL, width: oW };
-        barRows += `<div class="g-row" data-x0="${oL}" data-x1="${oL + oW}">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOffStart, oLab.gdOffEnd)}<div class="g-bar sub${light} align-${_eAlign}${oLab.barLow ? ' bar-low' : ''}" style="left:${oL}px;width:${oW}px;background:${colHex}"
-          title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}"
+        barRows += `<div class="g-row" data-x0="${oL}" data-x1="${oL + oW}">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOffStart, oLab.gdOffEnd)}<div class="g-bar sub${light} align-${_eAlign}${oLab.barLow ? ' bar-low' : ''}${o.erfuellt ? ' g-done' : ''}" style="left:${oL}px;width:${oW}px;background:${colHex}"
+          title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}${o.erfuellt ? ' · ✓ erfüllt' : ''}${o.notiz ? ' · 📝 ' + esc(o.notiz) : ''}"
           data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
-          <span class="g-h l"></span><span class="g-lbl">${oLab.inner}</span>${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div>${oLab.outer}${gDauerLabel(o.start, o.ende, oL, oL + oW, true)}</div>`;
+          <span class="g-h l"></span>${o.erfuellt ? '<span class="g-check">✓</span>' : ''}<span class="g-lbl">${oLab.inner}</span>${o.notiz ? `<span class="g-tnote" title="${esc(o.notiz)}">📝</span>` : ''}${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div>${oLab.outer}${gDauerLabel(o.start, o.ende, oL, oL + oW, true)}</div>`;
       } else {
         barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw sub" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}"><span class="g-draw-hint">ziehen = Untertermin zeichnen</span></div>`;
       }
@@ -11280,6 +11282,8 @@ function actEditTermin(pid, vid, defStart) {
     </div>
     <span class="muted" style="font-size:11px;display:block;margin-top:2px">Markiert im Gantt einen 📌 Vorab-Termin (Begehung/Kickoff) und erscheint im Kalender. Leer = kein Vorab-Termin.</span>
     ${(v.vorgaenge || []).length ? `<label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px"><input type="checkbox" id="t_auto"${v.autoBalken ? ' checked' : ''}> Dauer <b>automatisch aus den Unterterminen</b> (Oberbalken umspannt sie)</label>` : ''}
+    <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px"><input type="checkbox" id="t_erf"${v.erfuellt ? ' checked' : ''}> <b>Erfüllt / erledigt</b> (Häkchen im Balken)</label>
+    <label class="field" style="margin-top:6px">Notiz / Terminänderung <input class="input" id="t_notiz" value="${esc(v.notiz || '')}" placeholder="z.B. Ausführung KW24 verschoben auf KW26 · geht wahrscheinlich bis KW24+2"></label>
   `, `${(v.bauStart && v.bauEnde) ? `<button class="btn ghost danger" data-act="termin-clear" data-pid="${pid}" data-vid="${vid}">Termin entfernen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-termin" data-pid="${pid}" data-vid="${vid}">💾 Speichern</button>`);
 }
 
@@ -11288,6 +11292,7 @@ function saveTermin(pid, vid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   const auto = $('#t_auto') ? $('#t_auto').checked : v.autoBalken;
   v.autoBalken = !!auto;
+  { const ce = $('#t_erf'); if (ce) v.erfuellt = ce.checked; const cn = $('#t_notiz'); if (cn) v.notiz = cn.value.trim(); }
   if (!auto) {
     const s = $('#t_start').value, e = $('#t_ende').value;
     if (s && e && e < s) { toast('Ende liegt vor dem Start', 'info'); return; }

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v294';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v295';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -11914,7 +11914,7 @@ function demoData() {
     G('', 'Bezug & Inbetriebnahme', '2027-11-30', '2027-11-30'),
   ];
   const projekte = [{
-    id: uid('p'), name: 'Umbau EFH Römerstrasse 31', ort: '', bauherr: '', projektleiter: '',
+    id: uid('p'), name: 'Umbau EFH Römerstrasse 31', ort: 'Bremgarten', bauherr: 'Cosima Bader & Ursula Bader', projektleiter: 'P. Hefti Bauberatung GmbH',
     phase: 'ausfuehrung', start: '2026-06-08', ende: '2026-12-14', baustart: '2026-06-08', bezug: '2026-12-14',
     vergaben,
   }, {

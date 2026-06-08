@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v300';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v301';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -10013,9 +10013,10 @@ function pdfGantt(pid, paper, range) {
   closeModal();
   setFeierCtx(p);
   if (ganttMode === 'grob') return pdfGrobGantt(p, paper);
-  let vs = gewerkeSorted(p).filter(v => v.bauStart && v.bauEnde);
-  if (range) vs = vs.filter(v => v.bauStart <= range.to && v.bauEnde >= range.from);   // nur Gewerke, die im Jahr laufen
-  if (!vs.length) { toast(range ? 'Keine Gewerke in diesem Zeitraum' : 'Keine terminierten Gewerke vorhanden', 'info'); return; }
+  let vs = gewerkeSorted(p);
+  if (range) vs = vs.filter(v => v.bauStart && v.bauEnde && v.bauStart <= range.to && v.bauEnde >= range.from);   // Jahr: nur datierte, die im Jahr laufen
+  else if (ganttHideUndated) vs = vs.filter(v => v.bauStart && v.bauEnde);                                        // sonst alles inkl. ohne Termin (ausser Toggle „Nur Termin")
+  if (!vs.length) { toast(range ? 'Keine Gewerke in diesem Zeitraum' : 'Keine Gewerke vorhanden', 'info'); return; }
   // Druckzeilen: jedes Gewerk + seine datierten Untertermine (eingerückt)
   const items = [];
   vs.forEach(v => {
@@ -10031,6 +10032,7 @@ function pdfGantt(pid, paper, range) {
     if (v.vorab && v.vorab.tageVor != null) ext(addDays(v.bauStart, -Math.abs(Number(v.vorab.tageVor) || 0)));
     (v.vorgaenge || []).forEach(o => { ext(o.start); ext(o.ende); });
   });
+  if (!min || !max) { toast('Keine Termine zum Drucken (alle Gewerke ohne Datum)', 'info'); return; }
   const ds = dISO(min), de = dISO(max);
   const rangeStart = range ? dISO(range.from) : new Date(ds.getFullYear(), ds.getMonth() - ganttPad, 1);
   const rangeEnd = range ? dISO(range.to) : new Date(de.getFullYear(), de.getMonth() + 1 + ganttPad, 0);
@@ -10108,6 +10110,7 @@ function pdfGantt(pid, paper, range) {
       const fit = fitsBar(o.titel, w);
       return `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar sub" style="left:${x0}%;width:${w}%;height:${barH - 1.2}mm;background:${ganttColHex(v)}">${fit ? `<span class="pgb-l">${esc(o.titel || '')}</span>` : ''}</div>${fit ? '' : `<span class="pgb-out sub" style="left:${x0 + w}%">${esc(o.titel || '')}</span>`}</div>`;
     }
+    if (!v.bauStart || !v.bauEnde) return `<div class="pg-row" style="height:${rowH}mm"></div>`;   // ohne Termin: leere Zeile (Seiten-Label bleibt)
     let pre = '';
     if (Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); const bs = isoOf(d); pre += `<div class="pg-bestell" style="left:${Math.max(0, pct(bs))}%;width:${wpct(bs, v.bauStart)}%;height:${barH}mm"></div>`; }
     if (Number(v.nachfrist) > 0) { const ne = addDays(v.bauEnde, Number(v.nachfrist)); pre += `<div class="pg-nach" style="left:${pct(addDays(v.bauEnde, 1))}%;width:${wpct(addDays(v.bauEnde, 1), ne)}%;height:${barH}mm"></div>`; }

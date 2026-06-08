@@ -903,6 +903,15 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-si-sep { color: var(--text-faint); font-size: 10px; }
 /* Editierbare Start-/Ende-Datumsspalten + Dauer in der linken Gantt-Leiste */
 .g-si-cols { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex: none; }
+/* Frei verschiebbare Info-Spalten (Reihenfolge per Drag) */
+.g-side-cells { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; overflow: hidden; }
+.g-side-row .g-edit.bkp-only { flex: none; }
+.g-sc { min-width: 0; }
+.g-sc.gewerk { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.g-sc.g-si-date, .g-sc.g-si-dauer { flex: none; }
+.g-sidecols [data-sidecol] { cursor: grab; }
+.g-sidecols [data-sidecol].dragging { opacity: .45; }
+.g-sidecols [data-sidecol].drop-target { box-shadow: inset 0 0 0 2px var(--brand); }
 .g-si-date { font-size: 10.5px; padding: 2px 4px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--surface); color: var(--text); width: 108px; }
 .g-si-date:focus { border-color: var(--brand); outline: none; }
 .g-si-date:disabled { background: var(--surface-2); color: var(--text-soft); }

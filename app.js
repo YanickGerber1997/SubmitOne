@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v317';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v318';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1842,6 +1842,18 @@ let ganttScale = 1;        // stufenloser Breiten-Faktor auf pxPerDay
 let ganttChain = true;     // Verkettung: Nachfolger automatisch nachführen
 let ganttWorkdays = false; // Abstände/Verkettung in Arbeitstagen (Wochenende/Feiertage überspringen)
 let ganttSide = { gewerk: true, firma: false, person: false, natel: false, start: false, ende: false, dauer: false }; // einblendbare Info-Spalten (BKP-Nr. immer); start/ende = editierbare Datumsfelder
+let ganttSideOrder = ['gewerk', 'firma', 'person', 'natel', 'start', 'ende', 'dauer']; // frei verschiebbare Reihenfolge der Info-Spalten
+const SIDE_LABELS = { gewerk: 'Gewerk', firma: 'Firma', person: 'Person', natel: 'Natel', start: 'Start', ende: 'Ende', dauer: 'Dauer' };
+let _ganttSideLoaded = false;
+function loadGanttSide() {
+  if (_ganttSideLoaded) return; _ganttSideLoaded = true;
+  try {
+    const s = JSON.parse(localStorage.getItem('so_gantt_side') || 'null'); if (!s) return;
+    if (s.vis && typeof s.vis === 'object') Object.keys(ganttSide).forEach(k => { if (k in s.vis) ganttSide[k] = !!s.vis[k]; });
+    if (Array.isArray(s.order)) { const valid = s.order.filter(k => ganttSideOrder.includes(k)); ganttSideOrder.forEach(k => { if (!valid.includes(k)) valid.push(k); }); ganttSideOrder = valid; }
+  } catch (_) {}
+}
+function saveGanttSide() { try { localStorage.setItem('so_gantt_side', JSON.stringify({ vis: ganttSide, order: ganttSideOrder })); } catch (_) {} }
 let ganttDates = 'off';   // Anschrift am Balken: 'off' | 'datum' (dd.mm.yy) | 'kw' (Kalenderwoche) | 'grob' (Anfang/Mitte/Ende Monat)
 let ganttMode = 'detail'; // 'detail' = Termin-Gantt (Tage) | 'grob' = Grobplanung (Phasen) | 'fein' = Feinprogramm (Stunden)
 const FEIN_H0 = 6, FEIN_H1 = 20;   // Stunden-Achse Feinprogramm (06:00–20:00)
@@ -2644,6 +2656,7 @@ function viewTermine(id) {
   ganttPid = p.id;
   setFeierCtx(p);
   ganttEffective();
+  loadGanttSide();
   const gespr = terminGesperrt(p);
   if (ganttMode === 'grob') return viewGrobGantt(p);
   if (ganttMode === 'fein') return viewFeinGantt(p);
@@ -2657,7 +2670,7 @@ function viewTermine(id) {
   if (ganttDone === 'hide') vs = vs.filter(v => !v.erfuellt);   // erfüllte Gewerke ausblenden
 
   const sortCtrl = `<div class="g-zoom" title="Sortierung"><button class="${ganttSort === 'bkp' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="bkp">BKP</button><button class="${ganttSort === 'start' ? 'active' : ''}" data-act="gantt-sort" data-pid="${p.id}" data-kind="start">Start</button></div>`;
-  const infoCtrl = `<div class="g-zoom" title="Info-Spalten einblenden (BKP-Nr. immer sichtbar); Start/Ende sind editierbar">${[['gewerk', 'Gewerk'], ['firma', 'Firma'], ['person', 'Person'], ['natel', 'Natel'], ['start', 'Start'], ['ende', 'Ende'], ['dauer', 'Dauer']].map(([key, lbl]) => `<button class="${ganttSide[key] ? 'active' : ''}" data-act="gantt-side" data-pid="${p.id}" data-kind="${key}">${lbl}</button>`).join('')}</div>`;
+  const infoCtrl = `<div class="g-zoom g-sidecols" title="Info-Spalten: Klick = ein/aus (BKP-Nr. immer sichtbar) · ziehen = Reihenfolge ändern (wird gespeichert)">${ganttSideOrder.map(key => `<button class="${ganttSide[key] ? 'active' : ''}" draggable="true" data-sidecol="${key}" data-act="gantt-side" data-pid="${p.id}" data-kind="${key}">${SIDE_LABELS[key]}</button>`).join('')}</div>`;
   const dateLbl = ganttDates === 'off' ? 'Datum aus' : (ganttDates === 'full' ? 'Datum 26.06.26' : 'Datum 26.06.');
   const dateCtrl = `<button class="btn sm ${ganttDates === 'off' ? 'secondary' : ''}" data-act="gantt-dates" data-pid="${p.id}" title="Start-/Enddatum an den Balken einblenden (umschalten: aus → mit Jahr → ohne Jahr)">📅 ${dateLbl}</button>`;
   const zoomCtrl = `<div class="g-zoom">
@@ -2853,22 +2866,23 @@ function viewTermine(id) {
     const fenster = isAuto && ganttFenster;   // grosses Hintergrund-Fenster statt dünnem Oberbalken
     const hatTermin = v.bauStart && v.bauEnde;
     const k = (ganttSide.person || ganttSide.natel) && v.firma ? kontaktByFirma(v.firma) : null;
-    const extra = [];
-    if (ganttSide.firma && v.firma) extra.push(`<span class="g-si firma">${esc(v.firma)}</span>`);
-    if (ganttSide.person && k && k.person) extra.push(`<span class="g-si">${esc(k.person)}</span>`);
-    if (ganttSide.natel && k && k.telefon) extra.push(`<span class="g-si">☎ ${esc(k.telefon)}</span>`);
-    const dcols = [];
-    if (ganttSide.start) dcols.push(`<input type="date" class="g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-field="bauStart" value="${esc(v.bauStart || '')}"${gespr ? ' disabled' : ''} title="Starttermin">`);
-    if (ganttSide.ende) dcols.push(`<input type="date" class="g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-field="bauEnde" value="${esc(v.bauEnde || '')}"${gespr ? ' disabled' : ''} title="Endtermin">`);
-    if (ganttSide.dauer) dcols.push(`<span class="g-si-dauer" title="Dauer der Arbeiten (Kalendertage)">${esc(gDauerTxt(v.bauStart, v.bauEnde) || '–')}</span>`);
+    const editAttr = `data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}"`;
+    const cellFns = {
+      gewerk: () => `<span class="g-sc gewerk g-edit" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">${esc(v.gewerk)}</span>`,
+      firma: () => v.firma ? `<span class="g-sc g-si firma">${esc(v.firma)}</span>` : '',
+      person: () => (k && k.person) ? `<span class="g-sc g-si">${esc(k.person)}</span>` : '',
+      natel: () => (k && k.telefon) ? `<span class="g-sc g-si">☎ ${esc(k.telefon)}</span>` : '',
+      start: () => `<input type="date" class="g-sc g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-field="bauStart" value="${esc(v.bauStart || '')}"${gespr ? ' disabled' : ''} title="Starttermin">`,
+      ende: () => `<input type="date" class="g-sc g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-field="bauEnde" value="${esc(v.bauEnde || '')}"${gespr ? ' disabled' : ''} title="Endtermin">`,
+      dauer: () => `<span class="g-sc g-si-dauer" title="Dauer der Arbeiten (Kalendertage)">${esc(gDauerTxt(v.bauStart, v.bauEnde) || '–')}</span>`,
+    };
+    const orderedCells = ganttSideOrder.filter(key => ganttSide[key]).map(key => cellFns[key]()).join('');
     const gnr = ++gNr; let oNr = 0;
     sideRows += `<div class="g-side-row${hatTermin ? '' : ' offen'}">
       <span class="g-rownum">${gnr}</span>
       <button class="g-phase-dot" data-act="grob-phase" data-pid="${p.id}" data-vid="${v.id}" style="background:${phaseColOf(v)}" title="Bauphase (Grobplanung): ${esc((BAU_PHASEN.find(x => x.key === phaseOf(v)) || {}).label || '')}${v.bauPhase ? ' · manuell' : ''} – klicken zum Ändern"></button>
-      <span class="g-edit" data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}" title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">
-        <span class="bkp-code">${esc(v.bkp)}</span>${ganttSide.gewerk ? ` <span class="gewerk">${esc(v.gewerk)}</span>` : ''}${extra.length ? `<span class="g-si-wrap">${extra.join('<span class="g-si-sep">·</span>')}</span>` : ''}
-      </span>
-      ${dcols.length ? `<span class="g-si-cols">${dcols.join('')}</span>` : ''}
+      <span class="g-edit bkp-only" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)"><span class="bkp-code">${esc(v.bkp)}</span></span>
+      <span class="g-side-cells">${orderedCells}</span>
       ${gespr ? '' : `<button class="btn sm ghost add-vg" title="Untertermin hinzufügen (leer – dann Balken ziehen)" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${v.id}">＋</button>`}
     </div>`;
     if (hatTermin) {
@@ -3008,6 +3022,16 @@ function viewTermine(id) {
     $$('.g-si-date').forEach(inp => { inp.addEventListener('change', () => sideSetDate(inp.dataset.pid, inp.dataset.vid, inp.dataset.field, inp.value)); inp.addEventListener('mousedown', e => e.stopPropagation()); });
   } else {
     $$('.g-bar').forEach(b => b.classList.add('g-locked'));
+  }
+
+  // Info-Spalten frei verschieben (Drag der Chips) – Reihenfolge wird gespeichert
+  { let dragKey = null; $$('.g-sidecols [data-sidecol]').forEach(ch => {
+      ch.addEventListener('dragstart', e => { dragKey = ch.dataset.sidecol; if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; ch.classList.add('dragging'); });
+      ch.addEventListener('dragend', () => { ch.classList.remove('dragging'); $$('.g-sidecols [data-sidecol]').forEach(c => c.classList.remove('drop-target')); });
+      ch.addEventListener('dragover', e => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; if (ch.dataset.sidecol !== dragKey) ch.classList.add('drop-target'); });
+      ch.addEventListener('dragleave', () => ch.classList.remove('drop-target'));
+      ch.addEventListener('drop', e => { e.preventDefault(); const target = ch.dataset.sidecol; if (!dragKey || dragKey === target) return; const arr = ganttSideOrder.filter(x => x !== dragKey); arr.splice(arr.indexOf(target), 0, dragKey); ganttSideOrder = arr; saveGanttSide(); rerenderGantt(ganttPid); });
+    });
   }
 
   // Scroll nach In-Place-Rerender wiederherstellen (kein Sprung beim Resizen/Zoomen)
@@ -12008,7 +12032,7 @@ document.addEventListener('click', e => {
       else ganttScale = 1;
       rerenderGantt(pid); break;
     case 'gantt-sort':   ganttSort = kind; rerenderGantt(pid); break;
-    case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; rerenderGantt(pid); break;
+    case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; saveGanttSide(); rerenderGantt(pid); break;
     case 'side-date':    break;   // wird über change-Listener (sideSetDate) behandelt
     case 'gantt-dates':  ganttDates = kind || DATE_MODES[(DATE_MODES.indexOf(ganttDates) + 1) % DATE_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-datepos': ganttDatePos = kind || DATEPOS_MODES[(DATEPOS_MODES.indexOf(ganttDatePos) + 1) % DATEPOS_MODES.length]; rerenderGantt(pid); break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v320';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v321';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1944,6 +1944,7 @@ function ganttRibbonTabs(p) {
     rgroup('Kräftigkeit', optBtns('gantt-strength', p.id, [['voll', 'Voll'], ['mittel', 'Mittel'], ['hell', 'Hell'], ['pastell', 'Pastell']], ganttColorStrength)) +
     rgroup('Farben', bigBtn('gantt-colors-open', 'swatch', 'Anpassen', { pid: p.id, on: !!state.ganttColors, title: 'Farben je Status/Unternehmer/Phase anpassen' })) +
     rgroup('Sortierung', optBtns('gantt-sort', p.id, [['bkp', 'BKP', 'sort'], ['start', 'Startdatum', 'clock']], ganttSort)) +
+    rgroup('Phasen', bigBtn('gantt-phasebands', 'layers', 'Bänder', { pid: p.id, on: ganttPhaseBands, title: 'Senkrechte Phasen-Zeit-Bänder im Hintergrund (wann läuft welche Phase)' }) + bigBtn('gantt-phasestripe', 'tag', 'Streifen', { pid: p.id, on: ganttPhaseStripe, title: 'Farbiger Phasen-Streifen je Gewerk-Zeile (welche Phase pro Zeile)' })) +
     rgroup('Balken', bigBtn('gantt-fenster', 'window', 'Fenster', { pid: p.id, on: ganttFenster, title: 'Fenster-Oberbalken ' + (ganttFenster ? 'an' : 'aus') }));
   else if (ganttTab === 'beschriftung') b =
     rgroup('Auto-Layout', bigBtn('gantt-auto', 'wand', 'Auto', { pid: p.id, on: ganttAuto, title: 'Auto: Beschriftung + Datum + Dauer automatisch sauber & einheitlich platzieren (berücksichtigt Verknüpfungen)' })) +
@@ -2558,6 +2559,8 @@ const GANTT_LEGEND = [['rot', 'angefragt'], ['orange', 'Offerte / Abgebot'], ['g
 function ganttColKey(v) { return GANTT_PHASE[v.status] || 'dgrau'; }
 let ganttColorMode = 'status';   // 'status' | 'firma' (je Unternehmer) | 'phase' (Grobphase)
 let ganttFenster = true;         // Auto-Oberbalken als grosses Fenster über die Unterbalken
+let ganttPhaseBands = false;     // senkrechte Phasen-Zeit-Bänder im Hintergrund (wann läuft welche Phase)
+let ganttPhaseStripe = false;    // farbiger Phasen-Streifen je Gewerk-Zeile (welche Phase pro Zeile)
 let ganttRaster = true;          // Sitzungsraster-Linien im Gantt einblenden
 let ganttRowH = 38;              // Zeilenhöhe im Gantt (26–60, lesbar begrenzt)
 let ganttFont = 11;              // Schriftgrösse im Gantt (Balken-Labels, px; 8–16)
@@ -2834,6 +2837,11 @@ function viewTermine(id) {
   const inMarks = projMarks.filter(m => { const d = dISO(m.iso); return d >= rangeStart && d <= rangeEnd; });
   const markBands = inMarks.map(m => `<div class="g-mark ${m.cls}" data-act="eckdaten" data-pid="${p.id}" style="left:${dayDiff(rangeStart, dISO(m.iso)) * pxPerDay}px" title="${m.n}: ${fmtDate(m.iso)}${m.auto ? ' (automatisch)' : ' (manuell)'} – klicken zum Bearbeiten"></div>`).join('');
 
+  // Bauphasen-Zeiträume (für Hintergrund-Bänder + Zeilen-Streifen): Spanne je Phase aus den datierten Gewerken
+  const phaseAgg = {};
+  vs.forEach(v => { if (!(v.bauStart && v.bauEnde)) return; const key = phaseOf(v); const a = phaseAgg[key] || (phaseAgg[key] = { s: v.bauStart, e: v.bauEnde }); if (v.bauStart < a.s) a.s = v.bauStart; if (v.bauEnde > a.e) a.e = v.bauEnde; });
+  const phaseSpans = BAU_PHASEN.filter(ph => phaseAgg[ph.key]).map(ph => ({ ph, s: phaseAgg[ph.key].s, e: phaseAgg[ph.key].e }));
+
   // Feiertage/Meilensteine: eigene kompakte Zeile DIREKT UNTER den Monaten; nur bei sehr wenig Abstand gestapelt
   const evItems = [];
   inMarks.forEach(m => evItems.push({ x: dayDiff(rangeStart, dISO(m.iso)) * pxPerDay, n: `${m.n} ${fmtDate(m.iso)}`, cls: 'mark ' + m.cls, t: `${m.n}: ${fmtDate(m.iso)}`, mark: true }));
@@ -2892,7 +2900,7 @@ function viewTermine(id) {
     };
     const orderedCells = ganttSideOrder.filter(key => ganttSide[key]).map(key => cellFns[key]()).join('');
     const gnr = ++gNr; let oNr = 0;
-    sideRows += `<div class="g-side-row${hatTermin ? '' : ' offen'}">
+    sideRows += `<div class="g-side-row${hatTermin ? '' : ' offen'}" style="--phc:${phaseColOf(v)}">
       <span class="g-rownum">${gnr}</span>
       <button class="g-phase-dot" data-act="grob-phase" data-pid="${p.id}" data-vid="${v.id}" style="background:${phaseColOf(v)}" title="Bauphase (Grobplanung): ${esc((BAU_PHASEN.find(x => x.key === phaseOf(v)) || {}).label || '')}${v.bauPhase ? ' · manuell' : ''} – klicken zum Ändern"></button>
       <span class="g-edit bkp-only" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)"><span class="bkp-code">${esc(v.bkp)}</span></span>
@@ -2937,7 +2945,7 @@ function viewTermine(id) {
     (v.vorgaenge || []).forEach(o => {
       if (ganttDone === 'hide' && o.erfuellt) return;   // erfüllte Untertermine ausblenden
       const key = v.id + '/' + o.id; const oDated = o.start && o.ende;
-      sideRows += `<div class="g-side-row sub"><span class="g-rownum sub">${gnr}.${++oNr}</span><span class="gewerk" style="font-weight:500;cursor:pointer" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="Untertermin bearbeiten">${esc(o.titel)}</span>
+      sideRows += `<div class="g-side-row sub" style="--phc:${phaseColOf(v)}"><span class="g-rownum sub">${gnr}.${++oNr}</span><span class="gewerk" style="font-weight:500;cursor:pointer" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="Untertermin bearbeiten">${esc(o.titel)}</span>
         ${gespr ? '' : `<button class="x-btn" title="Untertermin löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button>`}</div>`;
       if (oDated) {
         const oOut = (p.ganttLinks || []).some(lk => lk.from === key), oIn = (p.ganttLinks || []).some(lk => lk.to === key);
@@ -2973,6 +2981,7 @@ function viewTermine(id) {
     </g>`;
   }).join('');
   const linkSvg = `<svg class="g-links" width="${innerW}" height="${rowIdx * ROW_H}">${linkPaths}</svg>`;
+  const phaseBandsHtml = ganttPhaseBands ? phaseSpans.map(x => `<div class="g-phaseband" style="left:${leftPx(x.s)}px;width:${widthPx(x.s, x.e)}px;background:${hexA(x.ph.col, .07)};border-left:1px solid ${hexA(x.ph.col, .32)}"><span class="g-phaseband-lbl" style="color:${x.ph.col}">${esc(x.ph.label)}</span></div>`).join('') : '';
 
   const sideExtras = (ganttSide.firma ? 1 : 0) + (ganttSide.person ? 1 : 0) + (ganttSide.natel ? 1 : 0);
   const dateColsW = (ganttSide.start ? 116 : 0) + (ganttSide.ende ? 116 : 0) + (ganttSide.dauer ? 52 : 0);
@@ -2982,7 +2991,7 @@ function viewTermine(id) {
 
   render(head + `
     ${warnBanner}${regelBanner}
-    <div class="gantt lbl-${ganttLabelMode}${ganttFocus ? ' focus-on' : ''}${ganttLinkFront ? ' links-front' : ' links-behind'}${ganttDone === 'dim' ? ' done-dim' : ''}" style="--rowh:${ROW_H}px;--gfont:${ganttFont}px">
+    <div class="gantt lbl-${ganttLabelMode}${ganttFocus ? ' focus-on' : ''}${ganttLinkFront ? ' links-front' : ' links-behind'}${ganttDone === 'dim' ? ' done-dim' : ''}${ganttPhaseStripe ? ' phase-stripe' : ''}" style="--rowh:${ROW_H}px;--gfont:${ganttFont}px">
       <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div></div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
@@ -2994,6 +3003,7 @@ function viewTermine(id) {
         </div>
         <div class="g-rows">
           <div class="g-bg">${bgCells}</div>
+          ${phaseBandsHtml}
           ${holBands}
           ${sitzLayer}
           ${todayLeft != null ? `<div class="g-today" style="left:${todayLeft}px"></div>` : ''}
@@ -12108,6 +12118,8 @@ document.addEventListener('click', e => {
     case 'gantt-focus':     ganttFocus = !ganttFocus; rerenderGantt(pid); break;
     case 'gantt-hideundated': ganttHideUndated = !ganttHideUndated; rerenderGantt(pid); break;
     case 'gantt-done':   ganttDone = DONE_MODES[(DONE_MODES.indexOf(ganttDone) + 1) % DONE_MODES.length]; rerenderGantt(pid); break;
+    case 'gantt-phasebands': ganttPhaseBands = !ganttPhaseBands; rerenderGantt(pid); break;
+    case 'gantt-phasestripe': ganttPhaseStripe = !ganttPhaseStripe; rerenderGantt(pid); break;
     case 'gantt-basecmp': actBaselinePick(e, pid); break;
     case 'verschieb-print': pdfVerschiebungen(pid); break;
     case 'focus-add':       actFocusAdd(e, pid); break;

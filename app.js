@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v289';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v290';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -11783,38 +11783,46 @@ window.addEventListener('DOMContentLoaded', boot);
    --------------------------------------------------------------- */
 
 function demoData() {
-  const V = (bkp, gewerk, s, e) => ({ id: uid('v'), bkp, gewerk, status: 'werkvertrag', firma: '', betrag: 0, schaetzung: 0, frist: '', bauStart: s, bauEnde: e, eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
+  // R = Kostenposition Römerstrasse: schaetzung = revidierter KV (aktuelle Prognose) + zugeordnete Termine
+  const R = (bkp, gewerk, kv, firma, s, e) => ({ id: uid('v'), bkp, gewerk, status: 'ausschreibung', firma: firma || '', betrag: 0, schaetzung: kv || 0, frist: '', bauStart: s || '', bauEnde: e || '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
   const K = (bkp, gewerk, schaetzung) => ({ id: uid('v'), bkp, gewerk, status: 'ausschreibung', firma: '', betrag: 0, schaetzung, frist: '', bauStart: '', bauEnde: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
   const vergaben = [
-    V('112', 'Abbrüche', '2026-06-08', '2026-07-03'),
-    V('211.3', 'Baumeisteraushub / Hinterfüllung', '2026-06-08', '2026-07-03'),
-    V('211.4', 'Regenwasserleitung', '2026-06-08', '2026-06-12'),
-    V('211.5', 'Beton- und Stahlbeton', '2026-06-22', '2026-07-17'),
-    V('211.1', 'Gerüst stellen', '2026-06-29', '2026-07-03'),
-    V('224', 'Steildach Demontage', '2026-07-13', '2026-07-17'),
-    V('214.6', 'Dach Sparren / Dämmung / Unterdach', '2026-08-03', '2026-08-28'),
-    V('222', 'Spenglerarbeiten', '2026-08-24', '2026-09-04'),
-    V('230', 'PV-Anlage Montage', '2026-08-31', '2026-09-11'),
-    V('271.1', 'Trockenbau', '2026-09-21', '2026-10-09'),
-    V('281.0', 'Unterlagsböden', '2026-09-28', '2026-10-09'),
-    V('272.2', 'Türeneinbau Metallbau', '2026-10-05', '2026-10-16'),
-    V('271.0', 'Grundputz', '2026-10-12', '2026-10-23'),
-    V('226.2', 'Aussenwärmedämmung', '2026-10-05', '2026-10-23'),
-    V('281.6', 'Keramische Platten', '2026-10-19', '2026-10-30'),
-    V('281.7', 'Parkett', '2026-10-26', '2026-11-06'),
-    V('225.1', 'Fugendichtungen', '2026-10-26', '2026-11-06'),
-    V('228', 'Sonnen- & Wetterschutz', '2026-10-26', '2026-11-13'),
-    V('258', 'Kücheneinbau', '2026-11-09', '2026-11-13'),
-    V('273', 'Innentüren', '2026-11-09', '2026-11-20'),
-    V('273.1', 'Schreinerarbeiten', '2026-11-09', '2026-11-27'),
-    V('285', 'Malerarbeiten', '2026-11-02', '2026-11-27'),
-    V('211.1', 'Gerüstabbau', '2026-11-09', '2026-11-20'),
-    V('272.2', 'Geländer', '2026-11-23', '2026-11-27'),
-    V('275', 'Schliessanlage', '2026-11-16', '2026-11-27'),
-    V('287', 'Baureinigung', '2026-11-30', '2026-12-04'),
-    V('299', 'Mängelbehebung', '2026-11-23', '2026-12-11'),
-    V('421', 'Umgebungsgestaltung', '2026-11-23', '2026-12-11'),
-    V('', 'Bezug & Inbetriebnahme', '2026-12-14', '2026-12-14'),
+    R('104', 'Baugespann', 500, '', '', ''),
+    R('121', 'Sicherung vorhandener Anlagen', 4000, '', '', ''),
+    R('191', 'Architekt (Vorbereitung)', 3794.90, 'P. Hefti Bauberatung', '', ''),
+    R('211', 'Baumeisterarbeiten', 94397.75, 'Kilchherr', '2026-06-08', '2026-07-17'),
+    R('211.1', 'Gerüstungen', 6771.35, '', '2026-06-29', '2026-11-20'),
+    R('214', 'Holzbau', 64322.30, '', '2026-08-03', '2026-08-28'),
+    R('221', 'Kunststoff-Metallfenster', 44220.75, '', '', ''),
+    R('221.6', 'Türen + Tore', 13900.00, '', '', ''),
+    R('222.0', 'Spenglerarbeiten', 13230.60, '', '2026-08-24', '2026-09-04'),
+    R('224.0', 'Steildach', 24812.40, '', '2026-07-13', '2026-07-17'),
+    R('225', 'Dichtungen / Dämmungen', 5000.00, '', '2026-10-26', '2026-11-06'),
+    R('226.2', 'Fassadendämmung verputzt', 52281.20, '', '2026-10-05', '2026-10-23'),
+    R('228', 'Sonnen- und Wetterschutz', 12258.40, '', '2026-10-26', '2026-11-13'),
+    R('230', 'Elektroanlagen', 29314.55, '', '', ''),
+    R('237', 'PV-Anlage', 32608.35, '', '2026-08-31', '2026-09-11'),
+    R('240', 'Heizungsanlagen', 47986.00, '', '', ''),
+    R('250', 'Sanitäranlagen', 35303.50, '', '', ''),
+    R('258', 'Kücheneinrichtung', 44300.00, '', '2026-11-09', '2026-11-13'),
+    R('271', 'Gipserarbeiten', 13253.65, '', '2026-09-21', '2026-10-23'),
+    R('272', 'Metallbauarbeiten', 16855.50, '', '2026-10-05', '2026-11-27'),
+    R('273', 'Schreinerarbeiten', 15000.00, '', '2026-11-09', '2026-11-27'),
+    R('281', 'Unterlagsböden', 5000.00, '', '2026-09-28', '2026-10-09'),
+    R('281.6', 'Wand- und Bodenbeläge / Parkett EG', 30000.00, '', '2026-10-19', '2026-11-06'),
+    R('285.1', 'Malerarbeiten', 16440.75, '', '2026-11-02', '2026-11-27'),
+    R('287', 'Baureinigung', 3210.55, '', '2026-11-30', '2026-12-04'),
+    R('289', 'Baubetriebskosten', 5000.00, '', '', ''),
+    R('291', 'Honorar Architekt', 78000.00, 'P. Hefti Bauberatung', '', ''),
+    R('292', 'Ingenieur', 3200.00, '', '', ''),
+    R('296', 'Schadstoff-Untersuchung', 1856.60, 'Bautox', '', ''),
+    R('299', 'Reserve', 20000.00, '', '', ''),
+    R('421', 'Gärtnerarbeiten / Umgebung', 10000.00, '', '2026-11-23', '2026-12-11'),
+    R('511.0', 'Bewilligungen, Gebühren', 3546.75, 'BBP Geomatik', '', ''),
+    R('52', 'Baunebenkosten (Budget)', 10000.00, '', '', ''),
+    R('275', 'Schliessanlage', 0, '', '2026-11-16', '2026-11-27'),
+    R('', 'Mängelbehebung', 0, '', '2026-11-23', '2026-12-11'),
+    R('', 'Bezug & Inbetriebnahme', 0, '', '2026-12-14', '2026-12-14'),
   ];
   const kunoweg = [
     K('112', 'Abbrüche / Demontagen', 8000),

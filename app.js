@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v362';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v363';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3012,11 +3012,14 @@ function subSetDate(pid, vid, oid, field, val, grob) {   // Untertermin-Datum (S
   recalcAutoBalken(v);
   save(); rerenderGantt(pid);
 }
-function pickGewerkBkp(pid, vid, code) {   // BKP für ein (leeres) Gewerk per Dropdown wählen → BKP + Name aus dem Katalog setzen
-  if (!code || gesperrt(pid)) return;
-  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
-  const b = BKP_KATALOG.find(x => x.code === code);
-  v.bkp = code; if (!v.gewerk && b) v.gewerk = b.label;
+function setNewGewerk(pid, vid, text) {   // leeres Gewerk benennen: freier Text = freier Balken; BKP (Code od. „Code Label") = vollwertiges Gewerk
+  if (gesperrt(pid)) return;
+  text = (text || '').trim();
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v || !text) return;
+  const cm = text.match(/^(\d[\d.]*)/);
+  let b = cm ? BKP_KATALOG.find(x => x.code === cm[1]) : null;
+  if (!b) b = BKP_KATALOG.find(x => (x.code + ' ' + x.label).toLowerCase() === text.toLowerCase());
+  if (b) { v.bkp = b.code; v.gewerk = b.label; } else { v.gewerk = text; }   // sonst: freier Balken ohne BKP
   save(); rerenderGantt(pid);
 }
 // Fokus: Gewerk in den aktuell sichtbaren Zeitausschnitt einplanen
@@ -3340,7 +3343,7 @@ function viewTermine(id) {
     const editAttr = `data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}"`;
     const cellFns = {
       bkp: () => `<span class="g-sc bkp g-edit" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)"><span class="bkp-code">${esc(v.bkp || '')}</span></span>`,
-      gewerk: () => v.gewerk ? `<span class="g-sc gewerk g-edit" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">${esc(v.gewerk)}</span>` : `<span class="g-sc gewerk">${bkpSelectHtml(p.id, v.id)}</span>`,
+      gewerk: () => v.gewerk ? `<span class="g-sc gewerk g-edit" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">${esc(v.gewerk)}</span>` : `<input type="text" class="g-sc gewerk g-gewerk-new" data-pid="${p.id}" data-vid="${v.id}" list="dl_gewerk_new" placeholder="Name tippen oder BKP wählen …" title="Freien Namen eingeben (freier Balken) ODER ein BKP aus der Liste wählen – beides legt das Gewerk an">`,
       firma: () => `<span class="g-sc g-si firma">${v.firma ? esc(v.firma) : ''}</span>`,
       person: () => `<span class="g-sc g-si">${(k && k.person) ? esc(k.person) : ''}</span>`,
       natel: () => `<span class="g-sc g-si">${(k && k.telefon) ? '☎ ' + esc(k.telefon) : ''}</span>`,
@@ -3475,7 +3478,7 @@ function viewTermine(id) {
   render(head + `
     ${warnBanner}${regelBanner}
     <div class="gantt lbl-${ganttLabelMode}${ganttFocus ? ' focus-on' : ''}${ganttLinkFront ? ' links-front' : ' links-behind'}${ganttDone === 'dim' ? ' done-dim' : ''}${ganttPhaseStripe ? ' phase-stripe' : ''}" style="--rowh:${ROW_H}px;--gfont:${ganttFont}px;--sfont:${ganttSideFont}px">
-      <div class="g-side ${spalten ? 'spalten' : 'locker'}" style="width:${sideW}px;--side-grid:${gridTemplate}"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${sideModeToggle}${infoCtrl}${sidePresetRow}</div>${sideHead}</div>${sideRows}${insertStrips}</div>
+      <div class="g-side ${spalten ? 'spalten' : 'locker'}" style="width:${sideW}px;--side-grid:${gridTemplate}"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${sideModeToggle}${infoCtrl}${sidePresetRow}</div>${sideHead}</div>${sideRows}${insertStrips}${bkpDatalist('dl_gewerk_new')}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
           ${yearCells ? `<div class="g-headrow yr">${yearCells}</div>` : ''}
@@ -3527,7 +3530,7 @@ function viewTermine(id) {
     $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) selectGanttLink(g.dataset.lid); }));
     $$('.g-link').forEach(g => g.addEventListener('contextmenu', e => { e.preventDefault(); linkMenu(e, ganttPid, g.dataset.lid); }));
     $$('.g-si-date').forEach(inp => { inp.addEventListener('change', () => { if (inp.dataset.oid) subSetDate(inp.dataset.pid, inp.dataset.vid, inp.dataset.oid, inp.dataset.field, inp.value, inp.dataset.grob || ''); else sideSetDate(inp.dataset.pid, inp.dataset.vid, inp.dataset.field, inp.value, inp.dataset.grob || ''); }); inp.addEventListener('mousedown', e => e.stopPropagation()); });
-    $$('.g-bkp-pick').forEach(sel => { sel.addEventListener('change', () => pickGewerkBkp(sel.dataset.pid, sel.dataset.vid, sel.value)); sel.addEventListener('mousedown', e => e.stopPropagation()); });
+    $$('.g-gewerk-new').forEach(inp => { inp.addEventListener('change', () => setNewGewerk(inp.dataset.pid, inp.dataset.vid, inp.value)); inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); setNewGewerk(inp.dataset.pid, inp.dataset.vid, inp.value); } }); inp.addEventListener('mousedown', e => e.stopPropagation()); });
   } else {
     $$('.g-bar').forEach(b => b.classList.add('g-locked'));
   }

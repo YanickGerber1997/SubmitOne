@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v360';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v361';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2224,6 +2224,7 @@ function ganttModeToggle(p) {
       <button class="btn sm ${ganttMode === 'detail' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="detail" type="button" style="border:none">📋 Detail</button>
       <button class="btn sm ${ganttMode === 'grob' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="grob" type="button" style="border:none">🗓 Grob</button>
       <button class="btn sm ${ganttMode === 'fein' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="fein" type="button" style="border:none">⏱ Fein</button>
+      <button class="btn sm ${ganttMode === 'aus' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="aus" type="button" style="border:none">📣 Ausschreibung</button>
     </div>
     ${ganttVersionBar(p)}
   </div>`;
@@ -2237,6 +2238,7 @@ function ganttRibbonTabs(p) {
       <button class="btn sm ${ganttMode === 'detail' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="detail" type="button" style="border:none" title="Detailprogramm">📋</button>
       <button class="btn sm ${ganttMode === 'grob' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="grob" type="button" style="border:none" title="Grobplanung">🗓</button>
       <button class="btn sm ${ganttMode === 'fein' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="fein" type="button" style="border:none" title="Feinprogramm">⏱</button>
+      <button class="btn sm ${ganttMode === 'aus' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="aus" type="button" style="border:none" title="Ausschreibungsprogramm">📣</button>
     </div>`;
   const tabBtns = `<div class="g-ribtabs">${TABS.map(([k, l]) => `<button class="g-ribtab${ganttTab === k ? ' active' : ''}" data-act="gantt-tab" data-pid="${p.id}" data-kind="${k}" type="button">${l}</button>`).join('')}</div>`;
   // Werkzeugleiste komplett ein-/ausklappbar
@@ -2301,6 +2303,7 @@ function bauPhaseKey(bkp) {
 function phaseOf(v) { return (v.bauPhase && BAU_PHASEN.some(ph => ph.key === v.bauPhase)) ? v.bauPhase : bauPhaseKey(v.bkp); }
 function phaseColOf(v) { const ph = BAU_PHASEN.find(x => x.key === phaseOf(v)); return ph ? ph.col : '#64748b'; }
 let grobZoom = 1;   // Grobplanung: Monatsbreiten-Faktor (Zoom)
+let ausZoom = 1;    // Ausschreibungsprogramm: Monatsbreiten-Faktor (Zoom)
 let _grobPxPerDay = 2;
 // Grobplanung: BKP-Gewerke aus dem Detailprogramm zu groben Bauphasen zusammengefasst (Spanne aus Bau-Terminen)
 function viewGrobGantt(p) {
@@ -2381,6 +2384,67 @@ function setVergPhase(pid, vid, key) {
   if (gesperrt(pid)) return;
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
   v.bauPhase = key || ''; save(); rerenderGantt(pid);
+}
+// Ausschreibungsprogramm: eigenständige Termin-Spur fürs Ausschreiben/Vergeben je Gewerk (parallel zum Bauprogramm).
+// Eingabe grob möglich (von/bis als „Frühling 26", „April 26 – Mai 26", nur Start „ab …" oder nur Ende „bis …").
+function ausSetDate(pid, vid, field, val, grob) {
+  if (gesperrt(pid)) return;
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  v[field] = val || '';
+  if (grob) v[field + 'Label'] = grob; else delete v[field + 'Label'];
+  save(); viewAusschreibGantt(p);
+}
+function viewAusschreibGantt(p) {
+  const head = `
+    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Ausschreibungsprogramm · wann wird welches Gewerk ausgeschrieben/vergeben (eigene Spur, parallel zum Bauprogramm)</div></div></div>
+    ${projektTabs(p, 'termine')}
+    ${ganttModeToggle(p)}`;
+  const vs = gewerkeSorted(p);
+  if (!vs.length) { render(head + emptyState('📣', 'Noch keine Gewerke – im Reiter „Gewerke" anlegen, dann hier die Ausschreibungstermine setzen.')); return; }
+  const lblOf = (label, iso) => (label && parseDateFlexible(label) === iso) ? label : (iso ? fmtDate(iso) : '');
+  // Zeitspanne: aus den Ausschreibungs-Terminen; Fallback = aktueller Monat + 11 Monate (damit man eine Achse zum Eintragen hat)
+  const datesA = []; vs.forEach(v => { if (v.ausStart) datesA.push(v.ausStart); if (v.ausEnde) datesA.push(v.ausEnde); });
+  let minD, maxD;
+  if (datesA.length) { const mn = datesA.reduce((a, b) => a < b ? a : b), mx = datesA.reduce((a, b) => a > b ? a : b); minD = dISO(mn); maxD = dISO(mx); }
+  else { minD = new Date(); maxD = new Date(); maxD.setMonth(maxD.getMonth() + 11); }
+  const y0 = minD.getFullYear(), m0 = minD.getMonth();
+  let nMon = (maxD.getFullYear() - y0) * 12 + (maxD.getMonth() - m0) + 1; if (nMon < 6) nMon = 6;
+  const colW = Math.round(66 * ausZoom), trackW = nMon * colW, MON = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+  const months = Array.from({ length: nMon }, (_, i) => { const mo = (m0 + i) % 12, yr = y0 + Math.floor((m0 + i) / 12); return { label: `${MON[mo]} ${String(yr).slice(2)}`, jan: mo === 0 }; });
+  const dim = (y, m) => new Date(y, m + 1, 0).getDate();
+  const xOf = iso => { const d = dISO(iso); const mi = (d.getFullYear() - y0) * 12 + (d.getMonth() - m0); return mi * colW + (d.getDate() - 1) / dim(d.getFullYear(), d.getMonth()) * colW; };
+  const NAMEW = 300;
+  const yearGroups = []; months.forEach((c, i) => { const yr = y0 + Math.floor((m0 + i) / 12); const last = yearGroups[yearGroups.length - 1]; if (last && last.year === yr) last.w += colW; else yearGroups.push({ year: yr, w: colW }); });
+  const yearCols = yearGroups.map(g => `<div class="grob-col yrband" style="width:${g.w}px">${g.year}</div>`).join('');
+  const headerCols = months.map(c => `<div class="grob-col${c.jan ? ' yr' : ''}" style="width:${colW}px">${esc(c.label)}</div>`).join('');
+  const cells = months.map((c, ci) => `<span class="grob-cell" style="left:${ci * colW}px;width:${colW}px"></span>`).join('');
+  const dateInp = (v, field, ph) => `<input type="date" class="input aus-date" data-pid="${p.id}" data-vid="${v.id}" data-field="${field}"${grobAttr(v[field + 'Label'], v[field])} value="${esc(v[field] || '')}" placeholder="${ph}" title="${ph}">`;
+  const rows = vs.map(v => {
+    const sIso = v.ausStart || '', eIso = v.ausEnde || '';
+    const sLbl = lblOf(v.ausStartLabel, sIso), eLbl = lblOf(v.ausEndeLabel, eIso);
+    let bar = '';
+    if (sIso && eIso) { const l = xOf(sIso), w = Math.max(xOf(eIso) - l, 26); bar = `<div class="grob-bar aus-bar" style="left:${l}px;width:${w - 3}px" title="Ausschreibung ${esc(sLbl)} – ${esc(eLbl)}"><span>${esc(sLbl)} – ${esc(eLbl)}</span></div>`; }
+    else if (sIso) { const l = xOf(sIso); bar = `<div class="grob-bar aus-bar open-end" style="left:${l}px" title="Ausschreibung ab ${esc(sLbl)}"><span>ab ${esc(sLbl)} →</span></div>`; }
+    else if (eIso) { const l = xOf(eIso); bar = `<div class="grob-bar aus-bar open-start" style="left:${Math.max(0, l - 150)}px;width:150px;justify-content:flex-end" title="Ausschreibung bis ${esc(eLbl)}"><span>← bis ${esc(eLbl)}</span></div>`; }
+    return `<div class="grob-row aus-row">
+      <div class="grob-name aus-name" style="width:${NAMEW}px">
+        <div class="aus-gnm">${v.bkp ? `<span class="bkp-code">${esc(v.bkp)}</span> ` : ''}${esc(v.gewerk)}</div>
+        <div class="aus-dates">${dateInp(v, 'ausStart', 'von / ab')}<span class="aus-sep">bis</span>${dateInp(v, 'ausEnde', 'optional')}</div>
+      </div>
+      <div class="grob-track" style="width:${trackW}px">${cells}${bar}</div>
+    </div>`;
+  }).join('');
+  render(head + `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-2px 0 10px">
+      <p class="muted" style="font-size:12.5px;margin:0;flex:1;min-width:240px">Trage je Gewerk ein, <b>wann ausgeschrieben/vergeben</b> wird – grob möglich: „Frühling 26", „April 26 – Mai 26", nur <b>ab</b> (Start) oder nur <b>bis</b> (Ende). Unabhängig vom Bauprogramm.</p>
+      <div class="g-zoom" title="Zoom"><button data-act="aus-zoom" data-pid="${p.id}" data-kind="out" title="schmaler">−</button><button data-act="aus-zoom" data-pid="${p.id}" data-kind="reset" style="min-width:46px">${Math.round(ausZoom * 100)}%</button><button data-act="aus-zoom" data-pid="${p.id}" data-kind="in" title="breiter">+</button></div>
+    </div>
+    <div class="card" style="padding:0;overflow:auto"><div class="grob-wrap" style="min-width:${NAMEW + trackW}px">
+      <div class="grob-row grob-yearrow"><div class="grob-name" style="width:${NAMEW}px"></div><div class="grob-track" style="width:${trackW}px">${yearCols}</div></div>
+      <div class="grob-row grob-headrow"><div class="grob-name" style="width:${NAMEW}px">Gewerk · Ausschreibung</div><div class="grob-track" style="width:${trackW}px">${headerCols}</div></div>
+      ${rows}
+    </div></div>`);
+  $$('.aus-date').forEach(inp => inp.addEventListener('change', () => ausSetDate(inp.dataset.pid, inp.dataset.vid, inp.dataset.field, inp.value, inp.dataset.grob || '')));
 }
 // Feinprogramm: stunden-/tagweise Detailanweisungen (z.B. 08:00–09:00 …, Pause 12–13) für kurze Programme
 function viewFeinGantt(p) {
@@ -3022,6 +3086,7 @@ function viewTermine(id) {
   const gespr = terminGesperrt(p);
   if (ganttMode === 'grob') return viewGrobGantt(p);
   if (ganttMode === 'fein') return viewFeinGantt(p);
+  if (ganttMode === 'aus') return viewAusschreibGantt(p);
   // ALLE Vergaben (auch ohne Termin), sortiert nach BKP/Gewerk ODER nach Baustart
   let vs = (p.vergaben || []).slice().sort((a, b) => {
     if (ganttSort === 'start') return (a.bauStart || '9999-99-99').localeCompare(b.bauStart || '9999-99-99') || bkpCmp(a.bkp, b.bkp);
@@ -12560,6 +12625,7 @@ document.addEventListener('click', e => {
     case 'gantt-mode':   ganttMode = kind; viewTermine(pid); break;
     case 'gantt-color':  ganttColorMode = kind; rerenderGantt(pid); break;
     case 'grob-zoom':    { grobZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.4, +(grobZoom + (kind === 'in' ? 0.2 : -0.2)).toFixed(2))); viewGrobGantt(findProjekt(pid)); } break;
+    case 'aus-zoom':     { ausZoom = kind === 'reset' ? 1 : Math.max(0.4, Math.min(2.4, +(ausZoom + (kind === 'in' ? 0.2 : -0.2)).toFixed(2))); viewAusschreibGantt(findProjekt(pid)); } break;
     case 'grob-phase':   actGrobPhase(e, pid, vid); break;
     case 'gantt-add-vorgang': addEmptyVorgangDetail(pid, vid); break;
     case 'gantt-add-gewerk': addGewerkAfter(pid, vid); break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v363';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v364';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -969,15 +969,19 @@ function condParts(c) {
   if (!c) return null;
   const b = (c.brutto != null && c.brutto !== '') ? Number(c.brutto) : null;
   if (b == null || isNaN(b)) return null;
+  // Jeder Abzug: Betrag (c.<x>Btr) hat Vorrang, sonst Prozent (c.<x>) auf die jeweilige Zwischensumme
+  const amt = (btrKey, p, base) => (c[btrKey] != null && c[btrKey] !== '') ? (Number(c[btrKey]) || 0) : base * (p / 100);
   const rabattP = Number(c.rabatt) || 0, skontoP = Number(c.skonto) || 0, allgP = Number(c.weitereAbz) || 0;
-  const rabattBetrag = b * (rabattP / 100);
+  const rabattBetrag = amt('rabattBtr', rabattP, b);
   const zsumme1 = b - rabattBetrag;
-  const skontoBetrag = zsumme1 * (skontoP / 100);
+  const skontoBetrag = amt('skontoBtr', skontoP, zsumme1);
   const netto = zsumme1 - skontoBetrag;
-  const allgBetrag = netto * (allgP / 100);
-  const zsumme2 = netto - allgBetrag;
+  const allgBetrag = amt('weitereAbzBtr', allgP, netto);
+  let running = netto - allgBetrag;
+  const extra = (c.extraAbz || []).map(a => { const betrag = a.art === 'chf' ? (Number(a.wert) || 0) : running * ((Number(a.wert) || 0) / 100); running -= betrag; return { name: a.name || 'Abzug', art: a.art || 'pct', wert: a.wert, betrag }; });
+  const zsumme2 = running;
   const mwst = zsumme2 * 0.081;
-  return { brutto: b, rabattP, rabattBetrag, zsumme1, skontoP, skontoBetrag, netto, allgP, allgBetrag, zsumme2, mwst, total: zsumme2 + mwst };
+  return { brutto: b, rabattP, rabattBetrag, zsumme1, skontoP, skontoBetrag, netto, allgP, allgBetrag, extra, zsumme2, mwst, total: zsumme2 + mwst, allgLabel: c.weitereAbzLabel || 'Allg. Abzüge' };
 }
 // Massgeblicher Netto-Vergleichswert = Z.-Summe nach allen Abzügen (exkl. MwSt)
 function condNetto(c) { const r = condParts(c); return r ? r.zsumme2 : null; }
@@ -1019,7 +1023,8 @@ function budgetBreakdownHtml(p, b) {
     ${cp ? `${r('Offerte Brutto', chf(cp.brutto))}
       ${r(`− Rabatt ${cp.rabattP}%`, '− ' + chf(cp.rabattBetrag), 'color:var(--text-soft)')}
       ${r(`− Skonto ${cp.skontoP}%`, '− ' + chf(cp.skontoBetrag), 'color:var(--text-soft)')}
-      ${r(`− Allg. Abzüge ${cp.allgP}%`, '− ' + chf(cp.allgBetrag), 'color:var(--text-soft)')}
+      ${r(`− ${esc(cp.allgLabel)} ${cp.allgP ? cp.allgP + '%' : ''}`, '− ' + chf(cp.allgBetrag), 'color:var(--text-soft)')}
+      ${(cp.extra || []).map(x => r(`− ${esc(x.name)} ${x.art === 'pct' && x.wert ? x.wert + '%' : ''}`, '− ' + chf(x.betrag), 'color:var(--text-soft)')).join('')}
       ${r('= Netto (nach Auswahl)', '<b>' + chf(cp.zsumme2) + '</b>', 'border-top:1px solid var(--border);padding-top:3px')}`
       : (netto != null ? r('Netto (nach Auswahl)', '<b>' + chf(netto) + '</b>') : '<div class="muted">Noch keine Auswahl / Offerte erfasst.</div>')}
     ${r('Budget im Werkvertrag', chf(budgetWV), 'color:var(--text-soft)')}
@@ -6864,36 +6869,101 @@ function viewVergabeDetail(pid, vid) {
 }
 
 // Preisspiegel-Konditionen je Unternehmer: Offerte / Abgebot / Vergabe (Brutto → Netto)
+let _kondM = null;   // Arbeitsmodell des Konditionen-Dialogs
+// Konditionen → flexible Abzugsliste (rückwärtskompatibel mit rabatt/skonto/weitereAbz + Betrag-Varianten)
+function kondAbzFromC(c) {
+  c = c || {};
+  const mk = (name, pKey, btrKey, opt) => { const chf = (c[btrKey] != null && c[btrKey] !== ''); return Object.assign({ name, art: chf ? 'chf' : 'pct', wert: chf ? c[btrKey] : (c[pKey] != null ? c[pKey] : '') }, opt || {}); };
+  const list = [mk('Rabatt', 'rabatt', 'rabattBtr'), mk('Skonto', 'skonto', 'skontoBtr'), mk(c.weitereAbzLabel || 'Allg. Abzüge', 'weitereAbz', 'weitereAbzBtr', { rename: true })];
+  (c.extraAbz || []).forEach(a => list.push({ name: a.name || 'Abzug', art: a.art || 'pct', wert: a.wert != null ? a.wert : '', rename: true, removable: true }));
+  return list;
+}
+function kondModelToC(s) {
+  const nn = w => (w === '' || w == null) ? null : Number(w);
+  const c = { brutto: nn(s.brutto) };
+  const slot = (i, pKey, btrKey) => { const r = s.abz[i]; if (!r) return; const w = nn(r.wert); if (r.art === 'chf') { c[btrKey] = w; c[pKey] = null; } else { c[pKey] = w; c[btrKey] = null; } };
+  slot(0, 'rabatt', 'rabattBtr'); slot(1, 'skonto', 'skontoBtr');
+  const al = s.abz[2]; if (al) { c.weitereAbzLabel = al.name || 'Allg. Abzüge'; const w = nn(al.wert); if (al.art === 'chf') { c.weitereAbzBtr = w; c.weitereAbz = null; } else { c.weitereAbz = w; c.weitereAbzBtr = null; } }
+  c.extraAbz = s.abz.slice(3).map(r => ({ name: r.name || 'Abzug', art: r.art, wert: nn(r.wert) || 0 }));
+  return c;
+}
 function actKonditionen(pid, vid, eid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); const e = v && (v.eingeladene || []).find(x => x.id === eid);
   if (!e) return;
   const stages = [['offerte', 'Offerte'], ['abgebot', 'Abgebot'], ['vergabe', 'Vergabe / Werkvertrag']];
-  const val = (key, f) => { const c = e[key] || (key === 'offerte' && e.betrag != null ? { brutto: e.betrag } : {}); return c[f] != null ? c[f] : ''; };
-  const stageHtml = stages.map(([key, label]) => `
-    <div class="kond-stage">
-      <div class="kond-h">${label}</div>
-      <div class="kond-grid">
-        <label class="field">Brutto (CHF)<input class="input kond-in" data-stage="${key}" data-f="brutto" type="number" value="${val(key, 'brutto')}"></label>
-        <label class="field">Rabatt (%)<input class="input kond-in" data-stage="${key}" data-f="rabatt" type="number" value="${val(key, 'rabatt')}"></label>
-        <label class="field">Skonto (%)<input class="input kond-in" data-stage="${key}" data-f="skonto" type="number" value="${val(key, 'skonto')}"></label>
-        <label class="field">Allg. Abz. (%)<input class="input kond-in" data-stage="${key}" data-f="weitereAbz" type="number" value="${val(key, 'weitereAbz')}"></label>
-      </div>
-      <div class="kond-res" id="kond_res_${key}"></div>
-    </div>`).join('');
+  _kondM = { pid, vid, eid, stages, st: {} };
+  stages.forEach(([key]) => { const c = e[key] || (key === 'offerte' && e.betrag != null ? { brutto: e.betrag } : {}); _kondM.st[key] = { brutto: (c.brutto != null ? c.brutto : ''), abz: kondAbzFromC(c) }; });
   openModal(`Konditionen – ${esc(e.firma)}`, `
     <label class="field" style="margin-bottom:10px">Eingabefrist (für diesen Unternehmer) <input class="input" type="date" id="kond_frist" value="${esc(e.frist || '')}">
-      <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Eigene Frist je Unternehmer (überschreibt die Gewerk-Frist ${v.frist ? '· Gewerk: ' + fmtDate(v.frist) : ''}). Erscheint auf dessen Deckblatt + in der Submittentenliste.</span></label>
-    <div class="kond-wrap">${stageHtml}</div>`, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="konditionen-save" data-pid="${pid}" data-vid="${vid}" data-eid="${eid}">💾 Speichern</button>`);
-  const recompute = () => stages.forEach(([key]) => { const r = condParts(kondReadStage(key)); const el = $('#kond_res_' + key); if (el) el.innerHTML = r ? `Netto <strong>${chf(r.zsumme2)}</strong> &nbsp;·&nbsp; MwSt 8.1% ${chf(r.mwst)} &nbsp;·&nbsp; inkl. ${chf(r.total)}` : '<span class="muted">Brutto eingeben für Berechnung</span>'; });
-  $$('.kond-in').forEach(i => i.addEventListener('input', recompute));
-  recompute();
+      <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Eigene Frist je Unternehmer (überschreibt die Gewerk-Frist ${v.frist ? '· Gewerk: ' + fmtDate(v.frist) : ''}).</span></label>
+    <p class="muted" style="font-size:11.5px;margin:0 0 8px">Jeder Abzug wahlweise <b>%</b> oder <b>CHF</b> (Knopf rechts). „Allg. Abzüge" umbenennbar, weitere mit „+ Abzug". <b>Netto-Zielwert</b> eingeben &amp; genau einen Abzug leer lassen → fehlender Betrag wird berechnet.</p>
+    <div class="kond-wrap" id="kond_body"></div>`,
+    `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="konditionen-save" data-pid="${pid}" data-vid="${vid}" data-eid="${eid}">💾 Speichern</button>`);
+  kondRenderBody();
 }
-function kondReadStage(key) { const o = {}; $$('.kond-in[data-stage="' + key + '"]').forEach(i => { o[i.dataset.f] = i.value === '' ? null : Number(i.value); }); return o; }
+function kondStageHtml(key, label) {
+  const s = _kondM.st[key];
+  const rows = s.abz.map((a, i) => `<div class="kabz-row" data-stage="${key}" data-i="${i}">
+    ${a.rename ? `<input class="input kabz-name" value="${esc(a.name)}" placeholder="Abzug">` : `<span class="kabz-name fix">${esc(a.name)}</span>`}
+    <input class="input kabz-wert" type="number" step="0.01" value="${a.wert === '' || a.wert == null ? '' : a.wert}" placeholder="0">
+    <button type="button" class="kabz-art${a.art === 'chf' ? ' chf' : ''}" title="zwischen % und CHF umschalten">${a.art === 'chf' ? 'CHF' : '%'}</button>
+    <span class="kabz-betrag" data-bet></span>
+    ${a.removable ? `<button type="button" class="kabz-del" title="Abzug entfernen">×</button>` : '<span class="kabz-delspc"></span>'}
+  </div>`).join('');
+  return `<div class="kond-stage" data-stage="${key}">
+    <div class="kond-h">${label}</div>
+    <label class="field kabz-bruttof">Brutto (CHF)<input class="input kabz-brutto" type="number" step="0.01" value="${s.brutto === '' || s.brutto == null ? '' : s.brutto}" placeholder="0"></label>
+    <div class="kabz-rows">${rows}</div>
+    <button type="button" class="btn sm ghost kabz-add">+ Abzug</button>
+    <label class="field kabz-nettof">Netto-Zielwert (CHF, optional)<input class="input kabz-netto" type="number" step="0.01" placeholder="wird automatisch berechnet"></label>
+    <div class="kond-res" data-res></div>
+  </div>`;
+}
+function kondRenderBody() {
+  const body = $('#kond_body'); if (!body || !_kondM) return;
+  body.innerHTML = _kondM.stages.map(([key, label]) => kondStageHtml(key, label)).join('');
+  kondWire(); kondUpdateComputed();
+}
+function kondWire() {
+  $$('#kond_body .kabz-brutto').forEach(inp => inp.addEventListener('input', e => { _kondM.st[e.target.closest('.kond-stage').dataset.stage].brutto = e.target.value; kondUpdateComputed(); }));
+  $$('#kond_body .kabz-wert').forEach(inp => inp.addEventListener('input', e => { const row = e.target.closest('.kabz-row'); _kondM.st[row.dataset.stage].abz[+row.dataset.i].wert = e.target.value; kondUpdateComputed(); }));
+  $$('#kond_body .kabz-name').forEach(inp => inp.addEventListener('input', e => { const row = e.target.closest('.kabz-row'); _kondM.st[row.dataset.stage].abz[+row.dataset.i].name = e.target.value; }));
+  $$('#kond_body .kabz-art').forEach(btn => btn.addEventListener('click', e => { const row = e.target.closest('.kabz-row'); const a = _kondM.st[row.dataset.stage].abz[+row.dataset.i]; a.art = a.art === 'chf' ? 'pct' : 'chf'; e.target.textContent = a.art === 'chf' ? 'CHF' : '%'; e.target.classList.toggle('chf', a.art === 'chf'); kondUpdateComputed(); }));
+  $$('#kond_body .kabz-add').forEach(btn => btn.addEventListener('click', e => { _kondM.st[e.target.closest('.kond-stage').dataset.stage].abz.push({ name: 'Abzug', art: 'pct', wert: '', rename: true, removable: true }); kondRenderBody(); }));
+  $$('#kond_body .kabz-del').forEach(btn => btn.addEventListener('click', e => { const row = e.target.closest('.kabz-row'); _kondM.st[row.dataset.stage].abz.splice(+row.dataset.i, 1); kondRenderBody(); }));
+  $$('#kond_body .kabz-netto').forEach(inp => inp.addEventListener('change', e => kondBackCalc(e.target.closest('.kond-stage').dataset.stage, e.target.value)));
+}
+function kondUpdateComputed() {
+  if (!_kondM) return;
+  _kondM.stages.forEach(([key]) => {
+    const stEl = document.querySelector('#kond_body .kond-stage[data-stage="' + key + '"]'); if (!stEl) return;
+    const r = condParts(kondModelToC(_kondM.st[key]));
+    const betr = r ? [r.rabattBetrag, r.skontoBetrag, r.allgBetrag].concat(r.extra.map(x => x.betrag)) : [];
+    stEl.querySelectorAll('.kabz-betrag').forEach((sp, i) => { sp.textContent = (r && betr[i]) ? '− ' + chf(betr[i]) : ''; });
+    const res = stEl.querySelector('[data-res]');
+    if (res) res.innerHTML = r ? `Netto <strong>${chf(r.zsumme2)}</strong> &nbsp;·&nbsp; MwSt 8.1% ${chf(r.mwst)} &nbsp;·&nbsp; inkl. ${chf(r.total)}` : '<span class="muted">Brutto eingeben für Berechnung</span>';
+  });
+}
+function kondBackCalc(key, target) {
+  const s = _kondM.st[key];
+  target = (target === '' || target == null) ? null : Number(target);
+  if (target == null || s.brutto === '' || s.brutto == null) return;
+  const empties = s.abz.map((a, i) => i).filter(i => s.abz[i].wert === '' || s.abz[i].wert == null);
+  if (empties.length !== 1) { toast('Für die Netto-Rückrechnung genau EINEN Abzug leer lassen.', 'info'); return; }
+  const idx = empties[0];
+  const nettoAt = X => { const t = { brutto: s.brutto, abz: s.abz.map((a, i) => i === idx ? Object.assign({}, a, { art: 'chf', wert: X }) : a) }; const r = condParts(kondModelToC(t)); return r ? r.zsumme2 : null; };
+  const n0 = nettoAt(0), n1 = nettoAt(1); if (n0 == null || n1 == null) return;
+  const slope = n1 - n0; if (Math.abs(slope) < 1e-9) return;
+  const X = Math.round(((target - n0) / slope) * 100) / 100;
+  s.abz[idx] = Object.assign({}, s.abz[idx], { art: 'chf', wert: X });
+  kondRenderBody();
+  toast('Fehlender Abzug „' + (s.abz[idx].name || 'Abzug') + '" = ' + chf(X) + ' berechnet.', 'success');
+}
 function saveKonditionen(pid, vid, eid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); const e = v && (v.eingeladene || []).find(x => x.id === eid);
-  if (!e) return;
+  if (!e || !_kondM) return;
   { const kf = $('#kond_frist'); if (kf) e.frist = kf.value || ''; }
-  ['offerte', 'abgebot', 'vergabe'].forEach(key => { const o = kondReadStage(key); e[key] = (o.brutto != null) ? o : null; });
+  _kondM.stages.forEach(([key]) => { const c = kondModelToC(_kondM.st[key]); e[key] = (c.brutto != null) ? c : null; });
   if (e.offerte && e.offerte.brutto != null) {
     e.betrag = condNetto(e.offerte);
     if (e.status !== 'abgesagt') e.status = 'offeriert';
@@ -6977,7 +7047,8 @@ function bindVergabeAntrag(p, v) {
   const commit = (eid, stage) => {
     const e = firms.find(x => x.id === eid); if (!e) return;
     const c = readC(eid, stage);
-    e[stage] = (c.brutto != null) ? c : null;
+    // Merge: Zusatz-Abzüge / Betrag-Varianten / umbenanntes Label (aus dem Konditionen-Dialog) erhalten
+    e[stage] = (c.brutto != null) ? Object.assign({}, e[stage] || {}, c) : null;
     if (stage === 'offerte' && e.offerte && e.offerte.brutto != null) { e.betrag = condNetto(e.offerte); if (e.status !== 'abgesagt') e.status = 'offeriert'; if (statusIdx(v) < STATUS_BY_KEY['offerten'].index) v.status = 'offerten'; }
     if (v.firma && e.firma === v.firma) { const ver = eVer(e); const fall = ver != null ? ver : (eAbg(e) != null ? eAbg(e) : eOff(e)); if (fall != null) v.betrag = fall; }
     save();

@@ -1441,6 +1441,19 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .kond-grid .field { font-size: 11px; gap: 3px; }
 .kond-grid .input { padding: 7px 8px; }
 .kond-res { margin-top: 8px; font-size: 12.5px; color: var(--text-soft); font-variant-numeric: tabular-nums; }
+/* Flexible Abzugs-Zeilen (Konditionen): Name · Wert · %/CHF · Betrag · Entfernen */
+.kabz-bruttof, .kabz-nettof { display: flex; flex-direction: column; gap: 3px; font-size: 11px; margin: 6px 0; }
+.kabz-bruttof .input, .kabz-nettof .input { padding: 7px 9px; max-width: 220px; }
+.kabz-rows { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 8px; }
+.kabz-row { display: grid; grid-template-columns: minmax(90px, 1fr) 88px 46px 96px 22px; gap: 6px; align-items: center; }
+.kabz-name.fix { font-size: 12.5px; font-weight: 600; color: var(--text-soft); padding-left: 2px; }
+.kabz-name { font-size: 12.5px; padding: 6px 8px; }
+.kabz-wert { text-align: right; padding: 6px 8px; }
+.kabz-art { border: 1px solid var(--border-2); background: var(--surface-2); border-radius: 6px; height: 30px; cursor: pointer; font-size: 12px; font-weight: 700; color: var(--text-soft); }
+.kabz-art.chf { background: var(--brand-soft); color: var(--brand); border-color: var(--brand); }
+.kabz-betrag { font-size: 11.5px; color: var(--text-soft); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.kabz-del { border: none; background: none; color: var(--s-red); cursor: pointer; font-size: 17px; line-height: 1; padding: 0; }
+.kabz-add { align-self: flex-start; }
 .inv-conds { display: flex; gap: 8px; font-size: 11.5px; color: var(--text-soft); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
 .inv-conds span { white-space: nowrap; }
 @media (max-width: 760px) { .kond-grid { grid-template-columns: repeat(2, 1fr); } }

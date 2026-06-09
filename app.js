@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v352';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v353';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3064,11 +3064,15 @@ function viewTermine(id) {
   inMarks.forEach(m => evItems.push({ x: dayDiff(rangeStart, dISO(m.iso)) * pxPerDay, n: `${m.n} ${fmtDate(m.iso)}`, cls: 'mark ' + m.cls, t: `${m.n}: ${fmtDate(m.iso)}`, mark: true }));
   if (ganttFeier !== 'vert') hols.forEach(f => evItems.push({ x: dayDiff(rangeStart, f.d) * pxPerDay, n: f.n, cls: 'hol', t: `${f.n} ${fmtDate(isoOf(f.d))}` }));
   evItems.sort((a, b) => a.x - b.x);
+  // Hintergrund-Ebene fürs Event-Band: dieselben Spaltenlinien/Wochenend-Einfärbung (bgCells) + Feiertags-Schattierung,
+  // damit Gitter und Einfärbung HINTER der Baustart-/heute-/Feiertags-Beschriftung durchlaufen (Band wird transparent).
+  const holShade = hols.map(f => `<div class="g-holiday" style="left:${dayDiff(rangeStart, f.d) * pxPerDay}px;width:${Math.max(pxPerDay, 2)}px"></div>`).join('');
+  const evBg = `<div class="g-ev-bg"><div class="g-bg">${bgCells}</div>${holShade}</div>`;
   let eventBand = '', eventBandH = 0;
   if (ganttFeier === 'diag') {
     eventBandH = evItems.length ? 56 : 0;
     const cells = evItems.map(e => `<span class="g-ev g-ev-diag ${e.cls}"${e.mark ? ` data-act="eckdaten" data-pid="${p.id}"` : ''} style="left:${e.x}px" title="${esc(e.t)}">${esc(e.n)}</span>`).join('');
-    eventBand = eventBandH ? `<div class="g-headrow ev diag" style="height:${eventBandH}px">${cells}</div>` : '';
+    eventBand = eventBandH ? `<div class="g-headrow ev diag" style="height:${eventBandH}px">${evBg}${cells}</div>` : '';
   } else {
     const evRowEnds = [];   // Greedy First-Fit: gleiche Zeile, wenn Platz – sonst eine Zeile tiefer
     evItems.forEach(e => {
@@ -3079,7 +3083,7 @@ function viewTermine(id) {
     });
     const evLineH = 11; eventBandH = evItems.length ? evRowEnds.length * evLineH + 3 : 0;
     const evCells = evItems.map(e => `<span class="g-ev ${e.cls}"${e.mark ? ` data-act="eckdaten" data-pid="${p.id}"` : ''} style="left:${e.x}px;top:${e.row * evLineH + 1}px" title="${esc(e.t)}">${esc(e.n)}</span>`).join('');
-    eventBand = eventBandH ? `<div class="g-headrow ev" style="height:${eventBandH}px">${evCells}</div>` : '';
+    eventBand = eventBandH ? `<div class="g-headrow ev" style="height:${eventBandH}px">${evBg}${evCells}</div>` : '';
   }
   const headH = (ganttZoom === 'tag' ? 74 : (subCells ? 56 : 38)) + yearBandH + eventBandH;
 

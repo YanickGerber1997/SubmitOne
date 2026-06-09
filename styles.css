@@ -920,7 +920,11 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-mark.bezug span { color: #1d4ed8; }
 /* Kopf-Band: Feiertags- & Meilenstein-Beschriftungen (vertikal, im klebrigen Kopf, nie über den Balken) */
 /* Feiertags-/Meilenstein-Zeile: kompakt direkt unter den Monaten, bei Enge gestapelt */
-.g-headrow.ev { position: relative; flex: none; border-top: 1px solid var(--border); background: var(--surface); display: block; }
+.g-headrow.ev { position: relative; flex: none; border-top: 1px solid var(--border); background: transparent; display: block; }
+/* Hintergrund-Ebene: Spaltenlinien/Wochenend-/Feiertags-Einfärbung läuft hinter der Beschriftung durch */
+.g-ev-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.g-ev-bg .g-bg { position: absolute; inset: 0; }
+.g-headrow.ev .g-ev { z-index: 1; }
 .g-ev { position: absolute; font-size: 8px; line-height: 10px; white-space: nowrap; color: #b91c1c; pointer-events: none; padding-left: 3px; border-left: 1px solid currentColor; }
 .g-ev.mark { font-weight: 700; pointer-events: auto; cursor: pointer; }
 .g-ev.mark.start { color: #15803d; }

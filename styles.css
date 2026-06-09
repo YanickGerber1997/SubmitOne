@@ -569,7 +569,6 @@ table.grid tbody tr.clickable:hover { background: var(--surface-2); }
 /* Tabelle scrollt IN der Box; Kennzahlen-Leiste liegt oben drin und scrollt mit weg.
    Spaltenkopf + Hauptgruppe kleben am Box-Rand (top:0) – robust, ohne Offset-Messung. */
 .ktable-wrap { max-height: 76vh; overflow: auto; -webkit-overflow-scrolling: touch; padding: 0; }
-.ktable-wrap .k-strip { margin: 0 0 0 0; border-radius: 0; border-left: 0; border-right: 0; border-top: 0; position: relative; z-index: 1; }
 .ktable thead th { position: sticky; top: 0; z-index: 6; background: var(--surface-2); box-shadow: inset 0 -1px 0 var(--border), 0 2px 5px -3px rgba(15,24,48,.3); }
 .ktable tr.kgroup td { position: sticky; top: 37px; z-index: 5; box-shadow: inset 0 -1px 0 var(--border); }
 /* Aufklapp-Panel je Gewerk (Baubeschrieb / Schätzung / Stand) */

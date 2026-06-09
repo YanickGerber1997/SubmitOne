@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v339';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v340';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1918,19 +1918,19 @@ function viewKosten(id) {
   const ks = (l, v, cls) => `<div class="ks${cls ? ' ' + cls : ''}"><span>${l}</span><b>${money(v)}</b></div>`;
 
   render(head + `
+    <div class="k-strip">
+      ${ks('KV / Schätzung', tot.kv)}
+      ${ks('Revision', tot.rev)}
+      ${ks('Werkvertrag', tot.wv)}
+      ${ks('Nachträge', tot.nt)}
+      ${ks('Prognose', tot.endsumme, 'hl')}
+      ${ks('Bezahlt', tot.fakturiert)}
+      ${ks('Offen', tot.offenRg)}
+      ${ks('inkl. ' + mwstSatz() + '% MwSt', tot.endsumme * (1 + mw / 100), 'mwst')}
+    </div>
     <p class="muted" style="font-size:12px;margin:-2px 0 10px">Alle Beträge <b>netto</b> (exkl. MwSt). MwSt, Rabatt &amp; Skonto werden <b>je Gewerk in den Konditionen</b> gerechnet. Der „Anzeige: Brutto"-Knopf zeigt zusätzlich inkl. ${mwstSatz()} % MwSt – ohne die Daten zu verändern.</p>
     ${(p.volumen || p.flaeche) ? `<p class="muted" style="font-size:12px;margin:-6px 0 12px">Kubische Kennzahlen für die Kostenschätzungs-Gegenüberstellung${p.volumen ? ` · GV ${p.volumen.toLocaleString('de-CH')} m³` : ''}${p.flaeche ? ` · BGF ${p.flaeche.toLocaleString('de-CH')} m²` : ''}. Gebäudedaten unter „Übersicht → ✎ Bearbeiten".</p>` : ''}
     <div class="card ktable-wrap">
-      <div class="k-strip">
-        ${ks('KV / Schätzung', tot.kv)}
-        ${ks('Revision', tot.rev)}
-        ${ks('Werkvertrag', tot.wv)}
-        ${ks('Nachträge', tot.nt)}
-        ${ks('Prognose', tot.endsumme, 'hl')}
-        ${ks('Bezahlt', tot.fakturiert)}
-        ${ks('Offen', tot.offenRg)}
-        ${ks('inkl. ' + mwstSatz() + '% MwSt', tot.endsumme * (1 + mw / 100), 'mwst')}
-      </div>
       <table class="grid ktable">
         <thead><tr>
           <th>BKP</th><th>Arbeitsgattung</th><th>Unternehmer</th>

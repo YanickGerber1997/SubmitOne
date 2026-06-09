@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v366';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v367';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7052,7 +7052,7 @@ function vergabeAntragTable(p, v, editable) {
       html += `<tr class="va-total"><td class="va-l">Netto (exkl. MwSt)<span class="va-hint2">– eintippen + 1 Abzug leer = Rückrechnung</span></td>${firms.map(e => `<td class="num"><input class="va-in va-nettoin" type="number" step="0.01" data-va="${e.id}|${key}|netto" placeholder="berechnet" value=""></td>`).join('')}</tr>`;
       html += compRow('MWST 8.1%', 'mwst');
       html += compRow('Netto inkl. MWST', 'total', 'va-total');
-      html += `<tr class="va-diff"><td class="va-l">Diff. zum günstigsten</td>${firms.map(e => `<td class="num"><span class="va-c" data-vd="${key}|${e.id}"></span></td>`).join('')}</tr>`;
+      if (cols > 1) html += `<tr class="va-diff"><td class="va-l">Diff. zum günstigsten</td>${firms.map(e => `<td class="num"><span class="va-c" data-vd="${key}|${e.id}"></span></td>`).join('')}</tr>`;
     } else {
       const parts = firms.map(e => condParts(vglStageOf(e, key)));
       const totals = parts.map(x => x ? x.total : null).filter(x => x != null);
@@ -7063,7 +7063,7 @@ function vergabeAntragTable(p, v, editable) {
       html += numRow('Netto (exkl. MwSt)', x => nf(x.zsumme2), 'va-total');
       html += numRow('MWST 8.1%', x => nf(x.mwst));
       html += numRow('Netto inkl. MWST', x => nf(x.total), 'va-total');
-      html += `<tr class="va-diff"><td class="va-l">Diff. zum günstigsten</td>${parts.map(x => `<td class="num">${(x && minT != null) ? (minT ? ((x.total - minT) / minT * 100) : 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : ''}</td>`).join('')}</tr>`;
+      if (cols > 1) html += `<tr class="va-diff"><td class="va-l">Diff. zum günstigsten</td>${parts.map(x => `<td class="num">${(x && minT != null) ? (minT ? ((x.total - minT) / minT * 100) : 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : ''}</td>`).join('')}</tr>`;
     }
   });
   return html + `</table>`;

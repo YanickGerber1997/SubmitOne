@@ -1423,17 +1423,22 @@ label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px
 .kond-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 /* Vergabeantrag / Offertvergleich (Firmen als Spalten) */
 .va-screen { padding: 0; }
-table.va { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
-table.va td { border: 1px solid var(--border); padding: 4px 8px; text-align: right; white-space: nowrap; }
-table.va td.va-l { text-align: left; width: 160px; color: var(--text-soft); position: sticky; left: 0; background: var(--surface); }
-table.va .va-firms td { font-weight: 700; text-align: center; background: var(--surface-2); font-size: 12.5px; }
+table.va { width: auto; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+table.va td { border: 1px solid var(--border); padding: 5px 10px; text-align: right; white-space: nowrap; }
+table.va td.va-l { text-align: left; width: 210px; min-width: 210px; color: var(--text-soft); position: sticky; left: 0; background: var(--surface); z-index: 1; }
+table.va td:not(.va-l) { width: 176px; }
+table.va .va-firms td { font-weight: 700; text-align: center; background: var(--surface-2); font-size: 13px; padding: 9px 10px; }
+table.va .va-firms td.va-l { background: var(--surface); }
 table.va .va-mail { font-size: 10.5px; color: var(--text-soft); }
 table.va .va-pct { color: var(--text-faint); font-size: 10px; margin-right: 5px; }
-table.va .va-stage td { background: var(--brand-soft); font-weight: 700; text-align: left; color: var(--text); }
+table.va .va-stage td { background: var(--brand-soft); font-weight: 700; text-align: left; color: var(--text); letter-spacing: .2px; }
+table.va .va-stage td.va-l { background: var(--brand-soft); }
 table.va .va-brutto td { font-weight: 600; }
 table.va .va-total td { font-weight: 700; background: var(--surface-2); }
+table.va .va-total td.va-l { background: var(--surface-2); }
 table.va .va-diff td { color: var(--text-faint); font-style: italic; }
-table.va .va-fav { font-size: 10px; font-weight: 700; color: var(--s-red); }
+table.va .va-addrow td { border: none; padding: 5px 10px; text-align: left; background: var(--surface); }
+table.va .va-fav { display: inline-block; margin-top: 2px; font-size: 9.5px; font-weight: 700; color: #fff; background: var(--s-red); border-radius: 10px; padding: 1px 8px; }
 /* Editierbare Eingaben in der Tabelle (Live-Berechnung) */
 table.va .va-in { width: 100%; border: 1px solid var(--border-2); border-radius: 5px; padding: 3px 6px; font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; background: #fff; }
 table.va .va-in:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft); }

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v359';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v360';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1399,6 +1399,18 @@ function parseDateFlexible(s) {
   }
   return '';
 }
+// Liefert ein normalisiertes grobes Label (z.B. „April 2026" / „Frühling 2026"), wenn die Eingabe ein Monats-/Saisonbegriff ist – sonst ''.
+function dateGrobLabel(s) {
+  s = String(s == null ? '' : s).trim().toLowerCase(); if (!s) return '';
+  const m = s.match(/^([a-zäöü]+)\.?[ ,]*(\d{2}|\d{4})?$/); if (!m) return '';
+  const MON = { jan: 'Januar', januar: 'Januar', feb: 'Februar', februar: 'Februar', mär: 'März', märz: 'März', maer: 'März', maerz: 'März', mar: 'März', apr: 'April', april: 'April', mai: 'Mai', jun: 'Juni', juni: 'Juni', jul: 'Juli', juli: 'Juli', aug: 'August', august: 'August', sep: 'September', sept: 'September', september: 'September', okt: 'Oktober', oktober: 'Oktober', nov: 'November', november: 'November', dez: 'Dezember', dezember: 'Dezember' };
+  const SEA = { frühling: 'Frühling', fruehling: 'Frühling', frühjahr: 'Frühling', fruehjahr: 'Frühling', lenz: 'Frühling', sommer: 'Sommer', herbst: 'Herbst', winter: 'Winter' };
+  const name = MON[m[1]] || SEA[m[1]]; if (!name) return '';
+  let y; if (m[2] == null) y = new Date().getFullYear(); else { y = +m[2]; if (m[2].length <= 2) y = 2000 + (y % 100); }
+  return name + ' ' + y;
+}
+// data-grob-Attribut nur, wenn das gespeicherte grobe Label noch zum aktuellen Datum passt (selbst-invalidierend bei Verschieben)
+function grobAttr(label, iso) { return (label && iso && parseDateFlexible(label) === iso) ? ` data-grob="${esc(label)}"` : ''; }
 function upgradeDateInputs(root) {
   (root || document).querySelectorAll('input[type="date"]:not([data-up])').forEach(inp => {
     inp.setAttribute('data-up', '1');
@@ -1407,20 +1419,21 @@ function upgradeDateInputs(root) {
     const txt = document.createElement('input');
     txt.type = 'text'; txt.className = 'date-text'; txt.placeholder = 'TT.MM.JJJJ'; txt.autocomplete = 'off'; txt.size = 10;
     txt.title = 'Frei eingeben: z.B. 8.6.26 · 08.06.2026 · heute/morgen · oder grob „April 26" / „Frühling 26" (→ Monats-/Saisonbeginn)';
-    txt.value = inp.value ? fmtDate(inp.value) : '';
+    const disp = () => inp.dataset.grob || (inp.value ? fmtDate(inp.value) : '');   // grobes Label (z.B. „Frühling 2026") vor dem Datum
+    txt.value = disp();
     const btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'date-cal'; btn.tabIndex = -1; btn.title = 'Kalender'; btn.textContent = '📅';
     if (inp.disabled) { txt.disabled = true; btn.disabled = true; }
     inp.classList.add('date-native-hidden');
     inp.parentNode.insertBefore(wrap, inp);
     wrap.appendChild(txt); wrap.appendChild(btn); wrap.appendChild(inp);
-    const commit = iso => { iso = iso || ''; inp.value = iso; txt.value = iso ? fmtDate(iso) : ''; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); };
-    const tryParse = () => { const t = txt.value.trim(); if (t === '') { if (inp.value) commit(''); return; } const iso = parseDateFlexible(t); if (iso) { if (iso !== inp.value) commit(iso); else txt.value = fmtDate(iso); } else txt.value = inp.value ? fmtDate(inp.value) : ''; };
-    txt.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tryParse(); } else if (e.key === 'Escape') { txt.value = inp.value ? fmtDate(inp.value) : ''; txt.blur(); } });
+    const commit = (iso, label) => { iso = iso || ''; label = label || ''; inp.value = iso; if (label) inp.dataset.grob = label; else inp.removeAttribute('data-grob'); txt.value = label || (iso ? fmtDate(iso) : ''); inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); };
+    const tryParse = () => { const t = txt.value.trim(); if (t === '') { if (inp.value || inp.dataset.grob) commit('', ''); return; } const iso = parseDateFlexible(t); if (iso) commit(iso, dateGrobLabel(t)); else txt.value = disp(); };
+    txt.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tryParse(); } else if (e.key === 'Escape') { txt.value = disp(); txt.blur(); } });
     txt.addEventListener('blur', tryParse);
     txt.addEventListener('mousedown', e => e.stopPropagation());
     btn.addEventListener('mousedown', e => e.stopPropagation());
-    btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); if (inp.disabled) return; openDatePop(btn, inp.value, iso => commit(iso)); });
+    btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); if (inp.disabled) return; openDatePop(btn, inp.value, iso => commit(iso, '')); });
   });
 }
 let _datePop = null;
@@ -2919,10 +2932,11 @@ function updateGanttDist() {
 }
 function scheduleGanttFocus() { if (!ganttFocus && !ganttDist) return; if (_focusRaf) return; _focusRaf = requestAnimationFrame(() => { _focusRaf = 0; if (ganttFocus) updateGanttFocus(); if (ganttDist) updateGanttDist(); }); }
 // Start-/Endtermin direkt aus der linken Spalte setzen (editierbares Datumsfeld)
-function sideSetDate(pid, vid, field, val) {
+function sideSetDate(pid, vid, field, val, grob) {
   if (gesperrt(pid)) return;
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
   v[field] = val || '';
+  if (grob) v[field + 'Label'] = grob; else delete v[field + 'Label'];   // grobes Label (z.B. „Frühling 2026") mitführen
   save(); rerenderGantt(pid);
 }
 // Fokus: Gewerk in den aktuell sichtbaren Zeitausschnitt einplanen
@@ -3249,8 +3263,8 @@ function viewTermine(id) {
       firma: () => `<span class="g-sc g-si firma">${v.firma ? esc(v.firma) : ''}</span>`,
       person: () => `<span class="g-sc g-si">${(k && k.person) ? esc(k.person) : ''}</span>`,
       natel: () => `<span class="g-sc g-si">${(k && k.telefon) ? '☎ ' + esc(k.telefon) : ''}</span>`,
-      start: () => `<input type="date" class="g-sc g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-field="bauStart" value="${esc(v.bauStart || '')}"${gespr ? ' disabled' : ''} title="Starttermin">`,
-      ende: () => `<input type="date" class="g-sc g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-field="bauEnde" value="${esc(v.bauEnde || '')}"${gespr ? ' disabled' : ''} title="Endtermin">`,
+      start: () => `<input type="date" class="g-sc g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-field="bauStart"${grobAttr(v.bauStartLabel, v.bauStart)} value="${esc(v.bauStart || '')}"${gespr ? ' disabled' : ''} title="Starttermin">`,
+      ende: () => `<input type="date" class="g-sc g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-field="bauEnde"${grobAttr(v.bauEndeLabel, v.bauEnde)} value="${esc(v.bauEnde || '')}"${gespr ? ' disabled' : ''} title="Endtermin">`,
       dauer: () => `<span class="g-sc g-si-dauer" title="Dauer der Arbeiten (Kalendertage)">${esc(gDauerTxt(v.bauStart, v.bauEnde) || '–')}</span>`,
     };
     const orderedCells = visCols.map(key => cellFns[key]()).join('');
@@ -3414,7 +3428,7 @@ function viewTermine(id) {
     $$('.g-link-grip').forEach(g => { g.addEventListener('mousedown', onLinkGripDown); g.addEventListener('dblclick', e => { e.stopPropagation(); const lid = g.dataset.lid; const pr = findProjekt(ganttPid); const lk = pr && (pr.ganttLinks || []).find(l => l.id === lid); if (lk && lk.dx) { delete lk.dx; save(); rerenderGantt(ganttPid); } }); });
     $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) selectGanttLink(g.dataset.lid); }));
     $$('.g-link').forEach(g => g.addEventListener('contextmenu', e => { e.preventDefault(); linkMenu(e, ganttPid, g.dataset.lid); }));
-    $$('.g-si-date').forEach(inp => { inp.addEventListener('change', () => sideSetDate(inp.dataset.pid, inp.dataset.vid, inp.dataset.field, inp.value)); inp.addEventListener('mousedown', e => e.stopPropagation()); });
+    $$('.g-si-date').forEach(inp => { inp.addEventListener('change', () => sideSetDate(inp.dataset.pid, inp.dataset.vid, inp.dataset.field, inp.value, inp.dataset.grob || '')); inp.addEventListener('mousedown', e => e.stopPropagation()); });
   } else {
     $$('.g-bar').forEach(b => b.classList.add('g-locked'));
   }

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v333';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v334';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -10645,7 +10645,7 @@ function ensureKontakt(firma, email) {
   state.kontakte = state.kontakte || [];
   const ex = state.kontakte.find(k => (k.firma || '').toLowerCase() === firma.toLowerCase());
   if (ex) { if (email && !ex.email) ex.email = email; return false; }
-  state.kontakte.unshift({ id: uid('k'), firma, email: email || '', kategorie: '–', strasse: '', plz: '', ort: '', person: '', funktion: '', telefon: '', website: '', notiz: '', uid_nr: '', rechtsform: '' });
+  state.kontakte.unshift({ id: uid('k'), firma, email: email || '', kategorie: '–', bkps: [], strasse: '', plz: '', ort: '', person: '', funktion: '', telefon: '', website: '', notiz: '', uid_nr: '', rechtsform: '' });
   return true;
 }
 function kontakteFirmaDatalist(id) {
@@ -10669,9 +10669,10 @@ function ensureKontaktFull(d) {
   const firma = (d.firma || '').trim(); if (!firma) return false;
   state.kontakte = state.kontakte || [];
   const fields = { strasse: d.strasse || '', plz: d.plz || '', ort: d.ort || '', person: d.person || '', telefon: d.telefon || '', email: d.email || '', kategorie: d.kategorie || '–' };
+  const bkps = (d.bkps || []).filter(Boolean);
   const k = state.kontakte.find(x => (x.firma || '').toLowerCase() === firma.toLowerCase());
-  if (k) { Object.keys(fields).forEach(key => { if (fields[key] && (!k[key] || (key === 'kategorie' && k[key] === '–'))) k[key] = fields[key]; }); return false; }
-  state.kontakte.unshift({ id: uid('k'), firma, funktion: '', website: '', notiz: '', uid_nr: '', rechtsform: '', ...fields });
+  if (k) { Object.keys(fields).forEach(key => { if (fields[key] && (!k[key] || (key === 'kategorie' && k[key] === '–'))) k[key] = fields[key]; }); k.bkps = [...new Set([...(k.bkps || []), ...bkps])]; return false; }
+  state.kontakte.unshift({ id: uid('k'), firma, funktion: '', website: '', notiz: '', uid_nr: '', rechtsform: '', bkps, ...fields });
   return true;
 }
 function importSubmittenten(pid, list) {
@@ -10679,7 +10680,7 @@ function importSubmittenten(pid, list) {
   let nK = 0, nE = 0;
   list.forEach(s => {
     const tel = [s.mobil, s.tel].filter(Boolean).join(' / ');
-    if (ensureKontaktFull({ firma: s.firma, strasse: s.str, plz: s.plz, ort: s.ort, person: s.person, telefon: tel, email: s.mail, kategorie: s.kat })) nK++;
+    if (ensureKontaktFull({ firma: s.firma, strasse: s.str, plz: s.plz, ort: s.ort, person: s.person, telefon: tel, email: s.mail, kategorie: s.kat, bkps: [s.bkp] })) nK++;
     const v = (p.vergaben || []).find(x => (x.bkp || '') === s.bkp);
     if (v) { v.eingeladene = v.eingeladene || []; if (!v.eingeladene.some(e => (e.firma || '').toLowerCase() === (s.firma || '').toLowerCase())) { v.eingeladene.push({ id: uid('e'), firma: s.firma, email: s.mail || '', betrag: null, status: 'eingeladen', datumMail: '' }); nE++; } }
   });
@@ -10842,20 +10843,26 @@ function matchCat(k, gewerk) {
   return gewerk.includes((k.kategorie || '').toLowerCase()) ? 1 : 0;
 }
 
+// BKP-Match: Kontakt passt zum Gewerk-BKP (gleiche Haupt-BKP-Gruppe oder exakt)
+function bkpBase(b) { return String(b || '').split('.')[0].replace(/[^0-9]/g, ''); }
+function kontaktPasstBkp(k, bkp) { const base = bkpBase(bkp); if (!base) return false; return (k.bkps || []).some(b => b === bkp || bkpBase(b) === base); }
 function actInvite(pid, vid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   const invited = new Set((v.eingeladene || []).map(e => e.firma));
   const g = v.gewerk.toLowerCase();
   const available = state.kontakte.filter(k => !invited.has(k.firma))
-    .sort((a, b) => (matchCat(b, g) - matchCat(a, g)) || a.firma.localeCompare(b.firma));
+    .map(k => ({ k, bm: kontaktPasstBkp(k, v.bkp) }))
+    .sort((a, b) => (b.bm - a.bm) || (matchCat(b.k, g) - matchCat(a.k, g)) || a.k.firma.localeCompare(b.k.firma));
+  const anyMatch = available.some(x => x.bm);
 
   openModal('Unternehmer einladen – ' + v.gewerk, `
+    <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;margin-bottom:8px"><input type="checkbox" id="invAll"${anyMatch ? '' : ' checked'}> Alle Unternehmer anzeigen <span class="muted">– Standard: nur passend zu BKP ${esc(v.bkp || '–')}</span></label>
     <input class="input" id="invSearch" placeholder="Kontakte filtern…">
     <div id="invList" style="max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:2px;margin:-2px 0">
-      ${available.length ? available.map(k => `
-        <label class="inv-pick" data-search="${esc((k.firma + ' ' + k.kategorie + ' ' + k.ort).toLowerCase())}">
+      ${available.length ? available.map(({ k, bm }) => `
+        <label class="inv-pick" data-search="${esc((k.firma + ' ' + k.kategorie + ' ' + (k.bkps || []).join(' ') + ' ' + k.ort).toLowerCase())}" data-bkpmatch="${bm ? 1 : 0}">
           <input type="checkbox" data-firma="${esc(k.firma)}" data-email="${esc(k.email)}">
-          <div><div style="font-weight:600">${esc(k.firma)}</div><div class="muted" style="font-size:12px">${esc(k.kategorie)} · ${esc(k.ort)}</div></div>
+          <div><div style="font-weight:600">${esc(k.firma)}${(k.bkps || []).length ? ` <span class="tag" style="font-size:9.5px;padding:0 5px">BKP ${esc(k.bkps.join(', '))}</span>` : ''}</div><div class="muted" style="font-size:12px">${esc(k.kategorie)} · ${esc(k.ort)}</div></div>
         </label>`).join('') : '<p class="muted" style="padding:8px">Alle Kontakte bereits eingeladen.</p>'}
     </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:6px 0">
@@ -10868,10 +10875,18 @@ function actInvite(pid, vid) {
     <label class="field">E-Mail <input class="input" id="cust_email" placeholder="optional"></label>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-invite" data-pid="${pid}" data-vid="${vid}">Einladen</button>`);
 
-  $('#invSearch')?.addEventListener('input', e => {
-    const q = e.target.value.toLowerCase();
-    $$('#invList .inv-pick').forEach(row => { row.style.display = row.dataset.search.includes(q) ? '' : 'none'; });
-  });
+  const applyInv = () => {
+    const q = ($('#invSearch')?.value || '').toLowerCase();
+    const all = $('#invAll')?.checked;
+    $$('#invList .inv-pick').forEach(row => {
+      const okS = row.dataset.search.includes(q);
+      const okB = all || row.dataset.bkpmatch === '1';
+      row.style.display = (okS && okB) ? '' : 'none';
+    });
+  };
+  $('#invSearch')?.addEventListener('input', applyInv);
+  $('#invAll')?.addEventListener('change', applyInv);
+  applyInv();
   attachFirmaRegisterSuche('cust_firma', 'custFirmaResults', f => {
     $('#cust_firma').value = f.name;
     $('#cust_email')?.focus();
@@ -11730,7 +11745,10 @@ function actKontakt(kid) {
       <label class="field">UID <input class="input" id="f_uid" value="${val('uid_nr')}" placeholder="CHE-…"></label>
       <label class="field">Rechtsform <input class="input" id="f_rf" value="${val('rechtsform')}"></label>
     </div>
-    <label class="field">Kategorie / Gewerk <input class="input" id="f_kat" list="dl_kkat" value="${k && k.kategorie !== '–' ? val('kategorie') : ''}" placeholder="z.B. Baumeister">${kategorieDatalist('dl_kkat')}</label>
+    <div class="form-row">
+      <label class="field">Kategorie / Gewerk <input class="input" id="f_kat" list="dl_kkat" value="${k && k.kategorie !== '–' ? val('kategorie') : ''}" placeholder="z.B. Baumeister">${kategorieDatalist('dl_kkat')}</label>
+      <label class="field">BKP(s) <span class="muted" style="font-weight:400;font-size:11px">– kommagetrennt</span> <input class="input" id="f_bkps" value="${esc(((k && k.bkps) || []).join(', '))}" list="dl_kbkp" placeholder="z.B. 211, 271">${bkpDatalist('dl_kbkp')}</label>
+    </div>
     <label class="field">Strasse <input class="input" id="f_str" value="${val('strasse')}"></label>
     <div class="form-row">
       <label class="field">PLZ <input class="input" id="f_plz" value="${val('plz')}"></label>
@@ -11808,6 +11826,7 @@ function saveKontakt(kid) {
     person: $('#f_person').value.trim(), funktion: $('#f_funktion').value.trim(),
     email: $('#f_email').value.trim(), telefon: $('#f_tel').value.trim(),
     website: $('#f_web').value.trim(), notiz: $('#f_notiz').value.trim(),
+    bkps: ($('#f_bkps') ? $('#f_bkps').value.split(',').map(s => s.trim()).filter(Boolean) : []),
   };
   const k = kid ? (state.kontakte || []).find(x => x.id === kid) : null;
   if (k) Object.assign(k, data); else state.kontakte.unshift({ id: uid('k'), ...data });
@@ -12471,13 +12490,13 @@ function demoData() {
   }];
   // Kontakte + Submittenten fest einpflegen (Kette Kontakt → Einladung → Zuschlag → Unternehmer)
   const kontakte = []; const seenK = new Map();
-  const addFull = d => { const firma = (d.firma || '').trim(); if (!firma) return; const key = firma.toLowerCase();
-    if (seenK.has(key)) { const k = seenK.get(key); ['strasse', 'plz', 'ort', 'person', 'telefon', 'email'].forEach(f => { if (d[f] && !k[f]) k[f] = d[f]; }); if ((!k.kategorie || k.kategorie === '–') && d.kategorie) k.kategorie = d.kategorie; return; }
-    const k = { id: uid('k'), firma, strasse: d.strasse || '', plz: d.plz || '', ort: d.ort || '', person: d.person || '', telefon: d.telefon || '', email: d.email || '', kategorie: d.kategorie || '–', funktion: '', website: '', notiz: '', uid_nr: '', rechtsform: '' }; kontakte.push(k); seenK.set(key, k); };
+  const addFull = (d, bkp) => { const firma = (d.firma || '').trim(); if (!firma) return; const key = firma.toLowerCase();
+    if (seenK.has(key)) { const k = seenK.get(key); ['strasse', 'plz', 'ort', 'person', 'telefon', 'email'].forEach(f => { if (d[f] && !k[f]) k[f] = d[f]; }); if ((!k.kategorie || k.kategorie === '–') && d.kategorie) k.kategorie = d.kategorie; if (bkp && !k.bkps.includes(bkp)) k.bkps.push(bkp); return; }
+    const k = { id: uid('k'), firma, strasse: d.strasse || '', plz: d.plz || '', ort: d.ort || '', person: d.person || '', telefon: d.telefon || '', email: d.email || '', kategorie: d.kategorie || '–', bkps: bkp ? [bkp] : [], funktion: '', website: '', notiz: '', uid_nr: '', rechtsform: '' }; kontakte.push(k); seenK.set(key, k); };
   // 1) Submittentenliste Römerstrasse: volle Kontakte + als eingeladene Submittenten beim BKP-Gewerk
   const roe = projekte.find(p => /römerstrasse|rö\s?31/i.test(p.name || ''));
   RO31_SUBMITTENTEN.forEach(s => {
-    addFull({ firma: s.firma, strasse: s.str, plz: s.plz, ort: s.ort, person: s.person, telefon: [s.mobil, s.tel].filter(Boolean).join(' / '), email: s.mail, kategorie: s.kat });
+    addFull({ firma: s.firma, strasse: s.str, plz: s.plz, ort: s.ort, person: s.person, telefon: [s.mobil, s.tel].filter(Boolean).join(' / '), email: s.mail, kategorie: s.kat }, s.bkp);
     if (roe) { const v = (roe.vergaben || []).find(x => (x.bkp || '') === s.bkp); if (v) { v.eingeladene = v.eingeladene || []; if (!v.eingeladene.some(e => (e.firma || '').toLowerCase() === s.firma.toLowerCase())) v.eingeladene.push({ id: uid('e'), firma: s.firma, email: s.mail || '', betrag: null, status: 'eingeladen', datumMail: '' }); } }
   });
   // 2) übrige Projekt-Firmen (Unternehmer/eingeladene aller Projekte) ergänzen

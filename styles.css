@@ -570,8 +570,8 @@ table.grid tbody tr.clickable:hover { background: var(--surface-2); }
 .ktable-wrap { overflow: visible; }
 .ktable thead th { background: var(--surface-2); box-shadow: inset 0 -1px 0 var(--border); }
 @media (max-width: 1280px) { .ktable-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; } }
-.kost-stickyhead { position: fixed; z-index: 19; display: none; overflow: hidden; background: var(--surface-2); box-shadow: 0 5px 11px -6px rgba(15,24,48,.4); }
-.kost-stickyhead table { border-collapse: collapse; margin: 0; }
+.kost-stickyhead { position: fixed; z-index: 19; display: none; overflow: hidden; background: transparent; }
+.kost-stickyhead table { border-collapse: collapse; margin: 0; box-shadow: 0 5px 11px -6px rgba(15,24,48,.4); }
 .kost-stickyhead th { background: var(--surface-2); }
 /* Aufklapp-Panel je Gewerk (Baubeschrieb / Schätzung / Stand) */
 .ktable tr.kost-row.open > td { background: var(--brand-soft); }

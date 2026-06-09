@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v343';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v344';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1811,16 +1811,20 @@ function setupKostStickyHead() {
   const tbl = document.createElement('table'); tbl.className = 'grid ktable'; tbl.style.tableLayout = 'fixed';
   const th2 = document.createElement('thead'); const trC = headTr.cloneNode(true); th2.appendChild(trC); tbl.appendChild(th2);
   ov.innerHTML = ''; ov.appendChild(tbl);
+  const wrap = table.closest('.ktable-wrap') || table.parentElement;
   const cl = trC.querySelectorAll('th');
   const syncWidths = () => { const ths = headTr.querySelectorAll('th'); let tw = 0; ths.forEach((th, i) => { const w = th.getBoundingClientRect().width; if (cl[i]) cl[i].style.width = w + 'px'; tw += w; }); tbl.style.width = tw + 'px'; };
   _kshUpdate = () => {
     if (!table.isConnected) { ov.style.display = 'none'; _kshUpdate = null; return; }
     const ps = document.querySelector('.proj-sticky');
     const offTop = ps ? Math.round(ps.getBoundingClientRect().bottom) : 0;
-    const tb = table.getBoundingClientRect();
+    const tb = table.getBoundingClientRect(), wb = wrap.getBoundingClientRect();
     if (tb.top < offTop && tb.bottom > offTop + 26) {
       syncWidths();
-      ov.style.display = 'block'; ov.style.top = offTop + 'px'; ov.style.left = tb.left + 'px'; ov.style.width = tb.width + 'px';
+      // an die SICHTBARE Box klemmen (nicht volle Tabellenbreite); Klon horizontal mit der Tabelle mitführen
+      ov.style.display = 'block'; ov.style.top = offTop + 'px';
+      ov.style.left = wb.left + 'px'; ov.style.width = wrap.clientWidth + 'px';
+      tbl.style.transform = 'translateX(' + Math.round(tb.left - wb.left) + 'px)';
     } else ov.style.display = 'none';
   };
   if (!window._kshBound) { window._kshBound = true; const run = () => { if (_kshUpdate) _kshUpdate(); }; window.addEventListener('scroll', run, { passive: true }); window.addEventListener('resize', run); }

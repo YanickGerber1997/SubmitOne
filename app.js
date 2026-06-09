@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v346';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v347';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3179,11 +3179,17 @@ function viewTermine(id) {
     // symmetrisch: Austritts-Stub + kräftiger Austrittsbogen, dann Eintritts-Stub + kräftiger Eintrittsbogen (von links vorne)
     const sout = 14, sin = 14, sx = ax + sout, tx = bx - sin;
     const dxV = Math.abs(by - ay) * 0.5 + 24;                          // gleicher kräftiger Bogen für Aus- und Eintritt
-    const d = `M ${ax} ${ay} L ${sx} ${ay} C ${Math.round(sx + dxV)} ${ay} ${Math.round(tx - dxV)} ${by} ${tx} ${by} L ${bx} ${by}`;
+    const mid = Math.round((sx + tx) / 2);
+    // Default exakt wie bisher; nur wenn der User die Biegung gezogen hat (lk.dx), die S-Kurve horizontal verschieben
+    let d, gripX;
+    if (lk.dx) { gripX = mid + Math.round(lk.dx); d = `M ${ax} ${ay} L ${sx} ${ay} C ${gripX} ${ay} ${gripX} ${by} ${tx} ${by} L ${bx} ${by}`; }
+    else { gripX = mid; d = `M ${ax} ${ay} L ${sx} ${ay} C ${Math.round(sx + dxV)} ${ay} ${Math.round(tx - dxV)} ${by} ${tx} ${by} L ${bx} ${by}`; }
+    const gripY = Math.round((ay + by) / 2);
     return `<g class="g-link${ganttLinkSel === lk.id ? ' g-sel' : ''}" data-lid="${lk.id}">
       <path class="g-link-hit" d="${d}"></path>
       <path class="g-link-line" d="${d}"></path>
       <path class="g-link-arrow" d="M ${bx - 6} ${by - 3.5} L ${bx} ${by} L ${bx - 6} ${by + 3.5} Z"></path>
+      <circle class="g-link-grip" data-lid="${lk.id}" data-ax="${ax}" data-ay="${ay}" data-sx="${sx}" data-tx="${tx}" data-bx="${bx}" data-by="${by}" data-mid="${mid}" cx="${gripX}" cy="${gripY}" r="5"><title>Verknüpfung links/rechts ziehen · Doppelklick: zurücksetzen</title></circle>
     </g>`;
   }).join('');
   const linkSvg = `<svg class="g-links" width="${innerW}" height="${rowIdx * ROW_H}">${linkPaths}</svg>`;
@@ -3246,7 +3252,7 @@ function viewTermine(id) {
     $$('.g-bestell').forEach(b => b.addEventListener('mousedown', onBestellDown));
     $$('.g-unterbruch').forEach(u => { u.addEventListener('mousedown', e => e.stopPropagation()); u.addEventListener('click', e => { e.stopPropagation(); actUnterbruch(u.dataset.pid, u.dataset.vid); }); });
     $$('.g-link-dot').forEach(d => d.addEventListener('mousedown', onLinkDotDown));
-    $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
+    $$('.g-link-grip').forEach(g => { g.addEventListener('mousedown', onLinkGripDown); g.addEventListener('dblclick', e => { e.stopPropagation(); const lid = g.dataset.lid; const pr = findProjekt(ganttPid); const lk = pr && (pr.ganttLinks || []).find(l => l.id === lid); if (lk && lk.dx) { delete lk.dx; save(); rerenderGantt(ganttPid); } }); });
     $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) selectGanttLink(g.dataset.lid); }));
     $$('.g-link').forEach(g => g.addEventListener('contextmenu', e => { e.preventDefault(); linkMenu(e, ganttPid, g.dataset.lid); }));
     $$('.g-si-date').forEach(inp => { inp.addEventListener('change', () => sideSetDate(inp.dataset.pid, inp.dataset.vid, inp.dataset.field, inp.value)); inp.addEventListener('mousedown', e => e.stopPropagation()); });
@@ -3318,23 +3324,25 @@ function onLinkGripDown(e) {
   e.stopPropagation(); e.preventDefault();
   const grip = e.currentTarget; const lid = grip.dataset.lid;
   const gEl = grip.closest('.g-link'); const rows = grip.closest('.g-rows'); const rect = rows.getBoundingClientRect();
-  const ax = +grip.dataset.ax, ay = +grip.dataset.ay, bx = +grip.dataset.bx, by = +grip.dataset.by;
-  ganttGrip = { lid, gEl, rect, ax, ay, bx, by, dx: 0 };
+  const g = grip.dataset;
+  ganttGrip = { lid, gEl, rect, ax: +g.ax, ay: +g.ay, sx: +g.sx, tx: +g.tx, bx: +g.bx, by: +g.by, mid: +g.mid, dx: 0, moved: false };
   document.addEventListener('mousemove', onGripMove); document.addEventListener('mouseup', onGripUp);
 }
 function onGripMove(e) {
   const g = ganttGrip; if (!g) return;
-  const mx = Math.round(e.clientX - g.rect.left); g.dx = mx - g.bx;
-  const d = `M ${g.ax} ${g.ay} H ${mx} V ${g.by} H ${g.bx}`;
+  const mx = Math.round(e.clientX - g.rect.left); g.dx = mx - g.mid; g.moved = true;
+  // S-Kurve beibehalten – nur die Biegung horizontal verschieben (kein rechtwinkliger Knick)
+  const d = `M ${g.ax} ${g.ay} L ${g.sx} ${g.ay} C ${mx} ${g.ay} ${mx} ${g.by} ${g.tx} ${g.by} L ${g.bx} ${g.by}`;
   g.gEl.querySelector('.g-link-hit').setAttribute('d', d);
   g.gEl.querySelector('.g-link-line').setAttribute('d', d);
-  g.gEl.querySelector('.g-link-grip').setAttribute('x', mx - 4);
+  g.gEl.querySelector('.g-link-grip').setAttribute('cx', mx);
 }
 function onGripUp() {
   const g = ganttGrip; ganttGrip = null;
   document.removeEventListener('mousemove', onGripMove); document.removeEventListener('mouseup', onGripUp);
+  if (!g || !g.moved) return;
   const p = findProjekt(ganttPid); const lk = p && (p.ganttLinks || []).find(l => l.id === g.lid);
-  if (lk) { lk.dx = g.dx; save(); }
+  if (lk) { lk.dx = g.dx; save(); rerenderGantt(ganttPid); }
 }
 function addGanttLink(pid, from, to) {
   if (gesperrt(pid)) return;

@@ -1275,9 +1275,10 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-link.g-sel .g-link-line { stroke: var(--brand); stroke-width: 2.2; }
 .g-link.g-sel .g-link-arrow { fill: var(--brand); }
 .g-link.g-sel .g-link-line { filter: drop-shadow(0 0 1.2px rgba(31,111,235,.6)); }
+/* Zieh-Griff zum Verschieben der Biegung – unsichtbar, erscheint beim Hover/Auswahl */
 .g-link-grip { fill: transparent; pointer-events: all; cursor: ew-resize; }
-.g-link:hover .g-link-grip { fill: rgba(31,111,235,.22); rx: 2.5; }
-.g-link.g-sel .g-link-grip { fill: var(--brand); rx: 2.5; }
+.g-link:hover .g-link-grip { fill: #fff; stroke: var(--brand); stroke-width: 1.6; }
+.g-link.g-sel .g-link-grip { fill: var(--brand); stroke: #fff; stroke-width: 1.4; }
 .g-link-temp { fill: none; stroke: var(--brand); stroke-width: 2; stroke-dasharray: 5 3; }
 .g-footer { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; overflow-x: auto; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); position: sticky; bottom: 8px; z-index: 30; box-shadow: 0 -3px 8px -4px rgba(15,24,48,.18); margin-top: 8px; }
 .g-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--text-soft); }

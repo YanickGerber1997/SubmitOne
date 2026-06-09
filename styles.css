@@ -638,6 +638,11 @@ table.grid tbody tr.clickable:hover { background: var(--surface-2); }
 .vp-step.done .vp-dot { background: var(--s-green); border-color: var(--s-green); color: #fff; }
 .vp-step.done .vp-line { background: var(--s-green); }
 .vp-step.current .vp-dot { border-color: var(--brand); color: var(--brand); box-shadow: 0 0 0 4px var(--brand-soft); }
+/* Interaktiver Stepper: Phase anklicken = dorthin springen */
+.vp-step.vp-click { cursor: pointer; border-radius: 9px; padding: 4px 6px; margin: -4px -6px; transition: background .1s; }
+.vp-step.vp-click:hover { background: var(--surface-2); }
+.vp-step.vp-click:hover .vp-sub { color: var(--brand); }
+.vp-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .vp-body { padding-bottom: 18px; }
 .vp-step:last-child .vp-body { padding-bottom: 0; }
 .vp-title { font-weight: 600; font-size: 14px; }

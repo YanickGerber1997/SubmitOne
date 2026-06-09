@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v330';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v331';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -6172,8 +6172,7 @@ function viewVergabeDetail(pid, vid) {
     ${vergabeMarken(v)}
     <select class="select vergabe-status-sel" data-pid="${p.id}" data-vid="${v.id}" title="Status setzen" style="padding:6px 9px;font-size:13px">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select>
     <button class="btn sm secondary" data-act="vergabe-art" data-pid="${p.id}" data-vid="${v.id}" title="Einzelvergabe / ARGE / Teilvergabe an mehrere Firmen">👥 Vergabe-Art</button>
-    <button class="btn sm secondary" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}" title="Stammdaten bearbeiten (BKP, Gewerk, Frist, Schätzung)">✎ Bearbeiten</button>
-    ${last ? '' : `<button class="btn sm" data-act="advance" data-pid="${p.id}" data-vid="${v.id}" style="margin-left:auto">Nächster Schritt →</button>`}`;
+    <button class="btn sm secondary" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}" title="Stammdaten bearbeiten (BKP, Gewerk, Frist, Schätzung)">✎ Bearbeiten</button>`;
   const header = `
     <div class="detail-head">
       <div>
@@ -6202,7 +6201,7 @@ function viewVergabeDetail(pid, vid) {
     <div class="two-col">
       <!-- Pipeline -->
       <div class="card card-pad">
-        <div class="section-head" style="margin-top:0"><h2>Ablauf &amp; Beträge</h2></div>
+        <div class="section-head" style="margin-top:0"><h2>Ablauf &amp; Beträge</h2><span class="hint">Phase anklicken = dorthin springen (überspringen/zurück möglich)</span></div>
         <div class="vpipe">
           ${(() => {
             const offenB = (isVergeben(v) ? schlussSumme(v) : 0) - rechnungBezahlt(v) - rechnungRueckbehalt(v);
@@ -6217,16 +6216,18 @@ function viewVergabeDetail(pid, vid) {
               schlussrechnung: ['noch offen', chf(offenB)],
               abgeschlossen: ['noch offen', chf(offenB)],
             };
+            const stp = gewerkSteps(v);
             return VERGABE_STATUS.map((s, i) => {
               const cls = i < cur ? 'done' : (i === cur ? 'current' : '');
               const mark = i < cur ? '✓' : (i + 1);
               const line = i < VERGABE_STATUS.length - 1 ? '<div class="vp-line"></div>' : '';
-              const sub = i < cur ? 'erledigt' : (i === cur ? 'aktueller Schritt' : '');
+              const sub = i < cur ? 'erledigt' : (i === cur ? 'aktueller Schritt' : 'Klick = hierher springen');
               const sv = stepVal[s.key];
+              const acts = (i === cur && stp.acts && stp.acts.length) ? `<div class="vp-acts">${stp.acts.map(a => `<button class="btn sm ${a.primary ? '' : 'secondary'}" data-act="gw-action" data-pid="${p.id}" data-vid="${v.id}" data-action="${a.action}">${a.label}</button>`).join('')}</div>` : '';
               return `
-                <div class="vp-step ${cls}">
+                <div class="vp-step ${cls} vp-click" data-act="set-status" data-pid="${p.id}" data-vid="${v.id}" data-status="${s.key}" title="Klick = direkt zu „${esc(s.label)}" springen">
                   <div class="vp-rail"><div class="vp-dot">${mark}</div>${line}</div>
-                  <div class="vp-body"><div class="vp-title">${esc(s.label)}</div>${sub ? `<div class="vp-sub">${sub}</div>` : ''}</div>
+                  <div class="vp-body"><div class="vp-title">${esc(s.label)}</div>${sub ? `<div class="vp-sub">${sub}</div>` : ''}${acts}</div>
                   ${sv ? `<div class="vp-val${s.key === 'werkvertrag' ? ' brand' : ''}"><span class="vl">${sv[0]}</span><span class="vv">${sv[1]}</span></div>` : ''}
                 </div>`;
             }).join('');
@@ -6268,6 +6269,7 @@ function viewVergabeDetail(pid, vid) {
               ${e.status === 'abgesagt'
                 ? `<span class="muted" style="font-size:12.5px">abgesagt</span>`
                 : `<div class="inv-conds">${eOff(e) != null ? `<span title="Offerte (Netto)">O ${chfShort(eOff(e))}</span>` : ''}${eAbg(e) != null ? `<span title="Abgebot (Netto)">A ${chfShort(eAbg(e))}</span>` : ''}${eVer(e) != null ? `<span title="Vergabe (Netto)">V ${chfShort(eVer(e))}</span>` : ''}</div>
+                   ${(eOff(e) != null || eAbg(e) != null || eVer(e) != null) && !(isVergeben(v) && v.firma === e.firma) ? `<button class="btn sm" data-act="zuschlag-an" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}" title="Dieser Firma direkt den Zuschlag erteilen (Offerte → Vergabe)">✓ Zuschlag</button>` : ''}${isVergeben(v) && v.firma === e.firma ? '<span class="off-best" title="Zuschlag erteilt">✓ Zuschlag</span>' : ''}
                    <button class="btn sm secondary" data-act="konditionen" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">✎ Konditionen</button>`}
               <button class="x-btn" title="Deckblatt: Submissionseinladung" data-act="deckblatt" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">📄</button>
               <button class="x-btn" title="Deckblatt: Äusserste Konditionen" data-act="deckblatt-offerte" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">📑</button>
@@ -10571,6 +10573,17 @@ function advanceVergabe(pid, vid) {
   save(); router();
   toast('Status → ' + STATUS_BY_KEY[v.status].label);
 }
+// Direkt einer offerierenden Firma den Zuschlag erteilen (Offerte → Vergabe), ohne alle Zwischenschritte
+function zuschlagAn(pid, vid, eid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const e = (v.eingeladene || []).find(x => x.id === eid); if (!e) return;
+  v.firma = e.firma;
+  const fall = eVer(e) != null ? eVer(e) : (eAbg(e) != null ? eAbg(e) : eOff(e));
+  if (fall != null) v.betrag = fall;
+  if (statusIdx(v) < STATUS_BY_KEY['vergeben'].index) v.status = 'vergeben';
+  ensureKontakt(e.firma, e.email);
+  save(); router(); toast('Zuschlag an ' + e.firma);
+}
 // Status direkt setzen (vor/zurück) – mit Auto-Firma beim Zuschlag wie advanceVergabe
 function setVergabeStatus(pid, vid, status) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid);
@@ -11958,6 +11971,8 @@ document.addEventListener('click', e => {
     case 'quickadd-bkp': quickAddVergabe(pid, act.dataset.code, act.dataset.label); break;
     case 'gw-toggle':    { const y = window.scrollY; gwOpen.has(vid) ? gwOpen.delete(vid) : gwOpen.add(vid); router(); window.scrollTo(0, y); } break;
     case 'gw-action':    gewerkAction(pid, vid, act.dataset.action); break;
+    case 'set-status':   setVergabeStatus(pid, vid, act.dataset.status); break;
+    case 'zuschlag-an':  zuschlagAn(pid, vid, eid); break;
     case 'ptabs-more':   ptabsMoreToggle(); break;
     case 'save-vergabe': saveVergabe(pid); break;
     case 'ks-edit':      actKostenschaetzung(pid, vid); break;

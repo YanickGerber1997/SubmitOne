@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v351';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v352';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2103,7 +2103,12 @@ function ganttRibbonTabs(p) {
       <button class="btn sm ${ganttMode === 'fein' ? '' : 'secondary'}" data-act="gantt-mode" data-pid="${p.id}" data-kind="fein" type="button" style="border:none" title="Feinprogramm">⏱</button>
     </div>`;
   const tabBtns = `<div class="g-ribtabs">${TABS.map(([k, l]) => `<button class="g-ribtab${ganttTab === k ? ' active' : ''}" data-act="gantt-tab" data-pid="${p.id}" data-kind="${k}" type="button">${l}</button>`).join('')}</div>`;
-  const bar = `<div class="g-tabrow">${modeSeg}${tabBtns}${ganttVersionBar(p)}</div>`;
+  // Werkzeugleiste komplett ein-/ausklappbar
+  if (!ganttRibbonOpen) {
+    return `<div class="g-tabrow collapsed">${modeSeg}<button class="g-ribbon-toggle wide" data-act="gantt-ribbon-toggle" data-pid="${p.id}" title="Werkzeugleiste ausklappen">▾ Werkzeuge</button>${ganttVersionBar(p)}</div>`;
+  }
+  const toggleBtn = `<button class="g-ribbon-toggle" data-act="gantt-ribbon-toggle" data-pid="${p.id}" title="Werkzeugleiste einklappen">▴</button>`;
+  const bar = `<div class="g-tabrow">${modeSeg}${tabBtns}${toggleBtn}${ganttVersionBar(p)}</div>`;
   let b = '';
   if (ganttTab === 'ansicht') b =
     rgroup('Farbe nach', optBtns('gantt-color', p.id, [['status', 'Status'], ['firma', 'Firma'], ['phase', 'Phase']], ganttColorMode)) +
@@ -2639,6 +2644,7 @@ function gDauerLabel(startIso, endIso, x0, x1, sub) {
 let ganttLabelAlign = 'links';   // 'links' | 'mitte' | 'rechts'
 // Office-artige Reiter über den Icons + Optionssatz (alle Möglichkeiten direkt anklickbar)
 let ganttTab = 'ansicht';   // ansicht | beschriftung | datum | dauer | zeit | mehr | datei
+let ganttRibbonOpen = (() => { try { return localStorage.getItem('so_gantt_ribbon') !== '0'; } catch (_) { return true; } })();   // Werkzeugleiste ein-/ausgeklappt (gemerkt)
 function gIconSm(name) { return `<svg class="g-opt-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${G_ICONS[name] || ''}</svg>`; }
 function optBtns(act, pid, opts, current) { return `<div class="g-optset">${opts.map(([val, lbl, ic]) => `<button class="g-opt${val === current ? ' active' : ''}" data-act="${act}" data-pid="${pid}" data-kind="${val}" type="button">${ic ? gIconSm(ic) : ''}${esc(lbl)}</button>`).join('')}</div>`; }
 // Passt das Balken-Label in den Balken? sonst rechts daneben anzeigen
@@ -12371,6 +12377,7 @@ document.addEventListener('click', e => {
     case 'gantt-dates':  ganttDates = kind || DATE_MODES[(DATE_MODES.indexOf(ganttDates) + 1) % DATE_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-datepos': ganttDatePos = kind || DATEPOS_MODES[(DATEPOS_MODES.indexOf(ganttDatePos) + 1) % DATEPOS_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-tab':    ganttTab = kind || 'ansicht'; rerenderGantt(pid); break;
+    case 'gantt-ribbon-toggle': ganttRibbonOpen = !ganttRibbonOpen; try { localStorage.setItem('so_gantt_ribbon', ganttRibbonOpen ? '1' : '0'); } catch (_) {} rerenderGantt(pid); break;
     case 'gantt-durmode': ganttDurMode = kind || 'off'; rerenderGantt(pid); break;
     case 'gantt-align':  ganttLabelAlign = kind || 'links'; rerenderGantt(pid); break;
     case 'gantt-linkpos': ganttLinkFront = (kind === 'front'); rerenderGantt(pid); break;

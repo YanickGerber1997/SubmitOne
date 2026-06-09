@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v358';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v359';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1389,6 +1389,14 @@ function parseDateFlexible(s) {
   if (m) { let d = +m[1], mo = +m[2], y; if (m[3] == null) y = new Date().getFullYear(); else { y = +m[3]; if (m[3].length <= 2) y = 2000 + (y % 100); } return valid(y, mo, d) ? y + '-' + pad(mo) + '-' + pad(d) : ''; }
   m = s.match(/^(\d{2})(\d{2})(\d{2}|\d{4})$/);                                      // ddmmyy | ddmmyyyy
   if (m) { let d = +m[1], mo = +m[2], y = +m[3]; if (m[3].length === 2) y = 2000 + y; return valid(y, mo, d) ? y + '-' + pad(mo) + '-' + pad(d) : ''; }
+  // Grob: Monatsname [+ Jahr] → 1. des Monats; Jahreszeit [+ Jahr] → 1. des Saison-Startmonats (für grobe Terminskizzen)
+  m = s.match(/^([a-zäöü]+)\.?[ ,]*(\d{2}|\d{4})?$/);
+  if (m) {
+    const MON = { jan: 1, januar: 1, feb: 2, februar: 2, mär: 3, maer: 3, maerz: 3, märz: 3, mar: 3, apr: 4, april: 4, mai: 5, jun: 6, juni: 6, jul: 7, juli: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9, okt: 10, oktober: 10, nov: 11, november: 11, dez: 12, dezember: 12 };
+    const SEASON = { frühling: 3, fruehling: 3, frühjahr: 3, fruehjahr: 3, lenz: 3, sommer: 6, herbst: 9, winter: 12 };
+    const mo = (MON[m[1]] != null) ? MON[m[1]] : SEASON[m[1]];
+    if (mo != null) { let y; if (m[2] == null) y = new Date().getFullYear(); else { y = +m[2]; if (m[2].length <= 2) y = 2000 + (y % 100); } return y + '-' + pad(mo) + '-01'; }
+  }
   return '';
 }
 function upgradeDateInputs(root) {
@@ -1397,7 +1405,8 @@ function upgradeDateInputs(root) {
     const wrap = document.createElement('span');
     wrap.className = 'date-field' + (inp.className ? ' ' + inp.className : '');   // Layout-Klassen aufs sichtbare Feld übertragen
     const txt = document.createElement('input');
-    txt.type = 'text'; txt.className = 'date-text'; txt.placeholder = 'TT.MM.JJJJ'; txt.autocomplete = 'off'; txt.size = 10; txt.setAttribute('inputmode', 'numeric');
+    txt.type = 'text'; txt.className = 'date-text'; txt.placeholder = 'TT.MM.JJJJ'; txt.autocomplete = 'off'; txt.size = 10;
+    txt.title = 'Frei eingeben: z.B. 8.6.26 · 08.06.2026 · heute/morgen · oder grob „April 26" / „Frühling 26" (→ Monats-/Saisonbeginn)';
     txt.value = inp.value ? fmtDate(inp.value) : '';
     const btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'date-cal'; btn.tabIndex = -1; btn.title = 'Kalender'; btn.textContent = '📅';

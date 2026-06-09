@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v328';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v329';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3016,7 +3016,9 @@ function viewTermine(id) {
         const vd = addDays(v.bauStart, -Math.abs(Number(v.vorab.tageVor) || 0));
         vorabM = `<div class="g-vorab" style="left:${leftPx(vd)}px" title="${esc(v.vorab.label || 'Vorab-Termin')} mit ${esc(v.firma || 'Unternehmer')} – ${fmtDate(vd)} (${v.vorab.tageVor} Tage vor Ausführungsbeginn)">📌<span class="g-vorab-lbl">${esc(v.vorab.label || 'Vorab')}</span></div>`;
       }
-      const preBars = bestellBar + nachBar + vorabM;
+      // Unterbruch: ausgegrauter Abschnitt auf derselben Zeile (Arbeit pausiert, z.B. Winterpause)
+      const unterbruchBars = (v.unterbrueche || []).map(u => (u.von && u.bis) ? `<div class="g-unterbruch" data-pid="${p.id}" data-vid="${v.id}" data-ctx="gantt" style="left:${leftPx(u.von)}px;width:${widthPx(u.von, u.bis)}px" title="Unterbruch${u.label ? ': ' + esc(u.label) : ''} · ${fmtDate(u.von)} – ${fmtDate(u.bis)} · Klick = bearbeiten">${u.label ? `<span>${esc(u.label)}</span>` : ''}</div>` : '').join('');
+      const preBars = bestellBar + nachBar + vorabM + unterbruchBars;
       barMeta[v.id] = { row: rowIdx, left: leftPx(v.bauStart), width: widthPx(v.bauStart, v.bauEnde) };
       const gx0 = barMeta[v.id].left, gx1 = gx0 + barMeta[v.id].width;
       if (fenster) {
@@ -3131,6 +3133,7 @@ function viewTermine(id) {
     { const gr = document.querySelector('.g-rows'); if (gr) gr.addEventListener('mousedown', e => { if (!e.target.closest('.g-bar') && !e.target.closest('.g-link') && !e.target.closest('.g-bestell')) { deselectGanttBar(); deselectGanttLink(); } }); }
     if (ganttSel) { const b = document.querySelector(`.g-bar[data-key="${ganttSel}"]`); if (b) b.classList.add('g-sel'); else ganttSel = null; }
     $$('.g-bestell').forEach(b => b.addEventListener('mousedown', onBestellDown));
+    $$('.g-unterbruch').forEach(u => { u.addEventListener('mousedown', e => e.stopPropagation()); u.addEventListener('click', e => { e.stopPropagation(); actUnterbruch(u.dataset.pid, u.dataset.vid); }); });
     $$('.g-link-dot').forEach(d => d.addEventListener('mousedown', onLinkDotDown));
     $$('.g-link-grip').forEach(g => g.addEventListener('mousedown', onLinkGripDown));
     $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) selectGanttLink(g.dataset.lid); }));
@@ -3305,8 +3308,41 @@ function ganttBarMenu(e, bar) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
   if (oid) { const o = (v.vorgaenge || []).find(x => x.id === oid); openContextMenu(e, [{ icon: '↗', label: 'Gewerk öffnen', act: () => go('#/projekt/' + pid + '/vergabe/' + vid) }, { sep: true }, { icon: o && o.erfuellt ? '↩' : '✓', label: o && o.erfuellt ? 'als offen markieren' : 'als erfüllt markieren', act: () => toggleErfuellt(pid, vid, oid) }, { icon: '🗓', label: 'Termin bearbeiten', act: () => actFeinVorgang(pid, vid, oid) }, { icon: '🗑', label: 'Untertermin löschen', danger: true, act: () => removeVorgang(pid, vid, oid) }]); return; }
   const extras = [{ icon: v.erfuellt ? '↩' : '✓', label: v.erfuellt ? 'als offen markieren' : 'als erfüllt markieren', act: () => toggleErfuellt(pid, vid, null) }, { icon: '🗓', label: 'Termin bearbeiten', act: () => actEditTermin(pid, vid) }, { icon: '＋', label: 'Untertermin hinzufügen', act: () => addEmptyVorgangDetail(pid, vid) }];
+  if (v.bauStart && v.bauEnde) extras.splice(2, 0, { icon: '⏸', label: 'Unterbruch …', act: () => actUnterbruch(pid, vid) });
   if (v.bauStart && v.bauEnde) extras.push({ icon: '✕', label: 'Termin entfernen', danger: true, act: () => clearTermin(pid, vid) });
   vergabeMenu(e, pid, vid, extras, { noDelete: true });   // im Terminprogramm kein Gewerk-Löschen
+}
+// Unterbruch: ausgegrauter Abschnitt auf der Balkenzeile (Arbeit pausiert, z.B. Winterpause) – mehrere möglich
+function actUnterbruch(pid, vid) {
+  if (gesperrt(pid)) return;
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  const list = v.unterbrueche || [];
+  const rows = list.length ? list.map(u => `<div class="ub-item"><span>${u.von ? fmtDate(u.von) : '?'} – ${u.bis ? fmtDate(u.bis) : '?'}${u.label ? ' · ' + esc(u.label) : ''}</span><button class="btn sm danger" data-act="ub-del" data-pid="${pid}" data-vid="${vid}" data-itemid="${u.id}">✕</button></div>`).join('') : '<p class="muted" style="margin:0">Noch kein Unterbruch.</p>';
+  openModal('Unterbruch – ' + esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk), `
+    <p class="muted" style="font-size:12.5px;margin-top:0">Ausgegrauter Abschnitt auf derselben Zeile – die Arbeit pausiert (z.B. Winterpause). Mehrere möglich.</p>
+    <div id="ubList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">${rows}</div>
+    <div class="section-head" style="margin:0 0 6px"><h2 style="font-size:14px">Neuer Unterbruch</h2></div>
+    <div class="form-row">
+      <label class="field">Von <input type="date" class="input" id="ub_von" value="${esc(v.bauStart || '')}"></label>
+      <label class="field">Bis <input type="date" class="input" id="ub_bis" value="${esc(v.bauEnde || '')}"></label>
+    </div>
+    <label class="field">Grund (optional) <input class="input" id="ub_lbl" placeholder="z.B. Winterpause"></label>
+  `, `<button class="btn ghost" data-close="1">Schliessen</button><button class="btn" data-act="ub-add" data-pid="${pid}" data-vid="${vid}">+ Hinzufügen</button>`);
+}
+function ubAdd(pid, vid) {
+  if (gesperrt(pid)) return;
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  const von = $('#ub_von').value, bis = $('#ub_bis').value;
+  if (!von || !bis) { toast('Von und Bis angeben', 'info'); return; }
+  if (bis < von) { toast('„Bis" muss nach „Von" liegen', 'info'); return; }
+  (v.unterbrueche = v.unterbrueche || []).push({ id: uid('ub'), von, bis, label: ($('#ub_lbl').value || '').trim() });
+  save(); rerenderGantt(pid); actUnterbruch(pid, vid); toast('Unterbruch hinzugefügt');
+}
+function ubDel(pid, vid, itemid) {
+  if (gesperrt(pid)) return;
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  v.unterbrueche = (v.unterbrueche || []).filter(u => u.id !== itemid);
+  save(); rerenderGantt(pid); actUnterbruch(pid, vid);
 }
 function clearTermin(pid, vid) { if (gesperrt(pid)) return; const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return; v.bauStart = ''; v.bauEnde = ''; save(); rerenderGantt(pid); toast('Termin entfernt', 'info'); }
 function toggleErfuellt(pid, vid, oid) {
@@ -3458,7 +3494,7 @@ function delFeiertagExtra(pid, datum) {
 /* --- Terminprogramm: umschaltbare Versionen (wie Zahlungsplan) --- */
 function terminSnapshot(p) {
   return {
-    vergaben: (p.vergaben || []).map(v => ({ id: v.id, bauStart: v.bauStart || '', bauEnde: v.bauEnde || '', bestellfrist: v.bestellfrist || 0, nachfrist: v.nachfrist || 0, nachfristLabel: v.nachfristLabel || '', autoBalken: !!v.autoBalken, bauPhase: v.bauPhase || '', vorab: v.vorab ? { label: v.vorab.label, tageVor: v.vorab.tageVor } : null, vorgaenge: (v.vorgaenge || []).map(o => ({ id: o.id, titel: o.titel, start: o.start || '', ende: o.ende || '' })) })),
+    vergaben: (p.vergaben || []).map(v => ({ id: v.id, bauStart: v.bauStart || '', bauEnde: v.bauEnde || '', bestellfrist: v.bestellfrist || 0, nachfrist: v.nachfrist || 0, nachfristLabel: v.nachfristLabel || '', autoBalken: !!v.autoBalken, bauPhase: v.bauPhase || '', vorab: v.vorab ? { label: v.vorab.label, tageVor: v.vorab.tageVor } : null, unterbrueche: (v.unterbrueche || []).map(u => ({ ...u })), vorgaenge: (v.vorgaenge || []).map(o => ({ id: o.id, titel: o.titel, start: o.start || '', ende: o.ende || '' })) })),
     ganttLinks: JSON.parse(JSON.stringify(p.ganttLinks || [])),
     regeln: JSON.parse(JSON.stringify(p.regeln || [])),
     sitzungsraster: p.sitzungsraster ? JSON.parse(JSON.stringify(p.sitzungsraster)) : null,
@@ -3467,7 +3503,7 @@ function terminSnapshot(p) {
 }
 function applyTerminSnapshot(p, snap) {
   if (!snap) return;
-  (snap.vergaben || []).forEach(sv => { const v = findVergabe(p, sv.id); if (!v) return; v.bauStart = sv.bauStart; v.bauEnde = sv.bauEnde; v.bestellfrist = sv.bestellfrist; v.nachfrist = sv.nachfrist; v.nachfristLabel = sv.nachfristLabel; v.autoBalken = sv.autoBalken; v.bauPhase = sv.bauPhase; v.vorab = sv.vorab ? { ...sv.vorab } : null; v.vorgaenge = (sv.vorgaenge || []).map(o => ({ ...o })); });
+  (snap.vergaben || []).forEach(sv => { const v = findVergabe(p, sv.id); if (!v) return; v.bauStart = sv.bauStart; v.bauEnde = sv.bauEnde; v.bestellfrist = sv.bestellfrist; v.nachfrist = sv.nachfrist; v.nachfristLabel = sv.nachfristLabel; v.autoBalken = sv.autoBalken; v.bauPhase = sv.bauPhase; v.vorab = sv.vorab ? { ...sv.vorab } : null; v.unterbrueche = (sv.unterbrueche || []).map(u => ({ ...u })); v.vorgaenge = (sv.vorgaenge || []).map(o => ({ ...o })); });
   p.ganttLinks = JSON.parse(JSON.stringify(snap.ganttLinks || []));
   p.regeln = JSON.parse(JSON.stringify(snap.regeln || []));
   if (snap.sitzungsraster) p.sitzungsraster = JSON.parse(JSON.stringify(snap.sitzungsraster));
@@ -11833,6 +11869,9 @@ document.addEventListener('click', e => {
     case 'upgrade':      openCheckout(act.dataset.plan); break;
     case 'dash-tab':     dashTab = kind || 'generell'; viewProjektDetail(pid); break;
     case 'firmen-to-kontakte': { const p = findProjekt(pid); if (p) { const n = migrateProjektFirmenToKontakte(p); save(); toast(n ? n + ' Firma(en) in Kontakte übernommen' : 'Alle Firmen sind bereits in den Kontakten', 'info'); viewProjektDetail(pid); } } break;
+    case 'unterbruch':   actUnterbruch(pid, vid); break;
+    case 'ub-add':       ubAdd(pid, vid); break;
+    case 'ub-del':       ubDel(pid, vid, itemid); break;
     case 'team':         actTeam(pid); break;
     case 'team-add':     teamAdd(pid); break;
     case 'team-rm':      teamRemove(pid, act.dataset.key); break;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v326';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v327';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1674,7 +1674,7 @@ function dashAusschreibung(p) {
     <div class="card"><table class="grid"><thead><tr><th>BKP</th><th>Gewerk</th><th>Status</th><th>Frist</th></tr></thead><tbody>
       ${fr.map(v => `<tr><td><span class="bkp-code">${esc(v.bkp || '')}</span></td><td><strong>${esc(v.gewerk || '')}</strong></td><td>${statusPill(v)}</td><td class="frist ${fristClass(v.frist, false)}">${fristText(v.frist, false)}</td></tr>`).join('')}
     </tbody></table></div>` : '<p class="muted" style="margin-top:14px">Keine offenen Eingabefristen.</p>'}
-    <div style="margin-top:12px"><a class="btn secondary" href="#/projekt/${p.id}/listen">Zur Submittentenliste →</a></div>`;
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn secondary" href="#/projekt/${p.id}/listen">Zur Submittentenliste →</a><button class="btn secondary" data-act="firmen-to-kontakte" data-pid="${p.id}" title="Alle Unternehmer dieses Projekts als Kontakte anlegen (für saubere Verwaltung)">👥 Firmen → Kontakte</button></div>`;
 }
 function dashTermin(p) {
   const ek = eckDaten(p); const vs = gewerkeSorted(p);
@@ -10582,6 +10582,31 @@ function saveVergabeEdit(pid, vid) {
   const ope = $('#fe_option'); if (ope) v.option = ope.value;
   save(); closeModal(); router(); toast('Arbeitsbeschrieb gespeichert');
 }
+// Unternehmer ↔ Kontakte: Firma sicher in die Kontakte aufnehmen (falls neu), Datalist + Projekt-Übernahme
+function ensureKontakt(firma, email) {
+  firma = (firma || '').trim(); if (!firma) return false;
+  state.kontakte = state.kontakte || [];
+  const ex = state.kontakte.find(k => (k.firma || '').toLowerCase() === firma.toLowerCase());
+  if (ex) { if (email && !ex.email) ex.email = email; return false; }
+  state.kontakte.unshift({ id: uid('k'), firma, email: email || '', kategorie: '–', strasse: '', plz: '', ort: '', person: '', funktion: '', telefon: '', website: '', notiz: '', uid_nr: '', rechtsform: '' });
+  return true;
+}
+function kontakteFirmaDatalist(id) {
+  const fs = [...new Set((state.kontakte || []).map(k => k.firma).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  return `<datalist id="${id}">${fs.map(f => `<option value="${esc(f)}">`).join('')}</datalist>`;
+}
+function migrateProjektFirmenToKontakte(p) {
+  const firms = new Map();
+  const add = (name, email) => { name = (name || '').trim(); if (!name) return; if (!firms.has(name) || (email && !firms.get(name))) firms.set(name, email || firms.get(name) || ''); };
+  (p.vergaben || []).forEach(v => {
+    (v.eingeladene || []).forEach(e => add(e.firma, e.email));
+    if (v.firma) v.firma.split(',').forEach(f => add(f.trim(), firmaEmailOf(p, f.trim())));
+    (v.argePartner || []).forEach(f => add(f, ''));
+    (v.teilvergaben || []).forEach(t => add(t.firma, ''));
+  });
+  let n = 0; firms.forEach((email, name) => { if (ensureKontakt(name, email)) n++; });
+  return n;
+}
 /* --- Vergabe-Art: Einzelvergabe / ARGE / Teilvergabe --- */
 function actVergabeArt(pid, vid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
@@ -10597,7 +10622,7 @@ function actVergabeArt(pid, vid) {
     </label>
     <div id="va_einzel" class="va-sec">
       <div class="form-row">
-        <label class="field">Unternehmer <input class="input" id="va_firma" value="${esc(v.firma || '')}"></label>
+        <label class="field">Unternehmer <input class="input" id="va_firma" list="dl_vafirma" value="${esc(v.firma || '')}" placeholder="aus Kontakten wählen oder neu eintippen">${kontakteFirmaDatalist('dl_vafirma')}<span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Aus deinen Kontakten wählen; neue Firma wird beim Speichern als Kontakt angelegt.</span></label>
         <label class="field">Vergabesumme (CHF) <input class="input" type="number" id="va_betrag" value="${v.betrag || ''}"></label>
       </div>
     </div>
@@ -10641,6 +10666,7 @@ function saveVergabeArt(pid, vid) {
     delete v.argePartner; delete v.teilvergaben;
     const f = $('#va_firma').value.trim(); v.firma = f;
     v.betrag = Number($('#va_betrag').value) || 0;
+    ensureKontakt(f, firmaEmailOf(p, f));
   } else if (mode === 'arge') {
     delete v.teilvergaben;
     const partner = $('#va_partner').value.split('\n').map(s => s.trim()).filter(Boolean);
@@ -10649,6 +10675,7 @@ function saveVergabeArt(pid, vid) {
     v.firma = $('#va_argename').value.trim() || partner[0];
     v.betrag = Number($('#va_argebetrag').value) || v.betrag || 0;
     if (statusIdx(v) < STATUS_BY_KEY['vergeben'].index) v.status = 'vergeben';
+    partner.forEach(f => ensureKontakt(f, ''));
   } else {
     delete v.argePartner;
     const rows = $$('#va_teil_rows .tv-row').map(row => ({
@@ -10661,6 +10688,7 @@ function saveVergabeArt(pid, vid) {
     v.betrag = rows.reduce((a, t) => a + t.betrag, 0);
     v.firma = rows.map(t => t.firma).filter(Boolean).join(', ');
     if (statusIdx(v) < STATUS_BY_KEY['vergeben'].index) v.status = 'vergeben';
+    rows.forEach(t => ensureKontakt(t.firma, ''));
   }
   save(); closeModal(); router(); toast('Vergabe-Art gespeichert');
 }
@@ -11802,6 +11830,7 @@ document.addEventListener('click', e => {
     case 'abo':          actAbo(); break;
     case 'upgrade':      openCheckout(act.dataset.plan); break;
     case 'dash-tab':     dashTab = kind || 'generell'; viewProjektDetail(pid); break;
+    case 'firmen-to-kontakte': { const p = findProjekt(pid); if (p) { const n = migrateProjektFirmenToKontakte(p); save(); toast(n ? n + ' Firma(en) in Kontakte übernommen' : 'Alle Firmen sind bereits in den Kontakten', 'info'); viewProjektDetail(pid); } } break;
     case 'team':         actTeam(pid); break;
     case 'team-add':     teamAdd(pid); break;
     case 'team-rm':      teamRemove(pid, act.dataset.key); break;

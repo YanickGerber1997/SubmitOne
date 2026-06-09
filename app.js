@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v365';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v366';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -6718,8 +6718,7 @@ function viewVergabeDetail(pid, vid) {
               ${e.status === 'abgesagt'
                 ? `<span class="muted" style="font-size:12.5px">abgesagt</span>`
                 : `<div class="inv-conds">${eOff(e) != null ? `<span title="Offerte (Netto)">O ${chfShort(eOff(e))}</span>` : ''}${eAbg(e) != null ? `<span title="Abgebot (Netto)">A ${chfShort(eAbg(e))}</span>` : ''}${eVer(e) != null ? `<span title="Vergabe (Netto)">V ${chfShort(eVer(e))}</span>` : ''}</div>
-                   ${(eOff(e) != null || eAbg(e) != null || eVer(e) != null) && !(isVergeben(v) && v.firma === e.firma) ? `<button class="btn sm" data-act="zuschlag-an" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}" title="Dieser Firma direkt den Zuschlag erteilen (Offerte → Vergabe)">✓ Zuschlag</button>` : ''}${isVergeben(v) && v.firma === e.firma ? '<span class="off-best" title="Zuschlag erteilt">✓ Zuschlag</span>' : ''}
-                   <button class="btn sm secondary" data-act="konditionen" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">✎ Konditionen</button>`}
+                   ${(eOff(e) != null || eAbg(e) != null || eVer(e) != null) && !(isVergeben(v) && v.firma === e.firma) ? `<button class="btn sm" data-act="zuschlag-an" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}" title="Dieser Firma direkt den Zuschlag erteilen (Offerte → Vergabe)">✓ Zuschlag</button>` : ''}${isVergeben(v) && v.firma === e.firma ? '<span class="off-best" title="Zuschlag erteilt">✓ Zuschlag</span>' : ''}`}
               <button class="x-btn" title="Deckblatt: Submissionseinladung" data-act="deckblatt" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">📄</button>
               <button class="x-btn" title="Deckblatt: Äusserste Konditionen" data-act="deckblatt-offerte" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">📑</button>
               <button class="x-btn" title="Entfernen" data-act="rm-inv" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">×</button>
@@ -6996,15 +6995,44 @@ function firmaKontakt(p, firma, eMail) {
   const k = (state.kontakte || []).find(k => k.firma === firma) || {};
   return { person: k.person || '', telefon: k.telefon || '', email: eMail || k.email || '' };
 }
+// Flexible Abzugs-Definitionen je Gewerk (geteilt über alle Firmen/Stufen). Erste 3 fix (Rabatt/Skonto/Allg.), Rest Zusatz-Abzüge.
+function vAbzDefs(v) {
+  let base;
+  if (Array.isArray(v.abzDefs) && v.abzDefs.length >= 3) base = v.abzDefs.map(d => ({ ...d }));
+  else {
+    const extra = [];
+    (v.eingeladene || []).forEach(e => ['offerte', 'abgebot', 'vergabe'].forEach(k => ((e[k] && e[k].extraAbz) || []).forEach((a, i) => { if (!extra[i]) extra[i] = a.name || 'Abzug'; })));
+    let allg = 'Allg. Abzüge';
+    (v.eingeladene || []).forEach(e => ['offerte', 'abgebot', 'vergabe'].forEach(k => { if (e[k] && e[k].weitereAbzLabel) allg = e[k].weitereAbzLabel; }));
+    base = [{ name: 'Rabatt' }, { name: 'Skonto' }, { name: allg }].concat(extra.map(n => ({ name: n })));
+  }
+  let ex = 0;
+  base.forEach((d, i) => { if (i < 3) { d.exIdx = null; } else { d.exIdx = ex; d.key = 'x' + ex; d.rename = true; d.removable = true; ex++; } });
+  base[0].key = 'rabatt'; base[0].name = base[0].name || 'Rabatt';
+  base[1].key = 'skonto'; base[1].name = base[1].name || 'Skonto';
+  base[2].key = 'allg'; base[2].rename = true; base[2].name = base[2].name || 'Allg. Abzüge';
+  return base;
+}
+function condCellVal(c, def) {
+  if (!c) return { art: 'pct', wert: '' };
+  if (def.exIdx == null) {
+    const m = { rabatt: ['rabatt', 'rabattBtr'], skonto: ['skonto', 'skontoBtr'], allg: ['weitereAbz', 'weitereAbzBtr'] }[def.key];
+    const chf = c[m[1]] != null && c[m[1]] !== '';
+    return { art: chf ? 'chf' : 'pct', wert: chf ? c[m[1]] : (c[m[0]] != null ? c[m[0]] : '') };
+  }
+  const a = (c.extraAbz || [])[def.exIdx];
+  return a ? { art: a.art || 'pct', wert: (a.wert != null ? a.wert : '') } : { art: 'pct', wert: '' };
+}
+function condBetragOf(r, di) { return di === 0 ? r.rabattBetrag : di === 1 ? r.skontoBetrag : di === 2 ? r.allgBetrag : ((r.extra[di - 3] || {}).betrag || 0); }
 function vergabeAntragTable(p, v, editable) {
   const firms = v.eingeladene || [];
   if (!firms.length) return '<p class="muted" style="margin:0">Noch keine Unternehmer eingeladen – mit „+ Einladen" erfassen.</p>';
   const stages = [['offerte', 'Offerte'], ['abgebot', 'Abgebot'], ['vergabe', 'Verhandelt / Vergabe']];
+  const defs = vAbzDefs(v);
   const nf = n => (n == null || isNaN(n)) ? '' : Number(n).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const pf = n => Number(n || 0).toLocaleString('de-CH', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
   const cols = firms.length;
   const headRow = (lbl, fn) => `<tr><td class="va-l">${lbl}</td>${firms.map(fn).join('')}</tr>`;
-  const valOf = (e, key, f) => { const c = e[key] || (key === 'offerte' && e.betrag != null ? { brutto: e.betrag } : {}); return c[f] != null ? c[f] : ''; };
+  const condOf = (e, key) => e[key] || (key === 'offerte' && e.betrag != null ? { brutto: e.betrag } : {});
   let html = `<table class="va"><tr class="va-firms"><td class="va-l"></td>${firms.map(e => `<td>${esc(e.firma)}${v.firma === e.firma ? '<div class="va-fav">Favorit / Vergabe</div>' : ''}</td>`).join('')}</tr>`;
   html += headRow('Sachbearbeiter', e => `<td>${esc(firmaKontakt(p, e.firma, e.email).person)}</td>`);
   html += headRow('Tel.', e => `<td>${esc(firmaKontakt(p, e.firma, e.email).telefon)}</td>`);
@@ -7012,16 +7040,16 @@ function vergabeAntragTable(p, v, editable) {
   stages.forEach(([key, label]) => {
     html += `<tr class="va-stage"><td class="va-l" colspan="${cols + 1}">${label}</td></tr>`;
     if (editable) {
-      const bruttoRow = `<tr class="va-brutto"><td class="va-l">Offertsumme brutto</td>${firms.map(e => `<td class="num"><input class="va-in" type="number" step="0.01" data-va="${e.id}|${key}|brutto" value="${valOf(e, key, 'brutto')}"></td>`).join('')}</tr>`;
-      const pctRow = (lbl, f, bCell) => `<tr><td class="va-l">${lbl}</td>${firms.map(e => `<td class="num"><span class="va-inp"><input class="va-in va-pctin" type="number" step="0.01" data-va="${e.id}|${key}|${f}" value="${valOf(e, key, f)}"><span class="va-pctsign">%</span></span> <span class="va-c" data-vc="${e.id}|${key}|${bCell}"></span></td>`).join('')}</tr>`;
       const compRow = (lbl, cell, cls) => `<tr${cls ? ` class="${cls}"` : ''}><td class="va-l">${lbl}</td>${firms.map(e => `<td class="num"><span class="va-c" data-vc="${e.id}|${key}|${cell}"></span></td>`).join('')}</tr>`;
-      html += bruttoRow;
-      html += pctRow('Rabatt', 'rabatt', 'rabattBetrag');
-      html += compRow('Z.-Summe', 'zsumme1');
-      html += pctRow('Skonto', 'skonto', 'skontoBetrag');
-      html += compRow('Netto', 'netto');
-      html += pctRow('Allg. Abz.', 'weitereAbz', 'allgBetrag');
-      html += compRow('Z.-Summe', 'zsumme2');
+      html += `<tr class="va-brutto"><td class="va-l">Offertsumme brutto</td>${firms.map(e => `<td class="num"><input class="va-in" type="number" step="0.01" data-va="${e.id}|${key}|brutto" value="${(condOf(e, key).brutto != null ? condOf(e, key).brutto : '')}"></td>`).join('')}</tr>`;
+      defs.forEach(def => {
+        const lblCell = def.rename
+          ? `<td class="va-l"><span class="va-abzname"><input class="va-rename" data-def="${def.key}" value="${esc(def.name)}">${def.removable ? `<button type="button" class="va-delabz" data-def="${def.key}" title="Abzug entfernen">×</button>` : ''}</span></td>`
+          : `<td class="va-l">${esc(def.name)}</td>`;
+        html += `<tr>${lblCell}${firms.map(e => { const cv = condCellVal(condOf(e, key), def); return `<td class="num"><span class="va-inp"><input class="va-in va-dedin" type="number" step="0.01" data-va="${e.id}|${key}|${def.key}" data-art="${cv.art}" value="${cv.wert === '' ? '' : cv.wert}"><button type="button" class="va-arttog" data-va="${e.id}|${key}|${def.key}" title="% / CHF umschalten">${cv.art === 'chf' ? 'CHF' : '%'}</button></span> <span class="va-c va-bet" data-vc="${e.id}|${key}|bet_${def.key}"></span></td>`; }).join('')}</tr>`;
+      });
+      html += `<tr class="va-addrow"><td class="va-l" colspan="${cols + 1}"><button type="button" class="va-addabz" data-stage="${key}">+ Abzug</button></td></tr>`;
+      html += `<tr class="va-total"><td class="va-l">Netto (exkl. MwSt)<span class="va-hint2">– eintippen + 1 Abzug leer = Rückrechnung</span></td>${firms.map(e => `<td class="num"><input class="va-in va-nettoin" type="number" step="0.01" data-va="${e.id}|${key}|netto" placeholder="berechnet" value=""></td>`).join('')}</tr>`;
       html += compRow('MWST 8.1%', 'mwst');
       html += compRow('Netto inkl. MWST', 'total', 'va-total');
       html += `<tr class="va-diff"><td class="va-l">Diff. zum günstigsten</td>${firms.map(e => `<td class="num"><span class="va-c" data-vd="${key}|${e.id}"></span></td>`).join('')}</tr>`;
@@ -7030,14 +7058,9 @@ function vergabeAntragTable(p, v, editable) {
       const totals = parts.map(x => x ? x.total : null).filter(x => x != null);
       const minT = totals.length ? Math.min(...totals) : null;
       const numRow = (lbl, fn, cls) => `<tr${cls ? ` class="${cls}"` : ''}><td class="va-l">${lbl}</td>${parts.map(x => `<td class="num">${x ? fn(x) : ''}</td>`).join('')}</tr>`;
-      const pctRow = (lbl, pFld, bFld) => `<tr><td class="va-l">${lbl}</td>${parts.map(x => `<td class="num">${x ? `<span class="va-pct">${pf(x[pFld])}</span> ${nf(x[bFld])}` : ''}</td>`).join('')}</tr>`;
       html += numRow('Offertsumme brutto', x => nf(x.brutto), 'va-brutto');
-      html += pctRow('Rabatt', 'rabattP', 'rabattBetrag');
-      html += numRow('Z.-Summe', x => nf(x.zsumme1));
-      html += pctRow('Skonto', 'skontoP', 'skontoBetrag');
-      html += numRow('Netto', x => nf(x.netto));
-      html += pctRow('Allg. Abz.', 'allgP', 'allgBetrag');
-      html += numRow('Z.-Summe', x => nf(x.zsumme2));
+      defs.forEach((def, di) => { html += `<tr><td class="va-l">${esc(def.name)}</td>${parts.map(x => `<td class="num">${x ? '− ' + nf(condBetragOf(x, di)) : ''}</td>`).join('')}</tr>`; });
+      html += numRow('Netto (exkl. MwSt)', x => nf(x.zsumme2), 'va-total');
       html += numRow('MWST 8.1%', x => nf(x.mwst));
       html += numRow('Netto inkl. MWST', x => nf(x.total), 'va-total');
       html += `<tr class="va-diff"><td class="va-l">Diff. zum günstigsten</td>${parts.map(x => `<td class="num">${(x && minT != null) ? (minT ? ((x.total - minT) / minT * 100) : 0).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : ''}</td>`).join('')}</tr>`;
@@ -7046,16 +7069,25 @@ function vergabeAntragTable(p, v, editable) {
   return html + `</table>`;
 }
 // Live-Berechnung der editierbaren Vergabeantrag-Tabelle (Bildschirm)
+function rerenderVA(p, v) { const box = document.querySelector('.va-screen'); if (box) { box.innerHTML = vergabeAntragTable(p, v, true); bindVergabeAntrag(p, v); } }
 function bindVergabeAntrag(p, v) {
   const firms = v.eingeladene || [];
   const stages = ['offerte', 'abgebot', 'vergabe'];
+  const defs = vAbzDefs(v);
   const nf = n => (n == null || isNaN(n)) ? '' : Number(n).toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const readC = (eid, stage) => { const g = f => { const el = document.querySelector(`[data-va="${eid}|${stage}|${f}"]`); return (el && el.value !== '') ? Number(el.value) : null; }; return { brutto: g('brutto'), rabatt: g('rabatt'), skonto: g('skonto'), weitereAbz: g('weitereAbz') }; };
+  const readDed = (eid, stage, def) => { const inp = document.querySelector(`.va-dedin[data-va="${eid}|${stage}|${def.key}"]`); return inp ? { val: inp.value === '' ? null : Number(inp.value), art: inp.dataset.art || 'pct' } : null; };
+  const readC = (eid, stage) => {
+    const c = {}; const gb = document.querySelector(`[data-va="${eid}|${stage}|brutto"]`); c.brutto = (gb && gb.value !== '') ? Number(gb.value) : null;
+    const fix = (def, pKey, btrKey) => { const r = readDed(eid, stage, def); if (!r) return; if (r.art === 'chf') { c[btrKey] = r.val; c[pKey] = null; } else { c[pKey] = r.val; c[btrKey] = null; } };
+    fix(defs[0], 'rabatt', 'rabattBtr'); fix(defs[1], 'skonto', 'skontoBtr'); fix(defs[2], 'weitereAbz', 'weitereAbzBtr'); c.weitereAbzLabel = defs[2].name;
+    c.extraAbz = defs.filter(d => d.exIdx != null).map(def => { const r = readDed(eid, stage, def); return { name: def.name, art: r ? r.art : 'pct', wert: (r && r.val != null) ? r.val : 0 }; });
+    return c;
+  };
   const recalcRow = (eid, stage) => {
     const r = condParts(readC(eid, stage));
-    ['rabattBetrag', 'zsumme1', 'skontoBetrag', 'netto', 'allgBetrag', 'zsumme2', 'mwst', 'total'].forEach(cell => {
-      const el = document.querySelector(`[data-vc="${eid}|${stage}|${cell}"]`); if (el) el.textContent = r ? nf(r[cell]) : '';
-    });
+    defs.forEach((def, di) => { const el = document.querySelector(`[data-vc="${eid}|${stage}|bet_${def.key}"]`); if (el) el.textContent = r ? '− ' + nf(condBetragOf(r, di)) : ''; });
+    const nin = document.querySelector(`.va-nettoin[data-va="${eid}|${stage}|netto"]`); if (nin) nin.placeholder = r ? nf(r.zsumme2) : 'berechnet';
+    ['mwst', 'total'].forEach(cell => { const el = document.querySelector(`[data-vc="${eid}|${stage}|${cell}"]`); if (el) el.textContent = r ? nf(r[cell]) : ''; });
   };
   const recalcDiff = stage => {
     const totals = firms.map(e => { const r = condParts(readC(e.id, stage)); return r ? r.total : null; });
@@ -7065,19 +7097,47 @@ function bindVergabeAntrag(p, v) {
   const commit = (eid, stage) => {
     const e = firms.find(x => x.id === eid); if (!e) return;
     const c = readC(eid, stage);
-    // Merge: Zusatz-Abzüge / Betrag-Varianten / umbenanntes Label (aus dem Konditionen-Dialog) erhalten
     e[stage] = (c.brutto != null) ? Object.assign({}, e[stage] || {}, c) : null;
     if (stage === 'offerte' && e.offerte && e.offerte.brutto != null) { e.betrag = condNetto(e.offerte); if (e.status !== 'abgesagt') e.status = 'offeriert'; if (statusIdx(v) < STATUS_BY_KEY['offerten'].index) v.status = 'offerten'; }
     if (v.firma && e.firma === v.firma) { const ver = eVer(e); const fall = ver != null ? ver : (eAbg(e) != null ? eAbg(e) : eOff(e)); if (fall != null) v.betrag = fall; }
     save();
   };
+  const backCalc = (eid, stage, target) => {
+    target = (target === '' || target == null) ? null : Number(target);
+    const gb = document.querySelector(`[data-va="${eid}|${stage}|brutto"]`); if (target == null || !gb || gb.value === '') return;
+    const empties = defs.map((d, i) => i).filter(i => { const inp = document.querySelector(`.va-dedin[data-va="${eid}|${stage}|${defs[i].key}"]`); return inp && (inp.value === '' || inp.value == null); });
+    if (empties.length !== 1) { toast('Für die Netto-Rückrechnung genau EINEN Abzug leer lassen.', 'info'); return; }
+    const di = empties[0], def = defs[di];
+    const nettoAt = X => { const c = readC(eid, stage); if (def.exIdx == null) { const m = { rabatt: ['rabatt', 'rabattBtr'], skonto: ['skonto', 'skontoBtr'], allg: ['weitereAbz', 'weitereAbzBtr'] }[def.key]; c[m[1]] = X; c[m[0]] = null; } else { c.extraAbz[def.exIdx] = { name: def.name, art: 'chf', wert: X }; } const r = condParts(c); return r ? r.zsumme2 : null; };
+    const n0 = nettoAt(0), n1 = nettoAt(1); if (n0 == null || n1 == null) return; const slope = n1 - n0; if (Math.abs(slope) < 1e-9) return;
+    const X = Math.round(((target - n0) / slope) * 100) / 100;
+    const inp = document.querySelector(`.va-dedin[data-va="${eid}|${stage}|${def.key}"]`); inp.value = X; inp.dataset.art = 'chf';
+    const tog = document.querySelector(`.va-arttog[data-va="${eid}|${stage}|${def.key}"]`); if (tog) tog.textContent = 'CHF';
+    const nin = document.querySelector(`.va-nettoin[data-va="${eid}|${stage}|netto"]`); if (nin) nin.value = '';
+    recalcRow(eid, stage); recalcDiff(stage); commit(eid, stage);
+    toast('Fehlender Abzug „' + def.name + '" = ' + chf(X) + ' berechnet.', 'success');
+  };
   firms.forEach(e => stages.forEach(s => recalcRow(e.id, s)));
   stages.forEach(s => recalcDiff(s));
-  $$('.va-in').forEach(inp => {
+  $$('.va-dedin, [data-va$="|brutto"]').forEach(inp => {
     const parts = inp.dataset.va.split('|'); const eid = parts[0], stage = parts[1];
     inp.addEventListener('input', () => { recalcRow(eid, stage); recalcDiff(stage); });
     inp.addEventListener('change', () => commit(eid, stage));
   });
+  $$('.va-arttog').forEach(btn => btn.addEventListener('click', () => {
+    const inp = document.querySelector(`.va-dedin[data-va="${btn.dataset.va}"]`); if (!inp) return;
+    inp.dataset.art = inp.dataset.art === 'chf' ? 'pct' : 'chf'; btn.textContent = inp.dataset.art === 'chf' ? 'CHF' : '%';
+    const parts = btn.dataset.va.split('|'); recalcRow(parts[0], parts[1]); recalcDiff(parts[1]); commit(parts[0], parts[1]);
+  }));
+  $$('.va-nettoin').forEach(inp => { const parts = inp.dataset.va.split('|'); inp.addEventListener('change', () => backCalc(parts[0], parts[1], inp.value)); });
+  $$('.va-rename').forEach(inp => inp.addEventListener('change', () => { const dd = vAbzDefs(v); const d = dd.find(x => x.key === inp.dataset.def); if (d) { d.name = inp.value || 'Abzug'; v.abzDefs = dd.map(x => ({ name: x.name })); save(); rerenderVA(p, v); } }));
+  $$('.va-delabz').forEach(btn => btn.addEventListener('click', () => {
+    const dd = vAbzDefs(v); const idx = dd.findIndex(x => x.key === btn.dataset.def); if (idx < 0) return;
+    const exIdx = dd[idx].exIdx;
+    (v.eingeladene || []).forEach(e => stages.forEach(s => { if (e[s] && Array.isArray(e[s].extraAbz)) e[s].extraAbz.splice(exIdx, 1); }));
+    dd.splice(idx, 1); v.abzDefs = dd.map(x => ({ name: x.name })); save(); rerenderVA(p, v);
+  }));
+  $$('.va-addabz').forEach(btn => btn.addEventListener('click', () => { const dd = vAbzDefs(v).map(x => ({ name: x.name })); dd.push({ name: 'Pauschalabzug' }); v.abzDefs = dd; save(); rerenderVA(p, v); }));
 }
 // Kompakte Druckregeln: passt auf EIN Blatt (A4 quer), nicht umbrechen
 const VA_PRINT_CSS = `

@@ -1438,9 +1438,21 @@ table.va .va-fav { font-size: 10px; font-weight: 700; color: var(--s-red); }
 table.va .va-in { width: 100%; border: 1px solid var(--border-2); border-radius: 5px; padding: 3px 6px; font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; background: #fff; }
 table.va .va-in:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-soft); }
 table.va .va-pctin { width: 50px; }
-table.va .va-inp { display: inline-flex; align-items: center; gap: 1px; }
+table.va .va-inp { display: inline-flex; align-items: center; gap: 2px; }
 table.va .va-pctsign { color: var(--text-faint); font-size: 11px; }
 table.va .va-c { color: var(--text-soft); }
+/* Flexible Konditionen direkt in der Tabelle: %/CHF-Umschalter, Abzug umbenennen/entfernen, +Abzug */
+table.va .va-arttog { flex: none; border: 1px solid var(--border-2); background: var(--surface-2); border-radius: 5px; padding: 2px 5px; font-size: 10.5px; font-weight: 700; color: var(--text-soft); cursor: pointer; min-width: 32px; }
+table.va .va-arttog:hover { border-color: var(--brand); color: var(--brand); }
+table.va .va-bet { display: block; font-size: 10.5px; }
+table.va .va-abzname { display: inline-flex; align-items: center; gap: 4px; }
+table.va .va-rename { width: 110px; border: 1px solid transparent; border-radius: 5px; padding: 2px 5px; font-size: 12px; background: transparent; color: var(--text-soft); font-weight: 600; }
+table.va .va-rename:hover, table.va .va-rename:focus { border-color: var(--border-2); background: #fff; outline: none; }
+table.va .va-delabz { border: none; background: none; color: var(--s-red); cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
+table.va .va-addabz { border: 1px dashed var(--border-2); background: transparent; color: var(--brand); border-radius: 6px; padding: 3px 10px; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+table.va .va-addabz:hover { border-color: var(--brand); background: var(--brand-soft); }
+table.va .va-nettoin { font-weight: 700; }
+table.va .va-hint2 { display: block; font-size: 10px; font-weight: 400; color: var(--text-faint); }
 table.va input[type=number]::-webkit-inner-spin-button, table.va input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 table.va input[type=number] { -moz-appearance: textfield; }
 .kond-grid .field { font-size: 11px; gap: 3px; }

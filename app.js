@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v332';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v333';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -7059,7 +7059,7 @@ function viewEinstellungen() {
         <button class="btn secondary" data-act="export">⬇ Voll-Backup speichern (JSON)</button>
         <button class="btn secondary" data-act="import-data">📥 Backup einlesen (JSON)</button>
         <button class="btn secondary" data-act="gerber-import">📂 Projekt aus .gerber öffnen</button>
-        <button class="btn secondary" data-act="reset">↻ Daten zurücksetzen (Römerstrasse 31)</button>
+        <button class="btn secondary" data-act="reset">↻ Demodaten laden (3 Projekte + Submittenten)</button>
         ${cloudEnabled ? '<button class="btn secondary" data-act="logout">⎋ Abmelden</button>' : ''}
       </div>
       <p class="muted" style="font-size:11.5px;margin-top:8px"><b>Voll-Backup (JSON):</b> sichert ALLE Projekte + Kontakte in eine Datei – „Backup einlesen" stellt diesen Stand wieder her (ersetzt alles). <b>Einzelnes Projekt (.gerber):</b> Rechtsklick auf ein Projekt → „Als .gerber speichern" zum Sichern/Teilen; „Projekt aus .gerber öffnen" liest es als zusätzliches Projekt ein (ideal zum Weitergeben/Weiterbearbeiten).</p>
@@ -11932,10 +11932,10 @@ function initGerberLaunch() {
 function resetDemo() {
   const warn = cloudEnabled
     ? `<div style="background:#fdecec;border:1px solid var(--s-red);border-radius:8px;padding:10px 12px;font-size:13px;color:#7a1d1d">
-         <strong>⚠ Cloud-Modus:</strong> Dies überschreibt den <strong>gemeinsamen Arbeitsbereich für alle</strong> mit dem Projekt Römerstrasse 31. Alle bestehenden Projekte, Vergaben, Protokolle usw. gehen verloren und werden auf allen Geräten synchronisiert.
+         <strong>⚠ Cloud-Modus:</strong> Dies überschreibt den <strong>gemeinsamen Arbeitsbereich für alle</strong> mit den Demodaten. Alle bestehenden Projekte, Vergaben, Protokolle usw. gehen verloren und werden auf allen Geräten synchronisiert.
        </div>`
-    : `<p class="muted" style="font-size:13px;margin-top:0">Dies ersetzt alle aktuellen Daten in diesem Browser durch das Projekt Römerstrasse 31.</p>`;
-  openModal('Daten zurücksetzen?', `
+    : `<p class="muted" style="font-size:13px;margin-top:0">Dies ersetzt alle aktuellen Daten in diesem Browser durch die <strong>Demodaten</strong>: Römerstrasse 31, Kunoweg 20, Kinderheim Heimelig – inkl. <strong>Submittentenliste &amp; Kontakte</strong> (Römerstrasse).</p>`;
+  openModal('Demodaten laden?', `
     ${warn}
     <p style="font-size:13px;margin-bottom:0">Tipp: vorher <button class="btn sm secondary" type="button" id="reset_export">⬇ Daten exportieren</button> zur Sicherung.</p>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button>
@@ -12469,9 +12469,18 @@ function demoData() {
     phase: 'ausfuehrung', start: '2026-02-03', ende: '2027-11-30', baustart: '2026-02-03', bezug: '2027-11-30',
     vergaben: kinderheim,
   }];
-  // Kontakte direkt aus den Projekt-Firmen erzeugen (Kette Kontakt → Einladung → Zuschlag → Unternehmer)
-  const kontakte = []; const seen = new Set();
-  const addF = (name, email) => { name = (name || '').trim(); if (!name) return; const key = name.toLowerCase(); if (seen.has(key)) { if (email) { const k = kontakte.find(x => x.firma.toLowerCase() === key); if (k && !k.email) k.email = email; } return; } seen.add(key); kontakte.push({ id: uid('k'), firma: name, email: email || '', kategorie: '–', strasse: '', plz: '', ort: '', person: '', funktion: '', telefon: '', website: '', notiz: '', uid_nr: '', rechtsform: '' }); };
-  projekte.forEach(p => (p.vergaben || []).forEach(v => { (v.eingeladene || []).forEach(e => addF(e.firma, e.email)); if (v.firma) v.firma.split(',').forEach(f => addF(f.trim(), '')); }));
+  // Kontakte + Submittenten fest einpflegen (Kette Kontakt → Einladung → Zuschlag → Unternehmer)
+  const kontakte = []; const seenK = new Map();
+  const addFull = d => { const firma = (d.firma || '').trim(); if (!firma) return; const key = firma.toLowerCase();
+    if (seenK.has(key)) { const k = seenK.get(key); ['strasse', 'plz', 'ort', 'person', 'telefon', 'email'].forEach(f => { if (d[f] && !k[f]) k[f] = d[f]; }); if ((!k.kategorie || k.kategorie === '–') && d.kategorie) k.kategorie = d.kategorie; return; }
+    const k = { id: uid('k'), firma, strasse: d.strasse || '', plz: d.plz || '', ort: d.ort || '', person: d.person || '', telefon: d.telefon || '', email: d.email || '', kategorie: d.kategorie || '–', funktion: '', website: '', notiz: '', uid_nr: '', rechtsform: '' }; kontakte.push(k); seenK.set(key, k); };
+  // 1) Submittentenliste Römerstrasse: volle Kontakte + als eingeladene Submittenten beim BKP-Gewerk
+  const roe = projekte.find(p => /römerstrasse|rö\s?31/i.test(p.name || ''));
+  RO31_SUBMITTENTEN.forEach(s => {
+    addFull({ firma: s.firma, strasse: s.str, plz: s.plz, ort: s.ort, person: s.person, telefon: [s.mobil, s.tel].filter(Boolean).join(' / '), email: s.mail, kategorie: s.kat });
+    if (roe) { const v = (roe.vergaben || []).find(x => (x.bkp || '') === s.bkp); if (v) { v.eingeladene = v.eingeladene || []; if (!v.eingeladene.some(e => (e.firma || '').toLowerCase() === s.firma.toLowerCase())) v.eingeladene.push({ id: uid('e'), firma: s.firma, email: s.mail || '', betrag: null, status: 'eingeladen', datumMail: '' }); } }
+  });
+  // 2) übrige Projekt-Firmen (Unternehmer/eingeladene aller Projekte) ergänzen
+  projekte.forEach(p => (p.vergaben || []).forEach(v => { (v.eingeladene || []).forEach(e => addFull({ firma: e.firma, email: e.email })); if (v.firma) v.firma.split(',').forEach(f => addFull({ firma: f.trim() })); }));
   return { projekte, kontakte, dokumente: [], buero: { ...BUERO } };
 }

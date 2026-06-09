@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v353';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v354';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1995,11 +1995,16 @@ let ganttScale = 1;        // stufenloser Breiten-Faktor auf pxPerDay
 let ganttFitScale = 0;     // kleinster Scale, bei dem das Programm die Breite füllt (Rauszoom-Limit); 0 = noch unbekannt
 let ganttChain = true;     // Verkettung: Nachfolger automatisch nachführen
 let ganttWorkdays = false; // Abstände/Verkettung in Arbeitstagen (Wochenende/Feiertage überspringen)
-let ganttSide = { bkp: true, gewerk: true, firma: false, person: false, natel: false, start: false, ende: false, dauer: false }; // einblendbare Spalten (Zeilennummer immer); start/ende = editierbare Datumsfelder
-let ganttSideOrder = ['bkp', 'gewerk', 'firma', 'person', 'natel', 'start', 'ende', 'dauer']; // frei verschiebbare Reihenfolge der Spalten
+const DEFAULT_SIDE_VIS = { bkp: true, gewerk: true, firma: false, person: false, natel: false, start: false, ende: false, dauer: false };
+const DEFAULT_SIDE_ORDER = ['bkp', 'gewerk', 'firma', 'person', 'natel', 'start', 'ende', 'dauer'];
+let ganttSide = { ...DEFAULT_SIDE_VIS };        // einblendbare Spalten (Zeilennummer immer); start/ende = editierbare Datumsfelder
+let ganttSideOrder = [...DEFAULT_SIDE_ORDER];   // frei verschiebbare Reihenfolge der Spalten
 const SIDE_LABELS = { bkp: 'BKP', gewerk: 'Gewerk', firma: 'Firma', person: 'Person', natel: 'Natel', start: 'Start', ende: 'Ende', dauer: 'Dauer' };
-const SIDE_W = { bkp: 60, gewerk: 184, firma: 138, person: 120, natel: 116, start: 124, ende: 124, dauer: 62 }; // Spaltenbreiten im Spalten-Modus (px)
+const SIDE_W = { bkp: 60, gewerk: 184, firma: 138, person: 120, natel: 116, start: 124, ende: 124, dauer: 62 }; // Default-Spaltenbreiten im Spalten-Modus (px)
+let ganttSideWidth = {};       // benutzerdefinierte Spaltenbreiten (Override über SIDE_W), px
+let ganttSideProfile = 'standard'; // 'standard' (Default-Layout) | 'persoenlich' (gespeicherte Anordnung/Breiten)
 let ganttSideMode = 'locker'; // 'locker' (kompakt wie bisher) | 'spalten' (saubere, ausgerichtete Spalten mit Kopf)
+const sideColW = k => Math.max(40, ganttSideWidth[k] || SIDE_W[k]);
 let _ganttSideLoaded = false;
 function loadGanttSide() {
   if (_ganttSideLoaded) return; _ganttSideLoaded = true;
@@ -2008,9 +2013,31 @@ function loadGanttSide() {
     if (s.vis && typeof s.vis === 'object') Object.keys(ganttSide).forEach(k => { if (k in s.vis) ganttSide[k] = !!s.vis[k]; });
     if (Array.isArray(s.order)) { const valid = s.order.filter(k => ganttSideOrder.includes(k)); ganttSideOrder.forEach((k, i) => { if (!valid.includes(k)) valid.splice(Math.min(i, valid.length), 0, k); }); ganttSideOrder = valid; }
     if (s.mode === 'locker' || s.mode === 'spalten') ganttSideMode = s.mode;
+    if (s.width && typeof s.width === 'object') ganttSideWidth = { ...s.width };
+    if (s.profile === 'standard' || s.profile === 'persoenlich') ganttSideProfile = s.profile;
   } catch (_) {}
 }
-function saveGanttSide() { try { localStorage.setItem('so_gantt_side', JSON.stringify({ vis: ganttSide, order: ganttSideOrder, mode: ganttSideMode })); } catch (_) {} }
+function saveGanttSide() { try { localStorage.setItem('so_gantt_side', JSON.stringify({ vis: ganttSide, order: ganttSideOrder, mode: ganttSideMode, width: ganttSideWidth, profile: ganttSideProfile })); } catch (_) {} }
+// Beim Anpassen (Sichtbarkeit/Reihenfolge/Breite): als „persönlich" markieren + separaten Schnappschuss sichern
+function markSidePersonal() {
+  ganttSideProfile = 'persoenlich';
+  try { localStorage.setItem('so_gantt_side_pers', JSON.stringify({ vis: ganttSide, order: ganttSideOrder, width: ganttSideWidth })); } catch (_) {}
+  saveGanttSide();
+}
+function sideStandard() {   // zurück auf Default-Layout (gleiche Reihenfolge/Breiten wie ab Werk)
+  ganttSide = { ...DEFAULT_SIDE_VIS }; ganttSideOrder = [...DEFAULT_SIDE_ORDER]; ganttSideWidth = {}; ganttSideProfile = 'standard'; saveGanttSide();
+}
+function sidePersonal() {   // gespeicherte persönliche Anordnung/Breiten wiederherstellen
+  try {
+    const s = JSON.parse(localStorage.getItem('so_gantt_side_pers') || 'null');
+    if (s) {
+      if (s.vis && typeof s.vis === 'object') { ganttSide = { ...DEFAULT_SIDE_VIS }; Object.keys(ganttSide).forEach(k => { if (k in s.vis) ganttSide[k] = !!s.vis[k]; }); }
+      if (Array.isArray(s.order)) { const valid = s.order.filter(k => DEFAULT_SIDE_ORDER.includes(k)); DEFAULT_SIDE_ORDER.forEach((k, i) => { if (!valid.includes(k)) valid.splice(Math.min(i, valid.length), 0, k); }); ganttSideOrder = valid; }
+      ganttSideWidth = (s.width && typeof s.width === 'object') ? { ...s.width } : {};
+    }
+  } catch (_) {}
+  ganttSideProfile = 'persoenlich'; saveGanttSide();
+}
 let ganttDates = 'off';   // Anschrift am Balken: 'off' | 'datum' (dd.mm.yy) | 'kw' (Kalenderwoche) | 'grob' (Anfang/Mitte/Ende Monat)
 let ganttMode = 'detail'; // 'detail' = Termin-Gantt (Tage) | 'grob' = Grobplanung (Phasen) | 'fein' = Feinprogramm (Stunden)
 const FEIN_H0 = 6, FEIN_H1 = 20;   // Stunden-Achse Feinprogramm (06:00–20:00)
@@ -3111,7 +3138,7 @@ function viewTermine(id) {
   const spalten = ganttSideMode === 'spalten';
   const visCols = ganttSideOrder.filter(key => ganttSide[key]);
   const NR_W = 46, ADD_W = 26;
-  const gridTemplate = [NR_W + 'px', ...visCols.map(k => SIDE_W[k] + 'px'), ADD_W + 'px'].join(' ');
+  const gridTemplate = [NR_W + 'px', ...visCols.map(k => sideColW(k) + 'px'), ADD_W + 'px'].join(' ');
   let sideRows = '', barRows = '', rowIdx = 0, gNr = 0; const barMeta = {}; const inserts = []; const windows = [];
   vs.forEach(v => {
     recalcAutoBalken(v);   // Oberbalken ggf. aus Unterterminen umspannen
@@ -3225,7 +3252,7 @@ function viewTermine(id) {
 
   let sideW;
   if (spalten) {
-    sideW = NR_W + ADD_W + visCols.reduce((s, k) => s + SIDE_W[k], 0);
+    sideW = NR_W + ADD_W + visCols.reduce((s, k) => s + sideColW(k), 0);
   } else {
     const sideExtras = (ganttSide.firma ? 1 : 0) + (ganttSide.person ? 1 : 0) + (ganttSide.natel ? 1 : 0);
     const dateColsW = (ganttSide.start ? 116 : 0) + (ganttSide.ende ? 116 : 0) + (ganttSide.dauer ? 52 : 0);
@@ -3234,13 +3261,15 @@ function viewTermine(id) {
     sideW = Math.min(700, sideW + dateColsW);
   }
   // Kopfzeile (nur Spalten-Modus): ausgeschriebene Spaltentitel, am Grid ausgerichtet
-  const sideHead = spalten ? `<div class="g-side-head" style="grid-template-columns:${gridTemplate}"><span class="g-shc nr">Nr.</span>${visCols.map(k => `<span class="g-shc">${SIDE_LABELS[k]}</span>`).join('')}<span class="g-shc"></span></div>` : '';
+  const sideHead = spalten ? `<div class="g-side-head" style="grid-template-columns:${gridTemplate}"><span class="g-shc nr"><span class="g-shc-lbl">Nr.</span></span>${visCols.map(k => `<span class="g-shc" data-col="${k}"><span class="g-shc-lbl">${SIDE_LABELS[k]}</span><span class="g-colresize" data-colresize="${k}" title="Spaltenbreite ziehen"></span></span>`).join('')}<span class="g-shc"></span></div>` : '';
   const sideModeToggle = `<div class="g-zoom g-sidemode" title="Darstellung der linken Spalten: Locker (kompakt) oder Spalten (saubere, ausgerichtete Tabelle)">${[['locker', 'Locker'], ['spalten', 'Spalten']].map(([k, l]) => `<button class="${ganttSideMode === k ? 'active' : ''}" data-act="gantt-sidemode" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>`;
+  // 3. Reihe: Layout-Profil Standard (Default) / Persönlich (gespeicherte Anordnung + Breiten)
+  const sidePresetRow = spalten ? `<div class="g-zoom g-sidepreset" title="Spalten-Layout: Standard = Default (gleiche Reihenfolge/Breiten wie ab Werk) · Persönlich = deine gespeicherte Anordnung &amp; Breiten">${[['standard', 'Standard'], ['persoenlich', 'Persönlich']].map(([k, l]) => `<button class="${ganttSideProfile === k ? 'active' : ''}" data-act="gantt-side-preset" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>` : '';
 
   render(head + `
     ${warnBanner}${regelBanner}
     <div class="gantt lbl-${ganttLabelMode}${ganttFocus ? ' focus-on' : ''}${ganttLinkFront ? ' links-front' : ' links-behind'}${ganttDone === 'dim' ? ' done-dim' : ''}${ganttPhaseStripe ? ' phase-stripe' : ''}" style="--rowh:${ROW_H}px;--gfont:${ganttFont}px;--sfont:${ganttSideFont}px">
-      <div class="g-side ${spalten ? 'spalten' : 'locker'}" style="width:${sideW}px;--side-grid:${gridTemplate}"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${sideModeToggle}${infoCtrl}</div>${sideHead}</div>${sideRows}${insertStrips}</div>
+      <div class="g-side ${spalten ? 'spalten' : 'locker'}" style="width:${sideW}px;--side-grid:${gridTemplate}"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${sideModeToggle}${infoCtrl}${sidePresetRow}</div>${sideHead}</div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
           ${yearCells ? `<div class="g-headrow yr">${yearCells}</div>` : ''}
@@ -3302,9 +3331,11 @@ function viewTermine(id) {
       ch.addEventListener('dragend', () => { ch.classList.remove('dragging'); $$('.g-sidecols [data-sidecol]').forEach(c => c.classList.remove('drop-target')); });
       ch.addEventListener('dragover', e => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; if (ch.dataset.sidecol !== dragKey) ch.classList.add('drop-target'); });
       ch.addEventListener('dragleave', () => ch.classList.remove('drop-target'));
-      ch.addEventListener('drop', e => { e.preventDefault(); const target = ch.dataset.sidecol; if (!dragKey || dragKey === target) return; const arr = ganttSideOrder.filter(x => x !== dragKey); arr.splice(arr.indexOf(target), 0, dragKey); ganttSideOrder = arr; saveGanttSide(); rerenderGantt(ganttPid); });
+      ch.addEventListener('drop', e => { e.preventDefault(); const target = ch.dataset.sidecol; if (!dragKey || dragKey === target) return; const arr = ganttSideOrder.filter(x => x !== dragKey); arr.splice(arr.indexOf(target), 0, dragKey); ganttSideOrder = arr; markSidePersonal(); rerenderGantt(ganttPid); });
     });
   }
+  // Spaltenbreite per Ziehen am rechten Rand des Spaltenkopfs (nur Spalten-Modus)
+  $$('.g-colresize').forEach(h => h.addEventListener('mousedown', onColResizeDown));
 
   // Scroll nach In-Place-Rerender wiederherstellen (kein Sprung beim Resizen/Zoomen)
   if (ganttPendingScroll) {
@@ -3381,6 +3412,36 @@ function onGripUp() {
   if (!g || !g.moved) return;
   const p = findProjekt(ganttPid); const lk = p && (p.ganttLinks || []).find(l => l.id === g.lid);
   if (lk) { lk.dx = g.dx; save(); rerenderGantt(ganttPid); }
+}
+// Spaltenbreite im Spalten-Modus per Ziehen am Kopf-Rand ändern (live), beim Loslassen als „persönlich" speichern
+let sideResize = null;
+function onColResizeDown(e) {
+  e.preventDefault(); e.stopPropagation();
+  const col = e.currentTarget.dataset.colresize;
+  sideResize = { col, startX: e.clientX, startW: sideColW(col), moved: false };
+  document.body.style.cursor = 'col-resize';
+  document.addEventListener('mousemove', onColResizeMove); document.addEventListener('mouseup', onColResizeUp);
+}
+function onColResizeMove(e) {
+  const r = sideResize; if (!r) return;
+  r.moved = true;
+  ganttSideWidth[r.col] = Math.max(40, Math.round(r.startW + (e.clientX - r.startX)));
+  applySideGridLive();
+}
+function onColResizeUp() {
+  const r = sideResize; sideResize = null;
+  document.body.style.cursor = '';
+  document.removeEventListener('mousemove', onColResizeMove); document.removeEventListener('mouseup', onColResizeUp);
+  if (r && r.moved) { markSidePersonal(); rerenderGantt(ganttPid); }
+}
+function applySideGridLive() {   // Grid-Template + Breite live aktualisieren, ohne kompletten Rerender
+  const side = document.querySelector('.g-side'); if (!side) return;
+  const NR_W = 46, ADD_W = 26;
+  const visCols = ganttSideOrder.filter(k => ganttSide[k]);
+  const tmpl = [NR_W + 'px', ...visCols.map(k => sideColW(k) + 'px'), ADD_W + 'px'].join(' ');
+  side.style.setProperty('--side-grid', tmpl);
+  const head = side.querySelector('.g-side-head'); if (head) head.style.gridTemplateColumns = tmpl;
+  side.style.width = (NR_W + ADD_W + visCols.reduce((s, k) => s + sideColW(k), 0)) + 'px';
 }
 function addGanttLink(pid, from, to) {
   if (gesperrt(pid)) return;
@@ -12375,8 +12436,9 @@ document.addEventListener('click', e => {
       if (ganttScale !== _before || kind === 'reset') rerenderGantt(pid);
     } break;
     case 'gantt-sort':   ganttSort = kind; rerenderGantt(pid); break;
-    case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; saveGanttSide(); rerenderGantt(pid); break;
+    case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; markSidePersonal(); rerenderGantt(pid); break;
     case 'gantt-sidemode': ganttSideMode = kind; saveGanttSide(); rerenderGantt(pid); break;
+    case 'gantt-side-preset': { if (kind === 'standard') sideStandard(); else sidePersonal(); rerenderGantt(pid); } break;
     case 'side-date':    break;   // wird über change-Listener (sideSetDate) behandelt
     case 'gantt-dates':  ganttDates = kind || DATE_MODES[(DATE_MODES.indexOf(ganttDates) + 1) % DATE_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-datepos': ganttDatePos = kind || DATEPOS_MODES[(DATEPOS_MODES.indexOf(ganttDatePos) + 1) % DATEPOS_MODES.length]; rerenderGantt(pid); break;

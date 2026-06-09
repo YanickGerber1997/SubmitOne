@@ -1019,8 +1019,16 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-side.spalten .g-side-row.sub { display: flex; }
 /* Kopfzeile mit ausgeschriebenen Spaltentiteln, am selben Grid ausgerichtet */
 .g-side-head { display: grid; align-items: stretch; border-top: 1px solid var(--border); margin: 2px -8px -4px -8px; background: var(--surface-2); }
-.g-side-head .g-shc { padding: 4px 8px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--text-faint); border-right: 1px solid var(--border); white-space: nowrap; overflow: hidden; display: flex; align-items: flex-end; }
+.g-side-head .g-shc { position: relative; padding: 4px 8px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--text-faint); border-right: 1px solid var(--border); white-space: nowrap; display: flex; align-items: flex-end; }
 .g-side-head .g-shc:last-child { border-right: none; }
+.g-side-head .g-shc-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+/* Zieh-Griff für Spaltenbreite am rechten Kopf-Rand */
+.g-colresize { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 3; }
+.g-colresize::after { content: ''; position: absolute; top: 2px; bottom: 2px; left: 3px; width: 2px; border-radius: 2px; background: transparent; }
+.g-colresize:hover::after { background: var(--brand); }
+/* Preset-Reihe Standard / Persönlich (3. Reihe) */
+.g-side .g-sidepreset { align-self: flex-start; }
+.g-side .g-sidepreset button { padding: 2px 8px; font-size: 10px; }
 .g-edit { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; min-width: 0; flex: 1; }
 .g-edit:hover .gewerk { color: var(--brand); text-decoration: underline; }
 .g-set {

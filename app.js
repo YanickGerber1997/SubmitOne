@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v338';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v339';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1799,12 +1799,6 @@ function viewGewerke(pid) {
 }
 let kostenBrutto = false;   // Baukostenübersicht: false = netto (exkl. MwSt), true = brutto (inkl.)
 let kostOpen = new Set();   // aufgeklappte Gewerk-Zeilen in der Baukostenübersicht (Baubeschrieb/Nachträge/Rechnungen)
-// Spaltenkopf der Baukostentabelle klebt direkt unter der (sticky) Projekt-Toolbar – Offset messen
-function setKostStickyTop() {
-  const ps = document.querySelector('.proj-sticky'); if (!ps) return;
-  const top = Math.round(ps.getBoundingClientRect().height + (parseFloat(getComputedStyle(ps).top) || 0));
-  document.documentElement.style.setProperty('--ktop', top + 'px');
-}
 function viewKosten(id) {
   const p = findProjekt(id);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
@@ -1924,19 +1918,19 @@ function viewKosten(id) {
   const ks = (l, v, cls) => `<div class="ks${cls ? ' ' + cls : ''}"><span>${l}</span><b>${money(v)}</b></div>`;
 
   render(head + `
-    <div class="k-strip">
-      ${ks('KV / Schätzung', tot.kv)}
-      ${ks('Revision', tot.rev)}
-      ${ks('Werkvertrag', tot.wv)}
-      ${ks('Nachträge', tot.nt)}
-      ${ks('Prognose', tot.endsumme, 'hl')}
-      ${ks('Bezahlt', tot.fakturiert)}
-      ${ks('Offen', tot.offenRg)}
-      ${ks('inkl. ' + mwstSatz() + '% MwSt', tot.endsumme * (1 + mw / 100), 'mwst')}
-    </div>
-    <p class="muted" style="font-size:12px;margin:-2px 0 12px">Alle Beträge <b>netto</b> (exkl. MwSt). MwSt, Rabatt &amp; Skonto werden <b>je Gewerk in den Konditionen</b> gerechnet. Der „Anzeige: Brutto"-Knopf zeigt zusätzlich inkl. ${mwstSatz()} % MwSt – ohne die Daten zu verändern.</p>
-    ${(p.volumen || p.flaeche) ? `<p class="muted" style="font-size:12px;margin:-6px 0 14px">Kubische Kennzahlen für die Kostenschätzungs-Gegenüberstellung${p.volumen ? ` · GV ${p.volumen.toLocaleString('de-CH')} m³` : ''}${p.flaeche ? ` · BGF ${p.flaeche.toLocaleString('de-CH')} m²` : ''}. Gebäudedaten unter „Übersicht → ✎ Bearbeiten".</p>` : ''}
+    <p class="muted" style="font-size:12px;margin:-2px 0 10px">Alle Beträge <b>netto</b> (exkl. MwSt). MwSt, Rabatt &amp; Skonto werden <b>je Gewerk in den Konditionen</b> gerechnet. Der „Anzeige: Brutto"-Knopf zeigt zusätzlich inkl. ${mwstSatz()} % MwSt – ohne die Daten zu verändern.</p>
+    ${(p.volumen || p.flaeche) ? `<p class="muted" style="font-size:12px;margin:-6px 0 12px">Kubische Kennzahlen für die Kostenschätzungs-Gegenüberstellung${p.volumen ? ` · GV ${p.volumen.toLocaleString('de-CH')} m³` : ''}${p.flaeche ? ` · BGF ${p.flaeche.toLocaleString('de-CH')} m²` : ''}. Gebäudedaten unter „Übersicht → ✎ Bearbeiten".</p>` : ''}
     <div class="card ktable-wrap">
+      <div class="k-strip">
+        ${ks('KV / Schätzung', tot.kv)}
+        ${ks('Revision', tot.rev)}
+        ${ks('Werkvertrag', tot.wv)}
+        ${ks('Nachträge', tot.nt)}
+        ${ks('Prognose', tot.endsumme, 'hl')}
+        ${ks('Bezahlt', tot.fakturiert)}
+        ${ks('Offen', tot.offenRg)}
+        ${ks('inkl. ' + mwstSatz() + '% MwSt', tot.endsumme * (1 + mw / 100), 'mwst')}
+      </div>
       <table class="grid ktable">
         <thead><tr>
           <th>BKP</th><th>Arbeitsgattung</th><th>Unternehmer</th>
@@ -1958,8 +1952,6 @@ function viewKosten(id) {
     ${teilprojektCard(p, tot.prognose)}
     <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = verhandelte Vergabesumme · Prognose = WV + Nachträge (bei Schlussrechnung „SR" = effektive Endsumme) · Rechnung = Summe eingetragener Rechnungen · Offen = Endsumme − Rechnungen (nie negativ) · +/− = WV gegen Endsumme (rot = Überschreitung). Unter jedem Gewerk: Nachträge (mit Status) &amp; Rechnungen; Teilprojekt-Dropdown je Gewerk/Nachtrag. <b>Zeile anklicken = aufklappen</b> (Baubeschrieb, Nachträge, Rechnungen); „Detail / Ausschreibung ↗" öffnet das Gewerk.</p>
   `);
-  requestAnimationFrame(setKostStickyTop);
-  if (!window._kostStickyWired) { window.addEventListener('resize', setKostStickyTop); window._kostStickyWired = true; }
 }
 
 /* ---------------------------------------------------------------

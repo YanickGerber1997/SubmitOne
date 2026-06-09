@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v354';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v355';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2139,7 +2139,7 @@ function ganttRibbonTabs(p) {
   let b = '';
   if (ganttTab === 'ansicht') b =
     rgroup('Farbe nach', optBtns('gantt-color', p.id, [['status', 'Status'], ['firma', 'Firma'], ['phase', 'Phase']], ganttColorMode)) +
-    rgroup('Kräftigkeit', optBtns('gantt-strength', p.id, [['voll', 'Voll'], ['mittel', 'Mittel'], ['hell', 'Hell'], ['pastell', 'Pastell']], ganttColorStrength)) +
+    rgroup('Kräftigkeit', optBtns('gantt-strength', p.id, [['satt', 'Satt'], ['voll', 'Voll'], ['mittel', 'Mittel'], ['hell', 'Hell'], ['pastell', 'Pastell']], ganttColorStrength)) +
     rgroup('Farben', bigBtn('gantt-colors-open', 'swatch', 'Anpassen', { pid: p.id, on: !!state.ganttColors, title: 'Farben je Status/Unternehmer/Phase anpassen' })) +
     rgroup('Sortierung', optBtns('gantt-sort', p.id, [['bkp', 'BKP', 'sort'], ['start', 'Startdatum', 'clock']], ganttSort)) +
     rgroup('Phasen', bigBtn('gantt-phasebands', 'layers', 'Bänder', { pid: p.id, on: ganttPhaseBands, title: 'Senkrechte Phasen-Zeit-Bänder im Hintergrund (wann läuft welche Phase)' }) + bigBtn('gantt-phasestripe', 'tag', 'Streifen', { pid: p.id, on: ganttPhaseStripe, title: 'Farbiger Phasen-Streifen je Gewerk-Zeile (welche Phase pro Zeile)' })) +
@@ -2888,15 +2888,20 @@ function setGanttColor(group, key, value) {
   save(); rerenderGantt(ganttPid);
 }
 // Farbkräftigkeit: Balkenfarben Richtung warmes Creme aufhellen (herbstlich)
-let ganttColorStrength = 'voll';   // 'voll' | 'mittel' | 'hell' | 'pastell'
-const STRENGTH_MIX = { voll: 0, mittel: 0.32, hell: 0.52, pastell: 0.7 };
-const STRENGTH_NAMES = { voll: 'Voll', mittel: 'Mittel', hell: 'Hell', pastell: 'Pastell' };
-const STRENGTH_MODES = ['voll', 'mittel', 'hell', 'pastell'];
+let ganttColorStrength = (() => { try { const v = localStorage.getItem('so_gantt_strength'); return ['satt', 'voll', 'mittel', 'hell', 'pastell'].includes(v) ? v : 'voll'; } catch (_) { return 'voll'; } })();   // 'satt' (kräftiger) | 'voll' | 'mittel' | 'hell' | 'pastell'
+const STRENGTH_MIX = { voll: 0, mittel: 0.32, hell: 0.52, pastell: 0.7 };   // satt wird in softHex separat behandelt (Sättigung erhöhen)
+const STRENGTH_NAMES = { satt: 'Satt', voll: 'Voll', mittel: 'Mittel', hell: 'Hell', pastell: 'Pastell' };
+const STRENGTH_MODES = ['satt', 'voll', 'mittel', 'hell', 'pastell'];
 function softHex(hex) {
-  const t = STRENGTH_MIX[ganttColorStrength] || 0; if (!t) return hex;
   const h = String(hex).replace('#', ''); if (h.length < 6) return hex;
-  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
-  const mix = (c, tc) => Math.round(c + (tc - c) * t), to2 = n => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
+  let r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  const to2 = n => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+  if (ganttColorStrength === 'satt') {   // kräftiger/sichtbarer: Sättigung erhöhen (Abstand vom Grau vergrössern)
+    const avg = (r + g + b) / 3, f = 1.3;
+    return '#' + to2(avg + (r - avg) * f) + to2(avg + (g - avg) * f) + to2(avg + (b - avg) * f);
+  }
+  const t = STRENGTH_MIX[ganttColorStrength] || 0; if (!t) return hex;
+  const mix = (c, tc) => Math.round(c + (tc - c) * t);
   return '#' + to2(mix(r, 246)) + to2(mix(g, 238)) + to2(mix(b, 224));   // Ziel: warmes Creme
 }
 function ganttSoftLight() { return (STRENGTH_MIX[ganttColorStrength] || 0) >= 0.5; }   // hell genug → dunkle Schrift
@@ -3212,7 +3217,7 @@ function viewTermine(id) {
         const oOut = (p.ganttLinks || []).some(lk => lk.from === key), oIn = (p.ganttLinks || []).some(lk => lk.to === key);
         const oL = leftPx(o.start), oW = widthPx(o.start, o.ende), oLab = gBarLabel(o.titel, oL, oW, true, false, innerW, oOut, oIn);
         barMeta[key] = { row: rowIdx, left: oL, width: oW };
-        barRows += `<div class="g-row" data-x0="${oL}" data-x1="${oL + oW}">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOffStart, oLab.gdOffEnd)}<div class="g-bar sub${light} align-${_eAlign}${oLab.barLow ? ' bar-low' : ''}${o.erfuellt ? ' g-done' : ''}" style="left:${oL}px;width:${oW}px;background:${colHex}"
+        barRows += `<div class="g-row" data-x0="${oL}" data-x1="${oL + oW}">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOffStart, oLab.gdOffEnd)}<div class="g-bar sub align-${_eAlign}${oLab.barLow ? ' bar-low' : ''}${o.erfuellt ? ' g-done' : ''}" style="left:${oL}px;width:${oW}px;background:#fff;--bc:${colHex}"
           title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}${o.erfuellt ? ' · ✓ erfüllt' : ''}${o.notiz ? ' · 📝 ' + esc(o.notiz) : ''}"
           data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
           <span class="g-h l"></span>${o.erfuellt ? '<span class="g-check">✓</span>' : ''}<span class="g-lbl">${oLab.inner}</span>${shiftMarkO(v.id, o.id, o.start, o.ende)}${o.notiz ? `<span class="g-tnote" title="${esc(o.notiz)}">📝</span>` : ''}${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div>${oLab.outer}${gDauerLabel(o.start, o.ende, oL, oL + oW, true)}</div>`;
@@ -12498,7 +12503,7 @@ document.addEventListener('click', e => {
     case 'gantt-pad':       { ganttPad = kind === 'reset' ? 1 : (kind === 'cycle' ? (ganttPad + 1) % 7 : Math.max(0, Math.min(12, ganttPad + (kind === 'in' ? 1 : -1)))); rerenderGantt(pid); } break;
     case 'gantt-ribbon':    ganttRibbon = !ganttRibbon; rerenderGantt(pid); break;
     case 'gantt-labelmode': ganttLabelMode = kind || LABEL_MODES[(LABEL_MODES.indexOf(ganttLabelMode) + 1) % LABEL_MODES.length]; rerenderGantt(pid); break;
-    case 'gantt-strength':  ganttColorStrength = kind || STRENGTH_MODES[(STRENGTH_MODES.indexOf(ganttColorStrength) + 1) % STRENGTH_MODES.length]; rerenderGantt(pid); break;
+    case 'gantt-strength':  ganttColorStrength = kind || STRENGTH_MODES[(STRENGTH_MODES.indexOf(ganttColorStrength) + 1) % STRENGTH_MODES.length]; try { localStorage.setItem('so_gantt_strength', ganttColorStrength); } catch (_) {} rerenderGantt(pid); break;
     case 'gantt-focus':     ganttFocus = !ganttFocus; rerenderGantt(pid); break;
     case 'gantt-dist':      ganttDist = !ganttDist; rerenderGantt(pid); break;
     case 'gantt-feier':     ganttFeier = kind; rerenderGantt(pid); break;

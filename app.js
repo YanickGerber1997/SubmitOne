@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v340';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v341';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1799,6 +1799,33 @@ function viewGewerke(pid) {
 }
 let kostenBrutto = false;   // Baukostenübersicht: false = netto (exkl. MwSt), true = brutto (inkl.)
 let kostOpen = new Set();   // aufgeklappte Gewerk-Zeilen in der Baukostenübersicht (Baubeschrieb/Nachträge/Rechnungen)
+// Mitlaufender Spaltenkopf (wie Gantt): Seite scrollt, ein fixes Overlay zeigt den Kopf unter der Toolbar
+let _kshUpdate = null;
+function setupKostStickyHead() {
+  const table = document.querySelector('.ktable');
+  let ov = document.getElementById('kostStickyHead');
+  if (!table) { if (ov) ov.style.display = 'none'; _kshUpdate = null; return; }
+  const headTr = table.querySelector('thead tr'); if (!headTr) return;
+  if (!ov) { ov = document.createElement('div'); ov.id = 'kostStickyHead'; document.body.appendChild(ov); }
+  ov.className = 'kost-stickyhead';
+  const tbl = document.createElement('table'); tbl.className = 'grid ktable'; tbl.style.tableLayout = 'fixed';
+  const th2 = document.createElement('thead'); const trC = headTr.cloneNode(true); th2.appendChild(trC); tbl.appendChild(th2);
+  ov.innerHTML = ''; ov.appendChild(tbl);
+  const cl = trC.querySelectorAll('th');
+  const syncWidths = () => { const ths = headTr.querySelectorAll('th'); let tw = 0; ths.forEach((th, i) => { const w = th.getBoundingClientRect().width; if (cl[i]) cl[i].style.width = w + 'px'; tw += w; }); tbl.style.width = tw + 'px'; };
+  _kshUpdate = () => {
+    if (!table.isConnected) { ov.style.display = 'none'; _kshUpdate = null; return; }
+    const ps = document.querySelector('.proj-sticky');
+    const offTop = ps ? Math.round(ps.getBoundingClientRect().bottom) : 0;
+    const tb = table.getBoundingClientRect();
+    if (tb.top < offTop && tb.bottom > offTop + 26) {
+      syncWidths();
+      ov.style.display = 'block'; ov.style.top = offTop + 'px'; ov.style.left = tb.left + 'px'; ov.style.width = tb.width + 'px';
+    } else ov.style.display = 'none';
+  };
+  if (!window._kshBound) { window._kshBound = true; const run = () => { if (_kshUpdate) _kshUpdate(); }; window.addEventListener('scroll', run, { passive: true }); window.addEventListener('resize', run); }
+  _kshUpdate();
+}
 function viewKosten(id) {
   const p = findProjekt(id);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
@@ -1952,6 +1979,7 @@ function viewKosten(id) {
     ${teilprojektCard(p, tot.prognose)}
     <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = verhandelte Vergabesumme · Prognose = WV + Nachträge (bei Schlussrechnung „SR" = effektive Endsumme) · Rechnung = Summe eingetragener Rechnungen · Offen = Endsumme − Rechnungen (nie negativ) · +/− = WV gegen Endsumme (rot = Überschreitung). Unter jedem Gewerk: Nachträge (mit Status) &amp; Rechnungen; Teilprojekt-Dropdown je Gewerk/Nachtrag. <b>Zeile anklicken = aufklappen</b> (Baubeschrieb, Nachträge, Rechnungen); „Detail / Ausschreibung ↗" öffnet das Gewerk.</p>
   `);
+  requestAnimationFrame(setupKostStickyHead);
 }
 
 /* ---------------------------------------------------------------

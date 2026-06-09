@@ -1017,7 +1017,11 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-side.spalten .g-side-row > .g-si-date { line-height: normal; width: 100%; box-sizing: border-box; padding: 2px 5px; }
 .g-side.spalten .g-side-row > .g-si-dauer { text-align: left; }
 .g-side.spalten .g-side-row > .g-sc-nr .g-rownum { width: auto; text-align: left; }
-.g-side.spalten .g-side-row.sub { display: flex; }
+/* Sub-Zeile nutzt im Spalten-Modus dasselbe Grid wie Hauptzeilen (gleiche Spalten); nur die Nummer kennzeichnet den Untertermin */
+.g-side.spalten .g-side-row.sub > .g-sc-nr { color: var(--text-faint); }
+.g-side.spalten .g-side-row.sub > .gewerk { font-weight: 500; }
+/* BKP-Dropdown für ein neu eingefügtes, leeres Gewerk */
+.g-bkp-pick { max-width: 100%; border: 1px solid var(--brand); border-radius: 6px; padding: 2px 4px; font-size: 11.5px; background: var(--brand-soft); color: var(--text); cursor: pointer; font-weight: 600; }
 /* Kopfzeile mit ausgeschriebenen Spaltentiteln, am selben Grid ausgerichtet */
 .g-side-head { display: grid; align-items: stretch; border-top: 1px solid var(--border); margin: 2px -8px -4px -8px; background: var(--surface-2); }
 .g-side-head .g-shc { position: relative; padding: 4px 8px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--text-faint); border-right: 1px solid var(--border); white-space: nowrap; display: flex; align-items: flex-end; }

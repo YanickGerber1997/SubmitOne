@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v361';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v362';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3003,6 +3003,22 @@ function sideSetDate(pid, vid, field, val, grob) {
   if (grob) v[field + 'Label'] = grob; else delete v[field + 'Label'];   // grobes Label (z.B. „Frühling 2026") mitführen
   save(); rerenderGantt(pid);
 }
+function subSetDate(pid, vid, oid, field, val, grob) {   // Untertermin-Datum (Start/Ende) aus den linken Spalten setzen
+  if (gesperrt(pid)) return;
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  const o = (v.vorgaenge || []).find(x => x.id === oid); if (!o) return;
+  o[field] = val || '';
+  if (grob) o[field + 'Label'] = grob; else delete o[field + 'Label'];
+  recalcAutoBalken(v);
+  save(); rerenderGantt(pid);
+}
+function pickGewerkBkp(pid, vid, code) {   // BKP für ein (leeres) Gewerk per Dropdown wählen → BKP + Name aus dem Katalog setzen
+  if (!code || gesperrt(pid)) return;
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  const b = BKP_KATALOG.find(x => x.code === code);
+  v.bkp = code; if (!v.gewerk && b) v.gewerk = b.label;
+  save(); rerenderGantt(pid);
+}
 // Fokus: Gewerk in den aktuell sichtbaren Zeitausschnitt einplanen
 function actFocusAdd(e, pid) {
   const p = findProjekt(pid); if (!p) return; if (gesperrt(pid)) return;
@@ -3324,7 +3340,7 @@ function viewTermine(id) {
     const editAttr = `data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}"`;
     const cellFns = {
       bkp: () => `<span class="g-sc bkp g-edit" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)"><span class="bkp-code">${esc(v.bkp || '')}</span></span>`,
-      gewerk: () => `<span class="g-sc gewerk g-edit" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">${esc(v.gewerk)}</span>`,
+      gewerk: () => v.gewerk ? `<span class="g-sc gewerk g-edit" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">${esc(v.gewerk)}</span>` : `<span class="g-sc gewerk">${bkpSelectHtml(p.id, v.id)}</span>`,
       firma: () => `<span class="g-sc g-si firma">${v.firma ? esc(v.firma) : ''}</span>`,
       person: () => `<span class="g-sc g-si">${(k && k.person) ? esc(k.person) : ''}</span>`,
       natel: () => `<span class="g-sc g-si">${(k && k.telefon) ? '☎ ' + esc(k.telefon) : ''}</span>`,
@@ -3379,8 +3395,25 @@ function viewTermine(id) {
     (v.vorgaenge || []).forEach(o => {
       if (ganttDone === 'hide' && o.erfuellt) return;   // erfüllte Untertermine ausblenden
       const key = v.id + '/' + o.id; const oDated = o.start && o.ende;
-      sideRows += `<div class="g-side-row sub" style="--phc:${phaseColOf(v)}"><span class="g-rownum sub">${gnr}.${++oNr}</span><span class="gewerk" style="font-weight:500;cursor:pointer" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="Untertermin bearbeiten">${esc(o.titel)}</span>
-        ${gespr ? '' : `<button class="x-btn" title="Untertermin löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button>`}</div>`;
+      const oNum = ++oNr;
+      const delBtn = gespr ? '<span class="g-sc-add"></span>' : `<button class="x-btn g-sc-add" title="Untertermin löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button>`;
+      const titleCell = `<span class="g-sc gewerk" style="font-weight:500;cursor:pointer" data-act="fein-vorgang-edit" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" title="Untertermin bearbeiten">${esc(o.titel)}</span>`;
+      if (spalten) {
+        // Sub-Zeile: gleiche Spalten wie eine Hauptzeile (Titel in „Gewerk"; Start/Ende/Dauer aus dem Untertermin)
+        const subCell = {
+          bkp: () => `<span class="g-sc bkp"></span>`,
+          gewerk: () => titleCell,
+          firma: () => `<span class="g-sc g-si"></span>`,
+          person: () => `<span class="g-sc g-si"></span>`,
+          natel: () => `<span class="g-sc g-si"></span>`,
+          start: () => `<input type="date" class="g-sc g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-field="start"${grobAttr(o.startLabel, o.start)} value="${esc(o.start || '')}"${gespr ? ' disabled' : ''} title="Start Untertermin">`,
+          ende: () => `<input type="date" class="g-sc g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-field="ende"${grobAttr(o.endeLabel, o.ende)} value="${esc(o.ende || '')}"${gespr ? ' disabled' : ''} title="Ende Untertermin">`,
+          dauer: () => `<span class="g-sc g-si-dauer" title="Dauer Untertermin">${esc(gDauerTxt(o.start, o.ende) || '–')}</span>`,
+        };
+        sideRows += `<div class="g-side-row sub" style="--phc:${phaseColOf(v)}"><span class="g-sc-nr"><span class="g-rownum sub">${gnr}.${oNum}</span></span>${visCols.map(k => subCell[k]()).join('')}${delBtn}</div>`;
+      } else {
+        sideRows += `<div class="g-side-row sub" style="--phc:${phaseColOf(v)}"><span class="g-rownum sub">${gnr}.${oNum}</span>${titleCell}${gespr ? '' : `<button class="x-btn" title="Untertermin löschen" data-act="rm-vorgang" data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}">×</button>`}</div>`;
+      }
       if (oDated) {
         const oOut = (p.ganttLinks || []).some(lk => lk.from === key), oIn = (p.ganttLinks || []).some(lk => lk.to === key);
         const oL = leftPx(o.start), oW = widthPx(o.start, o.ende), oLab = gBarLabel(o.titel, oL, oW, true, false, innerW, oOut, oIn);
@@ -3493,7 +3526,8 @@ function viewTermine(id) {
     $$('.g-link-grip').forEach(g => { g.addEventListener('mousedown', onLinkGripDown); g.addEventListener('dblclick', e => { e.stopPropagation(); const lid = g.dataset.lid; const pr = findProjekt(ganttPid); const lk = pr && (pr.ganttLinks || []).find(l => l.id === lid); if (lk && lk.dx) { delete lk.dx; save(); rerenderGantt(ganttPid); } }); });
     $$('.g-link-hit').forEach(h => h.addEventListener('click', e => { const g = e.target.closest('.g-link'); if (g) selectGanttLink(g.dataset.lid); }));
     $$('.g-link').forEach(g => g.addEventListener('contextmenu', e => { e.preventDefault(); linkMenu(e, ganttPid, g.dataset.lid); }));
-    $$('.g-si-date').forEach(inp => { inp.addEventListener('change', () => sideSetDate(inp.dataset.pid, inp.dataset.vid, inp.dataset.field, inp.value, inp.dataset.grob || '')); inp.addEventListener('mousedown', e => e.stopPropagation()); });
+    $$('.g-si-date').forEach(inp => { inp.addEventListener('change', () => { if (inp.dataset.oid) subSetDate(inp.dataset.pid, inp.dataset.vid, inp.dataset.oid, inp.dataset.field, inp.value, inp.dataset.grob || ''); else sideSetDate(inp.dataset.pid, inp.dataset.vid, inp.dataset.field, inp.value, inp.dataset.grob || ''); }); inp.addEventListener('mousedown', e => e.stopPropagation()); });
+    $$('.g-bkp-pick').forEach(sel => { sel.addEventListener('change', () => pickGewerkBkp(sel.dataset.pid, sel.dataset.vid, sel.value)); sel.addEventListener('mousedown', e => e.stopPropagation()); });
   } else {
     $$('.g-bar').forEach(b => b.classList.add('g-locked'));
   }
@@ -4278,9 +4312,9 @@ function addGewerkAfter(pid, vid) {
   if (gesperrt(pid)) return;
   const p = findProjekt(pid); p.vergaben = p.vergaben || [];
   const idx = p.vergaben.findIndex(x => x.id === vid); const prev = idx >= 0 ? p.vergaben[idx] : null;
-  const nv = { id: uid('v'), bkp: prev ? (prev.bkp || '') : '', gewerk: 'Neues Gewerk', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 0, frist: '', bauStart: '', bauEnde: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] };
+  const nv = { id: uid('v'), bkp: '', gewerk: '', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 0, frist: '', bauStart: '', bauEnde: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] };
   p.vergaben.splice(idx >= 0 ? idx + 1 : p.vergaben.length, 0, nv);
-  save(); rerenderGantt(pid); actEditVergabe(pid, nv.id);   // sofort BKP + Name setzen
+  save(); rerenderGantt(pid);   // leer einfügen – BKP wird in der Zeile per Dropdown gewählt (kein Dialog)
 }
 function commitBarDates(pid, vid, oid, s, en) {
   if (gesperrt(pid)) { rerenderGantt(pid); return; }
@@ -5321,6 +5355,8 @@ const BKP_KATALOG = [
 ].map(([code, label]) => ({ code, label }));
 
 function bkpDatalist(id) { return `<datalist id="${id}">${BKP_KATALOG.map(b => `<option value="${esc(b.code + ' ' + b.label)}">`).join('')}</datalist>`; }
+// Dropdown zum Wählen eines BKP (für ein neu eingefügtes, leeres Gewerk im Gantt). Nur Positionen (keine reinen Hauptgruppen).
+function bkpSelectHtml(pid, vid) { return `<select class="g-bkp-pick" data-pid="${pid}" data-vid="${vid}"><option value="">BKP wählen …</option>${BKP_KATALOG.filter(b => !/^\d{1,2}$/.test(b.code)).map(b => `<option value="${esc(b.code)}">${esc(b.code + ' ' + b.label)}</option>`).join('')}</select>`; }
 // Durchsuchbarer Katalog zum Anklicken (Hauptgruppen als Überschrift, Positionen als Buttons)
 function bkpCatRows(filter) {
   const q = (filter || '').trim().toLowerCase();

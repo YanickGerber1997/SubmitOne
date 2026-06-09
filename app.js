@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v349';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v350';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1992,6 +1992,7 @@ function viewKosten(id) {
 
 let ganttZoom = 'monat';   // 'monat' | 'woche' | 'tag'
 let ganttScale = 1;        // stufenloser Breiten-Faktor auf pxPerDay
+let ganttFitScale = 0;     // kleinster Scale, bei dem das Programm die Breite füllt (Rauszoom-Limit); 0 = noch unbekannt
 let ganttChain = true;     // Verkettung: Nachfolger automatisch nachführen
 let ganttWorkdays = false; // Abstände/Verkettung in Arbeitstagen (Wochenende/Feiertage überspringen)
 let ganttSide = { gewerk: true, firma: false, person: false, natel: false, start: false, ende: false, dauer: false }; // einblendbare Info-Spalten (BKP-Nr. immer); start/ende = editierbare Datumsfelder
@@ -2958,8 +2959,9 @@ function viewTermine(id) {
   const _vw = _gm ? _gm.clientWidth : 0;
   if (_vw > 60 && totalDays > 0) {
     const minPx = _vw / totalDays;
-    if (pxPerDay < minPx - 0.5) { pxPerDay = minPx; ganttScale = +(minPx / ZOOM[ganttZoom].px).toFixed(3); }
-  }
+    ganttFitScale = +(minPx / ZOOM[ganttZoom].px).toFixed(3);   // Rauszoom-Limit für Rad/Knopf
+    if (pxPerDay < minPx - 0.5) { pxPerDay = minPx; ganttScale = ganttFitScale; }
+  } else ganttFitScale = 0;
   const innerW = Math.round(totalDays * pxPerDay);
   ganttCtx = { rangeStartISO, pxPerDay };
 
@@ -3294,7 +3296,8 @@ function viewTermine(id) {
     const rect = gMain.getBoundingClientRect();
     const viewX = e.clientX - rect.left;
     const dayAtCursor = (gMain.scrollLeft + viewX) / pxPerDay;
-    const ns = Math.min(4, Math.max(0.1, +(ganttScale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)).toFixed(3)));
+    const lo = Math.max(0.1, ganttFitScale || 0.1);   // nicht unter das Rauszoom-Limit (sonst Flackern durch Re-Klemmen)
+    const ns = Math.min(4, Math.max(lo, +(ganttScale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)).toFixed(3)));
     if (ns === ganttScale) return;
     ganttScale = ns;
     viewTermine(p.id);
@@ -12339,11 +12342,13 @@ document.addEventListener('click', e => {
     case 'bauablauf':    actBauablauf(pid); break;
     case 'bauablauf-go': applyBauablauf(pid); break;
     case 'link-succ-pick': linkSuccessorPick(pid, act.dataset.vid, act.dataset.tvid); break;
-    case 'gantt-scale':
-      if (kind === 'out') ganttScale = Math.max(0.12, +(ganttScale * 0.8).toFixed(3));
+    case 'gantt-scale': {
+      const _before = ganttScale;
+      if (kind === 'out') ganttScale = Math.max(ganttFitScale || 0.12, +(ganttScale * 0.8).toFixed(3));
       else if (kind === 'in') ganttScale = Math.min(4, +(ganttScale * 1.25).toFixed(3));
       else ganttScale = 1;
-      rerenderGantt(pid); break;
+      if (ganttScale !== _before || kind === 'reset') rerenderGantt(pid);
+    } break;
     case 'gantt-sort':   ganttSort = kind; rerenderGantt(pid); break;
     case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; saveGanttSide(); rerenderGantt(pid); break;
     case 'side-date':    break;   // wird über change-Listener (sideSetDate) behandelt

@@ -967,6 +967,14 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-row.g-draw { cursor: crosshair; }
 .g-draw-hint { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 10px; color: var(--text-faint); opacity: 0; pointer-events: none; }
 .g-row.g-draw:hover .g-draw-hint { opacity: 1; }
+/* Vorgezeichneter Ghost-Balken auf leeren Zeilen: an die richtige Stelle ziehen, rechter Rand = Länge */
+.g-ghost { position: absolute; top: calc((var(--rowh, 38px) - 20px) / 2); height: 20px; border-radius: 6px; opacity: .42; border: 1.5px dashed rgba(255,255,255,.85); display: flex; align-items: center; cursor: grab; z-index: 3; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.g-ghost:hover { opacity: .82; }
+.g-ghost:active { cursor: grabbing; }
+.g-ghost .g-ghost-lbl { flex: 1; font-size: 9.5px; font-weight: 600; color: #fff; padding: 0 4px; white-space: nowrap; overflow: hidden; pointer-events: none; text-shadow: 0 0 2px rgba(0,0,0,.55); }
+.g-ghost .g-h { flex: none; width: 9px; align-self: stretch; }
+.g-ghost .g-h.r { cursor: ew-resize; }
+.g-ghost .g-h.r:hover { background: rgba(255,255,255,.5); border-radius: 0 6px 6px 0; }
 .g-bar.g-draft { opacity: .5; pointer-events: none; }
 .g-fenster { position: absolute; border: 1.5px solid; border-radius: 8px; z-index: 1; pointer-events: none; }
 .g-fenster-lbl { position: absolute; top: 3px; left: 8px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,.78); border-radius: 5px; padding: 1px 7px; white-space: nowrap; max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; }

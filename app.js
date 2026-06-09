@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v367';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v368';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3408,7 +3408,11 @@ function viewTermine(id) {
           <span class="g-h l"></span>${v.erfuellt ? '<span class="g-check">✓</span>' : ''}<span class="g-lbl">${gLab.inner}</span>${shiftMarkV(v.id, v.bauStart, v.bauEnde)}${v.notiz ? `<span class="g-tnote" title="${esc(v.notiz)}">📝</span>` : ''}${(p.feinkommentare || []).some(k => k.vid === v.id && !k.oid) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${v.id}" title="Verbindung ziehen"></span></div>${gLab.outer}${gDauerLabel(v.bauStart, v.bauEnde, gL, gL + gW, false)}</div>`;
       }
     } else {
-      barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw" data-pid="${p.id}" data-vid="${v.id}"><span class="g-draw-hint">ziehen = Termin zeichnen · Klick = Dialog</span></div>`;
+      {
+        const gd = v.planDauer || 10;   // vorgezeichnete Dauer (Tage); am rechten Rand änderbar, wird gemerkt
+        const ghost = gespr ? '' : `<div class="g-ghost" data-pid="${p.id}" data-vid="${v.id}" style="left:0;width:${gd * pxPerDay}px;background:${colHex}" title="Vorgezeichneter Balken (${gd} Tage) – an die richtige Stelle ziehen; rechter Rand = Länge ändern"><span class="g-h l"></span><span class="g-ghost-lbl">${gDauerTxt(todayIso(), addDays(todayIso(), gd - 1))} →</span><span class="g-h r"></span></div>`;
+        barRows += gespr ? `<div class="g-row"></div>` : `<div class="g-row g-draw" data-pid="${p.id}" data-vid="${v.id}">${ghost}<span class="g-draw-hint">Ghost ziehen = platzieren · leer ziehen = zeichnen</span></div>`;
+      }
     }
     rowIdx++; inserts.push({ y: headH + rowIdx * ROW_H, vid: v.id });
     (v.vorgaenge || []).forEach(o => {
@@ -3537,6 +3541,7 @@ function viewTermine(id) {
   if (!gespr) {
     $$('.g-bar').forEach(b => { b.addEventListener('mousedown', onBarMouseDown); b.addEventListener('dblclick', onGanttBarDbl); });
     $$('.g-row.g-draw').forEach(r => r.addEventListener('mousedown', onGanttDraw));
+    $$('.g-ghost').forEach(g => g.addEventListener('mousedown', onGhostDown));
     { const gr = document.querySelector('.g-rows'); if (gr) gr.addEventListener('mousedown', e => { if (!e.target.closest('.g-bar') && !e.target.closest('.g-link') && !e.target.closest('.g-bestell')) { deselectGanttBar(); deselectGanttLink(); } }); }
     if (ganttSel) { const b = document.querySelector(`.g-bar[data-key="${ganttSel}"]`); if (b) b.classList.add('g-sel'); else ganttSel = null; }
     $$('.g-bestell').forEach(b => b.addEventListener('mousedown', onBestellDown));
@@ -4320,6 +4325,36 @@ function onGanttDraw(e) {
     commitBarDates(pid, vid, oid, addDays(ganttCtx.rangeStartISO, lo), addDays(ganttCtx.rangeStartISO, hi));
   };
   document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); e.preventDefault();
+}
+// Vorgezeichneter „Ghost"-Balken auf leeren Gewerk-Zeilen: an die richtige Stelle ziehen (platzieren) · rechter Rand = Länge ändern
+function onGhostDown(e) {
+  if (!ganttCtx || e.button !== 0) return;
+  const ghost = e.currentTarget, pid = ghost.dataset.pid, vid = ghost.dataset.vid, oid = ghost.dataset.oid || null;
+  if (gesperrt(pid)) return;
+  e.stopPropagation(); e.preventDefault();
+  const rows = ghost.closest('.g-rows'); if (!rows) return;
+  const px = ganttCtx.pxPerDay;
+  const resize = e.target.classList.contains('g-h') && e.target.classList.contains('r');
+  const startX = e.clientX, left0 = parseFloat(ghost.style.left) || 0, w0 = parseFloat(ghost.style.width) || (10 * px);
+  let moved = false;
+  const move = ev => {
+    if (Math.abs(ev.clientX - startX) > 3) moved = true;
+    if (resize) ghost.style.width = Math.max(px, w0 + (ev.clientX - startX)) + 'px';
+    else ghost.style.left = Math.max(0, left0 + (ev.clientX - startX)) + 'px';
+  };
+  const up = () => {
+    document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+    if (!moved) return;
+    if (resize) {
+      const dur = Math.max(1, Math.round(parseFloat(ghost.style.width) / px));
+      const p = findProjekt(pid), v = findVergabe(p, vid); if (v) { v.planDauer = dur; save(); rerenderGantt(pid); }
+      return;
+    }
+    const day = Math.max(0, Math.round(parseFloat(ghost.style.left) / px));
+    const dur = Math.max(1, Math.round(w0 / px));
+    commitBarDates(pid, vid, oid, addDays(ganttCtx.rangeStartISO, day), addDays(ganttCtx.rangeStartISO, day + dur - 1));
+  };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
 }
 function addEmptyVorgangDetail(pid, vid) {
   if (gesperrt(pid)) return;

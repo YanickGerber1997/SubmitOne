@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v334';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v335';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1896,16 +1896,20 @@ function viewKosten(id) {
   });
   const dTot = tot.dWvEnd;
 
-  const kpi = (l, v, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:21px${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div></div>`;
+  const ks = (l, v, cls) => `<div class="ks${cls ? ' ' + cls : ''}"><span>${l}</span><b>${money(v)}</b></div>`;
 
   render(head + `
-    <div class="kpi-row">
-      ${kpi('Kostenschätzung (KV)', money(toNet(tot.kv)))}
-      ${kpi('Abrechnungsprognose', money(toNet(tot.endsumme)))}
-      ${kpi('Prognose inkl. ' + mwstSatz() + '% MwSt', 'CHF ' + money(toGross(tot.endsumme)), 'brand')}
-      ${kpi('Offen', money(toNet(tot.offenRg)))}
+    <div class="k-strip">
+      ${ks('KV / Schätzung', toNet(tot.kv))}
+      ${ks('Revision', toNet(tot.rev))}
+      ${ks('Werkvertrag', toNet(tot.wv))}
+      ${ks('Nachträge', toNet(tot.nt))}
+      ${ks('Prognose', toNet(tot.endsumme), 'hl')}
+      ${ks('Bezahlt', toNet(tot.fakturiert))}
+      ${ks('Offen', toNet(tot.offenRg))}
+      ${ks('inkl. ' + mwstSatz() + '% MwSt', toGross(tot.endsumme), 'mwst')}
     </div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 14px"><span class="tag" style="background:#eef2f8;color:#46505e;font-weight:600">erfasst ${inkl ? 'inkl.' : 'exkl.'} ${mwstSatz()} % MwSt</span> – Anzeige standardmässig <b>netto</b>; „Brutto"-Knopf zeigt inkl. MwSt. Total inkl. MwSt: <b>${chf(toGross(tot.endsumme))}</b>.</p>
+    <p class="muted" style="font-size:12px;margin:-2px 0 12px"><span class="tag" style="background:#eef2f8;color:#46505e;font-weight:600">erfasst ${inkl ? 'inkl.' : 'exkl.'} ${mwstSatz()} % MwSt</span> – Tabelle netto; „Brutto"-Knopf zeigt inkl. MwSt.</p>
     ${(p.volumen || p.flaeche) ? `<p class="muted" style="font-size:12px;margin:-6px 0 14px">Kubische Kennzahlen für die Kostenschätzungs-Gegenüberstellung${p.volumen ? ` · GV ${p.volumen.toLocaleString('de-CH')} m³` : ''}${p.flaeche ? ` · BGF ${p.flaeche.toLocaleString('de-CH')} m²` : ''}. Gebäudedaten unter „Übersicht → ✎ Bearbeiten".</p>` : ''}
     <div class="card ktable-wrap">
       <table class="grid ktable">

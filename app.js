@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v337';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v338';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -12403,11 +12403,18 @@ function demoData() {
   const K = (bkp, gewerk, schaetzung) => ({ id: uid('v'), bkp, gewerk, status: 'ausschreibung', firma: '', betrag: 0, schaetzung, frist: '', bauStart: '', bauEnde: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
   const vergaben = [
     R('104', 'Baugespann', 0, 500, '', '', '', 486.45),
+    R('112', 'Abbruch', 0, null, '', '2026-06-08', '2026-07-03'),
     R('121', 'Sicherung vorhandener Anlagen', 3000, 4000, '', '', ''),
     R('191', 'Architekt (Vorbereitung)', 3520, 3794.90, 'P. Hefti Bauberatung', '', '', 3794.90),
     R('199', 'Übriges', 500, 0, '', '', ''),
     R('211', 'Baumeisterarbeiten', 75000, 94397.75, 'Kilchherr', '2026-06-08', '2026-07-17', 1179.90),
-    R('211.1', 'Gerüstungen', 6000, 6771.35, '', '2026-06-29', '2026-11-20'),
+    R('211.3', 'Baumeisteraushub', 0, null, '', '2026-06-08', '2026-06-26'),
+    R('211.4', 'Kanalisationen im Gebäude', 0, null, '', '2026-06-08', '2026-06-09'),
+    R('211.5', 'Beton- und Stahlbetonarbeiten', 0, null, '', '2026-06-22', '2026-07-17'),
+    { ...R('211.1', 'Gerüstungen', 6000, 6771.35, '', '', ''), autoBalken: true, vorgaenge: [
+      { id: uid('o'), titel: 'Aufrichten', start: '2026-07-13', ende: '2026-07-14' },
+      { id: uid('o'), titel: 'Abrüsten', start: '2026-11-16', ende: '2026-11-20' },
+    ] },
     R('214', 'Holzbau', 11000, 64322.30, '', '2026-08-03', '2026-08-28'),
     R('215', 'Ing. Holzbau', 9000, 0, '', '', ''),
     { ...R('221.2', 'Fenster (Kunststoff-Metall)', 35000, 44220.75, '', '', ''), beschrieb: 'Variantenänderung: in der Kostenschätzung als Holz-Metall-Fenster geschätzt (KV 35\'000, BKP 221.1). Auf Wunsch der Bauherrschaft auf Kunststoff-Metall geändert – revidierter KV 44\'220.75 (BKP 221.2). Mehrkosten +9\'221 (in der Über-/Unterschreitung sichtbar).' },

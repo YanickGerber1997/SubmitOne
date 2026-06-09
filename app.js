@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v368';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v369';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -4369,6 +4369,7 @@ function addGewerkAfter(pid, vid) {
   const idx = p.vergaben.findIndex(x => x.id === vid); const prev = idx >= 0 ? p.vergaben[idx] : null;
   const nv = { id: uid('v'), bkp: '', gewerk: '', status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 0, frist: '', bauStart: '', bauEnde: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] };
   p.vergaben.splice(idx >= 0 ? idx + 1 : p.vergaben.length, 0, nv);
+  ganttHideUndated = false;   // neues (datumloses) Gewerk sichtbar machen, damit es platziert/gezogen werden kann
   save(); rerenderGantt(pid);   // leer einfügen – BKP wird in der Zeile per Dropdown gewählt (kein Dialog)
 }
 function commitBarDates(pid, vid, oid, s, en) {

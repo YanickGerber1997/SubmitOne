@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v347';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v348';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2950,7 +2950,15 @@ function viewTermine(id) {
   const rangeStartISO = isoOf(rangeStart);
   const totalDays = dayDiff(rangeStart, rangeEnd) + 1;
 
-  const pxPerDay = ZOOM[ganttZoom].px * ganttScale;
+  // Rauszoom-Limit: das Programm soll mindestens die sichtbare Chart-Breite füllen – nicht weiter rauszoomen
+  // (sonst bleibt rechts leerer Raum). Untergrenze für pxPerDay = Fensterbreite / Gesamttage; ganttScale wird entsprechend geklemmt.
+  let pxPerDay = ZOOM[ganttZoom].px * ganttScale;
+  const _gm = document.querySelector('.g-main');
+  const _vw = _gm ? _gm.clientWidth : 0;
+  if (_vw > 60 && totalDays > 0) {
+    const minPx = _vw / totalDays;
+    if (pxPerDay < minPx - 0.5) { pxPerDay = minPx; ganttScale = +(minPx / ZOOM[ganttZoom].px).toFixed(3); }
+  }
   const innerW = Math.round(totalDays * pxPerDay);
   ganttCtx = { rangeStartISO, pxPerDay };
 

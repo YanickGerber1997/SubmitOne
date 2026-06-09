@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v325';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v326';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1632,6 +1632,82 @@ function viewProjekte() {
    10) View: Projekt-Detail
    --------------------------------------------------------------- */
 
+// Dashboard-Unterreiter: Generell + je eigener Überblick für Ausschreibung / Termin / Kosten / Pendenzen
+let dashTab = 'generell';
+const DASH_TABS = [['generell', 'Generell'], ['ausschreibung', 'Ausschreibung'], ['termin', 'Terminprogramm'], ['kosten', 'Kosten'], ['pendenzen', 'Pendenzen']];
+function dashTabBar(p) {
+  return `<div class="dash-tabs">${DASH_TABS.map(([k, l]) => `<button class="dash-tab${dashTab === k ? ' active' : ''}" data-act="dash-tab" data-pid="${p.id}" data-kind="${k}" type="button">${l}</button>`).join('')}</div>`;
+}
+function dashOther(p) {
+  if (dashTab === 'ausschreibung') return dashAusschreibung(p);
+  if (dashTab === 'termin') return dashTermin(p);
+  if (dashTab === 'kosten') return dashKosten(p);
+  if (dashTab === 'pendenzen') return dashPendenzen(p);
+  return '';
+}
+function dashKosten(p) {
+  const vs = p.vergaben || []; let kv = 0, rev = 0, prog = 0, bez = 0, offen = 0;
+  vs.forEach(v => { const z = kostenZeile(v); kv += z.kv; rev += (z.rev != null ? z.rev : z.kv); prog += z.prognose; bez += z.bezahlt; offen += z.offen; });
+  const delta = prog - kv; const col = delta > 0.5 ? '#dc2626' : (delta < -0.5 ? '#16a34a' : 'inherit');
+  return `<div class="detail-stats">
+      <div class="dstat"><div class="l">Kostenvoranschlag</div><div class="v">${chf(kv)}</div></div>
+      <div class="dstat"><div class="l">Revision</div><div class="v">${chf(rev)}</div></div>
+      <div class="dstat"><div class="l">Prognose</div><div class="v">${chf(prog)}</div></div>
+      <div class="dstat"><div class="l">Über-/Unterschreitung</div><div class="v" style="color:${col}">${delta >= 0 ? '+' : ''}${chf(delta)}</div></div>
+      <div class="dstat"><div class="l">Bezahlt</div><div class="v">${chf(bez)}</div></div>
+      <div class="dstat"><div class="l">Offen</div><div class="v">${chf(offen)}</div></div>
+    </div>
+    <div style="margin-top:12px"><a class="btn secondary" href="#/projekt/${p.id}/kosten">Zur Baukostenübersicht →</a></div>`;
+}
+function dashAusschreibung(p) {
+  const vs = p.vergaben || []; const tot = vs.length;
+  const verg = vs.filter(isVergeben).length; const offenV = tot - verg;
+  const ueberf = vs.filter(v => v.frist && !isVergeben(v) && daysUntil(v.frist) < 0).length;
+  const fr = vs.filter(v => v.frist && !isVergeben(v)).slice().sort((a, b) => a.frist.localeCompare(b.frist)).slice(0, 8);
+  return `<div class="detail-stats">
+      <div class="dstat"><div class="l">Gewerke gesamt</div><div class="v">${tot}</div></div>
+      <div class="dstat"><div class="l">Vergeben</div><div class="v">${verg}</div></div>
+      <div class="dstat"><div class="l">Offen</div><div class="v">${offenV}</div></div>
+      <div class="dstat"><div class="l">Überfällige Fristen</div><div class="v" style="color:${ueberf ? '#dc2626' : 'inherit'}">${ueberf}</div></div>
+    </div>
+    ${fr.length ? `<div class="section-head" style="margin-top:18px"><h2>Nächste Eingabefristen</h2></div>
+    <div class="card"><table class="grid"><thead><tr><th>BKP</th><th>Gewerk</th><th>Status</th><th>Frist</th></tr></thead><tbody>
+      ${fr.map(v => `<tr><td><span class="bkp-code">${esc(v.bkp || '')}</span></td><td><strong>${esc(v.gewerk || '')}</strong></td><td>${statusPill(v)}</td><td class="frist ${fristClass(v.frist, false)}">${fristText(v.frist, false)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted" style="margin-top:14px">Keine offenen Eingabefristen.</p>'}
+    <div style="margin-top:12px"><a class="btn secondary" href="#/projekt/${p.id}/listen">Zur Submittentenliste →</a></div>`;
+}
+function dashTermin(p) {
+  const ek = eckDaten(p); const vs = gewerkeSorted(p);
+  const dated = vs.filter(v => v.bauStart && v.bauEnde); const today = todayIso();
+  const laufend = dated.filter(v => v.bauStart <= today && v.bauEnde >= today);
+  const kommend = dated.filter(v => v.bauStart > today).slice().sort((a, b) => a.bauStart.localeCompare(b.bauStart)).slice(0, 8);
+  return `<div class="detail-stats">
+      <div class="dstat"><div class="l">Baustart</div><div class="v" style="font-size:15px">${ek.baustart ? fmtDate(ek.baustart) : '–'}</div></div>
+      <div class="dstat"><div class="l">Bauende</div><div class="v" style="font-size:15px">${ek.bauende ? fmtDate(ek.bauende) : '–'}</div></div>
+      <div class="dstat"><div class="l">Bezug</div><div class="v" style="font-size:15px">${ek.bezug ? fmtDate(ek.bezug) : '–'}</div></div>
+      <div class="dstat"><div class="l">Datierte Gewerke</div><div class="v">${dated.length} / ${vs.length}</div></div>
+      <div class="dstat"><div class="l">Laufend</div><div class="v">${laufend.length}</div></div>
+    </div>
+    ${kommend.length ? `<div class="section-head" style="margin-top:18px"><h2>Nächste Termine</h2></div>
+    <div class="card"><table class="grid"><thead><tr><th>BKP</th><th>Gewerk</th><th>Start</th><th>Ende</th></tr></thead><tbody>
+      ${kommend.map(v => `<tr><td><span class="bkp-code">${esc(v.bkp || '')}</span></td><td><strong>${esc(v.gewerk || '')}</strong></td><td class="muted">${fmtDate(v.bauStart)}</td><td class="muted">${fmtDate(v.bauEnde)}</td></tr>`).join('')}
+    </tbody></table></div>` : ''}
+    <div style="margin-top:12px"><a class="btn secondary" href="#/projekt/${p.id}/termine">Zum Terminprogramm →</a></div>`;
+}
+function dashPendenzen(p) {
+  const offen = offenePendenzen(p);
+  const ueberf = offen.filter(x => x.it.termin && daysUntil(x.it.termin) < 0).length;
+  const next = offen.slice(0, 10);
+  return `<div class="detail-stats">
+      <div class="dstat"><div class="l">Offene Pendenzen</div><div class="v">${offen.length}</div></div>
+      <div class="dstat"><div class="l">Überfällig</div><div class="v" style="color:${ueberf ? '#dc2626' : 'inherit'}">${ueberf}</div></div>
+    </div>
+    ${next.length ? `<div class="section-head" style="margin-top:18px"><h2>Nächste Pendenzen</h2></div>
+    <div class="card"><table class="grid"><thead><tr><th>Pendenz</th><th>Verantwortlich</th><th>Termin</th></tr></thead><tbody>
+      ${next.map(x => `<tr><td>${esc(x.it.text || '')}</td><td>${esc(x.it.verantwortlich || '–')}</td><td class="muted frist ${fristClass(x.it.termin, false)}">${x.it.termin ? fristText(x.it.termin, false) : '–'}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted" style="margin-top:14px">Keine offenen Pendenzen. ✓</p>'}
+    <div style="margin-top:12px"><a class="btn secondary" href="#/projekt/${p.id}/pendenzen">Zu den Pendenzen →</a></div>`;
+}
 function viewProjektDetail(id) {
   const p = findProjekt(id);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
@@ -1655,7 +1731,8 @@ function viewProjektDetail(id) {
     </div>
 
     ${projektTabs(p, 'overview')}
-
+    ${dashTabBar(p)}
+    ${dashTab !== 'generell' ? dashOther(p) : `
     ${phasenBar(p)}
 
     <!-- Kennzahlen -->
@@ -1695,7 +1772,7 @@ function viewProjektDetail(id) {
           ${bkpGhostRows(p, 7)}
         </tbody>
       </table>` : emptyState('▤', 'Noch keine Vergaben angelegt.')}
-    </div>
+    </div>`}
   `;
   render(html);
 }
@@ -11724,6 +11801,7 @@ document.addEventListener('click', e => {
     case 'conflict-take': resolveConflictTake(pid); break;
     case 'abo':          actAbo(); break;
     case 'upgrade':      openCheckout(act.dataset.plan); break;
+    case 'dash-tab':     dashTab = kind || 'generell'; viewProjektDetail(pid); break;
     case 'team':         actTeam(pid); break;
     case 'team-add':     teamAdd(pid); break;
     case 'team-rm':      teamRemove(pid, act.dataset.key); break;

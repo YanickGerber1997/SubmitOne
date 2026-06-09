@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v342';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v343';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2115,7 +2115,7 @@ function ganttRibbonTabs(p) {
     rgroup('Schrift Balken', gFontStep('gantt-font', p.id, ganttFont)) +
     rgroup('Schrift Seite', gFontStep('gantt-sidefont', p.id, ganttSideFont));
   else if (ganttTab === 'anzeige') b =
-    rgroup('Fokus', bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' })) +
+    rgroup('Fokus', bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' }) + bigBtn('gantt-dist', 'arrBoth', 'Distanz', { pid: p.id, on: ganttDist, title: 'Auf leeren Zeilen anschreiben, wie weit der Balken vom sichtbaren Ausschnitt entfernt ist (← zurück / vorne →), in Tagen' })) +
     rgroup('Filter', bigBtn('gantt-hideundated', 'filter', 'Nur Termin', { pid: p.id, on: ganttHideUndated, title: 'Nur Gewerke mit Termin anzeigen (termin-lose wie Reserve ausblenden)' }) + bigBtn('gantt-done', 'check', 'Erfüllt: ' + DONE_NAMES[ganttDone], { pid: p.id, on: ganttDone !== 'show', title: 'Erfüllte Termine: Zeigen → Ausgrauen → Ausblenden' })) +
     rgroup('Vergleich', bigBtn('gantt-basecmp', 'delta', ganttBaseCompare && ganttBaselineVer(p) ? 'Δ ' + ganttBaselineVer(p).name : 'Δ Version', { pid: p.id, on: ganttBaseCompare, title: 'Vergleichsversion wählen – ⟳ am Balken zeigt „war → jetzt"; im Menü auch „Verschiebungen anzeigen"' }));
   else if (ganttTab === 'ablauf') b =
@@ -2689,6 +2689,7 @@ function setupGanttStickyHead() {
   if (!_gshBound) { _gshBound = true; window.addEventListener('scroll', _gshUpdate, { passive: true }); window.addEventListener('resize', _gshUpdate); }
   _gshUpdate();
   if (ganttFocus) updateGanttFocus();
+  if (ganttDist) updateGanttDist();
 }
 let ganttPendingScroll = null;  // {left, y} – nach In-Place-Rerender wiederherstellen
 // Gantt neu zeichnen ohne Scroll-Sprung (Seite + horizontaler Scroll bleiben)
@@ -2719,6 +2720,7 @@ let ganttSideFont = 12;          // Schriftgrösse der linken Seitenleiste (Gewe
 let ganttPad = 1;                // Rand (Monate) links/rechts um das Programm (Scroll-Spielraum)
 let ganttRibbon = true;          // Werkzeug-Leiste (Kategorien) ein-/ausgeklappt
 let ganttFocus = false;          // Fokus: nur Zeilen mit Aktivität im sichtbaren Zeitausschnitt hervorheben (live beim Scrollen)
+let ganttDist = false;           // auf leeren Zeilen anschreiben, wie weit der Balken vom sichtbaren Ausschnitt entfernt ist (Tage)
 let ganttLinkFront = false;      // Verbindungslinien über (true) oder hinter (false) den Balken
 let ganttHideUndated = false;    // termin-lose Gewerke (z.B. Reserve) im Gantt ausblenden
 let ganttBaseCompare = false;    // pro Balken Abweichung gegenüber Baseline-Version (war → jetzt) anzeigen
@@ -2739,7 +2741,26 @@ function updateGanttFocus() {
     if (side[i]) side[i].classList.toggle('g-hide', !active);
   });
 }
-function scheduleGanttFocus() { if (!ganttFocus) return; if (_focusRaf) return; _focusRaf = requestAnimationFrame(() => { _focusRaf = 0; updateGanttFocus(); }); }
+// Distanz-Marker: auf Zeilen, deren Balken ausserhalb des sichtbaren Ausschnitts liegt, „← N Tage" / „N Tage →" am sichtbaren Rand
+function updateGanttDist() {
+  const main = document.querySelector('.g-main'); const rowsC = main && main.querySelector('.g-rows'); if (!main || !rowsC) return;
+  const ppd = ganttCtx ? ganttCtx.pxPerDay : 0;
+  const vx0 = main.scrollLeft, vx1 = vx0 + main.clientWidth;
+  rowsC.querySelectorAll(':scope > .g-row').forEach(row => {
+    let d = row.querySelector(':scope > .g-dist');
+    if (!ganttDist || row.dataset.x0 === undefined || ppd <= 0) { if (d) d.style.display = 'none'; return; }
+    const a = Number(row.dataset.x0), b = Number(row.dataset.x1);
+    if (isNaN(a) || isNaN(b)) { if (d) d.style.display = 'none'; return; }
+    let txt, cls, left, right = false;
+    if (b < vx0) { const n = Math.max(1, Math.round((vx0 - b) / ppd)); txt = '← ' + n + ' ' + (n === 1 ? 'Tag' : 'Tage'); cls = 'behind'; left = vx0 + 4; }
+    else if (a > vx1) { const n = Math.max(1, Math.round((a - vx1) / ppd)); txt = n + ' ' + (n === 1 ? 'Tag' : 'Tage') + ' →'; cls = 'ahead'; left = vx1 - 4; right = true; }
+    else { if (d) d.style.display = 'none'; return; }
+    if (!d) { d = document.createElement('div'); row.appendChild(d); }
+    d.className = 'g-dist ' + cls; d.textContent = txt; d.style.display = 'block';
+    d.style.left = left + 'px'; d.style.transform = right ? 'translate(-100%, -50%)' : 'translateY(-50%)';
+  });
+}
+function scheduleGanttFocus() { if (!ganttFocus && !ganttDist) return; if (_focusRaf) return; _focusRaf = requestAnimationFrame(() => { _focusRaf = 0; if (ganttFocus) updateGanttFocus(); if (ganttDist) updateGanttDist(); }); }
 // Start-/Endtermin direkt aus der linken Spalte setzen (editierbares Datumsfeld)
 function sideSetDate(pid, vid, field, val) {
   if (gesperrt(pid)) return;
@@ -12336,6 +12357,7 @@ document.addEventListener('click', e => {
     case 'gantt-labelmode': ganttLabelMode = kind || LABEL_MODES[(LABEL_MODES.indexOf(ganttLabelMode) + 1) % LABEL_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-strength':  ganttColorStrength = kind || STRENGTH_MODES[(STRENGTH_MODES.indexOf(ganttColorStrength) + 1) % STRENGTH_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-focus':     ganttFocus = !ganttFocus; rerenderGantt(pid); break;
+    case 'gantt-dist':      ganttDist = !ganttDist; rerenderGantt(pid); break;
     case 'gantt-hideundated': ganttHideUndated = !ganttHideUndated; rerenderGantt(pid); break;
     case 'gantt-done':   ganttDone = DONE_MODES[(DONE_MODES.indexOf(ganttDone) + 1) % DONE_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-phasebands': ganttPhaseBands = !ganttPhaseBands; rerenderGantt(pid); break;

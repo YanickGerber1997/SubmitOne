@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v344';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v345';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2762,6 +2762,23 @@ function updateGanttDist() {
     if (!d) { d = document.createElement('div'); row.appendChild(d); }
     d.className = 'g-dist ' + cls; d.textContent = txt; d.style.display = 'block';
     d.style.left = left + 'px'; d.style.transform = right ? 'translate(-100%, -50%)' : 'translateY(-50%)';
+  });
+  // Meilensteine Baustart/Bauende/Bezug prominent, wenn ausserhalb des Ausschnitts (oben am Chart-Rand)
+  const MNAME = { start: 'Baustart', ende: 'Bauende', bezug: 'Bezug' };
+  let bN = 0, aN = 0;
+  rowsC.querySelectorAll(':scope > .g-mark').forEach(mk => {
+    let md = mk._distLabel;
+    if (!ganttDist || ppd <= 0) { if (md) md.style.display = 'none'; return; }
+    const x = mk.offsetLeft;
+    const cls = mk.classList.contains('start') ? 'start' : (mk.classList.contains('ende') ? 'ende' : 'bezug');
+    const name = MNAME[cls] || 'Termin';
+    let txt, left, top, ahead = false;
+    if (x < vx0) { const n = Math.max(1, Math.round((vx0 - x) / ppd)); txt = '◀ ' + name + ' · ' + n + ' ' + (n === 1 ? 'Tag' : 'Tage'); left = vx0 + 5; top = 4 + (bN++) * 21; }
+    else if (x > vx1) { const n = Math.max(1, Math.round((x - vx1) / ppd)); txt = name + ' · ' + n + ' ' + (n === 1 ? 'Tag' : 'Tage') + ' ▶'; left = vx1 - 5; top = 4 + (aN++) * 21; ahead = true; }
+    else { if (md) md.style.display = 'none'; return; }
+    if (!md) { md = document.createElement('div'); rowsC.appendChild(md); mk._distLabel = md; }
+    md.className = 'g-mdist ' + cls; md.textContent = txt; md.style.display = 'block';
+    md.style.top = top + 'px'; md.style.left = left + 'px'; md.style.transform = ahead ? 'translateX(-100%)' : 'none';
   });
 }
 function scheduleGanttFocus() { if (!ganttFocus && !ganttDist) return; if (_focusRaf) return; _focusRaf = requestAnimationFrame(() => { _focusRaf = 0; if (ganttFocus) updateGanttFocus(); if (ganttDist) updateGanttDist(); }); }

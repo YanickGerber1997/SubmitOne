@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v335';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v336';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1802,13 +1802,11 @@ function viewKosten(id) {
   const p = findProjekt(id);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const vs = (p.vergaben || []).slice().sort((a, b) => (a.bkp || '').localeCompare(b.bkp || ''));
-  const inkl = (p.preiseInkl != null) ? !!p.preiseInkl : preiseInkl();   // wie wurden die Beträge ERFASST (pro Projekt)
 
   const toolbar = `
     <button class="btn sm secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">🖨 Kostenschätzung</button>
     <button class="btn sm secondary" data-act="pdf-baukosten" data-pid="${p.id}">🖨 Baukostenübersicht</button>
-    <button class="btn sm ${inkl ? '' : 'secondary'}" data-act="kosten-inkl" data-pid="${p.id}" title="Wie wurden die Beträge ERFASST: exkl. MwSt (netto) oder inkl. ${mwstSatz()}% (brutto)? Ändert nur die Auslegung, nicht die gespeicherten Zahlen.">Erfasst: ${inkl ? 'inkl. ' + mwstSatz() + '%' : 'exkl.'} MwSt</button>
-    <button class="btn sm ${kostenBrutto ? '' : 'secondary'}" data-act="kosten-brutto" data-pid="${p.id}" title="Beträge netto (exkl.) oder brutto (inkl. ${mwstSatz()}% MwSt) anzeigen">${kostenBrutto ? `Brutto (inkl. ${mwstSatz()}%)` : 'Netto (exkl. MwSt)'}</button>
+    <button class="btn sm ${kostenBrutto ? '' : 'secondary'}" data-act="kosten-brutto" data-pid="${p.id}" title="Reine Anzeige: Beträge netto (exkl.) oder brutto (inkl. ${mwstSatz()}% MwSt). Ändert die gespeicherten Zahlen nicht.">${kostenBrutto ? `Anzeige: Brutto (inkl. ${mwstSatz()}%)` : 'Anzeige: Netto (exkl. MwSt)'}</button>
     ${katToggleBtn()}
     <button class="btn sm secondary" data-act="kosten-versionen" data-pid="${p.id}" title="Kostenstände sichern & vergleichen (z.B. monatliche Abgaben)" style="margin-left:auto">📊 Versionen${(p.kostenVersionen || []).length ? ' (' + p.kostenVersionen.length + ')' : ''}</button>
     <button class="btn sm" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>`;
@@ -1829,10 +1827,9 @@ function viewKosten(id) {
   const dCls = d => d > 0.5 ? 'over' : (d < -0.5 ? 'under' : '');
   const sh = t => `<div style="font-weight:400;font-size:9px;color:#9aa4b1;margin-top:1px">${t}</div>`;
   const mw = mwstSatz();
-  // inkl=true → gespeicherte Beträge sind brutto; sonst netto. Anzeige immer korrekt netto/brutto.
-  const toNet = n => inkl ? (n / (1 + mw / 100)) : n;
-  const toGross = n => inkl ? n : (n * (1 + mw / 100));
-  const mB = n => kostenBrutto ? `${money(toGross(n))}<div class="kb-net">${money(toNet(n))} <span style="opacity:.65">netto</span></div>` : money(toNet(n));
+  // Beträge sind NETTO (exkl. MwSt) – MwSt/Rabatt/Skonto werden je Gewerk in den Konditionen gerechnet.
+  // „Brutto" ist reine ANZEIGE (+MwSt), verändert die Daten nicht.
+  const mB = n => kostenBrutto ? `${money(n * (1 + mw / 100))}<div class="kb-net">${money(n)} <span style="opacity:.65">netto</span></div>` : money(n);
   const tot = blank();
 
   let body = '';
@@ -1900,16 +1897,16 @@ function viewKosten(id) {
 
   render(head + `
     <div class="k-strip">
-      ${ks('KV / Schätzung', toNet(tot.kv))}
-      ${ks('Revision', toNet(tot.rev))}
-      ${ks('Werkvertrag', toNet(tot.wv))}
-      ${ks('Nachträge', toNet(tot.nt))}
-      ${ks('Prognose', toNet(tot.endsumme), 'hl')}
-      ${ks('Bezahlt', toNet(tot.fakturiert))}
-      ${ks('Offen', toNet(tot.offenRg))}
-      ${ks('inkl. ' + mwstSatz() + '% MwSt', toGross(tot.endsumme), 'mwst')}
+      ${ks('KV / Schätzung', tot.kv)}
+      ${ks('Revision', tot.rev)}
+      ${ks('Werkvertrag', tot.wv)}
+      ${ks('Nachträge', tot.nt)}
+      ${ks('Prognose', tot.endsumme, 'hl')}
+      ${ks('Bezahlt', tot.fakturiert)}
+      ${ks('Offen', tot.offenRg)}
+      ${ks('inkl. ' + mwstSatz() + '% MwSt', tot.endsumme * (1 + mw / 100), 'mwst')}
     </div>
-    <p class="muted" style="font-size:12px;margin:-2px 0 12px"><span class="tag" style="background:#eef2f8;color:#46505e;font-weight:600">erfasst ${inkl ? 'inkl.' : 'exkl.'} ${mwstSatz()} % MwSt</span> – Tabelle netto; „Brutto"-Knopf zeigt inkl. MwSt.</p>
+    <p class="muted" style="font-size:12px;margin:-2px 0 12px">Alle Beträge <b>netto</b> (exkl. MwSt). MwSt, Rabatt &amp; Skonto werden <b>je Gewerk in den Konditionen</b> gerechnet. Der „Anzeige: Brutto"-Knopf zeigt zusätzlich inkl. ${mwstSatz()} % MwSt – ohne die Daten zu verändern.</p>
     ${(p.volumen || p.flaeche) ? `<p class="muted" style="font-size:12px;margin:-6px 0 14px">Kubische Kennzahlen für die Kostenschätzungs-Gegenüberstellung${p.volumen ? ` · GV ${p.volumen.toLocaleString('de-CH')} m³` : ''}${p.flaeche ? ` · BGF ${p.flaeche.toLocaleString('de-CH')} m²` : ''}. Gebäudedaten unter „Übersicht → ✎ Bearbeiten".</p>` : ''}
     <div class="card ktable-wrap">
       <table class="grid ktable">
@@ -12062,7 +12059,6 @@ document.addEventListener('click', e => {
     case 'new-vergabe':  actNewVergabe(pid); break;
     case 'kat-toggle':   katOpen = !katOpen; router(); break;
     case 'kosten-brutto': kostenBrutto = !kostenBrutto; viewKosten(pid); break;
-    case 'kosten-inkl':  { const p = findProjekt(pid); if (p) { p.preiseInkl = !((p.preiseInkl != null) ? p.preiseInkl : preiseInkl()); save(); viewKosten(pid); toast('Beträge erfasst ' + (p.preiseInkl ? 'inkl.' : 'exkl.') + ' MwSt', 'info'); } } break;
     case 'kosten-versionen': actKostenVersionen(pid); break;
     case 'kosten-vers-neu': kostenVersNeu(pid); break;
     case 'kosten-vers-del': kostenVersDel(pid, act.dataset.vid); break;

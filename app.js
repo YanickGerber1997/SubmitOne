@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v348';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v349';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -124,7 +124,7 @@ function updateUndoButtons() {
   if (r) { r.disabled = !redoStack.length; r.hidden = !redoStack.length; }
 }
 // Vor Undo/Redo die Gantt-Scrollposition sichern, damit es nicht an den Anfang springt
-function keepGanttScroll() { const gm = document.querySelector('.g-main'); if (gm) ganttPendingScroll = { left: gm.scrollLeft, y: window.scrollY }; }
+function keepGanttScroll() { const gm = document.querySelector('.g-main'); const rb = document.querySelector('.g-ribbon'); if (gm) ganttPendingScroll = { left: gm.scrollLeft, y: window.scrollY, rib: rb ? rb.scrollLeft : 0 }; }
 function undo() {
   if (!undoStack.length) { toast('Nichts zum Rückgängigmachen', 'info'); return; }
   undoing = true;
@@ -2700,7 +2700,8 @@ let ganttPendingScroll = null;  // {left, y} – nach In-Place-Rerender wiederhe
 // Gantt neu zeichnen ohne Scroll-Sprung (Seite + horizontaler Scroll bleiben)
 function rerenderGantt(pid) {
   const gm = document.querySelector('.g-main');
-  ganttPendingScroll = { left: gm ? gm.scrollLeft : 0, y: window.scrollY };
+  const rb = document.querySelector('.g-ribbon');
+  ganttPendingScroll = { left: gm ? gm.scrollLeft : 0, y: window.scrollY, rib: rb ? rb.scrollLeft : 0 };
   viewTermine(pid);
 }
 let ganttSort = 'bkp';     // 'bkp' | 'start'
@@ -3282,6 +3283,7 @@ function viewTermine(id) {
   if (ganttPendingScroll) {
     const ps = ganttPendingScroll; ganttPendingScroll = null;
     const gm0 = document.querySelector('.g-main'); if (gm0) gm0.scrollLeft = ps.left;
+    const rb0 = document.querySelector('.g-ribbon'); if (rb0 && ps.rib != null) rb0.scrollLeft = ps.rib;
     if (ps.y != null) window.scrollTo(0, ps.y);
   }
   // Cursor-Zoom: Strg + Mausrad zoomt dorthin, wo der Zeiger steht

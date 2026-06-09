@@ -990,6 +990,30 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .chg-delta.dn { color: #16a34a; }
 .g-side-row .add-vg { margin-left: auto; }
 .g-side-row.offen { background: repeating-linear-gradient(45deg, var(--surface), var(--surface) 6px, #fafbfd 6px, #fafbfd 12px); }
+/* === Linke Spalten: Nr-Zelle + Modus „Locker" (kompakt) und „Spalten" (saubere, ausgerichtete Tabelle) === */
+.g-sc-nr { flex: none; display: flex; align-items: center; gap: 5px; }
+.g-side .g-sidemode { align-self: flex-start; }
+.g-side .g-sidemode button { padding: 2px 8px; font-size: 10px; }
+/* Locker: direkte Flex-Kinder, leere Zellen weg, Gewerk dehnt sich */
+.g-side.locker .g-side-row { gap: 7px; }
+.g-side.locker .g-sc:empty { display: none; }
+.g-side.locker .g-sc.gewerk { flex: 1 1 auto; }
+.g-side.locker .g-sc.bkp { flex: none; }
+.g-side.locker .add-vg { margin-left: auto; }
+/* Spalten: Grid mit ausgerichteten Spalten, dünne Trennlinien, Ellipsis */
+.g-side.spalten .g-side-row { display: grid; grid-template-columns: var(--side-grid); align-items: stretch; padding: 0; gap: 0; }
+.g-side.spalten .g-side-row > * { min-width: 0; padding: 0 8px; border-right: 1px solid var(--border); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: var(--rowh, 38px); }
+.g-side.spalten .g-side-row > .g-sc-nr { display: flex; align-items: center; gap: 5px; line-height: normal; color: var(--text-faint); }
+.g-side.spalten .g-side-row > .g-sc-add { border-right: none; display: flex; align-items: center; justify-content: center; padding: 0 2px; line-height: normal; margin: 0; }
+.g-side.spalten .g-side-row > .gewerk { font-weight: 600; }
+.g-side.spalten .g-side-row > .g-si-date { line-height: normal; width: 100%; box-sizing: border-box; padding: 2px 5px; }
+.g-side.spalten .g-side-row > .g-si-dauer { text-align: left; }
+.g-side.spalten .g-side-row > .g-sc-nr .g-rownum { width: auto; text-align: left; }
+.g-side.spalten .g-side-row.sub { display: flex; }
+/* Kopfzeile mit ausgeschriebenen Spaltentiteln, am selben Grid ausgerichtet */
+.g-side-head { display: grid; align-items: stretch; border-top: 1px solid var(--border); margin: 2px -8px -4px -8px; background: var(--surface-2); }
+.g-side-head .g-shc { padding: 4px 8px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--text-faint); border-right: 1px solid var(--border); white-space: nowrap; overflow: hidden; display: flex; align-items: flex-end; }
+.g-side-head .g-shc:last-child { border-right: none; }
 .g-edit { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; min-width: 0; flex: 1; }
 .g-edit:hover .gewerk { color: var(--brand); text-decoration: underline; }
 .g-set {

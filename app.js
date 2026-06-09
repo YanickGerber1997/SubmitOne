@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v350';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v351';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1995,19 +1995,22 @@ let ganttScale = 1;        // stufenloser Breiten-Faktor auf pxPerDay
 let ganttFitScale = 0;     // kleinster Scale, bei dem das Programm die Breite füllt (Rauszoom-Limit); 0 = noch unbekannt
 let ganttChain = true;     // Verkettung: Nachfolger automatisch nachführen
 let ganttWorkdays = false; // Abstände/Verkettung in Arbeitstagen (Wochenende/Feiertage überspringen)
-let ganttSide = { gewerk: true, firma: false, person: false, natel: false, start: false, ende: false, dauer: false }; // einblendbare Info-Spalten (BKP-Nr. immer); start/ende = editierbare Datumsfelder
-let ganttSideOrder = ['gewerk', 'firma', 'person', 'natel', 'start', 'ende', 'dauer']; // frei verschiebbare Reihenfolge der Info-Spalten
-const SIDE_LABELS = { gewerk: 'Gewerk', firma: 'Firma', person: 'Person', natel: 'Natel', start: 'Start', ende: 'Ende', dauer: 'Dauer' };
+let ganttSide = { bkp: true, gewerk: true, firma: false, person: false, natel: false, start: false, ende: false, dauer: false }; // einblendbare Spalten (Zeilennummer immer); start/ende = editierbare Datumsfelder
+let ganttSideOrder = ['bkp', 'gewerk', 'firma', 'person', 'natel', 'start', 'ende', 'dauer']; // frei verschiebbare Reihenfolge der Spalten
+const SIDE_LABELS = { bkp: 'BKP', gewerk: 'Gewerk', firma: 'Firma', person: 'Person', natel: 'Natel', start: 'Start', ende: 'Ende', dauer: 'Dauer' };
+const SIDE_W = { bkp: 60, gewerk: 184, firma: 138, person: 120, natel: 116, start: 124, ende: 124, dauer: 62 }; // Spaltenbreiten im Spalten-Modus (px)
+let ganttSideMode = 'locker'; // 'locker' (kompakt wie bisher) | 'spalten' (saubere, ausgerichtete Spalten mit Kopf)
 let _ganttSideLoaded = false;
 function loadGanttSide() {
   if (_ganttSideLoaded) return; _ganttSideLoaded = true;
   try {
     const s = JSON.parse(localStorage.getItem('so_gantt_side') || 'null'); if (!s) return;
     if (s.vis && typeof s.vis === 'object') Object.keys(ganttSide).forEach(k => { if (k in s.vis) ganttSide[k] = !!s.vis[k]; });
-    if (Array.isArray(s.order)) { const valid = s.order.filter(k => ganttSideOrder.includes(k)); ganttSideOrder.forEach(k => { if (!valid.includes(k)) valid.push(k); }); ganttSideOrder = valid; }
+    if (Array.isArray(s.order)) { const valid = s.order.filter(k => ganttSideOrder.includes(k)); ganttSideOrder.forEach((k, i) => { if (!valid.includes(k)) valid.splice(Math.min(i, valid.length), 0, k); }); ganttSideOrder = valid; }
+    if (s.mode === 'locker' || s.mode === 'spalten') ganttSideMode = s.mode;
   } catch (_) {}
 }
-function saveGanttSide() { try { localStorage.setItem('so_gantt_side', JSON.stringify({ vis: ganttSide, order: ganttSideOrder })); } catch (_) {} }
+function saveGanttSide() { try { localStorage.setItem('so_gantt_side', JSON.stringify({ vis: ganttSide, order: ganttSideOrder, mode: ganttSideMode })); } catch (_) {} }
 let ganttDates = 'off';   // Anschrift am Balken: 'off' | 'datum' (dd.mm.yy) | 'kw' (Kalenderwoche) | 'grob' (Anfang/Mitte/Ende Monat)
 let ganttMode = 'detail'; // 'detail' = Termin-Gantt (Tage) | 'grob' = Grobplanung (Phasen) | 'fein' = Feinprogramm (Stunden)
 const FEIN_H0 = 6, FEIN_H1 = 20;   // Stunden-Achse Feinprogramm (06:00–20:00)
@@ -2887,7 +2890,7 @@ function viewTermine(id) {
   if (ganttHideUndated) vs = vs.filter(v => (v.bauStart && v.bauEnde) || (v.vorgaenge || []).some(o => o.start && o.ende));   // termin-lose Gewerke (z.B. Reserve) ausblenden
   if (ganttDone === 'hide') vs = vs.filter(v => !v.erfuellt);   // erfüllte Gewerke ausblenden
 
-  const infoCtrl =`<div class="g-zoom g-sidecols" title="Info-Spalten: Klick = ein/aus (BKP-Nr. immer sichtbar) · ziehen = Reihenfolge ändern (wird gespeichert)">${ganttSideOrder.map(key => `<button class="${ganttSide[key] ? 'active' : ''}" draggable="true" data-sidecol="${key}" data-act="gantt-side" data-pid="${p.id}" data-kind="${key}">${SIDE_LABELS[key]}</button>`).join('')}</div>`;
+  const infoCtrl =`<div class="g-zoom g-sidecols" title="Spalten: Klick = ein/aus (Zeilennummer immer sichtbar) · ziehen = Reihenfolge ändern (wird gespeichert)">${ganttSideOrder.map(key => `<button class="${ganttSide[key] ? 'active' : ''}" draggable="true" data-sidecol="${key}" data-act="gantt-side" data-pid="${p.id}" data-kind="${key}">${SIDE_LABELS[key]}</button>`).join('')}</div>`;
   const zoomCtrl = `<div class="g-zoom">
     ${Object.keys(ZOOM).map(z => `<button class="${ganttZoom === z ? 'active' : ''}" data-act="gantt-zoom" data-pid="${p.id}" data-kind="${z}">${ZOOM[z].label}</button>`).join('')}
   </div>`;
@@ -3094,6 +3097,11 @@ function viewTermine(id) {
 
   const ROW_H = ganttRowH;
   const kontaktByFirma = f => (state.kontakte || []).find(k => k.firma === f);
+  // Linke Spalten: sichtbare Spalten in Reihenfolge; Grid-Template (Spalten-Modus) bzw. Heuristik (Locker)
+  const spalten = ganttSideMode === 'spalten';
+  const visCols = ganttSideOrder.filter(key => ganttSide[key]);
+  const NR_W = 46, ADD_W = 26;
+  const gridTemplate = [NR_W + 'px', ...visCols.map(k => SIDE_W[k] + 'px'), ADD_W + 'px'].join(' ');
   let sideRows = '', barRows = '', rowIdx = 0, gNr = 0; const barMeta = {}; const inserts = []; const windows = [];
   vs.forEach(v => {
     recalcAutoBalken(v);   // Oberbalken ggf. aus Unterterminen umspannen
@@ -3105,22 +3113,21 @@ function viewTermine(id) {
     const k = (ganttSide.person || ganttSide.natel) && v.firma ? kontaktByFirma(v.firma) : null;
     const editAttr = `data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}"`;
     const cellFns = {
+      bkp: () => `<span class="g-sc bkp g-edit" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)"><span class="bkp-code">${esc(v.bkp || '')}</span></span>`,
       gewerk: () => `<span class="g-sc gewerk g-edit" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">${esc(v.gewerk)}</span>`,
-      firma: () => v.firma ? `<span class="g-sc g-si firma">${esc(v.firma)}</span>` : '',
-      person: () => (k && k.person) ? `<span class="g-sc g-si">${esc(k.person)}</span>` : '',
-      natel: () => (k && k.telefon) ? `<span class="g-sc g-si">☎ ${esc(k.telefon)}</span>` : '',
+      firma: () => `<span class="g-sc g-si firma">${v.firma ? esc(v.firma) : ''}</span>`,
+      person: () => `<span class="g-sc g-si">${(k && k.person) ? esc(k.person) : ''}</span>`,
+      natel: () => `<span class="g-sc g-si">${(k && k.telefon) ? '☎ ' + esc(k.telefon) : ''}</span>`,
       start: () => `<input type="date" class="g-sc g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-field="bauStart" value="${esc(v.bauStart || '')}"${gespr ? ' disabled' : ''} title="Starttermin">`,
       ende: () => `<input type="date" class="g-sc g-si-date" data-act="side-date" data-pid="${p.id}" data-vid="${v.id}" data-field="bauEnde" value="${esc(v.bauEnde || '')}"${gespr ? ' disabled' : ''} title="Endtermin">`,
       dauer: () => `<span class="g-sc g-si-dauer" title="Dauer der Arbeiten (Kalendertage)">${esc(gDauerTxt(v.bauStart, v.bauEnde) || '–')}</span>`,
     };
-    const orderedCells = ganttSideOrder.filter(key => ganttSide[key]).map(key => cellFns[key]()).join('');
+    const orderedCells = visCols.map(key => cellFns[key]()).join('');
     const gnr = ++gNr; let oNr = 0;
     sideRows += `<div class="g-side-row${hatTermin ? '' : ' offen'}" style="--phc:${phaseColOf(v)}">
-      <span class="g-rownum">${gnr}</span>
-      <button class="g-phase-dot" data-act="grob-phase" data-pid="${p.id}" data-vid="${v.id}" style="background:${phaseColOf(v)}" title="Bauphase (Grobplanung): ${esc((BAU_PHASEN.find(x => x.key === phaseOf(v)) || {}).label || '')}${v.bauPhase ? ' · manuell' : ''} – klicken zum Ändern"></button>
-      <span class="g-edit bkp-only" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)"><span class="bkp-code">${esc(v.bkp)}</span></span>
-      <span class="g-side-cells">${orderedCells}</span>
-      ${gespr ? '' : `<button class="btn sm ghost add-vg" title="Untertermin hinzufügen (leer – dann Balken ziehen)" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${v.id}">＋</button>`}
+      <span class="g-sc-nr"><button class="g-phase-dot" data-act="grob-phase" data-pid="${p.id}" data-vid="${v.id}" style="background:${phaseColOf(v)}" title="Bauphase (Grobplanung): ${esc((BAU_PHASEN.find(x => x.key === phaseOf(v)) || {}).label || '')}${v.bauPhase ? ' · manuell' : ''} – klicken zum Ändern"></button><span class="g-rownum">${gnr}</span></span>
+      ${orderedCells}
+      ${gespr ? '<span class="g-sc-add"></span>' : `<button class="btn sm ghost add-vg g-sc-add" title="Untertermin hinzufügen (leer – dann Balken ziehen)" data-act="gantt-add-vorgang" data-pid="${p.id}" data-vid="${v.id}">＋</button>`}
     </div>`;
     if (hatTermin) {
       let bestellBar = '';
@@ -3206,16 +3213,24 @@ function viewTermine(id) {
   const linkSvg = `<svg class="g-links" width="${innerW}" height="${rowIdx * ROW_H}">${linkPaths}</svg>`;
   const phaseBandsHtml = ganttPhaseBands ? phaseSpans.map(x => `<div class="g-phaseband" style="left:${leftPx(x.s)}px;width:${widthPx(x.s, x.e)}px;background:${hexA(x.ph.col, .07)};border-left:1px solid ${hexA(x.ph.col, .32)}"><span class="g-phaseband-lbl" style="color:${x.ph.col}">${esc(x.ph.label)}</span></div>`).join('') : '';
 
-  const sideExtras = (ganttSide.firma ? 1 : 0) + (ganttSide.person ? 1 : 0) + (ganttSide.natel ? 1 : 0);
-  const dateColsW = (ganttSide.start ? 116 : 0) + (ganttSide.ende ? 116 : 0) + (ganttSide.dauer ? 52 : 0);
-  let sideW = ganttSide.gewerk ? 200 : 66;
-  if (sideExtras) sideW = Math.min(480, (ganttSide.gewerk ? 200 : 92) + sideExtras * 96);
-  sideW = Math.min(680, sideW + dateColsW);
+  let sideW;
+  if (spalten) {
+    sideW = NR_W + ADD_W + visCols.reduce((s, k) => s + SIDE_W[k], 0);
+  } else {
+    const sideExtras = (ganttSide.firma ? 1 : 0) + (ganttSide.person ? 1 : 0) + (ganttSide.natel ? 1 : 0);
+    const dateColsW = (ganttSide.start ? 116 : 0) + (ganttSide.ende ? 116 : 0) + (ganttSide.dauer ? 52 : 0);
+    sideW = ganttSide.gewerk ? 200 : 78;
+    if (sideExtras) sideW = Math.min(480, (ganttSide.gewerk ? 200 : 100) + sideExtras * 96);
+    sideW = Math.min(700, sideW + dateColsW);
+  }
+  // Kopfzeile (nur Spalten-Modus): ausgeschriebene Spaltentitel, am Grid ausgerichtet
+  const sideHead = spalten ? `<div class="g-side-head" style="grid-template-columns:${gridTemplate}"><span class="g-shc nr">Nr.</span>${visCols.map(k => `<span class="g-shc">${SIDE_LABELS[k]}</span>`).join('')}<span class="g-shc"></span></div>` : '';
+  const sideModeToggle = `<div class="g-zoom g-sidemode" title="Darstellung der linken Spalten: Locker (kompakt) oder Spalten (saubere, ausgerichtete Tabelle)">${[['locker', 'Locker'], ['spalten', 'Spalten']].map(([k, l]) => `<button class="${ganttSideMode === k ? 'active' : ''}" data-act="gantt-sidemode" data-pid="${p.id}" data-kind="${k}">${l}</button>`).join('')}</div>`;
 
   render(head + `
     ${warnBanner}${regelBanner}
     <div class="gantt lbl-${ganttLabelMode}${ganttFocus ? ' focus-on' : ''}${ganttLinkFront ? ' links-front' : ' links-behind'}${ganttDone === 'dim' ? ' done-dim' : ''}${ganttPhaseStripe ? ' phase-stripe' : ''}" style="--rowh:${ROW_H}px;--gfont:${ganttFont}px;--sfont:${ganttSideFont}px">
-      <div class="g-side" style="width:${sideW}px"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${infoCtrl}</div></div>${sideRows}${insertStrips}</div>
+      <div class="g-side ${spalten ? 'spalten' : 'locker'}" style="width:${sideW}px;--side-grid:${gridTemplate}"><div class="g-corner" style="height:${headH}px"><div class="g-corner-top"><span class="g-corner-lbl">Spalten</span>${sideModeToggle}${infoCtrl}</div>${sideHead}</div>${sideRows}${insertStrips}</div>
       <div class="g-main"><div class="g-inner" style="width:${innerW}px">
         <div class="g-head" style="height:${headH}px">
           ${yearCells ? `<div class="g-headrow yr">${yearCells}</div>` : ''}
@@ -12351,6 +12366,7 @@ document.addEventListener('click', e => {
     } break;
     case 'gantt-sort':   ganttSort = kind; rerenderGantt(pid); break;
     case 'gantt-side':   ganttSide[kind] = !ganttSide[kind]; saveGanttSide(); rerenderGantt(pid); break;
+    case 'gantt-sidemode': ganttSideMode = kind; saveGanttSide(); rerenderGantt(pid); break;
     case 'side-date':    break;   // wird über change-Listener (sideSetDate) behandelt
     case 'gantt-dates':  ganttDates = kind || DATE_MODES[(DATE_MODES.indexOf(ganttDates) + 1) % DATE_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-datepos': ganttDatePos = kind || DATEPOS_MODES[(DATEPOS_MODES.indexOf(ganttDatePos) + 1) % DATEPOS_MODES.length]; rerenderGantt(pid); break;

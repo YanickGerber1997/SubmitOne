@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v327';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v328';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1663,17 +1663,18 @@ function dashAusschreibung(p) {
   const vs = p.vergaben || []; const tot = vs.length;
   const verg = vs.filter(isVergeben).length; const offenV = tot - verg;
   const ueberf = vs.filter(v => v.frist && !isVergeben(v) && daysUntil(v.frist) < 0).length;
-  const fr = vs.filter(v => v.frist && !isVergeben(v)).slice().sort((a, b) => a.frist.localeCompare(b.frist)).slice(0, 8);
+  const mitFrist = vs.filter(v => v.frist && !isVergeben(v)).length;
+  const versendet = vs.filter(v => (v.eingeladene || []).some(e => e.datumMail)).length;
+  const offerten = vs.filter(v => (v.eingeladene || []).some(e => eOff(e) != null)).length;
   return `<div class="detail-stats">
       <div class="dstat"><div class="l">Gewerke gesamt</div><div class="v">${tot}</div></div>
       <div class="dstat"><div class="l">Vergeben</div><div class="v">${verg}</div></div>
       <div class="dstat"><div class="l">Offen</div><div class="v">${offenV}</div></div>
-      <div class="dstat"><div class="l">Überfällige Fristen</div><div class="v" style="color:${ueberf ? '#dc2626' : 'inherit'}">${ueberf}</div></div>
+      <div class="dstat"><div class="l">Einladungen versendet</div><div class="v">${versendet}</div></div>
+      <div class="dstat"><div class="l">Offerten erhalten</div><div class="v">${offerten}</div></div>
+      <div class="dstat"><div class="l">Offene Fristen</div><div class="v" style="color:${ueberf ? '#dc2626' : 'inherit'}">${mitFrist}${ueberf ? ` <span style="font-size:12px">(${ueberf} überfällig)</span>` : ''}</div></div>
     </div>
-    ${fr.length ? `<div class="section-head" style="margin-top:18px"><h2>Nächste Eingabefristen</h2></div>
-    <div class="card"><table class="grid"><thead><tr><th>BKP</th><th>Gewerk</th><th>Status</th><th>Frist</th></tr></thead><tbody>
-      ${fr.map(v => `<tr><td><span class="bkp-code">${esc(v.bkp || '')}</span></td><td><strong>${esc(v.gewerk || '')}</strong></td><td>${statusPill(v)}</td><td class="frist ${fristClass(v.frist, false)}">${fristText(v.frist, false)}</td></tr>`).join('')}
-    </tbody></table></div>` : '<p class="muted" style="margin-top:14px">Keine offenen Eingabefristen.</p>'}
+    ${projektNextStepsCard(p) || '<p class="muted" style="margin-top:14px">Keine offenen Ausschreibungen.</p>'}
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn secondary" href="#/projekt/${p.id}/listen">Zur Submittentenliste →</a><button class="btn secondary" data-act="firmen-to-kontakte" data-pid="${p.id}" title="Alle Unternehmer dieses Projekts als Kontakte anlegen (für saubere Verwaltung)">👥 Firmen → Kontakte</button></div>`;
 }
 function dashTermin(p) {
@@ -1747,7 +1748,6 @@ function viewProjektDetail(id) {
       <div class="dstat"><div class="l">Termin</div><div class="v" style="font-size:15px">${fmtDate(p.start)} – ${fmtDate(p.ende)}</div></div>
     </div>
 
-    ${projektNextStepsCard(p)}
     ${erinnerungenCard(p)}
 
     <!-- Vergaben-Tabelle -->
@@ -5048,7 +5048,7 @@ function removeErinnerung(pid, rid) {
   const p = findProjekt(pid); p.erinnerungen = (p.erinnerungen || []).filter(x => x.id !== rid);
   save(); closeModal(); router();
 }
-function projektNextStepsCard(p) {
+function projektNextStepsCard(p, limit) {
   const t0 = todayIso();
   const wvIdx = (STATUS_BY_KEY['werkvertrag'] || {}).index ?? 99;
   const offen = (p.vergaben || []).filter(v => statusIdx(v) < wvIdx && v.status !== 'abgeschlossen');
@@ -5060,7 +5060,8 @@ function projektNextStepsCard(p) {
     return { v, einbau, bestellBis, sortKey };
   }).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
   if (!withDate.length) return '';
-  const rows = withDate.slice(0, 5).map(({ v, einbau, bestellBis }) => {
+  const lim = limit || withDate.length;
+  const rows = withDate.slice(0, lim).map(({ v, einbau, bestellBis }) => {
     const stt = STATUS_BY_KEY[v.status] || {};
     const ref = bestellBis || einbau;
     const ueber = ref && ref < t0;
@@ -5077,7 +5078,8 @@ function projektNextStepsCard(p) {
           : `<a class="btn sm secondary" href="#/projekt/${p.id}/vergabe/${v.id}">öffnen</a>`}
     </div>`;
   }).join('');
-  return `<div class="section-head"><h2>Top 5 – nächste Ausschreibungen</h2><span class="hint">am nächsten an der Ausführung · ${withDate.length} noch offen</span></div>
+  const titel = limit ? `Top ${limit} – nächste Ausschreibungen` : 'Nächste Ausschreibungen &amp; Aktionen';
+  return `<div class="section-head"><h2>${titel}</h2><span class="hint">am nächsten an der Ausführung · ${withDate.length} noch offen</span></div>
     <div class="card card-pad ns-board">${rows}</div>`;
 }
 function gewerkAction(pid, vid, action) {

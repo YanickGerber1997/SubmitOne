@@ -1024,6 +1024,11 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-gewerk-new { border: 1px solid var(--brand); border-radius: 6px; padding: 3px 7px; font-size: 12px; background: var(--brand-soft); color: var(--text); width: 100%; box-sizing: border-box; outline: none; }
 .g-gewerk-new::placeholder { color: var(--brand); opacity: .75; }
 .g-side.spalten .g-side-row > .g-gewerk-new { line-height: normal; padding: 3px 7px; align-self: center; }
+/* BKP nachträglich zuordnen (freier Balken) */
+.g-bkp-set { width: 100%; box-sizing: border-box; border: 1px dashed var(--border-2); border-radius: 5px; padding: 2px 4px; font-size: 11px; background: transparent; color: var(--text-soft); }
+.g-bkp-set:focus { border-color: var(--brand); border-style: solid; outline: none; color: var(--text); }
+.g-bkp-set::placeholder { color: var(--brand); opacity: .7; }
+.g-side.spalten .g-side-row > .g-bkp-set { line-height: normal; padding: 2px 4px; align-self: center; }
 /* Kopfzeile mit ausgeschriebenen Spaltentiteln, am selben Grid ausgerichtet */
 .g-side-head { display: grid; align-items: stretch; border-top: 1px solid var(--border); margin: 2px -8px -4px -8px; background: var(--surface-2); }
 .g-side-head .g-shc { position: relative; padding: 4px 8px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--text-faint); border-right: 1px solid var(--border); white-space: nowrap; display: flex; align-items: flex-end; }

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v364';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v365';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3027,6 +3027,17 @@ function setNewGewerk(pid, vid, text) {   // leeres Gewerk benennen: freier Text
   if (b) { v.bkp = b.code; v.gewerk = b.label; } else { v.gewerk = text; }   // sonst: freier Balken ohne BKP
   save(); rerenderGantt(pid);
 }
+function setGewerkBkp(pid, vid, text) {   // einem (freien) Balken nachträglich ein BKP zuordnen – Katalog-Code od. freie Nummer
+  if (gesperrt(pid)) return;
+  text = (text || '').trim();
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v || !text) return;
+  const cm = text.match(/^(\d[\d.]*)/);
+  let b = cm ? BKP_KATALOG.find(x => x.code === cm[1]) : null;
+  if (!b) b = BKP_KATALOG.find(x => (x.code + ' ' + x.label).toLowerCase() === text.toLowerCase());
+  v.bkp = b ? b.code : text;
+  if (b && !v.gewerk) v.gewerk = b.label;
+  save(); rerenderGantt(pid);
+}
 // Fokus: Gewerk in den aktuell sichtbaren Zeitausschnitt einplanen
 function actFocusAdd(e, pid) {
   const p = findProjekt(pid); if (!p) return; if (gesperrt(pid)) return;
@@ -3347,7 +3358,7 @@ function viewTermine(id) {
     const k = (ganttSide.person || ganttSide.natel) && v.firma ? kontaktByFirma(v.firma) : null;
     const editAttr = `data-act="edit-termin" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}"`;
     const cellFns = {
-      bkp: () => `<span class="g-sc bkp g-edit" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)"><span class="bkp-code">${esc(v.bkp || '')}</span></span>`,
+      bkp: () => v.bkp ? `<span class="g-sc bkp g-edit" ${editAttr} title="${esc(v.bkp + ' ' + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)"><span class="bkp-code">${esc(v.bkp)}</span></span>` : (v.gewerk ? `<input type="text" class="g-sc bkp g-bkp-set" data-pid="${p.id}" data-vid="${v.id}" list="dl_gewerk_new" placeholder="+ BKP" title="BKP nachträglich zuordnen – Code tippen oder aus der Liste wählen">` : `<span class="g-sc bkp"></span>`),
       gewerk: () => v.gewerk ? `<span class="g-sc gewerk g-edit" ${editAttr} title="${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)} – Termine bearbeiten (Rechtsklick: Menü)">${esc(v.gewerk)}</span>` : `<input type="text" class="g-sc gewerk g-gewerk-new" data-pid="${p.id}" data-vid="${v.id}" list="dl_gewerk_new" placeholder="Name tippen oder BKP wählen …" title="Freien Namen eingeben (freier Balken) ODER ein BKP aus der Liste wählen – beides legt das Gewerk an">`,
       firma: () => `<span class="g-sc g-si firma">${v.firma ? esc(v.firma) : ''}</span>`,
       person: () => `<span class="g-sc g-si">${(k && k.person) ? esc(k.person) : ''}</span>`,
@@ -3536,6 +3547,7 @@ function viewTermine(id) {
     $$('.g-link').forEach(g => g.addEventListener('contextmenu', e => { e.preventDefault(); linkMenu(e, ganttPid, g.dataset.lid); }));
     $$('.g-si-date').forEach(inp => { inp.addEventListener('change', () => { if (inp.dataset.oid) subSetDate(inp.dataset.pid, inp.dataset.vid, inp.dataset.oid, inp.dataset.field, inp.value, inp.dataset.grob || ''); else sideSetDate(inp.dataset.pid, inp.dataset.vid, inp.dataset.field, inp.value, inp.dataset.grob || ''); }); inp.addEventListener('mousedown', e => e.stopPropagation()); });
     $$('.g-gewerk-new').forEach(inp => { inp.addEventListener('change', () => setNewGewerk(inp.dataset.pid, inp.dataset.vid, inp.value)); inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); setNewGewerk(inp.dataset.pid, inp.dataset.vid, inp.value); } }); inp.addEventListener('mousedown', e => e.stopPropagation()); });
+    $$('.g-bkp-set').forEach(inp => { inp.addEventListener('change', () => setGewerkBkp(inp.dataset.pid, inp.dataset.vid, inp.value)); inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); setGewerkBkp(inp.dataset.pid, inp.dataset.vid, inp.value); } }); inp.addEventListener('mousedown', e => e.stopPropagation()); });
   } else {
     $$('.g-bar').forEach(b => b.classList.add('g-locked'));
   }
@@ -4728,8 +4740,14 @@ function bkpCmp(a, b) {
   return ka.localeCompare(kb);
 }
 function gewerkeSorted(p) {
-  return (p.vergaben || []).slice().sort((a, b) =>
-    bkpCmp(a.bkp, b.bkp) || (a.gewerk || '').localeCompare(b.gewerk || ''));
+  const list = (p.vergaben || []).slice();
+  const withBkp = list.filter(v => (v.bkp || '').trim());
+  const sorted = withBkp.slice().sort((a, b) => bkpCmp(a.bkp, b.bkp) || (a.gewerk || '').localeCompare(b.gewerk || ''));
+  const rank = new Map(); sorted.forEach((v, i) => rank.set(v, i));
+  // Freie Balken (ohne BKP) bleiben an ihrer Einfügeposition: sie ankern an den BKP-Vorgänger in der Originalreihenfolge
+  const key = new Map(); let lastRank = -1;
+  list.forEach((v, idx) => { if ((v.bkp || '').trim()) { lastRank = rank.get(v); key.set(v, [lastRank, 0, idx]); } else { key.set(v, [lastRank, 1, idx]); } });
+  return list.sort((a, b) => { const ka = key.get(a), kb = key.get(b); return ka[0] - kb[0] || ka[1] - kb[1] || ka[2] - kb[2]; });
 }
 
 function kontaktByFirma(firma) {

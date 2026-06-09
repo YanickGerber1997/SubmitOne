@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v345';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v346';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -2124,6 +2124,7 @@ function ganttRibbonTabs(p) {
     rgroup('Vergleich', bigBtn('gantt-basecmp', 'delta', ganttBaseCompare && ganttBaselineVer(p) ? 'Δ ' + ganttBaselineVer(p).name : 'Δ Version', { pid: p.id, on: ganttBaseCompare, title: 'Vergleichsversion wählen – ⟳ am Balken zeigt „war → jetzt"; im Menü auch „Verschiebungen anzeigen"' }));
   else if (ganttTab === 'ablauf') b =
     rgroup('Eckdaten', bigBtn('eckdaten', 'flag', 'Baustart', { pid: p.id, on: !!(p.baustart || p.bauende), title: 'Baustart / Bauende / Bezug' }) + bigBtn('feiertage', 'star', 'Feiertage', { pid: p.id, on: !!p.kanton, title: 'Feiertage / Kanton' + (p.kanton ? ' ' + p.kanton : '') })) +
+    rgroup('Feiertage-Anzeige', optBtns('gantt-feier', p.id, [['band', 'Band'], ['diag', '45°'], ['vert', 'Vertikal']], ganttFeier)) +
     rgroup('Abhängigkeit', bigBtn('gantt-chain', 'chain', 'Verkettung', { pid: p.id, on: ganttChain, title: 'Verkettung ' + (ganttChain ? 'an' : 'aus') }) + bigBtn('gantt-workdays', 'calCheck', 'Arbeitstage', { pid: p.id, on: ganttWorkdays, title: 'Arbeitstage ' + (ganttWorkdays ? 'an' : 'aus') }) + ((p.sitzungsraster && p.sitzungsraster.aktiv) ? bigBtn('gantt-raster', 'calendar', 'Sitzungen', { pid: p.id, on: ganttRaster, title: 'Sitzungslinien ' + (ganttRaster ? 'an' : 'aus') }) : '')) +
     rgroup('Linien', optBtns('gantt-linkpos', p.id, [['behind', 'Hinter'], ['front', 'Über']], ganttLinkFront ? 'front' : 'behind')) +
     rgroup('Rand', bigBtn('gantt-pad', 'rand', 'Rand ' + ganttPad + 'M', { pid: p.id, kind: 'cycle', title: 'Rand (Monate) links/rechts – klicken erhöht (0–6)' })) +
@@ -2725,6 +2726,7 @@ let ganttPad = 1;                // Rand (Monate) links/rechts um das Programm (
 let ganttRibbon = true;          // Werkzeug-Leiste (Kategorien) ein-/ausgeklappt
 let ganttFocus = false;          // Fokus: nur Zeilen mit Aktivität im sichtbaren Zeitausschnitt hervorheben (live beim Scrollen)
 let ganttDist = false;           // auf leeren Zeilen anschreiben, wie weit der Balken vom sichtbaren Ausschnitt entfernt ist (Tage)
+let ganttFeier = 'band';         // Feiertags-Darstellung: 'band' (horizontal) | 'diag' (45° schräg) | 'vert' (vertikal im Chart, ohne Band)
 let ganttLinkFront = false;      // Verbindungslinien über (true) oder hinter (false) den Balken
 let ganttHideUndated = false;    // termin-lose Gewerke (z.B. Reserve) im Gantt ausblenden
 let ganttBaseCompare = false;    // pro Balken Abweichung gegenüber Baseline-Version (war → jetzt) anzeigen
@@ -3020,7 +3022,7 @@ function viewTermine(id) {
 
   // Feiertage: nur Bänder (Schattierung) – die Beschriftung kommt ins Kopf-Band, NICHT über die Balken
   const hols = feiertageInRange(rangeStart, rangeEnd);
-  const holBands = hols.map(f => `<div class="g-holiday" style="left:${dayDiff(rangeStart, f.d) * pxPerDay}px;width:${Math.max(pxPerDay, 2)}px" title="${esc(f.n)} ${fmtDate(isoOf(f.d))}"></div>`).join('');
+  const holBands = hols.map(f => `<div class="g-holiday" style="left:${dayDiff(rangeStart, f.d) * pxPerDay}px;width:${Math.max(pxPerDay, 2)}px" title="${esc(f.n)} ${fmtDate(isoOf(f.d))}">${ganttFeier === 'vert' ? `<span>${esc(f.n)}</span>` : ''}</div>`).join('');
 
   // Meilensteine: nur Linien (klickbar) – Beschriftung ins Kopf-Band
   const ek = eckDaten(p);
@@ -3036,21 +3038,29 @@ function viewTermine(id) {
   vs.forEach(v => { if (!(v.bauStart && v.bauEnde)) return; const key = phaseOf(v); const a = phaseAgg[key] || (phaseAgg[key] = { s: v.bauStart, e: v.bauEnde }); if (v.bauStart < a.s) a.s = v.bauStart; if (v.bauEnde > a.e) a.e = v.bauEnde; });
   const phaseSpans = BAU_PHASEN.filter(ph => phaseAgg[ph.key]).map(ph => ({ ph, s: phaseAgg[ph.key].s, e: phaseAgg[ph.key].e }));
 
-  // Feiertage/Meilensteine: eigene kompakte Zeile DIREKT UNTER den Monaten; nur bei sehr wenig Abstand gestapelt
+  // Feiertage-Darstellung: 'band' (horizontal gestapelt), 'diag' (45° schräg), 'vert' (vertikal im Chart, ohne Band)
+  // Meilensteine (Baustart/Bauende) bleiben immer im oberen Band; Feiertage je nach Modus.
   const evItems = [];
   inMarks.forEach(m => evItems.push({ x: dayDiff(rangeStart, dISO(m.iso)) * pxPerDay, n: `${m.n} ${fmtDate(m.iso)}`, cls: 'mark ' + m.cls, t: `${m.n}: ${fmtDate(m.iso)}`, mark: true }));
-  hols.forEach(f => evItems.push({ x: dayDiff(rangeStart, f.d) * pxPerDay, n: f.n, cls: 'hol', t: `${f.n} ${fmtDate(isoOf(f.d))}` }));
+  if (ganttFeier !== 'vert') hols.forEach(f => evItems.push({ x: dayDiff(rangeStart, f.d) * pxPerDay, n: f.n, cls: 'hol', t: `${f.n} ${fmtDate(isoOf(f.d))}` }));
   evItems.sort((a, b) => a.x - b.x);
-  const evRowEnds = [];   // Greedy First-Fit: gleiche Zeile, wenn Platz – sonst eine Zeile tiefer
-  evItems.forEach(e => {
-    const w = String(e.n).length * 5.0 + 9;
-    let row = evRowEnds.findIndex(end => e.x >= end + 2);
-    if (row < 0) { row = evRowEnds.length; evRowEnds.push(0); }
-    evRowEnds[row] = e.x + w; e.row = row;
-  });
-  const evLineH = 11, eventBandH = evItems.length ? evRowEnds.length * evLineH + 3 : 0;
-  const evCells = evItems.map(e => `<span class="g-ev ${e.cls}"${e.mark ? ` data-act="eckdaten" data-pid="${p.id}"` : ''} style="left:${e.x}px;top:${e.row * evLineH + 1}px" title="${esc(e.t)}">${esc(e.n)}</span>`).join('');
-  const eventBand = eventBandH ? `<div class="g-headrow ev" style="height:${eventBandH}px">${evCells}</div>` : '';
+  let eventBand = '', eventBandH = 0;
+  if (ganttFeier === 'diag') {
+    eventBandH = evItems.length ? 56 : 0;
+    const cells = evItems.map(e => `<span class="g-ev g-ev-diag ${e.cls}"${e.mark ? ` data-act="eckdaten" data-pid="${p.id}"` : ''} style="left:${e.x}px" title="${esc(e.t)}">${esc(e.n)}</span>`).join('');
+    eventBand = eventBandH ? `<div class="g-headrow ev diag" style="height:${eventBandH}px">${cells}</div>` : '';
+  } else {
+    const evRowEnds = [];   // Greedy First-Fit: gleiche Zeile, wenn Platz – sonst eine Zeile tiefer
+    evItems.forEach(e => {
+      const w = String(e.n).length * 5.0 + 9;
+      let row = evRowEnds.findIndex(end => e.x >= end + 2);
+      if (row < 0) { row = evRowEnds.length; evRowEnds.push(0); }
+      evRowEnds[row] = e.x + w; e.row = row;
+    });
+    const evLineH = 11; eventBandH = evItems.length ? evRowEnds.length * evLineH + 3 : 0;
+    const evCells = evItems.map(e => `<span class="g-ev ${e.cls}"${e.mark ? ` data-act="eckdaten" data-pid="${p.id}"` : ''} style="left:${e.x}px;top:${e.row * evLineH + 1}px" title="${esc(e.t)}">${esc(e.n)}</span>`).join('');
+    eventBand = eventBandH ? `<div class="g-headrow ev" style="height:${eventBandH}px">${evCells}</div>` : '';
+  }
   const headH = (ganttZoom === 'tag' ? 74 : (subCells ? 56 : 38)) + yearBandH + eventBandH;
 
   // Ressourcen-Hinweis (einstellbar): gleiche Firma in Gewerken ohne genügend Abstand
@@ -12379,6 +12389,7 @@ document.addEventListener('click', e => {
     case 'gantt-strength':  ganttColorStrength = kind || STRENGTH_MODES[(STRENGTH_MODES.indexOf(ganttColorStrength) + 1) % STRENGTH_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-focus':     ganttFocus = !ganttFocus; rerenderGantt(pid); break;
     case 'gantt-dist':      ganttDist = !ganttDist; rerenderGantt(pid); break;
+    case 'gantt-feier':     ganttFeier = kind; rerenderGantt(pid); break;
     case 'gantt-hideundated': ganttHideUndated = !ganttHideUndated; rerenderGantt(pid); break;
     case 'gantt-done':   ganttDone = DONE_MODES[(DONE_MODES.indexOf(ganttDone) + 1) % DONE_MODES.length]; rerenderGantt(pid); break;
     case 'gantt-phasebands': ganttPhaseBands = !ganttPhaseBands; rerenderGantt(pid); break;

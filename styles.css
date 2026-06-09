@@ -926,6 +926,9 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 .g-ev.mark.start { color: #15803d; }
 .g-ev.mark.ende { color: #b91c1c; }
 .g-ev.mark.bezug { color: #1d4ed8; }
+/* 45°-Modus: Anschrift schräg nach oben, an der Feiertagslinie verankert (senkrechte Linie liefert g-holiday) */
+.g-headrow.ev.diag { overflow: hidden; }
+.g-ev-diag { top: auto; bottom: 3px; transform: rotate(-40deg); transform-origin: left bottom; border-left: none; padding-left: 2px; font-size: 8.5px; }
 .g-warn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .g-warn.g-warn-rule { background: #eef4ff; border-color: #c7dbff; color: #1e3a8a; }
 .g-warn.g-warn-lock { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v331';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v332';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1675,7 +1675,7 @@ function dashAusschreibung(p) {
       <div class="dstat"><div class="l">Offene Fristen</div><div class="v" style="color:${ueberf ? '#dc2626' : 'inherit'}">${mitFrist}${ueberf ? ` <span style="font-size:12px">(${ueberf} überfällig)</span>` : ''}</div></div>
     </div>
     ${projektNextStepsCard(p) || '<p class="muted" style="margin-top:14px">Keine offenen Ausschreibungen.</p>'}
-    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn secondary" href="#/projekt/${p.id}/listen">Zur Submittentenliste →</a><button class="btn secondary" data-act="firmen-to-kontakte" data-pid="${p.id}" title="Alle Unternehmer dieses Projekts als Kontakte anlegen (für saubere Verwaltung)">👥 Firmen → Kontakte</button></div>`;
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn secondary" href="#/projekt/${p.id}/listen">Zur Submittentenliste →</a><button class="btn secondary" data-act="firmen-to-kontakte" data-pid="${p.id}" title="Alle Unternehmer dieses Projekts als Kontakte anlegen (für saubere Verwaltung)">👥 Firmen → Kontakte</button>${/römerstrasse|rö\s?31/i.test(p.name || '') ? `<button class="btn" data-act="import-ro31-subm" data-pid="${p.id}" title="Submittentenliste aus dem PDF (P. Hefti) importieren: Firmen als Kontakte + als Submittenten bei den passenden BKP-Gewerken">📋 Submittentenliste importieren</button>` : ''}</div>`;
 }
 function dashTermin(p) {
   const ek = eckDaten(p); const vs = gewerkeSorted(p);
@@ -10664,6 +10664,85 @@ function migrateProjektFirmenToKontakte(p) {
   let n = 0; firms.forEach((email, name) => { if (ensureKontakt(name, email)) n++; });
   return n;
 }
+// Kontakt mit vollen Adressdaten anlegen/anreichern (für Submittenten-Import)
+function ensureKontaktFull(d) {
+  const firma = (d.firma || '').trim(); if (!firma) return false;
+  state.kontakte = state.kontakte || [];
+  const fields = { strasse: d.strasse || '', plz: d.plz || '', ort: d.ort || '', person: d.person || '', telefon: d.telefon || '', email: d.email || '', kategorie: d.kategorie || '–' };
+  const k = state.kontakte.find(x => (x.firma || '').toLowerCase() === firma.toLowerCase());
+  if (k) { Object.keys(fields).forEach(key => { if (fields[key] && (!k[key] || (key === 'kategorie' && k[key] === '–'))) k[key] = fields[key]; }); return false; }
+  state.kontakte.unshift({ id: uid('k'), firma, funktion: '', website: '', notiz: '', uid_nr: '', rechtsform: '', ...fields });
+  return true;
+}
+function importSubmittenten(pid, list) {
+  const p = findProjekt(pid); if (!p) return;
+  let nK = 0, nE = 0;
+  list.forEach(s => {
+    const tel = [s.mobil, s.tel].filter(Boolean).join(' / ');
+    if (ensureKontaktFull({ firma: s.firma, strasse: s.str, plz: s.plz, ort: s.ort, person: s.person, telefon: tel, email: s.mail, kategorie: s.kat })) nK++;
+    const v = (p.vergaben || []).find(x => (x.bkp || '') === s.bkp);
+    if (v) { v.eingeladene = v.eingeladene || []; if (!v.eingeladene.some(e => (e.firma || '').toLowerCase() === (s.firma || '').toLowerCase())) { v.eingeladene.push({ id: uid('e'), firma: s.firma, email: s.mail || '', betrag: null, status: 'eingeladen', datumMail: '' }); nE++; } }
+  });
+  save(); router(); toast(`${nK} Kontakte angelegt · ${nE} Submittenten eingetragen`, 'info');
+}
+// Submittentenliste Römerstrasse 31 (aus PDF P. Hefti Bauberatung) – BKP auf vorhandene Gewerke gemappt
+const RO31_SUBMITTENTEN = [
+  { bkp: '211', kat: 'Baumeisterarbeiten', firma: 'Merz Baulösungen', str: 'Ey 3', plz: '3063', ort: 'Ittigen', tel: '031 951 31 31', mail: 'office@bauloesungen.ch' },
+  { bkp: '211', firma: 'Fuhrer Bau AG', str: 'Waldhäusern 187A', plz: '3543', ort: 'Emmenmatt', mobil: '079 214 46 65', tel: '031 701 21 55', mail: 'm.liechti@fuhrerbauag.ch' },
+  { bkp: '211', firma: 'Stämpfli AG', str: 'Lindenackerweg 4', plz: '3506', ort: 'Grosshöchstetten', tel: '031 711 01 10', mail: 'grosshoechstetten@staempfliag.ch' },
+  { bkp: '211.1', kat: 'Gerüstungen', firma: 'Zaugg Theo', str: 'Wiggiswilweg 2', plz: '3303', ort: 'Jegenstorf', tel: '031 761 14 14', mail: 'theozaugg@bluewin.ch' },
+  { bkp: '211.1', firma: 'ELAG Gerüste AG', str: 'Libellenweg 8a', plz: '3006', ort: 'Bern', tel: '031 332 15 01', mail: 'info@elag-gerueste.ch' },
+  { bkp: '214', kat: 'Holzbau', firma: 'Ing. Holzbau Sieber', str: 'Radelfingenstrasse 126', plz: '3068', ort: 'Utzigen', tel: '031 839 06 27', mail: 'info@sieber-holzbau.ch' },
+  { bkp: '214', firma: 'Gfeller Holzbau', str: 'Bollstrasse 63', plz: '3076', ort: 'Worb', tel: '031 839 55 61', mail: 'info@gfeller-holzbau.ch' },
+  { bkp: '215', kat: 'Ing. Holzbau', firma: 'Ing. Holzbau Sieber', str: 'Radelfingenstrasse 126', plz: '3068', ort: 'Utzigen', tel: '031 839 06 27', mail: 'info@sieber-holzbau.ch' },
+  { bkp: '215', firma: 'Gfeller Holzbau', str: 'Bollstrasse 63', plz: '3076', ort: 'Worb', tel: '031 839 55 61', mail: 'info@gfeller-holzbau.ch' },
+  { bkp: '221.2', kat: 'Fenster (Holz-Metall)', firma: 'Sommer AG', str: 'Emmentalstrasse 55', plz: '3510', ort: 'Konolfingen', tel: '031 790 23 90', mail: 'info@sommer-fenster.ch' },
+  { bkp: '221.2', firma: 'Odermatt FensterBau AG', str: 'Gewerbestrasse 5', plz: '3423', ort: 'Ersigen', tel: '034 445 84 12', mail: 'info@odermatt-fensterbau.ch' },
+  { bkp: '221.2', firma: 'Fensterbaumeler AG', str: 'Hauptstrasse 36', plz: '6170', ort: 'Schüpfheim', tel: '041 485 01 70', mail: 'info@fensterbaumeler.ch' },
+  { bkp: '221.6', kat: 'Aussentüren', firma: 'Bauschlosserei Hermann', str: 'Schlossstalden 16', plz: '3076', ort: 'Worb', tel: '031 839 46 56', mail: 'info@bauschlossereihermann.ch' },
+  { bkp: '222.0', kat: 'Spenglerarbeiten', firma: 'Jau Bedachungen AG', str: 'Schermenwaldstrasse 12', plz: '3063', ort: 'Ittigen', tel: '031 921 80 88', mail: 'info@jauag.ch' },
+  { bkp: '222.0', firma: 'Peter Künzi AG', str: 'Ey 3', plz: '3063', ort: 'Ittigen', tel: '031 921 24 41', mail: 'info@spenglerei-kuenzi.ch' },
+  { bkp: '224.0', kat: 'Steildach', firma: 'Jau Bedachungen AG', str: 'Schermenwaldstrasse 12', plz: '3063', ort: 'Ittigen', tel: '031 921 80 88', mail: 'info@jauag.ch' },
+  { bkp: '224.0', firma: 'Peter Künzi AG', str: 'Ey 3', plz: '3063', ort: 'Ittigen', tel: '031 921 24 41', mail: 'info@spenglerei-kuenzi.ch' },
+  { bkp: '225', kat: 'Dichtungen / Dämmungen', firma: 'Hofmann Fugenabdichtungen GmbH', str: 'Seftigenstr. 310', plz: '3084', ort: 'Wabern', tel: '031 926 21 81', mail: 'info@die-fuge.ch' },
+  { bkp: '226.2', kat: 'Verputzte Aussenwärmedämmung', firma: 'Rothermann', str: 'Bernstrasse 32 A', plz: '3067', ort: 'Boll', tel: '034 402 81 81', mail: 'maler@rothermann.ch' },
+  { bkp: '226.2', firma: 'R & R Gipser & Malerei GmbH', str: 'Hühnerhubelstrasse 66', plz: '3123', ort: 'Belp', person: 'Michael Rahardt', mobil: '079 678 18 07', tel: '031 961 09 33', mail: 'mail@r-r-gipser.ch' },
+  { bkp: '226.2', firma: 'Merzgroup', str: 'Unterweg 29', plz: '3302', ort: 'Moosseedorf', tel: '031 301 00 50', mail: 'info@merzgroup.ch' },
+  { bkp: '228', kat: 'Sonnen-/Witterungsschutz', firma: 'Filtra', str: 'Erlenstrasse 4, Postfach', plz: '3665', ort: 'Wattenwil', tel: '033 356 28 74', mail: 'info@filtra.ch' },
+  { bkp: '228', firma: 'Schenker Storen AG', str: 'Bolligenstrasse 82', plz: '3006', ort: 'Bern', tel: '031 818 32 30', mail: 'schenker.bern@storen.ch' },
+  { bkp: '230', kat: 'Elektro Anlagen', firma: 'Baumann Elektro AG', str: 'Südstrasse 1', plz: '3110', ort: 'Münsingen', tel: '031 721 62 27', mail: 'info@baumannelektro.ch' },
+  { bkp: '230', firma: 'Grunder + Riesen AG', str: 'Vechigenstrasse 28', plz: '3076', ort: 'Worb', tel: '031 839 15 75', mail: 'info@egrag.ch' },
+  { bkp: '237', kat: 'PV-Anlage', firma: 'Baumann Elektro AG', str: 'Südstrasse 1', plz: '3110', ort: 'Münsingen', tel: '031 721 62 27', mail: 'info@baumannelektro.ch' },
+  { bkp: '237', firma: 'Grunder + Riesen AG', str: 'Vechigenstrasse 28', plz: '3076', ort: 'Worb', tel: '031 839 15 75', mail: 'info@egrag.ch' },
+  { bkp: '240', kat: 'Heizungsinstallationen', firma: 'Eichenberger Beat', str: 'Mühlestrasse 10', plz: '3507', ort: 'Biglen', tel: '031 701 05 77', mail: 'be.eichenbergersanitaer@bluewin.ch' },
+  { bkp: '240', firma: 'Heiztechnik Widmer AG', str: 'Bäraugrundstrasse 37a', plz: '3550', ort: 'Langnau', tel: '034 402 55 22', mail: 'info@heiztechnik-langnau.ch' },
+  { bkp: '250', kat: 'Sanitäre Anlagen', firma: 'Eichenberger Beat', str: 'Mühlestrasse 10', plz: '3507', ort: 'Biglen', tel: '031 701 05 77', mail: 'be.eichenbergersanitaer@bluewin.ch' },
+  { bkp: '250', firma: 'Leu Haustechnik AG', str: 'Laupenackerstrasse 56', plz: '3302', ort: 'Moosseedorf', tel: '031 850 15 50', mail: 'mail@leu-haustech.ch' },
+  { bkp: '252', kat: 'Wasch-/Trockenapparate', firma: 'Schulthess Maschinen AG', str: 'Ey 5', plz: '3063', ort: 'Ittigen', tel: '031 335 05 70', mail: 'niederlassungbern@schulthess.ch' },
+  { bkp: '258', kat: 'Kücheneinrichtungen', firma: 'Stucki Küchen AG', str: 'Worbstrasse 85', plz: '3075', ort: 'Rüfenacht', tel: '031 839 33 66', mail: 'info.stucki@stucki-mueller.ch' },
+  { bkp: '258', firma: 'B+S Gerber Küchen AG', str: 'Murifeldweg 2 + 4', plz: '3006', ort: 'Bern', tel: '031 351 02 21', mail: 'info@gerberskuechen.ch' },
+  { bkp: '271', kat: 'Gipserarbeiten', firma: 'Rothermann', str: 'Bernstrasse 32 A', plz: '3067', ort: 'Boll', tel: '034 402 81 81', mail: 'maler@rothermann.ch' },
+  { bkp: '271', firma: 'R & R Gipser & Malerei GmbH', str: 'Hühnerhubelstrasse 66', plz: '3123', ort: 'Belp', person: 'Michael Rahardt', mobil: '079 678 18 07', tel: '031 961 09 33', mail: 'mail@r-r-gipser.ch' },
+  { bkp: '271', firma: 'Merzgroup', str: 'Unterweg 29', plz: '3302', ort: 'Moosseedorf', tel: '031 301 00 50', mail: 'info@merzgroup.ch' },
+  { bkp: '272', kat: 'Schlosserarbeiten', firma: 'Bauschlosserei Hermann', str: 'Schlossstalden 16', plz: '3076', ort: 'Worb', tel: '031 839 46 56', mail: 'info@bauschlossereihermann.ch' },
+  { bkp: '272', firma: 'Iseli Schlosserei AG', str: 'Gutshofweg 609', plz: '3077', ort: 'Enggistein', tel: '031 839 47 07', mail: 'info@iseli-enggistein.ch' },
+  { bkp: '273', kat: 'Schreinerarbeiten', firma: 'Gfeller Holzbau GmbH', str: 'Bollstrasse 63', plz: '3076', ort: 'Worb', tel: '031 839 55 61', mail: 'info@gfeller-holzbau.ch' },
+  { bkp: '273', firma: 'E. Wenger Schreinerei AG', str: 'Dammweg 21', plz: '3053', ort: 'Münchenbuchsee', tel: '031 868 40 80', mail: 'office@e.wenger.ch' },
+  { bkp: '275', kat: 'Schliessanlagen', firma: 'ACS', str: 'Gartenstrasse 1', plz: '3110', ort: 'Münsingen', tel: '031 721 38 35', mail: 'info@acs-schliesstechnik.ch' },
+  { bkp: '275', firma: 'Hänni Sicherheitstechnik AG', str: 'Lehnweg 1', plz: '3123', ort: 'Belp', tel: '031 819 05 75', mail: 'info@haenni-sicherheit.ch' },
+  { bkp: '281', kat: 'Unterlagsböden', firma: 'Kummer Bodentechnik AG', str: 'Zikadenweg 43a', plz: '3006', ort: 'Bern', mobil: '079 439 22 23', mail: 'kummer-bodentechnik@bluewin.ch' },
+  { bkp: '281.6', kat: 'Keram. Plattenbeläge', firma: 'Keramik Böhme', str: 'Gohlhausweg 14', plz: '3432', ort: 'Lützelflüh-Goldbach', mobil: '078 604 42 33', tel: '034 411 16 67', mail: 'keramik.boehme@bluewin.ch' },
+  { bkp: '281.6', firma: 'Merz Baulösungen', str: 'Bernstrasse 1', plz: '3066', ort: 'Stettlen', tel: '031 951 31 31', mail: 'office@bauloesungen.ch' },
+  { bkp: '281.6', kat: 'Bodenbeläge in Holz', firma: 'Bruno Tschanz AG', str: 'Heidmoosweg 15', plz: '3049', ort: 'Säriswil', tel: '031 300 30 30', mail: 'info@bt-tschanz.ch' },
+  { bkp: '285.1', kat: 'Innere Malerarbeiten', firma: 'Probst Roland', str: 'Ahornweg 2', plz: '3076', ort: 'Worb', tel: '031 839 00 64', mail: 'info@farbig.ch' },
+  { bkp: '285.1', firma: 'Witschi AG', str: 'Bürglenstrasse 66', plz: '3006', ort: 'Bern', tel: '031 352 00 22', mail: 'info@witschi-ag-bern.ch' },
+  { bkp: '285.1', firma: 'Rothermann', str: 'Bernstrasse 32 A', plz: '3067', ort: 'Boll', tel: '034 402 81 81', mail: 'maler@rothermann.ch' },
+  { bkp: '287', kat: 'Baureinigungen', firma: 'HK Reinigungen AG', str: 'Bollstrasse 43', plz: '3076', ort: 'Worb', person: 'Hans Kissling', mobil: '079 667 71 71', tel: '031 839 98 91', mail: 'info@hkag.ch' },
+  { bkp: '291', kat: 'Architekt', firma: 'Hefti GmbH', str: 'Bernstrasse 40', plz: '3076', ort: 'Worb', tel: '031 839 00 77', mail: 'info@heftibb.ch' },
+  { bkp: '292', kat: 'Statiker', firma: 'Reto Studer Bauingenieur', str: 'Schnurrenmühle 127', plz: '3204', ort: 'Rosshäusern', person: 'Reto Studer', mobil: '078 824 93 34', mail: 'reto@studer-bauingenieur.ch' },
+  { bkp: '296.6', kat: 'Energieberatung', firma: 'Infrablow', str: 'Eggweg 13a', plz: '3065', ort: 'Bolligen', person: 'Harald Siegrist', tel: '031 918 07 73', mail: 'harald.siegrist@infrablow.ch' },
+  { bkp: '421', kat: 'Gärtnerarbeiten', firma: 'R. Nyffenegger Gartenbau AG', str: 'Bindenhausstrasse 46', plz: '3098', ort: 'Köniz', tel: '031 849 15 25', mail: 'info@nyffenegger-gartenbau.ch' },
+];
 /* --- Vergabe-Art: Einzelvergabe / ARGE / Teilvergabe --- */
 function actVergabeArt(pid, vid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
@@ -11889,6 +11968,7 @@ document.addEventListener('click', e => {
     case 'upgrade':      openCheckout(act.dataset.plan); break;
     case 'dash-tab':     dashTab = kind || 'generell'; viewProjektDetail(pid); break;
     case 'firmen-to-kontakte': { const p = findProjekt(pid); if (p) { const n = migrateProjektFirmenToKontakte(p); save(); toast(n ? n + ' Firma(en) in Kontakte übernommen' : 'Alle Firmen sind bereits in den Kontakten', 'info'); viewProjektDetail(pid); } } break;
+    case 'import-ro31-subm': importSubmittenten(pid, RO31_SUBMITTENTEN); break;
     case 'unterbruch':   actUnterbruch(pid, vid); break;
     case 'ub-add':       ubAdd(pid, vid); break;
     case 'ub-del':       ubDel(pid, vid, itemid); break;

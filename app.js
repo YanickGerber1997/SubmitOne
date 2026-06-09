@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v329';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v330';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1802,10 +1802,12 @@ function viewKosten(id) {
   const p = findProjekt(id);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const vs = (p.vergaben || []).slice().sort((a, b) => (a.bkp || '').localeCompare(b.bkp || ''));
+  const inkl = (p.preiseInkl != null) ? !!p.preiseInkl : preiseInkl();   // wie wurden die Beträge ERFASST (pro Projekt)
 
   const toolbar = `
     <button class="btn sm secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">🖨 Kostenschätzung</button>
     <button class="btn sm secondary" data-act="pdf-baukosten" data-pid="${p.id}">🖨 Baukostenübersicht</button>
+    <button class="btn sm ${inkl ? '' : 'secondary'}" data-act="kosten-inkl" data-pid="${p.id}" title="Wie wurden die Beträge ERFASST: exkl. MwSt (netto) oder inkl. ${mwstSatz()}% (brutto)? Ändert nur die Auslegung, nicht die gespeicherten Zahlen.">Erfasst: ${inkl ? 'inkl. ' + mwstSatz() + '%' : 'exkl.'} MwSt</button>
     <button class="btn sm ${kostenBrutto ? '' : 'secondary'}" data-act="kosten-brutto" data-pid="${p.id}" title="Beträge netto (exkl.) oder brutto (inkl. ${mwstSatz()}% MwSt) anzeigen">${kostenBrutto ? `Brutto (inkl. ${mwstSatz()}%)` : 'Netto (exkl. MwSt)'}</button>
     ${katToggleBtn()}
     <button class="btn sm secondary" data-act="kosten-versionen" data-pid="${p.id}" title="Kostenstände sichern & vergleichen (z.B. monatliche Abgaben)" style="margin-left:auto">📊 Versionen${(p.kostenVersionen || []).length ? ' (' + p.kostenVersionen.length + ')' : ''}</button>
@@ -1827,8 +1829,10 @@ function viewKosten(id) {
   const dCls = d => d > 0.5 ? 'over' : (d < -0.5 ? 'under' : '');
   const sh = t => `<div style="font-weight:400;font-size:9px;color:#9aa4b1;margin-top:1px">${t}</div>`;
   const mw = mwstSatz();
-  // Netto/Brutto-Anzeige: in Brutto den Bruttobetrag gross, darunter klein/ausgegraut Netto + MwSt-%
-  const mB = n => kostenBrutto ? `${money(n * (1 + mw / 100))}<div class="kb-net">${money(n)} <span style="opacity:.65">+${mw}%</span></div>` : money(n);
+  // inkl=true → gespeicherte Beträge sind brutto; sonst netto. Anzeige immer korrekt netto/brutto.
+  const toNet = n => inkl ? (n / (1 + mw / 100)) : n;
+  const toGross = n => inkl ? n : (n * (1 + mw / 100));
+  const mB = n => kostenBrutto ? `${money(toGross(n))}<div class="kb-net">${money(toNet(n))} <span style="opacity:.65">netto</span></div>` : money(toNet(n));
   const tot = blank();
 
   let body = '';
@@ -1896,12 +1900,12 @@ function viewKosten(id) {
 
   render(head + `
     <div class="kpi-row">
-      ${kpi('Kostenschätzung (KV)', money(tot.kv))}
-      ${kpi('Abrechnungsprognose', money(tot.endsumme))}
-      ${kpi(preiseInkl() ? 'Prognose (inkl. MwSt)' : 'Prognose inkl. ' + mwstSatz() + '% MwSt', 'CHF ' + money(inklMwst(tot.endsumme)), 'brand')}
-      ${kpi('Offen', money(tot.offenRg))}
+      ${kpi('Kostenschätzung (KV)', money(toNet(tot.kv)))}
+      ${kpi('Abrechnungsprognose', money(toNet(tot.endsumme)))}
+      ${kpi('Prognose inkl. ' + mwstSatz() + '% MwSt', 'CHF ' + money(toGross(tot.endsumme)), 'brand')}
+      ${kpi('Offen', money(toNet(tot.offenRg)))}
     </div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 14px"><span class="tag" style="background:#eef2f8;color:#46505e;font-weight:600">${esc(mwstNote())}</span> – alle Beträge in dieser Übersicht.${preiseInkl() ? '' : ` Total inkl. MwSt: <b>${chf(inklMwst(tot.endsumme))}</b>.`}</p>
+    <p class="muted" style="font-size:12.5px;margin:-4px 0 14px"><span class="tag" style="background:#eef2f8;color:#46505e;font-weight:600">erfasst ${inkl ? 'inkl.' : 'exkl.'} ${mwstSatz()} % MwSt</span> – Anzeige standardmässig <b>netto</b>; „Brutto"-Knopf zeigt inkl. MwSt. Total inkl. MwSt: <b>${chf(toGross(tot.endsumme))}</b>.</p>
     ${(p.volumen || p.flaeche) ? `<p class="muted" style="font-size:12px;margin:-6px 0 14px">Kubische Kennzahlen für die Kostenschätzungs-Gegenüberstellung${p.volumen ? ` · GV ${p.volumen.toLocaleString('de-CH')} m³` : ''}${p.flaeche ? ` · BGF ${p.flaeche.toLocaleString('de-CH')} m²` : ''}. Gebäudedaten unter „Übersicht → ✎ Bearbeiten".</p>` : ''}
     <div class="card ktable-wrap">
       <table class="grid ktable">
@@ -10563,6 +10567,7 @@ function advanceVergabe(pid, vid) {
     const offs = (v.eingeladene || []).filter(e => e.status !== 'abgesagt' && eOff(e) != null).sort((a, b) => eOff(a) - eOff(b));
     if (offs.length) { v.firma = offs[0].firma; v.betrag = eOff(offs[0]); }
   }
+  if (v.firma) ensureKontakt(v.firma, firmaEmailOf(p, v.firma));
   save(); router();
   toast('Status → ' + STATUS_BY_KEY[v.status].label);
 }
@@ -10575,6 +10580,7 @@ function setVergabeStatus(pid, vid, status) {
     const offs = (v.eingeladene || []).filter(e => e.status !== 'abgesagt' && eOff(e) != null).sort((a, b) => eOff(a) - eOff(b));
     if (offs.length) { v.firma = offs[0].firma; v.betrag = eOff(offs[0]); }
   }
+  if (v.firma) ensureKontakt(v.firma, firmaEmailOf(p, v.firma));
   save(); router(); toast('Status → ' + STATUS_BY_KEY[status].label);
 }
 // Stammdaten bearbeiten / löschen
@@ -10795,6 +10801,7 @@ function saveInvite(pid, vid) {
       v.eingeladene.push({ id: uid('e'), firma: pk.firma, email: pk.email || '', betrag: null, status: 'eingeladen', datumMail: '' });
       existing.add(pk.firma); n++;
     }
+    ensureKontakt(pk.firma, pk.email);   // eingeladene Firma als Kontakt sichern
   });
   save(); closeModal(); router();
   toast(n + ' Unternehmer eingeladen');
@@ -11939,6 +11946,7 @@ document.addEventListener('click', e => {
     case 'new-vergabe':  actNewVergabe(pid); break;
     case 'kat-toggle':   katOpen = !katOpen; router(); break;
     case 'kosten-brutto': kostenBrutto = !kostenBrutto; viewKosten(pid); break;
+    case 'kosten-inkl':  { const p = findProjekt(pid); if (p) { p.preiseInkl = !((p.preiseInkl != null) ? p.preiseInkl : preiseInkl()); save(); viewKosten(pid); toast('Beträge erfasst ' + (p.preiseInkl ? 'inkl.' : 'exkl.') + ' MwSt', 'info'); } } break;
     case 'kosten-versionen': actKostenVersionen(pid); break;
     case 'kosten-vers-neu': kostenVersNeu(pid); break;
     case 'kosten-vers-del': kostenVersDel(pid, act.dataset.vid); break;
@@ -12366,5 +12374,9 @@ function demoData() {
     phase: 'ausfuehrung', start: '2026-02-03', ende: '2027-11-30', baustart: '2026-02-03', bezug: '2027-11-30',
     vergaben: kinderheim,
   }];
-  return { projekte, kontakte: [], dokumente: [], buero: { ...BUERO } };
+  // Kontakte direkt aus den Projekt-Firmen erzeugen (Kette Kontakt → Einladung → Zuschlag → Unternehmer)
+  const kontakte = []; const seen = new Set();
+  const addF = (name, email) => { name = (name || '').trim(); if (!name) return; const key = name.toLowerCase(); if (seen.has(key)) { if (email) { const k = kontakte.find(x => x.firma.toLowerCase() === key); if (k && !k.email) k.email = email; } return; } seen.add(key); kontakte.push({ id: uid('k'), firma: name, email: email || '', kategorie: '–', strasse: '', plz: '', ort: '', person: '', funktion: '', telefon: '', website: '', notiz: '', uid_nr: '', rechtsform: '' }); };
+  projekte.forEach(p => (p.vergaben || []).forEach(v => { (v.eingeladene || []).forEach(e => addF(e.firma, e.email)); if (v.firma) v.firma.split(',').forEach(f => addF(f.trim(), '')); }));
+  return { projekte, kontakte, dokumente: [], buero: { ...BUERO } };
 }

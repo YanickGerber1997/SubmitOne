@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v336';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v337';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1798,6 +1798,13 @@ function viewGewerke(pid) {
     ${emptyState('◫', 'Noch keine Gewerke. Mit „+ Arbeitsbeschrieb" anlegen.')}`);
 }
 let kostenBrutto = false;   // Baukostenübersicht: false = netto (exkl. MwSt), true = brutto (inkl.)
+let kostOpen = new Set();   // aufgeklappte Gewerk-Zeilen in der Baukostenübersicht (Baubeschrieb/Nachträge/Rechnungen)
+// Spaltenkopf der Baukostentabelle klebt direkt unter der (sticky) Projekt-Toolbar – Offset messen
+function setKostStickyTop() {
+  const ps = document.querySelector('.proj-sticky'); if (!ps) return;
+  const top = Math.round(ps.getBoundingClientRect().height + (parseFloat(getComputedStyle(ps).top) || 0));
+  document.documentElement.style.setProperty('--ktop', top + 'px');
+}
 function viewKosten(id) {
   const p = findProjekt(id);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
@@ -1841,10 +1848,13 @@ function viewKosten(id) {
       const d = z.vergeben ? (z.endsumme - z.wv) : null;   // +/− = WV → Endsumme
       const hatBt = (p.bauteile || []).length;
       const btSel = hatBt ? `<div style="margin-top:3px"><select class="bt-gw" data-pid="${p.id}" data-vid="${v.id}" onclick="event.stopPropagation()" title="Teilprojekt" style="font-size:11px;padding:1px 5px;border:1px solid var(--border);border-radius:4px;max-width:200px">${bauteilOptionsHtml(p, v.bauteil)}</select></div>` : '';
-      rows += `<tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
-        <td class="bkp-code">${esc(v.bkp)}</td>
+      const open = kostOpen.has(v.id);
+      const ein = (v.eingeladene || []).length, off = offertenOf(v).length;
+      const untCell = v.firma ? `<span title="vergeben an ${esc(v.firma)}">${esc(v.firma)}</span>` : (ein ? `<span class="muted">${ein} eingeladen${off ? ` · ${off} Offerte${off === 1 ? '' : 'n'}` : ''}</span>` : '<span class="muted">nicht ausgeschrieben</span>');
+      rows += `<tr class="clickable kost-row${open ? ' open' : ''}" data-act="kost-toggle" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
+        <td class="bkp-code"><span class="gw-chev">${open ? '▾' : '▸'}</span> ${esc(v.bkp)}</td>
         <td><strong>${esc(v.gewerk)}</strong>${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
-        <td>${v.firma ? esc(v.firma) : '<span class="muted">nicht vergeben</span>'}</td>
+        <td>${untCell}</td>
         <td class="num">${mB(z.kv)}</td>
         <td class="num">${z.rev != null && Math.abs(z.rev - z.kv) > 0.5 ? `${mB(z.rev)} <span class="chg-delta ${z.rev > z.kv ? 'up' : 'dn'}" title="Änderung gegenüber Erst-KV">${z.rev > z.kv ? '▲' : '▼'}</span>` : (z.rev != null ? mB(z.rev) : `<span class="muted">${mB(z.kv)}</span>`)}</td>
         <td class="num">${z.vergeben ? mB(z.wv) : '–'}</td>
@@ -1854,31 +1864,49 @@ function viewKosten(id) {
         <td class="num">${z.offenRg ? mB(z.offenRg) : '–'}</td>
         <td class="num ${dCls(d || 0)}">${d != null && Math.abs(d) > 0.5 ? mB(d) : '–'}</td>
       </tr>`;
-      rows += (v.nachtraege || []).map(n => { const nc = n.status === 'genehmigt' ? 'green' : (n.status === 'abgelehnt' ? 'grey' : 'amber'); return `<tr class="rg-sub">
-        <td></td>
-        <td colspan="5"><span class="muted">↳ Nachtrag${n.nr ? ' ' + esc(n.nr) : ''}:</span> ${esc(n.titel || '')} <span class="st ${nc}" style="font-size:9px;padding:1px 6px">${esc(n.status || 'offen')}</span>${hatBt ? ` · <select class="bt-nt" data-pid="${p.id}" data-vid="${v.id}" data-nid="${n.id}" title="Teilprojekt des Nachtrags" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius:4px">${bauteilOptionsHtml(p, n.bauteil)}</select>` : ''}</td>
-        <td class="num">${mB(n.betrag)}</td>
-        <td colspan="4"></td>
-      </tr>`; }).join('');
-      rows += (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => `<tr class="rg-sub">
-        <td></td>
-        <td colspan="6"><span class="muted">↳ ${r.datum ? fmtDate(r.datum) : '—'}</span> ${esc(r.text || (r.art === 'gutschrift' ? 'Gutschrift' : 'Rechnung'))}${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''} · ${money(rgSigned(r))}${hatBt ? ` · <select class="bt-rg" data-pid="${p.id}" data-vid="${v.id}" data-rgid="${r.id}" title="Teilprojekt der Rechnung" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius:4px">${bauteilOptionsHtml(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)}</select>` : ''}</td>
-        <td></td>
-        <td class="num">${mB(rgSigned(r))}</td>
-        <td></td><td></td>
-      </tr>`).join('');
-      rows += (v.budgetposten || []).map(b => {
-        const src = !isVergeben(v) ? 'Schätzung' : (b.ist != null && b.ist !== '' ? 'nach Auswahl' : 'WV');
-        const sc = src === 'nach Auswahl' ? 'green' : (src === 'WV' ? 'blue' : 'grey');
-        const dlt = (b.ist != null && b.ist !== '') ? (Number(b.ist) || 0) - (Number(b.betrag) || 0) : null;
-        return `<tr class="rg-sub">
+      if (open) {
+        rows += `<tr class="kost-info"><td></td><td colspan="10">
+          <div class="kost-info-grid">
+            <div class="kost-info-main">
+              <div class="kost-info-h">Baubeschrieb / Schätzung</div>
+              <div style="font-size:13px;white-space:pre-wrap">${v.beschrieb ? esc(v.beschrieb) : '<span class="muted">– kein Beschrieb. Mit „✎ Kostenschätzung" erfassen (Beschrieb + Positionen).</span>'}</div>
+              ${(v.ksPositionen && v.ksPositionen.length) ? `<table class="grid" style="margin-top:8px"><tbody>${v.ksPositionen.map(pos => `<tr><td>${esc(pos.text || 'Position')}</td><td class="num">${mB(pos.betrag)}</td></tr>`).join('')}<tr><td><b>Total KV</b></td><td class="num"><b>${mB(v.schaetzung)}</b></td></tr></tbody></table>` : ''}
+            </div>
+            <div class="kost-info-side">
+              <div class="kost-info-h">Stand &amp; Unternehmer</div>
+              <div style="font-size:13px;margin-bottom:6px">${statusPill(v)}</div>
+              <div class="muted" style="font-size:12.5px">${esc(gewerkSteps(v).hint)}</div>
+              <div style="font-size:12.5px;margin-top:6px">${ein ? `${ein} Unternehmer eingeladen${off ? `, ${off} Offerte${off === 1 ? '' : 'n'} erhalten` : ''}` : 'noch nicht ausgeschrieben'}${v.firma ? ` · vergeben an <b>${esc(v.firma)}</b>` : ''}</div>
+              <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><a class="btn sm" href="#/projekt/${p.id}/vergabe/${v.id}">Detail / Ausschreibung ↗</a><button class="btn sm secondary" data-act="ks-edit" data-pid="${p.id}" data-vid="${v.id}">✎ Kostenschätzung</button></div>
+            </div>
+          </div>
+        </td></tr>`;
+        rows += (v.nachtraege || []).map(n => { const nc = n.status === 'genehmigt' ? 'green' : (n.status === 'abgelehnt' ? 'grey' : 'amber'); return `<tr class="rg-sub">
           <td></td>
-          <td colspan="6"><span class="muted">↳ Budget${b.eig ? ' (Eigentümerwunsch)' : ''}:</span> ${esc(b.text || 'Position')}${b.wohnung ? ` <span class="muted">[${esc(einheitName(p, b.wohnung))}]</span>` : ''} <span class="st ${sc}" style="font-size:9px;padding:1px 6px">${src}</span> · WV ${money(b.betrag)}${b.ist != null && b.ist !== '' ? ` · nach Auswahl ${money(b.ist)}` : ''}</td>
+          <td colspan="5"><span class="muted">↳ Nachtrag${n.nr ? ' ' + esc(n.nr) : ''}:</span> ${esc(n.titel || '')} <span class="st ${nc}" style="font-size:9px;padding:1px 6px">${esc(n.status || 'offen')}</span>${hatBt ? ` · <select class="bt-nt" data-pid="${p.id}" data-vid="${v.id}" data-nid="${n.id}" title="Teilprojekt des Nachtrags" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius:4px">${bauteilOptionsHtml(p, n.bauteil)}</select>` : ''}</td>
+          <td class="num">${mB(n.betrag)}</td>
+          <td colspan="4"></td>
+        </tr>`; }).join('');
+        rows += (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => `<tr class="rg-sub">
           <td></td>
-          <td class="num ${dlt ? (dlt > 0 ? 'over' : 'under') : ''}">${dlt ? (dlt > 0 ? '+' : '') + mB(dlt) : ''}</td>
+          <td colspan="6"><span class="muted">↳ ${r.datum ? fmtDate(r.datum) : '—'}</span> ${esc(r.text || (r.art === 'gutschrift' ? 'Gutschrift' : 'Rechnung'))}${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''} · ${money(rgSigned(r))}${hatBt ? ` · <select class="bt-rg" data-pid="${p.id}" data-vid="${v.id}" data-rgid="${r.id}" title="Teilprojekt der Rechnung" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius:4px">${bauteilOptionsHtml(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)}</select>` : ''}</td>
+          <td></td>
+          <td class="num">${mB(rgSigned(r))}</td>
           <td></td><td></td>
-        </tr>`;
-      }).join('');
+        </tr>`).join('');
+        rows += (v.budgetposten || []).map(b => {
+          const src = !isVergeben(v) ? 'Schätzung' : (b.ist != null && b.ist !== '' ? 'nach Auswahl' : 'WV');
+          const sc = src === 'nach Auswahl' ? 'green' : (src === 'WV' ? 'blue' : 'grey');
+          const dlt = (b.ist != null && b.ist !== '') ? (Number(b.ist) || 0) - (Number(b.betrag) || 0) : null;
+          return `<tr class="rg-sub">
+            <td></td>
+            <td colspan="6"><span class="muted">↳ Budget${b.eig ? ' (Eigentümerwunsch)' : ''}:</span> ${esc(b.text || 'Position')}${b.wohnung ? ` <span class="muted">[${esc(einheitName(p, b.wohnung))}]</span>` : ''} <span class="st ${sc}" style="font-size:9px;padding:1px 6px">${src}</span> · WV ${money(b.betrag)}${b.ist != null && b.ist !== '' ? ` · nach Auswahl ${money(b.ist)}` : ''}</td>
+            <td></td>
+            <td class="num ${dlt ? (dlt > 0 ? 'over' : 'under') : ''}">${dlt ? (dlt > 0 ? '+' : '') + mB(dlt) : ''}</td>
+            <td></td><td></td>
+          </tr>`;
+        }).join('');
+      }
     });
     const dSub = sub.dWvEnd;
     body += `<tr class="kgroup"><td>${esc(g)}</td><td colspan="10">${esc(BKP_GRUPPEN[g] || 'Übrige')}</td></tr>
@@ -1928,8 +1956,10 @@ function viewKosten(id) {
     </div>
     ${optionenCard(p, tot.kv, tot.prognose)}
     ${teilprojektCard(p, tot.prognose)}
-    <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = verhandelte Vergabesumme · Prognose = WV + Nachträge (bei Schlussrechnung „SR" = effektive Endsumme) · Rechnung = Summe eingetragener Rechnungen · Offen = Endsumme − Rechnungen (nie negativ) · +/− = WV gegen Endsumme (rot = Überschreitung). Unter jedem Gewerk: Nachträge (mit Status) &amp; Rechnungen; Teilprojekt-Dropdown je Gewerk/Nachtrag. Zeile anklicken → Gewerk-Detail.</p>
+    <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = verhandelte Vergabesumme · Prognose = WV + Nachträge (bei Schlussrechnung „SR" = effektive Endsumme) · Rechnung = Summe eingetragener Rechnungen · Offen = Endsumme − Rechnungen (nie negativ) · +/− = WV gegen Endsumme (rot = Überschreitung). Unter jedem Gewerk: Nachträge (mit Status) &amp; Rechnungen; Teilprojekt-Dropdown je Gewerk/Nachtrag. <b>Zeile anklicken = aufklappen</b> (Baubeschrieb, Nachträge, Rechnungen); „Detail / Ausschreibung ↗" öffnet das Gewerk.</p>
   `);
+  requestAnimationFrame(setKostStickyTop);
+  if (!window._kostStickyWired) { window.addEventListener('resize', setKostStickyTop); window._kostStickyWired = true; }
 }
 
 /* ---------------------------------------------------------------
@@ -12059,6 +12089,7 @@ document.addEventListener('click', e => {
     case 'new-vergabe':  actNewVergabe(pid); break;
     case 'kat-toggle':   katOpen = !katOpen; router(); break;
     case 'kosten-brutto': kostenBrutto = !kostenBrutto; viewKosten(pid); break;
+    case 'kost-toggle':  { if (kostOpen.has(vid)) kostOpen.delete(vid); else kostOpen.add(vid); viewKosten(pid); } break;
     case 'kosten-versionen': actKostenVersionen(pid); break;
     case 'kosten-vers-neu': kostenVersNeu(pid); break;
     case 'kosten-vers-del': kostenVersDel(pid, act.dataset.vid); break;

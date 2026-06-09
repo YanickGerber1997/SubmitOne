@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v356';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v357';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -1366,8 +1366,94 @@ function openModal(title, bodyHtml, footHtml) {
   root.querySelector('.modal-backdrop').addEventListener('click', e => {
     if (e.target.dataset.close) closeModal();
   });
+  upgradeDateInputs(root);
 }
 function closeModal() { $('#modal-root').innerHTML = ''; }
+
+/* ---------------------------------------------------------------
+   Datums-Eingabe: frei beschreibbares Textfeld + 📅 mit 3-Monats-Kalender.
+   Wertet native <input type="date"> systemweit auf; das native Feld bleibt
+   als versteckte Wertquelle (Klassen/Listener bleiben erhalten).
+   --------------------------------------------------------------- */
+function parseDateFlexible(s) {
+  if (s == null) return '';
+  s = String(s).trim().toLowerCase(); if (!s) return '';
+  const pad = n => String(n).padStart(2, '0');
+  const valid = (y, mo, d) => { if (mo < 1 || mo > 12 || d < 1 || d > 31) return false; const dt = new Date(y, mo - 1, d); return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d; };
+  if (s === 'heute' || s === 'today') return todayIso();
+  if (s === 'morgen') return addDays(todayIso(), 1);
+  if (s === 'gestern') return addDays(todayIso(), -1);
+  let m = s.match(/^(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})$/);                       // yyyy-mm-dd
+  if (m) { const y = +m[1], mo = +m[2], d = +m[3]; return valid(y, mo, d) ? y + '-' + pad(mo) + '-' + pad(d) : ''; }
+  m = s.match(/^(\d{1,2})[.\/\- ]+(\d{1,2})(?:[.\/\- ]+(\d{1,4}))?$/);              // dd.mm[.yy|.yyyy] (auch / - Leer)
+  if (m) { let d = +m[1], mo = +m[2], y; if (m[3] == null) y = new Date().getFullYear(); else { y = +m[3]; if (m[3].length <= 2) y = 2000 + (y % 100); } return valid(y, mo, d) ? y + '-' + pad(mo) + '-' + pad(d) : ''; }
+  m = s.match(/^(\d{2})(\d{2})(\d{2}|\d{4})$/);                                      // ddmmyy | ddmmyyyy
+  if (m) { let d = +m[1], mo = +m[2], y = +m[3]; if (m[3].length === 2) y = 2000 + y; return valid(y, mo, d) ? y + '-' + pad(mo) + '-' + pad(d) : ''; }
+  return '';
+}
+function upgradeDateInputs(root) {
+  (root || document).querySelectorAll('input[type="date"]:not([data-up])').forEach(inp => {
+    inp.setAttribute('data-up', '1');
+    const wrap = document.createElement('span');
+    wrap.className = 'date-field' + (inp.className ? ' ' + inp.className : '');   // Layout-Klassen aufs sichtbare Feld übertragen
+    const txt = document.createElement('input');
+    txt.type = 'text'; txt.className = 'date-text'; txt.placeholder = 'TT.MM.JJJJ'; txt.autocomplete = 'off'; txt.size = 10; txt.setAttribute('inputmode', 'numeric');
+    txt.value = inp.value ? fmtDate(inp.value) : '';
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'date-cal'; btn.tabIndex = -1; btn.title = 'Kalender'; btn.textContent = '📅';
+    if (inp.disabled) { txt.disabled = true; btn.disabled = true; }
+    inp.classList.add('date-native-hidden');
+    inp.parentNode.insertBefore(wrap, inp);
+    wrap.appendChild(txt); wrap.appendChild(btn); wrap.appendChild(inp);
+    const commit = iso => { iso = iso || ''; inp.value = iso; txt.value = iso ? fmtDate(iso) : ''; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); };
+    const tryParse = () => { const t = txt.value.trim(); if (t === '') { if (inp.value) commit(''); return; } const iso = parseDateFlexible(t); if (iso) { if (iso !== inp.value) commit(iso); else txt.value = fmtDate(iso); } else txt.value = inp.value ? fmtDate(inp.value) : ''; };
+    txt.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tryParse(); } else if (e.key === 'Escape') { txt.value = inp.value ? fmtDate(inp.value) : ''; txt.blur(); } });
+    txt.addEventListener('blur', tryParse);
+    txt.addEventListener('mousedown', e => e.stopPropagation());
+    btn.addEventListener('mousedown', e => e.stopPropagation());
+    btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); if (inp.disabled) return; openDatePop(btn, inp.value, iso => commit(iso)); });
+  });
+}
+let _datePop = null;
+function closeDatePop() { if (_datePop) { _datePop.remove(); _datePop = null; document.removeEventListener('mousedown', _dpOutside, true); document.removeEventListener('keydown', _dpKey, true); window.removeEventListener('resize', closeDatePop); } }
+function _dpOutside(e) { if (_datePop && !_datePop.contains(e.target)) closeDatePop(); }
+function _dpKey(e) { if (e.key === 'Escape') closeDatePop(); }
+function openDatePop(anchor, curISO, onPick) {
+  closeDatePop();
+  const pop = document.createElement('div'); pop.className = 'datepop';
+  const base = curISO ? dISO(curISO) : new Date();
+  let vy = base.getFullYear(), vm = base.getMonth();
+  const draw = () => {
+    let months = '';
+    for (let i = 0; i < 3; i++) { let mm = vm + i, yy = vy; while (mm > 11) { mm -= 12; yy++; } months += dpMonth(yy, mm, curISO); }
+    pop.innerHTML = `<div class="datepop-head"><button class="dp-nav" data-dp="prev" title="Zurück">‹</button><button class="dp-today" data-dp="today">Heute</button><button class="dp-nav" data-dp="next" title="Weiter">›</button></div><div class="datepop-months">${months}</div>`;
+  };
+  draw();
+  document.body.appendChild(pop); _datePop = pop;
+  const r = anchor.getBoundingClientRect();
+  let left = Math.min(r.left, window.innerWidth - pop.offsetWidth - 8); left = Math.max(8, left);
+  let top = r.bottom + 5; if (top + pop.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - pop.offsetHeight - 5);
+  pop.style.left = left + 'px'; pop.style.top = top + 'px';
+  pop.addEventListener('mousedown', e => e.stopPropagation());
+  pop.addEventListener('click', e => {
+    const nav = e.target.closest('[data-dp]'); const day = e.target.closest('[data-iso]');
+    if (nav) { const k = nav.dataset.dp; if (k === 'prev') { vm--; if (vm < 0) { vm = 11; vy--; } draw(); } else if (k === 'next') { vm++; if (vm > 11) { vm = 0; vy++; } draw(); } else if (k === 'today') { onPick(todayIso()); closeDatePop(); } return; }
+    if (day) { onPick(day.dataset.iso); closeDatePop(); }
+  });
+  setTimeout(() => { document.addEventListener('mousedown', _dpOutside, true); document.addEventListener('keydown', _dpKey, true); window.addEventListener('resize', closeDatePop); }, 0);
+}
+function dpMonth(y, m, curISO) {
+  const pad = n => String(n).padStart(2, '0');
+  const lead = (new Date(y, m, 1).getDay() + 6) % 7;       // Mo = 0
+  const dim = new Date(y, m + 1, 0).getDate(); const tIso = todayIso();
+  let cells = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map(d => `<span class="dp-dow">${d}</span>`).join('');
+  for (let i = 0; i < lead; i++) cells += '<span class="dp-empty"></span>';
+  for (let d = 1; d <= dim; d++) {
+    const iso = y + '-' + pad(m + 1) + '-' + pad(d); const dow = (new Date(y, m, d).getDay() + 6) % 7;
+    cells += `<button type="button" class="dp-day${dow >= 5 ? ' we' : ''}${iso === tIso ? ' today' : ''}${iso === curISO ? ' sel' : ''}" data-iso="${iso}">${d}</button>`;
+  }
+  return `<div class="dp-month"><div class="dp-mtitle">${MONATE[m]} ${y}</div><div class="dp-grid">${cells}</div></div>`;
+}
 
 /* ---------------------------------------------------------------
    7) Router
@@ -1419,6 +1505,7 @@ function topbar(actions) {
 }
 function render(html, actions) {
   $('#view').innerHTML = topbar(actions) + html;
+  upgradeDateInputs($('#view'));
   // Nur bei echtem Seitenwechsel nach oben scrollen; In-Place-Updates (z.B. Block verschieben) behalten die Position
   if (location.hash !== _lastRenderHash) { window.scrollTo(0, 0); _lastRenderHash = location.hash; }
 }

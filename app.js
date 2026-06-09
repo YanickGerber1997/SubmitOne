@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v357';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v358';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
@@ -3297,7 +3297,7 @@ function viewTermine(id) {
         const oOut = (p.ganttLinks || []).some(lk => lk.from === key), oIn = (p.ganttLinks || []).some(lk => lk.to === key);
         const oL = leftPx(o.start), oW = widthPx(o.start, o.ende), oLab = gBarLabel(o.titel, oL, oW, true, false, innerW, oOut, oIn);
         barMeta[key] = { row: rowIdx, left: oL, width: oW };
-        barRows += `<div class="g-row" data-x0="${oL}" data-x1="${oL + oW}">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOffStart, oLab.gdOffEnd)}<div class="g-bar sub align-${_eAlign}${oLab.barLow ? ' bar-low' : ''}${o.erfuellt ? ' g-done' : ''}" style="left:${oL}px;width:${oW}px;background:#fff;--bc:${colHex}"
+        barRows += `<div class="g-row" data-x0="${oL}" data-x1="${oL + oW}">${gdLabels(o.start, o.ende, oL, oL + oW, oLab.gdOffStart, oLab.gdOffEnd)}<div class="g-bar sub${light} align-${_eAlign}${oLab.barLow ? ' bar-low' : ''}${o.erfuellt ? ' g-done' : ''}" style="left:${oL}px;width:${oW}px;background:${colHex}"
           title="${esc(o.titel)}: ${fmtDate(o.start)} – ${fmtDate(o.ende)}${o.erfuellt ? ' · ✓ erfüllt' : ''}${o.notiz ? ' · 📝 ' + esc(o.notiz) : ''}"
           data-pid="${p.id}" data-vid="${v.id}" data-oid="${o.id}" data-key="${key}" data-ctx="gantt" data-start="${o.start}" data-ende="${o.ende}">
           <span class="g-h l"></span>${o.erfuellt ? '<span class="g-check">✓</span>' : ''}<span class="g-lbl">${oLab.inner}</span>${shiftMarkO(v.id, o.id, o.start, o.ende)}${o.notiz ? `<span class="g-tnote" title="${esc(o.notiz)}">📝</span>` : ''}${(p.feinkommentare || []).some(k => k.oid === o.id) ? '<span class="g-note" title="Notizen im Vierteltag">★</span>' : ''}<span class="g-h r"></span><span class="g-link-dot" data-key="${key}" title="Verbindung ziehen"></span></div>${oLab.outer}${gDauerLabel(o.start, o.ende, oL, oL + oW, true)}</div>`;

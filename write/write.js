@@ -1627,18 +1627,22 @@ let gridCols = 1, gridRows = 1;
 function renderCalc() { renderSheet(); highlightSel(); updateStats(); }
 function renderSheet() {
   const sheet = $('#calcSheet'), ur = calcUsedRange(), ext = calcExtent(), d = pageDims();
-  const ML = 16, printW = d.w - 2 * ML, printH = d.h - 2 * ML;          // Druckbereich in mm
-  const avail = (sheet.clientWidth || 900) - 80;
-  const S = Math.min(3.6, Math.max(1.5, avail / printW));                // px/mm – Blatt passt in die Breite
-  const colWpx = Math.round(22 * S), rowHpx = Math.max(22, Math.round(8 * S));
-  const colsPP = Math.max(1, Math.floor(printW / 22)), rowsPP = Math.max(1, Math.floor(printH / 8));
-  const cols = Math.max(ext.cols, colsPP + 2), rows = Math.max(ext.rows, rowsPP + 4);
+  const GUT = 32, HDR = 22;                                  // Zeilennummern-Spalte + Spaltenkopf (dünn, am Blattrand)
+  const printH = d.h - 36;                                   // nutzbare Höhe je Seite (mm)
+  const avail = (sheet.clientWidth || 900) - 110;            // Platz minus grauer Rand
+  const fit = Math.max(.4, Math.min(1, avail / (d.w * MM))); // wie Write: an Breite anpassen, höchstens 100 %
+  const S = MM * fit;                                        // px pro mm – echte A4-Grösse
+  const pagePxW = Math.round(d.w * S);                       // Blattbreite in px (zentriertes A4)
+  const colsPP = Math.max(1, Math.floor((d.w - 10) / 22));   // Spalten pro Seitenbreite (~22 mm/Spalte)
+  const rowsPP = Math.max(1, Math.floor(printH / 8));        // Zeilen pro Seite (~8 mm/Zeile)
+  const colWpx = Math.max(24, Math.floor((pagePxW - GUT) / colsPP));  // Spalten füllen die Blattbreite
+  const rowHpx = Math.max(20, Math.round(8 * S));
+  const cols = Math.max(ext.cols, colsPP), rows = Math.max(ext.rows, rowsPP);
   gridCols = cols; gridRows = rows;
-  const GUT = 38, HDR = 22;
   let cg = `<colgroup><col style="width:${GUT}px">`;
   for (let c = 0; c < cols; c++) cg += `<col style="width:${colWpx}px">`;
   cg += '</colgroup>';
-  let head = '<thead><tr><th class="cg-corner"></th>';
+  let head = `<thead><tr><th class="cg-corner" style="height:${HDR}px"></th>`;
   for (let c = 0; c < cols; c++) head += `<th class="cg-col">${idxToCol(c)}</th>`;
   head += '</tr></thead><tbody>';
   for (let r = 0; r < rows; r++) {
@@ -1653,12 +1657,20 @@ function renderSheet() {
     head += '</tr>';
   }
   head += '</tbody>';
-  const paperW = colsPP * colWpx, paperH = rowsPP * rowHpx;
-  const stageW = GUT + cols * colWpx, stageH = HDR + rows * rowHpx + 4;
+  const tableW = GUT + cols * colWpx;
+  const paperH = HDR + rows * rowHpx + 6;                    // durchgehendes Blatt über alle Zeilen
+  const pages = Math.max(1, Math.ceil(rows / rowsPP));
+  const stageW = Math.max(pagePxW, tableW), stageH = paperH + 8;
   const fmt = doc.einstellungen.format || 'A4';
+  let guides = '';                                           // Seiten-Hilfslinien wie in Write
+  for (let pg = 1; pg < pages; pg++) {
+    const y = HDR + pg * rowsPP * rowHpx;
+    if (y < paperH - 12) guides += `<div class="calc-guide" style="top:${y}px;width:${pagePxW}px"><span>Seite ${pg + 1}</span></div>`;
+  }
   sheet.innerHTML = `<div class="calc-stage" style="width:${stageW}px;height:${stageH}px">
-    <div class="calc-paper" style="left:${GUT}px;top:${HDR}px;width:${paperW}px;height:${paperH}px"><span class="cp-tag">${fmt} · Druckbereich</span></div>
-    <table class="cgrid">${cg}${head}</table>
+    <div class="calc-paper" style="left:0;top:0;width:${pagePxW}px;height:${paperH}px"><span class="cp-tag">${fmt} · ${pages} ${pages === 1 ? 'Seite' : 'Seiten'}</span></div>
+    ${guides}
+    <table class="cgrid" style="position:relative">${cg}${head}</table>
   </div>`;
 }
 let anchorC = 0, anchorR = 0, editingTd = null;

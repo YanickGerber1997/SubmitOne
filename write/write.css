@@ -491,10 +491,12 @@ body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .calc-stat{font-size:12px;color:var(--ink-soft);white-space:nowrap;font-variant-numeric:tabular-nums;padding:0 8px}
 
 /* Calc = Seitenlayout-Gitter: Köpfe als Rahmen aussen (Lineal), Blatt als Druckbereich im Hintergrund, Gitter läuft frei darüber hinaus */
-.calc-sheet{flex:1;min-height:0;overflow:auto;background:var(--bg);padding:30px}
-.calc-stage{position:relative}
-.calc-paper{position:absolute;background:var(--paper);box-shadow:0 6px 30px rgba(20,24,40,.18);border-radius:2px;z-index:0}
-.cp-tag{position:absolute;top:-17px;left:1px;font-size:9.5px;color:var(--ink-faint);white-space:nowrap}
+.calc-sheet{flex:1;min-height:0;overflow:auto;background:var(--bg);padding:34px 24px 90px}
+.calc-stage{position:relative;margin:0 auto}                /* A4-Blatt zentriert wie in Write */
+.calc-paper{position:absolute;background:var(--paper);box-shadow:var(--shadow);border-radius:3px;z-index:0}
+.cp-tag{position:absolute;top:-18px;left:1px;font-size:9.5px;color:var(--ink-faint);white-space:nowrap}
+.calc-guide{position:absolute;left:0;border-top:1px dashed rgba(120,132,156,.55);z-index:2;pointer-events:none}
+.calc-guide span{position:absolute;right:4px;top:-9px;font-size:9.5px;color:var(--ink-faint);background:var(--paper);padding:1px 6px;border-radius:4px}
 .cgrid{position:relative;z-index:1;border-collapse:collapse;table-layout:fixed;font-size:13px}
 .cgrid th,.cgrid td{border:1px solid var(--line-soft);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .cgrid td{background:transparent;color:var(--paper-ink);padding:2px 7px;cursor:cell}
@@ -586,8 +588,8 @@ body[data-theme="dark"] .toast{background:#2a3140}
   .grid td.sel{outline:none;background:none}
   /* Calc drucken = nur benutzter Bereich als saubere Tabelle (ohne Köpfe/Zeilennummern/Blatt) */
   .app.calc-mode .calc-sheet{display:block !important;overflow:visible;padding:0;background:#fff}
-  .calc-stage{position:static !important;width:auto !important;height:auto !important}
-  .calc-paper{display:none}
+  .calc-stage{position:static !important;width:auto !important;height:auto !important;margin:0 !important}
+  .calc-paper,.calc-guide{display:none}
   .cgrid{table-layout:auto !important;font-size:11pt}
   .cgrid colgroup{display:none}
   .cgrid thead,.cgrid .cg-row,.cgrid .cg-corner{display:none}

@@ -173,6 +173,9 @@
         <button class="icon-btn sm" id="findClose" title="Schliessen (Esc)">✕</button>
       </div>
 
+      <!-- LINEAL -->
+      <div class="ruler-wrap" id="rulerWrap"><div class="ruler" id="ruler"></div></div>
+
       <!-- DOKUMENT -->
       <div class="canvas" id="canvas">
         <div class="page" id="page">
@@ -221,6 +224,18 @@
             <button data-line="1.7" class="on">Normal</button>
             <button data-line="2.1">Weit</button>
           </div>
+        </div>
+        <div class="insp-block">
+          <div class="insp-lbl">Seite einrichten</div>
+          <div class="setup-grid">
+            <label><span class="cap">Rand oben</span><span class="val"><input type="number" id="mTop" min="0" max="60" step="1">mm</span></label>
+            <label><span class="cap">Rand unten</span><span class="val"><input type="number" id="mBottom" min="0" max="60" step="1">mm</span></label>
+            <label><span class="cap">Rand links</span><span class="val"><input type="number" id="mLeft" min="0" max="60" step="1">mm</span></label>
+            <label><span class="cap">Rand rechts</span><span class="val"><input type="number" id="mRight" min="0" max="60" step="1">mm</span></label>
+            <label><span class="cap">Kopf-Höhe</span><span class="val"><input type="number" id="kopfH" min="6" max="80" step="1">mm</span></label>
+            <label><span class="cap">Fuss-Höhe</span><span class="val"><input type="number" id="fussH" min="6" max="80" step="1">mm</span></label>
+          </div>
+          <button class="setup-reset" id="setupReset">Auf Standard zurücksetzen</button>
         </div>
         <div class="insp-block">
           <div class="insp-lbl">Statistik</div>

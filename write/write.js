@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v5';
+const WRITE_VERSION = 'v6';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -99,7 +99,7 @@ function newDocObject(partial = {}) {
   const t = nowIso();
   return Object.assign({
     id: uid(), titel: 'Unbenanntes Dokument', html: '', kopf: '', fuss: '',
-    einstellungen: { schriftart: "'Inter', sans-serif", schriftgroesse: 16, zeilenabstand: 1.7, ausrichtung: 'hoch' },
+    einstellungen: { schriftart: "'Inter', sans-serif", schriftgroesse: 16, zeilenabstand: 1.7, ausrichtung: 'hoch', margins: { top: 18, right: 22, bottom: 18, left: 22 }, kopfH: 14, fussH: 14, tabs: [] },
     meta: { erstellt: t, geaendert: t, autor: 'Yanick Gerber', version: 1 },
     folder: 'dokumente', fav: false, trashed: false
   }, partial);
@@ -141,6 +141,7 @@ function applySettings() {
   page.classList.toggle('quer', o === 'quer');
   $('#btnPortrait').classList.toggle('on', o !== 'quer');
   $('#btnLandscape').classList.toggle('on', o === 'quer');
+  applyPageSetup();
   applyZoom();
 }
 
@@ -397,13 +398,58 @@ function docMenu(id) {
 }
 
 /* ---------- Vorlagen ---------- */
+const TODAY = new Date().toLocaleDateString('de-CH');
 const TEMPLATES = {
-  brief: { titel: 'Brief', html: '<p style="text-align:right">Yanick Gerber<br>Musterstrasse 1<br>3000 Bern</p><p><br></p><p>Empfänger<br>Adresse<br>PLZ Ort</p><p><br></p><p style="text-align:right">Bern, ' + new Date().toLocaleDateString('de-CH') + '</p><h2>Betreff</h2><p>Sehr geehrte Damen und Herren,</p><p><br></p><p>Freundliche Grüsse<br>Yanick Gerber</p>' },
-  rechnung: { titel: 'Rechnung', html: '<h1>Rechnung</h1><p><b>Rechnungsnummer:</b> 2026-001<br><b>Datum:</b> ' + new Date().toLocaleDateString('de-CH') + '</p><table><tbody><tr><th>Position</th><th>Menge</th><th>Preis</th><th>Total</th></tr><tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr></tbody></table><p style="text-align:right"><b>Total CHF&nbsp;&nbsp;</b></p>' },
-  angebot: { titel: 'Angebot', html: '<h1>Angebot</h1><p>Sehr geehrte Damen und Herren,</p><p>gerne unterbreiten wir Ihnen folgendes Angebot:</p><h2>Leistungen</h2><ul><li>Leistung 1</li><li>Leistung 2</li></ul><h2>Konditionen</h2><p>Gültig bis: </p>' },
-  projektplan: { titel: 'Projektplan', html: '<h1>Projektplan</h1><h2>Ziel</h2><p></p><h2>Meilensteine</h2><ol><li>Start</li><li>Umsetzung</li><li>Abschluss</li></ol><h2>Risiken</h2><p></p>' },
-  protokoll: { titel: 'Meeting-Protokoll', html: '<h1>Protokoll</h1><p><b>Datum:</b> ' + new Date().toLocaleDateString('de-CH') + '<br><b>Teilnehmende:</b> </p><h2>Traktanden</h2><ol><li></li></ol><h2>Beschlüsse</h2><ul><li></li></ul><h2>Pendenzen</h2><ul><li></li></ul>' },
-  lebenslauf: { titel: 'Lebenslauf', html: '<h1>Lebenslauf</h1><h2>Persönliches</h2><p>Name<br>Adresse<br>E-Mail</p><h2>Berufserfahrung</h2><p></p><h2>Ausbildung</h2><p></p><h2>Kenntnisse</h2><ul><li></li></ul>' }
+  brief: { titel: 'Brief', html:
+    `<p style="text-align:right;color:#777">Yanick Gerber&nbsp;·&nbsp;Musterstrasse 1&nbsp;·&nbsp;3000 Bern</p>
+     <p><br></p><p><br></p>
+     <p>Empfänger AG<br>z.&nbsp;H. Frau Muster<br>Beispielweg 5<br>3000 Bern</p>
+     <p><br></p><p style="text-align:right">Bern, ${TODAY}</p><p><br></p>
+     <h2>Betreff der Mitteilung</h2>
+     <p>Sehr geehrte Damen und Herren</p>
+     <p>Hier steht der Inhalt Ihres Schreibens. Ersetzen Sie diesen Text durch Ihr Anliegen.</p>
+     <p><br></p><p>Freundliche Grüsse</p><p><br></p><p>Yanick Gerber</p>` },
+  rechnung: { titel: 'Rechnung', html:
+    `<h1>Rechnung</h1>
+     <p style="color:#777">Rechnungsnr. 2026-001&nbsp;·&nbsp;Datum ${TODAY}&nbsp;·&nbsp;zahlbar innert 30 Tagen</p>
+     <p><b>An</b><br>Kunde AG<br>Adresse<br>PLZ Ort</p>
+     <table><tbody>
+       <tr><th style="text-align:left">Beschreibung</th><th>Menge</th><th>Einzelpreis</th><th>Betrag</th></tr>
+       <tr><td>Leistung 1</td><td>1</td><td>CHF 0.00</td><td>CHF 0.00</td></tr>
+       <tr><td>Leistung 2</td><td>1</td><td>CHF 0.00</td><td>CHF 0.00</td></tr>
+     </tbody></table>
+     <p style="text-align:right">Zwischensumme&nbsp;&nbsp;CHF 0.00<br>MwSt 8,1&nbsp;%&nbsp;&nbsp;CHF 0.00<br><b>Total&nbsp;&nbsp;CHF 0.00</b></p>
+     <p style="color:#777">Zahlbar auf IBAN CH00 0000 0000 0000 0000 0</p>` },
+  angebot: { titel: 'Angebot', html:
+    `<h1>Angebot</h1>
+     <p style="color:#777">Angebot-Nr. 2026-001&nbsp;·&nbsp;${TODAY}&nbsp;·&nbsp;gültig 30 Tage</p>
+     <p>Sehr geehrte Damen und Herren</p>
+     <p>Gerne unterbreiten wir Ihnen folgendes Angebot:</p>
+     <h2>Leistungen</h2><ul><li>Leistung 1</li><li>Leistung 2</li><li>Leistung 3</li></ul>
+     <h2>Preis</h2><p>Pauschal <b>CHF 0.00</b> exkl. MwSt.</p>
+     <h2>Konditionen</h2><p>Zahlungsziel 30 Tage · Ausführung nach Absprache.</p>
+     <p><br></p><p>Freundliche Grüsse<br>Yanick Gerber</p>` },
+  projektplan: { titel: 'Projektplan', html:
+    `<h1>Projektplan</h1>
+     <p style="color:#777">Projekt …&nbsp;·&nbsp;Verantwortlich Yanick Gerber&nbsp;·&nbsp;Stand ${TODAY}</p>
+     <h2>Ausgangslage &amp; Ziel</h2><p>Worum geht es, was soll erreicht werden?</p>
+     <h2>Meilensteine</h2><ol><li>Start – </li><li>Umsetzung – </li><li>Abschluss – </li></ol>
+     <h2>Aufgaben</h2><ul><li>Aufgabe – verantwortlich – bis</li></ul>
+     <h2>Risiken</h2><ul><li>Risiko – Massnahme</li></ul>` },
+  protokoll: { titel: 'Sitzungsprotokoll', html:
+    `<h1>Sitzungsprotokoll</h1>
+     <p style="color:#777">Datum ${TODAY}&nbsp;·&nbsp;Ort …&nbsp;·&nbsp;Protokoll Yanick Gerber</p>
+     <p><b>Teilnehmende</b>&nbsp;&nbsp;…</p>
+     <h2>Traktanden</h2><ol><li></li><li></li></ol>
+     <h2>Beschlüsse</h2><ul><li></li></ul>
+     <h2>Pendenzen</h2><ul><li>Aufgabe – verantwortlich – bis</li></ul>` },
+  lebenslauf: { titel: 'Lebenslauf', html:
+    `<h1>Vorname Nachname</h1>
+     <p style="color:#777">Adresse&nbsp;·&nbsp;0000 Ort&nbsp;·&nbsp;mail@example.ch&nbsp;·&nbsp;079 000 00 00</p>
+     <h2>Profil</h2><p>Kurzer Beschrieb in zwei, drei Sätzen.</p>
+     <h2>Berufserfahrung</h2><p><b>2022 – heute&nbsp;·&nbsp;Position</b><br>Firma, Ort<br>Wichtigste Aufgaben und Erfolge.</p>
+     <h2>Ausbildung</h2><p><b>Jahr&nbsp;·&nbsp;Abschluss</b><br>Schule, Ort</p>
+     <h2>Kenntnisse</h2><ul><li>Sprachen: …</li><li>IT: …</li></ul>` }
 };
 function renderTemplateHint() {
   return '<div style="padding:8px 4px;display:flex;flex-direction:column;gap:4px">' +
@@ -495,6 +541,7 @@ function toggleFocus() {
   const on = appEl.classList.toggle('focus');
   $('#btnFocusExit').hidden = !on;
   if (on) editor.focus();
+  applyZoom();   // Lineal aus-/einblenden + Zoom an neue Breite
 }
 
 /* ============================================================
@@ -544,6 +591,24 @@ function wire() {
   $('#btnPortrait').addEventListener('click', () => setOrientation('hoch'));
   $('#btnLandscape').addEventListener('click', () => setOrientation('quer'));
   window.addEventListener('resize', applyZoom);
+
+  // Seite einrichten (Ränder + Kopf-/Fuss-Höhe)
+  [['#mTop', 'top'], ['#mBottom', 'bottom'], ['#mLeft', 'left'], ['#mRight', 'right']].forEach(([sel, key]) => {
+    $(sel).addEventListener('input', e => { if (!doc) return; pageSetup().margins[key] = Math.max(0, Math.min(60, +e.target.value || 0)); applyPageSetup(); drawRuler(); updatePages(); scheduleSave(); });
+  });
+  $('#kopfH').addEventListener('input', e => { if (!doc) return; pageSetup().kopfH = Math.max(6, Math.min(80, +e.target.value || 14)); applyPageSetup(); updatePages(); scheduleSave(); });
+  $('#fussH').addEventListener('input', e => { if (!doc) return; pageSetup().fussH = Math.max(6, Math.min(80, +e.target.value || 14)); applyPageSetup(); updatePages(); scheduleSave(); });
+  $('#setupReset').addEventListener('click', () => { if (!doc) return; doc.einstellungen.margins = defaultMargins(); doc.einstellungen.kopfH = 14; doc.einstellungen.fussH = 14; doc.einstellungen.tabs = []; applyPageSetup(); drawRuler(); updatePages(); scheduleSave(); });
+
+  // Lineal: Klick setzt Tabstopp
+  $('#ruler').addEventListener('click', e => {
+    if (suppressRulerClick || e.target.classList.contains('rhandle') || e.target.classList.contains('rtab')) return;
+    const mm = Math.round(rulerMm(e.clientX)), s = pageSetup();
+    if (mm > s.margins.left && mm < pageWidthMm() - s.margins.right) { s.tabs.push(mm); s.tabs.sort((a, b) => a - b); drawRuler(); scheduleSave(); }
+  });
+
+  // Tab-Taste im Editor (zum nächsten Tabstopp; Umschalt+Tab = Einzug zurück)
+  editor.addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); if (e.shiftKey) cmd('outdent'); else insertTab(); } });
 
   // Kopf-/Fusszeile (eigene Felder – immer erreichbar, nie im Textfluss)
   ['#zoneH', '#zoneF'].forEach(s => {
@@ -836,6 +901,7 @@ function applyZoom() {
   page.style.zoom = z;
   $('#zoomVal').innerHTML = Math.round(z * 100) + '&nbsp;%';
   $('#zoomVal').classList.toggle('on', zoomMode === 'auto');
+  drawRuler();
 }
 function setZoom(v) { zoomMode = v; applyZoom(); }
 function zoomStep(d) {
@@ -859,6 +925,75 @@ function updatePages() {
     const s = document.createElement('span'); s.textContent = 'Seite ' + (k + 1); line.appendChild(s); g.appendChild(line);
   }
   return n;
+}
+
+/* ---------- Seite einrichten (Ränder, Kopf-/Fuss-Höhe) + Lineal ---------- */
+function defaultMargins() { return { top: 18, right: 22, bottom: 18, left: 22 }; }
+function pageSetup() {
+  const s = doc.einstellungen;
+  if (!s.margins) s.margins = defaultMargins();
+  if (s.kopfH == null) s.kopfH = 14;
+  if (s.fussH == null) s.fussH = 14;
+  if (!Array.isArray(s.tabs)) s.tabs = [];
+  return s;
+}
+function applyPageSetup() {
+  if (!doc) return;
+  const s = pageSetup(), m = s.margins;
+  page.style.setProperty('--mt', m.top + 'mm');
+  page.style.setProperty('--mr', m.right + 'mm');
+  page.style.setProperty('--mb', m.bottom + 'mm');
+  page.style.setProperty('--ml', m.left + 'mm');
+  page.style.setProperty('--kopfH', s.kopfH + 'mm');
+  page.style.setProperty('--fussH', s.fussH + 'mm');
+  $('#mTop').value = m.top; $('#mBottom').value = m.bottom; $('#mLeft').value = m.left; $('#mRight').value = m.right;
+  $('#kopfH').value = s.kopfH; $('#fussH').value = s.fussH;
+}
+let suppressRulerClick = false;
+function drawRuler() {
+  if (!doc) return;
+  const wrap = $('#rulerWrap'), r = $('#ruler');
+  if (appEl.classList.contains('focus') || appEl.classList.contains('calc-mode')) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  const z = parseFloat(page.style.zoom) || 1;
+  const wmm = pageWidthMm(), wpx = wmm * MM * z;
+  r.style.width = wpx + 'px';
+  const m = pageSetup().margins; let html = '';
+  for (let cm = 0; cm <= Math.floor(wmm / 10); cm++) { html += `<div class="rtick" style="left:${cm * 10 * MM * z}px"><span>${cm}</span></div>`; }
+  html += `<div class="rmargin left" style="width:${m.left * MM * z}px"></div>`;
+  html += `<div class="rmargin right" style="width:${m.right * MM * z}px"></div>`;
+  (doc.einstellungen.tabs || []).forEach((t, i) => { html += `<div class="rtab" data-i="${i}" style="left:${t * MM * z}px" title="Tabstopp – Klick entfernt"></div>`; });
+  html += `<div class="rhandle" id="rhLeft" style="left:${m.left * MM * z}px" title="Linker Rand"></div>`;
+  html += `<div class="rhandle" id="rhRight" style="left:${(wmm - m.right) * MM * z}px" title="Rechter Rand"></div>`;
+  r.innerHTML = html;
+  $('#rhLeft').addEventListener('mousedown', e => startMarginDrag('left', e));
+  $('#rhRight').addEventListener('mousedown', e => startMarginDrag('right', e));
+  $$('#ruler .rtab').forEach(t => t.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); doc.einstellungen.tabs.splice(+t.dataset.i, 1); drawRuler(); scheduleSave(); }));
+}
+function rulerMm(clientX) { const r = $('#ruler').getBoundingClientRect(); const z = parseFloat(page.style.zoom) || 1; return Math.max(0, Math.min(pageWidthMm(), (clientX - r.left) / (MM * z))); }
+function startMarginDrag(which, e) {
+  e.preventDefault(); suppressRulerClick = true;
+  const wmm = pageWidthMm(), s = pageSetup();
+  const move = ev => {
+    const mm = Math.round(rulerMm(ev.clientX));
+    if (which === 'left') s.margins.left = Math.max(0, Math.min(mm, wmm - s.margins.right - 20));
+    else s.margins.right = Math.max(0, Math.min(wmm - mm, wmm - s.margins.left - 20));
+    applyPageSetup(); drawRuler();
+  };
+  const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); scheduleSave(); updatePages(); setTimeout(() => suppressRulerClick = false, 0); };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+}
+function insertTab() {
+  const sel = document.getSelection();
+  if (!sel || !sel.rangeCount) { document.execCommand('insertHTML', false, '<span class="tabspace" style="display:inline-block;width:48px"></span>​'); afterEdit(); return; }
+  const rng = sel.getRangeAt(0), rect = rng.getClientRects()[0] || rng.getBoundingClientRect();
+  const z = parseFloat(page.style.zoom) || 1;
+  const caretX = (rect.left - editor.getBoundingClientRect().left) / z;
+  const stops = (doc.einstellungen.tabs || []).map(mm => (mm - doc.einstellungen.margins.left) * MM).sort((a, b) => a - b);
+  const target = stops.find(s => s > caretX + 2);
+  const w = Math.max(8, Math.round(target != null ? target - caretX : 48));
+  document.execCommand('insertHTML', false, `<span class="tabspace" style="display:inline-block;width:${w}px"></span>​`);
+  afterEdit();
 }
 
 /* ============================================================

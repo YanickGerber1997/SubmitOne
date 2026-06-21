@@ -198,24 +198,40 @@ button{font-family:inherit;cursor:pointer}
 .fb-btn.color input[type=color]{position:absolute;inset:0;opacity:0;cursor:pointer}
 
 /* ---------- Canvas + Blatt ---------- */
-.canvas{flex:1;min-width:0;overflow:auto;padding:40px 24px 120px}
+.canvas{flex:1;min-width:0;overflow:auto;padding:18px 24px 120px}
 .page{
   position:relative;width:210mm;min-height:297mm;margin:0 auto;background:var(--paper);
-  border-radius:3px;box-shadow:var(--shadow);padding:0 24mm;color:var(--paper-ink);
+  border-radius:3px;box-shadow:var(--shadow);color:var(--paper-ink);
+  display:flex;flex-direction:column;
+  padding-left:var(--ml,22mm);padding-right:var(--mr,22mm);
   transition:box-shadow .3s var(--ease);
 }
 .page.quer{width:297mm;min-height:210mm}
-/* Kopf-/Fusszeile = eigene Felder, getrennt vom Fliesstext (immer erreichbar, nie kaputt) */
-.zone{outline:none;font-size:13px;color:var(--ink-soft);position:relative;z-index:2}
-.zone-h{padding:16mm 0 5mm;min-height:30mm;border-bottom:1px dashed var(--line)}
-.zone-f{padding:5mm 0 16mm;min-height:30mm;border-top:1px dashed var(--line)}
+/* Kopf-/Fusszeile = eigene Felder, getrennt vom Fliesstext (immer erreichbar, nie kaputt).
+   Blatt = Flex-Spalte → Kopf IMMER ganz oben, Fuss IMMER ganz unten. Höhen einstellbar. */
+.zone{outline:none;font-size:13px;color:var(--ink-soft);position:relative;z-index:2;flex:0 0 auto}
+.zone-h{padding-top:var(--mt,18mm);padding-bottom:4mm;min-height:var(--kopfH,14mm);border-bottom:1px dashed var(--line)}
+.zone-f{padding-top:4mm;padding-bottom:var(--mb,18mm);min-height:var(--fussH,14mm);border-top:1px dashed var(--line)}
 .zone:empty::before{content:attr(data-ph);color:var(--ink-faint)}
-.zone:focus{background:linear-gradient(var(--accent-soft),var(--accent-soft)) padding-box;border-radius:4px}
+.zone-tag{position:absolute;left:0;top:2px;font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-faint);opacity:0;transition:opacity .15s;pointer-events:none}
+.zone:hover .zone-tag,.zone:focus .zone-tag{opacity:1}
 /* Seiten-Hilfslinien (rein visuell – das Tippen hängt nie davon ab) */
 .guides{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;z-index:1}
 .guide{position:absolute;left:0;right:0;border-top:1px dashed rgba(120,132,156,.5)}
 .guide span{position:absolute;right:-19mm;top:-8px;font-size:9.5px;color:var(--ink-faint);background:var(--paper);padding:1px 6px;border-radius:4px}
-.editor{outline:none;font-size:16px;line-height:1.7;font-family:var(--font-ui);position:relative;z-index:2;min-height:180mm;padding:8mm 0}
+.editor{outline:none;font-size:16px;line-height:1.7;font-family:var(--font-ui);position:relative;z-index:2;flex:1 1 auto;padding:6mm 0}
+
+/* ---------- Lineal ---------- */
+.ruler-wrap{display:flex;justify-content:center;padding:6px 24px 0;background:var(--bg);overflow:hidden;flex:0 0 auto}
+.ruler{position:relative;height:22px;background:var(--surface);border:1px solid var(--line);border-radius:5px}
+.rtick{position:absolute;top:0;bottom:0;border-left:1px solid var(--line)}
+.rtick span{position:absolute;top:3px;left:3px;font-size:8.5px;color:var(--ink-faint)}
+.rmargin{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(45deg,rgba(120,132,156,.10),rgba(120,132,156,.10) 3px,transparent 3px,transparent 6px)}
+.rmargin.left{left:0} .rmargin.right{right:0}
+.rhandle{position:absolute;top:-2px;width:12px;height:26px;margin-left:-6px;cursor:ew-resize;z-index:3}
+.rhandle::after{content:'';position:absolute;left:5px;top:3px;width:2px;height:20px;background:var(--accent);border-radius:2px}
+.rhandle:hover::after{width:3px;left:4.5px}
+.rtab{position:absolute;bottom:1px;width:0;height:0;margin-left:-4px;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:6px solid var(--ink-soft);cursor:pointer}
 .editor:empty::before{content:attr(data-ph);color:var(--ink-faint)}
 .editor>*:first-child{margin-top:0}
 .editor h1{font-size:30px;font-weight:700;line-height:1.2;margin:.4em 0 .35em;letter-spacing:-.4px}
@@ -287,6 +303,14 @@ button{font-family:inherit;cursor:pointer}
 .stat-cell{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
 .stat-cell .sc-n{font-size:17px;font-weight:700;color:var(--ink)}
 .stat-cell .sc-l{font-size:11px;color:var(--ink-faint)}
+.setup-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px 10px}
+.setup-grid label{display:flex;flex-direction:column;gap:3px}
+.setup-grid .cap{font-size:11px;color:var(--ink-soft)}
+.setup-grid .val{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--ink-faint)}
+.setup-grid input{width:48px;border:1px solid var(--line);background:var(--surface-2);border-radius:6px;padding:4px 6px;font-size:12px;color:var(--ink);font-family:inherit}
+.setup-grid input:focus{outline:none;border-color:var(--accent)}
+.setup-reset{margin-top:11px;width:100%;border:1px solid var(--line);background:none;color:var(--ink-soft);font-size:12px;padding:7px;border-radius:7px}
+.setup-reset:hover{background:var(--line-soft);color:var(--ink)}
 
 /* ---------- Fokusmodus ---------- */
 .app.focus .topbar,.app.focus .formatbar,.app.focus .statusbar,
@@ -406,7 +430,7 @@ body[data-theme="dark"] .toast{background:#2a3140}
 /* ---------- Druck ---------- */
 @media print{
   body{background:#fff}
-  .side,.inspector,.topbar,.formatbar,.findbar,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,#toast-root{display:none !important}
+  .side,.inspector,.topbar,.formatbar,.findbar,.ruler-wrap,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.preview-overlay,#toast-root{display:none !important}
   .app{display:block}
   .canvas{padding:0;overflow:visible;display:block}
   .page{box-shadow:none;width:auto;min-height:auto;border-radius:0;padding:0 16mm;zoom:1 !important}

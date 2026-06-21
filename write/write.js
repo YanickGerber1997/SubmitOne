@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v16';
+const WRITE_VERSION = 'v17';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -754,7 +754,7 @@ function wire() {
   $('#btnLandscape').addEventListener('click', () => setOrientation('quer'));
   $('#selFormat').addEventListener('change', e => setFormat(e.target.value));
   window.addEventListener('resize', applyZoom);
-  window.addEventListener('resize', () => { if (doc && activePage().typ === 'calc') fitSheet(); });
+  window.addEventListener('resize', () => { if (doc && activePage().typ === 'calc') renderCalc(); });
 
   // Seite einrichten (Ränder + Kopf-/Fuss-Höhe)
   [['#mTop', 'top'], ['#mBottom', 'bottom'], ['#mLeft', 'left'], ['#mRight', 'right']].forEach(([sel, key]) => {
@@ -1468,49 +1468,50 @@ function calcUsedRange() {
   return { maxR, maxC };
 }
 // EINE kombinierte Ansicht: volles Tabellengitter (alle Spalten) AUF dem A4-Blatt
-function gEl() { return $('#calcSheet .sheet-grid'); }
+function gEl() { return $('#calcSheet .cgrid'); }
 function tdAt(c, r) { const t = gEl(); return t ? t.querySelector(`td[data-c="${c}"][data-r="${r}"]`) : null; }
 function allTd(sel) { const t = gEl(); return t ? [...t.querySelectorAll(sel)] : []; }
-function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen + 2 Spare
+function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen
   const z = curGrid.zeilen;
-  return { cols: Math.max(1, ...z.map(x => x.cells.length)), rows: z.length + 2 };
+  return { cols: Math.max(1, ...z.map(x => x.cells.length)), rows: z.length };
 }
+let gridCols = 1, gridRows = 1;
 function renderCalc() { renderSheet(); highlightSel(); }
 function renderSheet() {
-  const sheet = $('#calcSheet'), ur = calcUsedRange();
-  const { cols: totalCols, rows } = calcExtent();
-  const quer = doc.einstellungen.ausrichtung === 'quer';
-  let body = '';
+  const sheet = $('#calcSheet'), ur = calcUsedRange(), ext = calcExtent(), d = pageDims();
+  const ML = 16, printW = d.w - 2 * ML, printH = d.h - 2 * ML;          // Druckbereich in mm
+  const avail = (sheet.clientWidth || 900) - 80;
+  const S = Math.min(3.6, Math.max(1.5, avail / printW));                // px/mm – Blatt passt in die Breite
+  const colWpx = Math.round(22 * S), rowHpx = Math.max(22, Math.round(8 * S));
+  const colsPP = Math.max(1, Math.floor(printW / 22)), rowsPP = Math.max(1, Math.floor(printH / 8));
+  const cols = Math.max(ext.cols, colsPP + 2), rows = Math.max(ext.rows, rowsPP + 4);
+  gridCols = cols; gridRows = rows;
+  const GUT = 38, HDR = 22;
+  let cg = `<colgroup><col style="width:${GUT}px">`;
+  for (let c = 0; c < cols; c++) cg += `<col style="width:${colWpx}px">`;
+  cg += '</colgroup>';
+  let head = '<thead><tr><th class="cg-corner"></th>';
+  for (let c = 0; c < cols; c++) head += `<th class="cg-col">${idxToCol(c)}</th>`;
+  head += '</tr></thead><tbody>';
   for (let r = 0; r < rows; r++) {
-    const z = curGrid.zeilen[r];
-    const tag = (z && /^h[1-3]$/.test(z.tag)) ? z.tag : 'p';
-    const nCells = z ? z.cells.length : 0;
-    body += `<tr class="r-${tag}${r > ur.maxR ? ' pad' : ''}">`;
-    if (nCells <= 1) {                                   // Absatz/Überschrift → volle Breite (wie Write)
-      const raw = gridGet(curGrid, 0, r);
-      const disp = cellText(raw).startsWith('=') ? esc(String(evalCell(0, r))) : (raw || '<br>');
-      body += `<td data-c="0" data-r="${r}"${totalCols > 1 ? ` colspan="${totalCols}"` : ''}>${disp}</td>`;
-    } else {                                             // Datenzeile → Spalten so breit wie nötig
-      for (let c = 0; c < totalCols; c++) {
-        const raw = gridGet(curGrid, c, r), isF = cellText(raw).startsWith('=');
-        const v = isF ? evalCell(c, r) : null, cl = [];
-        if (isF && typeof v === 'number') cl.push('num'); else if (isF && /^#/.test(String(v))) cl.push('err');
-        if (c > ur.maxC || r > ur.maxR) cl.push('pad');
-        body += `<td data-c="${c}" data-r="${r}"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${isF ? esc(String(v)) : (raw || '')}</td>`;
-      }
+    head += `<tr${r > ur.maxR ? ' class="pad"' : ''}><th class="cg-row">${r + 1}</th>`;
+    for (let c = 0; c < cols; c++) {
+      const raw = gridGet(curGrid, c, r), isF = cellText(raw).startsWith('=');
+      const v = isF ? evalCell(c, r) : null, cl = [];
+      if (isF && typeof v === 'number') cl.push('num'); else if (isF && /^#/.test(String(v))) cl.push('err');
+      if (c > ur.maxC || r > ur.maxR) cl.push('pad');
+      head += `<td data-c="${c}" data-r="${r}" style="height:${rowHpx}px"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${isF ? esc(String(v)) : (raw || '')}</td>`;
     }
-    body += '</tr>';
+    head += '</tr>';
   }
+  head += '</tbody>';
+  const paperW = colsPP * colWpx, paperH = rowsPP * rowHpx;
+  const stageW = GUT + cols * colWpx, stageH = HDR + rows * rowHpx + 4;
   const fmt = doc.einstellungen.format || 'A4';
-  sheet.innerHTML = `<div class="cs-page${quer ? ' quer' : ''}" id="csPage"><div class="cs-format">${fmt} · Calc</div><div class="cs-h">${$('#zoneH').innerHTML}</div><div class="cs-c"><table class="sheet-grid doc">${body}</table></div><div class="cs-f"><span>${$('#zoneF').innerHTML}</span><span class="pv-num">Seite 1</span></div></div>`;
-  fitSheet();
-}
-function fitSheet() {
-  const cp = $('#csPage'); if (!cp) return;
-  const d = pageDims();
-  cp.style.width = d.w + 'mm'; cp.style.minHeight = d.h + 'mm';
-  const avail = ($('#calcSheet').clientWidth || 800) - 56;
-  cp.style.zoom = Math.max(.2, Math.min(1, avail / (d.w * MM)));
+  sheet.innerHTML = `<div class="calc-stage" style="width:${stageW}px;height:${stageH}px">
+    <div class="calc-paper" style="left:${GUT}px;top:${HDR}px;width:${paperW}px;height:${paperH}px"><span class="cp-tag">${fmt} · Druckbereich</span></div>
+    <table class="cgrid">${cg}${head}</table>
+  </div>`;
 }
 let anchorC = 0, anchorR = 0, editingTd = null;
 function rangeBounds() { return { c1: Math.min(anchorC, selC), c2: Math.max(anchorC, selC), r1: Math.min(anchorR, selR), r2: Math.max(anchorR, selR) }; }
@@ -1533,9 +1534,8 @@ function updateCalcStat() {
   el.textContent = nums.length ? `Summe ${roundN(sum)}  ·  Mittel ${roundN(sum / nums.length)}  ·  Anzahl ${count}` : `Anzahl ${count}`;
 }
 function selectCell(c, r, extend) {
-  const { cols, rows } = calcExtent();
-  selC = Math.max(0, Math.min(cols - 1, c));
-  selR = Math.max(0, Math.min(rows - 1, r));
+  selC = Math.max(0, Math.min(gridCols - 1, c));
+  selR = Math.max(0, Math.min(gridRows - 1, r));
   if (!extend) { anchorC = selC; anchorR = selR; }
   highlightSel();
   const td = tdAt(selC, selR); if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });

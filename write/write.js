@@ -476,6 +476,25 @@ function updateStatsCalc() {
   ].map(([l, n]) => `<div class="stat-cell"><div class="sc-n">${n}</div><div class="sc-l">${l}</div></div>`).join('');
 }
 
+// Spaltentrenner (Tabs) in Write auf dieselben Spaltenpositionen wie Calc ausrichten
+function alignColseps() {
+  if (!doc || (activePage() && activePage().typ === 'calc')) return;
+  const seps = $$('.colsep', editor); if (!seps.length) return;
+  const m = pageSetup().margins, contentMm = Math.max(60, pageDims().w - m.left - m.right);
+  let maxCells = 1; $$('p,h1,h2,h3,blockquote,pre', editor).forEach(b => { const n = b.querySelectorAll('.colsep').length + 1; if (n > maxCells) maxCells = n; });
+  const auto = Math.max(4, Math.floor(contentMm / 26));
+  const cols = Math.max(maxCells, activePage().dispCols || auto);
+  const colW = (contentMm * MM) / cols;                 // Spaltenbreite in px (ungezoomt) – wie in Calc
+  const z = parseFloat(page.style.zoom) || 1;
+  seps.forEach(s => { s.style.display = 'inline-block'; s.style.minWidth = '0'; s.style.width = '0px'; s.style.textAlign = 'left'; });   // erst zurücksetzen
+  seps.forEach(s => {
+    const block = s.closest('p,h1,h2,h3,blockquote,pre'); if (!block) return;
+    const x = (s.getBoundingClientRect().left - block.getBoundingClientRect().left) / z;
+    let w = (Math.floor(x / colW + 0.001) + 1) * colW - x;
+    if (w < 5) w += colW;                                // mind. eine Spalte vorrücken
+    s.style.width = Math.round(w) + 'px';
+  });
+}
 function updateOutline() {
   const heads = $$('h1,h2,h3', editor).filter(h => h.innerText.trim());
   const boxes = [$('#outline'), $('#navOutline')].filter(Boolean);
@@ -1357,6 +1376,7 @@ function paginate() {
   pageCount = pages;
   page.classList.toggle('first-no-hf', firstNo);
   page.classList.toggle('one-page', pages === 1);
+  alignColseps();
   if (off != null) setBodyCaret(off);
   const st = $('#stPages'); if (st) st.textContent = pages + (pages === 1 ? ' Seite' : ' Seiten');
 }
@@ -1754,7 +1774,7 @@ function renderActivePage() {
   appEl.classList.toggle('calc-mode', calc);
   appEl.classList.toggle('slides-mode', m === 'slides');
   if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; calcFitRows = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
-  else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.sp-err', editor).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); $$('.pgbreak-gap', editor).forEach(g => g.remove()); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); paginateLater(); }
+  else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.sp-err', editor).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); $$('.pgbreak-gap', editor).forEach(g => g.remove()); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); alignColseps(); paginateLater(); }
   if (m === 'slides') { const ni = $('#slideNotesInput'); if (ni) ni.value = p.notiz || ''; }
 }
 // Typ der AKTIVEN Seite wechseln (Modus-Pille)

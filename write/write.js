@@ -781,6 +781,11 @@ function wire() {
     best.querySelectorAll('.pdf-note').forEach(n => n.remove());
   });
   $('#pdfAnnoSave').addEventListener('click', pdfAnnoSave);
+  $('#pdfUndo').addEventListener('click', pdfUndo);
+  $('#pdfZoomIn').addEventListener('click', () => pdfZoomStep(.15));
+  $('#pdfZoomOut').addEventListener('click', () => pdfZoomStep(-.15));
+  $('#pdfZoomVal').addEventListener('click', pdfZoomFit);
+  $('#pdfOpenAnother').addEventListener('click', () => { pdfTarget = 'annotate'; $('#pdfInput').click(); });
   $('#pdfViewerClose').addEventListener('click', () => { $('#pdfViewer').hidden = true; });
 
   // Submit Slides – Präsentieren (Vollbild)
@@ -805,7 +810,7 @@ function wire() {
 
   // Modus-Umschalter (Write / Calc / Slides)
   $('#modePill').addEventListener('click', e => { e.stopPropagation(); $('#modeMenu').hidden = !$('#modeMenu').hidden; });
-  $('#modeMenu').addEventListener('click', e => { const m = e.target.closest('button')?.dataset.mode; if (m) { $('#modeMenu').hidden = true; setPageType(m); } });
+  $('#modeMenu').addEventListener('click', e => { const m = e.target.closest('button')?.dataset.mode; if (m) { $('#modeMenu').hidden = true; if (m === 'pdf') openPdfMode(); else setPageType(m); } });
 
   // Seiten-Reiter (Navigator)
   $('#pagetabs').addEventListener('click', e => {
@@ -1054,6 +1059,7 @@ function wire() {
     if ((e.key === 'Delete' || e.key === 'Backspace')) {
       const im = $('img.sel', editor); if (im) { e.preventDefault(); im.remove(); afterEdit(); return; }
     }
+    if (!$('#pdfViewer').hidden && mod && e.key.toLowerCase() === 'z') { e.preventDefault(); pdfUndo(); return; }   // Undo im PDF-Editor
     if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); printPreview(); }   // Strg+P → eigene Druckvorschau
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(e.shiftKey); }
     else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openFile(); }
@@ -2358,59 +2364,87 @@ function buildDocFromPdf(titel, pages, target) {
   toast('PDF importiert: ' + d.titel + ' (' + seiten.length + (seiten.length === 1 ? ' Seite)' : ' Seiten)'));
 }
 
-/* ---- PDF annotieren: zeichnen, Linien, Marker, Kommentare → als PDF speichern ---- */
-let pdfTool = 'pen', pdfColor = '#e8412e', pdfWidth = 2.5;
+/* ---- Submit PDF: zeichnen, Formen, Marker, Kommentare, Zoom, Undo → als PDF ---- */
+let pdfTool = 'pen', pdfColor = '#e8412e', pdfWidth = 2.5, pdfZoom = 1, pdfUndoStack = [];
+function openPdfMode() {                       // aus der Modus-Pille
+  if ($('#pdfPages').children.length) $('#pdfViewer').hidden = false;   // bereits geladenes PDF zeigen
+  else $('#pdfOverlay').hidden = false;                                 // sonst Öffnen-Dialog
+}
 async function openPdfAnnotate(file) {
   if (!file) return;
   toast('Lade PDF …');
   let pdfjs; try { pdfjs = await loadPdfJs(); } catch (_) { toast('PDF-Engine nicht ladbar (Internet?).'); return; }
   let pdf; try { const buf = await file.arrayBuffer(); pdf = await pdfjs.getDocument({ data: buf }).promise; } catch (_) { toast('PDF nicht lesbar.'); return; }
-  const host = $('#pdfPages'); host.innerHTML = '';
+  const host = $('#pdfPages'), thumbs = $('#pdfThumbs'); host.innerHTML = ''; thumbs.innerHTML = ''; pdfUndoStack = []; pdfZoom = 1;
   $('#pdfViewerTitle').textContent = (file.name || 'PDF');
   $('#pdfOverlay').hidden = true; $('#pdfViewer').hidden = false;
   for (let i = 1; i <= pdf.numPages; i++) {
     const pg = await pdf.getPage(i);
-    const vp = pg.getViewport({ scale: 1.5 });
-    const wrap = document.createElement('div'); wrap.className = 'pdf-pagewrap'; wrap.style.width = Math.round(vp.width) + 'px'; wrap.style.height = Math.round(vp.height) + 'px';
+    const vp = pg.getViewport({ scale: 1.6 });
+    const wrap = document.createElement('div'); wrap.className = 'pdf-pagewrap'; wrap.dataset.w = vp.width; wrap.dataset.h = vp.height;
+    wrap.style.width = Math.round(vp.width) + 'px'; wrap.style.height = Math.round(vp.height) + 'px';
     const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height; cv.className = 'pdf-base';
     try { await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise; } catch (_) {}
     const an = document.createElement('canvas'); an.width = vp.width; an.height = vp.height; an.className = 'pdf-anno';
     wrap.appendChild(cv); wrap.appendChild(an); host.appendChild(wrap);
     bindPdfAnno(an, wrap);
+    const tb = document.createElement('button'); tb.className = 'pdf-thumb'; tb.title = 'Seite ' + i;
+    try { const tc = document.createElement('canvas'); const s = 140 / vp.width; tc.width = 140; tc.height = Math.round(vp.height * s); tc.getContext('2d').drawImage(cv, 0, 0, tc.width, tc.height); tb.innerHTML = `<img src="${tc.toDataURL('image/jpeg', .6)}"><span>${i}</span>`; } catch (_) { tb.textContent = String(i); }
+    tb.addEventListener('click', () => wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    thumbs.appendChild(tb);
   }
-  host.scrollTop = 0;
+  applyPdfZoom(); host.scrollTop = 0;
 }
+function applyPdfZoom() {
+  $$('#pdfPages .pdf-pagewrap').forEach(w => { w.style.width = Math.round((+w.dataset.w) * pdfZoom) + 'px'; w.style.height = Math.round((+w.dataset.h) * pdfZoom) + 'px'; });
+  const el = $('#pdfZoomVal'); if (el) el.innerHTML = Math.round(pdfZoom * 100) + '&nbsp;%';
+}
+function pdfZoomStep(d) { pdfZoom = Math.max(.4, Math.min(3, Math.round((pdfZoom + d) * 100) / 100)); applyPdfZoom(); }
+function pdfZoomFit() { const first = $('#pdfPages .pdf-pagewrap'); if (!first) return; const avail = ($('#pdfPages').clientWidth || 800) - 48; pdfZoom = Math.max(.4, Math.min(2, avail / (+first.dataset.w))); applyPdfZoom(); }
+function pdfPushUndo(an) { pdfUndoStack.push({ an, img: an.getContext('2d').getImageData(0, 0, an.width, an.height) }); if (pdfUndoStack.length > 30) pdfUndoStack.shift(); }
+function pdfUndo() { const u = pdfUndoStack.pop(); if (!u) return; if (u.note) { if (u.note.parentNode) u.note.remove(); } else u.an.getContext('2d').putImageData(u.img, 0, 0); }
 function pdfPos(an, e) { const r = an.getBoundingClientRect(); return { x: (e.clientX - r.left) * (an.width / r.width), y: (e.clientY - r.top) * (an.height / r.height) }; }
-function pdfStrokeStyle(ctx) { ctx.strokeStyle = pdfColor; ctx.globalAlpha = (pdfTool === 'marker') ? 0.3 : 1; ctx.lineWidth = (pdfTool === 'marker') ? pdfWidth * 7 : pdfWidth; }
+function pdfStrokeStyle(ctx) { ctx.strokeStyle = pdfColor; ctx.fillStyle = pdfColor; ctx.globalAlpha = (pdfTool === 'marker') ? 0.3 : 1; ctx.lineWidth = (pdfTool === 'marker') ? pdfWidth * 7 : pdfWidth; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; }
+function pdfDrawArrow(ctx, x1, y1, x2, y2) { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); const a = Math.atan2(y2 - y1, x2 - x1), L = Math.max(11, pdfWidth * 4); ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - L * Math.cos(a - .4), y2 - L * Math.sin(a - .4)); ctx.lineTo(x2 - L * Math.cos(a + .4), y2 - L * Math.sin(a + .4)); ctx.closePath(); ctx.fill(); }
 function bindPdfAnno(an, wrap) {
   const ctx = an.getContext('2d'); let drawing = false, sx = 0, sy = 0, snap = null;
+  const shape = () => (pdfTool === 'line' || pdfTool === 'arrow' || pdfTool === 'rect');
   an.addEventListener('pointerdown', e => {
     if (pdfTool === 'text') { addPdfNote(wrap, e); return; }
     drawing = true; try { an.setPointerCapture(e.pointerId); } catch (_) {}
-    const p = pdfPos(an, e); sx = p.x; sy = p.y; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    if (pdfTool === 'line') snap = ctx.getImageData(0, 0, an.width, an.height);
-    else { ctx.beginPath(); ctx.moveTo(sx, sy); }
+    const p = pdfPos(an, e); sx = p.x; sy = p.y; pdfPushUndo(an);
+    if (shape()) snap = ctx.getImageData(0, 0, an.width, an.height);
+    else if (pdfTool !== 'eraser') { pdfStrokeStyle(ctx); ctx.beginPath(); ctx.moveTo(sx, sy); }
   });
   an.addEventListener('pointermove', e => {
     if (!drawing) return; const p = pdfPos(an, e);
-    if (pdfTool === 'eraser') { ctx.save(); ctx.globalCompositeOperation = 'destination-out'; ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, 6.29); ctx.fill(); ctx.restore(); return; }
-    if (pdfTool === 'line') { ctx.putImageData(snap, 0, 0); ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(p.x, p.y); pdfStrokeStyle(ctx); ctx.stroke(); return; }
-    ctx.lineTo(p.x, p.y); pdfStrokeStyle(ctx); ctx.stroke(); ctx.beginPath(); ctx.moveTo(p.x, p.y);
+    if (pdfTool === 'eraser') { ctx.save(); ctx.globalCompositeOperation = 'destination-out'; ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, 6.29); ctx.fill(); ctx.restore(); return; }
+    if (shape()) { ctx.putImageData(snap, 0, 0); pdfStrokeStyle(ctx); if (pdfTool === 'rect') ctx.strokeRect(sx, sy, p.x - sx, p.y - sy); else if (pdfTool === 'arrow') pdfDrawArrow(ctx, sx, sy, p.x, p.y); else { ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(p.x, p.y); ctx.stroke(); } return; }
+    ctx.lineTo(p.x, p.y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(p.x, p.y);
   });
   const end = () => { drawing = false; snap = null; ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; };
   an.addEventListener('pointerup', end); an.addEventListener('pointerleave', end);
 }
 function addPdfNote(wrap, e) {
   const r = wrap.getBoundingClientRect();
-  const n = document.createElement('div'); n.className = 'pdf-note'; n.contentEditable = 'true';
-  n.style.left = Math.round(e.clientX - r.left) + 'px'; n.style.top = Math.round(e.clientY - r.top) + 'px';
-  n.style.borderColor = pdfColor; n.dataset.color = pdfColor; n.textContent = 'Kommentar';
-  const del = document.createElement('button'); del.className = 'pdf-note-del'; del.textContent = '×'; del.contentEditable = 'false';
+  const n = document.createElement('div'); n.className = 'pdf-note'; n.style.borderColor = pdfColor; n.dataset.color = pdfColor;
+  n.style.left = Math.round((e.clientX - r.left) / pdfZoom) + 'px'; n.style.top = Math.round((e.clientY - r.top) / pdfZoom) + 'px';
+  const grip = document.createElement('div'); grip.className = 'pdf-note-grip'; grip.contentEditable = 'false'; grip.textContent = '⠿';
+  const body = document.createElement('div'); body.className = 'pdf-note-body'; body.contentEditable = 'true'; body.textContent = 'Kommentar';
+  const del = document.createElement('button'); del.className = 'pdf-note-del'; del.contentEditable = 'false'; del.textContent = '×';
   del.addEventListener('pointerdown', ev => { ev.stopPropagation(); ev.preventDefault(); n.remove(); });
-  n.appendChild(del); wrap.appendChild(n); n.focus();
-  const rng = document.createRange(); rng.selectNodeContents(n); const s = getSelection(); s.removeAllRanges(); s.addRange(rng);
+  n.appendChild(grip); n.appendChild(body); n.appendChild(del); wrap.appendChild(n);
+  pdfUndoStack.push({ note: n });
+  body.focus(); const rng = document.createRange(); rng.selectNodeContents(body); const s = getSelection(); s.removeAllRanges(); s.addRange(rng);
+  grip.addEventListener('pointerdown', ev => {
+    ev.preventDefault(); const wr = wrap.getBoundingClientRect();
+    const ox = ev.clientX - (parseFloat(n.style.left) * pdfZoom + wr.left), oy = ev.clientY - (parseFloat(n.style.top) * pdfZoom + wr.top);
+    const mv = me => { n.style.left = Math.round((me.clientX - wr.left - ox) / pdfZoom) + 'px'; n.style.top = Math.round((me.clientY - wr.top - oy) / pdfZoom) + 'px'; };
+    const up = () => { document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up); };
+    document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up);
+  });
 }
-// Jede Seite zu einem Bild verflachen (PDF + Zeichnungen + Kommentare) und drucken/als PDF speichern
+// Jede Seite zu einem Bild verflachen (PDF + Zeichnungen + Kommentare) und als PDF speichern
 function pdfAnnoSave() {
   const wraps = $$('#pdfPages .pdf-pagewrap'); if (!wraps.length) { toast('Nichts zu speichern.'); return; }
   let html = '';
@@ -2420,11 +2454,12 @@ function pdfAnnoSave() {
     const c = flat.getContext('2d'); c.drawImage(base, 0, 0); c.drawImage(an, 0, 0);
     wrap.querySelectorAll('.pdf-note').forEach(n => {
       const x = parseFloat(n.style.left) || 0, y = parseFloat(n.style.top) || 0;
-      const txt = (n.textContent || '').replace('×', '').trim(); if (!txt) return;
+      const txt = ((n.querySelector('.pdf-note-body') || {}).textContent || '').trim(); if (!txt) return;
       c.font = '600 15px Inter, sans-serif'; c.textBaseline = 'top';
-      const w = Math.min(240, Math.max(60, c.measureText(txt).width + 12));
-      c.fillStyle = 'rgba(255,249,196,.92)'; c.fillRect(x, y, w, 22);
-      c.fillStyle = n.dataset.color || '#c0392b'; c.fillText(txt, x + 6, y + 4);
+      const w = Math.min(260, Math.max(64, c.measureText(txt).width + 16));
+      c.fillStyle = 'rgba(255,249,196,.95)'; c.fillRect(x, y, w, 24);
+      c.fillStyle = n.dataset.color || '#c0392b'; c.fillRect(x, y, 3, 24);
+      c.fillStyle = '#333'; c.fillText(txt, x + 9, y + 5);
     });
     html += `<div class="pdfx-page"><img src="${flat.toDataURL('image/png')}"></div>`;
   });

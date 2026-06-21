@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v17';
+const WRITE_VERSION = 'v18';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -619,7 +619,7 @@ function doExport(kind) {
   if (!doc) return;
   captureDoc();
   const name = safeName(doc.titel);
-  if (kind === 'pdf') { window.print(); return; }
+  if (kind === 'pdf') { if (isSlides()) { printDeck(); return; } window.print(); return; }
   if (kind === 'html') { download(name + '.html', docHtmlShell(editor.innerHTML), 'text/html'); toast('HTML exportiert'); }
   else if (kind === 'md') { download(name + '.md', htmlToMarkdown(editor), 'text/markdown'); toast('Markdown exportiert'); }
   else if (kind === 'docx') {
@@ -685,7 +685,23 @@ function wire() {
   // Druckvorschau
   $('#btnPreview').addEventListener('click', printPreview);
   $('#pvClose').addEventListener('click', () => $('#previewOverlay').hidden = true);
-  $('#pvPrint').addEventListener('click', () => { $('#previewOverlay').hidden = true; setTimeout(() => window.print(), 60); });
+  $('#pvPrint').addEventListener('click', () => { const sl = isSlides(); $('#previewOverlay').hidden = true; setTimeout(() => sl ? printDeck() : window.print(), 60); });
+
+  // Submit Slides – Präsentieren (Vollbild)
+  $('#btnPresent').addEventListener('click', presentStart);
+  $('#presClose').addEventListener('click', presentEnd);
+  $('#presPrev').addEventListener('click', () => presGo(-1));
+  $('#presNext').addEventListener('click', () => presGo(1));
+  $('#presentSlide').addEventListener('click', () => presGo(1));
+  document.addEventListener('keydown', e => {
+    if ($('#presentOverlay').hidden) return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); presGo(1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Backspace') { e.preventDefault(); presGo(-1); }
+    else if (e.key === 'Home') { e.preventDefault(); presIdx = 0; presRender(); }
+    else if (e.key === 'End') { e.preventDefault(); presIdx = presList.length - 1; presRender(); }
+    else if (e.key === 'Escape') { e.preventDefault(); presentEnd(); }
+  });
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && !$('#presentOverlay').hidden) $('#presentOverlay').hidden = true; });
 
   // Modus-Umschalter (Write / Calc / Slides)
   $('#modePill').addEventListener('click', e => { e.stopPropagation(); $('#modeMenu').hidden = !$('#modeMenu').hidden; });
@@ -1056,7 +1072,10 @@ function findStep(back) {
    ============================================================ */
 let zoomMode = 'auto';   // 'auto' = an Fensterbreite anpassen, sonst feste Zahl
 const FORMATS = { A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189] };  // Hochformat [B,H] in mm
+const SLIDE_MM = [338, 190];    // Folie 16:9 (≈ PowerPoint Breitbild) in mm
+function isSlides() { return !!(doc && doc.seiten && activePage() && activePage().typ === 'slides'); }
 function pageDims() {
+  if (isSlides()) return { w: SLIDE_MM[0], h: SLIDE_MM[1] };   // Folien immer 16:9-Querformat
   const f = FORMATS[(doc && doc.einstellungen.format) || 'A4'] || FORMATS.A4;
   const quer = doc && doc.einstellungen.ausrichtung === 'quer';
   return { w: quer ? f[1] : f[0], h: quer ? f[0] : f[1] };
@@ -1068,7 +1087,8 @@ function applyFormat() {
   const d = pageDims();
   page.style.width = d.w + 'mm';
   page.style.minHeight = d.h + 'mm';
-  $('#pageFormat').textContent = ((doc.einstellungen.format || 'A4') + ' · ' + d.w + ' × ' + d.h + ' mm');
+  if (isSlides()) page.style.height = d.h + 'mm'; else page.style.height = '';
+  $('#pageFormat').textContent = isSlides() ? 'Folie · 16:9' : ((doc.einstellungen.format || 'A4') + ' · ' + d.w + ' × ' + d.h + ' mm');
   $('#selFormat').value = doc.einstellungen.format || 'A4';
 }
 function setFormat(f) {
@@ -1101,6 +1121,7 @@ function setOrientation(o) {
   applyFormat(); scheduleSave(); applyZoom(); updatePages();
 }
 function updatePages() {
+  if (isSlides()) { $('#guides').innerHTML = ''; return 1; }   // Folien: keine Mehrseiten-Hilfslinien
   const ph = pageHeightPx();
   const n = Math.max(1, Math.ceil((page.offsetHeight - 4) / ph));
   const g = $('#guides'); g.innerHTML = '';
@@ -1137,7 +1158,7 @@ let suppressRulerClick = false;
 function drawRuler() {
   if (!doc) return;
   const wrap = $('#rulerWrap'), r = $('#ruler');
-  if (appEl.classList.contains('focus') || appEl.classList.contains('calc-mode')) { wrap.style.display = 'none'; return; }
+  if (appEl.classList.contains('focus') || appEl.classList.contains('calc-mode') || appEl.classList.contains('slides-mode')) { wrap.style.display = 'none'; return; }
   wrap.style.display = '';
   const z = parseFloat(page.style.zoom) || 1;
   const wmm = pageWidthMm(), wpx = wmm * MM * z;
@@ -1282,6 +1303,7 @@ function previewCalc() {
 function printPreview() {
   if (!doc) return;
   captureDoc();
+  if (isSlides()) { previewSlides(); return; }
   if (activePage().typ === 'calc') { previewCalc(); return; }
   const quer = doc.einstellungen.ausrichtung === 'quer';
   const ov = $('#previewOverlay'), scroll = $('#previewScroll');
@@ -1308,6 +1330,66 @@ function printPreview() {
 }
 
 /* ============================================================
+   Submit Slides — Präsentieren, Deck-Druck, Folien-Vorschau
+   ============================================================ */
+function slidePages() { return doc ? doc.seiten.filter(p => p.typ === 'slides') : []; }
+function slideHtml(p) { return sanitizeHtml(p.html || '') || '<p class="slide-empty">Leere Folie</p>'; }
+
+// Vollbild-Präsentation aller Folien des Dokuments
+let presIdx = 0, presList = [];
+function presentStart() {
+  if (!doc) return;
+  capturePage();
+  presList = slidePages();
+  if (!presList.length) { toast('Keine Folien vorhanden. Wechsle oben links auf „Submit Slides".'); return; }
+  presIdx = Math.max(0, slidePages().indexOf(activePage()));
+  if (presIdx < 0) presIdx = 0;
+  $('#presentOverlay').hidden = false;
+  presRender();
+  const ov = $('#presentOverlay');
+  if (ov.requestFullscreen) ov.requestFullscreen().catch(() => {});
+}
+function presRender() {
+  const p = presList[presIdx]; if (!p) return;
+  $('#presentSlide').innerHTML = slideHtml(p);
+  $('#presNum').textContent = (presIdx + 1) + ' / ' + presList.length;
+}
+function presGo(d) { presIdx = Math.max(0, Math.min(presList.length - 1, presIdx + d)); presRender(); }
+function presentEnd() {
+  $('#presentOverlay').hidden = true;
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+}
+
+// Ganzes Foliendeck als PDF drucken: eine Querformat-Seite pro Folie
+function printDeck() {
+  if (!doc) return;
+  capturePage();
+  const slides = slidePages();
+  if (!slides.length) { toast('Keine Folien zum Drucken.'); return; }
+  $('#deckPrint').innerHTML = slides.map(p => `<section class="deck-slide">${slideHtml(p)}</section>`).join('');
+  const st = document.createElement('style');
+  st.id = 'deckPageStyle'; st.textContent = '@page{size:A4 landscape;margin:0}';
+  document.head.appendChild(st);
+  document.body.classList.add('printing-deck');
+  const cleanup = () => { document.body.classList.remove('printing-deck'); st.remove(); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(() => window.print(), 60);
+}
+
+// Folien-Druckvorschau (alle Folien als 16:9-Blätter)
+function previewSlides() {
+  const slides = slidePages();
+  if (!slides.length) { toast('Keine Folien vorhanden.'); return; }
+  const scroll = $('#previewScroll');
+  $('#previewOverlay').hidden = false;
+  scroll.innerHTML = slides.map((p, i) =>
+    `<div class="pv-page pv-slide"><div class="pv-slide-c">${slideHtml(p)}</div><span class="pv-num">Folie ${i + 1} / ${slides.length}</span></div>`
+  ).join('');
+  $('#pvInfo').textContent = slides.length + (slides.length === 1 ? ' Folie' : ' Folien') + ' · 16:9';
+  scroll.scrollTop = 0;
+}
+
+/* ============================================================
    Modus-Umschalter + Submit Calc (Raster & Formeln)
    ============================================================ */
 const MODE_META = { write: ['✍', 'Submit Write'], calc: ['▦', 'Submit Calc'], slides: ['▭', 'Submit Slides'] };
@@ -1319,27 +1401,30 @@ function renderActivePage() {
   const meta = MODE_META[m]; $('#modeIco').textContent = meta[0]; $('#modeName').textContent = meta[1];
   const calc = (m === 'calc');
   appEl.classList.toggle('calc-mode', calc);
+  appEl.classList.toggle('slides-mode', m === 'slides');
   if (calc) { curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; renderCalc(); selectCell(0, 0); }
-  else { editor.innerHTML = sanitizeHtml(p.html || ''); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); applyZoom(); refreshAll(); }
+  else { editor.innerHTML = sanitizeHtml(p.html || ''); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); }
 }
 // Typ der AKTIVEN Seite wechseln (Modus-Pille)
 function setPageType(typ) {
   if (!doc) return;
-  if (typ === 'slides') { toast('Submit Slides folgt als Nächstes 🙂'); return; }
   const p = activePage(); if (p.typ === typ) return;
   capturePage();
-  p.typ = typ;
+  p.typ = (typ === 'calc' || typ === 'slides') ? typ : 'write';
   if (p.html == null) p.html = '';
+  if (typ === 'slides' && !cellTextHas(p.html)) p.html = SLIDE_STARTER;   // leere Seite → Start-Folie
   renderActivePage(); renderPageNav(); scheduleSave();
 }
+function cellTextHas(html) { const d = document.createElement('div'); d.innerHTML = html || ''; return !!(d.textContent || '').trim() || /<(img|table|hr)/i.test(html || ''); }
+const SLIDE_STARTER = '<h1>Titel der Folie</h1><p>Klicke und schreibe deinen Inhalt …</p>';
 function switchPage(i) {
   if (i === doc.aktiv || i < 0 || i >= doc.seiten.length) return;
   capturePage(); doc.aktiv = i; renderActivePage(); renderPageNav(); scheduleSave();
 }
 function addPage(typ) {
-  if (typ === 'slides') { toast('Submit Slides folgt als Nächstes 🙂'); return; }
   capturePage();
-  const p = { id: uid(), typ: typ === 'calc' ? 'calc' : 'write', html: '' };
+  const t = (typ === 'calc' || typ === 'slides') ? typ : 'write';
+  const p = { id: uid(), typ: t, html: t === 'slides' ? SLIDE_STARTER : '' };
   doc.seiten.push(p); doc.aktiv = doc.seiten.length - 1;
   renderActivePage(); renderPageNav(); scheduleSave();
 }
@@ -1591,7 +1676,7 @@ function gridMenuAction(g) {
 /* ---- Vertikales Lineal: Kopf-/Fuss-Höhe ziehen ---- */
 function drawVRuler() {
   if (!doc) return; const v = $('#vruler');
-  if (appEl.classList.contains('focus') || appEl.classList.contains('calc-mode')) { v.style.display = 'none'; return; }
+  if (appEl.classList.contains('focus') || appEl.classList.contains('calc-mode') || appEl.classList.contains('slides-mode')) { v.style.display = 'none'; return; }
   v.style.display = '';
   const ph = page.offsetHeight; let html = '';
   for (let cm = 0; cm <= Math.floor(ph / (10 * MM)); cm++) html += `<div class="vtick" style="top:${cm * 10 * MM}px"><span>${cm}</span></div>`;

@@ -228,6 +228,50 @@ button{font-family:inherit;cursor:pointer}
 .page-format{position:absolute;top:-7mm;left:0;z-index:4;font-size:9.5px;letter-spacing:.3px;color:var(--ink-faint);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:2px 7px;pointer-events:none;white-space:nowrap;font-family:var(--font-ui)}
 .editor{outline:none;font-size:16px;line-height:1.7;font-family:var(--font-ui);position:relative;z-index:2;flex:1 1 auto;padding:6mm 0}
 
+/* ---------- Submit Slides (16:9-Folie bearbeiten) ---------- */
+.present-only{display:none}
+body[data-mode="slides"] .present-only{display:inline-flex}
+body[data-mode="slides"] .page{width:338mm;height:190mm;min-height:190mm;overflow:hidden;padding:14mm 20mm;border-radius:7px;border-top:6px solid var(--accent)}
+body[data-mode="slides"] .zone-h,body[data-mode="slides"] .zone-f,body[data-mode="slides"] .guides,body[data-mode="slides"] .vruler{display:none !important}
+body[data-mode="slides"] .editor{font-size:30px;line-height:1.32;padding:0}
+body[data-mode="slides"] .editor h1{font-size:56px;line-height:1.08;margin:0 0 .32em;color:var(--accent)}
+body[data-mode="slides"] .editor h2{font-size:42px;margin:.2em 0 .3em}
+body[data-mode="slides"] .editor h3{font-size:33px;margin:.2em 0 .3em}
+body[data-mode="slides"] .editor ul,body[data-mode="slides"] .editor ol{padding-left:1.2em;margin:.25em 0}
+body[data-mode="slides"] .editor li{margin:.3em 0}
+body[data-mode="slides"] .editor p{margin:0 0 .5em}
+body[data-mode="slides"] .editor img{max-width:100%}
+.slide-empty{color:var(--ink-faint)}
+
+/* ---------- Präsentationsmodus (Vollbild) ---------- */
+.present-overlay{position:fixed;inset:0;z-index:200;background:#0b0d12;display:flex;flex-direction:column}
+.present-overlay[hidden]{display:none}
+.present-stage{flex:1;display:flex;align-items:center;justify-content:center;padding:3vh 3vw;cursor:pointer;overflow:hidden}
+.present-slide{aspect-ratio:16/9;width:min(96vw,calc(94vh*16/9));background:#fff;color:#13161d;border-radius:6px;box-shadow:0 30px 90px rgba(0,0,0,.6);padding:4.5% 6%;overflow:hidden;font-size:2.5vw;line-height:1.32;box-sizing:border-box}
+.present-slide h1{font-size:5vw;line-height:1.08;margin:0 0 .32em;color:#e8772e}
+.present-slide h2{font-size:3.7vw;margin:.2em 0 .3em}
+.present-slide h3{font-size:3vw;margin:.2em 0 .3em}
+.present-slide ul,.present-slide ol{padding-left:1.2em;margin:.2em 0}
+.present-slide li{margin:.3em 0}
+.present-slide p{margin:0 0 .5em}
+.present-slide img{max-width:100%;max-height:70vh}
+.present-slide table{border-collapse:collapse;width:100%}.present-slide td,.present-slide th{border:1px solid #ccc;padding:.3em .5em}
+.present-bar{display:flex;align-items:center;gap:12px;padding:9px 18px;background:#13161d;border-top:1px solid #262a36}
+.present-bar .icon-btn{color:#e7e9f0;font-size:22px}
+.present-bar .ghost-btn{color:#e7e9f0;border-color:#363b49}
+.present-num{font-size:13px;color:#9aa3b8;min-width:64px;text-align:center}
+
+/* ---------- Folien-Druckvorschau (Spezifität .pv-page.pv-slide, da .pv-page später folgt) ---------- */
+.pv-page.pv-slide{width:254mm;min-height:143mm;height:143mm;padding:14mm 18mm;display:block;overflow:hidden}
+.pv-page.pv-slide .pv-slide-c{font-size:13pt;line-height:1.32}
+.pv-page.pv-slide h1{font-size:25pt;color:#e8772e;margin:0 0 .3em}
+.pv-page.pv-slide h2{font-size:19pt;margin:.2em 0 .3em}
+.pv-page.pv-slide h3{font-size:15pt;margin:.2em 0 .3em}
+.pv-page.pv-slide .pv-num{position:absolute;right:12mm;bottom:7mm;font-size:9pt;color:#999}
+
+/* ---------- Deck-Druck (eine Querformat-Seite pro Folie) ---------- */
+#deckPrint{display:none}
+
 /* ---------- Lineal ---------- */
 .ruler-wrap{display:flex;justify-content:center;padding:6px 24px 0;background:var(--bg);overflow:hidden;flex:0 0 auto}
 .ruler{position:relative;height:22px;background:var(--surface);border:1px solid var(--line);border-radius:5px}
@@ -547,4 +591,16 @@ body[data-theme="dark"] .toast{background:#2a3140}
   .cgrid td{border-color:#bbb;color:#000;white-space:normal}
   .cgrid td.sel,.cgrid td.active{outline:none;background:none}
   .cgrid tr.pad,.cgrid td.pad{display:none}
+  /* Foliendeck drucken: App ausblenden, eine Querformat-Seite pro Folie */
+  body.printing-deck .app{display:none !important}
+  body.printing-deck #deckPrint{display:block}
+  body.printing-deck #deckPrint .deck-slide{box-sizing:border-box;width:100%;height:206mm;overflow:hidden;padding:14mm 18mm;break-after:page;page-break-after:always;color:#000;background:#fff;font-size:20pt;line-height:1.3}
+  body.printing-deck #deckPrint .deck-slide:last-child{break-after:auto;page-break-after:auto}
+  body.printing-deck #deckPrint h1{font-size:34pt;margin:0 0 .3em}
+  body.printing-deck #deckPrint h2{font-size:26pt;margin:.2em 0 .3em}
+  body.printing-deck #deckPrint h3{font-size:21pt;margin:.2em 0 .3em}
+  body.printing-deck #deckPrint ul,body.printing-deck #deckPrint ol{padding-left:1.2em}
+  body.printing-deck #deckPrint img{max-width:100%}
+  body.printing-deck #deckPrint table{border-collapse:collapse;width:100%}
+  body.printing-deck #deckPrint td,body.printing-deck #deckPrint th{border:1px solid #999;padding:.3em .5em}
 }

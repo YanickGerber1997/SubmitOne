@@ -79,6 +79,7 @@
               <button data-export="docx">Als DOCX (Beta)</button>
             </div>
           </div>
+          <button class="ghost-btn present-only" id="btnPresent" title="Präsentieren (Vollbild)"><svg viewBox="0 0 24 24" class="i"><path d="M3 5h18v11H3z"/><path d="M12 16v3M8 21h8"/></svg><span>Präsentieren</span></button>
           <button class="icon-btn" id="btnPreview" title="Druckvorschau"><svg viewBox="0 0 24 24" class="i"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M7 17h10v4H7z"/></svg></button>
           <button class="icon-btn" id="btnInspector" title="Dokument-Infos (Gliederung, Zeilenabstand, Statistik)"><svg viewBox="0 0 24 24" class="i"><path d="M4 5h16v14H4z"/><path d="M15 5v14"/></svg></button>
           <button class="icon-btn" id="btnFocus" title="Fokusmodus (Strg+Umschalt+F)"><svg viewBox="0 0 24 24" class="i"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
@@ -317,6 +318,21 @@
     </div>
     <div class="preview-scroll" id="previewScroll"></div>
   </div>
+
+  <!-- PRÄSENTATION (Vollbild) -->
+  <div class="present-overlay" id="presentOverlay" hidden>
+    <div class="present-stage"><div class="present-slide" id="presentSlide"></div></div>
+    <div class="present-bar">
+      <button class="icon-btn" id="presPrev" title="Zurück (←)">‹</button>
+      <span class="present-num" id="presNum"></span>
+      <button class="icon-btn" id="presNext" title="Weiter (→)">›</button>
+      <span class="grow"></span>
+      <button class="ghost-btn" id="presClose" title="Schliessen (Esc)">Beenden</button>
+    </div>
+  </div>
+
+  <!-- DECK-DRUCK (eine Querformat-Seite pro Folie) -->
+  <div id="deckPrint" aria-hidden="true"></div>
 
   <input type="file" id="imgInput" accept="image/*" hidden />
   <div id="toast-root"></div>

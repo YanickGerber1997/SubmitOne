@@ -62,10 +62,11 @@ Gleiche Envelope-Logik wie `.gerber` (Migrations-Regel: alte `formatVersion` nie
 ## 5. Roadmap bis v1.0
 
 - [x] **v1** — A4-Editor, Formatierung, `.gdoc` Speichern/Öffnen (Roundtrip-Beweis), Autosave, Vorlagen, Fokusmodus, Dark Mode, Statistik, Gliederung, Export (PDF/HTML/MD/DOCX-Beta).
-- [ ] **v2** — Bilder einfügen (eingebettet/Base64), Tabellen-Werkzeuge (Zeile/Spalte), Inhaltsverzeichnis-Block, Suche im Dokument.
-- [ ] **v3** — `manifest.webmanifest` + `file_handlers` (echtes Doppelklick-Öffnen), Service Worker (offline), PWA-Installierbar.
-- [ ] **v4** — Seitenumbruch-Vorschau (echte Mehrseiten-Ansicht), Kopf-/Fusszeilen, Seitenränder einstellbar.
-- [ ] **v5** — Versionsverlauf (Snapshots wie SubmitOne), Kommentare.
+- [x] **v2** — Bilder (Button/Paste/Drag&Drop, Base64), Tabellen-Werkzeuge (Zeile/Spalte), Schwebe-Toolbar, Textmarker, Dokumentsuche (Strg+F).
+- [x] **v3 — Härtung („nicht kaputtbar"):** HTML-Sanitisierung (Import + Paste, gegen XSS), ehrlicher Speicherstatus + Quota-Warnung, automatische Bild-Verkleinerung, `beforeunload`-Schutz, Drag&Drop-Datenverlust geschlossen, Leerer-Zustand-Fix.
+- [ ] **v4** — `manifest.webmanifest` + `file_handlers` (echtes Doppelklick-Öffnen), Service Worker (offline), PWA-Installierbar.
+- [ ] **v5** — Seitenumbruch-Vorschau (echte Mehrseiten-Ansicht), Kopf-/Fusszeilen, Seitenränder; Inhaltsverzeichnis-Block.
+- [ ] **v6** — Versionsverlauf (Snapshots wie SubmitOne), Kommentare.
 - [ ] **v1.0** — Politur, Tastatur-Vollabdeckung, professioneller PDF-Export (Seitenränder/Schriften).
 
 ## 6. Submit PDF (separates Programm — später)

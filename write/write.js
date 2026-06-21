@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v2';
+const WRITE_VERSION = 'v3';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -21,6 +21,34 @@ function toast(msg) {
 function fmtDate(iso) {
   try { return new Date(iso).toLocaleDateString('de-CH', { day: '2-digit', month: 'short', year: 'numeric' }); }
   catch (_) { return ''; }
+}
+
+/* ---------- HTML-Sanitisierung (gegen XSS / kaputte Dateien) ---------- */
+const ALLOWED_TAGS = new Set(['P', 'BR', 'H1', 'H2', 'H3', 'H4', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'SPAN', 'FONT', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'PRE', 'CODE', 'A', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'IMG', 'HR', 'DIV', 'MARK', 'SUB', 'SUP']);
+const ALLOWED_ATTR = { '*': ['style'], A: ['href', 'target', 'rel'], IMG: ['src', 'alt', 'width', 'height'], FONT: ['face', 'color', 'size'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'] };
+function sanitizeHtml(html) {
+  try {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html || '';
+    tpl.content.querySelectorAll('script,style,iframe,object,embed,link,meta,noscript,svg,form,input,button').forEach(n => n.remove());
+    tpl.content.querySelectorAll('*').forEach(el => {
+      const tag = el.tagName;
+      if (!ALLOWED_TAGS.has(tag)) { el.replaceWith(...el.childNodes); return; }
+      [...el.attributes].forEach(a => {
+        const name = a.name.toLowerCase();
+        const ok = (ALLOWED_ATTR['*'].includes(name) || (ALLOWED_ATTR[tag] || []).includes(name)) && !name.startsWith('on');
+        if (!ok) { el.removeAttribute(a.name); return; }
+        if (name === 'href' || name === 'src') {
+          const v = a.value.trim().toLowerCase().replace(/\s/g, '');
+          if (v.startsWith('javascript:') || v.startsWith('vbscript:') || v.startsWith('data:text/html')) el.removeAttribute(a.name);
+        }
+      });
+      if (tag === 'A') { el.setAttribute('rel', 'noopener noreferrer'); }
+    });
+    return tpl.innerHTML;
+  } catch (_) {
+    const d = document.createElement('div'); d.textContent = html || ''; return d.innerHTML;
+  }
 }
 
 /* ---------- Elemente ---------- */
@@ -46,7 +74,13 @@ function loadLib() {
   } catch (_) {}
   return { docs: {}, order: [], currentId: null };
 }
-function persistLib() { try { localStorage.setItem(LS_LIB, JSON.stringify(lib)); } catch (_) {} }
+function persistLib() { try { localStorage.setItem(LS_LIB, JSON.stringify(lib)); return true; } catch (_) { return false; } }
+let quotaWarned = false;
+function warnQuota() {
+  if (quotaWarned) return; quotaWarned = true;
+  toast('Lokaler Speicher voll — bitte als .gdoc speichern (Strg+S). Tipp: grosse Bilder vermeiden.');
+  setTimeout(() => { quotaWarned = false; }, 30000);
+}
 
 function newDocObject(partial = {}) {
   const t = nowIso();
@@ -103,7 +137,9 @@ function captureDoc() {
 }
 function autosave() {
   if (!doc) return;
-  captureDoc(); persistLib(); setDirty(false); renderList();
+  captureDoc();
+  if (persistLib()) { setDirty(false); renderList(); }
+  else { saveState.classList.remove('saving'); saveState.classList.add('dirty'); $('.lbl', saveState).textContent = 'Speicher voll!'; warnQuota(); }
 }
 function scheduleSave() {
   setDirty(true);
@@ -175,10 +211,12 @@ async function openFile() {
 
 function ingestGdoc(text, handle) {
   let data; try { data = JSON.parse(text); } catch (_) { toast('Datei nicht lesbar'); return; }
-  if (data.format !== 'gdoc' || !data.inhalt) { toast('Keine .gdoc-Datei'); return; }
+  if (!data || data.format !== 'gdoc' || !data.inhalt) { toast('Keine .gdoc-Datei'); return; }
+  if (typeof data.formatVersion === 'number' && data.formatVersion > FORMAT_VERSION)
+    toast('Datei aus neuerer Version — wird nach bestem Wissen geöffnet.');
   const d = newDocObject({
     titel: (data.meta && data.meta.titel) || 'Importiertes Dokument',
-    html: data.inhalt.html || '',
+    html: sanitizeHtml(data.inhalt.html || ''),
     einstellungen: Object.assign(newDocObject().einstellungen, data.einstellungen || {}),
     meta: Object.assign(newDocObject().meta, data.meta || {})
   });
@@ -223,7 +261,11 @@ function insertLink() {
   afterEdit();
 }
 
-function afterEdit() { scheduleSave(); refreshAll(); }
+function normalizeEmpty() {
+  if (editor.querySelector('img,table,hr')) return;
+  if (!(editor.innerText || '').replace(/​/g, '').trim() && editor.innerHTML !== '') editor.innerHTML = '';
+}
+function afterEdit() { normalizeEmpty(); scheduleSave(); refreshAll(); }
 
 /* ---------- aktiven Zustand der Buttons spiegeln ---------- */
 function syncToolbar() {
@@ -454,13 +496,20 @@ function wire() {
   // Bilder: Einfügen + Drag&Drop
   editor.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
   editor.addEventListener('drop', e => {
-    const f = [...(e.dataTransfer.files || [])].find(f => f.type.startsWith('image/'));
-    if (f) { e.preventDefault(); insertImageFile(f); }
+    const files = [...(e.dataTransfer.files || [])];
+    if (!files.length) return;
+    e.preventDefault();                       // nie eine Datei "ins Nichts" fallen lassen (Navigation = Datenverlust)
+    const img = files.find(f => f.type.startsWith('image/'));
+    if (img) { insertImageFile(img); return; }
+    const gd = files.find(f => /\.(gdoc|json)$/i.test(f.name));
+    if (gd) gd.text().then(t => ingestGdoc(t, null));
   });
   editor.addEventListener('paste', e => {
     for (const it of (e.clipboardData?.items || [])) {
       if (it.type.startsWith('image/')) { e.preventDefault(); insertImageFile(it.getAsFile()); return; }
     }
+    const html = e.clipboardData?.getData('text/html');
+    if (html) { e.preventDefault(); document.execCommand('insertHTML', false, sanitizeHtml(html)); afterEdit(); }
   });
   editor.addEventListener('click', e => {
     $$('img.sel', editor).forEach(i => i.classList.remove('sel'));
@@ -517,6 +566,25 @@ function wire() {
   $('#btnSideShow').addEventListener('click', () => appEl.classList.toggle('side-mobile'));
   $('#btnInspClose').addEventListener('click', () => appEl.classList.remove('insp-open'));
 
+  // .gdoc per Drag&Drop ins Fenster öffnen
+  window.addEventListener('dragover', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
+  window.addEventListener('drop', e => {
+    if (editor.contains(e.target)) return;    // im Editor regelt der Editor selbst
+    const files = [...(e.dataTransfer?.files || [])];
+    if (!files.length) return;
+    e.preventDefault();                       // verhindert Wegnavigieren bei Datei-Drop
+    const f = files.find(f => /\.(gdoc|json)$/i.test(f.name));
+    if (f) f.text().then(t => ingestGdoc(t, null));
+  });
+
+  // Schutz vor Datenverlust beim Schliessen
+  window.addEventListener('beforeunload', e => {
+    if (!doc) return;
+    captureDoc();
+    if (persistLib()) setDirty(false);
+    else { e.preventDefault(); e.returnValue = ''; }  // nur warnen, wenn wirklich nicht gesichert
+  });
+
   // Tastenkürzel
   document.addEventListener('keydown', e => {
     const mod = e.ctrlKey || e.metaKey;
@@ -558,8 +626,31 @@ function initLaunch() {
 function insertImageFile(file) {
   if (!file || !file.type || !file.type.startsWith('image/')) return;
   const r = new FileReader();
-  r.onload = () => { editor.focus(); document.execCommand('insertHTML', false, `<img src="${r.result}" alt=""><p><br></p>`); afterEdit(); };
+  r.onload = () => downscaleImage(r.result, file.type, url => {
+    editor.focus();
+    document.execCommand('insertHTML', false, `<img src="${url}" alt=""><p><br></p>`);
+    afterEdit();
+  });
   r.readAsDataURL(file);
+}
+// Grosse Bilder automatisch verkleinern/komprimieren (schützt den lokalen Speicher)
+function downscaleImage(dataUrl, type, cb) {
+  const MAX = 1600, LIMIT = 700000;
+  const img = new Image();
+  img.onload = () => {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (w <= MAX && h <= MAX && dataUrl.length < LIMIT) return cb(dataUrl);
+    const scale = Math.min(1, MAX / Math.max(w, h));
+    const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+    try {
+      const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+      c.getContext('2d').drawImage(img, 0, 0, cw, ch);
+      const out = (type === 'image/png') ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85);
+      cb(out.length < dataUrl.length ? out : dataUrl);
+    } catch (_) { cb(dataUrl); }
+  };
+  img.onerror = () => cb(dataUrl);
+  img.src = dataUrl;
 }
 
 /* ============================================================

@@ -250,6 +250,10 @@ button{font-family:inherit;cursor:pointer}
 .zone:empty::before{content:attr(data-ph);color:var(--ink-faint)}
 .zone-tag{position:absolute;left:0;top:2px;font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-faint);opacity:0;transition:opacity .15s;pointer-events:none}
 .zone:hover .zone-tag,.zone:focus .zone-tag{opacity:1}
+/* Echte Seitenlücke zwischen zwei Blättern (nicht editierbar) */
+.editor .pgbreak-gap{user-select:none;cursor:default}
+.editor .pgbreak-gap .pg-edge{background:var(--paper)}
+.editor .pgbreak-gap .pg-mid{height:26px;margin-left:calc(-1 * var(--ml,22mm));margin-right:calc(-1 * var(--mr,22mm));background:var(--bg);box-shadow:inset 0 9px 9px -9px rgba(20,24,40,.22),inset 0 -9px 9px -9px rgba(20,24,40,.22)}
 /* Seiten-Hilfslinien (rein visuell – das Tippen hängt nie davon ab) */
 .guides{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;z-index:1}
 .guide{position:absolute;left:0;right:0;border-top:1px dashed rgba(120,132,156,.5)}
@@ -638,6 +642,7 @@ body[data-theme="dark"] .toast{background:#2a3140}
   body{background:#fff}
   .side,.inspector,.topbar,.ribtabs,.formatbar,.calcbar,.slidenotes,.pagetabs,.findbar,.ruler-wrap,.calc-colruler,.calc-rowruler,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.page-format,.preview-overlay,.present-overlay,.pdf-overlay,#toast-root{display:none !important}
   .editor .pagebreak{border:none !important;color:transparent !important;margin:0;padding:0;height:0;break-before:page;page-break-before:always}
+  .editor .pgbreak-gap{display:none !important}
   .editor.show-marks p::after,.editor.show-marks h1::after,.editor.show-marks h2::after,.editor.show-marks h3::after,.editor.show-marks li::after,.editor.show-marks blockquote::after{content:none}
   .app{display:block}
   .canvas{padding:0;overflow:visible;display:block}

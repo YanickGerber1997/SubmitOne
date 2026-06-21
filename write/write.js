@@ -269,6 +269,7 @@ function scheduleSave() {
   saveState.classList.add('saving');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { saveState.classList.remove('saving'); autosave(); }, 800);
+  paginateLater();
 }
 
 /* ---------- .gdoc Envelope ---------- */
@@ -1269,16 +1270,34 @@ function setOrientation(o) {
   $('#btnLandscape').classList.toggle('on', o === 'quer');
   applyFormat(); scheduleSave(); applyZoom(); updatePages();
 }
-function updatePages() {
-  if (isSlides()) { $('#guides').innerHTML = ''; return 1; }   // Folien: keine Mehrseiten-Hilfslinien
-  const ph = pageHeightPx();
-  const n = Math.max(1, Math.ceil((page.offsetHeight - 4) / ph));
-  const g = $('#guides'); g.innerHTML = '';
-  for (let k = 1; k < n; k++) {
-    const line = document.createElement('div'); line.className = 'guide'; line.style.top = (k * ph) + 'px';
-    const s = document.createElement('span'); s.textContent = 'Seite ' + (k + 1); line.appendChild(s); g.appendChild(line);
-  }
-  return n;
+let pageCount = 1, pagTimer = null;
+function updatePages() { $('#guides').innerHTML = ''; return pageCount; }   // echte Seitenlücken: siehe paginate()
+function paginateLater() { clearTimeout(pagTimer); pagTimer = setTimeout(paginate, 300); }
+// Echte Mehrseiten-Ansicht: nicht-editierbare „Seitenlücken" schieben überlaufende Blöcke aufs nächste Blatt
+function paginate() {
+  if (!doc || isSlides() || (activePage() && activePage().typ === 'calc')) return;
+  const off = (document.activeElement === editor) ? caretOffset(editor) : null;
+  $$('.pgbreak-gap', editor).forEach(g => g.remove());
+  const m = pageSetup().margins;
+  const H = Math.max(140, (pageDims().h - m.top - m.bottom) * MM - 14);   // Inhaltshöhe je Blatt (px)
+  const mtPx = Math.round(m.top * MM), mbPx = Math.round(m.bottom * MM);
+  let used = 0, pages = 1;
+  const kids = [...editor.children].filter(n => !(n.classList && n.classList.contains('pgbreak-gap')));
+  kids.forEach(node => {
+    if (node.classList && node.classList.contains('pagebreak')) { node.before(mkGap(mtPx, mbPx)); used = 0; pages++; return; }
+    const cs = getComputedStyle(node);
+    const h = node.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+    if (used + h > H && used > 0) { node.before(mkGap(mtPx, mbPx)); pages++; used = h; }   // passt nicht mehr → neues Blatt
+    else used += h;
+  });
+  pageCount = pages;
+  if (off != null) setCaretOffset(editor, off);
+  const st = $('#stPages'); if (st) st.textContent = pages + (pages === 1 ? ' Seite' : ' Seiten');
+}
+function mkGap(mtPx, mbPx) {
+  const d = document.createElement('div'); d.className = 'pgbreak-gap'; d.contentEditable = 'false';
+  d.innerHTML = `<div class="pg-edge" style="height:${mbPx}px"></div><div class="pg-mid"></div><div class="pg-edge" style="height:${mtPx}px"></div>`;
+  return d;
 }
 
 /* ---------- Seite einrichten (Ränder, Kopf-/Fuss-Höhe) + Lineal ---------- */
@@ -1537,6 +1556,7 @@ function printPreview() {
   const nextPage = () => { p = newPage(); pages.push(p); c = p.querySelector('.pv-c'); };
   let used = 0;
   [...editor.children].forEach(node => {
+    if (node.classList && node.classList.contains('pgbreak-gap')) return;   // Bildschirm-Seitenlücke nicht drucken
     // manueller Seitenumbruch
     if (node.classList && node.classList.contains('pagebreak')) { if (c.children.length) { nextPage(); used = 0; } return; }
     const clone = node.cloneNode(true);
@@ -1645,7 +1665,7 @@ function renderActivePage() {
   appEl.classList.toggle('calc-mode', calc);
   appEl.classList.toggle('slides-mode', m === 'slides');
   if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
-  else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.sp-err', editor).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); }
+  else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.sp-err', editor).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); $$('.pgbreak-gap', editor).forEach(g => g.remove()); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); paginateLater(); }
   if (m === 'slides') { const ni = $('#slideNotesInput'); if (ni) ni.value = p.notiz || ''; }
 }
 // Typ der AKTIVEN Seite wechseln (Modus-Pille)
@@ -2061,7 +2081,7 @@ function corrAdd(from, to) { const k = normWord(from); if (!k || !to) return; co
 let spellTimer = null, spellTarget = null, spellOn = true;
 function spellLater() { if (!spellOn) return; clearTimeout(spellTimer); spellTimer = setTimeout(spellcheckNow, 650); }
 function unwrapSpell(root) { $$('.sp-err', root).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); root.normalize(); }
-function cleanEditorHTML() { const c = editor.cloneNode(true); c.querySelectorAll('.sp-err').forEach(s => s.replaceWith(document.createTextNode(s.textContent))); return c.innerHTML; }
+function cleanEditorHTML() { const c = editor.cloneNode(true); c.querySelectorAll('.sp-err').forEach(s => s.replaceWith(document.createTextNode(s.textContent))); c.querySelectorAll('.pgbreak-gap').forEach(g => g.remove()); return c.innerHTML; }
 function spellcheckNow() {
   if (!doc || !spellOn) return;
   if (activePage() && activePage().typ === 'calc') return;     // nur Fliesstext prüfen

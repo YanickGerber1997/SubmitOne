@@ -426,22 +426,38 @@ function syncToolbar() {
 function refreshAll() { refreshTOC(); updateStats(); updateOutline(); syncToolbar(); }
 
 function updateStats() {
+  if (doc && activePage() && activePage().typ === 'calc') { updateStatsCalc(); return; }
   const text = (editor.innerText || '').replace(/ /g, ' ');
   const words = (text.match(/[^\s]+/g) || []).length;
   const chars = text.replace(/\s/g, '').length;
   const pars = $$('p,h1,h2,h3,li,blockquote', editor).filter(e => e.innerText.trim()).length || (text.trim() ? 1 : 0);
-  const pages = updatePages();
+  const pages = isSlides() ? Math.max(1, slidePages().length) : updatePages();
   const read = Math.max(1, Math.round(words / 200));
   $('#stWords').textContent = words.toLocaleString('de-CH') + ' Wörter';
   $('#stChars').textContent = chars.toLocaleString('de-CH') + ' Zeichen';
   $('#stPars').textContent = pars + (pars === 1 ? ' Absatz' : ' Absätze');
-  $('#stPages').textContent = pages + (pages === 1 ? ' Seite' : ' Seiten');
-  $('#stRead').textContent = words ? '~' + read + ' Min. Lesezeit' : '0 Min. Lesezeit';
+  $('#stPages').textContent = isSlides() ? (pages + (pages === 1 ? ' Folie' : ' Folien')) : (pages + (pages === 1 ? ' Seite' : ' Seiten'));
+  $('#stRead').textContent = isSlides() ? 'Präsentation' : (words ? '~' + read + ' Min. Lesezeit' : '0 Min. Lesezeit');
   // Inspector-Statistik
   $('#statGrid').innerHTML = [
     ['Wörter', words.toLocaleString('de-CH')], ['Zeichen', chars.toLocaleString('de-CH')],
     ['Absätze', pars], ['Seiten', pages],
     ['Lesezeit', (words ? '~' + read : '0') + ' Min.'], ['Version', 'v' + (doc?.meta.version || 1)]
+  ].map(([l, n]) => `<div class="stat-cell"><div class="sc-n">${n}</div><div class="sc-l">${l}</div></div>`).join('');
+}
+// Statistik für Calc-Seiten (echte Zell-/Zeilen-/Spaltenzahlen statt veraltetem Write-Text)
+function updateStatsCalc() {
+  const ur = curGrid ? calcUsedRange() : { maxR: -1, maxC: -1 };
+  const rows = Math.max(0, ur.maxR + 1), cols = Math.max(0, ur.maxC + 1);
+  let filled = 0;
+  if (curGrid) curGrid.zeilen.forEach(z => z.cells.forEach(c => { if (cellText(c) !== '') filled++; }));
+  $('#stWords').textContent = filled + (filled === 1 ? ' Zelle' : ' Zellen');
+  $('#stChars').textContent = cols + (cols === 1 ? ' Spalte' : ' Spalten');
+  $('#stPars').textContent = rows + (rows === 1 ? ' Zeile' : ' Zeilen');
+  $('#stPages').textContent = '1 Seite';
+  $('#stRead').textContent = 'Tabelle';
+  $('#statGrid').innerHTML = [
+    ['Zellen', filled], ['Zeilen', rows], ['Spalten', cols], ['Version', 'v' + (doc?.meta.version || 1)]
   ].map(([l, n]) => `<div class="stat-cell"><div class="sc-n">${n}</div><div class="sc-l">${l}</div></div>`).join('');
 }
 
@@ -1595,7 +1611,7 @@ function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen
   return { cols: Math.max(1, ...z.map(x => x.cells.length)), rows: z.length };
 }
 let gridCols = 1, gridRows = 1;
-function renderCalc() { renderSheet(); highlightSel(); }
+function renderCalc() { renderSheet(); highlightSel(); updateStats(); }
 function renderSheet() {
   const sheet = $('#calcSheet'), ur = calcUsedRange(), ext = calcExtent(), d = pageDims();
   const ML = 16, printW = d.w - 2 * ML, printH = d.h - 2 * ML;          // Druckbereich in mm

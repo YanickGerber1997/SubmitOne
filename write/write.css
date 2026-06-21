@@ -64,14 +64,16 @@ button{font-family:inherit;cursor:pointer}
 
 /* ---------- App-Raster ---------- */
 .app{
+  --nav-w:0;
   display:grid; height:100vh;
-  grid-template-columns:var(--side-w) minmax(0,1fr) 0;
+  grid-template-columns:var(--side-w) var(--nav-w) minmax(0,1fr) 0;
   transition:grid-template-columns .28s var(--ease);
 }
-.app.insp-open{grid-template-columns:var(--side-w) minmax(0,1fr) var(--insp-w)}
-.app.side-hidden{grid-template-columns:0 minmax(0,1fr) var(--insp-w)}
-.app.side-hidden:not(.insp-open){grid-template-columns:0 minmax(0,1fr) 0}
-.app.focus{grid-template-columns:0 minmax(0,1fr) 0 !important}
+.app.nav-open{--nav-w:262px}
+.app.insp-open{grid-template-columns:var(--side-w) var(--nav-w) minmax(0,1fr) var(--insp-w)}
+.app.side-hidden{grid-template-columns:0 var(--nav-w) minmax(0,1fr) var(--insp-w)}
+.app.side-hidden:not(.insp-open){grid-template-columns:0 var(--nav-w) minmax(0,1fr) 0}
+.app.focus{grid-template-columns:0 0 minmax(0,1fr) 0 !important}
 
 /* ---------- Linke Seitenleiste ---------- */
 .side{
@@ -118,11 +120,10 @@ button{font-family:inherit;cursor:pointer}
 .ver{margin-left:auto;font-size:11px;color:var(--ink-faint)}
 
 /* ---------- Mitte ---------- */
-.main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg);position:relative;transition:padding-left .24s var(--ease)}
-/* Linkes Inhaltsverzeichnis (Gliederung) – andockend, schiebt den Inhalt nach rechts */
-.navpane{position:absolute;left:0;top:0;bottom:0;width:262px;z-index:30;background:var(--surface);border-right:1px solid var(--line);transform:translateX(-106%);transition:transform .24s var(--ease);display:flex;flex-direction:column}
-.app.nav-open .navpane{transform:none}
-.app.nav-open .main{padding-left:262px}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg)}
+/* Linkes Inhaltsverzeichnis (Gliederung) – eigene Grid-Spalte, dockt an & schiebt den Inhalt */
+.navpane{grid-column:2;overflow:hidden;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
+.navpane .np-head,.navpane .outline{width:262px}
 .np-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600;font-size:14px}
 .navpane .outline{flex:1;overflow:auto;padding:8px 6px}
 .topbar{
@@ -377,8 +378,8 @@ body[data-mode="slides"] .editor img{max-width:100%}
 .menu-sep{height:1px;background:var(--line);margin:5px 6px;display:block}
 
 /* Einklappbare Icon-Leiste (links) – alles sichtbar, Hover = Info via title */
-.app.side-rail{grid-template-columns:58px minmax(0,1fr) 0}
-.app.side-rail.insp-open{grid-template-columns:58px minmax(0,1fr) var(--insp-w)}
+.app.side-rail{grid-template-columns:58px var(--nav-w) minmax(0,1fr) 0}
+.app.side-rail.insp-open{grid-template-columns:58px var(--nav-w) minmax(0,1fr) var(--insp-w)}
 .app.side-rail .brand-word,.app.side-rail .side-collapse,.app.side-rail .new-doc span,
 .app.side-rail .snav span,.app.side-rail .side-list,.app.side-rail .foot-link span,.app.side-rail .ver{display:none}
 .app.side-rail .side-brand{justify-content:center;padding:16px 0 10px}
@@ -625,7 +626,7 @@ body[data-theme="dark"] .toast{background:#2a3140}
 
 /* ---------- Responsiv ---------- */
 @media (max-width:760px){
-  .app{grid-template-columns:0 minmax(0,1fr) 0 !important}
+  .app{grid-template-columns:0 0 minmax(0,1fr) 0 !important}
   .side{position:fixed;top:0;left:0;bottom:0;width:var(--side-w);z-index:50;transform:translateX(-100%);transition:transform .26s var(--ease)}
   .app.side-mobile .side{transform:none;box-shadow:var(--shadow)}
   .topbar-side{display:inline-flex}

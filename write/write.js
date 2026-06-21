@@ -340,7 +340,7 @@ function ingestGdoc(text, handle) {
       const typ = (p && p.typ === 'calc') ? 'calc' : (p && p.typ === 'slides') ? 'slides' : 'write';
       let html = sanitizeHtml((p && p.html) || '');
       if (!html && p && p.tabelle && p.tabelle.cells) html = tabelleToHtml(p.tabelle);   // sehr alte Calc-Seite
-      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {} };
+      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {} };
     });
     if (!d.seiten.length) d.seiten = [{ id: uid(), typ: 'write', html: '' }];
     d.aktiv = 0;
@@ -742,6 +742,7 @@ function wire() {
   // Maus: Auswahl + Bereich ziehen (delegiert auf #pageGrid)
   let gridDragging = false;
   pgEl.addEventListener('mousedown', e => {
+    const rz = e.target.closest('.cresize'); if (rz) { e.preventDefault(); e.stopPropagation(); startColResize(+rz.dataset.c, e); return; }
     const td = e.target.closest('td[data-c]'); if (!td) return;
     if (editingTd && editingTd !== td) endEdit(true);
     gridDragging = true; e.preventDefault();
@@ -1630,8 +1631,9 @@ function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen
 }
 let gridCols = 1, gridRows = 1;
 function renderCalc() { renderSheet(); highlightSel(); updateStats(); updatePages(); }
-// Zahlenformate je Zelle (am Seiten-Objekt gespeichert, übersteht Speichern/Öffnen)
+// Zahlenformate je Zelle + Spaltenbreiten (am Seiten-Objekt gespeichert, übersteht Speichern/Öffnen)
 function curFmt() { const p = activePage(); if (!p.fmt || typeof p.fmt !== 'object') p.fmt = {}; return p.fmt; }
+function curColW() { const p = activePage(); if (!p.colW || typeof p.colW !== 'object') p.colW = {}; return p.colW; }
 function fmtNum(n, f) {
   if (!isFinite(n)) return String(n);
   if (f === 'pct') return (n * 100).toLocaleString('de-CH', { maximumFractionDigits: 2 }) + ' %';
@@ -1669,11 +1671,12 @@ function renderSheet() {
   const cols = Math.max(ext.cols, colsPP);
   const rows = Math.max(ext.rows, 30);                       // genug Leerzeilen, damit es wie ein Blatt wirkt
   gridCols = cols; gridRows = rows;
+  const cw = curColW();
   let cg = '<colgroup><col class="cg-gut">';
-  for (let c = 0; c < cols; c++) cg += '<col>';
+  for (let c = 0; c < cols; c++) cg += cw[c] ? `<col style="width:${cw[c]}px">` : '<col>';
   cg += '</colgroup>';
   let head = '<thead><tr><th class="cg-corner"></th>';
-  for (let c = 0; c < cols; c++) head += `<th class="cg-col" data-c="${c}">${idxToCol(c)}</th>`;
+  for (let c = 0; c < cols; c++) head += `<th class="cg-col" data-c="${c}">${idxToCol(c)}<span class="cresize" data-c="${c}" title="Spaltenbreite ziehen"></span></th>`;
   head += '</tr></thead><tbody>';
   for (let r = 0; r < rows; r++) {
     const z = curGrid.zeilen[r];
@@ -1755,6 +1758,21 @@ function readCellHtml(td) {
     else h += esc(n.textContent);
   });
   return h.replace(/(<br>)+$/,'');
+}
+// Spaltenbreite mit Maus ziehen (am Spaltenkopf-Rand)
+function startColResize(c, e) {
+  const t = gEl(); if (!t) return;
+  const col = t.querySelectorAll('colgroup col')[c + 1]; if (!col) return;
+  const z = parseFloat(page.style.zoom) || 1, startX = e.clientX;
+  const th = t.querySelector(`th.cg-col[data-c="${c}"]`);
+  const startW = th ? th.offsetWidth : 80;
+  const wAt = ev => Math.max(36, Math.round(startW + (ev.clientX - startX) / z));
+  const move = ev => { col.style.width = wAt(ev) + 'px'; };
+  const up = ev => {
+    document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+    curColW()[c] = wAt(ev); scheduleSave(); renderCalc();
+  };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
 }
 function calcAddRow() { gridEnsure(curGrid, 0, Math.max(curGrid.zeilen.length, DISP_MIN_ROWS)); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
 function calcAddCol() { curGrid.cols = Math.max(curGrid.cols, DISP_MIN_COLS) + 1; gridEnsure(curGrid, curGrid.cols - 1, 0); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }

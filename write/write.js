@@ -408,7 +408,7 @@ function normalizeEmpty() {
   if (editor.querySelector('img,table,hr')) return;
   if (!(editor.innerText || '').replace(/​/g, '').trim() && editor.innerHTML !== '') editor.innerHTML = '';
 }
-function afterEdit() { normalizeEmpty(); scheduleSave(); refreshAll(); spellLater(); }
+function afterEdit() { normalizeEmpty(); scheduleSave(); refreshAll(); }
 
 /* ---------- aktiven Zustand der Buttons spiegeln ---------- */
 function syncToolbar() {
@@ -890,10 +890,15 @@ function wire() {
 
   // Rechtsklick-Menü
   editor.addEventListener('contextmenu', e => {
+    const onImg = e.target.tagName === 'IMG';
+    const inCell = !!e.target.closest('td,th');
+    const sel = getSelection();
+    const hasSel = sel && sel.rangeCount && !sel.isCollapsed && editor.contains(sel.anchorNode);
+    // reiner Text → natives Browser-Menü (genaue Rechtschreibung + „Zum Wörterbuch hinzufügen")
+    if (!onImg && !inCell && !hasSel) return;
     e.preventDefault();
     $$('img.sel', editor).forEach(i => i.classList.remove('sel'));
-    if (e.target.tagName === 'IMG') e.target.classList.add('sel');
-    spellTarget = e.target.closest('.sp-err');   // falsch geschriebenes Wort unter dem Cursor
+    if (onImg) e.target.classList.add('sel');
     showContextMenu(e.clientX, e.clientY);
   });
   $('#ctxmenu').addEventListener('click', e => { const a = e.target.closest('button')?.dataset.ctx; if (a) ctxAction(a); });
@@ -1434,13 +1439,6 @@ function showContextMenu(x, y) {
   const cell = currentCell();
   const img = $('img.sel', editor);
   let h = '';
-  if (spellTarget) {
-    const w = spellTarget.textContent;
-    h += `<div class="lbl">Rechtschreibung</div>`;
-    h += `<button data-ctx="dict-add">„${esc(w)}" zum Wörterbuch hinzufügen</button>`;
-    h += `<button data-ctx="dict-corr">Autokorrektur für „${esc(w)}" …</button>`;
-    h += '<div class="sep"></div>';
-  }
   h += '<button data-ctx="cut">Ausschneiden<span class="km">Strg X</span></button>';
   h += '<button data-ctx="copy">Kopieren<span class="km">Strg C</span></button>';
   h += '<button data-ctx="paste">Einfügen<span class="km">Strg V</span></button>';
@@ -1637,7 +1635,7 @@ function renderActivePage() {
   appEl.classList.toggle('calc-mode', calc);
   appEl.classList.toggle('slides-mode', m === 'slides');
   if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
-  else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); spellLater(); }
+  else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.sp-err', editor).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); }
   if (m === 'slides') { const ni = $('#slideNotesInput'); if (ni) ni.value = p.notiz || ''; }
 }
 // Typ der AKTIVEN Seite wechseln (Modus-Pille)
@@ -2166,7 +2164,7 @@ function buildDocFromPdf(titel, pages, target) {
    ============================================================ */
 function init() {
   $('#verTag').textContent = WRITE_VERSION;
-  editor.spellcheck = false;   // eigene Rechtschreibprüfung statt der Browser-Unterringelung
+  editor.spellcheck = true;    // echte Rechtschreibprüfung des Browsers (vollständiges Wörterbuch)
   setTheme(localStorage.getItem(LS_THEME) || 'light');
   try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (_) {}
   try { document.execCommand('styleWithCSS', false, true); } catch (_) {}

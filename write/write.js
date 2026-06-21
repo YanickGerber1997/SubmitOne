@@ -1296,7 +1296,11 @@ function paginate() {
 }
 function mkGap(mtPx, mbPx) {
   const d = document.createElement('div'); d.className = 'pgbreak-gap'; d.contentEditable = 'false';
-  d.innerHTML = `<div class="pg-edge" style="height:${mbPx}px"></div><div class="pg-mid"></div><div class="pg-edge" style="height:${mtPx}px"></div>`;
+  const fh = $('#zoneF').innerHTML, hh = $('#zoneH').innerHTML;   // Kopf-/Fusszeile auf jeder Seite wiederholen
+  d.innerHTML =
+    `<div class="pg-foot" style="height:${mbPx}px">${fh}</div>` +
+    `<div class="pg-mid"></div>` +
+    `<div class="pg-head" style="height:${mtPx}px">${hh}</div>`;
   return d;
 }
 

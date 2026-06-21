@@ -1298,11 +1298,14 @@ function insertTOC() {
 let tocSeq = 0;
 function refreshTOC() {
   let tocs = $$('.toc', editor); if (!tocs.length) return;
-  tocs.forEach(t => $$('.toc', t).forEach(inner => inner.replaceWith(...inner.childNodes)));  // verschachtelte TOC-Altlasten auflösen
-  tocs = $$('.toc', editor);
+  // Altlast: Überschrift, die ein TOC umschliesst → TOC herauslösen
+  $$('h1,h2,h3', editor).forEach(h => { if (h.querySelector('.toc')) h.replaceWith(...h.childNodes); });
+  tocs = $$('.toc', editor); if (!tocs.length) return;
   tocs.slice(1).forEach(t => t.remove());                       // nur EIN Inhaltsverzeichnis behalten
   const toc = tocs[0];
-  // WICHTIG: Überschriften INNERHALB des Verzeichnisses NICHT zählen (sonst wuchert es)
+  toc.contentEditable = 'false';
+  toc.innerHTML = '';                                           // ZUERST leeren → Altlasten im TOC verschwinden, BEVOR gezählt wird
+  // jetzt zählen: nur echte Überschriften, keine im (geleerten) Verzeichnis
   const heads = $$('h1,h2,h3', editor).filter(h => h.innerText.trim() && !h.closest('.toc'));
   heads.forEach(h => { if (!h.id || !/^h\d+t$/.test(h.id)) h.id = 'h' + (++tocSeq) + 't'; });
   let html = '<div class="toc-head"><span class="toc-title">Inhaltsverzeichnis</span>'
@@ -1311,7 +1314,7 @@ function refreshTOC() {
   if (!heads.length) html += '<div class="toc-empty">Sobald du Überschriften (Titel, H1–H3) verwendest, erscheinen sie hier automatisch.</div>';
   else html += '<div class="toc-list">' + heads.map(h =>
     `<a class="toc-l${h.tagName[1]}" data-go="${h.id}">${esc(h.innerText.trim())}</a>`).join('') + '</div>';
-  toc.contentEditable = 'false'; if (toc.innerHTML !== html) toc.innerHTML = html;
+  toc.innerHTML = html;
 }
 
 /* ============================================================

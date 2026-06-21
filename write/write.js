@@ -264,12 +264,12 @@ function autosave() {
   if (persistLib()) { setDirty(false); renderList(); }
   else { saveState.classList.remove('saving'); saveState.classList.add('dirty'); $('.lbl', saveState).textContent = 'Speicher voll!'; warnQuota(); }
 }
-function scheduleSave() {
+function scheduleSave(skipPag) {
   setDirty(true);
   saveState.classList.add('saving');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { saveState.classList.remove('saving'); autosave(); }, 800);
-  paginateLater();
+  if (!skipPag) paginateLater();
 }
 
 /* ---------- .gdoc Envelope ---------- */
@@ -870,6 +870,7 @@ function wire() {
   });
   $('#kopfH').addEventListener('input', e => { if (!doc) return; pageSetup().kopfH = Math.max(6, Math.min(80, +e.target.value || 14)); applyPageSetup(); updatePages(); scheduleSave(); });
   $('#fussH').addEventListener('input', e => { if (!doc) return; pageSetup().fussH = Math.max(6, Math.min(80, +e.target.value || 14)); applyPageSetup(); updatePages(); scheduleSave(); });
+  $('#chkFirstNoHF').addEventListener('change', e => { if (!doc) return; doc.einstellungen.erstSeiteOhne = e.target.checked; page.classList.toggle('first-no-hf', e.target.checked); paginate(); scheduleSave(true); });
   $('#setupReset').addEventListener('click', () => { if (!doc) return; doc.einstellungen.margins = defaultMargins(); doc.einstellungen.kopfH = 14; doc.einstellungen.fussH = 14; doc.einstellungen.tabs = []; applyPageSetup(); drawRuler(); updatePages(); scheduleSave(); });
 
   // Lineal: Klick setzt Tabstopp
@@ -885,8 +886,8 @@ function wire() {
   // Kopf-/Fusszeile (eigene Felder – immer erreichbar, nie im Textfluss)
   ['#zoneH', '#zoneF'].forEach(s => {
     const z = $(s);
-    z.addEventListener('input', () => { scheduleSave(); updatePages(); });
-    z.addEventListener('paste', e => { const html = e.clipboardData?.getData('text/html'); if (html) { e.preventDefault(); document.execCommand('insertHTML', false, sanitizeHtml(html)); scheduleSave(); } });
+    z.addEventListener('input', () => { syncHFfromMaster(); scheduleSave(); });
+    z.addEventListener('paste', e => { const html = e.clipboardData?.getData('text/html'); if (html) { e.preventDefault(); document.execCommand('insertHTML', false, sanitizeHtml(html)); syncHFfromMaster(); scheduleSave(); } });
   });
 
   // Rechtsklick-Menü
@@ -1273,35 +1274,72 @@ function setOrientation(o) {
 let pageCount = 1, pagTimer = null;
 function updatePages() { $('#guides').innerHTML = ''; return pageCount; }   // echte Seitenlücken: siehe paginate()
 function paginateLater() { clearTimeout(pagTimer); pagTimer = setTimeout(paginate, 300); }
-// Echte Mehrseiten-Ansicht: nicht-editierbare „Seitenlücken" schieben überlaufende Blöcke aufs nächste Blatt
+// Cursor-Position nur im Fliesstext zählen (Kopf-/Fuss-Kopien in den Lücken ignorieren)
+function bodyCaret() {
+  const sel = getSelection(); if (!sel.rangeCount) return null;
+  const r = sel.getRangeAt(0); if (!editor.contains(r.endContainer)) return null;
+  if (r.endContainer.parentElement && r.endContainer.parentElement.closest('.pgbreak-gap')) return null;
+  const w = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, { acceptNode(n) { return n.parentElement && n.parentElement.closest('.pgbreak-gap') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; } });
+  let n, off = 0; while ((n = w.nextNode())) { if (n === r.endContainer) return off + r.endOffset; off += n.nodeValue.length; } return off;
+}
+function setBodyCaret(off) {
+  if (off == null) return;
+  const w = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, { acceptNode(n) { return n.parentElement && n.parentElement.closest('.pgbreak-gap') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; } });
+  let n, acc = 0; while ((n = w.nextNode())) { const len = n.nodeValue.length; if (acc + len >= off) { const r = document.createRange(); r.setStart(n, Math.max(0, off - acc)); r.collapse(true); const s = getSelection(); s.removeAllRanges(); s.addRange(r); return; } acc += len; }
+}
+// Echte Mehrseiten-Ansicht: volle A4-Blätter; „Seitenlücke" füllt den Rest + wiederholt Kopf-/Fusszeile (editierbar)
 function paginate() {
   if (!doc || isSlides() || (activePage() && activePage().typ === 'calc')) return;
-  const off = (document.activeElement === editor) ? caretOffset(editor) : null;
+  if (document.activeElement && document.activeElement.closest && document.activeElement.closest('.pgbreak-gap')) return;  // gerade Kopf/Fuss editieren → nicht neu umbrechen
   $$('.pgbreak-gap', editor).forEach(g => g.remove());
+  const off = (document.activeElement === editor) ? bodyCaret() : null;
   const m = pageSetup().margins;
-  const H = Math.max(140, (pageDims().h - m.top - m.bottom) * MM - 14);   // Inhaltshöhe je Blatt (px)
+  const H = Math.max(140, (pageDims().h - m.top - m.bottom) * MM - 12);   // Inhaltshöhe je Blatt (px)
   const mtPx = Math.round(m.top * MM), mbPx = Math.round(m.bottom * MM);
+  const firstNo = !!doc.einstellungen.erstSeiteOhne;
   let used = 0, pages = 1;
   const kids = [...editor.children].filter(n => !(n.classList && n.classList.contains('pgbreak-gap')));
   kids.forEach(node => {
-    if (node.classList && node.classList.contains('pagebreak')) { node.before(mkGap(mtPx, mbPx)); used = 0; pages++; return; }
+    const brk = node.classList && node.classList.contains('pagebreak');
     const cs = getComputedStyle(node);
-    const h = node.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
-    if (used + h > H && used > 0) { node.before(mkGap(mtPx, mbPx)); pages++; used = h; }   // passt nicht mehr → neues Blatt
-    else used += h;
+    const h = brk ? 0 : node.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+    if (brk || (used + h > H && used > 0)) {
+      node.before(mkGap(Math.max(0, H - used), mtPx, mbPx, pages === 1 && firstNo));
+      pages++; used = brk ? 0 : h;
+    } else used += h;
   });
+  // letzte Seite voll auffüllen (zoneF darunter = Fusszeile der letzten Seite)
+  const tail = document.createElement('div'); tail.className = 'pgbreak-gap pg-tail'; tail.contentEditable = 'false';
+  tail.style.height = Math.max(0, H - used) + 'px'; editor.appendChild(tail);
   pageCount = pages;
-  if (off != null) setCaretOffset(editor, off);
+  page.classList.toggle('first-no-hf', firstNo);
+  page.classList.toggle('one-page', pages === 1);
+  if (off != null) setBodyCaret(off);
   const st = $('#stPages'); if (st) st.textContent = pages + (pages === 1 ? ' Seite' : ' Seiten');
 }
-function mkGap(mtPx, mbPx) {
+function mkGap(fillPx, mtPx, mbPx, noFoot) {
   const d = document.createElement('div'); d.className = 'pgbreak-gap'; d.contentEditable = 'false';
-  const fh = $('#zoneF').innerHTML, hh = $('#zoneH').innerHTML;   // Kopf-/Fusszeile auf jeder Seite wiederholen
+  const fh = $('#zoneF').innerHTML, hh = $('#zoneH').innerHTML;   // Kopf-/Fusszeile pro Seite (editierbar, synchron)
   d.innerHTML =
-    `<div class="pg-foot" style="height:${mbPx}px">${fh}</div>` +
+    `<div class="pg-fill" style="height:${fillPx}px"></div>` +
+    (noFoot ? `<div class="pg-foot" style="height:${mbPx}px"></div>` : `<div class="pg-foot" style="height:${mbPx}px" contenteditable="true">${fh}</div>`) +
     `<div class="pg-mid"></div>` +
-    `<div class="pg-head" style="height:${mtPx}px">${hh}</div>`;
+    `<div class="pg-head" style="height:${mtPx}px" contenteditable="true">${hh}</div>`;
   return d;
+}
+// Kopf-/Fusszeile in allen Seiten gleich halten
+function syncHF(el) {
+  const isFoot = el.classList.contains('pg-foot');
+  const html = el.innerHTML;
+  const master = isFoot ? $('#zoneF') : $('#zoneH');
+  if (master.innerHTML !== html) master.innerHTML = html;
+  $$('.pgbreak-gap .' + (isFoot ? 'pg-foot' : 'pg-head'), editor).forEach(c => { if (c !== el && c.innerHTML !== html) c.innerHTML = html; });
+  scheduleSave(true);
+}
+function syncHFfromMaster() {
+  const fh = $('#zoneF').innerHTML, hh = $('#zoneH').innerHTML;
+  $$('.pgbreak-gap .pg-foot', editor).forEach(c => { if (c.innerHTML !== fh) c.innerHTML = fh; });
+  $$('.pgbreak-gap .pg-head', editor).forEach(c => { if (c.innerHTML !== hh) c.innerHTML = hh; });
 }
 
 /* ---------- Seite einrichten (Ränder, Kopf-/Fuss-Höhe) + Lineal ---------- */
@@ -1325,6 +1363,8 @@ function applyPageSetup() {
   page.style.setProperty('--fussH', s.fussH + 'mm');
   $('#mTop').value = m.top; $('#mBottom').value = m.bottom; $('#mLeft').value = m.left; $('#mRight').value = m.right;
   $('#kopfH').value = s.kopfH; $('#fussH').value = s.fussH;
+  const ck = $('#chkFirstNoHF'); if (ck) ck.checked = !!s.erstSeiteOhne;
+  page.classList.toggle('first-no-hf', !!s.erstSeiteOhne);
 }
 let suppressRulerClick = false;
 function drawRuler() {
@@ -1532,7 +1572,7 @@ function previewCalc() {
   tbl += '</table>';
   const scroll = $('#previewScroll');
   $('#previewOverlay').hidden = false;
-  scroll.innerHTML = `<div class="pv-page${quer ? ' quer' : ''}"><div class="pv-h">${$('#zoneH').innerHTML}</div><div class="pv-c">${tbl}</div><div class="pv-f"><span>${$('#zoneF').innerHTML}</span><span class="pv-num">Seite 1</span></div></div>`;
+  scroll.innerHTML = `<div class="pv-page${quer ? ' quer' : ''}"><div class="pv-h">${$('#zoneH').innerHTML}</div><div class="pv-c">${tbl}</div><div class="pv-f"><span>${$('#zoneF').innerHTML}</span><span class="pv-num"></span></div></div>`;
   $('#pvInfo').textContent = 'Tabelle · ' + (maxR + 1) + ' × ' + (maxC + 1) + (quer ? ' · Querformat' : ' · Hochformat');
   scroll.scrollTop = 0;
 }
@@ -1571,7 +1611,8 @@ function printPreview() {
       c.removeChild(clone); nextPage(); c.appendChild(clone); used = outerH(clone);
     } else used += h;
   });
-  pages.forEach((pg, i) => pg.querySelector('.pv-num').textContent = 'Seite ' + (i + 1) + ' / ' + pages.length);
+  pages.forEach(pg => pg.querySelector('.pv-num').textContent = '');   // keine automatischen Seitenzahlen (Viewer = Druck)
+  if (doc.einstellungen.erstSeiteOhne && pages[0]) { pages[0].querySelector('.pv-h').innerHTML = ''; pages[0].querySelector('.pv-f span:first-child').innerHTML = ''; }
   $('#pvInfo').textContent = pages.length + (pages.length === 1 ? ' Seite' : ' Seiten') + ' · ' + (quer ? 'Querformat' : 'Hochformat');
   scroll.scrollTop = 0;
 }
@@ -2136,6 +2177,8 @@ function applyAutocorrect() {
   sel.removeAllRanges(); sel.addRange(r2);
 }
 function onEditorInput(e) {
+  const hf = e && e.target && e.target.closest && e.target.closest('.pg-foot, .pg-head');
+  if (hf) { syncHF(hf); return; }   // Kopf-/Fusszeile in einer Seitenlücke editiert → überall übernehmen, nicht neu umbrechen
   if (e && e.inputType === 'insertText' && /[\s.,;:!?]/.test(e.data || '')) applyAutocorrect();
   afterEdit();
 }

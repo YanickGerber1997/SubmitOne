@@ -510,9 +510,38 @@
           </div>
           <div class="pdf-status" id="pdfStatus">Hinweis: Text-PDFs werden umgewandelt (gescannte Bild-PDFs nicht). Benötigt einmalig Internet zum Laden der PDF-Engine.</div>
         </div>
+        <div class="pdf-sec pdf-sec-wide">
+          <div class="pdf-ico">✎</div>
+          <h3>PDF kommentieren &amp; zeichnen</h3>
+          <p>Ein PDF öffnen, mit Stift/Linie/Marker zeichnen, Kommentare setzen – und als PDF speichern.</p>
+          <button class="ghost-btn" id="pdfAnnotate"><svg viewBox="0 0 24 24" class="i"><path d="M4 20h4l10-10-4-4L4 16z"/><path d="M14 6l4 4"/></svg><span>PDF öffnen &amp; annotieren</span></button>
+        </div>
       </div>
     </div>
   </div>
+
+  <!-- PDF-EDITOR (Annotieren) -->
+  <div class="pdf-viewer" id="pdfViewer" hidden>
+    <div class="pdf-toolbar">
+      <span class="pdf-vtitle" id="pdfViewerTitle">PDF</span>
+      <span class="pdf-tools">
+        <button data-ptool="pen" class="on" title="Stift (Freihand)">✎</button>
+        <button data-ptool="line" title="Gerade Linie">╱</button>
+        <button data-ptool="marker" title="Marker (Hervorheben)">▭</button>
+        <button data-ptool="text" title="Kommentar">💬</button>
+        <button data-ptool="eraser" title="Radierer">⌫</button>
+      </span>
+      <label class="pdf-col" title="Farbe"><span id="pdfColorDot"></span><input type="color" id="pdfColor" value="#e8412e" /></label>
+      <select class="fb-sel narrow" id="pdfWidth" title="Strichstärke"><option value="1.5">dünn</option><option value="2.5" selected>mittel</option><option value="5">dick</option></select>
+      <button class="fb-text" id="pdfClearPage" title="Aktuelle Zeichnungen löschen">Seite leeren</button>
+      <span class="grow"></span>
+      <button class="ghost-btn" id="pdfAnnoSave"><svg viewBox="0 0 24 24" class="i"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span>Als PDF speichern</span></button>
+      <button class="icon-btn" id="pdfViewerClose" title="Schliessen (Esc)">✕</button>
+    </div>
+    <div class="pdf-pages" id="pdfPages"></div>
+  </div>
+  <div id="pdfxPrint" aria-hidden="true"></div>
+
   <input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden />
 
   <input type="file" id="imgInput" accept="image/*" hidden />

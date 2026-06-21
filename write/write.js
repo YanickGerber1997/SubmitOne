@@ -767,7 +767,21 @@ function wire() {
   $('#pdfClose').addEventListener('click', () => { $('#pdfOverlay').hidden = true; });
   $('#pdfExport').addEventListener('click', () => { $('#pdfOverlay').hidden = true; setTimeout(() => doExport('pdf'), 60); });
   $$('[data-pdfimp]').forEach(b => b.addEventListener('click', () => { pdfTarget = b.dataset.pdfimp; $('#pdfInput').click(); }));
-  $('#pdfInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importPdf(f); });
+  $('#pdfAnnotate').addEventListener('click', () => { pdfTarget = 'annotate'; $('#pdfInput').click(); });
+  $('#pdfInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; if (pdfTarget === 'annotate') openPdfAnnotate(f); else importPdf(f); });
+  // PDF-Editor (Annotieren)
+  $$('#pdfViewer [data-ptool]').forEach(b => b.addEventListener('click', () => { pdfTool = b.dataset.ptool; $$('#pdfViewer [data-ptool]').forEach(x => x.classList.toggle('on', x === b)); }));
+  $('#pdfColor').addEventListener('input', e => { pdfColor = e.target.value; const d = $('#pdfColorDot'); if (d) d.style.background = pdfColor; });
+  $('#pdfWidth').addEventListener('change', e => { pdfWidth = +e.target.value || 2.5; });
+  $('#pdfClearPage').addEventListener('click', () => {
+    const ps = $$('#pdfPages .pdf-pagewrap'); if (!ps.length) return;
+    const mid = window.innerHeight / 2; let best = ps[0], bd = Infinity;
+    ps.forEach(w => { const r = w.getBoundingClientRect(); const d = Math.abs((r.top + r.bottom) / 2 - mid); if (d < bd) { bd = d; best = w; } });
+    const an = best.querySelector('.pdf-anno'); an.getContext('2d').clearRect(0, 0, an.width, an.height);
+    best.querySelectorAll('.pdf-note').forEach(n => n.remove());
+  });
+  $('#pdfAnnoSave').addEventListener('click', pdfAnnoSave);
+  $('#pdfViewerClose').addEventListener('click', () => { $('#pdfViewer').hidden = true; });
 
   // Submit Slides – Präsentieren (Vollbild)
   $('#btnPresent').addEventListener('click', presentStart);
@@ -1050,7 +1064,8 @@ function wire() {
     else if (mod && (e.key === '-' || e.key === '_')) { e.preventDefault(); zoomStep(-.1); }
     else if (mod && e.key === '0') { e.preventDefault(); setZoom('auto'); }
     else if (e.key === 'Escape') {
-      if (!$('#pdfOverlay').hidden) $('#pdfOverlay').hidden = true;
+      if (!$('#pdfViewer').hidden) $('#pdfViewer').hidden = true;
+      else if (!$('#pdfOverlay').hidden) $('#pdfOverlay').hidden = true;
       else if (!$('#previewOverlay').hidden) $('#previewOverlay').hidden = true;
       else if (!$('#ctxmenu').hidden) $('#ctxmenu').hidden = true;
       else if (!$('#findbar').hidden) { toggleFind(false); editor.focus(); }
@@ -2341,6 +2356,85 @@ function buildDocFromPdf(titel, pages, target) {
   if (!persistLib()) warnQuota();
   openDoc(d.id);
   toast('PDF importiert: ' + d.titel + ' (' + seiten.length + (seiten.length === 1 ? ' Seite)' : ' Seiten)'));
+}
+
+/* ---- PDF annotieren: zeichnen, Linien, Marker, Kommentare → als PDF speichern ---- */
+let pdfTool = 'pen', pdfColor = '#e8412e', pdfWidth = 2.5;
+async function openPdfAnnotate(file) {
+  if (!file) return;
+  toast('Lade PDF …');
+  let pdfjs; try { pdfjs = await loadPdfJs(); } catch (_) { toast('PDF-Engine nicht ladbar (Internet?).'); return; }
+  let pdf; try { const buf = await file.arrayBuffer(); pdf = await pdfjs.getDocument({ data: buf }).promise; } catch (_) { toast('PDF nicht lesbar.'); return; }
+  const host = $('#pdfPages'); host.innerHTML = '';
+  $('#pdfViewerTitle').textContent = (file.name || 'PDF');
+  $('#pdfOverlay').hidden = true; $('#pdfViewer').hidden = false;
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const pg = await pdf.getPage(i);
+    const vp = pg.getViewport({ scale: 1.5 });
+    const wrap = document.createElement('div'); wrap.className = 'pdf-pagewrap'; wrap.style.width = Math.round(vp.width) + 'px'; wrap.style.height = Math.round(vp.height) + 'px';
+    const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height; cv.className = 'pdf-base';
+    try { await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise; } catch (_) {}
+    const an = document.createElement('canvas'); an.width = vp.width; an.height = vp.height; an.className = 'pdf-anno';
+    wrap.appendChild(cv); wrap.appendChild(an); host.appendChild(wrap);
+    bindPdfAnno(an, wrap);
+  }
+  host.scrollTop = 0;
+}
+function pdfPos(an, e) { const r = an.getBoundingClientRect(); return { x: (e.clientX - r.left) * (an.width / r.width), y: (e.clientY - r.top) * (an.height / r.height) }; }
+function pdfStrokeStyle(ctx) { ctx.strokeStyle = pdfColor; ctx.globalAlpha = (pdfTool === 'marker') ? 0.3 : 1; ctx.lineWidth = (pdfTool === 'marker') ? pdfWidth * 7 : pdfWidth; }
+function bindPdfAnno(an, wrap) {
+  const ctx = an.getContext('2d'); let drawing = false, sx = 0, sy = 0, snap = null;
+  an.addEventListener('pointerdown', e => {
+    if (pdfTool === 'text') { addPdfNote(wrap, e); return; }
+    drawing = true; try { an.setPointerCapture(e.pointerId); } catch (_) {}
+    const p = pdfPos(an, e); sx = p.x; sy = p.y; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    if (pdfTool === 'line') snap = ctx.getImageData(0, 0, an.width, an.height);
+    else { ctx.beginPath(); ctx.moveTo(sx, sy); }
+  });
+  an.addEventListener('pointermove', e => {
+    if (!drawing) return; const p = pdfPos(an, e);
+    if (pdfTool === 'eraser') { ctx.save(); ctx.globalCompositeOperation = 'destination-out'; ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, 6.29); ctx.fill(); ctx.restore(); return; }
+    if (pdfTool === 'line') { ctx.putImageData(snap, 0, 0); ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(p.x, p.y); pdfStrokeStyle(ctx); ctx.stroke(); return; }
+    ctx.lineTo(p.x, p.y); pdfStrokeStyle(ctx); ctx.stroke(); ctx.beginPath(); ctx.moveTo(p.x, p.y);
+  });
+  const end = () => { drawing = false; snap = null; ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; };
+  an.addEventListener('pointerup', end); an.addEventListener('pointerleave', end);
+}
+function addPdfNote(wrap, e) {
+  const r = wrap.getBoundingClientRect();
+  const n = document.createElement('div'); n.className = 'pdf-note'; n.contentEditable = 'true';
+  n.style.left = Math.round(e.clientX - r.left) + 'px'; n.style.top = Math.round(e.clientY - r.top) + 'px';
+  n.style.borderColor = pdfColor; n.dataset.color = pdfColor; n.textContent = 'Kommentar';
+  const del = document.createElement('button'); del.className = 'pdf-note-del'; del.textContent = '×'; del.contentEditable = 'false';
+  del.addEventListener('pointerdown', ev => { ev.stopPropagation(); ev.preventDefault(); n.remove(); });
+  n.appendChild(del); wrap.appendChild(n); n.focus();
+  const rng = document.createRange(); rng.selectNodeContents(n); const s = getSelection(); s.removeAllRanges(); s.addRange(rng);
+}
+// Jede Seite zu einem Bild verflachen (PDF + Zeichnungen + Kommentare) und drucken/als PDF speichern
+function pdfAnnoSave() {
+  const wraps = $$('#pdfPages .pdf-pagewrap'); if (!wraps.length) { toast('Nichts zu speichern.'); return; }
+  let html = '';
+  wraps.forEach(wrap => {
+    const base = wrap.querySelector('.pdf-base'), an = wrap.querySelector('.pdf-anno');
+    const flat = document.createElement('canvas'); flat.width = base.width; flat.height = base.height;
+    const c = flat.getContext('2d'); c.drawImage(base, 0, 0); c.drawImage(an, 0, 0);
+    wrap.querySelectorAll('.pdf-note').forEach(n => {
+      const x = parseFloat(n.style.left) || 0, y = parseFloat(n.style.top) || 0;
+      const txt = (n.textContent || '').replace('×', '').trim(); if (!txt) return;
+      c.font = '600 15px Inter, sans-serif'; c.textBaseline = 'top';
+      const w = Math.min(240, Math.max(60, c.measureText(txt).width + 12));
+      c.fillStyle = 'rgba(255,249,196,.92)'; c.fillRect(x, y, w, 22);
+      c.fillStyle = n.dataset.color || '#c0392b'; c.fillText(txt, x + 6, y + 4);
+    });
+    html += `<div class="pdfx-page"><img src="${flat.toDataURL('image/png')}"></div>`;
+  });
+  $('#pdfxPrint').innerHTML = html;
+  const st = document.createElement('style'); st.id = 'pdfxStyle'; st.textContent = '@page{margin:8mm}';
+  document.head.appendChild(st);
+  document.body.classList.add('printing-pdfanno');
+  let done = false; const cleanup = () => { if (done) return; done = true; document.body.classList.remove('printing-pdfanno'); st.remove(); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(() => window.print(), 100); setTimeout(cleanup, 60000);
 }
 
 /* ============================================================

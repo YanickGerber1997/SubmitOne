@@ -657,10 +657,36 @@ body[data-theme="dark"] .toast{background:#2a3140}
 .pdf-targets .pt-ic{font-size:15px}
 .pdf-status{margin-top:12px;font-size:11.5px;color:var(--ink-faint);line-height:1.4}
 
+/* ---------- PDF-Editor (Annotieren) ---------- */
+.pdf-sec-wide{grid-column:1 / -1}
+.pdf-viewer{position:fixed;inset:0;z-index:170;background:#3a4150;display:flex;flex-direction:column}
+.pdf-viewer[hidden]{display:none}
+.pdf-toolbar{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.pdf-vtitle{font-weight:600;font-size:13px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pdf-tools{display:inline-flex;gap:3px;padding:0 6px;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.pdf-tools button{width:32px;height:30px;border:1px solid var(--line);border-radius:7px;background:var(--surface-2);font-size:15px;cursor:pointer}
+.pdf-tools button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.pdf-col{position:relative;width:30px;height:30px;border:1px solid var(--line);border-radius:7px;overflow:hidden;cursor:pointer;display:inline-block}
+.pdf-col #pdfColorDot{position:absolute;inset:0;background:#e8412e}
+.pdf-col input[type=color]{position:absolute;inset:-4px;opacity:0;cursor:pointer}
+.pdf-pages{flex:1;overflow:auto;padding:24px;display:flex;flex-direction:column;align-items:center;gap:20px}
+.pdf-pagewrap{position:relative;background:#fff;box-shadow:0 10px 40px rgba(0,0,0,.4);flex:0 0 auto}
+.pdf-pagewrap .pdf-base{position:absolute;inset:0;width:100%;height:100%}
+.pdf-pagewrap .pdf-anno{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+.pdf-note{position:absolute;min-width:60px;max-width:240px;background:rgba(255,249,196,.95);border:1px solid #e8412e;border-left-width:3px;border-radius:4px;padding:4px 16px 4px 7px;font:500 14px/1.35 var(--font-ui);color:#333;outline:none;cursor:move;z-index:5}
+.pdf-note-del{position:absolute;top:1px;right:1px;width:15px;height:15px;border:none;background:none;color:#b33;font-size:13px;line-height:1;cursor:pointer}
+#pdfxPrint{display:none}
+
 /* ---------- Druck ---------- */
 @media print{
   body{background:#fff}
-  .side,.inspector,.navpane,.topbar,.ribtabs,.formatbar,.calcbar,.slidenotes,.pagetabs,.findbar,.ruler-wrap,.calc-colruler,.calc-rowruler,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.page-format,.preview-overlay,.present-overlay,.pdf-overlay,#toast-root{display:none !important}
+  .side,.inspector,.navpane,.topbar,.ribtabs,.formatbar,.calcbar,.slidenotes,.pagetabs,.findbar,.ruler-wrap,.calc-colruler,.calc-rowruler,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.page-format,.preview-overlay,.present-overlay,.pdf-overlay,.pdf-viewer,#toast-root{display:none !important}
+  /* PDF-Annotation als PDF speichern: nur die geflachten Seiten drucken */
+  body.printing-pdfanno .app{display:none !important}
+  body.printing-pdfanno #pdfxPrint{display:block}
+  body.printing-pdfanno #pdfxPrint .pdfx-page{break-after:page;page-break-after:always;text-align:center}
+  body.printing-pdfanno #pdfxPrint .pdfx-page:last-child{break-after:auto;page-break-after:auto}
+  body.printing-pdfanno #pdfxPrint img{max-width:100%;max-height:99vh}
   .editor .pagebreak{border:none !important;color:transparent !important;margin:0;padding:0;height:0;break-before:page;page-break-before:always}
   .editor .pgbreak-gap{display:none !important}
   .editor.show-marks p::after,.editor.show-marks h1::after,.editor.show-marks h2::after,.editor.show-marks h3::after,.editor.show-marks li::after,.editor.show-marks blockquote::after{content:none}

@@ -389,6 +389,18 @@ body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .editor .toc .toc-l3{padding-left:32px;font-size:13px;color:var(--ink-soft)}
 .editor .toc-empty{color:var(--ink-faint);font-size:13px}
 
+/* ---------- Seiten-Reiter ---------- */
+.pagetabs{display:flex;align-items:center;gap:5px;padding:6px 14px;background:var(--surface);border-bottom:1px solid var(--line);overflow-x:auto}
+.ptab{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);color:var(--ink-soft);font-size:12.5px;font-weight:500;white-space:nowrap}
+.ptab:hover{background:var(--line-soft);color:var(--ink)}
+.ptab.active{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.ptab .pt-ico{font-size:13px}
+.ptab .pt-del{margin-left:3px;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;color:var(--ink-faint);font-size:13px}
+.ptab .pt-del:hover{background:rgba(214,69,61,.15);color:#d6453d}
+.ptadd{display:inline-flex;align-items:center;gap:4px;padding:6px 11px;border:1px dashed var(--line);border-radius:8px;background:none;color:var(--ink-soft);font-size:12.5px;font-weight:500;white-space:nowrap}
+.ptadd:hover{background:var(--line-soft);color:var(--ink);border-style:solid}
+.app.calc-mode .pagetabs{display:flex}
+
 /* ---------- Modus-Umschalter (oben links) ---------- */
 .mode-switch{position:relative}
 .mode-pill{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);font-family:var(--font-brand);font-weight:600;font-size:13.5px}
@@ -478,7 +490,7 @@ body[data-theme="dark"] .toast{background:#2a3140}
 /* ---------- Druck ---------- */
 @media print{
   body{background:#fff}
-  .side,.inspector,.topbar,.formatbar,.findbar,.ruler-wrap,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.preview-overlay,#toast-root{display:none !important}
+  .side,.inspector,.topbar,.formatbar,.pagetabs,.findbar,.ruler-wrap,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.preview-overlay,#toast-root{display:none !important}
   .app{display:block}
   .canvas{padding:0;overflow:visible;display:block}
   .page{box-shadow:none;width:auto;min-height:auto;border-radius:0;padding:0 16mm;zoom:1 !important}

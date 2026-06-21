@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v7';
+const WRITE_VERSION = 'v8';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -98,9 +98,9 @@ function warnQuota() {
 function newDocObject(partial = {}) {
   const t = nowIso();
   return Object.assign({
-    id: uid(), titel: 'Unbenanntes Dokument', html: '', kopf: '', fuss: '',
-    tabelle: { cols: 8, rows: 20, cells: {} },
-    einstellungen: { schriftart: "'Inter', sans-serif", schriftgroesse: 16, zeilenabstand: 1.7, ausrichtung: 'hoch', modus: 'write', margins: { top: 18, right: 22, bottom: 18, left: 22 }, kopfH: 14, fussH: 14, tabs: [] },
+    id: uid(), titel: 'Unbenanntes Dokument', kopf: '', fuss: '',
+    seiten: [{ id: uid(), typ: 'write', html: '' }], aktiv: 0,
+    einstellungen: { schriftart: "'Inter', sans-serif", schriftgroesse: 16, zeilenabstand: 1.7, ausrichtung: 'hoch', margins: { top: 18, right: 22, bottom: 18, left: 22 }, kopfH: 14, fussH: 14, tabs: [] },
     meta: { erstellt: t, geaendert: t, autor: 'Yanick Gerber', version: 1 },
     folder: 'dokumente', fav: false, trashed: false
   }, partial);
@@ -109,24 +109,45 @@ function newDocObject(partial = {}) {
 /* ============================================================
    Dokument laden / anlegen / wechseln
    ============================================================ */
+// Alte .gdoc (1 Modus pro Dokument) → neues Seiten-Modell (verlustfrei)
+function migrateDoc(d) {
+  if (!Array.isArray(d.seiten) || !d.seiten.length) {
+    const typ = (d.einstellungen && d.einstellungen.modus === 'calc') ? 'calc' : 'write';
+    const p = { id: uid(), typ };
+    if (typ === 'calc') p.tabelle = d.tabelle || { cols: 8, rows: 20, cells: {} };
+    else p.html = d.html || '';
+    d.seiten = [p]; d.aktiv = 0;
+  }
+  if (typeof d.aktiv !== 'number' || d.aktiv < 0 || d.aktiv >= d.seiten.length) d.aktiv = 0;
+  d.seiten.forEach(p => {
+    if (!p.id) p.id = uid();
+    if (p.typ === 'calc') { if (!p.tabelle || !p.tabelle.cells) p.tabelle = { cols: 8, rows: 20, cells: {} }; }
+    else { p.typ = (p.typ === 'slides') ? 'slides' : 'write'; if (p.html == null) p.html = ''; }
+  });
+  if (d.einstellungen) delete d.einstellungen.modus;
+  delete d.html; delete d.tabelle;
+  return d;
+}
+function activePage() { return doc.seiten[doc.aktiv]; }
+function curTab() { const p = activePage(); if (!p.tabelle || !p.tabelle.cells) p.tabelle = { cols: 8, rows: 20, cells: {} }; return p.tabelle; }
+
 function openDoc(id) {
   const d = lib.docs[id]; if (!d) return;
   if (doc && doc.id !== id && dirty) { clearTimeout(saveTimer); autosave(); }  // alten Stand sichern, bevor gewechselt wird
   clearTimeout(saveTimer);
-  doc = d; fileHandle = null;
-  editor.innerHTML = sanitizeHtml(d.html || '');   // auch aus localStorage immer bereinigen (#1)
+  doc = migrateDoc(d); fileHandle = null;
   $('#zoneH').innerHTML = sanitizeHtml(d.kopf || '');
   $('#zoneF').innerHTML = sanitizeHtml(d.fuss || '');
   titleEl.value = d.titel || 'Unbenanntes Dokument';
   applySettings();
-  ensureTabelle();
-  setMode(d.einstellungen.modus || 'write', true);
+  renderPageNav();
+  renderActivePage();
   lib.currentId = id; persistLib();
-  setDirty(false); refreshAll(); renderList();
-  editor.focus();
+  setDirty(false); renderList();
 }
 function createDoc(partial) {
   const d = newDocObject(partial);
+  if (partial && partial.html != null) { d.seiten = [{ id: uid(), typ: 'write', html: partial.html }]; d.aktiv = 0; delete d.html; }
   lib.docs[d.id] = d; lib.order.unshift(d.id); persistLib();
   openDoc(d.id);
   return d;
@@ -156,9 +177,13 @@ function setDirty(v) {
   saveState.classList.toggle('dirty', v);
   $('.lbl', saveState).textContent = v ? 'Nicht gespeichert' : 'Gespeichert';
 }
+function capturePage() {
+  const p = activePage(); if (!p) return;
+  if (p.typ === 'write') p.html = editor.innerHTML;   // calc-Daten werden live in p.tabelle mutiert
+}
 function captureDoc() {
   if (!doc) return;
-  doc.html = editor.innerHTML;
+  capturePage();
   doc.kopf = $('#zoneH').innerHTML;
   doc.fuss = $('#zoneF').innerHTML;
   doc.titel = (titleEl.value || 'Unbenanntes Dokument').trim() || 'Unbenanntes Dokument';
@@ -184,7 +209,7 @@ function buildGdoc() {
     format: 'gdoc', formatVersion: FORMAT_VERSION, typ: 'dokument',
     app: 'Submit Gdoc ' + WRITE_VERSION, exportiert: nowIso(),
     meta: { ...doc.meta, titel: doc.titel },
-    inhalt: { html: doc.html, kopf: doc.kopf || '', fuss: doc.fuss || '', tabelle: doc.tabelle || { cols: 8, rows: 20, cells: {} } },
+    inhalt: { kopf: doc.kopf || '', fuss: doc.fuss || '', seiten: doc.seiten },
     einstellungen: { ...doc.einstellungen }
   };
 }
@@ -245,15 +270,24 @@ function ingestGdoc(text, handle) {
     toast('Datei aus neuerer Version — wird nach bestem Wissen geöffnet.');
   const d = newDocObject({
     titel: (data.meta && data.meta.titel) || 'Importiertes Dokument',
-    html: sanitizeHtml(data.inhalt.html || ''),
     kopf: sanitizeHtml(data.inhalt.kopf || ''),
     fuss: sanitizeHtml(data.inhalt.fuss || ''),
-    tabelle: (data.inhalt.tabelle && data.inhalt.tabelle.cells && typeof data.inhalt.tabelle.cells === 'object')
-      ? { cols: +data.inhalt.tabelle.cols || 8, rows: +data.inhalt.tabelle.rows || 20, cells: data.inhalt.tabelle.cells }
-      : { cols: 8, rows: 20, cells: {} },
     einstellungen: Object.assign(newDocObject().einstellungen, data.einstellungen || {}),
     meta: Object.assign(newDocObject().meta, data.meta || {})
   });
+  if (Array.isArray(data.inhalt.seiten)) {              // neues Seiten-Format
+    d.seiten = data.inhalt.seiten.map(p => (p && p.typ === 'calc')
+      ? { id: uid(), typ: 'calc', tabelle: (p.tabelle && p.tabelle.cells) ? { cols: +p.tabelle.cols || 8, rows: +p.tabelle.rows || 20, cells: p.tabelle.cells } : { cols: 8, rows: 20, cells: {} } }
+      : { id: uid(), typ: (p && p.typ === 'slides') ? 'slides' : 'write', html: sanitizeHtml((p && p.html) || '') });
+    if (!d.seiten.length) d.seiten = [{ id: uid(), typ: 'write', html: '' }];
+    d.aktiv = 0;
+  } else {                                              // altes Format → migrieren
+    delete d.seiten;
+    d.html = sanitizeHtml(data.inhalt.html || '');
+    if (data.inhalt.tabelle && data.inhalt.tabelle.cells) d.tabelle = data.inhalt.tabelle;
+    if (data.einstellungen) d.einstellungen.modus = data.einstellungen.modus;
+    migrateDoc(d);
+  }
   lib.docs[d.id] = d; lib.order.unshift(d.id);
   if (!persistLib()) warnQuota();
   openDoc(d.id); fileHandle = handle || null;
@@ -592,7 +626,16 @@ function wire() {
 
   // Modus-Umschalter (Write / Calc / Slides)
   $('#modePill').addEventListener('click', e => { e.stopPropagation(); $('#modeMenu').hidden = !$('#modeMenu').hidden; });
-  $('#modeMenu').addEventListener('click', e => { const m = e.target.closest('button')?.dataset.mode; if (m) { $('#modeMenu').hidden = true; setMode(m); } });
+  $('#modeMenu').addEventListener('click', e => { const m = e.target.closest('button')?.dataset.mode; if (m) { $('#modeMenu').hidden = true; setPageType(m); } });
+
+  // Seiten-Reiter (Navigator)
+  $('#pagetabs').addEventListener('click', e => {
+    const del = e.target.closest('[data-del]'); if (del) { e.stopPropagation(); deletePage(+del.dataset.del); return; }
+    if (e.target.closest('#ptAdd')) { e.stopPropagation(); $('#addMenu').hidden = !$('#addMenu').hidden; return; }
+    const a = e.target.closest('[data-add]'); if (a) { $('#addMenu').hidden = true; addPage(a.dataset.add); return; }
+    const tab = e.target.closest('.ptab'); if (tab) switchPage(+tab.dataset.i);
+  });
+  document.addEventListener('click', () => { const m = $('#addMenu'); if (m) m.hidden = true; });
   document.addEventListener('click', () => $('#modeMenu').hidden = true);
 
   // Submit Calc – Raster
@@ -1148,21 +1191,56 @@ function printPreview() {
    Modus-Umschalter + Submit Calc (Raster & Formeln)
    ============================================================ */
 const MODE_META = { write: ['✍', 'Submit Write'], calc: ['▦', 'Submit Calc'], slides: ['▭', 'Submit Slides'] };
-function setMode(m, silent) {
+function pageMode(p) { return p.typ === 'calc' ? 'calc' : (p.typ === 'slides' ? 'slides' : 'write'); }
+function renderActivePage() {
   if (!doc) return;
-  if (m === 'slides') { toast('Submit Slides folgt als Nächstes 🙂'); return; }
-  doc.einstellungen.modus = m;
+  const p = activePage(), m = pageMode(p);
   document.body.dataset.mode = m;
-  const meta = MODE_META[m] || MODE_META.write;
-  $('#modeIco').textContent = meta[0]; $('#modeName').textContent = meta[1];
+  const meta = MODE_META[m]; $('#modeIco').textContent = meta[0]; $('#modeName').textContent = meta[1];
   const calc = (m === 'calc');
   appEl.classList.toggle('calc-mode', calc);
-  if (calc) { ensureTabelle(); renderGrid(); selectCell(selC, selR); }
-  else applyZoom();
-  if (!silent) scheduleSave();
+  if (calc) { selC = 0; selR = 1; renderGrid(); selectCell(0, 1); }
+  else { editor.innerHTML = sanitizeHtml(p.html || ''); applyZoom(); refreshAll(); }
 }
-
-function ensureTabelle() { if (!doc.tabelle || typeof doc.tabelle !== 'object') doc.tabelle = { cols: 8, rows: 20, cells: {} }; if (!doc.tabelle.cells) doc.tabelle.cells = {}; }
+// Typ der AKTIVEN Seite wechseln (Modus-Pille)
+function setPageType(typ) {
+  if (!doc) return;
+  if (typ === 'slides') { toast('Submit Slides folgt als Nächstes 🙂'); return; }
+  const p = activePage(); if (p.typ === typ) return;
+  capturePage();
+  p.typ = typ;
+  if (typ === 'calc' && (!p.tabelle || !p.tabelle.cells)) p.tabelle = { cols: 8, rows: 20, cells: {} };
+  if (typ === 'write' && p.html == null) p.html = '';
+  renderActivePage(); renderPageNav(); scheduleSave();
+}
+function switchPage(i) {
+  if (i === doc.aktiv || i < 0 || i >= doc.seiten.length) return;
+  capturePage(); doc.aktiv = i; renderActivePage(); renderPageNav(); scheduleSave();
+}
+function addPage(typ) {
+  if (typ === 'slides') { toast('Submit Slides folgt als Nächstes 🙂'); return; }
+  capturePage();
+  const p = { id: uid(), typ: typ === 'calc' ? 'calc' : 'write' };
+  if (p.typ === 'calc') p.tabelle = { cols: 8, rows: 20, cells: {} }; else p.html = '';
+  doc.seiten.push(p); doc.aktiv = doc.seiten.length - 1;
+  renderActivePage(); renderPageNav(); scheduleSave();
+}
+function deletePage(i) {
+  if (doc.seiten.length <= 1) { toast('Mindestens eine Seite muss bleiben.'); return; }
+  doc.seiten.splice(i, 1);
+  if (doc.aktiv >= doc.seiten.length) doc.aktiv = doc.seiten.length - 1;
+  else if (i < doc.aktiv) doc.aktiv--;
+  renderActivePage(); renderPageNav(); scheduleSave();
+}
+function renderPageNav() {
+  const bar = $('#pagetabs'); if (!bar || !doc) return;
+  let h = '';
+  doc.seiten.forEach((p, i) => {
+    h += `<button class="ptab${i === doc.aktiv ? ' active' : ''}" data-i="${i}"><span class="pt-ico">${MODE_META[pageMode(p)][0]}</span>Seite ${i + 1}${doc.seiten.length > 1 ? `<span class="pt-del" data-del="${i}" title="Seite löschen">×</span>` : ''}</button>`;
+  });
+  h += `<div class="menu-wrap"><button class="ptadd" id="ptAdd" title="Seite hinzufügen">＋ Seite</button><div class="menu" id="addMenu" hidden><button data-add="write"><span class="mi">✍</span> Write-Seite</button><button data-add="calc"><span class="mi">▦</span> Calc-Seite</button><button data-add="slides"><span class="mi">▭</span> Slides-Seite</button></div></div>`;
+  bar.innerHTML = h;
+}
 function colToIdx(s) { let n = 0; for (const ch of s) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; }
 function idxToCol(i) { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
 let selC = 0, selR = 1;
@@ -1172,7 +1250,7 @@ function cellKey(c, r) { return idxToCol(c) + r; }
 function refValue(ref, seen) {
   if (seen.has(ref)) return '#ZIRKEL';
   const ns = new Set(seen); ns.add(ref);
-  return evalRaw(doc.tabelle.cells[ref] || '', ns);
+  return evalRaw(curTab().cells[ref] || '', ns);
 }
 function expandArgs(args, seen) {
   const out = [];
@@ -1213,7 +1291,7 @@ function evalRaw(raw, seen) {
 
 /* ---- Raster + Auswahl ---- */
 function renderGrid() {
-  ensureTabelle(); const t = doc.tabelle, g = $('#grid');
+  const t = curTab(), g = $('#grid');
   let h = '<thead><tr><th class="corner"></th>';
   for (let c = 0; c < t.cols; c++) h += `<th>${idxToCol(c)}</th>`;
   h += '</tr></thead><tbody>';
@@ -1232,22 +1310,22 @@ function renderGrid() {
 function highlightSel() {
   $$('#grid td.sel').forEach(td => td.classList.remove('sel'));
   const td = $(`#grid td[data-c="${selC}"][data-r="${selR}"]`);
-  if (td) { td.classList.add('sel'); $('#cellRef').textContent = cellKey(selC, selR); $('#formulaInput').value = doc.tabelle.cells[cellKey(selC, selR)] || ''; }
+  if (td) { td.classList.add('sel'); $('#cellRef').textContent = cellKey(selC, selR); $('#formulaInput').value = curTab().cells[cellKey(selC, selR)] || ''; }
 }
 function selectCell(c, r) {
-  ensureTabelle();
-  selC = Math.max(0, Math.min(doc.tabelle.cols - 1, c));
-  selR = Math.max(1, Math.min(doc.tabelle.rows, r));
+  const t = curTab();
+  selC = Math.max(0, Math.min(t.cols - 1, c));
+  selR = Math.max(1, Math.min(t.rows, r));
   highlightSel();
   const td = $(`#grid td[data-c="${selC}"][data-r="${selR}"]`); if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 function commitCell(val) {
-  const k = cellKey(selC, selR);
-  if (val === '' || val == null) delete doc.tabelle.cells[k]; else doc.tabelle.cells[k] = val;
+  const k = cellKey(selC, selR), t = curTab();
+  if (val === '' || val == null) delete t.cells[k]; else t.cells[k] = val;
   renderGrid(); scheduleSave();
 }
-function calcAddRow() { ensureTabelle(); doc.tabelle.rows++; renderGrid(); scheduleSave(); }
-function calcAddCol() { ensureTabelle(); doc.tabelle.cols++; renderGrid(); scheduleSave(); }
+function calcAddRow() { curTab().rows++; renderGrid(); scheduleSave(); }
+function calcAddCol() { curTab().cols++; renderGrid(); scheduleSave(); }
 
 /* ---- Vertikales Lineal: Kopf-/Fuss-Höhe ziehen ---- */
 function drawVRuler() {

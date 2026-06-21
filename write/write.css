@@ -566,7 +566,7 @@ body[data-theme="dark"] .toast{background:#2a3140}
 /* ---------- Druck ---------- */
 @media print{
   body{background:#fff}
-  .side,.inspector,.topbar,.formatbar,.pagetabs,.findbar,.ruler-wrap,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.page-format,.preview-overlay,#toast-root{display:none !important}
+  .side,.inspector,.topbar,.formatbar,.pagetabs,.findbar,.ruler-wrap,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.page-format,.preview-overlay,.present-overlay,#toast-root{display:none !important}
   .app{display:block}
   .canvas{padding:0;overflow:visible;display:block}
   .page{box-shadow:none;width:auto !important;min-height:auto !important;border-radius:0;padding:0 16mm;zoom:1 !important}

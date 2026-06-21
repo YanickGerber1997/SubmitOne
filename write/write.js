@@ -1421,9 +1421,11 @@ function printDeck() {
   st.id = 'deckPageStyle'; st.textContent = '@page{size:A4 landscape;margin:0}';
   document.head.appendChild(st);
   document.body.classList.add('printing-deck');
-  const cleanup = () => { document.body.classList.remove('printing-deck'); st.remove(); window.removeEventListener('afterprint', cleanup); };
+  let done = false;
+  const cleanup = () => { if (done) return; done = true; document.body.classList.remove('printing-deck'); st.remove(); window.removeEventListener('afterprint', cleanup); };
   window.addEventListener('afterprint', cleanup);
   setTimeout(() => window.print(), 60);
+  setTimeout(cleanup, 60000);   // Sicherheitsnetz, falls afterprint nicht feuert
 }
 
 // Folien-Druckvorschau (alle Folien als 16:9-Blätter)

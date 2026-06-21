@@ -67,73 +67,100 @@
               <button data-export="docx">Als DOCX (Beta)</button>
             </div>
           </div>
+          <button class="icon-btn" id="btnPreview" title="Druckvorschau"><svg viewBox="0 0 24 24" class="i"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M7 17h10v4H7z"/></svg></button>
           <button class="icon-btn" id="btnInspector" title="Dokument-Infos (Gliederung, Zeilenabstand, Statistik)"><svg viewBox="0 0 24 24" class="i"><path d="M4 5h16v14H4z"/><path d="M15 5v14"/></svg></button>
           <button class="icon-btn" id="btnFocus" title="Fokusmodus (Strg+Umschalt+F)"><svg viewBox="0 0 24 24" class="i"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
         </div>
       </header>
 
-      <!-- FORMAT-LEISTE -->
-      <div class="formatbar" id="formatbar">
-        <div class="fb-group">
-          <select class="fb-sel" id="selBlock" title="Absatz-Stil – Titel, Überschriften oder Fliesstext">
-            <option value="p">Fliesstext</option>
-            <option value="h1">Titel (H1)</option>
-            <option value="h2">Überschrift (H2)</option>
-            <option value="h3">Unterüberschrift (H3)</option>
-            <option value="blockquote">Zitat</option>
-            <option value="pre">Codeblock</option>
-          </select>
-          <select class="fb-sel" id="selFont" title="Schriftart">
-            <option value="'Inter', sans-serif">Inter</option>
-            <option value="'Lora', serif">Lora</option>
-            <option value="Georgia, serif">Georgia</option>
-            <option value="'Times New Roman', serif">Times</option>
-            <option value="'Courier New', monospace">Courier</option>
-          </select>
-          <select class="fb-sel narrow" id="selSize" title="Schriftgrösse">
-            <option>12</option><option>14</option><option selected>16</option><option>18</option><option>20</option><option>24</option><option>28</option><option>32</option>
-          </select>
+      <!-- FORMAT-LEISTE (Ribbon, kompakt – Word-Stil) -->
+      <div class="formatbar ribbon" id="formatbar">
+
+        <div class="rib-group">
+          <div class="rib-body">
+            <select class="fb-sel wide" id="selBlock" title="Absatz-Stil – Titel, Überschriften oder Fliesstext">
+              <option value="p">Fliesstext</option>
+              <option value="h1">Titel (H1)</option>
+              <option value="h2">Überschrift (H2)</option>
+              <option value="h3">Unterüberschrift (H3)</option>
+              <option value="blockquote">Zitat</option>
+              <option value="pre">Codeblock</option>
+            </select>
+          </div>
+          <div class="rib-cap">Stil</div>
         </div>
-        <span class="fb-div"></span>
-        <div class="fb-group" aria-label="Zeichenformat">
-          <button class="fb-btn" data-cmd="bold" title="Fett (Strg+B)"><b>B</b></button>
-          <button class="fb-btn" data-cmd="italic" title="Kursiv (Strg+I)"><i>I</i></button>
-          <button class="fb-btn" data-cmd="underline" title="Unterstrichen (Strg+U)"><u>U</u></button>
-          <button class="fb-btn" data-cmd="strikeThrough" title="Durchgestrichen"><s>S</s></button>
-          <label class="fb-btn color" title="Textfarbe"><span class="ca">A</span><input type="color" id="inkColor" value="#1d2330" /></label>
-          <label class="fb-btn color hl" title="Textmarker (Hintergrundfarbe)"><span class="ca">A</span><input type="color" id="hlColor" value="#ffe066" /></label>
-        </div>
-        <span class="fb-div"></span>
-        <div class="fb-group" aria-label="Listen">
-          <button class="fb-btn" data-cmd="insertUnorderedList" title="Aufzählung"><svg viewBox="0 0 24 24" class="i"><circle cx="5" cy="7" r="1.4"/><circle cx="5" cy="12" r="1.4"/><circle cx="5" cy="17" r="1.4"/><path d="M9 7h11M9 12h11M9 17h11"/></svg></button>
-          <button class="fb-btn" data-cmd="insertOrderedList" title="Nummerierung"><svg viewBox="0 0 24 24" class="i"><path d="M9 7h11M9 12h11M9 17h11M4 6v3M4 9h1.5M3.5 13h2l-2 3h2"/></svg></button>
-        </div>
-        <span class="fb-div"></span>
-        <div class="fb-group" aria-label="Ausrichtung">
-          <button class="fb-btn" data-cmd="justifyLeft" title="Linksbündig"><svg viewBox="0 0 24 24" class="i"><path d="M4 6h16M4 10h10M4 14h16M4 18h10"/></svg></button>
-          <button class="fb-btn" data-cmd="justifyCenter" title="Zentriert"><svg viewBox="0 0 24 24" class="i"><path d="M4 6h16M7 10h10M4 14h16M7 18h10"/></svg></button>
-          <button class="fb-btn" data-cmd="justifyRight" title="Rechtsbündig"><svg viewBox="0 0 24 24" class="i"><path d="M4 6h16M10 10h10M4 14h16M10 18h10"/></svg></button>
-          <button class="fb-btn" data-cmd="justifyFull" title="Blocksatz"><svg viewBox="0 0 24 24" class="i"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg></button>
-        </div>
-        <span class="fb-div"></span>
-        <div class="fb-group" aria-label="Einfügen">
-          <div class="menu-wrap">
-            <button class="fb-text-btn" id="btnInsert" title="Element einfügen – Bild, Tabelle, Link, Inhaltsverzeichnis, Kopf-/Fusszeile">
-              <svg viewBox="0 0 24 24" class="i"><path d="M12 5v14M5 12h14"/></svg><span>Einfügen</span><span class="caret">▾</span>
-            </button>
-            <div class="menu" id="insertMenu" hidden>
-              <button data-ins="link"><span class="mi">🔗</span> Link …</button>
-              <button data-ins="image"><span class="mi">🖼️</span> Bild …</button>
-              <button data-ins="table"><span class="mi">▦</span> Tabelle 3×3</button>
-              <button data-ins="toc"><span class="mi">🧾</span> Inhaltsverzeichnis</button>
-              <button data-ins="hr"><span class="mi">—</span> Trennlinie</button>
-              <span class="menu-sep"></span>
-              <button data-ins="header"><span class="mi">⊤</span> Kopfzeile bearbeiten</button>
-              <button data-ins="footer"><span class="mi">⊥</span> Fusszeile bearbeiten</button>
+
+        <div class="rib-group">
+          <div class="rib-body col">
+            <div class="rib-row">
+              <select class="fb-sel" id="selFont" title="Schriftart">
+                <option value="'Inter', sans-serif">Inter</option>
+                <option value="'Lora', serif">Lora</option>
+                <option value="Georgia, serif">Georgia</option>
+                <option value="'Times New Roman', serif">Times</option>
+                <option value="'Courier New', monospace">Courier</option>
+              </select>
+              <select class="fb-sel narrow" id="selSize" title="Schriftgrösse">
+                <option>10</option><option>12</option><option>14</option><option selected>16</option><option>18</option><option>20</option><option>24</option><option>28</option><option>32</option><option>40</option><option>48</option>
+              </select>
+              <button class="fb-btn sm" id="fontGrow" title="Schrift vergrössern">A▴</button>
+              <button class="fb-btn sm" id="fontShrink" title="Schrift verkleinern">A▾</button>
+            </div>
+            <div class="rib-row">
+              <button class="fb-btn sm" data-cmd="bold" title="Fett (Strg+B)"><b>B</b></button>
+              <button class="fb-btn sm" data-cmd="italic" title="Kursiv (Strg+I)"><i>I</i></button>
+              <button class="fb-btn sm" data-cmd="underline" title="Unterstrichen (Strg+U)"><u>U</u></button>
+              <button class="fb-btn sm" data-cmd="strikeThrough" title="Durchgestrichen"><s>S</s></button>
+              <button class="fb-btn sm" data-cmd="subscript" title="Tiefgestellt">x<sub>2</sub></button>
+              <button class="fb-btn sm" data-cmd="superscript" title="Hochgestellt">x<sup>2</sup></button>
+              <label class="fb-btn sm color" title="Textfarbe"><span class="ca">A</span><input type="color" id="inkColor" value="#1d2330" /></label>
+              <label class="fb-btn sm color hl" title="Textmarker (Hintergrundfarbe)"><span class="ca">A</span><input type="color" id="hlColor" value="#ffe066" /></label>
+              <button class="fb-btn sm" id="btnClear" title="Formatierung der Auswahl entfernen"><svg viewBox="0 0 24 24" class="i"><path d="M6 5h12M9 5l-2 14M13 5l1 7M5 19h7M16 13l5 5M21 13l-5 5"/></svg></button>
             </div>
           </div>
-          <button class="fb-btn" id="btnClear" title="Formatierung der Auswahl entfernen"><svg viewBox="0 0 24 24" class="i"><path d="M6 5h12M9 5l-2 14M13 5l1 7M5 19h7M16 13l5 5M21 13l-5 5"/></svg></button>
+          <div class="rib-cap">Schrift</div>
         </div>
+
+        <div class="rib-group">
+          <div class="rib-body col">
+            <div class="rib-row">
+              <button class="fb-btn sm" data-cmd="insertUnorderedList" title="Aufzählung"><svg viewBox="0 0 24 24" class="i"><circle cx="5" cy="7" r="1.4"/><circle cx="5" cy="12" r="1.4"/><circle cx="5" cy="17" r="1.4"/><path d="M9 7h11M9 12h11M9 17h11"/></svg></button>
+              <button class="fb-btn sm" data-cmd="insertOrderedList" title="Nummerierung"><svg viewBox="0 0 24 24" class="i"><path d="M9 7h11M9 12h11M9 17h11M4 6v3M4 9h1.5M3.5 13h2l-2 3h2"/></svg></button>
+              <button class="fb-btn sm" data-cmd="outdent" title="Einzug verkleinern"><svg viewBox="0 0 24 24" class="i"><path d="M20 6H9M20 12h-7M20 18H9M7 9l-3 3 3 3"/></svg></button>
+              <button class="fb-btn sm" data-cmd="indent" title="Einzug vergrössern"><svg viewBox="0 0 24 24" class="i"><path d="M4 6h11M4 12h7M4 18h11M17 9l3 3-3 3"/></svg></button>
+              <select class="fb-sel narrow" id="selLine" title="Zeilenabstand">
+                <option value="1.0">1.0</option><option value="1.15">1.15</option><option value="1.4">1.4</option><option value="1.7" selected>1.7</option><option value="2.1">2.1</option>
+              </select>
+            </div>
+            <div class="rib-row">
+              <button class="fb-btn sm" data-cmd="justifyLeft" title="Linksbündig"><svg viewBox="0 0 24 24" class="i"><path d="M4 6h16M4 10h10M4 14h16M4 18h10"/></svg></button>
+              <button class="fb-btn sm" data-cmd="justifyCenter" title="Zentriert"><svg viewBox="0 0 24 24" class="i"><path d="M4 6h16M7 10h10M4 14h16M7 18h10"/></svg></button>
+              <button class="fb-btn sm" data-cmd="justifyRight" title="Rechtsbündig"><svg viewBox="0 0 24 24" class="i"><path d="M4 6h16M10 10h10M4 14h16M10 18h10"/></svg></button>
+              <button class="fb-btn sm" data-cmd="justifyFull" title="Blocksatz"><svg viewBox="0 0 24 24" class="i"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg></button>
+            </div>
+          </div>
+          <div class="rib-cap">Absatz</div>
+        </div>
+
+        <div class="rib-group">
+          <div class="rib-body">
+            <button class="rib-btn" data-ins="image" title="Bild einfügen"><svg viewBox="0 0 24 24" class="i"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M21 16l-5-5L5 20"/></svg><span>Bild</span></button>
+            <button class="rib-btn" data-ins="table" title="Tabelle einfügen"><svg viewBox="0 0 24 24" class="i"><rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 10h16M4 15h16M10 5v14M16 5v14"/></svg><span>Tabelle</span></button>
+            <button class="rib-btn" data-ins="link" title="Link einfügen"><svg viewBox="0 0 24 24" class="i"><path d="M10 13a4 4 0 0 0 6 .5l2-2a4 4 0 0 0-6-6l-1 1M14 11a4 4 0 0 0-6-.5l-2 2a4 4 0 0 0 6 6l1-1"/></svg><span>Link</span></button>
+            <button class="rib-btn" data-ins="toc" title="Inhaltsverzeichnis"><svg viewBox="0 0 24 24" class="i"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg><span>Inhalt</span></button>
+            <div class="menu-wrap">
+              <button class="rib-btn" id="btnInsertMore" title="Mehr einfügen"><svg viewBox="0 0 24 24" class="i"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>Mehr</span></button>
+              <div class="menu" id="insertMenu" hidden>
+                <button data-ins="hr"><span class="mi">—</span> Trennlinie</button>
+                <span class="menu-sep"></span>
+                <button data-ins="header"><span class="mi">⊤</span> Kopfzeile bearbeiten</button>
+                <button data-ins="footer"><span class="mi">⊥</span> Fusszeile bearbeiten</button>
+              </div>
+            </div>
+          </div>
+          <div class="rib-cap">Einfügen</div>
+        </div>
+
       </div>
 
       <!-- SUCHLEISTE -->
@@ -229,6 +256,18 @@
 
   <!-- RECHTSKLICK-MENÜ -->
   <div class="ctxmenu" id="ctxmenu" hidden></div>
+
+  <!-- DRUCKVORSCHAU -->
+  <div class="preview-overlay" id="previewOverlay" hidden>
+    <div class="preview-bar">
+      <span class="pv-title">Druckvorschau</span>
+      <span id="pvInfo" class="pv-info"></span>
+      <span class="grow"></span>
+      <button class="ghost-btn" id="pvPrint"><svg viewBox="0 0 24 24" class="i"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M7 17h10v4H7z"/></svg><span>Drucken / PDF</span></button>
+      <button class="icon-btn" id="pvClose" title="Schliessen (Esc)">✕</button>
+    </div>
+    <div class="preview-scroll" id="previewScroll"></div>
+  </div>
 
   <input type="file" id="imgInput" accept="image/*" hidden />
   <div id="toast-root"></div>

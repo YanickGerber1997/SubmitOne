@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v4';
+const WRITE_VERSION = 'v5';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -136,6 +136,7 @@ function applySettings() {
   $('#selFont').value = s.schriftart;
   $('#selSize').value = String(s.schriftgroesse);
   $$('#segLine button').forEach(b => b.classList.toggle('on', +b.dataset.line === +s.zeilenabstand));
+  $('#selLine').value = String(s.zeilenabstand);
   const o = s.ausrichtung || 'hoch';
   page.classList.toggle('quer', o === 'quer');
   $('#btnPortrait').classList.toggle('on', o !== 'quer');
@@ -520,11 +521,21 @@ function wire() {
   $('#hlColor').addEventListener('input', e => highlight(e.target.value));
   $('#btnClear').addEventListener('click', () => { cmd('removeFormat'); setBlock('p'); });
 
-  // Einfügen-Menü
+  // Einfügen (Ribbon-Buttons + „Mehr"-Menü)
   const insMenu = $('#insertMenu');
-  $('#btnInsert').addEventListener('click', e => { e.stopPropagation(); insMenu.hidden = !insMenu.hidden; });
-  insMenu.addEventListener('click', e => { const k = e.target.closest('button')?.dataset.ins; if (k) { insMenu.hidden = true; doInsert(k); } });
+  $('#btnInsertMore').addEventListener('click', e => { e.stopPropagation(); insMenu.hidden = !insMenu.hidden; });
+  $$('[data-ins]').forEach(b => b.addEventListener('click', () => { insMenu.hidden = true; doInsert(b.dataset.ins); }));
   document.addEventListener('click', () => insMenu.hidden = true);
+
+  // Schrift-Stufen + Zeilenabstand
+  $('#fontGrow').addEventListener('click', () => adjustFontSize(1));
+  $('#fontShrink').addEventListener('click', () => adjustFontSize(-1));
+  $('#selLine').addEventListener('change', e => setLineHeight(+e.target.value));
+
+  // Druckvorschau
+  $('#btnPreview').addEventListener('click', printPreview);
+  $('#pvClose').addEventListener('click', () => $('#previewOverlay').hidden = true);
+  $('#pvPrint').addEventListener('click', () => { $('#previewOverlay').hidden = true; setTimeout(() => window.print(), 60); });
 
   // Zoom & Ausrichtung
   $('#zoomIn').addEventListener('click', () => zoomStep(.1));
@@ -664,7 +675,8 @@ function wire() {
     else if (mod && (e.key === '-' || e.key === '_')) { e.preventDefault(); zoomStep(-.1); }
     else if (mod && e.key === '0') { e.preventDefault(); setZoom('auto'); }
     else if (e.key === 'Escape') {
-      if (!$('#ctxmenu').hidden) $('#ctxmenu').hidden = true;
+      if (!$('#previewOverlay').hidden) $('#previewOverlay').hidden = true;
+      else if (!$('#ctxmenu').hidden) $('#ctxmenu').hidden = true;
       else if (!$('#findbar').hidden) { toggleFind(false); editor.focus(); }
       else if (appEl.classList.contains('focus')) toggleFocus();
     }
@@ -915,6 +927,52 @@ function ctxAction(a) {
   else if (a === 'tdel') tableAction('del');
   else if (a === 'img-del' && img) { img.remove(); afterEdit(); }
   else if (img && (a === 'img-s' || a === 'img-m' || a === 'img-l')) { img.style.width = a === 'img-s' ? '40%' : a === 'img-m' ? '70%' : '100%'; afterEdit(); }
+}
+
+/* ============================================================
+   Schriftstufen, Zeilenabstand, Druckvorschau
+   ============================================================ */
+function adjustFontSize(dir) {
+  const sizes = [10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48];
+  let cur = +($('#selSize').value) || 16;
+  let idx = sizes.indexOf(cur);
+  if (idx < 0) { idx = sizes.findIndex(s => s >= cur); if (idx < 0) idx = sizes.length - 1; }
+  idx = Math.max(0, Math.min(sizes.length - 1, idx + (dir > 0 ? 1 : -1)));
+  const px = sizes[idx]; $('#selSize').value = String(px);
+  if (window.getSelection().isCollapsed) { if (doc) { doc.einstellungen.schriftgroesse = px; editor.style.fontSize = px + 'px'; scheduleSave(); } }
+  else setFontSize(px);
+}
+function setLineHeight(v) {
+  if (!doc) return;
+  doc.einstellungen.zeilenabstand = v; editor.style.lineHeight = v;
+  $$('#segLine button').forEach(x => x.classList.toggle('on', +x.dataset.line === v));
+  $('#selLine').value = String(v); scheduleSave();
+}
+function printPreview() {
+  if (!doc) return;
+  captureDoc();
+  const quer = doc.einstellungen.ausrichtung === 'quer';
+  const ov = $('#previewOverlay'), scroll = $('#previewScroll');
+  scroll.innerHTML = ''; ov.hidden = false;          // erst sichtbar → dann messbar
+  const headHTML = $('#zoneH').innerHTML, footHTML = $('#zoneF').innerHTML;
+  const pageHpx = (quer ? 210 : 297) * MM;
+  const newPage = () => {
+    const p = document.createElement('div'); p.className = 'pv-page' + (quer ? ' quer' : '');
+    p.innerHTML = `<div class="pv-h">${headHTML}</div><div class="pv-c"></div><div class="pv-f"><span>${footHTML}</span><span class="pv-num"></span></div>`;
+    scroll.appendChild(p); return p;
+  };
+  let p = newPage(), c = p.querySelector('.pv-c'); const pages = [p];
+  const budget = () => pageHpx - p.querySelector('.pv-h').offsetHeight - p.querySelector('.pv-f').offsetHeight - 8;
+  [...editor.children].forEach(node => {
+    const clone = node.cloneNode(true); c.appendChild(clone);
+    if (c.scrollHeight > budget() && c.children.length > 1) {
+      c.removeChild(clone);
+      p = newPage(); pages.push(p); c = p.querySelector('.pv-c'); c.appendChild(clone);
+    }
+  });
+  pages.forEach((pg, i) => pg.querySelector('.pv-num').textContent = 'Seite ' + (i + 1) + ' / ' + pages.length);
+  $('#pvInfo').textContent = pages.length + (pages.length === 1 ? ' Seite' : ' Seiten') + ' · ' + (quer ? 'Querformat' : 'Hochformat');
+  scroll.scrollTop = 0;
 }
 
 /* ============================================================

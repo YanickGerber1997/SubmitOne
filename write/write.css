@@ -160,6 +160,23 @@ button{font-family:inherit;cursor:pointer}
   display:flex;align-items:center;gap:6px;padding:8px 16px;flex-wrap:wrap;
   background:var(--surface);border-bottom:1px solid var(--line);
 }
+/* Ribbon – kompakt, Word-Stil: Gruppen mit Beschriftung */
+.formatbar.ribbon{flex-wrap:nowrap;overflow-x:auto;align-items:stretch;gap:0;padding:5px 10px 1px}
+.rib-group{display:flex;flex-direction:column;justify-content:space-between;padding:0 9px;border-right:1px solid var(--line);flex:0 0 auto}
+.rib-group:last-child{border-right:none}
+.rib-body{display:flex;align-items:center;gap:3px;flex:1}
+.rib-body.col{flex-direction:column;align-items:flex-start;gap:3px;justify-content:center}
+.rib-row{display:flex;align-items:center;gap:2px}
+.rib-cap{text-align:center;font-size:9.5px;color:var(--ink-faint);padding:2px 0 1px;letter-spacing:.2px}
+.ribbon .fb-sel{height:26px;font-size:12px;padding:0 6px}
+.ribbon .fb-sel.wide{height:54px;min-width:150px;font-size:13px}
+.ribbon .fb-sel.narrow{width:54px}
+.fb-btn.sm{min-width:26px;height:24px;padding:0 5px;font-size:12.5px;border-radius:6px}
+.fb-btn.sm .i{width:15px;height:15px}
+.fb-btn.sm sub,.fb-btn.sm sup{font-size:8px}
+.rib-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:52px;height:54px;padding:4px 6px;border:1px solid transparent;border-radius:8px;background:none;color:var(--ink-soft);font-size:11px}
+.rib-btn:hover{background:var(--line-soft);color:var(--ink)}
+.rib-btn .i{width:20px;height:20px}
 .fb-group{display:flex;align-items:center;gap:3px}
 .fb-div{width:1px;height:22px;background:var(--line);margin:0 4px}
 .fb-sel{
@@ -341,6 +358,27 @@ body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .editor .toc .toc-l2{padding-left:16px;font-size:13.5px}
 .editor .toc .toc-l3{padding-left:32px;font-size:13px;color:var(--ink-soft)}
 .editor .toc-empty{color:var(--ink-faint);font-size:13px}
+
+/* ---------- Druckvorschau ---------- */
+.preview-overlay{position:fixed;inset:0;z-index:100;background:rgba(18,22,36,.6);display:flex;flex-direction:column}
+.preview-bar{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.pv-title{font-weight:600;font-size:14px}
+.pv-info{font-size:12px;color:var(--ink-faint)}
+.preview-scroll{flex:1;overflow:auto;padding:30px 20px 60px;display:flex;flex-direction:column;align-items:center;gap:22px}
+.pv-page{width:210mm;min-height:297mm;background:#fff;color:#1a1e27;box-shadow:0 12px 44px rgba(0,0,0,.35);padding:0 16mm;position:relative;display:flex;flex-direction:column;font-size:11pt;line-height:1.5}
+.pv-page.quer{width:297mm;min-height:210mm}
+.pv-h{padding:12mm 0 4mm;border-bottom:1px solid #eee;color:#555;min-height:16mm}
+.pv-c{flex:1;padding:6mm 0}
+.pv-c>*:first-child{margin-top:0}
+.pv-f{padding:4mm 0 12mm;border-top:1px solid #eee;color:#555;min-height:16mm;display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
+.pv-num{color:#999;font-size:10px;white-space:nowrap}
+.pv-page h1{font-size:22pt;margin:.3em 0}.pv-page h2{font-size:16pt;margin:.4em 0 .2em}.pv-page h3{font-size:13pt;margin:.4em 0 .2em}
+.pv-page p{margin:0 0 .6em}.pv-page ul,.pv-page ol{padding-left:1.4em;margin:0 0 .6em}
+.pv-page table{border-collapse:collapse;width:100%;margin:.5em 0}.pv-page td,.pv-page th{border:1px solid #ddd;padding:5px 8px}
+.pv-page img{max-width:100%}
+.pv-page blockquote{border-left:3px solid #2f6df6;padding-left:12px;color:#555;font-style:italic;margin:.6em 0}
+.pv-page .toc{border:1px solid #e3e3e3;border-radius:8px;padding:12px 16px;background:#fafafa}
+.pv-page .toc a{display:block;color:#1a1e27;text-decoration:none;padding:2px 0}
 
 /* ---------- Toast ---------- */
 #toast-root{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:90;display:flex;flex-direction:column;gap:8px;align-items:center}

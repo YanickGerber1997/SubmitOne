@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v3.1';
+const WRITE_VERSION = 'v4';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -98,8 +98,8 @@ function warnQuota() {
 function newDocObject(partial = {}) {
   const t = nowIso();
   return Object.assign({
-    id: uid(), titel: 'Unbenanntes Dokument', html: '',
-    einstellungen: { schriftart: "'Inter', sans-serif", schriftgroesse: 16, zeilenabstand: 1.7 },
+    id: uid(), titel: 'Unbenanntes Dokument', html: '', kopf: '', fuss: '',
+    einstellungen: { schriftart: "'Inter', sans-serif", schriftgroesse: 16, zeilenabstand: 1.7, ausrichtung: 'hoch' },
     meta: { erstellt: t, geaendert: t, autor: 'Yanick Gerber', version: 1 },
     folder: 'dokumente', fav: false, trashed: false
   }, partial);
@@ -114,6 +114,8 @@ function openDoc(id) {
   clearTimeout(saveTimer);
   doc = d; fileHandle = null;
   editor.innerHTML = sanitizeHtml(d.html || '');   // auch aus localStorage immer bereinigen (#1)
+  $('#zoneH').innerHTML = sanitizeHtml(d.kopf || '');
+  $('#zoneF').innerHTML = sanitizeHtml(d.fuss || '');
   titleEl.value = d.titel || 'Unbenanntes Dokument';
   applySettings();
   lib.currentId = id; persistLib();
@@ -134,6 +136,11 @@ function applySettings() {
   $('#selFont').value = s.schriftart;
   $('#selSize').value = String(s.schriftgroesse);
   $$('#segLine button').forEach(b => b.classList.toggle('on', +b.dataset.line === +s.zeilenabstand));
+  const o = s.ausrichtung || 'hoch';
+  page.classList.toggle('quer', o === 'quer');
+  $('#btnPortrait').classList.toggle('on', o !== 'quer');
+  $('#btnLandscape').classList.toggle('on', o === 'quer');
+  applyZoom();
 }
 
 /* ============================================================
@@ -147,6 +154,8 @@ function setDirty(v) {
 function captureDoc() {
   if (!doc) return;
   doc.html = editor.innerHTML;
+  doc.kopf = $('#zoneH').innerHTML;
+  doc.fuss = $('#zoneF').innerHTML;
   doc.titel = (titleEl.value || 'Unbenanntes Dokument').trim() || 'Unbenanntes Dokument';
   doc.meta.geaendert = nowIso();
 }
@@ -170,7 +179,7 @@ function buildGdoc() {
     format: 'gdoc', formatVersion: FORMAT_VERSION, typ: 'dokument',
     app: 'Submit Write ' + WRITE_VERSION, exportiert: nowIso(),
     meta: { ...doc.meta, titel: doc.titel },
-    inhalt: { html: doc.html },
+    inhalt: { html: doc.html, kopf: doc.kopf || '', fuss: doc.fuss || '' },
     einstellungen: { ...doc.einstellungen }
   };
 }
@@ -232,6 +241,8 @@ function ingestGdoc(text, handle) {
   const d = newDocObject({
     titel: (data.meta && data.meta.titel) || 'Importiertes Dokument',
     html: sanitizeHtml(data.inhalt.html || ''),
+    kopf: sanitizeHtml(data.inhalt.kopf || ''),
+    fuss: sanitizeHtml(data.inhalt.fuss || ''),
     einstellungen: Object.assign(newDocObject().einstellungen, data.einstellungen || {}),
     meta: Object.assign(newDocObject().meta, data.meta || {})
   });
@@ -300,21 +311,21 @@ function syncToolbar() {
     const bl = el && el.closest('h1,h2,h3,blockquote,pre,p');
     if (bl) block = bl.tagName.toLowerCase();
   }
-  if (['h1', 'h2', 'h3'].includes(block)) $('#selBlock').value = block;
+  if (['h1', 'h2', 'h3', 'blockquote', 'pre'].includes(block)) $('#selBlock').value = block;
   else $('#selBlock').value = 'p';
 }
 
 /* ============================================================
    Statistik / Gliederung / Seiten
    ============================================================ */
-function refreshAll() { updateStats(); updateOutline(); syncToolbar(); }
+function refreshAll() { refreshTOC(); updateStats(); updateOutline(); syncToolbar(); }
 
 function updateStats() {
   const text = (editor.innerText || '').replace(/ /g, ' ');
   const words = (text.match(/[^\s]+/g) || []).length;
   const chars = text.replace(/\s/g, '').length;
   const pars = $$('p,h1,h2,h3,li,blockquote', editor).filter(e => e.innerText.trim()).length || (text.trim() ? 1 : 0);
-  const pages = Math.max(1, Math.ceil((editor.scrollHeight || 1) / PAGE_INNER_PX));
+  const pages = updatePages();
   const read = Math.max(1, Math.round(words / 200));
   $('#stWords').textContent = words.toLocaleString('de-CH') + ' Wörter';
   $('#stChars').textContent = chars.toLocaleString('de-CH') + ' Zeichen';
@@ -505,12 +516,41 @@ function wire() {
   $('#selFont').addEventListener('change', e => { if (!doc) return; doc.einstellungen.schriftart = e.target.value; editor.style.fontFamily = e.target.value; scheduleSave(); });
   $('#selSize').addEventListener('change', e => { if (!doc) return; const px = +e.target.value; if (window.getSelection().isCollapsed) { doc.einstellungen.schriftgroesse = px; editor.style.fontSize = px + 'px'; scheduleSave(); } else setFontSize(px); });
   $('#inkColor').addEventListener('input', e => { document.execCommand('styleWithCSS', false, true); cmd('foreColor', e.target.value); });
-  $('#btnLink').addEventListener('click', insertLink);
-  $('#btnTable').addEventListener('click', insertTable);
-  $('#btnImage').addEventListener('click', () => $('#imgInput').click());
   $('#imgInput').addEventListener('change', e => { insertImageFile(e.target.files[0]); e.target.value = ''; });
   $('#hlColor').addEventListener('input', e => highlight(e.target.value));
   $('#btnClear').addEventListener('click', () => { cmd('removeFormat'); setBlock('p'); });
+
+  // Einfügen-Menü
+  const insMenu = $('#insertMenu');
+  $('#btnInsert').addEventListener('click', e => { e.stopPropagation(); insMenu.hidden = !insMenu.hidden; });
+  insMenu.addEventListener('click', e => { const k = e.target.closest('button')?.dataset.ins; if (k) { insMenu.hidden = true; doInsert(k); } });
+  document.addEventListener('click', () => insMenu.hidden = true);
+
+  // Zoom & Ausrichtung
+  $('#zoomIn').addEventListener('click', () => zoomStep(.1));
+  $('#zoomOut').addEventListener('click', () => zoomStep(-.1));
+  $('#zoomVal').addEventListener('click', () => setZoom('auto'));
+  $('#btnPortrait').addEventListener('click', () => setOrientation('hoch'));
+  $('#btnLandscape').addEventListener('click', () => setOrientation('quer'));
+  window.addEventListener('resize', applyZoom);
+
+  // Kopf-/Fusszeile (eigene Felder – immer erreichbar, nie im Textfluss)
+  ['#zoneH', '#zoneF'].forEach(s => {
+    const z = $(s);
+    z.addEventListener('input', () => { scheduleSave(); updatePages(); });
+    z.addEventListener('paste', e => { const html = e.clipboardData?.getData('text/html'); if (html) { e.preventDefault(); document.execCommand('insertHTML', false, sanitizeHtml(html)); scheduleSave(); } });
+  });
+
+  // Rechtsklick-Menü
+  editor.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    $$('img.sel', editor).forEach(i => i.classList.remove('sel'));
+    if (e.target.tagName === 'IMG') e.target.classList.add('sel');
+    showContextMenu(e.clientX, e.clientY);
+  });
+  $('#ctxmenu').addEventListener('click', e => { const a = e.target.closest('button')?.dataset.ctx; if (a) ctxAction(a); });
+  document.addEventListener('click', () => $('#ctxmenu').hidden = true);
+  $('#canvas').addEventListener('scroll', () => { $('#ctxmenu').hidden = true; });
 
   // Bilder: Einfügen + Drag&Drop
   editor.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
@@ -531,6 +571,8 @@ function wire() {
     if (html) { e.preventDefault(); document.execCommand('insertHTML', false, sanitizeHtml(html)); afterEdit(); }
   });
   editor.addEventListener('click', e => {
+    const go = e.target.closest('[data-go]');
+    if (go) { e.preventDefault(); const el = document.getElementById(go.dataset.go); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     $$('img.sel', editor).forEach(i => i.classList.remove('sel'));
     if (e.target.tagName === 'IMG') e.target.classList.add('sel');
   });
@@ -582,9 +624,10 @@ function wire() {
     $$('.snav[data-folder]').forEach(x => x.classList.remove('active')); b.classList.add('active');
     activeFolder = b.dataset.folder; renderList();
   }));
-  $('#btnSideCollapse').addEventListener('click', () => appEl.classList.toggle('side-hidden'));
+  $('#btnSideCollapse').addEventListener('click', () => { appEl.classList.toggle('side-rail'); applyZoom(); });
   $('#btnSideShow').addEventListener('click', () => appEl.classList.toggle('side-mobile'));
-  $('#btnInspClose').addEventListener('click', () => appEl.classList.remove('insp-open'));
+  $('#btnInspClose').addEventListener('click', () => { appEl.classList.remove('insp-open'); applyZoom(); });
+  $('#btnInspector').addEventListener('click', () => { appEl.classList.toggle('insp-open'); applyZoom(); });
 
   // .gdoc per Drag&Drop ins Fenster öffnen
   window.addEventListener('dragover', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
@@ -617,8 +660,12 @@ function wire() {
     else if (mod && e.key.toLowerCase() === 'n') { e.preventDefault(); createDoc(); }
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); toggleFocus(); }
     else if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); toggleFind(true); }
+    else if (mod && (e.key === '+' || e.key === '=')) { e.preventDefault(); zoomStep(.1); }
+    else if (mod && (e.key === '-' || e.key === '_')) { e.preventDefault(); zoomStep(-.1); }
+    else if (mod && e.key === '0') { e.preventDefault(); setZoom('auto'); }
     else if (e.key === 'Escape') {
-      if (!$('#findbar').hidden) { toggleFind(false); editor.focus(); }
+      if (!$('#ctxmenu').hidden) $('#ctxmenu').hidden = true;
+      else if (!$('#findbar').hidden) { toggleFind(false); editor.focus(); }
       else if (appEl.classList.contains('focus')) toggleFocus();
     }
   });
@@ -761,6 +808,113 @@ function updateFindCount() {
 function findStep(back) {
   const t = $('#findInput').value; if (!t) return;
   try { window.find(t, false, !!back, true, false, false, false); } catch (_) {}
+}
+
+/* ============================================================
+   Ansicht: Zoom (auto-anpassend), Ausrichtung, Seiten-Hilfslinien
+   ============================================================ */
+let zoomMode = 'auto';   // 'auto' = an Fensterbreite anpassen, sonst feste Zahl
+function pageWidthMm() { return (doc && doc.einstellungen.ausrichtung === 'quer') ? 297 : 210; }
+function pageHeightPx() { return ((doc && doc.einstellungen.ausrichtung === 'quer') ? 210 : 297) * MM; }
+function applyZoom() {
+  const avail = ($('#canvas').clientWidth || 800) - 56;
+  const fit = Math.max(.2, avail / (pageWidthMm() * MM));
+  let z = (zoomMode === 'auto') ? Math.min(1, fit) : zoomMode;
+  z = Math.max(.2, Math.min(2.5, z));
+  page.style.zoom = z;
+  $('#zoomVal').innerHTML = Math.round(z * 100) + '&nbsp;%';
+  $('#zoomVal').classList.toggle('on', zoomMode === 'auto');
+}
+function setZoom(v) { zoomMode = v; applyZoom(); }
+function zoomStep(d) {
+  const cur = (zoomMode === 'auto') ? (parseFloat(page.style.zoom) || 1) : zoomMode;
+  setZoom(Math.max(.3, Math.min(2.5, Math.round((cur + d) * 100) / 100)));
+}
+function setOrientation(o) {
+  if (!doc) return;
+  doc.einstellungen.ausrichtung = o;
+  page.classList.toggle('quer', o === 'quer');
+  $('#btnPortrait').classList.toggle('on', o !== 'quer');
+  $('#btnLandscape').classList.toggle('on', o === 'quer');
+  scheduleSave(); applyZoom(); updatePages();
+}
+function updatePages() {
+  const ph = pageHeightPx();
+  const n = Math.max(1, Math.ceil((page.offsetHeight - 4) / ph));
+  const g = $('#guides'); g.innerHTML = '';
+  for (let k = 1; k < n; k++) {
+    const line = document.createElement('div'); line.className = 'guide'; line.style.top = (k * ph) + 'px';
+    const s = document.createElement('span'); s.textContent = 'Seite ' + (k + 1); line.appendChild(s); g.appendChild(line);
+  }
+  return n;
+}
+
+/* ============================================================
+   Einfügen-Menü + Inhaltsverzeichnis
+   ============================================================ */
+function doInsert(kind) {
+  if (kind === 'link') insertLink();
+  else if (kind === 'image') $('#imgInput').click();
+  else if (kind === 'table') insertTable();
+  else if (kind === 'toc') insertTOC();
+  else if (kind === 'hr') { editor.focus(); document.execCommand('insertHTML', false, '<hr><p><br></p>'); afterEdit(); }
+  else if (kind === 'header') { const z = $('#zoneH'); z.focus(); z.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  else if (kind === 'footer') { const z = $('#zoneF'); z.focus(); z.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+}
+function insertTOC() {
+  editor.focus();
+  document.execCommand('insertHTML', false, '<div class="toc" contenteditable="false" data-toc="1"></div><p><br></p>');
+  refreshTOC(); afterEdit();
+}
+function refreshTOC() {
+  const tocs = $$('.toc[data-toc]', editor); if (!tocs.length) return;
+  const heads = $$('h1,h2,h3', editor).filter(h => h.innerText.trim());
+  let html = '<div class="toc-title">Inhaltsverzeichnis</div>';
+  if (!heads.length) html += '<div class="toc-empty">Überschriften erscheinen hier automatisch.</div>';
+  heads.forEach((h, i) => { h.id = h.id || 'h_' + i; html += `<a class="toc-l${h.tagName[1]}" data-go="${h.id}">${esc(h.innerText.trim())}</a>`; });
+  tocs.forEach(t => { if (t.innerHTML !== html) t.innerHTML = html; });
+}
+
+/* ============================================================
+   Rechtsklick-Menü
+   ============================================================ */
+function showContextMenu(x, y) {
+  const m = $('#ctxmenu');
+  const cell = currentCell();
+  const img = $('img.sel', editor);
+  let h = '';
+  h += '<button data-ctx="cut">Ausschneiden<span class="km">Strg X</span></button>';
+  h += '<button data-ctx="copy">Kopieren<span class="km">Strg C</span></button>';
+  h += '<button data-ctx="paste">Einfügen<span class="km">Strg V</span></button>';
+  h += '<div class="sep"></div><div class="lbl">Stil</div>';
+  h += '<button data-ctx="b-h1">Titel</button><button data-ctx="b-h2">Überschrift</button><button data-ctx="b-h3">Unterüberschrift</button><button data-ctx="b-p">Fliesstext</button><button data-ctx="b-blockquote">Zitat</button>';
+  h += '<div class="sep"></div><div class="lbl">Einfügen</div>';
+  h += '<button data-ctx="link">Link …</button><button data-ctx="image">Bild …</button><button data-ctx="table">Tabelle</button><button data-ctx="toc">Inhaltsverzeichnis</button>';
+  if (cell) h += '<div class="sep"></div><div class="lbl">Tabelle</div><button data-ctx="row+">Zeile darunter</button><button data-ctx="col+">Spalte rechts</button><button data-ctx="row-">Zeile löschen</button><button data-ctx="col-">Spalte löschen</button><button data-ctx="tdel">Tabelle löschen</button>';
+  if (img) h += '<div class="sep"></div><div class="lbl">Bild</div><button data-ctx="img-s">Klein (40%)</button><button data-ctx="img-m">Mittel (70%)</button><button data-ctx="img-l">Volle Breite</button><button data-ctx="img-del">Bild löschen</button>';
+  m.innerHTML = h; m.hidden = false;
+  m.style.left = Math.min(x, window.innerWidth - m.offsetWidth - 8) + 'px';
+  m.style.top = Math.min(y, window.innerHeight - m.offsetHeight - 8) + 'px';
+}
+function ctxAction(a) {
+  $('#ctxmenu').hidden = true;
+  const img = $('img.sel', editor);
+  if (a === 'cut') document.execCommand('cut');
+  else if (a === 'copy') document.execCommand('copy');
+  else if (a === 'paste') {
+    if (navigator.clipboard && navigator.clipboard.readText)
+      navigator.clipboard.readText().then(t => { editor.focus(); document.execCommand('insertText', false, t); afterEdit(); }).catch(() => toast('Bitte Strg+V zum Einfügen verwenden.'));
+    else toast('Bitte Strg+V zum Einfügen verwenden.');
+  }
+  else if (a.startsWith('b-')) setBlock(a.slice(2));
+  else if (a === 'link') insertLink();
+  else if (a === 'image') $('#imgInput').click();
+  else if (a === 'table') insertTable();
+  else if (a === 'toc') insertTOC();
+  else if (['row+', 'col+', 'row-', 'col-'].includes(a)) tableAction(a);
+  else if (a === 'tdel') tableAction('del');
+  else if (a === 'img-del' && img) { img.remove(); afterEdit(); }
+  else if (img && (a === 'img-s' || a === 'img-m' || a === 'img-l')) { img.style.width = a === 'img-s' ? '40%' : a === 'img-m' ? '70%' : '100%'; afterEdit(); }
 }
 
 /* ============================================================

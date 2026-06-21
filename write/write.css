@@ -181,15 +181,24 @@ button{font-family:inherit;cursor:pointer}
 .fb-btn.color input[type=color]{position:absolute;inset:0;opacity:0;cursor:pointer}
 
 /* ---------- Canvas + Blatt ---------- */
-.canvas{flex:1;min-width:0;overflow-y:auto;overflow-x:hidden;padding:40px 24px 120px}
+.canvas{flex:1;min-width:0;overflow:auto;padding:40px 24px 120px}
 .page{
-  width:min(210mm,100%);margin:0 auto;min-height:297mm;background:var(--paper);
-  border-radius:3px;box-shadow:var(--shadow);
-  padding:28mm 24mm;color:var(--paper-ink);
+  position:relative;width:210mm;min-height:297mm;margin:0 auto;background:var(--paper);
+  border-radius:3px;box-shadow:var(--shadow);padding:0 24mm;color:var(--paper-ink);
   transition:box-shadow .3s var(--ease);
 }
-@media (max-width:840px){ .page{padding:24px 20px} }
-.editor{outline:none;font-size:16px;line-height:1.7;font-family:var(--font-ui)}
+.page.quer{width:297mm;min-height:210mm}
+/* Kopf-/Fusszeile = eigene Felder, getrennt vom Fliesstext (immer erreichbar, nie kaputt) */
+.zone{outline:none;font-size:13px;color:var(--ink-soft);position:relative;z-index:2}
+.zone-h{padding:16mm 0 5mm;min-height:30mm;border-bottom:1px dashed var(--line)}
+.zone-f{padding:5mm 0 16mm;min-height:30mm;border-top:1px dashed var(--line)}
+.zone:empty::before{content:attr(data-ph);color:var(--ink-faint)}
+.zone:focus{background:linear-gradient(var(--accent-soft),var(--accent-soft)) padding-box;border-radius:4px}
+/* Seiten-Hilfslinien (rein visuell – das Tippen hängt nie davon ab) */
+.guides{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;z-index:1}
+.guide{position:absolute;left:0;right:0;border-top:1px dashed rgba(120,132,156,.5)}
+.guide span{position:absolute;right:-19mm;top:-8px;font-size:9.5px;color:var(--ink-faint);background:var(--paper);padding:1px 6px;border-radius:4px}
+.editor{outline:none;font-size:16px;line-height:1.7;font-family:var(--font-ui);position:relative;z-index:2;min-height:180mm;padding:8mm 0}
 .editor:empty::before{content:attr(data-ph);color:var(--ink-faint)}
 .editor>*:first-child{margin-top:0}
 .editor h1{font-size:30px;font-weight:700;line-height:1.2;margin:.4em 0 .35em;letter-spacing:-.4px}
@@ -208,10 +217,42 @@ button{font-family:inherit;cursor:pointer}
 
 /* ---------- Statusleiste ---------- */
 .statusbar{
-  display:flex;align-items:center;gap:18px;padding:7px 18px;
+  display:flex;align-items:center;gap:16px;padding:6px 18px;
   background:var(--surface);border-top:1px solid var(--line);
   font-size:12px;color:var(--ink-faint);
 }
+.statusbar .seg.orient{padding:2px;gap:2px}
+.statusbar .seg.orient button{padding:4px 10px;font-size:12px;white-space:nowrap}
+.zoombox{display:flex;align-items:center;gap:1px}
+.zoom-val{min-width:56px;background:none;border:none;color:var(--ink-soft);font-size:12px;font-weight:600;padding:5px 6px;border-radius:6px}
+.zoom-val:hover{background:var(--line-soft);color:var(--ink)}
+
+/* Einfügen-Knopf + Menü-Detail */
+.fb-text-btn{height:32px;padding:0 11px;border:1px solid var(--line);border-radius:7px;background:var(--surface-2);color:var(--ink-soft);font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.fb-text-btn:hover{background:var(--line-soft);color:var(--ink)}
+.fb-text-btn .i{width:15px;height:15px}
+.fb-text-btn .caret{color:var(--ink-faint);font-size:11px}
+.menu .mi{display:inline-block;width:20px;text-align:center}
+.menu-sep{height:1px;background:var(--line);margin:5px 6px;display:block}
+
+/* Einklappbare Icon-Leiste (links) – alles sichtbar, Hover = Info via title */
+.app.side-rail{grid-template-columns:58px minmax(0,1fr) 0}
+.app.side-rail.insp-open{grid-template-columns:58px minmax(0,1fr) var(--insp-w)}
+.app.side-rail .brand-word,.app.side-rail .side-collapse,.app.side-rail .new-doc span,
+.app.side-rail .snav span,.app.side-rail .side-list,.app.side-rail .foot-link span,.app.side-rail .ver{display:none}
+.app.side-rail .side-brand{justify-content:center;padding:16px 0 10px}
+.app.side-rail .new-doc{justify-content:center;margin:6px 11px;padding:11px 0}
+.app.side-rail .side-nav{padding:0 9px}
+.app.side-rail .snav{justify-content:center;padding:10px 0}
+.app.side-rail .side-foot{justify-content:center;flex-wrap:wrap}
+
+/* Rechtsklick-Menü */
+.ctxmenu{position:fixed;z-index:85;min-width:212px;max-height:82vh;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);padding:6px;animation:bubbleIn .1s var(--ease)}
+.ctxmenu button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;padding:8px 10px;background:none;border:none;border-radius:7px;color:var(--ink-soft);font-size:13px}
+.ctxmenu button:hover{background:var(--line-soft);color:var(--ink)}
+.ctxmenu button .km{color:var(--ink-faint);font-size:11px;font-variant-numeric:tabular-nums}
+.ctxmenu .sep{height:1px;background:var(--line);margin:5px 4px}
+.ctxmenu .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-faint);padding:7px 10px 3px}
 
 /* ---------- Inspector ---------- */
 .inspector{background:var(--side);border-left:1px solid var(--line);overflow-y:auto;min-width:0}
@@ -291,6 +332,15 @@ body[data-theme="dark"] .bubble{background:#2a3140;border:1px solid var(--line)}
 .editor img.sel{outline:3px solid var(--accent);outline-offset:2px}
 .editor mark{background:#ffe066;color:inherit;padding:.05em .1em;border-radius:3px}
 body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
+.editor hr{border:none;border-top:1px solid var(--line);margin:1.2em 0}
+/* Automatisches Inhaltsverzeichnis */
+.editor .toc{border:1px solid var(--line);border-radius:9px;padding:16px 20px;margin:1em 0;background:var(--surface-2);user-select:none}
+.editor .toc-title{font-weight:700;font-size:15px;margin-bottom:10px}
+.editor .toc a{display:block;color:var(--paper-ink);text-decoration:none;padding:3px 0;cursor:pointer;font-size:14px;border-radius:4px}
+.editor .toc a:hover{color:var(--accent)}
+.editor .toc .toc-l2{padding-left:16px;font-size:13.5px}
+.editor .toc .toc-l3{padding-left:32px;font-size:13px;color:var(--ink-soft)}
+.editor .toc-empty{color:var(--ink-faint);font-size:13px}
 
 /* ---------- Toast ---------- */
 #toast-root{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:90;display:flex;flex-direction:column;gap:8px;align-items:center}
@@ -318,9 +368,13 @@ body[data-theme="dark"] .toast{background:#2a3140}
 /* ---------- Druck ---------- */
 @media print{
   body{background:#fff}
-  .side,.inspector,.topbar,.formatbar,.statusbar,.focus-exit,#toast-root{display:none !important}
+  .side,.inspector,.topbar,.formatbar,.findbar,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,#toast-root{display:none !important}
   .app{display:block}
   .canvas{padding:0;overflow:visible;display:block}
-  .page{box-shadow:none;width:auto;min-height:auto;border-radius:0;padding:0}
-  .editor{font-size:11pt}
+  .page{box-shadow:none;width:auto;min-height:auto;border-radius:0;padding:0 16mm;zoom:1 !important}
+  .editor{font-size:11pt;padding:0}
+  /* Kopf-/Fusszeile wiederholen sich auf jeder gedruckten Seite */
+  .zone-h{position:fixed;top:0;left:0;right:0;border:none;padding:6mm 16mm 2mm;min-height:0}
+  .zone-f{position:fixed;bottom:0;left:0;right:0;border:none;padding:2mm 16mm 6mm;min-height:0}
+  @page{margin:22mm 0}
 }

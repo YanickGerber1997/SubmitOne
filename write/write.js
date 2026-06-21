@@ -219,6 +219,10 @@ function applySettings() {
   $('#selSize').value = String(s.schriftgroesse);
   $$('#segLine button').forEach(b => b.classList.toggle('on', +b.dataset.line === +s.zeilenabstand));
   $('#selLine').value = String(s.zeilenabstand);
+  const cols = s.spalten || 1;
+  editor.style.columnCount = cols > 1 ? cols : '';
+  editor.style.columnGap = cols > 1 ? '12mm' : '';
+  const selC2 = $('#selCols'); if (selC2) selC2.value = String(cols);
   const o = s.ausrichtung || 'hoch';
   page.classList.toggle('quer', o === 'quer');
   $('#btnPortrait').classList.toggle('on', o !== 'quer');
@@ -688,11 +692,53 @@ function wire() {
   $('#hlColor').addEventListener('input', e => highlight(e.target.value));
   $('#btnClear').addEventListener('click', () => { cmd('removeFormat'); setBlock('p'); });
 
-  // Einfügen (Ribbon-Buttons + „Mehr"-Menü)
-  const insMenu = $('#insertMenu');
-  $('#btnInsertMore').addEventListener('click', e => { e.stopPropagation(); insMenu.hidden = !insMenu.hidden; });
-  $$('[data-ins]').forEach(b => b.addEventListener('click', () => { insMenu.hidden = true; doInsert(b.dataset.ins); }));
-  document.addEventListener('click', () => insMenu.hidden = true);
+  // Einfügen-Buttons (im Menüband)
+  $$('[data-ins]').forEach(b => b.addEventListener('click', () => doInsert(b.dataset.ins)));
+
+  // Register-Menüband: Reiter wechseln
+  $('#ribTabs').addEventListener('click', e => {
+    const b = e.target.closest('[data-rib]'); if (!b) return;
+    $$('#ribTabs button').forEach(x => x.classList.toggle('on', x === b));
+    $$('.ribpane').forEach(p => p.hidden = p.dataset.pane !== b.dataset.rib);
+  });
+  // Zwischenablage
+  $('#btnCopy').addEventListener('click', () => { editor.focus(); document.execCommand('copy'); });
+  $('#btnCut').addEventListener('click', () => { editor.focus(); document.execCommand('cut'); afterEdit(); });
+  $('#btnPaste').addEventListener('click', () => {
+    editor.focus();
+    if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(t => { document.execCommand('insertText', false, t); afterEdit(); }).catch(() => toast('Bitte Strg+V drücken.'));
+    else toast('Bitte Strg+V zum Einfügen drücken.');
+  });
+  // Format übertragen
+  $('#btnFmtPaint').addEventListener('mousedown', e => { e.preventDefault(); paintFmt = captureFmt(); $('#btnFmtPaint').classList.add('on'); toast('Format kopiert – jetzt Zieltext markieren.'); });
+  editor.addEventListener('mouseup', () => { if (paintFmt) { const sel = getSelection(); if (sel && !sel.isCollapsed) applyFmt(paintFmt); paintFmt = null; $('#btnFmtPaint').classList.remove('on'); } });
+  // Gross-/Kleinschreibung
+  const caseMenu = $('#caseMenu');
+  $('#btnCase').addEventListener('click', e => { e.stopPropagation(); caseMenu.hidden = !caseMenu.hidden; });
+  caseMenu.addEventListener('click', e => { const c = e.target.closest('[data-case]'); if (c) { caseMenu.hidden = true; changeCase(c.dataset.case); } });
+  document.addEventListener('click', () => caseMenu.hidden = true);
+  // Formatierungszeichen
+  $('#btnMarks').addEventListener('click', () => editor.classList.toggle('show-marks'));
+  // Einfügen-Extras
+  $('#btnPageBreak').addEventListener('click', insertPageBreak);
+  $('#btnDate').addEventListener('click', insertDate);
+  $('#btnDropcap').addEventListener('click', toggleDropcap);
+  buildSymbolMenu();
+  const symMenu = $('#symMenu');
+  $('#btnSymbol').addEventListener('click', e => { e.stopPropagation(); symMenu.hidden = !symMenu.hidden; });
+  symMenu.addEventListener('click', e => { const s = e.target.closest('[data-sym]'); if (s) { symMenu.hidden = true; editor.focus(); document.execCommand('insertText', false, s.dataset.sym); afterEdit(); } });
+  document.addEventListener('click', () => symMenu.hidden = true);
+  // Layout
+  $('#selCols').addEventListener('change', e => setColumns(+e.target.value));
+  $('#btnMarginsOpen').addEventListener('click', () => { appEl.classList.add('insp-open'); applyZoom(); const s = $('#mTop'); if (s) setTimeout(() => s.scrollIntoView({ block: 'center' }), 60); });
+  // Ansicht-Reiter
+  $$('[data-vact]').forEach(b => b.addEventListener('click', () => {
+    const a = b.dataset.vact;
+    if (a === 'focus') toggleFocus();
+    else if (a === 'marks') editor.classList.toggle('show-marks');
+    else if (a === 'inspector') { appEl.classList.toggle('insp-open'); applyZoom(); }
+    else if (a === 'theme') setTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark');
+  }));
 
   // Schrift-Stufen + Zeilenabstand
   $('#fontGrow').addEventListener('click', () => adjustFontSize(1));
@@ -1282,6 +1328,53 @@ function insertTab() {
 /* ============================================================
    Einfügen-Menü + Inhaltsverzeichnis
    ============================================================ */
+/* ---------- Menüband-Funktionen (Format übertragen, Gross/Klein, Symbol, Datum, Seitenumbruch, Initiale, Spalten) ---------- */
+let paintFmt = null;
+function captureFmt() {
+  const q = c => { try { return document.queryCommandState(c); } catch (_) { return false; } };
+  const v = c => { try { return document.queryCommandValue(c); } catch (_) { return ''; } };
+  return { b: q('bold'), i: q('italic'), u: q('underline'), s: q('strikeThrough'), fore: v('foreColor'), font: v('fontName') };
+}
+function applyFmt(f) {
+  editor.focus();
+  const q = c => { try { return document.queryCommandState(c); } catch (_) { return false; } };
+  document.execCommand('styleWithCSS', false, true);
+  if (q('bold') !== f.b) document.execCommand('bold');
+  if (q('italic') !== f.i) document.execCommand('italic');
+  if (q('underline') !== f.u) document.execCommand('underline');
+  if (q('strikeThrough') !== f.s) document.execCommand('strikeThrough');
+  if (f.fore) document.execCommand('foreColor', false, f.fore);
+  if (f.font) document.execCommand('fontName', false, f.font);
+  afterEdit();
+}
+function changeCase(mode) {
+  const sel = getSelection(); if (!sel.rangeCount || sel.isCollapsed) { toast('Bitte zuerst Text markieren.'); return; }
+  let t = sel.toString();
+  if (mode === 'upper') t = t.toUpperCase();
+  else if (mode === 'lower') t = t.toLowerCase();
+  else if (mode === 'title') t = t.replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  else t = t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+  editor.focus(); document.execCommand('insertText', false, t); afterEdit();
+}
+function buildSymbolMenu() {
+  const m = $('#symMenu'); if (!m) return;
+  const syms = '€ £ $ ¥ © ® ™ § ¶ † • · – — … « » „ " ° ± × ÷ ≈ ≠ ≤ ≥ → ← ↑ ↓ ↔ ✓ ✗ ★ ☆ ☑ ☐ µ Ω π ∑ √ ∞ ½ ¼ ¾ ✆ ✉ ⚠'.split(' ');
+  m.innerHTML = syms.map(s => `<button data-sym="${esc(s)}" title="${esc(s)} einfügen">${esc(s)}</button>`).join('');
+}
+function insertDate() { const d = new Date().toLocaleDateString('de-CH', { day: '2-digit', month: 'long', year: 'numeric' }); editor.focus(); document.execCommand('insertText', false, d); afterEdit(); }
+function insertPageBreak() { editor.focus(); document.execCommand('insertHTML', false, '<div class="pagebreak" contenteditable="false">Seitenumbruch</div><p><br></p>'); afterEdit(); }
+function toggleDropcap() {
+  const sel = getSelection(); let n = sel.anchorNode; n = (n && n.nodeType === 1) ? n : (n ? n.parentElement : null);
+  const p = n && n.closest('p,h1,h2,h3,blockquote');
+  if (p && editor.contains(p)) { p.classList.toggle('dropcap'); afterEdit(); } else toast('Cursor in einen Absatz setzen.');
+}
+function setColumns(n) {
+  if (!doc) return;
+  doc.einstellungen.spalten = n;
+  editor.style.columnCount = n > 1 ? n : '';
+  editor.style.columnGap = n > 1 ? '12mm' : '';
+  scheduleSave();
+}
 function doInsert(kind) {
   if (kind === 'link') insertLink();
   else if (kind === 'image') $('#imgInput').click();

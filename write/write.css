@@ -204,7 +204,7 @@ button{font-family:inherit;cursor:pointer}
 .fb-btn.color input[type=color]{position:absolute;inset:0;opacity:0;cursor:pointer}
 
 /* ---------- Canvas + Blatt ---------- */
-.canvas{flex:1;min-width:0;overflow:auto;padding:18px 24px 120px}
+.canvas{flex:1;min-width:0;overflow:auto;padding:34px 24px 120px}
 .page{
   position:relative;width:210mm;min-height:297mm;margin:0 auto;background:var(--paper);
   border-radius:3px;box-shadow:var(--shadow);color:var(--paper-ink);
@@ -225,7 +225,7 @@ button{font-family:inherit;cursor:pointer}
 .guides{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;z-index:1}
 .guide{position:absolute;left:0;right:0;border-top:1px dashed rgba(120,132,156,.5)}
 .guide span{position:absolute;right:-19mm;top:-8px;font-size:9.5px;color:var(--ink-faint);background:var(--paper);padding:1px 6px;border-radius:4px}
-.page-format{position:absolute;top:3mm;left:3mm;z-index:4;font-size:9px;letter-spacing:.2px;color:#a2a8b4;pointer-events:none;white-space:nowrap;font-family:var(--font-ui)}
+.page-format{position:absolute;top:-7mm;left:0;z-index:4;font-size:9.5px;letter-spacing:.3px;color:var(--ink-faint);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:2px 7px;pointer-events:none;white-space:nowrap;font-family:var(--font-ui)}
 .editor{outline:none;font-size:16px;line-height:1.7;font-family:var(--font-ui);position:relative;z-index:2;flex:1 1 auto;padding:6mm 0}
 
 /* ---------- Lineal ---------- */

@@ -352,7 +352,7 @@ function ingestGdoc(text, handle) {
       const typ = (p && p.typ === 'calc') ? 'calc' : (p && p.typ === 'slides') ? 'slides' : 'write';
       let html = sanitizeHtml((p && p.html) || '');
       if (!html && p && p.tabelle && p.tabelle.cells) html = tabelleToHtml(p.tabelle);   // sehr alte Calc-Seite
-      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {}, notiz: (p && typeof p.notiz === 'string') ? p.notiz : '', fill: (p && p.fill && typeof p.fill === 'object') ? p.fill : {}, txtcol: (p && p.txtcol && typeof p.txtcol === 'object') ? p.txtcol : {}, rowH: (p && p.rowH && typeof p.rowH === 'object') ? p.rowH : {}, merges: Array.isArray(p && p.merges) ? p.merges : [], borders: (p && p.borders && typeof p.borders === 'object') ? p.borders : {} };
+      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {}, notiz: (p && typeof p.notiz === 'string') ? p.notiz : '', fill: (p && p.fill && typeof p.fill === 'object') ? p.fill : {}, txtcol: (p && p.txtcol && typeof p.txtcol === 'object') ? p.txtcol : {}, rowH: (p && p.rowH && typeof p.rowH === 'object') ? p.rowH : {}, merges: Array.isArray(p && p.merges) ? p.merges : [], borders: (p && p.borders && typeof p.borders === 'object') ? p.borders : {}, dispCols: (p && +p.dispCols) || 0, dispRows: (p && +p.dispRows) || 0 };
     });
     if (!d.seiten.length) d.seiten = [{ id: uid(), typ: 'write', html: '' }];
     d.aktiv = 0;
@@ -805,6 +805,8 @@ function wire() {
   const calcFocus = () => pgEl.focus();
   $('#calcAddRow').addEventListener('click', calcAddRow);
   $('#calcAddCol').addEventListener('click', calcAddCol);
+  $('#calcDelRow').addEventListener('click', calcDelRow);
+  $('#calcDelCol').addEventListener('click', calcDelCol);
   $$('#calcBar [data-fmt]').forEach(b => b.addEventListener('click', () => setCellFormat(b.dataset.fmt)));
   $('#cellFill').addEventListener('input', e => setCellFill(e.target.value));
   $('#cellInk').addEventListener('input', e => setCellTextColor(e.target.value));
@@ -1995,9 +1997,10 @@ function renderSheet() {
   const host = $('#pageGrid'); if (!host || !curGrid) return;
   const ur = calcUsedRange(), ext = calcExtent(), d = pageDims(), m = pageSetup().margins;
   const contentMm = Math.max(60, d.w - m.left - m.right);
-  const colsPP = Math.max(4, Math.floor(contentMm / 26));   // Spaltenzahl, die bequem auf die Blattbreite passt
-  const cols = Math.max(ext.cols, colsPP);
-  const rows = Math.max(ext.rows, 30);                       // genug Leerzeilen, damit es wie ein Blatt wirkt
+  const colsPP = Math.max(4, Math.floor(contentMm / 26));   // Auto-Spaltenzahl, die bequem auf die Blattbreite passt
+  const wantC = activePage().dispCols | 0, wantR = activePage().dispRows | 0;
+  const cols = Math.max(ext.cols, wantC > 0 ? wantC : colsPP);   // gewünschte Spaltenzahl (dünner = mehr)
+  const rows = Math.max(ext.rows, wantR > 0 ? wantR : 30);
   gridCols = cols; gridRows = rows;
   const cw = curColW();
   let cg = '<colgroup>';   // keine Kopf-Spalte mehr – A/B/C & 1/2/3 liegen als Lineale AUSSERHALB des Blatts
@@ -2129,8 +2132,10 @@ function startColResize(c, e) {
   };
   document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
 }
-function calcAddRow() { if (editingTd) endEdit(true); gridEnsure(curGrid, 0, curGrid.zeilen.length); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
-function calcAddCol() { if (editingTd) endEdit(true); curGrid.cols = (curGrid.cols || 1) + 1; gridEnsure(curGrid, curGrid.cols - 1, 0); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
+function calcAddRow() { if (editingTd) endEdit(true); activePage().dispRows = gridRows + 1; renderCalc(); scheduleSave(); }
+function calcAddCol() { if (editingTd) endEdit(true); activePage().dispCols = gridCols + 1; renderCalc(); scheduleSave(); }
+function calcDelRow() { if (editingTd) endEdit(true); activePage().dispRows = Math.max(1, gridRows - 1); renderCalc(); scheduleSave(); }
+function calcDelCol() { if (editingTd) endEdit(true); activePage().dispCols = Math.max(1, gridCols - 1); renderCalc(); scheduleSave(); }
 
 /* ---- Inline-Zellbearbeitung (direkt in der Zelle) ---- */
 function beginEdit(initial) {

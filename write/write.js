@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v11';
+const WRITE_VERSION = 'v12';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -1224,9 +1224,29 @@ function setLineHeight(v) {
   $$('#segLine button').forEach(x => x.classList.toggle('on', +x.dataset.line === v));
   $('#selLine').value = String(v); scheduleSave();
 }
+function previewCalc() {
+  if (!curGrid) curGrid = htmlToGrid(activePage().html);
+  let maxR = -1, maxC = -1;
+  curGrid.zeilen.forEach((z, r) => z.cells.forEach((c, ci) => { if (cellText(c) !== '') { if (r > maxR) maxR = r; if (ci > maxC) maxC = ci; } }));
+  if (maxR < 0) { maxR = 0; maxC = 0; }
+  const quer = doc.einstellungen.ausrichtung === 'quer';
+  let tbl = '<table class="pv-grid">';
+  for (let r = 0; r <= maxR; r++) {
+    tbl += '<tr>';
+    for (let c = 0; c <= maxC; c++) { const v = evalCell(c, r); tbl += `<td${typeof v === 'number' ? ' class="num"' : ''}>${esc(String(v))}</td>`; }
+    tbl += '</tr>';
+  }
+  tbl += '</table>';
+  const scroll = $('#previewScroll');
+  $('#previewOverlay').hidden = false;
+  scroll.innerHTML = `<div class="pv-page${quer ? ' quer' : ''}"><div class="pv-h">${$('#zoneH').innerHTML}</div><div class="pv-c">${tbl}</div><div class="pv-f"><span>${$('#zoneF').innerHTML}</span><span class="pv-num">Seite 1</span></div></div>`;
+  $('#pvInfo').textContent = 'Tabelle · ' + (maxR + 1) + ' × ' + (maxC + 1) + (quer ? ' · Querformat' : ' · Hochformat');
+  scroll.scrollTop = 0;
+}
 function printPreview() {
   if (!doc) return;
   captureDoc();
+  if (activePage().typ === 'calc') { previewCalc(); return; }
   const quer = doc.einstellungen.ausrichtung === 'quer';
   const ov = $('#previewOverlay'), scroll = $('#previewScroll');
   scroll.innerHTML = ''; ov.hidden = false;          // erst sichtbar → dann messbar
@@ -1357,17 +1377,25 @@ function evalRaw(raw, seen) {
 function evalCell(c, r) { return evalRaw(cellText(gridGet(curGrid, c, r)), new Set([c + ',' + r])); }
 
 /* ---- Gitter rendern + Auswahl (liest/schreibt curGrid = aktive Seite) ---- */
+function calcUsedRange() {
+  let maxR = -1, maxC = -1;
+  curGrid.zeilen.forEach((z, r) => z.cells.forEach((c, ci) => { if (cellText(c) !== '') { if (r > maxR) maxR = r; if (ci > maxC) maxC = ci; } }));
+  return { maxR, maxC };
+}
 function renderCalc() {
   const g = $('#grid'), cols = Math.max(curGrid.cols, DISP_MIN_COLS), rows = Math.max(curGrid.zeilen.length, DISP_MIN_ROWS);
+  const { maxR, maxC } = calcUsedRange();
   let h = '<thead><tr><th class="corner"></th>';
-  for (let c = 0; c < cols; c++) h += `<th>${idxToCol(c)}</th>`;
+  for (let c = 0; c < cols; c++) h += `<th${c > maxC ? ' class="pad"' : ''}>${idxToCol(c)}</th>`;
   h += '</tr></thead><tbody>';
   for (let r = 0; r < rows; r++) {
-    h += `<tr><th class="rownum">${r + 1}</th>`;
+    h += `<tr${r > maxR ? ' class="pad"' : ''}><th class="rownum">${r + 1}</th>`;
     for (let c = 0; c < cols; c++) {
       const val = evalCell(c, r);
-      const cls = typeof val === 'number' ? ' class="num"' : (/^#/.test(String(val)) ? ' class="err"' : '');
-      h += `<td data-c="${c}" data-r="${r}"${cls}>${esc(String(val))}</td>`;
+      const cl = [];
+      if (typeof val === 'number') cl.push('num'); else if (/^#/.test(String(val))) cl.push('err');
+      if (c > maxC) cl.push('pad');
+      h += `<td data-c="${c}" data-r="${r}"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${esc(String(val))}</td>`;
     }
     h += '</tr>';
   }

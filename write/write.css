@@ -429,8 +429,8 @@ body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .formula-input{flex:1;border:1px solid var(--line);background:var(--surface-2);border-radius:7px;padding:7px 10px;font-family:var(--font-ui);font-size:13px;color:var(--ink)}
 .formula-input:focus{outline:none;border-color:var(--accent)}
 .calc-scroll{flex:1;overflow:auto;outline:none}
-.grid{border-collapse:collapse;font-size:13px;table-layout:fixed}
-.grid th,.grid td{border:1px solid var(--line);height:27px;min-width:96px;max-width:96px;width:96px;padding:2px 8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.grid{border-collapse:collapse;font-size:13px;table-layout:auto}
+.grid th,.grid td{border:1px solid var(--line);height:27px;min-width:84px;max-width:340px;padding:2px 8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .grid thead th,.grid .rownum{background:var(--surface-2);color:var(--ink-soft);font-weight:600;text-align:center;position:sticky;font-size:12px}
 .grid thead th{top:0;z-index:2}
 .grid .rownum{left:0;z-index:1;min-width:44px;max-width:44px;width:44px}
@@ -468,6 +468,9 @@ body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .pv-page blockquote{border-left:3px solid #2f6df6;padding-left:12px;color:#555;font-style:italic;margin:.6em 0}
 .pv-page .toc{border:1px solid #e3e3e3;border-radius:8px;padding:12px 16px;background:#fafafa}
 .pv-page .toc a{display:block;color:#1a1e27;text-decoration:none;padding:2px 0}
+.pv-grid{border-collapse:collapse;width:100%;font-size:10pt}
+.pv-grid td{border:1px solid #bbb;padding:4px 9px;white-space:nowrap;color:#1a1e27}
+.pv-grid td.num{text-align:right;font-variant-numeric:tabular-nums}
 
 /* ---------- Toast ---------- */
 #toast-root{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:90;display:flex;flex-direction:column;gap:8px;align-items:center}
@@ -505,4 +508,12 @@ body[data-theme="dark"] .toast{background:#2a3140}
   .zone-h{position:fixed;top:0;left:0;right:0;border:none;padding:6mm 16mm 2mm;min-height:0}
   .zone-f{position:fixed;bottom:0;left:0;right:0;border:none;padding:2mm 16mm 6mm;min-height:0}
   @page{margin:22mm 0}
+  /* Calc drucken = saubere Tabelle (benutzter Bereich), ohne A/B/C-Kopf & Zeilennummern */
+  .app.calc-mode .calc{display:block !important;overflow:visible}
+  .app.calc-mode .calc-bar{display:none !important}
+  .app.calc-mode .calc-scroll{overflow:visible !important}
+  .grid thead,.grid .corner,.grid .rownum{display:none}
+  .grid td{border:1px solid #999;color:#000;max-width:none;white-space:normal}
+  .grid td.pad,.grid tr.pad{display:none}
+  .grid td.sel{outline:none;background:none}
 }

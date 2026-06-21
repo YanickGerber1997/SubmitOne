@@ -179,6 +179,17 @@
       <!-- SEITEN-REITER (Navigator) -->
       <div class="pagetabs" id="pagetabs"></div>
 
+      <!-- FORMELZEILE (Submit Calc) -->
+      <div class="calcbar" id="calcBar">
+        <span class="cell-ref" id="cellRef">A1</span>
+        <span class="fx">fx</span>
+        <input class="formula-input" id="formulaInput" placeholder="Wert oder =Formel, z. B. =SUMME(A1:A5)  ·  =WENN(A1>0;&quot;ja&quot;;&quot;nein&quot;)" spellcheck="false" />
+        <span class="calc-stat" id="calcStat"></span>
+        <span class="grow"></span>
+        <button class="fb-btn sm" id="calcAddRow" title="Zeile hinzufügen">+ Zeile</button>
+        <button class="fb-btn sm" id="calcAddCol" title="Spalte hinzufügen">+ Spalte</button>
+      </div>
+
       <!-- SUCHLEISTE -->
       <div class="findbar" id="findbar" hidden>
         <svg viewBox="0 0 24 24" class="i"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
@@ -202,25 +213,12 @@
         <div class="page" id="page">
           <div class="zone zone-h" id="zoneH" contenteditable="true" data-ph="Kopfzeile – erscheint beim Drucken auf jeder Seite"></div>
           <div class="editor" id="editor" contenteditable="true" spellcheck="true"></div>
+          <div class="pagegrid" id="pageGrid" tabindex="0" aria-label="Tabellengitter"></div>
           <div class="zone zone-f" id="zoneF" contenteditable="true" data-ph="Fusszeile – erscheint beim Drucken auf jeder Seite"></div>
           <div class="guides" id="guides" aria-hidden="true"></div>
           <div class="vruler" id="vruler" aria-hidden="true"></div>
           <div class="page-format" id="pageFormat" aria-hidden="true">A4 · 210 × 297 mm</div>
         </div>
-      </div>
-
-      <!-- TABELLE (Submit Calc) -->
-      <div class="calc" id="calc">
-        <div class="calc-bar">
-          <span class="cell-ref" id="cellRef">A1</span>
-          <span class="fx">fx</span>
-          <input class="formula-input" id="formulaInput" placeholder="Wert oder =Formel, z. B. =SUMME(A1:A5)  ·  =WENN(A1>0;&quot;ja&quot;;&quot;nein&quot;)" spellcheck="false" />
-          <span class="calc-stat" id="calcStat"></span>
-          <span class="grow"></span>
-          <button class="fb-btn sm" id="calcAddRow" title="Zeile hinzufügen">+ Zeile</button>
-          <button class="fb-btn sm" id="calcAddCol" title="Spalte hinzufügen">+ Spalte</button>
-        </div>
-        <div class="calc-sheet" id="calcSheet" tabindex="0"></div>
       </div>
 
       <!-- STATUSLEISTE -->

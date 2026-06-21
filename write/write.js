@@ -733,22 +733,23 @@ function wire() {
   document.addEventListener('click', () => { const m = $('#addMenu'); if (m) m.hidden = true; });
   document.addEventListener('click', () => $('#modeMenu').hidden = true);
 
-  // Submit Calc – kombinierte Blatt-Ansicht
-  const calcFocus = () => $('#calcSheet').focus();
+  // Submit Calc – Gitter im Write-Blatt
+  const pgEl = $('#pageGrid');
+  const calcFocus = () => pgEl.focus();
   $('#calcAddRow').addEventListener('click', calcAddRow);
   $('#calcAddCol').addEventListener('click', calcAddCol);
-  // Maus: Auswahl + Bereich ziehen (delegiert auf #calc)
+  // Maus: Auswahl + Bereich ziehen (delegiert auf #pageGrid)
   let gridDragging = false;
-  $('#calc').addEventListener('mousedown', e => {
+  pgEl.addEventListener('mousedown', e => {
     const td = e.target.closest('td[data-c]'); if (!td) return;
     if (editingTd && editingTd !== td) endEdit(true);
     gridDragging = true; e.preventDefault();
     selectCell(+td.dataset.c, +td.dataset.r, e.shiftKey); calcFocus();
   });
-  $('#calc').addEventListener('mousemove', e => { if (!gridDragging) return; const td = e.target.closest('td[data-c]'); if (td) selectCell(+td.dataset.c, +td.dataset.r, true); });
+  pgEl.addEventListener('mousemove', e => { if (!gridDragging) return; const td = e.target.closest('td[data-c]'); if (td) selectCell(+td.dataset.c, +td.dataset.r, true); });
   document.addEventListener('mouseup', () => { gridDragging = false; });
-  $('#calc').addEventListener('dblclick', e => { const td = e.target.closest('td[data-c]'); if (td) { selectCell(+td.dataset.c, +td.dataset.r); beginEdit(); } });
-  $('#calc').addEventListener('contextmenu', e => { const td = e.target.closest('td[data-c]'); if (!td) return; e.preventDefault(); if (!td.classList.contains('sel')) selectCell(+td.dataset.c, +td.dataset.r); showGridMenu(e.clientX, e.clientY); });
+  pgEl.addEventListener('dblclick', e => { const td = e.target.closest('td[data-c]'); if (td) { selectCell(+td.dataset.c, +td.dataset.r); beginEdit(); } });
+  pgEl.addEventListener('contextmenu', e => { const td = e.target.closest('td[data-c]'); if (!td) return; e.preventDefault(); if (!td.classList.contains('sel')) selectCell(+td.dataset.c, +td.dataset.r); showGridMenu(e.clientX, e.clientY); });
   $('#ctxmenu').addEventListener('click', e => { const g = e.target.closest('button')?.dataset.g; if (g) gridMenuAction(g); });
 
   // Formelzeile
@@ -777,7 +778,7 @@ function wire() {
     else if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); const { c1, c2, r1, r2 } = rangeBounds(); for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { gridEnsure(curGrid, c, r); curGrid.zeilen[r].cells[c] = ''; } activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
     else if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); beginEdit(k); }
   };
-  $('#calcSheet').addEventListener('keydown', calcKey);
+  pgEl.addEventListener('keydown', calcKey);
 
   // Zoom & Ausrichtung
   $('#zoomIn').addEventListener('click', () => zoomStep(.1));
@@ -1042,6 +1043,7 @@ function currentCell() {
 }
 function updateTableTools() {
   const tt = $('#tabletools');
+  if (appEl.classList.contains('calc-mode')) { tt.hidden = true; return; }   // Calc hat eigene Gitter-Werkzeuge
   const cell = currentCell();
   if (!cell || appEl.classList.contains('focus')) { tt.hidden = true; return; }
   const table = cell.closest('table'); const rect = table.getBoundingClientRect();
@@ -1220,7 +1222,7 @@ let suppressRulerClick = false;
 function drawRuler() {
   if (!doc) return;
   const wrap = $('#rulerWrap'), r = $('#ruler');
-  if (appEl.classList.contains('focus') || appEl.classList.contains('calc-mode') || appEl.classList.contains('slides-mode')) { wrap.style.display = 'none'; return; }
+  if (appEl.classList.contains('focus') || appEl.classList.contains('slides-mode')) { wrap.style.display = 'none'; return; }
   wrap.style.display = '';
   const z = parseFloat(page.style.zoom) || 1;
   const wmm = pageWidthMm(), wpx = wmm * MM * z;
@@ -1466,7 +1468,7 @@ function renderActivePage() {
   const calc = (m === 'calc');
   appEl.classList.toggle('calc-mode', calc);
   appEl.classList.toggle('slides-mode', m === 'slides');
-  if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; renderCalc(); selectCell(0, 0); }
+  if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
   else { editor.innerHTML = sanitizeHtml(p.html || ''); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); }
 }
 // Typ der AKTIVEN Seite wechseln (Modus-Pille)
@@ -1617,7 +1619,7 @@ function calcUsedRange() {
   return { maxR, maxC };
 }
 // EINE kombinierte Ansicht: volles Tabellengitter (alle Spalten) AUF dem A4-Blatt
-function gEl() { return $('#calcSheet .cgrid'); }
+function gEl() { return $('#pageGrid .cgrid'); }
 function tdAt(c, r) { const t = gEl(); if (!t) return null; return t.querySelector(`td[data-c="${c}"][data-r="${r}"]`) || t.querySelector(`td[data-r="${r}"]`); }
 function allTd(sel) { const t = gEl(); return t ? [...t.querySelectorAll(sel)] : []; }
 function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen
@@ -1625,32 +1627,25 @@ function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen
   return { cols: Math.max(1, ...z.map(x => x.cells.length)), rows: z.length };
 }
 let gridCols = 1, gridRows = 1;
-function renderCalc() { renderSheet(); highlightSel(); updateStats(); }
+function renderCalc() { renderSheet(); highlightSel(); updateStats(); updatePages(); }
+// Gitter ins SELBE Blatt wie Write rendern: Ränder, Zoom, Kopf/Fuss, Lineal kommen vom .page
 function renderSheet() {
-  const sheet = $('#calcSheet'), ur = calcUsedRange(), ext = calcExtent(), d = pageDims();
-  const mL = 20, mR = 20, mT = 18, mB = 16;                  // Seitenränder mm (Blatt wie Write)
-  const GUT = 28, HDR = 20;                                  // Zeilennummern-Spalte / Spaltenkopf (im Blatt, dezent)
-  const avail = Math.max(360, (sheet.clientWidth || 900) - 96);
-  const fit = Math.max(.4, Math.min(1, avail / (d.w * MM))); // an Fensterbreite anpassen, höchstens 100 %
-  const S = MM * fit;                                        // px pro mm – echte A4-Grösse
-  const pagePxW = Math.round(d.w * S);
-  const padL = Math.round(mL * S), padR = Math.round(mR * S), padT = Math.round(mT * S), padB = Math.round(mB * S);
-  const contentW = pagePxW - padL - padR;                   // Druckbereich (Text-/Zellenbreite)
-  const colsPP = Math.max(1, Math.floor((d.w - mL - mR) / 24));
-  const rowsPP = Math.max(1, Math.floor((d.h - mT - mB) / 8));
-  const colWpx = Math.max(40, Math.floor((contentW - GUT) / colsPP));  // Spalten füllen den Druckbereich
-  const rowHpx = Math.max(20, Math.round(8 * S));
-  const cols = Math.max(ext.cols, colsPP), rows = Math.max(ext.rows, rowsPP);
+  const host = $('#pageGrid'); if (!host || !curGrid) return;
+  const ur = calcUsedRange(), ext = calcExtent(), d = pageDims(), m = pageSetup().margins;
+  const contentMm = Math.max(60, d.w - m.left - m.right);
+  const colsPP = Math.max(4, Math.floor(contentMm / 26));   // Spaltenzahl, die bequem auf die Blattbreite passt
+  const cols = Math.max(ext.cols, colsPP);
+  const rows = Math.max(ext.rows, 30);                       // genug Leerzeilen, damit es wie ein Blatt wirkt
   gridCols = cols; gridRows = rows;
-  let cg = `<colgroup><col style="width:${GUT}px">`;
-  for (let c = 0; c < cols; c++) cg += `<col style="width:${colWpx}px">`;
+  let cg = '<colgroup><col class="cg-gut">';
+  for (let c = 0; c < cols; c++) cg += '<col>';
   cg += '</colgroup>';
-  let head = `<thead><tr><th class="cg-corner" style="height:${HDR}px"></th>`;
+  let head = '<thead><tr><th class="cg-corner"></th>';
   for (let c = 0; c < cols; c++) head += `<th class="cg-col">${idxToCol(c)}</th>`;
   head += '</tr></thead><tbody>';
   for (let r = 0; r < rows; r++) {
     const z = curGrid.zeilen[r];
-    const textRow = !!(z && z.cells.length === 1);    // Absatz/Überschrift = eine Zelle → volle Blattbreite (wie Write)
+    const textRow = !!(z && z.cells.length === 1);           // Absatz/Überschrift = eine Zelle → volle Blattbreite (wie Write)
     head += `<tr${r > ur.maxR ? ' class="pad"' : ''}><th class="cg-row">${r + 1}</th>`;
     if (textRow) {
       const raw = gridGet(curGrid, 0, r), isF = cellText(raw).startsWith('=');
@@ -1658,35 +1653,20 @@ function renderSheet() {
       if (z.tag && /^h[1-3]$/.test(z.tag)) cl.push(z.tag);
       if (isF && typeof v === 'number') cl.push('num'); else if (isF && /^#/.test(String(v))) cl.push('err');
       if (r > ur.maxR) cl.push('pad');
-      head += `<td data-c="0" data-r="${r}" colspan="${cols}" style="height:${rowHpx}px" class="${cl.join(' ')}">${isF ? esc(String(v)) : (raw || '')}</td>`;
+      head += `<td data-c="0" data-r="${r}" colspan="${cols}" class="${cl.join(' ')}">${isF ? esc(String(v)) : (raw || '')}</td>`;
     } else {
       for (let c = 0; c < cols; c++) {
         const raw = gridGet(curGrid, c, r), isF = cellText(raw).startsWith('=');
         const v = isF ? evalCell(c, r) : null, cl = [];
         if (isF && typeof v === 'number') cl.push('num'); else if (isF && /^#/.test(String(v))) cl.push('err');
         if (c > ur.maxC || r > ur.maxR) cl.push('pad');
-        head += `<td data-c="${c}" data-r="${r}" style="height:${rowHpx}px"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${isF ? esc(String(v)) : (raw || '')}</td>`;
+        head += `<td data-c="${c}" data-r="${r}"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${isF ? esc(String(v)) : (raw || '')}</td>`;
       }
     }
     head += '</tr>';
   }
   head += '</tbody>';
-  const tableW = GUT + cols * colWpx, tableH = HDR + rows * rowHpx;
-  const paperH = padT + tableH + padB;                      // durchgehendes Blatt (alle Zeilen) + Ränder
-  const pages = Math.max(1, Math.ceil(rows / rowsPP));
-  const stageW = Math.max(pagePxW, padL + tableW + padR), stageH = paperH + 8;
-  const paperLeft = Math.round((stageW - pagePxW) / 2);
-  const fmt = doc.einstellungen.format || 'A4';
-  let guides = '';                                           // Seiten-Hilfslinien wie in Write
-  for (let pg = 1; pg < pages; pg++) {
-    const y = padT + HDR + pg * rowsPP * rowHpx;
-    if (y < paperH - 12) guides += `<div class="calc-guide" style="top:${y}px;left:${paperLeft + padL}px;width:${contentW}px"><span>Seite ${pg + 1}</span></div>`;
-  }
-  sheet.innerHTML = `<div class="calc-stage" style="width:${stageW}px;height:${stageH}px">
-    <div class="calc-paper" style="left:${paperLeft}px;top:0;width:${pagePxW}px;height:${paperH}px"><span class="cp-tag">${fmt} · ${pages} ${pages === 1 ? 'Seite' : 'Seiten'}</span></div>
-    ${guides}
-    <table class="cgrid" style="position:absolute;left:${paperLeft + padL}px;top:${padT}px">${cg}${head}</table>
-  </div>`;
+  host.innerHTML = `<table class="cgrid">${cg}${head}</table>`;
 }
 let anchorC = 0, anchorR = 0, editingTd = null;
 function rangeBounds() { return { c1: Math.min(anchorC, selC), c2: Math.max(anchorC, selC), r1: Math.min(anchorR, selR), r2: Math.max(anchorR, selR) }; }
@@ -1783,7 +1763,7 @@ function gridMenuAction(g) {
 /* ---- Vertikales Lineal: Kopf-/Fuss-Höhe ziehen ---- */
 function drawVRuler() {
   if (!doc) return; const v = $('#vruler');
-  if (appEl.classList.contains('focus') || appEl.classList.contains('calc-mode') || appEl.classList.contains('slides-mode')) { v.style.display = 'none'; return; }
+  if (appEl.classList.contains('focus') || appEl.classList.contains('slides-mode')) { v.style.display = 'none'; return; }
   v.style.display = '';
   const ph = page.offsetHeight; let html = '';
   for (let cm = 0; cm <= Math.floor(ph / (10 * MM)); cm++) html += `<div class="vtick" style="top:${cm * 10 * MM}px"><span>${cm}</span></div>`;

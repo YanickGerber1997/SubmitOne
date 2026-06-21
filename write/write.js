@@ -2142,11 +2142,11 @@ function onEditorInput(e) {
 let _pdfjs = null, pdfTarget = 'write';
 function loadPdfJs() {
   if (_pdfjs) return Promise.resolve(_pdfjs);
-  const ready = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; _pdfjs = window.pdfjsLib; return _pdfjs; };
+  const ready = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; _pdfjs = window.pdfjsLib; return _pdfjs; };
   if (window.pdfjsLib) return Promise.resolve(ready());
   return new Promise((res, rej) => {
     const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
     s.onload = () => window.pdfjsLib ? res(ready()) : rej(new Error('pdfjs'));
     s.onerror = () => rej(new Error('offline'));
     document.head.appendChild(s);

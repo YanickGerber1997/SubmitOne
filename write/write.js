@@ -1618,7 +1618,7 @@ function calcUsedRange() {
 }
 // EINE kombinierte Ansicht: volles Tabellengitter (alle Spalten) AUF dem A4-Blatt
 function gEl() { return $('#calcSheet .cgrid'); }
-function tdAt(c, r) { const t = gEl(); return t ? t.querySelector(`td[data-c="${c}"][data-r="${r}"]`) : null; }
+function tdAt(c, r) { const t = gEl(); if (!t) return null; return t.querySelector(`td[data-c="${c}"][data-r="${r}"]`) || t.querySelector(`td[data-r="${r}"]`); }
 function allTd(sel) { const t = gEl(); return t ? [...t.querySelectorAll(sel)] : []; }
 function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen
   const z = curGrid.zeilen;
@@ -1649,13 +1649,24 @@ function renderSheet() {
   for (let c = 0; c < cols; c++) head += `<th class="cg-col">${idxToCol(c)}</th>`;
   head += '</tr></thead><tbody>';
   for (let r = 0; r < rows; r++) {
+    const z = curGrid.zeilen[r];
+    const textRow = !!(z && z.cells.length === 1);    // Absatz/Überschrift = eine Zelle → volle Blattbreite (wie Write)
     head += `<tr${r > ur.maxR ? ' class="pad"' : ''}><th class="cg-row">${r + 1}</th>`;
-    for (let c = 0; c < cols; c++) {
-      const raw = gridGet(curGrid, c, r), isF = cellText(raw).startsWith('=');
-      const v = isF ? evalCell(c, r) : null, cl = [];
+    if (textRow) {
+      const raw = gridGet(curGrid, 0, r), isF = cellText(raw).startsWith('=');
+      const v = isF ? evalCell(0, r) : null, cl = ['textcell'];
+      if (z.tag && /^h[1-3]$/.test(z.tag)) cl.push(z.tag);
       if (isF && typeof v === 'number') cl.push('num'); else if (isF && /^#/.test(String(v))) cl.push('err');
-      if (c > ur.maxC || r > ur.maxR) cl.push('pad');
-      head += `<td data-c="${c}" data-r="${r}" style="height:${rowHpx}px"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${isF ? esc(String(v)) : (raw || '')}</td>`;
+      if (r > ur.maxR) cl.push('pad');
+      head += `<td data-c="0" data-r="${r}" colspan="${cols}" style="height:${rowHpx}px" class="${cl.join(' ')}">${isF ? esc(String(v)) : (raw || '')}</td>`;
+    } else {
+      for (let c = 0; c < cols; c++) {
+        const raw = gridGet(curGrid, c, r), isF = cellText(raw).startsWith('=');
+        const v = isF ? evalCell(c, r) : null, cl = [];
+        if (isF && typeof v === 'number') cl.push('num'); else if (isF && /^#/.test(String(v))) cl.push('err');
+        if (c > ur.maxC || r > ur.maxR) cl.push('pad');
+        head += `<td data-c="${c}" data-r="${r}" style="height:${rowHpx}px"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${isF ? esc(String(v)) : (raw || '')}</td>`;
+      }
     }
     head += '</tr>';
   }
@@ -1698,8 +1709,10 @@ function updateCalcStat() {
   el.textContent = nums.length ? `Summe ${roundN(sum)}  ·  Mittel ${roundN(sum / nums.length)}  ·  Anzahl ${count}` : `Anzahl ${count}`;
 }
 function selectCell(c, r, extend) {
-  selC = Math.max(0, Math.min(gridCols - 1, c));
   selR = Math.max(0, Math.min(gridRows - 1, r));
+  selC = Math.max(0, Math.min(gridCols - 1, c));
+  const z = curGrid.zeilen[selR];
+  if (z && z.cells.length === 1) selC = 0;     // Textzeile hat nur eine (volle) Zelle
   if (!extend) { anchorC = selC; anchorR = selR; }
   highlightSel();
   const td = tdAt(selC, selR); if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });

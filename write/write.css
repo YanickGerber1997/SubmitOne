@@ -504,6 +504,10 @@ body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .cgrid thead th{position:sticky;top:0;z-index:3;background:var(--surface-2);color:var(--ink-faint);font-size:9px;font-weight:600;text-align:center;height:22px;letter-spacing:.3px}
 .cgrid .cg-row{position:sticky;left:0;z-index:2;background:var(--surface-2);color:var(--ink-faint);font-size:9px;font-weight:600;text-align:center}
 .cgrid .cg-corner{position:sticky;left:0;top:0;z-index:4;background:var(--surface-2)}
+.cgrid td.textcell{text-align:left}                 /* Absatz/Überschrift über volle Blattbreite (wie Write) */
+.cgrid td.textcell.h1{font-size:1.7em;font-weight:700;letter-spacing:-.01em}
+.cgrid td.textcell.h2{font-size:1.32em;font-weight:700}
+.cgrid td.textcell.h3{font-size:1.12em;font-weight:600}
 .cgrid td.num{text-align:right;font-variant-numeric:tabular-nums}
 .cgrid td.err{color:#d6453d}
 .cgrid td.sel{background:var(--accent-soft)}

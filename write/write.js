@@ -1222,7 +1222,8 @@ let suppressRulerClick = false;
 function drawRuler() {
   if (!doc) return;
   const wrap = $('#rulerWrap'), r = $('#ruler');
-  if (appEl.classList.contains('focus') || appEl.classList.contains('slides-mode')) { wrap.style.display = 'none'; return; }
+  // In Calc sind die Spalten-/Zeilenköpfe selbst das Lineal → cm-Lineal ausblenden
+  if (appEl.classList.contains('focus') || appEl.classList.contains('slides-mode') || appEl.classList.contains('calc-mode')) { wrap.style.display = 'none'; return; }
   wrap.style.display = '';
   const z = parseFloat(page.style.zoom) || 1;
   const wmm = pageWidthMm(), wpx = wmm * MM * z;
@@ -1641,12 +1642,12 @@ function renderSheet() {
   for (let c = 0; c < cols; c++) cg += '<col>';
   cg += '</colgroup>';
   let head = '<thead><tr><th class="cg-corner"></th>';
-  for (let c = 0; c < cols; c++) head += `<th class="cg-col">${idxToCol(c)}</th>`;
+  for (let c = 0; c < cols; c++) head += `<th class="cg-col" data-c="${c}">${idxToCol(c)}</th>`;
   head += '</tr></thead><tbody>';
   for (let r = 0; r < rows; r++) {
     const z = curGrid.zeilen[r];
     const textRow = !!(z && z.cells.length === 1);           // Absatz/Überschrift = eine Zelle → volle Blattbreite (wie Write)
-    head += `<tr${r > ur.maxR ? ' class="pad"' : ''}><th class="cg-row">${r + 1}</th>`;
+    head += `<tr${r > ur.maxR ? ' class="pad"' : ''}><th class="cg-row" data-r="${r}">${r + 1}</th>`;
     if (textRow) {
       const raw = gridGet(curGrid, 0, r), isF = cellText(raw).startsWith('=');
       const v = isF ? evalCell(0, r) : null, cl = ['textcell'];
@@ -1656,9 +1657,11 @@ function renderSheet() {
       head += `<td data-c="0" data-r="${r}" colspan="${cols}" class="${cl.join(' ')}">${isF ? esc(String(v)) : (raw || '')}</td>`;
     } else {
       for (let c = 0; c < cols; c++) {
-        const raw = gridGet(curGrid, c, r), isF = cellText(raw).startsWith('=');
+        const raw = gridGet(curGrid, c, r), txt = cellText(raw), isF = txt.startsWith('=');
         const v = isF ? evalCell(c, r) : null, cl = [];
-        if (isF && typeof v === 'number') cl.push('num'); else if (isF && /^#/.test(String(v))) cl.push('err');
+        if (isF && typeof v === 'number') cl.push('num');
+        else if (isF && /^#/.test(String(v))) cl.push('err');
+        else if (!isF && txt !== '' && /\d/.test(txt) && /^-?[\d'’.,\s]+%?$/.test(txt)) cl.push('num');   // reine Zahl → rechtsbündig
         if (c > ur.maxC || r > ur.maxR) cl.push('pad');
         head += `<td data-c="${c}" data-r="${r}"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${isF ? esc(String(v)) : (raw || '')}</td>`;
       }
@@ -1672,9 +1675,15 @@ let anchorC = 0, anchorR = 0, editingTd = null;
 function rangeBounds() { return { c1: Math.min(anchorC, selC), c2: Math.max(anchorC, selC), r1: Math.min(anchorR, selR), r2: Math.max(anchorR, selR) }; }
 function roundN(x) { return Math.round(x * 100) / 100; }
 function highlightSel() {
+  const t = gEl();
   allTd('td.sel, td.active').forEach(td => td.classList.remove('sel', 'active'));
+  if (t) t.querySelectorAll('.colsel, .rowsel').forEach(e => e.classList.remove('colsel', 'rowsel'));
   const { c1, c2, r1, r2 } = rangeBounds();
   for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const td = tdAt(c, r); if (td) td.classList.add('sel'); }
+  if (t) {   // aktive Spalte/Zeile im „Lineal" (Köpfe) hervorheben
+    for (let c = c1; c <= c2; c++) { const h = t.querySelector(`th.cg-col[data-c="${c}"]`); if (h) h.classList.add('colsel'); }
+    for (let r = r1; r <= r2; r++) { const h = t.querySelector(`th.cg-row[data-r="${r}"]`); if (h) h.classList.add('rowsel'); }
+  }
   const act = tdAt(selC, selR);
   if (act) { act.classList.add('active'); $('#cellRef').textContent = cellKey(selC, selR); $('#formulaInput').value = gridCellRaw(selC, selR); }
   updateCalcStat();
@@ -1763,7 +1772,7 @@ function gridMenuAction(g) {
 /* ---- Vertikales Lineal: Kopf-/Fuss-Höhe ziehen ---- */
 function drawVRuler() {
   if (!doc) return; const v = $('#vruler');
-  if (appEl.classList.contains('focus') || appEl.classList.contains('slides-mode')) { v.style.display = 'none'; return; }
+  if (appEl.classList.contains('focus') || appEl.classList.contains('slides-mode') || appEl.classList.contains('calc-mode')) { v.style.display = 'none'; return; }
   v.style.display = '';
   const ph = page.offsetHeight; let html = '';
   for (let cm = 0; cm <= Math.floor(ph / (10 * MM)); cm++) html += `<div class="vtick" style="top:${cm * 10 * MM}px"><span>${cm}</span></div>`;

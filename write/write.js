@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v9';
+const WRITE_VERSION = 'v10';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -25,7 +25,7 @@ function fmtDate(iso) {
 
 /* ---------- HTML-Sanitisierung (gegen XSS / kaputte Dateien) ---------- */
 const ALLOWED_TAGS = new Set(['P', 'BR', 'H1', 'H2', 'H3', 'H4', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'SPAN', 'FONT', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'PRE', 'CODE', 'A', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'IMG', 'HR', 'DIV', 'MARK', 'SUB', 'SUP']);
-const ALLOWED_ATTR = { '*': ['style'], A: ['href', 'target', 'rel'], IMG: ['src', 'alt', 'width', 'height'], FONT: ['face', 'color', 'size'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'] };
+const ALLOWED_ATTR = { '*': ['style', 'class'], A: ['href', 'target', 'rel'], IMG: ['src', 'alt', 'width', 'height'], FONT: ['face', 'color', 'size'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'] };
 function sanitizeHtml(html) {
   try {
     const tpl = document.createElement('template');
@@ -113,23 +113,69 @@ function newDocObject(partial = {}) {
 function migrateDoc(d) {
   if (!Array.isArray(d.seiten) || !d.seiten.length) {
     const typ = (d.einstellungen && d.einstellungen.modus === 'calc') ? 'calc' : 'write';
-    const p = { id: uid(), typ };
-    if (typ === 'calc') p.tabelle = d.tabelle || { cols: 8, rows: 20, cells: {} };
-    else p.html = d.html || '';
-    d.seiten = [p]; d.aktiv = 0;
+    const html = (typ === 'calc' && d.tabelle && d.tabelle.cells) ? tabelleToHtml(d.tabelle) : (d.html || '');
+    d.seiten = [{ id: uid(), typ, html }]; d.aktiv = 0;
   }
   if (typeof d.aktiv !== 'number' || d.aktiv < 0 || d.aktiv >= d.seiten.length) d.aktiv = 0;
   d.seiten.forEach(p => {
     if (!p.id) p.id = uid();
-    if (p.typ === 'calc') { if (!p.tabelle || !p.tabelle.cells) p.tabelle = { cols: 8, rows: 20, cells: {} }; }
-    else { p.typ = (p.typ === 'slides') ? 'slides' : 'write'; if (p.html == null) p.html = ''; }
+    if (p.tabelle && p.tabelle.cells && p.html == null) p.html = tabelleToHtml(p.tabelle);  // alte Calc-Seite → HTML
+    if (p.html == null) p.html = '';
+    p.typ = (p.typ === 'calc') ? 'calc' : (p.typ === 'slides') ? 'slides' : 'write';
+    delete p.tabelle;
   });
   if (d.einstellungen) delete d.einstellungen.modus;
   delete d.html; delete d.tabelle;
   return d;
 }
 function activePage() { return doc.seiten[doc.aktiv]; }
-function curTab() { const p = activePage(); if (!p.tabelle || !p.tabelle.cells) p.tabelle = { cols: 8, rows: 20, cells: {} }; return p.tabelle; }
+
+/* ============================================================
+   Gemeinsames Modell: HTML  ⇄  Raster (Block = Zeile, Spaltentrenner = Spalte)
+   „Ein Write IST ein Calc" — dieselben Daten, nur andere Ansicht.
+   ============================================================ */
+let curGrid = null;   // aktuelles Raster der aktiven Seite (Calc-Ansicht)
+const COLSEP = '<span class="colsep" contenteditable="false">⇥</span>';
+function cellText(frag) { const d = document.createElement('div'); d.innerHTML = frag || ''; return (d.textContent || '').replace(/​/g, '').trim(); }
+function htmlToGrid(html) {
+  const tpl = document.createElement('template'); tpl.innerHTML = html || '';
+  const zeilen = [];
+  [...tpl.content.children].forEach(b => {
+    const cells = []; let cur = '';
+    b.childNodes.forEach(n => {
+      if (n.nodeType === 1 && n.classList && n.classList.contains('colsep')) { cells.push(cur); cur = ''; }
+      else cur += (n.nodeType === 1 ? n.outerHTML : esc(n.textContent));
+    });
+    cells.push(cur);
+    zeilen.push({ tag: (b.tagName || 'P').toLowerCase(), cells });
+  });
+  if (!zeilen.length) zeilen.push({ tag: 'p', cells: [''] });
+  return { cols: Math.max(1, ...zeilen.map(z => z.cells.length)), zeilen };
+}
+function gridToHtml(grid) {
+  return grid.zeilen.map(z => {
+    const tag = /^h[1-3]$/.test(z.tag) ? z.tag : 'p';
+    const inner = (z.cells.length ? z.cells : ['']).map(c => c || '').join(COLSEP);
+    return `<${tag}>${inner || '<br>'}</${tag}>`;
+  }).join('') || '<p><br></p>';
+}
+function gridGet(grid, c, r) { const z = grid.zeilen[r]; return z ? (z.cells[c] || '') : ''; }
+function gridEnsure(grid, c, r) {
+  while (grid.zeilen.length <= r) grid.zeilen.push({ tag: 'p', cells: [''] });
+  const z = grid.zeilen[r];
+  while (z.cells.length <= c) z.cells.push('');
+  grid.cols = Math.max(grid.cols, c + 1);
+}
+function tabelleToHtml(tab) {   // alte Calc-Tabelle → HTML-Zeilen (Migration)
+  let html = '';
+  for (let r = 1; r <= (tab.rows || 1); r++) {
+    const cells = [];
+    for (let c = 0; c < (tab.cols || 1); c++) cells.push(esc(tab.cells[idxToCol(c) + r] || ''));
+    while (cells.length > 1 && cells[cells.length - 1] === '') cells.pop();
+    html += '<p>' + cells.join(COLSEP) + '</p>';
+  }
+  return html || '<p><br></p>';
+}
 
 function openDoc(id) {
   const d = lib.docs[id]; if (!d) return;
@@ -180,7 +226,8 @@ function setDirty(v) {
 }
 function capturePage() {
   const p = activePage(); if (!p) return;
-  if (p.typ === 'write') p.html = editor.innerHTML;   // calc-Daten werden live in p.tabelle mutiert
+  if (p.typ === 'calc') { if (curGrid) p.html = gridToHtml(curGrid); }
+  else p.html = editor.innerHTML;
 }
 function captureDoc() {
   if (!doc) return;
@@ -277,9 +324,12 @@ function ingestGdoc(text, handle) {
     meta: Object.assign(newDocObject().meta, data.meta || {})
   });
   if (Array.isArray(data.inhalt.seiten)) {              // neues Seiten-Format
-    d.seiten = data.inhalt.seiten.map(p => (p && p.typ === 'calc')
-      ? { id: uid(), typ: 'calc', tabelle: (p.tabelle && p.tabelle.cells) ? { cols: +p.tabelle.cols || 8, rows: +p.tabelle.rows || 20, cells: p.tabelle.cells } : { cols: 8, rows: 20, cells: {} } }
-      : { id: uid(), typ: (p && p.typ === 'slides') ? 'slides' : 'write', html: sanitizeHtml((p && p.html) || '') });
+    d.seiten = data.inhalt.seiten.map(p => {
+      const typ = (p && p.typ === 'calc') ? 'calc' : (p && p.typ === 'slides') ? 'slides' : 'write';
+      let html = sanitizeHtml((p && p.html) || '');
+      if (!html && p && p.tabelle && p.tabelle.cells) html = tabelleToHtml(p.tabelle);   // sehr alte Calc-Seite
+      return { id: uid(), typ, html };
+    });
     if (!d.seiten.length) d.seiten = [{ id: uid(), typ: 'write', html: '' }];
     d.aktiv = 0;
   } else {                                              // altes Format → migrieren
@@ -1081,16 +1131,9 @@ function startMarginDrag(which, e) {
   const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); scheduleSave(); updatePages(); setTimeout(() => suppressRulerClick = false, 0); };
   document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
 }
+// Tab = Spaltentrenner: erzeugt im Write-Modus eine Spalte (in Calc dieselbe Zelle/Spalte)
 function insertTab() {
-  const sel = document.getSelection();
-  if (!sel || !sel.rangeCount) { document.execCommand('insertHTML', false, '<span class="tabspace" style="display:inline-block;width:48px"></span>​'); afterEdit(); return; }
-  const rng = sel.getRangeAt(0), rect = rng.getClientRects()[0] || rng.getBoundingClientRect();
-  const z = parseFloat(page.style.zoom) || 1;
-  const caretX = (rect.left - editor.getBoundingClientRect().left) / z;
-  const stops = (doc.einstellungen.tabs || []).map(mm => (mm - doc.einstellungen.margins.left) * MM).sort((a, b) => a - b);
-  const target = stops.find(s => s > caretX + 2);
-  const w = Math.max(8, Math.round(target != null ? target - caretX : 48));
-  document.execCommand('insertHTML', false, `<span class="tabspace" style="display:inline-block;width:${w}px"></span>​`);
+  document.execCommand('insertHTML', false, COLSEP + '​');
   afterEdit();
 }
 
@@ -1112,7 +1155,7 @@ function insertTOC() {
   refreshTOC(); afterEdit();
 }
 function refreshTOC() {
-  const tocs = $$('.toc[data-toc]', editor); if (!tocs.length) return;
+  const tocs = $$('.toc', editor); if (!tocs.length) return;
   const heads = $$('h1,h2,h3', editor).filter(h => h.innerText.trim());
   let html = '<div class="toc-title">Inhaltsverzeichnis</div>';
   if (!heads.length) html += '<div class="toc-empty">Überschriften erscheinen hier automatisch.</div>';
@@ -1220,8 +1263,8 @@ function renderActivePage() {
   const meta = MODE_META[m]; $('#modeIco').textContent = meta[0]; $('#modeName').textContent = meta[1];
   const calc = (m === 'calc');
   appEl.classList.toggle('calc-mode', calc);
-  if (calc) { selC = 0; selR = 1; renderGrid(); selectCell(0, 1); }
-  else { editor.innerHTML = sanitizeHtml(p.html || ''); applyZoom(); refreshAll(); }
+  if (calc) { curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; renderCalc(); selectCell(0, 0); }
+  else { editor.innerHTML = sanitizeHtml(p.html || ''); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); applyZoom(); refreshAll(); }
 }
 // Typ der AKTIVEN Seite wechseln (Modus-Pille)
 function setPageType(typ) {
@@ -1230,8 +1273,7 @@ function setPageType(typ) {
   const p = activePage(); if (p.typ === typ) return;
   capturePage();
   p.typ = typ;
-  if (typ === 'calc' && (!p.tabelle || !p.tabelle.cells)) p.tabelle = { cols: 8, rows: 20, cells: {} };
-  if (typ === 'write' && p.html == null) p.html = '';
+  if (p.html == null) p.html = '';
   renderActivePage(); renderPageNav(); scheduleSave();
 }
 function switchPage(i) {
@@ -1241,8 +1283,7 @@ function switchPage(i) {
 function addPage(typ) {
   if (typ === 'slides') { toast('Submit Slides folgt als Nächstes 🙂'); return; }
   capturePage();
-  const p = { id: uid(), typ: typ === 'calc' ? 'calc' : 'write' };
-  if (p.typ === 'calc') p.tabelle = { cols: 8, rows: 20, cells: {} }; else p.html = '';
+  const p = { id: uid(), typ: typ === 'calc' ? 'calc' : 'write', html: '' };
   doc.seiten.push(p); doc.aktiv = doc.seiten.length - 1;
   renderActivePage(); renderPageNav(); scheduleSave();
 }
@@ -1264,14 +1305,17 @@ function renderPageNav() {
 }
 function colToIdx(s) { let n = 0; for (const ch of s) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; }
 function idxToCol(i) { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
-let selC = 0, selR = 1;
-function cellKey(c, r) { return idxToCol(c) + r; }
+let selC = 0, selR = 0;   // 0-basiert (Spalte, Zeile)
+const DISP_MIN_COLS = 6, DISP_MIN_ROWS = 20;
+function cellKey(c, r) { return idxToCol(c) + (r + 1); }
 
-/* ---- Formel-Auswertung (=SUMME(A1:A5), =A1*B2 …) ---- */
+/* ---- Formel-Auswertung (=SUMME(A1:A5), =A1*B2 …) auf dem Raster ---- */
 function refValue(ref, seen) {
-  if (seen.has(ref)) return '#ZIRKEL';
-  const ns = new Set(seen); ns.add(ref);
-  return evalRaw(curTab().cells[ref] || '', ns);
+  const m = ref.match(/^([A-Z]+)(\d+)$/); if (!m) return '#FEHLER';
+  const c = colToIdx(m[1]), r = +m[2] - 1, key = c + ',' + r;
+  if (seen.has(key)) return '#ZIRKEL';
+  const ns = new Set(seen); ns.add(key);
+  return evalRaw(cellText(gridGet(curGrid, c, r)), ns);
 }
 function expandArgs(args, seen) {
   const out = [];
@@ -1310,16 +1354,18 @@ function evalRaw(raw, seen) {
   } catch (_) { return '#FEHLER'; }
 }
 
-/* ---- Raster + Auswahl ---- */
-function renderGrid() {
-  const t = curTab(), g = $('#grid');
+function evalCell(c, r) { return evalRaw(cellText(gridGet(curGrid, c, r)), new Set([c + ',' + r])); }
+
+/* ---- Gitter rendern + Auswahl (liest/schreibt curGrid = aktive Seite) ---- */
+function renderCalc() {
+  const g = $('#grid'), cols = Math.max(curGrid.cols, DISP_MIN_COLS), rows = Math.max(curGrid.zeilen.length, DISP_MIN_ROWS);
   let h = '<thead><tr><th class="corner"></th>';
-  for (let c = 0; c < t.cols; c++) h += `<th>${idxToCol(c)}</th>`;
+  for (let c = 0; c < cols; c++) h += `<th>${idxToCol(c)}</th>`;
   h += '</tr></thead><tbody>';
-  for (let r = 1; r <= t.rows; r++) {
-    h += `<tr><th class="rownum">${r}</th>`;
-    for (let c = 0; c < t.cols; c++) {
-      const k = cellKey(c, r), val = evalRaw(t.cells[k] || '', new Set([k]));
+  for (let r = 0; r < rows; r++) {
+    h += `<tr><th class="rownum">${r + 1}</th>`;
+    for (let c = 0; c < cols; c++) {
+      const val = evalCell(c, r);
       const cls = typeof val === 'number' ? ' class="num"' : (/^#/.test(String(val)) ? ' class="err"' : '');
       h += `<td data-c="${c}" data-r="${r}"${cls}>${esc(String(val))}</td>`;
     }
@@ -1331,22 +1377,23 @@ function renderGrid() {
 function highlightSel() {
   $$('#grid td.sel').forEach(td => td.classList.remove('sel'));
   const td = $(`#grid td[data-c="${selC}"][data-r="${selR}"]`);
-  if (td) { td.classList.add('sel'); $('#cellRef').textContent = cellKey(selC, selR); $('#formulaInput').value = curTab().cells[cellKey(selC, selR)] || ''; }
+  if (td) { td.classList.add('sel'); $('#cellRef').textContent = cellKey(selC, selR); $('#formulaInput').value = cellText(gridGet(curGrid, selC, selR)); }
 }
 function selectCell(c, r) {
-  const t = curTab();
-  selC = Math.max(0, Math.min(t.cols - 1, c));
-  selR = Math.max(1, Math.min(t.rows, r));
+  const cols = Math.max(curGrid.cols, DISP_MIN_COLS), rows = Math.max(curGrid.zeilen.length, DISP_MIN_ROWS);
+  selC = Math.max(0, Math.min(cols - 1, c));
+  selR = Math.max(0, Math.min(rows - 1, r));
   highlightSel();
   const td = $(`#grid td[data-c="${selC}"][data-r="${selR}"]`); if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 function commitCell(val) {
-  const k = cellKey(selC, selR), t = curTab();
-  if (val === '' || val == null) delete t.cells[k]; else t.cells[k] = val;
-  renderGrid(); scheduleSave();
+  gridEnsure(curGrid, selC, selR);
+  curGrid.zeilen[selR].cells[selC] = esc(val == null ? '' : String(val));
+  activePage().html = gridToHtml(curGrid);
+  renderCalc(); scheduleSave();
 }
-function calcAddRow() { curTab().rows++; renderGrid(); scheduleSave(); }
-function calcAddCol() { curTab().cols++; renderGrid(); scheduleSave(); }
+function calcAddRow() { gridEnsure(curGrid, 0, Math.max(curGrid.zeilen.length, DISP_MIN_ROWS)); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
+function calcAddCol() { curGrid.cols = Math.max(curGrid.cols, DISP_MIN_COLS) + 1; gridEnsure(curGrid, curGrid.cols - 1, 0); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
 
 /* ---- Vertikales Lineal: Kopf-/Fuss-Höhe ziehen ---- */
 function drawVRuler() {

@@ -383,6 +383,8 @@ body[data-theme="dark"] .bubble{background:#2a3140;border:1px solid var(--line)}
 .editor mark{background:#ffe066;color:inherit;padding:.05em .1em;border-radius:3px}
 body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .editor hr{border:none;border-top:1px solid var(--line);margin:1.2em 0}
+/* Spaltentrenner (Tab = Spalte) – verbindet Write- und Calc-Ansicht */
+.editor .colsep{display:inline-block;min-width:30px;text-align:center;color:var(--ink-faint);opacity:.45;user-select:none;font-size:11px;vertical-align:baseline}
 /* Automatisches Inhaltsverzeichnis */
 .editor .toc{border:1px solid var(--line);border-radius:9px;padding:16px 20px;margin:1em 0;background:var(--surface-2);user-select:none}
 .editor .toc-title{font-weight:700;font-size:15px;margin-bottom:10px}
@@ -498,6 +500,7 @@ body[data-theme="dark"] .toast{background:#2a3140}
   .canvas{padding:0;overflow:visible;display:block}
   .page{box-shadow:none;width:auto !important;min-height:auto !important;border-radius:0;padding:0 16mm;zoom:1 !important}
   .editor{font-size:11pt;padding:0}
+  .editor .colsep{color:transparent !important;opacity:1}
   /* Kopf-/Fusszeile wiederholen sich auf jeder gedruckten Seite */
   .zone-h{position:fixed;top:0;left:0;right:0;border:none;padding:6mm 16mm 2mm;min-height:0}
   .zone-f{position:fixed;bottom:0;left:0;right:0;border:none;padding:2mm 16mm 6mm;min-height:0}

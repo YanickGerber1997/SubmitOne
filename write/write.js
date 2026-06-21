@@ -1263,8 +1263,7 @@ function setFormat(f) {
   applyFormat(); applyZoom(); updatePages(); scheduleSave();
 }
 function applyZoom() {
-  const extra = appEl.classList.contains('calc-mode') ? 48 : 0;   // Platz für das linke Zeilen-Lineal
-  const avail = ($('#canvas').clientWidth || 800) - 56 - extra;
+  const avail = ($('#canvas').clientWidth || 800) - 56;   // Calc-Blatt exakt so gross wie Write
   const fit = Math.max(.2, avail / (pageWidthMm() * MM));
   let z = (zoomMode === 'auto') ? Math.min(1, fit) : zoomMode;
   z = Math.max(.2, Math.min(2.5, z));

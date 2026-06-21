@@ -2087,7 +2087,8 @@ function updateCalcStat() {
   const nums = []; let count = 0;
   for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const v = evalCell(c, r); if (v !== '' && v != null) count++; if (typeof v === 'number') nums.push(v); }
   const sum = nums.reduce((a, b) => a + b, 0);
-  el.textContent = nums.length ? `Summe ${roundN(sum)}  ·  Mittel ${roundN(sum / nums.length)}  ·  Anzahl ${count}` : `Anzahl ${count}`;
+  const prod = nums.length ? nums.reduce((a, b) => a * b, 1) : 0;
+  el.textContent = nums.length ? `Summe ${roundN(sum)}  ·  Produkt ${roundN(prod)}  ·  Mittel ${roundN(sum / nums.length)}  ·  Anzahl ${count}` : `Anzahl ${count}`;
 }
 function selectCell(c, r, extend) {
   selR = Math.max(0, Math.min(gridRows - 1, r));

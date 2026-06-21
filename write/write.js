@@ -1905,6 +1905,13 @@ function fmtNum(n, f) {
   return n.toLocaleString('de-CH');
 }
 function isNumericText(t) { return t !== '' && /\d/.test(t) && /^-?[\d'’.,\s]+%?$/.test(t); }
+// echte „Textzeile" (Absatz/Überschrift = eine volle Zelle über die Blattbreite) – sonst normales Gitter
+function isTextRow(r) {
+  const z = curGrid && curGrid.zeilen[r]; if (!z || z.cells.length !== 1) return false;
+  if (curMerges().some(mg => r >= mg.r && r < mg.r + mg.rs)) return false;
+  const only = cellText(z.cells[0]);
+  return /^h[1-3]$/.test(z.tag || '') || (!!only && /\s/.test(only)) || only.length > 24;
+}
 // liefert {html, cls} für eine Zelle – berücksichtigt Formel-Ergebnis und Zahlenformat
 function cellStyle(c, r) {
   let s = '';
@@ -2000,11 +2007,8 @@ function renderSheet() {
   let body = '<tbody>';
   for (let r = 0; r < rows; r++) {
     const z = curGrid.zeilen[r];
-    const hasMerge = curMerges().some(mg => r >= mg.r && r < mg.r + mg.rs);
-    // „Textzeile" (volle Blattbreite wie Write) nur bei Überschrift/Fliesstext – nicht bei leeren/kurzen Zellen oder Verbindungen
-    const only = (z && z.cells.length === 1) ? cellText(z.cells[0]) : '';
     const isHead = !!(z && /^h[1-3]$/.test(z.tag || ''));
-    const textRow = !hasMerge && !!(z && z.cells.length === 1 && (isHead || (only && /\s/.test(only)) || only.length > 24));
+    const textRow = isTextRow(r);
     const trStyle = rh[r] ? ` style="height:${rh[r]}px"` : '';
     body += `<tr${r > ur.maxR ? ' class="pad"' : ''}${trStyle}>`;
     if (textRow) {
@@ -2084,8 +2088,7 @@ function updateCalcStat() {
 function selectCell(c, r, extend) {
   selR = Math.max(0, Math.min(gridRows - 1, r));
   selC = Math.max(0, Math.min(gridCols - 1, c));
-  const z = curGrid.zeilen[selR];
-  if (z && z.cells.length === 1 && !curMerges().length) selC = 0;     // Textzeile hat nur eine (volle) Zelle
+  if (isTextRow(selR)) selC = 0;     // nur echte Fliesstext-Zeile hat eine volle Zelle
   const mg = mergeAt(selC, selR); if (mg) { selC = mg.c; selR = mg.r; }   // verbundene Zelle → Anker
   if (!extend) { anchorC = selC; anchorR = selR; }
   highlightSel();

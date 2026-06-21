@@ -340,7 +340,7 @@ function ingestGdoc(text, handle) {
       const typ = (p && p.typ === 'calc') ? 'calc' : (p && p.typ === 'slides') ? 'slides' : 'write';
       let html = sanitizeHtml((p && p.html) || '');
       if (!html && p && p.tabelle && p.tabelle.cells) html = tabelleToHtml(p.tabelle);   // sehr alte Calc-Seite
-      return { id: uid(), typ, html };
+      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {} };
     });
     if (!d.seiten.length) d.seiten = [{ id: uid(), typ: 'write', html: '' }];
     d.aktiv = 0;
@@ -738,6 +738,7 @@ function wire() {
   const calcFocus = () => pgEl.focus();
   $('#calcAddRow').addEventListener('click', calcAddRow);
   $('#calcAddCol').addEventListener('click', calcAddCol);
+  $$('#calcBar [data-fmt]').forEach(b => b.addEventListener('click', () => setCellFormat(b.dataset.fmt)));
   // Maus: Auswahl + Bereich ziehen (delegiert auf #pageGrid)
   let gridDragging = false;
   pgEl.addEventListener('mousedown', e => {
@@ -1629,6 +1630,36 @@ function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen
 }
 let gridCols = 1, gridRows = 1;
 function renderCalc() { renderSheet(); highlightSel(); updateStats(); updatePages(); }
+// Zahlenformate je Zelle (am Seiten-Objekt gespeichert, übersteht Speichern/Öffnen)
+function curFmt() { const p = activePage(); if (!p.fmt || typeof p.fmt !== 'object') p.fmt = {}; return p.fmt; }
+function fmtNum(n, f) {
+  if (!isFinite(n)) return String(n);
+  if (f === 'pct') return (n * 100).toLocaleString('de-CH', { maximumFractionDigits: 2 }) + ' %';
+  if (f === 'chf') return 'CHF ' + n.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (f === 'num2') return n.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (f === 'num0') return Math.round(n).toLocaleString('de-CH');
+  return n.toLocaleString('de-CH');
+}
+function isNumericText(t) { return t !== '' && /\d/.test(t) && /^-?[\d'’.,\s]+%?$/.test(t); }
+// liefert {html, cls} für eine Zelle – berücksichtigt Formel-Ergebnis und Zahlenformat
+function cellDisplay(c, r) {
+  const raw = gridGet(curGrid, c, r), txt = cellText(raw), isF = txt.startsWith('=');
+  const f = curFmt()[c + ',' + r];
+  if (isF) {
+    const v = evalCell(c, r);
+    if (typeof v === 'number') return { html: esc(f ? fmtNum(v, f) : String(v)), cls: 'num' };
+    if (/^#/.test(String(v))) return { html: esc(String(v)), cls: 'err' };
+    return { html: esc(String(v)), cls: '' };
+  }
+  if (f && isNumericText(txt)) return { html: esc(fmtNum(toNum(txt), f)), cls: 'num' };
+  return { html: raw || '', cls: isNumericText(txt) ? 'num' : '' };
+}
+function setCellFormat(f) {
+  if (!curGrid) return;
+  const fm = curFmt(), { c1, c2, r1, r2 } = rangeBounds();
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const k = c + ',' + r; if (f === 'none') delete fm[k]; else fm[k] = f; }
+  renderCalc(); scheduleSave();
+}
 // Gitter ins SELBE Blatt wie Write rendern: Ränder, Zoom, Kopf/Fuss, Lineal kommen vom .page
 function renderSheet() {
   const host = $('#pageGrid'); if (!host || !curGrid) return;
@@ -1646,24 +1677,23 @@ function renderSheet() {
   head += '</tr></thead><tbody>';
   for (let r = 0; r < rows; r++) {
     const z = curGrid.zeilen[r];
-    const textRow = !!(z && z.cells.length === 1);           // Absatz/Überschrift = eine Zelle → volle Blattbreite (wie Write)
+    // „Textzeile" (volle Blattbreite wie Write) nur bei Überschrift oder echtem Fliesstext – nicht bei leeren/kurzen Zellen
+    const only = (z && z.cells.length === 1) ? cellText(z.cells[0]) : '';
+    const isHead = !!(z && /^h[1-3]$/.test(z.tag || ''));
+    const textRow = !!(z && z.cells.length === 1 && (isHead || (only && /\s/.test(only)) || only.length > 24));
     head += `<tr${r > ur.maxR ? ' class="pad"' : ''}><th class="cg-row" data-r="${r}">${r + 1}</th>`;
     if (textRow) {
-      const raw = gridGet(curGrid, 0, r), isF = cellText(raw).startsWith('=');
-      const v = isF ? evalCell(0, r) : null, cl = ['textcell'];
-      if (z.tag && /^h[1-3]$/.test(z.tag)) cl.push(z.tag);
-      if (isF && typeof v === 'number') cl.push('num'); else if (isF && /^#/.test(String(v))) cl.push('err');
+      const dsp = cellDisplay(0, r), cl = ['textcell'];
+      if (isHead) cl.push(z.tag);
+      if (dsp.cls === 'err') cl.push('err');
       if (r > ur.maxR) cl.push('pad');
-      head += `<td data-c="0" data-r="${r}" colspan="${cols}" class="${cl.join(' ')}">${isF ? esc(String(v)) : (raw || '')}</td>`;
+      head += `<td data-c="0" data-r="${r}" colspan="${cols}" class="${cl.join(' ')}">${dsp.html}</td>`;
     } else {
       for (let c = 0; c < cols; c++) {
-        const raw = gridGet(curGrid, c, r), txt = cellText(raw), isF = txt.startsWith('=');
-        const v = isF ? evalCell(c, r) : null, cl = [];
-        if (isF && typeof v === 'number') cl.push('num');
-        else if (isF && /^#/.test(String(v))) cl.push('err');
-        else if (!isF && txt !== '' && /\d/.test(txt) && /^-?[\d'’.,\s]+%?$/.test(txt)) cl.push('num');   // reine Zahl → rechtsbündig
+        const dsp = cellDisplay(c, r), cl = [];
+        if (dsp.cls) cl.push(dsp.cls);
         if (c > ur.maxC || r > ur.maxR) cl.push('pad');
-        head += `<td data-c="${c}" data-r="${r}"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${isF ? esc(String(v)) : (raw || '')}</td>`;
+        head += `<td data-c="${c}" data-r="${r}"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${dsp.html}</td>`;
       }
     }
     head += '</tr>';

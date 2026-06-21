@@ -481,6 +481,8 @@ body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .formula-input{flex:1;border:1px solid var(--line);background:var(--surface-2);border-radius:7px;padding:7px 10px;font-family:var(--font-ui);font-size:13px;color:var(--ink)}
 .formula-input:focus{outline:none;border-color:var(--accent)}
 .calc-stat{font-size:12px;color:var(--ink-soft);white-space:nowrap;font-variant-numeric:tabular-nums;padding:0 8px}
+.cb-fmt{display:inline-flex;gap:3px;padding-left:8px;margin-left:2px;border-left:1px solid var(--line)}
+.cb-fmt .fb-btn{min-width:30px}
 
 /* Das Gitter füllt die Druckbreite des Blatts (Ränder kommen vom .page) */
 .cgrid{width:100%;border-collapse:collapse;table-layout:fixed;font-size:inherit}

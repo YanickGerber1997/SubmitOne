@@ -1529,13 +1529,23 @@ function printPreview() {
     scroll.appendChild(p); return p;
   };
   let p = newPage(), c = p.querySelector('.pv-c'); const pages = [p];
-  const budget = () => pageHpx - p.querySelector('.pv-h').offsetHeight - p.querySelector('.pv-f').offsetHeight - 8;
+  // verfügbare Höhe pro Seite (Kopf/Fuss + Innenabstand abziehen) – einmal messen, gilt für alle Seiten
+  const headH = p.querySelector('.pv-h').offsetHeight, footH = p.querySelector('.pv-f').offsetHeight;
+  const cpad = getComputedStyle(c); const padV = parseFloat(cpad.paddingTop) + parseFloat(cpad.paddingBottom);
+  const avail = pageHpx - headH - footH - padV - 2;
+  const outerH = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.height + (parseFloat(s.marginTop) || 0) + (parseFloat(s.marginBottom) || 0); };
+  const nextPage = () => { p = newPage(); pages.push(p); c = p.querySelector('.pv-c'); };
+  let used = 0;
   [...editor.children].forEach(node => {
-    const clone = node.cloneNode(true); c.appendChild(clone);
-    if (c.scrollHeight > budget() && c.children.length > 1) {
-      c.removeChild(clone);
-      p = newPage(); pages.push(p); c = p.querySelector('.pv-c'); c.appendChild(clone);
-    }
+    // manueller Seitenumbruch
+    if (node.classList && node.classList.contains('pagebreak')) { if (c.children.length) { nextPage(); used = 0; } return; }
+    const clone = node.cloneNode(true);
+    clone.querySelectorAll && clone.querySelectorAll('.sp-err').forEach(s => s.replaceWith(document.createTextNode(s.textContent)));
+    c.appendChild(clone);
+    const h = outerH(clone);
+    if (used + h > avail && c.children.length > 1) {     // passt nicht mehr → ganzer Block auf neue Seite
+      c.removeChild(clone); nextPage(); c.appendChild(clone); used = outerH(clone);
+    } else used += h;
   });
   pages.forEach((pg, i) => pg.querySelector('.pv-num').textContent = 'Seite ' + (i + 1) + ' / ' + pages.length);
   $('#pvInfo').textContent = pages.length + (pages.length === 1 ? ' Seite' : ' Seiten') + ' · ' + (quer ? 'Querformat' : 'Hochformat');

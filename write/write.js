@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v15';
+const WRITE_VERSION = 'v16';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -1471,31 +1471,38 @@ function calcUsedRange() {
 function gEl() { return $('#calcSheet .sheet-grid'); }
 function tdAt(c, r) { const t = gEl(); return t ? t.querySelector(`td[data-c="${c}"][data-r="${r}"]`) : null; }
 function allTd(sel) { const t = gEl(); return t ? [...t.querySelectorAll(sel)] : []; }
-function calcExtent() {   // wie viele Spalten/Zeilen das Blatt füllt (Inhalt oder Blattfüllung)
-  const ur = calcUsedRange(), d = pageDims();
-  return { cols: Math.max(ur.maxC + 2, Math.round((d.w - 44) / 20)), rows: Math.max(ur.maxR + 2, Math.round((d.h - 72) / 7)) };
+function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen + 2 Spare
+  const z = curGrid.zeilen;
+  return { cols: Math.max(1, ...z.map(x => x.cells.length)), rows: z.length + 2 };
 }
 function renderCalc() { renderSheet(); highlightSel(); }
 function renderSheet() {
   const sheet = $('#calcSheet'), ur = calcUsedRange();
-  const { cols, rows } = calcExtent();
+  const { cols: totalCols, rows } = calcExtent();
   const quer = doc.einstellungen.ausrichtung === 'quer';
-  let head = '<thead><tr><th class="cg-corner"></th>';
-  for (let c = 0; c < cols; c++) head += `<th class="cg-col${c > ur.maxC ? ' pad' : ''}">${idxToCol(c)}</th>`;
-  head += '</tr></thead><tbody>';
+  let body = '';
   for (let r = 0; r < rows; r++) {
-    head += `<tr${r > ur.maxR ? ' class="pad"' : ''}><th class="cg-row">${r + 1}</th>`;
-    for (let c = 0; c < cols; c++) {
-      const v = evalCell(c, r), cl = [];
-      if (typeof v === 'number') cl.push('num'); else if (/^#/.test(String(v))) cl.push('err');
-      if (c > ur.maxC || r > ur.maxR) cl.push('pad');
-      head += `<td data-c="${c}" data-r="${r}"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${esc(String(v))}</td>`;
+    const z = curGrid.zeilen[r];
+    const tag = (z && /^h[1-3]$/.test(z.tag)) ? z.tag : 'p';
+    const nCells = z ? z.cells.length : 0;
+    body += `<tr class="r-${tag}${r > ur.maxR ? ' pad' : ''}">`;
+    if (nCells <= 1) {                                   // Absatz/Überschrift → volle Breite (wie Write)
+      const raw = gridGet(curGrid, 0, r);
+      const disp = cellText(raw).startsWith('=') ? esc(String(evalCell(0, r))) : (raw || '<br>');
+      body += `<td data-c="0" data-r="${r}"${totalCols > 1 ? ` colspan="${totalCols}"` : ''}>${disp}</td>`;
+    } else {                                             // Datenzeile → Spalten so breit wie nötig
+      for (let c = 0; c < totalCols; c++) {
+        const raw = gridGet(curGrid, c, r), isF = cellText(raw).startsWith('=');
+        const v = isF ? evalCell(c, r) : null, cl = [];
+        if (isF && typeof v === 'number') cl.push('num'); else if (isF && /^#/.test(String(v))) cl.push('err');
+        if (c > ur.maxC || r > ur.maxR) cl.push('pad');
+        body += `<td data-c="${c}" data-r="${r}"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${isF ? esc(String(v)) : (raw || '')}</td>`;
+      }
     }
-    head += '</tr>';
+    body += '</tr>';
   }
-  head += '</tbody>';
   const fmt = doc.einstellungen.format || 'A4';
-  sheet.innerHTML = `<div class="cs-page${quer ? ' quer' : ''}" id="csPage"><div class="cs-format">${fmt} · Calc</div><div class="cs-h">${$('#zoneH').innerHTML}</div><div class="cs-c"><table class="sheet-grid">${head}</table></div><div class="cs-f"><span>${$('#zoneF').innerHTML}</span><span class="pv-num">Seite 1</span></div></div>`;
+  sheet.innerHTML = `<div class="cs-page${quer ? ' quer' : ''}" id="csPage"><div class="cs-format">${fmt} · Calc</div><div class="cs-h">${$('#zoneH').innerHTML}</div><div class="cs-c"><table class="sheet-grid doc">${body}</table></div><div class="cs-f"><span>${$('#zoneF').innerHTML}</span><span class="pv-num">Seite 1</span></div></div>`;
   fitSheet();
 }
 function fitSheet() {

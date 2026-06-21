@@ -450,16 +450,19 @@ body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .cs-h{padding:14mm 0 4mm;min-height:14mm;border-bottom:1px dashed var(--line);font-size:12px;color:var(--ink-soft)}
 .cs-c{flex:1;padding:5mm 0}
 .cs-f{padding:4mm 0 14mm;min-height:14mm;border-top:1px dashed var(--line);font-size:12px;color:var(--ink-soft);display:flex;justify-content:space-between;align-items:flex-end}
-.sheet-grid{border-collapse:collapse;width:100%;table-layout:fixed;font-size:10.5pt}
-.sheet-grid th,.sheet-grid td{border:1px solid var(--line-soft);padding:3px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sheet-grid thead th{background:var(--surface-2);color:var(--ink-faint);font-weight:600;font-size:9px;text-align:center;height:16px;letter-spacing:.3px}
-.sheet-grid .cg-corner,.sheet-grid .cg-row{width:30px;background:var(--surface-2);color:var(--ink-faint);font-weight:600;font-size:9px;text-align:center}
-.sheet-grid td{color:var(--paper-ink);height:22px;cursor:cell}
-.sheet-grid td.num{text-align:right;font-variant-numeric:tabular-nums}
-.sheet-grid td.err{color:#d6453d}
-.sheet-grid td.sel{background:var(--accent-soft)}
-.sheet-grid td.active{outline:2px solid var(--accent);outline-offset:-1px}
-.sheet-grid td.celledit{outline:2px solid var(--accent);background:var(--paper);cursor:text;white-space:normal}
+/* Calc-Tabelle = sieht aus wie das Write-Dokument; Spalten so breit wie nötig; Struktur nur bei Hover/Auswahl */
+.sheet-grid.doc{border-collapse:collapse;width:auto;max-width:100%;table-layout:auto;font-family:var(--font-ui);font-size:16px;line-height:1.7;color:var(--paper-ink)}
+.sheet-grid.doc td{border:1px solid transparent;padding:0 0 .55em;vertical-align:top;cursor:text}
+.sheet-grid.doc td + td{padding-left:1.4em}
+.sheet-grid.doc tr.r-h1 td{font-size:30px;font-weight:700;line-height:1.2;padding-top:.35em;letter-spacing:-.4px}
+.sheet-grid.doc tr.r-h2 td{font-size:23px;font-weight:600;line-height:1.25;padding-top:.5em;letter-spacing:-.2px}
+.sheet-grid.doc tr.r-h3 td{font-size:18.5px;font-weight:600;padding-top:.35em}
+.sheet-grid.doc td:hover{border-color:var(--line)}
+.sheet-grid.doc td.num{text-align:right;font-variant-numeric:tabular-nums}
+.sheet-grid.doc td.err{color:#d6453d}
+.sheet-grid.doc td.sel{background:var(--accent-soft)}
+.sheet-grid.doc td.active{outline:1.5px solid var(--accent);outline-offset:-1px;border-color:transparent}
+.sheet-grid.doc td.celledit{outline:1.5px solid var(--accent);background:var(--paper);white-space:normal}
 
 /* ---------- Vertikales Lineal ---------- */
 .vruler{position:absolute;top:0;bottom:0;left:calc(3mm - var(--ml,22mm));width:6mm;z-index:3;pointer-events:none}
@@ -489,8 +492,9 @@ body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .pv-page blockquote{border-left:3px solid #2f6df6;padding-left:12px;color:#555;font-style:italic;margin:.6em 0}
 .pv-page .toc{border:1px solid #e3e3e3;border-radius:8px;padding:12px 16px;background:#fafafa}
 .pv-page .toc a{display:block;color:#1a1e27;text-decoration:none;padding:2px 0}
-.pv-grid{border-collapse:collapse;width:100%;font-size:10pt}
-.pv-grid td{border:1px solid #bbb;padding:4px 9px;white-space:nowrap;color:#1a1e27}
+.pv-grid{border-collapse:collapse;width:auto;max-width:100%;font-size:11pt;line-height:1.7}
+.pv-grid td{border:none;padding:0 1.4em .5em 0;vertical-align:top;color:#1a1e27}
+.pv-grid td:last-child{padding-right:0}
 .pv-grid td.num{text-align:right;font-variant-numeric:tabular-nums}
 
 /* ---------- Toast ---------- */
@@ -542,8 +546,7 @@ body[data-theme="dark"] .toast{background:#2a3140}
   .cs-page{box-shadow:none !important;zoom:1 !important;width:auto !important;min-height:auto !important;padding:0 16mm !important}
   .cs-format{display:none}
   .cs-h,.cs-f{border-color:#ccc}
-  .sheet-grid thead,.sheet-grid .cg-row,.sheet-grid .cg-corner{display:none}
-  .sheet-grid td{border-color:#999;color:#000}
+  .sheet-grid.doc td{border-color:transparent !important;color:#000}
   .sheet-grid td.sel,.sheet-grid td.active{outline:none;background:none}
-  .sheet-grid td.pad,.sheet-grid tr.pad,.sheet-grid th.pad{display:none}
+  .sheet-grid tr.pad,.sheet-grid td.pad{display:none}
 }

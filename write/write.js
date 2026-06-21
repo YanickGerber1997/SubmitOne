@@ -853,6 +853,13 @@ function wire() {
     if (e.key === 'Enter') { e.preventDefault(); findStep(e.shiftKey); }
     else if (e.key === 'Escape') { toggleFind(false); editor.focus(); }
   });
+  // Ersetzen
+  $('#btnReplace').addEventListener('click', replaceCurrent);
+  $('#btnReplaceAll').addEventListener('click', replaceAll);
+  $('#replaceInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? replaceAll() : replaceCurrent(); }
+    else if (e.key === 'Escape') { toggleFind(false); editor.focus(); }
+  });
 
   // Zeilenabstand
   $$('#segLine button').forEach(b => b.addEventListener('click', () => {
@@ -1065,6 +1072,33 @@ function updateFindCount() {
 function findStep(back) {
   const t = $('#findInput').value; if (!t) return;
   try { window.find(t, false, !!back, true, false, false, false); } catch (_) {}
+}
+// Aktuellen Treffer ersetzen (oder zuerst zum nächsten springen)
+function replaceCurrent() {
+  const t = $('#findInput').value; if (!t) return;
+  const rep = $('#replaceInput').value;
+  const sel = document.getSelection();
+  const onMatch = sel && sel.rangeCount && !sel.isCollapsed
+    && editor.contains(sel.getRangeAt(0).commonAncestorContainer)
+    && sel.toString().toLowerCase() === t.toLowerCase();
+  if (onMatch) { editor.focus(); document.execCommand('insertText', false, rep); afterEdit(); }
+  findStep(false); updateFindCount();
+}
+// Alle Treffer ersetzen (textbasiert, erhält Formatierung)
+function replaceAll() {
+  const t = $('#findInput').value; if (!t) return;
+  const rep = $('#replaceInput').value;
+  const rx = new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null);
+  const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode);
+  let count = 0;
+  nodes.forEach(n => {
+    const nv = n.nodeValue.replace(rx, () => { count++; return rep; });
+    if (nv !== n.nodeValue) n.nodeValue = nv;
+  });
+  if (count) { afterEdit(); toast(count + (count === 1 ? ' Stelle ersetzt' : ' Stellen ersetzt')); }
+  else toast('Nichts gefunden.');
+  updateFindCount();
 }
 
 /* ============================================================

@@ -382,12 +382,15 @@ body[data-mode="slides"] .editor img{max-width:100%}
 
 /* ---------- Suchleiste ---------- */
 .findbar{
-  display:flex;align-items:center;gap:6px;padding:8px 16px;
+  display:flex;align-items:center;gap:6px;padding:8px 16px;flex-wrap:wrap;
   background:var(--surface);border-bottom:1px solid var(--line);
 }
+.findbar .find-div{width:1px;align-self:stretch;background:var(--line);margin:2px 4px}
+.findbar .fb-text{font-size:12px;padding:6px 11px;border:1px solid var(--line);border-radius:7px;background:var(--surface-2);color:var(--ink);cursor:pointer;font-family:inherit;white-space:nowrap}
+.findbar .fb-text:hover{border-color:var(--accent);color:var(--accent)}
 .findbar .i{width:16px;height:16px;color:var(--ink-faint)}
 .findbar input{
-  flex:0 0 260px;max-width:40vw;border:1px solid var(--line);background:var(--surface-2);
+  flex:1 1 200px;min-width:150px;max-width:320px;border:1px solid var(--line);background:var(--surface-2);
   border-radius:7px;padding:7px 10px;font-family:inherit;font-size:13px;color:var(--ink);
 }
 .findbar input:focus{outline:none;border-color:var(--accent)}

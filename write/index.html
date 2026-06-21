@@ -182,10 +182,15 @@
       <!-- SUCHLEISTE -->
       <div class="findbar" id="findbar" hidden>
         <svg viewBox="0 0 24 24" class="i"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-        <input id="findInput" placeholder="Im Dokument suchen …" spellcheck="false" />
+        <input id="findInput" placeholder="Suchen …" spellcheck="false" />
         <span class="find-count" id="findCount"></span>
         <button class="icon-btn sm" id="findPrev" title="Zurück (Umschalt+Enter)">‹</button>
         <button class="icon-btn sm" id="findNext" title="Weiter (Enter)">›</button>
+        <span class="find-div"></span>
+        <input id="replaceInput" placeholder="Ersetzen durch …" spellcheck="false" />
+        <button class="fb-text" id="btnReplace" title="Aktuellen Treffer ersetzen">Ersetzen</button>
+        <button class="fb-text" id="btnReplaceAll" title="Alle Treffer ersetzen">Alle</button>
+        <span class="grow"></span>
         <button class="icon-btn sm" id="findClose" title="Schliessen (Esc)">✕</button>
       </div>
 

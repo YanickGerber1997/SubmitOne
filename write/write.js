@@ -228,6 +228,8 @@ function applySettings() {
   editor.style.columnCount = cols > 1 ? cols : '';
   editor.style.columnGap = cols > 1 ? '12mm' : '';
   const selC2 = $('#selCols'); if (selC2) selC2.value = String(cols);
+  const hy = !!s.silben; editor.classList.toggle('hyphenate', hy);
+  const bh = $('#btnHyphen'); if (bh) bh.classList.toggle('on', hy);
   const o = s.ausrichtung || 'hoch';
   page.classList.toggle('quer', o === 'quer');
   $('#btnPortrait').classList.toggle('on', o !== 'quer');
@@ -414,10 +416,10 @@ function afterEdit() { normalizeEmpty(); scheduleSave(); refreshAll(); }
 /* ---------- aktiven Zustand der Buttons spiegeln ---------- */
 function syncToolbar() {
   const q = c => { try { return document.queryCommandState(c); } catch (_) { return false; } };
-  [['bold'], ['italic'], ['underline'], ['strikeThrough'],
-   ['insertUnorderedList'], ['insertOrderedList'],
-   ['justifyLeft'], ['justifyCenter'], ['justifyRight']
-  ].forEach(([c]) => { const b = $(`.fb-btn[data-cmd="${c}"]`); if (b) b.classList.toggle('on', q(c)); });
+  ['bold', 'italic', 'underline', 'strikeThrough', 'subscript', 'superscript',
+   'insertUnorderedList', 'insertOrderedList',
+   'justifyLeft', 'justifyCenter', 'justifyRight', 'justifyFull'
+  ].forEach(c => { const on = q(c); $$(`.fb-btn[data-cmd="${c}"]`).forEach(b => b.classList.toggle('on', on)); });
   // Absatzformat
   let block = 'p';
   const sel = document.getSelection();
@@ -736,6 +738,7 @@ function wire() {
   document.addEventListener('click', () => symMenu.hidden = true);
   // Layout
   $('#selCols').addEventListener('change', e => setColumns(+e.target.value));
+  $('#btnHyphen').addEventListener('click', () => { if (!doc) return; const on = !doc.einstellungen.silben; doc.einstellungen.silben = on; editor.classList.toggle('hyphenate', on); $('#btnHyphen').classList.toggle('on', on); scheduleSave(); });
   $('#btnMarginsOpen').addEventListener('click', () => { appEl.classList.add('insp-open'); applyZoom(); const s = $('#mTop'); if (s) setTimeout(() => s.scrollIntoView({ block: 'center' }), 60); });
   // Ansicht-Reiter
   $$('[data-vact]').forEach(b => b.addEventListener('click', () => {
@@ -939,7 +942,7 @@ function wire() {
   b.querySelectorAll('.bb[data-cmd]').forEach(btn => btn.addEventListener('mousedown', e => { e.preventDefault(); cmd(btn.dataset.cmd); updateBubble(); }));
   $('#bbHl').addEventListener('mousedown', e => { e.preventDefault(); highlight($('#hlColor').value); });
   $('#bbLink').addEventListener('mousedown', e => { e.preventDefault(); insertLink(); });
-  document.addEventListener('selectionchange', () => { updateBubble(); updateTableTools(); });
+  document.addEventListener('selectionchange', () => { updateBubble(); updateTableTools(); const s = getSelection(); if (s && s.anchorNode && editor.contains(s.anchorNode)) syncToolbar(); });
   $('#canvas').addEventListener('scroll', () => { if (!b.hidden) updateBubble(); if (!$('#tabletools').hidden) updateTableTools(); });
 
   // Tabellen-Werkzeuge
@@ -1583,6 +1586,7 @@ function printPreview() {
   if (activePage().typ === 'calc') { previewCalc(); return; }
   const quer = doc.einstellungen.ausrichtung === 'quer';
   const ov = $('#previewOverlay'), scroll = $('#previewScroll');
+  scroll.classList.toggle('hy', !!doc.einstellungen.silben);   // Silbentrennung auch in der Vorschau
   scroll.innerHTML = ''; ov.hidden = false;          // erst sichtbar → dann messbar
   const headHTML = $('#zoneH').innerHTML, footHTML = $('#zoneF').innerHTML;
   const pageHpx = (quer ? 210 : 297) * MM;

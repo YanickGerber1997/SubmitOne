@@ -49,9 +49,16 @@
 
     <!-- MITTE -->
     <main class="main">
+      <!-- LINKES INHALTSVERZEICHNIS (Gliederung, aufklappbar) -->
+      <aside class="navpane" id="navPane">
+        <div class="np-head"><span>Inhalt</span><button class="icon-btn" id="navClose" title="Schliessen">‹</button></div>
+        <div class="outline" id="navOutline"><p class="muted">Noch keine Überschriften.</p></div>
+      </aside>
+
       <!-- OBERE LEISTE -->
       <header class="topbar" id="topbar">
         <button class="icon-btn topbar-side" id="btnSideShow" title="Seitenleiste">☰</button>
+        <button class="icon-btn" id="btnNav" title="Inhaltsverzeichnis (Gliederung)"><svg viewBox="0 0 24 24" class="i"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg></button>
         <div class="mode-switch" id="modeSwitch">
           <button class="mode-pill" id="modePill" title="Modus wechseln: Schreiben, Tabelle, Folien">
             <span class="mode-ico" id="modeIco">✍</span>

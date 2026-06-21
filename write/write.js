@@ -446,7 +446,47 @@ function wire() {
   $('#inkColor').addEventListener('input', e => { document.execCommand('styleWithCSS', false, true); cmd('foreColor', e.target.value); });
   $('#btnLink').addEventListener('click', insertLink);
   $('#btnTable').addEventListener('click', insertTable);
+  $('#btnImage').addEventListener('click', () => $('#imgInput').click());
+  $('#imgInput').addEventListener('change', e => { insertImageFile(e.target.files[0]); e.target.value = ''; });
+  $('#hlColor').addEventListener('input', e => highlight(e.target.value));
   $('#btnClear').addEventListener('click', () => { cmd('removeFormat'); setBlock('p'); });
+
+  // Bilder: Einfügen + Drag&Drop
+  editor.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+  editor.addEventListener('drop', e => {
+    const f = [...(e.dataTransfer.files || [])].find(f => f.type.startsWith('image/'));
+    if (f) { e.preventDefault(); insertImageFile(f); }
+  });
+  editor.addEventListener('paste', e => {
+    for (const it of (e.clipboardData?.items || [])) {
+      if (it.type.startsWith('image/')) { e.preventDefault(); insertImageFile(it.getAsFile()); return; }
+    }
+  });
+  editor.addEventListener('click', e => {
+    $$('img.sel', editor).forEach(i => i.classList.remove('sel'));
+    if (e.target.tagName === 'IMG') e.target.classList.add('sel');
+  });
+
+  // Schwebe-Toolbar
+  const b = bubble();
+  b.querySelectorAll('.bb[data-cmd]').forEach(btn => btn.addEventListener('mousedown', e => { e.preventDefault(); cmd(btn.dataset.cmd); updateBubble(); }));
+  $('#bbHl').addEventListener('mousedown', e => { e.preventDefault(); highlight($('#hlColor').value); });
+  $('#bbLink').addEventListener('mousedown', e => { e.preventDefault(); insertLink(); });
+  document.addEventListener('selectionchange', () => { updateBubble(); updateTableTools(); });
+  $('#canvas').addEventListener('scroll', () => { if (!b.hidden) updateBubble(); if (!$('#tabletools').hidden) updateTableTools(); });
+
+  // Tabellen-Werkzeuge
+  $('#tabletools').addEventListener('mousedown', e => { const a = e.target.closest('button')?.dataset.tt; if (a) { e.preventDefault(); tableAction(a); } });
+
+  // Suche
+  $('#findClose').addEventListener('click', () => { toggleFind(false); editor.focus(); });
+  $('#findNext').addEventListener('click', () => findStep(false));
+  $('#findPrev').addEventListener('click', () => findStep(true));
+  $('#findInput').addEventListener('input', updateFindCount);
+  $('#findInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); findStep(e.shiftKey); }
+    else if (e.key === 'Escape') { toggleFind(false); editor.focus(); }
+  });
 
   // Zeilenabstand
   $$('#segLine button').forEach(b => b.addEventListener('click', () => {
@@ -480,11 +520,19 @@ function wire() {
   // Tastenkürzel
   document.addEventListener('keydown', e => {
     const mod = e.ctrlKey || e.metaKey;
+    // markiertes Bild löschen
+    if ((e.key === 'Delete' || e.key === 'Backspace')) {
+      const im = $('img.sel', editor); if (im) { e.preventDefault(); im.remove(); afterEdit(); return; }
+    }
     if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(e.shiftKey); }
     else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openFile(); }
     else if (mod && e.key.toLowerCase() === 'n') { e.preventDefault(); createDoc(); }
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); toggleFocus(); }
-    else if (e.key === 'Escape' && appEl.classList.contains('focus')) toggleFocus();
+    else if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); toggleFind(true); }
+    else if (e.key === 'Escape') {
+      if (!$('#findbar').hidden) { toggleFind(false); editor.focus(); }
+      else if (appEl.classList.contains('focus')) toggleFocus();
+    }
   });
 
   // Inspector standardmässig offen auf grossen Schirmen
@@ -505,11 +553,113 @@ function initLaunch() {
 }
 
 /* ============================================================
+   Bilder (eingebettet als Base64)
+   ============================================================ */
+function insertImageFile(file) {
+  if (!file || !file.type || !file.type.startsWith('image/')) return;
+  const r = new FileReader();
+  r.onload = () => { editor.focus(); document.execCommand('insertHTML', false, `<img src="${r.result}" alt=""><p><br></p>`); afterEdit(); };
+  r.readAsDataURL(file);
+}
+
+/* ============================================================
+   Textmarker (Highlight)
+   ============================================================ */
+function highlight(color) {
+  editor.focus();
+  document.execCommand('styleWithCSS', false, true);
+  document.execCommand('hiliteColor', false, color);
+  afterEdit();
+}
+
+/* ============================================================
+   Schwebe-Toolbar bei Textauswahl
+   ============================================================ */
+const bubble = () => $('#bubble');
+function updateBubble() {
+  const b = bubble();
+  if (appEl.classList.contains('focus')) { b.hidden = true; return; }
+  const sel = document.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) { b.hidden = true; return; }
+  const range = sel.getRangeAt(0);
+  if (!editor.contains(range.commonAncestorContainer)) { b.hidden = true; return; }
+  const rect = range.getBoundingClientRect();
+  if (!rect.width && !rect.height) { b.hidden = true; return; }
+  b.hidden = false;
+  const bw = b.offsetWidth, bh = b.offsetHeight;
+  let left = Math.max(8, Math.min(rect.left + rect.width / 2 - bw / 2, window.innerWidth - bw - 8));
+  let top = rect.top - bh - 8; if (top < 8) top = rect.bottom + 8;
+  b.style.left = left + 'px'; b.style.top = top + 'px';
+}
+
+/* ============================================================
+   Tabellen-Werkzeuge
+   ============================================================ */
+function currentCell() {
+  const sel = document.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  let n = sel.anchorNode; n = (n && n.nodeType === 1) ? n : (n ? n.parentElement : null);
+  return n ? n.closest('td,th') : null;
+}
+function updateTableTools() {
+  const tt = $('#tabletools');
+  const cell = currentCell();
+  if (!cell || appEl.classList.contains('focus')) { tt.hidden = true; return; }
+  const table = cell.closest('table'); const rect = table.getBoundingClientRect();
+  tt.hidden = false;
+  let top = rect.top - tt.offsetHeight - 6; if (top < 70) top = rect.bottom + 6;
+  tt.style.top = top + 'px';
+  tt.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - tt.offsetWidth - 8)) + 'px';
+}
+function tableAction(act) {
+  const cell = currentCell(); if (!cell) return;
+  const row = cell.parentElement, table = cell.closest('table');
+  const idx = [...row.children].indexOf(cell);
+  if (act === 'row+') {
+    const nr = document.createElement('tr');
+    [...row.children].forEach(() => { const td = document.createElement('td'); td.innerHTML = '&nbsp;'; nr.appendChild(td); });
+    row.after(nr);
+  } else if (act === 'row-') {
+    const tb = row.parentElement; if (tb.children.length > 1) row.remove();
+  } else if (act === 'col+') {
+    table.querySelectorAll('tr').forEach(tr => {
+      const ref = tr.children[idx];
+      const c = document.createElement(ref && ref.tagName === 'TH' ? 'th' : 'td'); c.innerHTML = '&nbsp;';
+      ref ? ref.after(c) : tr.appendChild(c);
+    });
+  } else if (act === 'col-') {
+    if (row.children.length > 1) table.querySelectorAll('tr').forEach(tr => { if (tr.children[idx]) tr.children[idx].remove(); });
+  } else if (act === 'del') { table.remove(); }
+  afterEdit(); setTimeout(updateTableTools, 0);
+}
+
+/* ============================================================
+   Dokumentsuche
+   ============================================================ */
+function toggleFind(show) {
+  const fb = $('#findbar');
+  fb.hidden = (show === false) ? true : (show === true ? false : !fb.hidden);
+  if (!fb.hidden) { const i = $('#findInput'); i.focus(); i.select(); updateFindCount(); }
+}
+function updateFindCount() {
+  const t = $('#findInput').value;
+  if (!t) { $('#findCount').textContent = ''; return; }
+  const n = (editor.innerText || '').toLowerCase().split(t.toLowerCase()).length - 1;
+  $('#findCount').textContent = n ? n + ' Treffer' : 'keine';
+}
+function findStep(back) {
+  const t = $('#findInput').value; if (!t) return;
+  try { window.find(t, false, !!back, true, false, false, false); } catch (_) {}
+}
+
+/* ============================================================
    Start
    ============================================================ */
 function init() {
   $('#verTag').textContent = WRITE_VERSION;
   setTheme(localStorage.getItem(LS_THEME) || 'light');
+  try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (_) {}
+  try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
   wire(); initLaunch();
   // letztes oder neues Dokument
   if (lib.currentId && lib.docs[lib.currentId]) openDoc(lib.currentId);

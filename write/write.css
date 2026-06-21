@@ -242,6 +242,55 @@ button{font-family:inherit;cursor:pointer}
 }
 .focus-exit:hover{opacity:1}
 
+.fb-btn.color.hl .ca{border-bottom-color:#ffe066}
+
+/* ---------- Suchleiste ---------- */
+.findbar{
+  display:flex;align-items:center;gap:6px;padding:8px 16px;
+  background:var(--surface);border-bottom:1px solid var(--line);
+}
+.findbar .i{width:16px;height:16px;color:var(--ink-faint)}
+.findbar input{
+  flex:0 0 260px;max-width:40vw;border:1px solid var(--line);background:var(--surface-2);
+  border-radius:7px;padding:7px 10px;font-family:inherit;font-size:13px;color:var(--ink);
+}
+.findbar input:focus{outline:none;border-color:var(--accent)}
+.find-count{font-size:12px;color:var(--ink-faint);min-width:48px}
+.icon-btn.sm{width:28px;height:28px;font-size:15px}
+
+/* ---------- Schwebe-Toolbar ---------- */
+.bubble{
+  position:fixed;z-index:70;display:flex;gap:2px;padding:4px;
+  background:var(--ink);border-radius:9px;box-shadow:0 8px 28px rgba(0,0,0,.28);
+  animation:bubbleIn .12s var(--ease);
+}
+body[data-theme="dark"] .bubble{background:#2a3140;border:1px solid var(--line)}
+@keyframes bubbleIn{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+.bb{
+  min-width:30px;height:30px;padding:0 8px;border:none;background:none;color:#fff;
+  border-radius:6px;font-size:14px;display:inline-flex;align-items:center;justify-content:center;
+}
+.bb:hover{background:rgba(255,255,255,.15)}
+.bb .i{width:16px;height:16px;stroke:#fff}
+.bb-hl{font-weight:700;border-bottom:3px solid #ffe066;line-height:1;padding-bottom:1px}
+
+/* ---------- Tabellen-Werkzeuge ---------- */
+.tabletools{
+  position:fixed;z-index:65;display:flex;gap:3px;padding:4px;
+  background:var(--surface);border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);
+}
+.tabletools button{
+  border:none;background:none;color:var(--ink-soft);font-size:12px;font-weight:500;
+  padding:5px 9px;border-radius:6px;
+}
+.tabletools button:hover{background:var(--line-soft);color:var(--ink)}
+
+/* ---------- Bild im Editor ---------- */
+.editor img{cursor:default;transition:outline .12s}
+.editor img.sel{outline:3px solid var(--accent);outline-offset:2px}
+.editor mark{background:#ffe066;color:inherit;padding:.05em .1em;border-radius:3px}
+body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
+
 /* ---------- Toast ---------- */
 #toast-root{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:90;display:flex;flex-direction:column;gap:8px;align-items:center}
 .toast{

@@ -159,6 +159,11 @@ function htmlToGrid(html) {
         const cells = [...tr.children].map(td => td.innerHTML.trim());
         zeilen.push({ tag: 'p', cells: cells.length ? cells : [''] });
       });
+    } else if (b.classList && b.classList.contains('toc')) {                // Inhaltsverzeichnis: saubere Zeilen, nicht als Wort-Salat
+      zeilen.push({ tag: 'h3', cells: ['Inhaltsverzeichnis'] });
+      const links = b.querySelectorAll('.toc-list a, a[data-go]');
+      links.forEach(a => { const t = (a.textContent || '').trim(); if (t) zeilen.push({ tag: 'p', cells: [esc(t)] }); });
+      if (!links.length) zeilen.push({ tag: 'p', cells: [''] });
     } else blockRow(b);
   });
   if (!zeilen.length) zeilen.push({ tag: 'p', cells: [''] });
@@ -750,6 +755,13 @@ function wire() {
   $('#pvClose').addEventListener('click', () => $('#previewOverlay').hidden = true);
   $('#pvPrint').addEventListener('click', () => { const sl = isSlides(); $('#previewOverlay').hidden = true; setTimeout(() => sl ? printDeck() : window.print(), 60); });
 
+  // Submit PDF
+  $('#btnPdf').addEventListener('click', () => { $('#pdfOverlay').hidden = false; });
+  $('#pdfClose').addEventListener('click', () => { $('#pdfOverlay').hidden = true; });
+  $('#pdfExport').addEventListener('click', () => { $('#pdfOverlay').hidden = true; setTimeout(() => doExport('pdf'), 60); });
+  $$('[data-pdfimp]').forEach(b => b.addEventListener('click', () => { pdfTarget = b.dataset.pdfimp; $('#pdfInput').click(); }));
+  $('#pdfInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importPdf(f); });
+
   // Submit Slides – Präsentieren (Vollbild)
   $('#btnPresent').addEventListener('click', presentStart);
   $('#presClose').addEventListener('click', presentEnd);
@@ -1009,7 +1021,8 @@ function wire() {
     else if (mod && (e.key === '-' || e.key === '_')) { e.preventDefault(); zoomStep(-.1); }
     else if (mod && e.key === '0') { e.preventDefault(); setZoom('auto'); }
     else if (e.key === 'Escape') {
-      if (!$('#previewOverlay').hidden) $('#previewOverlay').hidden = true;
+      if (!$('#pdfOverlay').hidden) $('#pdfOverlay').hidden = true;
+      else if (!$('#previewOverlay').hidden) $('#previewOverlay').hidden = true;
       else if (!$('#ctxmenu').hidden) $('#ctxmenu').hidden = true;
       else if (!$('#findbar').hidden) { toggleFind(false); editor.focus(); }
       else if (appEl.classList.contains('focus')) toggleFocus();
@@ -2079,6 +2092,59 @@ function applyAutocorrect() {
 function onEditorInput(e) {
   if (e && e.inputType === 'insertText' && /[\s.,;:!?]/.test(e.data || '')) applyAutocorrect();
   afterEdit();
+}
+
+/* ============================================================
+   Submit PDF — Export & Import (PDF → Write / Calc / Slides)
+   ============================================================ */
+let _pdfjs = null, pdfTarget = 'write';
+function loadPdfJs() {
+  if (_pdfjs) return Promise.resolve(_pdfjs);
+  const ready = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; _pdfjs = window.pdfjsLib; return _pdfjs; };
+  if (window.pdfjsLib) return Promise.resolve(ready());
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = () => window.pdfjsLib ? res(ready()) : rej(new Error('pdfjs'));
+    s.onerror = () => rej(new Error('offline'));
+    document.head.appendChild(s);
+  });
+}
+// Textzeilen einer PDF-Seite rekonstruieren (nach Y gruppieren, nach X sortieren)
+function pdfPageLines(tc) {
+  const rows = new Map();
+  tc.items.forEach(it => { if (!it.str || !it.str.trim()) return; const y = Math.round(it.transform[5]); if (!rows.has(y)) rows.set(y, []); rows.get(y).push({ x: it.transform[4], s: it.str }); });
+  return [...rows.keys()].sort((a, b) => b - a)
+    .map(y => rows.get(y).sort((a, b) => a.x - b.x).map(o => o.s).join('').replace(/\s+/g, ' ').trim())
+    .filter(l => l.length);
+}
+async function importPdf(file) {
+  const status = $('#pdfStatus'); if (!file) return;
+  status.textContent = 'Lade PDF-Engine …';
+  let pdfjs; try { pdfjs = await loadPdfJs(); } catch (_) { status.textContent = 'PDF-Engine konnte nicht geladen werden (Internet nötig).'; return; }
+  status.textContent = 'Lese PDF …';
+  let pdf; try { const buf = await file.arrayBuffer(); pdf = await pdfjs.getDocument({ data: buf }).promise; } catch (_) { status.textContent = 'PDF konnte nicht gelesen werden.'; return; }
+  const pages = [];
+  for (let i = 1; i <= pdf.numPages; i++) { status.textContent = 'Seite ' + i + ' / ' + pdf.numPages + ' …'; const pg = await pdf.getPage(i); pages.push(pdfPageLines(await pg.getTextContent())); }
+  buildDocFromPdf((file.name || 'PDF').replace(/\.pdf$/i, ''), pages, pdfTarget);
+  $('#pdfOverlay').hidden = true;
+}
+function buildDocFromPdf(titel, pages, target) {
+  let seiten;
+  if (target === 'slides') {
+    seiten = pages.map(lines => ({ id: uid(), typ: 'slides', html: (lines.map((l, i) => i === 0 ? `<h1>${esc(l)}</h1>` : `<p>${esc(l)}</p>`).join('') || SLIDE_STARTER), fmt: {}, colW: {}, notiz: '' }));
+  } else if (target === 'calc') {
+    seiten = pages.map(lines => ({ id: uid(), typ: 'calc', html: (lines.map(l => '<p>' + l.split(/ {2,}|\t/).map(c => esc(c)).join(COLSEP) + '</p>').join('') || '<p><br></p>'), fmt: {}, colW: {}, notiz: '' }));
+  } else {
+    seiten = pages.map(lines => ({ id: uid(), typ: 'write', html: (lines.map(l => `<p>${esc(l)}</p>`).join('') || '<p><br></p>'), fmt: {}, colW: {}, notiz: '' }));
+  }
+  if (!seiten.length) seiten = [{ id: uid(), typ: target === 'calc' ? 'calc' : target === 'slides' ? 'slides' : 'write', html: '<p><br></p>' }];
+  const d = newDocObject({ titel: titel || 'Importiertes PDF' });
+  d.seiten = seiten; d.aktiv = 0;
+  lib.docs[d.id] = d; lib.order.unshift(d.id);
+  if (!persistLib()) warnQuota();
+  openDoc(d.id);
+  toast('PDF importiert: ' + d.titel + ' (' + seiten.length + (seiten.length === 1 ? ' Seite)' : ' Seiten)'));
 }
 
 /* ============================================================

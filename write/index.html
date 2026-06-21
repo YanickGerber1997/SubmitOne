@@ -79,6 +79,7 @@
               <button data-export="docx">Als DOCX (Beta)</button>
             </div>
           </div>
+          <button class="ghost-btn" id="btnPdf" title="Submit PDF – exportieren & importieren"><svg viewBox="0 0 24 24" class="i"><path d="M6 2.5h8l4 4v15H6z"/><path d="M14 2.5v4h4"/><path d="M8.5 13h1.2a1.2 1.2 0 0 1 0 2.4H8.5zM8.5 18v-5M13 13v5h.8a1.6 1.6 0 0 0 1.6-1.6v-1.8A1.6 1.6 0 0 0 13.8 13zM17 13h2M17 13v5M17 15.5h1.6"/></svg><span>PDF</span></button>
           <button class="ghost-btn present-only" id="btnPresent" title="Präsentieren (Vollbild)"><svg viewBox="0 0 24 24" class="i"><path d="M3 5h18v11H3z"/><path d="M12 16v3M8 21h8"/></svg><span>Präsentieren</span></button>
           <button class="icon-btn" id="btnPreview" title="Druckvorschau"><svg viewBox="0 0 24 24" class="i"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M7 17h10v4H7z"/></svg></button>
           <button class="icon-btn" id="btnInspector" title="Dokument-Infos (Gliederung, Zeilenabstand, Statistik)"><svg viewBox="0 0 24 24" class="i"><path d="M4 5h16v14H4z"/><path d="M15 5v14"/></svg></button>
@@ -446,6 +447,33 @@
 
   <!-- DECK-DRUCK (eine Querformat-Seite pro Folie) -->
   <div id="deckPrint" aria-hidden="true"></div>
+
+  <!-- SUBMIT PDF (Export & Import) -->
+  <div class="pdf-overlay" id="pdfOverlay" hidden>
+    <div class="pdf-card">
+      <div class="pdf-head"><span class="pdf-brand"><span class="bw-a">Submit</span><span class="bw-b">PDF</span></span><button class="icon-btn" id="pdfClose" title="Schliessen (Esc)">✕</button></div>
+      <div class="pdf-body">
+        <div class="pdf-sec">
+          <div class="pdf-ico">⤓</div>
+          <h3>PDF exportieren</h3>
+          <p>Das aktuelle Dokument als PDF speichern (Write, Calc oder Folien-Deck).</p>
+          <button class="ghost-btn" id="pdfExport"><svg viewBox="0 0 24 24" class="i"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span>Als PDF exportieren</span></button>
+        </div>
+        <div class="pdf-sec">
+          <div class="pdf-ico">⤒</div>
+          <h3>PDF importieren</h3>
+          <p>Ein PDF in ein bearbeitbares Dokument umwandeln:</p>
+          <div class="pdf-targets">
+            <button data-pdfimp="write"><span class="pt-ic">✍</span>Submit Write</button>
+            <button data-pdfimp="calc"><span class="pt-ic">▦</span>Submit Calc</button>
+            <button data-pdfimp="slides"><span class="pt-ic">▭</span>Submit Slides</button>
+          </div>
+          <div class="pdf-status" id="pdfStatus">Hinweis: Text-PDFs werden umgewandelt (gescannte Bild-PDFs nicht). Benötigt einmalig Internet zum Laden der PDF-Engine.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden />
 
   <input type="file" id="imgInput" accept="image/*" hidden />
   <div id="toast-root"></div>

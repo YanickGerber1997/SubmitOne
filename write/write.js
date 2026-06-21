@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v12';
+const WRITE_VERSION = 'v13';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -140,14 +140,26 @@ function cellText(frag) { const d = document.createElement('div'); d.innerHTML =
 function htmlToGrid(html) {
   const tpl = document.createElement('template'); tpl.innerHTML = html || '';
   const zeilen = [];
-  [...tpl.content.children].forEach(b => {
+  const blockRow = b => {
     const cells = []; let cur = '';
     b.childNodes.forEach(n => {
       if (n.nodeType === 1 && n.classList && n.classList.contains('colsep')) { cells.push(cur); cur = ''; }
+      else if (n.nodeType === 3 && n.textContent.indexOf('\t') >= 0) {       // echte Tabs im Text = Spalten
+        const parts = n.textContent.split('\t');
+        parts.forEach((p, idx) => { if (idx > 0) { cells.push(cur); cur = ''; } cur += esc(p); });
+      }
       else cur += (n.nodeType === 1 ? n.outerHTML : esc(n.textContent));
     });
     cells.push(cur);
     zeilen.push({ tag: (b.tagName || 'P').toLowerCase(), cells });
+  };
+  [...tpl.content.children].forEach(b => {
+    if (b.tagName === 'TABLE') {                                            // echte Write-Tabelle = Gitterzeilen
+      b.querySelectorAll('tr').forEach(tr => {
+        const cells = [...tr.children].map(td => td.innerHTML.trim());
+        zeilen.push({ tag: 'p', cells: cells.length ? cells : [''] });
+      });
+    } else blockRow(b);
   });
   if (!zeilen.length) zeilen.push({ tag: 'p', cells: [''] });
   return { cols: Math.max(1, ...zeilen.map(z => z.cells.length)), zeilen };
@@ -692,23 +704,45 @@ function wire() {
   // Submit Calc – Raster
   $('#calcAddRow').addEventListener('click', calcAddRow);
   $('#calcAddCol').addEventListener('click', calcAddCol);
-  $('#grid').addEventListener('click', e => { const td = e.target.closest('td[data-c]'); if (td) { selectCell(+td.dataset.c, +td.dataset.r); $('#calcScroll').focus(); } });
-  $('#grid').addEventListener('dblclick', e => { const td = e.target.closest('td[data-c]'); if (td) { selectCell(+td.dataset.c, +td.dataset.r); $('#formulaInput').focus(); } });
+  // Maus: Auswahl + Bereich ziehen
+  let gridDragging = false;
+  $('#grid').addEventListener('mousedown', e => {
+    const td = e.target.closest('td[data-c]'); if (!td) return;
+    if (editingTd) endEdit(true);
+    gridDragging = true; e.preventDefault();
+    selectCell(+td.dataset.c, +td.dataset.r, e.shiftKey); $('#calcScroll').focus();
+  });
+  $('#grid').addEventListener('mousemove', e => { if (!gridDragging) return; const td = e.target.closest('td[data-c]'); if (td) selectCell(+td.dataset.c, +td.dataset.r, true); });
+  document.addEventListener('mouseup', () => { gridDragging = false; });
+  $('#grid').addEventListener('dblclick', e => { const td = e.target.closest('td[data-c]'); if (td) { selectCell(+td.dataset.c, +td.dataset.r); beginEdit(); } });
+  // Rechtsklick im Gitter
+  $('#grid').addEventListener('contextmenu', e => { const td = e.target.closest('td[data-c]'); if (!td) return; e.preventDefault(); if (!td.classList.contains('sel')) selectCell(+td.dataset.c, +td.dataset.r); showGridMenu(e.clientX, e.clientY); });
+  $('#ctxmenu').addEventListener('click', e => { const g = e.target.closest('button')?.dataset.g; if (g) gridMenuAction(g); });
+
+  // Formelzeile
   $('#formulaInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); commitCell(e.target.value); selectCell(selC, selR + 1); $('#calcScroll').focus(); }
     else if (e.key === 'Tab') { e.preventDefault(); commitCell(e.target.value); selectCell(selC + 1, selR); $('#calcScroll').focus(); }
     else if (e.key === 'Escape') { highlightSel(); $('#calcScroll').focus(); }
   });
+  // Tastatur im Gitter (Navigation, Inline-Edit, Bereich mit Umschalt)
   $('#calcScroll').addEventListener('keydown', e => {
     if (document.activeElement === $('#formulaInput')) return;
-    const k = e.key;
-    if (k === 'ArrowDown') { e.preventDefault(); selectCell(selC, selR + 1); }
-    else if (k === 'ArrowUp') { e.preventDefault(); selectCell(selC, selR - 1); }
-    else if (k === 'ArrowRight' || k === 'Tab') { e.preventDefault(); selectCell(selC + 1, selR); }
-    else if (k === 'ArrowLeft') { e.preventDefault(); selectCell(selC - 1, selR); }
-    else if (k === 'Enter' || k === 'F2') { e.preventDefault(); $('#formulaInput').focus(); }
-    else if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); commitCell(''); }
-    else if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); $('#formulaInput').value = k; $('#formulaInput').focus(); }
+    if (editingTd) {
+      if (e.key === 'Enter') { e.preventDefault(); endEdit(true); selectCell(selC, selR + 1); $('#calcScroll').focus(); }
+      else if (e.key === 'Tab') { e.preventDefault(); endEdit(true); selectCell(selC + 1, selR); $('#calcScroll').focus(); }
+      else if (e.key === 'Escape') { e.preventDefault(); endEdit(false); $('#calcScroll').focus(); }
+      return;
+    }
+    const k = e.key, ext = e.shiftKey;
+    if (k === 'ArrowDown') { e.preventDefault(); selectCell(selC, selR + 1, ext); }
+    else if (k === 'ArrowUp') { e.preventDefault(); selectCell(selC, selR - 1, ext); }
+    else if (k === 'ArrowRight') { e.preventDefault(); selectCell(selC + 1, selR, ext); }
+    else if (k === 'ArrowLeft') { e.preventDefault(); selectCell(selC - 1, selR, ext); }
+    else if (k === 'Tab') { e.preventDefault(); selectCell(selC + (ext ? -1 : 1), selR); }
+    else if (k === 'Enter' || k === 'F2') { e.preventDefault(); beginEdit(); }
+    else if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); const { c1, c2, r1, r2 } = rangeBounds(); for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { gridEnsure(curGrid, c, r); curGrid.zeilen[r].cells[c] = ''; } activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
+    else if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); beginEdit(k); }
   });
 
   // Zoom & Ausrichtung
@@ -1329,52 +1363,101 @@ let selC = 0, selR = 0;   // 0-basiert (Spalte, Zeile)
 const DISP_MIN_COLS = 6, DISP_MIN_ROWS = 20;
 function cellKey(c, r) { return idxToCol(c) + (r + 1); }
 
-/* ---- Formel-Auswertung (=SUMME(A1:A5), =A1*B2 …) auf dem Raster ---- */
-function refValue(ref, seen) {
-  const m = ref.match(/^([A-Z]+)(\d+)$/); if (!m) return '#FEHLER';
-  const c = colToIdx(m[1]), r = +m[2] - 1, key = c + ',' + r;
-  if (seen.has(key)) return '#ZIRKEL';
-  const ns = new Set(seen); ns.add(key);
-  return evalRaw(cellText(gridGet(curGrid, c, r)), ns);
-}
-function expandArgs(args, seen) {
-  const out = [];
-  args.split(/[;,]/).forEach(part => {
-    part = part.trim(); if (!part) return;
-    const rng = part.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
-    if (rng) {
-      const c1 = colToIdx(rng[1]), r1 = +rng[2], c2 = colToIdx(rng[3]), r2 = +rng[4];
-      for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c++)
-        for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r++) { const v = refValue(idxToCol(c) + r, seen); if (typeof v === 'number') out.push(v); }
-    } else if (/^[A-Z]+\d+$/.test(part)) { const v = refValue(part, seen); if (typeof v === 'number') out.push(v); }
-    else { const n = parseFloat(part.replace(',', '.')); if (!isNaN(n)) out.push(n); }
-  });
-  return out;
-}
+/* ---- Formel-Engine (Excel-artig): + - * / ^, Klammern, Vergleiche, Funktionen, Verschachtelung ---- */
+function gridCellRaw(c, r) { return cellText(gridGet(curGrid, c, r)); }
+function toNum(v) { if (typeof v === 'number') return v; if (v === true) return 1; if (!v) return 0; const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? 0 : n; }
+function evalCell(c, r) { return evalRaw(gridCellRaw(c, r), new Set([c + ',' + r])); }
 function evalRaw(raw, seen) {
   if (raw == null || raw === '') return '';
-  const s = String(raw);
-  if (s[0] !== '=') { const t = s.trim(); const n = parseFloat(t.replace(',', '.')); return (t !== '' && !isNaN(n) && /^[-+]?[\d.,]+$/.test(t)) ? n : s; }
+  const s = String(raw).trim();
+  if (s[0] !== '=') { const n = parseFloat(s.replace(',', '.')); return (!isNaN(n) && /^[-+]?\d*[.,]?\d+$/.test(s)) ? n : s; }
   try {
-    let e = s.slice(1).toUpperCase();
-    e = e.replace(/\b(SUMME|SUM|MITTELWERT|AVERAGE|AVG|MIN|MAX|ANZAHL|COUNT|PRODUKT|PRODUCT)\s*\(([^()]*)\)/g, (m, fn, args) => {
-      const v = expandArgs(args, seen);
-      if (/SUM|SUMME/.test(fn)) return '(' + v.reduce((a, b) => a + b, 0) + ')';
-      if (/AVERAGE|AVG|MITTELWERT/.test(fn)) return '(' + (v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0) + ')';
-      if (fn === 'MIN') return '(' + (v.length ? Math.min(...v) : 0) + ')';
-      if (fn === 'MAX') return '(' + (v.length ? Math.max(...v) : 0) + ')';
-      if (/COUNT|ANZAHL/.test(fn)) return '(' + v.length + ')';
-      return '(' + v.reduce((a, b) => a * b, 1) + ')';
-    });
-    e = e.replace(/([A-Z]+)(\d+)/g, (m, c, r) => { const v = refValue(c + r, seen); return (typeof v === 'number') ? '(' + v + ')' : '(0)'; });
-    e = e.replace(/,/g, '.');
-    if (!/^[-+*/(). 0-9eE]+$/.test(e)) return '#FEHLER';
-    const val = Function('"use strict";return (' + e + ')')();
-    return (typeof val === 'number' && isFinite(val)) ? Math.round(val * 1e10) / 1e10 : '#FEHLER';
-  } catch (_) { return '#FEHLER'; }
+    const v = evalFormula(s.slice(1), seen);
+    if (typeof v === 'number') return isFinite(v) ? Math.round(v * 1e10) / 1e10 : '#FEHLER';
+    if (v === true) return 'WAHR'; if (v === false) return 'FALSCH';
+    return v;
+  } catch (e) { return e === 'circ' ? '#ZIRKEL' : '#FEHLER'; }
 }
-
-function evalCell(c, r) { return evalRaw(cellText(gridGet(curGrid, c, r)), new Set([c + ',' + r])); }
+function refVal(ref, seen) {
+  const m = /^([A-Z]+)(\d+)$/.exec(ref.toUpperCase()); if (!m) return 0;
+  const c = colToIdx(m[1]), r = +m[2] - 1, key = c + ',' + r;
+  if (seen.has(key)) throw 'circ';
+  const ns = new Set(seen); ns.add(key);
+  return evalRaw(gridCellRaw(c, r), ns);
+}
+function rangeVals(a, b, seen) {
+  const m1 = /^([A-Z]+)(\d+)$/.exec(a.toUpperCase()), m2 = /^([A-Z]+)(\d+)$/.exec(b.toUpperCase());
+  const c1 = colToIdx(m1[1]), r1 = +m1[2], c2 = colToIdx(m2[1]), r2 = +m2[2], out = [];
+  for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c++)
+    for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r++) out.push(refVal(idxToCol(c) + r, seen));
+  return out;
+}
+function evalFormula(src, seen) {
+  let i = 0;
+  const ws = () => { while (i < src.length && src[i] === ' ') i++; };
+  const numsOf = args => { const o = []; args.forEach(a => { if (a.range) a.vals.forEach(v => { if (typeof v === 'number') o.push(v); }); else if (typeof a.val === 'number') o.push(a.val); }); return o; };
+  function callFn(name, args) {
+    const N = numsOf(args);
+    switch (name) {
+      case 'SUMME': case 'SUM': return N.reduce((a, b) => a + b, 0);
+      case 'MITTELWERT': case 'AVERAGE': case 'AVG': return N.length ? N.reduce((a, b) => a + b, 0) / N.length : 0;
+      case 'MIN': return N.length ? Math.min(...N) : 0;
+      case 'MAX': return N.length ? Math.max(...N) : 0;
+      case 'ANZAHL': case 'COUNT': return N.length;
+      case 'ANZAHL2': case 'COUNTA': { let n = 0; args.forEach(a => { if (a.range) a.vals.forEach(v => { if (v !== '' && v != null) n++; }); else if (a.val !== '' && a.val != null) n++; }); return n; }
+      case 'PRODUKT': case 'PRODUCT': return N.reduce((a, b) => a * b, 1);
+      case 'MEDIAN': { if (!N.length) return 0; const q = [...N].sort((a, b) => a - b), m = q.length >> 1; return q.length % 2 ? q[m] : (q[m - 1] + q[m]) / 2; }
+      case 'RUNDEN': case 'ROUND': { const f = Math.pow(10, args[1] ? toNum(args[1].val) : 0); return Math.round(toNum(args[0] && args[0].val) * f) / f; }
+      case 'ABS': return Math.abs(toNum(args[0] && args[0].val));
+      case 'WURZEL': case 'SQRT': return Math.sqrt(toNum(args[0] && args[0].val));
+      case 'POTENZ': case 'POWER': return Math.pow(toNum(args[0] && args[0].val), toNum(args[1] && args[1].val));
+      case 'GANZZAHL': case 'INT': return Math.floor(toNum(args[0] && args[0].val));
+      case 'WENN': case 'IF': { const c = args[0] && args[0].val; const t = (c === true || (typeof c === 'number' && c !== 0)); return t ? (args[1] ? args[1].val : 0) : (args[2] ? args[2].val : 0); }
+      default: return '#NAME';
+    }
+  }
+  function parseArgs() {
+    const args = []; ws(); if (src[i] === ')') return args;
+    for (; ;) {
+      ws();
+      const rm = /^([A-Za-z]+\d+):([A-Za-z]+\d+)/.exec(src.slice(i));
+      if (rm) { i += rm[0].length; args.push({ range: true, vals: rangeVals(rm[1], rm[2], seen) }); }
+      else args.push({ val: parseExpr() });
+      ws(); if (src[i] === ';' || src[i] === ',') { i++; continue; }
+      break;
+    }
+    return args;
+  }
+  function parsePrimary() {
+    ws();
+    if (src[i] === '(') { i++; const v = parseExpr(); ws(); if (src[i] === ')') i++; return v; }
+    if (src[i] === '"') { i++; let str = ''; while (i < src.length && src[i] !== '"') str += src[i++]; if (src[i] === '"') i++; return str; }
+    let m = /^\d+(\.\d+)?/.exec(src.slice(i));
+    if (m) { i += m[0].length; return parseFloat(m[0]); }
+    m = /^[A-Za-z]+\d*/.exec(src.slice(i));
+    if (m) {
+      const id = m[0].toUpperCase(); i += m[0].length; ws();
+      if (src[i] === '(') { i++; const a = parseArgs(); ws(); if (src[i] === ')') i++; return callFn(id, a); }
+      if (/^[A-Z]+\d+$/.test(id)) return refVal(id, seen);
+      if (id === 'WAHR' || id === 'TRUE') return true;
+      if (id === 'FALSCH' || id === 'FALSE') return false;
+      return '#NAME';
+    }
+    return 0;
+  }
+  function parseUnary() { ws(); if (src[i] === '-') { i++; return -toNum(parseUnary()); } if (src[i] === '+') { i++; return toNum(parseUnary()); } return parsePrimary(); }
+  function parsePow() { const a = parseUnary(); ws(); if (src[i] === '^') { i++; return Math.pow(toNum(a), toNum(parseUnary())); } return a; }
+  function parseMul() { let a = parsePow(); for (; ;) { ws(); const c = src[i]; if (c === '*' || c === '/') { i++; const b = parsePow(); a = c === '*' ? toNum(a) * toNum(b) : toNum(a) / toNum(b); } else break; } return a; }
+  function parseAdd() { let a = parseMul(); for (; ;) { ws(); const c = src[i]; if (c === '+' || c === '-') { i++; const b = parseMul(); a = c === '+' ? toNum(a) + toNum(b) : toNum(a) - toNum(b); } else break; } return a; }
+  function parseExpr() {
+    const a = parseAdd(); ws();
+    for (const op of ['<=', '>=', '<>', '<', '>', '=']) {
+      if (src.startsWith(op, i)) { i += op.length; const y = toNum(parseAdd()), x = toNum(a); return op === '<' ? x < y : op === '>' ? x > y : op === '<=' ? x <= y : op === '>=' ? x >= y : op === '=' ? x === y : x !== y; }
+    }
+    return a;
+  }
+  return parseExpr();
+}
 
 /* ---- Gitter rendern + Auswahl (liest/schreibt curGrid = aktive Seite) ---- */
 function calcUsedRange() {
@@ -1402,15 +1485,31 @@ function renderCalc() {
   g.innerHTML = h + '</tbody>';
   highlightSel();
 }
+let anchorC = 0, anchorR = 0, editingTd = null;
+function rangeBounds() { return { c1: Math.min(anchorC, selC), c2: Math.max(anchorC, selC), r1: Math.min(anchorR, selR), r2: Math.max(anchorR, selR) }; }
+function roundN(x) { return Math.round(x * 100) / 100; }
 function highlightSel() {
-  $$('#grid td.sel').forEach(td => td.classList.remove('sel'));
-  const td = $(`#grid td[data-c="${selC}"][data-r="${selR}"]`);
-  if (td) { td.classList.add('sel'); $('#cellRef').textContent = cellKey(selC, selR); $('#formulaInput').value = cellText(gridGet(curGrid, selC, selR)); }
+  $$('#grid td.sel, #grid td.active').forEach(td => td.classList.remove('sel', 'active'));
+  const { c1, c2, r1, r2 } = rangeBounds();
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const td = $(`#grid td[data-c="${c}"][data-r="${r}"]`); if (td) td.classList.add('sel'); }
+  const act = $(`#grid td[data-c="${selC}"][data-r="${selR}"]`);
+  if (act) { act.classList.add('active'); $('#cellRef').textContent = cellKey(selC, selR); $('#formulaInput').value = gridCellRaw(selC, selR); }
+  updateCalcStat();
 }
-function selectCell(c, r) {
+function updateCalcStat() {
+  const el = $('#calcStat'); if (!el) return;
+  const { c1, c2, r1, r2 } = rangeBounds();
+  if (c1 === c2 && r1 === r2) { el.textContent = ''; return; }
+  const nums = []; let count = 0;
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const v = evalCell(c, r); if (v !== '' && v != null) count++; if (typeof v === 'number') nums.push(v); }
+  const sum = nums.reduce((a, b) => a + b, 0);
+  el.textContent = nums.length ? `Summe ${roundN(sum)}  ·  Mittel ${roundN(sum / nums.length)}  ·  Anzahl ${count}` : `Anzahl ${count}`;
+}
+function selectCell(c, r, extend) {
   const cols = Math.max(curGrid.cols, DISP_MIN_COLS), rows = Math.max(curGrid.zeilen.length, DISP_MIN_ROWS);
   selC = Math.max(0, Math.min(cols - 1, c));
   selR = Math.max(0, Math.min(rows - 1, r));
+  if (!extend) { anchorC = selC; anchorR = selR; }
   highlightSel();
   const td = $(`#grid td[data-c="${selC}"][data-r="${selR}"]`); if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
@@ -1422,6 +1521,45 @@ function commitCell(val) {
 }
 function calcAddRow() { gridEnsure(curGrid, 0, Math.max(curGrid.zeilen.length, DISP_MIN_ROWS)); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
 function calcAddCol() { curGrid.cols = Math.max(curGrid.cols, DISP_MIN_COLS) + 1; gridEnsure(curGrid, curGrid.cols - 1, 0); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
+
+/* ---- Inline-Zellbearbeitung (direkt in der Zelle) ---- */
+function beginEdit(initial) {
+  const td = $(`#grid td[data-c="${selC}"][data-r="${selR}"]`); if (!td) return;
+  editingTd = td;
+  td.classList.add('celledit'); td.contentEditable = 'true';
+  td.textContent = (initial != null) ? initial : gridCellRaw(selC, selR);
+  td.focus();
+  const rng = document.createRange(); rng.selectNodeContents(td); rng.collapse(false);
+  const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rng);
+}
+function endEdit(commit) {
+  if (!editingTd) return;
+  const td = editingTd; editingTd = null;
+  const val = td.textContent;
+  td.contentEditable = 'false'; td.classList.remove('celledit');
+  if (commit) commitCell(val); else renderCalc();
+}
+
+/* ---- Zeilen/Spalten einfügen·löschen (Rechtsklick im Gitter) ---- */
+function showGridMenu(x, y) {
+  const m = $('#ctxmenu');
+  m.innerHTML = '<button data-g="rowAbove">Zeile oberhalb einfügen</button><button data-g="rowBelow">Zeile unterhalb einfügen</button><button data-g="rowDel">Zeile löschen</button><div class="sep"></div><button data-g="colLeft">Spalte links einfügen</button><button data-g="colRight">Spalte rechts einfügen</button><button data-g="colDel">Spalte löschen</button><div class="sep"></div><button data-g="clear">Inhalt löschen</button>';
+  m.hidden = false;
+  m.style.left = Math.min(x, window.innerWidth - m.offsetWidth - 8) + 'px';
+  m.style.top = Math.min(y, window.innerHeight - m.offsetHeight - 8) + 'px';
+}
+function gridMenuAction(g) {
+  $('#ctxmenu').hidden = true;
+  gridEnsure(curGrid, selC, selR);
+  if (g === 'rowAbove') curGrid.zeilen.splice(selR, 0, { tag: 'p', cells: [''] });
+  else if (g === 'rowBelow') curGrid.zeilen.splice(selR + 1, 0, { tag: 'p', cells: [''] });
+  else if (g === 'rowDel') { if (curGrid.zeilen.length > 1) curGrid.zeilen.splice(selR, 1); }
+  else if (g === 'colLeft') { curGrid.zeilen.forEach(z => z.cells.splice(selC, 0, '')); curGrid.cols++; }
+  else if (g === 'colRight') { curGrid.zeilen.forEach(z => z.cells.splice(selC + 1, 0, '')); curGrid.cols++; }
+  else if (g === 'colDel') { curGrid.zeilen.forEach(z => z.cells.splice(selC, 1)); curGrid.cols = Math.max(1, curGrid.cols - 1); }
+  else if (g === 'clear') { const { c1, c2, r1, r2 } = rangeBounds(); for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) if (curGrid.zeilen[r]) curGrid.zeilen[r].cells[c] = ''; }
+  activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave();
+}
 
 /* ---- Vertikales Lineal: Kopf-/Fuss-Höhe ziehen ---- */
 function drawVRuler() {

@@ -208,7 +208,8 @@
         <div class="calc-bar">
           <span class="cell-ref" id="cellRef">A1</span>
           <span class="fx">fx</span>
-          <input class="formula-input" id="formulaInput" placeholder="Wert oder =Formel, z. B. =SUMME(A1:A5)  ·  =A1*B2" spellcheck="false" />
+          <input class="formula-input" id="formulaInput" placeholder="Wert oder =Formel, z. B. =SUMME(A1:A5)  ·  =WENN(A1>0;&quot;ja&quot;;&quot;nein&quot;)" spellcheck="false" />
+          <span class="calc-stat" id="calcStat"></span>
           <span class="grow"></span>
           <button class="fb-btn sm" id="calcAddRow" title="Zeile hinzufügen">+ Zeile</button>
           <button class="fb-btn sm" id="calcAddCol" title="Spalte hinzufügen">+ Spalte</button>

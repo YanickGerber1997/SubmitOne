@@ -673,4 +673,11 @@ body[data-theme="dark"] .toast{background:#2a3140}
   body.printing-deck #deckPrint img{max-width:100%}
   body.printing-deck #deckPrint table{border-collapse:collapse;width:100%}
   body.printing-deck #deckPrint td,body.printing-deck #deckPrint th{border:1px solid #999;padding:.3em .5em}
+  /* WYSIWYG-Druck: nur die paginierten Vorschau-Seiten drucken (richtige Kopf-/Fusszeile, kein Überlappen) */
+  body.printing-pages .app{display:none !important}
+  body.printing-pages .preview-overlay{display:block !important;position:static !important;inset:auto !important;background:#fff !important;padding:0}
+  body.printing-pages .preview-bar{display:none !important}
+  body.printing-pages .preview-scroll{display:block !important;overflow:visible !important;padding:0;gap:0}
+  body.printing-pages .pv-page{box-shadow:none !important;margin:0 auto !important;border-radius:0;break-after:page;page-break-after:always}
+  body.printing-pages .pv-page:last-child{break-after:auto;page-break-after:auto}
 }

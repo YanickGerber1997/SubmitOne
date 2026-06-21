@@ -644,7 +644,7 @@ function doExport(kind) {
   if (!doc) return;
   captureDoc();
   const name = safeName(doc.titel);
-  if (kind === 'pdf') { if (isSlides()) { printDeck(); return; } window.print(); return; }
+  if (kind === 'pdf') { if (isSlides()) { printDeck(); return; } printPreview(); return; }   // Vorschau zeigen, von dort drucken
   const mdRoot = editor.cloneNode(true); mdRoot.querySelectorAll('.sp-err').forEach(s => s.replaceWith(document.createTextNode(s.textContent)));
   if (kind === 'html') { download(name + '.html', docHtmlShell(cleanEditorHTML()), 'text/html'); toast('HTML exportiert'); }
   else if (kind === 'md') { download(name + '.md', htmlToMarkdown(mdRoot), 'text/markdown'); toast('Markdown exportiert'); }
@@ -753,7 +753,7 @@ function wire() {
   // Druckvorschau
   $('#btnPreview').addEventListener('click', printPreview);
   $('#pvClose').addEventListener('click', () => $('#previewOverlay').hidden = true);
-  $('#pvPrint').addEventListener('click', () => { const sl = isSlides(); $('#previewOverlay').hidden = true; setTimeout(() => sl ? printDeck() : window.print(), 60); });
+  $('#pvPrint').addEventListener('click', () => { if (isSlides()) { $('#previewOverlay').hidden = true; setTimeout(printDeck, 60); } else printFromPreview(); });
 
   // Submit PDF
   $('#btnPdf').addEventListener('click', () => { $('#pdfOverlay').hidden = false; });
@@ -1580,6 +1580,19 @@ function presentEnd() {
 }
 
 // Ganzes Foliendeck als PDF drucken: eine Querformat-Seite pro Folie
+// WYSIWYG: genau die paginierten Vorschau-Seiten drucken (richtige Kopf-/Fusszeile je Seite, kein Überlappen)
+function printFromPreview() {
+  if ($('#previewOverlay').hidden) printPreview();
+  if ($('#previewOverlay').hidden) return;
+  const st = document.createElement('style'); st.id = 'pvPageStyle'; st.textContent = '@page{margin:0}';
+  document.head.appendChild(st);
+  document.body.classList.add('printing-pages');
+  let done = false;
+  const cleanup = () => { if (done) return; done = true; document.body.classList.remove('printing-pages'); st.remove(); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(() => window.print(), 80);
+  setTimeout(cleanup, 60000);
+}
 function printDeck() {
   if (!doc) return;
   capturePage();

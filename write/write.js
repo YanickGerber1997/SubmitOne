@@ -340,7 +340,7 @@ function ingestGdoc(text, handle) {
       const typ = (p && p.typ === 'calc') ? 'calc' : (p && p.typ === 'slides') ? 'slides' : 'write';
       let html = sanitizeHtml((p && p.html) || '');
       if (!html && p && p.tabelle && p.tabelle.cells) html = tabelleToHtml(p.tabelle);   // sehr alte Calc-Seite
-      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {} };
+      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {}, notiz: (p && typeof p.notiz === 'string') ? p.notiz : '' };
     });
     if (!d.seiten.length) d.seiten = [{ id: uid(), typ: 'write', html: '' }];
     d.aktiv = 0;
@@ -709,12 +709,16 @@ function wire() {
   $('#presPrev').addEventListener('click', () => presGo(-1));
   $('#presNext').addEventListener('click', () => presGo(1));
   $('#presentSlide').addEventListener('click', () => presGo(1));
+  $('#presNotesBtn').addEventListener('click', presToggleNotes);
+  // Sprechnotizen bearbeiten
+  $('#slideNotesInput').addEventListener('input', e => { if (doc && isSlides()) { activePage().notiz = e.target.value; scheduleSave(); } });
   document.addEventListener('keydown', e => {
     if ($('#presentOverlay').hidden) return;
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); presGo(1); }
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Backspace') { e.preventDefault(); presGo(-1); }
     else if (e.key === 'Home') { e.preventDefault(); presIdx = 0; presRender(); }
     else if (e.key === 'End') { e.preventDefault(); presIdx = presList.length - 1; presRender(); }
+    else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); presToggleNotes(); }
     else if (e.key === 'Escape') { e.preventDefault(); presentEnd(); }
   });
   document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && !$('#presentOverlay').hidden) $('#presentOverlay').hidden = true; });
@@ -1420,7 +1424,11 @@ function presRender() {
   const p = presList[presIdx]; if (!p) return;
   $('#presentSlide').innerHTML = slideHtml(p);
   $('#presNum').textContent = (presIdx + 1) + ' / ' + presList.length;
+  const pn = $('#presNotes');
+  pn.textContent = p.notiz || '';
+  if (!(p.notiz || '').trim() && !pn.hidden) pn.dataset.empty = '1'; else delete pn.dataset.empty;
 }
+function presToggleNotes() { const pn = $('#presNotes'); pn.hidden = !pn.hidden; presRender(); }
 function presGo(d) { presIdx = Math.max(0, Math.min(presList.length - 1, presIdx + d)); presRender(); }
 function presentEnd() {
   $('#presentOverlay').hidden = true;
@@ -1473,6 +1481,7 @@ function renderActivePage() {
   appEl.classList.toggle('slides-mode', m === 'slides');
   if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
   else { editor.innerHTML = sanitizeHtml(p.html || ''); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); }
+  if (m === 'slides') { const ni = $('#slideNotesInput'); if (ni) ni.value = p.notiz || ''; }
 }
 // Typ der AKTIVEN Seite wechseln (Modus-Pille)
 function setPageType(typ) {

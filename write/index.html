@@ -228,6 +228,12 @@
         </div>
       </div>
 
+      <!-- SPRECHNOTIZEN (nur Submit Slides) -->
+      <div class="slidenotes" id="slideNotes">
+        <span class="sn-lbl">Notizen</span>
+        <textarea id="slideNotesInput" spellcheck="true" placeholder="Sprechnotizen zu dieser Folie … (im Präsentationsmodus mit Taste N einblenden)"></textarea>
+      </div>
+
       <!-- STATUSLEISTE -->
       <footer class="statusbar" id="statusbar">
         <span id="stWords">0 Wörter</span>
@@ -332,11 +338,13 @@
   <!-- PRÄSENTATION (Vollbild) -->
   <div class="present-overlay" id="presentOverlay" hidden>
     <div class="present-stage"><div class="present-slide" id="presentSlide"></div></div>
+    <div class="present-notes" id="presNotes" hidden></div>
     <div class="present-bar">
       <button class="icon-btn" id="presPrev" title="Zurück (←)">‹</button>
       <span class="present-num" id="presNum"></span>
       <button class="icon-btn" id="presNext" title="Weiter (→)">›</button>
       <span class="grow"></span>
+      <button class="ghost-btn" id="presNotesBtn" title="Sprechnotizen ein/aus (N)">Notizen</button>
       <button class="ghost-btn" id="presClose" title="Schliessen (Esc)">Beenden</button>
     </div>
   </div>

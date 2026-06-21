@@ -242,6 +242,12 @@ body[data-mode="slides"] .editor li{margin:.3em 0}
 body[data-mode="slides"] .editor p{margin:0 0 .5em}
 body[data-mode="slides"] .editor img{max-width:100%}
 .slide-empty{color:var(--ink-faint)}
+/* Sprechnotizen-Leiste (nur Submit Slides) */
+.slidenotes{display:none}
+.app.slides-mode .slidenotes{display:flex;align-items:flex-start;gap:10px;flex:0 0 auto;padding:8px 18px;background:var(--surface);border-top:1px solid var(--line)}
+.slidenotes .sn-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--ink-faint);padding-top:7px;white-space:nowrap}
+.slidenotes textarea{flex:1;min-height:38px;max-height:120px;resize:vertical;border:1px solid var(--line);background:var(--surface-2);border-radius:7px;padding:7px 10px;font-family:var(--font-ui);font-size:13px;color:var(--ink);line-height:1.45}
+.slidenotes textarea:focus{outline:none;border-color:var(--accent)}
 
 /* ---------- Präsentationsmodus (Vollbild) ---------- */
 .present-overlay{position:fixed;inset:0;z-index:200;background:#0b0d12;display:flex;flex-direction:column}
@@ -256,6 +262,9 @@ body[data-mode="slides"] .editor img{max-width:100%}
 .present-slide p{margin:0 0 .5em}
 .present-slide img{max-width:100%;max-height:70vh}
 .present-slide table{border-collapse:collapse;width:100%}.present-slide td,.present-slide th{border:1px solid #ccc;padding:.3em .5em}
+.present-notes{flex:0 0 auto;max-height:26vh;overflow:auto;padding:14px 22px;background:#171a22;color:#dfe3ee;font-size:1.05rem;line-height:1.5;white-space:pre-wrap;border-top:1px solid #262a36}
+.present-notes[hidden]{display:none}
+.present-notes[data-empty]::before{content:'Keine Notizen zu dieser Folie.';color:#6b7488;font-style:italic}
 .present-bar{display:flex;align-items:center;gap:12px;padding:9px 18px;background:#13161d;border-top:1px solid #262a36}
 .present-bar .icon-btn{color:#e7e9f0;font-size:22px}
 .present-bar .ghost-btn{color:#e7e9f0;border-color:#363b49}
@@ -369,6 +378,7 @@ body[data-mode="slides"] .editor img{max-width:100%}
 .app.focus .topbar,.app.focus .formatbar,.app.focus .statusbar,
 .app.focus .side,.app.focus .inspector{display:none}
 .app.focus .canvas{padding-top:70px}
+.app.focus .slidenotes{display:none}
 .app.focus .page{box-shadow:0 20px 70px rgba(20,24,40,.10)}
 .focus-exit{
   position:fixed;top:18px;right:18px;z-index:60;width:40px;height:40px;border-radius:10px;
@@ -567,7 +577,7 @@ body[data-theme="dark"] .toast{background:#2a3140}
 /* ---------- Druck ---------- */
 @media print{
   body{background:#fff}
-  .side,.inspector,.topbar,.formatbar,.calcbar,.pagetabs,.findbar,.ruler-wrap,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.page-format,.preview-overlay,.present-overlay,#toast-root{display:none !important}
+  .side,.inspector,.topbar,.formatbar,.calcbar,.slidenotes,.pagetabs,.findbar,.ruler-wrap,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.page-format,.preview-overlay,.present-overlay,#toast-root{display:none !important}
   .app{display:block}
   .canvas{padding:0;overflow:visible;display:block}
   .page{box-shadow:none;width:auto !important;min-height:auto !important;border-radius:0;padding:0 16mm;zoom:1 !important}

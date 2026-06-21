@@ -118,10 +118,11 @@ button{font-family:inherit;cursor:pointer}
 .ver{margin-left:auto;font-size:11px;color:var(--ink-faint)}
 
 /* ---------- Mitte ---------- */
-.main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg);position:relative}
-/* Linkes Inhaltsverzeichnis (Gliederung) – aufklappbar */
-.navpane{position:absolute;left:0;top:0;bottom:0;width:262px;z-index:30;background:var(--surface);border-right:1px solid var(--line);box-shadow:6px 0 24px rgba(20,24,40,.10);transform:translateX(-106%);transition:transform .24s var(--ease);display:flex;flex-direction:column}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg);position:relative;transition:padding-left .24s var(--ease)}
+/* Linkes Inhaltsverzeichnis (Gliederung) – andockend, schiebt den Inhalt nach rechts */
+.navpane{position:absolute;left:0;top:0;bottom:0;width:262px;z-index:30;background:var(--surface);border-right:1px solid var(--line);transform:translateX(-106%);transition:transform .24s var(--ease);display:flex;flex-direction:column}
 .app.nav-open .navpane{transform:none}
+.app.nav-open .main{padding-left:262px}
 .np-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600;font-size:14px}
 .navpane .outline{flex:1;overflow:auto;padding:8px 6px}
 .topbar{

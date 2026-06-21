@@ -2000,7 +2000,13 @@ function renderSheet() {
   const colsPP = Math.max(4, Math.floor(contentMm / 26));   // Auto-Spaltenzahl, die bequem auf die Blattbreite passt
   const wantC = activePage().dispCols | 0, wantR = activePage().dispRows | 0;
   const cols = Math.max(ext.cols, wantC > 0 ? wantC : colsPP);   // gewünschte Spaltenzahl (dünner = mehr)
-  const rows = Math.max(ext.rows, wantR > 0 ? wantR : 30);
+  // Standard-Zeilenzahl so, dass genau EIN A4-Blatt gefüllt ist (sonst wird das Blatt zu lang)
+  const hH = $('#zoneH').offsetHeight || 60, fH = $('#zoneF').offsetHeight || 60;
+  const fs = +(doc.einstellungen.schriftgroesse) || 16, lh = +(doc.einstellungen.zeilenabstand) || 1.5;
+  const rowHpx = Math.max(20, Math.round(Math.max(1.7 * fs, lh * fs)) + 8);   // Zellenhöhe inkl. Padding/Rahmen
+  const availPx = d.h * MM - hH - fH - 12 * MM;                                // Blatt minus Kopf/Fuss/Innenabstand
+  const rowsPP = Math.max(8, Math.floor(availPx / rowHpx));
+  const rows = Math.max(ext.rows, wantR > 0 ? wantR : rowsPP);
   gridCols = cols; gridRows = rows;
   const cw = curColW();
   let cg = '<colgroup>';   // keine Kopf-Spalte mehr – A/B/C & 1/2/3 liegen als Lineale AUSSERHALB des Blatts

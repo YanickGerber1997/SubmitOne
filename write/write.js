@@ -1076,6 +1076,11 @@ function tableAction(act) {
    ============================================================ */
 function toggleFind(show) {
   const fb = $('#findbar');
+  const wantOpen = (show === true) || (show == null && fb.hidden);
+  if (wantOpen && doc && activePage() && activePage().typ === 'calc') {   // Suche/Ersetzen wirkt auf den Fliesstext, nicht aufs Raster
+    toast('Suchen & Ersetzen ist in Tabellen (Submit Calc) noch nicht verfügbar.');
+    return;
+  }
   fb.hidden = (show === false) ? true : (show === true ? false : !fb.hidden);
   if (!fb.hidden) { const i = $('#findInput'); i.focus(); i.select(); updateFindCount(); }
 }
@@ -1105,7 +1110,13 @@ function replaceAll() {
   const t = $('#findInput').value; if (!t) return;
   const rep = $('#replaceInput').value;
   const rx = new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null);
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {   // nicht in Spaltentrennern, Inhaltsverzeichnis oder nicht-editierbaren Blöcken ersetzen
+      const p = n.parentElement;
+      if (p && p.closest('.colsep, .toc, [contenteditable="false"]')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
   const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode);
   let count = 0;
   nodes.forEach(n => {
@@ -1454,7 +1465,7 @@ function renderActivePage() {
   const calc = (m === 'calc');
   appEl.classList.toggle('calc-mode', calc);
   appEl.classList.toggle('slides-mode', m === 'slides');
-  if (calc) { curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; renderCalc(); selectCell(0, 0); }
+  if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; renderCalc(); selectCell(0, 0); }
   else { editor.innerHTML = sanitizeHtml(p.html || ''); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); }
 }
 // Typ der AKTIVEN Seite wechseln (Modus-Pille)

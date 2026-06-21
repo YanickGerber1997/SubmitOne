@@ -231,7 +231,7 @@ button{font-family:inherit;cursor:pointer}
 /* ---------- Submit Slides (16:9-Folie bearbeiten) ---------- */
 .present-only{display:none}
 body[data-mode="slides"] .present-only{display:inline-flex}
-body[data-mode="slides"] .page{width:338mm;height:190mm;min-height:190mm;overflow:hidden;padding:14mm 20mm;border-radius:7px;border-top:6px solid var(--accent)}
+body[data-mode="slides"] .page,body[data-mode="slides"] .page.quer{width:338mm;height:190mm;min-height:190mm;overflow:auto;padding:14mm 20mm;border-radius:7px;border-top:6px solid var(--accent)}
 body[data-mode="slides"] .zone-h,body[data-mode="slides"] .zone-f,body[data-mode="slides"] .guides,body[data-mode="slides"] .vruler{display:none !important}
 body[data-mode="slides"] .editor{font-size:30px;line-height:1.32;padding:0}
 body[data-mode="slides"] .editor h1{font-size:56px;line-height:1.08;margin:0 0 .32em;color:var(--accent)}
@@ -261,7 +261,7 @@ body[data-mode="slides"] .editor img{max-width:100%}
 .present-bar .ghost-btn{color:#e7e9f0;border-color:#363b49}
 .present-num{font-size:13px;color:#9aa3b8;min-width:64px;text-align:center}
 
-/* ---------- Folien-Druckvorschau (Spezifität .pv-page.pv-slide, da .pv-page später folgt) ---------- */
+/* ---------- Folien-Druckvorschau (Spezifität .pv-page.pv-slide schlägt .pv-page) ---------- */
 .pv-page.pv-slide{width:254mm;min-height:143mm;height:143mm;padding:14mm 18mm;display:block;overflow:hidden}
 .pv-page.pv-slide .pv-slide-c{font-size:13pt;line-height:1.32}
 .pv-page.pv-slide h1{font-size:25pt;color:#e8772e;margin:0 0 .3em}

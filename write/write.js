@@ -1012,7 +1012,8 @@ function wire() {
     if ((e.key === 'Delete' || e.key === 'Backspace')) {
       const im = $('img.sel', editor); if (im) { e.preventDefault(); im.remove(); afterEdit(); return; }
     }
-    if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(e.shiftKey); }
+    if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); printPreview(); }   // Strg+P → eigene Druckvorschau
+    else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(e.shiftKey); }
     else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openFile(); }
     else if (mod && e.key.toLowerCase() === 'n') { e.preventDefault(); createDoc(); }
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); toggleFocus(); }

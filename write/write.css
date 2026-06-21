@@ -442,19 +442,19 @@ body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .grid td.celledit{outline:2px solid var(--accent);outline-offset:-2px;background:var(--paper);white-space:normal;overflow:visible;text-overflow:clip;cursor:text}
 .grid td.err{color:#d6453d}
 .calc-stat{font-size:12px;color:var(--ink-soft);white-space:nowrap;font-variant-numeric:tabular-nums;padding:0 8px}
-.seg.calcview button{padding:5px 10px;font-size:12px;white-space:nowrap}
 
-/* Calc-Blatt-Ansicht = Endprodukt auf A4 */
-.calc.blatt .calc-scroll{display:none}
-.calc:not(.blatt) .calc-sheet{display:none}
+/* Calc: EINE kombinierte Ansicht – volles Gitter auf dem A4-Blatt */
 .calc-sheet{flex:1;min-height:0;overflow:auto;background:var(--bg);padding:30px 24px 80px;display:flex;justify-content:center;align-items:flex-start}
 .cs-page{position:relative;background:var(--paper);color:var(--paper-ink);box-shadow:var(--shadow);border-radius:3px;padding:0 22mm;display:flex;flex-direction:column}
 .cs-format{position:absolute;top:-7mm;left:0;font-size:9.5px;color:var(--ink-faint);background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:2px 7px}
-.cs-h{padding:16mm 0 5mm;min-height:16mm;border-bottom:1px dashed var(--line);font-size:12px;color:var(--ink-soft)}
-.cs-c{flex:1;padding:8mm 0}
-.cs-f{padding:5mm 0 16mm;min-height:16mm;border-top:1px dashed var(--line);font-size:12px;color:var(--ink-soft);display:flex;justify-content:space-between;align-items:flex-end}
-.sheet-grid{border-collapse:collapse;width:100%;font-size:11pt}
-.sheet-grid td{border:1px solid var(--line);padding:4px 9px;min-width:40px;color:var(--paper-ink)}
+.cs-h{padding:14mm 0 4mm;min-height:14mm;border-bottom:1px dashed var(--line);font-size:12px;color:var(--ink-soft)}
+.cs-c{flex:1;padding:5mm 0}
+.cs-f{padding:4mm 0 14mm;min-height:14mm;border-top:1px dashed var(--line);font-size:12px;color:var(--ink-soft);display:flex;justify-content:space-between;align-items:flex-end}
+.sheet-grid{border-collapse:collapse;width:100%;table-layout:fixed;font-size:10.5pt}
+.sheet-grid th,.sheet-grid td{border:1px solid var(--line-soft);padding:3px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sheet-grid thead th{background:var(--surface-2);color:var(--ink-faint);font-weight:600;font-size:9px;text-align:center;height:16px;letter-spacing:.3px}
+.sheet-grid .cg-corner,.sheet-grid .cg-row{width:30px;background:var(--surface-2);color:var(--ink-faint);font-weight:600;font-size:9px;text-align:center}
+.sheet-grid td{color:var(--paper-ink);height:22px;cursor:cell}
 .sheet-grid td.num{text-align:right;font-variant-numeric:tabular-nums}
 .sheet-grid td.err{color:#d6453d}
 .sheet-grid td.sel{background:var(--accent-soft)}
@@ -537,13 +537,13 @@ body[data-theme="dark"] .toast{background:#2a3140}
   .grid td{border:1px solid #999;color:#000;max-width:none;white-space:normal}
   .grid td.pad,.grid tr.pad{display:none}
   .grid td.sel{outline:none;background:none}
-  /* Calc-Blatt drucken */
-  .calc:not(.blatt) .calc-sheet{display:none !important}
-  .calc.blatt .calc-sheet{display:block !important;overflow:visible;padding:0;background:#fff}
+  /* Calc-Blatt drucken = saubere Tabelle (benutzter Bereich), ohne Spaltenköpfe/Zeilennummern */
+  .app.calc-mode .calc-sheet{display:block !important;overflow:visible;padding:0;background:#fff}
   .cs-page{box-shadow:none !important;zoom:1 !important;width:auto !important;min-height:auto !important;padding:0 16mm !important}
   .cs-format{display:none}
   .cs-h,.cs-f{border-color:#ccc}
+  .sheet-grid thead,.sheet-grid .cg-row,.sheet-grid .cg-corner{display:none}
   .sheet-grid td{border-color:#999;color:#000}
   .sheet-grid td.sel,.sheet-grid td.active{outline:none;background:none}
-  .sheet-grid td.pad,.sheet-grid tr.pad{display:none}
+  .sheet-grid td.pad,.sheet-grid tr.pad,.sheet-grid th.pad{display:none}
 }

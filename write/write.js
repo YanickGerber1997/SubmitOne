@@ -25,7 +25,7 @@ function fmtDate(iso) {
 
 /* ---------- HTML-Sanitisierung (gegen XSS / kaputte Dateien) ---------- */
 const ALLOWED_TAGS = new Set(['P', 'BR', 'H1', 'H2', 'H3', 'H4', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'SPAN', 'FONT', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'PRE', 'CODE', 'A', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'IMG', 'HR', 'DIV', 'MARK', 'SUB', 'SUP']);
-const ALLOWED_ATTR = { '*': ['style', 'class'], A: ['href', 'target', 'rel'], IMG: ['src', 'alt', 'width', 'height'], FONT: ['face', 'color', 'size'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'] };
+const ALLOWED_ATTR = { '*': ['style', 'class', 'id'], A: ['href', 'target', 'rel', 'data-go'], IMG: ['src', 'alt', 'width', 'height'], FONT: ['face', 'color', 'size'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'], DIV: ['contenteditable', 'data-toc'], SPAN: ['contenteditable'] };
 function sanitizeHtml(html) {
   try {
     const tpl = document.createElement('template');
@@ -859,6 +859,8 @@ function wire() {
     if (html) { e.preventDefault(); document.execCommand('insertHTML', false, sanitizeHtml(html)); afterEdit(); }
   });
   editor.addEventListener('click', e => {
+    const tact = e.target.closest('[data-tocact]');
+    if (tact) { e.preventDefault(); const toc = tact.closest('.toc'); if (tact.dataset.tocact === 'del') { if (toc) toc.remove(); afterEdit(); } else refreshTOC(); return; }
     const go = e.target.closest('[data-go]');
     if (go) { e.preventDefault(); const el = document.getElementById(go.dataset.go); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     $$('img.sel', editor).forEach(i => i.classList.remove('sel'));
@@ -1288,17 +1290,23 @@ function doInsert(kind) {
   else if (kind === 'footer') { const z = $('#zoneF'); z.focus(); z.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
 }
 function insertTOC() {
+  if ($('.toc', editor)) { toast('Es gibt bereits ein Inhaltsverzeichnis.'); return; }
   editor.focus();
   document.execCommand('insertHTML', false, '<div class="toc" contenteditable="false" data-toc="1"></div><p><br></p>');
   refreshTOC(); afterEdit();
 }
+let tocSeq = 0;
 function refreshTOC() {
   const tocs = $$('.toc', editor); if (!tocs.length) return;
   const heads = $$('h1,h2,h3', editor).filter(h => h.innerText.trim());
-  let html = '<div class="toc-title">Inhaltsverzeichnis</div>';
-  if (!heads.length) html += '<div class="toc-empty">Überschriften erscheinen hier automatisch.</div>';
-  heads.forEach((h, i) => { h.id = h.id || 'h_' + i; html += `<a class="toc-l${h.tagName[1]}" data-go="${h.id}">${esc(h.innerText.trim())}</a>`; });
-  tocs.forEach(t => { if (t.innerHTML !== html) t.innerHTML = html; });
+  heads.forEach(h => { if (!h.id || !/^h\d+t$/.test(h.id)) h.id = 'h' + (++tocSeq) + 't'; });
+  let html = '<div class="toc-head"><span class="toc-title">Inhaltsverzeichnis</span>'
+    + '<span class="toc-tools"><button class="toc-btn" data-tocact="refresh" title="Aktualisieren">⟳</button>'
+    + '<button class="toc-btn" data-tocact="del" title="Inhaltsverzeichnis entfernen">✕</button></span></div>';
+  if (!heads.length) html += '<div class="toc-empty">Sobald du Überschriften (Titel, H1–H3) verwendest, erscheinen sie hier automatisch.</div>';
+  else html += '<div class="toc-list">' + heads.map(h =>
+    `<a class="toc-l${h.tagName[1]}" data-go="${h.id}">${esc(h.innerText.trim())}</a>`).join('') + '</div>';
+  tocs.forEach(t => { t.contentEditable = 'false'; if (t.innerHTML !== html) t.innerHTML = html; });
 }
 
 /* ============================================================
@@ -1490,7 +1498,7 @@ function renderActivePage() {
   appEl.classList.toggle('calc-mode', calc);
   appEl.classList.toggle('slides-mode', m === 'slides');
   if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
-  else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); }
+  else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); }
   if (m === 'slides') { const ni = $('#slideNotesInput'); if (ni) ni.value = p.notiz || ''; }
 }
 // Typ der AKTIVEN Seite wechseln (Modus-Pille)

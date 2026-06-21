@@ -454,13 +454,19 @@ body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 /* Spaltentrenner (Tab = Spalte) – verbindet Write- und Calc-Ansicht */
 .editor .colsep{display:inline-block;min-width:30px;text-align:center;color:var(--ink-faint);opacity:.45;user-select:none;font-size:11px;vertical-align:baseline}
 /* Automatisches Inhaltsverzeichnis */
-.editor .toc{border:1px solid var(--line);border-radius:9px;padding:16px 20px;margin:1em 0;background:var(--surface-2);user-select:none}
-.editor .toc-title{font-weight:700;font-size:15px;margin-bottom:10px}
-.editor .toc a{display:block;color:var(--paper-ink);text-decoration:none;padding:3px 0;cursor:pointer;font-size:14px;border-radius:4px}
-.editor .toc a:hover{color:var(--accent)}
-.editor .toc .toc-l2{padding-left:16px;font-size:13.5px}
-.editor .toc .toc-l3{padding-left:32px;font-size:13px;color:var(--ink-soft)}
-.editor .toc-empty{color:var(--ink-faint);font-size:13px}
+.editor .toc{position:relative;border:1px solid var(--line);border-radius:10px;padding:14px 18px 16px;margin:1em 0;background:var(--surface-2);user-select:none}
+.editor .toc-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.editor .toc-title{font-weight:700;font-size:15px;font-family:var(--font-ui);letter-spacing:.2px}
+.editor .toc-tools{display:flex;gap:4px;opacity:0;transition:opacity .15s}
+.editor .toc:hover .toc-tools{opacity:1}
+.editor .toc-btn{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-soft);font-size:13px;cursor:pointer;line-height:1}
+.editor .toc-btn:hover{border-color:var(--accent);color:var(--accent)}
+.editor .toc-list{display:flex;flex-direction:column;gap:1px}
+.editor .toc a{display:block;color:var(--paper-ink);text-decoration:none;padding:3px 6px;cursor:pointer;font-size:14px;font-family:var(--font-ui);border-radius:5px;border-left:2px solid transparent}
+.editor .toc a:hover{color:var(--accent);background:var(--accent-soft);border-left-color:var(--accent)}
+.editor .toc .toc-l2{padding-left:20px;font-size:13.5px}
+.editor .toc .toc-l3{padding-left:36px;font-size:13px;color:var(--ink-soft)}
+.editor .toc-empty{color:var(--ink-faint);font-size:13px;font-style:italic}
 
 /* ---------- Seiten-Reiter ---------- */
 .pagetabs{display:flex;align-items:center;gap:5px;padding:6px 14px;background:var(--surface);border-bottom:1px solid var(--line);overflow-x:auto}

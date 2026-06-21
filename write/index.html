@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Submit Write</title>
+  <title>Submit Gdoc</title>
   <meta name="theme-color" content="#ffffff" />
   <link rel="icon" href="../icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -17,7 +17,7 @@
     <!-- LINKE SEITENLEISTE -->
     <aside class="side" id="side">
       <div class="side-brand">
-        <span class="brand-word"><span class="bw-a">Submit</span><span class="bw-b">Write</span></span>
+        <span class="brand-word"><span class="bw-a">Submit</span><span class="bw-b">Gdoc</span></span>
         <button class="icon-btn side-collapse" id="btnSideCollapse" title="Seitenleiste einklappen">«</button>
       </div>
 
@@ -42,7 +42,7 @@
           <svg viewBox="0 0 24 24" class="i" id="themeIco"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
           <span id="themeLbl">Dunkel</span>
         </button>
-        <div class="ver">Submit Write · <span id="verTag">v1</span></div>
+        <div class="ver">Submit Gdoc · <span id="verTag">v1</span></div>
       </div>
     </aside>
 
@@ -51,6 +51,18 @@
       <!-- OBERE LEISTE -->
       <header class="topbar" id="topbar">
         <button class="icon-btn topbar-side" id="btnSideShow" title="Seitenleiste">☰</button>
+        <div class="mode-switch" id="modeSwitch">
+          <button class="mode-pill" id="modePill" title="Modus wechseln: Schreiben, Tabelle, Folien">
+            <span class="mode-ico" id="modeIco">✍</span>
+            <span class="mode-name" id="modeName">Submit Write</span>
+            <span class="caret">▾</span>
+          </button>
+          <div class="menu mode-menu" id="modeMenu" hidden>
+            <button data-mode="write"><span class="mi">✍</span><span class="mm-t">Submit Write</span><span class="mm-sub">Dokument</span></button>
+            <button data-mode="calc"><span class="mi">▦</span><span class="mm-t">Submit Calc</span><span class="mm-sub">Tabelle</span></button>
+            <button data-mode="slides"><span class="mi">▭</span><span class="mm-t">Submit Slides</span><span class="mm-sub">Folien · bald</span></button>
+          </div>
+        </div>
         <input class="doc-title" id="docTitle" value="Unbenanntes Dokument" spellcheck="false" />
         <div class="save-state" id="saveState" title="Speicherstatus">
           <span class="dot"></span><span class="lbl">Gespeichert</span>
@@ -183,7 +195,21 @@
           <div class="editor" id="editor" contenteditable="true" spellcheck="true"></div>
           <div class="zone zone-f" id="zoneF" contenteditable="true" data-ph="Fusszeile – erscheint beim Drucken auf jeder Seite"></div>
           <div class="guides" id="guides" aria-hidden="true"></div>
+          <div class="vruler" id="vruler" aria-hidden="true"></div>
         </div>
+      </div>
+
+      <!-- TABELLE (Submit Calc) -->
+      <div class="calc" id="calc">
+        <div class="calc-bar">
+          <span class="cell-ref" id="cellRef">A1</span>
+          <span class="fx">fx</span>
+          <input class="formula-input" id="formulaInput" placeholder="Wert oder =Formel, z. B. =SUMME(A1:A5)  ·  =A1*B2" spellcheck="false" />
+          <span class="grow"></span>
+          <button class="fb-btn sm" id="calcAddRow" title="Zeile hinzufügen">+ Zeile</button>
+          <button class="fb-btn sm" id="calcAddCol" title="Spalte hinzufügen">+ Spalte</button>
+        </div>
+        <div class="calc-scroll" id="calcScroll" tabindex="0"><table class="grid" id="grid"></table></div>
       </div>
 
       <!-- STATUSLEISTE -->

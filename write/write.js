@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v6';
+const WRITE_VERSION = 'v7';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -99,7 +99,8 @@ function newDocObject(partial = {}) {
   const t = nowIso();
   return Object.assign({
     id: uid(), titel: 'Unbenanntes Dokument', html: '', kopf: '', fuss: '',
-    einstellungen: { schriftart: "'Inter', sans-serif", schriftgroesse: 16, zeilenabstand: 1.7, ausrichtung: 'hoch', margins: { top: 18, right: 22, bottom: 18, left: 22 }, kopfH: 14, fussH: 14, tabs: [] },
+    tabelle: { cols: 8, rows: 20, cells: {} },
+    einstellungen: { schriftart: "'Inter', sans-serif", schriftgroesse: 16, zeilenabstand: 1.7, ausrichtung: 'hoch', modus: 'write', margins: { top: 18, right: 22, bottom: 18, left: 22 }, kopfH: 14, fussH: 14, tabs: [] },
     meta: { erstellt: t, geaendert: t, autor: 'Yanick Gerber', version: 1 },
     folder: 'dokumente', fav: false, trashed: false
   }, partial);
@@ -118,6 +119,8 @@ function openDoc(id) {
   $('#zoneF').innerHTML = sanitizeHtml(d.fuss || '');
   titleEl.value = d.titel || 'Unbenanntes Dokument';
   applySettings();
+  ensureTabelle();
+  setMode(d.einstellungen.modus || 'write', true);
   lib.currentId = id; persistLib();
   setDirty(false); refreshAll(); renderList();
   editor.focus();
@@ -179,9 +182,9 @@ function buildGdoc() {
   captureDoc();
   return {
     format: 'gdoc', formatVersion: FORMAT_VERSION, typ: 'dokument',
-    app: 'Submit Write ' + WRITE_VERSION, exportiert: nowIso(),
+    app: 'Submit Gdoc ' + WRITE_VERSION, exportiert: nowIso(),
     meta: { ...doc.meta, titel: doc.titel },
-    inhalt: { html: doc.html, kopf: doc.kopf || '', fuss: doc.fuss || '' },
+    inhalt: { html: doc.html, kopf: doc.kopf || '', fuss: doc.fuss || '', tabelle: doc.tabelle || { cols: 8, rows: 20, cells: {} } },
     einstellungen: { ...doc.einstellungen }
   };
 }
@@ -245,6 +248,9 @@ function ingestGdoc(text, handle) {
     html: sanitizeHtml(data.inhalt.html || ''),
     kopf: sanitizeHtml(data.inhalt.kopf || ''),
     fuss: sanitizeHtml(data.inhalt.fuss || ''),
+    tabelle: (data.inhalt.tabelle && data.inhalt.tabelle.cells && typeof data.inhalt.tabelle.cells === 'object')
+      ? { cols: +data.inhalt.tabelle.cols || 8, rows: +data.inhalt.tabelle.rows || 20, cells: data.inhalt.tabelle.cells }
+      : { cols: 8, rows: 20, cells: {} },
     einstellungen: Object.assign(newDocObject().einstellungen, data.einstellungen || {}),
     meta: Object.assign(newDocObject().meta, data.meta || {})
   });
@@ -584,6 +590,33 @@ function wire() {
   $('#pvClose').addEventListener('click', () => $('#previewOverlay').hidden = true);
   $('#pvPrint').addEventListener('click', () => { $('#previewOverlay').hidden = true; setTimeout(() => window.print(), 60); });
 
+  // Modus-Umschalter (Write / Calc / Slides)
+  $('#modePill').addEventListener('click', e => { e.stopPropagation(); $('#modeMenu').hidden = !$('#modeMenu').hidden; });
+  $('#modeMenu').addEventListener('click', e => { const m = e.target.closest('button')?.dataset.mode; if (m) { $('#modeMenu').hidden = true; setMode(m); } });
+  document.addEventListener('click', () => $('#modeMenu').hidden = true);
+
+  // Submit Calc – Raster
+  $('#calcAddRow').addEventListener('click', calcAddRow);
+  $('#calcAddCol').addEventListener('click', calcAddCol);
+  $('#grid').addEventListener('click', e => { const td = e.target.closest('td[data-c]'); if (td) { selectCell(+td.dataset.c, +td.dataset.r); $('#calcScroll').focus(); } });
+  $('#grid').addEventListener('dblclick', e => { const td = e.target.closest('td[data-c]'); if (td) { selectCell(+td.dataset.c, +td.dataset.r); $('#formulaInput').focus(); } });
+  $('#formulaInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commitCell(e.target.value); selectCell(selC, selR + 1); $('#calcScroll').focus(); }
+    else if (e.key === 'Tab') { e.preventDefault(); commitCell(e.target.value); selectCell(selC + 1, selR); $('#calcScroll').focus(); }
+    else if (e.key === 'Escape') { highlightSel(); $('#calcScroll').focus(); }
+  });
+  $('#calcScroll').addEventListener('keydown', e => {
+    if (document.activeElement === $('#formulaInput')) return;
+    const k = e.key;
+    if (k === 'ArrowDown') { e.preventDefault(); selectCell(selC, selR + 1); }
+    else if (k === 'ArrowUp') { e.preventDefault(); selectCell(selC, selR - 1); }
+    else if (k === 'ArrowRight' || k === 'Tab') { e.preventDefault(); selectCell(selC + 1, selR); }
+    else if (k === 'ArrowLeft') { e.preventDefault(); selectCell(selC - 1, selR); }
+    else if (k === 'Enter' || k === 'F2') { e.preventDefault(); $('#formulaInput').focus(); }
+    else if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); commitCell(''); }
+    else if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); $('#formulaInput').value = k; $('#formulaInput').focus(); }
+  });
+
   // Zoom & Ausrichtung
   $('#zoomIn').addEventListener('click', () => zoomStep(.1));
   $('#zoomOut').addEventListener('click', () => zoomStep(-.1));
@@ -902,6 +935,7 @@ function applyZoom() {
   $('#zoomVal').innerHTML = Math.round(z * 100) + '&nbsp;%';
   $('#zoomVal').classList.toggle('on', zoomMode === 'auto');
   drawRuler();
+  drawVRuler();
 }
 function setZoom(v) { zoomMode = v; applyZoom(); }
 function zoomStep(d) {
@@ -1108,6 +1142,137 @@ function printPreview() {
   pages.forEach((pg, i) => pg.querySelector('.pv-num').textContent = 'Seite ' + (i + 1) + ' / ' + pages.length);
   $('#pvInfo').textContent = pages.length + (pages.length === 1 ? ' Seite' : ' Seiten') + ' · ' + (quer ? 'Querformat' : 'Hochformat');
   scroll.scrollTop = 0;
+}
+
+/* ============================================================
+   Modus-Umschalter + Submit Calc (Raster & Formeln)
+   ============================================================ */
+const MODE_META = { write: ['✍', 'Submit Write'], calc: ['▦', 'Submit Calc'], slides: ['▭', 'Submit Slides'] };
+function setMode(m, silent) {
+  if (!doc) return;
+  if (m === 'slides') { toast('Submit Slides folgt als Nächstes 🙂'); return; }
+  doc.einstellungen.modus = m;
+  document.body.dataset.mode = m;
+  const meta = MODE_META[m] || MODE_META.write;
+  $('#modeIco').textContent = meta[0]; $('#modeName').textContent = meta[1];
+  const calc = (m === 'calc');
+  appEl.classList.toggle('calc-mode', calc);
+  if (calc) { ensureTabelle(); renderGrid(); selectCell(selC, selR); }
+  else applyZoom();
+  if (!silent) scheduleSave();
+}
+
+function ensureTabelle() { if (!doc.tabelle || typeof doc.tabelle !== 'object') doc.tabelle = { cols: 8, rows: 20, cells: {} }; if (!doc.tabelle.cells) doc.tabelle.cells = {}; }
+function colToIdx(s) { let n = 0; for (const ch of s) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; }
+function idxToCol(i) { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+let selC = 0, selR = 1;
+function cellKey(c, r) { return idxToCol(c) + r; }
+
+/* ---- Formel-Auswertung (=SUMME(A1:A5), =A1*B2 …) ---- */
+function refValue(ref, seen) {
+  if (seen.has(ref)) return '#ZIRKEL';
+  const ns = new Set(seen); ns.add(ref);
+  return evalRaw(doc.tabelle.cells[ref] || '', ns);
+}
+function expandArgs(args, seen) {
+  const out = [];
+  args.split(/[;,]/).forEach(part => {
+    part = part.trim(); if (!part) return;
+    const rng = part.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+    if (rng) {
+      const c1 = colToIdx(rng[1]), r1 = +rng[2], c2 = colToIdx(rng[3]), r2 = +rng[4];
+      for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c++)
+        for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r++) { const v = refValue(idxToCol(c) + r, seen); if (typeof v === 'number') out.push(v); }
+    } else if (/^[A-Z]+\d+$/.test(part)) { const v = refValue(part, seen); if (typeof v === 'number') out.push(v); }
+    else { const n = parseFloat(part.replace(',', '.')); if (!isNaN(n)) out.push(n); }
+  });
+  return out;
+}
+function evalRaw(raw, seen) {
+  if (raw == null || raw === '') return '';
+  const s = String(raw);
+  if (s[0] !== '=') { const t = s.trim(); const n = parseFloat(t.replace(',', '.')); return (t !== '' && !isNaN(n) && /^[-+]?[\d.,]+$/.test(t)) ? n : s; }
+  try {
+    let e = s.slice(1).toUpperCase();
+    e = e.replace(/\b(SUMME|SUM|MITTELWERT|AVERAGE|AVG|MIN|MAX|ANZAHL|COUNT|PRODUKT|PRODUCT)\s*\(([^()]*)\)/g, (m, fn, args) => {
+      const v = expandArgs(args, seen);
+      if (/SUM|SUMME/.test(fn)) return '(' + v.reduce((a, b) => a + b, 0) + ')';
+      if (/AVERAGE|AVG|MITTELWERT/.test(fn)) return '(' + (v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0) + ')';
+      if (fn === 'MIN') return '(' + (v.length ? Math.min(...v) : 0) + ')';
+      if (fn === 'MAX') return '(' + (v.length ? Math.max(...v) : 0) + ')';
+      if (/COUNT|ANZAHL/.test(fn)) return '(' + v.length + ')';
+      return '(' + v.reduce((a, b) => a * b, 1) + ')';
+    });
+    e = e.replace(/([A-Z]+)(\d+)/g, (m, c, r) => { const v = refValue(c + r, seen); return (typeof v === 'number') ? '(' + v + ')' : '(0)'; });
+    e = e.replace(/,/g, '.');
+    if (!/^[-+*/(). 0-9eE]+$/.test(e)) return '#FEHLER';
+    const val = Function('"use strict";return (' + e + ')')();
+    return (typeof val === 'number' && isFinite(val)) ? Math.round(val * 1e10) / 1e10 : '#FEHLER';
+  } catch (_) { return '#FEHLER'; }
+}
+
+/* ---- Raster + Auswahl ---- */
+function renderGrid() {
+  ensureTabelle(); const t = doc.tabelle, g = $('#grid');
+  let h = '<thead><tr><th class="corner"></th>';
+  for (let c = 0; c < t.cols; c++) h += `<th>${idxToCol(c)}</th>`;
+  h += '</tr></thead><tbody>';
+  for (let r = 1; r <= t.rows; r++) {
+    h += `<tr><th class="rownum">${r}</th>`;
+    for (let c = 0; c < t.cols; c++) {
+      const k = cellKey(c, r), val = evalRaw(t.cells[k] || '', new Set([k]));
+      const cls = typeof val === 'number' ? ' class="num"' : (/^#/.test(String(val)) ? ' class="err"' : '');
+      h += `<td data-c="${c}" data-r="${r}"${cls}>${esc(String(val))}</td>`;
+    }
+    h += '</tr>';
+  }
+  g.innerHTML = h + '</tbody>';
+  highlightSel();
+}
+function highlightSel() {
+  $$('#grid td.sel').forEach(td => td.classList.remove('sel'));
+  const td = $(`#grid td[data-c="${selC}"][data-r="${selR}"]`);
+  if (td) { td.classList.add('sel'); $('#cellRef').textContent = cellKey(selC, selR); $('#formulaInput').value = doc.tabelle.cells[cellKey(selC, selR)] || ''; }
+}
+function selectCell(c, r) {
+  ensureTabelle();
+  selC = Math.max(0, Math.min(doc.tabelle.cols - 1, c));
+  selR = Math.max(1, Math.min(doc.tabelle.rows, r));
+  highlightSel();
+  const td = $(`#grid td[data-c="${selC}"][data-r="${selR}"]`); if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+function commitCell(val) {
+  const k = cellKey(selC, selR);
+  if (val === '' || val == null) delete doc.tabelle.cells[k]; else doc.tabelle.cells[k] = val;
+  renderGrid(); scheduleSave();
+}
+function calcAddRow() { ensureTabelle(); doc.tabelle.rows++; renderGrid(); scheduleSave(); }
+function calcAddCol() { ensureTabelle(); doc.tabelle.cols++; renderGrid(); scheduleSave(); }
+
+/* ---- Vertikales Lineal: Kopf-/Fuss-Höhe ziehen ---- */
+function drawVRuler() {
+  if (!doc) return; const v = $('#vruler');
+  if (appEl.classList.contains('focus') || appEl.classList.contains('calc-mode')) { v.style.display = 'none'; return; }
+  v.style.display = '';
+  const ph = page.offsetHeight; let html = '';
+  for (let cm = 0; cm <= Math.floor(ph / (10 * MM)); cm++) html += `<div class="vtick" style="top:${cm * 10 * MM}px"><span>${cm}</span></div>`;
+  html += `<div class="vhandle" id="vhHead" style="top:${$('#zoneH').offsetHeight}px" title="Kopfzeilen-Höhe ziehen"></div>`;
+  html += `<div class="vhandle" id="vhFoot" style="top:${ph - $('#zoneF').offsetHeight}px" title="Fusszeilen-Höhe ziehen"></div>`;
+  v.innerHTML = html;
+  $('#vhHead').addEventListener('mousedown', e => startVDrag('head', e));
+  $('#vhFoot').addEventListener('mousedown', e => startVDrag('foot', e));
+}
+function startVDrag(which, e) {
+  e.preventDefault();
+  const z = parseFloat(page.style.zoom) || 1, s = pageSetup();
+  const move = ev => {
+    const yPx = (ev.clientY - page.getBoundingClientRect().top) / z;
+    if (which === 'head') s.kopfH = Math.max(6, Math.min(90, Math.round(yPx / MM - s.margins.top - 4)));
+    else s.fussH = Math.max(6, Math.min(90, Math.round((page.offsetHeight - yPx) / MM - s.margins.bottom - 4)));
+    applyPageSetup(); drawVRuler();
+  };
+  const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); scheduleSave(); updatePages(); };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
 }
 
 /* ============================================================

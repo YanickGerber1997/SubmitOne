@@ -41,6 +41,12 @@ body[data-theme="dark"]{
   --shadow:0 1px 2px rgba(0,0,0,.3), 0 16px 50px rgba(0,0,0,.45);
 }
 
+/* Akzentfarbe pro Modus: Write=blau, Calc=grün, Slides=orange */
+body[data-mode="calc"]{--accent:#1f9d57;--accent-soft:#e7f6ee}
+body[data-mode="slides"]{--accent:#e8772e;--accent-soft:#fceede}
+body[data-theme="dark"][data-mode="calc"]{--accent:#37cc80;--accent-soft:#11331f}
+body[data-theme="dark"][data-mode="slides"]{--accent:#f2945a;--accent-soft:#3a2615}
+
 *{box-sizing:border-box}
 [hidden]{display:none !important}   /* erzwingt, dass hidden immer greift (schlägt .menu/.findbar/.bubble usw.) */
 html,body{height:100%}
@@ -382,6 +388,48 @@ body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .editor .toc .toc-l2{padding-left:16px;font-size:13.5px}
 .editor .toc .toc-l3{padding-left:32px;font-size:13px;color:var(--ink-soft)}
 .editor .toc-empty{color:var(--ink-faint);font-size:13px}
+
+/* ---------- Modus-Umschalter (oben links) ---------- */
+.mode-switch{position:relative}
+.mode-pill{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);font-family:var(--font-brand);font-weight:600;font-size:13.5px}
+.mode-pill:hover{background:var(--line-soft)}
+.mode-ico{font-size:14px}
+.mode-name{color:var(--accent)}
+.mode-pill .caret{color:var(--ink-faint);font-size:11px}
+.mode-menu{min-width:230px}
+.mode-menu button{display:grid;grid-template-columns:24px 1fr auto;align-items:center;gap:8px;text-align:left}
+.mode-menu .mm-t{font-weight:600;color:var(--ink)}
+.mode-menu .mm-sub{font-size:11px;color:var(--ink-faint)}
+.mode-menu .mi{font-size:15px;text-align:center}
+
+/* ---------- Submit Calc (Raster) ---------- */
+.calc{display:none}
+.app.calc-mode .formatbar,.app.calc-mode .ruler-wrap,.app.calc-mode .canvas,.app.calc-mode .statusbar{display:none}
+.app.calc-mode .calc{display:flex;flex-direction:column;flex:1;min-height:0;background:var(--bg)}
+.calc-bar{display:flex;align-items:center;gap:8px;padding:7px 14px;background:var(--surface);border-bottom:1px solid var(--line)}
+.cell-ref{min-width:48px;font-weight:600;font-size:13px;color:var(--ink);text-align:center;border:1px solid var(--line);border-radius:6px;padding:5px 6px;background:var(--surface-2)}
+.calc-bar .fx{font-style:italic;color:var(--ink-faint);font-size:13px}
+.formula-input{flex:1;border:1px solid var(--line);background:var(--surface-2);border-radius:7px;padding:7px 10px;font-family:var(--font-ui);font-size:13px;color:var(--ink)}
+.formula-input:focus{outline:none;border-color:var(--accent)}
+.calc-scroll{flex:1;overflow:auto;outline:none}
+.grid{border-collapse:collapse;font-size:13px;table-layout:fixed}
+.grid th,.grid td{border:1px solid var(--line);height:27px;min-width:96px;max-width:96px;width:96px;padding:2px 8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.grid thead th,.grid .rownum{background:var(--surface-2);color:var(--ink-soft);font-weight:600;text-align:center;position:sticky;font-size:12px}
+.grid thead th{top:0;z-index:2}
+.grid .rownum{left:0;z-index:1;min-width:44px;max-width:44px;width:44px}
+.grid .corner{position:sticky;left:0;top:0;z-index:3;min-width:44px;width:44px;background:var(--surface-2)}
+.grid td{cursor:cell;color:var(--paper-ink);background:var(--paper)}
+.grid td.num{text-align:right;font-variant-numeric:tabular-nums}
+.grid td.sel{outline:2px solid var(--accent);outline-offset:-2px;background:var(--accent-soft)}
+.grid td.err{color:#d6453d}
+
+/* ---------- Vertikales Lineal ---------- */
+.vruler{position:absolute;top:0;bottom:0;left:calc(3mm - var(--ml,22mm));width:6mm;z-index:3;pointer-events:none}
+.vtick{position:absolute;left:0;right:0;border-top:1px solid var(--line)}
+.vtick span{position:absolute;left:0;top:1px;font-size:7px;color:var(--ink-faint)}
+.vhandle{position:absolute;left:-3mm;width:12mm;height:12px;margin-top:-6px;cursor:ns-resize;pointer-events:auto;z-index:4}
+.vhandle::after{content:'';position:absolute;left:1.5mm;right:1.5mm;top:5px;height:2px;background:var(--accent);border-radius:2px}
+.vhandle:hover::after{height:3px}
 
 /* ---------- Druckvorschau ---------- */
 .preview-overlay{position:fixed;inset:0;z-index:100;background:rgba(18,22,36,.6);display:flex;flex-direction:column}

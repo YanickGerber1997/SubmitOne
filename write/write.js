@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v8';
+const WRITE_VERSION = 'v9';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -100,7 +100,7 @@ function newDocObject(partial = {}) {
   return Object.assign({
     id: uid(), titel: 'Unbenanntes Dokument', kopf: '', fuss: '',
     seiten: [{ id: uid(), typ: 'write', html: '' }], aktiv: 0,
-    einstellungen: { schriftart: "'Inter', sans-serif", schriftgroesse: 16, zeilenabstand: 1.7, ausrichtung: 'hoch', margins: { top: 18, right: 22, bottom: 18, left: 22 }, kopfH: 14, fussH: 14, tabs: [] },
+    einstellungen: { schriftart: "'Inter', sans-serif", schriftgroesse: 16, zeilenabstand: 1.7, ausrichtung: 'hoch', format: 'A4', margins: { top: 18, right: 22, bottom: 18, left: 22 }, kopfH: 14, fussH: 14, tabs: [] },
     meta: { erstellt: t, geaendert: t, autor: 'Yanick Gerber', version: 1 },
     folder: 'dokumente', fav: false, trashed: false
   }, partial);
@@ -165,6 +165,7 @@ function applySettings() {
   page.classList.toggle('quer', o === 'quer');
   $('#btnPortrait').classList.toggle('on', o !== 'quer');
   $('#btnLandscape').classList.toggle('on', o === 'quer');
+  applyFormat();
   applyPageSetup();
   applyZoom();
 }
@@ -666,6 +667,7 @@ function wire() {
   $('#zoomVal').addEventListener('click', () => setZoom('auto'));
   $('#btnPortrait').addEventListener('click', () => setOrientation('hoch'));
   $('#btnLandscape').addEventListener('click', () => setOrientation('quer'));
+  $('#selFormat').addEventListener('change', e => setFormat(e.target.value));
   window.addEventListener('resize', applyZoom);
 
   // Seite einrichten (Ränder + Kopf-/Fuss-Höhe)
@@ -967,8 +969,27 @@ function findStep(back) {
    Ansicht: Zoom (auto-anpassend), Ausrichtung, Seiten-Hilfslinien
    ============================================================ */
 let zoomMode = 'auto';   // 'auto' = an Fensterbreite anpassen, sonst feste Zahl
-function pageWidthMm() { return (doc && doc.einstellungen.ausrichtung === 'quer') ? 297 : 210; }
-function pageHeightPx() { return ((doc && doc.einstellungen.ausrichtung === 'quer') ? 210 : 297) * MM; }
+const FORMATS = { A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189] };  // Hochformat [B,H] in mm
+function pageDims() {
+  const f = FORMATS[(doc && doc.einstellungen.format) || 'A4'] || FORMATS.A4;
+  const quer = doc && doc.einstellungen.ausrichtung === 'quer';
+  return { w: quer ? f[1] : f[0], h: quer ? f[0] : f[1] };
+}
+function pageWidthMm() { return pageDims().w; }
+function pageHeightPx() { return pageDims().h * MM; }
+function applyFormat() {
+  if (!doc) return;
+  const d = pageDims();
+  page.style.width = d.w + 'mm';
+  page.style.minHeight = d.h + 'mm';
+  $('#pageFormat').textContent = ((doc.einstellungen.format || 'A4') + ' · ' + d.w + ' × ' + d.h + ' mm');
+  $('#selFormat').value = doc.einstellungen.format || 'A4';
+}
+function setFormat(f) {
+  if (!doc || !FORMATS[f]) return;
+  doc.einstellungen.format = f;
+  applyFormat(); applyZoom(); updatePages(); scheduleSave();
+}
 function applyZoom() {
   const avail = ($('#canvas').clientWidth || 800) - 56;
   const fit = Math.max(.2, avail / (pageWidthMm() * MM));
@@ -991,7 +1012,7 @@ function setOrientation(o) {
   page.classList.toggle('quer', o === 'quer');
   $('#btnPortrait').classList.toggle('on', o !== 'quer');
   $('#btnLandscape').classList.toggle('on', o === 'quer');
-  scheduleSave(); applyZoom(); updatePages();
+  applyFormat(); scheduleSave(); applyZoom(); updatePages();
 }
 function updatePages() {
   const ph = pageHeightPx();

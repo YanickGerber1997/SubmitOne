@@ -199,6 +199,7 @@
           <div class="zone zone-f" id="zoneF" contenteditable="true" data-ph="Fusszeile – erscheint beim Drucken auf jeder Seite"></div>
           <div class="guides" id="guides" aria-hidden="true"></div>
           <div class="vruler" id="vruler" aria-hidden="true"></div>
+          <div class="page-format" id="pageFormat" aria-hidden="true">A4 · 210 × 297 mm</div>
         </div>
       </div>
 
@@ -222,9 +223,12 @@
         <span id="stPars">0 Absätze</span>
         <span id="stPages">1 Seite</span>
         <span class="grow"></span>
+        <select class="status-sel" id="selFormat" title="Papierformat">
+          <option>A4</option><option>A3</option><option>A2</option><option>A1</option><option>A0</option>
+        </select>
         <div class="seg orient" title="Seitenausrichtung">
-          <button id="btnPortrait" class="on" title="Hochformat (A4)">▯ Hoch</button>
-          <button id="btnLandscape" title="Querformat (A4)">▭ Quer</button>
+          <button id="btnPortrait" class="on" title="Hochformat">▯ Hoch</button>
+          <button id="btnLandscape" title="Querformat">▭ Quer</button>
         </div>
         <div class="zoombox">
           <button class="icon-btn sm" id="zoomOut" title="Verkleinern (Strg −)">−</button>

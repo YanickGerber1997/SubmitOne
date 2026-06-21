@@ -225,6 +225,7 @@ button{font-family:inherit;cursor:pointer}
 .guides{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;z-index:1}
 .guide{position:absolute;left:0;right:0;border-top:1px dashed rgba(120,132,156,.5)}
 .guide span{position:absolute;right:-19mm;top:-8px;font-size:9.5px;color:var(--ink-faint);background:var(--paper);padding:1px 6px;border-radius:4px}
+.page-format{position:absolute;top:3mm;left:3mm;z-index:4;font-size:9px;letter-spacing:.2px;color:#a2a8b4;pointer-events:none;white-space:nowrap;font-family:var(--font-ui)}
 .editor{outline:none;font-size:16px;line-height:1.7;font-family:var(--font-ui);position:relative;z-index:2;flex:1 1 auto;padding:6mm 0}
 
 /* ---------- Lineal ---------- */
@@ -265,6 +266,8 @@ button{font-family:inherit;cursor:pointer}
 .zoombox{display:flex;align-items:center;gap:1px}
 .zoom-val{min-width:56px;background:none;border:none;color:var(--ink-soft);font-size:12px;font-weight:600;padding:5px 6px;border-radius:6px}
 .zoom-val:hover{background:var(--line-soft);color:var(--ink)}
+.status-sel{height:26px;border:1px solid var(--line);background:var(--surface-2);border-radius:7px;color:var(--ink);font-family:inherit;font-size:12px;padding:0 6px;cursor:pointer}
+.status-sel:focus{outline:none;border-color:var(--accent)}
 
 /* Einfügen-Knopf + Menü-Detail */
 .fb-text-btn{height:32px;padding:0 11px;border:1px solid var(--line);border-radius:7px;background:var(--surface-2);color:var(--ink-soft);font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
@@ -490,10 +493,10 @@ body[data-theme="dark"] .toast{background:#2a3140}
 /* ---------- Druck ---------- */
 @media print{
   body{background:#fff}
-  .side,.inspector,.topbar,.formatbar,.pagetabs,.findbar,.ruler-wrap,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.preview-overlay,#toast-root{display:none !important}
+  .side,.inspector,.topbar,.formatbar,.pagetabs,.findbar,.ruler-wrap,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.page-format,.preview-overlay,#toast-root{display:none !important}
   .app{display:block}
   .canvas{padding:0;overflow:visible;display:block}
-  .page{box-shadow:none;width:auto;min-height:auto;border-radius:0;padding:0 16mm;zoom:1 !important}
+  .page{box-shadow:none;width:auto !important;min-height:auto !important;border-radius:0;padding:0 16mm;zoom:1 !important}
   .editor{font-size:11pt;padding:0}
   /* Kopf-/Fusszeile wiederholen sich auf jeder gedruckten Seite */
   .zone-h{position:fixed;top:0;left:0;right:0;border:none;padding:6mm 16mm 2mm;min-height:0}

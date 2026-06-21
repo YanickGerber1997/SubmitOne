@@ -761,7 +761,8 @@ function wire() {
   const calcKey = e => {
     if (document.activeElement === $('#formulaInput')) return;
     if (editingTd) {
-      if (e.key === 'Enter') { e.preventDefault(); endEdit(true); selectCell(selC, selR + 1); calcFocus(); }
+      if (e.key === 'Enter' && (e.altKey || e.shiftKey)) { e.preventDefault(); document.execCommand('insertHTML', false, '<br>'); }  // Zeilenumbruch in der Zelle
+      else if (e.key === 'Enter') { e.preventDefault(); endEdit(true); selectCell(selC, selR + 1); calcFocus(); }
       else if (e.key === 'Tab') { e.preventDefault(); endEdit(true); selectCell(selC + 1, selR); calcFocus(); }
       else if (e.key === 'Escape') { e.preventDefault(); endEdit(false); calcFocus(); }
       return;
@@ -1627,15 +1628,17 @@ let gridCols = 1, gridRows = 1;
 function renderCalc() { renderSheet(); highlightSel(); updateStats(); }
 function renderSheet() {
   const sheet = $('#calcSheet'), ur = calcUsedRange(), ext = calcExtent(), d = pageDims();
-  const GUT = 32, HDR = 22;                                  // Zeilennummern-Spalte + Spaltenkopf (dünn, am Blattrand)
-  const printH = d.h - 36;                                   // nutzbare Höhe je Seite (mm)
-  const avail = (sheet.clientWidth || 900) - 110;            // Platz minus grauer Rand
-  const fit = Math.max(.4, Math.min(1, avail / (d.w * MM))); // wie Write: an Breite anpassen, höchstens 100 %
+  const mL = 20, mR = 20, mT = 18, mB = 16;                  // Seitenränder mm (Blatt wie Write)
+  const GUT = 28, HDR = 20;                                  // Zeilennummern-Spalte / Spaltenkopf (im Blatt, dezent)
+  const avail = Math.max(360, (sheet.clientWidth || 900) - 96);
+  const fit = Math.max(.4, Math.min(1, avail / (d.w * MM))); // an Fensterbreite anpassen, höchstens 100 %
   const S = MM * fit;                                        // px pro mm – echte A4-Grösse
-  const pagePxW = Math.round(d.w * S);                       // Blattbreite in px (zentriertes A4)
-  const colsPP = Math.max(1, Math.floor((d.w - 10) / 22));   // Spalten pro Seitenbreite (~22 mm/Spalte)
-  const rowsPP = Math.max(1, Math.floor(printH / 8));        // Zeilen pro Seite (~8 mm/Zeile)
-  const colWpx = Math.max(24, Math.floor((pagePxW - GUT) / colsPP));  // Spalten füllen die Blattbreite
+  const pagePxW = Math.round(d.w * S);
+  const padL = Math.round(mL * S), padR = Math.round(mR * S), padT = Math.round(mT * S), padB = Math.round(mB * S);
+  const contentW = pagePxW - padL - padR;                   // Druckbereich (Text-/Zellenbreite)
+  const colsPP = Math.max(1, Math.floor((d.w - mL - mR) / 24));
+  const rowsPP = Math.max(1, Math.floor((d.h - mT - mB) / 8));
+  const colWpx = Math.max(40, Math.floor((contentW - GUT) / colsPP));  // Spalten füllen den Druckbereich
   const rowHpx = Math.max(20, Math.round(8 * S));
   const cols = Math.max(ext.cols, colsPP), rows = Math.max(ext.rows, rowsPP);
   gridCols = cols; gridRows = rows;
@@ -1657,20 +1660,21 @@ function renderSheet() {
     head += '</tr>';
   }
   head += '</tbody>';
-  const tableW = GUT + cols * colWpx;
-  const paperH = HDR + rows * rowHpx + 6;                    // durchgehendes Blatt über alle Zeilen
+  const tableW = GUT + cols * colWpx, tableH = HDR + rows * rowHpx;
+  const paperH = padT + tableH + padB;                      // durchgehendes Blatt (alle Zeilen) + Ränder
   const pages = Math.max(1, Math.ceil(rows / rowsPP));
-  const stageW = Math.max(pagePxW, tableW), stageH = paperH + 8;
+  const stageW = Math.max(pagePxW, padL + tableW + padR), stageH = paperH + 8;
+  const paperLeft = Math.round((stageW - pagePxW) / 2);
   const fmt = doc.einstellungen.format || 'A4';
   let guides = '';                                           // Seiten-Hilfslinien wie in Write
   for (let pg = 1; pg < pages; pg++) {
-    const y = HDR + pg * rowsPP * rowHpx;
-    if (y < paperH - 12) guides += `<div class="calc-guide" style="top:${y}px;width:${pagePxW}px"><span>Seite ${pg + 1}</span></div>`;
+    const y = padT + HDR + pg * rowsPP * rowHpx;
+    if (y < paperH - 12) guides += `<div class="calc-guide" style="top:${y}px;left:${paperLeft + padL}px;width:${contentW}px"><span>Seite ${pg + 1}</span></div>`;
   }
   sheet.innerHTML = `<div class="calc-stage" style="width:${stageW}px;height:${stageH}px">
-    <div class="calc-paper" style="left:0;top:0;width:${pagePxW}px;height:${paperH}px"><span class="cp-tag">${fmt} · ${pages} ${pages === 1 ? 'Seite' : 'Seiten'}</span></div>
+    <div class="calc-paper" style="left:${paperLeft}px;top:0;width:${pagePxW}px;height:${paperH}px"><span class="cp-tag">${fmt} · ${pages} ${pages === 1 ? 'Seite' : 'Seiten'}</span></div>
     ${guides}
-    <table class="cgrid" style="position:relative">${cg}${head}</table>
+    <table class="cgrid" style="position:absolute;left:${paperLeft + padL}px;top:${padT}px">${cg}${head}</table>
   </div>`;
 }
 let anchorC = 0, anchorR = 0, editingTd = null;
@@ -1700,11 +1704,25 @@ function selectCell(c, r, extend) {
   highlightSel();
   const td = tdAt(selC, selR); if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
-function commitCell(val) {
+function commitCell(val) {                       // aus der Formelzeile (reiner Text)
+  commitCellHtml(esc(val == null ? '' : String(val)));
+}
+function commitCellHtml(html) {                   // speichert bereits sicheres Zell-HTML (mit <br> für Zeilenumbrüche)
   gridEnsure(curGrid, selC, selR);
-  curGrid.zeilen[selR].cells[selC] = esc(val == null ? '' : String(val));
+  curGrid.zeilen[selR].cells[selC] = html || '';
   activePage().html = gridToHtml(curGrid);
   renderCalc(); scheduleSave();
+}
+// Inhalt einer bearbeiteten Zelle einlesen: nur Text + Zeilenumbrüche (<br>) behalten
+function readCellHtml(td) {
+  let h = '';
+  td.childNodes.forEach(n => {
+    if (n.nodeType === 3) h += esc(n.nodeValue.replace(/​/g, ''));
+    else if (n.tagName === 'BR') h += '<br>';
+    else if (n.tagName === 'DIV' || n.tagName === 'P') { if (h && !/<br>$/.test(h)) h += '<br>'; h += esc(n.textContent); }
+    else h += esc(n.textContent);
+  });
+  return h.replace(/(<br>)+$/,'');
 }
 function calcAddRow() { gridEnsure(curGrid, 0, Math.max(curGrid.zeilen.length, DISP_MIN_ROWS)); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
 function calcAddCol() { curGrid.cols = Math.max(curGrid.cols, DISP_MIN_COLS) + 1; gridEnsure(curGrid, curGrid.cols - 1, 0); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
@@ -1714,7 +1732,8 @@ function beginEdit(initial) {
   const td = tdAt(selC, selR); if (!td) return;
   editingTd = td;
   td.classList.add('celledit'); td.contentEditable = 'true';
-  td.textContent = (initial != null) ? initial : gridCellRaw(selC, selR);
+  if (initial != null) td.textContent = initial;             // direkt lostippen ersetzt den Inhalt
+  else td.innerHTML = gridGet(curGrid, selC, selR) || '';    // vorhandenen Inhalt (inkl. Zeilenumbrüche) bearbeiten
   td.focus();
   const rng = document.createRange(); rng.selectNodeContents(td); rng.collapse(false);
   const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rng);
@@ -1722,9 +1741,9 @@ function beginEdit(initial) {
 function endEdit(commit) {
   if (!editingTd) return;
   const td = editingTd; editingTd = null;
-  const val = td.textContent;
+  const html = readCellHtml(td);
   td.contentEditable = 'false'; td.classList.remove('celledit');
-  if (commit) commitCell(val); else renderCalc();
+  if (commit) commitCellHtml(html); else renderCalc();
 }
 
 /* ---- Zeilen/Spalten einfügen·löschen (Rechtsklick im Gitter) ---- */

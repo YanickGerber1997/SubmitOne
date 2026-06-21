@@ -557,6 +557,9 @@ body[data-theme="dark"] .editor .sp-err{text-decoration-color:#ff7a70}
 .cgrid th.cg-col{position:sticky}
 .cgrid .cresize{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;z-index:6}
 .cgrid .cresize:hover{background:var(--accent)}
+.calc-rowruler .rresize{position:absolute;left:0;right:0;bottom:-3px;height:7px;cursor:row-resize;z-index:6}
+.calc-rowruler .rresize:hover{background:var(--accent)}
+.calcbar .color .fillca{border-bottom:3px solid #ffd54a}
 .cgrid .cg-row{position:sticky;left:0;z-index:2;background:var(--surface-2);color:var(--ink-soft);font-size:.7em;font-weight:600;text-align:center;vertical-align:middle;border-color:var(--line)}
 .cgrid .cg-corner{position:sticky;left:0;top:0;z-index:4;background:var(--surface-2);border-color:var(--line)}
 .cgrid thead th.cg-col.colsel,.cgrid .cg-row.rowsel{background:var(--accent-soft);color:var(--accent)}

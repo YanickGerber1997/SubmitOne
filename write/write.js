@@ -352,7 +352,7 @@ function ingestGdoc(text, handle) {
       const typ = (p && p.typ === 'calc') ? 'calc' : (p && p.typ === 'slides') ? 'slides' : 'write';
       let html = sanitizeHtml((p && p.html) || '');
       if (!html && p && p.tabelle && p.tabelle.cells) html = tabelleToHtml(p.tabelle);   // sehr alte Calc-Seite
-      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {}, notiz: (p && typeof p.notiz === 'string') ? p.notiz : '' };
+      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {}, notiz: (p && typeof p.notiz === 'string') ? p.notiz : '', fill: (p && p.fill && typeof p.fill === 'object') ? p.fill : {}, txtcol: (p && p.txtcol && typeof p.txtcol === 'object') ? p.txtcol : {}, rowH: (p && p.rowH && typeof p.rowH === 'object') ? p.rowH : {}, merges: Array.isArray(p && p.merges) ? p.merges : [] };
     });
     if (!d.seiten.length) d.seiten = [{ id: uid(), typ: 'write', html: '' }];
     d.aktiv = 0;
@@ -806,12 +806,18 @@ function wire() {
   $('#calcAddRow').addEventListener('click', calcAddRow);
   $('#calcAddCol').addEventListener('click', calcAddCol);
   $$('#calcBar [data-fmt]').forEach(b => b.addEventListener('click', () => setCellFormat(b.dataset.fmt)));
+  $('#cellFill').addEventListener('input', e => setCellFill(e.target.value));
+  $('#cellInk').addEventListener('input', e => setCellTextColor(e.target.value));
+  $('#cellNoFill').addEventListener('click', () => { setCellFill('none'); setCellTextColor('none'); });
+  $('#cellMerge').addEventListener('click', mergeCells);
+  $('#cellSplit').addEventListener('click', unmergeCells);
   // Lineal-Leisten: Spalte/Zeile wählen, Spaltenbreite ziehen
   $('#colRuler').addEventListener('mousedown', e => {
     const rz = e.target.closest('.cresize'); if (rz) { e.preventDefault(); startColResize(+rz.dataset.c, e); return; }
     const seg = e.target.closest('.cr-seg'); if (seg) { const c = +seg.dataset.c; selectCell(c, 0); selectCell(c, gridRows - 1, true); calcFocus(); }
   });
   $('#rowRuler').addEventListener('mousedown', e => {
+    const rz = e.target.closest('.rresize'); if (rz) { e.preventDefault(); startRowResize(+rz.dataset.r, e); return; }
     const seg = e.target.closest('.rr-seg'); if (seg) { const r = +seg.dataset.r; selectCell(0, r); selectCell(gridCols - 1, r, true); calcFocus(); }
   });
   $('#canvas').addEventListener('scroll', () => { if (appEl.classList.contains('calc-mode')) $('#colRuler').style.top = $('#canvas').scrollTop + 'px'; });
@@ -846,6 +852,7 @@ function wire() {
       return;
     }
     const k = e.key, ext = e.shiftKey;
+    if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'a') { e.preventDefault(); selectAllCells(); return; }
     if (k === 'ArrowDown') { e.preventDefault(); selectCell(selC, selR + 1, ext); }
     else if (k === 'ArrowUp') { e.preventDefault(); selectCell(selC, selR - 1, ext); }
     else if (k === 'ArrowRight') { e.preventDefault(); selectCell(selC + 1, selR, ext); }
@@ -1866,7 +1873,7 @@ function calcUsedRange() {
 }
 // EINE kombinierte Ansicht: volles Tabellengitter (alle Spalten) AUF dem A4-Blatt
 function gEl() { return $('#pageGrid .cgrid'); }
-function tdAt(c, r) { const t = gEl(); if (!t) return null; return t.querySelector(`td[data-c="${c}"][data-r="${r}"]`) || t.querySelector(`td[data-r="${r}"]`); }
+function tdAt(c, r) { const t = gEl(); if (!t) return null; const m = mergeAt(c, r); if (m) { c = m.c; r = m.r; } return t.querySelector(`td[data-c="${c}"][data-r="${r}"]`) || t.querySelector(`td[data-r="${r}"]`); }
 function allTd(sel) { const t = gEl(); return t ? [...t.querySelectorAll(sel)] : []; }
 function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen
   const z = curGrid.zeilen;
@@ -1877,6 +1884,13 @@ function renderCalc() { renderSheet(); highlightSel(); updateStats(); updatePage
 // Zahlenformate je Zelle + Spaltenbreiten (am Seiten-Objekt gespeichert, übersteht Speichern/Öffnen)
 function curFmt() { const p = activePage(); if (!p.fmt || typeof p.fmt !== 'object') p.fmt = {}; return p.fmt; }
 function curColW() { const p = activePage(); if (!p.colW || typeof p.colW !== 'object') p.colW = {}; return p.colW; }
+function curFill() { const p = activePage(); if (!p.fill || typeof p.fill !== 'object') p.fill = {}; return p.fill; }
+function curTxtCol() { const p = activePage(); if (!p.txtcol || typeof p.txtcol !== 'object') p.txtcol = {}; return p.txtcol; }
+function curRowH() { const p = activePage(); if (!p.rowH || typeof p.rowH !== 'object') p.rowH = {}; return p.rowH; }
+function curMerges() { const p = activePage(); if (!Array.isArray(p.merges)) p.merges = []; return p.merges; }
+function mergeAt(c, r) { for (const m of curMerges()) { if (c >= m.c && c < m.c + m.cs && r >= m.r && r < m.r + m.rs) return m; } return null; }
+function isCovered(c, r) { const m = mergeAt(c, r); return !!(m && !(m.c === c && m.r === r)); }
+function safeColor(v) { return /^#[0-9a-fA-F]{3,8}$/.test(v || '') ? v : ''; }
 function fmtNum(n, f) {
   if (!isFinite(n)) return String(n);
   if (f === 'pct') return (n * 100).toLocaleString('de-CH', { maximumFractionDigits: 2 }) + ' %';
@@ -1887,23 +1901,68 @@ function fmtNum(n, f) {
 }
 function isNumericText(t) { return t !== '' && /\d/.test(t) && /^-?[\d'’.,\s]+%?$/.test(t); }
 // liefert {html, cls} für eine Zelle – berücksichtigt Formel-Ergebnis und Zahlenformat
+function cellStyle(c, r) {
+  let s = '';
+  const bg = safeColor(curFill()[c + ',' + r]); if (bg) s += `background:${bg};`;
+  const tc = safeColor(curTxtCol()[c + ',' + r]); if (tc) s += `color:${tc};`;
+  return s;
+}
 function cellDisplay(c, r) {
   const raw = gridGet(curGrid, c, r), txt = cellText(raw), isF = txt.startsWith('=');
-  const f = curFmt()[c + ',' + r];
+  const f = curFmt()[c + ',' + r], style = cellStyle(c, r);
   if (isF) {
     const v = evalCell(c, r);
-    if (typeof v === 'number') return { html: esc(f ? fmtNum(v, f) : String(v)), cls: 'num' };
-    if (/^#/.test(String(v))) return { html: esc(String(v)), cls: 'err' };
-    return { html: esc(String(v)), cls: '' };
+    if (typeof v === 'number') return { html: esc(f ? fmtNum(v, f) : String(v)), cls: 'num', style };
+    if (/^#/.test(String(v))) return { html: esc(String(v)), cls: 'err', style };
+    return { html: esc(String(v)), cls: '', style };
   }
-  if (f && isNumericText(txt)) return { html: esc(fmtNum(toNum(txt), f)), cls: 'num' };
-  return { html: raw || '', cls: isNumericText(txt) ? 'num' : '' };
+  if (f && isNumericText(txt)) return { html: esc(fmtNum(toNum(txt), f)), cls: 'num', style };
+  return { html: raw || '', cls: isNumericText(txt) ? 'num' : '', style };
 }
 function setCellFormat(f) {
   if (!curGrid) return;
   const fm = curFmt(), { c1, c2, r1, r2 } = rangeBounds();
   for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const k = c + ',' + r; if (f === 'none') delete fm[k]; else fm[k] = f; }
   renderCalc(); scheduleSave();
+}
+function setCellFill(color) {
+  if (!curGrid) return; const fm = curFill(), { c1, c2, r1, r2 } = rangeBounds();
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const k = c + ',' + r; if (!color || color === 'none') delete fm[k]; else fm[k] = color; }
+  renderCalc(); scheduleSave();
+}
+function setCellTextColor(color) {
+  if (!curGrid) return; const fm = curTxtCol(), { c1, c2, r1, r2 } = rangeBounds();
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const k = c + ',' + r; if (!color || color === 'none') delete fm[k]; else fm[k] = color; }
+  renderCalc(); scheduleSave();
+}
+function selectAllCells() {
+  if (!curGrid) return; const ur = calcUsedRange();
+  const c2 = ur.maxC < 0 ? gridCols - 1 : ur.maxC, r2 = ur.maxR < 0 ? gridRows - 1 : ur.maxR;
+  selC = 0; selR = 0; anchorC = 0; anchorR = 0; selectCell(c2, r2, true);
+}
+function mergeCells() {
+  if (!curGrid) return; const { c1, c2, r1, r2 } = rangeBounds();
+  if (c1 === c2 && r1 === r2) { toast('Bitte mehrere Zellen markieren.'); return; }
+  const merges = curMerges();
+  for (let i = merges.length - 1; i >= 0; i--) { const m = merges[i]; if (!(m.c + m.cs <= c1 || m.c > c2 || m.r + m.rs <= r1 || m.r > r2)) merges.splice(i, 1); }
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { if (c === c1 && r === r1) continue; gridEnsure(curGrid, c, r); curGrid.zeilen[r].cells[c] = ''; }
+  merges.push({ c: c1, r: r1, cs: c2 - c1 + 1, rs: r2 - r1 + 1 });
+  activePage().html = gridToHtml(curGrid); selectCell(c1, r1); renderCalc(); scheduleSave();
+}
+function unmergeCells() {
+  const merges = curMerges(), m = mergeAt(selC, selR);
+  if (!m) { toast('Keine verbundene Zelle ausgewählt.'); return; }
+  merges.splice(merges.indexOf(m), 1); renderCalc(); scheduleSave();
+}
+function startRowResize(r, e) {
+  const t = gEl(); if (!t) return;
+  const z = parseFloat(page.style.zoom) || 1, startY = e.clientY;
+  const cell = t.querySelector(`td[data-r="${r}"]`), tr = cell ? cell.parentElement : null;
+  const startH = cell ? cell.offsetHeight : 24;
+  const hAt = ev => Math.max(18, Math.round(startH + (ev.clientY - startY) / z));
+  const move = ev => { if (tr) tr.style.height = hAt(ev) + 'px'; buildCalcRulers(); };
+  const up = ev => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); curRowH()[r] = hAt(ev); scheduleSave(); renderCalc(); };
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
 }
 // Gitter ins SELBE Blatt wie Write rendern: Ränder, Zoom, Kopf/Fuss, Lineal kommen vom .page
 function renderSheet() {
@@ -1918,26 +1977,31 @@ function renderSheet() {
   let cg = '<colgroup>';   // keine Kopf-Spalte mehr – A/B/C & 1/2/3 liegen als Lineale AUSSERHALB des Blatts
   for (let c = 0; c < cols; c++) cg += cw[c] ? `<col style="width:${cw[c]}px">` : '<col>';
   cg += '</colgroup>';
+  const rh = curRowH();
   let body = '<tbody>';
   for (let r = 0; r < rows; r++) {
     const z = curGrid.zeilen[r];
-    // „Textzeile" (volle Blattbreite wie Write) nur bei Überschrift oder echtem Fliesstext – nicht bei leeren/kurzen Zellen
+    const hasMerge = curMerges().some(mg => r >= mg.r && r < mg.r + mg.rs);
+    // „Textzeile" (volle Blattbreite wie Write) nur bei Überschrift/Fliesstext – nicht bei leeren/kurzen Zellen oder Verbindungen
     const only = (z && z.cells.length === 1) ? cellText(z.cells[0]) : '';
     const isHead = !!(z && /^h[1-3]$/.test(z.tag || ''));
-    const textRow = !!(z && z.cells.length === 1 && (isHead || (only && /\s/.test(only)) || only.length > 24));
-    body += `<tr${r > ur.maxR ? ' class="pad"' : ''}>`;
+    const textRow = !hasMerge && !!(z && z.cells.length === 1 && (isHead || (only && /\s/.test(only)) || only.length > 24));
+    const trStyle = rh[r] ? ` style="height:${rh[r]}px"` : '';
+    body += `<tr${r > ur.maxR ? ' class="pad"' : ''}${trStyle}>`;
     if (textRow) {
       const dsp = cellDisplay(0, r), cl = ['textcell'];
       if (isHead) cl.push(z.tag);
       if (dsp.cls === 'err') cl.push('err');
       if (r > ur.maxR) cl.push('pad');
-      body += `<td data-c="0" data-r="${r}" colspan="${cols}" class="${cl.join(' ')}">${dsp.html}</td>`;
+      body += `<td data-c="0" data-r="${r}" colspan="${cols}" class="${cl.join(' ')}"${dsp.style ? ` style="${dsp.style}"` : ''}>${dsp.html}</td>`;
     } else {
       for (let c = 0; c < cols; c++) {
+        if (isCovered(c, r)) continue;   // von einer Verbindung überdeckt → keine Zelle
         const dsp = cellDisplay(c, r), cl = [];
         if (dsp.cls) cl.push(dsp.cls);
         if (c > ur.maxC || r > ur.maxR) cl.push('pad');
-        body += `<td data-c="${c}" data-r="${r}"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${dsp.html}</td>`;
+        const mg = mergeAt(c, r), span = (mg && mg.c === c && mg.r === r) ? ` colspan="${mg.cs}" rowspan="${mg.rs}"` : '';
+        body += `<td data-c="${c}" data-r="${r}"${span}${cl.length ? ` class="${cl.join(' ')}"` : ''}${dsp.style ? ` style="${dsp.style}"` : ''}>${dsp.html}</td>`;
       }
     }
     body += '</tr>';
@@ -1966,7 +2030,7 @@ function buildCalcRulers() {
   for (let r = 0; r < gridRows; r++) {
     const cell = t.querySelector(`td[data-r="${r}"]`); if (!cell) continue;
     const rc = cell.getBoundingClientRect();
-    rh += `<div class="rr-seg" data-r="${r}" style="top:${(rc.top - cr.top + st)}px;height:${rc.height}px">${r + 1}</div>`;
+    rh += `<div class="rr-seg" data-r="${r}" style="top:${(rc.top - cr.top + st)}px;height:${rc.height}px">${r + 1}<span class="rresize" data-r="${r}" title="Zeilenhöhe ziehen"></span></div>`;
   }
   rowR.innerHTML = rh;
   rowR.style.left = Math.max(0, pr.left - cr.left + sl - rowR.offsetWidth) + 'px';
@@ -2002,7 +2066,8 @@ function selectCell(c, r, extend) {
   selR = Math.max(0, Math.min(gridRows - 1, r));
   selC = Math.max(0, Math.min(gridCols - 1, c));
   const z = curGrid.zeilen[selR];
-  if (z && z.cells.length === 1) selC = 0;     // Textzeile hat nur eine (volle) Zelle
+  if (z && z.cells.length === 1 && !curMerges().length) selC = 0;     // Textzeile hat nur eine (volle) Zelle
+  const mg = mergeAt(selC, selR); if (mg) { selC = mg.c; selR = mg.r; }   // verbundene Zelle → Anker
   if (!extend) { anchorC = selC; anchorR = selR; }
   highlightSel();
   const td = tdAt(selC, selR); if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });

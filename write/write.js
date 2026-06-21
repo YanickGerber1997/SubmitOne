@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v13';
+const WRITE_VERSION = 'v14';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -701,37 +701,38 @@ function wire() {
   document.addEventListener('click', () => { const m = $('#addMenu'); if (m) m.hidden = true; });
   document.addEventListener('click', () => $('#modeMenu').hidden = true);
 
-  // Submit Calc – Raster
+  // Submit Calc – Raster (Gitter & Blatt teilen sich die Logik)
+  const calcFocus = () => (calcView === 'blatt' ? $('#calcSheet') : $('#calcScroll')).focus();
   $('#calcAddRow').addEventListener('click', calcAddRow);
   $('#calcAddCol').addEventListener('click', calcAddCol);
-  // Maus: Auswahl + Bereich ziehen
+  $$('#calcViewSeg button').forEach(b => b.addEventListener('click', () => setCalcView(b.dataset.cv)));
+  // Maus: Auswahl + Bereich ziehen (delegiert auf #calc → wirkt in Gitter UND Blatt)
   let gridDragging = false;
-  $('#grid').addEventListener('mousedown', e => {
+  $('#calc').addEventListener('mousedown', e => {
     const td = e.target.closest('td[data-c]'); if (!td) return;
-    if (editingTd) endEdit(true);
+    if (editingTd && editingTd !== td) endEdit(true);
     gridDragging = true; e.preventDefault();
-    selectCell(+td.dataset.c, +td.dataset.r, e.shiftKey); $('#calcScroll').focus();
+    selectCell(+td.dataset.c, +td.dataset.r, e.shiftKey); calcFocus();
   });
-  $('#grid').addEventListener('mousemove', e => { if (!gridDragging) return; const td = e.target.closest('td[data-c]'); if (td) selectCell(+td.dataset.c, +td.dataset.r, true); });
+  $('#calc').addEventListener('mousemove', e => { if (!gridDragging) return; const td = e.target.closest('td[data-c]'); if (td) selectCell(+td.dataset.c, +td.dataset.r, true); });
   document.addEventListener('mouseup', () => { gridDragging = false; });
-  $('#grid').addEventListener('dblclick', e => { const td = e.target.closest('td[data-c]'); if (td) { selectCell(+td.dataset.c, +td.dataset.r); beginEdit(); } });
-  // Rechtsklick im Gitter
-  $('#grid').addEventListener('contextmenu', e => { const td = e.target.closest('td[data-c]'); if (!td) return; e.preventDefault(); if (!td.classList.contains('sel')) selectCell(+td.dataset.c, +td.dataset.r); showGridMenu(e.clientX, e.clientY); });
+  $('#calc').addEventListener('dblclick', e => { const td = e.target.closest('td[data-c]'); if (td) { selectCell(+td.dataset.c, +td.dataset.r); beginEdit(); } });
+  $('#calc').addEventListener('contextmenu', e => { const td = e.target.closest('td[data-c]'); if (!td) return; e.preventDefault(); if (!td.classList.contains('sel')) selectCell(+td.dataset.c, +td.dataset.r); showGridMenu(e.clientX, e.clientY); });
   $('#ctxmenu').addEventListener('click', e => { const g = e.target.closest('button')?.dataset.g; if (g) gridMenuAction(g); });
 
   // Formelzeile
   $('#formulaInput').addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); commitCell(e.target.value); selectCell(selC, selR + 1); $('#calcScroll').focus(); }
-    else if (e.key === 'Tab') { e.preventDefault(); commitCell(e.target.value); selectCell(selC + 1, selR); $('#calcScroll').focus(); }
-    else if (e.key === 'Escape') { highlightSel(); $('#calcScroll').focus(); }
+    if (e.key === 'Enter') { e.preventDefault(); commitCell(e.target.value); selectCell(selC, selR + 1); calcFocus(); }
+    else if (e.key === 'Tab') { e.preventDefault(); commitCell(e.target.value); selectCell(selC + 1, selR); calcFocus(); }
+    else if (e.key === 'Escape') { highlightSel(); calcFocus(); }
   });
-  // Tastatur im Gitter (Navigation, Inline-Edit, Bereich mit Umschalt)
-  $('#calcScroll').addEventListener('keydown', e => {
+  // Tastatur (Navigation, Inline-Edit, Bereich mit Umschalt) – für Gitter UND Blatt
+  const calcKey = e => {
     if (document.activeElement === $('#formulaInput')) return;
     if (editingTd) {
-      if (e.key === 'Enter') { e.preventDefault(); endEdit(true); selectCell(selC, selR + 1); $('#calcScroll').focus(); }
-      else if (e.key === 'Tab') { e.preventDefault(); endEdit(true); selectCell(selC + 1, selR); $('#calcScroll').focus(); }
-      else if (e.key === 'Escape') { e.preventDefault(); endEdit(false); $('#calcScroll').focus(); }
+      if (e.key === 'Enter') { e.preventDefault(); endEdit(true); selectCell(selC, selR + 1); calcFocus(); }
+      else if (e.key === 'Tab') { e.preventDefault(); endEdit(true); selectCell(selC + 1, selR); calcFocus(); }
+      else if (e.key === 'Escape') { e.preventDefault(); endEdit(false); calcFocus(); }
       return;
     }
     const k = e.key, ext = e.shiftKey;
@@ -743,7 +744,9 @@ function wire() {
     else if (k === 'Enter' || k === 'F2') { e.preventDefault(); beginEdit(); }
     else if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); const { c1, c2, r1, r2 } = rangeBounds(); for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { gridEnsure(curGrid, c, r); curGrid.zeilen[r].cells[c] = ''; } activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
     else if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); beginEdit(k); }
-  });
+  };
+  $('#calcScroll').addEventListener('keydown', calcKey);
+  $('#calcSheet').addEventListener('keydown', calcKey);
 
   // Zoom & Ausrichtung
   $('#zoomIn').addEventListener('click', () => zoomStep(.1));
@@ -753,6 +756,7 @@ function wire() {
   $('#btnLandscape').addEventListener('click', () => setOrientation('quer'));
   $('#selFormat').addEventListener('change', e => setFormat(e.target.value));
   window.addEventListener('resize', applyZoom);
+  window.addEventListener('resize', () => { if (doc && activePage().typ === 'calc' && calcView === 'blatt') fitSheet(); });
 
   // Seite einrichten (Ränder + Kopf-/Fuss-Höhe)
   [['#mTop', 'top'], ['#mBottom', 'bottom'], ['#mLeft', 'left'], ['#mRight', 'right']].forEach(([sel, key]) => {
@@ -1465,7 +1469,17 @@ function calcUsedRange() {
   curGrid.zeilen.forEach((z, r) => z.cells.forEach((c, ci) => { if (cellText(c) !== '') { if (r > maxR) maxR = r; if (ci > maxC) maxC = ci; } }));
   return { maxR, maxC };
 }
+let calcView = 'blatt';   // 'blatt' (Endprodukt auf A4) oder 'gitter' (Excel-Gitter)
+function gEl() { return (curGrid && activePage().typ === 'calc' && calcView === 'blatt') ? $('#calcSheet .sheet-grid') : $('#grid'); }
+function tdAt(c, r) { const t = gEl(); return t ? t.querySelector(`td[data-c="${c}"][data-r="${r}"]`) : null; }
+function allTd(sel) { const t = gEl(); return t ? [...t.querySelectorAll(sel)] : []; }
+
 function renderCalc() {
+  $('#calc').classList.toggle('blatt', calcView === 'blatt');
+  if (calcView === 'blatt') renderSheet(); else renderGitter();
+  highlightSel();
+}
+function renderGitter() {
   const g = $('#grid'), cols = Math.max(curGrid.cols, DISP_MIN_COLS), rows = Math.max(curGrid.zeilen.length, DISP_MIN_ROWS);
   const { maxR, maxC } = calcUsedRange();
   let h = '<thead><tr><th class="corner"></th>';
@@ -1483,16 +1497,48 @@ function renderCalc() {
     h += '</tr>';
   }
   g.innerHTML = h + '</tbody>';
-  highlightSel();
+}
+function renderSheet() {
+  const sheet = $('#calcSheet');
+  const ur = calcUsedRange();
+  const rows = Math.max(ur.maxR, 0) + 3, cols = Math.max(ur.maxC, 0) + 2;   // Inhalt + Spare zum Weiterschreiben
+  const quer = doc.einstellungen.ausrichtung === 'quer';
+  let tbl = '<table class="sheet-grid">';
+  for (let r = 0; r <= rows; r++) {
+    tbl += `<tr${r > ur.maxR ? ' class="pad"' : ''}>`;
+    for (let c = 0; c <= cols; c++) {
+      const v = evalCell(c, r); const cl = [];
+      if (typeof v === 'number') cl.push('num'); else if (/^#/.test(String(v))) cl.push('err');
+      if (c > ur.maxC || r > ur.maxR) cl.push('pad');
+      tbl += `<td data-c="${c}" data-r="${r}"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${esc(String(v))}</td>`;
+    }
+    tbl += '</tr>';
+  }
+  tbl += '</table>';
+  const fmt = doc.einstellungen.format || 'A4';
+  sheet.innerHTML = `<div class="cs-page${quer ? ' quer' : ''}" id="csPage"><div class="cs-format">${fmt} · Tabelle</div><div class="cs-h">${$('#zoneH').innerHTML}</div><div class="cs-c">${tbl}</div><div class="cs-f"><span>${$('#zoneF').innerHTML}</span><span class="pv-num">Seite 1</span></div></div>`;
+  fitSheet();
+}
+function fitSheet() {
+  const cp = $('#csPage'); if (!cp) return;
+  const d = pageDims();
+  cp.style.width = d.w + 'mm'; cp.style.minHeight = d.h + 'mm';
+  const avail = ($('#calcSheet').clientWidth || 800) - 56;
+  cp.style.zoom = Math.max(.2, Math.min(1, avail / (d.w * MM)));
+}
+function setCalcView(v) {
+  calcView = v;
+  $$('#calcViewSeg button').forEach(b => b.classList.toggle('on', b.dataset.cv === v));
+  renderCalc(); selectCell(selC, selR);
 }
 let anchorC = 0, anchorR = 0, editingTd = null;
 function rangeBounds() { return { c1: Math.min(anchorC, selC), c2: Math.max(anchorC, selC), r1: Math.min(anchorR, selR), r2: Math.max(anchorR, selR) }; }
 function roundN(x) { return Math.round(x * 100) / 100; }
 function highlightSel() {
-  $$('#grid td.sel, #grid td.active').forEach(td => td.classList.remove('sel', 'active'));
+  allTd('td.sel, td.active').forEach(td => td.classList.remove('sel', 'active'));
   const { c1, c2, r1, r2 } = rangeBounds();
-  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const td = $(`#grid td[data-c="${c}"][data-r="${r}"]`); if (td) td.classList.add('sel'); }
-  const act = $(`#grid td[data-c="${selC}"][data-r="${selR}"]`);
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const td = tdAt(c, r); if (td) td.classList.add('sel'); }
+  const act = tdAt(selC, selR);
   if (act) { act.classList.add('active'); $('#cellRef').textContent = cellKey(selC, selR); $('#formulaInput').value = gridCellRaw(selC, selR); }
   updateCalcStat();
 }
@@ -1511,7 +1557,7 @@ function selectCell(c, r, extend) {
   selR = Math.max(0, Math.min(rows - 1, r));
   if (!extend) { anchorC = selC; anchorR = selR; }
   highlightSel();
-  const td = $(`#grid td[data-c="${selC}"][data-r="${selR}"]`); if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  const td = tdAt(selC, selR); if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 function commitCell(val) {
   gridEnsure(curGrid, selC, selR);
@@ -1524,7 +1570,7 @@ function calcAddCol() { curGrid.cols = Math.max(curGrid.cols, DISP_MIN_COLS) + 1
 
 /* ---- Inline-Zellbearbeitung (direkt in der Zelle) ---- */
 function beginEdit(initial) {
-  const td = $(`#grid td[data-c="${selC}"][data-r="${selR}"]`); if (!td) return;
+  const td = tdAt(selC, selR); if (!td) return;
   editingTd = td;
   td.classList.add('celledit'); td.contentEditable = 'true';
   td.textContent = (initial != null) ? initial : gridCellRaw(selC, selR);

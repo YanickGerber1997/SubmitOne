@@ -211,10 +211,15 @@
           <input class="formula-input" id="formulaInput" placeholder="Wert oder =Formel, z. B. =SUMME(A1:A5)  ·  =WENN(A1>0;&quot;ja&quot;;&quot;nein&quot;)" spellcheck="false" />
           <span class="calc-stat" id="calcStat"></span>
           <span class="grow"></span>
+          <div class="seg calcview" id="calcViewSeg" title="Ansicht: Gitter (Excel) oder Blatt (Endprodukt)">
+            <button data-cv="gitter">▦ Gitter</button>
+            <button data-cv="blatt" class="on">▭ Blatt</button>
+          </div>
           <button class="fb-btn sm" id="calcAddRow" title="Zeile hinzufügen">+ Zeile</button>
           <button class="fb-btn sm" id="calcAddCol" title="Spalte hinzufügen">+ Spalte</button>
         </div>
         <div class="calc-scroll" id="calcScroll" tabindex="0"><table class="grid" id="grid"></table></div>
+        <div class="calc-sheet" id="calcSheet" tabindex="0"></div>
       </div>
 
       <!-- STATUSLEISTE -->

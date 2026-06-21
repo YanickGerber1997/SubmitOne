@@ -239,7 +239,7 @@ function setDirty(v) {
 function capturePage() {
   const p = activePage(); if (!p) return;
   if (p.typ === 'calc') { if (editingTd) endEdit(true); if (curGrid) p.html = gridToHtml(curGrid); }   // offene Zellbearbeitung zuerst sichern
-  else p.html = editor.innerHTML;
+  else p.html = cleanEditorHTML();   // ohne Rechtschreib-Markierungen speichern
 }
 function captureDoc() {
   if (!doc) return;
@@ -399,7 +399,7 @@ function normalizeEmpty() {
   if (editor.querySelector('img,table,hr')) return;
   if (!(editor.innerText || '').replace(/​/g, '').trim() && editor.innerHTML !== '') editor.innerHTML = '';
 }
-function afterEdit() { normalizeEmpty(); scheduleSave(); refreshAll(); }
+function afterEdit() { normalizeEmpty(); scheduleSave(); refreshAll(); spellLater(); }
 
 /* ---------- aktiven Zustand der Buttons spiegeln ---------- */
 function syncToolbar() {
@@ -636,11 +636,12 @@ function doExport(kind) {
   captureDoc();
   const name = safeName(doc.titel);
   if (kind === 'pdf') { if (isSlides()) { printDeck(); return; } window.print(); return; }
-  if (kind === 'html') { download(name + '.html', docHtmlShell(editor.innerHTML), 'text/html'); toast('HTML exportiert'); }
-  else if (kind === 'md') { download(name + '.md', htmlToMarkdown(editor), 'text/markdown'); toast('Markdown exportiert'); }
+  const mdRoot = editor.cloneNode(true); mdRoot.querySelectorAll('.sp-err').forEach(s => s.replaceWith(document.createTextNode(s.textContent)));
+  if (kind === 'html') { download(name + '.html', docHtmlShell(cleanEditorHTML()), 'text/html'); toast('HTML exportiert'); }
+  else if (kind === 'md') { download(name + '.md', htmlToMarkdown(mdRoot), 'text/markdown'); toast('Markdown exportiert'); }
   else if (kind === 'docx') {
     // Beta: Word öffnet HTML mit .doc-Endung zuverlässig
-    download(name + '.doc', docHtmlShell(editor.innerHTML), 'application/msword'); toast('DOCX (Beta) exportiert');
+    download(name + '.doc', docHtmlShell(cleanEditorHTML()), 'application/msword'); toast('DOCX (Beta) exportiert');
   }
 }
 
@@ -668,7 +669,7 @@ function toggleFocus() {
    ============================================================ */
 function wire() {
   // Editor-Eingaben
-  editor.addEventListener('input', afterEdit);
+  editor.addEventListener('input', onEditorInput);
   editor.addEventListener('keyup', syncToolbar);
   editor.addEventListener('mouseup', syncToolbar);
   editor.setAttribute('data-ph', 'Schreib hier los …');
@@ -834,6 +835,7 @@ function wire() {
     e.preventDefault();
     $$('img.sel', editor).forEach(i => i.classList.remove('sel'));
     if (e.target.tagName === 'IMG') e.target.classList.add('sel');
+    spellTarget = e.target.closest('.sp-err');   // falsch geschriebenes Wort unter dem Cursor
     showContextMenu(e.clientX, e.clientY);
   });
   $('#ctxmenu').addEventListener('click', e => { const a = e.target.closest('button')?.dataset.ctx; if (a) ctxAction(a); });
@@ -1325,6 +1327,13 @@ function showContextMenu(x, y) {
   const cell = currentCell();
   const img = $('img.sel', editor);
   let h = '';
+  if (spellTarget) {
+    const w = spellTarget.textContent;
+    h += `<div class="lbl">Rechtschreibung</div>`;
+    h += `<button data-ctx="dict-add">„${esc(w)}" zum Wörterbuch hinzufügen</button>`;
+    h += `<button data-ctx="dict-corr">Autokorrektur für „${esc(w)}" …</button>`;
+    h += '<div class="sep"></div>';
+  }
   h += '<button data-ctx="cut">Ausschneiden<span class="km">Strg X</span></button>';
   h += '<button data-ctx="copy">Kopieren<span class="km">Strg C</span></button>';
   h += '<button data-ctx="paste">Einfügen<span class="km">Strg V</span></button>';
@@ -1340,6 +1349,8 @@ function showContextMenu(x, y) {
 }
 function ctxAction(a) {
   $('#ctxmenu').hidden = true;
+  if (a === 'dict-add' && spellTarget) { dictAdd(spellTarget.textContent); spellTarget = null; return; }
+  if (a === 'dict-corr' && spellTarget) { const w = spellTarget.textContent; const to = prompt('„' + w + '" automatisch ersetzen durch:', w); if (to && to.trim()) corrAdd(w, to.trim()); spellTarget = null; return; }
   const img = $('img.sel', editor);
   if (a === 'cut') document.execCommand('cut');
   else if (a === 'copy') document.execCommand('copy');
@@ -1506,7 +1517,7 @@ function renderActivePage() {
   appEl.classList.toggle('calc-mode', calc);
   appEl.classList.toggle('slides-mode', m === 'slides');
   if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
-  else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); }
+  else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); spellLater(); }
   if (m === 'slides') { const ni = $('#slideNotesInput'); if (ni) ni.value = p.notiz || ''; }
 }
 // Typ der AKTIVEN Seite wechseln (Modus-Pille)
@@ -1904,10 +1915,85 @@ function startVDrag(which, e) {
 }
 
 /* ============================================================
+   Rechtschreibprüfung + persönliches Wörterbuch (erweiterbar per Rechtsklick)
+   ============================================================ */
+const LS_DICT = 'sw_dict_v1', LS_CORR = 'sw_corr_v1';
+const BASE_DICT = new Set(('der die das des dem den ein eine einer eines einem einen kein keine und oder aber denn weil dass wenn als wie wo wer was wann warum welche welcher welches ich du er sie es wir ihr mich dich sich uns euch mir dir ihm ihnen mein dein sein unser euer ist sind war waren bin bist seid sei werden wird wurde wurden geworden haben habe hast hat hatte hatten gehabt kann kannst können konnte konnten muss musst müssen musste soll sollst sollen sollte will willst wollen wollte mag möchte darf dürfen nicht nichts nie noch nur schon auch sehr mehr meist viel viele wenig hier dort da jetzt dann immer oft manchmal mit ohne für gegen durch über unter vor nach bei zu zur zum von vom aus an auf in im ins am um bis seit ab während wegen trotz statt gut sehr gute guten schlecht gross grosse klein kleine neu neue alt alte lang kurz hoch tief ja nein bitte danke gerne hallo guten tag jahr jahre monat monate woche wochen tag tage stunde stunden minute zeit mal heute morgen gestern mensch menschen mann frau kind kinder leute haus stadt land welt arbeit firma geld preis kosten projekt projekte idee ideen system word excel powerpoint wort wörter text texte seite seiten brief briefe rechnung angebot offerte frage antwort beispiel name datum ort herr damen herren sehr geehrte freundliche grüsse betreff anbei beiliegend gemäss bezüglich').split(' '));
+let userDict = ssLoadSet(LS_DICT);
+let corrMap = ssLoadMap(LS_CORR);
+function ssLoadSet(k) { try { return new Set(JSON.parse(localStorage.getItem(k) || '[]')); } catch (_) { return new Set(); } }
+function ssLoadMap(k) { try { return new Map(Object.entries(JSON.parse(localStorage.getItem(k) || '{}'))); } catch (_) { return new Map(); } }
+function ssSaveDict() { try { localStorage.setItem(LS_DICT, JSON.stringify([...userDict])); } catch (_) {} }
+function ssSaveCorr() { try { localStorage.setItem(LS_CORR, JSON.stringify(Object.fromEntries(corrMap))); } catch (_) {} }
+function normWord(w) { return (w || '').toLowerCase().replace(/[’']/g, '').replace(/ß/g, 'ss'); }
+function knownWord(w) { const k = normWord(w); if (k.length < 2) return true; if (/\d/.test(w)) return true; return BASE_DICT.has(k) || userDict.has(k); }
+function dictAdd(w) { const k = normWord(w); if (!k) return; userDict.add(k); ssSaveDict(); spellcheckNow(); toast('„' + w + '" zum Wörterbuch hinzugefügt'); }
+function corrAdd(from, to) { const k = normWord(from); if (!k || !to) return; corrMap.set(k, to); userDict.add(normWord(to)); ssSaveDict(); ssSaveCorr(); spellcheckNow(); toast('Autokorrektur: „' + from + '" → „' + to + '"'); }
+
+let spellTimer = null, spellTarget = null, spellOn = true;
+function spellLater() { if (!spellOn) return; clearTimeout(spellTimer); spellTimer = setTimeout(spellcheckNow, 650); }
+function unwrapSpell(root) { $$('.sp-err', root).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); root.normalize(); }
+function cleanEditorHTML() { const c = editor.cloneNode(true); c.querySelectorAll('.sp-err').forEach(s => s.replaceWith(document.createTextNode(s.textContent))); return c.innerHTML; }
+function spellcheckNow() {
+  if (!doc || !spellOn) return;
+  if (activePage() && activePage().typ === 'calc') return;     // nur Fliesstext prüfen
+  const off = caretOffset(editor);
+  unwrapSpell(editor);
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) { const p = n.parentElement; if (!p || p.closest('.toc, pre, code, a, [contenteditable="false"]')) return NodeFilter.FILTER_REJECT; return NodeFilter.FILTER_ACCEPT; }
+  });
+  const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode);
+  const RE = /[A-Za-zÀ-ÿ’']+/g;
+  nodes.forEach(n => {
+    const text = n.nodeValue; if (!/[A-Za-zÀ-ÿ]/.test(text)) return;
+    let m, last = 0, any = false; const frag = document.createDocumentFragment(); RE.lastIndex = 0;
+    while ((m = RE.exec(text))) {
+      const w = m[0];
+      if (w.length >= 2 && /[A-Za-zÀ-ÿ]/.test(w) && !knownWord(w)) {
+        any = true;
+        if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+        const sp = document.createElement('span'); sp.className = 'sp-err'; sp.textContent = w; frag.appendChild(sp);
+        last = m.index + w.length;
+      }
+    }
+    if (any) { if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last))); n.replaceWith(frag); }
+  });
+  if (off != null) setCaretOffset(editor, off);
+}
+function caretOffset(root) {
+  const sel = getSelection(); if (!sel.rangeCount) return null;
+  const r = sel.getRangeAt(0); if (!root.contains(r.endContainer)) return null;
+  const pre = r.cloneRange(); pre.selectNodeContents(root); pre.setEnd(r.endContainer, r.endOffset);
+  return pre.toString().length;
+}
+function setCaretOffset(root, off) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null); let n, acc = 0;
+  while ((n = walker.nextNode())) { const len = n.nodeValue.length; if (acc + len >= off) { const r = document.createRange(); r.setStart(n, Math.max(0, off - acc)); r.collapse(true); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); return; } acc += len; }
+}
+// Autokorrektur beim Tippen (nach Wortende) anwenden
+function applyAutocorrect() {
+  if (!corrMap.size) return;
+  const sel = getSelection(); if (!sel.rangeCount) return;
+  const r = sel.getRangeAt(0), node = r.endContainer; if (node.nodeType !== 3) return;
+  const text = node.nodeValue, pos = r.endOffset;
+  const mm = /([A-Za-zÀ-ÿ’']+)([\s.,;:!?])$/.exec(text.slice(0, pos));
+  if (!mm) return; const corr = corrMap.get(normWord(mm[1])); if (!corr || corr === mm[1]) return;
+  const start = pos - mm[0].length;
+  node.nodeValue = text.slice(0, start) + corr + mm[2] + text.slice(pos);
+  const r2 = document.createRange(); r2.setStart(node, start + corr.length + 1); r2.collapse(true);
+  sel.removeAllRanges(); sel.addRange(r2);
+}
+function onEditorInput(e) {
+  if (e && e.inputType === 'insertText' && /[\s.,;:!?]/.test(e.data || '')) applyAutocorrect();
+  afterEdit();
+}
+
+/* ============================================================
    Start
    ============================================================ */
 function init() {
   $('#verTag').textContent = WRITE_VERSION;
+  editor.spellcheck = false;   // eigene Rechtschreibprüfung statt der Browser-Unterringelung
   setTheme(localStorage.getItem(LS_THEME) || 'light');
   try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (_) {}
   try { document.execCommand('styleWithCSS', false, true); } catch (_) {}

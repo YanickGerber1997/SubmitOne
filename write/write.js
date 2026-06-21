@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v3';
+const WRITE_VERSION = 'v3.1';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -38,17 +38,24 @@ function sanitizeHtml(html) {
         const name = a.name.toLowerCase();
         const ok = (ALLOWED_ATTR['*'].includes(name) || (ALLOWED_ATTR[tag] || []).includes(name)) && !name.startsWith('on');
         if (!ok) { el.removeAttribute(a.name); return; }
-        if (name === 'href' || name === 'src') {
-          const v = a.value.trim().toLowerCase().replace(/\s/g, '');
-          if (v.startsWith('javascript:') || v.startsWith('vbscript:') || v.startsWith('data:text/html')) el.removeAttribute(a.name);
-        }
+        if (name === 'href' && !/^(https?:|mailto:|tel:|#|\/|\.\/|\.\.\/)/i.test(a.value.trim())) el.removeAttribute(a.name);
+        if (name === 'src' && !/^(https?:|data:image\/(png|jpe?g|gif|webp|bmp);)/i.test(a.value.trim())) el.removeAttribute(a.name);
       });
+      // Style-Attribut auf gefährliche Werte prüfen (CSS-Injektion / Export)
+      if (el.hasAttribute('style') && /url\(|expression|javascript:|@import|position\s*:\s*fixed/i.test(el.getAttribute('style'))) el.removeAttribute('style');
       if (tag === 'A') { el.setAttribute('rel', 'noopener noreferrer'); }
     });
     return tpl.innerHTML;
   } catch (_) {
     const d = document.createElement('div'); d.textContent = html || ''; return d.innerHTML;
   }
+}
+// nur sichere Link-Adressen zulassen
+function safeUrl(u) {
+  const v = (u || '').trim();
+  if (/^(https?:|mailto:|tel:|#|\/|\.\/|\.\.\/)/i.test(v)) return v;
+  if (/^[\w.-]+\.[a-z]{2,}([\/?#].*)?$/i.test(v)) return 'https://' + v;  // nackte Domain
+  return '';
 }
 
 /* ---------- Elemente ---------- */
@@ -70,7 +77,13 @@ let saveTimer = null;
 function loadLib() {
   try {
     const raw = JSON.parse(localStorage.getItem(LS_LIB) || '{}');
-    if (raw && raw.docs) return raw;
+    if (raw && raw.docs && typeof raw.docs === 'object') {
+      return {
+        docs: raw.docs,
+        order: Array.isArray(raw.order) ? raw.order.filter(id => raw.docs[id]) : Object.keys(raw.docs),
+        currentId: raw.currentId || null
+      };
+    }
   } catch (_) {}
   return { docs: {}, order: [], currentId: null };
 }
@@ -97,8 +110,10 @@ function newDocObject(partial = {}) {
    ============================================================ */
 function openDoc(id) {
   const d = lib.docs[id]; if (!d) return;
+  if (doc && doc.id !== id && dirty) { clearTimeout(saveTimer); autosave(); }  // alten Stand sichern, bevor gewechselt wird
+  clearTimeout(saveTimer);
   doc = d; fileHandle = null;
-  editor.innerHTML = d.html || '';
+  editor.innerHTML = sanitizeHtml(d.html || '');   // auch aus localStorage immer bereinigen (#1)
   titleEl.value = d.titel || 'Unbenanntes Dokument';
   applySettings();
   lib.currentId = id; persistLib();
@@ -178,7 +193,7 @@ async function saveFile(asNew) {
       await w.write(json); await w.close();
       autosave(); toast('Gespeichert: ' + fileHandle.name);
       return;
-    } catch (e) { if (e && e.name === 'AbortError') return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; toast('Direktes Speichern nicht möglich — lade Datei herunter.'); }
   }
   // 2) Download-Fallback
   const blob = new Blob([json], { type: 'application/json' });
@@ -220,7 +235,8 @@ function ingestGdoc(text, handle) {
     einstellungen: Object.assign(newDocObject().einstellungen, data.einstellungen || {}),
     meta: Object.assign(newDocObject().meta, data.meta || {})
   });
-  lib.docs[d.id] = d; lib.order.unshift(d.id); persistLib();
+  lib.docs[d.id] = d; lib.order.unshift(d.id);
+  if (!persistLib()) warnQuota();
   openDoc(d.id); fileHandle = handle || null;
   toast('Geöffnet: ' + d.titel);
 }
@@ -253,11 +269,13 @@ function insertTable() {
   editor.focus(); document.execCommand('insertHTML', false, html); afterEdit();
 }
 function insertLink() {
-  const url = prompt('Link-Adresse (URL):', 'https://');
-  if (!url) return;
+  const raw = prompt('Link-Adresse (URL):', 'https://');
+  if (raw === null) return;
+  const url = safeUrl(raw);
+  if (!url) { toast('Ungültige Adresse — erlaubt: http(s), mailto, tel.'); return; }
   editor.focus(); document.execCommand('createLink', false, url);
   const sel = document.getSelection();
-  if (sel && sel.anchorNode) { const a = sel.anchorNode.parentElement?.closest('a'); if (a) a.target = '_blank'; }
+  if (sel && sel.anchorNode) { const a = sel.anchorNode.parentElement?.closest('a'); if (a) { a.target = '_blank'; a.rel = 'noopener noreferrer'; } }
   afterEdit();
 }
 
@@ -361,7 +379,7 @@ function docMenu(id) {
   if (a === '1') d.fav = !d.fav;
   else if (a === '2') { d.folder = d.folder === 'archiv' ? 'dokumente' : 'archiv'; }
   else if (a === '3') d.trashed = true;
-  else if (a === '4') { const c = newDocObject({ ...JSON.parse(JSON.stringify(d)), id: uid(), titel: d.titel + ' (Kopie)' }); lib.docs[c.id] = c; lib.order.unshift(c.id); }
+  else if (a === '4') { const c = newDocObject({ ...JSON.parse(JSON.stringify(d)), id: uid(), titel: d.titel + ' (Kopie)', folder: 'dokumente', trashed: false, fav: false }); lib.docs[c.id] = c; lib.order.unshift(c.id); }
   else if (a === '5') { delete lib.docs[id]; lib.order = lib.order.filter(x => x !== id); if (lib.currentId === id) { lib.currentId = lib.order[0] || null; lib.currentId ? openDoc(lib.currentId) : createDoc(); } }
   persistLib(); renderList();
 }
@@ -437,6 +455,7 @@ function htmlToMarkdown(root) {
   return out.replace(/\n{3,}/g, '\n\n').trim() + '\n';
 }
 function doExport(kind) {
+  if (!doc) return;
   captureDoc();
   const name = safeName(doc.titel);
   if (kind === 'pdf') { window.print(); return; }
@@ -483,8 +502,8 @@ function wire() {
   $$('.fb-btn[data-cmd]').forEach(b => b.addEventListener('click', () => cmd(b.dataset.cmd)));
   $$('.fb-btn[data-block]').forEach(b => b.addEventListener('click', () => setBlock(b.dataset.block)));
   $('#selBlock').addEventListener('change', e => setBlock(e.target.value));
-  $('#selFont').addEventListener('change', e => { doc.einstellungen.schriftart = e.target.value; editor.style.fontFamily = e.target.value; scheduleSave(); });
-  $('#selSize').addEventListener('change', e => { const px = +e.target.value; if (window.getSelection().isCollapsed) { doc.einstellungen.schriftgroesse = px; editor.style.fontSize = px + 'px'; scheduleSave(); } else setFontSize(px); });
+  $('#selFont').addEventListener('change', e => { if (!doc) return; doc.einstellungen.schriftart = e.target.value; editor.style.fontFamily = e.target.value; scheduleSave(); });
+  $('#selSize').addEventListener('change', e => { if (!doc) return; const px = +e.target.value; if (window.getSelection().isCollapsed) { doc.einstellungen.schriftgroesse = px; editor.style.fontSize = px + 'px'; scheduleSave(); } else setFontSize(px); });
   $('#inkColor').addEventListener('input', e => { document.execCommand('styleWithCSS', false, true); cmd('foreColor', e.target.value); });
   $('#btnLink').addEventListener('click', insertLink);
   $('#btnTable').addEventListener('click', insertTable);
@@ -539,6 +558,7 @@ function wire() {
 
   // Zeilenabstand
   $$('#segLine button').forEach(b => b.addEventListener('click', () => {
+    if (!doc) return;
     $$('#segLine button').forEach(x => x.classList.remove('on')); b.classList.add('on');
     doc.einstellungen.zeilenabstand = +b.dataset.line; editor.style.lineHeight = b.dataset.line; scheduleSave();
   }));

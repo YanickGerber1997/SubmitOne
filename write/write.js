@@ -172,7 +172,9 @@ function htmlToGrid(html) {
 function gridToHtml(grid) {
   return grid.zeilen.map(z => {
     const tag = /^h[1-3]$/.test(z.tag) ? z.tag : 'p';
-    const inner = (z.cells.length ? z.cells : ['']).map(c => c || '').join(COLSEP);
+    const cells = (z.cells.length ? z.cells : ['']).slice();
+    while (cells.length > 1 && (cells[cells.length - 1] || '') === '') cells.pop();   // leere End-Spalten weg → keine überflüssigen Tabs in Write
+    const inner = cells.map(c => c || '').join(COLSEP);
     return `<${tag}>${inner || '<br>'}</${tag}>`;
   }).join('') || '<p><br></p>';
 }
@@ -1751,7 +1753,7 @@ function renderActivePage() {
   const calc = (m === 'calc');
   appEl.classList.toggle('calc-mode', calc);
   appEl.classList.toggle('slides-mode', m === 'slides');
-  if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
+  if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; calcFitRows = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
   else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.sp-err', editor).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); $$('.pgbreak-gap', editor).forEach(g => g.remove()); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); paginateLater(); }
   if (m === 'slides') { const ni = $('#slideNotesInput'); if (ni) ni.value = p.notiz || ''; }
 }
@@ -1910,8 +1912,19 @@ function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen
   const z = curGrid.zeilen;
   return { cols: Math.max(1, ...z.map(x => x.cells.length)), rows: z.length };
 }
-let gridCols = 1, gridRows = 1;
-function renderCalc() { renderSheet(); highlightSel(); updateStats(); updatePages(); }
+let gridCols = 1, gridRows = 1, calcFitRows = 0;
+function renderCalc() { renderSheet(); fitCalcRows(); highlightSel(); updateStats(); updatePages(); }
+// Zeilenzahl per ECHTER Messung so setzen, dass die Tabelle genau ein A4-Blatt füllt (nicht zu hoch)
+function fitCalcRows() {
+  if (!doc || activePage().typ !== 'calc' || activePage().dispRows) return;
+  const t = gEl(); if (!t) return; const td = t.querySelector('td'); if (!td) return;
+  const z = parseFloat(page.style.zoom) || 1;
+  const rowH = td.getBoundingClientRect().height / z; if (rowH < 8) return;
+  const hH = $('#zoneH').offsetHeight || 60, fH = $('#zoneF').offsetHeight || 60;
+  const usable = pageDims().h * MM - hH - fH - 12 * MM - 4;        // A4-Inhaltshöhe (Seite min. A4)
+  const want = Math.max(5, Math.floor(usable / rowH));
+  if (want !== gridRows && want >= (calcUsedRange().maxR + 1)) { calcFitRows = want; renderSheet(); }
+}
 // Zahlenformate je Zelle + Spaltenbreiten (am Seiten-Objekt gespeichert, übersteht Speichern/Öffnen)
 function curFmt() { const p = activePage(); if (!p.fmt || typeof p.fmt !== 'object') p.fmt = {}; return p.fmt; }
 function curColW() { const p = activePage(); if (!p.colW || typeof p.colW !== 'object') p.colW = {}; return p.colW; }
@@ -2031,7 +2044,7 @@ function renderSheet() {
   const rowHpx = Math.max(20, Math.round(Math.max(1.7 * fs, lh * fs)) + 8);   // Zellenhöhe inkl. Padding/Rahmen
   const availPx = d.h * MM - hH - fH - 12 * MM;                                // Blatt minus Kopf/Fuss/Innenabstand
   const rowsPP = Math.max(8, Math.floor(availPx / rowHpx));
-  const rows = Math.max(ext.rows, wantR > 0 ? wantR : rowsPP);
+  const rows = Math.max(ext.rows, wantR > 0 ? wantR : (calcFitRows || rowsPP));
   gridCols = cols; gridRows = rows;
   const cw = curColW();
   let cg = '<colgroup>';   // keine Kopf-Spalte mehr – A/B/C & 1/2/3 liegen als Lineale AUSSERHALB des Blatts

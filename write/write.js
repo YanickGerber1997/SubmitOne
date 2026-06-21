@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v10';
+const WRITE_VERSION = 'v11';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -91,7 +91,7 @@ function persistLib() { try { localStorage.setItem(LS_LIB, JSON.stringify(lib));
 let quotaWarned = false;
 function warnQuota() {
   if (quotaWarned) return; quotaWarned = true;
-  toast('Lokaler Speicher voll — bitte als .gdoc speichern (Strg+S). Tipp: grosse Bilder vermeiden.');
+  toast('Lokaler Speicher voll — bitte als .paper speichern (Strg+S). Tipp: grosse Bilder vermeiden.');
   setTimeout(() => { quotaWarned = false; }, 30000);
 }
 
@@ -254,8 +254,8 @@ function scheduleSave() {
 function buildGdoc() {
   captureDoc();
   return {
-    format: 'gdoc', formatVersion: FORMAT_VERSION, typ: 'dokument',
-    app: 'Submit Gdoc ' + WRITE_VERSION, exportiert: nowIso(),
+    format: 'paper', formatVersion: FORMAT_VERSION, typ: 'dokument',
+    app: 'Submit Paper ' + WRITE_VERSION, exportiert: nowIso(),
     meta: { ...doc.meta, titel: doc.titel },
     inhalt: { kopf: doc.kopf || '', fuss: doc.fuss || '', seiten: doc.seiten },
     einstellungen: { ...doc.einstellungen }
@@ -265,7 +265,7 @@ function safeName(s) { return (s || 'Dokument').replace(/[^\wäöüÄÖÜ\- ]+/g
 
 async function saveFile(asNew) {
   const data = buildGdoc();
-  const fname = safeName(doc.titel) + '.gdoc';
+  const fname = safeName(doc.titel) + '.paper';
   const json = JSON.stringify(data, null, 2);
   // 1) File System Access API
   if (window.showSaveFilePicker) {
@@ -273,7 +273,7 @@ async function saveFile(asNew) {
       if (!fileHandle || asNew) {
         fileHandle = await window.showSaveFilePicker({
           suggestedName: fname,
-          types: [{ description: 'Submit Write Dokument', accept: { 'application/json': ['.gdoc'] } }]
+          types: [{ description: 'Submit Paper Dokument', accept: { 'application/json': ['.paper', '.gdoc'] } }]
         });
       }
       const w = await fileHandle.createWritable();
@@ -295,14 +295,14 @@ async function openFile() {
   if (window.showOpenFilePicker) {
     try {
       const [h] = await window.showOpenFilePicker({
-        types: [{ description: 'Submit Write / JSON', accept: { 'application/json': ['.gdoc', '.json'] } }]
+        types: [{ description: 'Submit Paper', accept: { 'application/json': ['.paper', '.gdoc', '.json'] } }]
       });
       handle = h; text = await (await h.getFile()).text();
     } catch (e) { if (e && e.name === 'AbortError') return; }
   }
   if (text === null) {
     text = await new Promise(res => {
-      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.gdoc,.json';
+      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.paper,.gdoc,.json';
       inp.onchange = () => { const f = inp.files[0]; if (!f) return res(null); const r = new FileReader(); r.onload = () => res(r.result); r.readAsText(f); };
       inp.click();
     });
@@ -313,7 +313,7 @@ async function openFile() {
 
 function ingestGdoc(text, handle) {
   let data; try { data = JSON.parse(text); } catch (_) { toast('Datei nicht lesbar'); return; }
-  if (!data || data.format !== 'gdoc' || !data.inhalt) { toast('Keine .gdoc-Datei'); return; }
+  if (!data || (data.format !== 'paper' && data.format !== 'gdoc') || !data.inhalt) { toast('Keine Submit-Paper-Datei'); return; }
   if (typeof data.formatVersion === 'number' && data.formatVersion > FORMAT_VERSION)
     toast('Datei aus neuerer Version — wird nach bestem Wissen geöffnet.');
   const d = newDocObject({
@@ -840,7 +840,7 @@ function wire() {
     const files = [...(e.dataTransfer?.files || [])];
     if (!files.length) return;
     e.preventDefault();                       // verhindert Wegnavigieren bei Datei-Drop
-    const f = files.find(f => /\.(gdoc|json)$/i.test(f.name));
+    const f = files.find(f => /\.(paper|gdoc|json)$/i.test(f.name));
     if (f) f.text().then(t => ingestGdoc(t, null));
   });
 

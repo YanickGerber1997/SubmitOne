@@ -352,7 +352,7 @@ function ingestGdoc(text, handle) {
       const typ = (p && p.typ === 'calc') ? 'calc' : (p && p.typ === 'slides') ? 'slides' : 'write';
       let html = sanitizeHtml((p && p.html) || '');
       if (!html && p && p.tabelle && p.tabelle.cells) html = tabelleToHtml(p.tabelle);   // sehr alte Calc-Seite
-      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {}, notiz: (p && typeof p.notiz === 'string') ? p.notiz : '', fill: (p && p.fill && typeof p.fill === 'object') ? p.fill : {}, txtcol: (p && p.txtcol && typeof p.txtcol === 'object') ? p.txtcol : {}, rowH: (p && p.rowH && typeof p.rowH === 'object') ? p.rowH : {}, merges: Array.isArray(p && p.merges) ? p.merges : [] };
+      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {}, notiz: (p && typeof p.notiz === 'string') ? p.notiz : '', fill: (p && p.fill && typeof p.fill === 'object') ? p.fill : {}, txtcol: (p && p.txtcol && typeof p.txtcol === 'object') ? p.txtcol : {}, rowH: (p && p.rowH && typeof p.rowH === 'object') ? p.rowH : {}, merges: Array.isArray(p && p.merges) ? p.merges : [], borders: (p && p.borders && typeof p.borders === 'object') ? p.borders : {} };
     });
     if (!d.seiten.length) d.seiten = [{ id: uid(), typ: 'write', html: '' }];
     d.aktiv = 0;
@@ -811,6 +811,10 @@ function wire() {
   $('#cellNoFill').addEventListener('click', () => { setCellFill('none'); setCellTextColor('none'); });
   $('#cellMerge').addEventListener('click', mergeCells);
   $('#cellSplit').addEventListener('click', unmergeCells);
+  const bdMenu = $('#borderMenu');
+  $('#cellBorder').addEventListener('click', e => { e.stopPropagation(); bdMenu.hidden = !bdMenu.hidden; });
+  bdMenu.addEventListener('click', e => { const m = e.target.closest('[data-bd]'); if (m) { bdMenu.hidden = true; setBorders(m.dataset.bd); } });
+  document.addEventListener('click', () => bdMenu.hidden = true);
   // Lineal-Leisten: Spalte/Zeile wählen, Spaltenbreite ziehen
   $('#colRuler').addEventListener('mousedown', e => {
     const rz = e.target.closest('.cresize'); if (rz) { e.preventDefault(); startColResize(+rz.dataset.c, e); return; }
@@ -1888,6 +1892,7 @@ function curFill() { const p = activePage(); if (!p.fill || typeof p.fill !== 'o
 function curTxtCol() { const p = activePage(); if (!p.txtcol || typeof p.txtcol !== 'object') p.txtcol = {}; return p.txtcol; }
 function curRowH() { const p = activePage(); if (!p.rowH || typeof p.rowH !== 'object') p.rowH = {}; return p.rowH; }
 function curMerges() { const p = activePage(); if (!Array.isArray(p.merges)) p.merges = []; return p.merges; }
+function curBorders() { const p = activePage(); if (!p.borders || typeof p.borders !== 'object') p.borders = {}; return p.borders; }
 function mergeAt(c, r) { for (const m of curMerges()) { if (c >= m.c && c < m.c + m.cs && r >= m.r && r < m.r + m.rs) return m; } return null; }
 function isCovered(c, r) { const m = mergeAt(c, r); return !!(m && !(m.c === c && m.r === r)); }
 function safeColor(v) { return /^#[0-9a-fA-F]{3,8}$/.test(v || '') ? v : ''; }
@@ -1905,7 +1910,21 @@ function cellStyle(c, r) {
   let s = '';
   const bg = safeColor(curFill()[c + ',' + r]); if (bg) s += `background:${bg};`;
   const tc = safeColor(curTxtCol()[c + ',' + r]); if (tc) s += `color:${tc};`;
+  const bd = curBorders()[c + ',' + r];
+  if (bd) { const col = '#5b6472'; if (bd.includes('t')) s += `border-top:1.5px solid ${col};`; if (bd.includes('b')) s += `border-bottom:1.5px solid ${col};`; if (bd.includes('l')) s += `border-left:1.5px solid ${col};`; if (bd.includes('r')) s += `border-right:1.5px solid ${col};`; }
   return s;
+}
+function setBorders(mode) {
+  if (!curGrid) return; const b = curBorders(), { c1, c2, r1, r2 } = rangeBounds();
+  const add = (c, r, sides) => { const k = c + ',' + r, set = new Set((b[k] || '').split('').filter(Boolean)); sides.split('').forEach(x => set.add(x)); b[k] = [...set].join(''); if (!b[k]) delete b[k]; };
+  if (mode === 'none') { for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) delete b[c + ',' + r]; }
+  else if (mode === 'all') { for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) add(c, r, 'tblr'); }
+  else if (mode === 'outside') { for (let c = c1; c <= c2; c++) { add(c, r1, 't'); add(c, r2, 'b'); } for (let r = r1; r <= r2; r++) { add(c1, r, 'l'); add(c2, r, 'r'); } }
+  else if (mode === 'top') { for (let c = c1; c <= c2; c++) add(c, r1, 't'); }
+  else if (mode === 'bottom') { for (let c = c1; c <= c2; c++) add(c, r2, 'b'); }
+  else if (mode === 'left') { for (let r = r1; r <= r2; r++) add(c1, r, 'l'); }
+  else if (mode === 'right') { for (let r = r1; r <= r2; r++) add(c2, r, 'r'); }
+  renderCalc(); scheduleSave();
 }
 function cellDisplay(c, r) {
   const raw = gridGet(curGrid, c, r), txt = cellText(raw), isF = txt.startsWith('=');

@@ -307,6 +307,20 @@
           <button class="fb-btn sm" id="cellNoFill" title="Füllung/Farbe entfernen">⌫</button>
           <button class="fb-btn sm" id="cellMerge" title="Zellen verbinden">⛶</button>
           <button class="fb-btn sm" id="cellSplit" title="Verbindung lösen">▥</button>
+          <div class="menu-wrap">
+            <button class="fb-btn sm" id="cellBorder" title="Rahmenlinien">▦▾</button>
+            <div class="menu" id="borderMenu" hidden>
+              <button data-bd="all">Alle Rahmen</button>
+              <button data-bd="outside">Aussenrahmen</button>
+              <span class="menu-sep"></span>
+              <button data-bd="top">Oben</button>
+              <button data-bd="bottom">Unten</button>
+              <button data-bd="left">Links</button>
+              <button data-bd="right">Rechts</button>
+              <span class="menu-sep"></span>
+              <button data-bd="none">Keine Rahmen</button>
+            </div>
+          </div>
         </span>
         <button class="fb-btn sm" id="calcAddRow" title="Zeile hinzufügen">+ Zeile</button>
         <button class="fb-btn sm" id="calcAddCol" title="Spalte hinzufügen">+ Spalte</button>

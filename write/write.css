@@ -42,6 +42,7 @@ body[data-theme="dark"]{
 }
 
 *{box-sizing:border-box}
+[hidden]{display:none !important}   /* erzwingt, dass hidden immer greift (schlägt .menu/.findbar/.bubble usw.) */
 html,body{height:100%}
 body{
   margin:0; font-family:var(--font-ui); color:var(--ink);

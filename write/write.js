@@ -238,7 +238,7 @@ function setDirty(v) {
 }
 function capturePage() {
   const p = activePage(); if (!p) return;
-  if (p.typ === 'calc') { if (curGrid) p.html = gridToHtml(curGrid); }
+  if (p.typ === 'calc') { if (editingTd) endEdit(true); if (curGrid) p.html = gridToHtml(curGrid); }   // offene Zellbearbeitung zuerst sichern
   else p.html = editor.innerHTML;
 }
 function captureDoc() {
@@ -1480,7 +1480,7 @@ function renderActivePage() {
   appEl.classList.toggle('calc-mode', calc);
   appEl.classList.toggle('slides-mode', m === 'slides');
   if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
-  else { editor.innerHTML = sanitizeHtml(p.html || ''); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); }
+  else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); }
   if (m === 'slides') { const ni = $('#slideNotesInput'); if (ni) ni.value = p.notiz || ''; }
 }
 // Typ der AKTIVEN Seite wechseln (Modus-Pille)
@@ -1783,8 +1783,8 @@ function startColResize(c, e) {
   };
   document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
 }
-function calcAddRow() { gridEnsure(curGrid, 0, Math.max(curGrid.zeilen.length, DISP_MIN_ROWS)); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
-function calcAddCol() { curGrid.cols = Math.max(curGrid.cols, DISP_MIN_COLS) + 1; gridEnsure(curGrid, curGrid.cols - 1, 0); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
+function calcAddRow() { if (editingTd) endEdit(true); gridEnsure(curGrid, 0, curGrid.zeilen.length); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
+function calcAddCol() { if (editingTd) endEdit(true); curGrid.cols = (curGrid.cols || 1) + 1; gridEnsure(curGrid, curGrid.cols - 1, 0); activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
 
 /* ---- Inline-Zellbearbeitung (direkt in der Zelle) ---- */
 function beginEdit(initial) {

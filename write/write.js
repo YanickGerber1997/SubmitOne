@@ -1297,8 +1297,13 @@ function insertTOC() {
 }
 let tocSeq = 0;
 function refreshTOC() {
-  const tocs = $$('.toc', editor); if (!tocs.length) return;
-  const heads = $$('h1,h2,h3', editor).filter(h => h.innerText.trim());
+  let tocs = $$('.toc', editor); if (!tocs.length) return;
+  tocs.forEach(t => $$('.toc', t).forEach(inner => inner.replaceWith(...inner.childNodes)));  // verschachtelte TOC-Altlasten auflösen
+  tocs = $$('.toc', editor);
+  tocs.slice(1).forEach(t => t.remove());                       // nur EIN Inhaltsverzeichnis behalten
+  const toc = tocs[0];
+  // WICHTIG: Überschriften INNERHALB des Verzeichnisses NICHT zählen (sonst wuchert es)
+  const heads = $$('h1,h2,h3', editor).filter(h => h.innerText.trim() && !h.closest('.toc'));
   heads.forEach(h => { if (!h.id || !/^h\d+t$/.test(h.id)) h.id = 'h' + (++tocSeq) + 't'; });
   let html = '<div class="toc-head"><span class="toc-title">Inhaltsverzeichnis</span>'
     + '<span class="toc-tools"><button class="toc-btn" data-tocact="refresh" title="Aktualisieren">⟳</button>'
@@ -1306,7 +1311,7 @@ function refreshTOC() {
   if (!heads.length) html += '<div class="toc-empty">Sobald du Überschriften (Titel, H1–H3) verwendest, erscheinen sie hier automatisch.</div>';
   else html += '<div class="toc-list">' + heads.map(h =>
     `<a class="toc-l${h.tagName[1]}" data-go="${h.id}">${esc(h.innerText.trim())}</a>`).join('') + '</div>';
-  tocs.forEach(t => { t.contentEditable = 'false'; if (t.innerHTML !== html) t.innerHTML = html; });
+  toc.contentEditable = 'false'; if (toc.innerHTML !== html) toc.innerHTML = html;
 }
 
 /* ============================================================

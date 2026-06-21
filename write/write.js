@@ -220,6 +220,7 @@ function applySettings() {
   editor.style.fontFamily = s.schriftart;
   editor.style.fontSize = s.schriftgroesse + 'px';
   editor.style.lineHeight = s.zeilenabstand;
+  const pg = $('#pageGrid'); if (pg) { pg.style.fontFamily = s.schriftart; pg.style.fontSize = s.schriftgroesse + 'px'; pg.style.lineHeight = s.zeilenabstand; }   // Calc = gleiche Schrift wie Write
   $('#selFont').value = s.schriftart;
   $('#selSize').value = String(s.schriftgroesse);
   $$('#segLine button').forEach(b => b.classList.toggle('on', +b.dataset.line === +s.zeilenabstand));
@@ -1309,9 +1310,9 @@ function paginate() {
   if (document.activeElement && document.activeElement.closest && document.activeElement.closest('.pgbreak-gap')) return;  // gerade Kopf/Fuss editieren → nicht neu umbrechen
   $$('.pgbreak-gap', editor).forEach(g => g.remove());
   const off = (document.activeElement === editor) ? bodyCaret() : null;
-  const m = pageSetup().margins;
-  const H = Math.max(140, (pageDims().h - m.top - m.bottom) * MM - 12);   // Inhaltshöhe je Blatt (px)
-  const mtPx = Math.round(m.top * MM), mbPx = Math.round(m.bottom * MM);
+  // echte Höhe von Kopf-/Fusszeile messen (inkl. Rand + Kopf-/Fusshöhe) – sonst wird das Blatt zu hoch
+  const hH = $('#zoneH').offsetHeight || 60, fH = $('#zoneF').offsetHeight || 60;
+  const H = Math.max(140, pageDims().h * MM - hH - fH - 2);   // verfügbare Inhaltshöhe je Blatt (px)
   const firstNo = !!doc.einstellungen.erstSeiteOhne;
   let used = 0, pages = 1;
   const kids = [...editor.children].filter(n => !(n.classList && n.classList.contains('pgbreak-gap')));
@@ -1320,7 +1321,7 @@ function paginate() {
     const cs = getComputedStyle(node);
     const h = brk ? 0 : node.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
     if (brk || (used + h > H && used > 0)) {
-      node.before(mkGap(Math.max(0, H - used), mtPx, mbPx, pages === 1 && firstNo));
+      node.before(mkGap(Math.max(0, H - used), hH, fH, pages === 1 && firstNo));
       pages++; used = brk ? 0 : h;
     } else used += h;
   });
@@ -1333,14 +1334,14 @@ function paginate() {
   if (off != null) setBodyCaret(off);
   const st = $('#stPages'); if (st) st.textContent = pages + (pages === 1 ? ' Seite' : ' Seiten');
 }
-function mkGap(fillPx, mtPx, mbPx, noFoot) {
+function mkGap(fillPx, headPx, footPx, noFoot) {
   const d = document.createElement('div'); d.className = 'pgbreak-gap'; d.contentEditable = 'false';
   const fh = $('#zoneF').innerHTML, hh = $('#zoneH').innerHTML;   // Kopf-/Fusszeile pro Seite (editierbar, synchron)
   d.innerHTML =
     `<div class="pg-fill" style="height:${fillPx}px"></div>` +
-    (noFoot ? `<div class="pg-foot" style="height:${mbPx}px"></div>` : `<div class="pg-foot" style="height:${mbPx}px" contenteditable="true">${fh}</div>`) +
+    (noFoot ? `<div class="pg-foot" style="height:${footPx}px"></div>` : `<div class="pg-foot" style="height:${footPx}px" contenteditable="true">${fh}</div>`) +
     `<div class="pg-mid"></div>` +
-    `<div class="pg-head" style="height:${mtPx}px" contenteditable="true">${hh}</div>`;
+    `<div class="pg-head" style="height:${headPx}px" contenteditable="true">${hh}</div>`;
   return d;
 }
 // Kopf-/Fusszeile in allen Seiten gleich halten

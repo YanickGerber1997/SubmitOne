@@ -743,10 +743,18 @@ function wire() {
   $('#calcAddRow').addEventListener('click', calcAddRow);
   $('#calcAddCol').addEventListener('click', calcAddCol);
   $$('#calcBar [data-fmt]').forEach(b => b.addEventListener('click', () => setCellFormat(b.dataset.fmt)));
+  // Lineal-Leisten: Spalte/Zeile wählen, Spaltenbreite ziehen
+  $('#colRuler').addEventListener('mousedown', e => {
+    const rz = e.target.closest('.cresize'); if (rz) { e.preventDefault(); startColResize(+rz.dataset.c, e); return; }
+    const seg = e.target.closest('.cr-seg'); if (seg) { const c = +seg.dataset.c; selectCell(c, 0); selectCell(c, gridRows - 1, true); calcFocus(); }
+  });
+  $('#rowRuler').addEventListener('mousedown', e => {
+    const seg = e.target.closest('.rr-seg'); if (seg) { const r = +seg.dataset.r; selectCell(0, r); selectCell(gridCols - 1, r, true); calcFocus(); }
+  });
+  $('#canvas').addEventListener('scroll', () => { if (appEl.classList.contains('calc-mode')) $('#colRuler').style.top = $('#canvas').scrollTop + 'px'; });
   // Maus: Auswahl + Bereich ziehen (delegiert auf #pageGrid)
   let gridDragging = false;
   pgEl.addEventListener('mousedown', e => {
-    const rz = e.target.closest('.cresize'); if (rz) { e.preventDefault(); e.stopPropagation(); startColResize(+rz.dataset.c, e); return; }
     const td = e.target.closest('td[data-c]'); if (!td) return;
     if (editingTd && editingTd !== td) endEdit(true);
     gridDragging = true; e.preventDefault();
@@ -1167,7 +1175,8 @@ function setFormat(f) {
   applyFormat(); applyZoom(); updatePages(); scheduleSave();
 }
 function applyZoom() {
-  const avail = ($('#canvas').clientWidth || 800) - 56;
+  const extra = appEl.classList.contains('calc-mode') ? 48 : 0;   // Platz für das linke Zeilen-Lineal
+  const avail = ($('#canvas').clientWidth || 800) - 56 - extra;
   const fit = Math.max(.2, avail / (pageWidthMm() * MM));
   let z = (zoomMode === 'auto') ? Math.min(1, fit) : zoomMode;
   z = Math.max(.2, Math.min(2.5, z));
@@ -1176,6 +1185,7 @@ function applyZoom() {
   $('#zoomVal').classList.toggle('on', zoomMode === 'auto');
   drawRuler();
   drawVRuler();
+  if (appEl.classList.contains('calc-mode')) buildCalcRulers();
 }
 function setZoom(v) { zoomMode = v; applyZoom(); }
 function zoomStep(d) {
@@ -1681,53 +1691,78 @@ function renderSheet() {
   const rows = Math.max(ext.rows, 30);                       // genug Leerzeilen, damit es wie ein Blatt wirkt
   gridCols = cols; gridRows = rows;
   const cw = curColW();
-  let cg = '<colgroup><col class="cg-gut">';
+  let cg = '<colgroup>';   // keine Kopf-Spalte mehr – A/B/C & 1/2/3 liegen als Lineale AUSSERHALB des Blatts
   for (let c = 0; c < cols; c++) cg += cw[c] ? `<col style="width:${cw[c]}px">` : '<col>';
   cg += '</colgroup>';
-  let head = '<thead><tr><th class="cg-corner"></th>';
-  for (let c = 0; c < cols; c++) head += `<th class="cg-col" data-c="${c}">${idxToCol(c)}<span class="cresize" data-c="${c}" title="Spaltenbreite ziehen"></span></th>`;
-  head += '</tr></thead><tbody>';
+  let body = '<tbody>';
   for (let r = 0; r < rows; r++) {
     const z = curGrid.zeilen[r];
     // „Textzeile" (volle Blattbreite wie Write) nur bei Überschrift oder echtem Fliesstext – nicht bei leeren/kurzen Zellen
     const only = (z && z.cells.length === 1) ? cellText(z.cells[0]) : '';
     const isHead = !!(z && /^h[1-3]$/.test(z.tag || ''));
     const textRow = !!(z && z.cells.length === 1 && (isHead || (only && /\s/.test(only)) || only.length > 24));
-    head += `<tr${r > ur.maxR ? ' class="pad"' : ''}><th class="cg-row" data-r="${r}">${r + 1}</th>`;
+    body += `<tr${r > ur.maxR ? ' class="pad"' : ''}>`;
     if (textRow) {
       const dsp = cellDisplay(0, r), cl = ['textcell'];
       if (isHead) cl.push(z.tag);
       if (dsp.cls === 'err') cl.push('err');
       if (r > ur.maxR) cl.push('pad');
-      head += `<td data-c="0" data-r="${r}" colspan="${cols}" class="${cl.join(' ')}">${dsp.html}</td>`;
+      body += `<td data-c="0" data-r="${r}" colspan="${cols}" class="${cl.join(' ')}">${dsp.html}</td>`;
     } else {
       for (let c = 0; c < cols; c++) {
         const dsp = cellDisplay(c, r), cl = [];
         if (dsp.cls) cl.push(dsp.cls);
         if (c > ur.maxC || r > ur.maxR) cl.push('pad');
-        head += `<td data-c="${c}" data-r="${r}"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${dsp.html}</td>`;
+        body += `<td data-c="${c}" data-r="${r}"${cl.length ? ` class="${cl.join(' ')}"` : ''}>${dsp.html}</td>`;
       }
     }
-    head += '</tr>';
+    body += '</tr>';
   }
-  head += '</tbody>';
-  host.innerHTML = `<table class="cgrid">${cg}${head}</table>`;
+  body += '</tbody>';
+  host.innerHTML = `<table class="cgrid">${cg}${body}</table>`;
+  buildCalcRulers();
+}
+// Spalten-/Zeilen-Lineale AUSSERHALB des Blatts aufbauen (wie das Lineal in Write), an Zellen ausgerichtet
+function buildCalcRulers() {
+  const t = gEl(), colR = $('#colRuler'), rowR = $('#rowRuler'), canvas = $('#canvas');
+  if (!t || !colR || !rowR || !appEl.classList.contains('calc-mode')) return;
+  const cr = canvas.getBoundingClientRect(), sl = canvas.scrollLeft, st = canvas.scrollTop;
+  const pr = page.getBoundingClientRect();
+  // Waagrechtes Lineal (A B C …) – oben fixiert, an Spalten ausgerichtet
+  let ch = '';
+  for (let c = 0; c < gridCols; c++) {
+    const cell = t.querySelector(`td[data-c="${c}"]`); if (!cell) continue;
+    const r = cell.getBoundingClientRect();
+    ch += `<div class="cr-seg" data-c="${c}" style="left:${(r.left - cr.left + sl)}px;width:${r.width}px">${idxToCol(c)}<span class="cresize" data-c="${c}" title="Spaltenbreite ziehen"></span></div>`;
+  }
+  colR.innerHTML = ch;
+  colR.style.top = st + 'px';                       // bleibt am sichtbaren oberen Rand
+  // Senkrechtes Lineal (1 2 3 …) – links neben dem Blatt, an Zeilen ausgerichtet
+  let rh = '';
+  for (let r = 0; r < gridRows; r++) {
+    const cell = t.querySelector(`td[data-r="${r}"]`); if (!cell) continue;
+    const rc = cell.getBoundingClientRect();
+    rh += `<div class="rr-seg" data-r="${r}" style="top:${(rc.top - cr.top + st)}px;height:${rc.height}px">${r + 1}</div>`;
+  }
+  rowR.innerHTML = rh;
+  rowR.style.left = Math.max(0, pr.left - cr.left + sl - rowR.offsetWidth) + 'px';
+  updateRulerSel();
+}
+function updateRulerSel() {
+  const { c1, c2, r1, r2 } = rangeBounds();
+  $$('#colRuler .cr-seg').forEach(e => e.classList.toggle('on', +e.dataset.c >= c1 && +e.dataset.c <= c2));
+  $$('#rowRuler .rr-seg').forEach(e => e.classList.toggle('on', +e.dataset.r >= r1 && +e.dataset.r <= r2));
 }
 let anchorC = 0, anchorR = 0, editingTd = null;
 function rangeBounds() { return { c1: Math.min(anchorC, selC), c2: Math.max(anchorC, selC), r1: Math.min(anchorR, selR), r2: Math.max(anchorR, selR) }; }
 function roundN(x) { return Math.round(x * 100) / 100; }
 function highlightSel() {
-  const t = gEl();
   allTd('td.sel, td.active').forEach(td => td.classList.remove('sel', 'active'));
-  if (t) t.querySelectorAll('.colsel, .rowsel').forEach(e => e.classList.remove('colsel', 'rowsel'));
   const { c1, c2, r1, r2 } = rangeBounds();
   for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const td = tdAt(c, r); if (td) td.classList.add('sel'); }
-  if (t) {   // aktive Spalte/Zeile im „Lineal" (Köpfe) hervorheben
-    for (let c = c1; c <= c2; c++) { const h = t.querySelector(`th.cg-col[data-c="${c}"]`); if (h) h.classList.add('colsel'); }
-    for (let r = r1; r <= r2; r++) { const h = t.querySelector(`th.cg-row[data-r="${r}"]`); if (h) h.classList.add('rowsel'); }
-  }
   const act = tdAt(selC, selR);
   if (act) { act.classList.add('active'); $('#cellRef').textContent = cellKey(selC, selR); $('#formulaInput').value = gridCellRaw(selC, selR); }
+  updateRulerSel();   // aktive Spalte/Zeile in den Lineal-Leisten hervorheben
   updateCalcStat();
 }
 function updateCalcStat() {
@@ -1771,12 +1806,12 @@ function readCellHtml(td) {
 // Spaltenbreite mit Maus ziehen (am Spaltenkopf-Rand)
 function startColResize(c, e) {
   const t = gEl(); if (!t) return;
-  const col = t.querySelectorAll('colgroup col')[c + 1]; if (!col) return;
+  const col = t.querySelectorAll('colgroup col')[c]; if (!col) return;
   const z = parseFloat(page.style.zoom) || 1, startX = e.clientX;
-  const th = t.querySelector(`th.cg-col[data-c="${c}"]`);
-  const startW = th ? th.offsetWidth : 80;
-  const wAt = ev => Math.max(36, Math.round(startW + (ev.clientX - startX) / z));
-  const move = ev => { col.style.width = wAt(ev) + 'px'; };
+  const cell = t.querySelector(`td[data-c="${c}"]:not([colspan])`);
+  const startW = cell ? cell.offsetWidth : (col.offsetWidth || 80);
+  const wAt = ev => Math.max(28, Math.round(startW + (ev.clientX - startX) / z));
+  const move = ev => { col.style.width = wAt(ev) + 'px'; buildCalcRulers(); };
   const up = ev => {
     document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
     curColW()[c] = wAt(ev); scheduleSave(); renderCalc();

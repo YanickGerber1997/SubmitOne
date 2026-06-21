@@ -204,7 +204,18 @@ button{font-family:inherit;cursor:pointer}
 .fb-btn.color input[type=color]{position:absolute;inset:0;opacity:0;cursor:pointer}
 
 /* ---------- Canvas + Blatt ---------- */
-.canvas{flex:1;min-width:0;overflow:auto;padding:34px 24px 120px}
+.canvas{flex:1;min-width:0;overflow:auto;padding:34px 24px 120px;position:relative}
+
+/* Calc-Lineale: Spalten (oben) & Zeilen (links) AUSSERHALB des Blatts – wie das Lineal in Write */
+.calc-colruler,.calc-rowruler{display:none}
+.app.calc-mode .calc-colruler{display:block;position:absolute;left:0;right:0;height:18px;z-index:6}
+.app.calc-mode .calc-rowruler{display:block;position:absolute;top:0;width:30px;z-index:6}
+.cr-seg{position:absolute;top:0;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--ink-faint);background:var(--surface-2);border:1px solid var(--line);border-left:none;box-sizing:border-box;cursor:pointer;user-select:none}
+.cr-seg:first-child{border-left:1px solid var(--line)}
+.rr-seg{position:absolute;left:0;width:30px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--ink-faint);background:var(--surface-2);border:1px solid var(--line);border-top:none;box-sizing:border-box;cursor:pointer;user-select:none}
+.cr-seg.on,.rr-seg.on{background:var(--accent-soft);color:var(--accent)}
+.cr-seg .cresize{position:absolute;right:-4px;top:0;width:8px;height:100%;cursor:col-resize;z-index:2}
+.cr-seg .cresize:hover{background:var(--accent)}
 .page{
   position:relative;width:210mm;min-height:297mm;margin:0 auto;background:var(--paper);
   border-radius:3px;box-shadow:var(--shadow);color:var(--paper-ink);
@@ -577,7 +588,7 @@ body[data-theme="dark"] .toast{background:#2a3140}
 /* ---------- Druck ---------- */
 @media print{
   body{background:#fff}
-  .side,.inspector,.topbar,.formatbar,.calcbar,.slidenotes,.pagetabs,.findbar,.ruler-wrap,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.page-format,.preview-overlay,.present-overlay,#toast-root{display:none !important}
+  .side,.inspector,.topbar,.formatbar,.calcbar,.slidenotes,.pagetabs,.findbar,.ruler-wrap,.calc-colruler,.calc-rowruler,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.page-format,.preview-overlay,.present-overlay,#toast-root{display:none !important}
   .app{display:block}
   .canvas{padding:0;overflow:visible;display:block}
   .page{box-shadow:none;width:auto !important;min-height:auto !important;border-radius:0;padding:0 16mm;zoom:1 !important}

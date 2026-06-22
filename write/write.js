@@ -99,7 +99,7 @@ function newDocObject(partial = {}) {
   const t = nowIso();
   return Object.assign({
     id: uid(), titel: 'Unbenanntes Dokument', kopf: '', fuss: '',
-    seiten: [{ id: uid(), typ: 'write', html: '' }], aktiv: 0,   // Einstieg = Write (frei schreiben), im Hintergrund das 6-Spalten-Raster
+    seiten: [{ id: uid(), typ: 'calc', html: '' }], aktiv: 0,   // Standard = Calc-Raster (Zeilen/Spalten als Leinwand)
     rasterCols: 6,
     einstellungen: { schriftart: "'Inter', sans-serif", schriftgroesse: 16, zeilenabstand: 1.7, ausrichtung: 'hoch', format: 'A4', margins: { top: 18, right: 22, bottom: 18, left: 22 }, kopfH: 14, fussH: 14, tabs: [] },
     meta: { erstellt: t, geaendert: t, autor: 'Yanick Gerber', version: 1 },

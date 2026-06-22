@@ -538,8 +538,7 @@ body[data-theme="dark"] .editor .sp-err{text-decoration-color:#ff7a70}
 
 /* ---------- Submit Calc: Gitter im SELBEN A4-Blatt wie Write ---------- */
 /* In Calc nur das Text-Ribbon gegen die Formelzeile tauschen; Blatt/Zoom/Lineal/Kopf-Fuss bleiben = Write */
-.app.calc-mode .formatbar,.app.calc-mode .ribtabs{display:none}
-.app.calc-mode .editor{display:none}
+.app.calc-mode .editor{display:none}      /* Menüband bleibt sichtbar – Formatierung wirkt auf markierte Zellen */
 .pagegrid{display:none}
 .app.calc-mode .pagegrid{display:block;flex:1 1 auto;position:relative;z-index:2;outline:none;padding:6mm 0;font-size:14px;line-height:1.5}
 

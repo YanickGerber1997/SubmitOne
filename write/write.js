@@ -378,9 +378,28 @@ function ingestGdoc(text, handle) {
 /* ============================================================
    Formatierung (contentEditable)
    ============================================================ */
-function cmd(name, val = null) { editor.focus(); document.execCommand(name, false, val); afterEdit(); }
+function inCalc() { return appEl.classList.contains('calc-mode'); }
+function cmd(name, val = null) {
+  if (inCalc()) { calcCmd(name); return; }
+  editor.focus(); document.execCommand(name, false, val); afterEdit();
+}
+// Menüband-Formatierung auf markierte Calc-Zellen anwenden
+function calcCmd(name) {
+  const flag = { bold: 'b', italic: 'i', underline: 'u', strikeThrough: 's' }[name];
+  if (flag) return toggleCellFmt(flag);
+  if (name === 'justifyLeft') return setCellFmt('al', 'left');
+  if (name === 'justifyCenter') return setCellFmt('al', 'center');
+  if (name === 'justifyRight') return setCellFmt('al', 'right');
+  if (name === 'justifyFull') return setCellFmt('al', 'justify');
+  // Listen/Hoch-/Tiefstellen etc. sind in Zellen nicht sinnvoll – ignorieren
+}
 
 function setBlock(tag) {
+  if (inCalc()) {                                  // Überschrift/Absatz als Zellenformat (Grösse + Fett)
+    const sz = { h1: 30, h2: 23, h3: 18.5 }[tag];
+    if (sz) { setCellFmt('sz', sz); setCellFmt('b', 1); } else { setCellFmt('sz', ''); }
+    return;
+  }
   editor.focus();
   document.execCommand('formatBlock', false, tag);
   afterEdit();
@@ -420,7 +439,17 @@ function normalizeEmpty() {
 function afterEdit() { normalizeEmpty(); scheduleSave(); refreshAll(); }
 
 /* ---------- aktiven Zustand der Buttons spiegeln ---------- */
+function syncCalcToolbar() {
+  const cf = (curGrid && curCfmt()[selC + ',' + selR]) || {};
+  const set = (c, on) => $$(`.fb-btn[data-cmd="${c}"]`).forEach(b => b.classList.toggle('on', !!on));
+  set('bold', cf.b); set('italic', cf.i); set('underline', cf.u); set('strikeThrough', cf.s);
+  set('justifyLeft', !cf.al || cf.al === 'left'); set('justifyCenter', cf.al === 'center'); set('justifyRight', cf.al === 'right'); set('justifyFull', cf.al === 'justify');
+  if (cf.fam) $('#selFont').value = cf.fam;
+  $('#selSize').value = String(Math.round(cf.sz || (doc ? doc.einstellungen.schriftgroesse : 16)));
+  $('#selBlock').value = 'p';
+}
 function syncToolbar() {
+  if (inCalc()) { syncCalcToolbar(); return; }
   const q = c => { try { return document.queryCommandState(c); } catch (_) { return false; } };
   ['bold', 'italic', 'underline', 'strikeThrough', 'subscript', 'superscript',
    'insertUnorderedList', 'insertOrderedList',
@@ -917,12 +946,12 @@ function wire() {
   $$('.fb-btn[data-cmd]').forEach(b => b.addEventListener('click', () => cmd(b.dataset.cmd)));
   $$('.fb-btn[data-block]').forEach(b => b.addEventListener('click', () => setBlock(b.dataset.block)));
   $('#selBlock').addEventListener('change', e => setBlock(e.target.value));
-  $('#selFont').addEventListener('change', e => { if (!doc) return; doc.einstellungen.schriftart = e.target.value; editor.style.fontFamily = e.target.value; scheduleSave(); });
-  $('#selSize').addEventListener('change', e => { if (!doc) return; const px = +e.target.value; if (window.getSelection().isCollapsed) { doc.einstellungen.schriftgroesse = px; editor.style.fontSize = px + 'px'; scheduleSave(); } else setFontSize(px); });
-  $('#inkColor').addEventListener('input', e => { document.execCommand('styleWithCSS', false, true); cmd('foreColor', e.target.value); });
+  $('#selFont').addEventListener('change', e => { if (!doc) return; if (inCalc()) { setCellFmt('fam', e.target.value); return; } doc.einstellungen.schriftart = e.target.value; editor.style.fontFamily = e.target.value; scheduleSave(); });
+  $('#selSize').addEventListener('change', e => { if (!doc) return; const px = +e.target.value; if (inCalc()) { setCellFmt('sz', px); return; } if (window.getSelection().isCollapsed) { doc.einstellungen.schriftgroesse = px; editor.style.fontSize = px + 'px'; scheduleSave(); } else setFontSize(px); });
+  $('#inkColor').addEventListener('input', e => { if (inCalc()) { setCellTextColor(e.target.value); return; } document.execCommand('styleWithCSS', false, true); cmd('foreColor', e.target.value); });
   $('#imgInput').addEventListener('change', e => { insertImageFile(e.target.files[0]); e.target.value = ''; });
-  $('#hlColor').addEventListener('input', e => highlight(e.target.value));
-  $('#btnClear').addEventListener('click', () => { cmd('removeFormat'); setBlock('p'); });
+  $('#hlColor').addEventListener('input', e => { if (inCalc()) { setCellFill(e.target.value); return; } highlight(e.target.value); });
+  $('#btnClear').addEventListener('click', () => { if (inCalc()) { clearCellFmt(); return; } cmd('removeFormat'); setBlock('p'); });
 
   // Einfügen-Buttons (im Menüband)
   $$('[data-ins]').forEach(b => b.addEventListener('click', () => doInsert(b.dataset.ins)));
@@ -1101,7 +1130,13 @@ function wire() {
       return;
     }
     const k = e.key, ext = e.shiftKey;
-    if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'a') { e.preventDefault(); selectAllCells(); return; }
+    if (e.ctrlKey || e.metaKey) {
+      const lk = k.toLowerCase();
+      if (lk === 'a') { e.preventDefault(); selectAllCells(); return; }
+      if (lk === 'b') { e.preventDefault(); toggleCellFmt('b'); return; }
+      if (lk === 'i') { e.preventDefault(); toggleCellFmt('i'); return; }
+      if (lk === 'u') { e.preventDefault(); toggleCellFmt('u'); return; }
+    }
     if (k === 'ArrowDown') { e.preventDefault(); selectCell(selC, selR + 1, ext); }
     else if (k === 'ArrowUp') { e.preventDefault(); selectCell(selC, selR - 1, ext); }
     else if (k === 'ArrowRight') { e.preventDefault(); selectCell(selC + 1, selR, ext); }
@@ -1741,6 +1776,7 @@ function setColumns(n) {
   scheduleSave();
 }
 function doInsert(kind) {
+  if (inCalc() && ['link', 'image', 'table', 'toc', 'hr'].includes(kind)) { toast('In Calc-Zellen nicht verfügbar – nutze die Tabellen-Werkzeuge (Rahmen, Verbinden, ±Sp/±Z).'); return; }
   if (kind === 'link') insertLink();
   else if (kind === 'image') $('#imgInput').click();
   else if (kind === 'table') insertTable();
@@ -2197,6 +2233,23 @@ function curTxtCol() { const p = activePage(); if (!p.txtcol || typeof p.txtcol 
 function curRowH() { const p = activePage(); if (!p.rowH || typeof p.rowH !== 'object') p.rowH = {}; return p.rowH; }
 function curMerges() { const p = activePage(); if (!Array.isArray(p.merges)) p.merges = []; return p.merges; }
 function curBorders() { const p = activePage(); if (!p.borders || typeof p.borders !== 'object') p.borders = {}; return p.borders; }
+function curCfmt() { const p = activePage(); if (!p.cfmt || typeof p.cfmt !== 'object') p.cfmt = {}; return p.cfmt; }
+function toggleCellFmt(flag) {
+  if (!curGrid) return; const m = curCfmt(), { c1, c2, r1, r2 } = rangeBounds();
+  const on = !((m[selC + ',' + selR] || {})[flag]);
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const k = c + ',' + r, o = m[k] || (m[k] = {}); if (on) o[flag] = 1; else delete o[flag]; if (!Object.keys(o).length) delete m[k]; }
+  renderCalc(); scheduleSave();
+}
+function setCellFmt(key, val) {
+  if (!curGrid) return; const m = curCfmt(), { c1, c2, r1, r2 } = rangeBounds();
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const k = c + ',' + r, o = m[k] || (m[k] = {}); if (val == null || val === '') delete o[key]; else o[key] = val; if (!Object.keys(o).length) delete m[k]; }
+  renderCalc(); scheduleSave();
+}
+function clearCellFmt() {
+  if (!curGrid) return; const m = curCfmt(), f = curFill(), tc = curTxtCol(), fmt = curFmt(), bd = curBorders(), { c1, c2, r1, r2 } = rangeBounds();
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const k = c + ',' + r; delete m[k]; delete f[k]; delete tc[k]; delete fmt[k]; delete bd[k]; }
+  renderCalc(); scheduleSave();
+}
 function mergeAt(c, r) { for (const m of curMerges()) { if (c >= m.c && c < m.c + m.cs && r >= m.r && r < m.r + m.rs) return m; } return null; }
 function isCovered(c, r) { const m = mergeAt(c, r); return !!(m && !(m.c === c && m.r === r)); }
 function safeColor(v) { return /^#[0-9a-fA-F]{3,8}$/.test(v || '') ? v : ''; }
@@ -2223,6 +2276,8 @@ function cellStyle(c, r) {
   const tc = safeColor(curTxtCol()[c + ',' + r]); if (tc) s += `color:${tc};`;
   const bd = curBorders()[c + ',' + r];
   if (bd) { const col = '#5b6472'; if (bd.includes('t')) s += `border-top:1.5px solid ${col};`; if (bd.includes('b')) s += `border-bottom:1.5px solid ${col};`; if (bd.includes('l')) s += `border-left:1.5px solid ${col};`; if (bd.includes('r')) s += `border-right:1.5px solid ${col};`; }
+  const cf = curCfmt()[c + ',' + r];
+  if (cf) { if (cf.b) s += 'font-weight:700;'; if (cf.i) s += 'font-style:italic;'; let d = ''; if (cf.u) d += 'underline '; if (cf.s) d += 'line-through '; if (d) s += 'text-decoration:' + d.trim() + ';'; if (cf.fam) s += `font-family:${cf.fam};`; if (cf.sz) s += `font-size:${+cf.sz}px;`; if (cf.al) s += `text-align:${cf.al};`; }
   return s;
 }
 function setBorders(mode) {
@@ -2386,6 +2441,7 @@ function highlightSel() {
   if (act) { act.classList.add('active'); $('#cellRef').textContent = cellKey(selC, selR); $('#formulaInput').value = gridCellRaw(selC, selR); }
   updateRulerSel();   // aktive Spalte/Zeile in den Lineal-Leisten hervorheben
   updateCalcStat();
+  syncCalcToolbar();  // Menüband (F/K/U, Ausrichtung, Schrift) auf die aktive Zelle spiegeln
 }
 function updateCalcStat() {
   const el = $('#calcStat'); if (!el) return;

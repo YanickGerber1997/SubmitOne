@@ -442,9 +442,10 @@ function normalizeEmpty() {
   if (editor.querySelector('img,table,hr')) return;
   if (!(editor.innerText || '').replace(/​/g, '').trim() && editor.innerHTML !== '') editor.innerHTML = '';
 }
-function afterEdit() { normalizeEmpty(); scheduleSave(); refreshAll(); scheduleRecompute(); }
-let _fxTimer = null;
+function afterEdit() { normalizeEmpty(); scheduleSave(); refreshAll(); scheduleRecompute(); scheduleWriteRulers(); }
+let _fxTimer = null, _rulerTimer = null;
 function scheduleRecompute() { clearTimeout(_fxTimer); _fxTimer = setTimeout(recomputeFormulas, 250); }
+function scheduleWriteRulers() { clearTimeout(_rulerTimer); _rulerTimer = setTimeout(buildWriteRulers, 120); }
 
 /* ---------- aktiven Zustand der Buttons spiegeln ---------- */
 function syncCalcToolbar() {
@@ -1462,7 +1463,7 @@ function wire() {
     const rz = e.target.closest('.rresize'); if (rz) { e.preventDefault(); startRowResize(+rz.dataset.r, e); return; }
     const seg = e.target.closest('.rr-seg'); if (seg) { const r = +seg.dataset.r; selectCell(0, r); selectCell(gridCols - 1, r, true); calcFocus(); }
   });
-  $('#canvas').addEventListener('scroll', () => { if (appEl.classList.contains('calc-mode')) $('#colRuler').style.top = $('#canvas').scrollTop + 'px'; });
+  $('#canvas').addEventListener('scroll', () => { if (appEl.classList.contains('calc-mode')) $('#colRuler').style.top = $('#canvas').scrollTop + 'px'; else buildWriteRulers(); });
   // Maus: Auswahl + Bereich ziehen (delegiert auf #pageGrid)
   let gridDragging = false;
   pgEl.addEventListener('mousedown', e => {
@@ -1938,7 +1939,7 @@ function applyZoom() {
   $('#zoomVal').classList.toggle('on', zoomMode === 'auto');
   drawRuler();
   drawVRuler();
-  if (appEl.classList.contains('calc-mode')) buildCalcRulers();
+  if (appEl.classList.contains('calc-mode')) buildCalcRulers(); else buildWriteRulers();
 }
 function setZoom(v) { zoomMode = v; applyZoom(); }
 function zoomStep(d) {
@@ -1996,6 +1997,7 @@ function paginate() {
   alignColseps();
   if (off != null) setBodyCaret(off);
   const st = $('#stPages'); if (st) st.textContent = pages + (pages === 1 ? ' Seite' : ' Seiten');
+  buildWriteRulers();
 }
 function mkGap(fillPx, headPx, footPx, noFoot) {
   const d = document.createElement('div'); d.className = 'pgbreak-gap'; d.contentEditable = 'false';
@@ -2796,6 +2798,35 @@ function buildCalcRulers() {
   rowR.innerHTML = rh;
   rowR.style.left = Math.max(0, pr.left - cr.left + sl - rowR.offsetWidth) + 'px';
   updateRulerSel();
+}
+// Tabellengerüst (A B C oben, 1 2 3 links, aussen am Blattrand) AUCH im Write-Blatt – Write = Calc
+function buildWriteRulers() {
+  const colR = $('#colRuler'), rowR = $('#rowRuler'), canvas = $('#canvas');
+  if (!colR || !rowR || !canvas || !doc) return;
+  if (appEl.classList.contains('calc-mode') || appEl.classList.contains('focus')) return;
+  const cr = canvas.getBoundingClientRect(), sl = canvas.scrollLeft, st = canvas.scrollTop;
+  const pr = page.getBoundingClientRect(), z = parseFloat(page.style.zoom) || 1;
+  const m = pageSetup().margins, contentMm = Math.max(40, pageDims().w - m.left - m.right);
+  // Spaltengrenzen (mm): aus den sichtbaren COLSEPs (data-tab), sonst gleichmässig wie Calc
+  const set = new Set();
+  $$('.colsep', editor).forEach(s => { if (s.dataset.tab) { const v = parseFloat(s.dataset.tab); if (v > 0 && v < contentMm) set.add(Math.round(v * 10) / 10); } });
+  let bounds = [...set].sort((a, b) => a - b);
+  if (bounds.length) bounds.push(contentMm);
+  else { const n = Math.max(4, Math.floor(contentMm / 26)), w = contentMm / n; for (let c = 1; c <= n; c++) bounds.push(roundN(w * c)); }
+  const contentLeft = pr.left + m.left * MM * z;
+  let ch = '', prev = 0;
+  bounds.forEach((endMm, c) => {
+    const left = contentLeft + prev * MM * z - cr.left + sl, width = (endMm - prev) * MM * z;
+    ch += `<div class="cr-seg" data-c="${c}" style="left:${left}px;width:${width}px">${idxToCol(c)}</div>`;
+    prev = endMm;
+  });
+  colR.innerHTML = ch; colR.style.top = st + 'px';
+  // Zeilen: jeder Block = eine Zeile
+  const blocks = [...editor.children].filter(b => !b.classList.contains('pgbreak-gap'));
+  let rh = '', n = 0;
+  blocks.forEach(b => { const rc = b.getBoundingClientRect(); if (rc.height < 1) return; n++; rh += `<div class="rr-seg" data-r="${n}" style="top:${rc.top - cr.top + st}px;height:${rc.height}px">${n}</div>`; });
+  rowR.innerHTML = rh;
+  rowR.style.left = Math.max(0, pr.left - cr.left + sl - (rowR.offsetWidth || 30)) + 'px';
 }
 function updateRulerSel() {
   const { c1, c2, r1, r2 } = rangeBounds();

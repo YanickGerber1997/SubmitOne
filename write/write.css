@@ -233,8 +233,9 @@ button{font-family:inherit;cursor:pointer}
 
 /* Calc-Lineale: Spalten (oben) & Zeilen (links) AUSSERHALB des Blatts – wie das Lineal in Write */
 .calc-colruler,.calc-rowruler{display:none}
-.app.calc-mode .calc-colruler{display:block;position:absolute;left:0;right:0;height:18px;z-index:6}
-.app.calc-mode .calc-rowruler{display:block;position:absolute;top:0;width:30px;z-index:6}
+.app.calc-mode .calc-colruler,body[data-mode="write"] .calc-colruler{display:block;position:absolute;left:0;right:0;height:18px;z-index:6}
+.app.calc-mode .calc-rowruler,body[data-mode="write"] .calc-rowruler{display:block;position:absolute;top:0;width:30px;z-index:6}
+.app.focus .calc-colruler,.app.focus .calc-rowruler{display:none}
 .cr-seg{position:absolute;top:0;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--ink-faint);background:var(--surface-2);border:1px solid var(--line);border-left:none;box-sizing:border-box;cursor:pointer;user-select:none}
 .cr-seg:first-child{border-left:1px solid var(--line)}
 .rr-seg{position:absolute;left:0;width:30px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--ink-faint);background:var(--surface-2);border:1px solid var(--line);border-top:none;box-sizing:border-box;cursor:pointer;user-select:none}

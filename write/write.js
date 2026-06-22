@@ -1442,6 +1442,8 @@ function wire() {
     const tab = e.target.closest('.ptab'); if (tab) switchPage(+tab.dataset.i);
   });
   document.addEventListener('click', () => { const m = $('#addMenu'); if (m) m.hidden = true; });
+  document.addEventListener('mousedown', e => { if (!e.target.closest('#hdrMenu')) closeHeaderMenu(); });
+  $('#canvas').addEventListener('scroll', closeHeaderMenu);
 
   // Submit Calc – Gitter im Write-Blatt
   const pgEl = $('#pageGrid');
@@ -1462,13 +1464,17 @@ function wire() {
   document.addEventListener('click', () => bdMenu.hidden = true);
   // Lineal-Leisten: Spalte/Zeile wählen, Spaltenbreite ziehen
   $('#colRuler').addEventListener('mousedown', e => {
+    const ins = e.target.closest('.cins'); if (ins) { e.preventDefault(); e.stopPropagation(); insertColAt(+ins.dataset.c + 1); return; }   // „+" → Spalte rechts daneben
     const rz = e.target.closest('.cresize'); if (rz) { e.preventDefault(); startColResize(+rz.dataset.c, e); return; }
     const seg = e.target.closest('.cr-seg'); if (seg) { const c = +seg.dataset.c; selectCell(c, 0); selectCell(c, gridRows - 1, true); calcFocus(); }
   });
+  $('#colRuler').addEventListener('contextmenu', e => { const seg = e.target.closest('.cr-seg'); if (!seg) return; e.preventDefault(); openHeaderMenu('col', +seg.dataset.c, e.clientX, e.clientY); });
   $('#rowRuler').addEventListener('mousedown', e => {
+    const ins = e.target.closest('.rins'); if (ins) { e.preventDefault(); e.stopPropagation(); insertRowAt(+ins.dataset.r + 1); return; }   // „+" → Zeile darunter
     const rz = e.target.closest('.rresize'); if (rz) { e.preventDefault(); startRowResize(+rz.dataset.r, e); return; }
     const seg = e.target.closest('.rr-seg'); if (seg) { const r = +seg.dataset.r; selectCell(0, r); selectCell(gridCols - 1, r, true); calcFocus(); }
   });
+  $('#rowRuler').addEventListener('contextmenu', e => { const seg = e.target.closest('.rr-seg'); if (!seg) return; e.preventDefault(); openHeaderMenu('row', +seg.dataset.r, e.clientX, e.clientY); });
   $('#canvas').addEventListener('scroll', () => { if (appEl.classList.contains('calc-mode')) $('#colRuler').style.top = $('#canvas').scrollTop + 'px'; else buildWriteRulers(); });
   // Maus: Auswahl + Bereich ziehen (delegiert auf #pageGrid)
   let gridDragging = false;
@@ -2792,7 +2798,7 @@ function buildCalcRulers() {
   for (let c = 0; c < gridCols; c++) {
     const cell = t.querySelector(`td[data-c="${c}"]`); if (!cell) continue;
     const r = cell.getBoundingClientRect();
-    ch += `<div class="cr-seg" data-c="${c}" style="left:${(r.left - cr.left + sl)}px;width:${r.width}px">${idxToCol(c)}<span class="cresize" data-c="${c}" title="Spaltenbreite ziehen"></span></div>`;
+    ch += `<div class="cr-seg" data-c="${c}" style="left:${(r.left - cr.left + sl)}px;width:${r.width}px">${idxToCol(c)}<span class="cins" data-c="${c}" title="Spalte rechts einfügen">+</span><span class="cresize" data-c="${c}" title="Spaltenbreite ziehen"></span></div>`;
   }
   colR.innerHTML = ch;
   colR.style.top = st + 'px';                       // bleibt am sichtbaren oberen Rand
@@ -2801,7 +2807,7 @@ function buildCalcRulers() {
   for (let r = 0; r < gridRows; r++) {
     const cell = t.querySelector(`td[data-r="${r}"]`); if (!cell) continue;
     const rc = cell.getBoundingClientRect();
-    rh += `<div class="rr-seg" data-r="${r}" style="top:${(rc.top - cr.top + st)}px;height:${rc.height}px">${r + 1}<span class="rresize" data-r="${r}" title="Zeilenhöhe ziehen"></span></div>`;
+    rh += `<div class="rr-seg" data-r="${r}" style="top:${(rc.top - cr.top + st)}px;height:${rc.height}px">${r + 1}<span class="rins" data-r="${r}" title="Zeile unten einfügen">+</span><span class="rresize" data-r="${r}" title="Zeilenhöhe ziehen"></span></div>`;
   }
   rowR.innerHTML = rh;
   rowR.style.left = Math.max(0, pr.left - cr.left + sl - rowR.offsetWidth) + 'px';
@@ -2912,6 +2918,64 @@ function calcAddRow() { if (editingTd) endEdit(true); activePage().dispRows = gr
 function calcAddCol() { if (editingTd) endEdit(true); activePage().dispCols = gridCols + 1; renderCalc(); scheduleSave(); }
 function calcDelRow() { if (editingTd) endEdit(true); activePage().dispRows = Math.max(1, gridRows - 1); renderCalc(); scheduleSave(); }
 function calcDelCol() { if (editingTd) endEdit(true); activePage().dispCols = Math.max(1, gridCols - 1); renderCalc(); scheduleSave(); }
+/* --- flexibles Einfügen/Löschen an beliebiger Position (Spalten & Zeilen) --- */
+function rekeyCR(map, axis, at, delta, del) {
+  const out = {};
+  for (const k in map) { let p = k.split(',').map(Number), c = p[0], r = p[1]; const v = axis === 'c' ? c : r; if (del != null && v === del) continue; const nv = v >= at ? v + delta : v; if (axis === 'c') c = nv; else r = nv; out[c + ',' + r] = map[k]; }
+  return out;
+}
+function rekey1(map, at, delta, del) { const out = {}; for (const k in map) { const i = +k; if (del != null && i === del) continue; out[(i >= at ? i + delta : i)] = map[k]; } return out; }
+function applyMapsCol(at, delta, del) { const p = activePage(); p.fmt = rekeyCR(curFmt(), 'c', at, delta, del); p.fill = rekeyCR(curFill(), 'c', at, delta, del); p.txtcol = rekeyCR(curTxtCol(), 'c', at, delta, del); p.borders = rekeyCR(curBorders(), 'c', at, delta, del); p.cfmt = rekeyCR(curCfmt(), 'c', at, delta, del); p.colW = rekey1(curColW(), at, delta, del); }
+function applyMapsRow(at, delta, del) { const p = activePage(); p.fmt = rekeyCR(curFmt(), 'r', at, delta, del); p.fill = rekeyCR(curFill(), 'r', at, delta, del); p.txtcol = rekeyCR(curTxtCol(), 'r', at, delta, del); p.borders = rekeyCR(curBorders(), 'r', at, delta, del); p.cfmt = rekeyCR(curCfmt(), 'r', at, delta, del); p.rowH = rekey1(curRowH(), at, delta, del); }
+function saveGridStruct() { activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
+function closeHeaderMenu() { const m = $('#hdrMenu'); if (m) m.remove(); }
+function openHeaderMenu(kind, idx, x, y) {
+  closeHeaderMenu();
+  const items = kind === 'col'
+    ? [['＋ Spalte links einfügen', () => insertColAt(idx)], ['＋ Spalte rechts einfügen', () => insertColAt(idx + 1)], ['✕ Spalte ' + idxToCol(idx) + ' löschen', () => deleteColAt(idx)]]
+    : [['＋ Zeile oben einfügen', () => insertRowAt(idx)], ['＋ Zeile unten einfügen', () => insertRowAt(idx + 1)], ['✕ Zeile ' + (idx + 1) + ' löschen', () => deleteRowAt(idx)]];
+  const menu = document.createElement('div'); menu.className = 'hdr-menu'; menu.id = 'hdrMenu';
+  menu.innerHTML = items.map((it, i) => `<button data-i="${i}"${i === 2 ? ' class="del"' : ''}>${it[0]}</button>`).join('');
+  document.body.appendChild(menu);
+  menu.style.left = Math.min(x, window.innerWidth - 210) + 'px'; menu.style.top = Math.min(y, window.innerHeight - 130) + 'px';
+  menu.addEventListener('mousedown', e => { const b = e.target.closest('button'); if (!b) return; e.preventDefault(); items[+b.dataset.i][1](); closeHeaderMenu(); });
+}
+function insertColAt(at) {
+  if (!curGrid) return; if (editingTd) endEdit(true);
+  at = Math.max(0, Math.min(gridCols, at));
+  curGrid.zeilen.forEach(z => { while (z.cells.length < at) z.cells.push(''); z.cells.splice(at, 0, ''); });
+  applyMapsCol(at, +1, null);
+  curMerges().forEach(m => { if (m.c >= at) m.c++; else if (m.c + m.cs > at) m.cs++; });
+  curGrid.colStops = [];
+  activePage().dispCols = gridCols + 1;
+  saveGridStruct(); selectCell(at, selR);
+}
+function deleteColAt(dc) {
+  if (!curGrid || gridCols <= 1) return; if (editingTd) endEdit(true);
+  curGrid.zeilen.forEach(z => { if (z.cells.length > dc) z.cells.splice(dc, 1); });
+  applyMapsCol(dc + 1, -1, dc);
+  const ms = curMerges(); for (let i = ms.length - 1; i >= 0; i--) { const m = ms[i]; if (m.c > dc) m.c--; else if (m.c <= dc && m.c + m.cs > dc) { m.cs--; if (m.cs < 1) ms.splice(i, 1); } }
+  curGrid.colStops = [];
+  activePage().dispCols = Math.max(1, gridCols - 1);
+  saveGridStruct(); selectCell(Math.max(0, Math.min(dc, gridCols - 2)), selR);
+}
+function insertRowAt(at) {
+  if (!curGrid) return; if (editingTd) endEdit(true);
+  at = Math.max(0, Math.min(curGrid.zeilen.length, at));
+  curGrid.zeilen.splice(at, 0, { tag: 'p', cells: [''] });
+  applyMapsRow(at, +1, null);
+  curMerges().forEach(m => { if (m.r >= at) m.r++; else if (m.r + m.rs > at) m.rs++; });
+  activePage().dispRows = gridRows + 1;
+  saveGridStruct(); selectCell(selC, at);
+}
+function deleteRowAt(dr) {
+  if (!curGrid || curGrid.zeilen.length <= 1) return; if (editingTd) endEdit(true);
+  curGrid.zeilen.splice(dr, 1);
+  applyMapsRow(dr + 1, -1, dr);
+  const ms = curMerges(); for (let i = ms.length - 1; i >= 0; i--) { const m = ms[i]; if (m.r > dr) m.r--; else if (m.r <= dr && m.r + m.rs > dr) { m.rs--; if (m.rs < 1) ms.splice(i, 1); } }
+  activePage().dispRows = Math.max(1, gridRows - 1);
+  saveGridStruct(); selectCell(selC, Math.max(0, Math.min(dr, curGrid.zeilen.length - 1)));
+}
 
 /* ---- Inline-Zellbearbeitung (direkt in der Zelle) ---- */
 function beginEdit(initial) {

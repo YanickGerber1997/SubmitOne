@@ -810,17 +810,30 @@ async function unzipRead(buf) {
 const DX_HL = { yellow: '#ffff00', green: '#92d050', cyan: '#00ffff', magenta: '#ff00ff', blue: '#0070c0', red: '#ff0000', darkBlue: '#002060', darkCyan: '#008080', darkGreen: '#008000', darkMagenta: '#800080', darkRed: '#c00000', darkYellow: '#808000', darkGray: '#808080', lightGray: '#d9d9d9', black: '#000000', white: '#ffffff' };
 function dxKids(el, name) { return el ? [...el.children].filter(c => c.nodeName === name) : []; }
 function dxKid(el, name) { return el ? [...el.children].find(c => c.nodeName === name) || null : null; }
+const DX_TC = { dark1: 'dk1', text1: 'dk1', light1: 'lt1', background1: 'lt1', dark2: 'dk2', text2: 'dk2', light2: 'lt2', background2: 'lt2', accent1: 'accent1', accent2: 'accent2', accent3: 'accent3', accent4: 'accent4', accent5: 'accent5', accent6: 'accent6', hyperlink: 'hlink', followedHyperlink: 'folHlink' };
+function dxThemeColor(name, ctx) { if (!ctx || !ctx.theme) return ''; return ctx.theme.colors[DX_TC[name] || name] || ''; }
+function dxThemeFont(name, ctx) { if (!ctx || !ctx.theme) return ''; return /major/i.test(name) ? ctx.theme.major : ctx.theme.minor; }
 function dxReadRPr(el) {
   const o = {}; if (!el) return o;
   const flag = t => { const e = dxKid(el, t); return e && e.getAttribute('w:val') !== 'false' && e.getAttribute('w:val') !== '0' && e.getAttribute('w:val') !== 'none'; };
   if (flag('w:b')) o.b = 1; if (flag('w:i')) o.i = 1; if (flag('w:u')) o.u = 1; if (flag('w:strike')) o.strike = 1;
+  if (flag('w:caps')) o.caps = 1; if (flag('w:smallCaps')) o.smallCaps = 1;
   const sz = dxKid(el, 'w:sz'); if (sz) o.sz = +sz.getAttribute('w:val') / 2;
-  const rf = dxKid(el, 'w:rFonts'); if (rf) { const f = rf.getAttribute('w:ascii') || rf.getAttribute('w:hAnsi') || rf.getAttribute('w:cs'); if (f) o.font = f; }
-  const col = dxKid(el, 'w:color'); if (col) { const v = col.getAttribute('w:val'); if (v && v !== 'auto') o.color = '#' + v; }
+  const rf = dxKid(el, 'w:rFonts'); if (rf) { const f = rf.getAttribute('w:ascii') || rf.getAttribute('w:hAnsi') || rf.getAttribute('w:cs'); if (f) o.font = f; else { const t = rf.getAttribute('w:asciiTheme') || rf.getAttribute('w:hAnsiTheme'); if (t) o.fontTheme = t; } }
+  const col = dxKid(el, 'w:color'); if (col) { const v = col.getAttribute('w:val'); if (v && v !== 'auto') o.color = '#' + v; else { const tc = col.getAttribute('w:themeColor'); if (tc) o.colorTheme = tc; } }
   const hl = dxKid(el, 'w:highlight'); if (hl) o.hl = hl.getAttribute('w:val');
-  const sh = dxKid(el, 'w:shd'); if (sh) { const f = sh.getAttribute('w:fill'); if (f && f !== 'auto') o.shd = '#' + f; }
+  const sh = dxKid(el, 'w:shd'); if (sh) { const f = sh.getAttribute('w:fill'); if (f && f !== 'auto') o.shd = '#' + f; else { const tf = sh.getAttribute('w:themeFill'); if (tf) o.shdTheme = tf; } }
   const va = dxKid(el, 'w:vertAlign'); if (va) o.vert = va.getAttribute('w:val');
   return o;
+}
+function dxParseTheme(xml) {
+  const t = { colors: {}, major: '', minor: '' }; if (!xml) return t;
+  const x = new DOMParser().parseFromString(xml, 'application/xml');
+  const cs = x.getElementsByTagName('a:clrScheme')[0];
+  if (cs) for (const c of cs.children) { const nm = c.nodeName.replace('a:', ''); const s = c.getElementsByTagName('a:srgbClr')[0], sy = c.getElementsByTagName('a:sysClr')[0]; const hex = s ? s.getAttribute('val') : sy ? sy.getAttribute('lastClr') : ''; if (hex) t.colors[nm] = '#' + hex; }
+  const lat = e => { const l = e && e.getElementsByTagName('a:latin')[0]; return l ? l.getAttribute('typeface') : ''; };
+  t.major = lat(x.getElementsByTagName('a:majorFont')[0]); t.minor = lat(x.getElementsByTagName('a:minorFont')[0]);
+  return t;
 }
 function dxReadPPr(el) {
   const o = {}; if (!el) return o;
@@ -862,19 +875,26 @@ function dxRunHtml(r, baseR, ctx) {
   let st = '';
   if (eff.b) st += 'font-weight:700;'; if (eff.i) st += 'font-style:italic;';
   let d = ''; if (eff.u) d += 'underline '; if (eff.strike) d += 'line-through '; if (d) st += 'text-decoration:' + d.trim() + ';';
+  if (eff.caps) st += 'text-transform:uppercase;'; if (eff.smallCaps) st += 'font-variant:small-caps;';
   if (eff.sz) st += `font-size:${eff.sz}pt;`;
-  if (eff.font) st += `font-family:'${eff.font.replace(/'/g, '')}';`;
-  if (eff.color) st += `color:${eff.color};`;
-  const bg = eff.shd || (eff.hl && DX_HL[eff.hl]); if (bg) st += `background:${bg};`;
+  const font = eff.font || dxThemeFont(eff.fontTheme, ctx); if (font) st += `font-family:'${font.replace(/'/g, '')}';`;
+  const color = eff.color || dxThemeColor(eff.colorTheme, ctx); if (color) st += `color:${color};`;
+  const bg = eff.shd || dxThemeColor(eff.shdTheme, ctx) || (eff.hl && DX_HL[eff.hl]); if (bg) st += `background:${bg};`;
   let body = txt; if (eff.vert === 'superscript') body = '<sup>' + body + '</sup>'; else if (eff.vert === 'subscript') body = '<sub>' + body + '</sub>';
   return img + (st && body ? `<span style="${st}">${body}</span>` : body);
 }
+// Läufe in Dokument-Reihenfolge sammeln – auch in Wrappern (Änderungsverfolgung w:ins, Smart-Tags, Inhaltssteuerelemente w:sdt)
 function dxParaInner(p, baseR, ctx) {
   let inner = '';
-  for (const c of p.children) {
-    if (c.nodeName === 'w:r') inner += dxRunHtml(c, baseR, ctx);
-    else if (c.nodeName === 'w:hyperlink') { let s = ''; for (const r of dxKids(c, 'w:r')) s += dxRunHtml(r, baseR, ctx); const rid = c.getAttribute('r:id'), href = rid && ctx.rels[rid]; inner += href ? `<a href="${esc(href)}">${s}</a>` : s; }
-  }
+  const walk = node => {
+    for (const c of node.children) {
+      const n = c.nodeName;
+      if (n === 'w:r') inner += dxRunHtml(c, baseR, ctx);
+      else if (n === 'w:hyperlink') { let s = ''; for (const r of c.getElementsByTagName('w:r')) s += dxRunHtml(r, baseR, ctx); const rid = c.getAttribute('r:id'), href = rid && ctx.rels[rid]; inner += href ? `<a href="${esc(href)}">${s}</a>` : s; }
+      else if (n === 'w:ins' || n === 'w:smartTag' || n === 'w:sdt' || n === 'w:sdtContent' || n === 'w:bdo' || n === 'w:dir') walk(c);
+    }
+  };
+  walk(p);
   return inner;
 }
 function dxParaBlock(p, ctx) {
@@ -893,9 +913,10 @@ function dxParaBlock(p, ctx) {
   if (!isList && pPr.indL) st += `margin-left:${pPr.indL}pt;`;     // bei Listen macht die Verschachtelung den Einzug
   if (!isList && pPr.indF) st += `text-indent:${pPr.indF}pt;`;
   if (pPr.line) st += `line-height:${pPr.line};`;
+  const bFont = baseR.font || dxThemeFont(baseR.fontTheme, ctx), bColor = baseR.color || dxThemeColor(baseR.colorTheme, ctx);
   if (!lvl && baseR.sz) st += `font-size:${baseR.sz}pt;`;
-  if (!lvl && baseR.font) st += `font-family:'${baseR.font.replace(/'/g, '')}';`;
-  if (!lvl && baseR.color) st += `color:${baseR.color};`;
+  if (!lvl && bFont) st += `font-family:'${bFont.replace(/'/g, '')}';`;
+  if (!lvl && bColor) st += `color:${bColor};`;
   const inner = dxParaInner(p, baseR, ctx) || '<br>';
   if (/\t/.test(inner)) st += `white-space:pre-wrap;tab-size:${ctx.defaultTab || 36}pt;`;   // Tabstopps wie Word (Standard-Tab)
   if (isList) { const lvls = ctx.numbering[pPr.numId], fmt = (lvls && (lvls[pPr.ilvl || 0] || lvls[0])) || 'bullet'; const ordered = fmt !== 'bullet' && fmt !== 'none'; return { list: ordered ? 'ol' : 'ul', level: pPr.ilvl || 0, html: `<li${st ? ` style="${st}"` : ''}>${inner}</li>` }; }
@@ -931,7 +952,8 @@ function dxTableHtml(tbl, ctx) {
 function dxRenderContainer(root, ctx) {
   let html = ''; const stack = [];                 // verschachtelte Listen je Ebene (ul/ol)
   const closeTo = lvl => { while (stack.length > lvl) html += `</${stack.pop()}>`; };
-  for (const el of root.children) {
+  const proc = el => {
+    if (el.nodeName === 'w:sdt') { const c = dxKid(el, 'w:sdtContent'); if (c) for (const ch of c.children) proc(ch); return; }   // Inhaltssteuerelement auflösen
     if (el.nodeName === 'w:p') {
       const blk = dxParaBlock(el, ctx);
       if (blk.list) {
@@ -942,7 +964,8 @@ function dxRenderContainer(root, ctx) {
         html += blk.html;
       } else { closeTo(0); html += blk.html; }
     } else if (el.nodeName === 'w:tbl') { closeTo(0); html += dxTableHtml(el, ctx); }
-  }
+  };
+  for (const el of root.children) proc(el);
   closeTo(0);
   return html;
 }
@@ -1008,6 +1031,7 @@ async function importDocx(file) {
   ctx.rels = dxParseRels(get('word/_rels/document.xml.rels'), zip, 'word/');
   ctx.numbering = dxParseNumbering(get('word/numbering.xml'));
   ctx.defaultTab = dxDefaultTab(get('word/settings.xml'));
+  ctx.theme = dxParseTheme(get('word/theme/theme1.xml'));
   const docStr = dec.decode(part);
   const html = docxToHtml(docStr, ctx);
   const sect = dxParseSect(docStr);

@@ -1417,13 +1417,8 @@ function wire() {
   $('#pvClose').addEventListener('click', () => $('#previewOverlay').hidden = true);
   $('#pvPrint').addEventListener('click', printFromPreview);
 
-  // „Gitter"-Schalter (Statusleiste): blendet nur die Gitterlinien ein/aus – kein Engine-Wechsel, kein Datenverlust
-  $('#gridToggle').addEventListener('click', () => {
-    if (!doc) return;
-    if (activePage().typ === 'calc') appEl.classList.toggle('grid-off');   // Calc: Linien ausblenden
-    else appEl.classList.toggle('grid-lines');                             // Write: Vollgitter einblenden
-    syncGridToggle();
-  });
+  // „Gitter"-Schalter (Statusleiste): wechselt zwischen Write (frei schreiben) und Gitter (Raster/rechnen)
+  $('#gridToggle').addEventListener('click', () => { if (!doc) return; setPageType(activePage().typ === 'calc' ? 'write' : 'calc'); });
   // Formelzeile im Write-Blatt (Etappe 3): Enter schreibt Wert/Formel-Ergebnis in die angeklickte Zelle
   $('#wfInput').addEventListener('keydown', e => {
     if (e.key !== 'Enter') return; e.preventDefault();
@@ -2324,7 +2319,7 @@ function printFromPreview() {
    ============================================================ */
 const MODE_META = { write: ['✍', 'Submit Write'], calc: ['▦', 'Submit Calc'] };
 function pageMode(p) { return p.typ === 'calc' ? 'calc' : 'write'; }
-function syncGridToggle() { const gt = $('#gridToggle'); if (!gt || !doc) return; const on = activePage().typ === 'calc' ? !appEl.classList.contains('grid-off') : appEl.classList.contains('grid-lines'); gt.classList.toggle('on', on); }
+function syncGridToggle() { const gt = $('#gridToggle'); if (!gt || !doc) return; gt.classList.toggle('on', activePage().typ === 'calc'); }
 function renderActivePage() {
   if (!doc) return;
   const p = activePage(), m = pageMode(p);

@@ -697,7 +697,7 @@ function exportBlocks() {
   const root = document.createElement('div'); root.innerHTML = cleanEditorHTML();
   const out = [];
   const runsOf = el => { const runs = []; const walk = (n, st) => { n.childNodes.forEach(x => {
-    if (x.nodeType === 3) { if (x.textContent) runs.push({ t: x.textContent, ...st }); return; }
+    if (x.nodeType === 3) { const t = x.textContent; if (!t) return; t.split('\t').forEach((seg, i) => { if (i) runs.push({ tab: 1 }); if (seg) runs.push({ t: seg, ...st }); }); return; }
     if (x.classList && x.classList.contains('colsep')) { runs.push({ tab: 1 }); return; }
     const tg = x.tagName.toLowerCase(); if (tg === 'br') { runs.push({ br: 1 }); return; }
     if (tg === 'img') { runs.push({ img: x.getAttribute('src') || '', iw: +x.getAttribute('width') || x.width || 0, ih: +x.getAttribute('height') || x.height || 0 }); return; }
@@ -827,7 +827,7 @@ function dxReadPPr(el) {
   const jc = dxKid(el, 'w:jc'); if (jc) { const v = jc.getAttribute('w:val'); o.align = v === 'center' ? 'center' : (v === 'right' || v === 'end') ? 'right' : (v === 'both' || v === 'distribute') ? 'justify' : 'left'; }
   const sp = dxKid(el, 'w:spacing'); if (sp) { const b = sp.getAttribute('w:before'), a = sp.getAttribute('w:after'), l = sp.getAttribute('w:line'); if (b != null) o.spB = +b / 20; if (a != null) o.spA = +a / 20; if (l && sp.getAttribute('w:lineRule') !== 'exact') o.line = +l / 240; }
   const ind = dxKid(el, 'w:ind'); if (ind) { const l = ind.getAttribute('w:left') || ind.getAttribute('w:start'); if (l) o.indL = +l / 20; const fl = ind.getAttribute('w:firstLine'); if (fl) o.indF = +fl / 20; const hg = ind.getAttribute('w:hanging'); if (hg) o.indF = -(+hg) / 20; }
-  const num = dxKid(el, 'w:numPr'); if (num) { const ni = dxKid(num, 'w:numId'); if (ni) o.numId = ni.getAttribute('w:val'); }
+  const num = dxKid(el, 'w:numPr'); if (num) { const ni = dxKid(num, 'w:numId'); if (ni) o.numId = ni.getAttribute('w:val'); const il = dxKid(num, 'w:ilvl'); o.ilvl = il ? +il.getAttribute('w:val') : 0; }
   const ol = dxKid(el, 'w:outlineLvl'); if (ol) o.outline = +ol.getAttribute('w:val');
   return o;
 }
@@ -857,7 +857,7 @@ function dxRunHtml(r, baseR, ctx) {
   const draw = dxKid(r, 'w:drawing') || dxKid(r, 'w:pict');
   if (draw) { const blip = draw.getElementsByTagName('a:blip')[0] || draw.getElementsByTagName('v:imagedata')[0]; const ext = draw.getElementsByTagName('wp:extent')[0]; if (blip) { const rid = blip.getAttribute('r:embed') || blip.getAttribute('r:link') || blip.getAttribute('r:id'); const url = rid && ctx.rels[rid]; if (url) { let dim = ' style="max-width:100%"'; if (ext) { const w = Math.round(+ext.getAttribute('cx') / 9525), h = Math.round(+ext.getAttribute('cy') / 9525); if (w && h) dim = ` width="${w}" height="${h}" style="max-width:100%"`; } img = `<img src="${url}"${dim}>`; } } }
   let txt = '';
-  for (const n of r.childNodes) { const nm = n.nodeName; if (nm === 'w:t') txt += esc(n.textContent); else if (nm === 'w:tab') txt += COLSEP; else if (nm === 'w:br' || nm === 'w:cr') txt += '<br>'; else if (nm === 'w:noBreakHyphen') txt += '-'; }
+  for (const n of r.childNodes) { const nm = n.nodeName; if (nm === 'w:t') txt += esc(n.textContent); else if (nm === 'w:tab') txt += '\t'; else if (nm === 'w:br' || nm === 'w:cr') txt += '<br>'; else if (nm === 'w:noBreakHyphen') txt += '-'; }
   if (!txt && !img) return '';
   let st = '';
   if (eff.b) st += 'font-weight:700;'; if (eff.i) st += 'font-style:italic;';
@@ -885,18 +885,20 @@ function dxParaBlock(p, ctx) {
   const nm = (sres.name || sid || '').toString();
   let lvl = 0; const m = nm.match(/heading\s*([1-9])/i) || nm.match(/berschrift\s*([1-9])/i); if (m) lvl = +m[1]; if (/^(title|titel)$/i.test(nm)) lvl = 1; if (!lvl && pPr.outline != null && pPr.outline < 3) lvl = pPr.outline + 1;
   const tag = lvl >= 1 ? 'h' + Math.min(3, lvl) : 'p';
+  const isList = !!pPr.numId;
   let st = '';
   if (pPr.spB != null) st += `margin-top:${pPr.spB}pt;`;
   if (pPr.spA != null) st += `margin-bottom:${pPr.spA}pt;`;
   if (pPr.align && pPr.align !== 'left') st += `text-align:${pPr.align};`;
-  if (pPr.indL) st += `margin-left:${pPr.indL}pt;`;
-  if (pPr.indF) st += `text-indent:${pPr.indF}pt;`;
+  if (!isList && pPr.indL) st += `margin-left:${pPr.indL}pt;`;     // bei Listen macht die Verschachtelung den Einzug
+  if (!isList && pPr.indF) st += `text-indent:${pPr.indF}pt;`;
   if (pPr.line) st += `line-height:${pPr.line};`;
   if (!lvl && baseR.sz) st += `font-size:${baseR.sz}pt;`;
   if (!lvl && baseR.font) st += `font-family:'${baseR.font.replace(/'/g, '')}';`;
   if (!lvl && baseR.color) st += `color:${baseR.color};`;
   const inner = dxParaInner(p, baseR, ctx) || '<br>';
-  if (pPr.numId) { const fmt = ctx.numbering[pPr.numId]; const ordered = fmt && fmt !== 'bullet' && fmt !== 'none'; return { list: ordered ? 'ol' : 'ul', html: `<li style="${st}">${inner}</li>` }; }
+  if (/\t/.test(inner)) st += `white-space:pre-wrap;tab-size:${ctx.defaultTab || 36}pt;`;   // Tabstopps wie Word (Standard-Tab)
+  if (isList) { const lvls = ctx.numbering[pPr.numId], fmt = (lvls && (lvls[pPr.ilvl || 0] || lvls[0])) || 'bullet'; const ordered = fmt !== 'bullet' && fmt !== 'none'; return { list: ordered ? 'ol' : 'ul', level: pPr.ilvl || 0, html: `<li${st ? ` style="${st}"` : ''}>${inner}</li>` }; }
   return { html: `<${tag}${st ? ` style="${st}"` : ''}>${inner}</${tag}>` };
 }
 function dxTableHtml(tbl, ctx) {
@@ -927,16 +929,21 @@ function dxTableHtml(tbl, ctx) {
   return html + '</table>';
 }
 function dxRenderContainer(root, ctx) {
-  let html = '', listOpen = null;
-  const closeList = () => { if (listOpen) { html += `</${listOpen}>`; listOpen = null; } };
+  let html = ''; const stack = [];                 // verschachtelte Listen je Ebene (ul/ol)
+  const closeTo = lvl => { while (stack.length > lvl) html += `</${stack.pop()}>`; };
   for (const el of root.children) {
     if (el.nodeName === 'w:p') {
       const blk = dxParaBlock(el, ctx);
-      if (blk.list) { if (listOpen !== blk.list) { closeList(); html += `<${blk.list}>`; listOpen = blk.list; } html += blk.html; }
-      else { closeList(); html += blk.html; }
-    } else if (el.nodeName === 'w:tbl') { closeList(); html += dxTableHtml(el, ctx); }
+      if (blk.list) {
+        const lvl = blk.level || 0, type = blk.list;
+        if (stack.length > lvl + 1) closeTo(lvl + 1);
+        while (stack.length <= lvl) { html += `<${type}>`; stack.push(type); }
+        if (stack[lvl] !== type) { closeTo(lvl); html += `<${type}>`; stack.push(type); }
+        html += blk.html;
+      } else { closeTo(0); html += blk.html; }
+    } else if (el.nodeName === 'w:tbl') { closeTo(0); html += dxTableHtml(el, ctx); }
   }
-  closeList();
+  closeTo(0);
   return html;
 }
 function docxToHtml(documentXml, ctx) {
@@ -987,10 +994,11 @@ function dxPartToHtml(xmlStr, ctx) {
 function dxParseNumbering(xml) {
   const num = {}; if (!xml) return num;
   const x = new DOMParser().parseFromString(xml, 'application/xml'); const abs = {};
-  for (const a of x.getElementsByTagName('w:abstractNum')) { const id = a.getAttribute('w:abstractNumId'); const l0 = [...a.getElementsByTagName('w:lvl')].find(l => l.getAttribute('w:ilvl') === '0'); const f = l0 && dxKid(l0, 'w:numFmt'); abs[id] = f ? f.getAttribute('w:val') : 'bullet'; }
-  for (const n of x.getElementsByTagName('w:num')) { const id = n.getAttribute('w:numId'); const a = dxKid(n, 'w:abstractNumId'); num[id] = a ? abs[a.getAttribute('w:val')] : 'bullet'; }
+  for (const a of x.getElementsByTagName('w:abstractNum')) { const id = a.getAttribute('w:abstractNumId'); const lv = {}; for (const l of a.getElementsByTagName('w:lvl')) { const il = l.getAttribute('w:ilvl'); const f = dxKid(l, 'w:numFmt'); lv[il] = f ? f.getAttribute('w:val') : 'bullet'; } abs[id] = lv; }
+  for (const n of x.getElementsByTagName('w:num')) { const id = n.getAttribute('w:numId'); const a = dxKid(n, 'w:abstractNumId'); num[id] = a ? (abs[a.getAttribute('w:val')] || {}) : {}; }
   return num;
 }
+function dxDefaultTab(xml) { if (!xml) return 36; const d = new DOMParser().parseFromString(xml, 'application/xml').getElementsByTagName('w:defaultTabStop')[0]; return d ? Math.round(+d.getAttribute('w:val') / 20) : 36; }
 async function importDocx(file) {
   toast('Öffne Word-Datei …');
   let zip; try { zip = await unzipRead(await file.arrayBuffer()); } catch (_) { toast('Datei nicht lesbar (kein gültiges .docx).'); return; }
@@ -999,6 +1007,7 @@ async function importDocx(file) {
   const ctx = dxParseStyles(get('word/styles.xml'));
   ctx.rels = dxParseRels(get('word/_rels/document.xml.rels'), zip, 'word/');
   ctx.numbering = dxParseNumbering(get('word/numbering.xml'));
+  ctx.defaultTab = dxDefaultTab(get('word/settings.xml'));
   const docStr = dec.decode(part);
   const html = docxToHtml(docStr, ctx);
   const sect = dxParseSect(docStr);

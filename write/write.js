@@ -1956,7 +1956,7 @@ function renderCalc() { renderSheet(); fitCalcRows(); highlightSel(); updateStat
 // Zeilenzahl per ECHTER Messung so setzen, dass die Tabelle genau ein A4-Blatt füllt (nicht zu hoch)
 function fitCalcRows() {
   if (!doc || activePage().typ !== 'calc' || activePage().dispRows) return;
-  const t = gEl(); if (!t) return; const td = t.querySelector('td'); if (!td) return;
+  const t = gEl(); if (!t) return; const td = t.querySelector('td:not(.textcell)') || t.querySelector('td'); if (!td) return;
   const z = parseFloat(page.style.zoom) || 1;
   const rowH = td.getBoundingClientRect().height / z; if (rowH < 8) return;
   const hH = $('#zoneH').offsetHeight || 60, fH = $('#zoneF').offsetHeight || 60;

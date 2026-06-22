@@ -559,7 +559,7 @@ body[data-theme="dark"] .editor .sp-err{text-decoration-color:#ff7a70}
 .cgrid col.cg-gut{width:30px}
 .cgrid th,.cgrid td{border:1px solid var(--line-soft)}
 .cgrid th{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.cgrid td{background:transparent;color:var(--paper-ink);padding:3px 8px;height:1.7em;cursor:cell;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;vertical-align:top}
+.cgrid td{background:transparent;color:var(--paper-ink);padding:3px 8px .82em;height:1.7em;cursor:cell;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;vertical-align:top}   /* unten ~ Absatzabstand wie Write */
 /* Spalten-/Zeilenköpfe = das Lineal in Calc: bleiben beim Scrollen oben/links stehen */
 .cgrid thead th{position:sticky;top:0;z-index:3;background:var(--surface-2);color:var(--ink-soft);font-size:.7em;font-weight:600;text-align:center;height:17px;letter-spacing:.3px;border-color:var(--line)}
 .cgrid th.cg-col{position:sticky}
@@ -571,10 +571,10 @@ body[data-theme="dark"] .editor .sp-err{text-decoration-color:#ff7a70}
 .cgrid .cg-row{position:sticky;left:0;z-index:2;background:var(--surface-2);color:var(--ink-soft);font-size:.7em;font-weight:600;text-align:center;vertical-align:middle;border-color:var(--line)}
 .cgrid .cg-corner{position:sticky;left:0;top:0;z-index:4;background:var(--surface-2);border-color:var(--line)}
 .cgrid thead th.cg-col.colsel,.cgrid .cg-row.rowsel{background:var(--accent-soft);color:var(--accent)}
-.cgrid td.textcell{text-align:left}                 /* Absatz/Überschrift über volle Blattbreite (wie Write) */
-.cgrid td.textcell.h1{font-size:1.7em;font-weight:700;letter-spacing:-.01em}
-.cgrid td.textcell.h2{font-size:1.32em;font-weight:700}
-.cgrid td.textcell.h3{font-size:1.12em;font-weight:600}
+.cgrid td.textcell{text-align:left}                 /* Absatz/Überschrift über volle Blattbreite (wie Write) – gleiche Grössen & Abstände */
+.cgrid td.textcell.h1{font-size:1.875em;font-weight:700;line-height:1.2;letter-spacing:-.02em;padding-top:.3em;padding-bottom:.35em}
+.cgrid td.textcell.h2{font-size:1.44em;font-weight:600;line-height:1.25;letter-spacing:-.01em;padding-top:.7em;padding-bottom:.3em}
+.cgrid td.textcell.h3{font-size:1.16em;font-weight:600;padding-top:.65em;padding-bottom:.25em}
 .cgrid td.num{text-align:right;font-variant-numeric:tabular-nums}
 .cgrid td.err{color:#d6453d}
 .cgrid td.sel{background:var(--accent-soft)}

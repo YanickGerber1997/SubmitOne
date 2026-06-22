@@ -943,6 +943,11 @@ function dxParaBlock(p, ctx) {
       const ld = right.leader === 'dot' ? 'border-bottom:1px dotted currentColor' : (right.leader === 'hyphen' || right.leader === 'underscore') ? 'border-bottom:1px solid currentColor' : '';
       return { html: pgPre + `<${tag} style="${st}display:flex;align-items:baseline"><span>${L}</span><span style="flex:1;${ld};margin:0 .3em;transform:translateY(-.18em)"></span><span style="white-space:nowrap">${R}</span></${tag}>` + pgPost };
     }
+    const left = pPr.tabs.find(t => t.val === 'left' || t.val === 'start');   // „Label ⇥ Wert" – Wertspalte am Tabstopp ausrichten (auch mehrzeilig)
+    if (left && left.pos > 0) {
+      const i = inner.indexOf('\t'), L = inner.slice(0, i), R = inner.slice(i + 1).split('\t').join('&nbsp;&nbsp;');
+      return { html: pgPre + `<${tag}${st ? ` style="${st}"` : ''}><span style="display:inline-block;min-width:${Math.round(left.pos)}pt;vertical-align:top">${L}</span><span style="display:inline-block;vertical-align:top">${R}</span></${tag}>` + pgPost };
+    }
   }
   if (tabCount > 0) st += `white-space:pre-wrap;tab-size:${ctx.defaultTab || 36}pt;`;   // sonst Standard-Tab wie Word
   if (isList) {
@@ -952,9 +957,17 @@ function dxParaBlock(p, ctx) {
   }
   return { html: pgPre + `<${tag}${st ? ` style="${st}"` : ''}>${inner}</${tag}>` + pgPost };
 }
+function dxBorderCss(el) {                          // Word-Rahmen → CSS (null = nicht gesetzt, 'none' = ausdrücklich ohne)
+  if (!el) return null; const v = el.getAttribute('w:val'); if (!v || v === 'nil' || v === 'none') return 'none';
+  const sz = +(el.getAttribute('w:sz') || 4), col = el.getAttribute('w:color');
+  const c = (col && col !== 'auto') ? '#' + col : '#000';
+  const style = v === 'dashed' ? 'dashed' : v === 'dotted' ? 'dotted' : v === 'double' ? 'double' : 'solid';
+  return `${Math.max(1, Math.round(sz / 8))}px ${style} ${c}`;
+}
 function dxTableHtml(tbl, ctx) {
-  const tblPr = dxKid(tbl, 'w:tblPr'); const bd = tblPr && dxKid(tblPr, 'w:tblBorders');
-  const cellBorder = bd ? '1px solid #999' : '1px solid #bbb';
+  const tblPr = dxKid(tbl, 'w:tblPr'), tbE = tblPr && dxKid(tblPr, 'w:tblBorders');
+  const TB = s => tbE ? dxBorderCss(dxKid(tbE, s)) : null;
+  const tblB = { top: TB('w:top'), bottom: TB('w:bottom'), left: TB('w:left'), right: TB('w:right'), iH: TB('w:insideH'), iV: TB('w:insideV') };
   const matrix = [], owners = [];                 // owners[col] = Zelle, die nach unten verbunden ist
   for (const tr of dxKids(tbl, 'w:tr')) {
     const cells = []; let col = 0;
@@ -963,7 +976,11 @@ function dxTableHtml(tbl, ctx) {
       const gs = tcPr && dxKid(tcPr, 'w:gridSpan'); const span = gs ? +gs.getAttribute('w:val') : 1;
       const vm = tcPr && dxKid(tcPr, 'w:vMerge'); const vmVal = vm ? (vm.getAttribute('w:val') || 'continue') : null;
       if (vmVal === 'continue') { const o = owners[col]; if (o) o.rowspan++; col += span; continue; }   // gehört zur Zelle darüber
-      let st = `border:${cellBorder};padding:3px 7px;vertical-align:top;`;
+      const tcb = tcPr && dxKid(tcPr, 'w:tcBorders'); const CB = s => tcb ? dxBorderCss(dxKid(tcb, s)) : null;
+      const pick = (cb, tb) => { const c = CB(cb); return c != null ? c : tb; };   // Zelle überschreibt Tabelle
+      let st = 'padding:3px 7px;vertical-align:top;';   // nur tatsächlich gesetzte Rahmen zeichnen (Word: oft nur unten = Ausfülllinie)
+      const sides = { top: pick('w:top', tblB.iH != null ? tblB.iH : tblB.top), bottom: pick('w:bottom', tblB.iH != null ? tblB.iH : tblB.bottom), left: pick('w:left', tblB.iV != null ? tblB.iV : tblB.left), right: pick('w:right', tblB.iV != null ? tblB.iV : tblB.right) };
+      for (const k in sides) if (sides[k] && sides[k] !== 'none') st += `border-${k}:${sides[k]};`;
       const shd = tcPr && dxKid(tcPr, 'w:shd'); if (shd) { const f = shd.getAttribute('w:fill'); if (f && f !== 'auto') st += `background:#${f};`; }
       const w = tcPr && dxKid(tcPr, 'w:tcW'); if (w) { const ww = +w.getAttribute('w:w'); if (ww > 0) st += `width:${Math.round(ww / 20)}pt;`; }
       const va = tcPr && dxKid(tcPr, 'w:vAlign'); if (va && va.getAttribute('w:val') === 'center') st = st.replace('vertical-align:top;', 'vertical-align:middle;');
@@ -1086,8 +1103,12 @@ async function importDocx(file) {
   st.zeilenabstand = Math.round(baseLine * 100) / 100;
   if (ctx.defR.sz) st.schriftgroesse = Math.round(ctx.defR.sz * 96 / 72);
   let kopf = '', fuss = '';
-  if (sect.headerId && ctx.rels[sect.headerId]) kopf = dxPartToHtml(get('word/' + ctx.rels[sect.headerId]), ctx);
-  if (sect.footerId && ctx.rels[sect.footerId]) fuss = dxPartToHtml(get('word/' + ctx.rels[sect.footerId]), ctx);
+  const renderPart = id => {                          // Kopf-/Fusszeile mit EIGENEN Beziehungen (Bilder!) rendern
+    const tgt = id && ctx.rels[id]; if (!tgt) return '';
+    const saved = ctx.rels; ctx.rels = Object.assign({}, saved, dxParseRels(get('word/_rels/' + tgt + '.rels'), zip, 'word/'));
+    const html = dxPartToHtml(get('word/' + tgt), ctx); ctx.rels = saved; return html;
+  };
+  kopf = renderPart(sect.headerId); fuss = renderPart(sect.footerId);
   createDoc({ titel: (file.name || 'Dokument').replace(/\.docx$/i, ''), html, kopf, fuss, einstellungen: st });
   toast('Word-Datei geöffnet: ' + d_title());
 }

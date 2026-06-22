@@ -1415,6 +1415,14 @@ function wire() {
 
   // „Gitter"-Schalter (Statusleiste): blendet die Tabellen-Linien ein/aus – dasselbe Blatt, nur als Tabelle rechenbar
   $('#gridToggle').addEventListener('click', () => { if (!doc) return; setPageType(activePage().typ === 'calc' ? 'write' : 'calc'); });
+  // Formelzeile im Write-Blatt (Etappe 3): Enter schreibt Wert/Formel-Ergebnis in die angeklickte Zelle
+  $('#wfInput').addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return; e.preventDefault();
+    if (!wfCell || !editor.contains(wfCell.rowEl)) { toast('Bitte zuerst eine Zelle im Blatt anklicken.'); return; }
+    let txt = $('#wfInput').value;
+    if (txt.trim().startsWith('=')) { const v = writeEvalFormula(txt.trim(), wfCell.r, wfCell.c); txt = (v == null ? '' : String(v)); }
+    writeSetCellSeg(wfCell.rowEl, wfCell.c, txt); editor.focus();
+  });
 
   // Seiten-Reiter (Navigator)
   $('#pagetabs').addEventListener('click', e => {
@@ -2373,7 +2381,29 @@ function writeCellPos() {
   let col = 0;
   try { const rg = document.createRange(); rg.setStart(rowEl, 0); rg.setEnd(sel.anchorNode, sel.anchorOffset); col = rg.cloneContents().querySelectorAll('.colsep').length; } catch (_) {}
   if (pos) pos.textContent = 'Zelle ' + idxToCol(col) + (r + 1);
+  wfCell = { r, c: col, rowEl };
+  const ref = $('#wfRef'); if (ref) ref.textContent = idxToCol(col) + (r + 1);
+  const wf = $('#wfInput'); if (wf && document.activeElement !== wf) wf.value = writeCellSegText(rowEl, col);
   drawWriteCellHi(rowEl, col);
+}
+let wfCell = null;
+function writeCellRange(rowEl, col) {
+  const seps = [...rowEl.querySelectorAll('.colsep')], rg = document.createRange();
+  if (col === 0) rg.setStart(rowEl, 0); else rg.setStartAfter(seps[col - 1]);
+  if (col < seps.length) rg.setEndBefore(seps[col]); else rg.setEnd(rowEl, rowEl.childNodes.length);
+  return rg;
+}
+function writeCellSegText(rowEl, col) { try { return writeCellRange(rowEl, col).toString().replace(/​/g, '').trim(); } catch (_) { return ''; } }
+function writeSetCellSeg(rowEl, col, text) {
+  let rg; try { rg = writeCellRange(rowEl, col); } catch (_) { return; }
+  rg.deleteContents(); rg.insertNode(document.createTextNode(text)); rowEl.normalize();
+  afterEdit(); alignColseps(); writeCellPos();
+}
+// Formel über das Editor-Raster rechnen (temporär curGrid setzen – dieselbe Engine wie Calc)
+function writeEvalFormula(text, r, c) {
+  const saved = curGrid;
+  try { curGrid = htmlToGrid(cleanEditorHTML()); gridEnsure(curGrid, c, r); curGrid.zeilen[r].cells[c] = text; const v = evalCell(c, r); curGrid = saved; return v; }
+  catch (_) { curGrid = saved; return '#FEHLER'; }
 }
 function drawWriteCellHi(rowEl, col) {
   const hi = $('#cellHi'); if (!hi) return;

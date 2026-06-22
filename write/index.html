@@ -281,6 +281,14 @@
       <!-- SEITEN-REITER (Navigator) -->
       <div class="pagetabs" id="pagetabs"></div>
 
+      <!-- FORMELZEILE im Write-Blatt (Etappe 3): ausgewählte Zelle lesen/schreiben, =Formel rechnen -->
+      <div class="wfbar" id="wfbar">
+        <span class="cell-ref" id="wfRef">A1</span>
+        <span class="fx">fx</span>
+        <input class="formula-input" id="wfInput" placeholder="Zelle anklicken, dann Wert oder =Formel eingeben (z. B. =SUMME(B1:B5)) und Enter" spellcheck="false" />
+        <span class="wf-hint">Enter rechnet in die Zelle</span>
+      </div>
+
       <!-- FORMELZEILE (Submit Calc) -->
       <div class="calcbar" id="calcBar">
         <span class="cell-ref" id="cellRef">A1</span>

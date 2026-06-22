@@ -842,6 +842,7 @@ function dxReadPPr(el) {
   const ind = dxKid(el, 'w:ind'); if (ind) { const l = ind.getAttribute('w:left') || ind.getAttribute('w:start'); if (l) o.indL = +l / 20; const fl = ind.getAttribute('w:firstLine'); if (fl) o.indF = +fl / 20; const hg = ind.getAttribute('w:hanging'); if (hg) o.indF = -(+hg) / 20; }
   const num = dxKid(el, 'w:numPr'); if (num) { const ni = dxKid(num, 'w:numId'); if (ni) o.numId = ni.getAttribute('w:val'); const il = dxKid(num, 'w:ilvl'); o.ilvl = il ? +il.getAttribute('w:val') : 0; }
   const ol = dxKid(el, 'w:outlineLvl'); if (ol) o.outline = +ol.getAttribute('w:val');
+  const tabsEl = dxKid(el, 'w:tabs'); if (tabsEl) { const ts = []; for (const tb of dxKids(tabsEl, 'w:tab')) { const v = tb.getAttribute('w:val'); if (v === 'clear') continue; ts.push({ val: v, pos: +tb.getAttribute('w:pos') / 20, leader: tb.getAttribute('w:leader') || 'none' }); } if (ts.length) o.tabs = ts; }
   return o;
 }
 function dxParseStyles(xml) {
@@ -880,8 +881,8 @@ function dxRunHtml(r, baseR, ctx) {
   const font = eff.font || dxThemeFont(eff.fontTheme, ctx); if (font) st += `font-family:'${font.replace(/'/g, '')}';`;
   const color = eff.color || dxThemeColor(eff.colorTheme, ctx); if (color) st += `color:${color};`;
   const bg = eff.shd || dxThemeColor(eff.shdTheme, ctx) || (eff.hl && DX_HL[eff.hl]); if (bg) st += `background:${bg};`;
-  let body = txt; if (eff.vert === 'superscript') body = '<sup>' + body + '</sup>'; else if (eff.vert === 'subscript') body = '<sub>' + body + '</sub>';
-  return img + (st && body ? `<span style="${st}">${body}</span>` : body);
+  const wrap = seg => { if (seg === '') return ''; let b = seg; if (eff.vert === 'superscript') b = '<sup>' + b + '</sup>'; else if (eff.vert === 'subscript') b = '<sub>' + b + '</sub>'; return st ? `<span style="${st}">${b}</span>` : b; };
+  return img + txt.split('\t').map(wrap).join('\t');   // Tabs bleiben „roh" (oberste Ebene) – so kann der Absatz daran ausgerichtet werden
 }
 // Läufe in Dokument-Reihenfolge sammeln – auch in Wrappern (Änderungsverfolgung w:ins, Smart-Tags, Inhaltssteuerelemente w:sdt)
 function dxParaInner(p, baseR, ctx) {
@@ -891,7 +892,7 @@ function dxParaInner(p, baseR, ctx) {
       const n = c.nodeName;
       if (n === 'w:r') inner += dxRunHtml(c, baseR, ctx);
       else if (n === 'w:hyperlink') { let s = ''; for (const r of c.getElementsByTagName('w:r')) s += dxRunHtml(r, baseR, ctx); const rid = c.getAttribute('r:id'), href = rid && ctx.rels[rid]; inner += href ? `<a href="${esc(href)}">${s}</a>` : s; }
-      else if (n === 'w:ins' || n === 'w:smartTag' || n === 'w:sdt' || n === 'w:sdtContent' || n === 'w:bdo' || n === 'w:dir') walk(c);
+      else if (n === 'w:fldSimple' || n === 'w:ins' || n === 'w:smartTag' || n === 'w:sdt' || n === 'w:sdtContent' || n === 'w:bdo' || n === 'w:dir') walk(c);   // Felder: zwischengespeichertes Ergebnis (Datum, Seitenzahl …)
     }
   };
   walk(p);
@@ -918,7 +919,21 @@ function dxParaBlock(p, ctx) {
   if (!lvl && bFont) st += `font-family:'${bFont.replace(/'/g, '')}';`;
   if (!lvl && bColor) st += `color:${bColor};`;
   const inner = dxParaInner(p, baseR, ctx) || '<br>';
-  if (/\t/.test(inner)) st += `white-space:pre-wrap;tab-size:${ctx.defaultTab || 36}pt;`;   // Tabstopps wie Word (Standard-Tab)
+  const tabCount = (inner.match(/\t/g) || []).length;
+  // Rechts-/Zentriert-Tabstopps (Kopf-/Fusszeile, „Titel … Seite") als Flex ausrichten – nur sicher, wenn der Tab nicht in einem Link steckt
+  if (!isList && tabCount > 0 && inner.indexOf('<a') < 0 && pPr.tabs) {
+    const right = pPr.tabs.find(t => t.val === 'right' || t.val === 'decimal'), center = pPr.tabs.find(t => t.val === 'center');
+    if (tabCount >= 2 && center && right) {
+      const parts = inner.split('\t'); const L = parts[0], M = parts[1], R = parts.slice(2).join(' ');
+      return { html: `<${tag} style="${st}display:flex;align-items:baseline"><span>${L}</span><span style="flex:1;text-align:center">${M}</span><span style="text-align:right;white-space:nowrap">${R}</span></${tag}>` };
+    }
+    if (right) {
+      const i = inner.lastIndexOf('\t'), L = inner.slice(0, i), R = inner.slice(i + 1);
+      const ld = right.leader === 'dot' ? 'border-bottom:1px dotted currentColor' : (right.leader === 'hyphen' || right.leader === 'underscore') ? 'border-bottom:1px solid currentColor' : '';
+      return { html: `<${tag} style="${st}display:flex;align-items:baseline"><span>${L}</span><span style="flex:1;${ld};margin:0 .3em;transform:translateY(-.18em)"></span><span style="white-space:nowrap">${R}</span></${tag}>` };
+    }
+  }
+  if (tabCount > 0) st += `white-space:pre-wrap;tab-size:${ctx.defaultTab || 36}pt;`;   // sonst Standard-Tab wie Word
   if (isList) { const lvls = ctx.numbering[pPr.numId], fmt = (lvls && (lvls[pPr.ilvl || 0] || lvls[0])) || 'bullet'; const ordered = fmt !== 'bullet' && fmt !== 'none'; return { list: ordered ? 'ol' : 'ul', level: pPr.ilvl || 0, html: `<li${st ? ` style="${st}"` : ''}>${inner}</li>` }; }
   return { html: `<${tag}${st ? ` style="${st}"` : ''}>${inner}</${tag}>` };
 }

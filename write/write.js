@@ -632,10 +632,117 @@ h1{font-size:30px}h2{font-size:23px}h3{font-size:18px}blockquote{border-left:3px
 pre{background:#f5f6f8;padding:14px;border-radius:8px;overflow:auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 10px}a{color:#2f6df6}</style>
 </head><body>${inner}</body></html>`;
 }
-function download(name, text, mime) {
-  const blob = new Blob([text], { type: mime });
+function download(name, data, mime) {
+  const blob = data instanceof Blob ? data : new Blob([data], { type: mime || 'text/plain' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ---------- Mini-ZIP-Writer (Store, ohne Abhängigkeit) für echte .docx/.odt ---------- */
+function crc32(b) { let c = ~0; for (let i = 0; i < b.length; i++) { c ^= b[i]; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xEDB88320 & -(c & 1)); } return ~c >>> 0; }
+function zipStore(files) {                       // files: [{name, bytes:Uint8Array}]
+  const u16 = n => [n & 255, (n >>> 8) & 255], u32 = n => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+  const locals = [], centrals = []; let offset = 0;
+  files.forEach(f => {
+    const name = new TextEncoder().encode(f.name), data = f.bytes, crc = crc32(data);
+    const lh = [0x50, 0x4b, 3, 4, ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)];
+    const local = new Uint8Array(lh.length + name.length + data.length);
+    local.set(lh, 0); local.set(name, lh.length); local.set(data, lh.length + name.length);
+    locals.push(local);
+    const ch = [0x50, 0x4b, 1, 2, ...u16(20), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)];
+    const cen = new Uint8Array(ch.length + name.length); cen.set(ch, 0); cen.set(name, ch.length); centrals.push(cen);
+    offset += local.length;
+  });
+  let cenSize = 0; centrals.forEach(c => cenSize += c.length);
+  const end = new Uint8Array([0x50, 0x4b, 5, 6, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cenSize), ...u32(offset), ...u16(0)]);
+  return new Blob([...locals, ...centrals, end], { type: 'application/octet-stream' });
+}
+function xmlEsc(s) { return (s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+// Editor-Inhalt in Blöcke mit Inline-Läufen zerlegen (für .docx/.odt)
+function exportBlocks() {
+  const root = document.createElement('div'); root.innerHTML = cleanEditorHTML();
+  const out = [];
+  const runsOf = el => { const runs = []; const walk = (n, st) => { n.childNodes.forEach(x => {
+    if (x.nodeType === 3) { if (x.textContent) runs.push({ t: x.textContent, ...st }); return; }
+    if (x.classList && x.classList.contains('colsep')) { runs.push({ tab: 1 }); return; }
+    const tg = x.tagName.toLowerCase(); if (tg === 'br') { runs.push({ br: 1 }); return; }
+    const ns = { ...st }; if (tg === 'b' || tg === 'strong') ns.b = 1; if (tg === 'i' || tg === 'em') ns.i = 1; if (tg === 'u') ns.u = 1; if (tg === 's' || tg === 'strike' || tg === 'del') ns.s = 1;
+    walk(x, ns);
+  }); }; walk(el, {}); return runs; };
+  [...root.children].forEach(el => {
+    const tag = el.tagName.toLowerCase();
+    const align = el.style.textAlign || '';
+    if (tag === 'ul' || tag === 'ol') { [...el.children].forEach((li, i) => out.push({ tag: 'li', list: tag, idx: i + 1, align: li.style.textAlign || '', runs: runsOf(li) })); return; }
+    if (tag === 'table') { el.querySelectorAll('tr').forEach(tr => { const runs = []; [...tr.children].forEach((td, ci) => { if (ci > 0) runs.push({ tab: 1 }); runsOf(td).forEach(r => runs.push(r)); }); out.push({ tag: 'p', align: '', runs }); }); return; }
+    if (tag === 'hr') { out.push({ tag: 'hr' }); return; }
+    if (/^(p|h1|h2|h3|blockquote|pre|div)$/.test(tag)) out.push({ tag, align, runs: runsOf(el) });
+  });
+  return out;
+}
+function buildDocx() {
+  const enc = new TextEncoder(), blocks = exportBlocks();
+  const szH = { h1: 44, h2: 34, h3: 28 };
+  const runXml = r => {
+    if (r.br) return '<w:r><w:br/></w:r>'; if (r.tab) return '<w:r><w:tab/></w:r>';
+    let p = ''; if (r.b) p += '<w:b/>'; if (r.i) p += '<w:i/>'; if (r.u) p += '<w:u w:val="single"/>'; if (r.s) p += '<w:strike/>'; if (r.sz) p += `<w:sz w:val="${r.sz}"/><w:szCs w:val="${r.sz}"/>`;
+    return `<w:r>${p ? `<w:rPr>${p}</w:rPr>` : ''}<w:t xml:space="preserve">${xmlEsc(r.t)}</w:t></w:r>`;
+  };
+  let body = '';
+  blocks.forEach(bl => {
+    if (bl.tag === 'hr') { body += '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="auto"/></w:pBdr></w:pPr></w:p>'; return; }
+    const jc = bl.align === 'center' ? '<w:jc w:val="center"/>' : bl.align === 'right' ? '<w:jc w:val="right"/>' : bl.align === 'justify' ? '<w:jc w:val="both"/>' : '';
+    const sz = szH[bl.tag];
+    let runs = (bl.runs || []).map(r => { if (sz && r.t != null) { r = { ...r, sz, b: 1 }; } return runXml(r); }).join('');
+    if (bl.list) runs = `<w:r><w:t xml:space="preserve">${bl.list === 'ol' ? bl.idx + '. ' : '• '}</w:t></w:r>` + runs;
+    body += `<w:p><w:pPr>${jc}</w:pPr>${runs || '<w:r><w:t/></w:r>'}</w:p>`;
+  });
+  const docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  const files = [
+    { name: '[Content_Types].xml', bytes: enc.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`) },
+    { name: '_rels/.rels', bytes: enc.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`) },
+    { name: 'word/document.xml', bytes: enc.encode(docXml) }
+  ];
+  download(safeName(doc.titel) + '.docx', zipStore(files));
+  toast('Word-Datei (.docx) erstellt');
+}
+function buildOdt() {
+  const enc = new TextEncoder(), blocks = exportBlocks();
+  const spanOf = r => {
+    if (r.br) return '<text:line-break/>'; if (r.tab) return '<text:tab/>';
+    const cls = [r.b && 'B', r.i && 'I', r.u && 'U', r.s && 'S'].filter(Boolean).join('');
+    const txt = xmlEsc(r.t).replace(/ {2,}/g, m => '<text:s text:c="' + m.length + '"/>');
+    return cls ? `<text:span text:style-name="${cls}">${txt}</text:span>` : txt;
+  };
+  let body = '';
+  blocks.forEach(bl => {
+    if (bl.tag === 'hr') { body += '<text:p text:style-name="HR"/>'; return; }
+    const runs = (bl.runs || []).map(spanOf).join('');
+    if (/^h[1-3]$/.test(bl.tag)) { body += `<text:h text:style-name="H${bl.tag[1]}" text:outline-level="${bl.tag[1]}">${runs}</text:h>`; return; }
+    const pre = bl.list ? (bl.list === 'ol' ? bl.idx + '. ' : '• ') : '';
+    body += `<text:p${bl.align ? ` text:style-name="A${bl.align}"` : ''}>${xmlEsc(pre)}${runs}</text:p>`;
+  });
+  const NS = 'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"';
+  const autoStyles = `<office:automatic-styles>
+<style:style style:name="B" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>
+<style:style style:name="I" style:family="text"><style:text-properties fo:font-style="italic"/></style:style>
+<style:style style:name="U" style:family="text"><style:text-properties style:text-underline-style="solid"/></style:style>
+<style:style style:name="S" style:family="text"><style:text-properties style:text-line-through-style="solid"/></style:style>
+<style:style style:name="BI" style:family="text"><style:text-properties fo:font-weight="bold" fo:font-style="italic"/></style:style>
+<style:style style:name="Acenter" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/></style:style>
+<style:style style:name="Aright" style:family="paragraph"><style:paragraph-properties fo:text-align="end"/></style:style>
+<style:style style:name="Ajustify" style:family="paragraph"><style:paragraph-properties fo:text-align="justify"/></style:style>
+</office:automatic-styles>`;
+  const content = `<?xml version="1.0" encoding="UTF-8"?>\n<office:document-content ${NS} office:version="1.2">${autoStyles}<office:body><office:text>${body}</office:text></office:body></office:document-content>`;
+  const styles = `<?xml version="1.0" encoding="UTF-8"?>\n<office:document-styles ${NS} office:version="1.2"><office:styles><style:style style:name="H1" style:family="paragraph"><style:text-properties fo:font-size="22pt" fo:font-weight="bold"/></style:style><style:style style:name="H2" style:family="paragraph"><style:text-properties fo:font-size="17pt" fo:font-weight="bold"/></style:style><style:style style:name="H3" style:family="paragraph"><style:text-properties fo:font-size="14pt" fo:font-weight="bold"/></style:style></office:styles></office:document-styles>`;
+  const manifest = `<?xml version="1.0" encoding="UTF-8"?>\n<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2"><manifest:file-entry manifest:full-path="/" manifest:version="1.2" manifest:media-type="application/vnd.oasis.opendocument.text"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/></manifest:manifest>`;
+  const files = [
+    { name: 'mimetype', bytes: enc.encode('application/vnd.oasis.opendocument.text') },   // muss zuerst & unkomprimiert sein
+    { name: 'content.xml', bytes: enc.encode(content) },
+    { name: 'styles.xml', bytes: enc.encode(styles) },
+    { name: 'META-INF/manifest.xml', bytes: enc.encode(manifest) }
+  ];
+  download(safeName(doc.titel) + '.odt', zipStore(files));
+  toast('OpenDocument (.odt) erstellt');
 }
 function htmlToMarkdown(root) {
   let out = '';
@@ -675,10 +782,8 @@ function doExport(kind) {
   const mdRoot = editor.cloneNode(true); mdRoot.querySelectorAll('.sp-err').forEach(s => s.replaceWith(document.createTextNode(s.textContent)));
   if (kind === 'html') { download(name + '.html', docHtmlShell(cleanEditorHTML()), 'text/html'); toast('HTML exportiert'); }
   else if (kind === 'md') { download(name + '.md', htmlToMarkdown(mdRoot), 'text/markdown'); toast('Markdown exportiert'); }
-  else if (kind === 'docx') {
-    // Beta: Word öffnet HTML mit .doc-Endung zuverlässig
-    download(name + '.doc', docHtmlShell(cleanEditorHTML()), 'application/msword'); toast('DOCX (Beta) exportiert');
-  }
+  else if (kind === 'docx') { buildDocx(); }
+  else if (kind === 'odt') { buildOdt(); }
 }
 
 /* ============================================================

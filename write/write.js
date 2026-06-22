@@ -1417,8 +1417,13 @@ function wire() {
   $('#pvClose').addEventListener('click', () => $('#previewOverlay').hidden = true);
   $('#pvPrint').addEventListener('click', printFromPreview);
 
-  // „Gitter"-Schalter (Statusleiste): wechselt zwischen Write (frei schreiben) und Gitter (Raster/rechnen)
-  $('#gridToggle').addEventListener('click', () => { if (!doc) return; setPageType(activePage().typ === 'calc' ? 'write' : 'calc'); });
+  // „Gitter"-Schalter: Calc ist das Grundgerüst – der Knopf blendet NUR die Linien ein/aus (kein Engine-Wechsel)
+  $('#gridToggle').addEventListener('click', () => {
+    if (!doc) return;
+    if (activePage().typ !== 'calc') { setPageType('calc'); appEl.classList.remove('lines-off'); syncGridToggle(); return; }   // Alt-Dokumente einmalig ins Raster
+    appEl.classList.toggle('lines-off');   // Linien aus = Dokumentansicht, Linien an = Raster
+    syncGridToggle();
+  });
   // Formelzeile im Write-Blatt (Etappe 3): Enter schreibt Wert/Formel-Ergebnis in die angeklickte Zelle
   $('#wfInput').addEventListener('keydown', e => {
     if (e.key !== 'Enter') return; e.preventDefault();
@@ -2319,7 +2324,7 @@ function printFromPreview() {
    ============================================================ */
 const MODE_META = { write: ['✍', 'Submit Write'], calc: ['▦', 'Submit Calc'] };
 function pageMode(p) { return p.typ === 'calc' ? 'calc' : 'write'; }
-function syncGridToggle() { const gt = $('#gridToggle'); if (!gt || !doc) return; gt.classList.toggle('on', activePage().typ === 'calc'); }
+function syncGridToggle() { const gt = $('#gridToggle'); if (!gt || !doc) return; gt.classList.toggle('on', activePage().typ === 'calc' && !appEl.classList.contains('lines-off')); }
 function renderActivePage() {
   if (!doc) return;
   const p = activePage(), m = pageMode(p);

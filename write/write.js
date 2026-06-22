@@ -917,8 +917,7 @@ function dxParaBlock(p, ctx) {
   const tag = lvl >= 1 ? 'h' + Math.min(3, lvl) : 'p';
   const isList = !!pPr.numId;
   let st = '';
-  if (pPr.spB != null) st += `margin-top:${pPr.spB}pt;`;
-  if (pPr.spA != null) st += `margin-bottom:${pPr.spA}pt;`;
+  st += `margin-top:${pPr.spB || 0}pt;margin-bottom:${pPr.spA || 0}pt;`;   // exakt Word-Abstände (sonst greift unser 0.85em-Standard → Dokument wird zu lang)
   if (pPr.align && pPr.align !== 'left') st += `text-align:${pPr.align};`;
   if (!isList && pPr.indL) st += `margin-left:${pPr.indL}pt;`;     // bei Listen macht die Verschachtelung den Einzug
   if (!isList && pPr.indF) st += `text-indent:${pPr.indF}pt;`;
@@ -1082,6 +1081,10 @@ async function importDocx(file) {
   if (sect.format) st.format = sect.format;
   if (sect.orient) st.ausrichtung = sect.orient;
   if (sect.margins) st.margins = sect.margins;
+  // Word-Grunddefaults übernehmen, sonst sind importierte Dokumente fast doppelt so lang
+  const baseLine = ctx.defP.line || (ctx.styles.Normal && dxResolve(ctx, 'Normal').pPr.line) || (ctx.styles.Standard && dxResolve(ctx, 'Standard').pPr.line) || 1.15;
+  st.zeilenabstand = Math.round(baseLine * 100) / 100;
+  if (ctx.defR.sz) st.schriftgroesse = Math.round(ctx.defR.sz * 96 / 72);
   let kopf = '', fuss = '';
   if (sect.headerId && ctx.rels[sect.headerId]) kopf = dxPartToHtml(get('word/' + ctx.rels[sect.headerId]), ctx);
   if (sect.footerId && ctx.rels[sect.footerId]) fuss = dxPartToHtml(get('word/' + ctx.rels[sect.footerId]), ctx);

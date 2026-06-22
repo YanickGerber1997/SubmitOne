@@ -1,32 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <rect x="2.5" y="2.5" width="59" height="59" rx="14" fill="#ffffff" stroke="#e6e8ee" stroke-width="1"/>
 
-  <!-- vier Modul-Kacheln: Write (blau), Calc (grün), Slides (orange), PDF (rot) -->
-  <rect x="8"  y="8"  width="22" height="22" rx="5.5" fill="#2b7cff"/>
-  <rect x="34" y="8"  width="22" height="22" rx="5.5" fill="#1f9d57"/>
-  <rect x="8"  y="34" width="22" height="22" rx="5.5" fill="#e8772e"/>
-  <rect x="34" y="34" width="22" height="22" rx="5.5" fill="#e8412e"/>
+  <!-- Ein Blatt: oben Text (Write), unten Raster (Calc) – ein Dokument, ein Motor -->
+  <rect x="14" y="9" width="36" height="46" rx="4" fill="#f7f9fc" stroke="#d8deea" stroke-width="1.5"/>
 
-  <!-- Write: Textzeilen -->
-  <g stroke="#fff" stroke-width="2" stroke-linecap="round">
-    <path d="M13 15h12M13 19h12M13 23h8"/>
+  <!-- Write: Textzeilen (blau) -->
+  <g stroke="#2b7cff" stroke-width="2.2" stroke-linecap="round">
+    <path d="M20 17h24M20 22h24M20 27h16"/>
   </g>
 
-  <!-- Calc: Gitter -->
-  <g stroke="#fff" stroke-width="1.7" stroke-linecap="round">
-    <path d="M39 13.5h12M39 19h12M39 24.5h12"/>
-    <path d="M39 13.5v11M45 13.5v11M51 13.5v11"/>
-  </g>
-
-  <!-- Slides: Präsentation -->
-  <g stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <rect x="12" y="39.5" width="14" height="9.5" rx="1.6"/>
-    <path d="M19 49v2.5M16.5 51.5h5"/>
-  </g>
-
-  <!-- PDF: Blatt mit Eselsohr -->
-  <g stroke="#fff" stroke-width="2" stroke-linejoin="round" fill="none">
-    <path d="M40 39.5h6l5 5v8H40z"/>
-    <path d="M46 39.5v5h5"/>
+  <!-- Calc: Raster (grün) -->
+  <g stroke="#1f9d57" stroke-width="1.6">
+    <path d="M20 34h24M20 41h24M20 48h24"/>
+    <path d="M20 34v14M28 34v14M36 34v14M44 34v14"/>
   </g>
 </svg>

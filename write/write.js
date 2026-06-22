@@ -25,7 +25,7 @@ function fmtDate(iso) {
 
 /* ---------- HTML-Sanitisierung (gegen XSS / kaputte Dateien) ---------- */
 const ALLOWED_TAGS = new Set(['P', 'BR', 'H1', 'H2', 'H3', 'H4', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'SPAN', 'FONT', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'PRE', 'CODE', 'A', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'IMG', 'HR', 'DIV', 'MARK', 'SUB', 'SUP']);
-const ALLOWED_ATTR = { '*': ['style', 'class', 'id'], A: ['href', 'target', 'rel', 'data-go'], IMG: ['src', 'alt', 'width', 'height'], FONT: ['face', 'color', 'size'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'], DIV: ['contenteditable', 'data-toc'], SPAN: ['contenteditable'] };
+const ALLOWED_ATTR = { '*': ['style', 'class', 'id'], A: ['href', 'target', 'rel', 'data-go'], IMG: ['src', 'alt', 'width', 'height'], FONT: ['face', 'color', 'size'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'], DIV: ['contenteditable', 'data-toc'], SPAN: ['contenteditable', 'data-tab', 'data-lead', 'data-align'] };
 function sanitizeHtml(html) {
   try {
     const tpl = document.createElement('template');
@@ -518,10 +518,18 @@ function alignColseps() {
   const cols = Math.max(maxCells, activePage().dispCols || auto);
   const colW = (contentMm * MM) / cols;                 // Spaltenbreite in px (ungezoomt) – wie in Calc
   const z = parseFloat(page.style.zoom) || 1;
-  seps.forEach(s => { s.style.display = 'inline-block'; s.style.minWidth = '0'; s.style.width = '0px'; s.style.textAlign = 'left'; });   // erst zurücksetzen
+  const maxPx = contentMm * MM;
+  seps.forEach(s => { s.style.display = 'inline-block'; s.style.minWidth = '0'; s.style.width = '0px'; s.style.textAlign = 'left'; s.style.borderBottom = ''; });   // erst zurücksetzen
   seps.forEach(s => {
     const block = s.closest('p,h1,h2,h3,blockquote,pre'); if (!block) return;
     const x = (s.getBoundingClientRect().left - block.getBoundingClientRect().left) / z;
+    if (s.dataset.tab) {                                 // exakte Tab-Position aus dem Word-Import (mm ab linkem Rand = Spalte)
+      let w = Math.min(maxPx, parseFloat(s.dataset.tab) * MM) - x;
+      if (w < 2) w = 2;
+      s.style.width = Math.round(w) + 'px';
+      s.style.borderBottom = s.dataset.lead === 'dot' ? '1px dotted currentColor' : s.dataset.lead === 'line' ? '1px solid currentColor' : '';
+      return;
+    }
     let w = (Math.floor(x / colW + 0.001) + 1) * colW - x;
     if (w < 5) w += colW;                                // mind. eine Spalte vorrücken
     s.style.width = Math.round(w) + 'px';
@@ -926,30 +934,23 @@ function dxParaBlock(p, ctx) {
   if (!lvl && baseR.sz) st += `font-size:${baseR.sz}pt;`;
   if (!lvl && bFont) st += `font-family:'${bFont.replace(/'/g, '')}';`;
   if (!lvl && bColor) st += `color:${bColor};`;
-  const inner = dxParaInner(p, baseR, ctx) || '<br>';
+  let inner = dxParaInner(p, baseR, ctx) || '<br>';
   // manueller Seitenumbruch (w:br type=page oder pageBreakBefore) → echte Umbruch-Marke
   let pgPre = pPr.pbBefore ? DX_PB : '', pgPost = '';
   for (const br of p.getElementsByTagName('w:br')) { if (br.getAttribute('w:type') === 'page') { pgPost = DX_PB; break; } }
-  const tabCount = (inner.match(/\t/g) || []).length;
-  // Rechts-/Zentriert-Tabstopps (Kopf-/Fusszeile, „Titel … Seite") als Flex ausrichten – nur sicher, wenn der Tab nicht in einem Link steckt
-  if (!isList && tabCount > 0 && inner.indexOf('<a') < 0 && pPr.tabs) {
-    const right = pPr.tabs.find(t => t.val === 'right' || t.val === 'decimal'), center = pPr.tabs.find(t => t.val === 'center');
-    if (tabCount >= 2 && center && right) {
-      const parts = inner.split('\t'); const L = parts[0], M = parts[1], R = parts.slice(2).join(' ');
-      return { html: pgPre + `<${tag} style="${st}display:flex;align-items:baseline"><span>${L}</span><span style="flex:1;text-align:center">${M}</span><span style="text-align:right;white-space:nowrap">${R}</span></${tag}>` + pgPost };
-    }
-    if (right) {
-      const i = inner.lastIndexOf('\t'), L = inner.slice(0, i), R = inner.slice(i + 1);
-      const ld = right.leader === 'dot' ? 'border-bottom:1px dotted currentColor' : (right.leader === 'hyphen' || right.leader === 'underscore') ? 'border-bottom:1px solid currentColor' : '';
-      return { html: pgPre + `<${tag} style="${st}display:flex;align-items:baseline"><span>${L}</span><span style="flex:1;${ld};margin:0 .3em;transform:translateY(-.18em)"></span><span style="white-space:nowrap">${R}</span></${tag}>` + pgPost };
-    }
-    const left = pPr.tabs.find(t => t.val === 'left' || t.val === 'start');   // „Label ⇥ Wert" – Wertspalte am Tabstopp ausrichten (auch mehrzeilig)
-    if (left && left.pos > 0) {
-      const i = inner.indexOf('\t'), L = inner.slice(0, i), R = inner.slice(i + 1).split('\t').join('&nbsp;&nbsp;');
-      return { html: pgPre + `<${tag}${st ? ` style="${st}"` : ''}><span style="display:inline-block;min-width:${Math.round(left.pos)}pt;vertical-align:top">${L}</span><span style="display:inline-block;vertical-align:top">${R}</span></${tag}>` + pgPost };
-    }
+  // Tabs = sichtbare Spalten (COLSEP). Bei definierten Tabstopps an die exakte Position (mm) gesetzt → Layout wie Word UND echtes Raster wie Calc
+  if (inner.indexOf('\t') >= 0) {
+    const stops = (pPr.tabs || []).slice().sort((a, b) => a.pos - b.pos);
+    if (stops.length) {
+      let k = 0;
+      inner = inner.replace(/\t/g, () => {
+        const s = stops[Math.min(k, stops.length - 1)]; k++;
+        const mm = Math.round(s.pos * 25.4 / 72 * 10) / 10;
+        const lead = s.leader === 'dot' ? ' data-lead="dot"' : (s.leader === 'underscore' || s.leader === 'hyphen') ? ' data-lead="line"' : '';
+        return `<span class="colsep" data-tab="${mm}"${lead} contenteditable="false">⇥</span>`;
+      });
+    } else inner = inner.split('\t').join(COLSEP);   // gleichmässige Spalte (kein definierter Tabstopp)
   }
-  if (tabCount > 0) st += `white-space:pre-wrap;tab-size:${ctx.defaultTab || 36}pt;`;   // sonst Standard-Tab wie Word
   if (isList) {
     const il = pPr.ilvl || 0, lvls = ctx.numbering[pPr.numId] || {}, lv = lvls[il] || lvls[0] || { fmt: 'bullet', start: 1 };
     const fmt = lv.fmt || 'bullet', ordered = fmt !== 'bullet' && fmt !== 'none';

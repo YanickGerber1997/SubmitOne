@@ -318,24 +318,27 @@ async function saveFile(asNew) {
 }
 
 async function openFile() {
-  let text = null, handle = null;
+  let file = null, handle = null;
   if (window.showOpenFilePicker) {
     try {
       const [h] = await window.showOpenFilePicker({
-        types: [{ description: 'Submit Paper', accept: { 'application/json': ['.paper', '.gdoc', '.json'] } }]
+        types: [{ description: 'Dokumente', accept: { 'application/octet-stream': ['.paper', '.gdoc', '.json', '.docx', '.odt'] } }]
       });
-      handle = h; text = await (await h.getFile()).text();
+      handle = h; file = await h.getFile();
     } catch (e) { if (e && e.name === 'AbortError') return; }
   }
-  if (text === null) {
-    text = await new Promise(res => {
-      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.paper,.gdoc,.json';
-      inp.onchange = () => { const f = inp.files[0]; if (!f) return res(null); const r = new FileReader(); r.onload = () => res(r.result); r.readAsText(f); };
+  if (!file) {
+    file = await new Promise(res => {
+      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.paper,.gdoc,.json,.docx,.odt';
+      inp.onchange = () => res(inp.files[0] || null);
       inp.click();
     });
   }
-  if (!text) return;
-  ingestGdoc(text, handle);
+  if (!file) return;
+  const nm = (file.name || '').toLowerCase();
+  if (nm.endsWith('.docx')) return importDocx(file);
+  if (nm.endsWith('.odt')) return importOdt(file);
+  ingestGdoc(await file.text(), handle);   // .paper/.gdoc/.json
 }
 
 function ingestGdoc(text, handle) {
@@ -705,6 +708,98 @@ function buildDocx() {
   download(safeName(doc.titel) + '.docx', zipStore(files));
   toast('Word-Datei (.docx) erstellt');
 }
+/* ---------- ZIP lesen + Word/ODF importieren ---------- */
+async function inflateRaw(b) { const s = new Blob([b]).stream().pipeThrough(new DecompressionStream('deflate-raw')); return new Uint8Array(await new Response(s).arrayBuffer()); }
+async function unzipRead(buf) {
+  const dv = new DataView(buf), bytes = new Uint8Array(buf), out = {}, dec = new TextDecoder();
+  let eocd = -1; for (let i = bytes.length - 22; i >= 0; i--) { if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; } }
+  if (eocd < 0) throw new Error('Kein ZIP');
+  const count = dv.getUint16(eocd + 10, true); let p = dv.getUint32(eocd + 16, true);
+  for (let n = 0; n < count; n++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+    const nameLen = dv.getUint16(p + 28, true), extraLen = dv.getUint16(p + 30, true), cmtLen = dv.getUint16(p + 32, true);
+    const lho = dv.getUint32(p + 42, true);
+    const name = dec.decode(bytes.subarray(p + 46, p + 46 + nameLen));
+    const lNameLen = dv.getUint16(lho + 26, true), lExtra = dv.getUint16(lho + 28, true);
+    const start = lho + 30 + lNameLen + lExtra, comp = bytes.subarray(start, start + csize);
+    out[name] = method === 8 ? await inflateRaw(comp) : comp.slice();
+    p += 46 + nameLen + extraLen + cmtLen;
+  }
+  return out;
+}
+function docxToHtml(xml) {
+  const xdoc = new DOMParser().parseFromString(xml, 'application/xml');
+  let html = '';
+  const ps = xdoc.getElementsByTagName('w:p');
+  for (const para of ps) {
+    const psEl = para.getElementsByTagName('w:pStyle')[0], sv = (psEl && psEl.getAttribute('w:val')) || '';
+    let tag = 'p';
+    if (/^(heading1|berschrift1|title|titel)/i.test(sv)) tag = 'h1'; else if (/^(heading2|berschrift2)/i.test(sv)) tag = 'h2'; else if (/^(heading3|berschrift3)/i.test(sv)) tag = 'h3';
+    const jcEl = para.getElementsByTagName('w:jc')[0], jc = jcEl && jcEl.getAttribute('w:val');
+    const align = jc === 'center' ? 'center' : jc === 'right' ? 'right' : jc === 'both' ? 'justify' : '';
+    let inner = '';
+    for (const r of para.getElementsByTagName('w:r')) {
+      const rpr = r.getElementsByTagName('w:rPr')[0];
+      const on = t => { if (!rpr) return false; const e = rpr.getElementsByTagName(t)[0]; return e && e.getAttribute('w:val') !== 'false' && e.getAttribute('w:val') !== '0'; };
+      const b = on('w:b'), i = on('w:i'), u = on('w:u'), s = on('w:strike');
+      let seg = '';
+      for (const node of r.childNodes) { const nm = node.nodeName; if (nm === 'w:t') seg += esc(node.textContent); else if (nm === 'w:tab') seg += COLSEP; else if (nm === 'w:br' || nm === 'w:cr') seg += '<br>'; }
+      if (!seg) continue;
+      if (s) seg = '<s>' + seg + '</s>'; if (u) seg = '<u>' + seg + '</u>'; if (i) seg = '<em>' + seg + '</em>'; if (b) seg = '<strong>' + seg + '</strong>';
+      inner += seg;
+    }
+    html += `<${tag}${align ? ` style="text-align:${align}"` : ''}>${inner || '<br>'}</${tag}>`;
+  }
+  return html || '<p><br></p>';
+}
+async function importDocx(file) {
+  toast('Öffne Word-Datei …');
+  let zip; try { zip = await unzipRead(await file.arrayBuffer()); } catch (_) { toast('Datei nicht lesbar (kein gültiges .docx).'); return; }
+  const part = zip['word/document.xml']; if (!part) { toast('Keine Word-Inhalte gefunden.'); return; }
+  const html = docxToHtml(new TextDecoder().decode(part));
+  createDoc({ titel: (file.name || 'Dokument').replace(/\.docx$/i, ''), html });
+  toast('Word-Datei geöffnet: ' + d_title());
+}
+function odtToHtml(xml) {
+  const xdoc = new DOMParser().parseFromString(xml, 'application/xml');
+  const styleMap = {};   // style-name → {b,i,u,s}
+  for (const st of xdoc.getElementsByTagName('style:style')) {
+    const nm = st.getAttribute('style:name'); const tp = st.getElementsByTagName('style:text-properties')[0]; if (!nm || !tp) continue;
+    styleMap[nm] = { b: tp.getAttribute('fo:font-weight') === 'bold', i: tp.getAttribute('fo:font-style') === 'italic', u: !!tp.getAttribute('style:text-underline-style') && tp.getAttribute('style:text-underline-style') !== 'none', s: !!tp.getAttribute('style:text-line-through-style') && tp.getAttribute('style:text-line-through-style') !== 'none' };
+  }
+  const runInner = el => {
+    let seg = '';
+    for (const node of el.childNodes) {
+      if (node.nodeType === 3) { seg += esc(node.textContent); continue; }
+      const nm = node.nodeName;
+      if (nm === 'text:tab') seg += COLSEP;
+      else if (nm === 'text:line-break') seg += '<br>';
+      else if (nm === 'text:s') { const c = +(node.getAttribute('text:c') || 1); seg += '&nbsp;'.repeat(c); }
+      else if (nm === 'text:span') { let inner = runInner(node); const f = styleMap[node.getAttribute('text:style-name')] || {}; if (f.s) inner = '<s>' + inner + '</s>'; if (f.u) inner = '<u>' + inner + '</u>'; if (f.i) inner = '<em>' + inner + '</em>'; if (f.b) inner = '<strong>' + inner + '</strong>'; seg += inner; }
+      else seg += runInner(node);
+    }
+    return seg;
+  };
+  let html = '';
+  const body = xdoc.getElementsByTagName('office:text')[0]; if (!body) return '<p><br></p>';
+  for (const el of body.children) {
+    const nm = el.nodeName;
+    if (nm === 'text:h') { const lv = Math.max(1, Math.min(3, +(el.getAttribute('text:outline-level') || 1))); html += `<h${lv}>${runInner(el) || '<br>'}</h${lv}>`; }
+    else if (nm === 'text:p') html += `<p>${runInner(el) || '<br>'}</p>`;
+    else if (nm === 'text:list') { for (const li of el.getElementsByTagName('text:p')) html += `<p>• ${runInner(li)}</p>`; }
+  }
+  return html || '<p><br></p>';
+}
+async function importOdt(file) {
+  toast('Öffne OpenDocument …');
+  let zip; try { zip = await unzipRead(await file.arrayBuffer()); } catch (_) { toast('Datei nicht lesbar (kein gültiges .odt).'); return; }
+  const part = zip['content.xml']; if (!part) { toast('Keine ODF-Inhalte gefunden.'); return; }
+  const html = odtToHtml(new TextDecoder().decode(part));
+  createDoc({ titel: (file.name || 'Dokument').replace(/\.odt$/i, ''), html });
+  toast('OpenDocument geöffnet: ' + d_title());
+}
+function d_title() { return doc ? doc.titel : ''; }
 function buildOdt() {
   const enc = new TextEncoder(), blocks = exportBlocks();
   const spanOf = r => {
@@ -1079,8 +1174,8 @@ function wire() {
     e.preventDefault();                       // nie eine Datei "ins Nichts" fallen lassen (Navigation = Datenverlust)
     const img = files.find(f => f.type.startsWith('image/'));
     if (img) { insertImageFile(img); return; }
-    const gd = files.find(f => /\.(gdoc|json)$/i.test(f.name));
-    if (gd) gd.text().then(t => ingestGdoc(t, null));
+    const gd = files.find(f => /\.(paper|gdoc|json|docx|odt)$/i.test(f.name));
+    if (gd) { if (/\.docx$/i.test(gd.name)) importDocx(gd); else if (/\.odt$/i.test(gd.name)) importOdt(gd); else gd.text().then(t => ingestGdoc(t, null)); }
   });
   editor.addEventListener('paste', e => {
     for (const it of (e.clipboardData?.items || [])) {
@@ -1185,8 +1280,9 @@ function wire() {
     const files = [...(e.dataTransfer?.files || [])];
     if (!files.length) return;
     e.preventDefault();                       // verhindert Wegnavigieren bei Datei-Drop
-    const f = files.find(f => /\.(paper|gdoc|json)$/i.test(f.name));
-    if (f) f.text().then(t => ingestGdoc(t, null));
+    const f = files.find(f => /\.(paper|gdoc|json|docx|odt)$/i.test(f.name));
+    if (!f) return;
+    if (/\.docx$/i.test(f.name)) importDocx(f); else if (/\.odt$/i.test(f.name)) importOdt(f); else f.text().then(t => ingestGdoc(t, null));
   });
 
   // Schutz vor Datenverlust beim Schliessen

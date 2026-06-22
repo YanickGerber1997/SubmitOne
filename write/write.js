@@ -902,30 +902,34 @@ function dxParaBlock(p, ctx) {
 function dxTableHtml(tbl, ctx) {
   const tblPr = dxKid(tbl, 'w:tblPr'); const bd = tblPr && dxKid(tblPr, 'w:tblBorders');
   const cellBorder = bd ? '1px solid #999' : '1px solid #bbb';
-  let html = '<table style="border-collapse:collapse;margin:6px 0;max-width:100%">';
+  const matrix = [], owners = [];                 // owners[col] = Zelle, die nach unten verbunden ist
   for (const tr of dxKids(tbl, 'w:tr')) {
-    html += '<tr>';
+    const cells = []; let col = 0;
     for (const tc of dxKids(tr, 'w:tc')) {
       const tcPr = dxKid(tc, 'w:tcPr');
-      let st = `border:${cellBorder};padding:3px 7px;vertical-align:top;`;
       const gs = tcPr && dxKid(tcPr, 'w:gridSpan'); const span = gs ? +gs.getAttribute('w:val') : 1;
+      const vm = tcPr && dxKid(tcPr, 'w:vMerge'); const vmVal = vm ? (vm.getAttribute('w:val') || 'continue') : null;
+      if (vmVal === 'continue') { const o = owners[col]; if (o) o.rowspan++; col += span; continue; }   // gehört zur Zelle darüber
+      let st = `border:${cellBorder};padding:3px 7px;vertical-align:top;`;
       const shd = tcPr && dxKid(tcPr, 'w:shd'); if (shd) { const f = shd.getAttribute('w:fill'); if (f && f !== 'auto') st += `background:#${f};`; }
       const w = tcPr && dxKid(tcPr, 'w:tcW'); if (w) { const ww = +w.getAttribute('w:w'); if (ww > 0) st += `width:${Math.round(ww / 20)}pt;`; }
-      const va = tcPr && dxKid(tcPr, 'w:vAlign'); if (va) { const v = va.getAttribute('w:val'); if (v === 'center') st = st.replace('vertical-align:top;', 'vertical-align:middle;'); }
+      const va = tcPr && dxKid(tcPr, 'w:vAlign'); if (va && va.getAttribute('w:val') === 'center') st = st.replace('vertical-align:top;', 'vertical-align:middle;');
       let inner = ''; for (const p of dxKids(tc, 'w:p')) inner += dxParaBlock(p, ctx).html;
       for (const nt of dxKids(tc, 'w:tbl')) inner += dxTableHtml(nt, ctx);
-      html += `<td${span > 1 ? ` colspan="${span}"` : ''} style="${st}">${inner || '<br>'}</td>`;
+      const cell = { span, rowspan: 1, st, inner: inner || '<br>' }; cells.push(cell);
+      owners[col] = vmVal === 'restart' ? cell : null; for (let k = 1; k < span; k++) owners[col + k] = null;
+      col += span;
     }
-    html += '</tr>';
+    matrix.push(cells);
   }
+  let html = '<table style="border-collapse:collapse;margin:6px 0;max-width:100%">';
+  matrix.forEach(cells => { html += '<tr>'; cells.forEach(c => { html += `<td${c.span > 1 ? ` colspan="${c.span}"` : ''}${c.rowspan > 1 ? ` rowspan="${c.rowspan}"` : ''} style="${c.st}">${c.inner}</td>`; }); html += '</tr>'; });
   return html + '</table>';
 }
-function docxToHtml(documentXml, ctx) {
-  const x = new DOMParser().parseFromString(documentXml, 'application/xml');
-  const body = x.getElementsByTagName('w:body')[0]; if (!body) return '<p><br></p>';
+function dxRenderContainer(root, ctx) {
   let html = '', listOpen = null;
   const closeList = () => { if (listOpen) { html += `</${listOpen}>`; listOpen = null; } };
-  for (const el of body.children) {
+  for (const el of root.children) {
     if (el.nodeName === 'w:p') {
       const blk = dxParaBlock(el, ctx);
       if (blk.list) { if (listOpen !== blk.list) { closeList(); html += `<${blk.list}>`; listOpen = blk.list; } html += blk.html; }
@@ -933,7 +937,12 @@ function docxToHtml(documentXml, ctx) {
     } else if (el.nodeName === 'w:tbl') { closeList(); html += dxTableHtml(el, ctx); }
   }
   closeList();
-  return html || '<p><br></p>';
+  return html;
+}
+function docxToHtml(documentXml, ctx) {
+  const x = new DOMParser().parseFromString(documentXml, 'application/xml');
+  const body = x.getElementsByTagName('w:body')[0]; if (!body) return '<p><br></p>';
+  return dxRenderContainer(body, ctx) || '<p><br></p>';
 }
 function dxBytesToDataUrl(bytes, name) {
   const ext = (name.split('.').pop() || '').toLowerCase();
@@ -948,11 +957,32 @@ function dxParseRels(xml, zip, base) {
     const id = r.getAttribute('Id'), tgt = r.getAttribute('Target'), mode = r.getAttribute('TargetMode');
     if (!id || !tgt) continue;
     if (mode === 'External' || /^https?:|^mailto:/i.test(tgt)) { rels[id] = tgt; continue; }
-    const path = (base + tgt).replace(/^\//, '').replace(/[^/]+\/\.\.\//g, '');
-    const bytes = zip[path] || zip['word/' + tgt.replace(/^\//, '')];
-    if (bytes) rels[id] = dxBytesToDataUrl(bytes, tgt); else rels[id] = tgt;
+    if (/\.(png|jpe?g|gif|bmp|webp|emf|wmf)$/i.test(tgt)) {          // nur Bilder als Data-URL einbetten
+      const path = (base + tgt).replace(/^\//, '').replace(/[^/]+\/\.\.\//g, '');
+      const bytes = zip[path] || zip['word/' + tgt.replace(/^\//, '')];
+      rels[id] = bytes ? dxBytesToDataUrl(bytes, tgt) : tgt;
+    } else { rels[id] = tgt.replace(/^\//, ''); }                    // z. B. header1.xml / Hyperlink-Anker
   }
   return rels;
+}
+function dxNear(a, b) { return Math.abs(a - b) < 220; }
+function dxParseSect(documentXml) {
+  const x = new DOMParser().parseFromString(documentXml, 'application/xml');
+  const sect = [...x.getElementsByTagName('w:sectPr')].pop(); const o = {};
+  if (!sect) return o;
+  const tw2mm = t => Math.max(0, Math.min(60, Math.round(+t * 25.4 / 1440)));
+  const sz = dxKid(sect, 'w:pgSz');
+  if (sz) { const w = +sz.getAttribute('w:w'), h = +sz.getAttribute('w:h'); o.orient = (sz.getAttribute('w:orient') === 'landscape' || w > h) ? 'quer' : 'hoch'; const width = Math.min(w, h); o.format = dxNear(width, 11906) ? 'A4' : dxNear(width, 12240) ? 'Letter' : dxNear(width, 8391) ? 'A5' : 'A4'; }
+  const mg = dxKid(sect, 'w:pgMar');
+  if (mg) o.margins = { top: tw2mm(mg.getAttribute('w:top') || 1440), right: tw2mm(mg.getAttribute('w:right') || 1440), bottom: tw2mm(mg.getAttribute('w:bottom') || 1440), left: tw2mm(mg.getAttribute('w:left') || 1440) };
+  const pick = arr => { const a = [...arr]; const def = a.find(r => r.getAttribute('w:type') === 'default') || a.find(r => r.getAttribute('w:type') !== 'first') || a[0]; return def ? def.getAttribute('r:id') : null; };
+  o.headerId = pick(dxKids(sect, 'w:headerReference')); o.footerId = pick(dxKids(sect, 'w:footerReference'));
+  return o;
+}
+function dxPartToHtml(xmlStr, ctx) {
+  if (!xmlStr) return ''; const x = new DOMParser().parseFromString(xmlStr, 'application/xml');
+  const root = x.getElementsByTagName('w:hdr')[0] || x.getElementsByTagName('w:ftr')[0]; if (!root) return '';
+  return dxRenderContainer(root, ctx);
 }
 function dxParseNumbering(xml) {
   const num = {}; if (!xml) return num;
@@ -969,8 +999,17 @@ async function importDocx(file) {
   const ctx = dxParseStyles(get('word/styles.xml'));
   ctx.rels = dxParseRels(get('word/_rels/document.xml.rels'), zip, 'word/');
   ctx.numbering = dxParseNumbering(get('word/numbering.xml'));
-  const html = docxToHtml(dec.decode(part), ctx);
-  createDoc({ titel: (file.name || 'Dokument').replace(/\.docx$/i, ''), html });
+  const docStr = dec.decode(part);
+  const html = docxToHtml(docStr, ctx);
+  const sect = dxParseSect(docStr);
+  const st = newDocObject().einstellungen;
+  if (sect.format) st.format = sect.format;
+  if (sect.orient) st.ausrichtung = sect.orient;
+  if (sect.margins) st.margins = sect.margins;
+  let kopf = '', fuss = '';
+  if (sect.headerId && ctx.rels[sect.headerId]) kopf = dxPartToHtml(get('word/' + ctx.rels[sect.headerId]), ctx);
+  if (sect.footerId && ctx.rels[sect.footerId]) fuss = dxPartToHtml(get('word/' + ctx.rels[sect.footerId]), ctx);
+  createDoc({ titel: (file.name || 'Dokument').replace(/\.docx$/i, ''), html, kopf, fuss, einstellungen: st });
   toast('Word-Datei geöffnet: ' + d_title());
 }
 function odtToHtml(xml) {

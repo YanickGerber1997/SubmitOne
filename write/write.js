@@ -1586,8 +1586,8 @@ function wire() {
   b.querySelectorAll('.bb[data-cmd]').forEach(btn => btn.addEventListener('mousedown', e => { e.preventDefault(); cmd(btn.dataset.cmd); updateBubble(); }));
   $('#bbHl').addEventListener('mousedown', e => { e.preventDefault(); highlight($('#hlColor').value); });
   $('#bbLink').addEventListener('mousedown', e => { e.preventDefault(); insertLink(); });
-  document.addEventListener('selectionchange', () => { updateBubble(); updateTableTools(); const s = getSelection(); if (s && s.anchorNode && editor.contains(s.anchorNode)) syncToolbar(); });
-  $('#canvas').addEventListener('scroll', () => { if (!b.hidden) updateBubble(); if (!$('#tabletools').hidden) updateTableTools(); });
+  document.addEventListener('selectionchange', () => { updateBubble(); updateTableTools(); const s = getSelection(); if (s && s.anchorNode && editor.contains(s.anchorNode)) syncToolbar(); writeCellPos(); });
+  $('#canvas').addEventListener('scroll', () => { if (!b.hidden) updateBubble(); if (!$('#tabletools').hidden) updateTableTools(); writeCellPos(); });
 
   // Tabellen-Werkzeuge
   $('#tabletools').addEventListener('mousedown', e => { const a = e.target.closest('button')?.dataset.tt; if (a) { e.preventDefault(); tableAction(a); } });
@@ -2356,6 +2356,38 @@ function idxToCol(i) { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; 
 let selC = 0, selR = 0;   // 0-basiert (Spalte, Zeile)
 const DISP_MIN_COLS = 6, DISP_MIN_ROWS = 20;
 function cellKey(c, r) { return idxToCol(c) + (r + 1); }
+
+/* ---- Etappe 2: Zelle direkt im Write-Blatt erkennen & markieren (additiv, ohne den Editor zu verändern) ---- */
+function writeCellPos() {
+  const pos = $('#cellPos'), hi = $('#cellHi');
+  const clear = () => { if (pos) pos.textContent = ''; if (hi) hi.hidden = true; };
+  if (!doc || appEl.classList.contains('calc-mode')) { clear(); return; }
+  const sel = document.getSelection();
+  if (!sel || !sel.rangeCount || !sel.anchorNode || !editor.contains(sel.anchorNode)) { clear(); return; }
+  let el = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
+  const block = el && el.closest('p,h1,h2,h3,blockquote,pre,li,div');
+  if (!block || !editor.contains(block) || block.closest('.pgbreak-gap')) { clear(); return; }
+  let rowEl = block; while (rowEl.parentElement && rowEl.parentElement !== editor) rowEl = rowEl.parentElement;
+  const rows = [...editor.children].filter(b => !b.classList.contains('pgbreak-gap'));
+  const r = rows.indexOf(rowEl); if (r < 0) { clear(); return; }
+  let col = 0;
+  try { const rg = document.createRange(); rg.setStart(rowEl, 0); rg.setEnd(sel.anchorNode, sel.anchorOffset); col = rg.cloneContents().querySelectorAll('.colsep').length; } catch (_) {}
+  if (pos) pos.textContent = 'Zelle ' + idxToCol(col) + (r + 1);
+  drawWriteCellHi(rowEl, col);
+}
+function drawWriteCellHi(rowEl, col) {
+  const hi = $('#cellHi'); if (!hi) return;
+  const seps = [...rowEl.querySelectorAll('.colsep')];
+  try {
+    const rg = document.createRange();
+    if (col === 0) rg.setStart(rowEl, 0); else rg.setStartAfter(seps[col - 1]);
+    if (col < seps.length) rg.setEndBefore(seps[col]); else rg.setEnd(rowEl, rowEl.childNodes.length);
+    const rc = rg.getBoundingClientRect();
+    if (rc.height < 2) { hi.hidden = true; return; }
+    hi.style.left = rc.left + 'px'; hi.style.top = rc.top + 'px'; hi.style.width = Math.max(10, rc.width) + 'px'; hi.style.height = rc.height + 'px';
+    hi.hidden = false;
+  } catch (_) { hi.hidden = true; }
+}
 
 /* ---- Formel-Engine (Excel-artig): + - * / ^, Klammern, Vergleiche, Funktionen, Verschachtelung ---- */
 function gridCellRaw(c, r) { return cellText(gridGet(curGrid, c, r)); }

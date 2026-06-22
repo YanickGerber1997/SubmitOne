@@ -1956,13 +1956,18 @@ function renderCalc() { renderSheet(); fitCalcRows(); highlightSel(); updateStat
 // Zeilenzahl per ECHTER Messung so setzen, dass die Tabelle genau ein A4-Blatt füllt (nicht zu hoch)
 function fitCalcRows() {
   if (!doc || activePage().typ !== 'calc' || activePage().dispRows) return;
-  const t = gEl(); if (!t) return; const td = t.querySelector('td:not(.textcell)') || t.querySelector('td'); if (!td) return;
+  const t = gEl(); if (!t) return;
   const z = parseFloat(page.style.zoom) || 1;
-  const rowH = td.getBoundingClientRect().height / z; if (rowH < 8) return;
+  const emptyTd = t.querySelector('td:not(.textcell)'); if (!emptyTd) return;
+  const rowH = emptyTd.getBoundingClientRect().height / z; if (rowH < 8) return;
+  const trs = t.querySelectorAll('tr');
+  const usedRows = Math.max(0, calcUsedRange().maxR + 1);
+  let contentH = 0; for (let i = 0; i < usedRows && i < trs.length; i++) contentH += trs[i].getBoundingClientRect().height / z;   // echte Höhe des Inhalts
   const hH = $('#zoneH').offsetHeight || 60, fH = $('#zoneF').offsetHeight || 60;
-  const usable = pageDims().h * MM - hH - fH - 12 * MM - 4;        // A4-Inhaltshöhe (Seite min. A4)
-  const want = Math.max(5, Math.floor(usable / rowH));
-  if (want !== gridRows && want >= (calcUsedRange().maxR + 1)) { calcFitRows = want; renderSheet(); }
+  const usable = pageDims().h * MM - hH - fH - 12 * MM - 6;        // A4-Inhaltshöhe
+  const emptyRows = Math.max(0, Math.floor((usable - contentH) / rowH));   // nur den REST mit Leerzeilen füllen
+  const want = usedRows + emptyRows;
+  if (want !== gridRows && want >= usedRows) { calcFitRows = want; renderSheet(); }
 }
 // Zahlenformate je Zelle + Spaltenbreiten (am Seiten-Objekt gespeichert, übersteht Speichern/Öffnen)
 function curFmt() { const p = activePage(); if (!p.fmt || typeof p.fmt !== 'object') p.fmt = {}; return p.fmt; }

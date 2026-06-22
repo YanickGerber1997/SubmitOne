@@ -139,11 +139,14 @@ const COLSEP = '<span class="colsep" contenteditable="false">⇥</span>';
 function cellText(frag) { const d = document.createElement('div'); d.innerHTML = frag || ''; return (d.textContent || '').replace(/​/g, '').trim(); }
 function htmlToGrid(html) {
   const tpl = document.createElement('template'); tpl.innerHTML = html || '';
-  const zeilen = [];
+  const zeilen = [], stops = [];   // stops[i] = Position (mm ab Rand), an der Spalte i endet → gemeinsame Spalten für Write & Calc
   const blockRow = b => {
     const cells = []; let cur = '';
     b.childNodes.forEach(n => {
-      if (n.nodeType === 1 && n.classList && n.classList.contains('colsep')) { cells.push(cur); cur = ''; }
+      if (n.nodeType === 1 && n.classList && n.classList.contains('colsep')) {
+        if (n.dataset && n.dataset.tab) { const i = cells.length, v = parseFloat(n.dataset.tab); if (v > 0) stops[i] = Math.max(stops[i] || 0, v); }
+        cells.push(cur); cur = '';
+      }
       else if (n.nodeType === 3 && n.textContent.indexOf('\t') >= 0) {       // echte Tabs im Text = Spalten
         const parts = n.textContent.split('\t');
         parts.forEach((p, idx) => { if (idx > 0) { cells.push(cur); cur = ''; } cur += esc(p); });
@@ -167,14 +170,18 @@ function htmlToGrid(html) {
     } else blockRow(b);
   });
   if (!zeilen.length) zeilen.push({ tag: 'p', cells: [''] });
-  return { cols: Math.max(1, ...zeilen.map(z => z.cells.length)), zeilen };
+  return { cols: Math.max(1, ...zeilen.map(z => z.cells.length)), zeilen, colStops: stops };
+}
+function colsepAt(i, grid) {   // Spaltentrenner – mit Tab-Position (mm), falls bekannt
+  const pos = grid && grid.colStops && grid.colStops[i];
+  return pos != null ? `<span class="colsep" data-tab="${pos}" contenteditable="false">⇥</span>` : COLSEP;
 }
 function gridToHtml(grid) {
   return grid.zeilen.map(z => {
     const tag = /^h[1-3]$/.test(z.tag) ? z.tag : 'p';
     const cells = (z.cells.length ? z.cells : ['']).slice();
     while (cells.length > 1 && (cells[cells.length - 1] || '') === '') cells.pop();   // leere End-Spalten weg → keine überflüssigen Tabs in Write
-    const inner = cells.map(c => c || '').join(COLSEP);
+    let inner = ''; cells.forEach((c, i) => { inner += (c || ''); if (i < cells.length - 1) inner += colsepAt(i, grid); });
     return `<${tag}>${inner || '<br>'}</${tag}>`;
   }).join('') || '<p><br></p>';
 }
@@ -2558,7 +2565,8 @@ function renderSheet() {
   const contentMm = Math.max(60, d.w - m.left - m.right);
   const colsPP = Math.max(4, Math.floor(contentMm / 26));   // Auto-Spaltenzahl, die bequem auf die Blattbreite passt
   const wantC = activePage().dispCols | 0, wantR = activePage().dispRows | 0;
-  const cols = Math.max(ext.cols, wantC > 0 ? wantC : colsPP);   // gewünschte Spaltenzahl (dünner = mehr)
+  const cs = curGrid.colStops || [];   // Spaltengrenzen aus den Tabstopps (gemeinsam mit Write) – Index = Spalte
+  const cols = Math.max(ext.cols, cs.length ? cs.length + 1 : 0, wantC > 0 ? wantC : colsPP);   // gewünschte Spaltenzahl (dünner = mehr)
   // Standard-Zeilenzahl so, dass genau EIN A4-Blatt gefüllt ist (sonst wird das Blatt zu lang)
   const hH = $('#zoneH').offsetHeight || 60, fH = $('#zoneF').offsetHeight || 60;
   const fs = +(doc.einstellungen.schriftgroesse) || 16, lh = +(doc.einstellungen.zeilenabstand) || 1.5;
@@ -2568,8 +2576,14 @@ function renderSheet() {
   const rows = Math.max(ext.rows, wantR > 0 ? wantR : (calcFitRows || rowsPP));
   gridCols = cols; gridRows = rows;
   const cw = curColW();
-  let cg = '<colgroup>';   // keine Kopf-Spalte mehr – A/B/C & 1/2/3 liegen als Lineale AUSSERHALB des Blatts
-  for (let c = 0; c < cols; c++) cg += cw[c] ? `<col style="width:${cw[c]}px">` : '<col>';
+  let cg = '<colgroup>', prev = 0;   // keine Kopf-Spalte – A/B/C & 1/2/3 liegen als Lineale AUSSERHALB; Breiten aus Tabstopps
+  for (let c = 0; c < cols; c++) {
+    const stopEnd = c < cs.length ? cs[c] : null;
+    let w = cw[c];                                              // manuelle Breite hat Vorrang
+    if (!w && stopEnd != null && stopEnd > prev) w = Math.round((stopEnd - prev) * MM);
+    if (stopEnd != null) prev = stopEnd;
+    cg += w > 0 ? `<col style="width:${w}px">` : '<col>';
+  }
   cg += '</colgroup>';
   const rh = curRowH();
   let body = '<tbody>';

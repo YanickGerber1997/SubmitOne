@@ -25,7 +25,7 @@ function fmtDate(iso) {
 
 /* ---------- HTML-Sanitisierung (gegen XSS / kaputte Dateien) ---------- */
 const ALLOWED_TAGS = new Set(['P', 'BR', 'H1', 'H2', 'H3', 'H4', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'SPAN', 'FONT', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'PRE', 'CODE', 'A', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'IMG', 'HR', 'DIV', 'MARK', 'SUB', 'SUP']);
-const ALLOWED_ATTR = { '*': ['style', 'class', 'id'], A: ['href', 'target', 'rel', 'data-go'], IMG: ['src', 'alt', 'width', 'height'], FONT: ['face', 'color', 'size'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'], DIV: ['contenteditable', 'data-toc'], SPAN: ['contenteditable', 'data-tab', 'data-lead', 'data-align'] };
+const ALLOWED_ATTR = { '*': ['style', 'class', 'id'], A: ['href', 'target', 'rel', 'data-go'], IMG: ['src', 'alt', 'width', 'height'], FONT: ['face', 'color', 'size'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan'], DIV: ['contenteditable', 'data-toc'], SPAN: ['contenteditable', 'data-tab', 'data-lead', 'data-align', 'data-fx'] };
 function sanitizeHtml(html) {
   try {
     const tpl = document.createElement('template');
@@ -442,7 +442,9 @@ function normalizeEmpty() {
   if (editor.querySelector('img,table,hr')) return;
   if (!(editor.innerText || '').replace(/​/g, '').trim() && editor.innerHTML !== '') editor.innerHTML = '';
 }
-function afterEdit() { normalizeEmpty(); scheduleSave(); refreshAll(); }
+function afterEdit() { normalizeEmpty(); scheduleSave(); refreshAll(); scheduleRecompute(); }
+let _fxTimer = null;
+function scheduleRecompute() { clearTimeout(_fxTimer); _fxTimer = setTimeout(recomputeFormulas, 250); }
 
 /* ---------- aktiven Zustand der Buttons spiegeln ---------- */
 function syncCalcToolbar() {
@@ -1419,9 +1421,10 @@ function wire() {
   $('#wfInput').addEventListener('keydown', e => {
     if (e.key !== 'Enter') return; e.preventDefault();
     if (!wfCell || !editor.contains(wfCell.rowEl)) { toast('Bitte zuerst eine Zelle im Blatt anklicken.'); return; }
-    let txt = $('#wfInput').value;
-    if (txt.trim().startsWith('=')) { const v = writeEvalFormula(txt.trim(), wfCell.r, wfCell.c); txt = (v == null ? '' : String(v)); }
-    writeSetCellSeg(wfCell.rowEl, wfCell.c, txt); editor.focus();
+    const raw = $('#wfInput').value;
+    if (raw.trim().startsWith('=')) { const f = raw.trim(); const v = writeEvalFormula(f, wfCell.r, wfCell.c); writeSetCellSegHTML(wfCell.rowEl, wfCell.c, `<span class="fx" data-fx="${esc(f)}" contenteditable="false">${esc(v == null ? '' : String(v))}</span>`); }
+    else writeSetCellSeg(wfCell.rowEl, wfCell.c, raw);
+    editor.focus();
   });
 
   // Seiten-Reiter (Navigator)
@@ -2321,7 +2324,7 @@ function renderActivePage() {
   const gt = $('#gridToggle'); if (gt) gt.classList.toggle('on', calc);   // „Gitter" zeigt, ob die Linien sichtbar sind
   appEl.classList.toggle('calc-mode', calc);
   if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; calcFitRows = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
-  else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.sp-err', editor).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); $$('.pgbreak-gap', editor).forEach(g => g.remove()); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); alignColseps(); paginateLater(); }
+  else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.sp-err', editor).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); $$('.pgbreak-gap', editor).forEach(g => g.remove()); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.fx', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); alignColseps(); paginateLater(); recomputeFormulas(); }
 }
 // Typ der AKTIVEN Seite wechseln (Modus-Pille)
 function setPageType(typ) {
@@ -2383,7 +2386,7 @@ function writeCellPos() {
   if (pos) pos.textContent = 'Zelle ' + idxToCol(col) + (r + 1);
   wfCell = { r, c: col, rowEl };
   const ref = $('#wfRef'); if (ref) ref.textContent = idxToCol(col) + (r + 1);
-  const wf = $('#wfInput'); if (wf && document.activeElement !== wf) wf.value = writeCellSegText(rowEl, col);
+  const wf = $('#wfInput'); if (wf && document.activeElement !== wf) wf.value = writeCellFx(rowEl, col) || writeCellSegText(rowEl, col);
   drawWriteCellHi(rowEl, col);
 }
 let wfCell = null;
@@ -2394,10 +2397,31 @@ function writeCellRange(rowEl, col) {
   return rg;
 }
 function writeCellSegText(rowEl, col) { try { return writeCellRange(rowEl, col).toString().replace(/​/g, '').trim(); } catch (_) { return ''; } }
+function writeCellFx(rowEl, col) { try { const fx = writeCellRange(rowEl, col).cloneContents().querySelector('.fx[data-fx]'); return fx ? fx.getAttribute('data-fx') : null; } catch (_) { return null; } }
 function writeSetCellSeg(rowEl, col, text) {
   let rg; try { rg = writeCellRange(rowEl, col); } catch (_) { return; }
   rg.deleteContents(); rg.insertNode(document.createTextNode(text)); rowEl.normalize();
   afterEdit(); alignColseps(); writeCellPos();
+}
+function writeSetCellSegHTML(rowEl, col, html) {
+  let rg; try { rg = writeCellRange(rowEl, col); } catch (_) { return; }
+  rg.deleteContents(); const tpl = document.createElement('template'); tpl.innerHTML = html; rg.insertNode(tpl.content); rowEl.normalize();
+  afterEdit(); alignColseps(); writeCellPos();
+}
+// Live nachrechnende Formeln: =Formel wird als <span class="fx" data-fx> gespeichert (zeigt das Ergebnis) und bei Änderungen neu berechnet
+function recomputeFormulas() {
+  const fxs = [...editor.querySelectorAll('.fx[data-fx]')]; if (!fxs.length) return;
+  const rows = [...editor.children].filter(b => !b.classList.contains('pgbreak-gap'));
+  const grid = htmlToGrid(cleanEditorHTML()), locs = [];
+  fxs.forEach(span => {
+    let rowEl = span; while (rowEl.parentElement && rowEl.parentElement !== editor) rowEl = rowEl.parentElement;
+    const r = rows.indexOf(rowEl); if (r < 0) return;
+    let c = 0; try { const rg = document.createRange(); rg.setStart(rowEl, 0); rg.setEndBefore(span); c = rg.cloneContents().querySelectorAll('.colsep').length; } catch (_) {}
+    const fx = span.getAttribute('data-fx'); locs.push({ span, r, c }); gridEnsure(grid, c, r); grid.zeilen[r].cells[c] = fx;   // Formel ins Raster → echte Rekursion/Abhängigkeiten
+  });
+  const saved = curGrid; curGrid = grid;
+  locs.forEach(l => { let v; try { v = evalCell(l.c, l.r); } catch (_) { v = '#FEHLER'; } const t = (v == null ? '' : String(v)); if (l.span.textContent !== t) l.span.textContent = t; });
+  curGrid = saved;
 }
 // Formel über das Editor-Raster rechnen (temporär curGrid setzen – dieselbe Engine wie Calc)
 function writeEvalFormula(text, r, c) {

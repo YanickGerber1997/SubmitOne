@@ -1416,8 +1416,13 @@ function wire() {
   $('#pvClose').addEventListener('click', () => $('#previewOverlay').hidden = true);
   $('#pvPrint').addEventListener('click', printFromPreview);
 
-  // „Gitter"-Schalter (Statusleiste): blendet die Tabellen-Linien ein/aus – dasselbe Blatt, nur als Tabelle rechenbar
-  $('#gridToggle').addEventListener('click', () => { if (!doc) return; setPageType(activePage().typ === 'calc' ? 'write' : 'calc'); });
+  // „Gitter"-Schalter (Statusleiste): blendet nur die Gitterlinien ein/aus – kein Engine-Wechsel, kein Datenverlust
+  $('#gridToggle').addEventListener('click', () => {
+    if (!doc) return;
+    if (activePage().typ === 'calc') appEl.classList.toggle('grid-off');   // Calc: Linien ausblenden
+    else appEl.classList.toggle('grid-lines');                             // Write: Vollgitter einblenden
+    syncGridToggle();
+  });
   // Formelzeile im Write-Blatt (Etappe 3): Enter schreibt Wert/Formel-Ergebnis in die angeklickte Zelle
   $('#wfInput').addEventListener('keydown', e => {
     if (e.key !== 'Enter') return; e.preventDefault();
@@ -2318,13 +2323,14 @@ function printFromPreview() {
    ============================================================ */
 const MODE_META = { write: ['✍', 'Submit Write'], calc: ['▦', 'Submit Calc'] };
 function pageMode(p) { return p.typ === 'calc' ? 'calc' : 'write'; }
+function syncGridToggle() { const gt = $('#gridToggle'); if (!gt || !doc) return; const on = activePage().typ === 'calc' ? !appEl.classList.contains('grid-off') : appEl.classList.contains('grid-lines'); gt.classList.toggle('on', on); }
 function renderActivePage() {
   if (!doc) return;
   const p = activePage(), m = pageMode(p);
   document.body.dataset.mode = m;
   const calc = (m === 'calc');
-  const gt = $('#gridToggle'); if (gt) gt.classList.toggle('on', calc);   // „Gitter" zeigt, ob die Linien sichtbar sind
   appEl.classList.toggle('calc-mode', calc);
+  syncGridToggle();   // „Gitter"-Knopf spiegelt, ob die Linien sichtbar sind
   if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; calcFitRows = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
   else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.sp-err', editor).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); $$('.pgbreak-gap', editor).forEach(g => g.remove()); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.fx', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); alignColseps(); paginateLater(); recomputeFormulas(); }
 }

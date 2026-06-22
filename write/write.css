@@ -367,6 +367,12 @@ body[data-mode="write"] .wfbar{display:flex}
 .app.focus .wfbar{display:none}
 .wf-hint{color:var(--ink-faint);font-size:11px;white-space:nowrap}
 .editor .fx{background:rgba(31,157,87,.08);border-radius:2px;padding:0 1px}   /* berechnete Formel-Zelle */
+/* „Gitter" ein → Write-Blatt zeigt das volle Raster (Spalten- + Zeilenlinien) wie Calc */
+.app.grid-lines .editor .colsep{border-right-color:#9fb2d8}
+.app.grid-lines .editor>p,.app.grid-lines .editor>h1,.app.grid-lines .editor>h2,.app.grid-lines .editor>h3,.app.grid-lines .editor>blockquote,.app.grid-lines .editor>pre,.app.grid-lines .editor>ul,.app.grid-lines .editor>ol{border-bottom:1px solid var(--line);margin-bottom:0;padding-bottom:2px}
+.app.grid-lines .editor>*:first-child{border-top:1px solid var(--line)}
+/* „Gitter" aus in Calc → Tabellenlinien unsichtbar */
+.app.grid-off .cgrid td{border-color:transparent !important}
 .cellpos{min-width:62px;color:var(--ink-soft);font-weight:600;font-variant-numeric:tabular-nums}
 .cell-hi{position:fixed;pointer-events:none;z-index:40;border:2px solid var(--accent);background:rgba(47,109,246,.10);border-radius:3px}
 .grid-toggle{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;transition:.15s}

@@ -495,7 +495,7 @@ body[data-theme="dark"] .bubble{background:#2a3140;border:1px solid var(--line)}
 body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .editor hr{border:none;border-top:1px solid var(--line);margin:1.2em 0}
 /* Spaltentrenner (Tab = Spalte) – verbindet Write- und Calc-Ansicht */
-.editor .colsep{display:inline-block;min-width:30px;text-align:center;color:var(--ink-faint);opacity:.45;user-select:none;font-size:11px;vertical-align:baseline}
+.editor .colsep{display:inline-block;min-width:30px;text-align:center;color:var(--ink-faint);opacity:.45;user-select:none;font-size:11px;vertical-align:baseline;border-right:1.5px solid var(--line)}   /* Spaltenlinie an der Tab-Position – das Raster ist auch in Write sichtbar */
 /* Automatisches Inhaltsverzeichnis */
 .editor .toc{position:relative;border:1px solid var(--line);border-radius:10px;padding:14px 18px 16px;margin:1em 0;background:var(--surface-2);user-select:none}
 .editor .toc-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line)}

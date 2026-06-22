@@ -1036,6 +1036,25 @@ function wire() {
   $('#btnFocusExit').addEventListener('click', toggleFocus);
   $('#btnTheme').addEventListener('click', () => setTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark'));
 
+  // Schöne Hover-Tooltips aus den title-Attributen
+  let tipEl = null, tipTimer = null;
+  const hideTip = () => { clearTimeout(tipTimer); if (tipEl && tipEl.dataset.tip != null) { tipEl.setAttribute('title', tipEl.dataset.tip); delete tipEl.dataset.tip; } tipEl = null; $('#tip').hidden = true; };
+  document.addEventListener('mouseover', e => {
+    const t = e.target.closest('[title]'); if (!t || t === tipEl) return;
+    hideTip(); const txt = t.getAttribute('title'); if (!txt) return; tipEl = t;
+    tipTimer = setTimeout(() => {
+      if (!tipEl) return; tipEl.dataset.tip = txt; tipEl.removeAttribute('title');
+      const tip = $('#tip'); tip.textContent = txt; tip.hidden = false;
+      const r = tipEl.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+      const left = Math.max(8, Math.min(r.left + r.width / 2 - tw / 2, window.innerWidth - tw - 8));
+      let top = r.bottom + 8; if (top + th > window.innerHeight - 8) top = r.top - th - 8;
+      tip.style.left = left + 'px'; tip.style.top = top + 'px';
+    }, 320);
+  });
+  document.addEventListener('mouseout', e => { if (tipEl && (!e.relatedTarget || !tipEl.contains(e.relatedTarget))) hideTip(); });
+  document.addEventListener('mousedown', hideTip, true);
+  window.addEventListener('scroll', hideTip, true);
+
   // Export-Menü
   const exMenu = $('#exportMenu');
   $('#btnExport').addEventListener('click', e => { e.stopPropagation(); exMenu.hidden = !exMenu.hidden; });
@@ -1047,7 +1066,7 @@ function wire() {
     $$('.snav[data-folder]').forEach(x => x.classList.remove('active')); b.classList.add('active');
     activeFolder = b.dataset.folder; renderList();
   }));
-  $('#btnSideCollapse').addEventListener('click', () => { appEl.classList.toggle('side-rail'); applyZoom(); });
+  $('#btnSideCollapse').addEventListener('click', () => { const rail = appEl.classList.toggle('side-rail'); $('#btnSideCollapse').title = rail ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'; applyZoom(); });
   $('#btnSideShow').addEventListener('click', () => appEl.classList.toggle('side-mobile'));
   $('#btnNav').addEventListener('click', () => { appEl.classList.toggle('nav-open'); });
   $('#navClose').addEventListener('click', () => appEl.classList.remove('nav-open'));

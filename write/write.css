@@ -380,9 +380,10 @@ body[data-mode="slides"] .editor img{max-width:100%}
 /* Einklappbare Icon-Leiste (links) – alles sichtbar, Hover = Info via title */
 .app.side-rail{grid-template-columns:58px var(--nav-w) minmax(0,1fr) 0}
 .app.side-rail.insp-open{grid-template-columns:58px var(--nav-w) minmax(0,1fr) var(--insp-w)}
-.app.side-rail .brand-word,.app.side-rail .side-collapse,.app.side-rail .new-doc span,
+.app.side-rail .brand-word,.app.side-rail .new-doc span,
 .app.side-rail .snav span,.app.side-rail .side-list,.app.side-rail .foot-link span,.app.side-rail .ver{display:none}
 .app.side-rail .side-brand{justify-content:center;padding:16px 0 10px}
+.app.side-rail .side-collapse{transform:rotate(180deg)}   /* eingeklappt: Pfeil zeigt nach aussen (Aufklappen) */
 .app.side-rail .new-doc{justify-content:center;margin:6px 11px;padding:11px 0}
 .app.side-rail .side-nav{padding:0 9px}
 .app.side-rail .snav{justify-content:center;padding:10px 0}
@@ -686,10 +687,16 @@ body[data-theme="dark"] .toast{background:#2a3140}
 .pdf-note-del{position:absolute;top:0;right:1px;width:15px;height:15px;border:none;background:none;color:#b33;font-size:13px;line-height:1;cursor:pointer}
 #pdfxPrint{display:none}
 
+/* ---------- Hover-Tooltip (schöner als Browser-Standard) ---------- */
+.tip{position:fixed;z-index:300;background:var(--ink);color:#fff;font-size:12px;font-family:var(--font-ui);padding:6px 10px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.28);pointer-events:none;max-width:260px;line-height:1.35;animation:tipIn .12s var(--ease)}
+.tip[hidden]{display:none}
+@keyframes tipIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+body[data-theme="dark"] .tip{background:#2a3140;border:1px solid #3a4150}
+
 /* ---------- Druck ---------- */
 @media print{
   body{background:#fff}
-  .side,.inspector,.navpane,.topbar,.ribtabs,.formatbar,.calcbar,.slidenotes,.pagetabs,.findbar,.ruler-wrap,.calc-colruler,.calc-rowruler,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.page-format,.preview-overlay,.present-overlay,.pdf-overlay,.pdf-viewer,#toast-root{display:none !important}
+  .side,.inspector,.navpane,.topbar,.ribtabs,.formatbar,.calcbar,.slidenotes,.pagetabs,.findbar,.ruler-wrap,.calc-colruler,.calc-rowruler,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.page-format,.preview-overlay,.present-overlay,.pdf-overlay,.pdf-viewer,.tip,#toast-root{display:none !important}
   /* PDF-Annotation als PDF speichern: nur die geflachten Seiten drucken */
   body.printing-pdfanno .app{display:none !important}
   body.printing-pdfanno #pdfxPrint{display:block}

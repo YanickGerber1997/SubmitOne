@@ -99,7 +99,8 @@ function newDocObject(partial = {}) {
   const t = nowIso();
   return Object.assign({
     id: uid(), titel: 'Unbenanntes Dokument', kopf: '', fuss: '',
-    seiten: [{ id: uid(), typ: 'calc', html: '' }], aktiv: 0,   // Standard = Raster (Zeilen/Spalten) als Leinwand
+    seiten: [{ id: uid(), typ: 'write', html: '' }], aktiv: 0,   // Einstieg = Write (frei schreiben), im Hintergrund das 6-Spalten-Raster
+    rasterCols: 6,
     einstellungen: { schriftart: "'Inter', sans-serif", schriftgroesse: 16, zeilenabstand: 1.7, ausrichtung: 'hoch', format: 'A4', margins: { top: 18, right: 22, bottom: 18, left: 22 }, kopfH: 14, fussH: 14, tabs: [] },
     meta: { erstellt: t, geaendert: t, autor: 'Yanick Gerber', version: 1 },
     folder: 'dokumente', fav: false, trashed: false
@@ -523,7 +524,7 @@ function alignColseps() {
   const seps = $$('.colsep', editor); if (!seps.length) return;
   const m = pageSetup().margins, contentMm = Math.max(60, pageDims().w - m.left - m.right);
   let maxCells = 1; $$('p,h1,h2,h3,blockquote,pre', editor).forEach(b => { const n = b.querySelectorAll('.colsep').length + 1; if (n > maxCells) maxCells = n; });
-  const auto = Math.max(4, Math.floor(contentMm / 26));
+  const auto = (doc && doc.rasterCols) || 6;   // Hintergrundraster: standardmässig 6 Spalten
   const cols = Math.max(maxCells, activePage().dispCols || auto);
   const colW = (contentMm * MM) / cols;                 // Spaltenbreite in px (ungezoomt) – wie in Calc
   const z = parseFloat(page.style.zoom) || 1;
@@ -2730,7 +2731,8 @@ function renderSheet() {
   const colsPP = Math.max(4, Math.floor(contentMm / 26));   // Auto-Spaltenzahl, die bequem auf die Blattbreite passt
   const wantC = activePage().dispCols | 0, wantR = activePage().dispRows | 0;
   const cs = curGrid.colStops || [];   // Spaltengrenzen aus den Tabstopps (gemeinsam mit Write) – Index = Spalte
-  const cols = Math.max(ext.cols, cs.length ? cs.length + 1 : 0, wantC > 0 ? wantC : colsPP);   // gewünschte Spaltenzahl (dünner = mehr)
+  const defCols = (doc && doc.rasterCols) || 6;   // standardmässig 6 Spalten im Hintergrundraster
+  const cols = Math.max(ext.cols, cs.length ? cs.length + 1 : 0, wantC > 0 ? wantC : defCols);
   // Standard-Zeilenzahl so, dass genau EIN A4-Blatt gefüllt ist (sonst wird das Blatt zu lang)
   const hH = $('#zoneH').offsetHeight || 60, fH = $('#zoneF').offsetHeight || 60;
   const fs = +(doc.einstellungen.schriftgroesse) || 16, lh = +(doc.einstellungen.zeilenabstand) || 1.5;
@@ -2818,7 +2820,7 @@ function buildWriteRulers() {
   $$('.colsep', editor).forEach(s => { if (s.dataset.tab) { const v = parseFloat(s.dataset.tab); if (v > 0 && v < contentMm) set.add(Math.round(v * 10) / 10); } });
   let bounds = [...set].sort((a, b) => a - b);
   if (bounds.length) bounds.push(contentMm);
-  else { const n = Math.max(4, Math.floor(contentMm / 26)), w = contentMm / n; for (let c = 1; c <= n; c++) bounds.push(roundN(w * c)); }
+  else { const n = (doc && doc.rasterCols) || 6, w = contentMm / n; for (let c = 1; c <= n; c++) bounds.push(roundN(w * c)); }   // Hintergrundraster: 6 Spalten (A–F)
   const contentLeft = pr.left + m.left * MM * z;
   let ch = '', prev = 0;
   bounds.forEach((endMm, c) => {

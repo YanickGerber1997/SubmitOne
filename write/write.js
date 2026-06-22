@@ -402,9 +402,11 @@ function calcCmd(name) {
 }
 
 function setBlock(tag) {
-  if (inCalc()) {                                  // Überschrift/Absatz als Zellenformat (Grösse + Fett)
-    const sz = { h1: 30, h2: 23, h3: 18.5 }[tag];
-    if (sz) { setCellFmt('sz', sz); setCellFmt('b', 1); } else { setCellFmt('sz', ''); }
+  if (inCalc()) {                                  // im Raster: die ganze ZEILE wird Titel/Überschrift (wie in Write)
+    if (!curGrid) return; if (editingTd) endEdit(true);
+    gridEnsure(curGrid, selC, selR);
+    curGrid.zeilen[selR].tag = /^h[1-3]$/.test(tag) ? tag : 'p';
+    activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave();
     return;
   }
   editor.focus();
@@ -456,7 +458,8 @@ function syncCalcToolbar() {
   set('justifyLeft', !cf.al || cf.al === 'left'); set('justifyCenter', cf.al === 'center'); set('justifyRight', cf.al === 'right'); set('justifyFull', cf.al === 'justify');
   if (cf.fam) $('#selFont').value = cf.fam;
   $('#selSize').value = String(Math.round(cf.sz || (doc ? doc.einstellungen.schriftgroesse : 16)));
-  $('#selBlock').value = 'p';
+  const tag = (curGrid && curGrid.zeilen[selR] && curGrid.zeilen[selR].tag) || 'p';   // Titel/Überschrift der Zeile in der Auswahl zeigen
+  $('#selBlock').value = /^h[1-3]$/.test(tag) ? tag : 'p';
 }
 function syncToolbar() {
   if (inCalc()) { syncCalcToolbar(); return; }
@@ -1501,8 +1504,8 @@ function wire() {
     if (document.activeElement === $('#formulaInput')) return;
     if (editingTd) {
       if (e.key === 'Enter' && (e.altKey || e.shiftKey)) { e.preventDefault(); document.execCommand('insertHTML', false, '<br>'); }  // Zeilenumbruch in der Zelle
-      else if (e.key === 'Enter') { e.preventDefault(); endEdit(true); selectCell(selC, selR + 1); calcFocus(); }
-      else if (e.key === 'Tab') { e.preventDefault(); endEdit(true); selectCell(selC + 1, selR); calcFocus(); }
+      else if (e.key === 'Enter') { e.preventDefault(); endEdit(true); const m = mergeAt(selC, selR); selectCell(selC, (m ? m.r + m.rs : selR + 1)); calcFocus(); }
+      else if (e.key === 'Tab') { e.preventDefault(); endEdit(true); const m = mergeAt(selC, selR); selectCell((m ? m.c + m.cs : selC + 1), selR); calcFocus(); }
       else if (e.key === 'Escape') { e.preventDefault(); endEdit(false); calcFocus(); }
       return;
     }
@@ -2748,15 +2751,18 @@ function renderSheet() {
   const rows = Math.max(ext.rows, wantR > 0 ? wantR : (calcFitRows || rowsPP));
   gridCols = cols; gridRows = rows;
   const cw = curColW();
-  let cg = '<colgroup>', prev = 0;   // keine Kopf-Spalte – A/B/C & 1/2/3 liegen als Lineale AUSSERHALB; Breiten aus Tabstopps
+  const widths = []; let prev = 0;   // Spaltenbreiten (px); A/B/C & 1/2/3 liegen als Lineale AUSSERHALB
   for (let c = 0; c < cols; c++) {
     const stopEnd = c < cs.length ? cs[c] : null;
     let w = cw[c];                                              // manuelle Breite hat Vorrang
     if (!w && stopEnd != null && stopEnd > prev) w = Math.round((stopEnd - prev) * MM);
     if (stopEnd != null) prev = stopEnd;
-    cg += w > 0 ? `<col style="width:${w}px">` : '<col>';
+    widths[c] = w > 0 ? w : null;
   }
-  cg += '</colgroup>';
+  const tableW = contentMm * MM, fixed = widths.reduce((a, w) => a + (w || 0), 0), nAuto = widths.filter(w => w == null).length;
+  const autoW = nAuto ? Math.max(20, (tableW - fixed) / nAuto) : 0;
+  gridColPx = widths.map(w => w == null ? autoW : w);   // für Auto-Verbinden bei Überlauf
+  const cg = '<colgroup>' + widths.map(w => w > 0 ? `<col style="width:${w}px">` : '<col>').join('') + '</colgroup>';
   const rh = curRowH();
   let body = '<tbody>';
   for (let r = 0; r < rows; r++) {
@@ -2993,7 +2999,35 @@ function endEdit(commit) {
   const td = editingTd; editingTd = null;
   const html = readCellHtml(td);
   td.contentEditable = 'false'; td.classList.remove('celledit');
-  if (commit) commitCellHtml(html); else renderCalc();
+  if (commit) { commitCellHtml(html); autoMergeOverflow(selC, selR); } else renderCalc();
+}
+let gridColPx = [], _measCv = null;
+function measureCellText(txt) {
+  if (!_measCv) _measCv = document.createElement('canvas');
+  const ctx = _measCv.getContext('2d');
+  const fs = (doc && +doc.einstellungen.schriftgroesse) || 16;
+  const fam = ((doc && doc.einstellungen.schriftart) || 'sans-serif').replace(/['"]/g, '');
+  ctx.font = fs + 'px ' + fam;
+  return ctx.measureText(txt || '').width;
+}
+function cellEmpty(c, r) { return cellText(gridGet(curGrid, c, r)) === ''; }
+// Text läuft über die Zelle hinaus → folgende leere Zellen automatisch verbinden (eine Zeile, kein Umbruch)
+function autoMergeOverflow(c, r) {
+  if (!curGrid || isTextRow(r)) return;
+  const cur = mergeAt(c, r);
+  if (cur && (cur.c !== c || cur.r !== r)) return;   // überdeckte Zelle (nicht der Ursprung)
+  if (cur && !cur.auto) return;                      // vom Nutzer verbunden → unangetastet lassen
+  const ms = curMerges();
+  if (cur) { const i = ms.indexOf(cur); if (i >= 0) ms.splice(i, 1); }   // alte Auto-Verbindung neu berechnen
+  const txt = gridCellRaw(c, r);
+  let span = 1;
+  if (txt && txt.indexOf('\n') < 0 && txt[0] !== '=') {
+    const need = measureCellText(txt) + 18;
+    let avail = gridColPx[c] || 80;
+    while (need > avail && c + span < gridCols && cellEmpty(c + span, r) && !mergeAt(c + span, r)) { avail += gridColPx[c + span] || 80; span++; }
+  }
+  if (span > 1) ms.push({ c, r, cs: span, rs: 1, auto: true });
+  if (span > 1 || cur) { activePage().html = gridToHtml(curGrid); renderCalc(); selectCell(c, r); scheduleSave(); }
 }
 
 /* ---- Zeilen/Spalten einfügen·löschen (Rechtsklick im Gitter) ---- */

@@ -2153,7 +2153,26 @@ function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen
   return { cols: Math.max(1, ...z.map(x => x.cells.length)), rows: z.length };
 }
 let gridCols = 1, gridRows = 1, calcFitRows = 0;
-function renderCalc() { renderSheet(); fitCalcRows(); highlightSel(); updateStats(); updatePages(); }
+function renderCalc() { renderSheet(); fitCalcRows(); calcPaginate(); buildCalcRulers(); highlightSel(); updateStats(); updatePages(); }
+// Calc bei Inhalt > A4 in mehrere A4-Blätter aufteilen (Lücke mit Fuss-/Kopfzeile, wie Write)
+function calcPaginate() {
+  if (!doc || activePage().typ !== 'calc') return;
+  const t = gEl(); if (!t) return; const tbody = t.querySelector('tbody'); if (!tbody) return;
+  const z = parseFloat(page.style.zoom) || 1;
+  const hH = $('#zoneH').offsetHeight || 60, fH = $('#zoneF').offsetHeight || 60;
+  const usable = pageDims().h * MM - hH - fH - 12 * MM - 6;
+  const fh = $('#zoneF').innerHTML, hh = $('#zoneH').innerHTML, cols = gridCols;
+  const rows = [...tbody.children].filter(r => !r.classList.contains('cgap'));
+  let used = 0;
+  rows.forEach(tr => {
+    const h = tr.getBoundingClientRect().height / z;
+    if (used + h > usable && used > 0) {
+      const gap = document.createElement('tr'); gap.className = 'cgap';
+      gap.innerHTML = `<td colspan="${cols}"><div class="pg-fill" style="height:${Math.max(0, usable - used)}px"></div><div class="pg-foot" style="height:${fH}px">${fh}</div><div class="pg-mid"></div><div class="pg-head" style="height:${hH}px">${hh}</div></td>`;
+      tbody.insertBefore(gap, tr); used = h;
+    } else used += h;
+  });
+}
 // Zeilenzahl per ECHTER Messung so setzen, dass die Tabelle genau ein A4-Blatt füllt (nicht zu hoch)
 function fitCalcRows() {
   if (!doc || activePage().typ !== 'calc' || activePage().dispRows) return;

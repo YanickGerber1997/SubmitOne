@@ -2649,8 +2649,7 @@ function isNumericText(t) { return t !== '' && /\d/.test(t) && /^-?[\d'’.,\s]+
 function isTextRow(r) {
   const z = curGrid && curGrid.zeilen[r]; if (!z || z.cells.length !== 1) return false;
   if (curMerges().some(mg => r >= mg.r && r < mg.r + mg.rs)) return false;
-  const only = cellText(z.cells[0]);
-  return /^h[1-3]$/.test(z.tag || '') || (!!only && /\s/.test(only)) || only.length > 24;
+  return /^h[1-3]$/.test(z.tag || '');   // nur explizite Überschriften nehmen die volle Breite – normaler Text nur die nötigen Spalten (Auto-Verbinden)
 }
 // liefert {html, cls} für eine Zelle – berücksichtigt Formel-Ergebnis und Zahlenformat
 function cellStyle(c, r) {
@@ -2993,6 +2992,19 @@ function beginEdit(initial) {
   td.focus();
   const rng = document.createRange(); rng.selectNodeContents(td); rng.collapse(false);
   const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rng);
+  td.addEventListener('input', liveExtendCell);   // live über die Zelle hinausschreiben
+  liveExtendCell();
+}
+// während des Tippens: Text breiter als die Zelle → folgende LEERE Zellen live aufnehmen (nur so viele wie nötig)
+function liveExtendCell() {
+  const td = editingTd; if (!td || td.classList.contains('textcell')) return;
+  let guard = 0;
+  while (td.scrollWidth > td.clientWidth + 1 && guard++ < 40) {
+    const nx = td.nextElementSibling; if (!nx || nx.dataset.c == null) break;
+    const nc = +nx.dataset.c, nr = +nx.dataset.r;
+    if (cellText(gridGet(curGrid, nc, nr)) !== '' || mergeAt(nc, nr)) break;   // nächste Zelle nicht leer → Stopp
+    nx.remove(); td.setAttribute('colspan', (+td.getAttribute('colspan') || 1) + 1);
+  }
 }
 function endEdit(commit) {
   if (!editingTd) return;
@@ -3019,9 +3031,9 @@ function autoMergeOverflow(c, r) {
   if (cur && !cur.auto) return;                      // vom Nutzer verbunden → unangetastet lassen
   const ms = curMerges();
   if (cur) { const i = ms.indexOf(cur); if (i >= 0) ms.splice(i, 1); }   // alte Auto-Verbindung neu berechnen
-  const txt = gridCellRaw(c, r);
+  const txt = gridCellRaw(c, r), raw = gridGet(curGrid, c, r);
   let span = 1;
-  if (txt && txt.indexOf('\n') < 0 && txt[0] !== '=') {
+  if (txt && !/<br/i.test(raw) && txt[0] !== '=') {   // mehrzeilige Zellen (Alt+Enter) nicht verbinden
     const need = measureCellText(txt) + 18;
     let avail = gridColPx[c] || 80;
     while (need > avail && c + span < gridCols && cellEmpty(c + span, r) && !mergeAt(c + span, r)) { avail += gridColPx[c + span] || 80; span++; }

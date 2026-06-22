@@ -614,7 +614,7 @@ body[data-theme="dark"] .editor .sp-err{text-decoration-color:#ff7a70}
 .cgrid td.err{color:#d6453d}
 .cgrid td.sel{background:var(--accent-soft)}
 .cgrid td.active{outline:2px solid var(--accent);outline-offset:-2px}
-.cgrid td.celledit{outline:2px solid var(--accent);background:var(--paper);white-space:pre-wrap;cursor:text;z-index:5;position:relative}
+.cgrid td.celledit{outline:2px solid var(--accent);background:var(--paper);white-space:nowrap;overflow:hidden;cursor:text;z-index:5;position:relative}   /* kein Umbruch → live über die Zelle hinaus, nimmt nur nötige Spalten auf */
 
 /* ---------- Vertikales Lineal ---------- */
 .vruler{position:absolute;top:0;bottom:0;left:calc(3mm - var(--ml,22mm));width:6mm;z-index:3;pointer-events:none}

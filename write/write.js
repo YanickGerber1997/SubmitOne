@@ -242,11 +242,7 @@ function applySettings() {
   const selC2 = $('#selCols'); if (selC2) selC2.value = String(cols);
   const hy = !!s.silben; editor.classList.toggle('hyphenate', hy);
   const bh = $('#btnHyphen'); if (bh) bh.classList.toggle('on', hy);
-  const o = s.ausrichtung || 'hoch';
-  page.classList.toggle('quer', o === 'quer');
-  $('#btnPortrait').classList.toggle('on', o !== 'quer');
-  $('#btnLandscape').classList.toggle('on', o === 'quer');
-  applyFormat();
+  applyFormat();        // Format/Ausrichtung pro Seite (setzt .quer + Knopf-Status)
   applyPageSetup();
   applyZoom();
 }
@@ -1417,9 +1413,8 @@ function wire() {
   $('#pvClose').addEventListener('click', () => $('#previewOverlay').hidden = true);
   $('#pvPrint').addEventListener('click', printFromPreview);
 
-  // Modus-Umschalter (Write / Calc) – ein Dokument, zwei Ansichten desselben Rasters
-  $('#modePill').addEventListener('click', e => { e.stopPropagation(); $('#modeMenu').hidden = !$('#modeMenu').hidden; });
-  $('#modeMenu').addEventListener('click', e => { const m = e.target.closest('button')?.dataset.mode; if (m) { $('#modeMenu').hidden = true; setPageType(m); } });
+  // „Gitter"-Schalter (Statusleiste): blendet die Tabellen-Linien ein/aus – dasselbe Blatt, nur als Tabelle rechenbar
+  $('#gridToggle').addEventListener('click', () => { if (!doc) return; setPageType(activePage().typ === 'calc' ? 'write' : 'calc'); });
 
   // Seiten-Reiter (Navigator)
   $('#pagetabs').addEventListener('click', e => {
@@ -1429,7 +1424,6 @@ function wire() {
     const tab = e.target.closest('.ptab'); if (tab) switchPage(+tab.dataset.i);
   });
   document.addEventListener('click', () => { const m = $('#addMenu'); if (m) m.hidden = true; });
-  document.addEventListener('click', () => $('#modeMenu').hidden = true);
 
   // Submit Calc – Gitter im Write-Blatt
   const pgEl = $('#pageGrid');
@@ -1896,25 +1890,31 @@ function replaceAll() {
 let zoomMode = 'auto';   // 'auto' = an Fensterbreite anpassen, sonst feste Zahl
 const FORMATS = { A4: [210, 297], A5: [148, 210], Letter: [216, 279], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189] };  // Hochformat [B,H] in mm
 function isSlides() { return false; }   // Slides entfernt – Submit Paper = Write+Calc (ein Raster)
+// Format & Ausrichtung sind PRO SEITE (Fallback: Dokument-Einstellung) → A4 hoch + A3 quer im selben Dokument
+function pageFmt() { const p = doc && activePage(); return (p && p.format) || (doc && doc.einstellungen.format) || 'A4'; }
+function pageOrient() { const p = doc && activePage(); return (p && p.ausrichtung) || (doc && doc.einstellungen.ausrichtung) || 'hoch'; }
 function pageDims() {
-  const f = FORMATS[(doc && doc.einstellungen.format) || 'A4'] || FORMATS.A4;
-  const quer = doc && doc.einstellungen.ausrichtung === 'quer';
+  const f = FORMATS[pageFmt()] || FORMATS.A4;
+  const quer = pageOrient() === 'quer';
   return { w: quer ? f[1] : f[0], h: quer ? f[0] : f[1] };
 }
 function pageWidthMm() { return pageDims().w; }
 function pageHeightPx() { return pageDims().h * MM; }
 function applyFormat() {
   if (!doc) return;
-  const d = pageDims();
+  const d = pageDims(), quer = pageOrient() === 'quer';
   page.style.width = d.w + 'mm';
   page.style.minHeight = d.h + 'mm';
-  if (isSlides()) page.style.height = d.h + 'mm'; else page.style.height = '';
-  $('#pageFormat').textContent = isSlides() ? 'Folie · 16:9' : ((doc.einstellungen.format || 'A4') + ' · ' + d.w + ' × ' + d.h + ' mm');
-  $('#selFormat').value = doc.einstellungen.format || 'A4';
+  page.style.height = '';
+  page.classList.toggle('quer', quer);
+  $('#pageFormat').textContent = pageFmt() + ' · ' + d.w + ' × ' + d.h + ' mm';
+  $('#selFormat').value = pageFmt();
+  $('#btnPortrait').classList.toggle('on', !quer);
+  $('#btnLandscape').classList.toggle('on', quer);
 }
 function setFormat(f) {
   if (!doc || !FORMATS[f]) return;
-  doc.einstellungen.format = f;
+  activePage().format = f;
   applyFormat(); applyZoom(); updatePages(); scheduleSave();
 }
 function applyZoom() {
@@ -1936,10 +1936,7 @@ function zoomStep(d) {
 }
 function setOrientation(o) {
   if (!doc) return;
-  doc.einstellungen.ausrichtung = o;
-  page.classList.toggle('quer', o === 'quer');
-  $('#btnPortrait').classList.toggle('on', o !== 'quer');
-  $('#btnLandscape').classList.toggle('on', o === 'quer');
+  activePage().ausrichtung = o;
   applyFormat(); scheduleSave(); applyZoom(); updatePages();
 }
 let pageCount = 1, pagTimer = null;
@@ -2235,7 +2232,7 @@ function previewCalc() {
   let maxR = -1, maxC = -1;
   curGrid.zeilen.forEach((z, r) => z.cells.forEach((c, ci) => { if (cellText(c) !== '') { if (r > maxR) maxR = r; if (ci > maxC) maxC = ci; } }));
   if (maxR < 0) { maxR = 0; maxC = 0; }
-  const quer = doc.einstellungen.ausrichtung === 'quer';
+  const quer = pageOrient() === 'quer';
   let tbl = '<table class="pv-grid">';
   for (let r = 0; r <= maxR; r++) {
     tbl += '<tr>';
@@ -2253,7 +2250,7 @@ function printPreview() {
   if (!doc) return;
   captureDoc();
   if (activePage().typ === 'calc') { previewCalc(); return; }
-  const quer = doc.einstellungen.ausrichtung === 'quer';
+  const quer = pageOrient() === 'quer';
   const ov = $('#previewOverlay'), scroll = $('#previewScroll');
   scroll.classList.toggle('hy', !!doc.einstellungen.silben);   // Silbentrennung auch in der Vorschau
   scroll.innerHTML = ''; ov.hidden = false;          // erst sichtbar → dann messbar
@@ -2312,8 +2309,8 @@ function renderActivePage() {
   if (!doc) return;
   const p = activePage(), m = pageMode(p);
   document.body.dataset.mode = m;
-  const meta = MODE_META[m]; $('#modeIco').textContent = meta[0]; $('#modeName').textContent = meta[1];
   const calc = (m === 'calc');
+  const gt = $('#gridToggle'); if (gt) gt.classList.toggle('on', calc);   // „Gitter" zeigt, ob die Linien sichtbar sind
   appEl.classList.toggle('calc-mode', calc);
   if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; calcFitRows = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
   else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.sp-err', editor).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); $$('.pgbreak-gap', editor).forEach(g => g.remove()); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); alignColseps(); paginateLater(); }

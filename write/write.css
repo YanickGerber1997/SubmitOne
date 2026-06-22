@@ -361,6 +361,10 @@ body[data-mode="slides"] .editor img{max-width:100%}
   background:var(--surface);border-top:1px solid var(--line);
   font-size:12px;color:var(--ink-faint);
 }
+.grid-toggle{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;transition:.15s}
+.grid-toggle .i{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7}
+.grid-toggle:hover{border-color:var(--accent)}
+.grid-toggle.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .statusbar .seg.orient{padding:2px;gap:2px}
 .statusbar .seg.orient button{padding:4px 10px;font-size:12px;white-space:nowrap}
 .zoombox{display:flex;align-items:center;gap:1px}

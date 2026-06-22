@@ -219,7 +219,9 @@ function openDoc(id) {
 }
 function createDoc(partial) {
   const d = newDocObject(partial);
-  if (partial && partial.html != null) { d.seiten = [{ id: uid(), typ: 'write', html: partial.html }]; d.aktiv = 0; delete d.html; }
+  if (partial && Array.isArray(partial.pages) && partial.pages.length) { d.seiten = partial.pages; d.aktiv = 0; }
+  else if (partial && partial.html != null) { d.seiten = [{ id: uid(), typ: 'write', html: partial.html }]; d.aktiv = 0; }
+  delete d.pages; delete d.html;
   lib.docs[d.id] = d; lib.order.unshift(d.id); persistLib();
   openDoc(d.id);
   return d;
@@ -329,14 +331,14 @@ async function openFile() {
   if (window.showOpenFilePicker) {
     try {
       const [h] = await window.showOpenFilePicker({
-        types: [{ description: 'Dokumente', accept: { 'application/octet-stream': ['.paper', '.gdoc', '.json', '.docx', '.odt'] } }]
+        types: [{ description: 'Dokumente', accept: { 'application/octet-stream': ['.paper', '.gdoc', '.json', '.docx', '.odt', '.xlsx'] } }]
       });
       handle = h; file = await h.getFile();
     } catch (e) { if (e && e.name === 'AbortError') return; }
   }
   if (!file) {
     file = await new Promise(res => {
-      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.paper,.gdoc,.json,.docx,.odt';
+      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.paper,.gdoc,.json,.docx,.odt,.xlsx';
       inp.onchange = () => res(inp.files[0] || null);
       inp.click();
     });
@@ -345,6 +347,7 @@ async function openFile() {
   const nm = (file.name || '').toLowerCase();
   if (nm.endsWith('.docx')) return importDocx(file);
   if (nm.endsWith('.odt')) return importOdt(file);
+  if (nm.endsWith('.xlsx')) return importXlsx(file);
   ingestGdoc(await file.text(), handle);   // .paper/.gdoc/.json
 }
 
@@ -1159,6 +1162,76 @@ async function importOdt(file) {
   toast('OpenDocument geöffnet: ' + d_title());
 }
 function d_title() { return doc ? doc.titel : ''; }
+
+/* === Excel (.xlsx) → dasselbe Raster (Calc-Seiten) === */
+function xlsxRefToRC(ref) { const m = /^([A-Z]+)(\d+)$/.exec(ref || ''); if (!m) return { col: 0, r: 0 }; let col = 0; for (const ch of m[1]) col = col * 26 + (ch.charCodeAt(0) - 64); return { col: col - 1, r: (+m[2]) - 1 }; }
+function xlsxSharedStrings(xml) { const out = []; if (!xml) return out; const x = new DOMParser().parseFromString(xml, 'application/xml'); for (const si of x.getElementsByTagName('si')) { let s = ''; for (const t of si.getElementsByTagName('t')) s += t.textContent; out.push(s); } return out; }
+function xlsxRels(xml) { const r = {}; if (!xml) return r; const x = new DOMParser().parseFromString(xml, 'application/xml'); for (const e of x.getElementsByTagName('Relationship')) { const id = e.getAttribute('Id'), t = e.getAttribute('Target'); if (id && t) r[id] = t; } return r; }
+function xlsxStyles(xml) {
+  const fmts = []; if (!xml) return fmts;
+  const x = new DOMParser().parseFromString(xml, 'application/xml');
+  const custom = {}; for (const nf of x.getElementsByTagName('numFmt')) custom[nf.getAttribute('numFmtId')] = nf.getAttribute('formatCode') || '';
+  const code2fmt = code => { if (!code || /general/i.test(code)) return ''; if (/\b(yy|mm|dd|d\/|m\/|h:|hh)/i.test(code) || /[dmy]{2,}/i.test(code)) return 'date'; if (code.indexOf('%') >= 0) return 'pct'; if (/[$€£]|CHF|"kr"|Fr\./.test(code)) return 'chf'; if (/0\.00/.test(code)) return 'num2'; if (/#,##0|^0(;|$)/.test(code)) return 'num0'; return ''; };
+  const builtinDate = new Set(['14', '15', '16', '17', '18', '19', '20', '21', '22', '45', '46', '47']);
+  const builtin = { '1': 'num0', '2': 'num2', '3': 'num0', '4': 'num2', '9': 'pct', '10': 'pct', '37': 'num0', '38': 'num0', '39': 'num2', '40': 'num2', '41': 'num0', '42': 'chf', '43': 'num2', '44': 'chf' };
+  const cellXfs = x.getElementsByTagName('cellXfs')[0];
+  if (cellXfs) for (const xf of cellXfs.getElementsByTagName('xf')) { const id = xf.getAttribute('numFmtId') || '0'; let f = builtinDate.has(id) ? 'date' : (builtin[id] || ''); if (!f && custom[id]) f = code2fmt(custom[id]); fmts.push(f); }
+  return fmts;
+}
+function xlsxSerialToDate(n) { if (!isFinite(n)) return ''; const ms = Math.round((n - 25569) * 86400000); const d = new Date(ms); if (isNaN(d)) return ''; const p = x => ('0' + x).slice(-2); return p(d.getUTCDate()) + '.' + p(d.getUTCMonth() + 1) + '.' + d.getUTCFullYear(); }
+function xlsxSheetToPage(xml, sst, styleFmts) {
+  const x = new DOMParser().parseFromString(xml, 'application/xml');
+  const rows = [], fmtMap = {}; let maxC = 0;
+  for (const row of x.getElementsByTagName('row')) {
+    for (const c of row.getElementsByTagName('c')) {
+      const { col, r } = xlsxRefToRC(c.getAttribute('r')); const t = c.getAttribute('t'), s = c.getAttribute('s');
+      const vEl = c.getElementsByTagName('v')[0], isEl = c.getElementsByTagName('is')[0];
+      const sf = s != null ? styleFmts[+s] : '';
+      let val = '';
+      if (t === 's') val = sst[+(vEl ? vEl.textContent : 0)] || '';
+      else if (t === 'inlineStr' && isEl) val = isEl.textContent;
+      else if (t === 'str') val = vEl ? vEl.textContent : '';
+      else if (t === 'b') val = (vEl && vEl.textContent === '1') ? 'WAHR' : 'FALSCH';
+      else { val = vEl ? vEl.textContent : ''; if (sf === 'date' && val !== '') val = xlsxSerialToDate(+val); }
+      while (rows.length <= r) rows.push([]);
+      while (rows[r].length <= col) rows[r].push('');
+      rows[r][col] = esc(val);
+      if (col > maxC) maxC = col;
+      if (sf && sf !== 'date') fmtMap[col + ',' + r] = sf;
+    }
+  }
+  const merges = []; for (const mc of x.getElementsByTagName('mergeCell')) { const ref = (mc.getAttribute('ref') || '').split(':'); if (ref.length === 2) { const a = xlsxRefToRC(ref[0]), b = xlsxRefToRC(ref[1]); merges.push({ c: Math.min(a.col, b.col), r: Math.min(a.r, b.r), cs: Math.abs(b.col - a.col) + 1, rs: Math.abs(b.r - a.r) + 1 }); } }
+  const colPx = {}; for (const col of x.getElementsByTagName('col')) { const mn = +col.getAttribute('min'), mx = +col.getAttribute('max'), w = +col.getAttribute('width'); if (w > 0) for (let ci = mn - 1; ci <= mx - 1; ci++) colPx[ci] = Math.round(w * 7 + 5); }
+  // Spaltenpositionen (mm) → COLSEPs mit data-tab (gleiche Engine wie Word: Tabs = Spalten in Write & Calc)
+  const stops = []; let cum = 0; for (let c = 0; c < maxC; c++) { cum += (colPx[c] || 64); stops[c] = Math.round(cum / MM * 10) / 10; }
+  let html = '';
+  for (let r = 0; r < rows.length; r++) {
+    const cells = rows[r], n = Math.max(1, cells.length); let inner = '';
+    for (let c = 0; c < n; c++) { inner += (cells[c] || ''); if (c < n - 1) inner += stops[c] != null ? `<span class="colsep" data-tab="${stops[c]}" contenteditable="false">⇥</span>` : COLSEP; }
+    html += `<p>${inner || '<br>'}</p>`;
+  }
+  return { id: uid(), typ: 'calc', html: html || '<p><br></p>', fmt: fmtMap, merges, colW: {}, fill: {}, txtcol: {}, borders: {}, cfmt: {}, notiz: '' };
+}
+async function importXlsx(file) {
+  toast('Öffne Excel-Datei …');
+  let zip; try { zip = await unzipRead(await file.arrayBuffer()); } catch (_) { toast('Datei nicht lesbar (kein gültiges .xlsx).'); return; }
+  const dec = new TextDecoder(), get = n => zip[n] ? dec.decode(zip[n]) : '';
+  const sst = xlsxSharedStrings(get('xl/sharedStrings.xml'));
+  const styleFmts = xlsxStyles(get('xl/styles.xml'));
+  const rels = xlsxRels(get('xl/_rels/workbook.xml.rels'));
+  const wbXml = get('xl/workbook.xml'); if (!wbXml) { toast('Keine Arbeitsmappe gefunden.'); return; }
+  const wb = new DOMParser().parseFromString(wbXml, 'application/xml');
+  const pages = [];
+  for (const s of wb.getElementsByTagName('sheet')) {
+    const rid = s.getAttribute('r:id'); let tgt = (rid && rels[rid]) || 'worksheets/sheet1.xml';
+    tgt = tgt.replace(/^\//, ''); if (!tgt.startsWith('xl/')) tgt = 'xl/' + tgt;
+    const xml = get(tgt); if (!xml) continue;
+    pages.push(xlsxSheetToPage(xml, sst, styleFmts));
+  }
+  if (!pages.length) { toast('Keine Tabellen gefunden.'); return; }
+  createDoc({ titel: (file.name || 'Tabelle').replace(/\.xlsx$/i, ''), pages });
+  toast('Excel geöffnet: ' + d_title() + ' (' + pages.length + (pages.length === 1 ? ' Tabelle)' : ' Tabellen)'));
+}
 function buildOdt() {
   const enc = new TextEncoder(), blocks = exportBlocks();
   const spanOf = r => {
@@ -1495,8 +1568,8 @@ function wire() {
     e.preventDefault();                       // nie eine Datei "ins Nichts" fallen lassen (Navigation = Datenverlust)
     const img = files.find(f => f.type.startsWith('image/'));
     if (img) { insertImageFile(img); return; }
-    const gd = files.find(f => /\.(paper|gdoc|json|docx|odt)$/i.test(f.name));
-    if (gd) { if (/\.docx$/i.test(gd.name)) importDocx(gd); else if (/\.odt$/i.test(gd.name)) importOdt(gd); else gd.text().then(t => ingestGdoc(t, null)); }
+    const gd = files.find(f => /\.(paper|gdoc|json|docx|odt|xlsx)$/i.test(f.name));
+    if (gd) { if (/\.docx$/i.test(gd.name)) importDocx(gd); else if (/\.odt$/i.test(gd.name)) importOdt(gd); else if (/\.xlsx$/i.test(gd.name)) importXlsx(gd); else gd.text().then(t => ingestGdoc(t, null)); }
   });
   editor.addEventListener('paste', e => {
     for (const it of (e.clipboardData?.items || [])) {
@@ -1601,9 +1674,9 @@ function wire() {
     const files = [...(e.dataTransfer?.files || [])];
     if (!files.length) return;
     e.preventDefault();                       // verhindert Wegnavigieren bei Datei-Drop
-    const f = files.find(f => /\.(paper|gdoc|json|docx|odt)$/i.test(f.name));
+    const f = files.find(f => /\.(paper|gdoc|json|docx|odt|xlsx)$/i.test(f.name));
     if (!f) return;
-    if (/\.docx$/i.test(f.name)) importDocx(f); else if (/\.odt$/i.test(f.name)) importOdt(f); else f.text().then(t => ingestGdoc(t, null));
+    if (/\.docx$/i.test(f.name)) importDocx(f); else if (/\.odt$/i.test(f.name)) importOdt(f); else if (/\.xlsx$/i.test(f.name)) importXlsx(f); else f.text().then(t => ingestGdoc(t, null));
   });
 
   // Schutz vor Datenverlust beim Schliessen

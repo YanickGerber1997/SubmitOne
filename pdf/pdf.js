@@ -373,6 +373,13 @@ function drawOne(svg, a, pv) {
     el = svgEl('text', { x: a.x, y: a.y, fill: a.color, 'font-size': a.size, 'data-id': a.id });
     a.text.split('\n').forEach((ln, i) => { const ts = svgEl('tspan', { x: a.x, dy: i === 0 ? 0 : a.size * 1.25 }); ts.textContent = ln || ' '; el.appendChild(ts); });
     svg.appendChild(el);
+  } else if (a.type === 'edit') {
+    const g = svgEl('g', { 'data-id': a.id });
+    g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: a.bg || '#fff', stroke: 'none' }));   // alte Stelle überdecken
+    const t = svgEl('text', { x: a.x + 1, y: a.y + 1, fill: a.color, 'font-size': a.size });
+    (a.text || '').split('\n').forEach((ln, i) => { const ts = svgEl('tspan', { x: a.x + 1, dy: i === 0 ? 0 : a.size * 1.25 }); ts.textContent = ln || ' '; t.appendChild(ts); });
+    g.appendChild(t); svg.appendChild(g); el = g;
+    const hit2 = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit2);
   } else if (a.type === 'note') {
     const g = svgEl('g', { class: 'note-pin', 'data-id': a.id });
     g.appendChild(svgEl('path', { d: `M${a.x} ${a.y} l13 0 l0 9 l-7 0 l-4 4 l0 -4 l-2 0 z`, fill: a.color, stroke: '#fff', 'stroke-width': 1 }));
@@ -415,7 +422,7 @@ function bbox(a) {
   if (a.type === 'pen') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: a.size * (a.text.split('\n').length) * 1.3 };
   if (a.type === 'note') return { x: a.x, y: a.y, w: 14, h: 14 };
-  if (a.type === 'sig') return { x: a.x, y: a.y, w: a.w, h: a.h };
+  if (a.type === 'sig' || a.type === 'edit') return { x: a.x, y: a.y, w: a.w, h: a.h };
   return { x: 0, y: 0, w: 0, h: 0 };
 }
 function drawSelection(svg, a, pv) {
@@ -456,6 +463,7 @@ function onPointerDown(pv, e) {
     sel = null; drawAnnos(pv); return;
   }
   if (tool === 'sig') { placeSig(pv, p); return; }
+  if (tool === 'edittext') { editTextAt(pv, p); return; }
   if (tool === 'text') { createText(pv, p); return; }
   if (tool === 'note') { pushUndo(); const a = { id: nextId++, type: 'note', x: p.x, y: p.y, color: style.color, text: '' }; getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); refreshComments(); openNoteEdit(pv, a); return; }
   // Zeichnen
@@ -482,7 +490,7 @@ function startResize(pv, e, h) {
     const q = evtToPage(pv, ev);
     if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') { if (h === 'p1') { a.x1 = q.x; a.y1 = q.y; } else { a.x2 = q.x; a.y2 = q.y; } }
     else if (orig.type === 'sig') { const ratio = orig.w / orig.h || 1, ax = h.includes('w') ? orig.x + orig.w : orig.x, ay = h.includes('n') ? orig.y + orig.h : orig.y; const nw = Math.max(12, Math.abs(q.x - ax)), nh = nw / ratio; a.w = nw; a.h = nh; a.x = h.includes('w') ? ax - nw : ax; a.y = h.includes('n') ? ay - nh : ay; }
-    else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
+    else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval' || orig.type === 'edit') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
     drawAnnos(pv);
   };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
@@ -565,6 +573,56 @@ function createText(pv, p) {
   const commit = () => { const txt = ta.value.replace(/\s+$/, ''); ta.remove(); if (!txt) return; pushUndo(); const a = { id: nextId++, type: 'text', x: p.x, y: p.y, text: txt, color: style.color, size: style.size }; getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState(); };
   ta.addEventListener('blur', commit);
   ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ta.blur(); } else if (ev.key === 'Escape') { ta.value = ''; ta.blur(); } });
+  ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
+}
+/* ---------- Vorhandenen Text bearbeiten (überdecken + neu schreiben) ---------- */
+function parseColor(s) { if (!s) return { r: 0, g: 0, b: 0 }; if (s[0] === '#') return hexToRgb(s); const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(s); return m ? { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255 } : { r: 0, g: 0, b: 0 }; }
+// Textstücke der Seite mit Kästchen in Seitenkoordinaten (y-unten, Oberkante) – einmal berechnet
+async function ensureTextItems(pv) {
+  if (pv.textItems) return pv.textItems;
+  const items = [];
+  try {
+    const tc = await pv.page.getTextContent();
+    for (const it of tc.items) {
+      if (!it.str || !it.str.trim()) continue;
+      const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10;
+      const top = (pv.pageH - tr[5]) - fs * 0.82;
+      items.push({ x: tr[4], y: top, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs });
+    }
+  } catch (_) { }
+  pv.textItems = items; return items;
+}
+// Hintergrund- (häufigste) und Text-Farbe (dunkelste) im Kästchen abtasten
+function sampleBox(pv, box) {
+  const cv = pv.canvas; if (!cv) return {};
+  let data; try { data = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; } catch (_) { return {}; }
+  const k = cv.width / pv.pageW, w = cv.width, h = cv.height, counts = {}; let ink = null, inkLum = 1e9;
+  for (let i = 0; i <= 10; i++) for (let j = 0; j <= 3; j++) {
+    const px = Math.round((box.x + box.w * (i / 10)) * k), py = Math.round((box.y + box.h * (j / 3)) * k);
+    if (px < 0 || py < 0 || px >= w || py >= h) continue; const o = (py * w + px) * 4;
+    const key = (data[o] >> 4) + ',' + (data[o + 1] >> 4) + ',' + (data[o + 2] >> 4);
+    (counts[key] = counts[key] || { n: 0, c: [data[o], data[o + 1], data[o + 2]] }).n++;
+    const lum = data[o] + data[o + 1] + data[o + 2]; if (lum < inkLum) { inkLum = lum; ink = [data[o], data[o + 1], data[o + 2]]; }
+  }
+  let best = null, bn = 0; for (const k2 in counts) if (counts[k2].n > bn) { bn = counts[k2].n; best = counts[k2].c; }
+  return { bg: best ? `rgb(${best[0]},${best[1]},${best[2]})` : null, ink: ink ? `rgb(${ink[0]},${ink[1]},${ink[2]})` : null };
+}
+async function editTextAt(pv, p) {
+  if (!pv.page) return;
+  const items = await ensureTextItems(pv);
+  const hit = items.find(it => p.x >= it.x - 2 && p.x <= it.x + it.w + 2 && p.y >= it.y - 1 && p.y <= it.y + it.h + 1);
+  let a;
+  if (hit) { const s = sampleBox(pv, hit); a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.str, size: hit.size, color: s.ink || '#111111', bg: s.bg || '#ffffff' }; }
+  else { a = { id: nextId++, type: 'edit', x: p.x, y: p.y - style.size * 0.82, w: 120, h: style.size * 1.2, text: '', size: style.size, color: style.color, bg: '#ffffff' }; }
+  pushUndo(); getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); openEditEdit(pv, a, true);
+}
+function openEditEdit(pv, a, isNew) {
+  const sc = pv.scale; const ta = document.createElement('textarea'); ta.className = 'textedit'; ta.value = a.text; ta.rows = 1;
+  ta.style.left = (a.x * sc) + 'px'; ta.style.top = (a.y * sc) + 'px'; ta.style.fontSize = (a.size * sc) + 'px'; ta.style.color = a.color; ta.style.background = a.bg; ta.style.minWidth = Math.max(40, a.w * sc) + 'px';
+  pv.inner.appendChild(ta); ta.focus(); ta.select();
+  const commit = () => { a.text = ta.value.replace(/\s+$/, ''); ta.remove(); if (!a.text && isNew) { const arr = getAnnos(pv.num); const i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); } setTool('select'); drawAnnos(pv); saveState(); };
+  ta.addEventListener('blur', commit);
+  ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ta.blur(); } else if (ev.key === 'Escape') { if (isNew) ta.value = ''; ta.blur(); } });
   ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
 }
 function openNoteEdit(pv, a) {
@@ -670,7 +728,7 @@ function setTool(t) {
   if (t === 'textsel') buildTextVisible();
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -703,6 +761,7 @@ async function buildPdfBytes() {
         else if (a.type === 'pen') { for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c }); }
         else if (a.type === 'text') { a.text.split('\n').forEach((ln, i) => pg.drawText(ln, { x: a.x, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: c })); }
         else if (a.type === 'note' && a.text) { pg.drawRectangle({ x: a.x, y: Y(a.y + 11), width: 13, height: 11, color: c }); }
+        else if (a.type === 'edit') { const bg = parseColor(a.bg), tc2 = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); (a.text || '').split('\n').forEach((ln, i) => pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) })); }
         else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); }
       }
       if (pageRot[n]) pg.setRotation(degrees(pageRot[n]));
@@ -881,8 +940,9 @@ function wire() {
   $('#pages').addEventListener('dblclick', e => {
     const id = e.target.getAttribute && e.target.getAttribute('data-id'); if (!id) return;
     const wrap = e.target.closest('.pagewrap'); if (!wrap) return; const pv = pageViews.find(p => p.num === +wrap.dataset.n);
-    const a = findAnno(pv.num, +id); if (!a || (a.type !== 'dim' && a.type !== 'measure' && a.type !== 'text')) return;
-    if (a.type === 'text') return; // Text wird ueber das Werkzeug bearbeitet
+    const a = findAnno(pv.num, +id); if (!a) return;
+    if (a.type === 'edit') { openEditEdit(pv, a, false); return; }   // bestehende Edit-Stelle erneut bearbeiten
+    if (a.type !== 'dim' && a.type !== 'measure') return;
     const v = prompt('Mass-Beschriftung (leer = automatisch gemessen):', a.text || lenLabel(a)); if (v === null) return;
     pushUndo(); a.text = v.trim() || ''; drawAnnos(pv);
   });

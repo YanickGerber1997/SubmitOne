@@ -86,13 +86,14 @@ async function loadDoc(bytes) {
    in voller Auflösung gerendert wurden (Speicher = Seitenzahl × Auflösung → Absturz).
    Jetzt: Platzhalter sofort (richtige Grösse → korrektes Scrollen), Canvas nur wenn die
    Seite in Sichtweite kommt; entfernt, wenn sie weit weg ist. Speicher bleibt konstant. */
-const MAX_AREA = 14e6;       // max. Canvas-Pixel pro Seite, scharf (deckelt Speicher/Seite)
-const PREVIEW_AREA = 3e6;    // max. Canvas-Pixel pro Seite, Vorschau (schnell, beim Scrollen)
+const MAX_AREA = 24e6;       // max. Canvas-Pixel pro Seite, scharf (deckelt Speicher/Seite)
+const PREVIEW_AREA = 6e6;    // max. Canvas-Pixel pro Seite, Vorschau (schnell, beim Scrollen)
 const RENDER_MAX = 2;        // gleichzeitige Seiten-Renderings
 let pageObserver = null, thumbObserver = null, renderQueue = [], renderActive = 0;
 function fitScale(pw) { const avail = $('#pages').clientWidth - 60; return Math.max(.2, Math.min(3, avail / pw)); }
 function pageScale(pv) { return (zoom === 'auto') ? fitScale(pv.pageW) : zoom; }
-function dprCap() { return Math.min(window.devicePixelRatio || 1, 2); }
+function dprCap() { return Math.min(window.devicePixelRatio || 1, 3); }                 // scharf: bis 3× Pixeldichte
+function dprPreview() { return Math.min(window.devicePixelRatio || 1, 1.5); }            // Vorschau: bis 1,5× (schon recht scharf)
 
 function layoutPv(pv) {                                  // Grösse/Drehung setzen (ohne zu rendern)
   const scale = pageScale(pv), dispW = pv.pageW * scale, dispH = pv.pageH * scale;
@@ -139,7 +140,7 @@ async function renderPage(pv, full) {
   if (pv.rendering || (pv.quality >= wantQ && !pv.stale)) return; pv.rendering = true;
   try {
     if (!pv.page) { pv.page = await pdfDoc.getPage(pv.num); const vp1 = pv.page.getViewport({ scale: 1 }); if (Math.abs(vp1.width - pv.pageW) > 1 || Math.abs(vp1.height - pv.pageH) > 1) { pv.pageW = vp1.width; pv.pageH = vp1.height; pv.svg.setAttribute('viewBox', `0 0 ${vp1.width} ${vp1.height}`); layoutPv(pv); } }
-    const scale = pageScale(pv), dpr = full ? dprCap() : 1, maxA = full ? MAX_AREA : PREVIEW_AREA;
+    const scale = pageScale(pv), dpr = full ? dprCap() : dprPreview(), maxA = full ? MAX_AREA : PREVIEW_AREA;
     let rscale = scale * dpr; const area = pv.pageW * rscale * pv.pageH * rscale; if (area > maxA) rscale *= Math.sqrt(maxA / area);   // riesige Seiten deckeln
     const vp = pv.page.getViewport({ scale: rscale });
     const canvas = document.createElement('canvas'); canvas.className = 'pagecanvas';
@@ -165,9 +166,12 @@ function renderVisible() {      // sichtbare Seiten in Vorschau anstossen, dann 
   scheduleSharpen();
 }
 let sharpenTimer = null;
-function scheduleSharpen() {    // nach kurzer Ruhe (kein Scrollen) das aktuelle Blatt scharf nachrendern
+function scheduleSharpen() {    // nach kurzer Ruhe (kein Scrollen) ALLE sichtbaren Blätter scharf nachrendern
   clearTimeout(sharpenTimer);
-  sharpenTimer = setTimeout(() => { const pv = pageViews.find(p => p.num === curPage()); if (pv) enqueueRender(pv, true); }, 170);
+  sharpenTimer = setTimeout(() => {
+    const host = $('#pages'), top = host.scrollTop - 120, bot = host.scrollTop + host.clientHeight + 120;
+    for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) enqueueRender(pv, true); }
+  }, 130);
 }
 function relayout() { if (!pdfDoc) return; pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); renderVisible(); }
 let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTimer = setTimeout(relayout, 140); }

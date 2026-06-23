@@ -1,25 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 1240" width="1240" height="1240" font-family="'Questrial','Century Gothic','Futura','Inter',sans-serif">
-  <rect width="1240" height="1240" fill="#f0efe9"/>
+  <rect width="1240" height="1240" fill="#ffffff"/>
 
-  <!-- Bildmarke: S-Monogramm (dunkel) + grünes Blatt (oben rechts) + grüner Aufwärts-Pfeil (Tail) -->
-  <g transform="translate(430 372) scale(2.6)" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <!-- S -->
-    <path d="M158 60 C158 40 116 34 90 46 C60 60 60 92 92 104 C116 113 130 120 130 140 C130 162 96 172 66 160"
-          stroke="#1c242c" stroke-width="17"/>
-    <!-- untere Linie -->
-    <path d="M66 167 L138 167" stroke="#1c242c" stroke-width="17"/>
-    <!-- grüner Aufwärts-Pfeil -->
-    <path d="M138 167 L138 106" stroke="#4f7a3c" stroke-width="17"/>
-    <path d="M122 122 L138 103 L154 122" stroke="#4f7a3c" stroke-width="17"/>
-    <!-- grünes Blatt -->
-    <path d="M157 48 C184 50 188 82 166 96 C180 74 174 58 157 48 Z" fill="#4f7a3c" stroke="none"/>
+  <!-- Bildmarke -->
+  <g transform="translate(290 168) scale(3.0)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- S: flacher Top-Balken, Bogen, flacher Boden-Balken (dunkel) -->
+    <path d="M122 72 L82 72 C58 72 56 100 84 110 C106 119 118 124 118 142 C118 164 92 172 70 164" stroke="#1c242c" stroke-width="13"/>
+    <path d="M70 165 L120 165" stroke="#1c242c" stroke-width="13"/>
+    <!-- grüner Aufwärts-Pfeil mit geschwungenem Fuss -->
+    <path d="M120 165 C133 165 139 157 139 145 L139 112" stroke="#5a7d3c" stroke-width="12"/>
+    <path d="M127 126 L139 110 L151 126" stroke="#5a7d3c" stroke-width="12"/>
+    <!-- grünes Blatt (spitz, gewinkelt) mit Mittelrippe -->
+    <path d="M120 94 C120 70 142 55 160 57 C158 81 140 96 120 94 Z" fill="#3e5a30" stroke="none"/>
+    <path d="M126 88 L154 62" stroke="#ffffff" stroke-width="2.2"/>
   </g>
 
-  <!-- Wortmarke -->
-  <text x="620" y="900" text-anchor="middle" font-size="134" letter-spacing="28" font-weight="400">
-    <tspan fill="#1c242c">SUBMIT</tspan><tspan fill="#4f7a3c" dx="46">PDF</tspan>
+  <!-- Wortmarke (dünn, weit gesperrt) -->
+  <text x="620" y="930" text-anchor="middle" font-size="128" letter-spacing="30" font-weight="300">
+    <tspan fill="#3a3f3a">SUBMIT</tspan><tspan fill="#a7a89b" dx="50">PDF</tspan>
   </text>
   <!-- Leitsatz als Zitat -->
-  <text x="620" y="968" text-anchor="middle" font-size="33" letter-spacing="2" font-style="italic" fill="#34502b">„It's all about the Paper, submit to everyone."</text>
-  <text x="620" y="1012" text-anchor="middle" font-size="26" letter-spacing="5" fill="#6e7a3a">— YANICK GERBER</text>
+  <text x="620" y="994" text-anchor="middle" font-size="32" letter-spacing="2" font-style="italic" fill="#34502b">„It's all about the Paper, submit to everyone."</text>
+  <text x="620" y="1036" text-anchor="middle" font-size="25" letter-spacing="5" fill="#6e7a3a">— YANICK GERBER</text>
 </svg>

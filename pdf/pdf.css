@@ -41,11 +41,12 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .tgrp{display:flex;align-items:center;gap:3px;padding-right:8px;margin-right:2px;border-right:1px solid var(--line-soft)}
 .tgrp:last-child{border-right:none}
 .tool{width:34px;height:34px;border:1px solid transparent;background:none;color:var(--ink-soft);border-radius:0;cursor:pointer;display:flex;align-items:center;justify-content:center}
-.tool:hover{background:var(--surface-2);color:var(--ink)}
-.tool.on{background:var(--accent-soft);color:var(--accent);border-color:#bcceaa}
-.tool.danger:hover{background:#fdecea;color:var(--danger)}
+.tool:hover{background:var(--surface-2);color:var(--accent-2)}
+.tool.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
+.tool.danger{color:var(--danger)}
+.tool.danger:hover{background:#f4e6df;color:var(--danger)}
 .swatch{position:relative;width:34px;height:34px;border-radius:0;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden}
-.swatch span{width:20px;height:20px;border-radius:0;border:2px solid #fff;box-shadow:0 0 0 1px var(--line);background:#e8412e}
+.swatch span{width:20px;height:20px;border-radius:0;border:2px solid #fff;box-shadow:0 0 0 1px var(--line);background:#b4502f}
 .swatch input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .sel{height:32px;border:1px solid var(--line);background:var(--surface);border-radius:0;font:inherit;font-size:12.5px;color:var(--ink);padding:0 6px;cursor:pointer}
 

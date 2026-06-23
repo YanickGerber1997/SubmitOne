@@ -12,7 +12,7 @@ let zoom = 'auto', pageViews = [], renderTok = 0;
 let annos = {};            // {pageNum: [anno]}
 let pageRot = {};          // {pageNum: 0/90/180/270}
 let tool = 'select';
-let style = { color: '#e8412e', width: 2.5, size: 16 };
+let style = { color: '#b4502f', width: 2.5, size: 16 };   // Standard: Rost (gut sichtbar auf Plänen)
 let penTidy = true;        // Freihand-Skizzen automatisch zu sauberen Formen aufräumen
 let sel = null;            // {num, id}
 let nextId = 1;

@@ -99,7 +99,7 @@ function layoutPv(pv) {                                  // Grösse/Drehung setz
   const scale = pageScale(pv), dispW = pv.pageW * scale, dispH = pv.pageH * scale;
   const rot = (pageRot[pv.num] || 0) + (viewRot[pv.num] || 0), rad = rot * Math.PI / 180;
   const bw = Math.abs(dispW * Math.cos(rad)) + Math.abs(dispH * Math.sin(rad)), bh = Math.abs(dispW * Math.sin(rad)) + Math.abs(dispH * Math.cos(rad));
-  if ((pv.scale !== scale || pv.rot !== rot)) dropTile(pv);   // Skalierung/Drehung geändert → Kachel verwerfen
+  if ((pv.scale !== scale || pv.rot !== rot)) { dropTile(pv); dropText(pv); }   // Skalierung/Drehung geändert → Kachel/Text neu
   if (pv.scale !== scale && pv.rendered) pv.stale = true;     // Zoom geändert → Basis neu rendern
   pv.scale = scale; pv.dispW = dispW; pv.dispH = dispH; pv.rot = rot;
   pv.wrap.style.width = bw + 'px'; pv.wrap.style.height = bh + 'px';
@@ -118,7 +118,7 @@ async function buildLayout() {
     const inner = document.createElement('div'); inner.className = 'pageinner';
     const svg = svgEl('svg', { class: 'anno', viewBox: `0 0 ${v1.width} ${v1.height}`, preserveAspectRatio: 'none' });
     inner.appendChild(svg); outer.appendChild(inner); host.appendChild(outer);
-    const pv = { num: n, wrap: outer, inner, svg, canvas: null, tile: null, page: n === 1 ? p1 : null, pageW: v1.width, pageH: v1.height, scale: 0, rot: 0, rendered: false, rendering: false, stale: false, task: null, tileTask: null };
+    const pv = { num: n, wrap: outer, inner, svg, canvas: null, tile: null, textLayer: null, page: n === 1 ? p1 : null, pageW: v1.width, pageH: v1.height, scale: 0, rot: 0, rendered: false, rendering: false, stale: false, baseCapped: false, task: null, tileTask: null, textScale: 0, textBusy: false };
     pageViews.push(pv); layoutPv(pv); drawAnnos(pv); bindPageEvents(pv);
   }
   pageObserver = new IntersectionObserver(ents => {
@@ -135,8 +135,9 @@ async function renderPage(pv) {                       // Basis-Vorschau (ganze S
   if (pv.rendering || (pv.rendered && !pv.stale)) return; pv.rendering = true;
   try {
     if (!pv.page) { pv.page = await pdfDoc.getPage(pv.num); const vp1 = pv.page.getViewport({ scale: 1 }); if (Math.abs(vp1.width - pv.pageW) > 1 || Math.abs(vp1.height - pv.pageH) > 1) { pv.pageW = vp1.width; pv.pageH = vp1.height; pv.svg.setAttribute('viewBox', `0 0 ${vp1.width} ${vp1.height}`); layoutPv(pv); } }
-    const scale = pageScale(pv); let rscale = scale * dprPreview();
-    const area = pv.pageW * rscale * pv.pageH * rscale; if (area > PREVIEW_AREA) rscale *= Math.sqrt(PREVIEW_AREA / area);
+    // Adaptiv: kleine/mittlere Seiten sofort VOLL scharf; nur riesige Seiten deckeln (dann schärft die Kachel).
+    const scale = pageScale(pv); let rscale = scale * dprCap();
+    const area = pv.pageW * rscale * pv.pageH * rscale; pv.baseCapped = area > MAX_AREA; if (pv.baseCapped) rscale *= Math.sqrt(MAX_AREA / area);
     const vp = pv.page.getViewport({ scale: rscale });
     const canvas = document.createElement('canvas'); canvas.className = 'pagecanvas';
     canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
@@ -151,12 +152,33 @@ async function renderPage(pv) {                       // Basis-Vorschau (ganze S
 }
 function releasePage(pv) {     // weit weg → laufendes Rendern abbrechen + Canvas/Kachel freigeben
   if (pv.task) { try { pv.task.cancel(); } catch (_) { } pv.task = null; }
-  dropTile(pv);
+  dropTile(pv); dropText(pv);
   if (pv.canvas) { pv.canvas.remove(); pv.canvas = null; }
   pv.rendered = false; pv.rendering = false; pv.stale = false;
   const i = renderQueue.indexOf(pv); if (i >= 0) renderQueue.splice(i, 1); pv.wrap.classList.add('loading');
 }
 function dropTile(pv) { if (pv.tileTask) { try { pv.tileTask.cancel(); } catch (_) { } pv.tileTask = null; } if (pv.tile) { pv.tile.remove(); pv.tile = null; } }
+function dropText(pv) { if (pv.textLayer) { pv.textLayer.remove(); pv.textLayer = null; } pv.textScale = 0; }
+// Auswählbare/kopierbare Textebene (pdf.js) über die Seite legen – im aktuellen Zoom positioniert.
+async function ensureTextLayer(pv) {
+  if (!pv.page || pv.textBusy || (pv.textLayer && pv.textScale === pv.scale)) return;
+  pv.textBusy = true;
+  try {
+    const tc = await pv.page.getTextContent();
+    const div = document.createElement('div'); div.className = 'textLayer';
+    const scale = pv.scale; div.style.width = pv.dispW + 'px'; div.style.height = pv.dispH + 'px'; div.style.setProperty('--scale-factor', scale);
+    const task = pdfjs.renderTextLayer({ textContentSource: tc, container: div, viewport: pv.page.getViewport({ scale }), textDivs: [] });
+    await task.promise;
+    if (pv.scale !== scale) return;     // Zoom hat sich zwischenzeitlich geändert
+    if (pv.textLayer) pv.textLayer.remove();
+    pv.inner.insertBefore(div, pv.svg); pv.textLayer = div; pv.textScale = scale;
+  } catch (_) { /* Textebene optional */ }
+  finally { pv.textBusy = false; }
+}
+function buildTextVisible() {     // Textebenen für sichtbare Seiten (nur im Text-Modus)
+  const host = $('#pages'), top = host.scrollTop - 200, bot = host.scrollTop + host.clientHeight + 200;
+  for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (pv.page && b >= top && t <= bot) ensureTextLayer(pv); }
+}
 function renderVisible() {
   const host = $('#pages'), top = host.scrollTop - 900, bot = host.scrollTop + host.clientHeight + 900;
   for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) enqueueRender(pv); }
@@ -201,8 +223,10 @@ function scheduleSharpen() {    // nach kurzer Ruhe: scharfe Kachel für die sic
   clearTimeout(sharpenTimer);
   sharpenTimer = setTimeout(() => {
     const host = $('#pages'), top = host.scrollTop, bot = host.scrollTop + host.clientHeight;
-    for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (pv.rendered && b >= top && t <= bot) renderTile(pv); }
-  }, 140);
+    // Kachel nur nötig, wenn die Basis gedeckelt wurde (riesige Seite / tiefer Zoom). Sonst ist die Basis schon voll scharf.
+    for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (pv.rendered && pv.baseCapped && b >= top && t <= bot) renderTile(pv); }
+    if (tool === 'textsel') buildTextVisible();
+  }, 90);
 }
 function relayout() { if (!pdfDoc) return; pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); renderVisible(); }
 let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTimer = setTimeout(relayout, 140); }
@@ -500,6 +524,8 @@ function deleteSel() { if (!sel) return; const arr = annos[sel.num]; if (!arr) r
 /* ---------- Werkzeug umschalten ---------- */
 function setTool(t) {
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
+  $('#pages').classList.toggle('mode-text', t === 'textsel');   // Text-Auswahl-Modus
+  if (t === 'textsel') buildTextVisible();
 }
 function applyToolCursor() {
   pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text'); });

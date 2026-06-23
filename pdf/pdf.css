@@ -92,6 +92,22 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .drop-card .priv{margin-top:16px;font-size:12.5px;color:var(--ink-faint)}
 .link{background:none;border:none;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;padding:0;text-decoration:underline}
 .status{position:absolute;top:calc(var(--bar) + var(--tools) + 14px);left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:8px 16px;border-radius:9px;font-size:13px;z-index:30;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+/* Schnellzugriff unten links */
+.quickbar{position:absolute;left:16px;bottom:16px;z-index:25;display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:5px;box-shadow:0 6px 20px rgba(20,24,40,.16)}
+.qbtn{width:36px;height:36px;border:none;background:none;color:var(--ink-soft);border-radius:9px;cursor:pointer;font-size:17px;display:flex;align-items:center;justify-content:center}
+.qbtn:hover{background:var(--surface-2);color:var(--accent)}
+.qsep{width:1px;height:22px;background:var(--line)}
+
+/* Rechtsklick-Menü */
+.ctxmenu{position:fixed;z-index:60;min-width:210px;background:var(--surface);border:1px solid var(--line);border-radius:11px;box-shadow:0 12px 34px rgba(20,24,40,.22);padding:6px;font-size:13.5px}
+.ctxmenu button{display:flex;align-items:center;gap:10px;width:100%;border:none;background:none;color:var(--ink);font:inherit;text-align:left;padding:8px 10px;border-radius:8px;cursor:pointer}
+.ctxmenu button:hover{background:var(--accent-soft);color:var(--accent)}
+.ctxmenu button .mi{width:18px;text-align:center;opacity:.85}
+.ctxmenu button.danger:hover{background:#fdecea;color:var(--danger)}
+.ctxmenu .sep{height:1px;background:var(--line-soft);margin:5px 4px}
+.ctxmenu .grp{display:flex;gap:2px;padding:2px 4px 4px}
+.ctxmenu .grp button{width:34px;height:34px;justify-content:center;padding:0}
+
 #toast-root{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:50;display:flex;flex-direction:column;gap:8px;align-items:center}
 .toast{background:var(--ink);color:#fff;padding:9px 16px;border-radius:9px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.22);animation:tIn .2s}
 @keyframes tIn{from{opacity:0;transform:translateY(8px)}}

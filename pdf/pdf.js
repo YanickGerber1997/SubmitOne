@@ -38,7 +38,7 @@ async function openFiles(files) {
 async function loadDoc(bytes) {
   status('Öffne Dokument …');
   pdfDoc = await pdfjs.getDocument({ data: bytes }).promise;
-  $('#drop').classList.add('hide'); $('#toolbar').hidden = false;
+  $('#drop').classList.add('hide'); $('#toolbar').hidden = false; $('#quickbar').hidden = false;
   $('#btnSave').disabled = false; $('#docName').textContent = docName;
   document.title = docName.replace(/\.pdf$/i, '') + ' – Submit PDF';
   await renderAll(); buildThumbs(); status(''); refreshComments();
@@ -333,6 +333,36 @@ async function save() {
   } catch (e) { status(''); console.error(e); toast('Speichern fehlgeschlagen.'); }
 }
 
+/* ---------- Rechtsklick-Menü (alles erreichbar) ---------- */
+function hideCtx() { $('#ctxmenu').hidden = true; }
+function showCtx(x, y, pv, annoId) {
+  const m = $('#ctxmenu'); m.innerHTML = '';
+  const add = (label, mi, act, cls) => { const b = document.createElement('button'); if (cls) b.className = cls; b.innerHTML = `<span class="mi">${mi}</span><span>${label}</span>`; b.onclick = () => { hideCtx(); act(); }; m.appendChild(b); };
+  const sep = () => { const d = document.createElement('div'); d.className = 'sep'; m.appendChild(d); };
+  if (annoId) {
+    add('Löschen', '🗑', () => { sel = { num: pv.num, id: annoId }; deleteSel(); }, 'danger');
+    add('Farbe ändern', '🎨', () => $('#colorPick').click());
+    add('Duplizieren', '⧉', () => duplicateAnno(pv, annoId));
+    sep();
+  }
+  // Werkzeuge als kompakte Icon-Reihe
+  const grp = document.createElement('div'); grp.className = 'grp';
+  [['select', '↖', 'Auswählen'], ['text', 'T', 'Text'], ['note', '💬', 'Kommentar'], ['pen', '✎', 'Stift'], ['line', '╱', 'Linie'], ['arrow', '➔', 'Pfeil'], ['rect', '▭', 'Rechteck'], ['oval', '◯', 'Oval']]
+    .forEach(([t, ic, ti]) => { const b = document.createElement('button'); b.title = ti; b.innerHTML = ic; b.onclick = () => { hideCtx(); setTool(t); }; grp.appendChild(b); });
+  m.appendChild(grp);
+  sep();
+  add('Seite 90° links drehen', '⟲', () => rotatePage(-90));
+  add('Seite 90° rechts drehen', '⟳', () => rotatePage(90));
+  sep();
+  add('Öffnen', '📂', () => $('#fileInput').click());
+  add('Speichern (PDF)', '💾', save);
+  m.hidden = false;
+  const w = m.offsetWidth, h = m.offsetHeight;
+  m.style.left = Math.min(x, window.innerWidth - w - 8) + 'px';
+  m.style.top = Math.min(y, window.innerHeight - h - 8) + 'px';
+}
+function duplicateAnno(pv, id) { const a = findAnno(pv.num, id); if (!a) return; pushUndo(); const c = JSON.parse(JSON.stringify(a)); c.id = nextId++; translateAnno(c, JSON.parse(JSON.stringify(c)), 12, 12); getAnnos(pv.num).push(c); sel = { num: pv.num, id: c.id }; drawAnnos(pv); refreshComments(); }
+
 /* ---------- Verdrahtung ---------- */
 function wire() {
   $('#btnOpen').onclick = () => $('#fileInput').click();
@@ -346,6 +376,21 @@ function wire() {
   $$('.tool[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $('#rotL').onclick = () => rotatePage(-90); $('#rotR').onclick = () => rotatePage(90);
   $('#delSel').onclick = deleteSel;
+  // Schnellzugriff unten links
+  $('#qRotL').onclick = () => rotatePage(-90); $('#qRotR').onclick = () => rotatePage(90);
+  $('#qPrev').onclick = () => gotoPage(Math.max(1, curPage() - 1));
+  $('#qNext').onclick = () => gotoPage(Math.min(pdfDoc ? pdfDoc.numPages : 1, curPage() + 1));
+  // Rechtsklick-Menü
+  $('#pages').addEventListener('contextmenu', e => {
+    if (!pdfDoc) return; e.preventDefault();
+    const wrap = e.target.closest('.pagewrap'); if (!wrap) return;
+    const pv = pageViews.find(p => p.num === +wrap.dataset.n); if (!pv) return;
+    const id = e.target.getAttribute && e.target.getAttribute('data-id');
+    if (id) { sel = { num: pv.num, id: +id }; drawAnnos(pv); }
+    showCtx(e.clientX, e.clientY, pv, id ? +id : null);
+  });
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#ctxmenu')) hideCtx(); }, true);
+  $('#pages').addEventListener('scroll', hideCtx, { passive: true });
   $('#btnComments').onclick = () => { const open = $('#work').classList.toggle('comm-open'); $('#comments').hidden = !open; $('#btnComments').classList.toggle('on', open); };
   const cp = $('#colorPick'); cp.oninput = () => { style.color = cp.value; $('#colorDot').style.background = cp.value; if (sel) { const a = findAnno(sel.num, sel.id); if (a) { pushUndo(); a.color = cp.value; pageViews.forEach(drawAnnos); } } };
   $('#widthSel').onchange = e => { style.width = +e.target.value; if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.width != null) { pushUndo(); a.width = style.width; pageViews.forEach(drawAnnos); } } };
@@ -369,6 +414,7 @@ function wire() {
     else if (mod && e.key === '-') { e.preventDefault(); zoomStep(-.15); }
     else if (mod && e.key === '0') { e.preventDefault(); setZoom('auto'); }
     else if (e.key === 'Delete' || e.key === 'Backspace') { if (sel) { e.preventDefault(); deleteSel(); } }
+    else if (e.key === 'Escape') { hideCtx(); sel = null; pageViews.forEach(drawAnnos); }
     else if (!mod && e.key.toLowerCase() === 'v') setTool('select');
     else if (!mod && e.key.toLowerCase() === 't') setTool('text');
     else if (!mod && e.key.toLowerCase() === 's') setTool('pen');

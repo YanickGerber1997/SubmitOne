@@ -75,6 +75,16 @@
     </div>
   </div>
 
+  <!-- Schnellzugriff (immer sichtbar): das Wichtigste direkt -->
+  <div class="quickbar" id="quickbar" hidden>
+    <button class="qbtn" id="qRotL" title="Seite 90° links drehen"><svg viewBox="0 0 24 24" class="i"><path d="M4 9a8 8 0 1 1 2 6"/><path d="M4 4v5h5"/></svg></button>
+    <button class="qbtn" id="qRotR" title="Seite 90° rechts drehen"><svg viewBox="0 0 24 24" class="i"><path d="M20 9a8 8 0 1 0-2 6"/><path d="M20 4v5h-5"/></svg></button>
+    <span class="qsep"></span>
+    <button class="qbtn" id="qPrev" title="Seite zurück">↑</button>
+    <button class="qbtn" id="qNext" title="Seite vor">↓</button>
+  </div>
+
+  <div class="ctxmenu" id="ctxmenu" hidden></div>
   <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden />
   <div class="status" id="status" hidden></div>
   <div id="toast-root"></div>

@@ -9,6 +9,21 @@
 }
 *{box-sizing:border-box}
 [hidden]{display:none !important}   /* Attribut sticht Klassen-display aus (Mail-Dialog etc.) */
+
+/* Animierter Startbildschirm */
+.splash{position:fixed;inset:0;z-index:200;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;transition:opacity .55s ease}
+.splash.hide{opacity:0;pointer-events:none}
+.splash-mark{width:158px;height:188px}
+.splash-mark .s-draw{stroke-dasharray:760;stroke-dashoffset:760;animation:lgDraw 1s ease .15s forwards}
+.splash-mark .a-draw{stroke-dasharray:150;stroke-dashoffset:150;animation:lgDraw .55s ease 1s forwards}
+.splash-mark .a-draw2{stroke-dasharray:90;stroke-dashoffset:90;animation:lgDraw .4s ease 1.3s forwards}
+.splash-mark .leaf{opacity:0;transform-box:fill-box;transform-origin:60% 70%;animation:lgPop .55s cubic-bezier(.2,1.4,.4,1) 1.15s forwards}
+@keyframes lgDraw{to{stroke-dashoffset:0}}
+@keyframes lgPop{from{opacity:0;transform:scale(.4) rotate(-8deg)}to{opacity:1;transform:scale(1) rotate(0)}}
+.splash-word{display:flex;align-items:center;font-weight:300;font-size:30px;letter-spacing:7px}
+.splash-word .sl{display:inline-block;opacity:0;transform:translateY(12px);animation:lgRise .42s ease forwards}
+.splash-word .sl.d{color:#3a3f3a} .splash-word .sl.g{color:#a7a89b}
+@keyframes lgRise{to{opacity:1;transform:translateY(0)}}
 html,body{margin:0;height:100%}
 body{font-family:var(--font);background:var(--bg);color:var(--ink);overflow:hidden}
 svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}

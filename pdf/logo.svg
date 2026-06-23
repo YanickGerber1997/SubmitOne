@@ -1,23 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 1240" width="1240" height="1240" font-family="'Questrial','Century Gothic','Futura','Inter',sans-serif">
   <rect width="1240" height="1240" fill="#ffffff"/>
 
-  <!-- Bildmarke: kompletter S (flach endend) über dem Blatt mit Knick (oben rechts) -->
-  <g transform="translate(303 185) scale(3.0)" fill="none" stroke-linejoin="round">
-    <!-- S – Top & Boden enden gerade (flach) -->
+  <!-- Bildmarke (gross): kompletter S (flach endend) + Blatt mit Knick oben rechts + Pfeil -->
+  <g transform="translate(-34 -230) scale(6)" fill="none" stroke-linejoin="round">
     <path d="M118 66 L84 66 C62 66 60 92 86 104 C108 112 116 118 116 136 C116 158 92 166 72 162 L116 162"
           stroke="#1c242c" stroke-width="12" stroke-linecap="butt"/>
-    <!-- grüner Aufwärts-Pfeil unten rechts (geschwungener Fuss) -->
     <path d="M116 162 C132 162 138 153 138 140 L138 110" stroke="#5a7d3c" stroke-width="11" stroke-linecap="round"/>
     <path d="M128 124 L138 109 L148 124" stroke="#5a7d3c" stroke-width="11" stroke-linecap="round"/>
-    <!-- grünes Blatt = Knick oben rechts, mit Mittelrippe -->
     <path d="M116 90 C112 66 138 50 158 55 C153 80 134 98 116 90 Z" fill="#3e5a30" stroke="none"/>
     <path d="M122 84 L150 60" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>
   </g>
 
-  <!-- Wortmarke (dünn, weit gesperrt) -->
-  <text x="620" y="950" text-anchor="middle" font-size="128" letter-spacing="30" font-weight="300">
+  <!-- Wortmarke -->
+  <text x="620" y="905" text-anchor="middle" font-size="128" letter-spacing="30" font-weight="300">
     <tspan fill="#3a3f3a">SUBMIT</tspan><tspan fill="#a7a89b" dx="50">PDF</tspan>
   </text>
-  <text x="620" y="1012" text-anchor="middle" font-size="32" letter-spacing="2" font-style="italic" fill="#34502b">„It's all about the Paper, submit to everyone."</text>
-  <text x="620" y="1054" text-anchor="middle" font-size="25" letter-spacing="5" fill="#6e7a3a">— YANICK GERBER</text>
+  <text x="620" y="967" text-anchor="middle" font-size="32" letter-spacing="2" font-style="italic" fill="#34502b">„It's all about the Paper, submit to everyone."</text>
+  <text x="620" y="1009" text-anchor="middle" font-size="25" letter-spacing="5" fill="#6e7a3a">— YANICK GERBER</text>
 </svg>

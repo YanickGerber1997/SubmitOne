@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF – PDFs bearbeiten im Browser</title>
-  <meta name="description" content="PDFs ansehen, anmerken, unterschreiben, zusammenführen – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
+  <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
   <link rel="icon" href="icon.svg" />
   <link rel="stylesheet" href="pdf.css" />
 </head>
@@ -12,29 +12,65 @@
   <header class="topbar">
     <div class="brand"><span class="bw-a">Submit</span><span class="bw-b">PDF</span></div>
     <button class="btn" id="btnOpen"><svg viewBox="0 0 24 24" class="i"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3z"/></svg><span>Öffnen</span></button>
-    <button class="btn" id="btnSave" disabled><svg viewBox="0 0 24 24" class="i"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h7M8 21v-7h8v7"/></svg><span>Speichern</span></button>
+    <button class="btn primary" id="btnSave" disabled><svg viewBox="0 0 24 24" class="i"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span>Speichern</span></button>
     <span class="doc-name" id="docName"></span>
     <span class="grow"></span>
+    <button class="icon-btn" id="btnUndo" title="Rückgängig (Strg+Z)" disabled><svg viewBox="0 0 24 24" class="i"><path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10h-3"/></svg></button>
     <div class="zoombox">
       <button class="icon-btn" id="zoomOut" title="Verkleinern">−</button>
       <button class="zoom-val" id="zoomVal" title="An Breite anpassen">100&nbsp;%</button>
       <button class="icon-btn" id="zoomIn" title="Vergrössern">+</button>
     </div>
     <span class="pageind" id="pageInd"></span>
+    <button class="icon-btn" id="btnComments" title="Kommentare"><svg viewBox="0 0 24 24" class="i"><path d="M4 5h16v11H9l-4 4z"/></svg></button>
     <a class="suite-link" href="../write/index.html" title="Zur Submit-Suite">Submit Paper ↗</a>
   </header>
+
+  <!-- Werkzeugleiste -->
+  <div class="toolbar" id="toolbar" hidden>
+    <div class="tgrp">
+      <button class="tool on" data-tool="select" title="Auswählen & Verschieben (V)"><svg viewBox="0 0 24 24" class="i"><path d="M5 3l6 16 2-6 6-2z"/></svg></button>
+      <button class="tool" data-tool="text" title="Text in den Plan schreiben (T)"><svg viewBox="0 0 24 24" class="i"><path d="M5 6h14M12 6v13M9 19h6"/></svg></button>
+      <button class="tool" data-tool="note" title="Kommentar-Notiz (K)"><svg viewBox="0 0 24 24" class="i"><path d="M4 5h16v11H9l-4 4z"/></svg></button>
+    </div>
+    <div class="tgrp">
+      <button class="tool" data-tool="pen" title="Stift / Freihand (S)"><svg viewBox="0 0 24 24" class="i"><path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M14 6l4 4"/></svg></button>
+      <button class="tool" data-tool="line" title="Linie (L)"><svg viewBox="0 0 24 24" class="i"><path d="M5 19 19 5"/></svg></button>
+      <button class="tool" data-tool="arrow" title="Pfeil (P)"><svg viewBox="0 0 24 24" class="i"><path d="M5 19 19 5M19 5h-7M19 5v7"/></svg></button>
+      <button class="tool" data-tool="rect" title="Rechteck (R)"><svg viewBox="0 0 24 24" class="i"><rect x="4" y="6" width="16" height="12" rx="1"/></svg></button>
+      <button class="tool" data-tool="oval" title="Oval (O)"><svg viewBox="0 0 24 24" class="i"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg></button>
+    </div>
+    <div class="tgrp">
+      <label class="swatch" title="Farbe"><span id="colorDot"></span><input type="color" id="colorPick" value="#e8412e" /></label>
+      <select class="sel" id="widthSel" title="Strichstärke">
+        <option value="1.5">dünn</option><option value="2.5" selected>mittel</option><option value="4">dick</option><option value="7">sehr dick</option>
+      </select>
+      <select class="sel" id="sizeSel" title="Textgrösse">
+        <option value="12">12</option><option value="16" selected>16</option><option value="22">22</option><option value="32">32</option>
+      </select>
+    </div>
+    <span class="grow"></span>
+    <div class="tgrp">
+      <button class="tool" id="rotL" title="Seite 90° links drehen"><svg viewBox="0 0 24 24" class="i"><path d="M4 9a8 8 0 1 1 2 6"/><path d="M4 4v5h5"/></svg></button>
+      <button class="tool" id="rotR" title="Seite 90° rechts drehen"><svg viewBox="0 0 24 24" class="i"><path d="M20 9a8 8 0 1 0-2 6"/><path d="M20 4v5h-5"/></svg></button>
+      <button class="tool danger" id="delSel" title="Markiertes löschen (Entf)"><svg viewBox="0 0 24 24" class="i"><path d="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13"/></svg></button>
+    </div>
+  </div>
 
   <main class="work" id="work">
     <aside class="thumbs" id="thumbs" aria-label="Seiten"></aside>
     <div class="pages" id="pages"></div>
+    <aside class="comments" id="comments" hidden>
+      <div class=" comm-head">Kommentare</div>
+      <div class="comm-list" id="commList"></div>
+    </aside>
   </main>
 
-  <!-- Leerzustand / Ablegen -->
   <div class="drop" id="drop">
     <div class="drop-card">
       <div class="drop-ico"><svg viewBox="0 0 24 24"><path d="M6 2.5h8l4 4v15H6z"/><path d="M14 2.5v4h4"/><path d="M12 11v6M9.5 13.5 12 11l2.5 2.5"/></svg></div>
       <h1>PDF hier ablegen</h1>
-      <p>oder <button class="link" id="dropOpen">Datei auswählen</button> · mehrere PDFs werden zusammengeführt</p>
+      <p>oder <button class="link" id="dropOpen">Datei auswählen</button></p>
       <p class="priv">🔒 Deine Dateien bleiben auf deinem Gerät – nichts wird hochgeladen.</p>
     </div>
   </div>

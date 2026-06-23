@@ -2998,6 +2998,7 @@ function beginEdit(initial) {
 // während des Tippens: Text breiter als die Zelle → folgende LEERE Zellen live aufnehmen (nur so viele wie nötig)
 function liveExtendCell() {
   const td = editingTd; if (!td || td.classList.contains('textcell')) return;
+  td.style.whiteSpace = 'nowrap';   // erst in einer Zeile wachsen
   let guard = 0;
   while (td.scrollWidth > td.clientWidth + 1 && guard++ < 40) {
     const nx = td.nextElementSibling; if (!nx || nx.dataset.c == null) break;
@@ -3005,6 +3006,8 @@ function liveExtendCell() {
     if (cellText(gridGet(curGrid, nc, nr)) !== '' || mergeAt(nc, nr)) break;   // nächste Zelle nicht leer → Stopp
     nx.remove(); td.setAttribute('colspan', (+td.getAttribute('colspan') || 1) + 1);
   }
+  // keine freie Spalte mehr (Blattende oder nächste Zelle belegt) → Text live umbrechen statt abschneiden
+  td.style.whiteSpace = (td.scrollWidth > td.clientWidth + 1) ? 'normal' : 'nowrap';
 }
 function endEdit(commit) {
   if (!editingTd) return;

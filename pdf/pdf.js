@@ -74,56 +74,94 @@ async function loadDoc(bytes) {
   $('#drop').classList.add('hide'); $('#toolbar').hidden = false; $('#quickbar').hidden = false;
   $('#btnSave').disabled = false; $('#btnSend').disabled = false; $('#docName').textContent = docName;
   document.title = docName.replace(/\.pdf$/i, '') + ' – Submit PDF';
-  await renderAll(); buildThumbs(); status(''); refreshComments(); updateScaleLabel();
+  await buildLayout(); buildThumbs(); status(''); refreshComments(); updateScaleLabel();
 }
 
-/* ---------- Rendern ---------- */
+/* ---------- Rendern (virtualisiert: nur sichtbare Seiten) ----------
+   Grosse PDFs (viele Seiten) liefen voll, weil früher ALLE Seiten zugleich als Canvas
+   in voller Auflösung gerendert wurden (Speicher = Seitenzahl × Auflösung → Absturz).
+   Jetzt: Platzhalter sofort (richtige Grösse → korrektes Scrollen), Canvas nur wenn die
+   Seite in Sichtweite kommt; entfernt, wenn sie weit weg ist. Speicher bleibt konstant. */
+const MAX_AREA = 14e6;       // max. Canvas-Pixel pro Seite (deckelt Speicher/Seite)
+const RENDER_MAX = 2;        // gleichzeitige Seiten-Renderings
+let pageObserver = null, thumbObserver = null, renderQueue = [], renderActive = 0;
 function fitScale(pw) { const avail = $('#pages').clientWidth - 60; return Math.max(.2, Math.min(3, avail / pw)); }
-async function renderAll() {
+function pageScale(pv) { return (zoom === 'auto') ? fitScale(pv.pageW) : zoom; }
+function dprCap() { return Math.min(window.devicePixelRatio || 1, 2); }
+
+function layoutPv(pv) {                                  // Grösse/Drehung setzen (ohne zu rendern)
+  const scale = pageScale(pv), dispW = pv.pageW * scale, dispH = pv.pageH * scale;
+  const rot = (pageRot[pv.num] || 0) + (viewRot[pv.num] || 0), rad = rot * Math.PI / 180;
+  const bw = Math.abs(dispW * Math.cos(rad)) + Math.abs(dispH * Math.sin(rad)), bh = Math.abs(dispW * Math.sin(rad)) + Math.abs(dispH * Math.cos(rad));
+  if (pv.scale !== scale && pv.rendered) pv.stale = true;     // Zoom geändert → Canvas neu rendern
+  pv.scale = scale; pv.dispW = dispW; pv.dispH = dispH; pv.rot = rot;
+  pv.wrap.style.width = bw + 'px'; pv.wrap.style.height = bh + 'px';
+  pv.inner.style.width = dispW + 'px'; pv.inner.style.height = dispH + 'px';
+  pv.inner.style.transform = `translate(-50%,-50%) rotate(${rot}deg)`;
+  pv.svg.style.width = dispW + 'px'; pv.svg.style.height = dispH + 'px';
+  if (pv.canvas) { pv.canvas.style.width = dispW + 'px'; pv.canvas.style.height = dispH + 'px'; }
+}
+async function buildLayout() {
   const tok = ++renderTok; const host = $('#pages'); host.innerHTML = ''; pageViews = [];
-  const dpr = window.devicePixelRatio || 1;
+  renderQueue = []; if (pageObserver) pageObserver.disconnect();
+  const p1 = await pdfDoc.getPage(1), v1 = p1.getViewport({ scale: 1 });   // Seite 1 für Standardgrösse
   for (let n = 1; n <= pdfDoc.numPages; n++) {
     if (tok !== renderTok) return;
-    const page = await pdfDoc.getPage(n);
-    const vp1 = page.getViewport({ scale: 1 }); const pw = vp1.width, ph = vp1.height;
-    const scale = (zoom === 'auto') ? fitScale(pw) : zoom;
-    const vp = page.getViewport({ scale });
-    const rot = ((pageRot[n] || 0) + (viewRot[n] || 0));   // 90°-Drehung (gespeichert) + freie Ansicht (Norden)
-    const dispW = vp.width, dispH = vp.height;
-    const rad = rot * Math.PI / 180, bw = Math.abs(dispW * Math.cos(rad)) + Math.abs(dispH * Math.sin(rad)), bh = Math.abs(dispW * Math.sin(rad)) + Math.abs(dispH * Math.cos(rad));
-    const outer = document.createElement('div'); outer.className = 'pagewrap'; outer.dataset.n = n;
-    outer.style.width = bw + 'px'; outer.style.height = bh + 'px';
-    const inner = document.createElement('div'); inner.style.position = 'absolute'; inner.style.left = '50%'; inner.style.top = '50%';
-    inner.style.width = dispW + 'px'; inner.style.height = dispH + 'px';
-    inner.style.transform = `translate(-50%,-50%) rotate(${rot}deg)`;
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.floor(dispW * dpr); canvas.height = Math.floor(dispH * dpr);
-    canvas.style.width = dispW + 'px'; canvas.style.height = dispH + 'px';
-    const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
-    const svg = svgEl('svg', { class: 'anno', viewBox: `0 0 ${pw} ${ph}`, preserveAspectRatio: 'none' });
-    svg.style.width = dispW + 'px'; svg.style.height = dispH + 'px';
-    inner.appendChild(canvas); inner.appendChild(svg); outer.appendChild(inner); host.appendChild(outer);
-    const pv = { num: n, wrap: outer, inner, canvas, svg, scale, pageW: pw, pageH: ph, rot, dispW, dispH };
-    pageViews.push(pv);
-    await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale }) }).promise;
-    drawAnnos(pv); bindPageEvents(pv);
+    const outer = document.createElement('div'); outer.className = 'pagewrap loading'; outer.dataset.n = n;
+    const inner = document.createElement('div'); inner.className = 'pageinner';
+    const svg = svgEl('svg', { class: 'anno', viewBox: `0 0 ${v1.width} ${v1.height}`, preserveAspectRatio: 'none' });
+    inner.appendChild(svg); outer.appendChild(inner); host.appendChild(outer);
+    const pv = { num: n, wrap: outer, inner, svg, canvas: null, page: n === 1 ? p1 : null, pageW: v1.width, pageH: v1.height, scale: 0, rendered: false, rendering: false, stale: false };
+    pageViews.push(pv); layoutPv(pv); drawAnnos(pv); bindPageEvents(pv);
   }
-  applyToolCursor(); updateZoomLabel(); updatePageInd();
+  pageObserver = new IntersectionObserver(ents => {
+    for (const e of ents) { const pv = pageViews.find(p => p.wrap === e.target); if (!pv) continue; if (e.isIntersecting) enqueueRender(pv); else releasePage(pv); }
+  }, { root: host, rootMargin: '900px 0px' });
+  pageViews.forEach(pv => pageObserver.observe(pv.wrap));
+  applyToolCursor(); updateZoomLabel(); updatePageInd(); renderVisible();
 }
-let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTimer = setTimeout(() => { if (pdfDoc) renderAll(); }, 140); }
+function enqueueRender(pv) { if (pv.rendering || (pv.rendered && !pv.stale) || renderQueue.includes(pv)) return; renderQueue.push(pv); pumpRender(); }
+function pumpRender() { while (renderActive < RENDER_MAX && renderQueue.length) { const pv = renderQueue.shift(); renderActive++; renderPage(pv).catch(() => { }).finally(() => { renderActive--; pumpRender(); }); } }
+async function renderPage(pv) {
+  if (pv.rendering || (pv.rendered && !pv.stale)) return; pv.rendering = true;
+  if (!pv.page) { pv.page = await pdfDoc.getPage(pv.num); const vp1 = pv.page.getViewport({ scale: 1 }); if (Math.abs(vp1.width - pv.pageW) > 1 || Math.abs(vp1.height - pv.pageH) > 1) { pv.pageW = vp1.width; pv.pageH = vp1.height; pv.svg.setAttribute('viewBox', `0 0 ${vp1.width} ${vp1.height}`); layoutPv(pv); } }
+  const scale = pageScale(pv), dpr = dprCap(); let rscale = scale * dpr;
+  const area = pv.pageW * rscale * pv.pageH * rscale; if (area > MAX_AREA) rscale *= Math.sqrt(MAX_AREA / area);   // riesige Seiten deckeln
+  const vp = pv.page.getViewport({ scale: rscale });
+  const canvas = document.createElement('canvas'); canvas.className = 'pagecanvas';
+  canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+  canvas.style.width = pv.dispW + 'px'; canvas.style.height = pv.dispH + 'px';
+  await pv.page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+  if (!pv.rendering) return;   // zwischenzeitlich weggescrollt/freigegeben → verwerfen
+  if (pv.canvas) pv.canvas.remove();
+  pv.inner.insertBefore(canvas, pv.svg); pv.canvas = canvas; pv.rendered = true; pv.rendering = false; pv.stale = false; pv.wrap.classList.remove('loading');
+}
+function releasePage(pv) {     // weit weg → Canvas freigeben (Annotationen/Platzhalter bleiben)
+  if (pv.canvas) { pv.canvas.remove(); pv.canvas = null; } pv.rendered = false; pv.rendering = false;
+  const i = renderQueue.indexOf(pv); if (i >= 0) renderQueue.splice(i, 1); pv.wrap.classList.add('loading');
+}
+function renderVisible() {      // sichtbare Seiten anstossen (Observer feuert bei Zoom nicht neu)
+  const host = $('#pages'), top = host.scrollTop - 900, bot = host.scrollTop + host.clientHeight + 900;
+  for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) enqueueRender(pv); }
+}
+function relayout() { if (!pdfDoc) return; pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); renderVisible(); }
+let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTimer = setTimeout(relayout, 140); }
 
-async function buildThumbs() {
-  const host = $('#thumbs'); host.innerHTML = '';
+function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im Seitenstreifen)
+  const host = $('#thumbs'); host.innerHTML = ''; if (thumbObserver) thumbObserver.disconnect();
   for (let n = 1; n <= pdfDoc.numPages; n++) {
-    const page = await pdfDoc.getPage(n); const vp1 = page.getViewport({ scale: 1 });
-    const vp = page.getViewport({ scale: 200 / vp1.width, rotation: pageRot[n] || 0 });
-    const btn = document.createElement('button'); btn.className = 'thumb'; btn.dataset.n = n;
-    const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height; btn.appendChild(c);
+    const btn = document.createElement('button'); btn.className = 'thumb loading'; btn.dataset.n = n;
+    const c = document.createElement('canvas'); btn.appendChild(c);
     const tn = document.createElement('span'); tn.className = 'tn'; tn.textContent = n; btn.appendChild(tn);
     btn.onclick = () => gotoPage(n); host.appendChild(btn);
-    await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
   }
+  thumbObserver = new IntersectionObserver(ents => { for (const e of ents) if (e.isIntersecting) { renderThumb(+e.target.dataset.n, e.target); thumbObserver.unobserve(e.target); } }, { root: host, rootMargin: '500px 0px' });
+  $$('.thumb', host).forEach(b => thumbObserver.observe(b));
 }
+async function renderThumb(n, btn) {
+  try { const page = await pdfDoc.getPage(n), vp1 = page.getViewport({ scale: 1 }); const vp = page.getViewport({ scale: 200 / vp1.width, rotation: pageRot[n] || 0 }); const c = btn.querySelector('canvas'); c.width = vp.width; c.height = vp.height; await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise; btn.classList.remove('loading'); } catch (_) { }
+}
+function refreshThumb(n) { const btn = $(`.thumb[data-n="${n}"]`, $('#thumbs')); if (btn) { btn.classList.add('loading'); renderThumb(n, btn); } }
 function gotoPage(n) { const v = pageViews.find(p => p.num === n); if (v) v.wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 function curPage() { const host = $('#pages'), mid = host.scrollTop + host.clientHeight / 2; let cur = 1; for (const v of pageViews) if (v.wrap.offsetTop <= mid) cur = v.num; return cur; }
 function updatePageInd() { if (!pdfDoc) return; const cur = curPage(); $('#pageInd').textContent = cur + ' / ' + pdfDoc.numPages; $$('.thumb', $('#thumbs')).forEach(t => t.classList.toggle('active', +t.dataset.n === cur)); }
@@ -131,7 +169,7 @@ function updatePageInd() { if (!pdfDoc) return; const cur = curPage(); $('#pageI
 /* ---------- Zoom ---------- */
 function curScale() { return (zoom === 'auto') ? (pageViews[0] ? pageViews[0].scale : 1) : zoom; }
 function updateZoomLabel() { const pct = Math.round(((zoom === 'auto') ? curScale() : zoom) * 100); $('#zoomVal').innerHTML = pct + '&nbsp;%'; $('#zoomVal').classList.toggle('on', zoom === 'auto'); }
-function setZoom(z) { zoom = z; if (pdfDoc) renderAll(); }
+function setZoom(z) { zoom = z; if (pdfDoc) relayout(); }
 function zoomStep(d) { const c = curScale(); setZoom(Math.max(.25, Math.min(3, Math.round((c + d) * 100) / 100))); }
 
 /* ---------- Annotationen rendern ---------- */
@@ -377,7 +415,8 @@ function refreshComments() {
 /* ---------- Drehen ---------- */
 function rotatePage(deg) {
   if (!pdfDoc) return; const n = curPage(); pageRot[n] = (((pageRot[n] || 0) + deg) % 360 + 360) % 360; saveState();
-  renderAll(); buildThumbs();
+  const pv = pageViews.find(p => p.num === n); if (pv) layoutPv(pv);   // reine CSS-Drehung, kein Neu-Render
+  refreshThumb(n); updatePageInd();
 }
 // Freies Drehen (nur Ansicht, live per CSS – kein Re-Render): Plan nach Norden ausrichten
 function applyViewRot(pv) {
@@ -393,7 +432,7 @@ function setFreeRot(deg) {
 /* ---------- Undo / Löschen ---------- */
 function snapshot() { return JSON.stringify({ annos, pageRot }); }
 function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 60) undoStack.shift(); $('#btnUndo').disabled = false; }
-function undo() { if (!undoStack.length) return; const s = JSON.parse(undoStack.pop()); annos = s.annos; pageRot = s.pageRot; sel = null; $('#btnUndo').disabled = !undoStack.length; renderAll(); buildThumbs(); refreshComments(); }
+function undo() { if (!undoStack.length) return; const s = JSON.parse(undoStack.pop()); annos = s.annos; pageRot = s.pageRot; sel = null; $('#btnUndo').disabled = !undoStack.length; pageViews.forEach(pv => { layoutPv(pv); drawAnnos(pv); }); buildThumbs(); refreshComments(); }
 function saveState() { /* Platzhalter für Autosave-Hook */ }
 function deleteSel() { if (!sel) return; const arr = annos[sel.num]; if (!arr) return; const i = arr.findIndex(a => a.id === sel.id); if (i < 0) return; pushUndo(); arr.splice(i, 1); sel = null; pageViews.forEach(drawAnnos); refreshComments(); }
 

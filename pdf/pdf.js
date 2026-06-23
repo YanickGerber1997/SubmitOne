@@ -97,7 +97,9 @@ function dprCap() { return Math.min(window.devicePixelRatio || 1, 3); }
 function dprPreview() { return Math.min(window.devicePixelRatio || 1, 1.5); }
 
 function layoutPv(pv) {                                  // Grösse/Drehung setzen (ohne zu rendern)
-  const scale = pageScale(pv), dispW = pv.pageW * scale, dispH = pv.pageH * scale;
+  // Anzeigegrösse exakt auf ganze GERÄTEPIXEL einrasten → Canvas 1:1 mit dem Bildschirm, keine Interpolation (Acrobat-scharf).
+  const scale = pageScale(pv), dpr = dprCap();
+  const dispW = Math.round(pv.pageW * scale * dpr) / dpr, dispH = Math.round(pv.pageH * scale * dpr) / dpr;
   const rot = (pageRot[pv.num] || 0) + (viewRot[pv.num] || 0), rad = rot * Math.PI / 180;
   const bw = Math.abs(dispW * Math.cos(rad)) + Math.abs(dispH * Math.sin(rad)), bh = Math.abs(dispW * Math.sin(rad)) + Math.abs(dispH * Math.cos(rad));
   if ((pv.scale !== scale || pv.rot !== rot)) { dropTile(pv); dropText(pv); }   // Skalierung/Drehung geändert → Kachel/Text neu
@@ -138,11 +140,11 @@ async function renderPage(pv) {                       // Basis-Vorschau (ganze S
   try {
     if (!pv.page) { pv.page = await pdfDoc.getPage(pv.num); const vp1 = pv.page.getViewport({ scale: 1 }); if (Math.abs(vp1.width - pv.pageW) > 1 || Math.abs(vp1.height - pv.pageH) > 1) { pv.pageW = vp1.width; pv.pageH = vp1.height; pv.svg.setAttribute('viewBox', `0 0 ${vp1.width} ${vp1.height}`); layoutPv(pv); } }
     // Adaptiv: kleine/mittlere Seiten sofort VOLL scharf; nur riesige Seiten deckeln (dann schärft die Kachel).
-    const scale = pageScale(pv); let rscale = scale * dprCap();
+    const dpr = dprCap(); let rscale = (pv.dispW * dpr) / pv.pageW;   // Canvas-Breite = dispW*dpr → ganzzahlig, 1:1 mit dem Geräteraster
     const area = pv.pageW * rscale * pv.pageH * rscale; pv.baseCapped = area > MAX_AREA; if (pv.baseCapped) rscale *= Math.sqrt(MAX_AREA / area);
     const vp = pv.page.getViewport({ scale: rscale });
     const canvas = document.createElement('canvas'); canvas.className = 'pagecanvas';
-    canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+    canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
     canvas.style.width = pv.dispW + 'px'; canvas.style.height = pv.dispH + 'px';
     const task = pv.page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }); pv.task = task;
     await task.promise; pv.task = null;
@@ -204,14 +206,14 @@ async function renderTile(pv) {                      // scharfe Kachel über den
   if (pv.rendering || !pv.page) return; const rect = visiblePageRect(pv); if (!rect) return;
   pv.rendering = true;
   try {
-    const scale = pageScale(pv); let px = scale * dprCap();   // gerätegenau – scharf, Linien bleiben sichtbar
-    let tw = rect.w * px, th = rect.h * px;
-    if (tw > TILE_MAXDIM || th > TILE_MAXDIM) { const f = Math.min(TILE_MAXDIM / tw, TILE_MAXDIM / th); px *= f; tw *= f; th *= f; }
+    const scale = pageScale(pv), dpr = dprCap(); let px = scale * dpr;   // gerätegenau – scharf, Linien bleiben sichtbar
+    let tw = rect.w * px, th = rect.h * px, capped = false;
+    if (tw > TILE_MAXDIM || th > TILE_MAXDIM) { const f = Math.min(TILE_MAXDIM / tw, TILE_MAXDIM / th); px *= f; tw *= f; th *= f; capped = true; }
     const vp = pv.page.getViewport({ scale: px });
     const canvas = document.createElement('canvas'); canvas.className = 'pagetile';
-    canvas.width = Math.max(1, Math.ceil(tw)); canvas.height = Math.max(1, Math.ceil(th));
+    canvas.width = Math.max(1, Math.round(tw)); canvas.height = Math.max(1, Math.round(th));
     canvas.style.left = (rect.x * scale) + 'px'; canvas.style.top = (rect.y * scale) + 'px';
-    canvas.style.width = (rect.w * scale) + 'px'; canvas.style.height = (rect.h * scale) + 'px';
+    canvas.style.width = (capped ? rect.w * scale : canvas.width / dpr) + 'px'; canvas.style.height = (capped ? rect.h * scale : canvas.height / dpr) + 'px';
     const transform = [1, 0, 0, 1, -rect.x * px, -rect.y * px];
     const task = pv.page.render({ canvasContext: canvas.getContext('2d'), viewport: vp, transform }); pv.tileTask = task;
     await task.promise; pv.tileTask = null;

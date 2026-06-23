@@ -223,19 +223,28 @@ async function renderTile(pv) {                      // scharfe Kachel über den
   if (pv.rendering || !pv.page) return; const rect = visiblePageRect(pv); if (!rect) return;
   pv.rendering = true;
   try {
-    const scale = pageScale(pv), dpr = dprCap(); let px = scale * dpr * SS_TILE;   // 2× überabgetastet → glatte Zahlen/Text
-    let tw = rect.w * px, th = rect.h * px;
-    if (tw > TILE_MAXDIM || th > TILE_MAXDIM) { const f = Math.min(TILE_MAXDIM / tw, TILE_MAXDIM / th); px *= f; tw *= f; th *= f; }
-    const vp = pv.page.getViewport({ scale: px });
-    const canvas = document.createElement('canvas'); canvas.className = 'pagetile';
-    canvas.width = Math.max(1, Math.round(tw)); canvas.height = Math.max(1, Math.round(th));
-    canvas.style.left = (rect.x * scale) + 'px'; canvas.style.top = (rect.y * scale) + 'px';
-    canvas.style.width = (rect.w * scale) + 'px'; canvas.style.height = (rect.h * scale) + 'px';   // Backing wird heruntergerechnet → überabgetastet
-    const transform = [1, 0, 0, 1, -rect.x * px, -rect.y * px];
-    const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; patchMinLine(ctx, px / (scale * dpr));   // min. 1 Gerätepixel + hochwertige Bild-Glättung
-    const task = pv.page.render({ canvasContext: ctx, viewport: vp, transform }); pv.tileTask = task;
+    const scale = pageScale(pv), dpr = dprCap();
+    let devW = Math.max(1, Math.round(rect.w * scale * dpr)), devH = Math.max(1, Math.round(rect.h * scale * dpr));   // Ziel: Geräteauflösung (On-Screen 1:1)
+    if (devW > TILE_MAXDIM || devH > TILE_MAXDIM) { const f = Math.min(TILE_MAXDIM / devW, TILE_MAXDIM / devH); devW = Math.round(devW * f); devH = Math.round(devH * f); }
+    let ss = SS_TILE; while (ss > 1 && (devW * ss > TILE_MAXDIM || devH * ss > TILE_MAXDIM)) ss -= 0.5;   // Überabtastung gegen Canvas-Grenze deckeln
+    const bw = Math.max(1, Math.round(devW * ss)), bh = Math.max(1, Math.round(devH * ss));
+    // 1) Hochauflösend (ss-fach) in einen Offscreen-Puffer rendern
+    const off = document.createElement('canvas'); off.width = bw; off.height = bh;
+    const octx = off.getContext('2d'); octx.imageSmoothingEnabled = true; octx.imageSmoothingQuality = 'high';
+    const renderScale = bw / rect.w; patchMinLine(octx, ss);                 // Mindest-Linienbreite im Puffer
+    const vp = pv.page.getViewport({ scale: renderScale });
+    const transform = [1, 0, 0, 1, -rect.x * renderScale, -rect.y * renderScale];
+    const task = pv.page.render({ canvasContext: octx, viewport: vp, transform }); pv.tileTask = task;
     await task.promise; pv.tileTask = null;
     if (!pv.rendered) return;   // zwischenzeitlich freigegeben → verwerfen
+    // 2) Selbst hochwertig auf Geräteauflösung herunterrechnen (besser als Browser-Compositing) → On-Screen 1:1
+    const canvas = document.createElement('canvas'); canvas.className = 'pagetile';
+    canvas.width = devW; canvas.height = devH;
+    canvas.style.left = (rect.x * scale) + 'px'; canvas.style.top = (rect.y * scale) + 'px';
+    canvas.style.width = (rect.w * scale) + 'px'; canvas.style.height = (rect.h * scale) + 'px';
+    const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(off, 0, 0, bw, bh, 0, 0, devW, devH);
+    off.width = off.height = 0;                                              // Puffer sofort freigeben
     if (pv.tile) pv.tile.remove(); pv.tile = canvas; pv.inner.insertBefore(canvas, pv.svg);
   } catch (_) { /* abgebrochen */ }
   finally { pv.rendering = false; }

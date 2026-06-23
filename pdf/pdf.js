@@ -100,6 +100,7 @@ function pageScale(pv) { return (zoom === 'auto') ? fitScale(pv.pageW) : zoom; }
 function dprCap() { return Math.min(window.devicePixelRatio || 1, 3); }
 function dprPreview() { return Math.min(window.devicePixelRatio || 1, 1.5); }
 const SS_TILE = 3;           // Überabtastung der scharfen Kachel (3× → noch glattere Diagonalen/kleine Schrift)
+const MIN_LINE_PX = 1.25;    // Mindest-Linienbreite in Gerätepixeln (Haarlinien knackig sichtbar)
 // Acrobat-Trick: keine Linie dünner als 1 Gerätepixel zeichnen (sonst werden Haarlinien grau/unscharf).
 function patchMinLine(ctx, minBuf) {
   if (!(minBuf > 0)) minBuf = 1;
@@ -162,7 +163,7 @@ async function renderPage(pv) {                       // Basis-Vorschau (ganze S
     const canvas = document.createElement('canvas'); canvas.className = 'pagecanvas';
     canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
     canvas.style.width = pv.dispW + 'px'; canvas.style.height = pv.dispH + 'px';
-    const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; patchMinLine(ctx, 1);   // Haarlinien ≥ 1 Pixel, Bilder hochwertig glätten
+    const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; patchMinLine(ctx, MIN_LINE_PX);   // Haarlinien sichtbar halten, Bilder hochwertig glätten
     const task = pv.page.render({ canvasContext: ctx, viewport: vp }); pv.task = task;
     await task.promise; pv.task = null;
     if (!pv.rendering) return;   // zwischenzeitlich weggescrollt/freigegeben → verwerfen
@@ -233,7 +234,7 @@ async function renderTile(pv) {                      // scharfe Kachel über den
     canvas.style.left = (rect.x * scale) + 'px'; canvas.style.top = (rect.y * scale) + 'px';
     canvas.style.width = (rect.w * scale) + 'px'; canvas.style.height = (rect.h * scale) + 'px';   // Backing wird vom Browser heruntergerechnet → überabgetastet
     const transform = [1, 0, 0, 1, -rect.x * px, -rect.y * px];
-    const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; patchMinLine(ctx, px / (scale * dpr));
+    const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; patchMinLine(ctx, MIN_LINE_PX * px / (scale * dpr));
     const task = pv.page.render({ canvasContext: ctx, viewport: vp, transform }); pv.tileTask = task;
     await task.promise; pv.tileTask = null;
     if (!pv.rendered) return;   // zwischenzeitlich freigegeben → verwerfen

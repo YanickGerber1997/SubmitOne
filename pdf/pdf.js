@@ -163,6 +163,10 @@ function drawOne(svg, a, pv) {
     const g = svgEl('g', { class: 'note-pin', 'data-id': a.id });
     g.appendChild(svgEl('path', { d: `M${a.x} ${a.y} l13 0 l0 9 l-7 0 l-4 4 l0 -4 l-2 0 z`, fill: a.color, stroke: '#fff', 'stroke-width': 1 }));
     svg.appendChild(g); el = g;
+  } else if (a.type === 'sig') {
+    el = svgEl('image', { x: a.x, y: a.y, width: a.w, height: a.h, href: a.data, 'data-id': a.id, preserveAspectRatio: 'none' });
+    el.setAttributeNS('http://www.w3.org/1999/xlink', 'href', a.data); svg.appendChild(el);
+    hit = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'dim') {
     drawDim(svg, a);
     hit = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'hit', 'data-id': a.id }); svg.appendChild(hit);
@@ -197,6 +201,7 @@ function bbox(a) {
   if (a.type === 'pen') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: a.size * (a.text.split('\n').length) * 1.3 };
   if (a.type === 'note') return { x: a.x, y: a.y, w: 14, h: 14 };
+  if (a.type === 'sig') return { x: a.x, y: a.y, w: a.w, h: a.h };
   return { x: 0, y: 0, w: 0, h: 0 };
 }
 function drawSelection(svg, a, pv) {
@@ -236,6 +241,7 @@ function onPointerDown(pv, e) {
     }
     sel = null; drawAnnos(pv); return;
   }
+  if (tool === 'sig') { placeSig(pv, p); return; }
   if (tool === 'text') { createText(pv, p); return; }
   if (tool === 'note') { pushUndo(); const a = { id: nextId++, type: 'note', x: p.x, y: p.y, color: style.color, text: '' }; getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); refreshComments(); openNoteEdit(pv, a); return; }
   // Zeichnen
@@ -261,6 +267,7 @@ function startResize(pv, e, h) {
   const move = ev => {
     const q = evtToPage(pv, ev);
     if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') { if (h === 'p1') { a.x1 = q.x; a.y1 = q.y; } else { a.x2 = q.x; a.y2 = q.y; } }
+    else if (orig.type === 'sig') { const ratio = orig.w / orig.h || 1, ax = h.includes('w') ? orig.x + orig.w : orig.x, ay = h.includes('n') ? orig.y + orig.h : orig.y; const nw = Math.max(12, Math.abs(q.x - ax)), nh = nw / ratio; a.w = nw; a.h = nh; a.x = h.includes('w') ? ax - nw : ax; a.y = h.includes('n') ? ay - nh : ay; }
     else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
     drawAnnos(pv);
   };
@@ -383,7 +390,7 @@ function setTool(t) {
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -395,7 +402,7 @@ async function buildPdfBytes() {
     const { PDFDocument, rgb, StandardFonts, degrees } = lib;
     const doc = await PDFDocument.load(curBytes.slice());
     const font = await doc.embedFont(StandardFonts.Helvetica);
-    const pages = doc.getPages();
+    const pages = doc.getPages(); const sigCache = {};
     for (let n = 1; n <= pages.length; n++) {
       const pg = pages[n - 1]; const { height: PH } = pg.getSize();
       const Y = y => PH - y;                         // pdf.js (oben) → pdf-lib (unten)
@@ -416,6 +423,7 @@ async function buildPdfBytes() {
         else if (a.type === 'pen') { for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c }); }
         else if (a.type === 'text') { a.text.split('\n').forEach((ln, i) => pg.drawText(ln, { x: a.x, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: c })); }
         else if (a.type === 'note' && a.text) { pg.drawRectangle({ x: a.x, y: Y(a.y + 11), width: 13, height: 11, color: c }); }
+        else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); }
       }
       if (pageRot[n]) pg.setRotation(degrees(pageRot[n]));
     }
@@ -454,6 +462,51 @@ async function doSend() {
   q.push('body=' + encodeURIComponent((body || '') + '\n\n(„' + file.name + '" wurde heruntergeladen – bitte noch anhängen.)'));
   window.location.href = 'mailto:' + encodeURIComponent(to) + '?' + q.join('&');
   toast('PDF heruntergeladen · Mail geöffnet → PDF anhängen.');
+}
+
+/* ---------- Unterschrift ---------- */
+let pendingSig = null;       // {data, ratio} – bereit zum Platzieren
+let _sigCtx = null, _sigDraw = false, _sigEmpty = true;
+function openSig() {
+  const dlg = $('#sigDlg'), cv = $('#sigCanvas');
+  const saved = localStorage.getItem('submitpdf_sig');
+  $('#sigSaved').hidden = !saved; if (saved) $('#sigSavedImg').src = saved;
+  dlg.hidden = false;
+  // Canvas auf Anzeigegrösse bringen
+  const r = cv.getBoundingClientRect(); cv.width = Math.round(r.width); cv.height = Math.round(r.height);
+  _sigCtx = cv.getContext('2d'); _sigCtx.lineCap = 'round'; _sigCtx.lineJoin = 'round'; _sigCtx.lineWidth = 2.6; _sigCtx.strokeStyle = '#14213d';
+  _sigEmpty = true;
+}
+function sigPos(e) { const cv = $('#sigCanvas'), r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+function sigDown(e) { _sigDraw = true; _sigEmpty = false; const p = sigPos(e); _sigCtx.beginPath(); _sigCtx.moveTo(p.x, p.y); e.preventDefault(); }
+function sigMove(e) { if (!_sigDraw) return; const p = sigPos(e); _sigCtx.lineTo(p.x, p.y); _sigCtx.stroke(); }
+function sigUp() { _sigDraw = false; }
+function sigClear() { const cv = $('#sigCanvas'); _sigCtx.clearRect(0, 0, cv.width, cv.height); _sigEmpty = true; }
+// Auf Inhalt zuschneiden → dataURL + Seitenverhältnis
+function sigToData(cv) {
+  const w = cv.width, h = cv.height, d = cv.getContext('2d').getImageData(0, 0, w, h).data;
+  let x0 = w, y0 = h, x1 = 0, y1 = 0, any = false;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { if (d[(y * w + x) * 4 + 3] > 10) { any = true; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+  if (!any) return null;
+  const pad = 6; x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(w, x1 + pad); y1 = Math.min(h, y1 + pad);
+  const cw = x1 - x0, ch = y1 - y0, out = document.createElement('canvas'); out.width = cw; out.height = ch;
+  out.getContext('2d').drawImage(cv, x0, y0, cw, ch, 0, 0, cw, ch);
+  return { data: out.toDataURL('image/png'), ratio: cw / ch };
+}
+function useSig(fromSaved) {
+  let sig;
+  if (fromSaved) { const s = localStorage.getItem('submitpdf_sig'); if (!s) return; const tmp = new Image(); sig = { data: s, ratio: 0 }; }
+  else { if (_sigEmpty) { toast('Bitte zuerst unterschreiben.'); return; } sig = sigToData($('#sigCanvas')); if (!sig) return; localStorage.setItem('submitpdf_sig', sig.data); }
+  $('#sigDlg').hidden = true;
+  const finish = ratio => { pendingSig = { data: sig.data, ratio: ratio || 3 }; setTool('sig'); toast('Auf den Plan tippen, um die Unterschrift zu setzen.'); };
+  if (sig.ratio) finish(sig.ratio);
+  else { const im = new Image(); im.onload = () => finish(im.naturalWidth / im.naturalHeight); im.src = sig.data; }
+}
+function placeSig(pv, p) {
+  if (!pendingSig) { setTool('select'); return; }
+  pushUndo(); const w = 170, h = w / (pendingSig.ratio || 3);
+  const a = { id: nextId++, type: 'sig', x: p.x - w / 2, y: p.y - h / 2, w, h, data: pendingSig.data };
+  getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
 }
 
 /* ---------- Massstab ---------- */
@@ -524,6 +577,15 @@ function wire() {
   window.addEventListener('resize', () => { if (zoom === 'auto') reflow(); });
   $$('.tool[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $('#penTidyBtn').onclick = () => { penTidy = !penTidy; $('#penTidyBtn').classList.toggle('on', penTidy); toast(penTidy ? 'Skizze aufräumen: an' : 'Freihand: roh'); };
+  $('#btnSig').onclick = openSig;
+  const sc = $('#sigCanvas');
+  sc.addEventListener('pointerdown', e => { sc.setPointerCapture(e.pointerId); sigDown(e); });
+  sc.addEventListener('pointermove', sigMove);
+  sc.addEventListener('pointerup', sigUp); sc.addEventListener('pointercancel', sigUp);
+  $('#sigClearBtn').onclick = sigClear;
+  $('#sigCancel').onclick = () => $('#sigDlg').hidden = true;
+  $('#sigUse').onclick = () => useSig(false);
+  $('#sigUseSaved').onclick = () => useSig(true);
   $('#btnScale').onclick = () => openScale(0);
   $('#scaleCalibBtn').onclick = () => { $('#scaleDlg').hidden = true; setTool('calibrate'); toast('Bekannte Strecke im Plan einzeichnen …'); };
   $('#scaleCancel').onclick = () => $('#scaleDlg').hidden = true;

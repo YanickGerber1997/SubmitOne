@@ -529,13 +529,7 @@ wire();
 
 /* ---------- Startbildschirm (Logo zeichnet sich, Schrift buchstabenweise) ---------- */
 (function splashIntro() {
-  const word = $('#splashWord'), sp = $('#splash'); if (!sp) return;
-  if (word) {
-    const add = (txt, cls, base) => [...txt].forEach((ch, i) => { const s = document.createElement('span'); s.className = 'sl ' + cls; s.textContent = ch; s.style.animationDelay = (1.5 + (base + i) * 0.06) + 's'; word.appendChild(s); });
-    add('SUBMIT', 'd', 0);
-    const gap = document.createElement('span'); gap.style.width = '14px'; word.appendChild(gap);
-    add('PDF', 'g', 7);
-  }
+  const sp = $('#splash'); if (!sp) return;
   let done = false;
   const dismiss = () => { if (done) return; done = true; sp.classList.add('hide'); document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', dismiss); setTimeout(() => sp.remove(), 650); };
   setTimeout(dismiss, 3000);

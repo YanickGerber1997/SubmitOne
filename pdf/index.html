@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF – PDFs bearbeiten im Browser</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" href="icon.svg" />
+  <link rel="icon" href="icon.png" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
   <link rel="stylesheet" href="pdf.css" />
@@ -13,25 +13,12 @@
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <svg class="splash-mark" viewBox="55 46 112 130" fill="none" stroke-linejoin="round" aria-hidden="true">
-      <path class="leaf" d="M126 78 L162 50 L162 78 Z" fill="#5a7d3c" stroke="none"/>
-      <path class="leaf" d="M126 78 L162 50" stroke="#cfe0b6" stroke-width="2" stroke-linecap="round"/>
-      <path class="s-draw" d="M122 66 L84 66 C62 66 60 92 86 104 C108 112 116 118 116 136 C116 158 92 166 72 162 L112 162" stroke="#1c242c" stroke-width="12" stroke-linecap="butt"/>
-      <path class="a-draw" d="M112 162 C128 162 134 153 134 140 L134 110" stroke="#5a7d3c" stroke-width="11" stroke-linecap="round"/>
-      <path class="a-draw2" d="M124 124 L134 109 L144 124" stroke="#5a7d3c" stroke-width="11" stroke-linecap="round"/>
-    </svg>
-    <div class="splash-word" id="splashWord"></div>
+    <img class="splash-logo" src="logo.png" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <svg class="logomark" viewBox="55 46 112 130" fill="none" stroke-linejoin="round" aria-hidden="true">
-        <path d="M126 78 L162 50 L162 78 Z" fill="#5a7d3c" stroke="none"/>
-        <path d="M126 78 L162 50" stroke="#cfe0b6" stroke-width="2" stroke-linecap="round"/>
-        <path d="M122 66 L84 66 C62 66 60 92 86 104 C108 112 116 118 116 136 C116 158 92 166 72 162 L112 162" stroke="#1c242c" stroke-width="12" stroke-linecap="butt"/>
-        <path d="M112 162 C128 162 134 153 134 140 L134 110" stroke="#5a7d3c" stroke-width="11" stroke-linecap="round"/>
-        <path d="M124 124 L134 109 L144 124" stroke="#5a7d3c" stroke-width="11" stroke-linecap="round"/>
-      </svg>
+      <img class="logomark" src="icon.png" alt="" aria-hidden="true" />
       <span class="bw-a">SUBMIT</span><span class="bw-b">PDF</span>
     </a>
     <button class="btn" id="btnOpen"><svg viewBox="0 0 24 24" class="i"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3z"/></svg><span>Öffnen</span></button>
@@ -93,11 +80,11 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
+      <img class="drop-logo" src="logo.png" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
       </div>
-      <div class="drop-ico"><svg viewBox="0 0 24 24"><path d="M6 2.5h8l4 4v15H6z"/><path d="M14 2.5v4h4"/><path d="M12 11v6M9.5 13.5 12 11l2.5 2.5"/></svg></div>
       <h1>PDF oder Bild hier ablegen</h1>
       <p>oder <button class="link" id="dropOpen">Datei auswählen</button> · auch Fotos vom Plan/der Baustelle</p>
       <p class="priv">🔒 Deine Dateien bleiben auf deinem Gerät – nichts wird hochgeladen.</p>

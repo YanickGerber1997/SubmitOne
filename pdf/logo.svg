@@ -23,4 +23,5 @@
   <text x="620" y="860" text-anchor="middle" font-size="132" letter-spacing="26" font-weight="400">
     <tspan fill="#1c242c">SUBMIT</tspan><tspan fill="#4f7a3c" dx="44">PDF</tspan>
   </text>
+  <text x="620" y="930" text-anchor="middle" font-size="34" letter-spacing="2" font-style="italic" fill="#4f7a3c">It's all about the Paper, submit to everyone</text>
 </svg>

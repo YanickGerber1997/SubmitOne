@@ -13,6 +13,7 @@ let annos = {};            // {pageNum: [anno]}
 let pageRot = {};          // {pageNum: 0/90/180/270}
 let tool = 'select';
 let style = { color: '#e8412e', width: 2.5, size: 16 };
+let penTidy = true;        // Freihand-Skizzen automatisch zu sauberen Formen aufräumen
 let sel = null;            // {num, id}
 let nextId = 1;
 let undoStack = [];
@@ -224,6 +225,48 @@ function startResize(pv, e, h) {
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
+/* ---------- Freihand „aufräumen": Skizze → perfekte Form ---------- */
+function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
+function perpDist(p, a, b) { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1; return Math.abs((p[0] - a[0]) * dy - (p[1] - a[1]) * dx) / L; }
+function rdp(pts, eps) {
+  if (pts.length < 3) return pts.slice();
+  let dm = 0, idx = 0;
+  for (let i = 1; i < pts.length - 1; i++) { const d = perpDist(pts[i], pts[0], pts[pts.length - 1]); if (d > dm) { dm = d; idx = i; } }
+  if (dm > eps) { const l = rdp(pts.slice(0, idx + 1), eps), r = rdp(pts.slice(idx), eps); return l.slice(0, -1).concat(r); }
+  return [pts[0], pts[pts.length - 1]];
+}
+function maxDev(pts, a, b) { let m = 0; for (const p of pts) m = Math.max(m, perpDist(p, a, b)); return m; }
+function rectOrOval(pts, x, y, w, h) {
+  const cx = x + w / 2, cy = y + h / 2, rx = (w / 2) || 1, ry = (h / 2) || 1; let er = 0, eo = 0;
+  for (const p of pts) {
+    const dl = Math.abs(p[0] - x), dr = Math.abs(p[0] - (x + w)), dt = Math.abs(p[1] - y), db = Math.abs(p[1] - (y + h));
+    er += Math.min(dl, dr, dt, db);
+    eo += Math.abs(Math.hypot((p[0] - cx) / rx, (p[1] - cy) / ry) - 1) * Math.min(rx, ry);
+  }
+  return er <= eo ? 'rect' : 'oval';
+}
+function beautify(pts) {
+  if (pts.length < 4) return null;
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const minx = Math.min(...xs), maxx = Math.max(...xs), miny = Math.min(...ys), maxy = Math.max(...ys);
+  const w = maxx - minx, h = maxy - miny, diag = Math.hypot(w, h);
+  if (diag < 8) return null;
+  const s = rdp(pts, Math.max(4, diag * 0.05));
+  const p0 = s[0], pL = s[s.length - 1], closed = dist(p0, pL) < diag * 0.22 && s.length >= 4;
+  // fast gerade → Linie
+  if (!closed && (s.length === 2 || maxDev(pts, p0, pL) < diag * 0.06)) return { type: 'line', x1: p0[0], y1: p0[1], x2: pL[0], y2: pL[1] };
+  if (closed) { const t = rectOrOval(pts, minx, miny, w, h); return t === 'rect' ? { type: 'rect', x: minx, y: miny, w, h } : { type: 'oval', x: minx, y: miny, w, h }; }
+  // offen mit Knicken: Pfeil (Schaft + kurzer zurückgeknickter Widerhaken) oder Polylinie
+  if (s.length === 3) {
+    const l1 = dist(s[0], s[1]), l2 = dist(s[1], s[2]);
+    const d1 = [(s[1][0] - s[0][0]) / (l1 || 1), (s[1][1] - s[0][1]) / (l1 || 1)];
+    const d2 = [(s[2][0] - s[1][0]) / (l2 || 1), (s[2][1] - s[1][1]) / (l2 || 1)];
+    const dot = d1[0] * d2[0] + d1[1] * d2[1];
+    if (l2 < l1 * 0.6 && dot < 0.35) return { type: 'arrow', x1: s[0][0], y1: s[0][1], x2: s[1][0], y2: s[1][1] };
+  }
+  return { type: 'pen', pts: s };   // saubere Polylinie mit 1–2 Abbiegern
+}
+
 function startDraw(pv, e, p) {
   pushUndo();
   let a;
@@ -241,8 +284,9 @@ function startDraw(pv, e, p) {
   };
   const up = () => {
     document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
-    // zu kleine Wegwerf-Zeichnungen verwerfen
-    const b = bbox(a); if (a.type !== 'pen' && b.w < 3 && b.h < 3) { getAnnos(pv.num).pop(); undoStack.pop(); drawAnnos(pv); return; }
+    if (a.type === 'pen' && penTidy) { const bz = beautify(a.pts); if (bz) { const arr = getAnnos(pv.num), i = arr.indexOf(a); arr[i] = Object.assign({ id: a.id, color: a.color, width: a.width }, bz); } }
+    const cur = getAnnos(pv.num).find(x => x.id === a.id) || a;
+    const b = bbox(cur); if (cur.type !== 'pen' && b.w < 3 && b.h < 3) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(cur), 1); undoStack.pop(); drawAnnos(pv); return; }
     sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
   };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
@@ -374,6 +418,7 @@ function wire() {
   $('#pages').addEventListener('scroll', updatePageInd, { passive: true });
   window.addEventListener('resize', () => { if (zoom === 'auto') reflow(); });
   $$('.tool[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+  $('#penTidyBtn').onclick = () => { penTidy = !penTidy; $('#penTidyBtn').classList.toggle('on', penTidy); toast(penTidy ? 'Skizze aufräumen: an' : 'Freihand: roh'); };
   $('#rotL').onclick = () => rotatePage(-90); $('#rotR').onclick = () => rotatePage(90);
   $('#delSel').onclick = deleteSel;
   // Schnellzugriff unten links

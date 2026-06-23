@@ -850,6 +850,12 @@ function showCtx(x, y, pv, annoId) {
     add('Löschen', '🗑', () => { sel = { num: pv.num, id: annoId }; deleteSel(); }, 'danger');
     add('Farbe ändern', '🎨', () => $('#colorPick').click());
     add('Duplizieren', '⧉', () => duplicateAnno(pv, annoId));
+    add('Kopieren', '⧉', () => { sel = { num: pv.num, id: annoId }; copySel(); });
+    add('Nach vorne', '⬆', () => reorderAnno(pv, annoId, true));
+    add('Nach hinten', '⬇', () => reorderAnno(pv, annoId, false));
+    sep();
+  } else if (clipAnno) {
+    add('Einfügen', '⎘', pasteAnno);
     sep();
   }
   // Werkzeuge als kompakte Icon-Reihe
@@ -869,13 +875,18 @@ function showCtx(x, y, pv, annoId) {
   m.style.top = Math.min(y, window.innerHeight - h - 8) + 'px';
 }
 function duplicateAnno(pv, id) { const a = findAnno(pv.num, id); if (!a) return; pushUndo(); const c = JSON.parse(JSON.stringify(a)); c.id = nextId++; translateAnno(c, JSON.parse(JSON.stringify(c)), 12, 12); getAnnos(pv.num).push(c); sel = { num: pv.num, id: c.id }; drawAnnos(pv); refreshComments(); }
+// Ebene: Zeichenreihenfolge = Stapel; ans Ende = vorne, an den Anfang = hinten
+function reorderAnno(pv, id, toFront) { const arr = getAnnos(pv.num), i = arr.findIndex(a => a.id === id); if (i < 0) return; pushUndo(); const [a] = arr.splice(i, 1); if (toFront) arr.push(a); else arr.unshift(a); drawAnnos(pv); }
+let clipAnno = null;
+function copySel() { if (!sel) return; const a = findAnno(sel.num, sel.id); if (a) { clipAnno = JSON.parse(JSON.stringify(a)); toast('Kopiert'); } }
+function pasteAnno() { if (!clipAnno) return; const n = curPage(), pv = pageViews.find(p => p.num === n); if (!pv) return; pushUndo(); const c = JSON.parse(JSON.stringify(clipAnno)); c.id = nextId++; translateAnno(c, JSON.parse(JSON.stringify(c)), 14, 14); getAnnos(n).push(c); sel = { num: n, id: c.id }; drawAnnos(pv); refreshComments(); }
 
 /* ---------- Tastenkürzel-Hilfe ---------- */
 function toggleShortcuts() {
   const ex = $('#shortcutsDlg'); if (ex) { ex.remove(); return; }
   const rows = [
     ['Werkzeuge', ''], ['Auswählen / Verschieben', 'V'], ['Text schreiben', 'T'], ['Stift / Freihand', 'S'], ['Linie', 'L'], ['Pfeil', 'P'], ['Rechteck', 'R'], ['Oval', 'O'], ['Messen', 'M'], ['Kommentar', 'K'],
-    ['Bearbeiten', ''], ['Rückgängig', 'Strg+Z'], ['Duplizieren', 'Strg+D'], ['Löschen', 'Entf'], ['Verschieben (fein/grob)', '← ↑ → ↓ / + Umschalt'],
+    ['Bearbeiten', ''], ['Rückgängig', 'Strg+Z'], ['Kopieren / Einfügen', 'Strg+C / Strg+V'], ['Duplizieren', 'Strg+D'], ['Löschen', 'Entf'], ['Verschieben (fein/grob)', '← ↑ → ↓ / + Umschalt'],
     ['Datei & Ansicht', ''], ['Öffnen', 'Strg+O'], ['Speichern', 'Strg+S'], ['Zoom +/− / Passt', 'Strg + / − / 0'], ['Abbrechen / Schliessen', 'Esc'],
   ];
   const m = document.createElement('div'); m.className = 'modal'; m.id = 'shortcutsDlg';
@@ -971,6 +982,8 @@ function wire() {
     else if (mod && e.key === '-') { e.preventDefault(); zoomStep(-.15); }
     else if (mod && e.key === '0') { e.preventDefault(); setZoom('auto'); }
     else if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); if (sel) { const pv = pageViews.find(p => p.num === sel.num); if (pv) duplicateAnno(pv, sel.id); } }
+    else if (mod && e.key.toLowerCase() === 'c' && sel && tool !== 'textsel') { e.preventDefault(); copySel(); }
+    else if (mod && e.key.toLowerCase() === 'v' && clipAnno && tool !== 'textsel') { e.preventDefault(); pasteAnno(); }
     else if (sel && e.key.startsWith('Arrow')) { e.preventDefault(); nudgeSel(e.key, e.shiftKey ? 10 : 1); }
     else if (e.key === 'Delete' || e.key === 'Backspace') { if (sel) { e.preventDefault(); deleteSel(); } }
     else if (e.key === 'Escape') { hideCtx(); sel = null; pageViews.forEach(drawAnnos); }

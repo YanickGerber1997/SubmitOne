@@ -102,9 +102,17 @@
   <div class="quickbar" id="quickbar" hidden>
     <button class="qbtn" id="qRotL" title="Seite 90° links drehen"><svg viewBox="0 0 24 24" class="i"><path d="M4 9a8 8 0 1 1 2 6"/><path d="M4 4v5h5"/></svg></button>
     <button class="qbtn" id="qRotR" title="Seite 90° rechts drehen"><svg viewBox="0 0 24 24" class="i"><path d="M20 9a8 8 0 1 0-2 6"/><path d="M20 4v5h-5"/></svg></button>
+    <button class="qbtn" id="qFree" title="Frei drehen – Plan nach Norden ausrichten (nur Ansicht)"><svg viewBox="0 0 24 24" class="i"><path d="M12 2v20M2 12h20" opacity=".5"/><path d="M12 4l3 6h-6z"/></svg></button>
     <span class="qsep"></span>
     <button class="qbtn" id="qPrev" title="Seite zurück">↑</button>
     <button class="qbtn" id="qNext" title="Seite vor">↓</button>
+  </div>
+
+  <div class="freerot" id="freeRot" hidden>
+    <span class="fr-cap">Frei drehen (Norden)</span>
+    <input type="range" id="freeRotRange" min="-180" max="180" value="0" step="1" />
+    <span id="freeRotVal" class="fr-val">0°</span>
+    <button class="btn" id="freeRotReset">0°</button>
   </div>
 
   <div class="ctxmenu" id="ctxmenu" hidden></div>

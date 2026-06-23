@@ -10,7 +10,8 @@ const PDFLIB = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js'
 let pdfjs = null, pdfDoc = null, curBytes = null, docName = 'dokument.pdf';
 let zoom = 'auto', pageViews = [], renderTok = 0;
 let annos = {};            // {pageNum: [anno]}
-let pageRot = {};          // {pageNum: 0/90/180/270}
+let pageRot = {};          // {pageNum: 0/90/180/270} – gespeicherte 90°-Drehung
+let viewRot = {};          // {pageNum: deg} – freie Ansichts-Drehung (Norden), NICHT gespeichert
 let tool = 'select';
 let style = { color: '#b4502f', width: 2.5, size: 16 };   // Standard: Rost (gut sichtbar auf Plänen)
 let penTidy = true;        // Freihand-Skizzen automatisch zu sauberen Formen aufräumen
@@ -47,7 +48,7 @@ async function openFiles(files) {
     if (pdf) { curBytes = new Uint8Array(await pdf.arrayBuffer()); docName = pdf.name; }
     else if (img) { await imageToPdfBytes(img); }
     else { status(''); return; }
-    annos = {}; pageRot = {}; undoStack = []; sel = null; docScale = null; await loadDoc(curBytes.slice());
+    annos = {}; pageRot = {}; viewRot = {}; undoStack = []; sel = null; docScale = null; await loadDoc(curBytes.slice());
   } catch (e) { status(''); console.error(e); toast('Datei konnte nicht geöffnet werden.'); }
 }
 // Bild → 1-seitige PDF (so läuft alles weitere wie bei einer PDF: anmerken, speichern, senden)
@@ -87,10 +88,11 @@ async function renderAll() {
     const vp1 = page.getViewport({ scale: 1 }); const pw = vp1.width, ph = vp1.height;
     const scale = (zoom === 'auto') ? fitScale(pw) : zoom;
     const vp = page.getViewport({ scale });
-    const rot = ((pageRot[n] || 0) % 360 + 360) % 360, swap = (rot === 90 || rot === 270);
+    const rot = ((pageRot[n] || 0) + (viewRot[n] || 0));   // 90°-Drehung (gespeichert) + freie Ansicht (Norden)
     const dispW = vp.width, dispH = vp.height;
+    const rad = rot * Math.PI / 180, bw = Math.abs(dispW * Math.cos(rad)) + Math.abs(dispH * Math.sin(rad)), bh = Math.abs(dispW * Math.sin(rad)) + Math.abs(dispH * Math.cos(rad));
     const outer = document.createElement('div'); outer.className = 'pagewrap'; outer.dataset.n = n;
-    outer.style.width = (swap ? dispH : dispW) + 'px'; outer.style.height = (swap ? dispW : dispH) + 'px';
+    outer.style.width = bw + 'px'; outer.style.height = bh + 'px';
     const inner = document.createElement('div'); inner.style.position = 'absolute'; inner.style.left = '50%'; inner.style.top = '50%';
     inner.style.width = dispW + 'px'; inner.style.height = dispH + 'px';
     inner.style.transform = `translate(-50%,-50%) rotate(${rot}deg)`;
@@ -101,7 +103,7 @@ async function renderAll() {
     const svg = svgEl('svg', { class: 'anno', viewBox: `0 0 ${pw} ${ph}`, preserveAspectRatio: 'none' });
     svg.style.width = dispW + 'px'; svg.style.height = dispH + 'px';
     inner.appendChild(canvas); inner.appendChild(svg); outer.appendChild(inner); host.appendChild(outer);
-    const pv = { num: n, wrap: outer, inner, canvas, svg, scale, pageW: pw, pageH: ph, rot };
+    const pv = { num: n, wrap: outer, inner, canvas, svg, scale, pageW: pw, pageH: ph, rot, dispW, dispH };
     pageViews.push(pv);
     await page.render({ canvasContext: ctx, viewport: page.getViewport({ scale }) }).promise;
     drawAnnos(pv); bindPageEvents(pv);
@@ -377,6 +379,16 @@ function rotatePage(deg) {
   if (!pdfDoc) return; const n = curPage(); pageRot[n] = (((pageRot[n] || 0) + deg) % 360 + 360) % 360; saveState();
   renderAll(); buildThumbs();
 }
+// Freies Drehen (nur Ansicht, live per CSS – kein Re-Render): Plan nach Norden ausrichten
+function applyViewRot(pv) {
+  const rot = (pageRot[pv.num] || 0) + (viewRot[pv.num] || 0), rad = rot * Math.PI / 180;
+  const bw = Math.abs(pv.dispW * Math.cos(rad)) + Math.abs(pv.dispH * Math.sin(rad)), bh = Math.abs(pv.dispW * Math.sin(rad)) + Math.abs(pv.dispH * Math.cos(rad));
+  pv.wrap.style.width = bw + 'px'; pv.wrap.style.height = bh + 'px'; pv.inner.style.transform = `translate(-50%,-50%) rotate(${rot}deg)`;
+}
+function setFreeRot(deg) {
+  const n = curPage(); viewRot[n] = deg; const pv = pageViews.find(p => p.num === n); if (pv) applyViewRot(pv);
+  $('#freeRotVal').textContent = (deg > 0 ? '+' : '') + deg + '°';
+}
 
 /* ---------- Undo / Löschen ---------- */
 function snapshot() { return JSON.stringify({ annos, pageRot }); }
@@ -605,6 +617,9 @@ function wire() {
   $('#delSel').onclick = deleteSel;
   // Schnellzugriff unten links
   $('#qRotL').onclick = () => rotatePage(-90); $('#qRotR').onclick = () => rotatePage(90);
+  $('#qFree').onclick = () => { const p = $('#freeRot'); p.hidden = !p.hidden; if (!p.hidden) { const n = curPage(); $('#freeRotRange').value = viewRot[n] || 0; $('#freeRotVal').textContent = ((viewRot[n] || 0) > 0 ? '+' : '') + (viewRot[n] || 0) + '°'; } };
+  $('#freeRotRange').oninput = e => setFreeRot(+e.target.value);
+  $('#freeRotReset').onclick = () => { $('#freeRotRange').value = 0; setFreeRot(0); };
   $('#qPrev').onclick = () => gotoPage(Math.max(1, curPage() - 1));
   $('#qNext').onclick = () => gotoPage(Math.min(pdfDoc ? pdfDoc.numPages : 1, curPage() + 1));
   // Rechtsklick-Menü

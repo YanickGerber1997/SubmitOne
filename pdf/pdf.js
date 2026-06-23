@@ -296,7 +296,16 @@ function updatePageInd() { if (!pdfDoc) return; const cur = curPage(); $('#pageI
 function curScale() { return (zoom === 'auto') ? (pageViews[0] ? pageViews[0].scale : 1) : zoom; }
 function updateZoomLabel() { const pct = Math.round(((zoom === 'auto') ? curScale() : zoom) * 100); $('#zoomVal').innerHTML = pct + '&nbsp;%'; $('#zoomVal').classList.toggle('on', zoom === 'auto'); }
 function setZoom(z) { zoom = z; if (pdfDoc) relayout(); }
-function zoomStep(d) { const c = curScale(); setZoom(Math.max(.25, Math.min(3, Math.round((c + d) * 100) / 100))); }
+function zoomStep(d) { const c = curScale(); setZoom(Math.max(.25, Math.min(5, Math.round((c + d) * 100) / 100))); }
+// Zum Mauszeiger zoomen: der Punkt unter der Maus bleibt an Ort und Stelle
+function zoomToward(clientX, clientY, factor) {
+  if (!pdfDoc) return; const host = $('#pages'), rect = host.getBoundingClientRect();
+  const px = clientX - rect.left, py = clientY - rect.top, cur = curScale();
+  const nz = Math.max(.25, Math.min(5, Math.round(cur * factor * 100) / 100)); if (nz === cur) return;
+  const docX = host.scrollLeft + px, docY = host.scrollTop + py, f = nz / cur;
+  setZoom(nz);                                  // Layout wird synchron neu gesetzt
+  host.scrollLeft = docX * f - px; host.scrollTop = docY * f - py;
+}
 
 /* ---------- Annotationen rendern ---------- */
 function getAnnos(n) { return annos[n] || (annos[n] = []); }
@@ -937,6 +946,11 @@ function wire() {
   $('#btnUndo').onclick = undo;
   $('#zoomIn').onclick = () => zoomStep(.15); $('#zoomOut').onclick = () => zoomStep(-.15); $('#zoomVal').onclick = () => setZoom('auto');
   $('#pages').addEventListener('scroll', () => { updatePageInd(); scheduleSharpen(); }, { passive: true });
+  $('#pages').addEventListener('wheel', e => {     // Strg/Cmd + Mausrad (oder Trackpad-Pinch) = zum Zeiger zoomen
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    zoomToward(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+  }, { passive: false });
   window.addEventListener('resize', () => { if (zoom === 'auto') reflow(); });
   $$('.tool[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $('#penTidyBtn').onclick = () => { penTidy = !penTidy; $('#penTidyBtn').classList.toggle('on', penTidy); toast(penTidy ? 'Skizze aufräumen: an' : 'Freihand: roh'); };

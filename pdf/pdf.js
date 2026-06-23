@@ -260,7 +260,7 @@ function snapPos(pv) {
   const dx = Math.round(left * dpr) / dpr - left;
   pv.wrap.style.transform = Math.abs(dx) > 0.001 ? `translateX(${dx}px)` : 'none';
 }
-function relayout() { if (!pdfDoc) return; pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); renderVisible(); }
+function relayout() { if (!pdfDoc) return; pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); renderVisible(); updateSelBar(); }
 let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTimer = setTimeout(relayout, 140); }
 
 function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im Seitenstreifen)
@@ -314,6 +314,29 @@ function drawAnnos(pv) {
   const svg = pv.svg; svg.innerHTML = '';
   for (const a of getAnnos(pv.num)) drawOne(svg, a, pv);
   if (sel && sel.num === pv.num) drawSelection(svg, findAnno(pv.num, sel.id), pv);
+  updateSelBar();
+}
+// Farbe (#hex oder rgb()) → #rrggbb für das Farbfeld
+function toHex(s) { const c = parseColor(s), h = n => ('0' + Math.round(n * 255).toString(16)).slice(-2); return '#' + h(c.r) + h(c.g) + h(c.b); }
+// Schwebende Leiste über der Auswahl positionieren/konfigurieren
+function updateSelBar() {
+  const bar = $('#selbar'); if (!bar) return;
+  if (!sel || tool !== 'select') { bar.hidden = true; return; }
+  const pv = pageViews.find(p => p.num === sel.num), a = pv && findAnno(pv.num, sel.id);
+  if (!pv || !a) { bar.hidden = true; return; }
+  const hasColor = a.type !== 'sig', hasWidth = a.width != null, hasSize = (a.type === 'text' || a.type === 'edit');
+  $('#sbColorWrap').hidden = !hasColor; $('#sbWidths').hidden = !hasWidth; $('#sbSize').hidden = !hasSize;
+  if (hasColor) { $('#sbColor').value = toHex(a.color); $('#sbColorDot').style.background = a.color; }
+  if (hasWidth) $$('#sbWidths button').forEach(b => b.classList.toggle('on', +b.dataset.w === a.width));
+  if (hasSize) $('#sbSize').value = String(a.size);
+  bar.hidden = false;
+  const b = bbox(a), ctm = pv.svg.getScreenCTM(); if (!ctm) { bar.hidden = true; return; }
+  const sp = pv.svg.createSVGPoint(); sp.x = b.x + b.w / 2; sp.y = b.y; const tp = sp.matrixTransform(ctm);
+  const host = $('#pages').getBoundingClientRect(), bw = bar.offsetWidth, bh = bar.offsetHeight;
+  let x = tp.x - bw / 2, y = tp.y - bh - 12;
+  x = Math.max(host.left + 6, Math.min(host.right - bw - 6, x));
+  if (y < host.top + 4) { sp.y = b.y + b.h; const bp = sp.matrixTransform(ctm); y = bp.y + 12; }   // kein Platz oben → unter die Auswahl
+  bar.style.left = x + 'px'; bar.style.top = y + 'px';
 }
 function strokeAttrs(a) { return { stroke: a.color, 'stroke-width': a.width, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }; }
 function drawOne(svg, a, pv) {
@@ -945,7 +968,7 @@ function wire() {
   $('#mCancel').onclick = () => $('#mailDlg').hidden = true;
   $('#btnUndo').onclick = undo;
   $('#zoomIn').onclick = () => zoomStep(.15); $('#zoomOut').onclick = () => zoomStep(-.15); $('#zoomVal').onclick = () => setZoom('auto');
-  $('#pages').addEventListener('scroll', () => { updatePageInd(); scheduleSharpen(); }, { passive: true });
+  $('#pages').addEventListener('scroll', () => { updatePageInd(); scheduleSharpen(); updateSelBar(); }, { passive: true });
   $('#pages').addEventListener('wheel', e => {     // Strg/Cmd + Mausrad (oder Trackpad-Pinch) = zum Zeiger zoomen
     if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
@@ -1002,6 +1025,15 @@ function wire() {
   $('#btnComments').onclick = () => { const open = $('#work').classList.toggle('comm-open'); $('#comments').hidden = !open; $('#btnComments').classList.toggle('on', open); };
   const cp = $('#colorPick'); cp.oninput = () => { style.color = cp.value; $('#colorDot').style.background = cp.value; if (sel) { const a = findAnno(sel.num, sel.id); if (a) { pushUndo(); a.color = cp.value; pageViews.forEach(drawAnnos); } } };
   $('#widthSel').onchange = e => { style.width = +e.target.value; if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.width != null) { pushUndo(); a.width = style.width; pageViews.forEach(drawAnnos); } } };
+  // Schwebende Auswahl-Leiste
+  const selA = () => sel && findAnno(sel.num, sel.id), selPv = () => pageViews.find(p => p.num === sel.num);
+  let sbColorPushed = false;
+  $('#sbColor').addEventListener('pointerdown', () => { sbColorPushed = false; });
+  $('#sbColor').addEventListener('input', e => { const a = selA(); if (!a) return; if (!sbColorPushed) { pushUndo(); sbColorPushed = true; } a.color = e.target.value; style.color = e.target.value; $('#colorDot').style.background = e.target.value; $('#sbColorDot').style.background = e.target.value; const pv = selPv(); if (pv) drawAnnos(pv); });
+  $$('#sbWidths button').forEach(btn => btn.onclick = () => { const a = selA(); if (!a || a.width == null) return; pushUndo(); a.width = +btn.dataset.w; style.width = +btn.dataset.w; $('#widthSel').value = btn.dataset.w; const pv = selPv(); if (pv) drawAnnos(pv); });
+  $('#sbSize').onchange = e => { const a = selA(); if (!a) return; pushUndo(); a.size = +e.target.value; style.size = +e.target.value; $('#sizeSel').value = e.target.value; const pv = selPv(); if (pv) drawAnnos(pv); };
+  $('#sbDup').onclick = () => { const pv = selPv(); if (pv && sel) duplicateAnno(pv, sel.id); };
+  $('#sbDel').onclick = () => deleteSel();
   $('#sizeSel').onchange = e => { style.size = +e.target.value; if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.type === 'text') { pushUndo(); a.size = style.size; pageViews.forEach(drawAnnos); } } };
   $('#colorDot').style.background = style.color;
 

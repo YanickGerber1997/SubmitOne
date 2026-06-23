@@ -181,6 +181,22 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .sc-grid span{font-size:13px;color:var(--ink-soft)}
 .sc-grid kbd{justify-self:end;font:600 12px/1 var(--font);background:var(--surface-2);border:1px solid var(--line);padding:4px 7px;color:var(--ink);white-space:nowrap}
 
+/* Schwebende Auswahl-Leiste */
+.selbar{position:fixed;z-index:60;display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--line);padding:4px;box-shadow:0 6px 22px rgba(20,24,40,.22)}
+.selbar button,.selbar .sb-color{display:flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid transparent;background:none;cursor:pointer;border-radius:0;padding:0;position:relative;color:var(--ink-soft)}
+.selbar button:hover,.selbar .sb-color:hover{background:var(--surface-2);border-color:var(--line)}
+.selbar .sb-color{overflow:hidden}
+.selbar #sbColorDot{width:18px;height:18px;border:1px solid var(--line);background:#b4502f}
+.selbar .sb-color input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.selbar .sb-widths{display:flex;gap:2px}
+.selbar .sb-widths button{width:26px}
+.selbar .sb-widths .wl{display:block;width:16px;background:var(--ink);border-radius:2px}
+.selbar .sb-widths button.on{background:var(--accent-soft);border-color:var(--accent)}
+.selbar .sb-size{height:30px;border:1px solid var(--line);background:var(--surface-2);font:inherit;font-size:13px;color:var(--ink);padding:0 4px}
+.selbar .sb-sep{width:1px;height:20px;background:var(--line);margin:0 2px}
+.selbar .sb-del:hover{color:var(--danger);border-color:var(--danger)}
+.selbar[hidden]{display:none !important}
+
 #toast-root{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:50;display:flex;flex-direction:column;gap:8px;align-items:center}
 .toast{background:var(--ink);color:#fff;padding:9px 16px;border-radius:0;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.22);animation:tIn .2s}
 @keyframes tIn{from{opacity:0;transform:translateY(8px)}}

@@ -119,6 +119,21 @@
 
   <div class="ctxmenu" id="ctxmenu" hidden></div>
 
+  <!-- Schwebende Leiste über der Auswahl -->
+  <div class="selbar" id="selbar" hidden>
+    <label class="sb-color" id="sbColorWrap" title="Farbe"><span id="sbColorDot"></span><input type="color" id="sbColor" /></label>
+    <div class="sb-widths" id="sbWidths">
+      <button data-w="1.5" title="dünn"><span class="wl" style="height:2px"></span></button>
+      <button data-w="2.5" title="mittel"><span class="wl" style="height:3px"></span></button>
+      <button data-w="4" title="dick"><span class="wl" style="height:5px"></span></button>
+      <button data-w="7" title="sehr dick"><span class="wl" style="height:7px"></span></button>
+    </div>
+    <select class="sb-size" id="sbSize" title="Textgrösse"><option value="12">12</option><option value="16">16</option><option value="22">22</option><option value="32">32</option><option value="48">48</option></select>
+    <span class="sb-sep"></span>
+    <button id="sbDup" title="Duplizieren (Strg+D)">⧉</button>
+    <button id="sbDel" class="sb-del" title="Löschen (Entf)">🗑</button>
+  </div>
+
   <!-- Unterschrift -->
   <div class="modal" id="sigDlg" hidden>
     <div class="modal-card">

@@ -2,23 +2,22 @@
   <rect width="1240" height="1240" fill="#ffffff"/>
 
   <!-- Bildmarke -->
-  <g transform="translate(290 168) scale(3.0)" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <!-- S: flacher Top-Balken, Bogen, flacher Boden-Balken (dunkel) -->
-    <path d="M122 72 L82 72 C58 72 56 100 84 110 C106 119 118 124 118 142 C118 164 92 172 70 164" stroke="#1c242c" stroke-width="13"/>
-    <path d="M70 165 L120 165" stroke="#1c242c" stroke-width="13"/>
-    <!-- grüner Aufwärts-Pfeil mit geschwungenem Fuss -->
-    <path d="M120 165 C133 165 139 157 139 145 L139 112" stroke="#5a7d3c" stroke-width="12"/>
-    <path d="M127 126 L139 110 L151 126" stroke="#5a7d3c" stroke-width="12"/>
+  <g transform="translate(300 180) scale(3.0)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- S: runder Kopf (links eingerollt) + flacher Boden-Balken (dunkel) -->
+    <path d="M120 64 C96 58 72 62 68 86 C65 104 90 110 98 114 C116 121 116 130 114 142 C110 163 86 171 68 162" stroke="#1c242c" stroke-width="12"/>
+    <path d="M70 165 L114 165" stroke="#1c242c" stroke-width="12"/>
+    <!-- grüner Aufwärts-Pfeil (heller), geschwungener Fuss -->
+    <path d="M114 165 C131 165 136 155 136 142 L136 112" stroke="#5a7d3c" stroke-width="11"/>
+    <path d="M126 126 L136 111 L146 126" stroke="#5a7d3c" stroke-width="11"/>
     <!-- grünes Blatt (spitz, gewinkelt) mit Mittelrippe -->
-    <path d="M120 94 C120 70 142 55 160 57 C158 81 140 96 120 94 Z" fill="#3e5a30" stroke="none"/>
-    <path d="M126 88 L154 62" stroke="#ffffff" stroke-width="2.2"/>
+    <path d="M116 95 C112 69 138 52 159 57 C155 83 135 101 116 95 Z" fill="#3e5a30" stroke="none"/>
+    <path d="M122 88 L151 63" stroke="#ffffff" stroke-width="2.2"/>
   </g>
 
   <!-- Wortmarke (dünn, weit gesperrt) -->
-  <text x="620" y="930" text-anchor="middle" font-size="128" letter-spacing="30" font-weight="300">
+  <text x="620" y="950" text-anchor="middle" font-size="128" letter-spacing="30" font-weight="300">
     <tspan fill="#3a3f3a">SUBMIT</tspan><tspan fill="#a7a89b" dx="50">PDF</tspan>
   </text>
-  <!-- Leitsatz als Zitat -->
-  <text x="620" y="994" text-anchor="middle" font-size="32" letter-spacing="2" font-style="italic" fill="#34502b">„It's all about the Paper, submit to everyone."</text>
-  <text x="620" y="1036" text-anchor="middle" font-size="25" letter-spacing="5" fill="#6e7a3a">— YANICK GERBER</text>
+  <text x="620" y="1012" text-anchor="middle" font-size="32" letter-spacing="2" font-style="italic" fill="#34502b">„It's all about the Paper, submit to everyone."</text>
+  <text x="620" y="1054" text-anchor="middle" font-size="25" letter-spacing="5" fill="#6e7a3a">— YANICK GERBER</text>
 </svg>

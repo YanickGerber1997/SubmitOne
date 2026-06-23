@@ -377,14 +377,30 @@ function bbox(a) {
   if (a.type === 'sig' || a.type === 'edit') return { x: a.x, y: a.y, w: a.w, h: a.h };
   return { x: 0, y: 0, w: 0, h: 0 };
 }
+function isLineType(a) { return a && (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim'); }
 function drawSelection(svg, a, pv) {
-  if (!a) return; const b = bbox(a); const pad = 3;
-  svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad }));
-  const hs = 4 / pv.scale;
-  const pts = (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim')
-    ? [['p1', a.x1, a.y1], ['p2', a.x2, a.y2]]
-    : [['nw', b.x, b.y], ['ne', b.x + b.w, b.y], ['sw', b.x, b.y + b.h], ['se', b.x + b.w, b.y + b.h]];
-  for (const [name, x, y] of pts) svg.appendChild(svgEl('rect', { class: 'handle', x: x - hs, y: y - hs, width: hs * 2, height: hs * 2, 'data-h': name }));
+  if (!a) return; const hs = 4.5 / pv.scale;
+  if (isLineType(a)) {                                  // Linie: KEIN Rechteck-Rahmen, nur Linie hervorheben + Endpunkte
+    svg.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'sel-line' }));
+    for (const [name, x, y] of [['p1', a.x1, a.y1], ['p2', a.x2, a.y2]]) svg.appendChild(svgEl('circle', { class: 'handle', cx: x, cy: y, r: hs, 'data-h': name }));
+  } else {
+    const b = bbox(a), pad = 3;
+    svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad }));
+    for (const [name, x, y] of [['nw', b.x, b.y], ['ne', b.x + b.w, b.y], ['sw', b.x, b.y + b.h], ['se', b.x + b.w, b.y + b.h]]) svg.appendChild(svgEl('rect', { class: 'handle', x: x - hs, y: y - hs, width: hs * 2, height: hs * 2, 'data-h': name }));
+  }
+}
+// Hover-Vorschau (Maus über Anmerkung): Linie hervorheben + Endpunkte zeigen
+function setHover(pv, a) {
+  const old = pv.svg.querySelector('.hover-layer'); if (old) old.remove();
+  if (!a || (sel && sel.num === pv.num && sel.id === a.id)) return;
+  const g = svgEl('g', { class: 'hover-layer' });
+  if (isLineType(a)) {
+    g.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'hover-line' }));
+    const r = 4 / pv.scale;
+    g.appendChild(svgEl('circle', { cx: a.x1, cy: a.y1, r, class: 'hover-dot' }));
+    g.appendChild(svgEl('circle', { cx: a.x2, cy: a.y2, r, class: 'hover-dot' }));
+  } else { const b = bbox(a), pad = 2; g.appendChild(svgEl('rect', { x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad, class: 'hover-box' })); }
+  pv.svg.appendChild(g);
 }
 
 /* ---------- Maus → Seitenkoordinaten ---------- */
@@ -397,6 +413,13 @@ function evtToPage(pv, e) {
 /* ---------- Werkzeuge / Interaktion ---------- */
 function bindPageEvents(pv) {
   pv.svg.addEventListener('pointerdown', e => onPointerDown(pv, e));
+  pv.svg.addEventListener('pointermove', e => {                       // Hover-Vorschau im Auswahl-Modus
+    if (tool !== 'select' || e.buttons) return;
+    const id = (e.target.getAttribute && e.target.getAttribute('data-id')) || null;
+    if (id === pv._hoverId) return; pv._hoverId = id;
+    setHover(pv, id ? findAnno(pv.num, +id) : null);
+  });
+  pv.svg.addEventListener('pointerleave', () => { pv._hoverId = null; setHover(pv, null); });
 }
 function onPointerDown(pv, e) {
   if (e.button !== 0) return;
@@ -431,6 +454,8 @@ function startMove(pv, e, a) {
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) undoStack.pop(); else { saveState(); refreshComments(); } };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
+// Endpunkt auf 15°-Schritte zum Festpunkt (ax,ay) einrasten (Shift beim Ziehen)
+function snap15(ax, ay, qx, qy) { const dx = qx - ax, dy = qy - ay, len = Math.hypot(dx, dy), step = Math.PI / 12, ang = Math.round(Math.atan2(dy, dx) / step) * step; return { x: ax + Math.cos(ang) * len, y: ay + Math.sin(ang) * len }; }
 function translateAnno(a, o, dx, dy) {
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
   else if (a.type === 'pen') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
@@ -440,7 +465,7 @@ function startResize(pv, e, h) {
   const a = findAnno(pv.num, sel.id); if (!a) return; pushUndo(); const orig = JSON.parse(JSON.stringify(a));
   const move = ev => {
     const q = evtToPage(pv, ev);
-    if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') { if (h === 'p1') { a.x1 = q.x; a.y1 = q.y; } else { a.x2 = q.x; a.y2 = q.y; } }
+    if (isLineType(a)) { let qx = q.x, qy = q.y; if (ev.shiftKey) { const o = h === 'p1' ? { x: a.x2, y: a.y2 } : { x: a.x1, y: a.y1 }; const s = snap15(o.x, o.y, qx, qy); qx = s.x; qy = s.y; } if (h === 'p1') { a.x1 = qx; a.y1 = qy; } else { a.x2 = qx; a.y2 = qy; } }
     else if (orig.type === 'sig') { const ratio = orig.w / orig.h || 1, ax = h.includes('w') ? orig.x + orig.w : orig.x, ay = h.includes('n') ? orig.y + orig.h : orig.y; const nw = Math.max(12, Math.abs(q.x - ax)), nh = nw / ratio; a.w = nw; a.h = nh; a.x = h.includes('w') ? ax - nw : ax; a.y = h.includes('n') ? ay - nh : ay; }
     else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval' || orig.type === 'edit') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
     drawAnnos(pv);
@@ -502,7 +527,7 @@ function startDraw(pv, e, p) {
     const q = evtToPage(pv, ev);
     if (a.type === 'pen') a.pts.push([q.x, q.y]);
     else if (a.type === 'rect' || a.type === 'oval') { a.w = q.x - a.x; a.h = q.y - a.y; }
-    else { a.x2 = q.x; a.y2 = q.y; }
+    else { if (ev.shiftKey) { const s = snap15(a.x1, a.y1, q.x, q.y); a.x2 = s.x; a.y2 = s.y; } else { a.x2 = q.x; a.y2 = q.y; } }   // Shift = 15°-Winkel
     drawAnnos(pv);
   };
   const up = () => {
@@ -690,6 +715,7 @@ function nudgeSel(key, d) {
 /* ---------- Werkzeug umschalten ---------- */
 function setTool(t) {
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
+  pageViews.forEach(p => { p._hoverId = null; const h = p.svg && p.svg.querySelector('.hover-layer'); if (h) h.remove(); });   // Hover bei Werkzeugwechsel löschen
   $('#pages').classList.toggle('mode-text', t === 'textsel');   // Text-Auswahl-Modus
   if (t === 'textsel') buildTextVisible();
 }

@@ -114,9 +114,13 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .pagewrap.tool-text .anno{cursor:text}
 
 /* Annotationen (SVG) */
-.anno .sel-out{fill:none;stroke:var(--accent);stroke-width:1;stroke-dasharray:4 3;vector-effect:non-scaling-stroke}
-.anno .handle{fill:#fff;stroke:var(--accent);stroke-width:1.5;vector-effect:non-scaling-stroke;cursor:nwse-resize}
-.anno .hit{stroke:transparent;fill:transparent;stroke-width:14;vector-effect:non-scaling-stroke}
+.anno .sel-out{fill:none;stroke:var(--accent);stroke-width:1;stroke-dasharray:4 3;vector-effect:non-scaling-stroke;pointer-events:none}
+.anno .sel-line{fill:none;stroke:var(--accent);stroke-width:3;opacity:.45;vector-effect:non-scaling-stroke;pointer-events:none;stroke-linecap:round}
+.anno .handle{fill:#fff;stroke:var(--accent);stroke-width:1.5;vector-effect:non-scaling-stroke;cursor:grab}
+.anno .hit{stroke:transparent;fill:transparent;stroke-width:11;vector-effect:non-scaling-stroke;cursor:move}
+.anno .hover-line{fill:none;stroke:var(--accent);stroke-width:2.5;opacity:.35;vector-effect:non-scaling-stroke;pointer-events:none;stroke-linecap:round}
+.anno .hover-dot{fill:#fff;stroke:var(--accent);stroke-width:1.4;vector-effect:non-scaling-stroke;pointer-events:none}
+.anno .hover-box{fill:none;stroke:var(--accent);stroke-width:1;stroke-dasharray:3 3;opacity:.5;vector-effect:non-scaling-stroke;pointer-events:none}
 .anno text{font-family:var(--font);dominant-baseline:hanging;white-space:pre}
 .note-pin{cursor:pointer}
 

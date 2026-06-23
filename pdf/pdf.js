@@ -158,7 +158,7 @@ async function renderPage(pv) {                       // Basis-Vorschau (ganze S
     const canvas = document.createElement('canvas'); canvas.className = 'pagecanvas';
     canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
     canvas.style.width = pv.dispW + 'px'; canvas.style.height = pv.dispH + 'px';
-    const ctx = canvas.getContext('2d'); patchMinLine(ctx, 1);   // Haarlinien ≥ 1 Pixel
+    const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; patchMinLine(ctx, 1);   // Haarlinien ≥ 1 Pixel, Bilder hochwertig glätten
     const task = pv.page.render({ canvasContext: ctx, viewport: vp }); pv.task = task;
     await task.promise; pv.task = null;
     if (!pv.rendering) return;   // zwischenzeitlich weggescrollt/freigegeben → verwerfen
@@ -228,7 +228,7 @@ async function renderTile(pv) {                      // scharfe Kachel über den
     canvas.style.left = (rect.x * scale) + 'px'; canvas.style.top = (rect.y * scale) + 'px';
     canvas.style.width = (rect.w * scale) + 'px'; canvas.style.height = (rect.h * scale) + 'px';   // Backing wird heruntergerechnet → überabgetastet
     const transform = [1, 0, 0, 1, -rect.x * px, -rect.y * px];
-    const ctx = canvas.getContext('2d'); patchMinLine(ctx, px / (scale * dpr));   // min. 1 Gerätepixel (trotz Überabtastung)
+    const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; patchMinLine(ctx, px / (scale * dpr));   // min. 1 Gerätepixel + hochwertige Bild-Glättung
     const task = pv.page.render({ canvasContext: ctx, viewport: vp, transform }); pv.tileTask = task;
     await task.promise; pv.tileTask = null;
     if (!pv.rendered) return;   // zwischenzeitlich freigegeben → verwerfen

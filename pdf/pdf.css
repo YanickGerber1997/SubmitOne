@@ -11,7 +11,7 @@
 [hidden]{display:none !important}   /* Attribut sticht Klassen-display aus (Mail-Dialog etc.) */
 
 /* Animierter Startbildschirm */
-.splash{position:fixed;inset:0;z-index:200;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;transition:opacity .55s ease}
+.splash{position:fixed;inset:0;z-index:200;background:#f4f3ef url('bg.png') center/cover no-repeat;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;transition:opacity .55s ease}
 .splash.hide{opacity:0;pointer-events:none}
 .splash-mark{width:158px;height:188px}
 .splash-mark .s-draw{stroke-dasharray:760;stroke-dashoffset:760;animation:lgDraw 1s ease .15s forwards}
@@ -74,7 +74,7 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .thumb.active{border-color:var(--accent)}
 .thumb .tn{position:absolute;left:50%;bottom:-16px;transform:translateX(-50%);font-size:11px;color:var(--ink-faint);font-weight:600}
 
-.pages{overflow:auto;padding:26px;display:flex;flex-direction:column;align-items:center;gap:22px}
+.pages{overflow:auto;padding:26px;display:flex;flex-direction:column;align-items:center;gap:22px;background:var(--bg) url('bg.png') center/cover no-repeat fixed}
 .pagewrap{position:relative;background:#fff;box-shadow:0 4px 22px rgba(20,24,40,.13);border-radius:0;transition:transform .15s}
 .pagewrap canvas{display:block;border-radius:0}
 .pagewrap .anno{position:absolute;inset:0;overflow:visible;touch-action:none}
@@ -102,10 +102,10 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .comm-empty{color:var(--ink-faint);font-size:13px;padding:8px 4px}
 
 /* Drop / Status / Toast */
-.drop{position:absolute;inset:var(--bar) 0 0 0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:5}
+.drop{position:absolute;inset:var(--bar) 0 0 0;display:flex;align-items:center;justify-content:center;background:var(--bg) url('bg.png') center/cover no-repeat;z-index:5}
 .drop.hide{display:none}
 .drop.over .drop-card{border-color:var(--accent);background:var(--accent-soft)}
-.drop-card{border:2.5px dashed var(--line);border-radius:0;padding:48px 60px;text-align:center;background:var(--surface);transition:.15s;max-width:520px}
+.drop-card{border:2.5px dashed var(--accent);border-radius:0;padding:48px 60px;text-align:center;background:rgba(255,255,255,.72);backdrop-filter:blur(3px);transition:.15s;max-width:520px}
 .drop-ico svg{width:54px;height:54px;fill:none;stroke:var(--accent);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .leitsatz{margin:0 0 22px}
 .ls-q{margin:0;font-size:16px;font-style:italic;color:var(--accent-3);letter-spacing:.3px}

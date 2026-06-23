@@ -204,7 +204,7 @@ async function renderTile(pv) {                      // scharfe Kachel über den
   if (pv.rendering || !pv.page) return; const rect = visiblePageRect(pv); if (!rect) return;
   pv.rendering = true;
   try {
-    const scale = pageScale(pv); let px = scale * dprCap();
+    const scale = pageScale(pv); let px = scale * Math.min(Math.max(window.devicePixelRatio || 1, 3), 4);   // Kachel = nur sichtbarer Bereich → hohe Überabtastung (sehr scharf, auch in der Passt-Ansicht)
     let tw = rect.w * px, th = rect.h * px;
     if (tw > TILE_MAXDIM || th > TILE_MAXDIM) { const f = Math.min(TILE_MAXDIM / tw, TILE_MAXDIM / th); px *= f; tw *= f; th *= f; }
     const vp = pv.page.getViewport({ scale: px });

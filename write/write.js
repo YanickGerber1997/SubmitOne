@@ -1943,6 +1943,7 @@ function setFormat(f) {
   if (!doc || !FORMATS[f]) return;
   activePage().format = f;
   applyFormat(); applyZoom(); updatePages(); scheduleSave();
+  if (activePage().typ === 'calc') { calcFitRows = 0; renderCalc(); }   // Spaltenzahl/Höhe ans neue Format anpassen
 }
 function applyZoom() {
   const avail = ($('#canvas').clientWidth || 800) - 56;   // Calc-Blatt exakt so gross wie Write
@@ -1965,6 +1966,7 @@ function setOrientation(o) {
   if (!doc) return;
   activePage().ausrichtung = o;
   applyFormat(); scheduleSave(); applyZoom(); updatePages();
+  if (activePage().typ === 'calc') { calcFitRows = 0; renderCalc(); }   // Spaltenzahl/Höhe ans neue Format anpassen
 }
 let pageCount = 1, pagTimer = null;
 function updatePages() { $('#guides').innerHTML = ''; return pageCount; }   // echte Seitenlücken: siehe paginate()
@@ -2739,7 +2741,9 @@ function renderSheet() {
   const colsPP = Math.max(4, Math.floor(contentMm / 26));   // Auto-Spaltenzahl, die bequem auf die Blattbreite passt
   const wantC = activePage().dispCols | 0, wantR = activePage().dispRows | 0;
   const cs = curGrid.colStops || [];   // Spaltengrenzen aus den Tabstopps (gemeinsam mit Write) – Index = Spalte
-  const defCols = (doc && doc.rasterCols) || 6;   // standardmässig 6 Spalten im Hintergrundraster
+  // Spaltenbreite ist FIX (aus A4 = 6 Spalten). Grösseres Blatt (A3 …) → mehr Spalten, statt 6 breitzuziehen.
+  const baseColMm = Math.max(12, (210 - m.left - m.right) / ((doc && doc.rasterCols) || 6));
+  const defCols = Math.max(2, Math.round(contentMm / baseColMm));
   const cols = Math.max(ext.cols, cs.length ? cs.length + 1 : 0, wantC > 0 ? wantC : defCols);
   // Standard-Zeilenzahl so, dass genau EIN A4-Blatt gefüllt ist (sonst wird das Blatt zu lang)
   const hH = $('#zoneH').offsetHeight || 60, fH = $('#zoneF').offsetHeight || 60;

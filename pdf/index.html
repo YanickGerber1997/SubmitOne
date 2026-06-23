@@ -6,6 +6,8 @@
   <title>Submit PDF – PDFs bearbeiten im Browser</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
   <link rel="icon" href="icon.svg" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#1c242c" />
   <link rel="stylesheet" href="pdf.css" />
 </head>
 <body>
@@ -21,7 +23,8 @@
       <span class="bw-a">SUBMIT</span><span class="bw-b">PDF</span>
     </a>
     <button class="btn" id="btnOpen"><svg viewBox="0 0 24 24" class="i"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3z"/></svg><span>Öffnen</span></button>
-    <button class="btn primary" id="btnSave" disabled><svg viewBox="0 0 24 24" class="i"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span>Speichern</span></button>
+    <button class="btn" id="btnSave" disabled><svg viewBox="0 0 24 24" class="i"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span>Speichern</span></button>
+    <button class="btn primary" id="btnSend" disabled><svg viewBox="0 0 24 24" class="i"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg><span>Senden</span></button>
     <span class="doc-name" id="docName"></span>
     <span class="grow"></span>
     <button class="icon-btn" id="btnUndo" title="Rückgängig (Strg+Z)" disabled><svg viewBox="0 0 24 24" class="i"><path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10h-3"/></svg></button>
@@ -80,8 +83,8 @@
     <div class="drop-card">
       <p class="leitsatz">It's all about the Paper, submit to everyone</p>
       <div class="drop-ico"><svg viewBox="0 0 24 24"><path d="M6 2.5h8l4 4v15H6z"/><path d="M14 2.5v4h4"/><path d="M12 11v6M9.5 13.5 12 11l2.5 2.5"/></svg></div>
-      <h1>PDF hier ablegen</h1>
-      <p>oder <button class="link" id="dropOpen">Datei auswählen</button></p>
+      <h1>PDF oder Bild hier ablegen</h1>
+      <p>oder <button class="link" id="dropOpen">Datei auswählen</button> · auch Fotos vom Plan/der Baustelle</p>
       <p class="priv">🔒 Deine Dateien bleiben auf deinem Gerät – nichts wird hochgeladen.</p>
     </div>
   </div>
@@ -96,7 +99,21 @@
   </div>
 
   <div class="ctxmenu" id="ctxmenu" hidden></div>
-  <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden />
+
+  <!-- Senden per E-Mail -->
+  <div class="modal" id="mailDlg" hidden>
+    <div class="modal-card">
+      <div class="modal-head">Per E-Mail senden</div>
+      <label>An <input id="mTo" type="email" placeholder="empfaenger@firma.ch" /></label>
+      <label>CC <input id="mCc" type="text" placeholder="optional, mehrere mit Komma" /></label>
+      <label>Betreff <input id="mSub" type="text" /></label>
+      <label>Text <textarea id="mBody" rows="4"></textarea></label>
+      <p class="modal-hint">Auf dem Handy wird die PDF direkt als Anhang geteilt. Am Computer öffnet sich die Mail vorausgefüllt und die PDF wird heruntergeladen – einfach noch anhängen.</p>
+      <div class="modal-act"><button class="btn" id="mCancel">Abbrechen</button><button class="btn primary" id="mSend">Mail öffnen</button></div>
+    </div>
+  </div>
+
+  <input type="file" id="fileInput" accept="application/pdf,.pdf,image/*" multiple hidden />
   <div class="status" id="status" hidden></div>
   <div id="toast-root"></div>
 

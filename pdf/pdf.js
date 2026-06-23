@@ -30,17 +30,39 @@ function svgEl(tag, attrs) { const e = document.createElementNS(SVGNS, tag); for
 function hexToRgb(h) { h = (h || '#000').replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join(''); return { r: parseInt(h.slice(0, 2), 16) / 255, g: parseInt(h.slice(2, 4), 16) / 255, b: parseInt(h.slice(4, 6), 16) / 255 }; }
 
 /* ---------- Öffnen ---------- */
+function isImg(f) { return /^image\//.test(f.type) || /\.(png|jpe?g|gif|webp|bmp|heic)$/i.test(f.name); }
 async function openFiles(files) {
-  files = [...files].filter(f => /pdf$/i.test(f.name) || f.type === 'application/pdf'); if (!files.length) return;
+  files = [...files]; const pdf = files.find(f => /pdf$/i.test(f.name) || f.type === 'application/pdf'); const img = files.find(isImg);
   try { status('Lade PDF-Engine …'); await loadPdfJs(); } catch (_) { status(''); toast('PDF-Engine nicht ladbar (einmal Internet nötig).'); return; }
-  try { curBytes = new Uint8Array(await files[0].arrayBuffer()); docName = files[0].name; annos = {}; pageRot = {}; undoStack = []; sel = null; await loadDoc(curBytes.slice()); }
-  catch (e) { status(''); console.error(e); toast('PDF konnte nicht gelesen werden.'); }
+  try {
+    if (pdf) { curBytes = new Uint8Array(await pdf.arrayBuffer()); docName = pdf.name; }
+    else if (img) { await imageToPdfBytes(img); }
+    else { status(''); return; }
+    annos = {}; pageRot = {}; undoStack = []; sel = null; await loadDoc(curBytes.slice());
+  } catch (e) { status(''); console.error(e); toast('Datei konnte nicht geöffnet werden.'); }
+}
+// Bild → 1-seitige PDF (so läuft alles weitere wie bei einer PDF: anmerken, speichern, senden)
+async function imageToPdfBytes(file) {
+  status('Bild wird vorbereitet …');
+  const lib = await loadPdfLib();
+  const url = URL.createObjectURL(file);
+  const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+  const cv = document.createElement('canvas'); cv.width = im.naturalWidth; cv.height = im.naturalHeight;
+  cv.getContext('2d').drawImage(im, 0, 0); URL.revokeObjectURL(url);
+  const b64 = cv.toDataURL('image/png').split(',')[1];
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const doc = await lib.PDFDocument.create();
+  const png = await doc.embedPng(bytes);
+  const pg = doc.addPage([im.naturalWidth, im.naturalHeight]);
+  pg.drawImage(png, { x: 0, y: 0, width: im.naturalWidth, height: im.naturalHeight });
+  curBytes = new Uint8Array(await doc.save());
+  docName = file.name.replace(/\.[^.]+$/, '') + '.pdf';
 }
 async function loadDoc(bytes) {
   status('Öffne Dokument …');
   pdfDoc = await pdfjs.getDocument({ data: bytes }).promise;
   $('#drop').classList.add('hide'); $('#toolbar').hidden = false; $('#quickbar').hidden = false;
-  $('#btnSave').disabled = false; $('#docName').textContent = docName;
+  $('#btnSave').disabled = false; $('#btnSend').disabled = false; $('#docName').textContent = docName;
   document.title = docName.replace(/\.pdf$/i, '') + ' – Submit PDF';
   await renderAll(); buildThumbs(); status(''); refreshComments();
 }
@@ -343,12 +365,12 @@ function applyToolCursor() {
   pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'note'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text'); });
 }
 
-/* ---------- Speichern (pdf-lib) ---------- */
-async function save() {
-  if (!curBytes) return;
-  status('Bereite Speichern vor …');
-  let lib; try { lib = await loadPdfLib(); } catch (_) { status(''); toast('Speicher-Bibliothek nicht ladbar (Internet?).'); return; }
-  try {
+/* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
+function downloadBytes(bytes, name) { const blob = new Blob([bytes], { type: 'application/pdf' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1500); }
+function outName() { return docName.replace(/\.pdf$/i, '') + '-submit.pdf'; }
+async function buildPdfBytes() {
+  const lib = await loadPdfLib();
+  {
     const { PDFDocument, rgb, StandardFonts, degrees } = lib;
     const doc = await PDFDocument.load(curBytes.slice());
     const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -370,11 +392,41 @@ async function save() {
       }
       if (pageRot[n]) pg.setRotation(degrees(pageRot[n]));
     }
-    const out = await doc.save();
-    const blob = new Blob([out], { type: 'application/pdf' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = docName.replace(/\.pdf$/i, '') + '-submit.pdf'; a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1500); status(''); toast('Gespeichert ✓');
-  } catch (e) { status(''); console.error(e); toast('Speichern fehlgeschlagen.'); }
+    return await doc.save();
+  }
+}
+async function save() {
+  if (!curBytes) return; status('Speichere …');
+  try { const out = await buildPdfBytes(); downloadBytes(out, outName()); status(''); toast('Gespeichert ✓'); }
+  catch (e) { status(''); console.error(e); toast('Speichern fehlgeschlagen (Internet für Speicher-Bibliothek nötig?).'); }
+}
+
+/* ---------- Senden per E-Mail ---------- */
+function openMail() {
+  if (!curBytes) return;
+  const cfg = JSON.parse(localStorage.getItem('submitpdf_mail') || '{}');
+  $('#mTo').value = cfg.to || ''; $('#mCc').value = cfg.cc || '';
+  $('#mSub').value = cfg.sub || (docName.replace(/\.pdf$/i, '') + ' – Anmerkungen');
+  $('#mBody').value = cfg.body || 'Hallo,\n\nim Anhang die markierte PDF.\n\nGruss';
+  $('#mailDlg').hidden = false; $('#mTo').focus();
+}
+async function doSend() {
+  const to = $('#mTo').value.trim(), cc = $('#mCc').value.trim(), sub = $('#mSub').value, body = $('#mBody').value;
+  localStorage.setItem('submitpdf_mail', JSON.stringify({ to, cc, sub, body }));
+  $('#mailDlg').hidden = true; status('Bereite Versand vor …');
+  let out; try { out = await buildPdfBytes(); } catch (e) { status(''); toast('PDF konnte nicht erzeugt werden.'); return; }
+  status('');
+  const file = new File([out], outName(), { type: 'application/pdf' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: sub || file.name, text: body || '' }); return; } catch (_) { /* abgebrochen → Fallback */ }
+  }
+  downloadBytes(out, file.name);
+  const q = [];
+  if (cc) q.push('cc=' + encodeURIComponent(cc));
+  if (sub) q.push('subject=' + encodeURIComponent(sub));
+  q.push('body=' + encodeURIComponent((body || '') + '\n\n(„' + file.name + '" wurde heruntergeladen – bitte noch anhängen.)'));
+  window.location.href = 'mailto:' + encodeURIComponent(to) + '?' + q.join('&');
+  toast('PDF heruntergeladen · Mail geöffnet → PDF anhängen.');
 }
 
 /* ---------- Rechtsklick-Menü (alles erreichbar) ---------- */
@@ -413,6 +465,9 @@ function wire() {
   $('#dropOpen').onclick = () => $('#fileInput').click();
   $('#fileInput').onchange = e => { openFiles(e.target.files); e.target.value = ''; };
   $('#btnSave').onclick = save;
+  $('#btnSend').onclick = openMail;
+  $('#mSend').onclick = doSend;
+  $('#mCancel').onclick = () => $('#mailDlg').hidden = true;
   $('#btnUndo').onclick = undo;
   $('#zoomIn').onclick = () => zoomStep(.15); $('#zoomOut').onclick = () => zoomStep(-.15); $('#zoomVal').onclick = () => setZoom('auto');
   $('#pages').addEventListener('scroll', updatePageInd, { passive: true });
@@ -471,3 +526,25 @@ function wire() {
   });
 }
 wire();
+
+/* ---------- Geräte-Anbindung (PWA) ---------- */
+async function loadSharedFile() {
+  try {
+    const c = await caches.open('submitpdf-v1'); const r = await c.match('shared-file'); if (!r) return;
+    await c.delete('shared-file');
+    const blob = await r.blob(); const name = decodeURIComponent(r.headers.get('X-Filename') || 'geteilt');
+    const ext = (blob.type.includes('pdf')) ? '.pdf' : (blob.type.split('/')[1] ? '.' + blob.type.split('/')[1] : '');
+    openFiles([new File([blob], /\.\w+$/.test(name) ? name : name + ext, { type: blob.type })]);
+  } catch (_) {}
+}
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+// „Öffnen mit Submit PDF" (Desktop, installierte App)
+if ('launchQueue' in window) {
+  window.launchQueue.setConsumer(async params => {
+    if (params && params.files && params.files.length) { const files = await Promise.all(params.files.map(h => h.getFile())); openFiles(files); }
+  });
+}
+// Geteilte Datei vom Handy (Teilen-Ziel)
+if (new URLSearchParams(location.search).get('shared')) { window.addEventListener('load', () => setTimeout(loadSharedFile, 300)); }

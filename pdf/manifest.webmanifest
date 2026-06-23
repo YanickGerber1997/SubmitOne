@@ -1,0 +1,34 @@
+{
+  "name": "Submit PDF",
+  "short_name": "Submit PDF",
+  "description": "PDFs und Bilder anmerken, vermassen, unterschreiben – direkt im Browser, deine Dateien bleiben auf dem Gerät.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f3f0",
+  "theme_color": "#1c242c",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "file_handlers": [
+    {
+      "action": "./index.html",
+      "accept": {
+        "application/pdf": [".pdf"],
+        "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".heic"]
+      }
+    }
+  ],
+  "share_target": {
+    "action": "./share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "files": [
+        { "name": "file", "accept": ["application/pdf", "image/*"] }
+      ]
+    }
+  }
+}

@@ -110,6 +110,16 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .ctxmenu .grp{display:flex;gap:2px;padding:2px 4px 4px}
 .ctxmenu .grp button{width:34px;height:34px;justify-content:center;padding:0}
 
+/* Mail-Dialog */
+.modal{position:fixed;inset:0;z-index:70;background:rgba(20,24,40,.4);display:flex;align-items:center;justify-content:center}
+.modal-card{background:var(--surface);border-radius:16px;padding:22px 24px;width:440px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal-head{font-size:18px;font-weight:700;margin-bottom:14px}
+.modal-card label{display:block;font-size:12px;color:var(--ink-soft);font-weight:600;margin-bottom:10px}
+.modal-card input,.modal-card textarea{display:block;width:100%;margin-top:4px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;font-size:14px;color:var(--ink);background:var(--surface-2);resize:vertical}
+.modal-card input:focus,.modal-card textarea:focus{outline:none;border-color:var(--accent)}
+.modal-hint{font-size:12px;color:var(--ink-faint);margin:6px 0 16px;line-height:1.45}
+.modal-act{display:flex;justify-content:flex-end;gap:8px}
+
 #toast-root{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:50;display:flex;flex-direction:column;gap:8px;align-items:center}
 .toast{background:var(--ink);color:#fff;padding:9px 16px;border-radius:9px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.22);animation:tIn .2s}
 @keyframes tIn{from{opacity:0;transform:translateY(8px)}}

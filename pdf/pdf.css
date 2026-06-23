@@ -12,8 +12,9 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 
 /* Topbar */
 .topbar{height:var(--bar);display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:6}
-.brand{font-weight:800;font-size:18px;letter-spacing:-.4px;margin-right:6px}
-.brand .bw-a{color:var(--ink)} .brand .bw-b{color:var(--accent)}
+.brand{display:flex;align-items:center;gap:8px;text-decoration:none;margin-right:6px;font-weight:500;font-size:16px;letter-spacing:2.5px}
+.brand .logomark{height:26px;width:26px;flex:none}
+.brand .bw-a{color:#1c242c} .brand .bw-b{color:#4f7a3c;margin-left:5px}
 .btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:9px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:.12s}
 .btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .btn:disabled{opacity:.45;cursor:default}

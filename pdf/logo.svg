@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 1240" width="1240" height="1240" font-family="'Questrial','Century Gothic','Futura','Inter',sans-serif">
+  <rect width="1240" height="1240" fill="#f4f3f0"/>
+
+  <!-- Bildmarke: S-Monogramm (dunkel) + Blatt-Ecke & Aufwärts-Pfeil (grün) -->
+  <g transform="translate(428 350) scale(1.6)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- S (dunkel) -->
+    <path d="M168 74
+             C168 50 126 42 98 50
+             C66 60 60 94 96 106
+             C116 113 128 120 128 138
+             C128 160 88 170 64 158"
+          stroke="#1c242c" stroke-width="16"/>
+    <!-- untere Linie -->
+    <path d="M70 165 L140 165" stroke="#1c242c" stroke-width="16"/>
+    <!-- grüner Aufwärts-Pfeil (Tail der S) -->
+    <path d="M140 165 L140 104" stroke="#4f7a3c" stroke-width="16"/>
+    <path d="M124 120 L140 102 L156 120" stroke="#4f7a3c" stroke-width="16"/>
+    <!-- grünes Blatt / Eselsohr oben rechts -->
+    <path d="M166 54 C192 54 198 82 180 98 C186 76 180 64 166 54 Z" fill="#4f7a3c" stroke="none"/>
+  </g>
+
+  <!-- Wortmarke -->
+  <text x="620" y="860" text-anchor="middle" font-size="132" letter-spacing="26" font-weight="400">
+    <tspan fill="#1c242c">SUBMIT</tspan><tspan fill="#4f7a3c" dx="44">PDF</tspan>
+  </text>
+</svg>

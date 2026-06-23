@@ -92,8 +92,8 @@ const RENDER_MAX = 2;        // gleichzeitige Seiten-Renderings
 let pageObserver = null, thumbObserver = null, renderQueue = [], renderActive = 0;
 function fitScale(pw) { const avail = $('#pages').clientWidth - 60; return Math.max(.2, Math.min(3, avail / pw)); }
 function pageScale(pv) { return (zoom === 'auto') ? fitScale(pv.pageW) : zoom; }
-// Mind. 2× Überabtastung (auch auf 1×-Monitoren → schärferer Text), bis 3× auf HiDPI.
-function dprCap() { return Math.min(Math.max(window.devicePixelRatio || 1, 2), 3); }
+// Gerätegenau rendern (1:1 mit den Bildschirmpixeln): scharf, ohne dünne Linien zu verblassen.
+function dprCap() { return Math.min(window.devicePixelRatio || 1, 3); }
 function dprPreview() { return Math.min(window.devicePixelRatio || 1, 1.5); }
 
 function layoutPv(pv) {                                  // Grösse/Drehung setzen (ohne zu rendern)
@@ -204,7 +204,7 @@ async function renderTile(pv) {                      // scharfe Kachel über den
   if (pv.rendering || !pv.page) return; const rect = visiblePageRect(pv); if (!rect) return;
   pv.rendering = true;
   try {
-    const scale = pageScale(pv); let px = scale * Math.min(Math.max(window.devicePixelRatio || 1, 3), 4);   // Kachel = nur sichtbarer Bereich → hohe Überabtastung (sehr scharf, auch in der Passt-Ansicht)
+    const scale = pageScale(pv); let px = scale * dprCap();   // gerätegenau – scharf, Linien bleiben sichtbar
     let tw = rect.w * px, th = rect.h * px;
     if (tw > TILE_MAXDIM || th > TILE_MAXDIM) { const f = Math.min(TILE_MAXDIM / tw, TILE_MAXDIM / th); px *= f; tw *= f; th *= f; }
     const vp = pv.page.getViewport({ scale: px });
@@ -731,6 +731,7 @@ function wire() {
   $('#sigCancel').onclick = () => $('#sigDlg').hidden = true;
   $('#sigUse').onclick = () => useSig(false);
   $('#sigUseSaved').onclick = () => useSig(true);
+  $('#btnReadable').onclick = () => { const on = $('#pages').classList.toggle('readable'); $('#btnReadable').classList.toggle('on', on); toast(on ? 'Lesbarkeit: Linien & Farben betont' : 'Lesbarkeit: normal'); };
   $('#btnScale').onclick = () => openScale(0);
   $('#scaleCalibBtn').onclick = () => { $('#scaleDlg').hidden = true; setTool('calibrate'); toast('Bekannte Strecke im Plan einzeichnen …'); };
   $('#scaleCancel').onclick = () => $('#scaleDlg').hidden = true;

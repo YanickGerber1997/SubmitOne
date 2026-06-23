@@ -55,9 +55,8 @@ async function openFiles(files) {
     annos = {}; pageRot = {}; viewRot = {}; undoStack = []; sel = null; docScale = null; await loadDoc(curBytes.slice());
   } catch (e) { status(''); console.error(e); toast('Datei konnte nicht geöffnet werden.'); }
 }
-// Bild → 1-seitige PDF (so läuft alles weitere wie bei einer PDF: anmerken, speichern, senden)
-async function imageToPdfBytes(file) {
-  status('Bild wird vorbereitet …');
+// Bild → 1-seitige PDF (Bytes, nebenwirkungsfrei)
+async function imageToPdf(file) {
   const lib = await loadPdfLib();
   const url = URL.createObjectURL(file);
   const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
@@ -69,7 +68,12 @@ async function imageToPdfBytes(file) {
   const png = await doc.embedPng(bytes);
   const pg = doc.addPage([im.naturalWidth, im.naturalHeight]);
   pg.drawImage(png, { x: 0, y: 0, width: im.naturalWidth, height: im.naturalHeight });
-  curBytes = new Uint8Array(await doc.save());
+  return new Uint8Array(await doc.save());
+}
+// Bild öffnen (setzt curBytes/docName) – nutzt die nebenwirkungsfreie Variante
+async function imageToPdfBytes(file) {
+  status('Bild wird vorbereitet …');
+  curBytes = await imageToPdf(file);
   docName = file.name.replace(/\.[^.]+$/, '') + '.pdf';
 }
 async function loadDoc(bytes) {
@@ -260,11 +264,21 @@ let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTim
 function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im Seitenstreifen)
   const host = $('#thumbs'); host.innerHTML = ''; if (thumbObserver) thumbObserver.disconnect();
   for (let n = 1; n <= pdfDoc.numPages; n++) {
-    const btn = document.createElement('button'); btn.className = 'thumb loading'; btn.dataset.n = n;
-    const c = document.createElement('canvas'); btn.appendChild(c);
-    const tn = document.createElement('span'); tn.className = 'tn'; tn.textContent = n; btn.appendChild(tn);
-    btn.onclick = () => gotoPage(n); host.appendChild(btn);
+    const wrap = document.createElement('div'); wrap.className = 'thumb loading'; wrap.dataset.n = n;
+    const c = document.createElement('canvas'); wrap.appendChild(c);
+    const tn = document.createElement('span'); tn.className = 'tn'; tn.textContent = n; wrap.appendChild(tn);
+    const ctrl = document.createElement('div'); ctrl.className = 'thumb-ctrl';
+    ctrl.innerHTML = '<button data-act="up" title="Seite nach oben">▲</button><button data-act="down" title="Seite nach unten">▼</button><button data-act="del" class="del" title="Seite löschen">✕</button>';
+    wrap.appendChild(ctrl);
+    wrap.addEventListener('click', e => {
+      const act = e.target.getAttribute && e.target.getAttribute('data-act');
+      if (act === 'up') { movePage(n, -1); } else if (act === 'down') { movePage(n, 1); } else if (act === 'del') { deletePage(n); } else gotoPage(n);
+    });
+    host.appendChild(wrap);
   }
+  const add = document.createElement('button'); add.className = 'thumb-add'; add.textContent = '+ PDF/Bild anhängen';
+  add.onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/pdf,.pdf,image/*'; inp.multiple = true; inp.onchange = e => appendFiles(e.target.files); inp.click(); };
+  host.appendChild(add);
   thumbObserver = new IntersectionObserver(ents => { for (const e of ents) if (e.isIntersecting) { renderThumb(+e.target.dataset.n, e.target); thumbObserver.unobserve(e.target); } }, { root: host, rootMargin: '500px 0px' });
   $$('.thumb', host).forEach(b => thumbObserver.observe(b));
 }
@@ -540,6 +554,56 @@ function setFreeRot(deg) {
   const n = curPage(); viewRot[n] = deg; const pv = pageViews.find(p => p.num === n); if (pv) { dropTile(pv); applyViewRot(pv); }
   $('#freeRotVal').textContent = (deg > 0 ? '+' : '') + deg + '°';
   scheduleSharpen();
+}
+
+/* ---------- Seiten verwalten (löschen / umsortieren / anhängen) ---------- */
+// Dokument neu aufbauen in der Reihenfolge `order` (1-basierte Originalseiten). Drehung wird einbezogen, Anmerkungen umnummeriert.
+async function applyPageOrder(order) {
+  if (!curBytes) return; status('Seiten werden neu angeordnet …');
+  try {
+    const lib = await loadPdfLib();
+    const src = await lib.PDFDocument.load(curBytes.slice());
+    const out = await lib.PDFDocument.create();
+    const pages = await out.copyPages(src, order.map(n => n - 1));
+    pages.forEach((p, i) => { const rot = pageRot[order[i]] || 0; if (rot) p.setRotation(lib.degrees(rot)); out.addPage(p); });
+    const newAnnos = {}; order.forEach((oldN, i) => { if (annos[oldN]) newAnnos[i + 1] = annos[oldN]; });
+    annos = newAnnos; pageRot = {}; viewRot = {}; sel = null; undoStack = [];   // Drehung ist jetzt in den Seiten gebacken
+    curBytes = new Uint8Array(await out.save());
+    await loadDoc(curBytes.slice());
+  } catch (e) { status(''); console.error(e); toast('Konnte Seiten nicht ändern.'); }
+}
+function deletePage(n) {
+  if (!pdfDoc || pdfDoc.numPages <= 1) { toast('Die letzte Seite kann nicht gelöscht werden.'); return; }
+  if (!confirm(`Seite ${n} löschen?`)) return;
+  const order = []; for (let i = 1; i <= pdfDoc.numPages; i++) if (i !== n) order.push(i);
+  applyPageOrder(order);
+}
+function movePage(n, dir) {     // dir: -1 hoch, +1 runter
+  if (!pdfDoc) return; const j = n + dir; if (j < 1 || j > pdfDoc.numPages) return;
+  const order = []; for (let i = 1; i <= pdfDoc.numPages; i++) order.push(i);
+  [order[n - 1], order[j - 1]] = [order[j - 1], order[n - 1]];
+  applyPageOrder(order);
+}
+// Weitere PDF(s)/Bilder ans Dokument anhängen
+async function appendFiles(files) {
+  if (!curBytes) return openFiles(files);
+  files = [...files]; status('Seiten werden angehängt …');
+  try {
+    const lib = await loadPdfLib();
+    const out = await lib.PDFDocument.load(curBytes.slice());
+    for (const f of files) {
+      let bytes;
+      if (isImg(f)) { bytes = await imageToPdf(f); }   // Bild → 1-seitige PDF (nebenwirkungsfrei)
+      else if (/pdf$/i.test(f.name) || f.type === 'application/pdf') { bytes = new Uint8Array(await f.arrayBuffer()); }
+      else continue;
+      const add = await lib.PDFDocument.load(bytes);
+      const pages = await out.copyPages(add, add.getPageIndices());
+      pages.forEach(p => out.addPage(p));
+    }
+    curBytes = new Uint8Array(await out.save());   // bestehende Anmerkungen behalten ihre Seitennummern (neue Seiten hinten dran)
+    await loadDoc(curBytes.slice());
+    toast('Seiten angehängt ✓');
+  } catch (e) { status(''); console.error(e); toast('Anhängen fehlgeschlagen.'); }
 }
 
 /* ---------- Undo / Löschen ---------- */

@@ -85,6 +85,13 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .thumb.loading canvas{aspect-ratio:1/1.414;height:auto}
 .thumb.active{border-color:var(--accent)}
 .thumb .tn{position:absolute;left:50%;bottom:-16px;transform:translateX(-50%);font-size:11px;color:var(--ink-faint);font-weight:600}
+.thumb-ctrl{position:absolute;top:3px;right:3px;display:none;gap:2px;background:rgba(255,255,255,.92);padding:2px;box-shadow:0 1px 4px rgba(20,24,40,.2)}
+.thumb:hover .thumb-ctrl{display:flex}
+.thumb-ctrl button{width:18px;height:18px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:10px;line-height:1;padding:0;color:var(--ink-soft)}
+.thumb-ctrl button:hover{border-color:var(--accent);color:var(--accent)}
+.thumb-ctrl button.del:hover{border-color:var(--danger);color:var(--danger)}
+.thumb-add{display:block;width:104px;margin:6px auto 14px;padding:8px 6px;font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-soft);border:1px dashed var(--accent);cursor:pointer;border-radius:0}
+.thumb-add:hover{background:#fff}
 
 .pages{overflow:auto;padding:26px;display:flex;flex-direction:column;align-items:center;gap:22px;background:var(--bg) url('bg.png') center/cover no-repeat fixed}
 .pagewrap{position:relative;flex:none;background:#fff;box-shadow:0 4px 22px rgba(20,24,40,.13);border-radius:0}

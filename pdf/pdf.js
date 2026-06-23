@@ -95,6 +95,18 @@ function pageScale(pv) { return (zoom === 'auto') ? fitScale(pv.pageW) : zoom; }
 // Gerätegenau rendern (1:1 mit den Bildschirmpixeln): scharf, ohne dünne Linien zu verblassen.
 function dprCap() { return Math.min(window.devicePixelRatio || 1, 3); }
 function dprPreview() { return Math.min(window.devicePixelRatio || 1, 1.5); }
+const SS_TILE = 2;           // Überabtastung der scharfen Kachel (2× → glattere Zahlen/Text)
+// Acrobat-Trick: keine Linie dünner als 1 Gerätepixel zeichnen (sonst werden Haarlinien grau/unscharf).
+function patchMinLine(ctx, minBuf) {
+  if (!(minBuf > 0)) minBuf = 1;
+  const orig = ctx.stroke.bind(ctx);
+  ctx.stroke = function (p) {
+    let sx = 1; try { const m = ctx.getTransform(); sx = Math.hypot(m.a, m.b) || 1; } catch (_) { }
+    const need = minBuf / sx;                          // Mindest-Linienbreite in PDF-Einheiten
+    if (ctx.lineWidth < need) { const s = ctx.lineWidth; ctx.lineWidth = need; p ? orig(p) : orig(); ctx.lineWidth = s; }
+    else { p ? orig(p) : orig(); }
+  };
+}
 
 function layoutPv(pv) {                                  // Grösse/Drehung setzen (ohne zu rendern)
   // Anzeigegrösse exakt auf ganze GERÄTEPIXEL einrasten → Canvas 1:1 mit dem Bildschirm, keine Interpolation (Acrobat-scharf).
@@ -146,7 +158,8 @@ async function renderPage(pv) {                       // Basis-Vorschau (ganze S
     const canvas = document.createElement('canvas'); canvas.className = 'pagecanvas';
     canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
     canvas.style.width = pv.dispW + 'px'; canvas.style.height = pv.dispH + 'px';
-    const task = pv.page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }); pv.task = task;
+    const ctx = canvas.getContext('2d'); patchMinLine(ctx, 1);   // Haarlinien ≥ 1 Pixel
+    const task = pv.page.render({ canvasContext: ctx, viewport: vp }); pv.task = task;
     await task.promise; pv.task = null;
     if (!pv.rendering) return;   // zwischenzeitlich weggescrollt/freigegeben → verwerfen
     if (pv.canvas) pv.canvas.remove();
@@ -206,16 +219,17 @@ async function renderTile(pv) {                      // scharfe Kachel über den
   if (pv.rendering || !pv.page) return; const rect = visiblePageRect(pv); if (!rect) return;
   pv.rendering = true;
   try {
-    const scale = pageScale(pv), dpr = dprCap(); let px = scale * dpr;   // gerätegenau – scharf, Linien bleiben sichtbar
-    let tw = rect.w * px, th = rect.h * px, capped = false;
-    if (tw > TILE_MAXDIM || th > TILE_MAXDIM) { const f = Math.min(TILE_MAXDIM / tw, TILE_MAXDIM / th); px *= f; tw *= f; th *= f; capped = true; }
+    const scale = pageScale(pv), dpr = dprCap(); let px = scale * dpr * SS_TILE;   // 2× überabgetastet → glatte Zahlen/Text
+    let tw = rect.w * px, th = rect.h * px;
+    if (tw > TILE_MAXDIM || th > TILE_MAXDIM) { const f = Math.min(TILE_MAXDIM / tw, TILE_MAXDIM / th); px *= f; tw *= f; th *= f; }
     const vp = pv.page.getViewport({ scale: px });
     const canvas = document.createElement('canvas'); canvas.className = 'pagetile';
     canvas.width = Math.max(1, Math.round(tw)); canvas.height = Math.max(1, Math.round(th));
     canvas.style.left = (rect.x * scale) + 'px'; canvas.style.top = (rect.y * scale) + 'px';
-    canvas.style.width = (capped ? rect.w * scale : canvas.width / dpr) + 'px'; canvas.style.height = (capped ? rect.h * scale : canvas.height / dpr) + 'px';
+    canvas.style.width = (rect.w * scale) + 'px'; canvas.style.height = (rect.h * scale) + 'px';   // Backing wird heruntergerechnet → überabgetastet
     const transform = [1, 0, 0, 1, -rect.x * px, -rect.y * px];
-    const task = pv.page.render({ canvasContext: canvas.getContext('2d'), viewport: vp, transform }); pv.tileTask = task;
+    const ctx = canvas.getContext('2d'); patchMinLine(ctx, px / (scale * dpr));   // min. 1 Gerätepixel (trotz Überabtastung)
+    const task = pv.page.render({ canvasContext: ctx, viewport: vp, transform }); pv.tileTask = task;
     await task.promise; pv.tileTask = null;
     if (!pv.rendered) return;   // zwischenzeitlich freigegeben → verwerfen
     if (pv.tile) pv.tile.remove(); pv.tile = canvas; pv.inner.insertBefore(canvas, pv.svg);

@@ -95,7 +95,7 @@ function pageScale(pv) { return (zoom === 'auto') ? fitScale(pv.pageW) : zoom; }
 // Gerätegenau rendern (1:1 mit den Bildschirmpixeln): scharf, ohne dünne Linien zu verblassen.
 function dprCap() { return Math.min(window.devicePixelRatio || 1, 3); }
 function dprPreview() { return Math.min(window.devicePixelRatio || 1, 1.5); }
-const SS_TILE = 2;           // Überabtastung der scharfen Kachel (2× → glattere Zahlen/Text)
+const SS_TILE = 3;           // Überabtastung der scharfen Kachel (3× → noch glattere Diagonalen/kleine Schrift)
 // Acrobat-Trick: keine Linie dünner als 1 Gerätepixel zeichnen (sonst werden Haarlinien grau/unscharf).
 function patchMinLine(ctx, minBuf) {
   if (!(minBuf > 0)) minBuf = 1;
@@ -240,9 +240,9 @@ let sharpenTimer = null;
 function scheduleSharpen() {    // nach kurzer Ruhe: scharfe Kachel für die sichtbaren Seiten
   clearTimeout(sharpenTimer);
   sharpenTimer = setTimeout(() => {
-    const host = $('#pages'), top = host.scrollTop, bot = host.scrollTop + host.clientHeight, cur = curPage();
-    // Scharfe Kachel über den sichtbaren Ausschnitt: für das aktuelle Blatt immer, sonst nur wenn die Basis gedeckelt war.
-    for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) { snapPos(pv); if (pv.rendered && (pv.num === cur || pv.baseCapped)) renderTile(pv); } }
+    const host = $('#pages'), top = host.scrollTop, bot = host.scrollTop + host.clientHeight;
+    // Scharfe Kachel (3× überabgetastet) über den sichtbaren Ausschnitt – für ALLE sichtbaren Seiten.
+    for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) { snapPos(pv); if (pv.rendered) renderTile(pv); } }
     if (tool === 'textsel') buildTextVisible();
   }, 90);
 }

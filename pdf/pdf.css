@@ -171,6 +171,10 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .modal-card input:focus,.modal-card textarea:focus{outline:none;border-color:var(--accent)}
 .modal-hint{font-size:12px;color:var(--ink-faint);margin:6px 0 16px;line-height:1.45}
 .modal-act{display:flex;justify-content:flex-end;gap:8px}
+.sc-grid{display:grid;grid-template-columns:1fr auto;gap:7px 18px;align-items:center;margin:2px 0 8px}
+.sc-grid .sc-h{grid-column:1/-1;font-weight:700;color:var(--accent);font-size:11px;margin-top:9px;text-transform:uppercase;letter-spacing:.5px}
+.sc-grid span{font-size:13px;color:var(--ink-soft)}
+.sc-grid kbd{justify-self:end;font:600 12px/1 var(--font);background:var(--surface-2);border:1px solid var(--line);padding:4px 7px;color:var(--ink);white-space:nowrap}
 
 #toast-root{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:50;display:flex;flex-direction:column;gap:8px;align-items:center}
 .toast{background:var(--ink);color:#fff;padding:9px 16px;border-radius:0;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.22);animation:tIn .2s}

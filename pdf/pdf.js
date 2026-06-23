@@ -619,7 +619,7 @@ function setFreeRot(deg) {
 /* ---------- Seiten verwalten (löschen / umsortieren / anhängen) ---------- */
 // Dokument neu aufbauen in der Reihenfolge `order` (1-basierte Originalseiten). Drehung wird einbezogen, Anmerkungen umnummeriert.
 async function applyPageOrder(order) {
-  if (!curBytes) return; status('Seiten werden neu angeordnet …');
+  if (!curBytes) return; pushDocUndo(); status('Seiten werden neu angeordnet …');   // rückgängig-fähig
   try {
     const lib = await loadPdfLib();
     const src = await lib.PDFDocument.load(curBytes.slice());
@@ -627,10 +627,10 @@ async function applyPageOrder(order) {
     const pages = await out.copyPages(src, order.map(n => n - 1));
     pages.forEach((p, i) => { const rot = pageRot[order[i]] || 0; if (rot) p.setRotation(lib.degrees(rot)); out.addPage(p); });
     const newAnnos = {}; order.forEach((oldN, i) => { if (annos[oldN]) newAnnos[i + 1] = annos[oldN]; });
-    annos = newAnnos; pageRot = {}; viewRot = {}; sel = null; undoStack = [];   // Drehung ist jetzt in den Seiten gebacken
+    annos = newAnnos; pageRot = {}; viewRot = {}; sel = null;   // Drehung ist jetzt in den Seiten gebacken
     curBytes = new Uint8Array(await out.save());
     await loadDoc(curBytes.slice());
-  } catch (e) { status(''); console.error(e); toast('Konnte Seiten nicht ändern.'); }
+  } catch (e) { status(''); console.error(e); undoStack.pop(); toast('Konnte Seiten nicht ändern.'); }
 }
 function deletePage(n) {
   if (!pdfDoc || pdfDoc.numPages <= 1) { toast('Die letzte Seite kann nicht gelöscht werden.'); return; }
@@ -647,7 +647,7 @@ function movePage(n, dir) {     // dir: -1 hoch, +1 runter
 // Weitere PDF(s)/Bilder ans Dokument anhängen
 async function appendFiles(files) {
   if (!curBytes) return openFiles(files);
-  files = [...files]; status('Seiten werden angehängt …');
+  files = [...files]; pushDocUndo(); status('Seiten werden angehängt …');   // rückgängig-fähig
   try {
     const lib = await loadPdfLib();
     const out = await lib.PDFDocument.load(curBytes.slice());
@@ -663,15 +663,29 @@ async function appendFiles(files) {
     curBytes = new Uint8Array(await out.save());   // bestehende Anmerkungen behalten ihre Seitennummern (neue Seiten hinten dran)
     await loadDoc(curBytes.slice());
     toast('Seiten angehängt ✓');
-  } catch (e) { status(''); console.error(e); toast('Anhängen fehlgeschlagen.'); }
+  } catch (e) { status(''); console.error(e); undoStack.pop(); toast('Anhängen fehlgeschlagen.'); }
 }
 
 /* ---------- Undo / Löschen ---------- */
 function snapshot() { return JSON.stringify({ annos, pageRot }); }
-function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 60) undoStack.shift(); $('#btnUndo').disabled = false; }
-function undo() { if (!undoStack.length) return; const s = JSON.parse(undoStack.pop()); annos = s.annos; pageRot = s.pageRot; sel = null; $('#btnUndo').disabled = !undoStack.length; pageViews.forEach(pv => { layoutPv(pv); drawAnnos(pv); }); buildThumbs(); refreshComments(); }
+function pushUndo() { undoStack.push({ t: 'anno', s: snapshot() }); if (undoStack.length > 80) undoStack.shift(); $('#btnUndo').disabled = false; }
+// Dokument-Undo (für Seiten-Operationen: Löschen/Verschieben/Anhängen) – sichert auch die PDF-Bytes
+function pushDocUndo() { if (!curBytes) return; undoStack.push({ t: 'doc', bytes: curBytes.slice(), s: JSON.stringify({ annos, pageRot, viewRot, docScale }) }); if (undoStack.length > 80) undoStack.shift(); $('#btnUndo').disabled = false; }
+async function undo() {
+  if (!undoStack.length) return;
+  const e = undoStack.pop(); sel = null; $('#btnUndo').disabled = !undoStack.length;
+  if (e.t === 'doc') { const d = JSON.parse(e.s); annos = d.annos; pageRot = d.pageRot; viewRot = d.viewRot || {}; docScale = d.docScale || null; curBytes = e.bytes; await loadDoc(curBytes.slice()); updateScaleLabel(); }
+  else { const d = JSON.parse(e.s); annos = d.annos; pageRot = d.pageRot; pageViews.forEach(pv => { layoutPv(pv); drawAnnos(pv); }); buildThumbs(); refreshComments(); }
+}
 function saveState() { /* Platzhalter für Autosave-Hook */ }
 function deleteSel() { if (!sel) return; const arr = annos[sel.num]; if (!arr) return; const i = arr.findIndex(a => a.id === sel.id); if (i < 0) return; pushUndo(); arr.splice(i, 1); sel = null; pageViews.forEach(drawAnnos); refreshComments(); }
+// Ausgewählte Anmerkung mit den Pfeiltasten verschieben (Shift = grosse Schritte)
+function nudgeSel(key, d) {
+  if (!sel) return; const a = findAnno(sel.num, sel.id); if (!a) return; pushUndo();
+  const dx = key === 'ArrowLeft' ? -d : key === 'ArrowRight' ? d : 0, dy = key === 'ArrowUp' ? -d : key === 'ArrowDown' ? d : 0;
+  translateAnno(a, JSON.parse(JSON.stringify(a)), dx, dy);
+  const pv = pageViews.find(p => p.num === sel.num); if (pv) drawAnnos(pv); refreshComments();
+}
 
 /* ---------- Werkzeug umschalten ---------- */
 function setTool(t) {
@@ -856,6 +870,24 @@ function showCtx(x, y, pv, annoId) {
 }
 function duplicateAnno(pv, id) { const a = findAnno(pv.num, id); if (!a) return; pushUndo(); const c = JSON.parse(JSON.stringify(a)); c.id = nextId++; translateAnno(c, JSON.parse(JSON.stringify(c)), 12, 12); getAnnos(pv.num).push(c); sel = { num: pv.num, id: c.id }; drawAnnos(pv); refreshComments(); }
 
+/* ---------- Tastenkürzel-Hilfe ---------- */
+function toggleShortcuts() {
+  const ex = $('#shortcutsDlg'); if (ex) { ex.remove(); return; }
+  const rows = [
+    ['Werkzeuge', ''], ['Auswählen / Verschieben', 'V'], ['Text schreiben', 'T'], ['Stift / Freihand', 'S'], ['Linie', 'L'], ['Pfeil', 'P'], ['Rechteck', 'R'], ['Oval', 'O'], ['Messen', 'M'], ['Kommentar', 'K'],
+    ['Bearbeiten', ''], ['Rückgängig', 'Strg+Z'], ['Duplizieren', 'Strg+D'], ['Löschen', 'Entf'], ['Verschieben (fein/grob)', '← ↑ → ↓ / + Umschalt'],
+    ['Datei & Ansicht', ''], ['Öffnen', 'Strg+O'], ['Speichern', 'Strg+S'], ['Zoom +/− / Passt', 'Strg + / − / 0'], ['Abbrechen / Schliessen', 'Esc'],
+  ];
+  const m = document.createElement('div'); m.className = 'modal'; m.id = 'shortcutsDlg';
+  let body = '<div class="modal-card"><div class="modal-head">Tastenkürzel</div><div class="sc-grid">';
+  for (const [label, key] of rows) body += key === '' ? `<div class="sc-h">${label}</div>` : `<span>${label}</span><kbd>${key}</kbd>`;
+  body += '</div><div class="modal-act"><span class="grow"></span><button class="btn primary" id="scClose">Schliessen</button></div></div>';
+  m.innerHTML = body; document.body.appendChild(m);
+  const close = () => m.remove();
+  m.addEventListener('pointerdown', e => { if (e.target === m) close(); });
+  $('#scClose').onclick = close;
+}
+
 /* ---------- Verdrahtung ---------- */
 function wire() {
   $('#btnOpen').onclick = openPicker;
@@ -938,8 +970,11 @@ function wire() {
     else if (mod && (e.key === '+' || e.key === '=')) { e.preventDefault(); zoomStep(.15); }
     else if (mod && e.key === '-') { e.preventDefault(); zoomStep(-.15); }
     else if (mod && e.key === '0') { e.preventDefault(); setZoom('auto'); }
+    else if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); if (sel) { const pv = pageViews.find(p => p.num === sel.num); if (pv) duplicateAnno(pv, sel.id); } }
+    else if (sel && e.key.startsWith('Arrow')) { e.preventDefault(); nudgeSel(e.key, e.shiftKey ? 10 : 1); }
     else if (e.key === 'Delete' || e.key === 'Backspace') { if (sel) { e.preventDefault(); deleteSel(); } }
     else if (e.key === 'Escape') { hideCtx(); sel = null; pageViews.forEach(drawAnnos); }
+    else if (e.key === '?' || (e.shiftKey && e.key === '/')) { e.preventDefault(); toggleShortcuts(); }
     else if (!mod && e.key.toLowerCase() === 'v') setTool('select');
     else if (!mod && e.key.toLowerCase() === 't') setTool('text');
     else if (!mod && e.key.toLowerCase() === 's') setTool('pen');
@@ -947,6 +982,7 @@ function wire() {
     else if (!mod && e.key.toLowerCase() === 'p') setTool('arrow');
     else if (!mod && e.key.toLowerCase() === 'r') setTool('rect');
     else if (!mod && e.key.toLowerCase() === 'o') setTool('oval');
+    else if (!mod && e.key.toLowerCase() === 'm') setTool('measure');
     else if (!mod && e.key.toLowerCase() === 'k') setTool('note');
   });
 }

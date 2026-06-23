@@ -33,6 +33,7 @@
       <button class="icon-btn" id="zoomIn" title="Vergrössern">+</button>
     </div>
     <span class="pageind" id="pageInd"></span>
+    <span class="scaleind" id="scaleInd"></span>
     <button class="icon-btn" id="btnComments" title="Kommentare"><svg viewBox="0 0 24 24" class="i"><path d="M4 5h16v11H9l-4 4z"/></svg></button>
     <a class="suite-link" href="../write/index.html" title="Zur Submit-Suite">Submit Paper ↗</a>
   </header>
@@ -51,6 +52,11 @@
       <button class="tool" data-tool="arrow" title="Pfeil (P)"><svg viewBox="0 0 24 24" class="i"><path d="M5 19 19 5M19 5h-7M19 5v7"/></svg></button>
       <button class="tool" data-tool="rect" title="Rechteck (R)"><svg viewBox="0 0 24 24" class="i"><rect x="4" y="6" width="16" height="12" rx="1"/></svg></button>
       <button class="tool" data-tool="oval" title="Oval (O)"><svg viewBox="0 0 24 24" class="i"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg></button>
+    </div>
+    <div class="tgrp">
+      <button class="tool" data-tool="measure" title="Messen – Länge (M)"><svg viewBox="0 0 24 24" class="i"><path d="M3 8h18v8H3z"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/></svg></button>
+      <button class="tool" data-tool="dim" title="Masslinie (mit Mass, selbst beschriftbar)"><svg viewBox="0 0 24 24" class="i"><path d="M4 12h16M4 8v8M20 8v8M7 12l3-3M7 12l3 3"/></svg></button>
+      <button class="tool" id="btnScale" title="Massstab setzen (z. B. 1:100 oder kalibrieren)"><b style="font:600 12px/1 var(--font)">1:n</b></button>
     </div>
     <div class="tgrp">
       <label class="swatch" title="Farbe"><span id="colorDot"></span><input type="color" id="colorPick" value="#e8412e" /></label>
@@ -101,6 +107,25 @@
   </div>
 
   <div class="ctxmenu" id="ctxmenu" hidden></div>
+
+  <!-- Massstab -->
+  <div class="modal" id="scaleDlg" hidden>
+    <div class="modal-card">
+      <div class="modal-head">Massstab</div>
+      <label id="scaleRatioRow">Massstab 1 :
+        <input id="scaleRatio" type="text" inputmode="numeric" placeholder="z. B. 100" />
+      </label>
+      <div id="scaleCalib" hidden>
+        <label>Die gezeichnete Strecke entspricht in der Realität:</label>
+        <div style="display:flex;gap:8px">
+          <input id="scaleReal" type="text" inputmode="decimal" placeholder="z. B. 5" style="flex:1" />
+          <select id="scaleUnit" class="sel" style="height:auto"><option value="m" selected>m</option><option value="cm">cm</option><option value="mm">mm</option></select>
+        </div>
+      </div>
+      <p class="modal-hint">Tipp: Genauer ist <b>Kalibrieren</b> – eine bekannte Strecke im Plan einzeichnen und ihre echte Länge eingeben.</p>
+      <div class="modal-act"><button class="btn" id="scaleCalibBtn">Kalibrieren</button><span class="grow"></span><button class="btn" id="scaleCancel">Abbrechen</button><button class="btn primary" id="scaleOk">Setzen</button></div>
+    </div>
+  </div>
 
   <!-- Senden per E-Mail -->
   <div class="modal" id="mailDlg" hidden>

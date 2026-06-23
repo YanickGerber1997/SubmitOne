@@ -14,6 +14,15 @@ let pageRot = {};          // {pageNum: 0/90/180/270}
 let tool = 'select';
 let style = { color: '#b4502f', width: 2.5, size: 16 };   // Standard: Rost (gut sichtbar auf Plänen)
 let penTidy = true;        // Freihand-Skizzen automatisch zu sauberen Formen aufräumen
+let docScale = null;       // {perPt: reale Meter pro PDF-Punkt, label:'1:100'} – für Messen
+const PT2MM = 25.4 / 72;   // 1 PDF-Punkt in mm
+function fmtLen(pts) {
+  if (!docScale) return Math.round(pts * PT2MM) + ' mm';      // ohne Massstab: Papier-mm
+  const m = pts * docScale.perPt;
+  if (m >= 1) return (Math.round(m * 100) / 100).toString().replace('.', ',') + ' m';
+  if (m >= 0.1) return (Math.round(m * 1000) / 10).toString().replace('.', ',') + ' cm';
+  return Math.round(m * 1000) + ' mm';
+}
 let sel = null;            // {num, id}
 let nextId = 1;
 let undoStack = [];
@@ -38,7 +47,7 @@ async function openFiles(files) {
     if (pdf) { curBytes = new Uint8Array(await pdf.arrayBuffer()); docName = pdf.name; }
     else if (img) { await imageToPdfBytes(img); }
     else { status(''); return; }
-    annos = {}; pageRot = {}; undoStack = []; sel = null; await loadDoc(curBytes.slice());
+    annos = {}; pageRot = {}; undoStack = []; sel = null; docScale = null; await loadDoc(curBytes.slice());
   } catch (e) { status(''); console.error(e); toast('Datei konnte nicht geöffnet werden.'); }
 }
 // Bild → 1-seitige PDF (so läuft alles weitere wie bei einer PDF: anmerken, speichern, senden)
@@ -64,7 +73,7 @@ async function loadDoc(bytes) {
   $('#drop').classList.add('hide'); $('#toolbar').hidden = false; $('#quickbar').hidden = false;
   $('#btnSave').disabled = false; $('#btnSend').disabled = false; $('#docName').textContent = docName;
   document.title = docName.replace(/\.pdf$/i, '') + ' – Submit PDF';
-  await renderAll(); buildThumbs(); status(''); refreshComments();
+  await renderAll(); buildThumbs(); status(''); refreshComments(); updateScaleLabel();
 }
 
 /* ---------- Rendern ---------- */
@@ -134,7 +143,7 @@ function drawAnnos(pv) {
 function strokeAttrs(a) { return { stroke: a.color, 'stroke-width': a.width, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }; }
 function drawOne(svg, a, pv) {
   let el, hit;
-  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure') {
+  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
     el = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, ...strokeAttrs(a), 'data-id': a.id });
     svg.appendChild(el);
     if (a.type === 'arrow') drawArrowHead(svg, a);
@@ -154,26 +163,37 @@ function drawOne(svg, a, pv) {
     const g = svgEl('g', { class: 'note-pin', 'data-id': a.id });
     g.appendChild(svgEl('path', { d: `M${a.x} ${a.y} l13 0 l0 9 l-7 0 l-4 4 l0 -4 l-2 0 z`, fill: a.color, stroke: '#fff', 'stroke-width': 1 }));
     svg.appendChild(g); el = g;
+  } else if (a.type === 'dim') {
+    drawDim(svg, a);
+    hit = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'hit', 'data-id': a.id }); svg.appendChild(hit);
+    el = svg.lastChild;
   }
   return el;
+}
+// Masslinie mit End-Strichen + (auto oder eigenem) Mass
+function drawDim(svg, a) {
+  svg.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, ...strokeAttrs(a), 'data-id': a.id }));
+  const ang = Math.atan2(a.y2 - a.y1, a.x2 - a.x1), tx = Math.cos(ang + Math.PI / 2) * 6, ty = Math.sin(ang + Math.PI / 2) * 6;
+  for (const [ex, ey] of [[a.x1, a.y1], [a.x2, a.y2]]) svg.appendChild(svgEl('line', { x1: ex - tx, y1: ey - ty, x2: ex + tx, y2: ey + ty, ...strokeAttrs(a) }));
+  const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2, lab = a.text || lenLabel(a);
+  const w = lab.length * 7 + 8, t = svgEl('text', { x: mx, y: my - 4, fill: a.color, 'font-size': 12, 'text-anchor': 'middle', 'dominant-baseline': 'auto' });
+  svg.appendChild(svgEl('rect', { x: mx - w / 2, y: my - 18, width: w, height: 15, fill: '#fff', 'fill-opacity': .82, stroke: 'none' }));
+  t.textContent = lab; svg.appendChild(t);
 }
 function drawArrowHead(svg, a) {
   const ang = Math.atan2(a.y2 - a.y1, a.x2 - a.x1), L = Math.max(7, a.width * 3.2);
   for (const s of [ang + 2.7, ang - 2.7]) svg.appendChild(svgEl('line', { x1: a.x2, y1: a.y2, x2: a.x2 + Math.cos(s) * L, y2: a.y2 + Math.sin(s) * L, ...strokeAttrs(a) }));
 }
-function lenLabel(a, pv) {
-  const dpt = Math.hypot(a.x2 - a.x1, a.y2 - a.y1);              // Länge in PDF-Punkten
-  return Math.round(dpt / 72 * 25.4) + ' mm';                    // Phase 2a: ohne Massstab (mm auf Papier); echter Massstab folgt in 2b
-}
+function lenLabel(a) { return fmtLen(Math.hypot(a.x2 - a.x1, a.y2 - a.y1)); }
 function drawMeasureLabel(svg, a, pv) {
   const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
-  const t = svgEl('text', { x: mx + 4, y: my - 4, fill: a.color, 'font-size': 12 }); t.textContent = a.label || lenLabel(a, pv); svg.appendChild(t);
+  const t = svgEl('text', { x: mx + 4, y: my - 4, fill: a.color, 'font-size': 12 }); t.textContent = a.label || lenLabel(a); svg.appendChild(t);
 }
 
 /* ---------- Auswahl / Griffe ---------- */
 function bbox(a) {
   if (a.type === 'rect' || a.type === 'oval') return { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), w: Math.abs(a.w), h: Math.abs(a.h) };
-  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure') return { x: Math.min(a.x1, a.x2), y: Math.min(a.y1, a.y2), w: Math.abs(a.x2 - a.x1), h: Math.abs(a.y2 - a.y1) };
+  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') return { x: Math.min(a.x1, a.x2), y: Math.min(a.y1, a.y2), w: Math.abs(a.x2 - a.x1), h: Math.abs(a.y2 - a.y1) };
   if (a.type === 'pen') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: a.size * (a.text.split('\n').length) * 1.3 };
   if (a.type === 'note') return { x: a.x, y: a.y, w: 14, h: 14 };
@@ -183,7 +203,7 @@ function drawSelection(svg, a, pv) {
   if (!a) return; const b = bbox(a); const pad = 3;
   svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad }));
   const hs = 4 / pv.scale;
-  const pts = (a.type === 'line' || a.type === 'arrow' || a.type === 'measure')
+  const pts = (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim')
     ? [['p1', a.x1, a.y1], ['p2', a.x2, a.y2]]
     : [['nw', b.x, b.y], ['ne', b.x + b.w, b.y], ['sw', b.x, b.y + b.h], ['se', b.x + b.w, b.y + b.h]];
   for (const [name, x, y] of pts) svg.appendChild(svgEl('rect', { class: 'handle', x: x - hs, y: y - hs, width: hs * 2, height: hs * 2, 'data-h': name }));
@@ -232,7 +252,7 @@ function startMove(pv, e, a) {
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function translateAnno(a, o, dx, dy) {
-  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
+  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
   else if (a.type === 'pen') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
   else { a.x = o.x + dx; a.y = o.y + dy; }
 }
@@ -240,7 +260,7 @@ function startResize(pv, e, h) {
   const a = findAnno(pv.num, sel.id); if (!a) return; pushUndo(); const orig = JSON.parse(JSON.stringify(a));
   const move = ev => {
     const q = evtToPage(pv, ev);
-    if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure') { if (h === 'p1') { a.x1 = q.x; a.y1 = q.y; } else { a.x2 = q.x; a.y2 = q.y; } }
+    if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') { if (h === 'p1') { a.x1 = q.x; a.y1 = q.y; } else { a.x2 = q.x; a.y2 = q.y; } }
     else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
     drawAnnos(pv);
   };
@@ -306,6 +326,7 @@ function startDraw(pv, e, p) {
   };
   const up = () => {
     document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+    if (a.type === 'calibrate') { const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1); const arr = getAnnos(pv.num); arr.splice(arr.indexOf(a), 1); undoStack.pop(); drawAnnos(pv); if (len > 4) openScale(len); else setTool('select'); return; }
     if (a.type === 'pen' && penTidy) { const bz = beautify(a.pts); if (bz) { const arr = getAnnos(pv.num), i = arr.indexOf(a); arr[i] = Object.assign({ id: a.id, color: a.color, width: a.width }, bz); } }
     const cur = getAnnos(pv.num).find(x => x.id === a.id) || a;
     const b = bbox(cur); if (cur.type !== 'pen' && b.w < 3 && b.h < 3) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(cur), 1); undoStack.pop(); drawAnnos(pv); return; }
@@ -362,7 +383,7 @@ function setTool(t) {
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'note'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -380,10 +401,16 @@ async function buildPdfBytes() {
       const Y = y => PH - y;                         // pdf.js (oben) → pdf-lib (unten)
       for (const a of (annos[n] || [])) {
         const col = hexToRgb(a.color), c = rgb(col.r, col.g, col.b), w = a.width || 2;
-        if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure') {
+        if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
           pg.drawLine({ start: { x: a.x1, y: Y(a.y1) }, end: { x: a.x2, y: Y(a.y2) }, thickness: w, color: c });
           if (a.type === 'arrow') { const ang = Math.atan2(a.y2 - a.y1, a.x2 - a.x1), L = Math.max(7, w * 3.2); for (const s of [ang + 2.7, ang - 2.7]) pg.drawLine({ start: { x: a.x2, y: Y(a.y2) }, end: { x: a.x2 + Math.cos(s) * L, y: Y(a.y2 + Math.sin(s) * L) }, thickness: w, color: c }); }
           if (a.type === 'measure') { const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2; pg.drawText(a.label || lenLabel(a), { x: mx + 4, y: Y(my) + 4, size: 11, font, color: c }); }
+          if (a.type === 'dim') {
+            const ang = Math.atan2(a.y2 - a.y1, a.x2 - a.x1), tx = Math.cos(ang + Math.PI / 2) * 6, ty = Math.sin(ang + Math.PI / 2) * 6;
+            for (const [ex, ey] of [[a.x1, a.y1], [a.x2, a.y2]]) pg.drawLine({ start: { x: ex - tx, y: Y(ey - ty) }, end: { x: ex + tx, y: Y(ey + ty) }, thickness: w, color: c });
+            const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2, lab = a.text || lenLabel(a);
+            pg.drawText(lab, { x: mx - lab.length * 3, y: Y(my) + 6, size: 11, font, color: c });
+          }
         } else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h); pg.drawRectangle({ x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w }); }
         else if (a.type === 'oval') { pg.drawEllipse({ x: a.x + a.w / 2, y: Y(a.y + a.h / 2), xScale: Math.abs(a.w / 2), yScale: Math.abs(a.h / 2), borderColor: c, borderWidth: w }); }
         else if (a.type === 'pen') { for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c }); }
@@ -428,6 +455,29 @@ async function doSend() {
   window.location.href = 'mailto:' + encodeURIComponent(to) + '?' + q.join('&');
   toast('PDF heruntergeladen · Mail geöffnet → PDF anhängen.');
 }
+
+/* ---------- Massstab ---------- */
+let _calibLen = 0;
+function openScale(calibLen) {
+  _calibLen = calibLen || 0;
+  $('#scaleCalib').hidden = !_calibLen; $('#scaleRatioRow').hidden = !!_calibLen;
+  if (docScale && docScale.n) $('#scaleRatio').value = docScale.n;
+  $('#scaleDlg').hidden = false; (_calibLen ? $('#scaleReal') : $('#scaleRatio')).focus();
+}
+function applyScale() {
+  if (_calibLen) {
+    const v = parseFloat(($('#scaleReal').value || '').replace(',', '.')), u = $('#scaleUnit').value;
+    if (!(v > 0)) { $('#scaleDlg').hidden = true; return; }
+    const meters = u === 'm' ? v : u === 'cm' ? v / 100 : v / 1000;
+    docScale = { perPt: meters / _calibLen, label: 'kalibriert' };
+  } else {
+    const n = parseFloat(($('#scaleRatio').value || '').replace(',', '.'));
+    if (!(n > 0)) { $('#scaleDlg').hidden = true; return; }
+    docScale = { perPt: n * PT2MM / 1000, label: '1:' + Math.round(n), n: Math.round(n) };
+  }
+  $('#scaleDlg').hidden = true; updateScaleLabel(); pageViews.forEach(drawAnnos); toast('Massstab gesetzt'); setTool('measure');
+}
+function updateScaleLabel() { const el = $('#scaleInd'); if (el) el.textContent = docScale ? (docScale.label === 'kalibriert' ? '⟂ kalibriert' : docScale.label) : ''; }
 
 /* ---------- Rechtsklick-Menü (alles erreichbar) ---------- */
 function hideCtx() { $('#ctxmenu').hidden = true; }
@@ -474,6 +524,21 @@ function wire() {
   window.addEventListener('resize', () => { if (zoom === 'auto') reflow(); });
   $$('.tool[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $('#penTidyBtn').onclick = () => { penTidy = !penTidy; $('#penTidyBtn').classList.toggle('on', penTidy); toast(penTidy ? 'Skizze aufräumen: an' : 'Freihand: roh'); };
+  $('#btnScale').onclick = () => openScale(0);
+  $('#scaleCalibBtn').onclick = () => { $('#scaleDlg').hidden = true; setTool('calibrate'); toast('Bekannte Strecke im Plan einzeichnen …'); };
+  $('#scaleCancel').onclick = () => $('#scaleDlg').hidden = true;
+  $('#scaleOk').onclick = applyScale;
+  $('#scaleReal').onkeydown = e => { if (e.key === 'Enter') applyScale(); };
+  $('#scaleRatio').onkeydown = e => { if (e.key === 'Enter') applyScale(); };
+  // Doppelklick auf Mass-/Masslinie → eigenes Mass eintragen
+  $('#pages').addEventListener('dblclick', e => {
+    const id = e.target.getAttribute && e.target.getAttribute('data-id'); if (!id) return;
+    const wrap = e.target.closest('.pagewrap'); if (!wrap) return; const pv = pageViews.find(p => p.num === +wrap.dataset.n);
+    const a = findAnno(pv.num, +id); if (!a || (a.type !== 'dim' && a.type !== 'measure' && a.type !== 'text')) return;
+    if (a.type === 'text') return; // Text wird ueber das Werkzeug bearbeitet
+    const v = prompt('Mass-Beschriftung (leer = automatisch gemessen):', a.text || lenLabel(a)); if (v === null) return;
+    pushUndo(); a.text = v.trim() || ''; drawAnnos(pv);
+  });
   $('#rotL').onclick = () => rotatePage(-90); $('#rotR').onclick = () => rotatePage(90);
   $('#delSel').onclick = deleteSel;
   // Schnellzugriff unten links

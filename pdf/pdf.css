@@ -90,6 +90,8 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .pagewrap{position:relative;background:#fff;box-shadow:0 4px 22px rgba(20,24,40,.13);border-radius:0}
 .pageinner{position:absolute;left:50%;top:50%}
 .pagewrap canvas{display:block;border-radius:0}
+.pagewrap .pagecanvas{position:absolute;left:0;top:0}
+.pagewrap .pagetile{position:absolute}
 .pagewrap.loading{background:#fff}
 .pagewrap.loading::before{content:"";position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border:2px solid var(--line-soft);border-top-color:var(--accent);animation:spin .7s linear infinite;z-index:1;pointer-events:none}
 @keyframes spin{to{transform:rotate(360deg)}}

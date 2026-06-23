@@ -99,7 +99,8 @@ function layoutPv(pv) {                                  // Grösse/Drehung setz
   const scale = pageScale(pv), dispW = pv.pageW * scale, dispH = pv.pageH * scale;
   const rot = (pageRot[pv.num] || 0) + (viewRot[pv.num] || 0), rad = rot * Math.PI / 180;
   const bw = Math.abs(dispW * Math.cos(rad)) + Math.abs(dispH * Math.sin(rad)), bh = Math.abs(dispW * Math.sin(rad)) + Math.abs(dispH * Math.cos(rad));
-  if (pv.scale !== scale && pv.rendered) pv.stale = true;     // Zoom geändert → Canvas neu rendern
+  if ((pv.scale !== scale || pv.rot !== rot)) dropTile(pv);   // Skalierung/Drehung geändert → Kachel verwerfen
+  if (pv.scale !== scale && pv.rendered) pv.stale = true;     // Zoom geändert → Basis neu rendern
   pv.scale = scale; pv.dispW = dispW; pv.dispH = dispH; pv.rot = rot;
   pv.wrap.style.width = bw + 'px'; pv.wrap.style.height = bh + 'px';
   pv.inner.style.width = dispW + 'px'; pv.inner.style.height = dispH + 'px';
@@ -117,7 +118,7 @@ async function buildLayout() {
     const inner = document.createElement('div'); inner.className = 'pageinner';
     const svg = svgEl('svg', { class: 'anno', viewBox: `0 0 ${v1.width} ${v1.height}`, preserveAspectRatio: 'none' });
     inner.appendChild(svg); outer.appendChild(inner); host.appendChild(outer);
-    const pv = { num: n, wrap: outer, inner, svg, canvas: null, page: n === 1 ? p1 : null, pageW: v1.width, pageH: v1.height, scale: 0, rendered: false, rendering: false, stale: false, quality: 0, task: null, pendingFull: false };
+    const pv = { num: n, wrap: outer, inner, svg, canvas: null, tile: null, page: n === 1 ? p1 : null, pageW: v1.width, pageH: v1.height, scale: 0, rot: 0, rendered: false, rendering: false, stale: false, task: null, tileTask: null };
     pageViews.push(pv); layoutPv(pv); drawAnnos(pv); bindPageEvents(pv);
   }
   pageObserver = new IntersectionObserver(ents => {
@@ -126,22 +127,16 @@ async function buildLayout() {
   pageViews.forEach(pv => pageObserver.observe(pv.wrap));
   applyToolCursor(); updateZoomLabel(); updatePageInd(); renderVisible();
 }
-// Zwei Stufen: full=false = schnelle Vorschau (DPR 1, kleiner), full=true = scharf (volle Pixeldichte).
-function enqueueRender(pv, full) {
-  full = !!full;
-  if (pv.rendering) { if (full) pv.pendingFull = true; return; }
-  if (pv.quality >= (full ? 2 : 1) && !pv.stale) return;
-  const ex = renderQueue.find(it => it.pv === pv); if (ex) { ex.full = ex.full || full; return; }
-  renderQueue.push({ pv, full }); pumpRender();
-}
-function pumpRender() { while (renderActive < RENDER_MAX && renderQueue.length) { const it = renderQueue.shift(); renderActive++; renderPage(it.pv, it.full).catch(() => { }).finally(() => { renderActive--; pumpRender(); }); } }
-async function renderPage(pv, full) {
-  const wantQ = full ? 2 : 1;
-  if (pv.rendering || (pv.quality >= wantQ && !pv.stale)) return; pv.rendering = true;
+// Basis: ganze Seite als günstige Vorschau. Scharf: nur der SICHTBARE Ausschnitt als
+// hochauflösende Kachel darüber → gestochen scharf bei jeder Seitengrösse und jedem Zoom.
+function enqueueRender(pv) { if (pv.rendering || (pv.rendered && !pv.stale) || renderQueue.includes(pv)) return; renderQueue.push(pv); pumpRender(); }
+function pumpRender() { while (renderActive < RENDER_MAX && renderQueue.length) { const pv = renderQueue.shift(); renderActive++; renderPage(pv).catch(() => { }).finally(() => { renderActive--; pumpRender(); }); } }
+async function renderPage(pv) {                       // Basis-Vorschau (ganze Seite, günstig)
+  if (pv.rendering || (pv.rendered && !pv.stale)) return; pv.rendering = true;
   try {
     if (!pv.page) { pv.page = await pdfDoc.getPage(pv.num); const vp1 = pv.page.getViewport({ scale: 1 }); if (Math.abs(vp1.width - pv.pageW) > 1 || Math.abs(vp1.height - pv.pageH) > 1) { pv.pageW = vp1.width; pv.pageH = vp1.height; pv.svg.setAttribute('viewBox', `0 0 ${vp1.width} ${vp1.height}`); layoutPv(pv); } }
-    const scale = pageScale(pv), dpr = full ? dprCap() : dprPreview(), maxA = full ? MAX_AREA : PREVIEW_AREA;
-    let rscale = scale * dpr; const area = pv.pageW * rscale * pv.pageH * rscale; if (area > maxA) rscale *= Math.sqrt(maxA / area);   // riesige Seiten deckeln
+    const scale = pageScale(pv); let rscale = scale * dprPreview();
+    const area = pv.pageW * rscale * pv.pageH * rscale; if (area > PREVIEW_AREA) rscale *= Math.sqrt(PREVIEW_AREA / area);
     const vp = pv.page.getViewport({ scale: rscale });
     const canvas = document.createElement('canvas'); canvas.className = 'pagecanvas';
     canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
@@ -150,28 +145,64 @@ async function renderPage(pv, full) {
     await task.promise; pv.task = null;
     if (!pv.rendering) return;   // zwischenzeitlich weggescrollt/freigegeben → verwerfen
     if (pv.canvas) pv.canvas.remove();
-    pv.inner.insertBefore(canvas, pv.svg); pv.canvas = canvas; pv.rendered = true; pv.quality = wantQ; pv.stale = false; pv.wrap.classList.remove('loading');
+    pv.inner.insertBefore(canvas, pv.tile || pv.svg); pv.canvas = canvas; pv.rendered = true; pv.stale = false; pv.wrap.classList.remove('loading');
   } catch (_) { /* abgebrochen (cancel) → still verwerfen */ }
-  finally { pv.rendering = false; if (pv.pendingFull && pv.quality < 2) { pv.pendingFull = false; enqueueRender(pv, true); } }
+  finally { pv.rendering = false; scheduleSharpen(); }   // sobald die Basis steht, scharfe Kachel anstossen
 }
-function releasePage(pv) {     // weit weg → laufendes Rendern abbrechen + Canvas freigeben
+function releasePage(pv) {     // weit weg → laufendes Rendern abbrechen + Canvas/Kachel freigeben
   if (pv.task) { try { pv.task.cancel(); } catch (_) { } pv.task = null; }
+  dropTile(pv);
   if (pv.canvas) { pv.canvas.remove(); pv.canvas = null; }
-  pv.rendered = false; pv.rendering = false; pv.quality = 0; pv.pendingFull = false;
-  const i = renderQueue.findIndex(it => it.pv === pv); if (i >= 0) renderQueue.splice(i, 1); pv.wrap.classList.add('loading');
+  pv.rendered = false; pv.rendering = false; pv.stale = false;
+  const i = renderQueue.indexOf(pv); if (i >= 0) renderQueue.splice(i, 1); pv.wrap.classList.add('loading');
 }
-function renderVisible() {      // sichtbare Seiten in Vorschau anstossen, dann aktuelles Blatt scharf
+function dropTile(pv) { if (pv.tileTask) { try { pv.tileTask.cancel(); } catch (_) { } pv.tileTask = null; } if (pv.tile) { pv.tile.remove(); pv.tile = null; } }
+function renderVisible() {
   const host = $('#pages'), top = host.scrollTop - 900, bot = host.scrollTop + host.clientHeight + 900;
-  for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) enqueueRender(pv, false); }
+  for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) enqueueRender(pv); }
   scheduleSharpen();
 }
+// Sichtbaren Seiten-Ausschnitt in Seiten-Punkten (berücksichtigt Zoom + Drehung über die CTM).
+function visiblePageRect(pv) {
+  const host = $('#pages'), r = host.getBoundingClientRect(), ctm = pv.svg.getScreenCTM(); if (!ctm) return null;
+  const inv = ctm.inverse(), pt = pv.svg.createSVGPoint();
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (const [x, y] of [[r.left, r.top], [r.right, r.top], [r.right, r.bottom], [r.left, r.bottom]]) {
+    pt.x = x; pt.y = y; const q = pt.matrixTransform(inv);
+    minx = Math.min(minx, q.x); maxx = Math.max(maxx, q.x); miny = Math.min(miny, q.y); maxy = Math.max(maxy, q.y);
+  }
+  minx = Math.max(0, minx); miny = Math.max(0, miny); maxx = Math.min(pv.pageW, maxx); maxy = Math.min(pv.pageH, maxy);
+  if (maxx - minx < 1 || maxy - miny < 1) return null;
+  return { x: minx, y: miny, w: maxx - minx, h: maxy - miny };
+}
+const TILE_MAXDIM = 8192;     // Browser-Canvas-Grenze pro Achse
+async function renderTile(pv) {                      // scharfe Kachel über den sichtbaren Ausschnitt
+  if (pv.rendering || !pv.page) return; const rect = visiblePageRect(pv); if (!rect) return;
+  pv.rendering = true;
+  try {
+    const scale = pageScale(pv); let px = scale * dprCap();
+    let tw = rect.w * px, th = rect.h * px;
+    if (tw > TILE_MAXDIM || th > TILE_MAXDIM) { const f = Math.min(TILE_MAXDIM / tw, TILE_MAXDIM / th); px *= f; tw *= f; th *= f; }
+    const vp = pv.page.getViewport({ scale: px });
+    const canvas = document.createElement('canvas'); canvas.className = 'pagetile';
+    canvas.width = Math.max(1, Math.ceil(tw)); canvas.height = Math.max(1, Math.ceil(th));
+    canvas.style.left = (rect.x * scale) + 'px'; canvas.style.top = (rect.y * scale) + 'px';
+    canvas.style.width = (rect.w * scale) + 'px'; canvas.style.height = (rect.h * scale) + 'px';
+    const transform = [1, 0, 0, 1, -rect.x * px, -rect.y * px];
+    const task = pv.page.render({ canvasContext: canvas.getContext('2d'), viewport: vp, transform }); pv.tileTask = task;
+    await task.promise; pv.tileTask = null;
+    if (!pv.rendered) return;   // zwischenzeitlich freigegeben → verwerfen
+    if (pv.tile) pv.tile.remove(); pv.tile = canvas; pv.inner.insertBefore(canvas, pv.svg);
+  } catch (_) { /* abgebrochen */ }
+  finally { pv.rendering = false; }
+}
 let sharpenTimer = null;
-function scheduleSharpen() {    // nach kurzer Ruhe (kein Scrollen) ALLE sichtbaren Blätter scharf nachrendern
+function scheduleSharpen() {    // nach kurzer Ruhe: scharfe Kachel für die sichtbaren Seiten
   clearTimeout(sharpenTimer);
   sharpenTimer = setTimeout(() => {
-    const host = $('#pages'), top = host.scrollTop - 120, bot = host.scrollTop + host.clientHeight + 120;
-    for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) enqueueRender(pv, true); }
-  }, 130);
+    const host = $('#pages'), top = host.scrollTop, bot = host.scrollTop + host.clientHeight;
+    for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (pv.rendered && b >= top && t <= bot) renderTile(pv); }
+  }, 140);
 }
 function relayout() { if (!pdfDoc) return; pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); renderVisible(); }
 let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTimer = setTimeout(relayout, 140); }
@@ -445,7 +476,7 @@ function refreshComments() {
 function rotatePage(deg) {
   if (!pdfDoc) return; const n = curPage(); pageRot[n] = (((pageRot[n] || 0) + deg) % 360 + 360) % 360; saveState();
   const pv = pageViews.find(p => p.num === n); if (pv) layoutPv(pv);   // reine CSS-Drehung, kein Neu-Render
-  refreshThumb(n); updatePageInd();
+  refreshThumb(n); updatePageInd(); scheduleSharpen();
 }
 // Freies Drehen (nur Ansicht, live per CSS – kein Re-Render): Plan nach Norden ausrichten
 function applyViewRot(pv) {
@@ -454,8 +485,9 @@ function applyViewRot(pv) {
   pv.wrap.style.width = bw + 'px'; pv.wrap.style.height = bh + 'px'; pv.inner.style.transform = `translate(-50%,-50%) rotate(${rot}deg)`;
 }
 function setFreeRot(deg) {
-  const n = curPage(); viewRot[n] = deg; const pv = pageViews.find(p => p.num === n); if (pv) applyViewRot(pv);
+  const n = curPage(); viewRot[n] = deg; const pv = pageViews.find(p => p.num === n); if (pv) { dropTile(pv); applyViewRot(pv); }
   $('#freeRotVal').textContent = (deg > 0 ? '+' : '') + deg + '°';
+  scheduleSharpen();
 }
 
 /* ---------- Undo / Löschen ---------- */

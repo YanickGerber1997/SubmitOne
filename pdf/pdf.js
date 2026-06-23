@@ -327,6 +327,7 @@ function updateSelBar() {
   const hasColor = a.type !== 'sig', hasWidth = a.width != null, hasSize = (a.type === 'text' || a.type === 'edit');
   $('#sbColorWrap').hidden = !hasColor; $('#sbWidths').hidden = !hasWidth; $('#sbSize').hidden = !hasSize;
   $('#sbEdit').hidden = a.type !== 'edit'; $('#sbMove').hidden = a.type !== 'edit';
+  $('#sbLine').hidden = !isLineType(a);
   if (hasColor) { $('#sbColor').value = toHex(a.color); $('#sbColorDot').style.background = a.color; }
   if (hasWidth) $$('#sbWidths button').forEach(b => b.classList.toggle('on', +b.dataset.w === a.width));
   if (hasSize) $('#sbSize').value = String(a.size);
@@ -1063,6 +1064,12 @@ function wire() {
   $('#sbSize').onchange = e => { const a = selA(); if (!a) return; pushUndo(); a.size = +e.target.value; style.size = +e.target.value; $('#sizeSel').value = e.target.value; const pv = selPv(); if (pv) drawAnnos(pv); };
   $('#sbEdit').onclick = () => { const a = selA(), pv = selPv(); if (a && pv) openEditEdit(pv, a, false); };
   $('#sbMove').onclick = () => { const a = selA(), pv = selPv(); if (a && pv) splitEditMove(pv, a); };
+  const lineAdjust = (dx, dy) => { const a = selA(); if (!isLineType(a)) return; pushUndo(); a.x1 += dx; a.y1 += dy; a.x2 += dx; a.y2 += dy; const pv = selPv(); if (pv) drawAnnos(pv); };
+  const lineRotate = deg => { const a = selA(); if (!isLineType(a)) return; pushUndo(); const cx = (a.x1 + a.x2) / 2, cy = (a.y1 + a.y2) / 2, r = deg * Math.PI / 180, c = Math.cos(r), s = Math.sin(r), rt = (x, y) => [cx + (x - cx) * c - (y - cy) * s, cy + (x - cx) * s + (y - cy) * c];[a.x1, a.y1] = rt(a.x1, a.y1);[a.x2, a.y2] = rt(a.x2, a.y2); const pv = selPv(); if (pv) drawAnnos(pv); };
+  $('#sbUp').onclick = () => lineAdjust(0, -2);
+  $('#sbDown').onclick = () => lineAdjust(0, 2);
+  $('#sbRotL').onclick = () => lineRotate(-15);
+  $('#sbRotR').onclick = () => lineRotate(15);
   $('#sbDup').onclick = () => { const pv = selPv(); if (pv && sel) duplicateAnno(pv, sel.id); };
   $('#sbDel').onclick = () => deleteSel();
   $('#sizeSel').onchange = e => { style.size = +e.target.value; if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.type === 'text') { pushUndo(); a.size = style.size; pageViews.forEach(drawAnnos); } } };

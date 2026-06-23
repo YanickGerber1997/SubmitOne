@@ -193,6 +193,8 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .selbar .sb-widths .wl{display:block;width:16px;background:var(--ink);border-radius:2px}
 .selbar .sb-widths button.on{background:var(--accent-soft);border-color:var(--accent)}
 .selbar .sb-size{height:30px;border:1px solid var(--line);background:var(--surface-2);font:inherit;font-size:13px;color:var(--ink);padding:0 4px}
+.selbar .sb-line{display:flex;gap:2px}
+.selbar .sb-line button{width:26px;font-size:13px}
 .selbar .sb-sep{width:1px;height:20px;background:var(--line);margin:0 2px}
 .selbar .sb-del:hover{color:var(--danger);border-color:var(--danger)}
 .selbar[hidden]{display:none !important}

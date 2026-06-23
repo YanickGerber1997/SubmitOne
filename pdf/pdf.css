@@ -36,6 +36,7 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .splash-logo{width:min(360px,72vw);opacity:0;animation:lgReveal 1.15s cubic-bezier(.2,.7,.3,1) .15s forwards}
 @keyframes lgReveal{from{opacity:0;transform:scale(.93) translateY(10px);clip-path:inset(0 0 100% 0)}to{opacity:1;transform:scale(1) translateY(0);clip-path:inset(0 0 0 0)}}
 .brand .bw-a{color:#1c242c} .brand .bw-b{color:#4f7a3c;margin-left:5px}
+.brand .brand-word{height:18px;width:auto;display:block;object-fit:contain}
 .btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:0;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:.12s}
 .btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .btn:disabled{opacity:.45;cursor:default}
@@ -202,6 +203,7 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
   :root{--bar:50px;--tools:46px}
   .brand{font-size:14px;letter-spacing:1.5px}
   .brand .logomark{height:22px;width:22px}
+  .brand .brand-word{height:14px}
   .tool{width:38px;height:38px}            /* touch-freundlicher */
   .swatch,.icon-btn{width:38px;height:38px}
   .sel{height:36px;font-size:12px}

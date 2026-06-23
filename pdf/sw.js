@@ -1,6 +1,6 @@
 /* Submit PDF – Service Worker: App-Shell cachen + Teilen-Ziel (Handy) entgegennehmen. */
 const CACHE = 'submitpdf-v1';
-const SHELL = ['./', './index.html', './pdf.css', './pdf.js', './tauri-bridge.js', './icon.png', './logo.png', './bg.png', './manifest.webmanifest'];
+const SHELL = ['./', './index.html', './pdf.css', './pdf.js', './tauri-bridge.js', './icon.png', './logo.png', './wordmark.png', './bg.png', './manifest.webmanifest'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

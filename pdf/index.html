@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Submit PDF – PDFs bearbeiten im Browser</title>
+  <meta name="description" content="PDFs ansehen, anmerken, unterschreiben, zusammenführen – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
+  <link rel="icon" href="icon.svg" />
+  <link rel="stylesheet" href="pdf.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="bw-a">Submit</span><span class="bw-b">PDF</span></div>
+    <button class="btn" id="btnOpen"><svg viewBox="0 0 24 24" class="i"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3z"/></svg><span>Öffnen</span></button>
+    <button class="btn" id="btnSave" disabled><svg viewBox="0 0 24 24" class="i"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h7M8 21v-7h8v7"/></svg><span>Speichern</span></button>
+    <span class="doc-name" id="docName"></span>
+    <span class="grow"></span>
+    <div class="zoombox">
+      <button class="icon-btn" id="zoomOut" title="Verkleinern">−</button>
+      <button class="zoom-val" id="zoomVal" title="An Breite anpassen">100&nbsp;%</button>
+      <button class="icon-btn" id="zoomIn" title="Vergrössern">+</button>
+    </div>
+    <span class="pageind" id="pageInd"></span>
+    <a class="suite-link" href="../write/index.html" title="Zur Submit-Suite">Submit Paper ↗</a>
+  </header>
+
+  <main class="work" id="work">
+    <aside class="thumbs" id="thumbs" aria-label="Seiten"></aside>
+    <div class="pages" id="pages"></div>
+  </main>
+
+  <!-- Leerzustand / Ablegen -->
+  <div class="drop" id="drop">
+    <div class="drop-card">
+      <div class="drop-ico"><svg viewBox="0 0 24 24"><path d="M6 2.5h8l4 4v15H6z"/><path d="M14 2.5v4h4"/><path d="M12 11v6M9.5 13.5 12 11l2.5 2.5"/></svg></div>
+      <h1>PDF hier ablegen</h1>
+      <p>oder <button class="link" id="dropOpen">Datei auswählen</button> · mehrere PDFs werden zusammengeführt</p>
+      <p class="priv">🔒 Deine Dateien bleiben auf deinem Gerät – nichts wird hochgeladen.</p>
+    </div>
+  </div>
+
+  <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden />
+  <div class="status" id="status" hidden></div>
+  <div id="toast-root"></div>
+
+  <script src="pdf.js"></script>
+</body>
+</html>

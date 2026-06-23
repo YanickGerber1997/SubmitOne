@@ -16,6 +16,7 @@ let tool = 'select';
 let style = { color: '#b4502f', width: 2.5, size: 16 };   // Standard: Rost (gut sichtbar auf Plänen)
 let penTidy = true;        // Freihand-Skizzen automatisch zu sauberen Formen aufräumen
 let docScale = null;       // {perPt: reale Meter pro PDF-Punkt, label:'1:100'} – für Messen
+let textSharp = false;     // Beta: echte (gehintete) Browser-Schrift über die Seite legen → gestochener Text
 const PT2MM = 25.4 / 72;   // 1 PDF-Punkt in mm
 function fmtLen(pts) {
   if (!docScale) return Math.round(pts * PT2MM) + ' mm';      // ohne Massstab: Papier-mm
@@ -118,7 +119,7 @@ function layoutPv(pv) {                                  // Grösse/Drehung setz
   const dispW = Math.round(pv.pageW * scale * dpr) / dpr, dispH = Math.round(pv.pageH * scale * dpr) / dpr;
   const rot = (pageRot[pv.num] || 0) + (viewRot[pv.num] || 0), rad = rot * Math.PI / 180;
   const bw = Math.abs(dispW * Math.cos(rad)) + Math.abs(dispH * Math.sin(rad)), bh = Math.abs(dispW * Math.sin(rad)) + Math.abs(dispH * Math.cos(rad));
-  if ((pv.scale !== scale || pv.rot !== rot)) { dropTile(pv); dropText(pv); }   // Skalierung/Drehung geändert → Kachel/Text neu
+  if ((pv.scale !== scale || pv.rot !== rot)) { dropTile(pv); dropText(pv); dropSharpText(pv); }   // Skalierung/Drehung geändert → Kachel/Text neu
   if (pv.scale !== scale && pv.rendered) pv.stale = true;     // Zoom geändert → Basis neu rendern
   pv.scale = scale; pv.dispW = dispW; pv.dispH = dispH; pv.rot = rot;
   pv.wrap.style.width = bw + 'px'; pv.wrap.style.height = bh + 'px';
@@ -138,7 +139,7 @@ async function buildLayout() {
     const inner = document.createElement('div'); inner.className = 'pageinner';
     const svg = svgEl('svg', { class: 'anno', viewBox: `0 0 ${v1.width} ${v1.height}`, preserveAspectRatio: 'none' });
     inner.appendChild(svg); outer.appendChild(inner); host.appendChild(outer);
-    const pv = { num: n, wrap: outer, inner, svg, canvas: null, tile: null, textLayer: null, page: n === 1 ? p1 : null, pageW: v1.width, pageH: v1.height, scale: 0, rot: 0, rendered: false, rendering: false, stale: false, baseCapped: false, task: null, tileTask: null, textScale: 0, textBusy: false };
+    const pv = { num: n, wrap: outer, inner, svg, canvas: null, tile: null, textLayer: null, sharpText: null, page: n === 1 ? p1 : null, pageW: v1.width, pageH: v1.height, scale: 0, rot: 0, rendered: false, rendering: false, stale: false, baseCapped: false, task: null, tileTask: null, textScale: 0, textBusy: false, sharpScale: 0, sharpBusy: false };
     pageViews.push(pv); layoutPv(pv); drawAnnos(pv); bindPageEvents(pv);
   }
   pageObserver = new IntersectionObserver(ents => {
@@ -173,7 +174,7 @@ async function renderPage(pv) {                       // Basis-Vorschau (ganze S
 }
 function releasePage(pv) {     // weit weg → laufendes Rendern abbrechen + Canvas/Kachel freigeben
   if (pv.task) { try { pv.task.cancel(); } catch (_) { } pv.task = null; }
-  dropTile(pv); dropText(pv);
+  dropTile(pv); dropText(pv); dropSharpText(pv);
   if (pv.canvas) { pv.canvas.remove(); pv.canvas = null; }
   pv.rendered = false; pv.rendering = false; pv.stale = false;
   const i = renderQueue.indexOf(pv); if (i >= 0) renderQueue.splice(i, 1); pv.wrap.classList.add('loading');
@@ -199,6 +200,45 @@ async function ensureTextLayer(pv) {
 function buildTextVisible() {     // Textebenen für sichtbare Seiten (nur im Text-Modus)
   const host = $('#pages'), top = host.scrollTop - 200, bot = host.scrollTop + host.clientHeight + 200;
   for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (pv.page && b >= top && t <= bot) ensureTextLayer(pv); }
+}
+
+/* ---------- Beta: Text-Lese-Schärfe (echte Browser-Schrift über die Seite) ---------- */
+function dropSharpText(pv) { if (pv.sharpText) { pv.sharpText.remove(); pv.sharpText = null; } pv.sharpScale = 0; }
+// dunkelstes/farbigstes Pixel entlang der Span-Mitte = Textfarbe (so bleiben blaue Überschriften blau)
+function sampleInk(data, w, h, cx, cy, span) {
+  cy = Math.max(0, Math.min(h - 1, Math.round(cy)));
+  const x0 = Math.max(0, Math.round(cx - span / 2)), x1 = Math.min(w - 1, Math.round(cx + span / 2));
+  let best = null, bestLum = 1e9;
+  for (let x = x0; x <= x1; x += 2) { const i = (cy * w + x) * 4; if (data[i + 3] < 40) continue; const lum = data[i] + data[i + 1] + data[i + 2]; if (lum < bestLum) { bestLum = lum; best = [data[i], data[i + 1], data[i + 2]]; } }
+  if (!best || bestLum > 690) return null;        // alles hell → kein Text (Hintergrund)
+  return `rgb(${best[0]},${best[1]},${best[2]})`;
+}
+async function buildSharpText(pv) {
+  if (!pv.page || !pv.canvas || pv.sharpBusy || (pv.sharpText && pv.sharpScale === pv.scale)) return;
+  pv.sharpBusy = true;
+  try {
+    const tc = await pv.page.getTextContent();
+    const scale = pv.scale; const div = document.createElement('div'); div.className = 'textLayer sharp';
+    div.style.width = pv.dispW + 'px'; div.style.height = pv.dispH + 'px'; div.style.setProperty('--scale-factor', scale);
+    await pdfjs.renderTextLayer({ textContentSource: tc, container: div, viewport: pv.page.getViewport({ scale }), textDivs: [] }).promise;
+    if (pv.scale !== scale || !pv.canvas) return;
+    pv.inner.insertBefore(div, pv.svg);                       // einfügen, damit Positionen messbar sind
+    let data = null; const cw = pv.canvas.width, ch = pv.canvas.height;
+    try { data = pv.canvas.getContext('2d').getImageData(0, 0, cw, ch).data; } catch (_) { }
+    if (data) { const k = cw / pv.dispW; for (const s of div.children) { const col = sampleInk(data, cw, ch, (s.offsetLeft + s.offsetWidth / 2) * k, (s.offsetTop + s.offsetHeight * 0.62) * k, Math.max(2, s.offsetWidth * k)); if (col) s.style.color = col; } }
+    if (pv.sharpText && pv.sharpText !== div) pv.sharpText.remove();
+    pv.sharpText = div; pv.sharpScale = scale;
+  } catch (_) { } finally { pv.sharpBusy = false; }
+}
+function buildSharpVisible() {
+  const host = $('#pages'), top = host.scrollTop, bot = host.scrollTop + host.clientHeight;
+  for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (pv.rendered && b >= top && t <= bot) buildSharpText(pv); }
+}
+function toggleTextSharp() {
+  textSharp = !textSharp; $('#btnTextSharp').classList.toggle('on', textSharp);
+  $('#pages').classList.toggle('text-sharp', textSharp);
+  if (textSharp) { buildSharpVisible(); toast('Text-Schärfe (Beta): an'); }
+  else { pageViews.forEach(dropSharpText); toast('Text-Schärfe: aus'); }
 }
 function renderVisible() {
   const host = $('#pages'), top = host.scrollTop - 900, bot = host.scrollTop + host.clientHeight + 900;
@@ -257,6 +297,7 @@ function scheduleSharpen() {    // nach kurzer Ruhe: scharfe Kachel für die sic
     // Scharfe Kachel (3× überabgetastet) über den sichtbaren Ausschnitt – für ALLE sichtbaren Seiten.
     for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) { snapPos(pv); if (pv.rendered) renderTile(pv); } }
     if (tool === 'textsel') buildTextVisible();
+    if (textSharp) buildSharpVisible();
   }, 90);
 }
 // Horizontale Zentrierung aufs Gerätepixel einrasten (sonst landet die Seite auf einem halben Pixel → leichtes Verwischen).
@@ -829,6 +870,7 @@ function wire() {
   $('#sigUse').onclick = () => useSig(false);
   $('#sigUseSaved').onclick = () => useSig(true);
   $('#btnReadable').onclick = () => { const on = $('#pages').classList.toggle('readable'); $('#btnReadable').classList.toggle('on', on); toast(on ? 'Lesbarkeit: Linien & Farben betont' : 'Lesbarkeit: normal'); };
+  $('#btnTextSharp').onclick = toggleTextSharp;
   $('#btnScale').onclick = () => openScale(0);
   $('#scaleCalibBtn').onclick = () => { $('#scaleDlg').hidden = true; setTool('calibrate'); toast('Bekannte Strecke im Plan einzeichnen …'); };
   $('#scaleCancel').onclick = () => $('#scaleDlg').hidden = true;

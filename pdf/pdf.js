@@ -86,7 +86,8 @@ async function loadDoc(bytes) {
    in voller Auflösung gerendert wurden (Speicher = Seitenzahl × Auflösung → Absturz).
    Jetzt: Platzhalter sofort (richtige Grösse → korrektes Scrollen), Canvas nur wenn die
    Seite in Sichtweite kommt; entfernt, wenn sie weit weg ist. Speicher bleibt konstant. */
-const MAX_AREA = 14e6;       // max. Canvas-Pixel pro Seite (deckelt Speicher/Seite)
+const MAX_AREA = 14e6;       // max. Canvas-Pixel pro Seite, scharf (deckelt Speicher/Seite)
+const PREVIEW_AREA = 3e6;    // max. Canvas-Pixel pro Seite, Vorschau (schnell, beim Scrollen)
 const RENDER_MAX = 2;        // gleichzeitige Seiten-Renderings
 let pageObserver = null, thumbObserver = null, renderQueue = [], renderActive = 0;
 function fitScale(pw) { const avail = $('#pages').clientWidth - 60; return Math.max(.2, Math.min(3, avail / pw)); }
@@ -115,7 +116,7 @@ async function buildLayout() {
     const inner = document.createElement('div'); inner.className = 'pageinner';
     const svg = svgEl('svg', { class: 'anno', viewBox: `0 0 ${v1.width} ${v1.height}`, preserveAspectRatio: 'none' });
     inner.appendChild(svg); outer.appendChild(inner); host.appendChild(outer);
-    const pv = { num: n, wrap: outer, inner, svg, canvas: null, page: n === 1 ? p1 : null, pageW: v1.width, pageH: v1.height, scale: 0, rendered: false, rendering: false, stale: false };
+    const pv = { num: n, wrap: outer, inner, svg, canvas: null, page: n === 1 ? p1 : null, pageW: v1.width, pageH: v1.height, scale: 0, rendered: false, rendering: false, stale: false, quality: 0, task: null, pendingFull: false };
     pageViews.push(pv); layoutPv(pv); drawAnnos(pv); bindPageEvents(pv);
   }
   pageObserver = new IntersectionObserver(ents => {
@@ -124,29 +125,49 @@ async function buildLayout() {
   pageViews.forEach(pv => pageObserver.observe(pv.wrap));
   applyToolCursor(); updateZoomLabel(); updatePageInd(); renderVisible();
 }
-function enqueueRender(pv) { if (pv.rendering || (pv.rendered && !pv.stale) || renderQueue.includes(pv)) return; renderQueue.push(pv); pumpRender(); }
-function pumpRender() { while (renderActive < RENDER_MAX && renderQueue.length) { const pv = renderQueue.shift(); renderActive++; renderPage(pv).catch(() => { }).finally(() => { renderActive--; pumpRender(); }); } }
-async function renderPage(pv) {
-  if (pv.rendering || (pv.rendered && !pv.stale)) return; pv.rendering = true;
-  if (!pv.page) { pv.page = await pdfDoc.getPage(pv.num); const vp1 = pv.page.getViewport({ scale: 1 }); if (Math.abs(vp1.width - pv.pageW) > 1 || Math.abs(vp1.height - pv.pageH) > 1) { pv.pageW = vp1.width; pv.pageH = vp1.height; pv.svg.setAttribute('viewBox', `0 0 ${vp1.width} ${vp1.height}`); layoutPv(pv); } }
-  const scale = pageScale(pv), dpr = dprCap(); let rscale = scale * dpr;
-  const area = pv.pageW * rscale * pv.pageH * rscale; if (area > MAX_AREA) rscale *= Math.sqrt(MAX_AREA / area);   // riesige Seiten deckeln
-  const vp = pv.page.getViewport({ scale: rscale });
-  const canvas = document.createElement('canvas'); canvas.className = 'pagecanvas';
-  canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
-  canvas.style.width = pv.dispW + 'px'; canvas.style.height = pv.dispH + 'px';
-  await pv.page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-  if (!pv.rendering) return;   // zwischenzeitlich weggescrollt/freigegeben → verwerfen
-  if (pv.canvas) pv.canvas.remove();
-  pv.inner.insertBefore(canvas, pv.svg); pv.canvas = canvas; pv.rendered = true; pv.rendering = false; pv.stale = false; pv.wrap.classList.remove('loading');
+// Zwei Stufen: full=false = schnelle Vorschau (DPR 1, kleiner), full=true = scharf (volle Pixeldichte).
+function enqueueRender(pv, full) {
+  full = !!full;
+  if (pv.rendering) { if (full) pv.pendingFull = true; return; }
+  if (pv.quality >= (full ? 2 : 1) && !pv.stale) return;
+  const ex = renderQueue.find(it => it.pv === pv); if (ex) { ex.full = ex.full || full; return; }
+  renderQueue.push({ pv, full }); pumpRender();
 }
-function releasePage(pv) {     // weit weg → Canvas freigeben (Annotationen/Platzhalter bleiben)
-  if (pv.canvas) { pv.canvas.remove(); pv.canvas = null; } pv.rendered = false; pv.rendering = false;
-  const i = renderQueue.indexOf(pv); if (i >= 0) renderQueue.splice(i, 1); pv.wrap.classList.add('loading');
+function pumpRender() { while (renderActive < RENDER_MAX && renderQueue.length) { const it = renderQueue.shift(); renderActive++; renderPage(it.pv, it.full).catch(() => { }).finally(() => { renderActive--; pumpRender(); }); } }
+async function renderPage(pv, full) {
+  const wantQ = full ? 2 : 1;
+  if (pv.rendering || (pv.quality >= wantQ && !pv.stale)) return; pv.rendering = true;
+  try {
+    if (!pv.page) { pv.page = await pdfDoc.getPage(pv.num); const vp1 = pv.page.getViewport({ scale: 1 }); if (Math.abs(vp1.width - pv.pageW) > 1 || Math.abs(vp1.height - pv.pageH) > 1) { pv.pageW = vp1.width; pv.pageH = vp1.height; pv.svg.setAttribute('viewBox', `0 0 ${vp1.width} ${vp1.height}`); layoutPv(pv); } }
+    const scale = pageScale(pv), dpr = full ? dprCap() : 1, maxA = full ? MAX_AREA : PREVIEW_AREA;
+    let rscale = scale * dpr; const area = pv.pageW * rscale * pv.pageH * rscale; if (area > maxA) rscale *= Math.sqrt(maxA / area);   // riesige Seiten deckeln
+    const vp = pv.page.getViewport({ scale: rscale });
+    const canvas = document.createElement('canvas'); canvas.className = 'pagecanvas';
+    canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+    canvas.style.width = pv.dispW + 'px'; canvas.style.height = pv.dispH + 'px';
+    const task = pv.page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }); pv.task = task;
+    await task.promise; pv.task = null;
+    if (!pv.rendering) return;   // zwischenzeitlich weggescrollt/freigegeben → verwerfen
+    if (pv.canvas) pv.canvas.remove();
+    pv.inner.insertBefore(canvas, pv.svg); pv.canvas = canvas; pv.rendered = true; pv.quality = wantQ; pv.stale = false; pv.wrap.classList.remove('loading');
+  } catch (_) { /* abgebrochen (cancel) → still verwerfen */ }
+  finally { pv.rendering = false; if (pv.pendingFull && pv.quality < 2) { pv.pendingFull = false; enqueueRender(pv, true); } }
 }
-function renderVisible() {      // sichtbare Seiten anstossen (Observer feuert bei Zoom nicht neu)
+function releasePage(pv) {     // weit weg → laufendes Rendern abbrechen + Canvas freigeben
+  if (pv.task) { try { pv.task.cancel(); } catch (_) { } pv.task = null; }
+  if (pv.canvas) { pv.canvas.remove(); pv.canvas = null; }
+  pv.rendered = false; pv.rendering = false; pv.quality = 0; pv.pendingFull = false;
+  const i = renderQueue.findIndex(it => it.pv === pv); if (i >= 0) renderQueue.splice(i, 1); pv.wrap.classList.add('loading');
+}
+function renderVisible() {      // sichtbare Seiten in Vorschau anstossen, dann aktuelles Blatt scharf
   const host = $('#pages'), top = host.scrollTop - 900, bot = host.scrollTop + host.clientHeight + 900;
-  for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) enqueueRender(pv); }
+  for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) enqueueRender(pv, false); }
+  scheduleSharpen();
+}
+let sharpenTimer = null;
+function scheduleSharpen() {    // nach kurzer Ruhe (kein Scrollen) das aktuelle Blatt scharf nachrendern
+  clearTimeout(sharpenTimer);
+  sharpenTimer = setTimeout(() => { const pv = pageViews.find(p => p.num === curPage()); if (pv) enqueueRender(pv, true); }, 170);
 }
 function relayout() { if (!pdfDoc) return; pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); renderVisible(); }
 let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTimer = setTimeout(relayout, 140); }
@@ -631,7 +652,7 @@ function wire() {
   $('#mCancel').onclick = () => $('#mailDlg').hidden = true;
   $('#btnUndo').onclick = undo;
   $('#zoomIn').onclick = () => zoomStep(.15); $('#zoomOut').onclick = () => zoomStep(-.15); $('#zoomVal').onclick = () => setZoom('auto');
-  $('#pages').addEventListener('scroll', updatePageInd, { passive: true });
+  $('#pages').addEventListener('scroll', () => { updatePageInd(); scheduleSharpen(); }, { passive: true });
   window.addEventListener('resize', () => { if (zoom === 'auto') reflow(); });
   $$('.tool[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $('#penTidyBtn').onclick = () => { penTidy = !penTidy; $('#penTidyBtn').classList.toggle('on', penTidy); toast(penTidy ? 'Skizze aufräumen: an' : 'Freihand: roh'); };

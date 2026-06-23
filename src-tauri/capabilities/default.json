@@ -1,0 +1,9 @@
+{
+  "identifier": "default",
+  "description": "Standard-Berechtigungen für das Hauptfenster",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default"
+  ]
+}

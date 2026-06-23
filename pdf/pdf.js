@@ -41,6 +41,10 @@ function hexToRgb(h) { h = (h || '#000').replace('#', ''); if (h.length === 3) h
 
 /* ---------- Öffnen ---------- */
 function isImg(f) { return /^image\//.test(f.type) || /\.(png|jpe?g|gif|webp|bmp|heic)$/i.test(f.name); }
+// Datei-Auswahl: native (Tauri-Desktop) bevorzugt, sonst Browser-Dateidialog
+function openPicker() { if (window.nativeOpen) { window.nativeOpen(); return; } $('#fileInput').click(); }
+// Einstieg für die Desktop-Hülle: rohe Bytes (z. B. aus Datei-Verknüpfung) in die normale Pipeline
+window.openNativeBytes = function (arr, path) { const name = (path || '').split(/[\\/]/).pop() || 'dokument.pdf'; openFiles([new File([arr], name, { type: /\.pdf$/i.test(name) ? 'application/pdf' : '' })]); };
 async function openFiles(files) {
   files = [...files]; const pdf = files.find(f => /pdf$/i.test(f.name) || f.type === 'application/pdf'); const img = files.find(isImg);
   try { status('Lade PDF-Engine …'); await loadPdfJs(); } catch (_) { status(''); toast('PDF-Engine nicht ladbar (einmal Internet nötig).'); return; }
@@ -483,8 +487,11 @@ async function buildPdfBytes() {
 }
 async function save() {
   if (!curBytes) return; status('Speichere …');
-  try { const out = await buildPdfBytes(); downloadBytes(out, outName()); status(''); toast('Gespeichert ✓'); }
-  catch (e) { status(''); console.error(e); toast('Speichern fehlgeschlagen (Internet für Speicher-Bibliothek nötig?).'); }
+  try {
+    const out = await buildPdfBytes();
+    if (window.nativeSave) { const ok = await window.nativeSave(out, outName()); status(''); toast(ok ? 'Gespeichert ✓' : 'Abgebrochen'); }
+    else { downloadBytes(out, outName()); status(''); toast('Gespeichert ✓'); }
+  } catch (e) { status(''); console.error(e); toast('Speichern fehlgeschlagen (Internet für Speicher-Bibliothek nötig?).'); }
 }
 
 /* ---------- Senden per E-Mail ---------- */
@@ -604,7 +611,7 @@ function showCtx(x, y, pv, annoId) {
   add('Seite 90° links drehen', '⟲', () => rotatePage(-90));
   add('Seite 90° rechts drehen', '⟳', () => rotatePage(90));
   sep();
-  add('Öffnen', '📂', () => $('#fileInput').click());
+  add('Öffnen', '📂', openPicker);
   add('Speichern (PDF)', '💾', save);
   m.hidden = false;
   const w = m.offsetWidth, h = m.offsetHeight;
@@ -615,8 +622,8 @@ function duplicateAnno(pv, id) { const a = findAnno(pv.num, id); if (!a) return;
 
 /* ---------- Verdrahtung ---------- */
 function wire() {
-  $('#btnOpen').onclick = () => $('#fileInput').click();
-  $('#dropOpen').onclick = () => $('#fileInput').click();
+  $('#btnOpen').onclick = openPicker;
+  $('#dropOpen').onclick = openPicker;
   $('#fileInput').onchange = e => { openFiles(e.target.files); e.target.value = ''; };
   $('#btnSave').onclick = save;
   $('#btnSend').onclick = openMail;
@@ -688,7 +695,7 @@ function wire() {
   document.addEventListener('keydown', e => {
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (e.key === 'Escape') e.target.blur(); return; }
     const mod = e.ctrlKey || e.metaKey;
-    if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); $('#fileInput').click(); }
+    if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openPicker(); }
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
     else if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
     else if (mod && (e.key === '+' || e.key === '=')) { e.preventDefault(); zoomStep(.15); }

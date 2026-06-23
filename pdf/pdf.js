@@ -228,9 +228,17 @@ function scheduleSharpen() {    // nach kurzer Ruhe: scharfe Kachel für die sic
   sharpenTimer = setTimeout(() => {
     const host = $('#pages'), top = host.scrollTop, bot = host.scrollTop + host.clientHeight, cur = curPage();
     // Scharfe Kachel über den sichtbaren Ausschnitt: für das aktuelle Blatt immer, sonst nur wenn die Basis gedeckelt war.
-    for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (pv.rendered && b >= top && t <= bot && (pv.num === cur || pv.baseCapped)) renderTile(pv); }
+    for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) { snapPos(pv); if (pv.rendered && (pv.num === cur || pv.baseCapped)) renderTile(pv); } }
     if (tool === 'textsel') buildTextVisible();
   }, 90);
+}
+// Horizontale Zentrierung aufs Gerätepixel einrasten (sonst landet die Seite auf einem halben Pixel → leichtes Verwischen).
+function snapPos(pv) {
+  if (pv.rot % 360 !== 0) { pv.wrap.style.transform = 'none'; return; }   // gedreht: nicht einrasten
+  const dpr = window.devicePixelRatio || 1; pv.wrap.style.transform = 'none';
+  const left = pv.wrap.getBoundingClientRect().left;
+  const dx = Math.round(left * dpr) / dpr - left;
+  pv.wrap.style.transform = Math.abs(dx) > 0.001 ? `translateX(${dx}px)` : 'none';
 }
 function relayout() { if (!pdfDoc) return; pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); renderVisible(); }
 let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTimer = setTimeout(relayout, 140); }

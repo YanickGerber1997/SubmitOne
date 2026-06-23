@@ -1,27 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 1240" width="1240" height="1240" font-family="'Questrial','Century Gothic','Futura','Inter',sans-serif">
-  <rect width="1240" height="1240" fill="#f4f3f0"/>
+  <rect width="1240" height="1240" fill="#f0efe9"/>
 
-  <!-- Bildmarke: S-Monogramm (dunkel) + Blatt-Ecke & Aufwärts-Pfeil (grün) -->
-  <g transform="translate(428 350) scale(1.6)" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <!-- S (dunkel) -->
-    <path d="M168 74
-             C168 50 126 42 98 50
-             C66 60 60 94 96 106
-             C116 113 128 120 128 138
-             C128 160 88 170 64 158"
-          stroke="#1c242c" stroke-width="16"/>
+  <!-- Bildmarke: S-Monogramm (dunkel) + grünes Blatt (oben rechts) + grüner Aufwärts-Pfeil (Tail) -->
+  <g transform="translate(430 372) scale(2.6)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- S -->
+    <path d="M158 60 C158 40 116 34 90 46 C60 60 60 92 92 104 C116 113 130 120 130 140 C130 162 96 172 66 160"
+          stroke="#1c242c" stroke-width="17"/>
     <!-- untere Linie -->
-    <path d="M70 165 L140 165" stroke="#1c242c" stroke-width="16"/>
-    <!-- grüner Aufwärts-Pfeil (Tail der S) -->
-    <path d="M140 165 L140 104" stroke="#4f7a3c" stroke-width="16"/>
-    <path d="M124 120 L140 102 L156 120" stroke="#4f7a3c" stroke-width="16"/>
-    <!-- grünes Blatt / Eselsohr oben rechts -->
-    <path d="M166 54 C192 54 198 82 180 98 C186 76 180 64 166 54 Z" fill="#4f7a3c" stroke="none"/>
+    <path d="M66 167 L138 167" stroke="#1c242c" stroke-width="17"/>
+    <!-- grüner Aufwärts-Pfeil -->
+    <path d="M138 167 L138 106" stroke="#4f7a3c" stroke-width="17"/>
+    <path d="M122 122 L138 103 L154 122" stroke="#4f7a3c" stroke-width="17"/>
+    <!-- grünes Blatt -->
+    <path d="M157 48 C184 50 188 82 166 96 C180 74 174 58 157 48 Z" fill="#4f7a3c" stroke="none"/>
   </g>
 
   <!-- Wortmarke -->
-  <text x="620" y="860" text-anchor="middle" font-size="132" letter-spacing="26" font-weight="400">
-    <tspan fill="#1c242c">SUBMIT</tspan><tspan fill="#4f7a3c" dx="44">PDF</tspan>
+  <text x="620" y="900" text-anchor="middle" font-size="134" letter-spacing="28" font-weight="400">
+    <tspan fill="#1c242c">SUBMIT</tspan><tspan fill="#4f7a3c" dx="46">PDF</tspan>
   </text>
-  <text x="620" y="930" text-anchor="middle" font-size="34" letter-spacing="2" font-style="italic" fill="#4f7a3c">It's all about the Paper, submit to everyone</text>
+  <!-- Leitsatz als Zitat -->
+  <text x="620" y="968" text-anchor="middle" font-size="33" letter-spacing="2" font-style="italic" fill="#34502b">„It's all about the Paper, submit to everyone."</text>
+  <text x="620" y="1012" text-anchor="middle" font-size="26" letter-spacing="5" fill="#6e7a3a">— YANICK GERBER</text>
 </svg>

@@ -92,8 +92,9 @@ const RENDER_MAX = 2;        // gleichzeitige Seiten-Renderings
 let pageObserver = null, thumbObserver = null, renderQueue = [], renderActive = 0;
 function fitScale(pw) { const avail = $('#pages').clientWidth - 60; return Math.max(.2, Math.min(3, avail / pw)); }
 function pageScale(pv) { return (zoom === 'auto') ? fitScale(pv.pageW) : zoom; }
-function dprCap() { return Math.min(window.devicePixelRatio || 1, 3); }                 // scharf: bis 3× Pixeldichte
-function dprPreview() { return Math.min(window.devicePixelRatio || 1, 1.5); }            // Vorschau: bis 1,5× (schon recht scharf)
+// Mind. 2× Überabtastung (auch auf 1×-Monitoren → schärferer Text), bis 3× auf HiDPI.
+function dprCap() { return Math.min(Math.max(window.devicePixelRatio || 1, 2), 3); }
+function dprPreview() { return Math.min(window.devicePixelRatio || 1, 1.5); }
 
 function layoutPv(pv) {                                  // Grösse/Drehung setzen (ohne zu rendern)
   const scale = pageScale(pv), dispW = pv.pageW * scale, dispH = pv.pageH * scale;
@@ -104,7 +105,8 @@ function layoutPv(pv) {                                  // Grösse/Drehung setz
   pv.scale = scale; pv.dispW = dispW; pv.dispH = dispH; pv.rot = rot;
   pv.wrap.style.width = bw + 'px'; pv.wrap.style.height = bh + 'px';
   pv.inner.style.width = dispW + 'px'; pv.inner.style.height = dispH + 'px';
-  pv.inner.style.transform = `translate(-50%,-50%) rotate(${rot}deg)`;
+  if (rot % 360 === 0) { pv.inner.style.left = '0'; pv.inner.style.top = '0'; pv.inner.style.transform = 'none'; }   // 0° = kein Transform → kein Verwischen
+  else { pv.inner.style.left = '50%'; pv.inner.style.top = '50%'; pv.inner.style.transform = `translate(-50%,-50%) rotate(${rot}deg)`; }
   pv.svg.style.width = dispW + 'px'; pv.svg.style.height = dispH + 'px';
   if (pv.canvas) { pv.canvas.style.width = dispW + 'px'; pv.canvas.style.height = dispH + 'px'; }
 }
@@ -222,9 +224,9 @@ let sharpenTimer = null;
 function scheduleSharpen() {    // nach kurzer Ruhe: scharfe Kachel für die sichtbaren Seiten
   clearTimeout(sharpenTimer);
   sharpenTimer = setTimeout(() => {
-    const host = $('#pages'), top = host.scrollTop, bot = host.scrollTop + host.clientHeight;
-    // Kachel nur nötig, wenn die Basis gedeckelt wurde (riesige Seite / tiefer Zoom). Sonst ist die Basis schon voll scharf.
-    for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (pv.rendered && pv.baseCapped && b >= top && t <= bot) renderTile(pv); }
+    const host = $('#pages'), top = host.scrollTop, bot = host.scrollTop + host.clientHeight, cur = curPage();
+    // Scharfe Kachel über den sichtbaren Ausschnitt: für das aktuelle Blatt immer, sonst nur wenn die Basis gedeckelt war.
+    for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (pv.rendered && b >= top && t <= bot && (pv.num === cur || pv.baseCapped)) renderTile(pv); }
     if (tool === 'textsel') buildTextVisible();
   }, 90);
 }
@@ -506,7 +508,9 @@ function rotatePage(deg) {
 function applyViewRot(pv) {
   const rot = (pageRot[pv.num] || 0) + (viewRot[pv.num] || 0), rad = rot * Math.PI / 180;
   const bw = Math.abs(pv.dispW * Math.cos(rad)) + Math.abs(pv.dispH * Math.sin(rad)), bh = Math.abs(pv.dispW * Math.sin(rad)) + Math.abs(pv.dispH * Math.cos(rad));
-  pv.wrap.style.width = bw + 'px'; pv.wrap.style.height = bh + 'px'; pv.inner.style.transform = `translate(-50%,-50%) rotate(${rot}deg)`;
+  pv.wrap.style.width = bw + 'px'; pv.wrap.style.height = bh + 'px';
+  if (rot % 360 === 0) { pv.inner.style.left = '0'; pv.inner.style.top = '0'; pv.inner.style.transform = 'none'; }
+  else { pv.inner.style.left = '50%'; pv.inner.style.top = '50%'; pv.inner.style.transform = `translate(-50%,-50%) rotate(${rot}deg)`; }
 }
 function setFreeRot(deg) {
   const n = curPage(); viewRot[n] = deg; const pv = pageViews.find(p => p.num === n); if (pv) { dropTile(pv); applyViewRot(pv); }

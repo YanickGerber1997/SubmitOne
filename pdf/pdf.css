@@ -216,6 +216,12 @@ body.form-fill .form-layer .ff:focus{outline:2px solid var(--accent);background:
 .ol-row:hover{background:var(--accent-soft);color:var(--accent-3)}
 #btnOutline.on{color:var(--accent)}
 .pageind{cursor:pointer}
+/* Zuschneiden-Leiste */
+.crop-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:55;display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.28);padding:8px 12px}
+.crop-bar .crop-lbl{font-size:13px;font-weight:600;color:var(--ink);margin-right:2px}
+.crop-bar .btn{height:32px}
+.btn.ghost{background:transparent;border-color:var(--line-soft);color:var(--ink-soft)}
+.btn.ghost:hover{border-color:var(--accent);color:var(--accent)}
 .pagewrap .anno{position:absolute;inset:0;overflow:visible;touch-action:pan-x pan-y;z-index:3}
 .pagewrap.tool-draw .anno,.pagewrap.tool-text .anno{touch-action:none}   /* beim Zeichnen/Text Finger fangen, sonst scrollen */
 @media (pointer:coarse){

@@ -188,7 +188,7 @@ function docSig() { return (docName || 'dok') + '::' + (curBytes ? curBytes.leng
 function markDirty() { dirty = true; scheduleAutosave(); }
 function scheduleAutosave() { clearTimeout(_autosaveT); _autosaveT = setTimeout(autosaveNow, 1200); }
 async function autosaveNow() {
-  if (!curBytes || active < 0 || !dirty) return;
+  if (!curBytes || active < 0 || !dirty || cropping) return;
   try { await idbPut(docSig(), { name: docName, ts: Date.now(), annos, pageRot, viewRot, docScale, nextId, formValues }); } catch (_) { }
 }
 function clearAutosave() { idbDel(docSig()); }
@@ -633,7 +633,7 @@ function updateSelBar() {
   const bar = $('#selbar'); if (!bar) return;
   if (!sel || tool !== 'select') { bar.hidden = true; return; }
   const pv = pageViews.find(p => p.num === sel.num), a = pv && findAnno(pv.num, sel.id);
-  if (!pv || !a) { bar.hidden = true; return; }
+  if (!pv || !a || a.type === 'crop') { bar.hidden = true; return; }   // Crop hat eine eigene Leiste
   const hasColor = a.type !== 'sig', hasWidth = a.width != null, hasSize = (a.type === 'text' || a.type === 'edit');
   $('#sbColorWrap').hidden = !hasColor; $('#sbWidths').hidden = !hasWidth; $('#sbSize').hidden = !hasSize;
   $('#sbEdit').hidden = a.type !== 'edit'; $('#sbMove').hidden = a.type !== 'edit';
@@ -686,6 +686,14 @@ function drawOne(svg, a, pv) {
     else if (a.kind === 'label') { g.appendChild(svgEl('rect', { x, y, width: w, height: h, fill: 'none', stroke: a.color, 'stroke-width': 2 })); const fs = h * 0.46, t = svgEl('text', { x: x + w / 2, y: y + h * 0.27, fill: a.color, 'font-size': fs, 'text-anchor': 'middle', 'font-weight': 700 }); t.textContent = a.text || ''; g.appendChild(t); }
     svg.appendChild(g); el = g;
     hit = svgEl('rect', { x, y, width: w, height: h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
+  } else if (a.type === 'crop') {
+    const g = svgEl('g', { 'data-id': a.id });
+    const dim = svgEl('path', { d: `M0 0H${pv.pageW}V${pv.pageH}H0Z M${a.x} ${a.y}H${a.x + a.w}V${a.y + a.h}H${a.x}Z`, fill: '#10161c', 'fill-opacity': 0.45, 'fill-rule': 'evenodd', stroke: 'none' });
+    dim.style.pointerEvents = 'none'; g.appendChild(dim);
+    g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'none', stroke: '#ffffff', 'stroke-width': 1.5, 'vector-effect': 'non-scaling-stroke' }));
+    g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'none', stroke: '#b4502f', 'stroke-width': 1, 'stroke-dasharray': '6 4', 'vector-effect': 'non-scaling-stroke' }));
+    svg.appendChild(g); el = g;
+    hit = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'highlight') {
     const g = svgEl('g', { 'data-id': a.id });
     for (const r of (a.rects || [])) g.appendChild(svgEl('rect', { x: r.x, y: r.y, width: r.w, height: r.h, fill: a.color, 'fill-opacity': 0.33, stroke: 'none' }));
@@ -749,7 +757,7 @@ function bbox(a) {
   if (a.type === 'pen') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: (a.h || a.size * (a.text.split('\n').length) * 1.3) };
   if (a.type === 'note') return { x: a.x, y: a.y, w: 14, h: 14 };
-  if (a.type === 'sig' || a.type === 'edit' || a.type === 'cover' || a.type === 'stamp') return { x: a.x, y: a.y, w: a.w, h: a.h };
+  if (a.type === 'sig' || a.type === 'edit' || a.type === 'cover' || a.type === 'stamp' || a.type === 'crop') return { x: a.x, y: a.y, w: a.w, h: a.h };
   if (a.type === 'highlight') { if (!a.rects || !a.rects.length) return { x: 0, y: 0, w: 0, h: 0 }; let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; for (const r of a.rects) { mnx = Math.min(mnx, r.x); mny = Math.min(mny, r.y); mxx = Math.max(mxx, r.x + r.w); mxy = Math.max(mxy, r.y + r.h); } return { x: mnx, y: mny, w: mxx - mnx, h: mxy - mny }; }
   return { x: 0, y: 0, w: 0, h: 0 };
 }
@@ -817,6 +825,7 @@ function onPointerDown(pv, e) {
   if (tool === 'highlight') { startHighlight(pv, e, p); return; }
   if (tool === 'stamp') { placeStamp(pv, p); return; }
   if (tool === 'eraser') { startErase(pv, e); return; }
+  if (tool === 'crop') { startCrop(pv, e, p); return; }
   if (tool === 'edittext') { editTextAt(pv, p); return; }
   if (tool === 'text') { createText(pv, p); return; }
   if (tool === 'note') { pushUndo(); const a = { id: nextId++, type: 'note', x: p.x, y: p.y, color: style.color, text: '' }; getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); refreshComments(); openNoteEdit(pv, a); return; }
@@ -837,6 +846,50 @@ function startErase(pv, e) {
   const move = ev => eraseAt(ev);
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (did) saveState(); };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
+/* ---------- Zuschneiden (Crop) ---------- */
+function removeCropAnno() {
+  if (!cropping) return; const { pv, a } = cropping; const arr = getAnnos(pv.num); const i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1);
+  cropping = null; if (sel && sel.id === (a && a.id)) sel = null; $('#cropBar').hidden = true;
+  pageViews.forEach(drawAnnos);
+}
+function startCrop(pv, e, p) {
+  removeCropAnno();
+  const a = { id: nextId++, type: 'crop', x: p.x, y: p.y, w: 0, h: 0 }; getAnnos(pv.num).push(a);
+  cropping = { pv, a };
+  const move = ev => { const q = evtToPage(pv, ev); a.x = Math.min(p.x, q.x); a.y = Math.min(p.y, q.y); a.w = Math.abs(q.x - p.x); a.h = Math.abs(q.y - p.y); drawAnnos(pv); };
+  const up = () => {
+    document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+    if (a.w < 8 || a.h < 8) { removeCropAnno(); setTool('select'); return; }   // zu klein → verwerfen
+    sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); $('#cropBar').hidden = false;
+  };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
+async function applyCrop(allPages) {
+  if (!cropping) return; const { pv } = cropping, a = cropping.a;
+  const rect = { x: a.x, y: a.y, w: a.w, h: a.h }; const num = pv.num;
+  removeCropAnno();
+  status('Zuschneiden …'); await new Promise(r => setTimeout(r, 10));
+  try {
+    pushDocUndo();
+    const lib = await loadPdfLib();
+    const doc = await lib.PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
+    const pages = doc.getPages();
+    const targets = allPages ? pages.map((_, i) => i + 1) : [num];
+    for (const n of targets) {
+      const pg = pages[n - 1]; let cb0; try { cb0 = pg.getCropBox(); } catch (_) { const s = pg.getSize(); cb0 = { x: 0, y: 0, width: s.width, height: s.height }; }
+      // Rahmen (Seite num, y-unten von oben) → Nutzerraum. Bei „alle Seiten" denselben Rahmen relativ anwenden.
+      const left = cb0.x + rect.x, top = (cb0.y + cb0.height) - rect.y;
+      const w = Math.min(rect.w, cb0.width - rect.x), h = Math.min(rect.h, rect.y + rect.h > cb0.height ? cb0.height - rect.y : rect.h);
+      if (w <= 1 || h <= 1) continue;
+      pg.setCropBox(left, top - h, w, h);
+    }
+    const bytes = new Uint8Array(await doc.save());
+    // Anmerkungen auf den zugeschnittenen Seiten in den neuen Ursprung verschieben
+    for (const n of targets) { for (const an of (annos[n] || [])) translateAnno(an, JSON.parse(JSON.stringify(an)), -rect.x, -rect.y); }
+    curBytes = bytes; await loadDoc(bytes.slice());
+    status(''); toast(allPages ? 'Alle Seiten zugeschnitten ✓' : 'Seite zugeschnitten ✓');
+  } catch (err) { status(''); console.error(err); toast('Zuschneiden fehlgeschlagen.'); }
 }
 function startMove(pv, e, a) {
   if (!a) return; const start = evtToPage(pv, e); pushUndo(); let moved = false;
@@ -861,7 +914,7 @@ function startResize(pv, e, h) {
     const q = evtToPage(pv, ev);
     if (isLineType(a)) { let qx = q.x, qy = q.y; if (ev.shiftKey) { const o = h === 'p1' ? { x: a.x2, y: a.y2 } : { x: a.x1, y: a.y1 }; const s = snap15(o.x, o.y, qx, qy); qx = s.x; qy = s.y; } if (h === 'p1') { a.x1 = qx; a.y1 = qy; } else { a.x2 = qx; a.y2 = qy; } }
     else if (orig.type === 'sig') { const ratio = orig.w / orig.h || 1, ax = h.includes('w') ? orig.x + orig.w : orig.x, ay = h.includes('n') ? orig.y + orig.h : orig.y; const nw = Math.max(12, Math.abs(q.x - ax)), nh = nw / ratio; a.w = nw; a.h = nh; a.x = h.includes('w') ? ax - nw : ax; a.y = h.includes('n') ? ay - nh : ay; }
-    else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval' || orig.type === 'edit' || orig.type === 'cover' || orig.type === 'stamp' || orig.type === 'text') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
+    else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval' || orig.type === 'edit' || orig.type === 'cover' || orig.type === 'stamp' || orig.type === 'text' || orig.type === 'crop') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
     drawAnnos(pv);
   };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
@@ -938,6 +991,7 @@ function startDraw(pv, e, p) {
 /* ---------- Text-Box (mit Rahmen, Ausrichtung, Hintergrund, Rand, Grösse) ---------- */
 let textStyle = { size: 16, align: 'left', bg: 'transparent', border: null };   // gemerkt für die nächste neue Box
 let editingId = null;                                                          // Id der gerade editierten Text-Box
+let cropping = null;                                                           // {pv, a} – aktiver Zuschneide-Rahmen
 function createText(pv, p) {
   pushUndo();
   const w = Math.max(120, Math.min(260, pv.pageW - p.x - 8));
@@ -1240,6 +1294,7 @@ function nudgeSel(key, d) {
 
 /* ---------- Werkzeug umschalten ---------- */
 function setTool(t) {
+  if (cropping && t !== 'select' && t !== 'crop') removeCropAnno();   // anderes Werkzeug → Zuschneiden verwerfen
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
   const bs = $('#btnStamp'); if (bs) bs.classList.toggle('on', t === 'stamp');
   $$('.fab-b').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
@@ -1249,7 +1304,7 @@ function setTool(t) {
   if (t === 'measure' && !docScale && !setTool._measHint) { setTool._measHint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n).'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -1269,13 +1324,17 @@ function outName() { return docName.replace(/\.pdf$/i, '') + '-submit.pdf'; }
 async function buildPdfBytes() {
   const lib = await loadPdfLib();
   {
-    const { PDFDocument, rgb, StandardFonts, degrees } = lib;
+    const { PDFDocument, rgb, StandardFonts, degrees, pushGraphicsState, popGraphicsState, concatTransformationMatrix } = lib;
     const doc = await PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const pages = doc.getPages(); const sigCache = {};
     for (let n = 1; n <= pages.length; n++) {
-      const pg = pages[n - 1]; const { height: PH } = pg.getSize();
-      const Y = y => PH - y;                         // pdf.js (oben) → pdf-lib (unten)
+      const pg = pages[n - 1];
+      let cb; try { cb = pg.getCropBox(); } catch (_) { const s = pg.getSize(); cb = { x: 0, y: 0, width: s.width, height: s.height }; }
+      const PH = cb.height;                          // zugeschnittene Höhe (Anmerkungen liegen relativ zum sichtbaren Rahmen)
+      const Y = y => PH - y;                          // pdf.js (oben) → pdf-lib (unten)
+      const cropT = (cb.x !== 0 || cb.y !== 0) && pushGraphicsState && popGraphicsState && concatTransformationMatrix;
+      if (cropT) pg.pushOperators(pushGraphicsState(), concatTransformationMatrix(1, 0, 0, 1, cb.x, cb.y));   // Ursprung in die CropBox-Ecke
       for (const a of (annos[n] || [])) {
         const col = hexToRgb(a.color), c = rgb(col.r, col.g, col.b), w = a.width || 2;
         if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
@@ -1315,6 +1374,7 @@ async function buildPdfBytes() {
         else if (a.type === 'edit') { const bg = parseColor(a.bg), tc2 = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); (a.text || '').split('\n').forEach((ln, i) => pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) })); }
         else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); if (a.caption) { const fs = Math.max(7, Math.min(11, a.h * 0.16)), cy = a.y + a.h + 2; pg.drawLine({ start: { x: a.x, y: Y(cy) }, end: { x: a.x + a.w, y: Y(cy) }, thickness: 0.7, color: rgb(.11, .14, .17) }); pg.drawText(a.caption, { x: a.x, y: Y(cy + fs + 1), size: fs, font, color: rgb(.11, .14, .17) }); } }
       }
+      if (cropT) pg.pushOperators(popGraphicsState());
       if (pageRot[n]) pg.setRotation(degrees(pageRot[n]));
     }
     // Ausgefüllte Formularfelder in das PDF schreiben (echte AcroForm-Werte)
@@ -1709,6 +1769,9 @@ function wire() {
   $('#btnForm').onclick = toggleFormMode;
   $$('.fab-b').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $('#pageInd').onclick = askGotoPage;
+  $('#cropApply').onclick = () => applyCrop(false);
+  $('#cropAll').onclick = () => applyCrop(true);
+  $('#cropCancel').onclick = () => { removeCropAnno(); setTool('select'); };
   $('#btnOutline').onclick = e => { e.stopPropagation(); const p = $('#outlinePop'); p.hidden = !p.hidden; $('#btnOutline').classList.toggle('on', !p.hidden); };
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#outlinePop') && !e.target.closest('#btnOutline')) { $('#outlinePop').hidden = true; $('#btnOutline').classList.remove('on'); } }, true);
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.swatch-wrap')) $('#palettePop').hidden = true; }, true);

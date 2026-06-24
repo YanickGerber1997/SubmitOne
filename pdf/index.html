@@ -118,6 +118,7 @@
     <div class="tgrp">
       <button class="tool" id="rotL" title="Seite 90° links drehen"><svg viewBox="0 0 24 24" class="i"><path d="M4 9a8 8 0 1 1 2 6"/><path d="M4 4v5h5"/></svg></button>
       <button class="tool" id="rotR" title="Seite 90° rechts drehen"><svg viewBox="0 0 24 24" class="i"><path d="M20 9a8 8 0 1 0-2 6"/><path d="M20 4v5h-5"/></svg></button>
+      <button class="tool" data-tool="crop" title="Zuschneiden (Bereich aufziehen)"><svg viewBox="0 0 24 24" class="i"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M2 6h14a2 2 0 0 1 2 2v14"/></svg></button>
       <button class="tool danger" id="delSel" title="Markiertes löschen (Entf)"><svg viewBox="0 0 24 24" class="i"><path d="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13"/></svg></button>
     </div>
     <div class="tgrp">
@@ -268,6 +269,13 @@
     <button class="fab-b" data-tool="pen" title="Reinzeichnen"><svg viewBox="0 0 24 24" class="i"><path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M14 6l4 4"/></svg><span>Zeichnen</span></button>
     <button class="fab-b" data-tool="text" title="Anschreiben"><svg viewBox="0 0 24 24" class="i"><path d="M5 6h14M12 6v13M9 19h6"/></svg><span>Schreiben</span></button>
     <button class="fab-b" data-tool="edittext" title="Etwas abändern"><svg viewBox="0 0 24 24" class="i"><path d="M4 7h10M9 7v10M6 17h6"/><path d="M15 14l5-5 2 2-5 5h-2z"/></svg><span>Ändern</span></button>
+  </div>
+
+  <div class="crop-bar" id="cropBar" hidden>
+    <span class="crop-lbl">Zuschneiden auf den Rahmen:</span>
+    <button class="btn" id="cropApply">Diese Seite</button>
+    <button class="btn" id="cropAll">Alle Seiten</button>
+    <button class="btn ghost" id="cropCancel">Abbrechen</button>
   </div>
 
   <div class="outline-pop" id="outlinePop" hidden></div>

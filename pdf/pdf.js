@@ -1214,6 +1214,8 @@ async function loadSharedFile() {
 }
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
+  let _swReloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (_swReloaded) return; _swReloaded = true; location.reload(); });
 }
 // App installieren (PWA) – Button erscheint, sobald der Browser die Installation anbietet (nur über https)
 let deferredInstall = null;

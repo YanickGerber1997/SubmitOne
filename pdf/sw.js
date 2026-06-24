@@ -1,5 +1,5 @@
 /* Submit PDF – Service Worker: App-Shell cachen + Teilen-Ziel (Handy) entgegennehmen. */
-const CACHE = 'submitpdf-v1';
+const CACHE = 'submitpdf-v2';
 const SHELL = ['./', './index.html', './pdf.css', './pdf.js', './tauri-bridge.js', './icon.png', './logo.png', './wordmark.png', './bg.png', './manifest.webmanifest'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
@@ -20,6 +20,10 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (e.request.method !== 'GET') return;
-  // App-Shell offline; alles andere normal
-  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).catch(() => caches.match('./index.html'))));
+  if (url.origin !== location.origin) return;            // Fremd-Ressourcen (CDN) normal laden
+  // Netzwerk-zuerst: immer die aktuelle Version; bei Offline aus dem Cache
+  e.respondWith(
+    fetch(e.request).then(r => { const cp = r.clone(); caches.open(CACHE).then(c => c.put(e.request, cp)); return r; })
+      .catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
+  );
 });

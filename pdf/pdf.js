@@ -454,6 +454,11 @@ function drawOne(svg, a, pv) {
   } else if (a.type === 'sig') {
     el = svgEl('image', { x: a.x, y: a.y, width: a.w, height: a.h, href: a.data, 'data-id': a.id, preserveAspectRatio: 'none' });
     el.setAttributeNS('http://www.w3.org/1999/xlink', 'href', a.data); svg.appendChild(el);
+    if (a.caption) {                                   // Signatur-Block: Linie + Name/Datum darunter
+      const cy = a.y + a.h + 2, fs = Math.max(7, Math.min(11, a.h * 0.16));
+      svg.appendChild(svgEl('line', { x1: a.x, y1: cy, x2: a.x + a.w, y2: cy, stroke: '#1c242c', 'stroke-width': 0.7 }));
+      const t = svgEl('text', { x: a.x, y: cy + fs + 1, fill: '#1c242c', 'font-size': fs }); t.textContent = a.caption; svg.appendChild(t);
+    }
     hit = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'dim') {
     drawDim(svg, a);
@@ -893,7 +898,7 @@ async function buildPdfBytes() {
         else if (a.type === 'note' && a.text) { pg.drawRectangle({ x: a.x, y: Y(a.y + 11), width: 13, height: 11, color: c }); }
         else if (a.type === 'cover') { const cc = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(cc.r, cc.g, cc.b) }); }
         else if (a.type === 'edit') { const bg = parseColor(a.bg), tc2 = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); (a.text || '').split('\n').forEach((ln, i) => pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) })); }
-        else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); }
+        else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); if (a.caption) { const fs = Math.max(7, Math.min(11, a.h * 0.16)), cy = a.y + a.h + 2; pg.drawLine({ start: { x: a.x, y: Y(cy) }, end: { x: a.x + a.w, y: Y(cy) }, thickness: 0.7, color: rgb(.11, .14, .17) }); pg.drawText(a.caption, { x: a.x, y: Y(cy + fs + 1), size: fs, font, color: rgb(.11, .14, .17) }); } }
       }
       if (pageRot[n]) pg.setRotation(degrees(pageRot[n]));
     }
@@ -945,6 +950,7 @@ function openSig() {
   const dlg = $('#sigDlg'), cv = $('#sigCanvas');
   const saved = localStorage.getItem('submitpdf_sig');
   $('#sigSaved').hidden = !saved; if (saved) $('#sigSavedImg').src = saved;
+  $('#sigName').value = localStorage.getItem('submitpdf_signame') || '';
   dlg.hidden = false;
   // Canvas auf Anzeigegrösse bringen
   const r = cv.getBoundingClientRect(); cv.width = Math.round(r.width); cv.height = Math.round(r.height);
@@ -972,14 +978,20 @@ function useSig(fromSaved) {
   if (fromSaved) { const s = localStorage.getItem('submitpdf_sig'); if (!s) return; const tmp = new Image(); sig = { data: s, ratio: 0 }; }
   else { if (_sigEmpty) { toast('Bitte zuerst unterschreiben.'); return; } sig = sigToData($('#sigCanvas')); if (!sig) return; localStorage.setItem('submitpdf_sig', sig.data); }
   $('#sigDlg').hidden = true;
-  const finish = ratio => { pendingSig = { data: sig.data, ratio: ratio || 3 }; setTool('sig'); toast('Auf den Plan tippen, um die Unterschrift zu setzen.'); };
+  // Signatur-Block: Name + Datum/Uhrzeit (lokal, kein Upload)
+  const name = ($('#sigName').value || '').trim(), withDate = $('#sigDate').checked;
+  localStorage.setItem('submitpdf_signame', name);
+  let caption = '';
+  if (name) caption += name;
+  if (withDate) caption += (caption ? ' · ' : '') + 'Signiert ' + new Date().toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const finish = ratio => { pendingSig = { data: sig.data, ratio: ratio || 3, caption }; setTool('sig'); toast('Auf den Plan tippen, um die Unterschrift zu setzen.'); };
   if (sig.ratio) finish(sig.ratio);
   else { const im = new Image(); im.onload = () => finish(im.naturalWidth / im.naturalHeight); im.src = sig.data; }
 }
 function placeSig(pv, p) {
   if (!pendingSig) { setTool('select'); return; }
   pushUndo(); const w = 170, h = w / (pendingSig.ratio || 3);
-  const a = { id: nextId++, type: 'sig', x: p.x - w / 2, y: p.y - h / 2, w, h, data: pendingSig.data };
+  const a = { id: nextId++, type: 'sig', x: p.x - w / 2, y: p.y - h / 2, w, h, data: pendingSig.data, caption: pendingSig.caption || '' };
   getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
 }
 

@@ -157,6 +157,10 @@
       <div class="modal-head">Unterschrift</div>
       <p class="modal-hint">Mit Maus, Finger oder Stift unterschreiben – wird gespeichert und kann immer wieder platziert werden.</p>
       <canvas id="sigCanvas" class="sig-canvas"></canvas>
+      <div class="sig-block">
+        <input id="sigName" type="text" placeholder="Name (für Signatur-Block, optional)" />
+        <label class="sig-chk"><input type="checkbox" id="sigDate" checked /> Datum &amp; Uhrzeit anfügen</label>
+      </div>
       <div id="sigSaved" class="sig-saved" hidden>
         <span>Gespeichert:</span><img id="sigSavedImg" alt="Gespeicherte Unterschrift" /><button class="btn" id="sigUseSaved">Diese verwenden</button>
       </div>

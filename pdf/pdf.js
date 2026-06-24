@@ -970,6 +970,17 @@ function applyToolCursor() {
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
 function downloadBytes(bytes, name) { const blob = new Blob([bytes], { type: 'application/pdf' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1500); }
+// Drucken: fertiges PDF (mit Anmerkungen) erzeugen und über ein verstecktes iframe drucken
+async function printDoc() {
+  if (!curBytes) return; status('Druckansicht wird vorbereitet …');
+  try {
+    const out = await buildPdfBytes();
+    const url = URL.createObjectURL(new Blob([out], { type: 'application/pdf' }));
+    const ifr = document.createElement('iframe'); ifr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'; ifr.src = url;
+    ifr.onload = () => { status(''); setTimeout(() => { try { ifr.contentWindow.focus(); ifr.contentWindow.print(); } catch (_) { window.open(url, '_blank'); } setTimeout(() => { URL.revokeObjectURL(url); ifr.remove(); }, 60000); }, 350); };
+    document.body.appendChild(ifr);
+  } catch (e) { status(''); console.error(e); toast('Drucken fehlgeschlagen.'); }
+}
 function outName() { return docName.replace(/\.pdf$/i, '') + '-submit.pdf'; }
 async function buildPdfBytes() {
   const lib = await loadPdfLib();
@@ -1356,6 +1367,7 @@ function wire() {
   $('#findPrev').onclick = () => gotoMatch(searchIdx - 1);
   $('#findClose').onclick = closeFind;
   $('#btnComments').onclick = () => { const open = $('#work').classList.toggle('comm-open'); $('#comments').hidden = !open; $('#btnComments').classList.toggle('on', open); };
+  $('#btnPrint').onclick = printDoc;
   const setColor = c => { style.color = c; $('#colorDot').style.background = c; $('#colorPick').value = c; if (sel) { const a = findAnno(sel.num, sel.id); if (a) { pushUndo(); a.color = c; pageViews.forEach(drawAnnos); } } };
   $('#colorPick').oninput = e => setColor(e.target.value);
   $('#btnColor').onclick = e => { e.stopPropagation(); const p = $('#palettePop'); p.hidden = !p.hidden; };
@@ -1396,6 +1408,7 @@ function wire() {
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openPicker(); }
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+    else if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); printDoc(); }
     else if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
     else if (mod && (e.key === '+' || e.key === '=')) { e.preventDefault(); zoomStep(.15); }
     else if (mod && e.key === '-') { e.preventDefault(); zoomStep(-.15); }

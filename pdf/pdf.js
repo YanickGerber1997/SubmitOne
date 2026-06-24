@@ -243,7 +243,38 @@ async function renderCurrentDoc() {
   _searchCache = {}; if (typeof closeFind === 'function') closeFind();   // Suche fürs neue Dokument zurücksetzen
   await buildLayout(); buildThumbs(); status(''); refreshComments(); updateScaleLabel();
   document.body.classList.add('has-doc');
-  detectForm();
+  detectForm(); detectOutline();
+}
+
+/* ---------- Lesezeichen / Inhalt (vorhandene PDF-Outline) ---------- */
+async function detectOutline() {
+  const btn = $('#btnOutline'), pop = $('#outlinePop');
+  if (btn) { btn.hidden = true; btn.classList.remove('on'); } if (pop) { pop.hidden = true; pop.innerHTML = ''; }
+  if (!pdfDoc || !pop) return;
+  let ol; try { ol = await pdfDoc.getOutline(); } catch (_) { ol = null; }
+  if (!ol || !ol.length) return;
+  const build = (items, depth) => {
+    for (const it of items) {
+      const row = document.createElement('button'); row.className = 'ol-row'; row.style.paddingLeft = (10 + depth * 14) + 'px';
+      row.textContent = it.title || '(ohne Titel)'; row.title = it.title || '';
+      row.onclick = () => { gotoDest(it.dest); pop.hidden = true; if (btn) btn.classList.remove('on'); };
+      pop.appendChild(row);
+      if (it.items && it.items.length) build(it.items, depth + 1);
+    }
+  };
+  build(ol, 0);
+  if (btn) btn.hidden = false;
+}
+async function gotoDest(dest) {
+  try {
+    let d = dest; if (typeof d === 'string') d = await pdfDoc.getDestination(d);
+    if (!Array.isArray(d) || !d[0]) return;
+    const idx = await pdfDoc.getPageIndex(d[0]); gotoPage(idx + 1);
+  } catch (_) { }
+}
+function askGotoPage() {
+  if (!pdfDoc) return; const v = prompt('Zu welcher Seite? (1–' + pdfDoc.numPages + ')', String(curPage()));
+  if (v == null) return; const n = parseInt(v, 10); if (n >= 1 && n <= pdfDoc.numPages) gotoPage(n);
 }
 
 /* ---------- PDF-Formularfelder ausfüllen ---------- */
@@ -1591,6 +1622,9 @@ function wire() {
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.stamp-wrap')) $('#stampPop').hidden = true; }, true);
   $('#btnForm').onclick = toggleFormMode;
   $$('.fab-b').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+  $('#pageInd').onclick = askGotoPage;
+  $('#btnOutline').onclick = e => { e.stopPropagation(); const p = $('#outlinePop'); p.hidden = !p.hidden; $('#btnOutline').classList.toggle('on', !p.hidden); };
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#outlinePop') && !e.target.closest('#btnOutline')) { $('#outlinePop').hidden = true; $('#btnOutline').classList.remove('on'); } }, true);
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.swatch-wrap')) $('#palettePop').hidden = true; }, true);
   $('#widthSel').onchange = e => { style.width = +e.target.value; if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.width != null) { pushUndo(); a.width = style.width; pageViews.forEach(drawAnnos); } } };
   // Schwebende Auswahl-Leiste

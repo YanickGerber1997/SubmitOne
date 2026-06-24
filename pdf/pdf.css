@@ -207,6 +207,12 @@ body.form-fill .form-layer .ff:focus{outline:2px solid var(--accent);background:
 .fab-b .i{width:24px;height:24px}
 .fab-b.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 @media (max-width:820px){body.has-doc .fab{display:flex}}
+/* Lesezeichen / Inhalt */
+.outline-pop{position:fixed;top:54px;right:12px;z-index:60;width:290px;max-width:84vw;max-height:62vh;overflow:auto;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.2);padding:6px}
+.ol-row{display:block;width:100%;text-align:left;border:0;background:transparent;font:inherit;font-size:13px;padding:7px 10px;cursor:pointer;color:var(--ink);border-radius:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ol-row:hover{background:var(--accent-soft);color:var(--accent-3)}
+#btnOutline.on{color:var(--accent)}
+.pageind{cursor:pointer}
 .pagewrap .anno{position:absolute;inset:0;overflow:visible;touch-action:pan-x pan-y;z-index:3}
 .pagewrap.tool-draw .anno,.pagewrap.tool-text .anno{touch-action:none}   /* beim Zeichnen/Text Finger fangen, sonst scrollen */
 @media (pointer:coarse){

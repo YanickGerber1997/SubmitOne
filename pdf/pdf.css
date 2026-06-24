@@ -48,8 +48,10 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .icon-btn.on{background:var(--accent-soft);color:var(--accent)}
 .doc-name{font-size:13px;color:var(--ink-soft);font-weight:600;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .grow{flex:1}
-.zoombox{display:flex;align-items:center;gap:2px;background:var(--surface-2);border:1px solid var(--line);border-radius:0;padding:2px}
-.zoom-val{min-width:54px;background:none;border:none;color:var(--ink-soft);font:inherit;font-size:12.5px;font-weight:700;padding:5px 6px;border-radius:0;cursor:pointer}
+.zoombox{display:flex;align-items:center;gap:0;background:var(--surface-2);border:1px solid var(--line);border-radius:0;padding:1px}
+.zoombox .icon-btn{width:28px;height:28px;font-size:17px}
+.zoom-val{min-width:62px;text-align:center;background:none;border:none;border-left:1px solid var(--line);border-right:1px solid var(--line);color:var(--ink-soft);font:inherit;font-size:12.5px;font-weight:700;padding:6px 4px;border-radius:0;cursor:pointer;font-variant-numeric:tabular-nums}
+.zoom-val:hover{color:var(--ink)}
 .zoom-val.on{color:var(--accent)}
 .pageind{font-size:12.5px;color:var(--ink-soft);font-weight:600;min-width:60px;text-align:center;font-variant-numeric:tabular-nums}
 .scaleind{font-size:12.5px;color:var(--accent);font-weight:700;white-space:nowrap}

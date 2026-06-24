@@ -21,6 +21,7 @@
       <img class="logomark" src="icon.png" alt="" aria-hidden="true" />
       <img class="brand-word" src="wordmark.png" alt="Submit PDF" />
     </a>
+    <button class="btn" id="btnFolder" title="Ordner durchsuchen (Datei-Baum links)"><svg viewBox="0 0 24 24" class="i"><path d="M3 6h6l2 2h10v11H3z"/></svg><span>Ordner</span></button>
     <button class="btn" id="btnOpen"><svg viewBox="0 0 24 24" class="i"><path d="M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3z"/></svg><span>Öffnen</span></button>
     <button class="btn" id="btnSave" disabled><svg viewBox="0 0 24 24" class="i"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span>Speichern</span></button>
     <button class="btn primary" id="btnSend" disabled><svg viewBox="0 0 24 24" class="i"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg><span>Senden</span></button>
@@ -79,7 +80,13 @@
     </div>
   </div>
 
+  <div class="tabbar" id="tabbar"></div>
+
   <main class="work" id="work">
+    <aside class="files-panel" id="filesPanel" aria-label="Dateien">
+      <div class="fp-head"><span class="fp-name" id="fpName">Ordner wählen …</span><button class="fp-x" id="fpRefresh" title="Aktualisieren">⟳</button><button class="fp-x" id="fpClose" title="Schliessen">✕</button></div>
+      <div class="fp-tree" id="fpTree"><div class="fp-hint">Klick auf „Ordner wählen", um einen Ordner zu durchsuchen.</div></div>
+    </aside>
     <aside class="thumbs" id="thumbs" aria-label="Seiten"></aside>
     <div class="pages" id="pages"></div>
     <aside class="comments" id="comments" hidden>

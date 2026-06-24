@@ -8,6 +8,7 @@ const CDN = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PV}/build`;
 const PDFLIB = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js';
 
 let pdfjs = null, pdfDoc = null, curBytes = null, docName = 'dokument.pdf';
+let docs = [], active = -1;   // mehrere offene Dokumente (Tabs); active = Index des sichtbaren
 let zoom = 'auto', pageViews = [], renderTok = 0;
 let annos = {};            // {pageNum: [anno]}
 let pageRot = {};          // {pageNum: 0/90/180/270} – gespeicherte 90°-Drehung
@@ -45,15 +46,88 @@ function isImg(f) { return /^image\//.test(f.type) || /\.(png|jpe?g|gif|webp|bmp
 function openPicker() { if (window.nativeOpen) { window.nativeOpen(); return; } $('#fileInput').click(); }
 // Einstieg für die Desktop-Hülle: rohe Bytes (z. B. aus Datei-Verknüpfung) in die normale Pipeline
 window.openNativeBytes = function (arr, path) { const name = (path || '').split(/[\\/]/).pop() || 'dokument.pdf'; openFiles([new File([arr], name, { type: /\.pdf$/i.test(name) ? 'application/pdf' : '' })]); };
+
+/* ---------- Ordner-Browser (File System Access API) ---------- */
+let dirHandle = null, curFileHandle = null;
+function fsSupported() { return 'showDirectoryPicker' in window; }
+async function pickFolder() {
+  if (!fsSupported()) { toast(location.protocol === 'file:' ? 'Ordner-Browser nur über die Online-/App-Version (https).' : 'Ordner-Zugriff braucht Chrome/Edge.'); return; }
+  try { dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' }); } catch (_) { return; }
+  $('#work').classList.add('files-open'); $('#fpName').textContent = dirHandle.name || 'Ordner'; await refreshTree();
+}
+async function refreshTree() {
+  if (!dirHandle) return; const t = $('#fpTree'); t.innerHTML = ''; await buildTree(dirHandle, t);
+  if (!t.children.length) t.innerHTML = '<div class="fp-hint">Keine PDFs/Bilder in diesem Ordner.</div>';
+}
+async function buildTree(handle, container) {
+  const entries = []; try { for await (const [name, h] of handle.entries()) entries.push([name, h]); } catch (_) { return; }
+  entries.sort((a, b) => (a[1].kind === b[1].kind) ? a[0].localeCompare(b[0]) : (a[1].kind === 'directory' ? -1 : 1));
+  for (const [name, h] of entries) {
+    if (h.kind === 'directory') {
+      if (name.startsWith('.')) continue;
+      const row = fpRow('▸', name, 'dir'); container.appendChild(row);
+      const sub = document.createElement('div'); sub.className = 'fp-sub'; sub.hidden = true; container.appendChild(sub); let loaded = false;
+      row.onclick = async () => { sub.hidden = !sub.hidden; row.querySelector('.fp-ic').textContent = sub.hidden ? '▸' : '▾'; if (!loaded && !sub.hidden) { loaded = true; await buildTree(h, sub); } };
+    } else if (/\.(pdf|png|jpe?g|webp)$/i.test(name)) {
+      const row = fpRow(/\.pdf$/i.test(name) ? '📄' : '🖼', name, 'file'); container.appendChild(row);
+      row.onclick = () => { $$('.fp-row.active', $('#fpTree')).forEach(r => r.classList.remove('active')); row.classList.add('active'); openFromHandle(h); };
+    }
+  }
+}
+function fpRow(ic, name, cls) { const d = document.createElement('div'); d.className = 'fp-row ' + cls; d.innerHTML = '<span class="fp-ic"></span><span class="fp-nm"></span>'; d.querySelector('.fp-ic').textContent = ic; d.querySelector('.fp-nm').textContent = name; return d; }
+async function openFromHandle(fh) {
+  try { const file = await fh.getFile(); await openFiles([file]); if (docs[active]) { docs[active].fileHandle = fh; curFileHandle = fh; } }
+  catch (e) { console.error(e); toast('Datei konnte nicht geöffnet werden.'); }
+}
 async function openFiles(files) {
-  files = [...files]; const pdf = files.find(f => /pdf$/i.test(f.name) || f.type === 'application/pdf'); const img = files.find(isImg);
+  files = [...files].filter(f => /pdf$/i.test(f.name) || f.type === 'application/pdf' || isImg(f));
+  if (!files.length) return;
   try { status('Lade PDF-Engine …'); await loadPdfJs(); } catch (_) { status(''); toast('PDF-Engine nicht ladbar (einmal Internet nötig).'); return; }
   try {
-    if (pdf) { curBytes = new Uint8Array(await pdf.arrayBuffer()); docName = pdf.name; }
-    else if (img) { await imageToPdfBytes(img); }
-    else { status(''); return; }
-    annos = {}; pageRot = {}; viewRot = {}; undoStack = []; sel = null; docScale = null; await loadDoc(curBytes.slice());
+    for (const f of files) {                                  // jede Datei → eigener Tab
+      let bytes, name;
+      if (isImg(f)) { status('Bild wird vorbereitet …'); bytes = await imageToPdf(f); name = f.name.replace(/\.[^.]+$/, '') + '.pdf'; }
+      else { bytes = new Uint8Array(await f.arrayBuffer()); name = f.name; }
+      await addDoc(bytes, name);
+    }
   } catch (e) { status(''); console.error(e); toast('Datei konnte nicht geöffnet werden.'); }
+}
+/* ---------- Mehrere Dokumente (Tabs) ---------- */
+function blankDoc(bytes, name) { return { bytes, name, fileHandle: null, annos: {}, pageRot: {}, viewRot: {}, docScale: null, nextId: 1, undo: [], zoom: 'auto', pdfDoc: null, scrollTop: 0 }; }
+function saveActiveDoc() {
+  if (active < 0 || !docs[active]) return; const d = docs[active];
+  d.bytes = curBytes; d.name = docName; d.fileHandle = curFileHandle; d.annos = annos; d.pageRot = pageRot; d.viewRot = viewRot; d.docScale = docScale; d.nextId = nextId; d.undo = undoStack; d.zoom = zoom; d.pdfDoc = pdfDoc;
+  const p = $('#pages'); d.scrollTop = p ? p.scrollTop : 0;
+}
+async function loadActive() {
+  const d = docs[active]; if (!d) return;
+  curBytes = d.bytes; docName = d.name; curFileHandle = d.fileHandle; annos = d.annos; pageRot = d.pageRot; viewRot = d.viewRot; docScale = d.docScale; nextId = d.nextId; undoStack = d.undo; zoom = d.zoom; sel = null;
+  $('#btnUndo').disabled = !undoStack.length;
+  if (d.pdfDoc) { pdfDoc = d.pdfDoc; await renderCurrentDoc(); } else { await loadDoc(d.bytes.slice()); d.pdfDoc = pdfDoc; }
+  const p = $('#pages'); if (p) p.scrollTop = d.scrollTop || 0;
+}
+async function addDoc(bytes, name) {
+  saveActiveDoc(); const d = blankDoc(bytes, name); docs.push(d); active = docs.length - 1;
+  await loadActive(); renderTabs();
+}
+async function activateDoc(i) { if (i === active || i < 0 || i >= docs.length) return; saveActiveDoc(); active = i; await loadActive(); renderTabs(); }
+async function closeDoc(i) {
+  if (i < 0 || i >= docs.length) return;
+  const wasActive = i === active; docs.splice(i, 1);
+  if (!docs.length) { active = -1; pdfDoc = null; curBytes = null; curFileHandle = null; $('#drop').classList.remove('hide'); $('#toolbar').hidden = true; $('#quickbar').hidden = true; $('#pages').innerHTML = ''; $('#thumbs').innerHTML = ''; $('#btnSave').disabled = true; $('#btnSend').disabled = true; document.title = 'Submit PDF'; renderTabs(); return; }
+  if (wasActive) { active = Math.min(active, docs.length - 1); await loadActive(); } else if (i < active) active--;
+  renderTabs();
+}
+function renderTabs() {
+  const bar = $('#tabbar'); if (!bar) return;
+  document.body.classList.toggle('has-tabs', docs.length > 1);
+  bar.innerHTML = ''; if (docs.length <= 1) return;
+  docs.forEach((d, i) => {
+    const t = document.createElement('div'); t.className = 'tab' + (i === active ? ' active' : '');
+    const nm = document.createElement('span'); nm.className = 'tab-nm'; nm.textContent = d.name; nm.title = d.name; nm.onclick = () => activateDoc(i);
+    const x = document.createElement('button'); x.className = 'tab-x'; x.textContent = '✕'; x.title = 'Schliessen'; x.onclick = e => { e.stopPropagation(); closeDoc(i); };
+    t.appendChild(nm); t.appendChild(x); bar.appendChild(t);
+  });
 }
 // Bild → 1-seitige PDF (Bytes, nebenwirkungsfrei)
 async function imageToPdf(file) {
@@ -79,6 +153,9 @@ async function imageToPdfBytes(file) {
 async function loadDoc(bytes) {
   status('Öffne Dokument …');
   pdfDoc = await pdfjs.getDocument({ data: bytes }).promise;
+  await renderCurrentDoc();
+}
+async function renderCurrentDoc() {
   $('#drop').classList.add('hide'); $('#toolbar').hidden = false; $('#quickbar').hidden = false;
   $('#btnSave').disabled = false; $('#btnSend').disabled = false; $('#docName').textContent = docName;
   document.title = docName.replace(/\.pdf$/i, '') + ' – Submit PDF';
@@ -826,7 +903,8 @@ async function save() {
   if (!curBytes) return; status('Speichere …');
   try {
     const out = await buildPdfBytes();
-    if (window.nativeSave) { const ok = await window.nativeSave(out, outName()); status(''); toast(ok ? 'Gespeichert ✓' : 'Abgebrochen'); }
+    if (curFileHandle) { const w = await curFileHandle.createWritable(); await w.write(out); await w.close(); status(''); toast('In Datei gespeichert ✓'); }   // direkt in die geöffnete Datei
+    else if (window.nativeSave) { const ok = await window.nativeSave(out, outName()); status(''); toast(ok ? 'Gespeichert ✓' : 'Abgebrochen'); }
     else { downloadBytes(out, outName()); status(''); toast('Gespeichert ✓'); }
   } catch (e) { status(''); console.error(e); toast('Speichern fehlgeschlagen (Internet für Speicher-Bibliothek nötig?).'); }
 }
@@ -990,6 +1068,9 @@ function toggleShortcuts() {
 function wire() {
   $('#btnOpen').onclick = openPicker;
   $('#dropOpen').onclick = openPicker;
+  $('#btnFolder').onclick = pickFolder;
+  $('#fpClose').onclick = () => $('#work').classList.remove('files-open');
+  $('#fpRefresh').onclick = refreshTree;
   $('#fileInput').onchange = e => { openFiles(e.target.files); e.target.value = ''; };
   $('#btnSave').onclick = save;
   $('#btnSend').onclick = openMail;

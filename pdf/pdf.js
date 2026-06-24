@@ -653,6 +653,7 @@ function updateSelBar() {
 function strokeAttrs(a) { const o = { stroke: a.color, 'stroke-width': a.width, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }; if (a.hl) o['stroke-opacity'] = 0.35; return o; }
 function drawOne(svg, a, pv) {
   let el, hit;
+  if (a.type === 'text' && a.id === editingId) return;  // wird gerade per Textbox-Editor bearbeitet
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
     el = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, ...strokeAttrs(a), 'data-id': a.id });
     svg.appendChild(el);
@@ -666,9 +667,17 @@ function drawOne(svg, a, pv) {
   } else if (a.type === 'pen') {
     el = svgEl('polyline', { points: a.pts.map(p => p[0] + ',' + p[1]).join(' '), ...strokeAttrs(a), 'data-id': a.id }); svg.appendChild(el);
   } else if (a.type === 'text') {
-    el = svgEl('text', { x: a.x, y: a.y, fill: a.color, 'font-size': a.size, 'data-id': a.id });
-    a.text.split('\n').forEach((ln, i) => { const ts = svgEl('tspan', { x: a.x, dy: i === 0 ? 0 : a.size * 1.25 }); ts.textContent = ln || ' '; el.appendChild(ts); });
-    svg.appendChild(el);
+    const g = svgEl('g', { 'data-id': a.id });
+    const pad = 3, lines = (a.text || '').split('\n'), lineH = a.size * 1.25;
+    const w = a.w || 120, h = a.h || (lines.length * lineH + pad * 2), align = a.align || 'left';
+    if (a.bg && a.bg !== 'transparent') g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: w, height: h, fill: a.bg, stroke: 'none' }));
+    if (a.border) g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: w, height: h, fill: 'none', stroke: a.border, 'stroke-width': a.borderW || 1 }));
+    const tx = align === 'center' ? a.x + w / 2 : align === 'right' ? a.x + w - pad : a.x + pad;
+    const anchor = align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
+    const t = svgEl('text', { fill: a.color, 'font-size': a.size, 'text-anchor': anchor });
+    lines.forEach((ln, i) => { const ts = svgEl('tspan', { x: tx, y: a.y + pad + i * lineH }); ts.textContent = ln || ' '; t.appendChild(ts); });
+    g.appendChild(t); svg.appendChild(g); el = g;
+    hit = svgEl('rect', { x: a.x, y: a.y, width: w, height: h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'stamp') {
     const g = svgEl('g', { 'data-id': a.id }); const x = a.x, y = a.y, w = a.w, h = a.h, sw = Math.max(2, Math.min(w, h) / 9);
     if (a.kind === 'check') g.appendChild(svgEl('path', { d: `M${x + w * 0.18} ${y + h * 0.55} L${x + w * 0.42} ${y + h * 0.78} L${x + w * 0.84} ${y + h * 0.22}`, fill: 'none', stroke: a.color, 'stroke-width': sw, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
@@ -738,7 +747,7 @@ function bbox(a) {
   if (a.type === 'rect' || a.type === 'oval') return { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), w: Math.abs(a.w), h: Math.abs(a.h) };
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') return { x: Math.min(a.x1, a.x2), y: Math.min(a.y1, a.y2), w: Math.abs(a.x2 - a.x1), h: Math.abs(a.y2 - a.y1) };
   if (a.type === 'pen') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
-  if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: a.size * (a.text.split('\n').length) * 1.3 };
+  if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: (a.h || a.size * (a.text.split('\n').length) * 1.3) };
   if (a.type === 'note') return { x: a.x, y: a.y, w: 14, h: 14 };
   if (a.type === 'sig' || a.type === 'edit' || a.type === 'cover' || a.type === 'stamp') return { x: a.x, y: a.y, w: a.w, h: a.h };
   if (a.type === 'highlight') { if (!a.rects || !a.rects.length) return { x: 0, y: 0, w: 0, h: 0 }; let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; for (const r of a.rects) { mnx = Math.min(mnx, r.x); mny = Math.min(mny, r.y); mxx = Math.max(mxx, r.x + r.w); mxy = Math.max(mxy, r.y + r.h); } return { x: mnx, y: mny, w: mxx - mnx, h: mxy - mny }; }
@@ -852,7 +861,7 @@ function startResize(pv, e, h) {
     const q = evtToPage(pv, ev);
     if (isLineType(a)) { let qx = q.x, qy = q.y; if (ev.shiftKey) { const o = h === 'p1' ? { x: a.x2, y: a.y2 } : { x: a.x1, y: a.y1 }; const s = snap15(o.x, o.y, qx, qy); qx = s.x; qy = s.y; } if (h === 'p1') { a.x1 = qx; a.y1 = qy; } else { a.x2 = qx; a.y2 = qy; } }
     else if (orig.type === 'sig') { const ratio = orig.w / orig.h || 1, ax = h.includes('w') ? orig.x + orig.w : orig.x, ay = h.includes('n') ? orig.y + orig.h : orig.y; const nw = Math.max(12, Math.abs(q.x - ax)), nh = nw / ratio; a.w = nw; a.h = nh; a.x = h.includes('w') ? ax - nw : ax; a.y = h.includes('n') ? ay - nh : ay; }
-    else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval' || orig.type === 'edit' || orig.type === 'cover' || orig.type === 'stamp') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
+    else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval' || orig.type === 'edit' || orig.type === 'cover' || orig.type === 'stamp' || orig.type === 'text') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
     drawAnnos(pv);
   };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
@@ -926,16 +935,75 @@ function startDraw(pv, e, p) {
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 
-/* ---------- Text ---------- */
+/* ---------- Text-Box (mit Rahmen, Ausrichtung, Hintergrund, Rand, Grösse) ---------- */
+let textStyle = { size: 16, align: 'left', bg: 'transparent', border: null };   // gemerkt für die nächste neue Box
+let editingId = null;                                                          // Id der gerade editierten Text-Box
 function createText(pv, p) {
-  const ta = document.createElement('textarea'); ta.className = 'textedit'; ta.rows = 1;
-  const sc = pv.scale; ta.style.left = (p.x * sc) + 'px'; ta.style.top = (p.y * sc) + 'px';
-  ta.style.fontSize = (style.size * sc) + 'px'; ta.style.color = style.color; ta.style.minWidth = '40px';
-  pv.inner.appendChild(ta); ta.focus(); try { ta.scrollIntoView({ block: 'center' }); } catch (_) { }
-  const commit = () => { const txt = ta.value.replace(/\s+$/, ''); ta.remove(); if (!txt) return; pushUndo(); const a = { id: nextId++, type: 'text', x: p.x, y: p.y, text: txt, color: style.color, size: style.size }; getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState(); };
-  setTimeout(() => ta.addEventListener('blur', commit), 400);   // mobil: aufpoppende Tastatur löst sonst sofort einen Blur aus → Feld verschwände
-  ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ta.blur(); } else if (ev.key === 'Escape') { ta.value = ''; ta.blur(); } });
-  ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
+  pushUndo();
+  const w = Math.max(120, Math.min(260, pv.pageW - p.x - 8));
+  const a = { id: nextId++, type: 'text', x: p.x, y: p.y, w, h: textStyle.size * 1.5, text: '', size: textStyle.size, color: style.color, align: textStyle.align, bg: textStyle.bg, border: textStyle.border, borderW: 1.2 };
+  getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id };
+  openTextBox(pv, a, true);
+}
+function openTextBox(pv, a, isNew) {
+  const sc = pv.scale, pad = 3;
+  editingId = a.id; drawAnnos(pv);
+  const ta = document.createElement('textarea'); ta.className = 'textedit tb-edit'; ta.value = a.text || '';
+  const restyle = () => {
+    ta.style.left = (a.x * sc) + 'px'; ta.style.top = (a.y * sc) + 'px'; ta.style.width = (a.w * sc) + 'px';
+    ta.style.fontSize = (a.size * sc) + 'px'; ta.style.color = a.color; ta.style.textAlign = a.align || 'left';
+    ta.style.padding = (pad * sc) + 'px';
+    ta.style.background = (a.bg && a.bg !== 'transparent') ? a.bg : 'rgba(255,255,255,.04)';
+    ta.style.border = a.border ? ((a.borderW || 1.2) + 'px solid ' + a.border) : '1px dashed rgba(80,110,70,.55)';
+  };
+  const autoH = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; a.h = ta.scrollHeight / sc; };
+  restyle(); pv.inner.appendChild(ta); autoH();
+  ta.focus(); try { ta.scrollIntoView({ block: 'center' }); } catch (_) { } if (!isNew) ta.select();
+  const bar = buildTextBar(pv, a, ta, restyle, autoH);
+  let done = false;
+  const commit = () => {
+    if (done) return; done = true;
+    document.removeEventListener('pointerdown', outside, true);
+    a.text = ta.value.replace(/\s+$/, ''); ta.remove(); bar.remove(); editingId = null;
+    textStyle = { size: a.size, align: a.align, bg: a.bg, border: a.border };
+    if (!a.text) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); sel = null; }
+    setTool('select'); drawAnnos(pv); saveState();
+  };
+  const outside = ev => { if (ev.target.closest('.tb-edit') === ta || ev.target.closest('.textbar') === bar) return; commit(); };
+  setTimeout(() => document.addEventListener('pointerdown', outside, true), 0);   // erst nach dem aktuellen Klick scharf schalten
+  ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commit(); } else if (ev.key === 'Escape') { ev.preventDefault(); commit(); } });
+  ta.addEventListener('input', autoH);
+}
+function buildTextBar(pv, a, ta, restyle, autoH) {
+  const sc = pv.scale, bar = document.createElement('div'); bar.className = 'textbar';
+  bar.style.left = (a.x * sc) + 'px'; bar.style.top = Math.max(0, a.y * sc - 42) + 'px';
+  bar.innerHTML =
+    '<div class="tb-g"><button data-al="left" title="Linksbündig">⯇</button><button data-al="center" title="Zentriert">≡</button><button data-al="right" title="Rechtsbündig">⯈</button></div>' +
+    '<div class="tb-g"><button data-sz="-1" title="Kleiner">A−</button><button data-sz="1" title="Grösser">A＋</button></div>' +
+    '<div class="tb-g"><label class="tb-sw" title="Textfarbe"><span class="tb-dot" data-dot="text"></span><input type="color" data-col="text"></label></div>' +
+    '<div class="tb-g"><span class="tb-lbl">Hg</span><button data-bg="transparent" title="Transparent">∅</button><button data-bg="#ffffff" title="Weiss">□</button><label class="tb-sw" title="Hintergrundfarbe"><span class="tb-dot" data-dot="bg"></span><input type="color" data-col="bg"></label></div>' +
+    '<div class="tb-g"><button data-bd="t" title="Rand an/aus">Rand</button><label class="tb-sw" title="Randfarbe"><span class="tb-dot" data-dot="bd"></span><input type="color" data-col="bd"></label></div>';
+  pv.inner.appendChild(bar);
+  const mark = () => {
+    bar.querySelectorAll('[data-al]').forEach(b => b.classList.toggle('on', (a.align || 'left') === b.dataset.al));
+    bar.querySelectorAll('[data-bg]').forEach(b => b.classList.toggle('on', (a.bg || 'transparent') === b.dataset.bg));
+    bar.querySelector('[data-bd="t"]').classList.toggle('on', !!a.border);
+    const td = bar.querySelector('[data-dot="text"]'); td.style.background = a.color;
+    const bd = bar.querySelector('[data-dot="bg"]'); bd.style.background = (a.bg && a.bg !== 'transparent') ? a.bg : 'transparent';
+    const dd = bar.querySelector('[data-dot="bd"]'); dd.style.background = a.border || 'transparent';
+  };
+  bar.querySelector('[data-col="text"]').value = a.color || '#1c242c';
+  bar.querySelector('[data-col="bg"]').value = (a.bg && a.bg[0] === '#') ? a.bg : '#ffffff';
+  bar.querySelector('[data-col="bd"]').value = a.border || '#1c242c';
+  bar.addEventListener('mousedown', e => { if (e.target.closest('input[type=color]')) return; e.preventDefault(); });   // Fokus im Textfeld halten
+  bar.querySelectorAll('[data-al]').forEach(b => b.onclick = () => { a.align = b.dataset.al; restyle(); mark(); ta.focus(); });
+  bar.querySelectorAll('[data-sz]').forEach(b => b.onclick = () => { a.size = Math.max(8, Math.min(96, a.size + (+b.dataset.sz) * 2)); restyle(); autoH(); ta.focus(); });
+  bar.querySelectorAll('[data-bg]').forEach(b => b.onclick = () => { a.bg = b.dataset.bg; restyle(); mark(); ta.focus(); });
+  bar.querySelector('[data-bd="t"]').onclick = () => { a.border = a.border ? null : (bar.querySelector('[data-col="bd"]').value || '#1c242c'); restyle(); mark(); ta.focus(); };
+  bar.querySelector('[data-col="text"]').oninput = e => { a.color = e.target.value; restyle(); mark(); };
+  bar.querySelector('[data-col="bg"]').oninput = e => { a.bg = e.target.value; restyle(); mark(); };
+  bar.querySelector('[data-col="bd"]').oninput = e => { a.border = e.target.value; restyle(); mark(); };
+  mark(); return bar;
 }
 /* ---------- Vorhandenen Text bearbeiten (überdecken + neu schreiben) ---------- */
 function parseColor(s) { if (!s) return { r: 0, g: 0, b: 0 }; if (s[0] === '#') return hexToRgb(s); const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(s); return m ? { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255 } : { r: 0, g: 0, b: 0 }; }
@@ -1029,16 +1097,8 @@ function openEditEdit(pv, a, isNew) {
   ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ta.blur(); } else if (ev.key === 'Escape') { if (isNew) ta.value = ''; ta.blur(); } });
   ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
 }
-// Bestehende Text-Annotation per Doppelklick bearbeiten
-function openTextAnnoEdit(pv, a) {
-  const sc = pv.scale; const ta = document.createElement('textarea'); ta.className = 'textedit'; ta.value = a.text; ta.rows = 1;
-  ta.style.left = (a.x * sc) + 'px'; ta.style.top = (a.y * sc) + 'px'; ta.style.fontSize = (a.size * sc) + 'px'; ta.style.color = a.color; ta.style.minWidth = '40px';
-  pv.inner.appendChild(ta); ta.focus(); ta.select();
-  const commit = () => { a.text = ta.value.replace(/\s+$/, ''); ta.remove(); if (!a.text) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); } drawAnnos(pv); saveState(); };
-  ta.addEventListener('blur', commit);
-  ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ta.blur(); } else if (ev.key === 'Escape') ta.blur(); });
-  ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
-}
+// Bestehende Text-Box bearbeiten (öffnet den Box-Editor mit Format-Leiste)
+function openTextAnnoEdit(pv, a) { openTextBox(pv, a, false); }
 function openNoteEdit(pv, a) {
   const sc = pv.scale; const ta = document.createElement('textarea'); ta.className = 'textedit'; ta.value = a.text || '';
   ta.style.left = (a.x * sc + 16) + 'px'; ta.style.top = (a.y * sc) + 'px'; ta.style.width = '180px'; ta.style.height = '70px'; ta.style.fontSize = '13px'; ta.placeholder = 'Kommentar …';
@@ -1231,7 +1291,17 @@ async function buildPdfBytes() {
         } else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h); pg.drawRectangle({ x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w }); }
         else if (a.type === 'oval') { pg.drawEllipse({ x: a.x + a.w / 2, y: Y(a.y + a.h / 2), xScale: Math.abs(a.w / 2), yScale: Math.abs(a.h / 2), borderColor: c, borderWidth: w }); }
         else if (a.type === 'pen') { const op = a.hl ? 0.35 : 1; for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c, opacity: op }); }
-        else if (a.type === 'text') { a.text.split('\n').forEach((ln, i) => pg.drawText(ln, { x: a.x, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: c })); }
+        else if (a.type === 'text') {
+          const pad = 3, lines = (a.text || '').split('\n'), lineH = a.size * 1.25, align = a.align || 'left';
+          const W = a.w || 120, H = a.h || (lines.length * lineH + pad * 2);
+          if (a.bg && a.bg !== 'transparent') { const bc = parseColor(a.bg); pg.drawRectangle({ x: a.x, y: Y(a.y + H), width: W, height: H, color: rgb(bc.r, bc.g, bc.b) }); }
+          if (a.border) { const oc = parseColor(a.border); pg.drawRectangle({ x: a.x, y: Y(a.y + H), width: W, height: H, borderColor: rgb(oc.r, oc.g, oc.b), borderWidth: a.borderW || 1.2 }); }
+          lines.forEach((ln, i) => {
+            const tw = font.widthOfTextAtSize(ln, a.size);
+            const tx = align === 'center' ? a.x + (W - tw) / 2 : align === 'right' ? a.x + W - pad - tw : a.x + pad;
+            pg.drawText(ln, { x: tx, y: Y(a.y + pad + a.size + i * lineH), size: a.size, font, color: c });
+          });
+        }
         else if (a.type === 'note' && a.text) { pg.drawRectangle({ x: a.x, y: Y(a.y + 11), width: 13, height: 11, color: c }); }
         else if (a.type === 'highlight') { for (const r of (a.rects || [])) pg.drawRectangle({ x: r.x, y: Y(r.y + r.h), width: r.w, height: r.h, color: c, opacity: 0.33 }); }
         else if (a.type === 'stamp') {

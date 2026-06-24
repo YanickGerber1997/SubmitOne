@@ -1133,6 +1133,19 @@ async function loadSharedFile() {
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
+// App installieren (PWA) – Button erscheint, sobald der Browser die Installation anbietet (nur über https)
+let deferredInstall = null;
+const installBtn = document.getElementById('btnInstall');
+const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+if (installBtn && !standalone) installBtn.hidden = false;                 // sichtbar zeigen (außer schon installiert)
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; if (installBtn && !standalone) installBtn.hidden = false; });
+window.addEventListener('appinstalled', () => { if (installBtn) installBtn.hidden = true; deferredInstall = null; toast('App installiert ✓'); });
+if (installBtn) installBtn.onclick = async () => {
+  if (deferredInstall) { deferredInstall.prompt(); const r = await deferredInstall.userChoice; if (r.outcome === 'accepted') installBtn.hidden = true; deferredInstall = null; }
+  else if (standalone) { toast('Läuft bereits als App.'); }
+  else if (location.protocol === 'file:') { toast('Installation nur über die Online-Seite (https) möglich.'); }
+  else { toast('Im Browser-Menü „App installieren" wählen (Chrome/Edge).'); }
+};
 // „Öffnen mit Submit PDF" (Desktop, installierte App)
 if ('launchQueue' in window) {
   window.launchQueue.setConsumer(async params => {

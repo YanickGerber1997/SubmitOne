@@ -198,6 +198,9 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .selbar .sb-sep{width:1px;height:20px;background:var(--line);margin:0 2px}
 .selbar .sb-del:hover{color:var(--danger);border-color:var(--danger)}
 .selbar[hidden]{display:none !important}
+.install-btn{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600;animation:instPulse 2.4s ease-in-out infinite}
+.install-btn:hover{background:var(--accent-3);border-color:var(--accent-3)}
+@keyframes instPulse{0%,100%{box-shadow:0 0 0 0 rgba(79,122,60,.0)}50%{box-shadow:0 0 0 4px rgba(79,122,60,.18)}}
 
 #toast-root{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:50;display:flex;flex-direction:column;gap:8px;align-items:center}
 .toast{background:var(--ink);color:#fff;padding:9px 16px;border-radius:0;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.22);animation:tIn .2s}

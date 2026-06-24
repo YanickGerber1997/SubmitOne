@@ -54,7 +54,12 @@ function fsSupported() { return 'showDirectoryPicker' in window; }
 async function pickFolder() {
   if (!fsSupported()) { toast(location.protocol === 'file:' ? 'Ordner-Browser nur über die Online-/App-Version (https).' : 'Ordner-Zugriff braucht Chrome/Edge.'); return; }
   try { dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' }); } catch (_) { return; }
-  $('#work').classList.add('files-open'); $('#fpName').textContent = dirHandle.name || 'Ordner'; await refreshTree();
+  $('#work').classList.add('files-open'); $('#btnFolder').classList.add('on'); $('#fpName').textContent = dirHandle.name || 'Ordner'; await refreshTree();
+}
+// „Ordner"-Knopf: schon ein Ordner gewählt → nur ein-/ausklappen; sonst Wähler öffnen
+function toggleFolder() {
+  if (!dirHandle) { pickFolder(); return; }
+  const open = $('#work').classList.toggle('files-open'); $('#btnFolder').classList.toggle('on', open);
 }
 async function refreshTree() {
   if (!dirHandle) return; const t = $('#fpTree'); t.innerHTML = ''; await buildTree(dirHandle, t);
@@ -1193,9 +1198,10 @@ window.addEventListener('message', e => {
 function wire() {
   $('#btnOpen').onclick = openPicker;
   $('#dropOpen').onclick = openPicker;
-  $('#btnFolder').onclick = pickFolder;
+  $('#btnFolder').onclick = toggleFolder;
   $('#btnSplit').onclick = toggleSplit;
-  $('#fpClose').onclick = () => $('#work').classList.remove('files-open');
+  $('#fpName').onclick = pickFolder;   // auf den Ordnernamen klicken = anderen Ordner wählen
+  $('#fpClose').onclick = () => { $('#work').classList.remove('files-open'); $('#btnFolder').classList.remove('on'); };
   $('#fpRefresh').onclick = () => { $('#fpSearch').value = ''; refreshTree(); };
   $('#fpSearch').addEventListener('input', e => onFolderSearch(e.target.value));
   $('#fileInput').onchange = e => { openFiles(e.target.files); e.target.value = ''; };

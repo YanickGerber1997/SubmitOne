@@ -288,16 +288,19 @@ body.has-tabs .files-panel,body.has-tabs .comments{top:calc(var(--bar) + var(--t
   .tgrp{padding-right:6px}
   .pageind{display:none}
   #btnSplit{display:none}            /* zwei nebeneinander – am Handy nicht sinnvoll */
-  .pages{padding:14px}
-  .quickbar{left:10px;bottom:10px}
+  .pages{padding:6px}
+  .quickbar{left:8px;bottom:8px;padding:3px;gap:2px}
+  .quickbar .qbtn{width:32px;height:32px;font-size:16px}
 }
 @media (max-width:520px){
-  :root{--bar:50px;--tools:46px}
+  :root{--bar:48px;--tools:44px;--tabs:28px}
   .brand{font-size:14px;letter-spacing:1.5px;margin-right:2px}
   .brand .logomark{height:26px;width:26px}
   .brand .brand-word{display:none}        /* Schriftzug am Handy weg – nur Symbol, spart Platz */
   .scaleind{display:none}
-  .topbar{gap:4px;padding:0 8px}
+  .topbar{gap:3px;padding:0 7px}
+  .pages{padding:4px}
+  #qFree{display:none}                     /* freies Drehen am Handy ausblenden – Leiste schlanker */
   .tool{width:38px;height:38px}            /* touch-freundlicher */
   .swatch,.icon-btn{width:38px;height:38px}
   .sel{height:36px;font-size:12px}

@@ -231,7 +231,7 @@ const MAX_AREA = 24e6;       // max. Canvas-Pixel pro Seite, scharf (deckelt Spe
 const PREVIEW_AREA = 6e6;    // max. Canvas-Pixel pro Seite, Vorschau (schnell, beim Scrollen)
 const RENDER_MAX = 2;        // gleichzeitige Seiten-Renderings
 let pageObserver = null, thumbObserver = null, renderQueue = [], renderActive = 0;
-function fitScale(pw) { const avail = $('#pages').clientWidth - 60; return Math.max(.2, Math.min(3, avail / pw)); }
+function fitScale(pw) { const avail = $('#pages').clientWidth - (innerWidth < 820 ? 14 : 48); return Math.max(.2, Math.min(3, avail / pw)); }
 function pageScale(pv) { return (zoom === 'auto') ? fitScale(pv.pageW) : zoom; }
 // Gerätegenau rendern (1:1 mit den Bildschirmpixeln): scharf, ohne dünne Linien zu verblassen.
 function dprCap() { return Math.min(window.devicePixelRatio || 1, 3); }

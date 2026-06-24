@@ -41,6 +41,8 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:0;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:.12s;white-space:nowrap;flex:none}
 .topbar{flex-wrap:nowrap}
 .hdr-sep{width:1px;height:22px;background:var(--line);margin:0 3px;flex:none}
+/* Ohne offenes Dokument: Header schlank halten (nur Logo + Dateien/Installieren) */
+body:not(.has-doc) #btnUndo,body:not(.has-doc) #btnRedo,body:not(.has-doc) .pageind,body:not(.has-doc) #btnOutline,body:not(.has-doc) .scaleind,body:not(.has-doc) .hdr-sep,body:not(.has-doc) #btnSave,body:not(.has-doc) #btnSend,body:not(.has-doc) #btnPrint,body:not(.has-doc) #btnComments,body:not(.has-doc) #btnSplit{display:none !important}
 .btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .btn:disabled{opacity:.45;cursor:default}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}

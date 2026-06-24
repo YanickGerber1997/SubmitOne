@@ -25,11 +25,6 @@
     <span class="doc-name" id="docName"></span>
     <button class="icon-btn" id="btnUndo" title="Rückgängig (Strg+Z)" disabled><svg viewBox="0 0 24 24" class="i"><path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10h-3"/></svg></button>
     <button class="icon-btn" id="btnRedo" title="Wiederherstellen (Strg+Y)" disabled><svg viewBox="0 0 24 24" class="i"><path d="M15 7l5 5-5 5M20 12H9a5 5 0 0 0 0 10h3"/></svg></button>
-    <div class="zoombox">
-      <button class="icon-btn" id="zoomOut" title="Verkleinern">−</button>
-      <button class="zoom-val" id="zoomVal" title="An Breite anpassen">100&nbsp;%</button>
-      <button class="icon-btn" id="zoomIn" title="Vergrössern">+</button>
-    </div>
     <span class="pageind" id="pageInd" title="Gehe zu Seite …"></span>
     <button class="icon-btn" id="btnOutline" title="Lesezeichen / Inhalt" hidden><svg viewBox="0 0 24 24" class="i"><path d="M6 3h12v18l-6-4-6 4z"/></svg></button>
     <span class="scaleind" id="scaleInd"></span>
@@ -113,6 +108,13 @@
       </select>
     </div>
     <span class="grow"></span>
+    <div class="tgrp">
+      <div class="zoombox">
+        <button class="icon-btn" id="zoomOut" title="Verkleinern">−</button>
+        <button class="zoom-val" id="zoomVal" title="An Breite anpassen">100&nbsp;%</button>
+        <button class="icon-btn" id="zoomIn" title="Vergrössern">+</button>
+      </div>
+    </div>
     <div class="tgrp">
       <button class="tool" id="rotL" title="Seite 90° links drehen"><svg viewBox="0 0 24 24" class="i"><path d="M4 9a8 8 0 1 1 2 6"/><path d="M4 4v5h5"/></svg></button>
       <button class="tool" id="rotR" title="Seite 90° rechts drehen"><svg viewBox="0 0 24 24" class="i"><path d="M20 9a8 8 0 1 0-2 6"/><path d="M20 4v5h-5"/></svg></button>

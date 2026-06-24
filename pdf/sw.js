@@ -1,10 +1,14 @@
-/* Submit PDF – Service Worker: App-Shell cachen + Teilen-Ziel (Handy) entgegennehmen. */
-const CACHE = 'submitpdf-v2';
-const SHELL = ['./', './index.html', './pdf.css', './pdf.js', './tauri-bridge.js', './icon.png', './logo.png', './wordmark.png', './bg.png', './manifest.webmanifest'];
-
-self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
-self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
-
+/* Submit PDF – Service Worker.
+   WICHTIG: Während der aktiven Entwicklung KEIN App-Caching mehr (verhinderte, dass Updates ankamen).
+   Der SW löscht alte Caches und lädt alles frisch aus dem Netzwerk. Teilen-Ziel (Handy) bleibt. */
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', e => {
+  e.waitUntil((async () => {
+    const ks = await caches.keys();
+    await Promise.all(ks.map(k => caches.delete(k)));   // alle alten Caches weg
+    await self.clients.claim();
+  })());
+});
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   // Teilen-Ziel: geteilte Datei zwischenspeichern und zur App weiterleiten
@@ -13,17 +17,11 @@ self.addEventListener('fetch', e => {
       try {
         const form = await e.request.formData();
         const file = form.get('file');
-        if (file) { const c = await caches.open(CACHE); await c.put('shared-file', new Response(file, { headers: { 'Content-Type': file.type || 'application/pdf', 'X-Filename': encodeURIComponent(file.name || 'geteilt') } })); }
+        if (file) { const c = await caches.open('submitpdf-share'); await c.put('shared-file', new Response(file, { headers: { 'Content-Type': file.type || 'application/pdf', 'X-Filename': encodeURIComponent(file.name || 'geteilt') } })); }
       } catch (_) {}
       return Response.redirect('./index.html?shared=1', 303);
     })());
     return;
   }
-  if (e.request.method !== 'GET') return;
-  if (url.origin !== location.origin) return;            // Fremd-Ressourcen (CDN) normal laden
-  // Netzwerk-zuerst: immer die aktuelle Version; bei Offline aus dem Cache
-  e.respondWith(
-    fetch(e.request).then(r => { const cp = r.clone(); caches.open(CACHE).then(c => c.put(e.request, cp)); return r; })
-      .catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
-  );
+  // Sonst: NICHT abfangen → Browser lädt normal aus dem Netzwerk (immer aktuell).
 });

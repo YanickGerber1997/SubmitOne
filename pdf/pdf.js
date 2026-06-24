@@ -33,6 +33,7 @@ function fmtLen(pts) {
 let sel = null;            // {num, id}
 let nextId = 1;
 let undoStack = [];
+let redoStack = [];
 
 /* ---------- Libs ---------- */
 function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('offline')); document.head.appendChild(s); }); }
@@ -141,7 +142,7 @@ function saveActiveDoc() {
 async function loadActive() {
   const d = docs[active]; if (!d) return;
   curBytes = d.bytes; docName = d.name; curFileHandle = d.fileHandle; annos = d.annos; pageRot = d.pageRot; viewRot = d.viewRot; docScale = d.docScale; nextId = d.nextId; undoStack = d.undo; zoom = d.zoom; sel = null; dirty = d.dirty || false; formValues = d.formValues || {};
-  $('#btnUndo').disabled = !undoStack.length;
+  redoStack = []; updateUndoButtons();
   if (d.pdfDoc) { pdfDoc = d.pdfDoc; await renderCurrentDoc(); } else { await loadDoc(d.bytes.slice()); d.pdfDoc = pdfDoc; }
   const p = $('#pages'); if (p) p.scrollTop = d.scrollTop || 0;
 }
@@ -1144,14 +1145,28 @@ async function appendFiles(files) {
 
 /* ---------- Undo / Löschen ---------- */
 function snapshot() { return JSON.stringify({ annos, pageRot }); }
-function pushUndo() { undoStack.push({ t: 'anno', s: snapshot() }); if (undoStack.length > 80) undoStack.shift(); $('#btnUndo').disabled = false; markDirty(); }
+function curAnnoEntry() { return { t: 'anno', s: snapshot() }; }
+function curDocEntry() { return { t: 'doc', bytes: curBytes.slice(), s: JSON.stringify({ annos, pageRot, viewRot, docScale }) }; }
+function pushUndo() { undoStack.push(curAnnoEntry()); if (undoStack.length > 80) undoStack.shift(); redoStack = []; updateUndoButtons(); markDirty(); }
 // Dokument-Undo (für Seiten-Operationen: Löschen/Verschieben/Anhängen) – sichert auch die PDF-Bytes
-function pushDocUndo() { if (!curBytes) return; undoStack.push({ t: 'doc', bytes: curBytes.slice(), s: JSON.stringify({ annos, pageRot, viewRot, docScale }) }); if (undoStack.length > 80) undoStack.shift(); $('#btnUndo').disabled = false; markDirty(); }
-async function undo() {
-  if (!undoStack.length) return;
-  const e = undoStack.pop(); sel = null; $('#btnUndo').disabled = !undoStack.length;
+function pushDocUndo() { if (!curBytes) return; undoStack.push(curDocEntry()); if (undoStack.length > 80) undoStack.shift(); redoStack = []; updateUndoButtons(); markDirty(); }
+function updateUndoButtons() { $('#btnUndo').disabled = !undoStack.length; const r = $('#btnRedo'); if (r) r.disabled = !redoStack.length; }
+async function applyState(e) {
+  sel = null;
   if (e.t === 'doc') { const d = JSON.parse(e.s); annos = d.annos; pageRot = d.pageRot; viewRot = d.viewRot || {}; docScale = d.docScale || null; curBytes = e.bytes; await loadDoc(curBytes.slice()); updateScaleLabel(); }
   else { const d = JSON.parse(e.s); annos = d.annos; pageRot = d.pageRot; pageViews.forEach(pv => { layoutPv(pv); drawAnnos(pv); }); buildThumbs(); refreshComments(); }
+}
+async function undo() {
+  if (!undoStack.length) return;
+  const e = undoStack.pop();
+  redoStack.push(e.t === 'doc' ? curDocEntry() : curAnnoEntry());   // aktuellen Zustand für Redo sichern
+  await applyState(e); updateUndoButtons(); markDirty();
+}
+async function redo() {
+  if (!redoStack.length) return;
+  const e = redoStack.pop();
+  undoStack.push(e.t === 'doc' ? curDocEntry() : curAnnoEntry());
+  await applyState(e); updateUndoButtons(); markDirty();
 }
 function saveState() { /* Platzhalter für Autosave-Hook */ }
 function deleteSel() { if (!sel) return; const arr = annos[sel.num]; if (!arr) return; const i = arr.findIndex(a => a.id === sel.id); if (i < 0) return; pushUndo(); arr.splice(i, 1); sel = null; pageViews.forEach(drawAnnos); refreshComments(); }
@@ -1532,6 +1547,7 @@ function wire() {
   $('#mSend').onclick = doSend;
   $('#mCancel').onclick = () => $('#mailDlg').hidden = true;
   $('#btnUndo').onclick = undo;
+  $('#btnRedo').onclick = redo;
   $('#zoomIn').onclick = () => zoomStep(.15); $('#zoomOut').onclick = () => zoomStep(-.15); $('#zoomVal').onclick = () => setZoom('auto');
   $('#pages').addEventListener('scroll', () => { updatePageInd(); scheduleSharpen(); updateSelBar(); }, { passive: true });
   $('#pages').addEventListener('wheel', e => {     // Strg/Cmd + Mausrad (oder Trackpad-Pinch) = zum Zeiger zoomen
@@ -1661,7 +1677,8 @@ function wire() {
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openPicker(); }
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
     else if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); printDoc(); }
-    else if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+    else if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
     else if (mod && (e.key === '+' || e.key === '=')) { e.preventDefault(); zoomStep(.15); }
     else if (mod && e.key === '-') { e.preventDefault(); zoomStep(-.15); }
     else if (mod && e.key === '0') { e.preventDefault(); setZoom('auto'); }

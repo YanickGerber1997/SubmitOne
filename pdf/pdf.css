@@ -81,8 +81,8 @@ body.has-tabs .findbar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 .suite-link:hover{color:var(--accent)}
 
 /* Werkzeugleiste */
-.toolbar{height:var(--tools);display:flex;align-items:center;gap:6px;padding:0 12px;background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:6}
-.tgrp{display:flex;align-items:center;gap:3px;padding-right:8px;margin-right:2px;border-right:1px solid var(--line-soft)}
+.toolbar{height:var(--tools);display:flex;align-items:center;gap:6px;padding:0 12px;background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:6;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.tgrp{display:flex;align-items:center;gap:3px;padding-right:8px;margin-right:2px;border-right:1px solid var(--line-soft);flex:none}
 .tgrp:last-child{border-right:none}
 .tool{width:34px;height:34px;border:1px solid transparent;background:none;color:var(--ink-soft);border-radius:0;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .tool:hover{background:var(--surface-2);color:var(--accent-2)}

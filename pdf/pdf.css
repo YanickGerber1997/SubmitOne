@@ -99,6 +99,13 @@ body.has-tabs .findbar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 .pal-row button:hover{outline:2px solid var(--accent);outline-offset:1px}
 .pal-custom{margin-top:2px;border:1px solid var(--line);background:var(--surface-2);font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-soft);padding:7px;cursor:pointer}
 .pal-custom:hover{border-color:var(--accent);color:var(--accent)}
+.stamp-wrap{position:relative}
+.stamp-pop{position:absolute;top:calc(100% + 6px);left:0;z-index:60;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.2);padding:8px;display:flex;flex-direction:column;gap:6px;min-width:160px}
+.stamp-grid{display:flex;gap:6px}
+.stamp-grid .st-sym{width:42px;height:42px;border:1px solid var(--line);background:var(--surface-2);font-size:21px;font-weight:700;cursor:pointer;line-height:1}
+.stamp-grid .st-sym:hover{border-color:var(--accent)}
+.st-lbl{border:1px solid var(--line);background:var(--surface-2);font:inherit;font-size:12.5px;font-weight:700;padding:8px;cursor:pointer;letter-spacing:.5px;text-align:left}
+.st-lbl:hover{border-color:var(--accent);color:var(--accent-3)}
 .sel{height:32px;border:1px solid var(--line);background:var(--surface);border-radius:0;font:inherit;font-size:12.5px;color:var(--ink);padding:0 6px;cursor:pointer}
 
 /* Tab-Leiste (mehrere Dokumente) */

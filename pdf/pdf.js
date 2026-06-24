@@ -1205,7 +1205,7 @@ wire();
 /* ---------- Geräte-Anbindung (PWA) ---------- */
 async function loadSharedFile() {
   try {
-    const c = await caches.open('submitpdf-v1'); const r = await c.match('shared-file'); if (!r) return;
+    const c = await caches.open('submitpdf-v2'); const r = await c.match('shared-file'); if (!r) return;
     await c.delete('shared-file');
     const blob = await r.blob(); const name = decodeURIComponent(r.headers.get('X-Filename') || 'geteilt');
     const ext = (blob.type.includes('pdf')) ? '.pdf' : (blob.type.split('/')[1] ? '.' + blob.type.split('/')[1] : '');

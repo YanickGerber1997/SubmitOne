@@ -145,6 +145,11 @@ body.has-tabs .files-panel,body.has-tabs .comments{top:calc(var(--bar) + var(--t
 .fp-row.result{flex-wrap:wrap;padding-top:5px;padding-bottom:5px}
 .fp-path{flex-basis:100%;font-size:10.5px;color:var(--ink-faint);padding-left:21px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fp-hint{padding:14px;color:var(--ink-faint);font-size:12px;line-height:1.5}
+.fp-empty{padding:12px}
+.fp-act{display:flex;align-items:center;gap:9px;width:100%;border:1px solid var(--line);background:var(--surface);padding:11px 12px;margin-bottom:8px;font:inherit;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer;text-align:left}
+.fp-act .i{width:18px;height:18px;flex:none;stroke-width:1.7}
+.fp-act:hover{border-color:var(--accent);color:var(--accent-3);background:var(--accent-soft)}
+.fp-empty .fp-hint{padding:6px 2px 0}
 .fp-row{display:flex;align-items:center;gap:6px;padding:4px 10px;cursor:pointer;white-space:nowrap;overflow:hidden;color:var(--ink-soft)}
 .fp-row:hover{background:var(--surface)}
 .fp-row .fp-ic{flex:none;width:15px;text-align:center}

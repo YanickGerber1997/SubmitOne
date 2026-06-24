@@ -56,9 +56,9 @@ async function pickFolder() {
   try { dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' }); } catch (_) { return; }
   $('#work').classList.add('files-open'); $('#btnFolder').classList.add('on'); $('#fpName').textContent = dirHandle.name || 'Ordner'; await refreshTree();
 }
-// „Ordner"-Knopf: schon ein Ordner gewählt → nur ein-/ausklappen; sonst Wähler öffnen
-function toggleFolder() {
-  if (!dirHandle) { pickFolder(); return; }
+// „Dateien"-Knopf: Verzeichnis-Panel ein-/ausklappen (ohne Ordner-Zugriff: einfach Datei öffnen)
+function toggleFiles() {
+  if (!fsSupported()) { openPicker(); return; }
   const open = $('#work').classList.toggle('files-open'); $('#btnFolder').classList.toggle('on', open);
 }
 async function refreshTree() {
@@ -1305,12 +1305,12 @@ function positionFindHL() {
 
 /* ---------- Verdrahtung ---------- */
 function wire() {
-  $('#btnOpen').onclick = openPicker;
   $('#dropOpen').onclick = openPicker;
-  $('#btnFolder').onclick = toggleFolder;
-  if (!fsSupported()) $('#btnFolder').hidden = true;   // Ordner-Browser nur wo Datei-System-Zugriff da ist (nicht am Handy)
+  $('#btnFolder').onclick = toggleFiles;
   $('#btnSplit').onclick = toggleSplit;
-  $('#fpName').onclick = pickFolder;   // auf den Ordnernamen klicken = anderen Ordner wählen
+  $('#fpName').onclick = pickFolder;            // Ordnernamen klicken = (anderen) Ordner wählen
+  $('#fpPickFolder').onclick = pickFolder;      // leerer Zustand: Ordner durchsuchen
+  $('#fpOpenFile').onclick = openPicker;        // leerer Zustand: einzelne Datei öffnen
   $('#fpClose').onclick = () => { $('#work').classList.remove('files-open'); $('#btnFolder').classList.remove('on'); };
   $('#fpRefresh').onclick = () => { $('#fpSearch').value = ''; refreshTree(); };
   $('#fpSearch').addEventListener('input', e => onFolderSearch(e.target.value));

@@ -21,8 +21,7 @@
       <img class="logomark" src="icon.png" alt="" aria-hidden="true" />
       <img class="brand-word" src="wordmark.png" alt="Submit PDF" />
     </a>
-    <button class="btn" id="btnFolder" title="Ordner durchsuchen (Datei-Baum links)"><svg viewBox="0 0 24 24" class="i"><path d="M3 7.5a1.5 1.5 0 0 1 1.5-1.5h3.6l2 2h9.4A1.5 1.5 0 0 1 21 9.5V18a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/></svg><span>Ordner</span></button>
-    <button class="btn" id="btnOpen" title="PDF/Bild öffnen"><svg viewBox="0 0 24 24" class="i"><path d="M3 8.5V7a1.5 1.5 0 0 1 1.5-1.5h3.6l2 2h8.4A1.5 1.5 0 0 1 20 9v.5"/><path d="M3 8.5h18l-2.1 8.7a1.5 1.5 0 0 1-1.5 1.3H4.5A1.5 1.5 0 0 1 3 17z"/></svg><span>Öffnen</span></button>
+    <button class="btn" id="btnFolder" title="Dateien & Ordner – Verzeichnis ein-/ausklappen"><svg viewBox="0 0 24 24" class="i"><path d="M3 7.5a1.5 1.5 0 0 1 1.5-1.5h3.6l2 2h9.4A1.5 1.5 0 0 1 21 9.5V18a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/></svg><span>Dateien</span></button>
     <button class="btn" id="btnSave" disabled title="Speichern (Strg+S)"><svg viewBox="0 0 24 24" class="i"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3"/><path d="M8 21v-6h8v6"/></svg><span>Speichern</span></button>
     <button class="btn primary" id="btnSend" disabled title="Per E-Mail senden"><svg viewBox="0 0 24 24" class="i"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg><span>Senden</span></button>
     <span class="doc-name" id="docName"></span>
@@ -109,7 +108,11 @@
     <aside class="files-panel" id="filesPanel" aria-label="Dateien">
       <div class="fp-head"><span class="fp-name" id="fpName" title="Anderen Ordner wählen">Ordner wählen …</span><button class="fp-x" id="fpRefresh" title="Aktualisieren">⟳</button><button class="fp-x" id="fpClose" title="Schliessen">✕</button></div>
       <div class="fp-search"><input id="fpSearch" type="search" placeholder="🔎 Im Ordner suchen (auch Unterordner) …" /></div>
-      <div class="fp-tree" id="fpTree"><div class="fp-hint">Klick auf „Ordner" (oben), um einen <b>Projekt-Ordner</b> zu durchsuchen.<br><br>Tipp: einen normalen Unterordner wählen (z. B. <i>Dokumente\Projekte</i>) — <b>keine</b> Systemordner oder die Laufwerks-Wurzel (C:\), die sperrt der Browser.</div></div>
+      <div class="fp-tree" id="fpTree"><div class="fp-empty">
+        <button class="fp-act" id="fpPickFolder"><svg viewBox="0 0 24 24" class="i"><path d="M3 7.5a1.5 1.5 0 0 1 1.5-1.5h3.6l2 2h9.4A1.5 1.5 0 0 1 21 9.5V18a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/></svg>Ordner durchsuchen</button>
+        <button class="fp-act" id="fpOpenFile"><svg viewBox="0 0 24 24" class="i"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/></svg>Einzelne Datei öffnen</button>
+        <div class="fp-hint">Im Ordner-Modus siehst du, in welchem Verzeichnis eine Datei liegt.<br><br>Tipp: einen Projekt-Unterordner wählen (z. B. <i>Dokumente\Projekte</i>) — <b>keine</b> Systemordner oder C:\ (sperrt der Browser).</div>
+      </div></div>
     </aside>
     <aside class="thumbs" id="thumbs" aria-label="Seiten"></aside>
     <div class="pages" id="pages"></div>

@@ -129,6 +129,10 @@ body.has-tabs .files-panel,body.has-tabs .comments{top:calc(var(--bar) + var(--t
 .thumb canvas{display:block;width:100%;border:1px solid var(--line);border-radius:0;background:#fff;box-shadow:0 1px 4px rgba(20,24,40,.08)}
 .thumb.loading canvas{aspect-ratio:1/1.414;height:auto}
 .thumb.active{border-color:var(--accent)}
+.thumb{cursor:grab}
+.thumb.dragging{opacity:.4;cursor:grabbing}
+.thumb.drop-before::before{content:"";position:absolute;left:-3px;right:-3px;top:-9px;height:3px;background:var(--accent);box-shadow:0 0 0 1px rgba(255,255,255,.6)}
+.thumb.drop-after::after{content:"";position:absolute;left:-3px;right:-3px;bottom:-9px;height:3px;background:var(--accent);box-shadow:0 0 0 1px rgba(255,255,255,.6)}
 .thumb .tn{position:absolute;left:50%;bottom:-16px;transform:translateX(-50%);font-size:11px;color:var(--ink-faint);font-weight:600}
 .thumb-ctrl{position:absolute;top:3px;right:3px;display:none;gap:2px;background:rgba(255,255,255,.92);padding:2px;box-shadow:0 1px 4px rgba(20,24,40,.2)}
 .thumb:hover .thumb-ctrl{display:flex}

@@ -352,8 +352,9 @@ function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im S
     wrap.appendChild(ctrl);
     wrap.addEventListener('click', e => {
       const act = e.target.getAttribute && e.target.getAttribute('data-act');
-      if (act === 'up') { movePage(n, -1); } else if (act === 'down') { movePage(n, 1); } else if (act === 'del') { deletePage(n); } else gotoPage(n);
+      if (act === 'up') { movePage(n, -1); } else if (act === 'down') { movePage(n, 1); } else if (act === 'del') { deletePage(n); } else if (!wrap._dragged) gotoPage(n);
     });
+    wrap.addEventListener('pointerdown', e => startThumbDrag(e, n, wrap));   // Drag&Drop-Umsortieren
     host.appendChild(wrap);
   }
   const add = document.createElement('button'); add.className = 'thumb-add'; add.textContent = '+ PDF/Bild anhängen';
@@ -364,6 +365,31 @@ function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im S
 }
 async function renderThumb(n, btn) {
   try { const page = await pdfDoc.getPage(n), vp1 = page.getViewport({ scale: 1 }); const vp = page.getViewport({ scale: 200 / vp1.width, rotation: pageRot[n] || 0 }); const c = btn.querySelector('canvas'); c.width = vp.width; c.height = vp.height; await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise; btn.classList.remove('loading'); } catch (_) { }
+}
+/* Miniaturen per Drag&Drop umsortieren */
+function thumbList() { return $$('.thumb', $('#thumbs')); }
+function thumbInsertIndex(clientY) { const ts = thumbList(); for (let i = 0; i < ts.length; i++) { const r = ts[i].getBoundingClientRect(); if (clientY < r.top + r.height / 2) return i; } return ts.length; }
+function thumbMarker(clientY) { const ts = thumbList(), idx = thumbInsertIndex(clientY); ts.forEach((t, i) => { t.classList.toggle('drop-before', i === idx); t.classList.toggle('drop-after', idx >= ts.length && i === ts.length - 1); }); }
+function clearThumbMarker() { thumbList().forEach(t => t.classList.remove('drop-before', 'drop-after')); }
+function startThumbDrag(e, n, wrap) {
+  if (e.button !== 0 || (e.target.closest && e.target.closest('.thumb-ctrl'))) return;
+  wrap._dragged = false; const startY = e.clientY; let active = false;
+  const move = ev => { if (!active && Math.abs(ev.clientY - startY) < 6) return; active = true; wrap._dragged = true; wrap.classList.add('dragging'); thumbMarker(ev.clientY); };
+  const up = ev => {
+    document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+    wrap.classList.remove('dragging'); clearThumbMarker();
+    if (active) reorderThumb(n, thumbInsertIndex(ev.clientY));
+    setTimeout(() => { wrap._dragged = false; }, 60);   // Klick nach Drag unterdrücken, dann zurücksetzen
+  };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
+function reorderThumb(srcN, insertIdx) {
+  if (!pdfDoc) return; const N = pdfDoc.numPages; const order = []; for (let i = 1; i <= N; i++) order.push(i);
+  const from = srcN - 1; order.splice(from, 1);
+  let to = insertIdx; if (from < insertIdx) to = insertIdx - 1;
+  order.splice(to, 0, srcN);
+  if (order.every((v, i) => v === i + 1)) return;   // unverändert → nichts tun
+  applyPageOrder(order);
 }
 function refreshThumb(n) { const btn = $(`.thumb[data-n="${n}"]`, $('#thumbs')); if (btn) { btn.classList.add('loading'); renderThumb(n, btn); } }
 function gotoPage(n) { const v = pageViews.find(p => p.num === n); if (v) v.wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); }

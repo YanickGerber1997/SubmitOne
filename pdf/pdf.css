@@ -116,7 +116,12 @@ body.has-tabs .files-panel,body.has-tabs .comments{top:calc(var(--bar) + var(--t
 .fp-name{flex:1;font-weight:600;font-size:12.5px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fp-x{width:24px;height:24px;border:1px solid transparent;background:none;cursor:pointer;color:var(--ink-faint);border-radius:0;font-size:13px}
 .fp-x:hover{background:var(--surface);border-color:var(--line);color:var(--ink)}
+.fp-search{padding:7px 8px;border-bottom:1px solid var(--line)}
+.fp-search input{width:100%;border:1px solid var(--line);background:var(--surface-2);padding:6px 9px;font:inherit;font-size:12.5px;color:var(--ink)}
+.fp-search input:focus{outline:none;border-color:var(--accent)}
 .fp-tree{flex:1;overflow:auto;padding:4px 0;font-size:13px}
+.fp-row.result{flex-wrap:wrap;padding-top:5px;padding-bottom:5px}
+.fp-path{flex-basis:100%;font-size:10.5px;color:var(--ink-faint);padding-left:21px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fp-hint{padding:14px;color:var(--ink-faint);font-size:12px;line-height:1.5}
 .fp-row{display:flex;align-items:center;gap:6px;padding:4px 10px;cursor:pointer;white-space:nowrap;overflow:hidden;color:var(--ink-soft)}
 .fp-row:hover{background:var(--surface)}

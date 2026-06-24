@@ -60,6 +60,35 @@ async function refreshTree() {
   if (!dirHandle) return; const t = $('#fpTree'); t.innerHTML = ''; await buildTree(dirHandle, t);
   if (!t.children.length) t.innerHTML = '<div class="fp-hint">Keine PDFs/Bilder in diesem Ordner.</div>';
 }
+// Im Ordner (inkl. Unterordner) nach Dateinamen suchen
+let _searchT = null, _searchRun = 0;
+function onFolderSearch(q) {
+  clearTimeout(_searchT);
+  q = (q || '').trim();
+  if (!dirHandle) return;
+  if (!q) { refreshTree(); return; }
+  _searchT = setTimeout(() => searchFolder(q), 220);
+}
+async function searchFolder(q) {
+  const t = $('#fpTree'), run = ++_searchRun; t.innerHTML = '<div class="fp-hint">Suche …</div>';
+  const ql = q.toLowerCase(), results = [];
+  await walkSearch(dirHandle, '', ql, results, 400, () => run !== _searchRun);
+  if (run !== _searchRun) return;                              // neuere Suche läuft
+  t.innerHTML = '';
+  if (!results.length) { t.innerHTML = '<div class="fp-hint">Nichts gefunden für „' + q + '".</div>'; return; }
+  for (const r of results) {
+    const row = fpRow(/\.pdf$/i.test(r.name) ? '📄' : '🖼', r.name, 'file result');
+    if (r.path) { const p = document.createElement('span'); p.className = 'fp-path'; p.textContent = r.path; row.appendChild(p); }
+    row.onclick = () => { $$('.fp-row.active', t).forEach(x => x.classList.remove('active')); row.classList.add('active'); openFromHandle(r.handle); };
+    t.appendChild(row);
+  }
+}
+async function walkSearch(handle, prefix, ql, results, max, aborted) {
+  if (results.length >= max || aborted()) return;
+  let entries = []; try { for await (const [name, h] of handle.entries()) entries.push([name, h]); } catch (_) { return; }
+  for (const [name, h] of entries) { if (results.length >= max) return; if (h.kind === 'file' && /\.(pdf|png|jpe?g|webp)$/i.test(name) && name.toLowerCase().includes(ql)) results.push({ name, handle: h, path: prefix }); }
+  for (const [name, h] of entries) { if (results.length >= max || aborted()) return; if (h.kind === 'directory' && !name.startsWith('.')) await walkSearch(h, prefix + '/' + name, ql, results, max, aborted); }
+}
 async function buildTree(handle, container) {
   const entries = []; try { for await (const [name, h] of handle.entries()) entries.push([name, h]); } catch (_) { return; }
   entries.sort((a, b) => (a[1].kind === b[1].kind) ? a[0].localeCompare(b[0]) : (a[1].kind === 'directory' ? -1 : 1));
@@ -1167,7 +1196,8 @@ function wire() {
   $('#btnFolder').onclick = pickFolder;
   $('#btnSplit').onclick = toggleSplit;
   $('#fpClose').onclick = () => $('#work').classList.remove('files-open');
-  $('#fpRefresh').onclick = refreshTree;
+  $('#fpRefresh').onclick = () => { $('#fpSearch').value = ''; refreshTree(); };
+  $('#fpSearch').addEventListener('input', e => onFolderSearch(e.target.value));
   $('#fileInput').onchange = e => { openFiles(e.target.files); e.target.value = ''; };
   $('#btnSave').onclick = save;
   $('#btnSend').onclick = openMail;

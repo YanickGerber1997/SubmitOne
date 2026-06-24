@@ -32,13 +32,13 @@ if (frame) frame.setAttribute('src', APP_URL + '?embed=1');
 
 // Kacheln bauen
 const tiles = document.getElementById('tiles');
-FEATURES.forEach(f => {
+FEATURES.forEach((f, i) => {
   const el = document.createElement('article'); el.className = 'tile reveal';
-  // Hat die Funktion schon ein Video? Dann abspielen, sonst Platzhalter.
+  // Hat die Funktion schon ein Video? Dann abspielen, sonst branded Platzhalter.
   const media = f.vid && f.has
     ? `<video src="${f.vid}" controls preload="metadata" playsinline></video>`
-    : `<div class="tile-ph"><div class="tile-play">▶</div><small>Demo-Video folgt</small></div>`;
-  el.innerHTML = `<div class="tile-media">${media}</div>
+    : `<span class="tile-ghost">${f.ic}</span><div class="tile-ph"><div class="tile-play">▶</div><small>Kurzvideo folgt</small></div>`;
+  el.innerHTML = `<div class="tile-media"><span class="tile-n">${String(i + 1).padStart(2, '0')}</span>${media}</div>
     <div class="tile-body"><div class="tile-ic">${f.ic}</div><h3>${f.t}</h3><p>${f.d}</p></div>`;
   tiles.appendChild(el);
 });

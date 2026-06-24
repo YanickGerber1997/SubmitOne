@@ -3,6 +3,7 @@
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const SVGNS = 'http://www.w3.org/2000/svg';
+const COARSE = matchMedia('(pointer:coarse)').matches;   // Touch-Gerät → grössere Anfasser
 const PV = '3.11.174';
 const CDN = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PV}/build`;
 const PDFLIB = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js';
@@ -525,7 +526,7 @@ function bbox(a) {
 }
 function isLineType(a) { return a && (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim'); }
 function drawSelection(svg, a, pv) {
-  if (!a) return; const hs = 4.5 / pv.scale;
+  if (!a) return; const hs = (COARSE ? 8 : 4.5) / pv.scale;
   if (isLineType(a)) {                                  // Linie: KEIN Rechteck-Rahmen, nur Linie hervorheben + Endpunkte
     svg.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'sel-line' }));
     for (const [name, x, y] of [['p1', a.x1, a.y1], ['p2', a.x2, a.y2]]) svg.appendChild(svgEl('circle', { class: 'handle', cx: x, cy: y, r: hs, 'data-h': name }));
@@ -1154,6 +1155,17 @@ function wire() {
     e.preventDefault();
     zoomToward(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12);
   }, { passive: false });
+  // Handy: Zwei-Finger-Pinch zoomt zum Mittelpunkt, gleichzeitig verschieben
+  const pg = $('#pages'); let pinch = null;
+  pg.addEventListener('touchstart', e => { if (e.touches.length === 2) { const [a, b] = e.touches; pinch = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), cx: (a.clientX + b.clientX) / 2, cy: (a.clientY + b.clientY) / 2 }; } }, { passive: true });
+  pg.addEventListener('touchmove', e => {
+    if (e.touches.length !== 2 || !pinch) return;
+    e.preventDefault();
+    const [a, b] = e.touches, d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), cx = (a.clientX + b.clientX) / 2, cy = (a.clientY + b.clientY) / 2;
+    if (pinch.d > 0 && Math.abs(d / pinch.d - 1) > 0.012) { zoomToward(cx, cy, d / pinch.d); pinch.d = d; }
+    pg.scrollLeft -= (cx - pinch.cx); pg.scrollTop -= (cy - pinch.cy); pinch.cx = cx; pinch.cy = cy;
+  }, { passive: false });
+  pg.addEventListener('touchend', e => { if (e.touches.length < 2) pinch = null; });
   window.addEventListener('resize', () => { if (zoom === 'auto') reflow(); });
   $$('.tool[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $('#penTidyBtn').onclick = () => { penTidy = !penTidy; $('#penTidyBtn').classList.toggle('on', penTidy); toast(penTidy ? 'Skizze aufräumen: an' : 'Freihand: roh'); };

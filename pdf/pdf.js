@@ -94,22 +94,22 @@ async function openFiles(files) {
   } catch (e) { status(''); console.error(e); toast('Datei konnte nicht geöffnet werden.'); }
 }
 /* ---------- Mehrere Dokumente (Tabs) ---------- */
-function blankDoc(bytes, name) { return { bytes, name, fileHandle: null, annos: {}, pageRot: {}, viewRot: {}, docScale: null, nextId: 1, undo: [], zoom: 'auto', pdfDoc: null, scrollTop: 0 }; }
+function blankDoc(bytes, name) { return { bytes, name, fileHandle: null, annos: {}, pageRot: {}, viewRot: {}, docScale: null, nextId: 1, undo: [], zoom: 'auto', pdfDoc: null, scrollTop: 0, dirty: false }; }
 function saveActiveDoc() {
   if (active < 0 || !docs[active]) return; const d = docs[active];
-  d.bytes = curBytes; d.name = docName; d.fileHandle = curFileHandle; d.annos = annos; d.pageRot = pageRot; d.viewRot = viewRot; d.docScale = docScale; d.nextId = nextId; d.undo = undoStack; d.zoom = zoom; d.pdfDoc = pdfDoc;
+  d.bytes = curBytes; d.name = docName; d.fileHandle = curFileHandle; d.annos = annos; d.pageRot = pageRot; d.viewRot = viewRot; d.docScale = docScale; d.nextId = nextId; d.undo = undoStack; d.zoom = zoom; d.pdfDoc = pdfDoc; d.dirty = dirty;
   const p = $('#pages'); d.scrollTop = p ? p.scrollTop : 0;
 }
 async function loadActive() {
   const d = docs[active]; if (!d) return;
-  curBytes = d.bytes; docName = d.name; curFileHandle = d.fileHandle; annos = d.annos; pageRot = d.pageRot; viewRot = d.viewRot; docScale = d.docScale; nextId = d.nextId; undoStack = d.undo; zoom = d.zoom; sel = null;
+  curBytes = d.bytes; docName = d.name; curFileHandle = d.fileHandle; annos = d.annos; pageRot = d.pageRot; viewRot = d.viewRot; docScale = d.docScale; nextId = d.nextId; undoStack = d.undo; zoom = d.zoom; sel = null; dirty = d.dirty || false;
   $('#btnUndo').disabled = !undoStack.length;
   if (d.pdfDoc) { pdfDoc = d.pdfDoc; await renderCurrentDoc(); } else { await loadDoc(d.bytes.slice()); d.pdfDoc = pdfDoc; }
   const p = $('#pages'); if (p) p.scrollTop = d.scrollTop || 0;
 }
 async function addDoc(bytes, name) {
   saveActiveDoc(); const d = blankDoc(bytes, name); docs.push(d); active = docs.length - 1;
-  await loadActive(); renderTabs();
+  await loadActive(); renderTabs(); await maybeRestore();
 }
 async function activateDoc(i) { if (i === active || i < 0 || i >= docs.length) return; saveActiveDoc(); active = i; await loadActive(); renderTabs(); }
 async function closeDoc(i) {
@@ -131,6 +131,30 @@ function renderTabs() {
   });
   const add = document.createElement('button'); add.className = 'tab-add'; add.textContent = '＋'; add.title = 'Weiteres Dokument öffnen'; add.onclick = () => openPicker(); bar.appendChild(add);
 }
+/* ---------- Autosave & Wiederherstellen (IndexedDB) ---------- */
+let dirty = false, _autosaveT = null, _db = null;
+function idb() { return new Promise((res, rej) => { if (_db) return res(_db); let r; try { r = indexedDB.open('submitpdf', 1); } catch (e) { return rej(e); } r.onupgradeneeded = () => r.result.createObjectStore('autosave'); r.onsuccess = () => res(_db = r.result); r.onerror = () => rej(r.error); }); }
+async function idbPut(k, v) { try { const db = await idb(); await new Promise((res, rej) => { const tx = db.transaction('autosave', 'readwrite'); tx.objectStore('autosave').put(v, k); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); } catch (_) { } }
+async function idbGet(k) { try { const db = await idb(); return await new Promise(res => { const rq = db.transaction('autosave', 'readonly').objectStore('autosave').get(k); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(null); }); } catch (_) { return null; } }
+async function idbDel(k) { try { const db = await idb(); await new Promise(res => { const tx = db.transaction('autosave', 'readwrite'); tx.objectStore('autosave').delete(k); tx.oncomplete = res; tx.onerror = res; }); } catch (_) { } }
+function docSig() { return (docName || 'dok') + '::' + (curBytes ? curBytes.length : 0); }
+function markDirty() { dirty = true; scheduleAutosave(); }
+function scheduleAutosave() { clearTimeout(_autosaveT); _autosaveT = setTimeout(autosaveNow, 1200); }
+async function autosaveNow() {
+  if (!curBytes || active < 0 || !dirty) return;
+  try { await idbPut(docSig(), { name: docName, ts: Date.now(), annos, pageRot, viewRot, docScale, nextId }); } catch (_) { }
+}
+function clearAutosave() { idbDel(docSig()); }
+async function maybeRestore() {                                  // beim Öffnen: gibt es gesicherte Anmerkungen?
+  const rec = await idbGet(docSig());
+  if (!rec || !rec.annos || !Object.keys(rec.annos).length) return;
+  const when = new Date(rec.ts).toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  if (!confirm('Für „' + docName + '" gibt es automatisch gesicherte Anmerkungen (' + when + ').\nWiederherstellen?')) return;
+  annos = rec.annos; pageRot = rec.pageRot || {}; viewRot = rec.viewRot || {}; docScale = rec.docScale || null; nextId = Math.max(nextId, rec.nextId || 1);
+  const d = docs[active]; if (d) { d.annos = annos; d.pageRot = pageRot; d.viewRot = viewRot; d.docScale = docScale; d.nextId = nextId; d.dirty = true; }
+  dirty = true; pageViews.forEach(pv => { layoutPv(pv); drawAnnos(pv); }); buildThumbs(); refreshComments(); updateScaleLabel(); toast('Anmerkungen wiederhergestellt ✓');
+}
+
 // Bild → 1-seitige PDF (Bytes, nebenwirkungsfrei)
 async function imageToPdf(file) {
   const lib = await loadPdfLib();
@@ -863,9 +887,9 @@ async function appendFiles(files) {
 
 /* ---------- Undo / Löschen ---------- */
 function snapshot() { return JSON.stringify({ annos, pageRot }); }
-function pushUndo() { undoStack.push({ t: 'anno', s: snapshot() }); if (undoStack.length > 80) undoStack.shift(); $('#btnUndo').disabled = false; }
+function pushUndo() { undoStack.push({ t: 'anno', s: snapshot() }); if (undoStack.length > 80) undoStack.shift(); $('#btnUndo').disabled = false; markDirty(); }
 // Dokument-Undo (für Seiten-Operationen: Löschen/Verschieben/Anhängen) – sichert auch die PDF-Bytes
-function pushDocUndo() { if (!curBytes) return; undoStack.push({ t: 'doc', bytes: curBytes.slice(), s: JSON.stringify({ annos, pageRot, viewRot, docScale }) }); if (undoStack.length > 80) undoStack.shift(); $('#btnUndo').disabled = false; }
+function pushDocUndo() { if (!curBytes) return; undoStack.push({ t: 'doc', bytes: curBytes.slice(), s: JSON.stringify({ annos, pageRot, viewRot, docScale }) }); if (undoStack.length > 80) undoStack.shift(); $('#btnUndo').disabled = false; markDirty(); }
 async function undo() {
   if (!undoStack.length) return;
   const e = undoStack.pop(); sel = null; $('#btnUndo').disabled = !undoStack.length;
@@ -936,9 +960,11 @@ async function save() {
   if (!curBytes) return; status('Speichere …');
   try {
     const out = await buildPdfBytes();
+    let ok = true;
     if (curFileHandle) { const w = await curFileHandle.createWritable(); await w.write(out); await w.close(); status(''); toast('In Datei gespeichert ✓'); }   // direkt in die geöffnete Datei
-    else if (window.nativeSave) { const ok = await window.nativeSave(out, outName()); status(''); toast(ok ? 'Gespeichert ✓' : 'Abgebrochen'); }
+    else if (window.nativeSave) { ok = await window.nativeSave(out, outName()); status(''); toast(ok ? 'Gespeichert ✓' : 'Abgebrochen'); }
     else { downloadBytes(out, outName()); status(''); toast('Gespeichert ✓'); }
+    if (ok) { dirty = false; if (docs[active]) docs[active].dirty = false; clearAutosave(); }   // gespeichert → sauber, Autosave verwerfen
   } catch (e) { status(''); console.error(e); toast('Speichern fehlgeschlagen (Internet für Speicher-Bibliothek nötig?).'); }
 }
 
@@ -1167,6 +1193,10 @@ function wire() {
   }, { passive: false });
   pg.addEventListener('touchend', e => { if (e.touches.length < 2) pinch = null; });
   window.addEventListener('resize', () => { if (zoom === 'auto') reflow(); });
+  // Arbeit nicht verlieren: warnen beim Schliessen + Autosave beim Verlassen/Verstecken
+  window.addEventListener('beforeunload', e => { saveActiveDoc(); if (dirty || docs.some(d => d.dirty)) { autosaveNow(); e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('pagehide', () => { saveActiveDoc(); autosaveNow(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { saveActiveDoc(); autosaveNow(); } });
   $$('.tool[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $('#penTidyBtn').onclick = () => { penTidy = !penTidy; $('#penTidyBtn').classList.toggle('on', penTidy); toast(penTidy ? 'Skizze aufräumen: an' : 'Freihand: roh'); };
   $('#btnSig').onclick = openSig;

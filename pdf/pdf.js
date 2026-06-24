@@ -14,6 +14,10 @@ let zoom = 'auto', pageViews = [], renderTok = 0;
 let annos = {};            // {pageNum: [anno]}
 let pageRot = {};          // {pageNum: 0/90/180/270} – gespeicherte 90°-Drehung
 let viewRot = {};          // {pageNum: deg} – freie Ansichts-Drehung (Norden), NICHT gespeichert
+let formValues = {};       // {feldName: Wert} – ausgefüllte PDF-Formularfelder (gespeichert)
+let formFields = {};       // {pageNum: [{name,type,left,top,w,h,...}]} – Geometrie, beim Laden neu erkannt
+let fieldTypes = {};       // {feldName: 'text'|'checkbox'|'radio'|'dropdown'}
+let formMode = false;      // „Formular ausfüllen"-Modus aktiv?
 let tool = 'select';
 let style = { color: '#b4502f', width: 2.5, size: 16 };   // Standard: Rost (gut sichtbar auf Plänen)
 let penTidy = true;        // Freihand-Skizzen automatisch zu sauberen Formen aufräumen
@@ -128,15 +132,15 @@ async function openFiles(files) {
   } catch (e) { status(''); console.error(e); toast('Datei konnte nicht geöffnet werden.'); }
 }
 /* ---------- Mehrere Dokumente (Tabs) ---------- */
-function blankDoc(bytes, name) { return { bytes, name, fileHandle: null, annos: {}, pageRot: {}, viewRot: {}, docScale: null, nextId: 1, undo: [], zoom: 'auto', pdfDoc: null, scrollTop: 0, dirty: false }; }
+function blankDoc(bytes, name) { return { bytes, name, fileHandle: null, annos: {}, pageRot: {}, viewRot: {}, docScale: null, nextId: 1, undo: [], zoom: 'auto', pdfDoc: null, scrollTop: 0, dirty: false, formValues: {} }; }
 function saveActiveDoc() {
   if (active < 0 || !docs[active]) return; const d = docs[active];
-  d.bytes = curBytes; d.name = docName; d.fileHandle = curFileHandle; d.annos = annos; d.pageRot = pageRot; d.viewRot = viewRot; d.docScale = docScale; d.nextId = nextId; d.undo = undoStack; d.zoom = zoom; d.pdfDoc = pdfDoc; d.dirty = dirty;
+  d.bytes = curBytes; d.name = docName; d.fileHandle = curFileHandle; d.annos = annos; d.pageRot = pageRot; d.viewRot = viewRot; d.docScale = docScale; d.nextId = nextId; d.undo = undoStack; d.zoom = zoom; d.pdfDoc = pdfDoc; d.dirty = dirty; d.formValues = formValues;
   const p = $('#pages'); d.scrollTop = p ? p.scrollTop : 0;
 }
 async function loadActive() {
   const d = docs[active]; if (!d) return;
-  curBytes = d.bytes; docName = d.name; curFileHandle = d.fileHandle; annos = d.annos; pageRot = d.pageRot; viewRot = d.viewRot; docScale = d.docScale; nextId = d.nextId; undoStack = d.undo; zoom = d.zoom; sel = null; dirty = d.dirty || false;
+  curBytes = d.bytes; docName = d.name; curFileHandle = d.fileHandle; annos = d.annos; pageRot = d.pageRot; viewRot = d.viewRot; docScale = d.docScale; nextId = d.nextId; undoStack = d.undo; zoom = d.zoom; sel = null; dirty = d.dirty || false; formValues = d.formValues || {};
   $('#btnUndo').disabled = !undoStack.length;
   if (d.pdfDoc) { pdfDoc = d.pdfDoc; await renderCurrentDoc(); } else { await loadDoc(d.bytes.slice()); d.pdfDoc = pdfDoc; }
   const p = $('#pages'); if (p) p.scrollTop = d.scrollTop || 0;
@@ -184,17 +188,18 @@ function markDirty() { dirty = true; scheduleAutosave(); }
 function scheduleAutosave() { clearTimeout(_autosaveT); _autosaveT = setTimeout(autosaveNow, 1200); }
 async function autosaveNow() {
   if (!curBytes || active < 0 || !dirty) return;
-  try { await idbPut(docSig(), { name: docName, ts: Date.now(), annos, pageRot, viewRot, docScale, nextId }); } catch (_) { }
+  try { await idbPut(docSig(), { name: docName, ts: Date.now(), annos, pageRot, viewRot, docScale, nextId, formValues }); } catch (_) { }
 }
 function clearAutosave() { idbDel(docSig()); }
 async function maybeRestore() {                                  // beim Öffnen: gibt es gesicherte Anmerkungen?
   const rec = await idbGet(docSig());
-  if (!rec || !rec.annos || !Object.keys(rec.annos).length) return;
+  const hasForm = rec && rec.formValues && Object.keys(rec.formValues).length;
+  if (!rec || ((!rec.annos || !Object.keys(rec.annos).length) && !hasForm)) return;
   const when = new Date(rec.ts).toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  if (!confirm('Für „' + docName + '" gibt es automatisch gesicherte Anmerkungen (' + when + ').\nWiederherstellen?')) return;
-  annos = rec.annos; pageRot = rec.pageRot || {}; viewRot = rec.viewRot || {}; docScale = rec.docScale || null; nextId = Math.max(nextId, rec.nextId || 1);
-  const d = docs[active]; if (d) { d.annos = annos; d.pageRot = pageRot; d.viewRot = viewRot; d.docScale = docScale; d.nextId = nextId; d.dirty = true; }
-  dirty = true; pageViews.forEach(pv => { layoutPv(pv); drawAnnos(pv); }); buildThumbs(); refreshComments(); updateScaleLabel(); toast('Anmerkungen wiederhergestellt ✓');
+  if (!confirm('Für „' + docName + '" gibt es automatisch gesicherte Eingaben (' + when + ').\nWiederherstellen?')) return;
+  annos = rec.annos || {}; pageRot = rec.pageRot || {}; viewRot = rec.viewRot || {}; docScale = rec.docScale || null; nextId = Math.max(nextId, rec.nextId || 1); if (hasForm) formValues = rec.formValues;
+  const d = docs[active]; if (d) { d.annos = annos; d.pageRot = pageRot; d.viewRot = viewRot; d.docScale = docScale; d.nextId = nextId; d.formValues = formValues; d.dirty = true; }
+  dirty = true; pageViews.forEach(pv => { layoutPv(pv); drawAnnos(pv); buildFormLayer(pv); }); buildThumbs(); refreshComments(); updateScaleLabel(); toast('Eingaben wiederhergestellt ✓');
 }
 
 // Bild → 1-seitige PDF (Bytes, nebenwirkungsfrei)
@@ -237,6 +242,98 @@ async function renderCurrentDoc() {
   document.title = docName.replace(/\.pdf$/i, '') + ' – Submit PDF';
   _searchCache = {}; if (typeof closeFind === 'function') closeFind();   // Suche fürs neue Dokument zurücksetzen
   await buildLayout(); buildThumbs(); status(''); refreshComments(); updateScaleLabel();
+  detectForm();
+}
+
+/* ---------- PDF-Formularfelder ausfüllen ---------- */
+async function detectForm() {
+  formFields = {}; fieldTypes = {}; formMode = false;
+  const btn = $('#btnForm'); if (btn) { btn.hidden = true; btn.classList.remove('on'); }
+  document.body.classList.remove('form-fill');
+  if (!pdfDoc) return;
+  let count = 0;
+  try {
+    for (let n = 1; n <= pdfDoc.numPages; n++) {
+      const page = await pdfDoc.getPage(n);
+      const anns = await page.getAnnotations();
+      const vp = page.getViewport({ scale: 1 });
+      const list = [];
+      for (const an of anns) {
+        if (an.subtype !== 'Widget' || !an.fieldName) continue;
+        const ft = an.fieldType; let type = null;
+        if (ft === 'Tx') type = 'text';
+        else if (ft === 'Btn') { if (an.checkBox) type = 'checkbox'; else if (an.radioButton) type = 'radio'; else continue; }
+        else if (ft === 'Ch') type = 'dropdown';
+        else continue;
+        const r = vp.convertToViewportRectangle(an.rect);
+        const left = Math.min(r[0], r[2]), top = Math.min(r[1], r[3]), w = Math.abs(r[2] - r[0]), h = Math.abs(r[3] - r[1]);
+        const f = { name: an.fieldName, type, left, top, w, h, pw: vp.width, ph: vp.height, multiline: !!an.multiLine, maxLen: an.maxLen || 0, options: an.options || [], exportValue: an.buttonValue || an.exportValue || null, readonly: !!an.readOnly };
+        list.push(f); fieldTypes[an.fieldName] = type; count++;
+        // Vorbelegung aus dem PDF übernehmen (falls noch kein Wert gesetzt)
+        if (!(an.fieldName in formValues)) {
+          if (type === 'checkbox') formValues[an.fieldName] = (an.fieldValue && an.fieldValue !== 'Off') ? (f.exportValue || 'Yes') : 'Off';
+          else if (type === 'radio') { if (an.fieldValue && an.fieldValue !== 'Off') formValues[an.fieldName] = an.fieldValue; }
+          else if (an.fieldValue != null) formValues[an.fieldName] = Array.isArray(an.fieldValue) ? an.fieldValue[0] : an.fieldValue;
+        }
+      }
+      if (list.length) formFields[n] = list;
+    }
+  } catch (e) { console.warn('Formular-Erkennung:', e); }
+  if (count) {
+    if (btn) { btn.hidden = false; }
+    pageViews.forEach(buildFormLayer);
+    toast(count + ' Formularfeld' + (count > 1 ? 'er' : '') + ' erkannt – „Formular" oben zum Ausfüllen.');
+  }
+}
+function buildFormLayer(pv) {
+  if (pv._formLayer) { pv._formLayer.remove(); pv._formLayer = null; }
+  const fields = formFields[pv.num]; if (!fields || !fields.length) return;
+  const layer = document.createElement('div'); layer.className = 'form-layer';
+  for (const f of fields) {
+    const pct = el => { el.style.left = (f.left / f.pw * 100) + '%'; el.style.top = (f.top / f.ph * 100) + '%'; el.style.width = (f.w / f.pw * 100) + '%'; el.style.height = (f.h / f.ph * 100) + '%'; };
+    let el;
+    if (f.type === 'text') {
+      el = document.createElement(f.multiline ? 'textarea' : 'input'); if (!f.multiline) el.type = 'text';
+      if (f.maxLen) el.maxLength = f.maxLen;
+      el.value = formValues[f.name] || '';
+      el.style.fontSize = Math.max(9, Math.min(f.h * 0.62, 22)) + 'px';
+      el.oninput = () => { formValues[f.name] = el.value; markDirty(); syncField(f.name); };
+    } else if (f.type === 'checkbox') {
+      el = document.createElement('input'); el.type = 'checkbox'; el.checked = (formValues[f.name] && formValues[f.name] !== 'Off');
+      el.onchange = () => { formValues[f.name] = el.checked ? (f.exportValue || 'Yes') : 'Off'; markDirty(); };
+    } else if (f.type === 'radio') {
+      el = document.createElement('input'); el.type = 'radio'; el.name = 'rg_' + f.name; el.dataset.export = f.exportValue; el.checked = (formValues[f.name] === f.exportValue);
+      el.onchange = () => { if (el.checked) { formValues[f.name] = f.exportValue; markDirty(); syncField(f.name); } };
+    } else if (f.type === 'dropdown') {
+      el = document.createElement('select');
+      const opts = f.options.length ? f.options : [];
+      el.appendChild(new Option('', ''));
+      for (const o of opts) { const dv = o.displayValue != null ? o.displayValue : o; const ev = o.exportValue != null ? o.exportValue : o; el.appendChild(new Option(dv, ev)); }
+      el.value = formValues[f.name] || '';
+      el.style.fontSize = Math.max(9, Math.min(f.h * 0.62, 18)) + 'px';
+      el.onchange = () => { formValues[f.name] = el.value; markDirty(); };
+    }
+    el.classList.add('ff'); el.classList.add('ff-' + f.type); if (f.readonly) el.disabled = true;
+    el.dataset.fname = f.name; pct(el); layer.appendChild(el);
+  }
+  pv.inner.appendChild(layer); pv._formLayer = layer;   // über Canvas + SVG
+}
+// gleichen Feldnamen auf anderen Seiten/Widgets nachziehen (Radio-Gruppen, wiederholte Felder)
+function syncField(name) {
+  pageViews.forEach(pv => {
+    if (!pv._formLayer) return;
+    pv._formLayer.querySelectorAll('[data-fname="' + CSS.escape(name) + '"]').forEach(el => {
+      if (el === document.activeElement) return;            // gerade getipptes Feld nicht überschreiben (Cursor)
+      if (el.type === 'checkbox') el.checked = (formValues[name] && formValues[name] !== 'Off');
+      else if (el.type === 'radio') el.checked = (formValues[name] === el.dataset.export);
+      else el.value = formValues[name] || '';
+    });
+  });
+}
+function toggleFormMode() {
+  formMode = !formMode; document.body.classList.toggle('form-fill', formMode);
+  $('#btnForm').classList.toggle('on', formMode);
+  if (formMode) { setTool('select'); toast('Formular-Modus: in die Felder tippen. Zum Zeichnen „Formular" wieder aus.'); }
 }
 
 /* ---------- Rendern (virtualisiert: nur sichtbare Seiten) ----------
@@ -1093,6 +1190,22 @@ async function buildPdfBytes() {
       }
       if (pageRot[n]) pg.setRotation(degrees(pageRot[n]));
     }
+    // Ausgefüllte Formularfelder in das PDF schreiben (echte AcroForm-Werte)
+    if (formValues && Object.keys(formValues).length) {
+      try {
+        const form = doc.getForm();
+        for (const [name, val] of Object.entries(formValues)) {
+          const ty = fieldTypes[name]; if (!ty) continue;
+          try {
+            if (ty === 'text') form.getTextField(name).setText(val == null ? '' : String(val));
+            else if (ty === 'checkbox') { const cb = form.getCheckBox(name); (val && val !== 'Off') ? cb.check() : cb.uncheck(); }
+            else if (ty === 'radio') { const rg = form.getRadioGroup(name); (val && val !== 'Off') ? rg.select(val) : rg.clear(); }
+            else if (ty === 'dropdown') { if (val) form.getDropdown(name).select(val); }
+          } catch (_) { /* Feldtyp passt nicht → überspringen */ }
+        }
+        try { form.updateFieldAppearances(font); } catch (_) { }
+      } catch (_) { /* kein AcroForm */ }
+    }
     return await doc.save();
   }
 }
@@ -1465,6 +1578,7 @@ function wire() {
   $('#btnStamp').onclick = e => { e.stopPropagation(); const p = $('#stampPop'); p.hidden = !p.hidden; };
   $$('#stampPop button').forEach(b => b.onclick = () => { pendingStamp = { kind: b.dataset.kind, text: b.dataset.text || '', color: b.dataset.color }; $('#stampPop').hidden = true; setTool('stamp'); toast('Auf den Plan tippen, um den Stempel zu setzen.'); });
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.stamp-wrap')) $('#stampPop').hidden = true; }, true);
+  $('#btnForm').onclick = toggleFormMode;
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.swatch-wrap')) $('#palettePop').hidden = true; }, true);
   $('#widthSel').onchange = e => { style.width = +e.target.value; if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.width != null) { pushUndo(); a.width = style.width; pageViews.forEach(drawAnnos); } } };
   // Schwebende Auswahl-Leiste

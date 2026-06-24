@@ -192,6 +192,15 @@ body.has-tabs .files-panel,body.has-tabs .comments{top:calc(var(--bar) + var(--t
 .pagewrap.render-fail{background:#fbf5f2}
 .pagewrap.render-fail::before{content:"⚠ Seite konnte nicht geladen werden";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:18px;color:var(--danger);font-size:13px;font-weight:600;z-index:1;pointer-events:none}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* PDF-Formularfelder (HTML-Overlay, in % → skaliert mit dem Zoom) */
+.form-layer{position:absolute;inset:0;z-index:4;pointer-events:none}
+.form-layer .ff{position:absolute;box-sizing:border-box;margin:0;padding:0 2px;border:1px solid transparent;background:transparent;font-family:var(--font);color:#0b2540;line-height:1.05;border-radius:0;resize:none;overflow:hidden}
+.form-layer input.ff-checkbox,.form-layer input.ff-radio{padding:0;accent-color:var(--accent);cursor:pointer}
+.form-layer textarea.ff{white-space:pre-wrap}
+.form-layer select.ff{appearance:none;-webkit-appearance:none;cursor:pointer}
+body.form-fill .form-layer .ff{pointer-events:auto;background:rgba(46,116,224,.10);border-color:rgba(46,116,224,.5)}
+body.form-fill .form-layer .ff:focus{outline:2px solid var(--accent);background:rgba(46,116,224,.16)}
+#btnForm.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .pagewrap .anno{position:absolute;inset:0;overflow:visible;touch-action:pan-x pan-y;z-index:3}
 .pagewrap.tool-draw .anno,.pagewrap.tool-text .anno{touch-action:none}   /* beim Zeichnen/Text Finger fangen, sonst scrollen */
 @media (pointer:coarse){

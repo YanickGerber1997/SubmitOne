@@ -424,11 +424,11 @@ function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im S
     const c = document.createElement('canvas'); wrap.appendChild(c);
     const tn = document.createElement('span'); tn.className = 'tn'; tn.textContent = n; wrap.appendChild(tn);
     const ctrl = document.createElement('div'); ctrl.className = 'thumb-ctrl';
-    ctrl.innerHTML = '<button data-act="up" title="Seite nach oben">▲</button><button data-act="down" title="Seite nach unten">▼</button><button data-act="del" class="del" title="Seite löschen">✕</button>';
+    ctrl.innerHTML = '<button data-act="up" title="Seite nach oben">▲</button><button data-act="down" title="Seite nach unten">▼</button><button data-act="extract" title="Seite als neue PDF speichern">⤓</button><button data-act="del" class="del" title="Seite löschen">✕</button>';
     wrap.appendChild(ctrl);
     wrap.addEventListener('click', e => {
       const act = e.target.getAttribute && e.target.getAttribute('data-act');
-      if (act === 'up') { movePage(n, -1); } else if (act === 'down') { movePage(n, 1); } else if (act === 'del') { deletePage(n); } else if (!wrap._dragged) gotoPage(n);
+      if (act === 'up') { movePage(n, -1); } else if (act === 'down') { movePage(n, 1); } else if (act === 'del') { deletePage(n); } else if (act === 'extract') { extractPage(n); } else if (!wrap._dragged) gotoPage(n);
     });
     wrap.addEventListener('pointerdown', e => startThumbDrag(e, n, wrap));   // Drag&Drop-Umsortieren
     host.appendChild(wrap);
@@ -942,6 +942,21 @@ function movePage(n, dir) {     // dir: -1 hoch, +1 runter
   const order = []; for (let i = 1; i <= pdfDoc.numPages; i++) order.push(i);
   [order[n - 1], order[j - 1]] = [order[j - 1], order[n - 1]];
   applyPageOrder(order);
+}
+// Eine Seite (inkl. Anmerkungen) als neue PDF speichern
+async function extractPage(n) {
+  if (!curBytes) return; status('Seite wird extrahiert …');
+  try {
+    const full = await buildPdfBytes();                 // ganzes Dokument MIT Anmerkungen
+    const lib = await loadPdfLib();
+    const src = await lib.PDFDocument.load(full, { ignoreEncryption: true });
+    const out = await lib.PDFDocument.create();
+    const [p] = await out.copyPages(src, [n - 1]); out.addPage(p);
+    const bytes = new Uint8Array(await out.save());
+    status('');
+    downloadBytes(bytes, docName.replace(/\.pdf$/i, '') + '_Seite-' + n + '.pdf');
+    toast('Seite ' + n + ' als neue PDF gespeichert ✓');
+  } catch (e) { status(''); console.error(e); toast('Extrahieren fehlgeschlagen.'); }
 }
 // Weitere PDF(s)/Bilder ans Dokument anhängen
 async function appendFiles(files) {

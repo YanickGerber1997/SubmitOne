@@ -219,6 +219,7 @@ async function renderCurrentDoc() {
   $('#drop').classList.add('hide'); $('#toolbar').hidden = false; $('#quickbar').hidden = false;
   $('#btnSave').disabled = false; $('#btnSend').disabled = false; $('#docName').textContent = docName;
   document.title = docName.replace(/\.pdf$/i, '') + ' – Submit PDF';
+  _searchCache = {}; if (typeof closeFind === 'function') closeFind();   // Suche fürs neue Dokument zurücksetzen
   await buildLayout(); buildThumbs(); status(''); refreshComments(); updateScaleLabel();
 }
 
@@ -1195,6 +1196,55 @@ window.addEventListener('message', e => {
   if (d && d.type === 'submitpdf-open' && d.bytes && window.openNativeBytes) window.openNativeBytes(d.bytes, d.name);
 });
 
+/* ---------- Suche im Dokument (Strg+F) ---------- */
+let searchMatches = [], searchIdx = -1, _searchCache = {}, _findT = null, _searchTok = 0;
+function openFind() { const b = $('#findBar'); b.hidden = false; const i = $('#findInput'); i.focus(); i.select(); if (i.value) runSearch(i.value); }
+function closeFind() { $('#findBar').hidden = true; $('#findHL').hidden = true; searchMatches = []; searchIdx = -1; }
+function updateFindCount() { $('#findCount').textContent = searchMatches.length ? (searchIdx + 1) + ' / ' + searchMatches.length : ($('#findInput').value ? 'keine' : ''); }
+async function pageSearchData(n) {
+  if (_searchCache[n]) return _searchCache[n];
+  let page; try { page = await pdfDoc.getPage(n); } catch (_) { return _searchCache[n] = { joined: '', ranges: [] }; }
+  const ph = page.getViewport({ scale: 1 }).height; let tc; try { tc = await page.getTextContent(); } catch (_) { return _searchCache[n] = { joined: '', ranges: [] }; }
+  let joined = ''; const ranges = [];
+  for (const it of tc.items) { if (!it.str) continue; const s = joined.length; joined += it.str; const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10; ranges.push({ s, e: joined.length, x: tr[4], y: (ph - tr[5]) - fs * 0.82, w: it.width || fs, h: fs * 1.2 }); }
+  return _searchCache[n] = { joined, ranges };
+}
+async function runSearch(q) {
+  q = (q || '').trim(); searchMatches = []; searchIdx = -1;
+  if (!q || !pdfDoc) { updateFindCount(); $('#findHL').hidden = true; return; }
+  const ql = q.toLowerCase(), token = ++_searchTok;
+  for (let n = 1; n <= pdfDoc.numPages; n++) {
+    const { joined, ranges } = await pageSearchData(n);
+    if (token !== _searchTok) return;                     // neuere Suche → abbrechen
+    if (!joined) continue;
+    const lower = joined.toLowerCase(); let from = 0, idx;
+    while ((idx = lower.indexOf(ql, from)) !== -1) {
+      const end = idx + ql.length;
+      const rects = ranges.filter(r => r.e > idx && r.s < end).map(r => ({ x: r.x, y: r.y, w: r.w, h: r.h }));
+      if (rects.length) searchMatches.push({ page: n, rects });
+      from = end;
+      if (searchMatches.length > 3000) break;
+    }
+    if (searchMatches.length > 3000) break;
+  }
+  updateFindCount();
+  if (searchMatches.length) gotoMatch(0); else $('#findHL').hidden = true;
+}
+function gotoMatch(i) {
+  if (!searchMatches.length) return;
+  searchIdx = (i + searchMatches.length) % searchMatches.length;
+  const m = searchMatches[searchIdx], pv = pageViews.find(p => p.num === m.page);
+  if (pv) pv.wrap.scrollIntoView({ behavior: 'auto', block: 'center' });
+  updateFindCount(); requestAnimationFrame(positionFindHL);
+}
+function positionFindHL() {
+  const hl = $('#findHL'), m = searchMatches[searchIdx]; if (!m) { hl.hidden = true; return; }
+  const pv = pageViews.find(p => p.num === m.page), ctm = pv && pv.svg.getScreenCTM(); if (!ctm) { hl.hidden = true; return; }
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity; const pt = pv.svg.createSVGPoint();
+  for (const r of m.rects) for (const [px, py] of [[r.x, r.y], [r.x + r.w, r.y + r.h]]) { pt.x = px; pt.y = py; const q = pt.matrixTransform(ctm); minx = Math.min(minx, q.x); maxx = Math.max(maxx, q.x); miny = Math.min(miny, q.y); maxy = Math.max(maxy, q.y); }
+  hl.style.left = (minx - 2) + 'px'; hl.style.top = (miny - 1) + 'px'; hl.style.width = (maxx - minx + 4) + 'px'; hl.style.height = (maxy - miny + 2) + 'px'; hl.hidden = false;
+}
+
 /* ---------- Verdrahtung ---------- */
 function wire() {
   $('#btnOpen').onclick = openPicker;
@@ -1283,6 +1333,13 @@ function wire() {
   });
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#ctxmenu')) hideCtx(); }, true);
   $('#pages').addEventListener('scroll', hideCtx, { passive: true });
+  $('#pages').addEventListener('scroll', () => { if (!$('#findBar').hidden) positionFindHL(); }, { passive: true });
+  // Suche im Dokument
+  $('#findInput').addEventListener('input', e => { clearTimeout(_findT); const v = e.target.value; _findT = setTimeout(() => runSearch(v), 200); });
+  $('#findInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); gotoMatch(searchIdx + (e.shiftKey ? -1 : 1)); } else if (e.key === 'Escape') { e.preventDefault(); closeFind(); } });
+  $('#findNext').onclick = () => gotoMatch(searchIdx + 1);
+  $('#findPrev').onclick = () => gotoMatch(searchIdx - 1);
+  $('#findClose').onclick = closeFind;
   $('#btnComments').onclick = () => { const open = $('#work').classList.toggle('comm-open'); $('#comments').hidden = !open; $('#btnComments').classList.toggle('on', open); };
   const setColor = c => { style.color = c; $('#colorDot').style.background = c; $('#colorPick').value = c; if (sel) { const a = findAnno(sel.num, sel.id); if (a) { pushUndo(); a.color = c; pageViews.forEach(drawAnnos); } } };
   $('#colorPick').oninput = e => setColor(e.target.value);
@@ -1319,6 +1376,7 @@ function wire() {
 
   // Tastatur
   document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && pdfDoc) { e.preventDefault(); openFind(); return; }   // Suche – auch wenn ein Feld fokussiert ist
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (e.key === 'Escape') e.target.blur(); return; }
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openPicker(); }

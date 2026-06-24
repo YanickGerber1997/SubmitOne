@@ -1284,7 +1284,12 @@ function wire() {
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#ctxmenu')) hideCtx(); }, true);
   $('#pages').addEventListener('scroll', hideCtx, { passive: true });
   $('#btnComments').onclick = () => { const open = $('#work').classList.toggle('comm-open'); $('#comments').hidden = !open; $('#btnComments').classList.toggle('on', open); };
-  const cp = $('#colorPick'); cp.oninput = () => { style.color = cp.value; $('#colorDot').style.background = cp.value; if (sel) { const a = findAnno(sel.num, sel.id); if (a) { pushUndo(); a.color = cp.value; pageViews.forEach(drawAnnos); } } };
+  const setColor = c => { style.color = c; $('#colorDot').style.background = c; $('#colorPick').value = c; if (sel) { const a = findAnno(sel.num, sel.id); if (a) { pushUndo(); a.color = c; pageViews.forEach(drawAnnos); } } };
+  $('#colorPick').oninput = e => setColor(e.target.value);
+  $('#btnColor').onclick = e => { e.stopPropagation(); const p = $('#palettePop'); p.hidden = !p.hidden; };
+  $$('#palettePop .pal-row button').forEach(b => b.onclick = () => { setColor(b.dataset.c); $('#palettePop').hidden = true; });
+  $('#palCustom').onclick = () => { $('#palettePop').hidden = true; $('#colorPick').click(); };
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('.swatch-wrap')) $('#palettePop').hidden = true; }, true);
   $('#widthSel').onchange = e => { style.width = +e.target.value; if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.width != null) { pushUndo(); a.width = style.width; pageViews.forEach(drawAnnos); } } };
   // Schwebende Auswahl-Leiste
   const selA = () => sel && findAnno(sel.num, sel.id), selPv = () => pageViews.find(p => p.num === sel.num);

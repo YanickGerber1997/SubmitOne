@@ -78,9 +78,16 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .tool.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
 .tool.danger{color:var(--danger)}
 .tool.danger:hover{background:#f4e6df;color:var(--danger)}
-.swatch{position:relative;width:34px;height:34px;border-radius:0;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden}
-.swatch span{width:20px;height:20px;border-radius:0;border:2px solid #fff;box-shadow:0 0 0 1px var(--line);background:#b4502f}
-.swatch input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.swatch-wrap{position:relative}
+.swatch{position:relative;width:34px;height:34px;border:none;background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.swatch span{width:20px;height:20px;border:2px solid #fff;box-shadow:0 0 0 1px var(--line);background:#b4502f}
+.palette{position:absolute;top:calc(100% + 6px);left:0;z-index:60;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.2);padding:10px;display:flex;flex-direction:column;gap:8px}
+.pal-row{display:flex;align-items:center;gap:5px}
+.pal-lbl{width:48px;font-size:11px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.5px}
+.pal-row button{width:26px;height:26px;border:1px solid rgba(0,0,0,.15);cursor:pointer;padding:0}
+.pal-row button:hover{outline:2px solid var(--accent);outline-offset:1px}
+.pal-custom{margin-top:2px;border:1px solid var(--line);background:var(--surface-2);font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-soft);padding:7px;cursor:pointer}
+.pal-custom:hover{border-color:var(--accent);color:var(--accent)}
 .sel{height:32px;border:1px solid var(--line);background:var(--surface);border-radius:0;font:inherit;font-size:12.5px;color:var(--ink);padding:0 6px;cursor:pointer}
 
 /* Tab-Leiste (mehrere Dokumente) */

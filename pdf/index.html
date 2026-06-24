@@ -65,7 +65,27 @@
       <button class="tool" id="btnScale" title="Massstab setzen (z. B. 1:100 oder kalibrieren)"><b style="font:600 12px/1 var(--font)">1:n</b></button>
     </div>
     <div class="tgrp">
-      <label class="swatch" title="Farbe"><span id="colorDot"></span><input type="color" id="colorPick" value="#e8412e" /></label>
+      <div class="swatch-wrap">
+        <button class="swatch" id="btnColor" title="Farbe wählen"><span id="colorDot"></span></button>
+        <input type="color" id="colorPick" value="#b4502f" hidden />
+        <div class="palette" id="palettePop" hidden>
+          <div class="pal-row"><span class="pal-lbl">Herbst</span>
+            <button data-c="#4f7a3c" style="background:#4f7a3c" title="Olivgrün"></button>
+            <button data-c="#b4502f" style="background:#b4502f" title="Rost"></button>
+            <button data-c="#3f5e7a" style="background:#3f5e7a" title="Stahlblau"></button>
+            <button data-c="#c8902f" style="background:#c8902f" title="Ocker"></button>
+            <button data-c="#1c242c" style="background:#1c242c" title="Tinte"></button>
+          </div>
+          <div class="pal-row"><span class="pal-lbl">Kräftig</span>
+            <button data-c="#2ea043" style="background:#2ea043" title="Grün"></button>
+            <button data-c="#e8412e" style="background:#e8412e" title="Rot"></button>
+            <button data-c="#1e7fe0" style="background:#1e7fe0" title="Blau"></button>
+            <button data-c="#f5a623" style="background:#f5a623" title="Orange"></button>
+            <button data-c="#111111" style="background:#111111" title="Schwarz"></button>
+          </div>
+          <button class="pal-custom" id="palCustom">＋ Eigene Farbe …</button>
+        </div>
+      </div>
       <select class="sel" id="widthSel" title="Strichstärke">
         <option value="1.5">dünn</option><option value="2.5" selected>mittel</option><option value="4">dick</option><option value="7">sehr dick</option>
       </select>

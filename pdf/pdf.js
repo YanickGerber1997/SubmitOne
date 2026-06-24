@@ -141,15 +141,23 @@ async function loadActive() {
   if (d.pdfDoc) { pdfDoc = d.pdfDoc; await renderCurrentDoc(); } else { await loadDoc(d.bytes.slice()); d.pdfDoc = pdfDoc; }
   const p = $('#pages'); if (p) p.scrollTop = d.scrollTop || 0;
 }
+function showEmpty() { active = -1; pdfDoc = null; curBytes = null; curFileHandle = null; $('#drop').classList.remove('hide'); $('#toolbar').hidden = true; $('#quickbar').hidden = true; $('#pages').innerHTML = ''; $('#thumbs').innerHTML = ''; $('#btnSave').disabled = true; $('#btnSend').disabled = true; document.title = 'Submit PDF'; renderTabs(); }
 async function addDoc(bytes, name) {
-  saveActiveDoc(); const d = blankDoc(bytes, name); docs.push(d); active = docs.length - 1;
-  await loadActive(); renderTabs(); await maybeRestore();
+  saveActiveDoc(); const prev = active; const d = blankDoc(bytes, name); docs.push(d); active = docs.length - 1;
+  try { await loadActive(); }
+  catch (e) {                                          // z. B. Passwort abgebrochen / nicht lesbar → Tab wieder entfernen
+    docs.pop(); active = docs.length ? Math.min(prev, docs.length - 1) : -1;
+    if (active >= 0) { try { await loadActive(); } catch (_) { } renderTabs(); } else showEmpty();
+    if (!e || e.name !== 'AbortByUser') toast('Datei konnte nicht geöffnet werden.');
+    return;
+  }
+  renderTabs(); await maybeRestore();
 }
 async function activateDoc(i) { if (i === active || i < 0 || i >= docs.length) return; saveActiveDoc(); active = i; await loadActive(); renderTabs(); }
 async function closeDoc(i) {
   if (i < 0 || i >= docs.length) return;
   const wasActive = i === active; docs.splice(i, 1);
-  if (!docs.length) { active = -1; pdfDoc = null; curBytes = null; curFileHandle = null; $('#drop').classList.remove('hide'); $('#toolbar').hidden = true; $('#quickbar').hidden = true; $('#pages').innerHTML = ''; $('#thumbs').innerHTML = ''; $('#btnSave').disabled = true; $('#btnSend').disabled = true; document.title = 'Submit PDF'; renderTabs(); return; }
+  if (!docs.length) { showEmpty(); return; }
   if (wasActive) { active = Math.min(active, docs.length - 1); await loadActive(); } else if (i < active) active--;
   renderTabs();
 }
@@ -212,7 +220,14 @@ async function imageToPdfBytes(file) {
 }
 async function loadDoc(bytes) {
   status('Öffne Dokument …');
-  pdfDoc = await pdfjs.getDocument({ data: bytes }).promise;
+  const task = pdfjs.getDocument({ data: bytes }); let cancelled = false;
+  task.onPassword = (updatePassword, reason) => {                          // passwortgeschütztes PDF
+    const wrong = pdfjs.PasswordResponses && reason === pdfjs.PasswordResponses.INCORRECT_PASSWORD;
+    const pw = prompt(wrong ? 'Falsches Passwort – bitte erneut eingeben:' : 'Dieses PDF ist passwortgeschützt.\nPasswort eingeben:');
+    if (pw === null) { cancelled = true; try { task.destroy(); } catch (_) { } } else updatePassword(pw);
+  };
+  try { pdfDoc = await task.promise; }
+  catch (e) { status(''); if (cancelled) { const er = new Error('abgebrochen'); er.name = 'AbortByUser'; throw er; } throw e; }
   await renderCurrentDoc();
 }
 async function renderCurrentDoc() {
@@ -876,7 +891,7 @@ async function applyPageOrder(order) {
   if (!curBytes) return; pushDocUndo(); status('Seiten werden neu angeordnet …');   // rückgängig-fähig
   try {
     const lib = await loadPdfLib();
-    const src = await lib.PDFDocument.load(curBytes.slice());
+    const src = await lib.PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
     const out = await lib.PDFDocument.create();
     const pages = await out.copyPages(src, order.map(n => n - 1));
     pages.forEach((p, i) => { const rot = pageRot[order[i]] || 0; if (rot) p.setRotation(lib.degrees(rot)); out.addPage(p); });
@@ -904,13 +919,13 @@ async function appendFiles(files) {
   files = [...files]; pushDocUndo(); status('Seiten werden angehängt …');   // rückgängig-fähig
   try {
     const lib = await loadPdfLib();
-    const out = await lib.PDFDocument.load(curBytes.slice());
+    const out = await lib.PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
     for (const f of files) {
       let bytes;
       if (isImg(f)) { bytes = await imageToPdf(f); }   // Bild → 1-seitige PDF (nebenwirkungsfrei)
       else if (/pdf$/i.test(f.name) || f.type === 'application/pdf') { bytes = new Uint8Array(await f.arrayBuffer()); }
       else continue;
-      const add = await lib.PDFDocument.load(bytes);
+      const add = await lib.PDFDocument.load(bytes, { ignoreEncryption: true });
       const pages = await out.copyPages(add, add.getPageIndices());
       pages.forEach(p => out.addPage(p));
     }
@@ -960,7 +975,7 @@ async function buildPdfBytes() {
   const lib = await loadPdfLib();
   {
     const { PDFDocument, rgb, StandardFonts, degrees } = lib;
-    const doc = await PDFDocument.load(curBytes.slice());
+    const doc = await PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const pages = doc.getPages(); const sigCache = {};
     for (let n = 1; n <= pages.length; n++) {

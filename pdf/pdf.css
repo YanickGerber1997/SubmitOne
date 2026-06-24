@@ -37,7 +37,8 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 @keyframes lgReveal{from{opacity:0;transform:scale(.93) translateY(10px);clip-path:inset(0 0 100% 0)}to{opacity:1;transform:scale(1) translateY(0);clip-path:inset(0 0 0 0)}}
 .brand .bw-a{color:#1c242c} .brand .bw-b{color:#4f7a3c;margin-left:5px}
 .brand .brand-word{height:18px;width:auto;display:block;object-fit:contain}
-.btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:0;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:.12s}
+.btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:0;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:.12s;white-space:nowrap;flex:none}
+.topbar{flex-wrap:nowrap}
 .btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .btn:disabled{opacity:.45;cursor:default}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -287,6 +288,14 @@ body.has-tabs .files-panel,body.has-tabs .comments{top:calc(var(--bar) + var(--t
 #toast-root{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:50;display:flex;flex-direction:column;gap:8px;align-items:center}
 .toast{background:var(--ink);color:#fff;padding:9px 16px;border-radius:0;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.22);animation:tIn .2s}
 @keyframes tIn{from{opacity:0;transform:translateY(8px)}}
+
+/* Mittlere Breite (halber Bildschirm): Knöpfe nur als Symbol, damit oben nichts abschneidet */
+@media (max-width:1024px){
+  .btn span{display:none}
+  .btn{padding:0 11px;gap:0}
+  .doc-name,.suite-link{display:none}
+  .topbar{gap:7px}
+}
 
 /* ===== Responsiv: Tablet / Handy ===== */
 @media (max-width:820px){

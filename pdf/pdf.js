@@ -677,6 +677,7 @@ function onPointerDown(pv, e) {
   if (tool === 'sig') { placeSig(pv, p); return; }
   if (tool === 'highlight') { startHighlight(pv, e, p); return; }
   if (tool === 'stamp') { placeStamp(pv, p); return; }
+  if (tool === 'eraser') { startErase(pv, e); return; }
   if (tool === 'edittext') { editTextAt(pv, p); return; }
   if (tool === 'text') { createText(pv, p); return; }
   if (tool === 'note') { pushUndo(); const a = { id: nextId++, type: 'note', x: p.x, y: p.y, color: style.color, text: '' }; getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); refreshComments(); openNoteEdit(pv, a); return; }
@@ -684,6 +685,20 @@ function onPointerDown(pv, e) {
   startDraw(pv, e, p);
 }
 
+// Radierer: über Anmerkungen wischen löscht sie (nutzt die Treffer-Flächen mit data-id)
+function startErase(pv, e) {
+  let did = false;
+  const eraseAt = ev => {
+    const t = document.elementFromPoint(ev.clientX, ev.clientY); if (!t) return;
+    const idEl = t.closest && t.closest('[data-id]'); if (!idEl || !pv.svg.contains(idEl)) return;
+    const id = +idEl.getAttribute('data-id'); const arr = getAnnos(pv.num); const i = arr.findIndex(a => a.id === id);
+    if (i >= 0) { if (!did) { pushUndo(); did = true; } arr.splice(i, 1); if (sel && sel.id === id) sel = null; drawAnnos(pv); if (typeof refreshComments === 'function') refreshComments(); }
+  };
+  eraseAt(e);
+  const move = ev => eraseAt(ev);
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (did) saveState(); };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
 function startMove(pv, e, a) {
   if (!a) return; const start = evtToPage(pv, e); pushUndo(); let moved = false;
   const orig = JSON.parse(JSON.stringify(a));
@@ -1020,7 +1035,7 @@ function setTool(t) {
   if (t === 'measure' && !docScale && !setTool._measHint) { setTool._measHint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n).'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -1506,6 +1521,7 @@ function wire() {
     else if (!mod && e.key.toLowerCase() === 'o') setTool('oval');
     else if (!mod && e.key.toLowerCase() === 'm') setTool('measure');
     else if (!mod && e.key.toLowerCase() === 'h') setTool('highlight');
+    else if (!mod && e.key.toLowerCase() === 'e') setTool('eraser');
     else if (!mod && e.key.toLowerCase() === 'k') setTool('note');
   });
 }

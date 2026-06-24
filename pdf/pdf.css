@@ -175,6 +175,8 @@ body.has-tabs .files-panel,body.has-tabs .comments{top:calc(var(--bar) + var(--t
 .pagewrap .pagetile{position:absolute}
 .pagewrap.loading{background:#fff}
 .pagewrap.loading::before{content:"";position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border:2px solid var(--line-soft);border-top-color:var(--accent);animation:spin .7s linear infinite;z-index:1;pointer-events:none}
+.pagewrap.render-fail{background:#fbf5f2}
+.pagewrap.render-fail::before{content:"⚠ Seite konnte nicht geladen werden";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:18px;color:var(--danger);font-size:13px;font-weight:600;z-index:1;pointer-events:none}
 @keyframes spin{to{transform:rotate(360deg)}}
 .pagewrap .anno{position:absolute;inset:0;overflow:visible;touch-action:pan-x pan-y;z-index:3}
 .pagewrap.tool-draw .anno,.pagewrap.tool-text .anno{touch-action:none}   /* beim Zeichnen/Text Finger fangen, sonst scrollen */

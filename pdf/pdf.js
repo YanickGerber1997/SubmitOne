@@ -221,6 +221,7 @@ async function imageToPdfBytes(file) {
 async function loadDoc(bytes) {
   status('Öffne Dokument …');
   const task = pdfjs.getDocument({ data: bytes }); let cancelled = false;
+  task.onProgress = p => { if (p && p.total) status('Öffne Dokument … ' + Math.min(100, Math.round(p.loaded / p.total * 100)) + ' %'); };   // Fortschritt bei grossen Dateien
   task.onPassword = (updatePassword, reason) => {                          // passwortgeschütztes PDF
     const wrong = pdfjs.PasswordResponses && reason === pdfjs.PasswordResponses.INCORRECT_PASSWORD;
     const pw = prompt(wrong ? 'Falsches Passwort – bitte erneut eingeben:' : 'Dieses PDF ist passwortgeschützt.\nPasswort eingeben:');
@@ -306,7 +307,7 @@ async function buildLayout() {
 function enqueueRender(pv) { if (pv.rendering || (pv.rendered && !pv.stale) || renderQueue.includes(pv)) return; renderQueue.push(pv); pumpRender(); }
 function pumpRender() { while (renderActive < RENDER_MAX && renderQueue.length) { const pv = renderQueue.shift(); renderActive++; renderPage(pv).catch(() => { }).finally(() => { renderActive--; pumpRender(); }); } }
 async function renderPage(pv) {                       // Basis-Vorschau (ganze Seite, günstig)
-  if (pv.rendering || (pv.rendered && !pv.stale)) return; pv.rendering = true;
+  if (pv.rendering || (pv.rendered && !pv.stale)) return; pv.rendering = true; pv.wrap.classList.remove('render-fail');
   try {
     if (!pv.page) { pv.page = await pdfDoc.getPage(pv.num); const vp1 = pv.page.getViewport({ scale: 1 }); if (Math.abs(vp1.width - pv.pageW) > 1 || Math.abs(vp1.height - pv.pageH) > 1) { pv.pageW = vp1.width; pv.pageH = vp1.height; pv.svg.setAttribute('viewBox', `0 0 ${vp1.width} ${vp1.height}`); layoutPv(pv); } }
     // Adaptiv: kleine/mittlere Seiten sofort VOLL scharf; nur riesige Seiten deckeln (dann schärft die Kachel).
@@ -322,7 +323,7 @@ async function renderPage(pv) {                       // Basis-Vorschau (ganze S
     if (!pv.rendering) return;   // zwischenzeitlich weggescrollt/freigegeben → verwerfen
     if (pv.canvas) pv.canvas.remove();
     pv.inner.insertBefore(canvas, pv.tile || pv.svg); pv.canvas = canvas; pv.rendered = true; pv.stale = false; pv.wrap.classList.remove('loading');
-  } catch (_) { /* abgebrochen (cancel) → still verwerfen */ }
+  } catch (e) { if (e && e.name !== 'RenderingCancelledException') { pv.wrap.classList.remove('loading'); pv.wrap.classList.add('render-fail'); } }   // echter Fehler → Hinweis statt leer
   finally { pv.rendering = false; scheduleSharpen(); }   // sobald die Basis steht, scharfe Kachel anstossen
 }
 function releasePage(pv) {     // weit weg → laufendes Rendern abbrechen + Canvas/Kachel freigeben
@@ -1019,7 +1020,8 @@ async function buildPdfBytes() {
   }
 }
 async function save() {
-  if (!curBytes) return; status('Speichere …');
+  if (!curBytes) return; status('Speichere … (bei grossen Dateien etwas Geduld)');
+  await new Promise(r => setTimeout(r, 20));            // Anzeige zuerst zeichnen lassen
   try {
     const out = await buildPdfBytes();
     let ok = true;

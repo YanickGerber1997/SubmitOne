@@ -539,6 +539,12 @@ function drawOne(svg, a, pv) {
     el = svgEl('text', { x: a.x, y: a.y, fill: a.color, 'font-size': a.size, 'data-id': a.id });
     a.text.split('\n').forEach((ln, i) => { const ts = svgEl('tspan', { x: a.x, dy: i === 0 ? 0 : a.size * 1.25 }); ts.textContent = ln || ' '; el.appendChild(ts); });
     svg.appendChild(el);
+  } else if (a.type === 'highlight') {
+    const g = svgEl('g', { 'data-id': a.id });
+    for (const r of (a.rects || [])) g.appendChild(svgEl('rect', { x: r.x, y: r.y, width: r.w, height: r.h, fill: a.color, 'fill-opacity': 0.33, stroke: 'none' }));
+    if (a._drag) g.appendChild(svgEl('rect', { x: a._drag.x, y: a._drag.y, width: a._drag.w, height: a._drag.h, fill: 'none', stroke: a.color, 'stroke-width': 1, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke' }));
+    svg.appendChild(g); el = g;
+    const b = bbox(a); if (b.w) { hit = svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit); }
   } else if (a.type === 'cover') {
     el = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: a.color || '#fff', stroke: 'none', 'data-id': a.id }); svg.appendChild(el);
     hit = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
@@ -597,6 +603,7 @@ function bbox(a) {
   if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: a.size * (a.text.split('\n').length) * 1.3 };
   if (a.type === 'note') return { x: a.x, y: a.y, w: 14, h: 14 };
   if (a.type === 'sig' || a.type === 'edit' || a.type === 'cover') return { x: a.x, y: a.y, w: a.w, h: a.h };
+  if (a.type === 'highlight') { if (!a.rects || !a.rects.length) return { x: 0, y: 0, w: 0, h: 0 }; let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; for (const r of a.rects) { mnx = Math.min(mnx, r.x); mny = Math.min(mny, r.y); mxx = Math.max(mxx, r.x + r.w); mxy = Math.max(mxy, r.y + r.h); } return { x: mnx, y: mny, w: mxx - mnx, h: mxy - mny }; }
   return { x: 0, y: 0, w: 0, h: 0 };
 }
 function isLineType(a) { return a && (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim'); }
@@ -660,6 +667,7 @@ function onPointerDown(pv, e) {
     sel = null; drawAnnos(pv); return;
   }
   if (tool === 'sig') { placeSig(pv, p); return; }
+  if (tool === 'highlight') { startHighlight(pv, e, p); return; }
   if (tool === 'edittext') { editTextAt(pv, p); return; }
   if (tool === 'text') { createText(pv, p); return; }
   if (tool === 'note') { pushUndo(); const a = { id: nextId++, type: 'note', x: p.x, y: p.y, color: style.color, text: '' }; getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); refreshComments(); openNoteEdit(pv, a); return; }
@@ -681,6 +689,7 @@ function snap15(ax, ay, qx, qy) { const dx = qx - ax, dy = qy - ay, len = Math.h
 function translateAnno(a, o, dx, dy) {
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
   else if (a.type === 'pen') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
+  else if (a.type === 'highlight') a.rects = o.rects.map(r => ({ x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }));
   else { a.x = o.x + dx; a.y = o.y + dy; }
 }
 function startResize(pv, e, h) {
@@ -828,6 +837,26 @@ function splitEditMove(pv, a) {
   arr.splice(i, 1, cover, txt); sel = { num: pv.num, id: txt.id }; drawAnnos(pv); refreshComments();
   toast('Original abgedeckt – Text frei verschiebbar');
 }
+// Text markieren (Marker): über Text ziehen → alle berührten Textstücke werden hinterlegt
+async function startHighlight(pv, e, p) {
+  const items = await ensureTextItems(pv);
+  pushUndo();
+  const a = { id: nextId++, type: 'highlight', rects: [], color: style.color }; getAnnos(pv.num).push(a);
+  const x0 = p.x, y0 = p.y;
+  const update = (qx, qy) => {
+    const rx = Math.min(x0, qx), ry = Math.min(y0, qy), rw = Math.abs(qx - x0), rh = Math.abs(qy - y0);
+    a.rects = items.filter(it => it.x < rx + rw && it.x + it.w > rx && it.y < ry + rh && it.y + it.h > ry).map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h }));
+    a._drag = { x: rx, y: ry, w: rw, h: rh }; drawAnnos(pv);
+  };
+  const move = ev => { const q = evtToPage(pv, ev); update(q.x, q.y); };
+  const up = ev => {
+    document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+    const q = evtToPage(pv, ev); update(q.x, q.y); delete a._drag;
+    if (!a.rects.length) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(a), 1); undoStack.pop(); drawAnnos(pv); setTool('select'); return; }
+    sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
+  };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
 function openEditEdit(pv, a, isNew) {
   const sc = pv.scale; const ta = document.createElement('textarea'); ta.className = 'textedit'; ta.value = a.text; ta.rows = 1;
   ta.style.left = (a.x * sc) + 'px'; ta.style.top = (a.y * sc) + 'px'; ta.style.fontSize = (a.size * sc) + 'px'; ta.style.color = a.color; ta.style.background = a.bg; ta.style.minWidth = Math.max(40, a.w * sc) + 'px';
@@ -966,7 +995,7 @@ function setTool(t) {
   if (t === 'measure' && !docScale && !setTool._measHint) { setTool._measHint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n).'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -1010,6 +1039,7 @@ async function buildPdfBytes() {
         else if (a.type === 'pen') { for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c }); }
         else if (a.type === 'text') { a.text.split('\n').forEach((ln, i) => pg.drawText(ln, { x: a.x, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: c })); }
         else if (a.type === 'note' && a.text) { pg.drawRectangle({ x: a.x, y: Y(a.y + 11), width: 13, height: 11, color: c }); }
+        else if (a.type === 'highlight') { for (const r of (a.rects || [])) pg.drawRectangle({ x: r.x, y: Y(r.y + r.h), width: r.w, height: r.h, color: c, opacity: 0.33 }); }
         else if (a.type === 'cover') { const cc = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(cc.r, cc.g, cc.b) }); }
         else if (a.type === 'edit') { const bg = parseColor(a.bg), tc2 = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); (a.text || '').split('\n').forEach((ln, i) => pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) })); }
         else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); if (a.caption) { const fs = Math.max(7, Math.min(11, a.h * 0.16)), cy = a.y + a.h + 2; pg.drawLine({ start: { x: a.x, y: Y(cy) }, end: { x: a.x + a.w, y: Y(cy) }, thickness: 0.7, color: rgb(.11, .14, .17) }); pg.drawText(a.caption, { x: a.x, y: Y(cy + fs + 1), size: fs, font, color: rgb(.11, .14, .17) }); } }
@@ -1430,6 +1460,7 @@ function wire() {
     else if (!mod && e.key.toLowerCase() === 'r') setTool('rect');
     else if (!mod && e.key.toLowerCase() === 'o') setTool('oval');
     else if (!mod && e.key.toLowerCase() === 'm') setTool('measure');
+    else if (!mod && e.key.toLowerCase() === 'h') setTool('highlight');
     else if (!mod && e.key.toLowerCase() === 'k') setTool('note');
   });
 }

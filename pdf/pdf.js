@@ -1199,6 +1199,7 @@ function wire() {
   $('#btnOpen').onclick = openPicker;
   $('#dropOpen').onclick = openPicker;
   $('#btnFolder').onclick = toggleFolder;
+  if (!fsSupported()) $('#btnFolder').hidden = true;   // Ordner-Browser nur wo Datei-System-Zugriff da ist (nicht am Handy)
   $('#btnSplit').onclick = toggleSplit;
   $('#fpName').onclick = pickFolder;   // auf den Ordnernamen klicken = anderen Ordner wählen
   $('#fpClose').onclick = () => { $('#work').classList.remove('files-open'); $('#btnFolder').classList.remove('on'); };

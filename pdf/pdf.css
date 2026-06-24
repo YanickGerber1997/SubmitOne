@@ -201,6 +201,12 @@ body.has-tabs .files-panel,body.has-tabs .comments{top:calc(var(--bar) + var(--t
 body.form-fill .form-layer .ff{pointer-events:auto;background:rgba(46,116,224,.10);border-color:rgba(46,116,224,.5)}
 body.form-fill .form-layer .ff:focus{outline:2px solid var(--accent);background:rgba(46,116,224,.16)}
 #btnForm.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+/* Schnell-Werkzeuge fürs Handy (unten rechts) */
+.fab{display:none;position:fixed;right:12px;bottom:14px;z-index:45;flex-direction:column;gap:10px}
+.fab-b{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:62px;height:62px;border:1.5px solid var(--accent);background:var(--surface);color:var(--accent-3);box-shadow:0 4px 14px rgba(20,24,40,.28);cursor:pointer;font:700 10px/1 var(--font)}
+.fab-b .i{width:24px;height:24px}
+.fab-b.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+@media (max-width:820px){body.has-doc .fab{display:flex}}
 .pagewrap .anno{position:absolute;inset:0;overflow:visible;touch-action:pan-x pan-y;z-index:3}
 .pagewrap.tool-draw .anno,.pagewrap.tool-text .anno{touch-action:none}   /* beim Zeichnen/Text Finger fangen, sonst scrollen */
 @media (pointer:coarse){

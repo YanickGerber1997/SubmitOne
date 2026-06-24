@@ -257,6 +257,14 @@
 
   <input type="file" id="fileInput" accept="application/pdf,.pdf,image/*" multiple hidden />
   <div class="status" id="status" hidden></div>
+
+  <!-- Schnell-Werkzeuge fürs Handy (unten rechts, gut mit dem Daumen erreichbar) -->
+  <div class="fab" id="fab">
+    <button class="fab-b" data-tool="pen" title="Reinzeichnen"><svg viewBox="0 0 24 24" class="i"><path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M14 6l4 4"/></svg><span>Zeichnen</span></button>
+    <button class="fab-b" data-tool="text" title="Anschreiben"><svg viewBox="0 0 24 24" class="i"><path d="M5 6h14M12 6v13M9 19h6"/></svg><span>Schreiben</span></button>
+    <button class="fab-b" data-tool="edittext" title="Etwas abändern"><svg viewBox="0 0 24 24" class="i"><path d="M4 7h10M9 7v10M6 17h6"/><path d="M15 14l5-5 2 2-5 5h-2z"/></svg><span>Ändern</span></button>
+  </div>
+
   <div id="toast-root"></div>
 
   <script src="pdf.js"></script>

@@ -145,7 +145,7 @@ async function loadActive() {
   if (d.pdfDoc) { pdfDoc = d.pdfDoc; await renderCurrentDoc(); } else { await loadDoc(d.bytes.slice()); d.pdfDoc = pdfDoc; }
   const p = $('#pages'); if (p) p.scrollTop = d.scrollTop || 0;
 }
-function showEmpty() { active = -1; pdfDoc = null; curBytes = null; curFileHandle = null; $('#drop').classList.remove('hide'); $('#toolbar').hidden = true; $('#quickbar').hidden = true; $('#pages').innerHTML = ''; $('#thumbs').innerHTML = ''; $('#btnSave').disabled = true; $('#btnSend').disabled = true; document.title = 'Submit PDF'; renderTabs(); }
+function showEmpty() { active = -1; pdfDoc = null; curBytes = null; curFileHandle = null; document.body.classList.remove('has-doc'); $('#drop').classList.remove('hide'); $('#toolbar').hidden = true; $('#quickbar').hidden = true; $('#pages').innerHTML = ''; $('#thumbs').innerHTML = ''; $('#btnSave').disabled = true; $('#btnSend').disabled = true; document.title = 'Submit PDF'; renderTabs(); }
 async function addDoc(bytes, name) {
   saveActiveDoc(); const prev = active; const d = blankDoc(bytes, name); docs.push(d); active = docs.length - 1;
   try { await loadActive(); }
@@ -242,6 +242,7 @@ async function renderCurrentDoc() {
   document.title = docName.replace(/\.pdf$/i, '') + ' – Submit PDF';
   _searchCache = {}; if (typeof closeFind === 'function') closeFind();   // Suche fürs neue Dokument zurücksetzen
   await buildLayout(); buildThumbs(); status(''); refreshComments(); updateScaleLabel();
+  document.body.classList.add('has-doc');
   detectForm();
 }
 
@@ -617,7 +618,7 @@ function updateSelBar() {
   if (y < host.top + 4) { sp.y = b.y + b.h; const bp = sp.matrixTransform(ctm); y = bp.y + 12; }   // kein Platz oben → unter die Auswahl
   bar.style.left = x + 'px'; bar.style.top = y + 'px';
 }
-function strokeAttrs(a) { return { stroke: a.color, 'stroke-width': a.width, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }; }
+function strokeAttrs(a) { const o = { stroke: a.color, 'stroke-width': a.width, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }; if (a.hl) o['stroke-opacity'] = 0.35; return o; }
 function drawOne(svg, a, pv) {
   let el, hit;
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
@@ -898,9 +899,9 @@ function createText(pv, p) {
   const ta = document.createElement('textarea'); ta.className = 'textedit'; ta.rows = 1;
   const sc = pv.scale; ta.style.left = (p.x * sc) + 'px'; ta.style.top = (p.y * sc) + 'px';
   ta.style.fontSize = (style.size * sc) + 'px'; ta.style.color = style.color; ta.style.minWidth = '40px';
-  pv.inner.appendChild(ta); ta.focus();
+  pv.inner.appendChild(ta); ta.focus(); try { ta.scrollIntoView({ block: 'center' }); } catch (_) { }
   const commit = () => { const txt = ta.value.replace(/\s+$/, ''); ta.remove(); if (!txt) return; pushUndo(); const a = { id: nextId++, type: 'text', x: p.x, y: p.y, text: txt, color: style.color, size: style.size }; getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState(); };
-  ta.addEventListener('blur', commit);
+  setTimeout(() => ta.addEventListener('blur', commit), 400);   // mobil: aufpoppende Tastatur löst sonst sofort einen Blur aus → Feld verschwände
   ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ta.blur(); } else if (ev.key === 'Escape') { ta.value = ''; ta.blur(); } });
   ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
 }
@@ -969,11 +970,20 @@ async function startHighlight(pv, e, p) {
     a.rects = items.filter(it => it.x < rx + rw && it.x + it.w > rx && it.y < ry + rh && it.y + it.h > ry).map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h }));
     a._drag = { x: rx, y: ry, w: rw, h: rh }; drawAnnos(pv);
   };
-  const move = ev => { const q = evtToPage(pv, ev); update(q.x, q.y); };
+  const pts = [[p.x, p.y]];
+  const move = ev => { const q = evtToPage(pv, ev); pts.push([q.x, q.y]); update(q.x, q.y); };
   const up = ev => {
     document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
     const q = evtToPage(pv, ev); update(q.x, q.y); delete a._drag;
-    if (!a.rects.length) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(a), 1); undoStack.pop(); drawAnnos(pv); setTool('select'); return; }
+    if (!a.rects.length) {                               // kein echter Text drunter → freier Marker-Strich
+      const arr = getAnnos(pv.num); arr.splice(arr.indexOf(a), 1);
+      if (pts.length >= 2) {
+        const w = Math.max(10, (style.width || 2.5) * 4);
+        const b = { id: nextId++, type: 'pen', hl: true, width: w, color: style.color, pts: pts.slice() };
+        getAnnos(pv.num).push(b); sel = { num: pv.num, id: b.id }; setTool('select'); drawAnnos(pv); saveState(); return;
+      }
+      undoStack.pop(); drawAnnos(pv); setTool('select'); return;
+    }
     sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
   };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
@@ -1126,6 +1136,7 @@ function nudgeSel(key, d) {
 function setTool(t) {
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
   const bs = $('#btnStamp'); if (bs) bs.classList.toggle('on', t === 'stamp');
+  $$('.fab-b').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   pageViews.forEach(p => { p._hoverId = null; const h = p.svg && p.svg.querySelector('.hover-layer'); if (h) h.remove(); });   // Hover bei Werkzeugwechsel löschen
   $('#pages').classList.toggle('mode-text', t === 'textsel');   // Text-Auswahl-Modus
   if (t === 'textsel') buildTextVisible();
@@ -1173,7 +1184,7 @@ async function buildPdfBytes() {
           }
         } else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h); pg.drawRectangle({ x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w }); }
         else if (a.type === 'oval') { pg.drawEllipse({ x: a.x + a.w / 2, y: Y(a.y + a.h / 2), xScale: Math.abs(a.w / 2), yScale: Math.abs(a.h / 2), borderColor: c, borderWidth: w }); }
-        else if (a.type === 'pen') { for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c }); }
+        else if (a.type === 'pen') { const op = a.hl ? 0.35 : 1; for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c, opacity: op }); }
         else if (a.type === 'text') { a.text.split('\n').forEach((ln, i) => pg.drawText(ln, { x: a.x, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: c })); }
         else if (a.type === 'note' && a.text) { pg.drawRectangle({ x: a.x, y: Y(a.y + 11), width: 13, height: 11, color: c }); }
         else if (a.type === 'highlight') { for (const r of (a.rects || [])) pg.drawRectangle({ x: r.x, y: Y(r.y + r.h), width: r.w, height: r.h, color: c, opacity: 0.33 }); }
@@ -1579,6 +1590,7 @@ function wire() {
   $$('#stampPop button').forEach(b => b.onclick = () => { pendingStamp = { kind: b.dataset.kind, text: b.dataset.text || '', color: b.dataset.color }; $('#stampPop').hidden = true; setTool('stamp'); toast('Auf den Plan tippen, um den Stempel zu setzen.'); });
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.stamp-wrap')) $('#stampPop').hidden = true; }, true);
   $('#btnForm').onclick = toggleFormMode;
+  $$('.fab-b').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.swatch-wrap')) $('#palettePop').hidden = true; }, true);
   $('#widthSel').onchange = e => { style.width = +e.target.value; if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.width != null) { pushUndo(); a.width = style.width; pageViews.forEach(drawAnnos); } } };
   // Schwebende Auswahl-Leiste

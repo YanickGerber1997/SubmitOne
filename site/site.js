@@ -16,7 +16,7 @@ const CATS = [
   ['profi', 'Profi & Teilen'],
 ];
 const FEATURES = [
-  { cat: 'anmerken', ic: '✎', t: 'Anmerken', d: 'Stift, Linien, Pfeile, Rechtecke, Ovale — frei über den Plan zeichnen.', vid: 'videos/anmerken.mp4', anim: 'draw' },
+  { cat: 'anmerken', ic: '✎', t: 'Anmerken', d: 'Stift, Linien, Pfeile, Rechtecke, Ovale — frei über den Plan zeichnen.', vid: 'videos/anmerken.mp4' },
   { cat: 'messen', ic: '📏', t: 'Messen mit Massstab', d: 'Massstab setzen (1:100) oder kalibrieren — und reale Längen direkt im Plan messen.', vid: 'videos/messen.mp4' },
   { cat: 'messen', ic: '↔️', t: 'Masslinien', d: 'Masslinien ziehen, automatisch oder selbst beschriftet.', vid: 'videos/masslinien.mp4' },
   { cat: 'text', ic: '🔤', t: 'Text bearbeiten', d: 'Vorhandene Zahlen/Texte überschreiben oder verschieben — die alte Stelle wird sauber abgedeckt.', vid: 'videos/text-bearbeiten.mp4' },
@@ -37,26 +37,12 @@ document.querySelectorAll('[data-app]').forEach(a => a.setAttribute('href', APP_
 const frame = document.querySelector('[data-app-embed]');
 if (frame) frame.setAttribute('src', APP_URL + '?embed=1');
 
-// Mini-Animationen (statt Video) — selbst gebaut, kein Aufnehmen nötig
-function animScene(id) {
-  if (id === 'draw') return `<svg class="anim anim-draw" viewBox="0 0 320 200" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-    <rect class="pg" x="46" y="28" width="228" height="144"/>
-    <line class="ln" x1="68" y1="60" x2="212" y2="60"/>
-    <line class="ln" x1="68" y1="84" x2="176" y2="84"/>
-    <line class="ln" x1="68" y1="108" x2="236" y2="108"/>
-    <rect class="an-sel" x="62" y="48" width="158" height="24"/>
-    <line class="an-shaft" x1="98" y1="150" x2="168" y2="110"/>
-    <path class="an-head" d="M168 110 L152 112 M168 110 L162 124"/>
-  </svg>`;
-  return '';
-}
-
 // Kacheln nach Gruppen bauen
 const tiles = document.getElementById('tiles');
 function tileMedia(f) {
-  if (f.anim) return animScene(f.anim);                                                  // 1) selbst gebaute Animation
-  if (f.vid && f.has) return `<video src="${f.vid}" controls preload="metadata" playsinline></video>`;  // 2) echtes Video
-  return `<span class="tile-ghost">${f.ic}</span><div class="tile-ph"><div class="tile-play">▶</div><small>Kurzvideo folgt</small></div>`;  // 3) Platzhalter
+  // Eigenes Video (im Programm aufgenommen) abspielen, sonst Platzhalter
+  if (f.vid && f.has) return `<video src="${f.vid}" controls preload="metadata" playsinline></video>`;
+  return `<span class="tile-ghost">${f.ic}</span><div class="tile-ph"><div class="tile-play">▶</div><small>Kurzvideo folgt</small></div>`;
 }
 let n = 0;
 CATS.forEach(([key, label]) => {

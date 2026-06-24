@@ -1065,11 +1065,42 @@ function toggleShortcuts() {
   $('#scClose').onclick = close;
 }
 
+/* ---------- Zwei Dokumente nebeneinander (Split) ---------- */
+const EMBED = new URLSearchParams(location.search).has('embed');   // läuft dieses Fenster als Split-Bereich?
+let splitOn = false;
+function toggleSplit() {
+  if (EMBED) return;
+  if (splitOn) return exitSplit();
+  splitOn = true; document.body.classList.add('split-mode');
+  const v = document.createElement('div'); v.id = 'splitView'; v.className = 'split-view';
+  v.innerHTML = '<div class="split-bar"><img class="logomark" src="icon.png" alt=""><b>Nebeneinander</b><span class="grow"></span><button class="btn" id="splitExit">✕ Split beenden</button></div>'
+    + '<div class="split-body"><div class="split-pane" id="paneL"><iframe src="index.html?embed=1"></iframe></div><div class="split-divider" id="splitDiv"></div><div class="split-pane" id="paneR"><iframe src="index.html?embed=1"></iframe></div></div>';
+  document.body.appendChild(v);
+  $('#splitExit').onclick = exitSplit;
+  const lf = $('#paneL iframe');                                   // aktuelles Dokument in den linken Bereich übernehmen
+  if (curBytes) { const bytes = curBytes.slice(), name = docName; lf.addEventListener('load', () => { try { lf.contentWindow.postMessage({ type: 'submitpdf-open', bytes, name }, location.origin); } catch (_) { } }, { once: true }); }
+  setupDivider();
+}
+function exitSplit() { splitOn = false; document.body.classList.remove('split-mode'); const v = $('#splitView'); if (v) v.remove(); }
+function setupDivider() {
+  const div = $('#splitDiv'), body = $('.split-body'), L = $('#paneL'), R = $('#paneR'); let drag = false;
+  div.addEventListener('pointerdown', e => { drag = true; div.setPointerCapture(e.pointerId); e.preventDefault(); });
+  div.addEventListener('pointermove', e => { if (!drag) return; const r = body.getBoundingClientRect(); let f = (e.clientX - r.left) / r.width; f = Math.max(.2, Math.min(.8, f)); L.style.flex = f + ' 1 0'; R.style.flex = (1 - f) + ' 1 0'; });
+  div.addEventListener('pointerup', () => drag = false);
+}
+// Im Embed-Bereich: Split/Suite/Installieren ausblenden + Dokument per Nachricht entgegennehmen
+if (EMBED) document.body.classList.add('embed');
+window.addEventListener('message', e => {
+  if (e.origin !== location.origin) return; const d = e.data;
+  if (d && d.type === 'submitpdf-open' && d.bytes && window.openNativeBytes) window.openNativeBytes(d.bytes, d.name);
+});
+
 /* ---------- Verdrahtung ---------- */
 function wire() {
   $('#btnOpen').onclick = openPicker;
   $('#dropOpen').onclick = openPicker;
   $('#btnFolder').onclick = pickFolder;
+  $('#btnSplit').onclick = toggleSplit;
   $('#fpClose').onclick = () => $('#work').classList.remove('files-open');
   $('#fpRefresh').onclick = refreshTree;
   $('#fileInput').onchange = e => { openFiles(e.target.files); e.target.value = ''; };

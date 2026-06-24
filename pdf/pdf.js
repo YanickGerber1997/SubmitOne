@@ -120,14 +120,15 @@ async function closeDoc(i) {
 }
 function renderTabs() {
   const bar = $('#tabbar'); if (!bar) return;
-  document.body.classList.toggle('has-tabs', docs.length > 1);
-  bar.innerHTML = ''; if (docs.length <= 1) return;
+  document.body.classList.toggle('has-tabs', docs.length >= 1);
+  bar.innerHTML = ''; if (!docs.length) return;
   docs.forEach((d, i) => {
     const t = document.createElement('div'); t.className = 'tab' + (i === active ? ' active' : '');
     const nm = document.createElement('span'); nm.className = 'tab-nm'; nm.textContent = d.name; nm.title = d.name; nm.onclick = () => activateDoc(i);
     const x = document.createElement('button'); x.className = 'tab-x'; x.textContent = '✕'; x.title = 'Schliessen'; x.onclick = e => { e.stopPropagation(); closeDoc(i); };
     t.appendChild(nm); t.appendChild(x); bar.appendChild(t);
   });
+  const add = document.createElement('button'); add.className = 'tab-add'; add.textContent = '＋'; add.title = 'Weiteres Dokument öffnen'; add.onclick = () => openPicker(); bar.appendChild(add);
 }
 // Bild → 1-seitige PDF (Bytes, nebenwirkungsfrei)
 async function imageToPdf(file) {

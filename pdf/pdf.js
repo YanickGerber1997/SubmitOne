@@ -979,10 +979,23 @@ async function applyCrop(allPages) {
 function startMove(pv, e, a) {
   if (!a) return; const start = evtToPage(pv, e); pushUndo(); let moved = false;
   const orig = JSON.parse(JSON.stringify(a));
+  const cx = pv.pageW / 2, cy = pv.pageH / 2, thr = 6 / pv.scale;
+  const removeGuides = () => pv.svg.querySelectorAll('.snap-guide').forEach(g => g.remove());
   const move = ev => {
-    const q = evtToPage(pv, ev), dx = q.x - start.x, dy = q.y - start.y; moved = true; translateAnno(a, orig, dx, dy); drawAnnos(pv);
+    const q = evtToPage(pv, ev); let dx = q.x - start.x, dy = q.y - start.y; moved = true;
+    translateAnno(a, orig, dx, dy);
+    let snapX = false, snapY = false;
+    if (!ev.altKey) {                                   // Alt = frei (kein Einrasten)
+      const b = bbox(a), bcx = b.x + b.w / 2, bcy = b.y + b.h / 2;
+      if (Math.abs(bcx - cx) < thr) { dx += cx - bcx; snapX = true; }
+      if (Math.abs(bcy - cy) < thr) { dy += cy - bcy; snapY = true; }
+      if (snapX || snapY) translateAnno(a, orig, dx, dy);
+    }
+    drawAnnos(pv); removeGuides();
+    if (snapX) pv.svg.appendChild(svgEl('line', { x1: cx, y1: 0, x2: cx, y2: pv.pageH, class: 'snap-guide' }));
+    if (snapY) pv.svg.appendChild(svgEl('line', { x1: 0, y1: cy, x2: pv.pageW, y2: cy, class: 'snap-guide' }));
   };
-  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) undoStack.pop(); else { saveState(); refreshComments(); } };
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); removeGuides(); if (!moved) undoStack.pop(); else { saveState(); refreshComments(); } };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 // Endpunkt auf 15°-Schritte zum Festpunkt (ax,ay) einrasten (Shift beim Ziehen)

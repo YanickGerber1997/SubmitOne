@@ -740,6 +740,7 @@ function updateSelBar() {
   const hasFill = (a.type === 'rect' || a.type === 'oval' || a.type === 'path');
   $('#sbColorWrap').hidden = !hasColor; $('#sbWidths').hidden = !hasWidth; $('#sbSize').hidden = !hasSize;
   $('#sbFillWrap').hidden = !hasFill; $('#sbNoFill').hidden = !hasFill;
+  $('#sbDash').hidden = !hasWidth; $('#sbDash').textContent = a.dash === 'dash' ? '- -' : a.dash === 'dot' ? '···' : '—';
   $('#sbEdit').hidden = a.type !== 'edit'; $('#sbMove').hidden = a.type !== 'edit';
   $('#sbLine').hidden = !isLineType(a);
   if (hasColor) { $('#sbColor').value = toHex(a.color); $('#sbColorDot').style.background = a.color; }
@@ -755,13 +756,15 @@ function updateSelBar() {
   if (y < host.top + 4) { sp.y = b.y + b.h; const bp = sp.matrixTransform(ctm); y = bp.y + 12; }   // kein Platz oben → unter die Auswahl
   bar.style.left = x + 'px'; bar.style.top = y + 'px';
 }
-function strokeAttrs(a) { const o = { stroke: a.color, 'stroke-width': a.width, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }; if (a.hl) o['stroke-opacity'] = 0.35; return o; }
+function dashSvg(a) { const w = a.width || 2; return a.dash === 'dash' ? (w * 3) + ',' + (w * 2) : a.dash === 'dot' ? '0.1,' + (w * 2.2) : null; }
+function dashPdf(a) { const w = a.width || 2; return a.dash === 'dash' ? [w * 3, w * 2] : a.dash === 'dot' ? [w * 0.8, w * 2] : null; }
+function strokeAttrs(a) { const o = { stroke: a.color, 'stroke-width': a.width, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }; if (a.hl) o['stroke-opacity'] = 0.35; const d = dashSvg(a); if (d) o['stroke-dasharray'] = d; return o; }
 function drawOne(svg, a, pv) {
   let el, hit;
   if (a.type === 'text' && a.id === editingId) return;  // wird gerade per Textbox-Editor bearbeitet
   if (a.type === 'path') {
     const g = svgEl('g', { 'data-id': a.id }), d = pathD(a), drafting = penDraft && penDraft.a === a;
-    if (d) g.appendChild(svgEl('path', { d, fill: a.fill || 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+    if (d) { const pe = svgEl('path', { d, fill: a.fill || 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }); const ds = dashSvg(a); if (ds) pe.setAttribute('stroke-dasharray', ds); g.appendChild(pe); }
     if (drafting) {
       const last = a.nodes[a.nodes.length - 1];
       if (last && a._preview) g.appendChild(svgEl('line', { x1: last.x, y1: last.y, x2: a._preview.x, y2: a._preview.y, stroke: a.color, 'stroke-width': 1, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke' }));
@@ -771,7 +774,7 @@ function drawOne(svg, a, pv) {
     if (d && !drafting) { hit = svgEl('path', { d, fill: (a.fill && a.fill !== 'none') ? a.fill : 'transparent', stroke: 'transparent', 'stroke-width': Math.max(12, (a.width || 2) + 10), 'data-id': a.id }); svg.appendChild(hit); }
   } else if (a.type === 'arc') {
     const d = arcPath(a);
-    el = svgEl('path', { d, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'data-id': a.id }); svg.appendChild(el);
+    el = svgEl('path', { d, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'data-id': a.id }); const ds = dashSvg(a); if (ds) el.setAttribute('stroke-dasharray', ds); svg.appendChild(el);
     hit = svgEl('path', { d, fill: 'none', stroke: 'transparent', 'stroke-width': Math.max(12, (a.width || 2) + 10), 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
     el = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, ...strokeAttrs(a), 'data-id': a.id });
@@ -1852,7 +1855,7 @@ async function buildPdfBytes() {
       const cropT = (cb.x !== 0 || cb.y !== 0) && pushGraphicsState && popGraphicsState && concatTransformationMatrix;
       if (cropT) pg.pushOperators(pushGraphicsState(), concatTransformationMatrix(1, 0, 0, 1, cb.x, cb.y));   // Ursprung in die CropBox-Ecke
       for (const a of (annos[n] || [])) {
-        const col = hexToRgb(a.color), c = rgb(col.r, col.g, col.b), w = a.width || 2;
+        const col = hexToRgb(a.color), c = rgb(col.r, col.g, col.b), w = a.width || 2, dp = dashPdf(a);
         if (a.type === 'path') {
           if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); try { pg.drawSvgPath(pathD(a), { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b) }); } catch (_) { } }   // Füllung (Vektor)
           const pts = flattenPath(a); for (let i = 1; i < pts.length; i++) pg.drawLine({ start: { x: pts[i - 1].x, y: Y(pts[i - 1].y) }, end: { x: pts[i].x, y: Y(pts[i].y) }, thickness: w, color: c });   // Strich (bewährt)
@@ -1863,7 +1866,7 @@ async function buildPdfBytes() {
           for (let i = 1; i <= N; i++) { const ang = a1 + Math.PI * (i / N), nx = cx + r * Math.cos(ang), ny = cy + r * Math.sin(ang); pg.drawLine({ start: { x: px, y: Y(py) }, end: { x: nx, y: Y(ny) }, thickness: w, color: c }); px = nx; py = ny; }
         }
         else if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
-          pg.drawLine({ start: { x: a.x1, y: Y(a.y1) }, end: { x: a.x2, y: Y(a.y2) }, thickness: w, color: c });
+          pg.drawLine({ start: { x: a.x1, y: Y(a.y1) }, end: { x: a.x2, y: Y(a.y2) }, thickness: w, color: c, dashArray: dp });
           if (a.type === 'arrow') { const ang = Math.atan2(a.y2 - a.y1, a.x2 - a.x1), L = Math.max(12, w * 5); for (const s of [ang + 2.7, ang - 2.7]) pg.drawLine({ start: { x: a.x2, y: Y(a.y2) }, end: { x: a.x2 + Math.cos(s) * L, y: Y(a.y2 + Math.sin(s) * L) }, thickness: w, color: c }); }
           if (a.type === 'measure') { const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2; pg.drawText(a.label || lenLabel(a), { x: mx + 4, y: Y(my) + 4, size: 11, font, color: c }); }
           if (a.type === 'dim') {
@@ -1872,8 +1875,8 @@ async function buildPdfBytes() {
             const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2, lab = a.text || lenLabel(a);
             pg.drawText(lab, { x: mx - lab.length * 3, y: Y(my) + 6, size: 11, font, color: c });
           }
-        } else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), o = { x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawRectangle(o); }
-        else if (a.type === 'oval') { const o = { x: a.x + a.w / 2, y: Y(a.y + a.h / 2), xScale: Math.abs(a.w / 2), yScale: Math.abs(a.h / 2), borderColor: c, borderWidth: w }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawEllipse(o); }
+        } else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), o = { x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawRectangle(o); }
+        else if (a.type === 'oval') { const o = { x: a.x + a.w / 2, y: Y(a.y + a.h / 2), xScale: Math.abs(a.w / 2), yScale: Math.abs(a.h / 2), borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawEllipse(o); }
         else if (a.type === 'pen') { const op = a.hl ? 0.35 : 1; for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c, opacity: op }); }
         else if (a.type === 'area') { for (let i = 0; i < a.pts.length; i++) { const p1 = a.pts[i], p2 = a.pts[(i + 1) % a.pts.length]; pg.drawLine({ start: { x: p1[0], y: Y(p1[1]) }, end: { x: p2[0], y: Y(p2[1]) }, thickness: w, color: c }); } if (a.pts.length >= 3) { const ct = centroid(a.pts), lab = areaLabel(a.pts), tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: ct[0] - tw / 2, y: Y(ct[1]) - 4, size: 11, font, color: c }); } }
         else if (a.type === 'text') {
@@ -2434,6 +2437,7 @@ function wire() {
   $('#sbFill').addEventListener('pointerdown', () => { sbFillPushed = false; });
   $('#sbFill').addEventListener('input', e => { const a = selA(); if (!a) return; if (!sbFillPushed) { pushUndo(); sbFillPushed = true; } a.fill = e.target.value; $('#sbFillDot').style.background = e.target.value; const pv = selPv(); if (pv) drawAnnos(pv); });
   $('#sbNoFill').onclick = () => { const a = selA(); if (!a) return; pushUndo(); a.fill = 'none'; $('#sbFillDot').style.background = 'transparent'; const pv = selPv(); if (pv) drawAnnos(pv); };
+  $('#sbDash').onclick = () => { const a = selA(); if (!a) return; pushUndo(); a.dash = a.dash === 'dash' ? 'dot' : a.dash === 'dot' ? null : 'dash'; $('#sbDash').textContent = a.dash === 'dash' ? '- -' : a.dash === 'dot' ? '···' : '—'; const pv = selPv(); if (pv) drawAnnos(pv); };
   $$('#sbWidths button').forEach(btn => btn.onclick = () => { const a = selA(); if (!a || a.width == null) return; pushUndo(); a.width = +btn.dataset.w; style.width = +btn.dataset.w; $('#widthSel').value = btn.dataset.w; const pv = selPv(); if (pv) drawAnnos(pv); });
   $('#sbSize').onchange = e => { const a = selA(); if (!a) return; pushUndo(); a.size = +e.target.value; style.size = +e.target.value; $('#sizeSel').value = e.target.value; const pv = selPv(); if (pv) drawAnnos(pv); };
   $('#sbEdit').onclick = () => { const a = selA(), pv = selPv(); if (a && pv) openEditEdit(pv, a, false); };

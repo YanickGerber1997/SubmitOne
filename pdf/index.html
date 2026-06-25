@@ -8,7 +8,7 @@
   <link rel="icon" href="icon.png" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=126" />
+  <link rel="stylesheet" href="pdf.css?v=127" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
@@ -341,6 +341,20 @@
     <button class="fab-b" data-tool="edittext" title="Etwas abändern"><svg viewBox="0 0 24 24" class="i"><path d="M4 7h10M9 7v10M6 17h6"/><path d="M15 14l5-5 2 2-5 5h-2z"/></svg><span>Ändern</span></button>
   </div>
 
+  <div class="align-bar" id="alignBar" hidden>
+    <span class="ab-t">Ausrichten</span>
+    <button data-al="left" title="Linksbündig">◀</button>
+    <button data-al="centerH" title="Horizontal zentrieren">▮</button>
+    <button data-al="right" title="Rechtsbündig">▶</button>
+    <span class="ab-sep"></span>
+    <button data-al="top" title="Oben">▲</button>
+    <button data-al="middle" title="Vertikal zentrieren">▬</button>
+    <button data-al="bottom" title="Unten">▼</button>
+    <span class="ab-sep"></span>
+    <button data-al="distH" title="Horizontal gleich verteilen">↔</button>
+    <button data-al="distV" title="Vertikal gleich verteilen">↕</button>
+  </div>
+
   <div class="crop-bar" id="cropBar" hidden>
     <span class="crop-lbl">Zuschneiden auf den Rahmen:</span>
     <button class="btn" id="cropApply">Diese Seite</button>
@@ -363,7 +377,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=126"></script>
+  <script src="pdf.js?v=127"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

@@ -728,6 +728,7 @@ function drawAnnos(pv) {
   for (const a of getAnnos(pv.num)) drawOne(svg, a, pv);
   if (sel && sel.num === pv.num) drawSelection(svg, findAnno(pv.num, sel.id), pv);
   if (groupSel && groupSel.num === pv.num) drawGroupSel(svg, pv);
+  updateAlignBar();
   updateSelBar();
 }
 // Farbe (#hex oder rgb()) → #rrggbb für das Farbfeld
@@ -1272,6 +1273,26 @@ function startGroupMove(pv, e) {
   const move = ev => { const q = evtToPage(pv, ev), dx = q.x - start.x, dy = q.y - start.y; moved = true; for (const id of groupSel.ids) { const a = findAnno(pv.num, id); if (a && origs[id]) translateAnno(a, origs[id], dx, dy); } drawAnnos(pv); };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) { if (undoStack.length) undoStack.pop(); } else { saveState(); refreshComments(); } };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
+function updateAlignBar() { const ab = $('#alignBar'); if (ab) ab.hidden = !(groupSel && groupSel.ids && groupSel.ids.length >= 2 && tool === 'select'); }
+function alignGroup(mode) {
+  if (!groupSel) return; const pv = pageViews.find(p => p.num === groupSel.num); if (!pv) return;
+  const arr = getAnnos(pv.num), items = groupSel.ids.map(id => arr.find(a => a.id === id)).filter(Boolean); if (items.length < 2) return;
+  let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity;
+  const bbs = items.map(a => { const b = bbox(a); mnx = Math.min(mnx, b.x); mny = Math.min(mny, b.y); mxx = Math.max(mxx, b.x + b.w); mxy = Math.max(mxy, b.y + b.h); return { a, b }; });
+  pushUndo(); const cx = (mnx + mxx) / 2, cy = (mny + mxy) / 2;
+  if (mode === 'distH' || mode === 'distV') {
+    const horiz = mode === 'distH'; bbs.sort((p, q) => horiz ? (p.b.x + p.b.w / 2) - (q.b.x + q.b.w / 2) : (p.b.y + p.b.h / 2) - (q.b.y + q.b.h / 2));
+    const n = bbs.length, c0 = horiz ? bbs[0].b.x + bbs[0].b.w / 2 : bbs[0].b.y + bbs[0].b.h / 2, c1 = horiz ? bbs[n - 1].b.x + bbs[n - 1].b.w / 2 : bbs[n - 1].b.y + bbs[n - 1].b.h / 2, step = (c1 - c0) / (n - 1);
+    bbs.forEach((p, i) => { const cur = horiz ? p.b.x + p.b.w / 2 : p.b.y + p.b.h / 2, d = (c0 + step * i) - cur; translateAnno(p.a, JSON.parse(JSON.stringify(p.a)), horiz ? d : 0, horiz ? 0 : d); });
+  } else {
+    bbs.forEach(({ a, b }) => { let dx = 0, dy = 0;
+      if (mode === 'left') dx = mnx - b.x; else if (mode === 'right') dx = mxx - (b.x + b.w); else if (mode === 'centerH') dx = cx - (b.x + b.w / 2);
+      else if (mode === 'top') dy = mny - b.y; else if (mode === 'bottom') dy = mxy - (b.y + b.h); else if (mode === 'middle') dy = cy - (b.y + b.h / 2);
+      translateAnno(a, JSON.parse(JSON.stringify(a)), dx, dy);
+    });
+  }
+  drawAnnos(pv); saveState();
 }
 function deleteGroup() {
   if (!groupSel) return; pushUndo(); const arr = getAnnos(groupSel.num); if (arr) for (const id of groupSel.ids) { const i = arr.findIndex(a => a.id === id); if (i >= 0) arr.splice(i, 1); }
@@ -2497,6 +2518,7 @@ function wire() {
   $('#gridCv').addEventListener('pointerdown', startGridDrag);
   $('#pages').addEventListener('scroll', () => { scheduleRulers(); scheduleGrid(); }, { passive: true });
   window.addEventListener('resize', () => { scheduleRulers(); scheduleGrid(); });
+  $$('#alignBar button').forEach(b => b.onclick = () => alignGroup(b.dataset.al));
   $('#cropApply').onclick = () => applyCrop(false);
   $('#cropAll').onclick = () => applyCrop(true);
   $('#cropCancel').onclick = () => { removeCropAnno(); setTool('select'); };

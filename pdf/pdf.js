@@ -756,7 +756,11 @@ function strokeAttrs(a) { const o = { stroke: a.color, 'stroke-width': a.width, 
 function drawOne(svg, a, pv) {
   let el, hit;
   if (a.type === 'text' && a.id === editingId) return;  // wird gerade per Textbox-Editor bearbeitet
-  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
+  if (a.type === 'arc') {
+    const d = arcPath(a);
+    el = svgEl('path', { d, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'data-id': a.id }); svg.appendChild(el);
+    hit = svgEl('path', { d, fill: 'none', stroke: 'transparent', 'stroke-width': Math.max(12, (a.width || 2) + 10), 'data-id': a.id }); svg.appendChild(hit);
+  } else if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
     el = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, ...strokeAttrs(a), 'data-id': a.id });
     svg.appendChild(el);
     if (a.type === 'arrow') drawArrowHead(svg, a);
@@ -887,7 +891,8 @@ function bbox(a) {
   if (a.type === 'highlight') { if (!a.rects || !a.rects.length) return { x: 0, y: 0, w: 0, h: 0 }; let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; for (const r of a.rects) { mnx = Math.min(mnx, r.x); mny = Math.min(mny, r.y); mxx = Math.max(mxx, r.x + r.w); mxy = Math.max(mxy, r.y + r.h); } return { x: mnx, y: mny, w: mxx - mnx, h: mxy - mny }; }
   return { x: 0, y: 0, w: 0, h: 0 };
 }
-function isLineType(a) { return a && (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim'); }
+function isLineType(a) { return a && (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc'); }
+function arcPath(a) { const r = Math.hypot(a.x2 - a.x1, a.y2 - a.y1) / 2; return `M ${a.x1} ${a.y1} A ${r} ${r} 0 0 1 ${a.x2} ${a.y2}`; }
 function drawSelection(svg, a, pv) {
   if (!a) return; const hs = (COARSE ? 8 : 4.5) / pv.scale;
   if (isLineType(a)) {                                  // Linie: KEIN Rechteck-Rahmen, nur Linie hervorheben + Endpunkte
@@ -931,9 +936,11 @@ function bindPageEvents(pv) {
   });
   pv.svg.addEventListener('pointerleave', () => { pv._hoverId = null; setHover(pv, null); });
 }
+// Punkt aufs cm-Raster einrasten (nur wenn Raster an) – Linien/Formen/Text/Box „greifen"
+function snapPt(x, y) { if (!gridOn) return { x, y }; const c = gridCellPt(); if (c <= 0) return { x, y }; return { x: Math.round((x - gridOffX) / c) * c + gridOffX, y: Math.round((y - gridOffY) / c) * c + gridOffY }; }
 function onPointerDown(pv, e) {
   if (e.button !== 0) return;
-  const p = evtToPage(pv, e);
+  let p = evtToPage(pv, e);
   const idAttr = e.target.getAttribute && e.target.getAttribute('data-id');
   const hAttr = e.target.getAttribute && e.target.getAttribute('data-h');
 
@@ -947,6 +954,7 @@ function onPointerDown(pv, e) {
     }
     sel = null; drawAnnos(pv); return;
   }
+  if (gridOn && tool !== 'eraser' && tool !== 'edittext' && tool !== 'pen' && tool !== 'highlight' && tool !== 'textsel' && tool !== 'calibrate') p = snapPt(p.x, p.y);   // aufs Raster einrasten
   if (tool === 'sig') { placeSig(pv, p); return; }
   if (tool === 'highlight') { startHighlight(pv, e, p); return; }
   if (tool === 'stamp') { placeStamp(pv, p); return; }
@@ -1121,7 +1129,7 @@ function startMove(pv, e, a) {
 // Endpunkt auf 15°-Schritte zum Festpunkt (ax,ay) einrasten (Shift beim Ziehen)
 function snap15(ax, ay, qx, qy) { const dx = qx - ax, dy = qy - ay, len = Math.hypot(dx, dy), step = Math.PI / 12, ang = Math.round(Math.atan2(dy, dx) / step) * step; return { x: ax + Math.cos(ang) * len, y: ay + Math.sin(ang) * len }; }
 function translateAnno(a, o, dx, dy) {
-  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
+  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
   else if (a.type === 'pen' || a.type === 'area') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
   else if (a.type === 'highlight') a.rects = o.rects.map(r => ({ x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }));
   else { a.x = o.x + dx; a.y = o.y + dy; }
@@ -1189,7 +1197,7 @@ function startDraw(pv, e, p) {
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   getAnnos(pv.num).push(a);
   const move = ev => {
-    const q = evtToPage(pv, ev);
+    let q = evtToPage(pv, ev); if (gridOn && a.type !== 'pen') q = snapPt(q.x, q.y);   // Ende aufs Raster einrasten
     if (a.type === 'pen') a.pts.push([q.x, q.y]);
     else if (a.type === 'rect' || a.type === 'oval') { a.w = q.x - a.x; a.h = q.y - a.y; }
     else { if (ev.shiftKey) { const s = snap15(a.x1, a.y1, q.x, q.y); a.x2 = s.x; a.y2 = s.y; } else { a.x2 = q.x; a.y2 = q.y; } }   // Shift = 15°-Winkel
@@ -1713,7 +1721,7 @@ function setTool(t) {
   if (t === 'measure' && !docScale && !setTool._measHint) { setTool._measHint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n).'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -1746,7 +1754,12 @@ async function buildPdfBytes() {
       if (cropT) pg.pushOperators(pushGraphicsState(), concatTransformationMatrix(1, 0, 0, 1, cb.x, cb.y));   // Ursprung in die CropBox-Ecke
       for (const a of (annos[n] || [])) {
         const col = hexToRgb(a.color), c = rgb(col.r, col.g, col.b), w = a.width || 2;
-        if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
+        if (a.type === 'arc') {
+          const cx = (a.x1 + a.x2) / 2, cy = (a.y1 + a.y2) / 2, r = Math.hypot(a.x2 - a.x1, a.y2 - a.y1) / 2, a1 = Math.atan2(a.y1 - cy, a.x1 - cx);
+          let px = a.x1, py = a.y1; const N = 28;
+          for (let i = 1; i <= N; i++) { const ang = a1 + Math.PI * (i / N), nx = cx + r * Math.cos(ang), ny = cy + r * Math.sin(ang); pg.drawLine({ start: { x: px, y: Y(py) }, end: { x: nx, y: Y(ny) }, thickness: w, color: c }); px = nx; py = ny; }
+        }
+        else if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
           pg.drawLine({ start: { x: a.x1, y: Y(a.y1) }, end: { x: a.x2, y: Y(a.y2) }, thickness: w, color: c });
           if (a.type === 'arrow') { const ang = Math.atan2(a.y2 - a.y1, a.x2 - a.x1), L = Math.max(12, w * 5); for (const s of [ang + 2.7, ang - 2.7]) pg.drawLine({ start: { x: a.x2, y: Y(a.y2) }, end: { x: a.x2 + Math.cos(s) * L, y: Y(a.y2 + Math.sin(s) * L) }, thickness: w, color: c }); }
           if (a.type === 'measure') { const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2; pg.drawText(a.label || lenLabel(a), { x: mx + 4, y: Y(my) + 4, size: 11, font, color: c }); }

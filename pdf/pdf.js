@@ -906,6 +906,17 @@ function isLineType(a) { return a && (a.type === 'line' || a.type === 'arrow' ||
 function arcPath(a) { const r = Math.hypot(a.x2 - a.x1, a.y2 - a.y1) / 2; return `M ${a.x1} ${a.y1} A ${r} ${r} 0 0 1 ${a.x2} ${a.y2}`; }
 function drawSelection(svg, a, pv) {
   if (!a) return; const hs = (COARSE ? 8 : 4.5) / pv.scale;
+  if (a.type === 'path') {                              // Kurve: Knoten + Anfasser zum Nachbearbeiten
+    const r = hs;
+    a.nodes.forEach((nd, i) => {
+      for (const [hk, h] of [['in', nd.hIn], ['out', nd.hOut]]) if (h.x !== nd.x || h.y !== nd.y) {
+        svg.appendChild(svgEl('line', { x1: nd.x, y1: nd.y, x2: h.x, y2: h.y, class: 'phl' }));
+        svg.appendChild(svgEl('circle', { class: 'phandle', cx: h.x, cy: h.y, r: r * 0.85, 'data-ph': i, 'data-hk': hk, 'data-id': a.id }));
+      }
+      svg.appendChild(svgEl('rect', { class: 'pnode', x: nd.x - r, y: nd.y - r, width: r * 2, height: r * 2, 'data-pn': i, 'data-id': a.id }));
+    });
+    return;
+  }
   if (isLineType(a)) {                                  // Linie: KEIN Rechteck-Rahmen, nur Linie hervorheben + Endpunkte
     svg.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'sel-line' }));
     for (const [name, x, y] of [['p1', a.x1, a.y1], ['p2', a.x2, a.y2]]) svg.appendChild(svgEl('circle', { class: 'handle', cx: x, cy: y, r: hs, 'data-h': name }));
@@ -956,6 +967,8 @@ function onPointerDown(pv, e) {
   const hAttr = e.target.getAttribute && e.target.getAttribute('data-h');
 
   if (tool === 'select') {
+    const pn = e.target.getAttribute && e.target.getAttribute('data-pn'), ph = e.target.getAttribute && e.target.getAttribute('data-ph');
+    if ((pn !== null || ph !== null) && sel && sel.num === pv.num) { startNodeDrag(pv, e, sel.id, pn, ph, e.target.getAttribute('data-hk')); return; }   // Kurven-Knoten/Anfasser ziehen
     if (hAttr && sel && sel.num === pv.num) { startResize(pv, e, hAttr); return; }
     if (idAttr) {
       sel = { num: pv.num, id: +idAttr }; drawAnnos(pv);
@@ -1188,6 +1201,18 @@ function translateAnno(a, o, dx, dy) {
   else if (a.type === 'path') a.nodes = o.nodes.map(nd => ({ x: nd.x + dx, y: nd.y + dy, hIn: { x: nd.hIn.x + dx, y: nd.hIn.y + dy }, hOut: { x: nd.hOut.x + dx, y: nd.hOut.y + dy } }));
   else if (a.type === 'highlight') a.rects = o.rects.map(r => ({ x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }));
   else { a.x = o.x + dx; a.y = o.y + dy; }
+}
+// Kurven-Knoten (data-pn) oder Anfasser (data-ph) ziehen
+function startNodeDrag(pv, e, id, pnIdx, phIdx, hk) {
+  const a = findAnno(pv.num, id); if (!a || a.type !== 'path') return; pushUndo();
+  const move = ev => {
+    let q = evtToPage(pv, ev); if (gridOn && !ev.altKey) q = snapPt(q.x, q.y);
+    if (pnIdx !== null) { const nd = a.nodes[+pnIdx], dx = q.x - nd.x, dy = q.y - nd.y; nd.hIn.x += dx; nd.hIn.y += dy; nd.hOut.x += dx; nd.hOut.y += dy; nd.x = q.x; nd.y = q.y; }   // Knoten + seine Anfasser mitnehmen
+    else { const nd = a.nodes[+phIdx], h = hk === 'in' ? nd.hIn : nd.hOut, other = hk === 'in' ? nd.hOut : nd.hIn; h.x = q.x; h.y = q.y; if (!ev.altKey) { other.x = 2 * nd.x - q.x; other.y = 2 * nd.y - q.y; } }   // Anfasser ziehen (Alt = einseitig)
+    drawAnnos(pv);
+  };
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function startResize(pv, e, h) {
   const a = findAnno(pv.num, sel.id); if (!a) return; pushUndo(); const orig = JSON.parse(JSON.stringify(a));

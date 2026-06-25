@@ -1109,11 +1109,16 @@ function startMove(pv, e, a) {
   const orig = JSON.parse(JSON.stringify(a));
   const cx = pv.pageW / 2, cy = pv.pageH / 2, thr = 6 / pv.scale;
   const removeGuides = () => pv.svg.querySelectorAll('.snap-guide').forEach(g => g.remove());
+  const ox = orig.x1 != null ? orig.x1 : orig.x != null ? orig.x : (orig.pts ? orig.pts[0][0] : (orig.rects && orig.rects[0] ? orig.rects[0].x : 0));   // Ankerpunkt fürs Raster
+  const oy = orig.y1 != null ? orig.y1 : orig.y != null ? orig.y : (orig.pts ? orig.pts[0][1] : (orig.rects && orig.rects[0] ? orig.rects[0].y : 0));
   const move = ev => {
     const q = evtToPage(pv, ev); let dx = q.x - start.x, dy = q.y - start.y; moved = true;
-    translateAnno(a, orig, dx, dy);
     let snapX = false, snapY = false;
-    if (!ev.altKey) {                                   // Alt = frei (kein Einrasten)
+    if (gridOn && !ev.altKey) {                          // aufs Raster einrasten (Ankerpunkt)
+      const sp = snapPt(ox + dx, oy + dy); dx = sp.x - ox; dy = sp.y - oy;
+    }
+    translateAnno(a, orig, dx, dy);
+    if (!gridOn && !ev.altKey) {                         // sonst: Mitte-Einrasten mit Hilfslinien
       const b = bbox(a), bcx = b.x + b.w / 2, bcy = b.y + b.h / 2;
       if (Math.abs(bcx - cx) < thr) { dx += cx - bcx; snapX = true; }
       if (Math.abs(bcy - cy) < thr) { dy += cy - bcy; snapY = true; }
@@ -1137,7 +1142,7 @@ function translateAnno(a, o, dx, dy) {
 function startResize(pv, e, h) {
   const a = findAnno(pv.num, sel.id); if (!a) return; pushUndo(); const orig = JSON.parse(JSON.stringify(a));
   const move = ev => {
-    const q = evtToPage(pv, ev);
+    let q = evtToPage(pv, ev); if (gridOn && !ev.shiftKey && !ev.altKey) q = snapPt(q.x, q.y);   // Anfasser aufs Raster
     if (isLineType(a)) { let qx = q.x, qy = q.y; if (ev.shiftKey) { const o = h === 'p1' ? { x: a.x2, y: a.y2 } : { x: a.x1, y: a.y1 }; const s = snap15(o.x, o.y, qx, qy); qx = s.x; qy = s.y; } if (h === 'p1') { a.x1 = qx; a.y1 = qy; } else { a.x2 = qx; a.y2 = qy; } }
     else if (orig.type === 'sig' || orig.type === 'img') { const ratio = orig.w / orig.h || 1, ax = h.includes('w') ? orig.x + orig.w : orig.x, ay = h.includes('n') ? orig.y + orig.h : orig.y; const nw = Math.max(12, Math.abs(q.x - ax)), nh = nw / ratio; a.w = nw; a.h = nh; a.x = h.includes('w') ? ax - nw : ax; a.y = h.includes('n') ? ay - nh : ay; }
     else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval' || orig.type === 'edit' || orig.type === 'cover' || orig.type === 'stamp' || orig.type === 'text' || orig.type === 'crop' || orig.type === 'imgph') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }

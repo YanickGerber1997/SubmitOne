@@ -321,6 +321,12 @@ body.form-fill .form-layer .ff:focus{outline:2px solid var(--accent);background:
 .modal-card input:focus,.modal-card textarea:focus{outline:none;border-color:var(--accent)}
 .modal-hint{font-size:12px;color:var(--ink-faint);margin:6px 0 16px;line-height:1.45}
 .modal-act{display:flex;justify-content:flex-end;gap:8px}
+.sd-sec{margin-bottom:16px}
+.sd-lbl{display:block;font-size:12px;color:var(--ink-soft);font-weight:700;margin-bottom:8px}
+.sd-chips{display:flex;flex-wrap:wrap;gap:6px}
+.sd-chips button{border:1px solid var(--line);background:var(--surface-2);color:var(--ink);font:inherit;font-size:13px;font-weight:600;padding:8px 12px;cursor:pointer;border-radius:0}
+.sd-chips button:hover{border-color:var(--accent)}
+.sd-chips button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .sc-grid{display:grid;grid-template-columns:1fr auto;gap:7px 18px;align-items:center;margin:2px 0 8px}
 .sc-grid .sc-h{grid-column:1/-1;font-weight:700;color:var(--accent);font-size:11px;margin-top:9px;text-transform:uppercase;letter-spacing:.5px}
 .sc-grid span{font-size:13px;color:var(--ink-soft)}

@@ -1265,18 +1265,38 @@ function remapAfterInsert(insertPageNum, count) {
   const shift = obj => { const o = {}; for (const k in obj) { const n = +k; o[n >= insertPageNum ? n + count : n] = obj[k]; } return o; };
   annos = shift(annos); pageRot = shift(pageRot); viewRot = shift(viewRot); sel = null;
 }
-// Leere Seite nach Seite `after` einfügen (after=0 → ganz oben). Grösse von der Nachbarseite.
-async function insertBlankPage(after) {
-  if (!curBytes) return; pushDocUndo(); status('Leere Seite wird eingefügt …');
+// Vorlagen-Inhalt (Folien-Layouts) als Annotationen für eine Seite der Grösse w×h
+function templateAnnos(kind, w, h) {
+  const dark = '#1c242c', gray = '#8a8f86';
+  const mk = o => Object.assign({ type: 'text', size: 16, color: dark, align: 'left', bg: 'transparent', border: null, borderW: 1.2 }, o);
+  if (kind === 'title') return [
+    mk({ x: w * 0.1, y: h * 0.38, w: w * 0.8, h: h * 0.12, text: 'Titel', size: Math.round(h * 0.07), align: 'center' }),
+    mk({ x: w * 0.15, y: h * 0.52, w: w * 0.7, h: h * 0.06, text: 'Untertitel', size: Math.round(h * 0.032), align: 'center', color: gray })
+  ];
+  if (kind === 'titlecontent') return [
+    mk({ x: w * 0.07, y: h * 0.07, w: w * 0.86, h: h * 0.1, text: 'Titel', size: Math.round(h * 0.05) }),
+    mk({ x: w * 0.07, y: h * 0.2, w: w * 0.86, h: h * 0.7, text: '•  Punkt 1\n•  Punkt 2\n•  Punkt 3', size: Math.round(h * 0.03) })
+  ];
+  if (kind === 'image') return [
+    { type: 'rect', x: w * 0.1, y: h * 0.12, w: w * 0.8, h: h * 0.62, color: gray, width: 1.5 },
+    mk({ x: w * 0.1, y: h * 0.4, w: w * 0.8, h: h * 0.06, text: 'Bild hier einfügen', size: Math.round(h * 0.028), align: 'center', color: gray }),
+    mk({ x: w * 0.1, y: h * 0.78, w: w * 0.8, h: h * 0.05, text: 'Bildunterschrift', size: Math.round(h * 0.024), align: 'center', color: gray })
+  ];
+  return [];
+}
+// Seite nach `after` einfügen (after=0 → ganz oben). size optional {w,h} (sonst Nachbarseite), tmpl = Vorlage.
+async function insertBlankPage(after, size, tmpl) {
+  if (!curBytes) return; pushDocUndo(); status('Seite wird eingefügt …');
   try {
     const lib = await loadPdfLib();
     const out = await lib.PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
-    const pgs = out.getPages(); const ref = pgs[Math.max(0, Math.min(pgs.length - 1, after - 1))];
-    let w = 595, h = 842; if (ref) { const s = ref.getSize(); w = s.width; h = s.height; }
+    let w, h;
+    if (size) { w = size.w; h = size.h; } else { const pgs = out.getPages(); const ref = pgs[Math.max(0, Math.min(pgs.length - 1, after - 1))]; const s = ref ? ref.getSize() : { width: 595, height: 842 }; w = s.width; h = s.height; }
     out.insertPage(after, [w, h]);
     remapAfterInsert(after + 1, 1);
+    const t = templateAnnos(tmpl || 'blank', w, h); if (t.length) annos[after + 1] = t.map(a => Object.assign(a, { id: nextId++ }));
     curBytes = new Uint8Array(await out.save()); await loadDoc(curBytes.slice());
-    status(''); toast('Leere Seite eingefügt ✓'); gotoPage(after + 1);
+    status(''); toast('Seite eingefügt ✓'); gotoPage(after + 1);
   } catch (e) { status(''); console.error(e); undoStack.pop(); toast('Einfügen fehlgeschlagen.'); }
 }
 // PDF(s)/Bild(er) nach Seite `after` einfügen
@@ -1301,19 +1321,39 @@ async function insertFilesAt(after, files) {
     status(''); toast(count + ' Seite(n) eingefügt ✓'); gotoPage(after + 1);
   } catch (e) { status(''); console.error(e); undoStack.pop(); toast('Einfügen fehlgeschlagen.'); }
 }
-// Leeres Dokument (eine A4-Seite) als neuen Tab starten
-async function newBlankDoc() {
-  try { const lib = await loadPdfLib(); const d = await lib.PDFDocument.create(); d.addPage([595, 842]); const bytes = new Uint8Array(await d.save()); addDoc(bytes, 'Neue Seite.pdf'); }
-  catch (e) { console.error(e); toast('Konnte kein leeres Dokument anlegen.'); }
+// Leeres Dokument (eine Seite, gewähltes Format + Vorlage) als neuen Tab starten
+async function newBlankDoc(size, tmpl) {
+  const w = (size && size.w) || 595, h = (size && size.h) || 842;
+  try {
+    const lib = await loadPdfLib(); const d = await lib.PDFDocument.create(); d.addPage([w, h]);
+    const bytes = new Uint8Array(await d.save()); await addDoc(bytes, 'Neue Seite.pdf');
+    const t = templateAnnos(tmpl || 'blank', w, h);
+    if (t.length) { annos[1] = t.map(a => Object.assign(a, { id: nextId++ })); if (docs[active]) docs[active].annos = annos; pageViews.forEach(drawAnnos); markDirty(); }
+  } catch (e) { console.error(e); toast('Konnte kein leeres Dokument anlegen.'); }
+}
+// Folien-/Seiten-Picker (Format + Vorlage)
+let _slideCtx = null;
+function openSlidePicker(mode, after) {
+  _slideCtx = { mode, after };
+  $('#sdTitle').textContent = mode === 'new' ? 'Leeres Dokument starten' : 'Seite / Folie einfügen';
+  $('#sdOk').textContent = mode === 'new' ? 'Erstellen' : 'Einfügen';
+  $('#slideDlg').hidden = false;
+}
+function slideConfirm() {
+  const fmt = $('#sdFormats button.on') || $('#sdFormats button'), lay = $('#sdLayouts button.on') || $('#sdLayouts button');
+  const size = { w: +fmt.dataset.w, h: +fmt.dataset.h }, tmpl = lay.dataset.t;
+  $('#slideDlg').hidden = true;
+  if (_slideCtx && _slideCtx.mode === 'new') newBlankDoc(size, tmpl); else insertBlankPage(_slideCtx ? _slideCtx.after : 0, size, tmpl);
 }
 function closeInsertMenu() { const m = $('#insMenu'); if (m) { if (m._onDoc) document.removeEventListener('pointerdown', m._onDoc, true); m.remove(); } }
 function showInsertMenu(after, anchor) {
   closeInsertMenu();
   const m = document.createElement('div'); m.className = 'ins-menu'; m.id = 'insMenu';
-  m.innerHTML = '<button data-a="blank">＋ Leere Seite</button><button data-a="file">Bild / PDF …</button>';
+  m.innerHTML = '<button data-a="blank">＋ Leere Seite</button><button data-a="tmpl">Vorlage / Format …</button><button data-a="file">Bild / PDF …</button>';
   document.body.appendChild(m);
-  const r = anchor.getBoundingClientRect(); m.style.left = (r.right + 6) + 'px'; m.style.top = Math.min(r.top, innerHeight - 90) + 'px';
+  const r = anchor.getBoundingClientRect(); m.style.left = (r.right + 6) + 'px'; m.style.top = Math.min(r.top, innerHeight - 120) + 'px';
   m.querySelector('[data-a="blank"]').onclick = () => { closeInsertMenu(); insertBlankPage(after); };
+  m.querySelector('[data-a="tmpl"]').onclick = () => { closeInsertMenu(); openSlidePicker('insert', after); };
   m.querySelector('[data-a="file"]').onclick = () => { closeInsertMenu(); const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/pdf,.pdf,image/*'; inp.multiple = true; inp.onchange = e => insertFilesAt(after, e.target.files); inp.click(); };
   const onDoc = e => { if (!e.target.closest('#insMenu')) closeInsertMenu(); }; m._onDoc = onDoc;
   setTimeout(() => document.addEventListener('pointerdown', onDoc, true), 0);
@@ -1725,7 +1765,11 @@ function positionFindHL() {
 /* ---------- Verdrahtung ---------- */
 function wire() {
   $('#dropOpen').onclick = openPicker;
-  $('#dropBlank').onclick = newBlankDoc;
+  $('#dropBlank').onclick = () => openSlidePicker('new');
+  $$('#sdFormats button').forEach(b => b.onclick = () => { $$('#sdFormats button').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
+  $$('#sdLayouts button').forEach(b => b.onclick = () => { $$('#sdLayouts button').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
+  $('#sdCancel').onclick = () => $('#slideDlg').hidden = true;
+  $('#sdOk').onclick = slideConfirm;
   $('#btnFolder').onclick = toggleFiles;
   $('#btnSplit').onclick = toggleSplit;
   $('#fpName').onclick = pickFolder;            // Ordnernamen klicken = (anderen) Ordner wählen

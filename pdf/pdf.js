@@ -220,7 +220,15 @@ async function loadActive() {
   if (d.pdfDoc) { pdfDoc = d.pdfDoc; await renderCurrentDoc(); } else { await loadDoc(d.bytes.slice()); d.pdfDoc = pdfDoc; }
   const p = $('#pages'); if (p) p.scrollTop = d.scrollTop || 0;
 }
-function showEmpty() { active = -1; pdfDoc = null; curBytes = null; curFileHandle = null; document.body.classList.remove('has-doc'); $('#drop').classList.remove('hide'); $('#toolbar').hidden = true; $('#quickbar').hidden = true; $('#pages').innerHTML = ''; $('#thumbs').innerHTML = ''; $('#btnSave').disabled = true; $('#btnSend').disabled = true; document.title = 'Submit PDF'; renderTabs(); }
+function showEmpty() { active = -1; pdfDoc = null; curBytes = null; curFileHandle = null; document.body.classList.remove('has-doc'); $('#drop').classList.remove('hide'); $('#toolbar').hidden = true; $('#quickbar').hidden = true; $('#pages').innerHTML = ''; showEmptyThumbs(); $('#btnSave').disabled = true; $('#btnSend').disabled = true; document.title = 'Submit PDF'; renderTabs(); }
+// Leerzustand: Vorschau-Spalte zeigt eine „Neue Seite/Folie"-Kachel (Deck-Start)
+function showEmptyThumbs() {
+  const host = $('#thumbs'); if (!host) return; host.innerHTML = '';
+  const b = document.createElement('button'); b.className = 'thumb-new'; b.title = 'Neue Seite / Folie';
+  b.innerHTML = '<span class="tn-plus">＋</span><span>Neue Seite<br>/ Folie</span>';
+  b.onclick = () => openSlidePicker('new');
+  host.appendChild(b);
+}
 async function addDoc(bytes, name) {
   saveActiveDoc(); const prev = active; const d = blankDoc(bytes, name); docs.push(d); active = docs.length - 1;
   try { await loadActive(); }
@@ -2094,6 +2102,7 @@ function wire() {
   });
 }
 wire();
+if (active < 0) showEmptyThumbs();   // beim Start: Vorschau-Spalte zeigt „Neue Seite/Folie"
 
 /* ---------- Startbildschirm (Logo zeichnet sich, Schrift buchstabenweise) ---------- */
 (function splashIntro() {

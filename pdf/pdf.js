@@ -1134,8 +1134,8 @@ function addPathNode(a, seg, t) {
 }
 function finishCurve() {
   if (!penDraft) return; const { pv, a } = penDraft; detachCurveHover(); delete a._preview; penDraft = null;
-  if (a.nodes.length < 2) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); drawAnnos(pv); setTool('select'); return; }
-  sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
+  if (a.nodes.length < 2) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); drawAnnos(pv); return; }
+  sel = null; drawAnnos(pv); saveState();   // Kurven-Werkzeug bleibt aktiv → nächste Kurve zeichnen (V/Esc = auswählen/bearbeiten)
 }
 function cancelCurve() {
   if (!penDraft) return; const { pv, a } = penDraft; detachCurveHover();
@@ -1310,7 +1310,7 @@ function startDraw(pv, e, p) {
     if (a.type === 'pen' && penTidy) { const bz = beautify(a.pts); if (bz) { const arr = getAnnos(pv.num), i = arr.indexOf(a); arr[i] = Object.assign({ id: a.id, color: a.color, width: a.width }, bz); } }
     const cur = getAnnos(pv.num).find(x => x.id === a.id) || a;
     const b = bbox(cur); if (cur.type !== 'pen' && b.w < 3 && b.h < 3) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(cur), 1); undoStack.pop(); drawAnnos(pv); return; }
-    sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
+    sel = null; drawAnnos(pv); saveState();   // Werkzeug bleibt aktiv → mehrere zeichnen (V/Esc = auswählen)
   };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
@@ -1821,6 +1821,8 @@ function setTool(t) {
   $('#pages').classList.toggle('mode-text', t === 'textsel');   // Text-Auswahl-Modus
   if (t === 'textsel') buildTextVisible();
   if (t === 'measure' && !docScale && !setTool._measHint) { setTool._measHint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n).'); }
+  if (t === 'curve' && !setTool._curveHint) { setTool._curveHint = true; toast('Kurve: Klick = Ecke (gerade) · Klick+Ziehen = Kurve · Enter/Doppelklick = fertig · Esc = abbrechen'); }
+  if (['pen', 'line', 'arrow', 'rect', 'oval', 'arc'].includes(t) && !setTool._drawHint) { setTool._drawHint = true; toast('Werkzeug bleibt aktiv – einfach weiterzeichnen. V oder Esc = auswählen/bearbeiten.'); }
 }
 function applyToolCursor() {
   pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });

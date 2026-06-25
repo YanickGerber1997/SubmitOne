@@ -32,12 +32,12 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 /* Topbar */
 .topbar{height:var(--bar);display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:6}
 .brand{display:flex;align-items:center;gap:8px;text-decoration:none;margin-right:6px;font-weight:500;font-size:16px;letter-spacing:2.5px}
-.brand .logomark{height:30px;width:30px;flex:none;object-fit:contain}
+.brand .logomark{height:44px;width:44px;flex:none;object-fit:contain}
 .drop-logo{width:min(300px,66vw);display:block;margin:0 auto 8px}
 .splash-logo{width:min(360px,72vw);opacity:0;animation:lgReveal 1.15s cubic-bezier(.2,.7,.3,1) .15s forwards}
 @keyframes lgReveal{from{opacity:0;transform:scale(.93) translateY(10px);clip-path:inset(0 0 100% 0)}to{opacity:1;transform:scale(1) translateY(0);clip-path:inset(0 0 0 0)}}
 .brand .bw-a{color:#1c242c} .brand .bw-b{color:#4f7a3c;margin-left:5px}
-.brand .brand-word{height:18px;width:auto;display:block;object-fit:contain}
+.brand .brand-word{height:22px;width:auto;display:block;object-fit:contain}
 .btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:0;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:.12s;white-space:nowrap;flex:none}
 .topbar{flex-wrap:nowrap}
 .hdr-sep{width:1px;height:22px;background:var(--line);margin:0 3px;flex:none}
@@ -468,7 +468,7 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
 @media (max-width:520px){
   :root{--bar:48px;--tools:44px;--tabs:28px}
   .brand{font-size:14px;letter-spacing:1.5px;margin-right:2px}
-  .brand .logomark{height:26px;width:26px}
+  .brand .logomark{height:38px;width:38px}
   .brand .brand-word{display:none}        /* Schriftzug am Handy weg – nur Symbol, spart Platz */
   .scaleind{display:none}
   .topbar{gap:3px;padding:0 7px}

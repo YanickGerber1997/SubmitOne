@@ -1621,7 +1621,7 @@ function refreshComments() {
 
 /* ---------- Drehen ---------- */
 function rotatePage(deg) {
-  if (!pdfDoc) return; const n = curPage(); pageRot[n] = (((pageRot[n] || 0) + deg) % 360 + 360) % 360; saveState();
+  if (!pdfDoc) return; const n = curPage(); pushUndo(); pageRot[n] = (((pageRot[n] || 0) + deg) % 360 + 360) % 360;
   const pv = pageViews.find(p => p.num === n); if (pv) layoutPv(pv);   // reine CSS-Drehung, kein Neu-Render
   refreshThumb(n); updatePageInd(); scheduleSharpen();
 }
@@ -1893,7 +1893,7 @@ function showInsertMenu(after, anchor) {
 }
 
 /* ---------- Undo / Löschen ---------- */
-function snapshot() { return JSON.stringify({ annos, pageRot }); }
+function snapshot() { return JSON.stringify({ annos, pageRot, viewRot, docScale }); }
 function curAnnoEntry() { return { t: 'anno', s: snapshot() }; }
 function curDocEntry() { return { t: 'doc', bytes: curBytes.slice(), s: JSON.stringify({ annos, pageRot, viewRot, docScale }) }; }
 function pushUndo() { undoStack.push(curAnnoEntry()); if (undoStack.length > 80) undoStack.shift(); redoStack = []; updateUndoButtons(); markDirty(); }
@@ -1903,7 +1903,7 @@ function updateUndoButtons() { $('#btnUndo').disabled = !undoStack.length; const
 async function applyState(e) {
   sel = null;
   if (e.t === 'doc') { const d = JSON.parse(e.s); annos = d.annos; pageRot = d.pageRot; viewRot = d.viewRot || {}; docScale = d.docScale || null; curBytes = e.bytes; await loadDoc(curBytes.slice()); updateScaleLabel(); }
-  else { const d = JSON.parse(e.s); annos = d.annos; pageRot = d.pageRot; pageViews.forEach(pv => { layoutPv(pv); drawAnnos(pv); }); buildThumbs(); refreshComments(); }
+  else { const d = JSON.parse(e.s); annos = d.annos; pageRot = d.pageRot; viewRot = d.viewRot || {}; docScale = d.docScale || null; pageViews.forEach(pv => { layoutPv(pv); drawAnnos(pv); }); buildThumbs(); refreshComments(); updateScaleLabel(); scheduleSharpen(); }
 }
 async function undo() {
   if (!undoStack.length) return;
@@ -2172,6 +2172,7 @@ function openScale(calibLen) {
   $('#scaleDlg').hidden = false; (_calibLen ? $('#scaleReal') : $('#scaleRatio')).focus();
 }
 function applyScale() {
+  pushUndo();   // Massstab-Änderung rückgängig-fähig
   if (_calibLen) {
     const v = parseFloat(($('#scaleReal').value || '').replace(',', '.')), u = $('#scaleUnit').value;
     if (!(v > 0)) { $('#scaleDlg').hidden = true; return; }
@@ -2532,8 +2533,10 @@ function wire() {
   // Schnellzugriff unten links
   $('#qRotL').onclick = () => rotatePage(-90); $('#qRotR').onclick = () => rotatePage(90);
   $('#qFree').onclick = () => { const p = $('#freeRot'); p.hidden = !p.hidden; if (!p.hidden) { const n = curPage(); $('#freeRotRange').value = viewRot[n] || 0; $('#freeRotVal').textContent = ((viewRot[n] || 0) > 0 ? '+' : '') + (viewRot[n] || 0) + '°'; } };
-  $('#freeRotRange').oninput = e => setFreeRot(+e.target.value);
-  $('#freeRotReset').onclick = () => { $('#freeRotRange').value = 0; setFreeRot(0); };
+  let _rotPushed = false;
+  $('#freeRotRange').addEventListener('pointerdown', () => { _rotPushed = false; });
+  $('#freeRotRange').oninput = e => { if (!_rotPushed) { pushUndo(); _rotPushed = true; } setFreeRot(+e.target.value); };
+  $('#freeRotReset').onclick = () => { if ((viewRot[curPage()] || 0) !== 0) pushUndo(); $('#freeRotRange').value = 0; setFreeRot(0); };
   $('#qPrev').onclick = () => gotoPage(Math.max(1, curPage() - 1));
   $('#qNext').onclick = () => gotoPage(Math.min(pdfDoc ? pdfDoc.numPages : 1, curPage() + 1));
   // Rechtsklick-Menü

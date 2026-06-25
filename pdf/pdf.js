@@ -1426,6 +1426,29 @@ function movePage(n, dir) {     // dir: -1 hoch, +1 runter
   [order[n - 1], order[j - 1]] = [order[j - 1], order[n - 1]];
   applyPageOrder(order);
 }
+// Zeichnung einer Seite als echte Vektor-SVG exportieren (Logo/Grafik – skalierbar)
+function exportSVG(n) {
+  const pv = pageViews.find(p => p.num === n); if (!pv) { toast('Seite kurz sichtbar machen, dann erneut.'); return; }
+  const list = (getAnnos(n) || []).filter(a => a.type !== 'crop' && a.type !== 'imgph');
+  if (!list.length) { toast('Nichts zum Exportieren – erst etwas zeichnen.'); return; }
+  sel = null; drawAnnos(pv);                                       // Auswahl/Anfasser weg, damit sie nicht mitexportiert werden
+  const src = pv.svg.cloneNode(true);
+  src.querySelectorAll('.snap-guide, .hover-layer, .handle, [data-h]').forEach(e => e.remove());
+  src.querySelectorAll('rect[fill="transparent"], polygon[fill="transparent"]').forEach(e => e.remove());
+  src.querySelectorAll('text').forEach(t => { if (!t.getAttribute('dominant-baseline')) t.setAttribute('dominant-baseline', 'hanging'); if (!t.getAttribute('font-family')) t.setAttribute('font-family', 'Arial, Helvetica, sans-serif'); });
+  // eng auf die Zeichnung zuschneiden
+  let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity;
+  for (const a of list) { const b = bbox(a); if (!b || !isFinite(b.x)) continue; mnx = Math.min(mnx, b.x); mny = Math.min(mny, b.y); mxx = Math.max(mxx, b.x + b.w); mxy = Math.max(mxy, b.y + b.h); }
+  const pad = 10; let vb, W, H;
+  if (isFinite(mnx)) { mnx -= pad; mny -= pad; W = (mxx - mnx) + pad; H = (mxy - mny) + pad; vb = `${mnx} ${mny} ${W} ${H}`; } else { W = pv.pageW; H = pv.pageH; vb = `0 0 ${W} ${H}`; }
+  src.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); src.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+  src.setAttribute('viewBox', vb); src.setAttribute('width', Math.round(W)); src.setAttribute('height', Math.round(H));
+  src.removeAttribute('class'); src.removeAttribute('style'); src.removeAttribute('preserveAspectRatio');
+  const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(src);
+  const blob = new Blob([xml], { type: 'image/svg+xml' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = docName.replace(/\.pdf$/i, '') + '_Seite-' + n + '.svg'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+  toast('Als SVG gespeichert ✓ (skalierbarer Vektor)');
+}
 // Eine Seite (inkl. Anmerkungen) als PNG-Bild exportieren (scharf gerendert)
 async function exportPagePng(n) {
   if (!curBytes) return; status('Bild wird erzeugt …'); await new Promise(r => setTimeout(r, 10));
@@ -1939,6 +1962,7 @@ function showCtx(x, y, pv, annoId) {
   add('Seite 90° links drehen', '⟲', () => rotatePage(-90));
   add('Seite 90° rechts drehen', '⟳', () => rotatePage(90));
   add('Seite als Bild (PNG)', '🖼', () => exportPagePng(pv.num));
+  add('Als SVG (Vektor/Logo)', '✦', () => exportSVG(pv.num));
   add('Seitenzahlen einfügen', '#', addPageNumbers);
   sep();
   add('Öffnen', '📂', openPicker);

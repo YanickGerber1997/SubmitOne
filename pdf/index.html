@@ -8,7 +8,7 @@
   <link rel="icon" href="icon.png" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=128" />
+  <link rel="stylesheet" href="pdf.css?v=129" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
@@ -211,6 +211,18 @@
     <label class="sb-color" id="sbColorWrap" title="Strichfarbe"><span id="sbColorDot"></span><input type="color" id="sbColor" /></label>
     <label class="sb-color sb-fill" id="sbFillWrap" title="Füllfarbe (Klick = Farbe, ✕ = keine)" hidden><span id="sbFillDot"></span><input type="color" id="sbFill" /></label>
     <button class="sb-nofill" id="sbNoFill" title="Keine Füllung" hidden>✕</button>
+    <div class="sb-hatch-wrap">
+      <button class="sb-hatch" id="sbHatch" title="Schraffur (Wand/Material/Detail)" hidden>▦</button>
+      <div class="hatch-pop" id="hatchPop" hidden>
+        <button data-h="diag">⁄⁄&nbsp; Diagonal</button>
+        <button data-h="cross">##&nbsp; Kreuz</button>
+        <button data-h="brick">▦&nbsp; Mauerwerk</button>
+        <button data-h="insul">〰&nbsp; Dämmung</button>
+        <button data-h="wood">≡&nbsp; Holz</button>
+        <button data-h="dots">⋮&nbsp; Kies/Erde</button>
+        <button data-h="none" class="hp-none">keine Schraffur</button>
+      </div>
+    </div>
     <div class="sb-widths" id="sbWidths">
       <button data-w="1.5" title="dünn"><span class="wl" style="height:2px"></span></button>
       <button data-w="2.5" title="mittel"><span class="wl" style="height:3px"></span></button>
@@ -380,7 +392,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=128"></script>
+  <script src="pdf.js?v=129"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

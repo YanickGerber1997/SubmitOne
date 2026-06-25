@@ -408,6 +408,12 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
 .selbar #sbFillDot{width:18px;height:18px;border:1px solid var(--line);background:transparent}
 .selbar .sb-fill{background:repeating-conic-gradient(#dcdcdc 0 25%,#fff 0 50%) 50%/8px 8px}
 .selbar .sb-nofill{font-size:13px;font-weight:700}
+.selbar .sb-hatch-wrap{position:relative;display:flex;width:30px;height:30px}
+.selbar .sb-hatch.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
+.hatch-pop{position:absolute;bottom:calc(100% + 6px);left:0;z-index:62;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.22);padding:5px;display:flex;flex-direction:column;gap:3px;min-width:160px}
+.hatch-pop button{border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;text-align:left;padding:7px 12px;cursor:pointer;color:var(--ink);white-space:nowrap;border-radius:0}
+.hatch-pop button:hover{background:var(--accent-soft);color:var(--accent-3)}
+.hatch-pop .hp-none{border-top:1px solid var(--line-soft);color:var(--ink-faint)}
 .selbar .sb-nofill:hover{color:var(--danger)}
 .selbar .sb-color input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .selbar .sb-widths{display:flex;gap:2px}

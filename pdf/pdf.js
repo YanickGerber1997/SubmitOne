@@ -744,6 +744,7 @@ function updateSelBar() {
   $('#sbColorWrap').hidden = !hasColor; $('#sbWidths').hidden = !hasWidth; $('#sbSize').hidden = !hasSize;
   $('#sbFillWrap').hidden = !hasFill; $('#sbNoFill').hidden = !hasFill;
   $('#sbDash').hidden = !hasWidth; $('#sbDash').textContent = a.dash === 'dash' ? '- -' : a.dash === 'dot' ? '···' : '—';
+  $('#sbHatch').hidden = !hasFill; $('#sbHatch').classList.toggle('on', !!(a.hatch && a.hatch.type));
   $('#sbEdit').hidden = a.type !== 'edit'; $('#sbMove').hidden = a.type !== 'edit';
   $('#sbLine').hidden = !isLineType(a);
   if (hasColor) { $('#sbColor').value = toHex(a.color); $('#sbColorDot').style.background = a.color; }
@@ -759,6 +760,33 @@ function updateSelBar() {
   if (y < host.top + 4) { sp.y = b.y + b.h; const bp = sp.matrixTransform(ctm); y = bp.y + 12; }   // kein Platz oben → unter die Auswahl
   bar.style.left = x + 'px'; bar.style.top = y + 'px';
 }
+/* ---------- Schraffuren (SIA-artig: Wand/Material/Detail) ---------- */
+const HATCHES = [['diag', '⁄⁄ Diagonal'], ['cross', '## Kreuz'], ['brick', '▦ Mauerwerk'], ['insul', '〰 Dämmung'], ['wood', '≡ Holz'], ['dots', '⋮ Kies/Erde']];
+function shapeOutline(a) {
+  if (a.type === 'rect') return svgEl('rect', { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), width: Math.abs(a.w), height: Math.abs(a.h) });
+  if (a.type === 'oval') return svgEl('ellipse', { cx: a.x + a.w / 2, cy: a.y + a.h / 2, rx: Math.abs(a.w / 2), ry: Math.abs(a.h / 2) });
+  return svgEl('path', { d: pathD(a) });
+}
+function hatchGeom(a) {
+  const b = bbox(a); const lines = [], dots = []; if (b.w <= 0 || b.h <= 0) return { lines, dots };
+  const S = a.hatch.scale || 7, t = a.hatch.type, x0 = b.x - 1, y0 = b.y - 1, x1 = b.x + b.w + 1, y1 = b.y + b.h + 1, ext = b.h + 2;
+  const diag = slope => { if (slope > 0) { for (let c = (y0 - x1); c <= (y1 - x0); c += S) lines.push([x0 - ext, x0 - ext + c, x1 + ext, x1 + ext + c]); } else { for (let c = (y0 + x0); c <= (y1 + x1); c += S) lines.push([x0 - ext, -(x0 - ext) + c, x1 + ext, -(x1 + ext) + c]); } };
+  if (t === 'diag' || t === 'beton') diag(1);
+  else if (t === 'cross') { diag(1); diag(-1); }
+  else if (t === 'wood') { for (let y = y0; y <= y1; y += S) lines.push([x0, y, x1, y]); }
+  else if (t === 'brick') { const bh = S * 1.6, bw = S * 3.2; let r = 0; for (let y = y0; y <= y1; y += bh) { lines.push([x0, y, x1, y]); const off = (r % 2) ? bw / 2 : 0; for (let x = x0 + off; x <= x1; x += bw) lines.push([x, y, x, y + bh]); r++; } }
+  else if (t === 'insul') { const bh = S * 2; for (let y = y0; y <= y1; y += bh) { let up = true; for (let x = x0; x <= x1; x += S) { lines.push([x, up ? y : y - bh * 0.6, x + S, up ? y - bh * 0.6 : y]); up = !up; } } }
+  else if (t === 'dots') { const g = S * 1.7; let r = 0; for (let y = y0; y <= y1; y += g) { const off = (r % 2) ? g / 2 : 0; for (let x = x0 + off; x <= x1; x += g) dots.push([x, y]); r++; } }
+  return { lines, dots };
+}
+function appendHatch(svg, a) {
+  const cid = 'hc' + a.id, cp = svgEl('clipPath', { id: cid }); cp.appendChild(shapeOutline(a));
+  const defs = svgEl('defs'); defs.appendChild(cp); svg.appendChild(defs);
+  const hg = svgEl('g', { 'clip-path': `url(#${cid})`, 'pointer-events': 'none' }), col = a.hatch.color || a.color, lw = a.hatch.w || 0.8, geom = hatchGeom(a);
+  for (const L of geom.lines) hg.appendChild(svgEl('line', { x1: L[0], y1: L[1], x2: L[2], y2: L[3], stroke: col, 'stroke-width': lw, 'vector-effect': 'non-scaling-stroke' }));
+  for (const D of geom.dots) hg.appendChild(svgEl('circle', { cx: D[0], cy: D[1], r: (a.hatch.scale || 7) * 0.16, fill: col }));
+  svg.appendChild(hg);
+}
 function dashSvg(a) { const w = a.width || 2; return a.dash === 'dash' ? (w * 3) + ',' + (w * 2) : a.dash === 'dot' ? '0.1,' + (w * 2.2) : null; }
 function dashPdf(a) { const w = a.width || 2; return a.dash === 'dash' ? [w * 3, w * 2] : a.dash === 'dot' ? [w * 0.8, w * 2] : null; }
 function strokeAttrs(a) { const o = { stroke: a.color, 'stroke-width': a.width, fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }; if (a.hl) o['stroke-opacity'] = 0.35; const d = dashSvg(a); if (d) o['stroke-dasharray'] = d; return o; }
@@ -767,7 +795,8 @@ function drawOne(svg, a, pv) {
   if (a.type === 'text' && a.id === editingId) return;  // wird gerade per Textbox-Editor bearbeitet
   if (a.type === 'path') {
     const g = svgEl('g', { 'data-id': a.id }), d = pathD(a), drafting = penDraft && penDraft.a === a;
-    if (d) { const pe = svgEl('path', { d, fill: a.fill || 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }); const ds = dashSvg(a); if (ds) pe.setAttribute('stroke-dasharray', ds); g.appendChild(pe); }
+    if (d && a.hatch && a.hatch.type) appendHatch(g, a);
+    if (d) { const pe = svgEl('path', { d, fill: (a.hatch && a.hatch.type) ? 'none' : (a.fill || 'none'), stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }); const ds = dashSvg(a); if (ds) pe.setAttribute('stroke-dasharray', ds); g.appendChild(pe); }
     if (drafting) {
       const last = a.nodes[a.nodes.length - 1];
       if (last && a._preview) g.appendChild(svgEl('line', { x1: last.x, y1: last.y, x2: a._preview.x, y2: a._preview.y, stroke: a.color, 'stroke-width': 1, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke' }));
@@ -786,9 +815,11 @@ function drawOne(svg, a, pv) {
     if (a.type === 'measure') drawMeasureLabel(svg, a, pv);
     hit = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'hit', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'rect') {
-    el = svgEl('rect', { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), width: Math.abs(a.w), height: Math.abs(a.h), ...strokeAttrs(a), 'data-id': a.id }); if (a.fill && a.fill !== 'none') el.setAttribute('fill', a.fill); svg.appendChild(el);
+    const hatched = a.hatch && a.hatch.type; if (hatched) appendHatch(svg, a);
+    el = svgEl('rect', { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), width: Math.abs(a.w), height: Math.abs(a.h), ...strokeAttrs(a), 'data-id': a.id }); if (hatched) el.setAttribute('fill', 'transparent'); else if (a.fill && a.fill !== 'none') el.setAttribute('fill', a.fill); svg.appendChild(el);
   } else if (a.type === 'oval') {
-    el = svgEl('ellipse', { cx: a.x + a.w / 2, cy: a.y + a.h / 2, rx: Math.abs(a.w / 2), ry: Math.abs(a.h / 2), ...strokeAttrs(a), 'data-id': a.id }); if (a.fill && a.fill !== 'none') el.setAttribute('fill', a.fill); svg.appendChild(el);
+    const hatched = a.hatch && a.hatch.type; if (hatched) appendHatch(svg, a);
+    el = svgEl('ellipse', { cx: a.x + a.w / 2, cy: a.y + a.h / 2, rx: Math.abs(a.w / 2), ry: Math.abs(a.h / 2), ...strokeAttrs(a), 'data-id': a.id }); if (hatched) el.setAttribute('fill', 'transparent'); else if (a.fill && a.fill !== 'none') el.setAttribute('fill', a.fill); svg.appendChild(el);
   } else if (a.type === 'pen') {
     el = svgEl('polyline', { points: a.pts.map(p => p[0] + ',' + p[1]).join(' '), ...strokeAttrs(a), 'data-id': a.id }); svg.appendChild(el);
   } else if (a.type === 'text') {
@@ -1932,7 +1963,7 @@ function outName() { return docName.replace(/\.pdf$/i, '') + '-submit.pdf'; }
 async function buildPdfBytes() {
   const lib = await loadPdfLib();
   {
-    const { PDFDocument, rgb, StandardFonts, degrees, pushGraphicsState, popGraphicsState, concatTransformationMatrix } = lib;
+    const { PDFDocument, rgb, StandardFonts, degrees, pushGraphicsState, popGraphicsState, concatTransformationMatrix, moveTo, lineTo, closePath, clip, endPath } = lib;
     const doc = await PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const pages = doc.getPages(); const sigCache = {};
@@ -1992,6 +2023,20 @@ async function buildPdfBytes() {
         else if (a.type === 'edit') { const bg = parseColor(a.bg), tc2 = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); (a.text || '').split('\n').forEach((ln, i) => pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) })); }
         else if (a.type === 'img' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, opacity: a.opacity != null ? a.opacity : 1 }); }
         else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); if (a.caption) { const fs = Math.max(7, Math.min(11, a.h * 0.16)), cy = a.y + a.h + 2; pg.drawLine({ start: { x: a.x, y: Y(cy) }, end: { x: a.x + a.w, y: Y(cy) }, thickness: 0.7, color: rgb(.11, .14, .17) }); pg.drawText(a.caption, { x: a.x, y: Y(cy + fs + 1), size: fs, font, color: rgb(.11, .14, .17) }); } }
+        // Schraffur (geclippt auf die Form)
+        if ((a.type === 'rect' || a.type === 'oval' || a.type === 'path') && a.hatch && a.hatch.type && moveTo && clip) {
+          try {
+            const ops = [pushGraphicsState()];
+            if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h); ops.push(moveTo(x, Y(y)), lineTo(x + W, Y(y)), lineTo(x + W, Y(y + H)), lineTo(x, Y(y + H)), closePath()); }
+            else if (a.type === 'oval') { const cx = a.x + a.w / 2, cy = a.y + a.h / 2, rx = Math.abs(a.w / 2), ry = Math.abs(a.h / 2); ops.push(moveTo(cx + rx, Y(cy))); for (let k = 1; k <= 32; k++) { const ang = k / 32 * 2 * Math.PI; ops.push(lineTo(cx + rx * Math.cos(ang), Y(cy + ry * Math.sin(ang)))); } ops.push(closePath()); }
+            else { const pts = flattenPath(a); if (pts.length) { ops.push(moveTo(pts[0].x, Y(pts[0].y))); for (let i = 1; i < pts.length; i++) ops.push(lineTo(pts[i].x, Y(pts[i].y))); ops.push(closePath()); } }
+            ops.push(clip(), endPath()); pg.pushOperators(...ops);
+            const hc = hexToRgb(a.hatch.color || a.color), hcc = rgb(hc.r, hc.g, hc.b), lw = a.hatch.w || 0.8, geom = hatchGeom(a);
+            for (const L of geom.lines) pg.drawLine({ start: { x: L[0], y: Y(L[1]) }, end: { x: L[2], y: Y(L[3]) }, thickness: lw, color: hcc });
+            for (const D of geom.dots) pg.drawEllipse({ x: D[0], y: Y(D[1]), xScale: (a.hatch.scale || 7) * 0.16, yScale: (a.hatch.scale || 7) * 0.16, color: hcc });
+            pg.pushOperators(popGraphicsState());
+          } catch (_) { }
+        }
       }
       if (cropT) pg.pushOperators(popGraphicsState());
       if (pageRot[n]) pg.setRotation(degrees(pageRot[n]));
@@ -2551,6 +2596,9 @@ function wire() {
   $('#sbFill').addEventListener('input', e => { const a = selA(); if (!a) return; if (!sbFillPushed) { pushUndo(); sbFillPushed = true; } a.fill = e.target.value; $('#sbFillDot').style.background = e.target.value; const pv = selPv(); if (pv) drawAnnos(pv); });
   $('#sbNoFill').onclick = () => { const a = selA(); if (!a) return; pushUndo(); a.fill = 'none'; $('#sbFillDot').style.background = 'transparent'; const pv = selPv(); if (pv) drawAnnos(pv); };
   $('#sbDash').onclick = () => { const a = selA(); if (!a) return; pushUndo(); a.dash = a.dash === 'dash' ? 'dot' : a.dash === 'dot' ? null : 'dash'; $('#sbDash').textContent = a.dash === 'dash' ? '- -' : a.dash === 'dot' ? '···' : '—'; const pv = selPv(); if (pv) drawAnnos(pv); };
+  $('#sbHatch').onclick = e => { e.stopPropagation(); const p = $('#hatchPop'); p.hidden = !p.hidden; };
+  $$('#hatchPop button').forEach(b => b.onclick = () => { const a = selA(); if (!a) return; pushUndo(); const t = b.dataset.h; a.hatch = (t === 'none') ? null : { type: t, color: a.color, scale: (a.hatch && a.hatch.scale) || 7, w: 0.8 }; $('#hatchPop').hidden = true; $('#sbHatch').classList.toggle('on', !!a.hatch); const pv = selPv(); if (pv) drawAnnos(pv); saveState(); });
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('.sb-hatch-wrap')) $('#hatchPop').hidden = true; }, true);
   $$('#sbWidths button').forEach(btn => btn.onclick = () => { const a = selA(); if (!a || a.width == null) return; pushUndo(); a.width = +btn.dataset.w; style.width = +btn.dataset.w; $('#widthSel').value = btn.dataset.w; const pv = selPv(); if (pv) drawAnnos(pv); });
   $('#sbSize').onchange = e => { const a = selA(); if (!a) return; pushUndo(); a.size = +e.target.value; style.size = +e.target.value; $('#sizeSel').value = e.target.value; const pv = selPv(); if (pv) drawAnnos(pv); };
   $('#sbEdit').onclick = () => { const a = selA(), pv = selPv(); if (a && pv) openEditEdit(pv, a, false); };

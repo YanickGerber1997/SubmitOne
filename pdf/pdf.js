@@ -1348,6 +1348,18 @@ function templateAnnos(kind, w, h) {
     mk({ x: w * 0.07, y: h * 0.07, w: w * 0.86, h: h * 0.1, text: 'Titel', size: Math.round(h * 0.05) }),
     mk({ x: w * 0.07, y: h * 0.2, w: w * 0.86, h: h * 0.7, text: '•  Punkt 1\n•  Punkt 2\n•  Punkt 3', size: Math.round(h * 0.03) })
   ];
+  if (kind === 'twocol') return [
+    mk({ x: w * 0.07, y: h * 0.07, w: w * 0.86, h: h * 0.1, text: 'Titel', size: Math.round(h * 0.05) }),
+    mk({ x: w * 0.07, y: h * 0.22, w: w * 0.42, h: h * 0.66, text: '•  Punkt\n•  Punkt', size: Math.round(h * 0.028) }),
+    mk({ x: w * 0.51, y: h * 0.22, w: w * 0.42, h: h * 0.66, text: '•  Punkt\n•  Punkt', size: Math.round(h * 0.028) })
+  ];
+  if (kind === 'compare') return [
+    mk({ x: w * 0.07, y: h * 0.07, w: w * 0.86, h: h * 0.1, text: 'Vergleich', size: Math.round(h * 0.05) }),
+    { type: 'rect', x: w * 0.07, y: h * 0.24, w: w * 0.42, h: h * 0.64, color: gray, width: 1.5 },
+    { type: 'rect', x: w * 0.51, y: h * 0.24, w: w * 0.42, h: h * 0.64, color: gray, width: 1.5 },
+    mk({ x: w * 0.07, y: h * 0.26, w: w * 0.42, h: h * 0.06, text: 'Option A', size: Math.round(h * 0.03), align: 'center' }),
+    mk({ x: w * 0.51, y: h * 0.26, w: w * 0.42, h: h * 0.06, text: 'Option B', size: Math.round(h * 0.03), align: 'center' })
+  ];
   if (kind === 'image') return [
     { type: 'rect', x: w * 0.1, y: h * 0.12, w: w * 0.8, h: h * 0.62, color: gray, width: 1.5 },
     mk({ x: w * 0.1, y: h * 0.4, w: w * 0.8, h: h * 0.06, text: 'Bild hier einfügen', size: Math.round(h * 0.028), align: 'center', color: gray }),
@@ -1434,6 +1446,8 @@ function renderSlidePreview() {
   let inner = '';
   if (t === 'title') inner = bar(15, 40, 70, 12, 'pv-strong') + bar(25, 57, 50, 7);
   else if (t === 'titlecontent') inner = bar(8, 8, 75, 11, 'pv-strong') + bar(8, 28, 80, 6) + bar(8, 40, 80, 6) + bar(8, 52, 65, 6);
+  else if (t === 'twocol') inner = bar(8, 8, 75, 11, 'pv-strong') + bar(8, 28, 38, 6) + bar(8, 40, 38, 6) + bar(54, 28, 38, 6) + bar(54, 40, 38, 6);
+  else if (t === 'compare') inner = bar(8, 8, 75, 11, 'pv-strong') + bar(8, 26, 38, 60, 'pv-box') + bar(54, 26, 38, 60, 'pv-box');
   else if (t === 'image') inner = bar(10, 12, 80, 55, 'pv-box') + bar(20, 76, 60, 6);
   $('#sdPreview').innerHTML = `<div class="pv-page" style="width:${Math.round(w * sc)}px;height:${Math.round(h * sc)}px">${inner}</div>`;
 }

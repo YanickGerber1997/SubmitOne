@@ -253,13 +253,22 @@ async function closeDoc(i) {
   if (wasActive) { active = Math.min(active, docs.length - 1); await loadActive(); } else if (i < active) active--;
   renderTabs();
 }
+// Dokument umbenennen (Tab-Name)
+function renameDoc(i) {
+  const d = docs[i]; if (!d) return;
+  const base = d.name.replace(/\.pdf$/i, '');
+  const v = prompt('Dokumentname:', base); if (v == null) return;
+  let name = v.trim(); if (!name) return; if (!/\.pdf$/i.test(name)) name += '.pdf';
+  d.name = name; if (i === active) { docName = name; $('#docName').textContent = name; document.title = name.replace(/\.pdf$/i, '') + ' – Submit PDF'; markDirty(); }
+  renderTabs();
+}
 function renderTabs() {
   const bar = $('#tabbar'); if (!bar) return;
   document.body.classList.toggle('has-tabs', docs.length >= 1);
   bar.innerHTML = ''; if (!docs.length) return;
   docs.forEach((d, i) => {
     const t = document.createElement('div'); t.className = 'tab' + (i === active ? ' active' : '');
-    const nm = document.createElement('span'); nm.className = 'tab-nm'; nm.textContent = d.name; nm.title = d.name; nm.onclick = () => activateDoc(i);
+    const nm = document.createElement('span'); nm.className = 'tab-nm'; nm.textContent = d.name; nm.title = d.name + '  ·  Doppelklick zum Umbenennen'; nm.onclick = () => activateDoc(i); nm.ondblclick = e => { e.stopPropagation(); renameDoc(i); };
     const x = document.createElement('button'); x.className = 'tab-x'; x.textContent = '✕'; x.title = 'Schliessen'; x.onclick = e => { e.stopPropagation(); closeDoc(i); };
     t.appendChild(nm); t.appendChild(x); bar.appendChild(t);
   });

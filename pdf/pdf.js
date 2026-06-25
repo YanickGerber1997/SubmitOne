@@ -56,18 +56,36 @@ window.openNativeBytes = function (arr, path) { const name = (path || '').split(
 /* ---------- Ordner-Browser (File System Access API) ---------- */
 let dirHandle = null, curFileHandle = null;
 function fsSupported() { return 'showDirectoryPicker' in window; }
+// Läuft die App als Tauri-Desktop-App (.exe)? Im Browser immer false → Tauri-Pfade schlafen.
+function isTauri() { return !!(window.__TAURI__ || window.__TAURI_INTERNALS__); }
 async function pickFolder() {
+  if (isTauri()) { await tauriPickStart(); return; }                 // Desktop: nativer Ordner-Dialog (voller Zugriff)
   if (!fsSupported()) { toast(location.protocol === 'file:' ? 'Ordner-Browser nur über die Online-/App-Version (https).' : 'Ordner-Zugriff braucht Chrome/Edge.'); return; }
   try { dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' }); } catch (_) { return; }
   $('#work').classList.add('files-open'); $('#btnFolder').classList.add('on'); $('#fpName').textContent = dirHandle.name || 'Ordner'; await refreshTree();
 }
 // „Dateien"-Knopf: Verzeichnis-Panel ein-/ausklappen (ohne Ordner-Zugriff: einfach Datei öffnen)
 function toggleFiles() {
+  if (isTauri()) {                                                   // Desktop: Panel zeigt direkt die Laufwerke (C:\ …)
+    const open = $('#work').classList.toggle('files-open'); $('#btnFolder').classList.toggle('on', open);
+    if (open) { $('#fpName').textContent = 'Dieser PC'; refreshTree(); } return;
+  }
   if (!fsSupported()) { openPicker(); return; }
   const open = $('#work').classList.toggle('files-open'); $('#btnFolder').classList.toggle('on', open);
 }
 async function refreshTree() {
-  if (!dirHandle) return; const t = $('#fpTree'); t.innerHTML = ''; await buildTree(dirHandle, t);
+  const t = $('#fpTree');
+  if (isTauri()) {                                                   // Desktop: Laufwerke als Wurzeln, beliebig tief
+    t.innerHTML = '';
+    for (const r of tauriRoots()) {
+      const row = fpRow('▾', r.name, 'dir'); t.appendChild(row);
+      const sub = document.createElement('div'); sub.className = 'fp-sub'; t.appendChild(sub);
+      await buildTreeTauri(r, sub);
+      row.onclick = () => { sub.hidden = !sub.hidden; row.querySelector('.fp-ic').textContent = sub.hidden ? '▸' : '▾'; };
+    }
+    return;
+  }
+  if (!dirHandle) return; t.innerHTML = ''; await buildTree(dirHandle, t);
   if (!t.children.length) t.innerHTML = '<div class="fp-hint">Keine PDFs/Bilder in diesem Ordner.</div>';
 }
 // Im Ordner (inkl. Unterordner) nach Dateinamen suchen
@@ -118,6 +136,59 @@ function fpRow(ic, name, cls) { const d = document.createElement('div'); d.class
 async function openFromHandle(fh) {
   try { const file = await fh.getFile(); await openFiles([file]); if (docs[active]) { docs[active].fileHandle = fh; curFileHandle = fh; } }
   catch (e) { console.error(e); toast('Datei konnte nicht geöffnet werden.'); }
+}
+
+/* ============================================================================
+   DESKTOP (Tauri) – voller Datei-Baum ab Laufwerk. Schläft im Browser komplett
+   (isTauri()===false → nichts davon läuft). Wird automatisch aktiv, sobald die
+   App als .exe gebaut ist. Beim ersten .exe-Build nur prüfen:
+   - tauri.conf.json: fs- + dialog-Plugin in der Allowlist freigeben
+   - ggf. echte Laufwerksliste via kleinem Rust-Command (statt fixem C:\)
+   - exakte JS-Bindung (Tauri v1: window.__TAURI__.fs / v2: plugin-fs)
+   ============================================================================ */
+function tauriRoots() {
+  // Vorerst Laufwerk C:\ als Wurzel. (Build-Zeit: echte Laufwerksliste ergänzen.)
+  return [{ tauri: true, name: 'C:\\', path: 'C:\\', isDir: true }];
+}
+async function tauriReadDir(path) {
+  const fs = window.__TAURI__.fs;
+  const ents = await fs.readDir(path);                               // Tauri v1: [{name, path, children?}]
+  return ents.map(e => ({ tauri: true, name: e.name || e.path, path: e.path, isDir: Array.isArray(e.children) }));
+}
+async function buildTreeTauri(node, container) {
+  let entries; try { entries = await tauriReadDir(node.path); } catch (_) { container.innerHTML = '<div class="fp-hint">Ordner nicht lesbar.</div>'; return; }
+  entries = entries.filter(e => e.isDir ? !e.name.startsWith('.') : /\.(pdf|png|jpe?g|webp)$/i.test(e.name));
+  entries.sort((a, b) => (a.isDir === b.isDir) ? a.name.localeCompare(b.name) : (a.isDir ? -1 : 1));
+  for (const e of entries) {
+    if (e.isDir) {
+      const row = fpRow('▸', e.name, 'dir'); container.appendChild(row);
+      const sub = document.createElement('div'); sub.className = 'fp-sub'; sub.hidden = true; container.appendChild(sub); let loaded = false;
+      row.onclick = async () => { sub.hidden = !sub.hidden; row.querySelector('.fp-ic').textContent = sub.hidden ? '▸' : '▾'; if (!loaded && !sub.hidden) { loaded = true; await buildTreeTauri(e, sub); } };
+    } else {
+      const row = fpRow(/\.pdf$/i.test(e.name) ? '📄' : '🖼', e.name, 'file'); container.appendChild(row);
+      row.onclick = () => { $$('.fp-row.active', $('#fpTree')).forEach(r => r.classList.remove('active')); row.classList.add('active'); openNodeTauri(e); };
+    }
+  }
+}
+async function openNodeTauri(e) {
+  try {
+    const data = new Uint8Array(await window.__TAURI__.fs.readBinaryFile(e.path));
+    if (/\.(png|jpe?g|webp)$/i.test(e.name)) { const f = new File([data], e.name); const bytes = await imageToPdf(f); await addDoc(bytes, e.name.replace(/\.[^.]+$/, '') + '.pdf'); }
+    else { await loadPdfJs(); await addDoc(data, e.name); }
+  } catch (err) { console.error(err); toast('Datei konnte nicht geöffnet werden.'); }
+}
+async function tauriPickStart() {                                     // nativer Ordner-Dialog → als Wurzel anzeigen
+  try {
+    const sel = await window.__TAURI__.dialog.open({ directory: true });
+    if (!sel) return; const path = Array.isArray(sel) ? sel[0] : sel;
+    $('#work').classList.add('files-open'); $('#btnFolder').classList.add('on'); $('#fpName').textContent = path;
+    const t = $('#fpTree'); t.innerHTML = '';
+    const node = { tauri: true, name: path, path, isDir: true };
+    const row = fpRow('▾', path, 'dir'); t.appendChild(row);
+    const sub = document.createElement('div'); sub.className = 'fp-sub'; t.appendChild(sub);
+    await buildTreeTauri(node, sub);
+    row.onclick = () => { sub.hidden = !sub.hidden; row.querySelector('.fp-ic').textContent = sub.hidden ? '▸' : '▾'; };
+  } catch (_) { }
 }
 async function openFiles(files) {
   files = [...files].filter(f => /pdf$/i.test(f.name) || f.type === 'application/pdf' || isImg(f));

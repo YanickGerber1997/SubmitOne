@@ -363,6 +363,9 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
 .qbtn{width:36px;height:36px;border:none;background:none;color:var(--ink-soft);border-radius:0;cursor:pointer;font-size:17px;display:flex;align-items:center;justify-content:center}
 .qbtn:hover{background:var(--surface-2);color:var(--accent)}
 .qsep{width:1px;height:22px;background:var(--line)}
+.quickbar .zoombox{background:none;border:none;padding:0;gap:0}
+.quickbar .zoombox .zb-btn{width:28px;height:36px;font-size:19px}
+.quickbar .zoom-val{height:36px;padding:0 8px;min-width:58px}
 
 /* Rechtsklick-Menü */
 .ctxmenu{position:fixed;z-index:60;min-width:210px;background:var(--surface);border:1px solid var(--line);border-radius:0;box-shadow:0 12px 34px rgba(20,24,40,.22);padding:6px;font-size:13.5px}

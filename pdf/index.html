@@ -5,21 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF – PDFs bearbeiten im Browser</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" href="icon.png?v=135" />
+  <link rel="icon" href="icon.png?v=136" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=135" />
+  <link rel="stylesheet" href="pdf.css?v=136" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=135" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=136" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=135" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=135" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=136" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=136" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <span class="doc-name" id="docName"></span>
@@ -120,13 +120,6 @@
     </div>
     <span class="grow"></span>
     <div class="tgrp">
-      <div class="zoombox">
-        <button class="icon-btn" id="zoomOut" title="Verkleinern">−</button>
-        <button class="zoom-val" id="zoomVal" title="An Breite anpassen">100&nbsp;%</button>
-        <button class="icon-btn" id="zoomIn" title="Vergrössern">+</button>
-      </div>
-    </div>
-    <div class="tgrp">
       <button class="tool" id="rotL" title="Seite 90° links drehen"><svg viewBox="0 0 24 24" class="i"><path d="M4 9a8 8 0 1 1 2 6"/><path d="M4 4v5h5"/></svg></button>
       <button class="tool" id="rotR" title="Seite 90° rechts drehen"><svg viewBox="0 0 24 24" class="i"><path d="M20 9a8 8 0 1 0-2 6"/><path d="M20 4v5h-5"/></svg></button>
       <button class="tool" data-tool="crop" title="Zuschneiden (Bereich aufziehen)"><svg viewBox="0 0 24 24" class="i"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M2 6h14a2 2 0 0 1 2 2v14"/></svg></button>
@@ -163,7 +156,7 @@
       <div class="wc-hi">👋 Willkommen! <b>Links</b> öffnest du ein PDF oder startest neu — oben rechts holst du dir die <b>volle Desktop-App</b>.</div>
     </div>
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=135" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=136" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -177,6 +170,12 @@
 
   <!-- Schnellzugriff (immer sichtbar): das Wichtigste direkt -->
   <div class="quickbar" id="quickbar" hidden>
+    <div class="zoombox">
+      <button class="qbtn zb-btn" id="zoomOut" title="Verkleinern (−5%)">−</button>
+      <button class="zoom-val" id="zoomVal" title="Zoom – klicken zum Eingeben (leer = an Breite anpassen)">100&nbsp;%</button>
+      <button class="qbtn zb-btn" id="zoomIn" title="Vergrössern (+5%)">+</button>
+    </div>
+    <span class="qsep"></span>
     <button class="qbtn" id="qRotL" title="Seite 90° links drehen"><svg viewBox="0 0 24 24" class="i"><path d="M4 9a8 8 0 1 1 2 6"/><path d="M4 4v5h5"/></svg></button>
     <button class="qbtn" id="qRotR" title="Seite 90° rechts drehen"><svg viewBox="0 0 24 24" class="i"><path d="M20 9a8 8 0 1 0-2 6"/><path d="M20 4v5h-5"/></svg></button>
     <button class="qbtn" id="qFree" title="Frei drehen – Plan nach Norden ausrichten (nur Ansicht)"><svg viewBox="0 0 24 24" class="i"><path d="M12 2v20M2 12h20" opacity=".5"/><path d="M12 4l3 6h-6z"/></svg></button>
@@ -391,7 +390,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=135"></script>
+  <script src="pdf.js?v=136"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

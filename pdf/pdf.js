@@ -709,7 +709,13 @@ function updatePageInd() { if (!pdfDoc) return; const cur = curPage(); $('#pageI
 function curScale() { return (zoom === 'auto') ? (pageViews[0] ? pageViews[0].scale : 1) : zoom; }
 function updateZoomLabel() { const pct = Math.round(((zoom === 'auto') ? curScale() : zoom) * 100); $('#zoomVal').innerHTML = pct + '&nbsp;%'; $('#zoomVal').classList.toggle('on', zoom === 'auto'); }
 function setZoom(z) { zoom = z; if (pdfDoc) relayout(); }
-function zoomStep(d) { const c = curScale(); setZoom(Math.max(.25, Math.min(5, Math.round((c + d) * 100) / 100))); }
+function zoomStep(d) { const c = curScale(); setZoom(Math.max(.1, Math.min(8, Math.round((c + d) * 100) / 100))); }
+function promptZoom() {
+  if (!pdfDoc) return; const cur = Math.round(curScale() * 100);
+  const v = prompt('Zoom in % (z. B. 80) – leer = an Breite anpassen:', cur); if (v === null) return;
+  const t = (v || '').trim(); if (t === '') { setZoom('auto'); return; }
+  const n = parseFloat(t.replace(',', '.').replace('%', '')); if (n >= 10 && n <= 800) setZoom(n / 100);
+}
 // Zum Mauszeiger zoomen: der Punkt unter der Maus bleibt an Ort und Stelle
 function zoomToward(clientX, clientY, factor) {
   if (!pdfDoc) return; const host = $('#pages'), rect = host.getBoundingClientRect();
@@ -2465,12 +2471,12 @@ function wire() {
   $('#mCancel').onclick = () => $('#mailDlg').hidden = true;
   $('#btnUndo').onclick = undo;
   $('#btnRedo').onclick = redo;
-  $('#zoomIn').onclick = () => zoomStep(.15); $('#zoomOut').onclick = () => zoomStep(-.15); $('#zoomVal').onclick = () => setZoom('auto');
+  $('#zoomIn').onclick = () => zoomStep(.05); $('#zoomOut').onclick = () => zoomStep(-.05); $('#zoomVal').onclick = promptZoom;
   $('#pages').addEventListener('scroll', () => { updatePageInd(); scheduleSharpen(); updateSelBar(); }, { passive: true });
   $('#pages').addEventListener('wheel', e => {     // Strg/Cmd + Mausrad (oder Trackpad-Pinch) = zum Zeiger zoomen
     if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
-    zoomToward(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+    zoomToward(e.clientX, e.clientY, e.deltaY < 0 ? 1.05 : 1 / 1.05);   // feinere Abstufung
   }, { passive: false });
   // Handy: Zwei-Finger-Pinch zoomt zum Mittelpunkt, gleichzeitig verschieben
   const pg = $('#pages'); let pinch = null;
@@ -2647,8 +2653,8 @@ function wire() {
     else if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); printDoc(); }
     else if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
     else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
-    else if (mod && (e.key === '+' || e.key === '=')) { e.preventDefault(); zoomStep(.15); }
-    else if (mod && e.key === '-') { e.preventDefault(); zoomStep(-.15); }
+    else if (mod && (e.key === '+' || e.key === '=')) { e.preventDefault(); zoomStep(.05); }
+    else if (mod && e.key === '-') { e.preventDefault(); zoomStep(-.05); }
     else if (mod && e.key === '0') { e.preventDefault(); setZoom('auto'); }
     else if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); if (groupSel) duplicateGroup(); else if (sel) { const pv = pageViews.find(p => p.num === sel.num); if (pv) duplicateAnno(pv, sel.id); } }
     else if (mod && e.key.toLowerCase() === 'c' && sel && tool !== 'textsel') { e.preventDefault(); copySel(); }

@@ -46,7 +46,7 @@ body:not(.has-doc) #btnUndo,body:not(.has-doc) #btnRedo,body:not(.has-doc) .page
 /* Grüner Download-Button (Desktop-App / Tauri) – nur im Leerzustand */
 .dl-btn{display:none;align-items:center;gap:9px;height:38px;padding:0 16px 0 10px;border:1px solid var(--accent-3);background:linear-gradient(180deg,var(--accent) 0%,var(--accent-3) 100%);color:#fff;font:inherit;font-size:14px;font-weight:700;letter-spacing:.2px;cursor:pointer;border-radius:0;box-shadow:0 3px 12px rgba(79,122,60,.32);white-space:nowrap;flex:none}
 .dl-btn:hover{filter:brightness(1.06);box-shadow:0 5px 18px rgba(79,122,60,.42)}
-.dl-btn .dl-logo{width:26px;height:26px;object-fit:contain;background:#fff;padding:2px;border-radius:0}
+.dl-btn .dl-logo{width:28px;height:28px;object-fit:contain}
 .dl-btn .dl-arrow{width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 body:not(.has-doc) #btnDownload{display:inline-flex}
 @media (max-width:560px){.dl-btn span{display:none}.dl-btn{padding:0 10px}}

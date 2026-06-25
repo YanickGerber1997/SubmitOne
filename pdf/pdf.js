@@ -756,7 +756,17 @@ function strokeAttrs(a) { const o = { stroke: a.color, 'stroke-width': a.width, 
 function drawOne(svg, a, pv) {
   let el, hit;
   if (a.type === 'text' && a.id === editingId) return;  // wird gerade per Textbox-Editor bearbeitet
-  if (a.type === 'arc') {
+  if (a.type === 'path') {
+    const g = svgEl('g', { 'data-id': a.id }), d = pathD(a), drafting = penDraft && penDraft.a === a;
+    if (d) g.appendChild(svgEl('path', { d, fill: a.fill || 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+    if (drafting) {
+      const last = a.nodes[a.nodes.length - 1];
+      if (last && a._preview) g.appendChild(svgEl('line', { x1: last.x, y1: last.y, x2: a._preview.x, y2: a._preview.y, stroke: a.color, 'stroke-width': 1, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke' }));
+      a.nodes.forEach((nd, i) => { const r = 4 / pv.scale; if (nd.hOut && (nd.hOut.x !== nd.x || nd.hOut.y !== nd.y)) { g.appendChild(svgEl('line', { x1: nd.x, y1: nd.y, x2: nd.hOut.x, y2: nd.hOut.y, stroke: a.color, 'stroke-opacity': .5, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' })); g.appendChild(svgEl('circle', { cx: nd.hOut.x, cy: nd.hOut.y, r: 3 / pv.scale, fill: a.color })); } g.appendChild(svgEl('circle', { cx: nd.x, cy: nd.y, r, fill: i === 0 ? '#fff' : a.color, stroke: a.color, 'stroke-width': 1.2 })); });
+    }
+    svg.appendChild(g); el = g;
+    if (d && !drafting) { hit = svgEl('path', { d, fill: (a.fill && a.fill !== 'none') ? a.fill : 'transparent', stroke: 'transparent', 'stroke-width': Math.max(12, (a.width || 2) + 10), 'data-id': a.id }); svg.appendChild(hit); }
+  } else if (a.type === 'arc') {
     const d = arcPath(a);
     el = svgEl('path', { d, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'data-id': a.id }); svg.appendChild(el);
     hit = svgEl('path', { d, fill: 'none', stroke: 'transparent', 'stroke-width': Math.max(12, (a.width || 2) + 10), 'data-id': a.id }); svg.appendChild(hit);
@@ -885,6 +895,7 @@ function bbox(a) {
   if (a.type === 'rect' || a.type === 'oval') return { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), w: Math.abs(a.w), h: Math.abs(a.h) };
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') return { x: Math.min(a.x1, a.x2), y: Math.min(a.y1, a.y2), w: Math.abs(a.x2 - a.x1), h: Math.abs(a.y2 - a.y1) };
   if (a.type === 'pen' || a.type === 'area') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
+  if (a.type === 'path') { const xs = [], ys = []; for (const nd of a.nodes) { xs.push(nd.x, nd.hIn.x, nd.hOut.x); ys.push(nd.y, nd.hIn.y, nd.hOut.y); } if (!xs.length) return { x: 0, y: 0, w: 0, h: 0 }; return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: (a.h || a.size * (a.text.split('\n').length) * 1.3) };
   if (a.type === 'note') return { x: a.x, y: a.y, w: 14, h: 14 };
   if (a.type === 'sig' || a.type === 'img' || a.type === 'imgph' || a.type === 'edit' || a.type === 'cover' || a.type === 'stamp' || a.type === 'crop') return { x: a.x, y: a.y, w: a.w, h: a.h };
@@ -954,7 +965,8 @@ function onPointerDown(pv, e) {
     }
     sel = null; drawAnnos(pv); return;
   }
-  if (gridOn && tool !== 'eraser' && tool !== 'edittext' && tool !== 'pen' && tool !== 'highlight' && tool !== 'textsel' && tool !== 'calibrate') p = snapPt(p.x, p.y);   // aufs Raster einrasten
+  if (gridOn && tool !== 'eraser' && tool !== 'edittext' && tool !== 'pen' && tool !== 'highlight' && tool !== 'textsel' && tool !== 'calibrate' && tool !== 'curve') p = snapPt(p.x, p.y);   // aufs Raster einrasten
+  if (tool === 'curve') { curveClick(pv, e, p); return; }
   if (tool === 'sig') { placeSig(pv, p); return; }
   if (tool === 'highlight') { startHighlight(pv, e, p); return; }
   if (tool === 'stamp') { placeStamp(pv, p); return; }
@@ -1059,6 +1071,43 @@ function cancelArea() {
   const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) { arr.splice(i, 1); if (undoStack.length) undoStack.pop(); }
   areaDraft = null; if (pv) drawAnnos(pv);
 }
+
+/* ---------- Kurven-Werkzeug (Bézier, wie Illustrator-Zeichenstift) ---------- */
+let penDraft = null, _curveHover = null;
+function pathD(a) {
+  const n = a.nodes; if (!n.length) return '';
+  let d = `M ${n[0].x} ${n[0].y}`;
+  for (let i = 1; i < n.length; i++) { const p0 = n[i - 1], p1 = n[i]; d += ` C ${p0.hOut.x} ${p0.hOut.y} ${p1.hIn.x} ${p1.hIn.y} ${p1.x} ${p1.y}`; }
+  if (a.closed && n.length > 1) { const p0 = n[n.length - 1], p1 = n[0]; d += ` C ${p0.hOut.x} ${p0.hOut.y} ${p1.hIn.x} ${p1.hIn.y} ${p1.x} ${p1.y} Z`; }
+  return d;
+}
+function cubicPt(p0, c1, c2, p1, t) { const u = 1 - t, A = u * u * u, B = 3 * u * u * t, C = 3 * u * t * t, D = t * t * t; return { x: A * p0.x + B * c1.x + C * c2.x + D * p1.x, y: A * p0.y + B * c1.y + C * c2.y + D * p1.y }; }
+function flattenPath(a) {
+  const n = a.nodes, out = []; if (!n.length) return out; out.push({ x: n[0].x, y: n[0].y });
+  const seg = (p0, p1) => { for (let k = 1; k <= 14; k++) out.push(cubicPt({ x: p0.x, y: p0.y }, p0.hOut, p1.hIn, { x: p1.x, y: p1.y }, k / 14)); };
+  for (let i = 1; i < n.length; i++) seg(n[i - 1], n[i]); if (a.closed && n.length > 1) seg(n[n.length - 1], n[0]); return out;
+}
+function attachCurveHover() { detachCurveHover(); _curveHover = ev => { if (!penDraft || ev.buttons) return; const q = evtToPage(penDraft.pv, ev); penDraft.a._preview = { x: q.x, y: q.y }; drawAnnos(penDraft.pv); }; document.addEventListener('pointermove', _curveHover); }
+function detachCurveHover() { if (_curveHover) { document.removeEventListener('pointermove', _curveHover); _curveHover = null; } }
+function curveClick(pv, e, p) {
+  if (!penDraft || penDraft.pv !== pv) { cancelCurve(); pushUndo(); const a = { id: nextId++, type: 'path', nodes: [], closed: false, color: style.color, width: style.width, fill: 'none' }; getAnnos(pv.num).push(a); penDraft = { pv, a }; attachCurveHover(); }
+  const a = penDraft.a;
+  if (a.nodes.length >= 2) { const f = a.nodes[0]; if (Math.hypot(p.x - f.x, p.y - f.y) * pv.scale < 12) { a.closed = true; finishCurve(); return; } }   // am ersten Punkt schliessen
+  const node = { x: p.x, y: p.y, hIn: { x: p.x, y: p.y }, hOut: { x: p.x, y: p.y } }; a.nodes.push(node);
+  const dragMove = ev => { const q = evtToPage(pv, ev); node.hOut = { x: q.x, y: q.y }; node.hIn = { x: 2 * node.x - q.x, y: 2 * node.y - q.y }; drawAnnos(pv); };   // ziehen = Kurvenanfasser
+  const dragUp = () => { document.removeEventListener('pointermove', dragMove); document.removeEventListener('pointerup', dragUp); drawAnnos(pv); };
+  document.addEventListener('pointermove', dragMove); document.addEventListener('pointerup', dragUp);
+}
+function finishCurve() {
+  if (!penDraft) return; const { pv, a } = penDraft; detachCurveHover(); delete a._preview; penDraft = null;
+  if (a.nodes.length < 2) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); drawAnnos(pv); setTool('select'); return; }
+  sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
+}
+function cancelCurve() {
+  if (!penDraft) return; const { pv, a } = penDraft; detachCurveHover();
+  const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) { arr.splice(i, 1); if (undoStack.length) undoStack.pop(); }
+  penDraft = null; if (pv) drawAnnos(pv);
+}
 // Bild (Foto/Logo) auf die aktuelle Seite platzieren – verschieb-/skalierbar
 function pickImage() {
   if (!pdfDoc) { toast('Erst ein Dokument öffnen oder eine Seite anlegen.'); return; }
@@ -1136,6 +1185,7 @@ function snap15(ax, ay, qx, qy) { const dx = qx - ax, dy = qy - ay, len = Math.h
 function translateAnno(a, o, dx, dy) {
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
   else if (a.type === 'pen' || a.type === 'area') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
+  else if (a.type === 'path') a.nodes = o.nodes.map(nd => ({ x: nd.x + dx, y: nd.y + dy, hIn: { x: nd.hIn.x + dx, y: nd.hIn.y + dy }, hOut: { x: nd.hOut.x + dx, y: nd.hOut.y + dy } }));
   else if (a.type === 'highlight') a.rects = o.rects.map(r => ({ x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }));
   else { a.x = o.x + dx; a.y = o.y + dy; }
 }
@@ -1717,6 +1767,7 @@ function nudgeSel(key, d) {
 function setTool(t) {
   if (cropping && t !== 'select' && t !== 'crop') removeCropAnno();   // anderes Werkzeug → Zuschneiden verwerfen
   if (areaDraft && t !== 'area') cancelArea();                       // anderes Werkzeug → Flächen-Polygon verwerfen
+  if (penDraft && t !== 'curve') finishCurve();                      // anderes Werkzeug → Kurve abschliessen
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
   const bs = $('#btnStamp'); if (bs) bs.classList.toggle('on', t === 'stamp');
   $$('.fab-b').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
@@ -1726,7 +1777,7 @@ function setTool(t) {
   if (t === 'measure' && !docScale && !setTool._measHint) { setTool._measHint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n).'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -1759,7 +1810,10 @@ async function buildPdfBytes() {
       if (cropT) pg.pushOperators(pushGraphicsState(), concatTransformationMatrix(1, 0, 0, 1, cb.x, cb.y));   // Ursprung in die CropBox-Ecke
       for (const a of (annos[n] || [])) {
         const col = hexToRgb(a.color), c = rgb(col.r, col.g, col.b), w = a.width || 2;
-        if (a.type === 'arc') {
+        if (a.type === 'path') {
+          const pts = flattenPath(a); for (let i = 1; i < pts.length; i++) pg.drawLine({ start: { x: pts[i - 1].x, y: Y(pts[i - 1].y) }, end: { x: pts[i].x, y: Y(pts[i].y) }, thickness: w, color: c });
+        }
+        else if (a.type === 'arc') {
           const cx = (a.x1 + a.x2) / 2, cy = (a.y1 + a.y2) / 2, r = Math.hypot(a.x2 - a.x1, a.y2 - a.y1) / 2, a1 = Math.atan2(a.y1 - cy, a.x1 - cx);
           let px = a.x1, py = a.y1; const N = 28;
           for (let i = 1; i <= N; i++) { const ang = a1 + Math.PI * (i / N), nx = cx + r * Math.cos(ang), ny = cy + r * Math.sin(ang); pg.drawLine({ start: { x: px, y: Y(py) }, end: { x: nx, y: Y(ny) }, thickness: w, color: c }); px = nx; py = ny; }
@@ -2253,6 +2307,7 @@ function wire() {
   $('#scaleRatio').onkeydown = e => { if (e.key === 'Enter') applyScale(); };
   // Doppelklick auf Mass-/Masslinie → eigenes Mass eintragen
   $('#pages').addEventListener('dblclick', e => {
+    if (penDraft) { if (penDraft.a.nodes.length >= 2) penDraft.a.nodes.pop(); finishCurve(); return; }   // Doppelklick = Kurve fertig
     const id = e.target.getAttribute && e.target.getAttribute('data-id'); if (!id) return;
     const wrap = e.target.closest('.pagewrap'); if (!wrap) return; const pv = pageViews.find(p => p.num === +wrap.dataset.n);
     const a = findAnno(pv.num, +id); if (!a) return;
@@ -2361,6 +2416,7 @@ function wire() {
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (e.key === 'Escape') e.target.blur(); return; }
     const mod = e.ctrlKey || e.metaKey;
     if (e.key === 'Enter' && areaDraft) { e.preventDefault(); finishArea(); return; }   // Fläche abschliessen
+    if (e.key === 'Enter' && penDraft) { e.preventDefault(); finishCurve(); return; }   // Kurve abschliessen
     if (e.key === ' ' && !mod) { if (active >= 0 && !panMode) { e.preventDefault(); panMode = true; document.body.classList.add('pan'); } return; }   // Leertaste = Hand
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openPicker(); }
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
@@ -2378,6 +2434,7 @@ function wire() {
     else if (e.key === 'Escape') {
       hideCtx();
       if (areaDraft) { cancelArea(); setTool('select'); return; }                     // Flächen-Polygon abbrechen
+      if (penDraft) { cancelCurve(); setTool('select'); return; }                      // Kurve abbrechen
       if (cropping) { removeCropAnno(); setTool('select'); return; }                  // Zuschneiden abbrechen
       let closed = false;
       ['palettePop', 'stampPop', 'outlinePop', 'slideDlg'].forEach(id => { const el = $('#' + id); if (el && !el.hidden) { el.hidden = true; closed = true; } });

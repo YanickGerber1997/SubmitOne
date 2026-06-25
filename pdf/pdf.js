@@ -1766,6 +1766,7 @@ function positionFindHL() {
 function wire() {
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
+  $('#btnNew').onclick = () => openSlidePicker('new');
   $$('#sdFormats button').forEach(b => b.onclick = () => { $$('#sdFormats button').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
   $$('#sdLayouts button').forEach(b => b.onclick = () => { $$('#sdLayouts button').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
   $('#sdCancel').onclick = () => $('#slideDlg').hidden = true;

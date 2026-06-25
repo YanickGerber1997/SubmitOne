@@ -549,6 +549,8 @@ let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTim
 
 function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im Seitenstreifen)
   const host = $('#thumbs'); host.innerHTML = ''; if (thumbObserver) thumbObserver.disconnect();
+  const insBar = after => { const d = document.createElement('div'); d.className = 'thumb-ins'; d.title = 'Seite hier einfügen'; d.innerHTML = '<span class="ins-plus">＋</span>'; d.onclick = e => { e.stopPropagation(); showInsertMenu(after, d); }; return d; };
+  host.appendChild(insBar(0));   // ganz oben einfügen
   for (let n = 1; n <= pdfDoc.numPages; n++) {
     const wrap = document.createElement('div'); wrap.className = 'thumb loading'; wrap.dataset.n = n;
     const c = document.createElement('canvas'); wrap.appendChild(c);
@@ -562,6 +564,7 @@ function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im S
     });
     wrap.addEventListener('pointerdown', e => startThumbDrag(e, n, wrap));   // Drag&Drop-Umsortieren
     host.appendChild(wrap);
+    host.appendChild(insBar(n));   // zwischen/nach dieser Seite einfügen
   }
   const add = document.createElement('button'); add.className = 'thumb-add'; add.textContent = '+ PDF/Bild anhängen';
   add.onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/pdf,.pdf,image/*'; inp.multiple = true; inp.onchange = e => appendFiles(e.target.files); inp.click(); };
@@ -1257,6 +1260,65 @@ async function appendFiles(files) {
   } catch (e) { status(''); console.error(e); undoStack.pop(); toast('Anhängen fehlgeschlagen.'); }
 }
 
+// Seiten-Maps nach einem Einfügen verschieben (Seiten ab insertPageNum um count nach hinten)
+function remapAfterInsert(insertPageNum, count) {
+  const shift = obj => { const o = {}; for (const k in obj) { const n = +k; o[n >= insertPageNum ? n + count : n] = obj[k]; } return o; };
+  annos = shift(annos); pageRot = shift(pageRot); viewRot = shift(viewRot); sel = null;
+}
+// Leere Seite nach Seite `after` einfügen (after=0 → ganz oben). Grösse von der Nachbarseite.
+async function insertBlankPage(after) {
+  if (!curBytes) return; pushDocUndo(); status('Leere Seite wird eingefügt …');
+  try {
+    const lib = await loadPdfLib();
+    const out = await lib.PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
+    const pgs = out.getPages(); const ref = pgs[Math.max(0, Math.min(pgs.length - 1, after - 1))];
+    let w = 595, h = 842; if (ref) { const s = ref.getSize(); w = s.width; h = s.height; }
+    out.insertPage(after, [w, h]);
+    remapAfterInsert(after + 1, 1);
+    curBytes = new Uint8Array(await out.save()); await loadDoc(curBytes.slice());
+    status(''); toast('Leere Seite eingefügt ✓'); gotoPage(after + 1);
+  } catch (e) { status(''); console.error(e); undoStack.pop(); toast('Einfügen fehlgeschlagen.'); }
+}
+// PDF(s)/Bild(er) nach Seite `after` einfügen
+async function insertFilesAt(after, files) {
+  if (!curBytes) return; files = [...files]; pushDocUndo(); status('Seiten werden eingefügt …');
+  try {
+    const lib = await loadPdfLib();
+    const out = await lib.PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
+    let idx = after, count = 0;
+    for (const f of files) {
+      let bytes;
+      if (isImg(f)) bytes = await imageToPdf(f);
+      else if (/pdf$/i.test(f.name) || f.type === 'application/pdf') bytes = new Uint8Array(await f.arrayBuffer());
+      else continue;
+      const add = await lib.PDFDocument.load(bytes, { ignoreEncryption: true });
+      const cps = await out.copyPages(add, add.getPageIndices());
+      for (const p of cps) { out.insertPage(idx, p); idx++; count++; }
+    }
+    if (!count) { status(''); undoStack.pop(); return; }
+    remapAfterInsert(after + 1, count);
+    curBytes = new Uint8Array(await out.save()); await loadDoc(curBytes.slice());
+    status(''); toast(count + ' Seite(n) eingefügt ✓'); gotoPage(after + 1);
+  } catch (e) { status(''); console.error(e); undoStack.pop(); toast('Einfügen fehlgeschlagen.'); }
+}
+// Leeres Dokument (eine A4-Seite) als neuen Tab starten
+async function newBlankDoc() {
+  try { const lib = await loadPdfLib(); const d = await lib.PDFDocument.create(); d.addPage([595, 842]); const bytes = new Uint8Array(await d.save()); addDoc(bytes, 'Neue Seite.pdf'); }
+  catch (e) { console.error(e); toast('Konnte kein leeres Dokument anlegen.'); }
+}
+function closeInsertMenu() { const m = $('#insMenu'); if (m) { if (m._onDoc) document.removeEventListener('pointerdown', m._onDoc, true); m.remove(); } }
+function showInsertMenu(after, anchor) {
+  closeInsertMenu();
+  const m = document.createElement('div'); m.className = 'ins-menu'; m.id = 'insMenu';
+  m.innerHTML = '<button data-a="blank">＋ Leere Seite</button><button data-a="file">Bild / PDF …</button>';
+  document.body.appendChild(m);
+  const r = anchor.getBoundingClientRect(); m.style.left = (r.right + 6) + 'px'; m.style.top = Math.min(r.top, innerHeight - 90) + 'px';
+  m.querySelector('[data-a="blank"]').onclick = () => { closeInsertMenu(); insertBlankPage(after); };
+  m.querySelector('[data-a="file"]').onclick = () => { closeInsertMenu(); const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/pdf,.pdf,image/*'; inp.multiple = true; inp.onchange = e => insertFilesAt(after, e.target.files); inp.click(); };
+  const onDoc = e => { if (!e.target.closest('#insMenu')) closeInsertMenu(); }; m._onDoc = onDoc;
+  setTimeout(() => document.addEventListener('pointerdown', onDoc, true), 0);
+}
+
 /* ---------- Undo / Löschen ---------- */
 function snapshot() { return JSON.stringify({ annos, pageRot }); }
 function curAnnoEntry() { return { t: 'anno', s: snapshot() }; }
@@ -1663,6 +1725,7 @@ function positionFindHL() {
 /* ---------- Verdrahtung ---------- */
 function wire() {
   $('#dropOpen').onclick = openPicker;
+  $('#dropBlank').onclick = newBlankDoc;
   $('#btnFolder').onclick = toggleFiles;
   $('#btnSplit').onclick = toggleSplit;
   $('#fpName').onclick = pickFolder;            // Ordnernamen klicken = (anderen) Ordner wählen

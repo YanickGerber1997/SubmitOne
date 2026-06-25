@@ -182,6 +182,14 @@ body.has-tabs .files-panel,body.has-tabs .comments{top:calc(var(--bar) + var(--t
 .thumb-ctrl button:hover{border-color:var(--accent);color:var(--accent)}
 .thumb-ctrl button.del:hover{border-color:var(--danger);color:var(--danger)}
 .thumb-add{display:block;width:104px;margin:6px auto 14px;padding:8px 6px;font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-soft);border:1px dashed var(--accent);cursor:pointer;border-radius:0}
+.thumb-ins{height:12px;margin:1px 8px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
+.thumb-ins::before{content:"";position:absolute;left:4px;right:4px;height:2px;background:transparent}
+.thumb-ins:hover::before{background:var(--accent)}
+.thumb-ins .ins-plus{width:18px;height:18px;background:var(--accent);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .12s;z-index:1}
+.thumb-ins:hover .ins-plus{opacity:1}
+.ins-menu{position:fixed;z-index:70;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.22);padding:5px;display:flex;flex-direction:column;gap:3px}
+.ins-menu button{border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;text-align:left;padding:7px 12px;cursor:pointer;color:var(--ink);white-space:nowrap;border-radius:0}
+.ins-menu button:hover{background:var(--accent-soft);color:var(--accent-3)}
 .thumb-add:hover{background:#fff}
 
 .pages{overflow:auto;padding:26px;display:flex;flex-direction:column;align-items:center;gap:22px;background:var(--bg) url('bg.png') center/cover no-repeat fixed}

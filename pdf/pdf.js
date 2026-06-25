@@ -2055,6 +2055,7 @@ function wire() {
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
   $('#btnNew').onclick = () => openSlidePicker('new');
+  $('#btnDownload').onclick = () => { toast('Die Desktop-App (voller Funktionsumfang mit Datei-Verzeichnis) liefern wir von Anfang an mit – kommt in Kürze.'); };   // Platzhalter → später Tauri-.exe-Download
   $$('#sdFormats button').forEach(b => b.onclick = () => { $$('#sdFormats button').forEach(x => x.classList.remove('on')); b.classList.add('on'); renderSlidePreview(); });
   $$('#sdLayouts button').forEach(b => b.onclick = () => { $$('#sdLayouts button').forEach(x => x.classList.remove('on')); b.classList.add('on'); renderSlidePreview(); });
   $$('#sdBg button').forEach(b => b.onclick = () => { $$('#sdBg button').forEach(x => x.classList.remove('on')); b.classList.add('on'); renderSlidePreview(); });
@@ -2285,13 +2286,13 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   let _swReloaded = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (_swReloaded) return; _swReloaded = true; location.reload(); });
 }
-// App installieren (PWA) – Button erscheint, sobald der Browser die Installation anbietet (nur über https)
+// PWA-Installation bewusst DEAKTIVIERT: Wir liefern die Desktop-App über Tauri (.exe) – kein PWA-Download.
 let deferredInstall = null;
 const installBtn = document.getElementById('btnInstall');
 const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-if (installBtn && !standalone) installBtn.hidden = false;                 // sichtbar zeigen (außer schon installiert)
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; if (installBtn && !standalone) installBtn.hidden = false; });
-window.addEventListener('appinstalled', () => { if (installBtn) installBtn.hidden = true; deferredInstall = null; toast('App installiert ✓'); });
+if (installBtn) installBtn.hidden = true;                                 // PWA-Knopf bleibt aus (Download-Button ersetzt ihn)
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; });   // Auto-Prompt abfangen, aber nichts anzeigen
+window.addEventListener('appinstalled', () => { if (installBtn) installBtn.hidden = true; deferredInstall = null; });
 if (installBtn) installBtn.onclick = async () => {
   if (deferredInstall) { deferredInstall.prompt(); const r = await deferredInstall.userChoice; if (r.outcome === 'accepted') installBtn.hidden = true; deferredInstall = null; }
   else if (standalone) { toast('Läuft bereits als App.'); }

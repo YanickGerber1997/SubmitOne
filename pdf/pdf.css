@@ -41,8 +41,15 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:0;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:.12s;white-space:nowrap;flex:none}
 .topbar{flex-wrap:nowrap}
 .hdr-sep{width:1px;height:22px;background:var(--line);margin:0 3px;flex:none}
-/* Ohne offenes Dokument: Header schlank halten (nur Logo + Dateien/Installieren) */
-body:not(.has-doc) #btnUndo,body:not(.has-doc) #btnRedo,body:not(.has-doc) .pageind,body:not(.has-doc) #btnOutline,body:not(.has-doc) .scaleind,body:not(.has-doc) .hdr-sep,body:not(.has-doc) #btnSave,body:not(.has-doc) #btnSend,body:not(.has-doc) #btnPrint,body:not(.has-doc) #btnComments,body:not(.has-doc) #btnSplit{display:none !important}
+/* Ohne offenes Dokument: oben rechts NUR der Download-Button (alles andere raus) */
+body:not(.has-doc) #btnUndo,body:not(.has-doc) #btnRedo,body:not(.has-doc) .pageind,body:not(.has-doc) #btnOutline,body:not(.has-doc) .scaleind,body:not(.has-doc) .hdr-sep,body:not(.has-doc) #btnSave,body:not(.has-doc) #btnSend,body:not(.has-doc) #btnPrint,body:not(.has-doc) #btnComments,body:not(.has-doc) #btnSplit,body:not(.has-doc) #btnNew,body:not(.has-doc) #btnFolder,body:not(.has-doc) #btnInstall,body:not(.has-doc) .doc-name,body:not(.has-doc) .suite-link{display:none !important}
+/* Grüner Download-Button (Desktop-App / Tauri) – nur im Leerzustand */
+.dl-btn{display:none;align-items:center;gap:9px;height:38px;padding:0 16px 0 10px;border:1px solid var(--accent-3);background:linear-gradient(180deg,var(--accent) 0%,var(--accent-3) 100%);color:#fff;font:inherit;font-size:14px;font-weight:700;letter-spacing:.2px;cursor:pointer;border-radius:0;box-shadow:0 3px 12px rgba(79,122,60,.32);white-space:nowrap;flex:none}
+.dl-btn:hover{filter:brightness(1.06);box-shadow:0 5px 18px rgba(79,122,60,.42)}
+.dl-btn .dl-logo{width:26px;height:26px;object-fit:contain;background:#fff;padding:2px;border-radius:0}
+.dl-btn .dl-arrow{width:18px;height:18px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+body:not(.has-doc) #btnDownload{display:inline-flex}
+@media (max-width:560px){.dl-btn span{display:none}.dl-btn{padding:0 10px}}
 .btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
 .btn:disabled{opacity:.45;cursor:default}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}

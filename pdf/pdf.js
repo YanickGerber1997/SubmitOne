@@ -34,6 +34,7 @@ function fmtLen(pts) {
   return Math.round(m * 1000) + ' mm';
 }
 let sel = null;            // {num, id}
+let groupSel = null;       // {num, ids:[…]} – Mehrfachauswahl (Rahmen)
 let nextId = 1;
 let undoStack = [];
 let redoStack = [];
@@ -726,6 +727,7 @@ function drawAnnos(pv) {
   const svg = pv.svg; svg.innerHTML = '';
   for (const a of getAnnos(pv.num)) drawOne(svg, a, pv);
   if (sel && sel.num === pv.num) drawSelection(svg, findAnno(pv.num, sel.id), pv);
+  if (groupSel && groupSel.num === pv.num) drawGroupSel(svg, pv);
   updateSelBar();
 }
 // Farbe (#hex oder rgb()) → #rrggbb für das Farbfeld
@@ -986,16 +988,17 @@ function onPointerDown(pv, e) {
   const hAttr = e.target.getAttribute && e.target.getAttribute('data-h');
 
   if (tool === 'select') {
+    if (e.target.getAttribute && e.target.getAttribute('data-group') && groupSel && groupSel.num === pv.num) { startGroupMove(pv, e); return; }   // ganze Gruppe ziehen
     const pn = e.target.getAttribute && e.target.getAttribute('data-pn'), ph = e.target.getAttribute && e.target.getAttribute('data-ph');
     if ((pn !== null || ph !== null) && sel && sel.num === pv.num) { startNodeDrag(pv, e, sel.id, pn, ph, e.target.getAttribute('data-hk')); return; }   // Kurven-Knoten/Anfasser ziehen
     if (hAttr && sel && sel.num === pv.num) { startResize(pv, e, hAttr); return; }
     if (idAttr) {
-      sel = { num: pv.num, id: +idAttr }; drawAnnos(pv);
+      groupSel = null; sel = { num: pv.num, id: +idAttr }; drawAnnos(pv);
       const a = findAnno(pv.num, sel.id);
       if (a && a.type === 'note') { openNoteEdit(pv, a); return; }
       startMove(pv, e, a); return;
     }
-    sel = null; drawAnnos(pv); return;
+    sel = null; groupSel = null; drawAnnos(pv); startMarquee(pv, e); return;   // leerer Klick → Rahmen aufziehen
   }
   if (['line', 'arrow', 'rect', 'oval', 'arc', 'curve', 'measure', 'dim'].includes(tool)) { const an = anchorSnap(pv, p.x, p.y); if (an) p = an; else if (gridOn) p = snapPt(p.x, p.y); }   // an Endpunkten/Knoten oder Raster einrasten
   else if (gridOn && tool !== 'eraser' && tool !== 'edittext' && tool !== 'pen' && tool !== 'highlight' && tool !== 'textsel' && tool !== 'calibrate') p = snapPt(p.x, p.y);
@@ -1238,6 +1241,42 @@ function translateAnno(a, o, dx, dy) {
   else { a.x = o.x + dx; a.y = o.y + dy; }
 }
 // Kurven-Knoten (data-pn) oder Anfasser (data-ph) ziehen
+/* ---------- Mehrfachauswahl (Rahmen aufziehen) ---------- */
+function startMarquee(pv, e) {
+  const start = evtToPage(pv, e); let rectEl = null, dragged = false;
+  const move = ev => {
+    const q = evtToPage(pv, ev); if (Math.hypot(q.x - start.x, q.y - start.y) * pv.scale > 3) dragged = true; if (!dragged) return;
+    const x = Math.min(start.x, q.x), y = Math.min(start.y, q.y), w = Math.abs(q.x - start.x), h = Math.abs(q.y - start.y);
+    if (rectEl) rectEl.remove(); rectEl = svgEl('rect', { x, y, width: w, height: h, class: 'marquee' }); pv.svg.appendChild(rectEl);
+  };
+  const up = ev => {
+    document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (rectEl) rectEl.remove();
+    if (!dragged) return;
+    const q = evtToPage(pv, ev), rx = Math.min(start.x, q.x), ry = Math.min(start.y, q.y), rw = Math.abs(q.x - start.x), rh = Math.abs(q.y - start.y), ids = [];
+    for (const a of (getAnnos(pv.num) || [])) { if (a.type === 'crop' || a.type === 'imgph') continue; const b = bbox(a); if (b.x < rx + rw && b.x + b.w > rx && b.y < ry + rh && b.y + b.h > ry) ids.push(a.id); }
+    if (ids.length === 1) { sel = { num: pv.num, id: ids[0] }; groupSel = null; }
+    else if (ids.length > 1) { groupSel = { num: pv.num, ids }; sel = null; }
+    else { sel = null; groupSel = null; }
+    drawAnnos(pv); updateSelBar();
+  };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
+function drawGroupSel(svg, pv) {
+  let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; const arr = getAnnos(pv.num);
+  for (const id of groupSel.ids) { const a = arr.find(x => x.id === id); if (!a) continue; const b = bbox(a); mnx = Math.min(mnx, b.x); mny = Math.min(mny, b.y); mxx = Math.max(mxx, b.x + b.w); mxy = Math.max(mxy, b.y + b.h); svg.appendChild(svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, class: 'group-item' })); }
+  if (isFinite(mnx)) svg.appendChild(svgEl('rect', { x: mnx - 3, y: mny - 3, width: (mxx - mnx) + 6, height: (mxy - mny) + 6, class: 'group-box', 'data-group': '1' }));
+}
+function startGroupMove(pv, e) {
+  const start = evtToPage(pv, e); pushUndo(); const origs = {}; let moved = false;
+  for (const id of groupSel.ids) { const a = findAnno(pv.num, id); if (a) origs[id] = JSON.parse(JSON.stringify(a)); }
+  const move = ev => { const q = evtToPage(pv, ev), dx = q.x - start.x, dy = q.y - start.y; moved = true; for (const id of groupSel.ids) { const a = findAnno(pv.num, id); if (a && origs[id]) translateAnno(a, origs[id], dx, dy); } drawAnnos(pv); };
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) { if (undoStack.length) undoStack.pop(); } else { saveState(); refreshComments(); } };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
+function deleteGroup() {
+  if (!groupSel) return; pushUndo(); const arr = getAnnos(groupSel.num); if (arr) for (const id of groupSel.ids) { const i = arr.findIndex(a => a.id === id); if (i >= 0) arr.splice(i, 1); }
+  groupSel = null; pageViews.forEach(drawAnnos); refreshComments();
+}
 function startNodeDrag(pv, e, id, pnIdx, phIdx, hk) {
   const a = findAnno(pv.num, id); if (!a || a.type !== 'path') return; pushUndo();
   const move = ev => {
@@ -1569,7 +1608,7 @@ function exportSVG(n) {
   const pv = pageViews.find(p => p.num === n); if (!pv) { toast('Seite kurz sichtbar machen, dann erneut.'); return; }
   const list = (getAnnos(n) || []).filter(a => a.type !== 'crop' && a.type !== 'imgph');
   if (!list.length) { toast('Nichts zum Exportieren – erst etwas zeichnen.'); return; }
-  sel = null; drawAnnos(pv);                                       // Auswahl/Anfasser weg, damit sie nicht mitexportiert werden
+  sel = null; groupSel = null; drawAnnos(pv);                      // Auswahl/Anfasser weg, damit sie nicht mitexportiert werden
   const src = pv.svg.cloneNode(true);
   src.querySelectorAll('.snap-guide, .hover-layer, .handle, [data-h]').forEach(e => e.remove());
   src.querySelectorAll('rect[fill="transparent"], polygon[fill="transparent"]').forEach(e => e.remove());
@@ -2527,7 +2566,7 @@ function wire() {
     else if (mod && e.key.toLowerCase() === 'c' && sel && tool !== 'textsel') { e.preventDefault(); copySel(); }
     else if (mod && e.key.toLowerCase() === 'v' && clipAnno && tool !== 'textsel') { e.preventDefault(); pasteAnno(); }
     else if (sel && e.key.startsWith('Arrow')) { e.preventDefault(); nudgeSel(e.key, e.shiftKey ? 10 : 1); }
-    else if (e.key === 'Delete' || e.key === 'Backspace') { if (sel) { e.preventDefault(); deleteSel(); } }
+    else if (e.key === 'Delete' || e.key === 'Backspace') { if (groupSel) { e.preventDefault(); deleteGroup(); } else if (sel) { e.preventDefault(); deleteSel(); } }
     else if (e.key === 'Escape') {
       hideCtx();
       if (areaDraft) { cancelArea(); setTool('select'); return; }                     // Flächen-Polygon abbrechen
@@ -2538,7 +2577,7 @@ function wire() {
       const im = $('#insMenu'); if (im) { closeInsertMenu(); closed = true; }
       if (closed) return;                                                              // erst Popups schliessen
       if (tool !== 'select') setTool('select');                                        // dann zurück zum Auswählen
-      sel = null; pageViews.forEach(drawAnnos);
+      sel = null; groupSel = null; pageViews.forEach(drawAnnos);
     }
     else if (e.key === '?' || (e.shiftKey && e.key === '/')) { e.preventDefault(); toggleShortcuts(); }
     else if (!mod && e.key.toLowerCase() === 'v') setTool('select');

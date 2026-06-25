@@ -966,6 +966,19 @@ function bindPageEvents(pv) {
 }
 // Punkt aufs cm-Raster einrasten (nur wenn Raster an) – Linien/Formen/Text/Box „greifen"
 function snapPt(x, y) { if (!gridOn) return { x, y }; const c = gridCellPt(); if (c <= 0) return { x, y }; return { x: Math.round((x - gridOffX) / c) * c + gridOffX, y: Math.round((y - gridOffY) / c) * c + gridOffY }; }
+// An vorhandene Endpunkte/Knoten/Ecken einrasten (sauberes Anschliessen beim Zeichnen)
+function anchorSnap(pv, x, y, excludeId) {
+  const thr = 9 / pv.scale; let best = null, bd = thr;
+  const consider = (ax, ay) => { const d = Math.hypot(ax - x, ay - y); if (d < bd) { bd = d; best = { x: ax, y: ay }; } };
+  for (const a of (getAnnos(pv.num) || [])) {
+    if (a.id === excludeId) continue;
+    if (a.x1 != null) { consider(a.x1, a.y1); consider(a.x2, a.y2); }
+    else if (a.type === 'path') { for (const nd of a.nodes) consider(nd.x, nd.y); }
+    else if (a.w != null && a.x != null) { consider(a.x, a.y); consider(a.x + a.w, a.y); consider(a.x, a.y + a.h); consider(a.x + a.w, a.y + a.h); }
+  }
+  return best;
+}
+function snapIndicator(pv, p) { const c = svgEl('circle', { cx: p.x, cy: p.y, r: 5 / pv.scale, class: 'snap-anchor' }); pv.svg.appendChild(c); }
 function onPointerDown(pv, e) {
   if (e.button !== 0) return;
   let p = evtToPage(pv, e);
@@ -984,7 +997,8 @@ function onPointerDown(pv, e) {
     }
     sel = null; drawAnnos(pv); return;
   }
-  if (gridOn && tool !== 'eraser' && tool !== 'edittext' && tool !== 'pen' && tool !== 'highlight' && tool !== 'textsel' && tool !== 'calibrate' && tool !== 'curve') p = snapPt(p.x, p.y);   // aufs Raster einrasten
+  if (['line', 'arrow', 'rect', 'oval', 'arc', 'curve', 'measure', 'dim'].includes(tool)) { const an = anchorSnap(pv, p.x, p.y); if (an) p = an; else if (gridOn) p = snapPt(p.x, p.y); }   // an Endpunkten/Knoten oder Raster einrasten
+  else if (gridOn && tool !== 'eraser' && tool !== 'edittext' && tool !== 'pen' && tool !== 'highlight' && tool !== 'textsel' && tool !== 'calibrate') p = snapPt(p.x, p.y);
   if (tool === 'curve') { curveClick(pv, e, p); return; }
   if (tool === 'sig') { placeSig(pv, p); return; }
   if (tool === 'highlight') { startHighlight(pv, e, p); return; }
@@ -1106,7 +1120,7 @@ function flattenPath(a) {
   const seg = (p0, p1) => { for (let k = 1; k <= 14; k++) out.push(cubicPt({ x: p0.x, y: p0.y }, p0.hOut, p1.hIn, { x: p1.x, y: p1.y }, k / 14)); };
   for (let i = 1; i < n.length; i++) seg(n[i - 1], n[i]); if (a.closed && n.length > 1) seg(n[n.length - 1], n[0]); return out;
 }
-function attachCurveHover() { detachCurveHover(); _curveHover = ev => { if (!penDraft || ev.buttons) return; const q = evtToPage(penDraft.pv, ev); penDraft.a._preview = { x: q.x, y: q.y }; drawAnnos(penDraft.pv); }; document.addEventListener('pointermove', _curveHover); }
+function attachCurveHover() { detachCurveHover(); _curveHover = ev => { if (!penDraft || ev.buttons) return; const pv = penDraft.pv; let q = evtToPage(pv, ev); const an = anchorSnap(pv, q.x, q.y, penDraft.a.id); if (an) q = an; else if (gridOn) q = snapPt(q.x, q.y); penDraft.a._preview = { x: q.x, y: q.y }; drawAnnos(pv); }; document.addEventListener('pointermove', _curveHover); }
 function detachCurveHover() { if (_curveHover) { document.removeEventListener('pointermove', _curveHover); _curveHover = null; } }
 function curveClick(pv, e, p) {
   if (!penDraft || penDraft.pv !== pv) { cancelCurve(); pushUndo(); const a = { id: nextId++, type: 'path', nodes: [], closed: false, color: style.color, width: style.width, fill: 'none' }; getAnnos(pv.num).push(a); penDraft = { pv, a }; attachCurveHover(); }
@@ -1298,11 +1312,12 @@ function startDraw(pv, e, p) {
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   getAnnos(pv.num).push(a);
   const move = ev => {
-    let q = evtToPage(pv, ev); if (gridOn && a.type !== 'pen') q = snapPt(q.x, q.y);   // Ende aufs Raster einrasten
+    let q = evtToPage(pv, ev), snapped = null;
+    if (a.type !== 'pen' && !ev.shiftKey) { const an = anchorSnap(pv, q.x, q.y, a.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
     if (a.type === 'pen') a.pts.push([q.x, q.y]);
     else if (a.type === 'rect' || a.type === 'oval') { a.w = q.x - a.x; a.h = q.y - a.y; }
     else { if (ev.shiftKey) { const s = snap15(a.x1, a.y1, q.x, q.y); a.x2 = s.x; a.y2 = s.y; } else { a.x2 = q.x; a.y2 = q.y; } }   // Shift = 15°-Winkel
-    drawAnnos(pv);
+    drawAnnos(pv); if (snapped) snapIndicator(pv, snapped);
   };
   const up = () => {
     document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);

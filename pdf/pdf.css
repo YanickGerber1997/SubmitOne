@@ -247,6 +247,7 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
 .anno .pnode{fill:#fff;stroke:var(--accent);stroke-width:1.4;vector-effect:non-scaling-stroke;cursor:move}
 .anno .phandle{fill:var(--accent);stroke:#fff;stroke-width:1;vector-effect:non-scaling-stroke;cursor:move}
 .anno .phl{stroke:var(--accent);stroke-opacity:.5;stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
+.anno .snap-anchor{fill:none;stroke:#d6336c;stroke-width:1.6;vector-effect:non-scaling-stroke;pointer-events:none}
 /* Lineal (oben & rechts) */
 .ruler{position:fixed;z-index:8;pointer-events:none}
 .ruler-h{border-bottom:1px solid var(--line)}

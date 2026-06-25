@@ -627,11 +627,11 @@ function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im S
     const c = document.createElement('canvas'); wrap.appendChild(c);
     const tn = document.createElement('span'); tn.className = 'tn'; tn.textContent = n; wrap.appendChild(tn);
     const ctrl = document.createElement('div'); ctrl.className = 'thumb-ctrl';
-    ctrl.innerHTML = '<button data-act="up" title="Seite nach oben">▲</button><button data-act="down" title="Seite nach unten">▼</button><button data-act="extract" title="Seite als neue PDF speichern">⤓</button><button data-act="del" class="del" title="Seite löschen">✕</button>';
+    ctrl.innerHTML = '<button data-act="up" title="Seite nach oben">▲</button><button data-act="down" title="Seite nach unten">▼</button><button data-act="dup" title="Seite duplizieren">⧉</button><button data-act="extract" title="Seite als neue PDF speichern">⤓</button><button data-act="del" class="del" title="Seite löschen">✕</button>';
     wrap.appendChild(ctrl);
     wrap.addEventListener('click', e => {
       const act = e.target.getAttribute && e.target.getAttribute('data-act');
-      if (act === 'up') { movePage(n, -1); } else if (act === 'down') { movePage(n, 1); } else if (act === 'del') { deletePage(n); } else if (act === 'extract') { extractPage(n); } else if (!wrap._dragged) gotoPage(n);
+      if (act === 'up') { movePage(n, -1); } else if (act === 'down') { movePage(n, 1); } else if (act === 'del') { deletePage(n); } else if (act === 'extract') { extractPage(n); } else if (act === 'dup') { duplicatePage(n); } else if (!wrap._dragged) gotoPage(n);
     });
     wrap.addEventListener('pointerdown', e => startThumbDrag(e, n, wrap));   // Drag&Drop-Umsortieren
     host.appendChild(wrap);
@@ -1369,6 +1369,22 @@ async function insertBlankPage(after, size, tmpl) {
     curBytes = new Uint8Array(await out.save()); await loadDoc(curBytes.slice());
     status(''); toast('Seite eingefügt ✓'); gotoPage(after + 1);
   } catch (e) { status(''); console.error(e); undoStack.pop(); toast('Einfügen fehlgeschlagen.'); }
+}
+// Seite n duplizieren (Inhalt + Anmerkungen), Kopie direkt dahinter
+async function duplicatePage(n) {
+  if (!curBytes) return; pushDocUndo(); status('Seite wird dupliziert …');
+  try {
+    const lib = await loadPdfLib();
+    const out = await lib.PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
+    const [copy] = await out.copyPages(out, [n - 1]);
+    out.insertPage(n, copy);                              // 0-basiert: neue Seite wird Nr. n+1
+    const dupAnnos = annos[n] ? JSON.parse(JSON.stringify(annos[n])) : null, dupRot = pageRot[n];
+    remapAfterInsert(n + 1, 1);
+    if (dupAnnos) annos[n + 1] = dupAnnos.map(a => Object.assign(a, { id: nextId++ }));
+    if (dupRot) pageRot[n + 1] = dupRot;
+    curBytes = new Uint8Array(await out.save()); await loadDoc(curBytes.slice());
+    status(''); toast('Seite dupliziert ✓'); gotoPage(n + 1);
+  } catch (e) { status(''); console.error(e); undoStack.pop(); toast('Duplizieren fehlgeschlagen.'); }
 }
 // PDF(s)/Bild(er) nach Seite `after` einfügen
 async function insertFilesAt(after, files) {

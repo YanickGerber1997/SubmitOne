@@ -8,7 +8,7 @@
   <link rel="icon" href="icon.png" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=119" />
+  <link rel="stylesheet" href="pdf.css?v=120" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
@@ -208,7 +208,9 @@
 
   <!-- Schwebende Leiste über der Auswahl -->
   <div class="selbar" id="selbar" hidden>
-    <label class="sb-color" id="sbColorWrap" title="Farbe"><span id="sbColorDot"></span><input type="color" id="sbColor" /></label>
+    <label class="sb-color" id="sbColorWrap" title="Strichfarbe"><span id="sbColorDot"></span><input type="color" id="sbColor" /></label>
+    <label class="sb-color sb-fill" id="sbFillWrap" title="Füllfarbe (Klick = Farbe, ✕ = keine)" hidden><span id="sbFillDot"></span><input type="color" id="sbFill" /></label>
+    <button class="sb-nofill" id="sbNoFill" title="Keine Füllung" hidden>✕</button>
     <div class="sb-widths" id="sbWidths">
       <button data-w="1.5" title="dünn"><span class="wl" style="height:2px"></span></button>
       <button data-w="2.5" title="mittel"><span class="wl" style="height:3px"></span></button>
@@ -349,7 +351,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=119"></script>
+  <script src="pdf.js?v=120"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

@@ -390,6 +390,10 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
 .selbar button:hover,.selbar .sb-color:hover{background:var(--surface-2);border-color:var(--line)}
 .selbar .sb-color{overflow:hidden}
 .selbar #sbColorDot{width:18px;height:18px;border:1px solid var(--line);background:#b4502f}
+.selbar #sbFillDot{width:18px;height:18px;border:1px solid var(--line);background:transparent}
+.selbar .sb-fill{background:repeating-conic-gradient(#dcdcdc 0 25%,#fff 0 50%) 50%/8px 8px}
+.selbar .sb-nofill{font-size:13px;font-weight:700}
+.selbar .sb-nofill:hover{color:var(--danger)}
 .selbar .sb-color input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .selbar .sb-widths{display:flex;gap:2px}
 .selbar .sb-widths button{width:26px}

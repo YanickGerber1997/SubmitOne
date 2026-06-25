@@ -221,13 +221,16 @@ async function loadActive() {
   const p = $('#pages'); if (p) p.scrollTop = d.scrollTop || 0;
 }
 function showEmpty() { active = -1; pdfDoc = null; curBytes = null; curFileHandle = null; document.body.classList.remove('has-doc'); $('#drop').classList.remove('hide'); $('#toolbar').hidden = true; $('#quickbar').hidden = true; $('#pages').innerHTML = ''; showEmptyThumbs(); $('#btnSave').disabled = true; $('#btnSend').disabled = true; document.title = 'Submit PDF'; renderTabs(); }
-// Leerzustand: Vorschau-Spalte zeigt eine „Neue Seite/Folie"-Kachel (Deck-Start)
+// Leerzustand: Vorschau-Spalte zeigt zwei Kacheln – „PDF öffnen" und „Neue Seite/Folie"
 function showEmptyThumbs() {
   const host = $('#thumbs'); if (!host) return; host.innerHTML = '';
-  const b = document.createElement('button'); b.className = 'thumb-new'; b.title = 'Neue Seite / Folie';
-  b.innerHTML = '<span class="tn-plus">＋</span><span>Neue Seite<br>/ Folie</span>';
-  b.onclick = () => openSlidePicker('new');
-  host.appendChild(b);
+  const open = document.createElement('button'); open.className = 'thumb-new tn-open'; open.title = 'PDF/Bild öffnen';
+  open.innerHTML = '<svg class="tn-ic" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg><span>PDF öffnen</span>';
+  open.onclick = openPicker;
+  const neu = document.createElement('button'); neu.className = 'thumb-new'; neu.title = 'Neue Seite / Folie';
+  neu.innerHTML = '<span class="tn-plus">＋</span><span>Neue Seite</span>';
+  neu.onclick = () => openSlidePicker('new');
+  host.appendChild(open); host.appendChild(neu);
 }
 async function addDoc(bytes, name) {
   saveActiveDoc(); const prev = active; const d = blankDoc(bytes, name); docs.push(d); active = docs.length - 1;

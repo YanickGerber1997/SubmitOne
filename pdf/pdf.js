@@ -1380,6 +1380,20 @@ function movePage(n, dir) {     // dir: -1 hoch, +1 runter
   [order[n - 1], order[j - 1]] = [order[j - 1], order[n - 1]];
   applyPageOrder(order);
 }
+// Eine Seite (inkl. Anmerkungen) als PNG-Bild exportieren (scharf gerendert)
+async function exportPagePng(n) {
+  if (!curBytes) return; status('Bild wird erzeugt …'); await new Promise(r => setTimeout(r, 10));
+  try {
+    const bytes = await buildPdfBytes(); await loadPdfJs();
+    const doc = await pdfjs.getDocument({ data: bytes }).promise;
+    const page = await doc.getPage(n), w0 = page.getViewport({ scale: 1 }).width;
+    const vp = page.getViewport({ scale: Math.max(1, Math.min(3, 2000 / w0)) });
+    const cv = document.createElement('canvas'); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+    const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise; doc.destroy();
+    cv.toBlob(blob => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = docName.replace(/\.pdf$/i, '') + '_Seite-' + n + '.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1500); status(''); toast('Seite als PNG gespeichert ✓'); }, 'image/png');
+  } catch (e) { status(''); console.error(e); toast('Bild-Export fehlgeschlagen.'); }
+}
 // Eine Seite (inkl. Anmerkungen) als neue PDF speichern
 async function extractPage(n) {
   if (!curBytes) return; status('Seite wird extrahiert …');
@@ -1859,6 +1873,7 @@ function showCtx(x, y, pv, annoId) {
   sep();
   add('Seite 90° links drehen', '⟲', () => rotatePage(-90));
   add('Seite 90° rechts drehen', '⟳', () => rotatePage(90));
+  add('Seite als Bild (PNG)', '🖼', () => exportPagePng(pv.num));
   sep();
   add('Öffnen', '📂', openPicker);
   add('Speichern (PDF)', '💾', save);

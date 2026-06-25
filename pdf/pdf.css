@@ -244,6 +244,12 @@ body.form-fill .form-layer .ff:focus{outline:2px solid var(--accent);background:
 body.pan #pages,body.pan .pagewrap,body.pan .anno{cursor:grab !important}
 body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !important}
 .snap-guide{stroke:#b4502f;stroke-width:1;stroke-dasharray:5 4;vector-effect:non-scaling-stroke;pointer-events:none}
+/* Lineal (oben & rechts) */
+.ruler{position:fixed;z-index:8;pointer-events:none}
+.ruler-h{border-bottom:1px solid var(--line)}
+.ruler-v{border-left:1px solid var(--line)}
+.ruler-corner{position:fixed;z-index:9;background:var(--surface-2);border-left:1px solid var(--line);border-bottom:1px solid var(--line);font:700 9px/20px var(--font);text-align:center;color:var(--ink-faint);pointer-events:none}
+#btnRuler.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
 /* Zuschneiden-Leiste */
 .crop-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:55;display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.28);padding:8px 12px}
 .crop-bar .crop-lbl{font-size:13px;font-weight:600;color:var(--ink);margin-right:2px}

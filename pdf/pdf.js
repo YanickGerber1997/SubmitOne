@@ -220,7 +220,7 @@ async function loadActive() {
   if (d.pdfDoc) { pdfDoc = d.pdfDoc; await renderCurrentDoc(); } else { await loadDoc(d.bytes.slice()); d.pdfDoc = pdfDoc; }
   const p = $('#pages'); if (p) p.scrollTop = d.scrollTop || 0;
 }
-function showEmpty() { active = -1; pdfDoc = null; curBytes = null; curFileHandle = null; document.body.classList.remove('has-doc'); $('#drop').classList.remove('hide'); $('#toolbar').hidden = true; $('#quickbar').hidden = true; $('#pages').innerHTML = ''; showEmptyThumbs(); $('#btnSave').disabled = true; $('#btnSend').disabled = true; document.title = 'Submit PDF'; renderTabs(); }
+function showEmpty() { active = -1; pdfDoc = null; curBytes = null; curFileHandle = null; document.body.classList.remove('has-doc'); ['#rulerH', '#rulerV', '#rulerCorner'].forEach(s => { const e = $(s); if (e) e.hidden = true; }); $('#drop').classList.remove('hide'); $('#toolbar').hidden = true; $('#quickbar').hidden = true; $('#pages').innerHTML = ''; showEmptyThumbs(); $('#btnSave').disabled = true; $('#btnSend').disabled = true; document.title = 'Submit PDF'; renderTabs(); }
 // Leerzustand: Vorschau-Spalte zeigt zwei Kacheln – „PDF öffnen" und „Neue Seite/Folie"
 function showEmptyThumbs() {
   const host = $('#thumbs'); if (!host) return; host.innerHTML = '';
@@ -333,6 +333,7 @@ async function renderCurrentDoc() {
   await buildLayout(); buildThumbs(); status(''); refreshComments(); updateScaleLabel();
   document.body.classList.add('has-doc');
   detectForm(); detectOutline();
+  if (rulerOn) requestAnimationFrame(drawRulers);
 }
 
 /* ---------- Lesezeichen / Inhalt (vorhandene PDF-Outline) ---------- */
@@ -632,7 +633,7 @@ function snapPos(pv) {
   const dx = Math.round(left * dpr) / dpr - left;
   pv.wrap.style.transform = Math.abs(dx) > 0.001 ? `translateX(${dx}px)` : 'none';
 }
-function relayout() { if (!pdfDoc) return; pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); renderVisible(); updateSelBar(); }
+function relayout() { if (!pdfDoc) return; pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); renderVisible(); updateSelBar(); scheduleRulers(); }
 let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTimer = setTimeout(relayout, 140); }
 
 function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im Seitenstreifen)
@@ -1931,6 +1932,47 @@ function addPageNumbers() {
   }
   pageViews.forEach(drawAnnos); saveState(); toast('Seitenzahlen eingefügt ✓');
 }
+/* ---------- Lineal (oben & rechts, echte Masse) ---------- */
+let rulerOn = false, _rulerRAF = 0;
+function toggleRuler() {
+  rulerOn = !rulerOn; const b = $('#btnRuler'); if (b) b.classList.toggle('on', rulerOn);
+  ['#rulerH', '#rulerV', '#rulerCorner'].forEach(s => { const e = $(s); if (e) e.hidden = !rulerOn; });
+  if (rulerOn) drawRulers();
+}
+function scheduleRulers() { if (!rulerOn || _rulerRAF) return; _rulerRAF = requestAnimationFrame(() => { _rulerRAF = 0; drawRulers(); }); }
+function niceStep(raw) { if (raw <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p; return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p; }
+function fmtRuler(v, step) { v = Math.abs(v) < 1e-9 ? 0 : v; return step >= 1 ? String(Math.round(v)) : step >= 0.1 ? v.toFixed(1) : v.toFixed(2); }
+function posFixed(sel, l, t, w, h) { const e = $(sel); if (!e) return; e.style.left = l + 'px'; e.style.top = t + 'px'; e.style.width = w + 'px'; e.style.height = h + 'px'; }
+function drawRulers() {
+  if (!rulerOn || !pdfDoc) return;
+  ['#rulerH', '#rulerV', '#rulerCorner'].forEach(s => { const e = $(s); if (e) e.hidden = false; });
+  const pagesEl = $('#pages'); if (!pagesEl) return; const pr = pagesEl.getBoundingClientRect();
+  const pv = pageViews.find(p => p.num === curPage()) || pageViews[0]; if (!pv) return;
+  const wr = pv.wrap.getBoundingClientRect(), RW = 20;
+  const scaleSet = !!docScale, valPerPt = scaleSet ? docScale.perPt : PT2MM;   // m/pt oder mm/pt
+  const cc = $('#rulerCorner'); if (cc) cc.textContent = scaleSet ? 'm' : 'mm';
+  posFixed('#rulerH', pr.left, pr.top, Math.max(0, pr.width - RW), RW);
+  posFixed('#rulerV', pr.right - RW, pr.top, RW, pr.height);
+  posFixed('#rulerCorner', pr.right - RW, pr.top, RW, RW);
+  drawAxis($('#rulerH'), true, pr.width - RW, RW, wr.left - pr.left, wr.width / pv.pageW, pv.pageW, valPerPt);
+  drawAxis($('#rulerV'), false, RW, pr.height, wr.top - pr.top, wr.height / pv.pageH, pv.pageH, valPerPt);
+}
+function drawAxis(cv, horiz, cssW, cssH, pageStartRel, pxPerPt, pageLenPt, valPerPt) {
+  if (!cv || pxPerPt <= 0) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.max(1, Math.round(cssW * dpr)); cv.height = Math.max(1, Math.round(cssH * dpr));
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, cssW, cssH);
+  ctx.fillStyle = '#f4f1ec'; ctx.fillRect(0, 0, cssW, cssH);
+  ctx.strokeStyle = '#b9bcb3'; ctx.fillStyle = '#6a6f64'; ctx.lineWidth = 1; ctx.font = '8.5px sans-serif'; ctx.textBaseline = 'top';
+  const pxPerVal = pxPerPt / valPerPt, step = niceStep(58 / pxPerVal), maxVal = pageLenPt * valPerPt;
+  for (let v = 0; v <= maxVal + 1e-6; v += step) {
+    const pos = pageStartRel + (v / valPerPt) * pxPerPt; if (pos < -1 || pos > (horiz ? cssW : cssH) + 1) continue;
+    const lbl = fmtRuler(v, step);
+    ctx.beginPath();
+    if (horiz) { ctx.moveTo(pos, cssH); ctx.lineTo(pos, cssH - 9); ctx.stroke(); ctx.fillText(lbl, pos + 2, 2); }
+    else { ctx.moveTo(cssW, pos); ctx.lineTo(cssW - 9, pos); ctx.stroke(); ctx.fillText(lbl, 2, pos + 2); }
+  }
+}
 // Eine Anmerkung auf alle anderen Seiten kopieren (Logo/Fusszeile/Stempel etc.)
 function annoToAllPages(pv, id) {
   const a = findAnno(pv.num, id); if (!a || !pdfDoc) return; pushUndo(); let cnt = 0;
@@ -2198,6 +2240,9 @@ function wire() {
   $('#btnForm').onclick = toggleFormMode;
   $$('.fab-b').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $('#pageInd').onclick = askGotoPage;
+  $('#btnRuler').onclick = toggleRuler;
+  $('#pages').addEventListener('scroll', scheduleRulers, { passive: true });
+  window.addEventListener('resize', scheduleRulers);
   $('#cropApply').onclick = () => applyCrop(false);
   $('#cropAll').onclick = () => applyCrop(true);
   $('#cropCancel').onclick = () => { removeCropAnno(); setTool('select'); };

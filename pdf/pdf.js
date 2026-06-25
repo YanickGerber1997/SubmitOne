@@ -1895,6 +1895,12 @@ function applyScale() {
 function updateScaleLabel() { const el = $('#scaleInd'); if (el) el.textContent = docScale ? (docScale.label === 'kalibriert' ? '⟂ kalibriert' : docScale.label) : ''; }
 
 /* ---------- Rechtsklick-Menü (alles erreichbar) ---------- */
+// Eine Anmerkung auf alle anderen Seiten kopieren (Logo/Fusszeile/Stempel etc.)
+function annoToAllPages(pv, id) {
+  const a = findAnno(pv.num, id); if (!a || !pdfDoc) return; pushUndo(); let cnt = 0;
+  for (let n = 1; n <= pdfDoc.numPages; n++) { if (n === pv.num) continue; const copy = JSON.parse(JSON.stringify(a)); copy.id = nextId++; getAnnos(n).push(copy); cnt++; }
+  pageViews.forEach(drawAnnos); refreshComments(); saveState(); toast('Auf ' + cnt + ' weitere Seite(n) kopiert ✓');
+}
 function hideCtx() { $('#ctxmenu').hidden = true; }
 function showCtx(x, y, pv, annoId) {
   const m = $('#ctxmenu'); m.innerHTML = '';
@@ -1904,6 +1910,7 @@ function showCtx(x, y, pv, annoId) {
     add('Löschen', '🗑', () => { sel = { num: pv.num, id: annoId }; deleteSel(); }, 'danger');
     add('Farbe ändern', '🎨', () => $('#colorPick').click());
     add('Duplizieren', '⧉', () => duplicateAnno(pv, annoId));
+    add('Auf alle Seiten', '▤', () => annoToAllPages(pv, annoId));
     add('Kopieren', '⧉', () => { sel = { num: pv.num, id: annoId }; copySel(); });
     add('Nach vorne', '⬆', () => reorderAnno(pv, annoId, true));
     add('Nach hinten', '⬇', () => reorderAnno(pv, annoId, false));

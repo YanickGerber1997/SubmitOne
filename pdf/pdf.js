@@ -1114,6 +1114,21 @@ function curveClick(pv, e, p) {
   const dragUp = () => { document.removeEventListener('pointermove', dragMove); document.removeEventListener('pointerup', dragUp); drawAnnos(pv); };
   document.addEventListener('pointermove', dragMove); document.addEventListener('pointerup', dragUp);
 }
+function nearestOnPath(a, px, py) {
+  const n = a.nodes; if (n.length < 2) return null; let best = null;
+  const chk = (i, p0, p1, p2, p3) => { for (let k = 0; k <= 24; k++) { const t = k / 24, pt = cubicPt(p0, p1, p2, p3, t), d = Math.hypot(pt.x - px, pt.y - py); if (!best || d < best.dist) best = { seg: i, t, dist: d }; } };
+  for (let i = 0; i < n.length - 1; i++) chk(i, { x: n[i].x, y: n[i].y }, n[i].hOut, n[i + 1].hIn, { x: n[i + 1].x, y: n[i + 1].y });
+  if (a.closed && n.length > 1) chk(n.length - 1, { x: n[n.length - 1].x, y: n[n.length - 1].y }, n[n.length - 1].hOut, n[0].hIn, { x: n[0].x, y: n[0].y });
+  return best;
+}
+function addPathNode(a, seg, t) {
+  const n = a.nodes, i = seg, j = (i + 1) % n.length;
+  const lerp = (A, B) => ({ x: A.x + (B.x - A.x) * t, y: A.y + (B.y - A.y) * t });
+  const p0 = { x: n[i].x, y: n[i].y }, p1 = { x: n[i].hOut.x, y: n[i].hOut.y }, p2 = { x: n[j].hIn.x, y: n[j].hIn.y }, p3 = { x: n[j].x, y: n[j].y };
+  const aa = lerp(p0, p1), bb = lerp(p1, p2), cc = lerp(p2, p3), dd = lerp(aa, bb), ee = lerp(bb, cc), ff = lerp(dd, ee);   // de Casteljau (formtreu)
+  n[i].hOut = aa; n[j].hIn = cc;
+  n.splice(i + 1, 0, { x: ff.x, y: ff.y, hIn: { x: dd.x, y: dd.y }, hOut: { x: ee.x, y: ee.y } });
+}
 function finishCurve() {
   if (!penDraft) return; const { pv, a } = penDraft; detachCurveHover(); delete a._preview; penDraft = null;
   if (a.nodes.length < 2) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); drawAnnos(pv); setTool('select'); return; }
@@ -2337,9 +2352,17 @@ function wire() {
   // Doppelklick auf Mass-/Masslinie → eigenes Mass eintragen
   $('#pages').addEventListener('dblclick', e => {
     if (penDraft) { if (penDraft.a.nodes.length >= 2) penDraft.a.nodes.pop(); finishCurve(); return; }   // Doppelklick = Kurve fertig
+    const pnAttr = e.target.getAttribute && e.target.getAttribute('data-pn');
     const id = e.target.getAttribute && e.target.getAttribute('data-id'); if (!id) return;
     const wrap = e.target.closest('.pagewrap'); if (!wrap) return; const pv = pageViews.find(p => p.num === +wrap.dataset.n);
     const a = findAnno(pv.num, +id); if (!a) return;
+    if (a.type === 'path') {                                          // Kurve: Knoten löschen / hinzufügen
+      if (!sel || sel.id !== a.id) { sel = { num: pv.num, id: a.id }; drawAnnos(pv); return; }   // erst auswählen
+      if (pnAttr !== null) { if (a.nodes.length > 2) { pushUndo(); a.nodes.splice(+pnAttr, 1); drawAnnos(pv); saveState(); } return; }
+      const q = evtToPage(pv, e), hit = nearestOnPath(a, q.x, q.y);
+      if (hit && hit.dist * pv.scale < 16) { pushUndo(); addPathNode(a, hit.seg, hit.t); drawAnnos(pv); saveState(); }
+      return;
+    }
     if (a.type === 'edit') { openEditEdit(pv, a, false); return; }   // bestehende Edit-Stelle erneut bearbeiten
     if (a.type === 'text') { openTextAnnoEdit(pv, a); return; }       // Text-Annotation bearbeiten
     if (a.type === 'imgph') { fillImgPlaceholder(pv, a); return; }    // Bild-Platzhalter füllen

@@ -1408,7 +1408,18 @@ function openSlidePicker(mode, after) {
   _slideCtx = { mode, after };
   $('#sdTitle').textContent = mode === 'new' ? 'Leeres Dokument starten' : 'Seite / Folie einfügen';
   $('#sdOk').textContent = mode === 'new' ? 'Erstellen' : 'Einfügen';
-  $('#slideDlg').hidden = false;
+  $('#slideDlg').hidden = false; renderSlidePreview();
+}
+function renderSlidePreview() {
+  const fmt = $('#sdFormats button.on') || $('#sdFormats button'), lay = $('#sdLayouts button.on') || $('#sdLayouts button');
+  if (!fmt || !lay) return;
+  const w = +fmt.dataset.w, h = +fmt.dataset.h, t = lay.dataset.t, sc = Math.min(150 / w, 104 / h);
+  const bar = (x, y, bw, bh, cls) => `<div class="pv-b ${cls || ''}" style="left:${x}%;top:${y}%;width:${bw}%;height:${bh}%"></div>`;
+  let inner = '';
+  if (t === 'title') inner = bar(15, 40, 70, 12, 'pv-strong') + bar(25, 57, 50, 7);
+  else if (t === 'titlecontent') inner = bar(8, 8, 75, 11, 'pv-strong') + bar(8, 28, 80, 6) + bar(8, 40, 80, 6) + bar(8, 52, 65, 6);
+  else if (t === 'image') inner = bar(10, 12, 80, 55, 'pv-box') + bar(20, 76, 60, 6);
+  $('#sdPreview').innerHTML = `<div class="pv-page" style="width:${Math.round(w * sc)}px;height:${Math.round(h * sc)}px">${inner}</div>`;
 }
 function slideConfirm() {
   const fmt = $('#sdFormats button.on') || $('#sdFormats button'), lay = $('#sdLayouts button.on') || $('#sdLayouts button');
@@ -1838,8 +1849,8 @@ function wire() {
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
   $('#btnNew').onclick = () => openSlidePicker('new');
-  $$('#sdFormats button').forEach(b => b.onclick = () => { $$('#sdFormats button').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
-  $$('#sdLayouts button').forEach(b => b.onclick = () => { $$('#sdLayouts button').forEach(x => x.classList.remove('on')); b.classList.add('on'); });
+  $$('#sdFormats button').forEach(b => b.onclick = () => { $$('#sdFormats button').forEach(x => x.classList.remove('on')); b.classList.add('on'); renderSlidePreview(); });
+  $$('#sdLayouts button').forEach(b => b.onclick = () => { $$('#sdLayouts button').forEach(x => x.classList.remove('on')); b.classList.add('on'); renderSlidePreview(); });
   $('#sdCancel').onclick = () => $('#slideDlg').hidden = true;
   $('#sdOk').onclick = slideConfirm;
   $('#btnFolder').onclick = toggleFiles;

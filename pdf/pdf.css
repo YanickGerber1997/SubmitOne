@@ -332,6 +332,11 @@ body.form-fill .form-layer .ff:focus{outline:2px solid var(--accent);background:
 .modal-card input:focus,.modal-card textarea:focus{outline:none;border-color:var(--accent)}
 .modal-hint{font-size:12px;color:var(--ink-faint);margin:6px 0 16px;line-height:1.45}
 .modal-act{display:flex;justify-content:flex-end;gap:8px}
+.sd-preview{display:flex;align-items:center;justify-content:center;height:120px;background:var(--surface-2);border:1px solid var(--line);margin-bottom:16px}
+.pv-page{position:relative;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.18)}
+.pv-b{position:absolute;background:var(--line)}
+.pv-b.pv-strong{background:var(--accent)}
+.pv-b.pv-box{background:transparent;border:1.5px solid var(--line)}
 .sd-sec{margin-bottom:16px}
 .sd-lbl{display:block;font-size:12px;color:var(--ink-soft);font-weight:700;margin-bottom:8px}
 .sd-chips{display:flex;flex-wrap:wrap;gap:6px}

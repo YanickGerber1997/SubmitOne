@@ -1367,15 +1367,16 @@ function templateAnnos(kind, w, h) {
   ];
   return [];
 }
-// Seite nach `after` einfügen (after=0 → ganz oben). size optional {w,h} (sonst Nachbarseite), tmpl = Vorlage.
-async function insertBlankPage(after, size, tmpl) {
+function paintBg(lib, pg, w, h, bg) { if (!bg || bg === '#ffffff') return; const c = hexToRgb(bg); pg.drawRectangle({ x: 0, y: 0, width: w, height: h, color: lib.rgb(c.r, c.g, c.b) }); }
+// Seite nach `after` einfügen (after=0 → ganz oben). size optional {w,h} (sonst Nachbarseite), tmpl = Vorlage, bg = Hintergrund.
+async function insertBlankPage(after, size, tmpl, bg) {
   if (!curBytes) return; pushDocUndo(); status('Seite wird eingefügt …');
   try {
     const lib = await loadPdfLib();
     const out = await lib.PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
     let w, h;
     if (size) { w = size.w; h = size.h; } else { const pgs = out.getPages(); const ref = pgs[Math.max(0, Math.min(pgs.length - 1, after - 1))]; const s = ref ? ref.getSize() : { width: 595, height: 842 }; w = s.width; h = s.height; }
-    out.insertPage(after, [w, h]);
+    const newPg = out.insertPage(after, [w, h]); paintBg(lib, newPg, w, h, bg);
     remapAfterInsert(after + 1, 1);
     const t = templateAnnos(tmpl || 'blank', w, h); if (t.length) annos[after + 1] = t.map(a => Object.assign(a, { id: nextId++ }));
     curBytes = new Uint8Array(await out.save()); await loadDoc(curBytes.slice());
@@ -1421,10 +1422,10 @@ async function insertFilesAt(after, files) {
   } catch (e) { status(''); console.error(e); undoStack.pop(); toast('Einfügen fehlgeschlagen.'); }
 }
 // Leeres Dokument (eine Seite, gewähltes Format + Vorlage) als neuen Tab starten
-async function newBlankDoc(size, tmpl) {
+async function newBlankDoc(size, tmpl, bg) {
   const w = (size && size.w) || 595, h = (size && size.h) || 842;
   try {
-    const lib = await loadPdfLib(); const d = await lib.PDFDocument.create(); d.addPage([w, h]);
+    const lib = await loadPdfLib(); const d = await lib.PDFDocument.create(); const pg = d.addPage([w, h]); paintBg(lib, pg, w, h, bg);
     const bytes = new Uint8Array(await d.save()); await addDoc(bytes, 'Neue Seite.pdf');
     const t = templateAnnos(tmpl || 'blank', w, h);
     if (t.length) { annos[1] = t.map(a => Object.assign(a, { id: nextId++ })); if (docs[active]) docs[active].annos = annos; pageViews.forEach(drawAnnos); markDirty(); }
@@ -1442,6 +1443,7 @@ function renderSlidePreview() {
   const fmt = $('#sdFormats button.on') || $('#sdFormats button'), lay = $('#sdLayouts button.on') || $('#sdLayouts button');
   if (!fmt || !lay) return;
   const w = +fmt.dataset.w, h = +fmt.dataset.h, t = lay.dataset.t, sc = Math.min(150 / w, 104 / h);
+  const bgB = $('#sdBg button.on') || $('#sdBg button'), bg = bgB ? bgB.dataset.bg : '#ffffff';
   const bar = (x, y, bw, bh, cls) => `<div class="pv-b ${cls || ''}" style="left:${x}%;top:${y}%;width:${bw}%;height:${bh}%"></div>`;
   let inner = '';
   if (t === 'title') inner = bar(15, 40, 70, 12, 'pv-strong') + bar(25, 57, 50, 7);
@@ -1449,13 +1451,13 @@ function renderSlidePreview() {
   else if (t === 'twocol') inner = bar(8, 8, 75, 11, 'pv-strong') + bar(8, 28, 38, 6) + bar(8, 40, 38, 6) + bar(54, 28, 38, 6) + bar(54, 40, 38, 6);
   else if (t === 'compare') inner = bar(8, 8, 75, 11, 'pv-strong') + bar(8, 26, 38, 60, 'pv-box') + bar(54, 26, 38, 60, 'pv-box');
   else if (t === 'image') inner = bar(10, 12, 80, 55, 'pv-box') + bar(20, 76, 60, 6);
-  $('#sdPreview').innerHTML = `<div class="pv-page" style="width:${Math.round(w * sc)}px;height:${Math.round(h * sc)}px">${inner}</div>`;
+  $('#sdPreview').innerHTML = `<div class="pv-page" style="width:${Math.round(w * sc)}px;height:${Math.round(h * sc)}px;background:${bg}">${inner}</div>`;
 }
 function slideConfirm() {
-  const fmt = $('#sdFormats button.on') || $('#sdFormats button'), lay = $('#sdLayouts button.on') || $('#sdLayouts button');
-  const size = { w: +fmt.dataset.w, h: +fmt.dataset.h }, tmpl = lay.dataset.t;
+  const fmt = $('#sdFormats button.on') || $('#sdFormats button'), lay = $('#sdLayouts button.on') || $('#sdLayouts button'), bgB = $('#sdBg button.on') || $('#sdBg button');
+  const size = { w: +fmt.dataset.w, h: +fmt.dataset.h }, tmpl = lay.dataset.t, bg = bgB.dataset.bg;
   $('#slideDlg').hidden = true;
-  if (_slideCtx && _slideCtx.mode === 'new') newBlankDoc(size, tmpl); else insertBlankPage(_slideCtx ? _slideCtx.after : 0, size, tmpl);
+  if (_slideCtx && _slideCtx.mode === 'new') newBlankDoc(size, tmpl, bg); else insertBlankPage(_slideCtx ? _slideCtx.after : 0, size, tmpl, bg);
 }
 function closeInsertMenu() { const m = $('#insMenu'); if (m) { if (m._onDoc) document.removeEventListener('pointerdown', m._onDoc, true); m.remove(); } }
 function showInsertMenu(after, anchor) {
@@ -1881,6 +1883,7 @@ function wire() {
   $('#btnNew').onclick = () => openSlidePicker('new');
   $$('#sdFormats button').forEach(b => b.onclick = () => { $$('#sdFormats button').forEach(x => x.classList.remove('on')); b.classList.add('on'); renderSlidePreview(); });
   $$('#sdLayouts button').forEach(b => b.onclick = () => { $$('#sdLayouts button').forEach(x => x.classList.remove('on')); b.classList.add('on'); renderSlidePreview(); });
+  $$('#sdBg button').forEach(b => b.onclick = () => { $$('#sdBg button').forEach(x => x.classList.remove('on')); b.classList.add('on'); renderSlidePreview(); });
   $('#sdCancel').onclick = () => $('#slideDlg').hidden = true;
   $('#sdOk').onclick = slideConfirm;
   $('#btnFolder').onclick = toggleFiles;

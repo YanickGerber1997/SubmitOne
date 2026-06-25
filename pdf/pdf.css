@@ -5,7 +5,7 @@
   --accent:#4f7a3c; --accent-soft:#e9efde; --accent-2:#6e7a3a; --accent-3:#34502b; --accent-4:#8a8a44;
   --danger:#b4502f;
   --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-  --bar:54px; --tools:48px; --tabs:32px;
+  --bar:64px; --tools:48px; --tabs:32px;
 }
 *{box-sizing:border-box}
 [hidden]{display:none !important}   /* Attribut sticht Klassen-display aus (Mail-Dialog etc.) */
@@ -32,24 +32,22 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 /* Topbar */
 .topbar{height:var(--bar);display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:6}
 .brand{display:flex;align-items:center;gap:8px;text-decoration:none;margin-right:6px;font-weight:500;font-size:16px;letter-spacing:2.5px}
-.brand .logomark{height:44px;width:44px;flex:none;object-fit:contain}
+.brand .logomark{height:52px;width:52px;flex:none;object-fit:contain}
 .drop-logo{width:min(300px,66vw);display:block;margin:0 auto 8px}
 .splash-logo{width:min(360px,72vw);opacity:0;animation:lgReveal 1.15s cubic-bezier(.2,.7,.3,1) .15s forwards}
 @keyframes lgReveal{from{opacity:0;transform:scale(.93) translateY(10px);clip-path:inset(0 0 100% 0)}to{opacity:1;transform:scale(1) translateY(0);clip-path:inset(0 0 0 0)}}
 .brand .bw-a{color:#1c242c} .brand .bw-b{color:#4f7a3c;margin-left:5px}
-.brand .brand-word{height:22px;width:auto;display:block;object-fit:contain}
+.brand .brand-word{height:25px;width:auto;display:block;object-fit:contain}
 .btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:0;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:.12s;white-space:nowrap;flex:none}
 .topbar{flex-wrap:nowrap}
 .hdr-sep{width:1px;height:22px;background:var(--line);margin:0 3px;flex:none}
 /* Ohne offenes Dokument: oben rechts NUR der Download-Button (alles andere raus) */
 body:not(.has-doc) #btnUndo,body:not(.has-doc) #btnRedo,body:not(.has-doc) .pageind,body:not(.has-doc) #btnOutline,body:not(.has-doc) .scaleind,body:not(.has-doc) .hdr-sep,body:not(.has-doc) #btnSave,body:not(.has-doc) #btnSend,body:not(.has-doc) #btnPrint,body:not(.has-doc) #btnComments,body:not(.has-doc) #btnSplit,body:not(.has-doc) #btnNew,body:not(.has-doc) #btnFolder,body:not(.has-doc) #btnInstall,body:not(.has-doc) .doc-name,body:not(.has-doc) .suite-link{display:none !important}
-/* Download-Button (Desktop-App / Tauri) – premium, schlicht, modern; nur im Leerzustand */
-.dl-btn{display:none;align-items:center;gap:11px;height:40px;padding:0 20px;border:none;border-radius:8px;background:linear-gradient(135deg,#5d8e46 0%,#436e33 55%,#3a5f2c 100%);color:#fff;font:inherit;font-size:13.5px;font-weight:600;letter-spacing:.2px;cursor:pointer;white-space:nowrap;flex:none;position:relative;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 -1px 0 rgba(0,0,0,.12),0 8px 20px -8px rgba(40,70,25,.7);transition:transform .16s ease,box-shadow .16s ease}
-.dl-btn::before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,transparent 30%,rgba(255,255,255,.16) 48%,transparent 66%);transform:translateX(-120%);transition:transform .6s ease}
-.dl-btn:hover{transform:translateY(-1px);box-shadow:inset 0 1px 0 rgba(255,255,255,.28),inset 0 -1px 0 rgba(0,0,0,.14),0 12px 26px -8px rgba(40,70,25,.8)}
-.dl-btn:hover::before{transform:translateX(120%)}
+/* Download-Button (Desktop-App / Tauri) – hell, offen, premium; nur im Leerzustand */
+.dl-btn{display:none;align-items:center;gap:10px;height:42px;padding:0 20px;border:1.5px solid var(--accent);border-radius:10px;background:linear-gradient(180deg,#fff 0%,#f3f8ef 100%);color:var(--accent-3);font:inherit;font-size:13.5px;font-weight:600;letter-spacing:.2px;cursor:pointer;white-space:nowrap;flex:none;box-shadow:0 4px 14px -6px rgba(60,95,40,.35);transition:transform .16s ease,box-shadow .16s ease,background .16s ease,border-color .16s ease}
+.dl-btn:hover{transform:translateY(-1px);background:linear-gradient(180deg,#f3f8ef 0%,#e7f1df 100%);border-color:var(--accent-3);box-shadow:0 8px 20px -8px rgba(60,95,40,.45)}
 .dl-btn:active{transform:translateY(0)}
-.dl-btn .dl-arrow{width:16px;height:16px;fill:none;stroke:#fff;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;opacity:.96}
+.dl-btn .dl-arrow{width:17px;height:17px;fill:none;stroke:var(--accent);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 body:not(.has-doc) #btnDownload{display:inline-flex}
 @media (max-width:560px){.dl-btn span{display:none}.dl-btn{padding:0 12px;gap:0}}
 .btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}

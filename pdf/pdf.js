@@ -232,7 +232,7 @@ function showEmptyThumbs() {
   neu.onclick = () => openSlidePicker('new');
   host.appendChild(open); host.appendChild(neu);
 }
-async function addDoc(bytes, name) {
+async function addDoc(bytes, name, skipRestore) {
   saveActiveDoc(); const prev = active; const d = blankDoc(bytes, name); docs.push(d); active = docs.length - 1;
   try { await loadActive(); }
   catch (e) {                                          // z. B. Passwort abgebrochen / nicht lesbar → Tab wieder entfernen
@@ -241,7 +241,7 @@ async function addDoc(bytes, name) {
     if (!e || e.name !== 'AbortByUser') toast('Datei konnte nicht geöffnet werden.');
     return;
   }
-  renderTabs(); await maybeRestore();
+  renderTabs(); if (!skipRestore) { try { await maybeRestore(); } catch (_) { } }   // neue Leerseiten: keine (kollidierende) Wiederherstellung
 }
 async function activateDoc(i) { if (i === active || i < 0 || i >= docs.length) return; saveActiveDoc(); active = i; await loadActive(); renderTabs(); }
 async function closeDoc(i) {
@@ -311,6 +311,7 @@ async function imageToPdfBytes(file) {
 }
 async function loadDoc(bytes) {
   status('Öffne Dokument …');
+  if (!pdfjs) { try { await loadPdfJs(); } catch (_) { status(''); toast('PDF-Engine nicht ladbar (einmal Internet nötig).'); throw new Error('pdfjs'); } }   // z. B. „Neue Seite" als erste Aktion
   const task = pdfjs.getDocument({ data: bytes }); let cancelled = false;
   task.onProgress = p => { if (p && p.total) status('Öffne Dokument … ' + Math.min(100, Math.round(p.loaded / p.total * 100)) + ' %'); };   // Fortschritt bei grossen Dateien
   task.onPassword = (updatePassword, reason) => {                          // passwortgeschütztes PDF
@@ -1570,10 +1571,11 @@ async function newBlankDoc(size, tmpl, bg) {
   const w = (size && size.w) || 595, h = (size && size.h) || 842;
   try {
     const lib = await loadPdfLib(); const d = await lib.PDFDocument.create(); const pg = d.addPage([w, h]); paintBg(lib, pg, w, h, bg);
-    const bytes = new Uint8Array(await d.save()); await addDoc(bytes, 'Neue Seite.pdf');
+    const bytes = new Uint8Array(await d.save()); await addDoc(bytes, 'Neue Seite.pdf', true);   // skipRestore: keine Autosave-Kollision
+    if (active < 0) return;                                                       // Anlegen fehlgeschlagen → still
     const t = templateAnnos(tmpl || 'blank', w, h);
     if (t.length) { annos[1] = t.map(a => Object.assign(a, { id: nextId++ })); if (docs[active]) docs[active].annos = annos; pageViews.forEach(drawAnnos); markDirty(); }
-  } catch (e) { console.error(e); toast('Konnte kein leeres Dokument anlegen.'); }
+  } catch (e) { console.error(e); status(''); toast('Konnte kein leeres Dokument anlegen.'); }
 }
 // Folien-/Seiten-Picker (Format + Vorlage)
 let _slideCtx = null;

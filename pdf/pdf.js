@@ -757,6 +757,15 @@ function updateSelBar() {
   if (hasFill) { const f = (a.fill && a.fill !== 'none') ? a.fill : null; $('#sbFillDot').style.background = f || 'transparent'; $('#sbFill').value = toHex(f || a.color); }
   if (hasWidth) $$('#sbWidths button').forEach(b => b.classList.toggle('on', +b.dataset.w === a.width));
   if (hasSize) $('#sbSize').value = String(a.size);
+  const isText = a.type === 'text';
+  $('#sbTextFmt').hidden = !isText;
+  if (isText) {
+    $$('#sbTextFmt [data-al]').forEach(b => b.classList.toggle('on', (a.align || 'left') === b.dataset.al));
+    $('#sbTbgNone').classList.toggle('on', !a.bg || a.bg === 'transparent');
+    $('#sbTbgDot').style.background = (a.bg && a.bg !== 'transparent') ? a.bg : 'transparent';
+    $('#sbTbg').value = (a.bg && a.bg[0] === '#') ? a.bg : '#ffffff';
+    $('#sbTborder').classList.toggle('on', !!a.border);
+  }
   bar.hidden = false;
   const b = bbox(a), ctm = pv.svg.getScreenCTM(); if (!ctm) { bar.hidden = true; return; }
   const sp = pv.svg.createSVGPoint(); sp.x = b.x + b.w / 2; sp.y = b.y; const tp = sp.matrixTransform(ctm);
@@ -1031,10 +1040,11 @@ function onPointerDown(pv, e) {
     if ((pn !== null || ph !== null) && sel && sel.num === pv.num) { startNodeDrag(pv, e, sel.id, pn, ph, e.target.getAttribute('data-hk')); return; }   // Kurven-Knoten/Anfasser ziehen
     if (hAttr && sel && sel.num === pv.num) { startResize(pv, e, hAttr); return; }
     if (idAttr) {
+      const wasSel = sel && sel.num === pv.num && sel.id === +idAttr;   // war schon ausgewählt → Klick (ohne Ziehen) = bearbeiten
       groupSel = null; sel = { num: pv.num, id: +idAttr }; drawAnnos(pv);
       const a = findAnno(pv.num, sel.id);
       if (a && a.type === 'note') { openNoteEdit(pv, a); return; }
-      startMove(pv, e, a); return;
+      startMove(pv, e, a, wasSel); return;
     }
     sel = null; groupSel = null; drawAnnos(pv); startMarquee(pv, e); return;   // leerer Klick → Rahmen aufziehen
   }
@@ -1242,7 +1252,7 @@ function fillImgPlaceholder(pv, a) {
   };
   inp.click();
 }
-function startMove(pv, e, a) {
+function startMove(pv, e, a, wasSel) {
   if (!a) return; const start = evtToPage(pv, e); pushUndo(); let moved = false;
   const orig = JSON.parse(JSON.stringify(a));
   const cx = pv.pageW / 2, cy = pv.pageH / 2, thr = 6 / pv.scale;
@@ -1266,7 +1276,15 @@ function startMove(pv, e, a) {
     if (snapX) pv.svg.appendChild(svgEl('line', { x1: cx, y1: 0, x2: cx, y2: pv.pageH, class: 'snap-guide' }));
     if (snapY) pv.svg.appendChild(svgEl('line', { x1: 0, y1: cy, x2: pv.pageW, y2: cy, class: 'snap-guide' }));
   };
-  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); removeGuides(); if (!moved) undoStack.pop(); else { saveState(); refreshComments(); } };
+  const up = () => {
+    document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); removeGuides();
+    if (!moved) {
+      undoStack.pop();
+      if (wasSel && editingId == null && (a.type === 'text' || a.type === 'edit')) {   // reiner Klick auf bereits gewählten Text → bearbeiten
+        if (a.type === 'text') openTextAnnoEdit(pv, a); else openEditEdit(pv, a, false);
+      }
+    } else { saveState(); refreshComments(); }
+  };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 // Endpunkt auf 15°-Schritte zum Festpunkt (ax,ay) einrasten (Shift beim Ziehen)
@@ -2515,6 +2533,7 @@ function wire() {
   $('#scaleRatio').onkeydown = e => { if (e.key === 'Enter') applyScale(); };
   // Doppelklick auf Mass-/Masslinie → eigenes Mass eintragen
   $('#pages').addEventListener('dblclick', e => {
+    if (editingId != null) return;   // schon im Bearbeiten-Modus (Klick hat bereits geöffnet)
     if (penDraft) { if (penDraft.a.nodes.length >= 2) penDraft.a.nodes.pop(); finishCurve(); return; }   // Doppelklick = Kurve fertig
     const pnAttr = e.target.getAttribute && e.target.getAttribute('data-pn');
     const id = e.target.getAttribute && e.target.getAttribute('data-id'); if (!id) return;
@@ -2597,7 +2616,7 @@ function wire() {
   $('#widthSel').onchange = e => { style.width = +e.target.value; saveStyle(); if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.width != null) { pushUndo(); a.width = style.width; pageViews.forEach(drawAnnos); } } };
   // Schwebende Auswahl-Leiste
   const selA = () => sel && findAnno(sel.num, sel.id), selPv = () => pageViews.find(p => p.num === sel.num);
-  let sbColorPushed = false;
+  let sbColorPushed = false, sbTbgPushed = false;
   $('#sbColor').addEventListener('pointerdown', () => { sbColorPushed = false; });
   $('#sbColor').addEventListener('input', e => { const a = selA(); if (!a) return; if (!sbColorPushed) { pushUndo(); sbColorPushed = true; } a.color = e.target.value; style.color = e.target.value; $('#colorDot').style.background = e.target.value; $('#sbColorDot').style.background = e.target.value; const pv = selPv(); if (pv) drawAnnos(pv); });
   let sbFillPushed = false;
@@ -2610,6 +2629,13 @@ function wire() {
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.sb-hatch-wrap')) $('#hatchPop').hidden = true; }, true);
   $$('#sbWidths button').forEach(btn => btn.onclick = () => { const a = selA(); if (!a || a.width == null) return; pushUndo(); a.width = +btn.dataset.w; style.width = +btn.dataset.w; $('#widthSel').value = btn.dataset.w; const pv = selPv(); if (pv) drawAnnos(pv); });
   $('#sbSize').onchange = e => { const a = selA(); if (!a) return; pushUndo(); a.size = +e.target.value; style.size = +e.target.value; $('#sizeSel').value = e.target.value; const pv = selPv(); if (pv) drawAnnos(pv); };
+  // Text-Format direkt aus der Auswahl-Leiste (volle Kontrolle, ohne erst zu editieren)
+  $$('#sbTextFmt [data-al]').forEach(b => b.onclick = () => { const a = selA(), pv = selPv(); if (!a || a.type !== 'text') return; pushUndo(); a.align = b.dataset.al; textStyle.align = b.dataset.al; if (pv) drawAnnos(pv); updateSelBar(); saveState(); });
+  $('#sbTbgNone').onclick = () => { const a = selA(), pv = selPv(); if (!a || a.type !== 'text') return; pushUndo(); a.bg = 'transparent'; textStyle.bg = 'transparent'; if (pv) drawAnnos(pv); updateSelBar(); saveState(); };
+  $('#sbTbg').addEventListener('pointerdown', () => { sbTbgPushed = false; });
+  $('#sbTbg').addEventListener('input', e => { const a = selA(), pv = selPv(); if (!a || a.type !== 'text') return; if (!sbTbgPushed) { pushUndo(); sbTbgPushed = true; } a.bg = e.target.value; textStyle.bg = e.target.value; if (pv) drawAnnos(pv); updateSelBar(); });
+  $('#sbTborder').onclick = () => { const a = selA(), pv = selPv(); if (!a || a.type !== 'text') return; pushUndo(); a.border = a.border ? null : (a.color || '#1c242c'); if (a.border && !a.borderW) a.borderW = 1.2; textStyle.border = a.border; if (pv) drawAnnos(pv); updateSelBar(); saveState(); };
+  $('#sbTedit').onclick = () => { const a = selA(), pv = selPv(); if (a && pv && a.type === 'text') openTextAnnoEdit(pv, a); };
   $('#sbEdit').onclick = () => { const a = selA(), pv = selPv(); if (a && pv) openEditEdit(pv, a, false); };
   $('#sbMove').onclick = () => { const a = selA(), pv = selPv(); if (a && pv) splitEditMove(pv, a); };
   const lineAdjust = (dx, dy) => { const a = selA(); if (!isLineType(a)) return; pushUndo(); a.x1 += dx; a.y1 += dy; a.x2 += dx; a.y2 += dy; const pv = selPv(); if (pv) drawAnnos(pv); };

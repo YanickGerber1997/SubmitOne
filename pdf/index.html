@@ -5,21 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF – PDFs bearbeiten im Browser</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" href="icon.png?v=139" />
+  <link rel="icon" href="icon.png?v=140" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=139" />
+  <link rel="stylesheet" href="pdf.css?v=140" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=139" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=140" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=139" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=139" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=140" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=140" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <span class="doc-name" id="docName"></span>
@@ -153,7 +153,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=139" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=140" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -226,6 +226,16 @@
     </div>
     <button class="sb-dash" id="sbDash" title="Strich: durchgezogen / gestrichelt / gepunktet" hidden>—</button>
     <select class="sb-size" id="sbSize" title="Textgrösse"><option value="12">12</option><option value="16">16</option><option value="22">22</option><option value="32">32</option><option value="48">48</option></select>
+    <div class="sb-tfmt" id="sbTextFmt" hidden>
+      <button data-al="left" title="Linksbündig">⯇</button>
+      <button data-al="center" title="Zentriert">≡</button>
+      <button data-al="right" title="Rechtsbündig">⯈</button>
+      <span class="sb-sep2"></span>
+      <button data-bg="transparent" id="sbTbgNone" title="Hintergrund transparent">∅</button>
+      <label class="sb-color" id="sbTbgWrap" title="Hintergrundfarbe"><span id="sbTbgDot"></span><input type="color" id="sbTbg" /></label>
+      <button id="sbTborder" title="Rahmen an/aus">▭</button>
+      <button id="sbTedit" class="sb-tedit" title="Text bearbeiten">✎ Text</button>
+    </div>
     <div class="sb-line" id="sbLine">
       <button id="sbUp" title="nach oben verschieben">▲</button>
       <button id="sbDown" title="nach unten verschieben">▼</button>
@@ -387,7 +397,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=139"></script>
+  <script src="pdf.js?v=140"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

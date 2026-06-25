@@ -20,6 +20,9 @@ let fieldTypes = {};       // {feldName: 'text'|'checkbox'|'radio'|'dropdown'}
 let formMode = false;      // „Formular ausfüllen"-Modus aktiv?
 let tool = 'select';
 let style = { color: '#b4502f', width: 2.5, size: 16 };   // Standard: Rost (gut sichtbar auf Plänen)
+function saveStyle() { try { localStorage.setItem('submitpdf.style', JSON.stringify({ color: style.color, width: style.width, size: style.size, penTidy })); } catch (_) { } }
+function loadStyle() { let s; try { s = JSON.parse(localStorage.getItem('submitpdf.style') || 'null'); } catch (_) { s = null; } if (!s) return; if (s.color) style.color = s.color; if (s.width) style.width = s.width; if (s.size) style.size = s.size; if (typeof s.penTidy === 'boolean') penTidy = s.penTidy; }
+function applyStyleUI() { const $$$ = id => document.getElementById(id); const d = $$$('colorDot'); if (d) d.style.background = style.color; const cp = $$$('colorPick'); if (cp) cp.value = style.color; const ws = $$$('widthSel'); if (ws) ws.value = String(style.width); const ss = $$$('sizeSel'); if (ss) ss.value = String(style.size); const pt = $$$('penTidyBtn'); if (pt) pt.classList.toggle('on', penTidy); }
 let penTidy = true;        // Freihand-Skizzen automatisch zu sauberen Formen aufräumen
 let docScale = null;       // {perPt: reale Meter pro PDF-Punkt, label:'1:100'} – für Messen
 const PT2MM = 25.4 / 72;   // 1 PDF-Punkt in mm
@@ -1933,8 +1936,9 @@ function wire() {
   window.addEventListener('beforeunload', e => { saveActiveDoc(); if (dirty || docs.some(d => d.dirty)) { autosaveNow(); e.preventDefault(); e.returnValue = ''; } });
   window.addEventListener('pagehide', () => { saveActiveDoc(); autosaveNow(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { saveActiveDoc(); autosaveNow(); } });
+  loadStyle(); applyStyleUI();   // zuletzt benutzte Farbe/Strichstärke/Textgrösse/Skizze-Modus wiederherstellen
   $$('.tool[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
-  $('#penTidyBtn').onclick = () => { penTidy = !penTidy; $('#penTidyBtn').classList.toggle('on', penTidy); toast(penTidy ? 'Skizze aufräumen: an' : 'Freihand: roh'); };
+  $('#penTidyBtn').onclick = () => { penTidy = !penTidy; $('#penTidyBtn').classList.toggle('on', penTidy); saveStyle(); toast(penTidy ? 'Skizze aufräumen: an' : 'Freihand: roh'); };
   $('#btnSig').onclick = openSig;
   const sc = $('#sigCanvas');
   sc.addEventListener('pointerdown', e => { sc.setPointerCapture(e.pointerId); sigDown(e); });
@@ -1990,7 +1994,7 @@ function wire() {
   $('#findClose').onclick = closeFind;
   $('#btnComments').onclick = () => { const open = $('#work').classList.toggle('comm-open'); $('#comments').hidden = !open; $('#btnComments').classList.toggle('on', open); };
   $('#btnPrint').onclick = printDoc;
-  const setColor = c => { style.color = c; $('#colorDot').style.background = c; $('#colorPick').value = c; if (sel) { const a = findAnno(sel.num, sel.id); if (a) { pushUndo(); a.color = c; pageViews.forEach(drawAnnos); } } };
+  const setColor = c => { style.color = c; $('#colorDot').style.background = c; $('#colorPick').value = c; saveStyle(); if (sel) { const a = findAnno(sel.num, sel.id); if (a) { pushUndo(); a.color = c; pageViews.forEach(drawAnnos); } } };
   $('#colorPick').oninput = e => setColor(e.target.value);
   $('#btnColor').onclick = e => { e.stopPropagation(); const p = $('#palettePop'); p.hidden = !p.hidden; };
   $$('#palettePop .pal-row button').forEach(b => b.onclick = () => { setColor(b.dataset.c); $('#palettePop').hidden = true; });
@@ -2007,7 +2011,7 @@ function wire() {
   $('#btnOutline').onclick = e => { e.stopPropagation(); const p = $('#outlinePop'); p.hidden = !p.hidden; $('#btnOutline').classList.toggle('on', !p.hidden); };
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#outlinePop') && !e.target.closest('#btnOutline')) { $('#outlinePop').hidden = true; $('#btnOutline').classList.remove('on'); } }, true);
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.swatch-wrap')) $('#palettePop').hidden = true; }, true);
-  $('#widthSel').onchange = e => { style.width = +e.target.value; if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.width != null) { pushUndo(); a.width = style.width; pageViews.forEach(drawAnnos); } } };
+  $('#widthSel').onchange = e => { style.width = +e.target.value; saveStyle(); if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.width != null) { pushUndo(); a.width = style.width; pageViews.forEach(drawAnnos); } } };
   // Schwebende Auswahl-Leiste
   const selA = () => sel && findAnno(sel.num, sel.id), selPv = () => pageViews.find(p => p.num === sel.num);
   let sbColorPushed = false;
@@ -2025,7 +2029,7 @@ function wire() {
   $('#sbRotR').onclick = () => lineRotate(15);
   $('#sbDup').onclick = () => { const pv = selPv(); if (pv && sel) duplicateAnno(pv, sel.id); };
   $('#sbDel').onclick = () => deleteSel();
-  $('#sizeSel').onchange = e => { style.size = +e.target.value; if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.type === 'text') { pushUndo(); a.size = style.size; pageViews.forEach(drawAnnos); } } };
+  $('#sizeSel').onchange = e => { style.size = +e.target.value; saveStyle(); if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.type === 'text') { pushUndo(); a.size = style.size; pageViews.forEach(drawAnnos); } } };
   $('#colorDot').style.background = style.color;
 
   // Drag & Drop

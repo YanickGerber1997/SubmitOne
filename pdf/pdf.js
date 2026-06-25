@@ -1069,6 +1069,7 @@ function startDraw(pv, e, p) {
 let textStyle = { size: 16, align: 'left', bg: 'transparent', border: null };   // gemerkt für die nächste neue Box
 let editingId = null;                                                          // Id der gerade editierten Text-Box
 let cropping = null;                                                           // {pv, a} – aktiver Zuschneide-Rahmen
+let panMode = false, panning = null;                                          // Leertaste-Hand (Pan)
 function createText(pv, p) {
   pushUndo();
   const w = Math.max(120, Math.min(260, pv.pageW - p.x - 8));
@@ -2032,6 +2033,17 @@ function wire() {
   $('#sizeSel').onchange = e => { style.size = +e.target.value; saveStyle(); if (sel) { const a = findAnno(sel.num, sel.id); if (a && a.type === 'text') { pushUndo(); a.size = style.size; pageViews.forEach(drawAnnos); } } };
   $('#colorDot').style.background = style.color;
 
+  // Leertaste-Hand (Pan): mit gedrückter Leertaste den Plan ziehen statt scrollen
+  document.addEventListener('keyup', e => { if (e.key === ' ') { panMode = false; panning = null; document.body.classList.remove('pan', 'panning'); } });
+  window.addEventListener('blur', () => { panMode = false; panning = null; document.body.classList.remove('pan', 'panning'); });
+  $('#pages').addEventListener('pointerdown', e => {
+    if (!panMode) return; e.preventDefault(); e.stopPropagation();
+    const pg = $('#pages'); panning = { x: e.clientX, y: e.clientY, l: pg.scrollLeft, t: pg.scrollTop }; document.body.classList.add('panning');
+    const move = ev => { if (!panning) return; pg.scrollLeft = panning.l - (ev.clientX - panning.x); pg.scrollTop = panning.t - (ev.clientY - panning.y); };
+    const up = () => { panning = null; document.body.classList.remove('panning'); document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  }, true);
+
   // Drag & Drop
   const drop = $('#drop');
   ['dragenter', 'dragover'].forEach(ev => window.addEventListener(ev, e => { e.preventDefault(); if ([...(e.dataTransfer?.items || [])].some(i => i.kind === 'file')) drop.classList.add('over'); }));
@@ -2043,6 +2055,7 @@ function wire() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && pdfDoc) { e.preventDefault(); openFind(); return; }   // Suche – auch wenn ein Feld fokussiert ist
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (e.key === 'Escape') e.target.blur(); return; }
     const mod = e.ctrlKey || e.metaKey;
+    if (e.key === ' ' && !mod) { if (active >= 0 && !panMode) { e.preventDefault(); panMode = true; document.body.classList.add('pan'); } return; }   // Leertaste = Hand
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openPicker(); }
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
     else if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); printDoc(); }

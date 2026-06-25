@@ -225,6 +225,8 @@ body.form-fill .form-layer .ff:focus{outline:2px solid var(--accent);background:
 .ol-row:hover{background:var(--accent-soft);color:var(--accent-3)}
 #btnOutline.on{color:var(--accent)}
 .pageind{cursor:pointer}
+body.pan #pages,body.pan .pagewrap,body.pan .anno{cursor:grab !important}
+body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !important}
 /* Zuschneiden-Leiste */
 .crop-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:55;display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.28);padding:8px 12px}
 .crop-bar .crop-lbl{font-size:13px;font-weight:600;color:var(--ink);margin-right:2px}

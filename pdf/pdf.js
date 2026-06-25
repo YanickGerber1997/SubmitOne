@@ -1276,6 +1276,7 @@ function startGroupMove(pv, e) {
 }
 function updateAlignBar() { const ab = $('#alignBar'); if (ab) ab.hidden = !(groupSel && groupSel.ids && groupSel.ids.length >= 2 && tool === 'select'); }
 function alignGroup(mode) {
+  if (mode === 'dup') { duplicateGroup(); return; }
   if (!groupSel) return; const pv = pageViews.find(p => p.num === groupSel.num); if (!pv) return;
   const arr = getAnnos(pv.num), items = groupSel.ids.map(id => arr.find(a => a.id === id)).filter(Boolean); if (items.length < 2) return;
   let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity;
@@ -1293,6 +1294,17 @@ function alignGroup(mode) {
     });
   }
   drawAnnos(pv); saveState();
+}
+function duplicateGroup() {
+  if (!groupSel) return; const pv = pageViews.find(p => p.num === groupSel.num); if (!pv) return; const arr = getAnnos(pv.num);
+  pushUndo(); const newIds = [];
+  for (const id of groupSel.ids) { const a = arr.find(x => x.id === id); if (!a) continue; const orig = JSON.parse(JSON.stringify(a)), copy = JSON.parse(JSON.stringify(a)); copy.id = nextId++; translateAnno(copy, orig, 12, 12); arr.push(copy); newIds.push(copy.id); }
+  groupSel = { num: pv.num, ids: newIds }; drawAnnos(pv); refreshComments(); saveState(); toast('Gruppe dupliziert ✓');
+}
+function applyGroupColor(color) {
+  if (!groupSel) return; const pv = pageViews.find(p => p.num === groupSel.num); if (!pv) return; const arr = getAnnos(pv.num);
+  for (const id of groupSel.ids) { const a = arr.find(x => x.id === id); if (a && a.color != null) a.color = color; }
+  drawAnnos(pv);
 }
 function deleteGroup() {
   if (!groupSel) return; pushUndo(); const arr = getAnnos(groupSel.num); if (arr) for (const id of groupSel.ids) { const i = arr.findIndex(a => a.id === id); if (i >= 0) arr.splice(i, 1); }
@@ -2519,6 +2531,9 @@ function wire() {
   $('#pages').addEventListener('scroll', () => { scheduleRulers(); scheduleGrid(); }, { passive: true });
   window.addEventListener('resize', () => { scheduleRulers(); scheduleGrid(); });
   $$('#alignBar button').forEach(b => b.onclick = () => alignGroup(b.dataset.al));
+  let abPushed = false;
+  $('#abColor').addEventListener('pointerdown', () => { abPushed = false; });
+  $('#abColor').addEventListener('input', e => { if (!abPushed) { pushUndo(); abPushed = true; } $('#abColorDot').style.background = e.target.value; applyGroupColor(e.target.value); });
   $('#cropApply').onclick = () => applyCrop(false);
   $('#cropAll').onclick = () => applyCrop(true);
   $('#cropCancel').onclick = () => { removeCropAnno(); setTool('select'); };
@@ -2584,7 +2599,7 @@ function wire() {
     else if (mod && (e.key === '+' || e.key === '=')) { e.preventDefault(); zoomStep(.15); }
     else if (mod && e.key === '-') { e.preventDefault(); zoomStep(-.15); }
     else if (mod && e.key === '0') { e.preventDefault(); setZoom('auto'); }
-    else if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); if (sel) { const pv = pageViews.find(p => p.num === sel.num); if (pv) duplicateAnno(pv, sel.id); } }
+    else if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); if (groupSel) duplicateGroup(); else if (sel) { const pv = pageViews.find(p => p.num === sel.num); if (pv) duplicateAnno(pv, sel.id); } }
     else if (mod && e.key.toLowerCase() === 'c' && sel && tool !== 'textsel') { e.preventDefault(); copySel(); }
     else if (mod && e.key.toLowerCase() === 'v' && clipAnno && tool !== 'textsel') { e.preventDefault(); pasteAnno(); }
     else if (sel && e.key.startsWith('Arrow')) { e.preventDefault(); nudgeSel(e.key, e.shiftKey ? 10 : 1); }

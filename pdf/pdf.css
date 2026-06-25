@@ -271,6 +271,9 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
 .align-bar button{width:30px;height:30px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-size:13px;border-radius:0;color:var(--ink-soft)}
 .align-bar button:hover{border-color:var(--accent);color:var(--accent-3)}
 .align-bar .ab-sep{width:1px;height:18px;background:var(--line);margin:0 3px}
+.align-bar .ab-color{position:relative;width:30px;height:30px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;background:var(--surface)}
+.align-bar #abColorDot{width:18px;height:18px;border:1px solid var(--line);background:#b4502f}
+.align-bar .ab-color input{position:absolute;inset:0;opacity:0;cursor:pointer}
 /* Zuschneiden-Leiste */
 .crop-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:55;display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.28);padding:8px 12px}
 .crop-bar .crop-lbl{font-size:13px;font-weight:600;color:var(--ink);margin-right:2px}

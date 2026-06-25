@@ -8,7 +8,7 @@
   <link rel="icon" href="icon.png" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=127" />
+  <link rel="stylesheet" href="pdf.css?v=128" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
@@ -353,6 +353,9 @@
     <span class="ab-sep"></span>
     <button data-al="distH" title="Horizontal gleich verteilen">↔</button>
     <button data-al="distV" title="Vertikal gleich verteilen">↕</button>
+    <span class="ab-sep"></span>
+    <label class="ab-color" id="abColorWrap" title="Alle einfärben (Strich)"><span id="abColorDot"></span><input type="color" id="abColor"></label>
+    <button data-al="dup" title="Gruppe duplizieren (Strg+D)">⧉</button>
   </div>
 
   <div class="crop-bar" id="cropBar" hidden>
@@ -377,7 +380,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=127"></script>
+  <script src="pdf.js?v=128"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

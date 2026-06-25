@@ -236,9 +236,11 @@ async function addDoc(bytes, name, skipRestore) {
   saveActiveDoc(); const prev = active; const d = blankDoc(bytes, name); docs.push(d); active = docs.length - 1;
   try { await loadActive(); }
   catch (e) {                                          // z. B. Passwort abgebrochen / nicht lesbar → Tab wieder entfernen
+    console.error('Dokument konnte nicht geladen werden:', e);
     docs.pop(); active = docs.length ? Math.min(prev, docs.length - 1) : -1;
     if (active >= 0) { try { await loadActive(); } catch (_) { } renderTabs(); } else showEmpty();
-    if (!e || e.name !== 'AbortByUser') toast('Datei konnte nicht geöffnet werden.');
+    status('');
+    if (!e || e.name !== 'AbortByUser') toast('Konnte nicht öffnen: ' + (e && (e.message || e.name) || 'unbekannt'));
     return;
   }
   renderTabs(); if (!skipRestore) { try { await maybeRestore(); } catch (_) { } }   // neue Leerseiten: keine (kollidierende) Wiederherstellung

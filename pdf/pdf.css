@@ -325,7 +325,7 @@ body.form-fill .form-layer .ff:focus{outline:2px solid var(--accent);background:
 
 /* Mail-Dialog */
 .modal{position:fixed;inset:0;z-index:70;background:rgba(20,24,40,.4);display:flex;align-items:center;justify-content:center}
-.modal-card{background:var(--surface);border-radius:0;padding:22px 24px;width:440px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal-card{background:var(--surface);border-radius:0;padding:22px 24px;width:440px;max-width:92vw;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .modal-head{font-size:18px;font-weight:700;margin-bottom:14px}
 .modal-card label{display:block;font-size:12px;color:var(--ink-soft);font-weight:600;margin-bottom:10px}
 .modal-card input,.modal-card textarea{display:block;width:100%;margin-top:4px;border:1px solid var(--line);border-radius:0;padding:9px 11px;font:inherit;font-size:14px;color:var(--ink);background:var(--surface-2);resize:vertical}

@@ -1437,7 +1437,15 @@ function openSlidePicker(mode, after) {
   _slideCtx = { mode, after };
   $('#sdTitle').textContent = mode === 'new' ? 'Leeres Dokument starten' : 'Seite / Folie einfügen';
   $('#sdOk').textContent = mode === 'new' ? 'Erstellen' : 'Einfügen';
+  applySlideDefaults();
   $('#slideDlg').hidden = false; renderSlidePreview();
+}
+function applySlideDefaults() {
+  let s; try { s = JSON.parse(localStorage.getItem('submitpdf.slide') || '{}'); } catch (_) { s = {}; }
+  const setOn = (group, pred) => { const btns = [...$$('#' + group + ' button')]; const m = btns.find(pred); if (m) { btns.forEach(x => x.classList.remove('on')); m.classList.add('on'); } };
+  if (s.fmt) setOn('sdFormats', b => (b.dataset.w + 'x' + b.dataset.h) === s.fmt);
+  if (s.tmpl) setOn('sdLayouts', b => b.dataset.t === s.tmpl);
+  if (s.bg) setOn('sdBg', b => b.dataset.bg === s.bg);
 }
 function renderSlidePreview() {
   const fmt = $('#sdFormats button.on') || $('#sdFormats button'), lay = $('#sdLayouts button.on') || $('#sdLayouts button');
@@ -1456,6 +1464,7 @@ function renderSlidePreview() {
 function slideConfirm() {
   const fmt = $('#sdFormats button.on') || $('#sdFormats button'), lay = $('#sdLayouts button.on') || $('#sdLayouts button'), bgB = $('#sdBg button.on') || $('#sdBg button');
   const size = { w: +fmt.dataset.w, h: +fmt.dataset.h }, tmpl = lay.dataset.t, bg = bgB.dataset.bg;
+  try { localStorage.setItem('submitpdf.slide', JSON.stringify({ fmt: fmt.dataset.w + 'x' + fmt.dataset.h, tmpl, bg })); } catch (_) { }
   $('#slideDlg').hidden = true;
   if (_slideCtx && _slideCtx.mode === 'new') newBlankDoc(size, tmpl, bg); else insertBlankPage(_slideCtx ? _slideCtx.after : 0, size, tmpl, bg);
 }

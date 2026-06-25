@@ -722,7 +722,7 @@ function updateSelBar() {
   if (!sel || tool !== 'select') { bar.hidden = true; return; }
   const pv = pageViews.find(p => p.num === sel.num), a = pv && findAnno(pv.num, sel.id);
   if (!pv || !a || a.type === 'crop') { bar.hidden = true; return; }   // Crop hat eine eigene Leiste
-  const hasColor = a.type !== 'sig' && a.type !== 'img', hasWidth = a.width != null, hasSize = (a.type === 'text' || a.type === 'edit');
+  const hasColor = a.type !== 'sig' && a.type !== 'img' && a.type !== 'imgph', hasWidth = a.width != null, hasSize = (a.type === 'text' || a.type === 'edit');
   $('#sbColorWrap').hidden = !hasColor; $('#sbWidths').hidden = !hasWidth; $('#sbSize').hidden = !hasSize;
   $('#sbEdit').hidden = a.type !== 'edit'; $('#sbMove').hidden = a.type !== 'edit';
   $('#sbLine').hidden = !isLineType(a);
@@ -778,6 +778,15 @@ function drawOne(svg, a, pv) {
     el = svgEl('image', { x: a.x, y: a.y, width: a.w, height: a.h, preserveAspectRatio: 'none', 'data-id': a.id });
     el.setAttributeNS('http://www.w3.org/1999/xlink', 'href', a.data); el.setAttribute('href', a.data);
     svg.appendChild(el);
+  } else if (a.type === 'imgph') {
+    const g = svgEl('g', { 'data-id': a.id });
+    g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: '#f3f4f2', stroke: '#b9bdb6', 'stroke-width': 1.5, 'stroke-dasharray': '7 5' }));
+    const s = Math.min(a.w, a.h) * 0.22, ix = a.x + a.w / 2 - s / 2, iy = a.y + a.h / 2 - s * 0.7;
+    g.appendChild(svgEl('rect', { x: ix, y: iy, width: s, height: s * 0.8, fill: 'none', stroke: '#9aa093', 'stroke-width': 1.5 }));
+    g.appendChild(svgEl('path', { d: `M${ix} ${iy + s * 0.62} L${ix + s * 0.35} ${iy + s * 0.3} L${ix + s * 0.6} ${iy + s * 0.55} L${ix + s * 0.78} ${iy + s * 0.4} L${ix + s} ${iy + s * 0.8}`, fill: 'none', stroke: '#9aa093', 'stroke-width': 1.5, 'stroke-linejoin': 'round' }));
+    const t = svgEl('text', { x: a.x + a.w / 2, y: a.y + a.h / 2 + s * 0.55, fill: '#9aa093', 'font-size': Math.max(9, Math.min(a.h * 0.06, 15)), 'text-anchor': 'middle', 'font-weight': 600 }); t.textContent = 'Doppelklick: Bild'; g.appendChild(t);
+    svg.appendChild(g); el = g;
+    hit = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'crop') {
     const g = svgEl('g', { 'data-id': a.id });
     const dim = svgEl('path', { d: `M0 0H${pv.pageW}V${pv.pageH}H0Z M${a.x} ${a.y}H${a.x + a.w}V${a.y + a.h}H${a.x}Z`, fill: '#10161c', 'fill-opacity': 0.45, 'fill-rule': 'evenodd', stroke: 'none' });
@@ -849,7 +858,7 @@ function bbox(a) {
   if (a.type === 'pen') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: (a.h || a.size * (a.text.split('\n').length) * 1.3) };
   if (a.type === 'note') return { x: a.x, y: a.y, w: 14, h: 14 };
-  if (a.type === 'sig' || a.type === 'img' || a.type === 'edit' || a.type === 'cover' || a.type === 'stamp' || a.type === 'crop') return { x: a.x, y: a.y, w: a.w, h: a.h };
+  if (a.type === 'sig' || a.type === 'img' || a.type === 'imgph' || a.type === 'edit' || a.type === 'cover' || a.type === 'stamp' || a.type === 'crop') return { x: a.x, y: a.y, w: a.w, h: a.h };
   if (a.type === 'highlight') { if (!a.rects || !a.rects.length) return { x: 0, y: 0, w: 0, h: 0 }; let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; for (const r of a.rects) { mnx = Math.min(mnx, r.x); mny = Math.min(mny, r.y); mxx = Math.max(mxx, r.x + r.w); mxy = Math.max(mxy, r.y + r.h); } return { x: mnx, y: mny, w: mxx - mnx, h: mxy - mny }; }
   return { x: 0, y: 0, w: 0, h: 0 };
 }
@@ -1008,6 +1017,26 @@ async function placeImageFile(file) {
     toast('Bild eingefügt – verschieben/skalieren möglich.');
   } catch (e) { console.error(e); toast('Bild konnte nicht eingefügt werden.'); }
 }
+// Bild-Platzhalter (Folien-Vorlage) per Doppelklick mit einem Bild füllen (eingepasst)
+function fillImgPlaceholder(pv, a) {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = async e => {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    try {
+      const url = URL.createObjectURL(file);
+      const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      const cv = document.createElement('canvas'); cv.width = im.naturalWidth; cv.height = im.naturalHeight; cv.getContext('2d').drawImage(im, 0, 0); URL.revokeObjectURL(url);
+      const data = cv.toDataURL('image/png'), ratio = (im.naturalWidth / im.naturalHeight) || 1;
+      let w = a.w, h = w / ratio; if (h > a.h) { h = a.h; w = h * ratio; }          // in die Box einpassen
+      const x = a.x + (a.w - w) / 2, y = a.y + (a.h - h) / 2;
+      pushUndo();
+      const arr = getAnnos(pv.num), idx = arr.indexOf(a), img = { id: nextId++, type: 'img', data, x, y, w, h };
+      if (idx >= 0) arr.splice(idx, 1, img); else arr.push(img);
+      sel = { num: pv.num, id: img.id }; drawAnnos(pv); saveState();
+    } catch (err) { console.error(err); toast('Bild konnte nicht eingefügt werden.'); }
+  };
+  inp.click();
+}
 function startMove(pv, e, a) {
   if (!a) return; const start = evtToPage(pv, e); pushUndo(); let moved = false;
   const orig = JSON.parse(JSON.stringify(a));
@@ -1044,7 +1073,7 @@ function startResize(pv, e, h) {
     const q = evtToPage(pv, ev);
     if (isLineType(a)) { let qx = q.x, qy = q.y; if (ev.shiftKey) { const o = h === 'p1' ? { x: a.x2, y: a.y2 } : { x: a.x1, y: a.y1 }; const s = snap15(o.x, o.y, qx, qy); qx = s.x; qy = s.y; } if (h === 'p1') { a.x1 = qx; a.y1 = qy; } else { a.x2 = qx; a.y2 = qy; } }
     else if (orig.type === 'sig' || orig.type === 'img') { const ratio = orig.w / orig.h || 1, ax = h.includes('w') ? orig.x + orig.w : orig.x, ay = h.includes('n') ? orig.y + orig.h : orig.y; const nw = Math.max(12, Math.abs(q.x - ax)), nh = nw / ratio; a.w = nw; a.h = nh; a.x = h.includes('w') ? ax - nw : ax; a.y = h.includes('n') ? ay - nh : ay; }
-    else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval' || orig.type === 'edit' || orig.type === 'cover' || orig.type === 'stamp' || orig.type === 'text' || orig.type === 'crop') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
+    else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval' || orig.type === 'edit' || orig.type === 'cover' || orig.type === 'stamp' || orig.type === 'text' || orig.type === 'crop' || orig.type === 'imgph') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
     drawAnnos(pv);
   };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
@@ -1418,8 +1447,7 @@ function templateAnnos(kind, w, h) {
     mk({ x: w * 0.51, y: h * 0.26, w: w * 0.42, h: h * 0.06, text: 'Option B', size: Math.round(h * 0.03), align: 'center' })
   ];
   if (kind === 'image') return [
-    { type: 'rect', x: w * 0.1, y: h * 0.12, w: w * 0.8, h: h * 0.62, color: gray, width: 1.5 },
-    mk({ x: w * 0.1, y: h * 0.4, w: w * 0.8, h: h * 0.06, text: 'Bild hier einfügen', size: Math.round(h * 0.028), align: 'center', color: gray }),
+    { type: 'imgph', x: w * 0.1, y: h * 0.12, w: w * 0.8, h: h * 0.62 },
     mk({ x: w * 0.1, y: h * 0.78, w: w * 0.8, h: h * 0.05, text: 'Bildunterschrift', size: Math.round(h * 0.024), align: 'center', color: gray })
   ];
   return [];
@@ -2017,6 +2045,7 @@ function wire() {
     const a = findAnno(pv.num, +id); if (!a) return;
     if (a.type === 'edit') { openEditEdit(pv, a, false); return; }   // bestehende Edit-Stelle erneut bearbeiten
     if (a.type === 'text') { openTextAnnoEdit(pv, a); return; }       // Text-Annotation bearbeiten
+    if (a.type === 'imgph') { fillImgPlaceholder(pv, a); return; }    // Bild-Platzhalter füllen
     if (a.type !== 'dim' && a.type !== 'measure') return;
     const v = prompt('Mass-Beschriftung (leer = automatisch gemessen):', a.text || lenLabel(a)); if (v === null) return;
     pushUndo(); a.text = v.trim() || ''; drawAnnos(pv);

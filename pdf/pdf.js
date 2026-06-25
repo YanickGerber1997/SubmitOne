@@ -1895,6 +1895,15 @@ function applyScale() {
 function updateScaleLabel() { const el = $('#scaleInd'); if (el) el.textContent = docScale ? (docScale.label === 'kalibriert' ? '⟂ kalibriert' : docScale.label) : ''; }
 
 /* ---------- Rechtsklick-Menü (alles erreichbar) ---------- */
+// Seitenzahlen „n / N" unten mittig auf jede Seite setzen
+function addPageNumbers() {
+  if (!pdfDoc) return; pushUndo(); const N = pdfDoc.numPages, size = 12, bw = 70, bh = size * 1.5;
+  for (let n = 1; n <= N; n++) {
+    const pv = pageViews.find(p => p.num === n), w = pv ? pv.pageW : 595, h = pv ? pv.pageH : 842;
+    getAnnos(n).push({ id: nextId++, type: 'text', x: (w - bw) / 2, y: h - bh - 12, w: bw, h: bh, text: n + ' / ' + N, size, color: '#555555', align: 'center', bg: 'transparent', border: null, borderW: 1.2 });
+  }
+  pageViews.forEach(drawAnnos); saveState(); toast('Seitenzahlen eingefügt ✓');
+}
 // Eine Anmerkung auf alle anderen Seiten kopieren (Logo/Fusszeile/Stempel etc.)
 function annoToAllPages(pv, id) {
   const a = findAnno(pv.num, id); if (!a || !pdfDoc) return; pushUndo(); let cnt = 0;
@@ -1928,6 +1937,7 @@ function showCtx(x, y, pv, annoId) {
   add('Seite 90° links drehen', '⟲', () => rotatePage(-90));
   add('Seite 90° rechts drehen', '⟳', () => rotatePage(90));
   add('Seite als Bild (PNG)', '🖼', () => exportPagePng(pv.num));
+  add('Seitenzahlen einfügen', '#', addPageNumbers);
   sep();
   add('Öffnen', '📂', openPicker);
   add('Speichern (PDF)', '💾', save);

@@ -220,7 +220,7 @@ async function loadActive() {
   if (d.pdfDoc) { pdfDoc = d.pdfDoc; await renderCurrentDoc(); } else { await loadDoc(d.bytes.slice()); d.pdfDoc = pdfDoc; }
   const p = $('#pages'); if (p) p.scrollTop = d.scrollTop || 0;
 }
-function showEmpty() { active = -1; pdfDoc = null; curBytes = null; curFileHandle = null; document.body.classList.remove('has-doc'); ['#rulerH', '#rulerV', '#rulerCorner'].forEach(s => { const e = $(s); if (e) e.hidden = true; }); $('#drop').classList.remove('hide'); $('#toolbar').hidden = true; $('#quickbar').hidden = true; $('#pages').innerHTML = ''; showEmptyThumbs(); $('#btnSave').disabled = true; $('#btnSend').disabled = true; document.title = 'Submit PDF'; renderTabs(); }
+function showEmpty() { active = -1; pdfDoc = null; curBytes = null; curFileHandle = null; document.body.classList.remove('has-doc'); ['#rulerH', '#rulerV', '#rulerCorner', '#gridCv', '#gridBar'].forEach(s => { const e = $(s); if (e) e.hidden = true; }); $('#drop').classList.remove('hide'); $('#toolbar').hidden = true; $('#quickbar').hidden = true; $('#pages').innerHTML = ''; showEmptyThumbs(); $('#btnSave').disabled = true; $('#btnSend').disabled = true; document.title = 'Submit PDF'; renderTabs(); }
 // Leerzustand: Vorschau-Spalte zeigt zwei Kacheln – „PDF öffnen" und „Neue Seite/Folie"
 function showEmptyThumbs() {
   const host = $('#thumbs'); if (!host) return; host.innerHTML = '';
@@ -334,6 +334,7 @@ async function renderCurrentDoc() {
   document.body.classList.add('has-doc');
   detectForm(); detectOutline();
   if (rulerOn) requestAnimationFrame(drawRulers);
+  if (gridOn) requestAnimationFrame(drawGrid);
 }
 
 /* ---------- Lesezeichen / Inhalt (vorhandene PDF-Outline) ---------- */
@@ -633,7 +634,7 @@ function snapPos(pv) {
   const dx = Math.round(left * dpr) / dpr - left;
   pv.wrap.style.transform = Math.abs(dx) > 0.001 ? `translateX(${dx}px)` : 'none';
 }
-function relayout() { if (!pdfDoc) return; pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); renderVisible(); updateSelBar(); scheduleRulers(); }
+function relayout() { if (!pdfDoc) return; pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); renderVisible(); updateSelBar(); scheduleRulers(); scheduleGrid(); }
 let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTimer = setTimeout(relayout, 140); }
 
 function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im Seitenstreifen)
@@ -791,6 +792,7 @@ function drawOne(svg, a, pv) {
   } else if (a.type === 'img') {
     el = svgEl('image', { x: a.x, y: a.y, width: a.w, height: a.h, preserveAspectRatio: 'none', 'data-id': a.id });
     el.setAttributeNS('http://www.w3.org/1999/xlink', 'href', a.data); el.setAttribute('href', a.data);
+    if (a.opacity != null && a.opacity < 1) el.setAttribute('opacity', a.opacity);
     svg.appendChild(el);
   } else if (a.type === 'imgph') {
     const g = svgEl('g', { 'data-id': a.id });
@@ -1771,7 +1773,7 @@ async function buildPdfBytes() {
         }
         else if (a.type === 'cover') { const cc = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(cc.r, cc.g, cc.b) }); }
         else if (a.type === 'edit') { const bg = parseColor(a.bg), tc2 = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); (a.text || '').split('\n').forEach((ln, i) => pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) })); }
-        else if (a.type === 'img' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); }
+        else if (a.type === 'img' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, opacity: a.opacity != null ? a.opacity : 1 }); }
         else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); if (a.caption) { const fs = Math.max(7, Math.min(11, a.h * 0.16)), cy = a.y + a.h + 2; pg.drawLine({ start: { x: a.x, y: Y(cy) }, end: { x: a.x + a.w, y: Y(cy) }, thickness: 0.7, color: rgb(.11, .14, .17) }); pg.drawText(a.caption, { x: a.x, y: Y(cy + fs + 1), size: fs, font, color: rgb(.11, .14, .17) }); } }
       }
       if (cropT) pg.pushOperators(popGraphicsState());
@@ -1973,6 +1975,38 @@ function drawAxis(cv, horiz, cssW, cssH, pageStartRel, pxPerPt, pageLenPt, valPe
     else { ctx.moveTo(cssW, pos); ctx.lineTo(cssW - 9, pos); ctx.stroke(); ctx.fillText(lbl, 2, pos + 2); }
   }
 }
+/* ---------- cm-Raster (zum Nachzeichnen, verschiebbar) ---------- */
+let gridOn = false, gridMove = false, gridCellCm = 1, gridOffX = 0, gridOffY = 0, _gridRAF = 0;
+function toggleGrid() {
+  gridOn = !gridOn; const b = $('#btnGrid'); if (b) b.classList.toggle('on', gridOn);
+  $('#gridCv').hidden = !gridOn; $('#gridBar').hidden = !gridOn;
+  if (!gridOn) { gridMove = false; $('#gridMoveBtn').classList.remove('on'); }
+  updateGridPE(); if (gridOn) drawGrid();
+}
+function updateGridPE() { const c = $('#gridCv'); if (c) c.style.pointerEvents = (gridOn && gridMove) ? 'auto' : 'none'; }
+function scheduleGrid() { if (!gridOn || _gridRAF) return; _gridRAF = requestAnimationFrame(() => { _gridRAF = 0; drawGrid(); }); }
+function gridCellPt() { return gridCellCm * (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }   // 1 cm in PDF-Punkten (real oder Papier)
+function drawGrid() {
+  if (!gridOn || !pdfDoc) return; const cv = $('#gridCv'); cv.hidden = false;
+  const pagesEl = $('#pages'); if (!pagesEl) return; const pr = pagesEl.getBoundingClientRect();
+  const pv = pageViews.find(p => p.num === curPage()) || pageViews[0]; if (!pv) return; const wr = pv.wrap.getBoundingClientRect();
+  posFixed('#gridCv', pr.left, pr.top, pr.width, pr.height);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2); cv.width = Math.round(pr.width * dpr); cv.height = Math.round(pr.height * dpr);
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, pr.width, pr.height);
+  const pxPerPt = wr.width / pv.pageW, cellPx = gridCellPt() * pxPerPt; if (cellPx < 3) return;   // zu eng → nicht zeichnen
+  const originX = (wr.left - pr.left) + gridOffX * pxPerPt, originY = (wr.top - pr.top) + gridOffY * pxPerPt;
+  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(70,100,60,.28)';
+  let x = originX % cellPx; if (x < 0) x += cellPx; for (; x <= pr.width; x += cellPx) { ctx.beginPath(); ctx.moveTo(Math.round(x) + .5, 0); ctx.lineTo(Math.round(x) + .5, pr.height); ctx.stroke(); }
+  let y = originY % cellPx; if (y < 0) y += cellPx; for (; y <= pr.height; y += cellPx) { ctx.beginPath(); ctx.moveTo(0, Math.round(y) + .5); ctx.lineTo(pr.width, Math.round(y) + .5); ctx.stroke(); }
+}
+function startGridDrag(e) {
+  if (!gridMove) return; e.preventDefault();
+  const pv = pageViews.find(p => p.num === curPage()) || pageViews[0]; if (!pv) return; const pxPerPt = pv.wrap.getBoundingClientRect().width / pv.pageW;
+  const sx = e.clientX, sy = e.clientY, ox = gridOffX, oy = gridOffY;
+  const mv = ev => { gridOffX = ox + (ev.clientX - sx) / pxPerPt; gridOffY = oy + (ev.clientY - sy) / pxPerPt; drawGrid(); };
+  const up = () => { document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up); };
+  document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up);
+}
 // Eine Anmerkung auf alle anderen Seiten kopieren (Logo/Fusszeile/Stempel etc.)
 function annoToAllPages(pv, id) {
   const a = findAnno(pv.num, id); if (!a || !pdfDoc) return; pushUndo(); let cnt = 0;
@@ -1992,6 +2026,8 @@ function showCtx(x, y, pv, annoId) {
     add('Kopieren', '⧉', () => { sel = { num: pv.num, id: annoId }; copySel(); });
     add('Nach vorne', '⬆', () => reorderAnno(pv, annoId, true));
     add('Nach hinten', '⬇', () => reorderAnno(pv, annoId, false));
+    const ca = findAnno(pv.num, annoId);
+    if (ca && ca.type === 'img') add((ca.opacity != null && ca.opacity < 1) ? 'Volle Deckkraft' : 'Als Vorlage dimmen (nachzeichnen)', '◐', () => { pushUndo(); ca.opacity = (ca.opacity != null && ca.opacity < 1) ? 1 : 0.3; reorderAnno(pv, annoId, false); drawAnnos(pv); saveState(); });
     sep();
   } else if (clipAnno) {
     add('Einfügen', '⎘', pasteAnno);
@@ -2241,8 +2277,13 @@ function wire() {
   $$('.fab-b').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $('#pageInd').onclick = askGotoPage;
   $('#btnRuler').onclick = toggleRuler;
-  $('#pages').addEventListener('scroll', scheduleRulers, { passive: true });
-  window.addEventListener('resize', scheduleRulers);
+  $('#btnGrid').onclick = toggleGrid;
+  $('#gridCell').onchange = e => { gridCellCm = +e.target.value; drawGrid(); };
+  $('#gridMoveBtn').onclick = () => { gridMove = !gridMove; $('#gridMoveBtn').classList.toggle('on', gridMove); updateGridPE(); };
+  $('#gridClose').onclick = toggleGrid;
+  $('#gridCv').addEventListener('pointerdown', startGridDrag);
+  $('#pages').addEventListener('scroll', () => { scheduleRulers(); scheduleGrid(); }, { passive: true });
+  window.addEventListener('resize', () => { scheduleRulers(); scheduleGrid(); });
   $('#cropApply').onclick = () => applyCrop(false);
   $('#cropAll').onclick = () => applyCrop(true);
   $('#cropCancel').onclick = () => { removeCropAnno(); setTool('select'); };

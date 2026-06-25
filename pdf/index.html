@@ -8,7 +8,7 @@
   <link rel="icon" href="icon.png" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=113" />
+  <link rel="stylesheet" href="pdf.css?v=114" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
@@ -85,6 +85,7 @@
       <button class="tool" data-tool="dim" title="Masslinie (mit Mass, selbst beschriftbar)"><svg viewBox="0 0 24 24" class="i"><path d="M4 12h16M4 8v8M20 8v8M7 12l3-3M7 12l3 3"/></svg></button>
       <button class="tool" data-tool="area" title="Fläche messen (m²) – Punkte klicken, am Anfang schliessen"><svg viewBox="0 0 24 24" class="i"><path d="M4 5l7 3 9-3v11l-9 3-7-3z"/><path d="M11 8v11"/></svg></button>
       <button class="tool" id="btnRuler" title="Lineal oben & rechts (echte Masse)"><svg viewBox="0 0 24 24" class="i"><path d="M3 15 15 3l6 6L9 21z"/><path d="M7 13l1.5 1.5M10 10l1.5 1.5M13 7l1.5 1.5"/></svg></button>
+      <button class="tool" id="btnGrid" title="cm-Raster zum Nachzeichnen (ein/aus, verschiebbar)"><svg viewBox="0 0 24 24" class="i"><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></button>
       <button class="tool" id="btnScale" title="Massstab setzen (z. B. 1:100 oder kalibrieren)"><b style="font:600 12px/1 var(--font)">1:n</b></button>
     </div>
     <div class="tgrp">
@@ -331,6 +332,13 @@
     <button class="btn ghost" id="cropCancel">Abbrechen</button>
   </div>
 
+  <canvas class="grid-ov" id="gridCv" hidden></canvas>
+  <div class="grid-bar" id="gridBar" hidden>
+    <span class="gb-t">cm-Raster</span>
+    <select class="sel" id="gridCell"><option value="0.5">0,5 cm</option><option value="1" selected>1 cm</option><option value="2">2 cm</option><option value="5">5 cm</option></select>
+    <button id="gridMoveBtn" title="Raster mit der Maus verschieben">Verschieben</button>
+    <button id="gridClose" title="Raster aus">✕</button>
+  </div>
   <canvas class="ruler ruler-h" id="rulerH" hidden></canvas>
   <canvas class="ruler ruler-v" id="rulerV" hidden></canvas>
   <div class="ruler-corner" id="rulerCorner" hidden>mm</div>
@@ -339,7 +347,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=113"></script>
+  <script src="pdf.js?v=114"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

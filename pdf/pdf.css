@@ -250,6 +250,14 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
 .ruler-v{border-left:1px solid var(--line)}
 .ruler-corner{position:fixed;z-index:9;background:var(--surface-2);border-left:1px solid var(--line);border-bottom:1px solid var(--line);font:700 9px/20px var(--font);text-align:center;color:var(--ink-faint);pointer-events:none}
 #btnRuler.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
+/* cm-Raster */
+.grid-ov{position:fixed;z-index:7}
+.grid-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:56;display:flex;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.25);padding:7px 12px;font-size:13px}
+.grid-bar .gb-t{font-weight:700;color:var(--ink)}
+.grid-bar button{height:30px;padding:0 12px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font:inherit;font-weight:600;border-radius:0}
+.grid-bar button:hover{border-color:var(--accent)}
+.grid-bar #gridMoveBtn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+#btnGrid.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
 /* Zuschneiden-Leiste */
 .crop-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:55;display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.28);padding:8px 12px}
 .crop-bar .crop-lbl{font-size:13px;font-weight:600;color:var(--ink);margin-right:2px}

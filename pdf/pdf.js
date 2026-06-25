@@ -1999,7 +1999,16 @@ function wire() {
     else if (mod && e.key.toLowerCase() === 'v' && clipAnno && tool !== 'textsel') { e.preventDefault(); pasteAnno(); }
     else if (sel && e.key.startsWith('Arrow')) { e.preventDefault(); nudgeSel(e.key, e.shiftKey ? 10 : 1); }
     else if (e.key === 'Delete' || e.key === 'Backspace') { if (sel) { e.preventDefault(); deleteSel(); } }
-    else if (e.key === 'Escape') { hideCtx(); sel = null; pageViews.forEach(drawAnnos); }
+    else if (e.key === 'Escape') {
+      hideCtx();
+      if (cropping) { removeCropAnno(); setTool('select'); return; }                  // Zuschneiden abbrechen
+      let closed = false;
+      ['palettePop', 'stampPop', 'outlinePop', 'slideDlg'].forEach(id => { const el = $('#' + id); if (el && !el.hidden) { el.hidden = true; closed = true; } });
+      const im = $('#insMenu'); if (im) { closeInsertMenu(); closed = true; }
+      if (closed) return;                                                              // erst Popups schliessen
+      if (tool !== 'select') setTool('select');                                        // dann zurück zum Auswählen
+      sel = null; pageViews.forEach(drawAnnos);
+    }
     else if (e.key === '?' || (e.shiftKey && e.key === '/')) { e.preventDefault(); toggleShortcuts(); }
     else if (!mod && e.key.toLowerCase() === 'v') setTool('select');
     else if (!mod && e.key.toLowerCase() === 't') setTool('text');

@@ -2141,6 +2141,22 @@ function annoToAllPages(pv, id) {
   for (let n = 1; n <= pdfDoc.numPages; n++) { if (n === pv.num) continue; const copy = JSON.parse(JSON.stringify(a)); copy.id = nextId++; getAnnos(n).push(copy); cnt++; }
   pageViews.forEach(drawAnnos); refreshComments(); saveState(); toast('Auf ' + cnt + ' weitere Seite(n) kopiert ✓');
 }
+/* ---------- Bild anpassen (Helligkeit/Kontrast/Graustufen/Drehen) ---------- */
+let _iaCtx = null;
+function openImgAdjust(pv, a) {
+  if (a.orig == null) a.orig = a.data; if (!a.f) a.f = { b: 100, c: 100, g: 0 };
+  _iaCtx = { pv, a }; pushUndo();
+  $('#iaB').value = a.f.b; $('#iaC').value = a.f.c; $('#iaG').value = a.f.g;
+  $('#imgAdjDlg').hidden = false;
+}
+function applyImgFilters() {
+  if (!_iaCtx) return; const { pv, a } = _iaCtx; a.f = { b: +$('#iaB').value, c: +$('#iaC').value, g: +$('#iaG').value };
+  const im = new Image(); im.onload = () => { const cv = document.createElement('canvas'); cv.width = im.naturalWidth; cv.height = im.naturalHeight; const ctx = cv.getContext('2d'); ctx.filter = `brightness(${a.f.b}%) contrast(${a.f.c}%) grayscale(${a.f.g}%)`; ctx.drawImage(im, 0, 0); a.data = cv.toDataURL('image/png'); drawAnnos(pv); }; im.src = a.orig;
+}
+function rotateImg() {
+  if (!_iaCtx) return; const { pv, a } = _iaCtx;
+  const im = new Image(); im.onload = () => { const cv = document.createElement('canvas'); cv.width = im.naturalHeight; cv.height = im.naturalWidth; const ctx = cv.getContext('2d'); ctx.translate(cv.width / 2, cv.height / 2); ctx.rotate(Math.PI / 2); ctx.drawImage(im, -im.naturalWidth / 2, -im.naturalHeight / 2); a.orig = cv.toDataURL('image/png'); const t = a.w; a.w = a.h; a.h = t; applyImgFilters(); }; im.src = a.orig;
+}
 function hideCtx() { $('#ctxmenu').hidden = true; }
 function showCtx(x, y, pv, annoId) {
   const m = $('#ctxmenu'); m.innerHTML = '';
@@ -2155,7 +2171,7 @@ function showCtx(x, y, pv, annoId) {
     add('Nach vorne', '⬆', () => reorderAnno(pv, annoId, true));
     add('Nach hinten', '⬇', () => reorderAnno(pv, annoId, false));
     const ca = findAnno(pv.num, annoId);
-    if (ca && ca.type === 'img') add((ca.opacity != null && ca.opacity < 1) ? 'Volle Deckkraft' : 'Als Vorlage dimmen (nachzeichnen)', '◐', () => { pushUndo(); ca.opacity = (ca.opacity != null && ca.opacity < 1) ? 1 : 0.3; reorderAnno(pv, annoId, false); drawAnnos(pv); saveState(); });
+    if (ca && ca.type === 'img') { add('Bild anpassen …', '◑', () => openImgAdjust(pv, ca)); add((ca.opacity != null && ca.opacity < 1) ? 'Volle Deckkraft' : 'Als Vorlage dimmen (nachzeichnen)', '◐', () => { pushUndo(); ca.opacity = (ca.opacity != null && ca.opacity < 1) ? 1 : 0.3; reorderAnno(pv, annoId, false); drawAnnos(pv); saveState(); }); }
     sep();
   } else if (clipAnno) {
     add('Einfügen', '⎘', pasteAnno);
@@ -2289,6 +2305,10 @@ function wire() {
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
   $('#btnNew').onclick = () => openSlidePicker('new');
+  ['#iaB', '#iaC', '#iaG'].forEach(s => $(s).addEventListener('input', applyImgFilters));
+  $('#iaRotate').onclick = rotateImg;
+  $('#iaReset').onclick = () => { $('#iaB').value = 100; $('#iaC').value = 100; $('#iaG').value = 0; applyImgFilters(); };
+  $('#iaDone').onclick = () => { $('#imgAdjDlg').hidden = true; saveState(); _iaCtx = null; };
   $('#btnDownload').onclick = () => { toast('Die Desktop-App (voller Funktionsumfang mit Datei-Verzeichnis) liefern wir von Anfang an mit – kommt in Kürze.'); };   // Platzhalter → später Tauri-.exe-Download
   $$('#sdFormats button').forEach(b => b.onclick = () => { $$('#sdFormats button').forEach(x => x.classList.remove('on')); b.classList.add('on'); renderSlidePreview(); });
   $$('#sdLayouts button').forEach(b => b.onclick = () => { $$('#sdLayouts button').forEach(x => x.classList.remove('on')); b.classList.add('on'); renderSlidePreview(); });

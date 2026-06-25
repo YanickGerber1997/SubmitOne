@@ -373,6 +373,8 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
 .pv-b{position:absolute;background:var(--line)}
 .pv-b.pv-strong{background:var(--accent)}
 .pv-b.pv-box{background:transparent;border:1.5px solid var(--line)}
+.ia-row{display:flex !important;align-items:center;gap:12px;margin-bottom:14px;font-size:13px;color:var(--ink)}
+.ia-row input[type=range]{flex:1;accent-color:var(--accent)}
 .sd-sec{margin-bottom:16px}
 .sd-lbl{display:block;font-size:12px;color:var(--ink-soft);font-weight:700;margin-bottom:8px}
 .sd-chips{display:flex;flex-wrap:wrap;gap:6px}

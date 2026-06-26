@@ -2290,13 +2290,16 @@ function openingRevealStrips(a, arr) {   // Schichteinzug: innerste/äusserste S
   const x = a.x, y = a.y, ang = a.ang, ht = (a.thick || wallThickPts()) / 2, hw = a.w / 2;
   const ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux, corner = (s, m) => [x + ux * hw * s + nx * ht * m, y + uy * hw * s + ny * ht * m];
   const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
-  const total = wall.layers.reduce((s, l) => s + l.t, 0) || 1, fAt = []; let cum = 0;
-  for (const l of wall.layers) { fAt.push([cum / total, (cum + l.t) / total]); cum += l.t; }
+  const fmh = Math.min(0.48, (a.frameD || cmToPts(7)) / (2 * ht)); let fmA = md - fmh, fmB = md + fmh;   // Rahmen-Band (wie beim Fenster)
+  if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }
+  const gapM = cmToPts(0.5) / ht, isWin = a.kind === 'window';   // 0.5 cm Abstand zum Rahmen
   const strips = [], FINISH = ['putz', 'gips', 'holz', 'konter'];
   for (const idx of [...new Set([0, wall.layers.length - 1])]) {
     const L = wall.layers[idx]; if (!FINISH.includes(L.mat)) continue;
     const mt = WALL_MATS[L.mat] || {}, faceM = idx === 0 ? -1 : 1, tw = Math.min(0.9, L.t / hw);
-    for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + tw : 1 - tw; strips.push({ poly: [corner(s0, faceM), corner(s1, faceM), corner(s1, md), corner(s0, md)], fill: mt.fill || '#fff', stroke: mt.color || '#1c242c' }); }
+    const target = idx === 0 ? (isWin ? fmA - gapM : md) : (isWin ? fmB + gapM : md);   // bis kurz vor den Rahmen
+    if (Math.abs(target - faceM) < 0.04) continue;   // kein/zu kleiner Einzug
+    for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + tw : 1 - tw; strips.push({ poly: [corner(s0, faceM), corner(s1, faceM), corner(s1, target), corner(s0, target)], fill: mt.fill || '#fff', stroke: mt.color || '#1c242c' }); }
   }
   return strips;
 }

@@ -2001,6 +2001,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     $('#pbSillWrap').style.display = kind === 'window' ? '' : 'none';
     $('#pbDepthWrap').style.display = kind === 'window' ? '' : 'none';
     if (document.activeElement !== $('#pbDepth')) $('#pbDepth').value = Math.round((sO && sO.depth != null ? sO.depth : lastOpenDepth) * 100);
+    $('#pbNiche').style.display = kind === 'window' ? '' : 'none'; $('#pbNiche').classList.toggle('on', !!(sO && sO.niche));
     $('#pbFlip').style.display = kind === 'door' ? '' : 'none';
   }
 }
@@ -3378,20 +3379,35 @@ function build3DScene(host, walls, arr) {
     if (!layerVisible(w) || !phaseVisible(w)) continue;
     const dx = w.x2 - w.x1, dy = w.y2 - w.y1, lp = Math.hypot(dx, dy); if (lp < 1) continue;
     const ux = dx / lp, uy = dy / lp, th = M(w.thick || wallThickPts()), HW = w.h3d || H, yb = lev(w), sx = M(w.x1 - cx), sz = M(w.y1 - cy), ry = -Math.atan2(dy, dx);
+    const nxw = -uy, nyw = ux;   // Querrichtung der Wand (in der Ebene)
     const addBox = (s0, s1, y0, y1, mat, depth, edge) => {                                  // Teilstück der Wand (Längs-Span s0..s1 in pt, Höhe y0..y1 in m)
       const lenM = (s1 - s0) * perPt; if (lenM <= 0.002 || y1 - y0 <= 0.002) return;
       const mid = (s0 + s1) / 2, geo = new THREE.BoxGeometry(lenM, y1 - y0, depth), m = new THREE.Mesh(geo, mat);
       m.position.set(sx + ux * M(mid), (y0 + y1) / 2, sz + uy * M(mid)); m.rotation.y = ry; scene.add(m);
       if (edge) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); e.rotation.copy(m.rotation); scene.add(e); }
     };
-    const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind })).sort((a, b) => a.c - b.c);
+    const addBox2 = (s0, s1, y0, y1, dCenter, dDepth, mat, edge) => {                       // wie addBox, aber mit Quer-Versatz dCenter (m) → Rahmen/Bank an bestimmter Tiefe
+      const lenM = (s1 - s0) * perPt; if (lenM <= 0.002 || y1 - y0 <= 0.002 || dDepth <= 0.001) return;
+      const mid = (s0 + s1) / 2, geo = new THREE.BoxGeometry(lenM, y1 - y0, dDepth), m = new THREE.Mesh(geo, mat);
+      m.position.set(sx + ux * M(mid) + nxw * dCenter, (y0 + y1) / 2, sz + uy * M(mid) + nyw * dCenter); m.rotation.y = ry; scene.add(m);
+      if (edge) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); e.rotation.copy(m.rotation); scene.add(e); }
+    };
+    const fmat = new THREE.MeshLambertMaterial({ color: 0xf2efe9 }), bmat = new THREE.MeshLambertMaterial({ color: 0xcfcabf }), nmat = new THREE.MeshLambertMaterial({ color: 0x3a3f45 });
+    const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(7), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche })).sort((a, b) => a.c - b.c);
     let cur = 0;
     for (const op of ops) {
       const a0 = Math.max(0, op.c - op.hw), a1 = Math.min(lp, op.c + op.hw); if (a1 <= a0) continue;
       if (a0 > cur) addBox(cur, a0, yb, yb + HW, wmat, th, true);                            // volles Wandstück bis zur Öffnung
       if (op.sill > 0) addBox(a0, a1, yb, yb + Math.min(op.sill, HW), wmat, th, true);       // Brüstung (Fenster)
       if (op.head < HW) addBox(a0, a1, yb + op.head, yb + HW, wmat, th, true);               // Sturz über der Öffnung
-      if (op.kind === 'window') addBox(a0, a1, yb + op.sill, yb + Math.min(op.head, HW), gmat, th * 0.2, false);   // Glas
+      if (op.kind === 'window') {
+        const fdM = M(op.fd), fwM = M(op.fw), dC = Math.max(-(th / 2 - fdM / 2), Math.min(th / 2 - fdM / 2, (op.depth - 0.5) * th)), sillY = yb + op.sill, headY = yb + Math.min(op.head, HW);
+        addBox2(a0, a0 + op.fw, sillY, headY, dC, fdM, fmat, true); addBox2(a1 - op.fw, a1, sillY, headY, dC, fdM, fmat, true);   // Rahmen seitlich
+        addBox2(a0, a1, sillY, sillY + fwM, dC, fdM, fmat, true); addBox2(a0, a1, headY - fwM, headY, dC, fdM, fmat, true);       // Rahmen unten/oben
+        addBox2(a0 + op.fw, a1 - op.fw, sillY + fwM, headY - fwM, dC, M(cmToPts(2)), gmat, false);                                 // Scheibe
+        if (op.bank) { const ext = cmToPts(8); addBox2(a0 - ext, a1 + ext, sillY - 0.04, sillY + 0.01, th / 2 + 0.03, 0.12, bmat, true); }   // Fensterbank aussen
+        if (op.niche) addBox2(a0, a1, headY, Math.min(yb + HW, headY + 0.24), 0, th * 0.85, nmat, true);                          // Storennische
+      }
       cur = Math.max(cur, a1);
     }
     if (cur < lp) addBox(cur, lp, yb, yb + HW, wmat, th, true);                              // Reststück
@@ -3762,6 +3778,7 @@ function wire() {
   $$('#pbOpen [data-ok]').forEach(b => b.onclick = () => { openKind = b.dataset.ok; const a = selOpen(); if (a) { pushUndo(); a.kind = openKind; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
   $('#pbWidth').onchange = () => { const v = parseFloat($('#pbWidth').value); if (!(v > 0)) return updatePlanBar(); const pts = cmToPts(v); lastOpenW = pts; const a = selOpen(); if (a) { pushUndo(); a.w = pts; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbFlip').onclick = () => { const a = selOpen(); if (!a) return; pushUndo(); if (a.swing === 1 && a.hinge === 1) a.hinge = -1; else if (a.hinge === -1 && a.swing === 1) a.swing = -1; else if (a.hinge === -1 && a.swing === -1) a.hinge = 1; else a.swing = 1; pageViews.forEach(drawAnnos); saveState(); };
+  $('#pbNiche').onclick = () => { const a = selOpen(); if (!a || a.kind !== 'window') { toast('Nische gibt es nur beim Fenster.'); return; } pushUndo(); a.niche = !a.niche; $('#pbNiche').classList.toggle('on', a.niche); saveState(); toast(a.niche ? 'Storennische an – im 3D sichtbar' : 'Storennische aus'); };
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
   $('#btnNew').onclick = () => openSlidePicker('new');

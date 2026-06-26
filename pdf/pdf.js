@@ -746,10 +746,10 @@ function updateSelBar() {
   const pv = pageViews.find(p => p.num === sel.num), a = pv && findAnno(pv.num, sel.id);
   if (!pv || !a || a.type === 'crop') { bar.hidden = true; return; }   // Crop hat eine eigene Leiste
   const hasColor = a.type !== 'sig' && a.type !== 'img' && a.type !== 'imgph', hasWidth = a.width != null, hasSize = (a.type === 'text' || a.type === 'edit');
-  const hasFill = (a.type === 'rect' || a.type === 'oval' || a.type === 'path');
+  const hasFill = (a.type === 'rect' || a.type === 'oval' || a.type === 'path' || a.type === 'wall');
   $('#sbColorWrap').hidden = !hasColor; $('#sbWidths').hidden = !hasWidth; $('#sbSize').hidden = !hasSize;
   $('#sbFillWrap').hidden = !hasFill; $('#sbNoFill').hidden = !hasFill;
-  $('#sbDash').hidden = !hasWidth; $('#sbDash').textContent = a.dash === 'dash' ? '- -' : a.dash === 'dot' ? '···' : '—';
+  $('#sbDash').hidden = !hasWidth || a.type === 'wall'; $('#sbDash').textContent = a.dash === 'dash' ? '- -' : a.dash === 'dot' ? '···' : '—';
   $('#sbHatch').hidden = !hasFill; $('#sbHatch').classList.toggle('on', !!(a.hatch && a.hatch.type));
   $('#sbEdit').hidden = a.type !== 'edit'; $('#sbMove').hidden = a.type !== 'edit';
   $('#sbLine').hidden = !isLineType(a);
@@ -778,6 +778,7 @@ function updateSelBar() {
 /* ---------- Schraffuren (SIA-artig: Wand/Material/Detail) ---------- */
 const HATCHES = [['diag', '⁄⁄ Diagonal'], ['cross', '## Kreuz'], ['brick', '▦ Mauerwerk'], ['insul', '〰 Dämmung'], ['wood', '≡ Holz'], ['dots', '⋮ Kies/Erde']];
 function shapeOutline(a) {
+  if (a.type === 'wall') return svgEl('polygon', { points: wallPoly(a).map(p => p[0] + ',' + p[1]).join(' ') });
   if (a.type === 'rect') return svgEl('rect', { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), width: Math.abs(a.w), height: Math.abs(a.h) });
   if (a.type === 'oval') return svgEl('ellipse', { cx: a.x + a.w / 2, cy: a.y + a.h / 2, rx: Math.abs(a.w / 2), ry: Math.abs(a.h / 2) });
   return svgEl('path', { d: pathD(a) });
@@ -785,13 +786,14 @@ function shapeOutline(a) {
 function hatchGeom(a) {
   const b = bbox(a); const lines = [], dots = []; if (b.w <= 0 || b.h <= 0) return { lines, dots };
   const S = a.hatch.scale || 7, t = a.hatch.type, x0 = b.x - 1, y0 = b.y - 1, x1 = b.x + b.w + 1, y1 = b.y + b.h + 1, ext = b.h + 2;
-  const diag = slope => { if (slope > 0) { for (let c = (y0 - x1); c <= (y1 - x0); c += S) lines.push([x0 - ext, x0 - ext + c, x1 + ext, x1 + ext + c]); } else { for (let c = (y0 + x0); c <= (y1 + x1); c += S) lines.push([x0 - ext, -(x0 - ext) + c, x1 + ext, -(x1 + ext) + c]); } };
+  const fl = (v, s) => Math.floor(v / s) * s;   // auf globales Raster (Ursprung 0,0) einrasten → Schraffur fluchtet über Formen/Wände hinweg
+  const diag = slope => { if (slope > 0) { for (let c = fl(y0 - x1, S); c <= (y1 - x0); c += S) lines.push([x0 - ext, x0 - ext + c, x1 + ext, x1 + ext + c]); } else { for (let c = fl(y0 + x0, S); c <= (y1 + x1); c += S) lines.push([x0 - ext, -(x0 - ext) + c, x1 + ext, -(x1 + ext) + c]); } };
   if (t === 'diag' || t === 'beton') diag(1);
   else if (t === 'cross') { diag(1); diag(-1); }
-  else if (t === 'wood') { for (let y = y0; y <= y1; y += S) lines.push([x0, y, x1, y]); }
-  else if (t === 'brick') { const bh = S * 1.6, bw = S * 3.2; let r = 0; for (let y = y0; y <= y1; y += bh) { lines.push([x0, y, x1, y]); const off = (r % 2) ? bw / 2 : 0; for (let x = x0 + off; x <= x1; x += bw) lines.push([x, y, x, y + bh]); r++; } }
-  else if (t === 'insul') { const bh = S * 2; for (let y = y0; y <= y1; y += bh) { let up = true; for (let x = x0; x <= x1; x += S) { lines.push([x, up ? y : y - bh * 0.6, x + S, up ? y - bh * 0.6 : y]); up = !up; } } }
-  else if (t === 'dots') { const g = S * 1.7; let r = 0; for (let y = y0; y <= y1; y += g) { const off = (r % 2) ? g / 2 : 0; for (let x = x0 + off; x <= x1; x += g) dots.push([x, y]); r++; } }
+  else if (t === 'wood') { for (let y = fl(y0, S); y <= y1; y += S) lines.push([x0, y, x1, y]); }
+  else if (t === 'brick') { const bh = S * 1.6, bw = S * 3.2; for (let y = fl(y0, bh); y <= y1; y += bh) { lines.push([x0, y, x1, y]); const off = (Math.round(y / bh) % 2) ? bw / 2 : 0; for (let x = fl(x0 - off, bw) + off; x <= x1; x += bw) lines.push([x, y, x, y + bh]); } }
+  else if (t === 'insul') { const bh = S * 2; for (let y = fl(y0, bh); y <= y1; y += bh) { for (let x = fl(x0, S); x <= x1; x += S) { const up = (Math.round(x / S) % 2) === 0; lines.push([x, up ? y : y - bh * 0.6, x + S, up ? y - bh * 0.6 : y]); } } }
+  else if (t === 'dots') { const g = S * 1.7; for (let y = fl(y0, g); y <= y1; y += g) { const off = (Math.round(y / g) % 2) ? g / 2 : 0; for (let x = fl(x0 - off, g) + off; x <= x1; x += g) dots.push([x, y]); } }
   return { lines, dots };
 }
 function appendHatch(svg, a) {
@@ -823,6 +825,18 @@ function drawOne(svg, a, pv) {
     const d = arcPath(a);
     el = svgEl('path', { d, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'data-id': a.id }); const ds = dashSvg(a); if (ds) el.setAttribute('stroke-dasharray', ds); svg.appendChild(el);
     hit = svgEl('path', { d, fill: 'none', stroke: 'transparent', 'stroke-width': Math.max(12, (a.width || 2) + 10), 'data-id': a.id }); svg.appendChild(hit);
+  } else if (a.type === 'wall') {
+    const poly = wallPoly(a), pstr = poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
+    const g = svgEl('g', { 'data-id': a.id });
+    if (a.fill && a.fill !== 'none') g.appendChild(svgEl('polygon', { points: pstr, fill: a.fill, stroke: 'none' }));   // Füllung → Wände verschmelzen
+    svg.appendChild(g); el = g;
+    if (a.hatch && a.hatch.type) appendHatch(svg, a);                                                                 // Schraffur (phasen-gleich → läuft durch)
+    const arr = getAnnos(pv.num), col = a.color || '#1c242c', lw = a.width || 1.4;
+    const edge = (p, q) => svg.appendChild(svgEl('line', { x1: p[0], y1: p[1], x2: q[0], y2: q[1], stroke: col, 'stroke-width': lw, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
+    edge(poly[0], poly[1]); edge(poly[3], poly[2]);                                                                   // Längsseiten
+    if (wallEndFree(a, a.x1, a.y1, arr)) edge(poly[0], poly[3]);                                                      // Stirn nur an freien Enden
+    if (wallEndFree(a, a.x2, a.y2, arr)) edge(poly[1], poly[2]);
+    hit = svgEl('polygon', { points: pstr, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
     el = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, ...strokeAttrs(a), 'data-id': a.id });
     svg.appendChild(el);
@@ -949,6 +963,7 @@ function drawMeasureLabel(svg, a, pv) {
 function bbox(a) {
   if (a.type === 'rect' || a.type === 'oval') return { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), w: Math.abs(a.w), h: Math.abs(a.h) };
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') return { x: Math.min(a.x1, a.x2), y: Math.min(a.y1, a.y2), w: Math.abs(a.x2 - a.x1), h: Math.abs(a.y2 - a.y1) };
+  if (a.type === 'wall') { const t = (a.thick || wallThickPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
   if (a.type === 'pen' || a.type === 'area') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'path') { const xs = [], ys = []; for (const nd of a.nodes) { xs.push(nd.x, nd.hIn.x, nd.hOut.x); ys.push(nd.y, nd.hIn.y, nd.hOut.y); } if (!xs.length) return { x: 0, y: 0, w: 0, h: 0 }; return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: (a.h || a.size * (a.text.split('\n').length) * 1.3) };
@@ -957,7 +972,7 @@ function bbox(a) {
   if (a.type === 'highlight') { if (!a.rects || !a.rects.length) return { x: 0, y: 0, w: 0, h: 0 }; let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; for (const r of a.rects) { mnx = Math.min(mnx, r.x); mny = Math.min(mny, r.y); mxx = Math.max(mxx, r.x + r.w); mxy = Math.max(mxy, r.y + r.h); } return { x: mnx, y: mny, w: mxx - mnx, h: mxy - mny }; }
   return { x: 0, y: 0, w: 0, h: 0 };
 }
-function isLineType(a) { return a && (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc'); }
+function isLineType(a) { return a && (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall'); }
 function arcPath(a) { const r = Math.hypot(a.x2 - a.x1, a.y2 - a.y1) / 2; return `M ${a.x1} ${a.y1} A ${r} ${r} 0 0 1 ${a.x2} ${a.y2}`; }
 function drawSelection(svg, a, pv) {
   if (!a) return; const hs = (COARSE ? 8 : 4.5) / pv.scale;
@@ -1090,6 +1105,32 @@ function lineForLength() {
   if (lastLine) { const pv = pageViews.find(p => p.num === lastLine.num), a = pv && findAnno(pv.num, lastLine.id); if (a && isLineType(a)) return { pv, a }; }
   return null;
 }
+/* ---------- Wand (Linie mit Dicke; Schraffuren laufen durch, Wände verschmelzen) ---------- */
+function cmToPts(cm) { return cm * (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
+function ptsToCm(pts) { return pts / (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
+let lastWallThick = null;
+function wallThickPts() { return lastWallThick || cmToPts(17.5); }   // Standard 17,5 cm (Backstein)
+function wallPoly(a) {                                              // 4 Eckpunkte des Wand-Streifens
+  const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, t = (a.thick || wallThickPts()) / 2;
+  const nx = -dy / len * t, ny = dx / len * t;
+  return [[a.x1 + nx, a.y1 + ny], [a.x2 + nx, a.y2 + ny], [a.x2 - nx, a.y2 - ny], [a.x1 - nx, a.y1 - ny]];
+}
+function wallEndFree(a, ex, ey, arr) {                             // true = freies Ende → Stirnseite zeichnen (sonst verschmelzen lassen)
+  const near = (a.thick || wallThickPts()) * 0.9;
+  for (const o of arr) { if (o === a || o.type !== 'wall') continue; for (const p of [[o.x1, o.y1], [o.x2, o.y2]]) if (Math.hypot(p[0] - ex, p[1] - ey) < near) return false; }
+  return true;
+}
+function wallForThick() {
+  if (sel) { const pv = pageViews.find(p => p.num === sel.num), a = pv && findAnno(pv.num, sel.id); if (a && a.type === 'wall') return { pv, a }; }
+  if (lastLine) { const pv = pageViews.find(p => p.num === lastLine.num), a = pv && findAnno(pv.num, lastLine.id); if (a && a.type === 'wall') return { pv, a }; }
+  return null;
+}
+function wallThickInput(pv, a) {   // „D": Wand-Dicke setzen (cm)
+  const cur = Math.round(ptsToCm(a.thick || wallThickPts()) * 10) / 10;
+  const v = prompt('Wand-Dicke in cm (z. B. 17,5 · 12,5 · 25):', String(cur).replace('.', ',')); if (v == null) return;
+  const s = v.trim().toLowerCase().replace(',', '.'); const m = /^([0-9]*\.?[0-9]+)\s*(mm|cm|m)?$/.exec(s); if (!m) return;
+  const pts = parseLenToPts(m[1] + (m[2] || 'cm')); if (pts > 0) { pushUndo(); a.thick = pts; lastWallThick = pts; drawAnnos(pv); saveState(); updateSelBar(); }
+}
 function onPointerDown(pv, e) {
   if (e.button !== 0) return;
   let p = evtToPage(pv, e);
@@ -1110,7 +1151,7 @@ function onPointerDown(pv, e) {
     }
     sel = null; groupSel = null; drawAnnos(pv); startMarquee(pv, e); return;   // leerer Klick → Rahmen aufziehen
   }
-  if (['line', 'arrow', 'rect', 'oval', 'arc', 'curve', 'measure', 'dim'].includes(tool)) { const an = anchorSnap(pv, p.x, p.y); if (an) p = an; else if (gridOn) p = snapPt(p.x, p.y); }   // an Endpunkten/Knoten oder Raster einrasten
+  if (['line', 'arrow', 'rect', 'oval', 'arc', 'curve', 'measure', 'dim', 'wall'].includes(tool)) { const an = anchorSnap(pv, p.x, p.y); if (an) p = an; else if (gridOn) p = snapPt(p.x, p.y); }   // an Endpunkten/Knoten oder Raster einrasten
   else if (gridOn && tool !== 'eraser' && tool !== 'edittext' && tool !== 'pen' && tool !== 'highlight' && tool !== 'textsel' && tool !== 'calibrate') p = snapPt(p.x, p.y);
   if (tool === 'curve') { curveClick(pv, e, p); return; }
   if (tool === 'sig') { placeSig(pv, p); return; }
@@ -1351,7 +1392,7 @@ function startMove(pv, e, a, wasSel) {
 // Endpunkt auf 15°-Schritte zum Festpunkt (ax,ay) einrasten (Shift beim Ziehen)
 function snap15(ax, ay, qx, qy) { const dx = qx - ax, dy = qy - ay, len = Math.hypot(dx, dy), step = Math.PI / 12, ang = Math.round(Math.atan2(dy, dx) / step) * step; return { x: ax + Math.cos(ang) * len, y: ay + Math.sin(ang) * len }; }
 function translateAnno(a, o, dx, dy) {
-  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
+  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
   else if (a.type === 'pen' || a.type === 'area') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
   else if (a.type === 'path') a.nodes = o.nodes.map(nd => ({ x: nd.x + dx, y: nd.y + dy, hIn: { x: nd.hIn.x + dx, y: nd.hIn.y + dy }, hOut: { x: nd.hOut.x + dx, y: nd.hOut.y + dy } }));
   else if (a.type === 'highlight') a.rects = o.rects.map(r => ({ x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }));
@@ -1497,6 +1538,7 @@ function startDraw(pv, e, p) {
   if (tool === 'pen') a = { id: nextId++, type: 'pen', pts: [[p.x, p.y]], color: style.color, width: style.width };
   else if (tool === 'rect') a = { id: nextId++, type: 'rect', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
   else if (tool === 'oval') a = { id: nextId++, type: 'oval', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
+  else if (tool === 'wall') a = { id: nextId++, type: 'wall', x1: p.x, y1: p.y, x2: p.x, y2: p.y, thick: wallThickPts(), color: style.color, fill: '#ffffff', hatch: null, width: 1.4 };   // Wand = Linie mit Dicke
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   getAnnos(pv.num).push(a);
   const isLine = (a.type !== 'pen' && a.type !== 'rect' && a.type !== 'oval');
@@ -2032,9 +2074,10 @@ function setTool(t) {
   if (t === 'measure' && !docScale && !setTool._measHint) { setTool._measHint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n).'); }
   if (t === 'curve' && !setTool._curveHint) { setTool._curveHint = true; toast('Kurve: Klick = Ecke (gerade) · Klick+Ziehen = Kurve · Enter/Doppelklick = fertig · Esc = abbrechen'); }
   if (['pen', 'line', 'arrow', 'rect', 'oval', 'arc'].includes(t) && !setTool._drawHint) { setTool._drawHint = true; toast('Werkzeug bleibt aktiv – einfach weiterzeichnen. V oder Esc = auswählen/bearbeiten.'); }
+  if (t === 'wall' && !setTool._wallHint) { setTool._wallHint = true; toast('Wand: ziehen = Linie mit Dicke · D = Dicke (cm) · L = Länge · Schraffur über die Auswahl-Leiste (läuft durch, Wände verschmelzen).'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -2086,7 +2129,16 @@ async function buildPdfBytes() {
             const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2, lab = a.text || lenLabel(a);
             pg.drawText(lab, { x: mx - lab.length * 3, y: Y(my) + 6, size: 11, font, color: c });
           }
-        } else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), o = { x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawRectangle(o); }
+        }
+        else if (a.type === 'wall') {
+          const poly = wallPoly(a), arr = annos[n] || [], lw = a.width || 1.4;
+          if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); const d = 'M' + poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b) }); } catch (_) { } }
+          const edge = (p, q) => pg.drawLine({ start: { x: p[0], y: Y(p[1]) }, end: { x: q[0], y: Y(q[1]) }, thickness: lw, color: c });
+          edge(poly[0], poly[1]); edge(poly[3], poly[2]);
+          if (wallEndFree(a, a.x1, a.y1, arr)) edge(poly[0], poly[3]);
+          if (wallEndFree(a, a.x2, a.y2, arr)) edge(poly[1], poly[2]);
+        }
+        else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), o = { x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawRectangle(o); }
         else if (a.type === 'oval') { const o = { x: a.x + a.w / 2, y: Y(a.y + a.h / 2), xScale: Math.abs(a.w / 2), yScale: Math.abs(a.h / 2), borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawEllipse(o); }
         else if (a.type === 'pen') { const op = a.hl ? 0.35 : 1; for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c, opacity: op }); }
         else if (a.type === 'area') { for (let i = 0; i < a.pts.length; i++) { const p1 = a.pts[i], p2 = a.pts[(i + 1) % a.pts.length]; pg.drawLine({ start: { x: p1[0], y: Y(p1[1]) }, end: { x: p2[0], y: Y(p2[1]) }, thickness: w, color: c }); } if (a.pts.length >= 3) { const ct = centroid(a.pts), lab = areaLabel(a.pts), tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: ct[0] - tw / 2, y: Y(ct[1]) - 4, size: 11, font, color: c }); } }
@@ -2115,10 +2167,11 @@ async function buildPdfBytes() {
         else if (a.type === 'img' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, opacity: a.opacity != null ? a.opacity : 1 }); }
         else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); if (a.caption) { const fs = Math.max(7, Math.min(11, a.h * 0.16)), cy = a.y + a.h + 2; pg.drawLine({ start: { x: a.x, y: Y(cy) }, end: { x: a.x + a.w, y: Y(cy) }, thickness: 0.7, color: rgb(.11, .14, .17) }); pg.drawText(a.caption, { x: a.x, y: Y(cy + fs + 1), size: fs, font, color: rgb(.11, .14, .17) }); } }
         // Schraffur (geclippt auf die Form)
-        if ((a.type === 'rect' || a.type === 'oval' || a.type === 'path') && a.hatch && a.hatch.type && moveTo && clip) {
+        if ((a.type === 'rect' || a.type === 'oval' || a.type === 'path' || a.type === 'wall') && a.hatch && a.hatch.type && moveTo && clip) {
           try {
             const ops = [pushGraphicsState()];
-            if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h); ops.push(moveTo(x, Y(y)), lineTo(x + W, Y(y)), lineTo(x + W, Y(y + H)), lineTo(x, Y(y + H)), closePath()); }
+            if (a.type === 'wall') { const poly = wallPoly(a); ops.push(moveTo(poly[0][0], Y(poly[0][1]))); for (let i = 1; i < 4; i++) ops.push(lineTo(poly[i][0], Y(poly[i][1]))); ops.push(closePath()); }
+            else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h); ops.push(moveTo(x, Y(y)), lineTo(x + W, Y(y)), lineTo(x + W, Y(y + H)), lineTo(x, Y(y + H)), closePath()); }
             else if (a.type === 'oval') { const cx = a.x + a.w / 2, cy = a.y + a.h / 2, rx = Math.abs(a.w / 2), ry = Math.abs(a.h / 2); ops.push(moveTo(cx + rx, Y(cy))); for (let k = 1; k <= 32; k++) { const ang = k / 32 * 2 * Math.PI; ops.push(lineTo(cx + rx * Math.cos(ang), Y(cy + ry * Math.sin(ang)))); } ops.push(closePath()); }
             else { const pts = flattenPath(a); if (pts.length) { ops.push(moveTo(pts[0].x, Y(pts[0].y))); for (let i = 1; i < pts.length; i++) ops.push(lineTo(pts[i].x, Y(pts[i].y))); ops.push(closePath()); } }
             ops.push(clip(), endPath()); pg.pushOperators(...ops);
@@ -2771,6 +2824,8 @@ function wire() {
     else if (!mod && e.key.toLowerCase() === 't') setTool('text');
     else if (!mod && e.key.toLowerCase() === 's') setTool('pen');
     else if (!mod && e.key.toLowerCase() === 'l') { const t = lineForLength(); if (t) { e.preventDefault(); lineLenInput(t.pv, t.a); } else setTool('line'); }
+    else if (!mod && e.key.toLowerCase() === 'w') setTool('wall');
+    else if (!mod && e.key.toLowerCase() === 'd') { const t = wallForThick(); if (t) { e.preventDefault(); wallThickInput(t.pv, t.a); } }
     else if (!mod && e.key.toLowerCase() === 'p') setTool('arrow');
     else if (!mod && e.key.toLowerCase() === 'r') setTool('rect');
     else if (!mod && e.key.toLowerCase() === 'o') setTool('oval');

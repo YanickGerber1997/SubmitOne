@@ -751,6 +751,7 @@ function updateSelBar() {
   $('#sbFillWrap').hidden = !hasFill; $('#sbNoFill').hidden = !hasFill;
   $('#sbDash').hidden = !hasWidth || a.type === 'wall'; $('#sbDash').textContent = a.dash === 'dash' ? '- -' : a.dash === 'dot' ? '···' : '—';
   $('#sbHatch').hidden = !hasFill; $('#sbHatch').classList.toggle('on', !!(a.hatch && a.hatch.type));
+  $('#sbWallDim').hidden = a.type !== 'wall'; $('#sbWallDim').classList.toggle('on', !!a.dim);
   $('#sbEdit').hidden = a.type !== 'edit'; $('#sbMove').hidden = a.type !== 'edit';
   $('#sbLine').hidden = !isLineType(a);
   if (hasColor) { $('#sbColor').value = toHex(a.color); $('#sbColorDot').style.background = a.color; }
@@ -836,6 +837,13 @@ function drawOne(svg, a, pv) {
     edge(poly[0], poly[1]); edge(poly[3], poly[2]);                                                                   // Längsseiten
     if (wallEndFree(a, a.x1, a.y1, arr)) edge(poly[0], poly[3]);                                                      // Stirn nur an freien Enden
     if (wallEndFree(a, a.x2, a.y2, arr)) edge(poly[1], poly[2]);
+    if (a.dim) {                                                                                                      // optionale Masslinie
+      const dg = wallDimGeom(a), tk = 4, dl = (x1, y1, x2, y2) => svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: col, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' }));
+      dl(a.x1, a.y1, dg.x1, dg.y1); dl(a.x2, a.y2, dg.x2, dg.y2); dl(dg.x1, dg.y1, dg.x2, dg.y2);
+      dl(dg.x1 - dg.nx * tk, dg.y1 - dg.ny * tk, dg.x1 + dg.nx * tk, dg.y1 + dg.ny * tk);
+      dl(dg.x2 - dg.nx * tk, dg.y2 - dg.ny * tk, dg.x2 + dg.nx * tk, dg.y2 + dg.ny * tk);
+      const mx = (dg.x1 + dg.x2) / 2, my = (dg.y1 + dg.y2) / 2, t = svgEl('text', { x: mx + dg.nx * 7, y: my + dg.ny * 7, fill: col, 'font-size': 11, 'text-anchor': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = dg.label; svg.appendChild(t);
+    }
     hit = svgEl('polygon', { points: pstr, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
     el = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, ...strokeAttrs(a), 'data-id': a.id });
@@ -1130,6 +1138,12 @@ function wallThickInput(pv, a) {   // „D": Wand-Dicke setzen (cm)
   const v = prompt('Wand-Dicke in cm (z. B. 17,5 · 12,5 · 25):', String(cur).replace('.', ',')); if (v == null) return;
   const s = v.trim().toLowerCase().replace(',', '.'); const m = /^([0-9]*\.?[0-9]+)\s*(mm|cm|m)?$/.exec(s); if (!m) return;
   const pts = parseLenToPts(m[1] + (m[2] || 'cm')); if (pts > 0) { pushUndo(); a.thick = pts; lastWallThick = pts; drawAnnos(pv); saveState(); updateSelBar(); }
+}
+let wallDimOn = false;   // neue Wände bekommen eine Masslinie?
+function wallDimGeom(a) {                                            // parallele Masslinie neben der Wand
+  const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1;
+  const off = (a.thick || wallThickPts()) / 2 + 9, nx = -dy / len, ny = dx / len, ux = dx / len, uy = dy / len;
+  return { x1: a.x1 + nx * off, y1: a.y1 + ny * off, x2: a.x2 + nx * off, y2: a.y2 + ny * off, nx, ny, ux, uy, len, label: fmtLen(len) };
 }
 function onPointerDown(pv, e) {
   if (e.button !== 0) return;
@@ -1538,7 +1552,7 @@ function startDraw(pv, e, p) {
   if (tool === 'pen') a = { id: nextId++, type: 'pen', pts: [[p.x, p.y]], color: style.color, width: style.width };
   else if (tool === 'rect') a = { id: nextId++, type: 'rect', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
   else if (tool === 'oval') a = { id: nextId++, type: 'oval', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
-  else if (tool === 'wall') a = { id: nextId++, type: 'wall', x1: p.x, y1: p.y, x2: p.x, y2: p.y, thick: wallThickPts(), color: style.color, fill: '#ffffff', hatch: null, width: 1.4 };   // Wand = Linie mit Dicke
+  else if (tool === 'wall') a = { id: nextId++, type: 'wall', x1: p.x, y1: p.y, x2: p.x, y2: p.y, thick: wallThickPts(), color: style.color, fill: '#ffffff', hatch: null, width: 1.4, dim: wallDimOn };   // Wand = Linie mit Dicke
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   getAnnos(pv.num).push(a);
   const isLine = (a.type !== 'pen' && a.type !== 'rect' && a.type !== 'oval');
@@ -2137,6 +2151,14 @@ async function buildPdfBytes() {
           edge(poly[0], poly[1]); edge(poly[3], poly[2]);
           if (wallEndFree(a, a.x1, a.y1, arr)) edge(poly[0], poly[3]);
           if (wallEndFree(a, a.x2, a.y2, arr)) edge(poly[1], poly[2]);
+          if (a.dim) {
+            const dg = wallDimGeom(a), tk = 4, dl = (x1, y1, x2, y2) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: 0.8, color: c });
+            dl(a.x1, a.y1, dg.x1, dg.y1); dl(a.x2, a.y2, dg.x2, dg.y2); dl(dg.x1, dg.y1, dg.x2, dg.y2);
+            dl(dg.x1 - dg.nx * tk, dg.y1 - dg.ny * tk, dg.x1 + dg.nx * tk, dg.y1 + dg.ny * tk);
+            dl(dg.x2 - dg.nx * tk, dg.y2 - dg.ny * tk, dg.x2 + dg.nx * tk, dg.y2 + dg.ny * tk);
+            const mx = (dg.x1 + dg.x2) / 2, my = (dg.y1 + dg.y2) / 2, tw = font.widthOfTextAtSize(dg.label, 11);
+            pg.drawText(dg.label, { x: mx + dg.nx * 7 - tw / 2, y: Y(my + dg.ny * 7) - 3, size: 11, font, color: c });
+          }
         }
         else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), o = { x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawRectangle(o); }
         else if (a.type === 'oval') { const o = { x: a.x + a.w / 2, y: Y(a.y + a.h / 2), xScale: Math.abs(a.w / 2), yScale: Math.abs(a.h / 2), borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawEllipse(o); }
@@ -2756,6 +2778,7 @@ function wire() {
   $('#sbTbg').addEventListener('input', e => { const a = selA(), pv = selPv(); if (!a || a.type !== 'text') return; if (!sbTbgPushed) { pushUndo(); sbTbgPushed = true; } a.bg = e.target.value; textStyle.bg = e.target.value; if (pv) drawAnnos(pv); updateSelBar(); });
   $('#sbTborder').onclick = () => { const a = selA(), pv = selPv(); if (!a || a.type !== 'text') return; pushUndo(); a.border = a.border ? null : (a.color || '#1c242c'); if (a.border && !a.borderW) a.borderW = 1.2; textStyle.border = a.border; if (pv) drawAnnos(pv); updateSelBar(); saveState(); };
   $('#sbTedit').onclick = () => { const a = selA(), pv = selPv(); if (a && pv && a.type === 'text') openTextAnnoEdit(pv, a); };
+  $('#sbWallDim').onclick = () => { const a = selA(), pv = selPv(); if (!a || a.type !== 'wall') return; pushUndo(); a.dim = !a.dim; wallDimOn = a.dim; if (pv) drawAnnos(pv); updateSelBar(); saveState(); };
   $('#sbEdit').onclick = () => { const a = selA(), pv = selPv(); if (a && pv) openEditEdit(pv, a, false); };
   $('#sbMove').onclick = () => { const a = selA(), pv = selPv(); if (a && pv) splitEditMove(pv, a); };
   const lineAdjust = (dx, dy) => { const a = selA(); if (!isLineType(a)) return; pushUndo(); a.x1 += dx; a.y1 += dy; a.x2 += dx; a.y2 += dy; const pv = selPv(); if (pv) drawAnnos(pv); };

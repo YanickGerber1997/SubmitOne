@@ -35,6 +35,8 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .brand .logomark{height:52px;width:52px;flex:none;object-fit:contain}
 .drop-logo{width:min(300px,66vw);display:block;margin:0 auto 8px}
 .splash-logo{width:min(360px,72vw);opacity:0;animation:lgReveal 1.15s cubic-bezier(.2,.7,.3,1) .15s forwards}
+/* Edge „Visuelle Suche"-Leiste (oben rechts auf Bildern) auf unseren Logos unterdrücken */
+.splash-logo,.brand .logomark,.brand .brand-word,.splash-mark{pointer-events:none;-webkit-user-select:none;user-select:none}
 @keyframes lgReveal{from{opacity:0;transform:scale(.93) translateY(10px);clip-path:inset(0 0 100% 0)}to{opacity:1;transform:scale(1) translateY(0);clip-path:inset(0 0 0 0)}}
 .brand .bw-a{color:#1c242c} .brand .bw-b{color:#4f7a3c;margin-left:5px}
 .brand .brand-word{height:25px;width:auto;display:block;object-fit:contain}

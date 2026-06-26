@@ -2322,13 +2322,20 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
     const recM = Math.min(fdh * 1.4, recess / ht), sdM = Math.min(fdh * 1.95, sashD / ht), smB = fmB - recM, smA = Math.max(-1, smB - sdM), gc = (smA + smB) / 2, gh = Math.min((smB - smA) * 0.42, (a.glassT || cmToPts(2)) / (2 * ht));
     const wm = WIN_MAT[a.winMat || 'holz'];
     const box = (s0, s1, mA, mB) => fills.push({ poly: [corner(s0, mA), corner(s1, mA), corner(s1, mB), corner(s0, mB)], fill: wm.fill, stroke: wm.stroke });
-    const div = wt === 'f2' ? [-1, 0, 1] : [-1, 1];
-    for (const dv of div) { let m0, m1; if (dv <= -0.999) { m0 = -1; m1 = -1 + fwS; } else if (dv >= 0.999) { m0 = 1 - fwS; m1 = 1; } else { m0 = -fwS / 2; m1 = fwS / 2; } box(m0, m1, fmA, fmB); }   // Blendrahmen 10×7
+    const twoMull = wt === 'f2s', twoFlush = wt === 'f2', two = twoMull || twoFlush;   // f2 = direkt verbunden (kein Mittelrahmen), f2s = mit Setzholz (Mittelrahmen)
+    const gIn = cmToPts(1) / hw;   // Glas greift 1 cm in die Flügel
+    const div = two ? [-1, 0, 1] : [-1, 1], hasMember = dv => dv <= -0.999 || dv >= 0.999 || twoMull;
+    for (const dv of div) { if (!hasMember(dv)) continue; let m0, m1; if (dv <= -0.999) { m0 = -1; m1 = -1 + fwS; } else if (dv >= 0.999) { m0 = 1 - fwS; m1 = 1; } else { m0 = -fwS / 2; m1 = fwS / 2; } box(m0, m1, fmA, fmB); }   // Blendrahmen (Jamben + Setzholz)
     for (let i = 0; i < div.length - 1; i++) {
-      const lEdge = div[i] <= -0.999 ? -1 + fwS : div[i] + fwS / 2, rEdge = div[i + 1] >= 0.999 ? 1 - fwS : div[i + 1] - fwS / 2;
-      if (wt !== 'fest') { box(lEdge - backS, lEdge - backS + ssW, smA, smB); box(rEdge + backS - ssW, rEdge + backS, smA, smB); }   // Flügelrahmen 7×7 (4 cm entlang in den Rahmen, 1 cm Tiefe zurück)
-      const gl = wt !== 'fest' ? lEdge - backS + ssW : lEdge, gr = wt !== 'fest' ? rEdge + backS - ssW : rEdge;
-      fills.push({ poly: [corner(gl, gc - gh), corner(gr, gc - gh), corner(gr, gc + gh), corner(gl, gc + gh)], fill: '#cfe0e8', stroke: '#7d9aa6' });   // Glas
+      const dvL = div[i], dvR = div[i + 1];
+      const lEdge = dvL <= -0.999 ? -1 + fwS : (twoMull ? fwS / 2 : 0), rEdge = dvR >= 0.999 ? 1 - fwS : (twoMull ? -fwS / 2 : 0);   // Setzholz-Kante oder Mitte
+      let gl, gr;
+      if (wt !== 'fest') {
+        const lsa = hasMember(dvL) ? lEdge - backS : lEdge, rsb = hasMember(dvR) ? rEdge + backS : rEdge;   // Jamb/Setzholz: 4 cm Überlappung; Mitte (direkt): bündig
+        box(lsa, lsa + ssW, smA, smB); box(rsb - ssW, rsb, smA, smB);   // Flügelrahmen 7×7
+        gl = lsa + ssW - gIn; gr = rsb - ssW + gIn;   // Glas zwischen den Flügeln, 1 cm rein
+      } else { gl = lEdge - gIn; gr = rEdge + gIn; }
+      fills.push({ poly: [corner(gl, gc - gh), corner(gr, gc - gh), corner(gr, gc + gh), corner(gl, gc + gh)], fill: '#9cc3e6', stroke: '#5a8bb5' });   // Glas (blau)
     }
   }
   else {   // Tür: Blatt + Schwenk, im Detail zusätzlich Blendrahmen an den Laibungen
@@ -2421,12 +2428,12 @@ function sectionPrimitives(a, arr) {
       if (o.kind === 'window') {
         const wt = o.winType || 'f1', fr = Math.min(opw * 0.12, 5), yT = Yh(head), yB = Yh(sill);
         out.push({ t: 'rect', x: X(opx0), y: yT, w: opw, h: yB - yT, fill: 'none', stroke: col, sw: 1.4 });   // Blendrahmen
-        const panes = wt === 'f2' ? 2 : 1, pw = opw / panes;
-        for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1.4 });   // Mittelpfosten
+        const two = wt === 'f2' || wt === 'f2s', panes = two ? 2 : 1, pw = opw / panes;
+        for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) { if (wt === 'f2s') { out.push({ t: 'rect', x: px0 - fr, y: yT, w: 2 * fr, h: yB - yT, fill: 'none', stroke: col, sw: 1.4 }); } else out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1.4 }); }   // Setzholz / direkt verbundene Flügel
           if (wt !== 'fest') { out.push({ t: 'rect', x: px0 + fr, y: yT + fr, w: pw - 2 * fr, h: (yB - yT) - 2 * fr, fill: 'none', stroke: col, sw: 0.9 });   // Flügelrahmen
             const ix0 = px0 + fr * 1.6, ix1 = px0 + pw - fr * 1.6, iy0 = yT + fr * 1.6, iy1 = yB - fr * 1.6, cmx = (ix0 + ix1) / 2, cmy = (iy0 + iy1) / 2, hinge = o.winHinge || 'left';
             if (hinge === 'kipp') { out.push({ t: 'line', x1: ix0, y1: iy0, x2: cmx, y2: iy1, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: ix1, y1: iy0, x2: cmx, y2: iy1, stroke: col, w: 0.6, dash: '4 3' }); }   // Kipp: Apex unten-Mitte
-            else { const apexL = (wt === 'f2' ? pi === 0 : hinge === 'left'), ax = apexL ? ix0 : ix1, bx = apexL ? ix1 : ix0; out.push({ t: 'line', x1: bx, y1: iy0, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: bx, y1: iy1, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); }   // Dreh: Apex = Bandseite
+            else { const apexL = (two ? pi === 0 : hinge === 'left'), ax = apexL ? ix0 : ix1, bx = apexL ? ix1 : ix0; out.push({ t: 'line', x1: bx, y1: iy0, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: bx, y1: iy1, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); }   // Dreh: Apex = Bandseite
           }
         }
         out.push({ t: 'line', x1: X(opx0) - 6, y1: Yh(sill), x2: X(opx0 + opw) + 6, y2: Yh(sill), stroke: col, w: 1.8 });   // Fensterbank
@@ -3620,7 +3627,7 @@ function build3DScene(host, walls, arr) {
         addBox2(a0, a0 + op.fw, sillY, headY, dC, fdM, fmat, true); addBox2(a1 - op.fw, a1, sillY, headY, dC, fdM, fmat, true);   // Rahmen seitlich
         addBox2(a0, a1, sillY, sillY + fwM, dC, fdM, fmat, true); addBox2(a0, a1, headY - fwM, headY, dC, fdM, fmat, true);       // Rahmen unten/oben
         addBox2(a0 + op.fw, a1 - op.fw, sillY + fwM, headY - fwM, dC, M(cmToPts(2)), gmat, false);                                 // Scheibe
-        if (op.winType === 'f2') addBox2((a0 + a1) / 2 - op.fw / 2, (a0 + a1) / 2 + op.fw / 2, sillY, headY, dC, fdM, fmat, true);   // Mittelpfosten (2 Flügel)
+        if (op.winType === 'f2s') addBox2((a0 + a1) / 2 - op.fw / 2, (a0 + a1) / 2 + op.fw / 2, sillY, headY, dC, fdM, fmat, true);   // Setzholz/Mittelpfosten (nur 2 Flügel mit Setzholz)
         if (op.bank) { const ext = cmToPts(8); addBox2(a0 - ext, a1 + ext, sillY - 0.04, sillY + 0.01, th / 2 + 0.03, 0.12, bmat, true); }   // Fensterbank aussen
         if (op.niche) addBox2(a0, a1, headY, Math.min(yb + HW, headY + 0.24), 0, th * 0.85, nmat, true);                          // Storennische
       }

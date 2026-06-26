@@ -1186,15 +1186,15 @@ function bindPageEvents(pv) {
 function snapPt(x, y) { if (!gridOn) return { x, y }; const c = gridCellPt(); if (c <= 0) return { x, y }; return { x: Math.round((x - gridOffX) / c) * c + gridOffX, y: Math.round((y - gridOffY) / c) * c + gridOffY }; }
 // An vorhandene Endpunkte/Knoten/Ecken einrasten (sauberes Anschliessen beim Zeichnen)
 function anchorSnap(pv, x, y, excludeId) {
-  const thr = 9 / pv.scale, cornerThr = 13 / pv.scale; let best = null, bd = cornerThr;   // Wand-Ecken etwas „klebriger"
-  const consider = (ax, ay, t) => { const d = Math.hypot(ax - x, ay - y); if (d < (t || thr) && d < bd) { bd = d; best = { x: ax, y: ay }; } };
+  const thr = 9 / pv.scale, cornerThr = 13 / pv.scale, midThr = 7 / pv.scale; let best = null, bd = cornerThr;   // Wand-Ecken etwas „klebriger", Mitte nur ganz nah
+  const consider = (ax, ay, kind, t) => { const d = Math.hypot(ax - x, ay - y); if (d < (t || thr) && d < bd) { bd = d; best = { x: ax, y: ay, kind }; } };
   const arr = getAnnos(pv.num) || [];
   for (const a of arr) {
     if (a.id === excludeId) continue;
-    if (a.type === 'wall') { consider(a.x1, a.y1); consider(a.x2, a.y2); for (const p of wallPoly(a, arr)) consider(p[0], p[1], cornerThr); }   // Achs-Enden + die vier Band-Ecken
-    else if (a.x1 != null) { consider(a.x1, a.y1); consider(a.x2, a.y2); }
-    else if (a.type === 'path') { for (const nd of a.nodes) consider(nd.x, nd.y); }
-    else if (a.w != null && a.x != null) { consider(a.x, a.y); consider(a.x + a.w, a.y); consider(a.x, a.y + a.h); consider(a.x + a.w, a.y + a.h); }
+    if (a.type === 'wall') { consider(a.x1, a.y1, 'end'); consider(a.x2, a.y2, 'end'); consider((a.x1 + a.x2) / 2, (a.y1 + a.y2) / 2, 'mid', midThr); for (const p of wallPoly(a, arr)) consider(p[0], p[1], 'corner', cornerThr); }   // Achs-Enden + Mitte + die vier Band-Ecken
+    else if (a.x1 != null) { consider(a.x1, a.y1, 'end'); consider(a.x2, a.y2, 'end'); consider((a.x1 + a.x2) / 2, (a.y1 + a.y2) / 2, 'mid', midThr); }
+    else if (a.type === 'path') { for (const nd of a.nodes) consider(nd.x, nd.y, 'node'); }
+    else if (a.w != null && a.x != null) { consider(a.x, a.y, 'corner'); consider(a.x + a.w, a.y, 'corner'); consider(a.x, a.y + a.h, 'corner'); consider(a.x + a.w, a.y + a.h, 'corner'); }
   }
   return best;
 }
@@ -1205,12 +1205,20 @@ function wallProjSnap(pv, x, y, excludeId) {   // Fusspunkt auf eine vorhandene 
     const dx = o.x2 - o.x1, dy = o.y2 - o.y1, L2 = dx * dx + dy * dy; if (L2 < 1) continue;
     const t = ((x - o.x1) * dx + (y - o.y1) * dy) / L2; if (t < 0.02 || t > 0.98) continue;   // Enden macht anchorSnap
     const px = o.x1 + dx * t, py = o.y1 + dy * t, d = Math.hypot(px - x, py - y);
-    if (d < bd) { bd = d; best = { x: px, y: py }; }
+    if (d < bd) { bd = d; best = { x: px, y: py, kind: 'axis' }; }
   }
   return best;
 }
 function snapWallPt(pv, x, y, excludeId) { return anchorSnap(pv, x, y, excludeId) || wallProjSnap(pv, x, y, excludeId); }   // erst Wand-Ende, dann Wand-Achse
-function snapIndicator(pv, p) { const c = svgEl('circle', { cx: p.x, cy: p.y, r: 5 / pv.scale, class: 'snap-anchor' }); pv.svg.appendChild(c); }
+const SNAP_LABELS = { corner: 'Ecke', end: 'Ende', mid: 'Mitte', node: 'Knoten', axis: 'Achse' };
+function snapIndicator(pv, p) {
+  const g = svgEl('g', { class: 'snap-layer' }), s = 1 / pv.scale, r = 5 * s;
+  if (p.kind === 'corner') g.appendChild(svgEl('rect', { x: p.x - r, y: p.y - r, width: r * 2, height: r * 2, class: 'snap-anchor' }));
+  else if (p.kind === 'mid') g.appendChild(svgEl('path', { d: `M${p.x} ${p.y - r} L${p.x + r} ${p.y + r} L${p.x - r} ${p.y + r} Z`, class: 'snap-anchor' }));
+  else g.appendChild(svgEl('circle', { cx: p.x, cy: p.y, r, class: 'snap-anchor' }));
+  const lbl = SNAP_LABELS[p.kind]; if (lbl) { const t = svgEl('text', { x: p.x + 9 * s, y: p.y - 9 * s, class: 'snap-label', 'font-size': 11 * s }); t.textContent = lbl; g.appendChild(t); }
+  pv.svg.appendChild(g);
+}
 /* ---------- Zeichen-Hilfslinien, Längen-/Winkel-Anzeige, exakte Längeneingabe ---------- */
 let lastLine = null;   // {num,id} – zuletzt gezeichnete Linie (für „L" = exakte Länge)
 function angleSnapPoint(x1, y1, x2, y2) {   // auf nächste 45°-Richtung einrasten, wenn nahe dran – sonst null

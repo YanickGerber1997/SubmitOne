@@ -2459,7 +2459,7 @@ function segInt(a, b, c, d) {   // Schnitt zweier Strecken → {pt,t1,t2} oder n
   const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
   if (t < 0 || t > 1 || u < 0 || u > 1) return null; return { pt: [a[0] + t * r[0], a[1] + t * r[1]], t1: t, t2: u };
 }
-function sectionMaxH(a, arr) { let m = wallHeightM; const p1 = [a.cx1, a.cy1], p2 = [a.cx2, a.cy2]; for (const w of arr || []) { if (w.type !== 'wall') continue; if (segInt(p1, p2, [w.x1, w.y1], [w.x2, w.y2])) m = Math.max(m, w.h3d || wallHeightM); } return m; }
+function sectionMaxH(a, arr) { let m = wallHeightM; for (const w of arr || []) { if (w.type !== 'wall' || !layerVisible(w) || !phaseVisible(w)) continue; m = Math.max(m, w.h3d || wallHeightM); } return m; }   // gemeinsames Höhen-Datum: höchste Wand im Gebäude → alle Schnitte gleich hoch (perfekt nebeneinanderlegbar)
 function clipSeg(ax, ay, bx, by, x0, y0, x1, y1) {   // Strecke gegen achsenparalleles Rechteck (Liang-Barsky)
   let t0 = 0, t1 = 1; const dx = bx - ax, dy = by - ay;
   const cl = (p, q) => { if (Math.abs(p) < 1e-9) return q >= 0; const r = q / p; if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; } return true; };
@@ -2563,7 +2563,7 @@ function sectionPrimitives(a, arr) {
     }
     for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = (ocx - p1[0]) * cux + (ocy - p1[1]) * cuy; if (od < -10 || od > cl + 10) continue; openingElev(out, X, Yh, od - (o.w * along) / 2, o.w * along, o, Hw, col); }
   }
-  const Htop = hits.reduce((m, h) => Math.max(m, h.w.h3d || wallHeightM), wallHeightM), slabF = '#dadde2', slabC = '#8a8f96';
+  const Htop = sectionMaxH(a, arr), slabF = '#dadde2', slabC = '#8a8f96';   // Decke auf gemeinsamem Höhen-Datum
   out.push({ t: 'rect', x: X(-16), y: Yh(0), w: cl + 32, h: Yh(-0.22) - Yh(0), fill: slabF, stroke: slabC, sw: 0.7 });           // Bodenplatte
   out.push({ t: 'rect', x: X(-16), y: Yh(Htop + 0.24), w: cl + 32, h: Yh(Htop) - Yh(Htop + 0.24), fill: slabF, stroke: slabC, sw: 0.7 });   // Decke
   const hSet = new Set([0, Htop]);   // Höhen-Stationen: Boden, Geschoss, je Öffnung Brüstung+Sturz

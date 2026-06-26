@@ -364,6 +364,7 @@ body.has-planbar.has-tabs .work{top:calc(var(--bar) + var(--tools) + var(--tabs)
 .anno .hit{stroke:transparent;fill:transparent;stroke-width:11;vector-effect:non-scaling-stroke;cursor:move}
 .anno .hover-line{fill:none;stroke:var(--accent);stroke-width:2.5;opacity:.35;vector-effect:non-scaling-stroke;pointer-events:none;stroke-linecap:round}
 .anno .hover-dot{fill:#fff;stroke:var(--accent);stroke-width:1.4;vector-effect:non-scaling-stroke;pointer-events:none}
+.anno .corner-dot{fill:var(--accent);stroke:#fff;stroke-width:1.6;vector-effect:non-scaling-stroke;pointer-events:none}
 .anno .hover-box{fill:none;stroke:var(--accent);stroke-width:1;stroke-dasharray:3 3;opacity:.5;vector-effect:non-scaling-stroke;pointer-events:none}
 .anno text{font-family:var(--font);dominant-baseline:hanging;white-space:pre}
 .note-pin{cursor:pointer}

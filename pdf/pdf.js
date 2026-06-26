@@ -1151,7 +1151,11 @@ function setHover(pv, a) {
   const old = pv.svg.querySelector('.hover-layer'); if (old) old.remove();
   if (!a || (sel && sel.num === pv.num && sel.id === a.id)) return;
   const g = svgEl('g', { class: 'hover-layer' });
-  if (isLineType(a)) {
+  if (a.type === 'wall') {                                   // Wand: vier Eckpunkte zum Andocken zeigen
+    g.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'hover-line' }));
+    const r = 4.5 / pv.scale;
+    for (const p of wallPoly(a, getAnnos(pv.num))) g.appendChild(svgEl('circle', { cx: p[0], cy: p[1], r, class: 'hover-dot corner-dot' }));
+  } else if (isLineType(a)) {
     g.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'hover-line' }));
     const r = 4 / pv.scale;
     g.appendChild(svgEl('circle', { cx: a.x1, cy: a.y1, r, class: 'hover-dot' }));
@@ -1182,11 +1186,13 @@ function bindPageEvents(pv) {
 function snapPt(x, y) { if (!gridOn) return { x, y }; const c = gridCellPt(); if (c <= 0) return { x, y }; return { x: Math.round((x - gridOffX) / c) * c + gridOffX, y: Math.round((y - gridOffY) / c) * c + gridOffY }; }
 // An vorhandene Endpunkte/Knoten/Ecken einrasten (sauberes Anschliessen beim Zeichnen)
 function anchorSnap(pv, x, y, excludeId) {
-  const thr = 9 / pv.scale; let best = null, bd = thr;
-  const consider = (ax, ay) => { const d = Math.hypot(ax - x, ay - y); if (d < bd) { bd = d; best = { x: ax, y: ay }; } };
-  for (const a of (getAnnos(pv.num) || [])) {
+  const thr = 9 / pv.scale, cornerThr = 13 / pv.scale; let best = null, bd = cornerThr;   // Wand-Ecken etwas „klebriger"
+  const consider = (ax, ay, t) => { const d = Math.hypot(ax - x, ay - y); if (d < (t || thr) && d < bd) { bd = d; best = { x: ax, y: ay }; } };
+  const arr = getAnnos(pv.num) || [];
+  for (const a of arr) {
     if (a.id === excludeId) continue;
-    if (a.x1 != null) { consider(a.x1, a.y1); consider(a.x2, a.y2); }
+    if (a.type === 'wall') { consider(a.x1, a.y1); consider(a.x2, a.y2); for (const p of wallPoly(a, arr)) consider(p[0], p[1], cornerThr); }   // Achs-Enden + die vier Band-Ecken
+    else if (a.x1 != null) { consider(a.x1, a.y1); consider(a.x2, a.y2); }
     else if (a.type === 'path') { for (const nd of a.nodes) consider(nd.x, nd.y); }
     else if (a.w != null && a.x != null) { consider(a.x, a.y); consider(a.x + a.w, a.y); consider(a.x, a.y + a.h); consider(a.x + a.w, a.y + a.h); }
   }

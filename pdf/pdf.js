@@ -2346,10 +2346,16 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
   return { cover, lines, arcs, bold, fills };
 }
 const REVEAL_MAT = { putz: { fill: '#ededed', color: '#9a9a9a' }, beton: { fill: '#dcecdf', color: '#2f7d4f' }, stahl: { fill: '#c9ccd1', color: '#565b62' }, holz: { fill: '#eedcc8', color: '#7a5126' } };   // Laibungs-Element: Putz/Betonelement/Stahlzarge/Holzzarge
+function bandHatchPerp(sa, sb, ma, mb, corner, hw) {   // Striche 90° zur Wand (m-Richtung), wie Wand-Dämmung – durchgehend
+  const out = [], sLo = Math.min(sa, sb), sHi = Math.max(sa, sb), step = cmToPts(1.3) / hw;
+  if (sHi - sLo < 1e-4 || Math.abs(mb - ma) < 1e-4) return out;
+  for (let s = sLo; s <= sHi + 1e-6; s += step) out.push([corner(s, ma), corner(s, mb)]);
+  return out;
+}
 function bandHatch(sa, sb, ma, mb, corner, hw, ht) {   // diagonale Schraffur (≈45°) in einem Parameter-Rechteck s∈[sa,sb], m∈[ma,mb]
-  const out = [], sLo = Math.min(sa, sb), sHi = Math.max(sa, sb), mLo = Math.min(ma, mb), mHi = Math.max(ma, mb), dm = mHi - mLo, dsE = dm * ht / hw;
+  const out = [], sLo = Math.min(sa, sb), sHi = Math.max(sa, sb), mLo = Math.min(ma, mb), mHi = Math.max(ma, mb), dm = mHi - mLo, dsE = Math.min(dm * ht / hw, sHi - sLo);
   if (dsE <= 1e-6 || sHi - sLo < 1e-4) return out;
-  const step = Math.max(dsE * 0.85, 0.015);
+  const step = Math.max(cmToPts(0.7) / hw, 0.008);
   for (let s = sLo - dsE; s < sHi; s += step) {
     let aS = s, aM = mLo, bS = s + dsE, bM = mHi;
     if (aS < sLo) { const f = (sLo - aS) / (bS - aS); aS = sLo; aM = mLo + dm * f; }
@@ -2372,15 +2378,18 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   const l0 = wall.layers[0], mI = WALL_MATS[l0.mat] || {}, twI = Math.min(0.45, l0.t / hw);   // innen: Putz/Brett als dünner Streifen bis Rahmen-Innenkante
   if (Math.abs((fmA - gapM) + 1) > 0.02) for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + twI : 1 - twI; strips.push({ poly: [corner(s0, -1), corner(s1, -1), corner(s1, fmA - gapM), corner(s0, fmA - gapM)], fill: mI.fill || '#fff', stroke: mI.color || '#1c242c' }); }
   const outer = []; for (let i = wall.layers.length - 1; i > coreIdx; i--) if (wall.layers[i].mat !== 'luft') outer.push(wall.layers[i]);   // aussen, ohne Hinterlüftung
-  if (outer.length) {   // vom Rahmen aus: 1 cm Rahmen sichtbar → Schalungsbrett → Dämmung bis Rohbaukante (KEINE Hinterlüftung in der Laibung)
+  if (outer.length) {   // vom Rahmen: 1 cm sichtbar → Brett (lappt auf Rahmen) → Dämmung (Wand-Schraffur) mit Schalung obenauf bis zur Rohbaukante
     const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw);
-    const visS = Math.min(fwSr * 0.3, cmToPts(1) / hw), schWs = Math.min(0.25, cmToPts(2.5) / hw);
+    const visS = Math.min(fwSr * 0.3, cmToPts(1) / hw), schWs = Math.min(0.22, cmToPts(2.5) / hw), schT = Math.min((1 - (fmB + gapM)) * 0.55, cmToPts(2.5) / ht);
     const schal = outer[0], daemm = outer.find(l => INS.includes(l.mat)) || outer[outer.length - 1], rt = a.revealType || 'putz';
     const revM = rt === 'beton' ? REVEAL_MAT.beton : rt === 'stahl' ? REVEAL_MAT.stahl : rt === 'holz' ? REVEAL_MAT.holz : (WALL_MATS[schal.mat] || {}), dM = WALL_MATS[daemm.mat] || {}, doHatch = rt === 'putz' || rt === 'holz';
     for (const sgn of [-1, 1]) {
-      const sBI = sgn * Math.min(1, 1 - fwSr + visS), sBO = sgn * Math.min(1, 1 - fwSr + visS + schWs), sE = sgn;   // Rahmen → 1 cm sichtbar → Brett → Dämmung → Rohbaukante
-      if (Math.abs(sE - sBO) > 0.02) strips.push({ poly: [corner(sBO, fmB + gapM), corner(sE, fmB + gapM), corner(sE, 1), corner(sBO, 1)], fill: dM.fill || '#fff', stroke: dM.color || '#1c242c' });   // Dämmung füllt bis Rohbaukante
-      if (Math.abs(sBO - sBI) > 0.02) strips.push({ poly: [corner(sBI, fmB), corner(sBO, fmB), corner(sBO, 1), corner(sBI, 1)], fill: revM.fill || '#fff', stroke: revM.color || '#1c242c', hatch: doHatch ? bandHatch(sBI, sBO, fmB, 1, corner, hw, ht) : null });   // Schalungsbrett 1 cm vom Rahmen, lappt auf fmB
+      const sBI = sgn * Math.min(1, 1 - fwSr + visS), sBO = sgn * Math.min(1, 1 - fwSr + visS + schWs), sE = sgn, lo = Math.min(sBO, sE), hi = Math.max(sBO, sE);
+      if (hi - lo > 0.02) {
+        strips.push({ poly: [corner(sBO, fmB + gapM), corner(sE, fmB + gapM), corner(sE, 1 - schT), corner(sBO, 1 - schT)], fill: dM.fill || '#fff', stroke: dM.color || '#1c242c', hatch: bandHatchPerp(lo, hi, fmB + gapM, 1 - schT, corner, hw) });   // Dämmung mit Wand-Schraffur (quer)
+        strips.push({ poly: [corner(sBO, 1 - schT), corner(sE, 1 - schT), corner(sE, 1), corner(sBO, 1)], fill: revM.fill || '#fff', stroke: revM.color || '#1c242c', hatch: doHatch ? bandHatch(lo, hi, 1 - schT, 1, corner, hw, ht) : null });   // Schalung läuft aussen bis zum Brett
+      }
+      if (Math.abs(sBO - sBI) > 0.02) strips.push({ poly: [corner(sBI, fmB), corner(sBO, fmB), corner(sBO, 1), corner(sBI, 1)], fill: revM.fill || '#fff', stroke: revM.color || '#1c242c', hatch: doHatch ? bandHatch(Math.min(sBI, sBO), Math.max(sBI, sBO), fmB, 1, corner, hw, ht) : null });   // Schalungsbrett, 1 cm vom Rahmen, lappt auf fmB
     }
   }
   return strips;

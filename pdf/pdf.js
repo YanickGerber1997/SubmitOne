@@ -1102,7 +1102,7 @@ function bindPageEvents(pv) {
     if (tool !== 'select' || e.buttons) return;
     const id = (e.target.getAttribute && e.target.getAttribute('data-id')) || null;
     if (id === pv._hoverId) return; pv._hoverId = id;
-    setHover(pv, id ? findAnno(pv.num, +id) : null);
+    const ha = id ? findAnno(pv.num, +id) : null; setHover(pv, (ha && ha.locked) ? null : ha);
   });
   pv.svg.addEventListener('pointerleave', () => { pv._hoverId = null; setHover(pv, null); });
 }
@@ -1270,6 +1270,8 @@ function onPointerDown(pv, e) {
     if ((pn !== null || ph !== null) && sel && sel.num === pv.num) { startNodeDrag(pv, e, sel.id, pn, ph, e.target.getAttribute('data-hk')); return; }   // Kurven-Knoten/Anfasser ziehen
     if (hAttr && sel && sel.num === pv.num) { startResize(pv, e, hAttr); return; }
     if (idAttr) {
+      const aHit = findAnno(pv.num, +idAttr);
+      if (aHit && aHit.locked) { sel = null; groupSel = null; drawAnnos(pv); startMarquee(pv, e); return; }   // gesperrt (Plan-Rahmen) → nicht greifen, Rahmen aufziehen
       const wasSel = sel && sel.num === pv.num && sel.id === +idAttr;   // war schon ausgewählt → Klick (ohne Ziehen) = bearbeiten
       groupSel = null; sel = { num: pv.num, id: +idAttr }; drawAnnos(pv);
       const a = findAnno(pv.num, sel.id);
@@ -1305,6 +1307,7 @@ function startErase(pv, e) {
     const t = document.elementFromPoint(ev.clientX, ev.clientY); if (!t) return;
     const idEl = t.closest && t.closest('[data-id]'); if (!idEl || !pv.svg.contains(idEl)) return;
     const id = +idEl.getAttribute('data-id'); const arr = getAnnos(pv.num); const i = arr.findIndex(a => a.id === id);
+    if (i >= 0 && arr[i].locked) return;   // gesperrte Plan-Elemente nicht radieren
     if (i >= 0) { if (!did) { pushUndo(); did = true; } arr.splice(i, 1); if (sel && sel.id === id) sel = null; drawAnnos(pv); if (typeof refreshComments === 'function') refreshComments(); }
   };
   eraseAt(e);
@@ -1575,7 +1578,7 @@ function startMarquee(pv, e) {
     document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (rectEl) rectEl.remove();
     if (!dragged) return;
     const q = evtToPage(pv, ev), rx = Math.min(start.x, q.x), ry = Math.min(start.y, q.y), rw = Math.abs(q.x - start.x), rh = Math.abs(q.y - start.y), ids = [];
-    for (const a of (getAnnos(pv.num) || [])) { if (a.type === 'crop' || a.type === 'imgph') continue; const b = bbox(a); if (b.x < rx + rw && b.x + b.w > rx && b.y < ry + rh && b.y + b.h > ry) ids.push(a.id); }
+    for (const a of (getAnnos(pv.num) || [])) { if (a.type === 'crop' || a.type === 'imgph' || a.locked) continue; const b = bbox(a); if (b.x < rx + rw && b.x + b.w > rx && b.y < ry + rh && b.y + b.h > ry) ids.push(a.id); }
     if (ids.length === 1) { sel = { num: pv.num, id: ids[0] }; groupSel = null; }
     else if (ids.length > 1) { groupSel = { num: pv.num, ids }; sel = null; }
     else { sel = null; groupSel = null; }
@@ -2190,7 +2193,8 @@ function templateAnnos(kind, w, h) {
     mk({ x: w * 0.1, y: h * 0.78, w: w * 0.8, h: h * 0.05, text: 'Bildunterschrift', size: Math.round(h * 0.024), align: 'center', color: gray })
   ];
   if (kind === 'plan') {   // Rahmen + Plankopf unten rechts + Faltmarken (je nach Blattgrösse)
-    const MM = 72 / 25.4, out = [];
+    const MM = 72 / 25.4, out0 = [], LK = { locked: true };
+    const out = { push: (...xs) => xs.forEach(x => out0.push(Object.assign(x, x.field ? {} : LK))) };   // Struktur gesperrt, ausfüllbare Felder (field) frei
     const ml = 20 * MM, mt = 8 * MM, mr = 8 * MM, mb = 8 * MM;                 // Heftrand links breiter
     const bx = ml, by = mt, bw = w - ml - mr, bh = h - mt - mb;
     out.push({ type: 'rect', x: bx, y: by, w: bw, h: bh, color: dark, width: 1.6, fill: 'none' });   // Rahmen
@@ -2204,13 +2208,13 @@ function templateAnnos(kind, w, h) {
       out.push(mk(Object.assign({ x: x + pad, y: y + rh * 0.42, w: wc, h: rh * 0.55, text: value || '', size: 9, color: dark }, field ? { field } : {})));
     };
     const lw = kw * 0.6 - 2 * pad, rw = kw * 0.4 - 2 * pad;
-    cell(kx, ky, lw, 'Projekt', ''); cell(kx, ky + rh, lw, 'Plan', ''); cell(kx, ky + 2 * rh, lw, 'Gezeichnet', '');
-    cell(cx, ky, rw, 'Massstab', docScale ? docScale.label : '', 'scale'); cell(cx, ky + rh, rw, 'Datum', todayStr(), 'date'); cell(cx, ky + 2 * rh, rw, 'Plan-Nr.', '');
-    out.push(mk({ x: kx + pad, y: ky + 3 * rh + pad, w: kw - 2 * pad, h: rh, text: 'Submit PDF', size: 11, color: dark }));
+    cell(kx, ky, lw, 'Projekt', '', 'projekt'); cell(kx, ky + rh, lw, 'Plan', '', 'plan'); cell(kx, ky + 2 * rh, lw, 'Gezeichnet', '', 'gezeichnet');
+    cell(cx, ky, rw, 'Massstab', docScale ? docScale.label : '', 'scale'); cell(cx, ky + rh, rw, 'Datum', todayStr(), 'date'); cell(cx, ky + 2 * rh, rw, 'Plan-Nr.', '', 'plannr');
+    out.push(mk({ x: kx + pad, y: ky + 3 * rh + pad, w: kw - 2 * pad, h: rh, text: 'Submit PDF', size: 11, color: dark, field: 'firma' }));
     const A4w = 210 * MM, A4h = 297 * MM, tk = 5 * MM;                          // Faltmarken (DIN-824-artig, in A4-Spalten)
     for (let x = w - A4w; x > ml * 0.5; x -= A4w) { out.push({ type: 'line', x1: x, y1: 0, x2: x, y2: tk, color: gray, width: 0.6 }); out.push({ type: 'line', x1: x, y1: h - tk, x2: x, y2: h, color: gray, width: 0.6 }); }
     for (let y = h - A4h; y > mt * 0.5; y -= A4h) { out.push({ type: 'line', x1: 0, y1: y, x2: tk, y2: y, color: gray, width: 0.6 }); out.push({ type: 'line', x1: w - tk, y1: y, x2: w, y2: y, color: gray, width: 0.6 }); }
-    return out;
+    return out0;
   }
   return [];
 }
@@ -2777,7 +2781,12 @@ function showCtx(x, y, pv, annoId) {
   const m = $('#ctxmenu'); m.innerHTML = '';
   const add = (label, mi, act, cls) => { const b = document.createElement('button'); if (cls) b.className = cls; b.innerHTML = `<span class="mi">${mi}</span><span>${label}</span>`; b.onclick = () => { hideCtx(); act(); }; m.appendChild(b); };
   const sep = () => { const d = document.createElement('div'); d.className = 'sep'; m.appendChild(d); };
-  if (annoId) {
+  const _lockedCa = annoId && findAnno(pv.num, annoId);
+  if (annoId && _lockedCa && _lockedCa.locked) {
+    add('Entsperren (Plan-Element)', '🔓', () => { pushUndo(); _lockedCa.locked = false; sel = { num: pv.num, id: annoId }; pageViews.forEach(drawAnnos); saveState(); });
+    add('Löschen', '🗑', () => { pushUndo(); const arr = getAnnos(pv.num), i = arr.findIndex(a => a.id === annoId); if (i >= 0) arr.splice(i, 1); pageViews.forEach(drawAnnos); saveState(); }, 'danger');
+    sep();
+  } else if (annoId) {
     add('Löschen', '🗑', () => { sel = { num: pv.num, id: annoId }; deleteSel(); }, 'danger');
     add('Farbe ändern', '🎨', () => $('#colorPick').click());
     add('Duplizieren', '⧉', () => duplicateAnno(pv, annoId));

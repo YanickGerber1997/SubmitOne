@@ -2844,7 +2844,9 @@ function outName() { return docName.replace(/\.pdf$/i, '') + '-submit.pdf'; }
 async function buildPdfBytes(visibleOnly) {
   const lib = await loadPdfLib();
   {
-    const { PDFDocument, rgb, StandardFonts, degrees, pushGraphicsState, popGraphicsState, concatTransformationMatrix, moveTo, lineTo, closePath, clip, endPath } = lib;
+    const { PDFDocument, rgb: rgb0, StandardFonts, degrees, pushGraphicsState, popGraphicsState, concatTransformationMatrix, moveTo, lineTo, closePath, clip, endPath } = lib;
+    const exportBW = document.body.classList.contains('bw');   // S/W-Modus → alle Anmerkungsfarben als Graustufe ins PDF
+    const rgb = exportBW ? ((r, g, b) => { const l = 0.299 * r + 0.587 * g + 0.114 * b; return rgb0(l, l, l); }) : rgb0;
     const doc = await PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const pages = doc.getPages(); const sigCache = {};

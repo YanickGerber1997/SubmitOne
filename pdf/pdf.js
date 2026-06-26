@@ -263,7 +263,7 @@ function renameDoc(i) {
   const base = d.name.replace(/\.pdf$/i, '');
   const v = prompt('Dokumentname:', base); if (v == null) return;
   let name = v.trim(); if (!name) return; if (!/\.pdf$/i.test(name)) name += '.pdf';
-  d.name = name; if (i === active) { docName = name; $('#docName').textContent = name; document.title = name.replace(/\.pdf$/i, '') + ' – Submit PDF'; markDirty(); }
+  d.name = name; if (i === active) { docName = name; $('#docName').textContent = name; document.title = 'Submit PDF'; markDirty(); }
   renderTabs();
 }
 function renderTabs() {
@@ -388,7 +388,7 @@ async function loadDoc(bytes) {
 async function renderCurrentDoc() {
   $('#drop').classList.add('hide'); $('#toolbar').hidden = false; $('#quickbar').hidden = false;
   $('#btnSave').disabled = false; $('#btnSend').disabled = false; $('#docName').textContent = docName;
-  document.title = docName.replace(/\.pdf$/i, '') + ' – Submit PDF';
+  document.title = 'Submit PDF';
   _searchCache = {}; if (typeof closeFind === 'function') closeFind();   // Suche fürs neue Dokument zurücksetzen
   await buildLayout(); buildThumbs(); status(''); refreshComments(); updateScaleLabel();
   document.body.classList.add('has-doc');

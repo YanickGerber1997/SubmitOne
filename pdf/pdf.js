@@ -2252,13 +2252,13 @@ function openingParts(a) {   // Geometrie: Ausstanz-Rechteck (cover), Linien (La
   const cover = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
   const lines = [[corner(-1, -1), corner(-1, 1)], [corner(1, -1), corner(1, 1)]];   // Laibungen
   const arcs = [];
-  if (a.kind === 'window') {   // Rahmen an einstellbarer Tiefe (depth 0=innen … 1=aussen), Glas-Doppellinie
+  if (a.kind === 'window') {   // echtes Fensterprofil: Rahmen-Querschnitt an beiden Laibungen + versenkte Scheibe
     const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
-    const fh = Math.min(0.45, (a.frameD || cmToPts(7)) / (2 * ht)); let f1 = md - fh, f2 = md + fh;
+    const fmh = Math.min(0.48, (a.frameD || cmToPts(7)) / (2 * ht)); let f1 = md - fmh, f2 = md + fmh;
     if (f1 < -1) { f2 += (-1 - f1); f1 = -1; } if (f2 > 1) { f1 -= (f2 - 1); f2 = 1; }
-    lines.push([corner(-1, f1), corner(1, f1)], [corner(-1, f2), corner(1, f2)]);   // Rahmen innen/aussen
-    lines.push([corner(-1, f1), corner(-1, f2)], [corner(1, f1), corner(1, f2)]);   // Rahmen-Stirnseiten
-    const g1 = md - 0.05, g2 = md + 0.05; lines.push([corner(-1, g1), corner(1, g1)], [corner(-1, g2), corner(1, g2)]);   // Glas (Doppellinie)
+    const fws = Math.min(0.45, (a.frameW || cmToPts(7)) / hw), gh = Math.min(fmh * 0.7, (a.glassT || cmToPts(2)) / (2 * ht));
+    for (const sgn of [-1, 1]) { const sa = sgn, sb = sgn < 0 ? -1 + fws : 1 - fws; lines.push([corner(sa, f1), corner(sb, f1)], [corner(sa, f2), corner(sb, f2)], [corner(sa, f1), corner(sa, f2)], [corner(sb, f1), corner(sb, f2)]); }   // Rahmenkasten je Laibung
+    const gA = -1 + fws, gB = 1 - fws; lines.push([corner(gA, md - gh), corner(gB, md - gh)], [corner(gA, md + gh), corner(gB, md + gh)]);   // Scheibe (2 Flächen, versenkt)
   }
   else { const hS = a.hinge || 1, sN = a.swing || 1, hp = [x - ux * hw * hS, y - uy * hw * hS], tip = [hp[0] + nx * a.w * sN, hp[1] + ny * a.w * sN], closed = [x + ux * hw * hS, y + uy * hw * hS]; lines.push([hp, tip]); arcs.push({ cx: hp[0], cy: hp[1], r: a.w, from: tip, to: closed }); }
   return { cover, lines, arcs };

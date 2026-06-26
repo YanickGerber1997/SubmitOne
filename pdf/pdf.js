@@ -1203,7 +1203,7 @@ function lineForLength() {
 /* ---------- Wand (Linie mit Dicke; Schraffuren laufen durch, Wände verschmelzen) ---------- */
 function cmToPts(cm) { return cm * (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
 function ptsToCm(pts) { return pts / (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
-let lastWallThick = null, wallJust = 'center';   // Achse der neuen Wand: 'center' | 'left' | 'right'
+let lastWallThick = null, wallJust = 'center', wallHatch = null, wallHeightM = 2.6;   // Achse · Schraffur · 3D-Höhe der neuen Wand
 function wallThickPts() { return lastWallThick || cmToPts(17.5); }   // Standard 17,5 cm (Backstein)
 function wallEnds(a, arr) {   // Enden an verbundenen Stössen um halbe Dicke verlängern (saubere Aussenecke)
   let x1 = a.x1, y1 = a.y1, x2 = a.x2, y2 = a.y2;
@@ -1307,8 +1307,8 @@ function onPointerDown(pv, e) {
   if (tool === 'edittext') { editTextAt(pv, p); return; }
   if (tool === 'text') { createText(pv, p); return; }
   if (tool === 'note') { pushUndo(); const a = { id: nextId++, type: 'note', x: p.x, y: p.y, color: style.color, text: '' }; getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); refreshComments(); openNoteEdit(pv, a); return; }
-  if (segDraft && segDraft.pv === pv) { finishSegDraft(); return; }                            // 2. Klick = Linie beenden
-  if (tool === 'wall' && wallDraft && wallDraft.pv === pv) { wallChainClick(pv, p); return; }   // laufende Wand-Kette: nächste Ecke
+  if (segDraft && segDraft.pv === pv) { finishSegDraft(); return; }                            // 2. Klick = Linie/Wand beenden
+  if (tool === 'wallchain') { let q = p; const an = anchorSnap(pv, q.x, q.y); if (an) q = an; else if (gridOn) q = snapPt(q.x, q.y); if (wallDraft && wallDraft.pv === pv) wallChainClick(pv, q); else startWallChain(pv, q.x, q.y); return; }   // Wände am Stück
   // Zeichnen
   startDraw(pv, e, p);
 }
@@ -1619,7 +1619,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
   const a = (sel && tool === 'select') ? findAnno(sel.num, sel.id) : null;
   const sW = a && a.type === 'wall' ? a : null, sO = a && a.type === 'opening' ? a : null;
   const isDimObj = a && ['dim', 'measure', 'chaindim', 'area'].includes(a.type);
-  let mode = sW ? 'wall' : sO ? 'open' : isDimObj ? 'dim' : (tool === 'wall' ? 'wall' : tool === 'opening' ? 'open' : (['measure', 'dim', 'chaindim', 'area'].includes(tool) ? 'dim' : null));
+  let mode = sW ? 'wall' : sO ? 'open' : isDimObj ? 'dim' : ((tool === 'wall' || tool === 'wallchain') ? 'wall' : tool === 'opening' ? 'open' : (['measure', 'dim', 'chaindim', 'area'].includes(tool) ? 'dim' : null));
   if (!mode) { bar.hidden = true; return; }
   bar.hidden = false; $('#pbWall').hidden = mode !== 'wall'; $('#pbOpen').hidden = mode !== 'open';
   $('#pbDimset').hidden = (mode !== 'wall' && mode !== 'dim'); $('#pbUnit').classList.toggle('on', dimUnit);
@@ -1629,6 +1629,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     $('#pbDim').classList.toggle('on', sW ? !!sW.dim : wallDimOn);
     if (document.activeElement !== $('#pbDimOff')) $('#pbDimOff').value = wallDimOffCm;
     const jv = sW ? (sW.just || 'center') : wallJust; $$('#pbWall .pb-j').forEach(b => b.classList.toggle('on', b.dataset.just === jv));
+    const ht = sW ? (sW.hatch && sW.hatch.type) : (wallHatch && wallHatch.type); $('#pbHatch').value = ht || '';
     const col = sW ? sW.color : style.color; $('#pbWallDot').style.background = col; $('#pbWallColor').value = toHex(col);
   } else if (mode === 'open') {
     const kind = sO ? sO.kind : openKind;
@@ -1744,7 +1745,7 @@ function startDraw(pv, e, p) {
   if (tool === 'pen') a = { id: nextId++, type: 'pen', pts: [[p.x, p.y]], color: style.color, width: style.width };
   else if (tool === 'rect') a = { id: nextId++, type: 'rect', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
   else if (tool === 'oval') a = { id: nextId++, type: 'oval', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
-  else if (tool === 'wall') a = { id: nextId++, type: 'wall', x1: p.x, y1: p.y, x2: p.x, y2: p.y, thick: wallThickPts(), just: wallJust, color: style.color, fill: '#ffffff', hatch: null, width: 1.4, dim: wallDimOn };   // Wand = Linie mit Dicke
+  else if (tool === 'wall') a = { id: nextId++, type: 'wall', x1: p.x, y1: p.y, x2: p.x, y2: p.y, thick: wallThickPts(), just: wallJust, color: style.color, fill: '#ffffff', hatch: wallHatch ? { ...wallHatch } : null, width: 1.4, dim: wallDimOn };   // Wand = Linie mit Dicke
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   getAnnos(pv.num).push(a);
   const isLine = (a.type !== 'pen' && a.type !== 'rect' && a.type !== 'oval');
@@ -1770,10 +1771,7 @@ function startDraw(pv, e, p) {
     if (a.type === 'pen' && penTidy) { const bz = beautify(a.pts); if (bz) { const arr = getAnnos(pv.num), i = arr.indexOf(a); arr[i] = Object.assign({ id: a.id, color: a.color, width: a.width }, bz); } }
     const cur = getAnnos(pv.num).find(x => x.id === a.id) || a;
     const clk = isLineType(cur) ? Math.hypot(cur.x2 - cur.x1, cur.y2 - cur.y1) < 3 : false;
-    if (cur.type === 'wall' && clk) {   // reiner Klick mit Wand-Werkzeug → Klick-Kette starten
-      const arr = getAnnos(pv.num); arr.splice(arr.indexOf(cur), 1); undoStack.pop(); drawAnnos(pv); startWallChain(pv, cur.x1, cur.y1); return;
-    }
-    if (clk && (cur.type === 'line' || cur.type === 'arrow' || cur.type === 'measure' || cur.type === 'dim')) { startSegDraft(pv, cur); return; }   // Klick = Richtung anpeilen, dann 2. Klick oder L
+    if (clk && (cur.type === 'line' || cur.type === 'arrow' || cur.type === 'measure' || cur.type === 'dim' || cur.type === 'wall')) { startSegDraft(pv, cur); return; }   // Klick = Richtung anpeilen, dann 2. Klick oder L (einzelne Wand/Linie)
     const b = bbox(cur); if (cur.type !== 'pen' && b.w < 3 && b.h < 3) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(cur), 1); undoStack.pop(); drawAnnos(pv); return; }
     if (isLineType(cur)) lastLine = { num: pv.num, id: cur.id };   // „L" wirkt auf die zuletzt gezeichnete Linie
     sel = null; drawAnnos(pv); saveState();   // Werkzeug bleibt aktiv → mehrere zeichnen (V/Esc = auswählen)
@@ -1817,7 +1815,7 @@ function cancelSegDraft() {
 let wallDraft = null;   // {pv, last:[x,y], seg, _onMove, _rel}
 function startWallChain(pv, x, y) {
   pushUndo();
-  const seg = { id: nextId++, type: 'wall', x1: x, y1: y, x2: x, y2: y, thick: wallThickPts(), just: wallJust, color: style.color, fill: '#ffffff', hatch: null, width: 1.4, dim: wallDimOn, _draft: true };
+  const seg = { id: nextId++, type: 'wall', x1: x, y1: y, x2: x, y2: y, thick: wallThickPts(), just: wallJust, color: style.color, fill: '#ffffff', hatch: wallHatch ? { ...wallHatch } : null, width: 1.4, dim: wallDimOn, _draft: true };
   getAnnos(pv.num).push(seg); wallDraft = { pv, last: [x, y], seg, pts: [[x, y]], segIds: [] };
   const onMove = ev => {
     if (!wallDraft) return; const s = wallDraft.seg; let q = evtToPage(pv, ev), snapped = null, rel = null;
@@ -2468,7 +2466,7 @@ function setTool(t) {
   if (areaDraft && t !== 'area') cancelArea();                       // anderes Werkzeug → Flächen-Polygon verwerfen
   if (penDraft && t !== 'curve') finishCurve();                      // anderes Werkzeug → Kurve abschliessen
   if (segDraft) cancelSegDraft();                                    // anderes Werkzeug → laufende Linie verwerfen
-  if (wallDraft && t !== 'wall') finishWallChain();                  // anderes Werkzeug → Wand-Kette beenden
+  if (wallDraft && t !== 'wallchain') finishWallChain();            // anderes Werkzeug → Wand-Kette beenden
   if (cdimDraft && t !== 'chaindim') finishChaindim();              // anderes Werkzeug → Kettenmass beenden
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
   const ab = $('.tool.on[data-tool]'); if (ab) { const grp = ab.closest('.rib-tools'); if (grp && grp.hidden) activateRibTab(grp.dataset.tabgroup); }   // Reiter des aktiven Werkzeugs zeigen
@@ -2483,11 +2481,12 @@ function setTool(t) {
   if (t === 'opening' && !setTool._openHint) { setTool._openHint = true; toast('Tür/Fenster: auf eine Wand klicken → wird eingesetzt (Wand wird ausgestanzt). In der Auswahl-Leiste: Tür/Fenster, Breite, Anschlag/Seite.'); }
   if (t === 'chaindim' && !setTool._cdimHint) { setTool._cdimHint = true; toast('Kettenmass: Stationen klicken (rastet an Ecken/Enden ein) · je Abschnitt ein Mass + Gesamt · Rücktaste = letzte Station zurück · Doppelklick/Enter = fertig.'); }
   updatePlanBar();
-  if (t === 'wall' && !docScale && !_scaleAfter) { _scaleAfter = 'wall'; toast('Erst den Massstab wählen – dann passen die Wände masstabsgetreu aufs Blatt.'); openScale(); return; }
-  if (t === 'wall' && !setTool._wallHint) { setTool._wallHint = true; toast('Wand: klicken–klicken = Raumzug · zurück auf Start = Raum schliessen (m²) · Rücktaste = letzte Wand zurück · ziehen = einzelne Wand · D = Dicke, L = Länge.'); }
+  if ((t === 'wall' || t === 'wallchain') && !docScale && !_scaleAfter) { _scaleAfter = t; toast('Erst den Massstab wählen – dann passen die Wände masstabsgetreu aufs Blatt.'); openScale(); return; }
+  if (t === 'wall' && !setTool._wallHint) { setTool._wallHint = true; toast('Einzelne Wand: Start klicken → Richtung → 2. Klick oder „L" = Länge. Volle Kontrolle (Dicke/Achse/Schraffur) oben in der Planungs-Leiste.'); }
+  if (t === 'wallchain' && !setTool._wcHint) { setTool._wcHint = true; toast('Wände am Stück: klicken–klicken = Raumzug · zurück auf den Startpunkt = Raum schliessen (m²) · Rücktaste = letzte Wand zurück · Doppelklick/Enter = fertig.'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'chaindim', 'opening'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -2785,6 +2784,61 @@ async function changePageFormat(w, h) {   // aktuelle Seite auf neues Blattforma
     status(''); updateFormatLabel(); toast('Blattformat geändert ✓');
   } catch (e) { status(''); console.error(e); if (undoStack.length) undoStack.pop(); toast('Format-Änderung fehlgeschlagen.'); }
 }
+/* ---------- 3D-Ansicht: Wände mit Höhe extrudieren (Three.js) ---------- */
+function loadThree() {
+  if (window.THREE && THREE.OrbitControls) return Promise.resolve();
+  return loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js').then(() => loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js'));
+}
+async function open3D() {
+  if (!docScale) { toast('Für die 3D-Ansicht zuerst den Massstab setzen (1:n).'); return; }
+  const arr = getAnnos(curPage()) || [], walls = arr.filter(a => a.type === 'wall');
+  if (!walls.length) { toast('Auf dieser Seite sind keine Wände für die 3D-Ansicht.'); return; }
+  status('3D wird geladen …');
+  try { await loadThree(); } catch (_) { status(''); toast('3D-Engine nicht ladbar (einmal Internet nötig).'); return; }
+  status('');
+  const ov = document.createElement('div'); ov.className = 'd3-overlay';
+  ov.innerHTML = '<div class="d3-bar"><b>3D-Ansicht</b><label class="d3-h">Höhe <input type="number" id="d3h" min="1" max="20" step="0.1" value="' + wallHeightM + '"> m</label><span class="d3-hint">Ziehen = drehen · Mausrad = zoomen</span><span class="grow"></span><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
+  document.body.appendChild(ov);
+  const host = ov.querySelector('#d3Canvas');
+  let api = build3DScene(host, walls, arr);
+  ov.querySelector('#d3h').onchange = e => { wallHeightM = Math.max(1, Math.min(20, parseFloat(e.target.value) || 2.6)); if (api) api.dispose(); api = build3DScene(host, walls, arr); };
+  const close = () => { if (api) api.dispose(); ov.remove(); document.removeEventListener('keydown', esc, true); };
+  const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } };
+  document.addEventListener('keydown', esc, true);
+  ov.querySelector('#d3Close').onclick = close;
+}
+function build3DScene(host, walls, arr) {
+  host.innerHTML = '';
+  const W = host.clientWidth || 800, Hp = host.clientHeight || 500, perPt = docScale.perPt, H = wallHeightM, M = v => v * perPt;
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (const w of walls) for (const [x, y] of [[w.x1, w.y1], [w.x2, w.y2]]) { minx = Math.min(minx, x); miny = Math.min(miny, y); maxx = Math.max(maxx, x); maxy = Math.max(maxy, y); }
+  const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2, span = Math.max(M(maxx - minx), M(maxy - miny), 2);
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xeef1ec);
+  const camera = new THREE.PerspectiveCamera(50, W / Hp, 0.05, 4000); camera.position.set(span * 0.85, span * 0.95, span * 0.95);
+  const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setSize(W, Hp); renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); host.appendChild(renderer.domElement);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(0, H * 0.4, 0);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x55604f, 0.95));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.55); sun.position.set(span, span * 1.6, span * 0.7); scene.add(sun);
+  const gsz = Math.max(span * 2.4, 4);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(gsz, gsz), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; scene.add(ground);
+  scene.add(new THREE.GridHelper(gsz, Math.min(60, Math.max(4, Math.round(gsz))), 0xc4cabe, 0xd8dcd2));
+  for (const a of arr) if (a.type === 'area' && a.room && a.pts && a.pts.length >= 3) {
+    const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
+    const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0xece6d8, side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = 0.006; scene.add(fl);
+  }
+  const wmat = new THREE.MeshLambertMaterial({ color: 0xe9e3d8 }), emat = new THREE.LineBasicMaterial({ color: 0x8c8678 });
+  for (const w of walls) {
+    const dx = w.x2 - w.x1, dy = w.y2 - w.y1, lp = Math.hypot(dx, dy); if (lp < 1) continue;
+    const geo = new THREE.BoxGeometry(M(lp), H, M(w.thick || wallThickPts())), box = new THREE.Mesh(geo, wmat);
+    box.position.set(M((w.x1 + w.x2) / 2 - cx), H / 2, M((w.y1 + w.y2) / 2 - cy)); box.rotation.y = -Math.atan2(dy, dx); scene.add(box);
+    const ed = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); ed.position.copy(box.position); ed.rotation.copy(box.rotation); scene.add(ed);
+  }
+  let raf, alive = true;
+  const onResize = () => { const w2 = host.clientWidth, h2 = host.clientHeight; if (!w2 || !h2) return; camera.aspect = w2 / h2; camera.updateProjectionMatrix(); renderer.setSize(w2, h2); };
+  window.addEventListener('resize', onResize);
+  const loop = () => { if (!alive) return; controls.update(); renderer.render(scene, camera); raf = requestAnimationFrame(loop); }; loop();
+  return { dispose: () => { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); controls.dispose(); renderer.dispose(); host.innerHTML = ''; } };
+}
 
 /* ---------- Rechtsklick-Menü (alles erreichbar) ---------- */
 // Seitenzahlen „n / N" unten mittig auf jede Seite setzen
@@ -3051,6 +3105,8 @@ function wire() {
   $('#pbDim').onclick = () => { const a = selWall(); if (a) { pushUndo(); a.dim = !a.dim; wallDimOn = a.dim; pageViews.forEach(drawAnnos); saveState(); } else { wallDimOn = !wallDimOn; updatePlanBar(); } };
   $$('#pbWall .pb-j').forEach(b => b.onclick = () => { wallJust = b.dataset.just; const a = selWall(); if (a) { pushUndo(); a.just = wallJust; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
   $('#pbDimOff').onchange = () => { const v = parseFloat(($('#pbDimOff').value || '').replace(',', '.')); if (v >= 0) { wallDimOffCm = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbHatch').onchange = () => { const t = $('#pbHatch').value; const h = t ? { type: t, scale: lastHatchScale, w: 0.8 } : null; wallHatch = h; const a = selWall(); if (a) { pushUndo(); a.hatch = h ? { ...h, color: a.color } : null; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#foot3d').onclick = open3D;
   $('#pbUnit').onclick = () => { dimUnit = !dimUnit; pageViews.forEach(drawAnnos); updatePlanBar(); saveState(); };
   $('#pbWallColor').addEventListener('input', e => { const c = e.target.value; style.color = c; $('#colorDot').style.background = c; $('#pbWallDot').style.background = c; const a = selWall(); if (a) { a.color = c; pageViews.forEach(drawAnnos); } });
   $$('#pbOpen [data-ok]').forEach(b => b.onclick = () => { openKind = b.dataset.ok; const a = selOpen(); if (a) { pushUndo(); a.kind = openKind; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });

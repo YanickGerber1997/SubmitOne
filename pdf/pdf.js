@@ -1217,6 +1217,7 @@ function onPointerDown(pv, e) {
   if (tool === 'edittext') { editTextAt(pv, p); return; }
   if (tool === 'text') { createText(pv, p); return; }
   if (tool === 'note') { pushUndo(); const a = { id: nextId++, type: 'note', x: p.x, y: p.y, color: style.color, text: '' }; getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); refreshComments(); openNoteEdit(pv, a); return; }
+  if (tool === 'wall' && wallDraft && wallDraft.pv === pv) { wallChainClick(pv, p); return; }   // laufende Wand-Kette: nächste Ecke
   // Zeichnen
   startDraw(pv, e, p);
 }
@@ -1599,11 +1600,11 @@ function startDraw(pv, e, p) {
   const move = ev => {
     let q = evtToPage(pv, ev), snapped = null;
     if (a.type !== 'pen' && !ev.shiftKey) { const an = anchorSnap(pv, q.x, q.y, a.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
+    let rel = null;
     if (a.type === 'pen') a.pts.push([q.x, q.y]);
     else if (a.type === 'rect' || a.type === 'oval') { a.w = q.x - a.x; a.h = q.y - a.y; }
-    let rel = null;
-    if (ev.shiftKey) { const s = snap15(a.x1, a.y1, q.x, q.y); a.x2 = s.x; a.y2 = s.y; }   // Shift = 15°
-    else {
+    else if (ev.shiftKey) { const s = snap15(a.x1, a.y1, q.x, q.y); a.x2 = s.x; a.y2 = s.y; }   // Shift = 15°
+    else {                                                                                       // Linie/Pfeil/Mass/Wand
       if (!snapped) rel = refAngleSnap(pv, a, q.x, q.y);                                   // senkrecht/parallel zu Nachbar-Linie/Wand
       const as = rel || (!snapped ? angleSnapPoint(a.x1, a.y1, q.x, q.y) : null);
       if (as) { a.x2 = as.x; a.y2 = as.y; } else { a.x2 = q.x; a.y2 = q.y; }               // sonst auto 0/45/90°
@@ -1617,11 +1618,45 @@ function startDraw(pv, e, p) {
     if (a.type === 'calibrate') { const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1); const arr = getAnnos(pv.num); arr.splice(arr.indexOf(a), 1); undoStack.pop(); drawAnnos(pv); if (len > 4) openScale(len); else setTool('select'); return; }
     if (a.type === 'pen' && penTidy) { const bz = beautify(a.pts); if (bz) { const arr = getAnnos(pv.num), i = arr.indexOf(a); arr[i] = Object.assign({ id: a.id, color: a.color, width: a.width }, bz); } }
     const cur = getAnnos(pv.num).find(x => x.id === a.id) || a;
+    if (cur.type === 'wall' && Math.hypot(cur.x2 - cur.x1, cur.y2 - cur.y1) < 3) {   // reiner Klick mit Wand-Werkzeug → Klick-Kette starten
+      const arr = getAnnos(pv.num); arr.splice(arr.indexOf(cur), 1); undoStack.pop(); drawAnnos(pv); startWallChain(pv, cur.x1, cur.y1); return;
+    }
     const b = bbox(cur); if (cur.type !== 'pen' && b.w < 3 && b.h < 3) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(cur), 1); undoStack.pop(); drawAnnos(pv); return; }
     if (isLineType(cur)) lastLine = { num: pv.num, id: cur.id };   // „L" wirkt auf die zuletzt gezeichnete Linie
     sel = null; drawAnnos(pv); saveState();   // Werkzeug bleibt aktiv → mehrere zeichnen (V/Esc = auswählen)
   };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
+/* ---------- Wand-Kette: klicken–klicken = ganze Raumzüge (Doppelklick/Enter/Esc = fertig) ---------- */
+let wallDraft = null;   // {pv, last:[x,y], seg, _onMove, _rel}
+function startWallChain(pv, x, y) {
+  pushUndo();
+  const seg = { id: nextId++, type: 'wall', x1: x, y1: y, x2: x, y2: y, thick: wallThickPts(), color: style.color, fill: '#ffffff', hatch: null, width: 1.4, dim: wallDimOn, _draft: true };
+  getAnnos(pv.num).push(seg); wallDraft = { pv, last: [x, y], seg };
+  const onMove = ev => {
+    if (!wallDraft) return; const s = wallDraft.seg; let q = evtToPage(pv, ev), snapped = null, rel = null;
+    if (!ev.shiftKey) { const an = anchorSnap(pv, q.x, q.y, s.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
+    if (ev.shiftKey) { const sn = snap15(s.x1, s.y1, q.x, q.y); s.x2 = sn.x; s.y2 = sn.y; }
+    else { if (!snapped) rel = refAngleSnap(pv, s, q.x, q.y); const as = rel || (!snapped ? angleSnapPoint(s.x1, s.y1, q.x, q.y) : null); if (as) { s.x2 = as.x; s.y2 = as.y; } else { s.x2 = q.x; s.y2 = q.y; } }
+    wallDraft._rel = rel; drawAnnos(pv); if (snapped) snapIndicator(pv, snapped);
+    if (rel) pv.svg.appendChild(svgEl('line', { x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, class: 'snap-guide' }));
+    showDrawHud(ev, s, rel ? (rel.perp ? '⟂' : '∥') : '');
+  };
+  document.addEventListener('pointermove', onMove); wallDraft._onMove = onMove;
+}
+function wallChainClick(pv, p) {
+  if (!wallDraft) return; const s = wallDraft.seg, ex = s.x2, ey = s.y2;   // Vorschau-Endpunkt (bereits gesnappt) übernehmen
+  if (Math.hypot(ex - s.x1, ey - s.y1) < 2) return;                       // zu kurz – ignorieren
+  delete s._draft; lastLine = { num: pv.num, id: s.id };
+  pushUndo();
+  const seg2 = { id: nextId++, type: 'wall', x1: ex, y1: ey, x2: ex, y2: ey, thick: s.thick, color: s.color, fill: s.fill, hatch: s.hatch, width: s.width, dim: s.dim, _draft: true };
+  getAnnos(pv.num).push(seg2); wallDraft.seg = seg2; wallDraft.last = [ex, ey];
+  drawAnnos(pv); saveState();
+}
+function finishWallChain() {
+  if (!wallDraft) return; const { pv, seg, _onMove } = wallDraft; document.removeEventListener('pointermove', _onMove);
+  const arr = getAnnos(pv.num), i = arr.indexOf(seg); if (i >= 0) arr.splice(i, 1);   // unbestätigtes letztes Segment verwerfen
+  wallDraft = null; hideDrawHud(); if (pv) drawAnnos(pv); saveState();
 }
 
 /* ---------- Text-Box (mit Rahmen, Ausrichtung, Hintergrund, Rand, Grösse) ---------- */
@@ -2123,6 +2158,7 @@ function setTool(t) {
   if (cropping && t !== 'select' && t !== 'crop') removeCropAnno();   // anderes Werkzeug → Zuschneiden verwerfen
   if (areaDraft && t !== 'area') cancelArea();                       // anderes Werkzeug → Flächen-Polygon verwerfen
   if (penDraft && t !== 'curve') finishCurve();                      // anderes Werkzeug → Kurve abschliessen
+  if (wallDraft && t !== 'wall') finishWallChain();                  // anderes Werkzeug → Wand-Kette beenden
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
   const bs = $('#btnStamp'); if (bs) bs.classList.toggle('on', t === 'stamp');
   $$('.fab-b').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
@@ -2132,7 +2168,7 @@ function setTool(t) {
   if (t === 'measure' && !docScale && !setTool._measHint) { setTool._measHint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n).'); }
   if (t === 'curve' && !setTool._curveHint) { setTool._curveHint = true; toast('Kurve: Klick = Ecke (gerade) · Klick+Ziehen = Kurve · Enter/Doppelklick = fertig · Esc = abbrechen'); }
   if (['pen', 'line', 'arrow', 'rect', 'oval', 'arc'].includes(t) && !setTool._drawHint) { setTool._drawHint = true; toast('Werkzeug bleibt aktiv – einfach weiterzeichnen. V oder Esc = auswählen/bearbeiten.'); }
-  if (t === 'wall' && !setTool._wallHint) { setTool._wallHint = true; toast('Wand: ziehen = Linie mit Dicke · D = Dicke (cm) · L = Länge · Schraffur über die Auswahl-Leiste (läuft durch, Wände verschmelzen).'); }
+  if (t === 'wall' && !setTool._wallHint) { setTool._wallHint = true; toast('Wand: klicken–klicken = Raumzug (Doppelklick/Enter/Esc = fertig) · oder ziehen = einzelne Wand · D = Dicke, L = Länge · Schraffur über die Auswahl-Leiste.'); }
 }
 function applyToolCursor() {
   pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
@@ -2167,6 +2203,7 @@ async function buildPdfBytes() {
       const cropT = (cb.x !== 0 || cb.y !== 0) && pushGraphicsState && popGraphicsState && concatTransformationMatrix;
       if (cropT) pg.pushOperators(pushGraphicsState(), concatTransformationMatrix(1, 0, 0, 1, cb.x, cb.y));   // Ursprung in die CropBox-Ecke
       for (const a of (annos[n] || [])) {
+        if (a._draft) continue;   // unbestätigtes Wand-Ketten-Segment nicht speichern
         const col = hexToRgb(a.color), c = rgb(col.r, col.g, col.b), w = a.width || 2, dp = dashPdf(a);
         if (a.type === 'path') {
           if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); try { pg.drawSvgPath(pathD(a), { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b) }); } catch (_) { } }   // Füllung (Vektor)
@@ -2717,6 +2754,7 @@ function wire() {
   // Doppelklick auf Mass-/Masslinie → eigenes Mass eintragen
   $('#pages').addEventListener('dblclick', e => {
     if (editingId != null) return;   // schon im Bearbeiten-Modus (Klick hat bereits geöffnet)
+    if (wallDraft) { finishWallChain(); return; }   // Doppelklick = Wand-Kette fertig
     if (penDraft) { if (penDraft.a.nodes.length >= 2) penDraft.a.nodes.pop(); finishCurve(); return; }   // Doppelklick = Kurve fertig
     const pnAttr = e.target.getAttribute && e.target.getAttribute('data-pn');
     const id = e.target.getAttribute && e.target.getAttribute('data-id'); if (!id) return;
@@ -2857,6 +2895,7 @@ function wire() {
     const mod = e.ctrlKey || e.metaKey;
     if (e.key === 'Enter' && areaDraft) { e.preventDefault(); finishArea(); return; }   // Fläche abschliessen
     if (e.key === 'Enter' && penDraft) { e.preventDefault(); finishCurve(); return; }   // Kurve abschliessen
+    if (e.key === 'Enter' && wallDraft) { e.preventDefault(); finishWallChain(); return; }   // Wand-Kette abschliessen
     if (e.key === ' ' && !mod) { if (active >= 0 && !panMode) { e.preventDefault(); panMode = true; document.body.classList.add('pan'); } return; }   // Leertaste = Hand
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openPicker(); }
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
@@ -2873,6 +2912,7 @@ function wire() {
     else if (e.key === 'Delete' || e.key === 'Backspace') { if (groupSel) { e.preventDefault(); deleteGroup(); } else if (sel) { e.preventDefault(); deleteSel(); } }
     else if (e.key === 'Escape') {
       hideCtx();
+      if (wallDraft) { finishWallChain(); return; }                                    // Wand-Kette beenden (gesetzte Wände bleiben)
       if (areaDraft) { cancelArea(); setTool('select'); return; }                     // Flächen-Polygon abbrechen
       if (penDraft) { cancelCurve(); setTool('select'); return; }                      // Kurve abbrechen
       if (cropping) { removeCropAnno(); setTool('select'); return; }                  // Zuschneiden abbrechen

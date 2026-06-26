@@ -26,8 +26,10 @@ function applyStyleUI() { const $$$ = id => document.getElementById(id); const d
 let penTidy = true;        // Freihand-Skizzen automatisch zu sauberen Formen aufräumen
 let docScale = null;       // {perPt: reale Meter pro PDF-Punkt, label:'1:100'} – für Messen
 const PT2MM = 25.4 / 72;   // 1 PDF-Punkt in mm
+let dimUnit = true, wallDimOffCm = 10;   // Mass-Anzeige mit Einheit? · Abstand der Wand-Masslinie (cm)
 function fmtLen(pts) {
-  if (!docScale) return Math.round(pts * PT2MM) + ' mm';      // ohne Massstab: Papier-mm
+  if (docScale && !dimUnit) return (pts * docScale.perPt).toFixed(2);          // Plan-Stil: „2.00" (Meter, 2 Nachkommastellen, ohne Einheit)
+  if (!docScale) return Math.round(pts * PT2MM) + (dimUnit ? ' mm' : '');      // ohne Massstab: Papier-mm
   const m = pts * docScale.perPt;
   if (m >= 1) return (Math.round(m * 100) / 100).toString().replace('.', ',') + ' m';
   if (m >= 0.1) return (Math.round(m * 1000) / 10).toString().replace('.', ',') + ' cm';
@@ -1265,7 +1267,7 @@ function wallOutlineSegs(a, arr) {                              // sichtbare Umr
 let wallDimOn = false;   // neue Wände bekommen eine Masslinie?
 function wallDimGeom(a) {                                            // parallele Masslinie neben der Wand
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1;
-  const off = (a.thick || wallThickPts()) / 2 + 9, nx = -dy / len, ny = dx / len, ux = dx / len, uy = dy / len;
+  const off = (a.thick || wallThickPts()) / 2 + cmToPts(wallDimOffCm), nx = -dy / len, ny = dx / len, ux = dx / len, uy = dy / len;
   return { x1: a.x1 + nx * off, y1: a.y1 + ny * off, x2: a.x2 + nx * off, y2: a.y2 + ny * off, nx, ny, ux, uy, len, label: fmtLen(len) };
 }
 function onPointerDown(pv, e) {
@@ -1615,16 +1617,19 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
   const bar = $('#planBar'); if (!bar) return;
   const a = (sel && tool === 'select') ? findAnno(sel.num, sel.id) : null;
   const sW = a && a.type === 'wall' ? a : null, sO = a && a.type === 'opening' ? a : null;
-  let mode = sW ? 'wall' : sO ? 'open' : (tool === 'wall' ? 'wall' : tool === 'opening' ? 'open' : null);
+  const isDimObj = a && ['dim', 'measure', 'chaindim', 'area'].includes(a.type);
+  let mode = sW ? 'wall' : sO ? 'open' : isDimObj ? 'dim' : (tool === 'wall' ? 'wall' : tool === 'opening' ? 'open' : (['measure', 'dim', 'chaindim', 'area'].includes(tool) ? 'dim' : null));
   if (!mode) { bar.hidden = true; return; }
   bar.hidden = false; $('#pbWall').hidden = mode !== 'wall'; $('#pbOpen').hidden = mode !== 'open';
+  $('#pbDimset').hidden = (mode !== 'wall' && mode !== 'dim'); $('#pbUnit').classList.toggle('on', dimUnit);
   if (mode === 'wall') {
     const cm = ptsToCm(sW ? (sW.thick || wallThickPts()) : wallThickPts());
     if (document.activeElement !== $('#pbThick')) $('#pbThick').value = Math.round(cm * 10) / 10;
     $('#pbDim').classList.toggle('on', sW ? !!sW.dim : wallDimOn);
+    if (document.activeElement !== $('#pbDimOff')) $('#pbDimOff').value = wallDimOffCm;
     const jv = sW ? (sW.just || 'center') : wallJust; $$('#pbWall .pb-j').forEach(b => b.classList.toggle('on', b.dataset.just === jv));
     const col = sW ? sW.color : style.color; $('#pbWallDot').style.background = col; $('#pbWallColor').value = toHex(col);
-  } else {
+  } else if (mode === 'open') {
     const kind = sO ? sO.kind : openKind;
     $$('#pbOpen [data-ok]').forEach(b => b.classList.toggle('on', b.dataset.ok === kind));
     const cm = ptsToCm(sO ? sO.w : (lastOpenW || cmToPts(kind === 'window' ? 100 : 90)));
@@ -2985,6 +2990,8 @@ function wire() {
   $('#pbThick').onchange = () => { const v = parseFloat(($('#pbThick').value || '').replace(',', '.')); if (!(v > 0)) return updatePlanBar(); const pts = cmToPts(v); lastWallThick = pts; const a = selWall(); if (a) { pushUndo(); a.thick = pts; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); };
   $('#pbDim').onclick = () => { const a = selWall(); if (a) { pushUndo(); a.dim = !a.dim; wallDimOn = a.dim; pageViews.forEach(drawAnnos); saveState(); } else { wallDimOn = !wallDimOn; updatePlanBar(); } };
   $$('#pbWall .pb-j').forEach(b => b.onclick = () => { wallJust = b.dataset.just; const a = selWall(); if (a) { pushUndo(); a.just = wallJust; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
+  $('#pbDimOff').onchange = () => { const v = parseFloat(($('#pbDimOff').value || '').replace(',', '.')); if (v >= 0) { wallDimOffCm = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbUnit').onclick = () => { dimUnit = !dimUnit; pageViews.forEach(drawAnnos); updatePlanBar(); saveState(); };
   $('#pbWallColor').addEventListener('input', e => { const c = e.target.value; style.color = c; $('#colorDot').style.background = c; $('#pbWallDot').style.background = c; const a = selWall(); if (a) { a.color = c; pageViews.forEach(drawAnnos); } });
   $$('#pbOpen [data-ok]').forEach(b => b.onclick = () => { openKind = b.dataset.ok; const a = selOpen(); if (a) { pushUndo(); a.kind = openKind; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
   $('#pbWidth').onchange = () => { const v = parseFloat($('#pbWidth').value); if (!(v > 0)) return updatePlanBar(); const pts = cmToPts(v); lastOpenW = pts; const a = selOpen(); if (a) { pushUndo(); a.w = pts; pageViews.forEach(drawAnnos); saveState(); } };

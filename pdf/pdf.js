@@ -787,7 +787,22 @@ function getAnnos(n) { return annos[n] || (annos[n] = []); }
 let layers = [{ id: 'base', name: 'Ebene 1', visible: true }], activeLayerId = 'base';
 function layerById(id) { return layers.find(l => l.id === id); }
 function layerVisible(a) { if (a.layer == null) return true; const l = layerById(a.layer); return l ? l.visible : true; }   // ohne Ebene → sichtbar (Alt-Daten)
-function pushAnno(n, a) { if (a && a.layer === undefined) a.layer = activeLayerId; getAnnos(n).push(a); return a; }
+/* ---------- Bauphasen: Bestand (schwarz) / Neu (rot) / Abbruch (gelb) ---------- */
+const PHASE_COLORS = { bestand: '#1c242c', neu: '#d11a1a', abbruch: '#e0a800' };
+let activePhase = null, phaseView = 'all';
+function applyPhase(a, ph) { if (!a) return; if (ph && PHASE_COLORS[ph]) { a.phase = ph; if (a.color != null) a.color = PHASE_COLORS[ph]; if (a.hatch) a.hatch.color = PHASE_COLORS[ph]; } else delete a.phase; }
+function phaseVisible(a) { if (phaseView === 'all' || !a.phase) return true; if (phaseView === 'end') return a.phase !== 'abbruch'; return a.phase === phaseView; }
+function updatePhaseUI() { $$('#phSet button').forEach(b => b.classList.toggle('on', (b.dataset.ph || '') === (activePhase || ''))); $$('#phView button').forEach(b => b.classList.toggle('on', b.dataset.pv === phaseView)); const fp = $('#footPhase'); if (fp) fp.classList.toggle('on', !!activePhase || phaseView !== 'all'); }
+function setActivePhase(ph) {
+  activePhase = ph || null;
+  const tgt = [];
+  if (groupSel) { const arr = getAnnos(groupSel.num) || []; for (const id of groupSel.ids) { const a = arr.find(x => x.id === id); if (a) tgt.push(a); } }
+  else if (sel) { const a = findAnno(sel.num, sel.id); if (a) tgt.push(a); }
+  if (tgt.length) { pushUndo(); tgt.forEach(a => applyPhase(a, ph)); pageViews.forEach(drawAnnos); saveState(); }
+  updatePhaseUI();
+}
+function setPhaseView(v) { phaseView = v; pageViews.forEach(drawAnnos); updatePhaseUI(); }
+function pushAnno(n, a) { if (a && a.layer === undefined) a.layer = activeLayerId; if (a && activePhase && a.phase === undefined) applyPhase(a, activePhase); getAnnos(n).push(a); return a; }
 function pageHasVisible(n) { return (annos[n] || []).some(a => layerVisible(a) && a.type !== 'crop'); }   // hat die Seite sichtbare Anmerkungen?
 let thumbFilter = false;
 function applyThumbFilter() {
@@ -823,8 +838,8 @@ function drawAnnos(pv) {
   const svg = pv.svg; svg.innerHTML = '';
   for (const a of getAnnos(pv.num)) if (a.type === 'opening') openingResolve(a, pv);   // Türen/Fenster der Wand folgen lassen
   _wallUnionActive = false;
-  if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall' && layerVisible(a)); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung
-  for (const a of getAnnos(pv.num)) { if (!layerVisible(a)) continue; drawOne(svg, a, pv); }
+  if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall' && layerVisible(a) && phaseVisible(a)); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung
+  for (const a of getAnnos(pv.num)) { if (!layerVisible(a) || !phaseVisible(a)) continue; drawOne(svg, a, pv); }
   _wallUnionActive = false;
   if (sel && sel.num === pv.num) drawSelection(svg, findAnno(pv.num, sel.id), pv);
   if (groupSel && groupSel.num === pv.num) drawGroupSel(svg, pv);
@@ -2817,7 +2832,7 @@ async function buildPdfBytes(visibleOnly) {
       if (cropT) pg.pushOperators(pushGraphicsState(), concatTransformationMatrix(1, 0, 0, 1, cb.x, cb.y));   // Ursprung in die CropBox-Ecke
       let wallUni = false;
       if (window.polygonClipping) {   // Wandflächen vereinigen → saubere Ecken auch im PDF
-        const walls = (annos[n] || []).filter(a => a.type === 'wall' && !a._draft && (!visibleOnly || layerVisible(a)));
+        const walls = (annos[n] || []).filter(a => a.type === 'wall' && !a._draft && phaseVisible(a) && (!visibleOnly || layerVisible(a)));
         if (walls.length) try {
           const uni = polygonClipping.union(...walls.map(w => [wallPoly(w, walls).map(p => [p[0], p[1]])]));
           if (uni && uni.length) { wallUni = true; const wc = hexToRgb(walls[0].color || '#1c242c'), lw = walls[0].width || 1.4;
@@ -2828,6 +2843,7 @@ async function buildPdfBytes(visibleOnly) {
       for (const a of (annos[n] || [])) {
         if (a._draft) continue;   // unbestätigtes Wand-Ketten-Segment nicht speichern
         if (visibleOnly && !layerVisible(a)) continue;   // Drucken: nur sichtbare Ebenen
+        if (!phaseVisible(a)) continue;                  // Drucken: nur Phasen der aktuellen Ansicht
         if (a.type === 'opening') openingResolve(a, { num: +n });   // Öffnung aus Wand ableiten
         if (a.type === 'opening') openingResolve(a, { num: +n });   // Öffnung aus Wand ableiten
         const col = hexToRgb(a.color), c = rgb(col.r, col.g, col.b), w = a.width || 2, dp = dashPdf(a);
@@ -3500,6 +3516,11 @@ function wire() {
   $('#foot3d').onclick = open3D;
   let planKind = 'kopf', planPos = 'br';
   $('#footPlan').onclick = e => { e.stopPropagation(); const p = $('#planPop'); p.hidden = !p.hidden; };
+  $('#footBW').onclick = () => { document.body.classList.toggle('bw'); $('#footBW').classList.toggle('on', document.body.classList.contains('bw')); };
+  $('#footPhase').onclick = e => { e.stopPropagation(); const p = $('#phasePop'); p.hidden = !p.hidden; if (!p.hidden) updatePhaseUI(); };
+  $$('#phSet button').forEach(b => b.onclick = () => setActivePhase(b.dataset.ph || null));
+  $$('#phView button').forEach(b => b.onclick = () => setPhaseView(b.dataset.pv));
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#phasePop') && !e.target.closest('#footPhase')) $('#phasePop').hidden = true; }, true);
   $$('#ppKind button').forEach(b => b.onclick = () => { planKind = b.dataset.pk; $$('#ppKind button').forEach(x => x.classList.toggle('on', x === b)); $$('#planPop .pp-sec').forEach(s => s.hidden = s.dataset.for !== planKind); });
   $$('#ppGrid button').forEach(b => b.onclick = () => { planPos = b.dataset.pos; $$('#ppGrid button').forEach(x => x.classList.toggle('on', x === b)); });
   try { const pf = JSON.parse(localStorage.getItem('submitpdf-plankopf') || '{}'); if (pf.firma) $('#ppFirma').value = pf.firma; if (pf.gezeichnet) $('#ppGezeichnet').value = pf.gezeichnet; } catch (_) { }

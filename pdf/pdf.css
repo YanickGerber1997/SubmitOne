@@ -484,6 +484,14 @@ body.has-planbar.has-tabs .work{top:calc(var(--bar) + var(--tools) + var(--tabs)
 .selbar .sb-hatch.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
 .handle.dim-handle{fill:var(--accent);stroke:#fff;stroke-width:1.5px;cursor:ns-resize}
 .foot-plan{font-weight:700;color:var(--accent-3)}
+.foot-info.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
+body.bw .pages{filter:grayscale(1)}
+.phase-pop{position:fixed;bottom:46px;right:14px;z-index:64;background:var(--surface);border:1px solid var(--line);box-shadow:0 10px 30px rgba(20,24,40,.24);padding:10px;width:250px}
+.phase-pop .pp-title{font-size:12px;font-weight:700;color:var(--ink);margin:2px 0 6px}
+.ph-set,.ph-view{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.ph-set button,.ph-view button{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface-2);font:inherit;font-size:12px;font-weight:600;text-align:left;padding:6px 9px;cursor:pointer;color:var(--ink-soft)}
+.ph-set button.on,.ph-view button.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
+.ph-sw{width:14px;height:14px;flex:none;border:1px solid rgba(0,0,0,.25)}
 .plan-pop{position:fixed;bottom:46px;left:50%;transform:translateX(-50%);z-index:64;background:var(--surface);border:1px solid var(--line);box-shadow:0 10px 30px rgba(20,24,40,.24);padding:12px;width:300px}
 .pp-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px}
 .pp-kind{display:flex;gap:4px;margin-bottom:10px}

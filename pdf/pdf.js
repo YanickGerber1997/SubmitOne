@@ -2594,9 +2594,10 @@ function pasteAnno() { if (!clipAnno) return; const n = curPage(), pv = pageView
 function toggleShortcuts() {
   const ex = $('#shortcutsDlg'); if (ex) { ex.remove(); return; }
   const rows = [
-    ['Werkzeuge', ''], ['Auswählen / Verschieben', 'V'], ['Text-Box schreiben', 'T'], ['Stift / Freihand', 'S'], ['Radierer', 'E'], ['Linie', 'L'], ['Pfeil', 'P'], ['Rechteck', 'R'], ['Oval', 'O'], ['Text markieren / Marker', 'H'], ['Messen', 'M'], ['Kommentar', 'K'],
-    ['Bearbeiten', ''], ['Rückgängig / Wiederherstellen', 'Strg+Z / Strg+Y'], ['Kopieren / Einfügen', 'Strg+C / Strg+V'], ['Duplizieren', 'Strg+D'], ['Löschen', 'Entf'], ['Verschieben (fein/grob)', '← ↑ → ↓ / + Umschalt'],
-    ['Datei & Ansicht', ''], ['Öffnen', 'Strg+O'], ['Speichern', 'Strg+S'], ['Suchen', 'Strg+F'], ['Drucken', 'Strg+P'], ['Zoom +/− / Passt', 'Strg + / − / 0'], ['Abbrechen / Schliessen', 'Esc'],
+    ['Werkzeuge', ''], ['Auswählen / Verschieben', 'V'], ['Text-Box schreiben', 'T'], ['Stift / Freihand', 'S'], ['Radierer', 'E'], ['Linie', 'L'], ['Pfeil', 'P'], ['Rechteck', 'R'], ['Oval', 'O'], ['Wand', 'W'], ['Text markieren / Marker', 'H'], ['Messen', 'M'], ['Kommentar', 'K'],
+    ['Zeichnen & Wände', ''], ['Exakte Länge eingeben (Linie/Wand)', 'L'], ['Wand-Dicke eingeben (cm)', 'D'], ['Raumzug zeichnen', 'Wand: klicken–klicken'], ['Raum schliessen → m²', 'zurück auf Start klicken'], ['Kette/Raum beenden', 'Doppelklick · Enter · Esc'], ['Einrasten: waagrecht/45°/senkrecht', 'automatisch'], ['15°-Schritte / frei (kein Einrasten)', 'Umschalt / Alt'],
+    ['Bearbeiten', ''], ['Rückgängig / Wiederherstellen', 'Strg+Z / Strg+Y'], ['Kopieren / Einfügen', 'Strg+C / Strg+V'], ['Duplizieren', 'Strg+D'], ['Löschen', 'Entf'], ['Verschieben (fein/grob)', '← ↑ → ↓ / + Umschalt'], ['Text bearbeiten', 'Doppelklick / 2× Klick'],
+    ['Datei & Ansicht', ''], ['Öffnen', 'Strg+O'], ['Speichern', 'Strg+S'], ['Suchen', 'Strg+F'], ['Drucken', 'Strg+P'], ['Zoom +/− (5%) / Passt', 'Strg + / − / 0'], ['Zoom (unten links): % eingeben', 'Klick auf %'], ['Hand / Verschieben der Ansicht', 'Leertaste'], ['Abbrechen / Schliessen', 'Esc'],
   ];
   const m = document.createElement('div'); m.className = 'modal'; m.id = 'shortcutsDlg';
   let body = '<div class="modal-card"><div class="modal-head">Tastenkürzel</div><div class="sc-grid">';

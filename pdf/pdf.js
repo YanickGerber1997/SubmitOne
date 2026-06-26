@@ -1389,6 +1389,14 @@ function onPointerDown(pv, e) {
     if (idAttr) {
       const aHit = findAnno(pv.num, +idAttr);
       if (aHit && aHit.locked) { sel = null; groupSel = null; drawAnnos(pv); startMarquee(pv, e); return; }   // gesperrt (Plan-Rahmen) → nicht greifen, Rahmen aufziehen
+      if (e.ctrlKey || e.metaKey) {   // Strg/Cmd-Klick = zur Auswahl hinzufügen / entfernen
+        let ids = groupSel && groupSel.num === pv.num ? groupSel.ids.slice() : (sel && sel.num === pv.num ? [sel.id] : []);
+        const k = ids.indexOf(+idAttr); if (k >= 0) ids.splice(k, 1); else ids.push(+idAttr);
+        if (ids.length === 1) { sel = { num: pv.num, id: ids[0] }; groupSel = null; }
+        else if (ids.length > 1) { sel = null; groupSel = { num: pv.num, ids }; }
+        else { sel = null; groupSel = null; }
+        drawAnnos(pv); updateAlignBar(); updateSelBar(); return;
+      }
       const wasSel = sel && sel.num === pv.num && sel.id === +idAttr;   // war schon ausgewählt → Klick (ohne Ziehen) = bearbeiten
       groupSel = null; sel = { num: pv.num, id: +idAttr }; drawAnnos(pv);
       const a = findAnno(pv.num, sel.id);
@@ -2466,6 +2474,44 @@ function templateAnnos(kind, w, h) {
   }
   return [];
 }
+function buildPlanParts(w, h, opts) {   // frei konfigurierbarer Plankopf / Rahmen / Kantenlinie (für vorhandene Seiten)
+  const MM = 72 / 25.4, color = opts.color || '#1c242c', gray = '#8a8f86', bw = +opts.bw || 1.2, LK = { locked: true };
+  const margin = (opts.margin != null ? +opts.margin : 8) * MM, out = [];
+  const push = o => out.push(Object.assign(o, o.field ? {} : LK));
+  const mk = o => Object.assign({ type: 'text', size: 16, color, align: 'left', bg: 'transparent', border: null, borderW: 1.2 }, o);
+  if (opts.kind === 'rahmen') { push({ type: 'rect', x: margin, y: margin, w: w - 2 * margin, h: h - 2 * margin, color, width: bw, fill: 'none' }); return out; }
+  if (opts.kind === 'linie') {
+    const e = opts.edge || 'left';
+    if (e === 'left') push({ type: 'line', x1: margin, y1: margin, x2: margin, y2: h - margin, color, width: bw });
+    else if (e === 'right') push({ type: 'line', x1: w - margin, y1: margin, x2: w - margin, y2: h - margin, color, width: bw });
+    else if (e === 'top') push({ type: 'line', x1: margin, y1: margin, x2: w - margin, y2: margin, color, width: bw });
+    else push({ type: 'line', x1: margin, y1: h - margin, x2: w - margin, y2: h - margin, color, width: bw });
+    return out;
+  }
+  const kw = Math.min(185 * MM, (w - 2 * margin) * 0.6), kh = Math.min(58 * MM, (h - 2 * margin) * 0.5);
+  const pos = opts.pos || 'br', vc = pos[0], hc = pos[1];
+  const kx = hc === 'l' ? margin : hc === 'c' ? (w - kw) / 2 : w - margin - kw;
+  const ky = vc === 't' ? margin : vc === 'm' ? (h - kh) / 2 : h - margin - kh;
+  if (opts.frame !== false) push({ type: 'rect', x: kx, y: ky, w: kw, h: kh, color, width: bw, fill: '#ffffff' });
+  const rows = 4, rh = kh / rows, cx = kx + kw * 0.6, pad = 2.5 * MM;
+  for (let r = 1; r < rows; r++) push({ type: 'line', x1: kx, y1: ky + rh * r, x2: kx + kw, y2: ky + rh * r, color, width: 0.6 });
+  push({ type: 'line', x1: cx, y1: ky, x2: cx, y2: ky + rh * 3, color, width: 0.6 });
+  const cell = (x, y, wc, label, value, field) => { push(mk({ x: x + pad, y: y + pad * 0.5, w: wc, h: rh * 0.4, text: label, size: 7, color: gray })); push(mk(Object.assign({ x: x + pad, y: y + rh * 0.42, w: wc, h: rh * 0.55, text: value || '', size: 9, color }, field ? { field } : {}))); };
+  const lw = kw * 0.6 - 2 * pad, rw = kw * 0.4 - 2 * pad;
+  cell(kx, ky, lw, 'Projekt', '', 'projekt'); cell(kx, ky + rh, lw, 'Plan', '', 'plan'); cell(kx, ky + 2 * rh, lw, 'Gezeichnet', '', 'gezeichnet');
+  cell(cx, ky, rw, 'Massstab', docScale ? docScale.label : '', 'scale'); cell(cx, ky + rh, rw, 'Datum', todayStr(), 'date'); cell(cx, ky + 2 * rh, rw, 'Plan-Nr.', '', 'plannr');
+  const logoSz = rh * 0.82, lox = logoDataUrl ? logoSz + pad : 0;
+  if (logoDataUrl) push({ type: 'img', data: logoDataUrl, x: kx + pad, y: ky + 3 * rh + (rh - logoSz) / 2, w: logoSz, h: logoSz });
+  push(mk({ x: kx + pad + lox, y: ky + 3 * rh + pad, w: kw - 2 * pad - lox, h: rh, text: 'Submit PDF', size: 11, color, field: 'firma' }));
+  return out;
+}
+function insertPlanParts(opts) {
+  const n = curPage(), pv = pageViews.find(p => p.num === n); if (!pv) { toast('Keine Seite offen.'); return; }
+  pushUndo();
+  const parts = buildPlanParts(pv.pageW || 595, pv.pageH || 842, opts).map(a => Object.assign(a, { id: nextId++, layer: activeLayerId }));
+  const arr = getAnnos(n); for (const a of parts) arr.push(a);
+  drawAnnos(pv); saveState(); toast(opts.kind === 'kopf' ? 'Plankopf eingefügt ✓ (gesperrt – per Rechtsklick entsperren)' : 'Element eingefügt ✓');
+}
 function paintBg(lib, pg, w, h, bg) { if (!bg || bg === '#ffffff') return; const c = hexToRgb(bg); pg.drawRectangle({ x: 0, y: 0, width: w, height: h, color: lib.rgb(c.r, c.g, c.b) }); }
 // Seite nach `after` einfügen (after=0 → ganz oben). size optional {w,h} (sonst Nachbarseite), tmpl = Vorlage, bg = Hintergrund.
 async function insertBlankPage(after, size, tmpl, bg) {
@@ -3356,6 +3402,12 @@ function wire() {
   $('#pbDimOff').onchange = () => { const v = parseFloat(($('#pbDimOff').value || '').replace(',', '.')); if (v >= 0) { wallDimOffCm = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbHatch').onchange = () => { const t = $('#pbHatch').value; const h = t ? { type: t, scale: lastHatchScale, w: 0.8 } : null; wallHatch = h; const a = selWall(); if (a) { pushUndo(); a.hatch = h ? { ...h, color: a.color } : null; pageViews.forEach(drawAnnos); saveState(); } };
   $('#foot3d').onclick = open3D;
+  let planKind = 'kopf', planPos = 'br';
+  $('#footPlan').onclick = e => { e.stopPropagation(); const p = $('#planPop'); p.hidden = !p.hidden; };
+  $$('#ppKind button').forEach(b => b.onclick = () => { planKind = b.dataset.pk; $$('#ppKind button').forEach(x => x.classList.toggle('on', x === b)); $$('#planPop .pp-sec').forEach(s => s.hidden = s.dataset.for !== planKind); });
+  $$('#ppGrid button').forEach(b => b.onclick = () => { planPos = b.dataset.pos; $$('#ppGrid button').forEach(x => x.classList.toggle('on', x === b)); });
+  $('#ppInsert').onclick = () => { insertPlanParts({ kind: planKind, pos: planPos, frame: $('#ppFrame').checked, edge: $('#ppEdge').value, margin: parseFloat($('#ppMargin').value), bw: parseFloat($('#ppBW').value), color: $('#ppColor').value }); $('#planPop').hidden = true; };
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#planPop') && !e.target.closest('#footPlan')) $('#planPop').hidden = true; }, true);
   $('#btnBlock').onclick = e => { e.stopPropagation(); const p = $('#blockPop'); p.hidden = !p.hidden; };
   $$('#blockPop button').forEach(b => b.onclick = () => { blockKind = b.dataset.bk; $('#blockPop').hidden = true; setTool('block'); });
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#blockPop') && !e.target.closest('#btnBlock')) $('#blockPop').hidden = true; }, true);

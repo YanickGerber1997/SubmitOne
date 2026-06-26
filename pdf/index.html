@@ -5,24 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=183" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=183" />
-  <link rel="icon" href="favicon.png?v=183" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=183" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=184" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=184" />
+  <link rel="icon" href="favicon.png?v=184" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=184" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=183" />
+  <link rel="stylesheet" href="pdf.css?v=184" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=183" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=184" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=183" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=183" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=184" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=184" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <span class="doc-name" id="docName"></span>
@@ -182,7 +182,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=183" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=184" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -213,6 +213,28 @@
     <button class="foot-info foot-3d" id="foot3d" title="Wände in 3D ansehen (Höhe einstellbar)">◳ 3D</button>
     <span class="foot-grp"><span class="foot-lbl">Format</span><button class="foot-info" id="footFormat" title="Blattformat ändern">—</button></span>
     <span class="foot-grp"><span class="foot-lbl">Massstab</span><button class="foot-info" id="footScale" title="Massstab setzen / ändern (1:n)">—</button></span>
+    <button class="foot-info foot-plan" id="footPlan" title="Plankopf / Rahmen / Linie auf diese Seite einfügen (frei positionierbar)">⊞ Plankopf</button>
+  </div>
+  <div class="plan-pop" id="planPop" hidden>
+    <div class="pp-title">Auf diese Seite einfügen</div>
+    <div class="pp-kind" id="ppKind">
+      <button data-pk="kopf" class="on">Plankopf</button><button data-pk="rahmen">Rahmen</button><button data-pk="linie">Linie</button>
+    </div>
+    <div class="pp-sec" data-for="kopf">
+      <div class="pp-lbl">Position</div>
+      <div class="pp-grid" id="ppGrid">
+        <button data-pos="tl" title="oben links"></button><button data-pos="tc" title="oben mitte"></button><button data-pos="tr" title="oben rechts"></button>
+        <button data-pos="ml" title="mitte links"></button><span class="pp-mid">×</span><button data-pos="mr" title="mitte rechts"></button>
+        <button data-pos="bl" title="unten links"></button><button data-pos="bc" title="unten mitte"></button><button data-pos="br" class="on" title="unten rechts"></button>
+      </div>
+      <label class="pp-chk"><input type="checkbox" id="ppFrame" checked> mit Rahmen um den Plankopf</label>
+    </div>
+    <div class="pp-sec" data-for="linie" hidden>
+      <div class="pp-lbl">Kante</div>
+      <select id="ppEdge"><option value="left">links</option><option value="right">rechts</option><option value="top">oben</option><option value="bottom">unten</option></select>
+    </div>
+    <div class="pp-row"><span>Rand</span><input type="number" id="ppMargin" value="8" min="0" step="1"><span>mm</span><span class="pp-gap"></span><span>Stärke</span><input type="number" id="ppBW" value="1.2" min="0.2" step="0.1"></div>
+    <div class="pp-row"><span>Farbe</span><input type="color" id="ppColor" value="#1c242c"><span class="pp-gap"></span><button class="pp-go" id="ppInsert">Einfügen</button></div>
   </div>
   <div class="fmt-pop" id="fmtPop" hidden>
     <button data-w="595" data-h="842">A4 hoch</button>
@@ -520,7 +542,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=183"></script>
+  <script src="pdf.js?v=184"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

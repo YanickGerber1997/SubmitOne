@@ -2363,6 +2363,23 @@ function segInt(a, b, c, d) {   // Schnitt zweier Strecken → {pt,t1,t2} oder n
   if (t < 0 || t > 1 || u < 0 || u > 1) return null; return { pt: [a[0] + t * r[0], a[1] + t * r[1]], t1: t, t2: u };
 }
 function sectionMaxH(a, arr) { let m = wallHeightM; const p1 = [a.cx1, a.cy1], p2 = [a.cx2, a.cy2]; for (const w of arr || []) { if (w.type !== 'wall') continue; if (segInt(p1, p2, [w.x1, w.y1], [w.x2, w.y2])) m = Math.max(m, w.h3d || wallHeightM); } return m; }
+function clipSeg(ax, ay, bx, by, x0, y0, x1, y1) {   // Strecke gegen achsenparalleles Rechteck (Liang-Barsky)
+  let t0 = 0, t1 = 1; const dx = bx - ax, dy = by - ay;
+  const cl = (p, q) => { if (Math.abs(p) < 1e-9) return q >= 0; const r = q / p; if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; } return true; };
+  if (cl(-dx, ax - x0) && cl(dx, x1 - ax) && cl(-dy, ay - y0) && cl(dy, y1 - ay) && t1 > t0) return [ax + t0 * dx, ay + t0 * dy, ax + t1 * dx, ay + t1 * dy];
+  return null;
+}
+function sectionBandHatch(out, rx, ry, rw, rh, mat, fallbackHatch) {   // Material-Schraffur in eine Schnitt-Wandschicht (auf das Band geclippt)
+  const def = WALL_MATS[mat] || {}, hatch = mat ? def.hatch : fallbackHatch, col = (mat ? def.color : null) || '#1c242c';
+  if (!hatch || rw < 1 || rh < 1) return;
+  const S = lastHatchScale * 1.15, x0 = rx, y0 = ry, x1 = rx + rw, y1 = ry + rh;
+  const add = (ax, ay, bx, by, w) => { const c = clipSeg(ax, ay, bx, by, x0, y0, x1, y1); if (c) out.push({ t: 'line', x1: c[0], y1: c[1], x2: c[2], y2: c[3], stroke: col, w: w || 0.5 }); };
+  if (hatch === 'daemm_eps' || hatch === 'daemm_wolle' || INSUL_TYPES.includes(hatch)) { for (let x = x0 + S / 2; x < x1; x += S) add(x, y0, x, y1); }   // Dämmung: senkrechte Striche
+  else if (hatch === 'holz' || hatch === 'konter') { for (let x = x0 + S * 0.8; x < x1; x += S * 1.5) add(x, y0, x, y1, 0.6); }   // Holz: senkrechte Bretter
+  else if (hatch === 'gips') { /* im Schnitt ruhig lassen */ }
+  else if (hatch === 'beton' || hatch === 'cross') { for (let c = -rh; c < rw; c += S) add(x0 + c, y1, x0 + c + rh, y0); for (let c = 0; c < rw + rh; c += S) add(x0 + c, y0, x0 + c - rh, y1); }   // Beton: Kreuz
+  else { for (let c = -rh; c < rw; c += S) add(x0 + c, y1, x0 + c + rh, y0); }   // Backstein/Diagonal/Erdreich: 45°
+}
 function sectionPrimitives(a, arr) {
   const out = [], col = '#1c242c';
   const p1 = [a.cx1, a.cy1], p2 = [a.cx2, a.cy2], cd = [p2[0] - p1[0], p2[1] - p1[1]], cl = Math.hypot(cd[0], cd[1]) || 1, cux = cd[0] / cl, cuy = cd[1] / cl, nx = -cuy, ny = cux, lbl = a.label || 'A';
@@ -2377,7 +2394,7 @@ function sectionPrimitives(a, arr) {
     const w = h.w, H = w.h3d || wallHeightM, x0 = h.dist - h.appW / 2;
     const layers = (w.layers && w.layers.length) ? w.layers : [{ mat: null, t: h.T }], totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
     let cx = x0;
-    for (const L of layers) { const lw = (L.t / totalT) * h.appW, m = L.mat ? (WALL_MATS[L.mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; out.push({ t: 'rect', x: X(cx), y: Yh(H), w: lw, h: Yh(0) - Yh(H), fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); cx += lw; }
+    for (const L of layers) { const lw = (L.t / totalT) * h.appW, m = L.mat ? (WALL_MATS[L.mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; const bx = X(cx), byT = Yh(H), bhh = Yh(0) - Yh(H); out.push({ t: 'rect', x: bx, y: byT, w: lw, h: bhh, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, bx, byT, lw, bhh, L.mat, (w.hatch && w.hatch.type)); cx += lw; }
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
     for (const o of ops) {
       const sill = o.kind === 'window' ? (o.sill || 0) : 0, head = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0)), opx0 = h.dist - h.appW / 2, opw = h.appW;
@@ -2398,7 +2415,10 @@ function sectionPrimitives(a, arr) {
     }
     out.push({ t: 'line', x1: X(x0), y1: Yh(H), x2: X(x0 + h.appW), y2: Yh(H), stroke: col, w: 1.2 });
   }
-  out.push({ t: 'text', x: X(cl / 2) - 18, y: Yh(0) + 22, text: 'Schnitt ' + lbl + '–' + lbl, col });
+  const Htop = hits.reduce((m, h) => Math.max(m, h.w.h3d || wallHeightM), wallHeightM), slabF = '#dadde2', slabC = '#8a8f96';
+  out.push({ t: 'rect', x: X(-16), y: Yh(0), w: cl + 32, h: Yh(-0.22) - Yh(0), fill: slabF, stroke: slabC, sw: 0.7 });           // Bodenplatte
+  out.push({ t: 'rect', x: X(-16), y: Yh(Htop + 0.24), w: cl + 32, h: Yh(Htop) - Yh(Htop + 0.24), fill: slabF, stroke: slabC, sw: 0.7 });   // Decke
+  out.push({ t: 'text', x: X(cl / 2) - 18, y: Yh(-0.22) + 22, text: 'Schnitt ' + lbl + '–' + lbl, col });
   return out;
 }
 function sectionBBox(a, arr) { if (!docScale) return { x: a.ox - 6, y: a.oy - 16, w: 180, h: 30 }; const perPt = docScale.perPt, cl = Math.hypot(a.cx2 - a.cx1, a.cy2 - a.cy1) || 1, mh = sectionMaxH(a, arr) / perPt; return { x: a.ox - 16, y: a.oy - mh - 8, w: cl + 32, h: mh + 36 }; }

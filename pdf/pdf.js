@@ -833,10 +833,7 @@ function drawOne(svg, a, pv) {
     svg.appendChild(g); el = g;
     if (a.hatch && a.hatch.type) appendHatch(svg, a);                                                                 // Schraffur (phasen-gleich → läuft durch)
     const arr = getAnnos(pv.num), col = a.color || '#1c242c', lw = a.width || 1.4;
-    const edge = (p, q) => svg.appendChild(svgEl('line', { x1: p[0], y1: p[1], x2: q[0], y2: q[1], stroke: col, 'stroke-width': lw, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
-    edge(poly[0], poly[1]); edge(poly[3], poly[2]);                                                                   // Längsseiten
-    if (wallEndFree(a, a.x1, a.y1, arr)) edge(poly[0], poly[3]);                                                      // Stirn nur an freien Enden
-    if (wallEndFree(a, a.x2, a.y2, arr)) edge(poly[1], poly[2]);
+    for (const [p, q] of wallOutlineSegs(a, arr)) svg.appendChild(svgEl('line', { x1: p[0], y1: p[1], x2: q[0], y2: q[1], stroke: col, 'stroke-width': lw, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));   // Umriss, an Stössen sauber getrimmt
     if (a.dim) {                                                                                                      // optionale Masslinie
       const dg = wallDimGeom(a), tk = 4, dl = (x1, y1, x2, y2) => svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: col, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' }));
       dl(a.x1, a.y1, dg.x1, dg.y1); dl(a.x2, a.y2, dg.x2, dg.y2); dl(dg.x1, dg.y1, dg.x2, dg.y2);
@@ -1138,6 +1135,35 @@ function wallThickInput(pv, a) {   // „D": Wand-Dicke setzen (cm)
   const v = prompt('Wand-Dicke in cm (z. B. 17,5 · 12,5 · 25):', String(cur).replace('.', ',')); if (v == null) return;
   const s = v.trim().toLowerCase().replace(',', '.'); const m = /^([0-9]*\.?[0-9]+)\s*(mm|cm|m)?$/.exec(s); if (!m) return;
   const pts = parseLenToPts(m[1] + (m[2] || 'cm')); if (pts > 0) { pushUndo(); a.thick = pts; lastWallThick = pts; drawAnnos(pv); saveState(); updateSelBar(); }
+}
+// Umriss-Segment innerhalb eines konvexen Vierecks finden → [t0,t1] oder null (zum Wegschneiden an Stössen)
+function segInsideQuad(p, q, quad) {
+  const cx = (quad[0][0] + quad[1][0] + quad[2][0] + quad[3][0]) / 4, cy = (quad[0][1] + quad[1][1] + quad[2][1] + quad[3][1]) / 4;
+  let t0 = 0, t1 = 1;
+  for (let i = 0; i < 4; i++) {
+    const a = quad[i], b = quad[(i + 1) % 4]; let nx = -(b[1] - a[1]), ny = (b[0] - a[0]);
+    if ((cx - a[0]) * nx + (cy - a[1]) * ny < 0) { nx = -nx; ny = -ny; }            // Normale nach innen
+    const n0 = (p[0] - a[0]) * nx + (p[1] - a[1]) * ny, n1 = (q[0] - a[0]) * nx + (q[1] - a[1]) * ny, dn = n1 - n0;
+    if (Math.abs(dn) < 1e-9) { if (n0 < 0) return null; }
+    else { const tc = -n0 / dn; if (dn > 0) t0 = Math.max(t0, tc); else t1 = Math.min(t1, tc); }
+    if (t0 > t1) return null;
+  }
+  return [t0, t1];
+}
+function shrinkQuad(q) { const cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, cy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4, s = 0.04; return q.map(v => [v[0] + (cx - v[0]) * s, v[1] + (cy - v[1]) * s]); }
+function wallOutlineSegs(a, arr) {                              // sichtbare Umriss-Segmente (Längskanten durch andere Wände weggeschnitten)
+  const poly = wallPoly(a), segs = [];
+  for (const [p, q] of [[poly[0], poly[1]], [poly[3], poly[2]]]) {
+    const ivs = [];
+    for (const o of arr) { if (o === a || o.type !== 'wall') continue; const iv = segInsideQuad(p, q, shrinkQuad(wallPoly(o))); if (iv && iv[1] - iv[0] > 0.01) ivs.push(iv); }
+    ivs.sort((u, v) => u[0] - v[0]); let cur = 0;
+    const sub = (s, e) => segs.push([[p[0] + (q[0] - p[0]) * s, p[1] + (q[1] - p[1]) * s], [p[0] + (q[0] - p[0]) * e, p[1] + (q[1] - p[1]) * e]]);
+    for (const [s, e] of ivs) { if (s > cur) sub(cur, Math.min(s, 1)); cur = Math.max(cur, e); if (cur >= 1) break; }
+    if (cur < 1) sub(cur, 1);
+  }
+  if (wallEndFree(a, a.x1, a.y1, arr)) segs.push([poly[0], poly[3]]);   // Stirn nur an freien Enden
+  if (wallEndFree(a, a.x2, a.y2, arr)) segs.push([poly[1], poly[2]]);
+  return segs;
 }
 let wallDimOn = false;   // neue Wände bekommen eine Masslinie?
 function wallDimGeom(a) {                                            // parallele Masslinie neben der Wand
@@ -2147,10 +2173,7 @@ async function buildPdfBytes() {
         else if (a.type === 'wall') {
           const poly = wallPoly(a), arr = annos[n] || [], lw = a.width || 1.4;
           if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); const d = 'M' + poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b) }); } catch (_) { } }
-          const edge = (p, q) => pg.drawLine({ start: { x: p[0], y: Y(p[1]) }, end: { x: q[0], y: Y(q[1]) }, thickness: lw, color: c });
-          edge(poly[0], poly[1]); edge(poly[3], poly[2]);
-          if (wallEndFree(a, a.x1, a.y1, arr)) edge(poly[0], poly[3]);
-          if (wallEndFree(a, a.x2, a.y2, arr)) edge(poly[1], poly[2]);
+          for (const [p, q] of wallOutlineSegs(a, arr)) pg.drawLine({ start: { x: p[0], y: Y(p[1]) }, end: { x: q[0], y: Y(q[1]) }, thickness: lw, color: c });
           if (a.dim) {
             const dg = wallDimGeom(a), tk = 4, dl = (x1, y1, x2, y2) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: 0.8, color: c });
             dl(a.x1, a.y1, dg.x1, dg.y1); dl(a.x2, a.y2, dg.x2, dg.y2); dl(dg.x1, dg.y1, dg.x2, dg.y2);

@@ -3814,6 +3814,14 @@ function build3DScene(host, walls, arr) {
     }
     return (matCache[matKey] = new THREE.MeshLambertMaterial({ color: new THREE.Color(def.fill || '#e9e3d8'), map: texCache[matKey] }));
   };
+  const layerMatCache = {};
+  const layerMat = (matKey, lenM, hM) => {   // Textur mit konstantem realem Abstand (gleiche Schraffur ueberall, scharf) – Wiederholung aus Boxgroesse
+    faceMat(matKey); if (!texCache[matKey]) return faceMat(matKey);
+    const P = (matKey === 'holz' || matKey === 'konter') ? 0.2 : (matKey === 'mauerwerk' || matKey === 'beton') ? 0.35 : 0.3;
+    const ru = Math.max(1, Math.round((lenM || P) / P)), rv = Math.max(1, Math.round((hM || P) / P)), key = matKey + ':' + ru + ':' + rv;
+    if (!layerMatCache[key]) { const tx = texCache[matKey].clone(); tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.repeat.set(ru, rv); tx.needsUpdate = true; layerMatCache[key] = new THREE.MeshLambertMaterial({ color: new THREE.Color((WALL_MATS[matKey] || {}).fill || '#e9e3d8'), map: tx }); }
+    return layerMatCache[key];
+  };
   for (const w of walls) {
     if (!layerVisible(w) || !phaseVisible(w)) continue;
     const dx = w.x2 - w.x1, dy = w.y2 - w.y1, lp = Math.hypot(dx, dy); if (lp < 1) continue;
@@ -3835,7 +3843,8 @@ function build3DScene(host, walls, arr) {
     const wL = w.layers && w.layers.length ? w.layers : null, totalT = wL ? (wL.reduce((s, l) => s + l.t, 0) || 1) : 1;
     const addWallLayered = (s0, s1, y0, y1) => {   // Wand schichtweise (echte Schichten quer über die Dicke) – akkurat zum 2D
       if (!wL) { addBox(s0, s1, y0, y1, wmat, th, true); return; }
-      let off = -th / 2; for (const L of wL) { const lt = (L.t / totalT) * th; addBox2(s0, s1, y0, y1, off + lt / 2, lt, faceMat(L.mat), true); off += lt; }
+      const lenM = (s1 - s0) * perPt, hM = y1 - y0;
+      let off = -th / 2; for (const L of wL) { const lt = (L.t / totalT) * th; addBox2(s0, s1, y0, y1, off + lt / 2, lt, layerMat(L.mat, lenM, hM), true); off += lt; }
     };
     const winMat3D = key => { const wm = WIN_MAT[key] || WIN_MAT.holz; return new THREE.MeshLambertMaterial({ color: new THREE.Color(wm.fill) }); };
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(o.kind === 'door' ? 6 : 10), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche, winType: o.winType || 'f1', winMat: o.winMat || 'holz', winHinge: o.winHinge || 'left' })).sort((a, b) => a.c - b.c);

@@ -874,7 +874,20 @@ function updateSelBar() {
   bar.style.left = x + 'px'; bar.style.top = y + 'px';
 }
 /* ---------- Schraffuren (SIA-artig: Wand/Material/Detail) ---------- */
-const HATCHES = [['diag', '⁄⁄ Diagonal'], ['cross', '## Kreuz'], ['brick', '▦ Mauerwerk'], ['insul', '〰 Dämmung'], ['wood', '≡ Holz'], ['dots', '⋮ Kies/Erde']];
+const HATCH_DEF = {   // Material-Schraffuren mit Standardfarbe
+  backstein: { label: 'Backstein (orange)', color: '#cf7a33' },
+  kalksand: { label: 'Kalksandstein (grau)', color: '#8b9097' },
+  daemm_holz: { label: 'Dämmung Holzwolle (braun)', color: '#7a5230' },
+  daemm_wolle: { label: 'Dämmung Stein-/Glaswolle (gelb)', color: '#d8a300' },
+  daemm_eps: { label: 'Dämmung EPS (weiss)', color: '#b9b9b9' },
+  daemm_xps: { label: 'Dämmung XPS (violett)', color: '#8a5cc0' },
+  gips: { label: 'Gips (Punkte)', color: '#9aa0a6' },
+  kies: { label: 'Kies', color: '#84786a' },
+  erdreich: { label: 'Erdreich', color: '#6e4f2c' },
+  holz: { label: 'Holz', color: '#9a6a3c' },
+  diag: { label: 'Diagonal', color: null }, cross: { label: 'Kreuz', color: null }
+};
+const INSUL_TYPES = ['daemm_holz', 'daemm_wolle', 'daemm_eps', 'daemm_xps'];
 let lastHatchScale = 7;   // gemerkte Schraffur-Dichte (Abstand in pt)
 function shapeOutline(a, arr) {
   if (a.type === 'wall') return svgEl('polygon', { points: wallPoly(a, arr).map(p => p[0] + ',' + p[1]).join(' ') });
@@ -882,17 +895,25 @@ function shapeOutline(a, arr) {
   if (a.type === 'oval') return svgEl('ellipse', { cx: a.x + a.w / 2, cy: a.y + a.h / 2, rx: Math.abs(a.w / 2), ry: Math.abs(a.h / 2) });
   return svgEl('path', { d: pathD(a) });
 }
+function insulWallStrokes(a, S, lines) {   // Dämmung: kurze Striche quer zur Wand (über die Dicke)
+  const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, T = a.thick || wallThickPts(), o = wallSideOffsets(a), eA = o[0] * T, eB = o[1] * T, step = Math.max(4, S * 1.3);
+  for (let s = 0; s <= L; s += step) { const px = a.x1 + ux * s, py = a.y1 + uy * s; lines.push([px + nx * eA, py + ny * eA, px + nx * eB, py + ny * eB]); }
+}
 function hatchGeom(a) {
   const b = bbox(a); const lines = [], dots = []; if (b.w <= 0 || b.h <= 0) return { lines, dots };
   const S = a.hatch.scale || 7, t = a.hatch.type, x0 = b.x - 1, y0 = b.y - 1, x1 = b.x + b.w + 1, y1 = b.y + b.h + 1, ext = b.h + 2;
   const fl = (v, s) => Math.floor(v / s) * s;   // auf globales Raster (Ursprung 0,0) einrasten → Schraffur fluchtet über Formen/Wände hinweg
-  const diag = slope => { if (slope > 0) { for (let c = fl(y0 - x1, S); c <= (y1 - x0); c += S) lines.push([x0 - ext, x0 - ext + c, x1 + ext, x1 + ext + c]); } else { for (let c = fl(y0 + x0, S); c <= (y1 + x1); c += S) lines.push([x0 - ext, -(x0 - ext) + c, x1 + ext, -(x1 + ext) + c]); } };
-  if (t === 'diag' || t === 'beton') diag(1);
+  const diag = (slope, step) => { const SS = step || S; if (slope > 0) { for (let c = fl(y0 - x1, SS); c <= (y1 - x0); c += SS) lines.push([x0 - ext, x0 - ext + c, x1 + ext, x1 + ext + c]); } else { for (let c = fl(y0 + x0, SS); c <= (y1 + x1); c += SS) lines.push([x0 - ext, -(x0 - ext) + c, x1 + ext, -(x1 + ext) + c]); } };
+  if (t === 'backstein' || t === 'diag' || t === 'beton') diag(1);
+  else if (t === 'kalksand') diag(-1);
   else if (t === 'cross') { diag(1); diag(-1); }
-  else if (t === 'wood') { for (let y = fl(y0, S); y <= y1; y += S) lines.push([x0, y, x1, y]); }
+  else if (INSUL_TYPES.includes(t) || t === 'insul') { if (a.type === 'wall') insulWallStrokes(a, S, lines); else { const g = S * 1.4; for (let y = fl(y0, g); y <= y1; y += g) lines.push([x0, y, x1, y]); } }
+  else if (t === 'erdreich') diag(-1, S * 0.75);
+  else if (t === 'holz' || t === 'wood') { const sp = Math.max(3, S * 0.55), gap = S * 2, period = 2 * sp + gap; for (let base = fl(y0 - x1, period); base <= (y1 - x0); base += period) for (let k = 0; k < 3; k++) { const c = base + k * sp; lines.push([x0 - ext, x0 - ext + c, x1 + ext, x1 + ext + c]); } }
+  else if (t === 'gips') { const g = S * 1.7; for (let y = fl(y0, g); y <= y1; y += g) { const off = (Math.round(y / g) % 2) ? g / 2 : 0; for (let x = fl(x0 - off, g) + off; x <= x1; x += g) dots.push([x, y, S * 0.14]); } }
+  else if (t === 'kies') { const g = S * 1.9; let i = 0; for (let y = fl(y0, g); y <= y1; y += g) for (let x = fl(x0, g); x <= x1; x += g) { i++; const jx = ((i * 37) % 100 / 100 - 0.5) * g, jy = ((i * 53) % 100 / 100 - 0.5) * g, r = S * (0.1 + ((i * 29) % 5) * 0.035); dots.push([x + jx, y + jy, r]); } }
+  else if (t === 'dots') { const g = S * 1.7; for (let y = fl(y0, g); y <= y1; y += g) { const off = (Math.round(y / g) % 2) ? g / 2 : 0; for (let x = fl(x0 - off, g) + off; x <= x1; x += g) dots.push([x, y, S * 0.16]); } }
   else if (t === 'brick') { const bh = S * 1.6, bw = S * 3.2; for (let y = fl(y0, bh); y <= y1; y += bh) { lines.push([x0, y, x1, y]); const off = (Math.round(y / bh) % 2) ? bw / 2 : 0; for (let x = fl(x0 - off, bw) + off; x <= x1; x += bw) lines.push([x, y, x, y + bh]); } }
-  else if (t === 'insul') { const bh = S * 2; for (let y = fl(y0, bh); y <= y1; y += bh) { for (let x = fl(x0, S); x <= x1; x += S) { const up = (Math.round(x / S) % 2) === 0; lines.push([x, up ? y : y - bh * 0.6, x + S, up ? y - bh * 0.6 : y]); } } }
-  else if (t === 'dots') { const g = S * 1.7; for (let y = fl(y0, g); y <= y1; y += g) { const off = (Math.round(y / g) % 2) ? g / 2 : 0; for (let x = fl(x0 - off, g) + off; x <= x1; x += g) dots.push([x, y]); } }
   return { lines, dots };
 }
 function appendHatch(svg, a, arr) {
@@ -900,7 +921,7 @@ function appendHatch(svg, a, arr) {
   const defs = svgEl('defs'); defs.appendChild(cp); svg.appendChild(defs);
   const hg = svgEl('g', { 'clip-path': `url(#${cid})`, 'pointer-events': 'none' }), col = a.hatch.color || a.color, lw = a.hatch.w || 0.8, geom = hatchGeom(a);
   for (const L of geom.lines) hg.appendChild(svgEl('line', { x1: L[0], y1: L[1], x2: L[2], y2: L[3], stroke: col, 'stroke-width': lw, 'vector-effect': 'non-scaling-stroke' }));
-  for (const D of geom.dots) hg.appendChild(svgEl('circle', { cx: D[0], cy: D[1], r: (a.hatch.scale || 7) * 0.16, fill: col }));
+  for (const D of geom.dots) hg.appendChild(svgEl('circle', { cx: D[0], cy: D[1], r: D[2] != null ? D[2] : (a.hatch.scale || 7) * 0.16, fill: col }));
   svg.appendChild(hg);
 }
 function dashSvg(a) { const w = a.width || 2; return a.dash === 'dash' ? (w * 3) + ',' + (w * 2) : a.dash === 'dot' ? '0.1,' + (w * 2.2) : null; }
@@ -2915,7 +2936,7 @@ async function buildPdfBytes(visibleOnly) {
             ops.push(clip(), endPath()); pg.pushOperators(...ops);
             const hc = hexToRgb(a.hatch.color || a.color), hcc = rgb(hc.r, hc.g, hc.b), lw = a.hatch.w || 0.8, geom = hatchGeom(a);
             for (const L of geom.lines) pg.drawLine({ start: { x: L[0], y: Y(L[1]) }, end: { x: L[2], y: Y(L[3]) }, thickness: lw, color: hcc });
-            for (const D of geom.dots) pg.drawEllipse({ x: D[0], y: Y(D[1]), xScale: (a.hatch.scale || 7) * 0.16, yScale: (a.hatch.scale || 7) * 0.16, color: hcc });
+            for (const D of geom.dots) { const dr = D[2] != null ? D[2] : (a.hatch.scale || 7) * 0.16; pg.drawEllipse({ x: D[0], y: Y(D[1]), xScale: dr, yScale: dr, color: hcc }); }
             pg.pushOperators(popGraphicsState());
           } catch (_) { }
         }
@@ -3475,7 +3496,7 @@ function wire() {
   $$('#pbWall .pb-j').forEach(b => b.onclick = () => { wallJust = b.dataset.just; const a = selWall(); if (a) { pushUndo(); a.just = wallJust; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
   $('#pbDimOff').onchange = () => { const v = parseFloat(($('#pbDimOff').value || '').replace(',', '.')); if (v >= 0) { wallDimOffCm = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbDimGap').onchange = () => { const v = parseFloat(($('#pbDimGap').value || '').replace(',', '.')); if (v >= 0) { wallDimGap = v; pageViews.forEach(drawAnnos); saveState(); } };
-  $('#pbHatch').onchange = () => { const t = $('#pbHatch').value; const h = t ? { type: t, scale: lastHatchScale, w: 0.8 } : null; wallHatch = h; const a = selWall(); if (a) { pushUndo(); a.hatch = h ? { ...h, color: a.color } : null; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbHatch').onchange = () => { const t = $('#pbHatch').value; const mc = HATCH_DEF[t] && HATCH_DEF[t].color; const h = t ? { type: t, scale: lastHatchScale, w: 0.8, color: mc || style.color } : null; wallHatch = h; const a = selWall(); if (a) { pushUndo(); a.hatch = h ? { ...h, color: mc || a.color } : null; pageViews.forEach(drawAnnos); saveState(); } };
   $('#foot3d').onclick = open3D;
   let planKind = 'kopf', planPos = 'br';
   $('#footPlan').onclick = e => { e.stopPropagation(); const p = $('#planPop'); p.hidden = !p.hidden; };
@@ -3685,7 +3706,7 @@ function wire() {
   $('#sbNoFill').onclick = () => { const a = selA(); if (!a) return; pushUndo(); a.fill = 'none'; $('#sbFillDot').style.background = 'transparent'; const pv = selPv(); if (pv) drawAnnos(pv); };
   $('#sbDash').onclick = () => { const a = selA(); if (!a) return; pushUndo(); a.dash = a.dash === 'dash' ? 'dot' : a.dash === 'dot' ? null : 'dash'; $('#sbDash').textContent = a.dash === 'dash' ? '- -' : a.dash === 'dot' ? '···' : '—'; const pv = selPv(); if (pv) drawAnnos(pv); };
   $('#sbHatch').onclick = e => { e.stopPropagation(); const p = $('#hatchPop'); p.hidden = !p.hidden; if (!p.hidden) { const a = selA(); $('#hpScaleVal').textContent = String(Math.round((a && a.hatch && a.hatch.scale) || lastHatchScale)); } };
-  $$('#hatchPop button[data-h]').forEach(b => b.onclick = () => { const a = selA(); if (!a) return; pushUndo(); const t = b.dataset.h; a.hatch = (t === 'none') ? null : { type: t, color: a.color, scale: (a.hatch && a.hatch.scale) || lastHatchScale, w: 0.8 }; $('#hatchPop').hidden = true; $('#sbHatch').classList.toggle('on', !!a.hatch); const pv = selPv(); if (pv) drawAnnos(pv); saveState(); });
+  $$('#hatchPop button[data-h]').forEach(b => b.onclick = () => { const a = selA(); if (!a) return; pushUndo(); const t = b.dataset.h, mc = HATCH_DEF[t] && HATCH_DEF[t].color; a.hatch = (t === 'none') ? null : { type: t, color: mc || a.color, scale: (a.hatch && a.hatch.scale) || lastHatchScale, w: 0.8 }; $('#hatchPop').hidden = true; $('#sbHatch').classList.toggle('on', !!a.hatch); const pv = selPv(); if (pv) drawAnnos(pv); saveState(); });
   $$('#hatchPop button[data-hs]').forEach(b => b.onclick = e => { e.stopPropagation(); const a = selA(); const cur = (a && a.hatch && a.hatch.scale) || lastHatchScale; const nv = Math.max(3, Math.min(20, cur + (+b.dataset.hs) * 1)); lastHatchScale = nv; $('#hpScaleVal').textContent = String(nv); if (a && a.hatch) { pushUndo(); a.hatch.scale = nv; const pv = selPv(); if (pv) drawAnnos(pv); saveState(); } });
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.sb-hatch-wrap')) $('#hatchPop').hidden = true; }, true);
   $$('#sbWidths button').forEach(btn => btn.onclick = () => { const a = selA(); if (!a || a.width == null) return; pushUndo(); a.width = +btn.dataset.w; style.width = +btn.dataset.w; $('#widthSel').value = btn.dataset.w; const pv = selPv(); if (pv) drawAnnos(pv); });

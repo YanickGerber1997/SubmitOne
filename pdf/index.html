@@ -5,24 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=191" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=191" />
-  <link rel="icon" href="favicon.png?v=191" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=191" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=192" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=192" />
+  <link rel="icon" href="favicon.png?v=192" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=192" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=191" />
+  <link rel="stylesheet" href="pdf.css?v=192" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=191" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=192" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=191" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=191" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=192" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=192" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <span class="doc-name" id="docName"></span>
@@ -182,7 +182,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=191" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=192" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -288,12 +288,18 @@
     <div class="sb-hatch-wrap">
       <button class="sb-hatch" id="sbHatch" title="Schraffur (Wand/Material/Detail)" hidden>▦</button>
       <div class="hatch-pop" id="hatchPop" hidden>
+        <button data-h="backstein"><span class="hp-sw" style="background:#cf7a33"></span> Backstein</button>
+        <button data-h="kalksand"><span class="hp-sw" style="background:#8b9097"></span> Kalksandstein</button>
+        <button data-h="daemm_holz"><span class="hp-sw" style="background:#7a5230"></span> Dämmung Holzwolle</button>
+        <button data-h="daemm_wolle"><span class="hp-sw" style="background:#d8a300"></span> Dämmung Glas-/Steinwolle</button>
+        <button data-h="daemm_eps"><span class="hp-sw" style="background:#b9b9b9"></span> Dämmung EPS</button>
+        <button data-h="daemm_xps"><span class="hp-sw" style="background:#8a5cc0"></span> Dämmung XPS</button>
+        <button data-h="gips"><span class="hp-sw" style="background:#9aa0a6"></span> Gips (Punkte)</button>
+        <button data-h="kies"><span class="hp-sw" style="background:#84786a"></span> Kies</button>
+        <button data-h="erdreich"><span class="hp-sw" style="background:#6e4f2c"></span> Erdreich</button>
+        <button data-h="holz"><span class="hp-sw" style="background:#9a6a3c"></span> Holz</button>
         <button data-h="diag">⁄⁄&nbsp; Diagonal</button>
         <button data-h="cross">##&nbsp; Kreuz</button>
-        <button data-h="brick">▦&nbsp; Mauerwerk</button>
-        <button data-h="insul">〰&nbsp; Dämmung</button>
-        <button data-h="wood">≡&nbsp; Holz</button>
-        <button data-h="dots">⋮&nbsp; Kies/Erde</button>
         <div class="hp-scale"><span>Dichte</span><button data-hs="-1" title="dichter">−</button><span id="hpScaleVal">7</span><button data-hs="1" title="weiter">＋</button></div>
         <button data-h="none" class="hp-none">keine Schraffur</button>
       </div>
@@ -466,12 +472,18 @@
       <span class="pb-sep"></span>
       <select class="pb-sel" id="pbHatch" title="Wand-Schraffur / Material">
         <option value="">Schraffur: keine</option>
+        <option value="backstein">Backstein (orange)</option>
+        <option value="kalksand">Kalksandstein (grau)</option>
+        <option value="daemm_holz">Dämmung Holzwolle (braun)</option>
+        <option value="daemm_wolle">Dämmung Stein-/Glaswolle (gelb)</option>
+        <option value="daemm_eps">Dämmung EPS (weiss)</option>
+        <option value="daemm_xps">Dämmung XPS (violett)</option>
+        <option value="gips">Gips (Punkte)</option>
+        <option value="kies">Kies</option>
+        <option value="erdreich">Erdreich</option>
+        <option value="holz">Holz</option>
         <option value="diag">Diagonal</option>
         <option value="cross">Kreuz</option>
-        <option value="brick">Mauerwerk</option>
-        <option value="insul">Dämmung</option>
-        <option value="wood">Holz</option>
-        <option value="dots">Kies/Erde</option>
       </select>
       <label class="pb-color" title="Linienfarbe"><span id="pbWallDot"></span><input type="color" id="pbWallColor" /></label>
       <span class="pb-sep"></span>
@@ -550,7 +562,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=191"></script>
+  <script src="pdf.js?v=192"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

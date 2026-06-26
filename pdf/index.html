@@ -5,21 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF – PDFs bearbeiten im Browser</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" href="icon.png?v=155" />
+  <link rel="icon" href="icon.png?v=156" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=155" />
+  <link rel="stylesheet" href="pdf.css?v=156" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=155" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=156" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=155" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=155" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=156" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=156" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <span class="doc-name" id="docName"></span>
@@ -44,8 +44,15 @@
     <a class="suite-link" href="../write/index.html" title="Zur Submit-Suite">Submit Paper ↗</a>
   </header>
 
-  <!-- Werkzeugleiste -->
+  <!-- Werkzeugleiste (Ribbon: Reiter Wichtig/Planung + einklappbare Werkzeugreihe) -->
   <div class="toolbar" id="toolbar" hidden>
+    <div class="rib-tabs">
+      <button class="rib-tab on" data-tab="wichtig" title="Allgemeine Werkzeuge">Wichtig</button>
+      <button class="rib-tab" data-tab="planung" title="Bauzeichnen: Wände, Türen/Fenster, Masse">Planung</button>
+      <button class="rib-collapse" id="ribCollapse" title="Werkzeugreihe ein-/ausklappen"><svg viewBox="0 0 24 24" class="i"><path d="M6 15l6-6 6 6"/></svg></button>
+    </div>
+    <div class="rib-row" id="ribRow">
+    <div class="rib-tools" data-tabgroup="wichtig">
     <div class="tgrp">
       <button class="tool on" data-tool="select" title="Auswählen & Verschieben (V)"><svg viewBox="0 0 24 24" class="i"><path d="M5 3l6 16 2-6 6-2z"/></svg></button>
       <button class="tool" data-tool="textsel" title="Text markieren & kopieren"><svg viewBox="0 0 24 24" class="i"><path d="M9 4h6M9 20h6M12 4v16M7 8V6h10v2M7 18v-2h10v2"/></svg></button>
@@ -63,11 +70,6 @@
       <button class="tool" data-tool="arrow" title="Pfeil (P)"><svg viewBox="0 0 24 24" class="i"><path d="M5 19 19 5M19 5h-7M19 5v7"/></svg></button>
       <button class="tool" data-tool="rect" title="Rechteck (R)"><svg viewBox="0 0 24 24" class="i"><rect x="4" y="6" width="16" height="12" rx="1"/></svg></button>
       <button class="tool" data-tool="oval" title="Oval (O)"><svg viewBox="0 0 24 24" class="i"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg></button>
-      <button class="tool" data-tool="arc" title="Halbkreis / Bogen – von A nach B ziehen (Richtung = Seite)"><svg viewBox="0 0 24 24" class="i"><path d="M4 17a8 8 0 0 1 16 0"/><path d="M4 17h16"/></svg></button>
-      <button class="tool" data-tool="wall" title="Wand zeichnen (W) – Linie mit Dicke · D = Dicke, L = Länge · Schraffuren laufen durch, Wände verschmelzen"><svg viewBox="0 0 24 24" class="i"><path d="M3 8h18M3 16h18"/></svg></button>
-      <button class="tool" data-tool="chaindim" title="Kettenmass – Stationen klicken, je Abschnitt ein Mass + Gesamt (Doppelklick/Enter = fertig)"><svg viewBox="0 0 24 24" class="i"><path d="M3 12h18M5 9v6M12 9v6M19 9v6"/></svg></button>
-      <button class="tool" data-tool="opening" title="Tür / Fenster – auf eine Wand klicken (stanzt die Wand aus; Tür mit Schwenk, Fenster mit Glas)"><svg viewBox="0 0 24 24" class="i"><path d="M5 21V5h7v16M12 5a7 7 0 0 1 7 7h-7"/></svg></button>
-      <button class="tool" data-tool="curve" title="Kurven-Werkzeug (Bézier): klicken = Ecke, ziehen = Kurve · Enter/Doppelklick = fertig"><svg viewBox="0 0 24 24" class="i"><path d="M4 18s1.5-11 8-11 8 11 8 11"/><circle cx="4" cy="18" r="1.7"/><circle cx="20" cy="18" r="1.7"/></svg></button>
       <button class="tool" data-tool="highlight" title="Text markieren / Marker (H)"><svg viewBox="0 0 24 24" class="i"><path d="M4 20h16"/><path d="M9 16l-3 1 1-3 8.5-8.5 2 2z"/><path d="M14 5.5l2 2"/></svg></button>
       <div class="stamp-wrap">
         <button class="tool" id="btnStamp" title="Stempel (✓/✗/Text)"><svg viewBox="0 0 24 24" class="i"><rect x="4" y="4" width="16" height="16"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg></button>
@@ -84,14 +86,25 @@
         </div>
       </div>
     </div>
+    </div>
+    <div class="rib-tools" data-tabgroup="planung" hidden>
+    <div class="tgrp">
+      <button class="tool" data-tool="wall" title="Wand zeichnen (W) – Linie mit Dicke · D = Dicke, L = Länge · Schraffuren laufen durch, Wände verschmelzen"><svg viewBox="0 0 24 24" class="i"><path d="M3 8h18M3 16h18"/></svg></button>
+      <button class="tool" data-tool="opening" title="Tür / Fenster – auf eine Wand klicken (stanzt die Wand aus; Tür mit Schwenk, Fenster mit Glas)"><svg viewBox="0 0 24 24" class="i"><path d="M5 21V5h7v16M12 5a7 7 0 0 1 7 7h-7"/></svg></button>
+      <button class="tool" data-tool="arc" title="Halbkreis / Bogen – von A nach B ziehen (Richtung = Seite)"><svg viewBox="0 0 24 24" class="i"><path d="M4 17a8 8 0 0 1 16 0"/><path d="M4 17h16"/></svg></button>
+      <button class="tool" data-tool="curve" title="Kurven-Werkzeug (Bézier): klicken = Ecke, ziehen = Kurve · Enter/Doppelklick = fertig"><svg viewBox="0 0 24 24" class="i"><path d="M4 18s1.5-11 8-11 8 11 8 11"/><circle cx="4" cy="18" r="1.7"/><circle cx="20" cy="18" r="1.7"/></svg></button>
+    </div>
     <div class="tgrp">
       <button class="tool" data-tool="measure" title="Messen – Länge (M)"><svg viewBox="0 0 24 24" class="i"><path d="M3 8h18v8H3z"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/></svg></button>
       <button class="tool" data-tool="dim" title="Masslinie (mit Mass, selbst beschriftbar)"><svg viewBox="0 0 24 24" class="i"><path d="M4 12h16M4 8v8M20 8v8M7 12l3-3M7 12l3 3"/></svg></button>
+      <button class="tool" data-tool="chaindim" title="Kettenmass – Stationen klicken, je Abschnitt ein Mass + Gesamt (Doppelklick/Enter = fertig)"><svg viewBox="0 0 24 24" class="i"><path d="M3 12h18M5 9v6M12 9v6M19 9v6"/></svg></button>
       <button class="tool" data-tool="area" title="Fläche messen (m²) – Punkte klicken, am Anfang schliessen"><svg viewBox="0 0 24 24" class="i"><path d="M4 5l7 3 9-3v11l-9 3-7-3z"/><path d="M11 8v11"/></svg></button>
-      <button class="tool" id="btnRuler" title="Lineal oben & rechts (echte Masse)"><svg viewBox="0 0 24 24" class="i"><path d="M3 15 15 3l6 6L9 21z"/><path d="M7 13l1.5 1.5M10 10l1.5 1.5M13 7l1.5 1.5"/></svg></button>
-      <button class="tool" id="btnGrid" title="cm-Raster zum Nachzeichnen (ein/aus, verschiebbar)"><svg viewBox="0 0 24 24" class="i"><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></button>
       <button class="tool" id="btnScale" title="Massstab setzen (z. B. 1:100 oder kalibrieren)"><b style="font:600 12px/1 var(--font)">1:n</b></button>
+      <button class="tool" id="btnGrid" title="cm-Raster zum Nachzeichnen (ein/aus, verschiebbar)"><svg viewBox="0 0 24 24" class="i"><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></button>
+      <button class="tool" id="btnRuler" title="Lineal oben & rechts (echte Masse)"><svg viewBox="0 0 24 24" class="i"><path d="M3 15 15 3l6 6L9 21z"/><path d="M7 13l1.5 1.5M10 10l1.5 1.5M13 7l1.5 1.5"/></svg></button>
     </div>
+    </div>
+    <span class="grow"></span>
     <div class="tgrp">
       <div class="swatch-wrap">
         <button class="swatch" id="btnColor" title="Farbe wählen"><span id="colorDot"></span></button>
@@ -121,7 +134,6 @@
         <option value="12">12</option><option value="16" selected>16</option><option value="22">22</option><option value="32">32</option>
       </select>
     </div>
-    <span class="grow"></span>
     <div class="tgrp">
       <button class="tool" id="rotL" title="Seite 90° links drehen"><svg viewBox="0 0 24 24" class="i"><path d="M4 9a8 8 0 1 1 2 6"/><path d="M4 4v5h5"/></svg></button>
       <button class="tool" id="rotR" title="Seite 90° rechts drehen"><svg viewBox="0 0 24 24" class="i"><path d="M20 9a8 8 0 1 0-2 6"/><path d="M20 4v5h-5"/></svg></button>
@@ -129,7 +141,8 @@
       <button class="tool danger" id="delSel" title="Markiertes löschen (Entf)"><svg viewBox="0 0 24 24" class="i"><path d="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13"/></svg></button>
     </div>
     <div class="tgrp">
-      <button class="btn" id="btnForm" title="PDF-Formular ausfüllen" hidden><svg viewBox="0 0 24 24" class="i"><rect x="4" y="3" width="16" height="18"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span>Formular</span></button>
+      <button class="btn" id="btnForm" title="PDF-Formular ausfüllen" hidden><svg viewBox="0 0 24 24" class="i"><rect x="4" y="3" width="16" height="18"/><path d="M8 8h8M8 16h5M8 12h8"/></svg><span>Formular</span></button>
+    </div>
     </div>
   </div>
 
@@ -156,7 +169,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=155" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=156" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -409,7 +422,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=155"></script>
+  <script src="pdf.js?v=156"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

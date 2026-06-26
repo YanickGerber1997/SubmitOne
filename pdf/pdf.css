@@ -5,7 +5,7 @@
   --accent:#4f7a3c; --accent-soft:#e9efde; --accent-2:#6e7a3a; --accent-3:#34502b; --accent-4:#8a8a44;
   --danger:#b4502f;
   --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-  --bar:64px; --tools:48px; --tabs:32px;
+  --bar:64px; --tools:80px; --tabs:32px;
 }
 *{box-sizing:border-box}
 [hidden]{display:none !important}   /* Attribut sticht Klassen-display aus (Mail-Dialog etc.) */
@@ -91,7 +91,19 @@ body.has-tabs .findbar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 .suite-link:hover{color:var(--accent)}
 
 /* Werkzeugleiste */
-.toolbar{height:var(--tools);display:flex;align-items:center;gap:6px;padding:0 12px;background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:6;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.toolbar{height:var(--tools);display:flex;flex-direction:column;align-items:stretch;background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:6}
+.rib-tabs{height:30px;flex:none;display:flex;align-items:center;gap:2px;padding:0 10px;border-bottom:1px solid var(--line-soft)}
+.rib-tab{height:30px;border:none;background:none;font:inherit;font-size:13px;font-weight:600;letter-spacing:.2px;color:var(--ink-soft);padding:0 14px;cursor:pointer;border-bottom:2px solid transparent;border-radius:0}
+.rib-tab:hover{color:var(--ink)}
+.rib-tab.on{color:var(--accent-3);border-bottom-color:var(--accent)}
+.rib-collapse{margin-left:auto;width:30px;height:24px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:0;flex:none}
+.rib-collapse:hover{border-color:var(--accent);color:var(--accent-3)}
+.rib-collapse svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .15s}
+body.rib-collapsed .rib-collapse svg{transform:rotate(180deg)}
+.rib-row{flex:1;display:flex;align-items:center;gap:6px;padding:0 12px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.rib-tools{display:flex;align-items:center;gap:3px}
+body.rib-collapsed{--tools:30px}
+body.rib-collapsed .rib-row{display:none}
 .tgrp{display:flex;align-items:center;gap:3px;padding-right:8px;margin-right:2px;border-right:1px solid var(--line-soft);flex:none}
 .tgrp:last-child{border-right:none}
 .tool{width:34px;height:34px;border:1px solid transparent;background:none;color:var(--ink-soft);border-radius:0;cursor:pointer;display:flex;align-items:center;justify-content:center}
@@ -473,8 +485,8 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
   .btn span{display:none}
   .btn{padding:0 11px;gap:0}
   .topbar{gap:6px;padding:0 10px}
-  .toolbar{overflow-x:auto;-webkit-overflow-scrolling:touch;gap:4px;padding:0 8px}
-  .toolbar::-webkit-scrollbar{display:none}
+  .rib-row{-webkit-overflow-scrolling:touch;gap:4px;padding:0 8px}
+  .rib-row::-webkit-scrollbar{display:none}
   .toolbar .grow{display:none}
   .tgrp{padding-right:6px}
   .pageind{display:none}
@@ -484,7 +496,7 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
   .quickbar .qbtn{width:32px;height:32px;font-size:16px}
 }
 @media (max-width:520px){
-  :root{--bar:48px;--tools:44px;--tabs:28px}
+  :root{--bar:48px;--tools:76px;--tabs:28px}
   .brand{font-size:14px;letter-spacing:1.5px;margin-right:2px}
   .brand .logomark{height:38px;width:38px}
   .brand .brand-word{display:none}        /* Schriftzug am Handy weg – nur Symbol, spart Platz */

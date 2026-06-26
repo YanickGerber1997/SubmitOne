@@ -2337,6 +2337,7 @@ function nudgeSel(key, d) {
 }
 
 /* ---------- Werkzeug umschalten ---------- */
+function activateRibTab(t) { $$('.rib-tab').forEach(x => x.classList.toggle('on', x.dataset.tab === t)); $$('.rib-tools').forEach(g => g.hidden = g.dataset.tabgroup !== t); }
 function setTool(t) {
   if (cropping && t !== 'select' && t !== 'crop') removeCropAnno();   // anderes Werkzeug → Zuschneiden verwerfen
   if (areaDraft && t !== 'area') cancelArea();                       // anderes Werkzeug → Flächen-Polygon verwerfen
@@ -2344,6 +2345,7 @@ function setTool(t) {
   if (wallDraft && t !== 'wall') finishWallChain();                  // anderes Werkzeug → Wand-Kette beenden
   if (cdimDraft && t !== 'chaindim') finishChaindim();              // anderes Werkzeug → Kettenmass beenden
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
+  const ab = $('.tool.on[data-tool]'); if (ab) { const grp = ab.closest('.rib-tools'); if (grp && grp.hidden) activateRibTab(grp.dataset.tabgroup); }   // Reiter des aktiven Werkzeugs zeigen
   const bs = $('#btnStamp'); if (bs) bs.classList.toggle('on', t === 'stamp');
   $$('.fab-b').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   pageViews.forEach(p => { p._hoverId = null; const h = p.svg && p.svg.querySelector('.hover-layer'); if (h) h.remove(); });   // Hover bei Werkzeugwechsel löschen
@@ -2884,6 +2886,9 @@ function positionFindHL() {
 
 /* ---------- Verdrahtung ---------- */
 function wire() {
+  // Ribbon: Reiter umschalten + Werkzeugreihe ein-/ausklappen
+  $$('.rib-tab').forEach(b => b.onclick = () => { activateRibTab(b.dataset.tab); document.body.classList.remove('rib-collapsed'); });
+  $('#ribCollapse').onclick = () => document.body.classList.toggle('rib-collapsed');
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
   $('#btnNew').onclick = () => openSlidePicker('new');

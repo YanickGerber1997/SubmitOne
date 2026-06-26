@@ -1864,11 +1864,18 @@ function startNodeDrag(pv, e, id, pnIdx, phIdx, hk) {
 function startResize(pv, e, h) {
   const a = findAnno(pv.num, sel.id); if (!a) return; pushUndo(); const orig = JSON.parse(JSON.stringify(a));
   const move = ev => {
-    let q = evtToPage(pv, ev); if (gridOn && !ev.shiftKey && !ev.altKey) q = snapPt(q.x, q.y);   // Anfasser aufs Raster
-    if (isLineType(a)) { let qx = q.x, qy = q.y; if (ev.shiftKey) { const o = h === 'p1' ? { x: a.x2, y: a.y2 } : { x: a.x1, y: a.y1 }; const s = snap15(o.x, o.y, qx, qy); qx = s.x; qy = s.y; } if (h === 'p1') { a.x1 = qx; a.y1 = qy; } else { a.x2 = qx; a.y2 = qy; } }
-    else if (orig.type === 'sig' || orig.type === 'img') { const ratio = orig.w / orig.h || 1, ax = h.includes('w') ? orig.x + orig.w : orig.x, ay = h.includes('n') ? orig.y + orig.h : orig.y; const nw = Math.max(12, Math.abs(q.x - ax)), nh = nw / ratio; a.w = nw; a.h = nh; a.x = h.includes('w') ? ax - nw : ax; a.y = h.includes('n') ? ay - nh : ay; }
-    else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval' || orig.type === 'edit' || orig.type === 'cover' || orig.type === 'stamp' || orig.type === 'text' || orig.type === 'crop' || orig.type === 'imgph' || orig.type === 'roof' || orig.type === 'block') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
-    drawAnnos(pv);
+    let q = evtToPage(pv, ev), snapped = null;
+    if (isLineType(a)) {
+      let qx = q.x, qy = q.y;
+      if (ev.shiftKey) { const o = h === 'p1' ? { x: a.x2, y: a.y2 } : { x: a.x1, y: a.y1 }; const s = snap15(o.x, o.y, qx, qy); qx = s.x; qy = s.y; }
+      else { const an = snapWallPt(pv, qx, qy, a.id); if (an) { qx = an.x; qy = an.y; snapped = an; } else if (gridOn && !ev.altKey) { const g = snapPt(qx, qy); qx = g.x; qy = g.y; } }   // Endpunkt an Wand-Ecke/-Ende/-Achse fangen
+      if (h === 'p1') { a.x1 = qx; a.y1 = qy; } else { a.x2 = qx; a.y2 = qy; }
+    } else {
+      if (gridOn && !ev.shiftKey && !ev.altKey) q = snapPt(q.x, q.y);   // Anfasser aufs Raster
+      if (orig.type === 'sig' || orig.type === 'img') { const ratio = orig.w / orig.h || 1, ax = h.includes('w') ? orig.x + orig.w : orig.x, ay = h.includes('n') ? orig.y + orig.h : orig.y; const nw = Math.max(12, Math.abs(q.x - ax)), nh = nw / ratio; a.w = nw; a.h = nh; a.x = h.includes('w') ? ax - nw : ax; a.y = h.includes('n') ? ay - nh : ay; }
+      else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval' || orig.type === 'edit' || orig.type === 'cover' || orig.type === 'stamp' || orig.type === 'text' || orig.type === 'crop' || orig.type === 'imgph' || orig.type === 'roof' || orig.type === 'block') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
+    }
+    drawAnnos(pv); if (snapped) snapIndicator(pv, snapped);
   };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
@@ -3609,6 +3616,9 @@ function wire() {
   // Rechtsklick-Menü
   $('#pages').addEventListener('contextmenu', e => {
     if (!pdfDoc) return; e.preventDefault();
+    if (wallDraft) { finishWallChain(); return; }                    // Rechtsklick = Wandkette beenden
+    if (segDraft) { finishSegDraft(); return; }                      // Rechtsklick = Linie/Wand beenden
+    if (areaDraft) { finishArea(); return; }
     const wrap = e.target.closest('.pagewrap'); if (!wrap) return;
     const pv = pageViews.find(p => p.num === +wrap.dataset.n); if (!pv) return;
     const id = e.target.getAttribute && e.target.getAttribute('data-id');

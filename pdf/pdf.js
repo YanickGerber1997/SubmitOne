@@ -2354,12 +2354,13 @@ function openingRevealStrips(a, arr) {   // Laibung: Dämmung zum Rahmen reingez
   const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
   const fmh = Math.min(0.48, (a.frameD || cmToPts(7)) / (2 * ht)); let fmA = md - fmh, fmB = md + fmh;   // fmB=aussen, fmA=innen
   if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }
-  const gapM = cmToPts(0.5) / ht, FIN = ['putz', 'gips', 'holz', 'konter'], INS = ['eps', 'glaswolle', 'daemm_holz', 'daemm_wolle', 'daemm_eps', 'daemm_xps'];
-  const strips = [];
-  const band = (mat, sw, mA, mB) => { const m = WALL_MATS[mat] || mat, tw = Math.min(0.45, cmToPts(sw) / hw); if (Math.abs(mB - mA) < 0.02) return; for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + tw : 1 - tw; strips.push({ poly: [corner(s0, mA), corner(s1, mA), corner(s1, mB), corner(s0, mB)], fill: (m.fill) || '#fff', stroke: (m.color) || '#1c242c' }); } };
-  const l0 = wall.layers[0], ins = wall.layers.find(l => INS.includes(l.mat));
-  if (FIN.includes(l0.mat)) band(l0.mat, ptsToCm(l0.t), -1, fmA - gapM);                 // innen: Putz/Brett bis Rahmen-Innenkante
-  if (ins) band(ins.mat, Math.min(8, ptsToCm(ins.t)), fmB + gapM, 1);                    // aussen: Dämmung vom Rahmen bis Aussenkante reingezogen
+  const gapM = cmToPts(0.5) / ht, CORE = ['mauerwerk', 'beton'];
+  const strips = [], total = wall.layers.reduce((s, l) => s + l.t, 0) || 1;
+  let coreIdx = wall.layers.findIndex(l => CORE.includes(l.mat)); if (coreIdx < 0) coreIdx = Math.floor((wall.layers.length - 1) / 2);
+  // Schichteinzug: jede Schicht innerhalb/ausserhalb des Tragkerns läuft als Brett um die Ecke bis zum Rahmen, gestaffelt am Jamb
+  const strip = (mat, mFrom, mTo, sOff, sw) => { const m = WALL_MATS[mat] || {}; if (Math.abs(mTo - mFrom) < 0.02 || sw < 0.004) return; for (const sgn of [-1, 1]) { const s0 = sgn * (1 - sOff), s1 = sgn * (1 - sOff - sw); strips.push({ poly: [corner(s0, mFrom), corner(s1, mFrom), corner(s1, mTo), corner(s0, mTo)], fill: m.fill || '#fff', stroke: m.color || '#1c242c' }); } };
+  let sIn = 0; for (let i = 0; i < coreIdx && sIn < 0.6; i++) { const l = wall.layers[i], sw = Math.min(0.5, l.t / hw); strip(l.mat, -1, fmA - gapM, sIn, sw); sIn += sw; }   // innen → Rahmen-Innenkante
+  let sOut = 0; for (let i = wall.layers.length - 1; i > coreIdx && sOut < 0.6; i--) { const l = wall.layers[i], sw = Math.min(0.5, l.t / hw); strip(l.mat, fmB + gapM, 1, sOut, sw); sOut += sw; }   // aussen: Dämmung/Hinterlüftung/Schalung um die Ecke nach hinten → Rahmen-Aussenkante
   const rt = a.revealType || 'putz', rm = REVEAL_MAT[rt];                                 // Laibungs-Element vorne am Rahmen
   if (rm) { const dM = Math.min(0.4, cmToPts(rt === 'stahl' ? 0.4 : rt === 'putz' ? 1.5 : 3) / ht), sW = Math.min(0.5, (a.outerLap != null ? a.outerLap : cmToPts(3)) / hw); for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + sW : 1 - sW; strips.push({ poly: [corner(s0, fmB), corner(s1, fmB), corner(s1, fmB + dM), corner(s0, fmB + dM)], fill: rm.fill, stroke: rm.color }); } }
   return strips;

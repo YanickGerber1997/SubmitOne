@@ -2338,7 +2338,7 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
         box(lsa, lsa + ssW, smA, smB); box(rsb - ssW, rsb, smA, smB);   // Flügelrahmen 7×7
         gl = lsa + ssW - gIn; gr = rsb - ssW + gIn;   // Glas zwischen den Flügeln, 1 cm rein
       } else { gl = lEdge - gIn; gr = rEdge + gIn; }
-      fills.push({ poly: [corner(gl, gc - gh), corner(gr, gc - gh), corner(gr, gc + gh), corner(gl, gc + gh)], fill: '#9cc3e6', stroke: '#5a8bb5' });   // Glas (blau)
+      fills.push({ poly: [corner(gl, gc - gh), corner(gr, gc - gh), corner(gr, gc + gh), corner(gl, gc + gh)], fill: '#c7e2f5', stroke: '#7fa9c6' });   // Glas (blau)
     }
   }
   else if (a.kind === 'door' && detail) {   // Tür wie Fenster: Zarge (Rahmen) + Flügel mit Schwenk; Festteil = Glas; 1-/2-flüglig
@@ -2352,7 +2352,7 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
     const box = (s0, s1, mA, mB) => fills.push({ poly: [corner(s0, mA), corner(s1, mA), corner(s1, mB), corner(s0, mB)], fill: wm.fill, stroke: wm.stroke });
     const div = mid ? [-1, 0, 1] : [-1, 1];
     for (const dv of div) { let m0, m1; if (dv <= -0.999) { m0 = -1; m1 = -1 + fwS; } else if (dv >= 0.999) { m0 = 1 - fwS; m1 = 1; } else { m0 = -fwS / 2; m1 = fwS / 2; } box(m0, m1, fmA, fmB); }   // Zarge (Jamben + Mittelpfosten)
-    const glassPane = (sl, sr) => fills.push({ poly: [corner(sl, gc - gh), corner(sr, gc - gh), corner(sr, gc + gh), corner(sl, gc + gh)], fill: '#9cc3e6', stroke: '#5a8bb5' });
+    const glassPane = (sl, sr) => fills.push({ poly: [corner(sl, gc - gh), corner(sr, gc - gh), corner(sr, gc + gh), corner(sl, gc + gh)], fill: '#c7e2f5', stroke: '#7fa9c6' });
     const leaf = (hingeS, dirAlong, clearWs) => { const hp = corner(hingeS, md), Ln = clearWs * hw, tip = [hp[0] + nx * sw * Ln, hp[1] + ny * sw * Ln], closed = [hp[0] + ux * dirAlong * Ln, hp[1] + uy * dirAlong * Ln], tw = Math.min(fdh * 1.4 * ht, cmToPts(4)), ox = ux * dirAlong * tw, oy = uy * dirAlong * tw; fills.push({ poly: [hp, tip, [tip[0] + ox, tip[1] + oy], [hp[0] + ox, hp[1] + oy]], fill: wm.fill, stroke: wm.stroke }); arcs.push({ cx: hp[0], cy: hp[1], r: Ln, from: tip, to: closed }); };
     if (wt === 'fest') glassPane(-1 + fwS, 1 - fwS);
     else if (wt === 'f2' || wt === 'f2s') { leaf(-1 + fwS, 1, 1 - 1.5 * fwS); leaf(1 - fwS, -1, 1 - 1.5 * fwS); }   // zwei Flügel von beiden Jamben zur Mitte
@@ -2474,7 +2474,7 @@ function openingElev(out, X, Yh, opx0, opw, o, H, col) {   // Fenster/Tür in An
     const two = wt === 'f2' || wt === 'f2s', panes = two ? 2 : 1, pw = opw / panes;
     for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) { if (wt === 'f2s') { out.push({ t: 'rect', x: px0 - fr, y: yT, w: 2 * fr, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.2 }); } else out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1.2 }); }
       const ins = wt === 'fest' ? fr : fr * 2;
-      out.push({ t: 'rect', x: px0 + ins, y: yT + ins, w: pw - 2 * ins, h: (yB - yT) - 2 * ins, fill: '#9cc3e6', stroke: '#5a8bb5', sw: 0.8 });   // Glas
+      out.push({ t: 'rect', x: px0 + ins, y: yT + ins, w: pw - 2 * ins, h: (yB - yT) - 2 * ins, fill: '#c7e2f5', stroke: '#7fa9c6', sw: 0.8 });   // Glas
       if (wt !== 'fest') { out.push({ t: 'rect', x: px0 + fr, y: yT + fr, w: pw - 2 * fr, h: (yB - yT) - 2 * fr, fill: 'none', stroke: wm.stroke, sw: 0.9 });   // Flügelrahmen
         const ix0 = px0 + fr * 1.6, ix1 = px0 + pw - fr * 1.6, iy0 = yT + fr * 1.6, iy1 = yB - fr * 1.6, cmx = (ix0 + ix1) / 2, cmy = (iy0 + iy1) / 2, hinge = o.winHinge || 'left';
         if (hinge === 'kipp') { out.push({ t: 'line', x1: ix0, y1: iy0, x2: cmx, y2: iy1, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: ix1, y1: iy0, x2: cmx, y2: iy1, stroke: col, w: 0.6, dash: '4 3' }); }
@@ -2489,10 +2489,32 @@ function openingElev(out, X, Yh, opx0, opw, o, H, col) {   // Fenster/Tür in An
     const two = wt === 'f2' || wt === 'f2s' || wt === 'f1f', panes = two ? 2 : 1, pw = opw / panes;
     for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1 });
       const isGlass = wt === 'fest' || (wt === 'f1f' && pi === (hingeRight ? 0 : 1));
-      if (isGlass) out.push({ t: 'rect', x: px0 + fr, y: yT + fr, w: pw - 2 * fr, h: (yB - yT) - 2 * fr, fill: '#9cc3e6', stroke: '#5a8bb5', sw: 0.8 });   // Fixteil verglast
+      if (isGlass) out.push({ t: 'rect', x: px0 + fr, y: yT + fr, w: pw - 2 * fr, h: (yB - yT) - 2 * fr, fill: '#c7e2f5', stroke: '#7fa9c6', sw: 0.8 });   // Fixteil verglast
       else { out.push({ t: 'rect', x: px0 + fr, y: yT + fr, w: pw - 2 * fr, h: (yB - yT) - 2 * fr, fill: wm.fill, stroke: wm.stroke, sw: 0.9 });   // Türblatt
         const hx = (two ? (pi === 0 ? px0 + pw - fr * 2 : px0 + fr * 2) : (hingeRight ? px0 + fr * 2 : px0 + pw - fr * 2)); out.push({ t: 'line', x1: hx, y1: (yT + yB) / 2 - 6, x2: hx, y2: (yT + yB) / 2 + 6, stroke: col, w: 1.6 }); }   // Türgriff
     }
+  }
+}
+function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall) {   // Schnitt DURCH die Öffnung: gedrehtes Grundriss-Profil (Rahmen/Flügel/Scheibe + Schichteinzug), Sturz oben/Schwelle unten
+  const sill = o.kind === 'window' ? (o.sill || 0) : 0, head = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0));
+  if (head - sill < 0.02 || appW < 2) return;
+  const hPx = (head - sill) / perPt, cx = X(distPt), cy = Yh((sill + head) / 2), ht2 = appW / 2, hw = hPx / 2;
+  const corner = (s, m) => [cx + ht2 * m, cy - hw * s];   // s = vertikal (Kopf oben), m = horizontal (Wanddicke)
+  const layered = !simpleMode && wall.layers && wall.layers.length >= 2;
+  out.push({ t: 'rect', x: cx - ht2, y: Yh(head), w: appW, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });   // Öffnung ausstanzen
+  const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: o.depth == null ? 0.5 : o.depth, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: o.winType || 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: o.revealType, outerLap: o.outerLap, innerReveal: o.innerReveal, wallId: 'secw' };
+  if (layered) { const sw = { id: 'secw', type: 'wall', layers: wall.layers, x1: cx, y1: cy + hw, x2: cx, y2: cy - hw, thick: appW, hatch: wall.hatch }; for (const st of openingRevealStrips(sa, [sw])) { out.push({ t: 'poly', pts: st.poly, fill: st.fill, stroke: st.stroke, sw: 0.7 }); if (st.hatch) for (const [u, v] of st.hatch) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.6 }); } }
+  if (o.kind === 'window') {
+    const P = openingParts(sa, layered);
+    for (const f of (P.fills || [])) out.push({ t: 'poly', pts: f.poly, fill: f.fill, stroke: f.stroke, sw: 1 });
+    for (const [u, v] of P.lines) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: '#1c242c', w: 1.2 });
+    for (const [u, v] of (P.bold || [])) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: '#1c242c', w: 2.4 });
+    if (o.bank !== false) { const bo = ht2 + 7; out.push({ t: 'poly', pts: [[cx, cy + hw + 1], [cx + bo, cy + hw + 1], [cx + bo, cy + hw - 4], [cx, cy + hw - 4]], fill: '#cfcabf', stroke: '#8a8f96', sw: 0.7 }); }   // Fensterbank aussen (unten = Schwelle)
+  } else {
+    const wm = WIN_MAT[o.winMat || 'holz'], md = Math.max(-1, Math.min(1, sa.depth * 2 - 1)), frameD = o.frameD || cmToPts(7), frameW = o.frameW || cmToPts(6);
+    const fdh = Math.min(0.49, frameD / appW), leafW = Math.min(0.4, cmToPts(4) / appW), fwS = Math.min(0.4, frameW / hPx);
+    out.push({ t: 'poly', pts: [corner(-1, md - leafW), corner(1 - fwS, md - leafW), corner(1 - fwS, md + leafW), corner(-1, md + leafW)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Türblatt (vertikal, bei Einbautiefe)
+    out.push({ t: 'poly', pts: [corner(1 - fwS, md - fdh), corner(1, md - fdh), corner(1, md + fdh), corner(1 - fwS, md + fdh)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Sturz-Rahmen
   }
 }
 function sectionPrimitives(a, arr) {
@@ -2511,7 +2533,7 @@ function sectionPrimitives(a, arr) {
     let cx = x0;
     for (const L of layers) { const lw = (L.t / totalT) * h.appW, m = L.mat ? (WALL_MATS[L.mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; const bx = X(cx), byT = Yh(H), bhh = Yh(0) - Yh(H); out.push({ t: 'rect', x: bx, y: byT, w: lw, h: bhh, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, bx, byT, lw, bhh, L.mat, (w.hatch && w.hatch.type)); cx += lw; }
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
-    for (const o of ops) openingElev(out, X, Yh, h.dist - h.appW / 2, h.appW, o, H, col);   // im Schnitt durchschnittene Öffnung
+    for (const o of ops) sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil
     out.push({ t: 'line', x1: X(x0), y1: Yh(H), x2: X(x0 + h.appW), y2: Yh(H), stroke: col, w: 1.2 });
   }
   for (const w of arr) {   // Ansicht: Fenster/Türen in (nahezu) parallel zur Schnittlinie laufenden Wänden – damit man sie im Schnitt sieht
@@ -2538,6 +2560,7 @@ function drawSection(svg, a, arr) {
   const g = svgEl('g', { 'data-id': a.id });
   for (const p of sectionPrimitives(a, arr)) {
     if (p.t === 'rect') { const r = svgEl('rect', { x: Math.min(p.x, p.x + p.w), y: Math.min(p.y, p.y + p.h), width: Math.abs(p.w), height: Math.abs(p.h), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { r.setAttribute('stroke', p.stroke); r.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(r); }
+    else if (p.t === 'poly') { const pl = svgEl('polygon', { points: p.pts.map(q => q[0].toFixed(2) + ',' + q[1].toFixed(2)).join(' '), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { pl.setAttribute('stroke', p.stroke); pl.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(pl); }
     else if (p.t === 'line') { const l = svgEl('line', { x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2, stroke: p.stroke || '#1c242c', 'stroke-width': p.w || 1, 'vector-effect': 'non-scaling-stroke' }); if (p.dash) l.setAttribute('stroke-dasharray', p.dash); g.appendChild(l); }
     else if (p.t === 'arrow') { const s = 6, ang = Math.atan2(p.dy, p.dx); for (const da of [2.5, -2.5]) g.appendChild(svgEl('line', { x1: p.x, y1: p.y, x2: p.x - Math.cos(ang + da) * s, y2: p.y - Math.sin(ang + da) * s, stroke: p.col || '#1c242c', 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' })); }
     else if (p.t === 'text') { const t = svgEl('text', { x: p.x, y: p.y, fill: p.col || '#1c242c', 'font-size': p.small ? 9 : 12, 'font-weight': p.small ? 400 : 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = p.text; g.appendChild(t); }
@@ -3398,6 +3421,7 @@ async function buildPdfBytes(visibleOnly) {
         else if (a.type === 'section') {
           for (const p of sectionPrimitives(a, annos[n] || [])) {
             if (p.t === 'rect') { const o = { x: Math.min(p.x, p.x + p.w), y: Y(Math.max(p.y, p.y + p.h)), width: Math.abs(p.w), height: Math.abs(p.h) }; if (p.fill && p.fill !== 'none') { const fc = hexToRgb(p.fill); o.color = rgb(fc.r, fc.g, fc.b); } if (p.stroke && p.stroke !== 'none') { const sc = hexToRgb(p.stroke); o.borderColor = rgb(sc.r, sc.g, sc.b); o.borderWidth = p.sw || 0.6; } pg.drawRectangle(o); }
+            else if (p.t === 'poly') { const d = 'M' + p.pts.map((q, i) => (i ? 'L' : '') + q[0] + ' ' + q[1]).join(' ') + 'Z', opt = { x: 0, y: PH }; if (p.fill && p.fill !== 'none') { const fc = hexToRgb(p.fill); opt.color = rgb(fc.r, fc.g, fc.b); } if (p.stroke && p.stroke !== 'none') { const sc = hexToRgb(p.stroke); opt.borderColor = rgb(sc.r, sc.g, sc.b); opt.borderWidth = p.sw || 0.6; } try { pg.drawSvgPath(d, opt); } catch (_) { } }
             else if (p.t === 'line') { const lc = hexToRgb(p.stroke || '#1c242c'); pg.drawLine({ start: { x: p.x1, y: Y(p.y1) }, end: { x: p.x2, y: Y(p.y2) }, thickness: p.w || 1, color: rgb(lc.r, lc.g, lc.b), dashArray: p.dash ? [4, 3] : undefined }); }
             else if (p.t === 'arrow') { const s = 6, ang = Math.atan2(p.dy, p.dx), ac0 = hexToRgb(p.col || '#1c242c'), ac = rgb(ac0.r, ac0.g, ac0.b); for (const da of [2.5, -2.5]) pg.drawLine({ start: { x: p.x, y: Y(p.y) }, end: { x: p.x - Math.cos(ang + da) * s, y: Y(p.y - Math.sin(ang + da) * s) }, thickness: 1.4, color: ac }); }
             else if (p.t === 'text') { const tc = hexToRgb(p.col || '#1c242c'); pg.drawText(p.text, { x: p.x, y: Y(p.y) - 4, size: p.small ? 9 : 11, font, color: rgb(tc.r, tc.g, tc.b) }); }

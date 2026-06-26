@@ -1280,6 +1280,16 @@ function drawSelection(svg, a, pv) {
     });
     return;
   }
+  if (a.type === 'section') {                           // Schnitt: Schnittlinie mit Endpunkt-Griffen + Mittelpunkt + Blickrichtung-Flip; Block-Rahmen
+    svg.appendChild(svgEl('line', { x1: a.cx1, y1: a.cy1, x2: a.cx2, y2: a.cy2, class: 'sel-line' }));
+    for (const [name, x, y] of [['sc1', a.cx1, a.cy1], ['sc2', a.cx2, a.cy2]]) svg.appendChild(svgEl('circle', { class: 'handle', cx: x, cy: y, r: hs, 'data-h': name, 'data-id': a.id }));
+    const mx = (a.cx1 + a.cx2) / 2, my = (a.cy1 + a.cy2) / 2, dx = a.cx2 - a.cx1, dy = a.cy2 - a.cy1, L = Math.hypot(dx, dy) || 1, nnx = -dy / L, nny = dx / L, fd = a.flip ? -1 : 1;
+    svg.appendChild(svgEl('circle', { class: 'handle', cx: mx, cy: my, r: hs * 0.9, 'data-h': 'scmid', 'data-id': a.id }));
+    svg.appendChild(svgEl('line', { x1: mx, y1: my, x2: mx + nnx * fd * 26 / pv.scale, y2: my + nny * fd * 26 / pv.scale, class: 'sel-line' }));
+    svg.appendChild(svgEl('circle', { class: 'handle dim-handle', cx: mx + nnx * fd * 26 / pv.scale, cy: my + nny * fd * 26 / pv.scale, r: hs, 'data-h': 'scflip', 'data-id': a.id }));
+    const b = bbox(a), pad = 3; svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad }));
+    return;
+  }
   if (isLineType(a)) {                                  // Linie: KEIN Rechteck-Rahmen, nur Linie hervorheben + Endpunkte
     svg.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'sel-line' }));
     for (const [name, x, y] of [['p1', a.x1, a.y1], ['p2', a.x2, a.y2]]) svg.appendChild(svgEl('circle', { class: 'handle', cx: x, cy: y, r: hs, 'data-h': name }));
@@ -1668,6 +1678,7 @@ function onPointerDown(pv, e) {
     const pn = e.target.getAttribute && e.target.getAttribute('data-pn'), ph = e.target.getAttribute && e.target.getAttribute('data-ph');
     if ((pn !== null || ph !== null) && sel && sel.num === pv.num) { startNodeDrag(pv, e, sel.id, pn, ph, e.target.getAttribute('data-hk')); return; }   // Kurven-Knoten/Anfasser ziehen
     if (hAttr === 'dimoff' && sel && sel.num === pv.num) { startDimOffDrag(pv, e, sel.id); return; }   // Wand-Masslinie verschieben
+    if (hAttr === 'scflip' && sel && sel.num === pv.num) { const a = findAnno(pv.num, sel.id); if (a && a.type === 'section') { pushUndo(); a.flip = !a.flip; drawAnnos(pv); saveState(); toast('Blickrichtung gedreht'); } return; }   // Schnitt-Blickrichtung
     if (hAttr && sel && sel.num === pv.num) { startResize(pv, e, hAttr); return; }
     if (idAttr) {
       const aHit = findAnno(pv.num, +idAttr);
@@ -2116,6 +2127,12 @@ function startResize(pv, e, h) {
   const a = findAnno(pv.num, sel.id); if (!a) return; pushUndo(); const orig = JSON.parse(JSON.stringify(a));
   const move = ev => {
     let q = evtToPage(pv, ev), snapped = null;
+    if (a.type === 'section') {
+      if (ev.shiftKey && (h === 'sc1' || h === 'sc2')) { const o2 = h === 'sc1' ? { x: orig.cx2, y: orig.cy2 } : { x: orig.cx1, y: orig.cy1 }; const s = snap15(o2.x, o2.y, q.x, q.y); q = { x: s.x, y: s.y }; }
+      if (h === 'sc1') { a.cx1 = q.x; a.cy1 = q.y; } else if (h === 'sc2') { a.cx2 = q.x; a.cy2 = q.y; }
+      else if (h === 'scmid') { const mx = (orig.cx1 + orig.cx2) / 2, my = (orig.cy1 + orig.cy2) / 2, ddx = q.x - mx, ddy = q.y - my; a.cx1 = orig.cx1 + ddx; a.cy1 = orig.cy1 + ddy; a.cx2 = orig.cx2 + ddx; a.cy2 = orig.cy2 + ddy; }
+      drawAnnos(pv); return;
+    }
     if (isLineType(a)) {
       let qx = q.x, qy = q.y;
       if (ev.shiftKey) { const o = h === 'p1' ? { x: a.x2, y: a.y2 } : { x: a.x1, y: a.y1 }; const s = snap15(o.x, o.y, qx, qy); qx = s.x; qy = s.y; }
@@ -2511,21 +2528,21 @@ function openingElev(out, X, Yh, opx0, opw, o, H, col, redM) {   // Fenster/Tür
     }
   }
 }
-function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall) {   // Schnitt DURCH die Öffnung: gedrehtes Grundriss-Profil (Rahmen/Flügel/Scheibe + Schichteinzug), Sturz oben/Schwelle unten
+function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip) {   // Schnitt DURCH die Öffnung: gedrehtes Grundriss-Profil (Rahmen/Flügel/Scheibe + Schichteinzug), Sturz oben/Schwelle unten
   const sill = o.kind === 'window' ? (o.sill || 0) : 0, head = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0));
   if (head - sill < 0.02 || appW < 2) return;
   const hPx = (head - sill) / perPt, cx = X(distPt), cy = Yh((sill + head) / 2), ht2 = appW / 2, hw = hPx / 2;
   const corner = (s, m) => [cx + ht2 * m, cy - hw * s];   // s = vertikal (Kopf oben), m = horizontal (Wanddicke)
-  const layered = !simpleMode && wall.layers && wall.layers.length >= 2;
+  const layered = !simpleMode && wall.layers && wall.layers.length >= 2, dep0 = o.depth == null ? 0.5 : o.depth, dep = flip ? 1 - dep0 : dep0;   // Blickrichtung: Innen/Aussen tauschen
   out.push({ t: 'rect', x: cx - ht2, y: Yh(head), w: appW, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });   // Öffnung ausstanzen
-  const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: o.depth == null ? 0.5 : o.depth, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: o.winType || 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: o.revealType, outerLap: o.outerLap, innerReveal: o.innerReveal, wallId: 'secw' };
-  if (layered) { const sw = { id: 'secw', type: 'wall', layers: wall.layers, x1: cx, y1: cy + hw, x2: cx, y2: cy - hw, thick: appW, hatch: wall.hatch }; for (const st of openingRevealStrips(sa, [sw])) { out.push({ t: 'poly', pts: st.poly, fill: st.fill, stroke: st.stroke, sw: 0.7 }); if (st.hatch) for (const [u, v] of st.hatch) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.6 }); } }
+  const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: dep, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: o.winType || 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: o.revealType, outerLap: o.outerLap, innerReveal: o.innerReveal, anschlagType: o.anschlagType, anschlagDepth: o.anschlagDepth, wallId: 'secw' };
+  if (layered) { const sw = { id: 'secw', type: 'wall', layers: flip ? wall.layers.slice().reverse() : wall.layers, x1: cx, y1: cy + hw, x2: cx, y2: cy - hw, thick: appW, hatch: wall.hatch }; for (const st of openingRevealStrips(sa, [sw])) { out.push({ t: 'poly', pts: st.poly, fill: st.fill, stroke: st.stroke, sw: 0.7 }); if (st.hatch) for (const [u, v] of st.hatch) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.6 }); } }
   if (o.kind === 'window') {
     const P = openingParts(sa, layered);
     for (const f of (P.fills || [])) out.push({ t: 'poly', pts: f.poly, fill: f.fill, stroke: f.stroke, sw: 1 });
     for (const [u, v] of P.lines) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: '#1c242c', w: 1.2 });
     for (const [u, v] of (P.bold || [])) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: '#1c242c', w: 2.4 });
-    if (o.bank !== false) { const bo = ht2 + 7; out.push({ t: 'poly', pts: [[cx, cy + hw + 1], [cx + bo, cy + hw + 1], [cx + bo, cy + hw - 4], [cx, cy + hw - 4]], fill: '#cfcabf', stroke: '#8a8f96', sw: 0.7 }); }   // Fensterbank aussen (unten = Schwelle)
+    if (o.bank !== false) { const bo = (ht2 + 7) * (flip ? -1 : 1); out.push({ t: 'poly', pts: [[cx, cy + hw + 1], [cx + bo, cy + hw + 1], [cx + bo, cy + hw - 4], [cx, cy + hw - 4]], fill: '#cfcabf', stroke: '#8a8f96', sw: 0.7 }); }   // Fensterbank aussen (unten = Schwelle)
   } else {
     const wm = WIN_MAT[o.winMat || 'holz'], md = Math.max(-1, Math.min(1, sa.depth * 2 - 1)), frameD = o.frameD || cmToPts(7), frameW = o.frameW || cmToPts(6);
     const fdh = Math.min(0.49, frameD / appW), leafW = Math.min(0.4, cmToPts(4) / appW), fwS = Math.min(0.4, frameW / hPx);
@@ -2545,9 +2562,10 @@ function sectionPrimitives(a, arr) {
   const out = [], col = '#1c242c';
   const p1 = [a.cx1, a.cy1], p2 = [a.cx2, a.cy2], cd = [p2[0] - p1[0], p2[1] - p1[1]], cl = Math.hypot(cd[0], cd[1]) || 1, cux = cd[0] / cl, cuy = cd[1] / cl, nx = -cuy, ny = cux, lbl = a.label || 'A';
   out.push({ t: 'line', x1: a.cx1, y1: a.cy1, x2: a.cx2, y2: a.cy2, stroke: col, w: 1.2, dash: '10 4 2 4' });   // Schnittlinie im Plan
-  for (const e of [[a.cx1, a.cy1], [a.cx2, a.cy2]]) { const tk = 8; out.push({ t: 'line', x1: e[0] - nx * tk, y1: e[1] - ny * tk, x2: e[0] + nx * tk, y2: e[1] + ny * tk, stroke: col, w: 1.4 }); out.push({ t: 'arrow', x: e[0] + nx * tk, y: e[1] + ny * tk, dx: nx, dy: ny, col }); out.push({ t: 'text', x: e[0] - nx * 16, y: e[1] - ny * 16, text: lbl, col }); }
+  const vdir = a.flip ? -1 : 1;   // Blickrichtung
+  for (const e of [[a.cx1, a.cy1], [a.cx2, a.cy2]]) { const tk = 8, ax = nx * vdir, ay = ny * vdir; out.push({ t: 'line', x1: e[0] - ax * tk, y1: e[1] - ay * tk, x2: e[0] + ax * tk, y2: e[1] + ay * tk, stroke: col, w: 1.4 }); out.push({ t: 'arrow', x: e[0] + ax * tk, y: e[1] + ay * tk, dx: ax, dy: ay, col }); out.push({ t: 'text', x: e[0] - ax * 16, y: e[1] - ay * 16, text: lbl, col }); }
   if (!docScale) { out.push({ t: 'text', x: a.ox, y: a.oy, text: '⟶ Massstab setzen, dann erscheint der Schnitt', col }); return out; }
-  const perPt = docScale.perPt, ox = a.ox, oy = a.oy, X = d => ox + d, Yh = h => oy - h / perPt;
+  const perPt = docScale.perPt, ox = a.ox, oy = a.oy, X = d => ox + (a.flip ? cl - d : d), Yh = h => oy - h / perPt;
   const hits = [];
   for (const w of arr) { if (w.type !== 'wall' || !layerVisible(w) || !phaseVisible(w)) continue; const ix = segInt(p1, p2, [w.x1, w.y1], [w.x2, w.y2]); if (!ix) continue; const dist = (ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy, wdx = w.x2 - w.x1, wdy = w.y2 - w.y1, wl = Math.hypot(wdx, wdy) || 1, sinA = Math.max(0.25, Math.abs((cux * wdy - cuy * wdx) / wl)), T = w.thick || wallThickPts(); hits.push({ w, dist, appW: T / sinA, tp: ix.t2, wl, T }); }
   out.push({ t: 'line', x1: X(-14), y1: Yh(0), x2: X(cl + 14), y2: Yh(0), stroke: col, w: 1.8 });   // Bodenlinie
@@ -2557,7 +2575,7 @@ function sectionPrimitives(a, arr) {
     let cx = x0;
     for (const L of layers) { const lw = (L.t / totalT) * h.appW, m = L.mat ? (WALL_MATS[L.mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; const bx = X(cx), byT = Yh(H), bhh = Yh(0) - Yh(H); out.push({ t: 'rect', x: bx, y: byT, w: lw, h: bhh, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, bx, byT, lw, bhh, L.mat, (w.hatch && w.hatch.type)); cx += lw; }
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
-    for (const o of ops) sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil
+    for (const o of ops) sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil (a.flip = Blickrichtung)
     out.push({ t: 'line', x1: X(x0), y1: Yh(H), x2: X(x0 + h.appW), y2: Yh(H), stroke: col, w: 1.2 });
   }
   for (const w of arr) {   // Ansicht: Fenster/Türen in (nahezu) parallel zur Schnittlinie laufenden Wänden – damit man sie im Schnitt sieht

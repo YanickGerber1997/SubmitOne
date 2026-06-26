@@ -833,8 +833,8 @@ function updateSelBar() {
 /* ---------- Schraffuren (SIA-artig: Wand/Material/Detail) ---------- */
 const HATCHES = [['diag', '⁄⁄ Diagonal'], ['cross', '## Kreuz'], ['brick', '▦ Mauerwerk'], ['insul', '〰 Dämmung'], ['wood', '≡ Holz'], ['dots', '⋮ Kies/Erde']];
 let lastHatchScale = 7;   // gemerkte Schraffur-Dichte (Abstand in pt)
-function shapeOutline(a) {
-  if (a.type === 'wall') return svgEl('polygon', { points: wallPoly(a).map(p => p[0] + ',' + p[1]).join(' ') });
+function shapeOutline(a, arr) {
+  if (a.type === 'wall') return svgEl('polygon', { points: wallPoly(a, arr).map(p => p[0] + ',' + p[1]).join(' ') });
   if (a.type === 'rect') return svgEl('rect', { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), width: Math.abs(a.w), height: Math.abs(a.h) });
   if (a.type === 'oval') return svgEl('ellipse', { cx: a.x + a.w / 2, cy: a.y + a.h / 2, rx: Math.abs(a.w / 2), ry: Math.abs(a.h / 2) });
   return svgEl('path', { d: pathD(a) });
@@ -852,8 +852,8 @@ function hatchGeom(a) {
   else if (t === 'dots') { const g = S * 1.7; for (let y = fl(y0, g); y <= y1; y += g) { const off = (Math.round(y / g) % 2) ? g / 2 : 0; for (let x = fl(x0 - off, g) + off; x <= x1; x += g) dots.push([x, y]); } }
   return { lines, dots };
 }
-function appendHatch(svg, a) {
-  const cid = 'hc' + a.id, cp = svgEl('clipPath', { id: cid }); cp.appendChild(shapeOutline(a));
+function appendHatch(svg, a, arr) {
+  const cid = 'hc' + a.id, cp = svgEl('clipPath', { id: cid }); cp.appendChild(shapeOutline(a, arr));
   const defs = svgEl('defs'); defs.appendChild(cp); svg.appendChild(defs);
   const hg = svgEl('g', { 'clip-path': `url(#${cid})`, 'pointer-events': 'none' }), col = a.hatch.color || a.color, lw = a.hatch.w || 0.8, geom = hatchGeom(a);
   for (const L of geom.lines) hg.appendChild(svgEl('line', { x1: L[0], y1: L[1], x2: L[2], y2: L[3], stroke: col, 'stroke-width': lw, 'vector-effect': 'non-scaling-stroke' }));
@@ -882,12 +882,12 @@ function drawOne(svg, a, pv) {
     el = svgEl('path', { d, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'data-id': a.id }); const ds = dashSvg(a); if (ds) el.setAttribute('stroke-dasharray', ds); svg.appendChild(el);
     hit = svgEl('path', { d, fill: 'none', stroke: 'transparent', 'stroke-width': Math.max(12, (a.width || 2) + 10), 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'wall') {
-    const poly = wallPoly(a), pstr = poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
+    const arr = getAnnos(pv.num), poly = wallPoly(a, arr), pstr = poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
     const g = svgEl('g', { 'data-id': a.id });
     if (a.fill && a.fill !== 'none') g.appendChild(svgEl('polygon', { points: pstr, fill: a.fill, stroke: 'none' }));   // Füllung → Wände verschmelzen
     svg.appendChild(g); el = g;
-    if (a.hatch && a.hatch.type) appendHatch(svg, a);                                                                 // Schraffur (phasen-gleich → läuft durch)
-    const arr = getAnnos(pv.num), col = a.color || '#1c242c', lw = a.width || 1.4;
+    if (a.hatch && a.hatch.type) appendHatch(svg, a, arr);                                                            // Schraffur (phasen-gleich → läuft durch)
+    const col = a.color || '#1c242c', lw = a.width || 1.4;
     for (const [p, q] of wallOutlineSegs(a, arr)) svg.appendChild(svgEl('line', { x1: p[0], y1: p[1], x2: q[0], y2: q[1], stroke: col, 'stroke-width': lw, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));   // Umriss, an Stössen sauber getrimmt
     if (a.dim) {                                                                                                      // optionale Masslinie
       const dg = wallDimGeom(a), tk = 4, dl = (x1, y1, x2, y2) => svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: col, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' }));
@@ -1201,12 +1201,21 @@ function lineForLength() {
 /* ---------- Wand (Linie mit Dicke; Schraffuren laufen durch, Wände verschmelzen) ---------- */
 function cmToPts(cm) { return cm * (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
 function ptsToCm(pts) { return pts / (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
-let lastWallThick = null;
+let lastWallThick = null, wallJust = 'center';   // Achse der neuen Wand: 'center' | 'left' | 'right'
 function wallThickPts() { return lastWallThick || cmToPts(17.5); }   // Standard 17,5 cm (Backstein)
-function wallPoly(a) {                                              // 4 Eckpunkte des Wand-Streifens
-  const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, t = (a.thick || wallThickPts()) / 2;
-  const nx = -dy / len * t, ny = dx / len * t;
-  return [[a.x1 + nx, a.y1 + ny], [a.x2 + nx, a.y2 + ny], [a.x2 - nx, a.y2 - ny], [a.x1 - nx, a.y1 - ny]];
+function wallEnds(a, arr) {   // Enden an verbundenen Stössen um halbe Dicke verlängern (saubere Aussenecke)
+  let x1 = a.x1, y1 = a.y1, x2 = a.x2, y2 = a.y2;
+  if (arr) { const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, ext = (a.thick || wallThickPts()) / 2;
+    if (!wallEndFree(a, a.x1, a.y1, arr)) { x1 -= ux * ext; y1 -= uy * ext; }
+    if (!wallEndFree(a, a.x2, a.y2, arr)) { x2 += ux * ext; y2 += uy * ext; } }
+  return { x1, y1, x2, y2 };
+}
+function wallPoly(a, arr) {                                              // 4 Eckpunkte des Wand-Streifens (Achse + Eck-Verlängerung)
+  const e = wallEnds(a, arr), dx = e.x2 - e.x1, dy = e.y2 - e.y1, len = Math.hypot(dx, dy) || 1, T = (a.thick || wallThickPts());
+  const lnx = -dy / len, lny = dx / len, j = a.just || 'center';
+  const oA = j === 'left' ? 1 : j === 'right' ? 0 : 0.5, oB = j === 'left' ? 0 : j === 'right' ? -1 : -0.5;
+  const ax = lnx * T * oA, ay = lny * T * oA, bx = lnx * T * oB, by = lny * T * oB;
+  return [[e.x1 + ax, e.y1 + ay], [e.x2 + ax, e.y2 + ay], [e.x2 + bx, e.y2 + by], [e.x1 + bx, e.y1 + by]];
 }
 function wallEndFree(a, ex, ey, arr) {                             // true = freies Ende → Stirnseite zeichnen (sonst verschmelzen lassen)
   const near = (a.thick || wallThickPts()) * 0.9;
@@ -1240,10 +1249,10 @@ function segInsideQuad(p, q, quad) {
 }
 function shrinkQuad(q) { const cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, cy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4, s = 0.04; return q.map(v => [v[0] + (cx - v[0]) * s, v[1] + (cy - v[1]) * s]); }
 function wallOutlineSegs(a, arr) {                              // sichtbare Umriss-Segmente (Längskanten durch andere Wände weggeschnitten)
-  const poly = wallPoly(a), segs = [];
+  const poly = wallPoly(a, arr), segs = [];
   for (const [p, q] of [[poly[0], poly[1]], [poly[3], poly[2]]]) {
     const ivs = [];
-    for (const o of arr) { if (o === a || o.type !== 'wall') continue; const iv = segInsideQuad(p, q, shrinkQuad(wallPoly(o))); if (iv && iv[1] - iv[0] > 0.01) ivs.push(iv); }
+    for (const o of arr) { if (o === a || o.type !== 'wall') continue; const iv = segInsideQuad(p, q, shrinkQuad(wallPoly(o, arr))); if (iv && iv[1] - iv[0] > 0.01) ivs.push(iv); }
     ivs.sort((u, v) => u[0] - v[0]); let cur = 0;
     const sub = (s, e) => segs.push([[p[0] + (q[0] - p[0]) * s, p[1] + (q[1] - p[1]) * s], [p[0] + (q[0] - p[0]) * e, p[1] + (q[1] - p[1]) * e]]);
     for (const [s, e] of ivs) { if (s > cur) sub(cur, Math.min(s, 1)); cur = Math.max(cur, e); if (cur >= 1) break; }
@@ -1613,6 +1622,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     const cm = ptsToCm(sW ? (sW.thick || wallThickPts()) : wallThickPts());
     if (document.activeElement !== $('#pbThick')) $('#pbThick').value = Math.round(cm * 10) / 10;
     $('#pbDim').classList.toggle('on', sW ? !!sW.dim : wallDimOn);
+    const jv = sW ? (sW.just || 'center') : wallJust; $$('#pbWall .pb-j').forEach(b => b.classList.toggle('on', b.dataset.just === jv));
     const col = sW ? sW.color : style.color; $('#pbWallDot').style.background = col; $('#pbWallColor').value = toHex(col);
   } else {
     const kind = sO ? sO.kind : openKind;
@@ -1728,7 +1738,7 @@ function startDraw(pv, e, p) {
   if (tool === 'pen') a = { id: nextId++, type: 'pen', pts: [[p.x, p.y]], color: style.color, width: style.width };
   else if (tool === 'rect') a = { id: nextId++, type: 'rect', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
   else if (tool === 'oval') a = { id: nextId++, type: 'oval', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
-  else if (tool === 'wall') a = { id: nextId++, type: 'wall', x1: p.x, y1: p.y, x2: p.x, y2: p.y, thick: wallThickPts(), color: style.color, fill: '#ffffff', hatch: null, width: 1.4, dim: wallDimOn };   // Wand = Linie mit Dicke
+  else if (tool === 'wall') a = { id: nextId++, type: 'wall', x1: p.x, y1: p.y, x2: p.x, y2: p.y, thick: wallThickPts(), just: wallJust, color: style.color, fill: '#ffffff', hatch: null, width: 1.4, dim: wallDimOn };   // Wand = Linie mit Dicke
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   getAnnos(pv.num).push(a);
   const isLine = (a.type !== 'pen' && a.type !== 'rect' && a.type !== 'oval');
@@ -1766,7 +1776,7 @@ function startDraw(pv, e, p) {
 let wallDraft = null;   // {pv, last:[x,y], seg, _onMove, _rel}
 function startWallChain(pv, x, y) {
   pushUndo();
-  const seg = { id: nextId++, type: 'wall', x1: x, y1: y, x2: x, y2: y, thick: wallThickPts(), color: style.color, fill: '#ffffff', hatch: null, width: 1.4, dim: wallDimOn, _draft: true };
+  const seg = { id: nextId++, type: 'wall', x1: x, y1: y, x2: x, y2: y, thick: wallThickPts(), just: wallJust, color: style.color, fill: '#ffffff', hatch: null, width: 1.4, dim: wallDimOn, _draft: true };
   getAnnos(pv.num).push(seg); wallDraft = { pv, last: [x, y], seg, pts: [[x, y]], segIds: [] };
   const onMove = ev => {
     if (!wallDraft) return; const s = wallDraft.seg; let q = evtToPage(pv, ev), snapped = null, rel = null;
@@ -1786,9 +1796,19 @@ function wallChainClick(pv, p) {
   pushUndo();
   const first = wallDraft.pts[0], closed = wallDraft.pts.length >= 4 && Math.hypot(ex - first[0], ey - first[1]) < (s.thick * 0.7 + 5);   // Zug geschlossen?
   if (closed) { addRoomArea(pv, wallDraft.pts.slice(0, -1), s.thick); finishWallChain(); return; }
-  const seg2 = { id: nextId++, type: 'wall', x1: ex, y1: ey, x2: ex, y2: ey, thick: s.thick, color: s.color, fill: s.fill, hatch: s.hatch, width: s.width, dim: s.dim, _draft: true };
+  const seg2 = { id: nextId++, type: 'wall', x1: ex, y1: ey, x2: ex, y2: ey, thick: s.thick, just: s.just, color: s.color, fill: s.fill, hatch: s.hatch, width: s.width, dim: s.dim, _draft: true };
   getAnnos(pv.num).push(seg2); wallDraft.seg = seg2; wallDraft.last = [ex, ey];
   drawAnnos(pv); saveState();
+}
+function wallChainLength() {   // „L" während der Wand-Kette: aktuelles Segment auf exakte Länge setzen + Ecke setzen
+  if (!wallDraft || !wallDraft.seg) return; const pv = wallDraft.pv, s = wallDraft.seg;
+  let ux = s.x2 - s.x1, uy = s.y2 - s.y1, l = Math.hypot(ux, uy);
+  const cur = docScale ? Math.round((l || 0) * docScale.perPt * 1000) / 1000 : Math.round((l || 0) * PT2MM);
+  const v = prompt('Wand-Länge' + (docScale ? ' in Metern (z. B. 3,25)' : ' in mm') + ' – Richtung = wie gezogen:', String(cur).replace('.', ',')); if (v == null) return;
+  const pts = parseLenToPts(v); if (!(pts > 0)) return;
+  if (l < 0.001) { ux = 1; uy = 0; l = 1; } ux /= l; uy /= l;
+  s.x2 = s.x1 + ux * pts; s.y2 = s.y1 + uy * pts;
+  wallChainClick(pv, { x: s.x2, y: s.y2 });   // Ecke an exakter Länge setzen, Kette läuft weiter
 }
 function polyArea2(pts) { let s = 0; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; s += a[0] * b[1] - b[0] * a[1]; } return s; }
 function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte Fläche)
@@ -1831,7 +1851,9 @@ function drawOpening(svg, a) {
 }
 function openingResolve(a, pv) {   // Position/Winkel/Dicke aus der zugehörigen Wand ableiten (Öffnung läuft mit)
   if (!a.wallId) return; const w = getAnnos(pv.num).find(o => o.id === a.wallId && o.type === 'wall'); if (!w) return;
-  const t = a.t == null ? 0.5 : a.t; a.x = w.x1 + (w.x2 - w.x1) * t; a.y = w.y1 + (w.y2 - w.y1) * t; a.ang = Math.atan2(w.y2 - w.y1, w.x2 - w.x1); a.thick = w.thick || wallThickPts();
+  const t = a.t == null ? 0.5 : a.t, T = w.thick || wallThickPts(); let px = w.x1 + (w.x2 - w.x1) * t, py = w.y1 + (w.y2 - w.y1) * t;
+  const dx = w.x2 - w.x1, dy = w.y2 - w.y1, L = Math.hypot(dx, dy) || 1, off = (w.just === 'left' ? T / 2 : w.just === 'right' ? -T / 2 : 0);   // Band-Mitte bei Achsen-Versatz
+  a.x = px + (-dy / L) * off; a.y = py + (dx / L) * off; a.ang = Math.atan2(dy, dx); a.thick = T;
 }
 function openingClick(pv, p) {
   const nw = nearestWall(pv, p.x, p.y);
@@ -2479,7 +2501,7 @@ async function buildPdfBytes() {
           }
         }
         else if (a.type === 'wall') {
-          const poly = wallPoly(a), arr = annos[n] || [], lw = a.width || 1.4;
+          const arr = annos[n] || [], poly = wallPoly(a, arr), lw = a.width || 1.4;
           if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); const d = 'M' + poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b) }); } catch (_) { } }
           for (const [p, q] of wallOutlineSegs(a, arr)) pg.drawLine({ start: { x: p[0], y: Y(p[1]) }, end: { x: q[0], y: Y(q[1]) }, thickness: lw, color: c });
           if (a.dim) {
@@ -2538,7 +2560,7 @@ async function buildPdfBytes() {
         if ((a.type === 'rect' || a.type === 'oval' || a.type === 'path' || a.type === 'wall') && a.hatch && a.hatch.type && moveTo && clip) {
           try {
             const ops = [pushGraphicsState()];
-            if (a.type === 'wall') { const poly = wallPoly(a); ops.push(moveTo(poly[0][0], Y(poly[0][1]))); for (let i = 1; i < 4; i++) ops.push(lineTo(poly[i][0], Y(poly[i][1]))); ops.push(closePath()); }
+            if (a.type === 'wall') { const poly = wallPoly(a, annos[n] || []); ops.push(moveTo(poly[0][0], Y(poly[0][1]))); for (let i = 1; i < 4; i++) ops.push(lineTo(poly[i][0], Y(poly[i][1]))); ops.push(closePath()); }
             else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h); ops.push(moveTo(x, Y(y)), lineTo(x + W, Y(y)), lineTo(x + W, Y(y + H)), lineTo(x, Y(y + H)), closePath()); }
             else if (a.type === 'oval') { const cx = a.x + a.w / 2, cy = a.y + a.h / 2, rx = Math.abs(a.w / 2), ry = Math.abs(a.h / 2); ops.push(moveTo(cx + rx, Y(cy))); for (let k = 1; k <= 32; k++) { const ang = k / 32 * 2 * Math.PI; ops.push(lineTo(cx + rx * Math.cos(ang), Y(cy + ry * Math.sin(ang)))); } ops.push(closePath()); }
             else { const pts = flattenPath(a); if (pts.length) { ops.push(moveTo(pts[0].x, Y(pts[0].y))); for (let i = 1; i < pts.length; i++) ops.push(lineTo(pts[i].x, Y(pts[i].y))); ops.push(closePath()); } }
@@ -2962,6 +2984,7 @@ function wire() {
   // Planungs-Leiste: Wandstärke / Masslinie / Farbe / Öffnungs-Breite – Standard ODER Auswahl
   $('#pbThick').onchange = () => { const v = parseFloat(($('#pbThick').value || '').replace(',', '.')); if (!(v > 0)) return updatePlanBar(); const pts = cmToPts(v); lastWallThick = pts; const a = selWall(); if (a) { pushUndo(); a.thick = pts; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); };
   $('#pbDim').onclick = () => { const a = selWall(); if (a) { pushUndo(); a.dim = !a.dim; wallDimOn = a.dim; pageViews.forEach(drawAnnos); saveState(); } else { wallDimOn = !wallDimOn; updatePlanBar(); } };
+  $$('#pbWall .pb-j').forEach(b => b.onclick = () => { wallJust = b.dataset.just; const a = selWall(); if (a) { pushUndo(); a.just = wallJust; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
   $('#pbWallColor').addEventListener('input', e => { const c = e.target.value; style.color = c; $('#colorDot').style.background = c; $('#pbWallDot').style.background = c; const a = selWall(); if (a) { a.color = c; pageViews.forEach(drawAnnos); } });
   $$('#pbOpen [data-ok]').forEach(b => b.onclick = () => { openKind = b.dataset.ok; const a = selOpen(); if (a) { pushUndo(); a.kind = openKind; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
   $('#pbWidth').onchange = () => { const v = parseFloat($('#pbWidth').value); if (!(v > 0)) return updatePlanBar(); const pts = cmToPts(v); lastOpenW = pts; const a = selOpen(); if (a) { pushUndo(); a.w = pts; pageViews.forEach(drawAnnos); saveState(); } };
@@ -3225,7 +3248,7 @@ function wire() {
     else if (!mod && e.key.toLowerCase() === 'v') setTool('select');
     else if (!mod && e.key.toLowerCase() === 't') setTool('text');
     else if (!mod && e.key.toLowerCase() === 's') setTool('pen');
-    else if (!mod && e.key.toLowerCase() === 'l') { const t = lineForLength(); if (t) { e.preventDefault(); lineLenInput(t.pv, t.a); } else setTool('line'); }
+    else if (!mod && e.key.toLowerCase() === 'l') { if (wallDraft && wallDraft.seg) { e.preventDefault(); wallChainLength(); return; } const t = lineForLength(); if (t) { e.preventDefault(); lineLenInput(t.pv, t.a); } else setTool('line'); }
     else if (!mod && e.key.toLowerCase() === 'w') setTool('wall');
     else if (!mod && e.key.toLowerCase() === 'd') { const t = wallForThick(); if (t) { e.preventDefault(); wallThickInput(t.pv, t.a); } }
     else if (!mod && e.key.toLowerCase() === 'p') setTool('arrow');

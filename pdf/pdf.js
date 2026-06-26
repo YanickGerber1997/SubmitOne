@@ -26,7 +26,7 @@ function applyStyleUI() { const $$$ = id => document.getElementById(id); const d
 let penTidy = true;        // Freihand-Skizzen automatisch zu sauberen Formen aufräumen
 let docScale = null;       // {perPt: reale Meter pro PDF-Punkt, label:'1:100'} – für Messen
 const PT2MM = 25.4 / 72;   // 1 PDF-Punkt in mm
-let dimUnit = false, wallDimOffCm = 10;   // Mass-Anzeige mit Einheit? (Standard: Plan-Stil „4.00") · Abstand der Wand-Masslinie (cm)
+let dimUnit = false, wallDimOffCm = 10, wallDimGap = 8;   // Mass-Anzeige mit Einheit? (Standard: Plan-Stil „4.00") · Abstand der Wand-Masslinie (cm) · Lücke Bauteil↔Hilfslinie (pt)
 function fmtLen(pts) {
   if (docScale && !dimUnit) return (pts * docScale.perPt).toFixed(2);          // Plan-Stil: „2.00" (Meter, 2 Nachkommastellen, ohne Einheit)
   if (!docScale) return Math.round(pts * PT2MM) + (dimUnit ? ' mm' : '');      // ohne Massstab: Papier-mm
@@ -1407,7 +1407,7 @@ function wallDimGeom(a) {                                            // parallel
 // Richtige Architektur-Masslinie: Hilfslinien (Lücke zum Bauteil, über die Masslinie hinaus) + Masslinie (über die äussersten Hilfslinien) + 45°-Schrägstriche + mitlaufender Text über/links der Linie.
 function archDim(svg, p1, p2, off, col, label) {
   const dx = p2[0] - p1[0], dy = p2[1] - p1[1], len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
-  const side = off >= 0 ? 1 : -1, gap = 3, over = 4, tick = 5;
+  const side = off >= 0 ? 1 : -1, gap = wallDimGap, over = 4, tick = 5;
   const D = (x1, y1, x2, y2, w) => svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: col, 'stroke-width': w || 0.7, 'vector-effect': 'non-scaling-stroke' }));
   for (const P of [p1, p2]) D(P[0] + nx * side * gap, P[1] + ny * side * gap, P[0] + nx * (off + side * over), P[1] + ny * (off + side * over));   // Maßhilfslinien
   const a1 = [p1[0] + nx * off, p1[1] + ny * off], a2 = [p2[0] + nx * off, p2[1] + ny * off];
@@ -1781,12 +1781,13 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
   const sW = a && a.type === 'wall' ? a : null, sO = a && a.type === 'opening' ? a : null;
   const isDimObj = a && ['dim', 'measure', 'chaindim', 'area'].includes(a.type), sS = a && a.type === 'slab' ? a : null, sT = a && a.type === 'stairs' ? a : null, sR = a && a.type === 'roof' ? a : null;
   let mode = sW ? 'wall' : sO ? 'open' : sS ? 'slab' : sT ? 'stairs' : sR ? 'roof' : isDimObj ? 'dim' : ((tool === 'wall' || tool === 'wallchain') ? 'wall' : (tool === 'opening' || tool === 'window') ? 'open' : tool === 'slab' ? 'slab' : tool === 'stairs' ? 'stairs' : tool === 'roof' ? 'roof' : (['measure', 'dim', 'chaindim', 'area'].includes(tool) ? 'dim' : null));
-  if (!mode) { bar.hidden = true; return; }
-  bar.hidden = false; $('#pbWall').hidden = mode !== 'wall'; $('#pbOpen').hidden = mode !== 'open'; $('#pbSlab').hidden = mode !== 'slab'; $('#pbStairs').hidden = mode !== 'stairs'; $('#pbRoof').hidden = mode !== 'roof';
+  if (!mode) { bar.hidden = true; document.body.classList.remove('has-planbar'); return; }
+  bar.hidden = false; document.body.classList.add('has-planbar'); $('#pbWall').hidden = mode !== 'wall'; $('#pbOpen').hidden = mode !== 'open'; $('#pbSlab').hidden = mode !== 'slab'; $('#pbStairs').hidden = mode !== 'stairs'; $('#pbRoof').hidden = mode !== 'roof';
   if (mode === 'roof') { const rt = sR ? sR.rtype : roofType; $$('#pbRoof [data-rt]').forEach(b => b.classList.toggle('on', b.dataset.rt === rt)); if (document.activeElement !== $('#pbEave')) $('#pbEave').value = sR ? sR.eave : roofEaveM; if (document.activeElement !== $('#pbRidge')) $('#pbRidge').value = sR ? sR.ridge : roofRidgeM; }
   if (mode === 'slab') { if (document.activeElement !== $('#pbSlabBase')) $('#pbSlabBase').value = sS ? sS.base : wallHeightM; if (document.activeElement !== $('#pbSlabThick')) $('#pbSlabThick').value = Math.round((sS ? sS.thick : 0.2) * 100); }
   if (mode === 'stairs') { if (document.activeElement !== $('#pbStairW')) $('#pbStairW').value = Math.round(ptsToCm(sT ? sT.width : stairWidthPts())); if (document.activeElement !== $('#pbStairRise')) $('#pbStairRise').value = sT ? sT.rise : stairRiseM; if (document.activeElement !== $('#pbStairBase')) $('#pbStairBase').value = sT ? sT.base : stairBaseM; }
   $('#pbDimset').hidden = (mode !== 'wall' && mode !== 'dim'); $('#pbUnit').classList.toggle('on', dimUnit);
+  if (document.activeElement !== $('#pbDimGap')) $('#pbDimGap').value = wallDimGap;
   if (mode === 'wall') {
     const cm = ptsToCm(sW ? (sW.thick || wallThickPts()) : wallThickPts());
     if (document.activeElement !== $('#pbThick')) $('#pbThick').value = Math.round(cm * 10) / 10;
@@ -2814,7 +2815,7 @@ async function buildPdfBytes(visibleOnly) {
           if (!wallUni) for (const [p, q] of wallOutlineSegs(a, arr)) pg.drawLine({ start: { x: p[0], y: Y(p[1]) }, end: { x: q[0], y: Y(q[1]) }, thickness: lw, color: c });
           if (a.dim) {   // Architektur-Masslinie im PDF
             const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
-            const base = (a.thick || wallThickPts()) / 2 + cmToPts(wallDimOffCm), off = (a.dimOff != null ? a.dimOff : base), side = off >= 0 ? 1 : -1, gap = 3, over = 4, tick = 5;
+            const base = (a.thick || wallThickPts()) / 2 + cmToPts(wallDimOffCm), off = (a.dimOff != null ? a.dimOff : base), side = off >= 0 ? 1 : -1, gap = wallDimGap, over = 4, tick = 5;
             const dl = (x1, y1, x2, y2, th) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: th || 0.7, color: c });
             for (const P of [[a.x1, a.y1], [a.x2, a.y2]]) dl(P[0] + nx * side * gap, P[1] + ny * side * gap, P[0] + nx * (off + side * over), P[1] + ny * (off + side * over));
             const q1 = [a.x1 + nx * off, a.y1 + ny * off], q2 = [a.x2 + nx * off, a.y2 + ny * off];
@@ -3452,6 +3453,7 @@ function wire() {
   $('#pbDim').onclick = () => { const a = selWall(); if (a) { pushUndo(); a.dim = !a.dim; wallDimOn = a.dim; pageViews.forEach(drawAnnos); saveState(); } else { wallDimOn = !wallDimOn; updatePlanBar(); } };
   $$('#pbWall .pb-j').forEach(b => b.onclick = () => { wallJust = b.dataset.just; const a = selWall(); if (a) { pushUndo(); a.just = wallJust; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
   $('#pbDimOff').onchange = () => { const v = parseFloat(($('#pbDimOff').value || '').replace(',', '.')); if (v >= 0) { wallDimOffCm = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbDimGap').onchange = () => { const v = parseFloat(($('#pbDimGap').value || '').replace(',', '.')); if (v >= 0) { wallDimGap = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbHatch').onchange = () => { const t = $('#pbHatch').value; const h = t ? { type: t, scale: lastHatchScale, w: 0.8 } : null; wallHatch = h; const a = selWall(); if (a) { pushUndo(); a.hatch = h ? { ...h, color: a.color } : null; pageViews.forEach(drawAnnos); saveState(); } };
   $('#foot3d').onclick = open3D;
   let planKind = 'kopf', planPos = 'br';

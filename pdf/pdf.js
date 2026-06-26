@@ -914,6 +914,15 @@ function drawOne(svg, a, pv) {
     const al = 7; g.appendChild(svgEl('path', { d: `M${a.x2} ${a.y2} L${a.x2 - ux * al + nx * al * .6} ${a.y2 - uy * al + ny * al * .6} M${a.x2} ${a.y2} L${a.x2 - ux * al - nx * al * .6} ${a.y2 - uy * al - ny * al * .6}`, stroke: col, 'stroke-width': 1, fill: 'none', 'vector-effect': 'non-scaling-stroke' }));   // Pfeil = aufwärts
     svg.appendChild(g); el = g;
     hit = svgEl('polygon', { points: [c1, c2, c3, c4].map(p => p[0] + ',' + p[1]).join(' '), fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
+  } else if (a.type === 'roof') {
+    const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), col = a.color || '#1c242c', g = svgEl('g', { 'data-id': a.id });
+    g.appendChild(svgEl('rect', { x, y, width: W, height: H, fill: '#fff', 'fill-opacity': .4, stroke: col, 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
+    const ridge = (x1, y1, x2, y2) => g.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: col, 'stroke-width': 1.8, 'vector-effect': 'non-scaling-stroke' }));
+    if (a.rtype === 'pult') { a.axis === 'x' ? ridge(x, y, x + W, y) : ridge(x, y, x, y + H); }   // hohe Traufkante
+    else { a.axis === 'x' ? ridge(x, y + H / 2, x + W, y + H / 2) : ridge(x + W / 2, y, x + W / 2, y + H); }   // First mittig
+    const t = svgEl('text', { x: x + W / 2, y: y + H / 2 - 3, fill: col, 'font-size': 11, 'text-anchor': 'middle', 'font-weight': 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = a.rtype === 'pult' ? 'Pultdach' : 'Satteldach'; g.appendChild(t);
+    svg.appendChild(g); el = g;
+    hit = svgEl('rect', { x, y, width: W, height: H, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
     el = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, ...strokeAttrs(a), 'data-id': a.id });
     svg.appendChild(el);
@@ -1065,7 +1074,7 @@ function drawMeasureLabel(svg, a, pv) {
 
 /* ---------- Auswahl / Griffe ---------- */
 function bbox(a) {
-  if (a.type === 'rect' || a.type === 'oval') return { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), w: Math.abs(a.w), h: Math.abs(a.h) };
+  if (a.type === 'rect' || a.type === 'oval' || a.type === 'roof') return { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), w: Math.abs(a.w), h: Math.abs(a.h) };
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') return { x: Math.min(a.x1, a.x2), y: Math.min(a.y1, a.y2), w: Math.abs(a.x2 - a.x1), h: Math.abs(a.y2 - a.y1) };
   if (a.type === 'wall') { const t = (a.thick || wallThickPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
   if (a.type === 'stairs') { const t = (a.width || stairWidthPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
@@ -1230,6 +1239,7 @@ function cmToPts(cm) { return cm * (docScale ? (0.01 / docScale.perPt) : (10 / P
 function ptsToCm(pts) { return pts / (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
 let lastWallThick = null, wallJust = 'center', wallHatch = null, wallHeightM = 2.6;   // Achse · Schraffur · 3D-Höhe der neuen Wand
 let stairW = null, stairRiseM = 2.6, stairBaseM = 0;   // Treppe: Breite · Geschosshöhe · Unterkante
+let roofType = 'sattel', roofEaveM = 2.6, roofRidgeM = 4.0, roofAxis = 'x';   // Dach: Pult/Sattel · Traufe · First · Firstrichtung
 function stairWidthPts() { return stairW || cmToPts(100); }
 function stairSteps(a) { return a.steps || Math.max(2, Math.round((a.rise || stairRiseM) / 0.18)); }   // ~18 cm Steigung
 function wallThickPts() { return lastWallThick || cmToPts(17.5); }   // Standard 17,5 cm (Backstein)
@@ -1663,10 +1673,11 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
   const bar = $('#planBar'); if (!bar) return;
   const a = (sel && tool === 'select') ? findAnno(sel.num, sel.id) : null;
   const sW = a && a.type === 'wall' ? a : null, sO = a && a.type === 'opening' ? a : null;
-  const isDimObj = a && ['dim', 'measure', 'chaindim', 'area'].includes(a.type), sS = a && a.type === 'slab' ? a : null, sT = a && a.type === 'stairs' ? a : null;
-  let mode = sW ? 'wall' : sO ? 'open' : sS ? 'slab' : sT ? 'stairs' : isDimObj ? 'dim' : ((tool === 'wall' || tool === 'wallchain') ? 'wall' : (tool === 'opening' || tool === 'window') ? 'open' : tool === 'slab' ? 'slab' : tool === 'stairs' ? 'stairs' : (['measure', 'dim', 'chaindim', 'area'].includes(tool) ? 'dim' : null));
+  const isDimObj = a && ['dim', 'measure', 'chaindim', 'area'].includes(a.type), sS = a && a.type === 'slab' ? a : null, sT = a && a.type === 'stairs' ? a : null, sR = a && a.type === 'roof' ? a : null;
+  let mode = sW ? 'wall' : sO ? 'open' : sS ? 'slab' : sT ? 'stairs' : sR ? 'roof' : isDimObj ? 'dim' : ((tool === 'wall' || tool === 'wallchain') ? 'wall' : (tool === 'opening' || tool === 'window') ? 'open' : tool === 'slab' ? 'slab' : tool === 'stairs' ? 'stairs' : tool === 'roof' ? 'roof' : (['measure', 'dim', 'chaindim', 'area'].includes(tool) ? 'dim' : null));
   if (!mode) { bar.hidden = true; return; }
-  bar.hidden = false; $('#pbWall').hidden = mode !== 'wall'; $('#pbOpen').hidden = mode !== 'open'; $('#pbSlab').hidden = mode !== 'slab'; $('#pbStairs').hidden = mode !== 'stairs';
+  bar.hidden = false; $('#pbWall').hidden = mode !== 'wall'; $('#pbOpen').hidden = mode !== 'open'; $('#pbSlab').hidden = mode !== 'slab'; $('#pbStairs').hidden = mode !== 'stairs'; $('#pbRoof').hidden = mode !== 'roof';
+  if (mode === 'roof') { const rt = sR ? sR.rtype : roofType; $$('#pbRoof [data-rt]').forEach(b => b.classList.toggle('on', b.dataset.rt === rt)); if (document.activeElement !== $('#pbEave')) $('#pbEave').value = sR ? sR.eave : roofEaveM; if (document.activeElement !== $('#pbRidge')) $('#pbRidge').value = sR ? sR.ridge : roofRidgeM; }
   if (mode === 'slab') { if (document.activeElement !== $('#pbSlabBase')) $('#pbSlabBase').value = sS ? sS.base : wallHeightM; if (document.activeElement !== $('#pbSlabThick')) $('#pbSlabThick').value = Math.round((sS ? sS.thick : 0.2) * 100); }
   if (mode === 'stairs') { if (document.activeElement !== $('#pbStairW')) $('#pbStairW').value = Math.round(ptsToCm(sT ? sT.width : stairWidthPts())); if (document.activeElement !== $('#pbStairRise')) $('#pbStairRise').value = sT ? sT.rise : stairRiseM; if (document.activeElement !== $('#pbStairBase')) $('#pbStairBase').value = sT ? sT.base : stairBaseM; }
   $('#pbDimset').hidden = (mode !== 'wall' && mode !== 'dim'); $('#pbUnit').classList.toggle('on', dimUnit);
@@ -1796,6 +1807,7 @@ function startDraw(pv, e, p) {
   let a;
   if (tool === 'pen') a = { id: nextId++, type: 'pen', pts: [[p.x, p.y]], color: style.color, width: style.width };
   else if (tool === 'rect') a = { id: nextId++, type: 'rect', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
+  else if (tool === 'roof') a = { id: nextId++, type: 'roof', x: p.x, y: p.y, w: 0, h: 0, rtype: roofType, eave: roofEaveM, ridge: roofRidgeM, axis: roofAxis, color: style.color };
   else if (tool === 'oval') a = { id: nextId++, type: 'oval', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
   else if (tool === 'wall') a = { id: nextId++, type: 'wall', x1: p.x, y1: p.y, x2: p.x, y2: p.y, thick: wallThickPts(), just: wallJust, color: style.color, fill: '#ffffff', hatch: wallHatch ? { ...wallHatch } : null, width: 1.4, dim: wallDimOn };   // Wand = Linie mit Dicke
   else if (tool === 'stairs') a = { id: nextId++, type: 'stairs', x1: p.x, y1: p.y, x2: p.x, y2: p.y, width: stairWidthPts(), rise: stairRiseM, base: stairBaseM, color: style.color };   // Treppe = Lauf (Linie mit Breite + Höhe)
@@ -1807,7 +1819,7 @@ function startDraw(pv, e, p) {
     if (a.type !== 'pen' && !ev.shiftKey) { const an = anchorSnap(pv, q.x, q.y, a.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
     let rel = null;
     if (a.type === 'pen') a.pts.push([q.x, q.y]);
-    else if (a.type === 'rect' || a.type === 'oval') { a.w = q.x - a.x; a.h = q.y - a.y; }
+    else if (a.type === 'rect' || a.type === 'oval' || a.type === 'roof') { a.w = q.x - a.x; a.h = q.y - a.y; }
     else if (ev.shiftKey) { const s = snap15(a.x1, a.y1, q.x, q.y); a.x2 = s.x; a.y2 = s.y; }   // Shift = 15°
     else {                                                                                       // Linie/Pfeil/Mass/Wand
       if (!snapped) rel = refAngleSnap(pv, a, q.x, q.y);                                   // senkrecht/parallel zu Nachbar-Linie/Wand
@@ -2532,6 +2544,7 @@ function setTool(t) {
   if (t === 'curve' && !setTool._curveHint) { setTool._curveHint = true; toast('Kurve: Klick = Ecke (gerade) · Klick+Ziehen = Kurve · Enter/Doppelklick = fertig · Esc = abbrechen'); }
   if (['pen', 'line', 'arrow', 'rect', 'oval', 'arc'].includes(t) && !setTool._drawHint) { setTool._drawHint = true; toast('Werkzeug bleibt aktiv – einfach weiterzeichnen. V oder Esc = auswählen/bearbeiten.'); }
   if ((t === 'opening' || t === 'window') && !setTool._openHint) { setTool._openHint = true; toast('Tür/Fenster: auf eine Wand klicken → wird eingesetzt. Oben in der Planungs-Leiste: Breite, Brüstung/Höhe, Anschlag – wirken in 2D und 3D.'); }
+  if (t === 'roof' && !setTool._roofHint) { setTool._roofHint = true; toast('Dach: Grundfläche aufziehen. Oben: Sattel/Pult, Traufe + First, „First ↻" dreht die Firstrichtung. 3D zeigt die Schräge.'); }
   if (t === 'stairs' && !setTool._stairHint) { setTool._stairHint = true; toast('Treppe (gerader Lauf): Start klicken → Richtung/Länge → 2. Klick oder „L". Breite/Höhe/UK oben einstellen · L-/U-Treppe: mehrere Läufe + Podest (Decke). 3D zeigt die Stufen.'); }
   if (t === 'chaindim' && !setTool._cdimHint) { setTool._cdimHint = true; toast('Kettenmass: Stationen klicken (rastet an Ecken/Enden ein) · je Abschnitt ein Mass + Gesamt · Rücktaste = letzte Station zurück · Doppelklick/Enter = fertig.'); }
   updatePlanBar();
@@ -2540,7 +2553,7 @@ function setTool(t) {
   if (t === 'wallchain' && !setTool._wcHint) { setTool._wcHint = true; toast('Wände am Stück: klicken–klicken = Raumzug · zurück auf den Startpunkt = Raum schliessen (m²) · Rücktaste = letzte Wand zurück · Doppelklick/Enter = fertig.'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'roof'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -2620,6 +2633,7 @@ async function buildPdfBytes() {
           }
         }
         else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), o = { x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawRectangle(o); }
+        else if (a.type === 'roof') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h); pg.drawRectangle({ x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: 1.2 }); const rl = (x1, y1, x2, y2) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: 1.8, color: c }); if (a.rtype === 'pult') { a.axis === 'x' ? rl(x, y, x + W, y) : rl(x, y, x, y + H); } else { a.axis === 'x' ? rl(x, y + H / 2, x + W, y + H / 2) : rl(x + W / 2, y, x + W / 2, y + H); } const lab = a.rtype === 'pult' ? 'Pultdach' : 'Satteldach', tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: x + W / 2 - tw / 2, y: Y(y + H / 2) - 3, size: 11, font, color: c }); }
         else if (a.type === 'oval') { const o = { x: a.x + a.w / 2, y: Y(a.y + a.h / 2), xScale: Math.abs(a.w / 2), yScale: Math.abs(a.h / 2), borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawEllipse(o); }
         else if (a.type === 'pen') { const op = a.hl ? 0.35 : 1; for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c, opacity: op }); }
         else if (a.type === 'opening') {
@@ -2943,6 +2957,21 @@ function build3DScene(host, walls, arr) {
       const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); e.rotation.copy(m.rotation); scene.add(e);
     }
   }
+  // Dächer (Pult-/Satteldach) als 3D-Schräge
+  const rmat = new THREE.MeshLambertMaterial({ color: 0xb06a4f, side: THREE.DoubleSide });
+  for (const a of arr) if (a.type === 'roof') {
+    const x0 = M(Math.min(a.x, a.x + a.w) - cx), x1 = M(Math.max(a.x, a.x + a.w) - cx), z0 = M(Math.min(a.y, a.y + a.h) - cy), z1 = M(Math.max(a.y, a.y + a.h) - cy), ev = a.eave || roofEaveM, rg = a.ridge || roofRidgeM, tris = [];
+    const quad = (A, B, C, D) => { tris.push([A, B, C], [A, C, D]); };
+    if (a.rtype === 'pult') {
+      if (a.axis === 'x') { quad([x0, ev, z0], [x1, ev, z0], [x1, rg, z1], [x0, rg, z1]); tris.push([[x0, ev, z0], [x0, rg, z1], [x0, ev, z1]], [[x1, ev, z0], [x1, ev, z1], [x1, rg, z1]]); }
+      else { quad([x0, ev, z0], [x0, ev, z1], [x1, rg, z1], [x1, rg, z0]); tris.push([[x0, ev, z0], [x1, rg, z0], [x1, ev, z0]], [[x0, ev, z1], [x1, ev, z1], [x1, rg, z1]]); }
+    } else {
+      if (a.axis === 'x') { const zc = (z0 + z1) / 2; quad([x0, ev, z0], [x1, ev, z0], [x1, rg, zc], [x0, rg, zc]); quad([x0, ev, z1], [x0, rg, zc], [x1, rg, zc], [x1, ev, z1]); tris.push([[x0, ev, z0], [x0, rg, zc], [x0, ev, z1]], [[x1, ev, z0], [x1, ev, z1], [x1, rg, zc]]); }
+      else { const xc = (x0 + x1) / 2; quad([x0, ev, z0], [x0, ev, z1], [xc, rg, z1], [xc, rg, z0]); quad([x1, ev, z0], [xc, rg, z0], [xc, rg, z1], [x1, ev, z1]); tris.push([[x0, ev, z0], [xc, rg, z0], [x1, ev, z0]], [[x0, ev, z1], [x1, ev, z1], [xc, rg, z1]]); }
+    }
+    const flat = []; for (const tri of tris) for (const v of tri) flat.push(v[0], v[1], v[2]);
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(flat, 3)); geo.computeVertexNormals(); scene.add(new THREE.Mesh(geo, rmat));
+  }
   let raf, alive = true;
   const onResize = () => { const w2 = host.clientWidth, h2 = host.clientHeight; if (!w2 || !h2) return; camera.aspect = w2 / h2; camera.updateProjectionMatrix(); renderer.setSize(w2, h2); };
   window.addEventListener('resize', onResize);
@@ -3226,6 +3255,11 @@ function wire() {
   $('#pbStairW').onchange = () => { const v = parseFloat(($('#pbStairW').value || '').replace(',', '.')); if (!(v > 0)) return; const pts = cmToPts(v); stairW = pts; const a = selStairs(); if (a) { pushUndo(); a.width = pts; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbStairRise').onchange = () => { const v = parseFloat(($('#pbStairRise').value || '').replace(',', '.')); if (!(v > 0)) return; stairRiseM = v; const a = selStairs(); if (a) { pushUndo(); a.rise = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbStairBase').onchange = () => { const v = parseFloat(($('#pbStairBase').value || '').replace(',', '.')); if (!(v >= 0)) return; stairBaseM = v; const a = selStairs(); if (a) { pushUndo(); a.base = v; saveState(); } };
+  const selRoof = () => { const a = sel && findAnno(sel.num, sel.id); return a && a.type === 'roof' ? a : null; };
+  $$('#pbRoof [data-rt]').forEach(b => b.onclick = () => { roofType = b.dataset.rt; const a = selRoof(); if (a) { pushUndo(); a.rtype = roofType; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
+  $('#pbEave').onchange = () => { const v = parseFloat(($('#pbEave').value || '').replace(',', '.')); if (!(v >= 0)) return; roofEaveM = v; const a = selRoof(); if (a) { pushUndo(); a.eave = v; saveState(); } };
+  $('#pbRidge').onchange = () => { const v = parseFloat(($('#pbRidge').value || '').replace(',', '.')); if (!(v > 0)) return; roofRidgeM = v; const a = selRoof(); if (a) { pushUndo(); a.ridge = v; saveState(); } };
+  $('#pbAxis').onclick = () => { roofAxis = roofAxis === 'x' ? 'y' : 'x'; const a = selRoof(); if (a) { pushUndo(); a.axis = roofAxis; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbUnit').onclick = () => { dimUnit = !dimUnit; pageViews.forEach(drawAnnos); updatePlanBar(); saveState(); };
   $('#pbWallColor').addEventListener('input', e => { const c = e.target.value; style.color = c; $('#colorDot').style.background = c; $('#pbWallDot').style.background = c; const a = selWall(); if (a) { a.color = c; pageViews.forEach(drawAnnos); } });
   $$('#pbOpen [data-ok]').forEach(b => b.onclick = () => { openKind = b.dataset.ok; const a = selOpen(); if (a) { pushUndo(); a.kind = openKind; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });

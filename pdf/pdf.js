@@ -2403,19 +2403,21 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   const l0 = wall.layers[0], lN = wall.layers[wall.layers.length - 1], rt0 = a.revealType || 'putz';   // Innen-Laibungs-Element nach Typ
   const innerLining = rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]);   // putz = innerste Wandschicht reingezogen; aussen = äusserste; sonst feste Konstruktion
   if (Math.abs((fmA - gapM) + 1) > 0.02) { let sAcc = 0; for (const [mat, tcm] of innerLining) { const mt = LINING_MAT[mat] || WALL_MATS[mat] || {}, tw = Math.min(0.42, cmToPts(tcm) / hw), sk = mt.stroke || mt.color || '#1c242c'; for (const sgn of [-1, 1]) { const s0 = sgn * (1 - sAcc), s1 = sgn * (1 - sAcc - tw); strips.push({ poly: [corner(s0, -1), corner(s1, -1), corner(s1, fmA - gapM), corner(s0, fmA - gapM)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(s0, s1), Math.max(s0, s1), -1, fmA - gapM, corner, hw, ht, stepS) : null }); } sAcc += tw; } }
-  const outer = []; for (let i = wall.layers.length - 1; i > coreIdx; i--) if (wall.layers[i].mat !== 'luft') outer.push(wall.layers[i]);   // aussen, ohne Hinterlüftung
-  if (outer.length) {   // vom Rahmen: 1 cm sichtbar → Brett (lappt auf Rahmen) → Dämmung (Wand-Schraffur) mit Schalung obenauf bis zur Rohbaukante
-    const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw);
-    const visS = Math.min(fwSr * 0.3, cmToPts(1) / hw), schWs = Math.min(0.22, cmToPts(2.5) / hw), schT = Math.min((1 - (fmB + gapM)) * 0.55, cmToPts(2.5) / ht);
-    const schal = outer[0], daemm = outer.find(l => INS.includes(l.mat)) || outer[outer.length - 1];
-    const revM = WALL_MATS[schal.mat] || {}, dM = WALL_MATS[daemm.mat] || {}, doHatch = ['holz', 'konter'].includes(schal.mat);
+  const total = wall.layers.reduce((s, l) => s + l.t, 0) || 1; let cum = 0;
+  const pos = wall.layers.map(l => { const f0 = cum / total, f1 = (cum + l.t) / total; cum += l.t; return { l, mLo: -1 + 2 * f0, mHi: -1 + 2 * f1 }; });   // Schicht-Positionen über die Wanddicke
+  const outerPos = pos.filter((p, i) => i > coreIdx);   // Schichten ausserhalb Tragkern
+  if (outerPos.length) {   // jede Aussenschicht läuft ununterbrochen aus der Wand (an ihrer m-Position) bis ans Laibungsbrett; Hinterlüftung bleibt offener Spalt
+    const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), visS = Math.min(fwSr * 0.3, cmToPts(1) / hw), schWs = Math.min(0.22, cmToPts(2.5) / hw);
+    const boardMat = WALL_MATS.holz || { fill: '#e7cfa8', color: '#7a5126' };
     for (const sgn of [-1, 1]) {
       const sBI = sgn * Math.min(1, 1 - fwSr + visS), sBO = sgn * Math.min(1, 1 - fwSr + visS + schWs), sE = sgn, lo = Math.min(sBO, sE), hi = Math.max(sBO, sE);
-      if (hi - lo > 0.02) {
-        strips.push({ poly: [corner(sBO, fmB + gapM), corner(sE, fmB + gapM), corner(sE, 1 - schT), corner(sBO, 1 - schT)], fill: dM.fill || '#fff', stroke: dM.color || '#1c242c', hatch: bandHatchPerp(lo, hi, fmB + gapM, 1 - schT, corner, stepS, s0) });   // Dämmung mit Wand-Schraffur (quer, eingerastet)
-        strips.push({ poly: [corner(sBO, 1 - schT), corner(sE, 1 - schT), corner(sE, 1), corner(sBO, 1)], fill: revM.fill || '#fff', stroke: revM.color || '#1c242c', hatch: doHatch ? bandHatch(lo, hi, 1 - schT, 1, corner, hw, ht, stepS) : null });   // Schalung läuft aussen bis zum Brett
+      if (hi - lo > 0.02) for (const p of outerPos) {
+        if (p.l.mat === 'luft') continue;   // Hinterlüftung: offener Spalt bis zum Brett (nicht gefüllt)
+        const mLoC = Math.max(p.mLo, fmB + gapM); if (p.mHi - mLoC < 0.01) continue;
+        const m = WALL_MATS[p.l.mat] || {}, isD = INS.includes(p.l.mat), isW = ['holz', 'konter'].includes(p.l.mat);
+        strips.push({ poly: [corner(sBO, mLoC), corner(sE, mLoC), corner(sE, p.mHi), corner(sBO, p.mHi)], fill: m.fill || '#fff', stroke: m.color || '#1c242c', hatch: isD ? bandHatchPerp(lo, hi, mLoC, p.mHi, corner, stepS, s0) : (isW ? bandHatch(lo, hi, mLoC, p.mHi, corner, hw, ht, stepS) : null) });   // Schicht läuft bis zum Brett
       }
-      if (Math.abs(sBO - sBI) > 0.02) strips.push({ poly: [corner(sBI, fmB), corner(sBO, fmB), corner(sBO, 1), corner(sBI, 1)], fill: revM.fill || '#fff', stroke: revM.color || '#1c242c', hatch: doHatch ? bandHatch(Math.min(sBI, sBO), Math.max(sBI, sBO), fmB, 1, corner, hw, ht, stepS) : null });   // Schalungsbrett, 1 cm vom Rahmen, lappt auf fmB
+      if (Math.abs(sBO - sBI) > 0.02) strips.push({ poly: [corner(sBI, fmB), corner(sBO, fmB), corner(sBO, 1), corner(sBI, 1)], fill: boardMat.fill, stroke: boardMat.color, hatch: bandHatch(Math.min(sBI, sBO), Math.max(sBI, sBO), fmB, 1, corner, hw, ht, stepS) });   // Laibungsbrett, 1 cm vom Rahmen
     }
   }
   return strips;

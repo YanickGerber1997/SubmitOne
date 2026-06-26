@@ -903,6 +903,17 @@ function drawOne(svg, a, pv) {
       const mx = (dg.x1 + dg.x2) / 2, my = (dg.y1 + dg.y2) / 2, t = svgEl('text', { x: mx + dg.nx * 7, y: my + dg.ny * 7, fill: col, 'font-size': 11, 'text-anchor': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = dg.label; svg.appendChild(t);
     }
     hit = svgEl('polygon', { points: pstr, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
+  } else if (a.type === 'stairs') {
+    const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, hw = (a.width || stairWidthPts()) / 2, col = a.color || '#1c242c', n = stairSteps(a);
+    const g = svgEl('g', { 'data-id': a.id });
+    const c1 = [a.x1 + nx * hw, a.y1 + ny * hw], c2 = [a.x2 + nx * hw, a.y2 + ny * hw], c3 = [a.x2 - nx * hw, a.y2 - ny * hw], c4 = [a.x1 - nx * hw, a.y1 - ny * hw];
+    g.appendChild(svgEl('polygon', { points: [c1, c2, c3, c4].map(p => p[0] + ',' + p[1]).join(' '), fill: '#fff', 'fill-opacity': .5, stroke: col, 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
+    for (let i = 1; i < n; i++) { const t = i / n, mx = a.x1 + dx * t, my = a.y1 + dy * t; g.appendChild(svgEl('line', { x1: mx + nx * hw, y1: my + ny * hw, x2: mx - nx * hw, y2: my - ny * hw, stroke: col, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' })); }
+    g.appendChild(svgEl('circle', { cx: a.x1, cy: a.y1, r: 2.6, fill: col }));   // unten (Antritt)
+    g.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, stroke: col, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));   // Lauflinie
+    const al = 7; g.appendChild(svgEl('path', { d: `M${a.x2} ${a.y2} L${a.x2 - ux * al + nx * al * .6} ${a.y2 - uy * al + ny * al * .6} M${a.x2} ${a.y2} L${a.x2 - ux * al - nx * al * .6} ${a.y2 - uy * al - ny * al * .6}`, stroke: col, 'stroke-width': 1, fill: 'none', 'vector-effect': 'non-scaling-stroke' }));   // Pfeil = aufwärts
+    svg.appendChild(g); el = g;
+    hit = svgEl('polygon', { points: [c1, c2, c3, c4].map(p => p[0] + ',' + p[1]).join(' '), fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') {
     el = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, ...strokeAttrs(a), 'data-id': a.id });
     svg.appendChild(el);
@@ -1057,6 +1068,7 @@ function bbox(a) {
   if (a.type === 'rect' || a.type === 'oval') return { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), w: Math.abs(a.w), h: Math.abs(a.h) };
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') return { x: Math.min(a.x1, a.x2), y: Math.min(a.y1, a.y2), w: Math.abs(a.x2 - a.x1), h: Math.abs(a.y2 - a.y1) };
   if (a.type === 'wall') { const t = (a.thick || wallThickPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
+  if (a.type === 'stairs') { const t = (a.width || stairWidthPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
   if (a.type === 'opening') { const P = openingParts(a), xs = [], ys = []; for (const p of P.cover) { xs.push(p[0]); ys.push(p[1]); } for (const [u, v] of P.lines) { xs.push(u[0], v[0]); ys.push(u[1], v[1]); } for (const arc of P.arcs) for (const p of arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 8)) { xs.push(p[0]); ys.push(p[1]); } return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim' || a.type === 'slab') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'path') { const xs = [], ys = []; for (const nd of a.nodes) { xs.push(nd.x, nd.hIn.x, nd.hOut.x); ys.push(nd.y, nd.hIn.y, nd.hOut.y); } if (!xs.length) return { x: 0, y: 0, w: 0, h: 0 }; return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
@@ -1066,7 +1078,7 @@ function bbox(a) {
   if (a.type === 'highlight') { if (!a.rects || !a.rects.length) return { x: 0, y: 0, w: 0, h: 0 }; let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; for (const r of a.rects) { mnx = Math.min(mnx, r.x); mny = Math.min(mny, r.y); mxx = Math.max(mxx, r.x + r.w); mxy = Math.max(mxy, r.y + r.h); } return { x: mnx, y: mny, w: mxx - mnx, h: mxy - mny }; }
   return { x: 0, y: 0, w: 0, h: 0 };
 }
-function isLineType(a) { return a && (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall'); }
+function isLineType(a) { return a && (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall' || a.type === 'stairs'); }
 function arcPath(a) { const r = Math.hypot(a.x2 - a.x1, a.y2 - a.y1) / 2; return `M ${a.x1} ${a.y1} A ${r} ${r} 0 0 1 ${a.x2} ${a.y2}`; }
 function drawSelection(svg, a, pv) {
   if (!a) return; const hs = (COARSE ? 8 : 4.5) / pv.scale;
@@ -1217,6 +1229,9 @@ function lineForLength() {
 function cmToPts(cm) { return cm * (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
 function ptsToCm(pts) { return pts / (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
 let lastWallThick = null, wallJust = 'center', wallHatch = null, wallHeightM = 2.6;   // Achse · Schraffur · 3D-Höhe der neuen Wand
+let stairW = null, stairRiseM = 2.6, stairBaseM = 0;   // Treppe: Breite · Geschosshöhe · Unterkante
+function stairWidthPts() { return stairW || cmToPts(100); }
+function stairSteps(a) { return a.steps || Math.max(2, Math.round((a.rise || stairRiseM) / 0.18)); }   // ~18 cm Steigung
 function wallThickPts() { return lastWallThick || cmToPts(17.5); }   // Standard 17,5 cm (Backstein)
 function wallEnds(a, arr) {   // Enden an verbundenen Stössen um halbe Dicke verlängern (saubere Aussenecke)
   let x1 = a.x1, y1 = a.y1, x2 = a.x2, y2 = a.y2;
@@ -1601,7 +1616,7 @@ function startMove(pv, e, a, wasSel) {
 // Endpunkt auf 15°-Schritte zum Festpunkt (ax,ay) einrasten (Shift beim Ziehen)
 function snap15(ax, ay, qx, qy) { const dx = qx - ax, dy = qy - ay, len = Math.hypot(dx, dy), step = Math.PI / 12, ang = Math.round(Math.atan2(dy, dx) / step) * step; return { x: ax + Math.cos(ang) * len, y: ay + Math.sin(ang) * len }; }
 function translateAnno(a, o, dx, dy) {
-  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
+  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall' || a.type === 'stairs') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
   else if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim' || a.type === 'slab') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
   else if (a.type === 'path') a.nodes = o.nodes.map(nd => ({ x: nd.x + dx, y: nd.y + dy, hIn: { x: nd.hIn.x + dx, y: nd.hIn.y + dy }, hOut: { x: nd.hOut.x + dx, y: nd.hOut.y + dy } }));
   else if (a.type === 'highlight') a.rects = o.rects.map(r => ({ x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }));
@@ -1648,11 +1663,12 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
   const bar = $('#planBar'); if (!bar) return;
   const a = (sel && tool === 'select') ? findAnno(sel.num, sel.id) : null;
   const sW = a && a.type === 'wall' ? a : null, sO = a && a.type === 'opening' ? a : null;
-  const isDimObj = a && ['dim', 'measure', 'chaindim', 'area'].includes(a.type), sS = a && a.type === 'slab' ? a : null;
-  let mode = sW ? 'wall' : sO ? 'open' : sS ? 'slab' : isDimObj ? 'dim' : ((tool === 'wall' || tool === 'wallchain') ? 'wall' : (tool === 'opening' || tool === 'window') ? 'open' : tool === 'slab' ? 'slab' : (['measure', 'dim', 'chaindim', 'area'].includes(tool) ? 'dim' : null));
+  const isDimObj = a && ['dim', 'measure', 'chaindim', 'area'].includes(a.type), sS = a && a.type === 'slab' ? a : null, sT = a && a.type === 'stairs' ? a : null;
+  let mode = sW ? 'wall' : sO ? 'open' : sS ? 'slab' : sT ? 'stairs' : isDimObj ? 'dim' : ((tool === 'wall' || tool === 'wallchain') ? 'wall' : (tool === 'opening' || tool === 'window') ? 'open' : tool === 'slab' ? 'slab' : tool === 'stairs' ? 'stairs' : (['measure', 'dim', 'chaindim', 'area'].includes(tool) ? 'dim' : null));
   if (!mode) { bar.hidden = true; return; }
-  bar.hidden = false; $('#pbWall').hidden = mode !== 'wall'; $('#pbOpen').hidden = mode !== 'open'; $('#pbSlab').hidden = mode !== 'slab';
+  bar.hidden = false; $('#pbWall').hidden = mode !== 'wall'; $('#pbOpen').hidden = mode !== 'open'; $('#pbSlab').hidden = mode !== 'slab'; $('#pbStairs').hidden = mode !== 'stairs';
   if (mode === 'slab') { if (document.activeElement !== $('#pbSlabBase')) $('#pbSlabBase').value = sS ? sS.base : wallHeightM; if (document.activeElement !== $('#pbSlabThick')) $('#pbSlabThick').value = Math.round((sS ? sS.thick : 0.2) * 100); }
+  if (mode === 'stairs') { if (document.activeElement !== $('#pbStairW')) $('#pbStairW').value = Math.round(ptsToCm(sT ? sT.width : stairWidthPts())); if (document.activeElement !== $('#pbStairRise')) $('#pbStairRise').value = sT ? sT.rise : stairRiseM; if (document.activeElement !== $('#pbStairBase')) $('#pbStairBase').value = sT ? sT.base : stairBaseM; }
   $('#pbDimset').hidden = (mode !== 'wall' && mode !== 'dim'); $('#pbUnit').classList.toggle('on', dimUnit);
   if (mode === 'wall') {
     const cm = ptsToCm(sW ? (sW.thick || wallThickPts()) : wallThickPts());
@@ -1782,6 +1798,7 @@ function startDraw(pv, e, p) {
   else if (tool === 'rect') a = { id: nextId++, type: 'rect', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
   else if (tool === 'oval') a = { id: nextId++, type: 'oval', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
   else if (tool === 'wall') a = { id: nextId++, type: 'wall', x1: p.x, y1: p.y, x2: p.x, y2: p.y, thick: wallThickPts(), just: wallJust, color: style.color, fill: '#ffffff', hatch: wallHatch ? { ...wallHatch } : null, width: 1.4, dim: wallDimOn };   // Wand = Linie mit Dicke
+  else if (tool === 'stairs') a = { id: nextId++, type: 'stairs', x1: p.x, y1: p.y, x2: p.x, y2: p.y, width: stairWidthPts(), rise: stairRiseM, base: stairBaseM, color: style.color };   // Treppe = Lauf (Linie mit Breite + Höhe)
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   getAnnos(pv.num).push(a);
   const isLine = (a.type !== 'pen' && a.type !== 'rect' && a.type !== 'oval');
@@ -1807,7 +1824,7 @@ function startDraw(pv, e, p) {
     if (a.type === 'pen' && penTidy) { const bz = beautify(a.pts); if (bz) { const arr = getAnnos(pv.num), i = arr.indexOf(a); arr[i] = Object.assign({ id: a.id, color: a.color, width: a.width }, bz); } }
     const cur = getAnnos(pv.num).find(x => x.id === a.id) || a;
     const clk = isLineType(cur) ? Math.hypot(cur.x2 - cur.x1, cur.y2 - cur.y1) < 3 : false;
-    if (clk && (cur.type === 'line' || cur.type === 'arrow' || cur.type === 'measure' || cur.type === 'dim' || cur.type === 'wall')) { startSegDraft(pv, cur); return; }   // Klick = Richtung anpeilen, dann 2. Klick oder L (einzelne Wand/Linie)
+    if (clk && (cur.type === 'line' || cur.type === 'arrow' || cur.type === 'measure' || cur.type === 'dim' || cur.type === 'wall' || cur.type === 'stairs')) { startSegDraft(pv, cur); return; }   // Klick = Richtung anpeilen, dann 2. Klick oder L (Wand/Linie/Treppe)
     const b = bbox(cur); if (cur.type !== 'pen' && b.w < 3 && b.h < 3) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(cur), 1); undoStack.pop(); drawAnnos(pv); return; }
     if (isLineType(cur)) lastLine = { num: pv.num, id: cur.id };   // „L" wirkt auf die zuletzt gezeichnete Linie
     sel = null; drawAnnos(pv); saveState();   // Werkzeug bleibt aktiv → mehrere zeichnen (V/Esc = auswählen)
@@ -2515,6 +2532,7 @@ function setTool(t) {
   if (t === 'curve' && !setTool._curveHint) { setTool._curveHint = true; toast('Kurve: Klick = Ecke (gerade) · Klick+Ziehen = Kurve · Enter/Doppelklick = fertig · Esc = abbrechen'); }
   if (['pen', 'line', 'arrow', 'rect', 'oval', 'arc'].includes(t) && !setTool._drawHint) { setTool._drawHint = true; toast('Werkzeug bleibt aktiv – einfach weiterzeichnen. V oder Esc = auswählen/bearbeiten.'); }
   if ((t === 'opening' || t === 'window') && !setTool._openHint) { setTool._openHint = true; toast('Tür/Fenster: auf eine Wand klicken → wird eingesetzt. Oben in der Planungs-Leiste: Breite, Brüstung/Höhe, Anschlag – wirken in 2D und 3D.'); }
+  if (t === 'stairs' && !setTool._stairHint) { setTool._stairHint = true; toast('Treppe (gerader Lauf): Start klicken → Richtung/Länge → 2. Klick oder „L". Breite/Höhe/UK oben einstellen · L-/U-Treppe: mehrere Läufe + Podest (Decke). 3D zeigt die Stufen.'); }
   if (t === 'chaindim' && !setTool._cdimHint) { setTool._cdimHint = true; toast('Kettenmass: Stationen klicken (rastet an Ecken/Enden ein) · je Abschnitt ein Mass + Gesamt · Rücktaste = letzte Station zurück · Doppelklick/Enter = fertig.'); }
   updatePlanBar();
   if ((t === 'wall' || t === 'wallchain') && !docScale && !_scaleAfter) { _scaleAfter = t; toast('Erst den Massstab wählen – dann passen die Wände masstabsgetreu aufs Blatt.'); openScale(); return; }
@@ -2522,7 +2540,7 @@ function setTool(t) {
   if (t === 'wallchain' && !setTool._wcHint) { setTool._wcHint = true; toast('Wände am Stück: klicken–klicken = Raumzug · zurück auf den Startpunkt = Raum schliessen (m²) · Rücktaste = letzte Wand zurück · Doppelklick/Enter = fertig.'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -2621,6 +2639,14 @@ async function buildPdfBytes() {
         }
         else if (a.type === 'area') { if (!a.room) for (let i = 0; i < a.pts.length; i++) { const p1 = a.pts[i], p2 = a.pts[(i + 1) % a.pts.length]; pg.drawLine({ start: { x: p1[0], y: Y(p1[1]) }, end: { x: p2[0], y: Y(p2[1]) }, thickness: w, color: c }); } if (a.pts.length >= 3) { const ct = centroid(a.pts), lab = areaLabel(a.pts), tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: ct[0] - tw / 2, y: Y(ct[1]) - 4, size: 11, font, color: c }); } }
         else if (a.type === 'slab') { for (let i = 0; i < a.pts.length; i++) { const p1 = a.pts[i], p2 = a.pts[(i + 1) % a.pts.length]; pg.drawLine({ start: { x: p1[0], y: Y(p1[1]) }, end: { x: p2[0], y: Y(p2[1]) }, thickness: 1.4, color: c, dashArray: [7, 4] }); } if (a.pts.length >= 3) { const ct = centroid(a.pts), lab = ((a.base >= wallHeightM ? 'Decke' : 'Platte') + ' ' + ((a.base || 0) + (a.thick || 0.2)).toFixed(2) + ' m'), tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: ct[0] - tw / 2, y: Y(ct[1]) - 4, size: 11, font, color: c }); } }
+        else if (a.type === 'stairs') {
+          const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, hw = (a.width || stairWidthPts()) / 2, n = stairSteps(a);
+          const c1 = [a.x1 + nx * hw, a.y1 + ny * hw], c2 = [a.x2 + nx * hw, a.y2 + ny * hw], c3 = [a.x2 - nx * hw, a.y2 - ny * hw], c4 = [a.x1 - nx * hw, a.y1 - ny * hw];
+          for (const [p, q] of [[c1, c2], [c2, c3], [c3, c4], [c4, c1]]) pg.drawLine({ start: { x: p[0], y: Y(p[1]) }, end: { x: q[0], y: Y(q[1]) }, thickness: 1.2, color: c });
+          for (let i = 1; i < n; i++) { const t = i / n, mx = a.x1 + dx * t, my = a.y1 + dy * t; pg.drawLine({ start: { x: mx + nx * hw, y: Y(my + ny * hw) }, end: { x: mx - nx * hw, y: Y(my - ny * hw) }, thickness: 0.8, color: c }); }
+          pg.drawLine({ start: { x: a.x1, y: Y(a.y1) }, end: { x: a.x2, y: Y(a.y2) }, thickness: 1, color: c });
+          const al = 7; pg.drawLine({ start: { x: a.x2, y: Y(a.y2) }, end: { x: a.x2 - ux * al + nx * al * .6, y: Y(a.y2 - uy * al + ny * al * .6) }, thickness: 1, color: c }); pg.drawLine({ start: { x: a.x2, y: Y(a.y2) }, end: { x: a.x2 - ux * al - nx * al * .6, y: Y(a.y2 - uy * al - ny * al * .6) }, thickness: 1, color: c });
+        }
         else if (a.type === 'text') {
           const pad = 3, lines = (a.text || '').split('\n'), lineH = a.size * 1.25, align = a.align || 'left';
           const W = a.w || 120, H = a.h || (lines.length * lineH + pad * 2);
@@ -2906,6 +2932,17 @@ function build3DScene(host, walls, arr) {
       const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.rotation.x = Math.PI / 2; e.position.y = m.position.y; scene.add(e);
     } catch (_) { }
   }
+  // Treppen (gerader Lauf) als 3D-Stufen
+  const stmat = new THREE.MeshLambertMaterial({ color: 0xd9d2c4 });
+  for (const a of arr) if (a.type === 'stairs') {
+    const dx = a.x2 - a.x1, dy = a.y2 - a.y1, lp = Math.hypot(dx, dy); if (lp < 1) continue;
+    const ux = dx / lp, uy = dy / lp, sx = M(a.x1 - cx), sz = M(a.y1 - cy), ry = -Math.atan2(dy, dx), wm = M(a.width || stairWidthPts()), n = stairSteps(a), rise = a.rise || stairRiseM, base = a.base || 0, stepRise = rise / n, going = (lp * perPt) / n;
+    for (let i = 0; i < n; i++) {
+      const h = (i + 1) * stepRise, geo = new THREE.BoxGeometry(going, h, wm), m = new THREE.Mesh(geo, stmat), along = (i + 0.5) * going;
+      m.position.set(sx + ux * along, base + h / 2, sz + uy * along); m.rotation.y = ry; scene.add(m);
+      const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); e.rotation.copy(m.rotation); scene.add(e);
+    }
+  }
   let raf, alive = true;
   const onResize = () => { const w2 = host.clientWidth, h2 = host.clientHeight; if (!w2 || !h2) return; camera.aspect = w2 / h2; camera.updateProjectionMatrix(); renderer.setSize(w2, h2); };
   window.addEventListener('resize', onResize);
@@ -3185,6 +3222,10 @@ function wire() {
   $('#pbHead').onchange = () => { const v = parseFloat(($('#pbHead').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selOpen(); if (a) { pushUndo(); a.head = v; saveState(); } };
   $('#pbSlabBase').onchange = () => { const v = parseFloat(($('#pbSlabBase').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selSlab(); if (a) { pushUndo(); a.base = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbSlabThick').onchange = () => { const v = parseFloat(($('#pbSlabThick').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selSlab(); if (a) { pushUndo(); a.thick = v / 100; pageViews.forEach(drawAnnos); saveState(); } };
+  const selStairs = () => { const a = sel && findAnno(sel.num, sel.id); return a && a.type === 'stairs' ? a : null; };
+  $('#pbStairW').onchange = () => { const v = parseFloat(($('#pbStairW').value || '').replace(',', '.')); if (!(v > 0)) return; const pts = cmToPts(v); stairW = pts; const a = selStairs(); if (a) { pushUndo(); a.width = pts; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbStairRise').onchange = () => { const v = parseFloat(($('#pbStairRise').value || '').replace(',', '.')); if (!(v > 0)) return; stairRiseM = v; const a = selStairs(); if (a) { pushUndo(); a.rise = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbStairBase').onchange = () => { const v = parseFloat(($('#pbStairBase').value || '').replace(',', '.')); if (!(v >= 0)) return; stairBaseM = v; const a = selStairs(); if (a) { pushUndo(); a.base = v; saveState(); } };
   $('#pbUnit').onclick = () => { dimUnit = !dimUnit; pageViews.forEach(drawAnnos); updatePlanBar(); saveState(); };
   $('#pbWallColor').addEventListener('input', e => { const c = e.target.value; style.color = c; $('#colorDot').style.background = c; $('#pbWallDot').style.background = c; const a = selWall(); if (a) { a.color = c; pageViews.forEach(drawAnnos); } });
   $$('#pbOpen [data-ok]').forEach(b => b.onclick = () => { openKind = b.dataset.ok; const a = selOpen(); if (a) { pushUndo(); a.kind = openKind; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });

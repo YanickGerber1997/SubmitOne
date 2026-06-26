@@ -3702,21 +3702,31 @@ function build3DScene(host, walls, arr) {
     const fmat = new THREE.MeshLambertMaterial({ color: 0xf2efe9 }), bmat = new THREE.MeshLambertMaterial({ color: 0xcfcabf }), nmat = new THREE.MeshLambertMaterial({ color: 0x3a3f45 });
     const wL = w.layers && w.layers.length ? w.layers : null, endM = new THREE.MeshLambertMaterial({ color: 0xd9d3c8 });   // Stufe 1: Schicht-Farben (aussen=äusserste, innen=innerste); Schnittkanten neutral
     const wallMats = wL ? [endM, endM, endM, endM, faceMat(wL[wL.length - 1].mat), faceMat(wL[0].mat)] : wmat;
-    const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(10), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche, winType: o.winType || 'f1' })).sort((a, b) => a.c - b.c);
+    const winMat3D = key => { const wm = WIN_MAT[key] || WIN_MAT.holz; return new THREE.MeshLambertMaterial({ color: new THREE.Color(wm.fill) }); };
+    const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(o.kind === 'door' ? 6 : 10), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche, winType: o.winType || 'f1', winMat: o.winMat || 'holz', winHinge: o.winHinge || 'left' })).sort((a, b) => a.c - b.c);
     let cur = 0;
     for (const op of ops) {
       const a0 = Math.max(0, op.c - op.hw), a1 = Math.min(lp, op.c + op.hw); if (a1 <= a0) continue;
       if (a0 > cur) addBox(cur, a0, yb, yb + HW, wallMats, th, true);                         // volles Wandstück bis zur Öffnung
       if (op.sill > 0) addBox(a0, a1, yb, yb + Math.min(op.sill, HW), wallMats, th, true);    // Brüstung (Fenster)
       if (op.head < HW) addBox(a0, a1, yb + op.head, yb + HW, wallMats, th, true);            // Sturz über der Öffnung
+      const omat = winMat3D(op.winMat);
       if (op.kind === 'window') {
         const fdM = M(op.fd), fwM = M(op.fw), dC = Math.max(-(th / 2 - fdM / 2), Math.min(th / 2 - fdM / 2, (op.depth - 0.5) * th)), sillY = yb + op.sill, headY = yb + Math.min(op.head, HW);
-        addBox2(a0, a0 + op.fw, sillY, headY, dC, fdM, fmat, true); addBox2(a1 - op.fw, a1, sillY, headY, dC, fdM, fmat, true);   // Rahmen seitlich
-        addBox2(a0, a1, sillY, sillY + fwM, dC, fdM, fmat, true); addBox2(a0, a1, headY - fwM, headY, dC, fdM, fmat, true);       // Rahmen unten/oben
+        addBox2(a0, a0 + op.fw, sillY, headY, dC, fdM, omat, true); addBox2(a1 - op.fw, a1, sillY, headY, dC, fdM, omat, true);   // Rahmen seitlich (Material)
+        addBox2(a0, a1, sillY, sillY + fwM, dC, fdM, omat, true); addBox2(a0, a1, headY - fwM, headY, dC, fdM, omat, true);       // Rahmen unten/oben
         addBox2(a0 + op.fw, a1 - op.fw, sillY + fwM, headY - fwM, dC, M(cmToPts(2)), gmat, false);                                 // Scheibe
-        if (op.winType === 'f2s') addBox2((a0 + a1) / 2 - op.fw / 2, (a0 + a1) / 2 + op.fw / 2, sillY, headY, dC, fdM, fmat, true);   // Setzholz/Mittelpfosten (nur 2 Flügel mit Setzholz)
+        if (op.winType === 'f2s') addBox2((a0 + a1) / 2 - op.fw / 2, (a0 + a1) / 2 + op.fw / 2, sillY, headY, dC, fdM, omat, true);   // Setzholz/Mittelpfosten
         if (op.bank) { const ext = cmToPts(8); addBox2(a0 - ext, a1 + ext, sillY - 0.04, sillY + 0.01, th / 2 + 0.03, 0.12, bmat, true); }   // Fensterbank aussen
         if (op.niche) addBox2(a0, a1, headY, Math.min(yb + HW, headY + 0.24), 0, th * 0.85, nmat, true);                          // Storennische
+      } else if (op.kind === 'door') {   // Tür im 3D: Zarge (Material) + Türblatt / Festteil = Glas
+        const fdM = M(op.fd), fwM = M(op.fw), dC = Math.max(-(th / 2 - fdM / 2), Math.min(th / 2 - fdM / 2, (op.depth - 0.5) * th)), headY = yb + Math.min(op.head, HW), leafD = M(cmToPts(4));
+        addBox2(a0, a0 + op.fw, yb, headY, dC, fdM, omat, true); addBox2(a1 - op.fw, a1, yb, headY, dC, fdM, omat, true);   // Zarge seitlich
+        addBox2(a0, a1, headY - fwM, headY, dC, fdM, omat, true);                                                          // Zarge oben
+        const mid = op.winType === 'f2' || op.winType === 'f2s' || op.winType === 'f1f';
+        if (mid) addBox2((a0 + a1) / 2 - op.fw / 2, (a0 + a1) / 2 + op.fw / 2, yb, headY, dC, fdM, omat, true);             // Mittelpfosten/Setzholz
+        if (op.winType === 'fest') addBox2(a0 + op.fw, a1 - op.fw, yb, headY - fwM, dC, M(cmToPts(2)), gmat, false);        // Festverglasung
+        else addBox2(a0 + op.fw, a1 - op.fw, yb, headY - fwM, dC, leafD, omat, true);                                       // Türblatt (Material)
       }
       cur = Math.max(cur, a1);
     }

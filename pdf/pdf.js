@@ -938,6 +938,8 @@ function drawOne(svg, a, pv) {
       const t = svgEl('text', { x: a.x, y: cy + fs + 1, fill: '#1c242c', 'font-size': fs }); t.textContent = a.caption; svg.appendChild(t);
     }
     hit = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
+  } else if (a.type === 'chaindim') {
+    el = drawChainDim(svg, a, pv);
   } else if (a.type === 'dim') {
     drawDim(svg, a);
     hit = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'hit', 'data-id': a.id }); svg.appendChild(hit);
@@ -955,6 +957,20 @@ function drawDim(svg, a) {
   svg.appendChild(svgEl('rect', { x: mx - w / 2, y: my - 18, width: w, height: 15, fill: '#fff', 'fill-opacity': .82, stroke: 'none' }));
   t.textContent = lab; svg.appendChild(t);
 }
+function drawChainDim(svg, a, pv) {
+  const pts = a._cursor ? a.pts.concat([a._cursor]) : a.pts, col = a.color || '#1c242c';
+  if (pts.length < 2) { if (pts[0]) svg.appendChild(svgEl('circle', { cx: pts[0][0], cy: pts[0][1], r: 3 / pv.scale, fill: col, 'data-id': a.id })); return svg.lastChild; }
+  const G = chainDimStations(pts); if (!G) return null; const { nx, ny, st } = G, tk = 4.5;
+  const g = svgEl('g', { 'data-id': a.id });
+  const ln = (x1, y1, x2, y2, w) => g.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: col, 'stroke-width': w || 0.8, 'vector-effect': 'non-scaling-stroke' }));
+  ln(st[0].proj[0], st[0].proj[1], st[st.length - 1].proj[0], st[st.length - 1].proj[1], 1);   // Basislinie
+  for (const s of st) { ln(s.proj[0] - nx * tk, s.proj[1] - ny * tk, s.proj[0] + nx * tk, s.proj[1] + ny * tk); if (Math.hypot(s.p[0] - s.proj[0], s.p[1] - s.proj[1]) > 1) ln(s.p[0], s.p[1], s.proj[0], s.proj[1]); }
+  for (let i = 0; i < st.length - 1; i++) { const d = Math.abs(st[i + 1].t - st[i].t); if (d < 1) continue; const mx = (st[i].proj[0] + st[i + 1].proj[0]) / 2, my = (st[i].proj[1] + st[i + 1].proj[1]) / 2, t = svgEl('text', { x: mx + nx * 7, y: my + ny * 7, fill: col, 'font-size': 11, 'text-anchor': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = fmtLen(d); g.appendChild(t); }
+  if (st.length > 2) { const tot = Math.abs(st[st.length - 1].t - st[0].t), e = st[st.length - 1].proj, t = svgEl('text', { x: e[0] + nx * 16, y: e[1] + ny * 16, fill: col, 'font-size': 11, 'font-weight': 700, 'text-anchor': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = '∑ ' + fmtLen(tot); g.appendChild(t); }
+  svg.appendChild(g);
+  if (!a._cursor) svg.appendChild(svgEl('line', { x1: st[0].proj[0], y1: st[0].proj[1], x2: st[st.length - 1].proj[0], y2: st[st.length - 1].proj[1], class: 'hit', 'data-id': a.id }));
+  return g;
+}
 function drawArrowHead(svg, a) {
   const ang = Math.atan2(a.y2 - a.y1, a.x2 - a.x1), L = Math.max(12, a.width * 5);
   for (const s of [ang + 2.7, ang - 2.7]) svg.appendChild(svgEl('line', { x1: a.x2, y1: a.y2, x2: a.x2 + Math.cos(s) * L, y2: a.y2 + Math.sin(s) * L, ...strokeAttrs(a) }));
@@ -970,7 +986,7 @@ function bbox(a) {
   if (a.type === 'rect' || a.type === 'oval') return { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), w: Math.abs(a.w), h: Math.abs(a.h) };
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') return { x: Math.min(a.x1, a.x2), y: Math.min(a.y1, a.y2), w: Math.abs(a.x2 - a.x1), h: Math.abs(a.y2 - a.y1) };
   if (a.type === 'wall') { const t = (a.thick || wallThickPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
-  if (a.type === 'pen' || a.type === 'area') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
+  if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'path') { const xs = [], ys = []; for (const nd of a.nodes) { xs.push(nd.x, nd.hIn.x, nd.hOut.x); ys.push(nd.y, nd.hIn.y, nd.hOut.y); } if (!xs.length) return { x: 0, y: 0, w: 0, h: 0 }; return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: (a.h || a.size * (a.text.split('\n').length) * 1.3) };
   if (a.type === 'note') return { x: a.x, y: a.y, w: 14, h: 14 };
@@ -1215,6 +1231,7 @@ function onPointerDown(pv, e) {
   if (tool === 'eraser') { startErase(pv, e); return; }
   if (tool === 'crop') { startCrop(pv, e, p); return; }
   if (tool === 'area') { areaClick(pv, p); return; }
+  if (tool === 'chaindim') { chaindimClick(pv, p); return; }
   if (tool === 'edittext') { editTextAt(pv, p); return; }
   if (tool === 'text') { createText(pv, p); return; }
   if (tool === 'note') { pushUndo(); const a = { id: nextId++, type: 'note', x: p.x, y: p.y, color: style.color, text: '' }; getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); refreshComments(); openNoteEdit(pv, a); return; }
@@ -1313,6 +1330,39 @@ function cancelArea() {
   if (!areaDraft) return; const { pv, a, _onMove } = areaDraft; document.removeEventListener('pointermove', _onMove);
   const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) { arr.splice(i, 1); if (undoStack.length) undoStack.pop(); }
   areaDraft = null; if (pv) drawAnnos(pv);
+}
+/* ---------- Kettenmass (mehrere Stationen klicken → Masskette mit Einzelmassen) ---------- */
+let cdimDraft = null;
+function chaindimClick(pv, p) {
+  { const an = anchorSnap(pv, p.x, p.y); if (an) p = an; else if (gridOn) p = snapPt(p.x, p.y); }   // an Endpunkte/Raster
+  if (!cdimDraft || cdimDraft.pv !== pv) {
+    cancelChaindim(); pushUndo();
+    const a = { id: nextId++, type: 'chaindim', pts: [[p.x, p.y]], color: style.color };
+    getAnnos(pv.num).push(a); cdimDraft = { pv, a };
+    const onMove = ev => { if (!cdimDraft) return; let q = evtToPage(pv, ev); const an = anchorSnap(pv, q.x, q.y, a.id); if (an) q = an; else if (gridOn) q = snapPt(q.x, q.y); cdimDraft.a._cursor = [q.x, q.y]; drawAnnos(pv); };
+    document.addEventListener('pointermove', onMove); cdimDraft._onMove = onMove;
+    drawAnnos(pv); if (!docScale && !chaindimClick._hint) { chaindimClick._hint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n). Klicken = Station · Doppelklick/Enter = fertig.'); }
+    return;
+  }
+  cdimDraft.a.pts.push([p.x, p.y]); drawAnnos(pv);
+}
+function finishChaindim() {
+  if (!cdimDraft) return; const { pv, a, _onMove } = cdimDraft; document.removeEventListener('pointermove', _onMove);
+  delete a._cursor; cdimDraft = null;
+  if (a.pts.length < 2) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); drawAnnos(pv); return; }
+  sel = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
+}
+function cancelChaindim() {
+  if (!cdimDraft) return; const { pv, a, _onMove } = cdimDraft; document.removeEventListener('pointermove', _onMove);
+  const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) { arr.splice(i, 1); if (undoStack.length) undoStack.pop(); }
+  cdimDraft = null; if (pv) drawAnnos(pv);
+}
+// Geometrie: Stationen auf die Basislinie (erster→letzter Punkt) projizieren
+function chainDimStations(pts) {
+  const f = pts[0], l = pts[pts.length - 1]; let dx = l[0] - f[0], dy = l[1] - f[1], len = Math.hypot(dx, dy); if (len < 1) return null;
+  const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+  const st = pts.map(p => { const t = (p[0] - f[0]) * ux + (p[1] - f[1]) * uy; return { p, t, proj: [f[0] + ux * t, f[1] + uy * t] }; }).sort((a, b) => a.t - b.t);
+  return { ux, uy, nx, ny, st };
 }
 
 /* ---------- Kurven-Werkzeug (Bézier, wie Illustrator-Zeichenstift) ---------- */
@@ -1449,7 +1499,7 @@ function startMove(pv, e, a, wasSel) {
 function snap15(ax, ay, qx, qy) { const dx = qx - ax, dy = qy - ay, len = Math.hypot(dx, dy), step = Math.PI / 12, ang = Math.round(Math.atan2(dy, dx) / step) * step; return { x: ax + Math.cos(ang) * len, y: ay + Math.sin(ang) * len }; }
 function translateAnno(a, o, dx, dy) {
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
-  else if (a.type === 'pen' || a.type === 'area') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
+  else if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
   else if (a.type === 'path') a.nodes = o.nodes.map(nd => ({ x: nd.x + dx, y: nd.y + dy, hIn: { x: nd.hIn.x + dx, y: nd.hIn.y + dy }, hOut: { x: nd.hOut.x + dx, y: nd.hOut.y + dy } }));
   else if (a.type === 'highlight') a.rects = o.rects.map(r => ({ x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }));
   else { a.x = o.x + dx; a.y = o.y + dy; }
@@ -2167,6 +2217,7 @@ function setTool(t) {
   if (areaDraft && t !== 'area') cancelArea();                       // anderes Werkzeug → Flächen-Polygon verwerfen
   if (penDraft && t !== 'curve') finishCurve();                      // anderes Werkzeug → Kurve abschliessen
   if (wallDraft && t !== 'wall') finishWallChain();                  // anderes Werkzeug → Wand-Kette beenden
+  if (cdimDraft && t !== 'chaindim') finishChaindim();              // anderes Werkzeug → Kettenmass beenden
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
   const bs = $('#btnStamp'); if (bs) bs.classList.toggle('on', t === 'stamp');
   $$('.fab-b').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
@@ -2176,10 +2227,11 @@ function setTool(t) {
   if (t === 'measure' && !docScale && !setTool._measHint) { setTool._measHint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n).'); }
   if (t === 'curve' && !setTool._curveHint) { setTool._curveHint = true; toast('Kurve: Klick = Ecke (gerade) · Klick+Ziehen = Kurve · Enter/Doppelklick = fertig · Esc = abbrechen'); }
   if (['pen', 'line', 'arrow', 'rect', 'oval', 'arc'].includes(t) && !setTool._drawHint) { setTool._drawHint = true; toast('Werkzeug bleibt aktiv – einfach weiterzeichnen. V oder Esc = auswählen/bearbeiten.'); }
+  if (t === 'chaindim' && !setTool._cdimHint) { setTool._cdimHint = true; toast('Kettenmass: Stationen nacheinander klicken (rastet an Ecken/Enden ein) · je Abschnitt ein Mass + Gesamtmass · Doppelklick/Enter = fertig.'); }
   if (t === 'wall' && !setTool._wallHint) { setTool._wallHint = true; toast('Wand: klicken–klicken = Raumzug · zurück auf den Startpunkt klicken = Raum schliessen (m² wird ergänzt) · ziehen = einzelne Wand · D = Dicke, L = Länge.'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'chaindim'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -2249,6 +2301,15 @@ async function buildPdfBytes() {
         else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), o = { x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawRectangle(o); }
         else if (a.type === 'oval') { const o = { x: a.x + a.w / 2, y: Y(a.y + a.h / 2), xScale: Math.abs(a.w / 2), yScale: Math.abs(a.h / 2), borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawEllipse(o); }
         else if (a.type === 'pen') { const op = a.hl ? 0.35 : 1; for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c, opacity: op }); }
+        else if (a.type === 'chaindim') {
+          const G = a.pts.length >= 2 && chainDimStations(a.pts);
+          if (G) { const { nx, ny, st } = G, tk = 4.5, dl = (x1, y1, x2, y2, th) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: th || 0.8, color: c });
+            dl(st[0].proj[0], st[0].proj[1], st[st.length - 1].proj[0], st[st.length - 1].proj[1], 1);
+            for (const s of st) { dl(s.proj[0] - nx * tk, s.proj[1] - ny * tk, s.proj[0] + nx * tk, s.proj[1] + ny * tk); if (Math.hypot(s.p[0] - s.proj[0], s.p[1] - s.proj[1]) > 1) dl(s.p[0], s.p[1], s.proj[0], s.proj[1]); }
+            for (let i = 0; i < st.length - 1; i++) { const d = Math.abs(st[i + 1].t - st[i].t); if (d < 1) continue; const mx = (st[i].proj[0] + st[i + 1].proj[0]) / 2, my = (st[i].proj[1] + st[i + 1].proj[1]) / 2, lab = fmtLen(d), tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: mx + nx * 7 - tw / 2, y: Y(my + ny * 7) - 3, size: 11, font, color: c }); }
+            if (st.length > 2) { const tot = '∑ ' + fmtLen(Math.abs(st[st.length - 1].t - st[0].t)), e = st[st.length - 1].proj, tw = font.widthOfTextAtSize(tot, 11); pg.drawText(tot, { x: e[0] + nx * 16 - tw / 2, y: Y(e[1] + ny * 16) - 3, size: 11, font, color: c }); }
+          }
+        }
         else if (a.type === 'area') { if (!a.room) for (let i = 0; i < a.pts.length; i++) { const p1 = a.pts[i], p2 = a.pts[(i + 1) % a.pts.length]; pg.drawLine({ start: { x: p1[0], y: Y(p1[1]) }, end: { x: p2[0], y: Y(p2[1]) }, thickness: w, color: c }); } if (a.pts.length >= 3) { const ct = centroid(a.pts), lab = areaLabel(a.pts), tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: ct[0] - tw / 2, y: Y(ct[1]) - 4, size: 11, font, color: c }); } }
         else if (a.type === 'text') {
           const pad = 3, lines = (a.text || '').split('\n'), lineH = a.size * 1.25, align = a.align || 'left';
@@ -2764,6 +2825,7 @@ function wire() {
   $('#pages').addEventListener('dblclick', e => {
     if (editingId != null) return;   // schon im Bearbeiten-Modus (Klick hat bereits geöffnet)
     if (wallDraft) { finishWallChain(); return; }   // Doppelklick = Wand-Kette fertig
+    if (cdimDraft) { finishChaindim(); return; }   // Doppelklick = Kettenmass fertig
     if (penDraft) { if (penDraft.a.nodes.length >= 2) penDraft.a.nodes.pop(); finishCurve(); return; }   // Doppelklick = Kurve fertig
     const pnAttr = e.target.getAttribute && e.target.getAttribute('data-pn');
     const id = e.target.getAttribute && e.target.getAttribute('data-id'); if (!id) return;
@@ -2906,6 +2968,7 @@ function wire() {
     if (e.key === 'Enter' && areaDraft) { e.preventDefault(); finishArea(); return; }   // Fläche abschliessen
     if (e.key === 'Enter' && penDraft) { e.preventDefault(); finishCurve(); return; }   // Kurve abschliessen
     if (e.key === 'Enter' && wallDraft) { e.preventDefault(); finishWallChain(); return; }   // Wand-Kette abschliessen
+    if (e.key === 'Enter' && cdimDraft) { e.preventDefault(); finishChaindim(); return; }   // Kettenmass abschliessen
     if (e.key === ' ' && !mod) { if (active >= 0 && !panMode) { e.preventDefault(); panMode = true; document.body.classList.add('pan'); } return; }   // Leertaste = Hand
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openPicker(); }
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
@@ -2923,6 +2986,7 @@ function wire() {
     else if (e.key === 'Escape') {
       hideCtx();
       if (wallDraft) { finishWallChain(); return; }                                    // Wand-Kette beenden (gesetzte Wände bleiben)
+      if (cdimDraft) { finishChaindim(); return; }                                      // Kettenmass beenden
       if (areaDraft) { cancelArea(); setTool('select'); return; }                     // Flächen-Polygon abbrechen
       if (penDraft) { cancelCurve(); setTool('select'); return; }                      // Kurve abbrechen
       if (cropping) { removeCropAnno(); setTool('select'); return; }                  // Zuschneiden abbrechen

@@ -434,6 +434,11 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
 .selbar .sb-tfmt button.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
 .selbar .sb-walldim{font:600 11px var(--font)}
 .selbar .sb-walldim.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
+.selbar .sb-open{display:flex;align-items:center;gap:3px}
+.selbar .sb-open button{width:auto;min-width:26px;padding:0 8px;font-size:12px;font-weight:600}
+.selbar .sb-open button[data-ow]{padding:0;width:26px}
+.selbar .sb-open button.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
+.selbar .sb-open #sbOpenW{min-width:30px;text-align:center;font-size:12px;font-weight:600;color:var(--ink)}
 .selbar .sb-sep2{width:1px;height:18px;background:var(--line);margin:0 1px}
 .selbar #sbTbgDot{width:15px;height:15px;border:1px solid var(--line);display:block}
 .selbar .sb-tedit{width:auto!important;padding:0 8px!important;font-size:12px;font-weight:600;gap:3px}

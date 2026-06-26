@@ -2477,8 +2477,8 @@ function sectionBandHatch(out, rx, ry, rw, rh, mat, fallbackHatch) {   // Materi
   else if (hatch === 'beton' || hatch === 'cross') { for (let c = -rh; c < rw; c += S) add(x0 + c, y1, x0 + c + rh, y0); for (let c = 0; c < rw + rh; c += S) add(x0 + c, y0, x0 + c - rh, y1); }   // Beton: Kreuz
   else { for (let c = -rh; c < rw; c += S) add(x0 + c, y1, x0 + c + rh, y0); }   // Backstein/Diagonal/Erdreich: 45°
 }
-function openingElev(out, X, Yh, opx0, opw, o, H, col) {   // Fenster/Tür in Ansicht (Schnittband oder parallele Wand)
-  const sill = o.kind === 'window' ? (o.sill || 0) : 0, head = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0));
+function openingElev(out, X, Yh, opx0, opw, o, H, col, redM) {   // Fenster/Tür in Ansicht von aussen → Aussenlichtmaß (Verkleidung/Sturz lappt über den Rahmen, redM)
+  const r = redM || 0, sill = (o.kind === 'window' ? (o.sill || 0) + r : 0), head = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0)) - r;
   if (head - sill < 0.02 || opw < 1) return;
   out.push({ t: 'rect', x: X(opx0), y: Yh(head), w: opw, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });
   if (o.kind === 'window') {
@@ -2561,7 +2561,10 @@ function sectionPrimitives(a, arr) {
       out.push({ t: 'rect', x: X(da), y: Yh(Hw), w: X(db) - X(da), h: Yh(0) - Yh(Hw), fill: m.fill || '#f0efea', stroke: m.color || col, sw: 0.6 });
       if (!simpleMode && outL) sectionBandHatch(out, X(da), Yh(Hw), X(db) - X(da), Yh(0) - Yh(Hw), outL.mat, null);
     }
-    for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = (ocx - p1[0]) * cux + (ocy - p1[1]) * cuy; if (od < -10 || od > cl + 10) continue; openingElev(out, X, Yh, od - (o.w * along) / 2, o.w * along, o, Hw, col); }
+    for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = (ocx - p1[0]) * cux + (ocy - p1[1]) * cuy; if (od < -10 || od > cl + 10) continue;
+      const lapPts = (o.kind === 'window' ? (o.outerLap != null ? o.outerLap : cmToPts(3)) : 0) + (o.anschlagType === 'aussen' ? (o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5)) : 0);   // Aussen-Lappung + Aussenanschlag → Aussenlichtmaß
+      const redM = ptsToCm(lapPts) / 100, wEff = Math.max(4, (o.w - 2 * lapPts) * along);
+      openingElev(out, X, Yh, od - wEff / 2, wEff, o, Hw, col, redM); }
   }
   const Htop = sectionMaxH(a, arr), slabF = '#dadde2', slabC = '#8a8f96';   // Decke auf gemeinsamem Höhen-Datum
   out.push({ t: 'rect', x: X(-16), y: Yh(0), w: cl + 32, h: Yh(-0.22) - Yh(0), fill: slabF, stroke: slabC, sw: 0.7 });           // Bodenplatte

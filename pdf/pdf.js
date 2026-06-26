@@ -195,13 +195,16 @@ async function tauriPickStart() {                                     // nativer
   } catch (_) { }
 }
 async function openFiles(files) {
-  files = [...files].filter(f => /pdf$/i.test(f.name) || f.type === 'application/pdf' || isImg(f));
+  files = [...files];
+  if (files.some(f => /\.dwg$/i.test(f.name))) toast('DWG geht im Browser nicht direkt (Autodesk-Binärformat). Bitte als DXF oder PDF exportieren – die Desktop-App kann DWG später umwandeln.');
+  files = files.filter(f => /\.(pdf|dxf)$/i.test(f.name) || f.type === 'application/pdf' || isImg(f));
   if (!files.length) return;
   try { status('Lade PDF-Engine …'); await loadPdfJs(); } catch (_) { status(''); toast('PDF-Engine nicht ladbar (einmal Internet nötig).'); return; }
   try {
     for (const f of files) {                                  // jede Datei → eigener Tab
       let bytes, name;
-      if (isImg(f)) { status('Bild wird vorbereitet …'); bytes = await imageToPdf(f); name = f.name.replace(/\.[^.]+$/, '') + '.pdf'; }
+      if (/\.dxf$/i.test(f.name)) { status('DXF wird umgewandelt …'); try { bytes = await dxfToPdf(f); } catch (err) { status(''); toast('DXF konnte nicht umgewandelt werden: ' + (err && err.message || 'unbekannt')); continue; } name = f.name.replace(/\.[^.]+$/, '') + '.pdf'; }
+      else if (isImg(f)) { status('Bild wird vorbereitet …'); bytes = await imageToPdf(f); name = f.name.replace(/\.[^.]+$/, '') + '.pdf'; }
       else { bytes = new Uint8Array(await f.arrayBuffer()); name = f.name; }
       await addDoc(bytes, name);
     }
@@ -313,6 +316,53 @@ async function imageToPdf(file) {
   const png = await doc.embedPng(bytes);
   const pg = doc.addPage([im.naturalWidth, im.naturalHeight]);
   pg.drawImage(png, { x: 0, y: 0, width: im.naturalWidth, height: im.naturalHeight });
+  return new Uint8Array(await doc.save());
+}
+/* ---------- DXF (CAD, Text-Format) → PDF-Seite zum Draufzeichnen ---------- */
+function parseDxf(text) {
+  const L = text.split(/\r\n|\r|\n/), toks = [];
+  for (let i = 0; i + 1 < L.length; i += 2) { const c = parseInt(L[i], 10); if (Number.isNaN(c)) { i -= 1; continue; } toks.push([c, L[i + 1]]); }
+  const ents = []; let i = 0;
+  const readEntity = type => { const e = { type, g: {}, xs: [], ys: [] }; while (i < toks.length) { const [c, v] = toks[i]; if (c === 0) break; i++; if (c === 10) e.xs.push(parseFloat(v)); else if (c === 20) e.ys.push(parseFloat(v)); else if (!(c in e.g)) e.g[c] = v; } return e; };
+  while (i < toks.length) {
+    const [c, v] = toks[i]; if (c !== 0) { i++; continue; }
+    const t = v.trim(); i++;
+    if (t === 'POLYLINE') { const head = readEntity('POLYLINE'), verts = []; while (i < toks.length) { const [cc, vv] = toks[i]; if (cc !== 0) { i++; continue; } const tt = vv.trim(); if (tt === 'VERTEX') { i++; const ve = readEntity('VERTEX'); verts.push([ve.xs[0] || 0, ve.ys[0] || 0]); } else if (tt === 'SEQEND') { i++; readEntity('SEQEND'); break; } else break; } head.verts = verts; head.closed = (parseInt(head.g[70] || '0', 10) & 1) === 1; ents.push(head); }
+    else ents.push(readEntity(t));
+  }
+  return ents;
+}
+function dxfGeom(ents) {
+  const segs = [], circles = [], arcs = [], texts = [];
+  for (const e of ents) {
+    if (e.type === 'LINE') { const x2 = parseFloat(e.g[11]), y2 = parseFloat(e.g[21]); if (isFinite(e.xs[0]) && isFinite(x2)) segs.push({ pts: [[e.xs[0], e.ys[0]], [x2, y2]], closed: false }); }
+    else if (e.type === 'LWPOLYLINE' && e.xs.length >= 2) segs.push({ pts: e.xs.map((x, k) => [x, e.ys[k]]), closed: (parseInt(e.g[70] || '0', 10) & 1) === 1 });
+    else if (e.type === 'POLYLINE' && e.verts && e.verts.length >= 2) segs.push({ pts: e.verts, closed: e.closed });
+    else if (e.type === 'CIRCLE') circles.push({ cx: e.xs[0], cy: e.ys[0], r: parseFloat(e.g[40] || '0') });
+    else if (e.type === 'ARC') arcs.push({ cx: e.xs[0], cy: e.ys[0], r: parseFloat(e.g[40] || '0'), a0: parseFloat(e.g[50] || '0'), a1: parseFloat(e.g[51] || '0') });
+    else if (e.type === 'TEXT' || e.type === 'MTEXT') { const str = (e.g[1] || '').replace(/\\[A-Za-z0-9.|]+;?/g, '').replace(/[{}]/g, '').trim(); if (str) texts.push({ x: e.xs[0] || 0, y: e.ys[0] || 0, h: parseFloat(e.g[40] || '2.5'), str }); }
+  }
+  return { segs, circles, arcs, texts };
+}
+async function dxfToPdf(file) {
+  const lib = await loadPdfLib(), geom = dxfGeom(parseDxf(await file.text()));
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  const ext = (x, y) => { if (!isFinite(x) || !isFinite(y)) return; if (x < minx) minx = x; if (y < miny) miny = y; if (x > maxx) maxx = x; if (y > maxy) maxy = y; };
+  for (const s of geom.segs) for (const p of s.pts) ext(p[0], p[1]);
+  for (const c of geom.circles) { ext(c.cx - c.r, c.cy - c.r); ext(c.cx + c.r, c.cy + c.r); }
+  for (const a of geom.arcs) { ext(a.cx - a.r, a.cy - a.r); ext(a.cx + a.r, a.cy + a.r); }
+  for (const t of geom.texts) ext(t.x, t.y);
+  if (!isFinite(minx)) throw new Error('Keine zeichenbare Geometrie in der DXF.');
+  const W = maxx - minx || 1, H = maxy - miny || 1;
+  let pw = 1190, ph = 842; if (H > W) { pw = 842; ph = 1190; }
+  const m = 30, s = Math.min((pw - 2 * m) / W, (ph - 2 * m) / H);
+  const ox = m - minx * s + ((pw - 2 * m) - W * s) / 2, oy = m - miny * s + ((ph - 2 * m) - H * s) / 2;
+  const X = x => ox + x * s, Yv = y => oy + y * s;   // DXF y-oben = PDF y-oben
+  const doc = await lib.PDFDocument.create(), font = await doc.embedFont(lib.StandardFonts.Helvetica), pg = doc.addPage([pw, ph]), col = lib.rgb(0.12, 0.14, 0.16), lw = 0.5;
+  for (const seg of geom.segs) { const p = seg.pts; for (let k = 1; k < p.length; k++) pg.drawLine({ start: { x: X(p[k - 1][0]), y: Yv(p[k - 1][1]) }, end: { x: X(p[k][0]), y: Yv(p[k][1]) }, thickness: lw, color: col }); if (seg.closed && p.length > 2) pg.drawLine({ start: { x: X(p[p.length - 1][0]), y: Yv(p[p.length - 1][1]) }, end: { x: X(p[0][0]), y: Yv(p[0][1]) }, thickness: lw, color: col }); }
+  for (const c of geom.circles) if (c.r > 0) pg.drawEllipse({ x: X(c.cx), y: Yv(c.cy), xScale: c.r * s, yScale: c.r * s, borderColor: col, borderWidth: lw });
+  for (const a of geom.arcs) { if (!(a.r > 0)) continue; const a0 = a.a0 * Math.PI / 180; let d = (a.a1 - a.a0) * Math.PI / 180; while (d <= 0) d += 2 * Math.PI; const N = Math.max(6, Math.ceil(d / (Math.PI / 18))); let px = a.cx + Math.cos(a0) * a.r, py = a.cy + Math.sin(a0) * a.r; for (let k = 1; k <= N; k++) { const ang = a0 + d * k / N, nx = a.cx + Math.cos(ang) * a.r, ny = a.cy + Math.sin(ang) * a.r; pg.drawLine({ start: { x: X(px), y: Yv(py) }, end: { x: X(nx), y: Yv(ny) }, thickness: lw, color: col }); px = nx; py = ny; } }
+  for (const t of geom.texts) { const fs = Math.max(4, Math.min(40, t.h * s)); try { pg.drawText(t.str, { x: X(t.x), y: Yv(t.y), size: fs, font, color: col }); } catch (_) { } }
   return new Uint8Array(await doc.save());
 }
 // Bild öffnen (setzt curBytes/docName) – nutzt die nebenwirkungsfreie Variante

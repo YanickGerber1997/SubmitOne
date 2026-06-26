@@ -4099,7 +4099,7 @@ function wire() {
   // Fussleiste (Blatt-Funktionen)
   $('#qRotL').onclick = () => rotatePage(-90); $('#qRotR').onclick = () => rotatePage(90);
   $('#qCrop').onclick = () => setTool('crop');
-  $('#footScale').onclick = openScale;
+  $('#footScale').onclick = () => openScale(0);   // 1:n-Eingabe (nicht Kalibrieren)
   $('#footFormat').onclick = e => { e.stopPropagation(); const p = $('#fmtPop'); p.hidden = !p.hidden; };
   $$('#fmtPop button').forEach(b => b.onclick = () => { $('#fmtPop').hidden = true; changePageFormat(+b.dataset.w, +b.dataset.h); });
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#fmtPop') && !e.target.closest('#footFormat')) $('#fmtPop').hidden = true; }, true);

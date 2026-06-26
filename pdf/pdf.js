@@ -787,6 +787,7 @@ function drawAnnos(pv) {
   if (groupSel && groupSel.num === pv.num) drawGroupSel(svg, pv);
   updateAlignBar();
   updateSelBar();
+  updatePlanBar();
 }
 // Farbe (#hex oder rgb()) → #rrggbb für das Farbfeld
 function toHex(s) { const c = parseColor(s), h = n => ('0' + Math.round(n * 255).toString(16)).slice(-2); return '#' + h(c.r) + h(c.g) + h(c.b); }
@@ -1599,6 +1600,28 @@ function startGroupMove(pv, e) {
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function updateAlignBar() { const ab = $('#alignBar'); if (ab) ab.hidden = !(groupSel && groupSel.ids && groupSel.ids.length >= 2 && tool === 'select'); }
+function selWall() { const a = sel && findAnno(sel.num, sel.id); return a && a.type === 'wall' ? a : null; }
+function selOpen() { const a = sel && findAnno(sel.num, sel.id); return a && a.type === 'opening' ? a : null; }
+function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste Zeichnen ODER ausgewähltes Objekt
+  const bar = $('#planBar'); if (!bar) return;
+  const a = (sel && tool === 'select') ? findAnno(sel.num, sel.id) : null;
+  const sW = a && a.type === 'wall' ? a : null, sO = a && a.type === 'opening' ? a : null;
+  let mode = sW ? 'wall' : sO ? 'open' : (tool === 'wall' ? 'wall' : tool === 'opening' ? 'open' : null);
+  if (!mode) { bar.hidden = true; return; }
+  bar.hidden = false; $('#pbWall').hidden = mode !== 'wall'; $('#pbOpen').hidden = mode !== 'open';
+  if (mode === 'wall') {
+    const cm = ptsToCm(sW ? (sW.thick || wallThickPts()) : wallThickPts());
+    if (document.activeElement !== $('#pbThick')) $('#pbThick').value = Math.round(cm * 10) / 10;
+    $('#pbDim').classList.toggle('on', sW ? !!sW.dim : wallDimOn);
+    const col = sW ? sW.color : style.color; $('#pbWallDot').style.background = col; $('#pbWallColor').value = toHex(col);
+  } else {
+    const kind = sO ? sO.kind : openKind;
+    $$('#pbOpen [data-ok]').forEach(b => b.classList.toggle('on', b.dataset.ok === kind));
+    const cm = ptsToCm(sO ? sO.w : (lastOpenW || cmToPts(kind === 'window' ? 100 : 90)));
+    if (document.activeElement !== $('#pbWidth')) $('#pbWidth').value = Math.round(cm);
+    $('#pbFlip').style.display = kind === 'door' ? '' : 'none';
+  }
+}
 function alignGroup(mode) {
   if (mode === 'dup') { duplicateGroup(); return; }
   if (!groupSel) return; const pv = pageViews.find(p => p.num === groupSel.num); if (!pv) return;
@@ -2395,6 +2418,7 @@ function setTool(t) {
   if (['pen', 'line', 'arrow', 'rect', 'oval', 'arc'].includes(t) && !setTool._drawHint) { setTool._drawHint = true; toast('Werkzeug bleibt aktiv – einfach weiterzeichnen. V oder Esc = auswählen/bearbeiten.'); }
   if (t === 'opening' && !setTool._openHint) { setTool._openHint = true; toast('Tür/Fenster: auf eine Wand klicken → wird eingesetzt (Wand wird ausgestanzt). In der Auswahl-Leiste: Tür/Fenster, Breite, Anschlag/Seite.'); }
   if (t === 'chaindim' && !setTool._cdimHint) { setTool._cdimHint = true; toast('Kettenmass: Stationen klicken (rastet an Ecken/Enden ein) · je Abschnitt ein Mass + Gesamt · Rücktaste = letzte Station zurück · Doppelklick/Enter = fertig.'); }
+  updatePlanBar();
   if (t === 'wall' && !docScale && !_scaleAfter) { _scaleAfter = 'wall'; toast('Erst den Massstab wählen – dann passen die Wände masstabsgetreu aufs Blatt.'); openScale(); return; }
   if (t === 'wall' && !setTool._wallHint) { setTool._wallHint = true; toast('Wand: klicken–klicken = Raumzug · zurück auf Start = Raum schliessen (m²) · Rücktaste = letzte Wand zurück · ziehen = einzelne Wand · D = Dicke, L = Länge.'); }
 }
@@ -2935,6 +2959,13 @@ function wire() {
   // Ribbon: Reiter umschalten + Werkzeugreihe ein-/ausklappen
   $$('.rib-tab').forEach(b => b.onclick = () => { activateRibTab(b.dataset.tab); document.body.classList.remove('rib-collapsed'); });
   $('#ribCollapse').onclick = () => document.body.classList.toggle('rib-collapsed');
+  // Planungs-Leiste: Wandstärke / Masslinie / Farbe / Öffnungs-Breite – Standard ODER Auswahl
+  $('#pbThick').onchange = () => { const v = parseFloat(($('#pbThick').value || '').replace(',', '.')); if (!(v > 0)) return updatePlanBar(); const pts = cmToPts(v); lastWallThick = pts; const a = selWall(); if (a) { pushUndo(); a.thick = pts; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); };
+  $('#pbDim').onclick = () => { const a = selWall(); if (a) { pushUndo(); a.dim = !a.dim; wallDimOn = a.dim; pageViews.forEach(drawAnnos); saveState(); } else { wallDimOn = !wallDimOn; updatePlanBar(); } };
+  $('#pbWallColor').addEventListener('input', e => { const c = e.target.value; style.color = c; $('#colorDot').style.background = c; $('#pbWallDot').style.background = c; const a = selWall(); if (a) { a.color = c; pageViews.forEach(drawAnnos); } });
+  $$('#pbOpen [data-ok]').forEach(b => b.onclick = () => { openKind = b.dataset.ok; const a = selOpen(); if (a) { pushUndo(); a.kind = openKind; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
+  $('#pbWidth').onchange = () => { const v = parseFloat($('#pbWidth').value); if (!(v > 0)) return updatePlanBar(); const pts = cmToPts(v); lastOpenW = pts; const a = selOpen(); if (a) { pushUndo(); a.w = pts; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbFlip').onclick = () => { const a = selOpen(); if (!a) return; pushUndo(); if (a.swing === 1 && a.hinge === 1) a.hinge = -1; else if (a.hinge === -1 && a.swing === 1) a.swing = -1; else if (a.hinge === -1 && a.swing === -1) a.hinge = 1; else a.swing = 1; pageViews.forEach(drawAnnos); saveState(); };
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
   $('#btnNew').onclick = () => openSlidePicker('new');

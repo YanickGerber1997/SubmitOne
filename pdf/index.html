@@ -5,24 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=166" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=166" />
-  <link rel="icon" href="favicon.png?v=166" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=166" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=167" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=167" />
+  <link rel="icon" href="favicon.png?v=167" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=167" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=166" />
+  <link rel="stylesheet" href="pdf.css?v=167" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=166" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=167" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=166" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=166" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=167" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=167" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <span class="doc-name" id="docName"></span>
@@ -172,7 +172,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=166" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=167" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -390,6 +390,23 @@
     <button class="fab-b" data-tool="edittext" title="Etwas abändern"><svg viewBox="0 0 24 24" class="i"><path d="M4 7h10M9 7v10M6 17h6"/><path d="M15 14l5-5 2 2-5 5h-2z"/></svg><span>Ändern</span></button>
   </div>
 
+  <!-- Planungs-Einstellungen (Wand/Öffnung): Standard fürs nächste Zeichnen ODER ausgewähltes Objekt ändern -->
+  <div class="plan-bar" id="planBar" hidden>
+    <div class="pb-wall" id="pbWall" hidden>
+      <span class="pb-lbl">Wand</span>
+      <label class="pb-num" title="Wandstärke">Stärke <input id="pbThick" type="number" min="2" max="120" step="0.5" /> cm</label>
+      <button class="pb-tg" id="pbDim" title="Masslinie an der Wand">⊥ Mass</button>
+      <span class="pb-sep"></span>
+      <label class="pb-color" title="Linienfarbe"><span id="pbWallDot"></span><input type="color" id="pbWallColor" /></label>
+    </div>
+    <div class="pb-open" id="pbOpen" hidden>
+      <span class="pb-lbl">Öffnung</span>
+      <button class="pb-tg" data-ok="door">Tür</button>
+      <button class="pb-tg" data-ok="window">Fenster</button>
+      <label class="pb-num" title="Breite der Öffnung">Breite <input id="pbWidth" type="number" min="20" max="400" step="5" /> cm</label>
+      <button class="pb-tg" id="pbFlip" title="Anschlag / Öffnungsseite">⟲</button>
+    </div>
+  </div>
   <div class="align-bar" id="alignBar" hidden>
     <span class="ab-t">Ausrichten</span>
     <button data-al="left" title="Linksbündig">◀</button>
@@ -429,7 +446,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=166"></script>
+  <script src="pdf.js?v=167"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

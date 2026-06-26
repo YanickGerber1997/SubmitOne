@@ -392,7 +392,7 @@ async function renderCurrentDoc() {
   $('#btnSave').disabled = false; $('#btnSend').disabled = false; $('#docName').textContent = docName;
   document.title = 'Submit PDF';
   _searchCache = {}; if (typeof closeFind === 'function') closeFind();   // Suche fürs neue Dokument zurücksetzen
-  await buildLayout(); buildThumbs(); status(''); refreshComments(); updateScaleLabel();
+  await buildLayout(); buildThumbs(); status(''); refreshComments(); updateScaleLabel(); updateFormatLabel();
   document.body.classList.add('has-doc');
   detectForm(); detectOutline();
   if (rulerOn) requestAnimationFrame(drawRulers);
@@ -755,7 +755,7 @@ function reorderThumb(srcN, insertIdx) {
 function refreshThumb(n) { const btn = $(`.thumb[data-n="${n}"]`, $('#thumbs')); if (btn) { btn.classList.add('loading'); renderThumb(n, btn); } }
 function gotoPage(n) { const v = pageViews.find(p => p.num === n); if (v) v.wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 function curPage() { const host = $('#pages'), mid = host.scrollTop + host.clientHeight / 2; let cur = 1; for (const v of pageViews) if (v.wrap.offsetTop <= mid) cur = v.num; return cur; }
-function updatePageInd() { if (!pdfDoc) return; const cur = curPage(); $('#pageInd').textContent = cur + ' / ' + pdfDoc.numPages; $$('.thumb', $('#thumbs')).forEach(t => t.classList.toggle('active', +t.dataset.n === cur)); }
+function updatePageInd() { if (!pdfDoc) return; const cur = curPage(); $('#pageInd').textContent = cur + ' / ' + pdfDoc.numPages; $$('.thumb', $('#thumbs')).forEach(t => t.classList.toggle('active', +t.dataset.n === cur)); updateFormatLabel(); }
 
 /* ---------- Zoom ---------- */
 function curScale() { return (zoom === 'auto') ? (pageViews[0] ? pageViews[0].scale : 1) : zoom; }
@@ -2761,7 +2761,30 @@ function applyScale() {
   }
   $('#scaleDlg').hidden = true; updateScaleLabel(); if (docScale) fillPlanField('scale', docScale.label); pageViews.forEach(drawAnnos); toast('Massstab gesetzt'); const after = _scaleAfter; _scaleAfter = null; setTool(after || 'measure');
 }
-function updateScaleLabel() { const el = $('#scaleInd'); if (el) el.textContent = docScale ? (docScale.label === 'kalibriert' ? '⟂ kalibriert' : docScale.label) : ''; }
+function updateScaleLabel() {
+  const lab = docScale ? (docScale.label === 'kalibriert' ? '⟂ kalibriert' : docScale.label) : '';
+  const el = $('#scaleInd'); if (el) el.textContent = lab;
+  const fs = $('#footScale'); if (fs) fs.textContent = lab || '—';
+}
+function fmtName(w, h) {
+  const near = (a, b) => Math.abs(a - b) < 4, S = [['A4', 595, 842], ['A3', 842, 1191], ['A2', 1191, 1684], ['A1', 1684, 2384], ['A0', 2384, 3370], ['Letter', 612, 792]];
+  for (const [n, a, b] of S) { if (near(w, a) && near(h, b)) return n + ' hoch'; if (near(w, b) && near(h, a)) return n + ' quer'; }
+  return Math.round(w * PT2MM) + '×' + Math.round(h * PT2MM) + ' mm';
+}
+function updateFormatLabel() {
+  const el = $('#footFormat'); if (!el) return;
+  const pv = pageViews.find(p => p.num === curPage()) || pageViews[0];
+  el.textContent = pv ? fmtName(pv.pageW, pv.pageH) : '—';
+}
+async function changePageFormat(w, h) {   // aktuelle Seite auf neues Blattformat bringen
+  if (!curBytes) return; pushDocUndo(); status('Format wird geändert …');
+  try {
+    const lib = await loadPdfLib(), out = await lib.PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
+    const n = curPage(), pg = out.getPages()[n - 1]; if (pg) pg.setSize(w, h);
+    curBytes = new Uint8Array(await out.save()); await loadDoc(curBytes.slice());
+    status(''); updateFormatLabel(); toast('Blattformat geändert ✓');
+  } catch (e) { status(''); console.error(e); if (undoStack.length) undoStack.pop(); toast('Format-Änderung fehlgeschlagen.'); }
+}
 
 /* ---------- Rechtsklick-Menü (alles erreichbar) ---------- */
 // Seitenzahlen „n / N" unten mittig auf jede Seite setzen
@@ -3128,10 +3151,14 @@ function wire() {
     const v = prompt('Mass-Beschriftung (leer = automatisch gemessen):', a.text || lenLabel(a)); if (v === null) return;
     pushUndo(); a.text = v.trim() || ''; drawAnnos(pv);
   });
-  $('#rotL').onclick = () => rotatePage(-90); $('#rotR').onclick = () => rotatePage(90);
   $('#delSel').onclick = deleteSel;
-  // Schnellzugriff unten links
+  // Fussleiste (Blatt-Funktionen)
   $('#qRotL').onclick = () => rotatePage(-90); $('#qRotR').onclick = () => rotatePage(90);
+  $('#qCrop').onclick = () => setTool('crop');
+  $('#footScale').onclick = openScale;
+  $('#footFormat').onclick = e => { e.stopPropagation(); const p = $('#fmtPop'); p.hidden = !p.hidden; };
+  $$('#fmtPop button').forEach(b => b.onclick = () => { $('#fmtPop').hidden = true; changePageFormat(+b.dataset.w, +b.dataset.h); });
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#fmtPop') && !e.target.closest('#footFormat')) $('#fmtPop').hidden = true; }, true);
   $('#qFree').onclick = () => { const p = $('#freeRot'); p.hidden = !p.hidden; if (!p.hidden) { const n = curPage(); $('#freeRotRange').value = viewRot[n] || 0; $('#freeRotVal').textContent = ((viewRot[n] || 0) > 0 ? '+' : '') + (viewRot[n] || 0) + '°'; } };
   let _rotPushed = false;
   $('#freeRotRange').addEventListener('pointerdown', () => { _rotPushed = false; });

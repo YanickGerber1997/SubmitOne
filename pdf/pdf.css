@@ -85,7 +85,7 @@ body.has-tabs .findbar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 .sig-block #sigName{flex:1;min-width:160px;border:1px solid var(--line);background:var(--surface-2);padding:8px 11px;font:inherit;font-size:14px;color:var(--ink)}
 .sig-block #sigName:focus{outline:none;border-color:var(--accent)}
 .sig-chk{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-soft);white-space:nowrap;cursor:pointer}
-.freerot{position:fixed;left:14px;bottom:64px;z-index:30;display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);padding:8px 12px;box-shadow:0 8px 24px rgba(20,24,40,.16)}
+.freerot{position:fixed;left:158px;bottom:44px;z-index:30;display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);padding:8px 12px;box-shadow:0 8px 24px rgba(20,24,40,.16)}
 .freerot .fr-cap{font-size:12px;font-weight:600;color:var(--ink-soft)}
 .freerot input[type=range]{width:160px;accent-color:var(--accent)}
 .freerot .fr-val{font-size:12.5px;font-weight:700;color:var(--accent);min-width:42px;text-align:center;font-variant-numeric:tabular-nums}
@@ -223,7 +223,7 @@ body:not(.has-doc) #drop{left:148px}
 .ins-menu button:hover{background:var(--accent-soft);color:var(--accent-3)}
 .thumb-add:hover{background:#fff}
 
-.pages{overflow:auto;padding:26px;display:flex;flex-direction:column;align-items:center;gap:22px;background-color:#f6f3f0;background-image:url('bg-left.png'),url('bg-right.png');background-position:left center,right center;background-size:auto 100%,auto 100%;background-repeat:no-repeat;background-attachment:fixed}
+.pages{overflow:auto;padding:26px 26px 50px;display:flex;flex-direction:column;align-items:center;gap:22px;background-color:#f6f3f0;background-image:url('bg-left.png'),url('bg-right.png');background-position:left center,right center;background-size:auto 100%,auto 100%;background-repeat:no-repeat;background-attachment:fixed}
 .pagewrap{position:relative;flex:none;background:#fff;box-shadow:0 4px 22px rgba(20,24,40,.13);border-radius:0}
 .pageinner{position:absolute;left:50%;top:50%}
 .pagewrap canvas{display:block;border-radius:0}
@@ -385,8 +385,16 @@ body.has-tabs .plan-bar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 .link{background:none;border:none;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;padding:0;text-decoration:underline}
 .status{position:absolute;top:calc(var(--bar) + var(--tools) + 14px);left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:8px 16px;border-radius:0;font-size:13px;z-index:30;box-shadow:0 6px 20px rgba(0,0,0,.2)}
 /* Schnellzugriff unten links */
-.quickbar{position:absolute;left:16px;bottom:16px;z-index:25;display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:0;padding:5px;box-shadow:0 6px 20px rgba(20,24,40,.16)}
-.qbtn{width:36px;height:36px;border:none;background:none;color:var(--ink-soft);border-radius:0;cursor:pointer;font-size:17px;display:flex;align-items:center;justify-content:center}
+.quickbar{position:fixed;left:148px;right:0;bottom:0;z-index:24;display:flex;align-items:center;gap:4px;background:var(--surface);border-top:1px solid var(--line);border-radius:0;padding:0 10px;height:38px;box-shadow:0 -2px 10px rgba(20,24,40,.05)}
+.qbtn{width:34px;height:30px;border:none;background:none;color:var(--ink-soft);border-radius:0;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.quickbar .zoom-val{height:30px}
+.foot-grp{display:flex;align-items:center;gap:5px;margin-left:8px}
+.foot-lbl{font-size:11px;color:var(--ink-faint);font-weight:600}
+.foot-info{height:26px;padding:0 11px;border:1px solid var(--line);background:var(--surface-2);font:inherit;font-size:12.5px;font-weight:700;color:var(--accent-3);cursor:pointer;border-radius:0;white-space:nowrap}
+.foot-info:hover{border-color:var(--accent)}
+.fmt-pop{position:fixed;right:12px;bottom:44px;z-index:60;background:var(--surface);border:1px solid var(--line);box-shadow:0 -6px 24px rgba(20,24,40,.22);padding:5px;display:flex;flex-direction:column;gap:2px;min-width:140px}
+.fmt-pop button{border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;text-align:left;padding:7px 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.fmt-pop button:hover{background:var(--accent-soft);color:var(--accent-3)}
 .qbtn:hover{background:var(--surface-2);color:var(--accent)}
 .qsep{width:1px;height:22px;background:var(--line)}
 .quickbar .zoombox{background:none;border:none;padding:0;gap:0}
@@ -509,8 +517,10 @@ body.has-tabs .plan-bar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
   .pageind{display:none}
   #btnSplit{display:none}            /* zwei nebeneinander – am Handy nicht sinnvoll */
   .pages{padding:6px}
-  .quickbar{left:8px;bottom:8px;padding:3px;gap:2px}
-  .quickbar .qbtn{width:32px;height:32px;font-size:16px}
+  .quickbar{left:0;right:0;bottom:0;padding:0 6px;gap:2px;overflow-x:auto}
+  .quickbar .qbtn{width:30px;height:30px;font-size:15px}
+  .quickbar .foot-lbl{display:none}
+  .freerot{left:8px}
 }
 @media (max-width:520px){
   :root{--bar:48px;--tools:76px;--tabs:28px}

@@ -2053,6 +2053,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     $('#pbWinType').style.display = kind === 'window' ? '' : 'none'; $('#pbWinType').value = (sO && sO.winType) || lastWinType;
     $('#pbWinHinge').style.display = kind === 'window' ? '' : 'none'; $('#pbWinHinge').value = (sO && sO.winHinge) || lastWinHinge;
     $('#pbWinMore').style.display = kind === 'window' ? '' : 'none';
+    $('#pbReveal').style.display = kind === 'window' ? '' : 'none'; $('#pbReveal').value = (sO && sO.revealType) || 'putz';
     $('#pbOuterWrap').style.display = kind === 'window' ? '' : 'none'; if (document.activeElement !== $('#pbOuterLap')) $('#pbOuterLap').value = Math.round(ptsToCm(sO && sO.outerLap != null ? sO.outerLap : cmToPts(3)) * 10) / 10;
     $('#pbInnerWrap').style.display = kind === 'window' ? '' : 'none'; if (document.activeElement !== $('#pbInnerRev')) $('#pbInnerRev').value = Math.round(ptsToCm(sO && sO.innerReveal != null ? sO.innerReveal : cmToPts(2)) * 10) / 10;
     $('#pbFlip').style.display = kind === 'door' ? '' : 'none';
@@ -2334,29 +2335,23 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
   }
   return { cover, lines, arcs, bold };
 }
-function openingRevealStrips(a, arr) {   // Schichteinzug: innerste/äusserste Schicht zieht in die Laibung bis zum Fensterrahmen
+const REVEAL_MAT = { putz: { fill: '#ededed', color: '#9a9a9a' }, beton: { fill: '#dcecdf', color: '#2f7d4f' }, stahl: { fill: '#c9ccd1', color: '#565b62' }, holz: { fill: '#eedcc8', color: '#7a5126' } };   // Laibungs-Element: Putz/Betonelement/Stahlzarge/Holzzarge
+function openingRevealStrips(a, arr) {   // Laibung: Dämmung zum Rahmen reingezogen + innen Putz/Brett + Laibungs-Element vorne am Rahmen
   const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall');
-  if (!wall || !wall.layers || wall.layers.length < 2) return [];
+  if (!wall || !wall.layers || wall.layers.length < 2 || a.kind !== 'window') return [];
   const x = a.x, y = a.y, ang = a.ang, ht = (a.thick || wallThickPts()) / 2, hw = a.w / 2;
   const ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux, corner = (s, m) => [x + ux * hw * s + nx * ht * m, y + uy * hw * s + ny * ht * m];
   const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
-  const fmh = Math.min(0.48, (a.frameD || cmToPts(7)) / (2 * ht)); let fmA = md - fmh, fmB = md + fmh;   // Rahmen-Band (wie beim Fenster)
+  const fmh = Math.min(0.48, (a.frameD || cmToPts(7)) / (2 * ht)); let fmA = md - fmh, fmB = md + fmh;   // fmB=aussen, fmA=innen
   if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }
-  const gapM = cmToPts(0.5) / ht, isWin = a.kind === 'window';   // 0.5 cm Abstand zum Rahmen
-  const strips = [], FINISH = ['putz', 'gips', 'holz', 'konter'];
-  for (const idx of [...new Set([0, wall.layers.length - 1])]) {
-    const L = wall.layers[idx]; if (!FINISH.includes(L.mat)) continue;
-    const mt = WALL_MATS[L.mat] || {}, faceM = idx === 0 ? -1 : 1, tw = Math.min(0.9, L.t / hw);
-    const target = idx === 0 ? (isWin ? fmA - gapM : md) : (isWin ? fmB + gapM : md);   // bis kurz vor den Rahmen
-    if (Math.abs(target - faceM) < 0.04) continue;   // kein/zu kleiner Einzug
-    for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + tw : 1 - tw; strips.push({ poly: [corner(s0, faceM), corner(s1, faceM), corner(s1, target), corner(s0, target)], fill: mt.fill || '#fff', stroke: mt.color || '#1c242c' }); }
-  }
-  if (isWin) {   // Lappung über den Rahmen: aussen Dämmung/Schalung, innen Putz-Laibung
-    const lapT = Math.min(fmh * 0.9, cmToPts(2) / ht), l0 = wall.layers[0], lN = wall.layers[wall.layers.length - 1];
-    const innerS = Math.min(0.85, (a.innerReveal || cmToPts(2)) / hw), outerS = Math.min(0.85, (a.outerLap || cmToPts(3)) / hw);
-    if (innerS > 0.01 && FINISH.includes(l0.mat)) { const m = WALL_MATS[l0.mat] || {}; for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + innerS : 1 - innerS; strips.push({ poly: [corner(s0, fmA), corner(s1, fmA), corner(s1, fmA + lapT), corner(s0, fmA + lapT)], fill: m.fill || '#fff', stroke: m.color || '#1c242c' }); } }
-    if (outerS > 0.01 && FINISH.includes(lN.mat)) { const m = WALL_MATS[lN.mat] || {}; for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + outerS : 1 - outerS; strips.push({ poly: [corner(s0, fmB), corner(s1, fmB), corner(s1, fmB - lapT), corner(s0, fmB - lapT)], fill: m.fill || '#fff', stroke: m.color || '#1c242c' }); } }
-  }
+  const gapM = cmToPts(0.5) / ht, FIN = ['putz', 'gips', 'holz', 'konter'], INS = ['eps', 'glaswolle', 'daemm_holz', 'daemm_wolle', 'daemm_eps', 'daemm_xps'];
+  const strips = [];
+  const band = (mat, sw, mA, mB) => { const m = WALL_MATS[mat] || mat, tw = Math.min(0.45, cmToPts(sw) / hw); if (Math.abs(mB - mA) < 0.02) return; for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + tw : 1 - tw; strips.push({ poly: [corner(s0, mA), corner(s1, mA), corner(s1, mB), corner(s0, mB)], fill: (m.fill) || '#fff', stroke: (m.color) || '#1c242c' }); } };
+  const l0 = wall.layers[0], ins = wall.layers.find(l => INS.includes(l.mat));
+  if (FIN.includes(l0.mat)) band(l0.mat, ptsToCm(l0.t), -1, fmA - gapM);                 // innen: Putz/Brett bis Rahmen-Innenkante
+  if (ins) band(ins.mat, Math.min(8, ptsToCm(ins.t)), fmB + gapM, 1);                    // aussen: Dämmung vom Rahmen bis Aussenkante reingezogen
+  const rt = a.revealType || 'putz', rm = REVEAL_MAT[rt];                                 // Laibungs-Element vorne am Rahmen
+  if (rm) { const dM = Math.min(0.4, cmToPts(rt === 'stahl' ? 0.4 : rt === 'putz' ? 1.5 : 3) / ht), sW = Math.min(0.5, (a.outerLap != null ? a.outerLap : cmToPts(3)) / hw); for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + sW : 1 - sW; strips.push({ poly: [corner(s0, fmB), corner(s1, fmB), corner(s1, fmB + dM), corner(s0, fmB + dM)], fill: rm.fill, stroke: rm.color }); } }
   return strips;
 }
 function openingLichtW(o) {   // Rohbau-, Aussenlicht-, Innenlichtmass (Fenster)
@@ -4005,6 +4000,7 @@ function wire() {
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#winPop') && !e.target.closest('#pbWinMore')) $('#winPop').hidden = true; }, true);
   $('#pbOuterLap').onchange = () => { const v = parseFloat(($('#pbOuterLap').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.outerLap = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbInnerRev').onchange = () => { const v = parseFloat(($('#pbInnerRev').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.innerReveal = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbReveal').onchange = () => { const v = $('#pbReveal').value, a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.revealType = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
   $('#btnNew').onclick = () => openSlidePicker('new');

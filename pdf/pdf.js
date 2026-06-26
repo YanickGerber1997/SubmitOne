@@ -2497,12 +2497,12 @@ function buildPlanParts(w, h, opts) {   // frei konfigurierbarer Plankopf / Rahm
   for (let r = 1; r < rows; r++) push({ type: 'line', x1: kx, y1: ky + rh * r, x2: kx + kw, y2: ky + rh * r, color, width: 0.6 });
   push({ type: 'line', x1: cx, y1: ky, x2: cx, y2: ky + rh * 3, color, width: 0.6 });
   const cell = (x, y, wc, label, value, field) => { push(mk({ x: x + pad, y: y + pad * 0.5, w: wc, h: rh * 0.4, text: label, size: 7, color: gray })); push(mk(Object.assign({ x: x + pad, y: y + rh * 0.42, w: wc, h: rh * 0.55, text: value || '', size: 9, color }, field ? { field } : {}))); };
-  const lw = kw * 0.6 - 2 * pad, rw = kw * 0.4 - 2 * pad;
-  cell(kx, ky, lw, 'Projekt', '', 'projekt'); cell(kx, ky + rh, lw, 'Plan', '', 'plan'); cell(kx, ky + 2 * rh, lw, 'Gezeichnet', '', 'gezeichnet');
-  cell(cx, ky, rw, 'Massstab', docScale ? docScale.label : '', 'scale'); cell(cx, ky + rh, rw, 'Datum', todayStr(), 'date'); cell(cx, ky + 2 * rh, rw, 'Plan-Nr.', '', 'plannr');
+  const lw = kw * 0.6 - 2 * pad, rw = kw * 0.4 - 2 * pad, f = opts.fields || {};
+  cell(kx, ky, lw, 'Projekt', f.projekt, 'projekt'); cell(kx, ky + rh, lw, 'Plan', '', 'plan'); cell(kx, ky + 2 * rh, lw, 'Gezeichnet', f.gezeichnet, 'gezeichnet');
+  cell(cx, ky, rw, 'Massstab', docScale ? docScale.label : '', 'scale'); cell(cx, ky + rh, rw, 'Datum', todayStr(), 'date'); cell(cx, ky + 2 * rh, rw, 'Plan-Nr.', f.plannr, 'plannr');
   const logoSz = rh * 0.82, lox = logoDataUrl ? logoSz + pad : 0;
   if (logoDataUrl) push({ type: 'img', data: logoDataUrl, x: kx + pad, y: ky + 3 * rh + (rh - logoSz) / 2, w: logoSz, h: logoSz });
-  push(mk({ x: kx + pad + lox, y: ky + 3 * rh + pad, w: kw - 2 * pad - lox, h: rh, text: 'Submit PDF', size: 11, color, field: 'firma' }));
+  push(mk({ x: kx + pad + lox, y: ky + 3 * rh + pad, w: kw - 2 * pad - lox, h: rh, text: f.firma || 'Submit PDF', size: 11, color, field: 'firma' }));
   return out;
 }
 function insertPlanParts(opts) {
@@ -3406,7 +3406,13 @@ function wire() {
   $('#footPlan').onclick = e => { e.stopPropagation(); const p = $('#planPop'); p.hidden = !p.hidden; };
   $$('#ppKind button').forEach(b => b.onclick = () => { planKind = b.dataset.pk; $$('#ppKind button').forEach(x => x.classList.toggle('on', x === b)); $$('#planPop .pp-sec').forEach(s => s.hidden = s.dataset.for !== planKind); });
   $$('#ppGrid button').forEach(b => b.onclick = () => { planPos = b.dataset.pos; $$('#ppGrid button').forEach(x => x.classList.toggle('on', x === b)); });
-  $('#ppInsert').onclick = () => { insertPlanParts({ kind: planKind, pos: planPos, frame: $('#ppFrame').checked, edge: $('#ppEdge').value, margin: parseFloat($('#ppMargin').value), bw: parseFloat($('#ppBW').value), color: $('#ppColor').value }); $('#planPop').hidden = true; };
+  try { const pf = JSON.parse(localStorage.getItem('submitpdf-plankopf') || '{}'); if (pf.firma) $('#ppFirma').value = pf.firma; if (pf.gezeichnet) $('#ppGezeichnet').value = pf.gezeichnet; } catch (_) { }
+  $('#ppInsert').onclick = () => {
+    const fields = { projekt: $('#ppProjekt').value.trim(), plannr: $('#ppPlannr').value.trim(), gezeichnet: $('#ppGezeichnet').value.trim(), firma: $('#ppFirma').value.trim() };
+    try { localStorage.setItem('submitpdf-plankopf', JSON.stringify({ firma: fields.firma, gezeichnet: fields.gezeichnet })); } catch (_) { }
+    insertPlanParts({ kind: planKind, pos: planPos, frame: $('#ppFrame').checked, edge: $('#ppEdge').value, margin: parseFloat($('#ppMargin').value), bw: parseFloat($('#ppBW').value), color: $('#ppColor').value, fields });
+    $('#planPop').hidden = true;
+  };
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#planPop') && !e.target.closest('#footPlan')) $('#planPop').hidden = true; }, true);
   $('#btnBlock').onclick = e => { e.stopPropagation(); const p = $('#blockPop'); p.hidden = !p.hidden; };
   $$('#blockPop button').forEach(b => b.onclick = () => { blockKind = b.dataset.bk; $('#blockPop').hidden = true; setTool('block'); });

@@ -492,6 +492,9 @@ body.has-tabs .plan-bar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 .pp-grid button.on::after{border-color:var(--accent-3)}
 .pp-mid{display:flex;align-items:center;justify-content:center;color:var(--ink-faint);font-size:11px}
 .pp-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);margin-bottom:6px}
+.pp-fields{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.pp-fields input{font:inherit;font-size:12px;padding:5px 6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);min-width:0}
+.pp-fields input:focus{border-color:var(--accent);outline:none}
 .pp-sec{margin-bottom:8px}
 .pp-sec select{font:inherit;font-size:12px;padding:4px;border:1px solid var(--line);background:var(--surface)}
 .pp-row{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-soft);margin-top:8px}

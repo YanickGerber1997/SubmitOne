@@ -2308,21 +2308,23 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
   const lines = [[corner(-1, -1), corner(-1, 1)], [corner(1, -1), corner(1, 1)]];   // Laibungen
   const arcs = [], bold = [];
   if (a.kind === 'window' && !detail) { bold.push([corner(-1, -0.13), corner(1, -0.13)]); lines.push([corner(-1, 0.13), corner(1, 0.13)]); }   // einfach: zwei quere Linien, eine breit
-  else if (a.kind === 'window') {   // editierbares Fenster: Blendrahmen + Flügelrahmen + Glas, Typ wählbar
+  else if (a.kind === 'window') {   // Profil: Blendrahmen 10×7, Flügelrahmen 7×7; Flügel aussen 4 cm eingerückt, ragt 1 cm innen über
     const wt = a.winType || 'f1';
     const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
-    const fmh = Math.min(0.48, (a.frameD || cmToPts(7)) / (2 * ht)); let fmA = md - fmh, fmB = md + fmh;
+    const frameD = a.frameD || cmToPts(10), frameW = a.frameW || cmToPts(7), sashD = a.sashD || cmToPts(7), sashW = a.sashW || cmToPts(7), recess = a.sashRecess != null ? a.sashRecess : cmToPts(4), ov = a.sashAcross != null ? a.sashAcross : cmToPts(1);
+    const fdh = Math.min(0.49, frameD / (2 * ht)); let fmA = md - fdh, fmB = md + fdh;   // fmB = aussen, fmA = innen
     if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }
-    const fwS = Math.min(0.42, (a.frameW || cmToPts(6)) / hw), ssW = Math.min(fwS * 0.95, (a.sashW || cmToPts(5)) / hw);
-    const gh = Math.min(fmh * 0.4, (a.glassT || cmToPts(2)) / (2 * ht)), sd = Math.min(fmh * 0.72, gh * 3);   // Glas-Halbtiefe, Flügel-Halbtiefe
+    const fwS = Math.min(0.42, frameW / hw), ssW = Math.min(0.4, sashW / hw), ovS = ov / hw;
+    const sdM = Math.min(fdh * 1.95, sashD / ht), recM = Math.min(fdh * 1.4, recess / ht);
+    const smB = fmB - recM, smA = Math.max(-1, smB - sdM), gh = Math.min((smB - smA) * 0.42, (a.glassT || cmToPts(2)) / (2 * ht)), gc = (smA + smB) / 2;
     const box = (s0, s1, mA, mB) => lines.push([corner(s0, mA), corner(s1, mA)], [corner(s0, mB), corner(s1, mB)], [corner(s0, mA), corner(s0, mB)], [corner(s1, mA), corner(s1, mB)]);
     const div = wt === 'f2' ? [-1, 0, 1] : [-1, 1];
-    for (const dv of div) { let m0, m1; if (dv <= -0.999) { m0 = -1; m1 = -1 + fwS; } else if (dv >= 0.999) { m0 = 1 - fwS; m1 = 1; } else { m0 = -fwS / 2; m1 = fwS / 2; } box(m0, m1, fmA, fmB); }   // Blendrahmen-Holme (im Mauerwerk, volle Tiefe)
+    for (const dv of div) { let m0, m1; if (dv <= -0.999) { m0 = -1; m1 = -1 + fwS; } else if (dv >= 0.999) { m0 = 1 - fwS; m1 = 1; } else { m0 = -fwS / 2; m1 = fwS / 2; } box(m0, m1, fmA, fmB); }   // Blendrahmen (volle Tiefe)
     for (let i = 0; i < div.length - 1; i++) {
       const cl = div[i] <= -0.999 ? -1 + fwS : div[i] + fwS / 2, cr = div[i + 1] >= 0.999 ? 1 - fwS : div[i + 1] - fwS / 2;
-      if (wt !== 'fest') { box(cl, cl + ssW, md - sd, md + sd); box(cr - ssW, cr, md - sd, md + sd); }   // Flügelrahmen-Holme (im Blendrahmen, flacher, raumseitig)
-      const gl = wt !== 'fest' ? cl + ssW : cl, gr = wt !== 'fest' ? cr - ssW : cr;
-      lines.push([corner(gl, md - gh), corner(gr, md - gh)], [corner(gl, md + gh), corner(gr, md + gh)]);   // Glas (Doppellinie)
+      if (wt !== 'fest') { box(cl - ovS, cl - ovS + ssW, smA, smB); box(cr + ovS - ssW, cr + ovS, smA, smB); }   // Flügelrahmen (eingerückt, 1 cm über Rahmen)
+      const gl = wt !== 'fest' ? cl - ovS + ssW : cl, gr = wt !== 'fest' ? cr + ovS - ssW : cr;
+      lines.push([corner(gl, gc - gh), corner(gr, gc - gh)], [corner(gl, gc + gh), corner(gr, gc + gh)]);   // Glas
     }
   }
   else {   // Tür: Blatt + Schwenk, im Detail zusätzlich Blendrahmen an den Laibungen
@@ -2338,7 +2340,7 @@ function openingRevealStrips(a, arr) {   // Schichteinzug: innerste/äusserste S
   const x = a.x, y = a.y, ang = a.ang, ht = (a.thick || wallThickPts()) / 2, hw = a.w / 2;
   const ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux, corner = (s, m) => [x + ux * hw * s + nx * ht * m, y + uy * hw * s + ny * ht * m];
   const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
-  const fmh = Math.min(0.48, (a.frameD || cmToPts(7)) / (2 * ht)); let fmA = md - fmh, fmB = md + fmh;   // Rahmen-Band (wie beim Fenster)
+  const fmh = Math.min(0.48, (a.frameD || cmToPts(10)) / (2 * ht)); let fmA = md - fmh, fmB = md + fmh;   // Rahmen-Band (wie beim Fenster)
   if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }
   const gapM = cmToPts(0.5) / ht, isWin = a.kind === 'window';   // 0.5 cm Abstand zum Rahmen
   const strips = [], FINISH = ['putz', 'gips', 'holz', 'konter'];

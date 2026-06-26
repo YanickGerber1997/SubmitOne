@@ -1701,15 +1701,26 @@ function wallChainClick(pv, p) {
   delete s._draft; lastLine = { num: pv.num, id: s.id }; wallDraft.pts.push([ex, ey]);
   pushUndo();
   const first = wallDraft.pts[0], closed = wallDraft.pts.length >= 4 && Math.hypot(ex - first[0], ey - first[1]) < (s.thick * 0.7 + 5);   // Zug geschlossen?
-  if (closed) { addRoomArea(pv, wallDraft.pts.slice(0, -1)); finishWallChain(); return; }
+  if (closed) { addRoomArea(pv, wallDraft.pts.slice(0, -1), s.thick); finishWallChain(); return; }
   const seg2 = { id: nextId++, type: 'wall', x1: ex, y1: ey, x2: ex, y2: ey, thick: s.thick, color: s.color, fill: s.fill, hatch: s.hatch, width: s.width, dim: s.dim, _draft: true };
   getAnnos(pv.num).push(seg2); wallDraft.seg = seg2; wallDraft.last = [ex, ey];
   drawAnnos(pv); saveState();
 }
-function addRoomArea(pv, pts) {   // geschlossener Wandzug → Raumfläche (m²) als Etikett
+function polyArea2(pts) { let s = 0; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; s += a[0] * b[1] - b[0] * a[1]; } return s; }
+function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte Fläche)
+  const n = pts.length; if (n < 3) return null; const ccw = polyArea2(pts) > 0;
+  const lines = [];
+  for (let i = 0; i < n; i++) { const a = pts[i], b = pts[(i + 1) % n]; let ex = b[0] - a[0], ey = b[1] - a[1]; const L = Math.hypot(ex, ey) || 1; ex /= L; ey /= L; let nx = -ey, ny = ex; if (!ccw) { nx = ey; ny = -ex; } lines.push({ px: a[0] + nx * d, py: a[1] + ny * d, dx: ex, dy: ey }); }
+  const out = [];
+  for (let i = 0; i < n; i++) { const l1 = lines[(i - 1 + n) % n], l2 = lines[i]; const den = l1.dx * (-l2.dy) - l1.dy * (-l2.dx); if (Math.abs(den) < 1e-6) { out.push([l2.px, l2.py]); continue; } const t = ((l2.px - l1.px) * (-l2.dy) - (l2.py - l1.py) * (-l2.dx)) / den; out.push([l1.px + t * l1.dx, l1.py + t * l1.dy]); }
+  if (Math.sign(polyArea2(out)) !== Math.sign(polyArea2(pts)) || Math.abs(polyArea2(out)) < Math.abs(polyArea2(pts)) * 0.05) return null;   // kollabiert/umgestülpt → verwerfen
+  return out;
+}
+function addRoomArea(pv, pts, thick) {   // geschlossener Wandzug → lichte Raumfläche (m²)
   if (pts.length < 3) return;
-  getAnnos(pv.num).push({ id: nextId++, type: 'area', pts: pts.map(p => [p[0], p[1]]), color: '#4f7a3c', width: 0, room: true });
-  toast('Raumfläche ergänzt ✓');
+  let poly = pts.map(p => [p[0], p[1]]); const inner = insetPolygon(poly, (thick || wallThickPts()) / 2); if (inner) poly = inner;
+  getAnnos(pv.num).push({ id: nextId++, type: 'area', pts: poly, color: '#4f7a3c', width: 0, room: true });
+  toast('Raumfläche (lichte) ergänzt ✓');
 }
 function finishWallChain() {
   if (!wallDraft) return; const { pv, seg, _onMove } = wallDraft; document.removeEventListener('pointermove', _onMove);

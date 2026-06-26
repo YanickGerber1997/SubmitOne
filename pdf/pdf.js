@@ -781,10 +781,14 @@ function zoomToward(clientX, clientY, factor) {
 /* ---------- Annotationen rendern ---------- */
 function getAnnos(n) { return annos[n] || (annos[n] = []); }
 function findAnno(n, id) { return (annos[n] || []).find(a => a.id === id); }
+let _wallUnionActive = false;
 function drawAnnos(pv) {
   const svg = pv.svg; svg.innerHTML = '';
   for (const a of getAnnos(pv.num)) if (a.type === 'opening') openingResolve(a, pv);   // Türen/Fenster der Wand folgen lassen
+  _wallUnionActive = false;
+  if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall'); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung
   for (const a of getAnnos(pv.num)) drawOne(svg, a, pv);
+  _wallUnionActive = false;
   if (sel && sel.num === pv.num) drawSelection(svg, findAnno(pv.num, sel.id), pv);
   if (groupSel && groupSel.num === pv.num) drawGroupSel(svg, pv);
   updateAlignBar();
@@ -886,11 +890,11 @@ function drawOne(svg, a, pv) {
   } else if (a.type === 'wall') {
     const arr = getAnnos(pv.num), poly = wallPoly(a, arr), pstr = poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
     const g = svgEl('g', { 'data-id': a.id });
-    if (a.fill && a.fill !== 'none') g.appendChild(svgEl('polygon', { points: pstr, fill: a.fill, stroke: 'none' }));   // Füllung → Wände verschmelzen
+    if (!_wallUnionActive && a.fill && a.fill !== 'none') g.appendChild(svgEl('polygon', { points: pstr, fill: a.fill, stroke: 'none' }));   // Füllung (wenn keine Union)
     svg.appendChild(g); el = g;
     if (a.hatch && a.hatch.type) appendHatch(svg, a, arr);                                                            // Schraffur (phasen-gleich → läuft durch)
     const col = a.color || '#1c242c', lw = a.width || 1.4;
-    for (const [p, q] of wallOutlineSegs(a, arr)) svg.appendChild(svgEl('line', { x1: p[0], y1: p[1], x2: q[0], y2: q[1], stroke: col, 'stroke-width': lw, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));   // Umriss, an Stössen sauber getrimmt
+    if (!_wallUnionActive) for (const [p, q] of wallOutlineSegs(a, arr)) svg.appendChild(svgEl('line', { x1: p[0], y1: p[1], x2: q[0], y2: q[1], stroke: col, 'stroke-width': lw, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));   // Umriss nur ohne Union (sonst macht die Union die sauberen Ecken)
     if (a.dim) {                                                                                                      // optionale Masslinie
       const dg = wallDimGeom(a), tk = 4, dl = (x1, y1, x2, y2) => svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: col, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' }));
       dl(a.x1, a.y1, dg.x1, dg.y1); dl(a.x2, a.y2, dg.x2, dg.y2); dl(dg.x1, dg.y1, dg.x2, dg.y2);
@@ -1263,6 +1267,21 @@ function wallOutlineSegs(a, arr) {                              // sichtbare Umr
   if (wallEndFree(a, a.x1, a.y1, arr)) segs.push([poly[0], poly[3]]);   // Stirn nur an freien Enden
   if (wallEndFree(a, a.x2, a.y2, arr)) segs.push([poly[1], poly[2]]);
   return segs;
+}
+function loadPolyClip() { if (window.polygonClipping) return; loadScript('https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js').then(() => { if (pdfDoc) pageViews.forEach(drawAnnos); }).catch(() => { }); }
+function drawWallUnion(svg, walls) {   // Wandflächen vereinigen → saubere Gehrungs-Ecken (L/T/Kreuz)
+  try {
+    const polys = walls.map(w => [wallPoly(w).map(p => [p[0], p[1]])]);   // jede Wand als ein Polygon
+    const uni = polygonClipping.union(...polys);
+    if (!uni || !uni.length) return false;
+    const col = walls[0].color || '#1c242c', lw = walls[0].width || 1.4;
+    for (const poly of uni) {
+      let d = '';
+      for (const ring of poly) { if (!ring.length) continue; d += 'M' + ring.map(p => p[0].toFixed(2) + ' ' + p[1].toFixed(2)).join(' L ') + ' Z'; }
+      if (d) svg.appendChild(svgEl('path', { d, fill: '#ffffff', 'fill-rule': 'evenodd', stroke: col, 'stroke-width': lw, 'stroke-linejoin': 'miter', 'vector-effect': 'non-scaling-stroke' }));
+    }
+    return true;
+  } catch (_) { return false; }
 }
 let wallDimOn = false;   // neue Wände bekommen eine Masslinie?
 function wallDimGeom(a) {                                            // parallele Masslinie neben der Wand
@@ -2517,8 +2536,19 @@ async function buildPdfBytes() {
       const Y = y => PH - y;                          // pdf.js (oben) → pdf-lib (unten)
       const cropT = (cb.x !== 0 || cb.y !== 0) && pushGraphicsState && popGraphicsState && concatTransformationMatrix;
       if (cropT) pg.pushOperators(pushGraphicsState(), concatTransformationMatrix(1, 0, 0, 1, cb.x, cb.y));   // Ursprung in die CropBox-Ecke
+      let wallUni = false;
+      if (window.polygonClipping) {   // Wandflächen vereinigen → saubere Ecken auch im PDF
+        const walls = (annos[n] || []).filter(a => a.type === 'wall' && !a._draft);
+        if (walls.length) try {
+          const uni = polygonClipping.union(...walls.map(w => [wallPoly(w).map(p => [p[0], p[1]])]));
+          if (uni && uni.length) { wallUni = true; const wc = hexToRgb(walls[0].color || '#1c242c'), lw = walls[0].width || 1.4;
+            for (const poly of uni) { let d = ''; for (const ring of poly) { if (!ring.length) continue; d += 'M' + ring.map(p => p[0] + ' ' + p[1]).join(' L ') + ' Z'; } if (d) pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(1, 1, 1), borderColor: rgb(wc.r, wc.g, wc.b), borderWidth: lw }); }
+          }
+        } catch (_) { wallUni = false; }
+      }
       for (const a of (annos[n] || [])) {
         if (a._draft) continue;   // unbestätigtes Wand-Ketten-Segment nicht speichern
+        if (a.type === 'opening') openingResolve(a, { num: +n });   // Öffnung aus Wand ableiten
         if (a.type === 'opening') openingResolve(a, { num: +n });   // Öffnung aus Wand ableiten
         const col = hexToRgb(a.color), c = rgb(col.r, col.g, col.b), w = a.width || 2, dp = dashPdf(a);
         if (a.type === 'path') {
@@ -2543,8 +2573,8 @@ async function buildPdfBytes() {
         }
         else if (a.type === 'wall') {
           const arr = annos[n] || [], poly = wallPoly(a, arr), lw = a.width || 1.4;
-          if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); const d = 'M' + poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b) }); } catch (_) { } }
-          for (const [p, q] of wallOutlineSegs(a, arr)) pg.drawLine({ start: { x: p[0], y: Y(p[1]) }, end: { x: q[0], y: Y(q[1]) }, thickness: lw, color: c });
+          if (!wallUni && a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); const d = 'M' + poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b) }); } catch (_) { } }
+          if (!wallUni) for (const [p, q] of wallOutlineSegs(a, arr)) pg.drawLine({ start: { x: p[0], y: Y(p[1]) }, end: { x: q[0], y: Y(q[1]) }, thickness: lw, color: c });
           if (a.dim) {
             const dg = wallDimGeom(a), tk = 4, dl = (x1, y1, x2, y2) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: 0.8, color: c });
             dl(a.x1, a.y1, dg.x1, dg.y1); dl(a.x2, a.y2, dg.x2, dg.y2); dl(dg.x1, dg.y1, dg.x2, dg.y2);
@@ -3096,7 +3126,7 @@ function positionFindHL() {
 
 /* ---------- Verdrahtung ---------- */
 function wire() {
-  loadLogoData();
+  loadLogoData(); loadPolyClip();
   // Ribbon: Reiter umschalten + Werkzeugreihe ein-/ausklappen
   $$('.rib-tab').forEach(b => b.onclick = () => { activateRibTab(b.dataset.tab); document.body.classList.remove('rib-collapsed'); });
   $('#ribCollapse').onclick = () => document.body.classList.toggle('rib-collapsed');

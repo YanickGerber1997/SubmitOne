@@ -26,7 +26,7 @@ function applyStyleUI() { const $$$ = id => document.getElementById(id); const d
 let penTidy = true;        // Freihand-Skizzen automatisch zu sauberen Formen aufräumen
 let docScale = null;       // {perPt: reale Meter pro PDF-Punkt, label:'1:100'} – für Messen
 const PT2MM = 25.4 / 72;   // 1 PDF-Punkt in mm
-let dimUnit = true, wallDimOffCm = 10;   // Mass-Anzeige mit Einheit? · Abstand der Wand-Masslinie (cm)
+let dimUnit = false, wallDimOffCm = 10;   // Mass-Anzeige mit Einheit? (Standard: Plan-Stil „4.00") · Abstand der Wand-Masslinie (cm)
 function fmtLen(pts) {
   if (docScale && !dimUnit) return (pts * docScale.perPt).toFixed(2);          // Plan-Stil: „2.00" (Meter, 2 Nachkommastellen, ohne Einheit)
   if (!docScale) return Math.round(pts * PT2MM) + (dimUnit ? ' mm' : '');      // ohne Massstab: Papier-mm
@@ -932,13 +932,7 @@ function drawOne(svg, a, pv) {
     if (a.hatch && a.hatch.type) appendHatch(svg, a, arr);                                                            // Schraffur (phasen-gleich → läuft durch)
     const col = a.color || '#1c242c', lw = a.width || 1.4;
     if (!_wallUnionActive) for (const [p, q] of wallOutlineSegs(a, arr)) svg.appendChild(svgEl('line', { x1: p[0], y1: p[1], x2: q[0], y2: q[1], stroke: col, 'stroke-width': lw, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));   // Umriss nur ohne Union (sonst macht die Union die sauberen Ecken)
-    if (a.dim) {                                                                                                      // optionale Masslinie
-      const dg = wallDimGeom(a), tk = 4, dl = (x1, y1, x2, y2) => svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: col, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' }));
-      dl(a.x1, a.y1, dg.x1, dg.y1); dl(a.x2, a.y2, dg.x2, dg.y2); dl(dg.x1, dg.y1, dg.x2, dg.y2);
-      dl(dg.x1 - dg.nx * tk, dg.y1 - dg.ny * tk, dg.x1 + dg.nx * tk, dg.y1 + dg.ny * tk);
-      dl(dg.x2 - dg.nx * tk, dg.y2 - dg.ny * tk, dg.x2 + dg.nx * tk, dg.y2 + dg.ny * tk);
-      const mx = (dg.x1 + dg.x2) / 2, my = (dg.y1 + dg.y2) / 2, t = svgEl('text', { x: mx + dg.nx * 7 * dg.side, y: my + dg.ny * 7 * dg.side, fill: col, 'font-size': 11, 'text-anchor': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = dg.label; svg.appendChild(t);
-    }
+    if (a.dim) { const dg = wallDimGeom(a); archDim(svg, [a.x1, a.y1], [a.x2, a.y2], dg.off, col, dg.label); }   // richtige Architektur-Masslinie
     hit = svgEl('polygon', { points: pstr, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'stairs') {
     const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, hw = (a.width || stairWidthPts()) / 2, col = a.color || '#1c242c', n = stairSteps(a);
@@ -1408,7 +1402,22 @@ function wallDimGeom(a) {                                            // parallel
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1;
   const base = (a.thick || wallThickPts()) / 2 + cmToPts(wallDimOffCm), off = (a.dimOff != null ? a.dimOff : base), side = off >= 0 ? 1 : -1;
   const nx = -dy / len, ny = dx / len, ux = dx / len, uy = dy / len;
-  return { x1: a.x1 + nx * off, y1: a.y1 + ny * off, x2: a.x2 + nx * off, y2: a.y2 + ny * off, nx, ny, ux, uy, len, side, label: fmtLen(len) };
+  return { x1: a.x1 + nx * off, y1: a.y1 + ny * off, x2: a.x2 + nx * off, y2: a.y2 + ny * off, nx, ny, ux, uy, len, side, off, label: fmtLen(len) };
+}
+// Richtige Architektur-Masslinie: Hilfslinien (Lücke zum Bauteil, über die Masslinie hinaus) + Masslinie (über die äussersten Hilfslinien) + 45°-Schrägstriche + mitlaufender Text über/links der Linie.
+function archDim(svg, p1, p2, off, col, label) {
+  const dx = p2[0] - p1[0], dy = p2[1] - p1[1], len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+  const side = off >= 0 ? 1 : -1, gap = 3, over = 4, tick = 5;
+  const D = (x1, y1, x2, y2, w) => svg.appendChild(svgEl('line', { x1, y1, x2, y2, stroke: col, 'stroke-width': w || 0.7, 'vector-effect': 'non-scaling-stroke' }));
+  for (const P of [p1, p2]) D(P[0] + nx * side * gap, P[1] + ny * side * gap, P[0] + nx * (off + side * over), P[1] + ny * (off + side * over));   // Maßhilfslinien
+  const a1 = [p1[0] + nx * off, p1[1] + ny * off], a2 = [p2[0] + nx * off, p2[1] + ny * off];
+  D(a1[0] - ux * over, a1[1] - uy * over, a2[0] + ux * over, a2[1] + uy * over, 0.9);   // Masslinie (quere), beidseitig etwas über
+  const kx = (ux + nx), ky = (uy + ny), kl = Math.hypot(kx, ky) || 1, sx = kx / kl, sy = ky / kl;   // 45°-Schrägstrich
+  for (const P of [a1, a2]) D(P[0] - sx * tick, P[1] - sy * tick, P[0] + sx * tick, P[1] + sy * tick, 1.1);
+  let ang = Math.atan2(uy, ux) * 180 / Math.PI; if (ang > 90) ang -= 180; else if (ang <= -90) ang += 180;   // von links lesbar
+  const mx = (a1[0] + a2[0]) / 2 + nx * side * 7, my = (a1[1] + a2[1]) / 2 + ny * side * 7;
+  const t = svgEl('text', { x: mx, y: my, fill: col, 'font-size': 11, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3, transform: `rotate(${ang.toFixed(1)} ${mx.toFixed(2)} ${my.toFixed(2)})` });
+  t.textContent = label; svg.appendChild(t);
 }
 function onPointerDown(pv, e) {
   if (e.button !== 0) return;
@@ -2803,13 +2812,20 @@ async function buildPdfBytes(visibleOnly) {
           const arr = annos[n] || [], poly = wallPoly(a, arr), lw = a.width || 1.4;
           if (!wallUni && a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); const d = 'M' + poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b) }); } catch (_) { } }
           if (!wallUni) for (const [p, q] of wallOutlineSegs(a, arr)) pg.drawLine({ start: { x: p[0], y: Y(p[1]) }, end: { x: q[0], y: Y(q[1]) }, thickness: lw, color: c });
-          if (a.dim) {
-            const dg = wallDimGeom(a), tk = 4, dl = (x1, y1, x2, y2) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: 0.8, color: c });
-            dl(a.x1, a.y1, dg.x1, dg.y1); dl(a.x2, a.y2, dg.x2, dg.y2); dl(dg.x1, dg.y1, dg.x2, dg.y2);
-            dl(dg.x1 - dg.nx * tk, dg.y1 - dg.ny * tk, dg.x1 + dg.nx * tk, dg.y1 + dg.ny * tk);
-            dl(dg.x2 - dg.nx * tk, dg.y2 - dg.ny * tk, dg.x2 + dg.nx * tk, dg.y2 + dg.ny * tk);
-            const mx = (dg.x1 + dg.x2) / 2, my = (dg.y1 + dg.y2) / 2, tw = font.widthOfTextAtSize(dg.label, 11);
-            pg.drawText(dg.label, { x: mx + dg.nx * 7 - tw / 2, y: Y(my + dg.ny * 7) - 3, size: 11, font, color: c });
+          if (a.dim) {   // Architektur-Masslinie im PDF
+            const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+            const base = (a.thick || wallThickPts()) / 2 + cmToPts(wallDimOffCm), off = (a.dimOff != null ? a.dimOff : base), side = off >= 0 ? 1 : -1, gap = 3, over = 4, tick = 5;
+            const dl = (x1, y1, x2, y2, th) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: th || 0.7, color: c });
+            for (const P of [[a.x1, a.y1], [a.x2, a.y2]]) dl(P[0] + nx * side * gap, P[1] + ny * side * gap, P[0] + nx * (off + side * over), P[1] + ny * (off + side * over));
+            const q1 = [a.x1 + nx * off, a.y1 + ny * off], q2 = [a.x2 + nx * off, a.y2 + ny * off];
+            dl(q1[0] - ux * over, q1[1] - uy * over, q2[0] + ux * over, q2[1] + uy * over, 0.9);
+            const kx = ux + nx, ky = uy + ny, kl = Math.hypot(kx, ky) || 1, kxn = kx / kl, kyn = ky / kl;
+            for (const P of [q1, q2]) dl(P[0] - kxn * tick, P[1] - kyn * tick, P[0] + kxn * tick, P[1] + kyn * tick, 1.1);
+            const lbl = fmtLen(len), tw = font.widthOfTextAtSize(lbl, 11);
+            let pang = Math.atan2(-uy, ux) * 180 / Math.PI; if (pang > 90) pang -= 180; else if (pang <= -90) pang += 180;
+            const rad = pang * Math.PI / 180, bx = Math.cos(rad), by = Math.sin(rad);
+            const cxm = (q1[0] + q2[0]) / 2 + nx * side * 7, cym = (q1[1] + q2[1]) / 2 + ny * side * 7;
+            pg.drawText(lbl, { x: cxm - bx * tw / 2 + by * 3.5, y: Y(cym) - by * tw / 2 - bx * 3.5, size: 11, font, color: c, rotate: degrees(pang) });
           }
         }
         else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), o = { x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawRectangle(o); }

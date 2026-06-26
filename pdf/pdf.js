@@ -2484,11 +2484,13 @@ function sectionPrimitives(a, arr) {
       const sill = o.kind === 'window' ? (o.sill || 0) : 0, head = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0)), opx0 = h.dist - h.appW / 2, opw = h.appW;
       out.push({ t: 'rect', x: X(opx0), y: Yh(head), w: opw, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });
       if (o.kind === 'window') {
-        const wt = o.winType || 'f1', fr = Math.min(opw * 0.12, 5), yT = Yh(head), yB = Yh(sill);
-        out.push({ t: 'rect', x: X(opx0), y: yT, w: opw, h: yB - yT, fill: 'none', stroke: col, sw: 1.4 });   // Blendrahmen
+        const wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', fr = Math.min(opw * 0.12, 5), yT = Yh(head), yB = Yh(sill);
+        out.push({ t: 'rect', x: X(opx0), y: yT, w: opw, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.4 });   // Blendrahmen (Material)
         const two = wt === 'f2' || wt === 'f2s', panes = two ? 2 : 1, pw = opw / panes;
-        for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) { if (wt === 'f2s') { out.push({ t: 'rect', x: px0 - fr, y: yT, w: 2 * fr, h: yB - yT, fill: 'none', stroke: col, sw: 1.4 }); } else out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1.4 }); }   // Setzholz / direkt verbundene Flügel
-          if (wt !== 'fest') { out.push({ t: 'rect', x: px0 + fr, y: yT + fr, w: pw - 2 * fr, h: (yB - yT) - 2 * fr, fill: 'none', stroke: col, sw: 0.9 });   // Flügelrahmen
+        for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) { if (wt === 'f2s') { out.push({ t: 'rect', x: px0 - fr, y: yT, w: 2 * fr, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.2 }); } else out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1.2 }); }   // Setzholz / direkt verbundene Flügel
+          const ins = wt === 'fest' ? fr : fr * 2;
+          out.push({ t: 'rect', x: px0 + ins, y: yT + ins, w: pw - 2 * ins, h: (yB - yT) - 2 * ins, fill: '#9cc3e6', stroke: '#5a8bb5', sw: 0.8 });   // Glas (blau)
+          if (wt !== 'fest') { out.push({ t: 'rect', x: px0 + fr, y: yT + fr, w: pw - 2 * fr, h: (yB - yT) - 2 * fr, fill: 'none', stroke: wm.stroke, sw: 0.9 });   // Flügelrahmen
             const ix0 = px0 + fr * 1.6, ix1 = px0 + pw - fr * 1.6, iy0 = yT + fr * 1.6, iy1 = yB - fr * 1.6, cmx = (ix0 + ix1) / 2, cmy = (iy0 + iy1) / 2, hinge = o.winHinge || 'left';
             if (hinge === 'kipp') { out.push({ t: 'line', x1: ix0, y1: iy0, x2: cmx, y2: iy1, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: ix1, y1: iy0, x2: cmx, y2: iy1, stroke: col, w: 0.6, dash: '4 3' }); }   // Kipp: Apex unten-Mitte
             else { const apexL = (two ? pi === 0 : hinge === 'left'), ax = apexL ? ix0 : ix1, bx = apexL ? ix1 : ix0; out.push({ t: 'line', x1: bx, y1: iy0, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: bx, y1: iy1, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); }   // Dreh: Apex = Bandseite
@@ -2496,7 +2498,17 @@ function sectionPrimitives(a, arr) {
         }
         out.push({ t: 'line', x1: X(opx0) - 6, y1: Yh(sill), x2: X(opx0 + opw) + 6, y2: Yh(sill), stroke: col, w: 1.8 });   // Fensterbank
         if (o.niche) { const nh = (Yh(0) - Yh(0.24)); out.push({ t: 'rect', x: X(opx0), y: Yh(head) - nh, w: opw, h: nh, fill: '#e9e6df', stroke: col, sw: 0.8 }); }
-      } else out.push({ t: 'rect', x: X(opx0) + 1.5, y: Yh(head), w: opw - 3, h: Yh(sill) - Yh(head), fill: 'none', stroke: col, sw: 1 });   // Tür: einfacher Rahmen
+      } else {   // Tür im Schnitt (Ansicht): Zarge + Türblatt (Material), Festteil/Fixteil = Glas
+        const wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', fr = Math.min(opw * 0.1, 5), yT = Yh(head), yB = Yh(sill), hingeRight = o.winHinge === 'right';
+        out.push({ t: 'rect', x: X(opx0), y: yT, w: opw, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.2 });   // Zarge
+        const two = wt === 'f2' || wt === 'f2s' || wt === 'f1f', panes = two ? 2 : 1, pw = opw / panes;
+        for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1 });
+          const isGlass = wt === 'fest' || (wt === 'f1f' && pi === (hingeRight ? 0 : 1));
+          if (isGlass) out.push({ t: 'rect', x: px0 + fr, y: yT + fr, w: pw - 2 * fr, h: (yB - yT) - 2 * fr, fill: '#9cc3e6', stroke: '#5a8bb5', sw: 0.8 });   // Fixteil verglast
+          else { out.push({ t: 'rect', x: px0 + fr, y: yT + fr, w: pw - 2 * fr, h: (yB - yT) - 2 * fr, fill: wm.fill, stroke: wm.stroke, sw: 0.9 });   // Türblatt
+            const hx = (two ? (pi === 0 ? px0 + pw - fr * 2 : px0 + fr * 2) : (hingeRight ? px0 + fr * 2 : px0 + pw - fr * 2)); out.push({ t: 'line', x1: hx, y1: (yT + yB) / 2 - 6, x2: hx, y2: (yT + yB) / 2 + 6, stroke: col, w: 1.6 }); }   // Türgriff
+        }
+      }
     }
     out.push({ t: 'line', x1: X(x0), y1: Yh(H), x2: X(x0 + h.appW), y2: Yh(H), stroke: col, w: 1.2 });
   }

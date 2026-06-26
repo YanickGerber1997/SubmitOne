@@ -731,6 +731,7 @@ function getAnnos(n) { return annos[n] || (annos[n] = []); }
 function findAnno(n, id) { return (annos[n] || []).find(a => a.id === id); }
 function drawAnnos(pv) {
   const svg = pv.svg; svg.innerHTML = '';
+  for (const a of getAnnos(pv.num)) if (a.type === 'opening') openingResolve(a, pv);   // Türen/Fenster der Wand folgen lassen
   for (const a of getAnnos(pv.num)) drawOne(svg, a, pv);
   if (sel && sel.num === pv.num) drawSelection(svg, findAnno(pv.num, sel.id), pv);
   if (groupSel && groupSel.num === pv.num) drawGroupSel(svg, pv);
@@ -1223,6 +1224,7 @@ function onPointerDown(pv, e) {
       groupSel = null; sel = { num: pv.num, id: +idAttr }; drawAnnos(pv);
       const a = findAnno(pv.num, sel.id);
       if (a && a.type === 'note') { openNoteEdit(pv, a); return; }
+      if (a && a.type === 'opening') { startOpeningMove(pv, e, a); return; }   // Öffnung entlang der Wand schieben
       startMove(pv, e, a, wasSel); return;
     }
     sel = null; groupSel = null; drawAnnos(pv); startMarquee(pv, e); return;   // leerer Klick → Rahmen aufziehen
@@ -1751,12 +1753,25 @@ function drawOpening(svg, a) {
   svg.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: 'transparent', 'data-id': a.id }));
   return g;
 }
+function openingResolve(a, pv) {   // Position/Winkel/Dicke aus der zugehörigen Wand ableiten (Öffnung läuft mit)
+  if (!a.wallId) return; const w = getAnnos(pv.num).find(o => o.id === a.wallId && o.type === 'wall'); if (!w) return;
+  const t = a.t == null ? 0.5 : a.t; a.x = w.x1 + (w.x2 - w.x1) * t; a.y = w.y1 + (w.y2 - w.y1) * t; a.ang = Math.atan2(w.y2 - w.y1, w.x2 - w.x1); a.thick = w.thick || wallThickPts();
+}
 function openingClick(pv, p) {
   const nw = nearestWall(pv, p.x, p.y);
   if (!nw || nw.dist > nw.thick * 0.85 + 10) { toast('Tür/Fenster auf eine Wand setzen.'); return; }
   pushUndo();
-  const a = { id: nextId++, type: 'opening', x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, color: nw.wall.color || '#1c242c' };
+  const dx = nw.wall.x2 - nw.wall.x1, dy = nw.wall.y2 - nw.wall.y1, L2 = dx * dx + dy * dy || 1, t = ((nw.cx - nw.wall.x1) * dx + (nw.cy - nw.wall.y1) * dy) / L2;
+  const a = { id: nextId++, type: 'opening', wallId: nw.wall.id, t, x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, color: nw.wall.color || '#1c242c' };
   getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
+}
+function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieben (sonst frei)
+  const wall = a.wallId && getAnnos(pv.num).find(o => o.id === a.wallId && o.type === 'wall');
+  if (!wall) return startMove(pv, e, a);
+  pushUndo(); let moved = false;
+  const move = ev => { moved = true; const q = evtToPage(pv, ev), dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, L2 = dx * dx + dy * dy || 1; let t = ((q.x - wall.x1) * dx + (q.y - wall.y1) * dy) / L2; a.t = Math.max(0, Math.min(1, t)); openingResolve(a, pv); drawAnnos(pv); };
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) undoStack.pop(); else saveState(); };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function addRoomArea(pv, pts, thick) {   // geschlossener Wandzug → lichte Raumfläche (m²)
   if (pts.length < 3) return;
@@ -2325,6 +2340,7 @@ async function buildPdfBytes() {
       if (cropT) pg.pushOperators(pushGraphicsState(), concatTransformationMatrix(1, 0, 0, 1, cb.x, cb.y));   // Ursprung in die CropBox-Ecke
       for (const a of (annos[n] || [])) {
         if (a._draft) continue;   // unbestätigtes Wand-Ketten-Segment nicht speichern
+        if (a.type === 'opening') openingResolve(a, { num: +n });   // Öffnung aus Wand ableiten
         const col = hexToRgb(a.color), c = rgb(col.r, col.g, col.b), w = a.width || 2, dp = dashPdf(a);
         if (a.type === 'path') {
           if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); try { pg.drawSvgPath(pathD(a), { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b) }); } catch (_) { } }   // Füllung (Vektor)

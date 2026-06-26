@@ -2159,6 +2159,8 @@ function remapAfterInsert(insertPageNum, count) {
   annos = shift(annos); pageRot = shift(pageRot); viewRot = shift(viewRot); sel = null;
 }
 // Vorlagen-Inhalt (Folien-Layouts) als Annotationen für eine Seite der Grösse w×h
+let logoDataUrl = null;   // Logo als data-URL (für den Plankopf), einmal vorgeladen
+function loadLogoData() { try { fetch('icon.png').then(r => r.blob()).then(b => { const fr = new FileReader(); fr.onload = () => { logoDataUrl = fr.result; }; fr.readAsDataURL(b); }).catch(() => { }); } catch (_) { } }
 function todayStr() { const d = new Date(), p = n => ('0' + n).slice(-2); return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear(); }
 function fillPlanField(field, value) {   // Plankopf-Feld (z. B. Massstab) automatisch eintragen
   let changed = false;
@@ -2210,7 +2212,9 @@ function templateAnnos(kind, w, h) {
     const lw = kw * 0.6 - 2 * pad, rw = kw * 0.4 - 2 * pad;
     cell(kx, ky, lw, 'Projekt', '', 'projekt'); cell(kx, ky + rh, lw, 'Plan', '', 'plan'); cell(kx, ky + 2 * rh, lw, 'Gezeichnet', '', 'gezeichnet');
     cell(cx, ky, rw, 'Massstab', docScale ? docScale.label : '', 'scale'); cell(cx, ky + rh, rw, 'Datum', todayStr(), 'date'); cell(cx, ky + 2 * rh, rw, 'Plan-Nr.', '', 'plannr');
-    out.push(mk({ x: kx + pad, y: ky + 3 * rh + pad, w: kw - 2 * pad, h: rh, text: 'Submit PDF', size: 11, color: dark, field: 'firma' }));
+    const logoSz = rh * 0.82, lox = logoDataUrl ? logoSz + pad : 0;             // Logo links im Fuss
+    if (logoDataUrl) out.push({ type: 'img', data: logoDataUrl, x: kx + pad, y: ky + 3 * rh + (rh - logoSz) / 2, w: logoSz, h: logoSz });
+    out.push(mk({ x: kx + pad + lox, y: ky + 3 * rh + pad, w: kw - 2 * pad - lox, h: rh, text: 'Submit PDF', size: 11, color: dark, field: 'firma' }));
     const A4w = 210 * MM, A4h = 297 * MM, tk = 5 * MM;                          // Faltmarken (DIN-824-artig, in A4-Spalten)
     for (let x = w - A4w; x > ml * 0.5; x -= A4w) { out.push({ type: 'line', x1: x, y1: 0, x2: x, y2: tk, color: gray, width: 0.6 }); out.push({ type: 'line', x1: x, y1: h - tk, x2: x, y2: h, color: gray, width: 0.6 }); }
     for (let y = h - A4h; y > mt * 0.5; y -= A4h) { out.push({ type: 'line', x1: 0, y1: y, x2: tk, y2: y, color: gray, width: 0.6 }); out.push({ type: 'line', x1: w - tk, y1: y, x2: w, y2: y, color: gray, width: 0.6 }); }
@@ -2927,6 +2931,7 @@ function positionFindHL() {
 
 /* ---------- Verdrahtung ---------- */
 function wire() {
+  loadLogoData();
   // Ribbon: Reiter umschalten + Werkzeugreihe ein-/ausklappen
   $$('.rib-tab').forEach(b => b.onclick = () => { activateRibTab(b.dataset.tab); document.body.classList.remove('rib-collapsed'); });
   $('#ribCollapse').onclick = () => document.body.classList.toggle('rib-collapsed');

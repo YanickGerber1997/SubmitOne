@@ -2007,6 +2007,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     $('#pbDepthWrap').style.display = kind === 'window' ? '' : 'none';
     if (document.activeElement !== $('#pbDepth')) $('#pbDepth').value = Math.round((sO && sO.depth != null ? sO.depth : lastOpenDepth) * 100);
     $('#pbNiche').style.display = kind === 'window' ? '' : 'none'; $('#pbNiche').classList.toggle('on', !!(sO && sO.niche));
+    $('#pbWinType').style.display = kind === 'window' ? '' : 'none'; $('#pbWinType').value = (sO && sO.winType) || lastWinType;
     $('#pbFlip').style.display = kind === 'door' ? '' : 'none';
   }
 }
@@ -2244,7 +2245,7 @@ function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte F
   return out;
 }
 /* ---------- Öffnungen (Tür/Fenster) in Wänden ---------- */
-let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5;
+let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5, lastWinType = 'f1';
 function nearestWall(pv, x, y) {
   let best = null, bd = Infinity;
   for (const o of getAnnos(pv.num)) { if (o.type !== 'wall') continue; const dx = o.x2 - o.x1, dy = o.y2 - o.y1, L2 = dx * dx + dy * dy || 1; let t = ((x - o.x1) * dx + (y - o.y1) * dy) / L2; t = Math.max(0, Math.min(1, t)); const px = o.x1 + dx * t, py = o.y1 + dy * t, d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = { wall: o, cx: px, cy: py, ang: Math.atan2(dy, dx), thick: o.thick || wallThickPts(), dist: d }; } }
@@ -2258,13 +2259,20 @@ function openingParts(a) {   // Geometrie: Ausstanz-Rechteck (cover), Linien (La
   const cover = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
   const lines = [[corner(-1, -1), corner(-1, 1)], [corner(1, -1), corner(1, 1)]];   // Laibungen
   const arcs = [];
-  if (a.kind === 'window') {   // echtes Fensterprofil: Rahmen-Querschnitt an beiden Laibungen + versenkte Scheibe
+  if (a.kind === 'window') {   // editierbares Fenster: Blendrahmen + Flügelrahmen + Glas, Typ wählbar
+    const wt = a.winType || 'f1';
     const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
-    const fmh = Math.min(0.48, (a.frameD || cmToPts(7)) / (2 * ht)); let f1 = md - fmh, f2 = md + fmh;
-    if (f1 < -1) { f2 += (-1 - f1); f1 = -1; } if (f2 > 1) { f1 -= (f2 - 1); f2 = 1; }
-    const fws = Math.min(0.45, (a.frameW || cmToPts(7)) / hw), gh = Math.min(fmh * 0.7, (a.glassT || cmToPts(2)) / (2 * ht));
-    for (const sgn of [-1, 1]) { const sa = sgn, sb = sgn < 0 ? -1 + fws : 1 - fws; lines.push([corner(sa, f1), corner(sb, f1)], [corner(sa, f2), corner(sb, f2)], [corner(sa, f1), corner(sa, f2)], [corner(sb, f1), corner(sb, f2)]); }   // Rahmenkasten je Laibung
-    const gA = -1 + fws, gB = 1 - fws; lines.push([corner(gA, md - gh), corner(gB, md - gh)], [corner(gA, md + gh), corner(gB, md + gh)]);   // Scheibe (2 Flächen, versenkt)
+    const fmh = Math.min(0.48, (a.frameD || cmToPts(7)) / (2 * ht)); let fmA = md - fmh, fmB = md + fmh;
+    if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }
+    const fwS = Math.min(0.45, (a.frameW || cmToPts(7)) / hw), gh = Math.min(fmh * 0.55, (a.glassT || cmToPts(2)) / (2 * ht));
+    const box = (s0, s1) => lines.push([corner(s0, fmA), corner(s1, fmA)], [corner(s0, fmB), corner(s1, fmB)], [corner(s0, fmA), corner(s0, fmB)], [corner(s1, fmA), corner(s1, fmB)]);
+    const div = wt === 'f2' ? [-1, 0, 1] : [-1, 1];
+    for (const dv of div) { if (dv <= -0.999) box(-1, -1 + fwS); else if (dv >= 0.999) box(1 - fwS, 1); else box(-fwS / 2, fwS / 2); }   // Blendrahmen-Holme
+    for (let i = 0; i < div.length - 1; i++) {
+      const cl = div[i] <= -0.999 ? -1 + fwS : div[i] + fwS / 2, cr = div[i + 1] >= 0.999 ? 1 - fwS : div[i + 1] - fwS / 2;
+      if (wt !== 'fest') { const sd = Math.min(fmh * 0.82, gh * 1.9), sA = md - sd, sB = md + sd; lines.push([corner(cl, sA), corner(cr, sA)], [corner(cl, sB), corner(cr, sB)], [corner(cl, sA), corner(cl, sB)], [corner(cr, sA), corner(cr, sB)]); }   // Flügelrahmen
+      lines.push([corner(cl, md - gh), corner(cr, md - gh)], [corner(cl, md + gh), corner(cr, md + gh)]);   // Glas
+    }
   }
   else { const hS = a.hinge || 1, sN = a.swing || 1, hp = [x - ux * hw * hS, y - uy * hw * hS], tip = [hp[0] + nx * a.w * sN, hp[1] + ny * a.w * sN], closed = [x + ux * hw * hS, y + uy * hw * hS]; lines.push([hp, tip]); arcs.push({ cx: hp[0], cy: hp[1], r: a.w, from: tip, to: closed }); }
   return { cover, lines, arcs };
@@ -2322,8 +2330,16 @@ function sectionPrimitives(a, arr) {
     for (const o of ops) {
       const sill = o.kind === 'window' ? (o.sill || 0) : 0, head = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0)), opx0 = h.dist - h.appW / 2, opw = h.appW;
       out.push({ t: 'rect', x: X(opx0), y: Yh(head), w: opw, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });
-      out.push({ t: 'rect', x: X(opx0) + 1.5, y: Yh(head), w: opw - 3, h: Yh(sill) - Yh(head), fill: 'none', stroke: col, sw: 1 });
-      if (o.kind === 'window') { const my = (Yh(sill) + Yh(head)) / 2; out.push({ t: 'line', x1: X(opx0) + 2, y1: my, x2: X(opx0 + opw) - 2, y2: my, stroke: col, w: 0.6 }); out.push({ t: 'line', x1: X(opx0) - 6, y1: Yh(sill), x2: X(opx0 + opw) + 6, y2: Yh(sill), stroke: col, w: 1.8 }); if (o.niche) { const nh = (Yh(0) - Yh(0.24)); out.push({ t: 'rect', x: X(opx0), y: Yh(head) - nh, w: opw, h: nh, fill: '#e9e6df', stroke: col, sw: 0.8 }); } }
+      if (o.kind === 'window') {
+        const wt = o.winType || 'f1', fr = Math.min(opw * 0.12, 5), yT = Yh(head), yB = Yh(sill);
+        out.push({ t: 'rect', x: X(opx0), y: yT, w: opw, h: yB - yT, fill: 'none', stroke: col, sw: 1.4 });   // Blendrahmen
+        const panes = wt === 'f2' ? 2 : 1, pw = opw / panes;
+        for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1.4 });   // Mittelpfosten
+          if (wt !== 'fest') out.push({ t: 'rect', x: px0 + fr, y: yT + fr, w: pw - 2 * fr, h: (yB - yT) - 2 * fr, fill: 'none', stroke: col, sw: 0.9 });   // Flügelrahmen
+        }
+        out.push({ t: 'line', x1: X(opx0) - 6, y1: Yh(sill), x2: X(opx0 + opw) + 6, y2: Yh(sill), stroke: col, w: 1.8 });   // Fensterbank
+        if (o.niche) { const nh = (Yh(0) - Yh(0.24)); out.push({ t: 'rect', x: X(opx0), y: Yh(head) - nh, w: opw, h: nh, fill: '#e9e6df', stroke: col, sw: 0.8 }); }
+      } else out.push({ t: 'rect', x: X(opx0) + 1.5, y: Yh(head), w: opw - 3, h: Yh(sill) - Yh(head), fill: 'none', stroke: col, sw: 1 });   // Tür: einfacher Rahmen
     }
     out.push({ t: 'line', x1: X(x0), y1: Yh(H), x2: X(x0 + h.appW), y2: Yh(H), stroke: col, w: 1.2 });
   }
@@ -2369,7 +2385,7 @@ function openingClick(pv, p) {
   if (!nw || nw.dist > nw.thick * 0.85 + 10) { toast('Tür/Fenster auf eine Wand setzen.'); return; }
   pushUndo();
   const dx = nw.wall.x2 - nw.wall.x1, dy = nw.wall.y2 - nw.wall.y1, L2 = dx * dx + dy * dy || 1, t = ((nw.cx - nw.wall.x1) * dx + (nw.cy - nw.wall.y1) * dy) / L2;
-  const a = { id: nextId++, type: 'opening', wallId: nw.wall.id, t, x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, sill: openKind === 'window' ? 0.9 : 0, head: openKind === 'window' ? 2.1 : 2.0, depth: lastOpenDepth, color: nw.wall.color || '#1c242c' };
+  const a = { id: nextId++, type: 'opening', wallId: nw.wall.id, t, x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, sill: openKind === 'window' ? 0.9 : 0, head: openKind === 'window' ? 2.1 : 2.0, depth: lastOpenDepth, winType: lastWinType, color: nw.wall.color || '#1c242c' };
   pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
 }
 function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieben (sonst frei)
@@ -3487,7 +3503,7 @@ function build3DScene(host, walls, arr) {
       if (edge) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); e.rotation.copy(m.rotation); scene.add(e); }
     };
     const fmat = new THREE.MeshLambertMaterial({ color: 0xf2efe9 }), bmat = new THREE.MeshLambertMaterial({ color: 0xcfcabf }), nmat = new THREE.MeshLambertMaterial({ color: 0x3a3f45 });
-    const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(7), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche })).sort((a, b) => a.c - b.c);
+    const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(7), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche, winType: o.winType || 'f1' })).sort((a, b) => a.c - b.c);
     let cur = 0;
     for (const op of ops) {
       const a0 = Math.max(0, op.c - op.hw), a1 = Math.min(lp, op.c + op.hw); if (a1 <= a0) continue;
@@ -3499,6 +3515,7 @@ function build3DScene(host, walls, arr) {
         addBox2(a0, a0 + op.fw, sillY, headY, dC, fdM, fmat, true); addBox2(a1 - op.fw, a1, sillY, headY, dC, fdM, fmat, true);   // Rahmen seitlich
         addBox2(a0, a1, sillY, sillY + fwM, dC, fdM, fmat, true); addBox2(a0, a1, headY - fwM, headY, dC, fdM, fmat, true);       // Rahmen unten/oben
         addBox2(a0 + op.fw, a1 - op.fw, sillY + fwM, headY - fwM, dC, M(cmToPts(2)), gmat, false);                                 // Scheibe
+        if (op.winType === 'f2') addBox2((a0 + a1) / 2 - op.fw / 2, (a0 + a1) / 2 + op.fw / 2, sillY, headY, dC, fdM, fmat, true);   // Mittelpfosten (2 Flügel)
         if (op.bank) { const ext = cmToPts(8); addBox2(a0 - ext, a1 + ext, sillY - 0.04, sillY + 0.01, th / 2 + 0.03, 0.12, bmat, true); }   // Fensterbank aussen
         if (op.niche) addBox2(a0, a1, headY, Math.min(yb + HW, headY + 0.24), 0, th * 0.85, nmat, true);                          // Storennische
       }
@@ -3873,6 +3890,7 @@ function wire() {
   $('#pbWidth').onchange = () => { const v = parseFloat($('#pbWidth').value); if (!(v > 0)) return updatePlanBar(); const pts = cmToPts(v); lastOpenW = pts; const a = selOpen(); if (a) { pushUndo(); a.w = pts; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbFlip').onclick = () => { const a = selOpen(); if (!a) return; pushUndo(); if (a.swing === 1 && a.hinge === 1) a.hinge = -1; else if (a.hinge === -1 && a.swing === 1) a.swing = -1; else if (a.hinge === -1 && a.swing === -1) a.hinge = 1; else a.swing = 1; pageViews.forEach(drawAnnos); saveState(); };
   $('#pbNiche').onclick = () => { const a = selOpen(); if (!a || a.kind !== 'window') { toast('Nische gibt es nur beim Fenster.'); return; } pushUndo(); a.niche = !a.niche; $('#pbNiche').classList.toggle('on', a.niche); saveState(); toast(a.niche ? 'Storennische an – im 3D sichtbar' : 'Storennische aus'); };
+  $('#pbWinType').onchange = () => { const v = $('#pbWinType').value; lastWinType = v; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.winType = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
   $('#btnNew').onclick = () => openSlidePicker('new');

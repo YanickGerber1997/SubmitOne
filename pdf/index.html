@@ -5,24 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=209" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=209" />
-  <link rel="icon" href="favicon.png?v=209" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=209" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=210" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=210" />
+  <link rel="icon" href="favicon.png?v=210" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=210" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=209" />
+  <link rel="stylesheet" href="pdf.css?v=210" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=209" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=210" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=209" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=209" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=210" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=210" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <span class="doc-name" id="docName"></span>
@@ -183,7 +183,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=209" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=210" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -555,6 +555,9 @@
       <label class="pb-num" id="pbSillWrap" title="Brüstungshöhe (Unterkante Fenster)">Brüstung <input id="pbSill" type="number" min="0" max="5" step="0.05" /> m</label>
       <label class="pb-num" title="Oberkante (Sturzhöhe ab Boden)">OK <input id="pbHead" type="number" min="0.5" max="10" step="0.05" /> m</label>
       <label class="pb-num" id="pbDepthWrap" title="Fenster-Tiefe in der Wand (0 % = innenbündig, 100 % = aussenbündig)">Tiefe <input id="pbDepth" type="number" min="0" max="100" step="5" /> %</label>
+      <select class="pb-sel" id="pbWinType" title="Fenstertyp">
+        <option value="fest">Festverglasung</option><option value="f1">1 Flügel</option><option value="f2">2 Flügel</option>
+      </select>
       <button class="pb-tg" id="pbNiche" title="Storennische / Rollladenkasten über dem Sturz (im 3D sichtbar)">Nische</button>
       <button class="pb-tg" id="pbFlip" title="Anschlag / Öffnungsseite">⟲</button>
     </div>
@@ -598,7 +601,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=209"></script>
+  <script src="pdf.js?v=210"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

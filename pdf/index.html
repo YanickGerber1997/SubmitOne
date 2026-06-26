@@ -5,24 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=226" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=226" />
-  <link rel="icon" href="favicon.png?v=226" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=226" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=227" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=227" />
+  <link rel="icon" href="favicon.png?v=227" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=227" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=226" />
+  <link rel="stylesheet" href="pdf.css?v=227" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=226" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=227" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=226" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=226" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=227" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=227" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <span class="doc-name" id="docName"></span>
@@ -183,7 +183,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=226" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=227" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -567,6 +567,9 @@
       </select>
       <label class="pb-num" id="pbOuterWrap" title="Aussenüberdämmung – wie weit Dämmung/Schalung aussen über den Rahmen lappt (→ Aussenlichtmass)">Aussen <input id="pbOuterLap" type="number" min="0" max="20" step="0.5" /> cm</label>
       <label class="pb-num" id="pbInnerWrap" title="Innenlaibung – wie weit der Putz innen über den Rahmen läuft (→ Innenlichtmass)">Innen <input id="pbInnerRev" type="number" min="0" max="20" step="0.5" /> cm</label>
+      <select class="pb-sel" id="pbWinMat" title="Fenstermaterial – färbt Rahmen und Flügel">
+        <option value="holz">Holzfenster</option><option value="metall">Metallfenster</option><option value="kunst">Kunststofffenster</option>
+      </select>
       <select class="pb-sel" id="pbReveal" title="Laibungs-Element vorne am Rahmen (aussen)">
         <option value="putz">Laibung: Putz</option><option value="beton">Betonelement</option><option value="stahl">Stahlzarge</option><option value="holz">Holzzarge</option>
       </select>
@@ -626,7 +629,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=226"></script>
+  <script src="pdf.js?v=227"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

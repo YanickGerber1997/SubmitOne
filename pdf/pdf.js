@@ -2054,6 +2054,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     $('#pbWinHinge').style.display = kind === 'window' ? '' : 'none'; $('#pbWinHinge').value = (sO && sO.winHinge) || lastWinHinge;
     $('#pbWinMore').style.display = kind === 'window' ? '' : 'none';
     $('#pbReveal').style.display = kind === 'window' ? '' : 'none'; $('#pbReveal').value = (sO && sO.revealType) || 'putz';
+    $('#pbWinMat').style.display = kind === 'window' ? '' : 'none'; $('#pbWinMat').value = (sO && sO.winMat) || lastWinMat || 'holz';
     $('#pbOuterWrap').style.display = kind === 'window' ? '' : 'none'; if (document.activeElement !== $('#pbOuterLap')) $('#pbOuterLap').value = Math.round(ptsToCm(sO && sO.outerLap != null ? sO.outerLap : cmToPts(3)) * 10) / 10;
     $('#pbInnerWrap').style.display = kind === 'window' ? '' : 'none'; if (document.activeElement !== $('#pbInnerRev')) $('#pbInnerRev').value = Math.round(ptsToCm(sO && sO.innerReveal != null ? sO.innerReveal : cmToPts(2)) * 10) / 10;
     $('#pbFlip').style.display = kind === 'door' ? '' : 'none';
@@ -2293,20 +2294,21 @@ function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte F
   return out;
 }
 /* ---------- Öffnungen (Tür/Fenster) in Wänden ---------- */
-let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5, lastWinType = 'f1', lastWinHinge = 'left';
+let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5, lastWinType = 'f1', lastWinHinge = 'left', lastWinMat = 'holz';
 function nearestWall(pv, x, y) {
   let best = null, bd = Infinity;
   for (const o of getAnnos(pv.num)) { if (o.type !== 'wall') continue; const dx = o.x2 - o.x1, dy = o.y2 - o.y1, L2 = dx * dx + dy * dy || 1; let t = ((x - o.x1) * dx + (y - o.y1) * dy) / L2; t = Math.max(0, Math.min(1, t)); const px = o.x1 + dx * t, py = o.y1 + dy * t, d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = { wall: o, cx: px, cy: py, ang: Math.atan2(dy, dx), thick: o.thick || wallThickPts(), dist: d }; } }
   return best;
 }
 function arcPts(cx, cy, r, from, to, n) { let a0 = Math.atan2(from[1] - cy, from[0] - cx), a1 = Math.atan2(to[1] - cy, to[0] - cx), d = a1 - a0; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; const out = []; for (let i = 0; i <= n; i++) { const a = a0 + d * i / n; out.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); } return out; }
+const WIN_MAT = { holz: { fill: '#e7cfa8', stroke: '#7a5126' }, metall: { fill: '#cfd3d8', stroke: '#565b62' }, kunst: { fill: '#f4f5f7', stroke: '#8a9099' } };   // Fenster: Holz / Metall / Kunststoff (Rahmen+Flügel)
 function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstellung (einschichtige Wand)
   detail = detail !== false;
   const x = a.x, y = a.y, ang = a.ang, ht = (a.thick || wallThickPts()) / 2, hw = a.w / 2;
   const ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
   const corner = (s, m) => [x + ux * hw * s + nx * ht * m, y + uy * hw * s + ny * ht * m];
   const cover = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
-  const lines = [], arcs = [], bold = [];
+  const lines = [], arcs = [], bold = [], fills = [];
   const isDetailWin = a.kind === 'window' && detail;
   if (!isDetailWin) lines.push([corner(-1, -1), corner(-1, 1)], [corner(1, -1), corner(1, 1)]);   // Laibungs-Querlinien (beim Detail-Fenster weg)
   if (a.kind === 'window' && !detail) { bold.push([corner(-1, -0.13), corner(1, -0.13)]); lines.push([corner(-1, 0.13), corner(1, 0.13)]); }   // einfach: zwei quere Linien, eine breit
@@ -2318,14 +2320,15 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
     if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }
     const fwS = Math.min(0.45, frameW / hw), ssW = Math.min(0.42, sashW / hw), backS = Math.min(fwS, shift / hw);   // backS = Überlappung in den Rahmen (4 cm) → Flügel schaut ssW−backS (≈3 cm) heraus
     const recM = Math.min(fdh * 1.4, recess / ht), sdM = Math.min(fdh * 1.95, sashD / ht), smB = fmB - recM, smA = Math.max(-1, smB - sdM), gc = (smA + smB) / 2, gh = Math.min((smB - smA) * 0.42, (a.glassT || cmToPts(2)) / (2 * ht));
-    const box = (s0, s1, mA, mB) => lines.push([corner(s0, mA), corner(s1, mA)], [corner(s0, mB), corner(s1, mB)], [corner(s0, mA), corner(s0, mB)], [corner(s1, mA), corner(s1, mB)]);
+    const wm = WIN_MAT[a.winMat || 'holz'];
+    const box = (s0, s1, mA, mB) => fills.push({ poly: [corner(s0, mA), corner(s1, mA), corner(s1, mB), corner(s0, mB)], fill: wm.fill, stroke: wm.stroke });
     const div = wt === 'f2' ? [-1, 0, 1] : [-1, 1];
     for (const dv of div) { let m0, m1; if (dv <= -0.999) { m0 = -1; m1 = -1 + fwS; } else if (dv >= 0.999) { m0 = 1 - fwS; m1 = 1; } else { m0 = -fwS / 2; m1 = fwS / 2; } box(m0, m1, fmA, fmB); }   // Blendrahmen 10×7
     for (let i = 0; i < div.length - 1; i++) {
       const lEdge = div[i] <= -0.999 ? -1 + fwS : div[i] + fwS / 2, rEdge = div[i + 1] >= 0.999 ? 1 - fwS : div[i + 1] - fwS / 2;
       if (wt !== 'fest') { box(lEdge - backS, lEdge - backS + ssW, smA, smB); box(rEdge + backS - ssW, rEdge + backS, smA, smB); }   // Flügelrahmen 7×7 (4 cm entlang in den Rahmen, 1 cm Tiefe zurück)
       const gl = wt !== 'fest' ? lEdge - backS + ssW : lEdge, gr = wt !== 'fest' ? rEdge + backS - ssW : rEdge;
-      lines.push([corner(gl, gc - gh), corner(gr, gc - gh)], [corner(gl, gc + gh), corner(gr, gc + gh)]);   // Glas
+      fills.push({ poly: [corner(gl, gc - gh), corner(gr, gc - gh), corner(gr, gc + gh), corner(gl, gc + gh)], fill: '#cfe0e8', stroke: '#7d9aa6' });   // Glas
     }
   }
   else {   // Tür: Blatt + Schwenk, im Detail zusätzlich Blendrahmen an den Laibungen
@@ -2333,7 +2336,7 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
     if (detail) { const fwS = Math.min(0.4, (a.frameW || cmToPts(6)) / hw), fr = 0.78; for (const sgn of [-1, 1]) { const sa = sgn, sb = sgn < 0 ? -1 + fwS : 1 - fwS; lines.push([corner(sa, -fr), corner(sb, -fr)], [corner(sa, fr), corner(sb, fr)], [corner(sa, -fr), corner(sa, fr)], [corner(sb, -fr), corner(sb, fr)]); } }   // Zarge/Blendrahmen
     bold.push([hp, tip]); arcs.push({ cx: hp[0], cy: hp[1], r: a.w, from: tip, to: closed });
   }
-  return { cover, lines, arcs, bold };
+  return { cover, lines, arcs, bold, fills };
 }
 const REVEAL_MAT = { putz: { fill: '#ededed', color: '#9a9a9a' }, beton: { fill: '#dcecdf', color: '#2f7d4f' }, stahl: { fill: '#c9ccd1', color: '#565b62' }, holz: { fill: '#eedcc8', color: '#7a5126' } };   // Laibungs-Element: Putz/Betonelement/Stahlzarge/Holzzarge
 function openingRevealStrips(a, arr) {   // Laibung: Dämmung zum Rahmen reingezogen + innen Putz/Brett + Laibungs-Element vorne am Rahmen
@@ -2364,6 +2367,7 @@ function drawOpening(svg, a, arr) {
   const g = svgEl('g', { 'data-id': a.id });
   g.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: '#fff', stroke: 'none' }));   // Wand ausstanzen
   if (detail) for (const st of openingRevealStrips(a, arr)) g.appendChild(svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' }));   // Schichteinzug
+  for (const f of (P.fills || [])) g.appendChild(svgEl('polygon', { points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: f.fill, stroke: f.stroke, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));   // Rahmen/Flügel/Glas (Fenstermaterial)
   for (const [u, v] of P.lines) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
   for (const [u, v] of (P.bold || [])) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 2.6, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
   for (const arc of P.arcs) g.appendChild(svgEl('polyline', { points: arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 18).map(p => p[0] + ',' + p[1]).join(' '), fill: 'none', stroke: col, 'stroke-width': 0.8, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke' }));
@@ -2482,7 +2486,7 @@ function openingClick(pv, p) {
   if (!nw || nw.dist > nw.thick * 0.85 + 10) { toast('Tür/Fenster auf eine Wand setzen.'); return; }
   pushUndo();
   const dx = nw.wall.x2 - nw.wall.x1, dy = nw.wall.y2 - nw.wall.y1, L2 = dx * dx + dy * dy || 1, t = ((nw.cx - nw.wall.x1) * dx + (nw.cy - nw.wall.y1) * dy) / L2;
-  const a = { id: nextId++, type: 'opening', wallId: nw.wall.id, t, x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, sill: openKind === 'window' ? 0.9 : 0, head: openKind === 'window' ? 2.1 : 2.0, depth: lastOpenDepth, winType: lastWinType, winHinge: lastWinHinge, color: nw.wall.color || '#1c242c' };
+  const a = { id: nextId++, type: 'opening', wallId: nw.wall.id, t, x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, sill: openKind === 'window' ? 0.9 : 0, head: openKind === 'window' ? 2.1 : 2.0, depth: lastOpenDepth, winType: lastWinType, winHinge: lastWinHinge, winMat: lastWinMat, color: nw.wall.color || '#1c242c' };
   pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
 }
 function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieben (sonst frei)
@@ -3300,6 +3304,7 @@ async function buildPdfBytes(visibleOnly) {
           const oDetail = openingDetail(a, annos[n] || []), P = openingParts(a, oDetail), d = 'M' + P.cover.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z';
           try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(1, 1, 1) }); } catch (_) { }   // Wand ausstanzen
           if (oDetail) for (const st of openingRevealStrips(a, annos[n] || [])) { const sf = hexToRgb(st.fill), ss = hexToRgb(st.stroke), sd = 'M' + st.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(sd, { x: 0, y: PH, color: rgb(sf.r, sf.g, sf.b), borderColor: rgb(ss.r, ss.g, ss.b), borderWidth: 0.7 }); } catch (_) { } }   // Schichteinzug
+          for (const f of (P.fills || [])) { const ff = hexToRgb(f.fill), fs = hexToRgb(f.stroke), fd = 'M' + f.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(fd, { x: 0, y: PH, color: rgb(ff.r, ff.g, ff.b), borderColor: rgb(fs.r, fs.g, fs.b), borderWidth: 1 }); } catch (_) { } }   // Rahmen/Flügel/Glas
           for (const [u, v] of P.lines) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 1.4, color: c });
           for (const [u, v] of (P.bold || [])) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 2.6, color: c });
           for (const arc of P.arcs) { const pts = arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 18); for (let i = 1; i < pts.length; i++) pg.drawLine({ start: { x: pts[i - 1][0], y: Y(pts[i - 1][1]) }, end: { x: pts[i][0], y: Y(pts[i][1]) }, thickness: 0.8, color: c }); }
@@ -4001,6 +4006,7 @@ function wire() {
   $('#pbOuterLap').onchange = () => { const v = parseFloat(($('#pbOuterLap').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.outerLap = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbInnerRev').onchange = () => { const v = parseFloat(($('#pbInnerRev').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.innerReveal = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbReveal').onchange = () => { const v = $('#pbReveal').value, a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.revealType = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbWinMat').onchange = () => { const v = $('#pbWinMat').value, a = selOpen(); lastWinMat = v; if (a && a.kind === 'window') { pushUndo(); a.winMat = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
   $('#btnNew').onclick = () => openSlidePicker('new');

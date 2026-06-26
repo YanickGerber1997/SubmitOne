@@ -478,6 +478,7 @@ body.has-tabs .plan-bar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 .selbar .sb-nofill{font-size:13px;font-weight:700}
 .selbar .sb-hatch-wrap{position:relative;display:flex;width:30px;height:30px}
 .selbar .sb-hatch.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
+.handle.dim-handle{fill:var(--accent);stroke:#fff;stroke-width:1.5px;cursor:ns-resize}
 .foot-plan{font-weight:700;color:var(--accent-3)}
 .plan-pop{position:fixed;bottom:46px;left:50%;transform:translateX(-50%);z-index:64;background:var(--surface);border:1px solid var(--line);box-shadow:0 10px 30px rgba(20,24,40,.24);padding:12px;width:300px}
 .pp-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px}

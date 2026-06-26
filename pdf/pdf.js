@@ -19,7 +19,7 @@ let formFields = {};       // {pageNum: [{name,type,left,top,w,h,...}]} – Geom
 let fieldTypes = {};       // {feldName: 'text'|'checkbox'|'radio'|'dropdown'}
 let formMode = false;      // „Formular ausfüllen"-Modus aktiv?
 let tool = 'select';
-let style = { color: '#b4502f', width: 2.5, size: 16 };   // Standard: Rost (gut sichtbar auf Plänen)
+let style = { color: '#1c242c', width: 1.5, size: 16 };   // Standard: dünn + schwarz (Plan-tauglich)
 function saveStyle() { try { localStorage.setItem('submitpdf.style', JSON.stringify({ color: style.color, width: style.width, size: style.size, penTidy })); } catch (_) { } }
 function loadStyle() { let s; try { s = JSON.parse(localStorage.getItem('submitpdf.style') || 'null'); } catch (_) { s = null; } if (!s) return; if (s.color) style.color = s.color; if (s.width) style.width = s.width; if (s.size) style.size = s.size; if (typeof s.penTidy === 'boolean') penTidy = s.penTidy; }
 function applyStyleUI() { const $$$ = id => document.getElementById(id); const d = $$$('colorDot'); if (d) d.style.background = style.color; const cp = $$$('colorPick'); if (cp) cp.value = style.color; const ws = $$$('widthSel'); if (ws) ws.value = String(style.width); const ss = $$$('sizeSel'); if (ss) ss.value = String(style.size); const pt = $$$('penTidyBtn'); if (pt) pt.classList.toggle('on', penTidy); }
@@ -937,7 +937,7 @@ function drawOne(svg, a, pv) {
       dl(a.x1, a.y1, dg.x1, dg.y1); dl(a.x2, a.y2, dg.x2, dg.y2); dl(dg.x1, dg.y1, dg.x2, dg.y2);
       dl(dg.x1 - dg.nx * tk, dg.y1 - dg.ny * tk, dg.x1 + dg.nx * tk, dg.y1 + dg.ny * tk);
       dl(dg.x2 - dg.nx * tk, dg.y2 - dg.ny * tk, dg.x2 + dg.nx * tk, dg.y2 + dg.ny * tk);
-      const mx = (dg.x1 + dg.x2) / 2, my = (dg.y1 + dg.y2) / 2, t = svgEl('text', { x: mx + dg.nx * 7, y: my + dg.ny * 7, fill: col, 'font-size': 11, 'text-anchor': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = dg.label; svg.appendChild(t);
+      const mx = (dg.x1 + dg.x2) / 2, my = (dg.y1 + dg.y2) / 2, t = svgEl('text', { x: mx + dg.nx * 7 * dg.side, y: my + dg.ny * 7 * dg.side, fill: col, 'font-size': 11, 'text-anchor': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = dg.label; svg.appendChild(t);
     }
     hit = svgEl('polygon', { points: pstr, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'stairs') {
@@ -1145,6 +1145,7 @@ function drawSelection(svg, a, pv) {
   if (isLineType(a)) {                                  // Linie: KEIN Rechteck-Rahmen, nur Linie hervorheben + Endpunkte
     svg.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'sel-line' }));
     for (const [name, x, y] of [['p1', a.x1, a.y1], ['p2', a.x2, a.y2]]) svg.appendChild(svgEl('circle', { class: 'handle', cx: x, cy: y, r: hs, 'data-h': name }));
+    if (a.type === 'wall' && a.dim) { const dg = wallDimGeom(a); svg.appendChild(svgEl('circle', { class: 'handle dim-handle', cx: (dg.x1 + dg.x2) / 2, cy: (dg.y1 + dg.y2) / 2, r: hs, 'data-h': 'dimoff', 'data-id': a.id })); }   // Masslinie von Hand verschieben
   } else {
     const b = bbox(a), pad = 3;
     svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad }));
@@ -1302,12 +1303,38 @@ function wallEnds(a, arr) {   // Enden an verbundenen Stössen um halbe Dicke ve
     if (!wallEndFree(a, a.x2, a.y2, arr)) { x2 += ux * ext; y2 += uy * ext; } }
   return { x1, y1, x2, y2 };
 }
-function wallPoly(a, arr) {                                              // 4 Eckpunkte des Wand-Streifens (Achse + Eck-Verlängerung)
-  const e = wallEnds(a, arr), dx = e.x2 - e.x1, dy = e.y2 - e.y1, len = Math.hypot(dx, dy) || 1, T = (a.thick || wallThickPts());
-  const lnx = -dy / len, lny = dx / len, j = a.just || 'center';
-  const oA = j === 'left' ? 1 : j === 'right' ? 0 : 0.5, oB = j === 'left' ? 0 : j === 'right' ? -1 : -0.5;
-  const ax = lnx * T * oA, ay = lny * T * oA, bx = lnx * T * oB, by = lny * T * oB;
-  return [[e.x1 + ax, e.y1 + ay], [e.x2 + ax, e.y2 + ay], [e.x2 + bx, e.y2 + by], [e.x1 + bx, e.y1 + by]];
+function wallSideOffsets(a) { const j = a.just || 'center'; return [j === 'left' ? 1 : j === 'right' ? 0 : 0.5, j === 'left' ? 0 : j === 'right' ? -1 : -0.5]; }
+function lineX(p, d, q, e) {   // Schnitt der Geraden p+t·d und q+s·e
+  const den = d[0] * e[1] - d[1] * e[0]; if (Math.abs(den) < 1e-7) return null;
+  const t = ((q[0] - p[0]) * e[1] - (q[1] - p[1]) * e[0]) / den;
+  return [p[0] + t * d[0], p[1] + t * d[1]];
+}
+function wallNeighborAt(a, ex, ey, arr) {   // genau EINE andere Wand teilt diesen Endpunkt → Gehrung möglich
+  const near = (a.thick || wallThickPts()) * 0.6, res = [];
+  for (const o of arr) { if (o === a || o.type !== 'wall') continue; if (Math.hypot(o.x1 - ex, o.y1 - ey) < near || Math.hypot(o.x2 - ex, o.y2 - ey) < near) res.push(o); }
+  return res.length === 1 ? res[0] : null;
+}
+function wallEdgePts(b) {   // die zwei Längskanten von b als Gerade {p, d}
+  const dx = b.x2 - b.x1, dy = b.y2 - b.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, T = b.thick || wallThickPts(), o = wallSideOffsets(b);
+  return [{ p: [b.x1 + nx * T * o[0], b.y1 + ny * T * o[0]], d: [ux, uy] }, { p: [b.x1 + nx * T * o[1], b.y1 + ny * T * o[1]], d: [ux, uy] }];
+}
+function wallPoly(a, arr) {                                              // 4 Eckpunkte des Wand-Streifens – an Stössen echt auf Gehrung geschnitten (kein Überstand)
+  const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, T = (a.thick || wallThickPts()), o = wallSideOffsets(a);
+  let c1A = [a.x1 + nx * T * o[0], a.y1 + ny * T * o[0]], c2A = [a.x2 + nx * T * o[0], a.y2 + ny * T * o[0]];
+  let c1B = [a.x1 + nx * T * o[1], a.y1 + ny * T * o[1]], c2B = [a.x2 + nx * T * o[1], a.y2 + ny * T * o[1]];
+  if (arr) {
+    const dir = [ux, uy], maxd = T * 4, D = (p, q) => (p && q) ? Math.hypot(p[0] - q[0], p[1] - q[1]) : Infinity;
+    const join = (cA, cB, fromA, fromB, b, setA, setB) => {   // Kante A↔eine b-Kante, Kante B↔andere b-Kante (Kreuzung vermieden)
+      const be = wallEdgePts(b);
+      const a0 = lineX(fromA, dir, be[0].p, be[0].d), a1 = lineX(fromA, dir, be[1].p, be[1].d);
+      const b0 = lineX(fromB, dir, be[0].p, be[0].d), b1 = lineX(fromB, dir, be[1].p, be[1].d);
+      let pa, pb; if (D(a0, cA) + D(b1, cB) <= D(a1, cA) + D(b0, cB)) { pa = a0; pb = b1; } else { pa = a1; pb = b0; }
+      if (pa && D(pa, cA) < maxd) setA(pa); if (pb && D(pb, cB) < maxd) setB(pb);
+    };
+    const nb2 = wallNeighborAt(a, a.x2, a.y2, arr); if (nb2) join(c2A, c2B, c1A, c1B, nb2, p => c2A = p, p => c2B = p);
+    const nb1 = wallNeighborAt(a, a.x1, a.y1, arr); if (nb1) join(c1A, c1B, c2A, c2B, nb1, p => c1A = p, p => c1B = p);
+  }
+  return [c1A, c2A, c2B, c1B];
 }
 function wallEndFree(a, ex, ey, arr) {                             // true = freies Ende → Stirnseite zeichnen (sonst verschmelzen lassen)
   const near = (a.thick || wallThickPts()) * 0.9;
@@ -1370,10 +1397,18 @@ function drawWallUnion(svg, walls) {   // Wandflächen vereinigen → saubere Ge
   } catch (_) { return false; }
 }
 let wallDimOn = false;   // neue Wände bekommen eine Masslinie?
-function wallDimGeom(a) {                                            // parallele Masslinie neben der Wand
+function startDimOffDrag(pv, e, id) {   // Wand-Masslinie senkrecht zur Wand verschieben (setzt a.dimOff)
+  const a = findAnno(pv.num, id); if (!a) return; pushUndo();
+  const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len, mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
+  const move = ev => { const q = evtToPage(pv, ev); a.dimOff = (q.x - mx) * nx + (q.y - my) * ny; drawAnnos(pv); };
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
+function wallDimGeom(a) {                                            // parallele Masslinie neben der Wand (a.dimOff = von Hand verschoben)
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1;
-  const off = (a.thick || wallThickPts()) / 2 + cmToPts(wallDimOffCm), nx = -dy / len, ny = dx / len, ux = dx / len, uy = dy / len;
-  return { x1: a.x1 + nx * off, y1: a.y1 + ny * off, x2: a.x2 + nx * off, y2: a.y2 + ny * off, nx, ny, ux, uy, len, label: fmtLen(len) };
+  const base = (a.thick || wallThickPts()) / 2 + cmToPts(wallDimOffCm), off = (a.dimOff != null ? a.dimOff : base), side = off >= 0 ? 1 : -1;
+  const nx = -dy / len, ny = dx / len, ux = dx / len, uy = dy / len;
+  return { x1: a.x1 + nx * off, y1: a.y1 + ny * off, x2: a.x2 + nx * off, y2: a.y2 + ny * off, nx, ny, ux, uy, len, side, label: fmtLen(len) };
 }
 function onPointerDown(pv, e) {
   if (e.button !== 0) return;
@@ -1385,6 +1420,7 @@ function onPointerDown(pv, e) {
     if (e.target.getAttribute && e.target.getAttribute('data-group') && groupSel && groupSel.num === pv.num) { startGroupMove(pv, e); return; }   // ganze Gruppe ziehen
     const pn = e.target.getAttribute && e.target.getAttribute('data-pn'), ph = e.target.getAttribute && e.target.getAttribute('data-ph');
     if ((pn !== null || ph !== null) && sel && sel.num === pv.num) { startNodeDrag(pv, e, sel.id, pn, ph, e.target.getAttribute('data-hk')); return; }   // Kurven-Knoten/Anfasser ziehen
+    if (hAttr === 'dimoff' && sel && sel.num === pv.num) { startDimOffDrag(pv, e, sel.id); return; }   // Wand-Masslinie verschieben
     if (hAttr && sel && sel.num === pv.num) { startResize(pv, e, hAttr); return; }
     if (idAttr) {
       const aHit = findAnno(pv.num, +idAttr);

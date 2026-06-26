@@ -2049,6 +2049,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     if (document.activeElement !== $('#pbDepth')) $('#pbDepth').value = Math.round((sO && sO.depth != null ? sO.depth : lastOpenDepth) * 100);
     $('#pbNiche').style.display = kind === 'window' ? '' : 'none'; $('#pbNiche').classList.toggle('on', !!(sO && sO.niche));
     $('#pbWinType').style.display = kind === 'window' ? '' : 'none'; $('#pbWinType').value = (sO && sO.winType) || lastWinType;
+    $('#pbWinHinge').style.display = kind === 'window' ? '' : 'none'; $('#pbWinHinge').value = (sO && sO.winHinge) || lastWinHinge;
     $('#pbFlip').style.display = kind === 'door' ? '' : 'none';
   }
 }
@@ -2286,7 +2287,7 @@ function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte F
   return out;
 }
 /* ---------- Öffnungen (Tür/Fenster) in Wänden ---------- */
-let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5, lastWinType = 'f1';
+let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5, lastWinType = 'f1', lastWinHinge = 'left';
 function nearestWall(pv, x, y) {
   let best = null, bd = Infinity;
   for (const o of getAnnos(pv.num)) { if (o.type !== 'wall') continue; const dx = o.x2 - o.x1, dy = o.y2 - o.y1, L2 = dx * dx + dy * dy || 1; let t = ((x - o.x1) * dx + (y - o.y1) * dy) / L2; t = Math.max(0, Math.min(1, t)); const px = o.x1 + dx * t, py = o.y1 + dy * t, d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = { wall: o, cx: px, cy: py, ang: Math.atan2(dy, dx), thick: o.thick || wallThickPts(), dist: d }; } }
@@ -2405,8 +2406,9 @@ function sectionPrimitives(a, arr) {
         const panes = wt === 'f2' ? 2 : 1, pw = opw / panes;
         for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1.4 });   // Mittelpfosten
           if (wt !== 'fest') { out.push({ t: 'rect', x: px0 + fr, y: yT + fr, w: pw - 2 * fr, h: (yB - yT) - 2 * fr, fill: 'none', stroke: col, sw: 0.9 });   // Flügelrahmen
-            const ix0 = px0 + fr * 1.6, ix1 = px0 + pw - fr * 1.6, iy0 = yT + fr * 1.6, iy1 = yB - fr * 1.6, mid = (iy0 + iy1) / 2, apexL = (wt === 'f2' ? pi === 0 : true), ax = apexL ? ix0 : ix1, bx = apexL ? ix1 : ix0;   // Drehflügel-Symbol (Apex = Anschlag/Bandseite)
-            out.push({ t: 'line', x1: bx, y1: iy0, x2: ax, y2: mid, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: bx, y1: iy1, x2: ax, y2: mid, stroke: col, w: 0.6, dash: '4 3' });
+            const ix0 = px0 + fr * 1.6, ix1 = px0 + pw - fr * 1.6, iy0 = yT + fr * 1.6, iy1 = yB - fr * 1.6, cmx = (ix0 + ix1) / 2, cmy = (iy0 + iy1) / 2, hinge = o.winHinge || 'left';
+            if (hinge === 'kipp') { out.push({ t: 'line', x1: ix0, y1: iy0, x2: cmx, y2: iy1, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: ix1, y1: iy0, x2: cmx, y2: iy1, stroke: col, w: 0.6, dash: '4 3' }); }   // Kipp: Apex unten-Mitte
+            else { const apexL = (wt === 'f2' ? pi === 0 : hinge === 'left'), ax = apexL ? ix0 : ix1, bx = apexL ? ix1 : ix0; out.push({ t: 'line', x1: bx, y1: iy0, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: bx, y1: iy1, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); }   // Dreh: Apex = Bandseite
           }
         }
         out.push({ t: 'line', x1: X(opx0) - 6, y1: Yh(sill), x2: X(opx0 + opw) + 6, y2: Yh(sill), stroke: col, w: 1.8 });   // Fensterbank
@@ -2418,6 +2420,12 @@ function sectionPrimitives(a, arr) {
   const Htop = hits.reduce((m, h) => Math.max(m, h.w.h3d || wallHeightM), wallHeightM), slabF = '#dadde2', slabC = '#8a8f96';
   out.push({ t: 'rect', x: X(-16), y: Yh(0), w: cl + 32, h: Yh(-0.22) - Yh(0), fill: slabF, stroke: slabC, sw: 0.7 });           // Bodenplatte
   out.push({ t: 'rect', x: X(-16), y: Yh(Htop + 0.24), w: cl + 32, h: Yh(Htop) - Yh(Htop + 0.24), fill: slabF, stroke: slabC, sw: 0.7 });   // Decke
+  const hSet = new Set([0, Htop]);   // Höhen-Stationen: Boden, Geschoss, je Öffnung Brüstung+Sturz
+  for (const h of hits) for (const o of arr.filter(o => o.type === 'opening' && o.wallId === h.w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl))) { hSet.add(o.kind === 'window' ? (o.sill || 0) : 0); hSet.add(Math.min(Htop, o.head || (o.kind === 'window' ? 2.1 : 2.0))); }
+  const hs = [...hSet].sort((p, q) => p - q), xD = X(-34);
+  out.push({ t: 'line', x1: xD, y1: Yh(0), x2: xD, y2: Yh(Htop), w: 0.9 });
+  for (const s of hs) out.push({ t: 'line', x1: xD - 4, y1: Yh(s), x2: xD + 4, y2: Yh(s), w: 0.8 });
+  for (let i = 0; i < hs.length - 1; i++) { const seg = hs[i + 1] - hs[i]; if (seg < 0.02) continue; out.push({ t: 'text', x: xD - 34, y: (Yh(hs[i]) + Yh(hs[i + 1])) / 2 + 4, text: fmtLen(seg / perPt), col, small: true }); }
   out.push({ t: 'text', x: X(cl / 2) - 18, y: Yh(-0.22) + 22, text: 'Schnitt ' + lbl + '–' + lbl, col });
   return out;
 }
@@ -2428,7 +2436,7 @@ function drawSection(svg, a, arr) {
     if (p.t === 'rect') { const r = svgEl('rect', { x: Math.min(p.x, p.x + p.w), y: Math.min(p.y, p.y + p.h), width: Math.abs(p.w), height: Math.abs(p.h), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { r.setAttribute('stroke', p.stroke); r.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(r); }
     else if (p.t === 'line') { const l = svgEl('line', { x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2, stroke: p.stroke || '#1c242c', 'stroke-width': p.w || 1, 'vector-effect': 'non-scaling-stroke' }); if (p.dash) l.setAttribute('stroke-dasharray', p.dash); g.appendChild(l); }
     else if (p.t === 'arrow') { const s = 6, ang = Math.atan2(p.dy, p.dx); for (const da of [2.5, -2.5]) g.appendChild(svgEl('line', { x1: p.x, y1: p.y, x2: p.x - Math.cos(ang + da) * s, y2: p.y - Math.sin(ang + da) * s, stroke: p.col || '#1c242c', 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' })); }
-    else if (p.t === 'text') { const t = svgEl('text', { x: p.x, y: p.y, fill: p.col || '#1c242c', 'font-size': 12, 'font-weight': 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = p.text; g.appendChild(t); }
+    else if (p.t === 'text') { const t = svgEl('text', { x: p.x, y: p.y, fill: p.col || '#1c242c', 'font-size': p.small ? 9 : 12, 'font-weight': p.small ? 400 : 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = p.text; g.appendChild(t); }
   }
   svg.appendChild(g);
   const b = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: 'transparent', 'data-id': a.id }));
@@ -2460,7 +2468,7 @@ function openingClick(pv, p) {
   if (!nw || nw.dist > nw.thick * 0.85 + 10) { toast('Tür/Fenster auf eine Wand setzen.'); return; }
   pushUndo();
   const dx = nw.wall.x2 - nw.wall.x1, dy = nw.wall.y2 - nw.wall.y1, L2 = dx * dx + dy * dy || 1, t = ((nw.cx - nw.wall.x1) * dx + (nw.cy - nw.wall.y1) * dy) / L2;
-  const a = { id: nextId++, type: 'opening', wallId: nw.wall.id, t, x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, sill: openKind === 'window' ? 0.9 : 0, head: openKind === 'window' ? 2.1 : 2.0, depth: lastOpenDepth, winType: lastWinType, color: nw.wall.color || '#1c242c' };
+  const a = { id: nextId++, type: 'opening', wallId: nw.wall.id, t, x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, sill: openKind === 'window' ? 0.9 : 0, head: openKind === 'window' ? 2.1 : 2.0, depth: lastOpenDepth, winType: lastWinType, winHinge: lastWinHinge, color: nw.wall.color || '#1c242c' };
   pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
 }
 function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieben (sonst frei)
@@ -3287,7 +3295,7 @@ async function buildPdfBytes(visibleOnly) {
             if (p.t === 'rect') { const o = { x: Math.min(p.x, p.x + p.w), y: Y(Math.max(p.y, p.y + p.h)), width: Math.abs(p.w), height: Math.abs(p.h) }; if (p.fill && p.fill !== 'none') { const fc = hexToRgb(p.fill); o.color = rgb(fc.r, fc.g, fc.b); } if (p.stroke && p.stroke !== 'none') { const sc = hexToRgb(p.stroke); o.borderColor = rgb(sc.r, sc.g, sc.b); o.borderWidth = p.sw || 0.6; } pg.drawRectangle(o); }
             else if (p.t === 'line') { const lc = hexToRgb(p.stroke || '#1c242c'); pg.drawLine({ start: { x: p.x1, y: Y(p.y1) }, end: { x: p.x2, y: Y(p.y2) }, thickness: p.w || 1, color: rgb(lc.r, lc.g, lc.b), dashArray: p.dash ? [4, 3] : undefined }); }
             else if (p.t === 'arrow') { const s = 6, ang = Math.atan2(p.dy, p.dx), ac0 = hexToRgb(p.col || '#1c242c'), ac = rgb(ac0.r, ac0.g, ac0.b); for (const da of [2.5, -2.5]) pg.drawLine({ start: { x: p.x, y: Y(p.y) }, end: { x: p.x - Math.cos(ang + da) * s, y: Y(p.y - Math.sin(ang + da) * s) }, thickness: 1.4, color: ac }); }
-            else if (p.t === 'text') { const tc = hexToRgb(p.col || '#1c242c'); pg.drawText(p.text, { x: p.x, y: Y(p.y) - 4, size: 11, font, color: rgb(tc.r, tc.g, tc.b) }); }
+            else if (p.t === 'text') { const tc = hexToRgb(p.col || '#1c242c'); pg.drawText(p.text, { x: p.x, y: Y(p.y) - 4, size: p.small ? 9 : 11, font, color: rgb(tc.r, tc.g, tc.b) }); }
           }
         }
         else if (a.type === 'chaindim') {
@@ -3970,6 +3978,7 @@ function wire() {
   $('#pbFlip').onclick = () => { const a = selOpen(); if (!a) return; pushUndo(); if (a.swing === 1 && a.hinge === 1) a.hinge = -1; else if (a.hinge === -1 && a.swing === 1) a.swing = -1; else if (a.hinge === -1 && a.swing === -1) a.hinge = 1; else a.swing = 1; pageViews.forEach(drawAnnos); saveState(); };
   $('#pbNiche').onclick = () => { const a = selOpen(); if (!a || a.kind !== 'window') { toast('Nische gibt es nur beim Fenster.'); return; } pushUndo(); a.niche = !a.niche; $('#pbNiche').classList.toggle('on', a.niche); saveState(); toast(a.niche ? 'Storennische an – im 3D sichtbar' : 'Storennische aus'); };
   $('#pbWinType').onchange = () => { const v = $('#pbWinType').value; lastWinType = v; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.winType = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbWinHinge').onchange = () => { const v = $('#pbWinHinge').value; lastWinHinge = v; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.winHinge = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
   $('#btnNew').onclick = () => openSlidePicker('new');

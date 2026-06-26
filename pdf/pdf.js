@@ -3847,7 +3847,16 @@ function build3DScene(host, walls, arr) {
       let off = -th / 2; for (const L of wL) { const lt = (L.t / totalT) * th; addBox2(s0, s1, y0, y1, off + lt / 2, lt, layerMat(L.mat, lenM, hM), true); off += lt; }
     };
     const winMat3D = key => { const wm = WIN_MAT[key] || WIN_MAT.holz; return new THREE.MeshLambertMaterial({ color: new THREE.Color(wm.fill) }); };
-    const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(o.kind === 'door' ? 6 : 10), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche, winType: o.winType || 'f1', winMat: o.winMat || 'holz', winHinge: o.winHinge || 'left' })).sort((a, b) => a.c - b.c);
+    const addReveal3D = (o, y0, y1) => {   // 2D-Schichteinzug (openingRevealStrips) vertikal extrudiert → 3D-Laibung, garantiert gleich wie 2D
+      if (!wL) return; let strips; try { strips = openingRevealStrips(o, arr); } catch (_) { return; } if (!strips || !strips.length) return;
+      const P3 = (p, yy) => [M(p[0] - cx), yy, M(p[1] - cy)];
+      for (const st of strips) { const poly = st.poly; if (!poly || poly.length < 3) continue; const n = poly.length, bot = poly.map(p => P3(p, y0)), top = poly.map(p => P3(p, y1)), v = []; const T = (A, B, C) => v.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
+        for (let i = 1; i < n - 1; i++) { T(top[0], top[i], top[i + 1]); T(bot[0], bot[i + 1], bot[i]); }
+        for (let i = 0; i < n; i++) { const j = (i + 1) % n; T(bot[i], bot[j], top[j]); T(bot[i], top[j], top[i]); }
+        const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); geo.computeVertexNormals();
+        scene.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: new THREE.Color(st.fill || '#e9e3d8'), side: THREE.DoubleSide }))); }
+    };
+    const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ obj: o, c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(o.kind === 'door' ? 6 : 10), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche, winType: o.winType || 'f1', winMat: o.winMat || 'holz', winHinge: o.winHinge || 'left' })).sort((a, b) => a.c - b.c);
     let cur = 0;
     for (const op of ops) {
       const a0 = Math.max(0, op.c - op.hw), a1 = Math.min(lp, op.c + op.hw); if (a1 <= a0) continue;
@@ -3857,6 +3866,7 @@ function build3DScene(host, walls, arr) {
       const omat = winMat3D(op.winMat);
       if (op.kind === 'window') {
         const fdM = M(op.fd), fwM = M(op.fw), dC = Math.max(-(th / 2 - fdM / 2), Math.min(th / 2 - fdM / 2, (op.depth - 0.5) * th)), sillY = yb + op.sill, headY = yb + Math.min(op.head, HW);
+        addReveal3D(op.obj, sillY, headY);   // Schichteinzug an den Laibungen (2D extrudiert)
         addBox2(a0, a0 + op.fw, sillY, headY, dC, fdM, omat, true); addBox2(a1 - op.fw, a1, sillY, headY, dC, fdM, omat, true);   // Rahmen seitlich (Material)
         addBox2(a0, a1, sillY, sillY + fwM, dC, fdM, omat, true); addBox2(a0, a1, headY - fwM, headY, dC, fdM, omat, true);       // Rahmen unten/oben
         addBox2(a0 + op.fw, a1 - op.fw, sillY + fwM, headY - fwM, dC, M(cmToPts(2)), gmat, false);                                 // Scheibe
@@ -3865,6 +3875,7 @@ function build3DScene(host, walls, arr) {
         if (op.niche) addBox2(a0, a1, headY, Math.min(yb + HW, headY + 0.24), 0, th * 0.85, nmat, true);                          // Storennische
       } else if (op.kind === 'door') {   // Tür im 3D: Zarge (Material) + Türblatt / Festteil = Glas
         const fdM = M(op.fd), fwM = M(op.fw), dC = Math.max(-(th / 2 - fdM / 2), Math.min(th / 2 - fdM / 2, (op.depth - 0.5) * th)), headY = yb + Math.min(op.head, HW), leafD = M(cmToPts(4));
+        addReveal3D(op.obj, yb, headY);   // Schichteinzug an den Laibungen (2D extrudiert)
         addBox2(a0, a0 + op.fw, yb, headY, dC, fdM, omat, true); addBox2(a1 - op.fw, a1, yb, headY, dC, fdM, omat, true);   // Zarge seitlich
         addBox2(a0, a1, headY - fwM, headY, dC, fdM, omat, true);                                                          // Zarge oben
         const mid = op.winType === 'f2' || op.winType === 'f2s' || op.winType === 'f1f';

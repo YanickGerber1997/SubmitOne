@@ -838,7 +838,7 @@ function drawAnnos(pv) {
   const svg = pv.svg; svg.innerHTML = '';
   for (const a of getAnnos(pv.num)) if (a.type === 'opening') openingResolve(a, pv);   // Türen/Fenster der Wand folgen lassen
   _wallUnionActive = false;
-  if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall' && layerVisible(a) && phaseVisible(a)); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung
+  if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall' && !(a.layers && a.layers.length) && layerVisible(a) && phaseVisible(a)); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung (Schicht-Wände zeichnen sich selbst)
   for (const a of getAnnos(pv.num)) { if (!layerVisible(a) || !phaseVisible(a)) continue; drawOne(svg, a, pv); }
   _wallUnionActive = false;
   if (sel && sel.num === pv.num) drawSelection(svg, findAnno(pv.num, sel.id), pv);
@@ -912,7 +912,62 @@ function applyMaterial(a, t) {   // Material auf Wand/Form anwenden: Strichfarbe
   if (d.color) a.color = d.color;
   if (d.fill) a.fill = d.fill;
 }
+/* ---------- Mehrschichtige Wandaufbäue ---------- */
+const WALL_MATS = {   // Schicht-Material: Füllung (hell), Schraffur-Typ (oder null) + Strichfarbe (dunkel)
+  putz: { label: 'Putz / Verputz', fill: '#ededed', hatch: null, color: '#9a9a9a' },
+  mauerwerk: { label: 'Mauerwerk', fill: HATCH_DEF.backstein.fill, hatch: 'backstein', color: HATCH_DEF.backstein.color },
+  beton: { label: 'Beton', fill: HATCH_DEF.beton.fill, hatch: 'beton', color: HATCH_DEF.beton.color },
+  eps: { label: 'Dämmung EPS', fill: HATCH_DEF.daemm_eps.fill, hatch: 'daemm_eps', color: HATCH_DEF.daemm_eps.color },
+  glaswolle: { label: 'Dämmung Glas-/Steinwolle', fill: HATCH_DEF.daemm_wolle.fill, hatch: 'daemm_wolle', color: HATCH_DEF.daemm_wolle.color },
+  luft: { label: 'Hinterlüftung', fill: '#ffffff', hatch: null, color: '#c2c2c2' },
+  gips: { label: 'Gipsplatte', fill: HATCH_DEF.gips.fill, hatch: 'gips', color: HATCH_DEF.gips.color },
+  holz: { label: 'Holzschalung', fill: HATCH_DEF.holz.fill, hatch: 'holz', color: HATCH_DEF.holz.color },
+  konter: { label: 'Konterlattung', fill: HATCH_DEF.holz.fill, hatch: 'holz', color: HATCH_DEF.holz.color }
+};
+const WALL_PRESETS = [   // Schichten innen → aussen [Material, cm]
+  { name: 'Mauerwerk + EPS', layers: [['putz', 1.5], ['mauerwerk', 15], ['eps', 22], ['putz', 2]] },
+  { name: 'Beton + EPS', layers: [['putz', 1.5], ['beton', 20], ['eps', 22], ['putz', 2]] },
+  { name: 'Hinterlüftet · Gipsplatte', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['gips', 1.5], ['putz', 0.5]] },
+  { name: 'Hinterlüftet · Holz horizontal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['holz', 2.2]] },
+  { name: 'Hinterlüftet · Holz vertikal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['konter', 3], ['holz', 2.2]] }
+];
+function applyWallBuildup(a, layersCm) {   // layersCm = [[mat, cm], …] innen→aussen
+  if (!layersCm || !layersCm.length) { delete a.layers; return; }
+  a.layers = layersCm.map(([mat, cm]) => ({ mat, t: cmToPts(cm) }));
+  a.thick = a.layers.reduce((s, l) => s + l.t, 0);
+  a.hatch = null; a.fill = '#ffffff'; a.color = '#1c242c';   // Aufbau übernimmt die Darstellung
+}
 let lastHatchScale = 7;   // gemerkte Schraffur-Dichte (Abstand in pt)
+function wallLayerBands(a, arr) {   // jede Schicht als (gehrungsfolgendes) Band-Polygon zwischen den beiden Wandflächen
+  const poly = wallPoly(a, arr), c1A = poly[0], c2A = poly[1], c2B = poly[2], c1B = poly[3];
+  const lp = (p, q, f) => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+  const total = a.layers.reduce((s, l) => s + l.t, 0) || 1, bands = []; let cum = 0;
+  for (const L of a.layers) { const f0 = cum / total, f1 = (cum + L.t) / total; bands.push({ mat: L.mat, f0, f1, poly: [lp(c1B, c1A, f1), lp(c2B, c2A, f1), lp(c2B, c2A, f0), lp(c1B, c1A, f0)] }); cum += L.t; }
+  return { bands, c1A, c2A, c2B, c1B };
+}
+function layerHatch(svg, a, band) {   // Schraffur einer einzelnen Schicht, auf das Band geclippt
+  const m = WALL_MATS[band.mat]; if (!m || !m.hatch) return;
+  const cid = 'hl' + a.id + '_' + Math.round(band.f0 * 1000), cp = svgEl('clipPath', { id: cid }); cp.appendChild(svgEl('polygon', { points: band.poly.map(p => p[0] + ',' + p[1]).join(' ') }));
+  const defs = svgEl('defs'); defs.appendChild(cp); svg.appendChild(defs);
+  const hg = svgEl('g', { 'clip-path': `url(#${cid})`, 'pointer-events': 'none' }), col = m.color, S = (a.hatch && a.hatch.scale) || lastHatchScale; let lines = [];
+  if (m.hatch === 'daemm_eps' || m.hatch === 'daemm_wolle' || INSUL_TYPES.includes(m.hatch)) {   // Dämmung: Striche quer über die Schichtdicke
+    const o0 = band.poly[3], o1 = band.poly[2], i0 = band.poly[0], i1 = band.poly[1], len = Math.hypot(o1[0] - o0[0], o1[1] - o0[1]) || 1, n = Math.max(1, Math.round(len / Math.max(4, S * 1.3)));
+    for (let k = 0; k <= n; k++) { const f = k / n, A = [o0[0] + (o1[0] - o0[0]) * f, o0[1] + (o1[1] - o0[1]) * f], B = [i0[0] + (i1[0] - i0[0]) * f, i0[1] + (i1[1] - i0[1]) * f]; lines.push([A[0], A[1], B[0], B[1]]); }
+  } else {
+    const xs = band.poly.map(p => p[0]), ys = band.poly.map(p => p[1]), fake = { type: 'rect', x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), hatch: { type: m.hatch, scale: S } }, g = hatchGeom(fake);
+    lines = g.lines; for (const D of g.dots) hg.appendChild(svgEl('circle', { cx: D[0], cy: D[1], r: D[2] != null ? D[2] : S * 0.16, fill: col }));
+  }
+  for (const L of lines) hg.appendChild(svgEl('line', { x1: L[0], y1: L[1], x2: L[2], y2: L[3], stroke: col, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' }));
+  svg.appendChild(hg);
+}
+function drawLayeredWall(svg, a, arr) {
+  const { bands, c1A, c2A, c2B, c1B } = wallLayerBands(a, arr), lp = (p, q, f) => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+  for (const b of bands) { const m = WALL_MATS[b.mat] || {}; svg.appendChild(svgEl('polygon', { points: b.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: m.fill || '#ffffff', stroke: 'none' })); layerHatch(svg, a, b); }
+  for (let i = 0; i < bands.length - 1; i++) { const f = bands[i].f1, A = lp(c1B, c1A, f), B = lp(c2B, c2A, f); svg.appendChild(svgEl('line', { x1: A[0], y1: A[1], x2: B[0], y2: B[1], stroke: '#9a9a9a', 'stroke-width': 0.6, 'vector-effect': 'non-scaling-stroke' })); }
+  const blk = '#1c242c', ln = (P, Q) => svg.appendChild(svgEl('line', { x1: P[0], y1: P[1], x2: Q[0], y2: Q[1], stroke: blk, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
+  ln(c1A, c2A); ln(c1B, c2B);
+  if (wallEndFree(a, a.x1, a.y1, arr)) ln(c1A, c1B); if (wallEndFree(a, a.x2, a.y2, arr)) ln(c2A, c2B);
+}
 function wallClipPoly(a) {   // einfaches, nicht-gehrtes Wandrechteck (immer simpel → sicherer Schraffur-Clip)
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, T = a.thick || wallThickPts(), o = wallSideOffsets(a), oA = o[0], oB = o[1];
   return [[a.x1 + nx * T * oA, a.y1 + ny * T * oA], [a.x2 + nx * T * oA, a.y2 + ny * T * oA], [a.x2 + nx * T * oB, a.y2 + ny * T * oB], [a.x1 + nx * T * oB, a.y1 + ny * T * oB]];
@@ -979,6 +1034,11 @@ function drawOne(svg, a, pv) {
     const d = arcPath(a);
     el = svgEl('path', { d, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'data-id': a.id }); const ds = dashSvg(a); if (ds) el.setAttribute('stroke-dasharray', ds); svg.appendChild(el);
     hit = svgEl('path', { d, fill: 'none', stroke: 'transparent', 'stroke-width': Math.max(12, (a.width || 2) + 10), 'data-id': a.id }); svg.appendChild(hit);
+  } else if (a.type === 'wall' && a.layers && a.layers.length) {   // mehrschichtiger Aufbau
+    const arr = getAnnos(pv.num);
+    drawLayeredWall(svg, a, arr);
+    if (a.dim) { const dg = wallDimGeom(a); archDim(svg, [a.x1, a.y1], [a.x2, a.y2], dg.off, '#1c242c', dg.label); }
+    const poly = wallClipPoly(a); hit = svgEl('polygon', { points: poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'wall') {
     const arr = getAnnos(pv.num), poly = wallPoly(a, arr), pstr = poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
     const g = svgEl('g', { 'data-id': a.id });
@@ -1354,6 +1414,35 @@ function lineForLength() {
 function cmToPts(cm) { return cm * (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
 function ptsToCm(pts) { return pts / (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
 let lastWallThick = null, wallJust = 'center', wallHatch = null, wallHeightM = 2.6;   // Achse · Schraffur · 3D-Höhe der neuen Wand
+let wallBuildup = null, buildDraft = [];   // mehrschichtiger Standard-Aufbau für neue Wände · Bearbeitungs-Entwurf
+function buildMatOptions(sel) { return Object.keys(WALL_MATS).map(k => `<option value="${k}"${k === sel ? ' selected' : ''}>${WALL_MATS[k].label}</option>`).join(''); }
+function updateBuildTotal() { const t = buildDraft.reduce((s, r) => s + (+r[1] || 0), 0), el = document.getElementById('bpTotal'); if (el) el.textContent = 'Gesamt: ' + (Math.round(t * 10) / 10) + ' cm'; }
+function renderBuildList() {
+  const list = document.getElementById('bpList'); if (!list) return; list.innerHTML = '';
+  buildDraft.forEach((row, i) => {
+    const r = document.createElement('div'); r.className = 'bp-row';
+    r.innerHTML = `<input class="bp-t" type="number" min="0.1" step="0.1" value="${row[1]}"><span>cm</span><select class="bp-m">${buildMatOptions(row[0])}</select><button class="bp-del" title="Schicht entfernen">✕</button>`;
+    r.querySelector('.bp-t').onchange = e => { buildDraft[i][1] = parseFloat((e.target.value || '').replace(',', '.')) || 0; updateBuildTotal(); };
+    r.querySelector('.bp-m').onchange = e => { buildDraft[i][0] = e.target.value; };
+    r.querySelector('.bp-del').onclick = () => { buildDraft.splice(i, 1); renderBuildList(); };
+    list.appendChild(r);
+  });
+  updateBuildTotal();
+}
+function openBuildPop() {
+  const presets = document.getElementById('bpPresets'); presets.innerHTML = '';
+  WALL_PRESETS.forEach(p => { const b = document.createElement('button'); b.className = 'bp-preset'; b.textContent = p.name; b.onclick = () => { buildDraft = p.layers.map(l => [l[0], l[1]]); renderBuildList(); }; presets.appendChild(b); });
+  const a = selWall();
+  if (a && a.layers && a.layers.length) buildDraft = a.layers.map(l => [l.mat, Math.round(ptsToCm(l.t) * 10) / 10]);
+  else if (!buildDraft.length) buildDraft = WALL_PRESETS[0].layers.map(l => [l[0], l[1]]);
+  renderBuildList(); document.getElementById('buildPop').hidden = false;
+}
+function applyBuildup() {
+  const layers = buildDraft.filter(r => r[1] > 0).map(r => [r[0], r[1]]);
+  wallBuildup = layers.length ? layers : null;
+  const a = selWall(); if (a) { pushUndo(); applyWallBuildup(a, layers); pageViews.forEach(drawAnnos); saveState(); updateSelBar(); }
+  document.getElementById('buildPop').hidden = true; toast(layers.length ? 'Wandaufbau angewendet ✓' : 'Aufbau entfernt');
+}
 let stairW = null, stairRiseM = 2.6, stairBaseM = 0;   // Treppe: Breite · Geschosshöhe · Unterkante
 let roofType = 'sattel', roofEaveM = 2.6, roofRidgeM = 4.0, roofAxis = 'x';   // Dach: Pult/Sattel · Traufe · First · Firstrichtung
 function stairWidthPts() { return stairW || cmToPts(100); }
@@ -2005,6 +2094,7 @@ function startDraw(pv, e, p) {
   else if (tool === 'stairs') a = { id: nextId++, type: 'stairs', x1: p.x, y1: p.y, x2: p.x, y2: p.y, width: stairWidthPts(), rise: stairRiseM, base: stairBaseM, color: style.color };   // Treppe = Lauf (Linie mit Breite + Höhe)
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   pushAnno(pv.num, a);
+  if (a.type === 'wall' && wallBuildup) applyWallBuildup(a, wallBuildup);   // Standard-Aufbau übernehmen
   const isLine = (a.type !== 'pen' && a.type !== 'rect' && a.type !== 'oval');
   const move = ev => {
     let q = evtToPage(pv, ev), snapped = null;
@@ -2073,7 +2163,7 @@ let wallDraft = null;   // {pv, last:[x,y], seg, _onMove, _rel}
 function startWallChain(pv, x, y) {
   pushUndo();
   const seg = { id: nextId++, type: 'wall', x1: x, y1: y, x2: x, y2: y, thick: wallThickPts(), just: wallJust, color: (wallHatch && wallHatch.color) || style.color, fill: (wallHatch && wallHatch.fill) || '#ffffff', hatch: wallHatch ? { ...wallHatch } : null, width: 1.4, dim: wallDimOn, _draft: true };
-  pushAnno(pv.num, seg); wallDraft = { pv, last: [x, y], seg, pts: [[x, y]], segIds: [] };
+  pushAnno(pv.num, seg); if (wallBuildup) applyWallBuildup(seg, wallBuildup); wallDraft = { pv, last: [x, y], seg, pts: [[x, y]], segIds: [] };
   const onMove = ev => {
     if (!wallDraft) return; const s = wallDraft.seg; let q = evtToPage(pv, ev), snapped = null, rel = null;
     if (!ev.shiftKey) { const an = snapWallPt(pv, q.x, q.y, s.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
@@ -2093,7 +2183,7 @@ function wallChainClick(pv, p) {
   const first = wallDraft.pts[0], closed = wallDraft.pts.length >= 4 && Math.hypot(ex - first[0], ey - first[1]) < (s.thick * 0.7 + 5);   // Zug geschlossen?
   if (closed) { addRoomArea(pv, wallDraft.pts.slice(0, -1), s.thick); finishWallChain(); return; }
   const seg2 = { id: nextId++, type: 'wall', x1: ex, y1: ey, x2: ex, y2: ey, thick: s.thick, just: s.just, color: s.color, fill: s.fill, hatch: s.hatch, width: s.width, dim: s.dim, _draft: true };
-  pushAnno(pv.num, seg2); wallDraft.seg = seg2; wallDraft.last = [ex, ey];
+  pushAnno(pv.num, seg2); if (wallBuildup) applyWallBuildup(seg2, wallBuildup); wallDraft.seg = seg2; wallDraft.last = [ex, ey];
   drawAnnos(pv); saveState();
 }
 function wallChainLength() {   // „L" während der Wand-Kette: aktuelles Segment auf exakte Länge setzen + Ecke setzen
@@ -2859,7 +2949,7 @@ async function buildPdfBytes(visibleOnly) {
       if (cropT) pg.pushOperators(pushGraphicsState(), concatTransformationMatrix(1, 0, 0, 1, cb.x, cb.y));   // Ursprung in die CropBox-Ecke
       let wallUni = false;
       if (window.polygonClipping) {   // Wandflächen vereinigen → saubere Ecken auch im PDF
-        const walls = (annos[n] || []).filter(a => a.type === 'wall' && !a._draft && phaseVisible(a) && (!visibleOnly || layerVisible(a)));
+        const walls = (annos[n] || []).filter(a => a.type === 'wall' && !a._draft && !(a.layers && a.layers.length) && phaseVisible(a) && (!visibleOnly || layerVisible(a)));
         if (walls.length) try {
           const groups = {};
           for (const w of walls) { const k = (w.color || '#1c242c') + '|' + (w.fill || '#ffffff'); (groups[k] || (groups[k] = [])).push(w); }
@@ -2896,6 +2986,41 @@ async function buildPdfBytes(visibleOnly) {
             for (const [ex, ey] of [[a.x1, a.y1], [a.x2, a.y2]]) pg.drawLine({ start: { x: ex - tx, y: Y(ey - ty) }, end: { x: ex + tx, y: Y(ey + ty) }, thickness: w, color: c });
             const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2, lab = a.text || lenLabel(a);
             pg.drawText(lab, { x: mx - lab.length * 3, y: Y(my) + 6, size: 11, font, color: c });
+          }
+        }
+        else if (a.type === 'wall' && a.layers && a.layers.length) {   // mehrschichtiger Aufbau im PDF
+          const arr = annos[n] || [], { bands, c1A, c2A, c2B, c1B } = wallLayerBands(a, arr), lp = (p, q, f) => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+          const polyD = pts => 'M' + pts.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z';
+          for (const b of bands) {
+            const m = WALL_MATS[b.mat] || {}, fc = hexToRgb(m.fill || '#ffffff');
+            try { pg.drawSvgPath(polyD(b.poly), { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b) }); } catch (_) { }
+            if (m.hatch && moveTo && clip) { try {
+              const ops = [pushGraphicsState(), moveTo(b.poly[0][0], Y(b.poly[0][1]))]; for (let i = 1; i < b.poly.length; i++) ops.push(lineTo(b.poly[i][0], Y(b.poly[i][1]))); ops.push(closePath(), clip(), endPath()); pg.pushOperators(...ops);
+              const hc = hexToRgb(m.color), hcc = rgb(hc.r, hc.g, hc.b), S = (a.hatch && a.hatch.scale) || lastHatchScale;
+              if (m.hatch === 'daemm_eps' || m.hatch === 'daemm_wolle' || INSUL_TYPES.includes(m.hatch)) {
+                const o0 = b.poly[3], o1 = b.poly[2], i0 = b.poly[0], i1 = b.poly[1], len = Math.hypot(o1[0] - o0[0], o1[1] - o0[1]) || 1, nn = Math.max(1, Math.round(len / Math.max(4, S * 1.3)));
+                for (let k = 0; k <= nn; k++) { const f = k / nn, A = [o0[0] + (o1[0] - o0[0]) * f, o0[1] + (o1[1] - o0[1]) * f], B = [i0[0] + (i1[0] - i0[0]) * f, i0[1] + (i1[1] - i0[1]) * f]; pg.drawLine({ start: { x: A[0], y: Y(A[1]) }, end: { x: B[0], y: Y(B[1]) }, thickness: 0.8, color: hcc }); }
+              } else { const xs = b.poly.map(p => p[0]), ys = b.poly.map(p => p[1]), g = hatchGeom({ type: 'rect', x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), hatch: { type: m.hatch, scale: S } }); for (const L of g.lines) pg.drawLine({ start: { x: L[0], y: Y(L[1]) }, end: { x: L[2], y: Y(L[3]) }, thickness: 0.8, color: hcc }); for (const D of g.dots) { const dr = D[2] != null ? D[2] : S * 0.16; pg.drawEllipse({ x: D[0], y: Y(D[1]), xScale: dr, yScale: dr, color: hcc }); } }
+              pg.pushOperators(popGraphicsState());
+            } catch (_) { } }
+          }
+          const blk = rgb(.11, .14, .17);
+          for (let i = 0; i < bands.length - 1; i++) { const f = bands[i].f1, A = lp(c1B, c1A, f), B = lp(c2B, c2A, f); pg.drawLine({ start: { x: A[0], y: Y(A[1]) }, end: { x: B[0], y: Y(B[1]) }, thickness: 0.6, color: rgb(.6, .6, .6) }); }
+          pg.drawLine({ start: { x: c1A[0], y: Y(c1A[1]) }, end: { x: c2A[0], y: Y(c2A[1]) }, thickness: 1.4, color: blk });
+          pg.drawLine({ start: { x: c1B[0], y: Y(c1B[1]) }, end: { x: c2B[0], y: Y(c2B[1]) }, thickness: 1.4, color: blk });
+          if (wallEndFree(a, a.x1, a.y1, arr)) pg.drawLine({ start: { x: c1A[0], y: Y(c1A[1]) }, end: { x: c1B[0], y: Y(c1B[1]) }, thickness: 1.4, color: blk });
+          if (wallEndFree(a, a.x2, a.y2, arr)) pg.drawLine({ start: { x: c2A[0], y: Y(c2A[1]) }, end: { x: c2B[0], y: Y(c2B[1]) }, thickness: 1.4, color: blk });
+          if (a.dim) {
+            const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+            const base = (a.thick || wallThickPts()) / 2 + cmToPts(wallDimOffCm), off = (a.dimOff != null ? a.dimOff : base), side = off >= 0 ? 1 : -1, gap = wallDimGap, over = 4, tick = 5, dimc = rgb(.11, .14, .17);
+            const dl = (x1, y1, x2, y2, th) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: th || 0.7, color: dimc });
+            for (const P of [[a.x1, a.y1], [a.x2, a.y2]]) dl(P[0] + nx * side * gap, P[1] + ny * side * gap, P[0] + nx * (off + side * over), P[1] + ny * (off + side * over));
+            const q1 = [a.x1 + nx * off, a.y1 + ny * off], q2 = [a.x2 + nx * off, a.y2 + ny * off]; dl(q1[0] - ux * over, q1[1] - uy * over, q2[0] + ux * over, q2[1] + uy * over, 0.9);
+            const kx = ux + nx, ky = uy + ny, kl = Math.hypot(kx, ky) || 1, kxn = kx / kl, kyn = ky / kl;
+            for (const P of [q1, q2]) dl(P[0] - kxn * tick, P[1] - kyn * tick, P[0] + kxn * tick, P[1] + kyn * tick, 1.1);
+            const lbl = fmtLen(len), tw = font.widthOfTextAtSize(lbl, 11); let pang = Math.atan2(-uy, ux) * 180 / Math.PI; if (pang > 90) pang -= 180; else if (pang <= -90) pang += 180;
+            const rad = pang * Math.PI / 180, bx = Math.cos(rad), by = Math.sin(rad), cxm = (q1[0] + q2[0]) / 2 + nx * side * 7, cym = (q1[1] + q2[1]) / 2 + ny * side * 7;
+            pg.drawText(lbl, { x: cxm - bx * tw / 2 + by * 3.5, y: Y(cym) - by * tw / 2 - bx * 3.5, size: 11, font, color: dimc, rotate: degrees(pang) });
           }
         }
         else if (a.type === 'wall') {
@@ -3547,6 +3672,11 @@ function wire() {
   $('#foot3d').onclick = open3D;
   let planKind = 'kopf', planPos = 'br';
   $('#footPlan').onclick = e => { e.stopPropagation(); const p = $('#planPop'); p.hidden = !p.hidden; };
+  $('#pbBuild').onclick = e => { e.stopPropagation(); const p = $('#buildPop'); if (p.hidden) openBuildPop(); else p.hidden = true; };
+  $('#bpAdd').onclick = () => { buildDraft.push(['putz', 2]); renderBuildList(); };
+  $('#bpApply').onclick = applyBuildup;
+  $('#bpSingle').onclick = () => { wallBuildup = null; const a = selWall(); if (a) { pushUndo(); applyWallBuildup(a, null); applyMaterial(a, 'none'); pageViews.forEach(drawAnnos); saveState(); } $('#buildPop').hidden = true; };
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#buildPop') && !e.target.closest('#pbBuild')) $('#buildPop').hidden = true; }, true);
   $('#footBW').onclick = () => { document.body.classList.toggle('bw'); $('#footBW').classList.toggle('on', document.body.classList.contains('bw')); };
   $('#footPhase').onclick = e => { e.stopPropagation(); const p = $('#phasePop'); p.hidden = !p.hidden; if (!p.hidden) updatePhaseUI(); };
   $$('#phSet button').forEach(b => b.onclick = () => setActivePhase(b.dataset.ph || null));

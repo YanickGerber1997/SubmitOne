@@ -311,6 +311,8 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
 /* Text-Eingabe-Overlay */
 .textedit{position:absolute;z-index:20;background:rgba(255,255,255,.92);border:1.5px solid var(--accent);border-radius:0;padding:1px 3px;font-family:var(--font);outline:none;resize:none;overflow:hidden;line-height:1.25;box-shadow:0 2px 10px rgba(20,24,40,.15)}
 .tb-edit{box-shadow:none;white-space:pre-wrap;box-sizing:border-box}
+.draw-hud{position:fixed;z-index:80;pointer-events:none;background:var(--ink);color:#fff;font:600 12px/1 var(--font);padding:5px 9px;border-radius:4px;white-space:nowrap;box-shadow:0 3px 10px rgba(20,24,40,.3);font-variant-numeric:tabular-nums}
+.len-input{position:absolute;z-index:35;transform:translate(-50%,-50%);width:90px;text-align:center;background:#fff;border:1.5px solid var(--accent);border-radius:4px;padding:3px 4px;font:600 13px var(--font);color:var(--ink);outline:none;box-shadow:0 3px 12px rgba(20,24,40,.22)}
 .textbar{position:absolute;z-index:30;display:flex;gap:6px;align-items:center;background:var(--surface);border:1px solid var(--line);box-shadow:0 5px 18px rgba(20,24,40,.25);padding:4px 6px}
 .textbar .tb-g{display:flex;gap:2px;align-items:center;padding-right:6px;border-right:1px solid var(--line-soft)}
 .textbar .tb-g:last-child{border-right:none;padding-right:0}

@@ -1028,6 +1028,68 @@ function anchorSnap(pv, x, y, excludeId) {
   return best;
 }
 function snapIndicator(pv, p) { const c = svgEl('circle', { cx: p.x, cy: p.y, r: 5 / pv.scale, class: 'snap-anchor' }); pv.svg.appendChild(c); }
+/* ---------- Zeichen-Hilfslinien, Längen-/Winkel-Anzeige, exakte Längeneingabe ---------- */
+let lastLine = null;   // {num,id} – zuletzt gezeichnete Linie (für „L" = exakte Länge)
+function angleSnapPoint(x1, y1, x2, y2) {   // auf nächste 45°-Richtung einrasten, wenn nahe dran – sonst null
+  const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy); if (len < 1) return null;
+  let ang = Math.atan2(dy, dx) * 180 / Math.PI;
+  const near = Math.round(ang / 45) * 45, diff = Math.abs(ang - near);
+  const tol = (((near % 90) + 90) % 90 === 0) ? 4.5 : 2.5;   // waagrecht/senkrecht grosszügiger als 45°
+  if (diff > tol) return null;
+  const r = near * Math.PI / 180;
+  return { x: x1 + Math.cos(r) * len, y: y1 + Math.sin(r) * len };
+}
+let hudEl = null;
+function showDrawHud(ev, a) {
+  if (!hudEl) { hudEl = document.createElement('div'); hudEl.className = 'draw-hud'; document.body.appendChild(hudEl); }
+  const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
+  let aDeg = Math.round(Math.atan2(-(a.y2 - a.y1), a.x2 - a.x1) * 180 / Math.PI); if (aDeg < 0) aDeg += 360;
+  hudEl.textContent = fmtLen(len) + '   ·   ' + aDeg + '°';
+  hudEl.style.left = (ev.clientX + 16) + 'px'; hudEl.style.top = (ev.clientY + 18) + 'px'; hudEl.hidden = false;
+}
+function hideDrawHud() { if (hudEl) hudEl.hidden = true; }
+// Verschieben: an Seitenrändern, Seitenmitte und anderen Objekten (Kanten/Mitte) einrasten
+function moveSnapAdjust(pv, a, orig, dx, dy) {
+  const thr = 6 / pv.scale, b = bbox(a);
+  const myX = { l: b.x, c: b.x + b.w / 2, r: b.x + b.w }, myY = { t: b.y, c: b.y + b.h / 2, b: b.y + b.h };
+  const targX = [0, pv.pageW / 2, pv.pageW], targY = [0, pv.pageH / 2, pv.pageH];
+  for (const o of getAnnos(pv.num)) { if (o.id === a.id) continue; const ob = bbox(o); targX.push(ob.x, ob.x + ob.w / 2, ob.x + ob.w); targY.push(ob.y, ob.y + ob.h / 2, ob.y + ob.h); }
+  let bx = null, by = null;
+  for (const k in myX) for (const t of targX) { const d = t - myX[k]; if (Math.abs(d) < thr && (!bx || Math.abs(d) < Math.abs(bx.d))) bx = { d, t }; }
+  for (const k in myY) for (const t of targY) { const d = t - myY[k]; if (Math.abs(d) < thr && (!by || Math.abs(d) < Math.abs(by.d))) by = { d, t }; }
+  const guides = [];
+  if (bx) guides.push({ x1: bx.t, y1: 0, x2: bx.t, y2: pv.pageH });
+  if (by) guides.push({ x1: 0, y1: by.t, x2: pv.pageW, y2: by.t });
+  return { dx: dx + (bx ? bx.d : 0), dy: dy + (by ? by.d : 0), guides };
+}
+function parseLenToPts(str) {
+  if (!str) return 0; const s = str.trim().toLowerCase().replace(',', '.');
+  const m = /^([0-9]*\.?[0-9]+)\s*(mm|cm|m)?$/.exec(s); if (!m) return 0;
+  const v = parseFloat(m[1]), unit = m[2];
+  let meters; if (unit === 'mm') meters = v / 1000; else if (unit === 'cm') meters = v / 100; else if (unit === 'm') meters = v; else meters = docScale ? v : null;
+  if (meters === null) return v / PT2MM;                 // ohne Einheit & ohne Massstab → Papier-mm
+  return docScale ? meters / docScale.perPt : meters * 1000 / PT2MM;
+}
+function lineLenInput(pv, a) {   // „L": Linie auf exakte Länge in aktueller Richtung bringen
+  const sc = pv.scale, curPts = Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
+  const inp = document.createElement('input'); inp.className = 'len-input';
+  inp.style.left = ((a.x1 + a.x2) / 2 * sc) + 'px'; inp.style.top = ((a.y1 + a.y2) / 2 * sc) + 'px';
+  const def = docScale ? (Math.round(curPts * docScale.perPt * 1000) / 1000) : Math.round(curPts * PT2MM);
+  inp.value = String(def).replace('.', ','); inp.title = docScale ? 'Länge in Metern (z. B. 3,25) – oder mit cm/mm' : 'Länge in mm (Papier) – oder mit cm/m';
+  pv.inner.appendChild(inp); inp.focus(); inp.select();
+  let done = false;
+  const apply = commit => {
+    if (done) return; done = true; const val = inp.value; inp.remove();
+    if (commit) { const pts = parseLenToPts(val); if (pts > 0) { pushUndo(); let ux = a.x2 - a.x1, uy = a.y2 - a.y1, l = Math.hypot(ux, uy); if (l < 0.001) { ux = 1; uy = 0; l = 1; } ux /= l; uy /= l; a.x2 = a.x1 + ux * pts; a.y2 = a.y1 + uy * pts; drawAnnos(pv); saveState(); updateSelBar(); } }
+  };
+  inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') { ev.preventDefault(); apply(true); } else if (ev.key === 'Escape') { ev.preventDefault(); apply(false); } });
+  inp.addEventListener('blur', () => apply(true));
+}
+function lineForLength() {
+  if (sel) { const pv = pageViews.find(p => p.num === sel.num), a = pv && findAnno(pv.num, sel.id); if (a && isLineType(a)) return { pv, a }; }
+  if (lastLine) { const pv = pageViews.find(p => p.num === lastLine.num), a = pv && findAnno(pv.num, lastLine.id); if (a && isLineType(a)) return { pv, a }; }
+  return null;
+}
 function onPointerDown(pv, e) {
   if (e.button !== 0) return;
   let p = evtToPage(pv, e);
@@ -1261,20 +1323,19 @@ function startMove(pv, e, a, wasSel) {
   const oy = orig.y1 != null ? orig.y1 : orig.y != null ? orig.y : (orig.pts ? orig.pts[0][1] : (orig.rects && orig.rects[0] ? orig.rects[0].y : 0));
   const move = ev => {
     const q = evtToPage(pv, ev); let dx = q.x - start.x, dy = q.y - start.y; moved = true;
-    let snapX = false, snapY = false;
+    let guides = [];
     if (gridOn && !ev.altKey) {                          // aufs Raster einrasten (Ankerpunkt)
-      const sp = snapPt(ox + dx, oy + dy); dx = sp.x - ox; dy = sp.y - oy;
-    }
-    translateAnno(a, orig, dx, dy);
-    if (!gridOn && !ev.altKey) {                         // sonst: Mitte-Einrasten mit Hilfslinien
-      const b = bbox(a), bcx = b.x + b.w / 2, bcy = b.y + b.h / 2;
-      if (Math.abs(bcx - cx) < thr) { dx += cx - bcx; snapX = true; }
-      if (Math.abs(bcy - cy) < thr) { dy += cy - bcy; snapY = true; }
-      if (snapX || snapY) translateAnno(a, orig, dx, dy);
+      const sp = snapPt(ox + dx, oy + dy); dx = sp.x - ox; dy = sp.y - oy; translateAnno(a, orig, dx, dy);
+    } else {
+      translateAnno(a, orig, dx, dy);
+      if (!ev.altKey) {                                  // an Seitenrändern/-mitte & anderen Objekten einrasten (Alt = frei)
+        const s = moveSnapAdjust(pv, a, orig, dx, dy);
+        if (s.dx !== dx || s.dy !== dy) { dx = s.dx; dy = s.dy; translateAnno(a, orig, dx, dy); }
+        guides = s.guides;
+      }
     }
     drawAnnos(pv); removeGuides();
-    if (snapX) pv.svg.appendChild(svgEl('line', { x1: cx, y1: 0, x2: cx, y2: pv.pageH, class: 'snap-guide' }));
-    if (snapY) pv.svg.appendChild(svgEl('line', { x1: 0, y1: cy, x2: pv.pageW, y2: cy, class: 'snap-guide' }));
+    for (const g of guides) pv.svg.appendChild(svgEl('line', { x1: g.x1, y1: g.y1, x2: g.x2, y2: g.y2, class: 'snap-guide' }));
   };
   const up = () => {
     document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); removeGuides();
@@ -1438,20 +1499,26 @@ function startDraw(pv, e, p) {
   else if (tool === 'oval') a = { id: nextId++, type: 'oval', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   getAnnos(pv.num).push(a);
+  const isLine = (a.type !== 'pen' && a.type !== 'rect' && a.type !== 'oval');
   const move = ev => {
     let q = evtToPage(pv, ev), snapped = null;
     if (a.type !== 'pen' && !ev.shiftKey) { const an = anchorSnap(pv, q.x, q.y, a.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
     if (a.type === 'pen') a.pts.push([q.x, q.y]);
     else if (a.type === 'rect' || a.type === 'oval') { a.w = q.x - a.x; a.h = q.y - a.y; }
-    else { if (ev.shiftKey) { const s = snap15(a.x1, a.y1, q.x, q.y); a.x2 = s.x; a.y2 = s.y; } else { a.x2 = q.x; a.y2 = q.y; } }   // Shift = 15°-Winkel
+    else {
+      if (ev.shiftKey) { const s = snap15(a.x1, a.y1, q.x, q.y); a.x2 = s.x; a.y2 = s.y; }   // Shift = 15°
+      else { let as = null; if (!snapped) as = angleSnapPoint(a.x1, a.y1, q.x, q.y); if (as) { a.x2 = as.x; a.y2 = as.y; } else { a.x2 = q.x; a.y2 = q.y; } }   // sonst auto 0/45/90°
+    }
     drawAnnos(pv); if (snapped) snapIndicator(pv, snapped);
+    if (isLine) showDrawHud(ev, a);
   };
   const up = () => {
-    document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+    document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); hideDrawHud();
     if (a.type === 'calibrate') { const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1); const arr = getAnnos(pv.num); arr.splice(arr.indexOf(a), 1); undoStack.pop(); drawAnnos(pv); if (len > 4) openScale(len); else setTool('select'); return; }
     if (a.type === 'pen' && penTidy) { const bz = beautify(a.pts); if (bz) { const arr = getAnnos(pv.num), i = arr.indexOf(a); arr[i] = Object.assign({ id: a.id, color: a.color, width: a.width }, bz); } }
     const cur = getAnnos(pv.num).find(x => x.id === a.id) || a;
     const b = bbox(cur); if (cur.type !== 'pen' && b.w < 3 && b.h < 3) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(cur), 1); undoStack.pop(); drawAnnos(pv); return; }
+    if (isLineType(cur)) lastLine = { num: pv.num, id: cur.id };   // „L" wirkt auf die zuletzt gezeichnete Linie
     sel = null; drawAnnos(pv); saveState();   // Werkzeug bleibt aktiv → mehrere zeichnen (V/Esc = auswählen)
   };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
@@ -2703,7 +2770,7 @@ function wire() {
     else if (!mod && e.key.toLowerCase() === 'v') setTool('select');
     else if (!mod && e.key.toLowerCase() === 't') setTool('text');
     else if (!mod && e.key.toLowerCase() === 's') setTool('pen');
-    else if (!mod && e.key.toLowerCase() === 'l') setTool('line');
+    else if (!mod && e.key.toLowerCase() === 'l') { const t = lineForLength(); if (t) { e.preventDefault(); lineLenInput(t.pv, t.a); } else setTool('line'); }
     else if (!mod && e.key.toLowerCase() === 'p') setTool('arrow');
     else if (!mod && e.key.toLowerCase() === 'r') setTool('rect');
     else if (!mod && e.key.toLowerCase() === 'o') setTool('oval');

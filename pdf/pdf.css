@@ -478,6 +478,9 @@ body.has-tabs .plan-bar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 .selbar .sb-nofill{font-size:13px;font-weight:700}
 .selbar .sb-hatch-wrap{position:relative;display:flex;width:30px;height:30px}
 .selbar .sb-hatch.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
+.block-pop{position:absolute;top:calc(100% + 6px);left:0;z-index:62;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.22);padding:6px;display:grid;grid-template-columns:1fr 1fr;gap:3px;width:200px}
+.block-pop button{border:1px solid var(--line);background:var(--surface);font:inherit;font-size:12px;font-weight:600;text-align:left;padding:7px 9px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.block-pop button:hover{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
 .hatch-pop{position:absolute;bottom:calc(100% + 6px);left:0;z-index:62;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.22);padding:5px;display:flex;flex-direction:column;gap:3px;min-width:160px}
 .hatch-pop button{border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;text-align:left;padding:7px 12px;cursor:pointer;color:var(--ink);white-space:nowrap;border-radius:0}
 .hatch-pop button:hover{background:var(--accent-soft);color:var(--accent-3)}

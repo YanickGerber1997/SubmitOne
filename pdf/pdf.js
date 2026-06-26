@@ -951,6 +951,9 @@ function drawOne(svg, a, pv) {
     const al = 7; g.appendChild(svgEl('path', { d: `M${a.x2} ${a.y2} L${a.x2 - ux * al + nx * al * .6} ${a.y2 - uy * al + ny * al * .6} M${a.x2} ${a.y2} L${a.x2 - ux * al - nx * al * .6} ${a.y2 - uy * al - ny * al * .6}`, stroke: col, 'stroke-width': 1, fill: 'none', 'vector-effect': 'non-scaling-stroke' }));   // Pfeil = aufwärts
     svg.appendChild(g); el = g;
     hit = svgEl('polygon', { points: [c1, c2, c3, c4].map(p => p[0] + ',' + p[1]).join(' '), fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
+  } else if (a.type === 'block') {
+    el = drawBlock(svg, a);
+    const b = bbox(a); hit = svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'roof') {
     const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), col = a.color || '#1c242c', g = svgEl('g', { 'data-id': a.id });
     g.appendChild(svgEl('rect', { x, y, width: W, height: H, fill: '#fff', 'fill-opacity': .4, stroke: col, 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
@@ -1111,7 +1114,7 @@ function drawMeasureLabel(svg, a, pv) {
 
 /* ---------- Auswahl / Griffe ---------- */
 function bbox(a) {
-  if (a.type === 'rect' || a.type === 'oval' || a.type === 'roof') return { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), w: Math.abs(a.w), h: Math.abs(a.h) };
+  if (a.type === 'rect' || a.type === 'oval' || a.type === 'roof' || a.type === 'block') return { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), w: Math.abs(a.w), h: Math.abs(a.h) };
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') return { x: Math.min(a.x1, a.x2), y: Math.min(a.y1, a.y2), w: Math.abs(a.x2 - a.x1), h: Math.abs(a.y2 - a.y1) };
   if (a.type === 'wall') { const t = (a.thick || wallThickPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
   if (a.type === 'stairs') { const t = (a.width || stairWidthPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
@@ -1392,6 +1395,7 @@ function onPointerDown(pv, e) {
   if (tool === 'eraser') { startErase(pv, e); return; }
   if (tool === 'crop') { startCrop(pv, e, p); return; }
   if (tool === 'area' || tool === 'slab') { areaClick(pv, p); return; }
+  if (tool === 'block') { placeBlock(pv, p); return; }
   if (tool === 'chaindim') { chaindimClick(pv, p); return; }
   if (tool === 'opening' || tool === 'window') { openKind = tool === 'window' ? 'window' : 'door'; openingClick(pv, p); return; }
   if (tool === 'edittext') { editTextAt(pv, p); return; }
@@ -1791,7 +1795,7 @@ function startResize(pv, e, h) {
     let q = evtToPage(pv, ev); if (gridOn && !ev.shiftKey && !ev.altKey) q = snapPt(q.x, q.y);   // Anfasser aufs Raster
     if (isLineType(a)) { let qx = q.x, qy = q.y; if (ev.shiftKey) { const o = h === 'p1' ? { x: a.x2, y: a.y2 } : { x: a.x1, y: a.y1 }; const s = snap15(o.x, o.y, qx, qy); qx = s.x; qy = s.y; } if (h === 'p1') { a.x1 = qx; a.y1 = qy; } else { a.x2 = qx; a.y2 = qy; } }
     else if (orig.type === 'sig' || orig.type === 'img') { const ratio = orig.w / orig.h || 1, ax = h.includes('w') ? orig.x + orig.w : orig.x, ay = h.includes('n') ? orig.y + orig.h : orig.y; const nw = Math.max(12, Math.abs(q.x - ax)), nh = nw / ratio; a.w = nw; a.h = nh; a.x = h.includes('w') ? ax - nw : ax; a.y = h.includes('n') ? ay - nh : ay; }
-    else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval' || orig.type === 'edit' || orig.type === 'cover' || orig.type === 'stamp' || orig.type === 'text' || orig.type === 'crop' || orig.type === 'imgph') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
+    else { let x = orig.x, y = orig.y, w = orig.w, h2 = orig.h; if (orig.type === 'rect' || orig.type === 'oval' || orig.type === 'edit' || orig.type === 'cover' || orig.type === 'stamp' || orig.type === 'text' || orig.type === 'crop' || orig.type === 'imgph' || orig.type === 'roof' || orig.type === 'block') { const x2 = x + w, y2 = y + h2; let nx = x, ny = y, nx2 = x2, ny2 = y2; if (h.includes('w')) nx = q.x; if (h.includes('e')) nx2 = q.x; if (h.includes('n')) ny = q.y; if (h.includes('s')) ny2 = q.y; a.x = nx; a.y = ny; a.w = nx2 - nx; a.h = ny2 - ny; } }
     drawAnnos(pv);
   };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
@@ -2011,6 +2015,45 @@ function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieb
   const move = ev => { moved = true; const q = evtToPage(pv, ev), dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, L2 = dx * dx + dy * dy || 1; let t = ((q.x - wall.x1) * dx + (q.y - wall.y1) * dy) / L2; a.t = Math.max(0, Math.min(1, t)); openingResolve(a, pv); drawAnnos(pv); };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) undoStack.pop(); else saveState(); };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
+/* ---------- Möbel- / Sanitär-Symbole (Blöcke) ---------- */
+let blockKind = 'table';
+const BLOCK_DEFS = { bed: [200, 150], table: [120, 80], sofa: [200, 90], chair: [45, 45], wc: [40, 60], sink: [60, 45], shower: [90, 90], bath: [170, 75], stove: [60, 60], fridge: [60, 65] };
+const BLOCK_H = { bed: 0.5, table: 0.75, sofa: 0.8, chair: 0.9, wc: 0.4, sink: 0.85, shower: 0.04, bath: 0.55, stove: 0.9, fridge: 1.8 };
+function blockShapes(a) {   // Symbol-Geometrie in absoluten Seitenkoordinaten (für Schirm + PDF)
+  const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), w = Math.abs(a.w), h = Math.abs(a.h), k = a.kind, mn = Math.min(w, h), s = [];
+  const X = f => x + f * w, Y = f => y + f * h;
+  const rr = (fx, fy, fw, fh, r) => s.push({ t: 'rect', x: X(fx), y: Y(fy), w: fw * w, h: fh * h, rx: (r || 0) * mn });
+  const el = (fx, fy, rx, ry) => s.push({ t: 'ell', cx: X(fx), cy: Y(fy), rx: rx * w, ry: ry * h });
+  const ci = (fx, fy, r) => s.push({ t: 'circ', cx: X(fx), cy: Y(fy), r: r * mn });
+  const ln = (x1, y1, x2, y2) => s.push({ t: 'line', x1: X(x1), y1: Y(y1), x2: X(x2), y2: Y(y2) });
+  rr(0, 0, 1, 1, 0.03);
+  if (k === 'bed') { rr(0.06, 0.04, 0.88, 0.26, 0.04); ln(0, 0.32, 1, 0.32); }
+  else if (k === 'table') rr(0.12, 0.12, 0.76, 0.76, 0.02);
+  else if (k === 'sofa') { rr(0, 0, 1, 0.26, 0.06); rr(0, 0.12, 0.12, 0.88, 0.06); rr(0.88, 0.12, 0.12, 0.88, 0.06); ln(0.34, 0.28, 0.34, 1); ln(0.66, 0.28, 0.66, 1); }
+  else if (k === 'chair') rr(0.12, 0, 0.76, 0.16, 0.03);
+  else if (k === 'wc') { rr(0.3, 0, 0.4, 0.22, 0.02); el(0.5, 0.62, 0.26, 0.33); }
+  else if (k === 'sink') { rr(0.12, 0.12, 0.76, 0.76, 0.12); ci(0.5, 0.74, 0.05); ci(0.5, 0.2, 0.05); }
+  else if (k === 'shower') { ln(0.06, 0.06, 0.94, 0.94); ln(0.94, 0.06, 0.06, 0.94); ci(0.5, 0.5, 0.06); }
+  else if (k === 'bath') { rr(0.06, 0.12, 0.88, 0.76, 0.2); ci(0.82, 0.5, 0.05); }
+  else if (k === 'stove') { ci(0.3, 0.3, 0.13); ci(0.7, 0.3, 0.13); ci(0.3, 0.7, 0.13); ci(0.7, 0.7, 0.13); }
+  else if (k === 'fridge') { ln(0, 0.42, 1, 0.42); ln(0.84, 0.12, 0.84, 0.32); ln(0.84, 0.52, 0.84, 0.72); }
+  return s;
+}
+function drawBlock(svg, a) {
+  const col = a.color || '#1c242c', g = svgEl('g', { 'data-id': a.id });
+  for (const sp of blockShapes(a)) {
+    if (sp.t === 'rect') g.appendChild(svgEl('rect', { x: sp.x, y: sp.y, width: sp.w, height: sp.h, rx: sp.rx || 0, ry: sp.rx || 0, fill: 'none', stroke: col, 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
+    else if (sp.t === 'ell') g.appendChild(svgEl('ellipse', { cx: sp.cx, cy: sp.cy, rx: sp.rx, ry: sp.ry, fill: 'none', stroke: col, 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
+    else if (sp.t === 'circ') g.appendChild(svgEl('circle', { cx: sp.cx, cy: sp.cy, r: sp.r, fill: 'none', stroke: col, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
+    else if (sp.t === 'line') g.appendChild(svgEl('line', { x1: sp.x1, y1: sp.y1, x2: sp.x2, y2: sp.y2, stroke: col, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
+  }
+  svg.appendChild(g); return g;
+}
+function placeBlock(pv, p) {
+  pushUndo(); const d = BLOCK_DEFS[blockKind] || [80, 80], w = docScale ? cmToPts(d[0]) : d[0] * 1.3, h = docScale ? cmToPts(d[1]) : d[1] * 1.3;
+  const a = { id: nextId++, type: 'block', kind: blockKind, x: p.x - w / 2, y: p.y - h / 2, w, h, color: '#1c242c' };
+  pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
 }
 function addRoomArea(pv, pts, thick) {   // geschlossener Wandzug → lichte Raumfläche (m²)
   if (pts.length < 3) return;
@@ -2573,6 +2616,7 @@ function setTool(t) {
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
   const ab = $('.tool.on[data-tool]'); if (ab) { const grp = ab.closest('.rib-tools'); if (grp && grp.hidden) activateRibTab(grp.dataset.tabgroup); }   // Reiter des aktiven Werkzeugs zeigen
   const bs = $('#btnStamp'); if (bs) bs.classList.toggle('on', t === 'stamp');
+  const bb = $('#btnBlock'); if (bb) bb.classList.toggle('on', t === 'block');
   $$('.fab-b').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   pageViews.forEach(p => { p._hoverId = null; const h = p.svg && p.svg.querySelector('.hover-layer'); if (h) h.remove(); });   // Hover bei Werkzeugwechsel löschen
   $('#pages').classList.toggle('mode-text', t === 'textsel');   // Text-Auswahl-Modus
@@ -2581,6 +2625,7 @@ function setTool(t) {
   if (t === 'curve' && !setTool._curveHint) { setTool._curveHint = true; toast('Kurve: Klick = Ecke (gerade) · Klick+Ziehen = Kurve · Enter/Doppelklick = fertig · Esc = abbrechen'); }
   if (['pen', 'line', 'arrow', 'rect', 'oval', 'arc'].includes(t) && !setTool._drawHint) { setTool._drawHint = true; toast('Werkzeug bleibt aktiv – einfach weiterzeichnen. V oder Esc = auswählen/bearbeiten.'); }
   if ((t === 'opening' || t === 'window') && !setTool._openHint) { setTool._openHint = true; toast('Tür/Fenster: auf eine Wand klicken → wird eingesetzt. Oben in der Planungs-Leiste: Breite, Brüstung/Höhe, Anschlag – wirken in 2D und 3D.'); }
+  if (t === 'block' && !setTool._blockHint) { setTool._blockHint = true; toast('Symbol auf die Seite klicken zum Platzieren. Danach auswählen → ziehen/skalieren. Weite/Höhe der Box = Ausrichtung (z. B. Bett quer/längs).'); }
   if (t === 'roof' && !setTool._roofHint) { setTool._roofHint = true; toast('Dach: Grundfläche aufziehen. Oben: Sattel/Pult, Traufe + First, „First ↻" dreht die Firstrichtung. 3D zeigt die Schräge.'); }
   if (t === 'stairs' && !setTool._stairHint) { setTool._stairHint = true; toast('Treppe (gerader Lauf): Start klicken → Richtung/Länge → 2. Klick oder „L". Breite/Höhe/UK oben einstellen · L-/U-Treppe: mehrere Läufe + Podest (Decke). 3D zeigt die Stufen.'); }
   if (t === 'chaindim' && !setTool._cdimHint) { setTool._cdimHint = true; toast('Kettenmass: Stationen klicken (rastet an Ecken/Enden ein) · je Abschnitt ein Mass + Gesamt · Rücktaste = letzte Station zurück · Doppelklick/Enter = fertig.'); }
@@ -2590,7 +2635,7 @@ function setTool(t) {
   if (t === 'wallchain' && !setTool._wcHint) { setTool._wcHint = true; toast('Wände am Stück: klicken–klicken = Raumzug · zurück auf den Startpunkt = Raum schliessen (m²) · Rücktaste = letzte Wand zurück · Doppelklick/Enter = fertig.'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'roof'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'roof', 'block'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -2672,6 +2717,7 @@ async function buildPdfBytes(visibleOnly) {
         }
         else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), o = { x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawRectangle(o); }
         else if (a.type === 'roof') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h); pg.drawRectangle({ x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: 1.2 }); const rl = (x1, y1, x2, y2) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: 1.8, color: c }); if (a.rtype === 'pult') { a.axis === 'x' ? rl(x, y, x + W, y) : rl(x, y, x, y + H); } else { a.axis === 'x' ? rl(x, y + H / 2, x + W, y + H / 2) : rl(x + W / 2, y, x + W / 2, y + H); } const lab = a.rtype === 'pult' ? 'Pultdach' : 'Satteldach', tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: x + W / 2 - tw / 2, y: Y(y + H / 2) - 3, size: 11, font, color: c }); }
+        else if (a.type === 'block') { for (const sp of blockShapes(a)) { if (sp.t === 'rect') pg.drawRectangle({ x: sp.x, y: Y(sp.y + sp.h), width: sp.w, height: sp.h, borderColor: c, borderWidth: 1.2 }); else if (sp.t === 'ell') pg.drawEllipse({ x: sp.cx, y: Y(sp.cy), xScale: sp.rx, yScale: sp.ry, borderColor: c, borderWidth: 1.2 }); else if (sp.t === 'circ') pg.drawEllipse({ x: sp.cx, y: Y(sp.cy), xScale: sp.r, yScale: sp.r, borderColor: c, borderWidth: 1 }); else if (sp.t === 'line') pg.drawLine({ start: { x: sp.x1, y: Y(sp.y1) }, end: { x: sp.x2, y: Y(sp.y2) }, thickness: 1, color: c }); } }
         else if (a.type === 'oval') { const o = { x: a.x + a.w / 2, y: Y(a.y + a.h / 2), xScale: Math.abs(a.w / 2), yScale: Math.abs(a.h / 2), borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawEllipse(o); }
         else if (a.type === 'pen') { const op = a.hl ? 0.35 : 1; for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c, opacity: op }); }
         else if (a.type === 'opening') {
@@ -3011,6 +3057,14 @@ function build3DScene(host, walls, arr) {
     const flat = []; for (const tri of tris) for (const v of tri) flat.push(v[0], v[1], v[2]);
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(flat, 3)); geo.computeVertexNormals(); scene.add(new THREE.Mesh(geo, rmat));
   }
+  // Möbel/Sanitär als niedrige Blöcke
+  const bmat = new THREE.MeshLambertMaterial({ color: 0xcec5b4 });
+  for (const a of arr) if (a.type === 'block' && layerVisible(a)) {
+    const bw = M(Math.abs(a.w)), bd = M(Math.abs(a.h)), bh = BLOCK_H[a.kind] || 0.6, ccx = Math.min(a.x, a.x + a.w) + Math.abs(a.w) / 2, ccy = Math.min(a.y, a.y + a.h) + Math.abs(a.h) / 2;
+    if (bw < 0.01 || bd < 0.01) continue;
+    const geo = new THREE.BoxGeometry(bw, bh, bd), m = new THREE.Mesh(geo, bmat); m.position.set(M(ccx - cx), lev(a) + bh / 2, M(ccy - cy)); scene.add(m);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); scene.add(e);
+  }
   let raf, alive = true;
   const onResize = () => { const w2 = host.clientWidth, h2 = host.clientHeight; if (!w2 || !h2) return; camera.aspect = w2 / h2; camera.updateProjectionMatrix(); renderer.setSize(w2, h2); };
   window.addEventListener('resize', onResize);
@@ -3287,6 +3341,9 @@ function wire() {
   $('#pbDimOff').onchange = () => { const v = parseFloat(($('#pbDimOff').value || '').replace(',', '.')); if (v >= 0) { wallDimOffCm = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbHatch').onchange = () => { const t = $('#pbHatch').value; const h = t ? { type: t, scale: lastHatchScale, w: 0.8 } : null; wallHatch = h; const a = selWall(); if (a) { pushUndo(); a.hatch = h ? { ...h, color: a.color } : null; pageViews.forEach(drawAnnos); saveState(); } };
   $('#foot3d').onclick = open3D;
+  $('#btnBlock').onclick = e => { e.stopPropagation(); const p = $('#blockPop'); p.hidden = !p.hidden; };
+  $$('#blockPop button').forEach(b => b.onclick = () => { blockKind = b.dataset.bk; $('#blockPop').hidden = true; setTool('block'); });
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#blockPop') && !e.target.closest('#btnBlock')) $('#blockPop').hidden = true; }, true);
   $('#pbWallH').onchange = () => { const v = parseFloat(($('#pbWallH').value || '').replace(',', '.')); if (!(v > 0)) return; wallHeightM = v; const a = selWall(); if (a) { pushUndo(); a.h3d = v; saveState(); } };
   $('#pbSill').onchange = () => { const v = parseFloat(($('#pbSill').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a) { pushUndo(); a.sill = v; saveState(); } };
   $('#pbHead').onchange = () => { const v = parseFloat(($('#pbHead').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selOpen(); if (a) { pushUndo(); a.head = v; saveState(); } };

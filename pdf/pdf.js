@@ -2565,13 +2565,13 @@ function sectionPrimitives(a, arr) {
   const vdir = a.flip ? -1 : 1;   // Blickrichtung
   for (const e of [[a.cx1, a.cy1], [a.cx2, a.cy2]]) { const tk = 8, ax = nx * vdir, ay = ny * vdir; out.push({ t: 'line', x1: e[0] - ax * tk, y1: e[1] - ay * tk, x2: e[0] + ax * tk, y2: e[1] + ay * tk, stroke: col, w: 1.4 }); out.push({ t: 'arrow', x: e[0] + ax * tk, y: e[1] + ay * tk, dx: ax, dy: ay, col }); out.push({ t: 'text', x: e[0] - ax * 16, y: e[1] - ay * 16, text: lbl, col }); }
   if (!docScale) { out.push({ t: 'text', x: a.ox, y: a.oy, text: '⟶ Massstab setzen, dann erscheint der Schnitt', col }); return out; }
-  const perPt = docScale.perPt, ox = a.ox, oy = a.oy, X = d => ox + (a.flip ? cl - d : d), Yh = h => oy - h / perPt;
+  const perPt = docScale.perPt, ox = a.ox, oy = a.oy, X = d => ox + d, Yh = h => oy - h / perPt, fp = d => a.flip ? cl - d : d;   // fp() spiegelt nur die Position (X bleibt normal → Rechtecke verrutschen nicht)
   const hits = [];
-  for (const w of arr) { if (w.type !== 'wall' || !layerVisible(w) || !phaseVisible(w)) continue; const ix = segInt(p1, p2, [w.x1, w.y1], [w.x2, w.y2]); if (!ix) continue; const dist = (ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy, wdx = w.x2 - w.x1, wdy = w.y2 - w.y1, wl = Math.hypot(wdx, wdy) || 1, sinA = Math.max(0.25, Math.abs((cux * wdy - cuy * wdx) / wl)), T = w.thick || wallThickPts(); hits.push({ w, dist, appW: T / sinA, tp: ix.t2, wl, T }); }
+  for (const w of arr) { if (w.type !== 'wall' || !layerVisible(w) || !phaseVisible(w)) continue; const ix = segInt(p1, p2, [w.x1, w.y1], [w.x2, w.y2]); if (!ix) continue; const dist = fp((ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy), wdx = w.x2 - w.x1, wdy = w.y2 - w.y1, wl = Math.hypot(wdx, wdy) || 1, sinA = Math.max(0.25, Math.abs((cux * wdy - cuy * wdx) / wl)), T = w.thick || wallThickPts(); hits.push({ w, dist, appW: T / sinA, tp: ix.t2, wl, T }); }
   out.push({ t: 'line', x1: X(-14), y1: Yh(0), x2: X(cl + 14), y2: Yh(0), stroke: col, w: 1.8 });   // Bodenlinie
   for (const h of hits) {
     const w = h.w, H = w.h3d || wallHeightM, x0 = h.dist - h.appW / 2;
-    const layers = (w.layers && w.layers.length) ? w.layers : [{ mat: null, t: h.T }], totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
+    const layers0 = (w.layers && w.layers.length) ? w.layers : [{ mat: null, t: h.T }], layers = a.flip ? layers0.slice().reverse() : layers0, totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
     let cx = x0;
     for (const L of layers) { const lw = (L.t / totalT) * h.appW, m = L.mat ? (WALL_MATS[L.mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; const bx = X(cx), byT = Yh(H), bhh = Yh(0) - Yh(H); out.push({ t: 'rect', x: bx, y: byT, w: lw, h: bhh, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, bx, byT, lw, bhh, L.mat, (w.hatch && w.hatch.type)); cx += lw; }
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
@@ -2583,14 +2583,14 @@ function sectionPrimitives(a, arr) {
     const wdx = w.x2 - w.x1, wdy = w.y2 - w.y1, wl = Math.hypot(wdx, wdy) || 1, along = Math.abs((wdx * cux + wdy * cuy) / wl);
     if (along < 0.7) continue;   // nur fast-parallele Wände → Ansicht (quer geschnittene sind schon oben)
     const Hw = w.h3d || wallHeightM;
-    const d1 = (w.x1 - p1[0]) * cux + (w.y1 - p1[1]) * cuy, d2 = (w.x2 - p1[0]) * cux + (w.y2 - p1[1]) * cuy;
+    const d1 = fp((w.x1 - p1[0]) * cux + (w.y1 - p1[1]) * cuy), d2 = fp((w.x2 - p1[0]) * cux + (w.y2 - p1[1]) * cuy);
     const da = Math.max(0, Math.min(d1, d2)), db = Math.min(cl, Math.max(d1, d2));
     if (db - da > 1) {   // Wand in Ansicht: Aussenschicht-Farbe + Schraffur (wie 3D)
       const outL = w.layers && w.layers.length ? w.layers[w.layers.length - 1] : null, m = outL ? (WALL_MATS[outL.mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#f0efea', color: w.color || col };
       out.push({ t: 'rect', x: X(da), y: Yh(Hw), w: X(db) - X(da), h: Yh(0) - Yh(Hw), fill: m.fill || '#f0efea', stroke: m.color || col, sw: 0.6 });
       if (!simpleMode && outL) sectionBandHatch(out, X(da), Yh(Hw), X(db) - X(da), Yh(0) - Yh(Hw), outL.mat, null);
     }
-    for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = (ocx - p1[0]) * cux + (ocy - p1[1]) * cuy; if (od < -10 || od > cl + 10) continue;
+    for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = fp((ocx - p1[0]) * cux + (ocy - p1[1]) * cuy); if (od < -10 || od > cl + 10) continue;
       const lapPts = (o.kind === 'window' ? (o.outerLap != null ? o.outerLap : cmToPts(3)) : 0) + (o.anschlagType === 'aussen' ? (o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5)) : 0);   // Aussen-Lappung + Aussenanschlag → Aussenlichtmaß
       const redM = ptsToCm(lapPts) / 100, wEff = Math.max(4, (o.w - 2 * lapPts) * along);
       openingElev(out, X, Yh, od - wEff / 2, wEff, o, Hw, col, redM);

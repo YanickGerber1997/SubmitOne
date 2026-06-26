@@ -27,7 +27,8 @@ let penTidy = true;        // Freihand-Skizzen automatisch zu sauberen Formen au
 let docScale = null;       // {perPt: reale Meter pro PDF-Punkt, label:'1:100'} – für Messen
 const PT2MM = 25.4 / 72;   // 1 PDF-Punkt in mm
 let dimUnit = false, wallDimOffCm = 10, wallDimGap = 8;   // Mass-Anzeige mit Einheit? (Standard: Plan-Stil „4.00") · Abstand der Wand-Masslinie (cm) · Lücke Bauteil↔Hilfslinie (pt)
-let simpleMode = false;   // einfache Darstellung erzwingen: Wände schwarz (Poché), Öffnungen als Symbol
+let simpleMode = false;   // global einfache Darstellung erzwingen: Wände schwarz (Poché), Öffnungen als Symbol
+function wallSimple(w) { return (w && w.simple != null) ? w.simple : simpleMode; }   // pro Wand überschreibbar (a.simple true/false), sonst global
 function fmtLen(pts) {
   if (docScale && !dimUnit) return (pts * docScale.perPt).toFixed(2);          // Plan-Stil: „2.00" (Meter, 2 Nachkommastellen, ohne Einheit)
   if (!docScale) return Math.round(pts * PT2MM) + (dimUnit ? ' mm' : '');      // ohne Massstab: Papier-mm
@@ -839,7 +840,7 @@ function drawAnnos(pv) {
   const svg = pv.svg; svg.innerHTML = '';
   for (const a of getAnnos(pv.num)) if (a.type === 'opening') openingResolve(a, pv);   // Türen/Fenster der Wand folgen lassen
   _wallUnionActive = false;
-  if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall' && (simpleMode || !(a.layers && a.layers.length)) && layerVisible(a) && phaseVisible(a)); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung (Schicht-Wände zeichnen sich selbst; im Einfach-Modus alle schwarz)
+  if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall' && (wallSimple(a) || !(a.layers && a.layers.length)) && layerVisible(a) && phaseVisible(a)); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung (Schicht-Wände zeichnen sich selbst; einfach = schwarz)
   for (const a of getAnnos(pv.num)) { if (!layerVisible(a) || !phaseVisible(a)) continue; drawOne(svg, a, pv); }
   _wallUnionActive = false;
   if (sel && sel.num === pv.num) drawSelection(svg, findAnno(pv.num, sel.id), pv);
@@ -1059,7 +1060,7 @@ function drawOne(svg, a, pv) {
     const d = arcPath(a);
     el = svgEl('path', { d, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'data-id': a.id }); const ds = dashSvg(a); if (ds) el.setAttribute('stroke-dasharray', ds); svg.appendChild(el);
     hit = svgEl('path', { d, fill: 'none', stroke: 'transparent', 'stroke-width': Math.max(12, (a.width || 2) + 10), 'data-id': a.id }); svg.appendChild(hit);
-  } else if (a.type === 'wall' && a.layers && a.layers.length && !simpleMode) {   // mehrschichtiger Aufbau (im Einfach-Modus → schwarze Union)
+  } else if (a.type === 'wall' && a.layers && a.layers.length && !wallSimple(a)) {   // mehrschichtiger Aufbau (einfach → schwarze Union)
     const arr = getAnnos(pv.num);
     drawLayeredWall(svg, a, arr);
     if (a.dim) { const dg = wallDimGeom(a); if (wallHasOpenings(a, arr)) renderWallDimPrims(svg, wallDimChainPrims(a, arr, dg.off), "#1c242c"); else archDim(svg, [a.x1, a.y1], [a.x2, a.y2], dg.off, "#1c242c", dg.label); }
@@ -1069,7 +1070,7 @@ function drawOne(svg, a, pv) {
     const g = svgEl('g', { 'data-id': a.id });
     if (!_wallUnionActive && a.fill && a.fill !== 'none') g.appendChild(svgEl('polygon', { points: pstr, fill: a.fill, stroke: 'none' }));   // Füllung (wenn keine Union)
     svg.appendChild(g); el = g;
-    if (a.hatch && a.hatch.type && !simpleMode) appendHatch(svg, a, arr);                                            // Schraffur (im Einfach-Modus weg → schwarze Wand)
+    if (a.hatch && a.hatch.type && !wallSimple(a)) appendHatch(svg, a, arr);                                          // Schraffur (einfach → weg, schwarze Wand)
     const col = a.color || '#1c242c', lw = a.width || 1.4;
     if (!_wallUnionActive) for (const [p, q] of wallOutlineSegs(a, arr)) svg.appendChild(svgEl('line', { x1: p[0], y1: p[1], x2: q[0], y2: q[1], stroke: col, 'stroke-width': lw, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));   // Umriss nur ohne Union (sonst macht die Union die sauberen Ecken)
     if (a.dim) { const dg = wallDimGeom(a); if (wallHasOpenings(a, arr)) renderWallDimPrims(svg, wallDimChainPrims(a, arr, dg.off), "#1c242c"); else archDim(svg, [a.x1, a.y1], [a.x2, a.y2], dg.off, "#1c242c", dg.label); }   // Architektur-Masslinie – immer schwarz
@@ -1570,13 +1571,13 @@ function loadPolyClip() { if (window.polygonClipping) return; loadScript('https:
 function drawWallUnion(svg, walls) {   // Wandflächen vereinigen → saubere Gehrungs-Ecken; je Material (Farbe+Füllung) eine Gruppe
   try {
     const groups = {};
-    for (const w of walls) { const k = simpleMode ? 'X' : ((w.color || '#1c242c') + '|' + (w.fill || '#ffffff')); (groups[k] || (groups[k] = [])).push(w); }
+    for (const w of walls) { const k = wallSimple(w) ? 'BLACK' : ((w.color || '#1c242c') + '|' + (w.fill || '#ffffff')); (groups[k] || (groups[k] = [])).push(w); }
     let any = false;
     for (const k in groups) {
-      const grp = groups[k], polys = grp.map(w => [wallPoly(w, walls).map(p => [p[0], p[1]])]);   // Gehrung gegen ALLE Wände
+      const grp = groups[k], blk = k === 'BLACK', polys = grp.map(w => [wallPoly(w, walls).map(p => [p[0], p[1]])]);   // Gehrung gegen ALLE Wände
       const uni = polygonClipping.union(...polys);
       if (!uni || !uni.length) continue;
-      const col = simpleMode ? '#1c242c' : (grp[0].color || '#1c242c'), fill = simpleMode ? '#1c242c' : (grp[0].fill || '#ffffff'), lw = grp[0].width || 1.4;
+      const col = blk ? '#1c242c' : (grp[0].color || '#1c242c'), fill = blk ? '#1c242c' : (grp[0].fill || '#ffffff'), lw = grp[0].width || 1.4;
       for (const poly of uni) {
         let d = '';
         for (const ring of poly) { if (!ring.length) continue; d += 'M' + ring.map(p => p[0].toFixed(2) + ' ' + p[1].toFixed(2)).join(' L ') + ' Z'; }
@@ -2036,6 +2037,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     const ht = sW ? (sW.hatch && sW.hatch.type) : (wallHatch && wallHatch.type); $('#pbHatch').value = ht || '';
     const col = sW ? sW.color : style.color; $('#pbWallDot').style.background = col; $('#pbWallColor').value = toHex(col);
     if (document.activeElement !== $('#pbWallH')) $('#pbWallH').value = sW ? (sW.h3d || wallHeightM) : wallHeightM;
+    $('#pbWallDisp').value = sW ? (sW.simple === true ? 'simple' : sW.simple === false ? 'detail' : 'auto') : 'auto';
   } else if (mode === 'open') {
     const kind = sO ? sO.kind : openKind;
     $$('#pbOpen [data-ok]').forEach(b => b.classList.toggle('on', b.dataset.ok === kind));
@@ -2344,7 +2346,7 @@ function openingRevealStrips(a, arr) {   // Schichteinzug: innerste/äusserste S
   }
   return strips;
 }
-function openingDetail(a, arr) { const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall'); return !simpleMode && !!(wall && wall.layers && wall.layers.length); }
+function openingDetail(a, arr) { const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall'); return !!(wall && !wallSimple(wall) && wall.layers && wall.layers.length); }
 function drawOpening(svg, a, arr) {
   const detail = openingDetail(a, arr), P = openingParts(a, detail), col = a.color || '#1c242c';
   const g = svgEl('g', { 'data-id': a.id });
@@ -3172,14 +3174,14 @@ async function buildPdfBytes(visibleOnly) {
       if (cropT) pg.pushOperators(pushGraphicsState(), concatTransformationMatrix(1, 0, 0, 1, cb.x, cb.y));   // Ursprung in die CropBox-Ecke
       let wallUni = false;
       if (window.polygonClipping) {   // Wandflächen vereinigen → saubere Ecken auch im PDF
-        const walls = (annos[n] || []).filter(a => a.type === 'wall' && !a._draft && (simpleMode || !(a.layers && a.layers.length)) && phaseVisible(a) && (!visibleOnly || layerVisible(a)));
+        const walls = (annos[n] || []).filter(a => a.type === 'wall' && !a._draft && (wallSimple(a) || !(a.layers && a.layers.length)) && phaseVisible(a) && (!visibleOnly || layerVisible(a)));
         if (walls.length) try {
           const groups = {};
-          for (const w of walls) { const k = simpleMode ? 'X' : ((w.color || '#1c242c') + '|' + (w.fill || '#ffffff')); (groups[k] || (groups[k] = [])).push(w); }
+          for (const w of walls) { const k = wallSimple(w) ? 'BLACK' : ((w.color || '#1c242c') + '|' + (w.fill || '#ffffff')); (groups[k] || (groups[k] = [])).push(w); }
           for (const k in groups) {
-            const grp = groups[k], uni = polygonClipping.union(...grp.map(w => [wallPoly(w, walls).map(p => [p[0], p[1]])]));
+            const grp = groups[k], blk = k === 'BLACK', uni = polygonClipping.union(...grp.map(w => [wallPoly(w, walls).map(p => [p[0], p[1]])]));
             if (!uni || !uni.length) continue; wallUni = true;
-            const wc = hexToRgb(simpleMode ? '#1c242c' : (grp[0].color || '#1c242c')), fc = hexToRgb(simpleMode ? '#1c242c' : (grp[0].fill || '#ffffff')), lw = grp[0].width || 1.4;
+            const wc = hexToRgb(blk ? '#1c242c' : (grp[0].color || '#1c242c')), fc = hexToRgb(blk ? '#1c242c' : (grp[0].fill || '#ffffff')), lw = grp[0].width || 1.4;
             for (const poly of uni) { let d = ''; for (const ring of poly) { if (!ring.length) continue; d += 'M' + ring.map(p => p[0] + ' ' + p[1]).join(' L ') + ' Z'; } if (d) pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b), borderColor: rgb(wc.r, wc.g, wc.b), borderWidth: lw }); }
           }
         } catch (_) { wallUni = false; }
@@ -3211,7 +3213,7 @@ async function buildPdfBytes(visibleOnly) {
             pg.drawText(lab, { x: mx - lab.length * 3, y: Y(my) + 6, size: 11, font, color: c });
           }
         }
-        else if (a.type === 'wall' && a.layers && a.layers.length && !simpleMode) {   // mehrschichtiger Aufbau im PDF
+        else if (a.type === 'wall' && a.layers && a.layers.length && !wallSimple(a)) {   // mehrschichtiger Aufbau im PDF
           const arr = annos[n] || [], { bands, c1A, c2A, c2B, c1B } = wallLayerBands(a, arr), lp = (p, q, f) => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
           const polyD = pts => 'M' + pts.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z';
           for (const b of bands) {
@@ -3342,7 +3344,7 @@ async function buildPdfBytes(visibleOnly) {
         else if (a.type === 'img' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, opacity: a.opacity != null ? a.opacity : 1 }); }
         else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); if (a.caption) { const fs = Math.max(7, Math.min(11, a.h * 0.16)), cy = a.y + a.h + 2; pg.drawLine({ start: { x: a.x, y: Y(cy) }, end: { x: a.x + a.w, y: Y(cy) }, thickness: 0.7, color: rgb(.11, .14, .17) }); pg.drawText(a.caption, { x: a.x, y: Y(cy + fs + 1), size: fs, font, color: rgb(.11, .14, .17) }); } }
         // Schraffur (geclippt auf die Form)
-        if ((a.type === 'rect' || a.type === 'oval' || a.type === 'path' || a.type === 'wall') && a.hatch && a.hatch.type && !(simpleMode && a.type === 'wall') && moveTo && clip) {
+        if ((a.type === 'rect' || a.type === 'oval' || a.type === 'path' || a.type === 'wall') && a.hatch && a.hatch.type && !(a.type === 'wall' && wallSimple(a)) && moveTo && clip) {
           try {
             const ops = [pushGraphicsState()];
             if (a.type === 'wall') { const poly = wallClipPoly(a); ops.push(moveTo(poly[0][0], Y(poly[0][1]))); for (let i = 1; i < 4; i++) ops.push(lineTo(poly[i][0], Y(poly[i][1]))); ops.push(closePath()); }
@@ -3928,6 +3930,7 @@ function wire() {
   $$('#pbWall .pb-j').forEach(b => b.onclick = () => { wallJust = b.dataset.just; const a = selWall(); if (a) { pushUndo(); a.just = wallJust; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
   $('#pbDimOff').onchange = () => { const v = parseFloat(($('#pbDimOff').value || '').replace(',', '.')); if (v >= 0) { wallDimOffCm = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbDimGap').onchange = () => { const v = parseFloat(($('#pbDimGap').value || '').replace(',', '.')); if (v >= 0) { wallDimGap = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbWallDisp').onchange = () => { const v = $('#pbWallDisp').value, a = selWall(); if (!a) return; pushUndo(); if (v === 'simple') a.simple = true; else if (v === 'detail') a.simple = false; else delete a.simple; pageViews.forEach(drawAnnos); saveState(); };
   $('#pbHatch').onchange = () => { const t = $('#pbHatch').value, d = HATCH_DEF[t] || {}; wallHatch = t ? { type: t, scale: lastHatchScale, w: 0.8, color: d.color || style.color, fill: d.fill || null } : null; const a = selWall(); if (a) { pushUndo(); applyMaterial(a, t); pageViews.forEach(drawAnnos); saveState(); } };
   $('#foot3d').onclick = open3D;
   let planKind = 'kopf', planPos = 'br';

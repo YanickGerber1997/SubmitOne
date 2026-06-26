@@ -1683,7 +1683,7 @@ let wallDraft = null;   // {pv, last:[x,y], seg, _onMove, _rel}
 function startWallChain(pv, x, y) {
   pushUndo();
   const seg = { id: nextId++, type: 'wall', x1: x, y1: y, x2: x, y2: y, thick: wallThickPts(), color: style.color, fill: '#ffffff', hatch: null, width: 1.4, dim: wallDimOn, _draft: true };
-  getAnnos(pv.num).push(seg); wallDraft = { pv, last: [x, y], seg, pts: [[x, y]] };
+  getAnnos(pv.num).push(seg); wallDraft = { pv, last: [x, y], seg, pts: [[x, y]], segIds: [] };
   const onMove = ev => {
     if (!wallDraft) return; const s = wallDraft.seg; let q = evtToPage(pv, ev), snapped = null, rel = null;
     if (!ev.shiftKey) { const an = anchorSnap(pv, q.x, q.y, s.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
@@ -1698,7 +1698,7 @@ function startWallChain(pv, x, y) {
 function wallChainClick(pv, p) {
   if (!wallDraft) return; const s = wallDraft.seg, ex = s.x2, ey = s.y2;   // Vorschau-Endpunkt (bereits gesnappt) übernehmen
   if (Math.hypot(ex - s.x1, ey - s.y1) < 2) return;                       // zu kurz – ignorieren
-  delete s._draft; lastLine = { num: pv.num, id: s.id }; wallDraft.pts.push([ex, ey]);
+  delete s._draft; lastLine = { num: pv.num, id: s.id }; wallDraft.pts.push([ex, ey]); wallDraft.segIds.push(s.id);
   pushUndo();
   const first = wallDraft.pts[0], closed = wallDraft.pts.length >= 4 && Math.hypot(ex - first[0], ey - first[1]) < (s.thick * 0.7 + 5);   // Zug geschlossen?
   if (closed) { addRoomArea(pv, wallDraft.pts.slice(0, -1), s.thick); finishWallChain(); return; }
@@ -1719,8 +1719,15 @@ function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte F
 function addRoomArea(pv, pts, thick) {   // geschlossener Wandzug → lichte Raumfläche (m²)
   if (pts.length < 3) return;
   let poly = pts.map(p => [p[0], p[1]]); const inner = insetPolygon(poly, (thick || wallThickPts()) / 2); if (inner) poly = inner;
-  getAnnos(pv.num).push({ id: nextId++, type: 'area', pts: poly, color: '#4f7a3c', width: 0, room: true });
+  getAnnos(pv.num).unshift({ id: nextId++, type: 'area', pts: poly, color: '#4f7a3c', width: 0, room: true });   // hinter die Wände
   toast('Raumfläche (lichte) ergänzt ✓');
+}
+function wallChainUndo() {   // Rücktaste: letzte gesetzte Wand zurücknehmen
+  if (!wallDraft) return; const { pv, seg, segIds } = wallDraft;
+  if (!segIds || !segIds.length) { finishWallChain(); return; }   // nichts gesetzt → Kette beenden
+  const arr = getAnnos(pv.num), lastId = segIds.pop(); const i = arr.findIndex(x => x.id === lastId); if (i >= 0) arr.splice(i, 1);
+  wallDraft.pts.pop(); const np = wallDraft.pts[wallDraft.pts.length - 1]; wallDraft.last = np; seg.x1 = np[0]; seg.y1 = np[1];
+  drawAnnos(pv);
 }
 function finishWallChain() {
   if (!wallDraft) return; const { pv, seg, _onMove } = wallDraft; document.removeEventListener('pointermove', _onMove);
@@ -2238,8 +2245,8 @@ function setTool(t) {
   if (t === 'measure' && !docScale && !setTool._measHint) { setTool._measHint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n).'); }
   if (t === 'curve' && !setTool._curveHint) { setTool._curveHint = true; toast('Kurve: Klick = Ecke (gerade) · Klick+Ziehen = Kurve · Enter/Doppelklick = fertig · Esc = abbrechen'); }
   if (['pen', 'line', 'arrow', 'rect', 'oval', 'arc'].includes(t) && !setTool._drawHint) { setTool._drawHint = true; toast('Werkzeug bleibt aktiv – einfach weiterzeichnen. V oder Esc = auswählen/bearbeiten.'); }
-  if (t === 'chaindim' && !setTool._cdimHint) { setTool._cdimHint = true; toast('Kettenmass: Stationen nacheinander klicken (rastet an Ecken/Enden ein) · je Abschnitt ein Mass + Gesamtmass · Doppelklick/Enter = fertig.'); }
-  if (t === 'wall' && !setTool._wallHint) { setTool._wallHint = true; toast('Wand: klicken–klicken = Raumzug · zurück auf den Startpunkt klicken = Raum schliessen (m² wird ergänzt) · ziehen = einzelne Wand · D = Dicke, L = Länge.'); }
+  if (t === 'chaindim' && !setTool._cdimHint) { setTool._cdimHint = true; toast('Kettenmass: Stationen klicken (rastet an Ecken/Enden ein) · je Abschnitt ein Mass + Gesamt · Rücktaste = letzte Station zurück · Doppelklick/Enter = fertig.'); }
+  if (t === 'wall' && !setTool._wallHint) { setTool._wallHint = true; toast('Wand: klicken–klicken = Raumzug · zurück auf Start = Raum schliessen (m²) · Rücktaste = letzte Wand zurück · ziehen = einzelne Wand · D = Dicke, L = Länge.'); }
 }
 function applyToolCursor() {
   pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'chaindim'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
@@ -2980,6 +2987,12 @@ function wire() {
     if (e.key === 'Enter' && penDraft) { e.preventDefault(); finishCurve(); return; }   // Kurve abschliessen
     if (e.key === 'Enter' && wallDraft) { e.preventDefault(); finishWallChain(); return; }   // Wand-Kette abschliessen
     if (e.key === 'Enter' && cdimDraft) { e.preventDefault(); finishChaindim(); return; }   // Kettenmass abschliessen
+    if (e.key === 'Backspace' || e.key === 'Delete') {   // im Zeichnen: letzten Punkt zurücknehmen
+      if (wallDraft) { e.preventDefault(); wallChainUndo(); return; }
+      if (cdimDraft) { e.preventDefault(); if (cdimDraft.a.pts.length > 1) { cdimDraft.a.pts.pop(); drawAnnos(cdimDraft.pv); } else cancelChaindim(); return; }
+      if (areaDraft) { e.preventDefault(); if (areaDraft.a.pts.length > 1) { areaDraft.a.pts.pop(); drawAnnos(areaDraft.pv); } else cancelArea(); return; }
+      if (penDraft) { e.preventDefault(); if (penDraft.a.nodes.length > 1) { penDraft.a.nodes.pop(); drawAnnos(penDraft.pv); } else cancelCurve(); return; }
+    }
     if (e.key === ' ' && !mod) { if (active >= 0 && !panMode) { e.preventDefault(); panMode = true; document.body.classList.add('pan'); } return; }   // Leertaste = Hand
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openPicker(); }
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }

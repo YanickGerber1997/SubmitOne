@@ -2346,7 +2346,19 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
   return { cover, lines, arcs, bold, fills };
 }
 const REVEAL_MAT = { putz: { fill: '#ededed', color: '#9a9a9a' }, beton: { fill: '#dcecdf', color: '#2f7d4f' }, stahl: { fill: '#c9ccd1', color: '#565b62' }, holz: { fill: '#eedcc8', color: '#7a5126' } };   // Laibungs-Element: Putz/Betonelement/Stahlzarge/Holzzarge
-function openingRevealStrips(a, arr) {   // Laibung: Dämmung zum Rahmen reingezogen + innen Putz/Brett + Laibungs-Element vorne am Rahmen
+function bandHatch(sa, sb, ma, mb, corner, hw, ht) {   // diagonale Schraffur (≈45°) in einem Parameter-Rechteck s∈[sa,sb], m∈[ma,mb]
+  const out = [], sLo = Math.min(sa, sb), sHi = Math.max(sa, sb), mLo = Math.min(ma, mb), mHi = Math.max(ma, mb), dm = mHi - mLo, dsE = dm * ht / hw;
+  if (dsE <= 1e-6 || sHi - sLo < 1e-4) return out;
+  const step = Math.max(dsE * 0.85, 0.015);
+  for (let s = sLo - dsE; s < sHi; s += step) {
+    let aS = s, aM = mLo, bS = s + dsE, bM = mHi;
+    if (aS < sLo) { const f = (sLo - aS) / (bS - aS); aS = sLo; aM = mLo + dm * f; }
+    if (bS > sHi) { const f = (sHi - aS) / (bS - aS); bS = sHi; bM = aM + (bM - aM) * f; }
+    if (bS > aS + 1e-6) out.push([corner(aS, aM), corner(bS, bM)]);
+  }
+  return out;
+}
+function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → Schalung 1,5 cm (Schraffur) → Rest Dämmung bis Rahmen; innen Putz/Brett
   const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall');
   if (!wall || !wall.layers || wall.layers.length < 2 || a.kind !== 'window') return [];
   const x = a.x, y = a.y, ang = a.ang, ht = (a.thick || wallThickPts()) / 2, hw = a.w / 2;
@@ -2354,15 +2366,22 @@ function openingRevealStrips(a, arr) {   // Laibung: Dämmung zum Rahmen reingez
   const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
   const fmh = Math.min(0.48, (a.frameD || cmToPts(7)) / (2 * ht)); let fmA = md - fmh, fmB = md + fmh;   // fmB=aussen, fmA=innen
   if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }
-  const gapM = cmToPts(0.5) / ht, CORE = ['mauerwerk', 'beton'];
-  const strips = [], total = wall.layers.reduce((s, l) => s + l.t, 0) || 1;
+  const gapM = cmToPts(0.5) / ht, CORE = ['mauerwerk', 'beton'], INS = ['eps', 'glaswolle', 'daemm_holz', 'daemm_wolle', 'daemm_eps', 'daemm_xps'];
+  const strips = [];
   let coreIdx = wall.layers.findIndex(l => CORE.includes(l.mat)); if (coreIdx < 0) coreIdx = Math.floor((wall.layers.length - 1) / 2);
-  // Schichteinzug: jede Schicht innerhalb/ausserhalb des Tragkerns läuft als Brett um die Ecke bis zum Rahmen, gestaffelt am Jamb
-  const strip = (mat, mFrom, mTo, sOff, sw) => { const m = WALL_MATS[mat] || {}; if (Math.abs(mTo - mFrom) < 0.02 || sw < 0.004) return; for (const sgn of [-1, 1]) { const s0 = sgn * (1 - sOff), s1 = sgn * (1 - sOff - sw); strips.push({ poly: [corner(s0, mFrom), corner(s1, mFrom), corner(s1, mTo), corner(s0, mTo)], fill: m.fill || '#fff', stroke: m.color || '#1c242c' }); } };
-  let sIn = 0; for (let i = 0; i < coreIdx && sIn < 0.6; i++) { const l = wall.layers[i], sw = Math.min(0.5, l.t / hw); strip(l.mat, -1, fmA - gapM, sIn, sw); sIn += sw; }   // innen → Rahmen-Innenkante
-  let sOut = 0; for (let i = wall.layers.length - 1; i > coreIdx && sOut < 0.6; i--) { const l = wall.layers[i], sw = Math.min(0.5, l.t / hw); if (l.mat !== 'luft') strip(l.mat, fmB + gapM, 1, sOut, sw); sOut += sw; }   // aussen: Dämmung + Schalung (um die Ecke nach hinten); Hinterlüftung bleibt offen (nicht gefüllt)
-  const rt = a.revealType || 'putz', rm = REVEAL_MAT[rt];                                 // Laibungs-Element vorne am Rahmen
-  if (rm) { const dM = Math.min(0.4, cmToPts(rt === 'stahl' ? 0.4 : rt === 'putz' ? 1.5 : 3) / ht), sW = Math.min(0.5, (a.outerLap != null ? a.outerLap : cmToPts(3)) / hw); for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + sW : 1 - sW; strips.push({ poly: [corner(s0, fmB), corner(s1, fmB), corner(s1, fmB + dM), corner(s0, fmB + dM)], fill: rm.fill, stroke: rm.color }); } }
+  const l0 = wall.layers[0], mI = WALL_MATS[l0.mat] || {}, twI = Math.min(0.45, l0.t / hw);   // innen: Putz/Brett als dünner Streifen bis Rahmen-Innenkante
+  if (Math.abs((fmA - gapM) + 1) > 0.02) for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + twI : 1 - twI; strips.push({ poly: [corner(s0, -1), corner(s1, -1), corner(s1, fmA - gapM), corner(s0, fmA - gapM)], fill: mI.fill || '#fff', stroke: mI.color || '#1c242c' }); }
+  const outer = []; for (let i = wall.layers.length - 1; i > coreIdx; i--) if (wall.layers[i].mat !== 'luft') outer.push(wall.layers[i]);   // aussen, ohne Hinterlüftung
+  if (outer.length) {   // 1,5 cm Rahmen sichtbar → Schalung 1,5 cm (Schraffur) → Rest Dämmung bis Rahmen
+    const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), visS = Math.min(fwSr * 0.6, cmToPts(1.5) / hw), schT = Math.min(Math.max(0.04, (1 - (fmB + gapM)) * 0.5), cmToPts(1.5) / ht);
+    const schal = outer[0], daemm = outer.find(l => INS.includes(l.mat)) || outer[outer.length - 1], rt = a.revealType || 'putz';
+    const revM = rt === 'beton' ? REVEAL_MAT.beton : rt === 'stahl' ? REVEAL_MAT.stahl : rt === 'holz' ? REVEAL_MAT.holz : (WALL_MATS[schal.mat] || {}), dM = WALL_MATS[daemm.mat] || {}, doHatch = rt === 'putz' || rt === 'holz';
+    for (const sgn of [-1, 1]) {
+      const s0 = sgn, s1 = sgn * (1 - fwSr + visS);
+      strips.push({ poly: [corner(s0, fmB + gapM), corner(s1, fmB + gapM), corner(s1, 1 - schT), corner(s0, 1 - schT)], fill: dM.fill || '#fff', stroke: dM.color || '#1c242c' });   // Dämmung Rest
+      strips.push({ poly: [corner(s0, 1 - schT), corner(s1, 1 - schT), corner(s1, 1), corner(s0, 1)], fill: revM.fill || '#fff', stroke: revM.color || '#1c242c', hatch: doHatch ? bandHatch(s0, s1, 1 - schT, 1, corner, hw, ht) : null });   // Schalung 1,5 cm
+    }
+  }
   return strips;
 }
 function openingLichtW(o) {   // Rohbau-, Aussenlicht-, Innenlichtmass (Fenster)
@@ -2374,7 +2393,7 @@ function drawOpening(svg, a, arr) {
   const detail = openingDetail(a, arr), P = openingParts(a, detail), col = a.color || '#1c242c';
   const g = svgEl('g', { 'data-id': a.id });
   g.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: '#fff', stroke: 'none' }));   // Wand ausstanzen
-  if (detail) for (const st of openingRevealStrips(a, arr)) g.appendChild(svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' }));   // Schichteinzug
+  if (detail) for (const st of openingRevealStrips(a, arr)) { g.appendChild(svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); if (st.hatch) for (const [u, v] of st.hatch) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.6, 'vector-effect': 'non-scaling-stroke' })); }   // Schichteinzug + Schalungs-Schraffur
   for (const f of (P.fills || [])) g.appendChild(svgEl('polygon', { points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: f.fill, stroke: f.stroke, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));   // Rahmen/Flügel/Glas (Fenstermaterial)
   for (const [u, v] of P.lines) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
   for (const [u, v] of (P.bold || [])) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 2.6, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
@@ -3311,7 +3330,7 @@ async function buildPdfBytes(visibleOnly) {
         else if (a.type === 'opening') {
           const oDetail = openingDetail(a, annos[n] || []), P = openingParts(a, oDetail), d = 'M' + P.cover.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z';
           try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(1, 1, 1) }); } catch (_) { }   // Wand ausstanzen
-          if (oDetail) for (const st of openingRevealStrips(a, annos[n] || [])) { const sf = hexToRgb(st.fill), ss = hexToRgb(st.stroke), sd = 'M' + st.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(sd, { x: 0, y: PH, color: rgb(sf.r, sf.g, sf.b), borderColor: rgb(ss.r, ss.g, ss.b), borderWidth: 0.7 }); } catch (_) { } }   // Schichteinzug
+          if (oDetail) for (const st of openingRevealStrips(a, annos[n] || [])) { const sf = hexToRgb(st.fill), ss = hexToRgb(st.stroke), sd = 'M' + st.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(sd, { x: 0, y: PH, color: rgb(sf.r, sf.g, sf.b), borderColor: rgb(ss.r, ss.g, ss.b), borderWidth: 0.7 }); } catch (_) { } if (st.hatch) for (const [u, v] of st.hatch) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 0.6, color: rgb(ss.r, ss.g, ss.b) }); }   // Schichteinzug + Schraffur
           for (const f of (P.fills || [])) { const ff = hexToRgb(f.fill), fs = hexToRgb(f.stroke), fd = 'M' + f.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(fd, { x: 0, y: PH, color: rgb(ff.r, ff.g, ff.b), borderColor: rgb(fs.r, fs.g, fs.b), borderWidth: 1 }); } catch (_) { } }   // Rahmen/Flügel/Glas
           for (const [u, v] of P.lines) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 1.4, color: c });
           for (const [u, v] of (P.bold || [])) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 2.6, color: c });

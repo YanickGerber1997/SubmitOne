@@ -1201,7 +1201,7 @@ function drawOne(svg, a, pv) {
     }
     hit = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'opening') {
-    el = drawOpening(svg, a);
+    el = drawOpening(svg, a, getAnnos(pv.num));
   } else if (a.type === 'chaindim') {
     el = drawChainDim(svg, a, pv);
   } else if (a.type === 'dim') {
@@ -2264,10 +2264,27 @@ function openingParts(a) {   // Geometrie: Ausstanz-Rechteck (cover), Linien (La
   else { const hS = a.hinge || 1, sN = a.swing || 1, hp = [x - ux * hw * hS, y - uy * hw * hS], tip = [hp[0] + nx * a.w * sN, hp[1] + ny * a.w * sN], closed = [x + ux * hw * hS, y + uy * hw * hS]; lines.push([hp, tip]); arcs.push({ cx: hp[0], cy: hp[1], r: a.w, from: tip, to: closed }); }
   return { cover, lines, arcs };
 }
-function drawOpening(svg, a) {
+function openingRevealStrips(a, arr) {   // Schichteinzug: innerste/äusserste Schicht zieht in die Laibung bis zum Fensterrahmen
+  const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall');
+  if (!wall || !wall.layers || wall.layers.length < 2) return [];
+  const x = a.x, y = a.y, ang = a.ang, ht = (a.thick || wallThickPts()) / 2, hw = a.w / 2;
+  const ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux, corner = (s, m) => [x + ux * hw * s + nx * ht * m, y + uy * hw * s + ny * ht * m];
+  const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
+  const total = wall.layers.reduce((s, l) => s + l.t, 0) || 1, fAt = []; let cum = 0;
+  for (const l of wall.layers) { fAt.push([cum / total, (cum + l.t) / total]); cum += l.t; }
+  const strips = [], FINISH = ['putz', 'gips', 'holz', 'konter'];
+  for (const idx of [...new Set([0, wall.layers.length - 1])]) {
+    const L = wall.layers[idx]; if (!FINISH.includes(L.mat)) continue;
+    const mt = WALL_MATS[L.mat] || {}, faceM = idx === 0 ? -1 : 1, tw = Math.min(0.9, L.t / hw);
+    for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + tw : 1 - tw; strips.push({ poly: [corner(s0, faceM), corner(s1, faceM), corner(s1, md), corner(s0, md)], fill: mt.fill || '#fff', stroke: mt.color || '#1c242c' }); }
+  }
+  return strips;
+}
+function drawOpening(svg, a, arr) {
   const P = openingParts(a), col = a.color || '#1c242c';
   const g = svgEl('g', { 'data-id': a.id });
   g.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: '#fff', stroke: 'none' }));   // Wand ausstanzen
+  for (const st of openingRevealStrips(a, arr)) g.appendChild(svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' }));   // Schichteinzug
   for (const [u, v] of P.lines) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
   for (const arc of P.arcs) g.appendChild(svgEl('polyline', { points: arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 18).map(p => p[0] + ',' + p[1]).join(' '), fill: 'none', stroke: col, 'stroke-width': 0.8, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke' }));
   svg.appendChild(g);
@@ -3099,6 +3116,7 @@ async function buildPdfBytes(visibleOnly) {
         else if (a.type === 'opening') {
           const P = openingParts(a), d = 'M' + P.cover.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z';
           try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(1, 1, 1) }); } catch (_) { }   // Wand ausstanzen
+          for (const st of openingRevealStrips(a, annos[n] || [])) { const sf = hexToRgb(st.fill), ss = hexToRgb(st.stroke), sd = 'M' + st.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(sd, { x: 0, y: PH, color: rgb(sf.r, sf.g, sf.b), borderColor: rgb(ss.r, ss.g, ss.b), borderWidth: 0.7 }); } catch (_) { } }   // Schichteinzug
           for (const [u, v] of P.lines) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 1.4, color: c });
           for (const arc of P.arcs) { const pts = arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 18); for (let i = 1; i < pts.length; i++) pg.drawLine({ start: { x: pts[i - 1][0], y: Y(pts[i - 1][1]) }, end: { x: pts[i][0], y: Y(pts[i][1]) }, thickness: 0.8, color: c }); }
         }

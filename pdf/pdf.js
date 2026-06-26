@@ -1637,9 +1637,9 @@ function wallDimChainPrims(a, arr, off) {   // Maßkette die auf Öffnungen reag
   const wall = a;
   for (let i = 0; i < stn.length - 1; i++) {
     const s0 = stn[i], s1 = stn[i + 1], mid = (s0 + s1) / 2, segLen = s1 - s0, op = ops.find(o => Math.abs(mid - o.c) < o.hw - 0.5);
-    if (op) { const roh = fmtLen(op.w), fin = openingClearW(op.o, wall), fert = fin != null ? fmtLen(fin) : null;
-      prims.push({ t: 'text', p: P(mid, off + side * 7), text: roh, ang, bold: true });
-      if (fert && fert !== roh) prims.push({ t: 'text', p: P(mid, off + side * 19), text: '(' + fert + ')', ang, small: true });
+    if (op) { const lw = openingLichtW(op.o);
+      prims.push({ t: 'text', p: P(mid, off + side * 7), text: fmtLen(lw.roh), ang, bold: true });
+      if (lw.aussen != null) prims.push({ t: 'text', p: P(mid, off + side * 19), text: 'a ' + fmtLen(lw.aussen) + ' · i ' + fmtLen(lw.innen), ang, small: true });
     } else if (segLen > 3) prims.push({ t: 'text', p: P(mid, off + side * 7), text: fmtLen(segLen), ang });
   }
   return prims;
@@ -2053,6 +2053,8 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     $('#pbWinType').style.display = kind === 'window' ? '' : 'none'; $('#pbWinType').value = (sO && sO.winType) || lastWinType;
     $('#pbWinHinge').style.display = kind === 'window' ? '' : 'none'; $('#pbWinHinge').value = (sO && sO.winHinge) || lastWinHinge;
     $('#pbFrameWrap').style.display = kind === 'window' ? '' : 'none'; if (document.activeElement !== $('#pbFrameW')) $('#pbFrameW').value = Math.round(ptsToCm(sO && sO.frameW ? sO.frameW : cmToPts(6)) * 10) / 10;
+    $('#pbOuterWrap').style.display = kind === 'window' ? '' : 'none'; if (document.activeElement !== $('#pbOuterLap')) $('#pbOuterLap').value = Math.round(ptsToCm(sO && sO.outerLap != null ? sO.outerLap : cmToPts(3)) * 10) / 10;
+    $('#pbInnerWrap').style.display = kind === 'window' ? '' : 'none'; if (document.activeElement !== $('#pbInnerRev')) $('#pbInnerRev').value = Math.round(ptsToCm(sO && sO.innerReveal != null ? sO.innerReveal : cmToPts(2)) * 10) / 10;
     $('#pbFlip').style.display = kind === 'door' ? '' : 'none';
   }
 }
@@ -2347,7 +2349,17 @@ function openingRevealStrips(a, arr) {   // Schichteinzug: innerste/äusserste S
     if (Math.abs(target - faceM) < 0.04) continue;   // kein/zu kleiner Einzug
     for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + tw : 1 - tw; strips.push({ poly: [corner(s0, faceM), corner(s1, faceM), corner(s1, target), corner(s0, target)], fill: mt.fill || '#fff', stroke: mt.color || '#1c242c' }); }
   }
+  if (isWin) {   // Lappung über den Rahmen: aussen Dämmung/Schalung, innen Putz-Laibung
+    const lapT = Math.min(fmh * 0.9, cmToPts(2) / ht), l0 = wall.layers[0], lN = wall.layers[wall.layers.length - 1];
+    const innerS = Math.min(0.85, (a.innerReveal || cmToPts(2)) / hw), outerS = Math.min(0.85, (a.outerLap || cmToPts(3)) / hw);
+    if (innerS > 0.01 && FINISH.includes(l0.mat)) { const m = WALL_MATS[l0.mat] || {}; for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + innerS : 1 - innerS; strips.push({ poly: [corner(s0, fmA), corner(s1, fmA), corner(s1, fmA + lapT), corner(s0, fmA + lapT)], fill: m.fill || '#fff', stroke: m.color || '#1c242c' }); } }
+    if (outerS > 0.01 && FINISH.includes(lN.mat)) { const m = WALL_MATS[lN.mat] || {}; for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + outerS : 1 - outerS; strips.push({ poly: [corner(s0, fmB), corner(s1, fmB), corner(s1, fmB - lapT), corner(s0, fmB - lapT)], fill: m.fill || '#fff', stroke: m.color || '#1c242c' }); } }
+  }
   return strips;
+}
+function openingLichtW(o) {   // Rohbau-, Aussenlicht-, Innenlichtmass (Fenster)
+  const roh = o.w; if (o.kind !== 'window') return { roh };
+  return { roh, aussen: roh - 2 * (o.outerLap || cmToPts(3)), innen: roh - 2 * (o.innerReveal || cmToPts(2)) };
 }
 function openingDetail(a, arr) { const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall'); return !!(wall && !wallSimple(wall) && wall.layers && wall.layers.length); }
 function drawOpening(svg, a, arr) {
@@ -3986,6 +3998,8 @@ function wire() {
   $('#pbWinType').onchange = () => { const v = $('#pbWinType').value; lastWinType = v; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.winType = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbWinHinge').onchange = () => { const v = $('#pbWinHinge').value; lastWinHinge = v; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.winHinge = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbFrameW').onchange = () => { const v = parseFloat(($('#pbFrameW').value || '').replace(',', '.')); if (!(v >= 3)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.frameW = cmToPts(v); a.sashW = cmToPts(Math.max(3, v - 1)); pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbOuterLap').onchange = () => { const v = parseFloat(($('#pbOuterLap').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.outerLap = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbInnerRev').onchange = () => { const v = parseFloat(($('#pbInnerRev').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.innerReveal = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
   $('#btnNew').onclick = () => openSlidePicker('new');

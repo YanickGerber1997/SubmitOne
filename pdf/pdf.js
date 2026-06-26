@@ -950,9 +950,10 @@ function layerHatch(svg, a, band) {   // Schraffur einer einzelnen Schicht, auf 
   const cid = 'hl' + a.id + '_' + Math.round(band.f0 * 1000), cp = svgEl('clipPath', { id: cid }); cp.appendChild(svgEl('polygon', { points: band.poly.map(p => p[0] + ',' + p[1]).join(' ') }));
   const defs = svgEl('defs'); defs.appendChild(cp); svg.appendChild(defs);
   const hg = svgEl('g', { 'clip-path': `url(#${cid})`, 'pointer-events': 'none' }), col = m.color, S = (a.hatch && a.hatch.scale) || lastHatchScale; let lines = [];
-  if (m.hatch === 'daemm_eps' || m.hatch === 'daemm_wolle' || INSUL_TYPES.includes(m.hatch)) {   // Dämmung: Striche quer über die Schichtdicke
-    const o0 = band.poly[3], o1 = band.poly[2], i0 = band.poly[0], i1 = band.poly[1], len = Math.hypot(o1[0] - o0[0], o1[1] - o0[1]) || 1, n = Math.max(1, Math.round(len / Math.max(4, S * 1.3)));
-    for (let k = 0; k <= n; k++) { const f = k / n, A = [o0[0] + (o1[0] - o0[0]) * f, o0[1] + (o1[1] - o0[1]) * f], B = [i0[0] + (i1[0] - i0[0]) * f, i0[1] + (i1[1] - i0[1]) * f]; lines.push([A[0], A[1], B[0], B[1]]); }
+  if (m.hatch === 'daemm_eps' || m.hatch === 'daemm_wolle' || INSUL_TYPES.includes(m.hatch)) {   // Dämmung: Striche exakt 90° zur Wandachse (je Wand für sich), aufs Band geclippt
+    const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, T = a.thick || wallThickPts(), o = wallSideOffsets(a), eB = o[1] * T, eA = o[0] * T;
+    const eFrom = eB + (eA - eB) * band.f0, eTo = eB + (eA - eB) * band.f1, step = Math.max(4, S * 1.3);
+    for (let s = 0; s <= L; s += step) { const px = a.x1 + ux * s, py = a.y1 + uy * s; lines.push([px + nx * eFrom, py + ny * eFrom, px + nx * eTo, py + ny * eTo]); }
   } else {
     const xs = band.poly.map(p => p[0]), ys = band.poly.map(p => p[1]), fake = { type: 'rect', x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), hatch: { type: m.hatch, scale: S } }, g = hatchGeom(fake);
     lines = g.lines; for (const D of g.dots) hg.appendChild(svgEl('circle', { cx: D[0], cy: D[1], r: D[2] != null ? D[2] : S * 0.16, fill: col }));
@@ -2993,9 +2994,10 @@ async function buildPdfBytes(visibleOnly) {
             if (m.hatch && moveTo && clip) { try {
               const ops = [pushGraphicsState(), moveTo(b.poly[0][0], Y(b.poly[0][1]))]; for (let i = 1; i < b.poly.length; i++) ops.push(lineTo(b.poly[i][0], Y(b.poly[i][1]))); ops.push(closePath(), clip(), endPath()); pg.pushOperators(...ops);
               const hc = hexToRgb(m.color), hcc = rgb(hc.r, hc.g, hc.b), S = (a.hatch && a.hatch.scale) || lastHatchScale;
-              if (m.hatch === 'daemm_eps' || m.hatch === 'daemm_wolle' || INSUL_TYPES.includes(m.hatch)) {
-                const o0 = b.poly[3], o1 = b.poly[2], i0 = b.poly[0], i1 = b.poly[1], len = Math.hypot(o1[0] - o0[0], o1[1] - o0[1]) || 1, nn = Math.max(1, Math.round(len / Math.max(4, S * 1.3)));
-                for (let k = 0; k <= nn; k++) { const f = k / nn, A = [o0[0] + (o1[0] - o0[0]) * f, o0[1] + (o1[1] - o0[1]) * f], B = [i0[0] + (i1[0] - i0[0]) * f, i0[1] + (i1[1] - i0[1]) * f]; pg.drawLine({ start: { x: A[0], y: Y(A[1]) }, end: { x: B[0], y: Y(B[1]) }, thickness: 0.8, color: hcc }); }
+              if (m.hatch === 'daemm_eps' || m.hatch === 'daemm_wolle' || INSUL_TYPES.includes(m.hatch)) {   // Striche 90° zur Wandachse
+                const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, T = a.thick || wallThickPts(), o = wallSideOffsets(a), eB = o[1] * T, eA = o[0] * T;
+                const eFrom = eB + (eA - eB) * b.f0, eTo = eB + (eA - eB) * b.f1, step = Math.max(4, S * 1.3);
+                for (let s = 0; s <= L; s += step) { const px = a.x1 + ux * s, py = a.y1 + uy * s; pg.drawLine({ start: { x: px + nx * eFrom, y: Y(py + ny * eFrom) }, end: { x: px + nx * eTo, y: Y(py + ny * eTo) }, thickness: 0.8, color: hcc }); }
               } else { const xs = b.poly.map(p => p[0]), ys = b.poly.map(p => p[1]), g = hatchGeom({ type: 'rect', x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), hatch: { type: m.hatch, scale: S } }); for (const L of g.lines) pg.drawLine({ start: { x: L[0], y: Y(L[1]) }, end: { x: L[2], y: Y(L[3]) }, thickness: 0.8, color: hcc }); for (const D of g.dots) { const dr = D[2] != null ? D[2] : S * 0.16; pg.drawEllipse({ x: D[0], y: Y(D[1]), xScale: dr, yScale: dr, color: hcc }); } }
               pg.pushOperators(popGraphicsState());
             } catch (_) { } }

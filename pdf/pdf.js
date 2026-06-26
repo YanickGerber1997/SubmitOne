@@ -904,8 +904,12 @@ const HATCH_DEF = {   // Material-Schraffuren mit Standardfarbe
 };
 const INSUL_TYPES = ['daemm_holz', 'daemm_wolle', 'daemm_eps', 'daemm_xps'];
 let lastHatchScale = 7;   // gemerkte Schraffur-Dichte (Abstand in pt)
+function wallClipPoly(a) {   // einfaches, nicht-gehrtes Wandrechteck (immer simpel → sicherer Schraffur-Clip)
+  const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, T = a.thick || wallThickPts(), o = wallSideOffsets(a), oA = o[0], oB = o[1];
+  return [[a.x1 + nx * T * oA, a.y1 + ny * T * oA], [a.x2 + nx * T * oA, a.y2 + ny * T * oA], [a.x2 + nx * T * oB, a.y2 + ny * T * oB], [a.x1 + nx * T * oB, a.y1 + ny * T * oB]];
+}
 function shapeOutline(a, arr) {
-  if (a.type === 'wall') return svgEl('polygon', { points: wallPoly(a, arr).map(p => p[0] + ',' + p[1]).join(' ') });
+  if (a.type === 'wall') return svgEl('polygon', { points: wallClipPoly(a).map(p => p[0] + ',' + p[1]).join(' ') });
   if (a.type === 'rect') return svgEl('rect', { x: Math.min(a.x, a.x + a.w), y: Math.min(a.y, a.y + a.h), width: Math.abs(a.w), height: Math.abs(a.h) });
   if (a.type === 'oval') return svgEl('ellipse', { cx: a.x + a.w / 2, cy: a.y + a.h / 2, rx: Math.abs(a.w / 2), ry: Math.abs(a.h / 2) });
   return svgEl('path', { d: pathD(a) });
@@ -2945,7 +2949,7 @@ async function buildPdfBytes(visibleOnly) {
         if ((a.type === 'rect' || a.type === 'oval' || a.type === 'path' || a.type === 'wall') && a.hatch && a.hatch.type && moveTo && clip) {
           try {
             const ops = [pushGraphicsState()];
-            if (a.type === 'wall') { const poly = wallPoly(a, annos[n] || []); ops.push(moveTo(poly[0][0], Y(poly[0][1]))); for (let i = 1; i < 4; i++) ops.push(lineTo(poly[i][0], Y(poly[i][1]))); ops.push(closePath()); }
+            if (a.type === 'wall') { const poly = wallClipPoly(a); ops.push(moveTo(poly[0][0], Y(poly[0][1]))); for (let i = 1; i < 4; i++) ops.push(lineTo(poly[i][0], Y(poly[i][1]))); ops.push(closePath()); }
             else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h); ops.push(moveTo(x, Y(y)), lineTo(x + W, Y(y)), lineTo(x + W, Y(y + H)), lineTo(x, Y(y + H)), closePath()); }
             else if (a.type === 'oval') { const cx = a.x + a.w / 2, cy = a.y + a.h / 2, rx = Math.abs(a.w / 2), ry = Math.abs(a.h / 2); ops.push(moveTo(cx + rx, Y(cy))); for (let k = 1; k <= 32; k++) { const ang = k / 32 * 2 * Math.PI; ops.push(lineTo(cx + rx * Math.cos(ang), Y(cy + ry * Math.sin(ang)))); } ops.push(closePath()); }
             else { const pts = flattenPath(a); if (pts.length) { ops.push(moveTo(pts[0].x, Y(pts[0].y))); for (let i = 1; i < pts.length; i++) ops.push(lineTo(pts[i].x, Y(pts[i].y))); ops.push(closePath()); } }

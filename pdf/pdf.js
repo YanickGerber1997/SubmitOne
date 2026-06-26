@@ -3667,6 +3667,21 @@ function build3DScene(host, walls, arr) {
     const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0xece6d8, side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.006; scene.add(fl);
   }
   const wmat = new THREE.MeshLambertMaterial({ color: 0xe9e3d8 }), emat = new THREE.LineBasicMaterial({ color: 0x8c8678 }), gmat = new THREE.MeshPhongMaterial({ color: 0x9fc6e0, transparent: true, opacity: 0.35 });
+  const texCache = {}, INSUL_T = ['daemm_eps', 'daemm_wolle', 'daemm_holz', 'daemm_xps', 'eps', 'glaswolle'];
+  const faceMat = matKey => {   // Stufe 2: Material-Textur (Verputz-Körnung / Holzschalung horizontal|vertikal / Beton / Dämmung / Backstein)
+    const def = WALL_MATS[matKey] || {};
+    if (!texCache[matKey]) {
+      const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+      g.fillStyle = def.fill || '#e9e3d8'; g.fillRect(0, 0, 128, 128); const sc = def.color || '#9a9a9a'; const h = def.hatch;
+      if (matKey === 'holz' || matKey === 'konter') { g.strokeStyle = sc; g.globalAlpha = 0.45; g.lineWidth = 2; const vert = matKey === 'konter'; for (let i = 14; i < 128; i += 18) { g.beginPath(); if (vert) { g.moveTo(i, 0); g.lineTo(i, 128); } else { g.moveTo(0, i); g.lineTo(128, i); } g.stroke(); } }
+      else if (matKey === 'putz' || matKey === 'gips') { g.globalAlpha = 0.10; g.fillStyle = sc; for (let i = 0; i < 1400; i++) g.fillRect(Math.random() * 128, Math.random() * 128, 1, 1); }
+      else if (matKey === 'beton') { g.globalAlpha = 0.07; g.fillStyle = sc; for (let i = 0; i < 400; i++) g.fillRect(Math.random() * 128, Math.random() * 128, 2, 2); }
+      else if (h && (String(h).indexOf('daemm') === 0 || INSUL_T.includes(h) || INSUL_T.includes(matKey))) { g.strokeStyle = sc; g.globalAlpha = 0.3; g.lineWidth = 1; for (let i = 8; i < 128; i += 12) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 128); g.stroke(); } }
+      else if (h) { g.strokeStyle = sc; g.globalAlpha = 0.22; g.lineWidth = 1.2; for (let i = -128; i < 128; i += 14) { g.beginPath(); g.moveTo(i, 128); g.lineTo(i + 128, 0); g.stroke(); } }
+      const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 2); texCache[matKey] = t;
+    }
+    return new THREE.MeshLambertMaterial({ color: new THREE.Color(def.fill || '#e9e3d8'), map: texCache[matKey] });
+  };
   for (const w of walls) {
     if (!layerVisible(w) || !phaseVisible(w)) continue;
     const dx = w.x2 - w.x1, dy = w.y2 - w.y1, lp = Math.hypot(dx, dy); if (lp < 1) continue;
@@ -3685,13 +3700,15 @@ function build3DScene(host, walls, arr) {
       if (edge) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); e.rotation.copy(m.rotation); scene.add(e); }
     };
     const fmat = new THREE.MeshLambertMaterial({ color: 0xf2efe9 }), bmat = new THREE.MeshLambertMaterial({ color: 0xcfcabf }), nmat = new THREE.MeshLambertMaterial({ color: 0x3a3f45 });
+    const wL = w.layers && w.layers.length ? w.layers : null, endM = new THREE.MeshLambertMaterial({ color: 0xd9d3c8 });   // Stufe 1: Schicht-Farben (aussen=äusserste, innen=innerste); Schnittkanten neutral
+    const wallMats = wL ? [endM, endM, endM, endM, faceMat(wL[wL.length - 1].mat), faceMat(wL[0].mat)] : wmat;
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(10), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche, winType: o.winType || 'f1' })).sort((a, b) => a.c - b.c);
     let cur = 0;
     for (const op of ops) {
       const a0 = Math.max(0, op.c - op.hw), a1 = Math.min(lp, op.c + op.hw); if (a1 <= a0) continue;
-      if (a0 > cur) addBox(cur, a0, yb, yb + HW, wmat, th, true);                            // volles Wandstück bis zur Öffnung
-      if (op.sill > 0) addBox(a0, a1, yb, yb + Math.min(op.sill, HW), wmat, th, true);       // Brüstung (Fenster)
-      if (op.head < HW) addBox(a0, a1, yb + op.head, yb + HW, wmat, th, true);               // Sturz über der Öffnung
+      if (a0 > cur) addBox(cur, a0, yb, yb + HW, wallMats, th, true);                         // volles Wandstück bis zur Öffnung
+      if (op.sill > 0) addBox(a0, a1, yb, yb + Math.min(op.sill, HW), wallMats, th, true);    // Brüstung (Fenster)
+      if (op.head < HW) addBox(a0, a1, yb + op.head, yb + HW, wallMats, th, true);            // Sturz über der Öffnung
       if (op.kind === 'window') {
         const fdM = M(op.fd), fwM = M(op.fw), dC = Math.max(-(th / 2 - fdM / 2), Math.min(th / 2 - fdM / 2, (op.depth - 0.5) * th)), sillY = yb + op.sill, headY = yb + Math.min(op.head, HW);
         addBox2(a0, a0 + op.fw, sillY, headY, dC, fdM, fmat, true); addBox2(a1 - op.fw, a1, sillY, headY, dC, fdM, fmat, true);   // Rahmen seitlich
@@ -3703,7 +3720,7 @@ function build3DScene(host, walls, arr) {
       }
       cur = Math.max(cur, a1);
     }
-    if (cur < lp) addBox(cur, lp, yb, yb + HW, wmat, th, true);                              // Reststück
+    if (cur < lp) addBox(cur, lp, yb, yb + HW, wallMats, th, true);                          // Reststück
   }
   // Decken / Platten (slab) extrudieren
   const smat = new THREE.MeshLambertMaterial({ color: 0xd7dbe2, side: THREE.DoubleSide });

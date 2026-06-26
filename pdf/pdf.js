@@ -3700,8 +3700,9 @@ function build3DScene(host, walls, arr) {
     const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0xece6d8, side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.006; scene.add(fl);
   }
   const wmat = new THREE.MeshLambertMaterial({ color: 0xe9e3d8 }), emat = new THREE.LineBasicMaterial({ color: 0x8c8678 }), gmat = new THREE.MeshPhongMaterial({ color: 0x9fc6e0, transparent: true, opacity: 0.35 });
-  const texCache = {}, INSUL_T = ['daemm_eps', 'daemm_wolle', 'daemm_holz', 'daemm_xps', 'eps', 'glaswolle'];
+  const texCache = {}, matCache = {}, INSUL_T = ['daemm_eps', 'daemm_wolle', 'daemm_holz', 'daemm_xps', 'eps', 'glaswolle'];
   const faceMat = matKey => {   // Stufe 2: Material-Textur (Verputz-Körnung / Holzschalung horizontal|vertikal / Beton / Dämmung / Backstein)
+    if (matCache[matKey]) return matCache[matKey];
     const def = WALL_MATS[matKey] || {};
     if (!texCache[matKey]) {
       const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
@@ -3713,7 +3714,7 @@ function build3DScene(host, walls, arr) {
       else if (h) { g.strokeStyle = sc; g.globalAlpha = 0.22; g.lineWidth = 1.2; for (let i = -128; i < 128; i += 14) { g.beginPath(); g.moveTo(i, 128); g.lineTo(i + 128, 0); g.stroke(); } }
       const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 2); texCache[matKey] = t;
     }
-    return new THREE.MeshLambertMaterial({ color: new THREE.Color(def.fill || '#e9e3d8'), map: texCache[matKey] });
+    return (matCache[matKey] = new THREE.MeshLambertMaterial({ color: new THREE.Color(def.fill || '#e9e3d8'), map: texCache[matKey] }));
   };
   for (const w of walls) {
     if (!layerVisible(w) || !phaseVisible(w)) continue;
@@ -3733,16 +3734,19 @@ function build3DScene(host, walls, arr) {
       if (edge) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); e.rotation.copy(m.rotation); scene.add(e); }
     };
     const fmat = new THREE.MeshLambertMaterial({ color: 0xf2efe9 }), bmat = new THREE.MeshLambertMaterial({ color: 0xcfcabf }), nmat = new THREE.MeshLambertMaterial({ color: 0x3a3f45 });
-    const wL = w.layers && w.layers.length ? w.layers : null, endM = new THREE.MeshLambertMaterial({ color: 0xd9d3c8 });   // Stufe 1: Schicht-Farben (aussen=äusserste, innen=innerste); Schnittkanten neutral
-    const wallMats = wL ? [endM, endM, endM, endM, faceMat(wL[wL.length - 1].mat), faceMat(wL[0].mat)] : wmat;
+    const wL = w.layers && w.layers.length ? w.layers : null, totalT = wL ? (wL.reduce((s, l) => s + l.t, 0) || 1) : 1;
+    const addWallLayered = (s0, s1, y0, y1) => {   // Wand schichtweise (echte Schichten quer über die Dicke) – akkurat zum 2D
+      if (!wL) { addBox(s0, s1, y0, y1, wmat, th, true); return; }
+      let off = -th / 2; for (const L of wL) { const lt = (L.t / totalT) * th; addBox2(s0, s1, y0, y1, off + lt / 2, lt, faceMat(L.mat), true); off += lt; }
+    };
     const winMat3D = key => { const wm = WIN_MAT[key] || WIN_MAT.holz; return new THREE.MeshLambertMaterial({ color: new THREE.Color(wm.fill) }); };
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(o.kind === 'door' ? 6 : 10), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche, winType: o.winType || 'f1', winMat: o.winMat || 'holz', winHinge: o.winHinge || 'left' })).sort((a, b) => a.c - b.c);
     let cur = 0;
     for (const op of ops) {
       const a0 = Math.max(0, op.c - op.hw), a1 = Math.min(lp, op.c + op.hw); if (a1 <= a0) continue;
-      if (a0 > cur) addBox(cur, a0, yb, yb + HW, wallMats, th, true);                         // volles Wandstück bis zur Öffnung
-      if (op.sill > 0) addBox(a0, a1, yb, yb + Math.min(op.sill, HW), wallMats, th, true);    // Brüstung (Fenster)
-      if (op.head < HW) addBox(a0, a1, yb + op.head, yb + HW, wallMats, th, true);            // Sturz über der Öffnung
+      if (a0 > cur) addWallLayered(cur, a0, yb, yb + HW);                                      // volles Wandstück bis zur Öffnung (schichtweise)
+      if (op.sill > 0) addWallLayered(a0, a1, yb, yb + Math.min(op.sill, HW));                 // Brüstung (Fenster)
+      if (op.head < HW) addWallLayered(a0, a1, yb + op.head, yb + HW);                         // Sturz über der Öffnung
       const omat = winMat3D(op.winMat);
       if (op.kind === 'window') {
         const fdM = M(op.fd), fwM = M(op.fw), dC = Math.max(-(th / 2 - fdM / 2), Math.min(th / 2 - fdM / 2, (op.depth - 0.5) * th)), sillY = yb + op.sill, headY = yb + Math.min(op.head, HW);
@@ -3763,7 +3767,7 @@ function build3DScene(host, walls, arr) {
       }
       cur = Math.max(cur, a1);
     }
-    if (cur < lp) addBox(cur, lp, yb, yb + HW, wallMats, th, true);                          // Reststück
+    if (cur < lp) addWallLayered(cur, lp, yb, yb + HW);                                       // Reststück (schichtweise)
   }
   // Decken / Platten (slab) extrudieren
   const smat = new THREE.MeshLambertMaterial({ color: 0xd7dbe2, side: THREE.DoubleSide });

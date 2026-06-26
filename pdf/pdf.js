@@ -906,7 +906,7 @@ const HATCH_DEF = {   // Material: color = Striche/Umrandung (dunkel), fill = ga
 };
 const INSUL_TYPES = ['daemm_holz', 'daemm_wolle', 'daemm_eps', 'daemm_xps'];
 function applyMaterial(a, t) {   // Material auf Wand/Form anwenden: Strichfarbe (dunkel) + Wandfüllung (hell)
-  if (!t || t === 'none') { a.hatch = null; return; }
+  if (!t || t === 'none') { a.hatch = null; if (a.type === 'wall') { a.fill = '#ffffff'; a.color = '#1c242c'; } return; }   // zurück auf weisse Wand, schwarzer Rand
   const d = HATCH_DEF[t] || {};
   a.hatch = { type: t, scale: (a.hatch && a.hatch.scale) || lastHatchScale, w: 0.8, color: d.color || a.color };
   if (d.color) a.color = d.color;
@@ -3166,7 +3166,7 @@ function loadThree() {
 }
 async function open3D() {
   if (!docScale) { toast('Für die 3D-Ansicht zuerst den Massstab setzen (1:n).'); return; }
-  const arr = getAnnos(curPage()) || [], walls = arr.filter(a => a.type === 'wall' && layerVisible(a));
+  const arr = getAnnos(curPage()) || [], walls = arr.filter(a => a.type === 'wall' && layerVisible(a) && phaseVisible(a));
   if (!walls.length) { toast('Auf dieser (sichtbaren) Ebene sind keine Wände für die 3D-Ansicht.'); return; }
   status('3D wird geladen …');
   try { await loadThree(); } catch (_) { status(''); toast('3D-Engine nicht ladbar (einmal Internet nötig).'); return; }
@@ -3197,13 +3197,13 @@ function build3DScene(host, walls, arr) {
   const gsz = Math.max(span * 2.4, 4);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(gsz, gsz), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; scene.add(ground);
   scene.add(new THREE.GridHelper(gsz, Math.min(60, Math.max(4, Math.round(gsz))), 0xc4cabe, 0xd8dcd2));
-  for (const a of arr) if (a.type === 'area' && a.room && a.pts && a.pts.length >= 3 && layerVisible(a)) {
+  for (const a of arr) if (a.type === 'area' && a.room && a.pts && a.pts.length >= 3 && layerVisible(a) && phaseVisible(a)) {
     const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
     const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0xece6d8, side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.006; scene.add(fl);
   }
   const wmat = new THREE.MeshLambertMaterial({ color: 0xe9e3d8 }), emat = new THREE.LineBasicMaterial({ color: 0x8c8678 }), gmat = new THREE.MeshPhongMaterial({ color: 0x9fc6e0, transparent: true, opacity: 0.35 });
   for (const w of walls) {
-    if (!layerVisible(w)) continue;
+    if (!layerVisible(w) || !phaseVisible(w)) continue;
     const dx = w.x2 - w.x1, dy = w.y2 - w.y1, lp = Math.hypot(dx, dy); if (lp < 1) continue;
     const ux = dx / lp, uy = dy / lp, th = M(w.thick || wallThickPts()), HW = w.h3d || H, yb = lev(w), sx = M(w.x1 - cx), sz = M(w.y1 - cy), ry = -Math.atan2(dy, dx);
     const addBox = (s0, s1, y0, y1, mat, depth, edge) => {                                  // Teilstück der Wand (Längs-Span s0..s1 in pt, Höhe y0..y1 in m)
@@ -3226,7 +3226,7 @@ function build3DScene(host, walls, arr) {
   }
   // Decken / Platten (slab) extrudieren
   const smat = new THREE.MeshLambertMaterial({ color: 0xd7dbe2, side: THREE.DoubleSide });
-  for (const a of arr) if (a.type === 'slab' && a.pts && a.pts.length >= 3 && layerVisible(a)) {
+  for (const a of arr) if (a.type === 'slab' && a.pts && a.pts.length >= 3 && layerVisible(a) && phaseVisible(a)) {
     try {
       const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Y = M(p[1] - cy); i ? sh.lineTo(X, Y) : sh.moveTo(X, Y); });
       const geo = new THREE.ExtrudeGeometry(sh, { depth: a.thick || 0.2, bevelEnabled: false }), m = new THREE.Mesh(geo, smat);
@@ -3236,7 +3236,7 @@ function build3DScene(host, walls, arr) {
   }
   // Treppen (gerader Lauf) als 3D-Stufen
   const stmat = new THREE.MeshLambertMaterial({ color: 0xd9d2c4 });
-  for (const a of arr) if (a.type === 'stairs' && layerVisible(a)) {
+  for (const a of arr) if (a.type === 'stairs' && layerVisible(a) && phaseVisible(a)) {
     const dx = a.x2 - a.x1, dy = a.y2 - a.y1, lp = Math.hypot(dx, dy); if (lp < 1) continue;
     const ux = dx / lp, uy = dy / lp, sx = M(a.x1 - cx), sz = M(a.y1 - cy), ry = -Math.atan2(dy, dx), wm = M(a.width || stairWidthPts()), n = stairSteps(a), rise = a.rise || stairRiseM, base = lev(a) + (a.base || 0), stepRise = rise / n, going = (lp * perPt) / n;
     for (let i = 0; i < n; i++) {
@@ -3247,7 +3247,7 @@ function build3DScene(host, walls, arr) {
   }
   // Dächer (Pult-/Satteldach) als 3D-Schräge
   const rmat = new THREE.MeshLambertMaterial({ color: 0xb06a4f, side: THREE.DoubleSide });
-  for (const a of arr) if (a.type === 'roof' && layerVisible(a)) {
+  for (const a of arr) if (a.type === 'roof' && layerVisible(a) && phaseVisible(a)) {
     const x0 = M(Math.min(a.x, a.x + a.w) - cx), x1 = M(Math.max(a.x, a.x + a.w) - cx), z0 = M(Math.min(a.y, a.y + a.h) - cy), z1 = M(Math.max(a.y, a.y + a.h) - cy), ev = lev(a) + (a.eave || roofEaveM), rg = lev(a) + (a.ridge || roofRidgeM), tris = [];
     const quad = (A, B, C, D) => { tris.push([A, B, C], [A, C, D]); };
     if (a.rtype === 'pult') {
@@ -3262,7 +3262,7 @@ function build3DScene(host, walls, arr) {
   }
   // Möbel/Sanitär als niedrige Blöcke
   const bmat = new THREE.MeshLambertMaterial({ color: 0xcec5b4 });
-  for (const a of arr) if (a.type === 'block' && layerVisible(a)) {
+  for (const a of arr) if (a.type === 'block' && layerVisible(a) && phaseVisible(a)) {
     const bw = M(Math.abs(a.w)), bd = M(Math.abs(a.h)), bh = BLOCK_H[a.kind] || 0.6, ccx = Math.min(a.x, a.x + a.w) + Math.abs(a.w) / 2, ccy = Math.min(a.y, a.y + a.h) + Math.abs(a.h) / 2;
     if (bw < 0.01 || bd < 0.01) continue;
     const geo = new THREE.BoxGeometry(bw, bh, bd), m = new THREE.Mesh(geo, bmat); m.position.set(M(ccx - cx), lev(a) + bh / 2, M(ccy - cy)); scene.add(m);
@@ -3580,7 +3580,7 @@ function wire() {
   $('#pbRidge').onchange = () => { const v = parseFloat(($('#pbRidge').value || '').replace(',', '.')); if (!(v > 0)) return; roofRidgeM = v; const a = selRoof(); if (a) { pushUndo(); a.ridge = v; saveState(); } };
   $('#pbAxis').onclick = () => { roofAxis = roofAxis === 'x' ? 'y' : 'x'; const a = selRoof(); if (a) { pushUndo(); a.axis = roofAxis; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbUnit').onclick = () => { dimUnit = !dimUnit; pageViews.forEach(drawAnnos); updatePlanBar(); saveState(); };
-  $('#pbWallColor').addEventListener('input', e => { const c = e.target.value; style.color = c; $('#colorDot').style.background = c; $('#pbWallDot').style.background = c; const a = selWall(); if (a) { a.color = c; pageViews.forEach(drawAnnos); } });
+  $('#pbWallColor').addEventListener('input', e => { const c = e.target.value; style.color = c; $('#colorDot').style.background = c; $('#pbWallDot').style.background = c; const a = selWall(); if (a) { a.color = c; if (a.hatch) a.hatch.color = c; pageViews.forEach(drawAnnos); } });
   $$('#pbOpen [data-ok]').forEach(b => b.onclick = () => { openKind = b.dataset.ok; const a = selOpen(); if (a) { pushUndo(); a.kind = openKind; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
   $('#pbWidth').onchange = () => { const v = parseFloat($('#pbWidth').value); if (!(v > 0)) return updatePlanBar(); const pts = cmToPts(v); lastOpenW = pts; const a = selOpen(); if (a) { pushUndo(); a.w = pts; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbFlip').onclick = () => { const a = selOpen(); if (!a) return; pushUndo(); if (a.swing === 1 && a.hinge === 1) a.hinge = -1; else if (a.hinge === -1 && a.swing === 1) a.swing = -1; else if (a.hinge === -1 && a.swing === -1) a.hinge = 1; else a.swing = 1; pageViews.forEach(drawAnnos); saveState(); };
@@ -3751,7 +3751,7 @@ function wire() {
   const selA = () => sel && findAnno(sel.num, sel.id), selPv = () => pageViews.find(p => p.num === sel.num);
   let sbColorPushed = false, sbTbgPushed = false;
   $('#sbColor').addEventListener('pointerdown', () => { sbColorPushed = false; });
-  $('#sbColor').addEventListener('input', e => { const a = selA(); if (!a) return; if (!sbColorPushed) { pushUndo(); sbColorPushed = true; } a.color = e.target.value; style.color = e.target.value; $('#colorDot').style.background = e.target.value; $('#sbColorDot').style.background = e.target.value; const pv = selPv(); if (pv) drawAnnos(pv); });
+  $('#sbColor').addEventListener('input', e => { const a = selA(); if (!a) return; if (!sbColorPushed) { pushUndo(); sbColorPushed = true; } a.color = e.target.value; if (a.hatch) a.hatch.color = e.target.value; style.color = e.target.value; $('#colorDot').style.background = e.target.value; $('#sbColorDot').style.background = e.target.value; const pv = selPv(); if (pv) drawAnnos(pv); });
   let sbFillPushed = false;
   $('#sbFill').addEventListener('pointerdown', () => { sbFillPushed = false; });
   $('#sbFill').addEventListener('input', e => { const a = selA(); if (!a) return; if (!sbFillPushed) { pushUndo(); sbFillPushed = true; } a.fill = e.target.value; $('#sbFillDot').style.background = e.target.value; const pv = selPv(); if (pv) drawAnnos(pv); });

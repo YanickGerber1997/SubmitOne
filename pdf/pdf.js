@@ -961,12 +961,8 @@ function layerHatch(svg, a, band) {   // Schraffur einer einzelnen Schicht, auf 
   svg.appendChild(hg);
 }
 function drawLayeredWall(svg, a, arr) {
-  const { bands, c1A, c2A, c2B, c1B } = wallLayerBands(a, arr), lp = (p, q, f) => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
-  for (const b of bands) { const m = WALL_MATS[b.mat] || {}; svg.appendChild(svgEl('polygon', { points: b.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: m.fill || '#ffffff', stroke: 'none' })); layerHatch(svg, a, b); }
-  for (let i = 0; i < bands.length - 1; i++) { const f = bands[i].f1, A = lp(c1B, c1A, f), B = lp(c2B, c2A, f); svg.appendChild(svgEl('line', { x1: A[0], y1: A[1], x2: B[0], y2: B[1], stroke: '#9a9a9a', 'stroke-width': 0.6, 'vector-effect': 'non-scaling-stroke' })); }
-  const blk = '#1c242c', ln = (P, Q) => svg.appendChild(svgEl('line', { x1: P[0], y1: P[1], x2: Q[0], y2: Q[1], stroke: blk, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
-  ln(c1A, c2A); ln(c1B, c2B);
-  if (wallEndFree(a, a.x1, a.y1, arr)) ln(c1A, c1B); if (wallEndFree(a, a.x2, a.y2, arr)) ln(c2A, c2B);
+  const { bands } = wallLayerBands(a, arr);   // jede Schicht: Füllung + dünne Umrandung in der Materialfarbe (kein schwarzer Gesamtrahmen)
+  for (const b of bands) { const m = WALL_MATS[b.mat] || {}; svg.appendChild(svgEl('polygon', { points: b.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: m.fill || '#ffffff', stroke: m.color || '#9a9a9a', 'stroke-width': 0.7, 'stroke-linejoin': 'miter', 'vector-effect': 'non-scaling-stroke' })); layerHatch(svg, a, b); }
 }
 function wallClipPoly(a) {   // einfaches, nicht-gehrtes Wandrechteck (immer simpel → sicherer Schraffur-Clip)
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, T = a.thick || wallThickPts(), o = wallSideOffsets(a), oA = o[0], oB = o[1];
@@ -2992,8 +2988,8 @@ async function buildPdfBytes(visibleOnly) {
           const arr = annos[n] || [], { bands, c1A, c2A, c2B, c1B } = wallLayerBands(a, arr), lp = (p, q, f) => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
           const polyD = pts => 'M' + pts.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z';
           for (const b of bands) {
-            const m = WALL_MATS[b.mat] || {}, fc = hexToRgb(m.fill || '#ffffff');
-            try { pg.drawSvgPath(polyD(b.poly), { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b) }); } catch (_) { }
+            const m = WALL_MATS[b.mat] || {}, fc = hexToRgb(m.fill || '#ffffff'), bc = hexToRgb(m.color || '#9a9a9a');
+            try { pg.drawSvgPath(polyD(b.poly), { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b), borderColor: rgb(bc.r, bc.g, bc.b), borderWidth: 0.7 }); } catch (_) { }
             if (m.hatch && moveTo && clip) { try {
               const ops = [pushGraphicsState(), moveTo(b.poly[0][0], Y(b.poly[0][1]))]; for (let i = 1; i < b.poly.length; i++) ops.push(lineTo(b.poly[i][0], Y(b.poly[i][1]))); ops.push(closePath(), clip(), endPath()); pg.pushOperators(...ops);
               const hc = hexToRgb(m.color), hcc = rgb(hc.r, hc.g, hc.b), S = (a.hatch && a.hatch.scale) || lastHatchScale;
@@ -3004,12 +3000,6 @@ async function buildPdfBytes(visibleOnly) {
               pg.pushOperators(popGraphicsState());
             } catch (_) { } }
           }
-          const blk = rgb(.11, .14, .17);
-          for (let i = 0; i < bands.length - 1; i++) { const f = bands[i].f1, A = lp(c1B, c1A, f), B = lp(c2B, c2A, f); pg.drawLine({ start: { x: A[0], y: Y(A[1]) }, end: { x: B[0], y: Y(B[1]) }, thickness: 0.6, color: rgb(.6, .6, .6) }); }
-          pg.drawLine({ start: { x: c1A[0], y: Y(c1A[1]) }, end: { x: c2A[0], y: Y(c2A[1]) }, thickness: 1.4, color: blk });
-          pg.drawLine({ start: { x: c1B[0], y: Y(c1B[1]) }, end: { x: c2B[0], y: Y(c2B[1]) }, thickness: 1.4, color: blk });
-          if (wallEndFree(a, a.x1, a.y1, arr)) pg.drawLine({ start: { x: c1A[0], y: Y(c1A[1]) }, end: { x: c1B[0], y: Y(c1B[1]) }, thickness: 1.4, color: blk });
-          if (wallEndFree(a, a.x2, a.y2, arr)) pg.drawLine({ start: { x: c2A[0], y: Y(c2A[1]) }, end: { x: c2B[0], y: Y(c2B[1]) }, thickness: 1.4, color: blk });
           if (a.dim) {
             const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
             const base = (a.thick || wallThickPts()) / 2 + cmToPts(wallDimOffCm), off = (a.dimOff != null ? a.dimOff : base), side = off >= 0 ? 1 : -1, gap = wallDimGap, over = 4, tick = 5, dimc = rgb(.11, .14, .17);

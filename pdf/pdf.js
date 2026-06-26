@@ -1059,12 +1059,26 @@ function angleSnapPoint(x1, y1, x2, y2) {   // auf nächste 45°-Richtung einras
   const r = near * Math.PI / 180;
   return { x: x1 + Math.cos(r) * len, y: y1 + Math.sin(r) * len };
 }
+// Senkrecht/parallel zu einer am Startpunkt anliegenden Linie/Wand einrasten (= „90° von der schrägen Linie weg")
+function refAngleSnap(pv, a, qx, qy) {
+  const sx = a.x1, sy = a.y1, dx = qx - sx, dy = qy - sy, len = Math.hypot(dx, dy); if (len < 3) return null;
+  const curAng = Math.atan2(dy, dx), near = 42 / pv.scale, tol = 3.2 * Math.PI / 180, refs = [];
+  for (const o of getAnnos(pv.num)) {
+    if (o === a || !isLineType(o) || o.x1 == null) continue;
+    for (const [ex, ey, ox, oy] of [[o.x1, o.y1, o.x2, o.y2], [o.x2, o.y2, o.x1, o.y1]]) if (Math.hypot(ex - sx, ey - sy) < near) refs.push(Math.atan2(oy - ey, ox - ex));
+  }
+  for (const rf of refs) for (const k of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    const target = rf + k, diff = Math.atan2(Math.sin(curAng - target), Math.cos(curAng - target));
+    if (Math.abs(diff) < tol) return { x: sx + Math.cos(target) * len, y: sy + Math.sin(target) * len, perp: (((k % Math.PI) + Math.PI) % Math.PI) !== 0 };
+  }
+  return null;
+}
 let hudEl = null;
-function showDrawHud(ev, a) {
+function showDrawHud(ev, a, mark) {
   if (!hudEl) { hudEl = document.createElement('div'); hudEl.className = 'draw-hud'; document.body.appendChild(hudEl); }
   const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
   let aDeg = Math.round(Math.atan2(-(a.y2 - a.y1), a.x2 - a.x1) * 180 / Math.PI); if (aDeg < 0) aDeg += 360;
-  hudEl.textContent = fmtLen(len) + '   ·   ' + aDeg + '°';
+  hudEl.textContent = (mark ? mark + '  ' : '') + fmtLen(len) + '   ·   ' + aDeg + '°';
   hudEl.style.left = (ev.clientX + 16) + 'px'; hudEl.style.top = (ev.clientY + 18) + 'px'; hudEl.hidden = false;
 }
 function hideDrawHud() { if (hudEl) hudEl.hidden = true; }
@@ -1587,12 +1601,16 @@ function startDraw(pv, e, p) {
     if (a.type !== 'pen' && !ev.shiftKey) { const an = anchorSnap(pv, q.x, q.y, a.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
     if (a.type === 'pen') a.pts.push([q.x, q.y]);
     else if (a.type === 'rect' || a.type === 'oval') { a.w = q.x - a.x; a.h = q.y - a.y; }
+    let rel = null;
+    if (ev.shiftKey) { const s = snap15(a.x1, a.y1, q.x, q.y); a.x2 = s.x; a.y2 = s.y; }   // Shift = 15°
     else {
-      if (ev.shiftKey) { const s = snap15(a.x1, a.y1, q.x, q.y); a.x2 = s.x; a.y2 = s.y; }   // Shift = 15°
-      else { let as = null; if (!snapped) as = angleSnapPoint(a.x1, a.y1, q.x, q.y); if (as) { a.x2 = as.x; a.y2 = as.y; } else { a.x2 = q.x; a.y2 = q.y; } }   // sonst auto 0/45/90°
+      if (!snapped) rel = refAngleSnap(pv, a, q.x, q.y);                                   // senkrecht/parallel zu Nachbar-Linie/Wand
+      const as = rel || (!snapped ? angleSnapPoint(a.x1, a.y1, q.x, q.y) : null);
+      if (as) { a.x2 = as.x; a.y2 = as.y; } else { a.x2 = q.x; a.y2 = q.y; }               // sonst auto 0/45/90°
     }
     drawAnnos(pv); if (snapped) snapIndicator(pv, snapped);
-    if (isLine) showDrawHud(ev, a);
+    if (rel) { pv.svg.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2 + (a.x2 - a.x1) * 0.25, y2: a.y2 + (a.y2 - a.y1) * 0.25, class: 'snap-guide' })); }   // Führungslinie
+    if (isLine) showDrawHud(ev, a, rel ? (rel.perp ? '⟂' : '∥') : '');
   };
   const up = () => {
     document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); hideDrawHud();

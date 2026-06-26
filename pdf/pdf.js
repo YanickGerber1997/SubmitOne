@@ -2365,7 +2365,9 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
   }
   return { cover, lines, arcs, bold, fills };
 }
-const REVEAL_MAT = { putz: { fill: '#ededed', color: '#9a9a9a' }, beton: { fill: '#dcecdf', color: '#2f7d4f' }, stahl: { fill: '#c9ccd1', color: '#565b62' }, holz: { fill: '#eedcc8', color: '#7a5126' } };   // Laibungs-Element: Putz/Betonelement/Stahlzarge/Holzzarge
+const REVEAL_MAT = { putz: { fill: '#ededed', color: '#9a9a9a' }, beton: { fill: '#dcecdf', color: '#2f7d4f' }, stahl: { fill: '#c9ccd1', color: '#565b62' }, holz: { fill: '#eedcc8', color: '#7a5126' } };
+const LINING_MAT = { putz: { fill: '#ededed', stroke: '#9a9a9a' }, gips: { fill: '#f3f3f3', stroke: '#b0b0b0' }, holz: { fill: '#e7cfa8', stroke: '#7a5126' }, stahl: { fill: '#c4c8cd', stroke: '#4f545b', hatch: 1 }, alu: { fill: '#dfe3e7', stroke: '#7d848c', hatch: 1 }, dsp: { fill: '#e9d6b8', stroke: '#9a7a45' } };
+const REVEAL_LINING = { gips: [['gips', 1.5], ['putz', 0.5]], holz: [['holz', 2.5]], stahl: [['stahl', 1.5]], alu: [['dsp', 1.8], ['alu', 0.7]] };   // Innen-Laibung: Gips+Putz / Holzbrett 25mm / Stahlzarge 15mm / Aluzarge (18mm Dreischichtplatte + 7mm)
 function bandHatchPerp(sa, sb, ma, mb, corner, stepS, s0) {   // Striche 90° zur Wand (m-Richtung) – auf das Wand-Schraffurraster eingerastet (gleicher Abstand wie Wand)
   const out = [], sLo = Math.min(sa, sb), sHi = Math.max(sa, sb);
   if (sHi - sLo < 1e-4 || Math.abs(mb - ma) < 1e-4 || stepS <= 1e-6) return out;
@@ -2398,14 +2400,15 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   const Lx = wall.x2 - wall.x1, Ly = wall.y2 - wall.y1, Lw = Math.hypot(Lx, Ly) || 1, uxW = Lx / Lw, uyW = Ly / Lw;
   const dC = (x - wall.x1) * uxW + (y - wall.y1) * uyW, sgnDir = (ux * uxW + uy * uyW) >= 0 ? 1 : -1, s0 = sgnDir * (Math.round(dC / hStep) * hStep - dC) / hw;   // Phase: auf das Wandraster (Ursprung Wandanfang) eingerastet
   let coreIdx = wall.layers.findIndex(l => CORE.includes(l.mat)); if (coreIdx < 0) coreIdx = Math.floor((wall.layers.length - 1) / 2);
-  const l0 = wall.layers[0], mI = WALL_MATS[l0.mat] || {}, twI = Math.min(0.45, l0.t / hw);   // innen: Putz/Brett als dünner Streifen bis Rahmen-Innenkante
-  if (Math.abs((fmA - gapM) + 1) > 0.02) for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + twI : 1 - twI; strips.push({ poly: [corner(s0, -1), corner(s1, -1), corner(s1, fmA - gapM), corner(s0, fmA - gapM)], fill: mI.fill || '#fff', stroke: mI.color || '#1c242c' }); }
+  const l0 = wall.layers[0], lN = wall.layers[wall.layers.length - 1], rt0 = a.revealType || 'putz';   // Innen-Laibungs-Element nach Typ
+  const innerLining = rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]);   // putz = innerste Wandschicht reingezogen; aussen = äusserste; sonst feste Konstruktion
+  if (Math.abs((fmA - gapM) + 1) > 0.02) { let sAcc = 0; for (const [mat, tcm] of innerLining) { const mt = LINING_MAT[mat] || WALL_MATS[mat] || {}, tw = Math.min(0.42, cmToPts(tcm) / hw), sk = mt.stroke || mt.color || '#1c242c'; for (const sgn of [-1, 1]) { const s0 = sgn * (1 - sAcc), s1 = sgn * (1 - sAcc - tw); strips.push({ poly: [corner(s0, -1), corner(s1, -1), corner(s1, fmA - gapM), corner(s0, fmA - gapM)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(s0, s1), Math.max(s0, s1), -1, fmA - gapM, corner, hw, ht, stepS) : null }); } sAcc += tw; } }
   const outer = []; for (let i = wall.layers.length - 1; i > coreIdx; i--) if (wall.layers[i].mat !== 'luft') outer.push(wall.layers[i]);   // aussen, ohne Hinterlüftung
   if (outer.length) {   // vom Rahmen: 1 cm sichtbar → Brett (lappt auf Rahmen) → Dämmung (Wand-Schraffur) mit Schalung obenauf bis zur Rohbaukante
     const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw);
     const visS = Math.min(fwSr * 0.3, cmToPts(1) / hw), schWs = Math.min(0.22, cmToPts(2.5) / hw), schT = Math.min((1 - (fmB + gapM)) * 0.55, cmToPts(2.5) / ht);
-    const schal = outer[0], daemm = outer.find(l => INS.includes(l.mat)) || outer[outer.length - 1], rt = a.revealType || 'putz';
-    const revM = rt === 'beton' ? REVEAL_MAT.beton : rt === 'stahl' ? REVEAL_MAT.stahl : rt === 'holz' ? REVEAL_MAT.holz : (WALL_MATS[schal.mat] || {}), dM = WALL_MATS[daemm.mat] || {}, doHatch = rt === 'putz' || rt === 'holz';
+    const schal = outer[0], daemm = outer.find(l => INS.includes(l.mat)) || outer[outer.length - 1];
+    const revM = WALL_MATS[schal.mat] || {}, dM = WALL_MATS[daemm.mat] || {}, doHatch = ['holz', 'konter'].includes(schal.mat);
     for (const sgn of [-1, 1]) {
       const sBI = sgn * Math.min(1, 1 - fwSr + visS), sBO = sgn * Math.min(1, 1 - fwSr + visS + schWs), sE = sgn, lo = Math.min(sBO, sE), hi = Math.max(sBO, sE);
       if (hi - lo > 0.02) {

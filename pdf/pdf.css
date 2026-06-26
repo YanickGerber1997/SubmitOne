@@ -213,6 +213,8 @@ body:not(.has-doc) #drop{left:148px}
 .thumb-ctrl button:hover{border-color:var(--accent);color:var(--accent)}
 .thumb-ctrl button.del:hover{border-color:var(--danger);color:var(--danger)}
 .thumb-add{display:block;width:104px;margin:6px auto 14px;padding:8px 6px;font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-soft);border:1px dashed var(--accent);cursor:pointer;border-radius:0}
+.thumb-filter{display:block;width:124px;margin:2px auto 10px;padding:6px 4px;font:inherit;font-size:11px;font-weight:600;color:var(--ink-soft);background:var(--surface-2);border:1px solid var(--line);cursor:pointer;border-radius:0}
+.thumb-filter.on{color:var(--accent-3);background:var(--accent-soft);border-color:var(--accent)}
 .thumb-ins{height:12px;margin:1px 8px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
 .thumb-ins::before{content:"";position:absolute;left:4px;right:4px;height:2px;background:transparent}
 .thumb-ins:hover::before{background:var(--accent)}

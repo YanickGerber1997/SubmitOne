@@ -701,6 +701,8 @@ let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTim
 
 function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im Seitenstreifen)
   const host = $('#thumbs'); host.innerHTML = ''; if (thumbObserver) thumbObserver.disconnect();
+  const ft = document.createElement('button'); ft.className = 'thumb-filter' + (thumbFilter ? ' on' : ''); ft.id = 'thumbFilterBtn'; ft.textContent = (thumbFilter ? '☑' : '☐') + ' Nur bezeichnete'; ft.title = 'Nur Seiten mit (sichtbaren) Anmerkungen anzeigen – Übersicht, welche Blätter bezeichnet sind';
+  ft.onclick = () => { thumbFilter = !thumbFilter; applyThumbFilter(); }; host.appendChild(ft);
   const insBar = after => { const d = document.createElement('div'); d.className = 'thumb-ins'; d.title = 'Seite hier einfügen'; d.innerHTML = '<span class="ins-plus">＋</span>'; d.onclick = e => { e.stopPropagation(); showInsertMenu(after, d); }; return d; };
   host.appendChild(insBar(0));   // ganz oben einfügen
   for (let n = 1; n <= pdfDoc.numPages; n++) {
@@ -723,6 +725,7 @@ function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im S
   host.appendChild(add);
   thumbObserver = new IntersectionObserver(ents => { for (const e of ents) if (e.isIntersecting) { renderThumb(+e.target.dataset.n, e.target); thumbObserver.unobserve(e.target); } }, { root: host, rootMargin: '500px 0px' });
   $$('.thumb', host).forEach(b => thumbObserver.observe(b));
+  applyThumbFilter();
 }
 async function renderThumb(n, btn) {
   try { const page = await pdfDoc.getPage(n), vp1 = page.getViewport({ scale: 1 }); const vp = page.getViewport({ scale: 200 / vp1.width, rotation: pageRot[n] || 0 }); const c = btn.querySelector('canvas'); c.width = vp.width; c.height = vp.height; await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise; btn.classList.remove('loading'); } catch (_) { }
@@ -786,6 +789,13 @@ function layerById(id) { return layers.find(l => l.id === id); }
 function layerVisible(a) { if (a.layer == null) return true; const l = layerById(a.layer); return l ? l.visible : true; }   // ohne Ebene → sichtbar (Alt-Daten)
 function pushAnno(n, a) { if (a && a.layer === undefined) a.layer = activeLayerId; getAnnos(n).push(a); return a; }
 function pageHasVisible(n) { return (annos[n] || []).some(a => layerVisible(a) && a.type !== 'crop'); }   // hat die Seite sichtbare Anmerkungen?
+let thumbFilter = false;
+function applyThumbFilter() {
+  const host = $('#thumbs'); if (!host) return;
+  $$('.thumb', host).forEach(t => { t.style.display = (thumbFilter && !pageHasVisible(+t.dataset.n)) ? 'none' : ''; });
+  $$('.thumb-ins', host).forEach(d => { d.style.display = thumbFilter ? 'none' : ''; });
+  const b = $('#thumbFilterBtn'); if (b) { b.classList.toggle('on', thumbFilter); b.textContent = (thumbFilter ? '☑' : '☐') + ' Nur bezeichnete'; }
+}
 function newLayerId() { return 'l' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36); }
 function renderLayerPanel() {
   const list = $('#lpList'); if (!list) return; list.innerHTML = '';
@@ -2538,7 +2548,7 @@ async function redo() {
   undoStack.push(e.t === 'doc' ? curDocEntry() : curAnnoEntry());
   await applyState(e); updateUndoButtons(); markDirty();
 }
-function saveState() { /* Platzhalter für Autosave-Hook */ }
+function saveState() { if (thumbFilter) applyThumbFilter(); /* + Autosave-Hook */ }
 function deleteSel() { if (!sel) return; const arr = annos[sel.num]; if (!arr) return; const i = arr.findIndex(a => a.id === sel.id); if (i < 0) return; pushUndo(); arr.splice(i, 1); sel = null; pageViews.forEach(drawAnnos); refreshComments(); }
 // Ausgewählte Anmerkung mit den Pfeiltasten verschieben (Shift = grosse Schritte)
 function nudgeSel(key, d) {

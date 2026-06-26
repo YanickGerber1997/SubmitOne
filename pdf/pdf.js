@@ -1307,6 +1307,7 @@ function onPointerDown(pv, e) {
   if (tool === 'edittext') { editTextAt(pv, p); return; }
   if (tool === 'text') { createText(pv, p); return; }
   if (tool === 'note') { pushUndo(); const a = { id: nextId++, type: 'note', x: p.x, y: p.y, color: style.color, text: '' }; getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); refreshComments(); openNoteEdit(pv, a); return; }
+  if (segDraft && segDraft.pv === pv) { finishSegDraft(); return; }                            // 2. Klick = Linie beenden
   if (tool === 'wall' && wallDraft && wallDraft.pv === pv) { wallChainClick(pv, p); return; }   // laufende Wand-Kette: nächste Ecke
   // Zeichnen
   startDraw(pv, e, p);
@@ -1768,14 +1769,49 @@ function startDraw(pv, e, p) {
     if (a.type === 'calibrate') { const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1); const arr = getAnnos(pv.num); arr.splice(arr.indexOf(a), 1); undoStack.pop(); drawAnnos(pv); if (len > 4) openScale(len); else setTool('select'); return; }
     if (a.type === 'pen' && penTidy) { const bz = beautify(a.pts); if (bz) { const arr = getAnnos(pv.num), i = arr.indexOf(a); arr[i] = Object.assign({ id: a.id, color: a.color, width: a.width }, bz); } }
     const cur = getAnnos(pv.num).find(x => x.id === a.id) || a;
-    if (cur.type === 'wall' && Math.hypot(cur.x2 - cur.x1, cur.y2 - cur.y1) < 3) {   // reiner Klick mit Wand-Werkzeug → Klick-Kette starten
+    const clk = isLineType(cur) ? Math.hypot(cur.x2 - cur.x1, cur.y2 - cur.y1) < 3 : false;
+    if (cur.type === 'wall' && clk) {   // reiner Klick mit Wand-Werkzeug → Klick-Kette starten
       const arr = getAnnos(pv.num); arr.splice(arr.indexOf(cur), 1); undoStack.pop(); drawAnnos(pv); startWallChain(pv, cur.x1, cur.y1); return;
     }
+    if (clk && (cur.type === 'line' || cur.type === 'arrow' || cur.type === 'measure' || cur.type === 'dim')) { startSegDraft(pv, cur); return; }   // Klick = Richtung anpeilen, dann 2. Klick oder L
     const b = bbox(cur); if (cur.type !== 'pen' && b.w < 3 && b.h < 3) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(cur), 1); undoStack.pop(); drawAnnos(pv); return; }
     if (isLineType(cur)) lastLine = { num: pv.num, id: cur.id };   // „L" wirkt auf die zuletzt gezeichnete Linie
     sel = null; drawAnnos(pv); saveState();   // Werkzeug bleibt aktiv → mehrere zeichnen (V/Esc = auswählen)
   };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
+/* ---------- Gerade Linie per Klick: Start klicken → Richtung anpeilen → 2. Klick oder „L" = Länge ---------- */
+let segDraft = null;
+function startSegDraft(pv, a) {
+  segDraft = { pv, a };
+  const onMove = ev => {
+    if (!segDraft) return; let q = evtToPage(pv, ev), snapped = null, rel = null;
+    if (!ev.shiftKey) { const an = anchorSnap(pv, q.x, q.y, a.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
+    if (ev.shiftKey) { const s = snap15(a.x1, a.y1, q.x, q.y); a.x2 = s.x; a.y2 = s.y; }
+    else { if (!snapped) rel = refAngleSnap(pv, a, q.x, q.y); const as = rel || (!snapped ? angleSnapPoint(a.x1, a.y1, q.x, q.y) : null); if (as) { a.x2 = as.x; a.y2 = as.y; } else { a.x2 = q.x; a.y2 = q.y; } }
+    drawAnnos(pv); if (snapped) snapIndicator(pv, snapped);
+    if (rel) pv.svg.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'snap-guide' }));
+    showDrawHud(ev, a, rel ? (rel.perp ? '⟂' : '∥') : '');
+  };
+  document.addEventListener('pointermove', onMove); segDraft._onMove = onMove;
+  if (!startSegDraft._hint) { startSegDraft._hint = true; toast('Richtung anpeilen, dann 2. Klick = Ende · oder „L" drücken und Länge eingeben · Esc = abbrechen.'); }
+}
+function segDraftLength() {   // „L" während des Zeichnens: exakte Länge in der angepeilten Richtung
+  if (!segDraft) return; const a = segDraft.a; let ux = a.x2 - a.x1, uy = a.y2 - a.y1, l = Math.hypot(ux, uy);
+  const cur = docScale ? Math.round((l || 0) * docScale.perPt * 1000) / 1000 : Math.round((l || 0) * PT2MM);
+  const v = prompt('Länge' + (docScale ? ' in Metern (z. B. 3,25)' : ' in mm') + ' – Richtung = wie angepeilt:', String(cur).replace('.', ',')); if (v == null) return;
+  const pts = parseLenToPts(v); if (!(pts > 0)) return;
+  if (l < 0.001) { ux = 1; uy = 0; l = 1; } ux /= l; uy /= l; a.x2 = a.x1 + ux * pts; a.y2 = a.y1 + uy * pts;
+  finishSegDraft();
+}
+function finishSegDraft() {
+  if (!segDraft) return; const { pv, a, _onMove } = segDraft; document.removeEventListener('pointermove', _onMove); segDraft = null; hideDrawHud();
+  const arr = getAnnos(pv.num); if (Math.hypot(a.x2 - a.x1, a.y2 - a.y1) < 2) { const i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); drawAnnos(pv); return; }
+  lastLine = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
+}
+function cancelSegDraft() {
+  if (!segDraft) return; const { pv, a, _onMove } = segDraft; document.removeEventListener('pointermove', _onMove);
+  const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); segDraft = null; hideDrawHud(); drawAnnos(pv);
 }
 /* ---------- Wand-Kette: klicken–klicken = ganze Raumzüge (Doppelklick/Enter/Esc = fertig) ---------- */
 let wallDraft = null;   // {pv, last:[x,y], seg, _onMove, _rel}
@@ -2431,6 +2467,7 @@ function setTool(t) {
   if (cropping && t !== 'select' && t !== 'crop') removeCropAnno();   // anderes Werkzeug → Zuschneiden verwerfen
   if (areaDraft && t !== 'area') cancelArea();                       // anderes Werkzeug → Flächen-Polygon verwerfen
   if (penDraft && t !== 'curve') finishCurve();                      // anderes Werkzeug → Kurve abschliessen
+  if (segDraft) cancelSegDraft();                                    // anderes Werkzeug → laufende Linie verwerfen
   if (wallDraft && t !== 'wall') finishWallChain();                  // anderes Werkzeug → Wand-Kette beenden
   if (cdimDraft && t !== 'chaindim') finishChaindim();              // anderes Werkzeug → Kettenmass beenden
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
@@ -3069,6 +3106,7 @@ function wire() {
   // Doppelklick auf Mass-/Masslinie → eigenes Mass eintragen
   $('#pages').addEventListener('dblclick', e => {
     if (editingId != null) return;   // schon im Bearbeiten-Modus (Klick hat bereits geöffnet)
+    if (segDraft) { finishSegDraft(); return; }     // Doppelklick = Linie fertig
     if (wallDraft) { finishWallChain(); return; }   // Doppelklick = Wand-Kette fertig
     if (cdimDraft) { finishChaindim(); return; }   // Doppelklick = Kettenmass fertig
     if (penDraft) { if (penDraft.a.nodes.length >= 2) penDraft.a.nodes.pop(); finishCurve(); return; }   // Doppelklick = Kurve fertig
@@ -3217,6 +3255,7 @@ function wire() {
     if (e.key === 'Enter' && penDraft) { e.preventDefault(); finishCurve(); return; }   // Kurve abschliessen
     if (e.key === 'Enter' && wallDraft) { e.preventDefault(); finishWallChain(); return; }   // Wand-Kette abschliessen
     if (e.key === 'Enter' && cdimDraft) { e.preventDefault(); finishChaindim(); return; }   // Kettenmass abschliessen
+    if (e.key === 'Enter' && segDraft) { e.preventDefault(); finishSegDraft(); return; }   // Linie beenden
     if (e.key === 'Backspace' || e.key === 'Delete') {   // im Zeichnen: letzten Punkt zurücknehmen
       if (wallDraft) { e.preventDefault(); wallChainUndo(); return; }
       if (cdimDraft) { e.preventDefault(); if (cdimDraft.a.pts.length > 1) { cdimDraft.a.pts.pop(); drawAnnos(cdimDraft.pv); } else cancelChaindim(); return; }
@@ -3239,6 +3278,7 @@ function wire() {
     else if (e.key === 'Delete' || e.key === 'Backspace') { if (groupSel) { e.preventDefault(); deleteGroup(); } else if (sel) { e.preventDefault(); deleteSel(); } }
     else if (e.key === 'Escape') {
       hideCtx();
+      if (segDraft) { cancelSegDraft(); return; }                                      // Linie abbrechen
       if (wallDraft) { finishWallChain(); return; }                                    // Wand-Kette beenden (gesetzte Wände bleiben)
       if (cdimDraft) { finishChaindim(); return; }                                      // Kettenmass beenden
       if (areaDraft) { cancelArea(); setTool('select'); return; }                     // Flächen-Polygon abbrechen
@@ -3255,7 +3295,7 @@ function wire() {
     else if (!mod && e.key.toLowerCase() === 'v') setTool('select');
     else if (!mod && e.key.toLowerCase() === 't') setTool('text');
     else if (!mod && e.key.toLowerCase() === 's') setTool('pen');
-    else if (!mod && e.key.toLowerCase() === 'l') { if (wallDraft && wallDraft.seg) { e.preventDefault(); wallChainLength(); return; } const t = lineForLength(); if (t) { e.preventDefault(); lineLenInput(t.pv, t.a); } else setTool('line'); }
+    else if (!mod && e.key.toLowerCase() === 'l') { if (segDraft) { e.preventDefault(); segDraftLength(); return; } if (wallDraft && wallDraft.seg) { e.preventDefault(); wallChainLength(); return; } const t = lineForLength(); if (t) { e.preventDefault(); lineLenInput(t.pv, t.a); } else setTool('line'); }
     else if (!mod && e.key.toLowerCase() === 'w') setTool('wall');
     else if (!mod && e.key.toLowerCase() === 'd') { const t = wallForThick(); if (t) { e.preventDefault(); wallThickInput(t.pv, t.a); } }
     else if (!mod && e.key.toLowerCase() === 'p') setTool('arrow');

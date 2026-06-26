@@ -1999,6 +1999,8 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     if (document.activeElement !== $('#pbSill')) $('#pbSill').value = sill;
     if (document.activeElement !== $('#pbHead')) $('#pbHead').value = head;
     $('#pbSillWrap').style.display = kind === 'window' ? '' : 'none';
+    $('#pbDepthWrap').style.display = kind === 'window' ? '' : 'none';
+    if (document.activeElement !== $('#pbDepth')) $('#pbDepth').value = Math.round((sO && sO.depth != null ? sO.depth : lastOpenDepth) * 100);
     $('#pbFlip').style.display = kind === 'door' ? '' : 'none';
   }
 }
@@ -2236,7 +2238,7 @@ function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte F
   return out;
 }
 /* ---------- Öffnungen (Tür/Fenster) in Wänden ---------- */
-let openKind = 'door', lastOpenW = null;
+let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5;
 function nearestWall(pv, x, y) {
   let best = null, bd = Infinity;
   for (const o of getAnnos(pv.num)) { if (o.type !== 'wall') continue; const dx = o.x2 - o.x1, dy = o.y2 - o.y1, L2 = dx * dx + dy * dy || 1; let t = ((x - o.x1) * dx + (y - o.y1) * dy) / L2; t = Math.max(0, Math.min(1, t)); const px = o.x1 + dx * t, py = o.y1 + dy * t, d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = { wall: o, cx: px, cy: py, ang: Math.atan2(dy, dx), thick: o.thick || wallThickPts(), dist: d }; } }
@@ -2250,7 +2252,14 @@ function openingParts(a) {   // Geometrie: Ausstanz-Rechteck (cover), Linien (La
   const cover = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
   const lines = [[corner(-1, -1), corner(-1, 1)], [corner(1, -1), corner(1, 1)]];   // Laibungen
   const arcs = [];
-  if (a.kind === 'window') { const f = 0.34; lines.push([[x - ux * hw + nx * ht * f, y - uy * hw + ny * ht * f], [x + ux * hw + nx * ht * f, y + uy * hw + ny * ht * f]]); lines.push([[x - ux * hw - nx * ht * f, y - uy * hw - ny * ht * f], [x + ux * hw - nx * ht * f, y + uy * hw - ny * ht * f]]); }
+  if (a.kind === 'window') {   // Rahmen an einstellbarer Tiefe (depth 0=innen … 1=aussen), Glas-Doppellinie
+    const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
+    const fh = Math.min(0.45, (a.frameD || cmToPts(7)) / (2 * ht)); let f1 = md - fh, f2 = md + fh;
+    if (f1 < -1) { f2 += (-1 - f1); f1 = -1; } if (f2 > 1) { f1 -= (f2 - 1); f2 = 1; }
+    lines.push([corner(-1, f1), corner(1, f1)], [corner(-1, f2), corner(1, f2)]);   // Rahmen innen/aussen
+    lines.push([corner(-1, f1), corner(-1, f2)], [corner(1, f1), corner(1, f2)]);   // Rahmen-Stirnseiten
+    const g1 = md - 0.05, g2 = md + 0.05; lines.push([corner(-1, g1), corner(1, g1)], [corner(-1, g2), corner(1, g2)]);   // Glas (Doppellinie)
+  }
   else { const hS = a.hinge || 1, sN = a.swing || 1, hp = [x - ux * hw * hS, y - uy * hw * hS], tip = [hp[0] + nx * a.w * sN, hp[1] + ny * a.w * sN], closed = [x + ux * hw * hS, y + uy * hw * hS]; lines.push([hp, tip]); arcs.push({ cx: hp[0], cy: hp[1], r: a.w, from: tip, to: closed }); }
   return { cover, lines, arcs };
 }
@@ -2275,7 +2284,7 @@ function openingClick(pv, p) {
   if (!nw || nw.dist > nw.thick * 0.85 + 10) { toast('Tür/Fenster auf eine Wand setzen.'); return; }
   pushUndo();
   const dx = nw.wall.x2 - nw.wall.x1, dy = nw.wall.y2 - nw.wall.y1, L2 = dx * dx + dy * dy || 1, t = ((nw.cx - nw.wall.x1) * dx + (nw.cy - nw.wall.y1) * dy) / L2;
-  const a = { id: nextId++, type: 'opening', wallId: nw.wall.id, t, x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, sill: openKind === 'window' ? 0.9 : 0, head: openKind === 'window' ? 2.1 : 2.0, color: nw.wall.color || '#1c242c' };
+  const a = { id: nextId++, type: 'opening', wallId: nw.wall.id, t, x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, sill: openKind === 'window' ? 0.9 : 0, head: openKind === 'window' ? 2.1 : 2.0, depth: lastOpenDepth, color: nw.wall.color || '#1c242c' };
   pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
 }
 function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieben (sonst frei)
@@ -3736,6 +3745,7 @@ function wire() {
   $('#pbWallH').onchange = () => { const v = parseFloat(($('#pbWallH').value || '').replace(',', '.')); if (!(v > 0)) return; wallHeightM = v; const a = selWall(); if (a) { pushUndo(); a.h3d = v; saveState(); } };
   $('#pbSill').onchange = () => { const v = parseFloat(($('#pbSill').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a) { pushUndo(); a.sill = v; saveState(); } };
   $('#pbHead').onchange = () => { const v = parseFloat(($('#pbHead').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selOpen(); if (a) { pushUndo(); a.head = v; saveState(); } };
+  $('#pbDepth').onchange = () => { let v = parseFloat(($('#pbDepth').value || '').replace(',', '.')); if (!(v >= 0)) return; v = Math.max(0, Math.min(100, v)) / 100; lastOpenDepth = v; const a = selOpen(); if (a) { pushUndo(); a.depth = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbSlabBase').onchange = () => { const v = parseFloat(($('#pbSlabBase').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selSlab(); if (a) { pushUndo(); a.base = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbSlabThick').onchange = () => { const v = parseFloat(($('#pbSlabThick').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selSlab(); if (a) { pushUndo(); a.thick = v / 100; pageViews.forEach(drawAnnos); saveState(); } };
   const selStairs = () => { const a = sel && findAnno(sel.num, sel.id); return a && a.type === 'stairs' ? a : null; };

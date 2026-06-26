@@ -1612,7 +1612,7 @@ function archDim(svg, p1, p2, off, col, label) {
   D(a1[0] - ux * over, a1[1] - uy * over, a2[0] + ux * over, a2[1] + uy * over, 0.9);   // Masslinie (quere), beidseitig etwas über
   const kx = (ux + nx), ky = (uy + ny), kl = Math.hypot(kx, ky) || 1, sx = kx / kl, sy = ky / kl;   // 45°-Schrägstrich
   for (const P of [a1, a2]) D(P[0] - sx * tick, P[1] - sy * tick, P[0] + sx * tick, P[1] + sy * tick, 1.1);
-  let ang = Math.atan2(uy, ux) * 180 / Math.PI; if (ang > 90) ang -= 180; else if (ang <= -90) ang += 180;   // von links lesbar
+  let ang = Math.atan2(uy, ux) * 180 / Math.PI; while (ang >= 90) ang -= 180; while (ang < -90) ang += 180;   // immer von rechts lesbar (vertikal → -90°)
   const mx = (a1[0] + a2[0]) / 2 + nx * side * 7, my = (a1[1] + a2[1]) / 2 + ny * side * 7;
   const t = svgEl('text', { x: mx, y: my, fill: col, 'font-size': 11, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3, transform: `rotate(${ang.toFixed(1)} ${mx.toFixed(2)} ${my.toFixed(2)})` });
   t.textContent = label; svg.appendChild(t);
@@ -1633,13 +1633,13 @@ function wallDimChainPrims(a, arr, off) {   // Maßkette die auf Öffnungen reag
   prims.push({ t: 'line', a: P(-over, off), b: P(len + over, off), w: 0.9 });
   const kx = ux + nx, ky = uy + ny, kl = Math.hypot(kx, ky) || 1, sx = kx / kl, sy = ky / kl;
   for (const s of stn) { prims.push({ t: 'line', a: P(s, side * gap), b: P(s, off + side * over), w: 0.7 }); const pc = P(s, off); prims.push({ t: 'line', a: [pc[0] - sx * tick, pc[1] - sy * tick], b: [pc[0] + sx * tick, pc[1] + sy * tick], w: 1.1 }); }
-  let ang = Math.atan2(uy, ux) * 180 / Math.PI; if (ang > 90) ang -= 180; else if (ang <= -90) ang += 180;
-  const wall = a;
+  let ang = Math.atan2(uy, ux) * 180 / Math.PI; while (ang >= 90) ang -= 180; while (ang < -90) ang += 180;   // immer „von rechts" lesbar (vertikal → -90°), unabhängig von Zeichenrichtung
+  const hLab = m => docScale ? (Math.round(m * 100) / 100).toFixed(2) : Math.round(m * 1000) + '';
   for (let i = 0; i < stn.length - 1; i++) {
     const s0 = stn[i], s1 = stn[i + 1], mid = (s0 + s1) / 2, segLen = s1 - s0, op = ops.find(o => Math.abs(mid - o.c) < o.hw - 0.5);
-    if (op) { const lw = openingLichtW(op.o);
-      prims.push({ t: 'text', p: P(mid, off + side * 7), text: fmtLen(lw.roh), ang, bold: true });
-      if (lw.aussen != null) prims.push({ t: 'text', p: P(mid, off + side * 19), text: 'a ' + fmtLen(lw.aussen) + ' · i ' + fmtLen(lw.innen), ang, small: true });
+    if (op) { const o2 = op.o, sill = o2.kind === 'window' ? (o2.sill || 0) : 0, head = o2.head || (o2.kind === 'window' ? 2.1 : 2.0), hM = Math.max(0, head - sill);
+      prims.push({ t: 'text', p: P(mid, off + side * 7), text: fmtLen(o2.w), ang, bold: true });          // Breite (Rohmass) auf der Linie
+      prims.push({ t: 'text', p: P(mid, off + side * 18), text: hLab(hM), ang });                          // Höhe (Rohmass) darüber
     } else if (segLen > 3) prims.push({ t: 'text', p: P(mid, off + side * 7), text: fmtLen(segLen), ang });
   }
   return prims;
@@ -3268,7 +3268,7 @@ async function buildPdfBytes(visibleOnly) {
             const q1 = [a.x1 + nx * off, a.y1 + ny * off], q2 = [a.x2 + nx * off, a.y2 + ny * off]; dl(q1[0] - ux * over, q1[1] - uy * over, q2[0] + ux * over, q2[1] + uy * over, 0.9);
             const kx = ux + nx, ky = uy + ny, kl = Math.hypot(kx, ky) || 1, kxn = kx / kl, kyn = ky / kl;
             for (const P of [q1, q2]) dl(P[0] - kxn * tick, P[1] - kyn * tick, P[0] + kxn * tick, P[1] + kyn * tick, 1.1);
-            const lbl = fmtLen(len), tw = font.widthOfTextAtSize(lbl, 11); let pang = Math.atan2(-uy, ux) * 180 / Math.PI; if (pang > 90) pang -= 180; else if (pang <= -90) pang += 180;
+            const lbl = fmtLen(len), tw = font.widthOfTextAtSize(lbl, 11); let sang = Math.atan2(uy, ux) * 180 / Math.PI; while (sang >= 90) sang -= 180; while (sang < -90) sang += 180; const pang = -sang;
             const rad = pang * Math.PI / 180, bx = Math.cos(rad), by = Math.sin(rad), cxm = (q1[0] + q2[0]) / 2 + nx * side * 7, cym = (q1[1] + q2[1]) / 2 + ny * side * 7;
             pg.drawText(lbl, { x: cxm - bx * tw / 2 + by * 3.5, y: Y(cym) - by * tw / 2 - bx * 3.5, size: 11, font, color: dimc, rotate: degrees(pang) });
           }
@@ -3288,7 +3288,7 @@ async function buildPdfBytes(visibleOnly) {
             const kx = ux + nx, ky = uy + ny, kl = Math.hypot(kx, ky) || 1, kxn = kx / kl, kyn = ky / kl;
             for (const P of [q1, q2]) dl(P[0] - kxn * tick, P[1] - kyn * tick, P[0] + kxn * tick, P[1] + kyn * tick, 1.1);
             const lbl = fmtLen(len), tw = font.widthOfTextAtSize(lbl, 11);
-            let pang = Math.atan2(-uy, ux) * 180 / Math.PI; if (pang > 90) pang -= 180; else if (pang <= -90) pang += 180;
+            let sang = Math.atan2(uy, ux) * 180 / Math.PI; while (sang >= 90) sang -= 180; while (sang < -90) sang += 180; const pang = -sang;
             const rad = pang * Math.PI / 180, bx = Math.cos(rad), by = Math.sin(rad);
             const cxm = (q1[0] + q2[0]) / 2 + nx * side * 7, cym = (q1[1] + q2[1]) / 2 + ny * side * 7;
             pg.drawText(lbl, { x: cxm - bx * tw / 2 + by * 3.5, y: Y(cym) - by * tw / 2 - bx * 3.5, size: 11, font, color: dimc, rotate: degrees(pang) });

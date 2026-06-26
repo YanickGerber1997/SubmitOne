@@ -2156,6 +2156,12 @@ function remapAfterInsert(insertPageNum, count) {
   annos = shift(annos); pageRot = shift(pageRot); viewRot = shift(viewRot); sel = null;
 }
 // Vorlagen-Inhalt (Folien-Layouts) als Annotationen für eine Seite der Grösse w×h
+function todayStr() { const d = new Date(), p = n => ('0' + n).slice(-2); return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear(); }
+function fillPlanField(field, value) {   // Plankopf-Feld (z. B. Massstab) automatisch eintragen
+  let changed = false;
+  for (const n in annos) for (const a of (annos[n] || [])) if (a.type === 'text' && a.field === field && !a.text) { a.text = value; changed = true; }
+  if (changed) pageViews.forEach(drawAnnos);
+}
 function templateAnnos(kind, w, h) {
   const dark = '#1c242c', gray = '#8a8f86';
   const mk = o => Object.assign({ type: 'text', size: 16, color: dark, align: 'left', bg: 'transparent', border: null, borderW: 1.2 }, o);
@@ -2193,9 +2199,13 @@ function templateAnnos(kind, w, h) {
     const rows = 4, rh = kh / rows, cx = kx + kw * 0.6, pad = 2.5 * MM;
     for (let r = 1; r < rows; r++) out.push({ type: 'line', x1: kx, y1: ky + rh * r, x2: kx + kw, y2: ky + rh * r, color: dark, width: 0.6 });
     out.push({ type: 'line', x1: cx, y1: ky, x2: cx, y2: ky + rh * 3, color: dark, width: 0.6 });
-    const lbl = (x, y, t) => mk({ x: x + pad, y: y + pad, w: kw * 0.5, h: rh, text: t, size: 8, color: gray });
-    out.push(lbl(kx, ky, 'Projekt'), lbl(kx, ky + rh, 'Plan'), lbl(kx, ky + 2 * rh, 'Gezeichnet'));
-    out.push(lbl(cx, ky, 'Massstab'), lbl(cx, ky + rh, 'Datum'), lbl(cx, ky + 2 * rh, 'Plan-Nr.'));
+    const cell = (x, y, wc, label, value, field) => {                       // Label oben + ausfüllbarer Wert darunter
+      out.push(mk({ x: x + pad, y: y + pad * 0.5, w: wc, h: rh * 0.4, text: label, size: 7, color: gray }));
+      out.push(mk(Object.assign({ x: x + pad, y: y + rh * 0.42, w: wc, h: rh * 0.55, text: value || '', size: 9, color: dark }, field ? { field } : {})));
+    };
+    const lw = kw * 0.6 - 2 * pad, rw = kw * 0.4 - 2 * pad;
+    cell(kx, ky, lw, 'Projekt', ''); cell(kx, ky + rh, lw, 'Plan', ''); cell(kx, ky + 2 * rh, lw, 'Gezeichnet', '');
+    cell(cx, ky, rw, 'Massstab', docScale ? docScale.label : '', 'scale'); cell(cx, ky + rh, rw, 'Datum', todayStr(), 'date'); cell(cx, ky + 2 * rh, rw, 'Plan-Nr.', '');
     out.push(mk({ x: kx + pad, y: ky + 3 * rh + pad, w: kw - 2 * pad, h: rh, text: 'Submit PDF', size: 11, color: dark }));
     const A4w = 210 * MM, A4h = 297 * MM, tk = 5 * MM;                          // Faltmarken (DIN-824-artig, in A4-Spalten)
     for (let x = w - A4w; x > ml * 0.5; x -= A4w) { out.push({ type: 'line', x1: x, y1: 0, x2: x, y2: tk, color: gray, width: 0.6 }); out.push({ type: 'line', x1: x, y1: h - tk, x2: x, y2: h, color: gray, width: 0.6 }); }
@@ -2653,7 +2663,7 @@ function applyScale() {
     if (!(n > 0)) { $('#scaleDlg').hidden = true; return; }
     docScale = { perPt: n * PT2MM / 1000, label: '1:' + Math.round(n), n: Math.round(n) };
   }
-  $('#scaleDlg').hidden = true; updateScaleLabel(); pageViews.forEach(drawAnnos); toast('Massstab gesetzt'); const after = _scaleAfter; _scaleAfter = null; setTool(after || 'measure');
+  $('#scaleDlg').hidden = true; updateScaleLabel(); if (docScale) fillPlanField('scale', docScale.label); pageViews.forEach(drawAnnos); toast('Massstab gesetzt'); const after = _scaleAfter; _scaleAfter = null; setTool(after || 'measure');
 }
 function updateScaleLabel() { const el = $('#scaleInd'); if (el) el.textContent = docScale ? (docScale.label === 'kalibriert' ? '⟂ kalibriert' : docScale.label) : ''; }
 

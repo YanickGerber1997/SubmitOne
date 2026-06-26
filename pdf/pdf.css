@@ -282,7 +282,7 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
 /* Ausrichten-Leiste */
 .plan-bar{position:fixed;top:calc(var(--bar) + var(--tools) + 8px);left:50%;transform:translateX(-50%);z-index:56;display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.22);padding:6px 12px}
 body.has-tabs .plan-bar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
-.plan-bar .pb-wall,.plan-bar .pb-open,.plan-bar .pb-dimset{display:flex;align-items:center;gap:8px}
+.plan-bar .pb-wall,.plan-bar .pb-open,.plan-bar .pb-dimset,.plan-bar .pb-slab{display:flex;align-items:center;gap:8px}
 .plan-bar .pb-lbl{font-size:12px;font-weight:700;color:var(--accent-3);letter-spacing:.3px}
 .plan-bar .pb-num{font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:5px;white-space:nowrap}
 .plan-bar .pb-num input{width:56px;height:28px;border:1px solid var(--line);background:var(--surface-2);font:inherit;font-size:13px;text-align:center;color:var(--ink)}

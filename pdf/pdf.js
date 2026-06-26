@@ -931,11 +931,37 @@ const WALL_PRESETS = [   // Schichten innen → aussen [Material, cm]
   { name: 'Hinterlüftet · Holz horizontal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['holz', 2.2]] },
   { name: 'Hinterlüftet · Holz vertikal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['konter', 3], ['holz', 2.2]] }
 ];
-function applyWallBuildup(a, layersCm) {   // layersCm = [[mat, cm], …] innen→aussen
-  if (!layersCm || !layersCm.length) { delete a.layers; return; }
-  a.layers = layersCm.map(([mat, cm]) => ({ mat, t: cmToPts(cm) }));
+const SUB_W = { lattung: 6, staender: 5, schraube: 1.2 };   // Breite/Markierung der UK-Querschnitte (cm)
+function applyWallBuildup(a, layersData, spacingCm) {   // layersData = [[mat, cm, subTyp?], …] innen→aussen · spacingCm = Achsabstand UK
+  if (!layersData || !layersData.length) { delete a.layers; return; }
+  const sp = cmToPts(spacingCm || 60);
+  a.layers = layersData.map(([mat, cm, sub]) => { const l = { mat, t: cmToPts(cm) }; if (sub) l.sub = { type: sub, spacing: sp, w: cmToPts(SUB_W[sub] || 2) }; return l; });
   a.thick = a.layers.reduce((s, l) => s + l.t, 0);
   a.hatch = null; a.fill = '#ffffff'; a.color = '#1c242c';   // Aufbau übernimmt die Darstellung
+}
+function wallOpeningsAlong(a, arr) {   // [t0,t1] in pt entlang der Achse je Öffnung auf dieser Wand (für UK-Unterbruch)
+  const res = [], L = Math.hypot(a.x2 - a.x1, a.y2 - a.y1) || 1;
+  for (const o of arr) if (o.type === 'opening' && o.wallId === a.id) { const c = o.t * L, hw = (o.w || 0) / 2; res.push([c - hw, c + hw]); }
+  return res;
+}
+function drawLayerSub(svg, a, band, arr) {   // Unterkonstruktion (Schrauben/Lattung/Ständer) im Achsabstand, an Öffnungen unterbrochen
+  const sub = band.sub; if (!sub) return;
+  const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, T = a.thick || wallThickPts(), o = wallSideOffsets(a), eB = o[1] * T, eA = o[0] * T;
+  const eFrom = eB + (eA - eB) * band.f0, eTo = eB + (eA - eB) * band.f1, spacing = sub.spacing || cmToPts(60), skips = wallOpeningsAlong(a, arr);
+  const inSkip = s => skips.some(([t0, t1]) => s > t0 - 2 && s < t1 + 2);
+  const dark = '#3a3f45', metal = '#6b7178', wood = WALL_MATS.holz.color, woodF = WALL_MATS.holz.fill, NS = 'vector-effect';
+  for (let s = spacing / 2; s <= L; s += spacing) {
+    if (inSkip(s)) continue;
+    const px = a.x1 + ux * s, py = a.y1 + uy * s, A = [px + nx * eFrom, py + ny * eFrom], B = [px + nx * eTo, py + ny * eTo];
+    if (sub.type === 'schraube') {
+      svg.appendChild(svgEl('line', { x1: A[0], y1: A[1], x2: B[0], y2: B[1], stroke: dark, 'stroke-width': 1.2, [NS]: 'non-scaling-stroke' }));
+      const hw = cmToPts(1.4); svg.appendChild(svgEl('line', { x1: B[0] - ux * hw, y1: B[1] - uy * hw, x2: B[0] + ux * hw, y2: B[1] + uy * hw, stroke: dark, 'stroke-width': 1.4, [NS]: 'non-scaling-stroke' }));
+    } else {
+      const w = (sub.w || cmToPts(5)) / 2, c1 = [A[0] - ux * w, A[1] - uy * w], c2 = [B[0] - ux * w, B[1] - uy * w], c3 = [B[0] + ux * w, B[1] + uy * w], c4 = [A[0] + ux * w, A[1] + uy * w], pts = [c1, c2, c3, c4].map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
+      if (sub.type === 'lattung') { svg.appendChild(svgEl('polygon', { points: pts, fill: woodF, stroke: wood, 'stroke-width': 0.8, [NS]: 'non-scaling-stroke' })); svg.appendChild(svgEl('line', { x1: c1[0], y1: c1[1], x2: c3[0], y2: c3[1], stroke: wood, 'stroke-width': 0.6, [NS]: 'non-scaling-stroke' })); svg.appendChild(svgEl('line', { x1: c2[0], y1: c2[1], x2: c4[0], y2: c4[1], stroke: wood, 'stroke-width': 0.6, [NS]: 'non-scaling-stroke' })); }
+      else svg.appendChild(svgEl('polygon', { points: pts, fill: 'none', stroke: metal, 'stroke-width': 1.3, [NS]: 'non-scaling-stroke' }));   // Metallständer
+    }
+  }
 }
 let lastHatchScale = 7;   // gemerkte Schraffur-Dichte (Abstand in pt)
 function wallLayerBands(a, arr) {   // jede Schicht als (gehrungsfolgendes) Band-Polygon zwischen den beiden Wandflächen
@@ -964,6 +990,7 @@ function layerHatch(svg, a, band) {   // Schraffur einer einzelnen Schicht, auf 
 function drawLayeredWall(svg, a, arr) {
   const { bands } = wallLayerBands(a, arr);   // jede Schicht: Füllung + dünne Umrandung in der Materialfarbe (kein schwarzer Gesamtrahmen)
   for (const b of bands) { const m = WALL_MATS[b.mat] || {}; svg.appendChild(svgEl('polygon', { points: b.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: m.fill || '#ffffff', stroke: m.color || '#9a9a9a', 'stroke-width': 0.7, 'stroke-linejoin': 'miter', 'vector-effect': 'non-scaling-stroke' })); layerHatch(svg, a, b); }
+  a.layers.forEach((l, i) => { if (l.sub && bands[i]) { bands[i].sub = l.sub; drawLayerSub(svg, a, bands[i], arr); } });   // Unterkonstruktion über die Schichten
 }
 function wallClipPoly(a) {   // einfaches, nicht-gehrtes Wandrechteck (immer simpel → sicherer Schraffur-Clip)
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, T = a.thick || wallThickPts(), o = wallSideOffsets(a), oA = o[0], oB = o[1];
@@ -1411,16 +1438,19 @@ function lineForLength() {
 function cmToPts(cm) { return cm * (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
 function ptsToCm(pts) { return pts / (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
 let lastWallThick = null, wallJust = 'center', wallHatch = null, wallHeightM = 2.6;   // Achse · Schraffur · 3D-Höhe der neuen Wand
-let wallBuildup = null, buildDraft = [];   // mehrschichtiger Standard-Aufbau für neue Wände · Bearbeitungs-Entwurf
+let wallBuildup = null, buildDraft = [], buildSpacing = 60;   // Standard-Aufbau {layers,spacing} · Entwurf [[mat,cm,sub]] · Achsabstand UK (cm)
+const SUB_OPTS = [['', '— keine UK —'], ['schraube', 'Distanzschrauben'], ['lattung', 'Holzlattung'], ['staender', 'Metallständer']];
 function buildMatOptions(sel) { return Object.keys(WALL_MATS).map(k => `<option value="${k}"${k === sel ? ' selected' : ''}>${WALL_MATS[k].label}</option>`).join(''); }
+function buildSubOptions(sel) { return SUB_OPTS.map(([v, l]) => `<option value="${v}"${v === (sel || '') ? ' selected' : ''}>${l}</option>`).join(''); }
 function updateBuildTotal() { const t = buildDraft.reduce((s, r) => s + (+r[1] || 0), 0), el = document.getElementById('bpTotal'); if (el) el.textContent = 'Gesamt: ' + (Math.round(t * 10) / 10) + ' cm'; }
 function renderBuildList() {
   const list = document.getElementById('bpList'); if (!list) return; list.innerHTML = '';
   buildDraft.forEach((row, i) => {
     const r = document.createElement('div'); r.className = 'bp-row';
-    r.innerHTML = `<input class="bp-t" type="number" min="0.1" step="0.1" value="${row[1]}"><span>cm</span><select class="bp-m">${buildMatOptions(row[0])}</select><button class="bp-del" title="Schicht entfernen">✕</button>`;
+    r.innerHTML = `<input class="bp-t" type="number" min="0.1" step="0.1" value="${row[1]}"><span>cm</span><select class="bp-m">${buildMatOptions(row[0])}</select><select class="bp-s" title="Unterkonstruktion in dieser Schicht">${buildSubOptions(row[2])}</select><button class="bp-del" title="Schicht entfernen">✕</button>`;
     r.querySelector('.bp-t').onchange = e => { buildDraft[i][1] = parseFloat((e.target.value || '').replace(',', '.')) || 0; updateBuildTotal(); };
     r.querySelector('.bp-m').onchange = e => { buildDraft[i][0] = e.target.value; };
+    r.querySelector('.bp-s').onchange = e => { buildDraft[i][2] = e.target.value; };
     r.querySelector('.bp-del').onclick = () => { buildDraft.splice(i, 1); renderBuildList(); };
     list.appendChild(r);
   });
@@ -1428,16 +1458,18 @@ function renderBuildList() {
 }
 function openBuildPop() {
   const presets = document.getElementById('bpPresets'); presets.innerHTML = '';
-  WALL_PRESETS.forEach(p => { const b = document.createElement('button'); b.className = 'bp-preset'; b.textContent = p.name; b.onclick = () => { buildDraft = p.layers.map(l => [l[0], l[1]]); renderBuildList(); }; presets.appendChild(b); });
+  WALL_PRESETS.forEach(p => { const b = document.createElement('button'); b.className = 'bp-preset'; b.textContent = p.name; b.onclick = () => { buildDraft = p.layers.map(l => [l[0], l[1], '']); renderBuildList(); }; presets.appendChild(b); });
   const a = selWall();
-  if (a && a.layers && a.layers.length) buildDraft = a.layers.map(l => [l.mat, Math.round(ptsToCm(l.t) * 10) / 10]);
-  else if (!buildDraft.length) buildDraft = WALL_PRESETS[0].layers.map(l => [l[0], l[1]]);
+  if (a && a.layers && a.layers.length) { buildDraft = a.layers.map(l => [l.mat, Math.round(ptsToCm(l.t) * 10) / 10, l.sub ? l.sub.type : '']); const sp = a.layers.find(l => l.sub); if (sp) buildSpacing = Math.round(ptsToCm(sp.sub.spacing)); }
+  else if (!buildDraft.length) buildDraft = WALL_PRESETS[0].layers.map(l => [l[0], l[1], '']);
+  const si = document.getElementById('bpSpacing'); if (si) si.value = buildSpacing;
   renderBuildList(); document.getElementById('buildPop').hidden = false;
 }
 function applyBuildup() {
-  const layers = buildDraft.filter(r => r[1] > 0).map(r => [r[0], r[1]]);
-  wallBuildup = layers.length ? layers : null;
-  const a = selWall(); if (a) { pushUndo(); applyWallBuildup(a, layers); pageViews.forEach(drawAnnos); saveState(); updateSelBar(); }
+  const si = document.getElementById('bpSpacing'); if (si) buildSpacing = parseFloat((si.value || '').replace(',', '.')) || 60;
+  const layers = buildDraft.filter(r => r[1] > 0).map(r => [r[0], r[1], r[2] || '']);
+  wallBuildup = layers.length ? { layers, spacing: buildSpacing } : null;
+  const a = selWall(); if (a) { pushUndo(); applyWallBuildup(a, layers, buildSpacing); pageViews.forEach(drawAnnos); saveState(); updateSelBar(); }
   document.getElementById('buildPop').hidden = true; toast(layers.length ? 'Wandaufbau angewendet ✓' : 'Aufbau entfernt');
 }
 let stairW = null, stairRiseM = 2.6, stairBaseM = 0;   // Treppe: Breite · Geschosshöhe · Unterkante
@@ -2091,7 +2123,7 @@ function startDraw(pv, e, p) {
   else if (tool === 'stairs') a = { id: nextId++, type: 'stairs', x1: p.x, y1: p.y, x2: p.x, y2: p.y, width: stairWidthPts(), rise: stairRiseM, base: stairBaseM, color: style.color };   // Treppe = Lauf (Linie mit Breite + Höhe)
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   pushAnno(pv.num, a);
-  if (a.type === 'wall' && wallBuildup) applyWallBuildup(a, wallBuildup);   // Standard-Aufbau übernehmen
+  if (a.type === 'wall' && wallBuildup) applyWallBuildup(a, wallBuildup.layers, wallBuildup.spacing);   // Standard-Aufbau übernehmen
   const isLine = (a.type !== 'pen' && a.type !== 'rect' && a.type !== 'oval');
   const move = ev => {
     let q = evtToPage(pv, ev), snapped = null;
@@ -2160,7 +2192,7 @@ let wallDraft = null;   // {pv, last:[x,y], seg, _onMove, _rel}
 function startWallChain(pv, x, y) {
   pushUndo();
   const seg = { id: nextId++, type: 'wall', x1: x, y1: y, x2: x, y2: y, thick: wallThickPts(), just: wallJust, color: (wallHatch && wallHatch.color) || style.color, fill: (wallHatch && wallHatch.fill) || '#ffffff', hatch: wallHatch ? { ...wallHatch } : null, width: 1.4, dim: wallDimOn, _draft: true };
-  pushAnno(pv.num, seg); if (wallBuildup) applyWallBuildup(seg, wallBuildup); wallDraft = { pv, last: [x, y], seg, pts: [[x, y]], segIds: [] };
+  pushAnno(pv.num, seg); if (wallBuildup) applyWallBuildup(seg, wallBuildup.layers, wallBuildup.spacing); wallDraft = { pv, last: [x, y], seg, pts: [[x, y]], segIds: [] };
   const onMove = ev => {
     if (!wallDraft) return; const s = wallDraft.seg; let q = evtToPage(pv, ev), snapped = null, rel = null;
     if (!ev.shiftKey) { const an = snapWallPt(pv, q.x, q.y, s.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
@@ -2180,7 +2212,7 @@ function wallChainClick(pv, p) {
   const first = wallDraft.pts[0], closed = wallDraft.pts.length >= 4 && Math.hypot(ex - first[0], ey - first[1]) < (s.thick * 0.7 + 5);   // Zug geschlossen?
   if (closed) { addRoomArea(pv, wallDraft.pts.slice(0, -1), s.thick); finishWallChain(); return; }
   const seg2 = { id: nextId++, type: 'wall', x1: ex, y1: ey, x2: ex, y2: ey, thick: s.thick, just: s.just, color: s.color, fill: s.fill, hatch: s.hatch, width: s.width, dim: s.dim, _draft: true };
-  pushAnno(pv.num, seg2); if (wallBuildup) applyWallBuildup(seg2, wallBuildup); wallDraft.seg = seg2; wallDraft.last = [ex, ey];
+  pushAnno(pv.num, seg2); if (wallBuildup) applyWallBuildup(seg2, wallBuildup.layers, wallBuildup.spacing); wallDraft.seg = seg2; wallDraft.last = [ex, ey];
   drawAnnos(pv); saveState();
 }
 function wallChainLength() {   // „L" während der Wand-Kette: aktuelles Segment auf exakte Länge setzen + Ecke setzen
@@ -3002,6 +3034,20 @@ async function buildPdfBytes(visibleOnly) {
               pg.pushOperators(popGraphicsState());
             } catch (_) { } }
           }
+          a.layers.forEach((Ly, li) => {   // Unterkonstruktion im PDF
+            const b = bands[li]; if (!Ly.sub || !b) return; const sub = Ly.sub;
+            const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, T = a.thick || wallThickPts(), o = wallSideOffsets(a), eB = o[1] * T, eA = o[0] * T;
+            const eFrom = eB + (eA - eB) * b.f0, eTo = eB + (eA - eB) * b.f1, spacing = sub.spacing || cmToPts(60), skips = wallOpeningsAlong(a, arr), inSkip = s => skips.some(([t0, t1]) => s > t0 - 2 && s < t1 + 2);
+            const dark = rgb(.23, .25, .27), mc = hexToRgb('#6b7178'), metalC = rgb(mc.r, mc.g, mc.b), wc = hexToRgb(WALL_MATS.holz.color), woodC = rgb(wc.r, wc.g, wc.b), wf = hexToRgb(WALL_MATS.holz.fill);
+            for (let s = spacing / 2; s <= L; s += spacing) {
+              if (inSkip(s)) continue; const px = a.x1 + ux * s, py = a.y1 + uy * s, A = [px + nx * eFrom, py + ny * eFrom], B = [px + nx * eTo, py + ny * eTo];
+              if (sub.type === 'schraube') { pg.drawLine({ start: { x: A[0], y: Y(A[1]) }, end: { x: B[0], y: Y(B[1]) }, thickness: 1.2, color: dark }); const hw = cmToPts(1.4); pg.drawLine({ start: { x: B[0] - ux * hw, y: Y(B[1] - uy * hw) }, end: { x: B[0] + ux * hw, y: Y(B[1] + uy * hw) }, thickness: 1.4, color: dark }); }
+              else { const w = (sub.w || cmToPts(5)) / 2, c1 = [A[0] - ux * w, A[1] - uy * w], c2 = [B[0] - ux * w, B[1] - uy * w], c3 = [B[0] + ux * w, B[1] + uy * w], c4 = [A[0] + ux * w, A[1] + uy * w], d = 'M' + [c1, c2, c3, c4].map((p, k) => (k ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z';
+                if (sub.type === 'lattung') { try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(wf.r, wf.g, wf.b), borderColor: woodC, borderWidth: 0.8 }); } catch (_) { } pg.drawLine({ start: { x: c1[0], y: Y(c1[1]) }, end: { x: c3[0], y: Y(c3[1]) }, thickness: 0.6, color: woodC }); pg.drawLine({ start: { x: c2[0], y: Y(c2[1]) }, end: { x: c4[0], y: Y(c4[1]) }, thickness: 0.6, color: woodC }); }
+                else { try { pg.drawSvgPath(d, { x: 0, y: PH, borderColor: metalC, borderWidth: 1.3 }); } catch (_) { } }
+              }
+            }
+          });
           if (a.dim) {
             const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
             const base = (a.thick || wallThickPts()) / 2 + cmToPts(wallDimOffCm), off = (a.dimOff != null ? a.dimOff : base), side = off >= 0 ? 1 : -1, gap = wallDimGap, over = 4, tick = 5, dimc = rgb(.11, .14, .17);

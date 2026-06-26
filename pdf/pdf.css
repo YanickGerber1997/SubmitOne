@@ -515,6 +515,9 @@ body.has-tabs .build-pop{top:calc(var(--bar) + var(--tools) + var(--tabs) + var(
 .bp-single{border:1px solid var(--line);background:var(--surface);font:inherit;font-size:12px;padding:6px 12px;cursor:pointer;color:var(--ink-soft)}
 .bp-apply{border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent-3);font:inherit;font-size:13px;font-weight:700;padding:6px 16px;cursor:pointer}
 .bp-apply:hover{background:var(--accent);color:#fff}
+.wp-grid{display:flex;flex-direction:column;gap:5px}
+.wp-grid label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--ink-soft)}
+.wp-grid input{width:64px;font:inherit;font-size:12px;padding:4px 6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);text-align:right}
 .plan-pop{position:fixed;bottom:46px;left:50%;transform:translateX(-50%);z-index:64;background:var(--surface);border:1px solid var(--line);box-shadow:0 10px 30px rgba(20,24,40,.24);padding:12px;width:300px}
 .pp-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px}
 .pp-kind{display:flex;gap:4px;margin-bottom:10px}

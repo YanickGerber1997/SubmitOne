@@ -5,24 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=224" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=224" />
-  <link rel="icon" href="favicon.png?v=224" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=224" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=225" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=225" />
+  <link rel="icon" href="favicon.png?v=225" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=225" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=224" />
+  <link rel="stylesheet" href="pdf.css?v=225" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=224" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=225" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=224" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=224" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=225" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=225" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <span class="doc-name" id="docName"></span>
@@ -183,7 +183,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=224" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=225" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -565,11 +565,23 @@
       <select class="pb-sel" id="pbWinHinge" title="Anschlag / Öffnungsrichtung (Schnitt-Symbol)">
         <option value="left">Anschlag links</option><option value="right">Anschlag rechts</option><option value="kipp">Kipp</option>
       </select>
-      <label class="pb-num" id="pbFrameWrap" title="Rahmenbreite (Blend-/Flügelrahmen)">Rahmen <input id="pbFrameW" type="number" min="3" max="20" step="0.5" /> cm</label>
       <label class="pb-num" id="pbOuterWrap" title="Aussenüberdämmung – wie weit Dämmung/Schalung aussen über den Rahmen lappt (→ Aussenlichtmass)">Aussen <input id="pbOuterLap" type="number" min="0" max="20" step="0.5" /> cm</label>
       <label class="pb-num" id="pbInnerWrap" title="Innenlaibung – wie weit der Putz innen über den Rahmen läuft (→ Innenlichtmass)">Innen <input id="pbInnerRev" type="number" min="0" max="20" step="0.5" /> cm</label>
+      <button class="pb-tg" id="pbWinMore" title="Fenster-Profil im Detail: Rahmen/Flügel-Masse, Versatz, Rücksprung">Profil ⚙</button>
       <button class="pb-tg" id="pbNiche" title="Storennische / Rollladenkasten über dem Sturz (im 3D sichtbar)">Nische</button>
       <button class="pb-tg" id="pbFlip" title="Anschlag / Öffnungsseite">⟲</button>
+    </div>
+  </div>
+  <div class="build-pop" id="winPop" hidden style="width:280px">
+    <div class="pp-title">Fenster-Profil (cm)</div>
+    <div class="wp-grid">
+      <label>Rahmen Höhe<input id="wpFrameW" type="number" step="0.5"></label>
+      <label>Rahmen Tiefe<input id="wpFrameD" type="number" step="0.5"></label>
+      <label>Flügel Breite<input id="wpSashW" type="number" step="0.5"></label>
+      <label>Flügel Tiefe<input id="wpSashD" type="number" step="0.5"></label>
+      <label>Versatz (im Rahmen)<input id="wpShift" type="number" step="0.5"></label>
+      <label>Rücksprung (Tiefe)<input id="wpRecess" type="number" step="0.5"></label>
+      <label>Glas Dicke<input id="wpGlass" type="number" step="0.5"></label>
     </div>
   </div>
   <div class="align-bar" id="alignBar" hidden>
@@ -611,7 +623,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=224"></script>
+  <script src="pdf.js?v=225"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

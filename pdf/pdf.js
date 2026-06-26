@@ -2052,7 +2052,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     $('#pbNiche').style.display = kind === 'window' ? '' : 'none'; $('#pbNiche').classList.toggle('on', !!(sO && sO.niche));
     $('#pbWinType').style.display = kind === 'window' ? '' : 'none'; $('#pbWinType').value = (sO && sO.winType) || lastWinType;
     $('#pbWinHinge').style.display = kind === 'window' ? '' : 'none'; $('#pbWinHinge').value = (sO && sO.winHinge) || lastWinHinge;
-    $('#pbFrameWrap').style.display = kind === 'window' ? '' : 'none'; if (document.activeElement !== $('#pbFrameW')) $('#pbFrameW').value = Math.round(ptsToCm(sO && sO.frameW ? sO.frameW : cmToPts(10)) * 10) / 10;
+    $('#pbWinMore').style.display = kind === 'window' ? '' : 'none';
     $('#pbOuterWrap').style.display = kind === 'window' ? '' : 'none'; if (document.activeElement !== $('#pbOuterLap')) $('#pbOuterLap').value = Math.round(ptsToCm(sO && sO.outerLap != null ? sO.outerLap : cmToPts(3)) * 10) / 10;
     $('#pbInnerWrap').style.display = kind === 'window' ? '' : 'none'; if (document.activeElement !== $('#pbInnerRev')) $('#pbInnerRev').value = Math.round(ptsToCm(sO && sO.innerReveal != null ? sO.innerReveal : cmToPts(2)) * 10) / 10;
     $('#pbFlip').style.display = kind === 'door' ? '' : 'none';
@@ -3608,7 +3608,7 @@ function build3DScene(host, walls, arr) {
       if (edge) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); e.rotation.copy(m.rotation); scene.add(e); }
     };
     const fmat = new THREE.MeshLambertMaterial({ color: 0xf2efe9 }), bmat = new THREE.MeshLambertMaterial({ color: 0xcfcabf }), nmat = new THREE.MeshLambertMaterial({ color: 0x3a3f45 });
-    const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(7), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche, winType: o.winType || 'f1' })).sort((a, b) => a.c - b.c);
+    const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(10), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche, winType: o.winType || 'f1' })).sort((a, b) => a.c - b.c);
     let cur = 0;
     for (const op of ops) {
       const a0 = Math.max(0, op.c - op.hw), a1 = Math.min(lp, op.c + op.hw); if (a1 <= a0) continue;
@@ -3999,7 +3999,10 @@ function wire() {
   $('#pbNiche').onclick = () => { const a = selOpen(); if (!a || a.kind !== 'window') { toast('Nische gibt es nur beim Fenster.'); return; } pushUndo(); a.niche = !a.niche; $('#pbNiche').classList.toggle('on', a.niche); saveState(); toast(a.niche ? 'Storennische an – im 3D sichtbar' : 'Storennische aus'); };
   $('#pbWinType').onchange = () => { const v = $('#pbWinType').value; lastWinType = v; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.winType = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbWinHinge').onchange = () => { const v = $('#pbWinHinge').value; lastWinHinge = v; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.winHinge = v; pageViews.forEach(drawAnnos); saveState(); } };
-  $('#pbFrameW').onchange = () => { const v = parseFloat(($('#pbFrameW').value || '').replace(',', '.')); if (!(v >= 3)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.frameW = cmToPts(v); a.sashW = cmToPts(Math.max(3, v - 1)); pageViews.forEach(drawAnnos); saveState(); } };
+  const winProf = [['wpFrameW', 'frameW', 10], ['wpFrameD', 'frameD', 7], ['wpSashW', 'sashW', 7], ['wpSashD', 'sashD', 7], ['wpShift', 'sashShift', 4], ['wpRecess', 'sashRecess', 1], ['wpGlass', 'glassT', 2]];
+  $('#pbWinMore').onclick = e => { e.stopPropagation(); const p = $('#winPop'); p.hidden = !p.hidden; if (!p.hidden) { const a = selOpen(); for (const [id, key, def] of winProf) $('#' + id).value = Math.round(ptsToCm(a && a[key] != null ? a[key] : cmToPts(def)) * 10) / 10; } };
+  for (const [id, key] of winProf) $('#' + id).onchange = () => { const v = parseFloat(($('#' + id).value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a[key] = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#winPop') && !e.target.closest('#pbWinMore')) $('#winPop').hidden = true; }, true);
   $('#pbOuterLap').onchange = () => { const v = parseFloat(($('#pbOuterLap').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.outerLap = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbInnerRev').onchange = () => { const v = parseFloat(($('#pbInnerRev').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.innerReveal = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
   $('#dropOpen').onclick = openPicker;

@@ -2305,8 +2305,9 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
   const ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
   const corner = (s, m) => [x + ux * hw * s + nx * ht * m, y + uy * hw * s + ny * ht * m];
   const cover = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
-  const lines = [[corner(-1, -1), corner(-1, 1)], [corner(1, -1), corner(1, 1)]];   // Laibungen
-  const arcs = [], bold = [];
+  const lines = [], arcs = [], bold = [];
+  const isDetailWin = a.kind === 'window' && detail;
+  if (!isDetailWin) lines.push([corner(-1, -1), corner(-1, 1)], [corner(1, -1), corner(1, 1)]);   // Laibungs-Querlinien (beim Detail-Fenster weg)
   if (a.kind === 'window' && !detail) { bold.push([corner(-1, -0.13), corner(1, -0.13)]); lines.push([corner(-1, 0.13), corner(1, 0.13)]); }   // einfach: zwei quere Linien, eine breit
   else if (a.kind === 'window') {   // Profil: Blendrahmen Höhe 10 (entlang Öffnung) × Tiefe 7; Flügel 7×7, 4 cm entlang in den Rahmen, 1 cm Tiefe zurück
     const wt = a.winType || 'f1';
@@ -2314,7 +2315,7 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
     const frameW = a.frameW || cmToPts(10), frameD = a.frameD || cmToPts(7), sashW = a.sashW || cmToPts(7), sashD = a.sashD || cmToPts(7), shift = a.sashShift != null ? a.sashShift : cmToPts(4), recess = a.sashRecess != null ? a.sashRecess : cmToPts(1);
     const fdh = Math.min(0.49, frameD / (2 * ht)); let fmA = md - fdh, fmB = md + fdh;   // fmB = Vorderkante (aussen), fmA = innen
     if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }
-    const fwS = Math.min(0.45, frameW / hw), ssW = Math.min(0.42, sashW / hw), shiftS = shift / hw, backS = Math.max(0, fwS - shiftS);
+    const fwS = Math.min(0.45, frameW / hw), ssW = Math.min(0.42, sashW / hw), backS = Math.min(fwS, shift / hw);   // backS = Überlappung in den Rahmen (4 cm) → Flügel schaut ssW−backS (≈3 cm) heraus
     const recM = Math.min(fdh * 1.4, recess / ht), sdM = Math.min(fdh * 1.95, sashD / ht), smB = fmB - recM, smA = Math.max(-1, smB - sdM), gc = (smA + smB) / 2, gh = Math.min((smB - smA) * 0.42, (a.glassT || cmToPts(2)) / (2 * ht));
     const box = (s0, s1, mA, mB) => lines.push([corner(s0, mA), corner(s1, mA)], [corner(s0, mB), corner(s1, mB)], [corner(s0, mA), corner(s0, mB)], [corner(s1, mA), corner(s1, mB)]);
     const div = wt === 'f2' ? [-1, 0, 1] : [-1, 1];

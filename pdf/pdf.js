@@ -2057,6 +2057,8 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     $('#pbWinHinge').style.display = winLike ? '' : 'none'; $('#pbWinHinge').value = (sO && sO.winHinge) || lastWinHinge;
     $('#pbWinMore').style.display = winLike ? '' : 'none';
     $('#pbReveal').style.display = winLike ? '' : 'none'; $('#pbReveal').value = (sO && sO.revealType) || 'putz';
+    $('#pbAnschlag').style.display = winLike ? '' : 'none'; $('#pbAnschlag').value = (sO && sO.anschlagType) || 'none';
+    $('#pbAnschlagDWrap').style.display = winLike && sO && sO.anschlagType && sO.anschlagType !== 'none' ? '' : 'none'; if (document.activeElement !== $('#pbAnschlagD')) $('#pbAnschlagD').value = Math.round(ptsToCm(sO && sO.anschlagDepth != null ? sO.anschlagDepth : cmToPts(5)) * 10) / 10;
     $('#pbWinMat').style.display = winLike ? '' : 'none'; $('#pbWinMat').value = (sO && sO.winMat) || lastWinMat || 'holz';
     $('#pbOuterWrap').style.display = winLike ? '' : 'none'; if (document.activeElement !== $('#pbOuterLap')) $('#pbOuterLap').value = Math.round(ptsToCm(sO && sO.outerLap != null ? sO.outerLap : cmToPts(3)) * 10) / 10;
     $('#pbInnerWrap').style.display = winLike ? '' : 'none'; if (document.activeElement !== $('#pbInnerRev')) $('#pbInnerRev').value = Math.round(ptsToCm(sO && sO.innerReveal != null ? sO.innerReveal : cmToPts(2)) * 10) / 10;
@@ -2418,6 +2420,16 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
         strips.push({ poly: [corner(sBO, mLoC), corner(sE, mLoC), corner(sE, p.mHi), corner(sBO, p.mHi)], fill: m.fill || '#fff', stroke: m.color || '#1c242c', hatch: isD ? bandHatchPerp(lo, hi, mLoC, p.mHi, corner, stepS, s0) : (isW ? bandHatch(lo, hi, mLoC, p.mHi, corner, hw, ht, stepS) : null) });   // Schicht läuft bis zum Brett
       }
       if (Math.abs(sBO - sBI) > 0.02) strips.push({ poly: [corner(sBI, fmB), corner(sBO, fmB), corner(sBO, 1), corner(sBI, 1)], fill: boardMat.fill, stroke: boardMat.color, hatch: bandHatch(Math.min(sBI, sBO), Math.max(sBI, sBO), fmB, 1, corner, hw, ht, stepS) });   // Laibungsbrett, 1 cm vom Rahmen
+    }
+  }
+  const anType = a.anschlagType || 'none';   // Anschlag: Mauerwerk läuft aussen (bzw. innen) vor den Rahmen → Öffnung dort schmaler
+  if (anType !== 'none') {
+    const core = wall.layers[coreIdx] || wall.layers[0], cmat = WALL_MATS[core.mat] || {};
+    const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), anS = Math.min(0.6, cmToPts(a.anschlagDepth != null ? a.anschlagDepth : 5) / hw);
+    const mLo = anType === 'innen' ? -1 : fmB, mHi = anType === 'innen' ? fmA : 1;
+    for (const sgn of [-1, 1]) {
+      const s0 = sgn, s1 = sgn * Math.max(0, 1 - fwSr - anS);
+      if (Math.abs(mHi - mLo) > 0.02 && Math.abs(s1 - s0) > 0.02) strips.push({ poly: [corner(s0, mLo), corner(s1, mLo), corner(s1, mHi), corner(s0, mHi)], fill: cmat.fill || '#fff', stroke: cmat.color || '#1c242c', hatch: bandHatch(Math.min(s0, s1), Math.max(s0, s1), mLo, mHi, corner, hw, ht, stepS) });   // Mauerwerks-Anschlag vor dem Rahmen
     }
   }
   return strips;
@@ -4147,6 +4159,8 @@ function wire() {
   $('#pbOuterLap').onchange = () => { const v = parseFloat(($('#pbOuterLap').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.outerLap = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbInnerRev').onchange = () => { const v = parseFloat(($('#pbInnerRev').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.innerReveal = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbReveal').onchange = () => { const v = $('#pbReveal').value, a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.revealType = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbAnschlag').onchange = () => { const v = $('#pbAnschlag').value, a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.anschlagType = v; updatePlanBar(); pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbAnschlagD').onchange = () => { const v = parseFloat(($('#pbAnschlagD').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.anschlagDepth = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbWinMat').onchange = () => { const v = $('#pbWinMat').value, a = selOpen(); lastWinMat = v; if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.winMat = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');

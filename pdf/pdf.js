@@ -2052,6 +2052,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     $('#pbNiche').style.display = kind === 'window' ? '' : 'none'; $('#pbNiche').classList.toggle('on', !!(sO && sO.niche));
     $('#pbWinType').style.display = kind === 'window' ? '' : 'none'; $('#pbWinType').value = (sO && sO.winType) || lastWinType;
     $('#pbWinHinge').style.display = kind === 'window' ? '' : 'none'; $('#pbWinHinge').value = (sO && sO.winHinge) || lastWinHinge;
+    $('#pbFrameWrap').style.display = kind === 'window' ? '' : 'none'; if (document.activeElement !== $('#pbFrameW')) $('#pbFrameW').value = Math.round(ptsToCm(sO && sO.frameW ? sO.frameW : cmToPts(6)) * 10) / 10;
     $('#pbFlip').style.display = kind === 'door' ? '' : 'none';
   }
 }
@@ -2310,14 +2311,16 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
     const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
     const fmh = Math.min(0.48, (a.frameD || cmToPts(7)) / (2 * ht)); let fmA = md - fmh, fmB = md + fmh;
     if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }
-    const fwS = Math.min(0.45, (a.frameW || cmToPts(7)) / hw), gh = Math.min(fmh * 0.55, (a.glassT || cmToPts(2)) / (2 * ht));
-    const box = (s0, s1) => lines.push([corner(s0, fmA), corner(s1, fmA)], [corner(s0, fmB), corner(s1, fmB)], [corner(s0, fmA), corner(s0, fmB)], [corner(s1, fmA), corner(s1, fmB)]);
+    const fwS = Math.min(0.42, (a.frameW || cmToPts(6)) / hw), ssW = Math.min(fwS * 0.95, (a.sashW || cmToPts(5)) / hw);
+    const gh = Math.min(fmh * 0.4, (a.glassT || cmToPts(2)) / (2 * ht)), sd = Math.min(fmh * 0.72, gh * 3);   // Glas-Halbtiefe, Flügel-Halbtiefe
+    const box = (s0, s1, mA, mB) => lines.push([corner(s0, mA), corner(s1, mA)], [corner(s0, mB), corner(s1, mB)], [corner(s0, mA), corner(s0, mB)], [corner(s1, mA), corner(s1, mB)]);
     const div = wt === 'f2' ? [-1, 0, 1] : [-1, 1];
-    for (const dv of div) { if (dv <= -0.999) box(-1, -1 + fwS); else if (dv >= 0.999) box(1 - fwS, 1); else box(-fwS / 2, fwS / 2); }   // Blendrahmen-Holme
+    for (const dv of div) { let m0, m1; if (dv <= -0.999) { m0 = -1; m1 = -1 + fwS; } else if (dv >= 0.999) { m0 = 1 - fwS; m1 = 1; } else { m0 = -fwS / 2; m1 = fwS / 2; } box(m0, m1, fmA, fmB); }   // Blendrahmen-Holme (im Mauerwerk, volle Tiefe)
     for (let i = 0; i < div.length - 1; i++) {
       const cl = div[i] <= -0.999 ? -1 + fwS : div[i] + fwS / 2, cr = div[i + 1] >= 0.999 ? 1 - fwS : div[i + 1] - fwS / 2;
-      if (wt !== 'fest') { const sd = Math.min(fmh * 0.82, gh * 1.9), sA = md - sd, sB = md + sd; lines.push([corner(cl, sA), corner(cr, sA)], [corner(cl, sB), corner(cr, sB)], [corner(cl, sA), corner(cl, sB)], [corner(cr, sA), corner(cr, sB)]); }   // Flügelrahmen
-      lines.push([corner(cl, md - gh), corner(cr, md - gh)], [corner(cl, md + gh), corner(cr, md + gh)]);   // Glas
+      if (wt !== 'fest') { box(cl, cl + ssW, md - sd, md + sd); box(cr - ssW, cr, md - sd, md + sd); }   // Flügelrahmen-Holme (im Blendrahmen, flacher, raumseitig)
+      const gl = wt !== 'fest' ? cl + ssW : cl, gr = wt !== 'fest' ? cr - ssW : cr;
+      lines.push([corner(gl, md - gh), corner(gr, md - gh)], [corner(gl, md + gh), corner(gr, md + gh)]);   // Glas (Doppellinie)
     }
   }
   else {   // Tür: Blatt + Schwenk, im Detail zusätzlich Blendrahmen an den Laibungen
@@ -3982,6 +3985,7 @@ function wire() {
   $('#pbNiche').onclick = () => { const a = selOpen(); if (!a || a.kind !== 'window') { toast('Nische gibt es nur beim Fenster.'); return; } pushUndo(); a.niche = !a.niche; $('#pbNiche').classList.toggle('on', a.niche); saveState(); toast(a.niche ? 'Storennische an – im 3D sichtbar' : 'Storennische aus'); };
   $('#pbWinType').onchange = () => { const v = $('#pbWinType').value; lastWinType = v; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.winType = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbWinHinge').onchange = () => { const v = $('#pbWinHinge').value; lastWinHinge = v; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.winHinge = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbFrameW').onchange = () => { const v = parseFloat(($('#pbFrameW').value || '').replace(',', '.')); if (!(v >= 3)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.frameW = cmToPts(v); a.sashW = cmToPts(Math.max(3, v - 1)); pageViews.forEach(drawAnnos); saveState(); } };
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
   $('#btnNew').onclick = () => openSlidePicker('new');

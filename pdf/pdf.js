@@ -2347,7 +2347,10 @@ function sectionPrimitives(a, arr) {
         out.push({ t: 'rect', x: X(opx0), y: yT, w: opw, h: yB - yT, fill: 'none', stroke: col, sw: 1.4 });   // Blendrahmen
         const panes = wt === 'f2' ? 2 : 1, pw = opw / panes;
         for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1.4 });   // Mittelpfosten
-          if (wt !== 'fest') out.push({ t: 'rect', x: px0 + fr, y: yT + fr, w: pw - 2 * fr, h: (yB - yT) - 2 * fr, fill: 'none', stroke: col, sw: 0.9 });   // Flügelrahmen
+          if (wt !== 'fest') { out.push({ t: 'rect', x: px0 + fr, y: yT + fr, w: pw - 2 * fr, h: (yB - yT) - 2 * fr, fill: 'none', stroke: col, sw: 0.9 });   // Flügelrahmen
+            const ix0 = px0 + fr * 1.6, ix1 = px0 + pw - fr * 1.6, iy0 = yT + fr * 1.6, iy1 = yB - fr * 1.6, mid = (iy0 + iy1) / 2, apexL = (wt === 'f2' ? pi === 0 : true), ax = apexL ? ix0 : ix1, bx = apexL ? ix1 : ix0;   // Drehflügel-Symbol (Apex = Anschlag/Bandseite)
+            out.push({ t: 'line', x1: bx, y1: iy0, x2: ax, y2: mid, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: bx, y1: iy1, x2: ax, y2: mid, stroke: col, w: 0.6, dash: '4 3' });
+          }
         }
         out.push({ t: 'line', x1: X(opx0) - 6, y1: Yh(sill), x2: X(opx0 + opw) + 6, y2: Yh(sill), stroke: col, w: 1.8 });   // Fensterbank
         if (o.niche) { const nh = (Yh(0) - Yh(0.24)); out.push({ t: 'rect', x: X(opx0), y: Yh(head) - nh, w: opw, h: nh, fill: '#e9e6df', stroke: col, sw: 0.8 }); }

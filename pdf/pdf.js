@@ -2056,6 +2056,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     $('#pbWinType').style.display = winLike ? '' : 'none'; $('#pbWinType').value = (sO && sO.winType) || (kind === 'door' ? lastDoorType : lastWinType);
     $('#pbWinHinge').style.display = winLike ? '' : 'none'; $('#pbWinHinge').value = (sO && sO.winHinge) || lastWinHinge;
     $('#pbWinMore').style.display = winLike ? '' : 'none';
+    $('#pbLaibEdit').style.display = winLike ? '' : 'none';
     $('#pbReveal').style.display = winLike ? '' : 'none'; $('#pbReveal').value = (sO && sO.revealType) || 'putz';
     $('#pbAnschlag').style.display = winLike ? '' : 'none'; $('#pbAnschlag').value = (sO && sO.anschlagType) || 'none';
     $('#pbAnschlagDWrap').style.display = winLike && sO && sO.anschlagType && sO.anschlagType !== 'none' ? '' : 'none'; if (document.activeElement !== $('#pbAnschlagD')) $('#pbAnschlagD').value = Math.round(ptsToCm(sO && sO.anschlagDepth != null ? sO.anschlagDepth : cmToPts(5)) * 10) / 10;
@@ -2409,8 +2410,8 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   const pos = wall.layers.map(l => { const f0 = cum / total, f1 = (cum + l.t) / total; cum += l.t; return { l, mLo: -1 + 2 * f0, mHi: -1 + 2 * f1 }; });   // Schicht-Positionen über die Wanddicke
   const outerPos = pos.filter((p, i) => i > coreIdx);   // Schichten ausserhalb Tragkern
   if (outerPos.length) {   // jede Aussenschicht läuft ununterbrochen aus der Wand (an ihrer m-Position) bis ans Laibungsbrett; Hinterlüftung bleibt offener Spalt
-    const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), visS = Math.min(fwSr * 0.3, cmToPts(1) / hw), schWs = Math.min(0.22, cmToPts(2.5) / hw);
-    const boardMat = WALL_MATS.holz || { fill: '#e7cfa8', color: '#7a5126' };
+    const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), visS = Math.min(fwSr * 0.6, cmToPts(a.boardVis != null ? a.boardVis : 1) / hw), schWs = Math.min(0.3, cmToPts(a.boardW != null ? a.boardW : 2.5) / hw);
+    const boardMat = WALL_MATS[a.boardMat || 'holz'] || { fill: '#e7cfa8', color: '#7a5126' };
     for (const sgn of [-1, 1]) {
       const sBI = sgn * Math.min(1, 1 - fwSr + visS), sBO = sgn * Math.min(1, 1 - fwSr + visS + schWs), sE = sgn, lo = Math.min(sBO, sE), hi = Math.max(sBO, sE);
       if (hi - lo > 0.02) for (const p of outerPos) {
@@ -3692,6 +3693,91 @@ async function open3D() {
   document.addEventListener('keydown', esc, true);
   ov.querySelector('#d3Close').onclick = close;
 }
+function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoomen, Ziehgriffe + Regler, live in den Plan
+  const arr = getAnnos(pv.num), wall = a.wallId && arr.find(o => o.id === a.wallId && o.type === 'wall');
+  const ov = document.createElement('div'); ov.className = 'lab-overlay';
+  ov.innerHTML = '<div class="lab-wrap"><div class="lab-head"><b>Laibungs-Detail</b><span class="lab-hint">Punkte ziehen oder Regler – aktualisiert live im Plan</span><span class="grow"></span><button class="btn" id="labClose">✕ Schliessen</button></div><div class="lab-body"><div class="lab-stage"><svg class="lab-svg" id="labSvg" xmlns="http://www.w3.org/2000/svg"></svg></div><div class="lab-side" id="labCtrls"></div></div></div>';
+  document.body.appendChild(ov);
+  const svg = ov.querySelector('#labSvg'), side = ov.querySelector('#labCtrls');
+  const W = 640, Hh = 520, cx = W * 0.42, cy = Hh / 2;
+  const cm = pts => Math.round(ptsToCm(pts) * 10) / 10;
+  const fields = [
+    { k: 'depth', label: 'Einbautiefe', unit: '%', get: () => Math.round((a.depth == null ? 0.5 : a.depth) * 100), set: v => a.depth = Math.max(0, Math.min(1, v / 100)), min: 0, max: 100, step: 1 },
+    { k: 'frameD', label: 'Rahmentiefe', unit: 'cm', get: () => cm(a.frameD || cmToPts(7)), set: v => a.frameD = cmToPts(v), min: 4, max: 16, step: 0.5 },
+    { k: 'boardW', label: 'Laibungsbrett Breite', unit: 'cm', get: () => a.boardW != null ? a.boardW : 2.5, set: v => a.boardW = v, min: 0.5, max: 10, step: 0.5 },
+    { k: 'boardVis', label: 'Rahmen sichtbar', unit: 'cm', get: () => a.boardVis != null ? a.boardVis : 1, set: v => a.boardVis = v, min: 0, max: 6, step: 0.5 },
+    { k: 'outerLap', label: 'Aussen (Dämmung über Rahmen)', unit: 'cm', get: () => cm(a.outerLap != null ? a.outerLap : cmToPts(3)), set: v => a.outerLap = cmToPts(v), min: 0, max: 20, step: 0.5 },
+    { k: 'innerReveal', label: 'Innen (Putz reingezogen)', unit: 'cm', get: () => cm(a.innerReveal != null ? a.innerReveal : cmToPts(2)), set: v => a.innerReveal = cmToPts(v), min: 0, max: 20, step: 0.5 },
+    { k: 'anschlagDepth', label: 'Anschlagtiefe', unit: 'cm', get: () => cm(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)), set: v => a.anschlagDepth = cmToPts(v), min: 0, max: 20, step: 0.5, when: () => a.anschlagType && a.anschlagType !== 'none' }
+  ];
+  let scale = 1;
+  function geom() {
+    const sa = Object.assign({}, a, { x: cx, y: cy, ang: 0, wallId: 'labw' });
+    const sw = wall ? Object.assign({}, wall, { id: 'labw', x1: cx, y1: cy - 4000, x2: cx, y2: cy + 4000 }) : null;
+    const layered = !!(sw && sw.layers && sw.layers.length >= 2);
+    const reveal = sw ? openingRevealStrips(sa, [sw]) : [];
+    const parts = openingParts(sa, layered);
+    return { sa, reveal, parts };
+  }
+  function render() {
+    const { sa, reveal, parts } = geom();
+    const xs = [], ys = [], acc = p => { if (p[0] >= cx - 4) { xs.push(p[0]); ys.push(p[1]); } };
+    for (const st of reveal) for (const p of st.poly) acc(p);
+    for (const f of (parts.fills || [])) for (const p of f.poly) acc(p);
+    for (const u of parts.lines) { acc(u[0]); acc(u[1]); }
+    const jamb = cx + a.w / 2;
+    let x0 = xs.length ? Math.min(...xs) : jamb - 120, x1 = Math.max(jamb + 8, xs.length ? Math.max(...xs) : jamb + 8);
+    let y0 = ys.length ? Math.min(...ys) : cy - 90, y1 = ys.length ? Math.max(...ys) : cy + 90;
+    const mx = (x1 - x0) * 0.12 + 8, my = (y1 - y0) * 0.12 + 8; x0 -= mx; x1 += mx; y0 -= my; y1 += my;
+    const vbw = x1 - x0, vbh = y1 - y0; svg.setAttribute('viewBox', x0 + ' ' + y0 + ' ' + vbw + ' ' + vbh);
+    scale = vbw / (svg.clientWidth || (W * 0.6));
+    let s = '';
+    for (const st of reveal) { s += '<polygon points="' + st.poly.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '" fill="' + st.fill + '" stroke="' + st.stroke + '" stroke-width="' + (0.7 * scale) + '" vector-effect="non-scaling-stroke"/>'; if (st.hatch) for (const [u, v] of st.hatch) s += '<line x1="' + u[0].toFixed(1) + '" y1="' + u[1].toFixed(1) + '" x2="' + v[0].toFixed(1) + '" y2="' + v[1].toFixed(1) + '" stroke="' + st.stroke + '" stroke-width="0.6" vector-effect="non-scaling-stroke"/>'; }
+    for (const f of (parts.fills || [])) s += '<polygon points="' + f.poly.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '" fill="' + f.fill + '" stroke="' + f.stroke + '" stroke-width="1" vector-effect="non-scaling-stroke"/>';
+    for (const [u, v] of parts.lines) s += '<line x1="' + u[0].toFixed(1) + '" y1="' + u[1].toFixed(1) + '" x2="' + v[0].toFixed(1) + '" y2="' + v[1].toFixed(1) + '" stroke="#1c242c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>';
+    // Ziehgriffe (in Geometrie-Koordinaten): corner(s,m) = [cx + (a.w/2)*s, cy + (thick/2)*m]
+    const hw = a.w / 2, ht = (a.thick || wallThickPts()) / 2, depth = a.depth == null ? 0.5 : a.depth, md = depth * 2 - 1;
+    const fdh = Math.min(0.49, (a.frameD || cmToPts(7)) / (2 * ht)), fmB = Math.min(1, md + fdh);
+    const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), boardVis = (a.boardVis != null ? a.boardVis : 1), boardW = (a.boardW != null ? a.boardW : 2.5);
+    const HG = (hx, hy, id, lbl) => '<g class="lab-h" data-h="' + id + '"><circle cx="' + hx.toFixed(1) + '" cy="' + hy.toFixed(1) + '" r="' + (6 * scale) + '" /><title>' + lbl + '</title></g>';
+    const hwx = s2 => cx + hw * s2, hwy = m2 => cy + ht * m2;
+    let H = '';
+    H += HG(hwx(1 - fwSr + cmToPts(boardVis) / hw + cmToPts(boardW) / hw), hwy(0.6), 'boardW', 'Laibungsbrett-Breite (ziehen ↔)');
+    H += HG(hwx(1) - 2, hwy(md), 'depth', 'Einbautiefe (ziehen ↕)');
+    if (a.anschlagType && a.anschlagType !== 'none') H += HG(hwx(Math.max(0, 1 - fwSr - cmToPts(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)) / hw)), hwy(a.anschlagType === 'innen' ? -0.6 : 0.85), 'anschlag', 'Anschlagtiefe (ziehen ↔)');
+    svg.innerHTML = s + H;
+    bindHandles();
+  }
+  function bindHandles() {
+    svg.querySelectorAll('.lab-h').forEach(g => { g.onpointerdown = e => {
+      e.preventDefault(); const id = g.dataset.h, hw = a.w / 2, ht = (a.thick || wallThickPts()) / 2;
+      const sx = e.clientX, sy = e.clientY, d0 = a.depth == null ? 0.5 : a.depth, bw0 = a.boardW != null ? a.boardW : 2.5, an0 = a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5);
+      const move = ev => {
+        const dxp = (ev.clientX - sx) * scale, dyp = (ev.clientY - sy) * scale;
+        if (id === 'depth') a.depth = Math.max(0, Math.min(1, d0 + (dyp / ht) / 2));
+        else if (id === 'boardW') a.boardW = Math.max(0.5, Math.min(10, bw0 + ptsToCm(dxp)));
+        else if (id === 'anschlag') a.anschlagDepth = Math.max(0, Math.min(cmToPts(20), an0 - dxp));
+        render(); drawAnnos(pv);
+      };
+      const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
+      document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+    }; });
+  }
+  function buildCtrls() {
+    side.innerHTML = '';
+    const anWrap = document.createElement('label'); anWrap.className = 'lab-row'; anWrap.innerHTML = '<span>Anschlag</span>';
+    const anSel = document.createElement('select'); anSel.innerHTML = '<option value="none">Kein</option><option value="aussen">Aussen</option><option value="innen">Innen</option>'; anSel.value = a.anschlagType || 'none';
+    anSel.onchange = () => { a.anschlagType = anSel.value; render(); buildCtrls(); drawAnnos(pv); saveState(); }; anWrap.appendChild(anSel); side.appendChild(anWrap);
+    for (const f of fields) { if (f.when && !f.when()) continue; const row = document.createElement('label'); row.className = 'lab-row'; const val = document.createElement('b'); val.textContent = f.get() + ' ' + f.unit;
+      row.innerHTML = '<span>' + f.label + '</span>'; const r = document.createElement('input'); r.type = 'range'; r.min = f.min; r.max = f.max; r.step = f.step; r.value = f.get();
+      r.oninput = () => { f.set(parseFloat(r.value)); val.textContent = f.get() + ' ' + f.unit; render(); drawAnnos(pv); }; r.onchange = () => saveState();
+      row.appendChild(r); row.appendChild(val); side.appendChild(row); }
+  }
+  const close = () => { ov.remove(); document.removeEventListener('keydown', esc, true); drawAnnos(pv); saveState(); };
+  const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } };
+  document.addEventListener('keydown', esc, true); ov.querySelector('#labClose').onclick = close;
+  buildCtrls(); requestAnimationFrame(render);
+}
 function build3DScene(host, walls, arr) {
   host.innerHTML = '';
   const W = host.clientWidth || 800, Hp = host.clientHeight || 500, perPt = docScale.perPt, H = wallHeightM, M = v => v * perPt, lev = a => { const l = layerById(a.layer); return (l && l.elevation) || 0; };
@@ -4160,6 +4246,7 @@ function wire() {
   $('#pbInnerRev').onchange = () => { const v = parseFloat(($('#pbInnerRev').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.innerReveal = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbReveal').onchange = () => { const v = $('#pbReveal').value, a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.revealType = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbAnschlag').onchange = () => { const v = $('#pbAnschlag').value, a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.anschlagType = v; updatePlanBar(); pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbLaibEdit').onclick = () => { const a = selOpen(), pv = sel && pageViews.find(p => p.num === sel.num); if (a && pv && (a.kind === 'window' || a.kind === 'door')) openLaibungEditor(a, pv); };
   $('#pbAnschlagD').onchange = () => { const v = parseFloat(($('#pbAnschlagD').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.anschlagDepth = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbWinMat').onchange = () => { const v = $('#pbWinMat').value, a = selOpen(); lastWinMat = v; if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.winMat = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#dropOpen').onclick = openPicker;

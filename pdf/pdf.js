@@ -807,9 +807,11 @@ function renderLayerPanel() {
     eye.onclick = e => { e.stopPropagation(); l.visible = !l.visible; pageViews.forEach(drawAnnos); buildThumbs(); renderLayerPanel(); markDirty(); };
     const nm = document.createElement('span'); nm.className = 'lp-name'; nm.textContent = l.name; nm.title = l.name;
     nm.ondblclick = e => { e.stopPropagation(); const v = prompt('Ebene umbenennen:', l.name); if (v && v.trim()) { l.name = v.trim(); renderLayerPanel(); markDirty(); } };
+    const ele = document.createElement('input'); ele.className = 'lp-ele'; ele.type = 'number'; ele.step = '0.1'; ele.title = 'Höhenlage / Geschoss-Höhe (3D-Stapel)'; ele.value = l.elevation || 0;
+    ele.onclick = e => e.stopPropagation(); ele.onchange = () => { l.elevation = parseFloat((ele.value || '').replace(',', '.')) || 0; markDirty(); };
     const del = document.createElement('button'); del.className = 'lp-del'; del.innerHTML = '✕'; del.title = 'Ebene löschen (Inhalt wandert auf die erste Ebene)';
     del.onclick = e => { e.stopPropagation(); if (layers.length <= 1) { toast('Mindestens eine Ebene muss bleiben.'); return; } const fb = layers.find(x => x.id !== l.id).id; for (const n in annos) for (const a of annos[n]) if (a.layer === l.id) a.layer = fb; layers = layers.filter(x => x.id !== l.id); if (activeLayerId === l.id) activeLayerId = fb; pageViews.forEach(drawAnnos); buildThumbs(); renderLayerPanel(); markDirty(); };
-    row.append(eye, nm, del);
+    row.append(eye, nm, ele, del);
     row.onclick = () => { activeLayerId = l.id; renderLayerPanel(); };
     list.appendChild(row);
   });
@@ -2915,8 +2917,8 @@ function loadThree() {
 }
 async function open3D() {
   if (!docScale) { toast('Für die 3D-Ansicht zuerst den Massstab setzen (1:n).'); return; }
-  const arr = getAnnos(curPage()) || [], walls = arr.filter(a => a.type === 'wall');
-  if (!walls.length) { toast('Auf dieser Seite sind keine Wände für die 3D-Ansicht.'); return; }
+  const arr = getAnnos(curPage()) || [], walls = arr.filter(a => a.type === 'wall' && layerVisible(a));
+  if (!walls.length) { toast('Auf dieser (sichtbaren) Ebene sind keine Wände für die 3D-Ansicht.'); return; }
   status('3D wird geladen …');
   try { await loadThree(); } catch (_) { status(''); toast('3D-Engine nicht ladbar (einmal Internet nötig).'); return; }
   status('');
@@ -2933,7 +2935,7 @@ async function open3D() {
 }
 function build3DScene(host, walls, arr) {
   host.innerHTML = '';
-  const W = host.clientWidth || 800, Hp = host.clientHeight || 500, perPt = docScale.perPt, H = wallHeightM, M = v => v * perPt;
+  const W = host.clientWidth || 800, Hp = host.clientHeight || 500, perPt = docScale.perPt, H = wallHeightM, M = v => v * perPt, lev = a => { const l = layerById(a.layer); return (l && l.elevation) || 0; };
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
   for (const w of walls) for (const [x, y] of [[w.x1, w.y1], [w.x2, w.y2]]) { minx = Math.min(minx, x); miny = Math.min(miny, y); maxx = Math.max(maxx, x); maxy = Math.max(maxy, y); }
   const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2, span = Math.max(M(maxx - minx), M(maxy - miny), 2);
@@ -2946,14 +2948,15 @@ function build3DScene(host, walls, arr) {
   const gsz = Math.max(span * 2.4, 4);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(gsz, gsz), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; scene.add(ground);
   scene.add(new THREE.GridHelper(gsz, Math.min(60, Math.max(4, Math.round(gsz))), 0xc4cabe, 0xd8dcd2));
-  for (const a of arr) if (a.type === 'area' && a.room && a.pts && a.pts.length >= 3) {
+  for (const a of arr) if (a.type === 'area' && a.room && a.pts && a.pts.length >= 3 && layerVisible(a)) {
     const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
-    const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0xece6d8, side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = 0.006; scene.add(fl);
+    const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0xece6d8, side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.006; scene.add(fl);
   }
   const wmat = new THREE.MeshLambertMaterial({ color: 0xe9e3d8 }), emat = new THREE.LineBasicMaterial({ color: 0x8c8678 }), gmat = new THREE.MeshPhongMaterial({ color: 0x9fc6e0, transparent: true, opacity: 0.35 });
   for (const w of walls) {
+    if (!layerVisible(w)) continue;
     const dx = w.x2 - w.x1, dy = w.y2 - w.y1, lp = Math.hypot(dx, dy); if (lp < 1) continue;
-    const ux = dx / lp, uy = dy / lp, th = M(w.thick || wallThickPts()), HW = w.h3d || H, sx = M(w.x1 - cx), sz = M(w.y1 - cy), ry = -Math.atan2(dy, dx);
+    const ux = dx / lp, uy = dy / lp, th = M(w.thick || wallThickPts()), HW = w.h3d || H, yb = lev(w), sx = M(w.x1 - cx), sz = M(w.y1 - cy), ry = -Math.atan2(dy, dx);
     const addBox = (s0, s1, y0, y1, mat, depth, edge) => {                                  // Teilstück der Wand (Längs-Span s0..s1 in pt, Höhe y0..y1 in m)
       const lenM = (s1 - s0) * perPt; if (lenM <= 0.002 || y1 - y0 <= 0.002) return;
       const mid = (s0 + s1) / 2, geo = new THREE.BoxGeometry(lenM, y1 - y0, depth), m = new THREE.Mesh(geo, mat);
@@ -2964,29 +2967,29 @@ function build3DScene(host, walls, arr) {
     let cur = 0;
     for (const op of ops) {
       const a0 = Math.max(0, op.c - op.hw), a1 = Math.min(lp, op.c + op.hw); if (a1 <= a0) continue;
-      if (a0 > cur) addBox(cur, a0, 0, HW, wmat, th, true);                                  // volles Wandstück bis zur Öffnung
-      if (op.sill > 0) addBox(a0, a1, 0, Math.min(op.sill, HW), wmat, th, true);             // Brüstung (Fenster)
-      if (op.head < HW) addBox(a0, a1, op.head, HW, wmat, th, true);                         // Sturz über der Öffnung
-      if (op.kind === 'window') addBox(a0, a1, op.sill, Math.min(op.head, HW), gmat, th * 0.2, false);   // Glas
+      if (a0 > cur) addBox(cur, a0, yb, yb + HW, wmat, th, true);                            // volles Wandstück bis zur Öffnung
+      if (op.sill > 0) addBox(a0, a1, yb, yb + Math.min(op.sill, HW), wmat, th, true);       // Brüstung (Fenster)
+      if (op.head < HW) addBox(a0, a1, yb + op.head, yb + HW, wmat, th, true);               // Sturz über der Öffnung
+      if (op.kind === 'window') addBox(a0, a1, yb + op.sill, yb + Math.min(op.head, HW), gmat, th * 0.2, false);   // Glas
       cur = Math.max(cur, a1);
     }
-    if (cur < lp) addBox(cur, lp, 0, HW, wmat, th, true);                                    // Reststück
+    if (cur < lp) addBox(cur, lp, yb, yb + HW, wmat, th, true);                              // Reststück
   }
   // Decken / Platten (slab) extrudieren
   const smat = new THREE.MeshLambertMaterial({ color: 0xd7dbe2, side: THREE.DoubleSide });
-  for (const a of arr) if (a.type === 'slab' && a.pts && a.pts.length >= 3) {
+  for (const a of arr) if (a.type === 'slab' && a.pts && a.pts.length >= 3 && layerVisible(a)) {
     try {
       const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Y = M(p[1] - cy); i ? sh.lineTo(X, Y) : sh.moveTo(X, Y); });
       const geo = new THREE.ExtrudeGeometry(sh, { depth: a.thick || 0.2, bevelEnabled: false }), m = new THREE.Mesh(geo, smat);
-      m.rotation.x = Math.PI / 2; m.position.y = (a.base || 0) + (a.thick || 0.2); scene.add(m);
+      m.rotation.x = Math.PI / 2; m.position.y = lev(a) + (a.base || 0) + (a.thick || 0.2); scene.add(m);
       const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.rotation.x = Math.PI / 2; e.position.y = m.position.y; scene.add(e);
     } catch (_) { }
   }
   // Treppen (gerader Lauf) als 3D-Stufen
   const stmat = new THREE.MeshLambertMaterial({ color: 0xd9d2c4 });
-  for (const a of arr) if (a.type === 'stairs') {
+  for (const a of arr) if (a.type === 'stairs' && layerVisible(a)) {
     const dx = a.x2 - a.x1, dy = a.y2 - a.y1, lp = Math.hypot(dx, dy); if (lp < 1) continue;
-    const ux = dx / lp, uy = dy / lp, sx = M(a.x1 - cx), sz = M(a.y1 - cy), ry = -Math.atan2(dy, dx), wm = M(a.width || stairWidthPts()), n = stairSteps(a), rise = a.rise || stairRiseM, base = a.base || 0, stepRise = rise / n, going = (lp * perPt) / n;
+    const ux = dx / lp, uy = dy / lp, sx = M(a.x1 - cx), sz = M(a.y1 - cy), ry = -Math.atan2(dy, dx), wm = M(a.width || stairWidthPts()), n = stairSteps(a), rise = a.rise || stairRiseM, base = lev(a) + (a.base || 0), stepRise = rise / n, going = (lp * perPt) / n;
     for (let i = 0; i < n; i++) {
       const h = (i + 1) * stepRise, geo = new THREE.BoxGeometry(going, h, wm), m = new THREE.Mesh(geo, stmat), along = (i + 0.5) * going;
       m.position.set(sx + ux * along, base + h / 2, sz + uy * along); m.rotation.y = ry; scene.add(m);
@@ -2995,8 +2998,8 @@ function build3DScene(host, walls, arr) {
   }
   // Dächer (Pult-/Satteldach) als 3D-Schräge
   const rmat = new THREE.MeshLambertMaterial({ color: 0xb06a4f, side: THREE.DoubleSide });
-  for (const a of arr) if (a.type === 'roof') {
-    const x0 = M(Math.min(a.x, a.x + a.w) - cx), x1 = M(Math.max(a.x, a.x + a.w) - cx), z0 = M(Math.min(a.y, a.y + a.h) - cy), z1 = M(Math.max(a.y, a.y + a.h) - cy), ev = a.eave || roofEaveM, rg = a.ridge || roofRidgeM, tris = [];
+  for (const a of arr) if (a.type === 'roof' && layerVisible(a)) {
+    const x0 = M(Math.min(a.x, a.x + a.w) - cx), x1 = M(Math.max(a.x, a.x + a.w) - cx), z0 = M(Math.min(a.y, a.y + a.h) - cy), z1 = M(Math.max(a.y, a.y + a.h) - cy), ev = lev(a) + (a.eave || roofEaveM), rg = lev(a) + (a.ridge || roofRidgeM), tris = [];
     const quad = (A, B, C, D) => { tris.push([A, B, C], [A, C, D]); };
     if (a.rtype === 'pult') {
       if (a.axis === 'x') { quad([x0, ev, z0], [x1, ev, z0], [x1, rg, z1], [x0, rg, z1]); tris.push([[x0, ev, z0], [x0, rg, z1], [x0, ev, z1]], [[x1, ev, z0], [x1, ev, z1], [x1, rg, z1]]); }

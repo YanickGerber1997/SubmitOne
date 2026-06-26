@@ -308,6 +308,7 @@ body.has-tabs .plan-bar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 .lp-row.hidden-layer .lp-name{color:var(--ink-faint);text-decoration:line-through}
 .lp-name{flex:1;font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lp-row.active .lp-name{color:var(--accent-3)}
+.lp-ele{width:48px;flex:none;height:24px;border:1px solid var(--line);background:var(--surface-2);font:inherit;font-size:12px;text-align:center;color:var(--ink-soft)}
 .lp-del{width:22px;height:22px;flex:none;border:none;background:none;cursor:pointer;color:var(--ink-faint);font-size:13px}
 .lp-del:hover{color:var(--danger)}
 .lp-foot{padding:8px 12px;border-top:1px solid var(--line-soft);font-size:11px;color:var(--ink-faint);line-height:1.4}

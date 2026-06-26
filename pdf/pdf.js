@@ -2542,7 +2542,7 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip) { 
     for (const f of (P.fills || [])) out.push({ t: 'poly', pts: f.poly, fill: f.fill, stroke: f.stroke, sw: 1 });
     for (const [u, v] of P.lines) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: '#1c242c', w: 1.2 });
     for (const [u, v] of (P.bold || [])) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: '#1c242c', w: 2.4 });
-    if (o.bank !== false) { const bo = (ht2 + 7) * (flip ? -1 : 1); out.push({ t: 'poly', pts: [[cx, cy + hw + 1], [cx + bo, cy + hw + 1], [cx + bo, cy + hw - 4], [cx, cy + hw - 4]], fill: '#cfcabf', stroke: '#8a8f96', sw: 0.7 }); }   // Fensterbank aussen (unten = Schwelle)
+    if (o.niche) { const nH = o.nicheH || cmToPts(28), nD = o.nicheD || cmToPts(13), nx0 = flip ? cx + ht2 - nD : cx - ht2, ny0 = (cy - hw) - nH; out.push({ t: 'rect', x: nx0, y: ny0, w: nD, h: nH, fill: '#e9e6df', stroke: '#1c242c', sw: 0.8 }); out.push({ t: 'text', x: nx0 + 2, y: ny0 + nH / 2, text: 'Storen', col: '#1c242c', small: true }); }   // Storennische 13×28 hinten, über dem Sturz
   } else {
     const wm = WIN_MAT[o.winMat || 'holz'], md = Math.max(-1, Math.min(1, sa.depth * 2 - 1)), frameD = o.frameD || cmToPts(7), frameW = o.frameW || cmToPts(6);
     const fdh = Math.min(0.49, frameD / appW), leafW = Math.min(0.4, cmToPts(4) / appW), fwS = Math.min(0.4, frameW / hPx);
@@ -3930,7 +3930,7 @@ function build3DScene(host, walls, arr) {
               addBox2(pl + sfM, pr - sfM, iB + sfM, iT - sfM, sdC - sdD * 0.2, M(cmToPts(2)), gmat, false); } }   // Scheibe im Flügel
           else addBox2(iL, iR, iB, iT, dC, M(cmToPts(2)), gmat, false); }   // Festverglasung
         if (op.bank) { const ext = cmToPts(8); addBox2(a0 - ext, a1 + ext, sillY - 0.04, sillY + 0.01, th / 2 + 0.03, 0.12, bmat, true); }   // Fensterbank aussen
-        if (op.niche) addBox2(a0, a1, headY, Math.min(yb + HW, headY + 0.24), 0, th * 0.85, nmat, true);                          // Storennische
+        if (op.niche) { const nD = M(op.obj.nicheD || cmToPts(13)), nH = ptsToCm(op.obj.nicheH || cmToPts(28)) / 100, nC = -(th / 2 - nD / 2); addBox2(a0, a1, headY, Math.min(yb + HW, headY + nH), nC, nD, nmat, true); }   // Storennische 13×28 hinten (innen)
       } else if (op.kind === 'door') {   // Tür im 3D: Zarge (Material) + Türblatt / Festteil = Glas
         const fdM = M(op.fd), fwM = M(op.fw), dC = Math.max(-(th / 2 - fdM / 2), Math.min(th / 2 - fdM / 2, (op.depth - 0.5) * th)), headY = yb + Math.min(op.head, HW), leafD = M(cmToPts(4));
         addReveal3D(op.obj, yb, headY, a0, a1);   // Schichteinzug Laibung + Sturz

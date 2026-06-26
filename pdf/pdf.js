@@ -1197,6 +1197,18 @@ function anchorSnap(pv, x, y, excludeId) {
   }
   return best;
 }
+function wallProjSnap(pv, x, y, excludeId) {   // Fusspunkt auf eine vorhandene Wand-Achse (für saubere T-Stösse / Start auf Wand)
+  const thr = 9 / pv.scale; let best = null, bd = thr;
+  for (const o of (getAnnos(pv.num) || [])) {
+    if (o.type !== 'wall' || o.id === excludeId) continue;
+    const dx = o.x2 - o.x1, dy = o.y2 - o.y1, L2 = dx * dx + dy * dy; if (L2 < 1) continue;
+    const t = ((x - o.x1) * dx + (y - o.y1) * dy) / L2; if (t < 0.02 || t > 0.98) continue;   // Enden macht anchorSnap
+    const px = o.x1 + dx * t, py = o.y1 + dy * t, d = Math.hypot(px - x, py - y);
+    if (d < bd) { bd = d; best = { x: px, y: py }; }
+  }
+  return best;
+}
+function snapWallPt(pv, x, y, excludeId) { return anchorSnap(pv, x, y, excludeId) || wallProjSnap(pv, x, y, excludeId); }   // erst Wand-Ende, dann Wand-Achse
 function snapIndicator(pv, p) { const c = svgEl('circle', { cx: p.x, cy: p.y, r: 5 / pv.scale, class: 'snap-anchor' }); pv.svg.appendChild(c); }
 /* ---------- Zeichen-Hilfslinien, Längen-/Winkel-Anzeige, exakte Längeneingabe ---------- */
 let lastLine = null;   // {num,id} – zuletzt gezeichnete Linie (für „L" = exakte Länge)
@@ -1345,7 +1357,7 @@ function wallOutlineSegs(a, arr) {                              // sichtbare Umr
 function loadPolyClip() { if (window.polygonClipping) return; loadScript('https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js').then(() => { if (pdfDoc) pageViews.forEach(drawAnnos); }).catch(() => { }); }
 function drawWallUnion(svg, walls) {   // Wandflächen vereinigen → saubere Gehrungs-Ecken (L/T/Kreuz)
   try {
-    const polys = walls.map(w => [wallPoly(w).map(p => [p[0], p[1]])]);   // jede Wand als ein Polygon
+    const polys = walls.map(w => [wallPoly(w, walls).map(p => [p[0], p[1]])]);   // jede Wand als ein Polygon (mit Eck-Verlängerung → Gehrung schliesst)
     const uni = polygonClipping.union(...polys);
     if (!uni || !uni.length) return false;
     const col = walls[0].color || '#1c242c', lw = walls[0].width || 1.4;
@@ -1402,7 +1414,7 @@ function onPointerDown(pv, e) {
   if (tool === 'text') { createText(pv, p); return; }
   if (tool === 'note') { pushUndo(); const a = { id: nextId++, type: 'note', x: p.x, y: p.y, color: style.color, text: '' }; pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); refreshComments(); openNoteEdit(pv, a); return; }
   if (segDraft && segDraft.pv === pv) { finishSegDraft(); return; }                            // 2. Klick = Linie/Wand beenden
-  if (tool === 'wallchain') { let q = p; const an = anchorSnap(pv, q.x, q.y); if (an) q = an; else if (gridOn) q = snapPt(q.x, q.y); if (wallDraft && wallDraft.pv === pv) wallChainClick(pv, q); else startWallChain(pv, q.x, q.y); return; }   // Wände am Stück
+  if (tool === 'wallchain') { let q = p; const an = snapWallPt(pv, q.x, q.y); if (an) q = an; else if (gridOn) q = snapPt(q.x, q.y); if (wallDraft && wallDraft.pv === pv) wallChainClick(pv, q); else startWallChain(pv, q.x, q.y); return; }   // Wände am Stück
   // Zeichnen
   startDraw(pv, e, p);
 }
@@ -1845,6 +1857,9 @@ function beautify(pts) {
 
 function startDraw(pv, e, p) {
   pushUndo();
+  if (!e.shiftKey && (tool === 'wall' || tool === 'line' || tool === 'arrow' || tool === 'measure' || tool === 'dim' || tool === 'stairs')) {
+    const sp = snapWallPt(pv, p.x, p.y); if (sp) p = { x: sp.x, y: sp.y }; else if (gridOn) p = snapPt(p.x, p.y);   // Startpunkt auf Wand-Ende/-Achse einrasten → saubere Gehrung
+  }
   let a;
   if (tool === 'pen') a = { id: nextId++, type: 'pen', pts: [[p.x, p.y]], color: style.color, width: style.width };
   else if (tool === 'rect') a = { id: nextId++, type: 'rect', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
@@ -1857,7 +1872,7 @@ function startDraw(pv, e, p) {
   const isLine = (a.type !== 'pen' && a.type !== 'rect' && a.type !== 'oval');
   const move = ev => {
     let q = evtToPage(pv, ev), snapped = null;
-    if (a.type !== 'pen' && !ev.shiftKey) { const an = anchorSnap(pv, q.x, q.y, a.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
+    if (a.type !== 'pen' && !ev.shiftKey) { const an = snapWallPt(pv, q.x, q.y, a.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
     let rel = null;
     if (a.type === 'pen') a.pts.push([q.x, q.y]);
     else if (a.type === 'rect' || a.type === 'oval' || a.type === 'roof') { a.w = q.x - a.x; a.h = q.y - a.y; }
@@ -1890,7 +1905,7 @@ function startSegDraft(pv, a) {
   segDraft = { pv, a };
   const onMove = ev => {
     if (!segDraft) return; let q = evtToPage(pv, ev), snapped = null, rel = null;
-    if (!ev.shiftKey) { const an = anchorSnap(pv, q.x, q.y, a.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
+    if (!ev.shiftKey) { const an = snapWallPt(pv, q.x, q.y, a.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
     if (ev.shiftKey) { const s = snap15(a.x1, a.y1, q.x, q.y); a.x2 = s.x; a.y2 = s.y; }
     else { if (!snapped) rel = refAngleSnap(pv, a, q.x, q.y); const as = rel || (!snapped ? angleSnapPoint(a.x1, a.y1, q.x, q.y) : null); if (as) { a.x2 = as.x; a.y2 = as.y; } else { a.x2 = q.x; a.y2 = q.y; } }
     drawAnnos(pv); if (snapped) snapIndicator(pv, snapped);
@@ -1925,7 +1940,7 @@ function startWallChain(pv, x, y) {
   pushAnno(pv.num, seg); wallDraft = { pv, last: [x, y], seg, pts: [[x, y]], segIds: [] };
   const onMove = ev => {
     if (!wallDraft) return; const s = wallDraft.seg; let q = evtToPage(pv, ev), snapped = null, rel = null;
-    if (!ev.shiftKey) { const an = anchorSnap(pv, q.x, q.y, s.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
+    if (!ev.shiftKey) { const an = snapWallPt(pv, q.x, q.y, s.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
     if (ev.shiftKey) { const sn = snap15(s.x1, s.y1, q.x, q.y); s.x2 = sn.x; s.y2 = sn.y; }
     else { if (!snapped) rel = refAngleSnap(pv, s, q.x, q.y); const as = rel || (!snapped ? angleSnapPoint(s.x1, s.y1, q.x, q.y) : null); if (as) { s.x2 = as.x; s.y2 = as.y; } else { s.x2 = q.x; s.y2 = q.y; } }
     wallDraft._rel = rel; drawAnnos(pv); if (snapped) snapIndicator(pv, snapped);
@@ -2670,7 +2685,7 @@ async function buildPdfBytes(visibleOnly) {
       if (window.polygonClipping) {   // Wandflächen vereinigen → saubere Ecken auch im PDF
         const walls = (annos[n] || []).filter(a => a.type === 'wall' && !a._draft && (!visibleOnly || layerVisible(a)));
         if (walls.length) try {
-          const uni = polygonClipping.union(...walls.map(w => [wallPoly(w).map(p => [p[0], p[1]])]));
+          const uni = polygonClipping.union(...walls.map(w => [wallPoly(w, walls).map(p => [p[0], p[1]])]));
           if (uni && uni.length) { wallUni = true; const wc = hexToRgb(walls[0].color || '#1c242c'), lw = walls[0].width || 1.4;
             for (const poly of uni) { let d = ''; for (const ring of poly) { if (!ring.length) continue; d += 'M' + ring.map(p => p[0] + ' ' + p[1]).join(' L ') + ' Z'; } if (d) pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(1, 1, 1), borderColor: rgb(wc.r, wc.g, wc.b), borderWidth: lw }); }
           }

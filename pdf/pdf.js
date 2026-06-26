@@ -2477,6 +2477,9 @@ function sectionBandHatch(out, rx, ry, rw, rh, mat, fallbackHatch) {   // Materi
   else if (hatch === 'beton' || hatch === 'cross') { for (let c = -rh; c < rw; c += S) add(x0 + c, y1, x0 + c + rh, y0); for (let c = 0; c < rw + rh; c += S) add(x0 + c, y0, x0 + c - rh, y1); }   // Beton: Kreuz
   else { for (let c = -rh; c < rw; c += S) add(x0 + c, y1, x0 + c + rh, y0); }   // Backstein/Diagonal/Erdreich: 45°
 }
+let winDimsOn = true;   // automatische Fenster-/Tür-Bemaßung im Schnitt/Ansicht
+function pDimH(out, y, x1, x2, label, below) { const col = '#1c242c'; out.push({ t: 'line', x1: x1, y1: y, x2: x2, y2: y, stroke: col, w: 0.5 }); for (const x of [x1, x2]) out.push({ t: 'line', x1: x, y1: y - 3, x2: x, y2: y + 3, stroke: col, w: 0.5 }); out.push({ t: 'text', x: (x1 + x2) / 2 - label.length * 2.4, y: y + (below ? 11 : -4), text: label, col, small: true }); }
+function pDimV(out, x, y1, y2, label, lx) { const col = '#1c242c'; out.push({ t: 'line', x1: x, y1: y1, x2: x, y2: y2, stroke: col, w: 0.5 }); for (const y of [y1, y2]) out.push({ t: 'line', x1: x - 3, y1: y, x2: x + 3, y2: y, stroke: col, w: 0.5 }); out.push({ t: 'text', x: x + (lx || 5), y: (y1 + y2) / 2 + 3, text: label, col, small: true }); }
 function openingElev(out, X, Yh, opx0, opw, o, H, col, redM) {   // Fenster/Tür in Ansicht von aussen → Aussenlichtmaß (Verkleidung/Sturz lappt über den Rahmen, redM)
   const r = redM || 0, sill = (o.kind === 'window' ? (o.sill || 0) + r : 0), head = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0)) - r;
   if (head - sill < 0.02 || opw < 1) return;
@@ -2529,6 +2532,14 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall) {   // S
     out.push({ t: 'poly', pts: [corner(-1, md - leafW), corner(1 - fwS, md - leafW), corner(1 - fwS, md + leafW), corner(-1, md + leafW)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Türblatt (vertikal, bei Einbautiefe)
     out.push({ t: 'poly', pts: [corner(1 - fwS, md - fdh), corner(1, md - fdh), corner(1, md + fdh), corner(1 - fwS, md + fdh)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Sturz-Rahmen
   }
+  if (winDimsOn) {   // Schnitt-Bemaßung Höhe: Rohbau + Aussenlicht + Innenlicht
+    const innerM = ptsToCm((o.innerReveal != null ? o.innerReveal : cmToPts(2)) + (o.anschlagType === 'innen' ? (o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5)) : 0)) / 100;
+    const outerM = ptsToCm((o.kind === 'window' ? (o.outerLap != null ? o.outerLap : cmToPts(3)) : 0) + (o.anschlagType === 'aussen' ? (o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5)) : 0)) / 100;
+    const roughM = head - sill, Ypx = m => m / perPt, xR = cx + ht2 + 14, yT2 = cy - hw, yB2 = cy + hw;
+    pDimV(out, xR, yT2, yB2, 'R ' + fmtLen(roughM / perPt), 6);
+    pDimV(out, xR + 18, yT2 + Ypx(outerM), yB2 - Ypx(outerM), 'La ' + fmtLen((roughM - 2 * outerM) / perPt), 6);
+    pDimV(out, xR + 38, yT2 + Ypx(innerM), yB2 - Ypx(innerM), 'Li ' + fmtLen((roughM - 2 * innerM) / perPt), 6);
+  }
 }
 function sectionPrimitives(a, arr) {
   const out = [], col = '#1c242c';
@@ -2564,7 +2575,12 @@ function sectionPrimitives(a, arr) {
     for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = (ocx - p1[0]) * cux + (ocy - p1[1]) * cuy; if (od < -10 || od > cl + 10) continue;
       const lapPts = (o.kind === 'window' ? (o.outerLap != null ? o.outerLap : cmToPts(3)) : 0) + (o.anschlagType === 'aussen' ? (o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5)) : 0);   // Aussen-Lappung + Aussenanschlag → Aussenlichtmaß
       const redM = ptsToCm(lapPts) / 100, wEff = Math.max(4, (o.w - 2 * lapPts) * along);
-      openingElev(out, X, Yh, od - wEff / 2, wEff, o, Hw, col, redM); }
+      openingElev(out, X, Yh, od - wEff / 2, wEff, o, Hw, col, redM);
+      if (winDimsOn) {   // Ansicht von aussen: Breite + Höhe, Rohbau + Aussenlicht
+        const sill0 = o.kind === 'window' ? (o.sill || 0) : 0, head0 = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), rW = o.w * along, yB = Yh(sill0) + 10, xL = X(od - rW / 2) - 10;
+        pDimH(out, yB, X(od - rW / 2), X(od + rW / 2), 'R ' + fmtLen(o.w), true); pDimH(out, yB + 13, X(od - wEff / 2), X(od + wEff / 2), 'L ' + fmtLen(o.w - 2 * lapPts), true);
+        pDimV(out, xL, Yh(head0), Yh(sill0), 'R ' + fmtLen((head0 - sill0) / perPt), -34); pDimV(out, xL - 16, Yh(head0 - redM), Yh(sill0 + redM), 'L ' + fmtLen((head0 - sill0 - 2 * redM) / perPt), -34);
+      } }
   }
   const Htop = sectionMaxH(a, arr), slabF = '#dadde2', slabC = '#8a8f96';   // Decke auf gemeinsamem Höhen-Datum
   out.push({ t: 'rect', x: X(-16), y: Yh(0), w: cl + 32, h: Yh(-0.22) - Yh(0), fill: slabF, stroke: slabC, sw: 0.7 });           // Bodenplatte
@@ -4228,6 +4244,7 @@ function wire() {
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#buildPop') && !e.target.closest('#pbBuild')) $('#buildPop').hidden = true; }, true);
   $('#footBW').onclick = () => { document.body.classList.toggle('bw'); $('#footBW').classList.toggle('on', document.body.classList.contains('bw')); };
   $('#footSimple').onclick = () => { simpleMode = !simpleMode; $('#footSimple').classList.toggle('on', simpleMode); pageViews.forEach(drawAnnos); toast(simpleMode ? 'Einfache Darstellung – Wände schwarz, Öffnungen als Symbol' : 'Detaillierte Darstellung (automatisch nach Aufbau)'); };
+  $('#footWinDim').onclick = () => { winDimsOn = !winDimsOn; $('#footWinDim').classList.toggle('on', winDimsOn); pageViews.forEach(drawAnnos); toast(winDimsOn ? 'Fenster-/Tür-Bemaßung an (R Rohbau · La Aussenlicht · Li Innenlicht)' : 'Fenster-/Tür-Bemaßung aus'); };
   $('#footPhase').onclick = e => { e.stopPropagation(); const p = $('#phasePop'); p.hidden = !p.hidden; if (!p.hidden) updatePhaseUI(); };
   $$('#phSet button').forEach(b => b.onclick = () => setActivePhase(b.dataset.ph || null));
   $$('#phView button').forEach(b => b.onclick = () => setPhaseView(b.dataset.pv));

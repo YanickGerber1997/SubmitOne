@@ -2372,14 +2372,15 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   const l0 = wall.layers[0], mI = WALL_MATS[l0.mat] || {}, twI = Math.min(0.45, l0.t / hw);   // innen: Putz/Brett als dünner Streifen bis Rahmen-Innenkante
   if (Math.abs((fmA - gapM) + 1) > 0.02) for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + twI : 1 - twI; strips.push({ poly: [corner(s0, -1), corner(s1, -1), corner(s1, fmA - gapM), corner(s0, fmA - gapM)], fill: mI.fill || '#fff', stroke: mI.color || '#1c242c' }); }
   const outer = []; for (let i = wall.layers.length - 1; i > coreIdx; i--) if (wall.layers[i].mat !== 'luft') outer.push(wall.layers[i]);   // aussen, ohne Hinterlüftung
-  if (outer.length) {   // 1,5 cm Rahmen sichtbar → Schalung 1,5 cm (Schraffur) → Rest Dämmung bis Rahmen
-    const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), visS = Math.min(fwSr * 0.6, cmToPts(1.5) / hw), schT = Math.min(Math.max(0.04, (1 - (fmB + gapM)) * 0.5), cmToPts(1.5) / ht);
+  if (outer.length) {   // Schalungsbrett wrappt um die Ecke aufs Rahmen (1 cm Rahmen sichtbar) → offener Hinterlüftungs-Spalt → Dämmung füllt Rest bis Rahmen
+    const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw);
+    const visS = Math.min(fwSr * 0.4, cmToPts(1) / hw), schWs = Math.min(fwSr * 0.35, cmToPts(2.5) / hw), airWs = Math.min(fwSr * 0.3, cmToPts(3) / hw);
     const schal = outer[0], daemm = outer.find(l => INS.includes(l.mat)) || outer[outer.length - 1], rt = a.revealType || 'putz';
     const revM = rt === 'beton' ? REVEAL_MAT.beton : rt === 'stahl' ? REVEAL_MAT.stahl : rt === 'holz' ? REVEAL_MAT.holz : (WALL_MATS[schal.mat] || {}), dM = WALL_MATS[daemm.mat] || {}, doHatch = rt === 'putz' || rt === 'holz';
     for (const sgn of [-1, 1]) {
-      const s0 = sgn, s1 = sgn * (1 - fwSr + visS);
-      strips.push({ poly: [corner(s0, fmB + gapM), corner(s1, fmB + gapM), corner(s1, 1 - schT), corner(s0, 1 - schT)], fill: dM.fill || '#fff', stroke: dM.color || '#1c242c' });   // Dämmung Rest
-      strips.push({ poly: [corner(s0, 1 - schT), corner(s1, 1 - schT), corner(s1, 1), corner(s0, 1)], fill: revM.fill || '#fff', stroke: revM.color || '#1c242c', hatch: doHatch ? bandHatch(s0, s1, 1 - schT, 1, corner, hw, ht) : null });   // Schalung 1,5 cm
+      const sE = sgn, sSch = sgn * (1 - schWs), sDa = sgn * (1 - schWs - airWs), sF = sgn * (1 - fwSr + visS);   // Kante → Schalung → (Spalt) → Dämmung → 1 cm vor Rahmen
+      strips.push({ poly: [corner(sE, fmB), corner(sSch, fmB), corner(sSch, 1), corner(sE, 1)], fill: revM.fill || '#fff', stroke: revM.color || '#1c242c', hatch: doHatch ? bandHatch(sE, sSch, fmB, 1, corner, hw, ht) : null });   // Schalungsbrett wrappt um Ecke bis auf Rahmen
+      if (Math.abs(sF - sDa) > 0.02) strips.push({ poly: [corner(sDa, fmB + gapM), corner(sF, fmB + gapM), corner(sF, 1), corner(sDa, 1)], fill: dM.fill || '#fff', stroke: dM.color || '#1c242c' });   // Dämmung füllt Rest (Spalt sSch..sDa bleibt offen = Hinterlüftung)
     }
   }
   return strips;

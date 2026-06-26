@@ -2183,6 +2183,25 @@ function templateAnnos(kind, w, h) {
     { type: 'imgph', x: w * 0.1, y: h * 0.12, w: w * 0.8, h: h * 0.62 },
     mk({ x: w * 0.1, y: h * 0.78, w: w * 0.8, h: h * 0.05, text: 'Bildunterschrift', size: Math.round(h * 0.024), align: 'center', color: gray })
   ];
+  if (kind === 'plan') {   // Rahmen + Plankopf unten rechts + Faltmarken (je nach Blattgrösse)
+    const MM = 72 / 25.4, out = [];
+    const ml = 20 * MM, mt = 8 * MM, mr = 8 * MM, mb = 8 * MM;                 // Heftrand links breiter
+    const bx = ml, by = mt, bw = w - ml - mr, bh = h - mt - mb;
+    out.push({ type: 'rect', x: bx, y: by, w: bw, h: bh, color: dark, width: 1.6, fill: 'none' });   // Rahmen
+    const kw = Math.min(185 * MM, bw * 0.5), kh = Math.min(58 * MM, bh * 0.45), kx = bx + bw - kw, ky = by + bh - kh;
+    out.push({ type: 'rect', x: kx, y: ky, w: kw, h: kh, color: dark, width: 1.2, fill: '#ffffff' });   // Plankopf-Box
+    const rows = 4, rh = kh / rows, cx = kx + kw * 0.6, pad = 2.5 * MM;
+    for (let r = 1; r < rows; r++) out.push({ type: 'line', x1: kx, y1: ky + rh * r, x2: kx + kw, y2: ky + rh * r, color: dark, width: 0.6 });
+    out.push({ type: 'line', x1: cx, y1: ky, x2: cx, y2: ky + rh * 3, color: dark, width: 0.6 });
+    const lbl = (x, y, t) => mk({ x: x + pad, y: y + pad, w: kw * 0.5, h: rh, text: t, size: 8, color: gray });
+    out.push(lbl(kx, ky, 'Projekt'), lbl(kx, ky + rh, 'Plan'), lbl(kx, ky + 2 * rh, 'Gezeichnet'));
+    out.push(lbl(cx, ky, 'Massstab'), lbl(cx, ky + rh, 'Datum'), lbl(cx, ky + 2 * rh, 'Plan-Nr.'));
+    out.push(mk({ x: kx + pad, y: ky + 3 * rh + pad, w: kw - 2 * pad, h: rh, text: 'Submit PDF', size: 11, color: dark }));
+    const A4w = 210 * MM, A4h = 297 * MM, tk = 5 * MM;                          // Faltmarken (DIN-824-artig, in A4-Spalten)
+    for (let x = w - A4w; x > ml * 0.5; x -= A4w) { out.push({ type: 'line', x1: x, y1: 0, x2: x, y2: tk, color: gray, width: 0.6 }); out.push({ type: 'line', x1: x, y1: h - tk, x2: x, y2: h, color: gray, width: 0.6 }); }
+    for (let y = h - A4h; y > mt * 0.5; y -= A4h) { out.push({ type: 'line', x1: 0, y1: y, x2: tk, y2: y, color: gray, width: 0.6 }); out.push({ type: 'line', x1: w - tk, y1: y, x2: w, y2: y, color: gray, width: 0.6 }); }
+    return out;
+  }
   return [];
 }
 function paintBg(lib, pg, w, h, bg) { if (!bg || bg === '#ffffff') return; const c = hexToRgb(bg); pg.drawRectangle({ x: 0, y: 0, width: w, height: h, color: lib.rgb(c.r, c.g, c.b) }); }
@@ -2273,7 +2292,8 @@ function renderSlidePreview() {
   const bgB = $('#sdBg button.on') || $('#sdBg button'), bg = bgB ? bgB.dataset.bg : '#ffffff';
   const bar = (x, y, bw, bh, cls) => `<div class="pv-b ${cls || ''}" style="left:${x}%;top:${y}%;width:${bw}%;height:${bh}%"></div>`;
   let inner = '';
-  if (t === 'title') inner = bar(15, 40, 70, 12, 'pv-strong') + bar(25, 57, 50, 7);
+  if (t === 'plan') inner = bar(3, 3, 94, 94, 'pv-box') + bar(64, 76, 32, 20, 'pv-box') + bar(66, 78, 28, 4, 'pv-strong');
+  else if (t === 'title') inner = bar(15, 40, 70, 12, 'pv-strong') + bar(25, 57, 50, 7);
   else if (t === 'titlecontent') inner = bar(8, 8, 75, 11, 'pv-strong') + bar(8, 28, 80, 6) + bar(8, 40, 80, 6) + bar(8, 52, 65, 6);
   else if (t === 'twocol') inner = bar(8, 8, 75, 11, 'pv-strong') + bar(8, 28, 38, 6) + bar(8, 40, 38, 6) + bar(54, 28, 38, 6) + bar(54, 40, 38, 6);
   else if (t === 'compare') inner = bar(8, 8, 75, 11, 'pv-strong') + bar(8, 26, 38, 60, 'pv-box') + bar(54, 26, 38, 60, 'pv-box');
@@ -2338,6 +2358,7 @@ function nudgeSel(key, d) {
 
 /* ---------- Werkzeug umschalten ---------- */
 function activateRibTab(t) { $$('.rib-tab').forEach(x => x.classList.toggle('on', x.dataset.tab === t)); $$('.rib-tools').forEach(g => g.hidden = g.dataset.tabgroup !== t); }
+let _scaleAfter = null;   // Werkzeug, zu dem nach dem Massstab-Setzen zurückgekehrt wird
 function setTool(t) {
   if (cropping && t !== 'select' && t !== 'crop') removeCropAnno();   // anderes Werkzeug → Zuschneiden verwerfen
   if (areaDraft && t !== 'area') cancelArea();                       // anderes Werkzeug → Flächen-Polygon verwerfen
@@ -2356,6 +2377,7 @@ function setTool(t) {
   if (['pen', 'line', 'arrow', 'rect', 'oval', 'arc'].includes(t) && !setTool._drawHint) { setTool._drawHint = true; toast('Werkzeug bleibt aktiv – einfach weiterzeichnen. V oder Esc = auswählen/bearbeiten.'); }
   if (t === 'opening' && !setTool._openHint) { setTool._openHint = true; toast('Tür/Fenster: auf eine Wand klicken → wird eingesetzt (Wand wird ausgestanzt). In der Auswahl-Leiste: Tür/Fenster, Breite, Anschlag/Seite.'); }
   if (t === 'chaindim' && !setTool._cdimHint) { setTool._cdimHint = true; toast('Kettenmass: Stationen klicken (rastet an Ecken/Enden ein) · je Abschnitt ein Mass + Gesamt · Rücktaste = letzte Station zurück · Doppelklick/Enter = fertig.'); }
+  if (t === 'wall' && !docScale && !_scaleAfter) { _scaleAfter = 'wall'; toast('Erst den Massstab wählen – dann passen die Wände masstabsgetreu aufs Blatt.'); openScale(); return; }
   if (t === 'wall' && !setTool._wallHint) { setTool._wallHint = true; toast('Wand: klicken–klicken = Raumzug · zurück auf Start = Raum schliessen (m²) · Rücktaste = letzte Wand zurück · ziehen = einzelne Wand · D = Dicke, L = Länge.'); }
 }
 function applyToolCursor() {
@@ -2631,7 +2653,7 @@ function applyScale() {
     if (!(n > 0)) { $('#scaleDlg').hidden = true; return; }
     docScale = { perPt: n * PT2MM / 1000, label: '1:' + Math.round(n), n: Math.round(n) };
   }
-  $('#scaleDlg').hidden = true; updateScaleLabel(); pageViews.forEach(drawAnnos); toast('Massstab gesetzt'); setTool('measure');
+  $('#scaleDlg').hidden = true; updateScaleLabel(); pageViews.forEach(drawAnnos); toast('Massstab gesetzt'); const after = _scaleAfter; _scaleAfter = null; setTool(after || 'measure');
 }
 function updateScaleLabel() { const el = $('#scaleInd'); if (el) el.textContent = docScale ? (docScale.label === 'kalibriert' ? '⟂ kalibriert' : docScale.label) : ''; }
 
@@ -2955,7 +2977,7 @@ function wire() {
   $('#sigUseSaved').onclick = () => useSig(true);
   $('#btnScale').onclick = () => openScale(0);
   $('#scaleCalibBtn').onclick = () => { $('#scaleDlg').hidden = true; setTool('calibrate'); toast('Bekannte Strecke im Plan einzeichnen …'); };
-  $('#scaleCancel').onclick = () => $('#scaleDlg').hidden = true;
+  $('#scaleCancel').onclick = () => { _scaleAfter = null; $('#scaleDlg').hidden = true; };
   $('#scaleOk').onclick = applyScale;
   $('#scaleReal').onkeydown = e => { if (e.key === 'Enter') applyScale(); };
   $('#scaleRatio').onkeydown = e => { if (e.key === 'Enter') applyScale(); };

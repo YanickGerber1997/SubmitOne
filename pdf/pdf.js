@@ -2046,17 +2046,20 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     const sill = sO ? (sO.sill || 0) : (kind === 'window' ? 0.9 : 0), head = sO ? (sO.head || (kind === 'window' ? 2.1 : 2.0)) : (kind === 'window' ? 2.1 : 2.0);
     if (document.activeElement !== $('#pbSill')) $('#pbSill').value = sill;
     if (document.activeElement !== $('#pbHead')) $('#pbHead').value = head;
+    const winLike = kind === 'window' || kind === 'door';
     $('#pbSillWrap').style.display = kind === 'window' ? '' : 'none';
-    $('#pbDepthWrap').style.display = kind === 'window' ? '' : 'none';
+    $('#pbDepthWrap').style.display = winLike ? '' : 'none';
     if (document.activeElement !== $('#pbDepth')) $('#pbDepth').value = Math.round((sO && sO.depth != null ? sO.depth : lastOpenDepth) * 100);
     $('#pbNiche').style.display = kind === 'window' ? '' : 'none'; $('#pbNiche').classList.toggle('on', !!(sO && sO.niche));
-    $('#pbWinType').style.display = kind === 'window' ? '' : 'none'; $('#pbWinType').value = (sO && sO.winType) || lastWinType;
-    $('#pbWinHinge').style.display = kind === 'window' ? '' : 'none'; $('#pbWinHinge').value = (sO && sO.winHinge) || lastWinHinge;
-    $('#pbWinMore').style.display = kind === 'window' ? '' : 'none';
-    $('#pbReveal').style.display = kind === 'window' ? '' : 'none'; $('#pbReveal').value = (sO && sO.revealType) || 'putz';
-    $('#pbWinMat').style.display = kind === 'window' ? '' : 'none'; $('#pbWinMat').value = (sO && sO.winMat) || lastWinMat || 'holz';
-    $('#pbOuterWrap').style.display = kind === 'window' ? '' : 'none'; if (document.activeElement !== $('#pbOuterLap')) $('#pbOuterLap').value = Math.round(ptsToCm(sO && sO.outerLap != null ? sO.outerLap : cmToPts(3)) * 10) / 10;
-    $('#pbInnerWrap').style.display = kind === 'window' ? '' : 'none'; if (document.activeElement !== $('#pbInnerRev')) $('#pbInnerRev').value = Math.round(ptsToCm(sO && sO.innerReveal != null ? sO.innerReveal : cmToPts(2)) * 10) / 10;
+    const tOpts = kind === 'door' ? '<option value="fest">Festverglast</option><option value="f1">1 Flügel</option><option value="f2">2 Flügel</option><option value="f1f">1 Flügel + Fixteil</option>' : '<option value="fest">Festverglasung</option><option value="f1">1 Flügel</option><option value="f2">2 Flügel (direkt)</option><option value="f2s">2 Flügel + Setzholz</option>';
+    if ($('#pbWinType').dataset.kind !== kind) { $('#pbWinType').innerHTML = tOpts; $('#pbWinType').dataset.kind = kind; }
+    $('#pbWinType').style.display = winLike ? '' : 'none'; $('#pbWinType').value = (sO && sO.winType) || (kind === 'door' ? lastDoorType : lastWinType);
+    $('#pbWinHinge').style.display = winLike ? '' : 'none'; $('#pbWinHinge').value = (sO && sO.winHinge) || lastWinHinge;
+    $('#pbWinMore').style.display = winLike ? '' : 'none';
+    $('#pbReveal').style.display = winLike ? '' : 'none'; $('#pbReveal').value = (sO && sO.revealType) || 'putz';
+    $('#pbWinMat').style.display = winLike ? '' : 'none'; $('#pbWinMat').value = (sO && sO.winMat) || lastWinMat || 'holz';
+    $('#pbOuterWrap').style.display = winLike ? '' : 'none'; if (document.activeElement !== $('#pbOuterLap')) $('#pbOuterLap').value = Math.round(ptsToCm(sO && sO.outerLap != null ? sO.outerLap : cmToPts(3)) * 10) / 10;
+    $('#pbInnerWrap').style.display = winLike ? '' : 'none'; if (document.activeElement !== $('#pbInnerRev')) $('#pbInnerRev').value = Math.round(ptsToCm(sO && sO.innerReveal != null ? sO.innerReveal : cmToPts(2)) * 10) / 10;
     $('#pbFlip').style.display = kind === 'door' ? '' : 'none';
   }
 }
@@ -2294,7 +2297,7 @@ function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte F
   return out;
 }
 /* ---------- Öffnungen (Tür/Fenster) in Wänden ---------- */
-let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5, lastWinType = 'f1', lastWinHinge = 'left', lastWinMat = 'holz';
+let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5, lastWinType = 'f1', lastDoorType = 'f1', lastWinHinge = 'left', lastWinMat = 'holz';
 function nearestWall(pv, x, y) {
   let best = null, bd = Infinity;
   for (const o of getAnnos(pv.num)) { if (o.type !== 'wall') continue; const dx = o.x2 - o.x1, dy = o.y2 - o.y1, L2 = dx * dx + dy * dy || 1; let t = ((x - o.x1) * dx + (y - o.y1) * dy) / L2; t = Math.max(0, Math.min(1, t)); const px = o.x1 + dx * t, py = o.y1 + dy * t, d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = { wall: o, cx: px, cy: py, ang: Math.atan2(dy, dx), thick: o.thick || wallThickPts(), dist: d }; } }
@@ -2309,7 +2312,7 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
   const corner = (s, m) => [x + ux * hw * s + nx * ht * m, y + uy * hw * s + ny * ht * m];
   const cover = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
   const lines = [], arcs = [], bold = [], fills = [];
-  const isDetailWin = a.kind === 'window' && detail;
+  const isDetailWin = (a.kind === 'window' || a.kind === 'door') && detail;
   if (!isDetailWin) lines.push([corner(-1, -1), corner(-1, 1)], [corner(1, -1), corner(1, 1)]);   // Laibungs-Querlinien (beim Detail-Fenster weg)
   if (a.kind === 'window' && !detail) { bold.push([corner(-1, -0.13), corner(1, -0.13)]); lines.push([corner(-1, 0.13), corner(1, 0.13)]); }   // einfach: zwei quere Linien, eine breit
   else if (a.kind === 'window') {   // Profil: Blendrahmen Höhe 10 (entlang Öffnung) × Tiefe 7; Flügel 7×7, 4 cm entlang in den Rahmen, 1 cm Tiefe zurück
@@ -2338,9 +2341,26 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
       fills.push({ poly: [corner(gl, gc - gh), corner(gr, gc - gh), corner(gr, gc + gh), corner(gl, gc + gh)], fill: '#9cc3e6', stroke: '#5a8bb5' });   // Glas (blau)
     }
   }
-  else {   // Tür: Blatt + Schwenk, im Detail zusätzlich Blendrahmen an den Laibungen
+  else if (a.kind === 'door' && detail) {   // Tür wie Fenster: Zarge (Rahmen) + Flügel mit Schwenk; Festteil = Glas; 1-/2-flüglig
+    const wt = a.winType || 'f1', wm = WIN_MAT[a.winMat || 'holz'];
+    const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
+    const frameD = a.frameD || cmToPts(7), frameW = a.frameW || cmToPts(6);
+    const fdh = Math.min(0.49, frameD / (2 * ht)); let fmA = md - fdh, fmB = md + fdh;
+    if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }
+    const fwS = Math.min(0.4, frameW / hw), gc = (fmA + fmB) / 2, gh = Math.min((fmB - fmA) * 0.32, (a.glassT || cmToPts(2)) / (2 * ht));
+    const sw = a.swing || 1, hingeRight = a.winHinge === 'right', mid = wt === 'f2' || wt === 'f2s' || wt === 'f1f';
+    const box = (s0, s1, mA, mB) => fills.push({ poly: [corner(s0, mA), corner(s1, mA), corner(s1, mB), corner(s0, mB)], fill: wm.fill, stroke: wm.stroke });
+    const div = mid ? [-1, 0, 1] : [-1, 1];
+    for (const dv of div) { let m0, m1; if (dv <= -0.999) { m0 = -1; m1 = -1 + fwS; } else if (dv >= 0.999) { m0 = 1 - fwS; m1 = 1; } else { m0 = -fwS / 2; m1 = fwS / 2; } box(m0, m1, fmA, fmB); }   // Zarge (Jamben + Mittelpfosten)
+    const glassPane = (sl, sr) => fills.push({ poly: [corner(sl, gc - gh), corner(sr, gc - gh), corner(sr, gc + gh), corner(sl, gc + gh)], fill: '#9cc3e6', stroke: '#5a8bb5' });
+    const leaf = (hingeS, dirAlong, clearWs) => { const hp = corner(hingeS, 0), Ln = clearWs * hw, tip = [hp[0] + nx * sw * Ln, hp[1] + ny * sw * Ln], closed = [hp[0] + ux * dirAlong * Ln, hp[1] + uy * dirAlong * Ln], tw = Math.min(fdh * 1.4 * ht, cmToPts(4)), ox = ux * dirAlong * tw, oy = uy * dirAlong * tw; fills.push({ poly: [hp, tip, [tip[0] + ox, tip[1] + oy], [hp[0] + ox, hp[1] + oy]], fill: wm.fill, stroke: wm.stroke }); arcs.push({ cx: hp[0], cy: hp[1], r: Ln, from: tip, to: closed }); };
+    if (wt === 'fest') glassPane(-1 + fwS, 1 - fwS);
+    else if (wt === 'f2' || wt === 'f2s') { leaf(-1 + fwS, 1, 1 - 1.5 * fwS); leaf(1 - fwS, -1, 1 - 1.5 * fwS); }   // zwei Flügel von beiden Jamben zur Mitte
+    else if (wt === 'f1f') { if (hingeRight) { glassPane(-1 + fwS, -fwS / 2); leaf(1 - fwS, -1, 1 - 1.5 * fwS); } else { leaf(-1 + fwS, 1, 1 - 1.5 * fwS); glassPane(fwS / 2, 1 - fwS); } }   // ein Flügel + Festverglasung
+    else { if (hingeRight) leaf(1 - fwS, -1, 2 - 2 * fwS); else leaf(-1 + fwS, 1, 2 - 2 * fwS); }   // 1 Flügel
+  }
+  else {   // einfache Tür (einschichtig): Blatt + Schwenk
     const hS = a.hinge || 1, sN = a.swing || 1, hp = [x - ux * hw * hS, y - uy * hw * hS], tip = [hp[0] + nx * a.w * sN, hp[1] + ny * a.w * sN], closed = [x + ux * hw * hS, y + uy * hw * hS];
-    if (detail) { const fwS = Math.min(0.4, (a.frameW || cmToPts(6)) / hw), fr = 0.78; for (const sgn of [-1, 1]) { const sa = sgn, sb = sgn < 0 ? -1 + fwS : 1 - fwS; lines.push([corner(sa, -fr), corner(sb, -fr)], [corner(sa, fr), corner(sb, fr)], [corner(sa, -fr), corner(sa, fr)], [corner(sb, -fr), corner(sb, fr)]); } }   // Zarge/Blendrahmen
     bold.push([hp, tip]); arcs.push({ cx: hp[0], cy: hp[1], r: a.w, from: tip, to: closed });
   }
   return { cover, lines, arcs, bold, fills };
@@ -2366,7 +2386,7 @@ function bandHatch(sa, sb, ma, mb, corner, hw, ht) {   // diagonale Schraffur (�
 }
 function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → Schalung 1,5 cm (Schraffur) → Rest Dämmung bis Rahmen; innen Putz/Brett
   const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall');
-  if (!wall || !wall.layers || wall.layers.length < 2 || a.kind !== 'window') return [];
+  if (!wall || !wall.layers || wall.layers.length < 2 || (a.kind !== 'window' && a.kind !== 'door')) return [];
   const x = a.x, y = a.y, ang = a.ang, ht = (a.thick || wallThickPts()) / 2, hw = a.w / 2;
   const ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux, corner = (s, m) => [x + ux * hw * s + nx * ht * m, y + uy * hw * s + ny * ht * m];
   const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
@@ -2523,7 +2543,7 @@ function openingClick(pv, p) {
   if (!nw || nw.dist > nw.thick * 0.85 + 10) { toast('Tür/Fenster auf eine Wand setzen.'); return; }
   pushUndo();
   const dx = nw.wall.x2 - nw.wall.x1, dy = nw.wall.y2 - nw.wall.y1, L2 = dx * dx + dy * dy || 1, t = ((nw.cx - nw.wall.x1) * dx + (nw.cy - nw.wall.y1) * dy) / L2;
-  const a = { id: nextId++, type: 'opening', wallId: nw.wall.id, t, x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, sill: openKind === 'window' ? 0.9 : 0, head: openKind === 'window' ? 2.1 : 2.0, depth: lastOpenDepth, winType: lastWinType, winHinge: lastWinHinge, winMat: lastWinMat, color: nw.wall.color || '#1c242c' };
+  const a = { id: nextId++, type: 'opening', wallId: nw.wall.id, t, x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, sill: openKind === 'window' ? 0.9 : 0, head: openKind === 'window' ? 2.1 : 2.0, depth: lastOpenDepth, winType: openKind === 'door' ? lastDoorType : lastWinType, winHinge: lastWinHinge, winMat: lastWinMat, color: nw.wall.color || '#1c242c' };
   pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
 }
 function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieben (sonst frei)
@@ -4034,16 +4054,16 @@ function wire() {
   $('#pbWidth').onchange = () => { const v = parseFloat($('#pbWidth').value); if (!(v > 0)) return updatePlanBar(); const pts = cmToPts(v); lastOpenW = pts; const a = selOpen(); if (a) { pushUndo(); a.w = pts; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbFlip').onclick = () => { const a = selOpen(); if (!a) return; pushUndo(); if (a.swing === 1 && a.hinge === 1) a.hinge = -1; else if (a.hinge === -1 && a.swing === 1) a.swing = -1; else if (a.hinge === -1 && a.swing === -1) a.hinge = 1; else a.swing = 1; pageViews.forEach(drawAnnos); saveState(); };
   $('#pbNiche').onclick = () => { const a = selOpen(); if (!a || a.kind !== 'window') { toast('Nische gibt es nur beim Fenster.'); return; } pushUndo(); a.niche = !a.niche; $('#pbNiche').classList.toggle('on', a.niche); saveState(); toast(a.niche ? 'Storennische an – im 3D sichtbar' : 'Storennische aus'); };
-  $('#pbWinType').onchange = () => { const v = $('#pbWinType').value; lastWinType = v; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.winType = v; pageViews.forEach(drawAnnos); saveState(); } };
-  $('#pbWinHinge').onchange = () => { const v = $('#pbWinHinge').value; lastWinHinge = v; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.winHinge = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbWinType').onchange = () => { const v = $('#pbWinType').value, a = selOpen(); if (a && a.kind === 'door') lastDoorType = v; else lastWinType = v; if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.winType = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbWinHinge').onchange = () => { const v = $('#pbWinHinge').value; lastWinHinge = v; const a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.winHinge = v; pageViews.forEach(drawAnnos); saveState(); } };
   const winProf = [['wpFrameW', 'frameW', 10], ['wpFrameD', 'frameD', 7], ['wpSashW', 'sashW', 7], ['wpSashD', 'sashD', 7], ['wpShift', 'sashShift', 4], ['wpRecess', 'sashRecess', 1], ['wpGlass', 'glassT', 2]];
   $('#pbWinMore').onclick = e => { e.stopPropagation(); const p = $('#winPop'); p.hidden = !p.hidden; if (!p.hidden) { const a = selOpen(); for (const [id, key, def] of winProf) $('#' + id).value = Math.round(ptsToCm(a && a[key] != null ? a[key] : cmToPts(def)) * 10) / 10; } };
-  for (const [id, key] of winProf) $('#' + id).onchange = () => { const v = parseFloat(($('#' + id).value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a[key] = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
+  for (const [id, key] of winProf) $('#' + id).onchange = () => { const v = parseFloat(($('#' + id).value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a[key] = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#winPop') && !e.target.closest('#pbWinMore')) $('#winPop').hidden = true; }, true);
-  $('#pbOuterLap').onchange = () => { const v = parseFloat(($('#pbOuterLap').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.outerLap = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
-  $('#pbInnerRev').onchange = () => { const v = parseFloat(($('#pbInnerRev').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.innerReveal = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
-  $('#pbReveal').onchange = () => { const v = $('#pbReveal').value, a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.revealType = v; pageViews.forEach(drawAnnos); saveState(); } };
-  $('#pbWinMat').onchange = () => { const v = $('#pbWinMat').value, a = selOpen(); lastWinMat = v; if (a && a.kind === 'window') { pushUndo(); a.winMat = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbOuterLap').onchange = () => { const v = parseFloat(($('#pbOuterLap').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.outerLap = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbInnerRev').onchange = () => { const v = parseFloat(($('#pbInnerRev').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.innerReveal = cmToPts(v); pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbReveal').onchange = () => { const v = $('#pbReveal').value, a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.revealType = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbWinMat').onchange = () => { const v = $('#pbWinMat').value, a = selOpen(); lastWinMat = v; if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.winMat = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#dropOpen').onclick = openPicker;
   $('#dropBlank').onclick = () => openSlidePicker('new');
   $('#btnNew').onclick = () => openSlidePicker('new');

@@ -27,6 +27,7 @@ let penTidy = true;        // Freihand-Skizzen automatisch zu sauberen Formen au
 let docScale = null;       // {perPt: reale Meter pro PDF-Punkt, label:'1:100'} – für Messen
 const PT2MM = 25.4 / 72;   // 1 PDF-Punkt in mm
 let dimUnit = false, wallDimOffCm = 10, wallDimGap = 8;   // Mass-Anzeige mit Einheit? (Standard: Plan-Stil „4.00") · Abstand der Wand-Masslinie (cm) · Lücke Bauteil↔Hilfslinie (pt)
+let simpleMode = false;   // einfache Darstellung erzwingen: Wände schwarz (Poché), Öffnungen als Symbol
 function fmtLen(pts) {
   if (docScale && !dimUnit) return (pts * docScale.perPt).toFixed(2);          // Plan-Stil: „2.00" (Meter, 2 Nachkommastellen, ohne Einheit)
   if (!docScale) return Math.round(pts * PT2MM) + (dimUnit ? ' mm' : '');      // ohne Massstab: Papier-mm
@@ -838,7 +839,7 @@ function drawAnnos(pv) {
   const svg = pv.svg; svg.innerHTML = '';
   for (const a of getAnnos(pv.num)) if (a.type === 'opening') openingResolve(a, pv);   // Türen/Fenster der Wand folgen lassen
   _wallUnionActive = false;
-  if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall' && !(a.layers && a.layers.length) && layerVisible(a) && phaseVisible(a)); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung (Schicht-Wände zeichnen sich selbst)
+  if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall' && (simpleMode || !(a.layers && a.layers.length)) && layerVisible(a) && phaseVisible(a)); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung (Schicht-Wände zeichnen sich selbst; im Einfach-Modus alle schwarz)
   for (const a of getAnnos(pv.num)) { if (!layerVisible(a) || !phaseVisible(a)) continue; drawOne(svg, a, pv); }
   _wallUnionActive = false;
   if (sel && sel.num === pv.num) drawSelection(svg, findAnno(pv.num, sel.id), pv);
@@ -1058,7 +1059,7 @@ function drawOne(svg, a, pv) {
     const d = arcPath(a);
     el = svgEl('path', { d, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linecap': 'round', 'data-id': a.id }); const ds = dashSvg(a); if (ds) el.setAttribute('stroke-dasharray', ds); svg.appendChild(el);
     hit = svgEl('path', { d, fill: 'none', stroke: 'transparent', 'stroke-width': Math.max(12, (a.width || 2) + 10), 'data-id': a.id }); svg.appendChild(hit);
-  } else if (a.type === 'wall' && a.layers && a.layers.length) {   // mehrschichtiger Aufbau
+  } else if (a.type === 'wall' && a.layers && a.layers.length && !simpleMode) {   // mehrschichtiger Aufbau (im Einfach-Modus → schwarze Union)
     const arr = getAnnos(pv.num);
     drawLayeredWall(svg, a, arr);
     if (a.dim) { const dg = wallDimGeom(a); archDim(svg, [a.x1, a.y1], [a.x2, a.y2], dg.off, '#1c242c', dg.label); }
@@ -1068,7 +1069,7 @@ function drawOne(svg, a, pv) {
     const g = svgEl('g', { 'data-id': a.id });
     if (!_wallUnionActive && a.fill && a.fill !== 'none') g.appendChild(svgEl('polygon', { points: pstr, fill: a.fill, stroke: 'none' }));   // Füllung (wenn keine Union)
     svg.appendChild(g); el = g;
-    if (a.hatch && a.hatch.type) appendHatch(svg, a, arr);                                                            // Schraffur (phasen-gleich → läuft durch)
+    if (a.hatch && a.hatch.type && !simpleMode) appendHatch(svg, a, arr);                                            // Schraffur (im Einfach-Modus weg → schwarze Wand)
     const col = a.color || '#1c242c', lw = a.width || 1.4;
     if (!_wallUnionActive) for (const [p, q] of wallOutlineSegs(a, arr)) svg.appendChild(svgEl('line', { x1: p[0], y1: p[1], x2: q[0], y2: q[1], stroke: col, 'stroke-width': lw, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));   // Umriss nur ohne Union (sonst macht die Union die sauberen Ecken)
     if (a.dim) { const dg = wallDimGeom(a); archDim(svg, [a.x1, a.y1], [a.x2, a.y2], dg.off, '#1c242c', dg.label); }   // Architektur-Masslinie – immer schwarz
@@ -1569,13 +1570,13 @@ function loadPolyClip() { if (window.polygonClipping) return; loadScript('https:
 function drawWallUnion(svg, walls) {   // Wandflächen vereinigen → saubere Gehrungs-Ecken; je Material (Farbe+Füllung) eine Gruppe
   try {
     const groups = {};
-    for (const w of walls) { const k = (w.color || '#1c242c') + '|' + (w.fill || '#ffffff'); (groups[k] || (groups[k] = [])).push(w); }
+    for (const w of walls) { const k = simpleMode ? 'X' : ((w.color || '#1c242c') + '|' + (w.fill || '#ffffff')); (groups[k] || (groups[k] = [])).push(w); }
     let any = false;
     for (const k in groups) {
       const grp = groups[k], polys = grp.map(w => [wallPoly(w, walls).map(p => [p[0], p[1]])]);   // Gehrung gegen ALLE Wände
       const uni = polygonClipping.union(...polys);
       if (!uni || !uni.length) continue;
-      const col = grp[0].color || '#1c242c', fill = grp[0].fill || '#ffffff', lw = grp[0].width || 1.4;
+      const col = simpleMode ? '#1c242c' : (grp[0].color || '#1c242c'), fill = simpleMode ? '#1c242c' : (grp[0].fill || '#ffffff'), lw = grp[0].width || 1.4;
       for (const poly of uni) {
         let d = '';
         for (const ring of poly) { if (!ring.length) continue; d += 'M' + ring.map(p => p[0].toFixed(2) + ' ' + p[1].toFixed(2)).join(' L ') + ' Z'; }
@@ -2252,14 +2253,16 @@ function nearestWall(pv, x, y) {
   return best;
 }
 function arcPts(cx, cy, r, from, to, n) { let a0 = Math.atan2(from[1] - cy, from[0] - cx), a1 = Math.atan2(to[1] - cy, to[0] - cx), d = a1 - a0; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; const out = []; for (let i = 0; i <= n; i++) { const a = a0 + d * i / n; out.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); } return out; }
-function openingParts(a) {   // Geometrie: Ausstanz-Rechteck (cover), Linien (Laibungen/Glas/Blatt), Bögen (Schwenk)
+function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstellung (einschichtige Wand)
+  detail = detail !== false;
   const x = a.x, y = a.y, ang = a.ang, ht = (a.thick || wallThickPts()) / 2, hw = a.w / 2;
   const ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
   const corner = (s, m) => [x + ux * hw * s + nx * ht * m, y + uy * hw * s + ny * ht * m];
   const cover = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)];
   const lines = [[corner(-1, -1), corner(-1, 1)], [corner(1, -1), corner(1, 1)]];   // Laibungen
-  const arcs = [];
-  if (a.kind === 'window') {   // editierbares Fenster: Blendrahmen + Flügelrahmen + Glas, Typ wählbar
+  const arcs = [], bold = [];
+  if (a.kind === 'window' && !detail) { bold.push([corner(-1, -0.13), corner(1, -0.13)]); lines.push([corner(-1, 0.13), corner(1, 0.13)]); }   // einfach: zwei quere Linien, eine breit
+  else if (a.kind === 'window') {   // editierbares Fenster: Blendrahmen + Flügelrahmen + Glas, Typ wählbar
     const wt = a.winType || 'f1';
     const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
     const fmh = Math.min(0.48, (a.frameD || cmToPts(7)) / (2 * ht)); let fmA = md - fmh, fmB = md + fmh;
@@ -2274,8 +2277,12 @@ function openingParts(a) {   // Geometrie: Ausstanz-Rechteck (cover), Linien (La
       lines.push([corner(cl, md - gh), corner(cr, md - gh)], [corner(cl, md + gh), corner(cr, md + gh)]);   // Glas
     }
   }
-  else { const hS = a.hinge || 1, sN = a.swing || 1, hp = [x - ux * hw * hS, y - uy * hw * hS], tip = [hp[0] + nx * a.w * sN, hp[1] + ny * a.w * sN], closed = [x + ux * hw * hS, y + uy * hw * hS]; lines.push([hp, tip]); arcs.push({ cx: hp[0], cy: hp[1], r: a.w, from: tip, to: closed }); }
-  return { cover, lines, arcs };
+  else {   // Tür: Blatt + Schwenk, im Detail zusätzlich Blendrahmen an den Laibungen
+    const hS = a.hinge || 1, sN = a.swing || 1, hp = [x - ux * hw * hS, y - uy * hw * hS], tip = [hp[0] + nx * a.w * sN, hp[1] + ny * a.w * sN], closed = [x + ux * hw * hS, y + uy * hw * hS];
+    if (detail) { const fwS = Math.min(0.4, (a.frameW || cmToPts(6)) / hw), fr = 0.78; for (const sgn of [-1, 1]) { const sa = sgn, sb = sgn < 0 ? -1 + fwS : 1 - fwS; lines.push([corner(sa, -fr), corner(sb, -fr)], [corner(sa, fr), corner(sb, fr)], [corner(sa, -fr), corner(sa, fr)], [corner(sb, -fr), corner(sb, fr)]); } }   // Zarge/Blendrahmen
+    bold.push([hp, tip]); arcs.push({ cx: hp[0], cy: hp[1], r: a.w, from: tip, to: closed });
+  }
+  return { cover, lines, arcs, bold };
 }
 function openingRevealStrips(a, arr) {   // Schichteinzug: innerste/äusserste Schicht zieht in die Laibung bis zum Fensterrahmen
   const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall');
@@ -2293,12 +2300,14 @@ function openingRevealStrips(a, arr) {   // Schichteinzug: innerste/äusserste S
   }
   return strips;
 }
+function openingDetail(a, arr) { const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall'); return !simpleMode && !!(wall && wall.layers && wall.layers.length); }
 function drawOpening(svg, a, arr) {
-  const P = openingParts(a), col = a.color || '#1c242c';
+  const detail = openingDetail(a, arr), P = openingParts(a, detail), col = a.color || '#1c242c';
   const g = svgEl('g', { 'data-id': a.id });
   g.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: '#fff', stroke: 'none' }));   // Wand ausstanzen
-  for (const st of openingRevealStrips(a, arr)) g.appendChild(svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' }));   // Schichteinzug
+  if (detail) for (const st of openingRevealStrips(a, arr)) g.appendChild(svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' }));   // Schichteinzug
   for (const [u, v] of P.lines) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
+  for (const [u, v] of (P.bold || [])) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 2.6, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
   for (const arc of P.arcs) g.appendChild(svgEl('polyline', { points: arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 18).map(p => p[0] + ',' + p[1]).join(' '), fill: 'none', stroke: col, 'stroke-width': 0.8, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke' }));
   svg.appendChild(g);
   svg.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: 'transparent', 'data-id': a.id }));
@@ -3089,14 +3098,14 @@ async function buildPdfBytes(visibleOnly) {
       if (cropT) pg.pushOperators(pushGraphicsState(), concatTransformationMatrix(1, 0, 0, 1, cb.x, cb.y));   // Ursprung in die CropBox-Ecke
       let wallUni = false;
       if (window.polygonClipping) {   // Wandflächen vereinigen → saubere Ecken auch im PDF
-        const walls = (annos[n] || []).filter(a => a.type === 'wall' && !a._draft && !(a.layers && a.layers.length) && phaseVisible(a) && (!visibleOnly || layerVisible(a)));
+        const walls = (annos[n] || []).filter(a => a.type === 'wall' && !a._draft && (simpleMode || !(a.layers && a.layers.length)) && phaseVisible(a) && (!visibleOnly || layerVisible(a)));
         if (walls.length) try {
           const groups = {};
-          for (const w of walls) { const k = (w.color || '#1c242c') + '|' + (w.fill || '#ffffff'); (groups[k] || (groups[k] = [])).push(w); }
+          for (const w of walls) { const k = simpleMode ? 'X' : ((w.color || '#1c242c') + '|' + (w.fill || '#ffffff')); (groups[k] || (groups[k] = [])).push(w); }
           for (const k in groups) {
             const grp = groups[k], uni = polygonClipping.union(...grp.map(w => [wallPoly(w, walls).map(p => [p[0], p[1]])]));
             if (!uni || !uni.length) continue; wallUni = true;
-            const wc = hexToRgb(grp[0].color || '#1c242c'), fc = hexToRgb(grp[0].fill || '#ffffff'), lw = grp[0].width || 1.4;
+            const wc = hexToRgb(simpleMode ? '#1c242c' : (grp[0].color || '#1c242c')), fc = hexToRgb(simpleMode ? '#1c242c' : (grp[0].fill || '#ffffff')), lw = grp[0].width || 1.4;
             for (const poly of uni) { let d = ''; for (const ring of poly) { if (!ring.length) continue; d += 'M' + ring.map(p => p[0] + ' ' + p[1]).join(' L ') + ' Z'; } if (d) pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b), borderColor: rgb(wc.r, wc.g, wc.b), borderWidth: lw }); }
           }
         } catch (_) { wallUni = false; }
@@ -3128,7 +3137,7 @@ async function buildPdfBytes(visibleOnly) {
             pg.drawText(lab, { x: mx - lab.length * 3, y: Y(my) + 6, size: 11, font, color: c });
           }
         }
-        else if (a.type === 'wall' && a.layers && a.layers.length) {   // mehrschichtiger Aufbau im PDF
+        else if (a.type === 'wall' && a.layers && a.layers.length && !simpleMode) {   // mehrschichtiger Aufbau im PDF
           const arr = annos[n] || [], { bands, c1A, c2A, c2B, c1B } = wallLayerBands(a, arr), lp = (p, q, f) => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
           const polyD = pts => 'M' + pts.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z';
           for (const b of bands) {
@@ -3198,10 +3207,11 @@ async function buildPdfBytes(visibleOnly) {
         else if (a.type === 'oval') { const o = { x: a.x + a.w / 2, y: Y(a.y + a.h / 2), xScale: Math.abs(a.w / 2), yScale: Math.abs(a.h / 2), borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawEllipse(o); }
         else if (a.type === 'pen') { const op = a.hl ? 0.35 : 1; for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c, opacity: op }); }
         else if (a.type === 'opening') {
-          const P = openingParts(a), d = 'M' + P.cover.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z';
+          const oDetail = openingDetail(a, annos[n] || []), P = openingParts(a, oDetail), d = 'M' + P.cover.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z';
           try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(1, 1, 1) }); } catch (_) { }   // Wand ausstanzen
-          for (const st of openingRevealStrips(a, annos[n] || [])) { const sf = hexToRgb(st.fill), ss = hexToRgb(st.stroke), sd = 'M' + st.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(sd, { x: 0, y: PH, color: rgb(sf.r, sf.g, sf.b), borderColor: rgb(ss.r, ss.g, ss.b), borderWidth: 0.7 }); } catch (_) { } }   // Schichteinzug
+          if (oDetail) for (const st of openingRevealStrips(a, annos[n] || [])) { const sf = hexToRgb(st.fill), ss = hexToRgb(st.stroke), sd = 'M' + st.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(sd, { x: 0, y: PH, color: rgb(sf.r, sf.g, sf.b), borderColor: rgb(ss.r, ss.g, ss.b), borderWidth: 0.7 }); } catch (_) { } }   // Schichteinzug
           for (const [u, v] of P.lines) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 1.4, color: c });
+          for (const [u, v] of (P.bold || [])) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 2.6, color: c });
           for (const arc of P.arcs) { const pts = arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 18); for (let i = 1; i < pts.length; i++) pg.drawLine({ start: { x: pts[i - 1][0], y: Y(pts[i - 1][1]) }, end: { x: pts[i][0], y: Y(pts[i][1]) }, thickness: 0.8, color: c }); }
         }
         else if (a.type === 'section') {
@@ -3256,7 +3266,7 @@ async function buildPdfBytes(visibleOnly) {
         else if (a.type === 'img' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, opacity: a.opacity != null ? a.opacity : 1 }); }
         else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); if (a.caption) { const fs = Math.max(7, Math.min(11, a.h * 0.16)), cy = a.y + a.h + 2; pg.drawLine({ start: { x: a.x, y: Y(cy) }, end: { x: a.x + a.w, y: Y(cy) }, thickness: 0.7, color: rgb(.11, .14, .17) }); pg.drawText(a.caption, { x: a.x, y: Y(cy + fs + 1), size: fs, font, color: rgb(.11, .14, .17) }); } }
         // Schraffur (geclippt auf die Form)
-        if ((a.type === 'rect' || a.type === 'oval' || a.type === 'path' || a.type === 'wall') && a.hatch && a.hatch.type && moveTo && clip) {
+        if ((a.type === 'rect' || a.type === 'oval' || a.type === 'path' || a.type === 'wall') && a.hatch && a.hatch.type && !(simpleMode && a.type === 'wall') && moveTo && clip) {
           try {
             const ops = [pushGraphicsState()];
             if (a.type === 'wall') { const poly = wallClipPoly(a); ops.push(moveTo(poly[0][0], Y(poly[0][1]))); for (let i = 1; i < 4; i++) ops.push(lineTo(poly[i][0], Y(poly[i][1]))); ops.push(closePath()); }
@@ -3852,6 +3862,7 @@ function wire() {
   $('#bpSingle').onclick = () => { wallBuildup = null; const a = selWall(); if (a) { pushUndo(); applyWallBuildup(a, null); applyMaterial(a, 'none'); pageViews.forEach(drawAnnos); saveState(); } $('#buildPop').hidden = true; };
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#buildPop') && !e.target.closest('#pbBuild')) $('#buildPop').hidden = true; }, true);
   $('#footBW').onclick = () => { document.body.classList.toggle('bw'); $('#footBW').classList.toggle('on', document.body.classList.contains('bw')); };
+  $('#footSimple').onclick = () => { simpleMode = !simpleMode; $('#footSimple').classList.toggle('on', simpleMode); pageViews.forEach(drawAnnos); toast(simpleMode ? 'Einfache Darstellung – Wände schwarz, Öffnungen als Symbol' : 'Detaillierte Darstellung (automatisch nach Aufbau)'); };
   $('#footPhase').onclick = e => { e.stopPropagation(); const p = $('#phasePop'); p.hidden = !p.hidden; if (!p.hidden) updatePhaseUI(); };
   $$('#phSet button').forEach(b => b.onclick = () => setActivePhase(b.dataset.ph || null));
   $$('#phView button').forEach(b => b.onclick = () => setPhaseView(b.dataset.pv));

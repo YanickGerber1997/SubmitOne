@@ -2549,13 +2549,11 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip) { 
     out.push({ t: 'poly', pts: [corner(-1, md - leafW), corner(1 - fwS, md - leafW), corner(1 - fwS, md + leafW), corner(-1, md + leafW)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Türblatt (vertikal, bei Einbautiefe)
     out.push({ t: 'poly', pts: [corner(1 - fwS, md - fdh), corner(1, md - fdh), corner(1, md + fdh), corner(1 - fwS, md + fdh)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Sturz-Rahmen
   }
-  if (winDimsOn) {   // Schnitt-Bemaßung Höhe: Rohbau + Aussenlicht + Innenlicht
-    const innerM = ptsToCm((o.innerReveal != null ? o.innerReveal : cmToPts(2)) + (o.anschlagType === 'innen' ? (o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5)) : 0)) / 100;
-    const outerM = ptsToCm((o.kind === 'window' ? (o.outerLap != null ? o.outerLap : cmToPts(3)) : 0) + (o.anschlagType === 'aussen' ? (o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5)) : 0)) / 100;
-    const roughM = head - sill, Ypx = m => m / perPt, xR = cx + ht2 + 14, yT2 = cy - hw, yB2 = cy + hw;
-    pDimV(out, xR, yT2, yB2, 'R ' + fmtLen(roughM / perPt), 6);
-    pDimV(out, xR + 18, yT2 + Ypx(outerM), yB2 - Ypx(outerM), 'La ' + fmtLen((roughM - 2 * outerM) / perPt), 6);
-    pDimV(out, xR + 38, yT2 + Ypx(innerM), yB2 - Ypx(innerM), 'Li ' + fmtLen((roughM - 2 * innerM) / perPt), 6);
+  if (winDimsOn) {   // Schnitt-Bemaßung Höhe: Rohbau + Licht (Licht = Rohbau − 2×(Rahmen − sichtbarer Rahmen))
+    const insM = Math.max(0, ptsToCm(o.frameW || cmToPts(10)) - (o.boardVis != null ? o.boardVis : 1)) / 100;
+    const roughM = head - sill, Ypx = m => m / perPt, xR = cx + ht2 + 14, yT2 = cy - hw, yB2 = cy + hw, inside = !!flip;
+    pDimV(out, xR + (inside ? 0 : 22), yT2, yB2, 'Rohbau ' + fmtLen(roughM / perPt), 6);
+    pDimV(out, xR + (inside ? 22 : 0), yT2 + Ypx(insM), yB2 - Ypx(insM), 'Licht ' + fmtLen(Math.max(0.05, roughM - 2 * insM) / perPt), 6);
   }
 }
 function sectionPrimitives(a, arr) {
@@ -2594,10 +2592,11 @@ function sectionPrimitives(a, arr) {
       const lapPts = (o.kind === 'window' ? (o.outerLap != null ? o.outerLap : cmToPts(3)) : 0) + (o.anschlagType === 'aussen' ? (o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5)) : 0);   // Aussen-Lappung + Aussenanschlag → Aussenlichtmaß
       const redM = ptsToCm(lapPts) / 100, wEff = Math.max(4, (o.w - 2 * lapPts) * along);
       openingElev(out, X, Yh, od - wEff / 2, wEff, o, Hw, col, redM);
-      if (winDimsOn) {   // Ansicht von aussen: Breite + Höhe, Rohbau + Aussenlicht
-        const sill0 = o.kind === 'window' ? (o.sill || 0) : 0, head0 = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), rW = o.w * along, yB = Yh(sill0) + 10, xL = X(od - rW / 2) - 10;
-        pDimH(out, yB, X(od - rW / 2), X(od + rW / 2), 'R ' + fmtLen(o.w), true); pDimH(out, yB + 13, X(od - wEff / 2), X(od + wEff / 2), 'L ' + fmtLen(o.w - 2 * lapPts), true);
-        pDimV(out, xL, Yh(head0), Yh(sill0), 'R ' + fmtLen((head0 - sill0) / perPt), -34); pDimV(out, xL - 16, Yh(head0 - redM), Yh(sill0 + redM), 'L ' + fmtLen((head0 - sill0 - 2 * redM) / perPt), -34);
+      if (winDimsOn) {   // Ansicht: Breite + Höhe, Rohbau + Licht (rahmenbasiert)
+        const insPts = Math.max(0, (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1)), insM = ptsToCm(insPts) / 100;
+        const sill0 = o.kind === 'window' ? (o.sill || 0) : 0, head0 = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), rW = o.w * along, lW = Math.max(4, (o.w - 2 * insPts) * along), yB = Yh(sill0) + 10, xL = X(od - rW / 2) - 12;
+        pDimH(out, yB, X(od - rW / 2), X(od + rW / 2), 'Rohbau ' + fmtLen(o.w), true); pDimH(out, yB + 13, X(od - lW / 2), X(od + lW / 2), 'Licht ' + fmtLen(Math.max(1, o.w - 2 * insPts)), true);
+        pDimV(out, xL, Yh(head0), Yh(sill0), 'Rohbau ' + fmtLen((head0 - sill0) / perPt), -46); pDimV(out, xL - 18, Yh(head0 - insM), Yh(sill0 + insM), 'Licht ' + fmtLen(Math.max(0.05, head0 - sill0 - 2 * insM) / perPt), -46);
       } }
   }
   const Htop = sectionMaxH(a, arr), slabF = '#dadde2', slabC = '#8a8f96';   // Decke auf gemeinsamem Höhen-Datum

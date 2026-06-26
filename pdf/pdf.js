@@ -2366,16 +2366,16 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
   return { cover, lines, arcs, bold, fills };
 }
 const REVEAL_MAT = { putz: { fill: '#ededed', color: '#9a9a9a' }, beton: { fill: '#dcecdf', color: '#2f7d4f' }, stahl: { fill: '#c9ccd1', color: '#565b62' }, holz: { fill: '#eedcc8', color: '#7a5126' } };   // Laibungs-Element: Putz/Betonelement/Stahlzarge/Holzzarge
-function bandHatchPerp(sa, sb, ma, mb, corner, hw) {   // Striche 90° zur Wand (m-Richtung), wie Wand-Dämmung – durchgehend
-  const out = [], sLo = Math.min(sa, sb), sHi = Math.max(sa, sb), step = cmToPts(1.3) / hw;
-  if (sHi - sLo < 1e-4 || Math.abs(mb - ma) < 1e-4) return out;
-  for (let s = sLo; s <= sHi + 1e-6; s += step) out.push([corner(s, ma), corner(s, mb)]);
+function bandHatchPerp(sa, sb, ma, mb, corner, stepS, s0) {   // Striche 90° zur Wand (m-Richtung) – auf das Wand-Schraffurraster eingerastet (gleicher Abstand wie Wand)
+  const out = [], sLo = Math.min(sa, sb), sHi = Math.max(sa, sb);
+  if (sHi - sLo < 1e-4 || Math.abs(mb - ma) < 1e-4 || stepS <= 1e-6) return out;
+  for (let s = s0 + Math.ceil((sLo - s0) / stepS) * stepS; s <= sHi + 1e-9; s += stepS) out.push([corner(s, ma), corner(s, mb)]);
   return out;
 }
-function bandHatch(sa, sb, ma, mb, corner, hw, ht) {   // diagonale Schraffur (≈45°) in einem Parameter-Rechteck s∈[sa,sb], m∈[ma,mb]
+function bandHatch(sa, sb, ma, mb, corner, hw, ht, stepS) {   // diagonale Schraffur (≈45°) im Parameter-Rechteck s∈[sa,sb], m∈[ma,mb]; Abstand = Wand-Schraffurraster
   const out = [], sLo = Math.min(sa, sb), sHi = Math.max(sa, sb), mLo = Math.min(ma, mb), mHi = Math.max(ma, mb), dm = mHi - mLo, dsE = Math.min(dm * ht / hw, sHi - sLo);
   if (dsE <= 1e-6 || sHi - sLo < 1e-4) return out;
-  const step = Math.max(cmToPts(0.7) / hw, 0.008);
+  const step = Math.max(stepS || cmToPts(0.7) / hw, 0.006);
   for (let s = sLo - dsE; s < sHi; s += step) {
     let aS = s, aM = mLo, bS = s + dsE, bM = mHi;
     if (aS < sLo) { const f = (sLo - aS) / (bS - aS); aS = sLo; aM = mLo + dm * f; }
@@ -2394,6 +2394,9 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }
   const gapM = cmToPts(0.5) / ht, CORE = ['mauerwerk', 'beton'], INS = ['eps', 'glaswolle', 'daemm_holz', 'daemm_wolle', 'daemm_eps', 'daemm_xps'];
   const strips = [];
+  const S = (wall.hatch && wall.hatch.scale) || lastHatchScale, hStep = Math.max(4, S * 1.3), stepS = hStep / hw;   // exakt das Wand-Schraffurraster (Bildschirm-Dichte, skalenunabhängig)
+  const Lx = wall.x2 - wall.x1, Ly = wall.y2 - wall.y1, Lw = Math.hypot(Lx, Ly) || 1, uxW = Lx / Lw, uyW = Ly / Lw;
+  const dC = (x - wall.x1) * uxW + (y - wall.y1) * uyW, sgnDir = (ux * uxW + uy * uyW) >= 0 ? 1 : -1, s0 = sgnDir * (Math.round(dC / hStep) * hStep - dC) / hw;   // Phase: auf das Wandraster (Ursprung Wandanfang) eingerastet
   let coreIdx = wall.layers.findIndex(l => CORE.includes(l.mat)); if (coreIdx < 0) coreIdx = Math.floor((wall.layers.length - 1) / 2);
   const l0 = wall.layers[0], mI = WALL_MATS[l0.mat] || {}, twI = Math.min(0.45, l0.t / hw);   // innen: Putz/Brett als dünner Streifen bis Rahmen-Innenkante
   if (Math.abs((fmA - gapM) + 1) > 0.02) for (const sgn of [-1, 1]) { const s0 = sgn, s1 = sgn < 0 ? -1 + twI : 1 - twI; strips.push({ poly: [corner(s0, -1), corner(s1, -1), corner(s1, fmA - gapM), corner(s0, fmA - gapM)], fill: mI.fill || '#fff', stroke: mI.color || '#1c242c' }); }
@@ -2406,10 +2409,10 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
     for (const sgn of [-1, 1]) {
       const sBI = sgn * Math.min(1, 1 - fwSr + visS), sBO = sgn * Math.min(1, 1 - fwSr + visS + schWs), sE = sgn, lo = Math.min(sBO, sE), hi = Math.max(sBO, sE);
       if (hi - lo > 0.02) {
-        strips.push({ poly: [corner(sBO, fmB + gapM), corner(sE, fmB + gapM), corner(sE, 1 - schT), corner(sBO, 1 - schT)], fill: dM.fill || '#fff', stroke: dM.color || '#1c242c', hatch: bandHatchPerp(lo, hi, fmB + gapM, 1 - schT, corner, hw) });   // Dämmung mit Wand-Schraffur (quer)
-        strips.push({ poly: [corner(sBO, 1 - schT), corner(sE, 1 - schT), corner(sE, 1), corner(sBO, 1)], fill: revM.fill || '#fff', stroke: revM.color || '#1c242c', hatch: doHatch ? bandHatch(lo, hi, 1 - schT, 1, corner, hw, ht) : null });   // Schalung läuft aussen bis zum Brett
+        strips.push({ poly: [corner(sBO, fmB + gapM), corner(sE, fmB + gapM), corner(sE, 1 - schT), corner(sBO, 1 - schT)], fill: dM.fill || '#fff', stroke: dM.color || '#1c242c', hatch: bandHatchPerp(lo, hi, fmB + gapM, 1 - schT, corner, stepS, s0) });   // Dämmung mit Wand-Schraffur (quer, eingerastet)
+        strips.push({ poly: [corner(sBO, 1 - schT), corner(sE, 1 - schT), corner(sE, 1), corner(sBO, 1)], fill: revM.fill || '#fff', stroke: revM.color || '#1c242c', hatch: doHatch ? bandHatch(lo, hi, 1 - schT, 1, corner, hw, ht, stepS) : null });   // Schalung läuft aussen bis zum Brett
       }
-      if (Math.abs(sBO - sBI) > 0.02) strips.push({ poly: [corner(sBI, fmB), corner(sBO, fmB), corner(sBO, 1), corner(sBI, 1)], fill: revM.fill || '#fff', stroke: revM.color || '#1c242c', hatch: doHatch ? bandHatch(Math.min(sBI, sBO), Math.max(sBI, sBO), fmB, 1, corner, hw, ht) : null });   // Schalungsbrett, 1 cm vom Rahmen, lappt auf fmB
+      if (Math.abs(sBO - sBI) > 0.02) strips.push({ poly: [corner(sBI, fmB), corner(sBO, fmB), corner(sBO, 1), corner(sBI, 1)], fill: revM.fill || '#fff', stroke: revM.color || '#1c242c', hatch: doHatch ? bandHatch(Math.min(sBI, sBO), Math.max(sBI, sBO), fmB, 1, corner, hw, ht, stepS) : null });   // Schalungsbrett, 1 cm vom Rahmen, lappt auf fmB
     }
   }
   return strips;
@@ -2423,7 +2426,7 @@ function drawOpening(svg, a, arr) {
   const detail = openingDetail(a, arr), P = openingParts(a, detail), col = a.color || '#1c242c';
   const g = svgEl('g', { 'data-id': a.id });
   g.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: '#fff', stroke: 'none' }));   // Wand ausstanzen
-  if (detail) for (const st of openingRevealStrips(a, arr)) { g.appendChild(svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); if (st.hatch) for (const [u, v] of st.hatch) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.6, 'vector-effect': 'non-scaling-stroke' })); }   // Schichteinzug + Schalungs-Schraffur
+  if (detail) for (const st of openingRevealStrips(a, arr)) { g.appendChild(svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); if (st.hatch) for (const [u, v] of st.hatch) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' })); }   // Schichteinzug + Schalungs-Schraffur
   for (const f of (P.fills || [])) g.appendChild(svgEl('polygon', { points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: f.fill, stroke: f.stroke, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));   // Rahmen/Flügel/Glas (Fenstermaterial)
   for (const [u, v] of P.lines) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
   for (const [u, v] of (P.bold || [])) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 2.6, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
@@ -3360,7 +3363,7 @@ async function buildPdfBytes(visibleOnly) {
         else if (a.type === 'opening') {
           const oDetail = openingDetail(a, annos[n] || []), P = openingParts(a, oDetail), d = 'M' + P.cover.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z';
           try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(1, 1, 1) }); } catch (_) { }   // Wand ausstanzen
-          if (oDetail) for (const st of openingRevealStrips(a, annos[n] || [])) { const sf = hexToRgb(st.fill), ss = hexToRgb(st.stroke), sd = 'M' + st.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(sd, { x: 0, y: PH, color: rgb(sf.r, sf.g, sf.b), borderColor: rgb(ss.r, ss.g, ss.b), borderWidth: 0.7 }); } catch (_) { } if (st.hatch) for (const [u, v] of st.hatch) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 0.6, color: rgb(ss.r, ss.g, ss.b) }); }   // Schichteinzug + Schraffur
+          if (oDetail) for (const st of openingRevealStrips(a, annos[n] || [])) { const sf = hexToRgb(st.fill), ss = hexToRgb(st.stroke), sd = 'M' + st.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(sd, { x: 0, y: PH, color: rgb(sf.r, sf.g, sf.b), borderColor: rgb(ss.r, ss.g, ss.b), borderWidth: 0.7 }); } catch (_) { } if (st.hatch) for (const [u, v] of st.hatch) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 0.8, color: rgb(ss.r, ss.g, ss.b) }); }   // Schichteinzug + Schraffur
           for (const f of (P.fills || [])) { const ff = hexToRgb(f.fill), fs = hexToRgb(f.stroke), fd = 'M' + f.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(fd, { x: 0, y: PH, color: rgb(ff.r, ff.g, ff.b), borderColor: rgb(fs.r, fs.g, fs.b), borderWidth: 1 }); } catch (_) { } }   // Rahmen/Flügel/Glas
           for (const [u, v] of P.lines) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 1.4, color: c });
           for (const [u, v] of (P.bold || [])) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 2.6, color: c });

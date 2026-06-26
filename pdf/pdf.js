@@ -2471,7 +2471,7 @@ function sectionBandHatch(out, rx, ry, rw, rh, mat, fallbackHatch) {   // Materi
   if (!hatch || rw < 1 || rh < 1) return;
   const S = lastHatchScale * 1.15, x0 = rx, y0 = ry, x1 = rx + rw, y1 = ry + rh;
   const add = (ax, ay, bx, by, w) => { const c = clipSeg(ax, ay, bx, by, x0, y0, x1, y1); if (c) out.push({ t: 'line', x1: c[0], y1: c[1], x2: c[2], y2: c[3], stroke: col, w: w || 0.5 }); };
-  if (hatch === 'daemm_eps' || hatch === 'daemm_wolle' || INSUL_TYPES.includes(hatch)) { for (let x = x0 + S / 2; x < x1; x += S) add(x, y0, x, y1); }   // Dämmung: senkrechte Striche
+  if (hatch === 'daemm_eps' || hatch === 'daemm_wolle' || INSUL_TYPES.includes(hatch)) { for (let y = y0 + S / 2; y < y1; y += S) add(x0, y, x1, y); }   // Dämmung: Striche quer zur Wanddicke (im Schnitt horizontal)
   else if (hatch === 'holz' || hatch === 'konter') { for (let x = x0 + S * 0.8; x < x1; x += S * 1.5) add(x, y0, x, y1, 0.6); }   // Holz: senkrechte Bretter
   else if (hatch === 'gips') { /* im Schnitt ruhig lassen */ }
   else if (hatch === 'beton' || hatch === 'cross') { for (let c = -rh; c < rw; c += S) add(x0 + c, y1, x0 + c + rh, y0); for (let c = 0; c < rw + rh; c += S) add(x0 + c, y0, x0 + c - rh, y1); }   // Beton: Kreuz
@@ -2554,6 +2554,13 @@ function sectionPrimitives(a, arr) {
     const wdx = w.x2 - w.x1, wdy = w.y2 - w.y1, wl = Math.hypot(wdx, wdy) || 1, along = Math.abs((wdx * cux + wdy * cuy) / wl);
     if (along < 0.7) continue;   // nur fast-parallele Wände → Ansicht (quer geschnittene sind schon oben)
     const Hw = w.h3d || wallHeightM;
+    const d1 = (w.x1 - p1[0]) * cux + (w.y1 - p1[1]) * cuy, d2 = (w.x2 - p1[0]) * cux + (w.y2 - p1[1]) * cuy;
+    const da = Math.max(0, Math.min(d1, d2)), db = Math.min(cl, Math.max(d1, d2));
+    if (db - da > 1) {   // Wand in Ansicht: Aussenschicht-Farbe + Schraffur (wie 3D)
+      const outL = w.layers && w.layers.length ? w.layers[w.layers.length - 1] : null, m = outL ? (WALL_MATS[outL.mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#f0efea', color: w.color || col };
+      out.push({ t: 'rect', x: X(da), y: Yh(Hw), w: X(db) - X(da), h: Yh(0) - Yh(Hw), fill: m.fill || '#f0efea', stroke: m.color || col, sw: 0.6 });
+      if (!simpleMode && outL) sectionBandHatch(out, X(da), Yh(Hw), X(db) - X(da), Yh(0) - Yh(Hw), outL.mat, null);
+    }
     for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = (ocx - p1[0]) * cux + (ocy - p1[1]) * cuy; if (od < -10 || od > cl + 10) continue; openingElev(out, X, Yh, od - (o.w * along) / 2, o.w * along, o, Hw, col); }
   }
   const Htop = hits.reduce((m, h) => Math.max(m, h.w.h3d || wallHeightM), wallHeightM), slabF = '#dadde2', slabC = '#8a8f96';

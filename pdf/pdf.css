@@ -416,6 +416,10 @@ body.panning #pages,body.panning .pagewrap,body.panning .anno{cursor:grabbing !i
 .hatch-pop button{border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;text-align:left;padding:7px 12px;cursor:pointer;color:var(--ink);white-space:nowrap;border-radius:0}
 .hatch-pop button:hover{background:var(--accent-soft);color:var(--accent-3)}
 .hatch-pop .hp-none{border-top:1px solid var(--line-soft);color:var(--ink-faint)}
+.hatch-pop .hp-scale{display:flex;align-items:center;gap:6px;padding:6px 10px;border-top:1px solid var(--line-soft);font-size:12px;color:var(--ink-soft);font-weight:600}
+.hatch-pop .hp-scale span:first-child{flex:1}
+.hatch-pop .hp-scale button{flex:none;width:26px;height:26px;text-align:center;padding:0;border:1px solid var(--line);background:var(--surface-2);justify-content:center}
+.hatch-pop .hp-scale #hpScaleVal{min-width:20px;text-align:center;color:var(--ink)}
 .selbar .sb-nofill:hover{color:var(--danger)}
 .selbar .sb-color input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .selbar .sb-widths{display:flex;gap:2px}

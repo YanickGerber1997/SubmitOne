@@ -1202,6 +1202,8 @@ function drawOne(svg, a, pv) {
     hit = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'opening') {
     el = drawOpening(svg, a, getAnnos(pv.num));
+  } else if (a.type === 'section') {
+    el = drawSection(svg, a, getAnnos(pv.num));
   } else if (a.type === 'chaindim') {
     el = drawChainDim(svg, a, pv);
   } else if (a.type === 'dim') {
@@ -1255,6 +1257,7 @@ function bbox(a) {
   if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim' || a.type === 'slab') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'path') { const xs = [], ys = []; for (const nd of a.nodes) { xs.push(nd.x, nd.hIn.x, nd.hOut.x); ys.push(nd.y, nd.hIn.y, nd.hOut.y); } if (!xs.length) return { x: 0, y: 0, w: 0, h: 0 }; return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: (a.h || a.size * (a.text.split('\n').length) * 1.3) };
+  if (a.type === 'section') return sectionBBox(a);
   if (a.type === 'note') return { x: a.x, y: a.y, w: 14, h: 14 };
   if (a.type === 'sig' || a.type === 'img' || a.type === 'imgph' || a.type === 'edit' || a.type === 'cover' || a.type === 'stamp' || a.type === 'crop') return { x: a.x, y: a.y, w: a.w, h: a.h };
   if (a.type === 'highlight') { if (!a.rects || !a.rects.length) return { x: 0, y: 0, w: 0, h: 0 }; let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; for (const r of a.rects) { mnx = Math.min(mnx, r.x); mny = Math.min(mny, r.y); mxx = Math.max(mxx, r.x + r.w); mxy = Math.max(mxy, r.y + r.h); } return { x: mnx, y: mny, w: mxx - mnx, h: mxy - mny }; }
@@ -1654,6 +1657,7 @@ function onPointerDown(pv, e) {
   if (tool === 'crop') { startCrop(pv, e, p); return; }
   if (tool === 'area' || tool === 'slab') { areaClick(pv, p); return; }
   if (tool === 'block') { placeBlock(pv, p); return; }
+  if (tool === 'section') { startSection(pv, e, p); return; }
   if (tool === 'chaindim') { chaindimClick(pv, p); return; }
   if (tool === 'opening' || tool === 'window') { openKind = tool === 'window' ? 'window' : 'door'; openingClick(pv, p); return; }
   if (tool === 'edittext') { editTextAt(pv, p); return; }
@@ -1929,6 +1933,7 @@ function translateAnno(a, o, dx, dy) {
   else if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim' || a.type === 'slab') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
   else if (a.type === 'path') a.nodes = o.nodes.map(nd => ({ x: nd.x + dx, y: nd.y + dy, hIn: { x: nd.hIn.x + dx, y: nd.hIn.y + dy }, hOut: { x: nd.hOut.x + dx, y: nd.hOut.y + dy } }));
   else if (a.type === 'highlight') a.rects = o.rects.map(r => ({ x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }));
+  else if (a.type === 'section') { a.ox = o.ox + dx; a.oy = o.oy + dy; }   // nur der Schnitt-Block wandert, Schnittlinie bleibt
   else { a.x = o.x + dx; a.y = o.y + dy; }
 }
 // Kurven-Knoten (data-pn) oder Anfasser (data-ph) ziehen
@@ -2290,6 +2295,68 @@ function drawOpening(svg, a, arr) {
   svg.appendChild(g);
   svg.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: 'transparent', 'data-id': a.id }));
   return g;
+}
+/* ---------- Schnitt-Werkzeug: live 2D-Vertikalschnitt aus dem Modell ---------- */
+function segInt(a, b, c, d) {   // Schnitt zweier Strecken → {pt,t1,t2} oder null
+  const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]], den = r[0] * s[1] - r[1] * s[0]; if (Math.abs(den) < 1e-9) return null;
+  const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null; return { pt: [a[0] + t * r[0], a[1] + t * r[1]], t1: t, t2: u };
+}
+function sectionMaxH(a, arr) { let m = wallHeightM; const p1 = [a.cx1, a.cy1], p2 = [a.cx2, a.cy2]; for (const w of arr || []) { if (w.type !== 'wall') continue; if (segInt(p1, p2, [w.x1, w.y1], [w.x2, w.y2])) m = Math.max(m, w.h3d || wallHeightM); } return m; }
+function sectionPrimitives(a, arr) {
+  const out = [], col = '#1c242c';
+  const p1 = [a.cx1, a.cy1], p2 = [a.cx2, a.cy2], cd = [p2[0] - p1[0], p2[1] - p1[1]], cl = Math.hypot(cd[0], cd[1]) || 1, cux = cd[0] / cl, cuy = cd[1] / cl, nx = -cuy, ny = cux, lbl = a.label || 'A';
+  out.push({ t: 'line', x1: a.cx1, y1: a.cy1, x2: a.cx2, y2: a.cy2, stroke: col, w: 1.2, dash: '10 4 2 4' });   // Schnittlinie im Plan
+  for (const e of [[a.cx1, a.cy1], [a.cx2, a.cy2]]) { const tk = 8; out.push({ t: 'line', x1: e[0] - nx * tk, y1: e[1] - ny * tk, x2: e[0] + nx * tk, y2: e[1] + ny * tk, stroke: col, w: 1.4 }); out.push({ t: 'arrow', x: e[0] + nx * tk, y: e[1] + ny * tk, dx: nx, dy: ny, col }); out.push({ t: 'text', x: e[0] - nx * 16, y: e[1] - ny * 16, text: lbl, col }); }
+  if (!docScale) { out.push({ t: 'text', x: a.ox, y: a.oy, text: '⟶ Massstab setzen, dann erscheint der Schnitt', col }); return out; }
+  const perPt = docScale.perPt, ox = a.ox, oy = a.oy, X = d => ox + d, Yh = h => oy - h / perPt;
+  const hits = [];
+  for (const w of arr) { if (w.type !== 'wall' || !layerVisible(w) || !phaseVisible(w)) continue; const ix = segInt(p1, p2, [w.x1, w.y1], [w.x2, w.y2]); if (!ix) continue; const dist = (ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy, wdx = w.x2 - w.x1, wdy = w.y2 - w.y1, wl = Math.hypot(wdx, wdy) || 1, sinA = Math.max(0.25, Math.abs((cux * wdy - cuy * wdx) / wl)), T = w.thick || wallThickPts(); hits.push({ w, dist, appW: T / sinA, tp: ix.t2, wl, T }); }
+  out.push({ t: 'line', x1: X(-14), y1: Yh(0), x2: X(cl + 14), y2: Yh(0), stroke: col, w: 1.8 });   // Bodenlinie
+  for (const h of hits) {
+    const w = h.w, H = w.h3d || wallHeightM, x0 = h.dist - h.appW / 2;
+    const layers = (w.layers && w.layers.length) ? w.layers : [{ mat: null, t: h.T }], totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
+    let cx = x0;
+    for (const L of layers) { const lw = (L.t / totalT) * h.appW, m = L.mat ? (WALL_MATS[L.mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; out.push({ t: 'rect', x: X(cx), y: Yh(H), w: lw, h: Yh(0) - Yh(H), fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); cx += lw; }
+    const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
+    for (const o of ops) {
+      const sill = o.kind === 'window' ? (o.sill || 0) : 0, head = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0)), opx0 = h.dist - h.appW / 2, opw = h.appW;
+      out.push({ t: 'rect', x: X(opx0), y: Yh(head), w: opw, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });
+      out.push({ t: 'rect', x: X(opx0) + 1.5, y: Yh(head), w: opw - 3, h: Yh(sill) - Yh(head), fill: 'none', stroke: col, sw: 1 });
+      if (o.kind === 'window') { const my = (Yh(sill) + Yh(head)) / 2; out.push({ t: 'line', x1: X(opx0) + 2, y1: my, x2: X(opx0 + opw) - 2, y2: my, stroke: col, w: 0.6 }); out.push({ t: 'line', x1: X(opx0) - 6, y1: Yh(sill), x2: X(opx0 + opw) + 6, y2: Yh(sill), stroke: col, w: 1.8 }); if (o.niche) { const nh = (Yh(0) - Yh(0.24)); out.push({ t: 'rect', x: X(opx0), y: Yh(head) - nh, w: opw, h: nh, fill: '#e9e6df', stroke: col, sw: 0.8 }); } }
+    }
+    out.push({ t: 'line', x1: X(x0), y1: Yh(H), x2: X(x0 + h.appW), y2: Yh(H), stroke: col, w: 1.2 });
+  }
+  out.push({ t: 'text', x: X(cl / 2) - 18, y: Yh(0) + 22, text: 'Schnitt ' + lbl + '–' + lbl, col });
+  return out;
+}
+function sectionBBox(a, arr) { if (!docScale) return { x: a.ox - 6, y: a.oy - 16, w: 180, h: 30 }; const perPt = docScale.perPt, cl = Math.hypot(a.cx2 - a.cx1, a.cy2 - a.cy1) || 1, mh = sectionMaxH(a, arr) / perPt; return { x: a.ox - 16, y: a.oy - mh - 8, w: cl + 32, h: mh + 36 }; }
+function drawSection(svg, a, arr) {
+  const g = svgEl('g', { 'data-id': a.id });
+  for (const p of sectionPrimitives(a, arr)) {
+    if (p.t === 'rect') { const r = svgEl('rect', { x: Math.min(p.x, p.x + p.w), y: Math.min(p.y, p.y + p.h), width: Math.abs(p.w), height: Math.abs(p.h), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { r.setAttribute('stroke', p.stroke); r.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(r); }
+    else if (p.t === 'line') { const l = svgEl('line', { x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2, stroke: p.stroke || '#1c242c', 'stroke-width': p.w || 1, 'vector-effect': 'non-scaling-stroke' }); if (p.dash) l.setAttribute('stroke-dasharray', p.dash); g.appendChild(l); }
+    else if (p.t === 'arrow') { const s = 6, ang = Math.atan2(p.dy, p.dx); for (const da of [2.5, -2.5]) g.appendChild(svgEl('line', { x1: p.x, y1: p.y, x2: p.x - Math.cos(ang + da) * s, y2: p.y - Math.sin(ang + da) * s, stroke: p.col || '#1c242c', 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' })); }
+    else if (p.t === 'text') { const t = svgEl('text', { x: p.x, y: p.y, fill: p.col || '#1c242c', 'font-size': 12, 'font-weight': 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = p.text; g.appendChild(t); }
+  }
+  svg.appendChild(g);
+  const b = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: 'transparent', 'data-id': a.id }));
+  return g;
+}
+function startSection(pv, e, p) {
+  pushUndo();
+  const a = { id: nextId++, type: 'section', cx1: p.x, cy1: p.y, cx2: p.x, cy2: p.y, label: 'A', ox: 0, oy: 0 };
+  pushAnno(pv.num, a);
+  const move = ev => { const q = evtToPage(pv, ev); if (ev.shiftKey) { const s = snap15(p.x, p.y, q.x, q.y); a.cx2 = s.x; a.cy2 = s.y; } else { a.cx2 = q.x; a.cy2 = q.y; } drawAnnos(pv); };
+  const up = () => {
+    document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+    if (Math.hypot(a.cx2 - a.cx1, a.cy2 - a.cy1) < 8) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(a), 1); undoStack.pop(); drawAnnos(pv); return; }
+    const perPt = docScale ? docScale.perPt : 0, hPts = perPt ? (sectionMaxH(a, getAnnos(pv.num)) / perPt) : 200;
+    a.ox = Math.min(a.cx1, a.cx2); a.oy = Math.max(a.cy1, a.cy2) + 70 + hPts;
+    sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
+    toast('Schnitt erstellt – er aktualisiert sich live. Block verschiebbar; Schnittlinie über die Wände ziehen.');
+  };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function openingResolve(a, pv) {   // Position/Winkel/Dicke aus der zugehörigen Wand ableiten (Öffnung läuft mit)
   if (!a.wallId) return; const w = getAnnos(pv.num).find(o => o.id === a.wallId && o.type === 'wall'); if (!w) return;
@@ -2961,6 +3028,7 @@ function setTool(t) {
   if (['pen', 'line', 'arrow', 'rect', 'oval', 'arc'].includes(t) && !setTool._drawHint) { setTool._drawHint = true; toast('Werkzeug bleibt aktiv – einfach weiterzeichnen. V oder Esc = auswählen/bearbeiten.'); }
   if ((t === 'opening' || t === 'window') && !setTool._openHint) { setTool._openHint = true; toast('Tür/Fenster: auf eine Wand klicken → wird eingesetzt. Oben in der Planungs-Leiste: Breite, Brüstung/Höhe, Anschlag – wirken in 2D und 3D.'); }
   if (t === 'block' && !setTool._blockHint) { setTool._blockHint = true; toast('Symbol auf die Seite klicken zum Platzieren. Danach auswählen → ziehen/skalieren. Weite/Höhe der Box = Ausrichtung (z. B. Bett quer/längs).'); }
+  if (t === 'section' && !setTool._secHint) { setTool._secHint = true; toast('Schnittlinie über die Wände ziehen (Shift = 15°). Daraus entsteht ein LIVE-Vertikalschnitt (Wände/Schichten/Höhen, Fenster mit Bank/Nische). Massstab muss gesetzt sein.'); }
   if (t === 'roof' && !setTool._roofHint) { setTool._roofHint = true; toast('Dach: Grundfläche aufziehen. Oben: Sattel/Pult, Traufe + First, „First ↻" dreht die Firstrichtung. 3D zeigt die Schräge.'); }
   if (t === 'stairs' && !setTool._stairHint) { setTool._stairHint = true; toast('Treppe (gerader Lauf): Start klicken → Richtung/Länge → 2. Klick oder „L". Breite/Höhe/UK oben einstellen · L-/U-Treppe: mehrere Läufe + Podest (Decke). 3D zeigt die Stufen.'); }
   if (t === 'chaindim' && !setTool._cdimHint) { setTool._cdimHint = true; toast('Kettenmass: Stationen klicken (rastet an Ecken/Enden ein) · je Abschnitt ein Mass + Gesamt · Rücktaste = letzte Station zurück · Doppelklick/Enter = fertig.'); }
@@ -2970,7 +3038,7 @@ function setTool(t) {
   if (t === 'wallchain' && !setTool._wcHint) { setTool._wcHint = true; toast('Wände am Stück: klicken–klicken = Raumzug · zurück auf den Startpunkt = Raum schliessen (m²) · Rücktaste = letzte Wand zurück · Doppelklick/Enter = fertig.'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'roof', 'block'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'roof', 'block', 'section'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -3119,6 +3187,14 @@ async function buildPdfBytes(visibleOnly) {
           for (const st of openingRevealStrips(a, annos[n] || [])) { const sf = hexToRgb(st.fill), ss = hexToRgb(st.stroke), sd = 'M' + st.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(sd, { x: 0, y: PH, color: rgb(sf.r, sf.g, sf.b), borderColor: rgb(ss.r, ss.g, ss.b), borderWidth: 0.7 }); } catch (_) { } }   // Schichteinzug
           for (const [u, v] of P.lines) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 1.4, color: c });
           for (const arc of P.arcs) { const pts = arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 18); for (let i = 1; i < pts.length; i++) pg.drawLine({ start: { x: pts[i - 1][0], y: Y(pts[i - 1][1]) }, end: { x: pts[i][0], y: Y(pts[i][1]) }, thickness: 0.8, color: c }); }
+        }
+        else if (a.type === 'section') {
+          for (const p of sectionPrimitives(a, annos[n] || [])) {
+            if (p.t === 'rect') { const o = { x: Math.min(p.x, p.x + p.w), y: Y(Math.max(p.y, p.y + p.h)), width: Math.abs(p.w), height: Math.abs(p.h) }; if (p.fill && p.fill !== 'none') { const fc = hexToRgb(p.fill); o.color = rgb(fc.r, fc.g, fc.b); } if (p.stroke && p.stroke !== 'none') { const sc = hexToRgb(p.stroke); o.borderColor = rgb(sc.r, sc.g, sc.b); o.borderWidth = p.sw || 0.6; } pg.drawRectangle(o); }
+            else if (p.t === 'line') { const lc = hexToRgb(p.stroke || '#1c242c'); pg.drawLine({ start: { x: p.x1, y: Y(p.y1) }, end: { x: p.x2, y: Y(p.y2) }, thickness: p.w || 1, color: rgb(lc.r, lc.g, lc.b), dashArray: p.dash ? [4, 3] : undefined }); }
+            else if (p.t === 'arrow') { const s = 6, ang = Math.atan2(p.dy, p.dx), ac0 = hexToRgb(p.col || '#1c242c'), ac = rgb(ac0.r, ac0.g, ac0.b); for (const da of [2.5, -2.5]) pg.drawLine({ start: { x: p.x, y: Y(p.y) }, end: { x: p.x - Math.cos(ang + da) * s, y: Y(p.y - Math.sin(ang + da) * s) }, thickness: 1.4, color: ac }); }
+            else if (p.t === 'text') { const tc = hexToRgb(p.col || '#1c242c'); pg.drawText(p.text, { x: p.x, y: Y(p.y) - 4, size: 11, font, color: rgb(tc.r, tc.g, tc.b) }); }
+          }
         }
         else if (a.type === 'chaindim') {
           const G = a.pts.length >= 2 && chainDimStations(a.pts);

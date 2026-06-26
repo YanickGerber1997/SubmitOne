@@ -213,15 +213,15 @@ async function openFiles(files) {
   } catch (e) { status(''); console.error(e); toast('Datei konnte nicht geöffnet werden.'); }
 }
 /* ---------- Mehrere Dokumente (Tabs) ---------- */
-function blankDoc(bytes, name) { return { bytes, name, fileHandle: null, annos: {}, pageRot: {}, viewRot: {}, docScale: null, nextId: 1, undo: [], zoom: 'auto', pdfDoc: null, scrollTop: 0, dirty: false, formValues: {} }; }
+function blankDoc(bytes, name) { return { bytes, name, fileHandle: null, annos: {}, pageRot: {}, viewRot: {}, docScale: null, nextId: 1, undo: [], zoom: 'auto', pdfDoc: null, scrollTop: 0, dirty: false, formValues: {}, layers: [{ id: 'base', name: 'Ebene 1', visible: true }], activeLayerId: 'base' }; }
 function saveActiveDoc() {
   if (active < 0 || !docs[active]) return; const d = docs[active];
-  d.bytes = curBytes; d.name = docName; d.fileHandle = curFileHandle; d.annos = annos; d.pageRot = pageRot; d.viewRot = viewRot; d.docScale = docScale; d.nextId = nextId; d.undo = undoStack; d.zoom = zoom; d.pdfDoc = pdfDoc; d.dirty = dirty; d.formValues = formValues;
+  d.bytes = curBytes; d.name = docName; d.fileHandle = curFileHandle; d.annos = annos; d.pageRot = pageRot; d.viewRot = viewRot; d.docScale = docScale; d.nextId = nextId; d.undo = undoStack; d.zoom = zoom; d.pdfDoc = pdfDoc; d.dirty = dirty; d.formValues = formValues; d.layers = layers; d.activeLayerId = activeLayerId;
   const p = $('#pages'); d.scrollTop = p ? p.scrollTop : 0;
 }
 async function loadActive() {
   const d = docs[active]; if (!d) return;
-  curBytes = d.bytes; docName = d.name; curFileHandle = d.fileHandle; annos = d.annos; pageRot = d.pageRot; viewRot = d.viewRot; docScale = d.docScale; nextId = d.nextId; undoStack = d.undo; zoom = d.zoom; sel = null; dirty = d.dirty || false; formValues = d.formValues || {};
+  curBytes = d.bytes; docName = d.name; curFileHandle = d.fileHandle; annos = d.annos; pageRot = d.pageRot; viewRot = d.viewRot; docScale = d.docScale; nextId = d.nextId; undoStack = d.undo; zoom = d.zoom; sel = null; dirty = d.dirty || false; formValues = d.formValues || {}; layers = d.layers || [{ id: 'base', name: 'Ebene 1', visible: true }]; activeLayerId = d.activeLayerId || (layers[0] && layers[0].id);
   redoStack = []; updateUndoButtons();
   if (d.pdfDoc) { pdfDoc = d.pdfDoc; await renderCurrentDoc(); } else { await loadDoc(d.bytes.slice()); d.pdfDoc = pdfDoc; }
   const p = $('#pages'); if (p) p.scrollTop = d.scrollTop || 0;
@@ -291,7 +291,7 @@ function markDirty() { dirty = true; scheduleAutosave(); }
 function scheduleAutosave() { clearTimeout(_autosaveT); _autosaveT = setTimeout(autosaveNow, 1200); }
 async function autosaveNow() {
   if (!curBytes || active < 0 || !dirty || cropping) return;
-  try { await idbPut(docSig(), { name: docName, ts: Date.now(), annos, pageRot, viewRot, docScale, nextId, formValues }); } catch (_) { }
+  try { await idbPut(docSig(), { name: docName, ts: Date.now(), annos, pageRot, viewRot, docScale, nextId, formValues, layers, activeLayerId }); } catch (_) { }
 }
 function clearAutosave() { idbDel(docSig()); }
 async function maybeRestore() {                                  // beim Öffnen: gibt es gesicherte Anmerkungen?
@@ -300,7 +300,7 @@ async function maybeRestore() {                                  // beim Öffnen
   if (!rec || ((!rec.annos || !Object.keys(rec.annos).length) && !hasForm)) return;
   const when = new Date(rec.ts).toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   if (!confirm('Für „' + docName + '" gibt es automatisch gesicherte Eingaben (' + when + ').\nWiederherstellen?')) return;
-  annos = rec.annos || {}; pageRot = rec.pageRot || {}; viewRot = rec.viewRot || {}; docScale = rec.docScale || null; nextId = Math.max(nextId, rec.nextId || 1); if (hasForm) formValues = rec.formValues;
+  annos = rec.annos || {}; pageRot = rec.pageRot || {}; viewRot = rec.viewRot || {}; docScale = rec.docScale || null; nextId = Math.max(nextId, rec.nextId || 1); if (hasForm) formValues = rec.formValues; if (rec.layers && rec.layers.length) { layers = rec.layers; activeLayerId = rec.activeLayerId || layers[0].id; }
   const d = docs[active]; if (d) { d.annos = annos; d.pageRot = pageRot; d.viewRot = viewRot; d.docScale = docScale; d.nextId = nextId; d.formValues = formValues; d.dirty = true; }
   dirty = true; pageViews.forEach(pv => { layoutPv(pv); drawAnnos(pv); buildFormLayer(pv); }); buildThumbs(); refreshComments(); updateScaleLabel(); toast('Eingaben wiederhergestellt ✓');
 }
@@ -780,14 +780,39 @@ function zoomToward(clientX, clientY, factor) {
 
 /* ---------- Annotationen rendern ---------- */
 function getAnnos(n) { return annos[n] || (annos[n] = []); }
+/* ---------- Ebenen / Stockwerke ---------- */
+let layers = [{ id: 'base', name: 'Ebene 1', visible: true }], activeLayerId = 'base';
+function layerById(id) { return layers.find(l => l.id === id); }
+function layerVisible(a) { if (a.layer == null) return true; const l = layerById(a.layer); return l ? l.visible : true; }   // ohne Ebene → sichtbar (Alt-Daten)
+function pushAnno(n, a) { if (a && a.layer === undefined) a.layer = activeLayerId; getAnnos(n).push(a); return a; }
+function pageHasVisible(n) { return (annos[n] || []).some(a => layerVisible(a) && a.type !== 'crop'); }   // hat die Seite sichtbare Anmerkungen?
+function newLayerId() { return 'l' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36); }
+function renderLayerPanel() {
+  const list = $('#lpList'); if (!list) return; list.innerHTML = '';
+  const eyeOn = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const eyeOff = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18M10.6 10.7a3 3 0 0 0 4 4M9.9 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3.2 3.9M6.1 6.2A18 18 0 0 0 2 12s3.5 7 10 7a10 10 0 0 0 3.1-.5"/></svg>';
+  layers.forEach(l => {
+    const row = document.createElement('div'); row.className = 'lp-row' + (l.id === activeLayerId ? ' active' : '') + (l.visible ? '' : ' hidden-layer');
+    const eye = document.createElement('button'); eye.className = 'lp-eye'; eye.innerHTML = l.visible ? eyeOn : eyeOff; eye.title = l.visible ? 'Sichtbar – ausblenden' : 'Ausgeblendet – einblenden';
+    eye.onclick = e => { e.stopPropagation(); l.visible = !l.visible; pageViews.forEach(drawAnnos); buildThumbs(); renderLayerPanel(); markDirty(); };
+    const nm = document.createElement('span'); nm.className = 'lp-name'; nm.textContent = l.name; nm.title = l.name;
+    nm.ondblclick = e => { e.stopPropagation(); const v = prompt('Ebene umbenennen:', l.name); if (v && v.trim()) { l.name = v.trim(); renderLayerPanel(); markDirty(); } };
+    const del = document.createElement('button'); del.className = 'lp-del'; del.innerHTML = '✕'; del.title = 'Ebene löschen (Inhalt wandert auf die erste Ebene)';
+    del.onclick = e => { e.stopPropagation(); if (layers.length <= 1) { toast('Mindestens eine Ebene muss bleiben.'); return; } const fb = layers.find(x => x.id !== l.id).id; for (const n in annos) for (const a of annos[n]) if (a.layer === l.id) a.layer = fb; layers = layers.filter(x => x.id !== l.id); if (activeLayerId === l.id) activeLayerId = fb; pageViews.forEach(drawAnnos); buildThumbs(); renderLayerPanel(); markDirty(); };
+    row.append(eye, nm, del);
+    row.onclick = () => { activeLayerId = l.id; renderLayerPanel(); };
+    list.appendChild(row);
+  });
+}
+function toggleLayerPanel() { const p = $('#layerPanel'); if (!p) return; p.hidden = !p.hidden; if (!p.hidden) renderLayerPanel(); }
 function findAnno(n, id) { return (annos[n] || []).find(a => a.id === id); }
 let _wallUnionActive = false;
 function drawAnnos(pv) {
   const svg = pv.svg; svg.innerHTML = '';
   for (const a of getAnnos(pv.num)) if (a.type === 'opening') openingResolve(a, pv);   // Türen/Fenster der Wand folgen lassen
   _wallUnionActive = false;
-  if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall'); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung
-  for (const a of getAnnos(pv.num)) drawOne(svg, a, pv);
+  if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall' && layerVisible(a)); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung
+  for (const a of getAnnos(pv.num)) { if (!layerVisible(a)) continue; drawOne(svg, a, pv); }
   _wallUnionActive = false;
   if (sel && sel.num === pv.num) drawSelection(svg, findAnno(pv.num, sel.id), pv);
   if (groupSel && groupSel.num === pv.num) drawGroupSel(svg, pv);
@@ -1359,7 +1384,7 @@ function onPointerDown(pv, e) {
   if (tool === 'opening' || tool === 'window') { openKind = tool === 'window' ? 'window' : 'door'; openingClick(pv, p); return; }
   if (tool === 'edittext') { editTextAt(pv, p); return; }
   if (tool === 'text') { createText(pv, p); return; }
-  if (tool === 'note') { pushUndo(); const a = { id: nextId++, type: 'note', x: p.x, y: p.y, color: style.color, text: '' }; getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); refreshComments(); openNoteEdit(pv, a); return; }
+  if (tool === 'note') { pushUndo(); const a = { id: nextId++, type: 'note', x: p.x, y: p.y, color: style.color, text: '' }; pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); refreshComments(); openNoteEdit(pv, a); return; }
   if (segDraft && segDraft.pv === pv) { finishSegDraft(); return; }                            // 2. Klick = Linie/Wand beenden
   if (tool === 'wallchain') { let q = p; const an = anchorSnap(pv, q.x, q.y); if (an) q = an; else if (gridOn) q = snapPt(q.x, q.y); if (wallDraft && wallDraft.pv === pv) wallChainClick(pv, q); else startWallChain(pv, q.x, q.y); return; }   // Wände am Stück
   // Zeichnen
@@ -1389,7 +1414,7 @@ function removeCropAnno() {
 }
 function startCrop(pv, e, p) {
   removeCropAnno();
-  const a = { id: nextId++, type: 'crop', x: p.x, y: p.y, w: 0, h: 0 }; getAnnos(pv.num).push(a);
+  const a = { id: nextId++, type: 'crop', x: p.x, y: p.y, w: 0, h: 0 }; pushAnno(pv.num, a);
   cropping = { pv, a };
   const move = ev => { const q = evtToPage(pv, ev); a.x = Math.min(p.x, q.x); a.y = Math.min(p.y, q.y); a.w = Math.abs(q.x - p.x); a.h = Math.abs(q.y - p.y); drawAnnos(pv); };
   const up = () => {
@@ -1438,7 +1463,7 @@ function areaClick(pv, p) {
     cancelArea(); pushUndo();
     const isSlab = tool === 'slab';
     const a = isSlab ? { id: nextId++, type: 'slab', pts: [[p.x, p.y]], color: '#5b6b86', base: wallHeightM, thick: 0.2 } : { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: style.color, width: style.width };
-    getAnnos(pv.num).push(a); areaDraft = { pv, a };
+    pushAnno(pv.num, a); areaDraft = { pv, a };
     const onMove = ev => { if (!areaDraft) return; const q = evtToPage(areaDraft.pv, ev); areaDraft.a._cursor = [q.x, q.y]; drawAnnos(areaDraft.pv); };
     document.addEventListener('pointermove', onMove); areaDraft._onMove = onMove;
     drawAnnos(pv); if (isSlab && !areaClick._slabHint) { areaClick._slabHint = true; toast('Decke/Boden: Ecken klicken, am Start schliessen (oder Enter). Höhe + Dicke oben in der Planungs-Leiste · erscheint in 3D.'); } else if (!isSlab && !docScale && !areaClick._hint) { areaClick._hint = true; toast('Tipp: Für echte m² zuerst den Massstab setzen (1:n).'); }
@@ -1466,7 +1491,7 @@ function chaindimClick(pv, p) {
   if (!cdimDraft || cdimDraft.pv !== pv) {
     cancelChaindim(); pushUndo();
     const a = { id: nextId++, type: 'chaindim', pts: [[p.x, p.y]], color: style.color };
-    getAnnos(pv.num).push(a); cdimDraft = { pv, a };
+    pushAnno(pv.num, a); cdimDraft = { pv, a };
     const onMove = ev => { if (!cdimDraft) return; let q = evtToPage(pv, ev); const an = anchorSnap(pv, q.x, q.y, a.id); if (an) q = an; else if (gridOn) q = snapPt(q.x, q.y); cdimDraft.a._cursor = [q.x, q.y]; drawAnnos(pv); };
     document.addEventListener('pointermove', onMove); cdimDraft._onMove = onMove;
     drawAnnos(pv); if (!docScale && !chaindimClick._hint) { chaindimClick._hint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n). Klicken = Station · Doppelklick/Enter = fertig.'); }
@@ -1511,7 +1536,7 @@ function flattenPath(a) {
 function attachCurveHover() { detachCurveHover(); _curveHover = ev => { if (!penDraft || ev.buttons) return; const pv = penDraft.pv; let q = evtToPage(pv, ev); const an = anchorSnap(pv, q.x, q.y, penDraft.a.id); if (an) q = an; else if (gridOn) q = snapPt(q.x, q.y); penDraft.a._preview = { x: q.x, y: q.y }; drawAnnos(pv); }; document.addEventListener('pointermove', _curveHover); }
 function detachCurveHover() { if (_curveHover) { document.removeEventListener('pointermove', _curveHover); _curveHover = null; } }
 function curveClick(pv, e, p) {
-  if (!penDraft || penDraft.pv !== pv) { cancelCurve(); pushUndo(); const a = { id: nextId++, type: 'path', nodes: [], closed: false, color: style.color, width: style.width, fill: 'none' }; getAnnos(pv.num).push(a); penDraft = { pv, a }; attachCurveHover(); }
+  if (!penDraft || penDraft.pv !== pv) { cancelCurve(); pushUndo(); const a = { id: nextId++, type: 'path', nodes: [], closed: false, color: style.color, width: style.width, fill: 'none' }; pushAnno(pv.num, a); penDraft = { pv, a }; attachCurveHover(); }
   const a = penDraft.a;
   if (a.nodes.length >= 2) { const f = a.nodes[0]; if (Math.hypot(p.x - f.x, p.y - f.y) * pv.scale < 12) { a.closed = true; finishCurve(); return; } }   // am ersten Punkt schliessen
   const node = { x: p.x, y: p.y, hIn: { x: p.x, y: p.y }, hOut: { x: p.x, y: p.y } }; a.nodes.push(node);
@@ -1565,7 +1590,7 @@ async function placeImageFile(file) {
     if (h > pv.pageH * 0.7) { h = pv.pageH * 0.7; w = h * ratio; }
     pushUndo();
     const a = { id: nextId++, type: 'img', data, x: (pv.pageW - w) / 2, y: (pv.pageH - h) / 2, w, h };
-    getAnnos(n).push(a); sel = { num: n, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
+    pushAnno(n, a); sel = { num: n, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
     toast('Bild eingefügt – verschieben/skalieren möglich.');
   } catch (e) { console.error(e); toast('Bild konnte nicht eingefügt werden.'); }
 }
@@ -1582,7 +1607,7 @@ function fillImgPlaceholder(pv, a) {
       let w = a.w, h = w / ratio; if (h > a.h) { h = a.h; w = h * ratio; }          // in die Box einpassen
       const x = a.x + (a.w - w) / 2, y = a.y + (a.h - h) / 2;
       pushUndo();
-      const arr = getAnnos(pv.num), idx = arr.indexOf(a), img = { id: nextId++, type: 'img', data, x, y, w, h };
+      const arr = getAnnos(pv.num), idx = arr.indexOf(a), img = { id: nextId++, type: 'img', data, x, y, w, h, layer: a.layer != null ? a.layer : activeLayerId };
       if (idx >= 0) arr.splice(idx, 1, img); else arr.push(img);
       sel = { num: pv.num, id: img.id }; drawAnnos(pv); saveState();
     } catch (err) { console.error(err); toast('Bild konnte nicht eingefügt werden.'); }
@@ -1812,7 +1837,7 @@ function startDraw(pv, e, p) {
   else if (tool === 'wall') a = { id: nextId++, type: 'wall', x1: p.x, y1: p.y, x2: p.x, y2: p.y, thick: wallThickPts(), just: wallJust, color: style.color, fill: '#ffffff', hatch: wallHatch ? { ...wallHatch } : null, width: 1.4, dim: wallDimOn };   // Wand = Linie mit Dicke
   else if (tool === 'stairs') a = { id: nextId++, type: 'stairs', x1: p.x, y1: p.y, x2: p.x, y2: p.y, width: stairWidthPts(), rise: stairRiseM, base: stairBaseM, color: style.color };   // Treppe = Lauf (Linie mit Breite + Höhe)
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
-  getAnnos(pv.num).push(a);
+  pushAnno(pv.num, a);
   const isLine = (a.type !== 'pen' && a.type !== 'rect' && a.type !== 'oval');
   const move = ev => {
     let q = evtToPage(pv, ev), snapped = null;
@@ -1881,7 +1906,7 @@ let wallDraft = null;   // {pv, last:[x,y], seg, _onMove, _rel}
 function startWallChain(pv, x, y) {
   pushUndo();
   const seg = { id: nextId++, type: 'wall', x1: x, y1: y, x2: x, y2: y, thick: wallThickPts(), just: wallJust, color: style.color, fill: '#ffffff', hatch: wallHatch ? { ...wallHatch } : null, width: 1.4, dim: wallDimOn, _draft: true };
-  getAnnos(pv.num).push(seg); wallDraft = { pv, last: [x, y], seg, pts: [[x, y]], segIds: [] };
+  pushAnno(pv.num, seg); wallDraft = { pv, last: [x, y], seg, pts: [[x, y]], segIds: [] };
   const onMove = ev => {
     if (!wallDraft) return; const s = wallDraft.seg; let q = evtToPage(pv, ev), snapped = null, rel = null;
     if (!ev.shiftKey) { const an = anchorSnap(pv, q.x, q.y, s.id); if (an) { q = snapped = an; } else if (gridOn) q = snapPt(q.x, q.y); }
@@ -1901,7 +1926,7 @@ function wallChainClick(pv, p) {
   const first = wallDraft.pts[0], closed = wallDraft.pts.length >= 4 && Math.hypot(ex - first[0], ey - first[1]) < (s.thick * 0.7 + 5);   // Zug geschlossen?
   if (closed) { addRoomArea(pv, wallDraft.pts.slice(0, -1), s.thick); finishWallChain(); return; }
   const seg2 = { id: nextId++, type: 'wall', x1: ex, y1: ey, x2: ex, y2: ey, thick: s.thick, just: s.just, color: s.color, fill: s.fill, hatch: s.hatch, width: s.width, dim: s.dim, _draft: true };
-  getAnnos(pv.num).push(seg2); wallDraft.seg = seg2; wallDraft.last = [ex, ey];
+  pushAnno(pv.num, seg2); wallDraft.seg = seg2; wallDraft.last = [ex, ey];
   drawAnnos(pv); saveState();
 }
 function wallChainLength() {   // „L" während der Wand-Kette: aktuelles Segment auf exakte Länge setzen + Ecke setzen
@@ -1965,7 +1990,7 @@ function openingClick(pv, p) {
   pushUndo();
   const dx = nw.wall.x2 - nw.wall.x1, dy = nw.wall.y2 - nw.wall.y1, L2 = dx * dx + dy * dy || 1, t = ((nw.cx - nw.wall.x1) * dx + (nw.cy - nw.wall.y1) * dy) / L2;
   const a = { id: nextId++, type: 'opening', wallId: nw.wall.id, t, x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, sill: openKind === 'window' ? 0.9 : 0, head: openKind === 'window' ? 2.1 : 2.0, color: nw.wall.color || '#1c242c' };
-  getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
+  pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
 }
 function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieben (sonst frei)
   const wall = a.wallId && getAnnos(pv.num).find(o => o.id === a.wallId && o.type === 'wall');
@@ -1978,7 +2003,7 @@ function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieb
 function addRoomArea(pv, pts, thick) {   // geschlossener Wandzug → lichte Raumfläche (m²)
   if (pts.length < 3) return;
   let poly = pts.map(p => [p[0], p[1]]); const inner = insetPolygon(poly, (thick || wallThickPts()) / 2); if (inner) poly = inner;
-  getAnnos(pv.num).unshift({ id: nextId++, type: 'area', pts: poly, color: '#4f7a3c', width: 0, room: true });   // hinter die Wände
+  getAnnos(pv.num).unshift({ id: nextId++, type: 'area', pts: poly, color: '#4f7a3c', width: 0, room: true, layer: activeLayerId });   // hinter die Wände
   toast('Raumfläche (lichte) ergänzt ✓');
 }
 function wallChainUndo() {   // Rücktaste: letzte gesetzte Wand zurücknehmen
@@ -2004,7 +2029,7 @@ function createText(pv, p) {
   pushUndo();
   const w = Math.max(120, Math.min(260, pv.pageW - p.x - 8));
   const a = { id: nextId++, type: 'text', x: p.x, y: p.y, w, h: textStyle.size * 1.5, text: '', size: textStyle.size, color: style.color, align: textStyle.align, bg: textStyle.bg, border: textStyle.border, borderW: 1.2 };
-  getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id };
+  pushAnno(pv.num, a); sel = { num: pv.num, id: a.id };
   openTextBox(pv, a, true);
 }
 function openTextBox(pv, a, isNew) {
@@ -2106,10 +2131,10 @@ async function editTextAt(pv, p) {
   let a;
   if (hit) {
     const s = sampleBox(pv, hit); a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.str, size: hit.size, color: s.ink || '#111111', bg: s.bg || '#ffffff' };
-    pushUndo(); getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv);   // Treffer: auswählen → Optionen-Leiste (Überschreiben/Verschieben/Grösse)
+    pushUndo(); pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv);   // Treffer: auswählen → Optionen-Leiste (Überschreiben/Verschieben/Grösse)
   } else {
     a = { id: nextId++, type: 'edit', x: p.x, y: p.y - style.size * 0.82, w: 120, h: style.size * 1.2, text: '', size: style.size, color: style.color, bg: '#ffffff' };
-    pushUndo(); getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); openEditEdit(pv, a, true);   // leere Stelle: direkt tippen
+    pushUndo(); pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); openEditEdit(pv, a, true);   // leere Stelle: direkt tippen
   }
 }
 // „Verschieben": Original-Stelle bleibt abgedeckt (Cover), der gleiche Text wird beweglich
@@ -2125,7 +2150,7 @@ function splitEditMove(pv, a) {
 async function startHighlight(pv, e, p) {
   const items = await ensureTextItems(pv);
   pushUndo();
-  const a = { id: nextId++, type: 'highlight', rects: [], color: style.color }; getAnnos(pv.num).push(a);
+  const a = { id: nextId++, type: 'highlight', rects: [], color: style.color }; pushAnno(pv.num, a);
   const x0 = p.x, y0 = p.y;
   const update = (qx, qy) => {
     const rx = Math.min(x0, qx), ry = Math.min(y0, qy), rw = Math.abs(qx - x0), rh = Math.abs(qy - y0);
@@ -2142,7 +2167,7 @@ async function startHighlight(pv, e, p) {
       if (pts.length >= 2) {
         const w = Math.max(10, (style.width || 2.5) * 4);
         const b = { id: nextId++, type: 'pen', hl: true, width: w, color: style.color, pts: pts.slice() };
-        getAnnos(pv.num).push(b); sel = { num: pv.num, id: b.id }; setTool('select'); drawAnnos(pv); saveState(); return;
+        pushAnno(pv.num, b); sel = { num: pv.num, id: b.id }; setTool('select'); drawAnnos(pv); saveState(); return;
       }
       undoStack.pop(); drawAnnos(pv); setTool('select'); return;
     }
@@ -2562,7 +2587,7 @@ function downloadBytes(bytes, name) { const blob = new Blob([bytes], { type: 'ap
 async function printDoc() {
   if (!curBytes) return; status('Druckansicht wird vorbereitet …');
   try {
-    const out = await buildPdfBytes();
+    const out = await buildPdfBytes(layers.some(l => !l.visible));   // ausgeblendete Ebenen nicht mitdrucken
     const url = URL.createObjectURL(new Blob([out], { type: 'application/pdf' }));
     const ifr = document.createElement('iframe'); ifr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'; ifr.src = url;
     ifr.onload = () => { status(''); setTimeout(() => { try { ifr.contentWindow.focus(); ifr.contentWindow.print(); } catch (_) { window.open(url, '_blank'); } setTimeout(() => { URL.revokeObjectURL(url); ifr.remove(); }, 60000); }, 350); };
@@ -2570,7 +2595,7 @@ async function printDoc() {
   } catch (e) { status(''); console.error(e); toast('Drucken fehlgeschlagen.'); }
 }
 function outName() { return docName.replace(/\.pdf$/i, '') + '-submit.pdf'; }
-async function buildPdfBytes() {
+async function buildPdfBytes(visibleOnly) {
   const lib = await loadPdfLib();
   {
     const { PDFDocument, rgb, StandardFonts, degrees, pushGraphicsState, popGraphicsState, concatTransformationMatrix, moveTo, lineTo, closePath, clip, endPath } = lib;
@@ -2586,7 +2611,7 @@ async function buildPdfBytes() {
       if (cropT) pg.pushOperators(pushGraphicsState(), concatTransformationMatrix(1, 0, 0, 1, cb.x, cb.y));   // Ursprung in die CropBox-Ecke
       let wallUni = false;
       if (window.polygonClipping) {   // Wandflächen vereinigen → saubere Ecken auch im PDF
-        const walls = (annos[n] || []).filter(a => a.type === 'wall' && !a._draft);
+        const walls = (annos[n] || []).filter(a => a.type === 'wall' && !a._draft && (!visibleOnly || layerVisible(a)));
         if (walls.length) try {
           const uni = polygonClipping.union(...walls.map(w => [wallPoly(w).map(p => [p[0], p[1]])]));
           if (uni && uni.length) { wallUni = true; const wc = hexToRgb(walls[0].color || '#1c242c'), lw = walls[0].width || 1.4;
@@ -2596,6 +2621,7 @@ async function buildPdfBytes() {
       }
       for (const a of (annos[n] || [])) {
         if (a._draft) continue;   // unbestätigtes Wand-Ketten-Segment nicht speichern
+        if (visibleOnly && !layerVisible(a)) continue;   // Drucken: nur sichtbare Ebenen
         if (a.type === 'opening') openingResolve(a, { num: +n });   // Öffnung aus Wand ableiten
         if (a.type === 'opening') openingResolve(a, { num: +n });   // Öffnung aus Wand ableiten
         const col = hexToRgb(a.color), c = rgb(col.r, col.g, col.b), w = a.width || 2, dp = dashPdf(a);
@@ -2817,13 +2843,13 @@ function placeStamp(pv, p) {
   if (k === 'label') { if (text === '__DATE__') text = new Date().toLocaleDateString('de-CH'); const fs = 18; w = Math.round(text.length * fs * 0.64) + 18; h = 30; }
   else { w = 34; h = 34; }
   const a = { id: nextId++, type: 'stamp', kind: k, text, x: p.x - w / 2, y: p.y - h / 2, w, h, color: pendingStamp.color };
-  getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
+  pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
 }
 function placeSig(pv, p) {
   if (!pendingSig) { setTool('select'); return; }
   pushUndo(); const w = 170, h = w / (pendingSig.ratio || 3);
   const a = { id: nextId++, type: 'sig', x: p.x - w / 2, y: p.y - h / 2, w, h, data: pendingSig.data, caption: pendingSig.caption || '' };
-  getAnnos(pv.num).push(a); sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
+  pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
 }
 
 /* ---------- Massstab ---------- */
@@ -2985,7 +3011,7 @@ function addPageNumbers() {
   if (!pdfDoc) return; pushUndo(); const N = pdfDoc.numPages, size = 12, bw = 70, bh = size * 1.5;
   for (let n = 1; n <= N; n++) {
     const pv = pageViews.find(p => p.num === n), w = pv ? pv.pageW : 595, h = pv ? pv.pageH : 842;
-    getAnnos(n).push({ id: nextId++, type: 'text', x: (w - bw) / 2, y: h - bh - 12, w: bw, h: bh, text: n + ' / ' + N, size, color: '#555555', align: 'center', bg: 'transparent', border: null, borderW: 1.2 });
+    pushAnno(n, { id: nextId++, type: 'text', x: (w - bw) / 2, y: h - bh - 12, w: bw, h: bh, text: n + ' / ' + N, size, color: '#555555', align: 'center', bg: 'transparent', border: null, borderW: 1.2 });
   }
   pageViews.forEach(drawAnnos); saveState(); toast('Seitenzahlen eingefügt ✓');
 }
@@ -3065,7 +3091,7 @@ function startGridDrag(e) {
 // Eine Anmerkung auf alle anderen Seiten kopieren (Logo/Fusszeile/Stempel etc.)
 function annoToAllPages(pv, id) {
   const a = findAnno(pv.num, id); if (!a || !pdfDoc) return; pushUndo(); let cnt = 0;
-  for (let n = 1; n <= pdfDoc.numPages; n++) { if (n === pv.num) continue; const copy = JSON.parse(JSON.stringify(a)); copy.id = nextId++; getAnnos(n).push(copy); cnt++; }
+  for (let n = 1; n <= pdfDoc.numPages; n++) { if (n === pv.num) continue; const copy = JSON.parse(JSON.stringify(a)); copy.id = nextId++; pushAnno(n, copy); cnt++; }
   pageViews.forEach(drawAnnos); refreshComments(); saveState(); toast('Auf ' + cnt + ' weitere Seite(n) kopiert ✓');
 }
 /* ---------- Bild anpassen (Helligkeit/Kontrast/Graustufen/Drehen) ---------- */
@@ -3128,12 +3154,12 @@ function showCtx(x, y, pv, annoId) {
   m.style.left = Math.min(x, window.innerWidth - w - 8) + 'px';
   m.style.top = Math.min(y, window.innerHeight - h - 8) + 'px';
 }
-function duplicateAnno(pv, id) { const a = findAnno(pv.num, id); if (!a) return; pushUndo(); const c = JSON.parse(JSON.stringify(a)); c.id = nextId++; translateAnno(c, JSON.parse(JSON.stringify(c)), 12, 12); getAnnos(pv.num).push(c); sel = { num: pv.num, id: c.id }; drawAnnos(pv); refreshComments(); }
+function duplicateAnno(pv, id) { const a = findAnno(pv.num, id); if (!a) return; pushUndo(); const c = JSON.parse(JSON.stringify(a)); c.id = nextId++; translateAnno(c, JSON.parse(JSON.stringify(c)), 12, 12); pushAnno(pv.num, c); sel = { num: pv.num, id: c.id }; drawAnnos(pv); refreshComments(); }
 // Ebene: Zeichenreihenfolge = Stapel; ans Ende = vorne, an den Anfang = hinten
 function reorderAnno(pv, id, toFront) { const arr = getAnnos(pv.num), i = arr.findIndex(a => a.id === id); if (i < 0) return; pushUndo(); const [a] = arr.splice(i, 1); if (toFront) arr.push(a); else arr.unshift(a); drawAnnos(pv); }
 let clipAnno = null;
 function copySel() { if (!sel) return; const a = findAnno(sel.num, sel.id); if (a) { clipAnno = JSON.parse(JSON.stringify(a)); toast('Kopiert'); } }
-function pasteAnno() { if (!clipAnno) return; const n = curPage(), pv = pageViews.find(p => p.num === n); if (!pv) return; pushUndo(); const c = JSON.parse(JSON.stringify(clipAnno)); c.id = nextId++; translateAnno(c, JSON.parse(JSON.stringify(c)), 14, 14); getAnnos(n).push(c); sel = { num: n, id: c.id }; drawAnnos(pv); refreshComments(); }
+function pasteAnno() { if (!clipAnno) return; const n = curPage(), pv = pageViews.find(p => p.num === n); if (!pv) return; pushUndo(); const c = JSON.parse(JSON.stringify(clipAnno)); c.id = nextId++; translateAnno(c, JSON.parse(JSON.stringify(c)), 14, 14); pushAnno(n, c); sel = { num: n, id: c.id }; drawAnnos(pv); refreshComments(); }
 
 /* ---------- Tastenkürzel-Hilfe ---------- */
 function toggleShortcuts() {
@@ -3236,6 +3262,8 @@ function positionFindHL() {
 /* ---------- Verdrahtung ---------- */
 function wire() {
   loadLogoData(); loadPolyClip();
+  $('#btnLayers').onclick = toggleLayerPanel;
+  $('#lpAdd').onclick = () => { const id = newLayerId(); layers.push({ id, name: 'Ebene ' + (layers.length + 1), visible: true }); activeLayerId = id; renderLayerPanel(); markDirty(); };
   // Ribbon: Reiter umschalten + Werkzeugreihe ein-/ausklappen
   $$('.rib-tab').forEach(b => b.onclick = () => { activateRibTab(b.dataset.tab); document.body.classList.remove('rib-collapsed'); });
   $('#ribCollapse').onclick = () => document.body.classList.toggle('rib-collapsed');

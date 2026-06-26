@@ -294,6 +294,21 @@ body.has-tabs .plan-bar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 .plan-bar .pb-mini{font-size:11px;color:var(--ink-faint);font-weight:600}
 .plan-bar .pb-sel{height:28px;border:1px solid var(--line);background:var(--surface-2);font:inherit;font-size:12px;color:var(--ink);padding:0 4px}
 .foot-3d{color:var(--accent-3);font-weight:800}
+.layer-panel{position:fixed;top:calc(var(--bar) + 6px);right:14px;z-index:62;width:260px;background:var(--surface);border:1px solid var(--line);box-shadow:0 10px 30px rgba(20,24,40,.22)}
+.lp-head{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:14px}
+.lp-add{border:1px solid var(--line);background:var(--surface-2);font:inherit;font-size:12px;font-weight:600;padding:4px 9px;cursor:pointer;color:var(--accent-3)}
+.lp-add:hover{border-color:var(--accent)}
+.lp-list{max-height:50vh;overflow:auto;padding:4px}
+.lp-row{display:flex;align-items:center;gap:7px;padding:6px 8px;cursor:pointer;border:1px solid transparent}
+.lp-row:hover{background:var(--surface-2)}
+.lp-row.active{background:var(--accent-soft);border-color:var(--accent)}
+.lp-eye{width:24px;height:24px;flex:none;border:none;background:none;cursor:pointer;color:var(--ink-soft);display:flex;align-items:center;justify-content:center;font-size:15px}
+.lp-row.hidden-layer .lp-name{color:var(--ink-faint);text-decoration:line-through}
+.lp-name{flex:1;font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lp-row.active .lp-name{color:var(--accent-3)}
+.lp-del{width:22px;height:22px;flex:none;border:none;background:none;cursor:pointer;color:var(--ink-faint);font-size:13px}
+.lp-del:hover{color:var(--danger)}
+.lp-foot{padding:8px 12px;border-top:1px solid var(--line-soft);font-size:11px;color:var(--ink-faint);line-height:1.4}
 .d3-overlay{position:fixed;inset:0;z-index:300;background:#eef1ec;display:flex;flex-direction:column}
 .d3-bar{height:48px;flex:none;display:flex;align-items:center;gap:14px;padding:0 16px;background:var(--surface);border-bottom:1px solid var(--line)}
 .d3-bar b{font-size:15px;letter-spacing:.3px}

@@ -5240,7 +5240,14 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     if (!docScale) { el.innerHTML = '<text x="10" y="22" font-size="13" fill="#9aa090">Massstab setzen (1:n)</text>'; el.setAttribute('viewBox', '0 0 300 60'); return; }
     const perPt = docScale.perPt, H = (a.head != null ? a.head : (a.kind === 'window' ? 2.1 : 2.0)) + 0.4, Yh = h => -h / perPt, X = d => d, out = [];
     const o = side === 'i' ? Object.assign({}, a, { winHinge: a.winHinge === 'left' ? 'right' : a.winHinge === 'right' ? 'left' : a.winHinge, bank: false }) : a;   // innen: Anschlag-Richtung gespiegelt, ohne Aussen-Fensterbank
-    try { openingElev(out, X, Yh, 0, a.w, o, H, '#1c242c', 0); } catch (_) { }
+    const wallE = a.wallId && arr.find(w => w.id === a.wallId && w.type === 'wall');   // Reveal-Einzug (Laibung/Sturz/Schwelle) auch in der Ansicht zeigen
+    const rPts = side === 'i' ? (a.innerReveal != null ? a.innerReveal : cmToPts(2)) : (a.outerLap != null ? a.outerLap : cmToPts(3));
+    if (wallE && wallE.layers && wallE.layers.length && rPts > 0.5) {
+      const ly = side === 'i' ? wallE.layers[0] : wallE.layers[wallE.layers.length - 1], m = WALL_MATS[ly.mat] || {};
+      const sillF = (o.kind === 'window' ? (o.sill || 0) : 0), headF = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0));
+      out.push({ t: 'rect', x: X(0), y: Yh(headF), w: a.w, h: Yh(sillF) - Yh(headF), fill: m.fill || '#eee', stroke: m.color || '#1c242c', sw: 1.2 });   // Rohbau-Laibung: Verkleidung/Sturz/Schwelle lappt über den Rahmen
+    }
+    try { openingElev(out, X, Yh, rPts, a.w - 2 * rPts, o, H, '#1c242c', rPts * perPt); } catch (_) { }   // sichtbares Fenster (Lichtmass) – seitlich + Sturz/Schwelle eingezogen
     drawPrims(el, out, getVb, setVb);
   }
   function bindHandles() {

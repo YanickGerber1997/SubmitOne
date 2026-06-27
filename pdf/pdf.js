@@ -375,7 +375,8 @@ async function imageToPdfBytes(file) {
   curBytes = await imageToPdf(file);
   docName = file.name.replace(/\.[^.]+$/, '') + '.pdf';
 }
-async function loadDoc(bytes) {
+function maxAnnoId(a) { let m = 0; for (const k in (a || {})) for (const an of (a[k] || [])) if (an && an.id > m) m = an.id; return m; }
+async function loadDoc(bytes, skipRestore) {
   status('Öffne Dokument …');
   if (!pdfjs) { try { await loadPdfJs(); } catch (_) { status(''); toast('PDF-Engine nicht ladbar (einmal Internet nötig).'); throw new Error('pdfjs'); } }   // z. B. „Neue Seite" als erste Aktion
   const task = pdfjs.getDocument({ data: bytes }); let cancelled = false;
@@ -387,6 +388,20 @@ async function loadDoc(bytes) {
   };
   try { pdfDoc = await task.promise; }
   catch (e) { status(''); if (cancelled) { const er = new Error('abgebrochen'); er.name = 'AbortByUser'; throw er; } throw e; }
+  if (!skipRestore) {   // eingebettete editierbare Daten (von Submit PDF gespeichert) wiederherstellen → sauberes Original + bearbeitbare Anmerkungen
+    let att = null; try { att = await pdfDoc.getAttachments(); } catch (_) { }
+    const proj = att && att['submitpdf-project.json'], base = att && att['submitpdf-base.pdf'];
+    if (proj && base) { let obj = null; try { obj = JSON.parse(new TextDecoder().decode(proj.content)); } catch (_) { }
+      if (obj && obj.annos) {
+        annos = obj.annos; docScale = obj.scale || null; pageRot = obj.pageRot || {}; viewRot = obj.viewRot || {}; formValues = obj.formValues || {}; layers = obj.layers || layers; activeLayerId = obj.activeLayerId || activeLayerId; nextId = maxAnnoId(annos) + 1; sel = null;
+        curBytes = new Uint8Array(base.content);
+        if (docs[active]) { const d = docs[active]; d.bytes = curBytes; d.annos = annos; d.docScale = docScale; d.pageRot = pageRot; d.viewRot = viewRot; d.formValues = formValues; d.layers = layers; d.activeLayerId = activeLayerId; d.nextId = nextId; d.pdfDoc = null; }
+        await loadDoc(curBytes.slice(), true); if (docs[active]) docs[active].pdfDoc = pdfDoc;
+        try { updateScaleLabel(); } catch (_) { } toast('Bearbeitbarer Plan + Anmerkungen wiederhergestellt – du kannst weiterzeichnen.');
+        return;
+      }
+    }
+  }
   await renderCurrentDoc();
 }
 async function renderCurrentDoc() {
@@ -3352,7 +3367,7 @@ async function printDoc() {
   } catch (e) { status(''); console.error(e); toast('Drucken fehlgeschlagen.'); }
 }
 function outName() { return docName.replace(/\.pdf$/i, '') + '-submit.pdf'; }
-async function buildPdfBytes(visibleOnly) {
+async function buildPdfBytes(visibleOnly, embed) {
   const lib = await loadPdfLib();
   {
     const { PDFDocument, rgb: rgb0, StandardFonts, degrees, pushGraphicsState, popGraphicsState, concatTransformationMatrix, moveTo, lineTo, closePath, clip, endPath } = lib;
@@ -3576,6 +3591,13 @@ async function buildPdfBytes(visibleOnly) {
         try { form.updateFieldAppearances(font); } catch (_) { }
       } catch (_) { /* kein AcroForm */ }
     }
+    if (embed) {   // editierbare Daten (Wände, Anmerkungen, Massstab …) + Originaldokument einbetten → in Submit PDF wieder bearbeitbar
+      try {
+        const proj = JSON.stringify({ v: 1, scale: docScale, annos, pageRot, viewRot, formValues, layers, activeLayerId, name: docName });
+        await doc.attach(new TextEncoder().encode(proj), 'submitpdf-project.json', { mimeType: 'application/json', description: 'Submit PDF – editierbare Plandaten' });
+        await doc.attach(curBytes.slice(), 'submitpdf-base.pdf', { mimeType: 'application/pdf', description: 'Submit PDF – Originaldokument (ohne Anmerkungen)' });
+      } catch (e) { console.warn('Einbetten fehlgeschlagen', e); }
+    }
     return await doc.save();
   }
 }
@@ -3583,9 +3605,9 @@ async function save() {
   if (!curBytes) return; status('Speichere … (bei grossen Dateien etwas Geduld)');
   await new Promise(r => setTimeout(r, 20));            // Anzeige zuerst zeichnen lassen
   try {
-    const out = await buildPdfBytes();
+    const out = await buildPdfBytes(false, true);   // editierbare Daten einbetten → wieder bearbeitbar
     let ok = true;
-    if (curFileHandle) { const w = await curFileHandle.createWritable(); await w.write(out); await w.close(); status(''); toast('In Datei gespeichert ✓'); }   // direkt in die geöffnete Datei
+    if (curFileHandle) { const w = await curFileHandle.createWritable(); await w.write(out); await w.close(); status(''); toast('In Datei gespeichert ✓ (in Submit PDF wieder bearbeitbar)'); }   // direkt in die geöffnete Datei
     else if (window.nativeSave) { ok = await window.nativeSave(out, outName()); status(''); toast(ok ? 'Gespeichert ✓' : 'Abgebrochen'); }
     else { downloadBytes(out, outName()); status(''); toast('Gespeichert ✓'); }
     if (ok) { dirty = false; if (docs[active]) docs[active].dirty = false; clearAutosave(); }   // gespeichert → sauber, Autosave verwerfen

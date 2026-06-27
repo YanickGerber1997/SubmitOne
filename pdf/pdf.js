@@ -1937,18 +1937,18 @@ function cancelProfile() {
   const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) { arr.splice(i, 1); if (undoStack.length) undoStack.pop(); }
   profDraft = null; if (pv) drawAnnos(pv);
 }
-function openProfileEditor(cb) {   // Querschnitt definieren: Vorlagen (parametrisch) oder frei zeichnen (Raster, cm)
-  const NS = 'http://www.w3.org/2000/svg', S = 3.4, OX = 96, OY = 178;   // feste Frei-Zeichnen-Transformation (px/cm)
-  let kind = 'zblech', params = {}, freePts = [], prof = profilePreset('zblech');
+function openProfileEditor(cb, init) {   // Querschnitt definieren: Vorlagen (parametrisch) oder frei zeichnen (Raster, cm). init = bestehendes Profil bearbeiten
+  const NS = 'http://www.w3.org/2000/svg', S = 3.4, OX = 96, OY = 178, src = init || curProfile;   // feste Frei-Zeichnen-Transformation (px/cm)
+  let kind = init ? 'frei' : 'zblech', params = {}, freePts = init ? init.prof.map(p => p.slice()) : [], prof = init ? init.prof.map(p => p.slice()) : profilePreset('zblech');
   const dlg = document.createElement('div'); dlg.className = 'd3-overlay'; dlg.style.zIndex = 100000;
   dlg.innerHTML = '<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.3);padding:18px;width:min(680px,94vw);max-height:92vh;overflow:auto;font:14px system-ui">'
     + '<div style="font-weight:600;font-size:16px;margin-bottom:10px">Profil-Querschnitt</div>'
     + '<div id="pfPresets" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>'
     + '<div style="display:flex;gap:16px;flex-wrap:wrap"><div style="flex:0 0 280px"><svg id="pfSvg" width="280" height="240" style="border:1px solid #e5e7eb;border-radius:8px;background:#fafafa"></svg><div id="pfHint" style="font-size:12px;color:#6b7280;margin-top:4px;min-height:16px"></div></div>'
     + '<div style="flex:1;min-width:200px"><div id="pfParams" style="margin-bottom:8px"></div><hr style="margin:10px 0;border:none;border-top:1px solid #eee">'
-    + '<label style="display:block;margin-bottom:8px">Höhe (Bezug) <input id="pfElev" type="number" step="0.05" value="' + curProfile.elev + '" style="width:80px"> m</label>'
-    + '<label style="display:block;margin-bottom:8px">Name <input id="pfName" type="text" value="' + curProfile.name + '" style="width:150px"></label>'
-    + '<label style="display:block;margin-bottom:8px">Farbe <input id="pfColor" type="color" value="' + curProfile.color + '"></label></div></div>'
+    + '<label style="display:block;margin-bottom:8px">Höhe (Bezug) <input id="pfElev" type="number" step="0.05" value="' + (src.elev != null ? src.elev : 3) + '" style="width:80px"> m</label>'
+    + '<label style="display:block;margin-bottom:8px">Name <input id="pfName" type="text" value="' + (src.name || 'Profil') + '" style="width:150px"></label>'
+    + '<label style="display:block;margin-bottom:8px">Farbe <input id="pfColor" type="color" value="' + (src.color || '#7a8392') + '"></label></div></div>'
     + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn" id="pfCancel">Abbrechen</button><button class="btn" id="pfOk" style="background:#1c242c;color:#fff">Profil verwenden →</button></div></div>';
   document.body.appendChild(dlg);
   const svg = dlg.querySelector('#pfSvg'), $ = s => dlg.querySelector(s);
@@ -1978,7 +1978,7 @@ function openProfileEditor(cb) {   // Querschnitt definieren: Vorlagen (parametr
     (paramDefs[kind] || []).forEach(([key, lbl, def]) => { const w = document.createElement('label'); w.style.cssText = 'display:inline-block;margin:0 10px 8px 0'; w.innerHTML = lbl + ' <input type="number" step="0.1" style="width:62px"> cm'; const inp = w.querySelector('input'); inp.value = params[key] != null ? params[key] : def; inp.oninput = () => { params[key] = +inp.value; redraw(); }; pp.appendChild(w); });
     if (kind === 'frei') { const b = document.createElement('button'); b.className = 'btn'; b.textContent = '↺ Löschen'; b.onclick = () => { freePts = []; redraw(); }; const b2 = document.createElement('button'); b2.className = 'btn'; b2.textContent = '✓ Schliessen'; b2.style.marginLeft = '6px'; b2.onclick = () => redraw(); pp.appendChild(b); pp.appendChild(b2); }
   }
-  const pc = $('#pfPresets'); presetDefs.forEach(([k, lbl]) => { const b = document.createElement('button'); b.className = 'btn'; b.textContent = lbl; if (k === 'zblech') b.classList.add('on'); b.onclick = () => { kind = k; if (k !== 'frei') { params = {}; (paramDefs[k] || []).forEach(([key, , def]) => params[key] = def); } pc.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); buildParams(); redraw(); }; pc.appendChild(b); });
+  const pc = $('#pfPresets'); presetDefs.forEach(([k, lbl]) => { const b = document.createElement('button'); b.className = 'btn'; b.textContent = lbl; if (k === kind) b.classList.add('on'); b.onclick = () => { kind = k; if (k !== 'frei') { params = {}; (paramDefs[k] || []).forEach(([key, , def]) => params[key] = def); } pc.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); buildParams(); redraw(); }; pc.appendChild(b); });
   svg.addEventListener('click', ev => { if (kind !== 'frei') return; const r = svg.getBoundingClientRect(), u = Math.round(((ev.clientX - r.left) - OX) / S * 2) / 2, v = Math.round((OY - (ev.clientY - r.top)) / S * 2) / 2; freePts.push([u, v]); redraw(); });
   svg.addEventListener('dblclick', () => { if (kind === 'frei') redraw(); });
   $('#pfColor').oninput = redraw;
@@ -4309,9 +4309,11 @@ async function parseIFC(bytes) {   // → { meshes (Welt-Geometrie, Y-oben), bbo
       if (geom.delete) try { geom.delete(); } catch (_) { }
     }
   });
-  const matByElem = {};   // Element-ID → Schichtaufbau [{name, thick}] (aus IfcRelAssociatesMaterial)
+  const matByElem = {};   // Element-/Typ-ID → Schichtaufbau [{name, thick}] (aus IfcRelAssociatesMaterial)
   try { const rels = api.GetLineIDsWithType(modelID, mod.IFCRELASSOCIATESMATERIAL); for (let i = 0; i < rels.size(); i++) { let r; try { r = api.GetLine(modelID, rels.get(i)); } catch (_) { continue; } if (!r || !r.RelatingMaterial) continue; const ly = ifcResolveLayers(api, modelID, r.RelatingMaterial.value, 0); if (!ly || !ly.length) continue; for (const o of (r.RelatedObjects || [])) if (o && o.value != null) matByElem[o.value] = ly; } } catch (_) { }
-  const elements = []; for (const k in elemAcc) { const o = elemAcc[k]; if (o.n) elements.push({ kind: o.kind, eid: +k, c: [o.sx / o.n, o.sy / o.n, o.sz / o.n], min: [o.minx, o.miny, o.minz], max: [o.maxx, o.maxy, o.maxz], layers: matByElem[+k] || null }); }
+  const typeOf = {};   // Instanz-ID → Typ-ID (für Material, das am Bauteil-Typ hängt – häufig bei Revit-Export)
+  try { const rt = api.GetLineIDsWithType(modelID, mod.IFCRELDEFINESBYTYPE); for (let i = 0; i < rt.size(); i++) { let r; try { r = api.GetLine(modelID, rt.get(i)); } catch (_) { continue; } if (!r || !r.RelatingType) continue; const ty = r.RelatingType.value; for (const o of (r.RelatedObjects || [])) if (o && o.value != null) typeOf[o.value] = ty; } } catch (_) { }
+  const elements = []; for (const k in elemAcc) { const o = elemAcc[k]; if (o.n) elements.push({ kind: o.kind, eid: +k, c: [o.sx / o.n, o.sy / o.n, o.sz / o.n], min: [o.minx, o.miny, o.minz], max: [o.maxx, o.maxy, o.maxz], layers: matByElem[+k] || (typeOf[+k] != null ? matByElem[typeOf[+k]] : null) || null }); }
   const openings = elements.filter(e => e.kind === 'window' || e.kind === 'door');
   const T = mod, TYPES = [['Wände', T.IFCWALL], ['Wände (Std.)', T.IFCWALLSTANDARDCASE], ['Fenster', T.IFCWINDOW], ['Türen', T.IFCDOOR], ['Decken/Platten', T.IFCSLAB], ['Dächer', T.IFCROOF], ['Stützen', T.IFCCOLUMN], ['Träger', T.IFCBEAM], ['Treppen', T.IFCSTAIR], ['Geländer', T.IFCRAILING], ['Vorhangfassade', T.IFCCURTAINWALL], ['Möblierung', T.IFCFURNISHINGELEMENT], ['Räume', T.IFCSPACE]];
   const summary = []; for (const [label, t] of TYPES) { if (t == null) continue; let v; try { v = api.GetLineIDsWithType(modelID, t); } catch (_) { continue; } const cnt = v ? v.size() : 0; if (cnt) summary.push({ label, n: cnt }); }
@@ -5725,6 +5727,7 @@ function wire() {
     if (a.type === 'edit') { openEditEdit(pv, a, false); return; }   // bestehende Edit-Stelle erneut bearbeiten
     if (a.type === 'text') { openTextAnnoEdit(pv, a); return; }       // Text-Annotation bearbeiten
     if (a.type === 'imgph') { fillImgPlaceholder(pv, a); return; }    // Bild-Platzhalter füllen
+    if (a.type === 'profile') { openProfileEditor(spec => { pushUndo(); a.prof = spec.prof; a.elev = spec.elev; a.name = spec.name; a.color = spec.color; a.mat = spec.mat; curProfile = Object.assign({}, curProfile, spec); drawAnnos(pv); saveState(); }, { prof: a.prof, elev: a.elev, name: a.name, color: a.color }); return; }   // Profil bearbeiten
     if (a.type !== 'dim' && a.type !== 'measure') return;
     const v = prompt('Mass-Beschriftung (leer = automatisch gemessen):', a.text || lenLabel(a)); if (v === null) return;
     pushUndo(); a.text = v.trim() || ''; drawAnnos(pv);

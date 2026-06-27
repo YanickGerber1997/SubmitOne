@@ -3753,6 +3753,45 @@ async function open3D() {
   document.addEventListener('keydown', esc, true);
   ov.querySelector('#d3Close').onclick = close;
 }
+const LAMBDA = { putz: 0.70, gips: 0.25, mauerwerk: 0.50, beton: 2.10, eps: 0.035, daemm_eps: 0.035, daemm_xps: 0.035, glaswolle: 0.035, daemm_wolle: 0.035, daemm_holz: 0.045, holz: 0.13, konter: 0.13 };   // Wärmeleitfähigkeit λ (W/mK)
+function wallUValue(layers, override) {   // U-Wert [W/m²K] = 1 / (Rsi + Σ d/λ + Rse); Luft = R 0.15
+  if (override != null && override > 0) return override;
+  let R = 0.13 + 0.04;
+  for (const l of layers) { const d = ptsToCm(l.t) / 100; if (l.mat === 'luft') R += 0.15; else R += d / (LAMBDA[l.mat] || 1.0); }
+  return R > 0 ? 1 / R : 0;
+}
+function computeWallBuildups(arr) {   // eindeutige Wandaufbauten gruppieren
+  const groups = {};
+  for (const w of arr) {
+    if (w.type !== 'wall' || !w.layers || !w.layers.length || !layerVisible(w) || !phaseVisible(w)) continue;
+    const sig = w.layers.map(l => l.mat + ':' + Math.round(ptsToCm(l.t) * 10)).join('|');
+    if (!groups[sig]) groups[sig] = { sig, layers: w.layers, walls: [], totalCm: w.layers.reduce((s, l) => s + ptsToCm(l.t), 0), uVal: null };
+    groups[sig].walls.push(w); if (w.uVal != null) groups[sig].uVal = w.uVal;
+  }
+  return Object.values(groups).sort((a, b) => b.totalCm - a.totalCm);
+}
+function buildupThumb(layers, totalCm) {   // Mini-Schichtbild (von innen links → aussen rechts)
+  const W = 120, H = 30; let x = 0, s = '<svg class="bu-thumb" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">';
+  for (const l of layers) { const w = Math.max(1.5, (ptsToCm(l.t) / (totalCm || 1)) * W), m = WALL_MATS[l.mat] || {}; s += '<rect x="' + x.toFixed(1) + '" y="0" width="' + w.toFixed(1) + '" height="' + H + '" fill="' + (m.fill || '#eee') + '" stroke="' + (m.color || '#999') + '" stroke-width="0.6"/>'; x += w; }
+  return s + '<text x="2" y="' + (H - 3) + '" font-size="7" fill="#555">innen</text><text x="' + (W - 2) + '" y="' + (H - 3) + '" font-size="7" fill="#555" text-anchor="end">aussen</text></svg>';
+}
+function openWallList() {
+  if (!docScale) { toast('Erst Massstab setzen – die Liste braucht reale Masse.'); return; }
+  const n = curPage(), arr = getAnnos(n), groups = computeWallBuildups(arr);
+  const desc = layers => layers.map(l => ((WALL_MATS[l.mat] && WALL_MATS[l.mat].label) || l.mat).replace(/ .*/, '') + ' ' + (Math.round(ptsToCm(l.t) * 10) / 10) + 'cm').join(' · ');
+  let rows = '', csv = 'Aufbau (innen→aussen)\tDicke (cm)\tU-Wert (W/m²K)\tAnzahl\n';
+  groups.forEach((g, i) => { const u = wallUValue(g.layers, g.uVal), us = (Math.round(u * 1000) / 1000).toFixed(3), comp = g.uVal != null; rows += '<tr><td><b>W' + (i + 1) + '</b></td><td>' + buildupThumb(g.layers, g.totalCm) + '</td><td>' + desc(g.layers) + '</td><td style="text-align:right">' + (Math.round(g.totalCm * 10) / 10) + '</td><td><input class="bu-u" data-sig="' + g.sig.replace(/"/g, '') + '" type="number" step="0.01" min="0.05" value="' + us + '"> ' + (comp ? '✎' : '') + '</td><td style="text-align:center">' + g.walls.length + '</td></tr>'; csv += desc(g.layers) + '\t' + (Math.round(g.totalCm * 10) / 10) + '\t' + us + '\t' + g.walls.length + '\n'; });
+  const ov = document.createElement('div'); ov.className = 'lab-overlay';
+  ov.innerHTML = '<div class="lab-wrap" style="width:min(820px,95vw);height:min(600px,90vh)"><div class="lab-head"><b>Wandaufbau-Liste · U-Werte</b><span class="lab-hint">Seite ' + n + ' · U-Wert editierbar (✎ = überschrieben), gilt für alle Wände dieses Aufbaus</span><span class="grow"></span><button class="btn" id="qCopy">Kopieren</button><button class="btn" id="qClose">✕</button></div><div class="qty-body"><table class="qty-tab"><thead><tr><th>Pos</th><th>Schichten</th><th>Aufbau (innen→aussen)</th><th>Dicke</th><th>U-Wert</th><th>Wände</th></tr></thead><tbody>' + (rows || '<tr><td colspan=6>Keine mehrschichtigen Wände auf dieser Seite.</td></tr>') + '</tbody></table></div></div>';
+  document.body.appendChild(ov);
+  const close = () => { ov.remove(); document.removeEventListener('keydown', esc, true); };
+  const esc = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+  document.addEventListener('keydown', esc, true);
+  ov.querySelector('#qClose').onclick = close;
+  ov.querySelector('#qCopy').onclick = () => { navigator.clipboard.writeText('WANDAUFBAUTEN\n' + csv).then(() => toast('Liste kopiert (Excel-tauglich)')).catch(() => toast('Kopieren nicht möglich')); };
+  ov.querySelectorAll('.bu-u').forEach(inp => inp.onchange = () => { const v = parseFloat(inp.value); if (!(v > 0)) return; const g = groups.find(x => x.sig.replace(/"/g, '') === inp.dataset.sig); if (!g) return; pushUndo(); g.uVal = v; g.walls.forEach(w => w.uVal = v); saveState(); toast('U-Wert ' + v + ' gespeichert (für ' + g.walls.length + ' Wand/Wände)'); });
+  ov.addEventListener('pointerdown', e => { if (e.target === ov) close(); });
+}
 function winThumb(o) {   // Mini-Ansicht (SVG) eines Fensters/einer Tür für die Liste
   const W = 64, H = 78, ww = ptsToCm(o.w) / 100, wh = o.kind === 'window' ? ((o.head || 2.1) - (o.sill || 0)) : (o.head || 2.0), ar = ww / Math.max(0.2, wh);
   let bw = W - 12, bh = bw / ar; if (bh > H - 10) { bh = H - 10; bw = bh * ar; } bw = Math.max(14, Math.min(W - 8, bw));
@@ -4396,6 +4435,7 @@ function wire() {
   $('#footWinDim').onclick = () => { winDimsOn = !winDimsOn; $('#footWinDim').classList.toggle('on', winDimsOn); pageViews.forEach(drawAnnos); toast(winDimsOn ? 'Fenster-/Tür-Bemaßung an (R Rohbau · La Aussenlicht · Li Innenlicht)' : 'Fenster-/Tür-Bemaßung aus'); };
   $('#footQty').onclick = openQuantities;
   $('#footSchedule').onclick = openSchedule;
+  $('#footWallList').onclick = openWallList;
   $('#footPhase').onclick = e => { e.stopPropagation(); const p = $('#phasePop'); p.hidden = !p.hidden; if (!p.hidden) updatePhaseUI(); };
   $$('#phSet button').forEach(b => b.onclick = () => setActivePhase(b.dataset.ph || null));
   $$('#phView button').forEach(b => b.onclick = () => setPhaseView(b.dataset.pv));

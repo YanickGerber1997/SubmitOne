@@ -544,6 +544,8 @@ body.has-tabs .build-pop{top:calc(var(--bar) + var(--tools) + var(--tabs) + var(
 .qty-tab td{border-bottom:1px solid var(--line);padding:5px 8px;color:var(--ink)}
 .ws-tab td{vertical-align:middle}
 .ws-thumb{display:block;background:#fff;border:1px solid var(--line)}
+.bu-thumb{display:block;border:1px solid var(--line)}
+.bu-u{width:70px;font:inherit;font-size:12px;padding:3px 5px;border:1px solid var(--line);background:var(--surface);color:var(--accent);text-align:right}
 .plan-pop{position:fixed;bottom:46px;left:50%;transform:translateX(-50%);z-index:64;background:var(--surface);border:1px solid var(--line);box-shadow:0 10px 30px rgba(20,24,40,.24);padding:12px;width:300px}
 .pp-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px}
 .pp-kind{display:flex;gap:4px;margin-bottom:10px}

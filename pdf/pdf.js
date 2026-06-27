@@ -5179,8 +5179,8 @@ function build3DScene(host, walls, arr, opts) {
     const wL = w.layers && w.layers.length ? w.layers : null, totalT = wL ? (wL.reduce((s, l) => s + l.t, 0) || 1) : 1;
     const addWallLayered = (s0, s1, y0, y1) => {   // Wand schichtweise; Luft (Hinterlüftung) bleibt leer/transparent
       if (!wL) { addBox(s0, s1, y0, y1, wmat, th, true); return; }
-      const lenM = (s1 - s0) * perPt, hM = y1 - y0, bH = (w.schalH ? w.schalH / 100 : 0.12);
-      let off = -th / 2; for (const L of wL) { const lt = (L.t / totalT) * th; if (L.mat !== 'luft') addBox2(s0, s1, y0, y1, off + lt / 2, lt, layerMat(L.mat, lenM, hM, bH), true); off += lt; }
+      const lenM = (s1 - s0) * perPt, bH = (w.schalH ? w.schalH / 100 : 0.12), atBase = Math.abs(y0 - yb) < 1e-4, atTop = Math.abs(y1 - (yb + HW)) < 1e-4;   // top/bot nur an echter Wand-Ober-/Unterkante
+      let off = -th / 2; for (const L of wL) { const lt = (L.t / totalT) * th; if (L.mat !== 'luft') { const yy0 = y0 - (atBase ? (L.bot || 0) : 0), yy1 = y1 + (atTop ? (L.top || 0) : 0); addBox2(s0, s1, yy0, yy1, off + lt / 2, lt, layerMat(L.mat, lenM, yy1 - yy0, bH), true); } off += lt; }
     };
     const winMat3D = key => { const wm = WIN_MAT[key] || WIN_MAT.holz; return new THREE.MeshLambertMaterial({ color: new THREE.Color(wm.fill) }); };
     const fillToMat = {}; for (const k in WALL_MATS) { const f = WALL_MATS[k] && WALL_MATS[k].fill; if (f) fillToMat[f.toLowerCase()] = k; }

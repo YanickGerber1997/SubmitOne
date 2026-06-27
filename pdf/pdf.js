@@ -5002,6 +5002,16 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       row.innerHTML = '<span>' + f.label + '</span>'; const r = document.createElement('input'); r.type = 'range'; r.min = f.min; r.max = f.max; r.step = f.step; r.value = f.get();
       r.oninput = () => { f.set(parseFloat(r.value)); val.textContent = f.get() + ' ' + f.unit; render(); drawAnnos(pv); }; r.onchange = () => saveState();
       row.appendChild(r); row.appendChild(val); side.appendChild(row); }
+    if (wall && wall.layers && wall.layers.length) {   // Wandschichten direkt im Laibungs-Detail anpassen (Dicke) – Wand + Öffnung folgen live
+      const hd = document.createElement('div'); hd.className = 'lab-row'; hd.style.marginTop = '6px'; hd.innerHTML = '<span style="font-weight:600">Wandschichten (innen→aussen)</span>'; side.appendChild(hd);
+      wall.layers.forEach(ly => {
+        const row = document.createElement('label'); row.className = 'lab-row'; const nm = (WALL_MATS[ly.mat] && WALL_MATS[ly.mat].label) || ly.mat || 'Schicht'; row.innerHTML = '<span>' + nm + '</span>';
+        const inp = document.createElement('input'); inp.type = 'number'; inp.step = '0.5'; inp.min = '0.1'; inp.style.width = '66px'; inp.value = Math.round(ptsToCm(ly.t) * 10) / 10;
+        inp.oninput = () => { const v = parseFloat(inp.value); if (!(v > 0)) return; ly.t = cmToPts(v); wall.thick = wall.layers.reduce((s, l) => s + l.t, 0); a.thick = wall.thick; render(); drawAnnos(pv); };
+        inp.onchange = () => saveState();
+        const u = document.createElement('b'); u.textContent = 'cm'; row.appendChild(inp); row.appendChild(u); side.appendChild(row);
+      });
+    }
   }
   const close = () => { ov.remove(); document.removeEventListener('keydown', esc, true); drawAnnos(pv); saveState(); };
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } };

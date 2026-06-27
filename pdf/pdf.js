@@ -2900,7 +2900,7 @@ function openingElev(out, X, Yh, opx0, opw, o, H, col, redM) {   // Fenster/Tür
   if (head - sill < 0.02 || opw < 1) return;
   out.push({ t: 'rect', x: X(opx0), y: Yh(head), w: opw, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });
   if (o.kind === 'window') {
-    const wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', fr = Math.min(opw * 0.12, 5), yT = Yh(head), yB = Yh(sill);
+    const wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', fr = Math.min(opw * 0.42, (o.frameW || cmToPts(10)) * (opw / Math.max(1, o.w))), yT = Yh(head), yB = Yh(sill);   // echte Rahmenbreite (mit Projektion skaliert)
     out.push({ t: 'rect', x: X(opx0), y: yT, w: opw, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.4 });   // Blendrahmen (Material)
     const two = wt === 'f2' || wt === 'f2s', panes = two ? 2 : 1, pw = opw / panes;
     for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) { if (wt === 'f2s') { out.push({ t: 'rect', x: px0 - fr, y: yT, w: 2 * fr, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.2 }); } else out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1.2 }); }
@@ -2915,7 +2915,7 @@ function openingElev(out, X, Yh, opx0, opw, o, H, col, redM) {   // Fenster/Tür
     out.push({ t: 'line', x1: X(opx0) - 6, y1: Yh(sill), x2: X(opx0 + opw) + 6, y2: Yh(sill), stroke: col, w: 1.8 });   // Fensterbank
     if (o.niche) { const nh = (Yh(0) - Yh(0.24)); out.push({ t: 'rect', x: X(opx0), y: Yh(head) - nh, w: opw, h: nh, fill: '#e9e6df', stroke: col, sw: 0.8 }); }   // Storennische
   } else {
-    const wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', fr = Math.min(opw * 0.1, 5), yT = Yh(head), yB = Yh(sill), hingeRight = o.winHinge === 'right';
+    const wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', fr = Math.min(opw * 0.42, (o.frameW || cmToPts(6)) * (opw / Math.max(1, o.w))), yT = Yh(head), yB = Yh(sill), hingeRight = o.winHinge === 'right';   // echte Rahmen-/Zargenbreite
     out.push({ t: 'rect', x: X(opx0), y: yT, w: opw, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.2 });   // Zarge
     const two = wt === 'f2' || wt === 'f2s' || wt === 'f1f', panes = two ? 2 : 1, pw = opw / panes;
     for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1 });
@@ -5291,16 +5291,21 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     if (!ops.length) ops.push(a);
     let curD = null;   // Geometrie des aktuellen Fensters für die Masslinien merken
     const facLy = (wall && wall.layers && wall.layers.length) ? (side === 'i' ? wall.layers[0] : wall.layers[wall.layers.length - 1]) : null, facMat = facLy ? (WALL_MATS[facLy.mat] || {}) : {};
-    out.push({ t: 'rect', x: 0, y: Yh(Hwall), w: Lw, h: Yh(0) - Yh(Hwall), fill: facMat.fill || '#f3f1ec', stroke: '#9aa08f', sw: 1 });   // Wand-Ansicht (Fassade)
+    const facTop = Hwall + (facLy && facLy.top ? facLy.top : 0), facBot = 0 - (facLy && facLy.bot ? facLy.bot : 0);   // sichtbare (äusserste/innerste) Schicht nimmt ihre Über-/Unterlänge mit
+    out.push({ t: 'rect', x: 0, y: Yh(facTop), w: Lw, h: Yh(facBot) - Yh(facTop), fill: facMat.fill || '#f3f1ec', stroke: '#9aa08f', sw: 1 });   // Wand-Ansicht (Fassade)
     out.push({ t: 'line', x1: -10, y1: Yh(0), x2: Lw + 10, y2: Yh(0), stroke: '#1c242c', w: 1.8 });   // Boden / OK Terrain
     for (const o2 of ops) {
       const oo = side === 'i' ? Object.assign({}, o2, { winHinge: o2.winHinge === 'left' ? 'right' : o2.winHinge === 'right' ? 'left' : o2.winHinge, bank: false }) : o2;
       const a0 = (wall ? along(o2.x, o2.y) : Lw / 2) - o2.w / 2, opx0 = flip ? (Lw - a0 - o2.w) : a0;
       const lapClad = side === 'i' ? (o2.innerReveal != null ? o2.innerReveal : cmToPts(2)) : (o2.outerLap != null ? o2.outerLap : cmToPts(3));
-      const boardPts = (side === 'a' && o2.kind === 'window') ? cmToPts(o2.boardW != null ? o2.boardW : 2.5) : 0, rPts = lapClad + boardPts, clM = ptsToCm(lapClad) / 100;
       const sillF = (o2.kind === 'window' ? (o2.sill || 0) : 0), headF = Math.min(Hwall, o2.head || (o2.kind === 'window' ? 2.1 : 2.0));
-      if (facLy && lapClad > 0.3) out.push({ t: 'rect', x: opx0, y: Yh(headF), w: o2.w, h: Yh(sillF) - Yh(headF), fill: facMat.fill || '#eee', stroke: facMat.color || '#1c242c', sw: 1 });   // Verkleidung/Rohbau-Laibung (umlaufend)
-      if (boardPts > 0.3 && o2.w - 2 * lapClad > 1) { const bm = WALL_MATS[o2.boardMat || 'holz'] || { fill: '#e7cfa8', color: '#7a5126' }; out.push({ t: 'rect', x: opx0 + lapClad, y: Yh(headF - clM), w: o2.w - 2 * lapClad, h: Yh(sillF + clM) - Yh(headF - clM), fill: bm.fill, stroke: bm.color, sw: 0.7 }); }   // Laibungsbrett (Holz) umlaufend
+      const rings = [];   // Laibungsschichten in der Ansicht = GLEICHE Datenquelle wie Grundriss: innen=innerste Schicht/Verputz, aussen=Verkleidung + Brett
+      if (Array.isArray(o2.revealLining) && o2.revealLining.length) { const src = side === 'i' ? o2.revealLining : o2.revealLining.slice().reverse(); for (const Lr of src) rings.push({ mat: Lr.mat, w: cmToPts(Lr.t) }); }
+      else if (side === 'a') { if (facLy) rings.push({ mat: facLy.mat, w: lapClad }); if (o2.kind === 'window') rings.push({ mat: o2.boardMat || 'holz', w: cmToPts(o2.boardW != null ? o2.boardW : 2.5) }); }
+      else rings.push({ mat: facLy ? facLy.mat : 'putz', w: lapClad });
+      let cum = 0;
+      for (const rg of rings) { const mt = WALL_MATS[rg.mat] || { fill: '#eee', color: '#1c242c' }, x = opx0 + cum, w = o2.w - 2 * cum, yT = Yh(headF - cum * perPt), yB = Yh(sillF + (o2.kind === 'window' ? cum * perPt : 0)); if (w > 1 && yB - yT > 0.5) out.push({ t: 'rect', x, y: yT, w, h: yB - yT, fill: mt.fill || '#eee', stroke: mt.color || '#1c242c', sw: 0.7 }); cum += rg.w; }   // Laibung umlaufend, Schicht für Schicht
+      const rPts = Math.min(cum, o2.w * 0.45);
       try { openingElev(out, d => d, Yh, opx0 + rPts, o2.w - 2 * rPts, oo, Hwall, '#1c242c', rPts * perPt); } catch (_) { }
       if (o2.id === a.id) { out.push({ t: 'rect', x: opx0 - 4, y: Yh(headF) - 4, w: o2.w + 8, h: (Yh(sillF) - Yh(headF)) + 8, fill: 'none', stroke: '#2aa869', sw: 2.4 }); curD = { opx0, w: o2.w, headF, sillF, rPts }; }   // aktuelles Fenster markiert
     }

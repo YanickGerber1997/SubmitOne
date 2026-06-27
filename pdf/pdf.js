@@ -3417,17 +3417,49 @@ async function printDoc() {
 }
 function outName() { return docName.replace(/\.pdf$/i, '') + '-submit.pdf'; }
 const NATIVE_OK = new Set(['note', 'text', 'line', 'arrow', 'rect', 'oval', 'pen', 'highlight']);
-function addNativeAnnot(doc, lib, pg, a, PH, cbx, cby) {   // Submit-Anmerkung → native PDF-Annotation (in Acrobat/Drawboard editierbar)
+function addNativeAnnot(doc, lib, pg, a, PH, cbx, cby, font) {   // Submit-Anmerkung → native PDF-Annotation MIT Appearance-Stream (in jedem Viewer sichtbar + editierbar)
   const { PDFName, PDFString } = lib, N = PDFName.of, S = PDFString.of, fx = x => x + cbx, fy = y => PH - y + cby;
-  const C = hex => { const c = hexToRgb(hex || '#1c242c'); return [c.r, c.g, c.b]; };
-  let d = null;
-  if (a.type === 'rect') d = { Type: N('Annot'), Subtype: N('Square'), Rect: [fx(a.x), fy(a.y + a.h), fx(a.x + a.w), fy(a.y)], C: C(a.color), Border: [0, 0, a.width || 1.5], Contents: S('') };
-  else if (a.type === 'oval') d = { Type: N('Annot'), Subtype: N('Circle'), Rect: [fx(a.x), fy(a.y + a.h), fx(a.x + a.w), fy(a.y)], C: C(a.color), Border: [0, 0, a.width || 1.5], Contents: S('') };
-  else if (a.type === 'line' || a.type === 'arrow') { d = { Type: N('Annot'), Subtype: N('Line'), Rect: [fx(Math.min(a.x1, a.x2)) - 2, fy(Math.max(a.y1, a.y2)) - 2, fx(Math.max(a.x1, a.x2)) + 2, fy(Math.min(a.y1, a.y2)) + 2], L: [fx(a.x1), fy(a.y1), fx(a.x2), fy(a.y2)], C: C(a.color), Border: [0, 0, a.width || 1.5], Contents: S('') }; if (a.type === 'arrow') d.LE = [N('None'), N('OpenArrow')]; }
-  else if (a.type === 'note') d = { Type: N('Annot'), Subtype: N('Text'), Rect: [fx(a.x), fy(a.y + 18), fx(a.x + 18), fy(a.y)], Contents: S(a.text || ''), C: C('#f5c84b'), Name: N('Comment'), Open: false };
-  else if (a.type === 'text') d = { Type: N('Annot'), Subtype: N('FreeText'), Rect: [fx(a.x), fy(a.y + (a.h || 16)), fx(a.x + (a.w || 60)), fy(a.y)], Contents: S(a.text || ''), DA: S('/Helv ' + (a.size || 12) + ' Tf 0 0 0 rg'), C: C(a.fill && a.fill !== 'none' ? a.fill : '#ffffff') };
-  else if (a.type === 'pen' && a.pts && a.pts.length > 1) { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); d = { Type: N('Annot'), Subtype: N('Ink'), Rect: [fx(Math.min(...xs)) - 1, fy(Math.max(...ys)) - 1, fx(Math.max(...xs)) + 1, fy(Math.min(...ys)) + 1], InkList: [a.pts.map(p => [fx(p[0]), fy(p[1])]).flat()], C: C(a.color), Border: [0, 0, a.width || 1.6], Contents: S('') }; }
-  else if (a.type === 'highlight' && a.rects && a.rects.length) { const q = [], xs = [], ys = []; for (const r of a.rects) { const x1 = fx(r.x), x2 = fx(r.x + r.w), yt = fy(r.y), yb = fy(r.y + r.h); q.push(x1, yt, x2, yt, x1, yb, x2, yb); xs.push(r.x, r.x + r.w); ys.push(r.y, r.y + r.h); } d = { Type: N('Annot'), Subtype: N('Highlight'), Rect: [fx(Math.min(...xs)), fy(Math.max(...ys)), fx(Math.max(...xs)), fy(Math.min(...ys))], QuadPoints: q, C: C(a.color || '#ffe14d'), CA: 0.4 }; }
+  const C = hex => { const c = hexToRgb(hex || '#1c242c'); return [c.r, c.g, c.b]; }, f = n => Math.round(n * 100) / 100;
+  let d = null, content = null, W = 0, Hh = 0, res = {};
+  const mkAP = () => { try { const ap = doc.context.stream(content, { Type: N('XObject'), Subtype: N('Form'), FormType: 1, BBox: [0, 0, W, Hh], Resources: res }); d.AP = { N: doc.context.register(ap) }; } catch (e) { console.warn('AP', e); } };
+  if (a.type === 'rect' || a.type === 'oval') {
+    const x1 = fx(a.x), y2 = fy(a.y), x2 = fx(a.x + a.w), y1 = fy(a.y + a.h), rx = Math.min(x1, x2), ry = Math.min(y1, y2); W = Math.abs(x2 - x1); Hh = Math.abs(y2 - y1);
+    const lw = a.width || 1.5, col = C(a.color), hasF = a.fill && a.fill !== 'none', fc = hasF ? C(a.fill) : null;
+    d = { Type: N('Annot'), Subtype: N(a.type === 'rect' ? 'Square' : 'Circle'), Rect: [rx, ry, rx + W, ry + Hh], C: col, Border: [0, 0, lw], Contents: S('') }; if (hasF) d.IC = fc;
+    let c = (hasF ? fc[0] + ' ' + fc[1] + ' ' + fc[2] + ' rg ' : '') + col[0] + ' ' + col[1] + ' ' + col[2] + ' RG ' + lw + ' w ';
+    if (a.type === 'rect') c += f(lw / 2) + ' ' + f(lw / 2) + ' ' + f(W - lw) + ' ' + f(Hh - lw) + ' re ' + (hasF ? 'B' : 'S');
+    else { const cx = W / 2, cy = Hh / 2, ex = (W - lw) / 2, ey = (Hh - lw) / 2, k = 0.5523; c += f(cx + ex) + ' ' + f(cy) + ' m ' + f(cx + ex) + ' ' + f(cy + ey * k) + ' ' + f(cx + ex * k) + ' ' + f(cy + ey) + ' ' + f(cx) + ' ' + f(cy + ey) + ' c ' + f(cx - ex * k) + ' ' + f(cy + ey) + ' ' + f(cx - ex) + ' ' + f(cy + ey * k) + ' ' + f(cx - ex) + ' ' + f(cy) + ' c ' + f(cx - ex) + ' ' + f(cy - ey * k) + ' ' + f(cx - ex * k) + ' ' + f(cy - ey) + ' ' + f(cx) + ' ' + f(cy - ey) + ' c ' + f(cx + ex * k) + ' ' + f(cy - ey) + ' ' + f(cx + ex) + ' ' + f(cy - ey * k) + ' ' + f(cx + ex) + ' ' + f(cy) + ' c ' + (hasF ? 'B' : 'S'); }
+    content = c; mkAP();
+  } else if (a.type === 'line' || a.type === 'arrow') {
+    const px1 = fx(a.x1), py1 = fy(a.y1), px2 = fx(a.x2), py2 = fy(a.y2), lw = a.width || 1.5, pad = Math.max(8, lw * 4), rx = Math.min(px1, px2) - pad, ry = Math.min(py1, py2) - pad; W = Math.abs(px2 - px1) + 2 * pad; Hh = Math.abs(py2 - py1) + 2 * pad;
+    const lx1 = px1 - rx, ly1 = py1 - ry, lx2 = px2 - rx, ly2 = py2 - ry, col = C(a.color);
+    d = { Type: N('Annot'), Subtype: N('Line'), Rect: [rx, ry, rx + W, ry + Hh], L: [px1, py1, px2, py2], C: col, Border: [0, 0, lw], Contents: S('') };
+    let c = col[0] + ' ' + col[1] + ' ' + col[2] + ' RG ' + lw + ' w 1 J 1 j ' + f(lx1) + ' ' + f(ly1) + ' m ' + f(lx2) + ' ' + f(ly2) + ' l S';
+    if (a.type === 'arrow') { d.LE = [N('None'), N('OpenArrow')]; const ang = Math.atan2(ly2 - ly1, lx2 - lx1), hl = Math.max(8, lw * 4.5), aw = 0.5; c += ' ' + f(lx2 - Math.cos(ang - aw) * hl) + ' ' + f(ly2 - Math.sin(ang - aw) * hl) + ' m ' + f(lx2) + ' ' + f(ly2) + ' l ' + f(lx2 - Math.cos(ang + aw) * hl) + ' ' + f(ly2 - Math.sin(ang + aw) * hl) + ' l S'; }
+    content = c; mkAP();
+  } else if (a.type === 'pen' && a.pts && a.pts.length > 1) {
+    const xs = a.pts.map(p => fx(p[0])), ys = a.pts.map(p => fy(p[1])), rx = Math.min(...xs) - 2, ry = Math.min(...ys) - 2; W = Math.max(...xs) - Math.min(...xs) + 4; Hh = Math.max(...ys) - Math.min(...ys) + 4;
+    const lw = a.width || 1.6, col = C(a.color), path = a.pts.map((p, i) => f(fx(p[0]) - rx) + ' ' + f(fy(p[1]) - ry) + ' ' + (i ? 'l' : 'm')).join(' ');
+    d = { Type: N('Annot'), Subtype: N('Ink'), Rect: [rx, ry, rx + W, ry + Hh], InkList: [a.pts.map(p => [fx(p[0]), fy(p[1])]).flat()], C: col, Border: [0, 0, lw], Contents: S('') };
+    content = col[0] + ' ' + col[1] + ' ' + col[2] + ' RG ' + lw + ' w 1 J 1 j ' + path + ' S'; mkAP();
+  } else if (a.type === 'highlight' && a.rects && a.rects.length) {
+    const xs = [], ys = [], q = []; for (const r of a.rects) { const x1 = fx(r.x), x2 = fx(r.x + r.w), yt = fy(r.y), yb = fy(r.y + r.h); q.push(x1, yt, x2, yt, x1, yb, x2, yb); xs.push(x1, x2); ys.push(yt, yb); }
+    const rx = Math.min(...xs), ry = Math.min(...ys), col = C(a.color || '#ffe14d'); W = Math.max(...xs) - rx; Hh = Math.max(...ys) - ry;
+    d = { Type: N('Annot'), Subtype: N('Highlight'), Rect: [rx, ry, rx + W, ry + Hh], QuadPoints: q, C: col, CA: 0.4 };
+    res = { ExtGState: { GSm: { Type: N('ExtGState'), ca: 0.4, BM: N('Multiply') } } };
+    let c = '/GSm gs ' + col[0] + ' ' + col[1] + ' ' + col[2] + ' rg '; for (const r of a.rects) c += f(fx(r.x) - rx) + ' ' + f(fy(r.y + r.h) - ry) + ' ' + f(r.w) + ' ' + f(r.h) + ' re '; c += 'f'; content = c; mkAP();
+  } else if (a.type === 'text') {
+    const x1 = fx(a.x), y2 = fy(a.y), x2 = fx(a.x + (a.w || 60)), y1 = fy(a.y + (a.h || 16)), rx = Math.min(x1, x2), ry = Math.min(y1, y2); W = Math.abs(x2 - x1); Hh = Math.abs(y2 - y1);
+    const sz = a.size || 12, col = C(a.color && a.color !== '#ffffff' ? a.color : '#1c242c');
+    d = { Type: N('Annot'), Subtype: N('FreeText'), Rect: [rx, ry, rx + W, ry + Hh], Contents: S(a.text || ''), DA: S('/Helv ' + sz + ' Tf ' + col[0] + ' ' + col[1] + ' ' + col[2] + ' rg') };
+    res = { Font: { Helv: font.ref } };
+    const lines = (a.text || '').split('\n').map(l => l.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)'));
+    let c = 'BT /Helv ' + sz + ' Tf ' + col[0] + ' ' + col[1] + ' ' + col[2] + ' rg ' + (sz * 1.2) + ' TL 2 ' + f(Hh - sz) + ' Td'; for (const ln of lines) c += ' (' + ln + ') Tj T*'; c += ' ET'; content = c; mkAP();
+  } else if (a.type === 'note') {
+    const rx = fx(a.x), ry = fy(a.y + 18); W = 18; Hh = 18;
+    d = { Type: N('Annot'), Subtype: N('Text'), Rect: [rx, ry, rx + 18, ry + 18], Contents: S(a.text || ''), C: C('#f5c84b'), Name: N('Comment'), Open: false };
+    content = '0.96 0.78 0.29 rg 0.4 0.36 0.16 RG 1 w 1 4 16 12 re B 0.25 0.22 0.18 RG 0.7 w 4 13 m 14 13 l S 4 10 m 14 10 l S 4 7 m 11 7 l S'; mkAP();
+  }
   if (!d) return;
   try { let an = pg.node.Annots(); if (!an) { an = doc.context.obj([]); pg.node.set(PDFName.of('Annots'), an); } an.push(doc.context.register(doc.context.obj(d))); } catch (_) { }
 }
@@ -3656,7 +3688,7 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
         try { form.updateFieldAppearances(font); } catch (_) { }
       } catch (_) { /* kein AcroForm */ }
     }
-    if (nativeExport) for (const z of nativeAnns) addNativeAnnot(doc, lib, z.pg, z.a, z.PH, z.cbx, z.cby);   // native Markup-Annotationen schreiben
+    if (nativeExport) for (const z of nativeAnns) addNativeAnnot(doc, lib, z.pg, z.a, z.PH, z.cbx, z.cby, font);   // native Markup-Annotationen schreiben
     if (embed) {   // editierbare Daten (Wände, Anmerkungen, Massstab …) + Originaldokument einbetten → in Submit PDF wieder bearbeitbar
       try {
         const proj = JSON.stringify({ v: 1, scale: docScale, annos, pageRot, viewRot, formValues, layers, activeLayerId, name: docName });

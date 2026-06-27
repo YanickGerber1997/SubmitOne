@@ -4125,7 +4125,7 @@ async function parseIFC(bytes) {   // → { meshes (Welt-Geometrie, Y-oben), bbo
   const modelID = api.OpenModel(new Uint8Array(bytes), { COORDINATE_TO_ORIGIN: true });
   const meshes = [], bb = { minx: Infinity, miny: Infinity, minz: Infinity, maxx: -Infinity, maxy: -Infinity, maxz: -Infinity };
   const ENV = new Set([mod.IFCBUILDINGELEMENTPROXY, mod.IFCSITE, mod.IFCFURNISHINGELEMENT, mod.IFCSPACE, mod.IFCOPENINGELEMENT].filter(x => x != null));   // Umgebung/Möbel/Pflanzen
-  const KIND = new Map([[mod.IFCWINDOW, 'window'], [mod.IFCDOOR, 'door'], [mod.IFCCOLUMN, 'column'], [mod.IFCBEAM, 'beam'], [mod.IFCSLAB, 'slab']].filter(e => e[0] != null)), elemAcc = {};   // Schwerpunkt + Bbox je Bauteil sammeln (für Rückbau)
+  const KIND = new Map([[mod.IFCWINDOW, 'window'], [mod.IFCDOOR, 'door'], [mod.IFCCOLUMN, 'column'], [mod.IFCBEAM, 'beam'], [mod.IFCSLAB, 'slab'], [mod.IFCROOF, 'roof']].filter(e => e[0] != null)), elemAcc = {};   // Schwerpunkt + Bbox je Bauteil sammeln (für Rückbau)
   api.StreamAllMeshes(modelID, flat => {
     const gs = flat.geometries; let et = 0; try { et = api.GetLineType(modelID, flat.expressID); } catch (_) { } const env = ENV.has(et);
     let oa = null; const kd = KIND.get(et); if (kd) { oa = elemAcc[flat.expressID] || (elemAcc[flat.expressID] = { kind: kd, sx: 0, sy: 0, sz: 0, n: 0, minx: Infinity, miny: Infinity, minz: Infinity, maxx: -Infinity, maxy: -Infinity, maxz: -Infinity }); }
@@ -4309,7 +4309,7 @@ async function ifcToWalls(ifc, cutAbove) {   // IFC → editierbare Submit-Wänd
   for (const w of ws) { const wid = nextId++, a = toPt(w.x1, w.y1), b = toPt(w.x2, w.y2); arr.push({ id: wid, type: 'wall', x1: a[0], y1: a[1], x2: b[0], y2: b[1], thick: cmToPts(Math.max(6, Math.min(60, w.thick * 100))), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: h3, dim: false, layer: lid }); placedWalls.push({ id: wid, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, h0: ca - 1.5, h1: ca + 1.8, layer: lid }); }
   const fl = [{ layer: lid, h0: ca - 1.5, h1: ca + 1.8, elev: 0 }], nOp = ifcPlaceOpenings(ifc, placedWalls, arr), nC = ifcPlaceColumns(ifc, fl, arr, toPt), nB = ifcPlaceBeams(ifc, fl, arr, toPt), nS = ifcPlaceSlabs(ifc, fl, arr, toPt);
   activeLayerId = lid; for (const a of arr) if (a.type === 'opening') openingResolve(a, { num: n }); drawAnnos(pv); renderLayerPanel(); saveState(); status('');
-  toast(ws.length + ' Wände · ' + nOp + ' Fenster/Türen · ' + nC + ' Stützen · ' + nB + ' Träger · ' + nS + ' Decken auf neuer Seite ' + n + ' (Ebene „IFC-Wände"). Experimentell.'); return true;
+  toast(ws.length + ' Wände · ' + nOp + ' Fenster/Türen · ' + nC + ' Stützen · ' + nB + ' Träger · ' + nS + ' Decken auf neuer Seite ' + n + ' (Ebene „IFC-Wände"). Tipp: „🏢 Alle Geschosse" baut auch Dächer.'); return true;
 }
 function ifcPlaceOpenings(ifc, placedWalls, arr) {   // IFC-Fenster/Türen → Öffnung in die nächstgelegene rekonstruierte Wand (passend zur Höhe/Geschoss)
   if (!ifc.openings || !ifc.openings.length || !placedWalls.length) return 0;
@@ -4332,6 +4332,11 @@ function ifcPlaceColumns(ifc, floorLayers, arr, toPt) {   // IfcColumn → Stüt
 function ifcPlaceBeams(ifc, floorLayers, arr, toPt) {   // IfcBeam → Unterzug (2-Punkt) auf dem passenden Geschoss
   let n = 0, hMin = ifcHeightMin(ifc);
   for (const e of ifc.elements) { if (e.kind !== 'beam') continue; const cr = ifcRemap(e.c), rmin = ifcRemap(e.min), rmax = ifcRemap(e.max), f = ifcFloorFor(floorLayers, cr[1] - hMin, 1.3); if (!f) continue; const xR = Math.abs(rmax[0] - rmin[0]), zR = Math.abs(rmax[2] - rmin[2]); let p1, p2, wid; if (xR >= zR) { p1 = toPt(Math.min(rmin[0], rmax[0]), cr[2]); p2 = toPt(Math.max(rmin[0], rmax[0]), cr[2]); wid = zR; } else { p1 = toPt(cr[0], Math.min(rmin[2], rmax[2])); p2 = toPt(cr[0], Math.max(rmin[2], rmax[2])); wid = xR; } arr.push({ id: nextId++, type: 'beam', x1: p1[0], y1: p1[1], x2: p2[0], y2: p2[1], width: cmToPts(Math.max(8, Math.min(60, wid * 100))), height: Math.max(0.2, Math.min(1, Math.abs(rmax[1] - rmin[1]))), color: '#1c242c', layer: f.layer }); n++; }
+  return n;
+}
+function ifcPlaceRoofs(ifc, floorLayers, arr, toPt) {   // IfcRoof → Dach (Rechteck + Neigung, Näherung) auf dem obersten passenden Geschoss
+  let n = 0, hMin = ifcHeightMin(ifc);
+  for (const e of ifc.elements) { if (e.kind !== 'roof') continue; const rmin = ifcRemap(e.min), rmax = ifcRemap(e.max), botH = Math.min(rmin[1], rmax[1]) - hMin, topH = Math.max(rmin[1], rmax[1]) - hMin; const f = ifcFloorFor(floorLayers, botH, 2.0) || floorLayers[floorLayers.length - 1]; if (!f) continue; const x0 = Math.min(rmin[0], rmax[0]), x1 = Math.max(rmin[0], rmax[0]), z0 = Math.min(rmin[2], rmax[2]), z1 = Math.max(rmin[2], rmax[2]), a = toPt(x0, z0), b = toPt(x1, z1); arr.push({ id: nextId++, type: 'roof', x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(b[0] - a[0]), h: Math.abs(b[1] - a[1]), rtype: 'sattel', eave: Math.max(0, botH - f.elev), ridge: Math.max(0.5, topH - f.elev), axis: (x1 - x0) >= (z1 - z0) ? 'x' : 'y', color: '#1c242c', layer: f.layer }); n++; }
   return n;
 }
 function ifcPlaceSlabs(ifc, floorLayers, arr, toPt) {   // IfcSlab → Decke/Platte (Rechteck-Näherung) auf dem passenden Geschoss
@@ -4364,9 +4369,9 @@ async function ifcAllStoreysToWalls(ifc) {   // alle Geschosse → je eine editi
     floorLayers.push({ layer: lid, h0: f.elev, h1: f.elev + f.h3d, elev: f.elev });
     for (const w of f.walls) { const wid = nextId++, a = toPt(w.x1, w.y1), b = toPt(w.x2, w.y2); arr.push({ id: wid, type: 'wall', x1: a[0], y1: a[1], x2: b[0], y2: b[1], thick: cmToPts(Math.max(6, Math.min(60, w.thick * 100))), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: f.h3d, dim: false, layer: lid }); placedWalls.push({ id: wid, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, h0: f.elev, h1: f.elev + f.h3d, layer: lid }); }
   }
-  const nOp = ifcPlaceOpenings(ifc, placedWalls, arr), nC = ifcPlaceColumns(ifc, floorLayers, arr, toPt), nB = ifcPlaceBeams(ifc, floorLayers, arr, toPt), nS = ifcPlaceSlabs(ifc, floorLayers, arr, toPt);
+  const nOp = ifcPlaceOpenings(ifc, placedWalls, arr), nC = ifcPlaceColumns(ifc, floorLayers, arr, toPt), nB = ifcPlaceBeams(ifc, floorLayers, arr, toPt), nS = ifcPlaceSlabs(ifc, floorLayers, arr, toPt), nR = ifcPlaceRoofs(ifc, floorLayers, arr, toPt);
   if (first) activeLayerId = first; for (const a of arr) if (a.type === 'opening') openingResolve(a, { num: n }); drawAnnos(pv); renderLayerPanel(); saveState(); status('');
-  toast(floors.length + ' Geschosse · ' + placedWalls.length + ' Wände · ' + nOp + ' Fenster/Türen · ' + nC + ' Stützen · ' + nB + ' Träger · ' + nS + ' Decken rekonstruiert (3D gestapelt). Ebenen einzeln ein-/ausblendbar.'); return true;
+  toast(floors.length + ' Geschosse · ' + placedWalls.length + ' Wände · ' + nOp + ' Fenster/Türen · ' + nC + ' Stützen · ' + nB + ' Träger · ' + nS + ' Decken · ' + nR + ' Dächer rekonstruiert (3D gestapelt).'); return true;
 }
 async function pdfPageSegments(n) {   // Vektorlinien einer PDF-Seite aus der Operator-Liste (mit CTM-Verfolgung) → Segmente in Seitenpunkten (oben-links)
   const page = await pdfDoc.getPage(n), OPS = pdfjs.OPS, opl = await page.getOperatorList(), PH = page.getViewport({ scale: 1 }).height;

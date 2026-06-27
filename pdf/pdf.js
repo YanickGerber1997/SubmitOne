@@ -2805,7 +2805,7 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   const pos = wall.layers.map(l => { const f0 = cum / total, f1 = (cum + l.t) / total; cum += l.t; return { l, mLo: -1 + 2 * f0, mHi: -1 + 2 * f1 }; });   // Schicht-Positionen über die Wanddicke
   const outerPos = pos.filter((p, i) => i > coreIdx);   // Schichten ausserhalb Tragkern
   if (outerPos.length) {   // jede Aussenschicht läuft ununterbrochen aus der Wand (an ihrer m-Position) bis ans Laibungsbrett; Hinterlüftung bleibt offener Spalt
-    const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), visS = Math.min(fwSr * 0.6, cmToPts(a.boardVis != null ? a.boardVis : 1) / hw), schWs = Math.min(0.3, cmToPts(a.boardW != null ? a.boardW : 2.5) / hw);
+    const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), visS = Math.min(fwSr * 0.6, cmToPts(a.boardVis != null ? a.boardVis : 1) / hw), schWs = Math.min(0.3, cmToPts(a.boardW != null ? a.boardW : 2.5) / hw), boardM1 = 1 + cmToPts(a.boardProtrude || 0) / ht;   // boardM1 = Brett-Aussenkante: über die Aussenschicht hinaus (+) oder zurück (−)
     const boardMat = WALL_MATS[a.boardMat || 'holz'] || { fill: '#e7cfa8', color: '#7a5126' };
     for (const sgn of [-1, 1]) {
       const sBI = sgn * Math.min(1, 1 - fwSr + visS), sBO = sgn * Math.min(1, 1 - fwSr + visS + schWs), sE = sgn, lo = Math.min(sBO, sE), hi = Math.max(sBO, sE);
@@ -2815,7 +2815,7 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
         const m = WALL_MATS[p.l.mat] || {}, isD = INS.includes(p.l.mat), isW = ['holz', 'konter'].includes(p.l.mat);
         strips.push({ poly: [corner(sBO, mLoC), corner(sE, mLoC), corner(sE, p.mHi), corner(sBO, p.mHi)], fill: m.fill || '#fff', stroke: m.color || '#1c242c', hatch: isD ? bandHatchPerp(lo, hi, mLoC, p.mHi, corner, stepS, s0) : (isW ? bandHatch(lo, hi, mLoC, p.mHi, corner, hw, ht, stepS) : null) });   // Schicht läuft bis zum Brett
       }
-      if (Math.abs(sBO - sBI) > 0.02) strips.push({ poly: [corner(sBI, fmB), corner(sBO, fmB), corner(sBO, 1), corner(sBI, 1)], fill: boardMat.fill, stroke: boardMat.color, board: true, hatch: bandHatch(Math.min(sBI, sBO), Math.max(sBI, sBO), fmB, 1, corner, hw, ht, stepS) });   // Laibungsbrett, 1 cm vom Rahmen (behält Kante)
+      if (Math.abs(sBO - sBI) > 0.02) strips.push({ poly: [corner(sBI, fmB), corner(sBO, fmB), corner(sBO, boardM1), corner(sBI, boardM1)], fill: boardMat.fill, stroke: boardMat.color, board: true, hatch: bandHatch(Math.min(sBI, sBO), Math.max(sBI, sBO), fmB, boardM1, corner, hw, ht, stepS) });   // Laibungsbrett (Aussenkante = boardProtrude), behält Kante
     }
   }
   if (anType !== 'none') {
@@ -2928,7 +2928,7 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip) { 
   const corner = (s, m) => [cx + ht2 * m, cy - hw * s];   // s = vertikal (Kopf oben), m = horizontal (Wanddicke)
   const layered = !simpleMode && wall.layers && wall.layers.length >= 2, dep0 = o.depth == null ? 0.5 : o.depth, dep = flip ? 1 - dep0 : dep0;   // Blickrichtung: Innen/Aussen tauschen
   out.push({ t: 'rect', x: cx - ht2, y: Yh(head), w: appW, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });   // Öffnung ausstanzen
-  const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: dep, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: o.winType || 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: flip ? (o.revealOuter || 'putz') : o.revealType, revealOuter: flip ? o.revealType : o.revealOuter, outerLap: o.outerLap, innerReveal: o.innerReveal, anschlagType: flip ? (o.anschlagType === 'innen' ? 'aussen' : o.anschlagType === 'aussen' ? 'innen' : (o.anschlagType || 'none')) : o.anschlagType, anschlagDepth: o.anschlagDepth, wallId: 'secw' };   // bei flip Innen/Aussen (Anschlag + Laibung) mitspiegeln
+  const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: dep, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: o.winType || 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: flip ? (o.revealOuter || 'putz') : o.revealType, revealOuter: flip ? o.revealType : o.revealOuter, boardW: o.boardW, boardVis: o.boardVis, boardProtrude: o.boardProtrude, boardMat: o.boardMat, outerLap: o.outerLap, innerReveal: o.innerReveal, anschlagType: flip ? (o.anschlagType === 'innen' ? 'aussen' : o.anschlagType === 'aussen' ? 'innen' : (o.anschlagType || 'none')) : o.anschlagType, anschlagDepth: o.anschlagDepth, wallId: 'secw' };   // bei flip Innen/Aussen (Anschlag + Laibung) mitspiegeln
   if (layered) { const sw = { id: 'secw', type: 'wall', layers: flip ? wall.layers.slice().reverse() : wall.layers, x1: cx, y1: cy + hw, x2: cx, y2: cy - hw, thick: appW, hatch: wall.hatch }; for (const st of openingRevealStrips(sa, [sw])) { out.push({ t: 'poly', pts: st.poly, fill: st.fill, stroke: st.noBorder ? 'none' : st.stroke, sw: 0.7 }); if (st.hatch) for (const [u, v] of st.hatch) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.6 }); } }
   if (o.kind === 'window') {
     const P = openingParts(sa, layered);
@@ -5109,8 +5109,9 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     { k: 'sashW', label: 'Flügelbreite', unit: 'cm', get: () => cm(a.sashW || cmToPts(7)), set: v => a.sashW = cmToPts(v), min: 3, max: 14, step: 0.5, when: () => a.kind === 'window' },
     { k: 'sashD', label: 'Flügeltiefe', unit: 'cm', get: () => cm(a.sashD || cmToPts(7)), set: v => a.sashD = cmToPts(v), min: 3, max: 14, step: 0.5, when: () => a.kind === 'window' },
     { k: 'sashShift', label: 'Flügel-Überlappung', unit: 'cm', get: () => cm(a.sashShift != null ? a.sashShift : cmToPts(4)), set: v => a.sashShift = cmToPts(v), min: 0, max: 8, step: 0.5, when: () => a.kind === 'window' },
-    { k: 'boardW', label: 'Laibungsbrett Breite', unit: 'cm', get: () => a.boardW != null ? a.boardW : 2.5, set: v => a.boardW = v, min: 0.5, max: 10, step: 0.5 },
-    { k: 'boardVis', label: 'Rahmen sichtbar', unit: 'cm', get: () => a.boardVis != null ? a.boardVis : 1, set: v => a.boardVis = v, min: 0, max: 6, step: 0.5 },
+    { k: 'boardW', label: 'Laibungsbrett Breite', unit: 'cm', get: () => a.boardW != null ? a.boardW : 2.5, set: v => a.boardW = v, min: 0.5, max: 20, step: 0.5 },
+    { k: 'boardVis', label: 'Brett-Abstand zum Rahmen', unit: 'cm', get: () => a.boardVis != null ? a.boardVis : 1, set: v => a.boardVis = v, min: 0, max: 12, step: 0.5 },
+    { k: 'boardProtrude', label: 'Brett über Aussenschicht (+/−)', unit: 'cm', get: () => a.boardProtrude || 0, set: v => a.boardProtrude = v, min: -10, max: 20, step: 0.5 },
     { k: 'outerLap', label: 'Aussen (Dämmung über Rahmen)', unit: 'cm', get: () => cm(a.outerLap != null ? a.outerLap : cmToPts(3)), set: v => a.outerLap = cmToPts(v), min: 0, max: 20, step: 0.5 },
     { k: 'innerReveal', label: 'Innen (Putz reingezogen)', unit: 'cm', get: () => cm(a.innerReveal != null ? a.innerReveal : cmToPts(2)), set: v => a.innerReveal = cmToPts(v), min: 0, max: 20, step: 0.5 },
     { k: 'anschlagDepth', label: 'Anschlagtiefe', unit: 'cm', get: () => cm(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)), set: v => a.anschlagDepth = cmToPts(v), min: 0, max: 20, step: 0.5, when: () => a.anschlagType && a.anschlagType !== 'none' }

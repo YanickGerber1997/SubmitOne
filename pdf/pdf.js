@@ -2862,6 +2862,18 @@ function sectionPrimitives(a, arr) {
   const hits = [];
   for (const w of arr) { if (w.type !== 'wall' || !layerVisible(w) || !phaseVisible(w)) continue; const ix = segInt(p1, p2, [w.x1, w.y1], [w.x2, w.y2]); if (!ix) continue; const dist = fp((ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy), wdx = w.x2 - w.x1, wdy = w.y2 - w.y1, wl = Math.hypot(wdx, wdy) || 1, sinA = Math.max(0.25, Math.abs((cux * wdy - cuy * wdx) / wl)), T = w.thick || wallThickPts(); hits.push({ w, dist, appW: T / sinA, tp: ix.t2, wl, T }); }
   out.push({ t: 'line', x1: X(-14), y1: Yh(0), x2: X(cl + 14), y2: Yh(0), stroke: col, w: 1.8 });   // Bodenlinie
+  for (const sl of arr) {   // Decken/Platten ZUERST (hinter den Wänden) → Decke läuft sauber an die Wand an, statt sie zu überdecken
+    if (sl.type !== 'slab' || !sl.pts || sl.pts.length < 3 || !layerVisible(sl) || !phaseVisible(sl)) continue;
+    const ds = [];
+    for (let i = 0; i < sl.pts.length; i++) { const q1 = sl.pts[i], q2 = sl.pts[(i + 1) % sl.pts.length], ix = segInt(p1, p2, q1, q2); if (ix) ds.push((ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy); }
+    if (pointInPoly(p1, sl.pts)) ds.push(0); if (pointInPoly(p2, sl.pts)) ds.push(cl);
+    ds.sort((u, v) => u - v);
+    const base = sl.base || 0, thick = sl.thick || 0.2, bands = slabLayerBands(sl);
+    for (let i = 0; i + 1 < ds.length; i++) { const dm = (ds[i] + ds[i + 1]) / 2, mid = [p1[0] + cux * dm, p1[1] + cuy * dm]; if (!pointInPoly(mid, sl.pts)) continue; const dA = fp(ds[i]), dB = fp(ds[i + 1]), xa = X(Math.min(dA, dB)), xb = X(Math.max(dA, dB));
+      if (bands) for (const b of bands) { const m = WALL_MATS[b.mat] || {}, yT = Yh(base + b.y1), hh = Yh(base + b.y0) - Yh(base + b.y1); out.push({ t: 'rect', x: xa, y: yT, w: xb - xa, h: hh, fill: m.fill || '#fff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode && m.hatch) sectionBandHatch(out, xa, yT, xb - xa, hh, b.mat, null); }
+      else out.push({ t: 'rect', x: xa, y: Yh(base + thick), w: xb - xa, h: Yh(base) - Yh(base + thick), fill: '#dadde2', stroke: '#8a8f96', sw: 0.7 });
+    }
+  }
   for (const h of hits) {
     const w = h.w, H = w.h3d || wallHeightM, x0 = h.dist - h.appW / 2;
     const layers0 = (w.layers && w.layers.length) ? w.layers : [{ mat: null, t: h.T }], layers = a.flip ? layers0.slice().reverse() : layers0, totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
@@ -2892,18 +2904,6 @@ function sectionPrimitives(a, arr) {
         const sill0 = o.kind === 'window' ? (o.sill || 0) : 0, head0 = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), rW = o.w * along, xL = X(od - rW / 2) - 12;   // im Schnitt nur HÖHEN (Breiten stehen im Grundriss)
         pDimV(out, xL, Yh(head0), Yh(sill0), 'Rohbau ' + fmtLen((head0 - sill0) / perPt), -46); pDimV(out, xL - 18, Yh(head0 - insM), Yh(sill0 + insM), 'Licht ' + fmtLen(Math.max(0.05, head0 - sill0 - 2 * insM) / perPt), -46);
       } }
-  }
-  for (const sl of arr) {   // Decken/Platten: Schichtaufbau dort zeigen, wo die Schnittlinie sie kreuzt
-    if (sl.type !== 'slab' || !sl.pts || sl.pts.length < 3 || !layerVisible(sl) || !phaseVisible(sl)) continue;
-    const ds = [];
-    for (let i = 0; i < sl.pts.length; i++) { const q1 = sl.pts[i], q2 = sl.pts[(i + 1) % sl.pts.length], ix = segInt(p1, p2, q1, q2); if (ix) ds.push((ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy); }
-    if (pointInPoly(p1, sl.pts)) ds.push(0); if (pointInPoly(p2, sl.pts)) ds.push(cl);
-    ds.sort((u, v) => u - v);
-    const base = sl.base || 0, thick = sl.thick || 0.2, bands = slabLayerBands(sl);
-    for (let i = 0; i + 1 < ds.length; i++) { const dm = (ds[i] + ds[i + 1]) / 2, mid = [p1[0] + cux * dm, p1[1] + cuy * dm]; if (!pointInPoly(mid, sl.pts)) continue; const dA = fp(ds[i]), dB = fp(ds[i + 1]), xa = X(Math.min(dA, dB)), xb = X(Math.max(dA, dB));
-      if (bands) for (const b of bands) { const m = WALL_MATS[b.mat] || {}, yT = Yh(base + b.y1), hh = Yh(base + b.y0) - Yh(base + b.y1); out.push({ t: 'rect', x: xa, y: yT, w: xb - xa, h: hh, fill: m.fill || '#fff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode && m.hatch) sectionBandHatch(out, xa, yT, xb - xa, hh, b.mat, null); }
-      else out.push({ t: 'rect', x: xa, y: Yh(base + thick), w: xb - xa, h: Yh(base) - Yh(base + thick), fill: '#dadde2', stroke: '#8a8f96', sw: 0.7 });
-    }
   }
   for (const pr of arr) {   // Profile: wo die Schnittlinie den Pfad kreuzt → echter Querschnitt an seiner Höhe
     if (pr.type !== 'profile' || !pr.path || pr.path.length < 2 || !pr.prof || pr.prof.length < 3 || !layerVisible(pr) || !phaseVisible(pr)) continue;

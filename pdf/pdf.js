@@ -1258,6 +1258,13 @@ function drawOne(svg, a, pv) {
     if (pts.length >= 3) { const ct = centroid(pts), t = svgEl('text', { x: ct[0], y: ct[1], fill: a.color, 'font-size': 12, 'text-anchor': 'middle', 'font-weight': 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = (a.base >= wallHeightM ? 'Decke' : 'Platte') + '  ' + (a.base + a.thick).toFixed(2) + ' m' + (a.layers && a.layers.length ? '  ▦' + a.layers.length : ''); g.appendChild(t); }
     svg.appendChild(g); el = g;
     if (!draft && pts.length >= 3) { hit = svgEl('polygon', { points: poly, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit); }
+  } else if (a.type === 'terrain') {   // Gelände/Terrain: offene Linie + Erdreich-Symbol (45°-Striche darunter)
+    const col = a.color || '#7a6a4a', g = svgEl('g', { 'data-id': a.id }), path = a._cursor ? a.pts.concat([a._cursor]) : a.pts;
+    g.appendChild(svgEl('polyline', { points: path.map(p => p[0] + ',' + p[1]).join(' '), fill: 'none', stroke: col, 'stroke-width': 1.8, 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));
+    const tick = 6, step = 9; for (let i = 0; i < path.length - 1; i++) { const x1 = path[i][0], y1 = path[i][1], x2 = path[i + 1][0], y2 = path[i + 1][1], L = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / L, uy = (y2 - y1) / L; for (let d = step / 2; d < L; d += step) { const px = x1 + ux * d, py = y1 + uy * d; g.appendChild(svgEl('line', { x1: px, y1: py, x2: px - tick, y2: py + tick, stroke: col, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' })); } }
+    for (const p of a.pts) g.appendChild(svgEl('circle', { cx: p[0], cy: p[1], r: 1.6, fill: col, 'vector-effect': 'non-scaling-stroke' }));
+    svg.appendChild(g); el = g;
+    hit = svgEl('polyline', { points: a.pts.map(p => p[0] + ',' + p[1]).join(' '), fill: 'none', stroke: 'transparent', 'stroke-width': 10, 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'img') {
     el = svgEl('image', { x: a.x, y: a.y, width: a.w, height: a.h, preserveAspectRatio: 'none', 'data-id': a.id });
     el.setAttributeNS('http://www.w3.org/1999/xlink', 'href', a.data); el.setAttribute('href', a.data);
@@ -1365,7 +1372,7 @@ function bbox(a) {
   if (a.type === 'stairs') { const t = (a.width || stairWidthPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
   if (a.type === 'beam') { const t = (a.width || beamWidthPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
   if (a.type === 'opening') { const P = openingParts(a), xs = [], ys = []; for (const p of P.cover) { xs.push(p[0]); ys.push(p[1]); } for (const [u, v] of P.lines) { xs.push(u[0], v[0]); ys.push(u[1], v[1]); } for (const arc of P.arcs) for (const p of arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 8)) { xs.push(p[0]); ys.push(p[1]); } return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
-  if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim' || a.type === 'slab') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
+  if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim' || a.type === 'slab' || a.type === 'terrain') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'profile') { const xs = a.path.map(p => p[0]), ys = a.path.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'path') { const xs = [], ys = []; for (const nd of a.nodes) { xs.push(nd.x, nd.hIn.x, nd.hOut.x); ys.push(nd.y, nd.hIn.y, nd.hOut.y); } if (!xs.length) return { x: 0, y: 0, w: 0, h: 0 }; return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: (a.h || a.size * (a.text.split('\n').length) * 1.3) };
@@ -1843,7 +1850,7 @@ function onPointerDown(pv, e) {
   if (tool === 'stamp') { placeStamp(pv, p); return; }
   if (tool === 'eraser') { startErase(pv, e); return; }
   if (tool === 'crop') { startCrop(pv, e, p); return; }
-  if (tool === 'area' || tool === 'slab') { areaClick(pv, p); return; }
+  if (tool === 'area' || tool === 'slab' || tool === 'terrain') { areaClick(pv, p); return; }
   if (tool === 'profile') { profileClick(pv, p); return; }
   if (tool === 'block') { placeBlock(pv, p); return; }
   if (tool === 'section') { startSection(pv, e, p); return; }
@@ -1929,22 +1936,22 @@ function areaLabel(pts) {
 function areaClick(pv, p) {
   if (!areaDraft || areaDraft.pv !== pv) {
     cancelArea(); pushUndo();
-    const isSlab = tool === 'slab';
-    const a = isSlab ? { id: nextId++, type: 'slab', pts: [[p.x, p.y]], color: '#5b6b86', base: wallHeightM, thick: 0.2 } : { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: style.color, width: style.width };
+    const isSlab = tool === 'slab', isTerr = tool === 'terrain';
+    const a = isSlab ? { id: nextId++, type: 'slab', pts: [[p.x, p.y]], color: '#5b6b86', base: wallHeightM, thick: 0.2 } : isTerr ? { id: nextId++, type: 'terrain', pts: [[p.x, p.y]], color: '#7a6a4a' } : { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: style.color, width: style.width };
     pushAnno(pv.num, a); areaDraft = { pv, a };
     const onMove = ev => { if (!areaDraft) return; const q = evtToPage(areaDraft.pv, ev); areaDraft.a._cursor = [q.x, q.y]; drawAnnos(areaDraft.pv); };
     document.addEventListener('pointermove', onMove); areaDraft._onMove = onMove;
-    drawAnnos(pv); if (isSlab && !areaClick._slabHint) { areaClick._slabHint = true; toast('Decke/Boden: Ecken klicken, am Start schliessen (oder Enter). Höhe + Dicke oben in der Planungs-Leiste · erscheint in 3D.'); } else if (!isSlab && !docScale && !areaClick._hint) { areaClick._hint = true; toast('Tipp: Für echte m² zuerst den Massstab setzen (1:n).'); }
+    drawAnnos(pv); if (isTerr && !areaClick._terrHint) { areaClick._terrHint = true; toast('Gelände/Terrain: Punkte klicken (offene Linie mit Erdreich-Symbol), Doppelklick/Enter = fertig.'); } else if (isSlab && !areaClick._slabHint) { areaClick._slabHint = true; toast('Decke/Boden: Ecken klicken, am Start schliessen (oder Enter). Höhe + Dicke oben in der Planungs-Leiste · erscheint in 3D.'); } else if (!isSlab && !isTerr && !docScale && !areaClick._hint) { areaClick._hint = true; toast('Tipp: Für echte m² zuerst den Massstab setzen (1:n).'); }
     return;
   }
   const a = areaDraft.a, f = a.pts[0];
-  if (a.pts.length >= 3 && Math.hypot(p.x - f[0], p.y - f[1]) * pv.scale < 12) { finishArea(); return; }   // am ersten Punkt schliessen
+  if (a.type !== 'terrain' && a.pts.length >= 3 && Math.hypot(p.x - f[0], p.y - f[1]) * pv.scale < 12) { finishArea(); return; }   // am ersten Punkt schliessen (Polygon; Terrain bleibt offen)
   a.pts.push([p.x, p.y]); drawAnnos(pv);
 }
 function finishArea() {
   if (!areaDraft) return; const { pv, a, _onMove } = areaDraft; document.removeEventListener('pointermove', _onMove);
   delete a._cursor; areaDraft = null;
-  if (a.pts.length < 3) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); drawAnnos(pv); setTool('select'); return; }
+  if (a.pts.length < (a.type === 'terrain' ? 2 : 3)) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); drawAnnos(pv); setTool('select'); return; }
   sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
 }
 function cancelArea() {
@@ -2275,7 +2282,7 @@ function startMove(pv, e, a, wasSel) {
 function snap15(ax, ay, qx, qy) { const dx = qx - ax, dy = qy - ay, len = Math.hypot(dx, dy), step = Math.PI / 12, ang = Math.round(Math.atan2(dy, dx) / step) * step; return { x: ax + Math.cos(ang) * len, y: ay + Math.sin(ang) * len }; }
 function translateAnno(a, o, dx, dy) {
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall' || a.type === 'stairs' || a.type === 'beam') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
-  else if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim' || a.type === 'slab') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
+  else if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim' || a.type === 'slab' || a.type === 'terrain') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
   else if (a.type === 'profile') a.path = o.path.map(p => [p[0] + dx, p[1] + dy]);
   else if (a.type === 'path') a.nodes = o.nodes.map(nd => ({ x: nd.x + dx, y: nd.y + dy, hIn: { x: nd.hIn.x + dx, y: nd.hIn.y + dy }, hOut: { x: nd.hOut.x + dx, y: nd.hOut.y + dy } }));
   else if (a.type === 'highlight') a.rects = o.rects.map(r => ({ x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }));
@@ -3671,7 +3678,7 @@ function activateRibTab(t) { $$('.rib-tab').forEach(x => x.classList.toggle('on'
 let _scaleAfter = null;   // Werkzeug, zu dem nach dem Massstab-Setzen zurückgekehrt wird
 function setTool(t) {
   if (cropping && t !== 'select' && t !== 'crop') removeCropAnno();   // anderes Werkzeug → Zuschneiden verwerfen
-  if (areaDraft && t !== 'area' && t !== 'slab') cancelArea();        // anderes Werkzeug → Flächen-/Decken-Polygon verwerfen
+  if (areaDraft && t !== 'area' && t !== 'slab' && t !== 'terrain') cancelArea();        // anderes Werkzeug → Flächen-/Decken-/Gelände-Polygon verwerfen
   if (profDraft && t !== 'profile') finishProfile();                  // anderes Werkzeug → Profil-Pfad abschliessen
   if (penDraft && t !== 'curve') finishCurve();                      // anderes Werkzeug → Kurve abschliessen
   if (segDraft) cancelSegDraft();                                    // anderes Werkzeug → laufende Linie verwerfen
@@ -3701,7 +3708,7 @@ function setTool(t) {
   if (t === 'wallchain' && !setTool._wcHint) { setTool._wcHint = true; toast('Wände am Stück: klicken–klicken = Raumzug · zurück auf den Startpunkt = Raum schliessen (m²) · Rücktaste = letzte Wand zurück · Doppelklick/Enter = fertig.'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'section'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'terrain', 'section'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -3945,6 +3952,11 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
         }
         else if (a.type === 'area') { if (!a.room) for (let i = 0; i < a.pts.length; i++) { const p1 = a.pts[i], p2 = a.pts[(i + 1) % a.pts.length]; pg.drawLine({ start: { x: p1[0], y: Y(p1[1]) }, end: { x: p2[0], y: Y(p2[1]) }, thickness: w, color: c }); } if (a.pts.length >= 3) { const ct = centroid(a.pts), lab = areaLabel(a.pts); if (a.name) { const nw = font.widthOfTextAtSize(a.name, 11); pg.drawText(a.name, { x: ct[0] - nw / 2, y: Y(ct[1]) + 4, size: 11, font, color: c }); const tw2 = font.widthOfTextAtSize(lab, 9); pg.drawText(lab, { x: ct[0] - tw2 / 2, y: Y(ct[1]) - 9, size: 9, font, color: c }); } else { const tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: ct[0] - tw / 2, y: Y(ct[1]) - 4, size: 11, font, color: c }); } } }
         else if (a.type === 'slab') { for (let i = 0; i < a.pts.length; i++) { const p1 = a.pts[i], p2 = a.pts[(i + 1) % a.pts.length]; pg.drawLine({ start: { x: p1[0], y: Y(p1[1]) }, end: { x: p2[0], y: Y(p2[1]) }, thickness: 1.4, color: c, dashArray: [7, 4] }); } if (a.pts.length >= 3) { const ct = centroid(a.pts), lab = ((a.base >= wallHeightM ? 'Decke' : 'Platte') + ' ' + ((a.base || 0) + (a.thick || 0.2)).toFixed(2) + ' m'), tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: ct[0] - tw / 2, y: Y(ct[1]) - 4, size: 11, font, color: c }); } }
+        else if (a.type === 'terrain' && a.pts && a.pts.length >= 2) {   // Gelände: Linie + Erdreich-Striche
+          const tc0 = hexToRgb(a.color || '#7a6a4a'), tcc = rgb(tc0.r, tc0.g, tc0.b), tick = 6, step = 9;
+          for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: 1.6, color: tcc });
+          for (let i = 0; i < a.pts.length - 1; i++) { const x1 = a.pts[i][0], y1 = a.pts[i][1], x2 = a.pts[i + 1][0], y2 = a.pts[i + 1][1], L = Math.hypot(x2 - x1, y2 - y1) || 1, ux = (x2 - x1) / L, uy = (y2 - y1) / L; for (let d = step / 2; d < L; d += step) { const px = x1 + ux * d, py = y1 + uy * d; pg.drawLine({ start: { x: px, y: Y(py) }, end: { x: px - tick, y: Y(py + tick) }, thickness: 0.7, color: tcc }); } }
+        }
         else if (a.type === 'stairs') {
           const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, hw = (a.width || stairWidthPts()) / 2, n = stairSteps(a);
           const c1 = [a.x1 + nx * hw, a.y1 + ny * hw], c2 = [a.x2 + nx * hw, a.y2 + ny * hw], c3 = [a.x2 - nx * hw, a.y2 - ny * hw], c4 = [a.x1 - nx * hw, a.y1 - ny * hw];

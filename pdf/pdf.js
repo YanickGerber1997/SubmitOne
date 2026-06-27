@@ -3903,12 +3903,20 @@ function build3DScene(host, walls, arr) {
       let off = -th / 2; for (const L of wL) { const lt = (L.t / totalT) * th; if (L.mat !== 'luft') addBox2(s0, s1, y0, y1, off + lt / 2, lt, layerMat(L.mat, lenM, hM, bH), true); off += lt; }
     };
     const winMat3D = key => { const wm = WIN_MAT[key] || WIN_MAT.holz; return new THREE.MeshLambertMaterial({ color: new THREE.Color(wm.fill) }); };
-    const extrudePrism = (poly, mapA, mapB, color) => {   // 2D-Polygon zwischen zwei 3D-Abbildungen extrudieren
-      if (!poly || poly.length < 3) return; const n = poly.length, bot = poly.map(mapA), top = poly.map(mapB), v = []; const T = (A, B, C) => v.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
+    const fillToMat = {}; for (const k in WALL_MATS) { const f = WALL_MATS[k] && WALL_MATS[k].fill; if (f) fillToMat[f.toLowerCase()] = k; }
+    const revMatCache = {};
+    const revealMat = fill => {   // Laibungs-Farbe → Wandmaterial (texturiert, beidseitig)
+      const mk = fillToMat[(fill || '').toLowerCase()], key = (mk || '_') + ':' + (fill || '');
+      if (!revMatCache[key]) { if (mk) { faceMat(mk); const tx = texCache[mk] ? texCache[mk].clone() : null; if (tx) { tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.repeat.set(1, 1); tx.needsUpdate = true; } revMatCache[key] = new THREE.MeshLambertMaterial({ color: new THREE.Color((WALL_MATS[mk] || {}).fill || fill || '#e9e3d8'), map: tx || undefined, side: THREE.DoubleSide }); } else revMatCache[key] = new THREE.MeshLambertMaterial({ color: new THREE.Color(fill || '#e9e3d8'), side: THREE.DoubleSide }); }
+      return revMatCache[key];
+    };
+    const extrudePrism = (poly, mapA, mapB, fill) => {   // 2D-Polygon zwischen zwei 3D-Abbildungen extrudieren (mit UV + Material-Textur)
+      if (!poly || poly.length < 3) return; const n = poly.length, bot = poly.map(mapA), top = poly.map(mapB), v = [], uv = [], S = 1 / 0.28;
+      const T = (A, B, C) => { v.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]); uv.push((A[0] + A[2]) * S, A[1] * S, (B[0] + B[2]) * S, B[1] * S, (C[0] + C[2]) * S, C[1] * S); };
       for (let i = 1; i < n - 1; i++) { T(top[0], top[i], top[i + 1]); T(bot[0], bot[i + 1], bot[i]); }
       for (let i = 0; i < n; i++) { const j = (i + 1) % n; T(bot[i], bot[j], top[j]); T(bot[i], top[j], top[i]); }
-      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); geo.computeVertexNormals();
-      scene.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: new THREE.Color(color || '#e9e3d8'), side: THREE.DoubleSide })));
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.computeVertexNormals();
+      scene.add(new THREE.Mesh(geo, revealMat(fill)));
     };
     const addReveal3D = (o, y0, y1, a0, a1) => {   // 2D-Schichteinzug (openingRevealStrips) → 3D, garantiert gleich wie 2D
       if (!wL) return;

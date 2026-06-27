@@ -1834,6 +1834,7 @@ function onPointerDown(pv, e) {
     if (hAttr === 'dimoff' && sel && sel.num === pv.num) { startDimOffDrag(pv, e, sel.id); return; }   // Wand-Masslinie verschieben
     if (hAttr && hAttr.indexOf('wl:') === 0 && sel && sel.num === pv.num) { const pp = hAttr.split(':'); startLayerExtDrag(pv, e, sel.id, +pp[1], +pp[2]); return; }   // Schicht-Länge (pro Schicht/Ende) ziehen
     if (hAttr && hAttr.indexOf('sl:') === 0 && sel && sel.num === pv.num) { const pp = hAttr.split(':'); startSectionLayerDrag(pv, e, +pp[1], +pp[2], pp[3]); return; }   // Schicht-Kante im Schnitt ziehen (Ober-/Unterlänge)
+    if (hAttr && hAttr.indexOf('sh:') === 0 && sel && sel.num === pv.num) { startSectionEdit(pv, e, hAttr); return; }   // Wandhöhe / Brüstung / Sturz / Decke im Schnitt ziehen
     if (hAttr === 'scflip' && sel && sel.num === pv.num) { const a = findAnno(pv.num, sel.id); if (a && a.type === 'section') { pushUndo(); a.flip = !a.flip; drawAnnos(pv); saveState(); toast('Blickrichtung gedreht'); } return; }   // Schnitt-Blickrichtung
     if (hAttr && sel && sel.num === pv.num) { startResize(pv, e, hAttr); return; }
     if (idAttr) {
@@ -2332,6 +2333,17 @@ function drawGroupSel(svg, pv) {
   let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; const arr = getAnnos(pv.num);
   for (const id of groupSel.ids) { const a = arr.find(x => x.id === id); if (!a) continue; const b = bbox(a); mnx = Math.min(mnx, b.x); mny = Math.min(mny, b.y); mxx = Math.max(mxx, b.x + b.w); mxy = Math.max(mxy, b.y + b.h); svg.appendChild(svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, class: 'group-item' })); }
   if (isFinite(mnx)) svg.appendChild(svgEl('rect', { x: mnx - 3, y: mny - 3, width: (mxx - mnx) + 6, height: (mxy - mny) + 6, class: 'group-box', 'data-group': '1' }));
+}
+function startSectionEdit(pv, e, key) {   // im Schnitt direkt ziehen: Wandhöhe / Brüstung / Sturz / Decken-Höhe (Höhen in m via perPt)
+  if (!docScale) return; const pp = key.split(':'), kind = pp[1], perPt = docScale.perPt, start = evtToPage(pv, e); pushUndo();
+  const dh = q => (start.y - q.y) * perPt;   // nach oben ziehen = grösser
+  let move;
+  if (kind === 'wh') { const w = findAnno(pv.num, +pp[2]); if (!w) { if (undoStack.length) undoStack.pop(); return; } const o = w.h3d || wallHeightM; move = ev => { w.h3d = Math.max(0.5, Math.round((o + dh(evtToPage(pv, ev))) * 100) / 100); drawAnnos(pv); }; }
+  else if (kind === 'op') { const o = findAnno(pv.num, +pp[2]); if (!o) { if (undoStack.length) undoStack.pop(); return; } const edge = pp[3], base = edge === 'head' ? (o.head != null ? o.head : (o.kind === 'window' ? 2.1 : 2.0)) : (o.sill || 0); move = ev => { const v = Math.max(0, Math.round((base + dh(evtToPage(pv, ev))) * 100) / 100); if (edge === 'head') o.head = v; else o.sill = v; drawAnnos(pv); }; }
+  else if (kind === 'sb') { const s = findAnno(pv.num, +pp[2]); if (!s) { if (undoStack.length) undoStack.pop(); return; } const o = s.base || 0; move = ev => { s.base = Math.max(0, Math.round((o + dh(evtToPage(pv, ev))) * 100) / 100); drawAnnos(pv); }; }
+  else { if (undoStack.length) undoStack.pop(); return; }
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function startSectionLayerDrag(pv, e, wallId, li, edge) {   // im Schnitt: Schicht-Ober-/Unterkante ziehen → layer.top/bot (m)
   const w = findAnno(pv.num, wallId); if (!w || !w.layers || !w.layers[li] || !docScale) return; pushUndo();
@@ -2910,6 +2922,8 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip) { 
     out.push({ t: 'poly', pts: [corner(-1, md - leafW), corner(1 - fwS, md - leafW), corner(1 - fwS, md + leafW), corner(-1, md + leafW)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Türblatt (vertikal, bei Einbautiefe)
     out.push({ t: 'poly', pts: [corner(1 - fwS, md - fdh), corner(1, md - fdh), corner(1, md + fdh), corner(1 - fwS, md + fdh)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Sturz-Rahmen
   }
+  out.push({ t: 'shandle', x: cx, y: Yh(head), key: 'sh:op:' + o.id + ':head' });   // Sturz-Höhe ziehen
+  if (o.kind === 'window') out.push({ t: 'shandle', x: cx, y: Yh(sill), key: 'sh:op:' + o.id + ':sill' });   // Brüstungs-Höhe ziehen
   if (winDimsOn) {   // Schnitt-Bemaßung Höhe: Rohbau + Licht (Licht = Rohbau − 2×(Rahmen − sichtbarer Rahmen))
     const insM = Math.max(0, ptsToCm(o.frameW || cmToPts(10)) - (o.boardVis != null ? o.boardVis : 1)) / 100;
     const roughM = head - sill, Ypx = m => m / perPt, xR = cx + ht2 + 14, yT2 = cy - hw, yB2 = cy + hw, inside = !!flip;
@@ -2938,6 +2952,7 @@ function sectionPrimitives(a, arr) {
     for (let i = 0; i + 1 < ds.length; i++) { const dm = (ds[i] + ds[i + 1]) / 2, mid = [p1[0] + cux * dm, p1[1] + cuy * dm]; if (!pointInPoly(mid, sl.pts)) continue; const dA = fp(ds[i]), dB = fp(ds[i + 1]), xa = X(Math.min(dA, dB)), xb = X(Math.max(dA, dB));
       if (bands) for (const b of bands) { const m = WALL_MATS[b.mat] || {}, yT = Yh(base + b.y1), hh = Yh(base + b.y0) - Yh(base + b.y1), ins = cmToPts((b.inset || 0) * 100), xaB = xa + ins, xbB = xb - ins; if (xbB - xaB < 0.5) continue; out.push({ t: 'rect', x: xaB, y: yT, w: xbB - xaB, h: hh, fill: m.fill || '#fff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode && m.hatch) sectionBandHatch(out, xaB, yT, xbB - xaB, hh, b.mat, null); }
       else out.push({ t: 'rect', x: xa, y: Yh(base + thick), w: xb - xa, h: Yh(base) - Yh(base + thick), fill: '#dadde2', stroke: '#8a8f96', sw: 0.7 });
+      out.push({ t: 'shandle', x: (xa + xb) / 2, y: Yh(base + thick), key: 'sh:sb:' + sl.id });   // Decken-Höhe (Unterkante) im Schnitt ziehen
     }
   }
   for (const h of hits) {
@@ -2952,6 +2967,7 @@ function sectionPrimitives(a, arr) {
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
     for (const o of ops) sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil (a.flip = Blickrichtung)
     out.push({ t: 'line', x1: X(x0), y1: Yh(H), x2: X(x0 + h.appW), y2: Yh(H), stroke: col, w: 1.2 });
+    out.push({ t: 'shandle', x: X(h.dist), y: Yh(H), key: 'sh:wh:' + w.id });   // Wandhöhe im Schnitt ziehen
   }
   for (const w of arr) {   // Ansicht: Fenster/Türen in (nahezu) parallel zur Schnittlinie laufenden Wänden – damit man sie im Schnitt sieht
     if (w.type !== 'wall' || !layerVisible(w) || !phaseVisible(w)) continue;
@@ -3000,6 +3016,7 @@ function drawSection(svg, a, arr) {
     else if (p.t === 'arrow') { const s = 6, ang = Math.atan2(p.dy, p.dx); for (const da of [2.5, -2.5]) g.appendChild(svgEl('line', { x1: p.x, y1: p.y, x2: p.x - Math.cos(ang + da) * s, y2: p.y - Math.sin(ang + da) * s, stroke: p.col || '#1c242c', 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' })); }
     else if (p.t === 'text') { const t = svgEl('text', { x: p.x, y: p.y, fill: p.col || '#1c242c', 'font-size': p.small ? 9 : 12, 'font-weight': p.small ? 400 : 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = p.text; g.appendChild(t); }
     else if (p.t === 'lhandle' && sel && sel.id === a.id) { g.appendChild(svgEl('circle', { class: 'handle lay-handle', cx: p.x, cy: p.y, r: 4.5, 'data-h': 'sl:' + p.wallId + ':' + p.li + ':' + p.edge, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' })); }   // Schicht-Kante im Schnitt ziehen
+    else if (p.t === 'shandle' && sel && sel.id === a.id) { g.appendChild(svgEl('circle', { class: 'handle dim-handle', cx: p.x, cy: p.y, r: 5, 'data-h': p.key, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' })); }   // Wandhöhe / Brüstung / Sturz / Decke im Schnitt ziehen
   }
   svg.appendChild(g);
   const b = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: 'transparent', 'data-id': a.id }));

@@ -1802,7 +1802,11 @@ function onPointerDown(pv, e) {
     if (hAttr && sel && sel.num === pv.num) { startResize(pv, e, hAttr); return; }
     if (idAttr) {
       const aHit = findAnno(pv.num, +idAttr);
-      if (aHit && aHit.locked) { sel = null; groupSel = null; drawAnnos(pv); startMarquee(pv, e); return; }   // gesperrt (Plan-Rahmen) → nicht greifen, Rahmen aufziehen
+      if (aHit && aHit.grp != null && !e.ctrlKey && !e.metaKey) {   // Plankopf/Gruppe → ganze Gruppe wählen + ziehen (Felder per Doppelklick editierbar)
+        const ids = (getAnnos(pv.num) || []).filter(x => x.grp === aHit.grp).map(x => x.id);
+        if (ids.length) { sel = null; groupSel = { num: pv.num, ids }; drawAnnos(pv); updateAlignBar(); updateSelBar(); startGroupMove(pv, e); return; }
+      }
+      if (aHit && aHit.locked) { sel = null; groupSel = null; drawAnnos(pv); startMarquee(pv, e); return; }   // gesperrt (z. B. Rahmen) → nicht greifen, Rahmen aufziehen
       if (e.ctrlKey || e.metaKey) {   // Strg/Cmd-Klick = zur Auswahl hinzufügen / entfernen
         let ids = groupSel && groupSel.num === pv.num ? groupSel.ids.slice() : (sel && sel.num === pv.num ? [sel.id] : []);
         const k = ids.indexOf(+idAttr); if (k >= 0) ids.splice(k, 1); else ids.push(+idAttr);
@@ -3364,6 +3368,7 @@ function remapAfterInsert(insertPageNum, count) {
 }
 // Vorlagen-Inhalt (Folien-Layouts) als Annotationen für eine Seite der Grösse w×h
 let logoDataUrl = null;   // Logo als data-URL (für den Plankopf), einmal vorgeladen
+let planGrpSeq = 0;       // Gruppen-Zähler: jeder eingefügte Plankopf/Rahmen ist eine verschiebbare Gruppe
 function loadLogoData() { try { fetch('icon.png').then(r => r.blob()).then(b => { const fr = new FileReader(); fr.onload = () => { logoDataUrl = fr.result; }; fr.readAsDataURL(b); }).catch(() => { }); } catch (_) { } }
 function todayStr() { const d = new Date(), p = n => ('0' + n).slice(-2); return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear(); }
 function fillPlanField(field, value) {   // Plankopf-Feld (z. B. Massstab) automatisch eintragen
@@ -3399,26 +3404,27 @@ function templateAnnos(kind, w, h) {
     mk({ x: w * 0.1, y: h * 0.78, w: w * 0.8, h: h * 0.05, text: 'Bildunterschrift', size: Math.round(h * 0.024), align: 'center', color: gray })
   ];
   if (kind === 'plan') {   // Rahmen + Plankopf unten rechts + Faltmarken (je nach Blattgrösse)
-    const MM = 72 / 25.4, out0 = [], LK = { locked: true };
-    const out = { push: (...xs) => xs.forEach(x => out0.push(Object.assign(x, x.field ? {} : LK))) };   // Struktur gesperrt, ausfüllbare Felder (field) frei
+    const MM = 72 / 25.4, out0 = [], LK = { locked: true }, gid = 'pk' + (++planGrpSeq);
+    const out = { push: (...xs) => xs.forEach(x => out0.push(Object.assign(x, x.field ? {} : LK))) };   // Rahmen/Faltmarken: Struktur gesperrt, Felder frei
+    const outPk = { push: (...xs) => xs.forEach(x => out0.push(Object.assign(x, { grp: gid }, x.field ? {} : LK))) };   // Plankopf = eine verschiebbare Gruppe
     const ml = 20 * MM, mt = 8 * MM, mr = 8 * MM, mb = 8 * MM;                 // Heftrand links breiter
     const bx = ml, by = mt, bw = w - ml - mr, bh = h - mt - mb;
-    out.push({ type: 'rect', x: bx, y: by, w: bw, h: bh, color: dark, width: 1.6, fill: 'none' });   // Rahmen
+    out.push({ type: 'rect', x: bx, y: by, w: bw, h: bh, color: dark, width: 1.6, fill: 'none' });   // Rahmen (fix)
     const kw = Math.min(185 * MM, bw * 0.5), kh = Math.min(58 * MM, bh * 0.45), kx = bx + bw - kw, ky = by + bh - kh;
-    out.push({ type: 'rect', x: kx, y: ky, w: kw, h: kh, color: dark, width: 1.2, fill: '#ffffff' });   // Plankopf-Box
+    outPk.push({ type: 'rect', x: kx, y: ky, w: kw, h: kh, color: dark, width: 1.2, fill: '#ffffff' });   // Plankopf-Box
     const rows = 4, rh = kh / rows, cx = kx + kw * 0.6, pad = 2.5 * MM;
-    for (let r = 1; r < rows; r++) out.push({ type: 'line', x1: kx, y1: ky + rh * r, x2: kx + kw, y2: ky + rh * r, color: dark, width: 0.6 });
-    out.push({ type: 'line', x1: cx, y1: ky, x2: cx, y2: ky + rh * 3, color: dark, width: 0.6 });
+    for (let r = 1; r < rows; r++) outPk.push({ type: 'line', x1: kx, y1: ky + rh * r, x2: kx + kw, y2: ky + rh * r, color: dark, width: 0.6 });
+    outPk.push({ type: 'line', x1: cx, y1: ky, x2: cx, y2: ky + rh * 3, color: dark, width: 0.6 });
     const cell = (x, y, wc, label, value, field) => {                       // Label oben + ausfüllbarer Wert darunter
-      out.push(mk({ x: x + pad, y: y + pad * 0.5, w: wc, h: rh * 0.4, text: label, size: 7, color: gray }));
-      out.push(mk(Object.assign({ x: x + pad, y: y + rh * 0.42, w: wc, h: rh * 0.55, text: value || '', size: 9, color: dark }, field ? { field } : {})));
+      outPk.push(mk({ x: x + pad, y: y + pad * 0.5, w: wc, h: rh * 0.4, text: label, size: 7, color: gray }));
+      outPk.push(mk(Object.assign({ x: x + pad, y: y + rh * 0.42, w: wc, h: rh * 0.55, text: value || '', size: 9, color: dark }, field ? { field } : {})));
     };
     const lw = kw * 0.6 - 2 * pad, rw = kw * 0.4 - 2 * pad;
     cell(kx, ky, lw, 'Projekt', '', 'projekt'); cell(kx, ky + rh, lw, 'Plan', '', 'plan'); cell(kx, ky + 2 * rh, lw, 'Gezeichnet', '', 'gezeichnet');
     cell(cx, ky, rw, 'Massstab', docScale ? docScale.label : '', 'scale'); cell(cx, ky + rh, rw, 'Datum', todayStr(), 'date'); cell(cx, ky + 2 * rh, rw, 'Plan-Nr.', '', 'plannr');
     const logoSz = rh * 0.82, lox = logoDataUrl ? logoSz + pad : 0;             // Logo links im Fuss
-    if (logoDataUrl) out.push({ type: 'img', data: logoDataUrl, x: kx + pad, y: ky + 3 * rh + (rh - logoSz) / 2, w: logoSz, h: logoSz });
-    out.push(mk({ x: kx + pad + lox, y: ky + 3 * rh + pad, w: kw - 2 * pad - lox, h: rh, text: 'Submit PDF', size: 11, color: dark, field: 'firma' }));
+    if (logoDataUrl) outPk.push({ type: 'img', data: logoDataUrl, x: kx + pad, y: ky + 3 * rh + (rh - logoSz) / 2, w: logoSz, h: logoSz });
+    outPk.push(mk({ x: kx + pad + lox, y: ky + 3 * rh + pad, w: kw - 2 * pad - lox, h: rh, text: 'Submit PDF', size: 11, color: dark, field: 'firma' }));
     const A4w = 210 * MM, A4h = 297 * MM, tk = 5 * MM;                          // Faltmarken (DIN-824-artig, in A4-Spalten)
     for (let x = w - A4w; x > ml * 0.5; x -= A4w) { out.push({ type: 'line', x1: x, y1: 0, x2: x, y2: tk, color: gray, width: 0.6 }); out.push({ type: 'line', x1: x, y1: h - tk, x2: x, y2: h, color: gray, width: 0.6 }); }
     for (let y = h - A4h; y > mt * 0.5; y -= A4h) { out.push({ type: 'line', x1: 0, y1: y, x2: tk, y2: y, color: gray, width: 0.6 }); out.push({ type: 'line', x1: w - tk, y1: y, x2: w, y2: y, color: gray, width: 0.6 }); }
@@ -3427,9 +3433,9 @@ function templateAnnos(kind, w, h) {
   return [];
 }
 function buildPlanParts(w, h, opts) {   // frei konfigurierbarer Plankopf / Rahmen / Kantenlinie (für vorhandene Seiten)
-  const MM = 72 / 25.4, color = opts.color || '#1c242c', gray = '#8a8f86', bw = +opts.bw || 1.2, LK = { locked: true };
+  const MM = 72 / 25.4, color = opts.color || '#1c242c', gray = '#8a8f86', bw = +opts.bw || 1.2, LK = { locked: true }, gid = 'pk' + (++planGrpSeq);
   const margin = (opts.margin != null ? +opts.margin : 8) * MM, out = [];
-  const push = o => out.push(Object.assign(o, o.field ? {} : LK));
+  const push = o => out.push(Object.assign(o, { grp: gid }, o.field ? {} : LK));   // alle Teile = eine verschiebbare Gruppe (Felder bleiben editierbar)
   const mk = o => Object.assign({ type: 'text', size: 16, color, align: 'left', bg: 'transparent', border: null, borderW: 1.2 }, o);
   if (opts.kind === 'rahmen') { push({ type: 'rect', x: margin, y: margin, w: w - 2 * margin, h: h - 2 * margin, color, width: bw, fill: 'none' }); return out; }
   if (opts.kind === 'linie') {

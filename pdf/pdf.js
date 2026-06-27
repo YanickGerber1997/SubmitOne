@@ -3835,16 +3835,17 @@ function build3DScene(host, walls, arr) {
   const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2, span = Math.max(M(maxx - minx), M(maxy - miny), 2);
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0xeef1ec);
   const camera = new THREE.PerspectiveCamera(50, W / Hp, 0.05, 4000); camera.position.set(span * 0.85, span * 0.95, span * 0.95);
-  const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setSize(W, Hp); renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); host.appendChild(renderer.domElement);
+  const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setSize(W, Hp); renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; host.appendChild(renderer.domElement);
   const controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(0, H * 0.4, 0);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x55604f, 0.95));
-  const sun = new THREE.DirectionalLight(0xffffff, 0.55); sun.position.set(span, span * 1.6, span * 0.7); scene.add(sun);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x55604f, 0.8));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(span * 0.8, span * 1.7, span * 0.5); sun.castShadow = true;   // Schatten
+  sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; const sc = sun.shadow.camera, sb = Math.max(span * 1.3, 6); sc.left = -sb; sc.right = sb; sc.top = sb; sc.bottom = -sb; sc.near = 0.1; sc.far = span * 5 + 20; scene.add(sun);
   const gsz = Math.max(span * 2.4, 4);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(gsz, gsz), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; scene.add(ground);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(gsz, gsz), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; ground.receiveShadow = true; scene.add(ground);
   scene.add(new THREE.GridHelper(gsz, Math.min(60, Math.max(4, Math.round(gsz))), 0xc4cabe, 0xd8dcd2));
   for (const a of arr) if (a.type === 'area' && a.room && a.pts && a.pts.length >= 3 && layerVisible(a) && phaseVisible(a)) {
     const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
-    const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0xece6d8, side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.006; scene.add(fl);
+    const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0xece6d8, side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.006; fl.receiveShadow = true; scene.add(fl);
   }
   const wmat = new THREE.MeshLambertMaterial({ color: 0xe9e3d8 }), emat = new THREE.LineBasicMaterial({ color: 0x8c8678 }), gmat = new THREE.MeshPhongMaterial({ color: 0x9fc6e0, transparent: true, opacity: 0.35 });
   const texCache = {}, matCache = {}, INSUL_T = ['daemm_eps', 'daemm_wolle', 'daemm_holz', 'daemm_xps', 'eps', 'glaswolle'];
@@ -3886,12 +3887,14 @@ function build3DScene(host, walls, arr) {
     const addBox = (s0, s1, y0, y1, mat, depth, edge) => {                                  // Teilstück der Wand (Längs-Span s0..s1 in pt, Höhe y0..y1 in m)
       const lenM = (s1 - s0) * perPt; if (lenM <= 0.002 || y1 - y0 <= 0.002) return;
       const mid = (s0 + s1) / 2, geo = new THREE.BoxGeometry(lenM, y1 - y0, depth), m = new THREE.Mesh(geo, mat);
+      m.castShadow = true; m.receiveShadow = true;
       m.position.set(sx + ux * M(mid), (y0 + y1) / 2, sz + uy * M(mid)); m.rotation.y = ry; scene.add(m);
       if (edge) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); e.rotation.copy(m.rotation); scene.add(e); }
     };
     const addBox2 = (s0, s1, y0, y1, dCenter, dDepth, mat, edge) => {                       // wie addBox, aber mit Quer-Versatz dCenter (m) → Rahmen/Bank an bestimmter Tiefe
       const lenM = (s1 - s0) * perPt; if (lenM <= 0.002 || y1 - y0 <= 0.002 || dDepth <= 0.001) return;
       const mid = (s0 + s1) / 2, geo = new THREE.BoxGeometry(lenM, y1 - y0, dDepth), m = new THREE.Mesh(geo, mat);
+      m.castShadow = true; m.receiveShadow = true;
       m.position.set(sx + ux * M(mid) + nxw * dCenter, (y0 + y1) / 2, sz + uy * M(mid) + nyw * dCenter); m.rotation.y = ry; scene.add(m);
       if (edge) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); e.rotation.copy(m.rotation); scene.add(e); }
     };
@@ -3916,7 +3919,7 @@ function build3DScene(host, walls, arr) {
       for (let i = 1; i < n - 1; i++) { T(top[0], top[i], top[i + 1]); T(bot[0], bot[i + 1], bot[i]); }
       for (let i = 0; i < n; i++) { const j = (i + 1) % n; T(bot[i], bot[j], top[j]); T(bot[i], top[j], top[i]); }
       const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.computeVertexNormals();
-      scene.add(new THREE.Mesh(geo, revealMat(fill)));
+      const rm = new THREE.Mesh(geo, revealMat(fill)); rm.castShadow = true; rm.receiveShadow = true; scene.add(rm);
     };
     const addReveal3D = (o, y0, y1, a0, a1) => {   // 2D-Schichteinzug (openingRevealStrips) → 3D, garantiert gleich wie 2D
       if (!wL) return;
@@ -3974,7 +3977,7 @@ function build3DScene(host, walls, arr) {
     try {
       const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Y = M(p[1] - cy); i ? sh.lineTo(X, Y) : sh.moveTo(X, Y); });
       const geo = new THREE.ExtrudeGeometry(sh, { depth: a.thick || 0.2, bevelEnabled: false }), m = new THREE.Mesh(geo, smat);
-      m.rotation.x = Math.PI / 2; m.position.y = lev(a) + (a.base || 0) + (a.thick || 0.2); scene.add(m);
+      m.castShadow = true; m.receiveShadow = true; m.rotation.x = Math.PI / 2; m.position.y = lev(a) + (a.base || 0) + (a.thick || 0.2); scene.add(m);
       const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.rotation.x = Math.PI / 2; e.position.y = m.position.y; scene.add(e);
     } catch (_) { }
   }

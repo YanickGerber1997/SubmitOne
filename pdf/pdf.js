@@ -3213,6 +3213,24 @@ function buildPlanParts(w, h, opts) {   // frei konfigurierbarer Plankopf / Rahm
     else push({ type: 'line', x1: margin, y1: h - margin, x2: w - margin, y2: h - margin, color, width: bw });
     return out;
   }
+  if (opts.kind === 'mstab') {   // grafischer Massstabsbalken (an den realen Massstab gekoppelt)
+    if (!docScale) { toast('Für den Massstabsbalken zuerst den Massstab setzen (1:n).'); return out; }
+    const nice = [0.25, 0.5, 1, 2, 5, 10, 20, 50, 100], u0 = ptsToCm(58) / 100; let unit = nice[0];
+    for (const u of nice) if (Math.abs(u - u0) < Math.abs(unit - u0)) unit = u;
+    const segPt = cmToPts(unit * 100), nSeg = 4, barH = 2.6 * MM, x0 = margin + 2 * MM, y0 = h - margin - 9 * MM;
+    push({ type: 'rect', x: x0, y: y0, w: segPt * nSeg, h: barH, color, width: 0.8, fill: '#ffffff' });
+    for (let i = 0; i < nSeg; i += 2) push({ type: 'rect', x: x0 + i * segPt, y: y0, w: segPt, h: barH, color, width: 0, fill: color });
+    for (let i = 0; i <= nSeg; i++) { push({ type: 'line', x1: x0 + i * segPt, y1: y0 - 1 * MM, x2: x0 + i * segPt, y2: y0 + barH, color, width: 0.6 }); push(mk({ type: 'text', x: x0 + i * segPt - 6 * MM, y: y0 + barH + 0.8 * MM, w: 12 * MM, h: 4 * MM, text: ('' + +(i * unit).toFixed(2)).replace('.', ',') + (i === nSeg ? ' m' : ''), size: 7, align: 'center', color: gray })); }
+    push(mk({ type: 'text', x: x0, y: y0 - 5.5 * MM, w: 40 * MM, h: 4 * MM, text: 'Massstab ' + (docScale.label || ''), size: 8, color }));
+    return out;
+  }
+  if (opts.kind === 'nord') {   // Nordpfeil (Norden oben), oben rechts
+    const r = 8.5 * MM, cxp = w - margin - r - 2 * MM, cyp = margin + r + 7 * MM;
+    push({ type: 'oval', x: cxp - r, y: cyp - r, w: 2 * r, h: 2 * r, color, width: 1, fill: 'none' });
+    push({ type: 'arrow', x1: cxp, y1: cyp + r * 0.62, x2: cxp, y2: cyp - r * 0.62, color, width: 1.6 });
+    push(mk({ type: 'text', x: cxp - 4 * MM, y: cyp - r - 5.5 * MM, w: 8 * MM, h: 5 * MM, text: 'N', size: 12, align: 'center', color }));
+    return out;
+  }
   const kw = Math.min(185 * MM, (w - 2 * margin) * 0.6), kh = Math.min(58 * MM, (h - 2 * margin) * 0.5);
   const pos = opts.pos || 'br', vc = pos[0], hc = pos[1];
   const kx = hc === 'l' ? margin : hc === 'c' ? (w - kw) / 2 : w - margin - kw;
@@ -4097,6 +4115,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Wandaufbau-Gruppe', () => computeWallBuildups(arr).length === 1);
     A('Raumbuch: Fläche (~30 m²)', () => { const m2 = polyArea([[0, 0], [cmToPts(600), 0], [cmToPts(600), cmToPts(500)], [0, cmToPts(500)]]) * docScale.perPt * docScale.perPt; return Math.abs(m2 - 30) < 0.5 ? '' : 'm²=' + m2.toFixed(2); });
     A('Annotation-Import (Square→rect)', () => { const a = convertAnnot({ subtype: 'Square', rect: [10, 10, 50, 50], color: [255, 0, 0] }, 200); return !!(a && a.type === 'rect'); });
+    A('Massstabsbalken-Element', () => buildPlanParts(842, 595, { kind: 'mstab', margin: 8 }).length > 3);
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
   } finally { docScale = saved; }

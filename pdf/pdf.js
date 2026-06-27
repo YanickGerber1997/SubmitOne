@@ -5100,9 +5100,10 @@ function applyMountPreset(a, mode) {   // drei Montagearten des Rahmens → sinn
 function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoomen, Ziehgriffe + Regler, live in den Plan
   const arr = getAnnos(pv.num), wall = a.wallId && arr.find(o => o.id === a.wallId && o.type === 'wall');
   const ov = document.createElement('div'); ov.className = 'lab-overlay';
-  ov.innerHTML = '<div class="lab-wrap"><div class="lab-head"><b>Laibungs-Detail</b><span class="lab-hint">Punkte ziehen oder Regler – aktualisiert live im Plan</span><span class="grow"></span><button class="btn" id="labClose">✕ Schliessen</button></div><div class="lab-body"><div class="lab-stage"><svg class="lab-svg" id="labSvg" xmlns="http://www.w3.org/2000/svg"></svg></div><div class="lab-side" id="labCtrls"></div></div></div>';
+  ov.innerHTML = '<div class="lab-wrap"><div class="lab-head"><b>Fenster-Detail</b><span class="lab-hint">Grundriss + Schnitt im Wandkontext · Mausrad = zoomen · Punkte ziehen / Regler · alles live</span><span class="grow"></span><button class="btn" id="labClose">✕ Schliessen</button></div><div class="lab-body"><div class="lab-stage" style="display:flex;flex-direction:column;gap:6px"><div style="flex:1;position:relative;min-height:0"><span style="position:absolute;left:8px;top:5px;font-size:11px;font-weight:600;color:#7a8470;background:rgba(255,255,255,.7);padding:1px 5px;z-index:1;pointer-events:none">GRUNDRISS</span><svg class="lab-svg" id="labSvg" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block"></svg></div><div style="flex:1;position:relative;min-height:0;border-top:1px solid #e0e3da"><span style="position:absolute;left:8px;top:5px;font-size:11px;font-weight:600;color:#7a8470;background:rgba(255,255,255,.7);padding:1px 5px;z-index:1;pointer-events:none">SCHNITT</span><svg class="lab-svg" id="labSvgS" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block"></svg></div></div><div class="lab-side" id="labCtrls"></div></div></div>';
   document.body.appendChild(ov);
-  const svg = ov.querySelector('#labSvg'), side = ov.querySelector('#labCtrls');
+  const svg = ov.querySelector('#labSvg'), svgS = ov.querySelector('#labSvgS'), side = ov.querySelector('#labCtrls');
+  let zoomG = 1, zoomS = 1;   // Zoom je Ansicht (Mausrad)
   const W = 640, Hh = 520, cx = W * 0.42, cy = Hh / 2;
   const cm = pts => Math.round(ptsToCm(pts) * 10) / 10;
   const fields = [
@@ -5138,7 +5139,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     let x0 = xs.length ? Math.min(...xs) : jamb - 120, x1 = Math.max(jamb + 8, xs.length ? Math.max(...xs) : jamb + 8);
     let y0 = ys.length ? Math.min(...ys) : cy - 90, y1 = ys.length ? Math.max(...ys) : cy + 90;
     const mx = (x1 - x0) * 0.12 + 8, my = (y1 - y0) * 0.12 + 8; x0 -= mx; x1 += mx; y0 -= my; y1 += my;
-    const vbw = x1 - x0, vbh = y1 - y0; svg.setAttribute('viewBox', x0 + ' ' + y0 + ' ' + vbw + ' ' + vbh);
+    let vbw = x1 - x0, vbh = y1 - y0; const ccx = (x0 + x1) / 2, ccy = (y0 + y1) / 2; vbw /= zoomG; vbh /= zoomG; svg.setAttribute('viewBox', (ccx - vbw / 2) + ' ' + (ccy - vbh / 2) + ' ' + vbw + ' ' + vbh);
     scale = vbw / (svg.clientWidth || (W * 0.6));
     let s = '';
     for (const st of reveal) { s += '<polygon points="' + st.poly.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '" fill="' + st.fill + '" stroke="' + (st.seam == null ? st.stroke : 'none') + '" stroke-width="' + (0.7 * scale) + '" vector-effect="non-scaling-stroke"/>'; if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) s += '<line x1="' + u[0].toFixed(1) + '" y1="' + u[1].toFixed(1) + '" x2="' + v[0].toFixed(1) + '" y2="' + v[1].toFixed(1) + '" stroke="' + st.stroke + '" stroke-width="0.7" vector-effect="non-scaling-stroke"/>'; if (st.hatch) for (const [u, v] of st.hatch) s += '<line x1="' + u[0].toFixed(1) + '" y1="' + u[1].toFixed(1) + '" x2="' + v[0].toFixed(1) + '" y2="' + v[1].toFixed(1) + '" stroke="' + st.stroke + '" stroke-width="0.6" vector-effect="non-scaling-stroke"/>'; }
@@ -5156,6 +5157,26 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     if (a.anschlagType && a.anschlagType !== 'none') H += HG(hwx(Math.max(0, 1 - fwSr - cmToPts(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)) / hw)), hwy(a.anschlagType === 'innen' ? -0.6 : 0.85), 'anschlag', 'Anschlagtiefe (ziehen ↔)');
     svg.innerHTML = s + H;
     bindHandles();
+    renderSec();
+  }
+  function renderSec() {   // Schnitt durch das Fenster (Sturz/Brüstung + geschichtete Laibung)
+    if (!docScale) { svgS.innerHTML = '<text x="10" y="22" font-size="13" fill="#9aa090">Für den Schnitt zuerst den Massstab setzen (1:n)</text>'; svgS.setAttribute('viewBox', '0 0 300 60'); return; }
+    const perPt = docScale.perPt, appW = a.thick || wallThickPts(), H2 = (a.head != null ? a.head : (a.kind === 'window' ? 2.1 : 2.0)) + 0.4;
+    const Yh = h => -h / perPt, X = d => d, out = [], sw = wall ? Object.assign({}, wall) : { layers: null, thick: appW, fill: a.fill, color: a.color, hatch: a.hatch };
+    try { sectionCutOpening(out, X, Yh, 0, appW, a, H2, perPt, sw, false); } catch (_) { }
+    let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; const acc = (x, y) => { if (x < mnx) mnx = x; if (y < mny) mny = y; if (x > mxx) mxx = x; if (y > mxy) mxy = y; };
+    for (const p of out) { if (p.t === 'rect') { acc(p.x, p.y); acc(p.x + p.w, p.y + p.h); } else if (p.t === 'poly') { for (const q of p.pts) acc(q[0], q[1]); } else if (p.t === 'line') { acc(p.x1, p.y1); acc(p.x2, p.y2); } else if (p.x != null) acc(p.x, p.y); }
+    if (!isFinite(mnx)) { svgS.innerHTML = ''; return; }
+    const pad = (mxx - mnx) * 0.14 + 12; mnx -= pad; mxx += pad; mny -= pad; mxy += pad;
+    let vbw = mxx - mnx, vbh = mxy - mny; const ccx = (mnx + mxx) / 2, ccy = (mny + mxy) / 2; vbw /= zoomS; vbh /= zoomS; svgS.setAttribute('viewBox', (ccx - vbw / 2) + ' ' + (ccy - vbh / 2) + ' ' + vbw + ' ' + vbh);
+    const scS = vbw / (svgS.clientWidth || 320); let s = '';
+    for (const p of out) {
+      if (p.t === 'rect') s += '<rect x="' + Math.min(p.x, p.x + p.w) + '" y="' + Math.min(p.y, p.y + p.h) + '" width="' + Math.abs(p.w) + '" height="' + Math.abs(p.h) + '" fill="' + (p.fill || 'none') + '" stroke="' + ((p.stroke && p.stroke !== 'none') ? p.stroke : 'none') + '" stroke-width="' + (p.sw || 0.6) + '" vector-effect="non-scaling-stroke"/>';
+      else if (p.t === 'poly') s += '<polygon points="' + p.pts.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ') + '" fill="' + (p.fill || 'none') + '" stroke="' + ((p.stroke && p.stroke !== 'none') ? p.stroke : 'none') + '" stroke-width="' + (p.sw || 0.6) + '" vector-effect="non-scaling-stroke"/>';
+      else if (p.t === 'line') s += '<line x1="' + p.x1 + '" y1="' + p.y1 + '" x2="' + p.x2 + '" y2="' + p.y2 + '" stroke="' + (p.stroke || '#1c242c') + '" stroke-width="' + (p.w || 1) + '" vector-effect="non-scaling-stroke"' + (p.dash ? ' stroke-dasharray="' + p.dash + '"' : '') + '/>';
+      else if (p.t === 'text') s += '<text x="' + p.x + '" y="' + p.y + '" font-size="' + ((p.small ? 9 : 11) * scS) + '" fill="' + (p.col || '#1c242c') + '">' + (p.text || '').replace(/[<>&]/g, '') + '</text>';
+    }
+    svgS.innerHTML = s;
   }
   function bindHandles() {
     svg.querySelectorAll('.lab-h').forEach(g => { g.onpointerdown = e => {
@@ -5199,6 +5220,8 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   const close = () => { ov.remove(); document.removeEventListener('keydown', esc, true); drawAnnos(pv); saveState(); };
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } };
   document.addEventListener('keydown', esc, true); ov.querySelector('#labClose').onclick = close;
+  svg.addEventListener('wheel', e => { e.preventDefault(); zoomG = Math.max(0.3, Math.min(10, zoomG * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); render(); }, { passive: false });
+  svgS.addEventListener('wheel', e => { e.preventDefault(); zoomS = Math.max(0.3, Math.min(10, zoomS * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); renderSec(); }, { passive: false });
   buildCtrls(); requestAnimationFrame(render);
 }
 function build3DScene(host, walls, arr, opts) {

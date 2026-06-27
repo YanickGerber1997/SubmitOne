@@ -3981,16 +3981,37 @@ async function open3D() {
   if (!window.polygonClipping) { try { await loadScript('https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js'); } catch (_) { } }   // für Geschossdecken-Footprint
   status('');
   const ov = document.createElement('div'); ov.className = 'd3-overlay';
-  ov.innerHTML = '<div class="d3-bar"><b>3D-Ansicht</b><label class="d3-h">Höhe <input type="number" id="d3h" min="1" max="20" step="0.1" value="' + wallHeightM + '"> m</label><span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">Ziehen = drehen · Mausrad = zoomen</span><span class="grow"></span><button class="btn' + (show3DSlabs ? ' on' : '') + '" id="d3Slab" title="Geschossdecken/Bodenplatte (aus Wand-Footprint) ein-/ausblenden">▦ Decken</button><button class="btn" id="d3Obj" title="3D-Modell als OBJ exportieren (Blender/SketchUp/Rhino …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
+  ov.innerHTML = '<div class="d3-bar"><b>3D-Ansicht</b><label class="d3-h">Höhe <input type="number" id="d3h" min="1" max="20" step="0.1" value="' + wallHeightM + '"> m</label><span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-views"><button class="btn" id="d3Rot" title="Modell automatisch drehen (Turntable)">🔄 Dreh</button><label class="d3-h" title="Sonnenstand / Verschattung über den Tag (Morgen → Mittag → Abend)">☀ <input type="range" id="d3Sun" min="0" max="100" value="50" style="width:84px;vertical-align:middle"></label><button class="btn" id="d3SunPlay" title="Sonnenlauf abspielen">▶ Sonne</button><button class="btn" id="d3Rec" title="Als Video (WebM) aufnehmen – dreht automatisch für einen Turntable">⏺ Video</button></span><span class="d3-hint">Ziehen = drehen · Mausrad = zoomen</span><span class="grow"></span><button class="btn' + (show3DSlabs ? ' on' : '') + '" id="d3Slab" title="Geschossdecken/Bodenplatte (aus Wand-Footprint) ein-/ausblenden">▦ Decken</button><button class="btn" id="d3Obj" title="3D-Modell als OBJ exportieren (Blender/SketchUp/Rhino …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
   document.body.appendChild(ov);
   const host = ov.querySelector('#d3Canvas');
   let api = build3DScene(host, walls, arr);
   ov.querySelector('#d3h').onchange = e => { wallHeightM = Math.max(1, Math.min(20, parseFloat(e.target.value) || 2.6)); if (api) api.dispose(); api = build3DScene(host, walls, arr); };
   ov.querySelector('#d3Slab').onclick = e => { show3DSlabs = !show3DSlabs; e.currentTarget.classList.toggle('on', show3DSlabs); if (api) api.dispose(); api = build3DScene(host, walls, arr); };
   ov.querySelector('#d3Obj').onclick = () => saveObjFrom(api, docName);
+  let sunRAF = 0, rec = null; const sunIn = ov.querySelector('#d3Sun'); if (api && api.setSun) api.setSun(0.5);
+  sunIn.oninput = () => { if (api && api.setSun) api.setSun(sunIn.value / 100); };
+  ov.querySelector('#d3Rot').onclick = e => { const on = !(api && api.getRotate && api.getRotate()); if (api && api.setRotate) api.setRotate(on); e.currentTarget.classList.toggle('on', on); };
+  ov.querySelector('#d3SunPlay').onclick = e => {
+    const btn = e.currentTarget;
+    if (sunRAF) { cancelAnimationFrame(sunRAF); sunRAF = 0; btn.textContent = '▶ Sonne'; return; }
+    btn.textContent = '⏸ Sonne'; let val = 0;
+    const step = () => { val += 0.6; if (val >= 100) val = 100; sunIn.value = val; if (api && api.setSun) api.setSun(val / 100); if (val < 100) sunRAF = requestAnimationFrame(step); else { sunRAF = 0; btn.textContent = '▶ Sonne'; } };
+    step();
+  };
+  ov.querySelector('#d3Rec').onclick = e => {
+    const btn = e.currentTarget, canvas = host.querySelector('canvas');
+    if (rec && rec.state === 'recording') { rec.stop(); return; }
+    if (!canvas || !canvas.captureStream) { toast('Video-Aufnahme in diesem Browser nicht verfügbar.'); return; }
+    let stream; try { stream = canvas.captureStream(30); } catch (_) { toast('Aufnahme nicht möglich.'); return; }
+    const chunks = []; try { rec = new MediaRecorder(stream, { mimeType: 'video/webm' }); } catch (_) { toast('WebM wird in diesem Browser nicht unterstützt.'); rec = null; return; }
+    rec.ondataavailable = ev => { if (ev.data && ev.data.size) chunks.push(ev.data); };
+    rec.onstop = () => { if (api && api.setRotate) api.setRotate(false); const blob = new Blob(chunks, { type: 'video/webm' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = (docName || 'modell').replace(/\.[a-z0-9]+$/i, '') + '.webm'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000); btn.classList.remove('on'); btn.textContent = '⏺ Video'; toast('Video gespeichert (WebM).'); rec = null; };
+    if (api && api.setRotate) api.setRotate(true);   // Turntable während der Aufnahme
+    rec.start(); btn.classList.add('on'); btn.textContent = '⏹ Stop'; toast('Aufnahme läuft … nochmal „Stop" klicken zum Speichern.');
+  };
   ov.querySelectorAll('.d3-views button').forEach(b => b.onclick = () => { if (api && api.setView) api.setView(b.dataset.v); });
   ov.querySelector('#d3Shot').onclick = () => { if (!api || !api.snapshot) return; const s = api.snapshot(); close(); place3DImage(s.data, s.w, s.h); };
-  const close = () => { if (api) api.dispose(); ov.remove(); document.removeEventListener('keydown', esc, true); };
+  const close = () => { if (sunRAF) cancelAnimationFrame(sunRAF); if (rec && rec.state === 'recording') { try { rec.onstop = null; rec.stop(); } catch (_) { } } if (api) api.dispose(); ov.remove(); document.removeEventListener('keydown', esc, true); };
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } };
   document.addEventListener('keydown', esc, true);
   ov.querySelector('#d3Close').onclick = close;
@@ -4397,10 +4418,15 @@ function build3DScene(host, walls, arr) {
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0xeef1ec);
   const camera = new THREE.PerspectiveCamera(50, W / Hp, 0.05, 4000); camera.position.set(span * 0.85, span * 0.95, span * 0.95);
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); renderer.setSize(W, Hp); renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; host.appendChild(renderer.domElement);
-  const controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(0, H * 0.4, 0);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x55604f, 0.8));
+  const controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(0, H * 0.4, 0); controls.autoRotate = false; controls.autoRotateSpeed = 1.6;
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x55604f, 0.8); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(span * 0.8, span * 1.7, span * 0.5); sun.castShadow = true;   // Schatten
   sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; const sc = sun.shadow.camera, sb = Math.max(span * 1.3, 6); sc.left = -sb; sc.right = sb; sc.top = sb; sc.bottom = -sb; sc.near = 0.1; sc.far = span * 5 + 20; scene.add(sun);
+  const setSun3D = t => {   // t 0..1 = Morgen→Mittag→Abend (relativer Tagesbogen): Sonne Ost→Zenit→West, Schatten ziehen mit
+    const a = Math.PI * Math.max(0, Math.min(1, t)), elev = Math.sin(a);
+    sun.position.set(Math.cos(a) * span * 1.5, Math.max(0.08, elev) * span * 1.9, span * 0.55);
+    sun.intensity = 0.35 + 0.45 * elev; hemi.intensity = 0.55 + 0.35 * elev;   // tief = schwächer/wärmer
+  };
   const gsz = Math.max(span * 2.4, 4);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(gsz, gsz), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; ground.receiveShadow = true; ground.name = 'ground'; scene.add(ground);
   scene.add(new THREE.GridHelper(gsz, Math.min(60, Math.max(4, Math.round(gsz))), 0xc4cabe, 0xd8dcd2));
@@ -4603,7 +4629,7 @@ function build3DScene(host, walls, arr) {
   const loop = () => { if (!alive) return; controls.update(); renderer.render(scene, camera); raf = requestAnimationFrame(loop); }; loop();
   const setView = name => { const ty = H * 0.45, d = Math.max(span * 1.4, 4); if (name === 'top') { camera.position.set(0.001, d * 1.7, 0.001); controls.target.set(0, 0, 0); } else if (name === 'front') { camera.position.set(0, ty, d * 1.5); controls.target.set(0, ty, 0); } else if (name === 'side') { camera.position.set(d * 1.5, ty, 0.001); controls.target.set(0, ty, 0); } else { camera.position.set(span * 0.85, span * 0.95, span * 0.95); controls.target.set(0, H * 0.4, 0); } camera.updateProjectionMatrix(); controls.update(); };
   const snapshot = () => { renderer.render(scene, camera); return { data: renderer.domElement.toDataURL('image/png'), w: renderer.domElement.width, h: renderer.domElement.height }; };
-  return { dispose: () => { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); controls.dispose(); renderer.dispose(); host.innerHTML = ''; }, setView, snapshot, exportObj: () => exportSceneObj(scene) };
+  return { dispose: () => { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); controls.dispose(); renderer.dispose(); host.innerHTML = ''; }, setView, snapshot, exportObj: () => exportSceneObj(scene), setRotate: on => { controls.autoRotate = !!on; }, getRotate: () => controls.autoRotate, setSun: setSun3D };
 }
 
 /* ---------- Rechtsklick-Menü (alles erreichbar) ---------- */

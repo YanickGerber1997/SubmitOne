@@ -2820,7 +2820,7 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
     const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), anS = Math.min(0.6, cmToPts(a.anschlagDepth != null ? a.anschlagDepth : 5) / hw);
     const hatchOf = (mat, sA, sB, mA, mB) => { const mt = WALL_MATS[mat] || {}; return (mt.hatch === 'daemm_eps' || mt.hatch === 'daemm_wolle' || (mt.hatch && INS.includes(mat))) ? bandHatchPerp(Math.min(sA, sB), Math.max(sA, sB), mA, mB, corner, stepS, s0) : (mt.hatch ? bandHatch(Math.min(sA, sB), Math.max(sA, sB), mA, mB, corner, hw, ht, stepS) : null); };
     if (anType === 'innen') {   // INNENANSCHLAG: Mauerwerks-Schulter raumseitig vor dem Rahmen; innere Deckschicht (Putz) läuft um die Ecke, 1 cm vor dem Flügel
-      const sEdge = Math.max(0, 1 - fwSr - anS), mHi = fmA;                          // Schulter bis Rahmen-Innenkante
+      const sEdge = Math.max(0, 1 - Math.min(anS, fwSr * 0.85)), mHi = fmA;          // Schulter deckt max. ~85% der Rahmenbreite – nie bis zum Flügel/Glas
       const fin = coreIdx > 0 ? wall.layers[coreIdx - 1] : null, fmat = fin ? (WALL_MATS[fin.mat] || {}) : null;
       const putzTm = fin ? Math.min(0.5, fin.t / ht) : 0, putzTs = fin ? Math.min(0.3, fin.t / hw) : 0;   // Putzdicke quer (m) bzw. längs (s)
       const finMHi = Math.max(-1 + 0.02, fmA - oneCm), mLoMas = -1 + putzTm;          // Putz endet 1 cm vor Rahmen; Mauerwerk hinter dem raumseitigen Putz
@@ -3026,18 +3026,19 @@ function sectionPrimitives(a, arr) {
 }
 function sectionBBox(a, arr) { if (!docScale) return { x: a.ox - 6, y: a.oy - 16, w: 180, h: 30 }; const perPt = docScale.perPt, cl = Math.hypot(a.cx2 - a.cx1, a.cy2 - a.cy1) || 1, mh = sectionMaxH(a, arr) / perPt; return { x: a.ox - 16, y: a.oy - mh - 8, w: cl + 32, h: mh + 36 }; }
 function drawSection(svg, a, arr) {
-  const g = svgEl('g', { 'data-id': a.id });
+  const g = svgEl('g', { 'data-id': a.id }), hdl = [];
   for (const p of sectionPrimitives(a, arr)) {
     if (p.t === 'rect') { const r = svgEl('rect', { x: Math.min(p.x, p.x + p.w), y: Math.min(p.y, p.y + p.h), width: Math.abs(p.w), height: Math.abs(p.h), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { r.setAttribute('stroke', p.stroke); r.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(r); }
     else if (p.t === 'poly') { const pl = svgEl('polygon', { points: p.pts.map(q => q[0].toFixed(2) + ',' + q[1].toFixed(2)).join(' '), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { pl.setAttribute('stroke', p.stroke); pl.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(pl); }
     else if (p.t === 'line') { const l = svgEl('line', { x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2, stroke: p.stroke || '#1c242c', 'stroke-width': p.w || 1, 'vector-effect': 'non-scaling-stroke' }); if (p.dash) l.setAttribute('stroke-dasharray', p.dash); g.appendChild(l); }
     else if (p.t === 'arrow') { const s = 6, ang = Math.atan2(p.dy, p.dx); for (const da of [2.5, -2.5]) g.appendChild(svgEl('line', { x1: p.x, y1: p.y, x2: p.x - Math.cos(ang + da) * s, y2: p.y - Math.sin(ang + da) * s, stroke: p.col || '#1c242c', 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' })); }
     else if (p.t === 'text') { const t = svgEl('text', { x: p.x, y: p.y, fill: p.col || '#1c242c', 'font-size': p.small ? 9 : 12, 'font-weight': p.small ? 400 : 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = p.text; g.appendChild(t); }
-    else if (p.t === 'lhandle' && sel && sel.id === a.id) { g.appendChild(svgEl('circle', { class: 'handle lay-handle', cx: p.x, cy: p.y, r: 4.5, 'data-h': 'sl:' + p.wallId + ':' + p.li + ':' + p.edge, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' })); }   // Schicht-Kante im Schnitt ziehen
-    else if (p.t === 'shandle' && sel && sel.id === a.id) { g.appendChild(svgEl('circle', { class: 'handle dim-handle', cx: p.x, cy: p.y, r: 5, 'data-h': p.key, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' })); }   // Wandhöhe / Brüstung / Sturz / Decke im Schnitt ziehen
+    else if (p.t === 'lhandle') hdl.push({ x: p.x, y: p.y, key: 'sl:' + p.wallId + ':' + p.li + ':' + p.edge, cls: 'lay-handle', r: 4.5 });
+    else if (p.t === 'shandle') hdl.push({ x: p.x, y: p.y, key: p.key, cls: 'dim-handle', r: 5 });
   }
   svg.appendChild(g);
   const b = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: 'transparent', 'data-id': a.id }));
+  if (sel && sel.id === a.id) for (const h of hdl) svg.appendChild(svgEl('circle', { class: 'handle ' + h.cls, cx: h.x, cy: h.y, r: h.r, 'data-h': h.key, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' }));   // Griffe ÜBER dem Hit-Rechteck → klickbar
   return g;
 }
 function startSection(pv, e, p) {

@@ -3952,6 +3952,26 @@ function loadThree() {
   if (window.THREE && THREE.OrbitControls) return Promise.resolve();
   return loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js').then(() => loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js'));
 }
+function exportSceneObj(scene) {   // THREE-Szene → Wavefront .obj (nur solide Meshes, ohne Boden/Raster/Linien)
+  let out = '# Submit PDF – 3D-Modell-Export (Wavefront OBJ)\n', vCount = 0, n = 0; const v = new THREE.Vector3();
+  scene.traverse(obj => {
+    if (!obj.isMesh || obj.name === 'ground') return;
+    const geo = obj.geometry; if (!geo || !geo.attributes || !geo.attributes.position) return;
+    obj.updateWorldMatrix(true, false);
+    const pos = geo.attributes.position, idx = geo.index, base = vCount; n++;
+    out += 'o ' + (obj.name || ('teil_' + n)) + '\n';
+    for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i); v.applyMatrix4(obj.matrixWorld); out += 'v ' + v.x.toFixed(4) + ' ' + v.y.toFixed(4) + ' ' + v.z.toFixed(4) + '\n'; vCount++; }
+    if (idx) { for (let i = 0; i < idx.count; i += 3) out += 'f ' + (idx.getX(i) + base + 1) + ' ' + (idx.getX(i + 1) + base + 1) + ' ' + (idx.getX(i + 2) + base + 1) + '\n'; }
+    else { for (let i = 0; i < pos.count; i += 3) out += 'f ' + (base + i + 1) + ' ' + (base + i + 2) + ' ' + (base + i + 3) + '\n'; }
+  });
+  return { obj: out, parts: n, verts: vCount };
+}
+function downloadText(str, name, mime) { const blob = new Blob([str], { type: mime || 'text/plain' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1500); }
+function saveObjFrom(api, baseName) {
+  if (!api || !api.exportObj) return; const r = api.exportObj(); if (!r || !r.parts) { toast('Keine 3D-Geometrie zum Exportieren.'); return; }
+  downloadText(r.obj, (baseName || 'modell').replace(/\.[a-z0-9]+$/i, '').replace(/[^\w.-]+/g, '_') + '.obj', 'model/obj');
+  toast('OBJ exportiert: ' + r.parts + ' Teile, ' + r.verts + ' Punkte (Blender/SketchUp/…).');
+}
 async function open3D() {
   if (!docScale) { toast('Für die 3D-Ansicht zuerst den Massstab setzen (1:n).'); return; }
   const arr = getAnnos(curPage()) || [], walls = arr.filter(a => a.type === 'wall' && layerVisible(a) && phaseVisible(a));
@@ -3961,12 +3981,13 @@ async function open3D() {
   if (!window.polygonClipping) { try { await loadScript('https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js'); } catch (_) { } }   // für Geschossdecken-Footprint
   status('');
   const ov = document.createElement('div'); ov.className = 'd3-overlay';
-  ov.innerHTML = '<div class="d3-bar"><b>3D-Ansicht</b><label class="d3-h">Höhe <input type="number" id="d3h" min="1" max="20" step="0.1" value="' + wallHeightM + '"> m</label><span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">Ziehen = drehen · Mausrad = zoomen</span><span class="grow"></span><button class="btn' + (show3DSlabs ? ' on' : '') + '" id="d3Slab" title="Geschossdecken/Bodenplatte (aus Wand-Footprint) ein-/ausblenden">▦ Decken</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
+  ov.innerHTML = '<div class="d3-bar"><b>3D-Ansicht</b><label class="d3-h">Höhe <input type="number" id="d3h" min="1" max="20" step="0.1" value="' + wallHeightM + '"> m</label><span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">Ziehen = drehen · Mausrad = zoomen</span><span class="grow"></span><button class="btn' + (show3DSlabs ? ' on' : '') + '" id="d3Slab" title="Geschossdecken/Bodenplatte (aus Wand-Footprint) ein-/ausblenden">▦ Decken</button><button class="btn" id="d3Obj" title="3D-Modell als OBJ exportieren (Blender/SketchUp/Rhino …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
   document.body.appendChild(ov);
   const host = ov.querySelector('#d3Canvas');
   let api = build3DScene(host, walls, arr);
   ov.querySelector('#d3h').onchange = e => { wallHeightM = Math.max(1, Math.min(20, parseFloat(e.target.value) || 2.6)); if (api) api.dispose(); api = build3DScene(host, walls, arr); };
   ov.querySelector('#d3Slab').onclick = e => { show3DSlabs = !show3DSlabs; e.currentTarget.classList.toggle('on', show3DSlabs); if (api) api.dispose(); api = build3DScene(host, walls, arr); };
+  ov.querySelector('#d3Obj').onclick = () => saveObjFrom(api, docName);
   ov.querySelectorAll('.d3-views button').forEach(b => b.onclick = () => { if (api && api.setView) api.setView(b.dataset.v); });
   ov.querySelector('#d3Shot').onclick = () => { if (!api || !api.snapshot) return; const s = api.snapshot(); close(); place3DImage(s.data, s.w, s.h); };
   const close = () => { if (api) api.dispose(); ov.remove(); document.removeEventListener('keydown', esc, true); };
@@ -4023,7 +4044,7 @@ function buildIFCScene(host, ifc) {
   const controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(0, sy * 0.4, 0);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x55604f, 0.85));
   const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(span, span * 1.7, span * 0.6); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; const scam = sun.shadow.camera, sb = span * 1.4; scam.left = -sb; scam.right = sb; scam.top = sb; scam.bottom = -sb; scam.near = 0.1; scam.far = span * 6 + 30; scene.add(sun);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(span * 3, span * 3), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; ground.receiveShadow = true; scene.add(ground);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(span * 3, span * 3), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; ground.receiveShadow = true; ground.name = 'ground'; scene.add(ground);
   scene.add(new THREE.GridHelper(span * 3, 40, 0xc4cabe, 0xd8dcd2));
   const byColor = {};   // nach Farbe zusammenfassen → wenige Draw-Calls
   for (const me of ifc.meshes) { const c = me.color, k = (c.r * 255 | 0) + '_' + (c.g * 255 | 0) + '_' + (c.b * 255 | 0) + '_' + c.a.toFixed(2); let g = byColor[k]; if (!g) g = byColor[k] = { color: c, pos: [], nor: [], idx: [], base: 0 }; const P = me.pos; for (let i = 0; i < P.length; i += 3) g.pos.push(P[i] - cx, P[i + 1] - floor, P[i + 2] - cz); for (const v of me.nor) g.nor.push(v); for (const ix of me.indices) g.idx.push(ix + g.base); g.base += P.length / 3; }
@@ -4032,16 +4053,17 @@ function buildIFCScene(host, ifc) {
   const setView = v => { const d = span * 1.4; if (v === 'top') camera.position.set(0.001, d * 1.5, 0); else if (v === 'front') camera.position.set(0, sy * 0.5, d); else if (v === 'side') camera.position.set(d, sy * 0.5, 0); else camera.position.set(d * 0.7, d * 0.7, d * 0.7); controls.target.set(0, sy * 0.4, 0); controls.update(); };
   const snapshot = () => { renderer.render(scene, camera); return { data: renderer.domElement.toDataURL('image/png'), w: W, h: Hp }; };
   const dispose = () => { cancelAnimationFrame(raf); try { renderer.dispose(); } catch (_) { } host.innerHTML = ''; };
-  return { dispose, setView, snapshot };
+  return { dispose, setView, snapshot, exportObj: () => exportSceneObj(scene) };
 }
 function open3DIFC(ifc) {
   const ov = document.createElement('div'); ov.className = 'd3-overlay';
   const dim = ifc.dim ? (ifc.dim.x.toFixed(1) + '×' + ifc.dim.z.toFixed(1) + ' m, H ' + ifc.dim.y.toFixed(1) + ' m') : '';
-  ov.innerHTML = '<div class="d3-bar"><b>IFC-Modell</b>' + (ifc.project ? '<span class="d3-hint">' + ifc.project + '</span>' : '') + '<span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">' + dim + ' · Ziehen = drehen</span><span class="grow"></span><button class="btn" id="ifcList">▦ Bauteilliste</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
+  ov.innerHTML = '<div class="d3-bar"><b>IFC-Modell</b>' + (ifc.project ? '<span class="d3-hint">' + ifc.project + '</span>' : '') + '<span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">' + dim + ' · Ziehen = drehen</span><span class="grow"></span><button class="btn" id="ifcList">▦ Bauteilliste</button><button class="btn" id="ifcObj" title="IFC-Modell als OBJ exportieren (Blender/SketchUp …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
   document.body.appendChild(ov); const host = ov.querySelector('#d3Canvas'); let api = buildIFCScene(host, ifc);
   ov.querySelectorAll('.d3-views button').forEach(b => b.onclick = () => api && api.setView && api.setView(b.dataset.v));
   ov.querySelector('#d3Shot').onclick = () => { if (!api || !api.snapshot) return; const s = api.snapshot(); if (pdfDoc) { close(); place3DImage(s.data, s.w, s.h); } else toast('Erst ein PDF/Plan öffnen, um das Bild abzulegen.'); };
   ov.querySelector('#ifcList').onclick = () => openIFCList(ifc);
+  ov.querySelector('#ifcObj').onclick = () => saveObjFrom(api, ifc.project || 'ifc-modell');
   const close = () => { if (api) api.dispose(); ov.remove(); document.removeEventListener('keydown', esc, true); };
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } }; document.addEventListener('keydown', esc, true);
   ov.querySelector('#d3Close').onclick = close;
@@ -4380,7 +4402,7 @@ function build3DScene(host, walls, arr) {
   const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(span * 0.8, span * 1.7, span * 0.5); sun.castShadow = true;   // Schatten
   sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; const sc = sun.shadow.camera, sb = Math.max(span * 1.3, 6); sc.left = -sb; sc.right = sb; sc.top = sb; sc.bottom = -sb; sc.near = 0.1; sc.far = span * 5 + 20; scene.add(sun);
   const gsz = Math.max(span * 2.4, 4);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(gsz, gsz), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; ground.receiveShadow = true; scene.add(ground);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(gsz, gsz), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; ground.receiveShadow = true; ground.name = 'ground'; scene.add(ground);
   scene.add(new THREE.GridHelper(gsz, Math.min(60, Math.max(4, Math.round(gsz))), 0xc4cabe, 0xd8dcd2));
   for (const a of arr) if (a.type === 'area' && a.room && a.pts && a.pts.length >= 3 && layerVisible(a) && phaseVisible(a)) {
     const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
@@ -4581,7 +4603,7 @@ function build3DScene(host, walls, arr) {
   const loop = () => { if (!alive) return; controls.update(); renderer.render(scene, camera); raf = requestAnimationFrame(loop); }; loop();
   const setView = name => { const ty = H * 0.45, d = Math.max(span * 1.4, 4); if (name === 'top') { camera.position.set(0.001, d * 1.7, 0.001); controls.target.set(0, 0, 0); } else if (name === 'front') { camera.position.set(0, ty, d * 1.5); controls.target.set(0, ty, 0); } else if (name === 'side') { camera.position.set(d * 1.5, ty, 0.001); controls.target.set(0, ty, 0); } else { camera.position.set(span * 0.85, span * 0.95, span * 0.95); controls.target.set(0, H * 0.4, 0); } camera.updateProjectionMatrix(); controls.update(); };
   const snapshot = () => { renderer.render(scene, camera); return { data: renderer.domElement.toDataURL('image/png'), w: renderer.domElement.width, h: renderer.domElement.height }; };
-  return { dispose: () => { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); controls.dispose(); renderer.dispose(); host.innerHTML = ''; }, setView, snapshot };
+  return { dispose: () => { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); controls.dispose(); renderer.dispose(); host.innerHTML = ''; }, setView, snapshot, exportObj: () => exportSceneObj(scene) };
 }
 
 /* ---------- Rechtsklick-Menü (alles erreichbar) ---------- */

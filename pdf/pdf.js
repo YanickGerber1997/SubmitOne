@@ -1006,15 +1006,15 @@ const SLAB_PRESETS = [   // Decken-/Bodenaufbau OBEN → UNTEN [Material, cm]
   { name: 'Holzbalkendecke', layers: [['belag', 1], ['estrich', 6], ['trittschall', 3], ['holz', 24]] },
   { name: 'Decke ohne Aufbau (Beton)', layers: [['beton', 24]] }
 ];
-function applySlabBuildup(a, layersData) {   // layersData = [[mat, cm], …] OBEN→UNTEN; t in Metern (Decke rechnet vertikal in m)
+function applySlabBuildup(a, layersData) {   // layersData = [[mat, cm, einzugCm?], …] OBEN→UNTEN; t in Metern (Decke rechnet vertikal in m)
   if (!layersData || !layersData.length) { delete a.layers; return; }
-  a.layers = layersData.map(([mat, cm]) => ({ mat, t: cm / 100 }));
+  a.layers = layersData.map(([mat, cm, inset]) => { const l = { mat, t: cm / 100 }; if (inset) l.inset = (+inset) / 100; return l; });   // inset = Einzug je Schicht beidseitig (cm→m) – z.B. Estrich stoppt vor der Wand
   a.thick = a.layers.reduce((s, l) => s + l.t, 0);
 }
-function slabLayerBands(a) {   // → [{mat,t,y0,y1}] Höhen über der Decken-Unterkante (0..thick); Schichten OBEN→UNTEN
+function slabLayerBands(a) {   // → [{mat,t,y0,y1,inset}] Höhen über der Decken-Unterkante (0..thick); Schichten OBEN→UNTEN
   const layers = a && a.layers; if (!layers || !layers.length) return null;
   let yTop = layers.reduce((s, l) => s + l.t, 0); const out = [];
-  for (const l of layers) { const y1 = yTop, y0 = yTop - l.t; out.push({ mat: l.mat, t: l.t, y0, y1 }); yTop = y0; }
+  for (const l of layers) { const y1 = yTop, y0 = yTop - l.t; out.push({ mat: l.mat, t: l.t, y0, y1, inset: l.inset || 0 }); yTop = y0; }
   return out;
 }
 const SUB_W = { lattung: 6, staender: 5, schraube: 1.2 };   // Breite/Markierung der UK-Querschnitte (cm)
@@ -2032,7 +2032,7 @@ function openProfileEditor(cb, init) {   // Querschnitt definieren: Vorlagen (pa
 }
 function openSlabBuildup(a, pv) {   // Decken-/Bodenaufbau: Vorlagen + freie Schichtliste (oben→unten)
   if (!a) { toast('Erst eine Decke/Platte wählen.'); return; }
-  let draft = (a.layers && a.layers.length) ? a.layers.map(l => [l.mat, Math.round(l.t * 1000) / 10]) : SLAB_PRESETS[0].layers.map(l => l.slice());
+  let draft = (a.layers && a.layers.length) ? a.layers.map(l => [l.mat, Math.round(l.t * 1000) / 10, Math.round((l.inset || 0) * 100)]) : SLAB_PRESETS[0].layers.map(l => l.slice());
   const dlg = document.createElement('div'); dlg.className = 'lab-overlay'; dlg.style.zIndex = 100000;
   dlg.innerHTML = '<div class="lab-wrap" style="width:min(560px,94vw);height:auto;max-height:90vh"><div class="lab-head"><b>Decken-/Bodenaufbau</b><span class="lab-hint">oben → unten</span><span class="grow"></span><button class="btn" id="sbClose">✕</button></div><div style="padding:14px;overflow:auto">'
     + '<div id="sbPresets" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div><div id="sbList"></div>'
@@ -2041,13 +2041,13 @@ function openSlabBuildup(a, pv) {   // Decken-/Bodenaufbau: Vorlagen + freie Sch
   document.body.appendChild(dlg);
   const $ = s => dlg.querySelector(s), matOpts = sel => Object.keys(WALL_MATS).map(k => '<option value="' + k + '"' + (k === sel ? ' selected' : '') + '>' + WALL_MATS[k].label + '</option>').join('');
   const total = () => draft.reduce((s, r) => s + (+r[1] || 0), 0);
-  function renderList() { const L = $('#sbList'); L.innerHTML = ''; draft.forEach((row, i) => { const r = document.createElement('div'); r.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px'; r.innerHTML = '<input type="number" min="0.1" step="0.1" value="' + row[1] + '" style="width:64px"><span>cm</span><select style="flex:1">' + matOpts(row[0]) + '</select><button class="btn">✕</button>'; const inp = r.children[0], sel = r.children[2], del = r.children[3]; inp.onchange = () => { draft[i][1] = parseFloat((inp.value || '').replace(',', '.')) || 0; $('#sbTotal').textContent = 'Gesamt: ' + (Math.round(total() * 10) / 10) + ' cm'; }; sel.onchange = () => draft[i][0] = sel.value; del.onclick = () => { draft.splice(i, 1); renderList(); }; L.appendChild(r); }); $('#sbTotal').textContent = 'Gesamt: ' + (Math.round(total() * 10) / 10) + ' cm'; }
+  function renderList() { const L = $('#sbList'); L.innerHTML = ''; draft.forEach((row, i) => { const r = document.createElement('div'); r.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px'; r.innerHTML = '<input type="number" min="0.1" step="0.1" value="' + row[1] + '" style="width:60px"><span>cm</span><select style="flex:1">' + matOpts(row[0]) + '</select><input type="number" step="0.5" value="' + (row[2] || 0) + '" title="Einzug beidseitig (im Schnitt vor der Wand stoppen), cm" style="width:52px"><span title="Einzug cm">⊣⊢</span><button class="btn">✕</button>'; const inp = r.children[0], sel = r.children[2], ins = r.children[3], del = r.children[5]; inp.onchange = () => { draft[i][1] = parseFloat((inp.value || '').replace(',', '.')) || 0; $('#sbTotal').textContent = 'Gesamt: ' + (Math.round(total() * 10) / 10) + ' cm'; }; sel.onchange = () => draft[i][0] = sel.value; ins.onchange = () => draft[i][2] = parseFloat((ins.value || '').replace(',', '.')) || 0; del.onclick = () => { draft.splice(i, 1); renderList(); }; L.appendChild(r); }); $('#sbTotal').textContent = 'Gesamt: ' + (Math.round(total() * 10) / 10) + ' cm'; }
   const pc = $('#sbPresets'); SLAB_PRESETS.forEach(p => { const b = document.createElement('button'); b.className = 'btn'; b.textContent = p.name; b.onclick = () => { draft = p.layers.map(l => l.slice()); renderList(); }; pc.appendChild(b); });
   $('#sbAdd').onclick = () => { draft.push(['beton', 10]); renderList(); };
   const close = () => dlg.remove();
   $('#sbClose').onclick = close;
   $('#sbNone').onclick = () => { pushUndo(); applySlabBuildup(a, null); pageViews.forEach(drawAnnos); saveState(); close(); toast('Aufbau entfernt'); };
-  $('#sbOk').onclick = () => { const layers = draft.filter(r => r[1] > 0).map(r => [r[0], r[1]]); if (!layers.length) { toast('Mindestens eine Schicht.'); return; } pushUndo(); applySlabBuildup(a, layers); pageViews.forEach(drawAnnos); saveState(); close(); toast('Deckenaufbau angewendet ✓ (' + (Math.round(total() * 10) / 10) + ' cm)'); };
+  $('#sbOk').onclick = () => { const layers = draft.filter(r => r[1] > 0).map(r => [r[0], r[1], r[2] || 0]); if (!layers.length) { toast('Mindestens eine Schicht.'); return; } pushUndo(); applySlabBuildup(a, layers); pageViews.forEach(drawAnnos); saveState(); close(); toast('Deckenaufbau angewendet ✓ (' + (Math.round(total() * 10) / 10) + ' cm)'); };
   renderList();
 }
 /* ---------- Kettenmass (mehrere Stationen klicken → Masskette mit Einzelmassen) ---------- */
@@ -2889,7 +2889,7 @@ function sectionPrimitives(a, arr) {
     ds.sort((u, v) => u - v);
     const base = sl.base || 0, thick = sl.thick || 0.2, bands = slabLayerBands(sl);
     for (let i = 0; i + 1 < ds.length; i++) { const dm = (ds[i] + ds[i + 1]) / 2, mid = [p1[0] + cux * dm, p1[1] + cuy * dm]; if (!pointInPoly(mid, sl.pts)) continue; const dA = fp(ds[i]), dB = fp(ds[i + 1]), xa = X(Math.min(dA, dB)), xb = X(Math.max(dA, dB));
-      if (bands) for (const b of bands) { const m = WALL_MATS[b.mat] || {}, yT = Yh(base + b.y1), hh = Yh(base + b.y0) - Yh(base + b.y1); out.push({ t: 'rect', x: xa, y: yT, w: xb - xa, h: hh, fill: m.fill || '#fff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode && m.hatch) sectionBandHatch(out, xa, yT, xb - xa, hh, b.mat, null); }
+      if (bands) for (const b of bands) { const m = WALL_MATS[b.mat] || {}, yT = Yh(base + b.y1), hh = Yh(base + b.y0) - Yh(base + b.y1), ins = cmToPts((b.inset || 0) * 100), xaB = xa + ins, xbB = xb - ins; if (xbB - xaB < 0.5) continue; out.push({ t: 'rect', x: xaB, y: yT, w: xbB - xaB, h: hh, fill: m.fill || '#fff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode && m.hatch) sectionBandHatch(out, xaB, yT, xbB - xaB, hh, b.mat, null); }
       else out.push({ t: 'rect', x: xa, y: Yh(base + thick), w: xb - xa, h: Yh(base) - Yh(base + thick), fill: '#dadde2', stroke: '#8a8f96', sw: 0.7 });
     }
   }
@@ -4865,7 +4865,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
     A('Profil im Schnitt', () => { const prof = { id: 9004, type: 'profile', path: [[200, 150], [300, 150]], prof: [[0, 0], [3, 0], [3, 12], [0, 12]], elev: 2.5, closed: false }; const pr = sectionPrimitives(sec, [prof, sec]); return pr.some(p => p.t === 'poly') ? '' : 'kein Querschnitt'; });
-    A('Decke im Schnitt (Schichten)', () => { const sl = { id: 9005, type: 'slab', pts: [[180, 100], [320, 100], [320, 200], [180, 200]], base: 2.6 }; applySlabBuildup(sl, [['belag', 1], ['estrich', 7], ['beton', 24]]); const pr = sectionPrimitives(sec, [sl, sec]); return pr.filter(p => p.t === 'rect').length >= 3 ? '' : 'zu wenig Schichten'; });
+    A('Decke im Schnitt (Schichten)', () => { const sl = { id: 9005, type: 'slab', pts: [[180, 100], [320, 100], [320, 200], [180, 200]], base: 2.6 }; applySlabBuildup(sl, [['belag', 1], ['estrich', 7, 1], ['beton', 24]]); const pr = sectionPrimitives(sec, [sl, sec]); return (pr.filter(p => p.t === 'rect').length >= 3 && Math.abs(sl.layers[1].inset - 0.01) < 1e-6) ? '' : 'Schichten/Einzug falsch'; });
     A('Schicht-Über/Unterlänge', () => { const w = { type: 'wall', x1: 0, y1: 0, x2: 100, y2: 0, thick: cmToPts(31) }; applyWallBuildup(w, [['mauerwerk', 15, '', 0, 30], ['eps', 16, '', 20, 0]]); return (Math.abs(w.layers[1].top - 0.2) < 1e-6 && Math.abs(w.layers[0].bot - 0.3) < 1e-6 && !w.layers[0].top) ? '' : 'top=' + w.layers[1].top + ' bot=' + w.layers[0].bot; });
     A('Sockelzone (Material-Split)', () => { const w = { type: 'wall', x1: 0, y1: 0, x2: 100, y2: 0, thick: cmToPts(31) }; applyWallBuildup(w, [['mauerwerk', 15, '', 0, 0, '', 0], ['glaswolle', 16, '', 0, 0, 'xps', 50]]); return (w.layers[1].lowMat === 'xps' && Math.abs(w.layers[1].lowH - 0.5) < 1e-6 && !w.layers[0].lowMat) ? '' : 'lowMat=' + w.layers[1].lowMat + ' lowH=' + w.layers[1].lowH; });
   } finally { docScale = saved; }

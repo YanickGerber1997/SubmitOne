@@ -4905,6 +4905,11 @@ function openQuantities() {
   ov.querySelector('#qCopy').onclick = () => { navigator.clipboard.writeText('MATERIALLISTE\n' + csv + '\nFENSTER/TÜREN\n' + ocsv + (erows ? '\nDECKEN/DÄCHER/TREPPEN\n' + ecsv : '')).then(() => toast('In die Zwischenablage kopiert (Excel-tauglich)')).catch(() => toast('Kopieren nicht möglich')); };
   ov.addEventListener('pointerdown', e => { if (e.target === ov) close(); });
 }
+function applyMountPreset(a, mode) {   // drei Montagearten des Rahmens → sinnvolle Defaults (danach frei editierbar)
+  if (mode === 'innen') { a.depth = 0.2; a.anschlagType = 'innen'; if (a.anschlagDepth == null) a.anschlagDepth = cmToPts(5); }          // innen ans Mauerwerk angeschlagen
+  else if (mode === 'laibung') { a.depth = 0.5; a.anschlagType = 'none'; }                                                              // stumpf in der Laibung
+  else if (mode === 'aussen') { a.depth = 0.82; a.anschlagType = 'aussen'; if (a.outerLap == null) a.outerLap = cmToPts(3); if (a.anschlagDepth == null) a.anschlagDepth = cmToPts(5); }   // aussen auf die Konstruktion
+}
 function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoomen, Ziehgriffe + Regler, live in den Plan
   const arr = getAnnos(pv.num), wall = a.wallId && arr.find(o => o.id === a.wallId && o.type === 'wall');
   const ov = document.createElement('div'); ov.className = 'lab-overlay';
@@ -4915,7 +4920,11 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   const cm = pts => Math.round(ptsToCm(pts) * 10) / 10;
   const fields = [
     { k: 'depth', label: 'Einbautiefe', unit: '%', get: () => Math.round((a.depth == null ? 0.5 : a.depth) * 100), set: v => a.depth = Math.max(0, Math.min(1, v / 100)), min: 0, max: 100, step: 1 },
+    { k: 'frameW', label: 'Rahmenbreite (Ansicht)', unit: 'cm', get: () => cm(a.frameW || cmToPts(a.kind === 'door' ? 6 : 10)), set: v => a.frameW = cmToPts(v), min: 3, max: 20, step: 0.5 },
     { k: 'frameD', label: 'Rahmentiefe', unit: 'cm', get: () => cm(a.frameD || cmToPts(7)), set: v => a.frameD = cmToPts(v), min: 4, max: 16, step: 0.5 },
+    { k: 'sashW', label: 'Flügelbreite', unit: 'cm', get: () => cm(a.sashW || cmToPts(7)), set: v => a.sashW = cmToPts(v), min: 3, max: 14, step: 0.5, when: () => a.kind === 'window' },
+    { k: 'sashD', label: 'Flügeltiefe', unit: 'cm', get: () => cm(a.sashD || cmToPts(7)), set: v => a.sashD = cmToPts(v), min: 3, max: 14, step: 0.5, when: () => a.kind === 'window' },
+    { k: 'sashShift', label: 'Flügel-Überlappung', unit: 'cm', get: () => cm(a.sashShift != null ? a.sashShift : cmToPts(4)), set: v => a.sashShift = cmToPts(v), min: 0, max: 8, step: 0.5, when: () => a.kind === 'window' },
     { k: 'boardW', label: 'Laibungsbrett Breite', unit: 'cm', get: () => a.boardW != null ? a.boardW : 2.5, set: v => a.boardW = v, min: 0.5, max: 10, step: 0.5 },
     { k: 'boardVis', label: 'Rahmen sichtbar', unit: 'cm', get: () => a.boardVis != null ? a.boardVis : 1, set: v => a.boardVis = v, min: 0, max: 6, step: 0.5 },
     { k: 'outerLap', label: 'Aussen (Dämmung über Rahmen)', unit: 'cm', get: () => cm(a.outerLap != null ? a.outerLap : cmToPts(3)), set: v => a.outerLap = cmToPts(v), min: 0, max: 20, step: 0.5 },
@@ -4977,6 +4986,9 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   }
   function buildCtrls() {
     side.innerHTML = '';
+    const moWrap = document.createElement('label'); moWrap.className = 'lab-row'; moWrap.innerHTML = '<span>Montageart</span>';
+    const moSel = document.createElement('select'); moSel.innerHTML = '<option value="">– frei –</option><option value="innen">Innen ans Mauerwerk</option><option value="laibung">In der Laibung</option><option value="aussen">Aussen auf Konstruktion</option>'; moSel.value = a.mountMode || '';
+    moSel.onchange = () => { a.mountMode = moSel.value; if (moSel.value) applyMountPreset(a, moSel.value); render(); buildCtrls(); drawAnnos(pv); saveState(); }; moWrap.appendChild(moSel); side.appendChild(moWrap);
     const anWrap = document.createElement('label'); anWrap.className = 'lab-row'; anWrap.innerHTML = '<span>Anschlag</span>';
     const anSel = document.createElement('select'); anSel.innerHTML = '<option value="none">Kein</option><option value="aussen">Aussen</option><option value="innen">Innen</option>'; anSel.value = a.anschlagType || 'none';
     anSel.onchange = () => { a.anschlagType = anSel.value; render(); buildCtrls(); drawAnnos(pv); saveState(); }; anWrap.appendChild(anSel); side.appendChild(anWrap);

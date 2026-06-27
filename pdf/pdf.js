@@ -2946,6 +2946,12 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip) { 
     out.push({ t: 'poly', pts: [corner(-1, md - leafW), corner(1 - fwS, md - leafW), corner(1 - fwS, md + leafW), corner(-1, md + leafW)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Türblatt (vertikal, bei Einbautiefe)
     out.push({ t: 'poly', pts: [corner(1 - fwS, md - fdh), corner(1, md - fdh), corner(1, md + fdh), corner(1 - fwS, md + fdh)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Sturz-Rahmen
   }
+  if (o.kind === 'window' && o.bank !== false) {   // Fensterbank aussen: Metallblech am Sims, geneigt + Überstand + Tropfkante
+    const bm = WALL_MATS[o.bankMat] || { fill: '#cfd3d8', color: '#565b62' }, over = cmToPts(o.bankOver != null ? o.bankOver : 4), bt = cmToPts(2), drop = cmToPts(2.5), md0 = Math.max(-1, Math.min(1, (o.depth == null ? 0.5 : o.depth) * 2 - 1));
+    const xIn = cx + ht2 * md0, xOut = cx + ht2 + over, yT = Yh(sill);
+    out.push({ t: 'poly', pts: [[xIn, yT], [xOut, yT + drop], [xOut, yT + drop + bt], [xIn, yT + bt]], fill: bm.fill, stroke: bm.color, sw: 0.9 });   // Bankblech
+    out.push({ t: 'line', x1: xOut, y1: yT + drop + bt, x2: xOut, y2: yT + drop + bt + cmToPts(2), stroke: bm.color, w: 1 });   // Tropfkante
+  }
   out.push({ t: 'shandle', x: cx, y: Yh(head), key: 'sh:op:' + o.id + ':head' });   // Sturz-Höhe ziehen
   if (o.kind === 'window') out.push({ t: 'shandle', x: cx, y: Yh(sill), key: 'sh:op:' + o.id + ':sill' });   // Brüstungs-Höhe ziehen
   if (winDimsOn) {   // Schnitt-Bemaßung Höhe: Rohbau + Licht (Licht = Rohbau − 2×(Rahmen − sichtbarer Rahmen))
@@ -5123,6 +5129,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     { k: 'boardProtrude', label: 'Brett über Aussenschicht (+/−)', unit: 'cm', get: () => a.boardProtrude || 0, set: v => a.boardProtrude = v, min: -10, max: 20, step: 0.5 },
     { k: 'outerLap', label: 'Aussen (Dämmung über Rahmen)', unit: 'cm', get: () => cm(a.outerLap != null ? a.outerLap : cmToPts(3)), set: v => a.outerLap = cmToPts(v), min: 0, max: 20, step: 0.5 },
     { k: 'innerReveal', label: 'Innen (Putz reingezogen)', unit: 'cm', get: () => cm(a.innerReveal != null ? a.innerReveal : cmToPts(2)), set: v => a.innerReveal = cmToPts(v), min: 0, max: 20, step: 0.5 },
+    { k: 'bankOver', label: 'Fensterbank Überstand', unit: 'cm', get: () => a.bankOver != null ? a.bankOver : 4, set: v => a.bankOver = v, min: 0, max: 15, step: 0.5, when: () => a.kind === 'window' && a.bank !== false },
     { k: 'anschlagDepth', label: 'Anschlagtiefe', unit: 'cm', get: () => cm(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)), set: v => a.anschlagDepth = cmToPts(v), min: 0, max: 20, step: 0.5, when: () => a.anschlagType && a.anschlagType !== 'none' }
   ];
   let scale = 1;
@@ -5230,6 +5237,11 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     sel('Innen', [['putz', 'Putz reingezogen'], ['aussen', 'Aussenschicht rein'], ['gips', 'Gipsplatte + Putz'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealType || 'putz', v => { a.revealType = v; render(); drawAnnos(pv); saveState(); });
     sel('Aussen', [['', 'Standard (Schicht)'], ['putz', 'Putz'], ['gips', 'Gipsplatte'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealOuter || '', v => { a.revealOuter = v; render(); drawAnnos(pv); saveState(); });
     fld('boardW'); fld('boardVis'); fld('boardProtrude'); fld('outerLap'); fld('innerReveal');
+    if (win) {
+      head('Fensterbank / Sims');
+      const tw = document.createElement('label'); tw.className = 'lab-row'; tw.style.cssText = 'flex-direction:row;align-items:center;gap:7px'; const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = a.bank !== false; const sp = document.createElement('span'); sp.textContent = 'Fensterbank (aussen)'; cb.onchange = () => { a.bank = cb.checked; render(); buildCtrls(); drawAnnos(pv); saveState(); }; tw.appendChild(cb); tw.appendChild(sp); side.appendChild(tw);
+      if (a.bank !== false) { sel('Material', [['metall', 'Metall'], ['holz', 'Holz'], ['beton', 'Beton / Stein']], a.bankMat || 'metall', v => { a.bankMat = v; render(); drawAnnos(pv); saveState(); }); fld('bankOver'); }
+    }
     if (wall && wall.layers && wall.layers.length) {
       head('Wandschichten (innen → aussen)');
       const fullBtn = document.createElement('button'); fullBtn.className = 'btn'; fullBtn.textContent = '▦ Alle Schichten voll bearbeiten'; fullBtn.style.cssText = 'width:100%;margin:2px 0 6px'; fullBtn.onclick = () => openBuildPop(wall, () => { render(); buildCtrls(); }); side.appendChild(fullBtn);

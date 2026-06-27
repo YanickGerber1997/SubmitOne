@@ -2768,8 +2768,9 @@ function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieb
 }
 /* ---------- Möbel- / Sanitär-Symbole (Blöcke) ---------- */
 let blockKind = 'table';
-const BLOCK_DEFS = { bed: [200, 150], table: [120, 80], sofa: [200, 90], chair: [45, 45], wc: [40, 60], sink: [60, 45], shower: [90, 90], bath: [170, 75], stove: [60, 60], fridge: [60, 65], kitchen: [60, 60], kitchensink: [80, 50], dishwasher: [60, 60], washer: [60, 60], cabinet: [90, 40], wardrobe: [140, 60], tallcab: [60, 60], desk: [140, 70], nightstand: [45, 40] };
-const BLOCK_H = { bed: 0.5, table: 0.75, sofa: 0.8, chair: 0.9, wc: 0.4, sink: 0.85, shower: 0.04, bath: 0.55, stove: 0.9, fridge: 1.8, kitchen: 0.9, kitchensink: 0.9, dishwasher: 0.85, washer: 0.85, cabinet: 1.2, wardrobe: 2.0, tallcab: 2.1, desk: 0.74, nightstand: 0.5 };
+const BLOCK_DEFS = { bed: [200, 150], table: [120, 80], sofa: [200, 90], chair: [45, 45], wc: [40, 60], sink: [60, 45], shower: [90, 90], bath: [170, 75], stove: [60, 60], fridge: [60, 65], kitchen: [60, 60], kitchensink: [80, 50], dishwasher: [60, 60], washer: [60, 60], cabinet: [90, 40], wardrobe: [140, 60], tallcab: [60, 60], desk: [140, 70], nightstand: [45, 40], column: [30, 30], columnRound: [36, 36] };
+const BLOCK_H = { bed: 0.5, table: 0.75, sofa: 0.8, chair: 0.9, wc: 0.4, sink: 0.85, shower: 0.04, bath: 0.55, stove: 0.9, fridge: 1.8, kitchen: 0.9, kitchensink: 0.9, dishwasher: 0.85, washer: 0.85, cabinet: 1.2, wardrobe: 2.0, tallcab: 2.1, desk: 0.74, nightstand: 0.5, column: 2.6, columnRound: 2.6 };
+const IS_COLUMN = k => k === 'column' || k === 'columnRound';   // Stütze (Poché-Füllung, volle Geschosshöhe im 3D)
 function blockShapes(a) {   // Symbol-Geometrie in absoluten Seitenkoordinaten (für Schirm + PDF)
   const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), w = Math.abs(a.w), h = Math.abs(a.h), k = a.kind, mn = Math.min(w, h), s = [];
   const X = f => x + f * w, Y = f => y + f * h;
@@ -2777,6 +2778,8 @@ function blockShapes(a) {   // Symbol-Geometrie in absoluten Seitenkoordinaten (
   const el = (fx, fy, rx, ry) => s.push({ t: 'ell', cx: X(fx), cy: Y(fy), rx: rx * w, ry: ry * h });
   const ci = (fx, fy, r) => s.push({ t: 'circ', cx: X(fx), cy: Y(fy), r: r * mn });
   const ln = (x1, y1, x2, y2) => s.push({ t: 'line', x1: X(x1), y1: Y(y1), x2: X(x2), y2: Y(y2) });
+  if (k === 'columnRound') { ci(0.5, 0.5, 0.5); return s; }   // runde Stütze
+  if (k === 'column') { rr(0, 0, 1, 1, 0); return s; }         // rechteckige Stütze
   rr(0, 0, 1, 1, 0.03);
   if (k === 'bed') { rr(0.06, 0.04, 0.88, 0.26, 0.04); ln(0, 0.32, 1, 0.32); }
   else if (k === 'table') rr(0.12, 0.12, 0.76, 0.76, 0.02);
@@ -2800,11 +2803,11 @@ function blockShapes(a) {   // Symbol-Geometrie in absoluten Seitenkoordinaten (
   return s;
 }
 function drawBlock(svg, a) {
-  const col = a.color || '#1c242c', g = svgEl('g', { 'data-id': a.id });
+  const col = a.color || '#1c242c', fill = IS_COLUMN(a.kind) ? '#b8bcb2' : 'none', g = svgEl('g', { 'data-id': a.id });
   for (const sp of blockShapes(a)) {
-    if (sp.t === 'rect') g.appendChild(svgEl('rect', { x: sp.x, y: sp.y, width: sp.w, height: sp.h, rx: sp.rx || 0, ry: sp.rx || 0, fill: 'none', stroke: col, 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
-    else if (sp.t === 'ell') g.appendChild(svgEl('ellipse', { cx: sp.cx, cy: sp.cy, rx: sp.rx, ry: sp.ry, fill: 'none', stroke: col, 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
-    else if (sp.t === 'circ') g.appendChild(svgEl('circle', { cx: sp.cx, cy: sp.cy, r: sp.r, fill: 'none', stroke: col, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
+    if (sp.t === 'rect') g.appendChild(svgEl('rect', { x: sp.x, y: sp.y, width: sp.w, height: sp.h, rx: sp.rx || 0, ry: sp.rx || 0, fill, stroke: col, 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
+    else if (sp.t === 'ell') g.appendChild(svgEl('ellipse', { cx: sp.cx, cy: sp.cy, rx: sp.rx, ry: sp.ry, fill, stroke: col, 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
+    else if (sp.t === 'circ') g.appendChild(svgEl('circle', { cx: sp.cx, cy: sp.cy, r: sp.r, fill: a.kind === 'columnRound' ? fill : 'none', stroke: col, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
     else if (sp.t === 'line') g.appendChild(svgEl('line', { x1: sp.x1, y1: sp.y1, x2: sp.x2, y2: sp.y2, stroke: col, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
   }
   svg.appendChild(g); return g;
@@ -3656,7 +3659,7 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
         }
         else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), o = { x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawRectangle(o); }
         else if (a.type === 'roof') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h); pg.drawRectangle({ x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: 1.2 }); const rl = (x1, y1, x2, y2) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: 1.8, color: c }); if (a.rtype === 'pult') { a.axis === 'x' ? rl(x, y, x + W, y) : rl(x, y, x, y + H); } else { a.axis === 'x' ? rl(x, y + H / 2, x + W, y + H / 2) : rl(x + W / 2, y, x + W / 2, y + H); } const lab = a.rtype === 'pult' ? 'Pultdach' : 'Satteldach', tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: x + W / 2 - tw / 2, y: Y(y + H / 2) - 3, size: 11, font, color: c }); }
-        else if (a.type === 'block') { for (const sp of blockShapes(a)) { if (sp.t === 'rect') pg.drawRectangle({ x: sp.x, y: Y(sp.y + sp.h), width: sp.w, height: sp.h, borderColor: c, borderWidth: 1.2 }); else if (sp.t === 'ell') pg.drawEllipse({ x: sp.cx, y: Y(sp.cy), xScale: sp.rx, yScale: sp.ry, borderColor: c, borderWidth: 1.2 }); else if (sp.t === 'circ') pg.drawEllipse({ x: sp.cx, y: Y(sp.cy), xScale: sp.r, yScale: sp.r, borderColor: c, borderWidth: 1 }); else if (sp.t === 'line') pg.drawLine({ start: { x: sp.x1, y: Y(sp.y1) }, end: { x: sp.x2, y: Y(sp.y2) }, thickness: 1, color: c }); } }
+        else if (a.type === 'block') { const pf = IS_COLUMN(a.kind) ? hexToRgb('#b8bcb2') : null, fco = pf ? { color: rgb(pf.r, pf.g, pf.b) } : {}; for (const sp of blockShapes(a)) { if (sp.t === 'rect') pg.drawRectangle({ x: sp.x, y: Y(sp.y + sp.h), width: sp.w, height: sp.h, borderColor: c, borderWidth: 1.2, ...fco }); else if (sp.t === 'ell') pg.drawEllipse({ x: sp.cx, y: Y(sp.cy), xScale: sp.rx, yScale: sp.ry, borderColor: c, borderWidth: 1.2 }); else if (sp.t === 'circ') pg.drawEllipse({ x: sp.cx, y: Y(sp.cy), xScale: sp.r, yScale: sp.r, borderColor: c, borderWidth: 1, ...(a.kind === 'columnRound' ? fco : {}) }); else if (sp.t === 'line') pg.drawLine({ start: { x: sp.x1, y: Y(sp.y1) }, end: { x: sp.x2, y: Y(sp.y2) }, thickness: 1, color: c }); } }
         else if (a.type === 'oval') { const o = { x: a.x + a.w / 2, y: Y(a.y + a.h / 2), xScale: Math.abs(a.w / 2), yScale: Math.abs(a.h / 2), borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawEllipse(o); }
         else if (a.type === 'pen') { const op = a.hl ? 0.35 : 1; for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c, opacity: op }); }
         else if (a.type === 'opening') {
@@ -4133,6 +4136,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Massstabsbalken-Element', () => buildPlanParts(842, 595, { kind: 'mstab', margin: 8 }).length > 3);
     A('Öffnungs-Nummern (F1/F2)', () => { const g = openingGroups([wall, win, { id: 9004, type: 'opening', kind: 'window', wallId: 9001, w: cmToPts(80), head: 2.1, sill: 0.9, winType: 'f1', winMat: 'holz' }]); return (g.wins.length === 2 && g.posOf[9004] === 'F1' && g.posOf[9002] === 'F2') ? '' : JSON.stringify(g.posOf); });
     A('Möbel-Symbol (Kleiderschrank)', () => blockShapes({ x: 0, y: 0, w: 140, h: 60, kind: 'wardrobe' }).length >= 3 && !!BLOCK_DEFS.kitchen && !!BLOCK_H.tallcab);
+    A('Stütze (rund/eckig)', () => { const r = blockShapes({ x: 0, y: 0, w: 30, h: 30, kind: 'columnRound' }); return r.length === 1 && r[0].t === 'circ' && IS_COLUMN('column') && !IS_COLUMN('table'); });
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
   } finally { docScale = saved; }
@@ -4537,11 +4541,11 @@ function build3DScene(host, walls, arr) {
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(flat, 3)); geo.computeVertexNormals(); scene.add(new THREE.Mesh(geo, rmat));
   }
   // Möbel/Sanitär als niedrige Blöcke
-  const bmat = new THREE.MeshLambertMaterial({ color: 0xcec5b4 });
+  const bmat = new THREE.MeshLambertMaterial({ color: 0xcec5b4 }), colMat = new THREE.MeshLambertMaterial({ color: 0xb8bcb2 });
   for (const a of arr) if (a.type === 'block' && layerVisible(a) && phaseVisible(a)) {
-    const bw = M(Math.abs(a.w)), bd = M(Math.abs(a.h)), bh = BLOCK_H[a.kind] || 0.6, ccx = Math.min(a.x, a.x + a.w) + Math.abs(a.w) / 2, ccy = Math.min(a.y, a.y + a.h) + Math.abs(a.h) / 2;
+    const isCol = IS_COLUMN(a.kind), bw = M(Math.abs(a.w)), bd = M(Math.abs(a.h)), bh = isCol ? (a.h3d || wallHeightM) : (BLOCK_H[a.kind] || 0.6), ccx = Math.min(a.x, a.x + a.w) + Math.abs(a.w) / 2, ccy = Math.min(a.y, a.y + a.h) + Math.abs(a.h) / 2;
     if (bw < 0.01 || bd < 0.01) continue;
-    const geo = new THREE.BoxGeometry(bw, bh, bd), m = new THREE.Mesh(geo, bmat); m.position.set(M(ccx - cx), lev(a) + bh / 2, M(ccy - cy)); scene.add(m);
+    const geo = a.kind === 'columnRound' ? new THREE.CylinderGeometry(Math.min(bw, bd) / 2, Math.min(bw, bd) / 2, bh, 24) : new THREE.BoxGeometry(bw, bh, bd), m = new THREE.Mesh(geo, isCol ? colMat : bmat); m.position.set(M(ccx - cx), lev(a) + bh / 2, M(ccy - cy)); m.castShadow = true; m.receiveShadow = true; scene.add(m);
     const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); scene.add(e);
   }
   let raf, alive = true;

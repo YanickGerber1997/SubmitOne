@@ -2914,7 +2914,7 @@ function openingElev(out, X, Yh, opx0, opw, o, H, col, redM) {   // Fenster/Tür
     }
     if (o.bank !== false) { const bm = o.bankMat === 'holz' ? { fill: '#e7cfa8', color: '#7a5126' } : o.bankMat === 'beton' ? { fill: '#dadde2', color: '#8a8f96' } : { fill: '#cfd3d8', color: '#565b62' }, pj = cmToPts(4), th = cmToPts(2.5); out.push({ t: 'rect', x: X(opx0) - pj, y: Yh(sill), w: opw + 2 * pj, h: th, fill: bm.fill, stroke: bm.color, sw: 0.9 }); }   // Fensterbank aussen = projizierende Sohlbank
     else out.push({ t: 'line', x1: X(opx0), y1: Yh(sill), x2: X(opx0 + opw), y2: Yh(sill), stroke: col, w: 1.2 });   // innen: nur Sohlbankkante
-    if (o.niche) { const nh = (Yh(0) - Yh(0.24)); out.push({ t: 'rect', x: X(opx0), y: Yh(head) - nh, w: opw, h: nh, fill: '#e9e6df', stroke: col, sw: 0.8 }); }   // Storennische
+    if (o.niche) { const nhM = ptsToCm(o.nicheH || cmToPts(28)) / 100, nhP = Math.abs(Yh(nhM) - Yh(0)); out.push({ t: 'rect', x: X(opx0), y: Yh(head) - nhP, w: opw, h: nhP, fill: '#e9e6df', stroke: col, sw: 0.8 }); out.push({ t: 'text', x: X(opx0) + 3, y: Yh(head) - nhP / 2 + 3, text: 'Storen', col, small: true }); }   // Storenkasten (einstellbare Höhe)
   } else {
     const wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', fr = Math.min(opw * 0.42, (o.frameW || cmToPts(6)) * (opw / Math.max(1, o.w))), yT = Yh(head), yB = Yh(sill), hingeRight = o.winHinge === 'right';   // echte Rahmen-/Zargenbreite
     out.push({ t: 'rect', x: X(opx0), y: yT, w: opw, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.2 });   // Zarge
@@ -5194,7 +5194,9 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     { k: 'outerLap', label: 'Aussen (Dämmung über Rahmen)', unit: 'cm', get: () => cm(a.outerLap != null ? a.outerLap : cmToPts(3)), set: v => a.outerLap = cmToPts(v), min: 0, max: 20, step: 0.5 },
     { k: 'innerReveal', label: 'Innen (Putz reingezogen)', unit: 'cm', get: () => cm(a.innerReveal != null ? a.innerReveal : cmToPts(2)), set: v => a.innerReveal = cmToPts(v), min: 0, max: 20, step: 0.5 },
     { k: 'bankOver', label: 'Fensterbank Überstand', unit: 'cm', get: () => a.bankOver != null ? a.bankOver : 4, set: v => a.bankOver = v, min: 0, max: 15, step: 0.5, when: () => a.kind === 'window' && a.bank !== false },
-    { k: 'anschlagDepth', label: 'Anschlagtiefe', unit: 'cm', get: () => cm(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)), set: v => a.anschlagDepth = cmToPts(v), min: 0, max: 20, step: 0.5, when: () => a.anschlagType && a.anschlagType !== 'none' }
+    { k: 'anschlagDepth', label: 'Anschlagtiefe', unit: 'cm', get: () => cm(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)), set: v => a.anschlagDepth = cmToPts(v), min: 0, max: 20, step: 0.5, when: () => a.anschlagType && a.anschlagType !== 'none' },
+    { k: 'nicheH', label: 'Storenkasten Höhe', unit: 'cm', get: () => cm(a.nicheH != null ? a.nicheH : cmToPts(28)), set: v => a.nicheH = cmToPts(v), min: 10, max: 45, step: 1, when: () => a.kind === 'window' && a.niche },
+    { k: 'nicheD', label: 'Storenkasten Tiefe', unit: 'cm', get: () => cm(a.nicheD != null ? a.nicheD : cmToPts(13)), set: v => a.nicheD = cmToPts(v), min: 8, max: 30, step: 1, when: () => a.kind === 'window' && a.niche }
   ];
   let scale = 1;
   function geom() {
@@ -5395,6 +5397,8 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       head('Fensterbank / Sims');
       const tw = document.createElement('label'); tw.className = 'lab-row'; tw.style.cssText = 'flex-direction:row;align-items:center;gap:7px'; const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = a.bank !== false; const sp = document.createElement('span'); sp.textContent = 'Fensterbank (aussen)'; cb.onchange = () => { a.bank = cb.checked; render(); buildCtrls(); drawAnnos(pv); saveState(); }; tw.appendChild(cb); tw.appendChild(sp); side.appendChild(tw);
       if (a.bank !== false) { sel('Material', [['metall', 'Metall'], ['holz', 'Holz'], ['beton', 'Beton / Stein']], a.bankMat || 'metall', v => { a.bankMat = v; render(); drawAnnos(pv); saveState(); }); fld('bankOver'); }
+      const tn = document.createElement('label'); tn.className = 'lab-row'; tn.style.cssText = 'flex-direction:row;align-items:center;gap:7px'; const cbn = document.createElement('input'); cbn.type = 'checkbox'; cbn.checked = !!a.niche; const spn = document.createElement('span'); spn.textContent = 'Storenkasten (innen, über Sturz)'; cbn.onchange = () => { a.niche = cbn.checked; render(); buildCtrls(); drawAnnos(pv); saveState(); }; tn.appendChild(cbn); tn.appendChild(spn); side.appendChild(tn);
+      if (a.niche) { fld('nicheH'); fld('nicheD'); }
     }
     if (wall && wall.layers && wall.layers.length) {
       head('Wandschichten (innen → aussen)');

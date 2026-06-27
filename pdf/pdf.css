@@ -317,6 +317,8 @@ body.has-planbar.has-tabs .work{top:calc(var(--bar) + var(--tools) + var(--tabs)
 .lp-foot{padding:8px 12px;border-top:1px solid var(--line-soft);font-size:11px;color:var(--ink-faint);line-height:1.4}
 .d3-overlay{position:fixed;inset:0;z-index:300;background:#eef1ec;display:flex;flex-direction:column}
 .d3-bar{height:48px;flex:none;display:flex;align-items:center;gap:14px;padding:0 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.d3-views{display:flex;gap:4px}
+.d3-views button{padding:4px 9px;font-size:12px}
 .d3-bar b{font-size:15px;letter-spacing:.3px}
 .d3-bar .d3-h{font-size:13px;color:var(--ink-soft);display:flex;align-items:center;gap:6px}
 .d3-bar .d3-h input{width:60px;height:28px;border:1px solid var(--line);background:var(--surface-2);text-align:center;font:inherit;font-size:13px}

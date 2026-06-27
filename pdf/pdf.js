@@ -4166,7 +4166,7 @@ function buildIFCScene(host, ifc) {
 function open3DIFC(ifc) {
   const ov = document.createElement('div'); ov.className = 'd3-overlay';
   const dim = ifc.dim ? (ifc.dim.x.toFixed(1) + '×' + ifc.dim.z.toFixed(1) + ' m, H ' + ifc.dim.y.toFixed(1) + ' m') : '';
-  ov.innerHTML = '<div class="d3-bar"><b>IFC-Modell</b>' + (ifc.project ? '<span class="d3-hint">' + ifc.project + '</span>' : '') + '<span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">' + dim + ' · Ziehen = drehen</span><span class="grow"></span><button class="btn' + (ifcShowEnv ? ' on' : '') + '" id="ifcEnv" title="Umgebung/Pflanzen/Möbel (RPC-Proxys, Gelände) ein-/ausblenden – für eine saubere Bauwerks-Ansicht standardmäßig aus">🌳 Umgebung</button><button class="btn" id="ifcList">▦ Bauteilliste</button><button class="btn" id="ifcPlan" title="Grundriss erzeugen: Horizontalschnitt durchs Modell → editierbare 2D-Linien auf die offene Seite (Massstab nötig)">⊞ Grundriss</button><button class="btn" id="ifcWalls" title="Als editierbare Wände: erkennt aus dem Schnitt parallele Wandpaare und erzeugt echte Submit-Wände (2D + 3D bearbeitbar). Experimentell.">⌂ Als Wände</button><button class="btn" id="ifcObj" title="IFC-Modell als OBJ exportieren (Blender/SketchUp …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
+  ov.innerHTML = '<div class="d3-bar"><b>IFC-Modell</b>' + (ifc.project ? '<span class="d3-hint">' + ifc.project + '</span>' : '') + '<span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">' + dim + ' · Ziehen = drehen</span><span class="grow"></span><button class="btn' + (ifcShowEnv ? ' on' : '') + '" id="ifcEnv" title="Umgebung/Pflanzen/Möbel (RPC-Proxys, Gelände) ein-/ausblenden – für eine saubere Bauwerks-Ansicht standardmäßig aus">🌳 Umgebung</button><button class="btn" id="ifcList">▦ Bauteilliste</button><button class="btn" id="ifcPlan" title="Grundriss erzeugen: Horizontalschnitt durchs Modell → editierbare 2D-Linien auf die offene Seite (Massstab nötig)">⊞ Grundriss</button><button class="btn" id="ifcWalls" title="Als editierbare Wände (EIN Geschoss): erkennt aus dem Schnitt parallele Wandpaare → echte Submit-Wände. Experimentell.">⌂ Als Wände</button><button class="btn" id="ifcStoreys" title="ALLE Geschosse → je eine editierbare Ebene mit Wänden, im 3D korrekt gestapelt (Höhen aus den IFC-Geschossen). Experimentell.">🏢 Alle Geschosse</button><button class="btn" id="ifcObj" title="IFC-Modell als OBJ exportieren (Blender/SketchUp …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
   document.body.appendChild(ov); const host = ov.querySelector('#d3Canvas'); let api = buildIFCScene(host, ifc);
   ov.querySelectorAll('.d3-views button').forEach(b => b.onclick = () => api && api.setView && api.setView(b.dataset.v));
   ov.querySelector('#d3Shot').onclick = () => { if (!api || !api.snapshot) return; const s = api.snapshot(); if (pdfDoc) { close(); place3DImage(s.data, s.w, s.h); } else toast('Erst ein PDF/Plan öffnen, um das Bild abzulegen.'); };
@@ -4175,6 +4175,7 @@ function open3DIFC(ifc) {
   ov.querySelector('#ifcObj').onclick = () => saveObjFrom(api, ifc.project || 'ifc-modell');
   ov.querySelector('#ifcPlan').onclick = () => { if (!pdfDoc) { toast('Erst ein PDF/Plan öffnen, um den Grundriss abzulegen.'); return; } const h = prompt('Schnitthöhe für den Grundriss (m über Gebäude-Unterkante):', '1.2'); if (h == null) return; const hv = parseFloat((h || '').replace(',', '.')); ifcFloorPlan(ifc, hv > 0 ? hv : 1.2); };
   ov.querySelector('#ifcWalls').onclick = () => { if (!pdfDoc) { toast('Erst ein PDF/Plan öffnen, um die Wände abzulegen.'); return; } const h = prompt('Schnitthöhe für die Wand-Erkennung (m über Gebäude-Unterkante):', '1.2'); if (h == null) return; const hv = parseFloat((h || '').replace(',', '.')); ifcToWalls(ifc, hv > 0 ? hv : 1.2); };
+  ov.querySelector('#ifcStoreys').onclick = () => { if (!pdfDoc) { toast('Erst ein Dokument öffnen/neu starten.'); return; } ifcAllStoreysToWalls(ifc); };
   const close = () => { if (api) api.dispose(); ov.remove(); document.removeEventListener('keydown', esc, true); };
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } }; document.addEventListener('keydown', esc, true);
   ov.querySelector('#d3Close').onclick = close;
@@ -4293,6 +4294,33 @@ async function ifcToWalls(ifc, cutAbove) {   // IFC → editierbare Submit-Wänd
   for (const w of ws) { const a = toPt(w.x1, w.y1), b = toPt(w.x2, w.y2); arr.push({ id: nextId++, type: 'wall', x1: a[0], y1: a[1], x2: b[0], y2: b[1], thick: cmToPts(Math.max(6, Math.min(60, w.thick * 100))), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: h3, dim: false, layer: lid }); }
   activeLayerId = lid; drawAnnos(pv); renderLayerPanel(); saveState(); status('');
   toast(ws.length + ' Wände auf neuer Seite ' + n + ' rekonstruiert (Ebene „IFC-Wände") – in 2D & 3D bearbeitbar. Experimentell, Dicke/Höhe ggf. nachjustieren.');
+}
+async function ifcAllStoreysToWalls(ifc) {   // alle Geschosse → je eine editierbare Ebene mit Wänden, korrekt gestapelt (Höhe aus IfcBuildingStorey, ausgerichtet an der Geometrie-Unterkante)
+  if (!pdfDoc) { toast('Erst ein Dokument öffnen/neu starten.'); return; }
+  if (!docScale) { toast('Erst den Massstab setzen (1:n).'); return; }
+  if (!ifc.storeys || !ifc.storeys.filter(s => s.elev != null).length) { toast('Keine Geschoss-Höhen im IFC – nutze „⌂ Als Wände" mit Schnitthöhe.'); return; }
+  status('Geschosse werden rekonstruiert …'); await new Promise(r => setTimeout(r, 20));
+  const sts = ifc.storeys.filter(s => s.elev != null).slice().sort((a, b) => a.elev - b.elev), minElev = sts[0].elev, floors = [];
+  for (let i = 0; i < sts.length; i++) {
+    const cutY = ifc.bbox.miny + (sts[i].elev - minElev) + 1.2;
+    const ws = ifcPairWalls(mergeIfcSegments(ifcSliceSegments(ifc.meshes, cutY)));
+    if (ws.length >= 3) { const next = sts.slice(i + 1).find(s => s.elev - sts[i].elev > 1.8); floors.push({ name: sts[i].name, elev: Math.round((sts[i].elev - minElev) * 1000) / 1000, h3d: next ? Math.min(4, next.elev - sts[i].elev) : 2.7, walls: ws }); }
+  }
+  if (!floors.length) { status(''); toast('Keine Geschosse mit erkennbaren Wänden gefunden – evtl. andere Geometrie.'); return; }
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (const f of floors) for (const w of f.walls) { for (const x of [w.x1, w.x2]) { if (x < minx) minx = x; if (x > maxx) maxx = x; } for (const y of [w.y1, w.y2]) { if (y < miny) miny = y; if (y > maxy) maxy = y; } }
+  const pad = 50, pgW = cmToPts((maxx - minx) * 100) + 2 * pad, pgH = cmToPts((maxy - miny) * 100) + 2 * pad;
+  await insertBlankPage(curPage(), { w: Math.max(300, Math.round(pgW)), h: Math.max(300, Math.round(pgH)) });
+  const n = curPage(), pv = pageViews.find(p => p.num === n) || pageViews[0]; if (!pv) { status(''); return; }
+  const cxm = (minx + maxx) / 2, cym = (miny + maxy) / 2, pcx = (pv.pageW || 595) / 2, pcy = (pv.pageH || 842) / 2, toPt = (x, y) => [pcx + cmToPts((x - cxm) * 100), pcy + cmToPts((y - cym) * 100)];
+  pushUndo();
+  const arr = getAnnos(n); let first = null;
+  for (const f of floors) {
+    const lid = newLayerId(); layers.push({ id: lid, name: f.name, visible: true, elevation: f.elev }); if (!first) first = lid;
+    for (const w of f.walls) { const a = toPt(w.x1, w.y1), b = toPt(w.x2, w.y2); arr.push({ id: nextId++, type: 'wall', x1: a[0], y1: a[1], x2: b[0], y2: b[1], thick: cmToPts(Math.max(6, Math.min(60, w.thick * 100))), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: f.h3d, dim: false, layer: lid }); }
+  }
+  if (first) activeLayerId = first; drawAnnos(pv); renderLayerPanel(); saveState(); status('');
+  toast(floors.length + ' Geschosse als Ebenen rekonstruiert (im 3D gestapelt): ' + floors.map(f => f.name).join(' · ') + '. Ebenen-Panel: einzeln ein-/ausblenden & Höhe anpassen.');
 }
 async function pdfPageSegments(n) {   // Vektorlinien einer PDF-Seite aus der Operator-Liste (mit CTM-Verfolgung) → Segmente in Seitenpunkten (oben-links)
   const page = await pdfDoc.getPage(n), OPS = pdfjs.OPS, opl = await page.getOperatorList(), PH = page.getViewport({ scale: 1 }).height;

@@ -3232,9 +3232,24 @@ function buildPlanParts(w, h, opts) {   // frei konfigurierbarer Plankopf / Rahm
 function insertPlanParts(opts) {
   const n = curPage(), pv = pageViews.find(p => p.num === n); if (!pv) { toast('Keine Seite offen.'); return; }
   pushUndo();
-  const parts = buildPlanParts(pv.pageW || 595, pv.pageH || 842, opts).map(a => Object.assign(a, { id: nextId++, layer: activeLayerId }));
+  const gid = 'pk' + nextId, optClone = JSON.parse(JSON.stringify(opts));   // Gruppe + Bauplan-Optionen merken → beim Formatwechsel neu aufbauen
+  const parts = buildPlanParts(pv.pageW || 595, pv.pageH || 842, opts).map(a => Object.assign(a, { id: nextId++, layer: activeLayerId, pkGid: gid, pkOpts: optClone }));
   const arr = getAnnos(n); for (const a of parts) arr.push(a);
-  drawAnnos(pv); saveState(); toast(opts.kind === 'kopf' ? 'Plankopf eingefügt ✓ (gesperrt – per Rechtsklick entsperren)' : 'Element eingefügt ✓');
+  drawAnnos(pv); saveState(); toast(opts.kind === 'kopf' ? 'Plankopf eingefügt ✓ (passt sich dem Blattformat an · gesperrt)' : 'Element eingefügt ✓ (passt sich dem Blattformat an)');
+}
+function reflowPlanGroups(n, w, h) {   // Plankopf/Rahmen/Linie an neues Blattformat (w,h) anpassen, Feldwerte erhalten
+  const arr = getAnnos(n); if (!arr || !arr.length) return; const groups = {};
+  for (const a of arr) if (a.pkGid) (groups[a.pkGid] = groups[a.pkGid] || []).push(a);
+  for (const gid of Object.keys(groups)) {
+    const parts = groups[gid]; let opts = null; for (const p of parts) if (p.pkOpts) { opts = JSON.parse(JSON.stringify(p.pkOpts)); break; }
+    if (!opts) continue;
+    const vals = {}; for (const p of parts) if (p.field) vals[p.field] = p.text;   // aktuelle Feldinhalte sichern
+    opts.fields = Object.assign({}, opts.fields, vals);
+    const layer = parts[0].layer, fresh = buildPlanParts(w, h, opts).map(a => Object.assign(a, { id: nextId++, layer, pkGid: gid, pkOpts: opts }));
+    for (const fp of fresh) if (fp.field && vals[fp.field] != null) fp.text = vals[fp.field];   // Werte zurückschreiben
+    for (let i = arr.length - 1; i >= 0; i--) if (arr[i].pkGid === gid) arr.splice(i, 1);
+    for (const fp of fresh) arr.push(fp);
+  }
 }
 function paintBg(lib, pg, w, h, bg) { if (!bg || bg === '#ffffff') return; const c = hexToRgb(bg); pg.drawRectangle({ x: 0, y: 0, width: w, height: h, color: lib.rgb(c.r, c.g, c.b) }); }
 // Seite nach `after` einfügen (after=0 → ganz oben). size optional {w,h} (sonst Nachbarseite), tmpl = Vorlage, bg = Hintergrund.
@@ -3872,7 +3887,10 @@ async function changePageFormat(w, h) {   // aktuelle Seite auf neues Blattforma
     const lib = await loadPdfLib(), out = await lib.PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
     const n = curPage(), pg = out.getPages()[n - 1]; if (pg) pg.setSize(w, h);
     curBytes = new Uint8Array(await out.save()); await loadDoc(curBytes.slice());
-    status(''); updateFormatLabel(); toast('Blattformat geändert ✓');
+    const hadPlan = (getAnnos(curPage()) || []).some(a => a.pkGid);
+    reflowPlanGroups(curPage(), w, h);   // Plankopf/Rahmen mit dem Format mitziehen
+    const pv = pageViews.find(p => p.num === curPage()); if (pv) drawAnnos(pv);
+    status(''); updateFormatLabel(); saveState(); toast('Blattformat geändert ✓' + (hadPlan ? ' – Plankopf angepasst' : ''));
   } catch (e) { status(''); console.error(e); if (undoStack.length) undoStack.pop(); toast('Format-Änderung fehlgeschlagen.'); }
 }
 /* ---------- 3D-Ansicht: Wände mit Höhe extrudieren (Three.js) ---------- */

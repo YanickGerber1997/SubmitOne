@@ -974,7 +974,12 @@ const WALL_MATS = {   // Schicht-Material: Füllung (hell), Schraffur-Typ (oder 
   luft: { label: 'Hinterlüftung', fill: '#ffffff', hatch: null, color: '#c2c2c2' },
   gips: { label: 'Gipsplatte', fill: HATCH_DEF.gips.fill, hatch: 'gips', color: HATCH_DEF.gips.color },
   holz: { label: 'Holzschalung', fill: HATCH_DEF.holz.fill, hatch: 'holz', color: HATCH_DEF.holz.color },
-  konter: { label: 'Konterlattung', fill: HATCH_DEF.holz.fill, hatch: 'holz', color: HATCH_DEF.holz.color }
+  konter: { label: 'Konterlattung', fill: HATCH_DEF.holz.fill, hatch: 'holz', color: HATCH_DEF.holz.color },
+  belag: { label: 'Bodenbelag', fill: '#cdb79e', hatch: null, color: '#7a5126' },
+  estrich: { label: 'Unterlagsboden / Estrich', fill: '#e7e7e3', hatch: null, color: '#9a9a9a' },
+  trittschall: { label: 'Trittschalldämmung', fill: HATCH_DEF.daemm_eps.fill, hatch: 'daemm_eps', color: '#b59a4d' },
+  xps: { label: 'Dämmung XPS', fill: HATCH_DEF.daemm_eps.fill, hatch: 'daemm_eps', color: '#b07d2a' },
+  kies: { label: 'Kies / Schotter', fill: '#e9e4d6', hatch: null, color: '#9a8e72' }
 };
 const WALL_PRESETS = [   // Schichten innen → aussen [Material, cm]
   { name: 'Mauerwerk + EPS', layers: [['putz', 1.5], ['mauerwerk', 15], ['eps', 22], ['putz', 2]] },
@@ -983,6 +988,24 @@ const WALL_PRESETS = [   // Schichten innen → aussen [Material, cm]
   { name: 'Hinterlüftet · Holz horizontal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['holz', 2.2]] },
   { name: 'Hinterlüftet · Holz vertikal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['konter', 3], ['holz', 2.2]] }
 ];
+const SLAB_PRESETS = [   // Decken-/Bodenaufbau OBEN → UNTEN [Material, cm]
+  { name: 'Geschossdecke (Unterlagsboden)', layers: [['belag', 1], ['estrich', 7], ['trittschall', 3], ['beton', 24]] },
+  { name: 'Bodenplatte auf Erdreich', layers: [['belag', 1], ['estrich', 8], ['xps', 12], ['beton', 25]] },
+  { name: 'Flachdach (Warmdach)', layers: [['kies', 5], ['eps', 20], ['beton', 24]] },
+  { name: 'Holzbalkendecke', layers: [['belag', 1], ['estrich', 6], ['trittschall', 3], ['holz', 24]] },
+  { name: 'Decke ohne Aufbau (Beton)', layers: [['beton', 24]] }
+];
+function applySlabBuildup(a, layersData) {   // layersData = [[mat, cm], …] OBEN→UNTEN; t in Metern (Decke rechnet vertikal in m)
+  if (!layersData || !layersData.length) { delete a.layers; return; }
+  a.layers = layersData.map(([mat, cm]) => ({ mat, t: cm / 100 }));
+  a.thick = a.layers.reduce((s, l) => s + l.t, 0);
+}
+function slabLayerBands(a) {   // → [{mat,t,y0,y1}] Höhen über der Decken-Unterkante (0..thick); Schichten OBEN→UNTEN
+  const layers = a && a.layers; if (!layers || !layers.length) return null;
+  let yTop = layers.reduce((s, l) => s + l.t, 0); const out = [];
+  for (const l of layers) { const y1 = yTop, y0 = yTop - l.t; out.push({ mat: l.mat, t: l.t, y0, y1 }); yTop = y0; }
+  return out;
+}
 const SUB_W = { lattung: 6, staender: 5, schraube: 1.2 };   // Breite/Markierung der UK-Querschnitte (cm)
 function applyWallBuildup(a, layersData, spacingCm) {   // layersData = [[mat, cm, subTyp?], …] innen→aussen · spacingCm = Achsabstand UK
   if (!layersData || !layersData.length) { delete a.layers; return; }
@@ -4783,6 +4806,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Mesh3D encode/decode', () => { const pos = new Float32Array([0, 0, 0, 12, 0, 0, 0, 3, 7, 12, 3, 7]); const e = encodeMesh3d(pos, [0, 1, 2, 1, 3, 2]); const d = decodeMesh3d(e); let mx = 0; for (let i = 0; i < pos.length; i++) mx = Math.max(mx, Math.abs(d.pos[i] - pos[i])); return (mx < 0.01 && d.idx.length === 6 && d.idx[4] === 3) ? '' : 'Abw. ' + mx; });
     A('Profil-Querschnitt', () => { const r = profileArea([[0, 0], [3, 0], [3, 12], [0, 12]]), z = profilePreset('zblech'); return (Math.abs(r - 36) < 0.01 && z.length === 8 && profileArea(z) > 0) ? '' : 'r=' + r + ' z=' + z.length; });
     A('Profil-Länge', () => { const sv = docScale; docScale = { perPt: 0.01, label: '1:50', n: 50 }; const len = profilePathLenM([[0, 0], [100, 0], [100, 100]]); docScale = sv; return Math.abs(len - 2) < 0.001 ? '' : 'len=' + len; });
+    A('Decken-Schichtaufbau', () => { const s = { type: 'slab', pts: [[0, 0], [100, 0], [100, 100], [0, 100]], base: 3 }; applySlabBuildup(s, [['belag', 1], ['estrich', 7], ['beton', 24]]); const b = slabLayerBands(s); return (s.layers.length === 3 && Math.abs(s.thick - 0.32) < 1e-6 && b[0].mat === 'belag' && Math.abs(b[0].y1 - 0.32) < 1e-6 && Math.abs(b[2].y0) < 1e-6) ? '' : 'thick=' + s.thick; });
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
     A('Profil im Schnitt', () => { const prof = { id: 9004, type: 'profile', path: [[200, 150], [300, 150]], prof: [[0, 0], [3, 0], [3, 12], [0, 12]], elev: 2.5, closed: false }; const pr = sectionPrimitives(sec, [prof, sec]); return pr.some(p => p.t === 'poly') ? '' : 'kein Querschnitt'; });
@@ -4882,7 +4906,7 @@ function computeQuantities(arr) {   // Mengenauszug: Wandfläche × Schichtstär
   const pp = docScale ? docScale.perPt : 0;
   for (const a of arr) {
     if (!layerVisible(a) || !phaseVisible(a)) continue;
-    if (a.type === 'slab' && a.pts && a.pts.length >= 3) { const m2 = polyArea(a.pts) * pp * pp, e = ex('slab', 'Decke / Bodenplatte', 'm²'); e.qty += m2; e.n++; e.vol += m2 * (a.thick || 0.2); }
+    if (a.type === 'slab' && a.pts && a.pts.length >= 3) { const m2 = polyArea(a.pts) * pp * pp; if (a.layers && a.layers.length) { for (const l of a.layers) { const lbl = (WALL_MATS[l.mat] && WALL_MATS[l.mat].label) || l.mat, e = ex('slabL:' + l.mat, 'Decke: ' + lbl, 'm²'); e.qty += m2; e.n++; e.vol += m2 * l.t; } } else { const e = ex('slab', 'Decke / Bodenplatte', 'm²'); e.qty += m2; e.n++; e.vol += m2 * (a.thick || 0.2); } }
     else if (a.type === 'roof' && a.w && a.h) { const e = ex('roof', 'Dach (Grundfläche)', 'm²'); e.qty += Math.abs(a.w * a.h) * pp * pp; e.n++; }
     else if (a.type === 'stairs') { const e = ex('stairs', 'Treppe (Lauf)', 'm'); e.qty += ptsToCm(Math.hypot(a.x2 - a.x1, a.y2 - a.y1)) / 100; e.n++; e.steps += stairSteps(a); }
     else if (a.type === 'beam') { const e = ex('beam', 'Unterzug', 'm'); e.qty += ptsToCm(Math.hypot(a.x2 - a.x1, a.y2 - a.y1)) / 100; e.n++; }
@@ -5195,9 +5219,14 @@ function build3DScene(host, walls, arr, opts) {
   for (const a of arr) if (a.type === 'slab' && a.pts && a.pts.length >= 3 && layerVisible(a) && phaseVisible(a)) {
     try {
       const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Y = M(p[1] - cy); i ? sh.lineTo(X, Y) : sh.moveTo(X, Y); });
-      const geo = new THREE.ExtrudeGeometry(sh, { depth: a.thick || 0.2, bevelEnabled: false }), m = new THREE.Mesh(geo, smat);
-      m.castShadow = true; m.receiveShadow = true; m.rotation.x = Math.PI / 2; m.position.y = lev(a) + (a.base || 0) + (a.thick || 0.2); scene.add(m);
-      const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.rotation.x = Math.PI / 2; e.position.y = m.position.y; scene.add(e);
+      const bands = slabLayerBands(a), baseY = lev(a) + (a.base || 0);
+      if (bands) {   // Decke schichtweise (Belag/Trittschall/Dämmung/Tragschicht …)
+        for (const b of bands) { const mt = WALL_MATS[b.mat] || {}, mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(mt.fill || '#cfcfcf'), roughness: 0.93, metalness: 0 }), geo = new THREE.ExtrudeGeometry(sh, { depth: b.t, bevelEnabled: false }), m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; m.rotation.x = Math.PI / 2; m.position.y = baseY + b.y1; scene.add(m); const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.rotation.x = Math.PI / 2; e.position.y = m.position.y; scene.add(e); }
+      } else {
+        const geo = new THREE.ExtrudeGeometry(sh, { depth: a.thick || 0.2, bevelEnabled: false }), m = new THREE.Mesh(geo, smat);
+        m.castShadow = true; m.receiveShadow = true; m.rotation.x = Math.PI / 2; m.position.y = baseY + (a.thick || 0.2); scene.add(m);
+        const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.rotation.x = Math.PI / 2; e.position.y = m.position.y; scene.add(e);
+      }
     } catch (_) { }
   }
   // Treppen (gerader Lauf) als 3D-Stufen

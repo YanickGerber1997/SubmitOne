@@ -4125,10 +4125,9 @@ async function parseIFC(bytes) {   // → { meshes (Welt-Geometrie, Y-oben), bbo
       const m = pg.flatTransformation, n = va.length / 6, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3);
       for (let v = 0; v < n; v++) {
         const x = va[v * 6], y = va[v * 6 + 1], z = va[v * 6 + 2], nx = va[v * 6 + 3], ny = va[v * 6 + 4], nz = va[v * 6 + 5];
-        const wx = m[0] * x + m[4] * y + m[8] * z + m[12], wy = m[1] * x + m[5] * y + m[9] * z + m[13], wz = m[2] * x + m[6] * y + m[10] * z + m[14];   // Welt
-        const tx = wx, ty = wz, tz = -wy;   // IFC Z-oben → three.js Y-oben
+        const tx = m[0] * x + m[4] * y + m[8] * z + m[12], ty = m[1] * x + m[5] * y + m[9] * z + m[13], tz = m[2] * x + m[6] * y + m[10] * z + m[14];   // Welt (web-ifc liefert bereits Y-oben)
         pos[v * 3] = tx; pos[v * 3 + 1] = ty; pos[v * 3 + 2] = tz;
-        nor[v * 3] = m[0] * nx + m[4] * ny + m[8] * nz; nor[v * 3 + 1] = m[2] * nx + m[6] * ny + m[10] * nz; nor[v * 3 + 2] = -(m[1] * nx + m[5] * ny + m[9] * nz);
+        nor[v * 3] = m[0] * nx + m[4] * ny + m[8] * nz; nor[v * 3 + 1] = m[1] * nx + m[5] * ny + m[9] * nz; nor[v * 3 + 2] = m[2] * nx + m[6] * ny + m[10] * nz;
         if (tx < bb.minx) bb.minx = tx; if (tx > bb.maxx) bb.maxx = tx; if (ty < bb.miny) bb.miny = ty; if (ty > bb.maxy) bb.maxy = ty; if (tz < bb.minz) bb.minz = tz; if (tz > bb.maxz) bb.maxz = tz;
       }
       const c = pg.color; meshes.push({ pos, nor, indices: Array.from(ia), color: { r: c.x, g: c.y, b: c.z, a: c.w }, env });

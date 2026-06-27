@@ -881,6 +881,7 @@ function drawAnnos(pv) {
   if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall' && (wallSimple(a) || !(a.layers && a.layers.length)) && layerVisible(a) && phaseVisible(a)); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung (Schicht-Wände zeichnen sich selbst; einfach = schwarz)
   for (const a of getAnnos(pv.num)) { if (!layerVisible(a) || !phaseVisible(a)) continue; drawOne(svg, a, pv); }
   _wallUnionActive = false;
+  if (openPosOn && docScale) drawOpenPosTags(svg, pv);   // Positionsnummern F1/T1
   if (sel && sel.num === pv.num) drawSelection(svg, findAnno(pv.num, sel.id), pv);
   if (groupSel && groupSel.num === pv.num) drawGroupSel(svg, pv);
   updateAlignBar();
@@ -2597,6 +2598,7 @@ function sectionBandHatch(out, rx, ry, rw, rh, mat, fallbackHatch) {   // Materi
   else { for (let c = -rh; c < rw; c += S) add(x0 + c, y1, x0 + c + rh, y0); }   // Backstein/Diagonal/Erdreich: 45°
 }
 let winDimsOn = true;   // automatische Fenster-/Tür-Bemaßung im Schnitt/Ansicht
+let openPosOn = false;   // Fenster-/Tür-Positionsnummern (F1/T1) im Plan
 function pDimH(out, y, x1, x2, label, below) { const col = '#1c242c'; out.push({ t: 'line', x1: x1, y1: y, x2: x2, y2: y, stroke: col, w: 0.5 }); for (const x of [x1, x2]) out.push({ t: 'line', x1: x, y1: y - 3, x2: x, y2: y + 3, stroke: col, w: 0.5 }); out.push({ t: 'text', x: (x1 + x2) / 2 - label.length * 2.4, y: y + (below ? 11 : -4), text: label, col, small: true }); }
 function pDimV(out, x, y1, y2, label, lx) { const col = '#1c242c'; out.push({ t: 'line', x1: x, y1: y1, x2: x, y2: y2, stroke: col, w: 0.5 }); for (const y of [y1, y2]) out.push({ t: 'line', x1: x - 3, y1: y, x2: x + 3, y2: y, stroke: col, w: 0.5 }); out.push({ t: 'text', x: x + (lx || 5), y: (y1 + y2) / 2 + 3, text: label, col, small: true }); }
 function openingElev(out, X, Yh, opx0, opw, o, H, col, redM) {   // Fenster/Tür in Ansicht von aussen → Aussenlichtmaß (Verkleidung/Sturz lappt über den Rahmen, redM)
@@ -3725,6 +3727,10 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
           } catch (_) { }
         }
       }
+      if (openPosOn && docScale) {   // Positionsnummern F1/T1 ins PDF
+        const { posOf } = openingGroups(annos[n] || []), r = 9, tc = rgb(.11, .14, .17);
+        for (const o of (annos[n] || [])) { if (o.type !== 'opening' || !posOf[o.id] || (visibleOnly && !layerVisible(o)) || !phaseVisible(o)) continue; const ang = o.ang || 0, nx = -Math.sin(ang), ny = Math.cos(ang), off = (o.thick || wallThickPts()) / 2 + r + 5, tx = o.x + nx * off, ty = o.y + ny * off, p = posOf[o.id], fs = 11, tw = font.widthOfTextAtSize(p, fs); pg.drawEllipse({ x: tx, y: Y(ty), xScale: r, yScale: r, color: rgb(1, 1, 1), borderColor: tc, borderWidth: 1.2 }); pg.drawText(p, { x: tx - tw / 2, y: Y(ty) - fs * 0.35, size: fs, font, color: tc }); }
+      }
       if (cropT) pg.pushOperators(popGraphicsState());
       if (pageRot[n]) pg.setRotation(degrees(pageRot[n]));
     }
@@ -4116,6 +4122,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Raumbuch: Fläche (~30 m²)', () => { const m2 = polyArea([[0, 0], [cmToPts(600), 0], [cmToPts(600), cmToPts(500)], [0, cmToPts(500)]]) * docScale.perPt * docScale.perPt; return Math.abs(m2 - 30) < 0.5 ? '' : 'm²=' + m2.toFixed(2); });
     A('Annotation-Import (Square→rect)', () => { const a = convertAnnot({ subtype: 'Square', rect: [10, 10, 50, 50], color: [255, 0, 0] }, 200); return !!(a && a.type === 'rect'); });
     A('Massstabsbalken-Element', () => buildPlanParts(842, 595, { kind: 'mstab', margin: 8 }).length > 3);
+    A('Öffnungs-Nummern (F1/F2)', () => { const g = openingGroups([wall, win, { id: 9004, type: 'opening', kind: 'window', wallId: 9001, w: cmToPts(80), head: 2.1, sill: 0.9, winType: 'f1', winMat: 'holz' }]); return (g.wins.length === 2 && g.posOf[9004] === 'F1' && g.posOf[9002] === 'F2') ? '' : JSON.stringify(g.posOf); });
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
   } finally { docScale = saved; }
@@ -4147,18 +4154,41 @@ function winThumb(o) {   // Mini-Ansicht (SVG) eines Fensters/einer Tür für di
   }
   return s + '</svg>';
 }
-function openSchedule() {   // saubere Fenster-/Türliste mit Position, Ansicht-Skizze, Material, Licht/Rohbau, Brüstung, Anschlag
-  if (!docScale) { toast('Erst Massstab setzen – die Liste braucht reale Masse.'); return; }
-  const n = curPage(), arr = getAnnos(n), groups = {};
-  for (const o of arr) { if (o.type !== 'opening' || !layerVisible(o) || !phaseVisible(o)) continue; const oh = o.kind === 'window' ? ((o.head || 2.1) - (o.sill || 0)) : (o.head || 2.0); const key = [o.kind, o.winType || 'f1', o.winMat || 'holz', Math.round(ptsToCm(o.w)), Math.round(oh * 100), Math.round((o.sill || 0) * 100), o.winHinge || 'left'].join('|'); if (!groups[key]) groups[key] = { o, n: 0, oh }; groups[key].n++; }
+function openingGroups(arr) {   // Öffnungen nach identischem Typ gruppieren + Positionsnummern (F1…/T1…) – geteilt von Liste, Plan-Tag und PDF
+  const groups = {};
+  for (const o of arr) {
+    if (o.type !== 'opening' || !layerVisible(o) || !phaseVisible(o)) continue;
+    const oh = o.kind === 'window' ? ((o.head || 2.1) - (o.sill || 0)) : (o.head || 2.0);
+    const key = [o.kind, o.winType || 'f1', o.winMat || 'holz', Math.round(ptsToCm(o.w)), Math.round(oh * 100), Math.round((o.sill || 0) * 100), o.winHinge || 'left'].join('|');
+    if (!groups[key]) groups[key] = { o, oh, n: 0, members: [], pos: '' };
+    groups[key].n++; groups[key].members.push(o);
+  }
   const wins = [], doors = []; for (const k in groups) (groups[k].o.kind === 'window' ? wins : doors).push(groups[k]);
   wins.sort((a, b) => a.o.w - b.o.w || a.oh - b.oh); doors.sort((a, b) => a.o.w - b.o.w);
+  const posOf = {};
+  wins.forEach((g, i) => { g.pos = 'F' + (i + 1); for (const m of g.members) posOf[m.id] = g.pos; });
+  doors.forEach((g, i) => { g.pos = 'T' + (i + 1); for (const m of g.members) posOf[m.id] = g.pos; });
+  return { wins, doors, posOf };
+}
+function drawOpenPosTags(svg, pv) {   // Positionsbubble (Kreis + F1/T1) am Öffnungsrand
+  const arr = getAnnos(pv.num), { posOf } = openingGroups(arr), r = 9;
+  for (const o of arr) {
+    if (o.type !== 'opening' || !layerVisible(o) || !phaseVisible(o)) continue; const p = posOf[o.id]; if (!p) continue;
+    const ang = o.ang || 0, nx = -Math.sin(ang), ny = Math.cos(ang), off = (o.thick || wallThickPts()) / 2 + r + 5;
+    const tx = o.x + nx * off, ty = o.y + ny * off;
+    svg.appendChild(svgEl('circle', { cx: tx, cy: ty, r, fill: '#fff', stroke: '#1c242c', 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
+    const t = svgEl('text', { x: tx, y: ty, fill: '#1c242c', 'font-size': 11, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-weight': 700 }); t.textContent = p; svg.appendChild(t);
+  }
+}
+function openSchedule() {   // saubere Fenster-/Türliste mit Position, Ansicht-Skizze, Material, Licht/Rohbau, Brüstung, Anschlag
+  if (!docScale) { toast('Erst Massstab setzen – die Liste braucht reale Masse.'); return; }
+  const n = curPage(), arr = getAnnos(n), { wins, doors } = openingGroups(arr);
   const matL = { holz: 'Holz', metall: 'Metall', kunst: 'Kunststoff' }, typeL = { fest: 'Fest', f1: '1-flügelig', f2: '2-flügelig', f2s: '2-fl. Setzholz', f1f: '1-fl.+Fixteil' }, hingeL = { left: 'links', right: 'rechts', kipp: 'Kipp' };
   const dim = (o, oh) => { const ins = ptsToCm(openInsPts(o)) / 100; return { rw: Math.round(ptsToCm(o.w)), rh: Math.round(oh * 100), lw: Math.round((ptsToCm(o.w) / 100 - 2 * ins) * 100), lh: Math.round((oh - 2 * ins) * 100) }; };
   let wr = '', wc = 'Pos\tTyp\tMaterial\tLicht BxH\tRohbau BxH\tBrüstung\tAnschlag\tStk\n';
-  wins.forEach((g, i) => { const o = g.o, d = dim(o, g.oh), p = 'F' + (i + 1); wr += '<tr><td><b>' + p + '</b></td><td>' + winThumb(o) + '</td><td>' + (typeL[o.winType || 'f1'] || '') + '</td><td>' + (matL[o.winMat || 'holz'] || '') + '</td><td>' + d.lw + '×' + d.lh + '</td><td>' + d.rw + '×' + d.rh + '</td><td>' + Math.round((o.sill || 0) * 100) + ' cm</td><td>' + (hingeL[o.winHinge || 'left'] || '') + '</td><td style="text-align:center">' + g.n + '</td></tr>'; wc += p + '\t' + (typeL[o.winType || 'f1'] || '') + '\t' + (matL[o.winMat || 'holz'] || '') + '\t' + d.lw + 'x' + d.lh + '\t' + d.rw + 'x' + d.rh + '\t' + Math.round((o.sill || 0) * 100) + '\t' + (hingeL[o.winHinge || 'left'] || '') + '\t' + g.n + '\n'; });
+  wins.forEach((g, i) => { const o = g.o, d = dim(o, g.oh), p = g.pos || ('F' + (i + 1)); wr +='<tr><td><b>' + p + '</b></td><td>' + winThumb(o) + '</td><td>' + (typeL[o.winType || 'f1'] || '') + '</td><td>' + (matL[o.winMat || 'holz'] || '') + '</td><td>' + d.lw + '×' + d.lh + '</td><td>' + d.rw + '×' + d.rh + '</td><td>' + Math.round((o.sill || 0) * 100) + ' cm</td><td>' + (hingeL[o.winHinge || 'left'] || '') + '</td><td style="text-align:center">' + g.n + '</td></tr>'; wc += p + '\t' + (typeL[o.winType || 'f1'] || '') + '\t' + (matL[o.winMat || 'holz'] || '') + '\t' + d.lw + 'x' + d.lh + '\t' + d.rw + 'x' + d.rh + '\t' + Math.round((o.sill || 0) * 100) + '\t' + (hingeL[o.winHinge || 'left'] || '') + '\t' + g.n + '\n'; });
   let dr = '', dc = 'Pos\tTyp\tMaterial\tLicht BxH\tRohbau BxH\tAnschlag\tStk\n';
-  doors.forEach((g, i) => { const o = g.o, d = dim(o, g.oh), p = 'T' + (i + 1); dr += '<tr><td><b>' + p + '</b></td><td>' + winThumb(o) + '</td><td>' + (typeL[o.winType || 'f1'] || '') + '</td><td>' + (matL[o.winMat || 'holz'] || '') + '</td><td>' + d.lw + '×' + d.lh + '</td><td>' + d.rw + '×' + d.rh + '</td><td>' + (hingeL[o.winHinge || 'left'] || '') + '</td><td style="text-align:center">' + g.n + '</td></tr>'; dc += p + '\t' + (typeL[o.winType || 'f1'] || '') + '\t' + (matL[o.winMat || 'holz'] || '') + '\t' + d.lw + 'x' + d.lh + '\t' + d.rw + 'x' + d.rh + '\t' + (hingeL[o.winHinge || 'left'] || '') + '\t' + g.n + '\n'; });
+  doors.forEach((g, i) => { const o = g.o, d = dim(o, g.oh), p = g.pos || ('T' + (i + 1)); dr +='<tr><td><b>' + p + '</b></td><td>' + winThumb(o) + '</td><td>' + (typeL[o.winType || 'f1'] || '') + '</td><td>' + (matL[o.winMat || 'holz'] || '') + '</td><td>' + d.lw + '×' + d.lh + '</td><td>' + d.rw + '×' + d.rh + '</td><td>' + (hingeL[o.winHinge || 'left'] || '') + '</td><td style="text-align:center">' + g.n + '</td></tr>'; dc += p + '\t' + (typeL[o.winType || 'f1'] || '') + '\t' + (matL[o.winMat || 'holz'] || '') + '\t' + d.lw + 'x' + d.lh + '\t' + d.rw + 'x' + d.rh + '\t' + (hingeL[o.winHinge || 'left'] || '') + '\t' + g.n + '\n'; });
   const ov = document.createElement('div'); ov.className = 'lab-overlay';
   ov.innerHTML = '<div class="lab-wrap" style="width:min(820px,95vw);height:min(640px,92vh)"><div class="lab-head"><b>Fenster- & Türliste</b><span class="lab-hint">Seite ' + n + ' · Masse in cm (B×H)</span><span class="grow"></span><button class="btn" id="qCopy">Kopieren</button><button class="btn" id="qClose">✕</button></div><div class="qty-body"><h4>Fenster (' + wins.reduce((s, g) => s + g.n, 0) + ' Stk)</h4><table class="qty-tab ws-tab"><thead><tr><th>Pos</th><th>Ansicht</th><th>Typ</th><th>Material</th><th>Licht B×H</th><th>Rohbau B×H</th><th>Brüstung</th><th>Anschlag</th><th>Stk</th></tr></thead><tbody>' + (wr || '<tr><td colspan=9>Keine Fenster.</td></tr>') + '</tbody></table><h4>Türen (' + doors.reduce((s, g) => s + g.n, 0) + ' Stk)</h4><table class="qty-tab ws-tab"><thead><tr><th>Pos</th><th>Ansicht</th><th>Typ</th><th>Material</th><th>Licht B×H</th><th>Rohbau B×H</th><th>Anschlag</th><th>Stk</th></tr></thead><tbody>' + (dr || '<tr><td colspan=8>Keine Türen.</td></tr>') + '</tbody></table></div></div>';
   document.body.appendChild(ov);
@@ -4797,6 +4827,7 @@ function wire() {
   $('#footBW').onclick = () => { document.body.classList.toggle('bw'); $('#footBW').classList.toggle('on', document.body.classList.contains('bw')); };
   $('#footSimple').onclick = () => { simpleMode = !simpleMode; $('#footSimple').classList.toggle('on', simpleMode); pageViews.forEach(drawAnnos); toast(simpleMode ? 'Einfache Darstellung – Wände schwarz, Öffnungen als Symbol' : 'Detaillierte Darstellung (automatisch nach Aufbau)'); };
   $('#footWinDim').onclick = () => { winDimsOn = !winDimsOn; $('#footWinDim').classList.toggle('on', winDimsOn); pageViews.forEach(drawAnnos); toast(winDimsOn ? 'Fenster-/Tür-Bemaßung an (R Rohbau · La Aussenlicht · Li Innenlicht)' : 'Fenster-/Tür-Bemaßung aus'); };
+  $('#footPosNo').onclick = () => { if (!docScale) { toast('Erst Massstab setzen (1:n).'); return; } openPosOn = !openPosOn; $('#footPosNo').classList.toggle('on', openPosOn); pageViews.forEach(drawAnnos); toast(openPosOn ? 'Positionsnummern an (F1/T1 … wie in der Fensterliste)' : 'Positionsnummern aus'); };
   $('#footQty').onclick = openQuantities;
   $('#footSchedule').onclick = openSchedule;
   $('#footWallList').onclick = openWallList;

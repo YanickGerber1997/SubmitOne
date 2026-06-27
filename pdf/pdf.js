@@ -3833,22 +3833,28 @@ function subfolderGuess() {   // passender Unterordner nach Inhalt
   if (arr.some(a => a.type === 'section')) return 'Schnitte';
   return 'Dokumente';
 }
-async function saveToProject() {   // Datei einem Projekt zuordnen → Unterordner im Arbeitsordner anlegen + dort ablegen
+function knownProjects() { try { return JSON.parse(localStorage.getItem('submitpdf_projects') || '[]'); } catch (_) { return []; } }
+function rememberProject(p) { if (!p) return; const list = knownProjects().filter(x => x !== p); list.unshift(p); localStorage.setItem('submitpdf_projects', JSON.stringify(list.slice(0, 30))); localStorage.setItem('submitpdf_lastproject', p); }
+function projPreviewUpd() { const pv = $('#projPreview'); if (!pv) return; const p = sanFolder($('#projName').value.trim() || 'Projekt'), s = sanFolder($('#projSub').value.trim() || 'Dokumente'), f = sanFolder(($('#projFile').value.replace(/\.pdf$/i, '') || 'plan')) + '.pdf'; pv.textContent = p + ' / ' + s + ' / ' + f; }
+function openProjectDlg() {   // Dialog: Projekt zuordnen (Liste bekannter Projekte + Unterordner + Dateiname)
   if (!curBytes) return;
-  const raw = prompt('In welches Projekt ablegen?\n(es wird ein Unterordner im Arbeitsordner angelegt)', projectGuess());
-  if (raw == null || !raw.trim()) return;   // abgebrochen / leer
-  const proj = sanFolder(raw.trim()), sub = subfolderGuess();
-  if (!fsSupported() && !dirHandle && !window.nativeSave) { status('Speichere …'); const out = await buildPdfBytes(false, true); status(''); downloadBytes(out, proj + ' - ' + (docName.replace(/\.pdf$/i, '') || 'plan') + '.pdf'); toast('Projekt-Ordner brauchen einen Arbeitsordner (Chrome/Edge). Datei mit Projekt-Präfix heruntergeladen.'); return; }
+  $('#projName').value = projectGuess();
+  $('#projList').innerHTML = knownProjects().map(p => '<option value="' + p.replace(/"/g, '&quot;') + '"></option>').join('');
+  const sel = $('#projSub'), sub = subfolderGuess(); if (![...sel.options].some(o => o.value === sub)) { const o = document.createElement('option'); o.value = sub; o.textContent = sub; sel.appendChild(o); } sel.value = sub;
+  $('#projFile').value = (docName.replace(/\.pdf$/i, '') || 'plan') + '.pdf';
+  projPreviewUpd(); $('#projDlg').hidden = false; setTimeout(() => { $('#projName').focus(); $('#projName').select(); }, 30);
+}
+async function doProjectSave(proj, sub, name) {   // Datei in <Arbeitsordner>/<Projekt>/<Unterordner>/<name> ablegen
+  if (!curBytes) return; proj = sanFolder(proj); sub = sanFolder(sub); name = sanFolder((name || '').replace(/\.pdf$/i, '') || 'plan') + '.pdf';
+  if (!fsSupported() && !dirHandle && !window.nativeSave) { status('Speichere …'); const out = await buildPdfBytes(false, true); status(''); downloadBytes(out, proj + ' - ' + name); rememberProject(proj); toast('Projekt-Ordner brauchen einen Arbeitsordner (Chrome/Edge). Datei mit Projekt-Präfix heruntergeladen.'); return; }
   if (!dirHandle) { if (!fsSupported()) { toast('Bitte zuerst oben den Arbeitsordner öffnen (📁).'); return; } await pickFolder(); if (!dirHandle) return; }
-  let name = (docName.replace(/\.pdf$/i, '') || 'plan').trim(); name = sanFolder(name) + '.pdf';
   status('Lege im Projekt ab …'); await new Promise(r => setTimeout(r, 20));
   try {
     const out = await buildPdfBytes(false, true);
-    let dir = await dirHandle.getDirectoryHandle(proj, { create: true });
-    dir = await dir.getDirectoryHandle(sub, { create: true });
+    let dir = await dirHandle.getDirectoryHandle(proj, { create: true }); dir = await dir.getDirectoryHandle(sub, { create: true });
     const fh = await dir.getFileHandle(name, { create: true }), w = await fh.createWritable(); await w.write(out); await w.close();
     curFileHandle = fh; docName = name; if (docs[active]) { docs[active].fileHandle = fh; docs[active].name = name; docs[active].project = proj; docs[active].dirty = false; }
-    dirty = false; clearAutosave(); localStorage.setItem('submitpdf_lastproject', proj);
+    dirty = false; clearAutosave(); rememberProject(proj);
     const dn = $('#docName'); if (dn) dn.textContent = name;
     try { await refreshTree(); } catch (_) { }
     status(''); toast('Abgelegt in „' + proj + ' / ' + sub + '" ✓ (in Submit PDF wieder bearbeitbar)');
@@ -5081,7 +5087,11 @@ function wire() {
   $('#hdrLists').onclick = e => { e.stopPropagation(); toggleHdrPop('listsPop', 'hdrLists'); };
   $('#hdrSubmit').onclick = e => { e.stopPropagation(); toggleHdrPop('submitPop', 'hdrSubmit'); };
   $('#smOpen').onclick = openPicker;
-  $('#smProject').onclick = saveToProject;
+  $('#smProject').onclick = openProjectDlg;
+  $('#projCancel').onclick = () => { $('#projDlg').hidden = true; };
+  $('#projOk').onclick = () => { const p = $('#projName').value.trim(); if (!p) { $('#projName').focus(); return; } $('#projDlg').hidden = true; doProjectSave(p, $('#projSub').value, $('#projFile').value); };
+  $('#projName').oninput = projPreviewUpd; $('#projSub').onchange = projPreviewUpd; $('#projFile').oninput = projPreviewUpd;
+  $('#projName').onkeydown = e => { if (e.key === 'Enter') $('#projOk').click(); };
   $('#smHint3d').onclick = () => toast('OBJ-Export: unten „◳ 3D" öffnen → im 3D-Balken „⭳ OBJ".');
   $$('.hdr-pop button').forEach(b => b.addEventListener('click', () => { const p = b.closest('.hdr-pop'); if (p) p.hidden = true; }));
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.hdr-pop') && !e.target.closest('.hdr-btn')) $$('.hdr-pop').forEach(p => p.hidden = true); }, true);

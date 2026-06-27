@@ -5,24 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=301" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=301" />
-  <link rel="icon" href="favicon.png?v=301" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=301" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=302" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=302" />
+  <link rel="icon" href="favicon.png?v=302" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=302" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=301" />
+  <link rel="stylesheet" href="pdf.css?v=302" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=301" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=302" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=301" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=301" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=302" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=302" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <span class="doc-name" id="docName"></span>
@@ -204,7 +204,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=301" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=302" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -430,6 +430,31 @@
       </div>
       <p class="modal-hint">Tipp: Genauer ist <b>Kalibrieren</b> – eine bekannte Strecke im Plan einzeichnen und ihre echte Länge eingeben.</p>
       <div class="modal-act"><button class="btn" id="scaleCalibBtn">Kalibrieren</button><span class="grow"></span><button class="btn" id="scaleCancel">Abbrechen</button><button class="btn primary" id="scaleOk">Setzen</button></div>
+    </div>
+  </div>
+
+  <div class="modal" id="projDlg" hidden>
+    <div class="modal-card">
+      <div class="modal-head">In Projekt ablegen</div>
+      <label>Projekt
+        <input id="projName" list="projList" type="text" placeholder="z. B. EFH Musterstrasse" autocomplete="off" />
+        <datalist id="projList"></datalist>
+      </label>
+      <label>Unterordner
+        <select id="projSub" class="sel" style="height:auto">
+          <option value="Pläne">Pläne</option>
+          <option value="Schnitte">Schnitte</option>
+          <option value="Ansichten">Ansichten</option>
+          <option value="Dokumente">Dokumente</option>
+          <option value="3D">3D</option>
+          <option value="Fotos">Fotos</option>
+        </select>
+      </label>
+      <label>Dateiname
+        <input id="projFile" type="text" placeholder="plan.pdf" autocomplete="off" />
+      </label>
+      <p class="modal-hint">Ablage im Arbeitsordner als <b id="projPreview">Projekt / Pläne / plan.pdf</b>. Voraussetzung: oben einen Arbeitsordner (📁) öffnen.</p>
+      <div class="modal-act"><span class="grow"></span><button class="btn" id="projCancel">Abbrechen</button><button class="btn primary" id="projOk">Ablegen</button></div>
     </div>
   </div>
 
@@ -659,7 +684,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=301"></script>
+  <script src="pdf.js?v=302"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

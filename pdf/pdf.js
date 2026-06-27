@@ -1907,6 +1907,15 @@ function pickImage() {
   inp.onchange = e => { if (e.target.files && e.target.files[0]) placeImageFile(e.target.files[0]); };
   inp.click();
 }
+function place3DImage(data, wpx, hpx) {   // 3D-Screenshot als Bild auf die aktuelle Seite legen
+  if (!pdfDoc) { toast('Erst ein Dokument öffnen oder neu starten.'); return; }
+  const n = curPage(), pv = pageViews.find(p => p.num === n) || pageViews[0]; if (!pv) return;
+  const ratio = (wpx / hpx) || 1.5; let w = Math.min(pv.pageW * 0.5, 380), h = w / ratio; if (h > pv.pageH * 0.6) { h = pv.pageH * 0.6; w = h * ratio; }
+  pushUndo();
+  const a = { id: nextId++, type: 'img', data, x: (pv.pageW - w) / 2, y: (pv.pageH - h) / 2, w, h };
+  pushAnno(n, a); sel = { num: n, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
+  toast('3D-Ansicht als Bild auf die Seite gelegt – verschieben/skalieren möglich.');
+}
 async function placeImageFile(file) {
   if (!pdfDoc) return;
   try {
@@ -3732,12 +3741,13 @@ async function open3D() {
   try { await loadThree(); } catch (_) { status(''); toast('3D-Engine nicht ladbar (einmal Internet nötig).'); return; }
   status('');
   const ov = document.createElement('div'); ov.className = 'd3-overlay';
-  ov.innerHTML = '<div class="d3-bar"><b>3D-Ansicht</b><label class="d3-h">Höhe <input type="number" id="d3h" min="1" max="20" step="0.1" value="' + wallHeightM + '"> m</label><span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">Ziehen = drehen · Mausrad = zoomen</span><span class="grow"></span><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
+  ov.innerHTML = '<div class="d3-bar"><b>3D-Ansicht</b><label class="d3-h">Höhe <input type="number" id="d3h" min="1" max="20" step="0.1" value="' + wallHeightM + '"> m</label><span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">Ziehen = drehen · Mausrad = zoomen</span><span class="grow"></span><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
   document.body.appendChild(ov);
   const host = ov.querySelector('#d3Canvas');
   let api = build3DScene(host, walls, arr);
   ov.querySelector('#d3h').onchange = e => { wallHeightM = Math.max(1, Math.min(20, parseFloat(e.target.value) || 2.6)); if (api) api.dispose(); api = build3DScene(host, walls, arr); };
   ov.querySelectorAll('.d3-views button').forEach(b => b.onclick = () => { if (api && api.setView) api.setView(b.dataset.v); });
+  ov.querySelector('#d3Shot').onclick = () => { if (!api || !api.snapshot) return; const s = api.snapshot(); close(); place3DImage(s.data, s.w, s.h); };
   const close = () => { if (api) api.dispose(); ov.remove(); document.removeEventListener('keydown', esc, true); };
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } };
   document.addEventListener('keydown', esc, true);
@@ -3836,7 +3846,7 @@ function build3DScene(host, walls, arr) {
   const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2, span = Math.max(M(maxx - minx), M(maxy - miny), 2);
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0xeef1ec);
   const camera = new THREE.PerspectiveCamera(50, W / Hp, 0.05, 4000); camera.position.set(span * 0.85, span * 0.95, span * 0.95);
-  const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setSize(W, Hp); renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; host.appendChild(renderer.domElement);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); renderer.setSize(W, Hp); renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; host.appendChild(renderer.domElement);
   const controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(0, H * 0.4, 0);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x55604f, 0.8));
   const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(span * 0.8, span * 1.7, span * 0.5); sun.castShadow = true;   // Schatten
@@ -4021,7 +4031,8 @@ function build3DScene(host, walls, arr) {
   window.addEventListener('resize', onResize);
   const loop = () => { if (!alive) return; controls.update(); renderer.render(scene, camera); raf = requestAnimationFrame(loop); }; loop();
   const setView = name => { const ty = H * 0.45, d = Math.max(span * 1.4, 4); if (name === 'top') { camera.position.set(0.001, d * 1.7, 0.001); controls.target.set(0, 0, 0); } else if (name === 'front') { camera.position.set(0, ty, d * 1.5); controls.target.set(0, ty, 0); } else if (name === 'side') { camera.position.set(d * 1.5, ty, 0.001); controls.target.set(0, ty, 0); } else { camera.position.set(span * 0.85, span * 0.95, span * 0.95); controls.target.set(0, H * 0.4, 0); } camera.updateProjectionMatrix(); controls.update(); };
-  return { dispose: () => { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); controls.dispose(); renderer.dispose(); host.innerHTML = ''; }, setView };
+  const snapshot = () => { renderer.render(scene, camera); return { data: renderer.domElement.toDataURL('image/png'), w: renderer.domElement.width, h: renderer.domElement.height }; };
+  return { dispose: () => { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); controls.dispose(); renderer.dispose(); host.innerHTML = ''; }, setView, snapshot };
 }
 
 /* ---------- Rechtsklick-Menü (alles erreichbar) ---------- */

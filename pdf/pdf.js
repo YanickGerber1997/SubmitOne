@@ -990,14 +990,24 @@ const WALL_MATS = {   // Schicht-Material: Füllung (hell), Schraffur-Typ (oder 
   estrich: { label: 'Unterlagsboden / Estrich', fill: '#e7e7e3', hatch: null, color: '#9a9a9a' },
   trittschall: { label: 'Trittschalldämmung', fill: HATCH_DEF.daemm_eps.fill, hatch: 'daemm_eps', color: '#b59a4d' },
   xps: { label: 'Dämmung XPS', fill: HATCH_DEF.daemm_eps.fill, hatch: 'daemm_eps', color: '#b07d2a' },
-  kies: { label: 'Kies / Schotter', fill: '#e9e4d6', hatch: null, color: '#9a8e72' }
+  kies: { label: 'Kies / Schotter', fill: '#e9e4d6', hatch: null, color: '#9a8e72' },
+  schalung: { label: 'Holzschalung (Latten)', fill: '#e7cfa8', hatch: null, color: '#7a5126', boards: true },
+  windpapier: { label: 'Windpapier (schwarz)', fill: '#262626', hatch: null, color: '#111111', membrane: true },
+  dampfbremse: { label: 'Dampfbremse (schwarz)', fill: '#262626', hatch: null, color: '#111111', membrane: true }
 };
+function bandBoards(band, boardWpt, gapPt) {   // Holzschalung als einzelne Latten (Breite + Abstand) entlang der Schicht → Lücken zeigen das Windpapier dahinter
+  const p0 = band.poly[0], p1 = band.poly[1], p2 = band.poly[2], p3 = band.poly[3], lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1, step = Math.max(2, boardWpt + gapPt), quads = [];
+  for (let d = 0; d < L - 0.5; d += step) { const t0 = d / L, t1 = Math.min(1, (d + boardWpt) / L); quads.push([lerp(p0, p1, t0), lerp(p0, p1, t1), lerp(p3, p2, t1), lerp(p3, p2, t0)]); }
+  return quads;
+}
 const WALL_PRESETS = [   // Schichten innen → aussen [Material, cm]
   { name: 'Mauerwerk + EPS', layers: [['putz', 1.5], ['mauerwerk', 15], ['eps', 22], ['putz', 2]] },
   { name: 'Beton + EPS', layers: [['putz', 1.5], ['beton', 20], ['eps', 22], ['putz', 2]] },
   { name: 'Hinterlüftet · Gipsplatte', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['gips', 1.5], ['putz', 0.5]] },
   { name: 'Hinterlüftet · Holz horizontal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['holz', 2.2]] },
-  { name: 'Hinterlüftet · Holz vertikal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['konter', 3], ['holz', 2.2]] }
+  { name: 'Hinterlüftet · Holz vertikal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['konter', 3], ['holz', 2.2]] },
+  { name: 'Hinterlüftet · Latten-Schalung + Windpapier', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['windpapier', 0.1], ['luft', 4], ['schalung', 2.4]] }
 ];
 const SLAB_PRESETS = [   // Decken-/Bodenaufbau OBEN → UNTEN [Material, cm]
   { name: 'Geschossdecke (Unterlagsboden)', layers: [['belag', 1], ['estrich', 7], ['trittschall', 3], ['beton', 24]] },
@@ -1021,7 +1031,7 @@ const SUB_W = { lattung: 6, staender: 5, schraube: 1.2 };   // Breite/Markierung
 function applyWallBuildup(a, layersData, spacingCm) {   // layersData = [[mat, cm, subTyp?], …] innen→aussen · spacingCm = Achsabstand UK
   if (!layersData || !layersData.length) { delete a.layers; return; }
   const sp = cmToPts(spacingCm || 60), old = a.layers || null;
-  a.layers = layersData.map(([mat, cm, sub, top, bot, lowMat, lowH], i) => { const l = { mat, t: cmToPts(cm) }; if (sub) l.sub = { type: sub, spacing: sp, w: cmToPts(SUB_W[sub] || 2) }; if (top) l.top = (+top) / 100; if (bot) l.bot = (+bot) / 100; if (lowMat && (+lowH) > 0) { l.lowMat = lowMat; l.lowH = (+lowH) / 100; } if (old && old[i] && old[i].mat === mat) { if (old[i].ext1) l.ext1 = old[i].ext1; if (old[i].ext2) l.ext2 = old[i].ext2; } return l; });   // top/bot = Über-/Unterlänge; lowMat/lowH = Sockelzone; ext1/ext2 (gezogene Schicht-Länge) bleiben erhalten
+  a.layers = layersData.map(([mat, cm, sub, top, bot, lowMat, lowH, boardW, boardGap], i) => { const l = { mat, t: cmToPts(cm) }; if (sub) l.sub = { type: sub, spacing: sp, w: cmToPts(SUB_W[sub] || 2) }; if (top) l.top = (+top) / 100; if (bot) l.bot = (+bot) / 100; if (lowMat && (+lowH) > 0) { l.lowMat = lowMat; l.lowH = (+lowH) / 100; } if (mat === 'schalung') { l.boardW = +boardW || 4; l.boardGap = boardGap != null ? +boardGap : 2; } if (old && old[i] && old[i].mat === mat) { if (old[i].ext1) l.ext1 = old[i].ext1; if (old[i].ext2) l.ext2 = old[i].ext2; } return l; });   // top/bot = Über-/Unterlänge; lowMat/lowH = Sockelzone; boardW/boardGap = Latten; ext1/ext2 (gezogene Länge) bleiben erhalten
   a.thick = a.layers.reduce((s, l) => s + l.t, 0);
   a.hatch = null; a.fill = '#ffffff'; a.color = '#1c242c';   // Aufbau übernimmt die Darstellung
 }
@@ -1082,7 +1092,11 @@ function layerHatch(svg, a, band) {   // Schraffur einer einzelnen Schicht, auf 
 }
 function drawLayeredWall(svg, a, arr) {
   const { bands } = wallLayerBands(a, arr);   // jede Schicht: Füllung + dünne Umrandung in der Materialfarbe (kein schwarzer Gesamtrahmen)
-  for (const b of bands) { const m = WALL_MATS[b.mat] || {}; svg.appendChild(svgEl('polygon', { points: b.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: m.fill || '#ffffff', stroke: m.color || '#9a9a9a', 'stroke-width': 0.7, 'stroke-linejoin': 'miter', 'vector-effect': 'non-scaling-stroke' })); layerHatch(svg, a, b); }
+  bands.forEach((b, i) => {
+    const m = WALL_MATS[b.mat] || {}, lay = a.layers[i] || {};
+    if (m.boards) { const bw = cmToPts(lay.boardW || 4), gp = cmToPts(lay.boardGap != null ? lay.boardGap : 2); for (const q of bandBoards(b, bw, gp)) svg.appendChild(svgEl('polygon', { points: q.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: m.fill || '#e7cfa8', stroke: m.color || '#7a5126', 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); return; }   // Latten einzeln (Lücken = Windpapier dahinter)
+    svg.appendChild(svgEl('polygon', { points: b.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: m.fill || '#ffffff', stroke: m.color || '#9a9a9a', 'stroke-width': 0.7, 'stroke-linejoin': 'miter', 'vector-effect': 'non-scaling-stroke' })); layerHatch(svg, a, b);
+  });
   a.layers.forEach((l, i) => { if (l.sub && bands[i]) { bands[i].sub = l.sub; drawLayerSub(svg, a, bands[i], arr); } });   // Unterkonstruktion über die Schichten
 }
 function wallClipPoly(a) {   // einfaches, nicht-gehrtes Wandrechteck (immer simpel → sicherer Schraffur-Clip)
@@ -1596,9 +1610,11 @@ function renderBuildList() {
   const list = document.getElementById('bpList'); if (!list) return; list.innerHTML = '';
   buildDraft.forEach((row, i) => {
     const r = document.createElement('div'); r.className = 'bp-row';
-    r.innerHTML = `<input class="bp-t" type="number" min="0.1" step="0.1" value="${row[1]}"><span>cm</span><select class="bp-m">${buildMatOptions(row[0])}</select><select class="bp-s" title="Unterkonstruktion in dieser Schicht">${buildSubOptions(row[2])}</select><input class="bp-top" type="number" step="1" value="${row[3] || 0}" title="im Schnitt: Schicht oben verlängern (+) / kürzen (−), cm" style="width:46px"><span title="oben ± cm">↑</span><input class="bp-bot" type="number" step="1" value="${row[4] || 0}" title="im Schnitt: Schicht unten verlängern (+) / kürzen (−), cm" style="width:46px"><span title="unten ± cm">↓</span><select class="bp-lm" title="Sockelzone: unten anderes Material (bis Höhe)"><option value="">— Sockel —</option>${buildMatOptions(row[5])}</select><input class="bp-lh" type="number" step="1" value="${row[6] || 0}" title="Sockelzone-Höhe ab Boden, cm" style="width:46px"><span title="Sockelhöhe cm">cm</span><button class="bp-del" title="Schicht entfernen">✕</button>`;
+    const isBoard = row[0] === 'schalung', boardHtml = isBoard ? `<input class="bp-bw" type="number" step="0.5" min="0.5" value="${row[7] != null ? row[7] : 4}" title="Lattenbreite cm" style="width:44px"><span title="Lattenbreite">▯</span><input class="bp-bg" type="number" step="0.5" min="0" value="${row[8] != null ? row[8] : 2}" title="Lattenabstand cm" style="width:44px"><span title="Abstand">⇆</span>` : '';
+    r.innerHTML = `<input class="bp-t" type="number" min="0.1" step="0.1" value="${row[1]}"><span>cm</span><select class="bp-m">${buildMatOptions(row[0])}</select><select class="bp-s" title="Unterkonstruktion in dieser Schicht">${buildSubOptions(row[2])}</select><input class="bp-top" type="number" step="1" value="${row[3] || 0}" title="im Schnitt: Schicht oben verlängern (+) / kürzen (−), cm" style="width:46px"><span title="oben ± cm">↑</span><input class="bp-bot" type="number" step="1" value="${row[4] || 0}" title="im Schnitt: Schicht unten verlängern (+) / kürzen (−), cm" style="width:46px"><span title="unten ± cm">↓</span><select class="bp-lm" title="Sockelzone: unten anderes Material (bis Höhe)"><option value="">— Sockel —</option>${buildMatOptions(row[5])}</select><input class="bp-lh" type="number" step="1" value="${row[6] || 0}" title="Sockelzone-Höhe ab Boden, cm" style="width:46px"><span title="Sockelhöhe cm">cm</span>${boardHtml}<button class="bp-del" title="Schicht entfernen">✕</button>`;
     r.querySelector('.bp-t').onchange = e => { buildDraft[i][1] = parseFloat((e.target.value || '').replace(',', '.')) || 0; updateBuildTotal(); };
-    r.querySelector('.bp-m').onchange = e => { buildDraft[i][0] = e.target.value; };
+    r.querySelector('.bp-m').onchange = e => { buildDraft[i][0] = e.target.value; renderBuildList(); };
+    if (isBoard) { r.querySelector('.bp-bw').onchange = e => { buildDraft[i][7] = parseFloat((e.target.value || '').replace(',', '.')) || 4; }; r.querySelector('.bp-bg').onchange = e => { buildDraft[i][8] = parseFloat((e.target.value || '').replace(',', '.')) || 0; }; }
     r.querySelector('.bp-s').onchange = e => { buildDraft[i][2] = e.target.value; };
     r.querySelector('.bp-top').onchange = e => { buildDraft[i][3] = parseFloat((e.target.value || '').replace(',', '.')) || 0; };
     r.querySelector('.bp-bot').onchange = e => { buildDraft[i][4] = parseFloat((e.target.value || '').replace(',', '.')) || 0; };
@@ -1613,14 +1629,14 @@ function openBuildPop() {
   const presets = document.getElementById('bpPresets'); presets.innerHTML = '';
   WALL_PRESETS.forEach(p => { const b = document.createElement('button'); b.className = 'bp-preset'; b.textContent = p.name; b.onclick = () => { buildDraft = p.layers.map(l => [l[0], l[1], '', 0, 0, '', 0]); renderBuildList(); }; presets.appendChild(b); });
   const a = selWall();
-  if (a && a.layers && a.layers.length) { buildDraft = a.layers.map(l => [l.mat, Math.round(ptsToCm(l.t) * 10) / 10, l.sub ? l.sub.type : '', Math.round((l.top || 0) * 100), Math.round((l.bot || 0) * 100), l.lowMat || '', Math.round((l.lowH || 0) * 100)]); const sp = a.layers.find(l => l.sub); if (sp) buildSpacing = Math.round(ptsToCm(sp.sub.spacing)); }
+  if (a && a.layers && a.layers.length) { buildDraft = a.layers.map(l => [l.mat, Math.round(ptsToCm(l.t) * 10) / 10, l.sub ? l.sub.type : '', Math.round((l.top || 0) * 100), Math.round((l.bot || 0) * 100), l.lowMat || '', Math.round((l.lowH || 0) * 100), l.boardW != null ? l.boardW : 4, l.boardGap != null ? l.boardGap : 2]); const sp = a.layers.find(l => l.sub); if (sp) buildSpacing = Math.round(ptsToCm(sp.sub.spacing)); }
   else if (!buildDraft.length) buildDraft = WALL_PRESETS[0].layers.map(l => [l[0], l[1], '', 0, 0, '', 0]);
   const si = document.getElementById('bpSpacing'); if (si) si.value = buildSpacing;
   renderBuildList(); document.getElementById('buildPop').hidden = false;
 }
 function applyBuildup() {
   const si = document.getElementById('bpSpacing'); if (si) buildSpacing = parseFloat((si.value || '').replace(',', '.')) || 60;
-  const layers = buildDraft.filter(r => r[1] > 0).map(r => [r[0], r[1], r[2] || '', r[3] || 0, r[4] || 0, r[5] || '', r[6] || 0]);
+  const layers = buildDraft.filter(r => r[1] > 0).map(r => [r[0], r[1], r[2] || '', r[3] || 0, r[4] || 0, r[5] || '', r[6] || 0, r[7] != null ? r[7] : 4, r[8] != null ? r[8] : 2]);
   wallBuildup = layers.length ? { layers, spacing: buildSpacing } : null;
   const a = selWall(); if (a) { pushUndo(); applyWallBuildup(a, layers, buildSpacing); pageViews.forEach(drawAnnos); saveState(); updateSelBar(); }
   document.getElementById('buildPop').hidden = true; toast(layers.length ? 'Wandaufbau angewendet ✓' : 'Aufbau entfernt');
@@ -2961,7 +2977,9 @@ function sectionPrimitives(a, arr) {
     let cx = x0;
     for (let li = 0; li < layers.length; li++) { const L = layers[li], lw = (L.t / totalT) * h.appW, bx = X(cx), yTopF = Yh(H + (L.top || 0)), yBotF = Yh(0 - (L.bot || 0));   // L.top/L.bot = eigene Über-/Unterlänge; L.lowMat/L.lowH = Sockelzone
       const drawSeg = (mat, yT, yB) => { if (yB - yT < 0.1) return; const m = mat ? (WALL_MATS[mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; out.push({ t: 'rect', x: bx, y: yT, w: lw, h: yB - yT, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, bx, yT, lw, yB - yT, mat, (w.hatch && w.hatch.type)); };
-      if (L.lowMat && L.lowH > 0) { const yS = Yh(L.lowH); drawSeg(L.lowMat, yS, yBotF); drawSeg(L.mat, yTopF, yS); } else drawSeg(L.mat, yTopF, yBotF);
+      const lm = WALL_MATS[L.mat] || {};
+      if (lm.boards) { const lay = (w.layers || [])[a.flip ? (layers.length - 1 - li) : li] || {}, bwp = cmToPts(lay.boardW || 4), gpp = cmToPts(lay.boardGap != null ? lay.boardGap : 2), step = Math.max(2, bwp + gpp); for (let yy = yTopF; yy < yBotF - 0.5; yy += step) { const y2 = Math.min(yBotF, yy + bwp); out.push({ t: 'rect', x: bx, y: yy, w: lw, h: y2 - yy, fill: lm.fill || '#e7cfa8', stroke: lm.color || '#7a5126', sw: 0.6 }); } }   // Latten gestapelt (Lücken zeigen Windpapier dahinter)
+      else if (L.lowMat && L.lowH > 0) { const yS = Yh(L.lowH); drawSeg(L.lowMat, yS, yBotF); drawSeg(L.mat, yTopF, yS); } else drawSeg(L.mat, yTopF, yBotF);
       if (w.layers && w.layers.length) { const oi = a.flip ? (layers.length - 1 - li) : li; out.push({ t: 'lhandle', x: bx + lw / 2, y: yTopF, wallId: w.id, li: oi, edge: 'top' }); out.push({ t: 'lhandle', x: bx + lw / 2, y: yBotF, wallId: w.id, li: oi, edge: 'bot' }); }   // Schicht-Ziehgriffe (Ober-/Unterkante) → im Schnitt verlängern/kürzen
       cx += lw; }
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
@@ -4940,6 +4958,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Schicht-Über/Unterlänge', () => { const w = { type: 'wall', x1: 0, y1: 0, x2: 100, y2: 0, thick: cmToPts(31) }; applyWallBuildup(w, [['mauerwerk', 15, '', 0, 30], ['eps', 16, '', 20, 0]]); return (Math.abs(w.layers[1].top - 0.2) < 1e-6 && Math.abs(w.layers[0].bot - 0.3) < 1e-6 && !w.layers[0].top) ? '' : 'top=' + w.layers[1].top + ' bot=' + w.layers[0].bot; });
     A('Sockelzone (Material-Split)', () => { const w = { type: 'wall', x1: 0, y1: 0, x2: 100, y2: 0, thick: cmToPts(31) }; applyWallBuildup(w, [['mauerwerk', 15, '', 0, 0, '', 0], ['glaswolle', 16, '', 0, 0, 'xps', 50]]); return (w.layers[1].lowMat === 'xps' && Math.abs(w.layers[1].lowH - 0.5) < 1e-6 && !w.layers[0].lowMat) ? '' : 'lowMat=' + w.layers[1].lowMat + ' lowH=' + w.layers[1].lowH; });
     A('Schicht-Eigenlänge (Wand)', () => { const mk = () => ({ type: 'wall', x1: 0, y1: 0, x2: cmToPts(500), y2: 0, thick: cmToPts(30) }); const w1 = mk(); applyWallBuildup(w1, [['mauerwerk', 15], ['eps', 15]]); const w2 = mk(); applyWallBuildup(w2, [['mauerwerk', 15], ['eps', 15]]); w2.layers[1].ext2 = 20; const a1 = Math.max(...wallLayerBands(w1, [w1]).bands[1].poly.map(p => p[0])), a2 = Math.max(...wallLayerBands(w2, [w2]).bands[1].poly.map(p => p[0])); return Math.abs((a2 - a1) - 20) < 0.01 ? '' : 'd=' + (a2 - a1); });
+    A('Holz-Latten (Schalung)', () => { const q = bandBoards({ poly: [[0, 0], [100, 0], [100, 10], [0, 10]] }, 10, 10); return (q.length === 5 && Math.abs(q[0][1][0] - 10) < 0.01 && !!WALL_MATS.schalung.boards && !!WALL_MATS.windpapier.membrane) ? '' : 'n=' + q.length; });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }
@@ -5276,7 +5295,7 @@ function build3DScene(host, walls, arr, opts) {
     const addWallLayered = (s0, s1, y0, y1) => {   // Wand schichtweise; Luft (Hinterlüftung) bleibt leer/transparent
       if (!wL) { addBox(s0, s1, y0, y1, wmat, th, true); return; }
       const bH = (w.schalH ? w.schalH / 100 : 0.12), atBase = Math.abs(y0 - yb) < 1e-4, atTop = Math.abs(y1 - (yb + HW)) < 1e-4, atStart = Math.abs(s0) < 1e-4, atEnd = Math.abs(s1 - lp) < 1e-4;   // top/bot an Ober-/Unterkante; ext1/ext2 an den Wandenden
-      let off = -th / 2; for (const L of wL) { const lt = (L.t / totalT) * th; if (L.mat !== 'luft') { const yy0 = y0 - (atBase ? (L.bot || 0) : 0), yy1 = y1 + (atTop ? (L.top || 0) : 0), sA = s0 - (atStart ? (L.ext1 || 0) : 0), sB = s1 + (atEnd ? (L.ext2 || 0) : 0), lenM = (sB - sA) * perPt; if (L.lowMat && L.lowH > 0) { const ys = yb + L.lowH, segs = (ys > yy0 + 1e-4 && ys < yy1 - 1e-4) ? [[yy0, ys, L.lowMat], [ys, yy1, L.mat]] : [[yy0, yy1, ys >= yy1 - 1e-4 ? L.lowMat : L.mat]]; for (const sg of segs) addBox2(sA, sB, sg[0], sg[1], off + lt / 2, lt, layerMat(sg[2], lenM, sg[1] - sg[0], bH), true); } else addBox2(sA, sB, yy0, yy1, off + lt / 2, lt, layerMat(L.mat, lenM, yy1 - yy0, bH), true); } off += lt; }
+      let off = -th / 2; for (const L of wL) { const lt = (L.t / totalT) * th; if (L.mat !== 'luft') { const yy0 = y0 - (atBase ? (L.bot || 0) : 0), yy1 = y1 + (atTop ? (L.top || 0) : 0), sA = s0 - (atStart ? (L.ext1 || 0) : 0), sB = s1 + (atEnd ? (L.ext2 || 0) : 0), lenM = (sB - sA) * perPt, lm = WALL_MATS[L.mat] || {}; if (lm.boards) { const bwp = cmToPts(L.boardW || 4), gpp = cmToPts(L.boardGap != null ? L.boardGap : 2), stp = Math.max(2, bwp + gpp), bmat = layerMat(L.mat, bwp * perPt, yy1 - yy0, bH); for (let s = sA; s < sB - 0.5; s += stp) { const s2 = Math.min(sB, s + bwp); addBox2(s, s2, yy0, yy1, off + lt / 2, lt, bmat, true); } } else if (L.lowMat && L.lowH > 0) { const ys = yb + L.lowH, segs = (ys > yy0 + 1e-4 && ys < yy1 - 1e-4) ? [[yy0, ys, L.lowMat], [ys, yy1, L.mat]] : [[yy0, yy1, ys >= yy1 - 1e-4 ? L.lowMat : L.mat]]; for (const sg of segs) addBox2(sA, sB, sg[0], sg[1], off + lt / 2, lt, layerMat(sg[2], lenM, sg[1] - sg[0], bH), true); } else addBox2(sA, sB, yy0, yy1, off + lt / 2, lt, layerMat(L.mat, lenM, yy1 - yy0, bH), true); } off += lt; }   // lm.boards = Latten einzeln (Lücken zeigen Windpapier)
     };
     const winMat3D = key => { const wm = WIN_MAT[key] || WIN_MAT.holz; return new THREE.MeshLambertMaterial({ color: new THREE.Color(wm.fill) }); };
     const fillToMat = {}; for (const k in WALL_MATS) { const f = WALL_MATS[k] && WALL_MATS[k].fill; if (f) fillToMat[f.toLowerCase()] = k; }

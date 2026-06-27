@@ -2056,9 +2056,9 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     const cm = ptsToCm(inputLicht ? Math.max(cmToPts(20), rawW - 2 * insW) : rawW);
     if (document.activeElement !== $('#pbWidth')) $('#pbWidth').value = Math.round(cm);
     { const lab = $('#pbWidthLab'); if (lab) lab.textContent = inputLicht ? 'Licht-B' : 'Rohbau-B'; $('#pbLichtRoh').classList.toggle('on', inputLicht); }
-    const sill = sO ? (sO.sill || 0) : (kind === 'window' ? 0.9 : 0), head = sO ? (sO.head || (kind === 'window' ? 2.1 : 2.0)) : (kind === 'window' ? 2.1 : 2.0);
-    if (document.activeElement !== $('#pbSill')) $('#pbSill').value = sill;
-    if (document.activeElement !== $('#pbHead')) $('#pbHead').value = head;
+    const insMh = ptsToCm(openInsPts(sO)) / 100, sill = sO ? (sO.sill || 0) : (kind === 'window' ? 0.9 : 0), head = sO ? (sO.head || (kind === 'window' ? 2.1 : 2.0)) : (kind === 'window' ? 2.1 : 2.0);
+    if (document.activeElement !== $('#pbSill')) $('#pbSill').value = Math.round((inputLicht && kind === 'window' ? sill + insMh : sill) * 100) / 100;
+    if (document.activeElement !== $('#pbHead')) $('#pbHead').value = Math.round((inputLicht ? head - insMh : head) * 100) / 100;
     const winLike = kind === 'window' || kind === 'door';
     $('#pbSillWrap').style.display = kind === 'window' ? '' : 'none';
     $('#pbDepthWrap').style.display = winLike ? '' : 'none';
@@ -4298,8 +4298,8 @@ function wire() {
   $$('#blockPop button').forEach(b => b.onclick = () => { blockKind = b.dataset.bk; $('#blockPop').hidden = true; setTool('block'); });
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#blockPop') && !e.target.closest('#btnBlock')) $('#blockPop').hidden = true; }, true);
   $('#pbWallH').onchange = () => { const v = parseFloat(($('#pbWallH').value || '').replace(',', '.')); if (!(v > 0)) return; wallHeightM = v; const a = selWall(); if (a) { pushUndo(); a.h3d = v; saveState(); } };
-  $('#pbSill').onchange = () => { const v = parseFloat(($('#pbSill').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a) { pushUndo(); a.sill = v; saveState(); } };
-  $('#pbHead').onchange = () => { const v = parseFloat(($('#pbHead').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selOpen(); if (a) { pushUndo(); a.head = v; saveState(); } };
+  $('#pbSill').onchange = () => { const v = parseFloat(($('#pbSill').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a) { pushUndo(); const ins = (inputLicht && a.kind === 'window') ? ptsToCm(openInsPts(a)) / 100 : 0; a.sill = Math.max(0, v - ins); pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbHead').onchange = () => { const v = parseFloat(($('#pbHead').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selOpen(); if (a) { pushUndo(); const ins = inputLicht ? ptsToCm(openInsPts(a)) / 100 : 0; a.head = v + ins; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbDepth').onchange = () => { let v = parseFloat(($('#pbDepth').value || '').replace(',', '.')); if (!(v >= 0)) return; v = Math.max(0, Math.min(100, v)) / 100; lastOpenDepth = v; const a = selOpen(); if (a) { pushUndo(); a.depth = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbSlabBase').onchange = () => { const v = parseFloat(($('#pbSlabBase').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selSlab(); if (a) { pushUndo(); a.base = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbSlabThick').onchange = () => { const v = parseFloat(($('#pbSlabThick').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selSlab(); if (a) { pushUndo(); a.thick = v / 100; pageViews.forEach(drawAnnos); saveState(); } };

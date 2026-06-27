@@ -1125,6 +1125,14 @@ function drawOne(svg, a, pv) {
     const al = 7; g.appendChild(svgEl('path', { d: `M${a.x2} ${a.y2} L${a.x2 - ux * al + nx * al * .6} ${a.y2 - uy * al + ny * al * .6} M${a.x2} ${a.y2} L${a.x2 - ux * al - nx * al * .6} ${a.y2 - uy * al - ny * al * .6}`, stroke: col, 'stroke-width': 1, fill: 'none', 'vector-effect': 'non-scaling-stroke' }));   // Pfeil = aufwärts
     svg.appendChild(g); el = g;
     hit = svgEl('polygon', { points: [c1, c2, c3, c4].map(p => p[0] + ',' + p[1]).join(' '), fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
+  } else if (a.type === 'beam') {   // Unterzug: gestricheltes Rechteck (überkopf)
+    const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, hw = (a.width || beamWidthPts()) / 2, col = a.color || '#1c242c';
+    const c1 = [a.x1 + nx * hw, a.y1 + ny * hw], c2 = [a.x2 + nx * hw, a.y2 + ny * hw], c3 = [a.x2 - nx * hw, a.y2 - ny * hw], c4 = [a.x1 - nx * hw, a.y1 - ny * hw], pts = [c1, c2, c3, c4].map(p => p[0] + ',' + p[1]).join(' ');
+    const g = svgEl('g', { 'data-id': a.id });
+    g.appendChild(svgEl('polygon', { points: pts, fill: 'none', stroke: col, 'stroke-width': 1.1, 'stroke-dasharray': '7 4', 'vector-effect': 'non-scaling-stroke' }));
+    g.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, stroke: col, 'stroke-width': 0.7, 'stroke-dasharray': '7 4', 'stroke-opacity': .5, 'vector-effect': 'non-scaling-stroke' }));
+    svg.appendChild(g); el = g;
+    hit = svgEl('polygon', { points: pts, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'block') {
     el = drawBlock(svg, a);
     const b = bbox(a); hit = svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
@@ -1294,6 +1302,7 @@ function bbox(a) {
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim') return { x: Math.min(a.x1, a.x2), y: Math.min(a.y1, a.y2), w: Math.abs(a.x2 - a.x1), h: Math.abs(a.y2 - a.y1) };
   if (a.type === 'wall') { const t = (a.thick || wallThickPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
   if (a.type === 'stairs') { const t = (a.width || stairWidthPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
+  if (a.type === 'beam') { const t = (a.width || beamWidthPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
   if (a.type === 'opening') { const P = openingParts(a), xs = [], ys = []; for (const p of P.cover) { xs.push(p[0]); ys.push(p[1]); } for (const [u, v] of P.lines) { xs.push(u[0], v[0]); ys.push(u[1], v[1]); } for (const arc of P.arcs) for (const p of arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 8)) { xs.push(p[0]); ys.push(p[1]); } return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim' || a.type === 'slab') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'path') { const xs = [], ys = []; for (const nd of a.nodes) { xs.push(nd.x, nd.hIn.x, nd.hOut.x); ys.push(nd.y, nd.hIn.y, nd.hOut.y); } if (!xs.length) return { x: 0, y: 0, w: 0, h: 0 }; return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
@@ -1304,7 +1313,7 @@ function bbox(a) {
   if (a.type === 'highlight') { if (!a.rects || !a.rects.length) return { x: 0, y: 0, w: 0, h: 0 }; let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; for (const r of a.rects) { mnx = Math.min(mnx, r.x); mny = Math.min(mny, r.y); mxx = Math.max(mxx, r.x + r.w); mxy = Math.max(mxy, r.y + r.h); } return { x: mnx, y: mny, w: mxx - mnx, h: mxy - mny }; }
   return { x: 0, y: 0, w: 0, h: 0 };
 }
-function isLineType(a) { return a && (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall' || a.type === 'stairs'); }
+function isLineType(a) { return a && (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall' || a.type === 'stairs' || a.type === 'beam'); }
 function arcPath(a) { const r = Math.hypot(a.x2 - a.x1, a.y2 - a.y1) / 2; return `M ${a.x1} ${a.y1} A ${r} ${r} 0 0 1 ${a.x2} ${a.y2}`; }
 function drawSelection(svg, a, pv) {
   if (!a) return; const hs = (COARSE ? 8 : 4.5) / pv.scale;
@@ -1529,6 +1538,8 @@ function applyBuildup() {
 }
 let stairW = null, stairRiseM = 2.6, stairBaseM = 0;   // Treppe: Breite · Geschosshöhe · Unterkante
 let roofType = 'sattel', roofEaveM = 2.6, roofRidgeM = 4.0, roofAxis = 'x';   // Dach: Pult/Sattel · Traufe · First · Firstrichtung
+let beamW = null, beamHM = 0.4;   // Unterzug: Breite · Höhe (hängt unter der Decke)
+function beamWidthPts() { return beamW || cmToPts(24); }
 function stairWidthPts() { return stairW || cmToPts(100); }
 function stairSteps(a) { return a.steps || Math.max(2, Math.round((a.rise || stairRiseM) / 0.18)); }   // ~18 cm Steigung
 function wallThickPts() { return lastWallThick || cmToPts(17.5); }   // Standard 17,5 cm (Backstein)
@@ -2079,7 +2090,7 @@ function startMove(pv, e, a, wasSel) {
 // Endpunkt auf 15°-Schritte zum Festpunkt (ax,ay) einrasten (Shift beim Ziehen)
 function snap15(ax, ay, qx, qy) { const dx = qx - ax, dy = qy - ay, len = Math.hypot(dx, dy), step = Math.PI / 12, ang = Math.round(Math.atan2(dy, dx) / step) * step; return { x: ax + Math.cos(ang) * len, y: ay + Math.sin(ang) * len }; }
 function translateAnno(a, o, dx, dy) {
-  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall' || a.type === 'stairs') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
+  if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall' || a.type === 'stairs' || a.type === 'beam') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
   else if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim' || a.type === 'slab') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
   else if (a.type === 'path') a.nodes = o.nodes.map(nd => ({ x: nd.x + dx, y: nd.y + dy, hIn: { x: nd.hIn.x + dx, y: nd.hIn.y + dy }, hOut: { x: nd.hOut.x + dx, y: nd.hOut.y + dy } }));
   else if (a.type === 'highlight') a.rects = o.rects.map(r => ({ x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }));
@@ -2293,7 +2304,7 @@ function beautify(pts) {
 
 function startDraw(pv, e, p) {
   pushUndo();
-  if (!e.shiftKey && (tool === 'wall' || tool === 'line' || tool === 'arrow' || tool === 'measure' || tool === 'dim' || tool === 'stairs')) {
+  if (!e.shiftKey && (tool === 'wall' || tool === 'line' || tool === 'arrow' || tool === 'measure' || tool === 'dim' || tool === 'stairs' || tool === 'beam')) {
     const sp = snapWallPt(pv, p.x, p.y); if (sp) p = { x: sp.x, y: sp.y }; else if (gridOn) p = snapPt(p.x, p.y);   // Startpunkt auf Wand-Ende/-Achse einrasten → saubere Gehrung
   }
   let a;
@@ -2303,6 +2314,7 @@ function startDraw(pv, e, p) {
   else if (tool === 'oval') a = { id: nextId++, type: 'oval', x: p.x, y: p.y, w: 0, h: 0, color: style.color, width: style.width };
   else if (tool === 'wall') a = { id: nextId++, type: 'wall', x1: p.x, y1: p.y, x2: p.x, y2: p.y, thick: wallThickPts(), just: wallJust, color: (wallHatch && wallHatch.color) || style.color, fill: (wallHatch && wallHatch.fill) || '#ffffff', hatch: wallHatch ? { ...wallHatch } : null, width: 1.4, dim: wallDimOn };   // Wand = Linie mit Dicke
   else if (tool === 'stairs') a = { id: nextId++, type: 'stairs', x1: p.x, y1: p.y, x2: p.x, y2: p.y, width: stairWidthPts(), rise: stairRiseM, base: stairBaseM, color: style.color };   // Treppe = Lauf (Linie mit Breite + Höhe)
+  else if (tool === 'beam') a = { id: nextId++, type: 'beam', x1: p.x, y1: p.y, x2: p.x, y2: p.y, width: beamWidthPts(), height: beamHM, color: style.color };   // Unterzug = Balken (Linie mit Breite + Höhe, unter der Decke)
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   pushAnno(pv.num, a);
   if (a.type === 'wall' && wallBuildup) applyWallBuildup(a, wallBuildup.layers, wallBuildup.spacing);   // Standard-Aufbau übernehmen
@@ -2329,7 +2341,7 @@ function startDraw(pv, e, p) {
     if (a.type === 'pen' && penTidy) { const bz = beautify(a.pts); if (bz) { const arr = getAnnos(pv.num), i = arr.indexOf(a); arr[i] = Object.assign({ id: a.id, color: a.color, width: a.width }, bz); } }
     const cur = getAnnos(pv.num).find(x => x.id === a.id) || a;
     const clk = isLineType(cur) ? Math.hypot(cur.x2 - cur.x1, cur.y2 - cur.y1) < 3 : false;
-    if (clk && (cur.type === 'line' || cur.type === 'arrow' || cur.type === 'measure' || cur.type === 'dim' || cur.type === 'wall' || cur.type === 'stairs')) { startSegDraft(pv, cur); return; }   // Klick = Richtung anpeilen, dann 2. Klick oder L (Wand/Linie/Treppe)
+    if (clk && (cur.type === 'line' || cur.type === 'arrow' || cur.type === 'measure' || cur.type === 'dim' || cur.type === 'wall' || cur.type === 'stairs' || cur.type === 'beam')) { startSegDraft(pv, cur); return; }   // Klick = Richtung anpeilen, dann 2. Klick oder L (Wand/Linie/Treppe/Unterzug)
     const b = bbox(cur); if (cur.type !== 'pen' && b.w < 3 && b.h < 3) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(cur), 1); undoStack.pop(); drawAnnos(pv); return; }
     if (isLineType(cur)) lastLine = { num: pv.num, id: cur.id };   // „L" wirkt auf die zuletzt gezeichnete Linie
     sel = null; drawAnnos(pv); saveState();   // Werkzeug bleibt aktiv → mehrere zeichnen (V/Esc = auswählen)
@@ -3469,7 +3481,7 @@ function setTool(t) {
   if (t === 'wallchain' && !setTool._wcHint) { setTool._wcHint = true; toast('Wände am Stück: klicken–klicken = Raumzug · zurück auf den Startpunkt = Raum schliessen (m²) · Rücktaste = letzte Wand zurück · Doppelklick/Enter = fertig.'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'roof', 'block', 'section'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'section'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -3698,6 +3710,11 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
           for (let i = 1; i < n; i++) { const t = i / n, mx = a.x1 + dx * t, my = a.y1 + dy * t; pg.drawLine({ start: { x: mx + nx * hw, y: Y(my + ny * hw) }, end: { x: mx - nx * hw, y: Y(my - ny * hw) }, thickness: 0.8, color: c }); }
           pg.drawLine({ start: { x: a.x1, y: Y(a.y1) }, end: { x: a.x2, y: Y(a.y2) }, thickness: 1, color: c });
           const al = 7; pg.drawLine({ start: { x: a.x2, y: Y(a.y2) }, end: { x: a.x2 - ux * al + nx * al * .6, y: Y(a.y2 - uy * al + ny * al * .6) }, thickness: 1, color: c }); pg.drawLine({ start: { x: a.x2, y: Y(a.y2) }, end: { x: a.x2 - ux * al - nx * al * .6, y: Y(a.y2 - uy * al - ny * al * .6) }, thickness: 1, color: c });
+        }
+        else if (a.type === 'beam') {
+          const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, hw = (a.width || beamWidthPts()) / 2;
+          const c1 = [a.x1 + nx * hw, a.y1 + ny * hw], c2 = [a.x2 + nx * hw, a.y2 + ny * hw], c3 = [a.x2 - nx * hw, a.y2 - ny * hw], c4 = [a.x1 - nx * hw, a.y1 - ny * hw];
+          for (const [p, q] of [[c1, c2], [c2, c3], [c3, c4], [c4, c1]]) pg.drawLine({ start: { x: p[0], y: Y(p[1]) }, end: { x: q[0], y: Y(q[1]) }, thickness: 1.1, color: c, dashArray: [7, 4] });
         }
         else if (a.type === 'text') {
           const pad = 3, lines = (a.text || '').split('\n'), lineH = a.size * 1.25, align = a.align || 'left';
@@ -4137,6 +4154,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Öffnungs-Nummern (F1/F2)', () => { const g = openingGroups([wall, win, { id: 9004, type: 'opening', kind: 'window', wallId: 9001, w: cmToPts(80), head: 2.1, sill: 0.9, winType: 'f1', winMat: 'holz' }]); return (g.wins.length === 2 && g.posOf[9004] === 'F1' && g.posOf[9002] === 'F2') ? '' : JSON.stringify(g.posOf); });
     A('Möbel-Symbol (Kleiderschrank)', () => blockShapes({ x: 0, y: 0, w: 140, h: 60, kind: 'wardrobe' }).length >= 3 && !!BLOCK_DEFS.kitchen && !!BLOCK_H.tallcab);
     A('Stütze (rund/eckig)', () => { const r = blockShapes({ x: 0, y: 0, w: 30, h: 30, kind: 'columnRound' }); return r.length === 1 && r[0].t === 'circ' && IS_COLUMN('column') && !IS_COLUMN('table'); });
+    A('Unterzug (Bauteil)', () => { const b = { id: 9100, type: 'beam', x1: 0, y1: 0, x2: cmToPts(500), y2: 0, width: cmToPts(24), height: 0.4 }; const bb = bbox(b); return isLineType(b) && bb.w > 0 && computeQuantities([b]).extra.some(e => e.label === 'Unterzug'); });
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
   } finally { docScale = saved; }
@@ -4238,6 +4256,7 @@ function computeQuantities(arr) {   // Mengenauszug: Wandfläche × Schichtstär
     if (a.type === 'slab' && a.pts && a.pts.length >= 3) { const m2 = polyArea(a.pts) * pp * pp, e = ex('slab', 'Decke / Bodenplatte', 'm²'); e.qty += m2; e.n++; e.vol += m2 * (a.thick || 0.2); }
     else if (a.type === 'roof' && a.w && a.h) { const e = ex('roof', 'Dach (Grundfläche)', 'm²'); e.qty += Math.abs(a.w * a.h) * pp * pp; e.n++; }
     else if (a.type === 'stairs') { const e = ex('stairs', 'Treppe (Lauf)', 'm'); e.qty += ptsToCm(Math.hypot(a.x2 - a.x1, a.y2 - a.y1)) / 100; e.n++; e.steps += stairSteps(a); }
+    else if (a.type === 'beam') { const e = ex('beam', 'Unterzug', 'm'); e.qty += ptsToCm(Math.hypot(a.x2 - a.x1, a.y2 - a.y1)) / 100; e.n++; }
   }
   return { mats: Object.values(mats).sort((a, b) => a.mat.localeCompare(b.mat)), ops: Object.values(opsAgg).sort((a, b) => (a.kind + a.rohW).localeCompare(b.kind + b.rohW)), extra: Object.values(extra) };
 }
@@ -4524,6 +4543,14 @@ function build3DScene(host, walls, arr) {
       m.position.set(sx + ux * along, base + h / 2, sz + uy * along); m.rotation.y = ry; scene.add(m);
       const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); e.rotation.copy(m.rotation); scene.add(e);
     }
+  }
+  // Unterzüge: Box direkt unter der Decke (Oberkante = Geschosshöhe)
+  const beamMat = new THREE.MeshLambertMaterial({ color: 0xc2bdb0 });
+  for (const a of arr) if (a.type === 'beam' && layerVisible(a) && phaseVisible(a)) {
+    const dx = a.x2 - a.x1, dy = a.y2 - a.y1, lp = Math.hypot(dx, dy); if (lp < 1) continue;
+    const ry = -Math.atan2(dy, dx), wm = M(a.width || beamWidthPts()), hm = a.height || beamHM, lenM = lp * perPt, ceil = lev(a) + wallHeightM, mxp = (a.x1 + a.x2) / 2, myp = (a.y1 + a.y2) / 2;
+    const geo = new THREE.BoxGeometry(lenM, hm, wm), m = new THREE.Mesh(geo, beamMat); m.position.set(M(mxp - cx), ceil - hm / 2, M(myp - cy)); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; scene.add(m);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); e.rotation.copy(m.rotation); scene.add(e);
   }
   // Dächer (Pult-/Satteldach) als 3D-Schräge
   const rmat = new THREE.MeshLambertMaterial({ color: 0xb06a4f, side: THREE.DoubleSide });

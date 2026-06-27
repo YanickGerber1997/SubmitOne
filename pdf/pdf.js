@@ -6271,6 +6271,17 @@ if (active < 0) showEmptyThumbs();   // beim Start: Vorschau-Spalte zeigt „Neu
   setTimeout(() => { document.addEventListener('pointerdown', dismiss); document.addEventListener('keydown', dismiss); }, 400);   // erst nach kurzer Zeit per Klick überspringbar
 })();
 setTimeout(() => { try { if (!pdfDoc && (typeof buildExampleProject === 'function')) buildExampleProject(); } catch (_) { } }, 1600);   // Start mit Beispielprojekt, wenn kein Dokument/Wiederherstellung geladen
+(function uiZoom() {   // Oberflächen-Zoom: skaliert die ganze App (Werkzeuge/Buttons/Blatt), unabhängig vom Browser-Zoom
+  let s = parseFloat(localStorage.getItem('uiScale') || '1') || 1;
+  const lbl = document.getElementById('uiZoomLbl'), inB = document.getElementById('uiZoomIn'), outB = document.getElementById('uiZoomOut');
+  const apply = () => { document.body.style.zoom = String(s); if (lbl) lbl.textContent = Math.round(s * 100) + '%'; try { localStorage.setItem('uiScale', String(s)); } catch (_) { } };
+  const set = v => { s = Math.max(0.6, Math.min(2.4, Math.round(v * 20) / 20)); apply(); };
+  if (inB) inB.onclick = () => set(s + 0.1);
+  if (outB) outB.onclick = () => set(s - 0.1);
+  if (lbl) lbl.onclick = () => set(1);
+  document.addEventListener('keydown', e => { if (!(e.ctrlKey && e.altKey)) return; if (e.key === '+' || e.key === '=') { set(s + 0.1); e.preventDefault(); } else if (e.key === '-') { set(s - 0.1); e.preventDefault(); } else if (e.key === '0') { set(1); e.preventDefault(); } });
+  apply();
+})();
 
 /* ---------- Geräte-Anbindung (PWA) ---------- */
 async function loadSharedFile() {

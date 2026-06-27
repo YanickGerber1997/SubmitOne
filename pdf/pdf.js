@@ -4173,9 +4173,9 @@ function open3DIFC(ifc) {
   ov.querySelector('#ifcList').onclick = () => openIFCList(ifc);
   ov.querySelector('#ifcEnv').onclick = e => { ifcShowEnv = !ifcShowEnv; e.currentTarget.classList.toggle('on', ifcShowEnv); if (api) api.dispose(); api = buildIFCScene(host, ifc); toast(ifcShowEnv ? 'Umgebung/Pflanzen eingeblendet.' : 'Umgebung/Pflanzen ausgeblendet (saubere Bauwerks-Ansicht).'); };
   ov.querySelector('#ifcObj').onclick = () => saveObjFrom(api, ifc.project || 'ifc-modell');
-  ov.querySelector('#ifcPlan').onclick = () => { if (!pdfDoc) { toast('Erst ein PDF/Plan öffnen, um den Grundriss abzulegen.'); return; } const h = prompt('Schnitthöhe für den Grundriss (m über Gebäude-Unterkante):', '1.2'); if (h == null) return; const hv = parseFloat((h || '').replace(',', '.')); ifcFloorPlan(ifc, hv > 0 ? hv : 1.2); };
-  ov.querySelector('#ifcWalls').onclick = () => { if (!pdfDoc) { toast('Erst ein PDF/Plan öffnen, um die Wände abzulegen.'); return; } const h = prompt('Schnitthöhe für die Wand-Erkennung (m über Gebäude-Unterkante):', '1.2'); if (h == null) return; const hv = parseFloat((h || '').replace(',', '.')); ifcToWalls(ifc, hv > 0 ? hv : 1.2); };
-  ov.querySelector('#ifcStoreys').onclick = () => { if (!pdfDoc) { toast('Erst ein Dokument öffnen/neu starten.'); return; } ifcAllStoreysToWalls(ifc); };
+  ov.querySelector('#ifcPlan').onclick = () => { if (!pdfDoc) { toast('Erst ein PDF/Plan öffnen, um den Grundriss abzulegen.'); return; } const h = prompt('Schnitthöhe für den Grundriss (m über Gebäude-Unterkante):', '1.2'); if (h == null) return; const hv = parseFloat((h || '').replace(',', '.')); ifcFloorPlan(ifc, hv > 0 ? hv : 1.2).then(ok => { if (ok) close(); }).catch(err => { status(''); console.error(err); toast('Grundriss fehlgeschlagen: ' + ((err && err.message) || err)); }); };
+  ov.querySelector('#ifcWalls').onclick = () => { if (!pdfDoc) { toast('Erst ein PDF/Plan öffnen, um die Wände abzulegen.'); return; } const h = prompt('Schnitthöhe für die Wand-Erkennung (m über Gebäude-Unterkante):', '1.2'); if (h == null) return; const hv = parseFloat((h || '').replace(',', '.')); ifcToWalls(ifc, hv > 0 ? hv : 1.2).then(ok => { if (ok) close(); }).catch(err => { status(''); console.error(err); toast('Wände fehlgeschlagen: ' + ((err && err.message) || err)); }); };
+  ov.querySelector('#ifcStoreys').onclick = () => { if (!pdfDoc) { toast('Erst ein Dokument öffnen/neu starten.'); return; } ifcAllStoreysToWalls(ifc).then(ok => { if (ok) close(); }).catch(err => { status(''); console.error(err); toast('Geschosse fehlgeschlagen: ' + ((err && err.message) || err)); }); };
   const close = () => { if (api) api.dispose(); ov.remove(); document.removeEventListener('keydown', esc, true); };
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } }; document.addEventListener('keydown', esc, true);
   ov.querySelector('#d3Close').onclick = close;
@@ -4225,7 +4225,7 @@ function mergeIfcSegments(segs) {   // viele Dreieck-Schnipsel → wenige lange,
 }
 async function ifcFloorPlan(ifc, cutAbove) {   // IFC → massstäblicher Grundriss (editierbare Vektorlinien) auf einer NEUEN Seite (Bild-Fallback bei zu vielen)
   if (!pdfDoc) { toast('Erst ein Dokument öffnen/neu starten, dann den Grundriss erzeugen.'); return; }
-  if (!docScale) { toast('Erst den Massstab setzen (1:n) – der Grundriss wird massstäblich.'); return; }
+  if (!docScale) { docScale = { perPt: 50 * PT2MM / 1000, label: '1:50', n: 50 }; toast('Massstab automatisch auf 1:50 gesetzt (im Footer änderbar).'); }
   status('Grundriss wird erzeugt …'); await new Promise(r => setTimeout(r, 20));
   const raw = ifcSliceSegments(ifc.meshes, ifc.bbox.miny + (cutAbove || 1.2));
   if (!raw.length) { status(''); toast('Auf dieser Höhe keine Schnittlinien gefunden – andere Höhe versuchen.'); return; }
@@ -4241,7 +4241,7 @@ async function ifcFloorPlan(ifc, cutAbove) {   // IFC → massstäblicher Grundr
     const lid = newLayerId(); layers.push({ id: lid, name: 'IFC-Grundriss', visible: true }); const arr = getAnnos(n);
     for (const s of segs) { const a = toPt(s[0][0], s[0][1]), b = toPt(s[1][0], s[1][1]); arr.push({ id: nextId++, type: 'line', x1: a[0], y1: a[1], x2: b[0], y2: b[1], color: '#1c242c', width: 1.2, layer: lid }); }
     activeLayerId = lid; drawAnnos(pv); renderLayerPanel(); saveState(); status('');
-    toast('IFC-Grundriss: ' + segs.length + ' editierbare Linien auf neuer Seite ' + n + ' (massstäblich) – anwählbar & verschiebbar.');
+    toast('IFC-Grundriss: ' + segs.length + ' editierbare Linien auf neuer Seite ' + n + ' (massstäblich) – anwählbar & verschiebbar.'); return true;
   } else {   // Fallback: Bild
     const wM = Math.max(0.2, maxx - minx), hM = Math.max(0.2, maxy - miny), ppm = Math.max(20, Math.min(120, 3200 / Math.max(wM, hM)));
     const cw = Math.min(4000, Math.round(wM * ppm)), ch = Math.min(4000, Math.round(hM * ppm)), cv = document.createElement('canvas'); cv.width = cw; cv.height = ch; const g = cv.getContext('2d');
@@ -4250,7 +4250,7 @@ async function ifcFloorPlan(ifc, cutAbove) {   // IFC → massstäblicher Grundr
     g.stroke();
     const wPts = cmToPts(wM * 100), hPts = cmToPts(hM * 100), a = { id: nextId++, type: 'img', data: cv.toDataURL('image/png'), x: (pv.pageW - wPts) / 2, y: (pv.pageH - hPts) / 2, w: wPts, h: hPts, layer: activeLayerId };
     pushAnno(n, a); sel = { num: n, id: a.id }; setTool('select'); drawAnnos(pv); saveState(); status('');
-    toast('IFC-Grundriss als Bild auf neuer Seite ' + n + ' (sehr viele Linien).');
+    toast('IFC-Grundriss als Bild auf neuer Seite ' + n + ' (sehr viele Linien).'); return true;
   }
 }
 function ifcPairWalls(lines) {   // aus den Schnittlinien parallele, nahe, überlappende Paare → Wand-Achse + Dicke (Meter)
@@ -4279,7 +4279,7 @@ function ifcPairWalls(lines) {   // aus den Schnittlinien parallele, nahe, über
 }
 async function ifcToWalls(ifc, cutAbove) {   // IFC → editierbare Submit-Wände (parametrisch, 2D+3D) auf einer NEUEN, passenden Seite – Stufe 2, experimentell
   if (!pdfDoc) { toast('Erst ein Dokument öffnen/neu starten, dann die Wände erzeugen.'); return; }
-  if (!docScale) { toast('Erst den Massstab setzen (1:n).'); return; }
+  if (!docScale) { docScale = { perPt: 50 * PT2MM / 1000, label: '1:50', n: 50 }; toast('Massstab automatisch auf 1:50 gesetzt (im Footer änderbar).'); }
   status('Wände werden rekonstruiert …'); await new Promise(r => setTimeout(r, 20));
   const ws = ifcPairWalls(mergeIfcSegments(ifcSliceSegments(ifc.meshes, ifc.bbox.miny + (cutAbove || 1.2))));
   if (!ws.length) { status(''); toast('Keine parallelen Wandpaare gefunden – andere Schnitthöhe versuchen.'); return; }
@@ -4293,11 +4293,11 @@ async function ifcToWalls(ifc, cutAbove) {   // IFC → editierbare Submit-Wänd
   const lid = newLayerId(); layers.push({ id: lid, name: 'IFC-Wände', visible: true }); const arr = getAnnos(n), h3 = Math.min(3.2, Math.max(2.3, ifc.dim.y || wallHeightM));
   for (const w of ws) { const a = toPt(w.x1, w.y1), b = toPt(w.x2, w.y2); arr.push({ id: nextId++, type: 'wall', x1: a[0], y1: a[1], x2: b[0], y2: b[1], thick: cmToPts(Math.max(6, Math.min(60, w.thick * 100))), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: h3, dim: false, layer: lid }); }
   activeLayerId = lid; drawAnnos(pv); renderLayerPanel(); saveState(); status('');
-  toast(ws.length + ' Wände auf neuer Seite ' + n + ' rekonstruiert (Ebene „IFC-Wände") – in 2D & 3D bearbeitbar. Experimentell, Dicke/Höhe ggf. nachjustieren.');
+  toast(ws.length + ' Wände auf neuer Seite ' + n + ' rekonstruiert (Ebene „IFC-Wände") – in 2D & 3D bearbeitbar. Experimentell, Dicke/Höhe ggf. nachjustieren.'); return true;
 }
 async function ifcAllStoreysToWalls(ifc) {   // alle Geschosse → je eine editierbare Ebene mit Wänden, korrekt gestapelt (Höhe aus IfcBuildingStorey, ausgerichtet an der Geometrie-Unterkante)
   if (!pdfDoc) { toast('Erst ein Dokument öffnen/neu starten.'); return; }
-  if (!docScale) { toast('Erst den Massstab setzen (1:n).'); return; }
+  if (!docScale) { docScale = { perPt: 50 * PT2MM / 1000, label: '1:50', n: 50 }; toast('Massstab automatisch auf 1:50 gesetzt (im Footer änderbar).'); }
   if (!ifc.storeys || !ifc.storeys.filter(s => s.elev != null).length) { toast('Keine Geschoss-Höhen im IFC – nutze „⌂ Als Wände" mit Schnitthöhe.'); return; }
   status('Geschosse werden rekonstruiert …'); await new Promise(r => setTimeout(r, 20));
   const sts = ifc.storeys.filter(s => s.elev != null).slice().sort((a, b) => a.elev - b.elev), minElev = sts[0].elev, floors = [];
@@ -4320,7 +4320,7 @@ async function ifcAllStoreysToWalls(ifc) {   // alle Geschosse → je eine editi
     for (const w of f.walls) { const a = toPt(w.x1, w.y1), b = toPt(w.x2, w.y2); arr.push({ id: nextId++, type: 'wall', x1: a[0], y1: a[1], x2: b[0], y2: b[1], thick: cmToPts(Math.max(6, Math.min(60, w.thick * 100))), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: f.h3d, dim: false, layer: lid }); }
   }
   if (first) activeLayerId = first; drawAnnos(pv); renderLayerPanel(); saveState(); status('');
-  toast(floors.length + ' Geschosse als Ebenen rekonstruiert (im 3D gestapelt): ' + floors.map(f => f.name).join(' · ') + '. Ebenen-Panel: einzeln ein-/ausblenden & Höhe anpassen.');
+  toast(floors.length + ' Geschosse als Ebenen rekonstruiert (im 3D gestapelt): ' + floors.map(f => f.name).join(' · ') + '. Ebenen-Panel: einzeln ein-/ausblenden & Höhe anpassen.'); return true;
 }
 async function pdfPageSegments(n) {   // Vektorlinien einer PDF-Seite aus der Operator-Liste (mit CTM-Verfolgung) → Segmente in Seitenpunkten (oben-links)
   const page = await pdfDoc.getPage(n), OPS = pdfjs.OPS, opl = await page.getOperatorList(), PH = page.getViewport({ scale: 1 }).height;

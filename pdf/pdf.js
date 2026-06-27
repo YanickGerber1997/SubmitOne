@@ -2816,6 +2816,7 @@ function blockShapes(a) {   // Symbol-Geometrie in absoluten Seitenkoordinaten (
 }
 function drawBlock(svg, a) {
   const col = a.color || '#1c242c', fill = IS_COLUMN(a.kind) ? '#b8bcb2' : 'none', g = svgEl('g', { 'data-id': a.id });
+  if (a.rot) { const bx = Math.min(a.x, a.x + a.w) + Math.abs(a.w) / 2, by = Math.min(a.y, a.y + a.h) + Math.abs(a.h) / 2; g.setAttribute('transform', 'rotate(' + (a.rot * 180 / Math.PI).toFixed(2) + ' ' + bx + ' ' + by + ')'); }
   for (const sp of blockShapes(a)) {
     if (sp.t === 'rect') g.appendChild(svgEl('rect', { x: sp.x, y: sp.y, width: sp.w, height: sp.h, rx: sp.rx || 0, ry: sp.rx || 0, fill, stroke: col, 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
     else if (sp.t === 'ell') g.appendChild(svgEl('ellipse', { cx: sp.cx, cy: sp.cy, rx: sp.rx, ry: sp.ry, fill, stroke: col, 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
@@ -3671,7 +3672,19 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
         }
         else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), o = { x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawRectangle(o); }
         else if (a.type === 'roof') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h); pg.drawRectangle({ x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: 1.2 }); const rl = (x1, y1, x2, y2) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: 1.8, color: c }); if (a.rtype === 'pult') { a.axis === 'x' ? rl(x, y, x + W, y) : rl(x, y, x, y + H); } else { a.axis === 'x' ? rl(x, y + H / 2, x + W, y + H / 2) : rl(x + W / 2, y, x + W / 2, y + H); } const lab = a.rtype === 'pult' ? 'Pultdach' : 'Satteldach', tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: x + W / 2 - tw / 2, y: Y(y + H / 2) - 3, size: 11, font, color: c }); }
-        else if (a.type === 'block') { const pf = IS_COLUMN(a.kind) ? hexToRgb('#b8bcb2') : null, fco = pf ? { color: rgb(pf.r, pf.g, pf.b) } : {}; for (const sp of blockShapes(a)) { if (sp.t === 'rect') pg.drawRectangle({ x: sp.x, y: Y(sp.y + sp.h), width: sp.w, height: sp.h, borderColor: c, borderWidth: 1.2, ...fco }); else if (sp.t === 'ell') pg.drawEllipse({ x: sp.cx, y: Y(sp.cy), xScale: sp.rx, yScale: sp.ry, borderColor: c, borderWidth: 1.2 }); else if (sp.t === 'circ') pg.drawEllipse({ x: sp.cx, y: Y(sp.cy), xScale: sp.r, yScale: sp.r, borderColor: c, borderWidth: 1, ...(a.kind === 'columnRound' ? fco : {}) }); else if (sp.t === 'line') pg.drawLine({ start: { x: sp.x1, y: Y(sp.y1) }, end: { x: sp.x2, y: Y(sp.y2) }, thickness: 1, color: c }); } }
+        else if (a.type === 'block') {
+          const pf = IS_COLUMN(a.kind) ? hexToRgb('#b8bcb2') : null, fco = pf ? { color: rgb(pf.r, pf.g, pf.b) } : {};
+          const ro = a.rot || 0, bcx = Math.min(a.x, a.x + a.w) + Math.abs(a.w) / 2, bcy = Math.min(a.y, a.y + a.h) + Math.abs(a.h) / 2, cs = Math.cos(ro), sn = Math.sin(ro);
+          const R = (x, y) => ro ? [bcx + (x - bcx) * cs - (y - bcy) * sn, bcy + (x - bcx) * sn + (y - bcy) * cs] : [x, y];
+          for (const sp of blockShapes(a)) {
+            if (sp.t === 'rect') {
+              if (!ro) { pg.drawRectangle({ x: sp.x, y: Y(sp.y + sp.h), width: sp.w, height: sp.h, borderColor: c, borderWidth: 1.2, ...fco }); }
+              else { const cs4 = [[sp.x, sp.y], [sp.x + sp.w, sp.y], [sp.x + sp.w, sp.y + sp.h], [sp.x, sp.y + sp.h]].map(p => R(p[0], p[1])); for (let i = 0; i < 4; i++) { const p = cs4[i], q = cs4[(i + 1) % 4]; pg.drawLine({ start: { x: p[0], y: Y(p[1]) }, end: { x: q[0], y: Y(q[1]) }, thickness: 1.2, color: c }); } }
+            } else if (sp.t === 'ell') { const [px, py] = R(sp.cx, sp.cy); pg.drawEllipse({ x: px, y: Y(py), xScale: sp.rx, yScale: sp.ry, rotate: degrees(-ro * 180 / Math.PI), borderColor: c, borderWidth: 1.2 }); }
+            else if (sp.t === 'circ') { const [px, py] = R(sp.cx, sp.cy); pg.drawEllipse({ x: px, y: Y(py), xScale: sp.r, yScale: sp.r, borderColor: c, borderWidth: 1, ...(a.kind === 'columnRound' ? fco : {}) }); }
+            else if (sp.t === 'line') { const [ax, ay] = R(sp.x1, sp.y1), [bx2, by2] = R(sp.x2, sp.y2); pg.drawLine({ start: { x: ax, y: Y(ay) }, end: { x: bx2, y: Y(by2) }, thickness: 1, color: c }); }
+          }
+        }
         else if (a.type === 'oval') { const o = { x: a.x + a.w / 2, y: Y(a.y + a.h / 2), xScale: Math.abs(a.w / 2), yScale: Math.abs(a.h / 2), borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawEllipse(o); }
         else if (a.type === 'pen') { const op = a.hl ? 0.35 : 1; for (let i = 1; i < a.pts.length; i++) pg.drawLine({ start: { x: a.pts[i - 1][0], y: Y(a.pts[i - 1][1]) }, end: { x: a.pts[i][0], y: Y(a.pts[i][1]) }, thickness: w, color: c, opacity: op }); }
         else if (a.type === 'opening') {
@@ -3999,7 +4012,7 @@ async function open3D() {
   let api = null;
   const mk = keepCam => { const cam = keepCam && api && api.camState ? api.camState() : null; if (api) api.dispose(); api = build3DScene(host, walls, arr, { initCam: cam, onEdit: () => { pageViews.forEach(drawAnnos); markDirty(); mk(true); applySun(); } }); };
   mk(false);
-  if (walls.length) toast('Tipp: blaue Punkte ziehen = Wände bearbeiten – wirkt direkt auf den 2D-Plan.');
+  if (walls.length) toast('3D-Editor: 🔵 Wandende (Snap) · ▭ grau Wand verschieben · 🌸 pink Höhe · 🟣 Möbel/Stütze · 🟡 drehen · 🟢 Fenster · Griff anklicken + Entf = löschen.');
   ov.querySelector('#d3h').onchange = e => { wallHeightM = Math.max(1, Math.min(20, parseFloat(e.target.value) || 2.6)); mk(true); };
   ov.querySelector('#d3Slab').onclick = e => { show3DSlabs = !show3DSlabs; e.currentTarget.classList.toggle('on', show3DSlabs); mk(true); };
   ov.querySelector('#d3Obj').onclick = () => saveObjFrom(api, docName);
@@ -4692,36 +4705,49 @@ function build3DScene(host, walls, arr, opts) {
   for (const a of arr) if (a.type === 'block' && layerVisible(a) && phaseVisible(a)) {
     const isCol = IS_COLUMN(a.kind), bw = M(Math.abs(a.w)), bd = M(Math.abs(a.h)), bh = isCol ? (a.h3d || wallHeightM) : (BLOCK_H[a.kind] || 0.6), ccx = Math.min(a.x, a.x + a.w) + Math.abs(a.w) / 2, ccy = Math.min(a.y, a.y + a.h) + Math.abs(a.h) / 2;
     if (bw < 0.01 || bd < 0.01) continue;
-    const geo = a.kind === 'columnRound' ? new THREE.CylinderGeometry(Math.min(bw, bd) / 2, Math.min(bw, bd) / 2, bh, 24) : new THREE.BoxGeometry(bw, bh, bd), m = new THREE.Mesh(geo, isCol ? colMat : bmat); m.position.set(M(ccx - cx), lev(a) + bh / 2, M(ccy - cy)); m.castShadow = true; m.receiveShadow = true; scene.add(m);
-    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); scene.add(e);
+    const geo = a.kind === 'columnRound' ? new THREE.CylinderGeometry(Math.min(bw, bd) / 2, Math.min(bw, bd) / 2, bh, 24) : new THREE.BoxGeometry(bw, bh, bd), m = new THREE.Mesh(geo, isCol ? colMat : bmat); m.position.set(M(ccx - cx), lev(a) + bh / 2, M(ccy - cy)); m.rotation.y = -(a.rot || 0); m.castShadow = true; m.receiveShadow = true; scene.add(m);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.position.copy(m.position); e.rotation.copy(m.rotation); scene.add(e);
   }
   let raf, alive = true;
   const onResize = () => { const w2 = host.clientWidth, h2 = host.clientHeight; if (!w2 || !h2) return; camera.aspect = w2 / h2; camera.updateProjectionMatrix(); renderer.setSize(w2, h2); };
   window.addEventListener('resize', onResize);
   let editHandles = [];
   if (opts.onEdit) {   // Griffe: Wand-Endpunkte (Kugel, Snapping) + Wand-Mittelpunkt (Quader) + Möbel/Stützen-Mittelpunkt → ändern DAS Bauteil-Objekt
-    const hR = Math.max(0.07, span * 0.013), hGeo = new THREE.SphereGeometry(hR, 14, 14), midGeo = new THREE.BoxGeometry(hR * 1.7, hR * 0.5, hR * 1.7), blkGeo = new THREE.BoxGeometry(hR * 2.2, hR * 0.5, hR * 2.2), opGeo = new THREE.SphereGeometry(hR * 1.05, 14, 14);
-    const cEnd = 0x2f7be4, cMid = 0x6b7280, cBlk = 0x8a5cc4, cOpen = 0x14b8a6, cHot = 0xf08a24, cSnap = 0x2fae4e;
+    const hR = Math.max(0.07, span * 0.013), hGeo = new THREE.SphereGeometry(hR, 14, 14), midGeo = new THREE.BoxGeometry(hR * 1.7, hR * 0.5, hR * 1.7), blkGeo = new THREE.BoxGeometry(hR * 2.2, hR * 0.5, hR * 2.2), opGeo = new THREE.SphereGeometry(hR * 1.05, 14, 14), rotGeo = new THREE.SphereGeometry(hR * 1.1, 14, 14), htGeo = new THREE.ConeGeometry(hR * 1.2, hR * 2.4, 4);
+    const cEnd = 0x2f7be4, cMid = 0x6b7280, cBlk = 0x8a5cc4, cOpen = 0x14b8a6, cRot = 0xeab308, cHt = 0xdb2777, cHot = 0xf08a24, cSnap = 0x2fae4e;
     const addH = (geo, col, x, y, z, ud) => { const s = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: col })); s.position.set(x, y, z); s.name = '__handle'; s.renderOrder = 999; s.userData = ud; scene.add(s); editHandles.push(s); };
-    for (const w of walls) { addH(hGeo, cEnd, M(w.x1 - cx), lev(w) + 0.07, M(w.y1 - cy), { obj: w, end: 1 }); addH(hGeo, cEnd, M(w.x2 - cx), lev(w) + 0.07, M(w.y2 - cy), { obj: w, end: 2 }); addH(midGeo, cMid, M((w.x1 + w.x2) / 2 - cx), lev(w) + 0.07, M((w.y1 + w.y2) / 2 - cy), { obj: w, end: 'mid' }); }
-    for (const a of arr) if (a.type === 'block' && layerVisible(a) && phaseVisible(a)) { const bx = Math.min(a.x, a.x + a.w) + Math.abs(a.w) / 2, by = Math.min(a.y, a.y + a.h) + Math.abs(a.h) / 2; addH(blkGeo, cBlk, M(bx - cx), lev(a) + 0.07, M(by - cy), { obj: a, end: 'block' }); }
+    for (const w of walls) { addH(hGeo, cEnd, M(w.x1 - cx), lev(w) + 0.07, M(w.y1 - cy), { obj: w, end: 1 }); addH(hGeo, cEnd, M(w.x2 - cx), lev(w) + 0.07, M(w.y2 - cy), { obj: w, end: 2 }); addH(midGeo, cMid, M((w.x1 + w.x2) / 2 - cx), lev(w) + 0.07, M((w.y1 + w.y2) / 2 - cy), { obj: w, end: 'mid' }); addH(htGeo, cHt, M((w.x1 + w.x2) / 2 - cx), lev(w) + (w.h3d || wallHeightM), M((w.y1 + w.y2) / 2 - cy), { obj: w, end: 'wh', baseY: lev(w) }); }
+    for (const a of arr) if (a.type === 'block' && layerVisible(a) && phaseVisible(a)) { const bx = Math.min(a.x, a.x + a.w) + Math.abs(a.w) / 2, by = Math.min(a.y, a.y + a.h) + Math.abs(a.h) / 2, cwx = M(bx - cx), cwz = M(by - cy), rad = Math.max(0.28, M(Math.max(Math.abs(a.w), Math.abs(a.h)) / 2) + 0.3); addH(blkGeo, cBlk, cwx, lev(a) + 0.07, cwz, { obj: a, end: 'block' }); addH(rotGeo, cRot, cwx + Math.sin(a.rot || 0) * rad, lev(a) + 0.07, cwz - Math.cos(a.rot || 0) * rad, { obj: a, end: 'brot', cwx, cwz, rad }); }
     for (const a of arr) if (a.type === 'opening' && layerVisible(a) && phaseVisible(a)) { const w = arr.find(o => o.id === a.wallId && o.type === 'wall'); if (!w) continue; addH(opGeo, cOpen, M(a.x - cx), lev(w) + 1.0, M(a.y - cy), { obj: a, end: 'open', wall: w }); }
     const snapTargets = []; for (const w of walls) { snapTargets.push({ w, x: M(w.x1 - cx), z: M(w.y1 - cy) }); snapTargets.push({ w, x: M(w.x2 - cx), z: M(w.y2 - cy) }); }
     const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitP = new THREE.Vector3(), dom = renderer.domElement;
     const prevGeo = new THREE.BufferGeometry(); prevGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3)); const prevLine = new THREE.Line(prevGeo, new THREE.LineBasicMaterial({ color: cHot })); prevLine.visible = false; prevLine.renderOrder = 998; prevLine.name = '__handle'; scene.add(prevLine);
-    let drag = null, startW = null, orig = null, snapThr = Math.max(0.25, span * 0.03);
+    let drag = null, startW = null, orig = null, moved = false, armed = null, snapThr = Math.max(0.25, span * 0.03), vplane = new THREE.Plane();
     const setNdc = ev => { const r = dom.getBoundingClientRect(); ndc.x = ((ev.clientX - r.left) / r.width) * 2 - 1; ndc.y = -((ev.clientY - r.top) / r.height) * 2 + 1; };
     const setPrev = (ax, az, bx, bz, y) => { const p = prevGeo.attributes.position; p.setXYZ(0, ax, y, az); p.setXYZ(1, bx, y, bz); p.needsUpdate = true; prevLine.visible = true; };
-    const onDown = ev => { setNdc(ev); ray.setFromCamera(ndc, camera); const h = ray.intersectObjects(editHandles)[0]; if (h) { drag = h.object; controls.enabled = false; plane.constant = -drag.position.y; startW = { x: drag.position.x, z: drag.position.z }; const o = drag.userData.obj; orig = o.type === 'block' ? { x: o.x, y: o.y } : { x1: o.x1, y1: o.y1, x2: o.x2, y2: o.y2 }; ev.preventDefault(); ev.stopPropagation(); } };
+    const onDown = ev => { setNdc(ev); ray.setFromCamera(ndc, camera); const h = ray.intersectObjects(editHandles)[0]; if (h) { drag = h.object; armed = drag.userData.obj; moved = false; controls.enabled = false; plane.constant = -drag.position.y; startW = { x: drag.position.x, z: drag.position.z }; const o = drag.userData.obj; orig = o.type === 'block' ? { x: o.x, y: o.y } : { x1: o.x1, y1: o.y1, x2: o.x2, y2: o.y2 }; ev.preventDefault(); ev.stopPropagation(); } };
     const onMove = ev => {
-      if (!drag) return; setNdc(ev); ray.setFromCamera(ndc, camera); if (!ray.ray.intersectPlane(plane, hitP)) return; const o = drag.userData.obj, end = drag.userData.end, y = drag.position.y;
-      if (end === 'open') { const w = drag.userData.wall, p1x = M(w.x1 - cx), p1z = M(w.y1 - cy), vx = M(w.x2 - cx) - p1x, vz = M(w.y2 - cy) - p1z, len2 = vx * vx + vz * vz || 1; let t = ((hitP.x - p1x) * vx + (hitP.z - p1z) * vz) / len2; t = Math.max(0, Math.min(1, t)); drag.position.x = p1x + vx * t; drag.position.z = p1z + vz * t; drag.userData._t = t; drag.material.color.setHex(cHot); prevLine.visible = false; }
+      if (!drag) return; setNdc(ev); ray.setFromCamera(ndc, camera); const o = drag.userData.obj, end = drag.userData.end; moved = true;
+      if (end === 'wh') { const nrm = new THREE.Vector3().subVectors(camera.position, drag.position); nrm.y = 0; if (nrm.lengthSq() < 1e-6) nrm.set(0, 0, 1); nrm.normalize(); vplane.setFromNormalAndCoplanarPoint(nrm, drag.position); if (ray.ray.intersectPlane(vplane, hitP)) { let hgt = Math.max(0.5, Math.min(20, hitP.y - drag.userData.baseY)); drag.position.y = drag.userData.baseY + hgt; drag.userData._h = hgt; } drag.material.color.setHex(cHot); prevLine.visible = false; return; }
+      if (!ray.ray.intersectPlane(plane, hitP)) return; const y = drag.position.y;
+      if (end === 'brot') { const u = drag.userData, r = Math.atan2(hitP.x - u.cwx, -(hitP.z - u.cwz)); drag.position.x = u.cwx + Math.sin(r) * u.rad; drag.position.z = u.cwz - Math.cos(r) * u.rad; u._rot = r; drag.material.color.setHex(cHot); prevLine.visible = false; }
+      else if (end === 'open') { const w = drag.userData.wall, p1x = M(w.x1 - cx), p1z = M(w.y1 - cy), vx = M(w.x2 - cx) - p1x, vz = M(w.y2 - cy) - p1z, len2 = vx * vx + vz * vz || 1; let t = ((hitP.x - p1x) * vx + (hitP.z - p1z) * vz) / len2; t = Math.max(0, Math.min(1, t)); drag.position.x = p1x + vx * t; drag.position.z = p1z + vz * t; drag.userData._t = t; drag.material.color.setHex(cHot); prevLine.visible = false; }
       else if (end === 'mid' || end === 'block') { const dx = hitP.x - startW.x, dz = hitP.z - startW.z; drag.position.x = startW.x + dx; drag.position.z = startW.z + dz; drag.material.color.setHex(cHot); if (end === 'mid') setPrev(M(orig.x1 - cx) + dx, M(orig.y1 - cy) + dz, M(orig.x2 - cx) + dx, M(orig.y2 - cy) + dz, y); else prevLine.visible = false; }
       else { let hx = hitP.x, hz = hitP.z, best = null, bd = snapThr; for (const t of snapTargets) { if (t.w === o) continue; const d = Math.hypot(t.x - hx, t.z - hz); if (d < bd) { bd = d; best = t; } } if (best) { hx = best.x; hz = best.z; drag.material.color.setHex(cSnap); } else drag.material.color.setHex(cHot); drag.position.x = hx; drag.position.z = hz; const fx = end === 1 ? M(o.x2 - cx) : M(o.x1 - cx), fz = end === 1 ? M(o.y2 - cy) : M(o.y1 - cy); setPrev(fx, fz, hx, hz, y); }
     };
-    const onUp = () => { if (!drag) return; const o = drag.userData.obj, end = drag.userData.end, dxp = (drag.position.x - startW.x) / perPt, dzp = (drag.position.z - startW.z) / perPt; if (end === 'open') { if (drag.userData._t != null) o.t = drag.userData._t; } else if (end === 'block') { o.x = orig.x + dxp; o.y = orig.y + dzp; } else if (end === 'mid') { o.x1 = orig.x1 + dxp; o.y1 = orig.y1 + dzp; o.x2 = orig.x2 + dxp; o.y2 = orig.y2 + dzp; } else { const px = drag.position.x / perPt + cx, py = drag.position.z / perPt + cy; if (end === 1) { o.x1 = px; o.y1 = py; } else { o.x2 = px; o.y2 = py; } } prevLine.visible = false; drag = null; controls.enabled = true; setTimeout(() => opts.onEdit(), 0); };
-    dom.addEventListener('pointerdown', onDown); dom.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
-    cleanups.push(() => { dom.removeEventListener('pointerdown', onDown); dom.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); });
+    const onUp = () => { if (!drag) return; const d = drag, o = d.userData.obj, end = d.userData.end; drag = null; controls.enabled = true; prevLine.visible = false; if (!moved) return;   // reiner Klick = nur anwählen (für Entf), kein Rebuild
+      const dxp = (d.position.x - startW.x) / perPt, dzp = (d.position.z - startW.z) / perPt;
+      if (end === 'wh') { if (d.userData._h != null) o.h3d = Math.round(d.userData._h * 100) / 100; }
+      else if (end === 'brot') { if (d.userData._rot != null) o.rot = d.userData._rot; }
+      else if (end === 'open') { if (d.userData._t != null) o.t = d.userData._t; }
+      else if (end === 'block') { o.x = orig.x + dxp; o.y = orig.y + dzp; }
+      else if (end === 'mid') { o.x1 = orig.x1 + dxp; o.y1 = orig.y1 + dzp; o.x2 = orig.x2 + dxp; o.y2 = orig.y2 + dzp; }
+      else { const px = d.position.x / perPt + cx, py = d.position.z / perPt + cy; if (end === 1) { o.x1 = px; o.y1 = py; } else { o.x2 = px; o.y2 = py; } }
+      setTimeout(() => opts.onEdit(), 0);
+    };
+    const onKey = ev => { if (/^(INPUT|TEXTAREA|SELECT)$/.test((ev.target && ev.target.tagName) || '')) return; if ((ev.key === 'Delete' || ev.key === 'Backspace') && armed) { ev.preventDefault(); const o = armed; armed = null; for (const nn in annos) { const i = (annos[nn] || []).indexOf(o); if (i >= 0) { annos[nn].splice(i, 1); if (o.type === 'wall') for (let j = annos[nn].length - 1; j >= 0; j--) if (annos[nn][j].type === 'opening' && annos[nn][j].wallId === o.id) annos[nn].splice(j, 1); break; } } setTimeout(() => opts.onEdit(), 0); } };
+    dom.addEventListener('pointerdown', onDown); dom.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp); window.addEventListener('keydown', onKey);
+    cleanups.push(() => { dom.removeEventListener('pointerdown', onDown); dom.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('keydown', onKey); });
   }
   const loop = () => { if (!alive) return; controls.update(); renderer.render(scene, camera); raf = requestAnimationFrame(loop); }; loop();
   const setView = name => { const ty = H * 0.45, d = Math.max(span * 1.4, 4); if (name === 'top') { camera.position.set(0.001, d * 1.7, 0.001); controls.target.set(0, 0, 0); } else if (name === 'front') { camera.position.set(0, ty, d * 1.5); controls.target.set(0, ty, 0); } else if (name === 'side') { camera.position.set(d * 1.5, ty, 0.001); controls.target.set(0, ty, 0); } else { camera.position.set(span * 0.85, span * 0.95, span * 0.95); controls.target.set(0, H * 0.4, 0); } camera.updateProjectionMatrix(); controls.update(); };

@@ -5142,41 +5142,29 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     return { sa, reveal, parts };
   }
   function render() {
-    const { sa, reveal, parts } = geom();
-    const xs = [], ys = [], acc = p => { if (p[0] >= cx - 4) { xs.push(p[0]); ys.push(p[1]); } };
-    for (const st of reveal) for (const p of st.poly) acc(p);
-    for (const f of (parts.fills || [])) for (const p of f.poly) acc(p);
-    for (const u of parts.lines) { acc(u[0]); acc(u[1]); }
-    const jamb = cx + a.w / 2;
-    let x0 = xs.length ? Math.min(...xs) : jamb - 120, x1 = Math.max(jamb + 8, xs.length ? Math.max(...xs) : jamb + 8);
-    let y0 = ys.length ? Math.min(...ys) : cy - 90, y1 = ys.length ? Math.max(...ys) : cy + 90;
-    const mx = (x1 - x0) * 0.12 + 8, my = (y1 - y0) * 0.12 + 8; x0 -= mx; x1 += mx; y0 -= my; y1 += my;
-    if (!vbG) vbG = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };   // beim ersten Mal einpassen, danach frei zoom-/verschiebbar
+    svg.innerHTML = '';
+    for (const an of (getAnnos(pv.num) || [])) { if (!layerVisible(an) || !phaseVisible(an)) continue; try { drawOne(svg, an, pv); } catch (_) { } }   // echter Planausschnitt: Wand + dieses Fenster + Nachbarn
+    const ang = a.ang || 0, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux, hw = a.w / 2, ht = (a.thick || wallThickPts()) / 2;
+    const rc = (sv, mv) => [a.x + ux * hw * sv + nx * ht * mv, a.y + uy * hw * sv + ny * ht * mv];   // echte Fensterkoordinaten
+    if (!vbG) { const cs = [rc(-1.7, -1.7), rc(1.7, -1.7), rc(1.7, 1.7), rc(-1.7, 1.7)]; const X0 = Math.min(...cs.map(c => c[0])), X1 = Math.max(...cs.map(c => c[0])), Y0 = Math.min(...cs.map(c => c[1])), Y1 = Math.max(...cs.map(c => c[1])), m = Math.max(X1 - X0, Y1 - Y0) * 0.12 + 10; vbG = { x: X0 - m, y: Y0 - m, w: (X1 - X0) + 2 * m, h: (Y1 - Y0) + 2 * m }; }
     svg.setAttribute('viewBox', vbStr(vbG));
     scale = vbG.w / (svg.clientWidth || (W * 0.6));
-    let s = '';
-    for (const st of reveal) { s += '<polygon points="' + st.poly.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '" fill="' + st.fill + '" stroke="' + (st.seam == null ? st.stroke : 'none') + '" stroke-width="' + (0.7 * scale) + '" vector-effect="non-scaling-stroke"/>'; if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) s += '<line x1="' + u[0].toFixed(1) + '" y1="' + u[1].toFixed(1) + '" x2="' + v[0].toFixed(1) + '" y2="' + v[1].toFixed(1) + '" stroke="' + st.stroke + '" stroke-width="0.7" vector-effect="non-scaling-stroke"/>'; if (st.hatch) for (const [u, v] of st.hatch) s += '<line x1="' + u[0].toFixed(1) + '" y1="' + u[1].toFixed(1) + '" x2="' + v[0].toFixed(1) + '" y2="' + v[1].toFixed(1) + '" stroke="' + st.stroke + '" stroke-width="0.6" vector-effect="non-scaling-stroke"/>'; }
-    for (const f of (parts.fills || [])) s += '<polygon points="' + f.poly.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '" fill="' + f.fill + '" stroke="' + f.stroke + '" stroke-width="1" vector-effect="non-scaling-stroke"/>';
-    for (const [u, v] of parts.lines) s += '<line x1="' + u[0].toFixed(1) + '" y1="' + u[1].toFixed(1) + '" x2="' + v[0].toFixed(1) + '" y2="' + v[1].toFixed(1) + '" stroke="#1c242c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>';
-    // Ziehgriffe (in Geometrie-Koordinaten): corner(s,m) = [cx + (a.w/2)*s, cy + (thick/2)*m]
-    const hw = a.w / 2, ht = (a.thick || wallThickPts()) / 2, depth = a.depth == null ? 0.5 : a.depth, md = depth * 2 - 1;
+    const depth = a.depth == null ? 0.5 : a.depth, md = depth * 2 - 1;
     const fdh = Math.min(0.49, (a.frameD || cmToPts(7)) / (2 * ht)), fmB = Math.min(1, md + fdh), fmA = Math.max(-1, md - fdh);
     const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), boardVis = (a.boardVis != null ? a.boardVis : 1), boardW = (a.boardW != null ? a.boardW : 2.5);
-    const HG = (hx, hy, id, lbl, val) => '<g class="lab-h" data-h="' + id + '"><circle cx="' + hx.toFixed(1) + '" cy="' + hy.toFixed(1) + '" r="' + (6 * scale) + '" /><title>' + lbl + (val ? ' · ' + val : '') + '</title></g>' + (val ? '<text x="' + (hx + 8.5 * scale) + '" y="' + (hy + 3.2 * scale) + '" font-size="' + (9 * scale) + '" fill="#1f7a4d" font-weight="700" style="pointer-events:none;paint-order:stroke" stroke="#fff" stroke-width="' + (2.4 * scale) + '">' + val + '</text>' : '');
-    const hwx = s2 => cx + hw * s2, hwy = m2 => cy + ht * m2;
-    const dimV = (xx, m1, m2v, label) => { const ya = hwy(m1), yb = hwy(m2v), t = 4 * scale, sw2 = 0.6 * scale, col = '#1c242c'; return '<line x1="' + xx + '" y1="' + ya + '" x2="' + xx + '" y2="' + yb + '" stroke="' + col + '" stroke-width="' + sw2 + '"/><line x1="' + (xx - t) + '" y1="' + ya + '" x2="' + (xx + t) + '" y2="' + ya + '" stroke="' + col + '" stroke-width="' + sw2 + '"/><line x1="' + (xx - t) + '" y1="' + yb + '" x2="' + (xx + t) + '" y2="' + yb + '" stroke="' + col + '" stroke-width="' + sw2 + '"/><text x="' + (xx + 3 * scale) + '" y="' + ((ya + yb) / 2 + 3 * scale) + '" font-size="' + (9 * scale) + '" fill="' + col + '">' + label + '</text>'; };
-    const dimH = (yy, s1, s2v, label) => { const xa = hwx(s1), xb = hwx(s2v), t = 4 * scale, sw2 = 0.6 * scale, col = '#1c242c'; return '<line x1="' + xa + '" y1="' + yy + '" x2="' + xb + '" y2="' + yy + '" stroke="' + col + '" stroke-width="' + sw2 + '"/><line x1="' + xa + '" y1="' + (yy - t) + '" x2="' + xa + '" y2="' + (yy + t) + '" stroke="' + col + '" stroke-width="' + sw2 + '"/><line x1="' + xb + '" y1="' + (yy - t) + '" x2="' + xb + '" y2="' + (yy + t) + '" stroke="' + col + '" stroke-width="' + sw2 + '"/><text x="' + ((xa + xb) / 2 - label.length * 2.4 * scale) + '" y="' + (yy - 3 * scale) + '" font-size="' + (9 * scale) + '" fill="' + col + '">' + label + '</text>'; };
+    const HG = (p, id, lbl, val) => { const hx = p[0], hy = p[1]; return '<g class="lab-h" data-h="' + id + '"><circle cx="' + hx.toFixed(1) + '" cy="' + hy.toFixed(1) + '" r="' + (6 * scale) + '" /><title>' + lbl + (val ? ' · ' + val : '') + '</title></g>' + (val ? '<text x="' + (hx + 8.5 * scale) + '" y="' + (hy + 3.2 * scale) + '" font-size="' + (9 * scale) + '" fill="#1f7a4d" font-weight="700" style="pointer-events:none;paint-order:stroke" stroke="#fff" stroke-width="' + (2.4 * scale) + '">' + val + '</text>' : ''); };
     const cmv = pts => (Math.round(ptsToCm(pts) * 10) / 10).toString().replace('.', ',');
+    const ln = (p1, p2) => '<line x1="' + p1[0].toFixed(1) + '" y1="' + p1[1].toFixed(1) + '" x2="' + p2[0].toFixed(1) + '" y2="' + p2[1].toFixed(1) + '" stroke="#1c242c" stroke-width="' + (0.6 * scale) + '"/>';
+    const dimSeg = (p1, p2, td, label) => { const t = 4 * scale; let d = ln(p1, p2); for (const pp of [p1, p2]) d += ln([pp[0] - td[0] * t, pp[1] - td[1] * t], [pp[0] + td[0] * t, pp[1] + td[1] * t]); const mx2 = (p1[0] + p2[0]) / 2 + td[0] * 8 * scale, my2 = (p1[1] + p2[1]) / 2 + td[1] * 8 * scale; return d + '<text x="' + mx2.toFixed(1) + '" y="' + my2.toFixed(1) + '" font-size="' + (9 * scale) + '" fill="#1c242c" text-anchor="middle" style="paint-order:stroke" stroke="#fff" stroke-width="' + (2.2 * scale) + '">' + label + '</text>'; };
     let H = '';
-    H += dimV(hwx(1) + 16 * scale, -1, 1, cmv(a.thick || wallThickPts()) + ' cm');                               // Wanddicke
-    H += dimV(hwx(1) + 40 * scale, fmA, fmB, cmv(a.frameD || cmToPts(7)) + ' cm');                                // Rahmentiefe
-    H += dimH(hwy(1) + 16 * scale, 1 - fwSr, 1, cmv(a.frameW || cmToPts(a.kind === 'door' ? 6 : 10)) + ' cm');    // Rahmenbreite (Ansicht)
-    H += HG(hwx(1 - fwSr + cmToPts(boardVis) / hw + cmToPts(boardW) / hw), hwy(0.6), 'boardW', 'Laibungsbrett-Breite (ziehen ↔)', (Math.round(boardW * 10) / 10) + ' cm');
-    H += HG(hwx(1) - 2, hwy(md), 'depth', 'Einbautiefe (ziehen ↕)', Math.round(depth * 100) + '%');
-    H += HG(hwx(1 - fwSr / 2), hwy(fmB), 'frameD', 'Rahmentiefe (ziehen ↕)', cmv(a.frameD || cmToPts(7)) + ' cm');
-    H += HG(hwx(1 - fwSr), hwy(md), 'frameW', 'Rahmenbreite (ziehen ↔)', cmv(a.frameW || cmToPts(a.kind === 'door' ? 6 : 10)) + ' cm');
-    if (a.anschlagType && a.anschlagType !== 'none') H += HG(hwx(Math.max(0, 1 - fwSr - cmToPts(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)) / hw)), hwy(a.anschlagType === 'innen' ? -0.6 : 0.85), 'anschlag', 'Anschlagtiefe (ziehen ↔)', cmv(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)) + ' cm');
-    svg.innerHTML = s + H;
+    H += dimSeg(rc(1.18, -1), rc(1.18, 1), [ux, uy], cmv(a.thick || wallThickPts()) + ' cm');     // Wanddicke
+    H += dimSeg(rc(1.34, fmA), rc(1.34, fmB), [ux, uy], cmv(a.frameD || cmToPts(7)) + ' cm');      // Rahmentiefe
+    H += HG(rc(1 - fwSr + cmToPts(boardVis) / hw + cmToPts(boardW) / hw, 0.6), 'boardW', 'Laibungsbrett-Breite (ziehen)', (Math.round(boardW * 10) / 10) + ' cm');
+    H += HG(rc(1, md), 'depth', 'Einbautiefe (ziehen)', Math.round(depth * 100) + '%');
+    H += HG(rc(1 - fwSr / 2, fmB), 'frameD', 'Rahmentiefe (ziehen)', cmv(a.frameD || cmToPts(7)) + ' cm');
+    H += HG(rc(1 - fwSr, md), 'frameW', 'Rahmenbreite (ziehen)', cmv(a.frameW || cmToPts(a.kind === 'door' ? 6 : 10)) + ' cm');
+    if (a.anschlagType && a.anschlagType !== 'none') H += HG(rc(Math.max(0, 1 - fwSr - cmToPts(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)) / hw), a.anschlagType === 'innen' ? -0.6 : 0.85), 'anschlag', 'Anschlagtiefe (ziehen)', cmv(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)) + ' cm');
+    svg.insertAdjacentHTML('beforeend', H);
     bindHandles();
     renderSec();
     renderElev(svgAo, 'a', () => vbAo, v => { vbAo = v; });
@@ -5219,13 +5207,14 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     svg.querySelectorAll('.lab-h').forEach(g => { g.onpointerdown = e => {
       e.preventDefault(); const id = g.dataset.h, hw = a.w / 2, ht = (a.thick || wallThickPts()) / 2;
       const sx = e.clientX, sy = e.clientY, d0 = a.depth == null ? 0.5 : a.depth, bw0 = a.boardW != null ? a.boardW : 2.5, an0 = a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5), fd0 = a.frameD || cmToPts(7), fw0 = a.frameW || cmToPts(a.kind === 'door' ? 6 : 10);
+      const ang = a.ang || 0, ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux;
       const move = ev => {
-        const dxp = (ev.clientX - sx) * scale, dyp = (ev.clientY - sy) * scale;
-        if (id === 'depth') a.depth = Math.max(0, Math.min(1, d0 + (dyp / ht) / 2));
-        else if (id === 'boardW') a.boardW = Math.max(0.5, Math.min(20, bw0 + ptsToCm(dxp)));
-        else if (id === 'anschlag') a.anschlagDepth = Math.max(0, Math.min(cmToPts(20), an0 - dxp));
-        else if (id === 'frameD') a.frameD = Math.max(cmToPts(2), Math.min(cmToPts(16), fd0 + 2 * dyp));   // Rahmentiefe (an der Vorderkante ziehen)
-        else if (id === 'frameW') a.frameW = Math.max(cmToPts(2), Math.min(cmToPts(20), fw0 - dxp));        // Rahmenbreite (Innenkante ziehen)
+        const dxp = (ev.clientX - sx) * scale, dyp = (ev.clientY - sy) * scale, ds = dxp * ux + dyp * uy, dm = dxp * nx + dyp * ny;   // auf Wandachse projizieren
+        if (id === 'depth') a.depth = Math.max(0, Math.min(1, d0 + (dm / ht) / 2));
+        else if (id === 'boardW') a.boardW = Math.max(0.5, Math.min(20, bw0 + ptsToCm(ds)));
+        else if (id === 'anschlag') a.anschlagDepth = Math.max(0, Math.min(cmToPts(20), an0 - ds));
+        else if (id === 'frameD') a.frameD = Math.max(cmToPts(2), Math.min(cmToPts(16), fd0 + 2 * dm));   // Rahmentiefe
+        else if (id === 'frameW') a.frameW = Math.max(cmToPts(2), Math.min(cmToPts(20), fw0 - ds));        // Rahmenbreite
         render(); drawAnnos(pv);
       };
       const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };

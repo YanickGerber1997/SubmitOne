@@ -3023,7 +3023,7 @@ function sectionPrimitives(a, arr) {
       if (o.kind === 'window' && boardPts > 0.5 && rohW - 2 * lapPts * along > 1) { const bm = WALL_MATS[o.boardMat || 'holz'] || { fill: '#e7cfa8', color: '#7a5126' }; out.push({ t: 'rect', x: X(od - rohW / 2 + lapPts * along), y: Yh(headF - clM), w: rohW - 2 * lapPts * along, h: Yh(sillF + clM) - Yh(headF - clM), fill: bm.fill, stroke: bm.color, sw: 0.6 }); }   // Laibungsbrett (Holz) umlaufend
       const redM = ptsToCm(lapTot) / 100, wEff = Math.max(4, (o.w - 2 * lapTot) * along);
       openingElev(out, X, Yh, od - wEff / 2, wEff, o, Hw, col, redM);
-      if (winDimsOn) {   // Ansicht: Breite + Höhe, Rohbau + Licht (rahmenbasiert)
+      if (winDimsOn && !a.noDims) {   // Ansicht: Breite + Höhe, Rohbau + Licht (rahmenbasiert)
         const insPts = Math.max(0, (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1)), insM = ptsToCm(insPts) / 100;
         const sill0 = o.kind === 'window' ? (o.sill || 0) : 0, head0 = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), rW = o.w * along, xL = X(od - rW / 2) - 12;   // im Schnitt nur HÖHEN (Breiten stehen im Grundriss)
         pDimV(out, xL, Yh(head0), Yh(sill0), 'Rohbau ' + fmtLen((head0 - sill0) / perPt), -46); pDimV(out, xL - 18, Yh(head0 - insM), Yh(sill0 + insM), 'Licht ' + fmtLen(Math.max(0.05, head0 - sill0 - 2 * insM) / perPt), -46);
@@ -3034,14 +3034,16 @@ function sectionPrimitives(a, arr) {
     const seg = pr.closed && pr.path.length >= 3 ? pr.path.concat([pr.path[0]]) : pr.path, base = pr.elev || 0;
     for (let i = 0; i < seg.length - 1; i++) { const ix = segInt(p1, p2, seg[i], seg[i + 1]); if (!ix) continue; const d = fp((ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy), pts = pr.prof.map(q => [X(d) + cmToPts(q[0]), Yh(base + q[1] / 100)]); out.push({ t: 'poly', pts, fill: pr.color || '#7a8392', stroke: '#1c242c', sw: 0.6 }); }
   }
-  const Htop = sectionMaxH(a, arr);   // gemeinsames Höhen-Datum (keine Auto-Decke mehr – nur echte, gezeichnete Decken oben)
-  const hSet = new Set([0, Htop]);   // Höhen-Stationen: Boden, Geschoss, je Öffnung Brüstung+Sturz
-  for (const h of hits) for (const o of arr.filter(o => o.type === 'opening' && o.wallId === h.w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl))) { hSet.add(o.kind === 'window' ? (o.sill || 0) : 0); hSet.add(Math.min(Htop, o.head || (o.kind === 'window' ? 2.1 : 2.0))); }
-  const hs = [...hSet].sort((p, q) => p - q), xD = X(-34);
-  out.push({ t: 'line', x1: xD, y1: Yh(0), x2: xD, y2: Yh(Htop), w: 0.9 });
-  for (const s of hs) out.push({ t: 'line', x1: xD - 4, y1: Yh(s), x2: xD + 4, y2: Yh(s), w: 0.8 });
-  for (let i = 0; i < hs.length - 1; i++) { const seg = hs[i + 1] - hs[i]; if (seg < 0.02) continue; out.push({ t: 'text', x: xD - 34, y: (Yh(hs[i]) + Yh(hs[i + 1])) / 2 + 4, text: fmtLen(seg / perPt), col, small: true }); }
-  out.push({ t: 'text', x: X(cl / 2) - 18, y: Yh(-0.22) + 22, text: 'Schnitt ' + lbl + '–' + lbl, col });
+  if (!a.noDims) {   // Auto-Höhenleiter + Schnitt-Beschriftung (im Detail-Editor weggelassen → dort eigene, verschiebbare Masslinien)
+    const Htop = sectionMaxH(a, arr);   // gemeinsames Höhen-Datum (keine Auto-Decke mehr – nur echte, gezeichnete Decken oben)
+    const hSet = new Set([0, Htop]);   // Höhen-Stationen: Boden, Geschoss, je Öffnung Brüstung+Sturz
+    for (const h of hits) for (const o of arr.filter(o => o.type === 'opening' && o.wallId === h.w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl))) { hSet.add(o.kind === 'window' ? (o.sill || 0) : 0); hSet.add(Math.min(Htop, o.head || (o.kind === 'window' ? 2.1 : 2.0))); }
+    const hs = [...hSet].sort((p, q) => p - q), xD = X(-34);
+    out.push({ t: 'line', x1: xD, y1: Yh(0), x2: xD, y2: Yh(Htop), w: 0.9 });
+    for (const s of hs) out.push({ t: 'line', x1: xD - 4, y1: Yh(s), x2: xD + 4, y2: Yh(s), w: 0.8 });
+    for (let i = 0; i < hs.length - 1; i++) { const seg = hs[i + 1] - hs[i]; if (seg < 0.02) continue; out.push({ t: 'text', x: xD - 34, y: (Yh(hs[i]) + Yh(hs[i + 1])) / 2 + 4, text: fmtLen(seg / perPt), col, small: true }); }
+    out.push({ t: 'text', x: X(cl / 2) - 18, y: Yh(-0.22) + 22, text: 'Schnitt ' + lbl + '–' + lbl, col });
+  }
   return out;
 }
 function sectionBBox(a, arr) { if (!docScale) return { x: a.ox - 6, y: a.oy - 16, w: 180, h: 30 }; const perPt = docScale.perPt, cl = Math.hypot(a.cx2 - a.cx1, a.cy2 - a.cy1) || 1, mh = sectionMaxH(a, arr) / perPt; return { x: a.ox - 16, y: a.oy - mh - 8, w: cl + 32, h: mh + 36 }; }
@@ -5157,6 +5159,20 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   const svg = ov.querySelector('#labSvg'), svgS = ov.querySelector('#labSvgS'), svgAo = ov.querySelector('#labSvgAo'), svgAi = ov.querySelector('#labSvgAi'), side = ov.querySelector('#labCtrls');
   let vbG = null, vbS = null, vbAo = null, vbAi = null;   // aktuelle viewBox je Ansicht (zoomen/verschieben wie im echten Grundriss; null = einpassen)
   let secFlip = false, secLine = null;   // Schnitt: Blickrichtung + frei verschiebbare Schnittlinie (null = perpendikulär durchs Fenster)
+  const dimOff = {};   // verschiebbare Masslinien: key -> Offset (Zeichnungseinheiten)
+  const DIMD = { secRoh: 74, secLicht: 36, elW: 40, elH: 60, gndRoh: 60, gndLicht: 28 };
+  const doff = k => dimOff[k] != null ? dimOff[k] : DIMD[k];
+  const pushDim = (out, P1, P2, n, off, label, key) => {   // durchlaufende Masslinie: Hilfslinien + Linie + Ticks + Text + Ziehgriff
+    const e = 3, q1 = [P1[0] + n[0] * off, P1[1] + n[1] * off], q2 = [P2[0] + n[0] * off, P2[1] + n[1] * off];
+    out.push({ t: 'line', x1: P1[0] + n[0] * e, y1: P1[1] + n[1] * e, x2: q1[0] + n[0] * e, y2: q1[1] + n[1] * e, stroke: '#5a6152', w: 0.4 });
+    out.push({ t: 'line', x1: P2[0] + n[0] * e, y1: P2[1] + n[1] * e, x2: q2[0] + n[0] * e, y2: q2[1] + n[1] * e, stroke: '#5a6152', w: 0.4 });
+    out.push({ t: 'line', x1: q1[0], y1: q1[1], x2: q2[0], y2: q2[1], stroke: '#1c242c', w: 0.7 });
+    const dx = q2[0] - q1[0], dy = q2[1] - q1[1], dl = Math.hypot(dx, dy) || 1, tx = dx / dl, ty = dy / dl, t = 3.2;
+    for (const q of [q1, q2]) out.push({ t: 'line', x1: q[0] - ty * t, y1: q[1] + tx * t, x2: q[0] + ty * t, y2: q[1] - tx * t, stroke: '#1c242c', w: 0.7 });
+    out.push({ t: 'text', x: (q1[0] + q2[0]) / 2 + n[0] * 6 - (Math.abs(n[1]) > 0.5 ? label.length * 2.5 : 0), y: (q1[1] + q2[1]) / 2 + n[1] * 6 + 3.5, text: label, col: '#1c242c', small: true });
+    out.push({ t: 'dh', x: (q1[0] + q2[0]) / 2, y: (q1[1] + q2[1]) / 2, nx: n[0], ny: n[1], key });
+  };
+  const bindDim = (el, getVb, redraw) => { const vb = getVb(); const sc = vb ? vb.w / (el.clientWidth || 320) : 1; el.querySelectorAll('.lab-dh').forEach(h => h.onpointerdown = ev => { ev.preventDefault(); ev.stopPropagation(); const key = h.dataset.key, nx = parseFloat(h.dataset.nx), ny = parseFloat(h.dataset.ny), o0 = doff(key), sx = ev.clientX, sy = ev.clientY; const mv = e2 => { const d = ((e2.clientX - sx) * nx + (e2.clientY - sy) * ny) * sc; dimOff[key] = Math.max(8, o0 + d); redraw(); }; const up = () => { document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up); }; document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up); }); };
   const vbStr = v => v.x + ' ' + v.y + ' ' + v.w + ' ' + v.h;
   function navSetup(el, getV, setV, redraw) {   // Mausrad = Zoom zum Cursor · Ziehen (ausser auf Griff) = verschieben
     el.addEventListener('wheel', e => { e.preventDefault(); const vb = getV(); if (!vb) return; const r = el.getBoundingClientRect(), fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height, mx = vb.x + fx * vb.w, my = vb.y + fy * vb.h, f = e.deltaY < 0 ? 1 / 1.15 : 1.15, nw = Math.max(3, vb.w * f), nh = Math.max(3, vb.h * f); setV({ x: mx - fx * nw, y: my - fy * nh, w: nw, h: nh }); redraw(); }, { passive: false });
@@ -5203,9 +5219,22 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     const cmv = pts => (Math.round(ptsToCm(pts) * 10) / 10).toString().replace('.', ',');
     const ln = (p1, p2) => '<line x1="' + p1[0].toFixed(1) + '" y1="' + p1[1].toFixed(1) + '" x2="' + p2[0].toFixed(1) + '" y2="' + p2[1].toFixed(1) + '" stroke="#1c242c" stroke-width="' + (0.6 * scale) + '"/>';
     const dimSeg = (p1, p2, td, label) => { const t = 4 * scale; let d = ln(p1, p2); for (const pp of [p1, p2]) d += ln([pp[0] - td[0] * t, pp[1] - td[1] * t], [pp[0] + td[0] * t, pp[1] + td[1] * t]); const mx2 = (p1[0] + p2[0]) / 2 + td[0] * 8 * scale, my2 = (p1[1] + p2[1]) / 2 + td[1] * 8 * scale; return d + '<text x="' + mx2.toFixed(1) + '" y="' + my2.toFixed(1) + '" font-size="' + (9 * scale) + '" fill="#1c242c" text-anchor="middle" style="paint-order:stroke" stroke="#fff" stroke-width="' + (2.2 * scale) + '">' + label + '</text>'; };
+    const dimStr = (P1, P2, n, off, label, key) => {   // durchlaufende, verschiebbare Masslinie als SVG-String
+      const e = 3 * scale, q1 = [P1[0] + n[0] * off, P1[1] + n[1] * off], q2 = [P2[0] + n[0] * off, P2[1] + n[1] * off];
+      let s = ln([P1[0] + n[0] * e, P1[1] + n[1] * e], [q1[0] + n[0] * e, q1[1] + n[1] * e]) + ln([P2[0] + n[0] * e, P2[1] + n[1] * e], [q2[0] + n[0] * e, q2[1] + n[1] * e]) + ln(q1, q2);
+      const dx = q2[0] - q1[0], dy = q2[1] - q1[1], dl = Math.hypot(dx, dy) || 1, tx = dx / dl, ty = dy / dl, t = 3.2 * scale;
+      for (const q of [q1, q2]) s += ln([q[0] - ty * t, q[1] + tx * t], [q[0] + ty * t, q[1] - tx * t]);
+      const mx2 = (q1[0] + q2[0]) / 2, my2 = (q1[1] + q2[1]) / 2;
+      s += '<text x="' + (mx2 + n[0] * 7 * scale).toFixed(1) + '" y="' + (my2 + n[1] * 7 * scale + 3.5 * scale).toFixed(1) + '" font-size="' + (9 * scale) + '" fill="#1c242c" text-anchor="middle" style="paint-order:stroke" stroke="#fff" stroke-width="' + (2.2 * scale) + '">' + label + '</text>';
+      s += '<circle class="lab-dh" data-key="' + key + '" data-nx="' + n[0] + '" data-ny="' + n[1] + '" cx="' + mx2.toFixed(1) + '" cy="' + my2.toFixed(1) + '" r="' + (5 * scale) + '"/>';
+      return s;
+    };
+    const lapTotG = (a.outerLap != null ? a.outerLap : cmToPts(3)) + (a.kind === 'window' ? cmToPts(a.boardW != null ? a.boardW : 2.5) : 0), rfG = Math.min(0.92, lapTotG / hw);
     let H = '';
     H += dimSeg(rc(1.18, -1), rc(1.18, 1), [ux, uy], cmv(a.thick || wallThickPts()) + ' cm');     // Wanddicke
     H += dimSeg(rc(1.34, fmA), rc(1.34, fmB), [ux, uy], cmv(a.frameD || cmToPts(7)) + ' cm');      // Rahmentiefe
+    H += dimStr(rc(-1, 1), rc(1, 1), [nx, ny], doff('gndRoh'), 'Rohbau ' + fmtLen(a.w), 'gndRoh');                                   // Breite Rohbau (aussen)
+    H += dimStr(rc(-1 + rfG, 1), rc(1 - rfG, 1), [nx, ny], doff('gndLicht'), 'Licht ' + fmtLen(Math.max(2, a.w - 2 * lapTotG)), 'gndLicht');   // Breite Licht
     H += HG(rc(1 - fwSr + cmToPts(boardVis) / hw + cmToPts(boardW) / hw, 0.6), 'boardW', 'Laibungsbrett-Breite (ziehen)', (Math.round(boardW * 10) / 10) + ' cm');
     H += HG(rc(1, md), 'depth', 'Einbautiefe (ziehen)', Math.round(depth * 100) + '%');
     H += HG(rc(1 - fwSr / 2, fmB), 'frameD', 'Rahmentiefe (ziehen)', cmv(a.frameD || cmToPts(7)) + ' cm');
@@ -5213,6 +5242,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     if (a.anschlagType && a.anschlagType !== 'none') H += HG(rc(Math.max(0, 1 - fwSr - cmToPts(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)) / hw), a.anschlagType === 'innen' ? -0.6 : 0.85), 'anschlag', 'Anschlagtiefe (ziehen)', cmv(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)) + ' cm');
     svg.insertAdjacentHTML('beforeend', H);
     bindHandles();
+    bindDim(svg, () => vbG, render);
     renderSec();
     renderElev(svgAo, 'a', () => vbAo, v => { vbAo = v; });
     renderElev(svgAi, 'i', () => vbAi, v => { vbAi = v; });
@@ -5224,7 +5254,8 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       else if (p.t === 'poly') s += '<polygon points="' + p.pts.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ') + '" fill="' + (p.fill || 'none') + '" stroke="' + ((p.stroke && p.stroke !== 'none') ? p.stroke : 'none') + '" stroke-width="' + (p.sw || 0.6) + '" vector-effect="non-scaling-stroke"/>';
       else if (p.t === 'line') s += '<line x1="' + p.x1 + '" y1="' + p.y1 + '" x2="' + p.x2 + '" y2="' + p.y2 + '" stroke="' + (p.stroke || '#1c242c') + '" stroke-width="' + (p.w || 1) + '" vector-effect="non-scaling-stroke"' + (p.dash ? ' stroke-dasharray="' + p.dash + '"' : '') + '/>';
       else if (p.t === 'arrow') { const sa = 6, ang = Math.atan2(p.dy, p.dx); for (const da of [2.5, -2.5]) s += '<line x1="' + p.x + '" y1="' + p.y + '" x2="' + (p.x - Math.cos(ang + da) * sa) + '" y2="' + (p.y - Math.sin(ang + da) * sa) + '" stroke="' + (p.col || '#1c242c') + '" stroke-width="1.2" vector-effect="non-scaling-stroke"/>'; }
-      else if (p.t === 'text') s += '<text x="' + p.x + '" y="' + p.y + '" font-size="' + ((p.small ? 9 : 11) * scS) + '" fill="' + (p.col || '#1c242c') + '">' + (p.text || '').replace(/[<>&]/g, '') + '</text>';
+      else if (p.t === 'text') s += '<text x="' + p.x + '" y="' + p.y + '" font-size="' + ((p.small ? 9 : 11) * scS) + '" fill="' + (p.col || '#1c242c') + '" style="paint-order:stroke" stroke="#fff" stroke-width="' + (2.2 * scS) + '">' + (p.text || '').replace(/[<>&]/g, '') + '</text>';
+      else if (p.t === 'dh') s += '<circle class="lab-dh" data-key="' + p.key + '" data-nx="' + p.nx + '" data-ny="' + p.ny + '" cx="' + p.x + '" cy="' + p.y + '" r="' + (5 * scS) + '"/>';
     }
     return s;
   }
@@ -5240,9 +5271,15 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     if (!docScale) { svgS.innerHTML = '<text x="10" y="22" font-size="13" fill="#9aa090">Für den Schnitt zuerst den Massstab setzen (1:n)</text>'; svgS.setAttribute('viewBox', '0 0 300 60'); return; }
     const ang = a.ang || 0, nx = -Math.sin(ang), ny = Math.cos(ang), L = (a.thick || wallThickPts()) * 1.7 + cmToPts(90);   // Schnittlinie quer durch die Wand
     const c1 = secLine ? secLine.c1 : [a.x - nx * L / 2, a.y - ny * L / 2], c2 = secLine ? secLine.c2 : [a.x + nx * L / 2, a.y + ny * L / 2];
-    const tmp = { type: 'section', cx1: c1[0], cy1: c1[1], cx2: c2[0], cy2: c2[1], ox: 0, oy: 0, flip: secFlip, label: 'A', noPlanLine: true };
+    const tmp = { type: 'section', cx1: c1[0], cy1: c1[1], cx2: c2[0], cy2: c2[1], ox: 0, oy: 0, flip: secFlip, label: 'A', noPlanLine: true, noDims: true };
     let out = []; try { out = sectionPrimitives(tmp, arr); } catch (_) { out = []; }
+    const perPt = docScale.perPt, Yh = h => -h / perPt;   // eigene, verschiebbare Masslinien: innen Rohbau, aussen Licht (vertikal, versetzt)
+    const head0 = Math.min((a.head != null ? a.head : (a.kind === 'window' ? 2.1 : 2.0)), (wall && wall.h3d) || wallHeightM), sill0 = a.kind === 'window' ? (a.sill || 0) : 0;
+    const lapTot = (a.outerLap != null ? a.outerLap : cmToPts(3)) + (a.kind === 'window' ? cmToPts(a.boardW != null ? a.boardW : 2.5) : 0), revM = ptsToCm(lapTot) / 100;
+    pushDim(out, [0, Yh(sill0)], [0, Yh(head0)], [-1, 0], doff('secRoh'), 'Rohbau ' + fmtLen((head0 - sill0) / perPt), 'secRoh');
+    pushDim(out, [0, Yh(sill0 + revM)], [0, Yh(head0 - revM)], [-1, 0], doff('secLicht'), 'Licht ' + fmtLen(Math.max(0.02, head0 - sill0 - 2 * revM) / perPt), 'secLicht');
     drawPrims(svgS, out, () => vbS, v => { vbS = v; });
+    bindDim(svgS, () => vbS, renderSec);
   }
   function renderElev(el, side, getVb, setVb) {   // Ansicht innen/aussen – die ganze WAND mit allen Fenstern/Türen (Kontext), aktuelles markiert
     if (!docScale) { el.innerHTML = '<text x="10" y="22" font-size="13" fill="#9aa090">Massstab setzen (1:n)</text>'; el.setAttribute('viewBox', '0 0 300 60'); return; }
@@ -5252,6 +5289,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     const Lw = Math.hypot(x2 - x1, y2 - y1) || a.w, uxw = (x2 - x1) / Lw, uyw = (y2 - y1) / Lw, along = (px, py) => (px - x1) * uxw + (py - y1) * uyw, flip = side === 'i';
     const ops = wall ? arr.filter(o2 => o2.type === 'opening' && (o2.kind === 'window' || o2.kind === 'door') && o2.wallId === wall.id) : [a];
     if (!ops.length) ops.push(a);
+    let curD = null;   // Geometrie des aktuellen Fensters für die Masslinien merken
     const facLy = (wall && wall.layers && wall.layers.length) ? (side === 'i' ? wall.layers[0] : wall.layers[wall.layers.length - 1]) : null, facMat = facLy ? (WALL_MATS[facLy.mat] || {}) : {};
     out.push({ t: 'rect', x: 0, y: Yh(Hwall), w: Lw, h: Yh(0) - Yh(Hwall), fill: facMat.fill || '#f3f1ec', stroke: '#9aa08f', sw: 1 });   // Wand-Ansicht (Fassade)
     out.push({ t: 'line', x1: -10, y1: Yh(0), x2: Lw + 10, y2: Yh(0), stroke: '#1c242c', w: 1.8 });   // Boden / OK Terrain
@@ -5264,9 +5302,16 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       if (facLy && lapClad > 0.3) out.push({ t: 'rect', x: opx0, y: Yh(headF), w: o2.w, h: Yh(sillF) - Yh(headF), fill: facMat.fill || '#eee', stroke: facMat.color || '#1c242c', sw: 1 });   // Verkleidung/Rohbau-Laibung (umlaufend)
       if (boardPts > 0.3 && o2.w - 2 * lapClad > 1) { const bm = WALL_MATS[o2.boardMat || 'holz'] || { fill: '#e7cfa8', color: '#7a5126' }; out.push({ t: 'rect', x: opx0 + lapClad, y: Yh(headF - clM), w: o2.w - 2 * lapClad, h: Yh(sillF + clM) - Yh(headF - clM), fill: bm.fill, stroke: bm.color, sw: 0.7 }); }   // Laibungsbrett (Holz) umlaufend
       try { openingElev(out, d => d, Yh, opx0 + rPts, o2.w - 2 * rPts, oo, Hwall, '#1c242c', rPts * perPt); } catch (_) { }
-      if (o2.id === a.id) out.push({ t: 'rect', x: opx0 - 4, y: Yh(headF) - 4, w: o2.w + 8, h: (Yh(sillF) - Yh(headF)) + 8, fill: 'none', stroke: '#2aa869', sw: 2.4 });   // aktuelles Fenster markiert
+      if (o2.id === a.id) { out.push({ t: 'rect', x: opx0 - 4, y: Yh(headF) - 4, w: o2.w + 8, h: (Yh(sillF) - Yh(headF)) + 8, fill: 'none', stroke: '#2aa869', sw: 2.4 }); curD = { opx0, w: o2.w, headF, sillF, rPts }; }   // aktuelles Fenster markiert
+    }
+    if (curD) {   // verschiebbare Masslinien: Breite (unten) + Höhe (links) – aussen = Rohbau, innen = Licht (fertig)
+      const roh = side !== 'i', tag = roh ? 'Rohbau ' : 'Licht ', x0 = roh ? curD.opx0 : curD.opx0 + curD.rPts, w0 = roh ? curD.w : Math.max(2, curD.w - 2 * curD.rPts);
+      const rM = ptsToCm(curD.rPts) / 100, hb = roh ? curD.sillF : curD.sillF + (curD.sillF > 0 ? rM : 0), htp = roh ? curD.headF : curD.headF - rM;
+      pushDim(out, [x0, Yh(hb)], [x0 + w0, Yh(hb)], [0, 1], doff('elW'), tag + 'B ' + fmtLen(w0 / perPt), 'elW');
+      pushDim(out, [x0, Yh(hb)], [x0, Yh(htp)], [-1, 0], doff('elH'), tag + 'H ' + fmtLen((htp - hb) / perPt), 'elH');
     }
     drawPrims(el, out, getVb, setVb);
+    bindDim(el, getVb, () => renderElev(el, side, getVb, setVb));
   }
   function bindHandles() {
     svg.querySelectorAll('.lab-h').forEach(g => { g.onpointerdown = e => {

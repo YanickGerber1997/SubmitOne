@@ -4155,6 +4155,47 @@ function openRoomList() {
   ov.querySelector('#rmClose').onclick = () => ov.remove(); ov.addEventListener('pointerdown', e => { if (e.target === ov) ov.remove(); });
   ov.querySelector('#rmCopy').onclick = () => { const tsv = 'Geschoss\tRaum\tFläche m²\tUmfang m\tBodenbelag\n' + rooms.map(r => r.floor + '\t' + (r.a.name || '') + '\t' + (Math.round(r.m2 * 100) / 100).toString().replace('.', ',') + '\t' + (Math.round(r.um * 100) / 100).toString().replace('.', ',') + '\t' + (r.a.floor || '')).join('\n') + '\nSumme\t\t' + (Math.round(total * 100) / 100).toString().replace('.', ','); if (navigator.clipboard) navigator.clipboard.writeText(tsv); toast('Raumbuch kopiert (Excel-tauglich).'); };
 }
+function geoToLocal(gj) {   // GeoJSON (lon/lat) → lokale Meter (äquirektangulär um den Schwerpunkt), Nord = oben
+  const feats = gj && gj.type === 'FeatureCollection' ? (gj.features || []) : gj && gj.type === 'Feature' ? [gj] : gj && gj.type ? [{ geometry: gj }] : [];
+  const rings = [], collect = geom => {
+    if (!geom) return; const t = geom.type, c = geom.coordinates;
+    if (t === 'Polygon') for (const r of c) rings.push({ kind: 'poly', coords: r });
+    else if (t === 'MultiPolygon') for (const p of c) for (const r of p) rings.push({ kind: 'poly', coords: r });
+    else if (t === 'LineString') rings.push({ kind: 'line', coords: c });
+    else if (t === 'MultiLineString') for (const l of c) rings.push({ kind: 'line', coords: l });
+    else if (t === 'Point') rings.push({ kind: 'point', coords: [c] });
+    else if (t === 'MultiPoint') for (const p of c) rings.push({ kind: 'point', coords: [p] });
+    else if (t === 'GeometryCollection') for (const g of (geom.geometries || [])) collect(g);
+  };
+  for (const f of feats) collect(f.geometry || f);
+  let sLon = 0, sLat = 0, cnt = 0; for (const r of rings) for (const p of r.coords) { sLon += p[0]; sLat += p[1]; cnt++; }
+  if (!cnt) return { shapes: [], bbox: null };
+  const lon0 = sLon / cnt, lat0 = sLat / cnt, k = Math.cos(lat0 * Math.PI / 180), shapes = [];
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (const r of rings) { const mpts = r.coords.map(p => { const mx = (p[0] - lon0) * 111320 * k, my = -(p[1] - lat0) * 110574; if (mx < minx) minx = mx; if (mx > maxx) maxx = mx; if (my < miny) miny = my; if (my > maxy) maxy = my; return [mx, my]; }); shapes.push({ kind: r.kind, mpts }); }
+  return { shapes, bbox: { minx, miny, maxx, maxy }, lon0, lat0 };
+}
+async function importGeoJSON(file) {
+  if (!docScale) { toast('Erst Massstab setzen (1:n) – GIS-Daten brauchen reale Masse.'); return; }
+  let gj; try { gj = JSON.parse(await file.text()); } catch (_) { toast('Keine gültige GeoJSON-Datei.'); return; }
+  const loc = geoToLocal(gj); if (!loc.shapes.length) { toast('Keine Geometrie in der GeoJSON gefunden.'); return; }
+  const n = curPage(), pv = pageViews.find(p => p.num === n); if (!pv) { toast('Keine Seite offen.'); return; }
+  const gcx = (loc.bbox.minx + loc.bbox.maxx) / 2, gcy = (loc.bbox.miny + loc.bbox.maxy) / 2, pcx = (pv.pageW || 595) / 2, pcy = (pv.pageH || 842) / 2;
+  const toPt = (mx, my) => [pcx + cmToPts((mx - gcx) * 100), pcy + cmToPts((my - gcy) * 100)];
+  pushUndo();
+  const prev = activeLayerId, id = newLayerId(); layers.push({ id, name: 'Gelände/GIS', visible: true });
+  const arr = getAnnos(n); let added = 0;
+  for (const s of loc.shapes) {
+    const pts = s.mpts.map(p => toPt(p[0], p[1]));
+    if (s.kind === 'poly' && pts.length >= 3) arr.push({ id: nextId++, type: 'area', pts, color: '#7a5c3c', width: 1.4, room: false, layer: id });
+    else if (s.kind === 'line' && pts.length >= 2) arr.push({ id: nextId++, type: 'pen', pts, color: '#7a5c3c', width: 1.4, layer: id });
+    else if (s.kind === 'point') { const q = pts[0]; arr.push({ id: nextId++, type: 'oval', x: q[0] - 3, y: q[1] - 3, w: 6, h: 6, color: '#7a5c3c', fill: '#7a5c3c', width: 1.2, layer: id }); }
+    else continue; added++;
+  }
+  activeLayerId = prev;   // weiter auf der vorherigen Ebene zeichnen
+  drawAnnos(pv); buildThumbs(); renderLayerPanel(); saveState(); toast(added + ' GIS-Objekt(e) als massstäbliches Gelände importiert (Ebene „Gelände/GIS").');
+}
+function importGISFile() { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.geojson,.json'; inp.onchange = () => { const f = inp.files && inp.files[0]; if (f) importGeoJSON(f); }; inp.click(); }
 const LAMBDA = { putz: 0.70, gips: 0.25, mauerwerk: 0.50, beton: 2.10, eps: 0.035, daemm_eps: 0.035, daemm_xps: 0.035, glaswolle: 0.035, daemm_wolle: 0.035, daemm_holz: 0.045, holz: 0.13, konter: 0.13 };   // Wärmeleitfähigkeit λ (W/mK)
 function wallUValue(layers, override) {   // U-Wert [W/m²K] = 1 / (Rsi + Σ d/λ + Rse); Luft = R 0.15
   if (override != null && override > 0) return override;
@@ -4218,6 +4259,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Stütze (rund/eckig)', () => { const r = blockShapes({ x: 0, y: 0, w: 30, h: 30, kind: 'columnRound' }); return r.length === 1 && r[0].t === 'circ' && IS_COLUMN('column') && !IS_COLUMN('table'); });
     A('Unterzug (Bauteil)', () => { const b = { id: 9100, type: 'beam', x1: 0, y1: 0, x2: cmToPts(500), y2: 0, width: cmToPts(24), height: 0.4 }; const bb = bbox(b); return isLineType(b) && bb.w > 0 && computeQuantities([b]).extra.some(e => e.label === 'Unterzug'); });
     A('Sonnenstand (Sommer Mittag ~66°)', () => { const doy = dayOfYearOf(2025, 6, 21), s = solarPosition(47, doy, 12), n = solarPosition(47, doy, 0); return (doy === 172 && Math.abs(s.elDeg - 66.5) < 2 && Math.abs(s.azDeg - 180) < 6 && n.elDeg < 0) ? '' : 'doy=' + doy + ' el=' + s.elDeg.toFixed(1) + ' az=' + s.azDeg.toFixed(1); });
+    A('GIS-Projektion (GeoJSON→m)', () => { const l = geoToLocal({ type: 'Polygon', coordinates: [[[8, 47], [8.001, 47], [8.001, 47.001], [8, 47.001], [8, 47]]] }), w = l.bbox.maxx - l.bbox.minx, h = l.bbox.maxy - l.bbox.miny; return (l.shapes.length === 1 && Math.abs(w - 75.9) < 3 && Math.abs(h - 110.6) < 3) ? '' : 'w=' + w.toFixed(1) + ' h=' + h.toFixed(1); });
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
   } finally { docScale = saved; }
@@ -4932,6 +4974,7 @@ function wire() {
   $('#pbHatch').onchange = () => { const t = $('#pbHatch').value, d = HATCH_DEF[t] || {}; wallHatch = t ? { type: t, scale: lastHatchScale, w: 0.8, color: d.color || style.color, fill: d.fill || null } : null; const a = selWall(); if (a) { pushUndo(); applyMaterial(a, t); pageViews.forEach(drawAnnos); saveState(); } };
   $('#foot3d').onclick = open3D;
   $('#footIFC').onclick = importIFCFile;
+  $('#footGIS').onclick = importGISFile;
   let planKind = 'kopf', planPos = 'br';
   $('#footPlan').onclick = e => { e.stopPropagation(); const p = $('#planPop'); p.hidden = !p.hidden; };
   $('#pbBuild').onclick = e => { e.stopPropagation(); const p = $('#buildPop'); if (p.hidden) openBuildPop(); else p.hidden = true; };

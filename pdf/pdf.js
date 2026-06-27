@@ -2965,9 +2965,11 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip) { 
 function sectionPrimitives(a, arr) {
   const out = [], col = '#1c242c';
   const p1 = [a.cx1, a.cy1], p2 = [a.cx2, a.cy2], cd = [p2[0] - p1[0], p2[1] - p1[1]], cl = Math.hypot(cd[0], cd[1]) || 1, cux = cd[0] / cl, cuy = cd[1] / cl, nx = -cuy, ny = cux, lbl = a.label || 'A';
-  out.push({ t: 'line', x1: a.cx1, y1: a.cy1, x2: a.cx2, y2: a.cy2, stroke: col, w: 1.2, dash: '10 4 2 4' });   // Schnittlinie im Plan
   const vdir = a.flip ? -1 : 1;   // Blickrichtung
-  for (const e of [[a.cx1, a.cy1], [a.cx2, a.cy2]]) { const tk = 8, ax = nx * vdir, ay = ny * vdir; out.push({ t: 'line', x1: e[0] - ax * tk, y1: e[1] - ay * tk, x2: e[0] + ax * tk, y2: e[1] + ay * tk, stroke: col, w: 1.4 }); out.push({ t: 'arrow', x: e[0] + ax * tk, y: e[1] + ay * tk, dx: ax, dy: ay, col }); out.push({ t: 'text', x: e[0] - ax * 16, y: e[1] - ay * 16, text: lbl, col }); }
+  if (!a.noPlanLine) {   // Plan-Schnittlinie + Pfeile (im Detail-Editor weggelassen)
+    out.push({ t: 'line', x1: a.cx1, y1: a.cy1, x2: a.cx2, y2: a.cy2, stroke: col, w: 1.2, dash: '10 4 2 4' });   // Schnittlinie im Plan
+    for (const e of [[a.cx1, a.cy1], [a.cx2, a.cy2]]) { const tk = 8, ax = nx * vdir, ay = ny * vdir; out.push({ t: 'line', x1: e[0] - ax * tk, y1: e[1] - ay * tk, x2: e[0] + ax * tk, y2: e[1] + ay * tk, stroke: col, w: 1.4 }); out.push({ t: 'arrow', x: e[0] + ax * tk, y: e[1] + ay * tk, dx: ax, dy: ay, col }); out.push({ t: 'text', x: e[0] - ax * 16, y: e[1] - ay * 16, text: lbl, col }); }
+  }
   if (!docScale) { out.push({ t: 'text', x: a.ox, y: a.oy, text: '⟶ Massstab setzen, dann erscheint der Schnitt', col }); return out; }
   const perPt = docScale.perPt, ox = a.ox, oy = a.oy, X = d => ox + d, Yh = h => oy - h / perPt, fp = d => a.flip ? cl - d : d;   // fp() spiegelt nur die Position (X bleibt normal → Rechtecke verrutschen nicht)
   const hits = [];
@@ -5154,6 +5156,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   document.body.appendChild(ov);
   const svg = ov.querySelector('#labSvg'), svgS = ov.querySelector('#labSvgS'), svgAo = ov.querySelector('#labSvgAo'), svgAi = ov.querySelector('#labSvgAi'), side = ov.querySelector('#labCtrls');
   let vbG = null, vbS = null, vbAo = null, vbAi = null;   // aktuelle viewBox je Ansicht (zoomen/verschieben wie im echten Grundriss; null = einpassen)
+  let secFlip = false, secLine = null;   // Schnitt: Blickrichtung + frei verschiebbare Schnittlinie (null = perpendikulär durchs Fenster)
   const vbStr = v => v.x + ' ' + v.y + ' ' + v.w + ' ' + v.h;
   function navSetup(el, getV, setV, redraw) {   // Mausrad = Zoom zum Cursor · Ziehen (ausser auf Griff) = verschieben
     el.addEventListener('wheel', e => { e.preventDefault(); const vb = getV(); if (!vb) return; const r = el.getBoundingClientRect(), fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height, mx = vb.x + fx * vb.w, my = vb.y + fy * vb.h, f = e.deltaY < 0 ? 1 / 1.15 : 1.15, nw = Math.max(3, vb.w * f), nh = Math.max(3, vb.h * f); setV({ x: mx - fx * nw, y: my - fy * nh, w: nw, h: nh }); redraw(); }, { passive: false });
@@ -5233,11 +5236,12 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     if (!getVb()) setVb({ x: mnx, y: mny, w: mxx - mnx, h: mxy - mny });
     const vb = getVb(); el.setAttribute('viewBox', vbStr(vb)); el.innerHTML = primStr(out, vb.w / (el.clientWidth || 320));
   }
-  function renderSec() {   // Schnitt durch das Fenster (Sturz/Brüstung + geschichtete Laibung + Fensterbank)
+  function renderSec() {   // Schnitt im Wandkontext: echte Schnitt-Engine an frei wählbarer Linie (Default = perpendikulär durchs Fenster)
     if (!docScale) { svgS.innerHTML = '<text x="10" y="22" font-size="13" fill="#9aa090">Für den Schnitt zuerst den Massstab setzen (1:n)</text>'; svgS.setAttribute('viewBox', '0 0 300 60'); return; }
-    const perPt = docScale.perPt, appW = a.thick || wallThickPts(), H2 = (a.head != null ? a.head : (a.kind === 'window' ? 2.1 : 2.0)) + 0.4;
-    const Yh = h => -h / perPt, X = d => d, out = [], sw = wall ? Object.assign({}, wall) : { layers: null, thick: appW, fill: a.fill, color: a.color, hatch: a.hatch };
-    try { sectionCutOpening(out, X, Yh, 0, appW, a, H2, perPt, sw, false); } catch (_) { }
+    const ang = a.ang || 0, nx = -Math.sin(ang), ny = Math.cos(ang), L = (a.thick || wallThickPts()) * 1.7 + cmToPts(90);   // Schnittlinie quer durch die Wand
+    const c1 = secLine ? secLine.c1 : [a.x - nx * L / 2, a.y - ny * L / 2], c2 = secLine ? secLine.c2 : [a.x + nx * L / 2, a.y + ny * L / 2];
+    const tmp = { type: 'section', cx1: c1[0], cy1: c1[1], cx2: c2[0], cy2: c2[1], ox: 0, oy: 0, flip: secFlip, label: 'A', noPlanLine: true };
+    let out = []; try { out = sectionPrimitives(tmp, arr); } catch (_) { out = []; }
     drawPrims(svgS, out, () => vbS, v => { vbS = v; });
   }
   function renderElev(el, side, getVb, setVb) {   // Ansicht innen/aussen – die ganze WAND mit allen Fenstern/Türen (Kontext), aktuelles markiert
@@ -5288,6 +5292,8 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     const sel = (label, opts, cur, cb) => { const w = document.createElement('label'); w.className = 'lab-row'; w.innerHTML = '<span>' + label + '</span>'; const s = document.createElement('select'); s.style.flex = '1'; s.innerHTML = opts.map(o => '<option value="' + o[0] + '"' + (o[0] === cur ? ' selected' : '') + '>' + o[1] + '</option>').join(''); s.value = cur; s.onchange = () => cb(s.value); w.appendChild(s); side.appendChild(w); };
     const fld = k => { const f = fields.find(x => x.k === k); if (!f || (f.when && !f.when())) return; const row = document.createElement('label'); row.className = 'lab-row'; row.innerHTML = '<span>' + f.label + '</span>'; const r = document.createElement('input'); r.type = 'range'; r.min = f.min; r.max = f.max; r.step = f.step; r.value = f.get(); r.style.flex = '1'; const num = document.createElement('input'); num.type = 'number'; num.min = f.min; num.max = f.max; num.step = f.step; num.value = f.get(); num.style.width = '54px'; r.oninput = () => { f.set(parseFloat(r.value)); num.value = f.get(); render(); drawAnnos(pv); }; r.onchange = () => saveState(); num.onchange = () => { const v = parseFloat((num.value || '').replace(',', '.')); if (isNaN(v)) return; f.set(v); r.value = f.get(); render(); drawAnnos(pv); saveState(); }; const u = document.createElement('b'); u.textContent = f.unit; u.style.minWidth = '16px'; r.style.flex = '1'; const line = document.createElement('div'); line.className = 'lab-line'; line.appendChild(r); line.appendChild(num); line.appendChild(u); row.appendChild(line); side.appendChild(row); };
     const win = a.kind === 'window';
+    head('Schnitt');
+    { const tw = document.createElement('label'); tw.className = 'lab-row'; tw.style.cssText = 'flex-direction:row;align-items:center;gap:7px'; const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = secFlip; const sp = document.createElement('span'); sp.textContent = 'Blickrichtung drehen (innen ⇄ aussen)'; cb.onchange = () => { secFlip = cb.checked; renderSec(); }; tw.appendChild(cb); tw.appendChild(sp); side.appendChild(tw); }
     head(win ? 'Fenster' : 'Tür');
     sel('Typ', win ? [['f1', '1-flügelig'], ['f2', '2-flügelig (bündig)'], ['f2s', '2-fl. + Setzholz'], ['fest', 'Fest verglast']] : [['f1', '1-flügelig'], ['f2', '2-flügelig'], ['fest', 'Fest'], ['f1f', '1-fl. + Fixteil']], a.winType || 'f1', v => { a.winType = v; render(); drawAnnos(pv); saveState(); });
     sel('Material', [['holz', 'Holz'], ['metall', 'Metall'], ['kunst', 'Kunststoff']], a.winMat || 'holz', v => { a.winMat = v; render(); drawAnnos(pv); saveState(); });

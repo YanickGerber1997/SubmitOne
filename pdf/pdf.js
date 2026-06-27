@@ -2801,8 +2801,9 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   let coreIdx = wall.layers.findIndex(l => CORE.includes(l.mat)); if (coreIdx < 0) coreIdx = Math.floor((wall.layers.length - 1) / 2);
   const l0 = wall.layers[0], lN = wall.layers[wall.layers.length - 1], rt0 = a.revealType || 'putz';   // Innen-Laibungs-Element nach Typ
   const anType = a.anschlagType || 'none', oneCm = cmToPts(1) / ht;   // 1 cm in m-Richtung – Putz nie näher als 1 cm an den Flügel
-  const innerLining = rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]);   // putz = innerste Wandschicht reingezogen; aussen = äusserste; sonst feste Konstruktion
-  if (anType !== 'innen' && Math.abs((fmA - oneCm) + 1) > 0.02) { let sAcc = 0; for (const [mat, tcm] of innerLining) { const mt = LINING_MAT[mat] || WALL_MATS[mat] || {}, tw = Math.min(0.42, cmToPts(tcm) / hw), sk = mt.stroke || mt.color || '#1c242c'; for (const sgn of [-1, 1]) { const s0 = sgn * (1 - sAcc), s1 = sgn * (1 - sAcc - tw); strips.push({ poly: [corner(s0, -1), corner(s1, -1), corner(s1, fmA - oneCm), corner(s0, fmA - oneCm)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(s0, s1), Math.max(s0, s1), -1, fmA - oneCm, corner, hw, ht, stepS) : null }); } sAcc += tw; } }   // Innen-Laibung (ohne Innenanschlag); Innenanschlag → eigener Block unten
+  const userLin = Array.isArray(a.revealLining) && a.revealLining.length ? a.revealLining.map(L => [L.mat, L.t, (L.depth == null ? 1 : L.depth)]) : null;   // eigene Laibungsschichten (Material/Dicke/Tiefe), sonst Preset
+  const innerLining = userLin || (rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t)), 1]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]).map(e => [e[0], e[1], 1]));   // putz = innerste Wandschicht reingezogen; aussen = äusserste; sonst feste Konstruktion
+  if (anType !== 'innen' && Math.abs((fmA - oneCm) + 1) > 0.02) { let sAcc = 0; const mEndFull = fmA - oneCm; for (const [mat, tcm, dep] of innerLining) { const mt = LINING_MAT[mat] || WALL_MATS[mat] || {}, tw = Math.min(0.42, cmToPts(tcm) / hw), sk = mt.stroke || mt.color || '#1c242c', mEnd = -1 + Math.max(0.02, Math.min(1, dep)) * (mEndFull + 1); for (const sgn of [-1, 1]) { const s0 = sgn * (1 - sAcc), s1 = sgn * (1 - sAcc - tw); strips.push({ poly: [corner(s0, -1), corner(s1, -1), corner(s1, mEnd), corner(s0, mEnd)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(s0, s1), Math.max(s0, s1), -1, mEnd, corner, hw, ht, stepS) : null }); } sAcc += tw; } }   // Innen-Laibung: je Schicht eigene Tiefe (dep) in die Laibung; ohne Innenanschlag
   const rtOut = a.revealOuter || '';   // Aussen-Laibung (Putz/Gips/Holz/Stahl/Alu) – spiegelbildlich zur Innen-Laibung
   if (rtOut && anType !== 'aussen' && Math.abs((fmB + oneCm) - 1) > 0.02) { const outerLining = rtOut === 'putz' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rtOut] || [[lN.mat, Math.min(3, ptsToCm(lN.t))]]); let sAcc = 0; for (const [mat, tcm] of outerLining) { const mt = LINING_MAT[mat] || WALL_MATS[mat] || {}, tw = Math.min(0.42, cmToPts(tcm) / hw), sk = mt.stroke || mt.color || '#1c242c'; for (const sgn of [-1, 1]) { const s0 = sgn * (1 - sAcc), s1 = sgn * (1 - sAcc - tw); strips.push({ poly: [corner(s0, 1), corner(s1, 1), corner(s1, fmB + oneCm), corner(s0, fmB + oneCm)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(s0, s1), Math.max(s0, s1), fmB + oneCm, 1, corner, hw, ht, stepS) : null }); } sAcc += tw; } }
   const total = wall.layers.reduce((s, l) => s + l.t, 0) || 1; let cum = 0;
@@ -5288,6 +5289,34 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     sel('Innen', [['putz', 'Putz reingezogen'], ['aussen', 'Aussenschicht rein'], ['gips', 'Gipsplatte + Putz'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealType || 'putz', v => { a.revealType = v; render(); drawAnnos(pv); saveState(); });
     sel('Aussen', [['', 'Standard (Schicht)'], ['putz', 'Putz'], ['gips', 'Gipsplatte'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealOuter || '', v => { a.revealOuter = v; render(); drawAnnos(pv); saveState(); });
     fld('boardW'); fld('boardVis'); fld('boardProtrude'); fld('outerLap'); fld('innerReveal');
+    { // --- Eigene Laibungsschichten (frei: 1/2/3… · Material/Dicke/Tiefe je Schicht) ---
+      const RL = a.revealLining, matOpts = Object.keys(WALL_MATS).map(k => [k, WALL_MATS[k].label || k]);
+      const prefill = () => (wall && wall.layers && wall.layers.length ? wall.layers : [{ mat: 'putz', t: cmToPts(1.5) }]).map(l => ({ mat: l.mat, t: Math.round(ptsToCm(l.t) * 10) / 10, depth: 1 }));
+      if (!Array.isArray(RL) || !RL.length) {
+        const b = document.createElement('button'); b.className = 'btn'; b.textContent = '⊞ Eigene Laibungsschichten'; b.style.cssText = 'width:100%;margin:5px 0 2px'; b.title = 'Laibung aus frei definierbaren Schichten (Material/Dicke/Tiefe) – Start = Wandschichten, danach frei änder-/lösch-/ergänzbar';
+        b.onclick = () => { a.revealLining = prefill(); render(); buildCtrls(); drawAnnos(pv); saveState(); }; side.appendChild(b);
+      } else {
+        const hint = document.createElement('div'); hint.className = 'lab-row'; hint.innerHTML = '<span style="color:#46503f">innen→aussen · Tiefe = wie weit in die Laibung</span>'; side.appendChild(hint);
+        RL.forEach((L, i) => {
+          const row = document.createElement('div'); row.className = 'lab-row'; row.style.cssText = 'border-left:3px solid #c9d4bd;padding-left:7px;margin-bottom:2px';
+          const l1 = document.createElement('div'); l1.className = 'lab-line';
+          const ms = document.createElement('select'); ms.style.flex = '1'; matOpts.forEach(([k, lab]) => { const o = document.createElement('option'); o.value = k; o.textContent = lab; if (k === L.mat) o.selected = true; ms.appendChild(o); }); ms.onchange = () => { L.mat = ms.value; render(); drawAnnos(pv); saveState(); };
+          const tn = document.createElement('input'); tn.type = 'number'; tn.min = '0.1'; tn.max = '30'; tn.step = '0.1'; tn.value = L.t; tn.style.width = '50px'; tn.title = 'Dicke (cm)'; tn.onchange = () => { const v = parseFloat((tn.value || '').replace(',', '.')); if (v > 0) { L.t = v; render(); drawAnnos(pv); saveState(); } };
+          const del = document.createElement('button'); del.className = 'btn'; del.textContent = '✕'; del.style.cssText = 'padding:0 8px'; del.title = 'Schicht löschen'; del.onclick = () => { RL.splice(i, 1); if (!RL.length) a.revealLining = null; render(); buildCtrls(); drawAnnos(pv); saveState(); };
+          l1.appendChild(ms); l1.appendChild(tn); l1.appendChild(del); row.appendChild(l1);
+          const l2 = document.createElement('div'); l2.className = 'lab-line';
+          const rg = document.createElement('input'); rg.type = 'range'; rg.min = '5'; rg.max = '100'; rg.step = '5'; rg.value = Math.round((L.depth == null ? 1 : L.depth) * 100); rg.style.flex = '1'; rg.title = 'Tiefe in die Laibung (%)';
+          const pl = document.createElement('b'); pl.textContent = rg.value + '%'; pl.style.minWidth = '36px';
+          rg.oninput = () => { L.depth = parseInt(rg.value) / 100; pl.textContent = rg.value + '%'; render(); drawAnnos(pv); }; rg.onchange = () => saveState();
+          l2.appendChild(rg); l2.appendChild(pl); row.appendChild(l2); side.appendChild(row);
+        });
+        const bar = document.createElement('div'); bar.className = 'lab-line'; bar.style.gap = '4px';
+        const add = document.createElement('button'); add.className = 'btn'; add.textContent = '+ Schicht'; add.style.flex = '1'; add.onclick = () => { RL.push({ mat: 'putz', t: 1, depth: 1 }); render(); buildCtrls(); drawAnnos(pv); saveState(); };
+        const wb = document.createElement('button'); wb.className = 'btn'; wb.textContent = '⟳ Wand'; wb.style.flex = '1'; wb.title = 'Aus den Wandschichten neu übernehmen'; wb.onclick = () => { a.revealLining = prefill(); render(); buildCtrls(); drawAnnos(pv); saveState(); };
+        bar.appendChild(add); bar.appendChild(wb); side.appendChild(bar);
+        const rs = document.createElement('button'); rs.className = 'btn'; rs.textContent = 'Standard (zurücksetzen)'; rs.style.cssText = 'width:100%;margin-top:3px'; rs.onclick = () => { a.revealLining = null; render(); buildCtrls(); drawAnnos(pv); saveState(); }; side.appendChild(rs);
+      }
+    }
     if (win) {
       head('Fensterbank / Sims');
       const tw = document.createElement('label'); tw.className = 'lab-row'; tw.style.cssText = 'flex-direction:row;align-items:center;gap:7px'; const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = a.bank !== false; const sp = document.createElement('span'); sp.textContent = 'Fensterbank (aussen)'; cb.onchange = () => { a.bank = cb.checked; render(); buildCtrls(); drawAnnos(pv); saveState(); }; tw.appendChild(cb); tw.appendChild(sp); side.appendChild(tw);

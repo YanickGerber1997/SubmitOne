@@ -4125,10 +4125,10 @@ async function parseIFC(bytes) {   // → { meshes (Welt-Geometrie, Y-oben), bbo
   const modelID = api.OpenModel(new Uint8Array(bytes), { COORDINATE_TO_ORIGIN: true });
   const meshes = [], bb = { minx: Infinity, miny: Infinity, minz: Infinity, maxx: -Infinity, maxy: -Infinity, maxz: -Infinity };
   const ENV = new Set([mod.IFCBUILDINGELEMENTPROXY, mod.IFCSITE, mod.IFCFURNISHINGELEMENT, mod.IFCSPACE, mod.IFCOPENINGELEMENT].filter(x => x != null));   // Umgebung/Möbel/Pflanzen
-  const OPEN = new Set([mod.IFCWINDOW, mod.IFCDOOR].filter(x => x != null)), openAcc = {};   // Fenster/Türen: Schwerpunkt + Bbox je Element sammeln
+  const KIND = new Map([[mod.IFCWINDOW, 'window'], [mod.IFCDOOR, 'door'], [mod.IFCCOLUMN, 'column'], [mod.IFCBEAM, 'beam'], [mod.IFCSLAB, 'slab']].filter(e => e[0] != null)), elemAcc = {};   // Schwerpunkt + Bbox je Bauteil sammeln (für Rückbau)
   api.StreamAllMeshes(modelID, flat => {
     const gs = flat.geometries; let et = 0; try { et = api.GetLineType(modelID, flat.expressID); } catch (_) { } const env = ENV.has(et);
-    let oa = null; if (OPEN.has(et)) { oa = openAcc[flat.expressID] || (openAcc[flat.expressID] = { kind: et === mod.IFCDOOR ? 'door' : 'window', sx: 0, sy: 0, sz: 0, n: 0, minx: Infinity, miny: Infinity, minz: Infinity, maxx: -Infinity, maxy: -Infinity, maxz: -Infinity }); }
+    let oa = null; const kd = KIND.get(et); if (kd) { oa = elemAcc[flat.expressID] || (elemAcc[flat.expressID] = { kind: kd, sx: 0, sy: 0, sz: 0, n: 0, minx: Infinity, miny: Infinity, minz: Infinity, maxx: -Infinity, maxy: -Infinity, maxz: -Infinity }); }
     for (let i = 0; i < gs.size(); i++) {
       const pg = gs.get(i), geom = api.GetGeometry(modelID, pg.geometryExpressID);
       const va = api.GetVertexArray(geom.GetVertexData(), geom.GetVertexDataSize()), ia = api.GetIndexArray(geom.GetIndexData(), geom.GetIndexDataSize());
@@ -4145,14 +4145,15 @@ async function parseIFC(bytes) {   // → { meshes (Welt-Geometrie, Y-oben), bbo
       if (geom.delete) try { geom.delete(); } catch (_) { }
     }
   });
-  const openings = []; for (const k in openAcc) { const o = openAcc[k]; if (o.n) openings.push({ kind: o.kind, c: [o.sx / o.n, o.sy / o.n, o.sz / o.n], min: [o.minx, o.miny, o.minz], max: [o.maxx, o.maxy, o.maxz] }); }
+  const elements = []; for (const k in elemAcc) { const o = elemAcc[k]; if (o.n) elements.push({ kind: o.kind, c: [o.sx / o.n, o.sy / o.n, o.sz / o.n], min: [o.minx, o.miny, o.minz], max: [o.maxx, o.maxy, o.maxz] }); }
+  const openings = elements.filter(e => e.kind === 'window' || e.kind === 'door');
   const T = mod, TYPES = [['Wände', T.IFCWALL], ['Wände (Std.)', T.IFCWALLSTANDARDCASE], ['Fenster', T.IFCWINDOW], ['Türen', T.IFCDOOR], ['Decken/Platten', T.IFCSLAB], ['Dächer', T.IFCROOF], ['Stützen', T.IFCCOLUMN], ['Träger', T.IFCBEAM], ['Treppen', T.IFCSTAIR], ['Geländer', T.IFCRAILING], ['Vorhangfassade', T.IFCCURTAINWALL], ['Möblierung', T.IFCFURNISHINGELEMENT], ['Räume', T.IFCSPACE]];
   const summary = []; for (const [label, t] of TYPES) { if (t == null) continue; let v; try { v = api.GetLineIDsWithType(modelID, t); } catch (_) { continue; } const cnt = v ? v.size() : 0; if (cnt) summary.push({ label, n: cnt }); }
   const spaces = []; try { const sp = api.GetLineIDsWithType(modelID, T.IFCSPACE); for (let i = 0; i < Math.min(sp.size(), 800); i++) { const id = sp.get(i); let line; try { line = api.GetLine(modelID, id); } catch (_) { continue; } const nm = (line.LongName && line.LongName.value) || (line.Name && line.Name.value) || '—', num = (line.Name && line.Name.value) || ''; spaces.push({ name: nm, num }); } } catch (_) { }
   let project = ''; try { const pr = api.GetLineIDsWithType(modelID, T.IFCPROJECT); if (pr && pr.size()) { const p = api.GetLine(modelID, pr.get(0)); project = (p.Name && p.Name.value) || (p.LongName && p.LongName.value) || ''; } } catch (_) { }
   const storeys = []; try { const st = api.GetLineIDsWithType(modelID, T.IFCBUILDINGSTOREY); for (let i = 0; i < st.size(); i++) { const id = st.get(i); let l; try { l = api.GetLine(modelID, id); } catch (_) { continue; } const nm = (l.Name && l.Name.value) || (l.LongName && l.LongName.value) || 'Geschoss', el = (l.Elevation && typeof l.Elevation.value === 'number') ? l.Elevation.value : (typeof l.Elevation === 'number' ? l.Elevation : null); storeys.push({ name: nm, elev: el }); } storeys.sort((a, b) => (a.elev == null ? 0 : a.elev) - (b.elev == null ? 0 : b.elev)); } catch (_) { }
   api.CloseModel(modelID);
-  return { meshes, bbox: bb, summary, spaces, storeys, openings, project, dim: { x: bb.maxx - bb.minx, y: bb.maxy - bb.miny, z: bb.maxz - bb.minz } };
+  return { meshes, bbox: bb, summary, spaces, storeys, openings, elements, project, dim: { x: bb.maxx - bb.minx, y: bb.maxy - bb.miny, z: bb.maxz - bb.minz } };
 }
 function buildIFCScene(host, ifc) {
   host.innerHTML = '';
@@ -4306,9 +4307,9 @@ async function ifcToWalls(ifc, cutAbove) {   // IFC → editierbare Submit-Wänd
   pushUndo();
   const lid = newLayerId(); layers.push({ id: lid, name: 'IFC-Wände', visible: true }); const arr = getAnnos(n), h3 = Math.min(3.2, Math.max(2.3, ifcHeightExt(ifc) || wallHeightM)), ca = cutAbove || 1.2, placedWalls = [];
   for (const w of ws) { const wid = nextId++, a = toPt(w.x1, w.y1), b = toPt(w.x2, w.y2); arr.push({ id: wid, type: 'wall', x1: a[0], y1: a[1], x2: b[0], y2: b[1], thick: cmToPts(Math.max(6, Math.min(60, w.thick * 100))), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: h3, dim: false, layer: lid }); placedWalls.push({ id: wid, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, h0: ca - 1.5, h1: ca + 1.8, layer: lid }); }
-  const nOp = ifcPlaceOpenings(ifc, placedWalls, arr);
+  const fl = [{ layer: lid, h0: ca - 1.5, h1: ca + 1.8, elev: 0 }], nOp = ifcPlaceOpenings(ifc, placedWalls, arr), nC = ifcPlaceColumns(ifc, fl, arr, toPt), nB = ifcPlaceBeams(ifc, fl, arr, toPt), nS = ifcPlaceSlabs(ifc, fl, arr, toPt);
   activeLayerId = lid; for (const a of arr) if (a.type === 'opening') openingResolve(a, { num: n }); drawAnnos(pv); renderLayerPanel(); saveState(); status('');
-  toast(ws.length + ' Wände + ' + nOp + ' Fenster/Türen auf neuer Seite ' + n + ' rekonstruiert (Ebene „IFC-Wände") – in 2D & 3D bearbeitbar. Experimentell.'); return true;
+  toast(ws.length + ' Wände · ' + nOp + ' Fenster/Türen · ' + nC + ' Stützen · ' + nB + ' Träger · ' + nS + ' Decken auf neuer Seite ' + n + ' (Ebene „IFC-Wände"). Experimentell.'); return true;
 }
 function ifcPlaceOpenings(ifc, placedWalls, arr) {   // IFC-Fenster/Türen → Öffnung in die nächstgelegene rekonstruierte Wand (passend zur Höhe/Geschoss)
   if (!ifc.openings || !ifc.openings.length || !placedWalls.length) return 0;
@@ -4321,6 +4322,22 @@ function ifcPlaceOpenings(ifc, placedWalls, arr) {   // IFC-Fenster/Türen → �
     if (best) { arr.push({ id: nextId++, type: 'opening', wallId: best.w.id, t: best.t, w: cmToPts(wM * 100), kind: o.kind, hinge: 1, swing: 1, sill: o.kind === 'door' ? 0 : 0.9, head: o.kind === 'door' ? 2.0 : 2.1, depth: 0.5, winType: 'f1', winHinge: 'left', winMat: 'holz', color: '#1c242c', layer: best.w.layer }); placed++; }
   }
   return placed;
+}
+function ifcFloorFor(floorLayers, hRel, pad) { let best = null, bd = Infinity; for (const f of floorLayers) { if (hRel >= f.h0 - (pad || 0.7) && hRel <= f.h1 + (pad || 0.7)) { const d = Math.abs(hRel - (f.h0 + f.h1) / 2); if (d < bd) { bd = d; best = f; } } } return best; }
+function ifcPlaceColumns(ifc, floorLayers, arr, toPt) {   // IfcColumn → Stütze (Block) auf dem passenden Geschoss
+  let n = 0, hMin = ifcHeightMin(ifc);
+  for (const e of ifc.elements) { if (e.kind !== 'column') continue; const cr = ifcRemap(e.c), rmin = ifcRemap(e.min), rmax = ifcRemap(e.max), f = ifcFloorFor(floorLayers, cr[1] - hMin, 1.0); if (!f) continue; const wx = Math.max(0.1, Math.abs(rmax[0] - rmin[0])), wz = Math.max(0.1, Math.abs(rmax[2] - rmin[2])), ctr = toPt(cr[0], cr[2]), wPt = cmToPts(wx * 100), hPt = cmToPts(wz * 100); arr.push({ id: nextId++, type: 'block', kind: 'column', x: ctr[0] - wPt / 2, y: ctr[1] - hPt / 2, w: wPt, h: hPt, color: '#1c242c', layer: f.layer }); n++; }
+  return n;
+}
+function ifcPlaceBeams(ifc, floorLayers, arr, toPt) {   // IfcBeam → Unterzug (2-Punkt) auf dem passenden Geschoss
+  let n = 0, hMin = ifcHeightMin(ifc);
+  for (const e of ifc.elements) { if (e.kind !== 'beam') continue; const cr = ifcRemap(e.c), rmin = ifcRemap(e.min), rmax = ifcRemap(e.max), f = ifcFloorFor(floorLayers, cr[1] - hMin, 1.3); if (!f) continue; const xR = Math.abs(rmax[0] - rmin[0]), zR = Math.abs(rmax[2] - rmin[2]); let p1, p2, wid; if (xR >= zR) { p1 = toPt(Math.min(rmin[0], rmax[0]), cr[2]); p2 = toPt(Math.max(rmin[0], rmax[0]), cr[2]); wid = zR; } else { p1 = toPt(cr[0], Math.min(rmin[2], rmax[2])); p2 = toPt(cr[0], Math.max(rmin[2], rmax[2])); wid = xR; } arr.push({ id: nextId++, type: 'beam', x1: p1[0], y1: p1[1], x2: p2[0], y2: p2[1], width: cmToPts(Math.max(8, Math.min(60, wid * 100))), height: Math.max(0.2, Math.min(1, Math.abs(rmax[1] - rmin[1]))), color: '#1c242c', layer: f.layer }); n++; }
+  return n;
+}
+function ifcPlaceSlabs(ifc, floorLayers, arr, toPt) {   // IfcSlab → Decke/Platte (Rechteck-Näherung) auf dem passenden Geschoss
+  let n = 0, hMin = ifcHeightMin(ifc);
+  for (const e of ifc.elements) { if (e.kind !== 'slab') continue; const cr = ifcRemap(e.c), rmin = ifcRemap(e.min), rmax = ifcRemap(e.max), f = ifcFloorFor(floorLayers, cr[1] - hMin, 1.6); if (!f) continue; const x0 = Math.min(rmin[0], rmax[0]), x1 = Math.max(rmin[0], rmax[0]), z0 = Math.min(rmin[2], rmax[2]), z1 = Math.max(rmin[2], rmax[2]); const a = toPt(x0, z0), b = toPt(x1, z0), c = toPt(x1, z1), d = toPt(x0, z1); arr.push({ id: nextId++, type: 'slab', pts: [[a[0], a[1]], [b[0], b[1]], [c[0], c[1]], [d[0], d[1]]], base: f.elev, thick: Math.max(0.1, Math.min(0.4, Math.abs(rmax[1] - rmin[1]))), color: '#5b6b86', layer: f.layer }); n++; }
+  return n;
 }
 async function ifcAllStoreysToWalls(ifc) {   // alle Geschosse → je eine editierbare Ebene mit Wänden, korrekt gestapelt (Höhe aus IfcBuildingStorey, ausgerichtet an der Geometrie-Unterkante)
   if (!pdfDoc) { toast('Erst ein Dokument öffnen/neu starten.'); return; }
@@ -4341,14 +4358,15 @@ async function ifcAllStoreysToWalls(ifc) {   // alle Geschosse → je eine editi
   const n = curPage(), pv = pageViews.find(p => p.num === n) || pageViews[0]; if (!pv) { status(''); return; }
   const cxm = (minx + maxx) / 2, cym = (miny + maxy) / 2, pcx = (pv.pageW || 595) / 2, pcy = (pv.pageH || 842) / 2, toPt = (x, y) => [pcx + cmToPts((x - cxm) * 100), pcy + cmToPts((y - cym) * 100)];
   pushUndo();
-  const arr = getAnnos(n), placedWalls = []; let first = null;
+  const arr = getAnnos(n), placedWalls = [], floorLayers = []; let first = null;
   for (const f of floors) {
     const lid = newLayerId(); layers.push({ id: lid, name: f.name, visible: true, elevation: f.elev }); if (!first) first = lid;
+    floorLayers.push({ layer: lid, h0: f.elev, h1: f.elev + f.h3d, elev: f.elev });
     for (const w of f.walls) { const wid = nextId++, a = toPt(w.x1, w.y1), b = toPt(w.x2, w.y2); arr.push({ id: wid, type: 'wall', x1: a[0], y1: a[1], x2: b[0], y2: b[1], thick: cmToPts(Math.max(6, Math.min(60, w.thick * 100))), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: f.h3d, dim: false, layer: lid }); placedWalls.push({ id: wid, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, h0: f.elev, h1: f.elev + f.h3d, layer: lid }); }
   }
-  const nOp = ifcPlaceOpenings(ifc, placedWalls, arr);
+  const nOp = ifcPlaceOpenings(ifc, placedWalls, arr), nC = ifcPlaceColumns(ifc, floorLayers, arr, toPt), nB = ifcPlaceBeams(ifc, floorLayers, arr, toPt), nS = ifcPlaceSlabs(ifc, floorLayers, arr, toPt);
   if (first) activeLayerId = first; for (const a of arr) if (a.type === 'opening') openingResolve(a, { num: n }); drawAnnos(pv); renderLayerPanel(); saveState(); status('');
-  toast(floors.length + ' Geschosse als Ebenen + ' + nOp + ' Fenster/Türen rekonstruiert (im 3D gestapelt): ' + floors.map(f => f.name).join(' · ') + '. Ebenen-Panel: einzeln ein-/ausblenden & Höhe anpassen.'); return true;
+  toast(floors.length + ' Geschosse · ' + placedWalls.length + ' Wände · ' + nOp + ' Fenster/Türen · ' + nC + ' Stützen · ' + nB + ' Träger · ' + nS + ' Decken rekonstruiert (3D gestapelt). Ebenen einzeln ein-/ausblendbar.'); return true;
 }
 async function pdfPageSegments(n) {   // Vektorlinien einer PDF-Seite aus der Operator-Liste (mit CTM-Verfolgung) → Segmente in Seitenpunkten (oben-links)
   const page = await pdfDoc.getPage(n), OPS = pdfjs.OPS, opl = await page.getOperatorList(), PH = page.getViewport({ scale: 1 }).height;

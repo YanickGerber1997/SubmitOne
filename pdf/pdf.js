@@ -4165,12 +4165,13 @@ function buildIFCScene(host, ifc) {
 function open3DIFC(ifc) {
   const ov = document.createElement('div'); ov.className = 'd3-overlay';
   const dim = ifc.dim ? (ifc.dim.x.toFixed(1) + '×' + ifc.dim.z.toFixed(1) + ' m, H ' + ifc.dim.y.toFixed(1) + ' m') : '';
-  ov.innerHTML = '<div class="d3-bar"><b>IFC-Modell</b>' + (ifc.project ? '<span class="d3-hint">' + ifc.project + '</span>' : '') + '<span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">' + dim + ' · Ziehen = drehen</span><span class="grow"></span><button class="btn" id="ifcList">▦ Bauteilliste</button><button class="btn" id="ifcObj" title="IFC-Modell als OBJ exportieren (Blender/SketchUp …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
+  ov.innerHTML = '<div class="d3-bar"><b>IFC-Modell</b>' + (ifc.project ? '<span class="d3-hint">' + ifc.project + '</span>' : '') + '<span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">' + dim + ' · Ziehen = drehen</span><span class="grow"></span><button class="btn" id="ifcList">▦ Bauteilliste</button><button class="btn" id="ifcPlan" title="Grundriss erzeugen: Horizontalschnitt durchs Modell → massstäbliche Planzeichnung auf die offene Seite (Massstab nötig)">⊞ Grundriss</button><button class="btn" id="ifcObj" title="IFC-Modell als OBJ exportieren (Blender/SketchUp …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
   document.body.appendChild(ov); const host = ov.querySelector('#d3Canvas'); let api = buildIFCScene(host, ifc);
   ov.querySelectorAll('.d3-views button').forEach(b => b.onclick = () => api && api.setView && api.setView(b.dataset.v));
   ov.querySelector('#d3Shot').onclick = () => { if (!api || !api.snapshot) return; const s = api.snapshot(); if (pdfDoc) { close(); place3DImage(s.data, s.w, s.h); } else toast('Erst ein PDF/Plan öffnen, um das Bild abzulegen.'); };
   ov.querySelector('#ifcList').onclick = () => openIFCList(ifc);
   ov.querySelector('#ifcObj').onclick = () => saveObjFrom(api, ifc.project || 'ifc-modell');
+  ov.querySelector('#ifcPlan').onclick = () => { if (!pdfDoc) { toast('Erst ein PDF/Plan öffnen, um den Grundriss abzulegen.'); return; } const h = prompt('Schnitthöhe für den Grundriss (m über Gebäude-Unterkante):', '1.2'); if (h == null) return; const hv = parseFloat((h || '').replace(',', '.')); ifcFloorPlan(ifc, hv > 0 ? hv : 1.2); };
   const close = () => { if (api) api.dispose(); ov.remove(); document.removeEventListener('keydown', esc, true); };
   const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } }; document.addEventListener('keydown', esc, true);
   ov.querySelector('#d3Close').onclick = close;
@@ -4182,6 +4183,44 @@ function openIFCList(ifc) {
   ov.innerHTML = '<div class="lab-wrap" style="width:min(560px,94vw);height:auto;max-height:84vh"><div class="lab-head"><b>IFC-Bauteilliste</b>' + (ifc.project ? '<span class="lab-hint">' + ifc.project + '</span>' : '') + '<span class="grow"></span><button class="btn" id="ifcCopy">In Zwischenablage</button><button class="btn" id="ifcLClose">✕</button></div><div class="qty-body"><table class="qty-tab"><thead><tr><th>Bauteil</th><th style="text-align:right">Anzahl</th></tr></thead><tbody>' + rows + '</tbody></table>' + sp + '</div></div>';
   document.body.appendChild(ov); ov.querySelector('#ifcLClose').onclick = () => ov.remove(); ov.addEventListener('pointerdown', e => { if (e.target === ov) ov.remove(); });
   ov.querySelector('#ifcCopy').onclick = () => { const tsv = ifc.summary.map(s => s.label + '\t' + s.n).join('\n') + (ifc.spaces.length ? ('\n\nRäume\n' + ifc.spaces.map(s => (s.num || '') + '\t' + s.name).join('\n')) : ''); if (navigator.clipboard) navigator.clipboard.writeText(tsv); toast('Liste kopiert (Excel-tauglich).'); };
+}
+function ifcSliceSegments(meshes, cutY) {   // Horizontalschnitt durch alle Meshes auf Höhe cutY (three-Y = Höhe) → 2D-Segmente (X, Z)
+  const segs = [];
+  for (const m of meshes) {
+    const p = m.pos, idx = m.indices;
+    const handle = (a, b, c) => {
+      const ay = p[a * 3 + 1], by = p[b * 3 + 1], cy = p[c * 3 + 1], mn = Math.min(ay, by, cy), mx = Math.max(ay, by, cy);
+      if (cutY < mn || cutY > mx) return;
+      const pts = [], ed = (i, j) => { const yi = p[i * 3 + 1], yj = p[j * 3 + 1]; if ((yi < cutY) !== (yj < cutY)) { const t = (cutY - yi) / ((yj - yi) || 1e-9); pts.push([p[i * 3] + (p[j * 3] - p[i * 3]) * t, p[i * 3 + 2] + (p[j * 3 + 2] - p[i * 3 + 2]) * t]); } };
+      ed(a, b); ed(b, c); ed(c, a); if (pts.length === 2) segs.push(pts);
+    };
+    if (idx && idx.length) { for (let i = 0; i + 2 < idx.length; i += 3) handle(idx[i], idx[i + 1], idx[i + 2]); }
+    else { const n = p.length / 3; for (let i = 0; i + 2 < n; i += 3) handle(i, i + 1, i + 2); }
+  }
+  return segs;
+}
+function ifcFloorPlan(ifc, cutAbove) {   // IFC → massstäblicher Grundriss (Bild) auf die aktuelle Seite
+  if (!pdfDoc) { toast('Erst ein PDF/Plan öffnen (oder neu starten), um den Grundriss abzulegen.'); return; }
+  if (!docScale) { toast('Erst den Massstab setzen (1:n) – der Grundriss wird massstäblich.'); return; }
+  const cutY = ifc.bbox.miny + (cutAbove || 1.2); status('Grundriss wird erzeugt …');
+  setTimeout(() => {
+    const segs = ifcSliceSegments(ifc.meshes, cutY);
+    if (!segs.length) { status(''); toast('Auf dieser Höhe keine Schnittlinien gefunden – andere Höhe versuchen.'); return; }
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    for (const s of segs) for (const q of s) { if (q[0] < minx) minx = q[0]; if (q[0] > maxx) maxx = q[0]; if (q[1] < miny) miny = q[1]; if (q[1] > maxy) maxy = q[1]; }
+    const wM = Math.max(0.2, maxx - minx), hM = Math.max(0.2, maxy - miny), ppm = Math.max(20, Math.min(120, 3200 / Math.max(wM, hM)));
+    const cw = Math.min(4000, Math.round(wM * ppm)), ch = Math.min(4000, Math.round(hM * ppm)), sx = cw / wM, sy = ch / hM;
+    const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch; const g = cv.getContext('2d');
+    g.strokeStyle = '#1c242c'; g.lineWidth = 1.4; g.lineCap = 'round'; g.beginPath();
+    for (const s of segs) { g.moveTo((s[0][0] - minx) * sx, (s[0][1] - miny) * sy); g.lineTo((s[1][0] - minx) * sx, (s[1][1] - miny) * sy); }
+    g.stroke();
+    const data = cv.toDataURL('image/png'), n = curPage(), pv = pageViews.find(p => p.num === n) || pageViews[0]; if (!pv) { status(''); return; }
+    const wPts = cmToPts(wM * 100), hPts = cmToPts(hM * 100);
+    pushUndo();
+    const a = { id: nextId++, type: 'img', data, x: (pv.pageW - wPts) / 2, y: (pv.pageH - hPts) / 2, w: wPts, h: hPts, layer: activeLayerId };
+    pushAnno(n, a); sel = { num: n, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
+    status(''); toast('IFC-Grundriss (Schnitt ' + (cutAbove || 1.2).toFixed(1) + ' m über UK) massstäblich auf die Seite gelegt – ' + segs.length + ' Linien.');
+  }, 30);
 }
 function importIFCFile() {
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.ifc,.ifcxml,.ifczip';

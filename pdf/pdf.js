@@ -4699,14 +4699,26 @@ function build3DScene(host, walls, arr, opts) {
   const onResize = () => { const w2 = host.clientWidth, h2 = host.clientHeight; if (!w2 || !h2) return; camera.aspect = w2 / h2; camera.updateProjectionMatrix(); renderer.setSize(w2, h2); };
   window.addEventListener('resize', onResize);
   let editHandles = [];
-  if (opts.onEdit) {   // Wand-Endpunkte als ziehbare Griffe → ändern DAS Wand-Objekt → 2D-Plan/Schnitt/Mengen aktualisieren
-    const hGeo = new THREE.SphereGeometry(Math.max(0.07, span * 0.013), 14, 14), hMat = new THREE.MeshBasicMaterial({ color: 0x2f7be4 }), hMatHi = new THREE.MeshBasicMaterial({ color: 0xf08a24 });
-    for (const w of walls) for (const end of [1, 2]) { const s = new THREE.Mesh(hGeo, hMat); s.position.set(M((end === 1 ? w.x1 : w.x2) - cx), lev(w) + 0.07, M((end === 1 ? w.y1 : w.y2) - cy)); s.name = '__handle'; s.renderOrder = 999; s.userData = { wall: w, end }; scene.add(s); editHandles.push(s); }
-    const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitP = new THREE.Vector3(), dom = renderer.domElement; let drag = null;
+  if (opts.onEdit) {   // Griffe: Endpunkte (Kugel, mit Snapping) + Mittelpunkt (Quader = ganze Wand verschieben) → ändern DAS Wand-Objekt
+    const hR = Math.max(0.07, span * 0.013), hGeo = new THREE.SphereGeometry(hR, 14, 14), midGeo = new THREE.BoxGeometry(hR * 1.7, hR * 0.5, hR * 1.7);
+    const cEnd = 0x2f7be4, cMid = 0x6b7280, cHot = 0xf08a24, cSnap = 0x2fae4e;
+    for (const w of walls) {
+      for (const end of [1, 2]) { const s = new THREE.Mesh(hGeo, new THREE.MeshBasicMaterial({ color: cEnd })); s.position.set(M((end === 1 ? w.x1 : w.x2) - cx), lev(w) + 0.07, M((end === 1 ? w.y1 : w.y2) - cy)); s.name = '__handle'; s.renderOrder = 999; s.userData = { wall: w, end }; scene.add(s); editHandles.push(s); }
+      const mid = new THREE.Mesh(midGeo, new THREE.MeshBasicMaterial({ color: cMid })); mid.position.set(M((w.x1 + w.x2) / 2 - cx), lev(w) + 0.07, M((w.y1 + w.y2) / 2 - cy)); mid.name = '__handle'; mid.renderOrder = 999; mid.userData = { wall: w, end: 'mid' }; scene.add(mid); editHandles.push(mid);
+    }
+    const snapTargets = []; for (const w of walls) { snapTargets.push({ w, x: M(w.x1 - cx), z: M(w.y1 - cy) }); snapTargets.push({ w, x: M(w.x2 - cx), z: M(w.y2 - cy) }); }
+    const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitP = new THREE.Vector3(), dom = renderer.domElement;
+    const prevGeo = new THREE.BufferGeometry(); prevGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3)); const prevLine = new THREE.Line(prevGeo, new THREE.LineBasicMaterial({ color: cHot })); prevLine.visible = false; prevLine.renderOrder = 998; prevLine.name = '__handle'; scene.add(prevLine);
+    let drag = null, startW = null, orig = null, snapThr = Math.max(0.25, span * 0.03);
     const setNdc = ev => { const r = dom.getBoundingClientRect(); ndc.x = ((ev.clientX - r.left) / r.width) * 2 - 1; ndc.y = -((ev.clientY - r.top) / r.height) * 2 + 1; };
-    const onDown = ev => { setNdc(ev); ray.setFromCamera(ndc, camera); const h = ray.intersectObjects(editHandles)[0]; if (h) { drag = h.object; drag.material = hMatHi; plane.constant = -drag.position.y; controls.enabled = false; ev.preventDefault(); ev.stopPropagation(); } };
-    const onMove = ev => { if (!drag) return; setNdc(ev); ray.setFromCamera(ndc, camera); if (ray.ray.intersectPlane(plane, hitP)) { drag.position.x = hitP.x; drag.position.z = hitP.z; } };
-    const onUp = () => { if (!drag) return; const w = drag.userData.wall, e = drag.userData.end, px = drag.position.x / perPt + cx, py = drag.position.z / perPt + cy; if (e === 1) { w.x1 = px; w.y1 = py; } else { w.x2 = px; w.y2 = py; } drag.material = hMat; drag = null; controls.enabled = true; setTimeout(() => opts.onEdit(), 0); };
+    const setPrev = (ax, az, bx, bz, y) => { const p = prevGeo.attributes.position; p.setXYZ(0, ax, y, az); p.setXYZ(1, bx, y, bz); p.needsUpdate = true; prevLine.visible = true; };
+    const onDown = ev => { setNdc(ev); ray.setFromCamera(ndc, camera); const h = ray.intersectObjects(editHandles)[0]; if (h) { drag = h.object; controls.enabled = false; plane.constant = -drag.position.y; startW = { x: drag.position.x, z: drag.position.z }; const w = drag.userData.wall; orig = { x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 }; ev.preventDefault(); ev.stopPropagation(); } };
+    const onMove = ev => {
+      if (!drag) return; setNdc(ev); ray.setFromCamera(ndc, camera); if (!ray.ray.intersectPlane(plane, hitP)) return; const w = drag.userData.wall, end = drag.userData.end, y = drag.position.y;
+      if (end === 'mid') { const dx = hitP.x - startW.x, dz = hitP.z - startW.z; drag.position.x = startW.x + dx; drag.position.z = startW.z + dz; drag.material.color.setHex(cHot); setPrev(M(orig.x1 - cx) + dx, M(orig.y1 - cy) + dz, M(orig.x2 - cx) + dx, M(orig.y2 - cy) + dz, y); }
+      else { let hx = hitP.x, hz = hitP.z, best = null, bd = snapThr; for (const t of snapTargets) { if (t.w === w) continue; const d = Math.hypot(t.x - hx, t.z - hz); if (d < bd) { bd = d; best = t; } } if (best) { hx = best.x; hz = best.z; drag.material.color.setHex(cSnap); } else drag.material.color.setHex(cHot); drag.position.x = hx; drag.position.z = hz; const fx = end === 1 ? M(w.x2 - cx) : M(w.x1 - cx), fz = end === 1 ? M(w.y2 - cy) : M(w.y1 - cy); setPrev(fx, fz, hx, hz, y); }
+    };
+    const onUp = () => { if (!drag) return; const w = drag.userData.wall, end = drag.userData.end; if (end === 'mid') { const dxp = (drag.position.x - startW.x) / perPt, dzp = (drag.position.z - startW.z) / perPt; w.x1 = orig.x1 + dxp; w.y1 = orig.y1 + dzp; w.x2 = orig.x2 + dxp; w.y2 = orig.y2 + dzp; } else { const px = drag.position.x / perPt + cx, py = drag.position.z / perPt + cy; if (end === 1) { w.x1 = px; w.y1 = py; } else { w.x2 = px; w.y2 = py; } } prevLine.visible = false; drag = null; controls.enabled = true; setTimeout(() => opts.onEdit(), 0); };
     dom.addEventListener('pointerdown', onDown); dom.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
     cleanups.push(() => { dom.removeEventListener('pointerdown', onDown); dom.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); });
   }

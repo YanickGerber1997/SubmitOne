@@ -11,7 +11,7 @@
 [hidden]{display:none !important}   /* Attribut sticht Klassen-display aus (Mail-Dialog etc.) */
 
 /* Animierter Startbildschirm */
-.splash{position:fixed;inset:0;z-index:200;background:#f4f3ef url('bg.png') center/cover no-repeat;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;transition:opacity .55s ease}
+.splash{position:fixed;inset:0;z-index:200;background:#eef0e8 url('bg.jpg') center/cover no-repeat;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;transition:opacity .55s ease}
 .splash.hide{opacity:0;pointer-events:none}
 .splash-mark{width:158px;height:188px}
 .splash-mark .s-draw{stroke-dasharray:760;stroke-dashoffset:760;animation:lgDraw 1s ease .15s forwards}

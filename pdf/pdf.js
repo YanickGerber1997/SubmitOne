@@ -1153,6 +1153,15 @@ function drawOne(svg, a, pv) {
     const t = svgEl('text', { x: a.x + a.fw / 2, y: a.y + a.fh / 2, fill: '#6b7280', 'font-size': 12, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = '📦 ' + (a.name || '3D-Objekt'); g.appendChild(t);
     svg.appendChild(g); el = g;
     hit = svgEl('rect', { x: a.x, y: a.y, width: a.fw, height: a.fh, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
+  } else if (a.type === 'profile') {   // Komplexes Profil: Pfad-Polylinie + Offset-Band (Profil-Breite) + Label
+    const path = a._cursor ? a.path.concat([a._cursor]) : a.path, col = a.color || '#7a8392', g = svgEl('g', { 'data-id': a.id }), ptsStr = path.map(p => p[0] + ',' + p[1]).join(' ');
+    g.appendChild(svgEl(a.closed && !a._cursor ? 'polygon' : 'polyline', { points: ptsStr, fill: 'none', stroke: col, 'stroke-width': 1.6, 'vector-effect': 'non-scaling-stroke' }));
+    const sp = profileUSpan(a.prof), off = cmToPts(sp[1]), segPts = a.closed && !a._cursor && path.length >= 3 ? path.concat([path[0]]) : path;
+    if (Math.abs(off) > 0.3 && segPts.length >= 2) { let d = ''; for (let i = 0; i < segPts.length - 1; i++) { const x1 = segPts[i][0], y1 = segPts[i][1], x2 = segPts[i + 1][0], y2 = segPts[i + 1][1], L = Math.hypot(x2 - x1, y2 - y1) || 1, nx = -(y2 - y1) / L, ny = (x2 - x1) / L; d += (i ? 'L' : 'M') + (x1 + nx * off) + ',' + (y1 + ny * off) + ' L' + (x2 + nx * off) + ',' + (y2 + ny * off) + ' '; } g.appendChild(svgEl('path', { d, fill: 'none', stroke: col, 'stroke-width': 0.8, 'stroke-dasharray': '4 3', opacity: 0.7, 'vector-effect': 'non-scaling-stroke' })); }
+    for (const p of a.path) g.appendChild(svgEl('circle', { cx: p[0], cy: p[1], r: 1.8, fill: col, 'vector-effect': 'non-scaling-stroke' }));
+    const lab = svgEl('text', { x: a.path[0][0] + 5, y: a.path[0][1] - 5, fill: '#6b7280', 'font-size': 11, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); lab.textContent = '⌐ ' + (a.name || 'Profil') + (a.elev != null ? ' @' + (+a.elev).toFixed(2) + 'm' : ''); g.appendChild(lab);
+    svg.appendChild(g); el = g;
+    hit = svgEl('polyline', { points: a.path.map(p => p[0] + ',' + p[1]).join(' '), fill: 'none', stroke: 'transparent', 'stroke-width': 10, 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'roof') {
     const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), col = a.color || '#1c242c', g = svgEl('g', { 'data-id': a.id });
     g.appendChild(svgEl('rect', { x, y, width: W, height: H, fill: '#fff', 'fill-opacity': .4, stroke: col, 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
@@ -1323,6 +1332,7 @@ function bbox(a) {
   if (a.type === 'beam') { const t = (a.width || beamWidthPts()) / 2; return { x: Math.min(a.x1, a.x2) - t, y: Math.min(a.y1, a.y2) - t, w: Math.abs(a.x2 - a.x1) + 2 * t, h: Math.abs(a.y2 - a.y1) + 2 * t }; }
   if (a.type === 'opening') { const P = openingParts(a), xs = [], ys = []; for (const p of P.cover) { xs.push(p[0]); ys.push(p[1]); } for (const [u, v] of P.lines) { xs.push(u[0], v[0]); ys.push(u[1], v[1]); } for (const arc of P.arcs) for (const p of arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 8)) { xs.push(p[0]); ys.push(p[1]); } return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim' || a.type === 'slab') { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
+  if (a.type === 'profile') { const xs = a.path.map(p => p[0]), ys = a.path.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'path') { const xs = [], ys = []; for (const nd of a.nodes) { xs.push(nd.x, nd.hIn.x, nd.hOut.x); ys.push(nd.y, nd.hIn.y, nd.hOut.y); } if (!xs.length) return { x: 0, y: 0, w: 0, h: 0 }; return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
   if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: (a.h || a.size * (a.text.split('\n').length) * 1.3) };
   if (a.type === 'section') return sectionBBox(a);
@@ -1561,6 +1571,20 @@ function beamWidthPts() { return beamW || cmToPts(24); }
 function stairWidthPts() { return stairW || cmToPts(100); }
 function stairSteps(a) { return a.steps || Math.max(2, Math.round((a.rise || stairRiseM) / 0.18)); }   // ~18 cm Steigung
 function wallThickPts() { return lastWallThick || cmToPts(17.5); }   // Standard 17,5 cm (Backstein)
+/* ---------- Komplexes Profil: frei definierter Querschnitt, entlang eines Pfades gezogen (Z-Blech, Sockel, Gesims …) ---------- */
+function profilePreset(kind, p) {   // → Querschnitt-Polygon [[u,v]] in cm (u = quer/horizontal, v = Höhe)
+  p = p || {}; const t = +p.t || 1.5;
+  if (kind === 'zblech') { const a = +p.a || 4, h = +p.h || 12, b = +p.b || 3; return [[-a, h], [t / 2, h], [t / 2, t], [b, t], [b, 0], [-t / 2, 0], [-t / 2, h - t], [-a, h - t]]; }
+  if (kind === 'sockel') { const h = +p.h || 30, d = +p.d || 3; return [[0, 0], [d, 0], [d, h], [0, h]]; }
+  if (kind === 'gesims') { const h = +p.h || 20, d = +p.d || 12; return [[0, 0], [d, 0], [d, h * 0.4], [d * 0.35, h], [0, h]]; }
+  if (kind === 'attika') { const h = +p.h || 25, d = +p.d || 30; return [[0, 0], [d, 0], [d, h], [0, h + d * 0.12]]; }
+  if (kind === 'rinne') { const w = +p.w || 12, h = +p.h || 10, tt = +p.t || 0.7; return [[0, 0], [w, 0], [w, h], [w - tt, h], [w - tt, tt], [tt, tt], [tt, h], [0, h]]; }
+  return [[0, 0], [3, 0], [3, 12], [0, 12]];
+}
+let curProfile = { prof: profilePreset('zblech'), elev: 3.0, name: 'Z-Blech', color: '#7a8392', mat: 'metall', closed: true };
+function profileArea(prof) { let s = 0; for (let i = 0; i < prof.length; i++) { const a = prof[i], b = prof[(i + 1) % prof.length]; s += a[0] * b[1] - b[0] * a[1]; } return Math.abs(s) / 2; }   // cm²
+function profilePathLenM(path) { let L = 0; for (let i = 1; i < path.length; i++) L += Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]); return ptsToCm(L) / 100; }   // m (Plan-Länge)
+function profileUSpan(prof) { let mn = Infinity, mx = -Infinity; for (const p of prof) { if (p[0] < mn) mn = p[0]; if (p[0] > mx) mx = p[0]; } return [mn, mx]; }   // cm
 function wallEnds(a, arr) {   // Enden an verbundenen Stössen um halbe Dicke verlängern (saubere Aussenecke)
   let x1 = a.x1, y1 = a.y1, x2 = a.x2, y2 = a.y2;
   if (arr) { const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, ext = (a.thick || wallThickPts()) / 2;
@@ -1778,6 +1802,7 @@ function onPointerDown(pv, e) {
   if (tool === 'eraser') { startErase(pv, e); return; }
   if (tool === 'crop') { startCrop(pv, e, p); return; }
   if (tool === 'area' || tool === 'slab') { areaClick(pv, p); return; }
+  if (tool === 'profile') { profileClick(pv, p); return; }
   if (tool === 'block') { placeBlock(pv, p); return; }
   if (tool === 'section') { startSection(pv, e, p); return; }
   if (tool === 'chaindim') { chaindimClick(pv, p); return; }
@@ -1883,6 +1908,84 @@ function cancelArea() {
   if (!areaDraft) return; const { pv, a, _onMove } = areaDraft; document.removeEventListener('pointermove', _onMove);
   const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) { arr.splice(i, 1); if (undoStack.length) undoStack.pop(); }
   areaDraft = null; if (pv) drawAnnos(pv);
+}
+/* ---------- Profil-Pfad zeichnen (Polylinie, snappt an Wandenden) ---------- */
+let profDraft = null;
+function profileClick(pv, p) {
+  { const an = anchorSnap(pv, p.x, p.y); if (an) p = an; else if (gridOn) p = snapPt(p.x, p.y); }
+  if (!profDraft || profDraft.pv !== pv) {
+    cancelProfile(); pushUndo();
+    const a = { id: nextId++, type: 'profile', path: [[p.x, p.y]], prof: curProfile.prof.map(q => q.slice()), elev: curProfile.elev, name: curProfile.name, color: curProfile.color, mat: curProfile.mat, closed: false, layer: activeLayerId };
+    pushAnno(pv.num, a); profDraft = { pv, a };
+    const onMove = ev => { if (!profDraft) return; let q = evtToPage(pv, ev); const an = anchorSnap(pv, q.x, q.y, a.id); if (an) q = an; else if (gridOn) q = snapPt(q.x, q.y); profDraft.a._cursor = [q.x, q.y]; drawAnnos(pv); };
+    document.addEventListener('pointermove', onMove); profDraft._onMove = onMove;
+    drawAnnos(pv); if (!profileClick._hint) { profileClick._hint = true; toast('Profil-Pfad: Punkte klicken (rastet an Wandenden) · am Startpunkt schliessen = Runde ums Haus · Doppelklick/Enter = fertig. Profil & Höhe oben einstellbar.'); }
+    return;
+  }
+  const a = profDraft.a, f = a.path[0];
+  if (a.path.length >= 2 && Math.hypot(p.x - f[0], p.y - f[1]) * pv.scale < 12) { a.closed = true; finishProfile(); return; }
+  a.path.push([p.x, p.y]); drawAnnos(pv);
+}
+function finishProfile() {
+  if (!profDraft) return; const { pv, a, _onMove } = profDraft; document.removeEventListener('pointermove', _onMove);
+  delete a._cursor; profDraft = null;
+  if (a.path.length < 2) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); drawAnnos(pv); setTool('select'); return; }
+  sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
+}
+function cancelProfile() {
+  if (!profDraft) return; const { pv, a, _onMove } = profDraft; document.removeEventListener('pointermove', _onMove);
+  const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) { arr.splice(i, 1); if (undoStack.length) undoStack.pop(); }
+  profDraft = null; if (pv) drawAnnos(pv);
+}
+function openProfileEditor(cb) {   // Querschnitt definieren: Vorlagen (parametrisch) oder frei zeichnen (Raster, cm)
+  const NS = 'http://www.w3.org/2000/svg', S = 3.4, OX = 96, OY = 178;   // feste Frei-Zeichnen-Transformation (px/cm)
+  let kind = 'zblech', params = {}, freePts = [], prof = profilePreset('zblech');
+  const dlg = document.createElement('div'); dlg.className = 'd3-overlay'; dlg.style.zIndex = 100000;
+  dlg.innerHTML = '<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;box-shadow:0 12px 48px rgba(0,0,0,.3);padding:18px;width:min(680px,94vw);max-height:92vh;overflow:auto;font:14px system-ui">'
+    + '<div style="font-weight:600;font-size:16px;margin-bottom:10px">Profil-Querschnitt</div>'
+    + '<div id="pfPresets" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>'
+    + '<div style="display:flex;gap:16px;flex-wrap:wrap"><div style="flex:0 0 280px"><svg id="pfSvg" width="280" height="240" style="border:1px solid #e5e7eb;border-radius:8px;background:#fafafa"></svg><div id="pfHint" style="font-size:12px;color:#6b7280;margin-top:4px;min-height:16px"></div></div>'
+    + '<div style="flex:1;min-width:200px"><div id="pfParams" style="margin-bottom:8px"></div><hr style="margin:10px 0;border:none;border-top:1px solid #eee">'
+    + '<label style="display:block;margin-bottom:8px">Höhe (Bezug) <input id="pfElev" type="number" step="0.05" value="' + curProfile.elev + '" style="width:80px"> m</label>'
+    + '<label style="display:block;margin-bottom:8px">Name <input id="pfName" type="text" value="' + curProfile.name + '" style="width:150px"></label>'
+    + '<label style="display:block;margin-bottom:8px">Farbe <input id="pfColor" type="color" value="' + curProfile.color + '"></label></div></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn" id="pfCancel">Abbrechen</button><button class="btn" id="pfOk" style="background:#1c242c;color:#fff">Profil verwenden →</button></div></div>';
+  document.body.appendChild(dlg);
+  const svg = dlg.querySelector('#pfSvg'), $ = s => dlg.querySelector(s);
+  const presetDefs = [['zblech', 'Z-Blech'], ['sockel', 'Sockel'], ['gesims', 'Gesims'], ['attika', 'Attika'], ['rinne', 'Rinne'], ['frei', 'Frei zeichnen']];
+  const paramDefs = { zblech: [['a', 'Schenkel oben', 4], ['h', 'Steg/Höhe', 12], ['b', 'Schenkel unten', 3], ['t', 'Dicke', 1.5]], sockel: [['h', 'Höhe', 30], ['d', 'Tiefe', 3]], gesims: [['h', 'Höhe', 20], ['d', 'Tiefe', 12]], attika: [['h', 'Höhe', 25], ['d', 'Breite', 30]], rinne: [['w', 'Breite', 12], ['h', 'Höhe', 10], ['t', 'Dicke', 0.7]], frei: [] };
+  function mk(tag, at) { const e = document.createElementNS(NS, tag); for (const k in at) e.setAttribute(k, at[k]); return e; }
+  function redraw() {
+    prof = kind === 'frei' ? freePts.slice() : profilePreset(kind, params);
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    const col = $('#pfColor').value;
+    if (kind === 'frei') {   // festes Raster + Achsen
+      for (let g = -20; g <= 60; g += 5) { svg.appendChild(mk('line', { x1: OX + g * S, y1: 8, x2: OX + g * S, y2: 232, stroke: g === 0 ? '#cbd5e1' : '#eef1f4', 'stroke-width': g === 0 ? 1.2 : 1 })); svg.appendChild(mk('line', { x1: 8, y1: OY - g * S, x2: 272, y2: OY - g * S, stroke: g === 0 ? '#cbd5e1' : '#eef1f4', 'stroke-width': g === 0 ? 1.2 : 1 })); }
+      const pts = freePts.map(p => (OX + p[0] * S) + ',' + (OY - p[1] * S)).join(' ');
+      if (freePts.length >= 3) svg.appendChild(mk('polygon', { points: pts, fill: col + '44', stroke: col, 'stroke-width': 2 })); else if (freePts.length) svg.appendChild(mk('polyline', { points: pts, fill: 'none', stroke: col, 'stroke-width': 2 }));
+      for (const p of freePts) svg.appendChild(mk('circle', { cx: OX + p[0] * S, cy: OY - p[1] * S, r: 3.5, fill: col }));
+      $('#pfHint').textContent = 'Klicken = Punkt (cm-Raster) · ' + freePts.length + ' Punkte · Doppelklick/„Schliessen" = fertig';
+    } else {   // Vorlage: einpassen
+      let mnu = Infinity, mxu = -Infinity, mnv = Infinity, mxv = -Infinity; for (const p of prof) { mnu = Math.min(mnu, p[0]); mxu = Math.max(mxu, p[0]); mnv = Math.min(mnv, p[1]); mxv = Math.max(mxv, p[1]); }
+      const pad = 28, su = Math.max(mxu - mnu, 1), sv = Math.max(mxv - mnv, 1), sc = Math.min((280 - 2 * pad) / su, (240 - 2 * pad) / sv), TX = u => pad + (u - mnu) * sc, TY = v => 240 - pad - (v - mnv) * sc;
+      svg.appendChild(mk('polygon', { points: prof.map(p => TX(p[0]) + ',' + TY(p[1])).join(' '), fill: col + '44', stroke: col, 'stroke-width': 2 }));
+      for (const p of prof) svg.appendChild(mk('circle', { cx: TX(p[0]), cy: TY(p[1]), r: 3, fill: col }));
+      $('#pfHint').textContent = 'Querschnittsfläche ≈ ' + profileArea(prof).toFixed(1) + ' cm²';
+    }
+  }
+  function buildParams() {
+    const pp = $('#pfParams'); pp.innerHTML = '';
+    (paramDefs[kind] || []).forEach(([key, lbl, def]) => { const w = document.createElement('label'); w.style.cssText = 'display:inline-block;margin:0 10px 8px 0'; w.innerHTML = lbl + ' <input type="number" step="0.1" style="width:62px"> cm'; const inp = w.querySelector('input'); inp.value = params[key] != null ? params[key] : def; inp.oninput = () => { params[key] = +inp.value; redraw(); }; pp.appendChild(w); });
+    if (kind === 'frei') { const b = document.createElement('button'); b.className = 'btn'; b.textContent = '↺ Löschen'; b.onclick = () => { freePts = []; redraw(); }; const b2 = document.createElement('button'); b2.className = 'btn'; b2.textContent = '✓ Schliessen'; b2.style.marginLeft = '6px'; b2.onclick = () => redraw(); pp.appendChild(b); pp.appendChild(b2); }
+  }
+  const pc = $('#pfPresets'); presetDefs.forEach(([k, lbl]) => { const b = document.createElement('button'); b.className = 'btn'; b.textContent = lbl; if (k === 'zblech') b.classList.add('on'); b.onclick = () => { kind = k; if (k !== 'frei') { params = {}; (paramDefs[k] || []).forEach(([key, , def]) => params[key] = def); } pc.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); buildParams(); redraw(); }; pc.appendChild(b); });
+  svg.addEventListener('click', ev => { if (kind !== 'frei') return; const r = svg.getBoundingClientRect(), u = Math.round(((ev.clientX - r.left) - OX) / S * 2) / 2, v = Math.round((OY - (ev.clientY - r.top)) / S * 2) / 2; freePts.push([u, v]); redraw(); });
+  svg.addEventListener('dblclick', () => { if (kind === 'frei') redraw(); });
+  $('#pfColor').oninput = redraw;
+  const close = () => dlg.remove();
+  $('#pfCancel').onclick = close;
+  $('#pfOk').onclick = () => { const p = kind === 'frei' ? freePts.slice() : profilePreset(kind, params); if (p.length < 3) { toast('Mindestens 3 Punkte für ein Profil.'); return; } cb({ prof: p, elev: +$('#pfElev').value || 0, name: $('#pfName').value || 'Profil', color: $('#pfColor').value, mat: 'metall' }); close(); };
+  buildParams(); redraw();
 }
 /* ---------- Kettenmass (mehrere Stationen klicken → Masskette mit Einzelmassen) ---------- */
 let cdimDraft = null;
@@ -2110,6 +2213,7 @@ function snap15(ax, ay, qx, qy) { const dx = qx - ax, dy = qy - ay, len = Math.h
 function translateAnno(a, o, dx, dy) {
   if (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall' || a.type === 'stairs' || a.type === 'beam') { a.x1 = o.x1 + dx; a.y1 = o.y1 + dy; a.x2 = o.x2 + dx; a.y2 = o.y2 + dy; }
   else if (a.type === 'pen' || a.type === 'area' || a.type === 'chaindim' || a.type === 'slab') a.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
+  else if (a.type === 'profile') a.path = o.path.map(p => [p[0] + dx, p[1] + dy]);
   else if (a.type === 'path') a.nodes = o.nodes.map(nd => ({ x: nd.x + dx, y: nd.y + dy, hIn: { x: nd.hIn.x + dx, y: nd.hIn.y + dy }, hOut: { x: nd.hOut.x + dx, y: nd.hOut.y + dy } }));
   else if (a.type === 'highlight') a.rects = o.rects.map(r => ({ x: r.x + dx, y: r.y + dy, w: r.w, h: r.h }));
   else if (a.type === 'section') { a.ox = o.ox + dx; a.oy = o.oy + dy; }   // nur der Schnitt-Block wandert, Schnittlinie bleibt
@@ -3473,6 +3577,7 @@ let _scaleAfter = null;   // Werkzeug, zu dem nach dem Massstab-Setzen zurückge
 function setTool(t) {
   if (cropping && t !== 'select' && t !== 'crop') removeCropAnno();   // anderes Werkzeug → Zuschneiden verwerfen
   if (areaDraft && t !== 'area' && t !== 'slab') cancelArea();        // anderes Werkzeug → Flächen-/Decken-Polygon verwerfen
+  if (profDraft && t !== 'profile') finishProfile();                  // anderes Werkzeug → Profil-Pfad abschliessen
   if (penDraft && t !== 'curve') finishCurve();                      // anderes Werkzeug → Kurve abschliessen
   if (segDraft) cancelSegDraft();                                    // anderes Werkzeug → laufende Linie verwerfen
   if (wallDraft && t !== 'wallchain') finishWallChain();            // anderes Werkzeug → Wand-Kette beenden
@@ -3481,6 +3586,7 @@ function setTool(t) {
   const ab = $('.tool.on[data-tool]'); if (ab) { const grp = ab.closest('.rib-tools'); if (grp && grp.hidden) activateRibTab(grp.dataset.tabgroup); }   // Reiter des aktiven Werkzeugs zeigen
   const bs = $('#btnStamp'); if (bs) bs.classList.toggle('on', t === 'stamp');
   const bb = $('#btnBlock'); if (bb) bb.classList.toggle('on', t === 'block');
+  const bpf = $('#btnProfile'); if (bpf) bpf.classList.toggle('on', t === 'profile');
   $$('.fab-b').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   pageViews.forEach(p => { p._hoverId = null; const h = p.svg && p.svg.querySelector('.hover-layer'); if (h) h.remove(); });   // Hover bei Werkzeugwechsel löschen
   $('#pages').classList.toggle('mode-text', t === 'textsel');   // Text-Auswahl-Modus
@@ -3500,7 +3606,7 @@ function setTool(t) {
   if (t === 'wallchain' && !setTool._wcHint) { setTool._wcHint = true; toast('Wände am Stück: klicken–klicken = Raumzug · zurück auf den Startpunkt = Raum schliessen (m²) · Rücktaste = letzte Wand zurück · Doppelklick/Enter = fertig.'); }
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'section'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'section'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -3726,6 +3832,11 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
         else if (a.type === 'mesh3d') {   // 3D-Objekt: Umriss-Box + Label im PDF (Geometrie selbst nur im 3D)
           pg.drawRectangle({ x: a.x, y: PH - (a.y + a.fh), width: a.fw, height: a.fh, borderColor: rgb(0.54, 0.56, 0.52), borderWidth: 1, opacity: 0 });
           try { pg.drawText('3D: ' + (a.name || 'Objekt'), { x: a.x + 6, y: PH - (a.y + 14), size: 9, font, color: rgb(0.42, 0.45, 0.5) }); } catch (_) { }
+        }
+        else if (a.type === 'profile' && a.path && a.path.length >= 2) {   // Komplexes Profil: Pfad-Linie im PDF
+          const pc0 = hexToRgb(a.color || '#7a8392'), pcc = rgb(pc0.r, pc0.g, pc0.b), pth = a.closed && a.path.length >= 3 ? a.path.concat([a.path[0]]) : a.path;
+          for (let i = 1; i < pth.length; i++) pg.drawLine({ start: { x: pth[i - 1][0], y: Y(pth[i - 1][1]) }, end: { x: pth[i][0], y: Y(pth[i][1]) }, thickness: 1.4, color: pcc });
+          try { pg.drawText((a.name || 'Profil') + (a.elev != null ? ' @' + (+a.elev).toFixed(2) + 'm' : ''), { x: a.path[0][0] + 5, y: Y(a.path[0][1]) + 4, size: 8, font, color: pcc }); } catch (_) { }
         }
         else if (a.type === 'chaindim') {
           const G = a.pts.length >= 2 && chainDimStations(a.pts);
@@ -4059,8 +4170,8 @@ function saveObjFrom(api, baseName) {
 }
 async function open3D() {
   if (!docScale) { toast('Für die 3D-Ansicht zuerst den Massstab setzen (1:n).'); return; }
-  const arr = getAnnos(curPage()) || [], walls = arr.filter(a => a.type === 'wall' && layerVisible(a) && phaseVisible(a)), mesh3ds = arr.filter(a => a.type === 'mesh3d' && layerVisible(a) && phaseVisible(a));
-  if (!walls.length && !mesh3ds.length) { toast('Auf dieser (sichtbaren) Ebene sind keine Wände/3D-Objekte für die 3D-Ansicht.'); return; }
+  const arr = getAnnos(curPage()) || [], walls = arr.filter(a => a.type === 'wall' && layerVisible(a) && phaseVisible(a)), extra3d = arr.filter(a => (a.type === 'mesh3d' || a.type === 'profile' || a.type === 'slab' || a.type === 'block') && layerVisible(a) && phaseVisible(a));
+  if (!walls.length && !extra3d.length) { toast('Auf dieser (sichtbaren) Ebene sind keine Wände/3D-Objekte für die 3D-Ansicht.'); return; }
   status('3D wird geladen …');
   try { await loadThree(); } catch (_) { status(''); toast('3D-Engine nicht ladbar (einmal Internet nötig).'); return; }
   if (!window.polygonClipping) { try { await loadScript('https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js'); } catch (_) { } }   // für Geschossdecken-Footprint
@@ -4650,6 +4761,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('IFC-Schnitt (Mesh→Segment)', () => { const s = ifcUpAxis; ifcUpAxis = 'y'; const seg = ifcSliceSegments([{ pos: [0, 0, 0, 0, 2, 0, 2, 2, 0], indices: [0, 1, 2], env: false }], 1); ifcUpAxis = s; return seg.length === 1 ? '' : JSON.stringify(seg); });
     A('IFC-Material-Mapping', () => (ifcMatKey('Beton C25/30') === 'beton' && ifcMatKey('Mineralwolle 035') === 'glaswolle' && ifcMatKey('Backstein 1.4') === 'mauerwerk' && ifcMatKey('Aussenputz') === 'putz') ? '' : 'Mapping falsch');
     A('Mesh3D encode/decode', () => { const pos = new Float32Array([0, 0, 0, 12, 0, 0, 0, 3, 7, 12, 3, 7]); const e = encodeMesh3d(pos, [0, 1, 2, 1, 3, 2]); const d = decodeMesh3d(e); let mx = 0; for (let i = 0; i < pos.length; i++) mx = Math.max(mx, Math.abs(d.pos[i] - pos[i])); return (mx < 0.01 && d.idx.length === 6 && d.idx[4] === 3) ? '' : 'Abw. ' + mx; });
+    A('Profil-Querschnitt', () => { const r = profileArea([[0, 0], [3, 0], [3, 12], [0, 12]]), z = profilePreset('zblech'); return (Math.abs(r - 36) < 0.01 && z.length === 8 && profileArea(z) > 0) ? '' : 'r=' + r + ' z=' + z.length; });
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
   } finally { docScale = saved; }
@@ -4867,6 +4979,7 @@ function build3DScene(host, walls, arr, opts) {
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
   for (const w of walls) for (const [x, y] of [[w.x1, w.y1], [w.x2, w.y2]]) { minx = Math.min(minx, x); miny = Math.min(miny, y); maxx = Math.max(maxx, x); maxy = Math.max(maxy, y); }
   for (const a of (arr || [])) if (a.type === 'mesh3d' && a.enc && layerVisible(a) && phaseVisible(a)) { minx = Math.min(minx, a.x); miny = Math.min(miny, a.y); maxx = Math.max(maxx, a.x + a.fw); maxy = Math.max(maxy, a.y + a.fh); }
+  for (const a of (arr || [])) if (a.type === 'profile' && a.path && layerVisible(a) && phaseVisible(a)) for (const p of a.path) { minx = Math.min(minx, p[0]); miny = Math.min(miny, p[1]); maxx = Math.max(maxx, p[0]); maxy = Math.max(maxy, p[1]); }
   if (!isFinite(minx)) { minx = 0; miny = 0; maxx = M ? 10 / perPt : 10; maxy = maxx; }
   const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2, span = Math.max(M(maxx - minx), M(maxy - miny), 2);
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0xeef1ec);
@@ -5090,6 +5203,18 @@ function build3DScene(host, walls, arr, opts) {
     for (let i = 0; i < pos.length; i += 3) { wp[i] = M((pos[i] + a.x) - cx); wp[i + 1] = lev(a) + pos[i + 1]; wp[i + 2] = M((pos[i + 2] + a.y) - cy); }
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3)); geo.setIndex(new THREE.BufferAttribute(d.idx, 1)); geo.computeVertexNormals();
     const mm = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: new THREE.Color(a.color || '#cfc8ba'), roughness: 0.92, metalness: 0, side: THREE.DoubleSide, flatShading: true })); mm.castShadow = true; mm.receiveShadow = true; scene.add(mm);
+  }
+  for (const a of arr) if (a.type === 'profile' && a.path && a.path.length >= 2 && a.prof && a.prof.length >= 2 && layerVisible(a) && phaseVisible(a)) {   // Komplexes Profil: Querschnitt entlang Pfad ziehen (Sweep)
+    const path = a.path, nP = a.prof.length, closed = !!a.closed && path.length >= 3, segN = [];
+    for (let i = 0; i < path.length - 1; i++) { const dx = path[i + 1][0] - path[i][0], dy = path[i + 1][1] - path[i][1], L = Math.hypot(dx, dy) || 1; segN.push([-dy / L, dx / L]); }
+    if (closed) { const dx = path[0][0] - path[path.length - 1][0], dy = path[0][1] - path[path.length - 1][1], L = Math.hypot(dx, dy) || 1; segN.push([-dy / L, dx / L]); }
+    const nodeN = []; for (let i = 0; i < path.length; i++) { let a1, a2; if (closed) { a1 = segN[(i - 1 + segN.length) % segN.length]; a2 = segN[i % segN.length]; } else { a1 = segN[Math.max(0, i - 1)]; a2 = segN[Math.min(segN.length - 1, i)]; } let nx = a1[0] + a2[0], ny = a1[1] + a2[1]; const L = Math.hypot(nx, ny) || 1; nodeN.push([nx / L, ny / L]); }
+    const lv = lev(a) + (a.elev || 0), pos = [], idx = [];
+    for (let i = 0; i < path.length; i++) { const px = M(path[i][0] - cx), pz = M(path[i][1] - cy), n = nodeN[i]; for (let k = 0; k < nP; k++) { const u = a.prof[k][0] / 100, v = a.prof[k][1] / 100; pos.push(px + n[0] * u, lv + v, pz + n[1] * u); } }
+    const nR = path.length, segCount = closed ? nR : nR - 1;
+    for (let i = 0; i < segCount; i++) { const i2 = (i + 1) % nR; for (let k = 0; k < nP; k++) { const k2 = (k + 1) % nP, A = i * nP + k, B = i * nP + k2, C = i2 * nP + k2, D = i2 * nP + k; idx.push(A, B, D, B, C, D); } }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx); geo.computeVertexNormals();
+    const mm = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: new THREE.Color(a.color || '#7a8392'), roughness: 0.5, metalness: 0.35, side: THREE.DoubleSide })); mm.castShadow = true; mm.receiveShadow = true; scene.add(mm);
   }
   let raf, alive = true;
   const onResize = () => { const w2 = host.clientWidth, h2 = host.clientHeight; if (!w2 || !h2) return; camera.aspect = w2 / h2; camera.updateProjectionMatrix(); renderer.setSize(w2, h2); };
@@ -5463,6 +5588,7 @@ function wire() {
   };
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#planPop') && !e.target.closest('#footPlan')) $('#planPop').hidden = true; }, true);
   $('#btnBlock').onclick = e => { e.stopPropagation(); const p = $('#blockPop'); p.hidden = !p.hidden; };
+  { const bp = $('#btnProfile'); if (bp) bp.onclick = () => { openProfileEditor(spec => { curProfile = Object.assign({}, curProfile, spec, { closed: true }); setTool('profile'); toast('Profil „' + curProfile.name + '" gewählt – jetzt den Pfad klicken (rastet an Wandenden, am Start schliessen = ums Haus).'); }); }; }
   $$('#blockPop button').forEach(b => b.onclick = () => { blockKind = b.dataset.bk; $('#blockPop').hidden = true; setTool('block'); });
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#blockPop') && !e.target.closest('#btnBlock')) $('#blockPop').hidden = true; }, true);
   $('#pbWallH').onchange = () => { const v = parseFloat(($('#pbWallH').value || '').replace(',', '.')); if (!(v > 0)) return; wallHeightM = v; const a = selWall(); if (a) { pushUndo(); a.h3d = v; saveState(); } };
@@ -5616,6 +5742,7 @@ function wire() {
     if (wallDraft) { finishWallChain(); return; }                    // Rechtsklick = Wandkette beenden
     if (segDraft) { finishSegDraft(); return; }                      // Rechtsklick = Linie/Wand beenden
     if (areaDraft) { finishArea(); return; }
+    if (profDraft) { finishProfile(); return; }
     const wrap = e.target.closest('.pagewrap'); if (!wrap) return;
     const pv = pageViews.find(p => p.num === +wrap.dataset.n); if (!pv) return;
     const id = e.target.getAttribute && e.target.getAttribute('data-id');
@@ -5726,6 +5853,7 @@ function wire() {
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (e.key === 'Escape') e.target.blur(); return; }
     const mod = e.ctrlKey || e.metaKey;
     if (e.key === 'Enter' && areaDraft) { e.preventDefault(); finishArea(); return; }   // Fläche abschliessen
+    if (e.key === 'Enter' && profDraft) { e.preventDefault(); finishProfile(); return; }   // Profil-Pfad abschliessen
     if (e.key === 'Enter' && penDraft) { e.preventDefault(); finishCurve(); return; }   // Kurve abschliessen
     if (e.key === 'Enter' && wallDraft) { e.preventDefault(); finishWallChain(); return; }   // Wand-Kette abschliessen
     if (e.key === 'Enter' && cdimDraft) { e.preventDefault(); finishChaindim(); return; }   // Kettenmass abschliessen
@@ -5734,6 +5862,7 @@ function wire() {
       if (wallDraft) { e.preventDefault(); wallChainUndo(); return; }
       if (cdimDraft) { e.preventDefault(); if (cdimDraft.a.pts.length > 1) { cdimDraft.a.pts.pop(); drawAnnos(cdimDraft.pv); } else cancelChaindim(); return; }
       if (areaDraft) { e.preventDefault(); if (areaDraft.a.pts.length > 1) { areaDraft.a.pts.pop(); drawAnnos(areaDraft.pv); } else cancelArea(); return; }
+      if (profDraft) { e.preventDefault(); if (profDraft.a.path.length > 1) { profDraft.a.path.pop(); drawAnnos(profDraft.pv); } else cancelProfile(); return; }
       if (penDraft) { e.preventDefault(); if (penDraft.a.nodes.length > 1) { penDraft.a.nodes.pop(); drawAnnos(penDraft.pv); } else cancelCurve(); return; }
     }
     if (e.key === ' ' && !mod) { if (active >= 0 && !panMode) { e.preventDefault(); panMode = true; document.body.classList.add('pan'); } return; }   // Leertaste = Hand
@@ -5756,6 +5885,7 @@ function wire() {
       if (wallDraft) { finishWallChain(); return; }                                    // Wand-Kette beenden (gesetzte Wände bleiben)
       if (cdimDraft) { finishChaindim(); return; }                                      // Kettenmass beenden
       if (areaDraft) { cancelArea(); setTool('select'); return; }                     // Flächen-Polygon abbrechen
+      if (profDraft) { cancelProfile(); setTool('select'); return; }                  // Profil-Pfad abbrechen
       if (penDraft) { cancelCurve(); setTool('select'); return; }                      // Kurve abbrechen
       if (cropping) { removeCropAnno(); setTool('select'); return; }                  // Zuschneiden abbrechen
       let closed = false;

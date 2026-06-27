@@ -403,6 +403,7 @@ async function loadDoc(bytes, skipRestore) {
     }
   }
   await renderCurrentDoc();
+  if (!skipRestore && active >= 0 && docs[active] && !docs[active]._annAsked) { docs[active]._annAsked = true; setTimeout(() => { try { importPdfAnnotations(true); } catch (_) { } }, 350); }   // PDF-Anmerkungen aus anderen Programmen anbieten
 }
 async function renderCurrentDoc() {
   $('#drop').classList.add('hide'); $('#toolbar').hidden = false; $('#quickbar').hidden = false;
@@ -1930,6 +1931,54 @@ function place3DImage(data, wpx, hpx) {   // 3D-Screenshot als Bild auf die aktu
   const a = { id: nextId++, type: 'img', data, x: (pv.pageW - w) / 2, y: (pv.pageH - h) / 2, w, h };
   pushAnno(n, a); sel = { num: n, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
   toast('3D-Ansicht als Bild auf die Seite gelegt – verschieben/skalieren möglich.');
+}
+const IMPORT_SUBTYPES = ['Text', 'FreeText', 'Line', 'Square', 'Circle', 'Ink', 'Highlight', 'PolyLine', 'Polygon'];
+function annColHex(c) { if (!c || c.length < 3) return '#1c242c'; const h = v => ('0' + Math.max(0, Math.min(255, Math.round(v))).toString(16)).slice(-2); return '#' + h(c[0]) + h(c[1]) + h(c[2]); }
+function ptList(arr, fy) {   // pdf.js Punktlisten: [{x,y}…] ODER flach [x,y,x,y…]
+  const out = []; if (!arr || !arr.length) return out;
+  if (typeof arr[0] === 'object' && arr[0] != null && 'x' in arr[0]) { for (const p of arr) out.push([p.x, fy(p.y)]); }
+  else { for (let i = 0; i + 1 < arr.length; i += 2) out.push([arr[i], fy(arr[i + 1])]); }
+  return out;
+}
+function convertAnnot(an, H) {   // native PDF-Annotation → Submit-Anmerkung
+  const fy = y => H - y, col = annColHex(an.color), r = an.rect || [0, 0, 0, 0];
+  const L = Math.min(r[0], r[2]), R = Math.max(r[0], r[2]), T = Math.max(r[1], r[3]), B = Math.min(r[1], r[3]), box = { x: L, y: fy(T), w: R - L, h: T - B };
+  try {
+    switch (an.subtype) {
+      case 'Text': return { type: 'note', x: box.x, y: box.y, text: an.contents || '' };
+      case 'FreeText': return { type: 'text', x: box.x, y: box.y, w: Math.max(40, box.w), h: Math.max(16, box.h), text: an.contents || '', size: 12, color: col };
+      case 'Square': return { type: 'rect', x: box.x, y: box.y, w: box.w, h: box.h, color: col, fill: 'none', width: 1.5 };
+      case 'Circle': return { type: 'oval', x: box.x, y: box.y, w: box.w, h: box.h, color: col, fill: 'none', width: 1.5 };
+      case 'Line': { const lc = an.lineCoordinates || [r[0], r[1], r[2], r[3]], le = an.lineEndings, arrow = le && ((le[0] && le[0] !== 'None') || (le[1] && le[1] !== 'None')); return { type: arrow ? 'arrow' : 'line', x1: lc[0], y1: fy(lc[1]), x2: lc[2], y2: fy(lc[3]), color: col, width: 1.5 }; }
+      case 'Ink': { const pts = []; for (const pl of (an.inkLists || [])) pts.push(...ptList(pl, fy)); return pts.length >= 2 ? { type: 'pen', pts, color: col, width: 1.6 } : null; }
+      case 'PolyLine': case 'Polygon': { const pts = ptList(an.vertices, fy); return pts.length >= 2 ? { type: 'pen', pts, color: col, width: 1.6 } : null; }
+      case 'Highlight': { const rects = []; for (const q of (an.quadPoints || [])) { const p = ptList(q, fy); if (p.length >= 4) { const xs = p.map(a => a[0]), ys = p.map(a => a[1]); rects.push({ x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }); } } return rects.length ? { type: 'highlight', rects, color: col } : null; }
+    }
+  } catch (_) { }
+  return null;
+}
+async function stripPdfAnnotations(bytes) {   // native Markup-Annotationen aus dem PDF entfernen (Formfelder/Links bleiben)
+  const lib = await loadPdfLib(), { PDFDocument, PDFName } = lib, doc = await PDFDocument.load(bytes.slice(), { ignoreEncryption: true });
+  for (const pg of doc.getPages()) {
+    let annots; try { annots = pg.node.Annots(); } catch (_) { annots = null; } if (!annots || !annots.size) continue;
+    const keep = [];
+    for (let i = 0; i < annots.size(); i++) { const ref = annots.get(i); let st = ''; try { const d = doc.context.lookup(ref); const sub = d.get(PDFName.of('Subtype')); st = sub ? String(sub).replace(/^\//, '') : ''; } catch (_) { } if (st === 'Widget' || st === 'Link') keep.push(ref); }
+    try { pg.node.set(PDFName.of('Annots'), doc.context.obj(keep)); } catch (_) { }
+  }
+  return new Uint8Array(await doc.save());
+}
+async function importPdfAnnotations(autoPrompt) {
+  if (!pdfDoc) return;
+  const found = [];
+  try { for (let n = 1; n <= pdfDoc.numPages; n++) { const page = await pdfDoc.getPage(n), H = page.getViewport({ scale: 1 }).height, anns = await page.getAnnotations(); for (const an of anns) if (IMPORT_SUBTYPES.includes(an.subtype)) found.push({ n, an, H }); } } catch (_) { }
+  if (!found.length) { if (!autoPrompt) toast('Keine importierbaren PDF-Anmerkungen gefunden.'); return; }
+  if (autoPrompt && !confirm('Dieses PDF enthält ' + found.length + ' Anmerkung(en) aus einem anderen Programm (z. B. Acrobat/Drawboard).\n\nIn bearbeitbare Anmerkungen umwandeln?')) return;
+  status('Anmerkungen werden importiert …'); await new Promise(r => setTimeout(r, 20));
+  pushUndo(); let ok = 0;
+  for (const f of found) { const a = convertAnnot(f.an, f.H); if (a) { a.id = nextId++; a.layer = activeLayerId; if (!annos[f.n]) annos[f.n] = []; annos[f.n].push(a); ok++; } }
+  try { curBytes = await stripPdfAnnotations(curBytes); if (docs[active]) docs[active].bytes = curBytes; } catch (e) { console.warn('strip failed', e); }
+  saveState(); await loadDoc(curBytes.slice(), true); if (docs[active]) docs[active].pdfDoc = pdfDoc;
+  status(''); toast(ok + ' Anmerkung(en) importiert – jetzt anwählbar & bearbeitbar.');
 }
 async function placeImageFile(file) {
   if (!pdfDoc) return;

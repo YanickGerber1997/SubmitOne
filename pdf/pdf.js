@@ -2768,8 +2768,8 @@ function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieb
 }
 /* ---------- Möbel- / Sanitär-Symbole (Blöcke) ---------- */
 let blockKind = 'table';
-const BLOCK_DEFS = { bed: [200, 150], table: [120, 80], sofa: [200, 90], chair: [45, 45], wc: [40, 60], sink: [60, 45], shower: [90, 90], bath: [170, 75], stove: [60, 60], fridge: [60, 65] };
-const BLOCK_H = { bed: 0.5, table: 0.75, sofa: 0.8, chair: 0.9, wc: 0.4, sink: 0.85, shower: 0.04, bath: 0.55, stove: 0.9, fridge: 1.8 };
+const BLOCK_DEFS = { bed: [200, 150], table: [120, 80], sofa: [200, 90], chair: [45, 45], wc: [40, 60], sink: [60, 45], shower: [90, 90], bath: [170, 75], stove: [60, 60], fridge: [60, 65], kitchen: [60, 60], kitchensink: [80, 50], dishwasher: [60, 60], washer: [60, 60], cabinet: [90, 40], wardrobe: [140, 60], tallcab: [60, 60], desk: [140, 70], nightstand: [45, 40] };
+const BLOCK_H = { bed: 0.5, table: 0.75, sofa: 0.8, chair: 0.9, wc: 0.4, sink: 0.85, shower: 0.04, bath: 0.55, stove: 0.9, fridge: 1.8, kitchen: 0.9, kitchensink: 0.9, dishwasher: 0.85, washer: 0.85, cabinet: 1.2, wardrobe: 2.0, tallcab: 2.1, desk: 0.74, nightstand: 0.5 };
 function blockShapes(a) {   // Symbol-Geometrie in absoluten Seitenkoordinaten (für Schirm + PDF)
   const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), w = Math.abs(a.w), h = Math.abs(a.h), k = a.kind, mn = Math.min(w, h), s = [];
   const X = f => x + f * w, Y = f => y + f * h;
@@ -2788,6 +2788,15 @@ function blockShapes(a) {   // Symbol-Geometrie in absoluten Seitenkoordinaten (
   else if (k === 'bath') { rr(0.06, 0.12, 0.88, 0.76, 0.2); ci(0.82, 0.5, 0.05); }
   else if (k === 'stove') { ci(0.3, 0.3, 0.13); ci(0.7, 0.3, 0.13); ci(0.3, 0.7, 0.13); ci(0.7, 0.7, 0.13); }
   else if (k === 'fridge') { ln(0, 0.42, 1, 0.42); ln(0.84, 0.12, 0.84, 0.32); ln(0.84, 0.52, 0.84, 0.72); }
+  else if (k === 'kitchen') { ln(0, 0.16, 1, 0.16); ln(0.42, 0.9, 0.58, 0.9); }   // Küchen-Unterschrank: Arbeitsplattenkante + Griff
+  else if (k === 'kitchensink') { rr(0.07, 0.2, 0.4, 0.6, 0.06); rr(0.53, 0.2, 0.4, 0.6, 0.06); ci(0.5, 0.1, 0.045); }   // Spüle: zwei Becken + Armatur
+  else if (k === 'dishwasher') { ln(0, 0.18, 1, 0.18); ci(0.5, 0.55, 0.3); ci(0.5, 0.55, 0.06); }   // Geschirrspüler
+  else if (k === 'washer') { ln(0, 0.16, 1, 0.16); ci(0.5, 0.56, 0.3); ci(0.5, 0.56, 0.12); }   // Waschmaschine: Trommel
+  else if (k === 'cabinet') { ln(0, 0.34, 1, 0.34); ln(0, 0.67, 1, 0.67); }   // Regal/Schrank: Tablare
+  else if (k === 'wardrobe') { ln(0.5, 0, 0.5, 1); ln(0.08, 0.5, 0.92, 0.5); }   // Kleiderschrank: zwei Türen + Kleiderstange
+  else if (k === 'tallcab') { ln(0, 0, 1, 1); ln(1, 0, 0, 1); }   // Hochschrank: X (raumhoch)
+  else if (k === 'desk') { rr(0.66, 0.08, 0.28, 0.84, 0.02); }   // Schreibtisch: Rollcontainer
+  else if (k === 'nightstand') { rr(0.22, 0.22, 0.56, 0.56, 0.02); }   // Nachttisch: Schublade
   return s;
 }
 function drawBlock(svg, a) {
@@ -4123,6 +4132,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Annotation-Import (Square→rect)', () => { const a = convertAnnot({ subtype: 'Square', rect: [10, 10, 50, 50], color: [255, 0, 0] }, 200); return !!(a && a.type === 'rect'); });
     A('Massstabsbalken-Element', () => buildPlanParts(842, 595, { kind: 'mstab', margin: 8 }).length > 3);
     A('Öffnungs-Nummern (F1/F2)', () => { const g = openingGroups([wall, win, { id: 9004, type: 'opening', kind: 'window', wallId: 9001, w: cmToPts(80), head: 2.1, sill: 0.9, winType: 'f1', winMat: 'holz' }]); return (g.wins.length === 2 && g.posOf[9004] === 'F1' && g.posOf[9002] === 'F2') ? '' : JSON.stringify(g.posOf); });
+    A('Möbel-Symbol (Kleiderschrank)', () => blockShapes({ x: 0, y: 0, w: 140, h: 60, kind: 'wardrobe' }).length >= 3 && !!BLOCK_DEFS.kitchen && !!BLOCK_H.tallcab);
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
   } finally { docScale = saved; }

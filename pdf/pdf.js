@@ -3900,6 +3900,99 @@ async function open3D() {
   document.addEventListener('keydown', esc, true);
   ov.querySelector('#d3Close').onclick = close;
 }
+/* ===================== IFC-Import (ArchiCAD/Allplan → BIM via web-ifc/WASM) ===================== */
+let _webifc = null;
+async function loadWebIFC() {
+  if (_webifc) return _webifc;
+  const VER = '0.0.57'; let mod;
+  try { mod = await import('https://unpkg.com/web-ifc@' + VER + '/web-ifc-api.js'); }
+  catch (_) { mod = await import('https://cdn.jsdelivr.net/npm/web-ifc@' + VER + '/web-ifc-api.js'); }
+  const api = new mod.IfcAPI(); api.SetWasmPath('https://unpkg.com/web-ifc@' + VER + '/'); await api.Init();
+  _webifc = { api, mod }; return _webifc;
+}
+async function parseIFC(bytes) {   // → { meshes (Welt-Geometrie, Y-oben), bbox, summary, spaces, project, dim }
+  const { api, mod } = await loadWebIFC();
+  const modelID = api.OpenModel(new Uint8Array(bytes), { COORDINATE_TO_ORIGIN: true });
+  const meshes = [], bb = { minx: Infinity, miny: Infinity, minz: Infinity, maxx: -Infinity, maxy: -Infinity, maxz: -Infinity };
+  api.StreamAllMeshes(modelID, flat => {
+    const gs = flat.geometries;
+    for (let i = 0; i < gs.size(); i++) {
+      const pg = gs.get(i), geom = api.GetGeometry(modelID, pg.geometryExpressID);
+      const va = api.GetVertexArray(geom.GetVertexData(), geom.GetVertexDataSize()), ia = api.GetIndexArray(geom.GetIndexData(), geom.GetIndexDataSize());
+      const m = pg.flatTransformation, n = va.length / 6, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3);
+      for (let v = 0; v < n; v++) {
+        const x = va[v * 6], y = va[v * 6 + 1], z = va[v * 6 + 2], nx = va[v * 6 + 3], ny = va[v * 6 + 4], nz = va[v * 6 + 5];
+        const wx = m[0] * x + m[4] * y + m[8] * z + m[12], wy = m[1] * x + m[5] * y + m[9] * z + m[13], wz = m[2] * x + m[6] * y + m[10] * z + m[14];   // Welt
+        const tx = wx, ty = wz, tz = -wy;   // IFC Z-oben → three.js Y-oben
+        pos[v * 3] = tx; pos[v * 3 + 1] = ty; pos[v * 3 + 2] = tz;
+        nor[v * 3] = m[0] * nx + m[4] * ny + m[8] * nz; nor[v * 3 + 1] = m[2] * nx + m[6] * ny + m[10] * nz; nor[v * 3 + 2] = -(m[1] * nx + m[5] * ny + m[9] * nz);
+        if (tx < bb.minx) bb.minx = tx; if (tx > bb.maxx) bb.maxx = tx; if (ty < bb.miny) bb.miny = ty; if (ty > bb.maxy) bb.maxy = ty; if (tz < bb.minz) bb.minz = tz; if (tz > bb.maxz) bb.maxz = tz;
+      }
+      const c = pg.color; meshes.push({ pos, nor, indices: Array.from(ia), color: { r: c.x, g: c.y, b: c.z, a: c.w } });
+      if (geom.delete) try { geom.delete(); } catch (_) { }
+    }
+  });
+  const T = mod, TYPES = [['Wände', T.IFCWALL], ['Wände (Std.)', T.IFCWALLSTANDARDCASE], ['Fenster', T.IFCWINDOW], ['Türen', T.IFCDOOR], ['Decken/Platten', T.IFCSLAB], ['Dächer', T.IFCROOF], ['Stützen', T.IFCCOLUMN], ['Träger', T.IFCBEAM], ['Treppen', T.IFCSTAIR], ['Geländer', T.IFCRAILING], ['Vorhangfassade', T.IFCCURTAINWALL], ['Möblierung', T.IFCFURNISHINGELEMENT], ['Räume', T.IFCSPACE]];
+  const summary = []; for (const [label, t] of TYPES) { if (t == null) continue; let v; try { v = api.GetLineIDsWithType(modelID, t); } catch (_) { continue; } const cnt = v ? v.size() : 0; if (cnt) summary.push({ label, n: cnt }); }
+  const spaces = []; try { const sp = api.GetLineIDsWithType(modelID, T.IFCSPACE); for (let i = 0; i < Math.min(sp.size(), 800); i++) { const id = sp.get(i); let line; try { line = api.GetLine(modelID, id); } catch (_) { continue; } const nm = (line.LongName && line.LongName.value) || (line.Name && line.Name.value) || '—', num = (line.Name && line.Name.value) || ''; spaces.push({ name: nm, num }); } } catch (_) { }
+  let project = ''; try { const pr = api.GetLineIDsWithType(modelID, T.IFCPROJECT); if (pr && pr.size()) { const p = api.GetLine(modelID, pr.get(0)); project = (p.Name && p.Name.value) || (p.LongName && p.LongName.value) || ''; } } catch (_) { }
+  api.CloseModel(modelID);
+  return { meshes, bbox: bb, summary, spaces, project, dim: { x: bb.maxx - bb.minx, y: bb.maxy - bb.miny, z: bb.maxz - bb.minz } };
+}
+function buildIFCScene(host, ifc) {
+  host.innerHTML = '';
+  const W = host.clientWidth || 800, Hp = host.clientHeight || 500, bb = ifc.bbox, cx = (bb.minx + bb.maxx) / 2, cz = (bb.minz + bb.maxz) / 2, floor = bb.miny;
+  const sy = bb.maxy - bb.miny, span = Math.max(bb.maxx - bb.minx, bb.maxz - bb.minz, sy, 2);
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xeef1ec);
+  const camera = new THREE.PerspectiveCamera(50, W / Hp, 0.05, span * 40 + 60); camera.position.set(span * 0.9, span * 0.9, span * 0.9);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); renderer.setSize(W, Hp); renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; host.appendChild(renderer.domElement);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(0, sy * 0.4, 0);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x55604f, 0.85));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(span, span * 1.7, span * 0.6); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; const scam = sun.shadow.camera, sb = span * 1.4; scam.left = -sb; scam.right = sb; scam.top = sb; scam.bottom = -sb; scam.near = 0.1; scam.far = span * 6 + 30; scene.add(sun);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(span * 3, span * 3), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; ground.receiveShadow = true; scene.add(ground);
+  scene.add(new THREE.GridHelper(span * 3, 40, 0xc4cabe, 0xd8dcd2));
+  const byColor = {};   // nach Farbe zusammenfassen → wenige Draw-Calls
+  for (const me of ifc.meshes) { const c = me.color, k = (c.r * 255 | 0) + '_' + (c.g * 255 | 0) + '_' + (c.b * 255 | 0) + '_' + c.a.toFixed(2); let g = byColor[k]; if (!g) g = byColor[k] = { color: c, pos: [], nor: [], idx: [], base: 0 }; const P = me.pos; for (let i = 0; i < P.length; i += 3) g.pos.push(P[i] - cx, P[i + 1] - floor, P[i + 2] - cz); for (const v of me.nor) g.nor.push(v); for (const ix of me.indices) g.idx.push(ix + g.base); g.base += P.length / 3; }
+  for (const k in byColor) { const g = byColor[k], geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.nor, 3)); geo.setIndex(g.idx); const tr = g.color.a < 0.99, mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(g.color.r, g.color.g, g.color.b), transparent: tr, opacity: tr ? g.color.a : 1, roughness: 0.85, metalness: 0, side: THREE.DoubleSide }); const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; scene.add(m); }
+  let raf; const tick = () => { controls.update(); renderer.render(scene, camera); raf = requestAnimationFrame(tick); }; tick();
+  const setView = v => { const d = span * 1.4; if (v === 'top') camera.position.set(0.001, d * 1.5, 0); else if (v === 'front') camera.position.set(0, sy * 0.5, d); else if (v === 'side') camera.position.set(d, sy * 0.5, 0); else camera.position.set(d * 0.7, d * 0.7, d * 0.7); controls.target.set(0, sy * 0.4, 0); controls.update(); };
+  const snapshot = () => { renderer.render(scene, camera); return { data: renderer.domElement.toDataURL('image/png'), w: W, h: Hp }; };
+  const dispose = () => { cancelAnimationFrame(raf); try { renderer.dispose(); } catch (_) { } host.innerHTML = ''; };
+  return { dispose, setView, snapshot };
+}
+function open3DIFC(ifc) {
+  const ov = document.createElement('div'); ov.className = 'd3-overlay';
+  const dim = ifc.dim ? (ifc.dim.x.toFixed(1) + '×' + ifc.dim.z.toFixed(1) + ' m, H ' + ifc.dim.y.toFixed(1) + ' m') : '';
+  ov.innerHTML = '<div class="d3-bar"><b>IFC-Modell</b>' + (ifc.project ? '<span class="d3-hint">' + ifc.project + '</span>' : '') + '<span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">' + dim + ' · Ziehen = drehen</span><span class="grow"></span><button class="btn" id="ifcList">▦ Bauteilliste</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
+  document.body.appendChild(ov); const host = ov.querySelector('#d3Canvas'); let api = buildIFCScene(host, ifc);
+  ov.querySelectorAll('.d3-views button').forEach(b => b.onclick = () => api && api.setView && api.setView(b.dataset.v));
+  ov.querySelector('#d3Shot').onclick = () => { if (!api || !api.snapshot) return; const s = api.snapshot(); if (pdfDoc) { close(); place3DImage(s.data, s.w, s.h); } else toast('Erst ein PDF/Plan öffnen, um das Bild abzulegen.'); };
+  ov.querySelector('#ifcList').onclick = () => openIFCList(ifc);
+  const close = () => { if (api) api.dispose(); ov.remove(); document.removeEventListener('keydown', esc, true); };
+  const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } }; document.addEventListener('keydown', esc, true);
+  ov.querySelector('#d3Close').onclick = close;
+}
+function openIFCList(ifc) {
+  const rows = ifc.summary.map(s => '<tr><td>' + s.label + '</td><td style="text-align:right">' + s.n + '</td></tr>').join('');
+  const sp = (ifc.spaces && ifc.spaces.length) ? ('<h4 style="margin:12px 6px 4px">Räume (' + ifc.spaces.length + ')</h4><table class="qty-tab"><tbody>' + ifc.spaces.map(s => '<tr><td style="white-space:nowrap">' + (s.num || '') + '</td><td>' + s.name + '</td></tr>').join('') + '</tbody></table>') : '';
+  const ov = document.createElement('div'); ov.className = 'lab-overlay';
+  ov.innerHTML = '<div class="lab-wrap" style="width:min(560px,94vw);height:auto;max-height:84vh"><div class="lab-head"><b>IFC-Bauteilliste</b>' + (ifc.project ? '<span class="lab-hint">' + ifc.project + '</span>' : '') + '<span class="grow"></span><button class="btn" id="ifcCopy">In Zwischenablage</button><button class="btn" id="ifcLClose">✕</button></div><div class="qty-body"><table class="qty-tab"><thead><tr><th>Bauteil</th><th style="text-align:right">Anzahl</th></tr></thead><tbody>' + rows + '</tbody></table>' + sp + '</div></div>';
+  document.body.appendChild(ov); ov.querySelector('#ifcLClose').onclick = () => ov.remove(); ov.addEventListener('pointerdown', e => { if (e.target === ov) ov.remove(); });
+  ov.querySelector('#ifcCopy').onclick = () => { const tsv = ifc.summary.map(s => s.label + '\t' + s.n).join('\n') + (ifc.spaces.length ? ('\n\nRäume\n' + ifc.spaces.map(s => (s.num || '') + '\t' + s.name).join('\n')) : ''); if (navigator.clipboard) navigator.clipboard.writeText(tsv); toast('Liste kopiert (Excel-tauglich).'); };
+}
+function importIFCFile() {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.ifc,.ifcxml,.ifczip';
+  inp.onchange = async () => {
+    const fl = inp.files && inp.files[0]; if (!fl) return;
+    status('IFC wird geladen (einmal Internet für die BIM-Engine) …');
+    try { await loadThree(); } catch (_) { status(''); toast('3D-Engine nicht ladbar.'); return; }
+    let buf; try { buf = await fl.arrayBuffer(); } catch (_) { status(''); return; }
+    let ifc; try { ifc = await parseIFC(buf); } catch (e) { console.error(e); status(''); toast('IFC-Import fehlgeschlagen (' + (e && e.message || 'Format?') + ').'); return; }
+    status(''); if (!ifc.meshes.length) { toast('Keine Geometrie in der IFC gefunden.'); return; }
+    window._ifc = ifc; toast('IFC geladen: ' + ifc.meshes.length + ' Objekte' + (ifc.summary.length ? ' · ' + ifc.summary.map(s => s.n + ' ' + s.label).slice(0, 4).join(', ') : '')); open3DIFC(ifc);
+  };
+  inp.click();
+}
 const LAMBDA = { putz: 0.70, gips: 0.25, mauerwerk: 0.50, beton: 2.10, eps: 0.035, daemm_eps: 0.035, daemm_xps: 0.035, glaswolle: 0.035, daemm_wolle: 0.035, daemm_holz: 0.045, holz: 0.13, konter: 0.13 };   // Wärmeleitfähigkeit λ (W/mK)
 function wallUValue(layers, override) {   // U-Wert [W/m²K] = 1 / (Rsi + Σ d/λ + Rse); Luft = R 0.15
   if (override != null && override > 0) return override;
@@ -4603,6 +4696,7 @@ function wire() {
   $('#pbSchalH').onchange = () => { const v = parseFloat(($('#pbSchalH').value || '').replace(',', '.')); if (!(v >= 4)) return; const a = selWall(); if (a) { pushUndo(); a.schalH = v; saveState(); toast('Schalung Bretthöhe ' + v + ' cm – im 3D sichtbar'); } };
   $('#pbHatch').onchange = () => { const t = $('#pbHatch').value, d = HATCH_DEF[t] || {}; wallHatch = t ? { type: t, scale: lastHatchScale, w: 0.8, color: d.color || style.color, fill: d.fill || null } : null; const a = selWall(); if (a) { pushUndo(); applyMaterial(a, t); pageViews.forEach(drawAnnos); saveState(); } };
   $('#foot3d').onclick = open3D;
+  $('#footIFC').onclick = importIFCFile;
   let planKind = 'kopf', planPos = 'br';
   $('#footPlan').onclick = e => { e.stopPropagation(); const p = $('#planPop'); p.hidden = !p.hidden; };
   $('#pbBuild').onclick = e => { e.stopPropagation(); const p = $('#buildPop'); if (p.hidden) openBuildPop(); else p.hidden = true; };

@@ -1625,21 +1625,25 @@ function renderBuildList() {
   });
   updateBuildTotal();
 }
-function openBuildPop() {
+let buildupWall = null, buildupCb = null;   // Ziel-Wand + Refresh-Callback, wenn das Aufbau-Popup aus dem Laibungs-Editor kommt
+function openBuildPop(target, cb) {
+  buildupWall = target || null; buildupCb = cb || null;
   const presets = document.getElementById('bpPresets'); presets.innerHTML = '';
   WALL_PRESETS.forEach(p => { const b = document.createElement('button'); b.className = 'bp-preset'; b.textContent = p.name; b.onclick = () => { buildDraft = p.layers.map(l => [l[0], l[1], '', 0, 0, '', 0]); renderBuildList(); }; presets.appendChild(b); });
-  const a = selWall();
+  const a = buildupWall || selWall();
   if (a && a.layers && a.layers.length) { buildDraft = a.layers.map(l => [l.mat, Math.round(ptsToCm(l.t) * 10) / 10, l.sub ? l.sub.type : '', Math.round((l.top || 0) * 100), Math.round((l.bot || 0) * 100), l.lowMat || '', Math.round((l.lowH || 0) * 100), l.boardW != null ? l.boardW : 4, l.boardGap != null ? l.boardGap : 2]); const sp = a.layers.find(l => l.sub); if (sp) buildSpacing = Math.round(ptsToCm(sp.sub.spacing)); }
   else if (!buildDraft.length) buildDraft = WALL_PRESETS[0].layers.map(l => [l[0], l[1], '', 0, 0, '', 0]);
   const si = document.getElementById('bpSpacing'); if (si) si.value = buildSpacing;
-  renderBuildList(); document.getElementById('buildPop').hidden = false;
+  const bp = document.getElementById('buildPop'); bp.style.zIndex = buildupWall ? '100002' : ''; if (buildupWall) { bp.style.position = 'fixed'; bp.style.left = '50%'; bp.style.top = '50%'; bp.style.transform = 'translate(-50%,-50%)'; bp.style.maxHeight = '88vh'; bp.style.overflow = 'auto'; } else { bp.style.position = ''; bp.style.left = ''; bp.style.top = ''; bp.style.transform = ''; }
+  renderBuildList(); bp.hidden = false;
 }
 function applyBuildup() {
   const si = document.getElementById('bpSpacing'); if (si) buildSpacing = parseFloat((si.value || '').replace(',', '.')) || 60;
   const layers = buildDraft.filter(r => r[1] > 0).map(r => [r[0], r[1], r[2] || '', r[3] || 0, r[4] || 0, r[5] || '', r[6] || 0, r[7] != null ? r[7] : 4, r[8] != null ? r[8] : 2]);
-  wallBuildup = layers.length ? { layers, spacing: buildSpacing } : null;
-  const a = selWall(); if (a) { pushUndo(); applyWallBuildup(a, layers, buildSpacing); pageViews.forEach(drawAnnos); saveState(); updateSelBar(); }
+  const a = buildupWall || selWall(); if (!buildupWall) wallBuildup = layers.length ? { layers, spacing: buildSpacing } : null;   // nur der Standard-Aufbau (für neue Wände) wenn nicht gezielt
+  if (a) { pushUndo(); applyWallBuildup(a, layers, buildSpacing); pageViews.forEach(drawAnnos); saveState(); updateSelBar(); }
   document.getElementById('buildPop').hidden = true; toast(layers.length ? 'Wandaufbau angewendet ✓' : 'Aufbau entfernt');
+  const cb = buildupCb; buildupWall = null; buildupCb = null; if (cb) try { cb(); } catch (_) { }
 }
 let stairW = null, stairRiseM = 2.6, stairBaseM = 0;   // Treppe: Breite · Geschosshöhe · Unterkante
 let roofType = 'sattel', roofEaveM = 2.6, roofRidgeM = 4.0, roofAxis = 'x';   // Dach: Pult/Sattel · Traufe · First · Firstrichtung
@@ -5183,6 +5187,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       row.appendChild(r); row.appendChild(val); side.appendChild(row); }
     if (wall && wall.layers && wall.layers.length) {   // Wandschichten direkt im Laibungs-Detail anpassen (Dicke) – Wand + Öffnung folgen live
       const hd = document.createElement('div'); hd.className = 'lab-row'; hd.style.marginTop = '6px'; hd.innerHTML = '<span style="font-weight:600">Wandschichten (innen→aussen)</span>'; side.appendChild(hd);
+      const fullBtn = document.createElement('button'); fullBtn.className = 'btn'; fullBtn.textContent = '▦ Alle Schichten voll bearbeiten'; fullBtn.style.cssText = 'width:100%;margin-bottom:6px'; fullBtn.onclick = () => openBuildPop(wall, () => { render(); buildCtrls(); }); side.appendChild(fullBtn);
       wall.layers.forEach(ly => {
         const row = document.createElement('label'); row.className = 'lab-row'; const nm = (WALL_MATS[ly.mat] && WALL_MATS[ly.mat].label) || ly.mat || 'Schicht'; row.innerHTML = '<span>' + nm + '</span>';
         const inp = document.createElement('input'); inp.type = 'number'; inp.step = '0.5'; inp.min = '0.1'; inp.style.width = '66px'; inp.value = Math.round(ptsToCm(ly.t) * 10) / 10;

@@ -1901,6 +1901,7 @@ async function applyCrop(allPages) {
 /* ---------- Fläche messen (Polygon, m²) ---------- */
 function polyArea(pts) { let s = 0; for (let i = 0; i < pts.length; i++) { const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length]; s += x1 * y2 - x2 * y1; } return Math.abs(s) / 2; }
 function centroid(pts) { let x = 0, y = 0; for (const p of pts) { x += p[0]; y += p[1]; } return [x / pts.length, y / pts.length]; }
+function pointInPoly(p, pts) { let inside = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1]; if (((yi > p[1]) !== (yj > p[1])) && (p[0] < (xj - xi) * (p[1] - yi) / ((yj - yi) || 1e-9) + xi)) inside = !inside; } return inside; }
 function areaLabel(pts) {
   const apt = polyArea(pts);
   if (docScale) { const m2 = apt * docScale.perPt * docScale.perPt; return m2 >= 0.01 ? (Math.round(m2 * 100) / 100).toString().replace('.', ',') + ' m²' : Math.round(m2 * 1e4) + ' cm²'; }
@@ -2769,7 +2770,7 @@ function segInt(a, b, c, d) {   // Schnitt zweier Strecken → {pt,t1,t2} oder n
   const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
   if (t < 0 || t > 1 || u < 0 || u > 1) return null; return { pt: [a[0] + t * r[0], a[1] + t * r[1]], t1: t, t2: u };
 }
-function sectionMaxH(a, arr) { let m = wallHeightM; for (const w of arr || []) { if (!layerVisible(w) || !phaseVisible(w)) continue; if (w.type === 'wall') m = Math.max(m, w.h3d || wallHeightM); else if (w.type === 'profile' && w.prof && w.prof.length) { let v = 0; for (const q of w.prof) v = Math.max(v, q[1]); m = Math.max(m, (w.elev || 0) + v / 100); } } return m; }   // gemeinsames Höhen-Datum: höchste Wand/Profil → alle Schnitte gleich hoch (perfekt nebeneinanderlegbar)
+function sectionMaxH(a, arr) { let m = wallHeightM; for (const w of arr || []) { if (!layerVisible(w) || !phaseVisible(w)) continue; if (w.type === 'wall') m = Math.max(m, w.h3d || wallHeightM); else if (w.type === 'slab') m = Math.max(m, (w.base || 0) + (w.thick || 0.2)); else if (w.type === 'profile' && w.prof && w.prof.length) { let v = 0; for (const q of w.prof) v = Math.max(v, q[1]); m = Math.max(m, (w.elev || 0) + v / 100); } } return m; }   // gemeinsames Höhen-Datum: höchste Wand/Decke/Profil → alle Schnitte gleich hoch (perfekt nebeneinanderlegbar)
 function clipSeg(ax, ay, bx, by, x0, y0, x1, y1) {   // Strecke gegen achsenparalleles Rechteck (Liang-Barsky)
   let t0 = 0, t1 = 1; const dx = bx - ax, dy = by - ay;
   const cl = (p, q) => { if (Math.abs(p) < 1e-9) return q >= 0; const r = q / p; if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; } return true; };
@@ -2892,6 +2893,18 @@ function sectionPrimitives(a, arr) {
         pDimH(out, yB, X(od - rW / 2), X(od + rW / 2), 'Rohbau ' + fmtLen(o.w), true); pDimH(out, yB + 13, X(od - lW / 2), X(od + lW / 2), 'Licht ' + fmtLen(Math.max(1, o.w - 2 * insPts)), true);
         pDimV(out, xL, Yh(head0), Yh(sill0), 'Rohbau ' + fmtLen((head0 - sill0) / perPt), -46); pDimV(out, xL - 18, Yh(head0 - insM), Yh(sill0 + insM), 'Licht ' + fmtLen(Math.max(0.05, head0 - sill0 - 2 * insM) / perPt), -46);
       } }
+  }
+  for (const sl of arr) {   // Decken/Platten: Schichtaufbau dort zeigen, wo die Schnittlinie sie kreuzt
+    if (sl.type !== 'slab' || !sl.pts || sl.pts.length < 3 || !layerVisible(sl) || !phaseVisible(sl)) continue;
+    const ds = [];
+    for (let i = 0; i < sl.pts.length; i++) { const q1 = sl.pts[i], q2 = sl.pts[(i + 1) % sl.pts.length], ix = segInt(p1, p2, q1, q2); if (ix) ds.push((ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy); }
+    if (pointInPoly(p1, sl.pts)) ds.push(0); if (pointInPoly(p2, sl.pts)) ds.push(cl);
+    ds.sort((u, v) => u - v);
+    const base = sl.base || 0, thick = sl.thick || 0.2, bands = slabLayerBands(sl);
+    for (let i = 0; i + 1 < ds.length; i++) { const dm = (ds[i] + ds[i + 1]) / 2, mid = [p1[0] + cux * dm, p1[1] + cuy * dm]; if (!pointInPoly(mid, sl.pts)) continue; const dA = fp(ds[i]), dB = fp(ds[i + 1]), xa = X(Math.min(dA, dB)), xb = X(Math.max(dA, dB));
+      if (bands) for (const b of bands) { const m = WALL_MATS[b.mat] || {}, yT = Yh(base + b.y1), hh = Yh(base + b.y0) - Yh(base + b.y1); out.push({ t: 'rect', x: xa, y: yT, w: xb - xa, h: hh, fill: m.fill || '#fff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode && m.hatch) sectionBandHatch(out, xa, yT, xb - xa, hh, b.mat, null); }
+      else out.push({ t: 'rect', x: xa, y: Yh(base + thick), w: xb - xa, h: Yh(base) - Yh(base + thick), fill: '#dadde2', stroke: '#8a8f96', sw: 0.7 });
+    }
   }
   for (const pr of arr) {   // Profile: wo die Schnittlinie den Pfad kreuzt → echter Querschnitt an seiner Höhe
     if (pr.type !== 'profile' || !pr.path || pr.path.length < 2 || !pr.prof || pr.prof.length < 3 || !layerVisible(pr) || !phaseVisible(pr)) continue;
@@ -4830,6 +4843,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
     A('Profil im Schnitt', () => { const prof = { id: 9004, type: 'profile', path: [[200, 150], [300, 150]], prof: [[0, 0], [3, 0], [3, 12], [0, 12]], elev: 2.5, closed: false }; const pr = sectionPrimitives(sec, [prof, sec]); return pr.some(p => p.t === 'poly') ? '' : 'kein Querschnitt'; });
+    A('Decke im Schnitt (Schichten)', () => { const sl = { id: 9005, type: 'slab', pts: [[180, 100], [320, 100], [320, 200], [180, 200]], base: 2.6 }; applySlabBuildup(sl, [['belag', 1], ['estrich', 7], ['beton', 24]]); const pr = sectionPrimitives(sec, [sl, sec]); return pr.filter(p => p.t === 'rect').length >= 3 ? '' : 'zu wenig Schichten'; });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

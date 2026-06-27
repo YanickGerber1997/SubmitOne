@@ -1491,6 +1491,7 @@ function lineForLength() {
 function cmToPts(cm) { return cm * (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
 function ptsToCm(pts) { return pts / (docScale ? (0.01 / docScale.perPt) : (10 / PT2MM)); }
 let lastWallThick = null, wallJust = 'center', wallHatch = null, wallHeightM = 2.6;   // Achse · Schraffur · 3D-Höhe der neuen Wand
+let show3DSlabs = true;   // 3D: Geschossdecken/Bodenplatte automatisch aus dem Wand-Footprint
 let wallBuildup = null, buildDraft = [], buildSpacing = 60;   // Standard-Aufbau {layers,spacing} · Entwurf [[mat,cm,sub]] · Achsabstand UK (cm)
 const SUB_OPTS = [['', '— keine UK —'], ['schraube', 'Distanzschrauben'], ['lattung', 'Holzlattung'], ['staender', 'Metallständer']];
 function buildMatOptions(sel) { return Object.keys(WALL_MATS).map(k => `<option value="${k}"${k === sel ? ' selected' : ''}>${WALL_MATS[k].label}</option>`).join(''); }
@@ -3904,13 +3905,15 @@ async function open3D() {
   if (!walls.length) { toast('Auf dieser (sichtbaren) Ebene sind keine Wände für die 3D-Ansicht.'); return; }
   status('3D wird geladen …');
   try { await loadThree(); } catch (_) { status(''); toast('3D-Engine nicht ladbar (einmal Internet nötig).'); return; }
+  if (!window.polygonClipping) { try { await loadScript('https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js'); } catch (_) { } }   // für Geschossdecken-Footprint
   status('');
   const ov = document.createElement('div'); ov.className = 'd3-overlay';
-  ov.innerHTML = '<div class="d3-bar"><b>3D-Ansicht</b><label class="d3-h">Höhe <input type="number" id="d3h" min="1" max="20" step="0.1" value="' + wallHeightM + '"> m</label><span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">Ziehen = drehen · Mausrad = zoomen</span><span class="grow"></span><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
+  ov.innerHTML = '<div class="d3-bar"><b>3D-Ansicht</b><label class="d3-h">Höhe <input type="number" id="d3h" min="1" max="20" step="0.1" value="' + wallHeightM + '"> m</label><span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">Ziehen = drehen · Mausrad = zoomen</span><span class="grow"></span><button class="btn' + (show3DSlabs ? ' on' : '') + '" id="d3Slab" title="Geschossdecken/Bodenplatte (aus Wand-Footprint) ein-/ausblenden">▦ Decken</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
   document.body.appendChild(ov);
   const host = ov.querySelector('#d3Canvas');
   let api = build3DScene(host, walls, arr);
   ov.querySelector('#d3h').onchange = e => { wallHeightM = Math.max(1, Math.min(20, parseFloat(e.target.value) || 2.6)); if (api) api.dispose(); api = build3DScene(host, walls, arr); };
+  ov.querySelector('#d3Slab').onclick = e => { show3DSlabs = !show3DSlabs; e.currentTarget.classList.toggle('on', show3DSlabs); if (api) api.dispose(); api = build3DScene(host, walls, arr); };
   ov.querySelectorAll('.d3-views button').forEach(b => b.onclick = () => { if (api && api.setView) api.setView(b.dataset.v); });
   ov.querySelector('#d3Shot').onclick = () => { if (!api || !api.snapshot) return; const s = api.snapshot(); close(); place3DImage(s.data, s.w, s.h); };
   const close = () => { if (api) api.dispose(); ov.remove(); document.removeEventListener('keydown', esc, true); };
@@ -4290,6 +4293,19 @@ function build3DScene(host, walls, arr) {
   for (const a of arr) if (a.type === 'area' && a.room && a.pts && a.pts.length >= 3 && layerVisible(a) && phaseVisible(a)) {
     const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
     const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0xece6d8, side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.006; fl.receiveShadow = true; scene.add(fl);
+  }
+  if (show3DSlabs && walls.length) {   // Geschossdecken / Bodenplatte: Wand-Footprint je Geschoss vereinigen → massive Platte (Oberkante = Geschoss-Höhenlage)
+    const slabT = 0.2, slabMat = new THREE.MeshStandardMaterial({ color: 0xd6d3cb, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
+    const wth = w => { const ls = (w.layers && w.layers.length) ? w.layers.reduce((s, l) => s + (l.t || 0), 0) : 0; return Math.max(ls, w.thick || 0, cmToPts(12)); };
+    const wallRect = w => { const dx = w.x2 - w.x1, dy = w.y2 - w.y1, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, hh = wth(w) / 2; return [[w.x1 + nx * hh, w.y1 + ny * hh], [w.x2 + nx * hh, w.y2 + ny * hh], [w.x2 - nx * hh, w.y2 - ny * hh], [w.x1 - nx * hh, w.y1 - ny * hh]]; };
+    const stories = {}; for (const w of walls) { const e = lev(w); (stories[e] = stories[e] || []).push(w); }
+    const PC = window.polygonClipping;
+    for (const e in stories) {
+      const grp = stories[e], elev = +e; let rings = [];
+      if (PC) { try { const polys = grp.map(w => [wallRect(w)]); const res = PC.union(polys[0], ...polys.slice(1)); for (const poly of res) if (poly[0]) rings.push(poly[0]); } catch (_) { rings = []; } }
+      if (!rings.length) { let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity; for (const w of grp) for (const [x, y] of wallRect(w)) { a = Math.min(a, x); b = Math.min(b, y); c = Math.max(c, x); d = Math.max(d, y); } if (isFinite(a)) rings = [[[a, b], [c, b], [c, d], [a, d]]]; }
+      for (const ring of rings) { if (!ring || ring.length < 3) continue; const sh = new THREE.Shape(); ring.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); }); const geo = new THREE.ExtrudeGeometry(sh, { depth: slabT, bevelEnabled: false }); const m = new THREE.Mesh(geo, slabMat); m.rotation.x = -Math.PI / 2; m.position.y = elev - slabT; m.receiveShadow = true; m.castShadow = true; scene.add(m); }
+    }
   }
   const wmat = new THREE.MeshLambertMaterial({ color: 0xe9e3d8 }), emat = new THREE.LineBasicMaterial({ color: 0x8c8678 }), gmat = new THREE.MeshPhongMaterial({ color: 0x9fc6e0, transparent: true, opacity: 0.35 });
   const texCache = {}, matCache = {}, INSUL_T = ['daemm_eps', 'daemm_wolle', 'daemm_holz', 'daemm_xps', 'eps', 'glaswolle'];

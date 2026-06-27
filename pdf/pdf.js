@@ -3917,6 +3917,38 @@ function openWallList() {
   ov.querySelectorAll('.bu-u').forEach(inp => inp.onchange = () => { const v = parseFloat(inp.value); if (!(v > 0)) return; const g = groups.find(x => x.sig.replace(/"/g, '') === inp.dataset.sig); if (!g) return; pushUndo(); g.uVal = v; g.walls.forEach(w => w.uVal = v); saveState(); toast('U-Wert ' + v + ' gespeichert (für ' + g.walls.length + ' Wand/Wände)'); });
   ov.addEventListener('pointerdown', e => { if (e.target === ov) close(); });
 }
+function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt Regressionen
+  const R = [], A = (name, fn) => { try { const m = fn(); R.push({ name, ok: m !== false, msg: typeof m === 'string' ? m : '' }); } catch (e) { R.push({ name, ok: false, msg: (e && e.message) || 'Fehler' }); } };
+  const saved = docScale; docScale = { perPt: 50 * PT2MM / 1000, label: '1:50', n: 50 };
+  try {
+    A('cm↔pt Round-Trip', () => Math.abs(ptsToCm(cmToPts(123.4)) - 123.4) < 0.01);
+    A('fmtLen liefert Text', () => { const s = fmtLen(cmToPts(200)); return typeof s === 'string' && s.length > 0; });
+    const wall = { id: 9001, type: 'wall', x1: 100, y1: 100, x2: 400, y2: 100, thick: cmToPts(40), h3d: 2.6, layers: [{ mat: 'putz', t: cmToPts(1.5) }, { mat: 'mauerwerk', t: cmToPts(15) }, { mat: 'eps', t: cmToPts(22) }, { mat: 'putz', t: cmToPts(2) }] };
+    const win = { id: 9002, type: 'opening', kind: 'window', wallId: 9001, x: 250, y: 100, ang: 0, thick: wall.thick, w: cmToPts(100), depth: 0.5, winType: 'f1', winMat: 'holz', sill: 0.9, head: 2.1, frameW: cmToPts(10), frameD: cmToPts(7) };
+    const arr = [wall, win];
+    A('openInsPts > 0', () => openInsPts(win) > 0);
+    A('U-Wert plausibel (0.1–0.4)', () => { const u = wallUValue(wall.layers); return (u > 0.1 && u < 0.4) ? '' : 'U=' + u.toFixed(3); });
+    A('openingParts: Fenster-Profil', () => { const p = openingParts(win, true); return (p.fills && p.fills.length > 0) || (p.lines && p.lines.length > 0); });
+    A('openingRevealStrips: Schichteinzug', () => { const s = openingRevealStrips(win, arr); return s && s.length > 0 ? '' : 'keine Strips'; });
+    A('computeQuantities: Fläche', () => { const q = computeQuantities(arr); return q.mats.length > 0 && q.mats.some(m => m.area > 0); });
+    A('Fensterliste: Skizze', () => { const s = winThumb(win); return typeof s === 'string' && s.indexOf('<svg') === 0; });
+    A('Wandaufbau-Gruppe', () => computeWallBuildups(arr).length === 1);
+    A('Annotation-Import (Square→rect)', () => { const a = convertAnnot({ subtype: 'Square', rect: [10, 10, 50, 50], color: [255, 0, 0] }, 200); return !!(a && a.type === 'rect'); });
+    const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
+    A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
+  } finally { docScale = saved; }
+  return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
+}
+function showSelfTest() {
+  const { R, pass, fail } = selfTest(), rows = R.map(r => '<tr><td>' + (r.ok ? '✅' : '❌') + '</td><td>' + r.name + '</td><td style="color:#b23">' + (r.msg || '') + '</td></tr>').join('');
+  const ov = document.createElement('div'); ov.className = 'lab-overlay';
+  ov.innerHTML = '<div class="lab-wrap" style="width:min(560px,94vw);height:auto;max-height:84vh"><div class="lab-head"><b>Selbsttest</b><span class="lab-hint">' + pass + ' OK · ' + fail + ' Fehler</span><span class="grow"></span><button class="btn" id="stClose">✕</button></div><div class="qty-body"><table class="qty-tab"><tbody>' + rows + '</tbody></table></div></div>';
+  document.body.appendChild(ov); ov.querySelector('#stClose').onclick = () => ov.remove(); ov.addEventListener('pointerdown', e => { if (e.target === ov) ov.remove(); });
+  console.log('[Submit PDF Selbsttest] ' + pass + ' OK, ' + fail + ' Fehler', R);
+  return { pass, fail };
+}
+window.submitSelfTest = showSelfTest;
+if (/[?&]selftest\b/i.test(location.search)) window.addEventListener('load', () => setTimeout(showSelfTest, 500));   // Aufruf: …/pdf/?selftest  oder Konsole: submitSelfTest()
 function winThumb(o) {   // Mini-Ansicht (SVG) eines Fensters/einer Tür für die Liste
   const W = 64, H = 78, ww = ptsToCm(o.w) / 100, wh = o.kind === 'window' ? ((o.head || 2.1) - (o.sill || 0)) : (o.head || 2.0), ar = ww / Math.max(0.2, wh);
   let bw = W - 12, bh = bw / ar; if (bh > H - 10) { bh = H - 10; bw = bh * ar; } bw = Math.max(14, Math.min(W - 8, bw));

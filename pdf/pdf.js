@@ -3952,6 +3952,18 @@ function loadThree() {
   if (window.THREE && THREE.OrbitControls) return Promise.resolve();
   return loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js').then(() => loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js'));
 }
+function dayOfYearOf(y, m, d) { const cum = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334], leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; return cum[(m - 1) % 12] + d + ((leap && m > 2) ? 1 : 0); }
+function solarPosition(latDeg, doy, hour) {   // Sonnenstand: Höhe (Elevation) + Azimut aus Breitengrad, Tag im Jahr, (Solar-)Stunde
+  const rad = Math.PI / 180, lat = latDeg * rad;
+  const decl = 23.45 * rad * Math.sin(2 * Math.PI * (284 + doy) / 365);   // Deklination
+  const H = (hour - 12) * 15 * rad;                                       // Stundenwinkel
+  const sinEl = Math.sin(lat) * Math.sin(decl) + Math.cos(lat) * Math.cos(decl) * Math.cos(H);
+  const el = Math.asin(Math.max(-1, Math.min(1, sinEl)));
+  let cosAz = (Math.sin(decl) - Math.sin(el) * Math.sin(lat)) / ((Math.cos(el) * Math.cos(lat)) || 1e-6);
+  cosAz = Math.max(-1, Math.min(1, cosAz));
+  let az = Math.acos(cosAz); if (H > 0) az = 2 * Math.PI - az;            // 0 = Nord, 90 = Ost, 180 = Süd, 270 = West; nachmittags → West
+  return { el, az, elDeg: el / rad, azDeg: az / rad };
+}
 function exportSceneObj(scene) {   // THREE-Szene → Wavefront .obj (nur solide Meshes, ohne Boden/Raster/Linien)
   let out = '# Submit PDF – 3D-Modell-Export (Wavefront OBJ)\n', vCount = 0, n = 0; const v = new THREE.Vector3();
   scene.traverse(obj => {
@@ -3981,21 +3993,28 @@ async function open3D() {
   if (!window.polygonClipping) { try { await loadScript('https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js'); } catch (_) { } }   // für Geschossdecken-Footprint
   status('');
   const ov = document.createElement('div'); ov.className = 'd3-overlay';
-  ov.innerHTML = '<div class="d3-bar"><b>3D-Ansicht</b><label class="d3-h">Höhe <input type="number" id="d3h" min="1" max="20" step="0.1" value="' + wallHeightM + '"> m</label><span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-views"><button class="btn" id="d3Rot" title="Modell automatisch drehen (Turntable)">🔄 Dreh</button><label class="d3-h" title="Sonnenstand / Verschattung über den Tag (Morgen → Mittag → Abend)">☀ <input type="range" id="d3Sun" min="0" max="100" value="50" style="width:84px;vertical-align:middle"></label><button class="btn" id="d3SunPlay" title="Sonnenlauf abspielen">▶ Sonne</button><button class="btn" id="d3Rec" title="Als Video (WebM) aufnehmen – dreht automatisch für einen Turntable">⏺ Video</button></span><span class="d3-hint">Ziehen = drehen · Mausrad = zoomen</span><span class="grow"></span><button class="btn' + (show3DSlabs ? ' on' : '') + '" id="d3Slab" title="Geschossdecken/Bodenplatte (aus Wand-Footprint) ein-/ausblenden">▦ Decken</button><button class="btn" id="d3Obj" title="3D-Modell als OBJ exportieren (Blender/SketchUp/Rhino …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
+  ov.innerHTML = '<div class="d3-bar"><b>3D-Ansicht</b><label class="d3-h">Höhe <input type="number" id="d3h" min="1" max="20" step="0.1" value="' + wallHeightM + '"> m</label><span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-views"><button class="btn" id="d3Rot" title="Modell automatisch drehen (Turntable)">🔄 Dreh</button><label class="d3-h" title="Sonnenstand / Verschattung: Breitengrad (°N) · Datum · Tageszeit – echte Sonnenstands-Berechnung">☀ <input type="number" id="d3Lat" value="47" min="-66" max="66" step="0.5" style="width:44px" title="Breitengrad °N (z. B. Zürich 47, Berlin 52, Wien 48)">° <input type="date" id="d3Date" style="width:122px"> <input type="range" id="d3Sun" min="0" max="100" value="50" style="width:74px;vertical-align:middle"> <span id="d3SunInfo" style="font-variant-numeric:tabular-nums;opacity:.85">–</span></label><button class="btn" id="d3SunPlay" title="Sonnenlauf über den Tag abspielen">▶</button><button class="btn" id="d3Rec" title="Als Video (WebM) aufnehmen – dreht automatisch für einen Turntable">⏺ Video</button></span><span class="d3-hint">Ziehen = drehen · Mausrad = zoomen</span><span class="grow"></span><button class="btn' + (show3DSlabs ? ' on' : '') + '" id="d3Slab" title="Geschossdecken/Bodenplatte (aus Wand-Footprint) ein-/ausblenden">▦ Decken</button><button class="btn" id="d3Obj" title="3D-Modell als OBJ exportieren (Blender/SketchUp/Rhino …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
   document.body.appendChild(ov);
   const host = ov.querySelector('#d3Canvas');
   let api = build3DScene(host, walls, arr);
   ov.querySelector('#d3h').onchange = e => { wallHeightM = Math.max(1, Math.min(20, parseFloat(e.target.value) || 2.6)); if (api) api.dispose(); api = build3DScene(host, walls, arr); };
   ov.querySelector('#d3Slab').onclick = e => { show3DSlabs = !show3DSlabs; e.currentTarget.classList.toggle('on', show3DSlabs); if (api) api.dispose(); api = build3DScene(host, walls, arr); };
   ov.querySelector('#d3Obj').onclick = () => saveObjFrom(api, docName);
-  let sunRAF = 0, rec = null; const sunIn = ov.querySelector('#d3Sun'); if (api && api.setSun) api.setSun(0.5);
-  sunIn.oninput = () => { if (api && api.setSun) api.setSun(sunIn.value / 100); };
+  let sunRAF = 0, rec = null; const sunIn = ov.querySelector('#d3Sun'), latIn = ov.querySelector('#d3Lat'), dateIn = ov.querySelector('#d3Date'), sunInfo = ov.querySelector('#d3SunInfo');
+  const td = new Date(); dateIn.value = td.getFullYear() + '-' + ('0' + (td.getMonth() + 1)).slice(-2) + '-' + ('0' + td.getDate()).slice(-2);
+  const applySun = () => {
+    const lat = parseFloat((latIn.value || '47').replace(',', '.')); const p = (dateIn.value || '2025-06-21').split('-'), doy = dayOfYearOf(+p[0] || 2025, +p[1] || 6, +p[2] || 21);
+    const hour = 4 + (sunIn.value / 100) * 18, sp = solarPosition(isNaN(lat) ? 47 : lat, doy, hour);   // 4:00 … 22:00
+    if (api && api.setSunDir) api.setSunDir(sp.az, sp.el);
+    const hh = Math.floor(hour), mm = Math.round((hour - hh) * 60); sunInfo.textContent = ('0' + hh).slice(-2) + ':' + ('0' + (mm % 60)).slice(-2) + ' · ' + (sp.elDeg >= 0 ? Math.round(sp.elDeg) + '° hoch' : 'Nacht');
+  };
+  sunIn.oninput = applySun; latIn.onchange = applySun; dateIn.onchange = applySun; applySun();
   ov.querySelector('#d3Rot').onclick = e => { const on = !(api && api.getRotate && api.getRotate()); if (api && api.setRotate) api.setRotate(on); e.currentTarget.classList.toggle('on', on); };
   ov.querySelector('#d3SunPlay').onclick = e => {
     const btn = e.currentTarget;
-    if (sunRAF) { cancelAnimationFrame(sunRAF); sunRAF = 0; btn.textContent = '▶ Sonne'; return; }
-    btn.textContent = '⏸ Sonne'; let val = 0;
-    const step = () => { val += 0.6; if (val >= 100) val = 100; sunIn.value = val; if (api && api.setSun) api.setSun(val / 100); if (val < 100) sunRAF = requestAnimationFrame(step); else { sunRAF = 0; btn.textContent = '▶ Sonne'; } };
+    if (sunRAF) { cancelAnimationFrame(sunRAF); sunRAF = 0; btn.textContent = '▶'; return; }
+    btn.textContent = '⏸'; let val = 0;
+    const step = () => { val += 0.6; if (val >= 100) val = 100; sunIn.value = val; applySun(); if (val < 100) sunRAF = requestAnimationFrame(step); else { sunRAF = 0; btn.textContent = '▶'; } };
     step();
   };
   ov.querySelector('#d3Rec').onclick = e => {
@@ -4198,6 +4217,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Möbel-Symbol (Kleiderschrank)', () => blockShapes({ x: 0, y: 0, w: 140, h: 60, kind: 'wardrobe' }).length >= 3 && !!BLOCK_DEFS.kitchen && !!BLOCK_H.tallcab);
     A('Stütze (rund/eckig)', () => { const r = blockShapes({ x: 0, y: 0, w: 30, h: 30, kind: 'columnRound' }); return r.length === 1 && r[0].t === 'circ' && IS_COLUMN('column') && !IS_COLUMN('table'); });
     A('Unterzug (Bauteil)', () => { const b = { id: 9100, type: 'beam', x1: 0, y1: 0, x2: cmToPts(500), y2: 0, width: cmToPts(24), height: 0.4 }; const bb = bbox(b); return isLineType(b) && bb.w > 0 && computeQuantities([b]).extra.some(e => e.label === 'Unterzug'); });
+    A('Sonnenstand (Sommer Mittag ~66°)', () => { const doy = dayOfYearOf(2025, 6, 21), s = solarPosition(47, doy, 12), n = solarPosition(47, doy, 0); return (doy === 172 && Math.abs(s.elDeg - 66.5) < 2 && Math.abs(s.azDeg - 180) < 6 && n.elDeg < 0) ? '' : 'doy=' + doy + ' el=' + s.elDeg.toFixed(1) + ' az=' + s.azDeg.toFixed(1); });
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
   } finally { docScale = saved; }
@@ -4427,6 +4447,12 @@ function build3DScene(host, walls, arr) {
     sun.position.set(Math.cos(a) * span * 1.5, Math.max(0.08, elev) * span * 1.9, span * 0.55);
     sun.intensity = 0.35 + 0.45 * elev; hemi.intensity = 0.55 + 0.35 * elev;   // tief = schwächer/wärmer
   };
+  const setSunDir = (az, el) => {   // echter Sonnenstand: Azimut (0=Nord, 90=Ost) + Höhe → Lichtrichtung, Schatten + Lichtfarbe
+    const ce = Math.cos(el), se = Math.sin(el), d = span * 1.85, day = Math.max(0, se);
+    sun.position.set(Math.sin(az) * ce * d, Math.max(0.04, se) * d, -Math.cos(az) * ce * d);
+    sun.intensity = 0.12 + 0.62 * day; hemi.intensity = 0.4 + 0.45 * day;
+    sun.color.setRGB(1, 0.78 + 0.22 * day, 0.55 + 0.45 * day);   // tiefe Sonne = wärmer/oranger
+  };
   const gsz = Math.max(span * 2.4, 4);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(gsz, gsz), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; ground.receiveShadow = true; ground.name = 'ground'; scene.add(ground);
   scene.add(new THREE.GridHelper(gsz, Math.min(60, Math.max(4, Math.round(gsz))), 0xc4cabe, 0xd8dcd2));
@@ -4629,7 +4655,7 @@ function build3DScene(host, walls, arr) {
   const loop = () => { if (!alive) return; controls.update(); renderer.render(scene, camera); raf = requestAnimationFrame(loop); }; loop();
   const setView = name => { const ty = H * 0.45, d = Math.max(span * 1.4, 4); if (name === 'top') { camera.position.set(0.001, d * 1.7, 0.001); controls.target.set(0, 0, 0); } else if (name === 'front') { camera.position.set(0, ty, d * 1.5); controls.target.set(0, ty, 0); } else if (name === 'side') { camera.position.set(d * 1.5, ty, 0.001); controls.target.set(0, ty, 0); } else { camera.position.set(span * 0.85, span * 0.95, span * 0.95); controls.target.set(0, H * 0.4, 0); } camera.updateProjectionMatrix(); controls.update(); };
   const snapshot = () => { renderer.render(scene, camera); return { data: renderer.domElement.toDataURL('image/png'), w: renderer.domElement.width, h: renderer.domElement.height }; };
-  return { dispose: () => { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); controls.dispose(); renderer.dispose(); host.innerHTML = ''; }, setView, snapshot, exportObj: () => exportSceneObj(scene), setRotate: on => { controls.autoRotate = !!on; }, getRotate: () => controls.autoRotate, setSun: setSun3D };
+  return { dispose: () => { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); controls.dispose(); renderer.dispose(); host.innerHTML = ''; }, setView, snapshot, exportObj: () => exportSceneObj(scene), setRotate: on => { controls.autoRotate = !!on; }, getRotate: () => controls.autoRotate, setSun: setSun3D, setSunDir };
 }
 
 /* ---------- Rechtsklick-Menü (alles erreichbar) ---------- */

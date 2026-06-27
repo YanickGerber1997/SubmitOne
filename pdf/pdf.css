@@ -536,6 +536,12 @@ body.has-tabs .build-pop{top:calc(var(--bar) + var(--tools) + var(--tabs) + var(
 .lab-row b{color:var(--accent);font-size:12px}
 .lab-row input[type=range]{width:100%}
 .lab-row select{font:inherit;font-size:12px;padding:4px 6px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.qty-body{flex:1;overflow:auto;padding:14px 18px}
+.qty-body h4{margin:14px 0 6px;font-size:13px;color:var(--ink)}
+.qty-body h4:first-child{margin-top:0}
+.qty-tab{width:100%;border-collapse:collapse;font-size:12px}
+.qty-tab th{text-align:left;border-bottom:1.5px solid var(--line);padding:5px 8px;color:var(--ink-soft);font-weight:600}
+.qty-tab td{border-bottom:1px solid var(--line);padding:5px 8px;color:var(--ink)}
 .plan-pop{position:fixed;bottom:46px;left:50%;transform:translateX(-50%);z-index:64;background:var(--surface);border:1px solid var(--line);box-shadow:0 10px 30px rgba(20,24,40,.24);padding:12px;width:300px}
 .pp-title{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px}
 .pp-kind{display:flex;gap:4px;margin-bottom:10px}

@@ -3753,6 +3753,45 @@ async function open3D() {
   document.addEventListener('keydown', esc, true);
   ov.querySelector('#d3Close').onclick = close;
 }
+function computeQuantities(arr) {   // Mengenauszug: Wandfläche × Schichtstärke − Öffnungen
+  const VOL = ['beton', 'mauerwerk'], mats = {}, opsAgg = {};
+  for (const w of arr) {
+    if (w.type !== 'wall' || !layerVisible(w) || !phaseVisible(w)) continue;
+    const L = ptsToCm(Math.hypot(w.x2 - w.x1, w.y2 - w.y1)) / 100, Hgt = w.h3d || wallHeightM;
+    let openA = 0;
+    for (const o of arr) {
+      if (o.type !== 'opening' || o.wallId !== w.id) continue;
+      const oh = o.kind === 'window' ? ((o.head || 2.1) - (o.sill || 0)) : (o.head || 2.0), ow = ptsToCm(o.w) / 100, ins = ptsToCm(openInsPts(o)) / 100;
+      openA += ow * oh;
+      const lw = Math.round((ow - 2 * ins) * 100), lh = Math.round((oh - 2 * ins) * 100), key = o.kind + ':' + Math.round(ow * 100) + 'x' + Math.round(oh * 100);
+      if (!opsAgg[key]) opsAgg[key] = { kind: o.kind, n: 0, rohW: Math.round(ow * 100), rohH: Math.round(oh * 100), lichtW: lw, lichtH: lh, winType: o.winType || 'f1', mat: o.winMat || 'holz' };
+      opsAgg[key].n++;
+    }
+    const netA = Math.max(0, L * Hgt - openA), layers = (w.layers && w.layers.length) ? w.layers : null;
+    if (!layers) { const k = '_wall@' + Math.round(ptsToCm(w.thick || wallThickPts())); if (!mats[k]) mats[k] = { mat: '_wall', tcm: Math.round(ptsToCm(w.thick || wallThickPts())), area: 0, vol: 0, unit: 'm²' }; mats[k].area += netA; continue; }
+    for (const ly of layers) { if (ly.mat === 'luft') continue; const tcm = Math.round(ptsToCm(ly.t) * 10) / 10, key = ly.mat + '@' + tcm, vol = VOL.includes(ly.mat); if (!mats[key]) mats[key] = { mat: ly.mat, tcm, area: 0, vol: 0, unit: vol ? 'm³' : 'm²' }; mats[key].area += netA; if (vol) mats[key].vol += netA * (tcm / 100); }
+  }
+  return { mats: Object.values(mats).sort((a, b) => a.mat.localeCompare(b.mat)), ops: Object.values(opsAgg).sort((a, b) => (a.kind + a.rohW).localeCompare(b.kind + b.rohW)) };
+}
+function openQuantities() {
+  if (!docScale) { toast('Erst Massstab setzen – Mengen brauchen reale Masse.'); return; }
+  const n = curPage(), arr = getAnnos(n), { mats, ops } = computeQuantities(arr);
+  const ML = { _wall: 'Wand (einschichtig)' }, lbl = m => (WALL_MATS[m] && WALL_MATS[m].label) || ML[m] || m;
+  let rows = '', csv = 'Material\tStärke (cm)\tMenge\tEinheit\n';
+  for (const r of mats) { const q = r.unit === 'm³' ? r.vol : r.area, qs = (Math.round(q * 100) / 100).toLocaleString('de-CH'); rows += '<tr><td>' + lbl(r.mat) + '</td><td>' + (r.unit === 'm³' ? '' : r.tcm) + '</td><td style="text-align:right">' + qs + '</td><td>' + r.unit + '</td></tr>'; csv += lbl(r.mat) + '\t' + (r.unit === 'm³' ? '' : r.tcm) + '\t' + qs + '\t' + r.unit + '\n'; }
+  let orows = '', ocsv = 'Typ\tAnzahl\tLicht B×H (cm)\tRohbau B×H (cm)\n';
+  const tn = { fest: 'Fest', f1: '1-flügelig', f2: '2-flügelig', f2s: '2-fl.+Setzholz', f1f: '1-fl.+Fixteil' };
+  for (const o of ops) { const t = (o.kind === 'window' ? 'Fenster' : 'Tür') + ' ' + (tn[o.winType] || ''); orows += '<tr><td>' + t + '</td><td style="text-align:center">' + o.n + '</td><td>' + o.lichtW + '×' + o.lichtH + '</td><td>' + o.rohW + '×' + o.rohH + '</td></tr>'; ocsv += t + '\t' + o.n + '\t' + o.lichtW + '×' + o.lichtH + '\t' + o.rohW + '×' + o.rohH + '\n'; }
+  const ov = document.createElement('div'); ov.className = 'lab-overlay';
+  ov.innerHTML = '<div class="lab-wrap" style="width:min(720px,94vw);height:min(620px,90vh)"><div class="lab-head"><b>Datenliste / Mengen</b><span class="lab-hint">Seite ' + n + ' · Öffnungen abgezogen</span><span class="grow"></span><button class="btn" id="qCopy">Kopieren</button><button class="btn" id="qClose">✕</button></div><div class="qty-body"><h4>Materialliste</h4><table class="qty-tab"><thead><tr><th>Material</th><th>Stärke</th><th>Menge</th><th>Einheit</th></tr></thead><tbody>' + (rows || '<tr><td colspan=4>Keine mehrschichtigen Wände auf dieser Seite.</td></tr>') + '</tbody></table><h4>Fenster-/Türliste</h4><table class="qty-tab"><thead><tr><th>Typ</th><th>Anzahl</th><th>Licht B×H</th><th>Rohbau B×H</th></tr></thead><tbody>' + (orows || '<tr><td colspan=4>Keine Öffnungen.</td></tr>') + '</tbody></table></div></div>';
+  document.body.appendChild(ov);
+  const close = () => { ov.remove(); document.removeEventListener('keydown', esc, true); };
+  const esc = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+  document.addEventListener('keydown', esc, true);
+  ov.querySelector('#qClose').onclick = close;
+  ov.querySelector('#qCopy').onclick = () => { navigator.clipboard.writeText('MATERIALLISTE\n' + csv + '\nFENSTER/TÜREN\n' + ocsv).then(() => toast('In die Zwischenablage kopiert (Excel-tauglich)')).catch(() => toast('Kopieren nicht möglich')); };
+  ov.addEventListener('pointerdown', e => { if (e.target === ov) close(); });
+}
 function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoomen, Ziehgriffe + Regler, live in den Plan
   const arr = getAnnos(pv.num), wall = a.wallId && arr.find(o => o.id === a.wallId && o.type === 'wall');
   const ov = document.createElement('div'); ov.className = 'lab-overlay';
@@ -4317,6 +4356,7 @@ function wire() {
   $('#footBW').onclick = () => { document.body.classList.toggle('bw'); $('#footBW').classList.toggle('on', document.body.classList.contains('bw')); };
   $('#footSimple').onclick = () => { simpleMode = !simpleMode; $('#footSimple').classList.toggle('on', simpleMode); pageViews.forEach(drawAnnos); toast(simpleMode ? 'Einfache Darstellung – Wände schwarz, Öffnungen als Symbol' : 'Detaillierte Darstellung (automatisch nach Aufbau)'); };
   $('#footWinDim').onclick = () => { winDimsOn = !winDimsOn; $('#footWinDim').classList.toggle('on', winDimsOn); pageViews.forEach(drawAnnos); toast(winDimsOn ? 'Fenster-/Tür-Bemaßung an (R Rohbau · La Aussenlicht · Li Innenlicht)' : 'Fenster-/Tür-Bemaßung aus'); };
+  $('#footQty').onclick = openQuantities;
   $('#footPhase').onclick = e => { e.stopPropagation(); const p = $('#phasePop'); p.hidden = !p.hidden; if (!p.hidden) updatePhaseUI(); };
   $$('#phSet button').forEach(b => b.onclick = () => setActivePhase(b.dataset.ph || null));
   $$('#phView button').forEach(b => b.onclick = () => setPhaseView(b.dataset.pv));

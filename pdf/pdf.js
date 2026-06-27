@@ -1407,6 +1407,11 @@ function drawSelection(svg, a, pv) {
     const b = bbox(a), pad = 3; svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad }));
     return;
   }
+  if (a.type === 'area' || a.type === 'slab' || a.type === 'terrain') {   // Polygon/Polylinie: Eck-Knoten ziehen (nachbearbeiten)
+    const b = bbox(a), pad = 3; svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad }));
+    (a.pts || []).forEach((p, i) => svg.appendChild(svgEl('rect', { class: 'pnode', x: p[0] - hs, y: p[1] - hs, width: hs * 2, height: hs * 2, 'data-pn': i, 'data-id': a.id })));
+    return;
+  }
   if (isLineType(a)) {                                  // Linie: KEIN Rechteck-Rahmen, nur Linie hervorheben + Endpunkte
     svg.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'sel-line' }));
     for (const [name, x, y] of [['p1', a.x1, a.y1], ['p2', a.x2, a.y2]]) svg.appendChild(svgEl('circle', { class: 'handle', cx: x, cy: y, r: hs, 'data-h': name }));
@@ -2418,9 +2423,9 @@ function deleteGroup() {
 }
 function startNodeDrag(pv, e, id, pnIdx, phIdx, hk) {
   const a = findAnno(pv.num, id); if (!a) return;
-  if (a.type === 'profile') {   // Profil-Pfad-Knoten ziehen (rastet an Wandenden/Raster)
-    if (pnIdx === null) return; pushUndo();
-    const move = ev => { let q = evtToPage(pv, ev); const an = anchorSnap(pv, q.x, q.y, a.id); if (an) q = an; else if (gridOn && !ev.altKey) q = snapPt(q.x, q.y); a.path[+pnIdx] = [q.x, q.y]; drawAnnos(pv); };
+  if (a.type === 'profile' || a.type === 'slab' || a.type === 'area' || a.type === 'terrain') {   // Polygon/Pfad-Knoten ziehen (rastet an Wandenden/Raster)
+    if (pnIdx === null) return; pushUndo(); const key = a.type === 'profile' ? 'path' : 'pts';
+    const move = ev => { let q = evtToPage(pv, ev); const an = anchorSnap(pv, q.x, q.y, a.id); if (an) q = an; else if (gridOn && !ev.altKey) q = snapPt(q.x, q.y); a[key][+pnIdx] = [q.x, q.y]; drawAnnos(pv); };
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); return;
   }
@@ -5863,6 +5868,7 @@ function wire() {
     if (a.type === 'text') { openTextAnnoEdit(pv, a); return; }       // Text-Annotation bearbeiten
     if (a.type === 'imgph') { fillImgPlaceholder(pv, a); return; }    // Bild-Platzhalter füllen
     if (a.type === 'profile') { openProfileEditor(spec => { pushUndo(); a.prof = spec.prof; a.elev = spec.elev; a.name = spec.name; a.color = spec.color; a.mat = spec.mat; curProfile = Object.assign({}, curProfile, spec); drawAnnos(pv); saveState(); }, { prof: a.prof, elev: a.elev, name: a.name, color: a.color }); return; }   // Profil bearbeiten
+    if (a.type === 'slab') { sel = { num: pv.num, id: a.id }; openSlabBuildup(a, pv); return; }   // Decke: Doppelklick → Schichtaufbau
     if (a.type !== 'dim' && a.type !== 'measure') return;
     const v = prompt('Mass-Beschriftung (leer = automatisch gemessen):', a.text || lenLabel(a)); if (v === null) return;
     pushUndo(); a.text = v.trim() || ''; drawAnnos(pv);

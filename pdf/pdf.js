@@ -1020,8 +1020,8 @@ function slabLayerBands(a) {   // → [{mat,t,y0,y1,inset}] Höhen über der Dec
 const SUB_W = { lattung: 6, staender: 5, schraube: 1.2 };   // Breite/Markierung der UK-Querschnitte (cm)
 function applyWallBuildup(a, layersData, spacingCm) {   // layersData = [[mat, cm, subTyp?], …] innen→aussen · spacingCm = Achsabstand UK
   if (!layersData || !layersData.length) { delete a.layers; return; }
-  const sp = cmToPts(spacingCm || 60);
-  a.layers = layersData.map(([mat, cm, sub, top, bot, lowMat, lowH]) => { const l = { mat, t: cmToPts(cm) }; if (sub) l.sub = { type: sub, spacing: sp, w: cmToPts(SUB_W[sub] || 2) }; if (top) l.top = (+top) / 100; if (bot) l.bot = (+bot) / 100; if (lowMat && (+lowH) > 0) { l.lowMat = lowMat; l.lowH = (+lowH) / 100; } return l; });   // top/bot = Über-/Unterlänge; lowMat/lowH = Sockelzone (unten anderes Material bis Höhe)
+  const sp = cmToPts(spacingCm || 60), old = a.layers || null;
+  a.layers = layersData.map(([mat, cm, sub, top, bot, lowMat, lowH], i) => { const l = { mat, t: cmToPts(cm) }; if (sub) l.sub = { type: sub, spacing: sp, w: cmToPts(SUB_W[sub] || 2) }; if (top) l.top = (+top) / 100; if (bot) l.bot = (+bot) / 100; if (lowMat && (+lowH) > 0) { l.lowMat = lowMat; l.lowH = (+lowH) / 100; } if (old && old[i] && old[i].mat === mat) { if (old[i].ext1) l.ext1 = old[i].ext1; if (old[i].ext2) l.ext2 = old[i].ext2; } return l; });   // top/bot = Über-/Unterlänge; lowMat/lowH = Sockelzone; ext1/ext2 (gezogene Schicht-Länge) bleiben erhalten
   a.thick = a.layers.reduce((s, l) => s + l.t, 0);
   a.hatch = null; a.fill = '#ffffff'; a.color = '#1c242c';   // Aufbau übernimmt die Darstellung
 }
@@ -1054,7 +1054,14 @@ function wallLayerBands(a, arr) {   // jede Schicht als (gehrungsfolgendes) Band
   const poly = wallPoly(a, arr), c1A = poly[0], c2A = poly[1], c2B = poly[2], c1B = poly[3];
   const lp = (p, q, f) => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
   const total = a.layers.reduce((s, l) => s + l.t, 0) || 1, bands = []; let cum = 0;
-  for (const L of a.layers) { const f0 = cum / total, f1 = (cum + L.t) / total; bands.push({ mat: L.mat, f0, f1, poly: [lp(c1B, c1A, f1), lp(c2B, c2A, f1), lp(c2B, c2A, f0), lp(c1B, c1A, f0)] }); cum += L.t; }
+  const dxw = a.x2 - a.x1, dyw = a.y2 - a.y1, Lw = Math.hypot(dxw, dyw) || 1, uxw = dxw / Lw, uyw = dyw / Lw;   // Wandachse (für Schicht-Eigenlänge ext1/ext2 in pt)
+  for (const L of a.layers) {
+    const f0 = cum / total, f1 = (cum + L.t) / total, e1 = L.ext1 || 0, e2 = L.ext2 || 0;
+    let p0 = lp(c1B, c1A, f1), p1 = lp(c2B, c2A, f1), p2 = lp(c2B, c2A, f0), p3 = lp(c1B, c1A, f0);
+    if (e1) { p0 = [p0[0] - uxw * e1, p0[1] - uyw * e1]; p3 = [p3[0] - uxw * e1, p3[1] - uyw * e1]; }   // Schicht an Ende 1 (bei x1) verlängern/kürzen
+    if (e2) { p1 = [p1[0] + uxw * e2, p1[1] + uyw * e2]; p2 = [p2[0] + uxw * e2, p2[1] + uyw * e2]; }   // Ende 2 (bei x2)
+    bands.push({ mat: L.mat, f0, f1, poly: [p0, p1, p2, p3] }); cum += L.t;
+  }
   return { bands, c1A, c2A, c2B, c1B };
 }
 function layerHatch(svg, a, band) {   // Schraffur einer einzelnen Schicht, auf das Band geclippt
@@ -1416,6 +1423,10 @@ function drawSelection(svg, a, pv) {
     svg.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'sel-line' }));
     for (const [name, x, y] of [['p1', a.x1, a.y1], ['p2', a.x2, a.y2]]) svg.appendChild(svgEl('circle', { class: 'handle', cx: x, cy: y, r: hs, 'data-h': name }));
     if (a.type === 'wall' && a.dim) { const dg = wallDimGeom(a); svg.appendChild(svgEl('circle', { class: 'handle dim-handle', cx: (dg.x1 + dg.x2) / 2, cy: (dg.y1 + dg.y2) / 2, r: hs, 'data-h': 'dimoff', 'data-id': a.id })); }   // Masslinie von Hand verschieben
+    if (a.type === 'wall' && a.layers && a.layers.length && !wallSimple(a)) {   // pro Schicht je ein Griff an beiden Enden → Schicht-Länge ziehen
+      const lb = wallLayerBands(a, getAnnos(pv.num)).bands;
+      lb.forEach((b, i) => { const e1 = [(b.poly[0][0] + b.poly[3][0]) / 2, (b.poly[0][1] + b.poly[3][1]) / 2], e2 = [(b.poly[1][0] + b.poly[2][0]) / 2, (b.poly[1][1] + b.poly[2][1]) / 2]; svg.appendChild(svgEl('circle', { class: 'handle lay-handle', cx: e1[0], cy: e1[1], r: hs * 0.8, 'data-h': 'wl:' + i + ':1', 'data-id': a.id })); svg.appendChild(svgEl('circle', { class: 'handle lay-handle', cx: e2[0], cy: e2[1], r: hs * 0.8, 'data-h': 'wl:' + i + ':2', 'data-id': a.id })); });
+    }
   } else {
     const b = bbox(a), pad = 3;
     svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad }));
@@ -1821,6 +1832,7 @@ function onPointerDown(pv, e) {
     const pn = e.target.getAttribute && e.target.getAttribute('data-pn'), ph = e.target.getAttribute && e.target.getAttribute('data-ph');
     if ((pn !== null || ph !== null) && sel && sel.num === pv.num) { startNodeDrag(pv, e, sel.id, pn, ph, e.target.getAttribute('data-hk')); return; }   // Kurven-Knoten/Anfasser ziehen
     if (hAttr === 'dimoff' && sel && sel.num === pv.num) { startDimOffDrag(pv, e, sel.id); return; }   // Wand-Masslinie verschieben
+    if (hAttr && hAttr.indexOf('wl:') === 0 && sel && sel.num === pv.num) { const pp = hAttr.split(':'); startLayerExtDrag(pv, e, sel.id, +pp[1], +pp[2]); return; }   // Schicht-Länge (pro Schicht/Ende) ziehen
     if (hAttr === 'scflip' && sel && sel.num === pv.num) { const a = findAnno(pv.num, sel.id); if (a && a.type === 'section') { pushUndo(); a.flip = !a.flip; drawAnnos(pv); saveState(); toast('Blickrichtung gedreht'); } return; }   // Schnitt-Blickrichtung
     if (hAttr && sel && sel.num === pv.num) { startResize(pv, e, hAttr); return; }
     if (idAttr) {
@@ -2319,6 +2331,13 @@ function drawGroupSel(svg, pv) {
   let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; const arr = getAnnos(pv.num);
   for (const id of groupSel.ids) { const a = arr.find(x => x.id === id); if (!a) continue; const b = bbox(a); mnx = Math.min(mnx, b.x); mny = Math.min(mny, b.y); mxx = Math.max(mxx, b.x + b.w); mxy = Math.max(mxy, b.y + b.h); svg.appendChild(svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, class: 'group-item' })); }
   if (isFinite(mnx)) svg.appendChild(svgEl('rect', { x: mnx - 3, y: mny - 3, width: (mxx - mnx) + 6, height: (mxy - mny) + 6, class: 'group-box', 'data-group': '1' }));
+}
+function startLayerExtDrag(pv, e, id, li, end) {   // eine Wandschicht an einem Ende entlang der Wandachse verlängern/kürzen (pt)
+  const a = findAnno(pv.num, id); if (!a || !a.layers || !a.layers[li]) return; pushUndo();
+  const dxw = a.x2 - a.x1, dyw = a.y2 - a.y1, Lw = Math.hypot(dxw, dyw) || 1, uxw = dxw / Lw, uyw = dyw / Lw, o1 = a.layers[li].ext1 || 0, o2 = a.layers[li].ext2 || 0, start = evtToPage(pv, e);
+  const move = ev => { const q = evtToPage(pv, ev), proj = (q.x - start.x) * uxw + (q.y - start.y) * uyw; if (end === 1) a.layers[li].ext1 = Math.round(o1 - proj); else a.layers[li].ext2 = Math.round(o2 + proj); drawAnnos(pv); };
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function startGroupMove(pv, e) {
   const start = evtToPage(pv, e); pushUndo(); const origs = {}; let moved = false;
@@ -4885,6 +4904,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Decke im Schnitt (Schichten)', () => { const sl = { id: 9005, type: 'slab', pts: [[180, 100], [320, 100], [320, 200], [180, 200]], base: 2.6 }; applySlabBuildup(sl, [['belag', 1], ['estrich', 7, 1], ['beton', 24]]); const pr = sectionPrimitives(sec, [sl, sec]); return (pr.filter(p => p.t === 'rect').length >= 3 && Math.abs(sl.layers[1].inset - 0.01) < 1e-6) ? '' : 'Schichten/Einzug falsch'; });
     A('Schicht-Über/Unterlänge', () => { const w = { type: 'wall', x1: 0, y1: 0, x2: 100, y2: 0, thick: cmToPts(31) }; applyWallBuildup(w, [['mauerwerk', 15, '', 0, 30], ['eps', 16, '', 20, 0]]); return (Math.abs(w.layers[1].top - 0.2) < 1e-6 && Math.abs(w.layers[0].bot - 0.3) < 1e-6 && !w.layers[0].top) ? '' : 'top=' + w.layers[1].top + ' bot=' + w.layers[0].bot; });
     A('Sockelzone (Material-Split)', () => { const w = { type: 'wall', x1: 0, y1: 0, x2: 100, y2: 0, thick: cmToPts(31) }; applyWallBuildup(w, [['mauerwerk', 15, '', 0, 0, '', 0], ['glaswolle', 16, '', 0, 0, 'xps', 50]]); return (w.layers[1].lowMat === 'xps' && Math.abs(w.layers[1].lowH - 0.5) < 1e-6 && !w.layers[0].lowMat) ? '' : 'lowMat=' + w.layers[1].lowMat + ' lowH=' + w.layers[1].lowH; });
+    A('Schicht-Eigenlänge (Wand)', () => { const mk = () => ({ type: 'wall', x1: 0, y1: 0, x2: cmToPts(500), y2: 0, thick: cmToPts(30) }); const w1 = mk(); applyWallBuildup(w1, [['mauerwerk', 15], ['eps', 15]]); const w2 = mk(); applyWallBuildup(w2, [['mauerwerk', 15], ['eps', 15]]); w2.layers[1].ext2 = 20; const a1 = Math.max(...wallLayerBands(w1, [w1]).bands[1].poly.map(p => p[0])), a2 = Math.max(...wallLayerBands(w2, [w2]).bands[1].poly.map(p => p[0])); return Math.abs((a2 - a1) - 20) < 0.01 ? '' : 'd=' + (a2 - a1); });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

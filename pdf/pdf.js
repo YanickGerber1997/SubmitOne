@@ -5195,19 +5195,27 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   }
   function buildCtrls() {
     side.innerHTML = '';
-    const moWrap = document.createElement('label'); moWrap.className = 'lab-row'; moWrap.innerHTML = '<span>Montageart</span>';
-    const moSel = document.createElement('select'); moSel.innerHTML = '<option value="">– frei –</option><option value="aussen">Innen ans Mauerwerk</option><option value="laibung">In der Laibung</option><option value="innen">Aussen auf Konstruktion</option>'; moSel.value = a.mountMode || '';
-    moSel.onchange = () => { a.mountMode = moSel.value; if (moSel.value) applyMountPreset(a, moSel.value); render(); buildCtrls(); drawAnnos(pv); saveState(); }; moWrap.appendChild(moSel); side.appendChild(moWrap);
-    const anWrap = document.createElement('label'); anWrap.className = 'lab-row'; anWrap.innerHTML = '<span>Anschlag</span>';
-    const anSel = document.createElement('select'); anSel.innerHTML = '<option value="none">Kein</option><option value="aussen">Innen</option><option value="innen">Aussen</option>'; anSel.value = a.anschlagType || 'none';
-    anSel.onchange = () => { a.anschlagType = anSel.value; render(); buildCtrls(); drawAnnos(pv); saveState(); }; anWrap.appendChild(anSel); side.appendChild(anWrap);
-    for (const f of fields) { if (f.when && !f.when()) continue; const row = document.createElement('label'); row.className = 'lab-row'; const val = document.createElement('b'); val.textContent = f.get() + ' ' + f.unit;
-      row.innerHTML = '<span>' + f.label + '</span>'; const r = document.createElement('input'); r.type = 'range'; r.min = f.min; r.max = f.max; r.step = f.step; r.value = f.get();
-      r.oninput = () => { f.set(parseFloat(r.value)); val.textContent = f.get() + ' ' + f.unit; render(); drawAnnos(pv); }; r.onchange = () => saveState();
-      row.appendChild(r); row.appendChild(val); side.appendChild(row); }
-    if (wall && wall.layers && wall.layers.length) {   // Wandschichten direkt im Laibungs-Detail anpassen (Dicke) – Wand + Öffnung folgen live
-      const hd = document.createElement('div'); hd.className = 'lab-row'; hd.style.marginTop = '6px'; hd.innerHTML = '<span style="font-weight:600">Wandschichten (innen→aussen)</span>'; side.appendChild(hd);
-      const fullBtn = document.createElement('button'); fullBtn.className = 'btn'; fullBtn.textContent = '▦ Alle Schichten voll bearbeiten'; fullBtn.style.cssText = 'width:100%;margin-bottom:6px'; fullBtn.onclick = () => openBuildPop(wall, () => { render(); buildCtrls(); }); side.appendChild(fullBtn);
+    const head = t => { const h = document.createElement('div'); h.style.cssText = 'font-weight:700;font-size:11px;letter-spacing:.4px;text-transform:uppercase;color:#5c6753;margin:11px 0 3px;border-bottom:1px solid #e6e9e0;padding-bottom:3px'; h.textContent = t; side.appendChild(h); };
+    const sel = (label, opts, cur, cb) => { const w = document.createElement('label'); w.className = 'lab-row'; w.innerHTML = '<span>' + label + '</span>'; const s = document.createElement('select'); s.style.flex = '1'; s.innerHTML = opts.map(o => '<option value="' + o[0] + '"' + (o[0] === cur ? ' selected' : '') + '>' + o[1] + '</option>').join(''); s.value = cur; s.onchange = () => cb(s.value); w.appendChild(s); side.appendChild(w); };
+    const fld = k => { const f = fields.find(x => x.k === k); if (!f || (f.when && !f.when())) return; const row = document.createElement('label'); row.className = 'lab-row'; row.innerHTML = '<span>' + f.label + '</span>'; const r = document.createElement('input'); r.type = 'range'; r.min = f.min; r.max = f.max; r.step = f.step; r.value = f.get(); r.style.flex = '1'; const num = document.createElement('input'); num.type = 'number'; num.min = f.min; num.max = f.max; num.step = f.step; num.value = f.get(); num.style.width = '54px'; r.oninput = () => { f.set(parseFloat(r.value)); num.value = f.get(); render(); drawAnnos(pv); }; r.onchange = () => saveState(); num.onchange = () => { const v = parseFloat((num.value || '').replace(',', '.')); if (isNaN(v)) return; f.set(v); r.value = f.get(); render(); drawAnnos(pv); saveState(); }; const u = document.createElement('b'); u.textContent = f.unit; u.style.minWidth = '16px'; row.appendChild(r); row.appendChild(num); row.appendChild(u); side.appendChild(row); };
+    const win = a.kind === 'window';
+    head(win ? 'Fenster' : 'Tür');
+    sel('Typ', win ? [['f1', '1-flügelig'], ['f2', '2-flügelig (bündig)'], ['f2s', '2-fl. + Setzholz'], ['fest', 'Fest verglast']] : [['f1', '1-flügelig'], ['f2', '2-flügelig'], ['fest', 'Fest'], ['f1f', '1-fl. + Fixteil']], a.winType || 'f1', v => { a.winType = v; render(); drawAnnos(pv); saveState(); });
+    sel('Material', [['holz', 'Holz'], ['metall', 'Metall'], ['kunst', 'Kunststoff']], a.winMat || 'holz', v => { a.winMat = v; render(); drawAnnos(pv); saveState(); });
+    fld('frameW'); fld('frameD'); fld('sashW'); fld('sashD'); fld('sashShift');
+    head('Einbau / Montage');
+    sel('Montageart', [['', '– frei –'], ['aussen', 'Innen ans Mauerwerk'], ['laibung', 'In der Laibung'], ['innen', 'Aussen auf Konstruktion']], a.mountMode || '', v => { a.mountMode = v; if (v) applyMountPreset(a, v); render(); buildCtrls(); drawAnnos(pv); saveState(); });
+    fld('depth');
+    head('Anschlag');
+    sel('Anschlag', [['none', 'Kein'], ['aussen', 'Innen'], ['innen', 'Aussen']], a.anschlagType || 'none', v => { a.anschlagType = v; render(); buildCtrls(); drawAnnos(pv); saveState(); });
+    fld('anschlagDepth');
+    head('Laibung');
+    sel('Innen', [['putz', 'Putz reingezogen'], ['aussen', 'Aussenschicht rein'], ['gips', 'Gipsplatte + Putz'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealType || 'putz', v => { a.revealType = v; render(); drawAnnos(pv); saveState(); });
+    sel('Aussen', [['', 'Standard (Schicht)'], ['putz', 'Putz'], ['gips', 'Gipsplatte'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealOuter || '', v => { a.revealOuter = v; render(); drawAnnos(pv); saveState(); });
+    fld('boardW'); fld('boardVis'); fld('boardProtrude'); fld('outerLap'); fld('innerReveal');
+    if (wall && wall.layers && wall.layers.length) {
+      head('Wandschichten (innen → aussen)');
+      const fullBtn = document.createElement('button'); fullBtn.className = 'btn'; fullBtn.textContent = '▦ Alle Schichten voll bearbeiten'; fullBtn.style.cssText = 'width:100%;margin:2px 0 6px'; fullBtn.onclick = () => openBuildPop(wall, () => { render(); buildCtrls(); }); side.appendChild(fullBtn);
       wall.layers.forEach(ly => {
         const row = document.createElement('label'); row.className = 'lab-row'; const nm = (WALL_MATS[ly.mat] && WALL_MATS[ly.mat].label) || ly.mat || 'Schicht'; row.innerHTML = '<span>' + nm + '</span>';
         const inp = document.createElement('input'); inp.type = 'number'; inp.step = '0.5'; inp.min = '0.1'; inp.style.width = '66px'; inp.value = Math.round(ptsToCm(ly.t) * 10) / 10;

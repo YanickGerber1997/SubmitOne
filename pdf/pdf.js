@@ -5355,9 +5355,12 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     sel('Anschlag', [['none', 'Kein'], ['aussen', 'Innen'], ['innen', 'Aussen']], a.anschlagType || 'none', v => { a.anschlagType = v; render(); buildCtrls(); drawAnnos(pv); saveState(); });
     fld('anschlagDepth');
     head('Laibung');
-    sel('Innen', [['putz', 'Putz reingezogen'], ['aussen', 'Aussenschicht rein'], ['gips', 'Gipsplatte + Putz'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealType || 'putz', v => { a.revealType = v; render(); drawAnnos(pv); saveState(); });
-    sel('Aussen', [['', 'Standard (Schicht)'], ['putz', 'Putz'], ['gips', 'Gipsplatte'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealOuter || '', v => { a.revealOuter = v; render(); drawAnnos(pv); saveState(); });
-    fld('boardW'); fld('boardVis'); fld('boardProtrude'); fld('outerLap'); fld('innerReveal');
+    const rlActive = Array.isArray(a.revealLining) && a.revealLining.length;
+    if (!rlActive) {   // Standard-Laibung (Dropdowns) – ausgeblendet, sobald eigene Laibungsschichten aktiv sind (= ein System)
+      sel('Innen', [['putz', 'Putz reingezogen'], ['aussen', 'Aussenschicht rein'], ['gips', 'Gipsplatte + Putz'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealType || 'putz', v => { a.revealType = v; render(); drawAnnos(pv); saveState(); });
+      sel('Aussen', [['', 'Standard (Schicht)'], ['putz', 'Putz'], ['gips', 'Gipsplatte'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealOuter || '', v => { a.revealOuter = v; render(); drawAnnos(pv); saveState(); });
+      fld('boardW'); fld('boardVis'); fld('boardProtrude'); fld('outerLap'); fld('innerReveal');
+    } else { const note = document.createElement('div'); note.className = 'lab-row'; note.innerHTML = '<span style="color:#46503f">Laibung wird durch die eigenen Schichten unten bestimmt (ein System).</span>'; side.appendChild(note); }
     { // --- Eigene Laibungsschichten (frei: 1/2/3… · Material/Dicke/Tiefe je Schicht) ---
       const RL = a.revealLining, matOpts = Object.keys(WALL_MATS).map(k => [k, WALL_MATS[k].label || k]);
       const prefill = () => (wall && wall.layers && wall.layers.length ? wall.layers : [{ mat: 'putz', t: cmToPts(1.5) }]).map(l => ({ mat: l.mat, t: Math.round(ptsToCm(l.t) * 10) / 10, depth: 1 }));

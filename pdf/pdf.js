@@ -4103,7 +4103,7 @@ async function open3D() {
   ov.querySelector('#d3Close').onclick = close;
 }
 /* ===================== IFC-Import (ArchiCAD/Allplan → BIM via web-ifc/WASM) ===================== */
-let _webifc = null;
+let _webifc = null, ifcShowEnv = false;   // ifcShowEnv: Umgebung/Pflanzen/Möbel (Proxys) anzeigen?
 async function loadWebIFC() {
   if (_webifc) return _webifc;
   const VER = '0.0.57'; let mod;
@@ -4116,8 +4116,9 @@ async function parseIFC(bytes) {   // → { meshes (Welt-Geometrie, Y-oben), bbo
   const { api, mod } = await loadWebIFC();
   const modelID = api.OpenModel(new Uint8Array(bytes), { COORDINATE_TO_ORIGIN: true });
   const meshes = [], bb = { minx: Infinity, miny: Infinity, minz: Infinity, maxx: -Infinity, maxy: -Infinity, maxz: -Infinity };
+  const ENV = new Set([mod.IFCBUILDINGELEMENTPROXY, mod.IFCSITE, mod.IFCFURNISHINGELEMENT, mod.IFCSPACE, mod.IFCOPENINGELEMENT].filter(x => x != null));   // Umgebung/Möbel/Pflanzen
   api.StreamAllMeshes(modelID, flat => {
-    const gs = flat.geometries;
+    const gs = flat.geometries; let et = 0; try { et = api.GetLineType(modelID, flat.expressID); } catch (_) { } const env = ENV.has(et);
     for (let i = 0; i < gs.size(); i++) {
       const pg = gs.get(i), geom = api.GetGeometry(modelID, pg.geometryExpressID);
       const va = api.GetVertexArray(geom.GetVertexData(), geom.GetVertexDataSize()), ia = api.GetIndexArray(geom.GetIndexData(), geom.GetIndexDataSize());
@@ -4130,7 +4131,7 @@ async function parseIFC(bytes) {   // → { meshes (Welt-Geometrie, Y-oben), bbo
         nor[v * 3] = m[0] * nx + m[4] * ny + m[8] * nz; nor[v * 3 + 1] = m[2] * nx + m[6] * ny + m[10] * nz; nor[v * 3 + 2] = -(m[1] * nx + m[5] * ny + m[9] * nz);
         if (tx < bb.minx) bb.minx = tx; if (tx > bb.maxx) bb.maxx = tx; if (ty < bb.miny) bb.miny = ty; if (ty > bb.maxy) bb.maxy = ty; if (tz < bb.minz) bb.minz = tz; if (tz > bb.maxz) bb.maxz = tz;
       }
-      const c = pg.color; meshes.push({ pos, nor, indices: Array.from(ia), color: { r: c.x, g: c.y, b: c.z, a: c.w } });
+      const c = pg.color; meshes.push({ pos, nor, indices: Array.from(ia), color: { r: c.x, g: c.y, b: c.z, a: c.w }, env });
       if (geom.delete) try { geom.delete(); } catch (_) { }
     }
   });
@@ -4138,8 +4139,9 @@ async function parseIFC(bytes) {   // → { meshes (Welt-Geometrie, Y-oben), bbo
   const summary = []; for (const [label, t] of TYPES) { if (t == null) continue; let v; try { v = api.GetLineIDsWithType(modelID, t); } catch (_) { continue; } const cnt = v ? v.size() : 0; if (cnt) summary.push({ label, n: cnt }); }
   const spaces = []; try { const sp = api.GetLineIDsWithType(modelID, T.IFCSPACE); for (let i = 0; i < Math.min(sp.size(), 800); i++) { const id = sp.get(i); let line; try { line = api.GetLine(modelID, id); } catch (_) { continue; } const nm = (line.LongName && line.LongName.value) || (line.Name && line.Name.value) || '—', num = (line.Name && line.Name.value) || ''; spaces.push({ name: nm, num }); } } catch (_) { }
   let project = ''; try { const pr = api.GetLineIDsWithType(modelID, T.IFCPROJECT); if (pr && pr.size()) { const p = api.GetLine(modelID, pr.get(0)); project = (p.Name && p.Name.value) || (p.LongName && p.LongName.value) || ''; } } catch (_) { }
+  const storeys = []; try { const st = api.GetLineIDsWithType(modelID, T.IFCBUILDINGSTOREY); for (let i = 0; i < st.size(); i++) { const id = st.get(i); let l; try { l = api.GetLine(modelID, id); } catch (_) { continue; } const nm = (l.Name && l.Name.value) || (l.LongName && l.LongName.value) || 'Geschoss', el = (l.Elevation && typeof l.Elevation.value === 'number') ? l.Elevation.value : (typeof l.Elevation === 'number' ? l.Elevation : null); storeys.push({ name: nm, elev: el }); } storeys.sort((a, b) => (a.elev == null ? 0 : a.elev) - (b.elev == null ? 0 : b.elev)); } catch (_) { }
   api.CloseModel(modelID);
-  return { meshes, bbox: bb, summary, spaces, project, dim: { x: bb.maxx - bb.minx, y: bb.maxy - bb.miny, z: bb.maxz - bb.minz } };
+  return { meshes, bbox: bb, summary, spaces, storeys, project, dim: { x: bb.maxx - bb.minx, y: bb.maxy - bb.miny, z: bb.maxz - bb.minz } };
 }
 function buildIFCScene(host, ifc) {
   host.innerHTML = '';
@@ -4154,7 +4156,7 @@ function buildIFCScene(host, ifc) {
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(span * 3, span * 3), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; ground.receiveShadow = true; ground.name = 'ground'; scene.add(ground);
   scene.add(new THREE.GridHelper(span * 3, 40, 0xc4cabe, 0xd8dcd2));
   const byColor = {};   // nach Farbe zusammenfassen → wenige Draw-Calls
-  for (const me of ifc.meshes) { const c = me.color, k = (c.r * 255 | 0) + '_' + (c.g * 255 | 0) + '_' + (c.b * 255 | 0) + '_' + c.a.toFixed(2); let g = byColor[k]; if (!g) g = byColor[k] = { color: c, pos: [], nor: [], idx: [], base: 0 }; const P = me.pos; for (let i = 0; i < P.length; i += 3) g.pos.push(P[i] - cx, P[i + 1] - floor, P[i + 2] - cz); for (const v of me.nor) g.nor.push(v); for (const ix of me.indices) g.idx.push(ix + g.base); g.base += P.length / 3; }
+  for (const me of ifc.meshes) { if (!ifcShowEnv && me.env) continue; const c = me.color, k = (c.r * 255 | 0) + '_' + (c.g * 255 | 0) + '_' + (c.b * 255 | 0) + '_' + c.a.toFixed(2); let g = byColor[k]; if (!g) g = byColor[k] = { color: c, pos: [], nor: [], idx: [], base: 0 }; const P = me.pos; for (let i = 0; i < P.length; i += 3) g.pos.push(P[i] - cx, P[i + 1] - floor, P[i + 2] - cz); for (const v of me.nor) g.nor.push(v); for (const ix of me.indices) g.idx.push(ix + g.base); g.base += P.length / 3; }
   for (const k in byColor) { const g = byColor[k], geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.nor, 3)); geo.setIndex(g.idx); const tr = g.color.a < 0.99, mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(g.color.r, g.color.g, g.color.b), transparent: tr, opacity: tr ? g.color.a : 1, roughness: 0.85, metalness: 0, side: THREE.DoubleSide }); const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; scene.add(m); }
   let raf; const tick = () => { controls.update(); renderer.render(scene, camera); raf = requestAnimationFrame(tick); }; tick();
   const setView = v => { const d = span * 1.4; if (v === 'top') camera.position.set(0.001, d * 1.5, 0); else if (v === 'front') camera.position.set(0, sy * 0.5, d); else if (v === 'side') camera.position.set(d, sy * 0.5, 0); else camera.position.set(d * 0.7, d * 0.7, d * 0.7); controls.target.set(0, sy * 0.4, 0); controls.update(); };
@@ -4165,11 +4167,12 @@ function buildIFCScene(host, ifc) {
 function open3DIFC(ifc) {
   const ov = document.createElement('div'); ov.className = 'd3-overlay';
   const dim = ifc.dim ? (ifc.dim.x.toFixed(1) + '×' + ifc.dim.z.toFixed(1) + ' m, H ' + ifc.dim.y.toFixed(1) + ' m') : '';
-  ov.innerHTML = '<div class="d3-bar"><b>IFC-Modell</b>' + (ifc.project ? '<span class="d3-hint">' + ifc.project + '</span>' : '') + '<span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">' + dim + ' · Ziehen = drehen</span><span class="grow"></span><button class="btn" id="ifcList">▦ Bauteilliste</button><button class="btn" id="ifcPlan" title="Grundriss erzeugen: Horizontalschnitt durchs Modell → editierbare 2D-Linien auf die offene Seite (Massstab nötig)">⊞ Grundriss</button><button class="btn" id="ifcWalls" title="Als editierbare Wände: erkennt aus dem Schnitt parallele Wandpaare und erzeugt echte Submit-Wände (2D + 3D bearbeitbar). Experimentell.">⌂ Als Wände</button><button class="btn" id="ifcObj" title="IFC-Modell als OBJ exportieren (Blender/SketchUp …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
+  ov.innerHTML = '<div class="d3-bar"><b>IFC-Modell</b>' + (ifc.project ? '<span class="d3-hint">' + ifc.project + '</span>' : '') + '<span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">' + dim + ' · Ziehen = drehen</span><span class="grow"></span><button class="btn' + (ifcShowEnv ? ' on' : '') + '" id="ifcEnv" title="Umgebung/Pflanzen/Möbel (RPC-Proxys, Gelände) ein-/ausblenden – für eine saubere Bauwerks-Ansicht standardmäßig aus">🌳 Umgebung</button><button class="btn" id="ifcList">▦ Bauteilliste</button><button class="btn" id="ifcPlan" title="Grundriss erzeugen: Horizontalschnitt durchs Modell → editierbare 2D-Linien auf die offene Seite (Massstab nötig)">⊞ Grundriss</button><button class="btn" id="ifcWalls" title="Als editierbare Wände: erkennt aus dem Schnitt parallele Wandpaare und erzeugt echte Submit-Wände (2D + 3D bearbeitbar). Experimentell.">⌂ Als Wände</button><button class="btn" id="ifcObj" title="IFC-Modell als OBJ exportieren (Blender/SketchUp …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
   document.body.appendChild(ov); const host = ov.querySelector('#d3Canvas'); let api = buildIFCScene(host, ifc);
   ov.querySelectorAll('.d3-views button').forEach(b => b.onclick = () => api && api.setView && api.setView(b.dataset.v));
   ov.querySelector('#d3Shot').onclick = () => { if (!api || !api.snapshot) return; const s = api.snapshot(); if (pdfDoc) { close(); place3DImage(s.data, s.w, s.h); } else toast('Erst ein PDF/Plan öffnen, um das Bild abzulegen.'); };
   ov.querySelector('#ifcList').onclick = () => openIFCList(ifc);
+  ov.querySelector('#ifcEnv').onclick = e => { ifcShowEnv = !ifcShowEnv; e.currentTarget.classList.toggle('on', ifcShowEnv); if (api) api.dispose(); api = buildIFCScene(host, ifc); toast(ifcShowEnv ? 'Umgebung/Pflanzen eingeblendet.' : 'Umgebung/Pflanzen ausgeblendet (saubere Bauwerks-Ansicht).'); };
   ov.querySelector('#ifcObj').onclick = () => saveObjFrom(api, ifc.project || 'ifc-modell');
   ov.querySelector('#ifcPlan').onclick = () => { if (!pdfDoc) { toast('Erst ein PDF/Plan öffnen, um den Grundriss abzulegen.'); return; } const h = prompt('Schnitthöhe für den Grundriss (m über Gebäude-Unterkante):', '1.2'); if (h == null) return; const hv = parseFloat((h || '').replace(',', '.')); ifcFloorPlan(ifc, hv > 0 ? hv : 1.2); };
   ov.querySelector('#ifcWalls').onclick = () => { if (!pdfDoc) { toast('Erst ein PDF/Plan öffnen, um die Wände abzulegen.'); return; } const h = prompt('Schnitthöhe für die Wand-Erkennung (m über Gebäude-Unterkante):', '1.2'); if (h == null) return; const hv = parseFloat((h || '').replace(',', '.')); ifcToWalls(ifc, hv > 0 ? hv : 1.2); };
@@ -4180,14 +4183,16 @@ function open3DIFC(ifc) {
 function openIFCList(ifc) {
   const rows = ifc.summary.map(s => '<tr><td>' + s.label + '</td><td style="text-align:right">' + s.n + '</td></tr>').join('');
   const sp = (ifc.spaces && ifc.spaces.length) ? ('<h4 style="margin:12px 6px 4px">Räume (' + ifc.spaces.length + ')</h4><table class="qty-tab"><tbody>' + ifc.spaces.map(s => '<tr><td style="white-space:nowrap">' + (s.num || '') + '</td><td>' + s.name + '</td></tr>').join('') + '</tbody></table>') : '';
+  const st = (ifc.storeys && ifc.storeys.length) ? ('<h4 style="margin:12px 6px 4px">Geschosse / Ebenen (' + ifc.storeys.length + ')</h4><table class="qty-tab"><thead><tr><th>Name</th><th style="text-align:right">Höhe (m)</th></tr></thead><tbody>' + ifc.storeys.map(s => '<tr><td>' + s.name + '</td><td style="text-align:right">' + (s.elev == null ? '—' : (Math.round(s.elev * 100) / 100)) + '</td></tr>').join('') + '</tbody></table>') : '';
   const ov = document.createElement('div'); ov.className = 'lab-overlay';
-  ov.innerHTML = '<div class="lab-wrap" style="width:min(560px,94vw);height:auto;max-height:84vh"><div class="lab-head"><b>IFC-Bauteilliste</b>' + (ifc.project ? '<span class="lab-hint">' + ifc.project + '</span>' : '') + '<span class="grow"></span><button class="btn" id="ifcCopy">In Zwischenablage</button><button class="btn" id="ifcLClose">✕</button></div><div class="qty-body"><table class="qty-tab"><thead><tr><th>Bauteil</th><th style="text-align:right">Anzahl</th></tr></thead><tbody>' + rows + '</tbody></table>' + sp + '</div></div>';
+  ov.innerHTML = '<div class="lab-wrap" style="width:min(560px,94vw);height:auto;max-height:84vh"><div class="lab-head"><b>IFC-Bauteilliste</b>' + (ifc.project ? '<span class="lab-hint">' + ifc.project + '</span>' : '') + '<span class="grow"></span><button class="btn" id="ifcCopy">In Zwischenablage</button><button class="btn" id="ifcLClose">✕</button></div><div class="qty-body"><table class="qty-tab"><thead><tr><th>Bauteil</th><th style="text-align:right">Anzahl</th></tr></thead><tbody>' + rows + '</tbody></table>' + st + sp + '</div></div>';
   document.body.appendChild(ov); ov.querySelector('#ifcLClose').onclick = () => ov.remove(); ov.addEventListener('pointerdown', e => { if (e.target === ov) ov.remove(); });
   ov.querySelector('#ifcCopy').onclick = () => { const tsv = ifc.summary.map(s => s.label + '\t' + s.n).join('\n') + (ifc.spaces.length ? ('\n\nRäume\n' + ifc.spaces.map(s => (s.num || '') + '\t' + s.name).join('\n')) : ''); if (navigator.clipboard) navigator.clipboard.writeText(tsv); toast('Liste kopiert (Excel-tauglich).'); };
 }
 function ifcSliceSegments(meshes, cutY) {   // Horizontalschnitt durch alle Meshes auf Höhe cutY (three-Y = Höhe) → 2D-Segmente (X, Z)
   const segs = [];
   for (const m of meshes) {
+    if (m.env) continue;   // Umgebung/Pflanzen/Möbel nicht schneiden
     const p = m.pos, idx = m.indices;
     const handle = (a, b, c) => {
       const ay = p[a * 3 + 1], by = p[b * 3 + 1], cy = p[c * 3 + 1], mn = Math.min(ay, by, cy), mx = Math.max(ay, by, cy);

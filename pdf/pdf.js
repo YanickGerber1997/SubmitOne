@@ -850,6 +850,12 @@ function renderLayerPanel() {
   });
 }
 function toggleLayerPanel() { const p = $('#layerPanel'); if (!p) return; p.hidden = !p.hidden; if (!p.hidden) renderLayerPanel(); }
+function toggleHdrPop(popId, btnId) {   // Header-Menü „Listen"/„Submit" auf-/zuklappen (fixed positioniert unter dem Knopf)
+  const pop = document.getElementById(popId), btn = document.getElementById(btnId); if (!pop || !btn) return;
+  document.querySelectorAll('.hdr-pop').forEach(p => { if (p !== pop) p.hidden = true; });
+  if (pop.hidden) { pop.hidden = false; const r = btn.getBoundingClientRect(), w = pop.offsetWidth || 236; pop.style.top = (r.bottom + 6) + 'px'; pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px'; }
+  else pop.hidden = true;
+}
 function duplicateLayerUp() {   // aktives Geschoss 1:1 nach oben kopieren (neue Ebene mit Höhenlage = aktuell + Geschosshöhe)
   const src = layerById(activeLayerId); if (!src) return;
   let wh = 0; for (const n in annos) for (const a of (annos[n] || [])) if (a.layer === activeLayerId && a.type === 'wall') wh = Math.max(wh, a.h3d || wallHeightM);
@@ -5040,6 +5046,12 @@ function wire() {
   $('#foot3d').onclick = open3D;
   $('#footIFC').onclick = importIFCFile;
   $('#footGIS').onclick = importGISFile;
+  $('#hdrLists').onclick = e => { e.stopPropagation(); toggleHdrPop('listsPop', 'hdrLists'); };
+  $('#hdrSubmit').onclick = e => { e.stopPropagation(); toggleHdrPop('submitPop', 'hdrSubmit'); };
+  $('#smOpen').onclick = openPicker;
+  $('#smHint3d').onclick = () => toast('OBJ-Export: unten „◳ 3D" öffnen → im 3D-Balken „⭳ OBJ".');
+  $$('.hdr-pop button').forEach(b => b.addEventListener('click', () => { const p = b.closest('.hdr-pop'); if (p) p.hidden = true; }));
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('.hdr-pop') && !e.target.closest('.hdr-btn')) $$('.hdr-pop').forEach(p => p.hidden = true); }, true);
   let planKind = 'kopf', planPos = 'br';
   $('#footPlan').onclick = e => { e.stopPropagation(); const p = $('#planPop'); p.hidden = !p.hidden; };
   $('#pbBuild').onclick = e => { e.stopPropagation(); const p = $('#buildPop'); if (p.hidden) openBuildPop(); else p.hidden = true; };

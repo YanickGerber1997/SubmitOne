@@ -37,6 +37,12 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .splash-logo{width:min(360px,72vw);opacity:0;animation:lgReveal 1.15s cubic-bezier(.2,.7,.3,1) .15s forwards}
 /* Edge „Visuelle Suche"-Leiste (oben rechts auf Bildern) auf unseren Logos unterdrücken */
 .splash-logo,.brand .logomark,.brand .brand-word,.splash-mark{pointer-events:none;-webkit-user-select:none;user-select:none}
+/* Header-Menüs „Listen" / „Submit" */
+.hdr-btn{height:30px;padding:0 11px;border:1px solid #d8dcd2;background:#fff;border-radius:8px;font:inherit;font-size:13px;color:#2a2f2a;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.hdr-btn:hover{background:#eef1ec;border-color:#c2c8ba}
+.hdr-pop{position:fixed;top:0;left:0;background:#fff;border:1px solid #d8dcd2;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:6px;z-index:300;display:flex;flex-direction:column;min-width:236px}
+.hdr-pop button{display:block;width:100%;text-align:left;padding:9px 12px;border:0;background:none;border-radius:7px;font:inherit;font-size:13px;color:#2a2f2a;cursor:pointer;white-space:nowrap}
+.hdr-pop button:hover{background:#eef1ec}
 @keyframes lgReveal{from{opacity:0;transform:scale(.93) translateY(10px);clip-path:inset(0 0 100% 0)}to{opacity:1;transform:scale(1) translateY(0);clip-path:inset(0 0 0 0)}}
 .brand .bw-a{color:#1c242c} .brand .bw-b{color:#4f7a3c;margin-left:5px}
 .brand .brand-word{height:25px;width:auto;display:block;object-fit:contain}

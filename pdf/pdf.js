@@ -1833,6 +1833,7 @@ function onPointerDown(pv, e) {
     if ((pn !== null || ph !== null) && sel && sel.num === pv.num) { startNodeDrag(pv, e, sel.id, pn, ph, e.target.getAttribute('data-hk')); return; }   // Kurven-Knoten/Anfasser ziehen
     if (hAttr === 'dimoff' && sel && sel.num === pv.num) { startDimOffDrag(pv, e, sel.id); return; }   // Wand-Masslinie verschieben
     if (hAttr && hAttr.indexOf('wl:') === 0 && sel && sel.num === pv.num) { const pp = hAttr.split(':'); startLayerExtDrag(pv, e, sel.id, +pp[1], +pp[2]); return; }   // Schicht-Länge (pro Schicht/Ende) ziehen
+    if (hAttr && hAttr.indexOf('sl:') === 0 && sel && sel.num === pv.num) { const pp = hAttr.split(':'); startSectionLayerDrag(pv, e, +pp[1], +pp[2], pp[3]); return; }   // Schicht-Kante im Schnitt ziehen (Ober-/Unterlänge)
     if (hAttr === 'scflip' && sel && sel.num === pv.num) { const a = findAnno(pv.num, sel.id); if (a && a.type === 'section') { pushUndo(); a.flip = !a.flip; drawAnnos(pv); saveState(); toast('Blickrichtung gedreht'); } return; }   // Schnitt-Blickrichtung
     if (hAttr && sel && sel.num === pv.num) { startResize(pv, e, hAttr); return; }
     if (idAttr) {
@@ -2331,6 +2332,13 @@ function drawGroupSel(svg, pv) {
   let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; const arr = getAnnos(pv.num);
   for (const id of groupSel.ids) { const a = arr.find(x => x.id === id); if (!a) continue; const b = bbox(a); mnx = Math.min(mnx, b.x); mny = Math.min(mny, b.y); mxx = Math.max(mxx, b.x + b.w); mxy = Math.max(mxy, b.y + b.h); svg.appendChild(svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, class: 'group-item' })); }
   if (isFinite(mnx)) svg.appendChild(svgEl('rect', { x: mnx - 3, y: mny - 3, width: (mxx - mnx) + 6, height: (mxy - mny) + 6, class: 'group-box', 'data-group': '1' }));
+}
+function startSectionLayerDrag(pv, e, wallId, li, edge) {   // im Schnitt: Schicht-Ober-/Unterkante ziehen → layer.top/bot (m)
+  const w = findAnno(pv.num, wallId); if (!w || !w.layers || !w.layers[li] || !docScale) return; pushUndo();
+  const perPt = docScale.perPt, L = w.layers[li], o = edge === 'top' ? (L.top || 0) : (L.bot || 0), start = evtToPage(pv, e);
+  const move = ev => { const q = evtToPage(pv, ev); if (edge === 'top') L.top = Math.max(-2, Math.round(((o + (start.y - q.y) * perPt)) * 1000) / 1000); else L.bot = Math.max(-2, Math.round(((o + (q.y - start.y) * perPt)) * 1000) / 1000); drawAnnos(pv); };
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function startLayerExtDrag(pv, e, id, li, end) {   // eine Wandschicht an einem Ende entlang der Wandachse verlängern/kürzen (pt)
   const a = findAnno(pv.num, id); if (!a || !a.layers || !a.layers[li]) return; pushUndo();
@@ -2936,9 +2944,10 @@ function sectionPrimitives(a, arr) {
     const w = h.w, H = w.h3d || wallHeightM, x0 = h.dist - h.appW / 2;
     const layers0 = (w.layers && w.layers.length) ? w.layers : [{ mat: null, t: h.T }], layers = a.flip ? layers0.slice().reverse() : layers0, totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
     let cx = x0;
-    for (const L of layers) { const lw = (L.t / totalT) * h.appW, bx = X(cx), yTopF = Yh(H + (L.top || 0)), yBotF = Yh(0 - (L.bot || 0));   // L.top/L.bot = eigene Über-/Unterlänge; L.lowMat/L.lowH = Sockelzone (unten anderes Material)
+    for (let li = 0; li < layers.length; li++) { const L = layers[li], lw = (L.t / totalT) * h.appW, bx = X(cx), yTopF = Yh(H + (L.top || 0)), yBotF = Yh(0 - (L.bot || 0));   // L.top/L.bot = eigene Über-/Unterlänge; L.lowMat/L.lowH = Sockelzone
       const drawSeg = (mat, yT, yB) => { if (yB - yT < 0.1) return; const m = mat ? (WALL_MATS[mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; out.push({ t: 'rect', x: bx, y: yT, w: lw, h: yB - yT, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, bx, yT, lw, yB - yT, mat, (w.hatch && w.hatch.type)); };
       if (L.lowMat && L.lowH > 0) { const yS = Yh(L.lowH); drawSeg(L.lowMat, yS, yBotF); drawSeg(L.mat, yTopF, yS); } else drawSeg(L.mat, yTopF, yBotF);
+      if (w.layers && w.layers.length) { const oi = a.flip ? (layers.length - 1 - li) : li; out.push({ t: 'lhandle', x: bx + lw / 2, y: yTopF, wallId: w.id, li: oi, edge: 'top' }); out.push({ t: 'lhandle', x: bx + lw / 2, y: yBotF, wallId: w.id, li: oi, edge: 'bot' }); }   // Schicht-Ziehgriffe (Ober-/Unterkante) → im Schnitt verlängern/kürzen
       cx += lw; }
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
     for (const o of ops) sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil (a.flip = Blickrichtung)
@@ -2990,6 +2999,7 @@ function drawSection(svg, a, arr) {
     else if (p.t === 'line') { const l = svgEl('line', { x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2, stroke: p.stroke || '#1c242c', 'stroke-width': p.w || 1, 'vector-effect': 'non-scaling-stroke' }); if (p.dash) l.setAttribute('stroke-dasharray', p.dash); g.appendChild(l); }
     else if (p.t === 'arrow') { const s = 6, ang = Math.atan2(p.dy, p.dx); for (const da of [2.5, -2.5]) g.appendChild(svgEl('line', { x1: p.x, y1: p.y, x2: p.x - Math.cos(ang + da) * s, y2: p.y - Math.sin(ang + da) * s, stroke: p.col || '#1c242c', 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' })); }
     else if (p.t === 'text') { const t = svgEl('text', { x: p.x, y: p.y, fill: p.col || '#1c242c', 'font-size': p.small ? 9 : 12, 'font-weight': p.small ? 400 : 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = p.text; g.appendChild(t); }
+    else if (p.t === 'lhandle' && sel && sel.id === a.id) { g.appendChild(svgEl('circle', { class: 'handle lay-handle', cx: p.x, cy: p.y, r: 4.5, 'data-h': 'sl:' + p.wallId + ':' + p.li + ':' + p.edge, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' })); }   // Schicht-Kante im Schnitt ziehen
   }
   svg.appendChild(g);
   const b = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: 'transparent', 'data-id': a.id }));

@@ -4103,14 +4103,22 @@ async function open3D() {
   ov.querySelector('#d3Close').onclick = close;
 }
 /* ===================== IFC-Import (ArchiCAD/Allplan → BIM via web-ifc/WASM) ===================== */
-let _webifc = null, ifcShowEnv = false;   // ifcShowEnv: Umgebung/Pflanzen/Möbel (Proxys) anzeigen?
+let _webifc = null, ifcShowEnv = false, ifcUpAxis = 'y';   // ifcShowEnv: Umgebung anzeigen? · ifcUpAxis: welche Achse ist „oben" (vom Nutzer korrigierbar)
+function ifcRemap(p) { return ifcUpAxis === 'z' ? [p[0], p[2], p[1]] : ifcUpAxis === 'x' ? [p[1], p[0], p[2]] : [p[0], p[1], p[2]]; }   // (Welt) → [planX, Höhe, planZ]
+function ifcHeightMin(ifc) { const b = ifc.bbox; return ifcUpAxis === 'z' ? b.minz : ifcUpAxis === 'x' ? b.minx : b.miny; }
+function ifcHeightExt(ifc) { const b = ifc.bbox; return ifcUpAxis === 'z' ? (b.maxz - b.minz) : ifcUpAxis === 'x' ? (b.maxx - b.minx) : (b.maxy - b.miny); }
 async function loadWebIFC() {
   if (_webifc) return _webifc;
-  const VER = '0.0.57'; let mod;
-  try { mod = await import('https://unpkg.com/web-ifc@' + VER + '/web-ifc-api.js'); }
-  catch (_) { mod = await import('https://cdn.jsdelivr.net/npm/web-ifc@' + VER + '/web-ifc-api.js'); }
-  const api = new mod.IfcAPI(); api.SetWasmPath('https://unpkg.com/web-ifc@' + VER + '/'); await api.Init();
-  _webifc = { api, mod }; return _webifc;
+  for (const VER of ['0.0.68', '0.0.57']) {   // neuere Engine zuerst (bessere Verschneidungen/Boolean), Rückfall auf die bewährte
+    try {
+      let mod;
+      try { mod = await import('https://unpkg.com/web-ifc@' + VER + '/web-ifc-api.js'); }
+      catch (_) { mod = await import('https://cdn.jsdelivr.net/npm/web-ifc@' + VER + '/web-ifc-api.js'); }
+      const api = new mod.IfcAPI(); api.SetWasmPath('https://unpkg.com/web-ifc@' + VER + '/'); await api.Init();
+      _webifc = { api, mod, version: VER }; return _webifc;
+    } catch (e) { console.warn('web-ifc ' + VER + ' nicht ladbar, versuche Rückfall …', e); }
+  }
+  throw new Error('web-ifc (BIM-Engine) nicht ladbar – Internet nötig.');
 }
 async function parseIFC(bytes) {   // → { meshes (Welt-Geometrie, Y-oben), bbox, summary, spaces, project, dim }
   const { api, mod } = await loadWebIFC();
@@ -4144,8 +4152,9 @@ async function parseIFC(bytes) {   // → { meshes (Welt-Geometrie, Y-oben), bbo
 }
 function buildIFCScene(host, ifc) {
   host.innerHTML = '';
-  const W = host.clientWidth || 800, Hp = host.clientHeight || 500, bb = ifc.bbox, cx = (bb.minx + bb.maxx) / 2, cz = (bb.minz + bb.maxz) / 2, floor = bb.miny;
-  const sy = bb.maxy - bb.miny, span = Math.max(bb.maxx - bb.minx, bb.maxz - bb.minz, sy, 2);
+  const W = host.clientWidth || 800, Hp = host.clientHeight || 500, rb = ifc.bbox;
+  const ex = ifcUpAxis === 'z' ? { x0: rb.minx, x1: rb.maxx, h0: rb.minz, h1: rb.maxz, z0: rb.miny, z1: rb.maxy } : ifcUpAxis === 'x' ? { x0: rb.miny, x1: rb.maxy, h0: rb.minx, h1: rb.maxx, z0: rb.minz, z1: rb.maxz } : { x0: rb.minx, x1: rb.maxx, h0: rb.miny, h1: rb.maxy, z0: rb.minz, z1: rb.maxz };
+  const cx = (ex.x0 + ex.x1) / 2, cz = (ex.z0 + ex.z1) / 2, floor = ex.h0, sy = ex.h1 - ex.h0, span = Math.max(ex.x1 - ex.x0, ex.z1 - ex.z0, sy, 2);
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0xeef1ec);
   const camera = new THREE.PerspectiveCamera(50, W / Hp, 0.05, span * 40 + 60); camera.position.set(span * 0.9, span * 0.9, span * 0.9);
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); renderer.setSize(W, Hp); renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; host.appendChild(renderer.domElement);
@@ -4155,7 +4164,7 @@ function buildIFCScene(host, ifc) {
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(span * 3, span * 3), new THREE.MeshLambertMaterial({ color: 0xdfe3da })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; ground.receiveShadow = true; ground.name = 'ground'; scene.add(ground);
   scene.add(new THREE.GridHelper(span * 3, 40, 0xc4cabe, 0xd8dcd2));
   const byColor = {};   // nach Farbe zusammenfassen → wenige Draw-Calls
-  for (const me of ifc.meshes) { if (!ifcShowEnv && me.env) continue; const c = me.color, k = (c.r * 255 | 0) + '_' + (c.g * 255 | 0) + '_' + (c.b * 255 | 0) + '_' + c.a.toFixed(2); let g = byColor[k]; if (!g) g = byColor[k] = { color: c, pos: [], nor: [], idx: [], base: 0 }; const P = me.pos; for (let i = 0; i < P.length; i += 3) g.pos.push(P[i] - cx, P[i + 1] - floor, P[i + 2] - cz); for (const v of me.nor) g.nor.push(v); for (const ix of me.indices) g.idx.push(ix + g.base); g.base += P.length / 3; }
+  for (const me of ifc.meshes) { if (!ifcShowEnv && me.env) continue; const c = me.color, k = (c.r * 255 | 0) + '_' + (c.g * 255 | 0) + '_' + (c.b * 255 | 0) + '_' + c.a.toFixed(2); let g = byColor[k]; if (!g) g = byColor[k] = { color: c, pos: [], nor: [], idx: [], base: 0 }; const P = me.pos, N = me.nor; for (let i = 0; i < P.length; i += 3) { const r = ifcRemap([P[i], P[i + 1], P[i + 2]]); g.pos.push(r[0] - cx, r[1] - floor, r[2] - cz); const rn = ifcRemap([N[i], N[i + 1], N[i + 2]]); g.nor.push(rn[0], rn[1], rn[2]); } for (const ix of me.indices) g.idx.push(ix + g.base); g.base += P.length / 3; }
   for (const k in byColor) { const g = byColor[k], geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.nor, 3)); geo.setIndex(g.idx); const tr = g.color.a < 0.99, mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(g.color.r, g.color.g, g.color.b), transparent: tr, opacity: tr ? g.color.a : 1, roughness: 0.85, metalness: 0, side: THREE.DoubleSide }); const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; scene.add(m); }
   let raf; const tick = () => { controls.update(); renderer.render(scene, camera); raf = requestAnimationFrame(tick); }; tick();
   const setView = v => { const d = span * 1.4; if (v === 'top') camera.position.set(0.001, d * 1.5, 0); else if (v === 'front') camera.position.set(0, sy * 0.5, d); else if (v === 'side') camera.position.set(d, sy * 0.5, 0); else camera.position.set(d * 0.7, d * 0.7, d * 0.7); controls.target.set(0, sy * 0.4, 0); controls.update(); };
@@ -4166,12 +4175,13 @@ function buildIFCScene(host, ifc) {
 function open3DIFC(ifc) {
   const ov = document.createElement('div'); ov.className = 'd3-overlay';
   const dim = ifc.dim ? (ifc.dim.x.toFixed(1) + '×' + ifc.dim.z.toFixed(1) + ' m, H ' + ifc.dim.y.toFixed(1) + ' m') : '';
-  ov.innerHTML = '<div class="d3-bar"><b>IFC-Modell</b>' + (ifc.project ? '<span class="d3-hint">' + ifc.project + '</span>' : '') + '<span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">' + dim + ' · Ziehen = drehen</span><span class="grow"></span><button class="btn' + (ifcShowEnv ? ' on' : '') + '" id="ifcEnv" title="Umgebung/Pflanzen/Möbel (RPC-Proxys, Gelände) ein-/ausblenden – für eine saubere Bauwerks-Ansicht standardmäßig aus">🌳 Umgebung</button><button class="btn" id="ifcList">▦ Bauteilliste</button><button class="btn" id="ifcPlan" title="Grundriss erzeugen: Horizontalschnitt durchs Modell → editierbare 2D-Linien auf die offene Seite (Massstab nötig)">⊞ Grundriss</button><button class="btn" id="ifcWalls" title="Als editierbare Wände (EIN Geschoss): erkennt aus dem Schnitt parallele Wandpaare → echte Submit-Wände. Experimentell.">⌂ Als Wände</button><button class="btn" id="ifcStoreys" title="ALLE Geschosse → je eine editierbare Ebene mit Wänden, im 3D korrekt gestapelt (Höhen aus den IFC-Geschossen). Experimentell.">🏢 Alle Geschosse</button><button class="btn" id="ifcObj" title="IFC-Modell als OBJ exportieren (Blender/SketchUp …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
+  ov.innerHTML = '<div class="d3-bar"><b>IFC-Modell</b>' + (ifc.project ? '<span class="d3-hint">' + ifc.project + '</span>' : '') + '<span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-hint">' + dim + ' · Ziehen = drehen</span><span class="grow"></span><button class="btn" id="ifcUp" title="Aufrichten: schaltet die Hoch-Achse durch (Y → Z → X), falls das Modell liegt oder gekippt ist – wirkt auf 3D, Grundriss und Wände">↻ Aufrichten</button><button class="btn' + (ifcShowEnv ? ' on' : '') + '" id="ifcEnv" title="Umgebung/Pflanzen/Möbel (RPC-Proxys, Gelände) ein-/ausblenden – für eine saubere Bauwerks-Ansicht standardmäßig aus">🌳 Umgebung</button><button class="btn" id="ifcList">▦ Bauteilliste</button><button class="btn" id="ifcPlan" title="Grundriss erzeugen: Horizontalschnitt durchs Modell → editierbare 2D-Linien auf die offene Seite (Massstab nötig)">⊞ Grundriss</button><button class="btn" id="ifcWalls" title="Als editierbare Wände (EIN Geschoss): erkennt aus dem Schnitt parallele Wandpaare → echte Submit-Wände. Experimentell.">⌂ Als Wände</button><button class="btn" id="ifcStoreys" title="ALLE Geschosse → je eine editierbare Ebene mit Wänden, im 3D korrekt gestapelt (Höhen aus den IFC-Geschossen). Experimentell.">🏢 Alle Geschosse</button><button class="btn" id="ifcObj" title="IFC-Modell als OBJ exportieren (Blender/SketchUp …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
   document.body.appendChild(ov); const host = ov.querySelector('#d3Canvas'); let api = buildIFCScene(host, ifc);
   ov.querySelectorAll('.d3-views button').forEach(b => b.onclick = () => api && api.setView && api.setView(b.dataset.v));
   ov.querySelector('#d3Shot').onclick = () => { if (!api || !api.snapshot) return; const s = api.snapshot(); if (pdfDoc) { close(); place3DImage(s.data, s.w, s.h); } else toast('Erst ein PDF/Plan öffnen, um das Bild abzulegen.'); };
   ov.querySelector('#ifcList').onclick = () => openIFCList(ifc);
   ov.querySelector('#ifcEnv').onclick = e => { ifcShowEnv = !ifcShowEnv; e.currentTarget.classList.toggle('on', ifcShowEnv); if (api) api.dispose(); api = buildIFCScene(host, ifc); toast(ifcShowEnv ? 'Umgebung/Pflanzen eingeblendet.' : 'Umgebung/Pflanzen ausgeblendet (saubere Bauwerks-Ansicht).'); };
+  ov.querySelector('#ifcUp').onclick = () => { ifcUpAxis = ifcUpAxis === 'y' ? 'z' : ifcUpAxis === 'z' ? 'x' : 'y'; if (api) api.dispose(); api = buildIFCScene(host, ifc); toast('Hoch-Achse: ' + ifcUpAxis.toUpperCase() + ' – passt für 3D, Grundriss & Wände.'); };
   ov.querySelector('#ifcObj').onclick = () => saveObjFrom(api, ifc.project || 'ifc-modell');
   ov.querySelector('#ifcPlan').onclick = () => { if (!pdfDoc) { toast('Erst ein PDF/Plan öffnen, um den Grundriss abzulegen.'); return; } const h = prompt('Schnitthöhe für den Grundriss (m über Gebäude-Unterkante):', '1.2'); if (h == null) return; const hv = parseFloat((h || '').replace(',', '.')); ifcFloorPlan(ifc, hv > 0 ? hv : 1.2).then(ok => { if (ok) close(); }).catch(err => { status(''); console.error(err); toast('Grundriss fehlgeschlagen: ' + ((err && err.message) || err)); }); };
   ov.querySelector('#ifcWalls').onclick = () => { if (!pdfDoc) { toast('Erst ein PDF/Plan öffnen, um die Wände abzulegen.'); return; } const h = prompt('Schnitthöhe für die Wand-Erkennung (m über Gebäude-Unterkante):', '1.2'); if (h == null) return; const hv = parseFloat((h || '').replace(',', '.')); ifcToWalls(ifc, hv > 0 ? hv : 1.2).then(ok => { if (ok) close(); }).catch(err => { status(''); console.error(err); toast('Wände fehlgeschlagen: ' + ((err && err.message) || err)); }); };
@@ -4189,15 +4199,15 @@ function openIFCList(ifc) {
   document.body.appendChild(ov); ov.querySelector('#ifcLClose').onclick = () => ov.remove(); ov.addEventListener('pointerdown', e => { if (e.target === ov) ov.remove(); });
   ov.querySelector('#ifcCopy').onclick = () => { const tsv = ifc.summary.map(s => s.label + '\t' + s.n).join('\n') + (ifc.spaces.length ? ('\n\nRäume\n' + ifc.spaces.map(s => (s.num || '') + '\t' + s.name).join('\n')) : ''); if (navigator.clipboard) navigator.clipboard.writeText(tsv); toast('Liste kopiert (Excel-tauglich).'); };
 }
-function ifcSliceSegments(meshes, cutY) {   // Horizontalschnitt durch alle Meshes auf Höhe cutY (three-Y = Höhe) → 2D-Segmente (X, Z)
-  const segs = [];
+function ifcSliceSegments(meshes, cutY) {   // Horizontalschnitt auf Höhe cutY (Höhenachse je ifcUpAxis) → 2D-Segmente (die beiden Horizontalachsen)
+  const segs = [], hO = ifcUpAxis === 'z' ? 2 : ifcUpAxis === 'x' ? 0 : 1, xO = ifcUpAxis === 'x' ? 1 : 0, zO = ifcUpAxis === 'z' ? 1 : 2;
   for (const m of meshes) {
     if (m.env) continue;   // Umgebung/Pflanzen/Möbel nicht schneiden
     const p = m.pos, idx = m.indices;
     const handle = (a, b, c) => {
-      const ay = p[a * 3 + 1], by = p[b * 3 + 1], cy = p[c * 3 + 1], mn = Math.min(ay, by, cy), mx = Math.max(ay, by, cy);
+      const ay = p[a * 3 + hO], by = p[b * 3 + hO], cy = p[c * 3 + hO], mn = Math.min(ay, by, cy), mx = Math.max(ay, by, cy);
       if (cutY < mn || cutY > mx) return;
-      const pts = [], ed = (i, j) => { const yi = p[i * 3 + 1], yj = p[j * 3 + 1]; if ((yi < cutY) !== (yj < cutY)) { const t = (cutY - yi) / ((yj - yi) || 1e-9); pts.push([p[i * 3] + (p[j * 3] - p[i * 3]) * t, p[i * 3 + 2] + (p[j * 3 + 2] - p[i * 3 + 2]) * t]); } };
+      const pts = [], ed = (i, j) => { const yi = p[i * 3 + hO], yj = p[j * 3 + hO]; if ((yi < cutY) !== (yj < cutY)) { const t = (cutY - yi) / ((yj - yi) || 1e-9); pts.push([p[i * 3 + xO] + (p[j * 3 + xO] - p[i * 3 + xO]) * t, p[i * 3 + zO] + (p[j * 3 + zO] - p[i * 3 + zO]) * t]); } };
       ed(a, b); ed(b, c); ed(c, a); if (pts.length === 2) segs.push(pts);
     };
     if (idx && idx.length) { for (let i = 0; i + 2 < idx.length; i += 3) handle(idx[i], idx[i + 1], idx[i + 2]); }
@@ -4227,7 +4237,7 @@ async function ifcFloorPlan(ifc, cutAbove) {   // IFC → massstäblicher Grundr
   if (!pdfDoc) { toast('Erst ein Dokument öffnen/neu starten, dann den Grundriss erzeugen.'); return; }
   if (!docScale) { docScale = { perPt: 50 * PT2MM / 1000, label: '1:50', n: 50 }; toast('Massstab automatisch auf 1:50 gesetzt (im Footer änderbar).'); }
   status('Grundriss wird erzeugt …'); await new Promise(r => setTimeout(r, 20));
-  const raw = ifcSliceSegments(ifc.meshes, ifc.bbox.miny + (cutAbove || 1.2));
+  const raw = ifcSliceSegments(ifc.meshes, ifcHeightMin(ifc) + (cutAbove || 1.2));
   if (!raw.length) { status(''); toast('Auf dieser Höhe keine Schnittlinien gefunden – andere Höhe versuchen.'); return; }
   const segs = mergeIfcSegments(raw);
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
@@ -4281,7 +4291,7 @@ async function ifcToWalls(ifc, cutAbove) {   // IFC → editierbare Submit-Wänd
   if (!pdfDoc) { toast('Erst ein Dokument öffnen/neu starten, dann die Wände erzeugen.'); return; }
   if (!docScale) { docScale = { perPt: 50 * PT2MM / 1000, label: '1:50', n: 50 }; toast('Massstab automatisch auf 1:50 gesetzt (im Footer änderbar).'); }
   status('Wände werden rekonstruiert …'); await new Promise(r => setTimeout(r, 20));
-  const ws = ifcPairWalls(mergeIfcSegments(ifcSliceSegments(ifc.meshes, ifc.bbox.miny + (cutAbove || 1.2))));
+  const ws = ifcPairWalls(mergeIfcSegments(ifcSliceSegments(ifc.meshes, ifcHeightMin(ifc) + (cutAbove || 1.2))));
   if (!ws.length) { status(''); toast('Keine parallelen Wandpaare gefunden – andere Schnitthöhe versuchen.'); return; }
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
   for (const w of ws) { for (const x of [w.x1, w.x2]) { if (x < minx) minx = x; if (x > maxx) maxx = x; } for (const y of [w.y1, w.y2]) { if (y < miny) miny = y; if (y > maxy) maxy = y; } }
@@ -4290,7 +4300,7 @@ async function ifcToWalls(ifc, cutAbove) {   // IFC → editierbare Submit-Wänd
   const n = curPage(), pv = pageViews.find(p => p.num === n) || pageViews[0]; if (!pv) { status(''); return; }
   const cxm = (minx + maxx) / 2, cym = (miny + maxy) / 2, pcx = (pv.pageW || 595) / 2, pcy = (pv.pageH || 842) / 2, toPt = (x, y) => [pcx + cmToPts((x - cxm) * 100), pcy + cmToPts((y - cym) * 100)];
   pushUndo();
-  const lid = newLayerId(); layers.push({ id: lid, name: 'IFC-Wände', visible: true }); const arr = getAnnos(n), h3 = Math.min(3.2, Math.max(2.3, ifc.dim.y || wallHeightM));
+  const lid = newLayerId(); layers.push({ id: lid, name: 'IFC-Wände', visible: true }); const arr = getAnnos(n), h3 = Math.min(3.2, Math.max(2.3, ifcHeightExt(ifc) || wallHeightM));
   for (const w of ws) { const a = toPt(w.x1, w.y1), b = toPt(w.x2, w.y2); arr.push({ id: nextId++, type: 'wall', x1: a[0], y1: a[1], x2: b[0], y2: b[1], thick: cmToPts(Math.max(6, Math.min(60, w.thick * 100))), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: h3, dim: false, layer: lid }); }
   activeLayerId = lid; drawAnnos(pv); renderLayerPanel(); saveState(); status('');
   toast(ws.length + ' Wände auf neuer Seite ' + n + ' rekonstruiert (Ebene „IFC-Wände") – in 2D & 3D bearbeitbar. Experimentell, Dicke/Höhe ggf. nachjustieren.'); return true;
@@ -4302,7 +4312,7 @@ async function ifcAllStoreysToWalls(ifc) {   // alle Geschosse → je eine editi
   status('Geschosse werden rekonstruiert …'); await new Promise(r => setTimeout(r, 20));
   const sts = ifc.storeys.filter(s => s.elev != null).slice().sort((a, b) => a.elev - b.elev), minElev = sts[0].elev, floors = [];
   for (let i = 0; i < sts.length; i++) {
-    const cutY = ifc.bbox.miny + (sts[i].elev - minElev) + 1.2;
+    const cutY = ifcHeightMin(ifc) + (sts[i].elev - minElev) + 1.2;
     const ws = ifcPairWalls(mergeIfcSegments(ifcSliceSegments(ifc.meshes, cutY)));
     if (ws.length >= 3) { const next = sts.slice(i + 1).find(s => s.elev - sts[i].elev > 1.8); floors.push({ name: sts[i].name, elev: Math.round((sts[i].elev - minElev) * 1000) / 1000, h3d: next ? Math.min(4, next.elev - sts[i].elev) : 2.7, walls: ws }); }
   }
@@ -4511,6 +4521,8 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('GIS-Projektion (GeoJSON→m)', () => { const l = geoToLocal({ type: 'Polygon', coordinates: [[[8, 47], [8.001, 47], [8.001, 47.001], [8, 47.001], [8, 47]]] }), w = l.bbox.maxx - l.bbox.minx, h = l.bbox.maxy - l.bbox.miny; return (l.shapes.length === 1 && Math.abs(w - 75.9) < 3 && Math.abs(h - 110.6) < 3) ? '' : 'w=' + w.toFixed(1) + ' h=' + h.toFixed(1); });
     A('Schnitt-Linien zusammenfassen', () => { const m = mergeIfcSegments([[[0, 0], [1, 0]], [[0.9, 0], [2, 0]]]); return (m.length === 1 && Math.abs(m[0][1][0] - m[0][0][0]) > 1.9) ? '' : JSON.stringify(m); });
     A('Wand-Erkennung (2 Linien → Wand)', () => { const w = ifcPairWalls([[[0, 0], [3, 0]], [[0, 0.3], [3, 0.3]]]); return (w.length === 1 && Math.abs(w[0].thick - 0.3) < 0.01 && Math.abs(w[0].y1 - 0.15) < 0.01 && Math.abs(Math.hypot(w[0].x2 - w[0].x1, w[0].y2 - w[0].y1) - 3) < 0.01) ? '' : JSON.stringify(w); });
+    A('IFC-Remap (Z→oben)', () => { const s = ifcUpAxis; ifcUpAxis = 'z'; const r = ifcRemap([1, 2, 3]); ifcUpAxis = s; return (r[0] === 1 && r[1] === 3 && r[2] === 2) ? '' : JSON.stringify(r); });
+    A('IFC-Schnitt (Mesh→Segment)', () => { const s = ifcUpAxis; ifcUpAxis = 'y'; const seg = ifcSliceSegments([{ pos: [0, 0, 0, 0, 2, 0, 2, 2, 0], indices: [0, 1, 2], env: false }], 1); ifcUpAxis = s; return seg.length === 1 ? '' : JSON.stringify(seg); });
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
   } finally { docScale = saved; }

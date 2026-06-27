@@ -2912,7 +2912,8 @@ function openingElev(out, X, Yh, opx0, opw, o, H, col, redM) {   // Fenster/Tür
         else { const apexL = (two ? pi === 0 : hinge === 'left'), ax = apexL ? ix0 : ix1, bx = apexL ? ix1 : ix0; out.push({ t: 'line', x1: bx, y1: iy0, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: bx, y1: iy1, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); }
       }
     }
-    out.push({ t: 'line', x1: X(opx0) - 6, y1: Yh(sill), x2: X(opx0 + opw) + 6, y2: Yh(sill), stroke: col, w: 1.8 });   // Fensterbank
+    if (o.bank !== false) { const bm = o.bankMat === 'holz' ? { fill: '#e7cfa8', color: '#7a5126' } : o.bankMat === 'beton' ? { fill: '#dadde2', color: '#8a8f96' } : { fill: '#cfd3d8', color: '#565b62' }, pj = cmToPts(4), th = cmToPts(2.5); out.push({ t: 'rect', x: X(opx0) - pj, y: Yh(sill), w: opw + 2 * pj, h: th, fill: bm.fill, stroke: bm.color, sw: 0.9 }); }   // Fensterbank aussen = projizierende Sohlbank
+    else out.push({ t: 'line', x1: X(opx0), y1: Yh(sill), x2: X(opx0 + opw), y2: Yh(sill), stroke: col, w: 1.2 });   // innen: nur Sohlbankkante
     if (o.niche) { const nh = (Yh(0) - Yh(0.24)); out.push({ t: 'rect', x: X(opx0), y: Yh(head) - nh, w: opw, h: nh, fill: '#e9e6df', stroke: col, sw: 0.8 }); }   // Storennische
   } else {
     const wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', fr = Math.min(opw * 0.42, (o.frameW || cmToPts(6)) * (opw / Math.max(1, o.w))), yT = Yh(head), yB = Yh(sill), hingeRight = o.winHinge === 'right';   // echte Rahmen-/Zargenbreite
@@ -5295,7 +5296,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     out.push({ t: 'rect', x: 0, y: Yh(facTop), w: Lw, h: Yh(facBot) - Yh(facTop), fill: facMat.fill || '#f3f1ec', stroke: '#9aa08f', sw: 1 });   // Wand-Ansicht (Fassade)
     out.push({ t: 'line', x1: -10, y1: Yh(0), x2: Lw + 10, y2: Yh(0), stroke: '#1c242c', w: 1.8 });   // Boden / OK Terrain
     for (const o2 of ops) {
-      const oo = side === 'i' ? Object.assign({}, o2, { winHinge: o2.winHinge === 'left' ? 'right' : o2.winHinge === 'right' ? 'left' : o2.winHinge, bank: false }) : o2;
+      const oo = side === 'i' ? Object.assign({}, o2, { winHinge: o2.winHinge === 'left' ? 'right' : o2.winHinge === 'right' ? 'left' : o2.winHinge, bank: false }) : Object.assign({}, o2, { niche: false });   // innen: Storenkasten zeigen, keine Aussenbank · aussen: Bank, kein Kasten
       const a0 = (wall ? along(o2.x, o2.y) : Lw / 2) - o2.w / 2, opx0 = flip ? (Lw - a0 - o2.w) : a0;
       const lapClad = side === 'i' ? (o2.innerReveal != null ? o2.innerReveal : cmToPts(2)) : (o2.outerLap != null ? o2.outerLap : cmToPts(3));
       const sillF = (o2.kind === 'window' ? (o2.sill || 0) : 0), headF = Math.min(Hwall, o2.head || (o2.kind === 'window' ? 2.1 : 2.0));
@@ -5307,6 +5308,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       for (const rg of rings) { const mt = WALL_MATS[rg.mat] || { fill: '#eee', color: '#1c242c' }, x = opx0 + cum, w = o2.w - 2 * cum, yT = Yh(headF - cum * perPt), yB = Yh(sillF + (o2.kind === 'window' ? cum * perPt : 0)); if (w > 1 && yB - yT > 0.5) out.push({ t: 'rect', x, y: yT, w, h: yB - yT, fill: mt.fill || '#eee', stroke: mt.color || '#1c242c', sw: 0.7 }); cum += rg.w; }   // Laibung umlaufend, Schicht für Schicht
       const rPts = Math.min(cum, o2.w * 0.45);
       try { openingElev(out, d => d, Yh, opx0 + rPts, o2.w - 2 * rPts, oo, Hwall, '#1c242c', rPts * perPt); } catch (_) { }
+      if (side === 'i' && o2.kind === 'window') { const pjI = cmToPts(3), th = cmToPts(2.5); out.push({ t: 'rect', x: opx0 - pjI, y: Yh(sillF), w: o2.w + 2 * pjI, h: th, fill: '#e7cfa8', stroke: '#7a5126', sw: 0.8 }); }   // innen: Holz-Fensterbrett
       if (o2.id === a.id) { out.push({ t: 'rect', x: opx0 - 4, y: Yh(headF) - 4, w: o2.w + 8, h: (Yh(sillF) - Yh(headF)) + 8, fill: 'none', stroke: '#2aa869', sw: 2.4 }); curD = { opx0, w: o2.w, headF, sillF, rPts }; }   // aktuelles Fenster markiert
     }
     if (curD) {   // verschiebbare Masslinien: Breite (unten) + Höhe (links) – aussen = Rohbau, innen = Licht (fertig)

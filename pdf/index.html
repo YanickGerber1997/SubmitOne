@@ -5,27 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=303" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=303" />
-  <link rel="icon" href="favicon.png?v=303" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=303" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=304" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=304" />
+  <link rel="icon" href="favicon.png?v=304" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=304" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=303" />
+  <link rel="stylesheet" href="pdf.css?v=304" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=303" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=304" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=303" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=303" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=304" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=304" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <span class="doc-name" id="docName"></span>
+    <button class="doc-project" id="docProject" title="Projekt dieses Dokuments – klicken zum Zuordnen/Ändern (legt im Arbeitsordner einen Projekt-Ordner an)" hidden></button>
     <button class="icon-btn" id="btnUndo" title="Rückgängig (Strg+Z)" disabled><svg viewBox="0 0 24 24" class="i"><path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10h-3"/></svg></button>
     <button class="icon-btn" id="btnRedo" title="Wiederherstellen (Strg+Y)" disabled><svg viewBox="0 0 24 24" class="i"><path d="M15 7l5 5-5 5M20 12H9a5 5 0 0 0 0 10h3"/></svg></button>
     <span class="pageind" id="pageInd" title="Gehe zu Seite …"></span>
@@ -38,7 +39,7 @@
     <button class="icon-btn" id="btnSend" disabled title="Per E-Mail senden"><svg viewBox="0 0 24 24" class="i"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
     <button class="icon-btn" id="btnPrint" title="Drucken (Strg+P)"><svg viewBox="0 0 24 24" class="i"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></svg></button>
     <button class="icon-btn" id="btnComments" title="Kommentare"><svg viewBox="0 0 24 24" class="i"><path d="M4 5h16v11H9l-4 4z"/></svg></button>
-    <button class="icon-btn" id="btnLayers" title="Ebenen / Stockwerke"><svg viewBox="0 0 24 24" class="i"><path d="M12 3 2 8l10 5 10-5z"/><path d="M2 12l10 5 10-5M2 16l10 5 10-5"/></svg></button>
+    <button class="icon-btn" id="btnLayers" title="Ebenen (= Stockwerke) – frei benennbar: Ebene 1, EG, OG …"><svg viewBox="0 0 24 24" class="i"><path d="M12 3 2 8l10 5 10-5z"/><path d="M2 12l10 5 10-5M2 16l10 5 10-5"/></svg></button>
     <button class="icon-btn" id="btnSplit" title="Zwei Dokumente nebeneinander"><svg viewBox="0 0 24 24" class="i"><rect x="3" y="5" width="8" height="14"/><rect x="13" y="5" width="8" height="14"/></svg></button>
     <button class="icon-btn" id="btnInstall" hidden title="App installieren"><svg viewBox="0 0 24 24" class="i"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></button>
     <button class="dl-btn" id="btnDownload" title="Submit PDF als Desktop-App herunterladen (voller Funktionsumfang)">
@@ -208,7 +209,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=303" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=304" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -318,9 +319,9 @@
   </div>
 
   <div class="layer-panel" id="layerPanel" hidden>
-    <div class="lp-head"><b>Ebenen / Geschosse</b><span class="grow"></span><button class="lp-add" id="lpDup" title="Aktives Geschoss 1:1 nach oben kopieren (neues Stockwerk)">⧉ Geschoss ↑</button><button class="lp-add" id="lpAdd" title="Ebene hinzufügen">＋ Ebene</button></div>
+    <div class="lp-head"><b>Ebenen</b><span class="grow"></span><button class="lp-add" id="lpDup" title="Aktive Ebene 1:1 nach oben kopieren (z. B. EG → OG) – Höhe wird abgefragt">⧉ Ebene ↑</button><button class="lp-add" id="lpAdd" title="Neue Ebene hinzufügen">＋ Ebene</button></div>
     <div class="lp-list" id="lpList"></div>
-    <div class="lp-foot">Auge = sichtbar · Klick = aktive Ebene (neue Anmerkungen) · Doppelklick = umbenennen · Zahl = Höhenlage/Geschoss (3D-Stapel). „Geschoss ↑" kopiert das aktive Stockwerk nach oben. Beim Drucken kommen nur sichtbare Ebenen.</div>
+    <div class="lp-foot">Ebene = frei benennbar (Ebene 1, EG, OG …). Auge = sichtbar · Klick = aktive Ebene (neue Anmerkungen) · Doppelklick = umbenennen · Zahl = Höhe der Ebene in m (für den 3D-Stapel). „Ebene ↑" kopiert die aktive Ebene nach oben. Beim Drucken kommen nur sichtbare Ebenen.</div>
   </div>
 
   <div class="ctxmenu" id="ctxmenu" hidden></div>
@@ -688,7 +689,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=303"></script>
+  <script src="pdf.js?v=304"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

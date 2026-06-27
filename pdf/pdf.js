@@ -115,7 +115,7 @@ async function searchFolder(q) {
   for (const r of results) {
     const row = fpRow(/\.pdf$/i.test(r.name) ? '📄' : '🖼', r.name, 'file result');
     if (r.path) { const p = document.createElement('span'); p.className = 'fp-path'; p.textContent = r.path; row.appendChild(p); }
-    row.onclick = () => { $$('.fp-row.active', t).forEach(x => x.classList.remove('active')); row.classList.add('active'); openFromHandle(r.handle); };
+    row.onclick = () => { $$('.fp-row.active', t).forEach(x => x.classList.remove('active')); row.classList.add('active'); openFromHandle(r.handle, (r.path || '').split('/').filter(Boolean)[0]); };
     t.appendChild(row);
   }
 }
@@ -125,25 +125,30 @@ async function walkSearch(handle, prefix, ql, results, max, aborted) {
   for (const [name, h] of entries) { if (results.length >= max) return; if (h.kind === 'file' && /\.(pdf|png|jpe?g|webp)$/i.test(name) && name.toLowerCase().includes(ql)) results.push({ name, handle: h, path: prefix }); }
   for (const [name, h] of entries) { if (results.length >= max || aborted()) return; if (h.kind === 'directory' && !name.startsWith('.')) await walkSearch(h, prefix + '/' + name, ql, results, max, aborted); }
 }
-async function buildTree(handle, container) {
+async function buildTree(handle, container, proj) {   // proj = Projektname (erste Ordnerebene unter dem Arbeitsordner)
   const entries = []; try { for await (const [name, h] of handle.entries()) entries.push([name, h]); } catch (_) { return; }
   entries.sort((a, b) => (a[1].kind === b[1].kind) ? a[0].localeCompare(b[0]) : (a[1].kind === 'directory' ? -1 : 1));
   for (const [name, h] of entries) {
     if (h.kind === 'directory') {
       if (name.startsWith('.')) continue;
-      const row = fpRow('▸', name, 'dir'); container.appendChild(row);
+      const childProj = proj || name, row = fpRow('▸', name, 'dir' + (!proj && knownProjects().includes(name) ? ' fp-proj' : '')); container.appendChild(row);
       const sub = document.createElement('div'); sub.className = 'fp-sub'; sub.hidden = true; container.appendChild(sub); let loaded = false;
-      row.onclick = async () => { sub.hidden = !sub.hidden; row.querySelector('.fp-ic').textContent = sub.hidden ? '▸' : '▾'; if (!loaded && !sub.hidden) { loaded = true; await buildTree(h, sub); } };
+      row.onclick = async () => { sub.hidden = !sub.hidden; row.querySelector('.fp-ic').textContent = sub.hidden ? '▸' : '▾'; if (!loaded && !sub.hidden) { loaded = true; await buildTree(h, sub, childProj); } };
     } else if (/\.(pdf|png|jpe?g|webp)$/i.test(name)) {
       const row = fpRow(/\.pdf$/i.test(name) ? '📄' : '🖼', name, 'file'); container.appendChild(row);
-      row.onclick = () => { $$('.fp-row.active', $('#fpTree')).forEach(r => r.classList.remove('active')); row.classList.add('active'); openFromHandle(h); };
+      row.onclick = () => { $$('.fp-row.active', $('#fpTree')).forEach(r => r.classList.remove('active')); row.classList.add('active'); openFromHandle(h, proj); };
     }
   }
 }
 function fpRow(ic, name, cls) { const d = document.createElement('div'); d.className = 'fp-row ' + cls; d.innerHTML = '<span class="fp-ic"></span><span class="fp-nm"></span>'; d.querySelector('.fp-ic').textContent = ic; d.querySelector('.fp-nm').textContent = name; return d; }
-async function openFromHandle(fh) {
-  try { const file = await fh.getFile(); await openFiles([file]); if (docs[active]) { docs[active].fileHandle = fh; curFileHandle = fh; } }
+async function openFromHandle(fh, proj) {
+  try { const file = await fh.getFile(); await openFiles([file]); if (docs[active]) { docs[active].fileHandle = fh; curFileHandle = fh; if (proj) docs[active].project = proj; } updateProjectChip(); }
   catch (e) { console.error(e); toast('Datei konnte nicht geöffnet werden.'); }
+}
+function updateProjectChip() {
+  const el = $('#docProject'); if (!el) return;
+  const p = (docs[active] && docs[active].project) || '';
+  if (p) { el.textContent = '📁 ' + p; el.hidden = false; } else { el.hidden = true; }
 }
 
 /* ============================================================================
@@ -776,7 +781,7 @@ function reorderThumb(srcN, insertIdx) {
 function refreshThumb(n) { const btn = $(`.thumb[data-n="${n}"]`, $('#thumbs')); if (btn) { btn.classList.add('loading'); renderThumb(n, btn); } }
 function gotoPage(n) { const v = pageViews.find(p => p.num === n); if (v) v.wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 function curPage() { const host = $('#pages'), mid = host.scrollTop + host.clientHeight / 2; let cur = 1; for (const v of pageViews) if (v.wrap.offsetTop <= mid) cur = v.num; return cur; }
-function updatePageInd() { if (!pdfDoc) return; const cur = curPage(); $('#pageInd').textContent = cur + ' / ' + pdfDoc.numPages; $$('.thumb', $('#thumbs')).forEach(t => t.classList.toggle('active', +t.dataset.n === cur)); updateFormatLabel(); }
+function updatePageInd() { if (!pdfDoc) return; const cur = curPage(); $('#pageInd').textContent = cur + ' / ' + pdfDoc.numPages; $$('.thumb', $('#thumbs')).forEach(t => t.classList.toggle('active', +t.dataset.n === cur)); updateFormatLabel(); updateProjectChip(); }
 
 /* ---------- Zoom ---------- */
 function curScale() { return (zoom === 'auto') ? (pageViews[0] ? pageViews[0].scale : 1) : zoom; }
@@ -840,7 +845,7 @@ function renderLayerPanel() {
     eye.onclick = e => { e.stopPropagation(); l.visible = !l.visible; pageViews.forEach(drawAnnos); buildThumbs(); renderLayerPanel(); markDirty(); };
     const nm = document.createElement('span'); nm.className = 'lp-name'; nm.textContent = l.name; nm.title = l.name;
     nm.ondblclick = e => { e.stopPropagation(); const v = prompt('Ebene umbenennen:', l.name); if (v && v.trim()) { l.name = v.trim(); renderLayerPanel(); markDirty(); } };
-    const ele = document.createElement('input'); ele.className = 'lp-ele'; ele.type = 'number'; ele.step = '0.1'; ele.title = 'Höhenlage / Geschoss-Höhe (3D-Stapel)'; ele.value = l.elevation || 0;
+    const ele = document.createElement('input'); ele.className = 'lp-ele'; ele.type = 'number'; ele.step = '0.1'; ele.title = 'Höhe / Lage dieser Ebene in m – für den 3D-Stapel (z. B. EG = 0, OG = 2.8)'; ele.value = l.elevation || 0;
     ele.onclick = e => e.stopPropagation(); ele.onchange = () => { l.elevation = parseFloat((ele.value || '').replace(',', '.')) || 0; markDirty(); };
     const del = document.createElement('button'); del.className = 'lp-del'; del.innerHTML = '✕'; del.title = 'Ebene löschen (Inhalt wandert auf die erste Ebene)';
     del.onclick = e => { e.stopPropagation(); if (layers.length <= 1) { toast('Mindestens eine Ebene muss bleiben.'); return; } const fb = layers.find(x => x.id !== l.id).id; for (const n in annos) for (const a of annos[n]) if (a.layer === l.id) a.layer = fb; layers = layers.filter(x => x.id !== l.id); if (activeLayerId === l.id) activeLayerId = fb; pageViews.forEach(drawAnnos); buildThumbs(); renderLayerPanel(); markDirty(); };
@@ -860,12 +865,12 @@ function duplicateLayerUp() {   // aktives Geschoss 1:1 nach oben kopieren (neue
   const src = layerById(activeLayerId); if (!src) return;
   let wh = 0; for (const n in annos) for (const a of (annos[n] || [])) if (a.layer === activeLayerId && a.type === 'wall') wh = Math.max(wh, a.h3d || wallHeightM);
   if (!wh) wh = wallHeightM;
-  const inp = prompt('Geschosshöhe für das neue Stockwerk (m)\nHöhenlage des Kopie-Geschosses = aktuelle Höhenlage + dieser Wert:', String(wh));
+  const inp = prompt('Höhe der neuen Ebene (m)\nLage der Kopie = aktuelle Höhenlage + dieser Wert (z. B. 2.8 für ein Geschoss):', String(wh));
   if (inp == null) return;
   const h = parseFloat((inp || '').replace(',', '.')); if (!(h > 0)) { toast('Ungültige Höhe.'); return; }
   pushUndo();
   const newId = newLayerId(), elev = Math.round(((src.elevation || 0) + h) * 1000) / 1000;
-  layers.push({ id: newId, name: 'Geschoss ' + (layers.length + 1), visible: true, elevation: elev });
+  layers.push({ id: newId, name: 'Ebene ' + (layers.length + 1), visible: true, elevation: elev });
   const idMap = {};   // alte → neue ID (für Öffnung→Wand-Referenz)
   for (const n in annos) for (const a of (annos[n] || [])) if (a.layer === activeLayerId) idMap[a.id] = nextId++;
   let cnt = 0;
@@ -876,7 +881,7 @@ function duplicateLayerUp() {   // aktives Geschoss 1:1 nach oben kopieren (neue
   }
   activeLayerId = newId;
   pageViews.forEach(drawAnnos); buildThumbs(); renderLayerPanel(); markDirty(); saveState();
-  toast(cnt ? (cnt + ' Element(e) als neues Geschoss kopiert · Höhenlage ' + elev.toFixed(2) + ' m') : 'Leeres Geschoss angelegt · Höhenlage ' + elev.toFixed(2) + ' m');
+  toast(cnt ? (cnt + ' Element(e) in neue Ebene kopiert · Höhe ' + elev.toFixed(2) + ' m') : 'Leere Ebene angelegt · Höhe ' + elev.toFixed(2) + ' m');
 }
 function findAnno(n, id) { return (annos[n] || []).find(a => a.id === id); }
 let _wallUnionActive = false;
@@ -3855,7 +3860,7 @@ async function doProjectSave(proj, sub, name) {   // Datei in <Arbeitsordner>/<P
     const fh = await dir.getFileHandle(name, { create: true }), w = await fh.createWritable(); await w.write(out); await w.close();
     curFileHandle = fh; docName = name; if (docs[active]) { docs[active].fileHandle = fh; docs[active].name = name; docs[active].project = proj; docs[active].dirty = false; }
     dirty = false; clearAutosave(); rememberProject(proj);
-    const dn = $('#docName'); if (dn) dn.textContent = name;
+    const dn = $('#docName'); if (dn) dn.textContent = name; updateProjectChip();
     try { await refreshTree(); } catch (_) { }
     status(''); toast('Abgelegt in „' + proj + ' / ' + sub + '" ✓ (in Submit PDF wieder bearbeitbar)');
   } catch (e) { status(''); console.error(e); toast('Ablage ins Projekt fehlgeschlagen.'); }
@@ -4208,14 +4213,14 @@ function openRoomList() {
   const rooms = roomData();
   const ov = document.createElement('div'); ov.className = 'lab-overlay';
   const total = rooms.reduce((s, r) => s + r.m2, 0);
-  const body = rooms.length ? ('<table class="qty-tab"><thead><tr><th>Geschoss</th><th>Raum (Name)</th><th style="text-align:right">Fläche</th><th style="text-align:right">Umfang</th><th>Bodenbelag</th></tr></thead><tbody>' +
+  const body = rooms.length ? ('<table class="qty-tab"><thead><tr><th>Ebene</th><th>Raum (Name)</th><th style="text-align:right">Fläche</th><th style="text-align:right">Umfang</th><th>Bodenbelag</th></tr></thead><tbody>' +
     rooms.map((r, i) => '<tr><td style="white-space:nowrap">' + r.floor + '</td><td><input class="bu-u" style="width:130px" data-i="' + i + '" data-k="name" value="' + (r.a.name ? r.a.name.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Wohnen"></td><td style="text-align:right;white-space:nowrap">' + (Math.round(r.m2 * 100) / 100).toFixed(2).replace('.', ',') + ' m²</td><td style="text-align:right;white-space:nowrap">' + (Math.round(r.um * 100) / 100).toFixed(2).replace('.', ',') + ' m</td><td><input class="bu-u" style="width:130px" data-i="' + i + '" data-k="floor" value="' + (r.a.floor ? r.a.floor.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Parkett"></td></tr>').join('') +
     '</tbody><tfoot><tr><th colspan="2" style="text-align:right">Summe</th><th style="text-align:right;white-space:nowrap">' + (Math.round(total * 100) / 100).toFixed(2).replace('.', ',') + ' m²</th><th colspan="2"></th></tr></tfoot></table>') : '<p style="padding:14px;opacity:.7">Noch keine Räume/Flächen. Zeichne mit dem Flächen-Werkzeug einen geschlossenen Wandzug oder ein Polygon.</p>';
   ov.innerHTML = '<div class="lab-wrap" style="width:min(680px,95vw);height:auto;max-height:84vh"><div class="lab-head"><b>Raumbuch</b><span class="lab-hint">' + rooms.length + ' Räume · Name & Bodenbelag werden gespeichert</span><span class="grow"></span><button class="btn" id="rmCopy">In Zwischenablage</button><button class="btn" id="rmClose">✕</button></div><div class="qty-body">' + body + '</div></div>';
   document.body.appendChild(ov);
   ov.querySelectorAll('input.bu-u').forEach(inp => inp.onchange = () => { const r = rooms[+inp.dataset.i]; if (!r) return; const k = inp.dataset.k, v = inp.value.trim(); if (v) r.a[k] = v; else delete r.a[k]; markDirty(); pageViews.forEach(drawAnnos); });
   ov.querySelector('#rmClose').onclick = () => ov.remove(); ov.addEventListener('pointerdown', e => { if (e.target === ov) ov.remove(); });
-  ov.querySelector('#rmCopy').onclick = () => { const tsv = 'Geschoss\tRaum\tFläche m²\tUmfang m\tBodenbelag\n' + rooms.map(r => r.floor + '\t' + (r.a.name || '') + '\t' + (Math.round(r.m2 * 100) / 100).toString().replace('.', ',') + '\t' + (Math.round(r.um * 100) / 100).toString().replace('.', ',') + '\t' + (r.a.floor || '')).join('\n') + '\nSumme\t\t' + (Math.round(total * 100) / 100).toString().replace('.', ','); if (navigator.clipboard) navigator.clipboard.writeText(tsv); toast('Raumbuch kopiert (Excel-tauglich).'); };
+  ov.querySelector('#rmCopy').onclick = () => { const tsv = 'Ebene\tRaum\tFläche m²\tUmfang m\tBodenbelag\n' + rooms.map(r => r.floor + '\t' + (r.a.name || '') + '\t' + (Math.round(r.m2 * 100) / 100).toString().replace('.', ',') + '\t' + (Math.round(r.um * 100) / 100).toString().replace('.', ',') + '\t' + (r.a.floor || '')).join('\n') + '\nSumme\t\t' + (Math.round(total * 100) / 100).toString().replace('.', ','); if (navigator.clipboard) navigator.clipboard.writeText(tsv); toast('Raumbuch kopiert (Excel-tauglich).'); };
 }
 function geoToLocal(gj) {   // GeoJSON (lon/lat) → lokale Meter (äquirektangulär um den Schwerpunkt), Nord = oben
   const feats = gj && gj.type === 'FeatureCollection' ? (gj.features || []) : gj && gj.type === 'Feature' ? [gj] : gj && gj.type ? [{ geometry: gj }] : [];
@@ -5086,6 +5091,7 @@ function wire() {
   $('#footGIS').onclick = importGISFile;
   $('#smOpen').onclick = openPicker;
   $('#smProject').onclick = openProjectDlg;
+  $('#docProject').onclick = openProjectDlg;
   $('#projCancel').onclick = () => { $('#projDlg').hidden = true; };
   $('#projOk').onclick = () => { const p = $('#projName').value.trim(); if (!p) { $('#projName').focus(); return; } $('#projDlg').hidden = true; doProjectSave(p, $('#projSub').value, $('#projFile').value); };
   $('#projName').oninput = projPreviewUpd; $('#projSub').onchange = projPreviewUpd; $('#projFile').oninput = projPreviewUpd;

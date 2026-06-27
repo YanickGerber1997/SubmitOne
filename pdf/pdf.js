@@ -2052,8 +2052,10 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
   } else if (mode === 'open') {
     const kind = sO ? sO.kind : openKind;
     $$('#pbOpen [data-ok]').forEach(b => b.classList.toggle('on', b.dataset.ok === kind));
-    const cm = ptsToCm(sO ? sO.w : (lastOpenW || cmToPts(kind === 'window' ? 100 : 90)));
+    const rawW = sO ? sO.w : (lastOpenW || cmToPts(kind === 'window' ? 100 : 90)), insW = openInsPts(sO);
+    const cm = ptsToCm(inputLicht ? Math.max(cmToPts(20), rawW - 2 * insW) : rawW);
     if (document.activeElement !== $('#pbWidth')) $('#pbWidth').value = Math.round(cm);
+    { const lab = $('#pbWidthLab'); if (lab) lab.textContent = inputLicht ? 'Licht-B' : 'Rohbau-B'; $('#pbLichtRoh').classList.toggle('on', inputLicht); }
     const sill = sO ? (sO.sill || 0) : (kind === 'window' ? 0.9 : 0), head = sO ? (sO.head || (kind === 'window' ? 2.1 : 2.0)) : (kind === 'window' ? 2.1 : 2.0);
     if (document.activeElement !== $('#pbSill')) $('#pbSill').value = sill;
     if (document.activeElement !== $('#pbHead')) $('#pbHead').value = head;
@@ -2318,6 +2320,8 @@ function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte F
 }
 /* ---------- Öffnungen (Tür/Fenster) in Wänden ---------- */
 let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5, lastWinType = 'f1', lastDoorType = 'f1', lastWinHinge = 'left', lastWinMat = 'holz';
+let inputLicht = true;   // eingegebene/angezeigte Öffnungsbreite = Lichtmaß (Rohbau = Licht + 2×(Rahmen − sichtbarer Rahmen)); sonst Rohbaumaß
+function openInsPts(o) { return Math.max(0, ((o && o.frameW) || cmToPts(10)) - cmToPts((o && o.boardVis != null) ? o.boardVis : 1)); }   // Licht-Einzug pro Seite
 function nearestWall(pv, x, y) {
   let best = null, bd = Infinity;
   for (const o of getAnnos(pv.num)) { if (o.type !== 'wall') continue; const dx = o.x2 - o.x1, dy = o.y2 - o.y1, L2 = dx * dx + dy * dy || 1; let t = ((x - o.x1) * dx + (y - o.y1) * dy) / L2; t = Math.max(0, Math.min(1, t)); const px = o.x1 + dx * t, py = o.y1 + dy * t, d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = { wall: o, cx: px, cy: py, ang: Math.atan2(dy, dx), thick: o.thick || wallThickPts(), dist: d }; } }
@@ -4311,7 +4315,8 @@ function wire() {
   $('#pbUnit').onclick = () => { dimUnit = !dimUnit; pageViews.forEach(drawAnnos); updatePlanBar(); saveState(); };
   $('#pbWallColor').addEventListener('input', e => { const c = e.target.value; style.color = c; $('#colorDot').style.background = c; $('#pbWallDot').style.background = c; const a = selWall(); if (a) { a.color = c; if (a.hatch) a.hatch.color = c; pageViews.forEach(drawAnnos); } });
   $$('#pbOpen [data-ok]').forEach(b => b.onclick = () => { openKind = b.dataset.ok; const a = selOpen(); if (a) { pushUndo(); a.kind = openKind; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
-  $('#pbWidth').onchange = () => { const v = parseFloat($('#pbWidth').value); if (!(v > 0)) return updatePlanBar(); const pts = cmToPts(v); lastOpenW = pts; const a = selOpen(); if (a) { pushUndo(); a.w = pts; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbWidth').onchange = () => { const v = parseFloat($('#pbWidth').value); if (!(v > 0)) return updatePlanBar(); const a = selOpen(); let pts = cmToPts(v); if (inputLicht) pts += 2 * openInsPts(a); lastOpenW = pts; if (a) { pushUndo(); a.w = pts; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbLichtRoh').onclick = () => { inputLicht = !inputLicht; $('#pbLichtRoh').classList.toggle('on', inputLicht); updatePlanBar(); toast(inputLicht ? 'Öffnungsbreite = Lichtmaß (Rohbau = Licht + Rahmen)' : 'Öffnungsbreite = Rohbaumaß'); };
   $('#pbFlip').onclick = () => { const a = selOpen(); if (!a) return; pushUndo(); if (a.swing === 1 && a.hinge === 1) a.hinge = -1; else if (a.hinge === -1 && a.swing === 1) a.swing = -1; else if (a.hinge === -1 && a.swing === -1) a.hinge = 1; else a.swing = 1; pageViews.forEach(drawAnnos); saveState(); };
   $('#pbNiche').onclick = () => { const a = selOpen(); if (!a || a.kind !== 'window') { toast('Nische gibt es nur beim Fenster.'); return; } pushUndo(); a.niche = !a.niche; $('#pbNiche').classList.toggle('on', a.niche); saveState(); toast(a.niche ? 'Storennische an – im 3D sichtbar' : 'Storennische aus'); };
   $('#pbWinType').onchange = () => { const v = $('#pbWinType').value, a = selOpen(); if (a && a.kind === 'door') lastDoorType = v; else lastWinType = v; if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.winType = v; pageViews.forEach(drawAnnos); saveState(); } };

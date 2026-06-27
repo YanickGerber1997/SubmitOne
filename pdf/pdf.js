@@ -2784,6 +2784,7 @@ function bandHatch(sa, sb, ma, mb, corner, hw, ht, stepS) {   // diagonale Schra
   }
   return out;
 }
+function revealEdgeSegs(poly, seam) { const n = poly.length, out = []; for (let i = 0; i < n; i++) { if (i === seam) continue; out.push([poly[i], poly[(i + 1) % n]]); } return out; }   // Rand-Kanten eines Laibungs-Streifens ausser der Naht-Kante (seam)
 function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → Schalung 1,5 cm (Schraffur) → Rest Dämmung bis Rahmen; innen Putz/Brett
   const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall');
   if (!wall || !wall.layers || wall.layers.length < 2 || (a.kind !== 'window' && a.kind !== 'door')) return [];
@@ -2816,7 +2817,7 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
         if (p.l.mat === 'luft') continue;   // Hinterlüftung: offener Spalt bis zum Brett (nicht gefüllt)
         const mLoC = Math.max(p.mLo, fmB + gapM); if (p.mHi - mLoC < 0.01) continue;
         const m = WALL_MATS[p.l.mat] || {}, isD = INS.includes(p.l.mat), isW = ['holz', 'konter'].includes(p.l.mat);
-        strips.push({ poly: [corner(sBO, mLoC), corner(sE, mLoC), corner(sE, p.mHi), corner(sBO, p.mHi)], fill: m.fill || '#fff', stroke: m.color || '#1c242c', hatch: isD ? bandHatchPerp(lo, hi, mLoC, p.mHi, corner, stepS, s0) : (isW ? bandHatch(lo, hi, mLoC, p.mHi, corner, hw, ht, stepS) : null) });   // Schicht läuft bis zum Brett
+        strips.push({ poly: [corner(sBO, mLoC), corner(sE, mLoC), corner(sE, p.mHi), corner(sBO, p.mHi)], fill: m.fill || '#fff', stroke: m.color || '#1c242c', seam: 1, hatch: isD ? bandHatchPerp(lo, hi, mLoC, p.mHi, corner, stepS, s0) : (isW ? bandHatch(lo, hi, mLoC, p.mHi, corner, hw, ht, stepS) : null) });   // Schicht läuft bis zum Brett (Naht zur Wand = Kante 1)
       }
       if (Math.abs(sBO - sBI) > 0.02) strips.push({ poly: [corner(sBI, fmB), corner(sBO, fmB), corner(sBO, boardM1), corner(sBI, boardM1)], fill: boardMat.fill, stroke: boardMat.color, board: true, hatch: bandHatch(Math.min(sBI, sBO), Math.max(sBI, sBO), fmB, boardM1, corner, hw, ht, stepS) });   // Laibungsbrett (Aussenkante = boardProtrude), behält Kante
     }
@@ -2836,7 +2837,7 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
         if (fin && putzTm > 0.005) {
           strips.push({ poly: [corner(sJ, -1), corner(sEdgeS, -1), corner(sEdgeS, mLoMas), corner(sJ, mLoMas)], fill: fmat.fill || '#fff', stroke: fmat.color || '#1c242c', hatch: hatchOf(fin.mat, sJ, sEdgeS, -1, mLoMas) });   // Putz raumseitig über die Schulter → verbindet mit gerader Wand
           const sb = sEdgeS - sgn * putzTs;
-          strips.push({ poly: [corner(sEdgeS, -1), corner(sb, -1), corner(sb, finMHi), corner(sEdgeS, finMHi)], fill: fmat.fill || '#fff', stroke: fmat.color || '#1c242c', hatch: hatchOf(fin.mat, sEdgeS, sb, -1, finMHi) });   // Putz-Return in die Laibung, 1 cm vor dem Rahmen
+          strips.push({ poly: [corner(sEdgeS, -1), corner(sb, -1), corner(sb, finMHi), corner(sEdgeS, finMHi)], fill: fmat.fill || '#fff', stroke: fmat.color || '#1c242c', seam: 0, hatch: hatchOf(fin.mat, sEdgeS, sb, -1, finMHi) });   // Putz-Return (Naht zur raumseitigen Schicht = Kante 0)
         }
       }
     } else {   // AUSSENANSCHLAG: Mauerwerk/Konstruktion aussen vor den Rahmen
@@ -2844,7 +2845,7 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
       for (const sgn of [-1, 1]) { const s0b = sgn, s1 = sgn * Math.max(0, 1 - fwSr - anS); if (Math.abs(mHi - mLo) > 0.02 && Math.abs(s1 - s0b) > 0.02) strips.push({ poly: [corner(s0b, mLo), corner(s1, mLo), corner(s1, mHi), corner(s0b, mHi)], fill: cmat.fill || '#fff', stroke: cmat.color || '#1c242c', hatch: hatchOf(core.mat, s0b, s1, mLo, mHi) }); }
     }
   }
-  for (const st of strips) if (!st.board) st.noBorder = true;   // Laibungs-Schichten laufen OHNE Übergangslinie durch (nur Schraffur); nur das Brett behält die Kante
+  for (const st of strips) if (st.seam == null && !st.board) st.seam = 3;   // Standard: nur die Kante am Stoß zur Wand (Kante 3) läuft randlos durch; übrige Kanten behalten den Rahmen
   return strips;
 }
 function openingLichtW(o) {   // Rohbau-, Aussenlicht-, Innenlichtmass (Fenster)
@@ -2856,7 +2857,7 @@ function drawOpening(svg, a, arr) {
   const detail = openingDetail(a, arr), P = openingParts(a, detail), col = a.color || '#1c242c';
   const g = svgEl('g', { 'data-id': a.id });
   g.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: '#fff', stroke: 'none' }));   // Wand ausstanzen
-  if (detail) for (const st of openingRevealStrips(a, arr)) { g.appendChild(svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.noBorder ? 'none' : st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); if (st.hatch) for (const [u, v] of st.hatch) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' })); }   // Schichteinzug ohne Übergangslinie (Schraffur läuft durch)
+  if (detail) for (const st of openingRevealStrips(a, arr)) { g.appendChild(svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.seam == null ? st.stroke : 'none', 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); if (st.hatch) for (const [u, v] of st.hatch) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' })); }   // Rahmen ausser an der Naht zur Wand
   for (const f of (P.fills || [])) g.appendChild(svgEl('polygon', { points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: f.fill, stroke: f.stroke, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));   // Rahmen/Flügel/Glas (Fenstermaterial)
   for (const [u, v] of P.lines) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
   for (const [u, v] of (P.bold || [])) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 2.6, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
@@ -2932,7 +2933,7 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip) { 
   const layered = !simpleMode && wall.layers && wall.layers.length >= 2, dep0 = o.depth == null ? 0.5 : o.depth, dep = flip ? 1 - dep0 : dep0;   // Blickrichtung: Innen/Aussen tauschen
   out.push({ t: 'rect', x: cx - ht2, y: Yh(head), w: appW, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });   // Öffnung ausstanzen
   const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: dep, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: o.winType || 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: flip ? (o.revealOuter || 'putz') : o.revealType, revealOuter: flip ? o.revealType : o.revealOuter, boardW: o.boardW, boardVis: o.boardVis, boardProtrude: o.boardProtrude, boardMat: o.boardMat, outerLap: o.outerLap, innerReveal: o.innerReveal, anschlagType: flip ? (o.anschlagType === 'innen' ? 'aussen' : o.anschlagType === 'aussen' ? 'innen' : (o.anschlagType || 'none')) : o.anschlagType, anschlagDepth: o.anschlagDepth, wallId: 'secw' };   // bei flip Innen/Aussen (Anschlag + Laibung) mitspiegeln
-  if (layered) { const sw = { id: 'secw', type: 'wall', layers: flip ? wall.layers.slice().reverse() : wall.layers, x1: cx, y1: cy + hw, x2: cx, y2: cy - hw, thick: appW, hatch: wall.hatch }; for (const st of openingRevealStrips(sa, [sw])) { out.push({ t: 'poly', pts: st.poly, fill: st.fill, stroke: st.noBorder ? 'none' : st.stroke, sw: 0.7 }); if (st.hatch) for (const [u, v] of st.hatch) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.6 }); } }
+  if (layered) { const sw = { id: 'secw', type: 'wall', layers: flip ? wall.layers.slice().reverse() : wall.layers, x1: cx, y1: cy + hw, x2: cx, y2: cy - hw, thick: appW, hatch: wall.hatch }; for (const st of openingRevealStrips(sa, [sw])) { out.push({ t: 'poly', pts: st.poly, fill: st.fill, stroke: st.seam == null ? st.stroke : 'none', sw: 0.7 }); if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.7 }); if (st.hatch) for (const [u, v] of st.hatch) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.6 }); } }
   if (o.kind === 'window') {
     const P = openingParts(sa, layered);
     for (const f of (P.fills || [])) out.push({ t: 'poly', pts: f.poly, fill: f.fill, stroke: f.stroke, sw: 1 });
@@ -4001,7 +4002,7 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
         else if (a.type === 'opening') {
           const oDetail = openingDetail(a, annos[n] || []), P = openingParts(a, oDetail), d = 'M' + P.cover.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z';
           try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(1, 1, 1) }); } catch (_) { }   // Wand ausstanzen
-          if (oDetail) for (const st of openingRevealStrips(a, annos[n] || [])) { const sf = hexToRgb(st.fill), ss = hexToRgb(st.stroke), sd = 'M' + st.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(sd, Object.assign({ x: 0, y: PH, color: rgb(sf.r, sf.g, sf.b) }, st.noBorder ? {} : { borderColor: rgb(ss.r, ss.g, ss.b), borderWidth: 0.7 })); } catch (_) { } if (st.hatch) for (const [u, v] of st.hatch) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 0.8, color: rgb(ss.r, ss.g, ss.b) }); }   // Schichteinzug ohne Übergangslinie + Schraffur
+          if (oDetail) for (const st of openingRevealStrips(a, annos[n] || [])) { const sf = hexToRgb(st.fill), ss = hexToRgb(st.stroke), sd = 'M' + st.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(sd, Object.assign({ x: 0, y: PH, color: rgb(sf.r, sf.g, sf.b) }, st.seam == null ? { borderColor: rgb(ss.r, ss.g, ss.b), borderWidth: 0.7 } : {})); } catch (_) { } if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 0.7, color: rgb(ss.r, ss.g, ss.b) }); if (st.hatch) for (const [u, v] of st.hatch) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 0.8, color: rgb(ss.r, ss.g, ss.b) }); }   // Rahmen ausser an der Naht + Schraffur
           for (const f of (P.fills || [])) { const ff = hexToRgb(f.fill), fs = hexToRgb(f.stroke), fd = 'M' + f.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(fd, { x: 0, y: PH, color: rgb(ff.r, ff.g, ff.b), borderColor: rgb(fs.r, fs.g, fs.b), borderWidth: 1 }); } catch (_) { } }   // Rahmen/Flügel/Glas
           for (const [u, v] of P.lines) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 1.4, color: c });
           for (const [u, v] of (P.bold || [])) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 2.6, color: c });
@@ -5140,7 +5141,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     const vbw = x1 - x0, vbh = y1 - y0; svg.setAttribute('viewBox', x0 + ' ' + y0 + ' ' + vbw + ' ' + vbh);
     scale = vbw / (svg.clientWidth || (W * 0.6));
     let s = '';
-    for (const st of reveal) { s += '<polygon points="' + st.poly.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '" fill="' + st.fill + '" stroke="' + (st.noBorder ? 'none' : st.stroke) + '" stroke-width="' + (0.7 * scale) + '" vector-effect="non-scaling-stroke"/>'; if (st.hatch) for (const [u, v] of st.hatch) s += '<line x1="' + u[0].toFixed(1) + '" y1="' + u[1].toFixed(1) + '" x2="' + v[0].toFixed(1) + '" y2="' + v[1].toFixed(1) + '" stroke="' + st.stroke + '" stroke-width="0.6" vector-effect="non-scaling-stroke"/>'; }
+    for (const st of reveal) { s += '<polygon points="' + st.poly.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '" fill="' + st.fill + '" stroke="' + (st.seam == null ? st.stroke : 'none') + '" stroke-width="' + (0.7 * scale) + '" vector-effect="non-scaling-stroke"/>'; if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) s += '<line x1="' + u[0].toFixed(1) + '" y1="' + u[1].toFixed(1) + '" x2="' + v[0].toFixed(1) + '" y2="' + v[1].toFixed(1) + '" stroke="' + st.stroke + '" stroke-width="0.7" vector-effect="non-scaling-stroke"/>'; if (st.hatch) for (const [u, v] of st.hatch) s += '<line x1="' + u[0].toFixed(1) + '" y1="' + u[1].toFixed(1) + '" x2="' + v[0].toFixed(1) + '" y2="' + v[1].toFixed(1) + '" stroke="' + st.stroke + '" stroke-width="0.6" vector-effect="non-scaling-stroke"/>'; }
     for (const f of (parts.fills || [])) s += '<polygon points="' + f.poly.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '" fill="' + f.fill + '" stroke="' + f.stroke + '" stroke-width="1" vector-effect="non-scaling-stroke"/>';
     for (const [u, v] of parts.lines) s += '<line x1="' + u[0].toFixed(1) + '" y1="' + u[1].toFixed(1) + '" x2="' + v[0].toFixed(1) + '" y2="' + v[1].toFixed(1) + '" stroke="#1c242c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>';
     // Ziehgriffe (in Geometrie-Koordinaten): corner(s,m) = [cx + (a.w/2)*s, cy + (thick/2)*m]

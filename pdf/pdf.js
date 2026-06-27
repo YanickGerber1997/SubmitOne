@@ -895,9 +895,20 @@ function drawAnnos(pv) {
   if (openPosOn && docScale) drawOpenPosTags(svg, pv);   // Positionsnummern F1/T1
   if (sel && sel.num === pv.num) drawSelection(svg, findAnno(pv.num, sel.id), pv);
   if (groupSel && groupSel.num === pv.num) drawGroupSel(svg, pv);
+  drawBrandMark(pv);   // permanente Marken-Signatur (Herbst/Gold-Ecke unten rechts) – nicht auswählbar/entfernbar
   updateAlignBar();
   updateSelBar();
   updatePlanBar();
+}
+function brandMarkGeom(W, H) {   // schräge Eck-Signatur unten rechts: zwei parallele Striche (Herbst-Olive + Gold), 45°
+  const L = Math.min(W, H) * 0.3, s = 1 / Math.SQRT2, off = L * 0.135;   // n = (s,s) zur Ecke hin
+  const A = [W - L, H], B = [W, H - L];
+  return { oli: { x1: A[0], y1: A[1], x2: B[0], y2: B[1], w: Math.max(2, L * 0.085) }, gold: { x1: A[0] + s * off, y1: A[1] + s * off, x2: B[0] + s * off, y2: B[1] + s * off, w: Math.max(1.2, L * 0.05) }, oliC: '#6f7a39', goldC: '#caa44b' };
+}
+function drawBrandMark(pv) {
+  const W = pv.pageW || 595, H = pv.pageH || 842, g = brandMarkGeom(W, H);
+  const ln = (s, c) => pv.svg.appendChild(svgEl('line', { x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, stroke: c, 'stroke-width': s.w, 'stroke-linecap': 'butt', opacity: 0.92, 'pointer-events': 'none', class: 'brandmark' }));
+  ln(g.oli, g.oliC); ln(g.gold, g.goldC);
 }
 // Farbe (#hex oder rgb()) → #rrggbb für das Farbfeld
 function toHex(s) { const c = parseColor(s), h = n => ('0' + Math.round(n * 255).toString(16)).slice(-2); return '#' + h(c.r) + h(c.g) + h(c.b); }
@@ -3770,6 +3781,7 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
       const Y = y => PH - y;                          // pdf.js (oben) → pdf-lib (unten)
       const cropT = (cb.x !== 0 || cb.y !== 0) && pushGraphicsState && popGraphicsState && concatTransformationMatrix;
       if (cropT) pg.pushOperators(pushGraphicsState(), concatTransformationMatrix(1, 0, 0, 1, cb.x, cb.y));   // Ursprung in die CropBox-Ecke
+      { const bm = brandMarkGeom(cb.width, PH), bo = hexToRgb(bm.oliC), bgo = hexToRgb(bm.goldC); pg.drawLine({ start: { x: bm.oli.x1, y: Y(bm.oli.y1) }, end: { x: bm.oli.x2, y: Y(bm.oli.y2) }, thickness: bm.oli.w, color: rgb(bo.r, bo.g, bo.b), opacity: 0.92 }); pg.drawLine({ start: { x: bm.gold.x1, y: Y(bm.gold.y1) }, end: { x: bm.gold.x2, y: Y(bm.gold.y2) }, thickness: bm.gold.w, color: rgb(bgo.r, bgo.g, bgo.b), opacity: 0.92 }); }   // permanente Marken-Signatur (Herbst/Gold-Ecke)
       let wallUni = false;
       if (window.polygonClipping) {   // Wandflächen vereinigen → saubere Ecken auch im PDF
         const walls = (annos[n] || []).filter(a => a.type === 'wall' && !a._draft && (wallSimple(a) || !(a.layers && a.layers.length)) && phaseVisible(a) && (!visibleOnly || layerVisible(a)));

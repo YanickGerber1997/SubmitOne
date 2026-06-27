@@ -3967,7 +3967,7 @@ function solarPosition(latDeg, doy, hour) {   // Sonnenstand: Höhe (Elevation) 
 function exportSceneObj(scene) {   // THREE-Szene → Wavefront .obj (nur solide Meshes, ohne Boden/Raster/Linien)
   let out = '# Submit PDF – 3D-Modell-Export (Wavefront OBJ)\n', vCount = 0, n = 0; const v = new THREE.Vector3();
   scene.traverse(obj => {
-    if (!obj.isMesh || obj.name === 'ground') return;
+    if (!obj.isMesh || obj.name === 'ground' || (obj.name && obj.name.indexOf('__') === 0)) return;
     const geo = obj.geometry; if (!geo || !geo.attributes || !geo.attributes.position) return;
     obj.updateWorldMatrix(true, false);
     const pos = geo.attributes.position, idx = geo.index, base = vCount; n++;
@@ -3996,9 +3996,12 @@ async function open3D() {
   ov.innerHTML = '<div class="d3-bar"><b>3D-Ansicht</b><label class="d3-h">Höhe <input type="number" id="d3h" min="1" max="20" step="0.1" value="' + wallHeightM + '"> m</label><span class="d3-views"><button class="btn" data-v="iso">Iso</button><button class="btn" data-v="top">Oben</button><button class="btn" data-v="front">Vorne</button><button class="btn" data-v="side">Seite</button></span><span class="d3-views"><button class="btn" id="d3Rot" title="Modell automatisch drehen (Turntable)">🔄 Dreh</button><label class="d3-h" title="Sonnenstand / Verschattung: Breitengrad (°N) · Datum · Tageszeit – echte Sonnenstands-Berechnung">☀ <input type="number" id="d3Lat" value="47" min="-66" max="66" step="0.5" style="width:44px" title="Breitengrad °N (z. B. Zürich 47, Berlin 52, Wien 48)">° <input type="date" id="d3Date" style="width:122px"> <input type="range" id="d3Sun" min="0" max="100" value="50" style="width:74px;vertical-align:middle"> <span id="d3SunInfo" style="font-variant-numeric:tabular-nums;opacity:.85">–</span></label><button class="btn" id="d3SunPlay" title="Sonnenlauf über den Tag abspielen">▶</button><button class="btn" id="d3Rec" title="Als Video (WebM) aufnehmen – dreht automatisch für einen Turntable">⏺ Video</button></span><span class="d3-hint">Ziehen = drehen · Mausrad = zoomen</span><span class="grow"></span><button class="btn' + (show3DSlabs ? ' on' : '') + '" id="d3Slab" title="Geschossdecken/Bodenplatte (aus Wand-Footprint) ein-/ausblenden">▦ Decken</button><button class="btn" id="d3Obj" title="3D-Modell als OBJ exportieren (Blender/SketchUp/Rhino …)">⭳ OBJ</button><button class="btn" id="d3Shot">📷 Auf Plan</button><button class="btn" id="d3Close">✕ Schliessen</button></div><div class="d3-canvas" id="d3Canvas"></div>';
   document.body.appendChild(ov);
   const host = ov.querySelector('#d3Canvas');
-  let api = build3DScene(host, walls, arr);
-  ov.querySelector('#d3h').onchange = e => { wallHeightM = Math.max(1, Math.min(20, parseFloat(e.target.value) || 2.6)); if (api) api.dispose(); api = build3DScene(host, walls, arr); };
-  ov.querySelector('#d3Slab').onclick = e => { show3DSlabs = !show3DSlabs; e.currentTarget.classList.toggle('on', show3DSlabs); if (api) api.dispose(); api = build3DScene(host, walls, arr); };
+  let api = null;
+  const mk = keepCam => { const cam = keepCam && api && api.camState ? api.camState() : null; if (api) api.dispose(); api = build3DScene(host, walls, arr, { initCam: cam, onEdit: () => { pageViews.forEach(drawAnnos); markDirty(); mk(true); applySun(); } }); };
+  mk(false);
+  if (walls.length) toast('Tipp: blaue Punkte ziehen = Wände bearbeiten – wirkt direkt auf den 2D-Plan.');
+  ov.querySelector('#d3h').onchange = e => { wallHeightM = Math.max(1, Math.min(20, parseFloat(e.target.value) || 2.6)); mk(true); };
+  ov.querySelector('#d3Slab').onclick = e => { show3DSlabs = !show3DSlabs; e.currentTarget.classList.toggle('on', show3DSlabs); mk(true); };
   ov.querySelector('#d3Obj').onclick = () => saveObjFrom(api, docName);
   let sunRAF = 0, rec = null; const sunIn = ov.querySelector('#d3Sun'), latIn = ov.querySelector('#d3Lat'), dateIn = ov.querySelector('#d3Date'), sunInfo = ov.querySelector('#d3SunInfo');
   const td = new Date(); dateIn.value = td.getFullYear() + '-' + ('0' + (td.getMonth() + 1)).slice(-2) + '-' + ('0' + td.getDate()).slice(-2);
@@ -4471,9 +4474,9 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   document.addEventListener('keydown', esc, true); ov.querySelector('#labClose').onclick = close;
   buildCtrls(); requestAnimationFrame(render);
 }
-function build3DScene(host, walls, arr) {
-  host.innerHTML = '';
-  const W = host.clientWidth || 800, Hp = host.clientHeight || 500, perPt = docScale.perPt, H = wallHeightM, M = v => v * perPt, lev = a => { const l = layerById(a.layer); return (l && l.elevation) || 0; };
+function build3DScene(host, walls, arr, opts) {
+  host.innerHTML = ''; opts = opts || {};
+  const cleanups = [], W = host.clientWidth || 800, Hp = host.clientHeight || 500, perPt = docScale.perPt, H = wallHeightM, M = v => v * perPt, lev = a => { const l = layerById(a.layer); return (l && l.elevation) || 0; };
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
   for (const w of walls) for (const [x, y] of [[w.x1, w.y1], [w.x2, w.y2]]) { minx = Math.min(minx, x); miny = Math.min(miny, y); maxx = Math.max(maxx, x); maxy = Math.max(maxy, y); }
   const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2, span = Math.max(M(maxx - minx), M(maxy - miny), 2);
@@ -4481,6 +4484,7 @@ function build3DScene(host, walls, arr) {
   const camera = new THREE.PerspectiveCamera(50, W / Hp, 0.05, 4000); camera.position.set(span * 0.85, span * 0.95, span * 0.95);
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); renderer.setSize(W, Hp); renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; host.appendChild(renderer.domElement);
   const controls = new THREE.OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(0, H * 0.4, 0); controls.autoRotate = false; controls.autoRotateSpeed = 1.6;
+  if (opts.initCam) { try { camera.position.fromArray(opts.initCam.p); controls.target.fromArray(opts.initCam.t); } catch (_) { } }   // Kamera über Rebuilds erhalten
   const hemi = new THREE.HemisphereLight(0xffffff, 0x55604f, 0.8); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(span * 0.8, span * 1.7, span * 0.5); sun.castShadow = true;   // Schatten
   sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0006; const sc = sun.shadow.camera, sb = Math.max(span * 1.3, 6); sc.left = -sb; sc.right = sb; sc.top = sb; sc.bottom = -sb; sc.near = 0.1; sc.far = span * 5 + 20; scene.add(sun);
@@ -4694,10 +4698,22 @@ function build3DScene(host, walls, arr) {
   let raf, alive = true;
   const onResize = () => { const w2 = host.clientWidth, h2 = host.clientHeight; if (!w2 || !h2) return; camera.aspect = w2 / h2; camera.updateProjectionMatrix(); renderer.setSize(w2, h2); };
   window.addEventListener('resize', onResize);
+  let editHandles = [];
+  if (opts.onEdit) {   // Wand-Endpunkte als ziehbare Griffe → ändern DAS Wand-Objekt → 2D-Plan/Schnitt/Mengen aktualisieren
+    const hGeo = new THREE.SphereGeometry(Math.max(0.07, span * 0.013), 14, 14), hMat = new THREE.MeshBasicMaterial({ color: 0x2f7be4 }), hMatHi = new THREE.MeshBasicMaterial({ color: 0xf08a24 });
+    for (const w of walls) for (const end of [1, 2]) { const s = new THREE.Mesh(hGeo, hMat); s.position.set(M((end === 1 ? w.x1 : w.x2) - cx), lev(w) + 0.07, M((end === 1 ? w.y1 : w.y2) - cy)); s.name = '__handle'; s.renderOrder = 999; s.userData = { wall: w, end }; scene.add(s); editHandles.push(s); }
+    const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitP = new THREE.Vector3(), dom = renderer.domElement; let drag = null;
+    const setNdc = ev => { const r = dom.getBoundingClientRect(); ndc.x = ((ev.clientX - r.left) / r.width) * 2 - 1; ndc.y = -((ev.clientY - r.top) / r.height) * 2 + 1; };
+    const onDown = ev => { setNdc(ev); ray.setFromCamera(ndc, camera); const h = ray.intersectObjects(editHandles)[0]; if (h) { drag = h.object; drag.material = hMatHi; plane.constant = -drag.position.y; controls.enabled = false; ev.preventDefault(); ev.stopPropagation(); } };
+    const onMove = ev => { if (!drag) return; setNdc(ev); ray.setFromCamera(ndc, camera); if (ray.ray.intersectPlane(plane, hitP)) { drag.position.x = hitP.x; drag.position.z = hitP.z; } };
+    const onUp = () => { if (!drag) return; const w = drag.userData.wall, e = drag.userData.end, px = drag.position.x / perPt + cx, py = drag.position.z / perPt + cy; if (e === 1) { w.x1 = px; w.y1 = py; } else { w.x2 = px; w.y2 = py; } drag.material = hMat; drag = null; controls.enabled = true; setTimeout(() => opts.onEdit(), 0); };
+    dom.addEventListener('pointerdown', onDown); dom.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
+    cleanups.push(() => { dom.removeEventListener('pointerdown', onDown); dom.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); });
+  }
   const loop = () => { if (!alive) return; controls.update(); renderer.render(scene, camera); raf = requestAnimationFrame(loop); }; loop();
   const setView = name => { const ty = H * 0.45, d = Math.max(span * 1.4, 4); if (name === 'top') { camera.position.set(0.001, d * 1.7, 0.001); controls.target.set(0, 0, 0); } else if (name === 'front') { camera.position.set(0, ty, d * 1.5); controls.target.set(0, ty, 0); } else if (name === 'side') { camera.position.set(d * 1.5, ty, 0.001); controls.target.set(0, ty, 0); } else { camera.position.set(span * 0.85, span * 0.95, span * 0.95); controls.target.set(0, H * 0.4, 0); } camera.updateProjectionMatrix(); controls.update(); };
-  const snapshot = () => { renderer.render(scene, camera); return { data: renderer.domElement.toDataURL('image/png'), w: renderer.domElement.width, h: renderer.domElement.height }; };
-  return { dispose: () => { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); controls.dispose(); renderer.dispose(); host.innerHTML = ''; }, setView, snapshot, exportObj: () => exportSceneObj(scene), setRotate: on => { controls.autoRotate = !!on; }, getRotate: () => controls.autoRotate, setSun: setSun3D, setSunDir };
+  const snapshot = () => { editHandles.forEach(h => h.visible = false); renderer.render(scene, camera); const d = renderer.domElement.toDataURL('image/png'); editHandles.forEach(h => h.visible = true); return { data: d, w: renderer.domElement.width, h: renderer.domElement.height }; };
+  return { dispose: () => { alive = false; cancelAnimationFrame(raf); cleanups.forEach(fn => { try { fn(); } catch (_) { } }); window.removeEventListener('resize', onResize); controls.dispose(); renderer.dispose(); host.innerHTML = ''; }, setView, snapshot, exportObj: () => exportSceneObj(scene), setRotate: on => { controls.autoRotate = !!on; }, getRotate: () => controls.autoRotate, setSun: setSun3D, setSunDir, camState: () => ({ p: camera.position.toArray(), t: controls.target.toArray() }) };
 }
 
 /* ---------- Rechtsklick-Menü (alles erreichbar) ---------- */

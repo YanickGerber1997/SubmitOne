@@ -3016,7 +3016,10 @@ function sectionPrimitives(a, arr) {
     }
     for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = fp((ocx - p1[0]) * cux + (ocy - p1[1]) * cuy); if (od < -10 || od > cl + 10) continue;
       const lapPts = (o.kind === 'window' ? (o.outerLap != null ? o.outerLap : cmToPts(3)) : 0) + (o.anschlagType === 'aussen' ? (o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5)) : 0);   // Aussen-Lappung + Aussenanschlag → Aussenlichtmaß
-      const redM = ptsToCm(lapPts) / 100, wEff = Math.max(4, (o.w - 2 * lapPts) * along);
+      const boardPts = (o.kind === 'window' ? cmToPts(o.boardW != null ? o.boardW : 2.5) : 0), lapTot = lapPts + boardPts;   // Laibungsbrett lappt zusätzlich über den Rahmen
+      const headF = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), sillF = (o.kind === 'window' ? (o.sill || 0) : 0), rohW = o.w * along, clM = ptsToCm(lapPts) / 100;
+      if (o.kind === 'window' && boardPts > 0.5 && rohW - 2 * lapPts * along > 1) { const bm = WALL_MATS[o.boardMat || 'holz'] || { fill: '#e7cfa8', color: '#7a5126' }; out.push({ t: 'rect', x: X(od - rohW / 2 + lapPts * along), y: Yh(headF - clM), w: rohW - 2 * lapPts * along, h: Yh(sillF + clM) - Yh(headF - clM), fill: bm.fill, stroke: bm.color, sw: 0.6 }); }   // Laibungsbrett (Holz) umlaufend
+      const redM = ptsToCm(lapTot) / 100, wEff = Math.max(4, (o.w - 2 * lapTot) * along);
       openingElev(out, X, Yh, od - wEff / 2, wEff, o, Hw, col, redM);
       if (winDimsOn) {   // Ansicht: Breite + Höhe, Rohbau + Licht (rahmenbasiert)
         const insPts = Math.max(0, (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1)), insM = ptsToCm(insPts) / 100;
@@ -5251,9 +5254,11 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     for (const o2 of ops) {
       const oo = side === 'i' ? Object.assign({}, o2, { winHinge: o2.winHinge === 'left' ? 'right' : o2.winHinge === 'right' ? 'left' : o2.winHinge, bank: false }) : o2;
       const a0 = (wall ? along(o2.x, o2.y) : Lw / 2) - o2.w / 2, opx0 = flip ? (Lw - a0 - o2.w) : a0;
-      const rPts = side === 'i' ? (o2.innerReveal != null ? o2.innerReveal : cmToPts(2)) : (o2.outerLap != null ? o2.outerLap : cmToPts(3));
+      const lapClad = side === 'i' ? (o2.innerReveal != null ? o2.innerReveal : cmToPts(2)) : (o2.outerLap != null ? o2.outerLap : cmToPts(3));
+      const boardPts = (side === 'a' && o2.kind === 'window') ? cmToPts(o2.boardW != null ? o2.boardW : 2.5) : 0, rPts = lapClad + boardPts, clM = ptsToCm(lapClad) / 100;
       const sillF = (o2.kind === 'window' ? (o2.sill || 0) : 0), headF = Math.min(Hwall, o2.head || (o2.kind === 'window' ? 2.1 : 2.0));
-      if (facLy && rPts > 0.5) out.push({ t: 'rect', x: opx0, y: Yh(headF), w: o2.w, h: Yh(sillF) - Yh(headF), fill: facMat.fill || '#eee', stroke: facMat.color || '#1c242c', sw: 1 });   // Rohbau-Laibung (Reveal/Sturz/Schwelle)
+      if (facLy && lapClad > 0.3) out.push({ t: 'rect', x: opx0, y: Yh(headF), w: o2.w, h: Yh(sillF) - Yh(headF), fill: facMat.fill || '#eee', stroke: facMat.color || '#1c242c', sw: 1 });   // Verkleidung/Rohbau-Laibung (umlaufend)
+      if (boardPts > 0.3 && o2.w - 2 * lapClad > 1) { const bm = WALL_MATS[o2.boardMat || 'holz'] || { fill: '#e7cfa8', color: '#7a5126' }; out.push({ t: 'rect', x: opx0 + lapClad, y: Yh(headF - clM), w: o2.w - 2 * lapClad, h: Yh(sillF + clM) - Yh(headF - clM), fill: bm.fill, stroke: bm.color, sw: 0.7 }); }   // Laibungsbrett (Holz) umlaufend
       try { openingElev(out, d => d, Yh, opx0 + rPts, o2.w - 2 * rPts, oo, Hwall, '#1c242c', rPts * perPt); } catch (_) { }
       if (o2.id === a.id) out.push({ t: 'rect', x: opx0 - 4, y: Yh(headF) - 4, w: o2.w + 8, h: (Yh(sillF) - Yh(headF)) + 8, fill: 'none', stroke: '#2aa869', sw: 2.4 });   // aktuelles Fenster markiert
     }

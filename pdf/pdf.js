@@ -5118,6 +5118,31 @@ async function makeTestScene() {   // schnelle Test-Szene: mehrschichtige Wand +
   sel = { num: n, id: win.id }; setTool('select'); drawAnnos(pv); saveState();
   toast('Test-Wand (35 cm, mehrschichtig) + Fenster (120 cm) erstellt → Fenster ist gewählt, jetzt „⊕ Detail" öffnen.');
 }
+async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fenster + Tür) + 2 Schnitte + Ansicht vorne/hinten, 1:20, beschriftet
+  try { await newBlankDoc({ w: 1684, h: 1191 }); } catch (_) { }   // A2 quer
+  if (!pdfDoc) { toast('Beispiel konnte nicht erstellt werden.'); return; }
+  docScale = { perPt: 20 * PT2MM / 1000, label: '1:20', n: 20 };
+  const n = curPage(), pv = pageViews.find(p => p.num === n); if (!pv) return;
+  const arr = getAnnos(n);
+  const txt = (x, y, t, size, w) => arr.push({ id: nextId++, type: 'text', x, y, w: w || cmToPts(200), h: 30, text: t, size: size || 16, color: '#1c242c', align: 'left', bg: 'transparent', border: null, layer: activeLayerId });
+  const mkSection = (cx1, cy1, cx2, cy2, label, ox, oy, flip) => { const s = { id: nextId++, type: 'section', cx1, cy1, cx2, cy2, label, ox, oy, layer: activeLayerId }; if (flip) s.flip = true; arr.push(s); };
+  txt(130, 64, 'BEISPIELPROJEKT — Wand mit Fenster & Tür · Massstab 1:20', 22, cmToPts(900));
+  const wy = 230, wx1 = 150, wlen = cmToPts(500), wx2 = wx1 + wlen, wid = nextId++;   // GRUNDRISS
+  const wall = { id: wid, type: 'wall', x1: wx1, y1: wy, x2: wx2, y2: wy, thick: cmToPts(35), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: wallHeightM, dim: false, layer: activeLayerId };
+  applyWallBuildup(wall, [['putz', 1.5], ['mauerwerk', 15], ['eps', 16], ['putz', 0.5]]); arr.push(wall);
+  const win = { id: nextId++, type: 'opening', kind: 'window', wallId: wid, t: 0.28, w: cmToPts(120), depth: 0.5, frameW: cmToPts(10), frameD: cmToPts(7), winType: 'f2', winMat: 'holz', sill: 0.9, head: 2.2, revealType: 'putz', bank: true, layer: activeLayerId };
+  const dr = { id: nextId++, type: 'opening', kind: 'door', wallId: wid, t: 0.72, w: cmToPts(100), depth: 0.5, frameW: cmToPts(6), frameD: cmToPts(7), winType: 'f1', winMat: 'holz', head: 2.05, revealType: 'putz', layer: activeLayerId };
+  openingResolve(win, pv); openingResolve(dr, pv); arr.push(win); arr.push(dr);
+  txt(wx1, wy - 80, 'GRUNDRISS', 16);
+  const winX = wx1 + 0.28 * wlen, drX = wx1 + 0.72 * wlen;
+  mkSection(winX, wy - 70, winX, wy + 70, 'A', 150, 880);   // Schnitt durch Fenster
+  mkSection(drX, wy - 70, drX, wy + 70, 'B', 560, 880);     // Schnitt durch Tür
+  mkSection(wx1, wy + 110, wx2, wy + 110, 'V', 1000, 470, false);   // Ansicht vorne (parallel)
+  mkSection(wx1, wy + 110, wx2, wy + 110, 'H', 1000, 900, true);    // Ansicht hinten (flip)
+  txt(1000, 400, 'ANSICHT VORNE', 14); txt(1000, 830, 'ANSICHT HINTEN', 14);
+  drawAnnos(pv); saveState();
+  toast('Beispielprojekt: Grundriss + Schnitte (Fenster/Tür) + Ansicht vorne/hinten · 1:20. Fenster wählen → „⊕ Detail".');
+}
 function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoomen, Ziehgriffe + Regler, live in den Plan
   const arr = getAnnos(pv.num), wall = a.wallId && arr.find(o => o.id === a.wallId && o.type === 'wall');
   const ov = document.createElement('div'); ov.className = 'lab-overlay';
@@ -5867,7 +5892,7 @@ function wire() {
   $('#smPdfWalls').onclick = detectWallsFromPdf;
   $('#smIfcReopen').onclick = () => { if (window._ifc) open3DIFC(window._ifc); else toast('Noch kein IFC importiert – zuerst „IFC importieren".'); };
   $('#smOpen').onclick = openPicker;
-  { const tb = $('#smTestScene'); if (tb) tb.onclick = () => makeTestScene(); }
+  { const tb = $('#smTestScene'); if (tb) tb.onclick = () => buildExampleProject(); }
   $('#smProject').onclick = openProjectDlg;
   $('#docProject').onclick = openProjectDlg;
   $('#projCancel').onclick = () => { $('#projDlg').hidden = true; };
@@ -6245,6 +6270,7 @@ if (active < 0) showEmptyThumbs();   // beim Start: Vorschau-Spalte zeigt „Neu
   setTimeout(dismiss, 3000);
   setTimeout(() => { document.addEventListener('pointerdown', dismiss); document.addEventListener('keydown', dismiss); }, 400);   // erst nach kurzer Zeit per Klick überspringbar
 })();
+setTimeout(() => { try { if (!pdfDoc && (typeof buildExampleProject === 'function')) buildExampleProject(); } catch (_) { } }, 1600);   // Start mit Beispielprojekt, wenn kein Dokument/Wiederherstellung geladen
 
 /* ---------- Geräte-Anbindung (PWA) ---------- */
 async function loadSharedFile() {

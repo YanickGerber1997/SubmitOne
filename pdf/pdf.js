@@ -5084,8 +5084,6 @@ function wire() {
   $('#foot3d').onclick = open3D;
   $('#footIFC').onclick = importIFCFile;
   $('#footGIS').onclick = importGISFile;
-  $('#hdrLists').onclick = e => { e.stopPropagation(); toggleHdrPop('listsPop', 'hdrLists'); };
-  $('#hdrSubmit').onclick = e => { e.stopPropagation(); toggleHdrPop('submitPop', 'hdrSubmit'); };
   $('#smOpen').onclick = openPicker;
   $('#smProject').onclick = openProjectDlg;
   $('#projCancel').onclick = () => { $('#projDlg').hidden = true; };
@@ -5093,8 +5091,6 @@ function wire() {
   $('#projName').oninput = projPreviewUpd; $('#projSub').onchange = projPreviewUpd; $('#projFile').oninput = projPreviewUpd;
   $('#projName').onkeydown = e => { if (e.key === 'Enter') $('#projOk').click(); };
   $('#smHint3d').onclick = () => toast('OBJ-Export: unten „◳ 3D" öffnen → im 3D-Balken „⭳ OBJ".');
-  $$('.hdr-pop button').forEach(b => b.addEventListener('click', () => { const p = b.closest('.hdr-pop'); if (p) p.hidden = true; }));
-  document.addEventListener('pointerdown', e => { if (!e.target.closest('.hdr-pop') && !e.target.closest('.hdr-btn')) $$('.hdr-pop').forEach(p => p.hidden = true); }, true);
   let planKind = 'kopf', planPos = 'br';
   $('#footPlan').onclick = e => { e.stopPropagation(); const p = $('#planPop'); p.hidden = !p.hidden; };
   $('#pbBuild').onclick = e => { e.stopPropagation(); const p = $('#buildPop'); if (p.hidden) openBuildPop(); else p.hidden = true; };

@@ -5106,10 +5106,10 @@ function applyMountPreset(a, mode) {   // drei Montagearten des Rahmens → sinn
 function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoomen, Ziehgriffe + Regler, live in den Plan
   const arr = getAnnos(pv.num), wall = a.wallId && arr.find(o => o.id === a.wallId && o.type === 'wall');
   const ov = document.createElement('div'); ov.className = 'lab-overlay';
-  ov.innerHTML = '<div class="lab-wrap"><div class="lab-head"><b>Fenster-Detail</b><span class="lab-hint">Grundriss + Schnitt im Wandkontext · Mausrad = zoomen · Punkte ziehen / Regler · alles live</span><span class="grow"></span><button class="btn" id="labFit" title="Ansichten einpassen">⤢ Einpassen</button><button class="btn" id="labClose">✕ Schliessen</button></div><div class="lab-body"><div class="lab-stage" style="display:flex;flex-direction:column;gap:6px"><div style="flex:1;position:relative;min-height:0"><span style="position:absolute;left:8px;top:5px;font-size:11px;font-weight:600;color:#7a8470;background:rgba(255,255,255,.7);padding:1px 5px;z-index:1;pointer-events:none">GRUNDRISS</span><div class="lab-zoom" data-view="g"><button data-z="in">＋</button><button data-z="out">−</button><button data-z="fit">⤢</button></div><svg class="lab-svg" id="labSvg" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block"></svg></div><div style="flex:1;position:relative;min-height:0;border-top:2px solid #d3d8cc"><span style="position:absolute;left:8px;top:5px;font-size:11px;font-weight:600;color:#7a8470;background:rgba(255,255,255,.7);padding:1px 5px;z-index:1;pointer-events:none">SCHNITT</span><div class="lab-zoom" data-view="s"><button data-z="in">＋</button><button data-z="out">−</button><button data-z="fit">⤢</button></div><svg class="lab-svg" id="labSvgS" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block"></svg></div></div><div class="lab-side" id="labCtrls"></div></div></div>';
+  ov.innerHTML = '<div class="lab-wrap"><div class="lab-head"><b>Fenster-Detail</b><span class="lab-hint">Grundriss + Schnitt im Wandkontext · Mausrad = zoomen · Punkte ziehen / Regler · alles live</span><span class="grow"></span><button class="btn" id="labFit" title="Ansichten einpassen">⤢ Einpassen</button><button class="btn" id="labClose">✕ Schliessen</button></div><div class="lab-body"><div class="lab-stage" style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:5px;padding:5px;background:#d6dacc"><div class="lab-view"><span class="lab-vlbl">GRUNDRISS</span><div class="lab-zoom" data-view="g"><button data-z="in">＋</button><button data-z="out">−</button><button data-z="fit">⤢</button></div><svg class="lab-svg" id="labSvg" xmlns="http://www.w3.org/2000/svg"></svg></div><div class="lab-view"><span class="lab-vlbl">ANSICHT AUSSEN</span><div class="lab-zoom" data-view="ao"><button data-z="in">＋</button><button data-z="out">−</button><button data-z="fit">⤢</button></div><svg class="lab-svg" id="labSvgAo" xmlns="http://www.w3.org/2000/svg"></svg></div><div class="lab-view"><span class="lab-vlbl">SCHNITT</span><div class="lab-zoom" data-view="s"><button data-z="in">＋</button><button data-z="out">−</button><button data-z="fit">⤢</button></div><svg class="lab-svg" id="labSvgS" xmlns="http://www.w3.org/2000/svg"></svg></div><div class="lab-view"><span class="lab-vlbl">ANSICHT INNEN</span><div class="lab-zoom" data-view="ai"><button data-z="in">＋</button><button data-z="out">−</button><button data-z="fit">⤢</button></div><svg class="lab-svg" id="labSvgAi" xmlns="http://www.w3.org/2000/svg"></svg></div></div><div class="lab-side" id="labCtrls"></div></div></div>';
   document.body.appendChild(ov);
-  const svg = ov.querySelector('#labSvg'), svgS = ov.querySelector('#labSvgS'), side = ov.querySelector('#labCtrls');
-  let vbG = null, vbS = null;   // aktuelle viewBox je Ansicht (zoomen/verschieben wie im echten Grundriss; null = einpassen)
+  const svg = ov.querySelector('#labSvg'), svgS = ov.querySelector('#labSvgS'), svgAo = ov.querySelector('#labSvgAo'), svgAi = ov.querySelector('#labSvgAi'), side = ov.querySelector('#labCtrls');
+  let vbG = null, vbS = null, vbAo = null, vbAi = null;   // aktuelle viewBox je Ansicht (zoomen/verschieben wie im echten Grundriss; null = einpassen)
   const vbStr = v => v.x + ' ' + v.y + ' ' + v.w + ' ' + v.h;
   function navSetup(el, getV, setV, redraw) {   // Mausrad = Zoom zum Cursor · Ziehen (ausser auf Griff) = verschieben
     el.addEventListener('wheel', e => { e.preventDefault(); const vb = getV(); if (!vb) return; const r = el.getBoundingClientRect(), fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height, mx = vb.x + fx * vb.w, my = vb.y + fy * vb.h, f = e.deltaY < 0 ? 1 / 1.15 : 1.15, nw = Math.max(3, vb.w * f), nh = Math.max(3, vb.h * f); setV({ x: mx - fx * nw, y: my - fy * nh, w: nw, h: nh }); redraw(); }, { passive: false });
@@ -5179,26 +5179,41 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     svg.innerHTML = s + H;
     bindHandles();
     renderSec();
+    renderElev(svgAo, 'a', () => vbAo, v => { vbAo = v; });
+    renderElev(svgAi, 'i', () => vbAi, v => { vbAi = v; });
   }
-  function renderSec() {   // Schnitt durch das Fenster (Sturz/Brüstung + geschichtete Laibung)
-    if (!docScale) { svgS.innerHTML = '<text x="10" y="22" font-size="13" fill="#9aa090">Für den Schnitt zuerst den Massstab setzen (1:n)</text>'; svgS.setAttribute('viewBox', '0 0 300 60'); return; }
-    const perPt = docScale.perPt, appW = a.thick || wallThickPts(), H2 = (a.head != null ? a.head : (a.kind === 'window' ? 2.1 : 2.0)) + 0.4;
-    const Yh = h => -h / perPt, X = d => d, out = [], sw = wall ? Object.assign({}, wall) : { layers: null, thick: appW, fill: a.fill, color: a.color, hatch: a.hatch };
-    try { sectionCutOpening(out, X, Yh, 0, appW, a, H2, perPt, sw, false); } catch (_) { }
-    let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; const acc = (x, y) => { if (x < mnx) mnx = x; if (y < mny) mny = y; if (x > mxx) mxx = x; if (y > mxy) mxy = y; };
-    for (const p of out) { if (p.t === 'rect') { acc(p.x, p.y); acc(p.x + p.w, p.y + p.h); } else if (p.t === 'poly') { for (const q of p.pts) acc(q[0], q[1]); } else if (p.t === 'line') { acc(p.x1, p.y1); acc(p.x2, p.y2); } else if (p.x != null) acc(p.x, p.y); }
-    if (!isFinite(mnx)) { svgS.innerHTML = ''; return; }
-    const pad = (mxx - mnx) * 0.14 + 12; mnx -= pad; mxx += pad; mny -= pad; mxy += pad;
-    if (!vbS) vbS = { x: mnx, y: mny, w: mxx - mnx, h: mxy - mny };
-    svgS.setAttribute('viewBox', vbStr(vbS));
-    const scS = vbS.w / (svgS.clientWidth || 320); let s = '';
+  function primStr(out, scS) {   // Schnitt-/Ansicht-Primitive → SVG-String
+    let s = '';
     for (const p of out) {
       if (p.t === 'rect') s += '<rect x="' + Math.min(p.x, p.x + p.w) + '" y="' + Math.min(p.y, p.y + p.h) + '" width="' + Math.abs(p.w) + '" height="' + Math.abs(p.h) + '" fill="' + (p.fill || 'none') + '" stroke="' + ((p.stroke && p.stroke !== 'none') ? p.stroke : 'none') + '" stroke-width="' + (p.sw || 0.6) + '" vector-effect="non-scaling-stroke"/>';
       else if (p.t === 'poly') s += '<polygon points="' + p.pts.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ') + '" fill="' + (p.fill || 'none') + '" stroke="' + ((p.stroke && p.stroke !== 'none') ? p.stroke : 'none') + '" stroke-width="' + (p.sw || 0.6) + '" vector-effect="non-scaling-stroke"/>';
       else if (p.t === 'line') s += '<line x1="' + p.x1 + '" y1="' + p.y1 + '" x2="' + p.x2 + '" y2="' + p.y2 + '" stroke="' + (p.stroke || '#1c242c') + '" stroke-width="' + (p.w || 1) + '" vector-effect="non-scaling-stroke"' + (p.dash ? ' stroke-dasharray="' + p.dash + '"' : '') + '/>';
+      else if (p.t === 'arrow') { const sa = 6, ang = Math.atan2(p.dy, p.dx); for (const da of [2.5, -2.5]) s += '<line x1="' + p.x + '" y1="' + p.y + '" x2="' + (p.x - Math.cos(ang + da) * sa) + '" y2="' + (p.y - Math.sin(ang + da) * sa) + '" stroke="' + (p.col || '#1c242c') + '" stroke-width="1.2" vector-effect="non-scaling-stroke"/>'; }
       else if (p.t === 'text') s += '<text x="' + p.x + '" y="' + p.y + '" font-size="' + ((p.small ? 9 : 11) * scS) + '" fill="' + (p.col || '#1c242c') + '">' + (p.text || '').replace(/[<>&]/g, '') + '</text>';
     }
-    svgS.innerHTML = s;
+    return s;
+  }
+  function drawPrims(el, out, getVb, setVb) {   // Bbox einpassen (einmal) + zeichnen
+    let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; const acc = (x, y) => { if (x < mnx) mnx = x; if (y < mny) mny = y; if (x > mxx) mxx = x; if (y > mxy) mxy = y; };
+    for (const p of out) { if (p.t === 'rect') { acc(p.x, p.y); acc(p.x + p.w, p.y + p.h); } else if (p.t === 'poly') { for (const q of p.pts) acc(q[0], q[1]); } else if (p.t === 'line') { acc(p.x1, p.y1); acc(p.x2, p.y2); } else if (p.x != null) acc(p.x, p.y); }
+    if (!isFinite(mnx)) { el.innerHTML = ''; return; }
+    const pad = (mxx - mnx) * 0.14 + 12; mnx -= pad; mxx += pad; mny -= pad; mxy += pad;
+    if (!getVb()) setVb({ x: mnx, y: mny, w: mxx - mnx, h: mxy - mny });
+    const vb = getVb(); el.setAttribute('viewBox', vbStr(vb)); el.innerHTML = primStr(out, vb.w / (el.clientWidth || 320));
+  }
+  function renderSec() {   // Schnitt durch das Fenster (Sturz/Brüstung + geschichtete Laibung + Fensterbank)
+    if (!docScale) { svgS.innerHTML = '<text x="10" y="22" font-size="13" fill="#9aa090">Für den Schnitt zuerst den Massstab setzen (1:n)</text>'; svgS.setAttribute('viewBox', '0 0 300 60'); return; }
+    const perPt = docScale.perPt, appW = a.thick || wallThickPts(), H2 = (a.head != null ? a.head : (a.kind === 'window' ? 2.1 : 2.0)) + 0.4;
+    const Yh = h => -h / perPt, X = d => d, out = [], sw = wall ? Object.assign({}, wall) : { layers: null, thick: appW, fill: a.fill, color: a.color, hatch: a.hatch };
+    try { sectionCutOpening(out, X, Yh, 0, appW, a, H2, perPt, sw, false); } catch (_) { }
+    drawPrims(svgS, out, () => vbS, v => { vbS = v; });
+  }
+  function renderElev(el, side, getVb, setVb) {   // Ansicht innen/aussen (Front des Fensters)
+    if (!docScale) { el.innerHTML = '<text x="10" y="22" font-size="13" fill="#9aa090">Massstab setzen (1:n)</text>'; el.setAttribute('viewBox', '0 0 300 60'); return; }
+    const perPt = docScale.perPt, H = (a.head != null ? a.head : (a.kind === 'window' ? 2.1 : 2.0)) + 0.4, Yh = h => -h / perPt, X = d => d, out = [];
+    const o = side === 'i' ? Object.assign({}, a, { winHinge: a.winHinge === 'left' ? 'right' : a.winHinge === 'right' ? 'left' : a.winHinge, bank: false }) : a;   // innen: Anschlag-Richtung gespiegelt, ohne Aussen-Fensterbank
+    try { openingElev(out, X, Yh, 0, a.w, o, H, '#1c242c', 0); } catch (_) { }
+    drawPrims(el, out, getVb, setVb);
   }
   function bindHandles() {
     svg.querySelectorAll('.lab-h').forEach(g => { g.onpointerdown = e => {
@@ -5259,9 +5274,12 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   document.addEventListener('keydown', esc, true); ov.querySelector('#labClose').onclick = close;
   navSetup(svg, () => vbG, v => { vbG = v; }, () => render());
   navSetup(svgS, () => vbS, v => { vbS = v; }, () => renderSec());
-  { const fb = ov.querySelector('#labFit'); if (fb) fb.onclick = () => { vbG = null; vbS = null; render(); }; }
+  navSetup(svgAo, () => vbAo, v => { vbAo = v; }, () => renderElev(svgAo, 'a', () => vbAo, v => { vbAo = v; }));
+  navSetup(svgAi, () => vbAi, v => { vbAi = v; }, () => renderElev(svgAi, 'i', () => vbAi, v => { vbAi = v; }));
+  const VIEW = { g: { get: () => vbG, set: v => { vbG = v; }, draw: () => render() }, s: { get: () => vbS, set: v => { vbS = v; }, draw: () => renderSec() }, ao: { get: () => vbAo, set: v => { vbAo = v; }, draw: () => renderElev(svgAo, 'a', () => vbAo, v => { vbAo = v; }) }, ai: { get: () => vbAi, set: v => { vbAi = v; }, draw: () => renderElev(svgAi, 'i', () => vbAi, v => { vbAi = v; }) } };
+  { const fb = ov.querySelector('#labFit'); if (fb) fb.onclick = () => { vbG = vbS = vbAo = vbAi = null; render(); }; }
   const zoomVbC = (vb, f) => { if (!vb) return vb; const cx2 = vb.x + vb.w / 2, cy2 = vb.y + vb.h / 2, nw = Math.max(3, vb.w * f), nh = Math.max(3, vb.h * f); return { x: cx2 - nw / 2, y: cy2 - nh / 2, w: nw, h: nh }; };
-  ov.querySelectorAll('.lab-zoom').forEach(tb => { const g = tb.dataset.view === 'g'; tb.querySelectorAll('button').forEach(b => b.onclick = e => { e.stopPropagation(); const z = b.dataset.z; if (z === 'fit') { if (g) { vbG = null; render(); } else { vbS = null; renderSec(); } return; } const f = z === 'in' ? 1 / 1.25 : 1.25; if (g) { vbG = zoomVbC(vbG, f); render(); } else { vbS = zoomVbC(vbS, f); renderSec(); } }); });
+  ov.querySelectorAll('.lab-zoom').forEach(tb => { const V = VIEW[tb.dataset.view]; if (!V) return; tb.querySelectorAll('button').forEach(b => b.onclick = e => { e.stopPropagation(); const z = b.dataset.z; if (z === 'fit') { V.set(null); V.draw(); return; } V.set(zoomVbC(V.get(), z === 'in' ? 1 / 1.25 : 1.25)); V.draw(); }); });
   buildCtrls(); requestAnimationFrame(render);
 }
 function build3DScene(host, walls, arr, opts) {

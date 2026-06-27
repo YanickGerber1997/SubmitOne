@@ -4294,6 +4294,49 @@ function ifcToWalls(ifc, cutAbove) {   // IFC → editierbare Submit-Wände (par
     toast(ws.length + ' editierbare Wände rekonstruiert (Ebene „IFC-Wände") – in 2D & 3D bearbeitbar. Experimentell: Dicke/Höhe ggf. nachjustieren.');
   }, 30);
 }
+async function pdfPageSegments(n) {   // Vektorlinien einer PDF-Seite aus der Operator-Liste (mit CTM-Verfolgung) → Segmente in Seitenpunkten (oben-links)
+  const page = await pdfDoc.getPage(n), OPS = pdfjs.OPS, opl = await page.getOperatorList(), PH = page.getViewport({ scale: 1 }).height;
+  let ctm = [1, 0, 0, 1, 0, 0]; const stack = [], segs = [];
+  const mul = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+  const comp = (m, a) => [m[0] * a[0] + m[2] * a[1], m[1] * a[0] + m[3] * a[1], m[0] * a[2] + m[2] * a[3], m[1] * a[2] + m[3] * a[3], m[0] * a[4] + m[2] * a[5] + m[4], m[1] * a[4] + m[3] * a[5] + m[5]];
+  for (let i = 0; i < opl.fnArray.length; i++) {
+    const fn = opl.fnArray[i], args = opl.argsArray[i];
+    if (fn === OPS.save) stack.push(ctm.slice());
+    else if (fn === OPS.restore) { if (stack.length) ctm = stack.pop(); }
+    else if (fn === OPS.transform) ctm = comp(ctm, args);
+    else if (fn === OPS.constructPath) {
+      const ops = args[0], co = args[1]; let k = 0, cx = 0, cy = 0, sx = 0, sy = 0;
+      const add = (x1, y1, x2, y2) => { const a = mul(ctm, x1, y1), b = mul(ctm, x2, y2); segs.push([[a[0], PH - a[1]], [b[0], PH - b[1]]]); };
+      for (const op of ops) {
+        if (op === OPS.moveTo) { cx = co[k++]; cy = co[k++]; sx = cx; sy = cy; }
+        else if (op === OPS.lineTo) { const nx = co[k++], ny = co[k++]; add(cx, cy, nx, ny); cx = nx; cy = ny; }
+        else if (op === OPS.curveTo) { k += 4; const nx = co[k++], ny = co[k++]; add(cx, cy, nx, ny); cx = nx; cy = ny; }
+        else if (op === OPS.curveTo2 || op === OPS.curveTo3) { k += 2; const nx = co[k++], ny = co[k++]; add(cx, cy, nx, ny); cx = nx; cy = ny; }
+        else if (op === OPS.rectangle) { const x = co[k++], y = co[k++], w = co[k++], h = co[k++]; add(x, y, x + w, y); add(x + w, y, x + w, y + h); add(x + w, y + h, x, y + h); add(x, y + h, x, y); cx = x; cy = y; sx = x; sy = y; }
+        else if (op === OPS.closePath) { add(cx, cy, sx, sy); cx = sx; cy = sy; }
+      }
+    }
+  }
+  return { segs, PH };
+}
+async function detectWallsFromPdf() {   // Vektor-PDF-Plan → editierbare Wände (gleiche Erkennung wie IFC)
+  if (!pdfDoc) { toast('Erst einen PDF-Plan öffnen.'); return; }
+  if (!docScale) { toast('Erst den Massstab setzen (1:n) – sonst stimmen die Wanddicken nicht.'); return; }
+  status('Wände werden aus dem PDF erkannt …'); await new Promise(r => setTimeout(r, 20));
+  try {
+    const n = curPage(), perPt = docScale.perPt, { segs } = await pdfPageSegments(n);
+    if (!segs.length) { status(''); toast('Keine Vektorlinien gefunden – vermutlich ein gescannter (Pixel-)Plan. Das geht (noch) nicht.'); return; }
+    const segM = segs.map(s => [[s[0][0] * perPt, s[0][1] * perPt], [s[1][0] * perPt, s[1][1] * perPt]]);
+    const merged = mergeIfcSegments(segM).filter(s => Math.hypot(s[1][0] - s[0][0], s[1][1] - s[0][1]) > 0.25);   // Text/Schraffur (kurze) weg
+    const walls = ifcPairWalls(merged);
+    if (!walls.length) { status(''); toast('Keine parallelen Wandpaare erkannt. (Maßstab prüfen; Einfachlinien-Pläne haben keine Wand-Dicke zum Paaren.) ' + merged.length + ' lange Linien gefunden.'); return; }
+    pushUndo();
+    const lid = newLayerId(); layers.push({ id: lid, name: 'Erkannte Wände', visible: true }); const arr = getAnnos(n);
+    for (const w of walls) arr.push({ id: nextId++, type: 'wall', x1: w.x1 / perPt, y1: w.y1 / perPt, x2: w.x2 / perPt, y2: w.y2 / perPt, thick: cmToPts(Math.max(6, Math.min(60, w.thick * 100))), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: wallHeightM, dim: false, layer: lid });
+    activeLayerId = lid; const pv = pageViews.find(p => p.num === n); if (pv) drawAnnos(pv); renderLayerPanel(); saveState();
+    status(''); toast(walls.length + ' Wände aus dem PDF erkannt (Ebene „Erkannte Wände") – in 2D & 3D editierbar. Bitte prüfen & nachjustieren.');
+  } catch (e) { status(''); console.error(e); toast('Wand-Erkennung fehlgeschlagen.'); }
+}
 function importIFCFile() {
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.ifc,.ifcxml,.ifczip';
   inp.onchange = async () => {
@@ -5202,6 +5245,7 @@ function wire() {
   $('#foot3d').onclick = open3D;
   $('#footIFC').onclick = importIFCFile;
   $('#footGIS').onclick = importGISFile;
+  $('#smPdfWalls').onclick = detectWallsFromPdf;
   $('#smOpen').onclick = openPicker;
   $('#smProject').onclick = openProjectDlg;
   $('#docProject').onclick = openProjectDlg;

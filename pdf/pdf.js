@@ -1244,7 +1244,7 @@ function drawOne(svg, a, pv) {
     const line = (draft ? pts.concat([draft]) : pts).map(p => p[0] + ',' + p[1]).join(' ');
     g.appendChild(svgEl('polyline', { points: line, fill: 'none', stroke: a.color, 'stroke-width': 1.4, 'stroke-dasharray': '7 4', 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));
     if (draft && pts.length) { const f = pts[0]; g.appendChild(svgEl('circle', { cx: f[0], cy: f[1], r: 4.5 / pv.scale, fill: '#fff', stroke: a.color, 'stroke-width': 1.5 })); }
-    if (pts.length >= 3) { const ct = centroid(pts), t = svgEl('text', { x: ct[0], y: ct[1], fill: a.color, 'font-size': 12, 'text-anchor': 'middle', 'font-weight': 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = (a.base >= wallHeightM ? 'Decke' : 'Platte') + '  ' + (a.base + a.thick).toFixed(2) + ' m'; g.appendChild(t); }
+    if (pts.length >= 3) { const ct = centroid(pts), t = svgEl('text', { x: ct[0], y: ct[1], fill: a.color, 'font-size': 12, 'text-anchor': 'middle', 'font-weight': 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = (a.base >= wallHeightM ? 'Decke' : 'Platte') + '  ' + (a.base + a.thick).toFixed(2) + ' m' + (a.layers && a.layers.length ? '  ▦' + a.layers.length : ''); g.appendChild(t); }
     svg.appendChild(g); el = g;
     if (!draft && pts.length >= 3) { hit = svgEl('polygon', { points: poly, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit); }
   } else if (a.type === 'img') {
@@ -2009,6 +2009,26 @@ function openProfileEditor(cb, init) {   // Querschnitt definieren: Vorlagen (pa
   $('#pfCancel').onclick = close;
   $('#pfOk').onclick = () => { const p = kind === 'frei' ? freePts.slice() : profilePreset(kind, params); if (p.length < 3) { toast('Mindestens 3 Punkte für ein Profil.'); return; } cb({ prof: p, elev: +$('#pfElev').value || 0, name: $('#pfName').value || 'Profil', color: $('#pfColor').value, mat: 'metall' }); close(); };
   buildParams(); redraw();
+}
+function openSlabBuildup(a, pv) {   // Decken-/Bodenaufbau: Vorlagen + freie Schichtliste (oben→unten)
+  if (!a) { toast('Erst eine Decke/Platte wählen.'); return; }
+  let draft = (a.layers && a.layers.length) ? a.layers.map(l => [l.mat, Math.round(l.t * 1000) / 10]) : SLAB_PRESETS[0].layers.map(l => l.slice());
+  const dlg = document.createElement('div'); dlg.className = 'lab-overlay'; dlg.style.zIndex = 100000;
+  dlg.innerHTML = '<div class="lab-wrap" style="width:min(560px,94vw);height:auto;max-height:90vh"><div class="lab-head"><b>Decken-/Bodenaufbau</b><span class="lab-hint">oben → unten</span><span class="grow"></span><button class="btn" id="sbClose">✕</button></div><div style="padding:14px;overflow:auto">'
+    + '<div id="sbPresets" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div><div id="sbList"></div>'
+    + '<button class="btn" id="sbAdd" style="margin-top:8px">+ Schicht</button> <b id="sbTotal" style="margin-left:10px"></b>'
+    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn" id="sbNone">Aufbau entfernen</button><button class="btn" id="sbOk" style="background:#1c242c;color:#fff">Anwenden →</button></div></div></div>';
+  document.body.appendChild(dlg);
+  const $ = s => dlg.querySelector(s), matOpts = sel => Object.keys(WALL_MATS).map(k => '<option value="' + k + '"' + (k === sel ? ' selected' : '') + '>' + WALL_MATS[k].label + '</option>').join('');
+  const total = () => draft.reduce((s, r) => s + (+r[1] || 0), 0);
+  function renderList() { const L = $('#sbList'); L.innerHTML = ''; draft.forEach((row, i) => { const r = document.createElement('div'); r.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px'; r.innerHTML = '<input type="number" min="0.1" step="0.1" value="' + row[1] + '" style="width:64px"><span>cm</span><select style="flex:1">' + matOpts(row[0]) + '</select><button class="btn">✕</button>'; const inp = r.children[0], sel = r.children[2], del = r.children[3]; inp.onchange = () => { draft[i][1] = parseFloat((inp.value || '').replace(',', '.')) || 0; $('#sbTotal').textContent = 'Gesamt: ' + (Math.round(total() * 10) / 10) + ' cm'; }; sel.onchange = () => draft[i][0] = sel.value; del.onclick = () => { draft.splice(i, 1); renderList(); }; L.appendChild(r); }); $('#sbTotal').textContent = 'Gesamt: ' + (Math.round(total() * 10) / 10) + ' cm'; }
+  const pc = $('#sbPresets'); SLAB_PRESETS.forEach(p => { const b = document.createElement('button'); b.className = 'btn'; b.textContent = p.name; b.onclick = () => { draft = p.layers.map(l => l.slice()); renderList(); }; pc.appendChild(b); });
+  $('#sbAdd').onclick = () => { draft.push(['beton', 10]); renderList(); };
+  const close = () => dlg.remove();
+  $('#sbClose').onclick = close;
+  $('#sbNone').onclick = () => { pushUndo(); applySlabBuildup(a, null); pageViews.forEach(drawAnnos); saveState(); close(); toast('Aufbau entfernt'); };
+  $('#sbOk').onclick = () => { const layers = draft.filter(r => r[1] > 0).map(r => [r[0], r[1]]); if (!layers.length) { toast('Mindestens eine Schicht.'); return; } pushUndo(); applySlabBuildup(a, layers); pageViews.forEach(drawAnnos); saveState(); close(); toast('Deckenaufbau angewendet ✓ (' + (Math.round(total() * 10) / 10) + ' cm)'); };
+  renderList();
 }
 /* ---------- Kettenmass (mehrere Stationen klicken → Masskette mit Einzelmassen) ---------- */
 let cdimDraft = null;
@@ -5670,7 +5690,8 @@ function wire() {
   $('#pbHead').onchange = () => { const v = parseFloat(($('#pbHead').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selOpen(); if (a) { pushUndo(); const ins = inputLicht ? ptsToCm(openInsPts(a)) / 100 : 0; a.head = v + ins; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbDepth').onchange = () => { let v = parseFloat(($('#pbDepth').value || '').replace(',', '.')); if (!(v >= 0)) return; v = Math.max(0, Math.min(100, v)) / 100; lastOpenDepth = v; const a = selOpen(); if (a) { pushUndo(); a.depth = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbSlabBase').onchange = () => { const v = parseFloat(($('#pbSlabBase').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selSlab(); if (a) { pushUndo(); a.base = v; pageViews.forEach(drawAnnos); saveState(); } };
-  $('#pbSlabThick').onchange = () => { const v = parseFloat(($('#pbSlabThick').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selSlab(); if (a) { pushUndo(); a.thick = v / 100; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbSlabThick').onchange = () => { const v = parseFloat(($('#pbSlabThick').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selSlab(); if (a) { pushUndo(); a.thick = v / 100; if (a.layers) delete a.layers; pageViews.forEach(drawAnnos); saveState(); } };
+  { const sb = $('#pbSlabBuildup'); if (sb) sb.onclick = () => openSlabBuildup(selSlab()); }
   const selStairs = () => { const a = sel && findAnno(sel.num, sel.id); return a && a.type === 'stairs' ? a : null; };
   $('#pbStairW').onchange = () => { const v = parseFloat(($('#pbStairW').value || '').replace(',', '.')); if (!(v > 0)) return; const pts = cmToPts(v); stairW = pts; const a = selStairs(); if (a) { pushUndo(); a.width = pts; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbStairRise').onchange = () => { const v = parseFloat(($('#pbStairRise').value || '').replace(',', '.')); if (!(v > 0)) return; stairRiseM = v; const a = selStairs(); if (a) { pushUndo(); a.rise = v; pageViews.forEach(drawAnnos); saveState(); } };

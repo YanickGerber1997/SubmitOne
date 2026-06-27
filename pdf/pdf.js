@@ -1177,7 +1177,7 @@ function drawOne(svg, a, pv) {
     const line = (draft ? pts.concat([draft]) : pts).map(p => p[0] + ',' + p[1]).join(' ');
     if (!a.room) g.appendChild(svgEl('polyline', { points: line, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));   // Raum: kein Umriss über die Wände
     if (draft && pts.length) { const f = pts[0]; g.appendChild(svgEl('circle', { cx: f[0], cy: f[1], r: 4.5 / pv.scale, fill: '#fff', stroke: a.color, 'stroke-width': 1.5 })); }
-    if (pts.length >= 3) { const ct = centroid(pts), t = svgEl('text', { x: ct[0], y: ct[1], fill: a.color, 'font-size': 12, 'text-anchor': 'middle', 'font-weight': 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = areaLabel(pts); g.appendChild(t); }
+    if (pts.length >= 3) { const ct = centroid(pts), t = svgEl('text', { x: ct[0], y: ct[1], fill: a.color, 'font-size': 12, 'text-anchor': 'middle', 'font-weight': 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); if (a.name) { const t1 = svgEl('tspan', { x: ct[0], dy: '-0.6em' }); t1.textContent = a.name; const t2 = svgEl('tspan', { x: ct[0], dy: '1.2em', 'font-weight': 400 }); t2.textContent = areaLabel(pts); t.append(t1, t2); } else t.textContent = areaLabel(pts); g.appendChild(t); }
     svg.appendChild(g); el = g;
     if (!draft && pts.length >= 3) { hit = svgEl('polygon', { points: poly, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit); }
   } else if (a.type === 'slab') {
@@ -3641,7 +3641,7 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
             if (st.length > 2) { const tot = '∑ ' + fmtLen(Math.abs(st[st.length - 1].t - st[0].t)), e = st[st.length - 1].proj, tw = font.widthOfTextAtSize(tot, 11); pg.drawText(tot, { x: e[0] + nx * 16 - tw / 2, y: Y(e[1] + ny * 16) - 3, size: 11, font, color: c }); }
           }
         }
-        else if (a.type === 'area') { if (!a.room) for (let i = 0; i < a.pts.length; i++) { const p1 = a.pts[i], p2 = a.pts[(i + 1) % a.pts.length]; pg.drawLine({ start: { x: p1[0], y: Y(p1[1]) }, end: { x: p2[0], y: Y(p2[1]) }, thickness: w, color: c }); } if (a.pts.length >= 3) { const ct = centroid(a.pts), lab = areaLabel(a.pts), tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: ct[0] - tw / 2, y: Y(ct[1]) - 4, size: 11, font, color: c }); } }
+        else if (a.type === 'area') { if (!a.room) for (let i = 0; i < a.pts.length; i++) { const p1 = a.pts[i], p2 = a.pts[(i + 1) % a.pts.length]; pg.drawLine({ start: { x: p1[0], y: Y(p1[1]) }, end: { x: p2[0], y: Y(p2[1]) }, thickness: w, color: c }); } if (a.pts.length >= 3) { const ct = centroid(a.pts), lab = areaLabel(a.pts); if (a.name) { const nw = font.widthOfTextAtSize(a.name, 11); pg.drawText(a.name, { x: ct[0] - nw / 2, y: Y(ct[1]) + 4, size: 11, font, color: c }); const tw2 = font.widthOfTextAtSize(lab, 9); pg.drawText(lab, { x: ct[0] - tw2 / 2, y: Y(ct[1]) - 9, size: 9, font, color: c }); } else { const tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: ct[0] - tw / 2, y: Y(ct[1]) - 4, size: 11, font, color: c }); } } }
         else if (a.type === 'slab') { for (let i = 0; i < a.pts.length; i++) { const p1 = a.pts[i], p2 = a.pts[(i + 1) % a.pts.length]; pg.drawLine({ start: { x: p1[0], y: Y(p1[1]) }, end: { x: p2[0], y: Y(p2[1]) }, thickness: 1.4, color: c, dashArray: [7, 4] }); } if (a.pts.length >= 3) { const ct = centroid(a.pts), lab = ((a.base >= wallHeightM ? 'Decke' : 'Platte') + ' ' + ((a.base || 0) + (a.thick || 0.2)).toFixed(2) + ' m'), tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: ct[0] - tw / 2, y: Y(ct[1]) - 4, size: 11, font, color: c }); } }
         else if (a.type === 'stairs') {
           const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, hw = (a.width || stairWidthPts()) / 2, n = stairSteps(a);
@@ -3993,6 +3993,32 @@ function importIFCFile() {
   };
   inp.click();
 }
+function roomData() {   // alle Flächen-/Raum-Anmerkungen → Raumbuch-Zeilen
+  const rooms = [];
+  for (const n in annos) for (const a of (annos[n] || [])) {
+    if (a.type !== 'area' || !a.pts || a.pts.length < 3) continue;
+    if (!layerVisible(a) || !phaseVisible(a)) continue;
+    const apt = polyArea(a.pts); let per = 0; for (let i = 0; i < a.pts.length; i++) { const p = a.pts[i], q = a.pts[(i + 1) % a.pts.length]; per += Math.hypot(q[0] - p[0], q[1] - p[1]); }
+    const m2 = docScale ? apt * docScale.perPt * docScale.perPt : 0, um = docScale ? per * docScale.perPt : 0, lay = layerById(a.layer);
+    rooms.push({ a, page: +n, floor: lay ? lay.name : '—', m2, um });
+  }
+  rooms.sort((x, y) => (x.floor || '').localeCompare(y.floor || '') || (y.m2 - x.m2));
+  return rooms;
+}
+function openRoomList() {
+  if (!docScale) { toast('Für Flächen in m² zuerst den Massstab setzen (1:n).'); return; }
+  const rooms = roomData();
+  const ov = document.createElement('div'); ov.className = 'lab-overlay';
+  const total = rooms.reduce((s, r) => s + r.m2, 0);
+  const body = rooms.length ? ('<table class="qty-tab"><thead><tr><th>Geschoss</th><th>Raum (Name)</th><th style="text-align:right">Fläche</th><th style="text-align:right">Umfang</th><th>Bodenbelag</th></tr></thead><tbody>' +
+    rooms.map((r, i) => '<tr><td style="white-space:nowrap">' + r.floor + '</td><td><input class="bu-u" style="width:130px" data-i="' + i + '" data-k="name" value="' + (r.a.name ? r.a.name.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Wohnen"></td><td style="text-align:right;white-space:nowrap">' + (Math.round(r.m2 * 100) / 100).toFixed(2).replace('.', ',') + ' m²</td><td style="text-align:right;white-space:nowrap">' + (Math.round(r.um * 100) / 100).toFixed(2).replace('.', ',') + ' m</td><td><input class="bu-u" style="width:130px" data-i="' + i + '" data-k="floor" value="' + (r.a.floor ? r.a.floor.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Parkett"></td></tr>').join('') +
+    '</tbody><tfoot><tr><th colspan="2" style="text-align:right">Summe</th><th style="text-align:right;white-space:nowrap">' + (Math.round(total * 100) / 100).toFixed(2).replace('.', ',') + ' m²</th><th colspan="2"></th></tr></tfoot></table>') : '<p style="padding:14px;opacity:.7">Noch keine Räume/Flächen. Zeichne mit dem Flächen-Werkzeug einen geschlossenen Wandzug oder ein Polygon.</p>';
+  ov.innerHTML = '<div class="lab-wrap" style="width:min(680px,95vw);height:auto;max-height:84vh"><div class="lab-head"><b>Raumbuch</b><span class="lab-hint">' + rooms.length + ' Räume · Name & Bodenbelag werden gespeichert</span><span class="grow"></span><button class="btn" id="rmCopy">In Zwischenablage</button><button class="btn" id="rmClose">✕</button></div><div class="qty-body">' + body + '</div></div>';
+  document.body.appendChild(ov);
+  ov.querySelectorAll('input.bu-u').forEach(inp => inp.onchange = () => { const r = rooms[+inp.dataset.i]; if (!r) return; const k = inp.dataset.k, v = inp.value.trim(); if (v) r.a[k] = v; else delete r.a[k]; markDirty(); pageViews.forEach(drawAnnos); });
+  ov.querySelector('#rmClose').onclick = () => ov.remove(); ov.addEventListener('pointerdown', e => { if (e.target === ov) ov.remove(); });
+  ov.querySelector('#rmCopy').onclick = () => { const tsv = 'Geschoss\tRaum\tFläche m²\tUmfang m\tBodenbelag\n' + rooms.map(r => r.floor + '\t' + (r.a.name || '') + '\t' + (Math.round(r.m2 * 100) / 100).toString().replace('.', ',') + '\t' + (Math.round(r.um * 100) / 100).toString().replace('.', ',') + '\t' + (r.a.floor || '')).join('\n') + '\nSumme\t\t' + (Math.round(total * 100) / 100).toString().replace('.', ','); if (navigator.clipboard) navigator.clipboard.writeText(tsv); toast('Raumbuch kopiert (Excel-tauglich).'); };
+}
 const LAMBDA = { putz: 0.70, gips: 0.25, mauerwerk: 0.50, beton: 2.10, eps: 0.035, daemm_eps: 0.035, daemm_xps: 0.035, glaswolle: 0.035, daemm_wolle: 0.035, daemm_holz: 0.045, holz: 0.13, konter: 0.13 };   // Wärmeleitfähigkeit λ (W/mK)
 function wallUValue(layers, override) {   // U-Wert [W/m²K] = 1 / (Rsi + Σ d/λ + Rse); Luft = R 0.15
   if (override != null && override > 0) return override;
@@ -4048,6 +4074,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('computeQuantities: Fläche', () => { const q = computeQuantities(arr); return q.mats.length > 0 && q.mats.some(m => m.area > 0); });
     A('Fensterliste: Skizze', () => { const s = winThumb(win); return typeof s === 'string' && s.indexOf('<svg') === 0; });
     A('Wandaufbau-Gruppe', () => computeWallBuildups(arr).length === 1);
+    A('Raumbuch: Fläche (~30 m²)', () => { const m2 = polyArea([[0, 0], [cmToPts(600), 0], [cmToPts(600), cmToPts(500)], [0, cmToPts(500)]]) * docScale.perPt * docScale.perPt; return Math.abs(m2 - 30) < 0.5 ? '' : 'm²=' + m2.toFixed(2); });
     A('Annotation-Import (Square→rect)', () => { const a = convertAnnot({ subtype: 'Square', rect: [10, 10, 50, 50], color: [255, 0, 0] }, 200); return !!(a && a.type === 'rect'); });
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
@@ -4710,6 +4737,7 @@ function wire() {
   $('#footQty').onclick = openQuantities;
   $('#footSchedule').onclick = openSchedule;
   $('#footWallList').onclick = openWallList;
+  $('#footRooms').onclick = openRoomList;
   $('#footImportAnn').onclick = () => importPdfAnnotations(false);
   $('#footExportAnn').onclick = exportNative;
   $('#footPhase').onclick = e => { e.stopPropagation(); const p = $('#phasePop'); p.hidden = !p.hidden; if (!p.hidden) updatePhaseUI(); };

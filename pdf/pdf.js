@@ -3926,12 +3926,15 @@ function build3DScene(host, walls, arr) {
         addBox2(a0, a0 + op.fw, sillY, headY, dC, fdM, omat, true); addBox2(a1 - op.fw, a1, sillY, headY, dC, fdM, omat, true);   // Blendrahmen seitlich
         addBox2(a0, a1, sillY, sillY + fwM, dC, fdM, omat, true); addBox2(a0, a1, headY - fwM, headY, dC, fdM, omat, true);       // Blendrahmen oben/unten
         if (op.winType === 'f2s') addBox2((a0 + a1) / 2 - op.fw / 2, (a0 + a1) / 2 + op.fw / 2, sillY, headY, dC, fdM, omat, true);   // Setzholz/Mittelpfosten
-        { const iL = a0 + op.fw, iR = a1 - op.fw, iB = sillY + fwM, iT = headY - fwM, sfM = M(op.obj.sashW || cmToPts(7)), sdC = dC - fdM * 0.18, sdD = fdM * 0.7;   // Flügelrahmen (Sash) + Scheibe, wie 2D
+        { const o2 = op.obj, swPts = o2.sashW || cmToPts(7), shPts = o2.sashShift != null ? o2.sashShift : cmToPts(4), ovPts = Math.max(0, swPts - shPts), swM = M(swPts), shM = M(shPts), ovM = Math.max(0, swM - shM);   // Flügel exakt nach 2D: Versatz/Rücksprung/Tiefe
+          const sdM = M(o2.sashD || cmToPts(7)), srM = M(o2.sashRecess != null ? o2.sashRecess : cmToPts(1)), gtM = M(o2.glassT || cmToPts(2)), sashC = dC + fdM / 2 - srM - sdM / 2;   // Flügel: 1 cm vom Rahmen-Vorderkante zurück, Tiefe 7 cm
+          const iL = a0 + op.fw, iR = a1 - op.fw, iB = sillY + fwM, iT = headY - fwM;
           if (op.winType !== 'fest' && iR - iL > 0.02 && iT - iB > 0.02) { const np = (op.winType === 'f2' || op.winType === 'f2s') ? 2 : 1, pw = (iR - iL) / np;
-            for (let pi = 0; pi < np; pi++) { const pl = iL + pi * pw, pr = pl + pw;
-              addBox2(pl, pl + sfM, iB, iT, sdC, sdD, omat, true); addBox2(pr - sfM, pr, iB, iT, sdC, sdD, omat, true); addBox2(pl, pr, iB, iB + sfM, sdC, sdD, omat, true); addBox2(pl, pr, iT - sfM, iT, sdC, sdD, omat, true);   // Flügelrahmen
-              addBox2(pl + sfM, pr - sfM, iB + sfM, iT - sfM, sdC - sdD * 0.2, M(cmToPts(2)), gmat, false); } }   // Scheibe im Flügel
-          else addBox2(iL, iR, iB, iT, dC, M(cmToPts(2)), gmat, false); }   // Festverglasung
+            for (let pi = 0; pi < np; pi++) { const pl = iL + pi * pw, pr = pl + pw, gL = pl + ovPts, gR = pr - ovPts, gB = iB + ovM, gT = iT - ovM;
+              addBox2(pl - shPts, gL, iB - shM, iT + shM, sashC, sdM, omat, true); addBox2(gR, pr + shPts, iB - shM, iT + shM, sashC, sdM, omat, true);   // Flügelrahmen seitlich (4 cm Überlappung)
+              addBox2(gL, gR, iB - shM, gB, sashC, sdM, omat, true); addBox2(gL, gR, gT, iT + shM, sashC, sdM, omat, true);   // Flügelrahmen oben/unten
+              addBox2(gL, gR, gB, gT, sashC, gtM, gmat, false); } }   // Scheibe im Flügel
+          else addBox2(iL, iR, iB, iT, sashC, gtM, gmat, false); }   // Festverglasung
         if (op.bank) { const ext = cmToPts(8); addBox2(a0 - ext, a1 + ext, sillY - 0.04, sillY + 0.01, th / 2 + 0.03, 0.12, bmat, true); }   // Fensterbank aussen
         if (op.niche) { const nD = M(op.obj.nicheD || cmToPts(13)), nH = ptsToCm(op.obj.nicheH || cmToPts(28)) / 100, nC = -(th / 2 - nD / 2); addBox2(a0, a1, headY, Math.min(yb + HW, headY + nH), nC, nD, nmat, true); }   // Storennische 13×28 hinten (innen)
       } else if (op.kind === 'door') {   // Tür im 3D: Zarge (Material) + Türblatt / Festteil = Glas

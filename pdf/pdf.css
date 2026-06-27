@@ -5,7 +5,7 @@
   --accent:#4f7a3c; --accent-soft:#e9efde; --accent-2:#6e7a3a; --accent-3:#34502b; --accent-4:#8a8a44;
   --danger:#b4502f;
   --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-  --bar:64px; --tools:80px; --tabs:32px; --planh:40px;
+  --bar:74px; --tools:94px; --tabs:36px; --planh:46px;
 }
 *{box-sizing:border-box}
 [hidden]{display:none !important}   /* Attribut sticht Klassen-display aus (Mail-Dialog etc.) */
@@ -26,10 +26,10 @@
 @keyframes lgRise{to{opacity:1;transform:translateY(0)}}
 html,body{margin:0;height:100%}
 body{font-family:var(--font);background:var(--bg);color:var(--ink);overflow:hidden}
-svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.btn .i{width:20px;height:20px;stroke-width:1.7}
+svg.i{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.btn .i{width:24px;height:24px;stroke-width:1.7}
 .topbar .icon-btn{width:38px;height:38px}
-.topbar .icon-btn .i{width:23px;height:23px;stroke-width:1.85}
+.topbar .icon-btn .i{width:28px;height:28px;stroke-width:1.85}
 
 /* Topbar */
 .topbar{height:var(--bar);display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:6}
@@ -46,7 +46,7 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .hdr-pop button{display:block;width:100%;text-align:left;padding:9px 12px;border:0;background:none;border-radius:7px;font:inherit;font-size:13px;color:#2a2f2a;cursor:pointer;white-space:nowrap}
 .hdr-pop button:hover{background:#eef1ec}
 /* Aktions-Buttons in den Ribbon-Reitern „Listen" / „Submit" */
-.rib-act{height:32px;padding:0 13px;border:1px solid var(--line);background:#fff;border-radius:8px;font:inherit;font-size:13px;color:var(--ink-soft);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.rib-act{height:38px;padding:0 16px;border:1px solid var(--line);background:#fff;border-radius:8px;font:inherit;font-size:15px;color:var(--ink-soft);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
 .rib-act:hover{background:#eef1ec;color:var(--ink);border-color:#c2c8ba}
 /* Projekt-Chip neben dem Dokumentnamen */
 .doc-project{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;height:24px;padding:0 10px;border:1px solid #cdd6c4;background:#eef3e8;color:#3c5a2f;border-radius:12px;font:inherit;font-size:12px;font-weight:600;cursor:pointer}
@@ -56,7 +56,7 @@ svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 @keyframes lgReveal{from{opacity:0;transform:scale(.93) translateY(10px);clip-path:inset(0 0 100% 0)}to{opacity:1;transform:scale(1) translateY(0);clip-path:inset(0 0 0 0)}}
 .brand .bw-a{color:#1c242c} .brand .bw-b{color:#4f7a3c;margin-left:5px}
 .brand .brand-word{height:25px;width:auto;display:block;object-fit:contain}
-.btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:0;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:.12s;white-space:nowrap;flex:none}
+.btn{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 16px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:0;font:inherit;font-size:15px;font-weight:600;cursor:pointer;transition:.12s;white-space:nowrap;flex:none}
 .topbar{flex-wrap:nowrap}
 .hdr-sep{width:1px;height:22px;background:var(--line);margin:0 3px;flex:none}
 /* Ohne offenes Dokument: oben rechts NUR der Download-Button (alles andere raus) */
@@ -72,7 +72,7 @@ body:not(.has-doc) #btnDownload{display:inline-flex}
 .btn:disabled{opacity:.45;cursor:default}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .btn.primary:hover:not(:disabled){filter:brightness(1.05);color:#fff}
-.icon-btn{width:32px;height:32px;border:none;background:none;color:var(--ink-soft);border-radius:0;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.icon-btn{width:40px;height:40px;border:none;background:none;color:var(--ink-soft);border-radius:0;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .icon-btn:hover:not(:disabled){background:var(--surface-2);color:var(--ink)}
 .icon-btn:disabled{opacity:.4;cursor:default}
 .icon-btn.on{background:var(--accent-soft);color:var(--accent)}
@@ -110,8 +110,8 @@ body.has-tabs .findbar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 
 /* Werkzeugleiste */
 .toolbar{height:var(--tools);display:flex;flex-direction:column;align-items:stretch;background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:6}
-.rib-tabs{height:30px;flex:none;display:flex;align-items:center;gap:2px;padding:0 10px;border-bottom:1px solid var(--line-soft)}
-.rib-tab{height:30px;border:none;background:none;font:inherit;font-size:13px;font-weight:600;letter-spacing:.2px;color:var(--ink-soft);padding:0 14px;cursor:pointer;border-bottom:2px solid transparent;border-radius:0}
+.rib-tabs{height:36px;flex:none;display:flex;align-items:center;gap:2px;padding:0 10px;border-bottom:1px solid var(--line-soft)}
+.rib-tab{height:36px;border:none;background:none;font:inherit;font-size:15px;font-weight:600;letter-spacing:.2px;color:var(--ink-soft);padding:0 16px;cursor:pointer;border-bottom:2px solid transparent;border-radius:0}
 .rib-tab:hover{color:var(--ink)}
 .rib-tab.on{color:var(--accent-3);border-bottom-color:var(--accent)}
 .rib-collapse{margin-left:auto;width:30px;height:24px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:0;flex:none}
@@ -120,17 +120,17 @@ body.has-tabs .findbar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 body.rib-collapsed .rib-collapse svg{transform:rotate(180deg)}
 .rib-row{flex:1;display:flex;align-items:center;gap:6px;padding:0 12px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
 .rib-tools{display:flex;align-items:center;gap:3px}
-body.rib-collapsed{--tools:30px}
+body.rib-collapsed{--tools:36px}
 body.rib-collapsed .rib-row{display:none}
 .tgrp{display:flex;align-items:center;gap:3px;padding-right:8px;margin-right:2px;border-right:1px solid var(--line-soft);flex:none}
 .tgrp:last-child{border-right:none}
-.tool{width:34px;height:34px;border:1px solid transparent;background:none;color:var(--ink-soft);border-radius:0;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.tool{width:42px;height:42px;border:1px solid transparent;background:none;color:var(--ink-soft);border-radius:0;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .tool:hover{background:var(--surface-2);color:var(--accent-2)}
 .tool.on{background:var(--accent-soft);color:var(--accent-3);border-color:var(--accent)}
 .tool.danger{color:var(--danger)}
 .tool.danger:hover{background:#f4e6df;color:var(--danger)}
 .swatch-wrap{position:relative}
-.swatch{position:relative;width:34px;height:34px;border:none;background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.swatch{position:relative;width:42px;height:42px;border:none;background:none;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .swatch span{width:20px;height:20px;border:2px solid #fff;box-shadow:0 0 0 1px var(--line);background:#b4502f}
 .palette{position:absolute;top:calc(100% + 6px);left:0;z-index:60;background:var(--surface);border:1px solid var(--line);box-shadow:0 8px 24px rgba(20,24,40,.2);padding:10px;display:flex;flex-direction:column;gap:8px}
 .pal-row{display:flex;align-items:center;gap:5px}

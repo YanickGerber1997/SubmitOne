@@ -3822,6 +3822,38 @@ async function save() {
   } catch (e) { status(''); console.error(e); toast('Speichern fehlgeschlagen (Internet für Speicher-Bibliothek nötig?).'); }
 }
 
+function sanFolder(s) { return (s || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/[.\s]+$/, '').trim() || 'Projekt'; }
+function projectGuess() {   // Projekt aus dem Plankopf-Feld „Projekt", sonst zuletzt verwendet / Dokumentname
+  for (const n in annos) for (const a of (annos[n] || [])) if (a.field === 'projekt' && a.text && a.text.trim()) return a.text.trim();
+  return (docs[active] && docs[active].project) || localStorage.getItem('submitpdf_lastproject') || docName.replace(/\.pdf$/i, '');
+}
+function subfolderGuess() {   // passender Unterordner nach Inhalt
+  const arr = getAnnos(curPage()) || [];
+  if (arr.some(a => a.type === 'wall' || a.type === 'opening')) return 'Pläne';
+  if (arr.some(a => a.type === 'section')) return 'Schnitte';
+  return 'Dokumente';
+}
+async function saveToProject() {   // Datei einem Projekt zuordnen → Unterordner im Arbeitsordner anlegen + dort ablegen
+  if (!curBytes) return;
+  const raw = prompt('In welches Projekt ablegen?\n(es wird ein Unterordner im Arbeitsordner angelegt)', projectGuess());
+  if (raw == null || !raw.trim()) return;   // abgebrochen / leer
+  const proj = sanFolder(raw.trim()), sub = subfolderGuess();
+  if (!fsSupported() && !dirHandle && !window.nativeSave) { status('Speichere …'); const out = await buildPdfBytes(false, true); status(''); downloadBytes(out, proj + ' - ' + (docName.replace(/\.pdf$/i, '') || 'plan') + '.pdf'); toast('Projekt-Ordner brauchen einen Arbeitsordner (Chrome/Edge). Datei mit Projekt-Präfix heruntergeladen.'); return; }
+  if (!dirHandle) { if (!fsSupported()) { toast('Bitte zuerst oben den Arbeitsordner öffnen (📁).'); return; } await pickFolder(); if (!dirHandle) return; }
+  let name = (docName.replace(/\.pdf$/i, '') || 'plan').trim(); name = sanFolder(name) + '.pdf';
+  status('Lege im Projekt ab …'); await new Promise(r => setTimeout(r, 20));
+  try {
+    const out = await buildPdfBytes(false, true);
+    let dir = await dirHandle.getDirectoryHandle(proj, { create: true });
+    dir = await dir.getDirectoryHandle(sub, { create: true });
+    const fh = await dir.getFileHandle(name, { create: true }), w = await fh.createWritable(); await w.write(out); await w.close();
+    curFileHandle = fh; docName = name; if (docs[active]) { docs[active].fileHandle = fh; docs[active].name = name; docs[active].project = proj; docs[active].dirty = false; }
+    dirty = false; clearAutosave(); localStorage.setItem('submitpdf_lastproject', proj);
+    const dn = $('#docName'); if (dn) dn.textContent = name;
+    try { await refreshTree(); } catch (_) { }
+    status(''); toast('Abgelegt in „' + proj + ' / ' + sub + '" ✓ (in Submit PDF wieder bearbeitbar)');
+  } catch (e) { status(''); console.error(e); toast('Ablage ins Projekt fehlgeschlagen.'); }
+}
 async function exportNative() {   // unsere Anmerkungen als native PDF-Annotationen exportieren (für Acrobat/Drawboard)
   if (!curBytes) return; status('Exportiere native Anmerkungen …'); await new Promise(r => setTimeout(r, 20));
   try { const out = await buildPdfBytes(false, false, true); downloadBytes(out, docName.replace(/\.pdf$/i, '') + '-annot.pdf'); status(''); toast('Als native PDF-Anmerkungen exportiert – in Acrobat/Drawboard editierbar (CAD/Wände bleiben eingebacken).'); }
@@ -5049,6 +5081,7 @@ function wire() {
   $('#hdrLists').onclick = e => { e.stopPropagation(); toggleHdrPop('listsPop', 'hdrLists'); };
   $('#hdrSubmit').onclick = e => { e.stopPropagation(); toggleHdrPop('submitPop', 'hdrSubmit'); };
   $('#smOpen').onclick = openPicker;
+  $('#smProject').onclick = saveToProject;
   $('#smHint3d').onclick = () => toast('OBJ-Export: unten „◳ 3D" öffnen → im 3D-Balken „⭳ OBJ".');
   $$('.hdr-pop button').forEach(b => b.addEventListener('click', () => { const p = b.closest('.hdr-pop'); if (p) p.hidden = true; }));
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.hdr-pop') && !e.target.closest('.hdr-btn')) $$('.hdr-pop').forEach(p => p.hidden = true); }, true);

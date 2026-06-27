@@ -5,24 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=300" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=300" />
-  <link rel="icon" href="favicon.png?v=300" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=300" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=301" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=301" />
+  <link rel="icon" href="favicon.png?v=301" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=301" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=300" />
+  <link rel="stylesheet" href="pdf.css?v=301" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=300" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=301" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=300" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=300" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=301" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=301" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <span class="doc-name" id="docName"></span>
@@ -49,6 +49,7 @@
     </div>
     <div class="hdr-pop" id="submitPop" hidden>
       <button id="smOpen" title="PDF oder Bild öffnen / importieren">📂  PDF / Bild öffnen …</button>
+      <button id="smProject" title="Datei einem Projekt zuordnen: legt im Arbeitsordner einen Projekt-Unterordner an (Vorschlag aus dem Plankopf-Feld „Projekt“) und speichert die Datei dort passend ab.">📁  In Projekt ablegen …</button>
       <button id="footIFC" title="IFC-Datei importieren (Export aus ArchiCAD/Allplan/Revit): 3D-Modell + Bauteil-/Raumliste. BIM-Engine lädt einmalig aus dem Netz.">⌂  IFC importieren</button>
       <button id="footGIS" title="GIS/GeoJSON importieren: Grundstück, Parzellen, Nachbargebäude → massstäbliches Gelände. Maßstab muss gesetzt sein.">⌖  GIS / Gelände (GeoJSON)</button>
       <button id="footImportAnn" title="Anmerkungen aus anderen Programmen (Acrobat/Drawboard) in bearbeitbare Submit-Anmerkungen umwandeln">⤓  Anmerkungen importieren</button>
@@ -203,7 +204,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=300" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=301" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -658,7 +659,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=300"></script>
+  <script src="pdf.js?v=301"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

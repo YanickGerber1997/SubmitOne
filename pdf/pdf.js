@@ -5103,6 +5103,21 @@ function applyMountPreset(a, mode) {   // drei Montagearten des Rahmens → sinn
   else if (mode === 'laibung') { a.depth = 0.5; a.anschlagType = 'none'; }                                                              // stumpf in der Laibung
   else if (mode === 'aussen') { a.depth = 0.82; a.anschlagType = 'aussen'; if (a.outerLap == null) a.outerLap = cmToPts(3); if (a.anschlagDepth == null) a.anschlagDepth = cmToPts(5); }   // aussen auf die Konstruktion
 }
+async function makeTestScene() {   // schnelle Test-Szene: mehrschichtige Wand + Fenster, bereit für den Detail-Editor
+  if (!pdfDoc) { try { await newBlankDoc(); } catch (_) { } }
+  if (!pdfDoc) { toast('Kein Dokument – „leer starten" oder PDF öffnen.'); return; }
+  if (!docScale) docScale = { perPt: 50 * PT2MM / 1000, label: '1:50', n: 50 };
+  const n = curPage(), pv = pageViews.find(p => p.num === n); if (!pv) { toast('Keine Seite offen.'); return; }
+  pushUndo();
+  const arr = getAnnos(n), y = (pv.pageH || 842) * 0.42, x1 = (pv.pageW || 595) * 0.18, x2 = x1 + cmToPts(400), wid = nextId++;
+  const wall = { id: wid, type: 'wall', x1, y1: y, x2, y2: y, thick: cmToPts(35), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: wallHeightM, dim: false, layer: activeLayerId };
+  applyWallBuildup(wall, [['putz', 1.5], ['mauerwerk', 15], ['eps', 16], ['putz', 0.5]]); arr.push(wall);
+  const win = { id: nextId++, type: 'opening', kind: 'window', wallId: wid, t: 0.5, w: cmToPts(120), depth: 0.5, frameW: cmToPts(10), frameD: cmToPts(7), winType: 'f2', winMat: 'holz', sill: 0.9, head: 2.2, revealType: 'putz', layer: activeLayerId };
+  openingResolve(win, pv); arr.push(win);
+  try { updateScaleLabel(); } catch (_) { }
+  sel = { num: n, id: win.id }; setTool('select'); drawAnnos(pv); saveState();
+  toast('Test-Wand (35 cm, mehrschichtig) + Fenster (120 cm) erstellt → Fenster ist gewählt, jetzt „⊕ Detail" öffnen.');
+}
 function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoomen, Ziehgriffe + Regler, live in den Plan
   const arr = getAnnos(pv.num), wall = a.wallId && arr.find(o => o.id === a.wallId && o.type === 'wall');
   const ov = document.createElement('div'); ov.className = 'lab-overlay';
@@ -5223,7 +5238,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   }
   function buildCtrls() {
     side.innerHTML = '';
-    const head = t => { const h = document.createElement('div'); h.style.cssText = 'font-weight:700;font-size:11px;letter-spacing:.4px;text-transform:uppercase;color:#5c6753;margin:11px 0 3px;border-bottom:1px solid #e6e9e0;padding-bottom:3px'; h.textContent = t; side.appendChild(h); };
+    const head = t => { const h = document.createElement('div'); h.className = 'lab-grp'; h.textContent = t; side.appendChild(h); };
     const sel = (label, opts, cur, cb) => { const w = document.createElement('label'); w.className = 'lab-row'; w.innerHTML = '<span>' + label + '</span>'; const s = document.createElement('select'); s.style.flex = '1'; s.innerHTML = opts.map(o => '<option value="' + o[0] + '"' + (o[0] === cur ? ' selected' : '') + '>' + o[1] + '</option>').join(''); s.value = cur; s.onchange = () => cb(s.value); w.appendChild(s); side.appendChild(w); };
     const fld = k => { const f = fields.find(x => x.k === k); if (!f || (f.when && !f.when())) return; const row = document.createElement('label'); row.className = 'lab-row'; row.innerHTML = '<span>' + f.label + '</span>'; const r = document.createElement('input'); r.type = 'range'; r.min = f.min; r.max = f.max; r.step = f.step; r.value = f.get(); r.style.flex = '1'; const num = document.createElement('input'); num.type = 'number'; num.min = f.min; num.max = f.max; num.step = f.step; num.value = f.get(); num.style.width = '54px'; r.oninput = () => { f.set(parseFloat(r.value)); num.value = f.get(); render(); drawAnnos(pv); }; r.onchange = () => saveState(); num.onchange = () => { const v = parseFloat((num.value || '').replace(',', '.')); if (isNaN(v)) return; f.set(v); r.value = f.get(); render(); drawAnnos(pv); saveState(); }; const u = document.createElement('b'); u.textContent = f.unit; u.style.minWidth = '16px'; r.style.flex = '1'; const line = document.createElement('div'); line.className = 'lab-line'; line.appendChild(r); line.appendChild(num); line.appendChild(u); row.appendChild(line); side.appendChild(row); };
     const win = a.kind === 'window';
@@ -5852,6 +5867,7 @@ function wire() {
   $('#smPdfWalls').onclick = detectWallsFromPdf;
   $('#smIfcReopen').onclick = () => { if (window._ifc) open3DIFC(window._ifc); else toast('Noch kein IFC importiert – zuerst „IFC importieren".'); };
   $('#smOpen').onclick = openPicker;
+  { const tb = $('#smTestScene'); if (tb) tb.onclick = () => makeTestScene(); }
   $('#smProject').onclick = openProjectDlg;
   $('#docProject').onclick = openProjectDlg;
   $('#projCancel').onclick = () => { $('#projDlg').hidden = true; };

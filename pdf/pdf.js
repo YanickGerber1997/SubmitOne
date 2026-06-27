@@ -2889,8 +2889,7 @@ function sectionPrimitives(a, arr) {
       openingElev(out, X, Yh, od - wEff / 2, wEff, o, Hw, col, redM);
       if (winDimsOn) {   // Ansicht: Breite + Höhe, Rohbau + Licht (rahmenbasiert)
         const insPts = Math.max(0, (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1)), insM = ptsToCm(insPts) / 100;
-        const sill0 = o.kind === 'window' ? (o.sill || 0) : 0, head0 = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), rW = o.w * along, lW = Math.max(4, (o.w - 2 * insPts) * along), yB = Yh(sill0) + 10, xL = X(od - rW / 2) - 12;
-        pDimH(out, yB, X(od - rW / 2), X(od + rW / 2), 'Rohbau ' + fmtLen(o.w), true); pDimH(out, yB + 13, X(od - lW / 2), X(od + lW / 2), 'Licht ' + fmtLen(Math.max(1, o.w - 2 * insPts)), true);
+        const sill0 = o.kind === 'window' ? (o.sill || 0) : 0, head0 = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), rW = o.w * along, xL = X(od - rW / 2) - 12;   // im Schnitt nur HÖHEN (Breiten stehen im Grundriss)
         pDimV(out, xL, Yh(head0), Yh(sill0), 'Rohbau ' + fmtLen((head0 - sill0) / perPt), -46); pDimV(out, xL - 18, Yh(head0 - insM), Yh(sill0 + insM), 'Licht ' + fmtLen(Math.max(0.05, head0 - sill0 - 2 * insM) / perPt), -46);
       } }
   }
@@ -2911,9 +2910,7 @@ function sectionPrimitives(a, arr) {
     const seg = pr.closed && pr.path.length >= 3 ? pr.path.concat([pr.path[0]]) : pr.path, base = pr.elev || 0;
     for (let i = 0; i < seg.length - 1; i++) { const ix = segInt(p1, p2, seg[i], seg[i + 1]); if (!ix) continue; const d = fp((ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy), pts = pr.prof.map(q => [X(d) + cmToPts(q[0]), Yh(base + q[1] / 100)]); out.push({ t: 'poly', pts, fill: pr.color || '#7a8392', stroke: '#1c242c', sw: 0.6 }); }
   }
-  const Htop = sectionMaxH(a, arr), slabF = '#dadde2', slabC = '#8a8f96';   // Decke auf gemeinsamem Höhen-Datum
-  out.push({ t: 'rect', x: X(-16), y: Yh(0), w: cl + 32, h: Yh(-0.22) - Yh(0), fill: slabF, stroke: slabC, sw: 0.7 });           // Bodenplatte
-  out.push({ t: 'rect', x: X(-16), y: Yh(Htop + 0.24), w: cl + 32, h: Yh(Htop) - Yh(Htop + 0.24), fill: slabF, stroke: slabC, sw: 0.7 });   // Decke
+  const Htop = sectionMaxH(a, arr);   // gemeinsames Höhen-Datum (keine Auto-Decke mehr – nur echte, gezeichnete Decken oben)
   const hSet = new Set([0, Htop]);   // Höhen-Stationen: Boden, Geschoss, je Öffnung Brüstung+Sturz
   for (const h of hits) for (const o of arr.filter(o => o.type === 'opening' && o.wallId === h.w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl))) { hSet.add(o.kind === 'window' ? (o.sill || 0) : 0); hSet.add(Math.min(Htop, o.head || (o.kind === 'window' ? 2.1 : 2.0))); }
   const hs = [...hSet].sort((p, q) => p - q), xD = X(-34);

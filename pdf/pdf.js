@@ -5153,13 +5153,21 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     for (const [u, v] of parts.lines) s += '<line x1="' + u[0].toFixed(1) + '" y1="' + u[1].toFixed(1) + '" x2="' + v[0].toFixed(1) + '" y2="' + v[1].toFixed(1) + '" stroke="#1c242c" stroke-width="1.2" vector-effect="non-scaling-stroke"/>';
     // Ziehgriffe (in Geometrie-Koordinaten): corner(s,m) = [cx + (a.w/2)*s, cy + (thick/2)*m]
     const hw = a.w / 2, ht = (a.thick || wallThickPts()) / 2, depth = a.depth == null ? 0.5 : a.depth, md = depth * 2 - 1;
-    const fdh = Math.min(0.49, (a.frameD || cmToPts(7)) / (2 * ht)), fmB = Math.min(1, md + fdh);
+    const fdh = Math.min(0.49, (a.frameD || cmToPts(7)) / (2 * ht)), fmB = Math.min(1, md + fdh), fmA = Math.max(-1, md - fdh);
     const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), boardVis = (a.boardVis != null ? a.boardVis : 1), boardW = (a.boardW != null ? a.boardW : 2.5);
     const HG = (hx, hy, id, lbl) => '<g class="lab-h" data-h="' + id + '"><circle cx="' + hx.toFixed(1) + '" cy="' + hy.toFixed(1) + '" r="' + (6 * scale) + '" /><title>' + lbl + '</title></g>';
     const hwx = s2 => cx + hw * s2, hwy = m2 => cy + ht * m2;
+    const dimV = (xx, m1, m2v, label) => { const ya = hwy(m1), yb = hwy(m2v), t = 4 * scale, sw2 = 0.6 * scale, col = '#1c242c'; return '<line x1="' + xx + '" y1="' + ya + '" x2="' + xx + '" y2="' + yb + '" stroke="' + col + '" stroke-width="' + sw2 + '"/><line x1="' + (xx - t) + '" y1="' + ya + '" x2="' + (xx + t) + '" y2="' + ya + '" stroke="' + col + '" stroke-width="' + sw2 + '"/><line x1="' + (xx - t) + '" y1="' + yb + '" x2="' + (xx + t) + '" y2="' + yb + '" stroke="' + col + '" stroke-width="' + sw2 + '"/><text x="' + (xx + 3 * scale) + '" y="' + ((ya + yb) / 2 + 3 * scale) + '" font-size="' + (9 * scale) + '" fill="' + col + '">' + label + '</text>'; };
+    const dimH = (yy, s1, s2v, label) => { const xa = hwx(s1), xb = hwx(s2v), t = 4 * scale, sw2 = 0.6 * scale, col = '#1c242c'; return '<line x1="' + xa + '" y1="' + yy + '" x2="' + xb + '" y2="' + yy + '" stroke="' + col + '" stroke-width="' + sw2 + '"/><line x1="' + xa + '" y1="' + (yy - t) + '" x2="' + xa + '" y2="' + (yy + t) + '" stroke="' + col + '" stroke-width="' + sw2 + '"/><line x1="' + xb + '" y1="' + (yy - t) + '" x2="' + xb + '" y2="' + (yy + t) + '" stroke="' + col + '" stroke-width="' + sw2 + '"/><text x="' + ((xa + xb) / 2 - label.length * 2.4 * scale) + '" y="' + (yy - 3 * scale) + '" font-size="' + (9 * scale) + '" fill="' + col + '">' + label + '</text>'; };
+    const cmv = pts => (Math.round(ptsToCm(pts) * 10) / 10).toString().replace('.', ',');
     let H = '';
+    H += dimV(hwx(1) + 16 * scale, -1, 1, cmv(a.thick || wallThickPts()) + ' cm');                               // Wanddicke
+    H += dimV(hwx(1) + 40 * scale, fmA, fmB, cmv(a.frameD || cmToPts(7)) + ' cm');                                // Rahmentiefe
+    H += dimH(hwy(1) + 16 * scale, 1 - fwSr, 1, cmv(a.frameW || cmToPts(a.kind === 'door' ? 6 : 10)) + ' cm');    // Rahmenbreite (Ansicht)
     H += HG(hwx(1 - fwSr + cmToPts(boardVis) / hw + cmToPts(boardW) / hw), hwy(0.6), 'boardW', 'Laibungsbrett-Breite (ziehen ↔)');
     H += HG(hwx(1) - 2, hwy(md), 'depth', 'Einbautiefe (ziehen ↕)');
+    H += HG(hwx(1 - fwSr / 2), hwy(fmB), 'frameD', 'Rahmentiefe (ziehen ↕)');
+    H += HG(hwx(1 - fwSr), hwy(md), 'frameW', 'Rahmenbreite (ziehen ↔)');
     if (a.anschlagType && a.anschlagType !== 'none') H += HG(hwx(Math.max(0, 1 - fwSr - cmToPts(a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5)) / hw)), hwy(a.anschlagType === 'innen' ? -0.6 : 0.85), 'anschlag', 'Anschlagtiefe (ziehen ↔)');
     svg.innerHTML = s + H;
     bindHandles();
@@ -5188,12 +5196,14 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   function bindHandles() {
     svg.querySelectorAll('.lab-h').forEach(g => { g.onpointerdown = e => {
       e.preventDefault(); const id = g.dataset.h, hw = a.w / 2, ht = (a.thick || wallThickPts()) / 2;
-      const sx = e.clientX, sy = e.clientY, d0 = a.depth == null ? 0.5 : a.depth, bw0 = a.boardW != null ? a.boardW : 2.5, an0 = a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5);
+      const sx = e.clientX, sy = e.clientY, d0 = a.depth == null ? 0.5 : a.depth, bw0 = a.boardW != null ? a.boardW : 2.5, an0 = a.anschlagDepth != null ? a.anschlagDepth : cmToPts(5), fd0 = a.frameD || cmToPts(7), fw0 = a.frameW || cmToPts(a.kind === 'door' ? 6 : 10);
       const move = ev => {
         const dxp = (ev.clientX - sx) * scale, dyp = (ev.clientY - sy) * scale;
         if (id === 'depth') a.depth = Math.max(0, Math.min(1, d0 + (dyp / ht) / 2));
-        else if (id === 'boardW') a.boardW = Math.max(0.5, Math.min(10, bw0 + ptsToCm(dxp)));
+        else if (id === 'boardW') a.boardW = Math.max(0.5, Math.min(20, bw0 + ptsToCm(dxp)));
         else if (id === 'anschlag') a.anschlagDepth = Math.max(0, Math.min(cmToPts(20), an0 - dxp));
+        else if (id === 'frameD') a.frameD = Math.max(cmToPts(2), Math.min(cmToPts(16), fd0 + 2 * dyp));   // Rahmentiefe (an der Vorderkante ziehen)
+        else if (id === 'frameW') a.frameW = Math.max(cmToPts(2), Math.min(cmToPts(20), fw0 - dxp));        // Rahmenbreite (Innenkante ziehen)
         render(); drawAnnos(pv);
       };
       const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };

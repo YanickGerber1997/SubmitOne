@@ -1158,7 +1158,7 @@ function drawOne(svg, a, pv) {
     g.appendChild(svgEl(a.closed && !a._cursor ? 'polygon' : 'polyline', { points: ptsStr, fill: 'none', stroke: col, 'stroke-width': 1.6, 'vector-effect': 'non-scaling-stroke' }));
     const sp = profileUSpan(a.prof), off = cmToPts(sp[1]), segPts = a.closed && !a._cursor && path.length >= 3 ? path.concat([path[0]]) : path;
     if (Math.abs(off) > 0.3 && segPts.length >= 2) { let d = ''; for (let i = 0; i < segPts.length - 1; i++) { const x1 = segPts[i][0], y1 = segPts[i][1], x2 = segPts[i + 1][0], y2 = segPts[i + 1][1], L = Math.hypot(x2 - x1, y2 - y1) || 1, nx = -(y2 - y1) / L, ny = (x2 - x1) / L; d += (i ? 'L' : 'M') + (x1 + nx * off) + ',' + (y1 + ny * off) + ' L' + (x2 + nx * off) + ',' + (y2 + ny * off) + ' '; } g.appendChild(svgEl('path', { d, fill: 'none', stroke: col, 'stroke-width': 0.8, 'stroke-dasharray': '4 3', opacity: 0.7, 'vector-effect': 'non-scaling-stroke' })); }
-    for (const p of a.path) g.appendChild(svgEl('circle', { cx: p[0], cy: p[1], r: 1.8, fill: col, 'vector-effect': 'non-scaling-stroke' }));
+    const pSel = sel && sel.id === a.id; a.path.forEach((p, i) => { const at = { cx: p[0], cy: p[1], r: pSel ? 3 : 1.8, fill: col, 'vector-effect': 'non-scaling-stroke' }; if (pSel) { at.class = 'pnode'; at['data-pn'] = i; at['data-id'] = a.id; } g.appendChild(svgEl('circle', at)); });
     const lab = svgEl('text', { x: a.path[0][0] + 5, y: a.path[0][1] - 5, fill: '#6b7280', 'font-size': 11, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); lab.textContent = '⌐ ' + (a.name || 'Profil') + (a.elev != null ? ' @' + (+a.elev).toFixed(2) + 'm' : ''); g.appendChild(lab);
     svg.appendChild(g); el = g;
     hit = svgEl('polyline', { points: a.path.map(p => p[0] + ',' + p[1]).join(' '), fill: 'none', stroke: 'transparent', 'stroke-width': 10, 'data-id': a.id }); svg.appendChild(hit);
@@ -2347,7 +2347,14 @@ function deleteGroup() {
   groupSel = null; pageViews.forEach(drawAnnos); refreshComments();
 }
 function startNodeDrag(pv, e, id, pnIdx, phIdx, hk) {
-  const a = findAnno(pv.num, id); if (!a || a.type !== 'path') return; pushUndo();
+  const a = findAnno(pv.num, id); if (!a) return;
+  if (a.type === 'profile') {   // Profil-Pfad-Knoten ziehen (rastet an Wandenden/Raster)
+    if (pnIdx === null) return; pushUndo();
+    const move = ev => { let q = evtToPage(pv, ev); const an = anchorSnap(pv, q.x, q.y, a.id); if (an) q = an; else if (gridOn && !ev.altKey) q = snapPt(q.x, q.y); a.path[+pnIdx] = [q.x, q.y]; drawAnnos(pv); };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); return;
+  }
+  if (a.type !== 'path') return; pushUndo();
   const move = ev => {
     let q = evtToPage(pv, ev); if (gridOn && !ev.altKey) q = snapPt(q.x, q.y);
     if (pnIdx !== null) { const nd = a.nodes[+pnIdx], dx = q.x - nd.x, dy = q.y - nd.y; nd.hIn.x += dx; nd.hIn.y += dy; nd.hOut.x += dx; nd.hOut.y += dy; nd.x = q.x; nd.y = q.y; }   // Knoten + seine Anfasser mitnehmen

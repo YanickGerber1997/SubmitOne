@@ -3416,7 +3416,22 @@ async function printDoc() {
   } catch (e) { status(''); console.error(e); toast('Drucken fehlgeschlagen.'); }
 }
 function outName() { return docName.replace(/\.pdf$/i, '') + '-submit.pdf'; }
-async function buildPdfBytes(visibleOnly, embed) {
+const NATIVE_OK = new Set(['note', 'text', 'line', 'arrow', 'rect', 'oval', 'pen', 'highlight']);
+function addNativeAnnot(doc, lib, pg, a, PH, cbx, cby) {   // Submit-Anmerkung → native PDF-Annotation (in Acrobat/Drawboard editierbar)
+  const { PDFName, PDFString } = lib, N = PDFName.of, S = PDFString.of, fx = x => x + cbx, fy = y => PH - y + cby;
+  const C = hex => { const c = hexToRgb(hex || '#1c242c'); return [c.r, c.g, c.b]; };
+  let d = null;
+  if (a.type === 'rect') d = { Type: N('Annot'), Subtype: N('Square'), Rect: [fx(a.x), fy(a.y + a.h), fx(a.x + a.w), fy(a.y)], C: C(a.color), Border: [0, 0, a.width || 1.5], Contents: S('') };
+  else if (a.type === 'oval') d = { Type: N('Annot'), Subtype: N('Circle'), Rect: [fx(a.x), fy(a.y + a.h), fx(a.x + a.w), fy(a.y)], C: C(a.color), Border: [0, 0, a.width || 1.5], Contents: S('') };
+  else if (a.type === 'line' || a.type === 'arrow') { d = { Type: N('Annot'), Subtype: N('Line'), Rect: [fx(Math.min(a.x1, a.x2)) - 2, fy(Math.max(a.y1, a.y2)) - 2, fx(Math.max(a.x1, a.x2)) + 2, fy(Math.min(a.y1, a.y2)) + 2], L: [fx(a.x1), fy(a.y1), fx(a.x2), fy(a.y2)], C: C(a.color), Border: [0, 0, a.width || 1.5], Contents: S('') }; if (a.type === 'arrow') d.LE = [N('None'), N('OpenArrow')]; }
+  else if (a.type === 'note') d = { Type: N('Annot'), Subtype: N('Text'), Rect: [fx(a.x), fy(a.y + 18), fx(a.x + 18), fy(a.y)], Contents: S(a.text || ''), C: C('#f5c84b'), Name: N('Comment'), Open: false };
+  else if (a.type === 'text') d = { Type: N('Annot'), Subtype: N('FreeText'), Rect: [fx(a.x), fy(a.y + (a.h || 16)), fx(a.x + (a.w || 60)), fy(a.y)], Contents: S(a.text || ''), DA: S('/Helv ' + (a.size || 12) + ' Tf 0 0 0 rg'), C: C(a.fill && a.fill !== 'none' ? a.fill : '#ffffff') };
+  else if (a.type === 'pen' && a.pts && a.pts.length > 1) { const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]); d = { Type: N('Annot'), Subtype: N('Ink'), Rect: [fx(Math.min(...xs)) - 1, fy(Math.max(...ys)) - 1, fx(Math.max(...xs)) + 1, fy(Math.min(...ys)) + 1], InkList: [a.pts.map(p => [fx(p[0]), fy(p[1])]).flat()], C: C(a.color), Border: [0, 0, a.width || 1.6], Contents: S('') }; }
+  else if (a.type === 'highlight' && a.rects && a.rects.length) { const q = [], xs = [], ys = []; for (const r of a.rects) { const x1 = fx(r.x), x2 = fx(r.x + r.w), yt = fy(r.y), yb = fy(r.y + r.h); q.push(x1, yt, x2, yt, x1, yb, x2, yb); xs.push(r.x, r.x + r.w); ys.push(r.y, r.y + r.h); } d = { Type: N('Annot'), Subtype: N('Highlight'), Rect: [fx(Math.min(...xs)), fy(Math.max(...ys)), fx(Math.max(...xs)), fy(Math.min(...ys))], QuadPoints: q, C: C(a.color || '#ffe14d'), CA: 0.4 }; }
+  if (!d) return;
+  try { let an = pg.node.Annots(); if (!an) { an = doc.context.obj([]); pg.node.set(PDFName.of('Annots'), an); } an.push(doc.context.register(doc.context.obj(d))); } catch (_) { }
+}
+async function buildPdfBytes(visibleOnly, embed, nativeExport) {
   const lib = await loadPdfLib();
   {
     const { PDFDocument, rgb: rgb0, StandardFonts, degrees, pushGraphicsState, popGraphicsState, concatTransformationMatrix, moveTo, lineTo, closePath, clip, endPath } = lib;
@@ -3424,7 +3439,7 @@ async function buildPdfBytes(visibleOnly, embed) {
     const rgb = exportBW ? ((r, g, b) => { const l = 0.299 * r + 0.587 * g + 0.114 * b; return rgb0(l, l, l); }) : rgb0;
     const doc = await PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
     const font = await doc.embedFont(StandardFonts.Helvetica);
-    const pages = doc.getPages(); const sigCache = {};
+    const pages = doc.getPages(); const sigCache = {}, nativeAnns = [];
     for (let n = 1; n <= pages.length; n++) {
       const pg = pages[n - 1];
       let cb; try { cb = pg.getCropBox(); } catch (_) { const s = pg.getSize(); cb = { x: 0, y: 0, width: s.width, height: s.height }; }
@@ -3450,6 +3465,7 @@ async function buildPdfBytes(visibleOnly, embed) {
         if (a._draft) continue;   // unbestätigtes Wand-Ketten-Segment nicht speichern
         if (visibleOnly && !layerVisible(a)) continue;   // Drucken: nur sichtbare Ebenen
         if (!phaseVisible(a)) continue;                  // Drucken: nur Phasen der aktuellen Ansicht
+        if (nativeExport && NATIVE_OK.has(a.type)) { nativeAnns.push({ a, pg, PH, cbx: cb.x, cby: cb.y }); continue; }   // als native PDF-Annotation exportieren statt einbacken
         if (a.type === 'opening') openingResolve(a, { num: +n });   // Öffnung aus Wand ableiten
         if (a.type === 'opening') openingResolve(a, { num: +n });   // Öffnung aus Wand ableiten
         const col = hexToRgb(a.color), c = rgb(col.r, col.g, col.b), w = a.width || 2, dp = dashPdf(a);
@@ -3640,6 +3656,7 @@ async function buildPdfBytes(visibleOnly, embed) {
         try { form.updateFieldAppearances(font); } catch (_) { }
       } catch (_) { /* kein AcroForm */ }
     }
+    if (nativeExport) for (const z of nativeAnns) addNativeAnnot(doc, lib, z.pg, z.a, z.PH, z.cbx, z.cby);   // native Markup-Annotationen schreiben
     if (embed) {   // editierbare Daten (Wände, Anmerkungen, Massstab …) + Originaldokument einbetten → in Submit PDF wieder bearbeitbar
       try {
         const proj = JSON.stringify({ v: 1, scale: docScale, annos, pageRot, viewRot, formValues, layers, activeLayerId, name: docName });
@@ -3663,6 +3680,11 @@ async function save() {
   } catch (e) { status(''); console.error(e); toast('Speichern fehlgeschlagen (Internet für Speicher-Bibliothek nötig?).'); }
 }
 
+async function exportNative() {   // unsere Anmerkungen als native PDF-Annotationen exportieren (für Acrobat/Drawboard)
+  if (!curBytes) return; status('Exportiere native Anmerkungen …'); await new Promise(r => setTimeout(r, 20));
+  try { const out = await buildPdfBytes(false, false, true); downloadBytes(out, docName.replace(/\.pdf$/i, '') + '-annot.pdf'); status(''); toast('Als native PDF-Anmerkungen exportiert – in Acrobat/Drawboard editierbar (CAD/Wände bleiben eingebacken).'); }
+  catch (e) { status(''); console.error(e); toast('Export fehlgeschlagen.'); }
+}
 /* ---------- Senden per E-Mail ---------- */
 function openMail() {
   if (!curBytes) return;
@@ -4507,6 +4529,8 @@ function wire() {
   $('#footQty').onclick = openQuantities;
   $('#footSchedule').onclick = openSchedule;
   $('#footWallList').onclick = openWallList;
+  $('#footImportAnn').onclick = () => importPdfAnnotations(false);
+  $('#footExportAnn').onclick = exportNative;
   $('#footPhase').onclick = e => { e.stopPropagation(); const p = $('#phasePop'); p.hidden = !p.hidden; if (!p.hidden) updatePhaseUI(); };
   $$('#phSet button').forEach(b => b.onclick = () => setActivePhase(b.dataset.ph || null));
   $$('#phView button').forEach(b => b.onclick = () => setPhaseView(b.dataset.pv));

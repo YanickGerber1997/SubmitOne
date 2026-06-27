@@ -2759,8 +2759,9 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   const dC = (x - wall.x1) * uxW + (y - wall.y1) * uyW, sgnDir = (ux * uxW + uy * uyW) >= 0 ? 1 : -1, s0 = sgnDir * (Math.round(dC / hStep) * hStep - dC) / hw;   // Phase: auf das Wandraster (Ursprung Wandanfang) eingerastet
   let coreIdx = wall.layers.findIndex(l => CORE.includes(l.mat)); if (coreIdx < 0) coreIdx = Math.floor((wall.layers.length - 1) / 2);
   const l0 = wall.layers[0], lN = wall.layers[wall.layers.length - 1], rt0 = a.revealType || 'putz';   // Innen-Laibungs-Element nach Typ
+  const anType = a.anschlagType || 'none', oneCm = cmToPts(1) / ht;   // 1 cm in m-Richtung – Putz nie näher als 1 cm an den Flügel
   const innerLining = rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]);   // putz = innerste Wandschicht reingezogen; aussen = äusserste; sonst feste Konstruktion
-  if (Math.abs((fmA - gapM) + 1) > 0.02) { let sAcc = 0; for (const [mat, tcm] of innerLining) { const mt = LINING_MAT[mat] || WALL_MATS[mat] || {}, tw = Math.min(0.42, cmToPts(tcm) / hw), sk = mt.stroke || mt.color || '#1c242c'; for (const sgn of [-1, 1]) { const s0 = sgn * (1 - sAcc), s1 = sgn * (1 - sAcc - tw); strips.push({ poly: [corner(s0, -1), corner(s1, -1), corner(s1, fmA - gapM), corner(s0, fmA - gapM)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(s0, s1), Math.max(s0, s1), -1, fmA - gapM, corner, hw, ht, stepS) : null }); } sAcc += tw; } }
+  if (anType !== 'innen' && Math.abs((fmA - oneCm) + 1) > 0.02) { let sAcc = 0; for (const [mat, tcm] of innerLining) { const mt = LINING_MAT[mat] || WALL_MATS[mat] || {}, tw = Math.min(0.42, cmToPts(tcm) / hw), sk = mt.stroke || mt.color || '#1c242c'; for (const sgn of [-1, 1]) { const s0 = sgn * (1 - sAcc), s1 = sgn * (1 - sAcc - tw); strips.push({ poly: [corner(s0, -1), corner(s1, -1), corner(s1, fmA - oneCm), corner(s0, fmA - oneCm)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(s0, s1), Math.max(s0, s1), -1, fmA - oneCm, corner, hw, ht, stepS) : null }); } sAcc += tw; } }   // Innen-Laibung (ohne Innenanschlag); Innenanschlag → eigener Block unten
   const total = wall.layers.reduce((s, l) => s + l.t, 0) || 1; let cum = 0;
   const pos = wall.layers.map(l => { const f0 = cum / total, f1 = (cum + l.t) / total; cum += l.t; return { l, mLo: -1 + 2 * f0, mHi: -1 + 2 * f1 }; });   // Schicht-Positionen über die Wanddicke
   const outerPos = pos.filter((p, i) => i > coreIdx);   // Schichten ausserhalb Tragkern
@@ -2778,20 +2779,27 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
       if (Math.abs(sBO - sBI) > 0.02) strips.push({ poly: [corner(sBI, fmB), corner(sBO, fmB), corner(sBO, 1), corner(sBI, 1)], fill: boardMat.fill, stroke: boardMat.color, hatch: bandHatch(Math.min(sBI, sBO), Math.max(sBI, sBO), fmB, 1, corner, hw, ht, stepS) });   // Laibungsbrett, 1 cm vom Rahmen
     }
   }
-  const anType = a.anschlagType || 'none';   // Anschlag: Mauerwerk läuft aussen (bzw. innen) vor den Rahmen → Öffnung dort schmaler
   if (anType !== 'none') {
     const core = wall.layers[coreIdx] || wall.layers[0], cmat = WALL_MATS[core.mat] || {};
     const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), anS = Math.min(0.6, cmToPts(a.anschlagDepth != null ? a.anschlagDepth : 5) / hw);
-    const mLo = anType === 'innen' ? -1 : fmB, mHi = anType === 'innen' ? fmA : 1;
-    const fin = (anType === 'innen' && coreIdx > 0) ? wall.layers[coreIdx - 1] : null, fmat = fin ? (WALL_MATS[fin.mat] || {}) : null;   // Deckschicht direkt innen am Tragkern (Putz/Holz …)
-    const finTw = fin ? Math.min(0.32, fin.t / hw) : 0, oneCm = cmToPts(1) / ht, finMHi = Math.max(-1 + 0.02, fmA - oneCm);   // Deckschicht endet 1 cm vor dem Rahmen/Flügel
-    for (const sgn of [-1, 1]) {
-      const s0 = sgn, s1 = sgn * Math.max(0, 1 - fwSr - anS);
-      if (Math.abs(mHi - mLo) > 0.02 && Math.abs(s1 - s0) > 0.02) strips.push({ poly: [corner(s0, mLo), corner(s1, mLo), corner(s1, mHi), corner(s0, mHi)], fill: cmat.fill || '#fff', stroke: cmat.color || '#1c242c', hatch: bandHatch(Math.min(s0, s1), Math.max(s0, s1), mLo, mHi, corner, hw, ht, stepS) });   // Mauerwerks-Anschlag vor dem Rahmen
-      if (fin && finTw > 0.01 && finMHi > -1 + 0.03) {   // Deckschicht läuft über den Anschlag bis 1 cm vor den Flügel
-        const sa = s1, sb = s1 - sgn * finTw;
-        strips.push({ poly: [corner(sa, -1), corner(sb, -1), corner(sb, finMHi), corner(sa, finMHi)], fill: fmat.fill || '#fff', stroke: fmat.color || '#1c242c', hatch: fmat.hatch ? bandHatch(Math.min(sa, sb), Math.max(sa, sb), -1, finMHi, corner, hw, ht, stepS) : (['holz', 'konter'].includes(fin.mat) ? bandHatch(Math.min(sa, sb), Math.max(sa, sb), -1, finMHi, corner, hw, ht, stepS) : null) });
+    const hatchOf = (mat, sA, sB, mA, mB) => { const mt = WALL_MATS[mat] || {}; return (mt.hatch === 'daemm_eps' || mt.hatch === 'daemm_wolle' || (mt.hatch && INS.includes(mat))) ? bandHatchPerp(Math.min(sA, sB), Math.max(sA, sB), mA, mB, corner, stepS, s0) : (mt.hatch ? bandHatch(Math.min(sA, sB), Math.max(sA, sB), mA, mB, corner, hw, ht, stepS) : null); };
+    if (anType === 'innen') {   // INNENANSCHLAG: Mauerwerks-Schulter raumseitig vor dem Rahmen; innere Deckschicht (Putz) läuft um die Ecke, 1 cm vor dem Flügel
+      const sEdge = Math.max(0, 1 - fwSr - anS), mHi = fmA;                          // Schulter bis Rahmen-Innenkante
+      const fin = coreIdx > 0 ? wall.layers[coreIdx - 1] : null, fmat = fin ? (WALL_MATS[fin.mat] || {}) : null;
+      const putzTm = fin ? Math.min(0.5, fin.t / ht) : 0, putzTs = fin ? Math.min(0.3, fin.t / hw) : 0;   // Putzdicke quer (m) bzw. längs (s)
+      const finMHi = Math.max(-1 + 0.02, fmA - oneCm), mLoMas = -1 + putzTm;          // Putz endet 1 cm vor Rahmen; Mauerwerk hinter dem raumseitigen Putz
+      for (const sgn of [-1, 1]) {
+        const sJ = sgn, sEdgeS = sgn * sEdge;
+        if (Math.abs(mHi - mLoMas) > 0.02 && Math.abs(sEdgeS - sJ) > 0.02) strips.push({ poly: [corner(sJ, mLoMas), corner(sEdgeS, mLoMas), corner(sEdgeS, mHi), corner(sJ, mHi)], fill: cmat.fill || '#fff', stroke: cmat.color || '#1c242c', hatch: hatchOf(core.mat, sJ, sEdgeS, mLoMas, mHi) });   // Mauerwerks-Schulter
+        if (fin && putzTm > 0.005) {
+          strips.push({ poly: [corner(sJ, -1), corner(sEdgeS, -1), corner(sEdgeS, mLoMas), corner(sJ, mLoMas)], fill: fmat.fill || '#fff', stroke: fmat.color || '#1c242c', hatch: hatchOf(fin.mat, sJ, sEdgeS, -1, mLoMas) });   // Putz raumseitig über die Schulter → verbindet mit gerader Wand
+          const sb = sEdgeS - sgn * putzTs;
+          strips.push({ poly: [corner(sEdgeS, -1), corner(sb, -1), corner(sb, finMHi), corner(sEdgeS, finMHi)], fill: fmat.fill || '#fff', stroke: fmat.color || '#1c242c', hatch: hatchOf(fin.mat, sEdgeS, sb, -1, finMHi) });   // Putz-Return in die Laibung, 1 cm vor dem Rahmen
+        }
       }
+    } else {   // AUSSENANSCHLAG: Mauerwerk/Konstruktion aussen vor den Rahmen
+      const mLo = fmB, mHi = 1;
+      for (const sgn of [-1, 1]) { const s0b = sgn, s1 = sgn * Math.max(0, 1 - fwSr - anS); if (Math.abs(mHi - mLo) > 0.02 && Math.abs(s1 - s0b) > 0.02) strips.push({ poly: [corner(s0b, mLo), corner(s1, mLo), corner(s1, mHi), corner(s0b, mHi)], fill: cmat.fill || '#fff', stroke: cmat.color || '#1c242c', hatch: hatchOf(core.mat, s0b, s1, mLo, mHi) }); }
     }
   }
   return strips;
@@ -2880,7 +2888,7 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip) { 
   const corner = (s, m) => [cx + ht2 * m, cy - hw * s];   // s = vertikal (Kopf oben), m = horizontal (Wanddicke)
   const layered = !simpleMode && wall.layers && wall.layers.length >= 2, dep0 = o.depth == null ? 0.5 : o.depth, dep = flip ? 1 - dep0 : dep0;   // Blickrichtung: Innen/Aussen tauschen
   out.push({ t: 'rect', x: cx - ht2, y: Yh(head), w: appW, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });   // Öffnung ausstanzen
-  const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: dep, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: o.winType || 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: o.revealType, outerLap: o.outerLap, innerReveal: o.innerReveal, anschlagType: o.anschlagType, anschlagDepth: o.anschlagDepth, wallId: 'secw' };
+  const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: dep, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: o.winType || 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: o.revealType, outerLap: o.outerLap, innerReveal: o.innerReveal, anschlagType: flip ? (o.anschlagType === 'innen' ? 'aussen' : o.anschlagType === 'aussen' ? 'innen' : (o.anschlagType || 'none')) : o.anschlagType, anschlagDepth: o.anschlagDepth, wallId: 'secw' };   // bei flip Innen/Aussen-Anschlag mitspiegeln
   if (layered) { const sw = { id: 'secw', type: 'wall', layers: flip ? wall.layers.slice().reverse() : wall.layers, x1: cx, y1: cy + hw, x2: cx, y2: cy - hw, thick: appW, hatch: wall.hatch }; for (const st of openingRevealStrips(sa, [sw])) { out.push({ t: 'poly', pts: st.poly, fill: st.fill, stroke: st.stroke, sw: 0.7 }); if (st.hatch) for (const [u, v] of st.hatch) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.6 }); } }
   if (o.kind === 'window') {
     const P = openingParts(sa, layered);

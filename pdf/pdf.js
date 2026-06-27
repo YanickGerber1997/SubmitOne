@@ -5237,18 +5237,26 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     try { sectionCutOpening(out, X, Yh, 0, appW, a, H2, perPt, sw, false); } catch (_) { }
     drawPrims(svgS, out, () => vbS, v => { vbS = v; });
   }
-  function renderElev(el, side, getVb, setVb) {   // Ansicht innen/aussen (Front des Fensters)
+  function renderElev(el, side, getVb, setVb) {   // Ansicht innen/aussen – die ganze WAND mit allen Fenstern/Türen (Kontext), aktuelles markiert
     if (!docScale) { el.innerHTML = '<text x="10" y="22" font-size="13" fill="#9aa090">Massstab setzen (1:n)</text>'; el.setAttribute('viewBox', '0 0 300 60'); return; }
-    const perPt = docScale.perPt, H = (a.head != null ? a.head : (a.kind === 'window' ? 2.1 : 2.0)) + 0.4, Yh = h => -h / perPt, X = d => d, out = [];
-    const o = side === 'i' ? Object.assign({}, a, { winHinge: a.winHinge === 'left' ? 'right' : a.winHinge === 'right' ? 'left' : a.winHinge, bank: false }) : a;   // innen: Anschlag-Richtung gespiegelt, ohne Aussen-Fensterbank
-    const wallE = a.wallId && arr.find(w => w.id === a.wallId && w.type === 'wall');   // Reveal-Einzug (Laibung/Sturz/Schwelle) auch in der Ansicht zeigen
-    const rPts = side === 'i' ? (a.innerReveal != null ? a.innerReveal : cmToPts(2)) : (a.outerLap != null ? a.outerLap : cmToPts(3));
-    if (wallE && wallE.layers && wallE.layers.length && rPts > 0.5) {
-      const ly = side === 'i' ? wallE.layers[0] : wallE.layers[wallE.layers.length - 1], m = WALL_MATS[ly.mat] || {};
-      const sillF = (o.kind === 'window' ? (o.sill || 0) : 0), headF = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0));
-      out.push({ t: 'rect', x: X(0), y: Yh(headF), w: a.w, h: Yh(sillF) - Yh(headF), fill: m.fill || '#eee', stroke: m.color || '#1c242c', sw: 1.2 });   // Rohbau-Laibung: Verkleidung/Sturz/Schwelle lappt über den Rahmen
+    const perPt = docScale.perPt, Yh = h => -h / perPt, out = [];
+    const Hwall = (wall && wall.h3d) || wallHeightM;
+    const x1 = wall ? wall.x1 : a.x - a.w / 2, y1 = wall ? wall.y1 : a.y, x2 = wall ? wall.x2 : a.x + a.w / 2, y2 = wall ? wall.y2 : a.y;
+    const Lw = Math.hypot(x2 - x1, y2 - y1) || a.w, uxw = (x2 - x1) / Lw, uyw = (y2 - y1) / Lw, along = (px, py) => (px - x1) * uxw + (py - y1) * uyw, flip = side === 'i';
+    const ops = wall ? arr.filter(o2 => o2.type === 'opening' && (o2.kind === 'window' || o2.kind === 'door') && o2.wallId === wall.id) : [a];
+    if (!ops.length) ops.push(a);
+    const facLy = (wall && wall.layers && wall.layers.length) ? (side === 'i' ? wall.layers[0] : wall.layers[wall.layers.length - 1]) : null, facMat = facLy ? (WALL_MATS[facLy.mat] || {}) : {};
+    out.push({ t: 'rect', x: 0, y: Yh(Hwall), w: Lw, h: Yh(0) - Yh(Hwall), fill: facMat.fill || '#f3f1ec', stroke: '#9aa08f', sw: 1 });   // Wand-Ansicht (Fassade)
+    out.push({ t: 'line', x1: -10, y1: Yh(0), x2: Lw + 10, y2: Yh(0), stroke: '#1c242c', w: 1.8 });   // Boden / OK Terrain
+    for (const o2 of ops) {
+      const oo = side === 'i' ? Object.assign({}, o2, { winHinge: o2.winHinge === 'left' ? 'right' : o2.winHinge === 'right' ? 'left' : o2.winHinge, bank: false }) : o2;
+      const a0 = (wall ? along(o2.x, o2.y) : Lw / 2) - o2.w / 2, opx0 = flip ? (Lw - a0 - o2.w) : a0;
+      const rPts = side === 'i' ? (o2.innerReveal != null ? o2.innerReveal : cmToPts(2)) : (o2.outerLap != null ? o2.outerLap : cmToPts(3));
+      const sillF = (o2.kind === 'window' ? (o2.sill || 0) : 0), headF = Math.min(Hwall, o2.head || (o2.kind === 'window' ? 2.1 : 2.0));
+      if (facLy && rPts > 0.5) out.push({ t: 'rect', x: opx0, y: Yh(headF), w: o2.w, h: Yh(sillF) - Yh(headF), fill: facMat.fill || '#eee', stroke: facMat.color || '#1c242c', sw: 1 });   // Rohbau-Laibung (Reveal/Sturz/Schwelle)
+      try { openingElev(out, d => d, Yh, opx0 + rPts, o2.w - 2 * rPts, oo, Hwall, '#1c242c', rPts * perPt); } catch (_) { }
+      if (o2.id === a.id) out.push({ t: 'rect', x: opx0 - 4, y: Yh(headF) - 4, w: o2.w + 8, h: (Yh(sillF) - Yh(headF)) + 8, fill: 'none', stroke: '#2aa869', sw: 2.4 });   // aktuelles Fenster markiert
     }
-    try { openingElev(out, X, Yh, rPts, a.w - 2 * rPts, o, H, '#1c242c', rPts * perPt); } catch (_) { }   // sichtbares Fenster (Lichtmass) – seitlich + Sturz/Schwelle eingezogen
     drawPrims(el, out, getVb, setVb);
   }
   function bindHandles() {

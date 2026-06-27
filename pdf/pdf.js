@@ -3753,6 +3753,44 @@ async function open3D() {
   document.addEventListener('keydown', esc, true);
   ov.querySelector('#d3Close').onclick = close;
 }
+function winThumb(o) {   // Mini-Ansicht (SVG) eines Fensters/einer Tür für die Liste
+  const W = 64, H = 78, ww = ptsToCm(o.w) / 100, wh = o.kind === 'window' ? ((o.head || 2.1) - (o.sill || 0)) : (o.head || 2.0), ar = ww / Math.max(0.2, wh);
+  let bw = W - 12, bh = bw / ar; if (bh > H - 10) { bh = H - 10; bw = bh * ar; } bw = Math.max(14, Math.min(W - 8, bw));
+  const x0 = (W - bw) / 2, y0 = (H - bh) / 2, wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', st = wm.stroke, F = v => v.toFixed(1);
+  let s = '<svg class="ws-thumb" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">';
+  s += '<rect x="' + F(x0) + '" y="' + F(y0) + '" width="' + F(bw) + '" height="' + F(bh) + '" fill="' + wm.fill + '" stroke="' + st + '" stroke-width="1.3"/>';
+  const fr = Math.min(bw, bh) * 0.12, two = wt === 'f2' || wt === 'f2s' || (o.kind === 'door' && wt === 'f1f'), np = two ? 2 : 1, pw = bw / np, hingeR = o.winHinge === 'right';
+  for (let i = 0; i < np; i++) {
+    const px = x0 + i * pw; if (i > 0) s += '<line x1="' + F(px) + '" y1="' + F(y0) + '" x2="' + F(px) + '" y2="' + F(y0 + bh) + '" stroke="' + st + '" stroke-width="1"/>';
+    const ins = fr * 1.7, gx = px + ins, gy = y0 + ins, gw = pw - 2 * ins, gh = bh - 2 * ins; if (gw <= 1 || gh <= 1) continue;
+    const isGlass = o.kind === 'window' ? true : (wt === 'fest' || (wt === 'f1f' && i === (hingeR ? 0 : 1)));
+    s += '<rect x="' + F(gx) + '" y="' + F(gy) + '" width="' + F(gw) + '" height="' + F(gh) + '" fill="' + (isGlass ? '#c7e2f5' : wm.fill) + '" stroke="' + (isGlass ? '#7fa9c6' : st) + '" stroke-width="0.8"/>';
+    if (wt !== 'fest' && !(o.kind === 'door' && isGlass)) { const apexL = two ? i === 0 : !hingeR, ax = apexL ? gx : gx + gw, bx = apexL ? gx + gw : gx, cy = gy + gh / 2; s += '<path d="M' + F(bx) + ' ' + F(gy) + ' L' + F(ax) + ' ' + F(cy) + ' L' + F(bx) + ' ' + F(gy + gh) + '" fill="none" stroke="' + st + '" stroke-width="0.7" stroke-dasharray="3 2"/>'; }
+  }
+  return s + '</svg>';
+}
+function openSchedule() {   // saubere Fenster-/Türliste mit Position, Ansicht-Skizze, Material, Licht/Rohbau, Brüstung, Anschlag
+  if (!docScale) { toast('Erst Massstab setzen – die Liste braucht reale Masse.'); return; }
+  const n = curPage(), arr = getAnnos(n), groups = {};
+  for (const o of arr) { if (o.type !== 'opening' || !layerVisible(o) || !phaseVisible(o)) continue; const oh = o.kind === 'window' ? ((o.head || 2.1) - (o.sill || 0)) : (o.head || 2.0); const key = [o.kind, o.winType || 'f1', o.winMat || 'holz', Math.round(ptsToCm(o.w)), Math.round(oh * 100), Math.round((o.sill || 0) * 100), o.winHinge || 'left'].join('|'); if (!groups[key]) groups[key] = { o, n: 0, oh }; groups[key].n++; }
+  const wins = [], doors = []; for (const k in groups) (groups[k].o.kind === 'window' ? wins : doors).push(groups[k]);
+  wins.sort((a, b) => a.o.w - b.o.w || a.oh - b.oh); doors.sort((a, b) => a.o.w - b.o.w);
+  const matL = { holz: 'Holz', metall: 'Metall', kunst: 'Kunststoff' }, typeL = { fest: 'Fest', f1: '1-flügelig', f2: '2-flügelig', f2s: '2-fl. Setzholz', f1f: '1-fl.+Fixteil' }, hingeL = { left: 'links', right: 'rechts', kipp: 'Kipp' };
+  const dim = (o, oh) => { const ins = ptsToCm(openInsPts(o)) / 100; return { rw: Math.round(ptsToCm(o.w)), rh: Math.round(oh * 100), lw: Math.round((ptsToCm(o.w) / 100 - 2 * ins) * 100), lh: Math.round((oh - 2 * ins) * 100) }; };
+  let wr = '', wc = 'Pos\tTyp\tMaterial\tLicht BxH\tRohbau BxH\tBrüstung\tAnschlag\tStk\n';
+  wins.forEach((g, i) => { const o = g.o, d = dim(o, g.oh), p = 'F' + (i + 1); wr += '<tr><td><b>' + p + '</b></td><td>' + winThumb(o) + '</td><td>' + (typeL[o.winType || 'f1'] || '') + '</td><td>' + (matL[o.winMat || 'holz'] || '') + '</td><td>' + d.lw + '×' + d.lh + '</td><td>' + d.rw + '×' + d.rh + '</td><td>' + Math.round((o.sill || 0) * 100) + ' cm</td><td>' + (hingeL[o.winHinge || 'left'] || '') + '</td><td style="text-align:center">' + g.n + '</td></tr>'; wc += p + '\t' + (typeL[o.winType || 'f1'] || '') + '\t' + (matL[o.winMat || 'holz'] || '') + '\t' + d.lw + 'x' + d.lh + '\t' + d.rw + 'x' + d.rh + '\t' + Math.round((o.sill || 0) * 100) + '\t' + (hingeL[o.winHinge || 'left'] || '') + '\t' + g.n + '\n'; });
+  let dr = '', dc = 'Pos\tTyp\tMaterial\tLicht BxH\tRohbau BxH\tAnschlag\tStk\n';
+  doors.forEach((g, i) => { const o = g.o, d = dim(o, g.oh), p = 'T' + (i + 1); dr += '<tr><td><b>' + p + '</b></td><td>' + winThumb(o) + '</td><td>' + (typeL[o.winType || 'f1'] || '') + '</td><td>' + (matL[o.winMat || 'holz'] || '') + '</td><td>' + d.lw + '×' + d.lh + '</td><td>' + d.rw + '×' + d.rh + '</td><td>' + (hingeL[o.winHinge || 'left'] || '') + '</td><td style="text-align:center">' + g.n + '</td></tr>'; dc += p + '\t' + (typeL[o.winType || 'f1'] || '') + '\t' + (matL[o.winMat || 'holz'] || '') + '\t' + d.lw + 'x' + d.lh + '\t' + d.rw + 'x' + d.rh + '\t' + (hingeL[o.winHinge || 'left'] || '') + '\t' + g.n + '\n'; });
+  const ov = document.createElement('div'); ov.className = 'lab-overlay';
+  ov.innerHTML = '<div class="lab-wrap" style="width:min(820px,95vw);height:min(640px,92vh)"><div class="lab-head"><b>Fenster- & Türliste</b><span class="lab-hint">Seite ' + n + ' · Masse in cm (B×H)</span><span class="grow"></span><button class="btn" id="qCopy">Kopieren</button><button class="btn" id="qClose">✕</button></div><div class="qty-body"><h4>Fenster (' + wins.reduce((s, g) => s + g.n, 0) + ' Stk)</h4><table class="qty-tab ws-tab"><thead><tr><th>Pos</th><th>Ansicht</th><th>Typ</th><th>Material</th><th>Licht B×H</th><th>Rohbau B×H</th><th>Brüstung</th><th>Anschlag</th><th>Stk</th></tr></thead><tbody>' + (wr || '<tr><td colspan=9>Keine Fenster.</td></tr>') + '</tbody></table><h4>Türen (' + doors.reduce((s, g) => s + g.n, 0) + ' Stk)</h4><table class="qty-tab ws-tab"><thead><tr><th>Pos</th><th>Ansicht</th><th>Typ</th><th>Material</th><th>Licht B×H</th><th>Rohbau B×H</th><th>Anschlag</th><th>Stk</th></tr></thead><tbody>' + (dr || '<tr><td colspan=8>Keine Türen.</td></tr>') + '</tbody></table></div></div>';
+  document.body.appendChild(ov);
+  const close = () => { ov.remove(); document.removeEventListener('keydown', esc, true); };
+  const esc = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+  document.addEventListener('keydown', esc, true);
+  ov.querySelector('#qClose').onclick = close;
+  ov.querySelector('#qCopy').onclick = () => { navigator.clipboard.writeText('FENSTERLISTE\n' + wc + '\nTÜRLISTE\n' + dc).then(() => toast('Liste kopiert (Excel-tauglich)')).catch(() => toast('Kopieren nicht möglich')); };
+  ov.addEventListener('pointerdown', e => { if (e.target === ov) close(); });
+}
 function computeQuantities(arr) {   // Mengenauszug: Wandfläche × Schichtstärke − Öffnungen
   const VOL = ['beton', 'mauerwerk'], mats = {}, opsAgg = {};
   for (const w of arr) {
@@ -4357,6 +4395,7 @@ function wire() {
   $('#footSimple').onclick = () => { simpleMode = !simpleMode; $('#footSimple').classList.toggle('on', simpleMode); pageViews.forEach(drawAnnos); toast(simpleMode ? 'Einfache Darstellung – Wände schwarz, Öffnungen als Symbol' : 'Detaillierte Darstellung (automatisch nach Aufbau)'); };
   $('#footWinDim').onclick = () => { winDimsOn = !winDimsOn; $('#footWinDim').classList.toggle('on', winDimsOn); pageViews.forEach(drawAnnos); toast(winDimsOn ? 'Fenster-/Tür-Bemaßung an (R Rohbau · La Aussenlicht · Li Innenlicht)' : 'Fenster-/Tür-Bemaßung aus'); };
   $('#footQty').onclick = openQuantities;
+  $('#footSchedule').onclick = openSchedule;
   $('#footPhase').onclick = e => { e.stopPropagation(); const p = $('#phasePop'); p.hidden = !p.hidden; if (!p.hidden) updatePhaseUI(); };
   $$('#phSet button').forEach(b => b.onclick = () => setActivePhase(b.dataset.ph || null));
   $$('#phView button').forEach(b => b.onclick = () => setPhaseView(b.dataset.pv));

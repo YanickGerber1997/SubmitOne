@@ -1010,7 +1010,7 @@ const SUB_W = { lattung: 6, staender: 5, schraube: 1.2 };   // Breite/Markierung
 function applyWallBuildup(a, layersData, spacingCm) {   // layersData = [[mat, cm, subTyp?], …] innen→aussen · spacingCm = Achsabstand UK
   if (!layersData || !layersData.length) { delete a.layers; return; }
   const sp = cmToPts(spacingCm || 60);
-  a.layers = layersData.map(([mat, cm, sub]) => { const l = { mat, t: cmToPts(cm) }; if (sub) l.sub = { type: sub, spacing: sp, w: cmToPts(SUB_W[sub] || 2) }; return l; });
+  a.layers = layersData.map(([mat, cm, sub, top, bot]) => { const l = { mat, t: cmToPts(cm) }; if (sub) l.sub = { type: sub, spacing: sp, w: cmToPts(SUB_W[sub] || 2) }; if (top) l.top = (+top) / 100; if (bot) l.bot = (+bot) / 100; return l; });   // top/bot = eigene Über-/Unterlänge je Schicht (cm→m, im Schnitt)
   a.thick = a.layers.reduce((s, l) => s + l.t, 0);
   a.hatch = null; a.fill = '#ffffff'; a.color = '#1c242c';   // Aufbau übernimmt die Darstellung
 }
@@ -1562,10 +1562,12 @@ function renderBuildList() {
   const list = document.getElementById('bpList'); if (!list) return; list.innerHTML = '';
   buildDraft.forEach((row, i) => {
     const r = document.createElement('div'); r.className = 'bp-row';
-    r.innerHTML = `<input class="bp-t" type="number" min="0.1" step="0.1" value="${row[1]}"><span>cm</span><select class="bp-m">${buildMatOptions(row[0])}</select><select class="bp-s" title="Unterkonstruktion in dieser Schicht">${buildSubOptions(row[2])}</select><button class="bp-del" title="Schicht entfernen">✕</button>`;
+    r.innerHTML = `<input class="bp-t" type="number" min="0.1" step="0.1" value="${row[1]}"><span>cm</span><select class="bp-m">${buildMatOptions(row[0])}</select><select class="bp-s" title="Unterkonstruktion in dieser Schicht">${buildSubOptions(row[2])}</select><input class="bp-top" type="number" step="1" value="${row[3] || 0}" title="im Schnitt: Schicht oben verlängern (+) / kürzen (−), cm" style="width:46px"><span title="oben ± cm">↑</span><input class="bp-bot" type="number" step="1" value="${row[4] || 0}" title="im Schnitt: Schicht unten verlängern (+) / kürzen (−), cm" style="width:46px"><span title="unten ± cm">↓</span><button class="bp-del" title="Schicht entfernen">✕</button>`;
     r.querySelector('.bp-t').onchange = e => { buildDraft[i][1] = parseFloat((e.target.value || '').replace(',', '.')) || 0; updateBuildTotal(); };
     r.querySelector('.bp-m').onchange = e => { buildDraft[i][0] = e.target.value; };
     r.querySelector('.bp-s').onchange = e => { buildDraft[i][2] = e.target.value; };
+    r.querySelector('.bp-top').onchange = e => { buildDraft[i][3] = parseFloat((e.target.value || '').replace(',', '.')) || 0; };
+    r.querySelector('.bp-bot').onchange = e => { buildDraft[i][4] = parseFloat((e.target.value || '').replace(',', '.')) || 0; };
     r.querySelector('.bp-del').onclick = () => { buildDraft.splice(i, 1); renderBuildList(); };
     list.appendChild(r);
   });
@@ -1573,16 +1575,16 @@ function renderBuildList() {
 }
 function openBuildPop() {
   const presets = document.getElementById('bpPresets'); presets.innerHTML = '';
-  WALL_PRESETS.forEach(p => { const b = document.createElement('button'); b.className = 'bp-preset'; b.textContent = p.name; b.onclick = () => { buildDraft = p.layers.map(l => [l[0], l[1], '']); renderBuildList(); }; presets.appendChild(b); });
+  WALL_PRESETS.forEach(p => { const b = document.createElement('button'); b.className = 'bp-preset'; b.textContent = p.name; b.onclick = () => { buildDraft = p.layers.map(l => [l[0], l[1], '', 0, 0]); renderBuildList(); }; presets.appendChild(b); });
   const a = selWall();
-  if (a && a.layers && a.layers.length) { buildDraft = a.layers.map(l => [l.mat, Math.round(ptsToCm(l.t) * 10) / 10, l.sub ? l.sub.type : '']); const sp = a.layers.find(l => l.sub); if (sp) buildSpacing = Math.round(ptsToCm(sp.sub.spacing)); }
-  else if (!buildDraft.length) buildDraft = WALL_PRESETS[0].layers.map(l => [l[0], l[1], '']);
+  if (a && a.layers && a.layers.length) { buildDraft = a.layers.map(l => [l.mat, Math.round(ptsToCm(l.t) * 10) / 10, l.sub ? l.sub.type : '', Math.round((l.top || 0) * 100), Math.round((l.bot || 0) * 100)]); const sp = a.layers.find(l => l.sub); if (sp) buildSpacing = Math.round(ptsToCm(sp.sub.spacing)); }
+  else if (!buildDraft.length) buildDraft = WALL_PRESETS[0].layers.map(l => [l[0], l[1], '', 0, 0]);
   const si = document.getElementById('bpSpacing'); if (si) si.value = buildSpacing;
   renderBuildList(); document.getElementById('buildPop').hidden = false;
 }
 function applyBuildup() {
   const si = document.getElementById('bpSpacing'); if (si) buildSpacing = parseFloat((si.value || '').replace(',', '.')) || 60;
-  const layers = buildDraft.filter(r => r[1] > 0).map(r => [r[0], r[1], r[2] || '']);
+  const layers = buildDraft.filter(r => r[1] > 0).map(r => [r[0], r[1], r[2] || '', r[3] || 0, r[4] || 0]);
   wallBuildup = layers.length ? { layers, spacing: buildSpacing } : null;
   const a = selWall(); if (a) { pushUndo(); applyWallBuildup(a, layers, buildSpacing); pageViews.forEach(drawAnnos); saveState(); updateSelBar(); }
   document.getElementById('buildPop').hidden = true; toast(layers.length ? 'Wandaufbau angewendet ✓' : 'Aufbau entfernt');
@@ -2878,7 +2880,7 @@ function sectionPrimitives(a, arr) {
     const w = h.w, H = w.h3d || wallHeightM, x0 = h.dist - h.appW / 2;
     const layers0 = (w.layers && w.layers.length) ? w.layers : [{ mat: null, t: h.T }], layers = a.flip ? layers0.slice().reverse() : layers0, totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
     let cx = x0;
-    for (const L of layers) { const lw = (L.t / totalT) * h.appW, m = L.mat ? (WALL_MATS[L.mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; const bx = X(cx), byT = Yh(H), bhh = Yh(0) - Yh(H); out.push({ t: 'rect', x: bx, y: byT, w: lw, h: bhh, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, bx, byT, lw, bhh, L.mat, (w.hatch && w.hatch.type)); cx += lw; }
+    for (const L of layers) { const lw = (L.t / totalT) * h.appW, m = L.mat ? (WALL_MATS[L.mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; const bx = X(cx), byT = Yh(H + (L.top || 0)), bhh = Yh(0 - (L.bot || 0)) - byT; out.push({ t: 'rect', x: bx, y: byT, w: lw, h: bhh, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, bx, byT, lw, bhh, L.mat, (w.hatch && w.hatch.type)); cx += lw; }   // L.top/L.bot = eigene Über-/Unterlänge je Schicht (m) → Schichtverschneidung
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
     for (const o of ops) sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil (a.flip = Blickrichtung)
     out.push({ t: 'line', x1: X(x0), y1: Yh(H), x2: X(x0 + h.appW), y2: Yh(H), stroke: col, w: 1.2 });
@@ -4841,6 +4843,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
     A('Profil im Schnitt', () => { const prof = { id: 9004, type: 'profile', path: [[200, 150], [300, 150]], prof: [[0, 0], [3, 0], [3, 12], [0, 12]], elev: 2.5, closed: false }; const pr = sectionPrimitives(sec, [prof, sec]); return pr.some(p => p.t === 'poly') ? '' : 'kein Querschnitt'; });
     A('Decke im Schnitt (Schichten)', () => { const sl = { id: 9005, type: 'slab', pts: [[180, 100], [320, 100], [320, 200], [180, 200]], base: 2.6 }; applySlabBuildup(sl, [['belag', 1], ['estrich', 7], ['beton', 24]]); const pr = sectionPrimitives(sec, [sl, sec]); return pr.filter(p => p.t === 'rect').length >= 3 ? '' : 'zu wenig Schichten'; });
+    A('Schicht-Über/Unterlänge', () => { const w = { type: 'wall', x1: 0, y1: 0, x2: 100, y2: 0, thick: cmToPts(31) }; applyWallBuildup(w, [['mauerwerk', 15, '', 0, 30], ['eps', 16, '', 20, 0]]); return (Math.abs(w.layers[1].top - 0.2) < 1e-6 && Math.abs(w.layers[0].bot - 0.3) < 1e-6 && !w.layers[0].top) ? '' : 'top=' + w.layers[1].top + ' bot=' + w.layers[0].bot; });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

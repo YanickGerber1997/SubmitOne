@@ -2689,9 +2689,15 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
     const core = wall.layers[coreIdx] || wall.layers[0], cmat = WALL_MATS[core.mat] || {};
     const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), anS = Math.min(0.6, cmToPts(a.anschlagDepth != null ? a.anschlagDepth : 5) / hw);
     const mLo = anType === 'innen' ? -1 : fmB, mHi = anType === 'innen' ? fmA : 1;
+    const fin = (anType === 'innen' && coreIdx > 0) ? wall.layers[coreIdx - 1] : null, fmat = fin ? (WALL_MATS[fin.mat] || {}) : null;   // Deckschicht direkt innen am Tragkern (Putz/Holz …)
+    const finTw = fin ? Math.min(0.32, fin.t / hw) : 0, oneCm = cmToPts(1) / ht, finMHi = Math.max(-1 + 0.02, fmA - oneCm);   // Deckschicht endet 1 cm vor dem Rahmen/Flügel
     for (const sgn of [-1, 1]) {
       const s0 = sgn, s1 = sgn * Math.max(0, 1 - fwSr - anS);
       if (Math.abs(mHi - mLo) > 0.02 && Math.abs(s1 - s0) > 0.02) strips.push({ poly: [corner(s0, mLo), corner(s1, mLo), corner(s1, mHi), corner(s0, mHi)], fill: cmat.fill || '#fff', stroke: cmat.color || '#1c242c', hatch: bandHatch(Math.min(s0, s1), Math.max(s0, s1), mLo, mHi, corner, hw, ht, stepS) });   // Mauerwerks-Anschlag vor dem Rahmen
+      if (fin && finTw > 0.01 && finMHi > -1 + 0.03) {   // Deckschicht läuft über den Anschlag bis 1 cm vor den Flügel
+        const sa = s1, sb = s1 - sgn * finTw;
+        strips.push({ poly: [corner(sa, -1), corner(sb, -1), corner(sb, finMHi), corner(sa, finMHi)], fill: fmat.fill || '#fff', stroke: fmat.color || '#1c242c', hatch: fmat.hatch ? bandHatch(Math.min(sa, sb), Math.max(sa, sb), -1, finMHi, corner, hw, ht, stepS) : (['holz', 'konter'].includes(fin.mat) ? bandHatch(Math.min(sa, sb), Math.max(sa, sb), -1, finMHi, corner, hw, ht, stepS) : null) });
+      }
     }
   }
   return strips;

@@ -2049,6 +2049,8 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     const col = sW ? sW.color : style.color; $('#pbWallDot').style.background = col; $('#pbWallColor').value = toHex(col);
     if (document.activeElement !== $('#pbWallH')) $('#pbWallH').value = sW ? (sW.h3d || wallHeightM) : wallHeightM;
     $('#pbWallDisp').value = sW ? (sW.simple === true ? 'simple' : sW.simple === false ? 'detail' : 'auto') : 'auto';
+    const hasSchal = sW && sW.layers && sW.layers.some(l => l.mat === 'holz' || l.mat === 'konter');
+    $('#pbSchalHWrap').style.display = hasSchal ? '' : 'none'; if (hasSchal && document.activeElement !== $('#pbSchalH')) $('#pbSchalH').value = sW.schalH || 12;
   } else if (mode === 'open') {
     const kind = sO ? sO.kind : openKind;
     $$('#pbOpen [data-ok]').forEach(b => b.classList.toggle('on', b.dataset.ok === kind));
@@ -3852,20 +3854,27 @@ function build3DScene(host, walls, arr) {
     if (!texCache[matKey]) {
       const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
       g.fillStyle = def.fill || '#e9e3d8'; g.fillRect(0, 0, 128, 128); const sc = def.color || '#9a9a9a'; const h = def.hatch;
-      if (matKey === 'holz' || matKey === 'konter') { g.strokeStyle = sc; g.globalAlpha = 0.45; g.lineWidth = 2; const vert = matKey === 'konter'; for (let i = 14; i < 128; i += 18) { g.beginPath(); if (vert) { g.moveTo(i, 0); g.lineTo(i, 128); } else { g.moveTo(0, i); g.lineTo(128, i); } g.stroke(); } }
-      else if (matKey === 'putz' || matKey === 'gips') { g.globalAlpha = 0.10; g.fillStyle = sc; for (let i = 0; i < 1400; i++) g.fillRect(Math.random() * 128, Math.random() * 128, 1, 1); }
-      else if (matKey === 'beton') { g.globalAlpha = 0.07; g.fillStyle = sc; for (let i = 0; i < 400; i++) g.fillRect(Math.random() * 128, Math.random() * 128, 2, 2); }
-      else if (h && (String(h).indexOf('daemm') === 0 || INSUL_T.includes(h) || INSUL_T.includes(matKey))) { g.strokeStyle = sc; g.globalAlpha = 0.3; g.lineWidth = 1; for (let i = 8; i < 128; i += 12) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 128); g.stroke(); } }
+      const isInsul = h && (String(h).indexOf('daemm') === 0 || INSUL_T.includes(h) || INSUL_T.includes(matKey));
+      if (matKey === 'holz' || matKey === 'konter') { const vert = matKey === 'konter';   // 1 Brett pro Kachel (Fuge an der Kachelkante) + feine Maserung
+        g.globalAlpha = 0.12; g.strokeStyle = sc; g.lineWidth = 1; for (let i = 0; i < 9; i++) { const p = Math.random() * 128; g.beginPath(); if (vert) { g.moveTo(p, 0); g.lineTo(p + (Math.random() * 8 - 4), 128); } else { g.moveTo(0, p); g.lineTo(128, p + (Math.random() * 8 - 4)); } g.stroke(); }
+        g.globalAlpha = 0.5; g.lineWidth = 3; g.beginPath(); if (vert) { g.moveTo(126, 0); g.lineTo(126, 128); } else { g.moveTo(0, 126); g.lineTo(128, 126); } g.stroke(); g.globalAlpha = 0.18; g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.beginPath(); if (vert) { g.moveTo(2, 0); g.lineTo(2, 128); } else { g.moveTo(0, 2); g.lineTo(128, 2); } g.stroke(); }
+      else if (matKey === 'putz' || matKey === 'gips') { g.globalAlpha = 0.16; g.fillStyle = sc; for (let i = 0; i < 2600; i++) g.fillRect(Math.random() * 128, Math.random() * 128, 1, 1); g.globalAlpha = 0.10; g.fillStyle = '#ffffff'; for (let i = 0; i < 1300; i++) g.fillRect(Math.random() * 128, Math.random() * 128, 1, 1); }   // Verputz: feine Körnung (dunkel+hell)
+      else if (matKey === 'beton') { g.globalAlpha = 0.08; g.fillStyle = sc; for (let i = 0; i < 500; i++) g.fillRect(Math.random() * 128, Math.random() * 128, 2, 2); }
+      else if (matKey === 'eps' || matKey === 'daemm_eps' || matKey === 'daemm_xps') { g.globalAlpha = 0.22; g.strokeStyle = sc; g.lineWidth = 1; for (let i = 0; i < 90; i++) { const x = Math.random() * 128, y = Math.random() * 128, r = 3 + Math.random() * 4; g.beginPath(); g.arc(x, y, r, 0, 6.3); g.stroke(); } }   // EPS/XPS: Perlen/Körner
+      else if (isInsul) { g.globalAlpha = 0.35; g.strokeStyle = sc; g.lineWidth = 1; for (let i = 0; i < 300; i++) { const x = Math.random() * 128, y = Math.random() * 128, a = Math.random() * Math.PI, l = 6 + Math.random() * 12; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); } }   // Glas-/Steinwolle: Fasern
       else if (h) { g.strokeStyle = sc; g.globalAlpha = 0.22; g.lineWidth = 1.2; for (let i = -128; i < 128; i += 14) { g.beginPath(); g.moveTo(i, 128); g.lineTo(i + 128, 0); g.stroke(); } }
       const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 2); texCache[matKey] = t;
     }
     return (matCache[matKey] = new THREE.MeshLambertMaterial({ color: new THREE.Color(def.fill || '#e9e3d8'), map: texCache[matKey] }));
   };
   const layerMatCache = {};
-  const layerMat = (matKey, lenM, hM) => {   // Textur mit konstantem realem Abstand (gleiche Schraffur ueberall, scharf) – Wiederholung aus Boxgroesse
+  const layerMat = (matKey, lenM, hM, boardHm) => {   // Textur mit realem Abstand; Holz = 1 Brett pro Bretthöhe (boardHm)
     faceMat(matKey); if (!texCache[matKey]) return faceMat(matKey);
-    const P = (matKey === 'holz' || matKey === 'konter') ? 0.2 : (matKey === 'mauerwerk' || matKey === 'beton') ? 0.35 : 0.3;
-    const ru = Math.max(1, Math.round((lenM || P) / P)), rv = Math.max(1, Math.round((hM || P) / P)), key = matKey + ':' + ru + ':' + rv;
+    const bH = boardHm || 0.12; let ru, rv;
+    if (matKey === 'holz') { ru = Math.max(1, Math.round((lenM || 1.2) / 1.2)); rv = Math.max(1, Math.round((hM || bH) / bH)); }   // horizontale Bretter
+    else if (matKey === 'konter') { ru = Math.max(1, Math.round((lenM || bH) / bH)); rv = Math.max(1, Math.round((hM || 1.2) / 1.2)); }   // vertikale Bretter
+    else { const P = (matKey === 'mauerwerk' || matKey === 'beton') ? 0.35 : 0.3; ru = Math.max(1, Math.round((lenM || P) / P)); rv = Math.max(1, Math.round((hM || P) / P)); }
+    const key = matKey + ':' + ru + ':' + rv;
     if (!layerMatCache[key]) { const tx = texCache[matKey].clone(); tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.repeat.set(ru, rv); tx.needsUpdate = true; layerMatCache[key] = new THREE.MeshLambertMaterial({ color: new THREE.Color((WALL_MATS[matKey] || {}).fill || '#e9e3d8'), map: tx }); }
     return layerMatCache[key];
   };
@@ -3888,10 +3897,10 @@ function build3DScene(host, walls, arr) {
     };
     const fmat = new THREE.MeshLambertMaterial({ color: 0xf2efe9 }), bmat = new THREE.MeshLambertMaterial({ color: 0xcfcabf }), nmat = new THREE.MeshLambertMaterial({ color: 0x3a3f45 });
     const wL = w.layers && w.layers.length ? w.layers : null, totalT = wL ? (wL.reduce((s, l) => s + l.t, 0) || 1) : 1;
-    const addWallLayered = (s0, s1, y0, y1) => {   // Wand schichtweise (echte Schichten quer über die Dicke) – akkurat zum 2D
+    const addWallLayered = (s0, s1, y0, y1) => {   // Wand schichtweise; Luft (Hinterlüftung) bleibt leer/transparent
       if (!wL) { addBox(s0, s1, y0, y1, wmat, th, true); return; }
-      const lenM = (s1 - s0) * perPt, hM = y1 - y0;
-      let off = -th / 2; for (const L of wL) { const lt = (L.t / totalT) * th; addBox2(s0, s1, y0, y1, off + lt / 2, lt, layerMat(L.mat, lenM, hM), true); off += lt; }
+      const lenM = (s1 - s0) * perPt, hM = y1 - y0, bH = (w.schalH ? w.schalH / 100 : 0.12);
+      let off = -th / 2; for (const L of wL) { const lt = (L.t / totalT) * th; if (L.mat !== 'luft') addBox2(s0, s1, y0, y1, off + lt / 2, lt, layerMat(L.mat, lenM, hM, bH), true); off += lt; }
     };
     const winMat3D = key => { const wm = WIN_MAT[key] || WIN_MAT.holz; return new THREE.MeshLambertMaterial({ color: new THREE.Color(wm.fill) }); };
     const extrudePrism = (poly, mapA, mapB, color) => {   // 2D-Polygon zwischen zwei 3D-Abbildungen extrudieren
@@ -4271,6 +4280,7 @@ function wire() {
   $('#pbDimOff').onchange = () => { const v = parseFloat(($('#pbDimOff').value || '').replace(',', '.')); if (v >= 0) { wallDimOffCm = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbDimGap').onchange = () => { const v = parseFloat(($('#pbDimGap').value || '').replace(',', '.')); if (v >= 0) { wallDimGap = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbWallDisp').onchange = () => { const v = $('#pbWallDisp').value, a = selWall(); if (!a) return; pushUndo(); if (v === 'simple') a.simple = true; else if (v === 'detail') a.simple = false; else delete a.simple; pageViews.forEach(drawAnnos); saveState(); };
+  $('#pbSchalH').onchange = () => { const v = parseFloat(($('#pbSchalH').value || '').replace(',', '.')); if (!(v >= 4)) return; const a = selWall(); if (a) { pushUndo(); a.schalH = v; saveState(); toast('Schalung Bretthöhe ' + v + ' cm – im 3D sichtbar'); } };
   $('#pbHatch').onchange = () => { const t = $('#pbHatch').value, d = HATCH_DEF[t] || {}; wallHatch = t ? { type: t, scale: lastHatchScale, w: 0.8, color: d.color || style.color, fill: d.fill || null } : null; const a = selWall(); if (a) { pushUndo(); applyMaterial(a, t); pageViews.forEach(drawAnnos); saveState(); } };
   $('#foot3d').onclick = open3D;
   let planKind = 'kopf', planPos = 'br';

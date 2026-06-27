@@ -5,24 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=274" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=274" />
-  <link rel="icon" href="favicon.png?v=274" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=274" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=275" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=275" />
+  <link rel="icon" href="favicon.png?v=275" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=275" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=274" />
+  <link rel="stylesheet" href="pdf.css?v=275" />
 </head>
 <body>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=274" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=275" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=274" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=274" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=275" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=275" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <span class="doc-name" id="docName"></span>
@@ -183,7 +183,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=274" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=275" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -297,9 +297,9 @@
   </div>
 
   <div class="layer-panel" id="layerPanel" hidden>
-    <div class="lp-head"><b>Ebenen</b><span class="grow"></span><button class="lp-add" id="lpAdd" title="Ebene hinzufügen">＋ Ebene</button></div>
+    <div class="lp-head"><b>Ebenen / Geschosse</b><span class="grow"></span><button class="lp-add" id="lpDup" title="Aktives Geschoss 1:1 nach oben kopieren (neues Stockwerk)">⧉ Geschoss ↑</button><button class="lp-add" id="lpAdd" title="Ebene hinzufügen">＋ Ebene</button></div>
     <div class="lp-list" id="lpList"></div>
-    <div class="lp-foot">Auge = sichtbar · Klick = aktive Ebene (neue Anmerkungen) · Doppelklick = umbenennen. Beim Drucken kommen nur sichtbare Ebenen.</div>
+    <div class="lp-foot">Auge = sichtbar · Klick = aktive Ebene (neue Anmerkungen) · Doppelklick = umbenennen · Zahl = Höhenlage/Geschoss (3D-Stapel). „Geschoss ↑" kopiert das aktive Stockwerk nach oben. Beim Drucken kommen nur sichtbare Ebenen.</div>
   </div>
 
   <div class="ctxmenu" id="ctxmenu" hidden></div>
@@ -642,7 +642,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=274"></script>
+  <script src="pdf.js?v=275"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

@@ -850,6 +850,28 @@ function renderLayerPanel() {
   });
 }
 function toggleLayerPanel() { const p = $('#layerPanel'); if (!p) return; p.hidden = !p.hidden; if (!p.hidden) renderLayerPanel(); }
+function duplicateLayerUp() {   // aktives Geschoss 1:1 nach oben kopieren (neue Ebene mit Höhenlage = aktuell + Geschosshöhe)
+  const src = layerById(activeLayerId); if (!src) return;
+  let wh = 0; for (const n in annos) for (const a of (annos[n] || [])) if (a.layer === activeLayerId && a.type === 'wall') wh = Math.max(wh, a.h3d || wallHeightM);
+  if (!wh) wh = wallHeightM;
+  const inp = prompt('Geschosshöhe für das neue Stockwerk (m)\nHöhenlage des Kopie-Geschosses = aktuelle Höhenlage + dieser Wert:', String(wh));
+  if (inp == null) return;
+  const h = parseFloat((inp || '').replace(',', '.')); if (!(h > 0)) { toast('Ungültige Höhe.'); return; }
+  pushUndo();
+  const newId = newLayerId(), elev = Math.round(((src.elevation || 0) + h) * 1000) / 1000;
+  layers.push({ id: newId, name: 'Geschoss ' + (layers.length + 1), visible: true, elevation: elev });
+  const idMap = {};   // alte → neue ID (für Öffnung→Wand-Referenz)
+  for (const n in annos) for (const a of (annos[n] || [])) if (a.layer === activeLayerId) idMap[a.id] = nextId++;
+  let cnt = 0;
+  for (const n in annos) {
+    const add = [];
+    for (const a of (annos[n] || [])) { if (a.layer !== activeLayerId) continue; const c = JSON.parse(JSON.stringify(a)); c.id = idMap[a.id]; c.layer = newId; if (c.wallId != null && idMap[c.wallId] != null) c.wallId = idMap[c.wallId]; add.push(c); cnt++; }
+    for (const c of add) annos[n].push(c);
+  }
+  activeLayerId = newId;
+  pageViews.forEach(drawAnnos); buildThumbs(); renderLayerPanel(); markDirty(); saveState();
+  toast(cnt ? (cnt + ' Element(e) als neues Geschoss kopiert · Höhenlage ' + elev.toFixed(2) + ' m') : 'Leeres Geschoss angelegt · Höhenlage ' + elev.toFixed(2) + ' m');
+}
 function findAnno(n, id) { return (annos[n] || []).find(a => a.id === id); }
 let _wallUnionActive = false;
 function drawAnnos(pv) {
@@ -4567,6 +4589,7 @@ function wire() {
   loadLogoData(); loadPolyClip();
   $('#btnLayers').onclick = toggleLayerPanel;
   $('#lpAdd').onclick = () => { const id = newLayerId(); layers.push({ id, name: 'Ebene ' + (layers.length + 1), visible: true }); activeLayerId = id; renderLayerPanel(); markDirty(); };
+  $('#lpDup').onclick = duplicateLayerUp;
   // Ribbon: Reiter umschalten + Werkzeugreihe ein-/ausklappen
   $$('.rib-tab').forEach(b => b.onclick = () => { activateRibTab(b.dataset.tab); document.body.classList.remove('rib-collapsed'); });
   $('#ribCollapse').onclick = () => document.body.classList.toggle('rib-collapsed');

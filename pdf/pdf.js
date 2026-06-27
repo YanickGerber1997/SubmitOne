@@ -5167,10 +5167,10 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   function buildCtrls() {
     side.innerHTML = '';
     const moWrap = document.createElement('label'); moWrap.className = 'lab-row'; moWrap.innerHTML = '<span>Montageart</span>';
-    const moSel = document.createElement('select'); moSel.innerHTML = '<option value="">– frei –</option><option value="innen">Innen ans Mauerwerk</option><option value="laibung">In der Laibung</option><option value="aussen">Aussen auf Konstruktion</option>'; moSel.value = a.mountMode || '';
+    const moSel = document.createElement('select'); moSel.innerHTML = '<option value="">– frei –</option><option value="aussen">Innen ans Mauerwerk</option><option value="laibung">In der Laibung</option><option value="innen">Aussen auf Konstruktion</option>'; moSel.value = a.mountMode || '';
     moSel.onchange = () => { a.mountMode = moSel.value; if (moSel.value) applyMountPreset(a, moSel.value); render(); buildCtrls(); drawAnnos(pv); saveState(); }; moWrap.appendChild(moSel); side.appendChild(moWrap);
     const anWrap = document.createElement('label'); anWrap.className = 'lab-row'; anWrap.innerHTML = '<span>Anschlag</span>';
-    const anSel = document.createElement('select'); anSel.innerHTML = '<option value="none">Kein</option><option value="aussen">Aussen</option><option value="innen">Innen</option>'; anSel.value = a.anschlagType || 'none';
+    const anSel = document.createElement('select'); anSel.innerHTML = '<option value="none">Kein</option><option value="aussen">Innen</option><option value="innen">Aussen</option>'; anSel.value = a.anschlagType || 'none';
     anSel.onchange = () => { a.anschlagType = anSel.value; render(); buildCtrls(); drawAnnos(pv); saveState(); }; anWrap.appendChild(anSel); side.appendChild(anWrap);
     for (const f of fields) { if (f.when && !f.when()) continue; const row = document.createElement('label'); row.className = 'lab-row'; const val = document.createElement('b'); val.textContent = f.get() + ' ' + f.unit;
       row.innerHTML = '<span>' + f.label + '</span>'; const r = document.createElement('input'); r.type = 'range'; r.min = f.min; r.max = f.max; r.step = f.step; r.value = f.get();

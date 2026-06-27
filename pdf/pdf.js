@@ -2713,7 +2713,7 @@ function segInt(a, b, c, d) {   // Schnitt zweier Strecken → {pt,t1,t2} oder n
   const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
   if (t < 0 || t > 1 || u < 0 || u > 1) return null; return { pt: [a[0] + t * r[0], a[1] + t * r[1]], t1: t, t2: u };
 }
-function sectionMaxH(a, arr) { let m = wallHeightM; for (const w of arr || []) { if (w.type !== 'wall' || !layerVisible(w) || !phaseVisible(w)) continue; m = Math.max(m, w.h3d || wallHeightM); } return m; }   // gemeinsames Höhen-Datum: höchste Wand im Gebäude → alle Schnitte gleich hoch (perfekt nebeneinanderlegbar)
+function sectionMaxH(a, arr) { let m = wallHeightM; for (const w of arr || []) { if (!layerVisible(w) || !phaseVisible(w)) continue; if (w.type === 'wall') m = Math.max(m, w.h3d || wallHeightM); else if (w.type === 'profile' && w.prof && w.prof.length) { let v = 0; for (const q of w.prof) v = Math.max(v, q[1]); m = Math.max(m, (w.elev || 0) + v / 100); } } return m; }   // gemeinsames Höhen-Datum: höchste Wand/Profil → alle Schnitte gleich hoch (perfekt nebeneinanderlegbar)
 function clipSeg(ax, ay, bx, by, x0, y0, x1, y1) {   // Strecke gegen achsenparalleles Rechteck (Liang-Barsky)
   let t0 = 0, t1 = 1; const dx = bx - ax, dy = by - ay;
   const cl = (p, q) => { if (Math.abs(p) < 1e-9) return q >= 0; const r = q / p; if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; } return true; };
@@ -2836,6 +2836,11 @@ function sectionPrimitives(a, arr) {
         pDimH(out, yB, X(od - rW / 2), X(od + rW / 2), 'Rohbau ' + fmtLen(o.w), true); pDimH(out, yB + 13, X(od - lW / 2), X(od + lW / 2), 'Licht ' + fmtLen(Math.max(1, o.w - 2 * insPts)), true);
         pDimV(out, xL, Yh(head0), Yh(sill0), 'Rohbau ' + fmtLen((head0 - sill0) / perPt), -46); pDimV(out, xL - 18, Yh(head0 - insM), Yh(sill0 + insM), 'Licht ' + fmtLen(Math.max(0.05, head0 - sill0 - 2 * insM) / perPt), -46);
       } }
+  }
+  for (const pr of arr) {   // Profile: wo die Schnittlinie den Pfad kreuzt → echter Querschnitt an seiner Höhe
+    if (pr.type !== 'profile' || !pr.path || pr.path.length < 2 || !pr.prof || pr.prof.length < 3 || !layerVisible(pr) || !phaseVisible(pr)) continue;
+    const seg = pr.closed && pr.path.length >= 3 ? pr.path.concat([pr.path[0]]) : pr.path, base = pr.elev || 0;
+    for (let i = 0; i < seg.length - 1; i++) { const ix = segInt(p1, p2, seg[i], seg[i + 1]); if (!ix) continue; const d = fp((ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy), pts = pr.prof.map(q => [X(d) + cmToPts(q[0]), Yh(base + q[1] / 100)]); out.push({ t: 'poly', pts, fill: pr.color || '#7a8392', stroke: '#1c242c', sw: 0.6 }); }
   }
   const Htop = sectionMaxH(a, arr), slabF = '#dadde2', slabC = '#8a8f96';   // Decke auf gemeinsamem Höhen-Datum
   out.push({ t: 'rect', x: X(-16), y: Yh(0), w: cl + 32, h: Yh(-0.22) - Yh(0), fill: slabF, stroke: slabC, sw: 0.7 });           // Bodenplatte
@@ -4762,8 +4767,10 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('IFC-Material-Mapping', () => (ifcMatKey('Beton C25/30') === 'beton' && ifcMatKey('Mineralwolle 035') === 'glaswolle' && ifcMatKey('Backstein 1.4') === 'mauerwerk' && ifcMatKey('Aussenputz') === 'putz') ? '' : 'Mapping falsch');
     A('Mesh3D encode/decode', () => { const pos = new Float32Array([0, 0, 0, 12, 0, 0, 0, 3, 7, 12, 3, 7]); const e = encodeMesh3d(pos, [0, 1, 2, 1, 3, 2]); const d = decodeMesh3d(e); let mx = 0; for (let i = 0; i < pos.length; i++) mx = Math.max(mx, Math.abs(d.pos[i] - pos[i])); return (mx < 0.01 && d.idx.length === 6 && d.idx[4] === 3) ? '' : 'Abw. ' + mx; });
     A('Profil-Querschnitt', () => { const r = profileArea([[0, 0], [3, 0], [3, 12], [0, 12]]), z = profilePreset('zblech'); return (Math.abs(r - 36) < 0.01 && z.length === 8 && profileArea(z) > 0) ? '' : 'r=' + r + ' z=' + z.length; });
+    A('Profil-Länge', () => { const sv = docScale; docScale = { perPt: 0.01, label: '1:50', n: 50 }; const len = profilePathLenM([[0, 0], [100, 0], [100, 100]]); docScale = sv; return Math.abs(len - 2) < 0.001 ? '' : 'len=' + len; });
     const sec = { id: 9003, type: 'section', cx1: 250, cy1: 0, cx2: 250, cy2: 300, ox: 500, oy: 600, label: 'A' };
     A('Live-Schnitt: Primitives', () => { const pr = sectionPrimitives(sec, [wall, win, sec]); return pr && pr.length > 3 ? '' : 'zu wenig'; });
+    A('Profil im Schnitt', () => { const prof = { id: 9004, type: 'profile', path: [[200, 150], [300, 150]], prof: [[0, 0], [3, 0], [3, 12], [0, 12]], elev: 2.5, closed: false }; const pr = sectionPrimitives(sec, [prof, sec]); return pr.some(p => p.t === 'poly') ? '' : 'kein Querschnitt'; });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }
@@ -4864,6 +4871,7 @@ function computeQuantities(arr) {   // Mengenauszug: Wandfläche × Schichtstär
     else if (a.type === 'roof' && a.w && a.h) { const e = ex('roof', 'Dach (Grundfläche)', 'm²'); e.qty += Math.abs(a.w * a.h) * pp * pp; e.n++; }
     else if (a.type === 'stairs') { const e = ex('stairs', 'Treppe (Lauf)', 'm'); e.qty += ptsToCm(Math.hypot(a.x2 - a.x1, a.y2 - a.y1)) / 100; e.n++; e.steps += stairSteps(a); }
     else if (a.type === 'beam') { const e = ex('beam', 'Unterzug', 'm'); e.qty += ptsToCm(Math.hypot(a.x2 - a.x1, a.y2 - a.y1)) / 100; e.n++; }
+    else if (a.type === 'profile' && a.path && a.path.length >= 2) { const len = profilePathLenM(a.closed && a.path.length >= 3 ? a.path.concat([a.path[0]]) : a.path), volM3 = len * (profileArea(a.prof || []) / 10000), e = ex('profile:' + (a.name || 'Profil'), 'Profil: ' + (a.name || 'Profil'), 'm'); e.qty += len; e.n++; e.vol += volM3; if (a.mat === 'metall') e.kg = (e.kg || 0) + volM3 * 7850; }
   }
   return { mats: Object.values(mats).sort((a, b) => a.mat.localeCompare(b.mat)), ops: Object.values(opsAgg).sort((a, b) => (a.kind + a.rohW).localeCompare(b.kind + b.rohW)), extra: Object.values(extra) };
 }
@@ -4877,9 +4885,9 @@ function openQuantities() {
   const tn = { fest: 'Fest', f1: '1-flügelig', f2: '2-flügelig', f2s: '2-fl.+Setzholz', f1f: '1-fl.+Fixteil' };
   for (const o of ops) { const t = (o.kind === 'window' ? 'Fenster' : 'Tür') + ' ' + (tn[o.winType] || ''); orows += '<tr><td>' + t + '</td><td style="text-align:center">' + o.n + '</td><td>' + o.lichtW + '×' + o.lichtH + '</td><td>' + o.rohW + '×' + o.rohH + '</td></tr>'; ocsv += t + '\t' + o.n + '\t' + o.lichtW + '×' + o.lichtH + '\t' + o.rohW + '×' + o.rohH + '\n'; }
   let erows = '', ecsv = 'Bauteil\tAnzahl\tMenge\tEinheit\tZusatz\n';
-  for (const e of (extra || [])) { const q = (Math.round(e.qty * 100) / 100).toLocaleString('de-CH'), note = e.vol ? (Math.round(e.vol * 100) / 100).toLocaleString('de-CH') + ' m³' : e.steps ? e.steps + ' Stufen' : ''; erows += '<tr><td>' + e.label + '</td><td style="text-align:center">' + e.n + '</td><td style="text-align:right">' + q + '</td><td>' + e.unit + '</td><td>' + note + '</td></tr>'; ecsv += e.label + '\t' + e.n + '\t' + q + '\t' + e.unit + '\t' + note + '\n'; }
+  for (const e of (extra || [])) { const q = (Math.round(e.qty * 100) / 100).toLocaleString('de-CH'), np = []; if (e.vol) np.push((Math.round(e.vol * 100) / 100).toLocaleString('de-CH') + ' m³'); if (e.kg) np.push(Math.round(e.kg).toLocaleString('de-CH') + ' kg'); if (e.steps) np.push(e.steps + ' Stufen'); const note = np.join(' · '); erows += '<tr><td>' + e.label + '</td><td style="text-align:center">' + e.n + '</td><td style="text-align:right">' + q + '</td><td>' + e.unit + '</td><td>' + note + '</td></tr>'; ecsv += e.label + '\t' + e.n + '\t' + q + '\t' + e.unit + '\t' + note + '\n'; }
   const ov = document.createElement('div'); ov.className = 'lab-overlay';
-  ov.innerHTML = '<div class="lab-wrap" style="width:min(720px,94vw);height:min(620px,90vh)"><div class="lab-head"><b>Datenliste / Mengen</b><span class="lab-hint">Seite ' + n + ' · Öffnungen abgezogen</span><span class="grow"></span><button class="btn" id="qCopy">Kopieren</button><button class="btn" id="qClose">✕</button></div><div class="qty-body"><h4>Materialliste</h4><table class="qty-tab"><thead><tr><th>Material</th><th>Stärke</th><th>Menge</th><th>Einheit</th></tr></thead><tbody>' + (rows || '<tr><td colspan=4>Keine mehrschichtigen Wände auf dieser Seite.</td></tr>') + '</tbody></table><h4>Fenster-/Türliste</h4><table class="qty-tab"><thead><tr><th>Typ</th><th>Anzahl</th><th>Licht B×H</th><th>Rohbau B×H</th></tr></thead><tbody>' + (orows || '<tr><td colspan=4>Keine Öffnungen.</td></tr>') + '</tbody></table>' + (erows ? '<h4>Decken · Dächer · Treppen</h4><table class="qty-tab"><thead><tr><th>Bauteil</th><th>Anzahl</th><th>Menge</th><th>Einheit</th><th>Zusatz</th></tr></thead><tbody>' + erows + '</tbody></table>' : '') + '</div></div>';
+  ov.innerHTML = '<div class="lab-wrap" style="width:min(720px,94vw);height:min(620px,90vh)"><div class="lab-head"><b>Datenliste / Mengen</b><span class="lab-hint">Seite ' + n + ' · Öffnungen abgezogen</span><span class="grow"></span><button class="btn" id="qCopy">Kopieren</button><button class="btn" id="qClose">✕</button></div><div class="qty-body"><h4>Materialliste</h4><table class="qty-tab"><thead><tr><th>Material</th><th>Stärke</th><th>Menge</th><th>Einheit</th></tr></thead><tbody>' + (rows || '<tr><td colspan=4>Keine mehrschichtigen Wände auf dieser Seite.</td></tr>') + '</tbody></table><h4>Fenster-/Türliste</h4><table class="qty-tab"><thead><tr><th>Typ</th><th>Anzahl</th><th>Licht B×H</th><th>Rohbau B×H</th></tr></thead><tbody>' + (orows || '<tr><td colspan=4>Keine Öffnungen.</td></tr>') + '</tbody></table>' + (erows ? '<h4>Decken · Dächer · Treppen · Profile</h4><table class="qty-tab"><thead><tr><th>Bauteil</th><th>Anzahl</th><th>Menge</th><th>Einheit</th><th>Zusatz</th></tr></thead><tbody>' + erows + '</tbody></table>' : '') + '</div></div>';
   document.body.appendChild(ov);
   const close = () => { ov.remove(); document.removeEventListener('keydown', esc, true); };
   const esc = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } };

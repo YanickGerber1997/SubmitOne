@@ -5278,8 +5278,8 @@ function build3DScene(host, walls, arr, opts) {
     try {
       const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Y = M(p[1] - cy); i ? sh.lineTo(X, Y) : sh.moveTo(X, Y); });
       const bands = slabLayerBands(a), baseY = lev(a) + (a.base || 0);
-      if (bands) {   // Decke schichtweise (Belag/Trittschall/Dämmung/Tragschicht …)
-        for (const b of bands) { const mt = WALL_MATS[b.mat] || {}, mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(mt.fill || '#cfcfcf'), roughness: 0.93, metalness: 0 }), geo = new THREE.ExtrudeGeometry(sh, { depth: b.t, bevelEnabled: false }), m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; m.rotation.x = Math.PI / 2; m.position.y = baseY + b.y1; scene.add(m); const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.rotation.x = Math.PI / 2; e.position.y = m.position.y; scene.add(e); }
+      if (bands) {   // Decke schichtweise (Belag/Trittschall/Dämmung/Tragschicht …), Einzug je Schicht
+        for (const b of bands) { let shp = sh; if (b.inset > 0) { const ip = insetPolygon(a.pts, cmToPts(b.inset * 100)); if (ip && ip.length >= 3) { shp = new THREE.Shape(); ip.forEach((p, i) => { const X = M(p[0] - cx), Y = M(p[1] - cy); i ? shp.lineTo(X, Y) : shp.moveTo(X, Y); }); } } const mt = WALL_MATS[b.mat] || {}, mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(mt.fill || '#cfcfcf'), roughness: 0.93, metalness: 0 }), geo = new THREE.ExtrudeGeometry(shp, { depth: b.t, bevelEnabled: false }), m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; m.rotation.x = Math.PI / 2; m.position.y = baseY + b.y1; scene.add(m); const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), emat); e.rotation.x = Math.PI / 2; e.position.y = m.position.y; scene.add(e); }
       } else {
         const geo = new THREE.ExtrudeGeometry(sh, { depth: a.thick || 0.2, bevelEnabled: false }), m = new THREE.Mesh(geo, smat);
         m.castShadow = true; m.receiveShadow = true; m.rotation.x = Math.PI / 2; m.position.y = baseY + (a.thick || 0.2); scene.add(m);

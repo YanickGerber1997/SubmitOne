@@ -2981,6 +2981,7 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip, no
     const fdh = Math.min(0.49, frameD / appW), leafW = Math.min(0.4, cmToPts(4) / appW), fwS = Math.min(0.4, frameW / hPx);
     out.push({ t: 'poly', pts: [corner(-1, md - leafW), corner(1 - fwS, md - leafW), corner(1 - fwS, md + leafW), corner(-1, md + leafW)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Türblatt (vertikal, bei Einbautiefe)
     out.push({ t: 'poly', pts: [corner(1 - fwS, md - fdh), corner(1, md - fdh), corner(1, md + fdh), corner(1 - fwS, md + fdh)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Sturz-Rahmen
+    { const thS = Math.min(0.5, 0.06 / Math.max(0.1, head - sill)); out.push({ t: 'poly', pts: [corner(-1, md - fdh), corner(-1 + thS, md - fdh), corner(-1 + thS, md + fdh), corner(-1, md + fdh)], fill: wm.fill, stroke: wm.stroke, sw: 1 }); }   // Türschwelle / Bodenschiene unten
   }
   if (!revealOnly && o.kind === 'window' && o.bank !== false) {   // Fensterbank aussen: Metallblech am Sims, geneigt + Überstand + Tropfkante
     const bm = WALL_MATS[o.bankMat] || { fill: '#cfd3d8', color: '#565b62' }, over = cmToPts(o.bankOver != null ? o.bankOver : 4), bt = cmToPts(2), drop = cmToPts(2.5), md0 = Math.max(-1, Math.min(1, (o.depth == null ? 0.5 : o.depth) * 2 - 1));
@@ -4571,6 +4572,7 @@ function openingSolids(o) {   // Stufe 3: Fenster/Tür als Profil-Teile in der A
   const panes = two ? [[-hw + fwB, -fw / 2], [fw / 2, hw - fwB]] : [[-hw + fwB, hw - fwB]];
   for (const [a0, b0] of panes) { rect(a0, b0, innerZ0, innerZ1, 'sash', 'holz', smA, smB); rect(a0 + fw, b0 - fw, innerZ0 + sashVm, innerZ1 - sashVm, door ? 'leaf' : 'glass', door ? 'holz' : null, door ? smA : gA, door ? smB : gB); }   // Flügel + Glas/Türblatt mit Tiefe
   if (!door && o.bank !== false) { const over = cmToPts(o.bankOver != null ? o.bankOver : 4), bt = m(cmToPts(2.5)); rect(-hw - over, hw + over, sill - bt, sill, 'bank', 'bank', md, 1.2); }   // Fensterbank: am Sims, projiziert über die Aussenkante
+  if (door) rect(-hw + fwB, hw - fwB, sill, sill + m(cmToPts(2.5)), 'frame', 'holz', fmA, fmB);   // Türschwelle / Bodenschiene (untere Zarge)
   return parts;
 }
 function openingPartStyle(role, o) {   // Füllung/Strich je Bauteil-Rolle (eine Quelle für Ansicht + Schnitt)

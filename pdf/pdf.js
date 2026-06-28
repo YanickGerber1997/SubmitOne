@@ -27,6 +27,7 @@ let penTidy = true;        // Freihand-Skizzen automatisch zu sauberen Formen au
 let docScale = null;       // {perPt: reale Meter pro PDF-Punkt, label:'1:100'} – für Messen
 const PT2MM = 25.4 / 72;   // 1 PDF-Punkt in mm
 let dimUnit = false, wallDimOffCm = 10, wallDimGap = 8;   // Mass-Anzeige mit Einheit? (Standard: Plan-Stil „4.00") · Abstand der Wand-Masslinie (cm) · Lücke Bauteil↔Hilfslinie (pt)
+let dimWithPlaster = false;   // Massbezug: false = ohne Putz (innen Tragschicht/Mauerwerk, aussen Dämmung) · true = fertige Oberfläche
 let simpleMode = false;   // global einfache Darstellung erzwingen: Wände schwarz (Poché), Öffnungen als Symbol
 function wallSimple(w) { return (w && w.simple != null) ? w.simple : simpleMode; }   // pro Wand überschreibbar (a.simple true/false), sonst global
 function fmtLen(pts) {
@@ -1830,6 +1831,10 @@ function openingClearW(o, wall) {   // Fertigmaß (lichte Öffnung) – Verputz 
 function wallDimChainPrims(a, arr, off, mode) {   // Maßkette: Pfeiler | Öffnung | Pfeiler · mode 'fertig' = Licht (Laibung abgezogen), sonst Rohbau
   const prims = [], fertig = mode === 'fertig', dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux, side = off >= 0 ? 1 : -1;
   const gap = wallDimGap, over = 4, tick = 5, P = (s, e) => [a.x1 + ux * s + nx * e, a.y1 + uy * s + ny * e];
+  const T = a.thick || wallThickPts(), FIN = ['putz', 'gips', 'dsp'];   // Massbezug: ohne Putz → innen Tragschicht (Mauerwerk), aussen Dämmung
+  let inP = 0; for (const l of (a.layers || [])) { if (FIN.includes(l.mat)) inP += l.t; else break; }
+  let outP = 0; for (let i = (a.layers || []).length - 1; i >= 0; i--) { if (FIN.includes(a.layers[i].mat)) outP += a.layers[i].t; else break; }
+  const putzExcl = dimWithPlaster ? 0 : (side < 0 ? inP : outP), faceE = side * Math.max(0, (T / 2) - putzExcl);   // Bezugsfläche der Maßhilfslinien (side<0 = innen)
   prims.push({ t: 'text', p: P(-over - 3, off), text: fertig ? 'F' : 'R', ang: 0, small: true });   // Kettenkennung: R=Rohbau (aussen), F=Fertig/Licht (innen)
   const ops = (arr || []).filter(o => o.type === 'opening' && o.wallId === a.id).map(o => { const ins = fertig ? openLichtInset(o) : 0; return { c: o.t * len, hw: Math.max(2, o.w / 2 - ins), w: Math.max(2, o.w - 2 * ins), ins, o }; }).sort((p, q) => p.c - q.c);
   let stn = [0]; for (const op of ops) { const l = Math.max(0, op.c - op.hw), r = Math.min(len, op.c + op.hw); if (l > stn[stn.length - 1] + 0.5) stn.push(l); stn.push(r); }
@@ -1837,7 +1842,7 @@ function wallDimChainPrims(a, arr, off, mode) {   // Maßkette: Pfeiler | Öffnu
   stn = [...new Set(stn.map(v => Math.round(v * 100) / 100))].sort((x, y) => x - y);
   prims.push({ t: 'line', a: P(-over, off), b: P(len + over, off), w: 0.9 });
   const kx = ux + nx, ky = uy + ny, kl = Math.hypot(kx, ky) || 1, sx = kx / kl, sy = ky / kl;
-  for (const s of stn) { prims.push({ t: 'line', a: P(s, side * gap), b: P(s, off + side * over), w: 0.7 }); const pc = P(s, off); prims.push({ t: 'line', a: [pc[0] - sx * tick, pc[1] - sy * tick], b: [pc[0] + sx * tick, pc[1] + sy * tick], w: 1.1 }); }
+  for (const s of stn) { prims.push({ t: 'line', a: P(s, faceE), b: P(s, off + side * over), w: 0.7 }); const pc = P(s, off); prims.push({ t: 'line', a: [pc[0] - sx * tick, pc[1] - sy * tick], b: [pc[0] + sx * tick, pc[1] + sy * tick], w: 1.1 }); }
   let ang = Math.atan2(uy, ux) * 180 / Math.PI; while (ang >= 90) ang -= 180; while (ang < -90) ang += 180;   // immer „von rechts" lesbar (vertikal → -90°), unabhängig von Zeichenrichtung
   const hLab = m => docScale ? (Math.round(m * 100) / 100).toFixed(2) : Math.round(m * 1000) + '';
   for (let i = 0; i < stn.length - 1; i++) {
@@ -2427,6 +2432,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
   if (mode === 'slab') { if (document.activeElement !== $('#pbSlabBase')) $('#pbSlabBase').value = sS ? sS.base : wallHeightM; if (document.activeElement !== $('#pbSlabThick')) $('#pbSlabThick').value = Math.round((sS ? sS.thick : 0.2) * 100); }
   if (mode === 'stairs') { if (document.activeElement !== $('#pbStairW')) $('#pbStairW').value = Math.round(ptsToCm(sT ? sT.width : stairWidthPts())); if (document.activeElement !== $('#pbStairRise')) $('#pbStairRise').value = sT ? sT.rise : stairRiseM; if (document.activeElement !== $('#pbStairBase')) $('#pbStairBase').value = sT ? sT.base : stairBaseM; }
   $('#pbDimset').hidden = (mode !== 'wall' && mode !== 'dim'); $('#pbUnit').classList.toggle('on', dimUnit);
+  { const b = $('#pbDimPutz'); if (b) { b.classList.toggle('on', dimWithPlaster); b.textContent = dimWithPlaster ? 'mit Putz' : 'ohne Putz'; } }
   if (document.activeElement !== $('#pbDimGap')) $('#pbDimGap').value = wallDimGap;
   if (mode === 'wall') {
     const cm = ptsToCm(sW ? (sW.thick || wallThickPts()) : wallThickPts());
@@ -6295,6 +6301,7 @@ function wire() {
   $('#pbRidge').onchange = () => { const v = parseFloat(($('#pbRidge').value || '').replace(',', '.')); if (!(v > 0)) return; roofRidgeM = v; const a = selRoof(); if (a) { pushUndo(); a.ridge = v; saveState(); } };
   $('#pbAxis').onclick = () => { roofAxis = roofAxis === 'x' ? 'y' : 'x'; const a = selRoof(); if (a) { pushUndo(); a.axis = roofAxis; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbUnit').onclick = () => { dimUnit = !dimUnit; pageViews.forEach(drawAnnos); updatePlanBar(); saveState(); };
+  { const b = $('#pbDimPutz'); if (b) b.onclick = () => { dimWithPlaster = !dimWithPlaster; pageViews.forEach(drawAnnos); updatePlanBar(); saveState(); }; }
   $('#pbWallColor').addEventListener('input', e => { const c = e.target.value; style.color = c; $('#colorDot').style.background = c; $('#pbWallDot').style.background = c; const a = selWall(); if (a) { a.color = c; if (a.hatch) a.hatch.color = c; pageViews.forEach(drawAnnos); } });
   $$('#pbOpen [data-ok]').forEach(b => b.onclick = () => { openKind = b.dataset.ok; const a = selOpen(); if (a) { pushUndo(); a.kind = openKind; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
   $('#pbWidth').onchange = () => { const v = parseFloat($('#pbWidth').value); if (!(v > 0)) return updatePlanBar(); const a = selOpen(); let pts = cmToPts(v); if (inputLicht) pts += 2 * openInsPts(a); lastOpenW = pts; if (a) { pushUndo(); a.w = pts; pageViews.forEach(drawAnnos); saveState(); } };

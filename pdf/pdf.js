@@ -5643,8 +5643,9 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       const sideKey = prop === 'revealLining' ? 'in' : 'out', matOpts = Object.keys(WALL_MATS).map(k => [k, WALL_MATS[k].label || k]);
       const getRL = () => editEdge === 'all' ? a[prop] : (a.reveals && a.reveals[editEdge] ? a.reveals[editEdge][sideKey] : null);
       const setRL = v => { if (editEdge === 'all') a[prop] = v; else { a.reveals = a.reveals || {}; a.reveals[editEdge] = a.reveals[editEdge] || {}; a.reveals[editEdge][sideKey] = v; } };
-      const RL = getRL();
       const prefill = () => { const ls = (wall && wall.layers && wall.layers.length) ? wall.layers : null, pick = ls ? (sideKey === 'out' ? ls[ls.length - 1] : ls[0]) : { mat: 'putz', t: cmToPts(1.5) }; return [{ mat: pick.mat, t: Math.round(ptsToCm(pick.t || cmToPts(1.5)) * 10) / 10 }]; };
+      let RL = getRL();
+      if (editEdge !== 'all' && (!Array.isArray(RL) || !RL.length)) { const base = Array.isArray(a[prop]) && a[prop].length ? a[prop].map(L => Object.assign({}, L)) : prefill(); setRL(base); RL = getRL(); }   // Kante sofort editierbar: aus Standard vorbefüllen
       if (!Array.isArray(RL) || !RL.length) {
         const b = document.createElement('button'); b.className = 'btn'; b.textContent = '⊞ ' + label + (editEdge === 'all' ? '' : ' (' + EDGES.find(e => e[0] === editEdge)[1] + ')'); b.style.cssText = 'width:100%;margin:5px 0 2px'; b.title = 'Eigene Laibungsschichten – Start = Wandschichten, danach frei';
         b.onclick = () => { setRL(prefill()); redrawAll(); buildCtrls(); drawAnnos(pv); saveState(); }; side.appendChild(b); return;

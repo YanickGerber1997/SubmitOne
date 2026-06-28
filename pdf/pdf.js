@@ -1107,7 +1107,7 @@ function layerHatch(svg, a, band) {   // Schraffur einer einzelnen Schicht, auf 
 function drawLayeredWall(svg, a, arr) {
   const { bands } = wallLayerBands(a, arr);   // jede Schicht: Füllung + dünne Umrandung in der Materialfarbe (kein schwarzer Gesamtrahmen)
   const ops = (arr || []).filter(o => o.type === 'opening' && o.wallId === a.id && o.x != null);   // Öffnungen boolesch aus den Schichten ausschneiden
-  const cuts = (window.polygonClipping && ops.length) ? ops.map(o => [openingFootprint(o).map(p => [p[0], p[1]])]) : null;
+  const cuts = (window.polygonClipping && ops.length) ? ops.map(o => [openingCutPoly(o).map(p => [p[0], p[1]])]) : null;
   const clip = poly => { if (!cuts) return [poly]; try { const r = polygonClipping.difference([poly.map(p => [p[0], p[1]])], ...cuts); return r.length ? r.map(rg => rg[0]) : []; } catch (_) { return [poly]; } };
   bands.forEach((b, i) => {
     const m = WALL_MATS[b.mat] || {}, lay = a.layers[i] || {};
@@ -2721,9 +2721,18 @@ function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte F
 let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5, lastWinType = 'f1', lastDoorType = 'f1', lastWinHinge = 'left', lastWinMat = 'holz';
 let inputLicht = true;   // eingegebene/angezeigte Öffnungsbreite = Lichtmaß (Rohbau = Licht + 2×(Rahmen − sichtbarer Rahmen)); sonst Rohbaumaß
 function openInsPts(o) { return Math.max(0, ((o && o.frameW) || cmToPts(10)) - cmToPts((o && o.boardVis != null) ? o.boardVis : 1)); }   // Licht-Einzug pro Seite
-function openingFootprint(o) {   // Öffnungs-Grundriss (Breite × volle Wanddicke) in Weltkoordinaten – zum boolschen Ausschneiden aus den Wandschichten
+function openingFootprint(o) {   // Öffnungs-Grundriss (Breite × volle Wanddicke) – einfacher Vollausschnitt
   const hw = (o.w || 0) / 2, ht = ((o.thick || wallThickPts()) / 2) + 1, ux = Math.cos(o.ang || 0), uy = Math.sin(o.ang || 0), nx = -uy, ny = ux, x = o.x, y = o.y;
   return [[x - ux * hw - nx * ht, y - uy * hw - ny * ht], [x + ux * hw - nx * ht, y + uy * hw - ny * ht], [x + ux * hw + nx * ht, y + uy * hw + ny * ht], [x - ux * hw + nx * ht, y - uy * hw + ny * ht]];
+}
+function openingRevealTotalPts(o, side) { const lst = side === 'i' ? o.revealLining : o.revealLiningOut; return Array.isArray(lst) && lst.length ? lst.reduce((s, L) => s + cmToPts(L.t || 0) + cmToPts(L.gap || 0), 0) : 0; }   // Gesamtdicke der Laibung je Seite (pt)
+function openingCutPoly(o) {   // Laibungs-bewusster Ausschnitt: die Wand LAPPT an den Laibungstiefen auf den Rahmen (H-Form) – nur die Laibungsdicke + 1cm bleibt frei, der Rest der Lappung ist Wandschicht
+  const hw = (o.w || 0) / 2, ht = (o.thick || wallThickPts()) / 2, ux = Math.cos(o.ang || 0), uy = Math.sin(o.ang || 0), nx = -uy, ny = ux, x = o.x, y = o.y, e = 1;
+  const frameW = o.frameW || cmToPts(10), boardVis = cmToPts(o.boardVis != null ? o.boardVis : 1), lapPt = Math.max(0, Math.min(hw * 0.92, frameW - boardVis));
+  const wIn = Math.max(2, hw - Math.max(0, lapPt - openingRevealTotalPts(o, 'i'))), wOut = Math.max(2, hw - Math.max(0, lapPt - openingRevealTotalPts(o, 'o')));   // freie Breite je Tiefenband = Öffnung − Wand-Lappung
+  const depth = o.depth == null ? 0.5 : o.depth, md = depth * 2 - 1, fdh = Math.min(0.49, (o.frameD || cmToPts(7)) / (2 * ht)), fmA = (md - fdh) * ht, fmB = (md + fdh) * ht;
+  const P = (s, m) => [x + ux * s + nx * m, y + uy * s + ny * m];
+  return [P(-wIn, -ht - e), P(wIn, -ht - e), P(wIn, fmA), P(hw + e, fmA), P(hw + e, fmB), P(wOut, fmB), P(wOut, ht + e), P(-wOut, ht + e), P(-wOut, fmB), P(-hw - e, fmB), P(-hw - e, fmA), P(-wIn, fmA)];
 }
 function revInsetPts(lst) { if (!Array.isArray(lst) || !lst.length) return 0; let acc = 0, mx = 0; for (const L of lst) { acc += cmToPts(L.t || 0); mx = Math.max(mx, acc + (L.sOff ? cmToPts(L.sOff) : 0)); } return mx; }   // seitliche Einragung einer Laibungs-Schichtliste (Dicke + Versatz, tiefste Kante)
 function openLichtInset(o) {   // seitlicher Licht-Einzug pro Seite (pt): STANDARD = am Rahmen (frameW − 1cm sichtbar), und reagiert wenn die Laibung tiefer einragt
@@ -2844,21 +2853,18 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   // NEUES Modell: die Laibung lappt seitlich AUF den Rahmen (Standard: frameW − 1cm sichtbar). Schichten stapeln in die Tiefe (m), die Deckschicht lappt voll, dahinterliegende Schichten treten um deren Dicke zurück (z. B. Putz voll, Dämmung dahinter).
   const boardVisCm = a.boardVis != null ? a.boardVis : 1;   // wie viel cm vom Rahmen sichtbar bleiben (Standard 1 cm)
   const lapPt = Math.max(cmToPts(0.3), Math.min(hw * 0.92, (a.frameW || cmToPts(10)) - cmToPts(boardVisCm)));   // seitliche Lappung auf den Rahmen
-  const drawReveal = (layers, sideOut, sgn, slopeCm) => {   // EINE Laibungsseite: Schichten QUER (in die Tiefe), parallel zur Wand gestapelt; höchste Priorität deckt bis zur Lappung; slopeCm = schräge Laibung (Versatz am Wandflächen-Ende)
+  const drawReveal = (layers, sideOut, sgn, slopeCm) => {   // EINE Laibungsseite: nur die DÜNNE Laibung (echte Dicke) am Rahmen (1cm sichtbar); die Wandschichten lappen davor (gibt openingCutPoly frei). Höchste Priorität direkt am Rahmen, nach aussen gestapelt
     if (!layers || !layers.length) return;
     if (a.noSillReveal && sgn < 0) return;   // Schwelle bei Fensterbank überspringen (nur im Schnitt-sa relevant)
-    const mA = sideOut ? (fmB + oneCm) : (fmA - oneCm), mB = sideOut ? 1 : -1, m0 = Math.min(mA, mB), m1 = Math.max(mA, mB), offP = cmToPts(slopeCm || 0);   // mA = Rahmenseite, mB = Wandfläche; offP = Schräg-Versatz am Wandflächen-Ende
+    const mA = sideOut ? (fmB + oneCm) : (fmA - oneCm), mB = sideOut ? 1 : -1, m0 = Math.min(mA, mB), m1 = Math.max(mA, mB), offP = cmToPts(slopeCm || 0);   // Tiefe: Rahmenseite … Wandfläche; offP = Schräg-Versatz am Wandflächen-Ende
     if (m1 - m0 < 0.02) return;
-    const ord = layers.slice().sort((x, y) => (x[3] != null ? x[3] : 2) - (y[3] != null ? y[3] : 2));   // PRIORITÄT: niedrige am Rahmen-fern (Jamb), höchste reicht bis zur Öffnung/Lappung; niedrigere endet an der höheren
-    let sAcc = 0;
-    ord.forEach((L, i) => {
+    const ord = layers.slice().sort((x, y) => (y[3] != null ? y[3] : 2) - (x[3] != null ? x[3] : 2));   // PRIORITÄT: höchste direkt am Rahmen (sichtbare Deckschicht), niedrigere nach aussen Richtung Wand
+    let sIn = lapPt;   // s-Einragung am Rahmen-Ende (= 1cm vom Rahmen); Schichten wachsen von hier nach aussen (Richtung Wand)
+    ord.forEach(L => {
       const mat = L[0], tcm = L[1], gap = L[2] || 0, mt = LINING_MAT[mat] || WALL_MATS[mat] || {};
-      sAcc += cmToPts(gap);   // Luft-Abstand (parallel zur Wand) vor dieser Schicht
-      let sEnd = sAcc + cmToPts(tcm); if (i === ord.length - 1) sEnd = Math.max(sEnd, lapPt);   // höchste Priorität (zuletzt) deckt bis zur Lappung
-      sEnd = Math.min(sEnd, hw * 0.96);
-      const saF = sgn * (1 - sAcc / hw), sbF = sgn * (1 - sEnd / hw), saO = sgn * (1 - (sAcc - offP) / hw), sbO = sgn * (1 - (sEnd - offP) / hw), sk = mt.stroke || mt.color || '#1c242c';   // F = Rahmen-Ende, O = Wandflächen-Ende (geschert)
-      if (sEnd - sAcc > 0.05) { const ss = [saF, sbF, saO, sbO]; strips.push({ poly: [corner(saF, mA), corner(sbF, mA), corner(sbO, mB), corner(saO, mB)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(...ss), Math.max(...ss), m0, m1, corner, hw, ht, stepS) : null }); }
-      sAcc = sEnd;
+      const sOut = sIn - cmToPts(tcm), sk = mt.stroke || mt.color || '#1c242c';   // diese Schicht: s-Einragung von sOut (wandseitig) bis sIn (rahmenseitig)
+      if (sIn - sOut > 0.05) { const aI = sgn * (1 - sIn / hw), aO = sgn * (1 - sOut / hw), bI = sgn * (1 - (sIn - offP) / hw), bO = sgn * (1 - (sOut - offP) / hw), ss = [aI, aO, bI, bO]; strips.push({ poly: [corner(aI, mA), corner(aO, mA), corner(bO, mB), corner(bI, mB)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(...ss), Math.max(...ss), m0, m1, corner, hw, ht, stepS) : null }); }
+      sIn = sOut - cmToPts(gap);   // nächste Schicht weiter aussen (mit Luft-Abstand)
     });
   };
   const innerLayers = userLin ? a.revealLining.map(L => [L.mat, L.t, L.gap || 0, L.prio]) : (rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]));
@@ -2903,7 +2909,8 @@ function openingDetail(a, arr) { const wall = a.wallId && arr && arr.find(o => o
 function drawOpening(svg, a, arr) {
   const detail = openingDetail(a, arr), P = openingParts(a, detail), col = a.color || '#1c242c';
   const g = svgEl('g', { 'data-id': a.id });
-  g.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: '#fff', stroke: 'none' }));   // Wand ausstanzen
+  const coverPoly = (window.polygonClipping && a.x != null && a.wallId) ? openingCutPoly(a) : P.cover;   // nur den freien Teil ausstanzen (Wand-Lappung bleibt sichtbar)
+  g.appendChild(svgEl('polygon', { points: coverPoly.map(p => p[0] + ',' + p[1]).join(' '), fill: '#fff', stroke: 'none' }));   // Wand ausstanzen (Laibungs-aware)
   if (detail) for (const st of openingRevealStrips(a, arr)) { g.appendChild(svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.seam == null ? st.stroke : 'none', 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); if (st.hatch) for (const [u, v] of st.hatch) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' })); }   // Rahmen ausser an der Naht zur Wand
   for (const f of (P.fills || [])) g.appendChild(svgEl('polygon', { points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: f.fill, stroke: f.stroke, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));   // Rahmen/Flügel/Glas (Fenstermaterial)
   for (const [u, v] of P.lines) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));

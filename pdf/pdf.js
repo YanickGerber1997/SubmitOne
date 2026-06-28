@@ -1040,8 +1040,10 @@ const SLAB_PRESETS = [   // Decken-/Bodenaufbau OBEN → UNTEN [Material, cm]
 ];
 function applySlabBuildup(a, layersData) {   // layersData = [[mat, cm, einzugCm?], …] OBEN→UNTEN; t in Metern (Decke rechnet vertikal in m)
   if (!layersData || !layersData.length) { delete a.layers; return; }
+  const topBefore = (a.base != null ? a.base : 0) + (a.thick || 0.2);   // Oberkante festhalten (liegt auf Geschosshöhe)
   a.layers = layersData.map(([mat, cm, inset]) => { const l = { mat, t: cm / 100 }; if (inset) l.inset = (+inset) / 100; return l; });   // inset = Einzug je Schicht beidseitig (cm→m) – z.B. Estrich stoppt vor der Wand
   a.thick = a.layers.reduce((s, l) => s + l.t, 0);
+  if (a.base != null) a.base = Math.round((topBefore - a.thick) * 1000) / 1000;   // Decken-OBERKANTE bleibt auf Geschosshöhe (Unterkante wandert mit der Dicke)
 }
 function slabLayerBands(a) {   // → [{mat,t,y0,y1,inset}] Höhen über der Decken-Unterkante (0..thick); Schichten OBEN→UNTEN
   const layers = a && a.layers; if (!layers || !layers.length) return null;
@@ -2042,7 +2044,7 @@ function areaClick(pv, p) {
   if (!areaDraft || areaDraft.pv !== pv) {
     cancelArea(); pushUndo();
     const isSlab = tool === 'slab', isTerr = tool === 'terrain';
-    const a = isSlab ? { id: nextId++, type: 'slab', pts: [[p.x, p.y]], color: '#5b6b86', base: wallHeightM, thick: 0.2 } : isTerr ? { id: nextId++, type: 'terrain', pts: [[p.x, p.y]], color: '#7a6a4a' } : { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: style.color, width: style.width };
+    const a = isSlab ? { id: nextId++, type: 'slab', pts: [[p.x, p.y]], color: '#5b6b86', base: Math.max(0, wallHeightM - 0.2), thick: 0.2 } :   // Decken-OBERKANTE auf Geschosshöhe (Unterkante = Geschosshöhe − Dicke) isTerr ? { id: nextId++, type: 'terrain', pts: [[p.x, p.y]], color: '#7a6a4a' } : { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: style.color, width: style.width };
     pushAnno(pv.num, a); areaDraft = { pv, a };
     const onMove = ev => { if (!areaDraft) return; const q = evtToPage(areaDraft.pv, ev); areaDraft.a._cursor = [q.x, q.y]; drawAnnos(areaDraft.pv); };
     document.addEventListener('pointermove', onMove); areaDraft._onMove = onMove;
@@ -3076,7 +3078,7 @@ function segInt(a, b, c, d) {   // Schnitt zweier Strecken → {pt,t1,t2} oder n
   const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
   if (t < 0 || t > 1 || u < 0 || u > 1) return null; return { pt: [a[0] + t * r[0], a[1] + t * r[1]], t1: t, t2: u };
 }
-function sectionMaxH(a, arr) { let m = wallHeightM; for (const w of arr || []) { if (!layerVisible(w) || !phaseVisible(w)) continue; if (w.type === 'wall') m = Math.max(m, w.h3d || wallHeightM); else if (w.type === 'slab') m = Math.max(m, (w.base || 0) + (w.thick || 0.2)); else if (w.type === 'profile' && w.prof && w.prof.length) { let v = 0; for (const q of w.prof) v = Math.max(v, q[1]); m = Math.max(m, (w.elev || 0) + v / 100); } } return m; }   // gemeinsames Höhen-Datum: höchste Wand/Decke/Profil → alle Schnitte gleich hoch (perfekt nebeneinanderlegbar)
+function sectionMaxH(a, arr) { let m = wallHeightM; for (const w of arr || []) { if (!layerVisible(w) || !phaseVisible(w)) continue; if (w.type === 'wall') m = Math.max(m, (w.base || 0) + (w.h3d || wallHeightM)); else if (w.type === 'slab') m = Math.max(m, (w.base || 0) + (w.thick || 0.2)); else if (w.type === 'profile' && w.prof && w.prof.length) { let v = 0; for (const q of w.prof) v = Math.max(v, q[1]); m = Math.max(m, (w.elev || 0) + v / 100); } } return m; }   // gemeinsames Höhen-Datum: höchste Wand/Decke/Profil → alle Schnitte gleich hoch (perfekt nebeneinanderlegbar)
 function clipSeg(ax, ay, bx, by, x0, y0, x1, y1) {   // Strecke gegen achsenparalleles Rechteck (Liang-Barsky)
   let t0 = 0, t1 = 1; const dx = bx - ax, dy = by - ay;
   const cl = (p, q) => { if (Math.abs(p) < 1e-9) return q >= 0; const r = q / p; if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; } return true; };
@@ -3216,7 +3218,7 @@ function sectionPrimitives(a, arr) {
     if (along < 0.3) continue;   // sehr steil gekreuzte Wände → nur Poché (Fassade vernachlässigbar schmal)
     const wOff = ((w.x1 + w.x2) / 2 - p1[0]) * nx + ((w.y1 + w.y2) / 2 - p1[1]) * ny;   // senkrechter Abstand der Wandmitte zur Schnittebene
     if (wOff * vdir < -cmToPts(3)) continue;   // Wand liegt HINTER der Blickrichtung (Schnitt schaut weg) → nicht sichtbar
-    const Hw = w.h3d || wallHeightM;
+    const Hw = w.h3d || wallHeightM, base = w.base || 0, Yb = z => Yh(base + z);   // base = Wand-Basishöhe (OG-Wand steht auf der Decke)
     const d1 = fp((w.x1 - p1[0]) * cux + (w.y1 - p1[1]) * cuy), d2 = fp((w.x2 - p1[0]) * cux + (w.y2 - p1[1]) * cuy);
     const da = Math.max(0, Math.min(d1, d2)), db = Math.min(cl, Math.max(d1, d2));
     if (db - da > 1) {   // Wand in Ansicht SCHICHTWEISE (tiefensortiert): jede Schicht mit top/bot/Sockelzone → Sichtkanten beim Schicht-Unterbruch (Verputz runtergezogen etc.)
@@ -3224,22 +3226,22 @@ function sectionPrimitives(a, arr) {
       const fRect = (mat, yT, yB) => { const m = WALL_MATS[mat] || {}; if (yB - yT <= 0.3) return; out.push({ t: 'rect', x: xa, y: yT, w: xw, h: yB - yT, fill: m.fill || '#f0efea', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, xa, yT, xw, yB - yT, mat, null); };
       if (wl2) { const idxs = fSide === 'i' ? [...wl2.keys()].reverse() : [...wl2.keys()];   // betrachtete Seite zuletzt (vorne/oben)
         for (const i of idxs) { const L = wl2[i]; if (L.mat === 'luft') continue; const top = Hw + (L.top || 0), bot = 0 - (L.bot || 0);
-          if (L.lowMat && L.lowH > 0) { fRect(L.lowMat, Yh(L.lowH), Yh(bot)); fRect(L.mat, Yh(top), Yh(L.lowH)); } else fRect(L.mat, Yh(top), Yh(bot)); }
-      } else { const m = { fill: (w.fill && w.fill !== 'none') ? w.fill : '#f0efea', color: w.color || col }; out.push({ t: 'rect', x: xa, y: Yh(Hw), w: xw, h: Yh(0) - Yh(Hw), fill: m.fill, stroke: m.color, sw: 0.6 }); }
+          if (L.lowMat && L.lowH > 0) { fRect(L.lowMat, Yb(L.lowH), Yb(bot)); fRect(L.mat, Yb(top), Yb(L.lowH)); } else fRect(L.mat, Yb(top), Yb(bot)); }
+      } else { const m = { fill: (w.fill && w.fill !== 'none') ? w.fill : '#f0efea', color: w.color || col }; out.push({ t: 'rect', x: xa, y: Yb(Hw), w: xw, h: Yb(0) - Yb(Hw), fill: m.fill, stroke: m.color, sw: 0.6 }); }
     }
     for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id || cutOps.has(o.id)) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = fp((ocx - p1[0]) * cux + (ocy - p1[1]) * cuy); if (od < -10 || od > cl + 10) continue;
       const eSide = (wOff * vdir >= 0 ? 'a' : 'i'), ring = openingRevealRing(o, eSide, w), headF = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), sillF = (o.kind === 'window' ? (o.sill || 0) : 0);   // Ansicht: nur die SICHTBARE Deckschicht (deckt die Lappung, verdeckt dahinterliegende Schichten)
-      if (ring.mat) { const mt = LINING_MAT[ring.mat] || WALL_MATS[ring.mat] || {}, xa = X(od - (o.w / 2) * along), xb = X(od + (o.w / 2) * along); out.push({ t: 'rect', x: Math.min(xa, xb), y: Yh(headF), w: Math.abs(xb - xa), h: Yh(sillF) - Yh(headF), fill: mt.fill || '#eee', stroke: (mt.stroke || mt.color) || col, sw: 0.6 }); }
-      try { openingElevDraw(out, Object.assign({}, o, { w: Math.max(4, o.w - 2 * ring.w) }), s => X(od + s * along), Yh); } catch (_) { }   // Fenster um die Lappung eingezogen (1cm Rahmen sichtbar)
+      if (ring.mat) { const mt = LINING_MAT[ring.mat] || WALL_MATS[ring.mat] || {}, xa = X(od - (o.w / 2) * along), xb = X(od + (o.w / 2) * along); out.push({ t: 'rect', x: Math.min(xa, xb), y: Yb(headF), w: Math.abs(xb - xa), h: Yb(sillF) - Yb(headF), fill: mt.fill || '#eee', stroke: (mt.stroke || mt.color) || col, sw: 0.6 }); }
+      try { openingElevDraw(out, Object.assign({}, o, { w: Math.max(4, o.w - 2 * ring.w) }), s => X(od + s * along), Yb); } catch (_) { }   // Fenster um die Lappung eingezogen (1cm Rahmen sichtbar)
       if (!a.noDims && !elevOps.includes(o)) elevOps.push(o);   // Ansicht-Öffnung in die Höhen-Maskette aufnehmen (statt eigener schräger Höhenmasse)
     }
   }
   for (const h of hits) {
-    const w = h.w, H = w.h3d || wallHeightM, x0 = h.dist - h.appW / 2;
+    const w = h.w, H = w.h3d || wallHeightM, x0 = h.dist - h.appW / 2, base = w.base || 0, Yb = z => Yh(base + z);   // base = Wand-Basishöhe (OG-Wand auf der Decke)
     const layers0 = (w.layers && w.layers.length) ? w.layers : [{ mat: null, t: h.T }], layers = a.flip ? layers0.slice().reverse() : layers0, totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
     if (USE_SOLID && w.layers && w.layers.length) {   // KANONISCH (Standard): Wand-Poché aus elementSolids + slicePlane – inkl. Lattung + Schicht-Ziehgriffe (Parität zur Alt-Logik)
       const byLi = {};
-      for (const c of slicePlane(elementSolids(w, arr), { kind: 'v', p1, p2 })) { const xa = X(fp(c.d0)), xb = X(fp(c.d1)), x = Math.min(xa, xb), wd = Math.abs(xb - xa), yT = Yh(c.z1), yB = Yh(c.z0); if (wd < 0.2 || yB - yT < 0.1) continue;
+      for (const c of slicePlane(elementSolids(w, arr), { kind: 'v', p1, p2 })) { const xa = X(fp(c.d0)), xb = X(fp(c.d1)), x = Math.min(xa, xb), wd = Math.abs(xb - xa), yT = Yb(c.z1), yB = Yb(c.z0); if (wd < 0.2 || yB - yT < 0.1) continue;
         const lm = WALL_MATS[c.mat] || {}, m = c.mat ? lm : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col };
         if (lm.boards) { const lay = (w.layers || [])[c.li] || {}, bwp = cmToPts(lay.boardW || 4), gpp = cmToPts(lay.boardGap != null ? lay.boardGap : 2), step = Math.max(2, bwp + gpp); for (let yy = yT; yy < yB - 0.5; yy += step) { const y2 = Math.min(yB, yy + bwp); out.push({ t: 'rect', x, y: yy, w: wd, h: y2 - yy, fill: lm.fill || '#e7cfa8', stroke: lm.color || '#7a5126', sw: 0.6 }); } }   // Lattung gestapelt
         else { out.push({ t: 'rect', x, y: yT, w: wd, h: yB - yT, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, x, yT, wd, yB - yT, c.mat, (w.hatch && w.hatch.type)); }
@@ -3248,24 +3250,24 @@ function sectionPrimitives(a, arr) {
       for (const li in byLi) { const g = byLi[li]; out.push({ t: 'lhandle', x: g.x, y: g.t, wallId: w.id, li: +li, edge: 'top' }); out.push({ t: 'lhandle', x: g.x, y: g.b, wallId: w.id, li: +li, edge: 'bot' }); }   // Schicht-Ziehgriffe (Ober-/Unterkante)
     } else {
     let cx = x0;
-    for (let li = 0; li < layers.length; li++) { const L = layers[li], lw = (L.t / totalT) * h.appW, bx = X(cx), yTopF = Yh(H + (L.top || 0)), yBotF = Yh(0 - (L.bot || 0));   // L.top/L.bot = eigene Über-/Unterlänge; L.lowMat/L.lowH = Sockelzone
+    for (let li = 0; li < layers.length; li++) { const L = layers[li], lw = (L.t / totalT) * h.appW, bx = X(cx), yTopF = Yb(H + (L.top || 0)), yBotF = Yb(0 - (L.bot || 0));   // L.top/L.bot = eigene Über-/Unterlänge; L.lowMat/L.lowH = Sockelzone
       const drawSeg = (mat, yT, yB) => { if (yB - yT < 0.1) return; const m = mat ? (WALL_MATS[mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; out.push({ t: 'rect', x: bx, y: yT, w: lw, h: yB - yT, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, bx, yT, lw, yB - yT, mat, (w.hatch && w.hatch.type)); };
       const lm = WALL_MATS[L.mat] || {};
       if (lm.boards) { const lay = (w.layers || [])[a.flip ? (layers.length - 1 - li) : li] || {}, bwp = cmToPts(lay.boardW || 4), gpp = cmToPts(lay.boardGap != null ? lay.boardGap : 2), step = Math.max(2, bwp + gpp); for (let yy = yTopF; yy < yBotF - 0.5; yy += step) { const y2 = Math.min(yBotF, yy + bwp); out.push({ t: 'rect', x: bx, y: yy, w: lw, h: y2 - yy, fill: lm.fill || '#e7cfa8', stroke: lm.color || '#7a5126', sw: 0.6 }); } }   // Latten gestapelt (Lücken zeigen Windpapier dahinter)
-      else if (L.lowMat && L.lowH > 0) { const yS = Yh(L.lowH); drawSeg(L.lowMat, yS, yBotF); drawSeg(L.mat, yTopF, yS); } else drawSeg(L.mat, yTopF, yBotF);
+      else if (L.lowMat && L.lowH > 0) { const yS = Yb(L.lowH); drawSeg(L.lowMat, yS, yBotF); drawSeg(L.mat, yTopF, yS); } else drawSeg(L.mat, yTopF, yBotF);
       if (w.layers && w.layers.length) { const oi = a.flip ? (layers.length - 1 - li) : li; out.push({ t: 'lhandle', x: bx + lw / 2, y: yTopF, wallId: w.id, li: oi, edge: 'top' }); out.push({ t: 'lhandle', x: bx + lw / 2, y: yBotF, wallId: w.id, li: oi, edge: 'bot' }); }   // Schicht-Ziehgriffe (Ober-/Unterkante) → im Schnitt verlängern/kürzen
       cx += lw; }
     }
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
     for (const o of ops) {
       if (USE_SOLID) {   // STUFE 3d/3f: Öffnung im Schnitt = Laibung (bewährt, revealOnly) + Fenster/Bank aus kanonischem sliceOpeningV
-        sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip, a.noDims, a.mullion, true);   // Laibung/Schichteinzug + Ausstanzen
+        sectionCutOpening(out, X, Yb, h.dist, h.appW, o, H, perPt, w, a.flip, a.noDims, a.mullion, true);   // Laibung/Schichteinzug + Ausstanzen
         const cx = X(h.dist), sCut = (a.flip ? -1 : 1) * (h.tp - o.t) * h.wl;
-        for (const r of sliceOpeningV(Object.assign({}, o, { thick: h.appW }), sCut)) { const x0 = cx + r.m0 * (h.appW / 2), x1 = cx + r.m1 * (h.appW / 2), st = openingPartStyle(r.role, o, r.mat); out.push({ t: 'rect', x: Math.min(x0, x1), y: Yh(r.z1), w: Math.abs(x1 - x0), h: Yh(r.z0) - Yh(r.z1), fill: st.fill, stroke: st.stroke, sw: 1 }); }
-      } else sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip, a.noDims, a.mullion);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil (a.flip = Blickrichtung)
+        for (const r of sliceOpeningV(Object.assign({}, o, { thick: h.appW }), sCut)) { const x0 = cx + r.m0 * (h.appW / 2), x1 = cx + r.m1 * (h.appW / 2), st = openingPartStyle(r.role, o, r.mat); out.push({ t: 'rect', x: Math.min(x0, x1), y: Yb(r.z1), w: Math.abs(x1 - x0), h: Yb(r.z0) - Yb(r.z1), fill: st.fill, stroke: st.stroke, sw: 1 }); }
+      } else sectionCutOpening(out, X, Yb, h.dist, h.appW, o, H, perPt, w, a.flip, a.noDims, a.mullion);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil (a.flip = Blickrichtung)
     }
-    out.push({ t: 'line', x1: X(x0), y1: Yh(H), x2: X(x0 + h.appW), y2: Yh(H), stroke: col, w: 1.2 });
-    out.push({ t: 'shandle', x: X(h.dist), y: Yh(H), key: 'sh:wh:' + w.id });   // Wandhöhe im Schnitt ziehen
+    out.push({ t: 'line', x1: X(x0), y1: Yb(H), x2: X(x0 + h.appW), y2: Yb(H), stroke: col, w: 1.2 });
+    out.push({ t: 'shandle', x: X(h.dist), y: Yb(H), key: 'sh:wh:' + w.id });   // Wandhöhe im Schnitt ziehen
   }
   for (const pr of arr) {   // Profile: wo die Schnittlinie den Pfad kreuzt → echter Querschnitt an seiner Höhe
     if (pr.type !== 'profile' || !pr.path || pr.path.length < 2 || !pr.prof || pr.prof.length < 3 || !layerVisible(pr) || !phaseVisible(pr)) continue;
@@ -3299,7 +3301,7 @@ function sectionSig(a, arr) {   // billige Inhalts-Signatur: alles was den Schni
   let s = 'S' + a.cx1.toFixed(1) + ',' + a.cy1.toFixed(1) + ',' + a.cx2.toFixed(1) + ',' + a.cy2.toFixed(1) + ',' + a.ox + ',' + a.oy + ',' + (a.flip ? 1 : 0) + ',' + (a.mullion ? 1 : 0) + ',' + (a.noDims ? 1 : 0) + ',' + p + ',' + (USE_SOLID ? 1 : 0) + ',' + (simpleMode ? 1 : 0) + ',' + wallDimOffCm + ',' + (sel && sel.id === a.id ? 1 : 0) + '|';
   for (const o of arr) {
     if (!layerVisible(o) || !phaseVisible(o)) continue; const t = o.type;
-    if (t === 'wall') s += 'W' + o.id + ':' + o.x1.toFixed(1) + ',' + o.y1.toFixed(1) + ',' + o.x2.toFixed(1) + ',' + o.y2.toFixed(1) + ',' + (o.thick || 0).toFixed(1) + ',' + (o.h3d || 0) + ',' + (o.just || '') + ',' + (o.fill || '') + ',' + (o.layers ? o.layers.map(l => l.mat + (l.t || 0).toFixed(1) + '/' + (l.top || 0) + '/' + (l.bot || 0) + '/' + (l.ext1 || 0) + '/' + (l.ext2 || 0) + '/' + (l.lowMat || '') + (l.lowH || 0) + (l.sub ? l.sub.type : '')).join('') : '') + ';';
+    if (t === 'wall') s += 'W' + o.id + ':' + o.x1.toFixed(1) + ',' + o.y1.toFixed(1) + ',' + o.x2.toFixed(1) + ',' + o.y2.toFixed(1) + ',' + (o.thick || 0).toFixed(1) + ',' + (o.h3d || 0) + ',' + (o.base || 0) + ',' + (o.just || '') + ',' + (o.fill || '') + ',' + (o.layers ? o.layers.map(l => l.mat + (l.t || 0).toFixed(1) + '/' + (l.top || 0) + '/' + (l.bot || 0) + '/' + (l.ext1 || 0) + '/' + (l.ext2 || 0) + '/' + (l.lowMat || '') + (l.lowH || 0) + (l.sub ? l.sub.type : '')).join('') : '') + ';';
     else if (t === 'opening') s += 'O' + o.id + ':' + o.wallId + ',' + (o.t || 0).toFixed(4) + ',' + (o.w || 0).toFixed(1) + ',' + (o.sill || 0) + ',' + (o.head || 0) + ',' + (o.depth || 0) + ',' + (o.frameW || 0) + ',' + (o.frameD || 0) + ',' + o.kind + ',' + (o.winType || '') + ',' + (o.winHinge || '') + ',' + (o.winMat || '') + ',' + (o.bank !== false ? 1 : 0) + ',' + (o.sims ? 1 : 0) + ',' + (o.bankOver || 0) + ',' + (o.boardVis != null ? o.boardVis : 1) + ',' + (o.anschlagType || '') + ',' + (o.anschlagDepth || 0) + ',' + (o.niche ? 1 : 0) + ',' + _revSig(o) + ';';
     else if (t === 'slab') s += 'B' + o.id + ':' + (o.base || 0) + ',' + (o.thick || 0) + ',' + (o.pts ? o.pts.length : 0) + ',' + (o.layers ? o.layers.map(l => l.mat + (l.t || 0)).join('') : '') + ';';
     else if (t === 'profile') s += 'P' + o.id + ':' + (o.elev || 0) + ',' + (o.path ? o.path.length : 0) + ',' + (o.prof ? o.prof.length : 0) + ',' + (o.mat || '') + ';';
@@ -5535,8 +5537,35 @@ async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fe
   mkSection(drX, wy - 70, drX, wy + 70, 'B', 510, 970);     // Schnitt durch Tür
   mkSection(wx1, wy - 110, wx2, wy - 110, 'V', 980, 600, false);   // Ansicht vorne: Blickrichtungs-Linie auf der Aussenseite → sieht die Wand, unspiegelt
   mkSection(wx1, wy + 110, wx2, wy + 110, 'H', 980, 1040, true);   // Ansicht hinten: andere Seite, gespiegelt – gestapelt, weiter rechts (eigene Labels weg, Schnitt V-V/H-H reicht)
-  drawAnnos(pv); saveState();
-  toast('Beispielprojekt: Grundriss + Schnitte (Fenster/Tür) + Ansicht vorne/hinten · 1:20. Fenster wählen → „⊕ Detail".');
+  drawAnnos(pv);
+  try { await buildTestSheet(); } catch (e) { console.error(e); }   // Seite 2: Teststand 3 Aufbauten + EG/Decke/OG
+  saveState();
+  toast('Beispielprojekt: Seite 1 = Grundriss/Schnitte/Ansicht. Seite 2 = Teststand (3 Wandaufbauten, EG+Decke+OG) zum Testen der Wand-Decken-Verschneidung + Performance.');
+}
+async function buildTestSheet() {   // Seite 2: 3 Wandaufbauten, je EG-Wand + Decke (OK auf Geschosshöhe) + OG-Wand, Schnitt quer → Wand-Decken-Verschneidung
+  await insertBlankPage(1, { w: 1684, h: 1900 });   // grössere Seite (hohe Schnitte EG+OG)
+  const pv2 = pageViews.find(p => p.num === 2); if (!pv2) return; const a2 = getAnnos(2);
+  const gh = 2.0, slabL = [['belag', 1], ['estrich', 7], ['trittschall', 3], ['beton', 24]];   // Geschosshöhe 2.0 m; Decken-Schichtaufbau
+  const txt2 = (x, y, t, size, w) => a2.push({ id: nextId++, type: 'text', x, y, w: w || cmToPts(300), h: 30, text: t, size: size || 16, color: '#1c242c', align: 'left', bg: 'transparent', border: null, layer: activeLayerId });
+  txt2(80, 70, 'TESTSTAND — 3 Wandaufbauten · EG-Wand + Decke + OG-Wand · Wand-Decken-Verschneidung · 1:20', 20, cmToPts(1500));
+  const setups = [
+    { name: 'Standard: Mauerwerk + EPS', b: [['putz', 1.5], ['mauerwerk', 15], ['eps', 22], ['putz', 2.5]] },
+    { name: 'Holzbau: Ständer + Schalung', b: [['putz', 0.5], ['gips', 1.25], ['konter', 4], ['osb', 2], ['staender', 16], ['mdf', 6], ['luft', 4], ['schalung', 2.2]] },
+    { name: 'Zweischalenmauerwerk (verputzt)', b: [['putz', 1.5], ['mauerwerk', 17.5], ['glaswolle', 2], ['luft', 4], ['klinker', 12.5], ['putz', 1.5]] }
+  ];
+  const wlen = cmToPts(200), planY = 240, colW = 540;
+  setups.forEach((su, i) => {
+    const X0 = 90 + i * colW, secX = X0 + wlen / 2;
+    txt2(X0, planY - 40, (i + 1) + ') ' + su.name, 13, cmToPts(380));
+    const eg = { id: nextId++, type: 'wall', x1: X0, y1: planY, x2: X0 + wlen, y2: planY, thick: cmToPts(20), just: 'center', color: '#1c242c', fill: '#fff', hatch: null, width: 1.4, h3d: gh, base: 0, dim: true, layer: activeLayerId };
+    applyWallBuildup(eg, su.b); a2.push(eg);   // EG-Wand (Basis 0)
+    const og = { id: nextId++, type: 'wall', x1: X0, y1: planY, x2: X0 + wlen, y2: planY, thick: cmToPts(20), just: 'center', color: '#1c242c', fill: '#fff', hatch: null, width: 1.4, h3d: gh, base: gh, layer: activeLayerId };
+    applyWallBuildup(og, su.b); a2.push(og);   // OG-Wand (steht auf der Decke, Basis = Geschosshöhe)
+    const slab = { id: nextId++, type: 'slab', pts: [[X0 - cmToPts(20), planY], [X0 + wlen + cmToPts(20), planY], [X0 + wlen + cmToPts(20), planY + cmToPts(200)], [X0 - cmToPts(20), planY + cmToPts(200)]], color: '#5b6b86', base: gh - 0.35, thick: 0.35, layer: activeLayerId };
+    applySlabBuildup(slab, slabL); slab.base = Math.round((gh - slab.thick) * 1000) / 1000; a2.push(slab);   // Decke: Oberkante auf Geschosshöhe gh
+    a2.push({ id: nextId++, type: 'section', cx1: secX, cy1: planY - cmToPts(45), cx2: secX, cy2: planY + cmToPts(210), label: String.fromCharCode(65 + i), ox: X0 + 30, oy: 1760, layer: activeLayerId });   // Schnitt quer durch EG-Wand + Decke + OG-Wand
+  });
+  drawAnnos(pv2);
 }
 function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoomen, Ziehgriffe + Regler, live in den Plan
   const arr = getAnnos(pv.num), wall = a.wallId && arr.find(o => o.id === a.wallId && o.type === 'wall');

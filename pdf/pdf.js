@@ -891,7 +891,7 @@ function duplicateLayerUp() {   // aktives Geschoss 1:1 nach oben kopieren (neue
 }
 function findAnno(n, id) { return (annos[n] || []).find(a => a.id === id); }
 let _wallUnionActive = false;
-let _rafDraw = 0, _fastDraw = false; const _rafPvs = new Set(), _secCache = {};   // _fastDraw = Frame während Drag → teure Schnitte aus Cache (aktualisieren beim Loslassen)
+let _rafDraw = 0, _fastDraw = false; const _rafPvs = new Set(), _secCache = {}, _secCacheSig = {};   // _fastDraw = Frame während Drag → teure Schnitte aus Cache (aktualisieren beim Loslassen); _secCacheSig = Inhalts-Signatur (nur bei Änderung neu rechnen)
 function requestDraw(pv) {   // mehrere drawAnnos pro Frame (z. B. während Drag) zu EINEM Redraw bündeln → flüssiger
   _rafPvs.add(pv); if (_rafDraw) return;
   _rafDraw = requestAnimationFrame(() => { _rafDraw = 0; _fastDraw = true; const ps = [..._rafPvs]; _rafPvs.clear(); for (const p of ps) { try { drawAnnos(p); } catch (_) { } } _fastDraw = false; });
@@ -3166,8 +3166,25 @@ function sectionPrimitives(a, arr) {
   return out;
 }
 function sectionBBox(a, arr) { if (!docScale) return { x: a.ox - 6, y: a.oy - 16, w: 180, h: 30 }; const perPt = docScale.perPt, cl = Math.hypot(a.cx2 - a.cx1, a.cy2 - a.cy1) || 1, mh = sectionMaxH(a, arr) / perPt; return { x: a.ox - 16, y: a.oy - mh - 8, w: cl + 32, h: mh + 36 }; }
+const _revSig = o => { const f = l => Array.isArray(l) ? l.map(x => x.mat + (x.t || 0) + (x.gap || 0) + (x.prio || '')).join('') : ''; let r = f(o.revealLining) + '|' + f(o.revealLiningOut); if (o.reveals) for (const e of ['L', 'R', 'T', 'B']) { const ed = o.reveals[e]; if (ed) r += e + f(ed.in) + f(ed.out) + (ed.slope || 0); } return r; };
+function sectionSig(a, arr) {   // billige Inhalts-Signatur: alles was den Schnitt/die Ansicht beeinflusst → nur bei Änderung neu rechnen
+  const p = docScale ? docScale.perPt : 0;
+  let s = 'S' + a.cx1.toFixed(1) + ',' + a.cy1.toFixed(1) + ',' + a.cx2.toFixed(1) + ',' + a.cy2.toFixed(1) + ',' + a.ox + ',' + a.oy + ',' + (a.flip ? 1 : 0) + ',' + (a.mullion ? 1 : 0) + ',' + (a.noDims ? 1 : 0) + ',' + p + ',' + (USE_SOLID ? 1 : 0) + ',' + (simpleMode ? 1 : 0) + ',' + (winDimsOn ? 1 : 0) + ',' + (sel && sel.id === a.id ? 1 : 0) + '|';
+  for (const o of arr) {
+    if (!layerVisible(o) || !phaseVisible(o)) continue; const t = o.type;
+    if (t === 'wall') s += 'W' + o.id + ':' + o.x1.toFixed(1) + ',' + o.y1.toFixed(1) + ',' + o.x2.toFixed(1) + ',' + o.y2.toFixed(1) + ',' + (o.thick || 0).toFixed(1) + ',' + (o.h3d || 0) + ',' + (o.just || '') + ',' + (o.fill || '') + ',' + (o.layers ? o.layers.map(l => l.mat + (l.t || 0).toFixed(1) + '/' + (l.top || 0) + '/' + (l.bot || 0) + '/' + (l.ext1 || 0) + '/' + (l.ext2 || 0) + '/' + (l.lowMat || '') + (l.lowH || 0) + (l.sub ? l.sub.type : '')).join('') : '') + ';';
+    else if (t === 'opening') s += 'O' + o.id + ':' + o.wallId + ',' + (o.t || 0).toFixed(4) + ',' + (o.w || 0).toFixed(1) + ',' + (o.sill || 0) + ',' + (o.head || 0) + ',' + (o.depth || 0) + ',' + (o.frameW || 0) + ',' + (o.frameD || 0) + ',' + o.kind + ',' + (o.winType || '') + ',' + (o.winHinge || '') + ',' + (o.winMat || '') + ',' + (o.bank !== false ? 1 : 0) + ',' + (o.sims ? 1 : 0) + ',' + (o.bankOver || 0) + ',' + (o.boardVis != null ? o.boardVis : 1) + ',' + (o.anschlagType || '') + ',' + (o.anschlagDepth || 0) + ',' + (o.niche ? 1 : 0) + ',' + _revSig(o) + ';';
+    else if (t === 'slab') s += 'B' + o.id + ':' + (o.base || 0) + ',' + (o.thick || 0) + ',' + (o.pts ? o.pts.length : 0) + ',' + (o.layers ? o.layers.map(l => l.mat + (l.t || 0)).join('') : '') + ';';
+    else if (t === 'profile') s += 'P' + o.id + ':' + (o.elev || 0) + ',' + (o.path ? o.path.length : 0) + ',' + (o.prof ? o.prof.length : 0) + ',' + (o.mat || '') + ';';
+    else if (t === 'roof') s += 'R' + o.id + ':' + o.x + ',' + o.y + ',' + o.w + ',' + o.h + ',' + (o.rtype || '') + ',' + (o.axis || '') + ';';
+    else if (t === 'stairs') s += 'T' + o.id + ':' + o.x1 + ',' + o.y1 + ',' + o.x2 + ',' + o.y2 + ';';
+  }
+  return s;
+}
 function drawSection(svg, a, arr) {
-  if (_fastDraw && _secCache[a.id]) { const gc = _secCache[a.id].cloneNode(true); svg.appendChild(gc); const bb = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: bb.x, y: bb.y, width: bb.w, height: bb.h, fill: 'transparent', 'data-id': a.id })); return gc; }   // während Drag: Schnitt aus Cache (kein Neuschnitt aller Wände) → flüssig; aktualisiert beim Loslassen
+  const reuse = () => { const gc = _secCache[a.id].cloneNode(true); svg.appendChild(gc); const bb = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: bb.x, y: bb.y, width: bb.w, height: bb.h, fill: 'transparent', 'data-id': a.id })); if (sel && sel.id === a.id && _secCache[a.id]._hdl) for (const h of _secCache[a.id]._hdl) svg.appendChild(svgEl('circle', { class: 'handle ' + h.cls, cx: h.x, cy: h.y, r: h.r, 'data-h': h.key, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' })); return gc; };
+  if (_fastDraw && _secCache[a.id]) return reuse();   // während Drag: aus Cache → flüssig
+  const sig = sectionSig(a, arr); if (_secCacheSig[a.id] === sig && _secCache[a.id]) return reuse();   // unverändert → aus Cache (kein Neuschnitt bei Klicks/Eingaben anderswo)
   const g = svgEl('g', { 'data-id': a.id }), hdl = [];
   for (const p of sectionPrimitives(a, arr)) {
     if (p.t === 'rect') { const r = svgEl('rect', { x: Math.min(p.x, p.x + p.w), y: Math.min(p.y, p.y + p.h), width: Math.abs(p.w), height: Math.abs(p.h), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { r.setAttribute('stroke', p.stroke); r.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(r); }
@@ -3179,7 +3196,7 @@ function drawSection(svg, a, arr) {
     else if (p.t === 'shandle') hdl.push({ x: p.x, y: p.y, key: p.key, cls: 'dim-handle', r: 5 });
   }
   svg.appendChild(g);
-  _secCache[a.id] = g.cloneNode(true);   // Cache für flüssige Drags (wird bei jedem normalen Redraw aufgefrischt)
+  const clone = g.cloneNode(true); clone._hdl = hdl; _secCache[a.id] = clone; _secCacheSig[a.id] = sig;   // Cache + Signatur + Griffe (für flüssige Drags / unveränderte Redraws)
   const b = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: 'transparent', 'data-id': a.id }));
   if (sel && sel.id === a.id) for (const h of hdl) svg.appendChild(svgEl('circle', { class: 'handle ' + h.cls, cx: h.x, cy: h.y, r: h.r, 'data-h': h.key, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' }));   // Griffe ÜBER dem Hit-Rechteck → klickbar
   return g;

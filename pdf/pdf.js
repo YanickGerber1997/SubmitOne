@@ -5447,12 +5447,14 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       const a0 = (wall ? along(o2.x, o2.y) : Lw / 2) - o2.w / 2, opx0 = flip ? (Lw - a0 - o2.w) : a0;
       const lapClad = side === 'i' ? (o2.innerReveal != null ? o2.innerReveal : cmToPts(2)) : (o2.outerLap != null ? o2.outerLap : cmToPts(3));
       const sillF = (o2.kind === 'window' ? (o2.sill || 0) : 0), headF = Math.min(Hwall, o2.head || (o2.kind === 'window' ? 2.1 : 2.0));
-      const rings = [];   // Laibung in der Ansicht = GLEICHE Quelle wie Grundriss/Schnitt: revealLining bzw. revealType/revealOuter (Putz/Gips/Holz/Stahl/Alu)
+      const rings = [];   // Ansicht: nur das SICHTBARE Laibungs-Material als dünne Lappung über dem Rahmen (der volle Aufbau/Tiefe ist in Grundriss+Schnitt, nicht hier)
       const wlrs = (wall && wall.layers && wall.layers.length) ? wall.layers : null, lyr0 = wlrs ? wlrs[0] : null, lyrN = wlrs ? wlrs[wlrs.length - 1] : null;
       const customSide = side === 'i' ? o2.revealLining : o2.revealLiningOut;
-      if (Array.isArray(customSide) && customSide.length) { for (const Lr of customSide) rings.push({ mat: Lr.mat, w: cmToPts(Lr.t) }); }   // eigene Laibungsschichten je Seite (innen=revealLining, aussen=revealLiningOut)
-      else if (side === 'i') { const rt = o2.revealType || 'putz', lin = rt === 'aussen' ? [[lyrN ? lyrN.mat : 'putz', 3]] : (REVEAL_LINING[rt] || [[lyr0 ? lyr0.mat : 'putz', ptsToCm(lapClad)]]); for (const [mat, tcm] of lin) rings.push({ mat, w: cmToPts(tcm) }); }   // Innen-Laibung nach revealType
-      else { const ro = o2.revealOuter || ''; if (ro && REVEAL_LINING[ro]) { for (const [mat, tcm] of REVEAL_LINING[ro]) rings.push({ mat, w: cmToPts(tcm) }); } else rings.push({ mat: lyrN ? lyrN.mat : (facLy ? facLy.mat : 'putz'), w: lapClad }); }   // Aussen-Laibung: EIN System – Default '' = Deckschicht (äusserste Schicht) wickelt um die Ecke (kein Brett)
+      let faceMat;   // sichtbares Material der gewählten Laibung (erste/innerste Schicht), aber nur als dünne Lappung gezeichnet
+      if (Array.isArray(customSide) && customSide.length) faceMat = customSide[0].mat;
+      else if (side === 'i') { const rt = o2.revealType || 'putz'; faceMat = rt === 'aussen' ? (lyrN ? lyrN.mat : 'putz') : ((REVEAL_LINING[rt] && REVEAL_LINING[rt][0][0]) || (lyr0 ? lyr0.mat : 'putz')); }
+      else { const ro = o2.revealOuter || ''; faceMat = (ro && REVEAL_LINING[ro] && REVEAL_LINING[ro][0][0]) || (lyrN ? lyrN.mat : (facLy ? facLy.mat : 'putz')); }
+      rings.push({ mat: faceMat, w: lapClad });
       const anT = o2.anschlagType || 'none';   // Anschlag ersetzt auf seiner Seite die Laibung durch eine Mauerwerks-Schulter (auch in der Ansicht)
       if ((side === 'i' && anT === 'innen') || (side === 'a' && anT === 'aussen')) { const core = wlrs ? (wlrs.find(l => ['mauerwerk', 'beton'].includes(l.mat)) || wlrs[Math.floor((wlrs.length - 1) / 2)]) : null; rings.length = 0; rings.push({ mat: core ? core.mat : 'mauerwerk', w: o2.anschlagDepth != null ? o2.anschlagDepth : cmToPts(5) }); }
       let cum = 0;

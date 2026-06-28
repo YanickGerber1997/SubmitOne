@@ -3141,7 +3141,7 @@ function sectionPrimitives(a, arr) {
       if (USE_SOLID) {   // STUFE 3d/3f: Öffnung im Schnitt = Laibung (bewährt, revealOnly) + Fenster/Bank aus kanonischem sliceOpeningV
         sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip, a.noDims, a.mullion, true);   // Laibung/Schichteinzug + Ausstanzen
         const cx = X(h.dist), sCut = (a.flip ? -1 : 1) * (h.tp - o.t) * h.wl;
-        for (const r of sliceOpeningV(Object.assign({}, o, { thick: h.appW }), sCut)) { const x0 = cx + r.m0 * (h.appW / 2), x1 = cx + r.m1 * (h.appW / 2), st = openingPartStyle(r.role, o); out.push({ t: 'rect', x: Math.min(x0, x1), y: Yh(r.z1), w: Math.abs(x1 - x0), h: Yh(r.z0) - Yh(r.z1), fill: st.fill, stroke: st.stroke, sw: 1 }); }
+        for (const r of sliceOpeningV(Object.assign({}, o, { thick: h.appW }), sCut)) { const x0 = cx + r.m0 * (h.appW / 2), x1 = cx + r.m1 * (h.appW / 2), st = openingPartStyle(r.role, o, r.mat); out.push({ t: 'rect', x: Math.min(x0, x1), y: Yh(r.z1), w: Math.abs(x1 - x0), h: Yh(r.z0) - Yh(r.z1), fill: st.fill, stroke: st.stroke, sw: 1 }); }
       } else sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip, a.noDims, a.mullion);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil (a.flip = Blickrichtung)
     }
     out.push({ t: 'line', x1: X(x0), y1: Yh(H), x2: X(x0 + h.appW), y2: Yh(H), stroke: col, w: 1.2 });
@@ -4637,19 +4637,20 @@ function openingSolids(o) {   // Stufe 3: Fenster/Tür als Profil-Teile in der A
   const innerZ0 = sill + (door ? 0 : fwBm), innerZ1 = head - fwBm;
   const panes = two ? [[-hw + fwB, -fw / 2], [fw / 2, hw - fwB]] : [[-hw + fwB, hw - fwB]];
   for (const [a0, b0] of panes) { rect(a0, b0, innerZ0, innerZ1, 'sash', 'holz', smA, smB); rect(a0 + fw, b0 - fw, innerZ0 + sashVm, innerZ1 - sashVm, door ? 'leaf' : 'glass', door ? 'holz' : null, door ? smA : gA, door ? smB : gB); }   // Flügel + Glas/Türblatt mit Tiefe
-  if (!door && o.bank !== false) { const overD = cmToPts(o.bankOver != null ? o.bankOver : 4), bt = m(cmToPts(2.5)), sideO = cmToPts(4), mOut = 1 + overD / ht; rect(-hw - sideO, hw + sideO, sill - bt, sill, 'bank', 'bank', md, mOut); }   // Fensterbank aussen: projiziert um bankOver (cm) über die Fassade
-  if (!door && o.sims) { const overD = cmToPts(o.bankOver != null ? o.bankOver : 4), bt = m(cmToPts(2.5)), sideO = cmToPts(4), mIn = -1 - overD / ht; rect(-hw - sideO, hw + sideO, sill - bt, sill, 'bank', 'bank', mIn, md); }   // Fenstersims innen (gerade): projiziert um bankOver über die Innenfläche
+  const bankLayers = (Array.isArray(o.bankLayers) && o.bankLayers.length) ? o.bankLayers : [{ mat: o.bankMat || 'metall', t: (o.bankH != null ? o.bankH : 2.5) }];   // Fensterbank/Sims-Aufbau (Schichten, Oberkante an der Schwelle)
+  if (!door && o.bank !== false) { const overD = cmToPts(o.bankOver != null ? o.bankOver : 4), sideO = cmToPts(4), mOut = 1 + overD / ht; let z = sill; for (const L of bankLayers) { const h = m(cmToPts(L.t || 2.5)); rect(-hw - sideO, hw + sideO, z - h, z, 'bank', L.mat, md, mOut); z -= h; } }   // Fensterbank aussen: geschichtet, Oberkante an der Schwelle, projiziert um bankOver über die Fassade
+  if (!door && o.sims) { const overD = cmToPts(o.bankOver != null ? o.bankOver : 4), sideO = cmToPts(4), mIn = -1 - overD / ht; let z = sill; for (const L of bankLayers) { const h = m(cmToPts(L.t || 2.5)); rect(-hw - sideO, hw + sideO, z - h, z, 'bank', L.mat, mIn, md); z -= h; } }   // Fenstersims innen (geschichtet)
   if (door) rect(-hw + fwB, hw - fwB, sill, sill + m(cmToPts(2.5)), 'frame', 'holz', fmA, fmB);   // Türschwelle / Bodenschiene (untere Zarge)
   return parts;
 }
-function openingPartStyle(role, o) {   // Füllung/Strich je Bauteil-Rolle (eine Quelle für Ansicht + Schnitt)
+function openingPartStyle(role, o, mat) {   // Füllung/Strich je Bauteil-Rolle (eine Quelle für Ansicht + Schnitt); mat = optionales Schicht-Material (Fensterbank-Aufbau)
   if (role === 'glass') return { fill: '#c7e2f5', stroke: '#7fa9c6' };
-  if (role === 'bank') { const b = o.bankMat; return b === 'holz' ? { fill: '#e7cfa8', stroke: '#7a5126' } : b === 'beton' ? { fill: '#dadde2', stroke: '#8a8f96' } : { fill: '#cfd3d8', stroke: '#565b62' }; }
+  if (role === 'bank') { const b = mat || o.bankMat; if (b === 'holz') return { fill: '#e7cfa8', stroke: '#7a5126' }; if (b === 'beton') return { fill: '#dadde2', stroke: '#8a8f96' }; if (b === 'metall' || !b) return { fill: '#cfd3d8', stroke: '#565b62' }; const wm = WALL_MATS[b] || LINING_MAT[b]; return wm ? { fill: wm.fill || '#cfd3d8', stroke: wm.color || wm.stroke || '#565b62' } : { fill: '#cfd3d8', stroke: '#565b62' }; }
   const wm = WIN_MAT[o.winMat || 'holz']; return { fill: wm.fill || '#e7cfa8', stroke: wm.stroke || '#7a5126' };
 }
 function openingElevDraw(out, o, sx, zy) {   // KANONISCHE Ansicht: openingSolids-Profil + Öffnungsrichtung. sx(s)=Zeichen-x, zy(z)=Zeichen-y
   const parts = openingSolids(o), col = '#1c242c';
-  for (const part of parts) { const st = openingPartStyle(part.role, o); out.push({ t: 'poly', pts: part.prof.map(p => [sx(p[0]), zy(p[1])]), fill: st.fill, stroke: st.stroke, sw: 1 }); }
+  for (const part of parts) { const st = openingPartStyle(part.role, o, part.mat); out.push({ t: 'poly', pts: part.prof.map(p => [sx(p[0]), zy(p[1])]), fill: st.fill, stroke: st.stroke, sw: 1 }); }
   const leaves = parts.filter(p => p.role === 'glass' || p.role === 'leaf'), two = leaves.length > 1, hinge = o.winHinge || 'left', door = o.kind === 'door';   // Öffnungsrichtung (gestrichelt) + Türgriff
   leaves.forEach((g, pi) => {
     const ss = g.prof.map(p => p[0]), zz = g.prof.map(p => p[1]), s0 = Math.min(...ss), s1 = Math.max(...ss), z0 = Math.min(...zz), z1 = Math.max(...zz), mz = (z0 + z1) / 2, ms = (s0 + s1) / 2;
@@ -5695,7 +5696,19 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     if (win) {
       head('Fensterbank / Sims');
       const tw = document.createElement('label'); tw.className = 'lab-row'; tw.style.cssText = 'flex-direction:row;align-items:center;gap:7px'; const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = a.bank !== false; const sp = document.createElement('span'); sp.textContent = 'Fensterbank (aussen)'; cb.onchange = () => { a.bank = cb.checked; render(); buildCtrls(); drawAnnos(pv); saveState(); }; tw.appendChild(cb); tw.appendChild(sp); side.appendChild(tw);
-      if (a.bank !== false) { sel('Material', [['metall', 'Metall'], ['holz', 'Holz'], ['beton', 'Beton / Stein']], a.bankMat || 'metall', v => { a.bankMat = v; render(); drawAnnos(pv); saveState(); }); fld('bankOver'); }
+      { const ts = document.createElement('label'); ts.className = 'lab-row'; ts.style.cssText = 'flex-direction:row;align-items:center;gap:7px'; const cs = document.createElement('input'); cs.type = 'checkbox'; cs.checked = !!a.sims; const sps = document.createElement('span'); sps.textContent = 'Fenstersims (innen, gerade)'; cs.onchange = () => { a.sims = cs.checked; redrawAll(); buildCtrls(); drawAnnos(pv); saveState(); }; ts.appendChild(cs); ts.appendChild(sps); side.appendChild(ts); }
+      if (a.bank !== false || a.sims) {   // Fensterbank/Sims-AUFBAU (Schichten, oben = Oberkante an der Schwelle) – editierbar wie die Laibung
+        if (!Array.isArray(a.bankLayers) || !a.bankLayers.length) a.bankLayers = [{ mat: a.bankMat || 'metall', t: 2.5 }];
+        const RL = a.bankLayers, bmatOpts = [['metall', 'Metallblech'], ['holz', 'Holz'], ['beton', 'Beton/Stein']].concat(Object.keys(WALL_MATS).map(k => [k, WALL_MATS[k].label || k]));
+        const hint = document.createElement('div'); hint.className = 'lab-row'; hint.innerHTML = '<span style="color:#46503f"><b style="color:#34502b">Bank-Aufbau</b> · oberste = OK Schwelle</span>'; side.appendChild(hint);
+        RL.forEach((L, i) => { const row = document.createElement('div'); row.className = 'lab-line';
+          const ms = document.createElement('select'); ms.style.flex = '1'; bmatOpts.forEach(([k, lab]) => { const o = document.createElement('option'); o.value = k; o.textContent = lab; if (k === L.mat) o.selected = true; ms.appendChild(o); }); ms.onchange = () => { L.mat = ms.value; redrawAll(); drawAnnos(pv); saveState(); };
+          const tn = document.createElement('input'); tn.type = 'number'; tn.min = '0.2'; tn.max = '20'; tn.step = '0.1'; tn.value = L.t; tn.style.width = '48px'; tn.title = 'Dicke (cm)'; tn.onchange = () => { const v = parseFloat((tn.value || '').replace(',', '.')); if (v > 0) { L.t = v; redrawAll(); drawAnnos(pv); saveState(); } };
+          const del = document.createElement('button'); del.className = 'btn'; del.textContent = '✕'; del.style.cssText = 'padding:0 8px'; del.onclick = () => { RL.splice(i, 1); if (!RL.length) a.bankLayers = [{ mat: 'metall', t: 2.5 }]; redrawAll(); buildCtrls(); drawAnnos(pv); saveState(); };
+          row.appendChild(ms); row.appendChild(tn); row.appendChild(del); side.appendChild(row); });
+        const ab = document.createElement('button'); ab.className = 'btn'; ab.textContent = '+ Schicht'; ab.style.cssText = 'width:100%;margin:2px 0'; ab.onclick = () => { RL.push({ mat: 'beton', t: 2 }); redrawAll(); buildCtrls(); drawAnnos(pv); saveState(); }; side.appendChild(ab);
+        fld('bankOver');
+      }
       const tn = document.createElement('label'); tn.className = 'lab-row'; tn.style.cssText = 'flex-direction:row;align-items:center;gap:7px'; const cbn = document.createElement('input'); cbn.type = 'checkbox'; cbn.checked = !!a.niche; const spn = document.createElement('span'); spn.textContent = 'Storenkasten (innen, über Sturz)'; cbn.onchange = () => { a.niche = cbn.checked; render(); buildCtrls(); drawAnnos(pv); saveState(); }; tn.appendChild(cbn); tn.appendChild(spn); side.appendChild(tn);
       if (a.niche) { fld('nicheH'); fld('nicheD'); }
     }
@@ -5895,7 +5908,7 @@ function build3DScene(host, walls, arr, opts) {
               addBox2(gL, gR, iB - shM, gB, sashC, sdM, omat, true); addBox2(gL, gR, gT, iT + shM, sashC, sdM, omat, true);   // Flügelrahmen oben/unten
               addBox2(gL, gR, gB, gT, sashC, gtM, gmat, false); } }   // Scheibe im Flügel
           else addBox2(iL, iR, iB, iT, sashC, gtM, gmat, false); }   // Festverglasung
-        if (op.bank) { const ext = cmToPts(8); addBox2(a0 - ext, a1 + ext, sillY - 0.04, sillY + 0.01, th / 2 + 0.03, 0.12, bmat, true); }   // Fensterbank aussen
+        if (op.bank) { const ext = cmToPts(8), bl = (Array.isArray(op.obj.bankLayers) && op.obj.bankLayers.length) ? op.obj.bankLayers : [{ mat: op.obj.bankMat || 'metall', t: op.obj.bankH != null ? op.obj.bankH : 2.5 }]; let z = sillY; for (const L of bl) { const h = M(cmToPts(L.t || 2.5)), st = openingPartStyle('bank', op.obj, L.mat), bm = new THREE.MeshLambertMaterial({ color: new THREE.Color(st.fill) }); addBox2(a0 - ext, a1 + ext, z - h, z, th / 2 + 0.03, 0.12, bm, false); z -= h; } }   // Fensterbank aussen: geschichtet, Oberkante an der Schwelle (sillY)
         if (op.niche) { const nD = M(op.obj.nicheD || cmToPts(13)), nH = ptsToCm(op.obj.nicheH || cmToPts(28)) / 100, nC = -(th / 2 - nD / 2); addBox2(a0, a1, headY, Math.min(yb + HW, headY + nH), nC, nD, nmat, true); }   // Storennische 13×28 hinten (innen)
       } else if (op.kind === 'door') {   // Tür im 3D: Zarge (Material) + Türblatt / Festteil = Glas
         const fdM = M(op.fd), fwM = M(op.fw), dC = Math.max(-(th / 2 - fdM / 2), Math.min(th / 2 - fdM / 2, (op.depth - 0.5) * th)), headY = yb + Math.min(op.head, HW), leafD = M(cmToPts(4));

@@ -1022,7 +1022,9 @@ const WALL_MATS = {   // Schicht-Material: Füllung (hell), Schraffur-Typ (oder 
   osb: { label: 'OSB-Platte', fill: '#e3c489', hatch: null, color: '#9c7a3e' },
   mdf: { label: 'MDF-/Holzfaserplatte', fill: '#d7b483', hatch: null, color: '#8a6a3a' },
   staender: { label: 'Holzständer + Dämmung', fill: HATCH_DEF.daemm_wolle.fill, hatch: 'daemm_wolle', color: HATCH_DEF.daemm_wolle.color },
-  klinker: { label: 'Backstein / Vormauerung', fill: HATCH_DEF.backstein.fill, hatch: 'backstein', color: HATCH_DEF.backstein.color }
+  klinker: { label: 'Backstein / Vormauerung', fill: HATCH_DEF.backstein.fill, hatch: 'backstein', color: HATCH_DEF.backstein.color },
+  dreischicht: { label: 'Dreischichtplatte', fill: '#e8d3ad', hatch: null, color: '#9c7a3e' },
+  stahl: { label: 'Stahlträger', fill: '#c8ccd2', hatch: null, color: '#3a3f45' }
 };
 function bandBoards(band, boardWpt, gapPt) {   // Holzschalung als einzelne Latten (Breite + Abstand) entlang der Schicht → Lücken zeigen das Windpapier dahinter
   const p0 = band.poly[0], p1 = band.poly[1], p2 = band.poly[2], p3 = band.poly[3], lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
@@ -1045,7 +1047,9 @@ const SLAB_PRESETS = [   // Decken-/Bodenaufbau OBEN → UNTEN [Material, cm]
   { name: 'Bodenplatte auf Erdreich', layers: [['belag', 1], ['estrich', 8], ['xps', 12], ['beton', 25]] },
   { name: 'Flachdach (Warmdach)', layers: [['kies', 5], ['eps', 20], ['beton', 24]] },
   { name: 'Holzbalkendecke', layers: [['belag', 1], ['estrich', 6], ['trittschall', 3], ['holz', 24]] },
-  { name: 'Decke ohne Aufbau (Beton)', layers: [['beton', 24]] }
+  { name: 'Decke ohne Aufbau (Beton)', layers: [['beton', 24]] },
+  { name: 'Stahlbeton gedämmt (Standard)', layers: [['belag', 1.5], ['estrich', 6], ['trittschall', 2], ['eps', 2], ['beton', 25], ['putz', 1.5]] },   // 15mm Deckschicht/60 Unterlagsboden/20 Trittschall/20 Wärmedämmung/25cm Stahlbeton/15 Putz
+  { name: 'Holzbau Dreischicht (gedämmt)', layers: [['belag', 1.5], ['estrich', 6], ['trittschall', 2], ['eps', 2], ['dreischicht', 2.5], ['glaswolle', 20], ['dreischicht', 1.5], ['konter', 4], ['gips', 1.25], ['putz', 0.5]] }   // oben Boden+Dämmung, 25 Dreischicht, 20cm Glaswolle, unten 15 Dreischicht/40 Installationsrost/12.5 Gips/5 Deckputz
 ];
 function applySlabBuildup(a, layersData) {   // layersData = [[mat, cm, einzugCm?], …] OBEN→UNTEN; t in Metern (Decke rechnet vertikal in m)
   if (!layersData || !layersData.length) { delete a.layers; return; }
@@ -5592,13 +5596,15 @@ async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fe
 async function buildTestSheet() {   // Seite 2: 3 Wandaufbauten, je EG-Wand + Decke (OK auf Geschosshöhe) + OG-Wand, Schnitt quer → Wand-Decken-Verschneidung
   await insertBlankPage(1, { w: 1684, h: 1900 });   // grössere Seite (hohe Schnitte EG+OG)
   const pv2 = pageViews.find(p => p.num === 2); if (!pv2) return; const a2 = getAnnos(2);
-  const gh = 2.0, slabL = [['belag', 1], ['estrich', 7], ['trittschall', 3], ['beton', 24]];   // Geschosshöhe 2.0 m; Decken-Schichtaufbau
+  const gh = 2.0;   // Geschosshöhe 2.0 m
+  const slabBeton = [['belag', 1.5], ['estrich', 6], ['trittschall', 2], ['eps', 2], ['beton', 25], ['putz', 1.5]];   // Stahlbeton gedämmt
+  const slabHolz = [['belag', 1.5], ['estrich', 6], ['trittschall', 2], ['eps', 2], ['dreischicht', 2.5], ['glaswolle', 20], ['dreischicht', 1.5], ['konter', 4], ['gips', 1.25], ['putz', 0.5]];   // Holzbau Dreischicht
   const txt2 = (x, y, t, size, w) => a2.push({ id: nextId++, type: 'text', x, y, w: w || cmToPts(300), h: 30, text: t, size: size || 16, color: '#1c242c', align: 'left', bg: 'transparent', border: null, layer: activeLayerId });
   txt2(80, 70, 'TESTSTAND — 3 Wandaufbauten · EG-Wand + Decke + OG-Wand · Wand-Decken-Verschneidung · 1:20', 20, cmToPts(1500));
   const setups = [
-    { name: 'Standard: Mauerwerk + EPS', b: [['putz', 1.5], ['mauerwerk', 15], ['eps', 22], ['putz', 2.5]] },
-    { name: 'Holzbau: Ständer + Schalung', b: [['putz', 0.5], ['gips', 1.25], ['konter', 4], ['osb', 2], ['staender', 16], ['mdf', 6], ['luft', 4], ['schalung', 2.2]] },
-    { name: 'Zweischalenmauerwerk (verputzt)', b: [['putz', 1.5], ['mauerwerk', 17.5], ['glaswolle', 20], ['luft', 4], ['klinker', 12.5], ['putz', 1.5]] }
+    { name: 'Standard: Mauerwerk + EPS', b: [['putz', 1.5], ['mauerwerk', 15], ['eps', 22], ['putz', 2.5]], s: slabBeton },
+    { name: 'Holzbau: Ständer + Schalung', b: [['putz', 0.5], ['gips', 1.25], ['konter', 4], ['osb', 2], ['staender', 16], ['mdf', 6], ['luft', 4], ['schalung', 2.2]], s: slabHolz },
+    { name: 'Zweischalenmauerwerk (verputzt)', b: [['putz', 1.5], ['mauerwerk', 17.5], ['glaswolle', 20], ['luft', 4], ['klinker', 12.5], ['putz', 1.5]], s: slabBeton }
   ];
   const wlen = cmToPts(200), planY = 240, colW = 540;
   setups.forEach((su, i) => {
@@ -5609,7 +5615,7 @@ async function buildTestSheet() {   // Seite 2: 3 Wandaufbauten, je EG-Wand + De
     const og = { id: nextId++, type: 'wall', x1: X0 + wlen, y1: planY, x2: X0, y2: planY, thick: cmToPts(20), just: 'center', color: '#1c242c', fill: '#fff', hatch: null, width: 1.4, h3d: gh, base: gh, layer: activeLayerId };
     applyWallBuildup(og, su.b); a2.push(og);   // OG-Wand (steht auf der Decke, Basis = Geschosshöhe)
     const slab = { id: nextId++, type: 'slab', pts: [[X0 - cmToPts(20), planY], [X0 + wlen + cmToPts(20), planY], [X0 + wlen + cmToPts(20), planY + cmToPts(200)], [X0 - cmToPts(20), planY + cmToPts(200)]], color: '#5b6b86', base: gh - 0.35, thick: 0.35, layer: activeLayerId };
-    applySlabBuildup(slab, slabL); slab.base = Math.round((gh - slab.thick) * 1000) / 1000; a2.push(slab);   // Decke: Oberkante auf Geschosshöhe gh
+    applySlabBuildup(slab, su.s); slab.base = Math.round((gh - slab.thick) * 1000) / 1000; a2.push(slab);   // Decke: passender Schichtaufbau, Oberkante auf Geschosshöhe gh
     a2.push({ id: nextId++, type: 'section', cx1: secX, cy1: planY - cmToPts(45), cx2: secX, cy2: planY + cmToPts(210), label: String.fromCharCode(65 + i), ox: X0 + 30, oy: 1760, layer: activeLayerId });   // Schnitt quer durch EG-Wand + Decke + OG-Wand
   });
   drawAnnos(pv2);

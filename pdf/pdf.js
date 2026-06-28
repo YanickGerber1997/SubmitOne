@@ -2832,18 +2832,20 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   // NEUES Modell: die Laibung lappt seitlich AUF den Rahmen (Standard: frameW − 1cm sichtbar). Schichten stapeln in die Tiefe (m), die Deckschicht lappt voll, dahinterliegende Schichten treten um deren Dicke zurück (z. B. Putz voll, Dämmung dahinter).
   const boardVisCm = a.boardVis != null ? a.boardVis : 1;   // wie viel cm vom Rahmen sichtbar bleiben (Standard 1 cm)
   const lapPt = Math.max(cmToPts(0.3), Math.min(hw * 0.92, (a.frameW || cmToPts(10)) - cmToPts(boardVisCm)));   // seitliche Lappung auf den Rahmen
-  const drawReveal = (layers, sideOut) => {   // layers = [[mat, tcm], …] Deckschicht (an der Wandfläche) zuerst
+  const drawReveal = (layers, sideOut) => {   // layers = [[mat, tcm, gapCm?], …] Deckschicht (an der Wandfläche) zuerst; stapeln in die Tiefe, die letzte füllt bis zum Rahmen
     if (!layers || !layers.length) return;
-    const mFace = sideOut ? 1 : -1, mFrame = sideOut ? (fmB + oneCm) : (fmA - oneCm), dir = sideOut ? -1 : 1;
-    if (Math.abs(mFrame - mFace) < 0.02) return;
+    const mFace = sideOut ? 1 : -1, mFrame = sideOut ? (fmB + oneCm) : (fmA - oneCm), dir = sideOut ? -1 : 1, depthM = Math.abs(mFrame - mFace);
+    if (depthM < 0.02) return;
     let mO = mFace, sFront = 0;
-    for (const L of layers) {
-      const mat = L[0], tcm = L[1], mt = LINING_MAT[mat] || WALL_MATS[mat] || {}, md2 = cmToPts(tcm) / ht;
-      let mI = mO + dir * md2; mI = sideOut ? Math.max(mFrame, mI) : Math.min(mFrame, mI);
+    layers.forEach((L, i) => {
+      const mat = L[0], tcm = L[1], gap = L[2] || 0, mt = LINING_MAT[mat] || WALL_MATS[mat] || {};
+      if (gap) mO += dir * cmToPts(gap) / ht;   // Luft-Abstand vor dieser Schicht
+      let mI = (i === layers.length - 1) ? mFrame : (mO + dir * cmToPts(tcm) / ht);   // letzte Schicht füllt bis zum Rahmen → keine Lücke
+      mI = sideOut ? Math.max(mFrame, mI) : Math.min(mFrame, mI);
       const lapL = Math.max(cmToPts(0.4), lapPt - sFront), m0 = Math.min(mO, mI), m1 = Math.max(mO, mI), sk = mt.stroke || mt.color || '#1c242c';
       if (m1 - m0 > 0.005) for (const sgn of [-1, 1]) { if (a.noSillReveal && sgn < 0) continue; const sA = sgn * 1, sB = sgn * (1 - lapL / hw); strips.push({ poly: [corner(sA, m0), corner(sB, m0), corner(sB, m1), corner(sA, m1)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(sA, sB), Math.max(sA, sB), m0, m1, corner, hw, ht, stepS) : null }); }
       mO = mI; sFront += cmToPts(tcm);
-    }
+    });
   };
   const innerLayers = userLin ? userLin.map(L => [L[0], L[1]]) : (rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]));
   if (anType !== 'innen') drawReveal(innerLayers, false);

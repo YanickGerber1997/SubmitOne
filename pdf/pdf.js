@@ -1029,7 +1029,7 @@ const WALL_PRESETS = [   // Schichten innen → aussen [Material, cm]
   { name: 'Hinterlüftet · Holz vertikal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['konter', 3], ['holz', 2.2]] },
   { name: 'Hinterlüftet · Latten-Schalung + Windpapier', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['windpapier', 0.1], ['luft', 4], ['schalung', 2.4]] },
   { name: 'Holzbau (Ständer + Schalung)', layers: [['putz', 0.5], ['gips', 1.25], ['konter', 4], ['osb', 2], ['staender', 16], ['mdf', 6], ['luft', 4], ['schalung', 2.2]] },   // innen Deckputz/Gips/Installationsrost/OSB, Ständer 16, aussen MDF/Luft/Schalung
-  { name: 'Zweischalenmauerwerk (verputzt)', layers: [['putz', 1.5], ['mauerwerk', 17.5], ['glaswolle', 2], ['luft', 4], ['klinker', 12.5], ['putz', 1.5]] }   // Tragschale 17.5 + Glaswolle + Hinterlüftung + Vormauerung 12.5, beidseitig Putz
+  { name: 'Zweischalenmauerwerk (verputzt)', layers: [['putz', 1.5], ['mauerwerk', 17.5], ['glaswolle', 20], ['luft', 4], ['klinker', 12.5], ['putz', 1.5]] }   // Tragschale 17.5 + Glaswolle 20 + Hinterlüftung + Vormauerung 12.5, beidseitig Putz
 ];
 const SLAB_PRESETS = [   // Decken-/Bodenaufbau OBEN → UNTEN [Material, cm]
   { name: 'Geschossdecke (Unterlagsboden)', layers: [['belag', 1], ['estrich', 7], ['trittschall', 3], ['beton', 24]] },
@@ -5551,7 +5551,7 @@ async function buildTestSheet() {   // Seite 2: 3 Wandaufbauten, je EG-Wand + De
   const setups = [
     { name: 'Standard: Mauerwerk + EPS', b: [['putz', 1.5], ['mauerwerk', 15], ['eps', 22], ['putz', 2.5]] },
     { name: 'Holzbau: Ständer + Schalung', b: [['putz', 0.5], ['gips', 1.25], ['konter', 4], ['osb', 2], ['staender', 16], ['mdf', 6], ['luft', 4], ['schalung', 2.2]] },
-    { name: 'Zweischalenmauerwerk (verputzt)', b: [['putz', 1.5], ['mauerwerk', 17.5], ['glaswolle', 2], ['luft', 4], ['klinker', 12.5], ['putz', 1.5]] }
+    { name: 'Zweischalenmauerwerk (verputzt)', b: [['putz', 1.5], ['mauerwerk', 17.5], ['glaswolle', 20], ['luft', 4], ['klinker', 12.5], ['putz', 1.5]] }
   ];
   const wlen = cmToPts(200), planY = 240, colW = 540;
   setups.forEach((su, i) => {

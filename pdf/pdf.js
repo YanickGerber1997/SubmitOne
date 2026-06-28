@@ -3105,10 +3105,9 @@ function sectionPrimitives(a, arr) {
       } else { const m = { fill: (w.fill && w.fill !== 'none') ? w.fill : '#f0efea', color: w.color || col }; out.push({ t: 'rect', x: xa, y: Yh(Hw), w: xw, h: Yh(0) - Yh(Hw), fill: m.fill, stroke: m.color, sw: 0.6 }); }
     }
     for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id || cutOps.has(o.id)) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = fp((ocx - p1[0]) * cux + (ocy - p1[1]) * cuy); if (od < -10 || od > cl + 10) continue;
-      const eSide = (wOff * vdir >= 0 ? 'a' : 'i'), bands = openingRevealBands(o, eSide, w), headF = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), sillF = (o.kind === 'window' ? (o.sill || 0) : 0);   // VOLLER Laibungs-Stack (alle Schichten) je Seite
-      let cum = 0; for (const rg of bands) { const mt = LINING_MAT[rg.mat] || WALL_MATS[rg.mat] || {}, xa = X(od - (o.w / 2 - cum) * along), xb = X(od + (o.w / 2 - cum) * along); out.push({ t: 'rect', x: Math.min(xa, xb), y: Yh(headF), w: Math.abs(xb - xa), h: Yh(sillF) - Yh(headF), fill: mt.fill || '#eee', stroke: (mt.stroke || mt.color) || col, sw: 0.6 }); cum += rg.w; }   // Schichten genestet von der Öffnungskante zum Rahmen
-      const rTot = Math.min(cum, o.w * 0.45);
-      try { openingElevDraw(out, Object.assign({}, o, { w: Math.max(4, o.w - 2 * rTot) }), s => X(od + s * along), Yh); } catch (_) { }   // kanonische Ansicht (foreshortened), Fenster um den Laibungs-Stack eingezogen
+      const eSide = (wOff * vdir >= 0 ? 'a' : 'i'), ring = openingRevealRing(o, eSide, w), headF = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), sillF = (o.kind === 'window' ? (o.sill || 0) : 0);   // Ansicht: nur die SICHTBARE Deckschicht (deckt die Lappung, verdeckt dahinterliegende Schichten)
+      if (ring.mat) { const mt = LINING_MAT[ring.mat] || WALL_MATS[ring.mat] || {}, xa = X(od - (o.w / 2) * along), xb = X(od + (o.w / 2) * along); out.push({ t: 'rect', x: Math.min(xa, xb), y: Yh(headF), w: Math.abs(xb - xa), h: Yh(sillF) - Yh(headF), fill: mt.fill || '#eee', stroke: (mt.stroke || mt.color) || col, sw: 0.6 }); }
+      try { openingElevDraw(out, Object.assign({}, o, { w: Math.max(4, o.w - 2 * ring.w) }), s => X(od + s * along), Yh); } catch (_) { }   // Fenster um die Lappung eingezogen (1cm Rahmen sichtbar)
       if (winDimsOn && !a.noDims) {   // Ansicht: Breite + Höhe, Rohbau + Licht (rahmenbasiert)
         const insPts = Math.max(0, (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1)), insM = ptsToCm(insPts) / 100;
         const sill0 = o.kind === 'window' ? (o.sill || 0) : 0, head0 = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), rW = o.w * along, xL = X(od - rW / 2) - 12;   // im Schnitt nur HÖHEN (Breiten stehen im Grundriss)
@@ -4662,9 +4661,9 @@ function openingElevDraw(out, o, sx, zy) {   // KANONISCHE Ansicht: openingSolid
 }
 function openingRevealRing(o, side, wall) {   // sichtbare Laibungs-Lappung in der Ansicht je Seite (Material + Breite) – EINE Quelle für Detail + Plan/PDF
   const wlrs = wall && wall.layers && wall.layers.length ? wall.layers : null, lyr0 = wlrs ? wlrs[0] : null, lyrN = wlrs ? wlrs[wlrs.length - 1] : null;
-  const customSide = side === 'i' ? o.revealLining : o.revealLiningOut, lapClad = side === 'i' ? (o.innerReveal != null ? o.innerReveal : cmToPts(2)) : (o.outerLap != null ? o.outerLap : cmToPts(3));
-  let faceMat, ringW = lapClad;
-  if (Array.isArray(customSide) && customSide.length) { faceMat = customSide[0].mat; ringW = Math.min(o.w * 0.2, cmToPts(customSide[0].t || 2)); }
+  const customSide = side === 'i' ? o.revealLining : o.revealLiningOut;
+  let faceMat, ringW = Math.max(0, (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1));   // Breite = Lappung (frameW − 1cm sichtbar): die sichtbare Deckschicht deckt die volle Lappung und VERDECKT die dahinterliegenden Schichten
+  if (Array.isArray(customSide) && customSide.length) faceMat = customSide[0].mat;   // sichtbare Deckschicht (innen innerste / aussen äusserste)
   else if (side === 'i') { const rt = o.revealType || 'putz'; faceMat = rt === 'aussen' ? (lyrN ? lyrN.mat : 'putz') : ((REVEAL_LINING[rt] && REVEAL_LINING[rt][0][0]) || (lyr0 ? lyr0.mat : 'putz')); }
   else { const ro = o.revealOuter || ''; faceMat = (ro && REVEAL_LINING[ro] && REVEAL_LINING[ro][0][0]) || (lyrN ? lyrN.mat : 'putz'); }
   const anT = o.anschlagType || 'none';
@@ -5575,7 +5574,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       const a0 = (wall ? along(o2.x, o2.y) : Lw / 2) - o2.w / 2, opx0 = flip ? (Lw - a0 - o2.w) : a0;
       const lapClad = side === 'i' ? (o2.innerReveal != null ? o2.innerReveal : cmToPts(2)) : (o2.outerLap != null ? o2.outerLap : cmToPts(3));
       const sillF = (o2.kind === 'window' ? (o2.sill || 0) : 0), headF = Math.min(Hwall, o2.head || (o2.kind === 'window' ? 2.1 : 2.0));
-      const rings = openingRevealBands(o2, side, wall);   // VOLLER Laibungs-Stack in der Ansicht (alle Schichten je Seite, von der Öffnungskante zum Rahmen)
+      const ring = openingRevealRing(o2, side, wall), rings = ring.mat ? [{ mat: ring.mat, w: ring.w }] : [];   // Ansicht: nur die SICHTBARE Deckschicht (Breite = Lappung, verdeckt dahinterliegende Schichten)
       let cum = 0;
       for (const rg of rings) { const mt = LINING_MAT[rg.mat] || WALL_MATS[rg.mat] || { fill: '#eee', color: '#1c242c' }, x = opx0 + cum, w = o2.w - 2 * cum, yT = Yh(headF - cum * perPt), yB = Yh(sillF); if (w > 1 && yB - yT > 0.5) out.push({ t: 'rect', x, y: yT, w, h: yB - yT, fill: mt.fill || '#eee', stroke: (mt.stroke || mt.color) || '#1c242c', sw: 0.7 }); cum += rg.w; }   // Laibung wickelt Sturz + Seiten; unten = Fensterbank (kein Doppel-Sims)
       const rPts = Math.min(cum, o2.w * 0.45);

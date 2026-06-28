@@ -5187,8 +5187,8 @@ async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fe
   const arr = getAnnos(n);
   const txt = (x, y, t, size, w) => arr.push({ id: nextId++, type: 'text', x, y, w: w || cmToPts(200), h: 30, text: t, size: size || 16, color: '#1c242c', align: 'left', bg: 'transparent', border: null, layer: activeLayerId });
   const mkSection = (cx1, cy1, cx2, cy2, label, ox, oy, flip) => { const s = { id: nextId++, type: 'section', cx1, cy1, cx2, cy2, label, ox, oy, layer: activeLayerId }; if (flip) s.flip = true; arr.push(s); };
-  txt(130, 64, 'BEISPIELPROJEKT — Wand mit Fenster & Tür · Massstab 1:20', 22, cmToPts(900));
-  const wy = 230, wx1 = 150, wlen = cmToPts(500), wx2 = wx1 + wlen, wid = nextId++;   // GRUNDRISS
+  txt(112, 104, 'BEISPIELPROJEKT — Wand mit Fenster & Tür · Massstab 1:20', 22, cmToPts(900));
+  const wy = 270, wx1 = 132, wlen = cmToPts(500), wx2 = wx1 + wlen, wid = nextId++;   // GRUNDRISS (etwas runter + leicht links)
   const wall = { id: wid, type: 'wall', x1: wx1, y1: wy, x2: wx2, y2: wy, thick: cmToPts(35), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: wallHeightM, dim: false, layer: activeLayerId };
   applyWallBuildup(wall, [['putz', 1.5], ['mauerwerk', 15], ['eps', 16], ['putz', 0.5]]); arr.push(wall);
   const win = { id: nextId++, type: 'opening', kind: 'window', wallId: wid, t: 0.28, w: cmToPts(120), depth: 0.5, frameW: cmToPts(10), frameD: cmToPts(7), winType: 'f2', winMat: 'holz', sill: 0.9, head: 2.2, revealType: 'putz', bank: true, layer: activeLayerId };
@@ -5196,11 +5196,11 @@ async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fe
   openingResolve(win, pv); openingResolve(dr, pv); arr.push(win); arr.push(dr);
   txt(wx1, wy - 80, 'GRUNDRISS', 16);
   const winX = wx1 + 0.28 * wlen, drX = wx1 + 0.72 * wlen;
-  mkSection(winX, wy - 70, winX, wy + 70, 'A', 150, 880);   // Schnitt durch Fenster
-  mkSection(drX, wy - 70, drX, wy + 70, 'B', 560, 880);     // Schnitt durch Tür
-  mkSection(wx1, wy + 110, wx2, wy + 110, 'V', 1000, 470, false);   // Ansicht vorne (parallel)
-  mkSection(wx1, wy + 110, wx2, wy + 110, 'H', 1000, 900, true);    // Ansicht hinten (flip)
-  txt(1000, 400, 'ANSICHT VORNE', 14); txt(1000, 830, 'ANSICHT HINTEN', 14);
+  mkSection(winX, wy - 70, winX, wy + 70, 'A', 132, 920);   // Schnitt durch Fenster
+  mkSection(drX, wy - 70, drX, wy + 70, 'B', 542, 920);     // Schnitt durch Tür
+  mkSection(wx1, wy + 110, wx2, wy + 110, 'V', 800, 540, false);    // Ansicht vorne (parallel)
+  mkSection(wx1, wy + 110, wx2, wy + 110, 'H', 1230, 540, true);    // Ansicht hinten – auf die andere Seite (neben Vorne)
+  txt(800, 470, 'ANSICHT VORNE', 14); txt(1230, 470, 'ANSICHT HINTEN', 14);
   drawAnnos(pv); saveState();
   toast('Beispielprojekt: Grundriss + Schnitte (Fenster/Tür) + Ansicht vorne/hinten · 1:20. Fenster wählen → „⊕ Detail".');
 }

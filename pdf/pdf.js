@@ -4581,11 +4581,13 @@ function openingPartStyle(role, o) {   // Füllung/Strich je Bauteil-Rolle (eine
 function openingElevDraw(out, o, sx, zy) {   // KANONISCHE Ansicht: openingSolids-Profil + Öffnungsrichtung. sx(s)=Zeichen-x, zy(z)=Zeichen-y
   const parts = openingSolids(o), col = '#1c242c';
   for (const part of parts) { const st = openingPartStyle(part.role, o); out.push({ t: 'poly', pts: part.prof.map(p => [sx(p[0]), zy(p[1])]), fill: st.fill, stroke: st.stroke, sw: 1 }); }
-  const leaves = parts.filter(p => p.role === 'glass' || p.role === 'leaf'), two = leaves.length > 1, hinge = o.winHinge || 'left';   // Öffnungsrichtung (gestrichelt)
+  const leaves = parts.filter(p => p.role === 'glass' || p.role === 'leaf'), two = leaves.length > 1, hinge = o.winHinge || 'left', door = o.kind === 'door';   // Öffnungsrichtung (gestrichelt) + Türgriff
   leaves.forEach((g, pi) => {
     const ss = g.prof.map(p => p[0]), zz = g.prof.map(p => p[1]), s0 = Math.min(...ss), s1 = Math.max(...ss), z0 = Math.min(...zz), z1 = Math.max(...zz), mz = (z0 + z1) / 2, ms = (s0 + s1) / 2;
-    if (hinge === 'kipp') { out.push({ t: 'line', x1: sx(s0), y1: zy(z1), x2: sx(ms), y2: zy(z0), stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: sx(s1), y1: zy(z1), x2: sx(ms), y2: zy(z0), stroke: col, w: 0.6, dash: '4 3' }); }
-    else { const apexLeft = two ? (pi === 0) : (hinge === 'left'), ax = apexLeft ? s0 : s1, bx = apexLeft ? s1 : s0; out.push({ t: 'line', x1: sx(bx), y1: zy(z0), x2: sx(ax), y2: zy(mz), stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: sx(bx), y1: zy(z1), x2: sx(ax), y2: zy(mz), stroke: col, w: 0.6, dash: '4 3' }); }
+    if (hinge === 'kipp' && !door) { out.push({ t: 'line', x1: sx(s0), y1: zy(z1), x2: sx(ms), y2: zy(z0), stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: sx(s1), y1: zy(z1), x2: sx(ms), y2: zy(z0), stroke: col, w: 0.6, dash: '4 3' }); }
+    else { const apexLeft = two ? (pi === 0) : (hinge === 'left'), ax = apexLeft ? s0 : s1, bx = apexLeft ? s1 : s0; out.push({ t: 'line', x1: sx(bx), y1: zy(z0), x2: sx(ax), y2: zy(mz), stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: sx(bx), y1: zy(z1), x2: sx(ax), y2: zy(mz), stroke: col, w: 0.6, dash: '4 3' });   // Anschlag/Bandseite = Apex
+      if (door) { const hx = bx + (ax > bx ? -1 : 1) * (s1 - s0) * 0.13; out.push({ t: 'line', x1: sx(hx), y1: zy(mz - 0.06), x2: sx(hx), y2: zy(mz + 0.06), stroke: col, w: 2.2 }); }   // Türgriff an der Bandgegenseite, ~Hüfthöhe
+    }
   });
 }
 function sliceOpeningV(o, sCut) {   // Vertikalschnitt durch die Öffnung bei Position sCut (pt, zentriert) → Rechtecke {m0,m1 (Dicke ∈[-1,1]), z0,z1, role}

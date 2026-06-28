@@ -2837,20 +2837,20 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   // NEUES Modell: die Laibung lappt seitlich AUF den Rahmen (Standard: frameW − 1cm sichtbar). Schichten stapeln in die Tiefe (m), die Deckschicht lappt voll, dahinterliegende Schichten treten um deren Dicke zurück (z. B. Putz voll, Dämmung dahinter).
   const boardVisCm = a.boardVis != null ? a.boardVis : 1;   // wie viel cm vom Rahmen sichtbar bleiben (Standard 1 cm)
   const lapPt = Math.max(cmToPts(0.3), Math.min(hw * 0.92, (a.frameW || cmToPts(10)) - cmToPts(boardVisCm)));   // seitliche Lappung auf den Rahmen
-  const drawReveal = (layers, sideOut, sgn) => {   // EINE Laibungsseite (sgn = -1 links / +1 rechts): Schichten stapeln in die Tiefe, letzte füllt bis zum Rahmen
+  const drawReveal = (layers, sideOut, sgn) => {   // EINE Laibungsseite (sgn = -1 links / +1 rechts): Schichten stehen QUER (jede reicht in die Tiefe von Wandfläche bis Rahmen), stapeln parallel zur Wand Richtung Öffnung; letzte deckt bis zur Lappung (Rahmen − 1cm)
     if (!layers || !layers.length) return;
     if (a.noSillReveal && sgn < 0) return;   // Schwelle bei Fensterbank überspringen (nur im Schnitt-sa relevant)
-    const mFace = sideOut ? 1 : -1, mFrame = sideOut ? (fmB + oneCm) : (fmA - oneCm), dir = sideOut ? -1 : 1;
-    if (Math.abs(mFrame - mFace) < 0.02) return;
-    let mO = mFace, sFront = 0;
+    const mA = sideOut ? (fmB + oneCm) : (fmA - oneCm), mB = sideOut ? 1 : -1, m0 = Math.min(mA, mB), m1 = Math.max(mA, mB);   // Tiefe: Rahmenseite … Wandfläche
+    if (m1 - m0 < 0.02) return;
+    let sAcc = 0;
     layers.forEach((L, i) => {
       const mat = L[0], tcm = L[1], gap = L[2] || 0, mt = LINING_MAT[mat] || WALL_MATS[mat] || {};
-      if (gap) mO += dir * cmToPts(gap) / ht;   // Luft-Abstand vor dieser Schicht
-      let mI = (i === layers.length - 1) ? mFrame : (mO + dir * cmToPts(tcm) / ht);   // letzte Schicht füllt bis zum Rahmen → keine Lücke
-      mI = sideOut ? Math.max(mFrame, mI) : Math.min(mFrame, mI);
-      const lapL = Math.max(cmToPts(0.4), lapPt - sFront), m0 = Math.min(mO, mI), m1 = Math.max(mO, mI), sk = mt.stroke || mt.color || '#1c242c';
-      if (m1 - m0 > 0.005) { const sA = sgn * 1, sB = sgn * (1 - lapL / hw); strips.push({ poly: [corner(sA, m0), corner(sB, m0), corner(sB, m1), corner(sA, m1)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(sA, sB), Math.max(sA, sB), m0, m1, corner, hw, ht, stepS) : null }); }
-      mO = mI; sFront += cmToPts(tcm);
+      sAcc += cmToPts(gap);   // Luft-Abstand (parallel zur Wand) vor dieser Schicht
+      let sEnd = sAcc + cmToPts(tcm); if (i === layers.length - 1) sEnd = Math.max(sEnd, lapPt);   // Deckschicht (letzte) deckt bis zur Lappung
+      sEnd = Math.min(sEnd, hw * 0.96);
+      const sa = sgn * (1 - sAcc / hw), sb = sgn * (1 - sEnd / hw), sk = mt.stroke || mt.color || '#1c242c';
+      if (sEnd - sAcc > 0.05) strips.push({ poly: [corner(sa, m0), corner(sb, m0), corner(sb, m1), corner(sa, m1)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(sa, sb), Math.max(sa, sb), m0, m1, corner, hw, ht, stepS) : null });
+      sAcc = sEnd;
     });
   };
   const innerLayers = userLin ? a.revealLining.map(L => [L.mat, L.t, L.gap || 0]) : (rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]));
@@ -3148,13 +3148,10 @@ function openingResolve(a, pv) {   // Position/Winkel/Dicke aus der zugehörigen
   const t = a.t == null ? 0.5 : a.t, T = w.thick || wallThickPts(); let px = w.x1 + (w.x2 - w.x1) * t, py = w.y1 + (w.y2 - w.y1) * t;
   const dx = w.x2 - w.x1, dy = w.y2 - w.y1, L = Math.hypot(dx, dy) || 1, off = (w.just === 'left' ? T / 2 : w.just === 'right' ? -T / 2 : 0);   // Band-Mitte bei Achsen-Versatz
   a.x = px + (-dy / L) * off; a.y = py + (dx / L) * off; a.ang = Math.atan2(dy, dx); a.thick = T;
-  if ((a.kind === 'window' || a.kind === 'door') && w.layers && w.layers.length) {   // STANDARD-Laibung: übernimmt alle Deckschichten (Material + Stärke), Deckschicht (Wandfläche) zuerst → laufen bis zur Lappung, dahinter Step-back
-    let ci = w.layers.findIndex(l => ['mauerwerk', 'beton'].includes(l.mat)); if (ci < 0) ci = Math.floor((w.layers.length - 1) / 2);
-    const cm = t => Math.round(ptsToCm(t) * 10) / 10, mk = l => ({ mat: l.mat, t: cm(l.t) });
-    const inner = w.layers.slice(0, ci).filter(l => l.mat !== 'luft');                 // innen: innerste→Kern, Deckschicht (innerste) zuerst
-    const outer = w.layers.slice(ci + 1).filter(l => l.mat !== 'luft').reverse();       // aussen: äusserste(Deckschicht) zuerst → dann Dämmung
-    if (!Array.isArray(a.revealLining)) a.revealLining = (inner.length ? inner : [w.layers[0]]).map(mk);
-    if (!Array.isArray(a.revealLiningOut)) a.revealLiningOut = (outer.length ? outer : [w.layers[w.layers.length - 1]]).map(mk);
+  if ((a.kind === 'window' || a.kind === 'door') && w.layers && w.layers.length) {   // STANDARD-Laibung: übernimmt die Deckschicht (Material + Stärke) – innen innerste, aussen äusserste Wandschicht; deckt bis 1cm vom Rahmen
+    const cm = t => Math.round(ptsToCm(t) * 10) / 10, L0 = w.layers[0], LN = w.layers[w.layers.length - 1];
+    if (!Array.isArray(a.revealLining)) a.revealLining = [{ mat: L0.mat, t: cm(L0.t) }];
+    if (!Array.isArray(a.revealLiningOut)) a.revealLiningOut = [{ mat: LN.mat, t: cm(LN.t) }];
   }
 }
 function openingClick(pv, p) {

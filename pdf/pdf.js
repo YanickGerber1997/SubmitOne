@@ -1815,6 +1815,7 @@ function drawWallUnion(svg, walls) {   // Wandflächen vereinigen → saubere Ge
 let wallDimOn = true;   // neue Wände bekommen standardmässig eine Masskette (aussen Rohbau / innen Fertig)
 let revealLinked = true;   // Standard: alle Laibungs-Kanten gekoppelt bearbeiten (eine ändern = alle); per Knopf entkoppeln
 const _angHandles = {};   // {openingId: handle} – Ziehpunkt des offenen Flügels (Öffnungswinkel ziehen)
+function addHoverHL(el) { el.addEventListener('pointerenter', () => el.classList.add('hl-on')); el.addEventListener('pointerleave', () => el.classList.remove('hl-on')); return el; }   // nur das berührte Bauteil hervorheben (kein SVG-:hover auf überlappenden Flächen)
 function startDimOffDrag(pv, e, id) {   // Wand-Masslinie senkrecht zur Wand verschieben (setzt a.dimOff)
   const a = findAnno(pv.num, id); if (!a) return; pushUndo();
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len, mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
@@ -2984,8 +2985,8 @@ function drawOpening(svg, a, arr) {
   for (const arc of P.arcs) { g.appendChild(svgEl('polyline', { points: arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 18).map(p => p[0] + ',' + p[1]).join(' '), fill: 'none', stroke: col, 'stroke-width': 0.8, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke' })); if (arc.handle) _angHandles[a.id] = arc.handle; }
   svg.appendChild(g);
   svg.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: 'transparent', 'data-id': a.id }));
-  for (const f of (P.fills || [])) { if (f.role !== 'frame') continue; const hp = svgEl('polygon', { class: 'frame-hit', points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id, 'data-frame': '1' }); svg.appendChild(hp); }   // klickbarer Rahmen (Hover = grün/schraffiert)
-  for (const st of revHits) { const hp = svgEl('polygon', { class: 'rev-hit', points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id, 'data-rev': st.edge + ':' + st.side + ':' + st.li }); svg.appendChild(hp); }   // klickbare Laibungs-Schichten ÜBER dem Auswahl-Rechteck (Hover = grün/schraffiert)
+  for (const f of (P.fills || [])) { if (f.role !== 'frame') continue; svg.appendChild(addHoverHL(svgEl('polygon', { class: 'frame-hit', points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id, 'data-frame': '1' }))); }   // klickbarer Rahmen
+  for (const st of revHits) { svg.appendChild(addHoverHL(svgEl('polygon', { class: 'rev-hit', points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id, 'data-rev': st.edge + ':' + st.side + ':' + st.li }))); }   // klickbare Laibungs-Schicht (nur diese leuchtet beim Hover)
   if (seld) for (const arc of P.arcs) { if (!arc.handle) continue; const c = svgEl('circle', { cx: arc.handle.x.toFixed(2), cy: arc.handle.y.toFixed(2), r: 5, fill: '#fff', stroke: '#2a7', 'stroke-width': 2, 'data-id': a.id, 'data-ah': '1', 'vector-effect': 'non-scaling-stroke' }); c.style.cursor = 'grab'; svg.appendChild(c); }   // Ziehpunkt: Öffnungswinkel am offenen Blatt ziehen
   return g;
 }
@@ -3029,7 +3030,12 @@ function openFramePop(pv, a, cx, cy) {   // Inline-Editor für den Rahmen/Flüge
   const selF = (opts, cur, set) => { const sl = document.createElement('select'); opts.forEach(([k, lab]) => { const o = document.createElement('option'); o.value = k; o.textContent = lab; if (k === cur) o.selected = true; sl.appendChild(o); }); sl.onchange = () => { set(sl.value); upd(); }; return sl; };
   const fwd = isWin ? 10 : 6, fw = numF(cm(a.frameW || cmToPts(fwd)), '1', '30', v => a.frameW = cmToPts(v), fwd); mk('Rahmenbreite (cm)', fw.n, fw.reset);
   const fd = numF(cm(a.frameD || cmToPts(7)), '2', '40', v => a.frameD = cmToPts(v), 7); mk('Rahmentiefe (cm)', fd.n, fd.reset);
-  if (isWin) { const sw = numF(cm(a.sashW || cmToPts(7)), '2', '20', v => a.sashW = cmToPts(v), 7); mk('Flügelbreite (cm)', sw.n, sw.reset); }
+  if (isWin) {
+    const sw = numF(cm(a.sashW || cmToPts(7)), '2', '20', v => a.sashW = cmToPts(v), 7); mk('Flügelbreite (cm)', sw.n, sw.reset);
+    const sd = numF(cm(a.sashD || cmToPts(7)), '2', '20', v => a.sashD = cmToPts(v), 7); mk('Flügeltiefe (cm)', sd.n, sd.reset);
+    const sh = numF(cm(a.sashShift != null ? a.sashShift : cmToPts(4)), '0', '15', v => a.sashShift = cmToPts(v), 4); mk('Überlappung Flügel↔Rahmen (cm)', sh.n, sh.reset);   // wie weit der Flügel auf den Blendrahmen lappt
+    const sr = numF(cm(a.sashRecess != null ? a.sashRecess : cmToPts(1)), '0', '10', v => a.sashRecess = cmToPts(v), 1); mk('Flügel-Rücksprung (cm)', sr.n, sr.reset);   // Tiefenversatz Flügel zum Rahmen
+  }
   const types = isWin ? [['f1', '1-flügelig'], ['f2', '2-flügelig'], ['f2s', '2-fl. Setzholz'], ['fest', 'Fest']] : [['f1', '1-flügelig'], ['f2', '2-flügelig'], ['f1f', '1-fl. + Fixteil'], ['fest', 'Fest']];
   mk('Typ', selF(types, a.winType || 'f1', v => a.winType = v));
   const hinges = isWin ? [['left', 'Band links'], ['right', 'Band rechts'], ['kipp', 'Kipp']] : [['left', 'Band links'], ['right', 'Band rechts']];
@@ -3276,7 +3282,7 @@ function sectionSig(a, arr) {   // billige Inhalts-Signatur: alles was den Schni
   return s;
 }
 function drawSection(svg, a, arr) {
-  const revLayer = () => { const rh = _secCache[a.id] && _secCache[a.id]._revHits; if (rh) for (const h of rh) { const at = { class: h.frame ? 'frame-hit' : 'rev-hit', points: h.pts.map(q => q[0].toFixed(2) + ',' + q[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': h.oid }; if (h.frame) at['data-frame'] = '1'; else at['data-rev'] = h.rev; svg.appendChild(svgEl('polygon', at)); } };   // klickbare Laibungsschichten (Sturz/Schwelle) + Rahmen ÜBER dem Hit-Rechteck (Hover = grün/schraffiert)
+  const revLayer = () => { const rh = _secCache[a.id] && _secCache[a.id]._revHits; if (rh) for (const h of rh) { const at = { class: h.frame ? 'frame-hit' : 'rev-hit', points: h.pts.map(q => q[0].toFixed(2) + ',' + q[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': h.oid }; if (h.frame) at['data-frame'] = '1'; else at['data-rev'] = h.rev; svg.appendChild(addHoverHL(svgEl('polygon', at))); } };   // klickbare Laibungsschichten (Sturz/Schwelle) + Rahmen; nur das berührte leuchtet
   const reuse = () => { const gc = _secCache[a.id].cloneNode(true); svg.appendChild(gc); const bb = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: bb.x, y: bb.y, width: bb.w, height: bb.h, fill: 'transparent', 'data-id': a.id })); revLayer(); if (sel && sel.id === a.id && _secCache[a.id]._hdl) for (const h of _secCache[a.id]._hdl) svg.appendChild(svgEl('circle', { class: 'handle ' + h.cls, cx: h.x, cy: h.y, r: h.r, 'data-h': h.key, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' })); return gc; };
   if (_fastDraw && _secCache[a.id]) return reuse();   // während Drag: aus Cache → flüssig
   const sig = sectionSig(a, arr); if (_secCacheSig[a.id] === sig && _secCache[a.id]) return reuse();   // unverändert → aus Cache (kein Neuschnitt bei Klicks/Eingaben anderswo)

@@ -1,5 +1,5 @@
-/* Hover-Hervorhebung editierbarer Bauteile (Laibungsschicht / Rahmen): grün umrandet + schraffiert */
-.rev-hit:hover,.frame-hit:hover{fill:url(#hlHatch)!important;fill-opacity:1!important;stroke:#1a9a4e!important;stroke-width:2.4!important}
+/* Hover-Hervorhebung editierbarer Bauteile (Laibungsschicht / Rahmen): nur das berührte Element, grün umrandet + schraffiert (JS-gesteuert, da SVG :hover auf alle überlappenden Flächen triggert) */
+.rev-hit.hl-on,.frame-hit.hl-on{fill:url(#hlHatch)!important;fill-opacity:1!important;stroke:#1a9a4e!important;stroke-width:2.4!important}
 .rev-hit,.frame-hit{cursor:pointer}
 :root{
   --bg:#f0efe9; --surface:#ffffff; --surface-2:#f5f4ee; --line:#dedcd2; --line-soft:#ebe9e0;

@@ -3028,9 +3028,7 @@ function sectionPrimitives(a, arr) {
     }
     for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id || cutOps.has(o.id)) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = fp((ocx - p1[0]) * cux + (ocy - p1[1]) * cuy); if (od < -10 || od > cl + 10) continue;
       const lapPts = (o.kind === 'window' ? (o.outerLap != null ? o.outerLap : cmToPts(3)) : 0) + (o.anschlagType === 'aussen' ? (o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5)) : 0);   // Aussen-Lappung + Aussenanschlag → Aussenlichtmaß
-      const boardPts = (o.kind === 'window' ? cmToPts(o.boardW != null ? o.boardW : 2.5) : 0), lapTot = lapPts + boardPts;   // Laibungsbrett lappt zusätzlich über den Rahmen
-      const headF = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), sillF = (o.kind === 'window' ? (o.sill || 0) : 0), rohW = o.w * along, clM = ptsToCm(lapPts) / 100;
-      if (o.kind === 'window' && boardPts > 0.5 && rohW - 2 * lapPts * along > 1) { const bm = WALL_MATS[o.boardMat || 'holz'] || { fill: '#e7cfa8', color: '#7a5126' }; out.push({ t: 'rect', x: X(od - rohW / 2 + lapPts * along), y: Yh(headF - clM), w: rohW - 2 * lapPts * along, h: Yh(sillF + clM) - Yh(headF - clM), fill: bm.fill, stroke: bm.color, sw: 0.6 }); }   // Laibungsbrett (Holz) umlaufend
+      const lapTot = lapPts;   // kein Default-Laibungsbrett mehr (Laibung = EIN System: Deckschicht/Preset/eigene Liste)
       const redM = ptsToCm(lapTot) / 100, wEff = Math.max(4, (o.w - 2 * lapTot) * along);
       try { openingElevDraw(out, Object.assign({}, o, { w: Math.max(4, o.w - 2 * lapTot) }), s => X(od + s * along), Yh); } catch (_) { }   // kanonische Ansicht (foreshortened mit along), Blickrichtung via Schnitt
       if (winDimsOn && !a.noDims) {   // Ansicht: Breite + Höhe, Rohbau + Licht (rahmenbasiert)
@@ -5380,7 +5378,6 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     H += dimSeg(rc(1.34, fmA), rc(1.34, fmB), [ux, uy], cmv(a.frameD || cmToPts(7)) + ' cm');      // Rahmentiefe
     H += dimStr(rc(-1, 1), rc(1, 1), [nx, ny], doff('gndRoh'), 'Rohbau ' + fmtLen(a.w), 'gndRoh');                                   // Breite Rohbau (aussen)
     H += dimStr(rc(-1 + rfG, 1), rc(1 - rfG, 1), [nx, ny], doff('gndLicht'), 'Licht ' + fmtLen(Math.max(2, a.w - 2 * lapTotG)), 'gndLicht');   // Breite Licht
-    H += HG(rc(1 - fwSr + cmToPts(boardVis) / hw + cmToPts(boardW) / hw, 0.6), 'boardW', 'Laibungsbrett-Breite (ziehen)', (Math.round(boardW * 10) / 10) + ' cm');
     H += HG(rc(1, md), 'depth', 'Einbautiefe (ziehen)', Math.round(depth * 100) + '%');
     H += HG(rc(1 - fwSr / 2, fmB), 'frameD', 'Rahmentiefe (ziehen)', cmv(a.frameD || cmToPts(7)) + ' cm');
     H += HG(rc(1 - fwSr, md), 'frameW', 'Rahmenbreite (ziehen)', cmv(a.frameW || cmToPts(a.kind === 'door' ? 6 : 10)) + ' cm');

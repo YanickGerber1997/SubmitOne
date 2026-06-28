@@ -1880,9 +1880,9 @@ function wallDimChainPrims(a, arr, off, mode) {   // Maßkette: Pfeiler | Öffnu
   }
   return prims;
 }
-function wallDimChains(a, arr) {   // zwei Maßketten: aussen = Rohbau (R), innen = Fertig/Licht (F)
+function wallDimChains(a, arr) {   // zwei Maßketten: INNEN = Rohbau (R, Bezug Tragschicht/Mauerwerk) · AUSSEN = Fertig/Licht (F, Bezug Dämmung)
   const dg = wallDimGeom(a), o = Math.abs(dg.off);
-  return [...wallDimChainPrims(a, arr, o, 'roh'), ...wallDimChainPrims(a, arr, -o, 'fertig')];
+  return [...wallDimChainPrims(a, arr, -o, 'roh'), ...wallDimChainPrims(a, arr, o, 'fertig')];
 }
 function renderWallDimPrims(svg, prims, col) {
   for (const p of prims) {

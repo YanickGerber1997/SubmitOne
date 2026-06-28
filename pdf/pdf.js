@@ -3038,7 +3038,7 @@ function openingElev(out, X, Yh, opx0, opw, o, H, col, redM, side) {   // Fenste
       if (!fest) {
         const ix0 = px0 + ins, ix1 = px0 + pw - ins, iy0 = yT + ins, iy1 = yB - ins, cmx = (ix0 + ix1) / 2, cmy = (iy0 + iy1) / 2, hinge = o.winHinge || 'left';
         if (hinge === 'kipp') { out.push({ t: 'line', x1: ix0, y1: iy0, x2: cmx, y2: iy1, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: ix1, y1: iy0, x2: cmx, y2: iy1, stroke: col, w: 0.6, dash: '4 3' }); }
-        else { const apexL = (two ? pi === 0 : hinge === 'left'), ax = apexL ? ix0 : ix1, bx = apexL ? ix1 : ix0; out.push({ t: 'line', x1: bx, y1: iy0, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: bx, y1: iy1, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); }
+        else { const apexL = (two ? pi !== 0 : hinge === 'right'), ax = apexL ? ix0 : ix1, bx = apexL ? ix1 : ix0; out.push({ t: 'line', x1: bx, y1: iy0, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: bx, y1: iy1, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); }   // Apex = Öffnungsseite
       }
     }
     if (o.bank !== false) { const bm = o.bankMat === 'holz' ? { fill: '#e7cfa8', color: '#7a5126' } : o.bankMat === 'beton' ? { fill: '#dadde2', color: '#8a8f96' } : { fill: '#cfd3d8', color: '#565b62' }, pj = cmToPts(4), th = cmToPts(2.5); out.push({ t: 'rect', x: X(opx0) - pj, y: Yh(sill), w: opw + 2 * pj, h: th, fill: bm.fill, stroke: bm.color, sw: 0.9 }); }   // Fensterbank aussen = projizierende Sohlbank
@@ -4691,8 +4691,8 @@ function openingElevDraw(out, o, sx, zy) {   // KANONISCHE Ansicht: openingSolid
   leaves.forEach((g, pi) => {
     const ss = g.prof.map(p => p[0]), zz = g.prof.map(p => p[1]), s0 = Math.min(...ss), s1 = Math.max(...ss), z0 = Math.min(...zz), z1 = Math.max(...zz), mz = (z0 + z1) / 2, ms = (s0 + s1) / 2;
     if (hinge === 'kipp' && !door) { out.push({ t: 'line', x1: sx(s0), y1: zy(z1), x2: sx(ms), y2: zy(z0), stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: sx(s1), y1: zy(z1), x2: sx(ms), y2: zy(z0), stroke: col, w: 0.6, dash: '4 3' }); }
-    else { const apexLeft = two ? (pi === 0) : (hinge === 'left'), ax = apexLeft ? s0 : s1, bx = apexLeft ? s1 : s0; out.push({ t: 'line', x1: sx(bx), y1: zy(z0), x2: sx(ax), y2: zy(mz), stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: sx(bx), y1: zy(z1), x2: sx(ax), y2: zy(mz), stroke: col, w: 0.6, dash: '4 3' });   // Anschlag/Bandseite = Apex
-      if (door) { const hx = bx + (ax > bx ? -1 : 1) * (s1 - s0) * 0.13; out.push({ t: 'line', x1: sx(hx), y1: zy(mz - 0.06), x2: sx(hx), y2: zy(mz + 0.06), stroke: col, w: 2.2 }); }   // Türgriff an der Bandgegenseite, ~Hüfthöhe
+    else { const apexLeft = two ? (pi !== 0) : (hinge === 'right'), ax = apexLeft ? s0 : s1, bx = apexLeft ? s1 : s0; out.push({ t: 'line', x1: sx(bx), y1: zy(z0), x2: sx(ax), y2: zy(mz), stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: sx(bx), y1: zy(z1), x2: sx(ax), y2: zy(mz), stroke: col, w: 0.6, dash: '4 3' });   // Apex = ÖFFNUNGSseite (Bandgegenseite), wo der Flügel aufgeht
+      if (door) { const hx = ax + (bx > ax ? 1 : -1) * (s1 - s0) * 0.13; out.push({ t: 'line', x1: sx(hx), y1: zy(mz - 0.06), x2: sx(hx), y2: zy(mz + 0.06), stroke: col, w: 2.2 }); }   // Türgriff auf der Öffnungsseite (beim Apex), ~Hüfthöhe
     }
   });
 }
@@ -5289,7 +5289,7 @@ function winThumb(o) {   // Mini-Ansicht (SVG) eines Fensters/einer Tür für di
     const ins = fr * 1.7, gx = px + ins, gy = y0 + ins, gw = pw - 2 * ins, gh = bh - 2 * ins; if (gw <= 1 || gh <= 1) continue;
     const isGlass = o.kind === 'window' ? true : (wt === 'fest' || (wt === 'f1f' && i === (hingeR ? 0 : 1)));
     s += '<rect x="' + F(gx) + '" y="' + F(gy) + '" width="' + F(gw) + '" height="' + F(gh) + '" fill="' + (isGlass ? '#c7e2f5' : wm.fill) + '" stroke="' + (isGlass ? '#7fa9c6' : st) + '" stroke-width="0.8"/>';
-    if (wt !== 'fest' && !(o.kind === 'door' && isGlass)) { const apexL = two ? i === 0 : !hingeR, ax = apexL ? gx : gx + gw, bx = apexL ? gx + gw : gx, cy = gy + gh / 2; s += '<path d="M' + F(bx) + ' ' + F(gy) + ' L' + F(ax) + ' ' + F(cy) + ' L' + F(bx) + ' ' + F(gy + gh) + '" fill="none" stroke="' + st + '" stroke-width="0.7" stroke-dasharray="3 2"/>'; }
+    if (wt !== 'fest' && !(o.kind === 'door' && isGlass)) { const apexL = two ? i !== 0 : hingeR, ax = apexL ? gx : gx + gw, bx = apexL ? gx + gw : gx, cy = gy + gh / 2; s += '<path d="M' + F(bx) + ' ' + F(gy) + ' L' + F(ax) + ' ' + F(cy) + ' L' + F(bx) + ' ' + F(gy + gh) + '" fill="none" stroke="' + st + '" stroke-width="0.7" stroke-dasharray="3 2"/>'; }   // Apex = Öffnungsseite
   }
   return s + '</svg>';
 }

@@ -3200,6 +3200,7 @@ function sectionPrimitives(a, arr) {
       out.push({ t: 'shandle', x: (xa + xb) / 2, y: Yh(base + thick), key: 'sh:sb:' + sl.id });   // Decken-Höhe (Unterkante) im Schnitt ziehen
     }
   }
+  const elevOps = [];   // in Ansicht gezeichnete Öffnungen → kommen in die Höhen-Maskette (Brüstung/Sturz)
   const cutOps = new Set();   // Öffnungen, die der (auch schräge) Schnitt KREUZT → werden als echter Schnitt gezeichnet, NICHT zusätzlich als Ansicht
   for (const h of hits) for (const o of arr) if (o.type === 'opening' && o.wallId === h.w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl)) cutOps.add(o.id);
   for (const w of arr) {   // Ansicht ZUERST (hinten): jede Wand in Blickrichtung als Fassade – auch schräg geschnittene (Poché kommt danach darüber)
@@ -3223,11 +3224,8 @@ function sectionPrimitives(a, arr) {
       const eSide = (wOff * vdir >= 0 ? 'a' : 'i'), ring = openingRevealRing(o, eSide, w), headF = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), sillF = (o.kind === 'window' ? (o.sill || 0) : 0);   // Ansicht: nur die SICHTBARE Deckschicht (deckt die Lappung, verdeckt dahinterliegende Schichten)
       if (ring.mat) { const mt = LINING_MAT[ring.mat] || WALL_MATS[ring.mat] || {}, xa = X(od - (o.w / 2) * along), xb = X(od + (o.w / 2) * along); out.push({ t: 'rect', x: Math.min(xa, xb), y: Yh(headF), w: Math.abs(xb - xa), h: Yh(sillF) - Yh(headF), fill: mt.fill || '#eee', stroke: (mt.stroke || mt.color) || col, sw: 0.6 }); }
       try { openingElevDraw(out, Object.assign({}, o, { w: Math.max(4, o.w - 2 * ring.w) }), s => X(od + s * along), Yh); } catch (_) { }   // Fenster um die Lappung eingezogen (1cm Rahmen sichtbar)
-      if (winDimsOn && !a.noDims) {   // Ansicht: Breite + Höhe, Rohbau + Licht (rahmenbasiert)
-        const insPts = Math.max(0, (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1)), insM = ptsToCm(insPts) / 100;
-        const sill0 = o.kind === 'window' ? (o.sill || 0) : 0, head0 = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), rW = o.w * along, xL = X(od - rW / 2) - 12;   // im Schnitt nur HÖHEN (Breiten stehen im Grundriss)
-        pDimV(out, xL, Yh(head0), Yh(sill0), 'Rohbau ' + fmtLen((head0 - sill0) / perPt), -46); pDimV(out, xL - 18, Yh(head0 - insM), Yh(sill0 + insM), 'Licht ' + fmtLen(Math.max(0.05, head0 - sill0 - 2 * insM) / perPt), -46);
-      } }
+      if (!a.noDims && !elevOps.includes(o)) elevOps.push(o);   // Ansicht-Öffnung in die Höhen-Maskette aufnehmen (statt eigener schräger Höhenmasse)
+    }
   }
   for (const h of hits) {
     const w = h.w, H = w.h3d || wallHeightM, x0 = h.dist - h.appW / 2;
@@ -3269,11 +3267,12 @@ function sectionPrimitives(a, arr) {
   }
   if (!a.noDims) {   // Höhen-Masketten wie im Grundriss: zwei Ketten (links innen=Fertig/Licht „F", rechts aussen=Rohbau „R"), wandabhängig, gleicher Abstand, geschnittene Fenster/Türen mitgenommen
     const Htop = sectionMaxH(a, arr), DOFF = 34, over = 4;
-    const cutOpsArr = [];   // alle vom Schnitt gekreuzten Öffnungen (Höhen)
-    for (const h of hits) for (const o of arr.filter(o => o.type === 'opening' && o.wallId === h.w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl))) if (!cutOpsArr.includes(o)) cutOpsArr.push(o);
+    const dimOps = [];   // alle Öffnungen im Schnitt (geschnitten + Ansicht) → Höhen-Stationen
+    for (const h of hits) for (const o of arr.filter(o => o.type === 'opening' && o.wallId === h.w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl))) if (!dimOps.includes(o)) dimOps.push(o);
+    for (const o of elevOps) if (!dimOps.includes(o)) dimOps.push(o);
     const dimChain = (xLine, side, fertig, tag) => {   // side<0 links (Text links), side>0 rechts; fertig = Licht (Laibung abgezogen)
       const hSet = new Set([0, Htop]);
-      for (const o of cutOpsArr) { const sill = o.kind === 'window' ? (o.sill || 0) : 0, head = Math.min(Htop, o.head || (o.kind === 'window' ? 2.1 : 2.0)), insM = fertig ? ptsToCm(Math.max(0, (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1))) / 100 : 0; hSet.add(Math.max(0, sill + insM)); hSet.add(Math.max(sill + insM + 0.02, head - insM)); }
+      for (const o of dimOps) { const sill = o.kind === 'window' ? (o.sill || 0) : 0, head = Math.min(Htop, o.head || (o.kind === 'window' ? 2.1 : 2.0)), insM = fertig ? ptsToCm(Math.max(0, (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1))) / 100 : 0; hSet.add(Math.max(0, sill + insM)); hSet.add(Math.max(sill + insM + 0.02, head - insM)); }
       const hs = [...new Set([...hSet].map(v => Math.round(v * 1000) / 1000))].sort((p, q) => p - q), xFace = side < 0 ? X(0) : X(cl);
       out.push({ t: 'line', x1: xLine, y1: Yh(0) + side * 0, x2: xLine, y2: Yh(Htop), w: 0.9 });   // Masslinie
       out.push({ t: 'text', x: xLine + side * 9, y: Yh(Htop) - 7, text: tag, col, small: true });   // Kettenkennung F/R

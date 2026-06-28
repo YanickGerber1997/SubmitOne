@@ -5865,9 +5865,9 @@ function build3DScene(host, walls, arr, opts) {
       let off = -th / 2;
       for (const L of wL) { const lt = (L.t / totalT) * th; if (L.mat !== 'luft') { const lo = off, hi = off + lt, inner = hi <= dC - fdM / 2 + 1e-4, outer = lo >= dC + fdM / 2 - 1e-4, lapPtS = inner ? lapInPt : (outer ? lapOutPt : 0);
         if (lapPtS > 0.5) { const lapM = lapPtS * perPt, dcen = off + lt / 2, mat = layerMat(L.mat, lapPtS * perPt, yTop - yBot, bH);
-          addBox2(a0, a0 + lapPtS, yBot, yTop, dcen, lt, mat, true); addBox2(a1 - lapPtS, a1, yBot, yTop, dcen, lt, mat, true);   // Jamben
-          if (yBot > yb + 1e-4) addBox2(a0, a1, yBot, yBot + lapM, dcen, lt, mat, true);   // Brüstung/Schwelle hoch
-          addBox2(a0, a1, yTop - lapM, yTop, dcen, lt, mat, true); } }   // Sturz runter
+          addBox2(a0, a0 + lapPtS, yBot, yTop, dcen, lt, mat, false); addBox2(a1 - lapPtS, a1, yBot, yTop, dcen, lt, mat, false);   // Jamben (ohne Kantenlinien → nahtlose Fläche)
+          if (yBot > yb + 1e-4) addBox2(a0, a1, yBot, yBot + lapM, dcen, lt, mat, false);   // Brüstung/Schwelle hoch
+          addBox2(a0, a1, yTop - lapM, yTop, dcen, lt, mat, false); } }   // Sturz runter
         off += lt; }
     };
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ obj: o, c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(o.kind === 'door' ? 6 : 10), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche, winType: o.winType || 'f1', winMat: o.winMat || 'holz', winHinge: o.winHinge || 'left' })).sort((a, b) => a.c - b.c);

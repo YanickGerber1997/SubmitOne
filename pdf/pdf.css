@@ -1,3 +1,6 @@
+/* Hover-Hervorhebung editierbarer Bauteile (Laibungsschicht / Rahmen): grün umrandet + schraffiert */
+.rev-hit:hover,.frame-hit:hover{fill:url(#hlHatch)!important;fill-opacity:1!important;stroke:#1a9a4e!important;stroke-width:2.4!important}
+.rev-hit,.frame-hit{cursor:pointer}
 :root{
   --bg:#f0efe9; --surface:#ffffff; --surface-2:#f5f4ee; --line:#dedcd2; --line-soft:#ebe9e0;
   --ink:#1c242c; --ink-soft:#565d52; --ink-faint:#9b9c8f;

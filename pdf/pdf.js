@@ -809,6 +809,12 @@ function zoomToward(clientX, clientY, factor) {
   setZoom(nz);                                  // Layout wird synchron neu gesetzt
   host.scrollLeft = docX * f - px; host.scrollTop = docY * f - py;
 }
+function zoomToClick(clientX, clientY) {   // beim Anklicken eines Bauteils sauber heranzoomen + auf den Klickpunkt zentrieren
+  if (!pdfDoc) return; const host = $('#pages'), rect = host.getBoundingClientRect();
+  const px = clientX - rect.left, py = clientY - rect.top, cur = curScale(), nz = Math.min(3.5, Math.max(cur, 2.2)), f = nz / cur;
+  const docX = host.scrollLeft + px, docY = host.scrollTop + py;
+  setZoom(nz); host.scrollLeft = docX * f - host.clientWidth / 2; host.scrollTop = docY * f - host.clientHeight / 2;
+}
 
 /* ---------- Annotationen rendern ---------- */
 function getAnnos(n) { return annos[n] || (annos[n] = []); }
@@ -1894,7 +1900,8 @@ function onPointerDown(pv, e) {
 
   if (tool === 'select') {
     const revAttr = e.target.getAttribute && e.target.getAttribute('data-rev');   // Klick auf eine Laibungs-Schicht im Grundriss → direkt editieren
-    if (revAttr && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; drawAnnos(pv); openRevealLayerPop(pv, oo, revAttr, e.clientX, e.clientY); return; } }
+    if (revAttr && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; zoomToClick(e.clientX, e.clientY); drawAnnos(pv); openRevealLayerPop(pv, oo, revAttr, e.clientX, e.clientY); return; } }
+    if (e.target.getAttribute && e.target.getAttribute('data-frame') && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; zoomToClick(e.clientX, e.clientY); drawAnnos(pv); openFramePop(pv, oo, e.clientX, e.clientY); return; } }   // Klick auf Rahmen → direkt editieren
     if (e.target.getAttribute && e.target.getAttribute('data-ah') && idAttr) { startAngleDrag(pv, e, +idAttr); return; }   // offenen Flügel ziehen → Öffnungswinkel
     if (e.target.getAttribute && e.target.getAttribute('data-group') && groupSel && groupSel.num === pv.num) { startGroupMove(pv, e); return; }   // ganze Gruppe ziehen
     const pn = e.target.getAttribute && e.target.getAttribute('data-pn'), ph = e.target.getAttribute && e.target.getAttribute('data-ph');
@@ -2808,11 +2815,11 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
     const fwS = Math.min(0.45, frameW / hw), ssW = Math.min(0.42, sashW / hw), backS = Math.min(fwS, shift / hw);   // backS = Überlappung in den Rahmen (4 cm) → Flügel schaut ssW−backS (≈3 cm) heraus
     const recM = Math.min(fdh * 1.4, recess / ht), sdM = Math.min(fdh * 1.95, sashD / ht), smB = fmB - recM, smA = Math.max(-1, smB - sdM), gc = (smA + smB) / 2, gh = Math.min((smB - smA) * 0.42, (a.glassT || cmToPts(2)) / (2 * ht));
     const wm = WIN_MAT[a.winMat || 'holz'];
-    const box = (s0, s1, mA, mB) => fills.push({ poly: [corner(s0, mA), corner(s1, mA), corner(s1, mB), corner(s0, mB)], fill: wm.fill, stroke: wm.stroke });
+    const box = (s0, s1, mA, mB, role) => fills.push({ poly: [corner(s0, mA), corner(s1, mA), corner(s1, mB), corner(s0, mB)], fill: wm.fill, stroke: wm.stroke, role });
     const twoMull = wt === 'f2s', twoFlush = wt === 'f2', two = twoMull || twoFlush;   // f2 = direkt verbunden (kein Mittelrahmen), f2s = mit Setzholz (Mittelrahmen)
     const gIn = cmToPts(1) / hw;   // Glas greift 1 cm in die Flügel
     const div = two ? [-1, 0, 1] : [-1, 1], hasMember = dv => dv <= -0.999 || dv >= 0.999 || twoMull;
-    for (const dv of div) { if (!hasMember(dv)) continue; let m0, m1; if (dv <= -0.999) { m0 = -1; m1 = -1 + fwS; } else if (dv >= 0.999) { m0 = 1 - fwS; m1 = 1; } else { m0 = -fwS / 2; m1 = fwS / 2; } box(m0, m1, fmA, fmB); }   // Blendrahmen (Jamben + Setzholz)
+    for (const dv of div) { if (!hasMember(dv)) continue; let m0, m1; if (dv <= -0.999) { m0 = -1; m1 = -1 + fwS; } else if (dv >= 0.999) { m0 = 1 - fwS; m1 = 1; } else { m0 = -fwS / 2; m1 = fwS / 2; } box(m0, m1, fmA, fmB, 'frame'); }   // Blendrahmen (Jamben + Setzholz)
     for (let i = 0; i < div.length - 1; i++) {
       const dvL = div[i], dvR = div[i + 1];
       const lEdge = dvL <= -0.999 ? -1 + fwS : (twoMull ? fwS / 2 : 0), rEdge = dvR >= 0.999 ? 1 - fwS : (twoMull ? -fwS / 2 : 0);   // Setzholz-Kante oder Mitte
@@ -2839,9 +2846,9 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
     if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }
     const fwS = Math.min(0.4, frameW / hw), gc = (fmA + fmB) / 2, gh = Math.min((fmB - fmA) * 0.32, (a.glassT || cmToPts(2)) / (2 * ht));
     const sw = a.swing || 1, hingeRight = a.winHinge === 'right', mid = wt === 'f2' || wt === 'f2s' || wt === 'f1f';
-    const box = (s0, s1, mA, mB) => fills.push({ poly: [corner(s0, mA), corner(s1, mA), corner(s1, mB), corner(s0, mB)], fill: wm.fill, stroke: wm.stroke });
+    const box = (s0, s1, mA, mB, role) => fills.push({ poly: [corner(s0, mA), corner(s1, mA), corner(s1, mB), corner(s0, mB)], fill: wm.fill, stroke: wm.stroke, role });
     const div = mid ? [-1, 0, 1] : [-1, 1];
-    for (const dv of div) { let m0, m1; if (dv <= -0.999) { m0 = -1; m1 = -1 + fwS; } else if (dv >= 0.999) { m0 = 1 - fwS; m1 = 1; } else { m0 = -fwS / 2; m1 = fwS / 2; } box(m0, m1, fmA, fmB); }   // Zarge (Jamben + Mittelpfosten)
+    for (const dv of div) { let m0, m1; if (dv <= -0.999) { m0 = -1; m1 = -1 + fwS; } else if (dv >= 0.999) { m0 = 1 - fwS; m1 = 1; } else { m0 = -fwS / 2; m1 = fwS / 2; } box(m0, m1, fmA, fmB, 'frame'); }   // Zarge (Jamben + Mittelpfosten)
     const glassPane = (sl, sr) => fills.push({ poly: [corner(sl, gc - gh), corner(sr, gc - gh), corner(sr, gc + gh), corner(sl, gc + gh)], fill: '#c7e2f5', stroke: '#7fa9c6' });
     const oAng = (a.openAngle != null ? a.openAngle : 90) * Math.PI / 180;   // Öffnungswinkel (Standard 90°); 0 = ganz zu
     const leaf = (hingeS, dirAlong, clearWs) => {   // geschlossenes Blatt (voll) + offenes Blatt (hell) beim Winkel + Schwenkbogen
@@ -2977,7 +2984,8 @@ function drawOpening(svg, a, arr) {
   for (const arc of P.arcs) { g.appendChild(svgEl('polyline', { points: arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 18).map(p => p[0] + ',' + p[1]).join(' '), fill: 'none', stroke: col, 'stroke-width': 0.8, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke' })); if (arc.handle) _angHandles[a.id] = arc.handle; }
   svg.appendChild(g);
   svg.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: 'transparent', 'data-id': a.id }));
-  for (const st of revHits) { const hp = svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id, 'data-rev': st.edge + ':' + st.side + ':' + st.li }); hp.style.cursor = 'pointer'; svg.appendChild(hp); }   // klickbare Laibungs-Schichten ÜBER dem Auswahl-Rechteck
+  for (const f of (P.fills || [])) { if (f.role !== 'frame') continue; const hp = svgEl('polygon', { class: 'frame-hit', points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id, 'data-frame': '1' }); svg.appendChild(hp); }   // klickbarer Rahmen (Hover = grün/schraffiert)
+  for (const st of revHits) { const hp = svgEl('polygon', { class: 'rev-hit', points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id, 'data-rev': st.edge + ':' + st.side + ':' + st.li }); svg.appendChild(hp); }   // klickbare Laibungs-Schichten ÜBER dem Auswahl-Rechteck (Hover = grün/schraffiert)
   if (seld) for (const arc of P.arcs) { if (!arc.handle) continue; const c = svgEl('circle', { cx: arc.handle.x.toFixed(2), cy: arc.handle.y.toFixed(2), r: 5, fill: '#fff', stroke: '#2a7', 'stroke-width': 2, 'data-id': a.id, 'data-ah': '1', 'vector-effect': 'non-scaling-stroke' }); c.style.cursor = 'grab'; svg.appendChild(c); }   // Ziehpunkt: Öffnungswinkel am offenen Blatt ziehen
   return g;
 }
@@ -3004,6 +3012,30 @@ function openRevealLayerPop(pv, a, revAttr, cx, cy) {   // Inline-Editor für EI
   const del = document.createElement('button'); del.textContent = '✕ Schicht'; del.style.cssText = 'flex:1;padding:4px;cursor:pointer'; del.onclick = () => { eachEdge((er, l2) => { if (l2[li]) l2.splice(li, 1); }); upd(); pop.remove(); };
   bar.appendChild(add); bar.appendChild(del); pop.appendChild(bar);
   const dt = document.createElement('button'); dt.textContent = '⊕ Detail (alle Kanten: Sturz/Schwelle…)'; dt.style.cssText = 'width:100%;margin-top:6px;padding:4px;cursor:pointer'; dt.onclick = () => { pop.remove(); try { openLaibungEditor(a, pv); } catch (_) { } }; pop.appendChild(dt);
+  document.body.appendChild(pop);
+  pop.style.left = Math.max(8, Math.min((cx || 200) + 8, window.innerWidth - pop.offsetWidth - 12)) + 'px';
+  pop.style.top = Math.max(8, Math.min((cy || 200) + 8, window.innerHeight - pop.offsetHeight - 12)) + 'px';
+  const close = ev => { if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('pointerdown', close, true); } };
+  setTimeout(() => document.addEventListener('pointerdown', close, true), 0);
+}
+function openFramePop(pv, a, cx, cy) {   // Inline-Editor für den Rahmen/Flügel (im Grundriss/Schnitt angeklickt)
+  document.querySelectorAll('.rev-pop').forEach(n => n.remove());
+  const isWin = a.kind === 'window', cm = v => Math.round(ptsToCm(v) * 10) / 10;
+  const pop = document.createElement('div'); pop.className = 'rev-pop'; pop.style.cssText = 'position:fixed;z-index:99999;background:#fff;border:1px solid #b8c0ad;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.2);padding:10px 11px;font:13px system-ui;min-width:220px';
+  const upd = () => { drawAnnos(pv); saveState(); };
+  const head = document.createElement('div'); head.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:7px;font-weight:600'; head.innerHTML = '<span>Rahmen / Flügel</span>'; const xb = document.createElement('button'); xb.textContent = '✕'; xb.style.cssText = 'margin-left:auto;border:none;background:none;cursor:pointer;font-size:15px'; xb.onclick = () => pop.remove(); head.appendChild(xb); pop.appendChild(head);
+  const mk = (lbl, node, reset) => { const r = document.createElement('div'); r.style.cssText = 'display:flex;align-items:center;gap:6px;margin:3px 0'; const s = document.createElement('span'); s.textContent = lbl; s.style.cssText = 'flex:1;color:#5a6152'; r.appendChild(s); r.appendChild(node); if (reset) { const rb = document.createElement('button'); rb.textContent = '↺'; rb.title = 'Zurück zum Standard'; rb.style.cssText = 'border:none;background:none;cursor:pointer;color:#7a8366;font-size:14px;padding:0 2px'; rb.onclick = reset; r.appendChild(rb); } pop.appendChild(r); };
+  const numF = (val, mn, mx, set, def) => { const n = document.createElement('input'); n.type = 'number'; n.min = mn; n.max = mx; n.step = '0.1'; n.value = val; n.style.width = '62px'; n.onchange = () => { const v = parseFloat((n.value || '').replace(',', '.')); if (!isNaN(v)) { set(v); upd(); } }; return { n, reset: () => { n.value = def; set(def); upd(); } }; };
+  const selF = (opts, cur, set) => { const sl = document.createElement('select'); opts.forEach(([k, lab]) => { const o = document.createElement('option'); o.value = k; o.textContent = lab; if (k === cur) o.selected = true; sl.appendChild(o); }); sl.onchange = () => { set(sl.value); upd(); }; return sl; };
+  const fwd = isWin ? 10 : 6, fw = numF(cm(a.frameW || cmToPts(fwd)), '1', '30', v => a.frameW = cmToPts(v), fwd); mk('Rahmenbreite (cm)', fw.n, fw.reset);
+  const fd = numF(cm(a.frameD || cmToPts(7)), '2', '40', v => a.frameD = cmToPts(v), 7); mk('Rahmentiefe (cm)', fd.n, fd.reset);
+  if (isWin) { const sw = numF(cm(a.sashW || cmToPts(7)), '2', '20', v => a.sashW = cmToPts(v), 7); mk('Flügelbreite (cm)', sw.n, sw.reset); }
+  const types = isWin ? [['f1', '1-flügelig'], ['f2', '2-flügelig'], ['f2s', '2-fl. Setzholz'], ['fest', 'Fest']] : [['f1', '1-flügelig'], ['f2', '2-flügelig'], ['f1f', '1-fl. + Fixteil'], ['fest', 'Fest']];
+  mk('Typ', selF(types, a.winType || 'f1', v => a.winType = v));
+  const hinges = isWin ? [['left', 'Band links'], ['right', 'Band rechts'], ['kipp', 'Kipp']] : [['left', 'Band links'], ['right', 'Band rechts']];
+  mk('Anschlag', selF(hinges, a.winHinge || 'left', v => a.winHinge = v));
+  const mats = [['holz', 'Holz'], ['metall', 'Metall'], ['kunst', 'Kunststoff']];
+  mk('Material', selF(mats, a.winMat || 'holz', v => a.winMat = v));
   document.body.appendChild(pop);
   pop.style.left = Math.max(8, Math.min((cx || 200) + 8, window.innerWidth - pop.offsetWidth - 12)) + 'px';
   pop.style.top = Math.max(8, Math.min((cy || 200) + 8, window.innerHeight - pop.offsetHeight - 12)) + 'px';
@@ -3095,7 +3127,7 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip, no
     out.push({ t: 'poly', pts: st.poly, fill: st.fill, stroke: st.seam == null ? st.stroke : 'none', sw: 0.7, rev, oid }); if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.7 }); if (st.hatch) for (const [u, v] of st.hatch) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.6 }); } }
   if (!revealOnly && o.kind === 'window') {
     const P = openingParts(sa, layered), wmM = WIN_MAT[o.winMat || 'holz'];
-    for (const f of (P.fills || [])) { const isGlass = f.fill === '#c7e2f5'; out.push({ t: 'poly', pts: f.poly, fill: (mullion && isGlass) ? wmM.fill : f.fill, stroke: (mullion && isGlass) ? wmM.stroke : f.stroke, sw: 1 }); }   // Mittelstoss-Schnitt: Glas → Rahmen-/Setzholzmaterial (durchgehender Pfosten)
+    for (const f of (P.fills || [])) { const isGlass = f.fill === '#c7e2f5'; out.push({ t: 'poly', pts: f.poly, fill: (mullion && isGlass) ? wmM.fill : f.fill, stroke: (mullion && isGlass) ? wmM.stroke : f.stroke, sw: 1, frame: f.role === 'frame' ? 1 : undefined, oid: f.role === 'frame' ? o.id : undefined }); }   // Mittelstoss-Schnitt: Glas → Rahmen-/Setzholzmaterial; Rahmen anklickbar
     if (mullion) { out.push({ t: 'line', x1: cx, y1: Yh(sill), x2: cx, y2: Yh(head), stroke: '#1c242c', w: 0.7, dash: '4 3' }); out.push({ t: 'text', x: cx + 3, y: cy, text: 'Setzholz', col: '#1c242c', small: true }); }   // Mittelstoss markiert
     for (const [u, v] of P.lines) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: '#1c242c', w: 1.2 });
     for (const [u, v] of (P.bold || [])) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: '#1c242c', w: 2.4 });
@@ -3244,14 +3276,14 @@ function sectionSig(a, arr) {   // billige Inhalts-Signatur: alles was den Schni
   return s;
 }
 function drawSection(svg, a, arr) {
-  const revLayer = () => { const rh = _secCache[a.id] && _secCache[a.id]._revHits; if (rh) for (const h of rh) { const hp = svgEl('polygon', { points: h.pts.map(q => q[0].toFixed(2) + ',' + q[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': h.oid, 'data-rev': h.rev }); hp.style.cursor = 'pointer'; svg.appendChild(hp); } };   // klickbare Laibungsschichten (Sturz/Schwelle) ÜBER dem Hit-Rechteck
+  const revLayer = () => { const rh = _secCache[a.id] && _secCache[a.id]._revHits; if (rh) for (const h of rh) { const at = { class: h.frame ? 'frame-hit' : 'rev-hit', points: h.pts.map(q => q[0].toFixed(2) + ',' + q[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': h.oid }; if (h.frame) at['data-frame'] = '1'; else at['data-rev'] = h.rev; svg.appendChild(svgEl('polygon', at)); } };   // klickbare Laibungsschichten (Sturz/Schwelle) + Rahmen ÜBER dem Hit-Rechteck (Hover = grün/schraffiert)
   const reuse = () => { const gc = _secCache[a.id].cloneNode(true); svg.appendChild(gc); const bb = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: bb.x, y: bb.y, width: bb.w, height: bb.h, fill: 'transparent', 'data-id': a.id })); revLayer(); if (sel && sel.id === a.id && _secCache[a.id]._hdl) for (const h of _secCache[a.id]._hdl) svg.appendChild(svgEl('circle', { class: 'handle ' + h.cls, cx: h.x, cy: h.y, r: h.r, 'data-h': h.key, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' })); return gc; };
   if (_fastDraw && _secCache[a.id]) return reuse();   // während Drag: aus Cache → flüssig
   const sig = sectionSig(a, arr); if (_secCacheSig[a.id] === sig && _secCache[a.id]) return reuse();   // unverändert → aus Cache (kein Neuschnitt bei Klicks/Eingaben anderswo)
   const g = svgEl('g', { 'data-id': a.id }), hdl = [], revHits = [];
   for (const p of sectionPrimitives(a, arr)) {
     if (p.t === 'rect') { const r = svgEl('rect', { x: Math.min(p.x, p.x + p.w), y: Math.min(p.y, p.y + p.h), width: Math.abs(p.w), height: Math.abs(p.h), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { r.setAttribute('stroke', p.stroke); r.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(r); }
-    else if (p.t === 'poly') { const pl = svgEl('polygon', { points: p.pts.map(q => q[0].toFixed(2) + ',' + q[1].toFixed(2)).join(' '), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { pl.setAttribute('stroke', p.stroke); pl.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(pl); if (p.rev && p.oid != null) revHits.push({ pts: p.pts, oid: p.oid, rev: p.rev }); }
+    else if (p.t === 'poly') { const pl = svgEl('polygon', { points: p.pts.map(q => q[0].toFixed(2) + ',' + q[1].toFixed(2)).join(' '), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { pl.setAttribute('stroke', p.stroke); pl.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(pl); if (p.rev && p.oid != null) revHits.push({ pts: p.pts, oid: p.oid, rev: p.rev }); else if (p.frame && p.oid != null) revHits.push({ pts: p.pts, oid: p.oid, frame: 1 }); }
     else if (p.t === 'line') { const l = svgEl('line', { x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2, stroke: p.stroke || '#1c242c', 'stroke-width': p.w || 1, 'vector-effect': 'non-scaling-stroke' }); if (p.dash) l.setAttribute('stroke-dasharray', p.dash); g.appendChild(l); }
     else if (p.t === 'arrow') { const s = 6, ang = Math.atan2(p.dy, p.dx); for (const da of [2.5, -2.5]) g.appendChild(svgEl('line', { x1: p.x, y1: p.y, x2: p.x - Math.cos(ang + da) * s, y2: p.y - Math.sin(ang + da) * s, stroke: p.col || '#1c242c', 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' })); }
     else if (p.t === 'text') { const t = svgEl('text', { x: p.x, y: p.y, fill: p.col || '#1c242c', 'font-size': p.size || (p.small ? 9 : 12), 'font-weight': p.small ? 400 : 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = p.text; g.appendChild(t); }

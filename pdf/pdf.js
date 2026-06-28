@@ -5644,6 +5644,7 @@ async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fe
   for (const part of buildPlanParts(1684, 1191, { pos: 'br', fields: { projekt: 'Beispielprojekt', gezeichnet: 'Submit PDF' } })) arr.push(Object.assign(part, { id: nextId++, layer: activeLayerId }));   // vollwertiger Plankopf unten rechts
   drawAnnos(pv);
   try { await buildTestSheet(); } catch (e) { console.error(e); }   // Seite 2: Teststand 3 Aufbauten + EG/Decke/OG
+  try { await buildCornerTest(); } catch (e) { console.error(e); }   // Seite 3: Eck-Test (45°/90°-Ecken, Fenster + Tür je Wand)
   saveState();
   toast('Beispielprojekt: Seite 1 = Grundriss/Schnitte/Ansicht. Seite 2 = Teststand (3 Wandaufbauten, EG+Decke+OG) zum Testen der Wand-Decken-Verschneidung + Performance.');
 }
@@ -5675,6 +5676,23 @@ async function buildTestSheet() {   // Seite 2: 3 Wandaufbauten, je EG-Wand + De
     a2.push({ id: nextId++, type: 'section', cx1: secX, cy1: planY - cmToPts(45), cx2: secX, cy2: planY + cmToPts(210), label: String.fromCharCode(65 + i), ox: X0 + 30, oy: secOy, layer: activeLayerId });   // Schnitt quer durch EG-Wand + Decke + OG-Wand
   });
   drawAnnos(pv2);
+}
+async function buildCornerTest() {   // Seite 3: Wandzug mit 45°/90°-Ecken, je Fenster + Tür → Eck-Verschneidung + Performance
+  await insertBlankPage(2, { w: 1684, h: 1191 });   // A2 quer
+  const pv3 = pageViews.find(p => p.num === 3); if (!pv3) return; const a3 = getAnnos(3);
+  const b = [['putz', 1.5], ['mauerwerk', 15], ['eps', 22], ['putz', 2.5]];
+  a3.push({ id: nextId++, type: 'text', x: 80, y: 70, w: cmToPts(1400), h: 30, text: 'ECK-TEST — Wandzug mit 45°/90°-Ecken, je Fenster + Tür · Eck-Verschneidung + Performance · 1:20', size: 18, color: '#1c242c', align: 'left', bg: 'transparent', border: null, layer: activeLayerId });
+  const P = [[380, 300], [663, 300], [813, 450], [813, 733], [601, 733]];   // A→B 4m, B→C 3m 45°, C→D 4m, D→E 3m (Ecken: B 45°, C 45°, D 90°)
+  const walls = [];
+  for (let i = 0; i < P.length - 1; i++) { const w = { id: nextId++, type: 'wall', x1: P[i][0], y1: P[i][1], x2: P[i + 1][0], y2: P[i + 1][1], thick: cmToPts(41), just: 'center', color: '#1c242c', fill: '#fff', hatch: null, width: 1.4, h3d: wallHeightM, base: 0, dim: true, layer: activeLayerId }; applyWallBuildup(w, b); a3.push(w); walls.push(w); }
+  for (const w of walls) { const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+    const win = { id: nextId++, type: 'opening', kind: 'window', wallId: w.id, t: 0.3, w: Math.min(cmToPts(120), len * 0.42), depth: 0.5, frameW: cmToPts(10), frameD: cmToPts(7), winType: 'f1', winMat: 'holz', sill: 0.9, head: 2.1, bank: true, layer: activeLayerId }; openingResolve(win, pv3); a3.push(win);
+    if (len > cmToPts(280)) { const dr = { id: nextId++, type: 'opening', kind: 'door', wallId: w.id, t: 0.74, w: cmToPts(90), depth: 0.5, frameW: cmToPts(6), frameD: cmToPts(7), winType: 'f1', winMat: 'holz', head: 2.0, layer: activeLayerId }; openingResolve(dr, pv3); a3.push(dr); }
+  }
+  a3.push({ id: nextId++, type: 'section', cx1: 520, cy1: 250, cx2: 520, cy2: 370, label: 'E', ox: 130, oy: 1080, layer: activeLayerId });   // Schnitt quer durch Wand A→B
+  for (const part of buildPlanParts(1684, 1191, { kind: 'rahmen' })) a3.push(Object.assign(part, { id: nextId++, layer: activeLayerId }));
+  for (const part of buildPlanParts(1684, 1191, { pos: 'br', fields: { projekt: 'Beispiel – Eck-Test', gezeichnet: 'Submit PDF' } })) a3.push(Object.assign(part, { id: nextId++, layer: activeLayerId }));
+  drawAnnos(pv3);
 }
 function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoomen, Ziehgriffe + Regler, live in den Plan
   const arr = getAnnos(pv.num), wall = a.wallId && arr.find(o => o.id === a.wallId && o.type === 'wall');

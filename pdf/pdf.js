@@ -3096,8 +3096,15 @@ function sectionPrimitives(a, arr) {
   for (const h of hits) {
     const w = h.w, H = w.h3d || wallHeightM, x0 = h.dist - h.appW / 2;
     const layers0 = (w.layers && w.layers.length) ? w.layers : [{ mat: null, t: h.T }], layers = a.flip ? layers0.slice().reverse() : layers0, totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
-    if (USE_SOLID && w.layers && w.layers.length) {   // STUFE 2: Wand-Poché aus kanonischem slicePlane (A/B gegen Alt)
-      for (const c of slicePlane(elementSolids(w, arr), { kind: 'v', p1, p2 })) { const xa = X(fp(c.d0)), xb = X(fp(c.d1)), x = Math.min(xa, xb), wd = Math.abs(xb - xa), yT = Yh(c.z1), yB = Yh(c.z0); if (wd < 0.2 || yB - yT < 0.1) continue; const m = c.mat ? (WALL_MATS[c.mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; out.push({ t: 'rect', x, y: yT, w: wd, h: yB - yT, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, x, yT, wd, yB - yT, c.mat, (w.hatch && w.hatch.type)); }
+    if (USE_SOLID && w.layers && w.layers.length) {   // KANONISCH (Standard): Wand-Poché aus elementSolids + slicePlane – inkl. Lattung + Schicht-Ziehgriffe (Parität zur Alt-Logik)
+      const byLi = {};
+      for (const c of slicePlane(elementSolids(w, arr), { kind: 'v', p1, p2 })) { const xa = X(fp(c.d0)), xb = X(fp(c.d1)), x = Math.min(xa, xb), wd = Math.abs(xb - xa), yT = Yh(c.z1), yB = Yh(c.z0); if (wd < 0.2 || yB - yT < 0.1) continue;
+        const lm = WALL_MATS[c.mat] || {}, m = c.mat ? lm : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col };
+        if (lm.boards) { const lay = (w.layers || [])[c.li] || {}, bwp = cmToPts(lay.boardW || 4), gpp = cmToPts(lay.boardGap != null ? lay.boardGap : 2), step = Math.max(2, bwp + gpp); for (let yy = yT; yy < yB - 0.5; yy += step) { const y2 = Math.min(yB, yy + bwp); out.push({ t: 'rect', x, y: yy, w: wd, h: y2 - yy, fill: lm.fill || '#e7cfa8', stroke: lm.color || '#7a5126', sw: 0.6 }); } }   // Lattung gestapelt
+        else { out.push({ t: 'rect', x, y: yT, w: wd, h: yB - yT, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, x, yT, wd, yB - yT, c.mat, (w.hatch && w.hatch.type)); }
+        const g = byLi[c.li] || (byLi[c.li] = { x: x + wd / 2, t: yT, b: yB }); g.t = Math.min(g.t, yT); g.b = Math.max(g.b, yB); g.x = x + wd / 2;
+      }
+      for (const li in byLi) { const g = byLi[li]; out.push({ t: 'lhandle', x: g.x, y: g.t, wallId: w.id, li: +li, edge: 'top' }); out.push({ t: 'lhandle', x: g.x, y: g.b, wallId: w.id, li: +li, edge: 'bot' }); }   // Schicht-Ziehgriffe (Ober-/Unterkante)
     } else {
     let cx = x0;
     for (let li = 0; li < layers.length; li++) { const L = layers[li], lw = (L.t / totalT) * h.appW, bx = X(cx), yTopF = Yh(H + (L.top || 0)), yBotF = Yh(0 - (L.bot || 0));   // L.top/L.bot = eigene Über-/Unterlänge; L.lowMat/L.lowH = Sockelzone
@@ -4520,7 +4527,7 @@ function decodeMesh3d(e) {
   return { pos, idx: e.bits === 16 ? new Uint16Array(_b642ab(e.i)) : new Uint32Array(_b642ab(e.i)) };
 }
 let meshSliceH = null;   // IFC-/Mesh-Höhenschnitt: null = aus, sonst Höhe in m (echter 3D-Schnitt → Grundriss)
-let USE_SOLID = false;   // Stufe 2: Wand-Vertikalschnitt aus kanonischem slicePlane statt Alt-Logik (A/B-Vergleich)
+let USE_SOLID = true;   // STANDARD: Wand-Vertikalschnitt + Öffnung aus kanonischem elementSolids/slicePlane (eine Quelle wie 3D); Alt-Logik via A/B-Knopf als Fallback
 function meshLev(a) { const l = layerById(a.layer); return (l && l.elevation) || 0; }
 function sliceMesh3d(a, hWorld) {   // schneidet das echte 3D-Mesh an der horizontalen Ebene y=hWorld → Grundriss-Segmente [x1,y1,x2,y2] (Plan-Punkte)
   if (!a.enc) return []; let d; try { d = decodeMesh3d(a.enc); } catch (_) { return []; }
@@ -6246,7 +6253,7 @@ function wire() {
   $('#smIfcReopen').onclick = () => { if (window._ifc) open3DIFC(window._ifc); else toast('Noch kein IFC importiert – zuerst „IFC importieren".'); };
   $('#smOpen').onclick = openPicker;
   { const tb = $('#smTestScene'); if (tb) tb.onclick = () => buildExampleProject(); }
-  { const sb = $('#smSolidCut'); if (sb) sb.onclick = () => { USE_SOLID = !USE_SOLID; sb.classList.toggle('on', USE_SOLID); (pageViews || []).forEach(pv => { try { drawAnnos(pv); } catch (_) { } }); toast(USE_SOLID ? 'Solid-Schnitt AN (kanonische Geometrie) – sollte gleich aussehen' : 'Solid-Schnitt aus (Alt-Logik)'); }; }
+  { const sb = $('#smSolidCut'); if (sb) { sb.classList.toggle('on', USE_SOLID); sb.onclick = () => { USE_SOLID = !USE_SOLID; sb.classList.toggle('on', USE_SOLID); (pageViews || []).forEach(pv => { try { drawAnnos(pv); } catch (_) { } }); toast(USE_SOLID ? 'Schnitt: kanonische Geometrie (Standard)' : 'Schnitt: Alt-Logik (Fallback)'); }; } }
   { const mb = $('#smMeshSlice'); if (mb) mb.onclick = () => { const cur = meshSliceH != null ? String(meshSliceH) : '1.2'; const r = prompt('IFC-/3D-Höhenschnitt bei welcher Höhe (m)? Leer = aus:', cur); if (r === null) return; const v = parseFloat((r || '').replace(',', '.')); meshSliceH = (r.trim() === '' || isNaN(v)) ? null : v; mb.classList.toggle('on', meshSliceH != null); (pageViews || []).forEach(pv => { try { drawAnnos(pv); } catch (_) { } }); toast(meshSliceH != null ? ('Höhenschnitt bei ' + meshSliceH + ' m – schneidet das echte 3D-Modell') : 'Höhenschnitt aus'); }; }
   $('#smProject').onclick = openProjectDlg;
   $('#docProject').onclick = openProjectDlg;

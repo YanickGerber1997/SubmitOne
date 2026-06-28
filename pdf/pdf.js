@@ -2771,7 +2771,7 @@ function openLichtInset(o) {   // seitlicher Licht-Einzug pro Seite (pt): STANDA
 function openingEdgeLayers(o, edge, side) {   // per-Kante-Laibung (edge L/R/T/B × side i/o); null → Fallback auf globale revealLining/Out
   const r = o && o.reveals && o.reveals[edge]; if (!r) return null;
   const lst = side === 'i' ? r.in : r.out; if (!Array.isArray(lst) || !lst.length) return null;
-  return lst.map((L, i) => [L.mat, L.t, L.gap || 0, L.prio, i]);   // [4] = Original-Index (für Klick/Editieren im Grundriss)
+  return lst.map((L, i) => [L.mat, L.t, L.gap || 0, L.prio, i, L.len, L.over]);   // [4]=Index, [5]=Länge/Tiefe (cm), [6]=Überstand(+)/Rücksprung(−) (cm)
 }
 function nearestWall(pv, x, y) {
   let best = null, bd = Infinity;
@@ -2886,14 +2886,15 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
     if (!layers || !layers.length) return;
     if (a.noSillReveal && sgn < 0) return;   // Schwelle bei Fensterbank überspringen (nur im Schnitt-sa relevant)
     const lapPt = Math.max(cmToPts(0.3), Math.min(hw * 0.92, (a.frameW || cmToPts(10)) - cmToPts(bv != null ? bv : boardVisCm)));   // seitliche Lappung (Rahmen − „Rahmen sichtbar" dieser Kante)
-    const mA = sideOut ? (fmB + oneCm) : (fmA - oneCm), mB = sideOut ? 1 : -1, m0 = Math.min(mA, mB), m1 = Math.max(mA, mB), offP = cmToPts(slopeCm || 0), sd = sideOut ? 'o' : 'i';
-    if (m1 - m0 < 0.02) return;
+    const mFrame = sideOut ? (fmB + oneCm) : (fmA - oneCm), mFace = sideOut ? 1 : -1, dirF = Math.sign(mFrame - mFace) || 1, fullDepth = Math.abs(mFrame - mFace), offP = cmToPts(slopeCm || 0), sd = sideOut ? 'o' : 'i';
+    if (fullDepth < 0.02) return;
     const ord = layers.slice().sort((x, y) => (y[3] != null ? y[3] : 2) - (x[3] != null ? x[3] : 2));   // PRIORITÄT: höchste direkt am Rahmen, niedrigere nach aussen
     let sIn = lapPt;
     ord.forEach(L => {
-      const mat = L[0], tcm = L[1], gap = L[2] || 0, mt = LINING_MAT[mat] || WALL_MATS[mat] || {};
+      const mat = L[0], tcm = L[1], gap = L[2] || 0, len = L[5], over = L[6], mt = LINING_MAT[mat] || WALL_MATS[mat] || {};
+      const mB2 = mFace + (-dirF) * (over ? cmToPts(over) / ht : 0), mA2 = (len != null) ? mFace + dirF * Math.min(cmToPts(len) / ht, fullDepth) : mFrame, m0 = Math.min(mA2, mB2), m1 = Math.max(mA2, mB2);   // Tiefe/Länge (len) + Überstand/Rücksprung (over) je Schicht
       const sOut = sIn - cmToPts(tcm), sk = mt.stroke || mt.color || '#1c242c';
-      if (sIn - sOut > 0.05) { const aI = sgn * (1 - sIn / hw), aO = sgn * (1 - sOut / hw), bI = sgn * (1 - (sIn - offP) / hw), bO = sgn * (1 - (sOut - offP) / hw), ss = [aI, aO, bI, bO]; strips.push({ poly: [corner(aI, mA), corner(aO, mA), corner(bO, mB), corner(bI, mB)], fill: mt.fill || '#fff', stroke: sk, edge, side: sd, li: L[4], hatch: mt.hatch ? bandHatch(Math.min(...ss), Math.max(...ss), m0, m1, corner, hw, ht, stepS) : null }); }
+      if (sIn - sOut > 0.05 && m1 - m0 > 0.005) { const aI = sgn * (1 - sIn / hw), aO = sgn * (1 - sOut / hw), bI = sgn * (1 - (sIn - offP) / hw), bO = sgn * (1 - (sOut - offP) / hw), ss = [aI, aO, bI, bO]; strips.push({ poly: [corner(aI, mA2), corner(aO, mA2), corner(bO, mB2), corner(bI, mB2)], fill: mt.fill || '#fff', stroke: sk, edge, side: sd, li: L[4], hatch: mt.hatch ? bandHatch(Math.min(...ss), Math.max(...ss), m0, m1, corner, hw, ht, stepS) : null }); }
       sIn = sOut - cmToPts(gap);
     });
   };
@@ -2964,6 +2965,8 @@ function openRevealLayerPop(pv, a, revAttr, cx, cy) {   // Inline-Editor für EI
   const mk = (lbl, node) => { const r = document.createElement('div'); r.style.cssText = 'display:flex;align-items:center;gap:6px;margin:3px 0'; const s = document.createElement('span'); s.textContent = lbl; s.style.cssText = 'flex:1;color:#5a6152'; r.appendChild(s); r.appendChild(node); pop.appendChild(r); };
   const ms = document.createElement('select'); matOpts.forEach(([k, lab]) => { const o = document.createElement('option'); o.value = k; o.textContent = lab; if (k === L.mat) o.selected = true; ms.appendChild(o); }); ms.onchange = () => { L.mat = ms.value; upd(); }; mk('Material', ms);
   const tn = document.createElement('input'); tn.type = 'number'; tn.min = '0.1'; tn.max = '30'; tn.step = '0.1'; tn.value = L.t; tn.style.width = '62px'; tn.onchange = () => { const v = parseFloat((tn.value || '').replace(',', '.')); if (v > 0) { L.t = v; upd(); } }; mk('Dicke (cm)', tn);
+  const ln = document.createElement('input'); ln.type = 'number'; ln.min = '0'; ln.max = '60'; ln.step = '0.5'; ln.value = (L.len != null ? L.len : ''); ln.placeholder = 'bis Rahmen'; ln.style.width = '62px'; ln.title = 'Länge/Tiefe der Schicht (cm, von der Wandfläche). Leer = bis zum Rahmen'; ln.onchange = () => { const v = parseFloat((ln.value || '').replace(',', '.')); L.len = (ln.value === '' || isNaN(v)) ? undefined : Math.max(0, v); upd(); }; mk('Länge/Tiefe (cm)', ln);
+  const ov = document.createElement('input'); ov.type = 'number'; ov.min = '-20'; ov.max = '20'; ov.step = '0.1'; ov.value = (L.over != null ? L.over : 0); ov.style.width = '62px'; ov.title = 'Überstand (+) über die Wandfläche / Rücksprung (−) dahinter (cm)'; ov.onchange = () => { const v = parseFloat((ov.value || '').replace(',', '.')); L.over = isNaN(v) ? 0 : v; upd(); }; mk('Überstand +/− (cm)', ov);
   const bvv = document.createElement('input'); bvv.type = 'number'; bvv.min = '0'; bvv.max = '30'; bvv.step = '0.1'; bvv.value = (a.reveals[edge].boardVis != null ? a.reveals[edge].boardVis : (a.boardVis != null ? a.boardVis : 1)); bvv.style.width = '62px'; bvv.onchange = () => { const v = parseFloat((bvv.value || '').replace(',', '.')); a.reveals[edge].boardVis = isNaN(v) ? 1 : Math.max(0, v); upd(); }; mk('Rahmen sichtbar (cm)', bvv);
   const bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:6px;margin-top:8px';
   const add = document.createElement('button'); add.textContent = '+ Schicht'; add.style.cssText = 'flex:1;padding:4px;cursor:pointer'; add.onclick = () => { lst.splice(li + 1, 0, { mat: 'putz', t: 1 }); upd(); pop.remove(); };

@@ -2829,15 +2829,27 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   const anType = a.anschlagType || 'none', oneCm = cmToPts(1) / ht;   // 1 cm in m-Richtung – Putz nie näher als 1 cm an den Flügel
   const userLin = Array.isArray(a.revealLining) && a.revealLining.length ? a.revealLining.map(L => [L.mat, L.t, (L.depth == null ? 1 : L.depth), (L.protrude || 0), L.dF, L.dS, L.sOff]) : null;   // innen: +sOff (seitl. Versatz entlang der Laibung)
   const userLinOut = Array.isArray(a.revealLiningOut) && a.revealLiningOut.length ? a.revealLiningOut.map(L => [L.mat, L.t, (L.depth == null ? 1 : L.depth), (L.protrude || 0), L.dF, L.dS, L.sOff]) : null;   // aussen
-  const innerLining = userLin || (rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t)), 1, 0]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]).map(e => [e[0], e[1], 1, 0]));   // putz = innerste Wandschicht reingezogen; aussen = äusserste; sonst feste Konstruktion
-  if (anType !== 'innen' && Math.abs((fmA - oneCm) + 1) > 0.02) { let sAcc = 0; const mEndFull = fmA - oneCm; for (const [mat, tcm, dep, prot, dF, dS, sOff] of innerLining) { const mt = LINING_MAT[mat] || WALL_MATS[mat] || {}, tw = Math.min(0.42, cmToPts(tcm) / hw), so = sOff ? cmToPts(sOff) / hw : 0, sk = mt.stroke || mt.color || '#1c242c', mEnd = (dF != null) ? Math.max(-0.98, mEndFull - cmToPts(dF) / ht) : (-1 + Math.max(0.02, Math.min(1, dep)) * (mEndFull + 1)), mStart = -1 - (prot ? cmToPts(prot) / ht : 0) + (dS != null ? cmToPts(dS) / ht : 0); for (const sgn of [-1, 1]) { if (a.noSillReveal && sgn === -1) continue; const s0 = sgn * (1 - sAcc - so), s1 = sgn * (1 - sAcc - so - tw); strips.push({ poly: [corner(s0, mStart), corner(s1, mStart), corner(s1, mEnd), corner(s0, mEnd)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(s0, s1), Math.max(s0, s1), mStart, mEnd, corner, hw, ht, stepS) : null }); } sAcc += tw; } }   // Innen-Laibung: dF=Abstand Rahmen, dS=Abstand Wand, sOff=seitl. Versatz, prot=Überstand
-  if (userLinOut && anType !== 'aussen' && Math.abs((fmB + oneCm) - 1) > 0.02) { let sAcc = 0; const mEndFull = fmB + oneCm; for (const [mat, tcm, dep, prot, dF, dS, sOff] of userLinOut) { const mt = LINING_MAT[mat] || WALL_MATS[mat] || {}, tw = Math.min(0.42, cmToPts(tcm) / hw), so = sOff ? cmToPts(sOff) / hw : 0, sk = mt.stroke || mt.color || '#1c242c', mEnd = (dF != null) ? Math.min(0.98, mEndFull + cmToPts(dF) / ht) : (1 - Math.max(0.02, Math.min(1, dep)) * (1 - mEndFull)), mStart = 1 + (prot ? cmToPts(prot) / ht : 0) - (dS != null ? cmToPts(dS) / ht : 0); for (const sgn of [-1, 1]) { if (a.noSillReveal && sgn === -1) continue; const s0 = sgn * (1 - sAcc - so), s1 = sgn * (1 - sAcc - so - tw); strips.push({ poly: [corner(s0, mStart), corner(s1, mStart), corner(s1, mEnd), corner(s0, mEnd)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(s0, s1), Math.max(s0, s1), mEnd, mStart, corner, hw, ht, stepS) : null }); } sAcc += tw; } }   // Aussen-Laibung: + sOff seitl. Versatz
-  const rtOut = a.revealOuter || '';   // Aussen-Laibung: EIN System (Default '' = Deckschicht/äusserste Schicht wickelt um die Ecke; Presets putz/gips/holz/stahl/alu; oder eigene Liste revealLiningOut)
-  if (!userLinOut && anType !== 'aussen' && Math.abs((fmB + oneCm) - 1) > 0.02) {
-    const outerLining = rtOut === 'putz' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (rtOut ? (REVEAL_LINING[rtOut] || [[lN.mat, Math.min(3, ptsToCm(lN.t))]]) : [[lN.mat, Math.min(8, ptsToCm(lN.t))]]);   // '' = Deckschicht (äusserste Wandschicht) wickelt um die Ecke
-    let sAcc = 0;
-    for (const [mat, tcm] of outerLining) { const mt = LINING_MAT[mat] || WALL_MATS[mat] || {}, tw = Math.min(0.42, cmToPts(tcm) / hw), sk = mt.stroke || mt.color || '#1c242c'; for (const sgn of [-1, 1]) { if (a.noSillReveal && sgn === -1) continue; const s0 = sgn * (1 - sAcc), s1 = sgn * (1 - sAcc - tw); strips.push({ poly: [corner(s0, 1), corner(s1, 1), corner(s1, fmB + oneCm), corner(s0, fmB + oneCm)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(s0, s1), Math.max(s0, s1), fmB + oneCm, 1, corner, hw, ht, stepS) : null }); } sAcc += tw; }
-  }
+  // NEUES Modell: die Laibung lappt seitlich AUF den Rahmen (Standard: frameW − 1cm sichtbar). Schichten stapeln in die Tiefe (m), die Deckschicht lappt voll, dahinterliegende Schichten treten um deren Dicke zurück (z. B. Putz voll, Dämmung dahinter).
+  const boardVisCm = a.boardVis != null ? a.boardVis : 1;   // wie viel cm vom Rahmen sichtbar bleiben (Standard 1 cm)
+  const lapPt = Math.max(cmToPts(0.3), Math.min(hw * 0.92, (a.frameW || cmToPts(10)) - cmToPts(boardVisCm)));   // seitliche Lappung auf den Rahmen
+  const drawReveal = (layers, sideOut) => {   // layers = [[mat, tcm], …] Deckschicht (an der Wandfläche) zuerst
+    if (!layers || !layers.length) return;
+    const mFace = sideOut ? 1 : -1, mFrame = sideOut ? (fmB + oneCm) : (fmA - oneCm), dir = sideOut ? -1 : 1;
+    if (Math.abs(mFrame - mFace) < 0.02) return;
+    let mO = mFace, sFront = 0;
+    for (const L of layers) {
+      const mat = L[0], tcm = L[1], mt = LINING_MAT[mat] || WALL_MATS[mat] || {}, md2 = cmToPts(tcm) / ht;
+      let mI = mO + dir * md2; mI = sideOut ? Math.max(mFrame, mI) : Math.min(mFrame, mI);
+      const lapL = Math.max(cmToPts(0.4), lapPt - sFront), m0 = Math.min(mO, mI), m1 = Math.max(mO, mI), sk = mt.stroke || mt.color || '#1c242c';
+      if (m1 - m0 > 0.005) for (const sgn of [-1, 1]) { if (a.noSillReveal && sgn < 0) continue; const sA = sgn * 1, sB = sgn * (1 - lapL / hw); strips.push({ poly: [corner(sA, m0), corner(sB, m0), corner(sB, m1), corner(sA, m1)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(sA, sB), Math.max(sA, sB), m0, m1, corner, hw, ht, stepS) : null }); }
+      mO = mI; sFront += cmToPts(tcm);
+    }
+  };
+  const innerLayers = userLin ? userLin.map(L => [L[0], L[1]]) : (rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]));
+  if (anType !== 'innen') drawReveal(innerLayers, false);
+  const rtOut = a.revealOuter || '';
+  const outerLayers = userLinOut ? userLinOut.map(L => [L[0], L[1]]) : (rtOut === 'putz' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (rtOut ? (REVEAL_LINING[rtOut] || [[lN.mat, Math.min(3, ptsToCm(lN.t))]]) : [[lN.mat, ptsToCm(lN.t)]]));
+  if (anType !== 'aussen') drawReveal(outerLayers, true);
   if (anType !== 'none') {
     const core = wall.layers[coreIdx] || wall.layers[0], cmat = WALL_MATS[core.mat] || {};
     const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), anS = Math.min(0.6, cmToPts(a.anschlagDepth != null ? a.anschlagDepth : 5) / hw);
@@ -3125,10 +3137,13 @@ function openingResolve(a, pv) {   // Position/Winkel/Dicke aus der zugehörigen
   const t = a.t == null ? 0.5 : a.t, T = w.thick || wallThickPts(); let px = w.x1 + (w.x2 - w.x1) * t, py = w.y1 + (w.y2 - w.y1) * t;
   const dx = w.x2 - w.x1, dy = w.y2 - w.y1, L = Math.hypot(dx, dy) || 1, off = (w.just === 'left' ? T / 2 : w.just === 'right' ? -T / 2 : 0);   // Band-Mitte bei Achsen-Versatz
   a.x = px + (-dy / L) * off; a.y = py + (dx / L) * off; a.ang = Math.atan2(dy, dx); a.thick = T;
-  if ((a.kind === 'window' || a.kind === 'door') && w.layers && w.layers.length) {   // STANDARD-Laibung: übernimmt Deckschicht (Material + Stärke) – innen innerste, aussen äusserste Wandschicht
-    const L0 = w.layers[0], LN = w.layers[w.layers.length - 1];
-    if (!Array.isArray(a.revealLining)) a.revealLining = [{ mat: L0.mat, t: Math.round(ptsToCm(L0.t) * 10) / 10 }];
-    if (!Array.isArray(a.revealLiningOut)) a.revealLiningOut = [{ mat: LN.mat, t: Math.round(ptsToCm(LN.t) * 10) / 10 }];
+  if ((a.kind === 'window' || a.kind === 'door') && w.layers && w.layers.length) {   // STANDARD-Laibung: übernimmt alle Deckschichten (Material + Stärke), Deckschicht (Wandfläche) zuerst → laufen bis zur Lappung, dahinter Step-back
+    let ci = w.layers.findIndex(l => ['mauerwerk', 'beton'].includes(l.mat)); if (ci < 0) ci = Math.floor((w.layers.length - 1) / 2);
+    const cm = t => Math.round(ptsToCm(t) * 10) / 10, mk = l => ({ mat: l.mat, t: cm(l.t) });
+    const inner = w.layers.slice(0, ci).filter(l => l.mat !== 'luft');                 // innen: innerste→Kern, Deckschicht (innerste) zuerst
+    const outer = w.layers.slice(ci + 1).filter(l => l.mat !== 'luft').reverse();       // aussen: äusserste(Deckschicht) zuerst → dann Dämmung
+    if (!Array.isArray(a.revealLining)) a.revealLining = (inner.length ? inner : [w.layers[0]]).map(mk);
+    if (!Array.isArray(a.revealLiningOut)) a.revealLiningOut = (outer.length ? outer : [w.layers[w.layers.length - 1]]).map(mk);
   }
 }
 function openingClick(pv, p) {
@@ -5541,6 +5556,17 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       bar.appendChild(add); bar.appendChild(wb); side.appendChild(bar);
       const rs = document.createElement('button'); rs.className = 'btn'; rs.textContent = 'Zurücksetzen'; rs.style.cssText = 'width:100%;margin-top:3px'; rs.onclick = () => { a[prop] = null; render(); buildCtrls(); drawAnnos(pv); saveState(); }; side.appendChild(rs);
     };
+    { head('Rahmen ↔ Laibung');
+      const redrawAll = () => { render(); renderSec(); renderElev(svgAo, 'a', () => vbAo, v => { vbAo = v; }); renderElev(svgAi, 'i', () => vbAi, v => { vbAi = v; }); };
+      const info = document.createElement('div'); info.className = 'lab-row'; info.style.cssText = 'font-size:11px;color:#3a4150;line-height:1.6;margin-bottom:2px';
+      const upd = () => { const fw = ptsToCm(a.frameW || cmToPts(10)), bv = a.boardVis != null ? a.boardVis : 1, lap = Math.max(0, fw - bv); info.innerHTML = 'Rahmen <b>' + fw.toFixed(1) + ' cm</b> · davon sichtbar <b>' + bv.toFixed(1) + ' cm</b> · Laibung deckt <b>' + lap.toFixed(1) + ' cm</b>'; };
+      upd(); side.appendChild(info);
+      const row = document.createElement('div'); row.className = 'lab-line';
+      const lb = document.createElement('span'); lb.textContent = 'Rahmen sichtbar (cm)'; lb.style.cssText = 'font-size:11px;color:#7a8366;flex:1';
+      const inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.max = '30'; inp.step = '0.5'; inp.value = (a.boardVis != null ? a.boardVis : 1); inp.style.width = '54px'; inp.title = 'Wie viel cm vom Rahmen sichtbar bleiben – Rest deckt die Laibung';
+      inp.onchange = () => { const v = parseFloat((inp.value || '').replace(',', '.')); a.boardVis = isNaN(v) ? 1 : Math.max(0, v); upd(); redrawAll(); drawAnnos(pv); saveState(); };
+      row.appendChild(lb); row.appendChild(inp); side.appendChild(row);
+    }
     revealEditor('revealLining', 'Laibung innen');
     revealEditor('revealLiningOut', 'Laibung aussen');
     if (win) {

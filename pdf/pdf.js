@@ -1808,6 +1808,7 @@ function drawWallUnion(svg, walls) {   // Wandflächen vereinigen → saubere Ge
 }
 let wallDimOn = true;   // neue Wände bekommen standardmässig eine Masskette (aussen Rohbau / innen Fertig)
 let revealLinked = true;   // Standard: alle Laibungs-Kanten gekoppelt bearbeiten (eine ändern = alle); per Knopf entkoppeln
+const _angHandles = {};   // {openingId: handle} – Ziehpunkt des offenen Flügels (Öffnungswinkel ziehen)
 function startDimOffDrag(pv, e, id) {   // Wand-Masslinie senkrecht zur Wand verschieben (setzt a.dimOff)
   const a = findAnno(pv.num, id); if (!a) return; pushUndo();
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len, mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
@@ -1894,6 +1895,7 @@ function onPointerDown(pv, e) {
   if (tool === 'select') {
     const revAttr = e.target.getAttribute && e.target.getAttribute('data-rev');   // Klick auf eine Laibungs-Schicht im Grundriss → direkt editieren
     if (revAttr && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; drawAnnos(pv); openRevealLayerPop(pv, oo, revAttr, e.clientX, e.clientY); return; } }
+    if (e.target.getAttribute && e.target.getAttribute('data-ah') && idAttr) { startAngleDrag(pv, e, +idAttr); return; }   // offenen Flügel ziehen → Öffnungswinkel
     if (e.target.getAttribute && e.target.getAttribute('data-group') && groupSel && groupSel.num === pv.num) { startGroupMove(pv, e); return; }   // ganze Gruppe ziehen
     const pn = e.target.getAttribute && e.target.getAttribute('data-pn'), ph = e.target.getAttribute && e.target.getAttribute('data-ph');
     if ((pn !== null || ph !== null) && sel && sel.num === pv.num) { startNodeDrag(pv, e, sel.id, pn, ph, e.target.getAttribute('data-hk')); return; }   // Kurven-Knoten/Anfasser ziehen
@@ -2549,6 +2551,12 @@ function startNodeDrag(pv, e, id, pnIdx, phIdx, hk) {
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
+function startAngleDrag(pv, e, id) {   // offenes Türblatt/Fenster ziehen → Öffnungswinkel a.openAngle (0–170°, 5°-Raster, Alt = frei)
+  const a = findAnno(pv.num, id), h = _angHandles[id]; if (!a || !h) return; pushUndo();
+  const move = ev => { const q = evtToPage(pv, ev), vx = q.x - h.hx, vy = q.y - h.hy, along = vx * h.cdx + vy * h.cdy, across = vx * h.odx + vy * h.ody; let deg = Math.atan2(across, along) * 180 / Math.PI; deg = Math.max(0, Math.min(170, deg)); if (!ev.altKey) deg = Math.round(deg / 5) * 5; a.openAngle = deg; requestDraw(pv); };
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); toast('Öffnungswinkel ' + Math.round(a.openAngle != null ? a.openAngle : 90) + '°'); };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
 function startResize(pv, e, h) {
   const a = findAnno(pv.num, sel.id); if (!a) return; pushUndo(); const orig = JSON.parse(JSON.stringify(a));
   const move = ev => {
@@ -2816,6 +2824,12 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
       } else { gl = lEdge - gIn; gr = rEdge + gIn; }
       fills.push({ poly: [corner(gl, gc - gh), corner(gr, gc - gh), corner(gr, gc + gh), corner(gl, gc + gh)], fill: '#c7e2f5', stroke: '#7fa9c6' });   // Glas (blau)
     }
+    if (wt !== 'fest') {   // offener Flügel hell + Schwenkbogen + Ziehpunkt (Fenster, 1/2-flüglig). Geschlossen = der oben gezeichnete Flügel
+      const oAngW = (a.openAngle != null ? a.openAngle : 90) * Math.PI / 180, swW = a.swing || 1, twW = cmToPts(2), Ln1 = ((2 - 2 * fwS) / (two ? 2 : 1)) * hw;
+      const wleaf = (hingeS, dirAlong) => { const hp = corner(hingeS, md), cdx = ux * dirAlong, cdy = uy * dirAlong, odx = nx * swW, ody = ny * swW, ldx = cdx * Math.cos(oAngW) + odx * Math.sin(oAngW), ldy = cdy * Math.cos(oAngW) + ody * Math.sin(oAngW), tp = [hp[0] + ldx * Ln1, hp[1] + ldy * Ln1], px = -ldy * twW, py = ldx * twW; fills.push({ poly: [hp, tp, [tp[0] + px, tp[1] + py], [hp[0] + px, hp[1] + py]], fill: wm.fill, stroke: wm.stroke, op: 0.26 }); arcs.push({ cx: hp[0], cy: hp[1], r: Ln1, from: tp, to: [hp[0] + cdx * Ln1, hp[1] + cdy * Ln1], handle: { x: tp[0], y: tp[1], hx: hp[0], hy: hp[1], cdx, cdy, odx, ody } }); };
+      if (two) { wleaf(-1 + fwS, 1); wleaf(1 - fwS, -1); }   // zwei Flügel zur Mitte
+      else if (a.winHinge === 'right') wleaf(1 - fwS, -1); else wleaf(-1 + fwS, 1);
+    }
   }
   else if (a.kind === 'door' && detail) {   // Tür wie Fenster: Zarge (Rahmen) + Flügel mit Schwenk; Festteil = Glas; 1-/2-flüglig
     const wt = a.winType || 'f1', wm = WIN_MAT[a.winMat || 'holz'];
@@ -2829,15 +2843,28 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
     const div = mid ? [-1, 0, 1] : [-1, 1];
     for (const dv of div) { let m0, m1; if (dv <= -0.999) { m0 = -1; m1 = -1 + fwS; } else if (dv >= 0.999) { m0 = 1 - fwS; m1 = 1; } else { m0 = -fwS / 2; m1 = fwS / 2; } box(m0, m1, fmA, fmB); }   // Zarge (Jamben + Mittelpfosten)
     const glassPane = (sl, sr) => fills.push({ poly: [corner(sl, gc - gh), corner(sr, gc - gh), corner(sr, gc + gh), corner(sl, gc + gh)], fill: '#c7e2f5', stroke: '#7fa9c6' });
-    const leaf = (hingeS, dirAlong, clearWs) => { const hp = corner(hingeS, md), Ln = clearWs * hw, tip = [hp[0] + nx * sw * Ln, hp[1] + ny * sw * Ln], closed = [hp[0] + ux * dirAlong * Ln, hp[1] + uy * dirAlong * Ln], tw = Math.min(fdh * 1.4 * ht, cmToPts(4)), ox = ux * dirAlong * tw, oy = uy * dirAlong * tw; fills.push({ poly: [hp, tip, [tip[0] + ox, tip[1] + oy], [hp[0] + ox, hp[1] + oy]], fill: wm.fill, stroke: wm.stroke }); arcs.push({ cx: hp[0], cy: hp[1], r: Ln, from: tip, to: closed }); };
+    const oAng = (a.openAngle != null ? a.openAngle : 90) * Math.PI / 180;   // Öffnungswinkel (Standard 90°); 0 = ganz zu
+    const leaf = (hingeS, dirAlong, clearWs) => {   // geschlossenes Blatt (voll) + offenes Blatt (hell) beim Winkel + Schwenkbogen
+      const hp = corner(hingeS, md), Ln = clearWs * hw, tw = Math.min(fdh * 1.4 * ht, cmToPts(4));
+      const cdx = ux * dirAlong, cdy = uy * dirAlong, odx = nx * sw, ody = ny * sw;   // zu-Richtung (entlang Wand) / auf-Richtung (quer)
+      const ldx = cdx * Math.cos(oAng) + odx * Math.sin(oAng), ldy = cdy * Math.cos(oAng) + ody * Math.sin(oAng);   // Blattrichtung beim Öffnungswinkel
+      const blade = (dx, dy, op) => { const tp = [hp[0] + dx * Ln, hp[1] + dy * Ln], px = -dy * tw, py = dx * tw; fills.push({ poly: [hp, tp, [tp[0] + px, tp[1] + py], [hp[0] + px, hp[1] + py]], fill: wm.fill, stroke: wm.stroke, op }); return tp; };
+      blade(cdx, cdy, 1);                                  // geschlossen = voll
+      const tipO = blade(ldx, ldy, 0.26);                 // offen = hell
+      arcs.push({ cx: hp[0], cy: hp[1], r: Ln, from: tipO, to: [hp[0] + cdx * Ln, hp[1] + cdy * Ln], handle: { x: tipO[0], y: tipO[1], hx: hp[0], hy: hp[1], cdx, cdy, odx, ody } });   // handle = Ziehpunkt am offenen Blatt (Winkel ziehen)
+    };
     if (wt === 'fest') glassPane(-1 + fwS, 1 - fwS);
     else if (wt === 'f2' || wt === 'f2s') { leaf(-1 + fwS, 1, 1 - 1.5 * fwS); leaf(1 - fwS, -1, 1 - 1.5 * fwS); }   // zwei Flügel von beiden Jamben zur Mitte
     else if (wt === 'f1f') { if (hingeRight) { glassPane(-1 + fwS, -fwS / 2); leaf(1 - fwS, -1, 1 - 1.5 * fwS); } else { leaf(-1 + fwS, 1, 1 - 1.5 * fwS); glassPane(fwS / 2, 1 - fwS); } }   // ein Flügel + Festverglasung
     else { if (hingeRight) leaf(1 - fwS, -1, 2 - 2 * fwS); else leaf(-1 + fwS, 1, 2 - 2 * fwS); }   // 1 Flügel
   }
-  else {   // einfache Tür (einschichtig): Blatt + Schwenk
-    const hS = a.hinge || 1, sN = a.swing || 1, hp = [x - ux * hw * hS, y - uy * hw * hS], tip = [hp[0] + nx * a.w * sN, hp[1] + ny * a.w * sN], closed = [x + ux * hw * hS, y + uy * hw * hS];
-    bold.push([hp, tip]); arcs.push({ cx: hp[0], cy: hp[1], r: a.w, from: tip, to: closed });
+  else {   // einfache Tür (einschichtig): geschlossen (voll) + offen (hell) beim Winkel + Schwenk
+    const hS = a.hinge || 1, sN = a.swing || 1, Ln = a.w, hp = [x - ux * hw * hS, y - uy * hw * hS], oAng = (a.openAngle != null ? a.openAngle : 90) * Math.PI / 180;
+    const cdx = ux * hS, cdy = uy * hS, odx = nx * sN, ody = ny * sN, ldx = cdx * Math.cos(oAng) + odx * Math.sin(oAng), ldy = cdy * Math.cos(oAng) + ody * Math.sin(oAng);
+    const tipC = [hp[0] + cdx * Ln, hp[1] + cdy * Ln], tipO = [hp[0] + ldx * Ln, hp[1] + ldy * Ln], tw = cmToPts(4);
+    fills.push({ poly: [hp, tipC, [tipC[0] - cdy * tw, tipC[1] + cdx * tw], [hp[0] - cdy * tw, hp[1] + cdx * tw]], fill: '#e9e6df', stroke: col });   // geschlossen voll
+    fills.push({ poly: [hp, tipO, [tipO[0] - ldy * tw, tipO[1] + ldx * tw], [hp[0] - ldy * tw, hp[1] + ldx * tw]], fill: '#e9e6df', stroke: col, op: 0.26 });   // offen hell
+    arcs.push({ cx: hp[0], cy: hp[1], r: Ln, from: tipO, to: tipC, handle: { x: tipO[0], y: tipO[1], hx: hp[0], hy: hp[1], cdx, cdy, odx, ody } });
   }
   return { cover, lines, arcs, bold, fills };
 }
@@ -2945,13 +2972,15 @@ function drawOpening(svg, a, arr) {
   g.appendChild(svgEl('polygon', { points: coverPoly.map(p => p[0] + ',' + p[1]).join(' '), fill: '#fff', stroke: 'none' }));   // Wand ausstanzen (Laibungs-aware)
   const revHits = [];   // Laibungs-Schichten für klickbare Hit-Flächen (über dem Auswahl-Rechteck)
   if (detail) for (const st of openingRevealStrips(a, arr)) { const pgr = svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.seam == null ? st.stroke : 'none', 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' }); g.appendChild(pgr); if (st.edge != null && st.li != null) revHits.push(st); if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); if (st.hatch) for (const [u, v] of st.hatch) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' })); }
-  for (const f of (P.fills || [])) g.appendChild(svgEl('polygon', { points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: f.fill, stroke: f.stroke, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));   // Rahmen/Flügel/Glas (Fenstermaterial)
+  for (const f of (P.fills || [])) g.appendChild(svgEl('polygon', { points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: f.fill, stroke: f.stroke, 'stroke-width': 1, 'fill-opacity': f.op != null ? f.op : 1, 'stroke-opacity': f.op != null ? f.op : 1, 'vector-effect': 'non-scaling-stroke' }));   // Rahmen/Flügel/Glas (Fenstermaterial); op = offenes Türblatt hell
   for (const [u, v] of P.lines) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
   for (const [u, v] of (P.bold || [])) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 2.6, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
-  for (const arc of P.arcs) g.appendChild(svgEl('polyline', { points: arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 18).map(p => p[0] + ',' + p[1]).join(' '), fill: 'none', stroke: col, 'stroke-width': 0.8, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke' }));
+  const seld = sel && sel.num != null && sel.id === a.id;
+  for (const arc of P.arcs) { g.appendChild(svgEl('polyline', { points: arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 18).map(p => p[0] + ',' + p[1]).join(' '), fill: 'none', stroke: col, 'stroke-width': 0.8, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke' })); if (arc.handle) _angHandles[a.id] = arc.handle; }
   svg.appendChild(g);
   svg.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: 'transparent', 'data-id': a.id }));
   for (const st of revHits) { const hp = svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id, 'data-rev': st.edge + ':' + st.side + ':' + st.li }); hp.style.cursor = 'pointer'; svg.appendChild(hp); }   // klickbare Laibungs-Schichten ÜBER dem Auswahl-Rechteck
+  if (seld) for (const arc of P.arcs) { if (!arc.handle) continue; const c = svgEl('circle', { cx: arc.handle.x.toFixed(2), cy: arc.handle.y.toFixed(2), r: 5, fill: '#fff', stroke: '#2a7', 'stroke-width': 2, 'data-id': a.id, 'data-ah': '1', 'vector-effect': 'non-scaling-stroke' }); c.style.cursor = 'grab'; svg.appendChild(c); }   // Ziehpunkt: Öffnungswinkel am offenen Blatt ziehen
   return g;
 }
 function openRevealLayerPop(pv, a, revAttr, cx, cy) {   // Inline-Editor für EINE Laibungsschicht (im Grundriss angeklickt): Material/Dicke + „Rahmen sichtbar" dieser Kante
@@ -4169,7 +4198,7 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
           const coverPoly = (a.x != null && a.wallId) ? openingCutPoly(a) : P.cover, d = 'M' + coverPoly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z';   // Laibungs-aware H-Ausschnitt (wie Bildschirm): Wand lappt auf den Rahmen
           try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(1, 1, 1) }); } catch (_) { }   // Wand ausstanzen
           if (oDetail) for (const st of openingRevealStrips(a, annos[n] || [])) { const sf = hexToRgb(st.fill), ss = hexToRgb(st.stroke), sd = 'M' + st.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(sd, Object.assign({ x: 0, y: PH, color: rgb(sf.r, sf.g, sf.b) }, st.seam == null ? { borderColor: rgb(ss.r, ss.g, ss.b), borderWidth: 0.7 } : {})); } catch (_) { } if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 0.7, color: rgb(ss.r, ss.g, ss.b) }); if (st.hatch) for (const [u, v] of st.hatch) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 0.8, color: rgb(ss.r, ss.g, ss.b) }); }   // Rahmen ausser an der Naht + Schraffur
-          for (const f of (P.fills || [])) { const ff = hexToRgb(f.fill), fs = hexToRgb(f.stroke), fd = 'M' + f.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(fd, { x: 0, y: PH, color: rgb(ff.r, ff.g, ff.b), borderColor: rgb(fs.r, fs.g, fs.b), borderWidth: 1 }); } catch (_) { } }   // Rahmen/Flügel/Glas
+          for (const f of (P.fills || [])) { const ff = hexToRgb(f.fill), fs = hexToRgb(f.stroke), fd = 'M' + f.poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z', fop = f.op != null ? f.op : 1; try { pg.drawSvgPath(fd, { x: 0, y: PH, color: rgb(ff.r, ff.g, ff.b), borderColor: rgb(fs.r, fs.g, fs.b), borderWidth: 1, opacity: fop, borderOpacity: fop }); } catch (_) { } }   // Rahmen/Flügel/Glas (op = offenes Blatt hell)
           for (const [u, v] of P.lines) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 1.4, color: c });
           for (const [u, v] of (P.bold || [])) pg.drawLine({ start: { x: u[0], y: Y(u[1]) }, end: { x: v[0], y: Y(v[1]) }, thickness: 2.6, color: c });
           for (const arc of P.arcs) { const pts = arcPts(arc.cx, arc.cy, arc.r, arc.from, arc.to, 18); for (let i = 1; i < pts.length; i++) pg.drawLine({ start: { x: pts[i - 1][0], y: Y(pts[i - 1][1]) }, end: { x: pts[i][0], y: Y(pts[i][1]) }, thickness: 0.8, color: c }); }

@@ -3269,6 +3269,33 @@ function sectionPrimitives(a, arr) {
     out.push({ t: 'line', x1: X(x0), y1: Yb(H), x2: X(x0 + h.appW), y2: Yb(H), stroke: col, w: 1.2 });
     out.push({ t: 'shandle', x: X(h.dist), y: Yb(H), key: 'sh:wh:' + w.id });   // Wandhöhe im Schnitt ziehen
   }
+  { const INSUL = ['eps', 'glaswolle', 'xps', 'daemm_eps', 'daemm_wolle', 'daemm_xps', 'daemm_holz', 'luft', 'konter'];   // Automatische Decke↔Wand-Verschneidung: die Decke läuft bis zur Tragschicht (vor der Dämmung/Verkleidung), die durchgehend bleibt
+    for (const sl of arr) {
+      if (sl.type !== 'slab' || !sl.layers || !sl.layers.length || !sl.pts || !layerVisible(sl) || !phaseVisible(sl)) continue;
+      const ds = [];
+      for (let i = 0; i < sl.pts.length; i++) { const q1 = sl.pts[i], q2 = sl.pts[(i + 1) % sl.pts.length], ix = segInt(p1, p2, q1, q2); if (ix) ds.push((ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy); }
+      if (pointInPoly(p1, sl.pts)) ds.push(0); if (pointInPoly(p2, sl.pts)) ds.push(cl); ds.sort((u, v) => u - v);
+      const ivs = []; for (let i = 0; i + 1 < ds.length; i++) { const dm = (ds[i] + ds[i + 1]) / 2, mid = [p1[0] + cux * dm, p1[1] + cuy * dm]; if (pointInPoly(mid, sl.pts)) ivs.push([fp(ds[i]), fp(ds[i + 1])]); }
+      if (!ivs.length) continue;
+      const sb0 = sl.base || 0, stk = sl.thick || 0.2, bands = slabLayerBands(sl) || [];
+      for (const h of hits) {
+        const w = h.w, wb = w.base || 0, wh = w.h3d || wallHeightM;
+        if (sb0 >= wb + wh - 0.005 || sb0 + stk <= wb + 0.005 || !(w.layers && w.layers.length)) continue;   // keine Höhen-Überlappung Wand/Decke
+        const wd0 = h.dist - h.appW / 2, wd1 = h.dist + h.appW / 2;
+        let touches = false, roomHigh = false;
+        for (const iv of ivs) { const lo = Math.min(iv[0], iv[1]), hi = Math.max(iv[0], iv[1]); if (hi > wd0 - 3 && lo < wd1 + 3) { touches = true; roomHigh = ((lo + hi) / 2) >= h.dist; } }
+        if (!touches) continue;
+        const layers = a.flip ? w.layers.slice().reverse() : w.layers, totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
+        let cum = 0; const bnd = [wd0]; for (const L of layers) { cum += L.t; bnd.push(wd0 + (cum / totalT) * h.appW); }
+        let structFace;   // Tragschicht-Aussenkante (= Innenkante der ersten Dämm-/Luftschicht von innen)
+        if (roomHigh) { structFace = wd0; for (let i = layers.length - 1; i >= 0; i--) { if (INSUL.includes(layers[i].mat)) { structFace = bnd[i + 1]; break; } } }
+        else { structFace = wd1; for (let i = 0; i < layers.length; i++) { if (INSUL.includes(layers[i].mat)) { structFace = bnd[i]; break; } } }
+        const innerFace = roomHigh ? wd1 : wd0, pxa = X(Math.min(innerFace, structFace)), pxb = X(Math.max(innerFace, structFace));
+        if (Math.abs(pxb - pxa) < 0.5) continue;
+        for (const bd of bands) { const m = WALL_MATS[bd.mat] || {}, yT = Yh(sb0 + bd.y1), yB = Yh(sb0 + bd.y0); if (yB - yT < 0.3) continue; out.push({ t: 'rect', x: Math.min(pxa, pxb), y: yT, w: Math.abs(pxb - pxa), h: yB - yT, fill: m.fill || '#dadde2', stroke: m.color || col, sw: 0.6 }); if (!simpleMode && m.hatch) sectionBandHatch(out, Math.min(pxa, pxb), yT, Math.abs(pxb - pxa), yB - yT, bd.mat, null); }
+      }
+    }
+  }
   for (const pr of arr) {   // Profile: wo die Schnittlinie den Pfad kreuzt → echter Querschnitt an seiner Höhe
     if (pr.type !== 'profile' || !pr.path || pr.path.length < 2 || !pr.prof || pr.prof.length < 3 || !layerVisible(pr) || !phaseVisible(pr)) continue;
     const seg = pr.closed && pr.path.length >= 3 ? pr.path.concat([pr.path[0]]) : pr.path, base = pr.elev || 0;

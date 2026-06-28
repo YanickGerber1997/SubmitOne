@@ -2732,14 +2732,19 @@ function openingFootprint(o) {   // Öffnungs-Grundriss (Breite × volle Wanddic
   const hw = (o.w || 0) / 2, ht = ((o.thick || wallThickPts()) / 2) + 1, ux = Math.cos(o.ang || 0), uy = Math.sin(o.ang || 0), nx = -uy, ny = ux, x = o.x, y = o.y;
   return [[x - ux * hw - nx * ht, y - uy * hw - ny * ht], [x + ux * hw - nx * ht, y + uy * hw - ny * ht], [x + ux * hw + nx * ht, y + uy * hw + ny * ht], [x - ux * hw + nx * ht, y - uy * hw + ny * ht]];
 }
-function openingRevealTotalPts(o, side) { const lst = side === 'i' ? o.revealLining : o.revealLiningOut; return Array.isArray(lst) && lst.length ? lst.reduce((s, L) => s + cmToPts(L.t || 0) + cmToPts(L.gap || 0), 0) : 0; }   // Gesamtdicke der Laibung je Seite (pt)
-function openingCutPoly(o) {   // Laibungs-bewusster Ausschnitt: die Wand LAPPT an den Laibungstiefen auf den Rahmen (H-Form) – nur die Laibungsdicke + 1cm bleibt frei, der Rest der Lappung ist Wandschicht
+function openingRevealTotalPts(o, edge, side) {   // Gesamtdicke der Laibung (pt) je Kante (L/R/T/B) + Seite (i/o); Fallback auf globale revealLining/Out
+  let lst = null; if (o.reveals && o.reveals[edge]) lst = side === 'i' ? o.reveals[edge].in : o.reveals[edge].out;
+  if (!Array.isArray(lst) || !lst.length) lst = side === 'i' ? o.revealLining : o.revealLiningOut;
+  return Array.isArray(lst) && lst.length ? lst.reduce((s, L) => s + cmToPts(L.t || 0) + cmToPts(L.gap || 0), 0) : 0;
+}
+function openingCutPoly(o) {   // Laibungs-bewusster Ausschnitt (H-Form): die Wand lappt an den Laibungstiefen auf den Rahmen – pro Jamb (L/R) und Tiefe (innen/aussen) eigene freie Breite
   const hw = (o.w || 0) / 2, ht = (o.thick || wallThickPts()) / 2, ux = Math.cos(o.ang || 0), uy = Math.sin(o.ang || 0), nx = -uy, ny = ux, x = o.x, y = o.y, e = 1;
   const frameW = o.frameW || cmToPts(10), boardVis = cmToPts(o.boardVis != null ? o.boardVis : 1), lapPt = Math.max(0, Math.min(hw * 0.92, frameW - boardVis));
-  const wIn = Math.max(2, hw - Math.max(0, lapPt - openingRevealTotalPts(o, 'i'))), wOut = Math.max(2, hw - Math.max(0, lapPt - openingRevealTotalPts(o, 'o')));   // freie Breite je Tiefenband = Öffnung − Wand-Lappung
+  const free = (edge, side) => Math.max(2, hw - Math.max(0, lapPt - openingRevealTotalPts(o, edge, side)));   // freie Halbbreite = Öffnung − Wand-Lappung
+  const wInL = free('L', 'i'), wOutL = free('L', 'o'), wInR = free('R', 'i'), wOutR = free('R', 'o');   // links (−s) = Kante L, rechts (+s) = Kante R
   const depth = o.depth == null ? 0.5 : o.depth, md = depth * 2 - 1, fdh = Math.min(0.49, (o.frameD || cmToPts(7)) / (2 * ht)), fmA = (md - fdh) * ht, fmB = (md + fdh) * ht;
   const P = (s, m) => [x + ux * s + nx * m, y + uy * s + ny * m];
-  return [P(-wIn, -ht - e), P(wIn, -ht - e), P(wIn, fmA), P(hw + e, fmA), P(hw + e, fmB), P(wOut, fmB), P(wOut, ht + e), P(-wOut, ht + e), P(-wOut, fmB), P(-hw - e, fmB), P(-hw - e, fmA), P(-wIn, fmA)];
+  return [P(-wInL, -ht - e), P(wInR, -ht - e), P(wInR, fmA), P(hw + e, fmA), P(hw + e, fmB), P(wOutR, fmB), P(wOutR, ht + e), P(-wOutL, ht + e), P(-wOutL, fmB), P(-hw - e, fmB), P(-hw - e, fmA), P(-wInL, fmA)];
 }
 function revInsetPts(lst) { if (!Array.isArray(lst) || !lst.length) return 0; let acc = 0, mx = 0; for (const L of lst) { acc += cmToPts(L.t || 0); mx = Math.max(mx, acc + (L.sOff ? cmToPts(L.sOff) : 0)); } return mx; }   // seitliche Einragung einer Laibungs-Schichtliste (Dicke + Versatz, tiefste Kante)
 function openLichtInset(o) {   // seitlicher Licht-Einzug pro Seite (pt): STANDARD = am Rahmen (frameW − 1cm sichtbar), und reagiert wenn die Laibung tiefer einragt

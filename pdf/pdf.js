@@ -2946,7 +2946,7 @@ function openingElev(out, X, Yh, opx0, opw, o, H, col, redM) {   // Fenster/Tür
     }
   }
 }
-function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip, noDims) {   // Schnitt DURCH die Öffnung: gedrehtes Grundriss-Profil (Rahmen/Flügel/Scheibe + Schichteinzug), Sturz oben/Schwelle unten
+function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip, noDims, mullion) {   // Schnitt DURCH die Öffnung: gedrehtes Grundriss-Profil (Rahmen/Flügel/Scheibe + Schichteinzug), Sturz oben/Schwelle unten
   const sill = o.kind === 'window' ? (o.sill || 0) : 0, head = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0));
   if (head - sill < 0.02 || appW < 2) return;
   const hPx = (head - sill) / perPt, cx = X(distPt), cy = Yh((sill + head) / 2), ht2 = appW / 2, hw = hPx / 2;
@@ -2956,8 +2956,9 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip, no
   const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: dep, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: (o.winType === 'fest' || o.winType === 'f1f') ? o.winType : 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: flip ? (o.revealOuter || 'putz') : o.revealType, revealOuter: flip ? o.revealType : o.revealOuter, boardW: o.boardW, boardVis: o.boardVis, boardProtrude: o.boardProtrude, boardMat: o.boardMat, outerLap: o.outerLap, innerReveal: o.innerReveal, revealLining: o.revealLining, noSillReveal: (o.kind === 'window' && o.bank !== false), anschlagType: flip ? (o.anschlagType === 'innen' ? 'aussen' : o.anschlagType === 'aussen' ? 'innen' : (o.anschlagType || 'none')) : o.anschlagType, anschlagDepth: o.anschlagDepth, wallId: 'secw' };   // bei flip Innen/Aussen (Anschlag + Laibung) mitspiegeln
   if (layered) { const sw = { id: 'secw', type: 'wall', layers: flip ? wall.layers.slice().reverse() : wall.layers, x1: cx, y1: cy + hw, x2: cx, y2: cy - hw, thick: appW, hatch: wall.hatch }; for (const st of openingRevealStrips(sa, [sw])) { out.push({ t: 'poly', pts: st.poly, fill: st.fill, stroke: st.seam == null ? st.stroke : 'none', sw: 0.7 }); if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.7 }); if (st.hatch) for (const [u, v] of st.hatch) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.6 }); } }
   if (o.kind === 'window') {
-    const P = openingParts(sa, layered);
-    for (const f of (P.fills || [])) out.push({ t: 'poly', pts: f.poly, fill: f.fill, stroke: f.stroke, sw: 1 });
+    const P = openingParts(sa, layered), wmM = WIN_MAT[o.winMat || 'holz'];
+    for (const f of (P.fills || [])) { const isGlass = f.fill === '#c7e2f5'; out.push({ t: 'poly', pts: f.poly, fill: (mullion && isGlass) ? wmM.fill : f.fill, stroke: (mullion && isGlass) ? wmM.stroke : f.stroke, sw: 1 }); }   // Mittelstoss-Schnitt: Glas → Rahmen-/Setzholzmaterial (durchgehender Pfosten)
+    if (mullion) { out.push({ t: 'line', x1: cx, y1: Yh(sill), x2: cx, y2: Yh(head), stroke: '#1c242c', w: 0.7, dash: '4 3' }); out.push({ t: 'text', x: cx + 3, y: cy, text: 'Setzholz', col: '#1c242c', small: true }); }   // Mittelstoss markiert
     for (const [u, v] of P.lines) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: '#1c242c', w: 1.2 });
     for (const [u, v] of (P.bold || [])) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: '#1c242c', w: 2.4 });
     if (o.niche) { const nH = o.nicheH || cmToPts(28), nD = o.nicheD || cmToPts(13), nx0 = flip ? cx + ht2 - nD : cx - ht2, ny0 = (cy - hw) - nH; out.push({ t: 'rect', x: nx0, y: ny0, w: nD, h: nH, fill: '#e9e6df', stroke: '#1c242c', sw: 0.8 }); out.push({ t: 'text', x: nx0 + 2, y: ny0 + nH / 2, text: 'Storen', col: '#1c242c', small: true }); }   // Storennische 13×28 hinten, über dem Sturz
@@ -3020,7 +3021,7 @@ function sectionPrimitives(a, arr) {
       if (w.layers && w.layers.length) { const oi = a.flip ? (layers.length - 1 - li) : li; out.push({ t: 'lhandle', x: bx + lw / 2, y: yTopF, wallId: w.id, li: oi, edge: 'top' }); out.push({ t: 'lhandle', x: bx + lw / 2, y: yBotF, wallId: w.id, li: oi, edge: 'bot' }); }   // Schicht-Ziehgriffe (Ober-/Unterkante) → im Schnitt verlängern/kürzen
       cx += lw; }
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
-    for (const o of ops) sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip, a.noDims);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil (a.flip = Blickrichtung)
+    for (const o of ops) sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip, a.noDims, a.mullion);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil (a.flip = Blickrichtung)
     out.push({ t: 'line', x1: X(x0), y1: Yh(H), x2: X(x0 + h.appW), y2: Yh(H), stroke: col, w: 1.2 });
     out.push({ t: 'shandle', x: X(h.dist), y: Yh(H), key: 'sh:wh:' + w.id });   // Wandhöhe im Schnitt ziehen
   }
@@ -5178,7 +5179,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   document.body.appendChild(ov);
   const svg = ov.querySelector('#labSvg'), svgS = ov.querySelector('#labSvgS'), svgAo = ov.querySelector('#labSvgAo'), svgAi = ov.querySelector('#labSvgAi'), side = ov.querySelector('#labCtrls');
   let vbG = null, vbS = null, vbAo = null, vbAi = null;   // aktuelle viewBox je Ansicht (zoomen/verschieben wie im echten Grundriss; null = einpassen)
-  let secFlip = false, secLine = null;   // Schnitt: Blickrichtung + frei verschiebbare Schnittlinie (null = perpendikulär durchs Fenster)
+  let secFlip = false, secLine = null, secMullion = false;   // Schnitt: Blickrichtung + frei verschiebbare Schnittlinie + Schnitt durch Mittelstoss (Setzholz)
   const dimOff = {};   // verschiebbare Masslinien: key -> Offset (Zeichnungseinheiten)
   const DIMD = { secRoh: 74, secLicht: 36, elW: 40, elH: 60, gndRoh: 60, gndLicht: 28 };
   const doff = k => dimOff[k] != null ? dimOff[k] : DIMD[k];
@@ -5292,10 +5293,11 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   function renderSec() {   // Schnitt im Wandkontext: echte Schnitt-Engine an frei wählbarer Linie (Default = perpendikulär durchs Fenster)
     if (!docScale) { svgS.innerHTML = '<text x="10" y="22" font-size="13" fill="#9aa090">Für den Schnitt zuerst den Massstab setzen (1:n)</text>'; svgS.setAttribute('viewBox', '0 0 300 60'); return; }
     const ang = a.ang || 0, nx = -Math.sin(ang), ny = Math.cos(ang), ux = Math.cos(ang), uy = Math.sin(ang), L = (a.thick || wallThickPts()) * 1.7 + cmToPts(90);   // Schnittlinie quer durch die Wand
-    const leafOff = (a.kind === 'window' && (a.winType === 'f2' || a.winType === 'f2s')) ? a.w / 4 : 0;   // 2-flügelig: Schnitt durch EINEN Flügel (nicht durch den Mittelstoss)
+    const two = a.kind === 'window' && (a.winType === 'f2' || a.winType === 'f2s');
+    const leafOff = (two && !secMullion) ? a.w / 4 : 0;   // 2-flügelig: Schnitt durch EINEN Flügel; Mittelstoss-Schnitt = mittig
     const ccx = a.x + ux * leafOff, ccy = a.y + uy * leafOff;
     const c1 = secLine ? secLine.c1 : [ccx - nx * L / 2, ccy - ny * L / 2], c2 = secLine ? secLine.c2 : [ccx + nx * L / 2, ccy + ny * L / 2];
-    const tmp = { type: 'section', cx1: c1[0], cy1: c1[1], cx2: c2[0], cy2: c2[1], ox: 0, oy: 0, flip: secFlip, label: 'A', noPlanLine: true, noDims: true };
+    const tmp = { type: 'section', cx1: c1[0], cy1: c1[1], cx2: c2[0], cy2: c2[1], ox: 0, oy: 0, flip: secFlip, label: 'A', noPlanLine: true, noDims: true, mullion: (two && secMullion) };
     let out = []; try { out = sectionPrimitives(tmp, arr); } catch (_) { out = []; }
     const perPt = docScale.perPt, Yh = h => -h / perPt;   // eigene, verschiebbare Masslinien: innen Rohbau, aussen Licht (vertikal, versetzt)
     const head0 = Math.min((a.head != null ? a.head : (a.kind === 'window' ? 2.1 : 2.0)), (wall && wall.h3d) || wallHeightM), sill0 = a.kind === 'window' ? (a.sill || 0) : 0;
@@ -5369,6 +5371,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     const win = a.kind === 'window';
     head('Schnitt');
     { const tw = document.createElement('label'); tw.className = 'lab-row'; tw.style.cssText = 'flex-direction:row;align-items:center;gap:7px'; const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = secFlip; const sp = document.createElement('span'); sp.textContent = 'Blickrichtung drehen (innen ⇄ aussen)'; cb.onchange = () => { secFlip = cb.checked; renderSec(); }; tw.appendChild(cb); tw.appendChild(sp); side.appendChild(tw); }
+    if (win && (a.winType === 'f2' || a.winType === 'f2s')) { const tw = document.createElement('label'); tw.className = 'lab-row'; tw.style.cssText = 'flex-direction:row;align-items:center;gap:7px'; const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = secMullion; const sp = document.createElement('span'); sp.textContent = 'Schnitt durch Mittelstoss (Setzholz)'; cb.onchange = () => { secMullion = cb.checked; renderSec(); }; tw.appendChild(cb); tw.appendChild(sp); side.appendChild(tw); }
     head(win ? 'Fenster' : 'Tür');
     sel('Typ', win ? [['f1', '1-flügelig'], ['f2', '2-flügelig (bündig)'], ['f2s', '2-fl. + Setzholz'], ['fest', 'Fest verglast']] : [['f1', '1-flügelig'], ['f2', '2-flügelig'], ['fest', 'Fest'], ['f1f', '1-fl. + Fixteil']], a.winType || 'f1', v => { a.winType = v; render(); drawAnnos(pv); saveState(); });
     sel('Material', [['holz', 'Holz'], ['metall', 'Metall'], ['kunst', 'Kunststoff']], a.winMat || 'holz', v => { a.winMat = v; render(); drawAnnos(pv); saveState(); });

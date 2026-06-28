@@ -5472,8 +5472,8 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       if (side === 'i' && o2.kind === 'window') { const pjI = cmToPts(3), th = cmToPts(2.5); out.push({ t: 'rect', x: opx0 - pjI, y: Yh(sillF), w: o2.w + 2 * pjI, h: th, fill: '#e7cfa8', stroke: '#7a5126', sw: 0.8 }); }   // innen: Holz-Fensterbrett
       if (o2.id === a.id) { out.push({ t: 'rect', x: opx0 - 4, y: Yh(headF) - 4, w: o2.w + 8, h: (Yh(sillF) - Yh(headF)) + 8, fill: 'none', stroke: '#2aa869', sw: 2.4 }); curD = { opx0, w: o2.w, headF, sillF, rPts }; }   // aktuelles Fenster markiert
     }
-    if (curD) {   // verschiebbare Masslinien: Breite (unten) + Höhe (links) – aussen = Rohbau, innen = Licht (fertig)
-      const roh = side !== 'i', tag = roh ? 'Rohbau ' : 'Licht ', x0 = roh ? curD.opx0 : curD.opx0 + curD.rPts, w0 = roh ? curD.w : Math.max(2, curD.w - 2 * curD.rPts);
+    if (curD) {   // verschiebbare Masslinien: Breite (unten) + Höhe (links) – INNEN = Rohbaumass, AUSSEN = Fertig-/Lichtmass
+      const roh = side === 'i', tag = roh ? 'Rohbau ' : 'Licht ', x0 = roh ? curD.opx0 : curD.opx0 + curD.rPts, w0 = roh ? curD.w : Math.max(2, curD.w - 2 * curD.rPts);
       const rM = ptsToCm(curD.rPts) / 100, hb = roh ? curD.sillF : curD.sillF + (curD.sillF > 0 ? rM : 0), htp = roh ? curD.headF : curD.headF - rM;
       pushDim(out, [x0, Yh(hb)], [x0 + w0, Yh(hb)], [0, 1], doff('elW'), tag + 'B ' + fmtLen(w0 / perPt), 'elW');
       pushDim(out, [x0, Yh(hb)], [x0, Yh(htp)], [-1, 0], doff('elH'), tag + 'H ' + fmtLen((htp - hb) / perPt), 'elH');

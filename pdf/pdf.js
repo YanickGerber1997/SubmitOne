@@ -5862,13 +5862,13 @@ function build3DScene(host, walls, arr, opts) {
     const addWallLap3D = (o, a0, a1, yBot, yTop, dC, fdM) => {   // Wand-Finish-Schichten (ausserhalb der Rahmen-Tiefe) lappen auf den Rahmen → füllt die Lücke an Laibung/Sturz/Brüstung
       if (!wL) return;
       const lapPt0 = (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1), lapInPt = Math.max(0, lapPt0 - openingRevealTotalPts(o, 'L', 'i')), lapOutPt = Math.max(0, lapPt0 - openingRevealTotalPts(o, 'L', 'o')), bH = (w.schalH ? w.schalH / 100 : 0.12);
-      let off = -th / 2;
-      for (const L of wL) { const lt = (L.t / totalT) * th; if (L.mat !== 'luft') { const lo = off, hi = off + lt, inner = hi <= dC - fdM / 2 + 1e-4, outer = lo >= dC + fdM / 2 - 1e-4, lapPtS = inner ? lapInPt : (outer ? lapOutPt : 0);
-        if (lapPtS > 0.5) { const lapM = lapPtS * perPt, dcen = off + lt / 2, mat = layerMat(L.mat, lapPtS * perPt, yTop - yBot, bH);
-          addBox2(a0, a0 + lapPtS, yBot, yTop, dcen, lt, mat, false); addBox2(a1 - lapPtS, a1, yBot, yTop, dcen, lt, mat, false);   // Jamben (ohne Kantenlinien → nahtlose Fläche)
-          if (yBot > yb + 1e-4) addBox2(a0, a1, yBot, yBot + lapM, dcen, lt, mat, false);   // Brüstung/Schwelle hoch
-          addBox2(a0, a1, yTop - lapM, yTop, dcen, lt, mat, false); } }   // Sturz runter
-        off += lt; }
+      const offs = []; { let off = -th / 2; for (const L of wL) { offs.push(off); off += (L.t / totalT) * th; } }
+      for (const [i, lapPtS] of [[0, lapInPt], [wL.length - 1, lapOutPt]]) {   // NUR Deckschichten lappen: innerste (innen) + äusserste (aussen) – Dämmung dazwischen NICHT (sonst graue Flicken)
+        const L = wL[i]; if (!L || L.mat === 'luft' || lapPtS <= 0.5) continue; const lt = (L.t / totalT) * th, dcen = offs[i] + lt / 2, lapM = lapPtS * perPt, mat = layerMat(L.mat, lapPtS * perPt, yTop - yBot, bH);
+        addBox2(a0, a0 + lapPtS, yBot, yTop, dcen, lt, mat, false); addBox2(a1 - lapPtS, a1, yBot, yTop, dcen, lt, mat, false);   // Jamben (nahtlos)
+        if (yBot > yb + 1e-4) addBox2(a0, a1, yBot, yBot + lapM, dcen, lt, mat, false);   // Brüstung/Schwelle hoch
+        addBox2(a0, a1, yTop - lapM, yTop, dcen, lt, mat, false);   // Sturz runter
+      }
     };
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ obj: o, c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(o.kind === 'door' ? 6 : 10), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche, winType: o.winType || 'f1', winMat: o.winMat || 'holz', winHinge: o.winHinge || 'left' })).sort((a, b) => a.c - b.c);
     let cur = 0;

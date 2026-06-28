@@ -2844,10 +2844,10 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   // NEUES Modell: die Laibung lappt seitlich AUF den Rahmen (Standard: frameW − 1cm sichtbar). Schichten stapeln in die Tiefe (m), die Deckschicht lappt voll, dahinterliegende Schichten treten um deren Dicke zurück (z. B. Putz voll, Dämmung dahinter).
   const boardVisCm = a.boardVis != null ? a.boardVis : 1;   // wie viel cm vom Rahmen sichtbar bleiben (Standard 1 cm)
   const lapPt = Math.max(cmToPts(0.3), Math.min(hw * 0.92, (a.frameW || cmToPts(10)) - cmToPts(boardVisCm)));   // seitliche Lappung auf den Rahmen
-  const drawReveal = (layers, sideOut, sgn) => {   // EINE Laibungsseite (sgn = -1 links / +1 rechts): Schichten stehen QUER (jede reicht in die Tiefe von Wandfläche bis Rahmen), stapeln parallel zur Wand Richtung Öffnung; letzte deckt bis zur Lappung (Rahmen − 1cm)
+  const drawReveal = (layers, sideOut, sgn, slopeCm) => {   // EINE Laibungsseite: Schichten QUER (in die Tiefe), parallel zur Wand gestapelt; höchste Priorität deckt bis zur Lappung; slopeCm = schräge Laibung (Versatz am Wandflächen-Ende)
     if (!layers || !layers.length) return;
     if (a.noSillReveal && sgn < 0) return;   // Schwelle bei Fensterbank überspringen (nur im Schnitt-sa relevant)
-    const mA = sideOut ? (fmB + oneCm) : (fmA - oneCm), mB = sideOut ? 1 : -1, m0 = Math.min(mA, mB), m1 = Math.max(mA, mB);   // Tiefe: Rahmenseite … Wandfläche
+    const mA = sideOut ? (fmB + oneCm) : (fmA - oneCm), mB = sideOut ? 1 : -1, m0 = Math.min(mA, mB), m1 = Math.max(mA, mB), offP = cmToPts(slopeCm || 0);   // mA = Rahmenseite, mB = Wandfläche; offP = Schräg-Versatz am Wandflächen-Ende
     if (m1 - m0 < 0.02) return;
     const ord = layers.slice().sort((x, y) => (x[3] != null ? x[3] : 2) - (y[3] != null ? y[3] : 2));   // PRIORITÄT: niedrige am Rahmen-fern (Jamb), höchste reicht bis zur Öffnung/Lappung; niedrigere endet an der höheren
     let sAcc = 0;
@@ -2856,8 +2856,8 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
       sAcc += cmToPts(gap);   // Luft-Abstand (parallel zur Wand) vor dieser Schicht
       let sEnd = sAcc + cmToPts(tcm); if (i === ord.length - 1) sEnd = Math.max(sEnd, lapPt);   // höchste Priorität (zuletzt) deckt bis zur Lappung
       sEnd = Math.min(sEnd, hw * 0.96);
-      const sa = sgn * (1 - sAcc / hw), sb = sgn * (1 - sEnd / hw), sk = mt.stroke || mt.color || '#1c242c';
-      if (sEnd - sAcc > 0.05) strips.push({ poly: [corner(sa, m0), corner(sb, m0), corner(sb, m1), corner(sa, m1)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(sa, sb), Math.max(sa, sb), m0, m1, corner, hw, ht, stepS) : null });
+      const saF = sgn * (1 - sAcc / hw), sbF = sgn * (1 - sEnd / hw), saO = sgn * (1 - (sAcc - offP) / hw), sbO = sgn * (1 - (sEnd - offP) / hw), sk = mt.stroke || mt.color || '#1c242c';   // F = Rahmen-Ende, O = Wandflächen-Ende (geschert)
+      if (sEnd - sAcc > 0.05) { const ss = [saF, sbF, saO, sbO]; strips.push({ poly: [corner(saF, mA), corner(sbF, mA), corner(sbO, mB), corner(saO, mB)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(...ss), Math.max(...ss), m0, m1, corner, hw, ht, stepS) : null }); }
       sAcc = sEnd;
     });
   };
@@ -2865,9 +2865,9 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   const rtOut = a.revealOuter || '';
   const outerLayers = userLinOut ? a.revealLiningOut.map(L => [L.mat, L.t, L.gap || 0, L.prio]) : (rtOut === 'putz' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (rtOut ? (REVEAL_LINING[rtOut] || [[lN.mat, Math.min(3, ptsToCm(lN.t))]]) : [[lN.mat, ptsToCm(lN.t)]]));
   for (const sgn of [-1, 1]) {   // links (sgn -1, Kante L) und rechts (sgn +1, Kante R) je eigene Laibung; Fallback = globale Liste
-    const edge = sgn < 0 ? 'L' : 'R';
-    if (anType !== 'innen') drawReveal(openingEdgeLayers(a, edge, 'i') || innerLayers, false, sgn);
-    if (anType !== 'aussen') drawReveal(openingEdgeLayers(a, edge, 'o') || outerLayers, true, sgn);
+    const edge = sgn < 0 ? 'L' : 'R', slope = (a.reveals && a.reveals[edge] && a.reveals[edge].slope) || 0;
+    if (anType !== 'innen') drawReveal(openingEdgeLayers(a, edge, 'i') || innerLayers, false, sgn, slope);
+    if (anType !== 'aussen') drawReveal(openingEdgeLayers(a, edge, 'o') || outerLayers, true, sgn, slope);
   }
   if (anType !== 'none') {
     const core = wall.layers[coreIdx] || wall.layers[0], cmat = WALL_MATS[core.mat] || {};
@@ -2993,7 +2993,7 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip, no
   const corner = (s, m) => [cx + ht2 * m, cy - hw * s];   // s = vertikal (Kopf oben), m = horizontal (Wanddicke)
   const layered = !simpleMode && wall.layers && wall.layers.length >= 2, dep0 = o.depth == null ? 0.5 : o.depth, dep = flip ? 1 - dep0 : dep0;   // Blickrichtung: Innen/Aussen tauschen
   out.push({ t: 'rect', x: cx - ht2, y: Yh(head), w: appW, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });   // Öffnung ausstanzen
-  const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: dep, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: (o.winType === 'fest' || o.winType === 'f1f') ? o.winType : 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: flip ? (o.revealOuter || 'putz') : o.revealType, revealOuter: flip ? o.revealType : o.revealOuter, boardW: o.boardW, boardVis: o.boardVis, boardProtrude: o.boardProtrude, boardMat: o.boardMat, outerLap: o.outerLap, innerReveal: o.innerReveal, revealLining: flip ? o.revealLiningOut : o.revealLining, revealLiningOut: flip ? o.revealLining : o.revealLiningOut, reveals: (() => { if (!o.reveals) return undefined; const sw = e => e ? (flip ? { in: e.out, out: e.in } : e) : undefined; return { L: sw(o.reveals.B), R: sw(o.reveals.T) }; })(), noSillReveal: (o.kind === 'window' && o.bank !== false), anschlagType: flip ? (o.anschlagType === 'innen' ? 'aussen' : o.anschlagType === 'aussen' ? 'innen' : (o.anschlagType || 'none')) : o.anschlagType, anschlagDepth: o.anschlagDepth, wallId: 'secw' };   // bei flip Innen/Aussen (Anschlag + Laibung) mitspiegeln
+  const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: dep, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: (o.winType === 'fest' || o.winType === 'f1f') ? o.winType : 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: flip ? (o.revealOuter || 'putz') : o.revealType, revealOuter: flip ? o.revealType : o.revealOuter, boardW: o.boardW, boardVis: o.boardVis, boardProtrude: o.boardProtrude, boardMat: o.boardMat, outerLap: o.outerLap, innerReveal: o.innerReveal, revealLining: flip ? o.revealLiningOut : o.revealLining, revealLiningOut: flip ? o.revealLining : o.revealLiningOut, reveals: (() => { if (!o.reveals) return undefined; const sw = e => e ? (flip ? { in: e.out, out: e.in, slope: e.slope } : e) : undefined; return { L: sw(o.reveals.B), R: sw(o.reveals.T) }; })(), noSillReveal: (o.kind === 'window' && o.bank !== false), anschlagType: flip ? (o.anschlagType === 'innen' ? 'aussen' : o.anschlagType === 'aussen' ? 'innen' : (o.anschlagType || 'none')) : o.anschlagType, anschlagDepth: o.anschlagDepth, wallId: 'secw' };   // bei flip Innen/Aussen (Anschlag + Laibung) mitspiegeln
   if (layered) { const sw = { id: 'secw', type: 'wall', layers: flip ? wall.layers.slice().reverse() : wall.layers, x1: cx, y1: cy + hw, x2: cx, y2: cy - hw, thick: appW, hatch: wall.hatch }; for (const st of openingRevealStrips(sa, [sw])) { out.push({ t: 'poly', pts: st.poly, fill: st.fill, stroke: st.seam == null ? st.stroke : 'none', sw: 0.7 }); if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.7 }); if (st.hatch) for (const [u, v] of st.hatch) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.6 }); } }
   if (!revealOnly && o.kind === 'window') {
     const P = openingParts(sa, layered), wmM = WIN_MAT[o.winMat || 'holz'];
@@ -5591,6 +5591,13 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       EDGES.forEach(([k, lab]) => { const b = document.createElement('button'); b.className = 'btn' + (editEdge === k ? ' on' : ''); b.textContent = lab; b.style.cssText = 'flex:1;min-width:48px;padding:3px 4px' + (editEdge === k ? ';background:#2aa869;color:#fff' : ''); b.onclick = () => { editEdge = k; buildCtrls(); }; pick.appendChild(b); });
       side.appendChild(pick);
       const en = document.createElement('div'); en.className = 'lab-row'; en.innerHTML = '<span style="color:#7a8366;font-size:11px">' + (editEdge === 'all' ? 'Gilt für alle Kanten (Standard). Wähle eine Kante für eigene Schichten.' : 'Nur Kante <b>' + EDGES.find(e => e[0] === editEdge)[1] + '</b>. „Alle" = gemeinsamer Standard.') + '</span>'; side.appendChild(en);
+      if (editEdge !== 'all') {   // schräge Laibung je Kante
+        const sr = document.createElement('div'); sr.className = 'lab-line';
+        const sl = document.createElement('span'); sl.textContent = 'Schräg (cm)'; sl.style.cssText = 'font-size:11px;color:#7a8366;flex:1';
+        const si = document.createElement('input'); si.type = 'number'; si.min = '-20'; si.max = '20'; si.step = '0.5'; si.value = ((a.reveals && a.reveals[editEdge] && a.reveals[editEdge].slope) || 0); si.style.width = '54px'; si.title = 'Neigung der Laibung: Versatz am Wandflächen-Ende (cm). + = öffnet zur Wandfläche hin (Splay), − = umgekehrt';
+        si.onchange = () => { const v = parseFloat((si.value || '').replace(',', '.')); a.reveals = a.reveals || {}; a.reveals[editEdge] = a.reveals[editEdge] || {}; a.reveals[editEdge].slope = isNaN(v) ? 0 : v; redrawAll(); drawAnnos(pv); saveState(); };
+        sr.appendChild(sl); sr.appendChild(si); side.appendChild(sr);
+      }
     }
     revealEditor('revealLining', 'Laibung innen');
     revealEditor('revealLiningOut', 'Laibung aussen');

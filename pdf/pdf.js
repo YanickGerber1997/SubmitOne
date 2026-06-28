@@ -3259,19 +3259,26 @@ function sectionPrimitives(a, arr) {
     const seg = pr.closed && pr.path.length >= 3 ? pr.path.concat([pr.path[0]]) : pr.path, base = pr.elev || 0;
     for (let i = 0; i < seg.length - 1; i++) { const ix = segInt(p1, p2, seg[i], seg[i + 1]); if (!ix) continue; const d = fp((ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy), pts = pr.prof.map(q => [X(d) + cmToPts(q[0]), Yh(base + q[1] / 100)]); out.push({ t: 'poly', pts, fill: pr.color || '#7a8392', stroke: '#1c242c', sw: 0.6 }); }
   }
-  if (!a.noDims) {   // Auto-Höhenleiter + Schnitt-Beschriftung (im Detail-Editor weggelassen → dort eigene, verschiebbare Masslinien)
-    const Htop = sectionMaxH(a, arr);   // gemeinsames Höhen-Datum (keine Auto-Decke mehr – nur echte, gezeichnete Decken oben)
-    const hSet = new Set([0, Htop]);   // Höhen-Stationen: Boden, Geschoss, je Öffnung Brüstung+Sturz
-    for (const h of hits) for (const o of arr.filter(o => o.type === 'opening' && o.wallId === h.w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl))) { hSet.add(o.kind === 'window' ? (o.sill || 0) : 0); hSet.add(Math.min(Htop, o.head || (o.kind === 'window' ? 2.1 : 2.0))); }
-    const hs = [...hSet].sort((p, q) => p - q), xD = X(-34);
-    out.push({ t: 'line', x1: xD, y1: Yh(0), x2: xD, y2: Yh(Htop), w: 0.9 });
-    for (const s of hs) out.push({ t: 'line', x1: xD - 4, y1: Yh(s), x2: xD + 4, y2: Yh(s), w: 0.8 });
-    for (let i = 0; i < hs.length - 1; i++) { const seg = hs[i + 1] - hs[i]; if (seg < 0.02) continue; out.push({ t: 'text', x: xD - 34, y: (Yh(hs[i]) + Yh(hs[i + 1])) / 2 + 4, text: fmtLen(seg / perPt), col, small: true }); }
+  if (!a.noDims) {   // Höhen-Masketten wie im Grundriss: zwei Ketten (links innen=Fertig/Licht „F", rechts aussen=Rohbau „R"), wandabhängig, gleicher Abstand, geschnittene Fenster/Türen mitgenommen
+    const Htop = sectionMaxH(a, arr), DOFF = 34, over = 4;
+    const cutOpsArr = [];   // alle vom Schnitt gekreuzten Öffnungen (Höhen)
+    for (const h of hits) for (const o of arr.filter(o => o.type === 'opening' && o.wallId === h.w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl))) if (!cutOpsArr.includes(o)) cutOpsArr.push(o);
+    const dimChain = (xLine, side, fertig, tag) => {   // side<0 links (Text links), side>0 rechts; fertig = Licht (Laibung abgezogen)
+      const hSet = new Set([0, Htop]);
+      for (const o of cutOpsArr) { const sill = o.kind === 'window' ? (o.sill || 0) : 0, head = Math.min(Htop, o.head || (o.kind === 'window' ? 2.1 : 2.0)), insM = fertig ? ptsToCm(Math.max(0, (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1))) / 100 : 0; hSet.add(Math.max(0, sill + insM)); hSet.add(Math.max(sill + insM + 0.02, head - insM)); }
+      const hs = [...new Set([...hSet].map(v => Math.round(v * 1000) / 1000))].sort((p, q) => p - q), xFace = side < 0 ? X(0) : X(cl);
+      out.push({ t: 'line', x1: xLine, y1: Yh(0) + side * 0, x2: xLine, y2: Yh(Htop), w: 0.9 });   // Masslinie
+      out.push({ t: 'text', x: xLine + side * 9, y: Yh(Htop) - 7, text: tag, col, small: true });   // Kettenkennung F/R
+      for (const s of hs) { out.push({ t: 'line', x1: xFace, y1: Yh(s), x2: xLine + side * over, y2: Yh(s), w: 0.55 }); const px = xLine; out.push({ t: 'line', x1: px - 3.5, y1: Yh(s) + 3.5, x2: px + 3.5, y2: Yh(s) - 3.5, w: 1.1 }); }   // Masshilfslinie (bis Wandfläche) + Tick
+      for (let i = 0; i < hs.length - 1; i++) { const seg = hs[i + 1] - hs[i]; if (seg < 0.02) continue; out.push({ t: 'text', x: xLine + side * 19, y: (Yh(hs[i]) + Yh(hs[i + 1])) / 2 + 4, text: fmtLen(seg / perPt), col, small: true }); }
+    };
+    dimChain(X(-DOFF), -1, true, 'F');          // innen = Fertig/Licht
+    dimChain(X(cl + DOFF), 1, false, 'R');      // aussen = Rohbau
     { const stxt = 'Schnitt ' + lbl + '–' + lbl; out.push({ t: 'text', x: X(cl / 2) - stxt.length * 5.2, y: Yh(-0.22) + 30, text: stxt, col, size: 21 }); }   // grössere Schnitt-Beschriftung
   }
   return out;
 }
-function sectionBBox(a, arr) { if (!docScale) return { x: a.ox - 6, y: a.oy - 16, w: 180, h: 30 }; const perPt = docScale.perPt, cl = Math.hypot(a.cx2 - a.cx1, a.cy2 - a.cy1) || 1, mh = sectionMaxH(a, arr) / perPt; return { x: a.ox - 16, y: a.oy - mh - 8, w: cl + 32, h: mh + 36 }; }
+function sectionBBox(a, arr) { if (!docScale) return { x: a.ox - 6, y: a.oy - 16, w: 180, h: 30 }; const perPt = docScale.perPt, cl = Math.hypot(a.cx2 - a.cx1, a.cy2 - a.cy1) || 1, mh = sectionMaxH(a, arr) / perPt; return { x: a.ox - 62, y: a.oy - mh - 12, w: cl + 124, h: mh + 40 }; }   // breiter: zwei Höhen-Masketten (links/rechts)
 const _revSig = o => { const f = l => Array.isArray(l) ? l.map(x => x.mat + (x.t || 0) + (x.gap || 0) + (x.prio || '') + (x.len != null ? 'L' + x.len : '') + (x.over || 0)).join('') : ''; let r = f(o.revealLining) + '|' + f(o.revealLiningOut); if (o.reveals) for (const e of ['L', 'R', 'T', 'B']) { const ed = o.reveals[e]; if (ed) r += e + f(ed.in) + f(ed.out) + (ed.slope || 0) + (ed.boardVis != null ? 'b' + ed.boardVis : ''); } return r; };
 function sectionSig(a, arr) {   // billige Inhalts-Signatur: alles was den Schnitt/die Ansicht beeinflusst → nur bei Änderung neu rechnen
   const p = docScale ? docScale.perPt : 0;

@@ -898,7 +898,7 @@ function duplicateLayerUp() {   // aktives Geschoss 1:1 nach oben kopieren (neue
 }
 function findAnno(n, id) { return (annos[n] || []).find(a => a.id === id); }
 let _wallUnionActive = false;
-let _rafDraw = 0, _fastDraw = false, _fullDeb = 0; const _rafPvs = new Set(), _fullPvs = new Set(), _secCache = {}, _secCacheSig = {};   // _fastDraw = Frame während Drag → teure Schnitte aus Cache; _fullDeb = kurz nach dem Drag voller Redraw (Schnitte ziehen automatisch nach, ohne Klick)
+let _rafDraw = 0, _fastDraw = false, _fullDeb = 0, _secLive = false; const _rafPvs = new Set(), _fullPvs = new Set(), _secCache = {}, _secCacheSig = {};   // _fastDraw = Frame während Drag → teure Schnitte aus Cache; _secLive = Schnitt wird gerade IM Schnitt bearbeitet → live neu rechnen (kein Cache); _fullDeb = kurz nach dem Drag voller Redraw
 function requestDraw(pv) {   // mehrere drawAnnos pro Frame (z. B. während Drag) zu EINEM Redraw bündeln → flüssiger; Schnitte folgen kurz danach automatisch
   _rafPvs.add(pv); _fullPvs.add(pv);
   if (!_rafDraw) _rafDraw = requestAnimationFrame(() => { _rafDraw = 0; _fastDraw = true; const ps = [..._rafPvs]; _rafPvs.clear(); for (const p of ps) { try { drawAnnos(p); } catch (_) { } } _fastDraw = false; });
@@ -2498,14 +2498,16 @@ function startSectionEdit(pv, e, key) {   // im Schnitt direkt ziehen: Wandhöhe
   else if (kind === 'op') { const o = findAnno(pv.num, +pp[2]); if (!o) { if (undoStack.length) undoStack.pop(); return; } const edge = pp[3], base = edge === 'head' ? (o.head != null ? o.head : (o.kind === 'window' ? 2.1 : 2.0)) : (o.sill || 0); move = ev => { const v = Math.max(0, Math.round((base + dh(evtToPage(pv, ev))) * 100) / 100); if (edge === 'head') o.head = v; else o.sill = v; requestDraw(pv); }; }
   else if (kind === 'sb') { const s = findAnno(pv.num, +pp[2]); if (!s) { if (undoStack.length) undoStack.pop(); return; } const o = s.base || 0; move = ev => { s.base = Math.max(0, Math.round((o + dh(evtToPage(pv, ev))) * 100) / 100); requestDraw(pv); }; }
   else { if (undoStack.length) undoStack.pop(); return; }
-  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
+  _secLive = true;
+  const up = () => { _secLive = false; document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); drawAnnos(pv); saveState(); };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function startSectionLayerDrag(pv, e, wallId, li, edge) {   // im Schnitt: Schicht-Ober-/Unterkante ziehen → layer.top/bot (m)
   const w = findAnno(pv.num, wallId); if (!w || !w.layers || !w.layers[li] || !docScale) return; pushUndo();
   const perPt = docScale.perPt, L = w.layers[li], o = edge === 'top' ? (L.top || 0) : (L.bot || 0), start = evtToPage(pv, e);
   const move = ev => { const q = evtToPage(pv, ev); if (edge === 'top') L.top = Math.max(-2, Math.round(((o + (start.y - q.y) * perPt)) * 1000) / 1000); else L.bot = Math.max(-2, Math.round(((o + (q.y - start.y) * perPt)) * 1000) / 1000); requestDraw(pv); };
-  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
+  _secLive = true;
+  const up = () => { _secLive = false; document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); drawAnnos(pv); saveState(); };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function startLayerExtDrag(pv, e, id, li, end) {   // eine Wandschicht an einem Ende entlang der Wandachse verlängern/kürzen (pt)
@@ -3415,7 +3417,7 @@ function drawSection(svg, a, arr) {
   const hdlVis = h => secSelWall == null || h.wid === secSelWall;   // bei sub-gewählter Wand nur deren Ziehpunkte
   const wallLayer = () => { const wh = _secCache[a.id] && _secCache[a.id]._wallHits; if (wh) for (const b of wh) { const r = svgEl('rect', { x: b.x0, y: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0, fill: 'transparent', 'data-id': a.id, 'data-wall': b.wid }); r.style.cursor = 'pointer'; svg.appendChild(r); } };   // klickbare Wand-Bauteile (Wand im Schnitt wählen) ÜBER dem Hit-Rechteck
   const reuse = () => { const gc = _secCache[a.id].cloneNode(true); svg.appendChild(gc); const bb = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: bb.x, y: bb.y, width: bb.w, height: bb.h, fill: 'transparent', 'data-id': a.id })); wallLayer(); revLayer(); if (sel && sel.id === a.id && _secCache[a.id]._hdl) for (const h of _secCache[a.id]._hdl) { if (!hdlVis(h)) continue; svg.appendChild(svgEl('circle', { class: 'handle ' + h.cls, cx: h.x, cy: h.y, r: h.r, 'data-h': h.key, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' })); } return gc; };
-  if (_fastDraw && _secCache[a.id]) return reuse();   // während Drag: aus Cache → flüssig
+  if (_fastDraw && _secCache[a.id] && !(_secLive && sel && sel.id === a.id)) return reuse();   // während Drag: aus Cache → flüssig; nur der aktiv bearbeitete Schnitt rechnet live neu
   const sig = sectionSig(a, arr); if (_secCacheSig[a.id] === sig && _secCache[a.id]) return reuse();   // unverändert → aus Cache (kein Neuschnitt bei Klicks/Eingaben anderswo)
   const g = svgEl('g', { 'data-id': a.id }), hdl = [], revHits = [], wallHB = {};
   for (const p of sectionPrimitives(a, arr)) {

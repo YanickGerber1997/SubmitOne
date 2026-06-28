@@ -4640,7 +4640,7 @@ function openingSolids(o) {   // Stufe 3: Fenster/Tür als Profil-Teile in der A
   const bankLayers = (Array.isArray(o.bankLayers) && o.bankLayers.length) ? o.bankLayers : [{ mat: o.bankMat || 'metall', t: (o.bankH != null ? o.bankH : 2.5) }];   // Fensterbank/Sims-Aufbau (Schichten, Oberkante an der Schwelle)
   if (!door && o.bank !== false) { const overD = cmToPts(o.bankOver != null ? o.bankOver : 4), sideO = cmToPts(4), mOut = 1 + overD / ht; let z = sill; for (const L of bankLayers) { const h = m(cmToPts(L.t || 2.5)); rect(-hw - sideO, hw + sideO, z - h, z, 'bank', L.mat, md, mOut); z -= h; } }   // Fensterbank aussen: geschichtet, Oberkante an der Schwelle, projiziert um bankOver über die Fassade
   if (!door && o.sims) { const overD = cmToPts(o.bankOver != null ? o.bankOver : 4), sideO = cmToPts(4), mIn = -1 - overD / ht; let z = sill; for (const L of bankLayers) { const h = m(cmToPts(L.t || 2.5)); rect(-hw - sideO, hw + sideO, z - h, z, 'bank', L.mat, mIn, md); z -= h; } }   // Fenstersims innen (geschichtet)
-  if (door) rect(-hw + fwB, hw - fwB, sill, sill + m(cmToPts(2.5)), 'frame', 'holz', fmA, fmB);   // Türschwelle / Bodenschiene (untere Zarge)
+  if (door) { const tl = (Array.isArray(o.sillLayers) && o.sillLayers.length) ? o.sillLayers : [{ mat: o.thresholdMat || 'holz', t: 2.5 }]; let z = sill; for (const L of tl) { const h = m(cmToPts(L.t || 2.5)); rect(-hw + fwB, hw - fwB, z, z + h, 'bank', L.mat, fmA, fmB); z += h; } }   // Türschwelle geschichtet (Aufbau, vom Boden hoch)
   return parts;
 }
 function openingPartStyle(role, o, mat) {   // Füllung/Strich je Bauteil-Rolle (eine Quelle für Ansicht + Schnitt); mat = optionales Schicht-Material (Fensterbank-Aufbau)
@@ -5711,6 +5711,17 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       }
       const tn = document.createElement('label'); tn.className = 'lab-row'; tn.style.cssText = 'flex-direction:row;align-items:center;gap:7px'; const cbn = document.createElement('input'); cbn.type = 'checkbox'; cbn.checked = !!a.niche; const spn = document.createElement('span'); spn.textContent = 'Storenkasten (innen, über Sturz)'; cbn.onchange = () => { a.niche = cbn.checked; render(); buildCtrls(); drawAnnos(pv); saveState(); }; tn.appendChild(cbn); tn.appendChild(spn); side.appendChild(tn);
       if (a.niche) { fld('nicheH'); fld('nicheD'); }
+    } else if (a.kind === 'door') {
+      head('Türschwelle');
+      if (!Array.isArray(a.sillLayers) || !a.sillLayers.length) a.sillLayers = [{ mat: a.thresholdMat || 'holz', t: 2.5 }];
+      const RL = a.sillLayers, bmatOpts = [['holz', 'Holz'], ['metall', 'Metallschiene'], ['beton', 'Beton/Stein']].concat(Object.keys(WALL_MATS).map(k => [k, WALL_MATS[k].label || k]));
+      const hint = document.createElement('div'); hint.className = 'lab-row'; hint.innerHTML = '<span style="color:#46503f"><b style="color:#34502b">Schwellen-Aufbau</b> · vom Boden hoch</span>'; side.appendChild(hint);
+      RL.forEach((L, i) => { const row = document.createElement('div'); row.className = 'lab-line';
+        const ms = document.createElement('select'); ms.style.flex = '1'; bmatOpts.forEach(([k, lab]) => { const o = document.createElement('option'); o.value = k; o.textContent = lab; if (k === L.mat) o.selected = true; ms.appendChild(o); }); ms.onchange = () => { L.mat = ms.value; redrawAll(); drawAnnos(pv); saveState(); };
+        const tn = document.createElement('input'); tn.type = 'number'; tn.min = '0.2'; tn.max = '20'; tn.step = '0.1'; tn.value = L.t; tn.style.width = '48px'; tn.title = 'Dicke (cm)'; tn.onchange = () => { const v = parseFloat((tn.value || '').replace(',', '.')); if (v > 0) { L.t = v; redrawAll(); drawAnnos(pv); saveState(); } };
+        const del = document.createElement('button'); del.className = 'btn'; del.textContent = '✕'; del.style.cssText = 'padding:0 8px'; del.onclick = () => { RL.splice(i, 1); if (!RL.length) a.sillLayers = [{ mat: 'holz', t: 2.5 }]; redrawAll(); buildCtrls(); drawAnnos(pv); saveState(); };
+        row.appendChild(ms); row.appendChild(tn); row.appendChild(del); side.appendChild(row); });
+      const ab = document.createElement('button'); ab.className = 'btn'; ab.textContent = '+ Schicht'; ab.style.cssText = 'width:100%;margin-top:2px'; ab.onclick = () => { RL.push({ mat: 'beton', t: 2 }); redrawAll(); buildCtrls(); drawAnnos(pv); saveState(); }; side.appendChild(ab);
     }
     if (wall && wall.layers && wall.layers.length) {
       head('Wandschichten (innen → aussen)');
@@ -5916,6 +5927,7 @@ function build3DScene(host, walls, arr, opts) {
         addWallLap3D(op.obj, a0, a1, yb, headY, dC, fdM);   // Wandschichten lappen auf die Zarge (Lücke füllen)
         addBox2(a0, a0 + op.fw, yb, headY, dC, fdM, omat, true); addBox2(a1 - op.fw, a1, yb, headY, dC, fdM, omat, true);   // Zarge seitlich
         addBox2(a0, a1, headY - fwM, headY, dC, fdM, omat, true);                                                          // Zarge oben
+        { const tl = (Array.isArray(op.obj.sillLayers) && op.obj.sillLayers.length) ? op.obj.sillLayers : [{ mat: op.obj.thresholdMat || 'holz', t: 2.5 }]; let z = yb; for (const L of tl) { const h = M(cmToPts(L.t || 2.5)), st = openingPartStyle('bank', op.obj, L.mat), bm = new THREE.MeshLambertMaterial({ color: new THREE.Color(st.fill) }); addBox2(a0 + op.fw, a1 - op.fw, z, z + h, dC, fdM, bm, false); z += h; } }   // Türschwelle geschichtet (vom Boden hoch)
         const mid = op.winType === 'f2' || op.winType === 'f2s' || op.winType === 'f1f';
         if (mid) addBox2((a0 + a1) / 2 - op.fw / 2, (a0 + a1) / 2 + op.fw / 2, yb, headY, dC, fdM, omat, true);             // Mittelpfosten/Setzholz
         if (op.winType === 'fest') addBox2(a0 + op.fw, a1 - op.fw, yb, headY - fwM, dC, M(cmToPts(2)), gmat, false);        // Festverglasung

@@ -2958,7 +2958,7 @@ function openingElev(out, X, Yh, opx0, opw, o, H, col, redM, side) {   // Fenste
     }
   }
 }
-function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip, noDims, mullion) {   // Schnitt DURCH die Öffnung: gedrehtes Grundriss-Profil (Rahmen/Flügel/Scheibe + Schichteinzug), Sturz oben/Schwelle unten
+function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip, noDims, mullion, revealOnly) {   // revealOnly = nur Laibung/Schichteinzug zeichnen (Rahmen/Glas/Bank kommen aus Solids)
   const sill = o.kind === 'window' ? (o.sill || 0) : 0, head = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0));
   if (head - sill < 0.02 || appW < 2) return;
   const hPx = (head - sill) / perPt, cx = X(distPt), cy = Yh((sill + head) / 2), ht2 = appW / 2, hw = hPx / 2;
@@ -2967,28 +2967,28 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip, no
   out.push({ t: 'rect', x: cx - ht2, y: Yh(head), w: appW, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });   // Öffnung ausstanzen
   const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: dep, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: (o.winType === 'fest' || o.winType === 'f1f') ? o.winType : 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: flip ? (o.revealOuter || 'putz') : o.revealType, revealOuter: flip ? o.revealType : o.revealOuter, boardW: o.boardW, boardVis: o.boardVis, boardProtrude: o.boardProtrude, boardMat: o.boardMat, outerLap: o.outerLap, innerReveal: o.innerReveal, revealLining: o.revealLining, noSillReveal: (o.kind === 'window' && o.bank !== false), anschlagType: flip ? (o.anschlagType === 'innen' ? 'aussen' : o.anschlagType === 'aussen' ? 'innen' : (o.anschlagType || 'none')) : o.anschlagType, anschlagDepth: o.anschlagDepth, wallId: 'secw' };   // bei flip Innen/Aussen (Anschlag + Laibung) mitspiegeln
   if (layered) { const sw = { id: 'secw', type: 'wall', layers: flip ? wall.layers.slice().reverse() : wall.layers, x1: cx, y1: cy + hw, x2: cx, y2: cy - hw, thick: appW, hatch: wall.hatch }; for (const st of openingRevealStrips(sa, [sw])) { out.push({ t: 'poly', pts: st.poly, fill: st.fill, stroke: st.seam == null ? st.stroke : 'none', sw: 0.7 }); if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.7 }); if (st.hatch) for (const [u, v] of st.hatch) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.6 }); } }
-  if (o.kind === 'window') {
+  if (!revealOnly && o.kind === 'window') {
     const P = openingParts(sa, layered), wmM = WIN_MAT[o.winMat || 'holz'];
     for (const f of (P.fills || [])) { const isGlass = f.fill === '#c7e2f5'; out.push({ t: 'poly', pts: f.poly, fill: (mullion && isGlass) ? wmM.fill : f.fill, stroke: (mullion && isGlass) ? wmM.stroke : f.stroke, sw: 1 }); }   // Mittelstoss-Schnitt: Glas → Rahmen-/Setzholzmaterial (durchgehender Pfosten)
     if (mullion) { out.push({ t: 'line', x1: cx, y1: Yh(sill), x2: cx, y2: Yh(head), stroke: '#1c242c', w: 0.7, dash: '4 3' }); out.push({ t: 'text', x: cx + 3, y: cy, text: 'Setzholz', col: '#1c242c', small: true }); }   // Mittelstoss markiert
     for (const [u, v] of P.lines) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: '#1c242c', w: 1.2 });
     for (const [u, v] of (P.bold || [])) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: '#1c242c', w: 2.4 });
     if (o.niche) { const nH = o.nicheH || cmToPts(28), nD = o.nicheD || cmToPts(13), nx0 = flip ? cx + ht2 - nD : cx - ht2, ny0 = (cy - hw) - nH; out.push({ t: 'rect', x: nx0, y: ny0, w: nD, h: nH, fill: '#e9e6df', stroke: '#1c242c', sw: 0.8 }); out.push({ t: 'text', x: nx0 + 2, y: ny0 + nH / 2, text: 'Storen', col: '#1c242c', small: true }); }   // Storennische 13×28 hinten, über dem Sturz
-  } else {
+  } else if (!revealOnly && o.kind === 'door') {
     const wm = WIN_MAT[o.winMat || 'holz'], md = Math.max(-1, Math.min(1, sa.depth * 2 - 1)), frameD = o.frameD || cmToPts(7), frameW = o.frameW || cmToPts(6);
     const fdh = Math.min(0.49, frameD / appW), leafW = Math.min(0.4, cmToPts(4) / appW), fwS = Math.min(0.4, frameW / hPx);
     out.push({ t: 'poly', pts: [corner(-1, md - leafW), corner(1 - fwS, md - leafW), corner(1 - fwS, md + leafW), corner(-1, md + leafW)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Türblatt (vertikal, bei Einbautiefe)
     out.push({ t: 'poly', pts: [corner(1 - fwS, md - fdh), corner(1, md - fdh), corner(1, md + fdh), corner(1 - fwS, md + fdh)], fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Sturz-Rahmen
   }
-  if (o.kind === 'window' && o.bank !== false) {   // Fensterbank aussen: Metallblech am Sims, geneigt + Überstand + Tropfkante
+  if (!revealOnly && o.kind === 'window' && o.bank !== false) {   // Fensterbank aussen: Metallblech am Sims, geneigt + Überstand + Tropfkante
     const bm = WALL_MATS[o.bankMat] || { fill: '#cfd3d8', color: '#565b62' }, over = cmToPts(o.bankOver != null ? o.bankOver : 4), bt = cmToPts(2), drop = cmToPts(2.5), md0 = Math.max(-1, Math.min(1, (o.depth == null ? 0.5 : o.depth) * 2 - 1));
     const xIn = cx + ht2 * md0, xOut = cx + ht2 + over, yT = Yh(sill);
     out.push({ t: 'poly', pts: [[xIn, yT], [xOut, yT + drop], [xOut, yT + drop + bt], [xIn, yT + bt]], fill: bm.fill, stroke: bm.color, sw: 0.9 });   // Bankblech
     out.push({ t: 'line', x1: xOut, y1: yT + drop + bt, x2: xOut, y2: yT + drop + bt + cmToPts(2), stroke: bm.color, w: 1 });   // Tropfkante
   }
-  out.push({ t: 'shandle', x: cx, y: Yh(head), key: 'sh:op:' + o.id + ':head' });   // Sturz-Höhe ziehen
-  if (o.kind === 'window') out.push({ t: 'shandle', x: cx, y: Yh(sill), key: 'sh:op:' + o.id + ':sill' });   // Brüstungs-Höhe ziehen
-  if (winDimsOn && !noDims) {   // Schnitt-Bemaßung Höhe: Rohbau + Licht (Licht = Rohbau − 2×(Rahmen − sichtbarer Rahmen))
+  if (!revealOnly) { out.push({ t: 'shandle', x: cx, y: Yh(head), key: 'sh:op:' + o.id + ':head' });   // Sturz-Höhe ziehen
+    if (o.kind === 'window') out.push({ t: 'shandle', x: cx, y: Yh(sill), key: 'sh:op:' + o.id + ':sill' }); }   // Brüstungs-Höhe ziehen
+  if (winDimsOn && !noDims && !revealOnly) {   // Schnitt-Bemaßung Höhe: Rohbau + Licht (Licht = Rohbau − 2×(Rahmen − sichtbarer Rahmen))
     const insM = Math.max(0, ptsToCm(o.frameW || cmToPts(10)) - (o.boardVis != null ? o.boardVis : 1)) / 100;
     const roughM = head - sill, Ypx = m => m / perPt, xR = cx + ht2 + 14, yT2 = cy - hw, yB2 = cy + hw, inside = !!flip;
     pDimV(out, xR + (inside ? 0 : 22), yT2, yB2, 'Rohbau ' + fmtLen(roughM / perPt), 6);
@@ -3067,9 +3067,9 @@ function sectionPrimitives(a, arr) {
     }
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
     for (const o of ops) {
-      if (USE_SOLID) {   // STUFE 3d: Öffnung im Schnitt aus kanonischem sliceOpeningV (echte Geometrie geschnitten)
-        const cx = X(h.dist), sCut = (a.flip ? -1 : 1) * (h.tp - o.t) * h.wl, sillO = o.kind === 'window' ? (o.sill || 0) : 0, headO = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0)), wm2 = WIN_MAT[o.winMat || 'holz'];
-        out.push({ t: 'rect', x: cx - h.appW / 2, y: Yh(headO), w: h.appW, h: Yh(sillO) - Yh(headO), fill: '#ffffff', stroke: 'none', sw: 0 });   // Öffnung ausstanzen
+      if (USE_SOLID) {   // STUFE 3d/3f: Öffnung im Schnitt = Laibung (bewährt, revealOnly) + Fenster/Bank aus kanonischem sliceOpeningV
+        sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip, a.noDims, a.mullion, true);   // Laibung/Schichteinzug + Ausstanzen
+        const cx = X(h.dist), sCut = (a.flip ? -1 : 1) * (h.tp - o.t) * h.wl;
         for (const r of sliceOpeningV(Object.assign({}, o, { thick: h.appW }), sCut)) { const x0 = cx + r.m0 * (h.appW / 2), x1 = cx + r.m1 * (h.appW / 2), st = openingPartStyle(r.role, o); out.push({ t: 'rect', x: Math.min(x0, x1), y: Yh(r.z1), w: Math.abs(x1 - x0), h: Yh(r.z0) - Yh(r.z1), fill: st.fill, stroke: st.stroke, sw: 1 }); }
       } else sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip, a.noDims, a.mullion);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil (a.flip = Blickrichtung)
     }

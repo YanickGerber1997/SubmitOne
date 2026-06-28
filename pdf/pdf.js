@@ -3029,6 +3029,8 @@ function sectionPrimitives(a, arr) {
     if (w.type !== 'wall' || !layerVisible(w) || !phaseVisible(w)) continue;
     const wdx = w.x2 - w.x1, wdy = w.y2 - w.y1, wl = Math.hypot(wdx, wdy) || 1, along = Math.abs((wdx * cux + wdy * cuy) / wl);
     if (along < 0.7) continue;   // nur fast-parallele Wände → Ansicht (quer geschnittene sind schon oben)
+    const wOff = ((w.x1 + w.x2) / 2 - p1[0]) * nx + ((w.y1 + w.y2) / 2 - p1[1]) * ny;   // senkrechter Abstand der Wandmitte zur Schnittebene
+    if (wOff * vdir < -cmToPts(3)) continue;   // Wand liegt HINTER der Blickrichtung (Schnitt schaut weg) → nicht sichtbar
     const Hw = w.h3d || wallHeightM;
     const d1 = fp((w.x1 - p1[0]) * cux + (w.y1 - p1[1]) * cuy), d2 = fp((w.x2 - p1[0]) * cux + (w.y2 - p1[1]) * cuy);
     const da = Math.max(0, Math.min(d1, d2)), db = Math.min(cl, Math.max(d1, d2));

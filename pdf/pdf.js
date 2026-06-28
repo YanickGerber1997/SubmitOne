@@ -1026,6 +1026,14 @@ const WALL_MATS = {   // Schicht-Material: Füllung (hell), Schraffur-Typ (oder 
   dreischicht: { label: 'Dreischichtplatte', fill: '#e8d3ad', hatch: null, color: '#9c7a3e' },
   stahl: { label: 'Stahlträger', fill: '#c8ccd2', hatch: null, color: '#3a3f45' }
 };
+const MAT_PRIO = {   // Verschneidungs-Priorität: höher = läuft durch, niedriger endet daran (Dämmung > Beton > Mauerwerk > Platten > Luft > Putz)
+  eps: 100, xps: 100, glaswolle: 100, daemm_eps: 100, daemm_wolle: 100, daemm_xps: 100, staender: 95, trittschall: 90,
+  beton: 80, mauerwerk: 70, kalksand: 70, klinker: 66,
+  dreischicht: 55, osb: 52, mdf: 52, gips: 50, schalung: 46, holz: 46,
+  luft: 40, konter: 40, belag: 32, estrich: 30, stahl: 78, kies: 20, erdreich: 20,
+  putz: 10, gips_deck: 10
+};
+function matPrio(mat) { return MAT_PRIO[mat] != null ? MAT_PRIO[mat] : 50; }   // Standard-Priorität, wenn Material unbekannt
 function bandBoards(band, boardWpt, gapPt) {   // Holzschalung als einzelne Latten (Breite + Abstand) entlang der Schicht → Lücken zeigen das Windpapier dahinter
   const p0 = band.poly[0], p1 = band.poly[1], p2 = band.poly[2], p3 = band.poly[3], lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
   const L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1, step = Math.max(2, boardWpt + gapPt), quads = [];
@@ -2387,6 +2395,11 @@ function startMove(pv, e, a, wasSel) {
         const s = moveSnapAdjust(pv, a, orig, dx, dy);
         if (s.dx !== dx || s.dy !== dy) { dx = s.dx; dy = s.dy; translateAnno(a, orig, dx, dy); }
         guides = s.guides;
+        if (a.type === 'wall') {   // Gebäudeecke: einen Wand-Endpunkt auf einen anderen Wand-Endpunkt einrasten → saubere Ecke, einfaches Zusammenschieben
+          const thrC = 14 / pv.scale; let bd = thrC, best = null, ends = [[orig.x1 + dx, orig.y1 + dy], [orig.x2 + dx, orig.y2 + dy]];
+          for (const o of (getAnnos(pv.num) || [])) { if (o.type !== 'wall' || o.id === a.id) continue; for (const oe of [[o.x1, o.y1], [o.x2, o.y2]]) for (const en of ends) { const d = Math.hypot(oe[0] - en[0], oe[1] - en[1]); if (d < bd) { bd = d; best = { ddx: oe[0] - en[0], ddy: oe[1] - en[1], gx: oe[0], gy: oe[1] }; } } }
+          if (best) { dx += best.ddx; dy += best.ddy; translateAnno(a, orig, dx, dy); guides = guides.concat([{ x1: best.gx - 8, y1: best.gy, x2: best.gx + 8, y2: best.gy }, { x1: best.gx, y1: best.gy - 8, x2: best.gx, y2: best.gy + 8 }]); }
+        }
       }
     }
     drawAnnos(pv); removeGuides();

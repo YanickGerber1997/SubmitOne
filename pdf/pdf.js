@@ -898,10 +898,11 @@ function duplicateLayerUp() {   // aktives Geschoss 1:1 nach oben kopieren (neue
 }
 function findAnno(n, id) { return (annos[n] || []).find(a => a.id === id); }
 let _wallUnionActive = false;
-let _rafDraw = 0, _fastDraw = false; const _rafPvs = new Set(), _secCache = {}, _secCacheSig = {};   // _fastDraw = Frame während Drag → teure Schnitte aus Cache (aktualisieren beim Loslassen); _secCacheSig = Inhalts-Signatur (nur bei Änderung neu rechnen)
-function requestDraw(pv) {   // mehrere drawAnnos pro Frame (z. B. während Drag) zu EINEM Redraw bündeln → flüssiger
-  _rafPvs.add(pv); if (_rafDraw) return;
-  _rafDraw = requestAnimationFrame(() => { _rafDraw = 0; _fastDraw = true; const ps = [..._rafPvs]; _rafPvs.clear(); for (const p of ps) { try { drawAnnos(p); } catch (_) { } } _fastDraw = false; });
+let _rafDraw = 0, _fastDraw = false, _fullDeb = 0; const _rafPvs = new Set(), _fullPvs = new Set(), _secCache = {}, _secCacheSig = {};   // _fastDraw = Frame während Drag → teure Schnitte aus Cache; _fullDeb = kurz nach dem Drag voller Redraw (Schnitte ziehen automatisch nach, ohne Klick)
+function requestDraw(pv) {   // mehrere drawAnnos pro Frame (z. B. während Drag) zu EINEM Redraw bündeln → flüssiger; Schnitte folgen kurz danach automatisch
+  _rafPvs.add(pv); _fullPvs.add(pv);
+  if (!_rafDraw) _rafDraw = requestAnimationFrame(() => { _rafDraw = 0; _fastDraw = true; const ps = [..._rafPvs]; _rafPvs.clear(); for (const p of ps) { try { drawAnnos(p); } catch (_) { } } _fastDraw = false; });
+  clearTimeout(_fullDeb); _fullDeb = setTimeout(() => { const ps = [..._fullPvs]; _fullPvs.clear(); for (const p of ps) { try { drawAnnos(p); } catch (_) { } } }, 150);   // sobald das Ziehen kurz pausiert/endet: voller Redraw → Schnitte aktualisieren sich selbst
 }
 function drawAnnos(pv) {
   const svg = pv.svg; svg.innerHTML = '';

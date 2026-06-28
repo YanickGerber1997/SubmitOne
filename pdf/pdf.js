@@ -5425,7 +5425,8 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       let cum = 0;
       for (const rg of rings) { const mt = WALL_MATS[rg.mat] || { fill: '#eee', color: '#1c242c' }, x = opx0 + cum, w = o2.w - 2 * cum, yT = Yh(headF - cum * perPt), yB = Yh(sillF); if (w > 1 && yB - yT > 0.5) out.push({ t: 'rect', x, y: yT, w, h: yB - yT, fill: mt.fill || '#eee', stroke: mt.color || '#1c242c', sw: 0.7 }); cum += rg.w; }   // Laibung wickelt Sturz + Seiten; unten = Fensterbank (kein Doppel-Sims)
       const rPts = Math.min(cum, o2.w * 0.45);
-      try { openingElev(out, d => d, Yh, opx0 + rPts, o2.w - 2 * rPts, oo, Hwall, '#1c242c', rPts * perPt, side); } catch (_) { }
+      if (USE_SOLID) { const ow = Math.max(4, o2.w - 2 * rPts), cxs = opx0 + o2.w / 2, wmm = WIN_MAT[o2.winMat || 'holz']; for (const part of openingSolids(Object.assign({}, oo, { w: ow }))) { const isG = part.role === 'glass'; out.push({ t: 'poly', pts: part.prof.map(p => [cxs + p[0], Yh(p[1])]), fill: isG ? '#c7e2f5' : (wmm.fill || '#e7cfa8'), stroke: isG ? '#7fa9c6' : (wmm.stroke || '#7a5126'), sw: 1 }); } }   // STUFE 3b: Ansicht aus kanonischem openingSolids (A/B)
+      else try { openingElev(out, d => d, Yh, opx0 + rPts, o2.w - 2 * rPts, oo, Hwall, '#1c242c', rPts * perPt, side); } catch (_) { }
       if (side === 'i' && o2.kind === 'window') { const pjI = cmToPts(3), th = cmToPts(2.5); out.push({ t: 'rect', x: opx0 - pjI, y: Yh(sillF), w: o2.w + 2 * pjI, h: th, fill: '#e7cfa8', stroke: '#7a5126', sw: 0.8 }); }   // innen: Holz-Fensterbrett
       if (o2.id === a.id) { out.push({ t: 'rect', x: opx0 - 4, y: Yh(headF) - 4, w: o2.w + 8, h: (Yh(sillF) - Yh(headF)) + 8, fill: 'none', stroke: '#2aa869', sw: 2.4 }); curD = { opx0, w: o2.w, headF, sillF, rPts }; }   // aktuelles Fenster markiert
     }

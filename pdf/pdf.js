@@ -5619,7 +5619,7 @@ async function makeTestScene() {   // schnelle Test-Szene: mehrschichtige Wand +
   toast('Test-Wand (35 cm, mehrschichtig) + Fenster (120 cm) erstellt → Fenster ist gewählt, jetzt „⊕ Detail" öffnen.');
 }
 async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fenster + Tür) + 2 Schnitte + Ansicht vorne/hinten, 1:20, beschriftet
-  try { await newBlankDoc({ w: 1684, h: 1191 }); } catch (_) { }   // A2 quer
+  try { await newBlankDoc({ w: 2694, h: 1191 }); } catch (_) { }   // A2 breit (A2 quer + 60% breiter)
   if (!pdfDoc) { toast('Beispiel konnte nicht erstellt werden.'); return; }
   docScale = { perPt: 20 * PT2MM / 1000, label: '1:20', n: 20 };
   const n = curPage(), pv = pageViews.find(p => p.num === n); if (!pv) return;
@@ -5645,7 +5645,7 @@ async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fe
   toast('Beispielprojekt: Seite 1 = Grundriss/Schnitte/Ansicht. Seite 2 = Teststand (3 Wandaufbauten, EG+Decke+OG) zum Testen der Wand-Decken-Verschneidung + Performance.');
 }
 async function buildTestSheet() {   // Seite 2: 3 Wandaufbauten, je EG-Wand + Decke (OK auf Geschosshöhe) + OG-Wand, Schnitt quer → Wand-Decken-Verschneidung
-  await insertBlankPage(1, { w: 1684, h: 1900 });   // grössere Seite (hohe Schnitte EG+OG)
+  await insertBlankPage(1, { w: 2384, h: 2694 });   // A1 hoch+ (A1 quer + 60% höher) – viel Platz für die hohen EG+OG-Schnitte
   const pv2 = pageViews.find(p => p.num === 2); if (!pv2) return; const a2 = getAnnos(2);
   const gh = 2.0;   // Geschosshöhe 2.0 m
   const slabBeton = [['belag', 1.5], ['estrich', 6], ['trittschall', 2], ['eps', 2], ['beton', 25], ['putz', 1.5]];   // Stahlbeton gedämmt
@@ -5657,7 +5657,7 @@ async function buildTestSheet() {   // Seite 2: 3 Wandaufbauten, je EG-Wand + De
     { name: 'Holzbau: Ständer + Schalung', b: [['putz', 0.5], ['gips', 1.25], ['konter', 4], ['osb', 2], ['staender', 16], ['mdf', 6], ['luft', 4], ['schalung', 2.2]], s: slabHolz },
     { name: 'Zweischalenmauerwerk (verputzt)', b: [['putz', 1.5], ['mauerwerk', 17.5], ['glaswolle', 20], ['luft', 4], ['klinker', 12.5], ['putz', 1.5]], s: slabBeton }
   ];
-  const wlen = cmToPts(200), planY = 240, colW = 540;
+  const wlen = cmToPts(200), planY = 260, colW = 740, secOy = 2510;
   setups.forEach((su, i) => {
     const X0 = 90 + i * colW, secX = X0 + wlen / 2;
     txt2(X0, planY - 40, (i + 1) + ') ' + su.name, 13, cmToPts(380));
@@ -5667,7 +5667,7 @@ async function buildTestSheet() {   // Seite 2: 3 Wandaufbauten, je EG-Wand + De
     applyWallBuildup(og, su.b); a2.push(og);   // OG-Wand (steht auf der Decke, Basis = Geschosshöhe)
     const slab = { id: nextId++, type: 'slab', pts: [[X0 - cmToPts(20), planY], [X0 + wlen + cmToPts(20), planY], [X0 + wlen + cmToPts(20), planY + cmToPts(200)], [X0 - cmToPts(20), planY + cmToPts(200)]], color: '#5b6b86', base: gh - 0.35, thick: 0.35, layer: activeLayerId };
     applySlabBuildup(slab, su.s); slab.base = Math.round((gh - slab.thick) * 1000) / 1000; a2.push(slab);   // Decke: passender Schichtaufbau, Oberkante auf Geschosshöhe gh
-    a2.push({ id: nextId++, type: 'section', cx1: secX, cy1: planY - cmToPts(45), cx2: secX, cy2: planY + cmToPts(210), label: String.fromCharCode(65 + i), ox: X0 + 30, oy: 1760, layer: activeLayerId });   // Schnitt quer durch EG-Wand + Decke + OG-Wand
+    a2.push({ id: nextId++, type: 'section', cx1: secX, cy1: planY - cmToPts(45), cx2: secX, cy2: planY + cmToPts(210), label: String.fromCharCode(65 + i), ox: X0 + 30, oy: secOy, layer: activeLayerId });   // Schnitt quer durch EG-Wand + Decke + OG-Wand
   });
   drawAnnos(pv2);
 }

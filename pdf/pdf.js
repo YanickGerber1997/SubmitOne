@@ -5854,7 +5854,7 @@ function build3DScene(host, walls, arr, opts) {
       let jamb; try { jamb = openingRevealStrips(o, arr); } catch (_) { jamb = null; }   // Laibung (Jamben): Grundriss-Reveal vertikal extrudiert
       if (jamb) for (const st of jamb) extrudePrism(st.poly, p => [M(p[0] - cx), y0, M(p[1] - cy)], p => [M(p[0] - cx), y1, M(p[1] - cy)], st.fill);
       const heightM = y1 - y0, midY = (y0 + y1) / 2, wPts = heightM / perPt, thPts = o.thick || (w.thick || wallThickPts());   // Sturz/Schwelle: vertikales Schnitt-Reveal horizontal extrudiert
-      const sa2 = Object.assign({}, o, { x: 0, y: 0, ang: 0, thick: thPts, w: wPts, wallId: 'rev2sh' });
+      const sa2 = Object.assign({}, o, { x: 0, y: 0, ang: 0, thick: thPts, w: wPts, wallId: 'rev2sh', noSillReveal: (o.kind === 'window' && o.bank !== false) });   // bei Fensterbank: Schwellen-Laibung NICHT zusätzlich (sonst zweite „Bank")
       const sw2 = { id: 'rev2sh', type: 'wall', layers: w.layers, x1: 0, y1: wPts / 2, x2: 0, y2: -wPts / 2, thick: thPts, hatch: w.hatch };
       let sh; try { sh = openingRevealStrips(sa2, [sw2]); } catch (_) { sh = null; }
       const mapSH = (p, u) => { const vOff = p[1] * perPt; return [sx + ux * M(u) + nxw * vOff, midY + p[0] * perPt, sz + uy * M(u) + nyw * vOff]; };

@@ -3075,10 +3075,13 @@ function sectionPrimitives(a, arr) {
     const Hw = w.h3d || wallHeightM;
     const d1 = fp((w.x1 - p1[0]) * cux + (w.y1 - p1[1]) * cuy), d2 = fp((w.x2 - p1[0]) * cux + (w.y2 - p1[1]) * cuy);
     const da = Math.max(0, Math.min(d1, d2)), db = Math.min(cl, Math.max(d1, d2));
-    if (db - da > 1) {   // Wand in Ansicht: Aussenschicht-Farbe + Schraffur (wie 3D)
-      const outL = w.layers && w.layers.length ? w.layers[w.layers.length - 1] : null, m = outL ? (WALL_MATS[outL.mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#f0efea', color: w.color || col };
-      out.push({ t: 'rect', x: X(da), y: Yh(Hw), w: X(db) - X(da), h: Yh(0) - Yh(Hw), fill: m.fill || '#f0efea', stroke: m.color || col, sw: 0.6 });
-      if (!simpleMode && outL) sectionBandHatch(out, X(da), Yh(Hw), X(db) - X(da), Yh(0) - Yh(Hw), outL.mat, null);
+    if (db - da > 1) {   // Wand in Ansicht SCHICHTWEISE (tiefensortiert): jede Schicht mit top/bot/Sockelzone → Sichtkanten beim Schicht-Unterbruch (Verputz runtergezogen etc.)
+      const wl2 = w.layers && w.layers.length ? w.layers : null, fSide = (wOff * vdir >= 0) ? 'a' : 'i', xa = X(da), xw = X(db) - X(da);
+      const fRect = (mat, yT, yB) => { const m = WALL_MATS[mat] || {}; if (yB - yT <= 0.3) return; out.push({ t: 'rect', x: xa, y: yT, w: xw, h: yB - yT, fill: m.fill || '#f0efea', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, xa, yT, xw, yB - yT, mat, null); };
+      if (wl2) { const idxs = fSide === 'i' ? [...wl2.keys()].reverse() : [...wl2.keys()];   // betrachtete Seite zuletzt (vorne/oben)
+        for (const i of idxs) { const L = wl2[i]; if (L.mat === 'luft') continue; const top = Hw + (L.top || 0), bot = 0 - (L.bot || 0);
+          if (L.lowMat && L.lowH > 0) { fRect(L.lowMat, Yh(L.lowH), Yh(bot)); fRect(L.mat, Yh(top), Yh(L.lowH)); } else fRect(L.mat, Yh(top), Yh(bot)); }
+      } else { const m = { fill: (w.fill && w.fill !== 'none') ? w.fill : '#f0efea', color: w.color || col }; out.push({ t: 'rect', x: xa, y: Yh(Hw), w: xw, h: Yh(0) - Yh(Hw), fill: m.fill, stroke: m.color, sw: 0.6 }); }
     }
     for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id || cutOps.has(o.id)) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = fp((ocx - p1[0]) * cux + (ocy - p1[1]) * cuy); if (od < -10 || od > cl + 10) continue;
       const eSide = (wOff * vdir >= 0 ? 'a' : 'i'), ring = openingRevealRing(o, eSide, w), hwO = o.w / 2;   // GLEICHE Laibungs-Lappung wie im Detail-Editor (ein System)
@@ -5497,9 +5500,12 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     const ops = wall ? arr.filter(o2 => o2.type === 'opening' && (o2.kind === 'window' || o2.kind === 'door') && o2.wallId === wall.id) : [a];
     if (!ops.length) ops.push(a);
     let curD = null;   // Geometrie des aktuellen Fensters für die Masslinien merken
-    const facLy = (wall && wall.layers && wall.layers.length) ? (side === 'i' ? wall.layers[0] : wall.layers[wall.layers.length - 1]) : null, facMat = facLy ? (WALL_MATS[facLy.mat] || {}) : {};
-    const facTop = Hwall + (facLy && facLy.top ? facLy.top : 0), facBot = 0 - (facLy && facLy.bot ? facLy.bot : 0);   // sichtbare (äusserste/innerste) Schicht nimmt ihre Über-/Unterlänge mit
-    out.push({ t: 'rect', x: 0, y: Yh(facTop), w: Lw, h: Yh(facBot) - Yh(facTop), fill: facMat.fill || '#f3f1ec', stroke: '#9aa08f', sw: 1 });   // Wand-Ansicht (Fassade)
+    const wlys = (wall && wall.layers && wall.layers.length) ? wall.layers : null;   // Fassade SCHICHTWEISE (tiefensortiert): jede Schicht mit top/bot/ext + Sockelzone → Sichtkanten beim Schicht-Unterbruch
+    if (wlys) { const idxs = side === 'i' ? [...wlys.keys()].reverse() : [...wlys.keys()];   // betrachtete Seite zuletzt (oben): innen → innerste vorne, aussen → äusserste vorne
+      for (const i of idxs) { const L = wlys[i]; if (L.mat === 'luft') continue; const mt = WALL_MATS[L.mat] || {}, x = -(L.ext1 || 0), w = Lw + (L.ext1 || 0) + (L.ext2 || 0), top = Hwall + (L.top || 0), bot = 0 - (L.bot || 0);
+        if (L.lowMat && L.lowH > 0) { const mlo = WALL_MATS[L.lowMat] || {}; out.push({ t: 'rect', x, y: Yh(L.lowH), w, h: Yh(bot) - Yh(L.lowH), fill: mlo.fill || '#eee', stroke: mlo.color || '#9aa08f', sw: 0.8 }); out.push({ t: 'rect', x, y: Yh(top), w, h: Yh(L.lowH) - Yh(top), fill: mt.fill || '#eee', stroke: mt.color || '#9aa08f', sw: 0.8 }); }   // Sockelzone (lowMat) unten, Hauptmaterial oben
+        else out.push({ t: 'rect', x, y: Yh(top), w, h: Yh(bot) - Yh(top), fill: mt.fill || '#f3f1ec', stroke: mt.color || '#9aa08f', sw: 0.8 }); }
+    } else out.push({ t: 'rect', x: 0, y: Yh(Hwall), w: Lw, h: Yh(0) - Yh(Hwall), fill: '#f3f1ec', stroke: '#9aa08f', sw: 1 });   // einschichtige Wand
     out.push({ t: 'line', x1: -10, y1: Yh(0), x2: Lw + 10, y2: Yh(0), stroke: '#1c242c', w: 1.8 });   // Boden / OK Terrain
     for (const o2 of ops) {
       const oo = side === 'i' ? Object.assign({}, o2, { winHinge: o2.winHinge === 'left' ? 'right' : o2.winHinge === 'right' ? 'left' : o2.winHinge, bank: false }) : Object.assign({}, o2, { niche: false });   // innen: Storenkasten zeigen, keine Aussenbank · aussen: Bank, kein Kasten

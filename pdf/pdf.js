@@ -4542,6 +4542,23 @@ function slicePlane(solids, plane) {   // plane: {kind:'h', z} (Grundriss) | {ki
   }
   return res;
 }
+function openingSolids(o) {   // Stufe 3: Fenster/Tür als Profil-Teile in der ANSICHTSEBENE (s = entlang Wand [pt, zentriert], z = Höhe [m]).
+  // Eine Quelle → Ansicht = Profil direkt; Schnitt = bei s geschnitten; Grundriss = bei z geschnitten. role: frame|mullion|sash|glass|sill.
+  const sp = openingSpec(o), hw = sp.w / 2, sill = sp.sill, head = sp.head, parts = [];
+  const fw = Math.min(hw * 0.8, sp.frameVis + sp.sashVis), fwB = Math.min(hw * 0.5, sp.frameVis);   // s-Richtung (pt)
+  const m = pt => ptsToCm(pt) / 100, fwBm = m(fwB), fwm = m(fw), sashVm = m(sp.sashVis);            // z-Richtung (m)
+  const rect = (s0, s1, z0, z1, role, mat) => { if (s1 - s0 > 0.5 && z1 - z0 > 0.001) parts.push({ prof: [[s0, z0], [s1, z0], [s1, z1], [s0, z1]], role, mat }); };
+  const two = o.winType === 'f2' || o.winType === 'f2s', door = o.kind === 'door';
+  // Blendrahmen (4 Stäbe, sichtbare Breite); Tür ohne unteren Stab
+  rect(-hw, -hw + fwB, sill, head, 'frame', 'holz'); rect(hw - fwB, hw, sill, head, 'frame', 'holz');
+  rect(-hw + fwB, hw - fwB, head - fwBm, head, 'frame', 'holz');
+  if (!door) rect(-hw + fwB, hw - fwB, sill, sill + fwBm, 'frame', 'holz');
+  if (two) rect(-fw / 2, fw / 2, sill + fwBm, head - fwBm, 'mullion', 'holz');   // Setzholz / Mittelstoss
+  const innerZ0 = sill + (door ? 0 : fwBm), innerZ1 = head - fwBm;
+  const panes = two ? [[-hw + fwB, -fw / 2], [fw / 2, hw - fwB]] : [[-hw + fwB, hw - fwB]];
+  for (const [a0, b0] of panes) { rect(a0, b0, innerZ0, innerZ1, 'sash', 'holz'); rect(a0 + fw, b0 - fw, innerZ0 + sashVm, innerZ1 - sashVm, door ? 'leaf' : 'glass', door ? 'holz' : null); }   // Flügel + Glas (Tür: Türblatt)
+  return parts;
+}
 function ifcMatKey(name) {   // IFC-Materialname → unser Material-Schlüssel (für Schraffur + λ/U-Wert)
   const s = (name || '').toLowerCase();
   if (/luft|cavity|\bair\b|hinterl/.test(s)) return 'luft';
@@ -5031,7 +5048,7 @@ function openWallList() {
   ov.addEventListener('pointerdown', e => { if (e.target === ov) close(); });
 }
 function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt Regressionen
-  const R = [], A = (name, fn) => { try { const m = fn(); R.push({ name, ok: m !== false, msg: typeof m === 'string' ? m : '' }); } catch (e) { R.push({ name, ok: false, msg: (e && e.message) || 'Fehler' }); } };
+  const R = [], A = (name, fn) => { try { const m = fn(); R.push({ name, ok: m === '' || m === true || m == null, msg: typeof m === 'string' ? m : '' }); } catch (e) { R.push({ name, ok: false, msg: (e && e.message) || 'Fehler' }); } };   // Pass = '' / true / nichts; non-leerer String od. false = Fehler
   const saved = docScale; docScale = { perPt: 50 * PT2MM / 1000, label: '1:50', n: 50 };
   try {
     A('cm↔pt Round-Trip', () => Math.abs(ptsToCm(cmToPts(123.4)) - 123.4) < 0.01);
@@ -5077,6 +5094,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Solid: Wand-Schichten', () => { const w = { type: 'wall', x1: 0, y1: 0, x2: cmToPts(400), y2: 0, thick: cmToPts(30), h3d: 2.6 }; applyWallBuildup(w, [['putz', 2], ['mauerwerk', 18], ['eps', 10]]); const sol = elementSolids(w, [w]); return (sol.length === 3 && sol.every(s => s.poly.length === 4 && s.z1 > s.z0)) ? '' : 'n=' + sol.length; });
     A('slicePlane horizontal (Grundriss)', () => { const w = { type: 'wall', x1: 0, y1: 0, x2: cmToPts(400), y2: 0, thick: cmToPts(30), h3d: 2.6 }; applyWallBuildup(w, [['putz', 2], ['mauerwerk', 18], ['eps', 10]]); const cut = slicePlane(elementSolids(w, [w]), { kind: 'h', z: 1.0 }); return (cut.length === 3 && slicePlane(elementSolids(w, [w]), { kind: 'h', z: 9 }).length === 0) ? '' : 'n=' + cut.length; });
     A('slicePlane vertikal (Schnitt)', () => { const w = { type: 'wall', x1: 0, y1: cmToPts(200), x2: cmToPts(400), y2: cmToPts(200), thick: cmToPts(30), h3d: 2.6 }; applyWallBuildup(w, [['putz', 2], ['mauerwerk', 18], ['eps', 10]]); const cut = slicePlane(elementSolids(w, [w]), { kind: 'v', p1: [cmToPts(200), 0], p2: [cmToPts(200), cmToPts(400)] }); const tot = cut.reduce((s, c) => s + (c.d1 - c.d0), 0); return (cut.length === 3 && cut.every(c => c.d1 > c.d0) && Math.abs(tot - cmToPts(30)) < 1) ? '' : 'n=' + cut.length + ' tot=' + tot; });
+    A('openingSolids (Fenster-Profil)', () => { const f2 = openingSolids({ kind: 'window', winType: 'f2', w: cmToPts(120), sill: 0.9, head: 2.2, frameW: cmToPts(10), sashW: cmToPts(7), boardVis: 1.5, winMat: 'holz' }); const f1 = openingSolids({ kind: 'window', winType: 'f1', w: cmToPts(120), sill: 0.9, head: 2.2, frameW: cmToPts(10), sashW: cmToPts(7), boardVis: 1.5, winMat: 'holz' }); const g2 = f2.filter(p => p.role === 'glass').length, m2 = f2.filter(p => p.role === 'mullion').length, g1 = f1.filter(p => p.role === 'glass').length; return (g2 === 2 && m2 === 1 && g1 === 1) ? '' : 'g2=' + g2 + ' m2=' + m2 + ' g1=' + g1; });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

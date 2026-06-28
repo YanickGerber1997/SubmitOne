@@ -3240,7 +3240,9 @@ function sectionPrimitives(a, arr) {
   }
   for (const h of hits) {
     const w = h.w, H = w.h3d || wallHeightM, x0 = h.dist - h.appW / 2, base = w.base || 0, Yb = z => Yh(base + z);   // base = Wand-Basishöhe (OG-Wand auf der Decke)
-    const layers0 = (w.layers && w.layers.length) ? w.layers : [{ mat: null, t: h.T }], layers = a.flip ? layers0.slice().reverse() : layers0, totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
+    const layers0 = (w.layers && w.layers.length) ? w.layers : [{ mat: null, t: h.T }];
+    const _wp = wallPoly(w, arr), _inM = [(_wp[2][0] + _wp[3][0]) / 2, (_wp[2][1] + _wp[3][1]) / 2], _outM = [(_wp[0][0] + _wp[1][0]) / 2, (_wp[0][1] + _wp[1][1]) / 2], _innerFirst = fp((_inM[0] - p1[0]) * cux + (_inM[1] - p1[1]) * cuy) <= fp((_outM[0] - p1[0]) * cux + (_outM[1] - p1[1]) * cuy);   // Schicht-Reihenfolge aus echter Wand-Geometrie: trifft der Schnitt die Innenseite zuerst? → korrekt zur Decke/zum Raum (statt a.flip)
+    const layers = _innerFirst ? layers0 : layers0.slice().reverse(), totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
     if (USE_SOLID && w.layers && w.layers.length) {   // KANONISCH (Standard): Wand-Poché aus elementSolids + slicePlane – inkl. Lattung + Schicht-Ziehgriffe (Parität zur Alt-Logik)
       const byLi = {};
       for (const c of slicePlane(elementSolids(w, arr), { kind: 'v', p1, p2 })) { const xa = X(fp(c.d0)), xb = X(fp(c.d1)), x = Math.min(xa, xb), wd = Math.abs(xb - xa), yT = Yb(c.z1), yB = Yb(c.z0); if (wd < 0.2 || yB - yT < 0.1) continue;
@@ -3255,9 +3257,9 @@ function sectionPrimitives(a, arr) {
     for (let li = 0; li < layers.length; li++) { const L = layers[li], lw = (L.t / totalT) * h.appW, bx = X(cx), yTopF = Yb(H + (L.top || 0)), yBotF = Yb(0 - (L.bot || 0));   // L.top/L.bot = eigene Über-/Unterlänge; L.lowMat/L.lowH = Sockelzone
       const drawSeg = (mat, yT, yB) => { if (yB - yT < 0.1) return; const m = mat ? (WALL_MATS[mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; out.push({ t: 'rect', x: bx, y: yT, w: lw, h: yB - yT, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6, wid: w.id }); if (!simpleMode) sectionBandHatch(out, bx, yT, lw, yB - yT, mat, (w.hatch && w.hatch.type)); };
       const lm = WALL_MATS[L.mat] || {};
-      if (lm.boards) { const lay = (w.layers || [])[a.flip ? (layers.length - 1 - li) : li] || {}, bwp = cmToPts(lay.boardW || 4), gpp = cmToPts(lay.boardGap != null ? lay.boardGap : 2), step = Math.max(2, bwp + gpp); for (let yy = yTopF; yy < yBotF - 0.5; yy += step) { const y2 = Math.min(yBotF, yy + bwp); out.push({ t: 'rect', x: bx, y: yy, w: lw, h: y2 - yy, fill: lm.fill || '#e7cfa8', stroke: lm.color || '#7a5126', sw: 0.6 }); } }   // Latten gestapelt (Lücken zeigen Windpapier dahinter)
+      if (lm.boards) { const lay = (w.layers || [])[_innerFirst ? li : (layers.length - 1 - li)] || {}, bwp = cmToPts(lay.boardW || 4), gpp = cmToPts(lay.boardGap != null ? lay.boardGap : 2), step = Math.max(2, bwp + gpp); for (let yy = yTopF; yy < yBotF - 0.5; yy += step) { const y2 = Math.min(yBotF, yy + bwp); out.push({ t: 'rect', x: bx, y: yy, w: lw, h: y2 - yy, fill: lm.fill || '#e7cfa8', stroke: lm.color || '#7a5126', sw: 0.6 }); } }   // Latten gestapelt (Lücken zeigen Windpapier dahinter)
       else if (L.lowMat && L.lowH > 0) { const yS = Yb(L.lowH); drawSeg(L.lowMat, yS, yBotF); drawSeg(L.mat, yTopF, yS); } else drawSeg(L.mat, yTopF, yBotF);
-      if (w.layers && w.layers.length) { const oi = a.flip ? (layers.length - 1 - li) : li; out.push({ t: 'lhandle', x: bx + lw / 2, y: yTopF, wallId: w.id, li: oi, edge: 'top' }); out.push({ t: 'lhandle', x: bx + lw / 2, y: yBotF, wallId: w.id, li: oi, edge: 'bot' }); }   // Schicht-Ziehgriffe (Ober-/Unterkante) → im Schnitt verlängern/kürzen
+      if (w.layers && w.layers.length) { const oi = _innerFirst ? li : (layers.length - 1 - li); out.push({ t: 'lhandle', x: bx + lw / 2, y: yTopF, wallId: w.id, li: oi, edge: 'top' }); out.push({ t: 'lhandle', x: bx + lw / 2, y: yBotF, wallId: w.id, li: oi, edge: 'bot' }); }   // Schicht-Ziehgriffe (Ober-/Unterkante) → im Schnitt verlängern/kürzen
       cx += lw; }
     }
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
@@ -3287,7 +3289,8 @@ function sectionPrimitives(a, arr) {
         let touches = false, roomHigh = false;
         for (const iv of ivs) { const lo = Math.min(iv[0], iv[1]), hi = Math.max(iv[0], iv[1]); if (hi > wd0 - 3 && lo < wd1 + 3) { touches = true; roomHigh = ((lo + hi) / 2) >= h.dist; } }
         if (!touches) continue;
-        const layers = a.flip ? w.layers.slice().reverse() : w.layers, totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
+        const _wp = wallPoly(w, arr), _inM = [(_wp[2][0] + _wp[3][0]) / 2, (_wp[2][1] + _wp[3][1]) / 2], _outM = [(_wp[0][0] + _wp[1][0]) / 2, (_wp[0][1] + _wp[1][1]) / 2], _innerFirst = fp((_inM[0] - p1[0]) * cux + (_inM[1] - p1[1]) * cuy) <= fp((_outM[0] - p1[0]) * cux + (_outM[1] - p1[1]) * cuy);
+        const layers = _innerFirst ? w.layers : w.layers.slice().reverse(), totalT = layers.reduce((s, l) => s + l.t, 0) || h.T;
         let cum = 0; const bnd = [wd0]; for (const L of layers) { cum += L.t; bnd.push(wd0 + (cum / totalT) * h.appW); }
         let structFace;   // Tragschicht-Aussenkante (= Innenkante der ersten Dämm-/Luftschicht von innen)
         if (roomHigh) { structFace = wd0; for (let i = layers.length - 1; i >= 0; i--) { if (INSUL.includes(layers[i].mat)) { structFace = bnd[i + 1]; break; } } }

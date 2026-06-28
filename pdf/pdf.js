@@ -1816,6 +1816,10 @@ let wallDimOn = true;   // neue Wände bekommen standardmässig eine Masskette (
 let revealLinked = true;   // Standard: alle Laibungs-Kanten gekoppelt bearbeiten (eine ändern = alle); per Knopf entkoppeln
 const _angHandles = {};   // {openingId: handle} – Ziehpunkt des offenen Flügels (Öffnungswinkel ziehen)
 function addHoverHL(el) { el.addEventListener('pointerenter', () => el.classList.add('hl-on')); el.addEventListener('pointerleave', () => el.classList.remove('hl-on')); return el; }   // nur das berührte Bauteil hervorheben (kein SVG-:hover auf überlappenden Flächen)
+function flipOpening(a) {   // 4 Anschlag-Varianten (Tür+Fenster): Band links/rechts × öffnet innen/aussen – nutzt winHinge + swing (Detail-Profil)
+  if (a.winHinge === 'kipp') { a.winHinge = 'left'; return; } const r = a.winHinge === 'right', s = (a.swing || 1) === 1;
+  if (!r && s) a.winHinge = 'right'; else if (r && s) a.swing = -1; else if (r && !s) { a.winHinge = 'left'; } else a.swing = 1;
+}
 function startDimOffDrag(pv, e, id) {   // Wand-Masslinie senkrecht zur Wand verschieben (setzt a.dimOff)
   const a = findAnno(pv.num, id); if (!a) return; pushUndo();
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len, mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
@@ -2503,7 +2507,7 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     $('#pbWinMat').style.display = winLike ? '' : 'none'; $('#pbWinMat').value = (sO && sO.winMat) || lastWinMat || 'holz';
     $('#pbOuterWrap').style.display = 'none'; if (document.activeElement !== $('#pbOuterLap')) $('#pbOuterLap').value = Math.round(ptsToCm(sO && sO.outerLap != null ? sO.outerLap : cmToPts(3)) * 10) / 10;
     $('#pbInnerWrap').style.display = 'none'; if (document.activeElement !== $('#pbInnerRev')) $('#pbInnerRev').value = Math.round(ptsToCm(sO && sO.innerReveal != null ? sO.innerReveal : cmToPts(2)) * 10) / 10;
-    $('#pbFlip').style.display = kind === 'door' ? '' : 'none';
+    $('#pbFlip').style.display = winLike ? '' : 'none';   // Anschlag/Seite wechseln – für Tür UND Fenster
   }
 }
 function alignGroup(mode) {
@@ -2834,7 +2838,7 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
     }
     if (wt !== 'fest' && !a.noSwing) {   // offener Flügel hell + Schwenkbogen + Ziehpunkt (Fenster, 1/2-flüglig); NUR im Grundriss. Geschlossen = der oben gezeichnete Flügel
       const oAngW = (a.openAngle != null ? a.openAngle : 90) * Math.PI / 180, swW = a.swing || 1, twW = cmToPts(2), Ln1 = ((2 - 2 * fwS) / (two ? 2 : 1)) * hw;
-      const wleaf = (hingeS, dirAlong) => { const hp = corner(hingeS, md), cdx = ux * dirAlong, cdy = uy * dirAlong, odx = nx * swW, ody = ny * swW, ldx = cdx * Math.cos(oAngW) + odx * Math.sin(oAngW), ldy = cdy * Math.cos(oAngW) + ody * Math.sin(oAngW), tp = [hp[0] + ldx * Ln1, hp[1] + ldy * Ln1], px = -ldy * twW, py = ldx * twW; fills.push({ poly: [hp, tp, [tp[0] + px, tp[1] + py], [hp[0] + px, hp[1] + py]], fill: wm.fill, stroke: wm.stroke, op: 0.26 }); arcs.push({ cx: hp[0], cy: hp[1], r: Ln1, from: tp, to: [hp[0] + cdx * Ln1, hp[1] + cdy * Ln1], handle: { x: tp[0], y: tp[1], hx: hp[0], hy: hp[1], cdx, cdy, odx, ody } }); };
+      const wleaf = (hingeS, dirAlong) => { const hp = corner(hingeS, md), cdx = ux * dirAlong, cdy = uy * dirAlong, odx = -nx * swW, ody = -ny * swW, ldx = cdx * Math.cos(oAngW) + odx * Math.sin(oAngW), ldy = cdy * Math.cos(oAngW) + ody * Math.sin(oAngW), tp = [hp[0] + ldx * Ln1, hp[1] + ldy * Ln1], px = -ldy * twW, py = ldx * twW; fills.push({ poly: [hp, tp, [tp[0] + px, tp[1] + py], [hp[0] + px, hp[1] + py]], fill: wm.fill, stroke: wm.stroke, op: 0.26 }); arcs.push({ cx: hp[0], cy: hp[1], r: Ln1, from: tp, to: [hp[0] + cdx * Ln1, hp[1] + cdy * Ln1], handle: { x: tp[0], y: tp[1], hx: hp[0], hy: hp[1], cdx, cdy, odx, ody } }); };   // Fenster öffnet nach INNEN (−nx, wo der Rahmen nicht raussteht); swing kehrt um
       if (two) { wleaf(-1 + fwS, 1); wleaf(1 - fwS, -1); }   // zwei Flügel zur Mitte
       else if (a.winHinge === 'right') wleaf(1 - fwS, -1); else wleaf(-1 + fwS, 1);
     }
@@ -3042,6 +3046,8 @@ function openFramePop(pv, a, cx, cy) {   // Inline-Editor für den Rahmen/Flüge
   mk('Anschlag', selF(hinges, a.winHinge || 'left', v => a.winHinge = v));
   const mats = [['holz', 'Holz'], ['metall', 'Metall'], ['kunst', 'Kunststoff']];
   mk('Material', selF(mats, a.winMat || 'holz', v => a.winMat = v));
+  const flip = document.createElement('button'); flip.textContent = '⇄ Anschlag / Öffnungsseite wechseln'; flip.style.cssText = 'width:100%;margin-top:8px;padding:5px;cursor:pointer'; flip.title = '4 Varianten: Band links/rechts × öffnet innen/aussen'; flip.onclick = () => { flipOpening(a); upd(); pop.remove(); openFramePop(pv, a, cx, cy); }; pop.appendChild(flip);
+  const st = document.createElement('div'); st.style.cssText = 'margin-top:5px;color:#5a6152;font-size:12px'; st.textContent = 'Band ' + (a.winHinge === 'right' ? 'rechts' : a.winHinge === 'kipp' ? 'Kipp' : 'links') + ' · öffnet ' + ((a.swing || 1) === 1 ? 'innen' : 'aussen'); pop.appendChild(st);
   document.body.appendChild(pop);
   pop.style.left = Math.max(8, Math.min((cx || 200) + 8, window.innerWidth - pop.offsetWidth - 12)) + 'px';
   pop.style.top = Math.max(8, Math.min((cy || 200) + 8, window.innerHeight - pop.offsetHeight - 12)) + 'px';
@@ -6521,7 +6527,7 @@ function wire() {
   $$('#pbOpen [data-ok]').forEach(b => b.onclick = () => { openKind = b.dataset.ok; const a = selOpen(); if (a) { pushUndo(); a.kind = openKind; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); });
   $('#pbWidth').onchange = () => { const v = parseFloat($('#pbWidth').value); if (!(v > 0)) return updatePlanBar(); const a = selOpen(); let pts = cmToPts(v); if (inputLicht) pts += 2 * openInsPts(a); lastOpenW = pts; if (a) { pushUndo(); a.w = pts; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbLichtRoh').onclick = () => { inputLicht = !inputLicht; $('#pbLichtRoh').classList.toggle('on', inputLicht); updatePlanBar(); toast(inputLicht ? 'Öffnungsbreite = Lichtmaß (Rohbau = Licht + Rahmen)' : 'Öffnungsbreite = Rohbaumaß'); };
-  $('#pbFlip').onclick = () => { const a = selOpen(); if (!a) return; pushUndo(); if (a.swing === 1 && a.hinge === 1) a.hinge = -1; else if (a.hinge === -1 && a.swing === 1) a.swing = -1; else if (a.hinge === -1 && a.swing === -1) a.hinge = 1; else a.swing = 1; pageViews.forEach(drawAnnos); saveState(); };
+  $('#pbFlip').onclick = () => { const a = selOpen(); if (!a) return; pushUndo(); flipOpening(a); pageViews.forEach(drawAnnos); saveState(); toast('Anschlag: Band ' + (a.winHinge === 'right' ? 'rechts' : 'links') + ', öffnet ' + ((a.swing || 1) === 1 ? 'innen' : 'aussen')); };
   $('#pbNiche').onclick = () => { const a = selOpen(); if (!a || a.kind !== 'window') { toast('Nische gibt es nur beim Fenster.'); return; } pushUndo(); a.niche = !a.niche; $('#pbNiche').classList.toggle('on', a.niche); saveState(); toast(a.niche ? 'Storennische an – im 3D sichtbar' : 'Storennische aus'); };
   $('#pbWinType').onchange = () => { const v = $('#pbWinType').value, a = selOpen(); if (a && a.kind === 'door') lastDoorType = v; else lastWinType = v; if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.winType = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbWinHinge').onchange = () => { const v = $('#pbWinHinge').value; lastWinHinge = v; const a = selOpen(); if (a && (a.kind === 'window' || a.kind === 'door')) { pushUndo(); a.winHinge = v; pageViews.forEach(drawAnnos); saveState(); } };
@@ -6729,7 +6735,7 @@ function wire() {
   $('#sbWallDim').onclick = () => { const a = selA(), pv = selPv(); if (!a || a.type !== 'wall') return; pushUndo(); a.dim = !a.dim; wallDimOn = a.dim; if (pv) drawAnnos(pv); updateSelBar(); saveState(); };
   $$('#sbOpen [data-ok]').forEach(b => b.onclick = () => { const a = selA(), pv = selPv(); if (!a || a.type !== 'opening') return; pushUndo(); a.kind = b.dataset.ok; openKind = a.kind; if (pv) drawAnnos(pv); updateSelBar(); saveState(); });
   $$('#sbOpen [data-ow]').forEach(b => b.onclick = () => { const a = selA(), pv = selPv(); if (!a || a.type !== 'opening') return; pushUndo(); a.w = Math.max(cmToPts(40), Math.min(cmToPts(400), a.w + (+b.dataset.ow) * cmToPts(5))); lastOpenW = a.w; if (pv) drawAnnos(pv); updateSelBar(); saveState(); });
-  $('#sbOpenFlip').onclick = () => { const a = selA(), pv = selPv(); if (!a || a.type !== 'opening') return; pushUndo(); if (a.swing === 1 && a.hinge === 1) { a.hinge = -1; } else if (a.hinge === -1 && a.swing === 1) { a.swing = -1; } else if (a.hinge === -1 && a.swing === -1) { a.hinge = 1; } else { a.swing = 1; } if (pv) drawAnnos(pv); saveState(); };
+  $('#sbOpenFlip').onclick = () => { const a = selA(), pv = selPv(); if (!a || a.type !== 'opening') return; pushUndo(); flipOpening(a); if (pv) drawAnnos(pv); saveState(); };
   $('#sbEdit').onclick = () => { const a = selA(), pv = selPv(); if (a && pv) openEditEdit(pv, a, false); };
   $('#sbMove').onclick = () => { const a = selA(), pv = selPv(); if (a && pv) splitEditMove(pv, a); };
   const lineAdjust = (dx, dy) => { const a = selA(); if (!isLineType(a)) return; pushUndo(); a.x1 += dx; a.y1 += dy; a.x2 += dx; a.y2 += dy; const pv = selPv(); if (pv) drawAnnos(pv); };

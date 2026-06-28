@@ -787,7 +787,12 @@ function updatePageInd() { if (!pdfDoc) return; const cur = curPage(); $('#pageI
 /* ---------- Zoom ---------- */
 function curScale() { return (zoom === 'auto') ? (pageViews[0] ? pageViews[0].scale : 1) : zoom; }
 function updateZoomLabel() { const pct = Math.round(((zoom === 'auto') ? curScale() : zoom) * 100); $('#zoomVal').innerHTML = pct + '&nbsp;%'; $('#zoomVal').classList.toggle('on', zoom === 'auto'); }
-function setZoom(z) { zoom = z; if (pdfDoc) relayout(); }
+let _zoomRenderDeb = null;
+function setZoom(z) {   // Zoom: Layout/Canvas sofort per CSS skalieren (flüssig), den teuren scharfen PDF-Re-Render entprellen
+  zoom = z; if (!pdfDoc) return;
+  pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); updateSelBar();
+  clearTimeout(_zoomRenderDeb); _zoomRenderDeb = setTimeout(() => { renderVisible(); scheduleRulers(); scheduleGrid(); }, 110);
+}
 function zoomStep(d) { const c = curScale(); setZoom(Math.max(.1, Math.min(8, Math.round((c + d) * 100) / 100))); }
 function promptZoom() {
   if (!pdfDoc) return; const cur = Math.round(curScale() * 100);
@@ -886,10 +891,10 @@ function duplicateLayerUp() {   // aktives Geschoss 1:1 nach oben kopieren (neue
 }
 function findAnno(n, id) { return (annos[n] || []).find(a => a.id === id); }
 let _wallUnionActive = false;
-let _rafDraw = 0; const _rafPvs = new Set();
+let _rafDraw = 0, _fastDraw = false; const _rafPvs = new Set(), _secCache = {};   // _fastDraw = Frame während Drag → teure Schnitte aus Cache (aktualisieren beim Loslassen)
 function requestDraw(pv) {   // mehrere drawAnnos pro Frame (z. B. während Drag) zu EINEM Redraw bündeln → flüssiger
   _rafPvs.add(pv); if (_rafDraw) return;
-  _rafDraw = requestAnimationFrame(() => { _rafDraw = 0; const ps = [..._rafPvs]; _rafPvs.clear(); for (const p of ps) { try { drawAnnos(p); } catch (_) { } } });
+  _rafDraw = requestAnimationFrame(() => { _rafDraw = 0; _fastDraw = true; const ps = [..._rafPvs]; _rafPvs.clear(); for (const p of ps) { try { drawAnnos(p); } catch (_) { } } _fastDraw = false; });
 }
 function drawAnnos(pv) {
   const svg = pv.svg; svg.innerHTML = '';
@@ -3162,6 +3167,7 @@ function sectionPrimitives(a, arr) {
 }
 function sectionBBox(a, arr) { if (!docScale) return { x: a.ox - 6, y: a.oy - 16, w: 180, h: 30 }; const perPt = docScale.perPt, cl = Math.hypot(a.cx2 - a.cx1, a.cy2 - a.cy1) || 1, mh = sectionMaxH(a, arr) / perPt; return { x: a.ox - 16, y: a.oy - mh - 8, w: cl + 32, h: mh + 36 }; }
 function drawSection(svg, a, arr) {
+  if (_fastDraw && _secCache[a.id]) { const gc = _secCache[a.id].cloneNode(true); svg.appendChild(gc); const bb = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: bb.x, y: bb.y, width: bb.w, height: bb.h, fill: 'transparent', 'data-id': a.id })); return gc; }   // während Drag: Schnitt aus Cache (kein Neuschnitt aller Wände) → flüssig; aktualisiert beim Loslassen
   const g = svgEl('g', { 'data-id': a.id }), hdl = [];
   for (const p of sectionPrimitives(a, arr)) {
     if (p.t === 'rect') { const r = svgEl('rect', { x: Math.min(p.x, p.x + p.w), y: Math.min(p.y, p.y + p.h), width: Math.abs(p.w), height: Math.abs(p.h), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { r.setAttribute('stroke', p.stroke); r.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(r); }
@@ -3173,6 +3179,7 @@ function drawSection(svg, a, arr) {
     else if (p.t === 'shandle') hdl.push({ x: p.x, y: p.y, key: p.key, cls: 'dim-handle', r: 5 });
   }
   svg.appendChild(g);
+  _secCache[a.id] = g.cloneNode(true);   // Cache für flüssige Drags (wird bei jedem normalen Redraw aufgefrischt)
   const b = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: 'transparent', 'data-id': a.id }));
   if (sel && sel.id === a.id) for (const h of hdl) svg.appendChild(svgEl('circle', { class: 'handle ' + h.cls, cx: h.x, cy: h.y, r: h.r, 'data-h': h.key, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' }));   // Griffe ÜBER dem Hit-Rechteck → klickbar
   return g;

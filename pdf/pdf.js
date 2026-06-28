@@ -2445,20 +2445,20 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     $('#pbSillWrap').style.display = kind === 'window' ? '' : 'none';
     $('#pbDepthWrap').style.display = winLike ? '' : 'none';
     if (document.activeElement !== $('#pbDepth')) $('#pbDepth').value = Math.round((sO && sO.depth != null ? sO.depth : lastOpenDepth) * 100);
-    $('#pbNiche').style.display = kind === 'window' ? '' : 'none'; $('#pbNiche').classList.toggle('on', !!(sO && sO.niche));
+    $('#pbNiche').style.display = 'none'; $('#pbNiche').classList.toggle('on', !!(sO && sO.niche));   // Konsolidiert: Storenkasten nur im „⊕ Detail"
     const tOpts = kind === 'door' ? '<option value="fest">Festverglast</option><option value="f1">1 Flügel</option><option value="f2">2 Flügel</option><option value="f1f">1 Flügel + Fixteil</option>' : '<option value="fest">Festverglasung</option><option value="f1">1 Flügel</option><option value="f2">2 Flügel (direkt)</option><option value="f2s">2 Flügel + Setzholz</option>';
     if ($('#pbWinType').dataset.kind !== kind) { $('#pbWinType').innerHTML = tOpts; $('#pbWinType').dataset.kind = kind; }
     $('#pbWinType').style.display = winLike ? '' : 'none'; $('#pbWinType').value = (sO && sO.winType) || (kind === 'door' ? lastDoorType : lastWinType);
     $('#pbWinHinge').style.display = winLike ? '' : 'none'; $('#pbWinHinge').value = (sO && sO.winHinge) || lastWinHinge;
     $('#pbWinMore').style.display = winLike ? '' : 'none';
     $('#pbLaibEdit').style.display = winLike ? '' : 'none';
-    $('#pbReveal').style.display = winLike ? '' : 'none'; $('#pbReveal').value = (sO && sO.revealType) || 'putz';
-    { const ro = $('#pbRevealOut'); if (ro) { ro.style.display = winLike ? '' : 'none'; ro.value = (sO && sO.revealOuter) || ''; } }
-    $('#pbAnschlag').style.display = winLike ? '' : 'none'; $('#pbAnschlag').value = (sO && sO.anschlagType) || 'none';
-    $('#pbAnschlagDWrap').style.display = winLike && sO && sO.anschlagType && sO.anschlagType !== 'none' ? '' : 'none'; if (document.activeElement !== $('#pbAnschlagD')) $('#pbAnschlagD').value = Math.round(ptsToCm(sO && sO.anschlagDepth != null ? sO.anschlagDepth : cmToPts(5)) * 10) / 10;
+    $('#pbReveal').style.display = 'none'; $('#pbReveal').value = (sO && sO.revealType) || 'putz';   // Konsolidiert: Laibung/Anschlag nur im „⊕ Detail"
+    { const ro = $('#pbRevealOut'); if (ro) { ro.style.display = 'none'; ro.value = (sO && sO.revealOuter) || ''; } }
+    $('#pbAnschlag').style.display = 'none'; $('#pbAnschlag').value = (sO && sO.anschlagType) || 'none';
+    $('#pbAnschlagDWrap').style.display = 'none'; if (document.activeElement !== $('#pbAnschlagD')) $('#pbAnschlagD').value = Math.round(ptsToCm(sO && sO.anschlagDepth != null ? sO.anschlagDepth : cmToPts(5)) * 10) / 10;
     $('#pbWinMat').style.display = winLike ? '' : 'none'; $('#pbWinMat').value = (sO && sO.winMat) || lastWinMat || 'holz';
-    $('#pbOuterWrap').style.display = winLike ? '' : 'none'; if (document.activeElement !== $('#pbOuterLap')) $('#pbOuterLap').value = Math.round(ptsToCm(sO && sO.outerLap != null ? sO.outerLap : cmToPts(3)) * 10) / 10;
-    $('#pbInnerWrap').style.display = winLike ? '' : 'none'; if (document.activeElement !== $('#pbInnerRev')) $('#pbInnerRev').value = Math.round(ptsToCm(sO && sO.innerReveal != null ? sO.innerReveal : cmToPts(2)) * 10) / 10;
+    $('#pbOuterWrap').style.display = 'none'; if (document.activeElement !== $('#pbOuterLap')) $('#pbOuterLap').value = Math.round(ptsToCm(sO && sO.outerLap != null ? sO.outerLap : cmToPts(3)) * 10) / 10;
+    $('#pbInnerWrap').style.display = 'none'; if (document.activeElement !== $('#pbInnerRev')) $('#pbInnerRev').value = Math.round(ptsToCm(sO && sO.innerReveal != null ? sO.innerReveal : cmToPts(2)) * 10) / 10;
     $('#pbFlip').style.display = kind === 'door' ? '' : 'none';
   }
 }

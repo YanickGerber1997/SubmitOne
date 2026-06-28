@@ -5528,6 +5528,9 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     sel('Anschlag', [['none', 'Kein'], ['aussen', 'Innen'], ['innen', 'Aussen']], a.anschlagType || 'none', v => { a.anschlagType = v; render(); buildCtrls(); drawAnnos(pv); saveState(); });
     fld('anschlagDepth');
     head('Laibung');
+    { const fb = document.createElement('button'); fb.className = 'btn'; fb.textContent = '⇄ Innen/Außen tauschen'; fb.style.cssText = 'width:100%;margin:2px 0 5px'; fb.title = 'Wandaufbau spiegeln – falls Dämmung/Mauerwerk auf der falschen Seite liegen (innen = Mauerwerk, aussen = Dämmung)';
+      fb.onclick = () => { if (wall && wall.layers && wall.layers.length) { pushUndo(); wall.layers.reverse(); a.revealLining = null; a.revealLiningOut = null; openingResolve(a, pv); render(); renderSec(); renderElev(svgAo, 'a', () => vbAo, v => { vbAo = v; }); renderElev(svgAi, 'i', () => vbAi, v => { vbAi = v; }); buildCtrls(); drawAnnos(pv); saveState(); toast('Wandaufbau gespiegelt'); } };
+      side.appendChild(fb); }
     { const note = document.createElement('div'); note.className = 'lab-row'; note.innerHTML = '<span style="color:#7a8366">Standard: die Deckschicht wickelt um die Ecke. Für vollen Aufbau die Laibung je Seite anlegen.</span>'; side.appendChild(note); }
     const revealEditor = (prop, label) => {   // EINZIGES Laibungs-System je Seite (prop = revealLining innen / revealLiningOut aussen)
       const RL = a[prop], matOpts = Object.keys(WALL_MATS).map(k => [k, WALL_MATS[k].label || k]);

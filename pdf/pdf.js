@@ -6021,7 +6021,7 @@ function build3DScene(host, walls, arr, opts) {
   for (const w of walls) {
     if (!layerVisible(w) || !phaseVisible(w)) continue;
     const dx = w.x2 - w.x1, dy = w.y2 - w.y1, lp = Math.hypot(dx, dy); if (lp < 1) continue;
-    const ux = dx / lp, uy = dy / lp, th = M(w.thick || wallThickPts()), HW = w.h3d || H, yb = lev(w), sx = M(w.x1 - cx), sz = M(w.y1 - cy), ry = -Math.atan2(dy, dx);
+    const ux = dx / lp, uy = dy / lp, th = M(w.thick || wallThickPts()), HW = w.h3d || H, yb = lev(w) + (w.base || 0), sx = M(w.x1 - cx), sz = M(w.y1 - cy), ry = -Math.atan2(dy, dx);   // yb = Ebenen-Höhe + Wand-Basishöhe (OG-Wand auf der Decke → alle Geschosse sichtbar)
     const nxw = -uy, nyw = ux;   // Querrichtung der Wand (in der Ebene)
     const addBox = (s0, s1, y0, y1, mat, depth, edge) => {                                  // Teilstück der Wand (Längs-Span s0..s1 in pt, Höhe y0..y1 in m)
       const lenM = (s1 - s0) * perPt; if (lenM <= 0.002 || y1 - y0 <= 0.002) return;

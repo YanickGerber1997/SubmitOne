@@ -39,6 +39,7 @@ function fmtLen(pts) {
   return Math.round(m * 1000) + ' mm';
 }
 let sel = null;            // {num, id}
+let secSelWall = null;     // im Schnitt sub-gewählte Wand (id) → nur deren Ziehpunkte + Highlight
 let groupSel = null;       // {num, ids:[…]} – Mehrfachauswahl (Rahmen)
 let nextId = 1;
 let undoStack = [];
@@ -1916,6 +1917,7 @@ function onPointerDown(pv, e) {
     if (revAttr && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; zoomToClick(e.clientX, e.clientY); drawAnnos(pv); openRevealLayerPop(pv, oo, revAttr, e.clientX, e.clientY); return; } }
     if (e.target.getAttribute && e.target.getAttribute('data-frame') && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; zoomToClick(e.clientX, e.clientY); drawAnnos(pv); openFramePop(pv, oo, e.clientX, e.clientY); return; } }   // Klick auf Rahmen → direkt editieren
     if (e.target.getAttribute && e.target.getAttribute('data-ah') && idAttr) { startAngleDrag(pv, e, +idAttr); return; }   // offenen Flügel ziehen → Öffnungswinkel
+    { const wallAttr = e.target.getAttribute && e.target.getAttribute('data-wall'); if (wallAttr && idAttr) { const sa = findAnno(pv.num, +idAttr); if (sa && sa.type === 'section') { sel = { num: pv.num, id: sa.id }; groupSel = null; secSelWall = +wallAttr; drawAnnos(pv); updateSelBar(); toast('Wand im Schnitt gewählt – nur deren Höhen/Schicht-Punkte. Leere Stelle klicken = alle.'); return; } } }   // Wand im Schnitt sub-wählen
     if (e.target.getAttribute && e.target.getAttribute('data-group') && groupSel && groupSel.num === pv.num) { startGroupMove(pv, e); return; }   // ganze Gruppe ziehen
     const pn = e.target.getAttribute && e.target.getAttribute('data-pn'), ph = e.target.getAttribute && e.target.getAttribute('data-ph');
     if ((pn !== null || ph !== null) && sel && sel.num === pv.num) { startNodeDrag(pv, e, sel.id, pn, ph, e.target.getAttribute('data-hk')); return; }   // Kurven-Knoten/Anfasser ziehen
@@ -1941,13 +1943,13 @@ function onPointerDown(pv, e) {
         drawAnnos(pv); updateAlignBar(); updateSelBar(); return;
       }
       const wasSel = sel && sel.num === pv.num && sel.id === +idAttr;   // war schon ausgewählt → Klick (ohne Ziehen) = bearbeiten
-      groupSel = null; sel = { num: pv.num, id: +idAttr }; drawAnnos(pv);
+      secSelWall = null; groupSel = null; sel = { num: pv.num, id: +idAttr }; drawAnnos(pv);
       const a = findAnno(pv.num, sel.id);
       if (a && a.type === 'note') { openNoteEdit(pv, a); return; }
       if (a && a.type === 'opening') { startOpeningMove(pv, e, a); return; }   // Öffnung entlang der Wand schieben
       startMove(pv, e, a, wasSel); return;
     }
-    sel = null; groupSel = null; drawAnnos(pv); startMarquee(pv, e); return;   // leerer Klick → Rahmen aufziehen
+    sel = null; secSelWall = null; groupSel = null; drawAnnos(pv); startMarquee(pv, e); return;   // leerer Klick → Rahmen aufziehen
   }
   if (['line', 'arrow', 'rect', 'oval', 'arc', 'curve', 'measure', 'dim', 'wall'].includes(tool)) { const an = anchorSnap(pv, p.x, p.y); if (an) p = an; else if (gridOn) p = snapPt(p.x, p.y); }   // an Endpunkten/Knoten oder Raster einrasten
   else if (gridOn && tool !== 'eraser' && tool !== 'edittext' && tool !== 'pen' && tool !== 'highlight' && tool !== 'textsel' && tool !== 'calibrate') p = snapPt(p.x, p.y);
@@ -3251,7 +3253,7 @@ function sectionPrimitives(a, arr) {
     } else {
     let cx = x0;
     for (let li = 0; li < layers.length; li++) { const L = layers[li], lw = (L.t / totalT) * h.appW, bx = X(cx), yTopF = Yb(H + (L.top || 0)), yBotF = Yb(0 - (L.bot || 0));   // L.top/L.bot = eigene Über-/Unterlänge; L.lowMat/L.lowH = Sockelzone
-      const drawSeg = (mat, yT, yB) => { if (yB - yT < 0.1) return; const m = mat ? (WALL_MATS[mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; out.push({ t: 'rect', x: bx, y: yT, w: lw, h: yB - yT, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6 }); if (!simpleMode) sectionBandHatch(out, bx, yT, lw, yB - yT, mat, (w.hatch && w.hatch.type)); };
+      const drawSeg = (mat, yT, yB) => { if (yB - yT < 0.1) return; const m = mat ? (WALL_MATS[mat] || {}) : { fill: (w.fill && w.fill !== 'none') ? w.fill : '#ffffff', color: w.color || col }; out.push({ t: 'rect', x: bx, y: yT, w: lw, h: yB - yT, fill: m.fill || '#ffffff', stroke: m.color || col, sw: 0.6, wid: w.id }); if (!simpleMode) sectionBandHatch(out, bx, yT, lw, yB - yT, mat, (w.hatch && w.hatch.type)); };
       const lm = WALL_MATS[L.mat] || {};
       if (lm.boards) { const lay = (w.layers || [])[a.flip ? (layers.length - 1 - li) : li] || {}, bwp = cmToPts(lay.boardW || 4), gpp = cmToPts(lay.boardGap != null ? lay.boardGap : 2), step = Math.max(2, bwp + gpp); for (let yy = yTopF; yy < yBotF - 0.5; yy += step) { const y2 = Math.min(yBotF, yy + bwp); out.push({ t: 'rect', x: bx, y: yy, w: lw, h: y2 - yy, fill: lm.fill || '#e7cfa8', stroke: lm.color || '#7a5126', sw: 0.6 }); } }   // Latten gestapelt (Lücken zeigen Windpapier dahinter)
       else if (L.lowMat && L.lowH > 0) { const yS = Yb(L.lowH); drawSeg(L.lowMat, yS, yBotF); drawSeg(L.mat, yTopF, yS); } else drawSeg(L.mat, yTopF, yBotF);
@@ -3325,7 +3327,7 @@ function sectionBBox(a, arr) { if (!docScale) return { x: a.ox - 6, y: a.oy - 16
 const _revSig = o => { const f = l => Array.isArray(l) ? l.map(x => x.mat + (x.t || 0) + (x.gap || 0) + (x.prio || '') + (x.len != null ? 'L' + x.len : '') + (x.over || 0)).join('') : ''; let r = f(o.revealLining) + '|' + f(o.revealLiningOut); if (o.reveals) for (const e of ['L', 'R', 'T', 'B']) { const ed = o.reveals[e]; if (ed) r += e + f(ed.in) + f(ed.out) + (ed.slope || 0) + (ed.boardVis != null ? 'b' + ed.boardVis : '') + (ed.boardVisIn != null ? 'i' + ed.boardVisIn : '') + (ed.boardVisOut != null ? 'o' + ed.boardVisOut : ''); } return r; };
 function sectionSig(a, arr) {   // billige Inhalts-Signatur: alles was den Schnitt/die Ansicht beeinflusst → nur bei Änderung neu rechnen
   const p = docScale ? docScale.perPt : 0;
-  let s = 'S' + a.cx1.toFixed(1) + ',' + a.cy1.toFixed(1) + ',' + a.cx2.toFixed(1) + ',' + a.cy2.toFixed(1) + ',' + a.ox + ',' + a.oy + ',' + (a.flip ? 1 : 0) + ',' + (a.mullion ? 1 : 0) + ',' + (a.noDims ? 1 : 0) + ',' + p + ',' + (USE_SOLID ? 1 : 0) + ',' + (simpleMode ? 1 : 0) + ',' + wallDimOffCm + ',' + (sel && sel.id === a.id ? 1 : 0) + '|';
+  let s = 'S' + a.cx1.toFixed(1) + ',' + a.cy1.toFixed(1) + ',' + a.cx2.toFixed(1) + ',' + a.cy2.toFixed(1) + ',' + a.ox + ',' + a.oy + ',' + (a.flip ? 1 : 0) + ',' + (a.mullion ? 1 : 0) + ',' + (a.noDims ? 1 : 0) + ',' + p + ',' + (USE_SOLID ? 1 : 0) + ',' + (simpleMode ? 1 : 0) + ',' + wallDimOffCm + ',' + (sel && sel.id === a.id ? 1 : 0) + ',' + (sel && sel.id === a.id ? (secSelWall || 0) : 0) + '|';
   for (const o of arr) {
     if (!layerVisible(o) || !phaseVisible(o)) continue; const t = o.type;
     if (t === 'wall') s += 'W' + o.id + ':' + o.x1.toFixed(1) + ',' + o.y1.toFixed(1) + ',' + o.x2.toFixed(1) + ',' + o.y2.toFixed(1) + ',' + (o.thick || 0).toFixed(1) + ',' + (o.h3d || 0) + ',' + (o.base || 0) + ',' + (o.just || '') + ',' + (o.fill || '') + ',' + (o.layers ? o.layers.map(l => l.mat + (l.t || 0).toFixed(1) + '/' + (l.top || 0) + '/' + (l.bot || 0) + '/' + (l.ext1 || 0) + '/' + (l.ext2 || 0) + '/' + (l.lowMat || '') + (l.lowH || 0) + (l.sub ? l.sub.type : '')).join('') : '') + ';';
@@ -3339,24 +3341,26 @@ function sectionSig(a, arr) {   // billige Inhalts-Signatur: alles was den Schni
 }
 function drawSection(svg, a, arr) {
   const revLayer = () => { const rh = _secCache[a.id] && _secCache[a.id]._revHits; if (rh) for (const h of rh) { const at = { class: h.frame ? 'frame-hit' : 'rev-hit', points: h.pts.map(q => q[0].toFixed(2) + ',' + q[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': h.oid }; if (h.frame) at['data-frame'] = '1'; else at['data-rev'] = h.rev; svg.appendChild(addHoverHL(svgEl('polygon', at))); } };   // klickbare Laibungsschichten (Sturz/Schwelle) + Rahmen; nur das berührte leuchtet
-  const reuse = () => { const gc = _secCache[a.id].cloneNode(true); svg.appendChild(gc); const bb = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: bb.x, y: bb.y, width: bb.w, height: bb.h, fill: 'transparent', 'data-id': a.id })); revLayer(); if (sel && sel.id === a.id && _secCache[a.id]._hdl) for (const h of _secCache[a.id]._hdl) svg.appendChild(svgEl('circle', { class: 'handle ' + h.cls, cx: h.x, cy: h.y, r: h.r, 'data-h': h.key, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' })); return gc; };
+  const hdlVis = h => secSelWall == null || h.wid === secSelWall;   // bei sub-gewählter Wand nur deren Ziehpunkte
+  const wallLayer = () => { const wh = _secCache[a.id] && _secCache[a.id]._wallHits; if (wh) for (const b of wh) { const r = svgEl('rect', { x: b.x0, y: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0, fill: 'transparent', 'data-id': a.id, 'data-wall': b.wid }); r.style.cursor = 'pointer'; svg.appendChild(r); } };   // klickbare Wand-Bauteile (Wand im Schnitt wählen) ÜBER dem Hit-Rechteck
+  const reuse = () => { const gc = _secCache[a.id].cloneNode(true); svg.appendChild(gc); const bb = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: bb.x, y: bb.y, width: bb.w, height: bb.h, fill: 'transparent', 'data-id': a.id })); wallLayer(); revLayer(); if (sel && sel.id === a.id && _secCache[a.id]._hdl) for (const h of _secCache[a.id]._hdl) { if (!hdlVis(h)) continue; svg.appendChild(svgEl('circle', { class: 'handle ' + h.cls, cx: h.x, cy: h.y, r: h.r, 'data-h': h.key, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' })); } return gc; };
   if (_fastDraw && _secCache[a.id]) return reuse();   // während Drag: aus Cache → flüssig
   const sig = sectionSig(a, arr); if (_secCacheSig[a.id] === sig && _secCache[a.id]) return reuse();   // unverändert → aus Cache (kein Neuschnitt bei Klicks/Eingaben anderswo)
-  const g = svgEl('g', { 'data-id': a.id }), hdl = [], revHits = [];
+  const g = svgEl('g', { 'data-id': a.id }), hdl = [], revHits = [], wallHB = {};
   for (const p of sectionPrimitives(a, arr)) {
-    if (p.t === 'rect') { const r = svgEl('rect', { x: Math.min(p.x, p.x + p.w), y: Math.min(p.y, p.y + p.h), width: Math.abs(p.w), height: Math.abs(p.h), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { r.setAttribute('stroke', p.stroke); r.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(r); }
+    if (p.t === 'rect') { const hl = p.wid != null && sel && sel.id === a.id && secSelWall === p.wid, r = svgEl('rect', { x: Math.min(p.x, p.x + p.w), y: Math.min(p.y, p.y + p.h), width: Math.abs(p.w), height: Math.abs(p.h), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (hl) { r.setAttribute('stroke', '#1a9a4e'); r.setAttribute('stroke-width', 2); } else if (p.stroke && p.stroke !== 'none') { r.setAttribute('stroke', p.stroke); r.setAttribute('stroke-width', p.sw || 0.6); } if (p.wid != null) { const k = p.wid, b = wallHB[k] || (wallHB[k] = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, wid: k }), rx0 = Math.min(p.x, p.x + p.w), ry0 = Math.min(p.y, p.y + p.h), rx1 = Math.max(p.x, p.x + p.w), ry1 = Math.max(p.y, p.y + p.h); b.x0 = Math.min(b.x0, rx0); b.y0 = Math.min(b.y0, ry0); b.x1 = Math.max(b.x1, rx1); b.y1 = Math.max(b.y1, ry1); } g.appendChild(r); }
     else if (p.t === 'poly') { const pl = svgEl('polygon', { points: p.pts.map(q => q[0].toFixed(2) + ',' + q[1].toFixed(2)).join(' '), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { pl.setAttribute('stroke', p.stroke); pl.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(pl); if (p.rev && p.oid != null) revHits.push({ pts: p.pts, oid: p.oid, rev: p.rev }); else if (p.frame && p.oid != null) revHits.push({ pts: p.pts, oid: p.oid, frame: 1 }); }
     else if (p.t === 'line') { const l = svgEl('line', { x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2, stroke: p.stroke || '#1c242c', 'stroke-width': p.w || 1, 'vector-effect': 'non-scaling-stroke' }); if (p.dash) l.setAttribute('stroke-dasharray', p.dash); g.appendChild(l); }
     else if (p.t === 'arrow') { const s = 6, ang = Math.atan2(p.dy, p.dx); for (const da of [2.5, -2.5]) g.appendChild(svgEl('line', { x1: p.x, y1: p.y, x2: p.x - Math.cos(ang + da) * s, y2: p.y - Math.sin(ang + da) * s, stroke: p.col || '#1c242c', 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' })); }
     else if (p.t === 'text') { const t = svgEl('text', { x: p.x, y: p.y, fill: p.col || '#1c242c', 'font-size': p.size || (p.small ? 9 : 12), 'font-weight': p.small ? 400 : 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); if (p.mid) { t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'middle'); } if (p.ang) t.setAttribute('transform', 'rotate(' + p.ang.toFixed(1) + ' ' + p.x.toFixed(2) + ' ' + p.y.toFixed(2) + ')'); t.textContent = p.text; g.appendChild(t); }
-    else if (p.t === 'lhandle') hdl.push({ x: p.x, y: p.y, key: 'sl:' + p.wallId + ':' + p.li + ':' + p.edge, cls: 'lay-handle', r: 4.5 });
-    else if (p.t === 'shandle') hdl.push({ x: p.x, y: p.y, key: p.key, cls: 'dim-handle', r: 5 });
+    else if (p.t === 'lhandle') hdl.push({ x: p.x, y: p.y, key: 'sl:' + p.wallId + ':' + p.li + ':' + p.edge, cls: 'lay-handle', r: 4.5, wid: p.wallId });
+    else if (p.t === 'shandle') { const m = /^sh:wh:(\d+)/.exec(p.key); hdl.push({ x: p.x, y: p.y, key: p.key, cls: 'dim-handle', r: 5, wid: m ? +m[1] : null }); }
   }
   svg.appendChild(g);
-  const clone = g.cloneNode(true); clone._hdl = hdl; clone._revHits = revHits; _secCache[a.id] = clone; _secCacheSig[a.id] = sig;   // Cache + Signatur + Griffe + Laibungs-Klickflächen
+  const clone = g.cloneNode(true); clone._hdl = hdl; clone._revHits = revHits; clone._wallHits = Object.values(wallHB); _secCache[a.id] = clone; _secCacheSig[a.id] = sig;   // Cache + Signatur + Griffe + Laibungs-/Wand-Klickflächen
   const b = sectionBBox(a, arr); svg.appendChild(svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: 'transparent', 'data-id': a.id }));
-  revLayer();
-  if (sel && sel.id === a.id) for (const h of hdl) svg.appendChild(svgEl('circle', { class: 'handle ' + h.cls, cx: h.x, cy: h.y, r: h.r, 'data-h': h.key, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' }));   // Griffe ÜBER dem Hit-Rechteck → klickbar
+  wallLayer(); revLayer();
+  if (sel && sel.id === a.id) for (const h of hdl) { if (!hdlVis(h)) continue; svg.appendChild(svgEl('circle', { class: 'handle ' + h.cls, cx: h.x, cy: h.y, r: h.r, 'data-h': h.key, 'data-id': a.id, 'vector-effect': 'non-scaling-stroke' })); }   // Griffe ÜBER dem Hit-Rechteck → klickbar (bei sub-gewählter Wand nur deren)
   return g;
 }
 function startSection(pv, e, p) {

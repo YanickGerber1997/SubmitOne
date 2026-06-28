@@ -5117,6 +5117,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Annotation-Import (Square→rect)', () => { const a = convertAnnot({ subtype: 'Square', rect: [10, 10, 50, 50], color: [255, 0, 0] }, 200); return !!(a && a.type === 'rect'); });
     A('Massstabsbalken-Element', () => buildPlanParts(842, 595, { kind: 'mstab', margin: 8 }).length > 3);
     A('Öffnungs-Nummern (F1/F2)', () => { const g = openingGroups([wall, win, { id: 9004, type: 'opening', kind: 'window', wallId: 9001, w: cmToPts(80), head: 2.1, sill: 0.9, winType: 'f1', winMat: 'holz' }]); return (g.wins.length === 2 && g.posOf[9004] === 'F1' && g.posOf[9002] === 'F2') ? '' : JSON.stringify(g.posOf); });
+    A('Mengen: Laibung', () => { const w2 = { id: 9101, type: 'wall', x1: 0, y1: 0, x2: cmToPts(300), y2: 0, thick: cmToPts(30), layers: [{ mat: 'putz', t: cmToPts(1.5) }, { mat: 'mauerwerk', t: cmToPts(15) }, { mat: 'eps', t: cmToPts(16) }] }; const o2 = { id: 9102, type: 'opening', kind: 'window', wallId: 9101, w: cmToPts(120), head: 2.1, sill: 0.9, frameD: cmToPts(7), revealLining: [{ mat: 'putz', t: 1.5 }], revealLiningOut: [{ mat: 'putz', t: 2.5 }] }; const q = computeQuantities([w2, o2]); const rev = q.extra.find(e => e.label && e.label.indexOf('Laibung') === 0); return (rev && rev.qty > 0) ? '' : 'rev=' + JSON.stringify(q.extra.map(e => e.label)); });
     A('Möbel-Symbol (Kleiderschrank)', () => blockShapes({ x: 0, y: 0, w: 140, h: 60, kind: 'wardrobe' }).length >= 3 && !!BLOCK_DEFS.kitchen && !!BLOCK_H.tallcab);
     A('Stütze (rund/eckig)', () => { const r = blockShapes({ x: 0, y: 0, w: 30, h: 30, kind: 'columnRound' }); return r.length === 1 && r[0].t === 'circ' && IS_COLUMN('column') && !IS_COLUMN('table'); });
     A('Unterzug (Bauteil)', () => { const b = { id: 9100, type: 'beam', x1: 0, y1: 0, x2: cmToPts(500), y2: 0, width: cmToPts(24), height: 0.4 }; const bb = bbox(b); return isLineType(b) && bb.w > 0 && computeQuantities([b]).extra.some(e => e.label === 'Unterzug'); });
@@ -5248,6 +5249,16 @@ function computeQuantities(arr) {   // Mengenauszug: Wandfläche × Schichtstär
     else if (a.type === 'stairs') { const e = ex('stairs', 'Treppe (Lauf)', 'm'); e.qty += ptsToCm(Math.hypot(a.x2 - a.x1, a.y2 - a.y1)) / 100; e.n++; e.steps += stairSteps(a); }
     else if (a.type === 'beam') { const e = ex('beam', 'Unterzug', 'm'); e.qty += ptsToCm(Math.hypot(a.x2 - a.x1, a.y2 - a.y1)) / 100; e.n++; }
     else if (a.type === 'profile' && a.path && a.path.length >= 2) { const len = profilePathLenM(a.closed && a.path.length >= 3 ? a.path.concat([a.path[0]]) : a.path), volM3 = len * (profileArea(a.prof || []) / 10000), e = ex('profile:' + (a.name || 'Profil'), 'Profil: ' + (a.name || 'Profil'), 'm'); e.qty += len; e.n++; e.vol += volM3; if (a.mat === 'metall') e.kg = (e.kg || 0) + volM3 * 7850; }
+    else if (a.type === 'opening' && (a.kind === 'window' || a.kind === 'door')) {   // Laibung: 4 Kanten × innen/aussen, Fläche (m²) + Volumen (m³) je Material
+      const w = arr.find(x => x.id === a.wallId && x.type === 'wall');
+      const T = ptsToCm(a.thick || (w && w.thick) || wallThickPts()) / 100, frameD = ptsToCm(a.frameD || cmToPts(7)) / 100, depthSide = Math.max(0.02, (T - frameD) / 2);
+      const ow = ptsToCm(a.w || 0) / 100, oh = a.kind === 'window' ? ((a.head || 2.1) - (a.sill || 0)) : (a.head || 2.0);
+      for (const [edge, len] of [['L', oh], ['R', oh], ['T', ow], ['B', ow]]) for (const side of ['in', 'out']) {
+        const er = a.reveals && a.reveals[edge], lst = (er && Array.isArray(er[side]) && er[side].length) ? er[side] : (side === 'in' ? a.revealLining : a.revealLiningOut);
+        if (!Array.isArray(lst) || len <= 0) continue;
+        for (const ly of lst) { if (!ly || ly.mat === 'luft') continue; const lbl = (WALL_MATS[ly.mat] && WALL_MATS[ly.mat].label) || ly.mat, vol = VOL.includes(ly.mat), e = ex('reveal:' + ly.mat, 'Laibung: ' + lbl, vol ? 'm³' : 'm²'); e.qty += vol ? (len * depthSide * ((ly.t || 0) / 100)) : (len * depthSide); e.n++; e.vol += len * depthSide * ((ly.t || 0) / 100); }
+      }
+    }
   }
   return { mats: Object.values(mats).sort((a, b) => a.mat.localeCompare(b.mat)), ops: Object.values(opsAgg).sort((a, b) => (a.kind + a.rohW).localeCompare(b.kind + b.rohW)), extra: Object.values(extra) };
 }

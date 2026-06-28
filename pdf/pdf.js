@@ -908,6 +908,7 @@ function drawAnnos(pv) {
   for (const a of getAnnos(pv.num)) if (a.type === 'opening') openingResolve(a, pv);   // Türen/Fenster der Wand folgen lassen
   _wallUnionActive = false;
   if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall' && (wallSimple(a) || !(a.layers && a.layers.length)) && layerVisible(a) && phaseVisible(a)); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung (Schicht-Wände zeichnen sich selbst; einfach = schwarz)
+  ensureJunctionClips(pv);   // prioritätsbasierte Eck-Verschneidung der Schicht-Wände vorbereiten (gecacht)
   for (const a of getAnnos(pv.num)) { if (!layerVisible(a) || !phaseVisible(a)) continue; drawOne(svg, a, pv); }
   _wallUnionActive = false;
   if (snapLayersOn && ['line', 'arrow', 'rect', 'oval', 'arc', 'curve', 'measure', 'dim', 'wall', 'slab', 'area', 'terrain'].includes(tool)) drawSnapNet(svg, pv);   // Schicht-Kanten-Hilfsnetz beim Zeichnen
@@ -1154,15 +1155,35 @@ function layerHatch(svg, a, band) {   // Schraffur einer einzelnen Schicht, auf 
   if (lines.length) { let d = ''; for (const L of lines) d += 'M' + L[0].toFixed(1) + ' ' + L[1].toFixed(1) + 'L' + L[2].toFixed(1) + ' ' + L[3].toFixed(1); hg.appendChild(svgEl('path', { d, stroke: col, 'stroke-width': 0.8, fill: 'none', 'vector-effect': 'non-scaling-stroke' })); }   // alle Schraffur-Striche als EIN Pfad (statt vieler <line> → viel weniger DOM)
   svg.appendChild(hg);
 }
+let _junctionClips = {}, _junctionSig = '';   // pro Wand/Schicht die abzuziehenden (höher priorisierten) Fremd-Bänder → prioritätsbasierte Eck-Verschneidung
+function _polyBB(poly) { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const p of poly) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; } return [x0, y0, x1, y1]; }
+function _bbOver(a, b) { return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3]; }
+function computeJunctionClips(arr, walls) {   // je Band: Liste der zu subtrahierenden Fremd-Bänder mit STRIKT höherer Priorität (überlappend) → läuft durch / endet daran
+  if (!window.polygonClipping) return {};
+  const all = [];
+  for (const w of walls) { const wlb = wallLayerBands(w, arr); wlb.bands.forEach((b, i) => all.push({ wid: w.id, li: i, prio: matPrio(b.mat), poly: b.poly, bb: _polyBB(b.poly) })); }
+  const res = {};
+  for (const band of all) { const subs = [];
+    for (const o of all) { if (o.wid === band.wid || o.prio <= band.prio || !_bbOver(band.bb, o.bb)) continue; subs.push([o.poly.map(p => [p[0], p[1]])]); }
+    if (subs.length) (res[band.wid] = res[band.wid] || {})[band.li] = subs;
+  }
+  return res;
+}
+function ensureJunctionClips(pv) {
+  const arr = getAnnos(pv.num) || [], walls = arr.filter(a => a.type === 'wall' && a.layers && a.layers.length && layerVisible(a) && phaseVisible(a));
+  let sig = ''; for (const w of walls) sig += w.id + ':' + w.x1.toFixed(1) + ',' + w.y1.toFixed(1) + ',' + w.x2.toFixed(1) + ',' + w.y2.toFixed(1) + ',' + (w.thick || 0).toFixed(1) + ',' + (w.just || '') + ',' + w.layers.map(l => l.mat + (l.t || 0).toFixed(1) + (l.ext1 || 0) + (l.ext2 || 0)).join('') + ';';
+  if (sig === _junctionSig) return; _junctionSig = sig; _junctionClips = computeJunctionClips(arr, walls);
+}
 function drawLayeredWall(svg, a, arr) {
   const { bands } = wallLayerBands(a, arr);   // jede Schicht: Füllung + dünne Umrandung in der Materialfarbe (kein schwarzer Gesamtrahmen)
   const ops = (arr || []).filter(o => o.type === 'opening' && o.wallId === a.id && o.x != null);   // Öffnungen boolesch aus den Schichten ausschneiden
   const cuts = (window.polygonClipping && ops.length) ? ops.map(o => [openingCutPoly(o).map(p => [p[0], p[1]])]) : null;
-  const clip = poly => { if (!cuts) return [poly]; try { const r = polygonClipping.difference([poly.map(p => [p[0], p[1]])], ...cuts); return r.length ? r.map(rg => rg[0]) : []; } catch (_) { return [poly]; } };
+  const jc = _junctionClips[a.id] || {};   // prioritätsbasierte Eck-Verschneidung: höher priorisierte Fremd-Bänder abziehen
+  const clipBand = (poly, i) => { const subs = []; if (cuts) for (const c of cuts) subs.push(c); if (jc[i]) for (const c of jc[i]) subs.push(c); if (!subs.length || !window.polygonClipping) return [poly]; try { const r = polygonClipping.difference([poly.map(p => [p[0], p[1]])], ...subs); return r.length ? r.map(rg => rg[0]) : []; } catch (_) { return [poly]; } };
   bands.forEach((b, i) => {
     const m = WALL_MATS[b.mat] || {}, lay = a.layers[i] || {};
     if (m.boards) { const bw = cmToPts(lay.boardW || 4), gp = cmToPts(lay.boardGap != null ? lay.boardGap : 2); for (const q of bandBoards(b, bw, gp)) svg.appendChild(svgEl('polygon', { points: q.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: m.fill || '#e7cfa8', stroke: m.color || '#7a5126', 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); return; }   // Latten einzeln (Lücken = Windpapier dahinter)
-    for (const poly of clip(b.poly)) { svg.appendChild(svgEl('polygon', { points: poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: m.fill || '#ffffff', stroke: m.color || '#9a9a9a', 'stroke-width': 0.7, 'stroke-linejoin': 'miter', 'vector-effect': 'non-scaling-stroke' })); layerHatch(svg, a, { ...b, poly }); }
+    for (const poly of clipBand(b.poly, i)) { svg.appendChild(svgEl('polygon', { points: poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: m.fill || '#ffffff', stroke: m.color || '#9a9a9a', 'stroke-width': 0.7, 'stroke-linejoin': 'miter', 'vector-effect': 'non-scaling-stroke' })); layerHatch(svg, a, { ...b, poly }); }
   });
   a.layers.forEach((l, i) => { if (l.sub && bands[i]) { bands[i].sub = l.sub; drawLayerSub(svg, a, bands[i], arr); } });   // Unterkonstruktion über die Schichten
 }
@@ -2377,13 +2398,12 @@ function fillImgPlaceholder(pv, a) {
   };
   inp.click();
 }
-function wallSnapPoint(pv, x, y, w) {   // (x,y) auf EINE Wand einrasten: Schicht-Band-Kanten/-Ecken (wenn geschichtet) + Achsenden
-  const arr = getAnnos(pv.num) || [], cThr = 13 / pv.scale, lThr = 12 / pv.scale; let best = null, bd = cThr;
+function wallSnapPoint(pv, x, y, w) {   // (x,y) auf EINE Wand einrasten: JEDE Schichtgrenze als Linie (Decke quer durch die Schichten klipsbar) + Wand-Aussenecken
+  const arr = getAnnos(pv.num) || [], cThr = 12 / pv.scale, lThr = 13 / pv.scale; let best = null, bd = Infinity;
   const consider = (ax, ay) => { const d = Math.hypot(ax - x, ay - y); if (d < cThr && d < bd) { bd = d; best = { x: ax, y: ay }; } };
-  const considerLine = (p, q) => { const dx = q[0] - p[0], dy = q[1] - p[1], L2 = dx * dx + dy * dy; if (L2 < 1) return; let u = ((x - p[0]) * dx + (y - p[1]) * dy) / L2; if (u < 0 || u > 1) return; const px = p[0] + dx * u, py = p[1] + dy * u, d = Math.hypot(px - x, py - y); if (d < lThr && d < bd) { bd = d; best = { x: px, y: py }; } };
-  consider(w.x1, w.y1); consider(w.x2, w.y2);
-  if (w.layers && w.layers.length) { const wlb = wallLayerBands(w, arr); for (const b of wlb.bands) { const q = b.poly; consider(q[0][0], q[0][1]); consider(q[1][0], q[1][1]); consider(q[2][0], q[2][1]); consider(q[3][0], q[3][1]); considerLine(q[0], q[1]); considerLine(q[3], q[2]); } }
-  else { for (const p of wallPoly(w, arr)) consider(p[0], p[1]); }
+  const considerLine = (p, q) => { const dx = q[0] - p[0], dy = q[1] - p[1], L2 = dx * dx + dy * dy; if (L2 < 1) return; let u = ((x - p[0]) * dx + (y - p[1]) * dy) / L2; if (u < -0.04 || u > 1.04) return; u = Math.max(0, Math.min(1, u)); const px = p[0] + dx * u, py = p[1] + dy * u, d = Math.hypot(px - x, py - y); if (d < lThr && d < bd) { bd = d; best = { x: px, y: py }; } };
+  for (const p of wallPoly(w, arr)) consider(p[0], p[1]);   // nur die vier Aussenecken (Gebäudeecke)
+  if (w.layers && w.layers.length) { const wlb = wallLayerBands(w, arr); for (const b of wlb.bands) { const q = b.poly; considerLine(q[0], q[1]); considerLine(q[3], q[2]); } }   // JEDE Schichtgrenze als Linie → quer durch die Schichten an jede einrasten
   return best;
 }
 function wallLayerGuides(pv, w) {   // Schicht-Kanten EINER Wand als Hilfslinien (nur die aktive Wand zeigen)

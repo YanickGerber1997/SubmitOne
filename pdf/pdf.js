@@ -4511,8 +4511,8 @@ function elementSolids(a, arr) {
     const H = a.h3d || wallHeightM, bands = wallLayerBands(a, arr).bands;
     bands.forEach((b, i) => {
       const L = a.layers[i] || {}, z0 = 0 - (L.bot || 0), zTop = H + (L.top || 0);
-      if (L.lowMat && L.lowH > 0) { out.push({ poly: b.poly, z0, z1: L.lowH, mat: L.lowMat, role: 'wall-layer' }); out.push({ poly: b.poly, z0: L.lowH, z1: zTop, mat: b.mat, role: 'wall-layer' }); }   // Sockelzone unten + Hauptmaterial darüber
-      else out.push({ poly: b.poly, z0, z1: zTop, mat: b.mat, role: 'wall-layer' });
+      if (L.lowMat && L.lowH > 0) { out.push({ poly: b.poly, z0, z1: L.lowH, mat: L.lowMat, role: 'wall-layer', li: i }); out.push({ poly: b.poly, z0: L.lowH, z1: zTop, mat: b.mat, role: 'wall-layer', li: i }); }   // Sockelzone unten + Hauptmaterial darüber
+      else out.push({ poly: b.poly, z0, z1: zTop, mat: b.mat, role: 'wall-layer', li: i });
     });
   } else if (a.type === 'wall') {
     out.push({ poly: wallPoly(a, arr), z0: 0, z1: a.h3d || wallHeightM, mat: null, role: 'wall', fill: a.fill, color: a.color });
@@ -4525,7 +4525,7 @@ function elementSolids(a, arr) {
 }
 function slicePlane(solids, plane) {   // plane: {kind:'h', z} (Grundriss) | {kind:'v', p1,p2} (Vertikalschnitt entlang Linie p1→p2)
   const res = [];
-  if (plane.kind === 'h') { const z = plane.z; for (const s of solids) if (s.z0 <= z && z < s.z1) res.push({ poly: s.poly, mat: s.mat, role: s.role, fill: s.fill, color: s.color, inset: s.inset }); return res; }
+  if (plane.kind === 'h') { const z = plane.z; for (const s of solids) if (s.z0 <= z && z < s.z1) res.push({ poly: s.poly, mat: s.mat, role: s.role, fill: s.fill, color: s.color, inset: s.inset, li: s.li }); return res; }
   const p1 = plane.p1, p2 = plane.p2, dx = p2[0] - p1[0], dy = p2[1] - p1[1], L = Math.hypot(dx, dy) || 1, cux = dx / L, cuy = dy / L, nx = -cuy, ny = cux;
   for (const s of solids) {
     const poly = s.poly, ds = [];
@@ -4533,7 +4533,7 @@ function slicePlane(solids, plane) {   // plane: {kind:'h', z} (Grundriss) | {ki
       const a0 = poly[i], b0 = poly[(i + 1) % poly.length], sa = (a0[0] - p1[0]) * nx + (a0[1] - p1[1]) * ny, sb = (b0[0] - p1[0]) * nx + (b0[1] - p1[1]) * ny;
       if ((sa <= 0 && sb > 0) || (sb <= 0 && sa > 0)) { const t = sa / (sa - sb), ix = a0[0] + (b0[0] - a0[0]) * t, iy = a0[1] + (b0[1] - a0[1]) * t; ds.push((ix - p1[0]) * cux + (iy - p1[1]) * cuy); }
     }
-    if (ds.length >= 2) { ds.sort((u, v) => u - v); res.push({ d0: ds[0], d1: ds[ds.length - 1], z0: s.z0, z1: s.z1, mat: s.mat, role: s.role, fill: s.fill, color: s.color }); }
+    if (ds.length >= 2) { ds.sort((u, v) => u - v); res.push({ d0: ds[0], d1: ds[ds.length - 1], z0: s.z0, z1: s.z1, mat: s.mat, role: s.role, fill: s.fill, color: s.color, li: s.li }); }
   }
   return res;
 }
@@ -5298,6 +5298,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   const svg = ov.querySelector('#labSvg'), svgS = ov.querySelector('#labSvgS'), svgAo = ov.querySelector('#labSvgAo'), svgAi = ov.querySelector('#labSvgAi'), side = ov.querySelector('#labCtrls');
   let vbG = null, vbS = null, vbAo = null, vbAi = null;   // aktuelle viewBox je Ansicht (zoomen/verschieben wie im echten Grundriss; null = einpassen)
   let secFlip = false, secLine = null, secMullion = false;   // Schnitt: Blickrichtung + frei verschiebbare Schnittlinie + Schnitt durch Mittelstoss (Setzholz)
+  let selLayer = null;   // im Bild angeklickte Schicht: { kind:'wall', i } → Inline-Editor
   const dimOff = {};   // verschiebbare Masslinien: key -> Offset (Zeichnungseinheiten)
   const DIMD = { secRoh: 74, secLicht: 36, elW: 40, elH: 60, gndRoh: 60, gndLicht: 28 };
   const doff = k => dimOff[k] != null ? dimOff[k] : DIMD[k];
@@ -5353,6 +5354,9 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     if (!vbG) { const cs = [rc(-1.7, -1.7), rc(1.7, -1.7), rc(1.7, 1.7), rc(-1.7, 1.7)]; const X0 = Math.min(...cs.map(c => c[0])), X1 = Math.max(...cs.map(c => c[0])), Y0 = Math.min(...cs.map(c => c[1])), Y1 = Math.max(...cs.map(c => c[1])), m = Math.max(X1 - X0, Y1 - Y0) * 0.12 + 10; vbG = { x: X0 - m, y: Y0 - m, w: (X1 - X0) + 2 * m, h: (Y1 - Y0) + 2 * m }; }
     svg.setAttribute('viewBox', vbStr(vbG));
     scale = vbG.w / (svg.clientWidth || (W * 0.6));
+    if (wall && wall.layers && wall.layers.length) {   // Wandschichten klickbar: transparente Overlays je Schicht-Band → Auswahl + Inline-Editor
+      try { const bands = wallLayerBands(wall, arr).bands; bands.forEach((b, i) => { const onSel = selLayer && selLayer.kind === 'wall' && selLayer.i === i; const pg = svgEl('polygon', { points: b.poly.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '), fill: onSel ? 'rgba(42,168,105,0.22)' : 'transparent', stroke: onSel ? '#2aa869' : 'none', 'stroke-width': onSel ? 2 : 0, 'vector-effect': 'non-scaling-stroke' }); pg.style.cursor = 'pointer'; pg.onclick = e => { e.stopPropagation(); selLayer = onSel ? null : { kind: 'wall', i }; buildCtrls(); render(); }; svg.appendChild(pg); }); } catch (_) { }
+    }
     const depth = a.depth == null ? 0.5 : a.depth, md = depth * 2 - 1;
     const fdh = Math.min(0.49, (a.frameD || cmToPts(7)) / (2 * ht)), fmB = Math.min(1, md + fdh), fmA = Math.max(-1, md - fdh);
     const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), boardVis = (a.boardVis != null ? a.boardVis : 1), boardW = (a.boardW != null ? a.boardW : 2.5);
@@ -5424,6 +5428,9 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     pushDim(out, [0, Yh(sill0 + revM)], [0, Yh(head0 - revM)], [-1, 0], doff('secLicht'), 'Licht ' + fmtLen(Math.max(0.02, head0 - sill0 - 2 * revM) / perPt), 'secLicht');
     drawPrims(svgS, out, () => vbS, v => { vbS = v; });
     bindDim(svgS, () => vbS, renderSec);
+    if (wall && wall.layers && wall.layers.length) {   // Wandschichten im Schnitt klickbar (Index li aus slicePlane)
+      try { const cl = Math.hypot(c2[0] - c1[0], c2[1] - c1[1]) || 1, fpp = d => secFlip ? cl - d : d; for (const r of slicePlane(elementSolids(wall, arr), { kind: 'v', p1: c1, p2: c2 })) { if (r.li == null) continue; const xa = fpp(r.d0), xb = fpp(r.d1), x = Math.min(xa, xb), w = Math.abs(xb - xa), y = -r.z1 / perPt, h = (r.z1 - r.z0) / perPt, onSel = selLayer && selLayer.kind === 'wall' && selLayer.i === r.li; if (w < 0.2 || h < 0.2) continue; const pg = svgEl('rect', { x: x.toFixed(1), y: y.toFixed(1), width: w.toFixed(1), height: h.toFixed(1), fill: onSel ? 'rgba(42,168,105,0.22)' : 'transparent', stroke: onSel ? '#2aa869' : 'none', 'stroke-width': onSel ? 2 : 0, 'vector-effect': 'non-scaling-stroke' }); pg.style.cursor = 'pointer'; pg.onclick = e => { e.stopPropagation(); selLayer = onSel ? null : { kind: 'wall', i: r.li }; buildCtrls(); render(); renderSec(); }; svgS.appendChild(pg); } } catch (_) { }
+    }
   }
   function renderElev(el, side, getVb, setVb) {   // Ansicht innen/aussen – die ganze WAND mit allen Fenstern/Türen (Kontext), aktuelles markiert
     if (!docScale) { el.innerHTML = '<text x="10" y="22" font-size="13" fill="#9aa090">Massstab setzen (1:n)</text>'; el.setAttribute('viewBox', '0 0 300 60'); return; }
@@ -5491,6 +5498,13 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     const sel = (label, opts, cur, cb) => { const w = document.createElement('label'); w.className = 'lab-row'; w.innerHTML = '<span>' + label + '</span>'; const s = document.createElement('select'); s.style.flex = '1'; s.innerHTML = opts.map(o => '<option value="' + o[0] + '"' + (o[0] === cur ? ' selected' : '') + '>' + o[1] + '</option>').join(''); s.value = cur; s.onchange = () => cb(s.value); w.appendChild(s); side.appendChild(w); };
     const fld = k => { const f = fields.find(x => x.k === k); if (!f || (f.when && !f.when())) return; const row = document.createElement('label'); row.className = 'lab-row'; row.innerHTML = '<span>' + f.label + '</span>'; const r = document.createElement('input'); r.type = 'range'; r.min = f.min; r.max = f.max; r.step = f.step; r.value = f.get(); r.style.flex = '1'; const num = document.createElement('input'); num.type = 'number'; num.min = f.min; num.max = f.max; num.step = f.step; num.value = f.get(); num.style.width = '54px'; r.oninput = () => { f.set(parseFloat(r.value)); num.value = f.get(); render(); drawAnnos(pv); }; r.onchange = () => saveState(); num.onchange = () => { const v = parseFloat((num.value || '').replace(',', '.')); if (isNaN(v)) return; f.set(v); r.value = f.get(); render(); drawAnnos(pv); saveState(); }; const u = document.createElement('b'); u.textContent = f.unit; u.style.minWidth = '16px'; r.style.flex = '1'; const line = document.createElement('div'); line.className = 'lab-line'; line.appendChild(r); line.appendChild(num); line.appendChild(u); row.appendChild(line); side.appendChild(row); };
     const win = a.kind === 'window';
+    if (selLayer && selLayer.kind === 'wall' && wall && wall.layers && wall.layers[selLayer.i]) {   // im Bild angeklickte Wandschicht → Inline-Editor oben
+      const L = wall.layers[selLayer.i], matOpts = Object.keys(WALL_MATS).map(k => [k, WALL_MATS[k].label || k]);
+      head('▣ Wandschicht ' + (selLayer.i + 1) + ' (angeklickt)');
+      sel('Material', matOpts, L.mat, v => { L.mat = v; render(); drawAnnos(pv); saveState(); });
+      { const row = document.createElement('label'); row.className = 'lab-row'; row.innerHTML = '<span>Dicke</span>'; const line = document.createElement('div'); line.className = 'lab-line'; const num = document.createElement('input'); num.type = 'number'; num.min = '0.2'; num.max = '60'; num.step = '0.5'; num.value = Math.round(ptsToCm(L.t) * 10) / 10; num.style.width = '64px'; const u = document.createElement('b'); u.textContent = 'cm'; num.onchange = () => { const v = parseFloat((num.value || '').replace(',', '.')); if (v > 0) { L.t = cmToPts(v); wall.thick = wall.layers.reduce((s, l) => s + l.t, 0); a.thick = wall.thick; render(); drawAnnos(pv); saveState(); } }; line.appendChild(num); line.appendChild(u); row.appendChild(line); side.appendChild(row); }
+      { const bar = document.createElement('div'); bar.className = 'lab-line'; bar.style.gap = '4px'; const full = document.createElement('button'); full.className = 'btn'; full.textContent = '▦ Voller Wandaufbau'; full.style.flex = '1'; full.onclick = () => openBuildPop(wall, () => { render(); buildCtrls(); drawAnnos(pv); }); const ds = document.createElement('button'); ds.className = 'btn'; ds.textContent = '✕ Abwählen'; ds.style.flex = '1'; ds.onclick = () => { selLayer = null; buildCtrls(); render(); }; bar.appendChild(full); bar.appendChild(ds); side.appendChild(bar); }
+    }
     head('Schnitt');
     { const tw = document.createElement('label'); tw.className = 'lab-row'; tw.style.cssText = 'flex-direction:row;align-items:center;gap:7px'; const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = secFlip; const sp = document.createElement('span'); sp.textContent = 'Blickrichtung drehen (innen ⇄ aussen)'; cb.onchange = () => { secFlip = cb.checked; renderSec(); }; tw.appendChild(cb); tw.appendChild(sp); side.appendChild(tw); }
     if (win && (a.winType === 'f2' || a.winType === 'f2s')) { const tw = document.createElement('label'); tw.className = 'lab-row'; tw.style.cssText = 'flex-direction:row;align-items:center;gap:7px'; const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = secMullion; const sp = document.createElement('span'); sp.textContent = 'Schnitt durch Mittelstoss (Setzholz)'; cb.onchange = () => { secMullion = cb.checked; renderSec(); }; tw.appendChild(cb); tw.appendChild(sp); side.appendChild(tw); }

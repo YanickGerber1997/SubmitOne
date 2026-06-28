@@ -2918,15 +2918,15 @@ function openingElev(out, X, Yh, opx0, opw, o, H, col, redM) {   // Fenster/Tür
   if (head - sill < 0.02 || opw < 1) return;
   out.push({ t: 'rect', x: X(opx0), y: Yh(head), w: opw, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });
   if (o.kind === 'window') {
-    const wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', fr = Math.min(opw * 0.16, (o.frameW || cmToPts(10)) * 0.5 * (opw / Math.max(1, o.w))), yT = Yh(head), yB = Yh(sill);   // halbe frameW: Blendrahmen + Flügel zusammen ≈ frameW
+    const wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', sc = opw / Math.max(1, o.w), fb = Math.min(opw * 0.2, (o.frameW || cmToPts(10)) * sc), fs = Math.min(opw * 0.18, (o.sashW || cmToPts(7)) * sc), yT = Yh(head), yB = Yh(sill);   // Blendrahmen = frameW, Flügel = sashW (identisch zu Grundriss/Schnitt)
     out.push({ t: 'rect', x: X(opx0), y: yT, w: opw, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.4 });   // Blendrahmen (Material)
     const two = wt === 'f2' || wt === 'f2s', panes = two ? 2 : 1, pw = opw / panes;
-    for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) { if (wt === 'f2s') { out.push({ t: 'rect', x: px0 - fr, y: yT, w: 2 * fr, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.2 }); } else out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1.2 }); }
-      const ins = wt === 'fest' ? fr : fr * 2, gap = fr * 0.35;
-      if (wt !== 'fest') out.push({ t: 'rect', x: px0 + fr + gap, y: yT + fr + gap, w: pw - 2 * (fr + gap), h: (yB - yT) - 2 * (fr + gap), fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Flügelrahmen als eigenes Profil (Schattenfuge zum Blendrahmen)
-      out.push({ t: 'rect', x: px0 + ins, y: yT + ins, w: pw - 2 * ins, h: (yB - yT) - 2 * ins, fill: '#c7e2f5', stroke: '#7fa9c6', sw: 0.8 });   // Glas
-      if (wt !== 'fest') {
-        const ix0 = px0 + fr * 1.6, ix1 = px0 + pw - fr * 1.6, iy0 = yT + fr * 1.6, iy1 = yB - fr * 1.6, cmx = (ix0 + ix1) / 2, cmy = (iy0 + iy1) / 2, hinge = o.winHinge || 'left';
+    for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) { if (wt === 'f2s') { out.push({ t: 'rect', x: px0 - fb, y: yT, w: 2 * fb, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.2 }); } else out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1.2 }); }
+      const fest = wt === 'fest', ins = fest ? fb : fb + fs;
+      if (!fest && pw - 2 * fb > 1 && (yB - yT) - 2 * fb > 1) out.push({ t: 'rect', x: px0 + fb, y: yT + fb, w: pw - 2 * fb, h: (yB - yT) - 2 * fb, fill: wm.fill, stroke: wm.stroke, sw: 1 });   // Flügelrahmen (eigenes Profil, Face = sashW)
+      if (pw - 2 * ins > 1 && (yB - yT) - 2 * ins > 1) out.push({ t: 'rect', x: px0 + ins, y: yT + ins, w: pw - 2 * ins, h: (yB - yT) - 2 * ins, fill: '#c7e2f5', stroke: '#7fa9c6', sw: 0.8 });   // Glas
+      if (!fest) {
+        const ix0 = px0 + ins, ix1 = px0 + pw - ins, iy0 = yT + ins, iy1 = yB - ins, cmx = (ix0 + ix1) / 2, cmy = (iy0 + iy1) / 2, hinge = o.winHinge || 'left';
         if (hinge === 'kipp') { out.push({ t: 'line', x1: ix0, y1: iy0, x2: cmx, y2: iy1, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: ix1, y1: iy0, x2: cmx, y2: iy1, stroke: col, w: 0.6, dash: '4 3' }); }
         else { const apexL = (two ? pi === 0 : hinge === 'left'), ax = apexL ? ix0 : ix1, bx = apexL ? ix1 : ix0; out.push({ t: 'line', x1: bx, y1: iy0, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: bx, y1: iy1, x2: ax, y2: cmy, stroke: col, w: 0.6, dash: '4 3' }); }
       }

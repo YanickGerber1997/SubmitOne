@@ -3347,6 +3347,7 @@ function sectionPrimitives(a, arr) {
       const ivs = []; for (let i = 0; i + 1 < ds.length; i++) { const dm = (ds[i] + ds[i + 1]) / 2, mid = [p1[0] + cux * dm, p1[1] + cuy * dm]; if (pointInPoly(mid, sl.pts)) ivs.push([fp(ds[i]), fp(ds[i + 1])]); }
       if (!ivs.length) continue;
       const sb0 = sl.base || 0, stk = sl.thick || 0.2, bands = slabLayerBands(sl) || [];
+      let structIdx = 0, maxT = -1; bands.forEach((b, ix) => { if (b.t > maxT) { maxT = b.t; structIdx = ix; } }); const structTop = bands.length ? bands[structIdx].y1 : stk;   // Tragschicht = dickste Decken-Schicht (Beton/Holz-Box); Oberkante davon
       for (const h of hits) {
         const w = h.w, wb = w.base || 0, wh = w.h3d || wallHeightM;
         if (sb0 >= wb + wh - 0.005 || sb0 + stk <= wb + 0.005 || !(w.layers && w.layers.length)) continue;   // keine Höhen-Überlappung Wand/Decke
@@ -3362,7 +3363,8 @@ function sectionPrimitives(a, arr) {
         else { structFace = wd1; for (let i = 0; i < layers.length; i++) { if (INSUL.includes(layers[i].mat)) { structFace = bnd[i]; break; } } }
         const innerFace = roomHigh ? wd1 : wd0, pxa = X(Math.min(innerFace, structFace)), pxb = X(Math.max(innerFace, structFace));
         if (Math.abs(pxb - pxa) < 0.5) continue;
-        for (const bd of bands) { const m = WALL_MATS[bd.mat] || {}, yT = Yh(sb0 + bd.y1), yB = Yh(sb0 + bd.y0); if (yB - yT < 0.3) continue; out.push({ t: 'rect', x: Math.min(pxa, pxb), y: yT, w: Math.abs(pxb - pxa), h: yB - yT, fill: m.fill || '#dadde2', stroke: m.color || col, sw: 0.6 }); if (!simpleMode && m.hatch) sectionBandHatch(out, Math.min(pxa, pxb), yT, Math.abs(pxb - pxa), yB - yT, bd.mat, null); }
+        for (const bd of bands) { if (bd.y0 >= structTop - 1e-6) continue;   // schwimmender Bodenaufbau ÜBER der Tragschicht springt an der Wand zurück (nicht einbinden); nur Tragschicht + Untersicht (Putz/Gips) binden ein
+          const m = WALL_MATS[bd.mat] || {}, yT = Yh(sb0 + bd.y1), yB = Yh(sb0 + bd.y0); if (yB - yT < 0.3) continue; out.push({ t: 'rect', x: Math.min(pxa, pxb), y: yT, w: Math.abs(pxb - pxa), h: yB - yT, fill: m.fill || '#dadde2', stroke: m.color || col, sw: 0.6 }); if (!simpleMode && m.hatch) sectionBandHatch(out, Math.min(pxa, pxb), yT, Math.abs(pxb - pxa), yB - yT, bd.mat, null); }
       }
     }
   }

@@ -910,12 +910,20 @@ function drawAnnos(pv) {
   if (window.polygonClipping) { const walls = getAnnos(pv.num).filter(a => a.type === 'wall' && (wallSimple(a) || !(a.layers && a.layers.length)) && layerVisible(a) && phaseVisible(a)); if (walls.length) _wallUnionActive = drawWallUnion(svg, walls); }   // saubere Ecken via Flächen-Vereinigung (Schicht-Wände zeichnen sich selbst; einfach = schwarz)
   for (const a of getAnnos(pv.num)) { if (!layerVisible(a) || !phaseVisible(a)) continue; drawOne(svg, a, pv); }
   _wallUnionActive = false;
+  if (snapLayersOn && ['line', 'arrow', 'rect', 'oval', 'arc', 'curve', 'measure', 'dim', 'wall', 'slab', 'area', 'terrain'].includes(tool)) drawSnapNet(svg, pv);   // Schicht-Kanten-Hilfsnetz beim Zeichnen
   if (openPosOn && docScale) drawOpenPosTags(svg, pv);   // Positionsnummern F1/T1
   if (sel && sel.num === pv.num) drawSelection(svg, findAnno(pv.num, sel.id), pv);
   if (groupSel && groupSel.num === pv.num) drawGroupSel(svg, pv);
   updateAlignBar();
   updateSelBar();
   updatePlanBar();
+}
+function drawSnapNet(svg, pv) {   // Hilfsnetz: Schicht-Kanten aller Wände (zum Einrasten von Decke/Linie/Wand) als feine grüne Linien
+  const arr = getAnnos(pv.num) || [];
+  for (const a of arr) { if (a.type !== 'wall' || !a.layers || !a.layers.length || !layerVisible(a) || !phaseVisible(a)) continue;
+    const wlb = wallLayerBands(a, arr);
+    for (const b of wlb.bands) { const q = b.poly; for (const [u, v] of [[q[0], q[1]], [q[3], q[2]]]) svg.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: '#1a9a4e', 'stroke-width': 0.6, 'stroke-dasharray': '3 3', opacity: 0.45, 'pointer-events': 'none', 'vector-effect': 'non-scaling-stroke' })); }
+  }
 }
 function brandMarkGeom(W, H) {   // schräge Eck-Signatur unten rechts: zwei parallele Striche (Herbst-Olive + Gold), 45°
   const L = Math.min(W, H) * 0.3, s = 1 / Math.SQRT2, off = L * 0.135;   // n = (s,s) zur Ecke hin
@@ -1536,14 +1544,18 @@ function bindPageEvents(pv) {
 function snapPt(x, y) { if (!gridOn) return { x, y }; const c = gridCellPt(); if (c <= 0) return { x, y }; return { x: Math.round((x - gridOffX) / c) * c + gridOffX, y: Math.round((y - gridOffY) / c) * c + gridOffY }; }
 // An vorhandene Endpunkte/Knoten/Ecken einrasten (sauberes Anschliessen beim Zeichnen)
 function anchorSnap(pv, x, y, excludeId) {
-  const thr = 9 / pv.scale, cornerThr = 13 / pv.scale, midThr = 7 / pv.scale; let best = null, bd = cornerThr;   // Wand-Ecken etwas „klebriger", Mitte nur ganz nah
+  const thr = 9 / pv.scale, cornerThr = 13 / pv.scale, midThr = 7 / pv.scale, lineThr = 7 / pv.scale; let best = null, bd = cornerThr;   // Wand-Ecken etwas „klebriger", Mitte nur ganz nah
   const consider = (ax, ay, kind, t) => { const d = Math.hypot(ax - x, ay - y); if (d < (t || thr) && d < bd) { bd = d; best = { x: ax, y: ay, kind }; } };
+  const considerLine = (a, b, kind, t) => { const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy; if (L2 < 1) return; let u = ((x - a[0]) * dx + (y - a[1]) * dy) / L2; if (u < 0 || u > 1) return; const px = a[0] + dx * u, py = a[1] + dy * u, d = Math.hypot(px - x, py - y); if (d < (t || lineThr) && d < bd) { bd = d; best = { x: px, y: py, kind }; } };
   const arr = getAnnos(pv.num) || [];
   for (const a of arr) {
     if (a.id === excludeId) continue;
-    if (a.type === 'wall') { consider(a.x1, a.y1, 'end'); consider(a.x2, a.y2, 'end'); consider((a.x1 + a.x2) / 2, (a.y1 + a.y2) / 2, 'mid', midThr); for (const p of wallPoly(a, arr)) consider(p[0], p[1], 'corner', cornerThr); }   // Achs-Enden + Mitte + die vier Band-Ecken
+    if (a.type === 'wall') { consider(a.x1, a.y1, 'end'); consider(a.x2, a.y2, 'end'); consider((a.x1 + a.x2) / 2, (a.y1 + a.y2) / 2, 'mid', midThr); for (const p of wallPoly(a, arr)) consider(p[0], p[1], 'corner', cornerThr);   // Achs-Enden + Mitte + die vier Band-Ecken
+      if (snapLayersOn && a.layers && a.layers.length && layerVisible(a)) { const wlb = wallLayerBands(a, arr); for (const b of wlb.bands) { const q = b.poly; consider(q[0][0], q[0][1], 'layer', cornerThr); consider(q[1][0], q[1][1], 'layer', cornerThr); consider(q[2][0], q[2][1], 'layer', cornerThr); consider(q[3][0], q[3][1], 'layer', cornerThr); considerLine(q[0], q[1], 'layer'); considerLine(q[3], q[2], 'layer'); } }   // Schicht-Kanten (Bänder) einrasten – Decke/Linie/Wand exakt an eine Schicht
+    }
     else if (a.x1 != null) { consider(a.x1, a.y1, 'end'); consider(a.x2, a.y2, 'end'); consider((a.x1 + a.x2) / 2, (a.y1 + a.y2) / 2, 'mid', midThr); }
     else if (a.type === 'path') { for (const nd of a.nodes) consider(nd.x, nd.y, 'node'); }
+    else if (a.type === 'slab' && a.pts && a.pts.length >= 3) { for (let i = 0; i < a.pts.length; i++) { consider(a.pts[i][0], a.pts[i][1], 'corner'); considerLine(a.pts[i], a.pts[(i + 1) % a.pts.length], 'edge'); } }   // Decken-Ecken/Kanten einrasten
     else if (a.w != null && a.x != null) { consider(a.x, a.y, 'corner'); consider(a.x + a.w, a.y, 'corner'); consider(a.x, a.y + a.h, 'corner'); consider(a.x + a.w, a.y + a.h, 'corner'); }
   }
   return best;
@@ -4115,6 +4127,7 @@ function setTool(t) {
   if ((t === 'wall' || t === 'wallchain') && !docScale && !_scaleAfter) { _scaleAfter = t; toast('Erst den Massstab wählen – dann passen die Wände masstabsgetreu aufs Blatt.'); openScale(); return; }
   if (t === 'wall' && !setTool._wallHint) { setTool._wallHint = true; toast('Einzelne Wand: Start klicken → Richtung → 2. Klick oder „L" = Länge. Volle Kontrolle (Dicke/Achse/Schraffur) oben in der Planungs-Leiste.'); }
   if (t === 'wallchain' && !setTool._wcHint) { setTool._wcHint = true; toast('Wände am Stück: klicken–klicken = Raumzug · zurück auf den Startpunkt = Raum schliessen (m²) · Rücktaste = letzte Wand zurück · Doppelklick/Enter = fertig.'); }
+  if (pdfDoc) pageViews.forEach(p => drawAnnos(p));   // neu zeichnen → Schicht-Hilfsnetz erscheint/verschwindet je nach Werkzeug
 }
 function applyToolCursor() {
   pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'terrain', 'section'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
@@ -6315,6 +6328,7 @@ function drawAxis(cv, horiz, cssW, cssH, pageStartRel, pxPerPt, pageLenPt, valPe
 }
 /* ---------- cm-Raster (zum Nachzeichnen, verschiebbar) ---------- */
 let gridOn = false, gridMove = false, gridCellCm = 1, gridOffX = 0, gridOffY = 0, _gridRAF = 0;
+let snapLayersOn = true;   // Einrasten auf Wand-Schichtkanten (Hilfsnetz) beim Zeichnen von Decke/Linie/Wand
 function toggleGrid() {
   gridOn = !gridOn; const b = $('#btnGrid'); if (b) b.classList.toggle('on', gridOn);
   $('#gridCv').hidden = !gridOn; $('#gridBar').hidden = !gridOn;

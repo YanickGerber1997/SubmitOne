@@ -5372,7 +5372,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       s += '<circle class="lab-dh" data-key="' + key + '" data-nx="' + n[0] + '" data-ny="' + n[1] + '" cx="' + mx2.toFixed(1) + '" cy="' + my2.toFixed(1) + '" r="' + (5 * scale) + '"/>';
       return s;
     };
-    const lapTotG = openInsPts(a), rfG = Math.min(0.92, lapTotG / hw);   // Lichtmass = innen am Holzrahmen (frameW − sichtbarer Rahmen), nicht an Verkleidung/Brett
+    const lapTotG = (Array.isArray(a.revealLining) && a.revealLining.length) ? Math.min(hw * 0.92, a.revealLining.reduce((s, L) => s + cmToPts(L.t || 0), 0)) : openInsPts(a), rfG = Math.min(0.92, lapTotG / hw);   // Lichtmass misst LIVE auf die eigene Laibung (Summe der Schichtdicken), sonst innen am Holzrahmen
     let H = '';
     H += dimSeg(rc(1.18, -1), rc(1.18, 1), [ux, uy], cmv(a.thick || wallThickPts()) + ' cm');     // Wanddicke
     H += dimSeg(rc(1.34, fmA), rc(1.34, fmB), [ux, uy], cmv(a.frameD || cmToPts(7)) + ' cm');      // Rahmentiefe
@@ -5420,7 +5420,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     let out = []; try { out = sectionPrimitives(tmp, arr); } catch (_) { out = []; }
     const perPt = docScale.perPt, Yh = h => -h / perPt;   // eigene, verschiebbare Masslinien: innen Rohbau, aussen Licht (vertikal, versetzt)
     const head0 = Math.min((a.head != null ? a.head : (a.kind === 'window' ? 2.1 : 2.0)), (wall && wall.h3d) || wallHeightM), sill0 = a.kind === 'window' ? (a.sill || 0) : 0;
-    const revM = ptsToCm(openInsPts(a)) / 100;   // Lichtmass (Höhe) = innen am Holzrahmen, konsistent zum Grundriss
+    const revM = ptsToCm((Array.isArray(a.revealLining) && a.revealLining.length) ? a.revealLining.reduce((s, L) => s + cmToPts(L.t || 0), 0) : openInsPts(a)) / 100;   // Lichtmass (Höhe) misst LIVE auf die eigene Laibung, sonst am Holzrahmen
     pushDim(out, [0, Yh(sill0)], [0, Yh(head0)], [-1, 0], doff('secRoh'), 'Rohbau ' + fmtLen((head0 - sill0) / perPt), 'secRoh');
     pushDim(out, [0, Yh(sill0 + revM)], [0, Yh(head0 - revM)], [-1, 0], doff('secLicht'), 'Licht ' + fmtLen(Math.max(0.02, head0 - sill0 - 2 * revM) / perPt), 'secLicht');
     drawPrims(svgS, out, () => vbS, v => { vbS = v; });

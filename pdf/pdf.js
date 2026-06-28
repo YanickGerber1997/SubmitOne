@@ -1106,10 +1106,13 @@ function layerHatch(svg, a, band) {   // Schraffur einer einzelnen Schicht, auf 
 }
 function drawLayeredWall(svg, a, arr) {
   const { bands } = wallLayerBands(a, arr);   // jede Schicht: Füllung + dünne Umrandung in der Materialfarbe (kein schwarzer Gesamtrahmen)
+  const ops = (arr || []).filter(o => o.type === 'opening' && o.wallId === a.id && o.x != null);   // Öffnungen boolesch aus den Schichten ausschneiden
+  const cuts = (window.polygonClipping && ops.length) ? ops.map(o => [openingFootprint(o).map(p => [p[0], p[1]])]) : null;
+  const clip = poly => { if (!cuts) return [poly]; try { const r = polygonClipping.difference([poly.map(p => [p[0], p[1]])], ...cuts); return r.length ? r.map(rg => rg[0]) : []; } catch (_) { return [poly]; } };
   bands.forEach((b, i) => {
     const m = WALL_MATS[b.mat] || {}, lay = a.layers[i] || {};
     if (m.boards) { const bw = cmToPts(lay.boardW || 4), gp = cmToPts(lay.boardGap != null ? lay.boardGap : 2); for (const q of bandBoards(b, bw, gp)) svg.appendChild(svgEl('polygon', { points: q.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: m.fill || '#e7cfa8', stroke: m.color || '#7a5126', 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); return; }   // Latten einzeln (Lücken = Windpapier dahinter)
-    svg.appendChild(svgEl('polygon', { points: b.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: m.fill || '#ffffff', stroke: m.color || '#9a9a9a', 'stroke-width': 0.7, 'stroke-linejoin': 'miter', 'vector-effect': 'non-scaling-stroke' })); layerHatch(svg, a, b);
+    for (const poly of clip(b.poly)) { svg.appendChild(svgEl('polygon', { points: poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: m.fill || '#ffffff', stroke: m.color || '#9a9a9a', 'stroke-width': 0.7, 'stroke-linejoin': 'miter', 'vector-effect': 'non-scaling-stroke' })); layerHatch(svg, a, { ...b, poly }); }
   });
   a.layers.forEach((l, i) => { if (l.sub && bands[i]) { bands[i].sub = l.sub; drawLayerSub(svg, a, bands[i], arr); } });   // Unterkonstruktion über die Schichten
 }
@@ -2718,6 +2721,10 @@ function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte F
 let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5, lastWinType = 'f1', lastDoorType = 'f1', lastWinHinge = 'left', lastWinMat = 'holz';
 let inputLicht = true;   // eingegebene/angezeigte Öffnungsbreite = Lichtmaß (Rohbau = Licht + 2×(Rahmen − sichtbarer Rahmen)); sonst Rohbaumaß
 function openInsPts(o) { return Math.max(0, ((o && o.frameW) || cmToPts(10)) - cmToPts((o && o.boardVis != null) ? o.boardVis : 1)); }   // Licht-Einzug pro Seite
+function openingFootprint(o) {   // Öffnungs-Grundriss (Breite × volle Wanddicke) in Weltkoordinaten – zum boolschen Ausschneiden aus den Wandschichten
+  const hw = (o.w || 0) / 2, ht = ((o.thick || wallThickPts()) / 2) + 1, ux = Math.cos(o.ang || 0), uy = Math.sin(o.ang || 0), nx = -uy, ny = ux, x = o.x, y = o.y;
+  return [[x - ux * hw - nx * ht, y - uy * hw - ny * ht], [x + ux * hw - nx * ht, y + uy * hw - ny * ht], [x + ux * hw + nx * ht, y + uy * hw + ny * ht], [x - ux * hw + nx * ht, y - uy * hw + ny * ht]];
+}
 function revInsetPts(lst) { if (!Array.isArray(lst) || !lst.length) return 0; let acc = 0, mx = 0; for (const L of lst) { acc += cmToPts(L.t || 0); mx = Math.max(mx, acc + (L.sOff ? cmToPts(L.sOff) : 0)); } return mx; }   // seitliche Einragung einer Laibungs-Schichtliste (Dicke + Versatz, tiefste Kante)
 function openLichtInset(o) {   // seitlicher Licht-Einzug pro Seite (pt): STANDARD = am Rahmen (frameW − 1cm sichtbar), und reagiert wenn die Laibung tiefer einragt
   return Math.max(openInsPts(o), revInsetPts(o && o.revealLining), revInsetPts(o && o.revealLiningOut));

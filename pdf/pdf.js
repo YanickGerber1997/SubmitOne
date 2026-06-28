@@ -2967,6 +2967,7 @@ function openRevealLayerPop(pv, a, revAttr, cx, cy) {   // Inline-Editor für EI
   const add = document.createElement('button'); add.textContent = '+ Schicht'; add.style.cssText = 'flex:1;padding:4px;cursor:pointer'; add.onclick = () => { lst.splice(li + 1, 0, { mat: 'putz', t: 1 }); upd(); pop.remove(); };
   const del = document.createElement('button'); del.textContent = '✕ Schicht'; del.style.cssText = 'flex:1;padding:4px;cursor:pointer'; del.onclick = () => { lst.splice(li, 1); upd(); pop.remove(); };
   bar.appendChild(add); bar.appendChild(del); pop.appendChild(bar);
+  const dt = document.createElement('button'); dt.textContent = '⊕ Detail (alle Kanten: Sturz/Schwelle…)'; dt.style.cssText = 'width:100%;margin-top:6px;padding:4px;cursor:pointer'; dt.onclick = () => { pop.remove(); try { openLaibungEditor(a, pv); } catch (_) { } }; pop.appendChild(dt);
   document.body.appendChild(pop);
   pop.style.left = Math.max(8, Math.min((cx || 200) + 8, window.innerWidth - pop.offsetWidth - 12)) + 'px';
   pop.style.top = Math.max(8, Math.min((cy || 200) + 8, window.innerHeight - pop.offsetHeight - 12)) + 'px';

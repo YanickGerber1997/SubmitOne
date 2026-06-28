@@ -2732,7 +2732,7 @@ function openLichtInset(o) {   // seitlicher Licht-Einzug pro Seite (pt): STANDA
 function openingEdgeLayers(o, edge, side) {   // per-Kante-Laibung (edge L/R/T/B × side i/o); null → Fallback auf globale revealLining/Out
   const r = o && o.reveals && o.reveals[edge]; if (!r) return null;
   const lst = side === 'i' ? r.in : r.out; if (!Array.isArray(lst) || !lst.length) return null;
-  return lst.map(L => [L.mat, L.t, L.gap || 0]);
+  return lst.map(L => [L.mat, L.t, L.gap || 0, L.prio]);
 }
 function nearestWall(pv, x, y) {
   let best = null, bd = Infinity;
@@ -2849,20 +2849,21 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
     if (a.noSillReveal && sgn < 0) return;   // Schwelle bei Fensterbank überspringen (nur im Schnitt-sa relevant)
     const mA = sideOut ? (fmB + oneCm) : (fmA - oneCm), mB = sideOut ? 1 : -1, m0 = Math.min(mA, mB), m1 = Math.max(mA, mB);   // Tiefe: Rahmenseite … Wandfläche
     if (m1 - m0 < 0.02) return;
+    const ord = layers.slice().sort((x, y) => (x[3] != null ? x[3] : 2) - (y[3] != null ? y[3] : 2));   // PRIORITÄT: niedrige am Rahmen-fern (Jamb), höchste reicht bis zur Öffnung/Lappung; niedrigere endet an der höheren
     let sAcc = 0;
-    layers.forEach((L, i) => {
+    ord.forEach((L, i) => {
       const mat = L[0], tcm = L[1], gap = L[2] || 0, mt = LINING_MAT[mat] || WALL_MATS[mat] || {};
       sAcc += cmToPts(gap);   // Luft-Abstand (parallel zur Wand) vor dieser Schicht
-      let sEnd = sAcc + cmToPts(tcm); if (i === layers.length - 1) sEnd = Math.max(sEnd, lapPt);   // Deckschicht (letzte) deckt bis zur Lappung
+      let sEnd = sAcc + cmToPts(tcm); if (i === ord.length - 1) sEnd = Math.max(sEnd, lapPt);   // höchste Priorität (zuletzt) deckt bis zur Lappung
       sEnd = Math.min(sEnd, hw * 0.96);
       const sa = sgn * (1 - sAcc / hw), sb = sgn * (1 - sEnd / hw), sk = mt.stroke || mt.color || '#1c242c';
       if (sEnd - sAcc > 0.05) strips.push({ poly: [corner(sa, m0), corner(sb, m0), corner(sb, m1), corner(sa, m1)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(sa, sb), Math.max(sa, sb), m0, m1, corner, hw, ht, stepS) : null });
       sAcc = sEnd;
     });
   };
-  const innerLayers = userLin ? a.revealLining.map(L => [L.mat, L.t, L.gap || 0]) : (rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]));
+  const innerLayers = userLin ? a.revealLining.map(L => [L.mat, L.t, L.gap || 0, L.prio]) : (rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]));
   const rtOut = a.revealOuter || '';
-  const outerLayers = userLinOut ? a.revealLiningOut.map(L => [L.mat, L.t, L.gap || 0]) : (rtOut === 'putz' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (rtOut ? (REVEAL_LINING[rtOut] || [[lN.mat, Math.min(3, ptsToCm(lN.t))]]) : [[lN.mat, ptsToCm(lN.t)]]));
+  const outerLayers = userLinOut ? a.revealLiningOut.map(L => [L.mat, L.t, L.gap || 0, L.prio]) : (rtOut === 'putz' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (rtOut ? (REVEAL_LINING[rtOut] || [[lN.mat, Math.min(3, ptsToCm(lN.t))]]) : [[lN.mat, ptsToCm(lN.t)]]));
   for (const sgn of [-1, 1]) {   // links (sgn -1, Kante L) und rechts (sgn +1, Kante R) je eigene Laibung; Fallback = globale Liste
     const edge = sgn < 0 ? 'L' : 'R';
     if (anType !== 'innen') drawReveal(openingEdgeLayers(a, edge, 'i') || innerLayers, false, sgn);
@@ -5564,9 +5565,10 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
         const l1 = document.createElement('div'); l1.className = 'lab-line';
         const ms = document.createElement('select'); ms.style.flex = '1'; matOpts.forEach(([k, lab]) => { const o = document.createElement('option'); o.value = k; o.textContent = lab; if (k === L.mat) o.selected = true; ms.appendChild(o); }); ms.onchange = () => { L.mat = ms.value; redrawAll(); drawAnnos(pv); saveState(); };
         const tn = document.createElement('input'); tn.type = 'number'; tn.min = '0.1'; tn.max = '30'; tn.step = '0.1'; tn.value = L.t; tn.style.width = '46px'; tn.title = 'Dicke (cm)'; tn.onchange = () => { const v = parseFloat((tn.value || '').replace(',', '.')); if (v > 0) { L.t = v; redrawAll(); drawAnnos(pv); saveState(); } };
-        const gp = document.createElement('input'); gp.type = 'number'; gp.min = '0'; gp.max = '20'; gp.step = '0.5'; gp.value = (L.gap || 0); gp.style.width = '42px'; gp.title = 'Abstand/Luftspalt vor dieser Schicht (cm)'; gp.onchange = () => { const v = parseFloat((gp.value || '').replace(',', '.')); L.gap = isNaN(v) ? 0 : v; redrawAll(); drawAnnos(pv); saveState(); };
+        const gp = document.createElement('input'); gp.type = 'number'; gp.min = '0'; gp.max = '20'; gp.step = '0.5'; gp.value = (L.gap || 0); gp.style.width = '40px'; gp.title = 'Abstand/Luftspalt vor dieser Schicht (cm)'; gp.onchange = () => { const v = parseFloat((gp.value || '').replace(',', '.')); L.gap = isNaN(v) ? 0 : v; redrawAll(); drawAnnos(pv); saveState(); };
+        const pr = document.createElement('input'); pr.type = 'number'; pr.min = '1'; pr.max = '9'; pr.step = '1'; pr.value = (L.prio != null ? L.prio : 2); pr.style.width = '34px'; pr.title = 'Priorität: höher = reicht zum Rahmen, niedriger endet davor (z. B. Brett > Putz)'; pr.onchange = () => { const v = parseInt(pr.value); L.prio = isNaN(v) ? 2 : v; redrawAll(); drawAnnos(pv); saveState(); };
         const del = document.createElement('button'); del.className = 'btn'; del.textContent = '✕'; del.style.cssText = 'padding:0 8px'; del.title = 'Schicht löschen'; del.onclick = () => { RL.splice(i, 1); if (!RL.length) setRL(null); redrawAll(); buildCtrls(); drawAnnos(pv); saveState(); };
-        l1.appendChild(ms); l1.appendChild(tn); const gl = document.createElement('span'); gl.textContent = '⊥'; gl.style.cssText = 'font-size:10px;color:#7a8366'; l1.appendChild(gl); l1.appendChild(gp); l1.appendChild(del); row.appendChild(l1); side.appendChild(row);
+        l1.appendChild(ms); l1.appendChild(tn); const gl = document.createElement('span'); gl.textContent = '⊥'; gl.style.cssText = 'font-size:10px;color:#7a8366'; l1.appendChild(gl); l1.appendChild(gp); const pl2 = document.createElement('span'); pl2.textContent = '★'; pl2.style.cssText = 'font-size:10px;color:#7a8366'; l1.appendChild(pl2); l1.appendChild(pr); l1.appendChild(del); row.appendChild(l1); side.appendChild(row);
       });
       const bar = document.createElement('div'); bar.className = 'lab-line'; bar.style.gap = '4px';
       const add = document.createElement('button'); add.className = 'btn'; add.textContent = '+ Schicht'; add.style.flex = '1'; add.onclick = () => { RL.push({ mat: 'putz', t: 1 }); redrawAll(); buildCtrls(); drawAnnos(pv); saveState(); };

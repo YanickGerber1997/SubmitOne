@@ -1556,14 +1556,14 @@ function bindPageEvents(pv) {
 function snapPt(x, y) { if (!gridOn) return { x, y }; const c = gridCellPt(); if (c <= 0) return { x, y }; return { x: Math.round((x - gridOffX) / c) * c + gridOffX, y: Math.round((y - gridOffY) / c) * c + gridOffY }; }
 // An vorhandene Endpunkte/Knoten/Ecken einrasten (sauberes Anschliessen beim Zeichnen)
 function anchorSnap(pv, x, y, excludeId) {
-  const thr = 9 / pv.scale, cornerThr = 13 / pv.scale, midThr = 7 / pv.scale, lineThr = 7 / pv.scale; let best = null, bd = cornerThr;   // Wand-Ecken etwas „klebriger", Mitte nur ganz nah
+  const thr = 9 / pv.scale, cornerThr = 13 / pv.scale, midThr = 7 / pv.scale, lineThr = 7 / pv.scale, layerLineThr = 11 / pv.scale; let best = null, bd = cornerThr;   // Wand-Ecken etwas „klebriger", Mitte nur ganz nah
   const consider = (ax, ay, kind, t) => { const d = Math.hypot(ax - x, ay - y); if (d < (t || thr) && d < bd) { bd = d; best = { x: ax, y: ay, kind }; } };
   const considerLine = (a, b, kind, t) => { const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy; if (L2 < 1) return; let u = ((x - a[0]) * dx + (y - a[1]) * dy) / L2; if (u < 0 || u > 1) return; const px = a[0] + dx * u, py = a[1] + dy * u, d = Math.hypot(px - x, py - y); if (d < (t || lineThr) && d < bd) { bd = d; best = { x: px, y: py, kind }; } };
   const arr = getAnnos(pv.num) || [];
   for (const a of arr) {
     if (a.id === excludeId) continue;
     if (a.type === 'wall') { consider(a.x1, a.y1, 'end'); consider(a.x2, a.y2, 'end'); consider((a.x1 + a.x2) / 2, (a.y1 + a.y2) / 2, 'mid', midThr); for (const p of wallPoly(a, arr)) consider(p[0], p[1], 'corner', cornerThr);   // Achs-Enden + Mitte + die vier Band-Ecken
-      if (snapLayersOn && a.layers && a.layers.length && layerVisible(a)) { const wlb = wallLayerBands(a, arr); for (const b of wlb.bands) { const q = b.poly; consider(q[0][0], q[0][1], 'layer', cornerThr); consider(q[1][0], q[1][1], 'layer', cornerThr); consider(q[2][0], q[2][1], 'layer', cornerThr); consider(q[3][0], q[3][1], 'layer', cornerThr); considerLine(q[0], q[1], 'layer'); considerLine(q[3], q[2], 'layer'); } }   // Schicht-Kanten (Bänder) einrasten – Decke/Linie/Wand exakt an eine Schicht
+      if (snapLayersOn && a.layers && a.layers.length && layerVisible(a)) { const wlb = wallLayerBands(a, arr); for (const b of wlb.bands) { const q = b.poly; consider(q[0][0], q[0][1], 'layer', cornerThr); consider(q[1][0], q[1][1], 'layer', cornerThr); consider(q[2][0], q[2][1], 'layer', cornerThr); consider(q[3][0], q[3][1], 'layer', cornerThr); considerLine(q[0], q[1], 'layer', layerLineThr); considerLine(q[3], q[2], 'layer', layerLineThr); } }   // Schicht-Kanten (Bänder) einrasten – Decke/Linie/Wand exakt an eine Schicht (grösserer Fang)
     }
     else if (a.x1 != null) { consider(a.x1, a.y1, 'end'); consider(a.x2, a.y2, 'end'); consider((a.x1 + a.x2) / 2, (a.y1 + a.y2) / 2, 'mid', midThr); }
     else if (a.type === 'path') { for (const nd of a.nodes) consider(nd.x, nd.y, 'node'); }
@@ -2395,10 +2395,10 @@ function startMove(pv, e, a, wasSel) {
         const s = moveSnapAdjust(pv, a, orig, dx, dy);
         if (s.dx !== dx || s.dy !== dy) { dx = s.dx; dy = s.dy; translateAnno(a, orig, dx, dy); }
         guides = s.guides;
-        if (a.type === 'wall') {   // Gebäudeecke: einen Wand-Endpunkt auf einen anderen Wand-Endpunkt einrasten → saubere Ecke, einfaches Zusammenschieben
-          const thrC = 14 / pv.scale; let bd = thrC, best = null, ends = [[orig.x1 + dx, orig.y1 + dy], [orig.x2 + dx, orig.y2 + dy]];
-          for (const o of (getAnnos(pv.num) || [])) { if (o.type !== 'wall' || o.id === a.id) continue; for (const oe of [[o.x1, o.y1], [o.x2, o.y2]]) for (const en of ends) { const d = Math.hypot(oe[0] - en[0], oe[1] - en[1]); if (d < bd) { bd = d; best = { ddx: oe[0] - en[0], ddy: oe[1] - en[1], gx: oe[0], gy: oe[1] }; } } }
-          if (best) { dx += best.ddx; dy += best.ddy; translateAnno(a, orig, dx, dy); guides = guides.concat([{ x1: best.gx - 8, y1: best.gy, x2: best.gx + 8, y2: best.gy }, { x1: best.gx, y1: best.gy - 8, x2: best.gx, y2: best.gy + 8 }]); }
+        if (a.type === 'wall' || a.type === 'slab' || a.type === 'area' || a.type === 'terrain') {   // Eckpunkte auf Anker einrasten (inkl. Wand-Schichtkanten) → Decke an die Tragschicht-Aussenkante „anklipsen", saubere Gebäudeecke
+          const pts = a.type === 'wall' ? [[a.x1, a.y1], [a.x2, a.y2]] : (a.pts || []); let bd = 16 / pv.scale, best = null;
+          for (const pt of pts) { const an = anchorSnap(pv, pt[0], pt[1], a.id); if (an) { const d = Math.hypot(an.x - pt[0], an.y - pt[1]); if (d < bd) { bd = d; best = { ddx: an.x - pt[0], ddy: an.y - pt[1], gx: an.x, gy: an.y }; } } }
+          if (best) { dx += best.ddx; dy += best.ddy; translateAnno(a, orig, dx, dy); guides = guides.concat([{ x1: best.gx - 9, y1: best.gy, x2: best.gx + 9, y2: best.gy }, { x1: best.gx, y1: best.gy - 9, x2: best.gx, y2: best.gy + 9 }]); }
         }
       }
     }

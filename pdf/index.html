@@ -5,26 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=510" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=510" />
-  <link rel="icon" href="favicon.png?v=510" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=510" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=511" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=511" />
+  <link rel="icon" href="favicon.png?v=511" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=511" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=510" />
+  <link rel="stylesheet" href="pdf.css?v=511" />
 </head>
 <body>
   <!-- Hervorhebungs-Schraffur (grün) für Hover über editierbaren Bauteilen -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><pattern id="hlHatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="rgba(26,154,78,0.12)"/><line x1="0" y1="0" x2="0" y2="6" stroke="#1a9a4e" stroke-width="1.3"/></pattern></defs></svg>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=510" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=511" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=510" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=510" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=511" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=511" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <div class="ui-zoom" title="Oberflächen-Zoom – macht Werkzeuge, Buttons und das Blatt grösser/kleiner (unabhängig vom Browser-Zoom). Klick auf die Prozentzahl = zurück auf 100%.">
@@ -223,7 +223,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=510" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=511" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -316,17 +316,24 @@
   <div class="fmt-pop" id="fmtPop" hidden>
     <button data-w="595" data-h="842">A4 hoch</button>
     <button data-w="842" data-h="595">A4 quer</button>
+    <button data-w="1347" data-h="595" title="A4 quer + 60% breiter (zum Falten)">A4b</button>
+    <button data-w="842" data-h="952" title="A4 quer + 60% höher (zum Falten)">A4h</button>
     <button data-w="842" data-h="1191">A3 hoch</button>
     <button data-w="1191" data-h="842">A3 quer</button>
-    <button data-w="1906" data-h="842" title="A3 quer + 60% breiter (zum Falten)">A3 breit</button>
-    <button data-w="1191" data-h="1347" title="A3 quer + 60% höher (zum Falten)">A3 hoch+</button>
+    <button data-w="1906" data-h="842" title="A3 quer + 60% breiter (zum Falten)">A3b</button>
+    <button data-w="1191" data-h="1347" title="A3 quer + 60% höher (zum Falten)">A3h</button>
+    <button data-w="1191" data-h="1684">A2 hoch</button>
     <button data-w="1684" data-h="1191">A2 quer</button>
-    <button data-w="2694" data-h="1191" title="A2 quer + 60% breiter (zum Falten)">A2 breit</button>
-    <button data-w="1684" data-h="1906" title="A2 quer + 60% höher (zum Falten)">A2 hoch+</button>
+    <button data-w="2694" data-h="1191" title="A2 quer + 60% breiter (zum Falten)">A2b</button>
+    <button data-w="1684" data-h="1906" title="A2 quer + 60% höher (zum Falten)">A2h</button>
+    <button data-w="1684" data-h="2384">A1 hoch</button>
     <button data-w="2384" data-h="1684">A1 quer</button>
-    <button data-w="3814" data-h="1684" title="A1 quer + 60% breiter (zum Falten)">A1 breit</button>
-    <button data-w="2384" data-h="2694" title="A1 quer + 60% höher (zum Falten)">A1 hoch+</button>
+    <button data-w="3814" data-h="1684" title="A1 quer + 60% breiter (zum Falten)">A1b</button>
+    <button data-w="2384" data-h="2694" title="A1 quer + 60% höher (zum Falten)">A1h</button>
+    <button data-w="2384" data-h="3370">A0 hoch</button>
     <button data-w="3370" data-h="2384">A0 quer</button>
+    <button data-w="5392" data-h="2384" title="A0 quer + 60% breiter (zum Falten)">A0b</button>
+    <button data-w="3370" data-h="3814" title="A0 quer + 60% höher (zum Falten)">A0h</button>
     <button data-w="612" data-h="792">US Letter</button>
   </div>
 
@@ -491,17 +498,24 @@
         <div class="sd-chips" id="sdFormats">
           <button data-w="595" data-h="842" class="on">A4 hoch</button>
           <button data-w="842" data-h="595">A4 quer</button>
+          <button data-w="1347" data-h="595" title="A4 quer + 60% breiter (zum Falten)">A4b</button>
+          <button data-w="842" data-h="952" title="A4 quer + 60% höher (zum Falten)">A4h</button>
           <button data-w="842" data-h="1191">A3 hoch</button>
           <button data-w="1191" data-h="842">A3 quer</button>
-          <button data-w="1906" data-h="842" title="A3 quer + 60% breiter (zum Falten)">A3 breit</button>
-          <button data-w="1191" data-h="1347" title="A3 quer + 60% höher (zum Falten)">A3 hoch+</button>
+          <button data-w="1906" data-h="842" title="A3 quer + 60% breiter (zum Falten)">A3b</button>
+          <button data-w="1191" data-h="1347" title="A3 quer + 60% höher (zum Falten)">A3h</button>
+          <button data-w="1191" data-h="1684">A2 hoch</button>
           <button data-w="1684" data-h="1191">A2 quer</button>
-          <button data-w="2694" data-h="1191" title="A2 quer + 60% breiter (zum Falten)">A2 breit</button>
-          <button data-w="1684" data-h="1906" title="A2 quer + 60% höher (zum Falten)">A2 hoch+</button>
+          <button data-w="2694" data-h="1191" title="A2 quer + 60% breiter (zum Falten)">A2b</button>
+          <button data-w="1684" data-h="1906" title="A2 quer + 60% höher (zum Falten)">A2h</button>
+          <button data-w="1684" data-h="2384">A1 hoch</button>
           <button data-w="2384" data-h="1684">A1 quer</button>
-          <button data-w="3814" data-h="1684" title="A1 quer + 60% breiter (zum Falten)">A1 breit</button>
-          <button data-w="2384" data-h="2694" title="A1 quer + 60% höher (zum Falten)">A1 hoch+</button>
+          <button data-w="3814" data-h="1684" title="A1 quer + 60% breiter (zum Falten)">A1b</button>
+          <button data-w="2384" data-h="2694" title="A1 quer + 60% höher (zum Falten)">A1h</button>
+          <button data-w="2384" data-h="3370">A0 hoch</button>
           <button data-w="3370" data-h="2384">A0 quer</button>
+          <button data-w="5392" data-h="2384" title="A0 quer + 60% breiter (zum Falten)">A0b</button>
+          <button data-w="3370" data-h="3814" title="A0 quer + 60% höher (zum Falten)">A0h</button>
           <button data-w="612" data-h="792">US Letter</button>
           <button data-w="720" data-h="720">Quadrat</button>
           <button data-w="960" data-h="540">Folie 16:9</button>
@@ -723,7 +737,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=510"></script>
+  <script src="pdf.js?v=511"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

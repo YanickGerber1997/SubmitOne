@@ -4546,18 +4546,28 @@ function openingSolids(o) {   // Stufe 3: Fenster/Tür als Profil-Teile in der A
   // Eine Quelle → Ansicht = Profil direkt; Schnitt = bei s geschnitten; Grundriss = bei z geschnitten. role: frame|mullion|sash|glass|sill.
   const sp = openingSpec(o), hw = sp.w / 2, sill = sp.sill, head = sp.head, parts = [];
   const fw = Math.min(hw * 0.8, sp.frameVis + sp.sashVis), fwB = Math.min(hw * 0.5, sp.frameVis);   // s-Richtung (pt)
-  const m = pt => ptsToCm(pt) / 100, fwBm = m(fwB), fwm = m(fw), sashVm = m(sp.sashVis);            // z-Richtung (m)
-  const rect = (s0, s1, z0, z1, role, mat) => { if (s1 - s0 > 0.5 && z1 - z0 > 0.001) parts.push({ prof: [[s0, z0], [s1, z0], [s1, z1], [s0, z1]], role, mat }); };
+  const m = pt => ptsToCm(pt) / 100, fwBm = m(fwB), sashVm = m(sp.sashVis);                          // z-Richtung (m)
+  const ht = (o.thick || wallThickPts()) / 2, depth = o.depth == null ? 0.5 : o.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));   // Tiefe über Wanddicke (m ∈ [-1,1])
+  const frameD = sp.frameD, sashD = o.sashD || cmToPts(7), recess = o.sashRecess != null ? o.sashRecess : cmToPts(1);
+  const fdh = Math.min(0.48, frameD / (2 * ht)); let fmA = md - fdh, fmB = md + fdh; if (fmA < -1) { fmB += (-1 - fmA); fmA = -1; } if (fmB > 1) { fmA -= (fmB - 1); fmB = 1; }   // Rahmen-Tiefe
+  const recM = Math.min(fdh * 1.4, recess / ht), sdM = Math.min(fdh * 1.95, sashD / ht), smB = fmB - recM, smA = Math.max(-1, smB - sdM);   // Flügel-Tiefe (zurückgesetzt)
+  const gc = (smA + smB) / 2, gh = Math.min((smB - smA) * 0.42, (o.glassT || cmToPts(2)) / (2 * ht)), gA = gc - gh, gB = gc + gh;   // Glas-Tiefe (dünn, mittig)
+  const rect = (s0, s1, z0, z1, role, mat, mLo, mHi) => { if (s1 - s0 > 0.5 && z1 - z0 > 0.001) parts.push({ prof: [[s0, z0], [s1, z0], [s1, z1], [s0, z1]], role, mat, mLo, mHi }); };
   const two = o.winType === 'f2' || o.winType === 'f2s', door = o.kind === 'door';
-  // Blendrahmen (4 Stäbe, sichtbare Breite); Tür ohne unteren Stab
-  rect(-hw, -hw + fwB, sill, head, 'frame', 'holz'); rect(hw - fwB, hw, sill, head, 'frame', 'holz');
-  rect(-hw + fwB, hw - fwB, head - fwBm, head, 'frame', 'holz');
-  if (!door) rect(-hw + fwB, hw - fwB, sill, sill + fwBm, 'frame', 'holz');
-  if (two) rect(-fw / 2, fw / 2, sill + fwBm, head - fwBm, 'mullion', 'holz');   // Setzholz / Mittelstoss
+  // Blendrahmen (4 Stäbe, sichtbare Breite, Rahmen-Tiefe); Tür ohne unteren Stab
+  rect(-hw, -hw + fwB, sill, head, 'frame', 'holz', fmA, fmB); rect(hw - fwB, hw, sill, head, 'frame', 'holz', fmA, fmB);
+  rect(-hw + fwB, hw - fwB, head - fwBm, head, 'frame', 'holz', fmA, fmB);
+  if (!door) rect(-hw + fwB, hw - fwB, sill, sill + fwBm, 'frame', 'holz', fmA, fmB);
+  if (two) rect(-fw / 2, fw / 2, sill + fwBm, head - fwBm, 'mullion', 'holz', fmA, fmB);   // Setzholz / Mittelstoss
   const innerZ0 = sill + (door ? 0 : fwBm), innerZ1 = head - fwBm;
   const panes = two ? [[-hw + fwB, -fw / 2], [fw / 2, hw - fwB]] : [[-hw + fwB, hw - fwB]];
-  for (const [a0, b0] of panes) { rect(a0, b0, innerZ0, innerZ1, 'sash', 'holz'); rect(a0 + fw, b0 - fw, innerZ0 + sashVm, innerZ1 - sashVm, door ? 'leaf' : 'glass', door ? 'holz' : null); }   // Flügel + Glas (Tür: Türblatt)
+  for (const [a0, b0] of panes) { rect(a0, b0, innerZ0, innerZ1, 'sash', 'holz', smA, smB); rect(a0 + fw, b0 - fw, innerZ0 + sashVm, innerZ1 - sashVm, door ? 'leaf' : 'glass', door ? 'holz' : null, door ? smA : gA, door ? smB : gB); }   // Flügel + Glas/Türblatt mit Tiefe
   return parts;
+}
+function sliceOpeningV(o, sCut) {   // Vertikalschnitt durch die Öffnung bei Position sCut (pt, zentriert) → Rechtecke {m0,m1 (Dicke ∈[-1,1]), z0,z1, role}
+  const res = [];
+  for (const p of openingSolids(o)) { const s0 = Math.min(p.prof[0][0], p.prof[2][0]), s1 = Math.max(p.prof[0][0], p.prof[2][0]); if (sCut >= s0 && sCut <= s1) { const z0 = Math.min(p.prof[0][1], p.prof[2][1]), z1 = Math.max(p.prof[0][1], p.prof[2][1]); res.push({ m0: Math.min(p.mLo, p.mHi), m1: Math.max(p.mLo, p.mHi), z0, z1, role: p.role, mat: p.mat }); } }
+  return res;
 }
 function ifcMatKey(name) {   // IFC-Materialname → unser Material-Schlüssel (für Schraffur + λ/U-Wert)
   const s = (name || '').toLowerCase();
@@ -5094,7 +5104,8 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Solid: Wand-Schichten', () => { const w = { type: 'wall', x1: 0, y1: 0, x2: cmToPts(400), y2: 0, thick: cmToPts(30), h3d: 2.6 }; applyWallBuildup(w, [['putz', 2], ['mauerwerk', 18], ['eps', 10]]); const sol = elementSolids(w, [w]); return (sol.length === 3 && sol.every(s => s.poly.length === 4 && s.z1 > s.z0)) ? '' : 'n=' + sol.length; });
     A('slicePlane horizontal (Grundriss)', () => { const w = { type: 'wall', x1: 0, y1: 0, x2: cmToPts(400), y2: 0, thick: cmToPts(30), h3d: 2.6 }; applyWallBuildup(w, [['putz', 2], ['mauerwerk', 18], ['eps', 10]]); const cut = slicePlane(elementSolids(w, [w]), { kind: 'h', z: 1.0 }); return (cut.length === 3 && slicePlane(elementSolids(w, [w]), { kind: 'h', z: 9 }).length === 0) ? '' : 'n=' + cut.length; });
     A('slicePlane vertikal (Schnitt)', () => { const w = { type: 'wall', x1: 0, y1: cmToPts(200), x2: cmToPts(400), y2: cmToPts(200), thick: cmToPts(30), h3d: 2.6 }; applyWallBuildup(w, [['putz', 2], ['mauerwerk', 18], ['eps', 10]]); const cut = slicePlane(elementSolids(w, [w]), { kind: 'v', p1: [cmToPts(200), 0], p2: [cmToPts(200), cmToPts(400)] }); const tot = cut.reduce((s, c) => s + (c.d1 - c.d0), 0); return (cut.length === 3 && cut.every(c => c.d1 > c.d0) && Math.abs(tot - cmToPts(30)) < 1) ? '' : 'n=' + cut.length + ' tot=' + tot; });
-    A('openingSolids (Fenster-Profil)', () => { const f2 = openingSolids({ kind: 'window', winType: 'f2', w: cmToPts(120), sill: 0.9, head: 2.2, frameW: cmToPts(10), sashW: cmToPts(7), boardVis: 1.5, winMat: 'holz' }); const f1 = openingSolids({ kind: 'window', winType: 'f1', w: cmToPts(120), sill: 0.9, head: 2.2, frameW: cmToPts(10), sashW: cmToPts(7), boardVis: 1.5, winMat: 'holz' }); const g2 = f2.filter(p => p.role === 'glass').length, m2 = f2.filter(p => p.role === 'mullion').length, g1 = f1.filter(p => p.role === 'glass').length; return (g2 === 2 && m2 === 1 && g1 === 1) ? '' : 'g2=' + g2 + ' m2=' + m2 + ' g1=' + g1; });
+    A('openingSolids (Fenster-Profil)', () => { const f2 = openingSolids({ kind: 'window', winType: 'f2', w: cmToPts(120), sill: 0.9, head: 2.2, frameW: cmToPts(10), sashW: cmToPts(7), boardVis: 1.5, winMat: 'holz' }); const f1 = openingSolids({ kind: 'window', winType: 'f1', w: cmToPts(120), sill: 0.9, head: 2.2, frameW: cmToPts(10), sashW: cmToPts(7), boardVis: 1.5, winMat: 'holz' }); const g2 = f2.filter(p => p.role === 'glass').length, m2 = f2.filter(p => p.role === 'mullion').length, g1 = f1.filter(p => p.role === 'glass').length; return (g2 === 2 && m2 === 1 && g1 === 1 && f2.every(p => p.mHi > p.mLo)) ? '' : 'g2=' + g2 + ' m2=' + m2 + ' g1=' + g1; });
+    A('sliceOpeningV (Schnitt durch Öffnung)', () => { const o = { kind: 'window', winType: 'f2', w: cmToPts(120), sill: 0.9, head: 2.2, frameW: cmToPts(10), sashW: cmToPts(7), boardVis: 1.5, depth: 0.5, thick: cmToPts(35), winMat: 'holz' }; const mid = sliceOpeningV(o, 0), pane = sliceOpeningV(o, cmToPts(30)); const midGlass = mid.some(r => r.role === 'glass'), paneGlass = pane.some(r => r.role === 'glass'); return (!midGlass && paneGlass && mid.length > 0 && mid.every(r => r.m1 > r.m0 && r.z1 > r.z0)) ? '' : 'midGlass=' + midGlass + ' paneGlass=' + paneGlass; });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

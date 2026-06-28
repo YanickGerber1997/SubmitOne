@@ -1001,8 +1001,8 @@ function bandBoards(band, boardWpt, gapPt) {   // Holzschalung als einzelne Latt
   return quads;
 }
 const WALL_PRESETS = [   // Schichten innen → aussen [Material, cm]
-  { name: 'Mauerwerk + EPS', layers: [['putz', 1.5], ['mauerwerk', 15], ['eps', 22], ['putz', 2]] },
-  { name: 'Beton + EPS', layers: [['putz', 1.5], ['beton', 20], ['eps', 22], ['putz', 2]] },
+  { name: 'Mauerwerk + EPS', layers: [['putz', 1.5], ['mauerwerk', 15], ['eps', 22], ['putz', 2.5]] },
+  { name: 'Beton + EPS', layers: [['putz', 1.5], ['beton', 20], ['eps', 22], ['putz', 2.5]] },
   { name: 'Hinterlüftet · Gipsplatte', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['gips', 1.5], ['putz', 0.5]] },
   { name: 'Hinterlüftet · Holz horizontal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['holz', 2.2]] },
   { name: 'Hinterlüftet · Holz vertikal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['konter', 3], ['holz', 2.2]] },
@@ -5254,7 +5254,7 @@ async function makeTestScene() {   // schnelle Test-Szene: mehrschichtige Wand +
   pushUndo();
   const arr = getAnnos(n), y = (pv.pageH || 842) * 0.42, x1 = (pv.pageW || 595) * 0.18, x2 = x1 + cmToPts(400), wid = nextId++;
   const wall = { id: wid, type: 'wall', x1, y1: y, x2, y2: y, thick: cmToPts(35), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: wallHeightM, dim: false, layer: activeLayerId };
-  applyWallBuildup(wall, [['putz', 1.5], ['mauerwerk', 15], ['eps', 16], ['putz', 0.5]]); arr.push(wall);
+  applyWallBuildup(wall, [['putz', 1.5], ['mauerwerk', 15], ['eps', 16], ['putz', 2.5]]); arr.push(wall);
   const win = { id: nextId++, type: 'opening', kind: 'window', wallId: wid, t: 0.5, w: cmToPts(120), depth: 0.5, frameW: cmToPts(10), frameD: cmToPts(7), winType: 'f2', winMat: 'holz', sill: 0.9, head: 2.2, revealType: 'putz', layer: activeLayerId };
   openingResolve(win, pv); arr.push(win);
   try { updateScaleLabel(); } catch (_) { }
@@ -5272,7 +5272,7 @@ async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fe
   txt(82, 96, 'BEISPIELPROJEKT — Wand mit Fenster & Tür · Massstab 1:20', 22, cmToPts(900));   // Titel weiter hoch
   const wy = 360, wx1 = 100, wlen = cmToPts(500), wx2 = wx1 + wlen, wid = nextId++;   // GRUNDRISS (Abstand zum Titel)
   const wall = { id: wid, type: 'wall', x1: wx1, y1: wy, x2: wx2, y2: wy, thick: cmToPts(35), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: wallHeightM, dim: true, layer: activeLayerId };
-  applyWallBuildup(wall, [['putz', 1.5], ['mauerwerk', 15], ['eps', 16], ['putz', 0.5]]); arr.push(wall);
+  applyWallBuildup(wall, [['putz', 1.5], ['mauerwerk', 15], ['eps', 16], ['putz', 2.5]]); arr.push(wall);
   const win = { id: nextId++, type: 'opening', kind: 'window', wallId: wid, t: 0.28, w: cmToPts(120), depth: 0.5, frameW: cmToPts(10), frameD: cmToPts(7), winType: 'f2', winMat: 'holz', sill: 0.9, head: 2.2, revealType: 'putz', bank: true, layer: activeLayerId };
   const dr = { id: nextId++, type: 'opening', kind: 'door', wallId: wid, t: 0.72, w: cmToPts(100), depth: 0.5, frameW: cmToPts(6), frameD: cmToPts(7), winType: 'f1', winMat: 'holz', head: 2.05, revealType: 'putz', layer: activeLayerId };
   openingResolve(win, pv); openingResolve(dr, pv); arr.push(win); arr.push(dr);

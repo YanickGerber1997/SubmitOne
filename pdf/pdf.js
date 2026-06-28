@@ -2377,6 +2377,20 @@ function fillImgPlaceholder(pv, a) {
   };
   inp.click();
 }
+function wallSnapPoint(pv, x, y, w) {   // (x,y) auf EINE Wand einrasten: Schicht-Band-Kanten/-Ecken (wenn geschichtet) + Achsenden
+  const arr = getAnnos(pv.num) || [], cThr = 13 / pv.scale, lThr = 12 / pv.scale; let best = null, bd = cThr;
+  const consider = (ax, ay) => { const d = Math.hypot(ax - x, ay - y); if (d < cThr && d < bd) { bd = d; best = { x: ax, y: ay }; } };
+  const considerLine = (p, q) => { const dx = q[0] - p[0], dy = q[1] - p[1], L2 = dx * dx + dy * dy; if (L2 < 1) return; let u = ((x - p[0]) * dx + (y - p[1]) * dy) / L2; if (u < 0 || u > 1) return; const px = p[0] + dx * u, py = p[1] + dy * u, d = Math.hypot(px - x, py - y); if (d < lThr && d < bd) { bd = d; best = { x: px, y: py }; } };
+  consider(w.x1, w.y1); consider(w.x2, w.y2);
+  if (w.layers && w.layers.length) { const wlb = wallLayerBands(w, arr); for (const b of wlb.bands) { const q = b.poly; consider(q[0][0], q[0][1]); consider(q[1][0], q[1][1]); consider(q[2][0], q[2][1]); consider(q[3][0], q[3][1]); considerLine(q[0], q[1]); considerLine(q[3], q[2]); } }
+  else { for (const p of wallPoly(w, arr)) consider(p[0], p[1]); }
+  return best;
+}
+function wallLayerGuides(pv, w) {   // Schicht-Kanten EINER Wand als Hilfslinien (nur die aktive Wand zeigen)
+  const arr = getAnnos(pv.num) || [], g = []; if (!(w.layers && w.layers.length)) return g;
+  const wlb = wallLayerBands(w, arr); for (const b of wlb.bands) { const q = b.poly; g.push({ x1: q[0][0], y1: q[0][1], x2: q[1][0], y2: q[1][1] }); g.push({ x1: q[3][0], y1: q[3][1], x2: q[2][0], y2: q[2][1] }); }
+  return g;
+}
 function startMove(pv, e, a, wasSel) {
   if (!a) return; const start = evtToPage(pv, e); pushUndo(); let moved = false;
   const orig = JSON.parse(JSON.stringify(a));
@@ -2391,14 +2405,16 @@ function startMove(pv, e, a, wasSel) {
       const sp = snapPt(ox + dx, oy + dy); dx = sp.x - ox; dy = sp.y - oy; translateAnno(a, orig, dx, dy);
     } else {
       translateAnno(a, orig, dx, dy);
-      if (!ev.altKey) {                                  // an Seitenrändern/-mitte & anderen Objekten einrasten (Alt = frei)
-        const s = moveSnapAdjust(pv, a, orig, dx, dy);
-        if (s.dx !== dx || s.dy !== dy) { dx = s.dx; dy = s.dy; translateAnno(a, orig, dx, dy); }
-        guides = s.guides;
-        if (a.type === 'wall' || a.type === 'slab' || a.type === 'area' || a.type === 'terrain') {   // Eckpunkte auf Anker einrasten (inkl. Wand-Schichtkanten) → Decke an die Tragschicht-Aussenkante „anklipsen", saubere Gebäudeecke
-          const pts = a.type === 'wall' ? [[a.x1, a.y1], [a.x2, a.y2]] : (a.pts || []); let bd = 16 / pv.scale, best = null;
-          for (const pt of pts) { const an = anchorSnap(pv, pt[0], pt[1], a.id); if (an) { const d = Math.hypot(an.x - pt[0], an.y - pt[1]); if (d < bd) { bd = d; best = { ddx: an.x - pt[0], ddy: an.y - pt[1], gx: an.x, gy: an.y }; } } }
-          if (best) { dx += best.ddx; dy += best.ddy; translateAnno(a, orig, dx, dy); guides = guides.concat([{ x1: best.gx - 9, y1: best.gy, x2: best.gx + 9, y2: best.gy }, { x1: best.gx, y1: best.gy - 9, x2: best.gx, y2: best.gy + 9 }]); }
+      if (!ev.altKey) {                                  // einrasten (Alt = frei)
+        if (a.type === 'wall' || a.type === 'slab' || a.type === 'area' || a.type === 'terrain') {   // NUR die nächste Wand erkennen → an deren Schichtkanten sauber einrasten (keine Hilfslinien-Flut)
+          const pts = a.type === 'wall' ? [[a.x1, a.y1], [a.x2, a.y2]] : (a.pts || []); let bd = 18 / pv.scale, best = null, bw = null;
+          for (const o of (getAnnos(pv.num) || [])) { if (o.type !== 'wall' || o.id === a.id || !layerVisible(o)) continue; for (const pt of pts) { const an = wallSnapPoint(pv, pt[0], pt[1], o); if (an) { const d = Math.hypot(an.x - pt[0], an.y - pt[1]); if (d < bd) { bd = d; best = { ddx: an.x - pt[0], ddy: an.y - pt[1], gx: an.x, gy: an.y }; bw = o; } } } }
+          if (bw) { dx += best.ddx; dy += best.ddy; translateAnno(a, orig, dx, dy); guides = wallLayerGuides(pv, bw).concat([{ x1: best.gx - 9, y1: best.gy, x2: best.gx + 9, y2: best.gy }, { x1: best.gx, y1: best.gy - 9, x2: best.gx, y2: best.gy + 9 }]); }   // nur die Schicht-Kanten DIESER Wand + Fadenkreuz
+          else { const s = moveSnapAdjust(pv, a, orig, dx, dy); if (s.dx !== dx || s.dy !== dy) { dx = s.dx; dy = s.dy; translateAnno(a, orig, dx, dy); } guides = s.guides; }
+        } else {
+          const s = moveSnapAdjust(pv, a, orig, dx, dy);
+          if (s.dx !== dx || s.dy !== dy) { dx = s.dx; dy = s.dy; translateAnno(a, orig, dx, dy); }
+          guides = s.guides;
         }
       }
     }

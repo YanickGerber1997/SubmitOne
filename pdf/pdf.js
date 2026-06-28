@@ -3266,7 +3266,7 @@ function sectionPrimitives(a, arr) {
     for (let i = 0; i < seg.length - 1; i++) { const ix = segInt(p1, p2, seg[i], seg[i + 1]); if (!ix) continue; const d = fp((ix.pt[0] - p1[0]) * cux + (ix.pt[1] - p1[1]) * cuy), pts = pr.prof.map(q => [X(d) + cmToPts(q[0]), Yh(base + q[1] / 100)]); out.push({ t: 'poly', pts, fill: pr.color || '#7a8392', stroke: '#1c242c', sw: 0.6 }); }
   }
   if (!a.noDims) {   // Höhen-Masketten wie im Grundriss: zwei Ketten (links innen=Fertig/Licht „F", rechts aussen=Rohbau „R"), wandabhängig, gleicher Abstand, geschnittene Fenster/Türen mitgenommen
-    const Htop = sectionMaxH(a, arr), DOFF = 34, over = 4;
+    const Htop = sectionMaxH(a, arr), DOFF = Math.max(16, Math.min(70, cmToPts(wallDimOffCm))), over = 4;   // Abstand zur Wand = wie im Grundriss (wallDimOffCm)
     const dimOps = [];   // alle Öffnungen im Schnitt (geschnitten + Ansicht) → Höhen-Stationen
     for (const h of hits) for (const o of arr.filter(o => o.type === 'opening' && o.wallId === h.w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl))) if (!dimOps.includes(o)) dimOps.push(o);
     for (const o of elevOps) if (!dimOps.includes(o)) dimOps.push(o);
@@ -3277,7 +3277,7 @@ function sectionPrimitives(a, arr) {
       out.push({ t: 'line', x1: xLine, y1: Yh(0) + side * 0, x2: xLine, y2: Yh(Htop), w: 0.9 });   // Masslinie
       out.push({ t: 'text', x: xLine + side * 9, y: Yh(Htop) - 7, text: tag, col, small: true });   // Kettenkennung F/R
       for (const s of hs) { out.push({ t: 'line', x1: xFace, y1: Yh(s), x2: xLine + side * over, y2: Yh(s), w: 0.55 }); const px = xLine; out.push({ t: 'line', x1: px - 3.5, y1: Yh(s) + 3.5, x2: px + 3.5, y2: Yh(s) - 3.5, w: 1.1 }); }   // Masshilfslinie (bis Wandfläche) + Tick
-      for (let i = 0; i < hs.length - 1; i++) { const seg = hs[i + 1] - hs[i]; if (seg < 0.02) continue; out.push({ t: 'text', x: xLine + side * 19, y: (Yh(hs[i]) + Yh(hs[i + 1])) / 2 + 4, text: fmtLen(seg / perPt), col, small: true }); }
+      for (let i = 0; i < hs.length - 1; i++) { const seg = hs[i + 1] - hs[i]; if (seg < 0.02) continue; out.push({ t: 'text', x: xLine + side * 22, y: (Yh(hs[i]) + Yh(hs[i + 1])) / 2 + 4, text: fmtLen(seg / perPt), col, size: 11 }); }   // Segment-Mass: Schriftgrösse 11 wie im Grundriss
     };
     dimChain(X(-DOFF), -1, true, 'F');          // innen = Fertig/Licht
     dimChain(X(cl + DOFF), 1, false, 'R');      // aussen = Rohbau
@@ -3285,11 +3285,11 @@ function sectionPrimitives(a, arr) {
   }
   return out;
 }
-function sectionBBox(a, arr) { if (!docScale) return { x: a.ox - 6, y: a.oy - 16, w: 180, h: 30 }; const perPt = docScale.perPt, cl = Math.hypot(a.cx2 - a.cx1, a.cy2 - a.cy1) || 1, mh = sectionMaxH(a, arr) / perPt; return { x: a.ox - 62, y: a.oy - mh - 12, w: cl + 124, h: mh + 40 }; }   // breiter: zwei Höhen-Masketten (links/rechts)
+function sectionBBox(a, arr) { if (!docScale) return { x: a.ox - 6, y: a.oy - 16, w: 180, h: 30 }; const perPt = docScale.perPt, cl = Math.hypot(a.cx2 - a.cx1, a.cy2 - a.cy1) || 1, mh = sectionMaxH(a, arr) / perPt, dOff = Math.max(16, Math.min(70, cmToPts(wallDimOffCm))) + 30; return { x: a.ox - dOff, y: a.oy - mh - 12, w: cl + 2 * dOff, h: mh + 40 }; }   // breiter: zwei Höhen-Masketten (links/rechts), Abstand = wallDimOffCm
 const _revSig = o => { const f = l => Array.isArray(l) ? l.map(x => x.mat + (x.t || 0) + (x.gap || 0) + (x.prio || '') + (x.len != null ? 'L' + x.len : '') + (x.over || 0)).join('') : ''; let r = f(o.revealLining) + '|' + f(o.revealLiningOut); if (o.reveals) for (const e of ['L', 'R', 'T', 'B']) { const ed = o.reveals[e]; if (ed) r += e + f(ed.in) + f(ed.out) + (ed.slope || 0) + (ed.boardVis != null ? 'b' + ed.boardVis : '') + (ed.grow ? 'g' + ed.grow : ''); } return r; };
 function sectionSig(a, arr) {   // billige Inhalts-Signatur: alles was den Schnitt/die Ansicht beeinflusst → nur bei Änderung neu rechnen
   const p = docScale ? docScale.perPt : 0;
-  let s = 'S' + a.cx1.toFixed(1) + ',' + a.cy1.toFixed(1) + ',' + a.cx2.toFixed(1) + ',' + a.cy2.toFixed(1) + ',' + a.ox + ',' + a.oy + ',' + (a.flip ? 1 : 0) + ',' + (a.mullion ? 1 : 0) + ',' + (a.noDims ? 1 : 0) + ',' + p + ',' + (USE_SOLID ? 1 : 0) + ',' + (simpleMode ? 1 : 0) + ',' + (winDimsOn ? 1 : 0) + ',' + (sel && sel.id === a.id ? 1 : 0) + '|';
+  let s = 'S' + a.cx1.toFixed(1) + ',' + a.cy1.toFixed(1) + ',' + a.cx2.toFixed(1) + ',' + a.cy2.toFixed(1) + ',' + a.ox + ',' + a.oy + ',' + (a.flip ? 1 : 0) + ',' + (a.mullion ? 1 : 0) + ',' + (a.noDims ? 1 : 0) + ',' + p + ',' + (USE_SOLID ? 1 : 0) + ',' + (simpleMode ? 1 : 0) + ',' + (winDimsOn ? 1 : 0) + ',' + wallDimOffCm + ',' + (sel && sel.id === a.id ? 1 : 0) + '|';
   for (const o of arr) {
     if (!layerVisible(o) || !phaseVisible(o)) continue; const t = o.type;
     if (t === 'wall') s += 'W' + o.id + ':' + o.x1.toFixed(1) + ',' + o.y1.toFixed(1) + ',' + o.x2.toFixed(1) + ',' + o.y2.toFixed(1) + ',' + (o.thick || 0).toFixed(1) + ',' + (o.h3d || 0) + ',' + (o.just || '') + ',' + (o.fill || '') + ',' + (o.layers ? o.layers.map(l => l.mat + (l.t || 0).toFixed(1) + '/' + (l.top || 0) + '/' + (l.bot || 0) + '/' + (l.ext1 || 0) + '/' + (l.ext2 || 0) + '/' + (l.lowMat || '') + (l.lowH || 0) + (l.sub ? l.sub.type : '')).join('') : '') + ';';

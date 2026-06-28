@@ -1009,7 +1009,11 @@ const WALL_MATS = {   // Schicht-Material: Füllung (hell), Schraffur-Typ (oder 
   kies: { label: 'Kies / Schotter', fill: '#e9e4d6', hatch: null, color: '#9a8e72' },
   schalung: { label: 'Holzschalung (Latten)', fill: '#e7cfa8', hatch: null, color: '#7a5126', boards: true },
   windpapier: { label: 'Windpapier (schwarz)', fill: '#262626', hatch: null, color: '#111111', membrane: true },
-  dampfbremse: { label: 'Dampfbremse (schwarz)', fill: '#262626', hatch: null, color: '#111111', membrane: true }
+  dampfbremse: { label: 'Dampfbremse (schwarz)', fill: '#262626', hatch: null, color: '#111111', membrane: true },
+  osb: { label: 'OSB-Platte', fill: '#e3c489', hatch: null, color: '#9c7a3e' },
+  mdf: { label: 'MDF-/Holzfaserplatte', fill: '#d7b483', hatch: null, color: '#8a6a3a' },
+  staender: { label: 'Holzständer + Dämmung', fill: HATCH_DEF.daemm_wolle.fill, hatch: 'daemm_wolle', color: HATCH_DEF.daemm_wolle.color },
+  klinker: { label: 'Backstein / Vormauerung', fill: HATCH_DEF.backstein.fill, hatch: 'backstein', color: HATCH_DEF.backstein.color }
 };
 function bandBoards(band, boardWpt, gapPt) {   // Holzschalung als einzelne Latten (Breite + Abstand) entlang der Schicht → Lücken zeigen das Windpapier dahinter
   const p0 = band.poly[0], p1 = band.poly[1], p2 = band.poly[2], p3 = band.poly[3], lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
@@ -1023,7 +1027,9 @@ const WALL_PRESETS = [   // Schichten innen → aussen [Material, cm]
   { name: 'Hinterlüftet · Gipsplatte', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['gips', 1.5], ['putz', 0.5]] },
   { name: 'Hinterlüftet · Holz horizontal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['holz', 2.2]] },
   { name: 'Hinterlüftet · Holz vertikal', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['luft', 4], ['konter', 3], ['holz', 2.2]] },
-  { name: 'Hinterlüftet · Latten-Schalung + Windpapier', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['windpapier', 0.1], ['luft', 4], ['schalung', 2.4]] }
+  { name: 'Hinterlüftet · Latten-Schalung + Windpapier', layers: [['putz', 1.5], ['mauerwerk', 15], ['glaswolle', 22], ['windpapier', 0.1], ['luft', 4], ['schalung', 2.4]] },
+  { name: 'Holzbau (Ständer + Schalung)', layers: [['putz', 0.5], ['gips', 1.25], ['konter', 4], ['osb', 2], ['staender', 16], ['mdf', 6], ['luft', 4], ['schalung', 2.2]] },   // innen Deckputz/Gips/Installationsrost/OSB, Ständer 16, aussen MDF/Luft/Schalung
+  { name: 'Zweischalenmauerwerk (verputzt)', layers: [['putz', 1.5], ['mauerwerk', 17.5], ['glaswolle', 2], ['luft', 4], ['klinker', 12.5], ['putz', 1.5]] }   // Tragschale 17.5 + Glaswolle + Hinterlüftung + Vormauerung 12.5, beidseitig Putz
 ];
 const SLAB_PRESETS = [   // Decken-/Bodenaufbau OBEN → UNTEN [Material, cm]
   { name: 'Geschossdecke (Unterlagsboden)', layers: [['belag', 1], ['estrich', 7], ['trittschall', 3], ['beton', 24]] },

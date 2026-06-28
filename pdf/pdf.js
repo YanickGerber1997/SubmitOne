@@ -3070,7 +3070,7 @@ function sectionPrimitives(a, arr) {
       if (USE_SOLID) {   // STUFE 3d: Öffnung im Schnitt aus kanonischem sliceOpeningV (echte Geometrie geschnitten)
         const cx = X(h.dist), sCut = (a.flip ? -1 : 1) * (h.tp - o.t) * h.wl, sillO = o.kind === 'window' ? (o.sill || 0) : 0, headO = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0)), wm2 = WIN_MAT[o.winMat || 'holz'];
         out.push({ t: 'rect', x: cx - h.appW / 2, y: Yh(headO), w: h.appW, h: Yh(sillO) - Yh(headO), fill: '#ffffff', stroke: 'none', sw: 0 });   // Öffnung ausstanzen
-        for (const r of sliceOpeningV(Object.assign({}, o, { thick: h.appW }), sCut)) { const x0 = cx + r.m0 * (h.appW / 2), x1 = cx + r.m1 * (h.appW / 2), isG = r.role === 'glass'; out.push({ t: 'rect', x: Math.min(x0, x1), y: Yh(r.z1), w: Math.abs(x1 - x0), h: Yh(r.z0) - Yh(r.z1), fill: isG ? '#c7e2f5' : (wm2.fill || '#e7cfa8'), stroke: isG ? '#7fa9c6' : (wm2.stroke || '#7a5126'), sw: 1 }); }
+        for (const r of sliceOpeningV(Object.assign({}, o, { thick: h.appW }), sCut)) { const x0 = cx + r.m0 * (h.appW / 2), x1 = cx + r.m1 * (h.appW / 2), st = openingPartStyle(r.role, o); out.push({ t: 'rect', x: Math.min(x0, x1), y: Yh(r.z1), w: Math.abs(x1 - x0), h: Yh(r.z0) - Yh(r.z1), fill: st.fill, stroke: st.stroke, sw: 1 }); }
       } else sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip, a.noDims, a.mullion);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil (a.flip = Blickrichtung)
     }
     out.push({ t: 'line', x1: X(x0), y1: Yh(H), x2: X(x0 + h.appW), y2: Yh(H), stroke: col, w: 1.2 });
@@ -4568,7 +4568,13 @@ function openingSolids(o) {   // Stufe 3: Fenster/Tür als Profil-Teile in der A
   const innerZ0 = sill + (door ? 0 : fwBm), innerZ1 = head - fwBm;
   const panes = two ? [[-hw + fwB, -fw / 2], [fw / 2, hw - fwB]] : [[-hw + fwB, hw - fwB]];
   for (const [a0, b0] of panes) { rect(a0, b0, innerZ0, innerZ1, 'sash', 'holz', smA, smB); rect(a0 + fw, b0 - fw, innerZ0 + sashVm, innerZ1 - sashVm, door ? 'leaf' : 'glass', door ? 'holz' : null, door ? smA : gA, door ? smB : gB); }   // Flügel + Glas/Türblatt mit Tiefe
+  if (!door && o.bank !== false) { const over = cmToPts(o.bankOver != null ? o.bankOver : 4), bt = m(cmToPts(2.5)); rect(-hw - over, hw + over, sill - bt, sill, 'bank', 'bank', md, 1.2); }   // Fensterbank: am Sims, projiziert über die Aussenkante
   return parts;
+}
+function openingPartStyle(role, o) {   // Füllung/Strich je Bauteil-Rolle (eine Quelle für Ansicht + Schnitt)
+  if (role === 'glass') return { fill: '#c7e2f5', stroke: '#7fa9c6' };
+  if (role === 'bank') { const b = o.bankMat; return b === 'holz' ? { fill: '#e7cfa8', stroke: '#7a5126' } : b === 'beton' ? { fill: '#dadde2', stroke: '#8a8f96' } : { fill: '#cfd3d8', stroke: '#565b62' }; }
+  const wm = WIN_MAT[o.winMat || 'holz']; return { fill: wm.fill || '#e7cfa8', stroke: wm.stroke || '#7a5126' };
 }
 function sliceOpeningV(o, sCut) {   // Vertikalschnitt durch die Öffnung bei Position sCut (pt, zentriert) → Rechtecke {m0,m1 (Dicke ∈[-1,1]), z0,z1, role}
   const res = [];
@@ -5112,6 +5118,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('slicePlane vertikal (Schnitt)', () => { const w = { type: 'wall', x1: 0, y1: cmToPts(200), x2: cmToPts(400), y2: cmToPts(200), thick: cmToPts(30), h3d: 2.6 }; applyWallBuildup(w, [['putz', 2], ['mauerwerk', 18], ['eps', 10]]); const cut = slicePlane(elementSolids(w, [w]), { kind: 'v', p1: [cmToPts(200), 0], p2: [cmToPts(200), cmToPts(400)] }); const tot = cut.reduce((s, c) => s + (c.d1 - c.d0), 0); return (cut.length === 3 && cut.every(c => c.d1 > c.d0) && Math.abs(tot - cmToPts(30)) < 1) ? '' : 'n=' + cut.length + ' tot=' + tot; });
     A('openingSolids (Fenster-Profil)', () => { const f2 = openingSolids({ kind: 'window', winType: 'f2', w: cmToPts(120), sill: 0.9, head: 2.2, frameW: cmToPts(10), sashW: cmToPts(7), boardVis: 1.5, winMat: 'holz' }); const f1 = openingSolids({ kind: 'window', winType: 'f1', w: cmToPts(120), sill: 0.9, head: 2.2, frameW: cmToPts(10), sashW: cmToPts(7), boardVis: 1.5, winMat: 'holz' }); const g2 = f2.filter(p => p.role === 'glass').length, m2 = f2.filter(p => p.role === 'mullion').length, g1 = f1.filter(p => p.role === 'glass').length; return (g2 === 2 && m2 === 1 && g1 === 1 && f2.every(p => p.mHi > p.mLo)) ? '' : 'g2=' + g2 + ' m2=' + m2 + ' g1=' + g1; });
     A('sliceOpeningV (Schnitt durch Öffnung)', () => { const o = { kind: 'window', winType: 'f2', w: cmToPts(120), sill: 0.9, head: 2.2, frameW: cmToPts(10), sashW: cmToPts(7), boardVis: 1.5, depth: 0.5, thick: cmToPts(35), winMat: 'holz' }; const mid = sliceOpeningV(o, 0), pane = sliceOpeningV(o, cmToPts(30)); const midGlass = mid.some(r => r.role === 'glass'), paneGlass = pane.some(r => r.role === 'glass'); return (!midGlass && paneGlass && mid.length > 0 && mid.every(r => r.m1 > r.m0 && r.z1 > r.z0)) ? '' : 'midGlass=' + midGlass + ' paneGlass=' + paneGlass; });
+    A('openingSolids Fensterbank', () => { const wb = openingSolids({ kind: 'window', winType: 'f1', w: cmToPts(120), sill: 0.9, head: 2.2, frameW: cmToPts(10), sashW: cmToPts(7), boardVis: 1.5, thick: cmToPts(35), bank: true, bankMat: 'metall', winMat: 'holz' }); const nb = openingSolids({ kind: 'window', winType: 'f1', w: cmToPts(120), sill: 0.9, head: 2.2, frameW: cmToPts(10), bank: false, thick: cmToPts(35), winMat: 'holz' }); return (wb.some(p => p.role === 'bank') && !nb.some(p => p.role === 'bank') && openingPartStyle('bank', { bankMat: 'metall' }).fill === '#cfd3d8') ? '' : 'bank fehlt/falsch'; });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }
@@ -5442,7 +5449,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       let cum = 0;
       for (const rg of rings) { const mt = WALL_MATS[rg.mat] || { fill: '#eee', color: '#1c242c' }, x = opx0 + cum, w = o2.w - 2 * cum, yT = Yh(headF - cum * perPt), yB = Yh(sillF); if (w > 1 && yB - yT > 0.5) out.push({ t: 'rect', x, y: yT, w, h: yB - yT, fill: mt.fill || '#eee', stroke: mt.color || '#1c242c', sw: 0.7 }); cum += rg.w; }   // Laibung wickelt Sturz + Seiten; unten = Fensterbank (kein Doppel-Sims)
       const rPts = Math.min(cum, o2.w * 0.45);
-      if (USE_SOLID) { const ow = Math.max(4, o2.w - 2 * rPts), cxs = opx0 + o2.w / 2, wmm = WIN_MAT[o2.winMat || 'holz']; for (const part of openingSolids(Object.assign({}, oo, { w: ow }))) { const isG = part.role === 'glass'; out.push({ t: 'poly', pts: part.prof.map(p => [cxs + p[0], Yh(p[1])]), fill: isG ? '#c7e2f5' : (wmm.fill || '#e7cfa8'), stroke: isG ? '#7fa9c6' : (wmm.stroke || '#7a5126'), sw: 1 }); } }   // STUFE 3b: Ansicht aus kanonischem openingSolids (A/B)
+      if (USE_SOLID) { const ow = Math.max(4, o2.w - 2 * rPts), cxs = opx0 + o2.w / 2; for (const part of openingSolids(Object.assign({}, oo, { w: ow }))) { const st = openingPartStyle(part.role, o2); out.push({ t: 'poly', pts: part.prof.map(p => [cxs + p[0], Yh(p[1])]), fill: st.fill, stroke: st.stroke, sw: 1 }); } }   // STUFE 3b/3e: Ansicht aus kanonischem openingSolids (A/B)
       else try { openingElev(out, d => d, Yh, opx0 + rPts, o2.w - 2 * rPts, oo, Hwall, '#1c242c', rPts * perPt, side); } catch (_) { }
       if (side === 'i' && o2.kind === 'window') { const pjI = cmToPts(3), th = cmToPts(2.5); out.push({ t: 'rect', x: opx0 - pjI, y: Yh(sillF), w: o2.w + 2 * pjI, h: th, fill: '#e7cfa8', stroke: '#7a5126', sw: 0.8 }); }   // innen: Holz-Fensterbrett
       if (o2.id === a.id) { out.push({ t: 'rect', x: opx0 - 4, y: Yh(headF) - 4, w: o2.w + 8, h: (Yh(sillF) - Yh(headF)) + 8, fill: 'none', stroke: '#2aa869', sw: 2.4 }); curD = { opx0, w: o2.w, headF, sillF, rPts }; }   // aktuelles Fenster markiert

@@ -3079,7 +3079,7 @@ function sectionPrimitives(a, arr) {
     out.push({ t: 'line', x1: xD, y1: Yh(0), x2: xD, y2: Yh(Htop), w: 0.9 });
     for (const s of hs) out.push({ t: 'line', x1: xD - 4, y1: Yh(s), x2: xD + 4, y2: Yh(s), w: 0.8 });
     for (let i = 0; i < hs.length - 1; i++) { const seg = hs[i + 1] - hs[i]; if (seg < 0.02) continue; out.push({ t: 'text', x: xD - 34, y: (Yh(hs[i]) + Yh(hs[i + 1])) / 2 + 4, text: fmtLen(seg / perPt), col, small: true }); }
-    out.push({ t: 'text', x: X(cl / 2) - 18, y: Yh(-0.22) + 22, text: 'Schnitt ' + lbl + '–' + lbl, col });
+    { const stxt = 'Schnitt ' + lbl + '–' + lbl; out.push({ t: 'text', x: X(cl / 2) - stxt.length * 5.2, y: Yh(-0.22) + 30, text: stxt, col, size: 21 }); }   // grössere Schnitt-Beschriftung
   }
   return out;
 }
@@ -3091,7 +3091,7 @@ function drawSection(svg, a, arr) {
     else if (p.t === 'poly') { const pl = svgEl('polygon', { points: p.pts.map(q => q[0].toFixed(2) + ',' + q[1].toFixed(2)).join(' '), fill: p.fill || 'none', 'vector-effect': 'non-scaling-stroke' }); if (p.stroke && p.stroke !== 'none') { pl.setAttribute('stroke', p.stroke); pl.setAttribute('stroke-width', p.sw || 0.6); } g.appendChild(pl); }
     else if (p.t === 'line') { const l = svgEl('line', { x1: p.x1, y1: p.y1, x2: p.x2, y2: p.y2, stroke: p.stroke || '#1c242c', 'stroke-width': p.w || 1, 'vector-effect': 'non-scaling-stroke' }); if (p.dash) l.setAttribute('stroke-dasharray', p.dash); g.appendChild(l); }
     else if (p.t === 'arrow') { const s = 6, ang = Math.atan2(p.dy, p.dx); for (const da of [2.5, -2.5]) g.appendChild(svgEl('line', { x1: p.x, y1: p.y, x2: p.x - Math.cos(ang + da) * s, y2: p.y - Math.sin(ang + da) * s, stroke: p.col || '#1c242c', 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' })); }
-    else if (p.t === 'text') { const t = svgEl('text', { x: p.x, y: p.y, fill: p.col || '#1c242c', 'font-size': p.small ? 9 : 12, 'font-weight': p.small ? 400 : 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = p.text; g.appendChild(t); }
+    else if (p.t === 'text') { const t = svgEl('text', { x: p.x, y: p.y, fill: p.col || '#1c242c', 'font-size': p.size || (p.small ? 9 : 12), 'font-weight': p.small ? 400 : 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = p.text; g.appendChild(t); }
     else if (p.t === 'lhandle') hdl.push({ x: p.x, y: p.y, key: 'sl:' + p.wallId + ':' + p.li + ':' + p.edge, cls: 'lay-handle', r: 4.5 });
     else if (p.t === 'shandle') hdl.push({ x: p.x, y: p.y, key: p.key, cls: 'dim-handle', r: 5 });
   }
@@ -5187,8 +5187,8 @@ async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fe
   const arr = getAnnos(n);
   const txt = (x, y, t, size, w) => arr.push({ id: nextId++, type: 'text', x, y, w: w || cmToPts(200), h: 30, text: t, size: size || 16, color: '#1c242c', align: 'left', bg: 'transparent', border: null, layer: activeLayerId });
   const mkSection = (cx1, cy1, cx2, cy2, label, ox, oy, flip) => { const s = { id: nextId++, type: 'section', cx1, cy1, cx2, cy2, label, ox, oy, layer: activeLayerId }; if (flip) s.flip = true; arr.push(s); };
-  txt(82, 154, 'BEISPIELPROJEKT — Wand mit Fenster & Tür · Massstab 1:20', 22, cmToPts(900));
-  const wy = 320, wx1 = 100, wlen = cmToPts(500), wx2 = wx1 + wlen, wid = nextId++;   // GRUNDRISS (weiter runter + weiter links)
+  txt(82, 96, 'BEISPIELPROJEKT — Wand mit Fenster & Tür · Massstab 1:20', 22, cmToPts(900));   // Titel weiter hoch
+  const wy = 360, wx1 = 100, wlen = cmToPts(500), wx2 = wx1 + wlen, wid = nextId++;   // GRUNDRISS (Abstand zum Titel)
   const wall = { id: wid, type: 'wall', x1: wx1, y1: wy, x2: wx2, y2: wy, thick: cmToPts(35), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: wallHeightM, dim: false, layer: activeLayerId };
   applyWallBuildup(wall, [['putz', 1.5], ['mauerwerk', 15], ['eps', 16], ['putz', 0.5]]); arr.push(wall);
   const win = { id: nextId++, type: 'opening', kind: 'window', wallId: wid, t: 0.28, w: cmToPts(120), depth: 0.5, frameW: cmToPts(10), frameD: cmToPts(7), winType: 'f2', winMat: 'holz', sill: 0.9, head: 2.2, revealType: 'putz', bank: true, layer: activeLayerId };
@@ -5198,9 +5198,8 @@ async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fe
   const winX = wx1 + 0.28 * wlen, drX = wx1 + 0.72 * wlen;
   mkSection(winX, wy - 70, winX, wy + 70, 'A', 100, 970);   // Schnitt durch Fenster
   mkSection(drX, wy - 70, drX, wy + 70, 'B', 510, 970);     // Schnitt durch Tür
-  mkSection(wx1, wy - 110, wx2, wy - 110, 'V', 860, 560, false);   // Ansicht vorne: Blickrichtungs-Linie auf der Aussenseite → sieht die Wand, unspiegelt
-  mkSection(wx1, wy + 110, wx2, wy + 110, 'H', 860, 1000, true);   // Ansicht hinten: andere Seite, gespiegelt – Ansichten gestapelt (übereinander)
-  txt(860, 490, 'ANSICHT VORNE', 14); txt(860, 930, 'ANSICHT HINTEN', 14);
+  mkSection(wx1, wy - 110, wx2, wy - 110, 'V', 980, 600, false);   // Ansicht vorne: Blickrichtungs-Linie auf der Aussenseite → sieht die Wand, unspiegelt
+  mkSection(wx1, wy + 110, wx2, wy + 110, 'H', 980, 1040, true);   // Ansicht hinten: andere Seite, gespiegelt – gestapelt, weiter rechts (eigene Labels weg, Schnitt V-V/H-H reicht)
   drawAnnos(pv); saveState();
   toast('Beispielprojekt: Grundriss + Schnitte (Fenster/Tür) + Ansicht vorne/hinten · 1:20. Fenster wählen → „⊕ Detail".');
 }

@@ -5455,11 +5455,11 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       const rings = [];   // Ansicht: nur das SICHTBARE Laibungs-Material als dünne Lappung über dem Rahmen (der volle Aufbau/Tiefe ist in Grundriss+Schnitt, nicht hier)
       const wlrs = (wall && wall.layers && wall.layers.length) ? wall.layers : null, lyr0 = wlrs ? wlrs[0] : null, lyrN = wlrs ? wlrs[wlrs.length - 1] : null;
       const customSide = side === 'i' ? o2.revealLining : o2.revealLiningOut;
-      let faceMat;   // sichtbares Material der gewählten Laibung (erste/innerste Schicht), aber nur als dünne Lappung gezeichnet
-      if (Array.isArray(customSide) && customSide.length) faceMat = customSide[0].mat;
+      let faceMat, ringW = lapClad;   // sichtbares Material + Dicke der gewählten Laibung je Seite (innen=revealLining, aussen=revealLiningOut)
+      if (Array.isArray(customSide) && customSide.length) { faceMat = customSide[0].mat; ringW = Math.min(o2.w * 0.2, cmToPts(customSide[0].t || 2)); }   // Dicke = gewählte Laibungsschicht (gedeckelt)
       else if (side === 'i') { const rt = o2.revealType || 'putz'; faceMat = rt === 'aussen' ? (lyrN ? lyrN.mat : 'putz') : ((REVEAL_LINING[rt] && REVEAL_LINING[rt][0][0]) || (lyr0 ? lyr0.mat : 'putz')); }
       else { const ro = o2.revealOuter || ''; faceMat = (ro && REVEAL_LINING[ro] && REVEAL_LINING[ro][0][0]) || (lyrN ? lyrN.mat : (facLy ? facLy.mat : 'putz')); }
-      rings.push({ mat: faceMat, w: lapClad });
+      rings.push({ mat: faceMat, w: ringW });
       const anT = o2.anschlagType || 'none';   // Anschlag ersetzt auf seiner Seite die Laibung durch eine Mauerwerks-Schulter (auch in der Ansicht)
       if ((side === 'i' && anT === 'innen') || (side === 'a' && anT === 'aussen')) { const core = wlrs ? (wlrs.find(l => ['mauerwerk', 'beton'].includes(l.mat)) || wlrs[Math.floor((wlrs.length - 1) / 2)]) : null; rings.length = 0; rings.push({ mat: core ? core.mat : 'mauerwerk', w: o2.anschlagDepth != null ? o2.anschlagDepth : cmToPts(5) }); }
       let cum = 0;

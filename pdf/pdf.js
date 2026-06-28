@@ -5505,12 +5505,10 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     sel('Anschlag', [['none', 'Kein'], ['aussen', 'Innen'], ['innen', 'Aussen']], a.anschlagType || 'none', v => { a.anschlagType = v; render(); buildCtrls(); drawAnnos(pv); saveState(); });
     fld('anschlagDepth');
     head('Laibung');
-    const inFree = Array.isArray(a.revealLining) && a.revealLining.length, outFree = Array.isArray(a.revealLiningOut) && a.revealLiningOut.length;   // je Seite: Dropdown ODER eigene Schichten (nie beides → keine Doppelspurigkeit)
-    if (!inFree) { sel('Innen (Preset)', [['putz', 'Putz reingezogen'], ['aussen', 'Aussenschicht rein'], ['gips', 'Gipsplatte + Putz'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealType || 'putz', v => { a.revealType = v; render(); drawAnnos(pv); saveState(); }); fld('innerReveal'); }
-    if (!outFree) { sel('Aussen (Preset)', [['', 'Standard (Schicht)'], ['putz', 'Putz'], ['gips', 'Gipsplatte'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealOuter || '', v => { a.revealOuter = v; render(); drawAnnos(pv); saveState(); }); fld('boardW'); fld('boardVis'); fld('boardProtrude'); fld('outerLap'); }
-    const revealEditor = (prop, label) => {   // freie Laibungsschichten je Seite (prop = revealLining innen / revealLiningOut aussen)
+    { const note = document.createElement('div'); note.className = 'lab-row'; note.innerHTML = '<span style="color:#7a8366">Standard: die Deckschicht wickelt um die Ecke. Für vollen Aufbau die Laibung je Seite anlegen.</span>'; side.appendChild(note); }
+    const revealEditor = (prop, label) => {   // EINZIGES Laibungs-System je Seite (prop = revealLining innen / revealLiningOut aussen)
       const RL = a[prop], matOpts = Object.keys(WALL_MATS).map(k => [k, WALL_MATS[k].label || k]);
-      const prefill = () => (wall && wall.layers && wall.layers.length ? wall.layers : [{ mat: 'putz', t: cmToPts(1.5) }]).map(l => ({ mat: l.mat, t: Math.round(ptsToCm(l.t) * 10) / 10, depth: 1 }));
+      const prefill = () => { const ls = (wall && wall.layers && wall.layers.length) ? wall.layers : null, pick = ls ? (prop === 'revealLiningOut' ? ls[ls.length - 1] : ls[0]) : { mat: 'putz', t: cmToPts(1.5) }; return [{ mat: pick.mat, t: Math.round(ptsToCm(pick.t || cmToPts(1.5)) * 10) / 10, depth: 1 }]; };   // startet mit der aktuellen Deckschicht (kein neues System)
       if (!Array.isArray(RL) || !RL.length) {
         const b = document.createElement('button'); b.className = 'btn'; b.textContent = '⊞ ' + label; b.style.cssText = 'width:100%;margin:5px 0 2px'; b.title = 'Eigene Laibungsschichten (Material/Dicke/Tiefe/Überstand) – Start = Wandschichten, danach frei';
         b.onclick = () => { a[prop] = prefill(); render(); buildCtrls(); drawAnnos(pv); saveState(); }; side.appendChild(b); return;

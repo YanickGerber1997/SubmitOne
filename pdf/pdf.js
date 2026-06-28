@@ -5620,7 +5620,7 @@ async function makeTestScene() {   // schnelle Test-Szene: mehrschichtige Wand +
   toast('Test-Wand (35 cm, mehrschichtig) + Fenster (120 cm) erstellt → Fenster ist gewählt, jetzt „⊕ Detail" öffnen.');
 }
 async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fenster + Tür) + 2 Schnitte + Ansicht vorne/hinten, 1:20, beschriftet
-  try { await newBlankDoc({ w: 2694, h: 1191 }); } catch (_) { }   // A2 breit (A2 quer + 60% breiter)
+  try { await newBlankDoc({ w: 1684, h: 1191 }); } catch (_) { }   // A2 quer (Inhalt füllt das Blatt)
   if (!pdfDoc) { toast('Beispiel konnte nicht erstellt werden.'); return; }
   docScale = { perPt: 20 * PT2MM / 1000, label: '1:20', n: 20 };
   const n = curPage(), pv = pageViews.find(p => p.num === n); if (!pv) return;
@@ -5640,13 +5640,15 @@ async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fe
   mkSection(drX, wy - 70, drX, wy + 70, 'B', 510, 970);     // Schnitt durch Tür
   mkSection(wx1, wy - 110, wx2, wy - 110, 'V', 980, 600, false);   // Ansicht vorne: Blickrichtungs-Linie auf der Aussenseite → sieht die Wand, unspiegelt
   mkSection(wx1, wy + 110, wx2, wy + 110, 'H', 980, 1040, true);   // Ansicht hinten: andere Seite, gespiegelt – gestapelt, weiter rechts (eigene Labels weg, Schnitt V-V/H-H reicht)
+  for (const part of buildPlanParts(1684, 1191, { kind: 'rahmen' })) arr.push(Object.assign(part, { id: nextId++, layer: activeLayerId }));
+  for (const part of buildPlanParts(1684, 1191, { pos: 'br', fields: { projekt: 'Beispielprojekt', gezeichnet: 'Submit PDF' } })) arr.push(Object.assign(part, { id: nextId++, layer: activeLayerId }));   // vollwertiger Plankopf unten rechts
   drawAnnos(pv);
   try { await buildTestSheet(); } catch (e) { console.error(e); }   // Seite 2: Teststand 3 Aufbauten + EG/Decke/OG
   saveState();
   toast('Beispielprojekt: Seite 1 = Grundriss/Schnitte/Ansicht. Seite 2 = Teststand (3 Wandaufbauten, EG+Decke+OG) zum Testen der Wand-Decken-Verschneidung + Performance.');
 }
 async function buildTestSheet() {   // Seite 2: 3 Wandaufbauten, je EG-Wand + Decke (OK auf Geschosshöhe) + OG-Wand, Schnitt quer → Wand-Decken-Verschneidung
-  await insertBlankPage(1, { w: 2384, h: 2694 });   // A1 hoch+ (A1 quer + 60% höher) – viel Platz für die hohen EG+OG-Schnitte
+  await insertBlankPage(1, { w: 3370, h: 2384 });   // A1 quer – breit genug für 3 Aufbauten nebeneinander, hoch genug für EG+OG-Schnitte
   const pv2 = pageViews.find(p => p.num === 2); if (!pv2) return; const a2 = getAnnos(2);
   const gh = 2.0;   // Geschosshöhe 2.0 m
   const slabBeton = [['belag', 1.5], ['estrich', 6], ['trittschall', 2], ['eps', 2], ['beton', 25], ['putz', 1.5]];   // Stahlbeton gedämmt
@@ -5658,7 +5660,9 @@ async function buildTestSheet() {   // Seite 2: 3 Wandaufbauten, je EG-Wand + De
     { name: 'Holzbau: Ständer + Schalung', b: [['putz', 0.5], ['gips', 1.25], ['konter', 4], ['osb', 2], ['staender', 16], ['mdf', 6], ['luft', 4], ['schalung', 2.2]], s: slabHolz },
     { name: 'Zweischalenmauerwerk (verputzt)', b: [['putz', 1.5], ['mauerwerk', 17.5], ['glaswolle', 20], ['luft', 4], ['klinker', 12.5], ['putz', 1.5]], s: slabBeton }
   ];
-  const wlen = cmToPts(200), planY = 260, colW = 740, secOy = 2510;
+  const wlen = cmToPts(200), planY = 300, colW = 1040, secOy = 2120;
+  for (const part of buildPlanParts(3370, 2384, { kind: 'rahmen' })) a2.push(Object.assign(part, { id: nextId++, layer: activeLayerId }));
+  for (const part of buildPlanParts(3370, 2384, { pos: 'br', fields: { projekt: 'Beispielprojekt – Teststand', gezeichnet: 'Submit PDF' } })) a2.push(Object.assign(part, { id: nextId++, layer: activeLayerId }));   // vollwertiger Plankopf unten rechts
   setups.forEach((su, i) => {
     const X0 = 90 + i * colW, secX = X0 + wlen / 2;
     txt2(X0, planY - 40, (i + 1) + ') ' + su.name, 13, cmToPts(380));

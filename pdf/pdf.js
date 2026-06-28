@@ -3092,9 +3092,10 @@ function sectionPrimitives(a, arr) {
       } else { const m = { fill: (w.fill && w.fill !== 'none') ? w.fill : '#f0efea', color: w.color || col }; out.push({ t: 'rect', x: xa, y: Yh(Hw), w: xw, h: Yh(0) - Yh(Hw), fill: m.fill, stroke: m.color, sw: 0.6 }); }
     }
     for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id || cutOps.has(o.id)) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = fp((ocx - p1[0]) * cux + (ocy - p1[1]) * cuy); if (od < -10 || od > cl + 10) continue;
-      const eSide = (wOff * vdir >= 0 ? 'a' : 'i'), ring = openingRevealRing(o, eSide, w), hwO = o.w / 2;   // GLEICHE Laibungs-Lappung wie im Detail-Editor (ein System)
-      if (ring.mat) { const mt = LINING_MAT[ring.mat] || WALL_MATS[ring.mat] || {}, headF = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), sillF = (o.kind === 'window' ? (o.sill || 0) : 0), xa = X(od - hwO * along), xb = X(od + hwO * along); out.push({ t: 'rect', x: Math.min(xa, xb), y: Yh(headF), w: Math.abs(xb - xa), h: Yh(sillF) - Yh(headF), fill: mt.fill || '#eee', stroke: (mt.stroke || mt.color) || col, sw: 0.6 }); }   // Laibung-Lappung
-      try { openingElevDraw(out, Object.assign({}, o, { w: Math.max(4, o.w - 2 * ring.w) }), s => X(od + s * along), Yh); } catch (_) { }   // kanonische Ansicht (foreshortened mit along), Fenster um die Laibung eingezogen
+      const eSide = (wOff * vdir >= 0 ? 'a' : 'i'), bands = openingRevealBands(o, eSide, w), headF = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), sillF = (o.kind === 'window' ? (o.sill || 0) : 0);   // VOLLER Laibungs-Stack (alle Schichten) je Seite
+      let cum = 0; for (const rg of bands) { const mt = LINING_MAT[rg.mat] || WALL_MATS[rg.mat] || {}, xa = X(od - (o.w / 2 - cum) * along), xb = X(od + (o.w / 2 - cum) * along); out.push({ t: 'rect', x: Math.min(xa, xb), y: Yh(headF), w: Math.abs(xb - xa), h: Yh(sillF) - Yh(headF), fill: mt.fill || '#eee', stroke: (mt.stroke || mt.color) || col, sw: 0.6 }); cum += rg.w; }   // Schichten genestet von der Öffnungskante zum Rahmen
+      const rTot = Math.min(cum, o.w * 0.45);
+      try { openingElevDraw(out, Object.assign({}, o, { w: Math.max(4, o.w - 2 * rTot) }), s => X(od + s * along), Yh); } catch (_) { }   // kanonische Ansicht (foreshortened), Fenster um den Laibungs-Stack eingezogen
       if (winDimsOn && !a.noDims) {   // Ansicht: Breite + Höhe, Rohbau + Licht (rahmenbasiert)
         const insPts = Math.max(0, (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1)), insM = ptsToCm(insPts) / 100;
         const sill0 = o.kind === 'window' ? (o.sill || 0) : 0, head0 = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), rW = o.w * along, xL = X(od - rW / 2) - 12;   // im Schnitt nur HÖHEN (Breiten stehen im Grundriss)
@@ -4638,6 +4639,19 @@ function openingRevealRing(o, side, wall) {   // sichtbare Laibungs-Lappung in d
   if ((side === 'i' && anT === 'innen') || (side === 'a' && anT === 'aussen')) { const core = wlrs ? (wlrs.find(l => ['mauerwerk', 'beton'].includes(l.mat)) || wlrs[Math.floor((wlrs.length - 1) / 2)]) : null; faceMat = core ? core.mat : 'mauerwerk'; ringW = o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5); }
   return { mat: faceMat, w: Math.min(ringW, o.w * 0.45) };
 }
+function openingRevealBands(o, side, wall) {   // VOLLER Laibungs-Stack in der Ansicht je Seite: [{mat,w}] von der Öffnungskante (aussen) zum Rahmen (innen) – per-Kante (revealLining/Out), Prioritäten, Lappung
+  const wlrs = wall && wall.layers && wall.layers.length ? wall.layers : null, lyr0 = wlrs ? wlrs[0] : null, lyrN = wlrs ? wlrs[wlrs.length - 1] : null;
+  const hw = (o.w || 0) / 2, frameW = o.frameW || cmToPts(10), boardVis = cmToPts(o.boardVis != null ? o.boardVis : 1), lapPt = Math.max(cmToPts(0.4), Math.min(hw * 0.45, frameW - boardVis));
+  const anT = o.anschlagType || 'none';
+  if ((side === 'i' && anT === 'innen') || (side === 'a' && anT === 'aussen')) { const core = wlrs ? (wlrs.find(l => ['mauerwerk', 'beton'].includes(l.mat)) || wlrs[Math.floor((wlrs.length - 1) / 2)]) : null; return [{ mat: core ? core.mat : 'mauerwerk', w: Math.min(o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5), hw * 0.45) }]; }   // Anschlag = Mauerwerks-Schulter
+  let lst = side === 'i' ? o.revealLining : o.revealLiningOut;
+  if (!Array.isArray(lst) || !lst.length) { const pick = side === 'i' ? lyr0 : lyrN; lst = pick ? [{ mat: pick.mat, t: ptsToCm(pick.t) }] : null; }
+  if (!Array.isArray(lst) || !lst.length) return [];
+  const ord = lst.slice().sort((a, b) => (a.prio != null ? a.prio : 2) - (b.prio != null ? b.prio : 2));   // niedrigste Prio an der Öffnungskante (aussen), höchste am Rahmen (zuletzt)
+  const bands = []; let acc = 0;
+  ord.forEach((L, i) => { let w = cmToPts(L.t || 0) + cmToPts(L.gap || 0); if (i === ord.length - 1) w = Math.max(w, lapPt - acc); w = Math.min(w, lapPt - acc); if (w > 0.3) { bands.push({ mat: L.mat, w }); acc += w; } });
+  return bands;
+}
 function sliceOpeningV(o, sCut) {   // Vertikalschnitt durch die Öffnung bei Position sCut (pt, zentriert) → Rechtecke {m0,m1 (Dicke ∈[-1,1]), z0,z1, role}
   const res = [];
   for (const p of openingSolids(o)) { const s0 = Math.min(p.prof[0][0], p.prof[2][0]), s1 = Math.max(p.prof[0][0], p.prof[2][0]); if (sCut >= s0 && sCut <= s1) { const z0 = Math.min(p.prof[0][1], p.prof[2][1]), z1 = Math.max(p.prof[0][1], p.prof[2][1]); res.push({ m0: Math.min(p.mLo, p.mHi), m1: Math.max(p.mLo, p.mHi), z0, z1, role: p.role, mat: p.mat }); } }
@@ -5529,7 +5543,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       const a0 = (wall ? along(o2.x, o2.y) : Lw / 2) - o2.w / 2, opx0 = flip ? (Lw - a0 - o2.w) : a0;
       const lapClad = side === 'i' ? (o2.innerReveal != null ? o2.innerReveal : cmToPts(2)) : (o2.outerLap != null ? o2.outerLap : cmToPts(3));
       const sillF = (o2.kind === 'window' ? (o2.sill || 0) : 0), headF = Math.min(Hwall, o2.head || (o2.kind === 'window' ? 2.1 : 2.0));
-      const ring = openingRevealRing(o2, side, wall), rings = ring.mat ? [{ mat: ring.mat, w: ring.w }] : [];   // GLEICHE Laibungs-Lappung wie Plan/PDF (ein System) – Material + Dicke je Seite
+      const rings = openingRevealBands(o2, side, wall);   // VOLLER Laibungs-Stack in der Ansicht (alle Schichten je Seite, von der Öffnungskante zum Rahmen)
       let cum = 0;
       for (const rg of rings) { const mt = LINING_MAT[rg.mat] || WALL_MATS[rg.mat] || { fill: '#eee', color: '#1c242c' }, x = opx0 + cum, w = o2.w - 2 * cum, yT = Yh(headF - cum * perPt), yB = Yh(sillF); if (w > 1 && yB - yT > 0.5) out.push({ t: 'rect', x, y: yT, w, h: yB - yT, fill: mt.fill || '#eee', stroke: (mt.stroke || mt.color) || '#1c242c', sw: 0.7 }); cum += rg.w; }   // Laibung wickelt Sturz + Seiten; unten = Fensterbank (kein Doppel-Sims)
       const rPts = Math.min(cum, o2.w * 0.45);

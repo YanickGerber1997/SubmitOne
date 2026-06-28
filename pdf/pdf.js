@@ -2459,7 +2459,10 @@ function updatePlanBar() {   // Planungs-Einstellungen: Standard fürs nächste 
     const winLike = kind === 'window' || kind === 'door';
     $('#pbSillWrap').style.display = kind === 'window' ? '' : 'none';
     $('#pbDepthWrap').style.display = winLike ? '' : 'none';
-    if (document.activeElement !== $('#pbDepth')) $('#pbDepth').value = Math.round((sO && sO.depth != null ? sO.depth : lastOpenDepth) * 100);
+    const thCm = ptsToCm((sO && sO.thick) || wallThickPts());   // Flügel-/Rahmenposition in cm (Abstand von der Innenseite)
+    if (document.activeElement !== $('#pbDepth')) $('#pbDepth').value = (Math.round((sO && sO.depth != null ? sO.depth : lastOpenDepth) * thCm * 10) / 10);
+    { const w2 = $('#pbBoardVisWrap'); if (w2) w2.style.display = winLike ? '' : 'none'; if (document.activeElement !== $('#pbBoardVis')) $('#pbBoardVis').value = (sO && sO.boardVis != null ? sO.boardVis : 1); }   // Abstand Laibung↔Rahmen (sichtbarer Rahmen)
+    { const isWin = kind === 'window'; $('#pbBank').style.display = isWin ? '' : 'none'; $('#pbBank').classList.toggle('on', !!(sO && sO.bank !== false)); $('#pbSims').style.display = isWin ? '' : 'none'; $('#pbSims').classList.toggle('on', !!(sO && sO.sims)); const ow = $('#pbBankOverWrap'); if (ow) ow.style.display = (isWin && (sO && (sO.bank !== false || sO.sims))) ? '' : 'none'; if (document.activeElement !== $('#pbBankOver')) $('#pbBankOver').value = (sO && sO.bankOver != null ? sO.bankOver : 4); }   // Fensterbank (aussen) / Sims (innen) + Überstand zur Fassade
     $('#pbNiche').style.display = 'none'; $('#pbNiche').classList.toggle('on', !!(sO && sO.niche));   // Konsolidiert: Storenkasten nur im „⊕ Detail"
     const tOpts = kind === 'door' ? '<option value="fest">Festverglast</option><option value="f1">1 Flügel</option><option value="f2">2 Flügel</option><option value="f1f">1 Flügel + Fixteil</option>' : '<option value="fest">Festverglasung</option><option value="f1">1 Flügel</option><option value="f2">2 Flügel (direkt)</option><option value="f2s">2 Flügel + Setzholz</option>';
     if ($('#pbWinType').dataset.kind !== kind) { $('#pbWinType').innerHTML = tOpts; $('#pbWinType').dataset.kind = kind; }
@@ -4602,7 +4605,8 @@ function openingSolids(o) {   // Stufe 3: Fenster/Tür als Profil-Teile in der A
   const innerZ0 = sill + (door ? 0 : fwBm), innerZ1 = head - fwBm;
   const panes = two ? [[-hw + fwB, -fw / 2], [fw / 2, hw - fwB]] : [[-hw + fwB, hw - fwB]];
   for (const [a0, b0] of panes) { rect(a0, b0, innerZ0, innerZ1, 'sash', 'holz', smA, smB); rect(a0 + fw, b0 - fw, innerZ0 + sashVm, innerZ1 - sashVm, door ? 'leaf' : 'glass', door ? 'holz' : null, door ? smA : gA, door ? smB : gB); }   // Flügel + Glas/Türblatt mit Tiefe
-  if (!door && o.bank !== false) { const over = cmToPts(o.bankOver != null ? o.bankOver : 4), bt = m(cmToPts(2.5)); rect(-hw - over, hw + over, sill - bt, sill, 'bank', 'bank', md, 1.2); }   // Fensterbank: am Sims, projiziert über die Aussenkante
+  if (!door && o.bank !== false) { const overD = cmToPts(o.bankOver != null ? o.bankOver : 4), bt = m(cmToPts(2.5)), sideO = cmToPts(4), mOut = 1 + overD / ht; rect(-hw - sideO, hw + sideO, sill - bt, sill, 'bank', 'bank', md, mOut); }   // Fensterbank aussen: projiziert um bankOver (cm) über die Fassade
+  if (!door && o.sims) { const overD = cmToPts(o.bankOver != null ? o.bankOver : 4), bt = m(cmToPts(2.5)), sideO = cmToPts(4), mIn = -1 - overD / ht; rect(-hw - sideO, hw + sideO, sill - bt, sill, 'bank', 'bank', mIn, md); }   // Fenstersims innen (gerade): projiziert um bankOver über die Innenfläche
   if (door) rect(-hw + fwB, hw - fwB, sill, sill + m(cmToPts(2.5)), 'frame', 'holz', fmA, fmB);   // Türschwelle / Bodenschiene (untere Zarge)
   return parts;
 }
@@ -6306,7 +6310,11 @@ function wire() {
   $('#pbWallH').onchange = () => { const v = parseFloat(($('#pbWallH').value || '').replace(',', '.')); if (!(v > 0)) return; wallHeightM = v; const a = selWall(); if (a) { pushUndo(); a.h3d = v; saveState(); } };
   $('#pbSill').onchange = () => { const v = parseFloat(($('#pbSill').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a) { pushUndo(); const ins = (inputLicht && a.kind === 'window') ? ptsToCm(openInsPts(a)) / 100 : 0; a.sill = Math.max(0, v - ins); pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbHead').onchange = () => { const v = parseFloat(($('#pbHead').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selOpen(); if (a) { pushUndo(); const ins = inputLicht ? ptsToCm(openInsPts(a)) / 100 : 0; a.head = v + ins; pageViews.forEach(drawAnnos); saveState(); } };
-  $('#pbDepth').onchange = () => { let v = parseFloat(($('#pbDepth').value || '').replace(',', '.')); if (!(v >= 0)) return; v = Math.max(0, Math.min(100, v)) / 100; lastOpenDepth = v; const a = selOpen(); if (a) { pushUndo(); a.depth = v; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbDepth').onchange = () => { let v = parseFloat(($('#pbDepth').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); const thCm = ptsToCm((a && a.thick) || wallThickPts()) || 1; let f = Math.max(0, Math.min(1, v / thCm)); lastOpenDepth = f; if (a) { pushUndo(); a.depth = f; pageViews.forEach(drawAnnos); saveState(); } };
+  $('#pbBoardVis').onchange = () => { const v = parseFloat(($('#pbBoardVis').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a) { pushUndo(); a.boardVis = v; pageViews.forEach(drawAnnos); saveState(); } };   // Abstand Laibung↔Rahmen (sichtbarer Rahmen)
+  { const b = $('#pbBank'); if (b) b.onclick = () => { const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.bank = (a.bank === false); pageViews.forEach(drawAnnos); updatePlanBar(); saveState(); } }; }
+  { const b = $('#pbSims'); if (b) b.onclick = () => { const a = selOpen(); if (a && a.kind === 'window') { pushUndo(); a.sims = !a.sims; pageViews.forEach(drawAnnos); updatePlanBar(); saveState(); } }; }
+  $('#pbBankOver').onchange = () => { const v = parseFloat(($('#pbBankOver').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a) { pushUndo(); a.bankOver = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbSlabBase').onchange = () => { const v = parseFloat(($('#pbSlabBase').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selSlab(); if (a) { pushUndo(); a.base = v; pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbSlabThick').onchange = () => { const v = parseFloat(($('#pbSlabThick').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selSlab(); if (a) { pushUndo(); a.thick = v / 100; if (a.layers) delete a.layers; pageViews.forEach(drawAnnos); saveState(); } };
   { const sb = $('#pbSlabBuildup'); if (sb) sb.onclick = () => openSlabBuildup(selSlab()); }

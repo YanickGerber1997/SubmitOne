@@ -4502,6 +4502,41 @@ function sliceMesh3d(a, hWorld) {   // schneidet das echte 3D-Mesh an der horizo
   }
   return segs;
 }
+/* ===== Kanonische Bauteil-Geometrie (Stufe 1) – EINE Quelle für Plan/Schnitt/Ansicht/3D =====
+   Solid = { poly:[[x,y]…] (Grundriss-Basispolygon, Welt-pt), z0,z1 (Höhe m), mat, role, fill?, color? }.
+   slicePlane(): horizontal → Grundriss-Schnitt (Polygone); vertikal → Vertikalschnitt (Strecke d0..d1 × z0..z1). */
+function elementSolids(a, arr) {
+  const out = [];
+  if (a.type === 'wall' && a.layers && a.layers.length) {
+    const H = a.h3d || wallHeightM, bands = wallLayerBands(a, arr).bands;
+    bands.forEach((b, i) => {
+      const L = a.layers[i] || {}, z0 = 0 - (L.bot || 0), zTop = H + (L.top || 0);
+      if (L.lowMat && L.lowH > 0) { out.push({ poly: b.poly, z0, z1: L.lowH, mat: L.lowMat, role: 'wall-layer' }); out.push({ poly: b.poly, z0: L.lowH, z1: zTop, mat: b.mat, role: 'wall-layer' }); }   // Sockelzone unten + Hauptmaterial darüber
+      else out.push({ poly: b.poly, z0, z1: zTop, mat: b.mat, role: 'wall-layer' });
+    });
+  } else if (a.type === 'wall') {
+    out.push({ poly: wallPoly(a, arr), z0: 0, z1: a.h3d || wallHeightM, mat: null, role: 'wall', fill: a.fill, color: a.color });
+  } else if (a.type === 'slab' && a.pts && a.pts.length >= 3) {
+    const base = a.base || 0, bands = slabLayerBands(a);
+    if (bands) for (const b of bands) out.push({ poly: a.pts, z0: base + b.y0, z1: base + b.y1, mat: b.mat, role: 'slab-layer', inset: b.inset });
+    else out.push({ poly: a.pts, z0: base, z1: base + (a.thick || 0.2), mat: null, role: 'slab', fill: '#dadde2', color: '#8a8f96' });
+  }
+  return out;
+}
+function slicePlane(solids, plane) {   // plane: {kind:'h', z} (Grundriss) | {kind:'v', p1,p2} (Vertikalschnitt entlang Linie p1→p2)
+  const res = [];
+  if (plane.kind === 'h') { const z = plane.z; for (const s of solids) if (s.z0 <= z && z < s.z1) res.push({ poly: s.poly, mat: s.mat, role: s.role, fill: s.fill, color: s.color, inset: s.inset }); return res; }
+  const p1 = plane.p1, p2 = plane.p2, dx = p2[0] - p1[0], dy = p2[1] - p1[1], L = Math.hypot(dx, dy) || 1, cux = dx / L, cuy = dy / L, nx = -cuy, ny = cux;
+  for (const s of solids) {
+    const poly = s.poly, ds = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a0 = poly[i], b0 = poly[(i + 1) % poly.length], sa = (a0[0] - p1[0]) * nx + (a0[1] - p1[1]) * ny, sb = (b0[0] - p1[0]) * nx + (b0[1] - p1[1]) * ny;
+      if ((sa <= 0 && sb > 0) || (sb <= 0 && sa > 0)) { const t = sa / (sa - sb), ix = a0[0] + (b0[0] - a0[0]) * t, iy = a0[1] + (b0[1] - a0[1]) * t; ds.push((ix - p1[0]) * cux + (iy - p1[1]) * cuy); }
+    }
+    if (ds.length >= 2) { ds.sort((u, v) => u - v); res.push({ d0: ds[0], d1: ds[ds.length - 1], z0: s.z0, z1: s.z1, mat: s.mat, role: s.role, fill: s.fill, color: s.color }); }
+  }
+  return res;
+}
 function ifcMatKey(name) {   // IFC-Materialname → unser Material-Schlüssel (für Schraffur + λ/U-Wert)
   const s = (name || '').toLowerCase();
   if (/luft|cavity|\bair\b|hinterl/.test(s)) return 'luft';
@@ -5034,6 +5069,9 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Holz-Latten (Schalung)', () => { const q = bandBoards({ poly: [[0, 0], [100, 0], [100, 10], [0, 10]] }, 10, 10); return (q.length === 5 && Math.abs(q[0][1][0] - 10) < 0.01 && !!WALL_MATS.schalung.boards && !!WALL_MATS.windpapier.membrane) ? '' : 'n=' + q.length; });
     A('IFC-Höhenschnitt (Mesh-Slice)', () => { const P = [0, 0, 0, 100, 0, 0, 100, 0, 100, 0, 0, 100, 0, 100, 0, 100, 100, 0, 100, 100, 100, 0, 100, 100], I = [0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 3, 2, 6, 3, 6, 7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2]; const enc = encodeMesh3d(P, I); const segs = sliceMesh3d({ type: 'mesh3d', enc, x: 0, y: 0 }, 50); if (segs.length < 4) return 'zu wenig Segmente: ' + segs.length; return segs.every(s => s.every(v => v >= -2 && v <= 102)) ? '' : 'Segment ausserhalb der Bbox'; });
     A('openingSpec (kanonisch)', () => { const sp = openingSpec({ kind: 'window', w: cmToPts(120), sashW: cmToPts(7), sashShift: cmToPts(4), boardVis: 1.5 }); return (Math.abs(ptsToCm(sp.sashVis) - 3) < 0.02 && Math.abs(ptsToCm(sp.frameVis) - 1.5) < 0.02) ? '' : 'sashVis=' + ptsToCm(sp.sashVis) + ' frameVis=' + ptsToCm(sp.frameVis); });
+    A('Solid: Wand-Schichten', () => { const w = { type: 'wall', x1: 0, y1: 0, x2: cmToPts(400), y2: 0, thick: cmToPts(30), h3d: 2.6 }; applyWallBuildup(w, [['putz', 2], ['mauerwerk', 18], ['eps', 10]]); const sol = elementSolids(w, [w]); return (sol.length === 3 && sol.every(s => s.poly.length === 4 && s.z1 > s.z0)) ? '' : 'n=' + sol.length; });
+    A('slicePlane horizontal (Grundriss)', () => { const w = { type: 'wall', x1: 0, y1: 0, x2: cmToPts(400), y2: 0, thick: cmToPts(30), h3d: 2.6 }; applyWallBuildup(w, [['putz', 2], ['mauerwerk', 18], ['eps', 10]]); const cut = slicePlane(elementSolids(w, [w]), { kind: 'h', z: 1.0 }); return (cut.length === 3 && slicePlane(elementSolids(w, [w]), { kind: 'h', z: 9 }).length === 0) ? '' : 'n=' + cut.length; });
+    A('slicePlane vertikal (Schnitt)', () => { const w = { type: 'wall', x1: 0, y1: cmToPts(200), x2: cmToPts(400), y2: cmToPts(200), thick: cmToPts(30), h3d: 2.6 }; applyWallBuildup(w, [['putz', 2], ['mauerwerk', 18], ['eps', 10]]); const cut = slicePlane(elementSolids(w, [w]), { kind: 'v', p1: [cmToPts(200), 0], p2: [cmToPts(200), cmToPts(400)] }); const tot = cut.reduce((s, c) => s + (c.d1 - c.d0), 0); return (cut.length === 3 && cut.every(c => c.d1 > c.d0) && Math.abs(tot - cmToPts(30)) < 1) ? '' : 'n=' + cut.length + ' tot=' + tot; });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

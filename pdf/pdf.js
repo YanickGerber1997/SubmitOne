@@ -3045,7 +3045,7 @@ function sectionPrimitives(a, arr) {
       const headF = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), sillF = (o.kind === 'window' ? (o.sill || 0) : 0), rohW = o.w * along, clM = ptsToCm(lapPts) / 100;
       if (o.kind === 'window' && boardPts > 0.5 && rohW - 2 * lapPts * along > 1) { const bm = WALL_MATS[o.boardMat || 'holz'] || { fill: '#e7cfa8', color: '#7a5126' }; out.push({ t: 'rect', x: X(od - rohW / 2 + lapPts * along), y: Yh(headF - clM), w: rohW - 2 * lapPts * along, h: Yh(sillF + clM) - Yh(headF - clM), fill: bm.fill, stroke: bm.color, sw: 0.6 }); }   // Laibungsbrett (Holz) umlaufend
       const redM = ptsToCm(lapTot) / 100, wEff = Math.max(4, (o.w - 2 * lapTot) * along);
-      openingElev(out, X, Yh, od - wEff / 2, wEff, o, Hw, col, redM, (wOff * vdir >= 0 ? 'a' : 'i'));   // Blickrichtung bestimmt aussen/innen
+      try { openingElevDraw(out, Object.assign({}, o, { w: Math.max(4, o.w - 2 * lapTot) }), s => X(od + s * along), Yh); } catch (_) { }   // kanonische Ansicht (foreshortened mit along), Blickrichtung via Schnitt
       if (winDimsOn && !a.noDims) {   // Ansicht: Breite + Höhe, Rohbau + Licht (rahmenbasiert)
         const insPts = Math.max(0, (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1)), insM = ptsToCm(insPts) / 100;
         const sill0 = o.kind === 'window' ? (o.sill || 0) : 0, head0 = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), rW = o.w * along, xL = X(od - rW / 2) - 12;   // im Schnitt nur HÖHEN (Breiten stehen im Grundriss)
@@ -4578,6 +4578,16 @@ function openingPartStyle(role, o) {   // Füllung/Strich je Bauteil-Rolle (eine
   if (role === 'bank') { const b = o.bankMat; return b === 'holz' ? { fill: '#e7cfa8', stroke: '#7a5126' } : b === 'beton' ? { fill: '#dadde2', stroke: '#8a8f96' } : { fill: '#cfd3d8', stroke: '#565b62' }; }
   const wm = WIN_MAT[o.winMat || 'holz']; return { fill: wm.fill || '#e7cfa8', stroke: wm.stroke || '#7a5126' };
 }
+function openingElevDraw(out, o, sx, zy) {   // KANONISCHE Ansicht: openingSolids-Profil + Öffnungsrichtung. sx(s)=Zeichen-x, zy(z)=Zeichen-y
+  const parts = openingSolids(o), col = '#1c242c';
+  for (const part of parts) { const st = openingPartStyle(part.role, o); out.push({ t: 'poly', pts: part.prof.map(p => [sx(p[0]), zy(p[1])]), fill: st.fill, stroke: st.stroke, sw: 1 }); }
+  const leaves = parts.filter(p => p.role === 'glass' || p.role === 'leaf'), two = leaves.length > 1, hinge = o.winHinge || 'left';   // Öffnungsrichtung (gestrichelt)
+  leaves.forEach((g, pi) => {
+    const ss = g.prof.map(p => p[0]), zz = g.prof.map(p => p[1]), s0 = Math.min(...ss), s1 = Math.max(...ss), z0 = Math.min(...zz), z1 = Math.max(...zz), mz = (z0 + z1) / 2, ms = (s0 + s1) / 2;
+    if (hinge === 'kipp') { out.push({ t: 'line', x1: sx(s0), y1: zy(z1), x2: sx(ms), y2: zy(z0), stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: sx(s1), y1: zy(z1), x2: sx(ms), y2: zy(z0), stroke: col, w: 0.6, dash: '4 3' }); }
+    else { const apexLeft = two ? (pi === 0) : (hinge === 'left'), ax = apexLeft ? s0 : s1, bx = apexLeft ? s1 : s0; out.push({ t: 'line', x1: sx(bx), y1: zy(z0), x2: sx(ax), y2: zy(mz), stroke: col, w: 0.6, dash: '4 3' }); out.push({ t: 'line', x1: sx(bx), y1: zy(z1), x2: sx(ax), y2: zy(mz), stroke: col, w: 0.6, dash: '4 3' }); }
+  });
+}
 function sliceOpeningV(o, sCut) {   // Vertikalschnitt durch die Öffnung bei Position sCut (pt, zentriert) → Rechtecke {m0,m1 (Dicke ∈[-1,1]), z0,z1, role}
   const res = [];
   for (const p of openingSolids(o)) { const s0 = Math.min(p.prof[0][0], p.prof[2][0]), s1 = Math.max(p.prof[0][0], p.prof[2][0]); if (sCut >= s0 && sCut <= s1) { const z0 = Math.min(p.prof[0][1], p.prof[2][1]), z1 = Math.max(p.prof[0][1], p.prof[2][1]); res.push({ m0: Math.min(p.mLo, p.mHi), m1: Math.max(p.mLo, p.mHi), z0, z1, role: p.role, mat: p.mat }); } }
@@ -5452,8 +5462,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       let cum = 0;
       for (const rg of rings) { const mt = LINING_MAT[rg.mat] || WALL_MATS[rg.mat] || { fill: '#eee', color: '#1c242c' }, x = opx0 + cum, w = o2.w - 2 * cum, yT = Yh(headF - cum * perPt), yB = Yh(sillF); if (w > 1 && yB - yT > 0.5) out.push({ t: 'rect', x, y: yT, w, h: yB - yT, fill: mt.fill || '#eee', stroke: (mt.stroke || mt.color) || '#1c242c', sw: 0.7 }); cum += rg.w; }   // Laibung wickelt Sturz + Seiten; unten = Fensterbank (kein Doppel-Sims)
       const rPts = Math.min(cum, o2.w * 0.45);
-      if (USE_SOLID) { const ow = Math.max(4, o2.w - 2 * rPts), cxs = opx0 + o2.w / 2; for (const part of openingSolids(Object.assign({}, oo, { w: ow }))) { const st = openingPartStyle(part.role, o2); out.push({ t: 'poly', pts: part.prof.map(p => [cxs + p[0], Yh(p[1])]), fill: st.fill, stroke: st.stroke, sw: 1 }); } }   // STUFE 3b/3e: Ansicht aus kanonischem openingSolids (A/B)
-      else try { openingElev(out, d => d, Yh, opx0 + rPts, o2.w - 2 * rPts, oo, Hwall, '#1c242c', rPts * perPt, side); } catch (_) { }
+      { const ow = Math.max(4, o2.w - 2 * rPts), cxs = opx0 + o2.w / 2; try { openingElevDraw(out, Object.assign({}, oo, { w: ow }), s => cxs + s, Yh); } catch (_) { } }   // Ansicht IMMER kanonisch (openingSolids + Öffnungsrichtung)
       if (side === 'i' && o2.kind === 'window') { const pjI = cmToPts(3), th = cmToPts(2.5); out.push({ t: 'rect', x: opx0 - pjI, y: Yh(sillF), w: o2.w + 2 * pjI, h: th, fill: '#e7cfa8', stroke: '#7a5126', sw: 0.8 }); }   // innen: Holz-Fensterbrett
       if (o2.id === a.id) { out.push({ t: 'rect', x: opx0 - 4, y: Yh(headF) - 4, w: o2.w + 8, h: (Yh(sillF) - Yh(headF)) + 8, fill: 'none', stroke: '#2aa869', sw: 2.4 }); curD = { opx0, w: o2.w, headF, sillF, rPts }; }   // aktuelles Fenster markiert
     }

@@ -2828,7 +2828,7 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   const total = wall.layers.reduce((s, l) => s + l.t, 0) || 1; let cum = 0;
   const pos = wall.layers.map(l => { const f0 = cum / total, f1 = (cum + l.t) / total; cum += l.t; return { l, mLo: -1 + 2 * f0, mHi: -1 + 2 * f1 }; });   // Schicht-Positionen über die Wanddicke
   const outerPos = pos.filter((p, i) => i > coreIdx);   // Schichten ausserhalb Tragkern
-  if (outerPos.length && !userLinOut) {   // jede Aussenschicht läuft ununterbrochen aus der Wand bis ans Laibungsbrett (entfällt bei eigener Aussen-Laibung)
+  if (outerPos.length && !userLinOut && !rtOut) {   // Default-Aussenlaibung (Wandschichten bis Brett) NUR bei „Standard" – entfällt bei gewählter Aussen-Laibung (rtOut) oder eigener Liste
     const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), visS = Math.min(fwSr * 0.6, cmToPts(a.boardVis != null ? a.boardVis : 1) / hw), schWs = Math.min(0.3, cmToPts(a.boardW != null ? a.boardW : 2.5) / hw), boardM1 = 1 + cmToPts(a.boardProtrude || 0) / ht;   // boardM1 = Brett-Aussenkante: über die Aussenschicht hinaus (+) oder zurück (−)
     const boardMat = WALL_MATS[a.boardMat || 'holz'] || { fill: '#e7cfa8', color: '#7a5126' };
     for (const sgn of [-1, 1]) {
@@ -5504,12 +5504,9 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     sel('Anschlag', [['none', 'Kein'], ['aussen', 'Innen'], ['innen', 'Aussen']], a.anschlagType || 'none', v => { a.anschlagType = v; render(); buildCtrls(); drawAnnos(pv); saveState(); });
     fld('anschlagDepth');
     head('Laibung');
-    const rlActive = Array.isArray(a.revealLining) && a.revealLining.length;
-    if (!rlActive) {   // Standard-Laibung (Dropdowns) – ausgeblendet, sobald eigene Laibungsschichten aktiv sind (= ein System)
-      sel('Innen', [['putz', 'Putz reingezogen'], ['aussen', 'Aussenschicht rein'], ['gips', 'Gipsplatte + Putz'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealType || 'putz', v => { a.revealType = v; render(); drawAnnos(pv); saveState(); });
-      sel('Aussen', [['', 'Standard (Schicht)'], ['putz', 'Putz'], ['gips', 'Gipsplatte'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealOuter || '', v => { a.revealOuter = v; render(); drawAnnos(pv); saveState(); });
-      fld('boardW'); fld('boardVis'); fld('boardProtrude'); fld('outerLap'); fld('innerReveal');
-    } else { const note = document.createElement('div'); note.className = 'lab-row'; note.innerHTML = '<span style="color:#46503f">Laibung wird durch die eigenen Schichten unten bestimmt (ein System).</span>'; side.appendChild(note); }
+    const inFree = Array.isArray(a.revealLining) && a.revealLining.length, outFree = Array.isArray(a.revealLiningOut) && a.revealLiningOut.length;   // je Seite: Dropdown ODER eigene Schichten (nie beides → keine Doppelspurigkeit)
+    if (!inFree) { sel('Innen (Preset)', [['putz', 'Putz reingezogen'], ['aussen', 'Aussenschicht rein'], ['gips', 'Gipsplatte + Putz'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealType || 'putz', v => { a.revealType = v; render(); drawAnnos(pv); saveState(); }); fld('innerReveal'); }
+    if (!outFree) { sel('Aussen (Preset)', [['', 'Standard (Schicht)'], ['putz', 'Putz'], ['gips', 'Gipsplatte'], ['holz', 'Holzbrett'], ['stahl', 'Stahlzarge'], ['alu', 'Aluzarge']], a.revealOuter || '', v => { a.revealOuter = v; render(); drawAnnos(pv); saveState(); }); fld('boardW'); fld('boardVis'); fld('boardProtrude'); fld('outerLap'); }
     const revealEditor = (prop, label) => {   // freie Laibungsschichten je Seite (prop = revealLining innen / revealLiningOut aussen)
       const RL = a[prop], matOpts = Object.keys(WALL_MATS).map(k => [k, WALL_MATS[k].label || k]);
       const prefill = () => (wall && wall.layers && wall.layers.length ? wall.layers : [{ mat: 'putz', t: cmToPts(1.5) }]).map(l => ({ mat: l.mat, t: Math.round(ptsToCm(l.t) * 10) / 10, depth: 1 }));

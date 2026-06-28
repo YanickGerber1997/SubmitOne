@@ -2722,6 +2722,11 @@ function revInsetPts(lst) { if (!Array.isArray(lst) || !lst.length) return 0; le
 function openLichtInset(o) {   // seitlicher Licht-Einzug pro Seite (pt): STANDARD = am Rahmen (frameW − 1cm sichtbar), und reagiert wenn die Laibung tiefer einragt
   return Math.max(openInsPts(o), revInsetPts(o && o.revealLining), revInsetPts(o && o.revealLiningOut));
 }
+function openingEdgeLayers(o, edge, side) {   // per-Kante-Laibung (edge L/R/T/B × side i/o); null → Fallback auf globale revealLining/Out
+  const r = o && o.reveals && o.reveals[edge]; if (!r) return null;
+  const lst = side === 'i' ? r.in : r.out; if (!Array.isArray(lst) || !lst.length) return null;
+  return lst.map(L => [L.mat, L.t, L.gap || 0]);
+}
 function nearestWall(pv, x, y) {
   let best = null, bd = Infinity;
   for (const o of getAnnos(pv.num)) { if (o.type !== 'wall') continue; const dx = o.x2 - o.x1, dy = o.y2 - o.y1, L2 = dx * dx + dy * dy || 1; let t = ((x - o.x1) * dx + (y - o.y1) * dy) / L2; t = Math.max(0, Math.min(1, t)); const px = o.x1 + dx * t, py = o.y1 + dy * t, d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = { wall: o, cx: px, cy: py, ang: Math.atan2(dy, dx), thick: o.thick || wallThickPts(), dist: d }; } }
@@ -2832,10 +2837,11 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   // NEUES Modell: die Laibung lappt seitlich AUF den Rahmen (Standard: frameW − 1cm sichtbar). Schichten stapeln in die Tiefe (m), die Deckschicht lappt voll, dahinterliegende Schichten treten um deren Dicke zurück (z. B. Putz voll, Dämmung dahinter).
   const boardVisCm = a.boardVis != null ? a.boardVis : 1;   // wie viel cm vom Rahmen sichtbar bleiben (Standard 1 cm)
   const lapPt = Math.max(cmToPts(0.3), Math.min(hw * 0.92, (a.frameW || cmToPts(10)) - cmToPts(boardVisCm)));   // seitliche Lappung auf den Rahmen
-  const drawReveal = (layers, sideOut) => {   // layers = [[mat, tcm, gapCm?], …] Deckschicht (an der Wandfläche) zuerst; stapeln in die Tiefe, die letzte füllt bis zum Rahmen
+  const drawReveal = (layers, sideOut, sgn) => {   // EINE Laibungsseite (sgn = -1 links / +1 rechts): Schichten stapeln in die Tiefe, letzte füllt bis zum Rahmen
     if (!layers || !layers.length) return;
-    const mFace = sideOut ? 1 : -1, mFrame = sideOut ? (fmB + oneCm) : (fmA - oneCm), dir = sideOut ? -1 : 1, depthM = Math.abs(mFrame - mFace);
-    if (depthM < 0.02) return;
+    if (a.noSillReveal && sgn < 0) return;   // Schwelle bei Fensterbank überspringen (nur im Schnitt-sa relevant)
+    const mFace = sideOut ? 1 : -1, mFrame = sideOut ? (fmB + oneCm) : (fmA - oneCm), dir = sideOut ? -1 : 1;
+    if (Math.abs(mFrame - mFace) < 0.02) return;
     let mO = mFace, sFront = 0;
     layers.forEach((L, i) => {
       const mat = L[0], tcm = L[1], gap = L[2] || 0, mt = LINING_MAT[mat] || WALL_MATS[mat] || {};
@@ -2843,15 +2849,18 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
       let mI = (i === layers.length - 1) ? mFrame : (mO + dir * cmToPts(tcm) / ht);   // letzte Schicht füllt bis zum Rahmen → keine Lücke
       mI = sideOut ? Math.max(mFrame, mI) : Math.min(mFrame, mI);
       const lapL = Math.max(cmToPts(0.4), lapPt - sFront), m0 = Math.min(mO, mI), m1 = Math.max(mO, mI), sk = mt.stroke || mt.color || '#1c242c';
-      if (m1 - m0 > 0.005) for (const sgn of [-1, 1]) { if (a.noSillReveal && sgn < 0) continue; const sA = sgn * 1, sB = sgn * (1 - lapL / hw); strips.push({ poly: [corner(sA, m0), corner(sB, m0), corner(sB, m1), corner(sA, m1)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(sA, sB), Math.max(sA, sB), m0, m1, corner, hw, ht, stepS) : null }); }
+      if (m1 - m0 > 0.005) { const sA = sgn * 1, sB = sgn * (1 - lapL / hw); strips.push({ poly: [corner(sA, m0), corner(sB, m0), corner(sB, m1), corner(sA, m1)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(sA, sB), Math.max(sA, sB), m0, m1, corner, hw, ht, stepS) : null }); }
       mO = mI; sFront += cmToPts(tcm);
     });
   };
-  const innerLayers = userLin ? userLin.map(L => [L[0], L[1]]) : (rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]));
-  if (anType !== 'innen') drawReveal(innerLayers, false);
+  const innerLayers = userLin ? a.revealLining.map(L => [L.mat, L.t, L.gap || 0]) : (rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]));
   const rtOut = a.revealOuter || '';
-  const outerLayers = userLinOut ? userLinOut.map(L => [L[0], L[1]]) : (rtOut === 'putz' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (rtOut ? (REVEAL_LINING[rtOut] || [[lN.mat, Math.min(3, ptsToCm(lN.t))]]) : [[lN.mat, ptsToCm(lN.t)]]));
-  if (anType !== 'aussen') drawReveal(outerLayers, true);
+  const outerLayers = userLinOut ? a.revealLiningOut.map(L => [L.mat, L.t, L.gap || 0]) : (rtOut === 'putz' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (rtOut ? (REVEAL_LINING[rtOut] || [[lN.mat, Math.min(3, ptsToCm(lN.t))]]) : [[lN.mat, ptsToCm(lN.t)]]));
+  for (const sgn of [-1, 1]) {   // links (sgn -1, Kante L) und rechts (sgn +1, Kante R) je eigene Laibung; Fallback = globale Liste
+    const edge = sgn < 0 ? 'L' : 'R';
+    if (anType !== 'innen') drawReveal(openingEdgeLayers(a, edge, 'i') || innerLayers, false, sgn);
+    if (anType !== 'aussen') drawReveal(openingEdgeLayers(a, edge, 'o') || outerLayers, true, sgn);
+  }
   if (anType !== 'none') {
     const core = wall.layers[coreIdx] || wall.layers[0], cmat = WALL_MATS[core.mat] || {};
     const fwSr = Math.min(0.45, (a.frameW || cmToPts(10)) / hw), anS = Math.min(0.6, cmToPts(a.anschlagDepth != null ? a.anschlagDepth : 5) / hw);
@@ -2976,7 +2985,7 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip, no
   const corner = (s, m) => [cx + ht2 * m, cy - hw * s];   // s = vertikal (Kopf oben), m = horizontal (Wanddicke)
   const layered = !simpleMode && wall.layers && wall.layers.length >= 2, dep0 = o.depth == null ? 0.5 : o.depth, dep = flip ? 1 - dep0 : dep0;   // Blickrichtung: Innen/Aussen tauschen
   out.push({ t: 'rect', x: cx - ht2, y: Yh(head), w: appW, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });   // Öffnung ausstanzen
-  const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: dep, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: (o.winType === 'fest' || o.winType === 'f1f') ? o.winType : 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: flip ? (o.revealOuter || 'putz') : o.revealType, revealOuter: flip ? o.revealType : o.revealOuter, boardW: o.boardW, boardVis: o.boardVis, boardProtrude: o.boardProtrude, boardMat: o.boardMat, outerLap: o.outerLap, innerReveal: o.innerReveal, revealLining: flip ? o.revealLiningOut : o.revealLining, revealLiningOut: flip ? o.revealLining : o.revealLiningOut, noSillReveal: (o.kind === 'window' && o.bank !== false), anschlagType: flip ? (o.anschlagType === 'innen' ? 'aussen' : o.anschlagType === 'aussen' ? 'innen' : (o.anschlagType || 'none')) : o.anschlagType, anschlagDepth: o.anschlagDepth, wallId: 'secw' };   // bei flip Innen/Aussen (Anschlag + Laibung) mitspiegeln
+  const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: dep, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: (o.winType === 'fest' || o.winType === 'f1f') ? o.winType : 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: flip ? (o.revealOuter || 'putz') : o.revealType, revealOuter: flip ? o.revealType : o.revealOuter, boardW: o.boardW, boardVis: o.boardVis, boardProtrude: o.boardProtrude, boardMat: o.boardMat, outerLap: o.outerLap, innerReveal: o.innerReveal, revealLining: flip ? o.revealLiningOut : o.revealLining, revealLiningOut: flip ? o.revealLining : o.revealLiningOut, reveals: (() => { if (!o.reveals) return undefined; const sw = e => e ? (flip ? { in: e.out, out: e.in } : e) : undefined; return { L: sw(o.reveals.B), R: sw(o.reveals.T) }; })(), noSillReveal: (o.kind === 'window' && o.bank !== false), anschlagType: flip ? (o.anschlagType === 'innen' ? 'aussen' : o.anschlagType === 'aussen' ? 'innen' : (o.anschlagType || 'none')) : o.anschlagType, anschlagDepth: o.anschlagDepth, wallId: 'secw' };   // bei flip Innen/Aussen (Anschlag + Laibung) mitspiegeln
   if (layered) { const sw = { id: 'secw', type: 'wall', layers: flip ? wall.layers.slice().reverse() : wall.layers, x1: cx, y1: cy + hw, x2: cx, y2: cy - hw, thick: appW, hatch: wall.hatch }; for (const st of openingRevealStrips(sa, [sw])) { out.push({ t: 'poly', pts: st.poly, fill: st.fill, stroke: st.seam == null ? st.stroke : 'none', sw: 0.7 }); if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.7 }); if (st.hatch) for (const [u, v] of st.hatch) out.push({ t: 'line', x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, w: 0.6 }); } }
   if (!revealOnly && o.kind === 'window') {
     const P = openingParts(sa, layered), wmM = WIN_MAT[o.winMat || 'holz'];
@@ -5316,6 +5325,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
   let vbG = null, vbS = null, vbAo = null, vbAi = null;   // aktuelle viewBox je Ansicht (zoomen/verschieben wie im echten Grundriss; null = einpassen)
   let secFlip = false, secLine = null, secMullion = false;   // Schnitt: Blickrichtung + frei verschiebbare Schnittlinie + Schnitt durch Mittelstoss (Setzholz)
   let selLayer = null;   // im Bild angeklickte Schicht: { kind:'wall', i } → Inline-Editor
+  let editEdge = 'all';   // welche Laibungs-Kante bearbeitet wird: all | L | R | T | B
   const dimOff = {};   // verschiebbare Masslinien: key -> Offset (Zeichnungseinheiten)
   const DIMD = { secRoh: 74, secLicht: 36, elW: 40, elH: 60, gndRoh: 60, gndLicht: 28 };
   const doff = k => dimOff[k] != null ? dimOff[k] : DIMD[k];
@@ -5532,37 +5542,35 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       fb.onclick = () => { if (wall && wall.layers && wall.layers.length) { pushUndo(); wall.layers.reverse(); a.revealLining = null; a.revealLiningOut = null; openingResolve(a, pv); render(); renderSec(); renderElev(svgAo, 'a', () => vbAo, v => { vbAo = v; }); renderElev(svgAi, 'i', () => vbAi, v => { vbAi = v; }); buildCtrls(); drawAnnos(pv); saveState(); toast('Wandaufbau gespiegelt'); } };
       side.appendChild(fb); }
     { const note = document.createElement('div'); note.className = 'lab-row'; note.innerHTML = '<span style="color:#7a8366">Standard: die Deckschicht wickelt um die Ecke. Für vollen Aufbau die Laibung je Seite anlegen.</span>'; side.appendChild(note); }
-    const revealEditor = (prop, label) => {   // EINZIGES Laibungs-System je Seite (prop = revealLining innen / revealLiningOut aussen)
-      const RL = a[prop], matOpts = Object.keys(WALL_MATS).map(k => [k, WALL_MATS[k].label || k]);
-      const prefill = () => { const ls = (wall && wall.layers && wall.layers.length) ? wall.layers : null, pick = ls ? (prop === 'revealLiningOut' ? ls[ls.length - 1] : ls[0]) : { mat: 'putz', t: cmToPts(1.5) }; return [{ mat: pick.mat, t: Math.round(ptsToCm(pick.t || cmToPts(1.5)) * 10) / 10, depth: 1 }]; };   // startet mit der aktuellen Deckschicht (kein neues System)
+    const redrawAll = () => { render(); renderSec(); renderElev(svgAo, 'a', () => vbAo, v => { vbAo = v; }); renderElev(svgAi, 'i', () => vbAi, v => { vbAi = v; }); };
+    const EDGES = [['all', 'Alle'], ['L', 'Links'], ['R', 'Rechts'], ['T', 'Sturz'], ['B', 'Schwelle']];
+    const revealEditor = (prop, label) => {   // Laibung je Seite (innen=revealLining / aussen=revealLiningOut), pro Kante (editEdge) eigene Liste
+      const sideKey = prop === 'revealLining' ? 'in' : 'out', matOpts = Object.keys(WALL_MATS).map(k => [k, WALL_MATS[k].label || k]);
+      const getRL = () => editEdge === 'all' ? a[prop] : (a.reveals && a.reveals[editEdge] ? a.reveals[editEdge][sideKey] : null);
+      const setRL = v => { if (editEdge === 'all') a[prop] = v; else { a.reveals = a.reveals || {}; a.reveals[editEdge] = a.reveals[editEdge] || {}; a.reveals[editEdge][sideKey] = v; } };
+      const RL = getRL();
+      const prefill = () => { const ls = (wall && wall.layers && wall.layers.length) ? wall.layers : null, pick = ls ? (sideKey === 'out' ? ls[ls.length - 1] : ls[0]) : { mat: 'putz', t: cmToPts(1.5) }; return [{ mat: pick.mat, t: Math.round(ptsToCm(pick.t || cmToPts(1.5)) * 10) / 10 }]; };
       if (!Array.isArray(RL) || !RL.length) {
-        const b = document.createElement('button'); b.className = 'btn'; b.textContent = '⊞ ' + label; b.style.cssText = 'width:100%;margin:5px 0 2px'; b.title = 'Eigene Laibungsschichten (Material/Dicke/Tiefe/Überstand) – Start = Wandschichten, danach frei';
-        b.onclick = () => { a[prop] = prefill(); render(); buildCtrls(); drawAnnos(pv); saveState(); }; side.appendChild(b); return;
+        const b = document.createElement('button'); b.className = 'btn'; b.textContent = '⊞ ' + label + (editEdge === 'all' ? '' : ' (' + EDGES.find(e => e[0] === editEdge)[1] + ')'); b.style.cssText = 'width:100%;margin:5px 0 2px'; b.title = 'Eigene Laibungsschichten – Start = Wandschichten, danach frei';
+        b.onclick = () => { setRL(prefill()); redrawAll(); buildCtrls(); drawAnnos(pv); saveState(); }; side.appendChild(b); return;
       }
-      const hint = document.createElement('div'); hint.className = 'lab-row'; hint.innerHTML = '<span style="color:#46503f"><b style="color:#34502b">' + label + '</b> · Tiefe = wie weit rein · ↥ = Überstand</span>'; side.appendChild(hint);
+      const hint = document.createElement('div'); hint.className = 'lab-row'; hint.innerHTML = '<span style="color:#46503f"><b style="color:#34502b">' + label + '</b> · Deckschicht zuerst · Abstand = Luftspalt davor</span>'; side.appendChild(hint);
       RL.forEach((L, i) => {
         const row = document.createElement('div'); row.className = 'lab-row'; row.style.cssText = 'border-left:3px solid #c9d4bd;padding-left:7px;margin-bottom:2px';
         const l1 = document.createElement('div'); l1.className = 'lab-line';
-        const ms = document.createElement('select'); ms.style.flex = '1'; matOpts.forEach(([k, lab]) => { const o = document.createElement('option'); o.value = k; o.textContent = lab; if (k === L.mat) o.selected = true; ms.appendChild(o); }); ms.onchange = () => { L.mat = ms.value; render(); drawAnnos(pv); saveState(); };
-        const tn = document.createElement('input'); tn.type = 'number'; tn.min = '0.1'; tn.max = '30'; tn.step = '0.1'; tn.value = L.t; tn.style.width = '50px'; tn.title = 'Dicke (cm)'; tn.onchange = () => { const v = parseFloat((tn.value || '').replace(',', '.')); if (v > 0) { L.t = v; render(); drawAnnos(pv); saveState(); } };
-        const del = document.createElement('button'); del.className = 'btn'; del.textContent = '✕'; del.style.cssText = 'padding:0 8px'; del.title = 'Schicht löschen'; del.onclick = () => { RL.splice(i, 1); if (!RL.length) a[prop] = null; render(); buildCtrls(); drawAnnos(pv); saveState(); };
-        l1.appendChild(ms); l1.appendChild(tn); l1.appendChild(del); row.appendChild(l1);
-        const l2 = document.createElement('div'); l2.className = 'lab-line'; l2.style.gap = '3px';
-        const numF = (label, ph, getv, setv) => { const wrap = document.createElement('span'); wrap.style.cssText = 'display:flex;align-items:center;gap:1px'; const lb = document.createElement('span'); lb.textContent = label; lb.style.cssText = 'font-size:10px;color:#7a8366'; const inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.max = '30'; inp.step = '0.5'; inp.value = getv(); inp.style.width = '40px'; inp.title = ph; inp.onchange = () => { const v = parseFloat((inp.value || '').replace(',', '.')); setv(isNaN(v) ? null : v); render(); drawAnnos(pv); saveState(); }; wrap.appendChild(lb); wrap.appendChild(inp); return wrap; };
-        l2.appendChild(numF('↦Rahmen', 'Abstand der Schicht zum Rahmen (cm, in der Tiefe)', () => (L.dF != null ? L.dF : ''), v => L.dF = v));
-        l2.appendChild(numF('↤Wand', 'Abstand zur Wandfläche (cm, in der Tiefe)', () => (L.dS != null ? L.dS : ''), v => L.dS = v));
-        l2.appendChild(numF('↔seitl', 'Seitlicher Versatz entlang der Laibung (cm) – Schicht nach innen/aussen schieben', () => (L.sOff || 0), v => L.sOff = v || 0));
-        l2.appendChild(numF('↥über', 'Überstand über die Wandfläche (cm)', () => (L.protrude || 0), v => L.protrude = v || 0));
-        row.appendChild(l2); side.appendChild(row);
+        const ms = document.createElement('select'); ms.style.flex = '1'; matOpts.forEach(([k, lab]) => { const o = document.createElement('option'); o.value = k; o.textContent = lab; if (k === L.mat) o.selected = true; ms.appendChild(o); }); ms.onchange = () => { L.mat = ms.value; redrawAll(); drawAnnos(pv); saveState(); };
+        const tn = document.createElement('input'); tn.type = 'number'; tn.min = '0.1'; tn.max = '30'; tn.step = '0.1'; tn.value = L.t; tn.style.width = '46px'; tn.title = 'Dicke (cm)'; tn.onchange = () => { const v = parseFloat((tn.value || '').replace(',', '.')); if (v > 0) { L.t = v; redrawAll(); drawAnnos(pv); saveState(); } };
+        const gp = document.createElement('input'); gp.type = 'number'; gp.min = '0'; gp.max = '20'; gp.step = '0.5'; gp.value = (L.gap || 0); gp.style.width = '42px'; gp.title = 'Abstand/Luftspalt vor dieser Schicht (cm)'; gp.onchange = () => { const v = parseFloat((gp.value || '').replace(',', '.')); L.gap = isNaN(v) ? 0 : v; redrawAll(); drawAnnos(pv); saveState(); };
+        const del = document.createElement('button'); del.className = 'btn'; del.textContent = '✕'; del.style.cssText = 'padding:0 8px'; del.title = 'Schicht löschen'; del.onclick = () => { RL.splice(i, 1); if (!RL.length) setRL(null); redrawAll(); buildCtrls(); drawAnnos(pv); saveState(); };
+        l1.appendChild(ms); l1.appendChild(tn); const gl = document.createElement('span'); gl.textContent = '⊥'; gl.style.cssText = 'font-size:10px;color:#7a8366'; l1.appendChild(gl); l1.appendChild(gp); l1.appendChild(del); row.appendChild(l1); side.appendChild(row);
       });
       const bar = document.createElement('div'); bar.className = 'lab-line'; bar.style.gap = '4px';
-      const add = document.createElement('button'); add.className = 'btn'; add.textContent = '+ Schicht'; add.style.flex = '1'; add.onclick = () => { RL.push({ mat: 'putz', t: 1, depth: 1 }); render(); buildCtrls(); drawAnnos(pv); saveState(); };
-      const wb = document.createElement('button'); wb.className = 'btn'; wb.textContent = '⟳ Wand'; wb.style.flex = '1'; wb.title = 'Aus den Wandschichten neu übernehmen'; wb.onclick = () => { a[prop] = prefill(); render(); buildCtrls(); drawAnnos(pv); saveState(); };
+      const add = document.createElement('button'); add.className = 'btn'; add.textContent = '+ Schicht'; add.style.flex = '1'; add.onclick = () => { RL.push({ mat: 'putz', t: 1 }); redrawAll(); buildCtrls(); drawAnnos(pv); saveState(); };
+      const wb = document.createElement('button'); wb.className = 'btn'; wb.textContent = '⟳ Wand'; wb.style.flex = '1'; wb.title = 'Aus den Wandschichten neu übernehmen'; wb.onclick = () => { setRL(prefill()); redrawAll(); buildCtrls(); drawAnnos(pv); saveState(); };
       bar.appendChild(add); bar.appendChild(wb); side.appendChild(bar);
-      const rs = document.createElement('button'); rs.className = 'btn'; rs.textContent = 'Zurücksetzen'; rs.style.cssText = 'width:100%;margin-top:3px'; rs.onclick = () => { a[prop] = null; render(); buildCtrls(); drawAnnos(pv); saveState(); }; side.appendChild(rs);
+      const rs = document.createElement('button'); rs.className = 'btn'; rs.textContent = 'Zurücksetzen'; rs.style.cssText = 'width:100%;margin-top:3px'; rs.onclick = () => { setRL(null); redrawAll(); buildCtrls(); drawAnnos(pv); saveState(); }; side.appendChild(rs);
     };
     { head('Rahmen ↔ Laibung');
-      const redrawAll = () => { render(); renderSec(); renderElev(svgAo, 'a', () => vbAo, v => { vbAo = v; }); renderElev(svgAi, 'i', () => vbAi, v => { vbAi = v; }); };
       const info = document.createElement('div'); info.className = 'lab-row'; info.style.cssText = 'font-size:11px;color:#3a4150;line-height:1.6;margin-bottom:2px';
       const upd = () => { const fw = ptsToCm(a.frameW || cmToPts(10)), bv = a.boardVis != null ? a.boardVis : 1, lap = Math.max(0, fw - bv); info.innerHTML = 'Rahmen <b>' + fw.toFixed(1) + ' cm</b> · davon sichtbar <b>' + bv.toFixed(1) + ' cm</b> · Laibung deckt <b>' + lap.toFixed(1) + ' cm</b>'; };
       upd(); side.appendChild(info);
@@ -5571,6 +5579,12 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       const inp = document.createElement('input'); inp.type = 'number'; inp.min = '0'; inp.max = '30'; inp.step = '0.5'; inp.value = (a.boardVis != null ? a.boardVis : 1); inp.style.width = '54px'; inp.title = 'Wie viel cm vom Rahmen sichtbar bleiben – Rest deckt die Laibung';
       inp.onchange = () => { const v = parseFloat((inp.value || '').replace(',', '.')); a.boardVis = isNaN(v) ? 1 : Math.max(0, v); upd(); redrawAll(); drawAnnos(pv); saveState(); };
       row.appendChild(lb); row.appendChild(inp); side.appendChild(row);
+    }
+    { const pick = document.createElement('div'); pick.className = 'lab-line'; pick.style.cssText = 'flex-wrap:wrap;gap:3px;margin:4px 0 2px';
+      const pl = document.createElement('span'); pl.textContent = 'Kante:'; pl.style.cssText = 'font-size:11px;color:#7a8366;align-self:center'; pick.appendChild(pl);
+      EDGES.forEach(([k, lab]) => { const b = document.createElement('button'); b.className = 'btn' + (editEdge === k ? ' on' : ''); b.textContent = lab; b.style.cssText = 'flex:1;min-width:48px;padding:3px 4px' + (editEdge === k ? ';background:#2aa869;color:#fff' : ''); b.onclick = () => { editEdge = k; buildCtrls(); }; pick.appendChild(b); });
+      side.appendChild(pick);
+      const en = document.createElement('div'); en.className = 'lab-row'; en.innerHTML = '<span style="color:#7a8366;font-size:11px">' + (editEdge === 'all' ? 'Gilt für alle Kanten (Standard). Wähle eine Kante für eigene Schichten.' : 'Nur Kante <b>' + EDGES.find(e => e[0] === editEdge)[1] + '</b>. „Alle" = gemeinsamer Standard.') + '</span>'; side.appendChild(en);
     }
     revealEditor('revealLining', 'Laibung innen');
     revealEditor('revealLiningOut', 'Laibung aussen');

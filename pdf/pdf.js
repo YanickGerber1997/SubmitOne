@@ -2731,9 +2731,6 @@ function wallChainLength() {   // „L" während der Wand-Kette: aktuelles Segme
   wallChainClick(pv, { x: s.x2, y: s.y2 });   // Ecke an exakter Länge setzen, Kette läuft weiter
 }
 function polyArea2(pts) { let s = 0; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; s += a[0] * b[1] - b[0] * a[1]; } return s; }
-function _memo(cache, key, fn) { let v = cache.get(key); if (v !== undefined) return v; v = fn(); if (cache.size > 600) cache.clear(); cache.set(key, v); return v; }   // Bauteil-Geometrie zwischenspeichern (key = Parameter-Signatur)
-function _openingKey(o) { return (o.kind || '') + ',' + (o.w || 0).toFixed(1) + ',' + (o.sill || 0) + ',' + (o.head || 0) + ',' + (o.depth || 0) + ',' + (o.thick || 0).toFixed(1) + ',' + (o.frameW || 0) + ',' + (o.frameD || 0) + ',' + (o.sashW || 0) + ',' + (o.sashD || 0) + ',' + (o.sashShift || 0) + ',' + (o.sashRecess || 0) + ',' + (o.glassT || 0) + ',' + (o.winType || '') + ',' + (o.winHinge || '') + ',' + (o.winMat || '') + ',' + (o.bank !== false ? 1 : 0) + ',' + (o.bankMat || '') + ',' + (o.bankOver || 0) + ',' + (o.sims ? 1 : 0) + ',' + (o.boardVis != null ? o.boardVis : 1); }   // Signatur der Öffnungs-Profilparameter (ohne Position)
-function _orsRevSig(o) { const f = l => Array.isArray(l) ? l.map(x => x.mat + (x.t || 0) + (x.gap || 0) + (x.prio || '')).join('') : ''; let r = f(o.revealLining) + '|' + f(o.revealLiningOut); if (o.reveals) for (const e of ['L', 'R', 'T', 'B']) { const ed = o.reveals[e]; if (ed) r += e + f(ed.in) + f(ed.out) + (ed.slope || 0); } return r; }   // Signatur der Laibungs-Konfiguration
 function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte Fläche)
   const n = pts.length; if (n < 3) return null; const ccw = polyArea2(pts) > 0;
   const lines = [];
@@ -2863,14 +2860,9 @@ function bandHatch(sa, sb, ma, mb, corner, hw, ht, stepS) {   // diagonale Schra
   return out;
 }
 function revealEdgeSegs(poly, seam) { const n = poly.length, out = []; for (let i = 0; i < n; i++) { if (i === seam) continue; out.push([poly[i], poly[(i + 1) % n]]); } return out; }   // Rand-Kanten eines Laibungs-Streifens ausser der Naht-Kante (seam)
-const _orsCache = new Map();
-function openingRevealStrips(a, arr) {   // memoized: Laibungs-Streifen pro Fenster (key = Position + Profil + Laibung + Wand)
+function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → Schalung 1,5 cm (Schraffur) → Rest Dämmung bis Rahmen; innen Putz/Brett
   const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall');
   if (!wall || !wall.layers || wall.layers.length < 2 || (a.kind !== 'window' && a.kind !== 'door')) return [];
-  const key = (a.id || 0) + '@' + (a.x || 0).toFixed(2) + ',' + (a.y || 0).toFixed(2) + ',' + (a.ang || 0).toFixed(4) + '|' + _openingKey(a) + '|' + (a.revealType || '') + ',' + (a.revealOuter || '') + ',' + (a.anschlagType || '') + ',' + (a.anschlagDepth || 0) + ',' + (a.noSillReveal ? 1 : 0) + ',' + _orsRevSig(a) + '|' + wall.x1.toFixed(1) + ',' + wall.y1.toFixed(1) + ',' + wall.x2.toFixed(1) + ',' + wall.y2.toFixed(1) + ',' + (wall.thick || 0).toFixed(1) + ',' + (wall.layers.map(l => l.mat + (l.t || 0) + (l.top || 0) + (l.bot || 0) + (l.lowMat || '') + (l.lowH || 0)).join('')) + ',' + ((wall.hatch && wall.hatch.scale) || lastHatchScale);
-  return _memo(_orsCache, key, () => _openingRevealStrips(a, arr, wall));
-}
-function _openingRevealStrips(a, arr, wall) {
   const x = a.x, y = a.y, ang = a.ang, ht = (a.thick || wallThickPts()) / 2, hw = a.w / 2;
   const ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux, corner = (s, m) => [x + ux * hw * s + nx * ht * m, y + uy * hw * s + ny * ht * m];
   const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
@@ -4626,9 +4618,7 @@ function slicePlane(solids, plane) {   // plane: {kind:'h', z} (Grundriss) | {ki
   }
   return res;
 }
-const _osCache = new Map();
-function openingSolids(o) { return _memo(_osCache, _openingKey(o), () => _openingSolids(o)); }   // memoized (Profil hängt nur von den Öffnungs-Parametern ab, nicht von der Position)
-function _openingSolids(o) {   // Stufe 3: Fenster/Tür als Profil-Teile in der ANSICHTSEBENE (s = entlang Wand [pt, zentriert], z = Höhe [m]).
+function openingSolids(o) {   // Stufe 3: Fenster/Tür als Profil-Teile in der ANSICHTSEBENE (s = entlang Wand [pt, zentriert], z = Höhe [m]).
   // Eine Quelle → Ansicht = Profil direkt; Schnitt = bei s geschnitten; Grundriss = bei z geschnitten. role: frame|mullion|sash|glass|sill.
   const sp = openingSpec(o), hw = sp.w / 2, sill = sp.sill, head = sp.head, parts = [];
   const fw = Math.min(hw * 0.8, sp.frameVis + sp.sashVis), fwB = Math.min(hw * 0.5, sp.frameVis);   // s-Richtung (pt)
@@ -4681,12 +4671,7 @@ function openingRevealRing(o, side, wall) {   // sichtbare Laibungs-Lappung in d
   if ((side === 'i' && anT === 'innen') || (side === 'a' && anT === 'aussen')) { const core = wlrs ? (wlrs.find(l => ['mauerwerk', 'beton'].includes(l.mat)) || wlrs[Math.floor((wlrs.length - 1) / 2)]) : null; faceMat = core ? core.mat : 'mauerwerk'; ringW = o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5); }
   return { mat: faceMat, w: Math.min(ringW, o.w * 0.45) };
 }
-const _orbCache = new Map();
-function openingRevealBands(o, side, wall) {   // memoized: Laibungs-Stack in der Ansicht je Seite (key = Seite + Laibung + Wand-Deckschicht)
-  const wkey = side + '|' + (o.frameW || 0) + ',' + (o.boardVis != null ? o.boardVis : 1) + ',' + (o.w || 0).toFixed(1) + ',' + (o.anschlagType || '') + ',' + (o.anschlagDepth || 0) + ',' + (o.revealType || '') + ',' + (o.revealOuter || '') + '|' + _orsRevSig(o) + '|' + (wall && wall.layers ? wall.layers.map(l => l.mat + (l.t || 0)).join('') : '');
-  return _memo(_orbCache, wkey, () => _openingRevealBands(o, side, wall));
-}
-function _openingRevealBands(o, side, wall) {
+function openingRevealBands(o, side, wall) {   // VOLLER Laibungs-Stack in der Ansicht je Seite: [{mat,w}] von der Öffnungskante (aussen) zum Rahmen (innen) – per-Kante (revealLining/Out), Prioritäten, Lappung
   const wlrs = wall && wall.layers && wall.layers.length ? wall.layers : null, lyr0 = wlrs ? wlrs[0] : null, lyrN = wlrs ? wlrs[wlrs.length - 1] : null;
   const hw = (o.w || 0) / 2, frameW = o.frameW || cmToPts(10), boardVis = cmToPts(o.boardVis != null ? o.boardVis : 1), lapPt = Math.max(cmToPts(0.4), Math.min(hw * 0.45, frameW - boardVis));
   const anT = o.anschlagType || 'none';

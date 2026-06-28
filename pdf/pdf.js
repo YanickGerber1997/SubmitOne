@@ -3087,7 +3087,6 @@ function sectionBandHatch(out, rx, ry, rw, rh, mat, fallbackHatch) {   // Materi
   else if (hatch === 'beton' || hatch === 'cross') { for (let c = -rh; c < rw; c += S) add(x0 + c, y1, x0 + c + rh, y0); for (let c = 0; c < rw + rh; c += S) add(x0 + c, y0, x0 + c - rh, y1); }   // Beton: Kreuz
   else { for (let c = -rh; c < rw; c += S) add(x0 + c, y1, x0 + c + rh, y0); }   // Backstein/Diagonal/Erdreich: 45°
 }
-let winDimsOn = true;   // automatische Fenster-/Tür-Bemaßung im Schnitt/Ansicht
 let openPosOn = false;   // Fenster-/Tür-Positionsnummern (F1/T1) im Plan
 function pDimH(out, y, x1, x2, label, below) { const col = '#1c242c'; out.push({ t: 'line', x1: x1, y1: y, x2: x2, y2: y, stroke: col, w: 0.5 }); for (const x of [x1, x2]) out.push({ t: 'line', x1: x, y1: y - 3, x2: x, y2: y + 3, stroke: col, w: 0.5 }); out.push({ t: 'text', x: (x1 + x2) / 2 - label.length * 2.4, y: y + (below ? 11 : -4), text: label, col, small: true }); }
 function pDimV(out, x, y1, y2, label, lx) { const col = '#1c242c'; out.push({ t: 'line', x1: x, y1: y1, x2: x, y2: y2, stroke: col, w: 0.5 }); for (const y of [y1, y2]) out.push({ t: 'line', x1: x - 3, y1: y, x2: x + 3, y2: y, stroke: col, w: 0.5 }); out.push({ t: 'text', x: x + (lx || 5), y: (y1 + y2) / 2 + 3, text: label, col, small: true }); }
@@ -3167,12 +3166,6 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip, no
   }
   if (!revealOnly) { out.push({ t: 'shandle', x: cx, y: Yh(head), key: 'sh:op:' + o.id + ':head' });   // Sturz-Höhe ziehen
     if (o.kind === 'window') out.push({ t: 'shandle', x: cx, y: Yh(sill), key: 'sh:op:' + o.id + ':sill' }); }   // Brüstungs-Höhe ziehen
-  if (winDimsOn && !noDims && !revealOnly) {   // Schnitt-Bemaßung Höhe: Rohbau + Licht (Licht = Rohbau − 2×(Rahmen − sichtbarer Rahmen))
-    const insM = Math.max(0, ptsToCm(o.frameW || cmToPts(10)) - (o.boardVis != null ? o.boardVis : 1)) / 100;
-    const roughM = head - sill, Ypx = m => m / perPt, xR = cx + ht2 + 14, yT2 = cy - hw, yB2 = cy + hw, inside = !!flip;
-    pDimV(out, xR + (inside ? 0 : 22), yT2, yB2, 'Rohbau ' + fmtLen(roughM / perPt), 6);
-    pDimV(out, xR + (inside ? 22 : 0), yT2 + Ypx(insM), yB2 - Ypx(insM), 'Licht ' + fmtLen(Math.max(0.05, roughM - 2 * insM) / perPt), 6);
-  }
 }
 function sectionPrimitives(a, arr) {
   const out = [], col = '#1c242c';
@@ -3289,7 +3282,7 @@ function sectionBBox(a, arr) { if (!docScale) return { x: a.ox - 6, y: a.oy - 16
 const _revSig = o => { const f = l => Array.isArray(l) ? l.map(x => x.mat + (x.t || 0) + (x.gap || 0) + (x.prio || '') + (x.len != null ? 'L' + x.len : '') + (x.over || 0)).join('') : ''; let r = f(o.revealLining) + '|' + f(o.revealLiningOut); if (o.reveals) for (const e of ['L', 'R', 'T', 'B']) { const ed = o.reveals[e]; if (ed) r += e + f(ed.in) + f(ed.out) + (ed.slope || 0) + (ed.boardVis != null ? 'b' + ed.boardVis : '') + (ed.grow ? 'g' + ed.grow : ''); } return r; };
 function sectionSig(a, arr) {   // billige Inhalts-Signatur: alles was den Schnitt/die Ansicht beeinflusst → nur bei Änderung neu rechnen
   const p = docScale ? docScale.perPt : 0;
-  let s = 'S' + a.cx1.toFixed(1) + ',' + a.cy1.toFixed(1) + ',' + a.cx2.toFixed(1) + ',' + a.cy2.toFixed(1) + ',' + a.ox + ',' + a.oy + ',' + (a.flip ? 1 : 0) + ',' + (a.mullion ? 1 : 0) + ',' + (a.noDims ? 1 : 0) + ',' + p + ',' + (USE_SOLID ? 1 : 0) + ',' + (simpleMode ? 1 : 0) + ',' + (winDimsOn ? 1 : 0) + ',' + wallDimOffCm + ',' + (sel && sel.id === a.id ? 1 : 0) + '|';
+  let s = 'S' + a.cx1.toFixed(1) + ',' + a.cy1.toFixed(1) + ',' + a.cx2.toFixed(1) + ',' + a.cy2.toFixed(1) + ',' + a.ox + ',' + a.oy + ',' + (a.flip ? 1 : 0) + ',' + (a.mullion ? 1 : 0) + ',' + (a.noDims ? 1 : 0) + ',' + p + ',' + (USE_SOLID ? 1 : 0) + ',' + (simpleMode ? 1 : 0) + ',' + wallDimOffCm + ',' + (sel && sel.id === a.id ? 1 : 0) + '|';
   for (const o of arr) {
     if (!layerVisible(o) || !phaseVisible(o)) continue; const t = o.type;
     if (t === 'wall') s += 'W' + o.id + ':' + o.x1.toFixed(1) + ',' + o.y1.toFixed(1) + ',' + o.x2.toFixed(1) + ',' + o.y2.toFixed(1) + ',' + (o.thick || 0).toFixed(1) + ',' + (o.h3d || 0) + ',' + (o.just || '') + ',' + (o.fill || '') + ',' + (o.layers ? o.layers.map(l => l.mat + (l.t || 0).toFixed(1) + '/' + (l.top || 0) + '/' + (l.bot || 0) + '/' + (l.ext1 || 0) + '/' + (l.ext2 || 0) + '/' + (l.lowMat || '') + (l.lowH || 0) + (l.sub ? l.sub.type : '')).join('') : '') + ';';
@@ -6489,7 +6482,6 @@ function wire() {
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#buildPop') && !e.target.closest('#pbBuild')) $('#buildPop').hidden = true; }, true);
   $('#footBW').onclick = () => { document.body.classList.toggle('bw'); $('#footBW').classList.toggle('on', document.body.classList.contains('bw')); };
   $('#footSimple').onclick = () => { simpleMode = !simpleMode; $('#footSimple').classList.toggle('on', simpleMode); pageViews.forEach(drawAnnos); toast(simpleMode ? 'Einfache Darstellung – Wände schwarz, Öffnungen als Symbol' : 'Detaillierte Darstellung (automatisch nach Aufbau)'); };
-  $('#footWinDim').onclick = () => { winDimsOn = !winDimsOn; $('#footWinDim').classList.toggle('on', winDimsOn); pageViews.forEach(drawAnnos); toast(winDimsOn ? 'Fenster-/Tür-Bemaßung an (R Rohbau · La Aussenlicht · Li Innenlicht)' : 'Fenster-/Tür-Bemaßung aus'); };
   $('#footPosNo').onclick = () => { if (!docScale) { toast('Erst Massstab setzen (1:n).'); return; } openPosOn = !openPosOn; $('#footPosNo').classList.toggle('on', openPosOn); pageViews.forEach(drawAnnos); toast(openPosOn ? 'Positionsnummern an (F1/T1 … wie in der Fensterliste)' : 'Positionsnummern aus'); };
   $('#footQty').onclick = openQuantities;
   $('#footSchedule').onclick = openSchedule;

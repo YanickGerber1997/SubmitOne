@@ -1891,6 +1891,8 @@ function onPointerDown(pv, e) {
   const hAttr = e.target.getAttribute && e.target.getAttribute('data-h');
 
   if (tool === 'select') {
+    const revAttr = e.target.getAttribute && e.target.getAttribute('data-rev');   // Klick auf eine Laibungs-Schicht im Grundriss → direkt editieren
+    if (revAttr && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; drawAnnos(pv); openRevealLayerPop(pv, oo, revAttr, e.clientX, e.clientY); return; } }
     if (e.target.getAttribute && e.target.getAttribute('data-group') && groupSel && groupSel.num === pv.num) { startGroupMove(pv, e); return; }   // ganze Gruppe ziehen
     const pn = e.target.getAttribute && e.target.getAttribute('data-pn'), ph = e.target.getAttribute && e.target.getAttribute('data-ph');
     if ((pn !== null || ph !== null) && sel && sel.num === pv.num) { startNodeDrag(pv, e, sel.id, pn, ph, e.target.getAttribute('data-hk')); return; }   // Kurven-Knoten/Anfasser ziehen
@@ -2755,8 +2757,8 @@ function openingRevealTotalPts(o, edge, side) {   // Gesamtdicke der Laibung (pt
 }
 function openingCutPoly(o) {   // Laibungs-bewusster Ausschnitt (H-Form): die Wand lappt an den Laibungstiefen auf den Rahmen – pro Jamb (L/R) und Tiefe (innen/aussen) eigene freie Breite
   const hw = (o.w || 0) / 2, ht = (o.thick || wallThickPts()) / 2, ux = Math.cos(o.ang || 0), uy = Math.sin(o.ang || 0), nx = -uy, ny = ux, x = o.x, y = o.y, e = 1;
-  const frameW = o.frameW || cmToPts(10), boardVis = cmToPts(o.boardVis != null ? o.boardVis : 1), lapPt = Math.max(0, Math.min(hw * 0.92, frameW - boardVis));
-  const free = (edge, side) => Math.max(2, hw - Math.max(0, lapPt - openingRevealTotalPts(o, edge, side)));   // freie Halbbreite = Öffnung − Wand-Lappung
+  const frameW = o.frameW || cmToPts(10), bvG = o.boardVis != null ? o.boardVis : 1;
+  const free = (edge, side) => { const bv = (o.reveals && o.reveals[edge] && o.reveals[edge].boardVis != null) ? o.reveals[edge].boardVis : bvG, lapE = Math.max(0, Math.min(hw * 0.92, frameW - cmToPts(bv))); return Math.max(2, hw - Math.max(0, lapE - openingRevealTotalPts(o, edge, side))); };   // freie Halbbreite je Kante: Öffnung − Wand-Lappung (Lappung = Rahmen − „Rahmen sichtbar" dieser Kante)
   const wInL = free('L', 'i'), wOutL = free('L', 'o'), wInR = free('R', 'i'), wOutR = free('R', 'o');   // links (−s) = Kante L, rechts (+s) = Kante R
   const depth = o.depth == null ? 0.5 : o.depth, md = depth * 2 - 1, fdh = Math.min(0.49, (o.frameD || cmToPts(7)) / (2 * ht)), fmA = (md - fdh) * ht, fmB = (md + fdh) * ht;
   const P = (s, m) => [x + ux * s + nx * m, y + uy * s + ny * m];
@@ -2769,7 +2771,7 @@ function openLichtInset(o) {   // seitlicher Licht-Einzug pro Seite (pt): STANDA
 function openingEdgeLayers(o, edge, side) {   // per-Kante-Laibung (edge L/R/T/B × side i/o); null → Fallback auf globale revealLining/Out
   const r = o && o.reveals && o.reveals[edge]; if (!r) return null;
   const lst = side === 'i' ? r.in : r.out; if (!Array.isArray(lst) || !lst.length) return null;
-  return lst.map(L => [L.mat, L.t, L.gap || 0, L.prio]);
+  return lst.map((L, i) => [L.mat, L.t, L.gap || 0, L.prio, i]);   // [4] = Original-Index (für Klick/Editieren im Grundriss)
 }
 function nearestWall(pv, x, y) {
   let best = null, bd = Infinity;
@@ -2880,28 +2882,28 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   const userLinOut = Array.isArray(a.revealLiningOut) && a.revealLiningOut.length ? a.revealLiningOut.map(L => [L.mat, L.t, (L.depth == null ? 1 : L.depth), (L.protrude || 0), L.dF, L.dS, L.sOff]) : null;   // aussen
   // NEUES Modell: die Laibung lappt seitlich AUF den Rahmen (Standard: frameW − 1cm sichtbar). Schichten stapeln in die Tiefe (m), die Deckschicht lappt voll, dahinterliegende Schichten treten um deren Dicke zurück (z. B. Putz voll, Dämmung dahinter).
   const boardVisCm = a.boardVis != null ? a.boardVis : 1;   // wie viel cm vom Rahmen sichtbar bleiben (Standard 1 cm)
-  const lapPt = Math.max(cmToPts(0.3), Math.min(hw * 0.92, (a.frameW || cmToPts(10)) - cmToPts(boardVisCm)));   // seitliche Lappung auf den Rahmen
-  const drawReveal = (layers, sideOut, sgn, slopeCm) => {   // EINE Laibungsseite: nur die DÜNNE Laibung (echte Dicke) am Rahmen (1cm sichtbar); die Wandschichten lappen davor (gibt openingCutPoly frei). Höchste Priorität direkt am Rahmen, nach aussen gestapelt
+  const drawReveal = (layers, sideOut, sgn, slopeCm, bv, edge) => {   // EINE Laibungsseite: dünne Laibung am Rahmen; bv = „Rahmen sichtbar" dieser Kante; tag jede Schicht (edge/side/li) für Klick im Grundriss
     if (!layers || !layers.length) return;
     if (a.noSillReveal && sgn < 0) return;   // Schwelle bei Fensterbank überspringen (nur im Schnitt-sa relevant)
-    const mA = sideOut ? (fmB + oneCm) : (fmA - oneCm), mB = sideOut ? 1 : -1, m0 = Math.min(mA, mB), m1 = Math.max(mA, mB), offP = cmToPts(slopeCm || 0);   // Tiefe: Rahmenseite … Wandfläche; offP = Schräg-Versatz am Wandflächen-Ende
+    const lapPt = Math.max(cmToPts(0.3), Math.min(hw * 0.92, (a.frameW || cmToPts(10)) - cmToPts(bv != null ? bv : boardVisCm)));   // seitliche Lappung (Rahmen − „Rahmen sichtbar" dieser Kante)
+    const mA = sideOut ? (fmB + oneCm) : (fmA - oneCm), mB = sideOut ? 1 : -1, m0 = Math.min(mA, mB), m1 = Math.max(mA, mB), offP = cmToPts(slopeCm || 0), sd = sideOut ? 'o' : 'i';
     if (m1 - m0 < 0.02) return;
-    const ord = layers.slice().sort((x, y) => (y[3] != null ? y[3] : 2) - (x[3] != null ? x[3] : 2));   // PRIORITÄT: höchste direkt am Rahmen (sichtbare Deckschicht), niedrigere nach aussen Richtung Wand
-    let sIn = lapPt;   // s-Einragung am Rahmen-Ende (= 1cm vom Rahmen); Schichten wachsen von hier nach aussen (Richtung Wand)
+    const ord = layers.slice().sort((x, y) => (y[3] != null ? y[3] : 2) - (x[3] != null ? x[3] : 2));   // PRIORITÄT: höchste direkt am Rahmen, niedrigere nach aussen
+    let sIn = lapPt;
     ord.forEach(L => {
       const mat = L[0], tcm = L[1], gap = L[2] || 0, mt = LINING_MAT[mat] || WALL_MATS[mat] || {};
-      const sOut = sIn - cmToPts(tcm), sk = mt.stroke || mt.color || '#1c242c';   // diese Schicht: s-Einragung von sOut (wandseitig) bis sIn (rahmenseitig)
-      if (sIn - sOut > 0.05) { const aI = sgn * (1 - sIn / hw), aO = sgn * (1 - sOut / hw), bI = sgn * (1 - (sIn - offP) / hw), bO = sgn * (1 - (sOut - offP) / hw), ss = [aI, aO, bI, bO]; strips.push({ poly: [corner(aI, mA), corner(aO, mA), corner(bO, mB), corner(bI, mB)], fill: mt.fill || '#fff', stroke: sk, hatch: mt.hatch ? bandHatch(Math.min(...ss), Math.max(...ss), m0, m1, corner, hw, ht, stepS) : null }); }
-      sIn = sOut - cmToPts(gap);   // nächste Schicht weiter aussen (mit Luft-Abstand)
+      const sOut = sIn - cmToPts(tcm), sk = mt.stroke || mt.color || '#1c242c';
+      if (sIn - sOut > 0.05) { const aI = sgn * (1 - sIn / hw), aO = sgn * (1 - sOut / hw), bI = sgn * (1 - (sIn - offP) / hw), bO = sgn * (1 - (sOut - offP) / hw), ss = [aI, aO, bI, bO]; strips.push({ poly: [corner(aI, mA), corner(aO, mA), corner(bO, mB), corner(bI, mB)], fill: mt.fill || '#fff', stroke: sk, edge, side: sd, li: L[4], hatch: mt.hatch ? bandHatch(Math.min(...ss), Math.max(...ss), m0, m1, corner, hw, ht, stepS) : null }); }
+      sIn = sOut - cmToPts(gap);
     });
   };
   const innerLayers = userLin ? a.revealLining.map(L => [L.mat, L.t, L.gap || 0, L.prio]) : (rt0 === 'aussen' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (REVEAL_LINING[rt0] || [[l0.mat, ptsToCm(l0.t)]]));
   const rtOut = a.revealOuter || '';
   const outerLayers = userLinOut ? a.revealLiningOut.map(L => [L.mat, L.t, L.gap || 0, L.prio]) : (rtOut === 'putz' ? [[lN.mat, Math.min(3, ptsToCm(lN.t))]] : (rtOut ? (REVEAL_LINING[rtOut] || [[lN.mat, Math.min(3, ptsToCm(lN.t))]]) : [[lN.mat, ptsToCm(lN.t)]]));
   for (const sgn of [-1, 1]) {   // links (sgn -1, Kante L) und rechts (sgn +1, Kante R) je eigene Laibung; Fallback = globale Liste
-    const edge = sgn < 0 ? 'L' : 'R', slope = (a.reveals && a.reveals[edge] && a.reveals[edge].slope) || 0;
-    if (anType !== 'innen') drawReveal(openingEdgeLayers(a, edge, 'i') || innerLayers, false, sgn, slope);
-    if (anType !== 'aussen') drawReveal(openingEdgeLayers(a, edge, 'o') || outerLayers, true, sgn, slope);
+    const edge = sgn < 0 ? 'L' : 'R', er = a.reveals && a.reveals[edge], slope = (er && er.slope) || 0, bv = er && er.boardVis != null ? er.boardVis : boardVisCm;
+    if (anType !== 'innen') drawReveal(openingEdgeLayers(a, edge, 'i') || innerLayers, false, sgn, slope, bv, edge);
+    if (anType !== 'aussen') drawReveal(openingEdgeLayers(a, edge, 'o') || outerLayers, true, sgn, slope, bv, edge);
   }
   if (anType !== 'none') {
     const core = wall.layers[coreIdx] || wall.layers[0], cmat = WALL_MATS[core.mat] || {};
@@ -2939,7 +2941,7 @@ function drawOpening(svg, a, arr) {
   const g = svgEl('g', { 'data-id': a.id });
   const coverPoly = (window.polygonClipping && a.x != null && a.wallId) ? openingCutPoly(a) : P.cover;   // nur den freien Teil ausstanzen (Wand-Lappung bleibt sichtbar)
   g.appendChild(svgEl('polygon', { points: coverPoly.map(p => p[0] + ',' + p[1]).join(' '), fill: '#fff', stroke: 'none' }));   // Wand ausstanzen (Laibungs-aware)
-  if (detail) for (const st of openingRevealStrips(a, arr)) { g.appendChild(svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.seam == null ? st.stroke : 'none', 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); if (st.hatch) for (const [u, v] of st.hatch) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' })); }   // Rahmen ausser an der Naht zur Wand
+  if (detail) for (const st of openingRevealStrips(a, arr)) { const pgr = svgEl('polygon', { points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: st.fill, stroke: st.seam == null ? st.stroke : 'none', 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' }); if (st.edge != null && st.li != null) { pgr.setAttribute('data-id', a.id); pgr.setAttribute('data-rev', st.edge + ':' + st.side + ':' + st.li); pgr.style.cursor = 'pointer'; } g.appendChild(pgr); if (st.seam != null) for (const [u, v] of revealEdgeSegs(st.poly, st.seam)) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.7, 'vector-effect': 'non-scaling-stroke' })); if (st.hatch) for (const [u, v] of st.hatch) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: st.stroke, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' })); }   // Laibungs-Schicht anklickbar (data-rev = Kante:Seite:Index)
   for (const f of (P.fills || [])) g.appendChild(svgEl('polygon', { points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: f.fill, stroke: f.stroke, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));   // Rahmen/Flügel/Glas (Fenstermaterial)
   for (const [u, v] of P.lines) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
   for (const [u, v] of (P.bold || [])) g.appendChild(svgEl('line', { x1: u[0], y1: u[1], x2: v[0], y2: v[1], stroke: col, 'stroke-width': 2.6, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
@@ -2947,6 +2949,29 @@ function drawOpening(svg, a, arr) {
   svg.appendChild(g);
   svg.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: 'transparent', 'data-id': a.id }));
   return g;
+}
+function openRevealLayerPop(pv, a, revAttr, cx, cy) {   // Inline-Editor für EINE Laibungsschicht (im Grundriss angeklickt): Material/Dicke + „Rahmen sichtbar" dieser Kante
+  document.querySelectorAll('.rev-pop').forEach(n => n.remove());
+  const parts = (revAttr || '').split(':'), edge = parts[0], sk = parts[1] === 'i' ? 'in' : 'out', li = +parts[2];
+  a.reveals = a.reveals || {}; a.reveals[edge] = a.reveals[edge] || {}; if (!Array.isArray(a.reveals[edge][sk])) a.reveals[edge][sk] = [];
+  const lst = a.reveals[edge][sk], L = lst[li]; if (!L) return;
+  const EDGEN = { L: 'Laibung links', R: 'Laibung rechts', T: 'Sturz', B: 'Schwelle' }, SIDEN = sk === 'in' ? 'innen' : 'aussen', matOpts = Object.keys(WALL_MATS).map(k => [k, WALL_MATS[k].label || k]);
+  const pop = document.createElement('div'); pop.className = 'rev-pop'; pop.style.cssText = 'position:fixed;z-index:99999;background:#fff;border:1px solid #b8c0ad;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.2);padding:10px 11px;font:13px system-ui;min-width:220px';
+  const upd = () => { drawAnnos(pv); saveState(); };
+  const head = document.createElement('div'); head.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:7px;font-weight:600'; head.innerHTML = '<span>' + (EDGEN[edge] || edge) + ' · ' + SIDEN + '</span>'; const xb = document.createElement('button'); xb.textContent = '✕'; xb.style.cssText = 'margin-left:auto;border:none;background:none;cursor:pointer;font-size:15px'; xb.onclick = () => pop.remove(); head.appendChild(xb); pop.appendChild(head);
+  const mk = (lbl, node) => { const r = document.createElement('div'); r.style.cssText = 'display:flex;align-items:center;gap:6px;margin:3px 0'; const s = document.createElement('span'); s.textContent = lbl; s.style.cssText = 'flex:1;color:#5a6152'; r.appendChild(s); r.appendChild(node); pop.appendChild(r); };
+  const ms = document.createElement('select'); matOpts.forEach(([k, lab]) => { const o = document.createElement('option'); o.value = k; o.textContent = lab; if (k === L.mat) o.selected = true; ms.appendChild(o); }); ms.onchange = () => { L.mat = ms.value; upd(); }; mk('Material', ms);
+  const tn = document.createElement('input'); tn.type = 'number'; tn.min = '0.1'; tn.max = '30'; tn.step = '0.1'; tn.value = L.t; tn.style.width = '62px'; tn.onchange = () => { const v = parseFloat((tn.value || '').replace(',', '.')); if (v > 0) { L.t = v; upd(); } }; mk('Dicke (cm)', tn);
+  const bvv = document.createElement('input'); bvv.type = 'number'; bvv.min = '0'; bvv.max = '30'; bvv.step = '0.1'; bvv.value = (a.reveals[edge].boardVis != null ? a.reveals[edge].boardVis : (a.boardVis != null ? a.boardVis : 1)); bvv.style.width = '62px'; bvv.onchange = () => { const v = parseFloat((bvv.value || '').replace(',', '.')); a.reveals[edge].boardVis = isNaN(v) ? 1 : Math.max(0, v); upd(); }; mk('Rahmen sichtbar (cm)', bvv);
+  const bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:6px;margin-top:8px';
+  const add = document.createElement('button'); add.textContent = '+ Schicht'; add.style.cssText = 'flex:1;padding:4px;cursor:pointer'; add.onclick = () => { lst.splice(li + 1, 0, { mat: 'putz', t: 1 }); upd(); pop.remove(); };
+  const del = document.createElement('button'); del.textContent = '✕ Schicht'; del.style.cssText = 'flex:1;padding:4px;cursor:pointer'; del.onclick = () => { lst.splice(li, 1); upd(); pop.remove(); };
+  bar.appendChild(add); bar.appendChild(del); pop.appendChild(bar);
+  document.body.appendChild(pop);
+  pop.style.left = Math.max(8, Math.min((cx || 200) + 8, window.innerWidth - pop.offsetWidth - 12)) + 'px';
+  pop.style.top = Math.max(8, Math.min((cy || 200) + 8, window.innerHeight - pop.offsetHeight - 12)) + 'px';
+  const close = ev => { if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('pointerdown', close, true); } };
+  setTimeout(() => document.addEventListener('pointerdown', close, true), 0);
 }
 /* ---------- Schnitt-Werkzeug: live 2D-Vertikalschnitt aus dem Modell ---------- */
 function segInt(a, b, c, d) {   // Schnitt zweier Strecken → {pt,t1,t2} oder null
@@ -3224,6 +3249,7 @@ function openingResolve(a, pv) {   // Position/Winkel/Dicke aus der zugehörigen
     const cm = t => Math.round(ptsToCm(t) * 10) / 10, L0 = w.layers[0], LN = w.layers[w.layers.length - 1];
     if (!Array.isArray(a.revealLining)) a.revealLining = [{ mat: L0.mat, t: cm(L0.t) }];
     if (!Array.isArray(a.revealLiningOut)) a.revealLiningOut = [{ mat: LN.mat, t: cm(LN.t) }];
+    if (!a.reveals) { const cp = arr2 => (Array.isArray(arr2) ? arr2 : []).map(L => ({ mat: L.mat, t: L.t, gap: L.gap, prio: L.prio })); a.reveals = {}; for (const e of ['L', 'R', 'T', 'B']) a.reveals[e] = { in: cp(a.revealLining), out: cp(a.revealLiningOut), boardVis: (a.boardVis != null ? a.boardVis : 1) }; }   // jede Kante eigenständig + eigenes „Rahmen sichtbar"
   }
 }
 function openingClick(pv, p) {

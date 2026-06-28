@@ -1107,7 +1107,7 @@ function layerHatch(svg, a, band) {   // Schraffur einer einzelnen Schicht, auf 
   const defs = svgEl('defs'); defs.appendChild(cp); svg.appendChild(defs);
   const hg = svgEl('g', { 'clip-path': `url(#${cid})`, 'pointer-events': 'none' }), col = m.color, S = (a.hatch && a.hatch.scale) || lastHatchScale; let lines = [];
   if (m.hatch === 'daemm_eps' || m.hatch === 'daemm_xps') {   // EPS/XPS: Waben (Hexagon)
-    const xs = band.poly.map(p => p[0]), ys = band.poly.map(p => p[1]); lines = honeycombSegs(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), Math.max(3, S * 0.6));
+    const xs = band.poly.map(p => p[0]), ys = band.poly.map(p => p[1]); lines = honeycombSegs(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), Math.max(7, S * 1.5));
   } else if (m.hatch === 'daemm_wolle' || INSUL_TYPES.includes(m.hatch)) {   // übrige Dämmung: Striche exakt 90° zur Wandachse (je Wand für sich), aufs Band geclippt
     const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, T = a.thick || wallThickPts(), o = wallSideOffsets(a), eB = o[1] * T, eA = o[0] * T;
     const eFrom = eB + (eA - eB) * band.f0, eTo = eB + (eA - eB) * band.f1, step = Math.max(4, S * 1.3);
@@ -1116,7 +1116,7 @@ function layerHatch(svg, a, band) {   // Schraffur einer einzelnen Schicht, auf 
     const xs = band.poly.map(p => p[0]), ys = band.poly.map(p => p[1]), fake = { type: 'rect', x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), hatch: { type: m.hatch, scale: S } }, g = hatchGeom(fake);
     lines = g.lines; for (const D of g.dots) hg.appendChild(svgEl('circle', { cx: D[0], cy: D[1], r: D[2] != null ? D[2] : S * 0.16, fill: col }));
   }
-  for (const L of lines) hg.appendChild(svgEl('line', { x1: L[0], y1: L[1], x2: L[2], y2: L[3], stroke: col, 'stroke-width': 0.8, 'vector-effect': 'non-scaling-stroke' }));
+  if (lines.length) { let d = ''; for (const L of lines) d += 'M' + L[0].toFixed(1) + ' ' + L[1].toFixed(1) + 'L' + L[2].toFixed(1) + ' ' + L[3].toFixed(1); hg.appendChild(svgEl('path', { d, stroke: col, 'stroke-width': 0.8, fill: 'none', 'vector-effect': 'non-scaling-stroke' })); }   // alle Schraffur-Striche als EIN Pfad (statt vieler <line> → viel weniger DOM)
   svg.appendChild(hg);
 }
 function drawLayeredWall(svg, a, arr) {
@@ -1159,7 +1159,7 @@ function hatchGeom(a) {
   else if (t === 'kalksand') diag(-1);
   else if (t === 'cross' || t === 'beton') { diag(1); diag(-1); }   // Beton: diagonales Kreuz
   else if (t === 'beton_vorfab') { if (a.type === 'wall') betonElemWall(a, S, lines); else { for (let y = fl(y0, S * 1.6); y <= y1; y += S * 1.6) lines.push([x0, y, x1, y]); for (let x = fl(x0, S * 1.6); x <= x1; x += S * 1.6) lines.push([x, y0, x, y1]); } }   // Element: orthogonales Gitter
-  else if (t === 'daemm_eps' || t === 'daemm_xps') { for (const sg of honeycombSegs(x0, y0, x1, y1, Math.max(3, S * 0.6))) lines.push(sg); }   // EPS/XPS: Waben (dicht)
+  else if (t === 'daemm_eps' || t === 'daemm_xps') { for (const sg of honeycombSegs(x0, y0, x1, y1, Math.max(7, S * 1.5))) lines.push(sg); }   // EPS/XPS: Waben (dicht)
   else if (INSUL_TYPES.includes(t) || t === 'insul') { if (a.type === 'wall') insulWallStrokes(a, S, lines); else { const g = S * 1.4; for (let y = fl(y0, g); y <= y1; y += g) lines.push([x0, y, x1, y]); } }
   else if (t === 'erdreich') diag(-1, S * 0.75);
   else if (t === 'holz' || t === 'wood') { const sp = Math.max(3, S * 0.55), gap = S * 2, period = 2 * sp + gap; for (let base = fl(y0 - x1, period); base <= (y1 - x0); base += period) for (let k = 0; k < 3; k++) { const c = base + k * sp; lines.push([x0 - ext, x0 - ext + c, x1 + ext, x1 + ext + c]); } }
@@ -2966,7 +2966,7 @@ function sectionBandHatch(out, rx, ry, rw, rh, mat, fallbackHatch) {   // Materi
   if (!hatch || rw < 1 || rh < 1) return;
   const S = lastHatchScale * 1.15, x0 = rx, y0 = ry, x1 = rx + rw, y1 = ry + rh;
   const add = (ax, ay, bx, by, w) => { const c = clipSeg(ax, ay, bx, by, x0, y0, x1, y1); if (c) out.push({ t: 'line', x1: c[0], y1: c[1], x2: c[2], y2: c[3], stroke: col, w: w || 0.5 }); };
-  if (hatch === 'daemm_eps' || hatch === 'daemm_xps') { for (const sg of honeycombSegs(x0, y0, x1, y1, Math.max(3, S * 0.6))) add(sg[0], sg[1], sg[2], sg[3], 0.45); }   // EPS/XPS: Waben (dicht)
+  if (hatch === 'daemm_eps' || hatch === 'daemm_xps') { for (const sg of honeycombSegs(x0, y0, x1, y1, Math.max(7, S * 1.5))) add(sg[0], sg[1], sg[2], sg[3], 0.45); }   // EPS/XPS: Waben (dicht)
   else if (hatch === 'daemm_wolle' || INSUL_TYPES.includes(hatch)) { for (let y = y0 + S / 2; y < y1; y += S) add(x0, y, x1, y); }   // übrige Dämmung: Striche quer zur Wanddicke (im Schnitt horizontal)
   else if (hatch === 'holz' || hatch === 'konter') { for (let x = x0 + S * 0.8; x < x1; x += S * 1.5) add(x, y0, x, y1, 0.6); }   // Holz: senkrechte Bretter
   else if (hatch === 'gips') { /* im Schnitt ruhig lassen */ }

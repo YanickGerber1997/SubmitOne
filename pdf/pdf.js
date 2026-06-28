@@ -2918,7 +2918,7 @@ function openingElev(out, X, Yh, opx0, opw, o, H, col, redM) {   // Fenster/Tür
   if (head - sill < 0.02 || opw < 1) return;
   out.push({ t: 'rect', x: X(opx0), y: Yh(head), w: opw, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });
   if (o.kind === 'window') {
-    const wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', sc = opw / Math.max(1, o.w), fb = Math.min(opw * 0.2, (o.frameW || cmToPts(10)) * sc), fs = Math.min(opw * 0.18, (o.sashW || cmToPts(7)) * sc), yT = Yh(head), yB = Yh(sill);   // Blendrahmen = frameW, Flügel = sashW (identisch zu Grundriss/Schnitt)
+    const wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', sc = opw / Math.max(1, o.w), fb = Math.min(opw * 0.12, cmToPts(o.boardVis != null ? o.boardVis : 1.5) * sc), fs = Math.min(opw * 0.2, Math.max(cmToPts(1), (o.sashW || cmToPts(7)) - (o.sashShift != null ? o.sashShift : cmToPts(4))) * sc), yT = Yh(head), yB = Yh(sill);   // SICHTBARER Blendrahmen = boardVis (~1.5 cm), sichtbarer Flügel = sashW − Versatz (~3 cm)
     out.push({ t: 'rect', x: X(opx0), y: yT, w: opw, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.4 });   // Blendrahmen (Material)
     const two = wt === 'f2' || wt === 'f2s', panes = two ? 2 : 1, pw = opw / panes;
     for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) { if (wt === 'f2s') { out.push({ t: 'rect', x: px0 - fb, y: yT, w: 2 * fb, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.2 }); } else out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1.2 }); }
@@ -5323,8 +5323,8 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       const sillF = (o2.kind === 'window' ? (o2.sill || 0) : 0), headF = Math.min(Hwall, o2.head || (o2.kind === 'window' ? 2.1 : 2.0));
       const rings = [];   // Laibungsschichten in der Ansicht = GLEICHE Datenquelle wie Grundriss: innen=innerste Schicht/Verputz, aussen=Verkleidung + Brett
       if (Array.isArray(o2.revealLining) && o2.revealLining.length) { const src = side === 'i' ? o2.revealLining : o2.revealLining.slice().reverse(); for (const Lr of src) rings.push({ mat: Lr.mat, w: cmToPts(Lr.t) }); }
-      else if (side === 'a') { if (facLy) rings.push({ mat: facLy.mat, w: lapClad }); if (o2.kind === 'window') rings.push({ mat: o2.boardMat || 'holz', w: cmToPts(o2.boardW != null ? o2.boardW : 2.5) }); }
-      else rings.push({ mat: facLy ? facLy.mat : 'putz', w: lapClad });
+      else if (side === 'a') { if (o2.kind === 'window' && (o2.boardW == null || o2.boardW > 0)) rings.push({ mat: o2.boardMat || 'holz', w: cmToPts(o2.boardW != null ? o2.boardW : 2) }); }   // aussen: nur das Laibungsbrett lappt über den Rahmen (Verkleidung = Fassaden-Hintergrund)
+      else rings.push({ mat: facLy ? facLy.mat : 'putz', w: lapClad });   // innen: Putz-Laibung reingezogen
       let cum = 0;
       for (const rg of rings) { const mt = WALL_MATS[rg.mat] || { fill: '#eee', color: '#1c242c' }, x = opx0 + cum, w = o2.w - 2 * cum, yT = Yh(headF - cum * perPt), yB = Yh(sillF); if (w > 1 && yB - yT > 0.5) out.push({ t: 'rect', x, y: yT, w, h: yB - yT, fill: mt.fill || '#eee', stroke: mt.color || '#1c242c', sw: 0.7 }); cum += rg.w; }   // Laibung wickelt Sturz + Seiten; unten = Fensterbank (kein Doppel-Sims)
       const rPts = Math.min(cum, o2.w * 0.45);

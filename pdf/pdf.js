@@ -1183,7 +1183,7 @@ function drawOne(svg, a, pv) {
   } else if (a.type === 'wall' && a.layers && a.layers.length && !wallSimple(a)) {   // mehrschichtiger Aufbau (einfach → schwarze Union)
     const arr = getAnnos(pv.num);
     drawLayeredWall(svg, a, arr);
-    if (a.dim) { const dg = wallDimGeom(a); if (wallHasOpenings(a, arr)) renderWallDimPrims(svg, wallDimChainPrims(a, arr, dg.off), "#1c242c"); else archDim(svg, [a.x1, a.y1], [a.x2, a.y2], dg.off, "#1c242c", dg.label); }
+    if (a.dim) renderWallDimPrims(svg, wallDimChains(a, arr), "#1c242c");   // zwei Maßketten: aussen Rohbau / innen Fertig
     const poly = wallClipPoly(a); hit = svgEl('polygon', { points: poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'wall') {
     const arr = getAnnos(pv.num), poly = wallPoly(a, arr), pstr = poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
@@ -1193,7 +1193,7 @@ function drawOne(svg, a, pv) {
     if (a.hatch && a.hatch.type && !wallSimple(a)) appendHatch(svg, a, arr);                                          // Schraffur (einfach → weg, schwarze Wand)
     const col = a.color || '#1c242c', lw = a.width || 1.4;
     if (!_wallUnionActive) for (const [p, q] of wallOutlineSegs(a, arr)) svg.appendChild(svgEl('line', { x1: p[0], y1: p[1], x2: q[0], y2: q[1], stroke: col, 'stroke-width': lw, 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));   // Umriss nur ohne Union (sonst macht die Union die sauberen Ecken)
-    if (a.dim) { const dg = wallDimGeom(a); if (wallHasOpenings(a, arr)) renderWallDimPrims(svg, wallDimChainPrims(a, arr, dg.off), "#1c242c"); else archDim(svg, [a.x1, a.y1], [a.x2, a.y2], dg.off, "#1c242c", dg.label); }   // Architektur-Masslinie – immer schwarz
+    if (a.dim) renderWallDimPrims(svg, wallDimChains(a, arr), "#1c242c");   // zwei Maßketten: aussen Rohbau / innen Fertig   // Architektur-Masslinie – immer schwarz
     hit = svgEl('polygon', { points: pstr, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'stairs') {
     const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, hw = (a.width || stairWidthPts()) / 2, col = a.color || '#1c242c', n = stairSteps(a);
@@ -1788,7 +1788,7 @@ function drawWallUnion(svg, walls) {   // Wandflächen vereinigen → saubere Ge
     return any;
   } catch (_) { return false; }
 }
-let wallDimOn = false;   // neue Wände bekommen eine Masslinie?
+let wallDimOn = true;   // neue Wände bekommen standardmässig eine Masskette (aussen Rohbau / innen Fertig)
 function startDimOffDrag(pv, e, id) {   // Wand-Masslinie senkrecht zur Wand verschieben (setzt a.dimOff)
   const a = findAnno(pv.num, id); if (!a) return; pushUndo();
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len, mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
@@ -1823,10 +1823,11 @@ function openingClearW(o, wall) {   // Fertigmaß (lichte Öffnung) – Verputz 
   if (LIN.includes(l0.mat)) red += l0.t; if (lN !== l0 && LIN.includes(lN.mat)) red += lN.t;
   return red > 0 ? o.w - 2 * red : null;
 }
-function wallDimChainPrims(a, arr, off) {   // Maßkette die auf Öffnungen reagiert: Pfeiler | Öffnung (Rohbaumass + Fertigmass) | Pfeiler
-  const prims = [], dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux, side = off >= 0 ? 1 : -1;
+function wallDimChainPrims(a, arr, off, mode) {   // Maßkette: Pfeiler | Öffnung | Pfeiler · mode 'fertig' = Licht (Laibung abgezogen), sonst Rohbau
+  const prims = [], fertig = mode === 'fertig', dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux, side = off >= 0 ? 1 : -1;
   const gap = wallDimGap, over = 4, tick = 5, P = (s, e) => [a.x1 + ux * s + nx * e, a.y1 + uy * s + ny * e];
-  const ops = (arr || []).filter(o => o.type === 'opening' && o.wallId === a.id).map(o => ({ c: o.t * len, hw: o.w / 2, w: o.w, o })).sort((p, q) => p.c - q.c);
+  prims.push({ t: 'text', p: P(-over - 3, off), text: fertig ? 'F' : 'R', ang: 0, small: true });   // Kettenkennung: R=Rohbau (aussen), F=Fertig/Licht (innen)
+  const ops = (arr || []).filter(o => o.type === 'opening' && o.wallId === a.id).map(o => { const ins = fertig ? openLichtInset(o) : 0; return { c: o.t * len, hw: Math.max(2, o.w / 2 - ins), w: Math.max(2, o.w - 2 * ins), ins, o }; }).sort((p, q) => p.c - q.c);
   let stn = [0]; for (const op of ops) { const l = Math.max(0, op.c - op.hw), r = Math.min(len, op.c + op.hw); if (l > stn[stn.length - 1] + 0.5) stn.push(l); stn.push(r); }
   if (len > stn[stn.length - 1] + 0.5) stn.push(len); else stn[stn.length - 1] = len;
   stn = [...new Set(stn.map(v => Math.round(v * 100) / 100))].sort((x, y) => x - y);
@@ -1837,12 +1838,16 @@ function wallDimChainPrims(a, arr, off) {   // Maßkette die auf Öffnungen reag
   const hLab = m => docScale ? (Math.round(m * 100) / 100).toFixed(2) : Math.round(m * 1000) + '';
   for (let i = 0; i < stn.length - 1; i++) {
     const s0 = stn[i], s1 = stn[i + 1], mid = (s0 + s1) / 2, segLen = s1 - s0, op = ops.find(o => Math.abs(mid - o.c) < o.hw - 0.5);
-    if (op) { const o2 = op.o, sill = o2.kind === 'window' ? (o2.sill || 0) : 0, head = o2.head || (o2.kind === 'window' ? 2.1 : 2.0), hM = Math.max(0, head - sill);
-      prims.push({ t: 'text', p: P(mid, off + side * 7), text: fmtLen(o2.w), ang, bold: true });          // Breite (Rohmass) auf der Linie
-      prims.push({ t: 'text', p: P(mid, off + side * 18), text: hLab(hM), ang });                          // Höhe (Rohmass) darüber
+    if (op) { const o2 = op.o, sill = o2.kind === 'window' ? (o2.sill || 0) : 0, head = o2.head || (o2.kind === 'window' ? 2.1 : 2.0), insM = ptsToCm(op.ins) / 100, hM = Math.max(0, head - sill - 2 * insM);
+      prims.push({ t: 'text', p: P(mid, off + side * 7), text: fmtLen(op.w), ang, bold: true });          // Breite (Rohbau bzw. Licht)
+      prims.push({ t: 'text', p: P(mid, off + side * 18), text: hLab(hM), ang });                          // Höhe (Brüstung→Sturz, Rohbau bzw. Licht)
     } else if (segLen > 3) prims.push({ t: 'text', p: P(mid, off + side * 7), text: fmtLen(segLen), ang });
   }
   return prims;
+}
+function wallDimChains(a, arr) {   // zwei Maßketten: aussen = Rohbau (R), innen = Fertig/Licht (F)
+  const dg = wallDimGeom(a), o = Math.abs(dg.off);
+  return [...wallDimChainPrims(a, arr, o, 'roh'), ...wallDimChainPrims(a, arr, -o, 'fertig')];
 }
 function renderWallDimPrims(svg, prims, col) {
   for (const p of prims) {
@@ -2713,6 +2718,11 @@ function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte F
 let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5, lastWinType = 'f1', lastDoorType = 'f1', lastWinHinge = 'left', lastWinMat = 'holz';
 let inputLicht = true;   // eingegebene/angezeigte Öffnungsbreite = Lichtmaß (Rohbau = Licht + 2×(Rahmen − sichtbarer Rahmen)); sonst Rohbaumaß
 function openInsPts(o) { return Math.max(0, ((o && o.frameW) || cmToPts(10)) - cmToPts((o && o.boardVis != null) ? o.boardVis : 1)); }   // Licht-Einzug pro Seite
+function openLichtInset(o) {   // seitlicher Laibungs-Einzug pro Seite (pt) = engste eigene Laibung (Dicke + Versatz), sonst am Holzrahmen
+  const ri = lst => { if (!Array.isArray(lst) || !lst.length) return 0; let acc = 0, mx = 0; for (const L of lst) { acc += cmToPts(L.t || 0); mx = Math.max(mx, acc + (L.sOff ? cmToPts(L.sOff) : 0)); } return mx; };
+  const i = ri(o && o.revealLining), a = ri(o && o.revealLiningOut);
+  return (i || a) ? Math.max(i, a) : openInsPts(o);
+}
 function nearestWall(pv, x, y) {
   let best = null, bd = Infinity;
   for (const o of getAnnos(pv.num)) { if (o.type !== 'wall') continue; const dx = o.x2 - o.x1, dy = o.y2 - o.y1, L2 = dx * dx + dy * dy || 1; let t = ((x - o.x1) * dx + (y - o.y1) * dy) / L2; t = Math.max(0, Math.min(1, t)); const px = o.x1 + dx * t, py = o.y1 + dy * t, d = Math.hypot(px - x, py - y); if (d < bd) { bd = d; best = { wall: o, cx: px, cy: py, ang: Math.atan2(dy, dx), thick: o.thick || wallThickPts(), dist: d }; } }
@@ -3994,40 +4004,13 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
               }
             }
           });
-          if (a.dim && wallHasOpenings(a, annos[n] || [])) { const dg = wallDimGeom(a); wallDimPrimsToPdf(pg, wallDimChainPrims(a, annos[n] || [], dg.off), Y, font, degrees, rgb(.11, .14, .17)); }
-          else if (a.dim) {
-            const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
-            const base = (a.thick || wallThickPts()) / 2 + cmToPts(wallDimOffCm), off = (a.dimOff != null ? a.dimOff : base), side = off >= 0 ? 1 : -1, gap = wallDimGap, over = 4, tick = 5, dimc = rgb(.11, .14, .17);
-            const dl = (x1, y1, x2, y2, th) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: th || 0.7, color: dimc });
-            for (const P of [[a.x1, a.y1], [a.x2, a.y2]]) dl(P[0] + nx * side * gap, P[1] + ny * side * gap, P[0] + nx * (off + side * over), P[1] + ny * (off + side * over));
-            const q1 = [a.x1 + nx * off, a.y1 + ny * off], q2 = [a.x2 + nx * off, a.y2 + ny * off]; dl(q1[0] - ux * over, q1[1] - uy * over, q2[0] + ux * over, q2[1] + uy * over, 0.9);
-            const kx = ux + nx, ky = uy + ny, kl = Math.hypot(kx, ky) || 1, kxn = kx / kl, kyn = ky / kl;
-            for (const P of [q1, q2]) dl(P[0] - kxn * tick, P[1] - kyn * tick, P[0] + kxn * tick, P[1] + kyn * tick, 1.1);
-            const lbl = fmtLen(len), tw = font.widthOfTextAtSize(lbl, 11); let sang = Math.atan2(uy, ux) * 180 / Math.PI; while (sang >= 90) sang -= 180; while (sang < -90) sang += 180; const pang = -sang;
-            const rad = pang * Math.PI / 180, bx = Math.cos(rad), by = Math.sin(rad), cxm = (q1[0] + q2[0]) / 2 + nx * side * 7, cym = (q1[1] + q2[1]) / 2 + ny * side * 7;
-            pg.drawText(lbl, { x: cxm - bx * tw / 2 + by * 3.5, y: Y(cym) - by * tw / 2 - bx * 3.5, size: 11, font, color: dimc, rotate: degrees(pang) });
-          }
+          if (a.dim) wallDimPrimsToPdf(pg, wallDimChains(a, annos[n] || []), Y, font, degrees, rgb(.11, .14, .17));   // zwei Maßketten: aussen Rohbau / innen Fertig
         }
         else if (a.type === 'wall') {
           const arr = annos[n] || [], poly = wallPoly(a, arr), lw = a.width || 1.4;
           if (!wallUni && a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); const d = 'M' + poly.map((p, i) => (i ? 'L' : '') + p[0] + ' ' + p[1]).join(' ') + 'Z'; try { pg.drawSvgPath(d, { x: 0, y: PH, color: rgb(fc.r, fc.g, fc.b) }); } catch (_) { } }
           if (!wallUni) for (const [p, q] of wallOutlineSegs(a, arr)) pg.drawLine({ start: { x: p[0], y: Y(p[1]) }, end: { x: q[0], y: Y(q[1]) }, thickness: lw, color: c });
-          if (a.dim && wallHasOpenings(a, annos[n] || [])) { const dg = wallDimGeom(a); wallDimPrimsToPdf(pg, wallDimChainPrims(a, annos[n] || [], dg.off), Y, font, degrees, rgb(.11, .14, .17)); }
-          else if (a.dim) {   // Architektur-Masslinie im PDF
-            const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
-            const base = (a.thick || wallThickPts()) / 2 + cmToPts(wallDimOffCm), off = (a.dimOff != null ? a.dimOff : base), side = off >= 0 ? 1 : -1, gap = wallDimGap, over = 4, tick = 5;
-            const dimc = rgb(.11, .14, .17), dl = (x1, y1, x2, y2, th) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: th || 0.7, color: dimc });   // Masslinie immer schwarz
-            for (const P of [[a.x1, a.y1], [a.x2, a.y2]]) dl(P[0] + nx * side * gap, P[1] + ny * side * gap, P[0] + nx * (off + side * over), P[1] + ny * (off + side * over));
-            const q1 = [a.x1 + nx * off, a.y1 + ny * off], q2 = [a.x2 + nx * off, a.y2 + ny * off];
-            dl(q1[0] - ux * over, q1[1] - uy * over, q2[0] + ux * over, q2[1] + uy * over, 0.9);
-            const kx = ux + nx, ky = uy + ny, kl = Math.hypot(kx, ky) || 1, kxn = kx / kl, kyn = ky / kl;
-            for (const P of [q1, q2]) dl(P[0] - kxn * tick, P[1] - kyn * tick, P[0] + kxn * tick, P[1] + kyn * tick, 1.1);
-            const lbl = fmtLen(len), tw = font.widthOfTextAtSize(lbl, 11);
-            let sang = Math.atan2(uy, ux) * 180 / Math.PI; while (sang >= 90) sang -= 180; while (sang < -90) sang += 180; const pang = -sang;
-            const rad = pang * Math.PI / 180, bx = Math.cos(rad), by = Math.sin(rad);
-            const cxm = (q1[0] + q2[0]) / 2 + nx * side * 7, cym = (q1[1] + q2[1]) / 2 + ny * side * 7;
-            pg.drawText(lbl, { x: cxm - bx * tw / 2 + by * 3.5, y: Y(cym) - by * tw / 2 - bx * 3.5, size: 11, font, color: dimc, rotate: degrees(pang) });
-          }
+          if (a.dim) wallDimPrimsToPdf(pg, wallDimChains(a, annos[n] || []), Y, font, degrees, rgb(.11, .14, .17));   // zwei Maßketten: aussen Rohbau / innen Fertig
         }
         else if (a.type === 'rect') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h), o = { x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: w, borderDashArray: dp }; if (a.fill && a.fill !== 'none') { const fc = hexToRgb(a.fill); o.color = rgb(fc.r, fc.g, fc.b); } pg.drawRectangle(o); }
         else if (a.type === 'roof') { const x = Math.min(a.x, a.x + a.w), y = Math.min(a.y, a.y + a.h), W = Math.abs(a.w), H = Math.abs(a.h); pg.drawRectangle({ x, y: Y(y + H), width: W, height: H, borderColor: c, borderWidth: 1.2 }); const rl = (x1, y1, x2, y2) => pg.drawLine({ start: { x: x1, y: Y(y1) }, end: { x: x2, y: Y(y2) }, thickness: 1.8, color: c }); if (a.rtype === 'pult') { a.axis === 'x' ? rl(x, y, x + W, y) : rl(x, y, x, y + H); } else { a.axis === 'x' ? rl(x, y + H / 2, x + W, y + H / 2) : rl(x + W / 2, y, x + W / 2, y + H); } const lab = a.rtype === 'pult' ? 'Pultdach' : 'Satteldach', tw = font.widthOfTextAtSize(lab, 11); pg.drawText(lab, { x: x + W / 2 - tw / 2, y: Y(y + H / 2) - 3, size: 11, font, color: c }); }
@@ -5284,7 +5267,7 @@ async function buildExampleProject() {   // Start-Beispiel: Grundriss (Wand + Fe
   const mkSection = (cx1, cy1, cx2, cy2, label, ox, oy, flip) => { const s = { id: nextId++, type: 'section', cx1, cy1, cx2, cy2, label, ox, oy, layer: activeLayerId }; if (flip) s.flip = true; arr.push(s); };
   txt(82, 96, 'BEISPIELPROJEKT — Wand mit Fenster & Tür · Massstab 1:20', 22, cmToPts(900));   // Titel weiter hoch
   const wy = 360, wx1 = 100, wlen = cmToPts(500), wx2 = wx1 + wlen, wid = nextId++;   // GRUNDRISS (Abstand zum Titel)
-  const wall = { id: wid, type: 'wall', x1: wx1, y1: wy, x2: wx2, y2: wy, thick: cmToPts(35), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: wallHeightM, dim: false, layer: activeLayerId };
+  const wall = { id: wid, type: 'wall', x1: wx1, y1: wy, x2: wx2, y2: wy, thick: cmToPts(35), just: 'center', color: '#1c242c', fill: '#ffffff', hatch: null, width: 1.4, h3d: wallHeightM, dim: true, layer: activeLayerId };
   applyWallBuildup(wall, [['putz', 1.5], ['mauerwerk', 15], ['eps', 16], ['putz', 0.5]]); arr.push(wall);
   const win = { id: nextId++, type: 'opening', kind: 'window', wallId: wid, t: 0.28, w: cmToPts(120), depth: 0.5, frameW: cmToPts(10), frameD: cmToPts(7), winType: 'f2', winMat: 'holz', sill: 0.9, head: 2.2, revealType: 'putz', bank: true, layer: activeLayerId };
   const dr = { id: nextId++, type: 'opening', kind: 'door', wallId: wid, t: 0.72, w: cmToPts(100), depth: 0.5, frameW: cmToPts(6), frameD: cmToPts(7), winType: 'f1', winMat: 'holz', head: 2.05, revealType: 'putz', layer: activeLayerId };

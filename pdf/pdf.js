@@ -3021,6 +3021,8 @@ function sectionPrimitives(a, arr) {
       out.push({ t: 'shandle', x: (xa + xb) / 2, y: Yh(base + thick), key: 'sh:sb:' + sl.id });   // Decken-Höhe (Unterkante) im Schnitt ziehen
     }
   }
+  const cutOps = new Set();   // Öffnungen, die der (auch schräge) Schnitt KREUZT → werden als echter Schnitt gezeichnet, NICHT zusätzlich als Ansicht
+  for (const h of hits) for (const o of arr) if (o.type === 'opening' && o.wallId === h.w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl)) cutOps.add(o.id);
   for (const w of arr) {   // Ansicht ZUERST (hinten): jede Wand in Blickrichtung als Fassade – auch schräg geschnittene (Poché kommt danach darüber)
     if (w.type !== 'wall' || !layerVisible(w) || !phaseVisible(w)) continue;
     const wdx = w.x2 - w.x1, wdy = w.y2 - w.y1, wl = Math.hypot(wdx, wdy) || 1, along = Math.abs((wdx * cux + wdy * cuy) / wl);
@@ -3035,7 +3037,7 @@ function sectionPrimitives(a, arr) {
       out.push({ t: 'rect', x: X(da), y: Yh(Hw), w: X(db) - X(da), h: Yh(0) - Yh(Hw), fill: m.fill || '#f0efea', stroke: m.color || col, sw: 0.6 });
       if (!simpleMode && outL) sectionBandHatch(out, X(da), Yh(Hw), X(db) - X(da), Yh(0) - Yh(Hw), outL.mat, null);
     }
-    for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = fp((ocx - p1[0]) * cux + (ocy - p1[1]) * cuy); if (od < -10 || od > cl + 10) continue;
+    for (const o of arr) { if (o.type !== 'opening' || o.wallId !== w.id || cutOps.has(o.id)) continue; const ocx = w.x1 + wdx * o.t, ocy = w.y1 + wdy * o.t, od = fp((ocx - p1[0]) * cux + (ocy - p1[1]) * cuy); if (od < -10 || od > cl + 10) continue;
       const lapPts = (o.kind === 'window' ? (o.outerLap != null ? o.outerLap : cmToPts(3)) : 0) + (o.anschlagType === 'aussen' ? (o.anschlagDepth != null ? o.anschlagDepth : cmToPts(5)) : 0);   // Aussen-Lappung + Aussenanschlag → Aussenlichtmaß
       const boardPts = (o.kind === 'window' ? cmToPts(o.boardW != null ? o.boardW : 2.5) : 0), lapTot = lapPts + boardPts;   // Laibungsbrett lappt zusätzlich über den Rahmen
       const headF = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), sillF = (o.kind === 'window' ? (o.sill || 0) : 0), rohW = o.w * along, clM = ptsToCm(lapPts) / 100;

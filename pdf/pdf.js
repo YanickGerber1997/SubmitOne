@@ -2718,10 +2718,9 @@ function insetPolygon(pts, d) {   // Polygon um d nach innen versetzen (lichte F
 let openKind = 'door', lastOpenW = null, lastOpenDepth = 0.5, lastWinType = 'f1', lastDoorType = 'f1', lastWinHinge = 'left', lastWinMat = 'holz';
 let inputLicht = true;   // eingegebene/angezeigte Öffnungsbreite = Lichtmaß (Rohbau = Licht + 2×(Rahmen − sichtbarer Rahmen)); sonst Rohbaumaß
 function openInsPts(o) { return Math.max(0, ((o && o.frameW) || cmToPts(10)) - cmToPts((o && o.boardVis != null) ? o.boardVis : 1)); }   // Licht-Einzug pro Seite
-function openLichtInset(o) {   // seitlicher Laibungs-Einzug pro Seite (pt) = engste eigene Laibung (Dicke + Versatz), sonst am Holzrahmen
-  const ri = lst => { if (!Array.isArray(lst) || !lst.length) return 0; let acc = 0, mx = 0; for (const L of lst) { acc += cmToPts(L.t || 0); mx = Math.max(mx, acc + (L.sOff ? cmToPts(L.sOff) : 0)); } return mx; };
-  const i = ri(o && o.revealLining), a = ri(o && o.revealLiningOut);
-  return (i || a) ? Math.max(i, a) : openInsPts(o);
+function revInsetPts(lst) { if (!Array.isArray(lst) || !lst.length) return 0; let acc = 0, mx = 0; for (const L of lst) { acc += cmToPts(L.t || 0); mx = Math.max(mx, acc + (L.sOff ? cmToPts(L.sOff) : 0)); } return mx; }   // seitliche Einragung einer Laibungs-Schichtliste (Dicke + Versatz, tiefste Kante)
+function openLichtInset(o) {   // seitlicher Licht-Einzug pro Seite (pt): STANDARD = am Rahmen (frameW − 1cm sichtbar), und reagiert wenn die Laibung tiefer einragt
+  return Math.max(openInsPts(o), revInsetPts(o && o.revealLining), revInsetPts(o && o.revealLiningOut));
 }
 function nearestWall(pv, x, y) {
   let best = null, bd = Infinity;
@@ -3126,6 +3125,11 @@ function openingResolve(a, pv) {   // Position/Winkel/Dicke aus der zugehörigen
   const t = a.t == null ? 0.5 : a.t, T = w.thick || wallThickPts(); let px = w.x1 + (w.x2 - w.x1) * t, py = w.y1 + (w.y2 - w.y1) * t;
   const dx = w.x2 - w.x1, dy = w.y2 - w.y1, L = Math.hypot(dx, dy) || 1, off = (w.just === 'left' ? T / 2 : w.just === 'right' ? -T / 2 : 0);   // Band-Mitte bei Achsen-Versatz
   a.x = px + (-dy / L) * off; a.y = py + (dx / L) * off; a.ang = Math.atan2(dy, dx); a.thick = T;
+  if ((a.kind === 'window' || a.kind === 'door') && w.layers && w.layers.length) {   // STANDARD-Laibung: übernimmt Deckschicht (Material + Stärke) – innen innerste, aussen äusserste Wandschicht
+    const L0 = w.layers[0], LN = w.layers[w.layers.length - 1];
+    if (!Array.isArray(a.revealLining)) a.revealLining = [{ mat: L0.mat, t: Math.round(ptsToCm(L0.t) * 10) / 10 }];
+    if (!Array.isArray(a.revealLiningOut)) a.revealLiningOut = [{ mat: LN.mat, t: Math.round(ptsToCm(LN.t) * 10) / 10 }];
+  }
 }
 function openingClick(pv, p) {
   const nw = nearestWall(pv, p.x, p.y);
@@ -5370,8 +5374,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       s += '<circle class="lab-dh" data-key="' + key + '" data-nx="' + n[0] + '" data-ny="' + n[1] + '" cx="' + mx2.toFixed(1) + '" cy="' + my2.toFixed(1) + '" r="' + (5 * scale) + '"/>';
       return s;
     };
-    const revInset = lst => { if (!Array.isArray(lst) || !lst.length) return 0; let acc = 0, mx = 0; for (const L of lst) { acc += cmToPts(L.t || 0); mx = Math.max(mx, acc + (L.sOff ? cmToPts(L.sOff) : 0)); } return mx; };   // tatsächliche seitl. Einragung = Schichtdicke + Versatz (tiefste Kante)
-    const lapInG = revInset(a.revealLining), lapOutG = revInset(a.revealLiningOut), lapTotG = (lapInG || lapOutG) ? Math.min(hw * 0.92, Math.max(lapInG, lapOutG)) : openInsPts(a), rfG = Math.min(0.92, lapTotG / hw);   // Lichtmass misst LIVE auf die engste Laibung (innen ODER aussen, inkl. Versatz), sonst innen am Holzrahmen
+    const lapTotG = Math.min(hw * 0.92, openLichtInset(a)), rfG = Math.min(0.92, lapTotG / hw);   // Lichtmass = STANDARD am Rahmen (frameW−1cm), reagiert wenn Laibung tiefer einragt – gleiche Quelle wie Plan-Maßkette
     let H = '';
     H += dimSeg(rc(1.18, -1), rc(1.18, 1), [ux, uy], cmv(a.thick || wallThickPts()) + ' cm');     // Wanddicke
     H += dimSeg(rc(1.34, fmA), rc(1.34, fmB), [ux, uy], cmv(a.frameD || cmToPts(7)) + ' cm');      // Rahmentiefe
@@ -5419,8 +5422,7 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
     let out = []; try { out = sectionPrimitives(tmp, arr); } catch (_) { out = []; }
     const perPt = docScale.perPt, Yh = h => -h / perPt;   // eigene, verschiebbare Masslinien: innen Rohbau, aussen Licht (vertikal, versetzt)
     const head0 = Math.min((a.head != null ? a.head : (a.kind === 'window' ? 2.1 : 2.0)), (wall && wall.h3d) || wallHeightM), sill0 = a.kind === 'window' ? (a.sill || 0) : 0;
-    const revI = lst => { if (!Array.isArray(lst) || !lst.length) return 0; let acc = 0, mx = 0; for (const L of lst) { acc += cmToPts(L.t || 0); mx = Math.max(mx, acc + (L.sOff ? cmToPts(L.sOff) : 0)); } return mx; };
-    const revM = ptsToCm((revI(a.revealLining) || revI(a.revealLiningOut)) ? Math.max(revI(a.revealLining), revI(a.revealLiningOut)) : openInsPts(a)) / 100;   // Lichtmass (Höhe) misst LIVE auf die engste Laibung (inkl. Versatz), sonst am Holzrahmen
+    const revM = ptsToCm(openLichtInset(a)) / 100;   // Lichtmass (Höhe) = STANDARD am Rahmen, reagiert wenn Laibung tiefer – gleiche Quelle wie Plan
     pushDim(out, [0, Yh(sill0)], [0, Yh(head0)], [-1, 0], doff('secRoh'), 'Rohbau ' + fmtLen((head0 - sill0) / perPt), 'secRoh');
     pushDim(out, [0, Yh(sill0 + revM)], [0, Yh(head0 - revM)], [-1, 0], doff('secLicht'), 'Licht ' + fmtLen(Math.max(0.02, head0 - sill0 - 2 * revM) / perPt), 'secLicht');
     drawPrims(svgS, out, () => vbS, v => { vbS = v; });

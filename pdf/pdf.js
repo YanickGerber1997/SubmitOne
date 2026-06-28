@@ -2925,12 +2925,12 @@ function openingSpec(o) {   // KANONISCHE, abgeleitete Fenster-/Tür-Masse – E
     outerLap: o.outerLap != null ? o.outerLap : cmToPts(3), innerReveal: o.innerReveal != null ? o.innerReveal : cmToPts(2)
   };
 }
-function openingElev(out, X, Yh, opx0, opw, o, H, col, redM) {   // Fenster/Tür in Ansicht von aussen → Aussenlichtmaß (Verkleidung/Sturz lappt über den Rahmen, redM)
+function openingElev(out, X, Yh, opx0, opw, o, H, col, redM, side) {   // Fenster/Tür in Ansicht (side='i' innen → mehr Rahmen, weniger Flügel; 'a' aussen → mehr Flügel)
   const r = redM || 0, sill = (o.kind === 'window' ? (o.sill || 0) + r : 0), head = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0)) - r;
   if (head - sill < 0.02 || opw < 1) return;
   out.push({ t: 'rect', x: X(opx0), y: Yh(head), w: opw, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });
   if (o.kind === 'window') {
-    const sp = openingSpec(o), wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', sc = opw / Math.max(1, o.w), fb = Math.min(opw * 0.12, sp.frameVis * sc), fs = Math.min(opw * 0.2, sp.sashVis * sc), yT = Yh(head), yB = Yh(sill);   // sichtbarer Blendrahmen/Flügel aus openingSpec (EINE Quelle)
+    const sp = openingSpec(o), inside = side === 'i', wm = WIN_MAT[o.winMat || 'holz'], wt = o.winType || 'f1', sc = opw / Math.max(1, o.w), fb = Math.min(opw * 0.16, sp.frameVis * (inside ? 1.7 : 1) * sc), fs = Math.min(opw * 0.22, sp.sashVis * (inside ? 0.5 : 1) * sc), yT = Yh(head), yB = Yh(sill);   // innen: mehr Blendrahmen / weniger Flügel; aussen: mehr Flügel (Anschlag-Logik)
     out.push({ t: 'rect', x: X(opx0), y: yT, w: opw, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.4 });   // Blendrahmen (Material)
     const two = wt === 'f2' || wt === 'f2s', panes = two ? 2 : 1, pw = opw / panes;
     for (let pi = 0; pi < panes; pi++) { const px0 = X(opx0) + pi * pw; if (pi > 0) { if (wt === 'f2s') { out.push({ t: 'rect', x: px0 - fb, y: yT, w: 2 * fb, h: yB - yT, fill: wm.fill, stroke: wm.stroke, sw: 1.2 }); } else out.push({ t: 'line', x1: px0, y1: yT, x2: px0, y2: yB, stroke: col, w: 1.2 }); }
@@ -3041,7 +3041,7 @@ function sectionPrimitives(a, arr) {
       const headF = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), sillF = (o.kind === 'window' ? (o.sill || 0) : 0), rohW = o.w * along, clM = ptsToCm(lapPts) / 100;
       if (o.kind === 'window' && boardPts > 0.5 && rohW - 2 * lapPts * along > 1) { const bm = WALL_MATS[o.boardMat || 'holz'] || { fill: '#e7cfa8', color: '#7a5126' }; out.push({ t: 'rect', x: X(od - rohW / 2 + lapPts * along), y: Yh(headF - clM), w: rohW - 2 * lapPts * along, h: Yh(sillF + clM) - Yh(headF - clM), fill: bm.fill, stroke: bm.color, sw: 0.6 }); }   // Laibungsbrett (Holz) umlaufend
       const redM = ptsToCm(lapTot) / 100, wEff = Math.max(4, (o.w - 2 * lapTot) * along);
-      openingElev(out, X, Yh, od - wEff / 2, wEff, o, Hw, col, redM);
+      openingElev(out, X, Yh, od - wEff / 2, wEff, o, Hw, col, redM, (wOff * vdir >= 0 ? 'a' : 'i'));   // Blickrichtung bestimmt aussen/innen
       if (winDimsOn && !a.noDims) {   // Ansicht: Breite + Höhe, Rohbau + Licht (rahmenbasiert)
         const insPts = Math.max(0, (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1)), insM = ptsToCm(insPts) / 100;
         const sill0 = o.kind === 'window' ? (o.sill || 0) : 0, head0 = Math.min(Hw, o.head || (o.kind === 'window' ? 2.1 : 2.0)), rW = o.w * along, xL = X(od - rW / 2) - 12;   // im Schnitt nur HÖHEN (Breiten stehen im Grundriss)
@@ -5357,12 +5357,13 @@ function openLaibungEditor(a, pv) {   // interaktives Laibungs-Detail: reinzoome
       const sillF = (o2.kind === 'window' ? (o2.sill || 0) : 0), headF = Math.min(Hwall, o2.head || (o2.kind === 'window' ? 2.1 : 2.0));
       const rings = [];   // Laibungsschichten in der Ansicht = GLEICHE Datenquelle wie Grundriss: innen=innerste Schicht/Verputz, aussen=Verkleidung + Brett
       if (Array.isArray(o2.revealLining) && o2.revealLining.length) { const src = side === 'i' ? o2.revealLining : o2.revealLining.slice().reverse(); for (const Lr of src) rings.push({ mat: Lr.mat, w: cmToPts(Lr.t) }); }
-      else if (side === 'a') { if (o2.kind === 'window' && (o2.boardW == null || o2.boardW > 0)) rings.push({ mat: o2.boardMat || 'holz', w: cmToPts(o2.boardW != null ? o2.boardW : 2) }); }   // aussen: nur das Laibungsbrett lappt über den Rahmen (Verkleidung = Fassaden-Hintergrund)
+      else if (side === 'a') { if (facLy) rings.push({ mat: facLy.mat, w: lapClad });   // aussen: äusserste Wandschicht (z.B. Verputz) lappt um die Laibung → „Verputz rund ums Fenster"
+        const wood = facLy && ['holz', 'schalung', 'konter'].includes(facLy.mat); if (wood && o2.kind === 'window' && (o2.boardW == null || o2.boardW > 0)) rings.push({ mat: o2.boardMat || 'holz', w: cmToPts(o2.boardW != null ? o2.boardW : 2) }); }   // Laibungsbrett nur bei Holzfassade
       else rings.push({ mat: facLy ? facLy.mat : 'putz', w: lapClad });   // innen: Putz-Laibung reingezogen
       let cum = 0;
       for (const rg of rings) { const mt = WALL_MATS[rg.mat] || { fill: '#eee', color: '#1c242c' }, x = opx0 + cum, w = o2.w - 2 * cum, yT = Yh(headF - cum * perPt), yB = Yh(sillF); if (w > 1 && yB - yT > 0.5) out.push({ t: 'rect', x, y: yT, w, h: yB - yT, fill: mt.fill || '#eee', stroke: mt.color || '#1c242c', sw: 0.7 }); cum += rg.w; }   // Laibung wickelt Sturz + Seiten; unten = Fensterbank (kein Doppel-Sims)
       const rPts = Math.min(cum, o2.w * 0.45);
-      try { openingElev(out, d => d, Yh, opx0 + rPts, o2.w - 2 * rPts, oo, Hwall, '#1c242c', rPts * perPt); } catch (_) { }
+      try { openingElev(out, d => d, Yh, opx0 + rPts, o2.w - 2 * rPts, oo, Hwall, '#1c242c', rPts * perPt, side); } catch (_) { }
       if (side === 'i' && o2.kind === 'window') { const pjI = cmToPts(3), th = cmToPts(2.5); out.push({ t: 'rect', x: opx0 - pjI, y: Yh(sillF), w: o2.w + 2 * pjI, h: th, fill: '#e7cfa8', stroke: '#7a5126', sw: 0.8 }); }   // innen: Holz-Fensterbrett
       if (o2.id === a.id) { out.push({ t: 'rect', x: opx0 - 4, y: Yh(headF) - 4, w: o2.w + 8, h: (Yh(sillF) - Yh(headF)) + 8, fill: 'none', stroke: '#2aa869', sw: 2.4 }); curD = { opx0, w: o2.w, headF, sillF, rPts }; }   // aktuelles Fenster markiert
     }

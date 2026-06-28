@@ -3066,7 +3066,13 @@ function sectionPrimitives(a, arr) {
       cx += lw; }
     }
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id && Math.abs(o.t - h.tp) < ((o.w / 2) / h.wl));
-    for (const o of ops) sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip, a.noDims, a.mullion);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil (a.flip = Blickrichtung)
+    for (const o of ops) {
+      if (USE_SOLID) {   // STUFE 3d: Öffnung im Schnitt aus kanonischem sliceOpeningV (echte Geometrie geschnitten)
+        const cx = X(h.dist), sCut = (a.flip ? -1 : 1) * (h.tp - o.t) * h.wl, sillO = o.kind === 'window' ? (o.sill || 0) : 0, headO = Math.min(H, o.head || (o.kind === 'window' ? 2.1 : 2.0)), wm2 = WIN_MAT[o.winMat || 'holz'];
+        out.push({ t: 'rect', x: cx - h.appW / 2, y: Yh(headO), w: h.appW, h: Yh(sillO) - Yh(headO), fill: '#ffffff', stroke: 'none', sw: 0 });   // Öffnung ausstanzen
+        for (const r of sliceOpeningV(Object.assign({}, o, { thick: h.appW }), sCut)) { const x0 = cx + r.m0 * (h.appW / 2), x1 = cx + r.m1 * (h.appW / 2), isG = r.role === 'glass'; out.push({ t: 'rect', x: Math.min(x0, x1), y: Yh(r.z1), w: Math.abs(x1 - x0), h: Yh(r.z0) - Yh(r.z1), fill: isG ? '#c7e2f5' : (wm2.fill || '#e7cfa8'), stroke: isG ? '#7fa9c6' : (wm2.stroke || '#7a5126'), sw: 1 }); }
+      } else sectionCutOpening(out, X, Yh, h.dist, h.appW, o, H, perPt, w, a.flip, a.noDims, a.mullion);   // quer geschnittene Öffnung = gedrehtes Grundriss-Profil (a.flip = Blickrichtung)
+    }
     out.push({ t: 'line', x1: X(x0), y1: Yh(H), x2: X(x0 + h.appW), y2: Yh(H), stroke: col, w: 1.2 });
     out.push({ t: 'shandle', x: X(h.dist), y: Yh(H), key: 'sh:wh:' + w.id });   // Wandhöhe im Schnitt ziehen
   }

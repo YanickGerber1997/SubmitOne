@@ -5557,9 +5557,9 @@ async function buildTestSheet() {   // Seite 2: 3 Wandaufbauten, je EG-Wand + De
   setups.forEach((su, i) => {
     const X0 = 90 + i * colW, secX = X0 + wlen / 2;
     txt2(X0, planY - 40, (i + 1) + ') ' + su.name, 13, cmToPts(380));
-    const eg = { id: nextId++, type: 'wall', x1: X0, y1: planY, x2: X0 + wlen, y2: planY, thick: cmToPts(20), just: 'center', color: '#1c242c', fill: '#fff', hatch: null, width: 1.4, h3d: gh, base: 0, dim: true, layer: activeLayerId };
+    const eg = { id: nextId++, type: 'wall', x1: X0 + wlen, y1: planY, x2: X0, y2: planY, thick: cmToPts(20), just: 'center', color: '#1c242c', fill: '#fff', hatch: null, width: 1.4, h3d: gh, base: 0, dim: true, layer: activeLayerId };   // Endpunkte gedreht → Innenseite zeigt zur Decke (Raum)
     applyWallBuildup(eg, su.b); a2.push(eg);   // EG-Wand (Basis 0)
-    const og = { id: nextId++, type: 'wall', x1: X0, y1: planY, x2: X0 + wlen, y2: planY, thick: cmToPts(20), just: 'center', color: '#1c242c', fill: '#fff', hatch: null, width: 1.4, h3d: gh, base: gh, layer: activeLayerId };
+    const og = { id: nextId++, type: 'wall', x1: X0 + wlen, y1: planY, x2: X0, y2: planY, thick: cmToPts(20), just: 'center', color: '#1c242c', fill: '#fff', hatch: null, width: 1.4, h3d: gh, base: gh, layer: activeLayerId };
     applyWallBuildup(og, su.b); a2.push(og);   // OG-Wand (steht auf der Decke, Basis = Geschosshöhe)
     const slab = { id: nextId++, type: 'slab', pts: [[X0 - cmToPts(20), planY], [X0 + wlen + cmToPts(20), planY], [X0 + wlen + cmToPts(20), planY + cmToPts(200)], [X0 - cmToPts(20), planY + cmToPts(200)]], color: '#5b6b86', base: gh - 0.35, thick: 0.35, layer: activeLayerId };
     applySlabBuildup(slab, slabL); slab.base = Math.round((gh - slab.thick) * 1000) / 1000; a2.push(slab);   // Decke: Oberkante auf Geschosshöhe gh

@@ -1217,10 +1217,11 @@ function drawOne(svg, a, pv) {
   } else if (a.type === 'block') {
     el = drawBlock(svg, a);
     const b = bbox(a); hit = svgEl('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
-  } else if (a.type === 'mesh3d') {   // akkurates 3D-Objekt: im Grundriss als Umriss-Box mit Label
+  } else if (a.type === 'mesh3d') {   // akkurates 3D-Objekt: im Grundriss als Umriss-Box mit Label (+ optional echter Höhenschnitt)
     const g = svgEl('g', { 'data-id': a.id });
     g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.fw, height: a.fh, fill: '#cfc8ba', 'fill-opacity': 0.12, stroke: '#8a8f86', 'stroke-width': 1, 'stroke-dasharray': '6 4', 'vector-effect': 'non-scaling-stroke' }));
-    const t = svgEl('text', { x: a.x + a.fw / 2, y: a.y + a.fh / 2, fill: '#6b7280', 'font-size': 12, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = '📦 ' + (a.name || '3D-Objekt'); g.appendChild(t);
+    if (meshSliceH != null) { for (const s of sliceMesh3d(a, meshSliceH)) g.appendChild(svgEl('line', { x1: s[0], y1: s[1], x2: s[2], y2: s[3], stroke: '#1c242c', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' })); }   // echter 3D-Höhenschnitt → Grundriss-Linien
+    else { const t = svgEl('text', { x: a.x + a.fw / 2, y: a.y + a.fh / 2, fill: '#6b7280', 'font-size': 12, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = '📦 ' + (a.name || '3D-Objekt'); g.appendChild(t); }
     svg.appendChild(g); el = g;
     hit = svgEl('rect', { x: a.x, y: a.y, width: a.fw, height: a.fh, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'profile') {   // Komplexes Profil: Pfad-Polylinie + Offset-Band (Profil-Breite) + Label
@@ -4485,6 +4486,20 @@ function decodeMesh3d(e) {
   for (let i = 0; i < n; i++) for (let a = 0; a < 3; a++) pos[i * 3 + a] = e.bmin[a] + (q[i * 3 + a] / 32767) * e.bsz[a];
   return { pos, idx: e.bits === 16 ? new Uint16Array(_b642ab(e.i)) : new Uint32Array(_b642ab(e.i)) };
 }
+let meshSliceH = null;   // IFC-/Mesh-Höhenschnitt: null = aus, sonst Höhe in m (echter 3D-Schnitt → Grundriss)
+function meshLev(a) { const l = layerById(a.layer); return (l && l.elevation) || 0; }
+function sliceMesh3d(a, hWorld) {   // schneidet das echte 3D-Mesh an der horizontalen Ebene y=hWorld → Grundriss-Segmente [x1,y1,x2,y2] (Plan-Punkte)
+  if (!a.enc) return []; let d; try { d = decodeMesh3d(a.enc); } catch (_) { return []; }
+  const pos = d.pos, idx = d.idx, yL = hWorld - meshLev(a), segs = [];
+  for (let t = 0; t + 2 < idx.length; t += 3) {
+    const i0 = idx[t] * 3, i1 = idx[t + 1] * 3, i2 = idx[t + 2] * 3;
+    const E = [[pos[i0], pos[i0 + 1], pos[i0 + 2], pos[i1], pos[i1 + 1], pos[i1 + 2]], [pos[i1], pos[i1 + 1], pos[i1 + 2], pos[i2], pos[i2 + 1], pos[i2 + 2]], [pos[i2], pos[i2 + 1], pos[i2 + 2], pos[i0], pos[i0 + 1], pos[i0 + 2]]];
+    const P = [];
+    for (const e of E) { const y1 = e[1] - yL, y2 = e[4] - yL; if ((y1 <= 0 && y2 > 0) || (y2 <= 0 && y1 > 0)) { const tt = y1 / (y1 - y2); P.push([e[0] + (e[3] - e[0]) * tt, e[2] + (e[5] - e[2]) * tt]); } }
+    if (P.length === 2) segs.push([P[0][0] + a.x, P[0][1] + a.y, P[1][0] + a.x, P[1][1] + a.y]);
+  }
+  return segs;
+}
 function ifcMatKey(name) {   // IFC-Materialname → unser Material-Schlüssel (für Schraffur + λ/U-Wert)
   const s = (name || '').toLowerCase();
   if (/luft|cavity|\bair\b|hinterl/.test(s)) return 'luft';
@@ -6047,6 +6062,7 @@ function wire() {
   $('#smIfcReopen').onclick = () => { if (window._ifc) open3DIFC(window._ifc); else toast('Noch kein IFC importiert – zuerst „IFC importieren".'); };
   $('#smOpen').onclick = openPicker;
   { const tb = $('#smTestScene'); if (tb) tb.onclick = () => buildExampleProject(); }
+  { const mb = $('#smMeshSlice'); if (mb) mb.onclick = () => { const cur = meshSliceH != null ? String(meshSliceH) : '1.2'; const r = prompt('IFC-/3D-Höhenschnitt bei welcher Höhe (m)? Leer = aus:', cur); if (r === null) return; const v = parseFloat((r || '').replace(',', '.')); meshSliceH = (r.trim() === '' || isNaN(v)) ? null : v; mb.classList.toggle('on', meshSliceH != null); (pageViews || []).forEach(pv => { try { drawAnnos(pv); } catch (_) { } }); toast(meshSliceH != null ? ('Höhenschnitt bei ' + meshSliceH + ' m – schneidet das echte 3D-Modell') : 'Höhenschnitt aus'); }; }
   $('#smProject').onclick = openProjectDlg;
   $('#docProject').onclick = openProjectDlg;
   $('#projCancel').onclick = () => { $('#projDlg').hidden = true; };

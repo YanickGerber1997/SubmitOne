@@ -4552,7 +4552,7 @@ function decodeMesh3d(e) {
   return { pos, idx: e.bits === 16 ? new Uint16Array(_b642ab(e.i)) : new Uint32Array(_b642ab(e.i)) };
 }
 let meshSliceH = null;   // IFC-/Mesh-Höhenschnitt: null = aus, sonst Höhe in m (echter 3D-Schnitt → Grundriss)
-let USE_SOLID = true;   // STANDARD: Wand-Vertikalschnitt + Öffnung aus kanonischem elementSolids/slicePlane (eine Quelle wie 3D); Alt-Logik via A/B-Knopf als Fallback
+let USE_SOLID = false;   // STANDARD: bewährte, akkurate Schnitt-Logik (war „immer sehr gut"). Kanonisch (elementSolids/slicePlane) optional via A/B-Knopf „⬛ Solid-Schnitt"
 function meshLev(a) { const l = layerById(a.layer); return (l && l.elevation) || 0; }
 function sliceMesh3d(a, hWorld) {   // schneidet das echte 3D-Mesh an der horizontalen Ebene y=hWorld → Grundriss-Segmente [x1,y1,x2,y2] (Plan-Punkte)
   if (!a.enc) return []; let d; try { d = decodeMesh3d(a.enc); } catch (_) { return []; }

@@ -886,6 +886,11 @@ function duplicateLayerUp() {   // aktives Geschoss 1:1 nach oben kopieren (neue
 }
 function findAnno(n, id) { return (annos[n] || []).find(a => a.id === id); }
 let _wallUnionActive = false;
+let _rafDraw = 0; const _rafPvs = new Set();
+function requestDraw(pv) {   // mehrere drawAnnos pro Frame (z. B. während Drag) zu EINEM Redraw bündeln → flüssiger
+  _rafPvs.add(pv); if (_rafDraw) return;
+  _rafDraw = requestAnimationFrame(() => { _rafDraw = 0; const ps = [..._rafPvs]; _rafPvs.clear(); for (const p of ps) { try { drawAnnos(p); } catch (_) { } } });
+}
 function drawAnnos(pv) {
   const svg = pv.svg; svg.innerHTML = '';
   for (const a of getAnnos(pv.num)) if (a.type === 'opening') openingResolve(a, pv);   // Türen/Fenster der Wand folgen lassen
@@ -1074,7 +1079,10 @@ function wallLayerBands(a, arr) {   // jede Schicht als (gehrungsfolgendes) Band
   }
   return { bands, c1A, c2A, c2B, c1B };
 }
+const _hcCache = new Map();   // Waben-Segmente cachen (teuer; deterministisch über bbox+R) – spart Rechenzeit bei jedem Redraw für unveränderte Wände
 function honeycombSegs(x0, y0, x1, y1, R) {   // Waben-/Hexagon-Schraffur (EPS/XPS): Liniensegmente über das Rechteck, Ursprung 0,0 → fluchtet über Bauteile
+  const key = Math.round(x0) + ',' + Math.round(y0) + ',' + Math.round(x1) + ',' + Math.round(y1) + ',' + R.toFixed(2);
+  const cached = _hcCache.get(key); if (cached) return cached;
   const segs = [], w = Math.sqrt(3) * R, vs = 1.5 * R, fl = (v, s) => Math.floor(v / s) * s;
   let row = Math.round(fl(y0 - R, vs) / vs);
   for (let cy = fl(y0 - R, vs); cy <= y1 + R; cy += vs, row++) {
@@ -1085,7 +1093,7 @@ function honeycombSegs(x0, y0, x1, y1, R) {   // Waben-/Hexagon-Schraffur (EPS/X
       for (let k = 0; k < 3; k++) segs.push([v[k][0], v[k][1], v[(k + 1) % 6][0], v[(k + 1) % 6][1]]);   // nur 3 Kanten je Wabe → Nachbarn ergänzen den Rest (keine Doppelung)
     }
   }
-  return segs;
+  if (_hcCache.size > 400) _hcCache.clear(); _hcCache.set(key, segs); return segs;
 }
 let _hlClip = 0;   // eindeutige clipPath-IDs (sonst überschreiben sich gesplittete Bänder → fehlende Schraffur)
 function layerHatch(svg, a, band) {   // Schraffur einer einzelnen Schicht, auf das Band geclippt
@@ -1797,7 +1805,7 @@ let wallDimOn = true;   // neue Wände bekommen standardmässig eine Masskette (
 function startDimOffDrag(pv, e, id) {   // Wand-Masslinie senkrecht zur Wand verschieben (setzt a.dimOff)
   const a = findAnno(pv.num, id); if (!a) return; pushUndo();
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len, mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
-  const move = ev => { const q = evtToPage(pv, ev); a.dimOff = (q.x - mx) * nx + (q.y - my) * ny; drawAnnos(pv); };
+  const move = ev => { const q = evtToPage(pv, ev); a.dimOff = (q.x - mx) * nx + (q.y - my) * ny; requestDraw(pv); };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
@@ -2388,9 +2396,9 @@ function startSectionEdit(pv, e, key) {   // im Schnitt direkt ziehen: Wandhöhe
   if (!docScale) return; const pp = key.split(':'), kind = pp[1], perPt = docScale.perPt, start = evtToPage(pv, e); pushUndo();
   const dh = q => (start.y - q.y) * perPt;   // nach oben ziehen = grösser
   let move;
-  if (kind === 'wh') { const w = findAnno(pv.num, +pp[2]); if (!w) { if (undoStack.length) undoStack.pop(); return; } const o = w.h3d || wallHeightM; move = ev => { w.h3d = Math.max(0.5, Math.round((o + dh(evtToPage(pv, ev))) * 100) / 100); drawAnnos(pv); }; }
-  else if (kind === 'op') { const o = findAnno(pv.num, +pp[2]); if (!o) { if (undoStack.length) undoStack.pop(); return; } const edge = pp[3], base = edge === 'head' ? (o.head != null ? o.head : (o.kind === 'window' ? 2.1 : 2.0)) : (o.sill || 0); move = ev => { const v = Math.max(0, Math.round((base + dh(evtToPage(pv, ev))) * 100) / 100); if (edge === 'head') o.head = v; else o.sill = v; drawAnnos(pv); }; }
-  else if (kind === 'sb') { const s = findAnno(pv.num, +pp[2]); if (!s) { if (undoStack.length) undoStack.pop(); return; } const o = s.base || 0; move = ev => { s.base = Math.max(0, Math.round((o + dh(evtToPage(pv, ev))) * 100) / 100); drawAnnos(pv); }; }
+  if (kind === 'wh') { const w = findAnno(pv.num, +pp[2]); if (!w) { if (undoStack.length) undoStack.pop(); return; } const o = w.h3d || wallHeightM; move = ev => { w.h3d = Math.max(0.5, Math.round((o + dh(evtToPage(pv, ev))) * 100) / 100); requestDraw(pv); }; }
+  else if (kind === 'op') { const o = findAnno(pv.num, +pp[2]); if (!o) { if (undoStack.length) undoStack.pop(); return; } const edge = pp[3], base = edge === 'head' ? (o.head != null ? o.head : (o.kind === 'window' ? 2.1 : 2.0)) : (o.sill || 0); move = ev => { const v = Math.max(0, Math.round((base + dh(evtToPage(pv, ev))) * 100) / 100); if (edge === 'head') o.head = v; else o.sill = v; requestDraw(pv); }; }
+  else if (kind === 'sb') { const s = findAnno(pv.num, +pp[2]); if (!s) { if (undoStack.length) undoStack.pop(); return; } const o = s.base || 0; move = ev => { s.base = Math.max(0, Math.round((o + dh(evtToPage(pv, ev))) * 100) / 100); requestDraw(pv); }; }
   else { if (undoStack.length) undoStack.pop(); return; }
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
@@ -2398,21 +2406,21 @@ function startSectionEdit(pv, e, key) {   // im Schnitt direkt ziehen: Wandhöhe
 function startSectionLayerDrag(pv, e, wallId, li, edge) {   // im Schnitt: Schicht-Ober-/Unterkante ziehen → layer.top/bot (m)
   const w = findAnno(pv.num, wallId); if (!w || !w.layers || !w.layers[li] || !docScale) return; pushUndo();
   const perPt = docScale.perPt, L = w.layers[li], o = edge === 'top' ? (L.top || 0) : (L.bot || 0), start = evtToPage(pv, e);
-  const move = ev => { const q = evtToPage(pv, ev); if (edge === 'top') L.top = Math.max(-2, Math.round(((o + (start.y - q.y) * perPt)) * 1000) / 1000); else L.bot = Math.max(-2, Math.round(((o + (q.y - start.y) * perPt)) * 1000) / 1000); drawAnnos(pv); };
+  const move = ev => { const q = evtToPage(pv, ev); if (edge === 'top') L.top = Math.max(-2, Math.round(((o + (start.y - q.y) * perPt)) * 1000) / 1000); else L.bot = Math.max(-2, Math.round(((o + (q.y - start.y) * perPt)) * 1000) / 1000); requestDraw(pv); };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function startLayerExtDrag(pv, e, id, li, end) {   // eine Wandschicht an einem Ende entlang der Wandachse verlängern/kürzen (pt)
   const a = findAnno(pv.num, id); if (!a || !a.layers || !a.layers[li]) return; pushUndo();
   const dxw = a.x2 - a.x1, dyw = a.y2 - a.y1, Lw = Math.hypot(dxw, dyw) || 1, uxw = dxw / Lw, uyw = dyw / Lw, o1 = a.layers[li].ext1 || 0, o2 = a.layers[li].ext2 || 0, start = evtToPage(pv, e);
-  const move = ev => { const q = evtToPage(pv, ev), proj = (q.x - start.x) * uxw + (q.y - start.y) * uyw; if (end === 1) a.layers[li].ext1 = Math.round(o1 - proj); else a.layers[li].ext2 = Math.round(o2 + proj); drawAnnos(pv); };
+  const move = ev => { const q = evtToPage(pv, ev), proj = (q.x - start.x) * uxw + (q.y - start.y) * uyw; if (end === 1) a.layers[li].ext1 = Math.round(o1 - proj); else a.layers[li].ext2 = Math.round(o2 + proj); requestDraw(pv); };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function startGroupMove(pv, e) {
   const start = evtToPage(pv, e); pushUndo(); const origs = {}; let moved = false;
   for (const id of groupSel.ids) { const a = findAnno(pv.num, id); if (a) origs[id] = JSON.parse(JSON.stringify(a)); }
-  const move = ev => { const q = evtToPage(pv, ev), dx = q.x - start.x, dy = q.y - start.y; moved = true; for (const id of groupSel.ids) { const a = findAnno(pv.num, id); if (a && origs[id]) translateAnno(a, origs[id], dx, dy); } drawAnnos(pv); };
+  const move = ev => { const q = evtToPage(pv, ev), dx = q.x - start.x, dy = q.y - start.y; moved = true; for (const id of groupSel.ids) { const a = findAnno(pv.num, id); if (a && origs[id]) translateAnno(a, origs[id], dx, dy); } requestDraw(pv); };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) { if (undoStack.length) undoStack.pop(); } else { saveState(); refreshComments(); } };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
@@ -2519,7 +2527,7 @@ function startNodeDrag(pv, e, id, pnIdx, phIdx, hk) {
   const a = findAnno(pv.num, id); if (!a) return;
   if (a.type === 'profile' || a.type === 'slab' || a.type === 'area' || a.type === 'terrain') {   // Polygon/Pfad-Knoten ziehen (rastet an Wandenden/Raster)
     if (pnIdx === null) return; pushUndo(); const key = a.type === 'profile' ? 'path' : 'pts';
-    const move = ev => { let q = evtToPage(pv, ev); const an = anchorSnap(pv, q.x, q.y, a.id); if (an) q = an; else if (gridOn && !ev.altKey) q = snapPt(q.x, q.y); a[key][+pnIdx] = [q.x, q.y]; drawAnnos(pv); };
+    const move = ev => { let q = evtToPage(pv, ev); const an = anchorSnap(pv, q.x, q.y, a.id); if (an) q = an; else if (gridOn && !ev.altKey) q = snapPt(q.x, q.y); a[key][+pnIdx] = [q.x, q.y]; requestDraw(pv); };
     const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); saveState(); };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); return;
   }
@@ -3173,7 +3181,7 @@ function startSection(pv, e, p) {
   pushUndo();
   const a = { id: nextId++, type: 'section', cx1: p.x, cy1: p.y, cx2: p.x, cy2: p.y, label: 'A', ox: 0, oy: 0 };
   pushAnno(pv.num, a);
-  const move = ev => { const q = evtToPage(pv, ev); if (ev.shiftKey) { const s = snap15(p.x, p.y, q.x, q.y); a.cx2 = s.x; a.cy2 = s.y; } else { a.cx2 = q.x; a.cy2 = q.y; } drawAnnos(pv); };
+  const move = ev => { const q = evtToPage(pv, ev); if (ev.shiftKey) { const s = snap15(p.x, p.y, q.x, q.y); a.cx2 = s.x; a.cy2 = s.y; } else { a.cx2 = q.x; a.cy2 = q.y; } requestDraw(pv); };
   const up = () => {
     document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
     if (Math.hypot(a.cx2 - a.cx1, a.cy2 - a.cy1) < 8) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(a), 1); undoStack.pop(); drawAnnos(pv); return; }
@@ -3207,7 +3215,7 @@ function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieb
   const wall = a.wallId && getAnnos(pv.num).find(o => o.id === a.wallId && o.type === 'wall');
   if (!wall) return startMove(pv, e, a);
   pushUndo(); let moved = false;
-  const move = ev => { moved = true; const q = evtToPage(pv, ev), dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, L2 = dx * dx + dy * dy || 1; let t = ((q.x - wall.x1) * dx + (q.y - wall.y1) * dy) / L2; a.t = Math.max(0, Math.min(1, t)); openingResolve(a, pv); drawAnnos(pv); };
+  const move = ev => { moved = true; const q = evtToPage(pv, ev), dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, L2 = dx * dx + dy * dy || 1; let t = ((q.x - wall.x1) * dx + (q.y - wall.y1) * dy) / L2; a.t = Math.max(0, Math.min(1, t)); openingResolve(a, pv); requestDraw(pv); };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) undoStack.pop(); else saveState(); };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }

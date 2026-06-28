@@ -5860,6 +5860,17 @@ function build3DScene(host, walls, arr, opts) {
       const mapSH = (p, u) => { const vOff = p[1] * perPt; return [sx + ux * M(u) + nxw * vOff, midY + p[0] * perPt, sz + uy * M(u) + nyw * vOff]; };
       if (sh) for (const st of sh) extrudePrism(st.poly, p => mapSH(p, a0), p => mapSH(p, a1), st.fill);
     };
+    const addWallLap3D = (o, a0, a1, yBot, yTop, dC, fdM) => {   // Wand-Finish-Schichten (ausserhalb der Rahmen-Tiefe) lappen auf den Rahmen → füllt die Lücke an Laibung/Sturz/Brüstung
+      if (!wL) return;
+      const lapPt0 = (o.frameW || cmToPts(10)) - cmToPts(o.boardVis != null ? o.boardVis : 1), lapInPt = Math.max(0, lapPt0 - openingRevealTotalPts(o, 'L', 'i')), lapOutPt = Math.max(0, lapPt0 - openingRevealTotalPts(o, 'L', 'o')), bH = (w.schalH ? w.schalH / 100 : 0.12);
+      let off = -th / 2;
+      for (const L of wL) { const lt = (L.t / totalT) * th; if (L.mat !== 'luft') { const lo = off, hi = off + lt, inner = hi <= dC - fdM / 2 + 1e-4, outer = lo >= dC + fdM / 2 - 1e-4, lapPtS = inner ? lapInPt : (outer ? lapOutPt : 0);
+        if (lapPtS > 0.5) { const lapM = lapPtS * perPt, dcen = off + lt / 2, mat = layerMat(L.mat, lapPtS * perPt, yTop - yBot, bH);
+          addBox2(a0, a0 + lapPtS, yBot, yTop, dcen, lt, mat, true); addBox2(a1 - lapPtS, a1, yBot, yTop, dcen, lt, mat, true);   // Jamben
+          if (yBot > yb + 1e-4) addBox2(a0, a1, yBot, yBot + lapM, dcen, lt, mat, true);   // Brüstung/Schwelle hoch
+          addBox2(a0, a1, yTop - lapM, yTop, dcen, lt, mat, true); } }   // Sturz runter
+        off += lt; }
+    };
     const ops = arr.filter(o => o.type === 'opening' && o.wallId === w.id).map(o => ({ obj: o, c: o.t * lp, hw: o.w / 2, sill: o.kind === 'window' ? (o.sill || 0) : 0, head: o.head || (o.kind === 'window' ? 2.1 : 2.0), kind: o.kind, depth: o.depth == null ? 0.5 : o.depth, fw: o.frameW || cmToPts(o.kind === 'door' ? 6 : 10), fd: o.frameD || cmToPts(7), bank: o.bank !== false, niche: !!o.niche, winType: o.winType || 'f1', winMat: o.winMat || 'holz', winHinge: o.winHinge || 'left' })).sort((a, b) => a.c - b.c);
     let cur = 0;
     for (const op of ops) {
@@ -5871,6 +5882,7 @@ function build3DScene(host, walls, arr, opts) {
       if (op.kind === 'window') {
         const fdM = M(op.fd), fwM = M(op.fw), dC = Math.max(-(th / 2 - fdM / 2), Math.min(th / 2 - fdM / 2, (op.depth - 0.5) * th)), sillY = yb + op.sill, headY = yb + Math.min(op.head, HW);
         addReveal3D(op.obj, sillY, headY, a0, a1);   // Schichteinzug Laibung + Sturz/Schwelle
+        addWallLap3D(op.obj, a0, a1, sillY, headY, dC, fdM);   // Wandschichten lappen auf den Rahmen (Lücke füllen)
         addBox2(a0, a0 + op.fw, sillY, headY, dC, fdM, omat, true); addBox2(a1 - op.fw, a1, sillY, headY, dC, fdM, omat, true);   // Blendrahmen seitlich
         addBox2(a0, a1, sillY, sillY + fwM, dC, fdM, omat, true); addBox2(a0, a1, headY - fwM, headY, dC, fdM, omat, true);       // Blendrahmen oben/unten
         if (op.winType === 'f2s') addBox2((a0 + a1) / 2 - op.fw / 2, (a0 + a1) / 2 + op.fw / 2, sillY, headY, dC, fdM, omat, true);   // Setzholz/Mittelpfosten
@@ -5888,6 +5900,7 @@ function build3DScene(host, walls, arr, opts) {
       } else if (op.kind === 'door') {   // Tür im 3D: Zarge (Material) + Türblatt / Festteil = Glas
         const fdM = M(op.fd), fwM = M(op.fw), dC = Math.max(-(th / 2 - fdM / 2), Math.min(th / 2 - fdM / 2, (op.depth - 0.5) * th)), headY = yb + Math.min(op.head, HW), leafD = M(cmToPts(4));
         addReveal3D(op.obj, yb, headY, a0, a1);   // Schichteinzug Laibung + Sturz
+        addWallLap3D(op.obj, a0, a1, yb, headY, dC, fdM);   // Wandschichten lappen auf die Zarge (Lücke füllen)
         addBox2(a0, a0 + op.fw, yb, headY, dC, fdM, omat, true); addBox2(a1 - op.fw, a1, yb, headY, dC, fdM, omat, true);   // Zarge seitlich
         addBox2(a0, a1, headY - fwM, headY, dC, fdM, omat, true);                                                          // Zarge oben
         const mid = op.winType === 'f2' || op.winType === 'f2s' || op.winType === 'f1f';

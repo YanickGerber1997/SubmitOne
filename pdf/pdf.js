@@ -1496,6 +1496,17 @@ function bbox(a) {
 }
 function isLineType(a) { return a && (a.type === 'line' || a.type === 'arrow' || a.type === 'measure' || a.type === 'dim' || a.type === 'arc' || a.type === 'wall' || a.type === 'stairs' || a.type === 'beam'); }
 function arcPath(a) { const r = Math.hypot(a.x2 - a.x1, a.y2 - a.y1) / 2; return `M ${a.x1} ${a.y1} A ${r} ${r} 0 0 1 ${a.x2} ${a.y2}`; }
+function compOutline(a, arr) {   // exakte Bauteil-Aussenform (Polygone) zum Hervorheben/Nachziehen – Wand/Fenster/Tür/Decke/Dach/…
+  if (!a) return null;
+  if (a.type === 'wall') return [wallPoly(a, arr)];
+  if (a.type === 'opening') return [openingFootprint(a)];
+  if ((a.type === 'slab' || a.type === 'area' || a.type === 'terrain') && a.pts && a.pts.length >= 2) return [a.pts];
+  if (a.type === 'rect' || a.type === 'roof' || a.type === 'block' || a.type === 'mesh3d' || a.type === 'columnSquare') { const x = a.x, y = a.y, w = a.w != null ? a.w : (a.fw || 0), h = a.h != null ? a.h : (a.fh || 0); if (w && h) return [[[x, y], [x + w, y], [x + w, y + h], [x, y + h]]]; }
+  if (a.type === 'profile' && a.path && a.path.length >= 2) return [a.closed ? a.path.concat([a.path[0]]) : a.path];
+  if (a.type === 'stairs' && a.x1 != null) { const dx = a.x2 - a.x1, dy = a.y2 - a.y1, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux, hw = (a.width || stairWidthPts()) / 2; return [[[a.x1 + nx * hw, a.y1 + ny * hw], [a.x2 + nx * hw, a.y2 + ny * hw], [a.x2 - nx * hw, a.y2 - ny * hw], [a.x1 - nx * hw, a.y1 - ny * hw]]]; }
+  return null;
+}
+function drawCompOutline(svg, a, arr, cls) { const polys = compOutline(a, arr); if (!polys) return false; for (const poly of polys) { if (!poly || poly.length < 2) continue; svg.appendChild(svgEl('polygon', { class: cls, points: poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ') })); } return true; }
 function drawSelection(svg, a, pv) {
   if (!a) return; const hs = (COARSE ? 8 : 4.5) / pv.scale;
   if (a.type === 'path') {                              // Kurve: Knoten + Anfasser zum Nachbearbeiten
@@ -1519,12 +1530,13 @@ function drawSelection(svg, a, pv) {
     const b = bbox(a), pad = 3; svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad }));
     return;
   }
-  if (a.type === 'area' || a.type === 'slab' || a.type === 'terrain') {   // Polygon/Polylinie: Eck-Knoten ziehen (nachbearbeiten)
-    const b = bbox(a), pad = 3; svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad }));
+  if (a.type === 'area' || a.type === 'slab' || a.type === 'terrain') {   // Polygon/Polylinie: echte Form nachziehen + Eck-Knoten ziehen
+    if (!drawCompOutline(svg, a, getAnnos(pv.num), 'sel-shape')) { const b = bbox(a), pad = 3; svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad })); }
     (a.pts || []).forEach((p, i) => svg.appendChild(svgEl('rect', { class: 'pnode', x: p[0] - hs, y: p[1] - hs, width: hs * 2, height: hs * 2, 'data-pn': i, 'data-id': a.id })));
     return;
   }
-  if (isLineType(a)) {                                  // Linie: KEIN Rechteck-Rahmen, nur Linie hervorheben + Endpunkte
+  if (isLineType(a)) {                                  // Linie/Wand: bei Wand die echte Form nachziehen, sonst nur Linie + Endpunkte
+    if (a.type === 'wall') drawCompOutline(svg, a, getAnnos(pv.num), 'sel-shape');   // Wand-Aussenform exakt hervorheben
     svg.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'sel-line' }));
     for (const [name, x, y] of [['p1', a.x1, a.y1], ['p2', a.x2, a.y2]]) svg.appendChild(svgEl('circle', { class: 'handle', cx: x, cy: y, r: hs, 'data-h': name }));
     if (a.type === 'wall' && a.dim) { const dg = wallDimGeom(a); svg.appendChild(svgEl('circle', { class: 'handle dim-handle', cx: (dg.x1 + dg.x2) / 2, cy: (dg.y1 + dg.y2) / 2, r: hs, 'data-h': 'dimoff', 'data-id': a.id })); }   // Masslinie von Hand verschieben
@@ -1534,7 +1546,7 @@ function drawSelection(svg, a, pv) {
     }
   } else {
     const b = bbox(a), pad = 3;
-    svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad }));
+    if (!drawCompOutline(svg, a, getAnnos(pv.num), 'sel-shape')) svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad }));   // echte Form nachziehen, sonst Box
     for (const [name, x, y] of [['nw', b.x, b.y], ['ne', b.x + b.w, b.y], ['sw', b.x, b.y + b.h], ['se', b.x + b.w, b.y + b.h]]) svg.appendChild(svgEl('rect', { class: 'handle', x: x - hs, y: y - hs, width: hs * 2, height: hs * 2, 'data-h': name }));
   }
 }
@@ -1543,8 +1555,8 @@ function setHover(pv, a) {
   const old = pv.svg.querySelector('.hover-layer'); if (old) old.remove();
   if (!a || (sel && sel.num === pv.num && sel.id === a.id)) return;
   const g = svgEl('g', { class: 'hover-layer' });
-  if (a.type === 'wall') {                                   // Wand: vier Eckpunkte zum Andocken zeigen
-    g.appendChild(svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'hover-line' }));
+  if (a.type === 'wall') {                                   // Wand: echte Form nachziehen + vier Eckpunkte zum Andocken
+    drawCompOutline(g, a, getAnnos(pv.num), 'hover-shape');
     const r = 4.5 / pv.scale;
     for (const p of wallPoly(a, getAnnos(pv.num))) g.appendChild(svgEl('circle', { cx: p[0], cy: p[1], r, class: 'hover-dot corner-dot' }));
   } else if (isLineType(a)) {
@@ -1552,7 +1564,7 @@ function setHover(pv, a) {
     const r = 4 / pv.scale;
     g.appendChild(svgEl('circle', { cx: a.x1, cy: a.y1, r, class: 'hover-dot' }));
     g.appendChild(svgEl('circle', { cx: a.x2, cy: a.y2, r, class: 'hover-dot' }));
-  } else { const b = bbox(a), pad = 2; g.appendChild(svgEl('rect', { x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad, class: 'hover-box' })); }
+  } else if (!drawCompOutline(g, a, getAnnos(pv.num), 'hover-shape')) { const b = bbox(a), pad = 2; g.appendChild(svgEl('rect', { x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad, class: 'hover-box' })); }   // echte Bauteil-Form, sonst Box
   pv.svg.appendChild(g);
 }
 

@@ -1875,10 +1875,13 @@ function revealEachEdge(a, edge, sk, cb) {   // Kopplung wie im Popup: none=nur 
   const es = revealCouple === 'none' ? [edge] : ['L', 'R', 'T', 'B'], sides = revealCouple === 'all' ? ['in', 'out'] : [sk];
   for (const e of es) { a.reveals[e] = a.reveals[e] || {}; for (const s2 of sides) { if (!Array.isArray(a.reveals[e][s2])) a.reveals[e][s2] = []; cb(a.reveals[e], a.reveals[e][s2], s2); } }
 }
-function startRevealThickDrag(pv, id, revKey) {   // Laibungsschicht-Dicke per Maus ziehen (im Grundriss)
+function startRevealLapDrag(pv, e, id, revKey) {   // im Grundriss ziehen: wie weit die Laibung auf den Rahmen lappt (= „Rahmen sichtbar", per Seite)
   const a = findAnno(pv.num, id), h = _revtHandles[id + '|' + revKey]; if (!a || !h) return;
-  const parts = revKey.split(':'), edge = parts[0], sk = parts[1] === 'i' ? 'in' : 'out', li = +parts[2]; pushUndo();
-  const move = ev => { const q = evtToPage(pv, ev), proj = (q.x - h.ax) * h.dirx + (q.y - h.ay) * h.diry, tcm = Math.max(0.2, Math.round(ptsToCm(proj) * 10) / 10); revealEachEdge(a, edge, sk, (er, l2) => { if (l2[li]) l2[li].t = tcm; }); requestDraw(pv); };
+  const parts = revKey.split(':'), edge = parts[0], sk = parts[1] === 'i' ? 'in' : 'out'; pushUndo();
+  a.reveals = a.reveals || {}; a.reveals[edge] = a.reveals[edge] || {};
+  const bvKey0 = sk === 'in' ? 'boardVisIn' : 'boardVisOut', bv0 = a.reveals[edge][bvKey0] != null ? a.reveals[edge][bvKey0] : (a.reveals[edge].boardVis != null ? a.reveals[edge].boardVis : 1), start = evtToPage(pv, e);
+  function mv(q) { const proj = (q.x - start.x) * h.dirx + (q.y - start.y) * h.diry; const bv = Math.round((bv0 - ptsToCm(proj)) * 10) / 10; revealEachEdge(a, edge, sk, (er, l2, s2) => { er[s2 === 'in' ? 'boardVisIn' : 'boardVisOut'] = bv; }); requestDraw(pv); }
+  const move = ev => mv(evtToPage(pv, ev));
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); drawAnnos(pv); saveState(); };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
@@ -1975,7 +1978,7 @@ function onPointerDown(pv, e) {
     if (revAttr && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; zoomToClick(e.clientX, e.clientY); drawAnnos(pv); openRevealLayerPop(pv, oo, revAttr, e.clientX, e.clientY); return; } }
     if (e.target.getAttribute && e.target.getAttribute('data-frame') && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; zoomToClick(e.clientX, e.clientY); drawAnnos(pv); openFramePop(pv, oo, e.clientX, e.clientY); return; } }   // Klick auf Rahmen → direkt editieren
     if (e.target.getAttribute && e.target.getAttribute('data-ah') && idAttr) { startAngleDrag(pv, e, +idAttr); return; }   // offenen Flügel ziehen → Öffnungswinkel
-    { const rt = e.target.getAttribute && e.target.getAttribute('data-revt'); if (rt && idAttr) { startRevealThickDrag(pv, +idAttr, rt); return; } }   // Laibungsschicht-Dicke per Maus ziehen
+    { const rt = e.target.getAttribute && e.target.getAttribute('data-revt'); if (rt && idAttr) { startRevealLapDrag(pv, e, +idAttr, rt); return; } }   // Laibung-Lappung (Rahmen sichtbar) per Maus ziehen
     { const wallAttr = e.target.getAttribute && e.target.getAttribute('data-wall'); if (wallAttr && idAttr) { const sa = findAnno(pv.num, +idAttr); if (sa && sa.type === 'section') { sel = { num: pv.num, id: sa.id }; groupSel = null; secSelWall = +wallAttr; drawAnnos(pv); updateSelBar(); toast('Wand im Schnitt gewählt – nur deren Höhen/Schicht-Punkte. Leere Stelle klicken = alle.'); return; } } }   // Wand im Schnitt sub-wählen
     if (e.target.getAttribute && e.target.getAttribute('data-group') && groupSel && groupSel.num === pv.num) { startGroupMove(pv, e); return; }   // ganze Gruppe ziehen
     const pn = e.target.getAttribute && e.target.getAttribute('data-pn'), ph = e.target.getAttribute && e.target.getAttribute('data-ph');
@@ -3086,7 +3089,7 @@ function drawOpening(svg, a, arr) {
   for (const f of (P.fills || [])) { if (f.role !== 'frame') continue; svg.appendChild(addHoverHL(svgEl('polygon', { class: 'frame-hit', points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id, 'data-frame': '1' }))); }   // klickbarer Rahmen
   for (const st of revHits) { svg.appendChild(addHoverHL(svgEl('polygon', { class: 'rev-hit', points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id, 'data-rev': st.edge + ':' + st.side + ':' + st.li }))); }   // klickbare Laibungs-Schicht (nur diese leuchtet beim Hover)
   if (seld) for (const arc of P.arcs) { if (!arc.handle) continue; const c = svgEl('circle', { cx: arc.handle.x.toFixed(2), cy: arc.handle.y.toFixed(2), r: 5, fill: '#fff', stroke: '#2a7', 'stroke-width': 2, 'data-id': a.id, 'data-ah': '1', 'vector-effect': 'non-scaling-stroke' }); c.style.cursor = 'grab'; svg.appendChild(c); }   // Ziehpunkt: Öffnungswinkel am offenen Blatt ziehen
-  if (seld) for (const st of revHits) { const q = st.poly; if (q.length < 4) continue; const fmx = (q[0][0] + q[3][0]) / 2, fmy = (q[0][1] + q[3][1]) / 2, wmx = (q[1][0] + q[2][0]) / 2, wmy = (q[1][1] + q[2][1]) / 2, dx = wmx - fmx, dy = wmy - fmy, dl = Math.hypot(dx, dy) || 1, key = st.edge + ':' + st.side + ':' + st.li; _revtHandles[a.id + '|' + key] = { ax: fmx, ay: fmy, dirx: dx / dl, diry: dy / dl }; const c = svgEl('circle', { cx: wmx.toFixed(2), cy: wmy.toFixed(2), r: 4.5, fill: '#cfe6c4', stroke: '#1a9a4e', 'stroke-width': 2, 'data-id': a.id, 'data-revt': key, 'vector-effect': 'non-scaling-stroke' }); c.style.cursor = 'move'; svg.appendChild(c); }   // Ziehgriff je Laibungsschicht: Dicke/Tiefe per Maus ziehen
+  if (seld) { const seen = {}; for (const st of revHits) { const k2 = st.edge + ':' + st.side; if (seen[k2]) continue; seen[k2] = 1; const q = st.poly; if (q.length < 4) continue; const fmx = (q[0][0] + q[3][0]) / 2, fmy = (q[0][1] + q[3][1]) / 2, sgn = st.edge === 'R' ? 1 : -1, ca = Math.cos(a.ang || 0), sa = Math.sin(a.ang || 0), key = st.edge + ':' + st.side + ':' + st.li; _revtHandles[a.id + '|' + key] = { dirx: -sgn * ca, diry: -sgn * sa }; const c = svgEl('circle', { cx: fmx.toFixed(2), cy: fmy.toFixed(2), r: 5, fill: '#cfe6c4', stroke: '#1a9a4e', 'stroke-width': 2, 'data-id': a.id, 'data-revt': key, 'vector-effect': 'non-scaling-stroke' }); c.style.cursor = 'ew-resize'; svg.appendChild(c); } }   // Ziehgriff je Laibungsseite an der Rahmenkante: ziehen Richtung Öffnungsmitte = Laibung lappt weiter auf den Rahmen
   return g;
 }
 function openRevealLayerPop(pv, a, revAttr, cx, cy) {   // Inline-Editor für EINE Laibungsschicht (im Grundriss angeklickt): Material/Dicke + „Rahmen sichtbar" dieser Kante

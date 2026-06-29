@@ -3051,8 +3051,7 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
     ord.forEach((L, idx) => {
       const mat = L[0], tcm = L[1], gap = L[2] || 0, len = L[5], over = L[6], mt = LINING_MAT[mat] || WALL_MATS[mat] || {};
       const mB2 = mFace + (-dirF) * (over ? cmToPts(over) / ht : 0), mA2 = (len != null) ? Math.max(-1.15, Math.min(1.15, mFace + dirF * cmToPts(len) / ht)) : mFrame, m0 = Math.min(mA2, mB2), m1 = Math.max(mA2, mB2);   // Länge (len) darf über den Rahmen hinaus; Überstand/Rücksprung (over)
-      let sOut = sIn - cmToPts(tcm);
-      if (idx === ord.length - 1) sOut = Math.min(sOut, -growPt);   // letzte (wandseitige) Schicht füllt IMMER bis zur Öffnungs-/Wandkante (−growPt) → die Laibung wächst mit der Lappung (Schichtaufbau wird dicker), nicht nur verschoben
+      const sOut = sIn - cmToPts(tcm);   // jede Schicht behält ihre Dicke – die Laibung wandert nur (kein Mitwachsen)
       const sk = mt.stroke || mt.color || '#1c242c';
       if (sIn - sOut > 0.05 && m1 - m0 > 0.005) { const aI = sgn * (1 - sIn / hw), aO = sgn * (1 - sOut / hw), bI = sgn * (1 - (sIn - offP) / hw), bO = sgn * (1 - (sOut - offP) / hw), ss = [aI, aO, bI, bO]; strips.push({ poly: [corner(aI, mA2), corner(aO, mA2), corner(bO, mB2), corner(bI, mB2)], fill: mt.fill || '#fff', stroke: sk, edge, side: sd, li: L[4], hatch: mt.hatch ? bandHatch(Math.min(...ss), Math.max(...ss), m0, m1, corner, hw, ht, stepS) : null }); }
       sIn = sOut - cmToPts(gap);

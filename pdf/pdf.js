@@ -1547,7 +1547,7 @@ function drawSelection(svg, a, pv) {
   } else {
     const b = bbox(a), pad = 3;
     if (!drawCompOutline(svg, a, getAnnos(pv.num), 'sel-shape')) svg.appendChild(svgEl('rect', { class: 'sel-out', x: b.x - pad, y: b.y - pad, width: b.w + 2 * pad, height: b.h + 2 * pad }));   // echte Form nachziehen, sonst Box
-    for (const [name, x, y] of [['nw', b.x, b.y], ['ne', b.x + b.w, b.y], ['sw', b.x, b.y + b.h], ['se', b.x + b.w, b.y + b.h]]) svg.appendChild(svgEl('rect', { class: 'handle', x: x - hs, y: y - hs, width: hs * 2, height: hs * 2, 'data-h': name }));
+    if (a.type !== 'opening') for (const [name, x, y] of [['nw', b.x, b.y], ['ne', b.x + b.w, b.y], ['sw', b.x, b.y + b.h], ['se', b.x + b.w, b.y + b.h]]) svg.appendChild(svgEl('rect', { class: 'handle', x: x - hs, y: y - hs, width: hs * 2, height: hs * 2, 'data-h': name }));   // Öffnung: keine Box-Eckgriffe (Breite/Position + Laibung haben eigene Griffe)
   }
 }
 // Hover-Vorschau (Maus über Anmerkung): Linie hervorheben + Endpunkte zeigen
@@ -1886,11 +1886,11 @@ const _revtHandles = {};   // {key: {dirx,diry}} – Ziehgriff Laibungs-Lappung 
 const _revoHandles = {};   // {key: {dirx,diry,li}} – Ziehgriff Laibungs-Überstand (über die Wandfläche)
 function startRevealOverDrag(pv, e, id, revKey) {   // Überstand/Rücksprung der Laibungsschicht per Maus (Tiefe über die Wandfläche)
   const a = findAnno(pv.num, id), h = _revoHandles[id + '|' + revKey]; if (!a || !h) return;
-  const parts = revKey.split(':'), edge = parts[0], sk = parts[1] === 'i' ? 'in' : 'out', li = +parts[2]; pushUndo();
+  const parts = revKey.split(':'), edge = parts[0], sk = parts[1] === 'i' ? 'in' : 'out', li = +parts[2];
   a.reveals = a.reveals || {}; a.reveals[edge] = a.reveals[edge] || {};
-  const lst0 = a.reveals[edge][sk] || [], o0 = (lst0[li] && lst0[li].over) || 0, start = evtToPage(pv, e);
-  const move = ev => { const q = evtToPage(pv, ev), proj = (q.x - start.x) * h.dirx + (q.y - start.y) * h.diry, ov = Math.round((o0 + ptsToCm(proj)) * 10) / 10; revealEachEdge(a, edge, sk, (er, l2) => { if (l2[li]) l2[li].over = ov; }); requestDraw(pv); };
-  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); drawAnnos(pv); saveState(); };
+  const lst0 = a.reveals[edge][sk] || [], o0 = (lst0[li] && lst0[li].over) || 0, start = evtToPage(pv, e); let moved = false;
+  const move = ev => { const q = evtToPage(pv, ev); if (!moved) { if (Math.hypot(q.x - start.x, q.y - start.y) < 3 / pv.scale) return; pushUndo(); moved = true; } const proj = (q.x - start.x) * h.dirx + (q.y - start.y) * h.diry, ov = Math.round((o0 + ptsToCm(proj)) * 10) / 10; revealEachEdge(a, edge, sk, (er, l2) => { if (l2[li]) l2[li].over = ov; }); requestDraw(pv); };
+  const up = ev => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) openRevealLayerPop(pv, a, revKey, (ev && ev.clientX) || e.clientX, (ev && ev.clientY) || e.clientY); else { drawAnnos(pv); saveState(); } };   // nur Klick (kein Ziehen) → Laibung anwählen/Popup
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function revealEachEdge(a, edge, sk, cb) {   // Kopplung wie im Popup: none=nur Kante, side=alle Kanten dieser Seite, all=alle Kanten beide Seiten
@@ -1913,12 +1913,12 @@ function startOpeningWidthDrag(pv, id, side) {   // Fensterbreite an der Kante z
 }
 function startRevealLapDrag(pv, e, id, revKey) {   // im Grundriss ziehen: wie weit die Laibung auf den Rahmen lappt (= „Rahmen sichtbar", per Seite)
   const a = findAnno(pv.num, id), h = _revtHandles[id + '|' + revKey]; if (!a || !h) return;
-  const parts = revKey.split(':'), edge = parts[0], sk = parts[1] === 'i' ? 'in' : 'out'; pushUndo();
+  const parts = revKey.split(':'), edge = parts[0], sk = parts[1] === 'i' ? 'in' : 'out';
   a.reveals = a.reveals || {}; a.reveals[edge] = a.reveals[edge] || {};
-  const bvKey0 = sk === 'in' ? 'boardVisIn' : 'boardVisOut', bv0 = a.reveals[edge][bvKey0] != null ? a.reveals[edge][bvKey0] : (a.reveals[edge].boardVis != null ? a.reveals[edge].boardVis : 1), start = evtToPage(pv, e);
+  const bvKey0 = sk === 'in' ? 'boardVisIn' : 'boardVisOut', bv0 = a.reveals[edge][bvKey0] != null ? a.reveals[edge][bvKey0] : (a.reveals[edge].boardVis != null ? a.reveals[edge].boardVis : 1), start = evtToPage(pv, e); let moved = false;
   function mv(q) { const proj = (q.x - start.x) * h.dirx + (q.y - start.y) * h.diry; const bv = Math.round((bv0 - ptsToCm(proj)) * 10) / 10; revealEachEdge(a, edge, sk, (er, l2, s2) => { er[s2 === 'in' ? 'boardVisIn' : 'boardVisOut'] = bv; }); requestDraw(pv); }
-  const move = ev => mv(evtToPage(pv, ev));
-  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); drawAnnos(pv); saveState(); };
+  const move = ev => { const q = evtToPage(pv, ev); if (!moved) { if (Math.hypot(q.x - start.x, q.y - start.y) < 3 / pv.scale) return; pushUndo(); moved = true; } mv(q); };
+  const up = ev => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) openRevealLayerPop(pv, a, revKey, (ev && ev.clientX) || e.clientX, (ev && ev.clientY) || e.clientY); else { drawAnnos(pv); saveState(); } };   // nur Klick (kein Ziehen) → Laibung anwählen/Popup
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function addHoverHL(el) { el.addEventListener('pointerenter', () => el.classList.add('hl-on')); el.addEventListener('pointerleave', () => el.classList.remove('hl-on')); return el; }   // nur das berührte Bauteil hervorheben (kein SVG-:hover auf überlappenden Flächen)

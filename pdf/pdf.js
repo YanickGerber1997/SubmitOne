@@ -3095,9 +3095,12 @@ function ensureRevealLayers(a, arr) {   // Standard-Laibung in a.reveals materia
   }
   return changed;
 }
+let _revStripCache = {};
 function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → Schalung 1,5 cm (Schraffur) → Rest Dämmung bis Rahmen; innen Putz/Brett
   const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall');
   if (!wall || !wall.layers || wall.layers.length < 2 || (a.kind !== 'window' && a.kind !== 'door')) return [];
+  const ck = a.id + '|' + a.wallId, sig = [a.x, a.y, a.ang, a.w, a.thick || 0, a.frameW || 0, a.depth == null ? 0.5 : a.depth, a.frameD || 0, a.revealType || '', a.revealOuter || '', a.anschlagType || '', a.anschlagDepth || 0, a.boardVis != null ? a.boardVis : '', _revSig(a), wall.layers.map(l => l.mat + (l.t || 0)).join('|'), (wall.hatch && wall.hatch.scale) || lastHatchScale].join('~');   // unveränderte Laibung → aus Cache (Schraffur/Geometrie nicht jedes Frame neu rechnen)
+  const C = _revStripCache[ck]; if (C && C.sig === sig) return C.strips;
   const x = a.x, y = a.y, ang = a.ang, ht = (a.thick || wallThickPts()) / 2, hw = a.w / 2;
   const ux = Math.cos(ang), uy = Math.sin(ang), nx = -uy, ny = ux, corner = (s, m) => [x + ux * hw * s + nx * ht * m, y + uy * hw * s + ny * ht * m];
   const depth = a.depth == null ? 0.5 : a.depth, md = Math.max(-1, Math.min(1, depth * 2 - 1));
@@ -3165,7 +3168,7 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
     }
   }
   for (const st of strips) if (st.seam == null && !st.board) st.seam = 3;   // Standard: nur die Kante am Stoß zur Wand (Kante 3) läuft randlos durch; übrige Kanten behalten den Rahmen
-  return strips;
+  _revStripCache[ck] = { sig, strips }; return strips;
 }
 function openingLichtW(o) {   // Rohbau-, Aussenlicht-, Innenlichtmass (Fenster)
   const roh = o.w; if (o.kind !== 'window') return { roh };

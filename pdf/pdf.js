@@ -816,6 +816,13 @@ function zoomToClick(clientX, clientY) {   // beim Anklicken eines Bauteils saub
   const docX = host.scrollLeft + px, docY = host.scrollTop + py;
   setZoom(nz); host.scrollLeft = docX * f - host.clientWidth / 2; host.scrollTop = docY * f - host.clientHeight / 2;
 }
+function zoomToReveal(el) {   // auf EINE Laibungsschicht zentriert heranzoomen, bis die Schicht-Dicke gut greifbar ist (bis 1600%)
+  if (!pdfDoc || !el || !el.getBoundingClientRect) return; const host = $('#pages'), rect = host.getBoundingClientRect(), b = el.getBoundingClientRect();
+  const cur = curScale(), smaller = Math.max(1, Math.min(b.width, b.height)), targetPx = 90;   // gewünschte Schicht-Dicke auf dem Bildschirm
+  let nz = cur * (targetPx / smaller); nz = Math.max(cur, Math.min(16, Math.round(nz * 100) / 100)); const f = nz / cur;
+  const ccx = b.left + b.width / 2 - rect.left, ccy = b.top + b.height / 2 - rect.top, docX = host.scrollLeft + ccx, docY = host.scrollTop + ccy;
+  setZoom(nz); host.scrollLeft = docX * f - host.clientWidth / 2; host.scrollTop = docY * f - host.clientHeight / 2;
+}
 
 /* ---------- Annotationen rendern ---------- */
 function getAnnos(n) { return annos[n] || (annos[n] = []); }
@@ -1891,7 +1898,7 @@ function startRevealOverDrag(pv, e, id, revKey) {   // Überstand/Rücksprung de
   a.reveals = a.reveals || {}; a.reveals[edge] = a.reveals[edge] || {};
   const lst0 = a.reveals[edge][sk] || [], o0 = (lst0[li] && lst0[li].over) || 0, start = evtToPage(pv, e); let moved = false;
   const move = ev => { const q = evtToPage(pv, ev); if (!moved) { if (Math.hypot(q.x - start.x, q.y - start.y) < 3 / pv.scale) return; pushUndo(); moved = true; } const proj = (q.x - start.x) * h.dirx + (q.y - start.y) * h.diry, ov = Math.round((o0 + ptsToCm(proj)) * 10) / 10; revealEachEdge(a, edge, sk, (er, l2) => { if (l2[li]) l2[li].over = ov; }); requestDraw(pv); };
-  const up = ev => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) openRevealLayerPop(pv, a, revKey, (ev && ev.clientX) || e.clientX, (ev && ev.clientY) || e.clientY); else { drawAnnos(pv); saveState(); } };   // nur Klick (kein Ziehen) → Laibung anwählen/Popup
+  const up = ev => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) { const rel = pv.svg.querySelector('.rev-hit[data-rev="' + revKey + '"]'); if (rel) zoomToReveal(rel); drawAnnos(pv); openRevealLayerPop(pv, a, revKey, (ev && ev.clientX) || e.clientX, (ev && ev.clientY) || e.clientY); } else { drawAnnos(pv); saveState(); } };   // nur Klick (kein Ziehen) → auf die Laibung zoomen + Popup
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function revealEachEdge(a, edge, sk, cb) {   // Kopplung wie im Popup: none=nur Kante, side=alle Kanten dieser Seite, all=alle Kanten beide Seiten
@@ -1920,7 +1927,7 @@ function startRevealLapDrag(pv, e, id, revKey) {   // im Grundriss ziehen: wie w
   const bvKey0 = sk === 'in' ? 'boardVisIn' : 'boardVisOut', bv0 = a.reveals[edge][bvKey0] != null ? a.reveals[edge][bvKey0] : (a.reveals[edge].boardVis != null ? a.reveals[edge].boardVis : 1), start = evtToPage(pv, e); let moved = false;
   function mv(q) { const proj = (q.x - start.x) * h.dirx + (q.y - start.y) * h.diry; const bv = Math.round((bv0 - ptsToCm(proj)) * 10) / 10; revealEachEdge(a, edge, sk, (er, l2, s2) => { er[s2 === 'in' ? 'boardVisIn' : 'boardVisOut'] = bv; }); requestDraw(pv); }
   const move = ev => { const q = evtToPage(pv, ev); if (!moved) { if (Math.hypot(q.x - start.x, q.y - start.y) < 3 / pv.scale) return; pushUndo(); moved = true; } mv(q); };
-  const up = ev => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) openRevealLayerPop(pv, a, revKey, (ev && ev.clientX) || e.clientX, (ev && ev.clientY) || e.clientY); else { drawAnnos(pv); saveState(); } };   // nur Klick (kein Ziehen) → Laibung anwählen/Popup
+  const up = ev => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) { const rel = pv.svg.querySelector('.rev-hit[data-rev="' + revKey + '"]'); if (rel) zoomToReveal(rel); drawAnnos(pv); openRevealLayerPop(pv, a, revKey, (ev && ev.clientX) || e.clientX, (ev && ev.clientY) || e.clientY); } else { drawAnnos(pv); saveState(); } };   // nur Klick (kein Ziehen) → auf die Laibung zoomen + Popup
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function addHoverHL(el) { el.addEventListener('pointerenter', () => el.classList.add('hl-on')); el.addEventListener('pointerleave', () => el.classList.remove('hl-on')); return el; }   // nur das berührte Bauteil hervorheben (kein SVG-:hover auf überlappenden Flächen)
@@ -2018,7 +2025,7 @@ function onPointerDown(pv, e) {
 
   if (tool === 'select') {
     const revAttr = e.target.getAttribute && e.target.getAttribute('data-rev');   // Klick auf eine Laibungs-Schicht im Grundriss → direkt editieren
-    if (revAttr && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; zoomToClick(e.clientX, e.clientY); drawAnnos(pv); openRevealLayerPop(pv, oo, revAttr, e.clientX, e.clientY); return; } }
+    if (revAttr && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; zoomToReveal(e.target); drawAnnos(pv); openRevealLayerPop(pv, oo, revAttr, e.clientX, e.clientY); return; } }   // Laibung anklicken → zentriert auf die Schicht zoomen (Kanten gross & greifbar)
     if (e.target.getAttribute && e.target.getAttribute('data-frame') && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; zoomToClick(e.clientX, e.clientY); drawAnnos(pv); openFramePop(pv, oo, e.clientX, e.clientY); return; } }   // Klick auf Rahmen → direkt editieren
     if (e.target.getAttribute && e.target.getAttribute('data-ah') && idAttr) { startAngleDrag(pv, e, +idAttr); return; }   // offenen Flügel ziehen → Öffnungswinkel
     { const rt = e.target.getAttribute && e.target.getAttribute('data-revt'); if (rt && idAttr) { startRevealLapDrag(pv, e, +idAttr, rt); return; } }   // Laibung-Lappung (Rahmen sichtbar) per Maus ziehen

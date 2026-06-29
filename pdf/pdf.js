@@ -1950,6 +1950,14 @@ function startRevealLenDrag(pv, e, id, revKey) {   // Schicht-TIEFE/LÄNGE (wie 
   const up = ev => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) _revClickFallback(pv, a, revKey, e, ev); else { drawAnnos(pv); saveState(); } };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
+let _dimHandles = {};
+function startDimEdgeDrag(pv, e, id, key) {   // Rahmen-/Flügelmass an der Kante ziehen (frameW/sashW …); Klick = Popup
+  const a = findAnno(pv.num, id), h = _dimHandles[id + '|' + key]; if (!a || !h) return;
+  const base = ptsToCm(a[h.prop] != null ? a[h.prop] : cmToPts(h.def)), start = evtToPage(pv, e); let moved = false;
+  const move = ev => { const q = evtToPage(pv, ev); if (!moved) { if (Math.hypot(q.x - start.x, q.y - start.y) < 3 / pv.scale) return; pushUndo(); moved = true; } const proj = (q.x - start.x) * h.dirx + (q.y - start.y) * h.diry, v = Math.max(h.min, Math.min(h.max, Math.round((base + ptsToCm(proj)) * 10) / 10)); a[h.prop] = cmToPts(v); if (typeof openingResolve === 'function') openingResolve(a, pv); requestDraw(pv); };
+  const up = ev => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (!moved) { zoomToClick((ev && ev.clientX) || e.clientX, (ev && ev.clientY) || e.clientY); drawAnnos(pv); openFramePop(pv, a, (ev && ev.clientX) || e.clientX, (ev && ev.clientY) || e.clientY); } else { drawAnnos(pv); saveState(); } };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
 function addHoverHL(el) { el.addEventListener('pointerenter', () => el.classList.add('hl-on')); el.addEventListener('pointerleave', () => el.classList.remove('hl-on')); return el; }   // nur das berührte Bauteil hervorheben (kein SVG-:hover auf überlappenden Flächen)
 let _tipEl = null;
 function showTip(text, x, y) { if (!_tipEl) { _tipEl = document.createElement('div'); _tipEl.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;background:#1c242c;color:#fff;font:11px/1.3 system-ui,sans-serif;padding:3px 7px;border-radius:5px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.35)'; document.body.appendChild(_tipEl); } _tipEl.textContent = text; _tipEl.style.display = 'block'; _tipEl.style.left = (x + 13) + 'px'; _tipEl.style.top = (y + 13) + 'px'; }
@@ -2053,6 +2061,7 @@ function onPointerDown(pv, e) {
     { const ro = e.target.getAttribute && e.target.getAttribute('data-revo'); if (ro && idAttr) { startRevealOverDrag(pv, e, +idAttr, ro); return; } }   // Laibungs-Überstand per Maus ziehen
     { const rtk = e.target.getAttribute && e.target.getAttribute('data-revtk'); if (rtk && idAttr) { startRevealThickDrag(pv, e, +idAttr, rtk); return; } }   // Laibungs-Schichtdicke per Maus ziehen
     { const rln = e.target.getAttribute && e.target.getAttribute('data-revln'); if (rln && idAttr) { startRevealLenDrag(pv, e, +idAttr, rln); return; } }   // Laibungs-Tiefe/Länge per Maus ziehen
+    { const dim = e.target.getAttribute && e.target.getAttribute('data-dim'); if (dim && idAttr) { startDimEdgeDrag(pv, e, +idAttr, dim); return; } }   // Rahmen-/Flügelbreite per Maus ziehen
     { const wallAttr = e.target.getAttribute && e.target.getAttribute('data-wall'); if (wallAttr && idAttr) { const sa = findAnno(pv.num, +idAttr); if (sa && sa.type === 'section') { sel = { num: pv.num, id: sa.id }; groupSel = null; secSelWall = +wallAttr; drawAnnos(pv); updateSelBar(); toast('Wand im Schnitt gewählt – nur deren Höhen/Schicht-Punkte. Leere Stelle klicken = alle.'); return; } } }   // Wand im Schnitt sub-wählen
     if (e.target.getAttribute && e.target.getAttribute('data-group') && groupSel && groupSel.num === pv.num) { startGroupMove(pv, e); return; }   // ganze Gruppe ziehen
     const pn = e.target.getAttribute && e.target.getAttribute('data-pn'), ph = e.target.getAttribute && e.target.getAttribute('data-ph');
@@ -3028,8 +3037,8 @@ function openingParts(a, detail) {   // detail=false → einfache Symbol-Darstel
       const hp = corner(hingeS, md), Ln = clearWs * hw, tw = Math.min(fdh * 1.4 * ht, cmToPts(4));
       const cdx = ux * dirAlong, cdy = uy * dirAlong, odx = nx * sw, ody = ny * sw;   // zu-Richtung (entlang Wand) / auf-Richtung (quer)
       const ldx = cdx * Math.cos(oAng) + odx * Math.sin(oAng), ldy = cdy * Math.cos(oAng) + ody * Math.sin(oAng);   // Blattrichtung beim Öffnungswinkel
-      const blade = (dx, dy, op) => { const tp = [hp[0] + dx * Ln, hp[1] + dy * Ln], px = -dy * tw, py = dx * tw; fills.push({ poly: [hp, tp, [tp[0] + px, tp[1] + py], [hp[0] + px, hp[1] + py]], fill: wm.fill, stroke: wm.stroke, op }); return tp; };
-      blade(cdx, cdy, 1);                                  // geschlossen = voll
+      const blade = (dx, dy, op, role) => { const tp = [hp[0] + dx * Ln, hp[1] + dy * Ln], px = -dy * tw, py = dx * tw; fills.push({ poly: [hp, tp, [tp[0] + px, tp[1] + py], [hp[0] + px, hp[1] + py]], fill: wm.fill, stroke: wm.stroke, op, role }); return tp; };
+      blade(cdx, cdy, 1, 'sash');                          // geschlossen = voll (Flügel, anklickbar)
       if (!a.noSwing) { const tipO = blade(ldx, ldy, 0.26); arcs.push({ cx: hp[0], cy: hp[1], r: Ln, from: tipO, to: [hp[0] + cdx * Ln, hp[1] + cdy * Ln], handle: { x: tipO[0], y: tipO[1], hx: hp[0], hy: hp[1], cdx, cdy, odx, ody } }); }   // offen hell + Schwenkbogen + Ziehpunkt – NUR im Grundriss
     };
     if (wt === 'fest') glassPane(-1 + fwS, 1 - fwS);
@@ -3177,7 +3186,7 @@ function drawOpening(svg, a, arr) {
   svg.appendChild(g);
   svg.appendChild(svgEl('polygon', { points: P.cover.map(p => p[0] + ',' + p[1]).join(' '), fill: 'transparent', 'data-id': a.id }));
   { const hw3 = (a.w || 0) / 2, uxa = Math.cos(a.ang || 0), uya = Math.sin(a.ang || 0), nxa = -uya, nya = uxa, ht3 = (a.thick || wallThickPts()) / 2 + 1; for (const sd of [-1, 1]) { const ex = a.x + uxa * hw3 * sd, ey = a.y + uya * hw3 * sd, ix = a.x + uxa * hw3 * sd * 0.82, iy = a.y + uya * hw3 * sd * 0.82, poly = [[ix - nxa * ht3, iy - nya * ht3], [ex - nxa * ht3, ey - nya * ht3], [ex + nxa * ht3, ey + nya * ht3], [ix + nxa * ht3, iy + nya * ht3]]; const z = svgEl('polygon', { points: poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id, 'data-ow': String(sd) }); z.style.cursor = 'ew-resize'; svg.appendChild(z); } }   // Kantenzonen: Fensterbreite direkt an der Kante ziehen (auch ohne Auswahl)
-  if (seld) for (const f of (P.fills || [])) { if (f.role !== 'frame') continue; svg.appendChild(attachTip(addHoverHL(svgEl('polygon', { class: 'frame-hit', points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', 'data-id': a.id, 'data-frame': '1' })), 'Rahmen')); }   // Rahmen anklickbar (nur bei gewähltem Fenster) – keine Füllung
+  if (seld) for (const f of (P.fills || [])) { if (f.role !== 'frame' && f.role !== 'sash') continue; const nm = f.role === 'sash' ? 'Flügel' : 'Rahmen'; svg.appendChild(attachTip(addHoverHL(svgEl('polygon', { class: 'frame-hit', points: f.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: '#37404a', 'fill-opacity': 0.14, stroke: '#37404a', 'stroke-width': 1, 'stroke-opacity': 0.85, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke', 'data-id': a.id, 'data-frame': '1' })), nm)); }   // Rahmen + Flügel anklickbar/editierbar – Laibungs-Stil in Anthrazit
   if (seld) for (const st of revHits) { const gc = revealGroupColor(a, st.edge, st.side === 'i' ? 'in' : 'out'); svg.appendChild(attachTip(addHoverHL(svgEl('polygon', { class: 'rev-hit', points: st.poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: gc, 'fill-opacity': 0.16, stroke: gc, 'stroke-width': 1, 'stroke-opacity': 0.8, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke', 'data-id': a.id, 'data-rev': st.edge + ':' + st.side + ':' + st.li })), revealName(st.edge, st.side, st.li))); }   // Laibungs-Schichten: gestrichelte Gruppenfarben-Kontur + ganz leichte Füllung (Mittelweg) + Hover-Name
   if (seld) for (const arc of P.arcs) { if (!arc.handle) continue; const c = svgEl('circle', { cx: arc.handle.x.toFixed(2), cy: arc.handle.y.toFixed(2), r: 5, fill: '#fff', stroke: '#2a7', 'stroke-width': 2, 'data-id': a.id, 'data-ah': '1', 'vector-effect': 'non-scaling-stroke' }); c.style.cursor = 'grab'; svg.appendChild(c); }   // Ziehpunkt: Öffnungswinkel am offenen Blatt ziehen
   if (seld) { const seen = {}; const edgeStrip = (A, B, attr, tip) => { const dx = B[0] - A[0], dy = B[1] - A[1], L = Math.hypot(dx, dy) || 1, ox = -dy / L * 4, oy = dx / L * 4, poly = [[A[0] + ox, A[1] + oy], [B[0] + ox, B[1] + oy], [B[0] - ox, B[1] - oy], [A[0] - ox, A[1] - oy]]; const z = svgEl('polygon', Object.assign({ points: poly.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), fill: 'transparent', stroke: 'none', 'data-id': a.id }, attr)); z.style.cursor = 'default'; svg.appendChild(tip ? attachTip(z, tip) : z); };   // unsichtbare Ziehkante (nur Hit-Zone) – normale Maus, Tooltip sagt was sie tut
@@ -3186,6 +3195,14 @@ function drawOpening(svg, a, arr) {
       const fmx = (q[0][0] + q[3][0]) / 2, fmy = (q[0][1] + q[3][1]) / 2, flx = (q[2][0] + q[3][0]) / 2, fly = (q[2][1] + q[3][1]) / 2, odx = flx - fmx, ody = fly - fmy, odl = Math.hypot(odx, ody) || 1; _revoHandles[a.id + '|' + key] = { dirx: odx / odl, diry: ody / odl, li: st.li }; edgeStrip(q[2], q[3], { 'data-revo': key }, nm + ' · Überstand ziehen');   // Überstand an der Wandflächenkante (pro Schicht)
       const tdx = q[1][0] - q[0][0], tdy = q[1][1] - q[0][1], tdl = Math.hypot(tdx, tdy) || 1; _revThickHandles[a.id + '|' + key] = { dirx: tdx / tdl, diry: tdy / tdl }; edgeStrip(q[1], q[2], { 'data-revtk': key }, nm + ' · Dicke ziehen');   // Dicke an der Aussenkante (pro Schicht)
       const ldx = q[0][0] - q[3][0], ldy = q[0][1] - q[3][1], ldl = Math.hypot(ldx, ldy) || 1; _revLenHandles[a.id + '|' + key] = { dirx: ldx / ldl, diry: ldy / ldl, depthCm: Math.round(ptsToCm(ldl) * 10) / 10 }; edgeStrip(q[0], q[1], { 'data-revln': key }, nm + ' · Tiefe/Länge ziehen');   // Tiefe/Länge an der Rahmenkante (pro Schicht)
+    }
+    const uxF = Math.cos(a.ang || 0), uyF = Math.sin(a.ang || 0); let fi = 0;   // Rahmenbreite an der inneren Rahmenkante ziehen (Flügel: per Zahlen im Popup)
+    for (const f of (P.fills || [])) { if (f.role !== 'frame') continue; const q = f.poly; if (q.length < 4) continue;
+      const e1 = [(q[0][0] + q[3][0]) / 2, (q[0][1] + q[3][1]) / 2], e2 = [(q[1][0] + q[2][0]) / 2, (q[1][1] + q[2][1]) / 2];   // die zwei Kanten entlang der Wand (= Breite)
+      const inner = Math.hypot(e1[0] - a.x, e1[1] - a.y) < Math.hypot(e2[0] - a.x, e2[1] - a.y) ? [q[0], q[3]] : [q[1], q[2]];   // dem Öffnungszentrum nähere Kante
+      const bcx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, bcy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4, sSign = ((bcx - a.x) * uxF + (bcy - a.y) * uyF) < 0 ? 1 : -1;
+      const key = 'fw:' + (fi++); _dimHandles[a.id + '|' + key] = { dirx: sSign * uxF, diry: sSign * uyF, prop: 'frameW', def: a.kind === 'window' ? 10 : 6, min: 1, max: 30 };
+      edgeStrip(inner[0], inner[1], { 'data-dim': key }, 'Rahmen · Breite ziehen');   // an der inneren Kante ziehen = Rahmenbreite
     } }
   // Breiten-Änderung: einfach am kurzen Ende ganz aussen am Rahmen ziehen (Kantenzonen data-ow oben) – keine extra Griffe nötig
   return g;

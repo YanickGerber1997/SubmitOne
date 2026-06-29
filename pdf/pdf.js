@@ -3046,6 +3046,22 @@ function bandHatch(sa, sb, ma, mb, corner, hw, ht, stepS) {   // diagonale Schra
   return out;
 }
 function revealEdgeSegs(poly, seam) { const n = poly.length, out = []; for (let i = 0; i < n; i++) { if (i === seam) continue; out.push([poly[i], poly[(i + 1) % n]]); } return out; }   // Rand-Kanten eines Laibungs-Streifens ausser der Naht-Kante (seam)
+function ensureRevealLayers(a, arr) {   // Standard-Laibung in a.reveals materialisieren → JEDE Laibung wird anklick-/einstellbar (Dicke/Länge/Überstand/Rahmen sichtbar)
+  if (a.kind !== 'window' && a.kind !== 'door') return false;
+  const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall');
+  if (!wall || !wall.layers || wall.layers.length < 2) return false;
+  const l0 = wall.layers[0], lN = wall.layers[wall.layers.length - 1], rt0 = a.revealType || 'putz', rtOut = a.revealOuter || '';
+  const defIn = (Array.isArray(a.revealLining) && a.revealLining.length) ? a.revealLining.map(L => ({ mat: L.mat, t: L.t, gap: L.gap || 0, prio: L.prio }))
+    : (rt0 === 'aussen' ? [{ mat: lN.mat, t: Math.min(3, Math.round(ptsToCm(lN.t) * 10) / 10) }] : (REVEAL_LINING[rt0] ? REVEAL_LINING[rt0].map(d => ({ mat: d[0], t: d[1] })) : [{ mat: l0.mat, t: Math.round(ptsToCm(l0.t) * 10) / 10 }]));
+  const defOut = (Array.isArray(a.revealLiningOut) && a.revealLiningOut.length) ? a.revealLiningOut.map(L => ({ mat: L.mat, t: L.t, gap: L.gap || 0, prio: L.prio }))
+    : (rtOut === 'putz' ? [{ mat: lN.mat, t: Math.min(3, Math.round(ptsToCm(lN.t) * 10) / 10) }] : (rtOut && REVEAL_LINING[rtOut] ? REVEAL_LINING[rtOut].map(d => ({ mat: d[0], t: d[1] })) : [{ mat: lN.mat, t: Math.round(ptsToCm(lN.t) * 10) / 10 }]));
+  a.reveals = a.reveals || {}; let changed = false;
+  for (const edge of ['L', 'R', 'T', 'B']) { a.reveals[edge] = a.reveals[edge] || {};
+    if (!Array.isArray(a.reveals[edge].in) || !a.reveals[edge].in.length) { a.reveals[edge].in = defIn.map(d => ({ ...d })); changed = true; }
+    if (!Array.isArray(a.reveals[edge].out) || !a.reveals[edge].out.length) { a.reveals[edge].out = defOut.map(d => ({ ...d })); changed = true; }
+  }
+  return changed;
+}
 function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → Schalung 1,5 cm (Schraffur) → Rest Dämmung bis Rahmen; innen Putz/Brett
   const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall');
   if (!wall || !wall.layers || wall.layers.length < 2 || (a.kind !== 'window' && a.kind !== 'door')) return [];
@@ -3124,6 +3140,7 @@ function openingLichtW(o) {   // Rohbau-, Aussenlicht-, Innenlichtmass (Fenster)
 }
 function openingDetail(a, arr) { const wall = a.wallId && arr && arr.find(o => o.id === a.wallId && o.type === 'wall'); return !!(wall && !wallSimple(wall) && wall.layers && wall.layers.length); }
 function drawOpening(svg, a, arr) {
+  if (sel && sel.num != null && sel.id === a.id) ensureRevealLayers(a, arr);   // gewähltes Fenster: Standard-Laibung materialisieren → anklick-/einstellbar
   const detail = openingDetail(a, arr), P = openingParts(a, detail), col = a.color || '#1c242c';
   const g = svgEl('g', { 'data-id': a.id });
   const coverPoly = (window.polygonClipping && a.x != null && a.wallId) ? openingCutPoly(a) : P.cover;   // nur den freien Teil ausstanzen (Wand-Lappung bleibt sichtbar)
@@ -3156,8 +3173,9 @@ function popDrag(pop, head, ignore) {   // Popup am Titel verschiebbar (falls es
 function openRevealLayerPop(pv, a, revAttr, cx, cy) {   // Inline-Editor für EINE Laibungsschicht (im Grundriss angeklickt): Material/Dicke + „Rahmen sichtbar" dieser Kante
   document.querySelectorAll('.rev-pop').forEach(n => n.remove());
   const parts = (revAttr || '').split(':'), edge = parts[0], sk = parts[1] === 'i' ? 'in' : 'out', li = +parts[2];
+  ensureRevealLayers(a, getAnnos(pv.num));   // Standard-Laibung sicherstellen, damit die Schicht existiert + editierbar ist
   a.reveals = a.reveals || {}; a.reveals[edge] = a.reveals[edge] || {}; if (!Array.isArray(a.reveals[edge][sk])) a.reveals[edge][sk] = [];
-  const lst = a.reveals[edge][sk], L = lst[li]; if (!L) return;
+  const lst = a.reveals[edge][sk]; if (!lst[li]) lst[li] = { mat: 'putz', t: 1.5 }; const L = lst[li];
   const EDGEN = { L: 'Laibung links', R: 'Laibung rechts', T: 'Sturz', B: 'Schwelle' }, SIDEN = sk === 'in' ? 'innen' : 'aussen', matOpts = Object.keys(WALL_MATS).map(k => [k, WALL_MATS[k].label || k]);
   const pop = document.createElement('div'); pop.className = 'rev-pop'; pop.style.cssText = 'position:fixed;z-index:99999;background:#fff;border:1px solid #b8c0ad;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.2);padding:10px 11px;font:13px system-ui;min-width:220px';
   const upd = () => { drawAnnos(pv); saveState(); };
@@ -3300,6 +3318,7 @@ function sectionCutOpening(out, X, Yh, distPt, appW, o, H, perPt, wall, flip, no
   const hPx = (head - sill) / perPt, cx = X(distPt), cy = Yh((sill + head) / 2), ht2 = appW / 2, hw = hPx / 2;
   const corner = (s, m) => [cx + ht2 * m, cy - hw * s];   // s = vertikal (Kopf oben), m = horizontal (Wanddicke)
   const layered = !simpleMode && wall.layers && wall.layers.length >= 2, dep0 = o.depth == null ? 0.5 : o.depth, dep = flip ? 1 - dep0 : dep0;   // Blickrichtung: Innen/Aussen tauschen
+  if (layered) ensureRevealLayers(o, [wall]);   // Schnitt: Standard-Laibung materialisieren → Sturz/Schwelle anklick-/einstellbar
   out.push({ t: 'rect', x: cx - ht2, y: Yh(head), w: appW, h: Yh(sill) - Yh(head), fill: '#ffffff', stroke: 'none', sw: 0 });   // Öffnung ausstanzen
   if (!revealOnly) out.push({ t: 'owhit', x: cx - ht2, y: Math.min(Yh(head), Yh(sill)), w: appW, h: Math.abs(Yh(sill) - Yh(head)), oid: o.id });   // Klickzone: Fenster im Schnitt auswählen
   const sa = { id: o.id, kind: o.kind, x: cx, y: cy, ang: -Math.PI / 2, thick: appW, w: hPx, depth: dep, frameW: o.frameW, frameD: o.frameD, sashW: o.sashW, sashD: o.sashD, sashShift: o.sashShift, sashRecess: o.sashRecess, glassT: o.glassT, winType: (o.winType === 'fest' || o.winType === 'f1f') ? o.winType : 'f1', winMat: o.winMat, winHinge: o.winHinge, revealType: flip ? (o.revealOuter || 'putz') : o.revealType, revealOuter: flip ? o.revealType : o.revealOuter, boardW: o.boardW, boardVis: o.boardVis, boardProtrude: o.boardProtrude, boardMat: o.boardMat, outerLap: o.outerLap, innerReveal: o.innerReveal, revealLining: flip ? o.revealLiningOut : o.revealLining, revealLiningOut: flip ? o.revealLining : o.revealLiningOut, reveals: (() => { if (!o.reveals) return undefined; const sw = e => e ? (flip ? { in: e.out, out: e.in, slope: e.slope, boardVis: e.boardVis, boardVisIn: e.boardVisOut, boardVisOut: e.boardVisIn } : e) : undefined; return { L: sw(o.reveals.B), R: sw(o.reveals.T) }; })(), noSillReveal: (o.kind === 'window' && o.bank !== false), anschlagType: flip ? (o.anschlagType === 'innen' ? 'aussen' : o.anschlagType === 'aussen' ? 'innen' : (o.anschlagType || 'none')) : o.anschlagType, anschlagDepth: o.anschlagDepth, noSwing: true, wallId: 'secw' };   // noSwing: Flügel-Schwenk ist NUR im Grundriss, nicht im Schnitt

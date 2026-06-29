@@ -1,13 +1,6 @@
-/* Hover-Hervorhebung editierbarer Bauteile (Laibungsschicht / Rahmen): nur das berührte Element, grün umrandet + schraffiert (JS-gesteuert, da SVG :hover auf alle überlappenden Flächen triggert) */
-.rev-hit.hl-on{fill:#1a9a4e!important;fill-opacity:.32!important;stroke:#1a9a4e!important;stroke-width:3.2!important;stroke-dasharray:none!important}
-.frame-hit.hl-on{fill:#37404a!important;fill-opacity:.30!important;stroke:#37404a!important;stroke-width:3.2!important;stroke-dasharray:none!important}
+/* Laibung/Rahmen: einfache gestrichelte Linien zum Anwählen/Ziehen – ohne Hover-Effekte */
 .rev-hit,.frame-hit{cursor:default}
-.edge-strip{cursor:default}
-.edge-strip .edge-line{stroke-opacity:0}
-.edge-strip.hl-on .edge-line{stroke-opacity:.95!important;stroke-width:3.4!important}
-.lay-hover .pm-btn{opacity:0;pointer-events:none;transition:opacity .1s}
-.lay-hover:hover .pm-btn{opacity:.5;pointer-events:auto}
-.lay-hover .pm-btn:hover{opacity:1!important}
+.pm-btn{opacity:.5}
 :root{
   --bg:#f0efe9; --surface:#ffffff; --surface-2:#f5f4ee; --line:#dedcd2; --line-soft:#ebe9e0;
   --ink:#1c242c; --ink-soft:#565d52; --ink-faint:#9b9c8f;

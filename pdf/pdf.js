@@ -794,25 +794,25 @@ function setZoom(z) {   // Zoom: Layout/Canvas sofort per CSS skalieren (flüssi
   pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); updateSelBar();
   clearTimeout(_zoomRenderDeb); _zoomRenderDeb = setTimeout(() => { renderVisible(); scheduleRulers(); scheduleGrid(); }, 110);
 }
-function zoomStep(d) { const c = curScale(); setZoom(Math.max(.1, Math.min(8, Math.round((c + d) * 100) / 100))); }
+function zoomStep(d) { const c = curScale(); setZoom(Math.max(.1, Math.min(16, Math.round((c + d) * 100) / 100))); }
 function promptZoom() {
   if (!pdfDoc) return; const cur = Math.round(curScale() * 100);
   const v = prompt('Zoom in % (z. B. 80) – leer = an Breite anpassen:', cur); if (v === null) return;
   const t = (v || '').trim(); if (t === '') { setZoom('auto'); return; }
-  const n = parseFloat(t.replace(',', '.').replace('%', '')); if (n >= 10 && n <= 800) setZoom(n / 100);
+  const n = parseFloat(t.replace(',', '.').replace('%', '')); if (n >= 10 && n <= 1600) setZoom(n / 100);
 }
 // Zum Mauszeiger zoomen: der Punkt unter der Maus bleibt an Ort und Stelle
 function zoomToward(clientX, clientY, factor) {
   if (!pdfDoc) return; const host = $('#pages'), rect = host.getBoundingClientRect();
   const px = clientX - rect.left, py = clientY - rect.top, cur = curScale();
-  const nz = Math.max(.25, Math.min(5, Math.round(cur * factor * 100) / 100)); if (nz === cur) return;
+  const nz = Math.max(.25, Math.min(16, Math.round(cur * factor * 100) / 100)); if (nz === cur) return;
   const docX = host.scrollLeft + px, docY = host.scrollTop + py, f = nz / cur;
   setZoom(nz);                                  // Layout wird synchron neu gesetzt
   host.scrollLeft = docX * f - px; host.scrollTop = docY * f - py;
 }
 function zoomToClick(clientX, clientY) {   // beim Anklicken eines Bauteils sauber heranzoomen + auf den Klickpunkt zentrieren
   if (!pdfDoc) return; const host = $('#pages'), rect = host.getBoundingClientRect();
-  const px = clientX - rect.left, py = clientY - rect.top, cur = curScale(), nz = Math.min(5, Math.max(cur, 3.4)), f = nz / cur;
+  const px = clientX - rect.left, py = clientY - rect.top, cur = curScale(), nz = Math.min(16, Math.max(cur, 3.4)), f = nz / cur;
   const docX = host.scrollLeft + px, docY = host.scrollTop + py;
   setZoom(nz); host.scrollLeft = docX * f - host.clientWidth / 2; host.scrollTop = docY * f - host.clientHeight / 2;
 }

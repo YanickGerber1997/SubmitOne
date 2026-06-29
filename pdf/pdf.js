@@ -3017,7 +3017,7 @@ function openingRevealStrips(a, arr) {   // Laibung: 1,5 cm Rahmen sichtbar → 
   const drawReveal = (layers, sideOut, sgn, slopeCm, bv, edge) => {   // EINE Laibungsseite: bv = „Rahmen sichtbar" (eine Logik). >0 = Laibung lappt auf Rahmen, Rest sichtbar. <0 = Laibung deckt ganzen Rahmen und verlängert sich (Wand zurückgeschnitten, Öffnung grösser)
     if (!layers || !layers.length) return;
     if (a.noSillReveal && sgn < 0) return;   // Schwelle bei Fensterbank überspringen (nur im Schnitt-sa relevant)
-    const frameWpt = a.frameW || cmToPts(10), lapNom = frameWpt - cmToPts(bv != null ? bv : boardVisCm), lapPt = Math.max(cmToPts(0.3), Math.min(hw * 0.92, lapNom, frameWpt)), growPt = Math.max(0, lapNom - frameWpt);   // Lappung auf Rahmen (max bis Rahmen-Innenkante) + Verlängerung (negativer bv) bis zur zurückversetzten Wandkante
+    const frameWpt = a.frameW || cmToPts(10), lapNom = frameWpt - cmToPts(bv != null ? bv : boardVisCm), lapPt = Math.max(0, Math.min(hw * 0.92, lapNom)), growPt = Math.max(0, lapNom - frameWpt);   // Lappung frei bis fast zur Öffnungsmitte (nicht mehr bei Rahmenbreite gekappt) → volle Zieh-Freiheit; >Rahmen schneidet die Wand zurück (grow)
     const mFrame = sideOut ? (fmB + oneCm) : (fmA - oneCm), mFace = sideOut ? 1 : -1, dirF = Math.sign(mFrame - mFace) || 1, fullDepth = Math.abs(mFrame - mFace), offP = cmToPts(slopeCm || 0), sd = sideOut ? 'o' : 'i';
     if (fullDepth < 0.02) return;
     const ord = layers.slice().sort((x, y) => (y[3] != null ? y[3] : 2) - (x[3] != null ? x[3] : 2));   // PRIORITÄT: höchste direkt am Rahmen, niedrigere nach aussen

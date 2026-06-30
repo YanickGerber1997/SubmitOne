@@ -33,8 +33,8 @@ body.has-planbar.has-tabs .list-panel,body.has-planbar.has-tabs .side-rail{top:c
 .lp2-tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .lp2-body{flex:1;overflow:auto;padding:10px 12px}
 .lp2-empty{padding:8px 2px;color:var(--ink-soft);font-size:13px;line-height:1.5}
-.lp2-body h4{margin:14px 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint);font-weight:700}
-.lp2-body h4:first-child{margin-top:0}
+.lp2-body h4{margin:16px 0 7px;padding-left:8px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);font-weight:700;border-left:3px solid var(--accent)}
+.lp2-body h4:first-child{margin-top:2px}
 /* Inspector-Felder */
 .lp2-body .insp-row{display:flex;align-items:center;gap:6px;margin:6px 0}
 .lp2-body .insp-lbl{flex:1;color:var(--ink-soft);font-size:12px}
@@ -48,14 +48,18 @@ body.has-planbar.has-tabs .list-panel,body.has-planbar.has-tabs .side-rail{top:c
 .insp-kv{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--line-soft);font-size:12px}
 .insp-kv span{color:var(--ink-soft)}
 .lp2-body .bu-thumb{display:block;margin:2px 0 8px}
-/* Listen-Politur (nur im Panel) */
-.lp2-body .qty-tab{width:100%;border-collapse:collapse;font-size:12px}
-.lp2-body .qty-tab th{position:sticky;top:0;background:var(--surface-2);text-align:left;padding:6px;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink-soft);z-index:1}
-.lp2-body .qty-tab td{padding:5px 6px;border-bottom:1px solid var(--line-soft);vertical-align:middle;color:var(--ink)}
+/* Listen-Politur (nur im Panel) – ruhig, tabellarische Zahlen, klare Trennung */
+.lp2-body .qty-tab{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+.lp2-body .qty-tab th{position:sticky;top:0;background:var(--surface);text-align:left;padding:6px;border-bottom:2px solid var(--line);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-faint);z-index:1;white-space:nowrap}
+.lp2-body .qty-tab td{padding:6px;border-bottom:1px solid var(--line-soft);vertical-align:middle;color:var(--ink)}
+.lp2-body .qty-tab td:first-child,.lp2-body .qty-tab th:first-child{padding-left:2px}
+.lp2-body .qty-tab td:last-child,.lp2-body .qty-tab th:last-child{padding-right:2px}
 .lp2-body .qty-tab tbody tr:nth-child(even){background:var(--surface-2)}
 .lp2-body .qty-tab tbody tr:hover{background:var(--accent-soft)}
-.lp2-body .qty-tab tfoot th{position:static;background:var(--surface-2);border-top:1px solid var(--line)}
-.lp2-body .bu-u{padding:3px 5px;border:1px solid var(--line);font-size:12px;background:var(--surface)}
+.lp2-body .qty-tab tfoot th{position:static;background:var(--accent-soft);border-top:2px solid var(--line);border-bottom:none;color:var(--ink);font-size:12px;text-transform:none}
+.lp2-body .bu-u{width:100%;max-width:120px;padding:4px 6px;border:1px solid var(--line);font-size:12px;background:var(--surface)}
+.lp2-body .bu-u:focus{outline:none;border-color:var(--accent)}
+.lp2-body .qty-tab svg{display:block}
 :root{
   --bg:#f0efe9; --surface:#ffffff; --surface-2:#f5f4ee; --line:#dedcd2; --line-soft:#ebe9e0;
   --ink:#1c242c; --ink-soft:#565d52; --ink-faint:#9b9c8f;

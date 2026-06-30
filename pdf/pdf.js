@@ -6562,7 +6562,7 @@ function addPageNumbers() {
 /* ---------- Lineal (oben & rechts, echte Masse) ---------- */
 let rulerOn = false, _rulerRAF = 0;
 function toggleRuler() {
-  rulerOn = !rulerOn; const b = $('#btnRuler'); if (b) b.classList.toggle('on', rulerOn);
+  rulerOn = !rulerOn; const b = $('#btnRuler'); if (b) b.classList.toggle('on', rulerOn); const b2 = $('#btnRuler2'); if (b2) b2.classList.toggle('on', rulerOn);
   ['#rulerH', '#rulerV', '#rulerCorner'].forEach(s => { const e = $(s); if (e) e.hidden = !rulerOn; });
   if (rulerOn) drawRulers();
 }
@@ -6604,7 +6604,7 @@ function drawAxis(cv, horiz, cssW, cssH, pageStartRel, pxPerPt, pageLenPt, valPe
 let gridOn = false, gridMove = false, gridCellCm = 1, gridOffX = 0, gridOffY = 0, _gridRAF = 0;
 let snapLayersOn = true;   // Einrasten auf Wand-Schichtkanten (Hilfsnetz) beim Zeichnen von Decke/Linie/Wand
 function toggleGrid() {
-  gridOn = !gridOn; const b = $('#btnGrid'); if (b) b.classList.toggle('on', gridOn);
+  gridOn = !gridOn; const b = $('#btnGrid'); if (b) b.classList.toggle('on', gridOn); const b2 = $('#btnGrid2'); if (b2) b2.classList.toggle('on', gridOn);
   $('#gridCv').hidden = !gridOn; $('#gridBar').hidden = !gridOn;
   if (!gridOn) { gridMove = false; $('#gridMoveBtn').classList.remove('on'); }
   updateGridPE(); if (gridOn) drawGrid();
@@ -7064,6 +7064,7 @@ function wire() {
   $('#pageInd').onclick = askGotoPage;
   $('#btnRuler').onclick = toggleRuler;
   $('#btnGrid').onclick = toggleGrid;
+  { const s2 = $('#btnScale2'); if (s2) s2.onclick = () => openScale(0); const r2 = $('#btnRuler2'); if (r2) r2.onclick = toggleRuler; const g2 = $('#btnGrid2'); if (g2) g2.onclick = toggleGrid; }   // Dokument-Reiter: Duplikate von Massstab/Lineal/Raster
   $('#gridCell').onchange = e => { gridCellCm = +e.target.value; drawGrid(); };
   $('#gridMoveBtn').onclick = () => { gridMove = !gridMove; $('#gridMoveBtn').classList.toggle('on', gridMove); updateGridPE(); };
   $('#gridClose').onclick = toggleGrid;

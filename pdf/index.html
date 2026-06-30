@@ -5,26 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=561" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=561" />
-  <link rel="icon" href="favicon.png?v=561" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=561" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=562" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=562" />
+  <link rel="icon" href="favicon.png?v=562" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=562" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=561" />
+  <link rel="stylesheet" href="pdf.css?v=562" />
 </head>
 <body>
   <!-- Hervorhebungs-Schraffur (grün) für Hover über editierbaren Bauteilen -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><pattern id="hlHatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="rgba(26,154,78,0.12)"/><line x1="0" y1="0" x2="0" y2="6" stroke="#1a9a4e" stroke-width="1.3"/></pattern></defs></svg>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=561" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=562" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=561" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=561" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=562" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=562" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <div class="ui-zoom" title="Oberflächen-Zoom – macht Werkzeuge, Buttons und das Blatt grösser/kleiner (unabhängig vom Browser-Zoom). Klick auf die Prozentzahl = zurück auf 100%.">
@@ -66,6 +66,7 @@
       <button class="rib-collapse" id="ribCollapse" title="Werkzeugreihe ein-/ausklappen"><svg viewBox="0 0 24 24" class="i"><path d="M6 15l6-6 6 6"/></svg></button>
     </div>
     <div class="rib-row" id="ribRow">
+    <div class="tgrp"><button class="rib-act" id="btnFileMenu" title="Datei, Import & Export (PDF/Bild öffnen, IFC, GIS, Anmerkungen …)">📂 Datei ▾</button></div>
     <div class="rib-tools" data-tabgroup="wichtig">
     <div class="tgrp">
       <button class="tool on" data-tool="select" title="Auswählen & Verschieben (V)"><svg viewBox="0 0 24 24" class="i"><path d="M5 3l6 16 2-6 6-2z"/></svg></button>
@@ -126,13 +127,6 @@
       <button class="tool" data-tool="terrain" title="Gelände / Terrain – offene Linie mit Erdreich-Symbol (für Schnitte & Sockeldetails). Punkte klicken, Doppelklick/Enter = fertig."><svg viewBox="0 0 24 24" class="i"><path d="M2 14l5-4 5 3 4-5 6 6"/><path d="M4 18l1.4-1.4M8 18l1.4-1.4M12 18l1.4-1.4M16 18l1.4-1.4"/></svg></button>
       <div class="stamp-wrap">
         <button class="tool" id="btnBlock" title="Möbel & Sanitär – Symbol wählen und platzieren"><svg viewBox="0 0 24 24" class="i"><path d="M4 11V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4"/><path d="M3 11h18v6H3z M6 17v2M18 17v2"/></svg></button>
-        <div class="block-pop" id="blockPop" hidden>
-          <button data-bk="bed">Bett</button><button data-bk="table">Tisch</button><button data-bk="sofa">Sofa</button><button data-bk="chair">Stuhl</button><button data-bk="wc">WC</button>
-          <button data-bk="sink">Lavabo</button><button data-bk="shower">Dusche</button><button data-bk="bath">Wanne</button><button data-bk="stove">Herd</button><button data-bk="fridge">Kühlschr.</button>
-          <button data-bk="kitchen">Küche US</button><button data-bk="kitchensink">Spüle</button><button data-bk="dishwasher">Geschirrsp.</button><button data-bk="washer">Waschm.</button><button data-bk="desk">Schreibt.</button>
-          <button data-bk="cabinet">Regal</button><button data-bk="wardrobe">Kleiderschr.</button><button data-bk="tallcab">Hochschr.</button><button data-bk="nightstand">Nachttisch</button>
-          <button data-bk="column" title="Stütze rechteckig (Poché, raumhoch im 3D)">Stütze ▭</button><button data-bk="columnRound" title="Stütze rund (Poché, raumhoch im 3D)">Stütze ●</button>
-        </div>
       </div>
       <button class="tool" data-tool="section" title="Schnitt-Werkzeug – Schnittlinie über die Wände ziehen, daraus entsteht ein LIVE-2D-Vertikalschnitt (Massstab nötig)"><svg viewBox="0 0 24 24" class="i"><path d="M3 5v14M3 5l3 2M3 19l3-2"/><path d="M9 9h11v9H9z"/><path d="M13 9v9M9 13h11"/></svg></button>
       <button class="tool" data-tool="arc" title="Halbkreis / Bogen – von A nach B ziehen (Richtung = Seite)"><svg viewBox="0 0 24 24" class="i"><path d="M4 17a8 8 0 0 1 16 0"/><path d="M4 17h16"/></svg></button>
@@ -156,8 +150,8 @@
         <button class="rib-act" id="footRooms" title="Raumbuch: alle Flächen mit m², Umfang, Geschoss – Raumname &amp; Bodenbelag editierbar">▦ Raumbuch</button>
       </div>
     </div>
-    <div class="rib-tools" data-tabgroup="submit" hidden>
-      <div class="tgrp">
+    <div class="sm-menu" id="smMenu" hidden>
+      <div class="sm-grid">
         <button class="rib-act" id="smOpen" title="PDF oder Bild öffnen / importieren">📂 PDF / Bild öffnen</button>
         <button class="rib-act" id="smTestScene" title="Beispielprojekt: Grundriss (Wand + Fenster + Tür) + Schnitte + Ansicht vorne/hinten, 1:20 – zum Ausprobieren">📐 Beispielprojekt</button>
         <button class="rib-act" id="smProject" title="Datei einem Projekt zuordnen: legt im Arbeitsordner einen Projekt-Unterordner an (Vorschlag aus dem Plankopf-Feld „Projekt“) und speichert dort.">📁 In Projekt ablegen</button>
@@ -234,7 +228,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=561" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=562" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -364,6 +358,13 @@
   <div class="side-rail" id="sideRail">
     <button class="sr-btn" id="srInspect" title="Inspector / Listen ein-/ausblenden"><b>▤</b>Listen</button>
     <button class="sr-btn" id="srComments" title="Kommentare ein-/ausblenden"><b>💬</b>Komm.</button>
+  </div>
+  <div class="block-pop" id="blockPop" hidden>
+    <button data-bk="bed">Bett</button><button data-bk="table">Tisch</button><button data-bk="sofa">Sofa</button><button data-bk="chair">Stuhl</button><button data-bk="wc">WC</button>
+    <button data-bk="sink">Lavabo</button><button data-bk="shower">Dusche</button><button data-bk="bath">Wanne</button><button data-bk="stove">Herd</button><button data-bk="fridge">Kühlschr.</button>
+    <button data-bk="kitchen">Küche US</button><button data-bk="kitchensink">Spüle</button><button data-bk="dishwasher">Geschirrsp.</button><button data-bk="washer">Waschm.</button><button data-bk="desk">Schreibt.</button>
+    <button data-bk="cabinet">Regal</button><button data-bk="wardrobe">Kleiderschr.</button><button data-bk="tallcab">Hochschr.</button><button data-bk="nightstand">Nachttisch</button>
+    <button data-bk="column" title="Stütze rechteckig (Poché, raumhoch im 3D)">Stütze ▭</button><button data-bk="columnRound" title="Stütze rund (Poché, raumhoch im 3D)">Stütze ●</button>
   </div>
   <!-- Linke Planungs-Tool-Spalte (zusätzlich zum Reiter „Planung") -->
   <button class="plan-rail-toggle" id="planRailToggle" title="Planungs-Werkzeuge ein-/ausblenden">▸</button>
@@ -784,7 +785,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=561"></script>
+  <script src="pdf.js?v=562"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

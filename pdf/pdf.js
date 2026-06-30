@@ -6877,7 +6877,7 @@ function wire() {
   $('#btnBlock').onclick = e => { e.stopPropagation(); const p = $('#blockPop'); p.hidden = !p.hidden; };
   { const bp = $('#btnProfile'); if (bp) bp.onclick = () => { openProfileEditor(spec => { curProfile = Object.assign({}, curProfile, spec, { closed: true }); setTool('profile'); toast('Profil „' + curProfile.name + '" gewählt – jetzt den Pfad klicken (rastet an Wandenden, am Start schliessen = ums Haus).'); }); }; }
   $$('#blockPop button').forEach(b => b.onclick = () => { blockKind = b.dataset.bk; $('#blockPop').hidden = true; setTool('block'); });
-  document.addEventListener('pointerdown', e => { if (!e.target.closest('#blockPop') && !e.target.closest('#btnBlock')) $('#blockPop').hidden = true; }, true);
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#blockPop') && !e.target.closest('#btnBlock') && !e.target.closest('#btnBlock2')) $('#blockPop').hidden = true; }, true);
   $('#pbWallH').onchange = () => { const v = parseFloat(($('#pbWallH').value || '').replace(',', '.')); if (!(v > 0)) return; wallHeightM = v; const a = selWall(); if (a) { pushUndo(); a.h3d = v; saveState(); } };
   $('#pbSill').onchange = () => { const v = parseFloat(($('#pbSill').value || '').replace(',', '.')); if (!(v >= 0)) return; const a = selOpen(); if (a) { pushUndo(); const ins = (inputLicht && a.kind === 'window') ? ptsToCm(openInsPts(a)) / 100 : 0; a.sill = Math.max(0, v - ins); pageViews.forEach(drawAnnos); saveState(); } };
   $('#pbHead').onchange = () => { const v = parseFloat(($('#pbHead').value || '').replace(',', '.')); if (!(v > 0)) return; const a = selOpen(); if (a) { pushUndo(); const ins = inputLicht ? ptsToCm(openInsPts(a)) / 100 : 0; a.head = v + ins; pageViews.forEach(drawAnnos); saveState(); } };
@@ -7070,7 +7070,13 @@ function wire() {
   $('#btnRuler').onclick = toggleRuler;
   $('#btnGrid').onclick = toggleGrid;
   { const s2 = $('#btnScale2'); if (s2) s2.onclick = () => openScale(0); const r2 = $('#btnRuler2'); if (r2) r2.onclick = toggleRuler; const g2 = $('#btnGrid2'); if (g2) g2.onclick = toggleGrid; }   // Dokument-Reiter: Duplikate von Massstab/Lineal/Raster
-  { const pt = $('#planRailToggle'); if (pt) pt.onclick = () => document.body.classList.toggle('planrail-collapsed'); const bp2 = $('#btnProfile2'); if (bp2) bp2.onclick = () => { const o = $('#btnProfile'); if (o) o.click(); }; const bb2 = $('#btnBlock2'); if (bb2) bb2.onclick = e => { e.stopPropagation(); const o = $('#btnBlock'); if (o) o.click(); }; }   // linke Planungs-Rail: Toggle + Profil/Objekt-Duplikate
+  { const pt = $('#planRailToggle'); if (pt) pt.onclick = () => document.body.classList.toggle('planrail-collapsed'); const bp2 = $('#btnProfile2'); if (bp2) bp2.onclick = () => { const o = $('#btnProfile'); if (o) o.click(); };
+    const popAt = (pop, btn, side) => { const r = btn.getBoundingClientRect(); pop.hidden = false; const w = pop.offsetWidth || 200, h = pop.offsetHeight || 100; let x = side === 'right' ? r.right + 4 : r.left; x = Math.min(x, window.innerWidth - w - 8); let y = Math.min(r.top, window.innerHeight - h - 8); pop.style.left = Math.max(8, x) + 'px'; pop.style.top = Math.max(8, y) + 'px'; };
+    const bb2 = $('#btnBlock2'); if (bb2) bb2.onclick = e => { e.stopPropagation(); const p = $('#blockPop'); if (!p) return; if (!p.hidden) { p.hidden = true; return; } popAt(p, bb2, 'right'); };
+    const fm = $('#btnFileMenu'); if (fm) fm.onclick = e => { e.stopPropagation(); const p = $('#smMenu'); if (!p) return; if (!p.hidden) { p.hidden = true; return; } popAt(p, fm, 'below'); };
+    const sm = $('#smMenu'); if (sm) sm.querySelectorAll('.rib-act').forEach(b => b.addEventListener('click', () => { sm.hidden = true; }));   // nach Auswahl Menü schliessen
+    document.addEventListener('pointerdown', e => { const sm2 = $('#smMenu'); if (sm2 && !sm2.hidden && !e.target.closest('#smMenu') && !e.target.closest('#btnFileMenu')) sm2.hidden = true; const bp = $('#blockPop'); if (bp && !bp.hidden && !e.target.closest('#blockPop') && !e.target.closest('#btnBlock2') && !e.target.closest('#btnBlock')) bp.hidden = true; }, true);
+  }   // linke Planungs-Rail: Toggle + Profil; Objekt-/Datei-Menüs als positionierte Dropdowns
   $('#gridCell').onchange = e => { gridCellCm = +e.target.value; drawGrid(); };
   $('#gridMoveBtn').onclick = () => { gridMove = !gridMove; $('#gridMoveBtn').classList.toggle('on', gridMove); updateGridPE(); };
   $('#gridClose').onclick = toggleGrid;

@@ -60,6 +60,12 @@ body.has-planbar.has-tabs .list-panel,body.has-planbar.has-tabs .side-rail{top:c
 .lp2-body .bu-u{width:100%;max-width:120px;padding:4px 6px;border:1px solid var(--line);font-size:12px;background:var(--surface)}
 .lp2-body .bu-u:focus{outline:none;border-color:var(--accent)}
 .lp2-body .qty-tab svg{display:block}
+.lp2-body .qty-tab .num{font-weight:600;color:var(--ink)}
+.lp2-body .qty-tab .unit{color:var(--ink-faint)}
+.mat-sw{display:inline-block;width:11px;height:11px;border:1px solid #9a9a9a;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.bu-u.uval-good{color:#2e7d32;font-weight:600}
+.bu-u.uval-mid{color:#9a7a16;font-weight:600}
+.bu-u.uval-poor{color:#b4502f;font-weight:600}
 :root{
   --bg:#f0efe9; --surface:#ffffff; --surface-2:#f5f4ee; --line:#dedcd2; --line-soft:#ebe9e0;
   --ink:#1c242c; --ink-soft:#565d52; --ink-faint:#9b9c8f;

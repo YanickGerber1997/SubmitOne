@@ -5486,12 +5486,12 @@ function roomData() {   // alle Flächen-/Raum-Anmerkungen → Raumbuch-Zeilen
 let _listTab = 'sel', _listCopyFn = null, _lastInspId = null;
 function openListPanel(tab) {   // rechtes Inspector/Listen-Panel zeigen + Tab wählen
   if (tab) _listTab = tab; const p = document.getElementById('listPanel'); if (!p) return; p.hidden = false;
-  const tg = document.getElementById('lp2Toggle'); if (tg) tg.style.display = 'none';
   document.querySelectorAll('.lp2-tab').forEach(b => b.classList.toggle('on', b.dataset.lt === _listTab));
   const cp = document.getElementById('lp2Copy'); if (cp) cp.style.display = _listTab === 'sel' ? 'none' : '';   // Kopieren nur bei Listen
+  const sb = document.getElementById('srInspect'); if (sb) sb.classList.add('on');
   renderList();
 }
-function closeListPanel() { const p = document.getElementById('listPanel'); if (p) p.hidden = true; const tg = document.getElementById('lp2Toggle'); if (tg) tg.style.display = ''; }
+function closeListPanel() { const p = document.getElementById('listPanel'); if (p) p.hidden = true; const sb = document.getElementById('srInspect'); if (sb) sb.classList.remove('on'); }
 function renderList() {   // aktuellen Tab in den Panel-Body rendern (Inspector + Listen einheitlich)
   const body = document.getElementById('lp2Body'); if (!body) return; body.innerHTML = ''; _listCopyFn = null;
   if (_listTab === 'sel') { fillSelectionInspector(body); return; }
@@ -5534,10 +5534,10 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
 }
 function syncInspector() {   // Auswahl gewechselt → Inspector zeigen/aktualisieren (Bauteil anwählen ⇒ Einstellungen rechts)
   const id = sel ? sel.id : null; if (id === _lastInspId) return; _lastInspId = id;
-  const p = document.getElementById('listPanel'); if (!p) return;
+  const p = document.getElementById('listPanel'); if (!p || p.hidden) return;   // nur aktualisieren, wenn Panel offen (Einklappen wird respektiert)
   const a = (id != null && sel) ? findAnno(sel.num, sel.id) : null;
-  if (a && (a.type === 'opening' || a.type === 'wall' || a.type === 'area')) { _listTab = 'sel'; openListPanel('sel'); }   // Bauteil gewählt → Inspector
-  else if (!p.hidden && _listTab === 'sel') renderList();   // abgewählt → Inspector leeren
+  if (a && (a.type === 'opening' || a.type === 'wall' || a.type === 'area')) { _listTab = 'sel'; openListPanel('sel'); }   // Bauteil gewählt → Inspector zeigt Einstellungen
+  else if (_listTab === 'sel') renderList();   // abgewählt → Inspector leeren
 }
 function fillRoomList(bodyEl) {   // Raumbuch in das Listen-Panel
   const rooms = roomData(), total = rooms.reduce((s, r) => s + r.m2, 0);
@@ -6852,7 +6852,7 @@ function wire() {
   $('#footSchedule').onclick = openSchedule;
   $('#footWallList').onclick = openWallList;
   $('#footRooms').onclick = openRoomList;
-  { const tg = $('#lp2Toggle'); if (tg) tg.onclick = () => openListPanel(); const cl = $('#lp2Close'); if (cl) cl.onclick = closeListPanel; const cp = $('#lp2Copy'); if (cp) cp.onclick = () => { if (_listCopyFn) _listCopyFn(); }; document.querySelectorAll('.lp2-tab').forEach(b => b.onclick = () => openListPanel(b.dataset.lt)); }   // Listen-Panel: Tabs/Toggle/Schliessen/Kopieren
+  { const si = $('#srInspect'); if (si) si.onclick = () => { const p = $('#listPanel'); if (p && p.hidden) openListPanel(); else closeListPanel(); }; const sc = $('#srComments'); if (sc) sc.onclick = () => { const b = $('#btnComments'); if (b && b.onclick) b.onclick(); const c = $('#comments'); sc.classList.toggle('on', !!(c && !c.hidden)); }; const cl = $('#lp2Close'); if (cl) cl.onclick = closeListPanel; const cp = $('#lp2Copy'); if (cp) cp.onclick = () => { if (_listCopyFn) _listCopyFn(); }; document.querySelectorAll('.lp2-tab').forEach(b => b.onclick = () => openListPanel(b.dataset.lt)); openListPanel('sel'); }   // rechte Rail: Listen/Inspector + Kommentare; Panel standardmäßig offen
   $('#footImportAnn').onclick = () => importPdfAnnotations(false);
   $('#footExportAnn').onclick = exportNative;
   $('#footPhase').onclick = e => { e.stopPropagation(); const p = $('#phasePop'); p.hidden = !p.hidden; if (!p.hidden) updatePhaseUI(); };

@@ -3,10 +3,14 @@
 .pm-btn{opacity:.5}
 .opening-g .rev-hatch,.sec-g .rev-hatch{opacity:0}                 /* Laibungs-Schraffur standardmäßig aus … */
 .opening-g:hover .rev-hatch,.sec-g:hover .rev-hatch{opacity:1}     /* … nur beim Drüberfahren (Öffnung bzw. Schnitt) sichtbar */
-/* Einheitliches Listen-Panel (rechts, ein-/ausblendbar, Tabs) */
-.lp2-toggle{position:fixed;top:calc(var(--bar) + 6px);right:0;z-index:61;background:#fff;border:1px solid var(--line);border-right:none;border-radius:8px 0 0 8px;padding:7px 9px;font-size:13px;cursor:pointer;box-shadow:-2px 2px 8px rgba(0,0,0,.08)}
-.lp2-toggle:hover{background:#f1f3ee}
-.list-panel{position:fixed;top:calc(var(--bar) + 6px);right:0;bottom:8px;width:min(380px,92vw);z-index:62;background:#fff;border:1px solid var(--line);border-radius:10px 0 0 10px;box-shadow:-4px 0 18px rgba(0,0,0,.14);display:flex;flex-direction:column;overflow:hidden}
+/* Immer sichtbare rechte Leiste (Knöpfe zum Ausfahren: Listen/Inspector, Kommentare) */
+.side-rail{position:fixed;top:calc(var(--bar) + 6px);right:0;z-index:63;display:flex;flex-direction:column;gap:4px;padding:4px;background:#fff;border:1px solid var(--line);border-right:none;border-radius:8px 0 0 8px;box-shadow:-2px 2px 8px rgba(0,0,0,.08)}
+.sr-btn{display:flex;flex-direction:column;align-items:center;gap:1px;width:42px;padding:5px 2px;border:1px solid transparent;border-radius:7px;background:none;cursor:pointer;font-size:9px;color:#5a6152;line-height:1}
+.sr-btn b{font-size:15px;font-weight:400}
+.sr-btn:hover{background:#f1f3ee}
+.sr-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+/* Einheitliches Inspector-/Listen-Panel (rechts, ein-/ausblendbar, Tabs) */
+.list-panel{position:fixed;top:calc(var(--bar) + 6px);right:54px;bottom:8px;width:min(360px,86vw);z-index:62;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:-4px 0 18px rgba(0,0,0,.14);display:flex;flex-direction:column;overflow:hidden}
 .lp2-head{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--line);background:#f6f7f4;flex-wrap:wrap}
 .lp2-tabs{display:flex;gap:3px;flex-wrap:wrap}
 .lp2-tab{border:1px solid var(--line);background:#fff;border-radius:7px;padding:4px 8px;font-size:12px;cursor:pointer;color:#5a6152}

@@ -66,6 +66,20 @@ body.has-planbar.has-tabs .list-panel,body.has-planbar.has-tabs .side-rail{top:c
 .bu-u.uval-good{color:#2e7d32;font-weight:600}
 .bu-u.uval-mid{color:#9a7a16;font-weight:600}
 .bu-u.uval-poor{color:#b4502f;font-weight:600}
+/* Wandaufbau-Karten */
+.wb-card{border:1px solid var(--line);background:var(--surface-2);border-radius:7px;padding:9px 10px;margin:0 0 9px}
+.wb-top{display:flex;align-items:center;gap:8px;font-size:12px}
+.wb-top b{font-size:13px;color:var(--accent-3)}
+.wb-dim{color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.wb-cnt{color:var(--ink-faint);font-size:11px}
+.wb-thumb{margin:7px 0 6px;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:#fff}
+.wb-thumb svg{width:100%;height:auto;display:block}
+.wb-desc{font-size:11px;color:var(--ink-soft);line-height:1.45;margin-bottom:8px}
+.wb-u{display:flex;align-items:center;gap:6px;font-size:12px}
+.wb-u>span:first-child{color:var(--ink-soft)}
+.wb-uu{color:var(--ink-faint);font-size:11px}
+.wb-edit{color:var(--accent)}
+.wb-card .bu-u{width:74px}
 :root{
   --bg:#f0efe9; --surface:#ffffff; --surface-2:#f5f4ee; --line:#dedcd2; --line-soft:#ebe9e0;
   --ink:#1c242c; --ink-soft:#565d52; --ink-faint:#9b9c8f;

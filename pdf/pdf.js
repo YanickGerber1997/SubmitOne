@@ -5481,20 +5481,31 @@ function roomData() {   // alle Flächen-/Raum-Anmerkungen → Raumbuch-Zeilen
   rooms.sort((x, y) => (x.floor || '').localeCompare(y.floor || '') || (y.m2 - x.m2));
   return rooms;
 }
-function openRoomList() {
-  if (!docScale) { toast('Für Flächen in m² zuerst den Massstab setzen (1:n).'); return; }
-  const rooms = roomData();
-  const ov = document.createElement('div'); ov.className = 'lab-overlay';
-  const total = rooms.reduce((s, r) => s + r.m2, 0);
-  const body = rooms.length ? ('<table class="qty-tab"><thead><tr><th>Ebene</th><th>Raum (Name)</th><th style="text-align:right">Fläche</th><th style="text-align:right">Umfang</th><th>Bodenbelag</th></tr></thead><tbody>' +
-    rooms.map((r, i) => '<tr><td style="white-space:nowrap">' + r.floor + '</td><td><input class="bu-u" style="width:130px" data-i="' + i + '" data-k="name" value="' + (r.a.name ? r.a.name.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Wohnen"></td><td style="text-align:right;white-space:nowrap">' + (Math.round(r.m2 * 100) / 100).toFixed(2).replace('.', ',') + ' m²</td><td style="text-align:right;white-space:nowrap">' + (Math.round(r.um * 100) / 100).toFixed(2).replace('.', ',') + ' m</td><td><input class="bu-u" style="width:130px" data-i="' + i + '" data-k="floor" value="' + (r.a.floor ? r.a.floor.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Parkett"></td></tr>').join('') +
-    '</tbody><tfoot><tr><th colspan="2" style="text-align:right">Summe</th><th style="text-align:right;white-space:nowrap">' + (Math.round(total * 100) / 100).toFixed(2).replace('.', ',') + ' m²</th><th colspan="2"></th></tr></tfoot></table>') : '<p style="padding:14px;opacity:.7">Noch keine Räume/Flächen. Zeichne mit dem Flächen-Werkzeug einen geschlossenen Wandzug oder ein Polygon.</p>';
-  ov.innerHTML = '<div class="lab-wrap" style="width:min(680px,95vw);height:auto;max-height:84vh"><div class="lab-head"><b>Raumbuch</b><span class="lab-hint">' + rooms.length + ' Räume · Name & Bodenbelag werden gespeichert</span><span class="grow"></span><button class="btn" id="rmCopy">In Zwischenablage</button><button class="btn" id="rmClose">✕</button></div><div class="qty-body">' + body + '</div></div>';
-  document.body.appendChild(ov);
-  ov.querySelectorAll('input.bu-u').forEach(inp => inp.onchange = () => { const r = rooms[+inp.dataset.i]; if (!r) return; const k = inp.dataset.k, v = inp.value.trim(); if (v) r.a[k] = v; else delete r.a[k]; markDirty(); pageViews.forEach(drawAnnos); });
-  ov.querySelector('#rmClose').onclick = () => ov.remove(); ov.addEventListener('pointerdown', e => { if (e.target === ov) ov.remove(); });
-  ov.querySelector('#rmCopy').onclick = () => { const tsv = 'Ebene\tRaum\tFläche m²\tUmfang m\tBodenbelag\n' + rooms.map(r => r.floor + '\t' + (r.a.name || '') + '\t' + (Math.round(r.m2 * 100) / 100).toString().replace('.', ',') + '\t' + (Math.round(r.um * 100) / 100).toString().replace('.', ',') + '\t' + (r.a.floor || '')).join('\n') + '\nSumme\t\t' + (Math.round(total * 100) / 100).toString().replace('.', ','); if (navigator.clipboard) navigator.clipboard.writeText(tsv); toast('Raumbuch kopiert (Excel-tauglich).'); };
+let _listTab = 'rooms', _listCopyFn = null;
+function openListPanel(tab) {   // rechtes Listen-Panel zeigen + Tab wählen
+  if (tab) _listTab = tab; const p = document.getElementById('listPanel'); if (!p) return; p.hidden = false;
+  const tg = document.getElementById('lp2Toggle'); if (tg) tg.style.display = 'none';
+  document.querySelectorAll('.lp2-tab').forEach(b => b.classList.toggle('on', b.dataset.lt === _listTab));
+  renderList();
 }
+function closeListPanel() { const p = document.getElementById('listPanel'); if (p) p.hidden = true; const tg = document.getElementById('lp2Toggle'); if (tg) tg.style.display = ''; }
+function renderList() {   // aktuellen Tab in den Panel-Body rendern (alle Listen einheitlich)
+  const body = document.getElementById('lp2Body'); if (!body) return; body.innerHTML = ''; _listCopyFn = null;
+  if (!docScale) { body.innerHTML = '<p class="lp2-empty">Für Flächen/Mengen in m² zuerst den Massstab setzen (1:n) – unten in der Fusszeile.</p>'; return; }
+  if (_listTab === 'rooms') _listCopyFn = fillRoomList(body);
+  else if (_listTab === 'qty') _listCopyFn = fillQtyList(body);
+  else if (_listTab === 'schedule') _listCopyFn = fillScheduleList(body);
+  else if (_listTab === 'walls') _listCopyFn = fillWallList(body);
+}
+function fillRoomList(bodyEl) {   // Raumbuch in das Listen-Panel
+  const rooms = roomData(), total = rooms.reduce((s, r) => s + r.m2, 0);
+  bodyEl.innerHTML = '<h4>' + rooms.length + ' Räume · Name & Bodenbelag werden gespeichert</h4>' + (rooms.length ? ('<table class="qty-tab"><thead><tr><th>Ebene</th><th>Raum (Name)</th><th style="text-align:right">Fläche</th><th style="text-align:right">Umfang</th><th>Bodenbelag</th></tr></thead><tbody>' +
+    rooms.map((r, i) => '<tr><td style="white-space:nowrap">' + r.floor + '</td><td><input class="bu-u" style="width:110px" data-i="' + i + '" data-k="name" value="' + (r.a.name ? r.a.name.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Wohnen"></td><td style="text-align:right;white-space:nowrap">' + (Math.round(r.m2 * 100) / 100).toFixed(2).replace('.', ',') + ' m²</td><td style="text-align:right;white-space:nowrap">' + (Math.round(r.um * 100) / 100).toFixed(2).replace('.', ',') + ' m</td><td><input class="bu-u" style="width:110px" data-i="' + i + '" data-k="floor" value="' + (r.a.floor ? r.a.floor.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Parkett"></td></tr>').join('') +
+    '</tbody><tfoot><tr><th colspan="2" style="text-align:right">Summe</th><th style="text-align:right;white-space:nowrap">' + (Math.round(total * 100) / 100).toFixed(2).replace('.', ',') + ' m²</th><th colspan="2"></th></tr></tfoot></table>') : '<p class="lp2-empty">Noch keine Räume/Flächen. Zeichne mit dem Flächen-Werkzeug einen geschlossenen Wandzug oder ein Polygon.</p>');
+  bodyEl.querySelectorAll('input.bu-u').forEach(inp => inp.onchange = () => { const r = rooms[+inp.dataset.i]; if (!r) return; const k = inp.dataset.k, v = inp.value.trim(); if (v) r.a[k] = v; else delete r.a[k]; markDirty(); pageViews.forEach(drawAnnos); });
+  return () => { const tsv = 'Ebene\tRaum\tFläche m²\tUmfang m\tBodenbelag\n' + rooms.map(r => r.floor + '\t' + (r.a.name || '') + '\t' + (Math.round(r.m2 * 100) / 100).toString().replace('.', ',') + '\t' + (Math.round(r.um * 100) / 100).toString().replace('.', ',') + '\t' + (r.a.floor || '')).join('\n') + '\nSumme\t\t' + (Math.round(total * 100) / 100).toString().replace('.', ','); if (navigator.clipboard) navigator.clipboard.writeText(tsv); toast('Raumbuch kopiert (Excel-tauglich).'); };
+}
+function openRoomList() { openListPanel('rooms'); }
 function geoToLocal(gj) {   // GeoJSON (lon/lat) → lokale Meter (äquirektangulär um den Schwerpunkt), Nord = oben
   const feats = gj && gj.type === 'FeatureCollection' ? (gj.features || []) : gj && gj.type === 'Feature' ? [gj] : gj && gj.type ? [{ geometry: gj }] : [];
   const rings = [], collect = geom => {
@@ -5558,23 +5569,16 @@ function buildupThumb(layers, totalCm) {   // Mini-Schichtbild (von innen links 
   for (const l of layers) { const w = Math.max(1.5, (ptsToCm(l.t) / (totalCm || 1)) * W), m = WALL_MATS[l.mat] || {}; s += '<rect x="' + x.toFixed(1) + '" y="0" width="' + w.toFixed(1) + '" height="' + H + '" fill="' + (m.fill || '#eee') + '" stroke="' + (m.color || '#999') + '" stroke-width="0.6"/>'; x += w; }
   return s + '<text x="2" y="' + (H - 3) + '" font-size="7" fill="#555">innen</text><text x="' + (W - 2) + '" y="' + (H - 3) + '" font-size="7" fill="#555" text-anchor="end">aussen</text></svg>';
 }
-function openWallList() {
-  if (!docScale) { toast('Erst Massstab setzen – die Liste braucht reale Masse.'); return; }
+function fillWallList(bodyEl) {   // Wandaufbau/U-Werte in das Listen-Panel
   const n = curPage(), arr = getAnnos(n), groups = computeWallBuildups(arr);
   const desc = layers => layers.map(l => ((WALL_MATS[l.mat] && WALL_MATS[l.mat].label) || l.mat).replace(/ .*/, '') + ' ' + (Math.round(ptsToCm(l.t) * 10) / 10) + 'cm').join(' · ');
   let rows = '', csv = 'Aufbau (innen→aussen)\tDicke (cm)\tU-Wert (W/m²K)\tAnzahl\n';
   groups.forEach((g, i) => { const u = wallUValue(g.layers, g.uVal), us = (Math.round(u * 1000) / 1000).toFixed(3), comp = g.uVal != null; rows += '<tr><td><b>W' + (i + 1) + '</b></td><td>' + buildupThumb(g.layers, g.totalCm) + '</td><td>' + desc(g.layers) + '</td><td style="text-align:right">' + (Math.round(g.totalCm * 10) / 10) + '</td><td><input class="bu-u" data-sig="' + g.sig.replace(/"/g, '') + '" type="number" step="0.01" min="0.05" value="' + us + '"> ' + (comp ? '✎' : '') + '</td><td style="text-align:center">' + g.walls.length + '</td></tr>'; csv += desc(g.layers) + '\t' + (Math.round(g.totalCm * 10) / 10) + '\t' + us + '\t' + g.walls.length + '\n'; });
-  const ov = document.createElement('div'); ov.className = 'lab-overlay';
-  ov.innerHTML = '<div class="lab-wrap" style="width:min(820px,95vw);height:min(600px,90vh)"><div class="lab-head"><b>Wandaufbau-Liste · U-Werte</b><span class="lab-hint">Seite ' + n + ' · U-Wert editierbar (✎ = überschrieben), gilt für alle Wände dieses Aufbaus</span><span class="grow"></span><button class="btn" id="qCopy">Kopieren</button><button class="btn" id="qClose">✕</button></div><div class="qty-body"><table class="qty-tab"><thead><tr><th>Pos</th><th>Schichten</th><th>Aufbau (innen→aussen)</th><th>Dicke</th><th>U-Wert</th><th>Wände</th></tr></thead><tbody>' + (rows || '<tr><td colspan=6>Keine mehrschichtigen Wände auf dieser Seite.</td></tr>') + '</tbody></table></div></div>';
-  document.body.appendChild(ov);
-  const close = () => { ov.remove(); document.removeEventListener('keydown', esc, true); };
-  const esc = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
-  document.addEventListener('keydown', esc, true);
-  ov.querySelector('#qClose').onclick = close;
-  ov.querySelector('#qCopy').onclick = () => { navigator.clipboard.writeText('WANDAUFBAUTEN\n' + csv).then(() => toast('Liste kopiert (Excel-tauglich)')).catch(() => toast('Kopieren nicht möglich')); };
-  ov.querySelectorAll('.bu-u').forEach(inp => inp.onchange = () => { const v = parseFloat(inp.value); if (!(v > 0)) return; const g = groups.find(x => x.sig.replace(/"/g, '') === inp.dataset.sig); if (!g) return; pushUndo(); g.uVal = v; g.walls.forEach(w => w.uVal = v); saveState(); toast('U-Wert ' + v + ' gespeichert (für ' + g.walls.length + ' Wand/Wände)'); });
-  ov.addEventListener('pointerdown', e => { if (e.target === ov) close(); });
+  bodyEl.innerHTML = '<h4>Seite ' + n + ' · U-Wert editierbar (✎ = überschrieben), gilt für alle Wände dieses Aufbaus</h4><table class="qty-tab"><thead><tr><th>Pos</th><th>Schichten</th><th>Aufbau (innen→aussen)</th><th>Dicke</th><th>U-Wert</th><th>Wände</th></tr></thead><tbody>' + (rows || '<tr><td colspan=6>Keine mehrschichtigen Wände auf dieser Seite.</td></tr>') + '</tbody></table>';
+  bodyEl.querySelectorAll('.bu-u').forEach(inp => inp.onchange = () => { const v = parseFloat(inp.value); if (!(v > 0)) return; const g = groups.find(x => x.sig.replace(/"/g, '') === inp.dataset.sig); if (!g) return; pushUndo(); g.uVal = v; g.walls.forEach(w => w.uVal = v); saveState(); toast('U-Wert ' + v + ' gespeichert (für ' + g.walls.length + ' Wand/Wände)'); });
+  return () => navigator.clipboard.writeText('WANDAUFBAUTEN\n' + csv).then(() => toast('Liste kopiert (Excel-tauglich)')).catch(() => toast('Kopieren nicht möglich'));
 }
+function openWallList() { openListPanel('walls'); }
 function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt Regressionen
   const R = [], A = (name, fn) => { try { const m = fn(); R.push({ name, ok: m === '' || m === true || m == null, msg: typeof m === 'string' ? m : '' }); } catch (e) { R.push({ name, ok: false, msg: (e && e.message) || 'Fehler' }); } };   // Pass = '' / true / nichts; non-leerer String od. false = Fehler
   const saved = docScale; docScale = { perPt: 50 * PT2MM / 1000, label: '1:50', n: 50 };
@@ -5681,8 +5685,7 @@ function drawOpenPosTags(svg, pv) {   // Positionsbubble (Kreis + F1/T1) am Öff
     const t = svgEl('text', { x: tx, y: ty, fill: '#1c242c', 'font-size': 11, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-weight': 700 }); t.textContent = p; svg.appendChild(t);
   }
 }
-function openSchedule() {   // saubere Fenster-/Türliste mit Position, Ansicht-Skizze, Material, Licht/Rohbau, Brüstung, Anschlag
-  if (!docScale) { toast('Erst Massstab setzen – die Liste braucht reale Masse.'); return; }
+function fillScheduleList(bodyEl) {   // Fenster-/Türliste in das Listen-Panel (Position, Ansicht-Skizze, Material, Licht/Rohbau, Brüstung, Anschlag)
   const n = curPage(), arr = getAnnos(n), { wins, doors } = openingGroups(arr);
   const matL = { holz: 'Holz', metall: 'Metall', kunst: 'Kunststoff' }, typeL = { fest: 'Fest', f1: '1-flügelig', f2: '2-flügelig', f2s: '2-fl. Setzholz', f1f: '1-fl.+Fixteil' }, hingeL = { left: 'links', right: 'rechts', kipp: 'Kipp' };
   const dim = (o, oh) => { const ins = ptsToCm(openInsPts(o)) / 100; return { rw: Math.round(ptsToCm(o.w)), rh: Math.round(oh * 100), lw: Math.round((ptsToCm(o.w) / 100 - 2 * ins) * 100), lh: Math.round((oh - 2 * ins) * 100) }; };
@@ -5690,16 +5693,10 @@ function openSchedule() {   // saubere Fenster-/Türliste mit Position, Ansicht-
   wins.forEach((g, i) => { const o = g.o, d = dim(o, g.oh), p = g.pos || ('F' + (i + 1)); wr +='<tr><td><b>' + p + '</b></td><td>' + winThumb(o) + '</td><td>' + (typeL[o.winType || 'f1'] || '') + '</td><td>' + (matL[o.winMat || 'holz'] || '') + '</td><td>' + d.lw + '×' + d.lh + '</td><td>' + d.rw + '×' + d.rh + '</td><td>' + Math.round((o.sill || 0) * 100) + ' cm</td><td>' + (hingeL[o.winHinge || 'left'] || '') + '</td><td style="text-align:center">' + g.n + '</td></tr>'; wc += p + '\t' + (typeL[o.winType || 'f1'] || '') + '\t' + (matL[o.winMat || 'holz'] || '') + '\t' + d.lw + 'x' + d.lh + '\t' + d.rw + 'x' + d.rh + '\t' + Math.round((o.sill || 0) * 100) + '\t' + (hingeL[o.winHinge || 'left'] || '') + '\t' + g.n + '\n'; });
   let dr = '', dc = 'Pos\tTyp\tMaterial\tLicht BxH\tRohbau BxH\tAnschlag\tStk\n';
   doors.forEach((g, i) => { const o = g.o, d = dim(o, g.oh), p = g.pos || ('T' + (i + 1)); dr +='<tr><td><b>' + p + '</b></td><td>' + winThumb(o) + '</td><td>' + (typeL[o.winType || 'f1'] || '') + '</td><td>' + (matL[o.winMat || 'holz'] || '') + '</td><td>' + d.lw + '×' + d.lh + '</td><td>' + d.rw + '×' + d.rh + '</td><td>' + (hingeL[o.winHinge || 'left'] || '') + '</td><td style="text-align:center">' + g.n + '</td></tr>'; dc += p + '\t' + (typeL[o.winType || 'f1'] || '') + '\t' + (matL[o.winMat || 'holz'] || '') + '\t' + d.lw + 'x' + d.lh + '\t' + d.rw + 'x' + d.rh + '\t' + (hingeL[o.winHinge || 'left'] || '') + '\t' + g.n + '\n'; });
-  const ov = document.createElement('div'); ov.className = 'lab-overlay';
-  ov.innerHTML = '<div class="lab-wrap" style="width:min(820px,95vw);height:min(640px,92vh)"><div class="lab-head"><b>Fenster- & Türliste</b><span class="lab-hint">Seite ' + n + ' · Masse in cm (B×H)</span><span class="grow"></span><button class="btn" id="qCopy">Kopieren</button><button class="btn" id="qClose">✕</button></div><div class="qty-body"><h4>Fenster (' + wins.reduce((s, g) => s + g.n, 0) + ' Stk)</h4><table class="qty-tab ws-tab"><thead><tr><th>Pos</th><th>Ansicht</th><th>Typ</th><th>Material</th><th>Licht B×H</th><th>Rohbau B×H</th><th>Brüstung</th><th>Anschlag</th><th>Stk</th></tr></thead><tbody>' + (wr || '<tr><td colspan=9>Keine Fenster.</td></tr>') + '</tbody></table><h4>Türen (' + doors.reduce((s, g) => s + g.n, 0) + ' Stk)</h4><table class="qty-tab ws-tab"><thead><tr><th>Pos</th><th>Ansicht</th><th>Typ</th><th>Material</th><th>Licht B×H</th><th>Rohbau B×H</th><th>Anschlag</th><th>Stk</th></tr></thead><tbody>' + (dr || '<tr><td colspan=8>Keine Türen.</td></tr>') + '</tbody></table></div></div>';
-  document.body.appendChild(ov);
-  const close = () => { ov.remove(); document.removeEventListener('keydown', esc, true); };
-  const esc = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
-  document.addEventListener('keydown', esc, true);
-  ov.querySelector('#qClose').onclick = close;
-  ov.querySelector('#qCopy').onclick = () => { navigator.clipboard.writeText('FENSTERLISTE\n' + wc + '\nTÜRLISTE\n' + dc).then(() => toast('Liste kopiert (Excel-tauglich)')).catch(() => toast('Kopieren nicht möglich')); };
-  ov.addEventListener('pointerdown', e => { if (e.target === ov) close(); });
+  bodyEl.innerHTML = '<h4>Fenster (' + wins.reduce((s, g) => s + g.n, 0) + ' Stk) · Seite ' + n + ' · Masse in cm (B×H)</h4><table class="qty-tab ws-tab"><thead><tr><th>Pos</th><th>Ansicht</th><th>Typ</th><th>Material</th><th>Licht B×H</th><th>Rohbau B×H</th><th>Brüstung</th><th>Anschlag</th><th>Stk</th></tr></thead><tbody>' + (wr || '<tr><td colspan=9>Keine Fenster.</td></tr>') + '</tbody></table><h4>Türen (' + doors.reduce((s, g) => s + g.n, 0) + ' Stk)</h4><table class="qty-tab ws-tab"><thead><tr><th>Pos</th><th>Ansicht</th><th>Typ</th><th>Material</th><th>Licht B×H</th><th>Rohbau B×H</th><th>Anschlag</th><th>Stk</th></tr></thead><tbody>' + (dr || '<tr><td colspan=8>Keine Türen.</td></tr>') + '</tbody></table>';
+  return () => navigator.clipboard.writeText('FENSTERLISTE\n' + wc + '\nTÜRLISTE\n' + dc).then(() => toast('Liste kopiert (Excel-tauglich)')).catch(() => toast('Kopieren nicht möglich'));
 }
+function openSchedule() { openListPanel('schedule'); }
 function computeQuantities(arr) {   // Mengenauszug: Wandfläche × Schichtstärke − Öffnungen
   const VOL = ['beton', 'mauerwerk'], mats = {}, opsAgg = {};
   for (const w of arr) {
@@ -5740,8 +5737,7 @@ function computeQuantities(arr) {   // Mengenauszug: Wandfläche × Schichtstär
   }
   return { mats: Object.values(mats).sort((a, b) => a.mat.localeCompare(b.mat)), ops: Object.values(opsAgg).sort((a, b) => (a.kind + a.rohW).localeCompare(b.kind + b.rohW)), extra: Object.values(extra) };
 }
-function openQuantities() {
-  if (!docScale) { toast('Erst Massstab setzen – Mengen brauchen reale Masse.'); return; }
+function fillQtyList(bodyEl) {   // Mengenauszug in das Listen-Panel
   const n = curPage(), arr = getAnnos(n), { mats, ops, extra } = computeQuantities(arr);
   const ML = { _wall: 'Wand (einschichtig)' }, lbl = m => (WALL_MATS[m] && WALL_MATS[m].label) || ML[m] || m;
   let rows = '', csv = 'Material\tStärke (cm)\tMenge\tEinheit\n';
@@ -5751,16 +5747,10 @@ function openQuantities() {
   for (const o of ops) { const t = (o.kind === 'window' ? 'Fenster' : 'Tür') + ' ' + (tn[o.winType] || ''); orows += '<tr><td>' + t + '</td><td style="text-align:center">' + o.n + '</td><td>' + o.lichtW + '×' + o.lichtH + '</td><td>' + o.rohW + '×' + o.rohH + '</td></tr>'; ocsv += t + '\t' + o.n + '\t' + o.lichtW + '×' + o.lichtH + '\t' + o.rohW + '×' + o.rohH + '\n'; }
   let erows = '', ecsv = 'Bauteil\tAnzahl\tMenge\tEinheit\tZusatz\n';
   for (const e of (extra || [])) { const q = (Math.round(e.qty * 100) / 100).toLocaleString('de-CH'), np = []; if (e.vol) np.push((Math.round(e.vol * 100) / 100).toLocaleString('de-CH') + ' m³'); if (e.kg) np.push(Math.round(e.kg).toLocaleString('de-CH') + ' kg'); if (e.steps) np.push(e.steps + ' Stufen'); const note = np.join(' · '); erows += '<tr><td>' + e.label + '</td><td style="text-align:center">' + e.n + '</td><td style="text-align:right">' + q + '</td><td>' + e.unit + '</td><td>' + note + '</td></tr>'; ecsv += e.label + '\t' + e.n + '\t' + q + '\t' + e.unit + '\t' + note + '\n'; }
-  const ov = document.createElement('div'); ov.className = 'lab-overlay';
-  ov.innerHTML = '<div class="lab-wrap" style="width:min(720px,94vw);height:min(620px,90vh)"><div class="lab-head"><b>Datenliste / Mengen</b><span class="lab-hint">Seite ' + n + ' · Öffnungen abgezogen</span><span class="grow"></span><button class="btn" id="qCopy">Kopieren</button><button class="btn" id="qClose">✕</button></div><div class="qty-body"><h4>Materialliste</h4><table class="qty-tab"><thead><tr><th>Material</th><th>Stärke</th><th>Menge</th><th>Einheit</th></tr></thead><tbody>' + (rows || '<tr><td colspan=4>Keine mehrschichtigen Wände auf dieser Seite.</td></tr>') + '</tbody></table><h4>Fenster-/Türliste</h4><table class="qty-tab"><thead><tr><th>Typ</th><th>Anzahl</th><th>Licht B×H</th><th>Rohbau B×H</th></tr></thead><tbody>' + (orows || '<tr><td colspan=4>Keine Öffnungen.</td></tr>') + '</tbody></table>' + (erows ? '<h4>Decken · Dächer · Treppen · Profile</h4><table class="qty-tab"><thead><tr><th>Bauteil</th><th>Anzahl</th><th>Menge</th><th>Einheit</th><th>Zusatz</th></tr></thead><tbody>' + erows + '</tbody></table>' : '') + '</div></div>';
-  document.body.appendChild(ov);
-  const close = () => { ov.remove(); document.removeEventListener('keydown', esc, true); };
-  const esc = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
-  document.addEventListener('keydown', esc, true);
-  ov.querySelector('#qClose').onclick = close;
-  ov.querySelector('#qCopy').onclick = () => { navigator.clipboard.writeText('MATERIALLISTE\n' + csv + '\nFENSTER/TÜREN\n' + ocsv + (erows ? '\nDECKEN/DÄCHER/TREPPEN\n' + ecsv : '')).then(() => toast('In die Zwischenablage kopiert (Excel-tauglich)')).catch(() => toast('Kopieren nicht möglich')); };
-  ov.addEventListener('pointerdown', e => { if (e.target === ov) close(); });
+  bodyEl.innerHTML = '<h4>Seite ' + n + ' · Öffnungen abgezogen · Materialliste</h4><table class="qty-tab"><thead><tr><th>Material</th><th>Stärke</th><th>Menge</th><th>Einheit</th></tr></thead><tbody>' + (rows || '<tr><td colspan=4>Keine mehrschichtigen Wände auf dieser Seite.</td></tr>') + '</tbody></table><h4>Fenster-/Türliste</h4><table class="qty-tab"><thead><tr><th>Typ</th><th>Anzahl</th><th>Licht B×H</th><th>Rohbau B×H</th></tr></thead><tbody>' + (orows || '<tr><td colspan=4>Keine Öffnungen.</td></tr>') + '</tbody></table>' + (erows ? '<h4>Decken · Dächer · Treppen · Profile</h4><table class="qty-tab"><thead><tr><th>Bauteil</th><th>Anzahl</th><th>Menge</th><th>Einheit</th><th>Zusatz</th></tr></thead><tbody>' + erows + '</tbody></table>' : '');
+  return () => navigator.clipboard.writeText('MATERIALLISTE\n' + csv + '\nFENSTER/TÜREN\n' + ocsv + (erows ? '\nDECKEN/DÄCHER/TREPPEN\n' + ecsv : '')).then(() => toast('In die Zwischenablage kopiert (Excel-tauglich)')).catch(() => toast('Kopieren nicht möglich'));
 }
+function openQuantities() { openListPanel('qty'); }
 function applyMountPreset(a, mode) {   // drei Montagearten des Rahmens → sinnvolle Defaults (danach frei editierbar)
   if (mode === 'innen') { a.depth = 0.2; a.anschlagType = 'innen'; if (a.anschlagDepth == null) a.anschlagDepth = cmToPts(5); }          // innen ans Mauerwerk angeschlagen
   else if (mode === 'laibung') { a.depth = 0.5; a.anschlagType = 'none'; }                                                              // stumpf in der Laibung
@@ -6820,6 +6810,7 @@ function wire() {
   $('#footSchedule').onclick = openSchedule;
   $('#footWallList').onclick = openWallList;
   $('#footRooms').onclick = openRoomList;
+  { const tg = $('#lp2Toggle'); if (tg) tg.onclick = () => openListPanel(); const cl = $('#lp2Close'); if (cl) cl.onclick = closeListPanel; const cp = $('#lp2Copy'); if (cp) cp.onclick = () => { if (_listCopyFn) _listCopyFn(); }; document.querySelectorAll('.lp2-tab').forEach(b => b.onclick = () => openListPanel(b.dataset.lt)); }   // Listen-Panel: Tabs/Toggle/Schliessen/Kopieren
   $('#footImportAnn').onclick = () => importPdfAnnotations(false);
   $('#footExportAnn').onclick = exportNative;
   $('#footPhase').onclick = e => { e.stopPropagation(); const p = $('#phasePop'); p.hidden = !p.hidden; if (!p.hidden) updatePhaseUI(); };

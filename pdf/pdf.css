@@ -3,6 +3,18 @@
 .pm-btn{opacity:.5}
 .opening-g .rev-hatch,.sec-g .rev-hatch{opacity:0}                 /* Laibungs-Schraffur standardmäßig aus … */
 .opening-g:hover .rev-hatch,.sec-g:hover .rev-hatch{opacity:1}     /* … nur beim Drüberfahren (Öffnung bzw. Schnitt) sichtbar */
+/* Einheitliches Listen-Panel (rechts, ein-/ausblendbar, Tabs) */
+.lp2-toggle{position:fixed;top:calc(var(--bar) + 6px);right:0;z-index:61;background:#fff;border:1px solid var(--line);border-right:none;border-radius:8px 0 0 8px;padding:7px 9px;font-size:13px;cursor:pointer;box-shadow:-2px 2px 8px rgba(0,0,0,.08)}
+.lp2-toggle:hover{background:#f1f3ee}
+.list-panel{position:fixed;top:calc(var(--bar) + 6px);right:0;bottom:8px;width:min(380px,92vw);z-index:62;background:#fff;border:1px solid var(--line);border-radius:10px 0 0 10px;box-shadow:-4px 0 18px rgba(0,0,0,.14);display:flex;flex-direction:column;overflow:hidden}
+.lp2-head{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--line);background:#f6f7f4;flex-wrap:wrap}
+.lp2-tabs{display:flex;gap:3px;flex-wrap:wrap}
+.lp2-tab{border:1px solid var(--line);background:#fff;border-radius:7px;padding:4px 8px;font-size:12px;cursor:pointer;color:#5a6152}
+.lp2-tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.lp2-body{flex:1;overflow:auto;padding:8px 10px}
+.lp2-empty{padding:14px;opacity:.7;font-size:13px}
+.lp2-body h4{margin:10px 0 4px;font-size:12px;color:#5a6152}
+.lp2-body h4:first-child{margin-top:0}
 :root{
   --bg:#f0efe9; --surface:#ffffff; --surface-2:#f5f4ee; --line:#dedcd2; --line-soft:#ebe9e0;
   --ink:#1c242c; --ink-soft:#565d52; --ink-faint:#9b9c8f;

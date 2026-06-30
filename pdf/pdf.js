@@ -5515,9 +5515,10 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     body.innerHTML = '<h4>Wand</h4>' + (a.layers && a.layers.length ? buildupThumb(a.layers, tcm) : '') +
       '<div class="insp-kv"><span>Dicke</span><b>' + (Math.round(tcm * 10) / 10) + ' cm</b></div>' +
       (u != null ? '<div class="insp-kv"><span>U-Wert</span><b>' + (Math.round(u * 1000) / 1000).toFixed(3) + ' W/m²K</b></div>' : '') +
-      '<div class="insp-kv"><span>Höhe (m)</span><input class="insp-num" id="iWh" type="number" step="0.05" min="0.5" value="' + (a.h3d || wallHeightM) + '"></div>' +
-      '<p class="insp-hint">Schicht-Aufbau über die Planungsleiste („Aufbau") bearbeiten. Im Schnitt sind die Höhen direkt ziehbar.</p>';
+      '<div class="insp-kv"><span>Höhe (m)</span><input class="insp-num" id="iWh" type="number" step="0.05" min="0.5" value="' + (a.h3d || wallHeightM) + '"></div>';
     const wh = body.querySelector('#iWh'); if (wh) wh.onchange = () => { const v = parseFloat((wh.value || '').replace(',', '.')); if (v > 0) { pushUndo(); a.h3d = v; pageViews.forEach(drawAnnos); saveState(); } };
+    const bb = document.createElement('button'); bb.className = 'insp-btn'; bb.textContent = '▦ Schicht-Aufbau bearbeiten'; bb.onclick = () => openBuildPop(a, () => { pageViews.forEach(drawAnnos); renderList(); }); body.appendChild(bb);   // Wandaufbau-Editor direkt aus dem Inspector
+    body.insertAdjacentHTML('beforeend', '<p class="insp-hint">Ausrichtung/Farbe in der Planungsleiste. Im Schnitt sind die Höhen direkt ziehbar.</p>');
     return;
   }
   if (a.type === 'area') {

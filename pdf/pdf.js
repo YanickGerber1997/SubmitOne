@@ -948,6 +948,7 @@ function drawBrandMark(pv) {
 function toHex(s) { const c = parseColor(s), h = n => ('0' + Math.round(n * 255).toString(16)).slice(-2); return '#' + h(c.r) + h(c.g) + h(c.b); }
 // Schwebende Leiste über der Auswahl positionieren/konfigurieren
 function updateSelBar() {
+  try { syncInspector(); } catch (_) { }   // Auswahl → Inspector rechts aktualisieren
   const bar = $('#selbar'); if (!bar) return;
   if (!sel || tool !== 'select') { bar.hidden = true; return; }
   const pv = pageViews.find(p => p.num === sel.num), a = pv && findAnno(pv.num, sel.id);
@@ -3259,35 +3260,36 @@ function openRevealLayerPop(pv, a, revAttr, cx, cy) {   // Inline-Editor für EI
   const close = ev => { if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('pointerdown', close, true); } };
   setTimeout(() => document.addEventListener('pointerdown', close, true), 0);
 }
-function openFramePop(pv, a, cx, cy) {   // Inline-Editor für den Rahmen/Flügel (im Grundriss/Schnitt angeklickt)
-  document.querySelectorAll('.rev-pop').forEach(n => n.remove());
-  const isWin = a.kind === 'window', cm = v => Math.round(ptsToCm(v) * 10) / 10;
-  const pop = document.createElement('div'); pop.className = 'rev-pop'; pop.style.cssText = 'position:fixed;z-index:99999;background:#fff;border:1px solid #b8c0ad;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.2);padding:10px 11px;font:13px system-ui;min-width:220px';
-  const upd = () => { drawAnnos(pv); saveState(); };
-  const head = document.createElement('div'); head.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:7px;font-weight:600'; head.innerHTML = '<span>Rahmen / Flügel</span>'; const xb = document.createElement('button'); xb.textContent = '✕'; xb.style.cssText = 'margin-left:auto;border:none;background:none;cursor:pointer;font-size:15px'; xb.onclick = () => pop.remove(); head.appendChild(xb); pop.appendChild(head);
-  const mk = (lbl, node, reset) => { const r = document.createElement('div'); r.style.cssText = 'display:flex;align-items:center;gap:6px;margin:3px 0'; const s = document.createElement('span'); s.textContent = lbl; s.style.cssText = 'flex:1;color:#5a6152'; r.appendChild(s); r.appendChild(node); if (reset) { const rb = document.createElement('button'); rb.textContent = '↺'; rb.title = 'Zurück zum Standard'; rb.style.cssText = 'border:none;background:none;cursor:pointer;color:#7a8366;font-size:14px;padding:0 2px'; rb.onclick = reset; r.appendChild(rb); } pop.appendChild(r); };
-  const numF = (val, mn, mx, set, def) => { const n = document.createElement('input'); n.type = 'number'; n.min = mn; n.max = mx; n.step = '0.1'; n.value = val; n.style.width = '62px'; n.onchange = () => { const v = parseFloat((n.value || '').replace(',', '.')); if (!isNaN(v)) { set(v); upd(); } }; return { n, reset: () => { n.value = def; set(def); upd(); } }; };
-  const selF = (opts, cur, set) => { const sl = document.createElement('select'); opts.forEach(([k, lab]) => { const o = document.createElement('option'); o.value = k; o.textContent = lab; if (k === cur) o.selected = true; sl.appendChild(o); }); sl.onchange = () => { set(sl.value); upd(); }; return sl; };
+function buildFrameFields(host, a, pv) {   // Rahmen-/Flügel-Felder in einen beliebigen Container (Popup ODER Inspector)
+  host.innerHTML = ''; const isWin = a.kind === 'window', cm = v => Math.round(ptsToCm(v) * 10) / 10, upd = () => { drawAnnos(pv); saveState(); };
+  const mk = (lbl, node, reset) => { const r = document.createElement('div'); r.className = 'insp-row'; const s = document.createElement('span'); s.textContent = lbl; s.className = 'insp-lbl'; r.appendChild(s); r.appendChild(node); if (reset) { const rb = document.createElement('button'); rb.textContent = '↺'; rb.title = 'Zurück zum Standard'; rb.className = 'insp-rst'; rb.onclick = reset; r.appendChild(rb); } host.appendChild(r); };
+  const numF = (val, mn, mx, set, def) => { const n = document.createElement('input'); n.type = 'number'; n.min = mn; n.max = mx; n.step = '0.1'; n.value = val; n.className = 'insp-num'; n.onchange = () => { const v = parseFloat((n.value || '').replace(',', '.')); if (!isNaN(v)) { set(v); upd(); } }; return { n, reset: () => { n.value = def; set(def); upd(); } }; };
+  const selF = (opts, cur, set) => { const sl = document.createElement('select'); sl.className = 'insp-sel'; opts.forEach(([k, lab]) => { const o = document.createElement('option'); o.value = k; o.textContent = lab; if (k === cur) o.selected = true; sl.appendChild(o); }); sl.onchange = () => { set(sl.value); upd(); }; return sl; };
   const fwd = isWin ? 10 : 6, fw = numF(cm(a.frameW || cmToPts(fwd)), '1', '30', v => a.frameW = cmToPts(v), fwd); mk('Rahmenbreite (cm)', fw.n, fw.reset);
   const fd = numF(cm(a.frameD || cmToPts(7)), '2', '40', v => a.frameD = cmToPts(v), 7); mk('Rahmentiefe (cm)', fd.n, fd.reset);
   if (isWin) {
     const sw = numF(cm(a.sashW || cmToPts(7)), '2', '20', v => a.sashW = cmToPts(v), 7); mk('Flügelbreite (cm)', sw.n, sw.reset);
     const sd = numF(cm(a.sashD || cmToPts(7)), '2', '20', v => a.sashD = cmToPts(v), 7); mk('Flügeltiefe (cm)', sd.n, sd.reset);
-    const sh = numF(cm(a.sashShift != null ? a.sashShift : cmToPts(4)), '0', '15', v => a.sashShift = cmToPts(v), 4); mk('Überlappung Flügel↔Rahmen (cm)', sh.n, sh.reset);   // wie weit der Flügel auf den Blendrahmen lappt
-    const sr = numF(cm(a.sashRecess != null ? a.sashRecess : cmToPts(1)), '0', '10', v => a.sashRecess = cmToPts(v), 1); mk('Flügel-Rücksprung (cm)', sr.n, sr.reset);   // Tiefenversatz Flügel zum Rahmen
+    const sh = numF(cm(a.sashShift != null ? a.sashShift : cmToPts(4)), '0', '15', v => a.sashShift = cmToPts(v), 4); mk('Überlappung Flügel↔Rahmen (cm)', sh.n, sh.reset);
+    const sr = numF(cm(a.sashRecess != null ? a.sashRecess : cmToPts(1)), '0', '10', v => a.sashRecess = cmToPts(v), 1); mk('Flügel-Rücksprung (cm)', sr.n, sr.reset);
   }
   const types = isWin ? [['f1', '1-flügelig'], ['f2', '2-flügelig'], ['f2s', '2-fl. Setzholz'], ['fest', 'Fest']] : [['f1', '1-flügelig'], ['f2', '2-flügelig'], ['f1f', '1-fl. + Fixteil'], ['fest', 'Fest']];
   mk('Typ', selF(types, a.winType || 'f1', v => a.winType = v));
   const hinges = isWin ? [['left', 'Band links'], ['right', 'Band rechts'], ['kipp', 'Kipp']] : [['left', 'Band links'], ['right', 'Band rechts']];
   mk('Anschlag', selF(hinges, a.winHinge || 'left', v => a.winHinge = v));
-  const mats = [['holz', 'Holz'], ['metall', 'Metall'], ['kunst', 'Kunststoff']];
-  mk('Material', selF(mats, a.winMat || 'holz', v => a.winMat = v));
-  const flip = document.createElement('button'); flip.textContent = '⇄ Anschlag / Öffnungsseite wechseln'; flip.style.cssText = 'width:100%;margin-top:8px;padding:5px;cursor:pointer'; flip.title = '4 Varianten: Band links/rechts × öffnet innen/aussen'; flip.onclick = () => { flipOpening(a); upd(); pop.remove(); openFramePop(pv, a, cx, cy); }; pop.appendChild(flip);
-  const st = document.createElement('div'); st.style.cssText = 'margin-top:5px;color:#5a6152;font-size:12px'; st.textContent = 'Band ' + (a.winHinge === 'right' ? 'rechts' : a.winHinge === 'kipp' ? 'Kipp' : 'links') + ' · öffnet ' + ((a.swing || 1) === 1 ? 'innen' : 'aussen'); pop.appendChild(st);
+  mk('Material', selF([['holz', 'Holz'], ['metall', 'Metall'], ['kunst', 'Kunststoff']], a.winMat || 'holz', v => a.winMat = v));
+  const flip = document.createElement('button'); flip.textContent = '⇄ Anschlag / Öffnungsseite wechseln'; flip.className = 'insp-btn'; flip.onclick = () => { flipOpening(a); upd(); buildFrameFields(host, a, pv); }; host.appendChild(flip);
+  const st = document.createElement('div'); st.className = 'insp-note'; st.textContent = 'Band ' + (a.winHinge === 'right' ? 'rechts' : a.winHinge === 'kipp' ? 'Kipp' : 'links') + ' · öffnet ' + ((a.swing || 1) === 1 ? 'innen' : 'aussen'); host.appendChild(st);
+}
+function openFramePop(pv, a, cx, cy) {   // schwebender Rahmen-/Flügel-Editor (im Plan/Schnitt angeklickt)
+  document.querySelectorAll('.rev-pop').forEach(n => n.remove());
+  const pop = document.createElement('div'); pop.className = 'rev-pop'; pop.style.cssText = 'position:fixed;z-index:99999;background:#fff;border:1px solid #b8c0ad;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.2);padding:10px 11px;font:13px system-ui;min-width:220px';
+  const head = document.createElement('div'); head.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:7px;font-weight:600'; head.innerHTML = '<span>Rahmen / Flügel</span>'; const xb = document.createElement('button'); xb.textContent = '✕'; xb.style.cssText = 'margin-left:auto;border:none;background:none;cursor:pointer;font-size:15px'; xb.onclick = () => pop.remove(); head.appendChild(xb); pop.appendChild(head);
+  const fwrap = document.createElement('div'); pop.appendChild(fwrap); buildFrameFields(fwrap, a, pv);
   document.body.appendChild(pop);
   pop.style.left = Math.max(8, Math.min((cx || 200) + 8, window.innerWidth - pop.offsetWidth - 12)) + 'px';
   pop.style.top = Math.max(8, Math.min((cy || 200) + 8, window.innerHeight - pop.offsetHeight - 12)) + 'px';
-  popDrag(pop, head, xb);   // am Titel verschiebbar, falls im Weg
+  popDrag(pop, head, xb);
   const close = ev => { if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('pointerdown', close, true); } };
   setTimeout(() => document.addEventListener('pointerdown', close, true), 0);
 }
@@ -5481,21 +5483,61 @@ function roomData() {   // alle Flächen-/Raum-Anmerkungen → Raumbuch-Zeilen
   rooms.sort((x, y) => (x.floor || '').localeCompare(y.floor || '') || (y.m2 - x.m2));
   return rooms;
 }
-let _listTab = 'rooms', _listCopyFn = null;
-function openListPanel(tab) {   // rechtes Listen-Panel zeigen + Tab wählen
+let _listTab = 'sel', _listCopyFn = null, _lastInspId = null;
+function openListPanel(tab) {   // rechtes Inspector/Listen-Panel zeigen + Tab wählen
   if (tab) _listTab = tab; const p = document.getElementById('listPanel'); if (!p) return; p.hidden = false;
   const tg = document.getElementById('lp2Toggle'); if (tg) tg.style.display = 'none';
   document.querySelectorAll('.lp2-tab').forEach(b => b.classList.toggle('on', b.dataset.lt === _listTab));
+  const cp = document.getElementById('lp2Copy'); if (cp) cp.style.display = _listTab === 'sel' ? 'none' : '';   // Kopieren nur bei Listen
   renderList();
 }
 function closeListPanel() { const p = document.getElementById('listPanel'); if (p) p.hidden = true; const tg = document.getElementById('lp2Toggle'); if (tg) tg.style.display = ''; }
-function renderList() {   // aktuellen Tab in den Panel-Body rendern (alle Listen einheitlich)
+function renderList() {   // aktuellen Tab in den Panel-Body rendern (Inspector + Listen einheitlich)
   const body = document.getElementById('lp2Body'); if (!body) return; body.innerHTML = ''; _listCopyFn = null;
+  if (_listTab === 'sel') { fillSelectionInspector(body); return; }
   if (!docScale) { body.innerHTML = '<p class="lp2-empty">Für Flächen/Mengen in m² zuerst den Massstab setzen (1:n) – unten in der Fusszeile.</p>'; return; }
   if (_listTab === 'rooms') _listCopyFn = fillRoomList(body);
   else if (_listTab === 'qty') _listCopyFn = fillQtyList(body);
   else if (_listTab === 'schedule') _listCopyFn = fillScheduleList(body);
   else if (_listTab === 'walls') _listCopyFn = fillWallList(body);
+}
+function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des gewählten Bauteils (wie ein Inspector)
+  const a = sel ? findAnno(sel.num, sel.id) : null, pv = sel ? pageViews.find(p => p.num === sel.num) : null;
+  if (!a || !pv) { body.innerHTML = '<p class="lp2-empty">Kein Bauteil gewählt.<br><br>Wähle ein <b>Fenster</b>, eine <b>Tür</b>, eine <b>Wand</b> oder eine <b>Fläche</b> an – die Einstellungen erscheinen hier.</p>'; return; }
+  if (a.type === 'opening') {
+    body.innerHTML = '<h4>' + (a.kind === 'window' ? 'Fenster' : 'Tür') + ' · Rahmen / Flügel</h4>';
+    const wrap = document.createElement('div'); body.appendChild(wrap); buildFrameFields(wrap, a, pv);
+    body.insertAdjacentHTML('beforeend', '<p class="insp-hint">Laibung: im Plan auf die gestrichelten Linien klicken (zoomt rein) oder die Kanten ziehen. + / − an jeder Schicht.</p>');
+    return;
+  }
+  if (a.type === 'wall') {
+    const u = a.layers && a.layers.length ? wallUValue(a.layers, a.uVal) : null, tcm = a.layers && a.layers.length ? a.layers.reduce((s, l) => s + ptsToCm(l.t), 0) : ptsToCm(a.thick || wallThickPts());
+    body.innerHTML = '<h4>Wand</h4>' + (a.layers && a.layers.length ? buildupThumb(a.layers, tcm) : '') +
+      '<div class="insp-kv"><span>Dicke</span><b>' + (Math.round(tcm * 10) / 10) + ' cm</b></div>' +
+      (u != null ? '<div class="insp-kv"><span>U-Wert</span><b>' + (Math.round(u * 1000) / 1000).toFixed(3) + ' W/m²K</b></div>' : '') +
+      '<div class="insp-kv"><span>Höhe (m)</span><input class="insp-num" id="iWh" type="number" step="0.05" min="0.5" value="' + (a.h3d || wallHeightM) + '"></div>' +
+      '<p class="insp-hint">Schicht-Aufbau über die Planungsleiste („Aufbau") bearbeiten. Im Schnitt sind die Höhen direkt ziehbar.</p>';
+    const wh = body.querySelector('#iWh'); if (wh) wh.onchange = () => { const v = parseFloat((wh.value || '').replace(',', '.')); if (v > 0) { pushUndo(); a.h3d = v; pageViews.forEach(drawAnnos); saveState(); } };
+    return;
+  }
+  if (a.type === 'area') {
+    const m2 = docScale ? polyArea(a.pts || []) * docScale.perPt * docScale.perPt : 0;
+    body.innerHTML = '<h4>Fläche / Raum</h4>' + (m2 ? '<div class="insp-kv"><span>Fläche</span><b>' + (Math.round(m2 * 100) / 100).toFixed(2).replace('.', ',') + ' m²</b></div>' : '') +
+      '<div class="insp-row"><span class="insp-lbl">Raumname</span><input class="insp-num" style="width:120px" id="iNm" value="' + (a.name ? a.name.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Wohnen"></div>' +
+      '<div class="insp-row"><span class="insp-lbl">Bodenbelag</span><input class="insp-num" style="width:120px" id="iFl" value="' + (a.floor ? a.floor.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Parkett"></div>';
+    const nm = body.querySelector('#iNm'), fl = body.querySelector('#iFl');
+    if (nm) nm.onchange = () => { const v = nm.value.trim(); if (v) a.name = v; else delete a.name; markDirty(); pageViews.forEach(drawAnnos); };
+    if (fl) fl.onchange = () => { const v = fl.value.trim(); if (v) a.floor = v; else delete a.floor; markDirty(); pageViews.forEach(drawAnnos); };
+    return;
+  }
+  body.innerHTML = '<h4>' + (a.type || 'Bauteil') + '</h4><p class="lp2-empty">Für diesen Typ gibt es (noch) keine Inspector-Einstellungen. Doppelklick im Plan öffnet ggf. die Eingabe.</p>';
+}
+function syncInspector() {   // Auswahl gewechselt → Inspector zeigen/aktualisieren (Bauteil anwählen ⇒ Einstellungen rechts)
+  const id = sel ? sel.id : null; if (id === _lastInspId) return; _lastInspId = id;
+  const p = document.getElementById('listPanel'); if (!p) return;
+  const a = (id != null && sel) ? findAnno(sel.num, sel.id) : null;
+  if (a && (a.type === 'opening' || a.type === 'wall' || a.type === 'area')) { _listTab = 'sel'; openListPanel('sel'); }   // Bauteil gewählt → Inspector
+  else if (!p.hidden && _listTab === 'sel') renderList();   // abgewählt → Inspector leeren
 }
 function fillRoomList(bodyEl) {   // Raumbuch in das Listen-Panel
   const rooms = roomData(), total = rooms.reduce((s, r) => s + r.m2, 0);

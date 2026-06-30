@@ -3,6 +3,18 @@
 .pm-btn{opacity:.5}
 .opening-g .rev-hatch,.sec-g .rev-hatch{opacity:0}                 /* Laibungs-Schraffur standardmäßig aus … */
 .opening-g:hover .rev-hatch,.sec-g:hover .rev-hatch{opacity:1}     /* … nur beim Drüberfahren (Öffnung bzw. Schnitt) sichtbar */
+/* Linke Planungs-Tool-Spalte (zusätzlich zum Reiter „Planung") */
+.plan-rail{position:fixed;left:0;top:calc(var(--bar) + var(--tools));bottom:var(--quickh);z-index:41;width:var(--planrailw);display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;background:var(--surface);border-right:1px solid var(--line);overflow-y:auto;font-family:var(--font)}
+body.has-tabs .plan-rail{top:calc(var(--bar) + var(--tools) + var(--tabs))}
+body.has-planbar .plan-rail{top:calc(var(--bar) + var(--tools) + var(--planh))}
+body.has-planbar.has-tabs .plan-rail{top:calc(var(--bar) + var(--tools) + var(--tabs) + var(--planh))}
+body:not(.has-doc) .plan-rail{display:none}
+body.planrail-collapsed .plan-rail{display:none}
+body.has-doc:not(.planrail-collapsed) .work{left:var(--planrailw);transition:left .15s}
+.plan-rail-toggle{position:fixed;left:0;top:calc(var(--bar) + var(--tools) + 4px);z-index:42;width:18px;height:30px;border:1px solid var(--line);border-left:none;background:var(--surface);color:var(--ink-soft);cursor:pointer;font-size:12px;border-radius:0 6px 6px 0}
+body:not(.planrail-collapsed) .plan-rail-toggle{left:var(--planrailw)}
+body:not(.planrail-collapsed) .plan-rail-toggle{transform:scaleX(-1)}
+body:not(.has-doc) .plan-rail-toggle{display:none}
 /* Immer sichtbare rechte Leiste (Knöpfe zum Ausfahren: Listen/Inspector, Kommentare) – Stil wie Kommentar-Panel */
 .side-rail{position:fixed;top:calc(var(--bar) + var(--tools));right:0;bottom:var(--quickh);z-index:63;display:flex;flex-direction:column;gap:2px;padding:6px 4px;background:var(--surface);border-left:1px solid var(--line);font-family:var(--font)}
 .sr-btn{display:flex;flex-direction:column;align-items:center;gap:2px;width:44px;padding:7px 2px;border:none;background:none;cursor:pointer;font-size:9px;color:var(--ink-soft);line-height:1}
@@ -52,7 +64,7 @@ body.has-planbar.has-tabs .list-panel,body.has-planbar.has-tabs .side-rail{top:c
   --danger:#b4502f;
   --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   --bar:74px; --tools:94px; --tabs:36px; --planh:46px;
-  --railw:54px; --listw:340px; --quickh:38px;
+  --railw:54px; --listw:340px; --quickh:38px; --planrailw:50px;
 }
 *{box-sizing:border-box}
 [hidden]{display:none !important}   /* Attribut sticht Klassen-display aus (Mail-Dialog etc.) */
@@ -725,6 +737,8 @@ body.has-tabs .build-pop{top:calc(var(--bar) + var(--tools) + var(--tabs) + var(
   .comments{position:fixed;top:calc(var(--bar) + var(--tools));right:0;bottom:0;width:min(320px,86vw);z-index:40;box-shadow:-8px 0 24px rgba(20,24,40,.16)}
   body.list-open .work{right:var(--railw)}   /* schmaler Schirm: Listen-Panel überlagert (schiebt nicht) */
   .list-panel{box-shadow:-8px 0 24px rgba(20,24,40,.16)}
+  body.has-doc:not(.planrail-collapsed) .work{left:0}   /* schmaler Schirm: Planungs-Rail überlagert (schiebt nicht) */
+  .plan-rail{box-shadow:6px 0 24px rgba(20,24,40,.16)}
   .doc-name,.suite-link{display:none}
   .btn span{display:none}
   .btn{padding:0 11px;gap:0}

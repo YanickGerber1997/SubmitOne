@@ -7065,6 +7065,7 @@ function wire() {
   $('#btnRuler').onclick = toggleRuler;
   $('#btnGrid').onclick = toggleGrid;
   { const s2 = $('#btnScale2'); if (s2) s2.onclick = () => openScale(0); const r2 = $('#btnRuler2'); if (r2) r2.onclick = toggleRuler; const g2 = $('#btnGrid2'); if (g2) g2.onclick = toggleGrid; }   // Dokument-Reiter: Duplikate von Massstab/Lineal/Raster
+  { const pt = $('#planRailToggle'); if (pt) pt.onclick = () => document.body.classList.toggle('planrail-collapsed'); const bp2 = $('#btnProfile2'); if (bp2) bp2.onclick = () => { const o = $('#btnProfile'); if (o) o.click(); }; const bb2 = $('#btnBlock2'); if (bb2) bb2.onclick = e => { e.stopPropagation(); const o = $('#btnBlock'); if (o) o.click(); }; }   // linke Planungs-Rail: Toggle + Profil/Objekt-Duplikate
   $('#gridCell').onchange = e => { gridCellCm = +e.target.value; drawGrid(); };
   $('#gridMoveBtn').onclick = () => { gridMove = !gridMove; $('#gridMoveBtn').classList.toggle('on', gridMove); updateGridPE(); };
   $('#gridClose').onclick = toggleGrid;

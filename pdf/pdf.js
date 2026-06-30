@@ -5485,13 +5485,13 @@ function roomData() {   // alle Flächen-/Raum-Anmerkungen → Raumbuch-Zeilen
 }
 let _listTab = 'sel', _listCopyFn = null, _lastInspId = null;
 function openListPanel(tab) {   // rechtes Inspector/Listen-Panel zeigen + Tab wählen
-  if (tab) _listTab = tab; const p = document.getElementById('listPanel'); if (!p) return; p.hidden = false;
+  if (tab) _listTab = tab; const p = document.getElementById('listPanel'); if (!p) return; p.hidden = false; document.body.classList.add('list-open');   // schiebt die Vorschau zur Seite (wie Kommentar-Panel)
   document.querySelectorAll('.lp2-tab').forEach(b => b.classList.toggle('on', b.dataset.lt === _listTab));
   const cp = document.getElementById('lp2Copy'); if (cp) cp.style.display = _listTab === 'sel' ? 'none' : '';   // Kopieren nur bei Listen
   const sb = document.getElementById('srInspect'); if (sb) sb.classList.add('on');
   renderList();
 }
-function closeListPanel() { const p = document.getElementById('listPanel'); if (p) p.hidden = true; const sb = document.getElementById('srInspect'); if (sb) sb.classList.remove('on'); }
+function closeListPanel() { const p = document.getElementById('listPanel'); if (p) p.hidden = true; document.body.classList.remove('list-open'); const sb = document.getElementById('srInspect'); if (sb) sb.classList.remove('on'); }
 function renderList() {   // aktuellen Tab in den Panel-Body rendern (Inspector + Listen einheitlich)
   const body = document.getElementById('lp2Body'); if (!body) return; body.innerHTML = ''; _listCopyFn = null;
   if (_listTab === 'sel') { fillSelectionInspector(body); return; }

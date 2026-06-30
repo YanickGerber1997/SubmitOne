@@ -4,13 +4,16 @@
 .opening-g .rev-hatch,.sec-g .rev-hatch{opacity:0}                 /* Laibungs-Schraffur standardmäßig aus … */
 .opening-g:hover .rev-hatch,.sec-g:hover .rev-hatch{opacity:1}     /* … nur beim Drüberfahren (Öffnung bzw. Schnitt) sichtbar */
 /* Immer sichtbare rechte Leiste (Knöpfe zum Ausfahren: Listen/Inspector, Kommentare) – Stil wie Kommentar-Panel */
-.side-rail{position:fixed;top:calc(var(--bar) + 6px);right:0;z-index:63;display:flex;flex-direction:column;gap:2px;padding:6px 4px;background:var(--surface);border-left:1px solid var(--line);font-family:var(--font)}
+.side-rail{position:fixed;top:calc(var(--bar) + var(--tools));right:0;z-index:63;display:flex;flex-direction:column;gap:2px;padding:6px 4px;background:var(--surface);border-left:1px solid var(--line);font-family:var(--font)}
 .sr-btn{display:flex;flex-direction:column;align-items:center;gap:2px;width:44px;padding:7px 2px;border:none;background:none;cursor:pointer;font-size:9px;color:var(--ink-soft);line-height:1}
 .sr-btn b{font-size:16px;font-weight:400}
 .sr-btn:hover{background:var(--surface-2)}
 .sr-btn.on{background:var(--accent-soft);color:var(--accent-3)}
 /* Inspector-/Listen-Panel – sauberer Stil wie das Kommentar-Panel (Theme-Farben, eckig, ruhig) */
-.list-panel{position:fixed;top:calc(var(--bar) + 6px);right:54px;bottom:8px;width:min(340px,86vw);z-index:62;background:var(--surface);border:1px solid var(--line);box-shadow:-8px 0 24px rgba(20,24,40,.10);display:flex;flex-direction:column;overflow:hidden;font-family:var(--font)}
+.list-panel{position:fixed;top:calc(var(--bar) + var(--tools));right:var(--railw);bottom:0;width:min(var(--listw),86vw);z-index:62;background:var(--surface);border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;font-family:var(--font)}
+body.has-tabs .list-panel,body.has-tabs .side-rail{top:calc(var(--bar) + var(--tools) + var(--tabs))}
+body.has-planbar .list-panel,body.has-planbar .side-rail{top:calc(var(--bar) + var(--tools) + var(--planh))}
+body.has-planbar.has-tabs .list-panel,body.has-planbar.has-tabs .side-rail{top:calc(var(--bar) + var(--tools) + var(--tabs) + var(--planh))}
 .lp2-head{display:flex;align-items:center;gap:6px;padding:10px 12px 8px;border-bottom:1px solid var(--line);background:var(--surface);flex-wrap:wrap}
 .lp2-tabs{display:flex;gap:4px;flex-wrap:wrap}
 .lp2-tab{border:1px solid var(--line);background:var(--surface-2);padding:4px 9px;font-size:12px;cursor:pointer;color:var(--ink-soft)}
@@ -49,6 +52,7 @@
   --danger:#b4502f;
   --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   --bar:74px; --tools:94px; --tabs:36px; --planh:46px;
+  --railw:54px; --listw:340px;
 }
 *{box-sizing:border-box}
 [hidden]{display:none !important}   /* Attribut sticht Klassen-display aus (Mail-Dialog etc.) */
@@ -219,7 +223,8 @@ body.has-tabs .tabbar{display:flex}
 body.embed .suite-link,body.embed #btnSplit,body.embed #btnInstall{display:none !important}
 
 /* Work */
-.work{position:absolute;top:calc(var(--bar) + var(--tools));left:0;right:0;bottom:0;display:grid;grid-template-columns:148px 1fr 0;transition:grid-template-columns .15s}
+.work{position:absolute;top:calc(var(--bar) + var(--tools));left:0;right:var(--railw);bottom:0;display:grid;grid-template-columns:148px 1fr 0;transition:grid-template-columns .15s, right .15s}
+body.list-open .work{right:calc(var(--railw) + var(--listw))}   /* Listen/Inspector schiebt die Vorschau zur Seite (wie das Kommentar-Panel), statt zu überlagern */
 body.has-tabs .work{top:calc(var(--bar) + var(--tools) + var(--tabs))}
 body.has-tabs .files-panel,body.has-tabs .comments{top:calc(var(--bar) + var(--tools) + var(--tabs))}
 .work.comm-open{grid-template-columns:148px 1fr 280px}
@@ -718,6 +723,8 @@ body.has-tabs .build-pop{top:calc(var(--bar) + var(--tools) + var(--tabs) + var(
   .thumbs{display:none}
   body:not(.has-doc) #drop{left:0}
   .comments{position:fixed;top:calc(var(--bar) + var(--tools));right:0;bottom:0;width:min(320px,86vw);z-index:40;box-shadow:-8px 0 24px rgba(20,24,40,.16)}
+  body.list-open .work{right:var(--railw)}   /* schmaler Schirm: Listen-Panel überlagert (schiebt nicht) */
+  .list-panel{box-shadow:-8px 0 24px rgba(20,24,40,.16)}
   .doc-name,.suite-link{display:none}
   .btn span{display:none}
   .btn{padding:0 11px;gap:0}

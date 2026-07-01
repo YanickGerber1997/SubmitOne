@@ -555,8 +555,13 @@ const MAX_AREA = 24e6;       // max. Canvas-Pixel pro Seite, scharf (deckelt Spe
 const PREVIEW_AREA = 6e6;    // max. Canvas-Pixel pro Seite, Vorschau (schnell, beim Scrollen)
 const RENDER_MAX = 2;        // gleichzeitige Seiten-Renderings
 let pageObserver = null, thumbObserver = null, renderQueue = [], renderActive = 0;
-function fitScale(pw) { const avail = $('#pages').clientWidth - (innerWidth < 820 ? 14 : 48); return Math.max(.2, Math.min(3, avail / pw)); }
-function pageScale(pv) { return (zoom === 'auto') ? fitScale(pv.pageW) : zoom; }
+function fitScale(pw, ph) {   // „auto": ganze Seite sichtbar – Breite UND Höhe passen (A4/A3 sofort komplett lesbar), Platz voll ausgenutzt
+  const host = $('#pages'), avail = host.clientWidth - (innerWidth < 820 ? 14 : 48);
+  let s = avail / pw;
+  if (ph) { const availH = host.clientHeight - (innerWidth < 820 ? 14 : 40); if (availH > 40) s = Math.min(s, availH / ph); }
+  return Math.max(.2, Math.min(3, s));
+}
+function pageScale(pv) { return (zoom === 'auto') ? fitScale(pv.pageW, pv.pageH) : zoom; }
 // Gerätegenau rendern (1:1 mit den Bildschirmpixeln): scharf, ohne dünne Linien zu verblassen.
 function dprCap() { return Math.min(window.devicePixelRatio || 1, 3); }
 function dprPreview() { return Math.min(window.devicePixelRatio || 1, 1.5); }
@@ -5489,9 +5494,9 @@ function openListPanel(tab) {   // rechtes Inspector/Listen-Panel zeigen + Tab w
   document.querySelectorAll('.lp2-tab').forEach(b => b.classList.toggle('on', b.dataset.lt === _listTab));
   const cp = document.getElementById('lp2Copy'); if (cp) cp.style.display = _listTab === 'sel' ? 'none' : '';   // Kopieren nur bei Listen
   const sb = document.getElementById('srInspect'); if (sb) sb.classList.add('on');
-  renderList();
+  renderList(); if (zoom === 'auto') relayout();   // Vorschau wird schmaler → Seite neu einpassen
 }
-function closeListPanel() { const p = document.getElementById('listPanel'); if (p) p.hidden = true; document.body.classList.remove('list-open'); const sb = document.getElementById('srInspect'); if (sb) sb.classList.remove('on'); }
+function closeListPanel() { const p = document.getElementById('listPanel'); if (p) p.hidden = true; document.body.classList.remove('list-open'); const sb = document.getElementById('srInspect'); if (sb) sb.classList.remove('on'); if (zoom === 'auto') relayout(); }   // wieder volle Breite → Seite neu einpassen
 function renderList() {   // aktuellen Tab in den Panel-Body rendern (Inspector + Listen einheitlich)
   const body = document.getElementById('lp2Body'); if (!body) return; body.innerHTML = ''; _listCopyFn = null;
   if (_listTab === 'sel') { fillSelectionInspector(body); return; }
@@ -6857,7 +6862,7 @@ function wire() {
   $('#footSchedule').onclick = openSchedule;
   $('#footWallList').onclick = openWallList;
   $('#footRooms').onclick = openRoomList;
-  { const si = $('#srInspect'); if (si) si.onclick = () => { const p = $('#listPanel'); if (p && p.hidden) openListPanel(); else closeListPanel(); }; const sc = $('#srComments'); if (sc) sc.onclick = () => { const b = $('#btnComments'); if (b && b.onclick) b.onclick(); const c = $('#comments'); sc.classList.toggle('on', !!(c && !c.hidden)); }; const cl = $('#lp2Close'); if (cl) cl.onclick = closeListPanel; const cp = $('#lp2Copy'); if (cp) cp.onclick = () => { if (_listCopyFn) _listCopyFn(); }; document.querySelectorAll('.lp2-tab').forEach(b => b.onclick = () => openListPanel(b.dataset.lt)); openListPanel('sel'); }   // rechte Rail: Listen/Inspector + Kommentare; Panel standardmäßig offen
+  { const si = $('#srInspect'); if (si) si.onclick = () => { const p = $('#listPanel'); if (p && p.hidden) openListPanel(); else closeListPanel(); }; const sc = $('#srComments'); if (sc) sc.onclick = () => { const b = $('#btnComments'); if (b && b.onclick) b.onclick(); const c = $('#comments'); sc.classList.toggle('on', !!(c && !c.hidden)); }; const cl = $('#lp2Close'); if (cl) cl.onclick = closeListPanel; const cp = $('#lp2Copy'); if (cp) cp.onclick = () => { if (_listCopyFn) _listCopyFn(); }; document.querySelectorAll('.lp2-tab').forEach(b => b.onclick = () => openListPanel(b.dataset.lt)); }   // rechte Rail: Listen/Inspector + Kommentare; Panel standardmäßig EINGEKLAPPT (spart Platz; per ▤ Listen öffnen)
   $('#footImportAnn').onclick = () => importPdfAnnotations(false);
   $('#footExportAnn').onclick = exportNative;
   $('#footPhase').onclick = e => { e.stopPropagation(); const p = $('#phasePop'); p.hidden = !p.hidden; if (!p.hidden) updatePhaseUI(); };

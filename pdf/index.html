@@ -5,26 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=564" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=564" />
-  <link rel="icon" href="favicon.png?v=564" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=564" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=565" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=565" />
+  <link rel="icon" href="favicon.png?v=565" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=565" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="pdf.css?v=564" />
+  <link rel="stylesheet" href="pdf.css?v=565" />
 </head>
 <body>
   <!-- Hervorhebungs-Schraffur (grün) für Hover über editierbaren Bauteilen -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><pattern id="hlHatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="rgba(26,154,78,0.12)"/><line x1="0" y1="0" x2="0" y2="6" stroke="#1a9a4e" stroke-width="1.3"/></pattern></defs></svg>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=564" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=565" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=564" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=564" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=565" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=565" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <div class="ui-zoom" title="Oberflächen-Zoom – macht Werkzeuge, Buttons und das Blatt grösser/kleiner (unabhängig vom Browser-Zoom). Klick auf die Prozentzahl = zurück auf 100%.">
@@ -228,7 +228,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=564" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=565" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -255,6 +255,7 @@
     <button class="qbtn" id="qRotR" title="Seite 90° rechts drehen"><svg viewBox="0 0 24 24" class="i"><path d="M20 9a8 8 0 1 0-2 6"/><path d="M20 4v5h-5"/></svg></button>
     <button class="qbtn" id="qFree" title="Frei drehen – Plan nach Norden ausrichten (nur Ansicht)"><svg viewBox="0 0 24 24" class="i"><path d="M12 2v20M2 12h20" opacity=".5"/><path d="M12 4l3 6h-6z"/></svg></button>
     <button class="qbtn" id="qCrop" title="Zuschneiden (Bereich aufziehen)"><svg viewBox="0 0 24 24" class="i"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M2 6h14a2 2 0 0 1 2 2v14"/></svg></button>
+    <button class="qbtn" id="qSnip" title="Ausschnitt: Bereich aufziehen → als PDF, in die Zwischenablage oder per Mail"><svg viewBox="0 0 24 24" class="i"><path d="M4 7h4l1-2h6l1 2h4v12H4z"/><circle cx="12" cy="13" r="3.2"/></svg></button>
     <span class="grow"></span>
     <button class="foot-info foot-3d" id="foot3d" title="Wände in 3D ansehen, editieren + OBJ-Export">◳ 3D</button>
     <span class="foot-grp"><span class="foot-lbl">Format</span><button class="foot-info" id="footFormat" title="Blattformat ändern">—</button></span>
@@ -769,6 +770,13 @@
     <button class="btn" id="cropAll">Alle Seiten</button>
     <button class="btn ghost" id="cropCancel">Abbrechen</button>
   </div>
+  <div class="crop-bar" id="snipBar" hidden>
+    <span class="crop-lbl">Ausschnitt:</span>
+    <button class="btn" id="snipPdf" title="Ausschnitt als eigenständige PDF speichern">Als PDF</button>
+    <button class="btn" id="snipCopy" title="Ausschnitt als Bild in die Zwischenablage (Strg+V zum Einfügen)">Kopieren</button>
+    <button class="btn" id="snipMail" title="Ausschnitt-PDF per Mail versenden / teilen">Per Mail</button>
+    <button class="btn ghost" id="snipCancel">Abbrechen</button>
+  </div>
 
   <canvas class="grid-ov" id="gridCv" hidden></canvas>
   <div class="grid-bar" id="gridBar" hidden>
@@ -785,7 +793,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=564"></script>
+  <script src="pdf.js?v=565"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

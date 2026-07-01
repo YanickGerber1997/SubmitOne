@@ -299,7 +299,7 @@ function docSig() { return (docName || 'dok') + '::' + (curBytes ? curBytes.leng
 function markDirty() { dirty = true; scheduleAutosave(); }
 function scheduleAutosave() { clearTimeout(_autosaveT); _autosaveT = setTimeout(autosaveNow, 1200); }
 async function autosaveNow() {
-  if (!curBytes || active < 0 || !dirty || cropping) return;
+  if (!curBytes || active < 0 || !dirty || cropping || snipping) return;
   try { await idbPut(docSig(), { name: docName, ts: Date.now(), annos, pageRot, viewRot, docScale, nextId, formValues, layers, activeLayerId }); } catch (_) { }
 }
 function clearAutosave() { idbDel(docSig()); }
@@ -851,7 +851,7 @@ function setActivePhase(ph) {
 }
 function setPhaseView(v) { phaseView = v; pageViews.forEach(drawAnnos); updatePhaseUI(); }
 function pushAnno(n, a) { if (a && a.layer === undefined) a.layer = activeLayerId; if (a && activePhase && a.phase === undefined) applyPhase(a, activePhase); getAnnos(n).push(a); return a; }
-function pageHasVisible(n) { return (annos[n] || []).some(a => layerVisible(a) && a.type !== 'crop'); }   // hat die Seite sichtbare Anmerkungen?
+function pageHasVisible(n) { return (annos[n] || []).some(a => layerVisible(a) && a.type !== 'crop' && a.type !== 'snip'); }   // hat die Seite sichtbare Anmerkungen?
 let thumbFilter = false;
 function applyThumbFilter() {
   const host = $('#thumbs'); if (!host) return;
@@ -957,7 +957,7 @@ function updateSelBar() {
   const bar = $('#selbar'); if (!bar) return;
   if (!sel || tool !== 'select') { bar.hidden = true; return; }
   const pv = pageViews.find(p => p.num === sel.num), a = pv && findAnno(pv.num, sel.id);
-  if (!pv || !a || a.type === 'crop') { bar.hidden = true; return; }   // Crop hat eine eigene Leiste
+  if (!pv || !a || a.type === 'crop' || a.type === 'snip') { bar.hidden = true; return; }   // Crop/Ausschnitt haben eine eigene Leiste
   const hasColor = a.type !== 'sig' && a.type !== 'img' && a.type !== 'imgph', hasWidth = a.width != null, hasSize = (a.type === 'text' || a.type === 'edit');
   const hasFill = (a.type === 'rect' || a.type === 'oval' || a.type === 'path' || a.type === 'wall');
   $('#sbColorWrap').hidden = !hasColor; $('#sbWidths').hidden = !hasWidth; $('#sbSize').hidden = !hasSize;
@@ -1404,12 +1404,12 @@ function drawOne(svg, a, pv) {
     const t = svgEl('text', { x: a.x + a.w / 2, y: a.y + a.h / 2 + s * 0.55, fill: '#9aa093', 'font-size': Math.max(9, Math.min(a.h * 0.06, 15)), 'text-anchor': 'middle', 'font-weight': 600 }); t.textContent = 'Doppelklick: Bild'; g.appendChild(t);
     svg.appendChild(g); el = g;
     hit = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
-  } else if (a.type === 'crop') {
+  } else if (a.type === 'crop' || a.type === 'snip') {
     const g = svgEl('g', { 'data-id': a.id });
     const dim = svgEl('path', { d: `M0 0H${pv.pageW}V${pv.pageH}H0Z M${a.x} ${a.y}H${a.x + a.w}V${a.y + a.h}H${a.x}Z`, fill: '#10161c', 'fill-opacity': 0.45, 'fill-rule': 'evenodd', stroke: 'none' });
     dim.style.pointerEvents = 'none'; g.appendChild(dim);
     g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'none', stroke: '#ffffff', 'stroke-width': 1.5, 'vector-effect': 'non-scaling-stroke' }));
-    g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'none', stroke: '#b4502f', 'stroke-width': 1, 'stroke-dasharray': '6 4', 'vector-effect': 'non-scaling-stroke' }));
+    g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'none', stroke: a.type === 'snip' ? '#2e7d46' : '#b4502f', 'stroke-width': 1, 'stroke-dasharray': '6 4', 'vector-effect': 'non-scaling-stroke' }));
     svg.appendChild(g); el = g;
     hit = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'highlight') {
@@ -1503,7 +1503,7 @@ function bbox(a) {
   if (a.type === 'text') return { x: a.x, y: a.y, w: (a.w || 120), h: (a.h || a.size * (a.text.split('\n').length) * 1.3) };
   if (a.type === 'section') return sectionBBox(a);
   if (a.type === 'note') return { x: a.x, y: a.y, w: 14, h: 14 };
-  if (a.type === 'sig' || a.type === 'img' || a.type === 'imgph' || a.type === 'edit' || a.type === 'cover' || a.type === 'stamp' || a.type === 'crop') return { x: a.x, y: a.y, w: a.w, h: a.h };
+  if (a.type === 'sig' || a.type === 'img' || a.type === 'imgph' || a.type === 'edit' || a.type === 'cover' || a.type === 'stamp' || a.type === 'crop' || a.type === 'snip') return { x: a.x, y: a.y, w: a.w, h: a.h };
   if (a.type === 'highlight') { if (!a.rects || !a.rects.length) return { x: 0, y: 0, w: 0, h: 0 }; let mnx = Infinity, mny = Infinity, mxx = -Infinity, mxy = -Infinity; for (const r of a.rects) { mnx = Math.min(mnx, r.x); mny = Math.min(mny, r.y); mxx = Math.max(mxx, r.x + r.w); mxy = Math.max(mxy, r.y + r.h); } return { x: mnx, y: mny, w: mxx - mnx, h: mxy - mny }; }
   return { x: 0, y: 0, w: 0, h: 0 };
 }
@@ -2112,6 +2112,7 @@ function onPointerDown(pv, e) {
   if (tool === 'stamp') { placeStamp(pv, p); return; }
   if (tool === 'eraser') { startErase(pv, e); return; }
   if (tool === 'crop') { startCrop(pv, e, p); return; }
+  if (tool === 'snip') { startSnip(pv, e, p); return; }
   if (tool === 'area' || tool === 'slab' || tool === 'terrain') { areaClick(pv, p); return; }
   if (tool === 'profile') { profileClick(pv, p); return; }
   if (tool === 'block') { placeBlock(pv, p); return; }
@@ -2185,6 +2186,106 @@ async function applyCrop(allPages) {
     curBytes = bytes; await loadDoc(bytes.slice());
     status(''); toast(allPages ? 'Alle Seiten zugeschnitten ✓' : 'Seite zugeschnitten ✓');
   } catch (err) { status(''); console.error(err); toast('Zuschneiden fehlgeschlagen.'); }
+}
+/* ---------- Ausschnitt (Snip): Rahmen aufziehen → als PDF / in Zwischenablage / per Mail ---------- */
+let snipping = null;                                                           // {pv, a} – aktiver Ausschnitt-Rahmen
+function removeSnipAnno() {
+  if (!snipping) return; const { pv, a } = snipping; const arr = getAnnos(pv.num); const i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1);
+  snipping = null; if (sel && sel.id === (a && a.id)) sel = null; const sb = $('#snipBar'); if (sb) sb.hidden = true;
+  pageViews.forEach(drawAnnos);
+}
+function startSnip(pv, e, p) {
+  removeSnipAnno();
+  const a = { id: nextId++, type: 'snip', x: p.x, y: p.y, w: 0, h: 0 }; pushAnno(pv.num, a);
+  snipping = { pv, a };
+  const move = ev => { const q = evtToPage(pv, ev); a.x = Math.min(p.x, q.x); a.y = Math.min(p.y, q.y); a.w = Math.abs(q.x - p.x); a.h = Math.abs(q.y - p.y); drawAnnos(pv); };
+  const up = () => {
+    document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+    if (a.w < 8 || a.h < 8) { removeSnipAnno(); setTool('select'); return; }   // zu klein → verwerfen
+    sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); const sb = $('#snipBar'); if (sb) sb.hidden = false;
+  };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
+// Ausschnitt scharf rendern: Original-Seiteninhalt + Anmerkungen (SVG-Overlay) über dem Rechteck.
+async function renderSnipCanvas(pv, rect) {
+  let scale = Math.max(2, Math.min(6, 2400 / Math.max(rect.w, rect.h)));       // Zielkante ~2400 px, scharf
+  let tw = Math.round(rect.w * scale), th = Math.round(rect.h * scale);
+  const MAX = 8000; if (tw > MAX || th > MAX) { const f = Math.min(MAX / tw, MAX / th); scale *= f; tw = Math.round(rect.w * scale); th = Math.round(rect.h * scale); }
+  const cv = document.createElement('canvas'); cv.width = tw; cv.height = th;
+  const ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, tw, th);
+  // 1) Seiteninhalt (aus dem Original) scharf in den Ausschnitt rendern – eigenes Dokument, um das Live-Rendering nicht zu stören
+  try {
+    await loadPdfJs();
+    const doc = await pdfjs.getDocument({ data: curBytes.slice() }).promise;
+    try {
+      const page = await doc.getPage(pv.num);
+      const vp = page.getViewport({ scale });
+      await page.render({ canvasContext: ctx, viewport: vp, transform: [1, 0, 0, 1, -rect.x * scale, -rect.y * scale] }).promise;
+    } finally { doc.destroy(); }
+  } catch (_) { /* Notfalls nur Anmerkungen */ }
+  // 2) Anmerkungen (SVG) darüberlegen – exakt auf den Ausschnitt beschnitten
+  const im = await snipAnnoImage(pv, rect, tw, th); if (im) try { ctx.drawImage(im, 0, 0, tw, th); } catch (_) { }
+  // 3) Seiten-Drehung (90/180/270) auf das fertige Bild anwenden, damit es wie am Bildschirm liegt
+  const rot = (((pageRot[pv.num] || 0) % 360) + 360) % 360;
+  if (rot === 90 || rot === 180 || rot === 270) {
+    const swap = rot !== 180, rc = document.createElement('canvas'); rc.width = swap ? th : tw; rc.height = swap ? tw : th;
+    const rx = rc.getContext('2d'); rx.translate(rc.width / 2, rc.height / 2); rx.rotate(rot * Math.PI / 180); rx.drawImage(cv, -tw / 2, -th / 2); return rc;
+  }
+  return cv;
+}
+function snipAnnoImage(pv, rect, tw, th) {   // SVG-Overlay des Ausschnitts als Bild (Anmerkungen)
+  const src = pv.svg.cloneNode(true);
+  src.querySelectorAll('.snap-guide, .snap-layer, .hover-layer, .handle, [data-h], .sel-line, .dim-handle').forEach(e => e.remove());
+  src.querySelectorAll('rect[fill="transparent"], polygon[fill="transparent"]').forEach(e => e.remove());
+  src.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); src.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+  src.setAttribute('viewBox', `${rect.x} ${rect.y} ${rect.w} ${rect.h}`); src.setAttribute('width', tw); src.setAttribute('height', th);
+  src.removeAttribute('class'); src.removeAttribute('style'); src.setAttribute('preserveAspectRatio', 'none');
+  const xml = new XMLSerializer().serializeToString(src), url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+  return new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = url; });
+}
+function snipBaseName() { return docName.replace(/\.pdf$/i, '') + '_Ausschnitt'; }
+function canvasToBlob(cv) { return new Promise(res => cv.toBlob(res, 'image/png')); }
+async function snipPdfBytes(cv, rect, pv) {   // Ausschnitt als eigenständige 1-Seiten-PDF (Bild in Originalgrösse in Punkten)
+  const lib = await loadPdfLib(), doc = await lib.PDFDocument.create();
+  const blob = await canvasToBlob(cv), png = await doc.embedPng(new Uint8Array(await blob.arrayBuffer()));
+  const rot = (((pageRot[pv.num] || 0) % 360) + 360) % 360, swap = rot === 90 || rot === 270;
+  const pw = swap ? rect.h : rect.w, ph = swap ? rect.w : rect.h;             // Seitengrösse = Ausschnitt in PDF-Punkten
+  const pg = doc.addPage([pw, ph]); pg.drawImage(png, { x: 0, y: 0, width: pw, height: ph });
+  return new Uint8Array(await doc.save());
+}
+async function snipDo(kind) {   // kind: 'pdf' | 'copy' | 'mail'
+  if (!snipping) return; const { pv } = snipping, a = snipping.a, rect = { x: a.x, y: a.y, w: a.w, h: a.h };
+  removeSnipAnno(); setTool('select');
+  status('Ausschnitt wird erzeugt …'); await new Promise(r => setTimeout(r, 10));
+  try {
+    const cv = await renderSnipCanvas(pv, rect);
+    if (kind === 'copy') {
+      const blob = await canvasToBlob(cv);
+      try {
+        if (!navigator.clipboard || !window.ClipboardItem) throw new Error('no-clipboard');
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        status(''); toast('Ausschnitt in die Zwischenablage kopiert ✓ (Bild einfügen mit Strg+V)');
+      } catch (_) {   // Zwischenablage nicht erlaubt → als PNG sichern
+        const a2 = document.createElement('a'); a2.href = URL.createObjectURL(blob); a2.download = snipBaseName() + '.png'; a2.click(); setTimeout(() => URL.revokeObjectURL(a2.href), 1500);
+        status(''); toast('Zwischenablage nicht möglich → als PNG gespeichert.');
+      }
+      return;
+    }
+    const bytes = await snipPdfBytes(cv, rect, pv), fname = snipBaseName() + '.pdf';
+    if (kind === 'mail') {
+      const file = new File([bytes], fname, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: fname }); status(''); return; } catch (_) { /* abgebrochen → Fallback */ }
+      }
+      downloadBytes(bytes, fname);
+      const q = ['subject=' + encodeURIComponent(snipBaseName()), 'body=' + encodeURIComponent('Hallo,\n\nim Anhang ein Planausschnitt.\n\nGruss\n\n(„' + fname + '" wurde heruntergeladen – bitte anhängen.)')];
+      window.location.href = 'mailto:?' + q.join('&');
+      status(''); toast('Ausschnitt-PDF heruntergeladen · Mail geöffnet → anhängen.');
+      return;
+    }
+    downloadBytes(bytes, fname); status(''); toast('Ausschnitt als PDF gespeichert ✓');
+  } catch (e) { status(''); console.error(e); toast('Ausschnitt fehlgeschlagen.'); }
 }
 /* ---------- Fläche messen (Polygon, m²) ---------- */
 function polyArea(pts) { let s = 0; for (let i = 0; i < pts.length; i++) { const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length]; s += x1 * y2 - x2 * y1; } return Math.abs(s) / 2; }
@@ -2584,7 +2685,7 @@ function startMarquee(pv, e) {
     document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (rectEl) rectEl.remove();
     if (!dragged) return;
     const q = evtToPage(pv, ev), rx = Math.min(start.x, q.x), ry = Math.min(start.y, q.y), rw = Math.abs(q.x - start.x), rh = Math.abs(q.y - start.y), ids = [];
-    for (const a of (getAnnos(pv.num) || [])) { if (a.type === 'crop' || a.type === 'imgph' || a.locked) continue; const b = bbox(a); if (b.x < rx + rw && b.x + b.w > rx && b.y < ry + rh && b.y + b.h > ry) ids.push(a.id); }
+    for (const a of (getAnnos(pv.num) || [])) { if (a.type === 'crop' || a.type === 'snip' || a.type === 'imgph' || a.locked) continue; const b = bbox(a); if (b.x < rx + rw && b.x + b.w > rx && b.y < ry + rh && b.y + b.h > ry) ids.push(a.id); }
     if (ids.length === 1) { sel = { num: pv.num, id: ids[0] }; groupSel = null; }
     else if (ids.length > 1) { groupSel = { num: pv.num, ids }; sel = null; }
     else { sel = null; groupSel = null; }
@@ -3954,7 +4055,7 @@ function movePage(n, dir) {     // dir: -1 hoch, +1 runter
 // Zeichnung einer Seite als echte Vektor-SVG exportieren (Logo/Grafik – skalierbar)
 function exportSVG(n) {
   const pv = pageViews.find(p => p.num === n); if (!pv) { toast('Seite kurz sichtbar machen, dann erneut.'); return; }
-  const list = (getAnnos(n) || []).filter(a => a.type !== 'crop' && a.type !== 'imgph');
+  const list = (getAnnos(n) || []).filter(a => a.type !== 'crop' && a.type !== 'snip' && a.type !== 'imgph');
   if (!list.length) { toast('Nichts zum Exportieren – erst etwas zeichnen.'); return; }
   sel = null; groupSel = null; drawAnnos(pv);                      // Auswahl/Anfasser weg, damit sie nicht mitexportiert werden
   const src = pv.svg.cloneNode(true);
@@ -4324,6 +4425,7 @@ function activateRibTab(t) { $$('.rib-tab').forEach(x => x.classList.toggle('on'
 let _scaleAfter = null;   // Werkzeug, zu dem nach dem Massstab-Setzen zurückgekehrt wird
 function setTool(t) {
   if (cropping && t !== 'select' && t !== 'crop') removeCropAnno();   // anderes Werkzeug → Zuschneiden verwerfen
+  if (snipping && t !== 'select' && t !== 'snip') removeSnipAnno();   // anderes Werkzeug → Ausschnitt verwerfen
   if (areaDraft && t !== 'area' && t !== 'slab' && t !== 'terrain') cancelArea();        // anderes Werkzeug → Flächen-/Decken-/Gelände-Polygon verwerfen
   if (profDraft && t !== 'profile') finishProfile();                  // anderes Werkzeug → Profil-Pfad abschliessen
   if (penDraft && t !== 'curve') finishCurve();                      // anderes Werkzeug → Kurve abschliessen
@@ -4355,7 +4457,7 @@ function setTool(t) {
   if (pdfDoc) pageViews.forEach(p => drawAnnos(p));   // neu zeichnen → Schicht-Hilfsnetz erscheint/verschwindet je nach Werkzeug
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'terrain', 'section'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'snip', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'terrain', 'section'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -7026,6 +7128,7 @@ function wire() {
   // Fussleiste (Blatt-Funktionen)
   $('#qRotL').onclick = () => rotatePage(-90); $('#qRotR').onclick = () => rotatePage(90);
   $('#qCrop').onclick = () => setTool('crop');
+  { const qs = $('#qSnip'); if (qs) qs.onclick = () => setTool('snip'); }
   $('#footScale').onclick = () => openScale(0);   // 1:n-Eingabe (nicht Kalibrieren)
   $('#footFormat').onclick = e => { e.stopPropagation(); const p = $('#fmtPop'); p.hidden = !p.hidden; };
   $$('#fmtPop button').forEach(b => b.onclick = () => { $('#fmtPop').hidden = true; changePageFormat(+b.dataset.w, +b.dataset.h); });
@@ -7095,6 +7198,9 @@ function wire() {
   $('#cropApply').onclick = () => applyCrop(false);
   $('#cropAll').onclick = () => applyCrop(true);
   $('#cropCancel').onclick = () => { removeCropAnno(); setTool('select'); };
+  { const b1 = $('#snipPdf'), b2 = $('#snipCopy'), b3 = $('#snipMail'), b4 = $('#snipCancel');
+    if (b1) b1.onclick = () => snipDo('pdf'); if (b2) b2.onclick = () => snipDo('copy'); if (b3) b3.onclick = () => snipDo('mail');
+    if (b4) b4.onclick = () => { removeSnipAnno(); setTool('select'); }; }
   $('#btnOutline').onclick = e => { e.stopPropagation(); const p = $('#outlinePop'); p.hidden = !p.hidden; $('#btnOutline').classList.toggle('on', !p.hidden); };
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#outlinePop') && !e.target.closest('#btnOutline')) { $('#outlinePop').hidden = true; $('#btnOutline').classList.remove('on'); } }, true);
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.swatch-wrap')) $('#palettePop').hidden = true; }, true);

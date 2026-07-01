@@ -551,6 +551,11 @@ body.has-planbar.has-tabs .work{top:calc(var(--bar) + var(--tools) + var(--tabs)
 .fmt-pop{position:fixed;right:12px;bottom:44px;z-index:60;background:var(--surface);border:1px solid var(--line);box-shadow:0 -6px 24px rgba(20,24,40,.22);padding:5px;display:flex;flex-direction:column;gap:2px;min-width:140px}
 .fmt-pop button{border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;text-align:left;padding:7px 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
 .fmt-pop button:hover{background:var(--accent-soft);color:var(--accent-3)}
+.fmt-sep{margin-top:6px;padding:6px 12px 2px;border-top:1px solid var(--line);font-size:11px;font-weight:700;color:var(--muted,#8a93a6);white-space:normal;line-height:1.25}
+.fmt-grid9{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;padding:2px 8px 6px}
+.fmt-grid9 button{text-align:center !important;padding:8px 0 !important;border:1px solid var(--line) !important;border-radius:7px;font-size:15px !important}
+.fmt-grid9 button:hover{background:var(--accent-soft);border-color:var(--accent-3) !important}
+.toast-act{margin-left:8px;border:0;background:#2e7d46;color:#fff;font:inherit;font-weight:700;font-size:12px;padding:4px 10px;border-radius:6px;cursor:pointer}
 .qbtn:hover{background:var(--surface-2);color:var(--accent)}
 .qsep{width:1px;height:22px;background:var(--line)}
 .quickbar .zoombox{background:none;border:none;padding:0;gap:0}

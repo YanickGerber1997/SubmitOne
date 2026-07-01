@@ -422,6 +422,7 @@ async function renderCurrentDoc() {
   detectForm(); detectOutline();
   if (rulerOn) requestAnimationFrame(drawRulers);
   if (gridOn) requestAnimationFrame(drawGrid);
+  setTimeout(maybeOfferMount, 400);   // flaches „kein Blatt"-Dokument → anbieten, auf A4 zu legen
 }
 
 /* ---------- Lesezeichen / Inhalt (vorhandene PDF-Outline) ---------- */
@@ -4961,6 +4962,66 @@ async function changePageFormat(w, h) {   // aktuelle Seite auf neues Blattforma
     status(''); updateFormatLabel(); saveState(); toast('Blattformat geändert ✓' + (hadPlan ? ' – Plankopf angepasst' : ''));
   } catch (e) { status(''); console.error(e); if (undoStack.length) undoStack.pop(); toast('Format-Änderung fehlgeschlagen.'); }
 }
+// „Kein Blatt" erkennen: kein Standardformat + sehr flach/schmal oder extremes Seitenverhältnis (z. B. ein exportierter Tabellen-Streifen)
+function isOddSheet(w, h) {
+  const near = (a, b) => Math.abs(a - b) < 6, S = [[595, 842], [842, 1191], [1191, 1684], [1684, 2384], [2384, 3370], [612, 792]];
+  for (const [a, b] of S) { if ((near(w, a) && near(h, b)) || (near(w, b) && near(h, a))) return false; }
+  const ar = Math.max(w, h) / Math.max(1, Math.min(w, h));
+  return Math.min(w, h) < 420 || ar > 2.2;
+}
+// Geometrie skalieren + verschieben (Anno-Raum, y von oben): newCoord = coord*s + offset. Für s=1 reine Verschiebung.
+function sxAnno(a, o, s, dx, dy) {
+  const P = p => [p[0] * s + dx, p[1] * s + dy];
+  if (['line', 'arrow', 'measure', 'dim', 'arc', 'wall', 'stairs', 'beam'].includes(a.type)) { a.x1 = o.x1 * s + dx; a.y1 = o.y1 * s + dy; a.x2 = o.x2 * s + dx; a.y2 = o.y2 * s + dy; }
+  else if (['pen', 'area', 'chaindim', 'slab', 'terrain'].includes(a.type)) a.pts = o.pts.map(P);
+  else if (a.type === 'profile') a.path = o.path.map(P);
+  else if (a.type === 'path') a.nodes = o.nodes.map(nd => ({ x: nd.x * s + dx, y: nd.y * s + dy, hIn: { x: nd.hIn.x * s + dx, y: nd.hIn.y * s + dy }, hOut: { x: nd.hOut.x * s + dx, y: nd.hOut.y * s + dy } }));
+  else if (a.type === 'highlight') a.rects = o.rects.map(r => ({ x: r.x * s + dx, y: r.y * s + dy, w: r.w * s, h: r.h * s }));
+  else if (a.type === 'section') { a.ox = o.ox * s + dx; a.oy = o.oy * s + dy; }
+  else { a.x = o.x * s + dx; a.y = o.y * s + dy; if (o.w != null) a.w = o.w * s; if (o.h != null) a.h = o.h * s; }
+  if (s !== 1) { if (o.width != null) a.width = o.width * s; if (o.size != null) a.size = o.size * s; if (o.fontSize != null) a.fontSize = o.fontSize * s; if (o.r != null) a.r = o.r * s; }
+}
+// Aktuellen Seiteninhalt (vektortreu) auf ein A4-Blatt legen – Ausrichtung ha=l|c|r, va=t|c|b. Rundherum bleibt Platz für Anmerkungen.
+async function mountOnSheet(va, ha) {
+  if (!curBytes) return; va = va || 't'; ha = ha || 'c';
+  const n = curPage(), pv = pageViews.find(p => p.num === n); if (!pv) return;
+  const cw = pv.pageW, ch = pv.pageH;
+  const land = cw > ch, SW = land ? 842 : 595, SH = land ? 595 : 842, m = 24;   // A4, Orientierung nach Inhalt, Rand ~8.5 mm
+  const s = Math.min(1, (SW - 2 * m) / cw, (SH - 2 * m) / ch), dw = cw * s, dh = ch * s;
+  const dx = ha === 'l' ? m : ha === 'r' ? (SW - m - dw) : (SW - dw) / 2;
+  const dyTop = va === 't' ? m : va === 'b' ? (SH - m - dh) : (SH - dh) / 2;
+  pushDocUndo(); status('Auf A4-Blatt legen …'); await new Promise(r => setTimeout(r, 10));
+  try {
+    const lib = await loadPdfLib();
+    const srcDoc = await lib.PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
+    const out = await lib.PDFDocument.create();
+    const total = srcDoc.getPageCount();
+    const [emb] = await out.embedPages([srcDoc.getPage(n - 1)]);
+    for (let i = 0; i < total; i++) {
+      if (i === n - 1) { const pg = out.addPage([SW, SH]); pg.drawPage(emb, { x: dx, y: SH - dyTop - dh, width: dw, height: dh }); }   // pdf-lib: Ursprung unten-links → y = SH − oben − Höhe
+      else { const [cp] = await out.copyPages(srcDoc, [i]); out.addPage(cp); }
+    }
+    // vorhandene Anmerkungen dieser Seite mitskalieren/-verschieben, damit sie auf dem Inhalt bleiben
+    for (const a of (annos[n] || [])) { const o = JSON.parse(JSON.stringify(a)); sxAnno(a, o, s, dx, dyTop); }
+    pageRot[n] = 0;
+    curBytes = new Uint8Array(await out.save()); await loadDoc(curBytes.slice());
+    status(''); updateFormatLabel(); saveState();
+    toast('Auf A4 gelegt ✓ – jetzt rundherum frei beschriften. Andere Ausrichtung: unten „Format".');
+  } catch (e) { status(''); console.error(e); if (undoStack.length) undoStack.pop(); toast('Auf A4 legen fehlgeschlagen.'); }
+}
+function toastAction(msg, label, fn) {   // Hinweis-Toast mit einem Aktions-Knopf (länger sichtbar)
+  const r = $('#toast-root'); if (!r) return; const t = document.createElement('div'); t.className = 'toast';
+  const s = document.createElement('span'); s.textContent = msg; t.appendChild(s);
+  const b = document.createElement('button'); b.className = 'toast-act'; b.textContent = label; b.onclick = () => { t.remove(); fn(); }; t.appendChild(b);
+  r.appendChild(t); setTimeout(() => t.remove(), 9000);
+}
+let _oddOfferedSig = null;
+function maybeOfferMount() {   // beim Öffnen: flaches/„kein Blatt"-Dokument → einmalig je Dokument anbieten, auf A4 zu legen
+  if (!pageViews.length) return; const pv = pageViews[0]; if (!pv) return;
+  let sig; try { sig = docSig(); } catch (_) { sig = docName; }
+  if (sig === _oddOfferedSig) return; _oddOfferedSig = sig;
+  if (isOddSheet(pv.pageW, pv.pageH)) toastAction('Diese Seite ist kein Standard-Blatt. ', 'Auf A4 legen', () => mountOnSheet('t', 'c'));
+}
 /* ---------- 3D-Ansicht: Wände mit Höhe extrudieren (Three.js) ---------- */
 function loadThree() {
   if (window.THREE && THREE.OrbitControls) return Promise.resolve();
@@ -7131,7 +7192,7 @@ function wire() {
   { const qs = $('#qSnip'); if (qs) qs.onclick = () => setTool('snip'); }
   $('#footScale').onclick = () => openScale(0);   // 1:n-Eingabe (nicht Kalibrieren)
   $('#footFormat').onclick = e => { e.stopPropagation(); const p = $('#fmtPop'); p.hidden = !p.hidden; };
-  $$('#fmtPop button').forEach(b => b.onclick = () => { $('#fmtPop').hidden = true; changePageFormat(+b.dataset.w, +b.dataset.h); });
+  $$('#fmtPop button').forEach(b => b.onclick = () => { $('#fmtPop').hidden = true; if (b.dataset.mount) { const [va, ha] = b.dataset.mount.split('-'); mountOnSheet(va, ha); } else changePageFormat(+b.dataset.w, +b.dataset.h); });
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#fmtPop') && !e.target.closest('#footFormat')) $('#fmtPop').hidden = true; }, true);
   $('#qFree').onclick = () => { const p = $('#freeRot'); p.hidden = !p.hidden; if (!p.hidden) { const n = curPage(); $('#freeRotRange').value = viewRot[n] || 0; $('#freeRotVal').textContent = ((viewRot[n] || 0) > 0 ? '+' : '') + (viewRot[n] || 0) + '°'; } };
   let _rotPushed = false;

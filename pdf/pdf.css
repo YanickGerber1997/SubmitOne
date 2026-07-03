@@ -222,6 +222,8 @@ body.rib-collapsed .rib-collapse svg{transform:rotate(180deg)}
 .rib-tabs{display:none}   /* keine Reiter mehr – alle Werkzeuge sind sichtbar (in 2 Reihen) */
 .rib-row{flex:1;display:flex;align-items:center;gap:6px 10px;padding:5px 12px;overflow:visible;flex-wrap:wrap;align-content:center}
 .rib-tools{display:flex;align-items:center;gap:3px 6px;flex-wrap:wrap}
+.rib-tools:not([hidden]){display:contents}   /* Werkzeuggruppe in den gemeinsamen Umbruch-Fluss der Reihe auflösen → Werkzeuge UND Stil-Leiste brechen zusammen um */
+.toolbar .grow{display:none}   /* kein Rechts-Schub: Farbe/Breite/Grösse/Löschen fliessen direkt hinter den Werkzeugen mit → alles in 2 Reihen, kein Umbruch in eine 3. Reihe */
 body.rib-collapsed{--tools:36px}
 body.rib-collapsed .rib-row{display:none}
 .tgrp{display:flex;align-items:center;gap:3px;padding-right:8px;margin-right:2px;border-right:1px solid var(--line-soft);flex:none}

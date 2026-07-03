@@ -417,9 +417,10 @@ async function renderCurrentDoc() {
   $('#btnSave').disabled = false; $('#btnSend').disabled = false; $('#docName').textContent = docName;
   document.title = 'Submit PDF';
   _searchCache = {}; if (typeof closeFind === 'function') closeFind();   // Suche fürs neue Dokument zurücksetzen
+  document.body.classList.add('has-doc');   // Toolbar-Höhe VOR dem Layout setzen → „auto"-Zoom rechnet mit dem endgültigen sichtbaren Feld (sonst Seite 1 zu gross)
   await buildLayout(); buildThumbs(); status(''); refreshComments(); updateScaleLabel(); updateFormatLabel();
-  document.body.classList.add('has-doc');
   detectForm(); detectOutline();
+  requestAnimationFrame(() => { if (zoom === 'auto' && pdfDoc) relayout(); });   // nach dem ersten Paint einmal sauber einpassen (endgültige Feldgrösse) → keine Doppel-/Versatz-Kachel
   if (rulerOn) requestAnimationFrame(drawRulers);
   if (gridOn) requestAnimationFrame(drawGrid);
   setTimeout(maybeOfferMount, 400);   // flaches „kein Blatt"-Dokument → anbieten, auf A4 zu legen
@@ -556,13 +557,18 @@ const MAX_AREA = 24e6;       // max. Canvas-Pixel pro Seite, scharf (deckelt Spe
 const PREVIEW_AREA = 6e6;    // max. Canvas-Pixel pro Seite, Vorschau (schnell, beim Scrollen)
 const RENDER_MAX = 2;        // gleichzeitige Seiten-Renderings
 let pageObserver = null, thumbObserver = null, renderQueue = [], renderActive = 0;
-function fitScale(pw, ph) {   // „auto": ganze Seite sichtbar – Breite UND Höhe passen (A4/A3 sofort komplett lesbar), Platz voll ausgenutzt
-  const host = $('#pages'), avail = host.clientWidth - (innerWidth < 820 ? 14 : 48);
-  let s = avail / pw;
-  if (ph) { const availH = host.clientHeight - (innerWidth < 820 ? 14 : 40); if (availH > 40) s = Math.min(s, availH / ph); }
+function fitScale(pw, ph) {   // Skala, bei der die Seite ganz ins sichtbare Feld passt (Breite UND Höhe) – echtes Innenmass, Padding abgezogen (sonst zu breit → nicht eingemittet)
+  const host = $('#pages'), cs = getComputedStyle(host);
+  const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  const availW = host.clientWidth - padX - 6, availH = host.clientHeight - padY - 6;
+  let s = availW / pw;
+  if (ph && availH > 60) s = Math.min(s, availH / ph);
   return Math.max(.2, Math.min(3, s));
 }
-function pageScale(pv) { return (zoom === 'auto') ? fitScale(pv.pageW, pv.pageH) : zoom; }
+// „auto": EIN einheitlicher Zoom fürs ganze Dokument – so, dass die ERSTE Seite ganz sichtbar ist. Alle Seiten gleich skaliert → sauber eingemittet, keine „erste Seite grösser".
+function autoScale() { const p0 = pageViews[0]; return p0 ? fitScale(p0.pageW, p0.pageH) : 1; }
+function pageScale(pv) { return (zoom === 'auto') ? autoScale() : zoom; }
 // Gerätegenau rendern (1:1 mit den Bildschirmpixeln): scharf, ohne dünne Linien zu verblassen.
 function dprCap() { return Math.min(window.devicePixelRatio || 1, 3); }
 function dprPreview() { return Math.min(window.devicePixelRatio || 1, 1.5); }

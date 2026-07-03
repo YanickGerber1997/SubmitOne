@@ -12,6 +12,9 @@ body:not(.has-doc) .plan-rail{display:none}
 body.planrail-collapsed .plan-rail{display:none}
 body.has-doc:not(.planrail-collapsed) .work{left:var(--planrailw);transition:left .15s}
 .plan-rail-toggle{position:fixed;left:0;top:calc(var(--bar) + var(--tools) + 4px);z-index:42;width:18px;height:30px;border:1px solid var(--line);border-left:none;background:var(--surface);color:var(--ink-soft);cursor:pointer;font-size:12px;border-radius:0 6px 6px 0}
+body.has-tabs .plan-rail-toggle{top:calc(var(--bar) + var(--tools) + var(--tabs) + 4px)}   /* unter die Tab-Leiste, nicht darüber */
+body.has-planbar .plan-rail-toggle{top:calc(var(--bar) + var(--tools) + var(--planh) + 4px)}
+body.has-planbar.has-tabs .plan-rail-toggle{top:calc(var(--bar) + var(--tools) + var(--tabs) + var(--planh) + 4px)}
 body:not(.planrail-collapsed) .plan-rail-toggle{left:var(--planrailw)}
 body:not(.planrail-collapsed) .plan-rail-toggle{transform:scaleX(-1)}
 body:not(.has-doc) .plan-rail-toggle{display:none}
@@ -253,15 +256,17 @@ body.rib-collapsed .rib-row{display:none}
 .sel{height:32px;border:1px solid var(--line);background:var(--surface);border-radius:0;font:inherit;font-size:12.5px;color:var(--ink);padding:0 6px;cursor:pointer}
 
 /* Tab-Leiste (mehrere Dokumente) */
-.tabbar{position:absolute;top:calc(var(--bar) + var(--tools));left:0;right:0;height:var(--tabs);display:none;align-items:flex-end;gap:2px;background:var(--surface-2);border-bottom:1px solid var(--line);padding:0 8px;overflow-x:auto;z-index:6}
+.tabbar{position:absolute;top:calc(var(--bar) + var(--tools));left:0;right:0;height:var(--tabs);display:none;align-items:flex-end;gap:4px;background:var(--surface-2);border-bottom:1px solid var(--line);padding:0 10px;overflow-x:auto;overflow-y:hidden;z-index:6;scrollbar-width:thin}
 body.has-tabs .tabbar{display:flex}
-.tab{display:flex;align-items:center;gap:6px;max-width:200px;padding:5px 8px 6px;background:var(--surface-2);border:1px solid transparent;border-bottom:none;cursor:pointer;font-size:12.5px;color:var(--ink-soft);white-space:nowrap;flex:none}
+.tab{display:flex;align-items:center;gap:8px;max-width:230px;padding:8px 12px 9px;background:transparent;border:1px solid transparent;border-bottom:none;border-radius:10px 10px 0 0;cursor:pointer;font-size:13.5px;color:var(--ink-soft);white-space:nowrap;flex:none;position:relative;top:1px;transition:background .12s,color .12s}
+.tab:hover{background:var(--accent-soft);color:var(--accent-3)}
 .tab.active{background:var(--surface);border-color:var(--line);color:var(--ink);font-weight:600}
-.tab-nm{overflow:hidden;text-overflow:ellipsis;max-width:160px}
-.tab-x{border:none;background:none;cursor:pointer;color:var(--ink-faint);font-size:11px;padding:0 2px;border-radius:0}
-.tab-x:hover{color:var(--danger)}
-.tab-add{flex:none;align-self:center;margin-left:4px;width:24px;height:24px;border:1px solid var(--line);background:var(--surface);cursor:pointer;color:var(--ink-soft);font-size:14px;line-height:1;border-radius:0}
-.tab-add:hover{border-color:var(--accent);color:var(--accent)}
+.tab.active::before{content:"";position:absolute;left:-1px;right:-1px;top:-1px;height:3px;background:var(--accent);border-radius:10px 10px 0 0}
+.tab-nm{overflow:hidden;text-overflow:ellipsis;max-width:180px}
+.tab-x{border:none;background:none;cursor:pointer;color:var(--ink-faint);font-size:13px;line-height:1;padding:0;width:19px;height:19px;display:flex;align-items:center;justify-content:center;border-radius:50%;flex:none;transition:background .12s,color .12s}
+.tab-x:hover{color:var(--danger);background:var(--line-soft)}
+.tab-add{flex:none;align-self:center;margin-left:6px;margin-bottom:2px;width:29px;height:29px;border:1px solid var(--line);background:var(--surface);cursor:pointer;color:var(--ink-soft);font-size:18px;line-height:1;border-radius:9px;display:flex;align-items:center;justify-content:center;transition:border-color .12s,color .12s,background .12s}
+.tab-add:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 
 /* Zwei Dokumente nebeneinander */
 .split-view{position:fixed;inset:0;z-index:300;background:var(--bg);display:flex;flex-direction:column}

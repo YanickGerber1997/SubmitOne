@@ -566,9 +566,8 @@ function fitScale(pw, ph) {   // Skala, bei der die Seite ganz ins sichtbare Fel
   if (ph && availH > 60) s = Math.min(s, availH / ph);
   return Math.max(.2, Math.min(3, s));
 }
-// „auto": EIN einheitlicher Zoom fürs ganze Dokument – so, dass die ERSTE Seite ganz sichtbar ist. Alle Seiten gleich skaliert → sauber eingemittet, keine „erste Seite grösser".
-function autoScale() { const p0 = pageViews[0]; return p0 ? fitScale(p0.pageW, p0.pageH) : 1; }
-function pageScale(pv) { return (zoom === 'auto') ? autoScale() : zoom; }
+// „auto": Fit-Breite je Seite → JEDE Seite füllt exakt die verfügbare Breite. Dadurch alle Seiten gleich breit auf dem Schirm (auch bei unterschiedlichen Seitengrössen) → einheitlich, keine „erste Seite grösser".
+function pageScale(pv) { return (zoom === 'auto') ? fitScale(pv.pageW) : zoom; }
 // Gerätegenau rendern (1:1 mit den Bildschirmpixeln): scharf, ohne dünne Linien zu verblassen.
 function dprCap() { return Math.min(window.devicePixelRatio || 1, 3); }
 function dprPreview() { return Math.min(window.devicePixelRatio || 1, 1.5); }
@@ -652,7 +651,7 @@ function releasePage(pv) {     // weit weg → laufendes Rendern abbrechen + Can
   pv.rendered = false; pv.rendering = false; pv.stale = false;
   const i = renderQueue.indexOf(pv); if (i >= 0) renderQueue.splice(i, 1); pv.wrap.classList.add('loading');
 }
-function dropTile(pv) { if (pv.tileTask) { try { pv.tileTask.cancel(); } catch (_) { } pv.tileTask = null; } if (pv.tile) { pv.tile.remove(); pv.tile = null; } }
+function dropTile(pv) { if (pv.tileTask) { try { pv.tileTask.cancel(); } catch (_) { } pv.tileTask = null; } if (pv.tile) { pv.tile.remove(); pv.tile = null; } pv.tileRect = null; pv.tileScale = 0; }
 function dropText(pv) { if (pv.textLayer) { pv.textLayer.remove(); pv.textLayer = null; } pv.textScale = 0; }
 // Auswählbare/kopierbare Textebene (pdf.js) über die Seite legen – im aktuellen Zoom positioniert.
 async function ensureTextLayer(pv) {
@@ -680,8 +679,8 @@ function renderVisible() {
   for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) enqueueRender(pv); }
   scheduleSharpen();
 }
-// Sichtbaren Seiten-Ausschnitt in Seiten-Punkten (berücksichtigt Zoom + Drehung über die CTM).
-function visiblePageRect(pv) {
+// Sichtbaren Seiten-Ausschnitt in Seiten-Punkten (berücksichtigt Zoom + Drehung über die CTM). margin = Anteil, um den rundum vorgerendert wird.
+function visiblePageRect(pv, margin) {
   const host = $('#pages'), r = host.getBoundingClientRect(), ctm = pv.svg.getScreenCTM(); if (!ctm) return null;
   const inv = ctm.inverse(), pt = pv.svg.createSVGPoint();
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
@@ -689,16 +688,21 @@ function visiblePageRect(pv) {
     pt.x = x; pt.y = y; const q = pt.matrixTransform(inv);
     minx = Math.min(minx, q.x); maxx = Math.max(maxx, q.x); miny = Math.min(miny, q.y); maxy = Math.max(maxy, q.y);
   }
+  if (margin) { const mw = (maxx - minx) * margin, mh = (maxy - miny) * margin; minx -= mw; maxx += mw; miny -= mh; maxy += mh; }   // rundum etwas mehr rendern → beim Scrollen bleibt es scharf
   minx = Math.max(0, minx); miny = Math.max(0, miny); maxx = Math.min(pv.pageW, maxx); maxy = Math.min(pv.pageH, maxy);
   if (maxx - minx < 1 || maxy - miny < 1) return null;
   return { x: minx, y: miny, w: maxx - minx, h: maxy - miny };
 }
+function rectCovers(o, i) { return o && i && i.x >= o.x - 0.5 && i.y >= o.y - 0.5 && i.x + i.w <= o.x + o.w + 0.5 && i.y + i.h <= o.y + o.h + 0.5; }
 const TILE_MAXDIM = 8192;     // Browser-Canvas-Grenze pro Achse
-async function renderTile(pv) {                      // scharfe Kachel über den sichtbaren Ausschnitt
-  if (pv.rendering || !pv.page) return; const rect = visiblePageRect(pv); if (!rect) return;
+async function renderTile(pv) {                      // scharfe Kachel über den sichtbaren Ausschnitt (+ Rand vorgerendert)
+  if (pv.rendering || !pv.page) return;
+  const scale = pageScale(pv), vis = visiblePageRect(pv, 0); if (!vis) return;
+  if (pv.tile && pv.tileScale === scale && rectCovers(pv.tileRect, vis)) return;   // aktueller Blick ist schon scharf abgedeckt → nichts tun (kein Flackern/kein Neurendern)
+  const rect = visiblePageRect(pv, 0.6); if (!rect) return;   // 60 % Rand rundum → beim Scrollen sofort scharf, muss nicht ständig nachladen
   pv.rendering = true;
   try {
-    const scale = pageScale(pv), dpr = dprCap(); let px = scale * dpr * SS_TILE;   // direkt überabgetastet rendern (wie vor v33)
+    const dpr = dprCap(); let px = scale * dpr * SS_TILE;   // direkt überabgetastet rendern (wie vor v33)
     let tw = rect.w * px, th = rect.h * px;
     if (tw > TILE_MAXDIM || th > TILE_MAXDIM) { const f = Math.min(TILE_MAXDIM / tw, TILE_MAXDIM / th); px *= f; tw *= f; th *= f; }
     const vp = pv.page.getViewport({ scale: px });
@@ -711,7 +715,7 @@ async function renderTile(pv) {                      // scharfe Kachel über den
     const task = pv.page.render({ canvasContext: ctx, viewport: vp, transform }); pv.tileTask = task;
     await task.promise; pv.tileTask = null;
     if (!pv.rendered) return;   // zwischenzeitlich freigegeben → verwerfen
-    if (pv.tile) pv.tile.remove(); pv.tile = canvas; pv.inner.insertBefore(canvas, pv.svg);
+    if (pv.tile) pv.tile.remove(); pv.tile = canvas; pv.tileRect = rect; pv.tileScale = scale; pv.inner.insertBefore(canvas, pv.svg);
   } catch (_) { /* abgebrochen */ }
   finally { pv.rendering = false; }
 }
@@ -723,7 +727,7 @@ function scheduleSharpen() {    // nach kurzer Ruhe: scharfe Kachel für die sic
     // Position einrasten; scharfe (2× überabgetastete) Kachel über den sichtbaren Ausschnitt – für ALLE sichtbaren Seiten.
     for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) { snapPos(pv); if (pv.rendered) renderTile(pv); } }
     if (tool === 'textsel') buildTextVisible();
-  }, 90);
+  }, 55);
 }
 // Horizontale Zentrierung aufs Gerätepixel einrasten (sonst landet die Seite auf einem halben Pixel → leichtes Verwischen).
 function snapPos(pv) {

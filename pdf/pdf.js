@@ -1435,7 +1435,8 @@ function drawOne(svg, a, pv) {
   } else if (a.type === 'edit') {
     const g = svgEl('g', { 'data-id': a.id });
     g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: a.bg || '#fff', stroke: 'none' }));   // alte Stelle überdecken
-    const t = svgEl('text', { x: a.x + 1, y: a.y + 1, fill: a.color, 'font-size': a.size });
+    const t = svgEl('text', { x: a.x + 1, y: a.y + 1, fill: a.color, 'font-size': a.size, 'font-family': cssFontStack(a.fam) });
+    if (a.bold) t.setAttribute('font-weight', 'bold'); if (a.italic) t.setAttribute('font-style', 'italic');
     (a.text || '').split('\n').forEach((ln, i) => { const ts = svgEl('tspan', { x: a.x + 1, dy: i === 0 ? 0 : a.size * 1.25 }); ts.textContent = ln || ' '; t.appendChild(ts); });
     g.appendChild(t); svg.appendChild(g); el = g;
     const hit2 = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit2);
@@ -3904,17 +3905,32 @@ function buildTextBar(pv, a, ta, restyle, autoH) {
 }
 /* ---------- Vorhandenen Text bearbeiten (überdecken + neu schreiben) ---------- */
 function parseColor(s) { if (!s) return { r: 0, g: 0, b: 0 }; if (s[0] === '#') return hexToRgb(s); const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(s); return m ? { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255 } : { r: 0, g: 0, b: 0 }; }
-// Textstücke der Seite mit Kästchen in Seitenkoordinaten (y-unten, Oberkante) – einmal berechnet
+// Schrift-Familie (CSS) aus erkannter Klasse
+function cssFontStack(fam) { return fam === 'times' ? 'Georgia,"Times New Roman",serif' : fam === 'courier' ? 'Consolas,"Courier New",monospace' : 'Helvetica,Arial,sans-serif'; }
+// Original-Schrift bestmöglich erkennen: Serif/Sans/Mono + fett + kursiv (aus PDF-Schriftname/-familie)
+function detectFontMeta(pv, fontName, family) {
+  let nm = '';
+  try { const f = pv.page.commonObjs.get(fontName); if (f && f.name) nm = f.name; } catch (_) { }
+  const s = ((nm || '') + ' ' + (family || '')).toLowerCase();
+  const bold = /bold|black|heavy|semibold|demibold|-bd|\bbd\b|extrab/.test(s);
+  const italic = /italic|oblique|-it\b|\bit\b/.test(s);
+  const mono = /mono|courier|consol|typewriter/.test(s) || family === 'monospace';
+  const serif = !mono && (/times|serif|roman|georgia|minion|garamond|antiqua|palatino|cambria|caslon/.test(s) || family === 'serif');
+  return { fam: mono ? 'courier' : serif ? 'times' : 'helv', bold: !!bold, italic: !!italic };
+}
+// Textstücke der Seite mit Kästchen in Seitenkoordinaten (y-unten, Oberkante) – einmal berechnet, inkl. erkannter Schrift
 async function ensureTextItems(pv) {
   if (pv.textItems) return pv.textItems;
   const items = [];
   try {
     const tc = await pv.page.getTextContent();
+    const styles = tc.styles || {};
     for (const it of tc.items) {
       if (!it.str || !it.str.trim()) continue;
       const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10;
       const top = (pv.pageH - tr[5]) - fs * 0.82;
-      items.push({ x: tr[4], y: top, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs });
+      const fm = detectFontMeta(pv, it.fontName, styles[it.fontName] && styles[it.fontName].fontFamily);
+      items.push({ x: tr[4], y: top, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic });
     }
   } catch (_) { }
   pv.textItems = items; return items;
@@ -3940,12 +3956,34 @@ async function editTextAt(pv, p) {
   const hit = items.find(it => p.x >= it.x - 2 && p.x <= it.x + it.w + 2 && p.y >= it.y - 1 && p.y <= it.y + it.h + 1);
   let a;
   if (hit) {
-    const s = sampleBox(pv, hit); a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.str, size: hit.size, color: s.ink || '#111111', bg: s.bg || '#ffffff' };
+    const s = sampleBox(pv, hit); a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.str, size: hit.size, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic };
     pushUndo(); pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv);   // Treffer: auswählen → Optionen-Leiste (Überschreiben/Verschieben/Grösse)
   } else {
     a = { id: nextId++, type: 'edit', x: p.x, y: p.y - style.size * 0.82, w: 120, h: style.size * 1.2, text: '', size: style.size, color: style.color, bg: '#ffffff' };
     pushUndo(); pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); openEditEdit(pv, a, true);   // leere Stelle: direkt tippen
   }
+}
+// Ganze Seite auf einmal editierbar machen (wie Acrobat): jede erkannte Textstelle wird eine überschreibbare Edit-Stelle in passender Schrift.
+let _editAllBusy = false;
+async function editAllTextOnPage(pv) {
+  pv = pv || pageViews.find(p => p.num === curPage()); if (!pv || !pv.page || _editAllBusy) return;
+  _editAllBusy = true; status('Text wird eingelesen …'); await new Promise(r => setTimeout(r, 10));
+  try {
+    const items = await ensureTextItems(pv);
+    if (!items.length) { toast('Auf dieser Seite wurde kein bearbeitbarer Text erkannt (evtl. gescanntes Bild).'); return; }
+    const already = new Set((getAnnos(pv.num) || []).filter(a => a.type === 'edit').map(a => Math.round(a.x) + '|' + Math.round(a.y)));
+    if (items.length > 500 && !confirm(items.length + ' Textstellen editierbar machen? Das kann einen Moment dauern.')) return;
+    pushUndo(); let added = 0;
+    for (const it of items) {
+      if (already.has(Math.round(it.x) + '|' + Math.round(it.y))) continue;   // schon editierbar → nicht doppelt
+      const s = sampleBox(pv, it);
+      pushAnno(pv.num, { id: nextId++, type: 'edit', x: it.x, y: it.y, w: Math.max(it.w, it.size), h: it.h, text: it.str, size: it.size, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: it.fam, bold: it.bold, italic: it.italic });
+      added++;
+    }
+    drawAnnos(pv); saveState();
+    toast(added ? (added + ' Textstellen sind jetzt editierbar – Doppelklick auf eine Stelle zum Ändern.') : 'Alle Textstellen sind bereits editierbar.');
+  } catch (e) { console.error(e); toast('Text-Einlesen fehlgeschlagen.'); }
+  finally { _editAllBusy = false; status(''); }
 }
 // „Verschieben": Original-Stelle bleibt abgedeckt (Cover), der gleiche Text wird beweglich
 function splitEditMove(pv, a) {
@@ -3988,6 +4026,7 @@ async function startHighlight(pv, e, p) {
 function openEditEdit(pv, a, isNew) {
   const sc = pv.scale; const ta = document.createElement('textarea'); ta.className = 'textedit'; ta.value = a.text; ta.rows = 1;
   ta.style.left = (a.x * sc) + 'px'; ta.style.top = (a.y * sc) + 'px'; ta.style.fontSize = (a.size * sc) + 'px'; ta.style.color = a.color; ta.style.background = a.bg; ta.style.minWidth = Math.max(40, a.w * sc) + 'px';
+  ta.style.fontFamily = cssFontStack(a.fam); if (a.bold) ta.style.fontWeight = 'bold'; if (a.italic) ta.style.fontStyle = 'italic';
   pv.inner.appendChild(ta); ta.focus(); ta.select();
   const commit = () => { a.text = ta.value.replace(/\s+$/, ''); ta.remove(); if (!a.text && isNew) { const arr = getAnnos(pv.num); const i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); } setTool('select'); drawAnnos(pv); saveState(); };
   ta.addEventListener('blur', commit);
@@ -4451,6 +4490,7 @@ function setTool(t) {
   $$('.fab-b').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
   pageViews.forEach(p => { p._hoverId = null; const h = p.svg && p.svg.querySelector('.hover-layer'); if (h) h.remove(); });   // Hover bei Werkzeugwechsel löschen
   $('#pages').classList.toggle('mode-text', t === 'textsel');   // Text-Auswahl-Modus
+  { const eb = $('#editBar'); if (eb) eb.hidden = (t !== 'edittext'); }   // „Text bearbeiten"-Leiste (ganze Seite editierbar)
   if (t === 'textsel') buildTextVisible();
   if (t === 'measure' && !docScale && !setTool._measHint) { setTool._measHint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n).'); }
   if (t === 'curve' && !setTool._curveHint) { setTool._curveHint = true; toast('Kurve: Klick = Ecke (gerade) · Klick+Ziehen = Kurve · Enter/Doppelklick = fertig · Esc = abbrechen'); }
@@ -4540,6 +4580,15 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
     const rgb = exportBW ? ((r, g, b) => { const l = 0.299 * r + 0.587 * g + 0.114 * b; return rgb0(l, l, l); }) : rgb0;
     const doc = await PDFDocument.load(curBytes.slice(), { ignoreEncryption: true });
     const font = await doc.embedFont(StandardFonts.Helvetica);
+    const _fontCache = {};   // passende Standardschrift je erkannter Familie/Stil (Text-Bearbeiten) – identischer Look wie am Bildschirm
+    async function getFont(fam, bold, italic) {
+      const key = (fam || 'helv') + (bold ? 'B' : '') + (italic ? 'I' : ''); if (_fontCache[key]) return _fontCache[key];
+      const SF = StandardFonts; let nm;
+      if (fam === 'times') nm = bold && italic ? SF.TimesRomanBoldItalic : bold ? SF.TimesRomanBold : italic ? SF.TimesRomanItalic : SF.TimesRoman;
+      else if (fam === 'courier') nm = bold && italic ? SF.CourierBoldOblique : bold ? SF.CourierBold : italic ? SF.CourierOblique : SF.Courier;
+      else nm = bold && italic ? SF.HelveticaBoldOblique : bold ? SF.HelveticaBold : italic ? SF.HelveticaOblique : SF.Helvetica;
+      try { return _fontCache[key] = await doc.embedFont(nm); } catch (_) { return _fontCache[key] = font; }
+    }
     const pages = doc.getPages(); const sigCache = {}, nativeAnns = [];
     for (let n = 1; n <= pages.length; n++) {
       const pg = pages[n - 1];
@@ -4724,7 +4773,7 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
           else if (a.kind === 'label') { pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, borderColor: c, borderWidth: 2 }); const fs = a.h * 0.46, tw = font.widthOfTextAtSize(a.text || '', fs); pg.drawText(a.text || '', { x: a.x + (a.w - tw) / 2, y: Y(a.y + a.h) + (a.h - fs) / 2 + fs * 0.2, size: fs, font, color: c }); }
         }
         else if (a.type === 'cover') { const cc = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(cc.r, cc.g, cc.b) }); }
-        else if (a.type === 'edit') { const bg = parseColor(a.bg), tc2 = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); (a.text || '').split('\n').forEach((ln, i) => pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) })); }
+        else if (a.type === 'edit') { const bg = parseColor(a.bg), tc2 = parseColor(a.color), ef = await getFont(a.fam, a.bold, a.italic); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); (a.text || '').split('\n').forEach((ln, i) => { try { pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font: ef, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { try { pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { } } }); }
         else if (a.type === 'img' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, opacity: a.opacity != null ? a.opacity : 1 }); }
         else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); if (a.caption) { const fs = Math.max(7, Math.min(11, a.h * 0.16)), cy = a.y + a.h + 2; pg.drawLine({ start: { x: a.x, y: Y(cy) }, end: { x: a.x + a.w, y: Y(cy) }, thickness: 0.7, color: rgb(.11, .14, .17) }); pg.drawText(a.caption, { x: a.x, y: Y(cy + fs + 1), size: fs, font, color: rgb(.11, .14, .17) }); } }
         // Schraffur (geclippt auf die Form)
@@ -7272,6 +7321,7 @@ function wire() {
   { const b1 = $('#snipPdf'), b2 = $('#snipCopy'), b3 = $('#snipMail'), b4 = $('#snipCancel');
     if (b1) b1.onclick = () => snipDo('pdf'); if (b2) b2.onclick = () => snipDo('copy'); if (b3) b3.onclick = () => snipDo('mail');
     if (b4) b4.onclick = () => { removeSnipAnno(); setTool('select'); }; }
+  { const ea = $('#editAllPage'), ed = $('#editDone'); if (ea) ea.onclick = () => editAllTextOnPage(); if (ed) ed.onclick = () => setTool('select'); }
   $('#btnOutline').onclick = e => { e.stopPropagation(); const p = $('#outlinePop'); p.hidden = !p.hidden; $('#btnOutline').classList.toggle('on', !p.hidden); };
   document.addEventListener('pointerdown', e => { if (!e.target.closest('#outlinePop') && !e.target.closest('#btnOutline')) { $('#outlinePop').hidden = true; $('#btnOutline').classList.remove('on'); } }, true);
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.swatch-wrap')) $('#palettePop').hidden = true; }, true);

@@ -210,7 +210,7 @@ body.has-tabs .findbar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 .suite-link:hover{color:var(--accent)}
 
 /* Werkzeugleiste */
-.toolbar{height:var(--tools);display:flex;flex-direction:column;align-items:stretch;background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:6}
+.toolbar{min-height:44px;display:flex;flex-direction:column;align-items:stretch;background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:6}
 .rib-tabs{height:36px;flex:none;display:flex;align-items:center;gap:2px;padding:0 10px;border-bottom:1px solid var(--line-soft)}
 .rib-tab{height:36px;border:none;background:none;font:inherit;font-size:15px;font-weight:600;letter-spacing:.2px;color:var(--ink-soft);padding:0 16px;cursor:pointer;border-bottom:2px solid transparent;border-radius:0}
 .rib-tab:hover{color:var(--ink)}
@@ -220,7 +220,7 @@ body.has-tabs .findbar{top:calc(var(--bar) + var(--tools) + var(--tabs) + 8px)}
 .rib-collapse svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .15s}
 body.rib-collapsed .rib-collapse svg{transform:rotate(180deg)}
 .rib-tabs{display:none}   /* keine Reiter mehr – alle Werkzeuge sind sichtbar (in 2 Reihen) */
-.rib-row{flex:1;display:flex;align-items:center;gap:6px 10px;padding:4px 12px;overflow-x:hidden;overflow-y:auto;flex-wrap:wrap;align-content:center;scrollbar-width:thin}
+.rib-row{flex:1;display:flex;align-items:center;gap:6px 10px;padding:5px 12px;overflow:visible;flex-wrap:wrap;align-content:center}
 .rib-tools{display:flex;align-items:center;gap:3px 6px;flex-wrap:wrap}
 body.rib-collapsed{--tools:36px}
 body.rib-collapsed .rib-row{display:none}

@@ -414,6 +414,7 @@ async function loadDoc(bytes, skipRestore) {
 }
 async function renderCurrentDoc() {
   $('#drop').classList.add('hide'); $('#toolbar').hidden = false; $('#quickbar').hidden = false;
+  requestAnimationFrame(syncToolbarHeight);   // Toolbar-Höhe an die tatsächlichen Reihen anpassen
   $('#btnSave').disabled = false; $('#btnSend').disabled = false; $('#docName').textContent = docName;
   document.title = 'Submit PDF';
   _searchCache = {}; if (typeof closeFind === 'function') closeFind();   // Suche fürs neue Dokument zurücksetzen
@@ -739,6 +740,13 @@ function snapPos(pv) {
 }
 function relayout() { if (!pdfDoc) return; pageViews.forEach(layoutPv); updateZoomLabel(); updatePageInd(); renderVisible(); updateSelBar(); scheduleRulers(); scheduleGrid(); }
 let reflowTimer = null; function reflow() { clearTimeout(reflowTimer); reflowTimer = setTimeout(relayout, 140); }
+// Toolbar wächst mit dem Inhalt (2 oder 3 Reihen je nach Fensterbreite) → echte Höhe messen und --tools setzen, damit nichts abgeschnitten wird und die Vorschau darunter korrekt sitzt.
+let _tbH = 0;
+function syncToolbarHeight() {
+  const tb = document.getElementById('toolbar'); if (!tb || tb.hidden) return;
+  const h = Math.round(tb.getBoundingClientRect().height);
+  if (h > 0 && Math.abs(h - _tbH) > 1) { _tbH = h; document.documentElement.style.setProperty('--tools', h + 'px'); if (zoom === 'auto') reflow(); }
+}
 
 function buildThumbs() {        // Miniaturen ebenfalls lazy (nur sichtbare im Seitenstreifen)
   const host = $('#thumbs'); host.innerHTML = ''; if (thumbObserver) thumbObserver.disconnect();
@@ -7044,7 +7052,8 @@ function wire() {
   $('#lpDup').onclick = duplicateLayerUp;
   // Ribbon: Reiter umschalten + Werkzeugreihe ein-/ausklappen
   $$('.rib-tab').forEach(b => b.onclick = () => { activateRibTab(b.dataset.tab); document.body.classList.remove('rib-collapsed'); });
-  $('#ribCollapse').onclick = () => document.body.classList.toggle('rib-collapsed');
+  $('#ribCollapse').onclick = () => { document.body.classList.toggle('rib-collapsed'); requestAnimationFrame(syncToolbarHeight); };
+  try { const tb = document.getElementById('toolbar'); if (tb && window.ResizeObserver) new ResizeObserver(() => syncToolbarHeight()).observe(tb); } catch (_) { }   // Toolbar-Umbruch (Fensterbreite) → Höhe darunter mitführen
   // Planungs-Leiste: Wandstärke / Masslinie / Farbe / Öffnungs-Breite – Standard ODER Auswahl
   $('#pbThick').onchange = () => { const v = parseFloat(($('#pbThick').value || '').replace(',', '.')); if (!(v > 0)) return updatePlanBar(); const pts = cmToPts(v); lastWallThick = pts; const a = selWall(); if (a) { pushUndo(); a.thick = pts; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); };
   $('#pbDim').onclick = () => { const a = selWall(); if (a) { pushUndo(); a.dim = !a.dim; wallDimOn = a.dim; pageViews.forEach(drawAnnos); saveState(); } else { wallDimOn = !wallDimOn; updatePlanBar(); } };

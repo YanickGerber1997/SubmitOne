@@ -422,6 +422,7 @@ async function renderCurrentDoc() {
   await buildLayout(); buildThumbs(); status(''); refreshComments(); updateScaleLabel(); updateFormatLabel();
   detectForm(); detectOutline();
   requestAnimationFrame(() => { if (zoom === 'auto' && pdfDoc) relayout(); });   // nach dem ersten Paint einmal sauber einpassen (endgültige Feldgrösse) → keine Doppel-/Versatz-Kachel
+  setTimeout(() => { if (zoom === 'auto' && pdfDoc) relayout(); }, 280);   // nach dem Paletten-Übergang (~0,15s) nochmal → Seite 1 sitzt sicher richtig (nicht zu gross)
   if (rulerOn) requestAnimationFrame(drawRulers);
   if (gridOn) requestAnimationFrame(drawGrid);
   setTimeout(maybeOfferMount, 400);   // flaches „kein Blatt"-Dokument → anbieten, auf A4 zu legen
@@ -7054,6 +7055,7 @@ function wire() {
   $$('.rib-tab').forEach(b => b.onclick = () => { activateRibTab(b.dataset.tab); document.body.classList.remove('rib-collapsed'); });
   $('#ribCollapse').onclick = () => { document.body.classList.toggle('rib-collapsed'); requestAnimationFrame(syncToolbarHeight); };
   try { const tb = document.getElementById('toolbar'); if (tb && window.ResizeObserver) new ResizeObserver(() => syncToolbarHeight()).observe(tb); } catch (_) { }   // Toolbar-Umbruch (Fensterbreite) → Höhe darunter mitführen
+  try { const hostEl = document.getElementById('pages'); if (hostEl && window.ResizeObserver) new ResizeObserver(() => { if (zoom === 'auto' && pdfDoc) reflow(); }).observe(hostEl); } catch (_) { }   // Vorschau-Feld ändert Breite (linke Palette/Panels/Fenster) → alle Seiten neu einpassen (auch Seite 1!)
   // Planungs-Leiste: Wandstärke / Masslinie / Farbe / Öffnungs-Breite – Standard ODER Auswahl
   $('#pbThick').onchange = () => { const v = parseFloat(($('#pbThick').value || '').replace(',', '.')); if (!(v > 0)) return updatePlanBar(); const pts = cmToPts(v); lastWallThick = pts; const a = selWall(); if (a) { pushUndo(); a.thick = pts; pageViews.forEach(drawAnnos); saveState(); } else updatePlanBar(); };
   $('#pbDim').onclick = () => { const a = selWall(); if (a) { pushUndo(); a.dim = !a.dim; wallDimOn = a.dim; pageViews.forEach(drawAnnos); saveState(); } else { wallDimOn = !wallDimOn; updatePlanBar(); } };

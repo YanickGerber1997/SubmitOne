@@ -351,7 +351,7 @@ body:not(.has-doc) #drop{left:148px}
 .ins-menu button:hover{background:var(--accent-soft);color:var(--accent-3)}
 .thumb-add:hover{background:#fff}
 
-.pages{overflow:auto;padding:26px 70px 50px;display:flex;flex-direction:column;align-items:safe center;gap:22px;background-color:#f6f3f0;background-image:url('bg-left.png'),url('bg-right.png');background-position:left center,right center;background-size:auto 100%,auto 100%;background-repeat:no-repeat;background-attachment:fixed}
+.pages{overflow:auto;scrollbar-gutter:stable;padding:16px 22px 40px;display:flex;flex-direction:column;align-items:safe center;gap:20px;background-color:#f6f3f0;background-image:url('bg-left.png'),url('bg-right.png');background-position:left center,right center;background-size:auto 100%,auto 100%;background-repeat:no-repeat;background-attachment:fixed}
 .pagewrap{position:relative;flex:none;background:#fff;box-shadow:0 4px 22px rgba(20,24,40,.13);border-radius:0}
 .pageinner{position:absolute;left:50%;top:50%}
 .pagewrap canvas{display:block;border-radius:0}

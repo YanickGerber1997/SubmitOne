@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v372';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v373';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -1396,8 +1396,11 @@ function ptabsMoreToggle() {
   if (show) { const away = e => { if (!e.target.closest('.ptab-more')) { m.hidden = true; document.removeEventListener('mousedown', away); } }; setTimeout(() => document.addEventListener('mousedown', away), 0); }
 }
 
-function emptyState(ico, text) {
-  return `<div class="empty"><div class="e-ico">${ico}</div><p>${esc(text)}</p></div>`;
+function emptyState(ico, text, sub, action) {
+  return `<div class="empty"><div class="e-ico">${ico}</div><p>${esc(text)}</p>`
+    + (sub ? `<p class="e-sub">${esc(sub)}</p>` : '')
+    + (action ? `<button class="btn e-cta" data-act="${esc(action.act)}">${esc(action.label)}</button>` : '')
+    + `</div>`;
 }
 
 /* ---------------------------------------------------------------
@@ -1714,7 +1717,7 @@ function viewDashboard() {
       <span class="dr-main">${esc(p.name)}<div class="dr-sub">${esc(p.ort || '')} · <a href="#/projekt/${p.id}/dossier" onclick="event.stopPropagation()">Unterlagen <span style="color:var(--${docCls(dp)});font-weight:600">${dp}%</span></a></div></span>
       ${phaseBadge(dominantPhase(p))}
       <span class="dash-muted" style="font-size:12px;min-width:32px;text-align:right" title="Bau-Fortschritt">${projektFortschritt(p)}%</span>
-    </div>`; }).join('')}</div>` : emptyState('▤', 'Noch keine Projekte.')}</div>`;
+    </div>`; }).join('')}</div>` : emptyState('▤', 'Noch keine Projekte', 'Lege dein erstes Projekt an – Termine, Kosten und Ausschreibung an einem Ort.', { label: '+ Erstes Projekt anlegen', act: 'new-projekt' })}</div>`;
 
   render(`
     <div class="page-head"><div><h1>Dashboard</h1><div class="sub">Überblick · Fristen, Termine &amp; Pendenzen aller Projekte</div></div><button class="btn" data-act="new-projekt">+ Neues Projekt</button></div>
@@ -13363,6 +13366,10 @@ function selfTest() {
     } catch (e) { ok('Migration ohne Fehler', false, (e && e.message) || 'Fehler'); }
     finally { state = _st; }
   }
+
+  // Leerzustand: erweiterter emptyState (Sub-Text + Aktions-Knopf) rückwärtskompatibel
+  ok('emptyState schlicht (nur Icon+Text)', /class="empty"/.test(emptyState('x', 'Leer')) && !/e-cta/.test(emptyState('x', 'Leer')) && !/e-sub/.test(emptyState('x', 'Leer')));
+  ok('emptyState mit Sub + CTA', (() => { const h = emptyState('x', 'Leer', 'Hinweis', { label: '+ Neu', act: 'new-projekt' }); return /e-sub/.test(h) && /data-act="new-projekt"/.test(h) && /\+ Neu/.test(h); })());
 
   return { R, pass, fail };
 }

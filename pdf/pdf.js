@@ -4055,7 +4055,10 @@ function _parseNum(raw) {   // 4'269.75 / 4’269.75 / 1.234,55 / 1234,55 / 183.
   const m = s.match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null;
 }
 function _isNumCell(s) { const t = (s || '').trim(); return /\d/.test(t) && /^[-+]?[\d'’., \s]+%?$/.test(t) && _parseNum(t) != null; }
-function _isTotalDesc(s) { return /^\s*(total|zwischentotal|zwischensumme|(gesamt|end|netto|brutto|rechnungs)?betrag|(gesamt|zwischen)?summe|mwst|mehrwertsteuer|rundung|rabatt|skonto|netto|brutto|gesamt|inkl\.?\s|exkl\.?\s|akonto|schlusszahlung)/i.test(s || ''); }
+function _isTotalDesc(s) {
+  // bare gesamt/netto/brutto nur als GANZES Wort (Lookahead) → „Gesamtfläche"/„Bruttogeschossfläche"/„Nettowohnfläche" sind KEINE Summenzeilen
+  return /^\s*((?:gesamt|netto|brutto|zwischen|end)?total|(?:gesamt|end|netto|brutto|rechnungs)?betrag|(?:gesamt|zwischen)?summe|(?:gesamt|netto|brutto)(?![a-zäöü])|mwst|mehrwertsteuer|rundung|rabatt|skonto|akonto|schlusszahlung|inkl\.?\s|exkl\.?\s)/i.test(s || '');
+}
 function _numDecimals(s) { const m = String(s).replace(/[’'\s]/g, '').match(/[.,](\d+)$/); return m ? m[1].length : 0; }
 function _fmtNum(n) { const neg = n < 0; n = Math.abs(Math.round(n * 100) / 100); const p = n.toFixed(2).split('.'); return (neg ? '-' : '') + p[0].replace(/\B(?=(\d{3})+(?!\d))/g, '’') + '.' + p[1]; }
 // nums: [{v,str,k}] → prüft, ob ein Wert das Produkt zweier anderer ist (Anzahl×Ansatz=Betrag). {ok, expected, cK} oder null.
@@ -6239,6 +6242,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('checkCalc Fehler (3×12.5=37.0)', () => { const c = _checkCalc([{ v: 3, str: '3', k: 1 }, { v: 12.5, str: '12.50', k: 2 }, { v: 37.0, str: '37.00', k: 3 }]); return (c && !c.ok && c.expected === 37.5) ? '' : 'erwartet Fehler+37.5: ' + JSON.stringify(c); });
     A('fmtNum Schweizer Tausender', () => (_fmtNum(4269.75) === '4’269.75' && _fmtNum(1000) === '1’000.00') ? '' : 'got ' + _fmtNum(4269.75));
     A('isTotalDesc erkennt Total/MwSt', () => (_isTotalDesc('Total Möbel') && _isTotalDesc('MwSt 8,1%') && _isTotalDesc('Zwischentotal') && !_isTotalDesc('Legrabox seidenweiss')) ? '' : 'fail');
+    A('isTotalDesc: Bau-Positionen sind KEINE Summenzeile', () => (!_isTotalDesc('Gesamtfläche Fassade') && !_isTotalDesc('Bruttogeschossfläche') && !_isTotalDesc('Nettowohnfläche') && _isTotalDesc('Gesamt') && _isTotalDesc('Netto CHF') && _isTotalDesc('Gesamttotal') && _isTotalDesc('Gesamtbetrag')) ? '' : 'fail');
     A('isListLine erkennt Aufzählung', () => (_isListLine('- Punkt') && _isListLine('1. Punkt') && _isListLine('• Punkt') && !_isListLine('Normaler Text')) ? '' : 'fail');
     A('blockToParaHtml stapelt kurze Zeilen (<br>)', () => { const b = { x: 0, size: 10, lh: 12, right: 40, lines: [{ str: 'Zeile A', x: 0, maxx: 40 }, { str: 'Zeile B', x: 0, maxx: 40 }] }; const h = blockToParaHtml(b, 10, 500); return /Zeile A<br>Zeile B/.test(h) ? '' : h; });
     A('blockToParaHtml führt Fliesstext zusammen (Leerzeichen)', () => { const b = { x: 0, size: 10, lh: 12, right: 498, lines: [{ str: 'lange Zeile bis Rand', x: 0, maxx: 498 }, { str: 'weiter', x: 0, maxx: 40 }] }; const h = blockToParaHtml(b, 10, 500); return /Rand weiter/.test(h) ? '' : h; });

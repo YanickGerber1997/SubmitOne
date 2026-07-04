@@ -865,3 +865,9 @@ html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink) 22%,trans
 ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ink) 20%,transparent);border-radius:99px;border:3px solid transparent;background-clip:padding-box}
 ::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--ink) 34%,transparent);background-clip:padding-box}
 ::-webkit-scrollbar-corner{background:transparent}
+
+/* ===== Handling-Konsistenz mit Submit Paper: Dropdown-/Kontext-Popups blenden sanft ein ===== */
+/* Neutrale scale+opacity-Einblendung (passt für nach oben UND unten öffnende Popups) */
+@keyframes pdfPopIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+.palette:not([hidden]),.stamp-pop:not([hidden]),.fmt-pop:not([hidden]),.ins-menu:not([hidden]),.outline-pop:not([hidden]),.ctxmenu:not([hidden]),.hdr-pop:not([hidden]){animation:pdfPopIn .13s cubic-bezier(.4,0,.2,1)}
+@media (prefers-reduced-motion:reduce){.palette,.stamp-pop,.fmt-pop,.ins-menu,.outline-pop,.ctxmenu,.hdr-pop{animation:none !important}}

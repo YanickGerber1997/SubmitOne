@@ -3321,6 +3321,22 @@ function selfTest() {
   eq('Zirkelbezug erkannt', evalCell(0, 0), '#ZIRKEL');
   curGrid = saved;
 
+  // Named functions (Bereiche A1:C1 vermeiden das Argument-Trennzeichen; cellText ist oben bereits DOM-frei)
+  const savedN = curGrid;
+  curGrid = { cols: 3, zeilen: [{ tag: 'p', cells: ['2', '8', '5'] }] };
+  const fx = f => evalRaw(f, new Set());   // Zellbezüge → seen-Set nötig (wie evalCell)
+  eq('MITTELWERT(A1:C1)', fx('=MITTELWERT(A1:C1)'), 5);
+  eq('MIN(A1:C1)', fx('=MIN(A1:C1)'), 2);
+  eq('MAX(A1:C1)', fx('=MAX(A1:C1)'), 8);
+  eq('ANZAHL(A1:C1)', fx('=ANZAHL(A1:C1)'), 3);
+  eq('PRODUKT(A1:C1)', fx('=PRODUKT(A1:C1)'), 80);
+  eq('SUMME(A1:C1)', fx('=SUMME(A1:C1)'), 15);
+  curGrid = savedN;
+  eq('WURZEL(16)', evalRaw('=WURZEL(16)'), 4);
+  eq('ABS(-7)', evalRaw('=ABS(-7)'), 7);
+  eq('GANZZAHL(3.9)', evalRaw('=GANZZAHL(3.9)'), 3);
+  eq('Fehler bei Division durch 0', evalRaw('=1/0'), '#FEHLER');
+
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);

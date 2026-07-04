@@ -4108,6 +4108,13 @@ function tableHtml(lines, first, last, cols, body) {
       else rows.push({ descOnly: true, heading, dl: [{ str: texts[0], x: dx, maxx: dmax }] });
     } else rows.push({ descOnly: false, desc: texts[0], numTexts: texts.slice(1) });
   }
+  // Geld-Spalten erkennen (Mehrheit der Zahlen hat 2 Nachkommastellen) → dort Beträge einheitlich formatieren
+  const money = [];
+  for (let c = 0; c < ncol - 1; c++) {
+    let numeric = 0, dec2 = 0;
+    for (const r of rows) if (!r.descOnly) { const t = r.numTexts[c]; if (t && _isNumCell(t) && !t.includes('%')) { numeric++; if (_numDecimals(t) === 2) dec2++; } }
+    money[c] = numeric >= 3 && dec2 / numeric >= 0.6;
+  }
   let html = '<table class="pdftab" style="width:100%;border-collapse:collapse;font-size:15px">';
   for (const r of rows) {
     if (r.descOnly) {
@@ -4125,7 +4132,8 @@ function tableHtml(lines, first, last, cols, body) {
       let tds = `<td>${_htmlEsc(r.desc)}</td>`;
       for (let k = 0; k < r.numTexts.length; k++) { const col = k + 1, t = r.numTexts[k];
         if (chk && !chk.ok && chk.cK === col) { tds += `<td style="text-align:right;white-space:nowrap;background:#ffd6d6;color:#8a1f11"><strong>${_fmtNum(chk.expected)}</strong> ⚠ <s>${_htmlEsc(t)}</s></td>`; continue; }   // Rechenfehler → berechnetes Ergebnis rot, Original durchgestrichen
-        tds += `<td${_isNumCell(t) ? ' style="text-align:right;white-space:nowrap"' : ''}>${_htmlEsc(t) || ''}</td>`;
+        const isNum = _isNumCell(t), disp = (money[k] && isNum && !t.includes('%')) ? _fmtNum(_parseNum(t)) : (_htmlEsc(t) || '');   // Geld-Spalte → einheitlich 1'234.50
+        tds += `<td${isNum ? ' style="text-align:right;white-space:nowrap"' : ''}>${disp}</td>`;
       }
       html += `<tr${totalRow ? ' class="tot"' : ''}>` + tds + '</tr>';
     }
@@ -6227,6 +6235,12 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('blockToParaHtml führt Fliesstext zusammen (Leerzeichen)', () => { const b = { x: 0, size: 10, lh: 12, right: 498, lines: [{ str: 'lange Zeile bis Rand', x: 0, maxx: 498 }, { str: 'weiter', x: 0, maxx: 40 }] }; const h = blockToParaHtml(b, 10, 500); return /Rand weiter/.test(h) ? '' : h; });
     A('blockToParaHtml Überschrift bei grosser Einzelzeile', () => { const b = { x: 0, size: 20, lh: 24, right: 60, lines: [{ str: 'Titel', x: 0, maxx: 60 }] }; return /<h2/.test(blockToParaHtml(b, 10, 500)) ? '' : 'kein h2'; });
     A('tableHtml Rechenfehler → rot markiert', () => { const lines = [{ items: [{ x: 0, y: 0, w: 60, size: 10, str: 'Pos' }, { x: 100, y: 0, w: 12, size: 10, str: '3' }, { x: 150, y: 0, w: 20, size: 10, str: '12.50' }, { x: 200, y: 0, w: 24, size: 10, str: '37.00' }] }]; const html = tableHtml(lines, 0, 0, [90, 140, 190], 10); return (/background:#ffd6d6/.test(html) && /37[’']?\.50/.test(html) && /<s>37\.00<\/s>/.test(html)) ? '' : html; });
+    A('tableHtml vereinheitlicht Geld-Spalte (183 → 183.00)', () => {
+      const mk = (d, a) => ({ items: [{ x: 0, y: 0, w: 40, size: 10, str: d }, { x: 200, y: 0, w: 30, size: 10, str: a }] });
+      const lines = [mk('A', '1234.5'), mk('B', '183'), mk('C', '250.00'), mk('D', '99.50'), mk('E', '12.00')];
+      const html = tableHtml(lines, 0, 4, [190], 10);
+      return (/1[’']234\.50/.test(html) && />183\.00</.test(html) && />250\.00</.test(html)) ? '' : html;
+    });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

@@ -13305,5 +13305,20 @@ function selfTest() {
   eq('zahlungsplanCalc pct≠100 → Teil-Total', zahlungsplanCalc({ betrag: 100000, phasen: [{ pct: 30 }, { pct: 30 }] }).total, 60000);
   eq('kostenDiff entfernt erkannt', kostenDiff({ positionen: [{ id: 9, prognose: 500, gewerk: 'X', bkp: '2' }] }, { positionen: [] }).rows[0].status, 'removed');
 
+  // Undo (nicht kaputtbar): save() sichert VOR der Änderung; eine Löschung ist rückholbar (Kernlogik, ohne DOM-Render)
+  { const _st = state, _us = undoStack, _rs = redoStack, _ls = lastSnap, _la = lastSnapAt;
+    try {
+      state = { projekte: [{ id: 'p1', name: 'X', vergaben: [{ id: 'v1' }, { id: 'v2' }] }], kontakte: [], dokumente: [], buero: {} };
+      lastSnap = JSON.stringify(state); lastSnapAt = 0; undoStack = []; redoStack = []; undoing = false;
+      state.projekte[0].vergaben = state.projekte[0].vergaben.filter(v => v.id !== 'v2'); save();   // löschen + speichern
+      eq('Undo: Snapshot angelegt', undoStack.length, 1);
+      eq('Undo: nach Löschen 1 Vergabe', state.projekte[0].vergaben.length, 1);
+      eq('Undo: Snapshot enthält Vor-Zustand (2)', JSON.parse(undoStack[0]).projekte[0].vergaben.length, 2);
+      state = JSON.parse(undoStack.pop());   // Kern der undo()-Wiederherstellung
+      eq('Undo (Wiederherstellung): Vergabe zurück (2)', state.projekte[0].vergaben.length, 2);
+    } catch (e) { ok('Undo-Kernlogik ohne Fehler', false, (e && e.message) || 'Fehler'); }
+    finally { state = _st; undoStack = _us; redoStack = _rs; lastSnap = _ls; lastSnapAt = _la; undoing = false; }
+  }
+
   return { R, pass, fail };
 }

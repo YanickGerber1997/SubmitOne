@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v377';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v378';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -1392,7 +1392,7 @@ function projektTabs(p, active, toolbar) {
   if (sub) sub.innerHTML = `<div class="subnav-title" title="${esc(p.name)}">${esc(p.name)}</div>` +
     items.map(it => `<a class="subnav-link ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('');
   // In-Page-Reiter: häufige primär, Rest unter „Mehr ▾" (kompakt, halbschirm-tauglich)
-  const primary = ['overview', 'gewerke', 'kalender', 'listen', 'kosten', 'termine'];
+  const primary = personaPrimary(getPersona());   // Persona bestimmt die primär sichtbaren Reiter (nicht-destruktiv, Rest unter „Mehr ▾")
   const prim = items.filter(it => primary.includes(it.key));
   const more = items.filter(it => !primary.includes(it.key));
   const moreActive = more.some(it => it.key === active);
@@ -1695,6 +1695,17 @@ function personaActions(key) {
     sekretariat: ['kontakte', 'kalender', 'erfassen', 'brief', 'drucken'],
   };
   return (sets[key] || sets.alle).map(k => A[k]);
+}
+// Persona bestimmt, welche Projekt-Reiter PRIMÄR sichtbar sind (Rest unter „Mehr ▾") – versteckt nichts, ordnet nur
+function personaPrimary(persona) {
+  const P = {
+    alle:        ['overview', 'gewerke', 'kalender', 'listen', 'kosten', 'termine'],
+    bauleiter:   ['overview', 'termine', 'pendenzen', 'protokolle', 'kalender', 'gewerke'],
+    architekt:   ['overview', 'gewerke', 'kosten', 'termine', 'listen', 'dossier'],
+    finanz:      ['overview', 'kosten', 'rechnungen', 'zahlungsplan', 'nachtraege', 'honorar'],
+    sekretariat: ['overview', 'listen', 'kalender', 'protokolle', 'dossier', 'pendenzen'],
+  };
+  return P[persona] || P.alle;
 }
 function personaChosen() { try { return localStorage.getItem('so_persona') !== null; } catch (_) { return true; } }   // Speicher kaputt → nicht nerven
 // Erststart: Persona einmal aktiv abfragen (freundliche Karte, überspringbar)
@@ -13453,6 +13464,9 @@ function selfTest() {
   ok('personaActions Finanz → Honorar', personaActions('finanz').some(a => a.href === '#/honorar'));
   ok('personaActions unbekannt → Fallback alle (mit Neues Projekt)', personaActions('xyz').length === personaActions('alle').length && personaActions('alle').some(a => a.act === 'new-projekt'));
   ok('personaOnboardCard: 4 Rollen + Umschauen', ['bauleiter', 'architekt', 'finanz', 'sekretariat', 'alle'].every(k => new RegExp('data-persona="' + k + '"').test(personaOnboardCard())) && /ob-choice/.test(personaOnboardCard()) && /ob-skip/.test(personaOnboardCard()));
+  ok('personaPrimary: Overview zuerst + 6 Reiter je Rolle', ['alle', 'bauleiter', 'architekt', 'finanz', 'sekretariat'].every(k => personaPrimary(k)[0] === 'overview' && personaPrimary(k).length === 6));
+  ok('personaPrimary Finanz → Kosten+Rechnungen primär', personaPrimary('finanz').includes('kosten') && personaPrimary('finanz').includes('rechnungen'));
+  ok('personaPrimary Bauleiter → Pendenzen+Protokolle primär', personaPrimary('bauleiter').includes('pendenzen') && personaPrimary('bauleiter').includes('protokolle'));
 
   // Leerzustand: erweiterter emptyState (Sub-Text + Aktions-Knopf) rückwärtskompatibel
   ok('emptyState schlicht (nur Icon+Text)', /class="empty"/.test(emptyState('x', 'Leer')) && !/e-cta/.test(emptyState('x', 'Leer')) && !/e-sub/.test(emptyState('x', 'Leer')));

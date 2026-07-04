@@ -7226,7 +7226,7 @@ function wire() {
   $('#projName').oninput = projPreviewUpd; $('#projSub').onchange = projPreviewUpd; $('#projFile').oninput = projPreviewUpd;
   $('#projName').onkeydown = e => { if (e.key === 'Enter') $('#projOk').click(); };
   $('#smHint3d').onclick = () => toast('OBJ-Export: unten „◳ 3D" öffnen → im 3D-Balken „⭳ OBJ".');
-  { const tp = $('#smToPaper'); if (tp) tp.onclick = convertToPaper; }
+  { const tp = $('#smToPaper'); if (tp) tp.onclick = convertToPaper; const tb = $('#btnToPaper'); if (tb) tb.onclick = convertToPaper; }
   let planKind = 'kopf', planPos = 'br';
   $('#footPlan').onclick = e => { e.stopPropagation(); const p = $('#planPop'); p.hidden = !p.hidden; };
   $('#pbBuild').onclick = e => { e.stopPropagation(); const p = $('#buildPop'); if (p.hidden) openBuildPop(); else p.hidden = true; };

@@ -7,6 +7,36 @@
 
 const APP_VERSION = 'v369';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
+/* ============================================================
+   MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
+   Ctrl-F den Funktionsnamen. Zeilen = Richtwerte (verschieben sich). Aufräum-Disziplin:
+   neue Funktionen ins passende Modul, Banner „// ===== MODUL: X =====" setzen. Siehe STRUKTUR.md.
+   ------------------------------------------------------------
+   KERN (kein Modul):
+     · State/Speichern/Undo:  save · snapshotForUndo · undo · db/state
+     · Router/Render:         render · route (hashchange) · parseHash
+     · Helfer:                uid · esc · chf · chfShort · money · fmtDate · addDays ·
+                              parseDateFlexible · parseBkp · bkpBase · bkpCmp · gewerkeSorted
+     · UI:                    toast · openModal · Kontextmenü
+     · Kataloge/Stammdaten:   BKP_KATALOG · MODULES/Abo · PHASEN · VERGABE_STATUS
+     · Auth/Abo (Supabase):   cloudEnabled · subscribeCloud · Entitlements
+   ------------------------------------------------------------
+   🟦 TERMINE (SubTermin):        viewTermine · viewGrobGantt · viewFeinGantt ·
+                                  viewFeinViertel · rerenderGantt · ganttRibbonTabs · terminSnapshot
+   🟩 KOSTEN (SubKosten + ZP):    viewKosten · kostenZeile · kostenSnapshot · kostenDiff ·
+                                  viewRechnungen · actNewNachtrag · actNewRechnung · nachtragSumme ·
+                                  zahlungsplanOf · bauherrPlan · zahlungsplanCalc ·
+                                  viewZahlungsplan · zpBauherrHtml · zpHonorarHtml
+   🟧 AUSSCHREIBUNG (SubAussschr): viewListen · submTableHtml · mailEinladung ·
+                                  actKonditionen · pdfDeckblatt · pdfSubmittenten · isVergeben
+   ------------------------------------------------------------
+   Weitere Module: Pendenzen (viewPendenzen) · Kalender (viewKalender) · Kontakte (viewKontakte) ·
+     Protokolle (viewProtokolle) · Optionen/Bauteile (Banner „Optionen & Bauteile") ·
+     Auflagen · Solarrechner · U-Wert-Rechner · Dossier · Honorar · Finanzierung · Bauherr-Freigabe
+   ------------------------------------------------------------
+   TEST:  node test/selftest-node.js   (selfTest() am Dateiende – reine Kernlogik)
+   ============================================================ */
+
 /* ---------------------------------------------------------------
    1) Domänen-Konstanten
    --------------------------------------------------------------- */
@@ -1944,6 +1974,7 @@ function setupKostStickyHead() {
   if (!window._kshBound) { window._kshBound = true; const run = () => { if (_kshUpdate) _kshUpdate(); }; window.addEventListener('scroll', run, { passive: true }); window.addEventListener('resize', run); }
   _kshUpdate();
 }
+/* ===== 🟩 MODUL: KOSTEN (SubKosten) — Baukostenübersicht, Rechnungen, Nachträge, Zahlungsplan ===== */
 function viewKosten(id) {
   const p = findProjekt(id);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
@@ -2311,6 +2342,7 @@ let grobZoom = 1;   // Grobplanung: Monatsbreiten-Faktor (Zoom)
 let ausZoom = 1;    // Ausschreibungsprogramm: Monatsbreiten-Faktor (Zoom)
 let _grobPxPerDay = 2;
 // Grobplanung: BKP-Gewerke aus dem Detailprogramm zu groben Bauphasen zusammengefasst (Spanne aus Bau-Terminen)
+/* ===== 🟦 MODUL: TERMINE (SubTermin) — Gantt (grob/fein/Viertel), Bauprogramm, Baseline ===== */
 function viewGrobGantt(p) {
   const head = `
     <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Grobplanung · Bauphasen aus dem Detailprogramm (Planung, Rohbau, Innenausbau …)</div></div></div>
@@ -4831,6 +4863,7 @@ function submSetStatus(pid, vid, eid, val) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); const e = v && (v.eingeladene || []).find(x => x.id === eid); if (!e) return;
   e.status = val; save(); viewListen(pid);
 }
+/* ===== 🟧 MODUL: AUSSCHREIBUNG (SubAusschreibung) — Submittenten, Einladungen, Konditionen, Deckblatt ===== */
 function viewListen(pid) {
   const p = findProjekt(pid);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }

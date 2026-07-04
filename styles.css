@@ -1799,6 +1799,20 @@ tr.rg-sub:hover td { background: rgba(0,0,0,.03); }
 .sz-chip:hover { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); }
 .sz-chip:active { transform: translateY(1px); }
 .sz-chip .sz-i, .sz-pill .sz-i { font-size: 14px; line-height: 1; }
+/* Erststart-Onboarding (Persona einmal aktiv abfragen) */
+.onboard { margin-bottom: 18px; border: 1px solid var(--brand-soft); }
+.ob-head { margin-bottom: 14px; }
+.ob-badge { font-size: 12px; font-weight: 700; color: var(--brand); background: var(--brand-soft); padding: 3px 10px; border-radius: 99px; }
+.ob-title { margin: 10px 0 4px; font-size: 18px; }
+.ob-sub { margin: 0; font-size: 13px; color: var(--text-soft); max-width: 560px; line-height: 1.5; }
+.ob-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.ob-choice { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); cursor: pointer; transition: border-color .14s, background .14s, transform .1s; }
+.ob-choice:hover { border-color: var(--brand); background: var(--brand-soft); transform: translateY(-1px); }
+.ob-choice:active { transform: translateY(0); }
+.ob-ico { font-size: 26px; line-height: 1; }
+.ob-l { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.ob-skip { border: none; background: none; color: var(--text-soft); font-size: 13px; cursor: pointer; padding: 4px 2px; }
+.ob-skip:hover { color: var(--brand); }
 
 /* --- Dauerhafte Tier-Anzeige (auf jeder Seite) – schlankes Pill mit Metall-Chip + Speicher-Status --- */
 .tier-badge {

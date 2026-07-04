@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v376';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v377';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -1696,6 +1696,19 @@ function personaActions(key) {
   };
   return (sets[key] || sets.alle).map(k => A[k]);
 }
+function personaChosen() { try { return localStorage.getItem('so_persona') !== null; } catch (_) { return true; } }   // Speicher kaputt → nicht nerven
+// Erststart: Persona einmal aktiv abfragen (freundliche Karte, überspringbar)
+function personaOnboardCard() {
+  const choices = PERSONAS.filter(p => p.key !== 'alle').map(p =>
+    `<button class="ob-choice" data-persona="${p.key}"><span class="ob-ico">${p.ico}</span><span class="ob-l">${esc(p.label)}</span></button>`).join('');
+  return `<div class="card card-pad onboard">
+      <div class="ob-head"><span class="ob-badge">Willkommen 👋</span>
+        <h2 class="ob-title">Wofür nutzt du SubmitOne?</h2>
+        <p class="ob-sub">Wähle deine Rolle – dann zeigt dir das Dashboard oben sofort die passenden Werkzeuge. Jederzeit änderbar.</p></div>
+      <div class="ob-choices">${choices}</div>
+      <button class="ob-skip" data-persona="alle">Erstmal umschauen →</button>
+    </div>`;
+}
 function viewDashboard() {
   const projekte = sichtbareProjekte();
   const todayI = todayIso();
@@ -1778,17 +1791,18 @@ function viewDashboard() {
       <div class="sz-head"><span class="sz-title">Schnellzugriff</span><div class="sz-pills">${szPills}</div></div>
       <div class="sz-chips">${szChips}</div>
     </div>`;
+  const topCard = personaChosen() ? schnellzugriff : personaOnboardCard();   // Erststart → Persona abfragen, sonst Schnellzugriff
 
   render(`
     <div class="page-head"><div><h1>Dashboard</h1><div class="sub">Überblick · Fristen, Termine &amp; Pendenzen aller Projekte</div></div><button class="btn" data-act="new-projekt">+ Neues Projekt</button></div>
-    ${schnellzugriff}
+    ${topCard}
     <div class="kpi-row">${kpis}</div>
     <div class="two-col">
       <div>${fristPanel}${terminePanel}</div>
       <div>${pendPanel}${projPanel}</div>
     </div>
   `);
-  $$('.sz-pill').forEach(b => b.addEventListener('click', () => setPersona(b.dataset.persona)));
+  $$('.sz-pill, .ob-choice, .ob-skip').forEach(b => b.addEventListener('click', () => setPersona(b.dataset.persona)));
   $$('.pend-check').forEach(cb => cb.addEventListener('change', () => togglePendenz(cb.dataset.pid, cb.dataset.prid, cb.dataset.tid, cb.dataset.itemid)));
 }
 
@@ -13438,6 +13452,7 @@ function selfTest() {
   ok('personaActions Bauleiter → Erfassen+Pendenzen', personaActions('bauleiter').some(a => a.href === '#/erfassen') && personaActions('bauleiter').some(a => a.href === '#/pendenzen'));
   ok('personaActions Finanz → Honorar', personaActions('finanz').some(a => a.href === '#/honorar'));
   ok('personaActions unbekannt → Fallback alle (mit Neues Projekt)', personaActions('xyz').length === personaActions('alle').length && personaActions('alle').some(a => a.act === 'new-projekt'));
+  ok('personaOnboardCard: 4 Rollen + Umschauen', ['bauleiter', 'architekt', 'finanz', 'sekretariat', 'alle'].every(k => new RegExp('data-persona="' + k + '"').test(personaOnboardCard())) && /ob-choice/.test(personaOnboardCard()) && /ob-skip/.test(personaOnboardCard()));
 
   // Leerzustand: erweiterter emptyState (Sub-Text + Aktions-Knopf) rückwärtskompatibel
   ok('emptyState schlicht (nur Icon+Text)', /class="empty"/.test(emptyState('x', 'Leer')) && !/e-cta/.test(emptyState('x', 'Leer')) && !/e-sub/.test(emptyState('x', 'Leer')));

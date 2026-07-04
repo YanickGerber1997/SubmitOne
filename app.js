@@ -13267,5 +13267,17 @@ function selfTest() {
   eq('bauherrPlan Total (nur terminiert)', bp.total, 18000);
   eq('bauherrPlan fehlend (ohne Termin)', bp.fehlend.length, 1);
 
+  // Ausschreibung/Nachkontrolle (S1.2-Kern): Fristen-Ampel + nächste offene Frist (relativ zu heute)
+  eq('fristClass überfällig', fristClass(addDays(todayIso(), -1), false), 'over');
+  eq('fristClass Warnung ≤7d', fristClass(addDays(todayIso(), 3), false), 'warn');
+  eq('fristClass fern', fristClass(addDays(todayIso(), 30), false), '');
+  eq('fristClass erledigt → keine', fristClass(addDays(todayIso(), -5), true), '');
+  eq('fristText leer', fristText('', false), '–');
+  ok('fristText „heute"', /heute/.test(fristText(addDays(todayIso(), 0), false)));
+  ok('fristText „überf."', /überf\./.test(fristText(addDays(todayIso(), -2), false)));
+  ok('fristText „in 5d"', /in 5d/.test(fristText(addDays(todayIso(), 5), false)));
+  eq('naechsteFrist früheste offene', naechsteFrist({ vergaben: [{ frist: '2026-03-01', status: 'offen' }, { frist: '2026-01-15', status: 'offen' }, { frist: '2020-01-01', status: 'abgeschlossen' }] }), '2026-01-15');
+  ok('naechsteFrist ohne Frist → null', naechsteFrist({ vergaben: [{ status: 'offen' }] }) === null);
+
   return { R, pass, fail };
 }

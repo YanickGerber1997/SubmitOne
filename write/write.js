@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v36';
+const WRITE_VERSION = 'v37';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -809,10 +809,33 @@ function bindTemplateHint() {
    ============================================================ */
 function docHtmlShell(inner) {
   const s = doc.einstellungen;
-  return `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>${esc(doc.titel)}</title>
-<style>body{font-family:${s.schriftart};font-size:${s.schriftgroesse}px;line-height:${s.zeilenabstand};color:#1a1e27;max-width:760px;margin:40px auto;padding:0 24px}
-h1{font-size:30px}h2{font-size:23px}h3{font-size:18px}blockquote{border-left:3px solid #2f6df6;padding-left:14px;color:#555;font-style:italic}
-pre{background:#f5f6f8;padding:14px;border-radius:8px;overflow:auto}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:6px 10px}a{color:#2f6df6}</style>
+  return `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(doc.titel)}</title>
+<style>
+:root{--acc:#4f7a3c}
+*{box-sizing:border-box}
+body{font-family:${s.schriftart},'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:${s.schriftgroesse}px;line-height:${s.zeilenabstand};color:#1a1e27;max-width:780px;margin:48px auto;padding:0 24px;-webkit-text-size-adjust:100%}
+h1{font-size:2em;font-weight:700;line-height:1.2;letter-spacing:-.01em;margin:.4em 0 .35em}
+h2{font-size:1.5em;font-weight:600;line-height:1.25;margin:1.1em 0 .3em}
+h3{font-size:1.2em;font-weight:600;margin:1em 0 .25em}
+p{margin:0 0 .85em}
+a{color:var(--acc);text-underline-offset:2px}
+blockquote{border-left:3px solid var(--acc);padding:.2em 0 .2em 1.1em;margin:.8em 0;color:#555;font-style:italic}
+pre{background:#f5f6f8;border:1px solid #eceae2;padding:14px 16px;border-radius:8px;overflow:auto;font-family:'Courier New',monospace}
+hr{border:none;border-top:1px solid #e2e0d6;margin:1.4em 0}
+img{max-width:100%;border-radius:6px}
+mark{background:#ffe066;padding:.05em .1em;border-radius:3px}
+table{border-collapse:collapse;width:100%;margin:.6em 0}
+td,th{border:1px solid #ddd;padding:6px 10px;text-align:left}
+th{background:#f5f4ee;font-weight:600}
+.pdftab{border:none;margin:.5em 0}
+.pdftab td{border:none;border-bottom:1px solid #ebe9e0;padding:4px 0 4px 12px;vertical-align:top;font-variant-numeric:tabular-nums}
+.pdftab td:first-child{padding-left:0}
+.pdftab td:not(:first-child){padding-left:20px}
+.pdftab td[colspan]{border-bottom:none;padding-top:8px;padding-left:0}
+.pdftab tr:last-child td{border-bottom:none}
+.pdftab tr.tot td{font-weight:700;border-top:1.5px solid #565d52;border-bottom:none;padding-top:7px}
+@media print{body{margin:0;max-width:none}}
+</style>
 </head><body>${inner}</body></html>`;
 }
 function download(name, data, mime) {
@@ -3436,6 +3459,15 @@ function selfTest() {
   ok('selRefLabel Einzelzelle', selRefLabel(0, 0, 0, 0, 'A1') === 'A1');
   ok('selRefLabel Bereich 3×2', selRefLabel(0, 1, 0, 2, 'A1') === '3×2');
   ok('selRefLabel Zeile 1×4', selRefLabel(0, 3, 5, 5, 'A6') === '1×4');
+
+  // Export-HTML: markenkonform (grün, kein Blau-Rest) + konvertierte Positionsliste
+  { const _d = doc; doc = { titel: 'T & Co', einstellungen: { schriftart: 'Inter', schriftgroesse: 16, zeilenabstand: 1.6 } };
+    const shell = docHtmlShell('<p>x</p>');
+    ok('Export-HTML grün, kein Blau-Rest', shell.includes('#4f7a3c') && !shell.includes('#2f6df6'));
+    ok('Export-HTML rendert .pdftab', /\.pdftab tr\.tot/.test(shell));
+    ok('Export-HTML Titel escaped', /T &amp; Co/.test(shell));
+    doc = _d;
+  }
 
   return { R, pass, fail };
 }

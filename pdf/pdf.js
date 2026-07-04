@@ -4105,7 +4105,7 @@ function tableHtml(lines, first, last, cols, body) {
       else rows.push({ descOnly: true, heading, dl: [{ str: texts[0], x: dx, maxx: dmax }] });
     } else rows.push({ descOnly: false, desc: texts[0], numTexts: texts.slice(1) });
   }
-  let html = '<table style="width:100%;border-collapse:collapse;font-size:15px">';
+  let html = '<table class="pdftab" style="width:100%;border-collapse:collapse;font-size:15px">';
   for (const r of rows) {
     if (r.descOnly) {
       let inner = '';

@@ -365,6 +365,12 @@ body[data-mode="slides"] .editor img{max-width:100%}
 .editor a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .editor table{border-collapse:collapse;width:100%;margin:.8em 0}
 .editor td,.editor th{border:1px solid var(--line);padding:7px 10px;min-width:40px}
+/* Aus PDF konvertierte Offerten/Rechnungen: ruhige Positionsliste statt Excel-Gitter */
+.editor .pdftab,.pv-page .pdftab{border:none;margin:.5em 0;width:100%}
+.editor .pdftab td,.pv-page .pdftab td{border:none;border-bottom:1px solid var(--line-soft);padding:4px 0 4px 12px;vertical-align:top;min-width:0}
+.editor .pdftab td:first-child,.pv-page .pdftab td:first-child{padding-left:0}
+.editor .pdftab tr:last-child td,.pv-page .pdftab tr:last-child td{border-bottom:none}
+.editor .pdftab td[colspan],.pv-page .pdftab td[colspan]{border-bottom:none;padding-top:8px}   /* Abschnitts-Überschriften: kein Trennstrich, etwas Luft darüber */
 .editor img{max-width:100%;border-radius:6px}
 .editor:focus{outline:none}
 

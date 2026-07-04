@@ -104,6 +104,14 @@ button{font-family:inherit;cursor:pointer}
 .doc-item.current .di-title{color:var(--accent)}
 .doc-item .di-meta{font-size:11px;color:var(--ink-faint)}
 .list-empty{padding:18px 12px;font-size:12.5px;color:var(--ink-faint);text-align:center}
+/* Einladender, ordner-spezifischer Leerzustand */
+.empty-state{display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:36px 18px 24px;color:var(--ink-faint)}
+.empty-state .es-ico{width:34px;height:34px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;opacity:.5;margin-bottom:3px}
+.empty-state .es-t{font-size:13.5px;font-weight:600;color:var(--ink-soft)}
+.empty-state .es-s{font-size:12px;line-height:1.45;max-width:200px}
+.empty-cta{margin-top:12px;padding:8px 15px;border:none;border-radius:var(--radius-sm);background:var(--accent);color:#fff;font-size:12.5px;font-weight:600;box-shadow:0 2px 8px color-mix(in srgb,var(--accent) 30%,transparent);transition:transform .12s var(--ease),box-shadow .2s var(--ease)}
+.empty-cta:hover{transform:translateY(-1px);box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 38%,transparent)}
+.empty-cta:active{transform:translateY(0)}
 .side-foot{padding:10px 14px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px}
 .foot-link{display:flex;align-items:center;gap:7px;background:none;border:none;color:var(--ink-soft);font-size:12.5px;font-weight:500;padding:4px 6px;border-radius:6px}
 .foot-link:hover{background:var(--line-soft);color:var(--ink)}

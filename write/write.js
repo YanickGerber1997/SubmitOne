@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v32';
+const WRITE_VERSION = 'v33';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -595,7 +595,7 @@ function renderList() {
     return d.folder === 'dokumente';
   });
   if (activeFolder === 'vorlagen' && !ids.length) { list.innerHTML = renderTemplateHint(); bindTemplateHint(); return; }
-  if (!ids.length) { list.innerHTML = '<div class="list-empty">Noch keine Dokumente hier.</div>'; return; }
+  if (!ids.length) { list.innerHTML = renderEmptyState(); const b = $('#esNew'); if (b) b.onclick = () => createDoc(); return; }
   ids.forEach(id => {
     const d = lib.docs[id];
     const el = document.createElement('div');
@@ -605,6 +605,20 @@ function renderList() {
     el.oncontextmenu = (e) => { e.preventDefault(); docMenu(id); };
     list.appendChild(el);
   });
+}
+// Einladender, ordner-spezifischer Leerzustand (erster Eindruck) statt einer kargen Zeile
+function renderEmptyState() {
+  const F = {
+    dokumente: { ic: '<path d="M6 2.5h8l4 4v15H6z"/><path d="M14 2.5v4h4"/>', t: 'Noch keine Dokumente', s: 'Erstelle dein erstes Dokument – oder starte mit einer Vorlage.', cta: true },
+    favoriten: { ic: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.2 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.7l5.9-.9z"/>', t: 'Keine Favoriten', s: 'Markiere ein Dokument mit ★, dann erscheint es hier.' },
+    zuletzt: { ic: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3.2 1.9"/>', t: 'Noch nichts geöffnet', s: 'Zuletzt bearbeitete Dokumente sammeln sich hier.' },
+    archiv: { ic: '<rect x="3" y="4" width="18" height="5" rx="1.5"/><path d="M5 9v11h14V9M9.5 13h5"/>', t: 'Archiv ist leer', s: 'Abgelegte Dokumente findest du hier wieder.' },
+    papierkorb: { ic: '<path d="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13"/>', t: 'Papierkorb ist leer', s: 'Gelöschte Dokumente lassen sich hier wiederherstellen.' },
+  };
+  const f = F[activeFolder] || F.dokumente;
+  return `<div class="empty-state"><svg viewBox="0 0 24 24" class="es-ico">${f.ic}</svg>`
+    + `<div class="es-t">${f.t}</div><div class="es-s">${f.s}</div>`
+    + (f.cta ? `<button class="empty-cta" id="esNew">+ Neues Dokument</button>` : '') + `</div>`;
 }
 function docMenu(id) {
   const d = lib.docs[id];
@@ -3340,6 +3354,14 @@ function selfTest() {
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  // Leerzustand (erster Eindruck): ordner-spezifisch, Aktions-Knopf nur bei „Dokumente"
+  { const _af = activeFolder;
+    activeFolder = 'favoriten'; ok('Leerzustand Favoriten (kein CTA)', /Keine Favoriten/.test(renderEmptyState()) && !/esNew/.test(renderEmptyState()));
+    activeFolder = 'papierkorb'; ok('Leerzustand Papierkorb-Text', /Papierkorb ist leer/.test(renderEmptyState()));
+    activeFolder = 'dokumente'; ok('Leerzustand Dokumente (mit CTA)', /esNew/.test(renderEmptyState()) && /Noch keine Dokumente/.test(renderEmptyState()));
+    activeFolder = _af;
+  }
 
   return { R, pass, fail };
 }

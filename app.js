@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v374';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v375';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -122,13 +122,30 @@ const PocketBaseAdapter = {
 
 let dbAdapter = LocalAdapter;
 
+// Beschädigte gespeicherte Daten wegsichern (statt sie zu überschreiben) – Wiederherstellung bleibt möglich
+function preserveCorrupt() {
+  try {
+    if (dbAdapter !== LocalAdapter) return;
+    const raw = localStorage.getItem(LocalAdapter.key);
+    if (raw && raw.length) localStorage.setItem('submitone.corrupt.' + Date.now(), raw);
+  } catch (_) {}
+}
+// Entscheidung beim Laden: gültige Daten nutzen; bei LESEFEHLER Demo nur ANZEIGEN (nicht speichern → nichts überschreiben); wirklich leer = Erststart committen
+function initDecision(loaded, loadFailed) {
+  if (loaded) return 'use';
+  return loadFailed ? 'keep-demo' : 'commit-demo';
+}
 const db = {
   use(adapter) { dbAdapter = adapter; },
   async init() {
-    let loaded = null;
-    try { loaded = await dbAdapter.load(); } catch (e) { console.warn('Laden fehlgeschlagen:', e); }
-    if (loaded) { state = loaded; migrate(); }
-    else { state = demoData(); migrate(); db.commit(); }
+    let loaded = null, loadFailed = false;
+    try { loaded = await dbAdapter.load(); }
+    catch (e) { console.warn('Laden fehlgeschlagen:', e); loadFailed = true; preserveCorrupt(); }
+    const action = initDecision(loaded, loadFailed);
+    if (action === 'use') { state = loaded; migrate(); return; }
+    state = demoData(); migrate();
+    if (action === 'commit-demo') db.commit();   // wirklich leer = Erststart → Demo speichern
+    else if (typeof toast === 'function') setTimeout(() => toast('⚠ Gespeicherte Daten waren unlesbar – der letzte Stand wurde gesichert, es wurde nichts überschrieben.', 'info'), 900);   // Lesefehler: NICHT speichern (Datenverlust vermeiden)
   },
   commit() {
     try { dbAdapter.save(state); } catch (e) { console.warn('Speichern fehlgeschlagen:', e); }
@@ -13366,6 +13383,11 @@ function selfTest() {
     } catch (e) { ok('Migration ohne Fehler', false, (e && e.message) || 'Fehler'); }
     finally { state = _st; }
   }
+
+  // Ladepfad „nicht kaputtbar": beschädigte Daten dürfen NICHT mit Demo überschrieben werden
+  eq('initDecision: gültige Daten → nutzen', initDecision({ projekte: [] }, false), 'use');
+  eq('initDecision: Lesefehler → Demo behalten (nichts überschreiben)', initDecision(null, true), 'keep-demo');
+  eq('initDecision: wirklich leer → Erststart committen', initDecision(null, false), 'commit-demo');
 
   // Leerzustand: erweiterter emptyState (Sub-Text + Aktions-Knopf) rückwärtskompatibel
   ok('emptyState schlicht (nur Icon+Text)', /class="empty"/.test(emptyState('x', 'Leer')) && !/e-cta/.test(emptyState('x', 'Leer')) && !/e-sub/.test(emptyState('x', 'Leer')));

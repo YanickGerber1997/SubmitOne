@@ -13186,5 +13186,40 @@ function selfTest() {
   eq('fmtUid formatiert', fmtUid('CHE123456789'), 'CHE-123.456.789');
   eq('fmtUid leer', fmtUid(''), '');
 
+  // --- Geschäftskritische Zahlen: Nachträge, Rundung, Zahlungsplan, Kostenzeile, Versions-Diff ---
+  eq('nachtragSumme nur genehmigt', nachtragSumme({ nachtraege: [{ status: 'genehmigt', betrag: 500 }, { status: 'offen', betrag: 999 }, { status: 'genehmigt', betrag: 100 }] }), 600);
+  eq('rapportSumme', rapportSumme({ rapporte: [{ betrag: 200 }, { betrag: 50 }] }), 250);
+  eq('budgetDelta (Ist − Budget)', budgetDelta({ budgetposten: [{ betrag: 1000, ist: 1200 }, { betrag: 500 }] }), 200);
+  eq('schlussSumme', schlussSumme({ betrag: 10000, nachtraege: [{ status: 'genehmigt', betrag: 500 }], rapporte: [{ betrag: 200 }], budgetposten: [{ betrag: 1000, ist: 1200 }] }), 10900);
+  eq('rp5 Rappen auf', rp5(12.34), 12.35);
+  eq('rp5 Rappen ab', rp5(12.31), 12.30);
+  ok('isVergeben true', isVergeben({ status: 'vergeben' }));
+  ok('isVergeben false (Start)', !isVergeben({ status: VERGABE_STATUS[0].key }));
+
+  // Kostenzeile: nur genehmigte Nachträge + Rapporte fliessen in die Prognose (offener Nachtrag zählt NICHT)
+  const zk = kostenZeile({ status: 'vergeben', betrag: 10000, nachtraege: [{ status: 'genehmigt', betrag: 500 }, { status: 'offen', betrag: 999 }], rapporte: [{ betrag: 200 }] });
+  eq('kostenZeile prognose', zk.prognose, 10700);
+  eq('kostenZeile endsumme', zk.endsumme, 10700);
+  eq('kostenZeile bezahlt', zk.bezahlt, 0);
+  eq('kostenZeile offen', zk.offen, 10700);
+
+  // Zahlungsplan-Rechnung (Prozente → Rappen-gerundete Beträge)
+  const zp = zahlungsplanCalc({ betrag: 100000, phasen: [{ pct: 30 }, { pct: 40 }, { pct: 30 }] });
+  eq('zahlungsplan Raten', zp.rows.map(r => r.betrag), [30000, 40000, 30000]);
+  eq('zahlungsplan pctSum', zp.pctSum, 100);
+  eq('zahlungsplan total', zp.total, 100000);
+  eq('zahlungsplan kumuliert', zp.rows[2].cum, 100);
+
+  // Kosten-Versions-Diff (Vergleich zweier Stände)
+  const dA = { positionen: [{ id: 1, prognose: 1000, bezahlt: 0, gewerk: 'A', bkp: '211' }] };
+  const dB = { positionen: [{ id: 1, prognose: 1200, bezahlt: 0, gewerk: 'A', bkp: '211' }, { id: 2, prognose: 500, bezahlt: 0, gewerk: 'B', bkp: '212' }] };
+  const kd = kostenDiff(dA, dB);
+  eq('kostenDiff totA', kd.totA, 1000);
+  eq('kostenDiff totB', kd.totB, 1700);
+  eq('kostenDiff dTot', kd.dTot, 700);
+  eq('kostenDiff Zeilenzahl', kd.rows.length, 2);
+  eq('kostenDiff changed dProg', (kd.rows.find(r => r.status === 'changed') || {}).dProg, 200);
+  ok('kostenDiff neu erkannt', kd.rows.some(r => r.status === 'new'));
+
   return { R, pass, fail };
 }

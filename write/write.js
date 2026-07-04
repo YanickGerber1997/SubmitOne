@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v24';
+const WRITE_VERSION = 'v25';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -657,7 +657,58 @@ const TEMPLATES = {
      <h2>Profil</h2><p>Kurzer Beschrieb in zwei, drei Sätzen.</p>
      <h2>Berufserfahrung</h2><p><b>2022 – heute&nbsp;·&nbsp;Position</b><br>Firma, Ort<br>Wichtigste Aufgaben und Erfolge.</p>
      <h2>Ausbildung</h2><p><b>Jahr&nbsp;·&nbsp;Abschluss</b><br>Schule, Ort</p>
-     <h2>Kenntnisse</h2><ul><li>Sprachen: …</li><li>IT: …</li></ul>` }
+     <h2>Kenntnisse</h2><ul><li>Sprachen: …</li><li>IT: …</li></ul>` },
+  kostenvoranschlag: { titel: 'Kostenvoranschlag', html:
+    `<h1>Kostenvoranschlag</h1>
+     <p style="color:#777">Objekt …&nbsp;·&nbsp;Bauherrschaft …&nbsp;·&nbsp;${TODAY}</p>
+     <table class="pdftab"><tbody>
+       <tr><td><strong>Pos.</strong></td><td><strong>Leistung</strong></td><td style="text-align:right"><strong>Menge</strong></td><td><strong>Einheit</strong></td><td style="text-align:right"><strong>Ansatz</strong></td><td style="text-align:right"><strong>Betrag</strong></td></tr>
+       <tr><td>1</td><td>Baumeisterarbeiten</td><td style="text-align:right">1</td><td>pausch.</td><td style="text-align:right">0.00</td><td style="text-align:right">0.00</td></tr>
+       <tr><td>2</td><td>…</td><td style="text-align:right"></td><td></td><td style="text-align:right"></td><td style="text-align:right">0.00</td></tr>
+     </tbody></table>
+     <p style="text-align:right">Zwischentotal&nbsp;&nbsp;CHF 0.00<br>MwSt 8,1&nbsp;%&nbsp;&nbsp;CHF 0.00<br><strong>Total inkl. MwSt&nbsp;&nbsp;CHF 0.00</strong></p>
+     <p style="color:#777">Unverbindlicher Richtpreis · Genauigkeit ± 15 % · gültig 60 Tage.</p>` },
+  regierapport: { titel: 'Regierapport', html:
+    `<h1>Regie- / Arbeitsrapport</h1>
+     <p style="color:#777">Objekt …&nbsp;·&nbsp;Datum ${TODAY}&nbsp;·&nbsp;Rapport-Nr. …</p>
+     <h2>Arbeitsstunden</h2>
+     <table class="pdftab"><tbody>
+       <tr><td><strong>Mitarbeiter</strong></td><td><strong>Tätigkeit</strong></td><td style="text-align:right"><strong>Std.</strong></td><td style="text-align:right"><strong>Ansatz</strong></td><td style="text-align:right"><strong>Betrag</strong></td></tr>
+       <tr><td>…</td><td>…</td><td style="text-align:right">0.0</td><td style="text-align:right">0.00</td><td style="text-align:right">0.00</td></tr>
+     </tbody></table>
+     <h2>Material</h2>
+     <table class="pdftab"><tbody>
+       <tr><td><strong>Material</strong></td><td style="text-align:right"><strong>Menge</strong></td><td><strong>Einheit</strong></td><td style="text-align:right"><strong>Betrag</strong></td></tr>
+       <tr><td>…</td><td style="text-align:right"></td><td></td><td style="text-align:right">0.00</td></tr>
+     </tbody></table>
+     <p style="text-align:right"><strong>Total&nbsp;&nbsp;CHF 0.00</strong></p>
+     <p style="color:#777">Visum Bauleitung …&nbsp;&nbsp;·&nbsp;&nbsp;Visum Unternehmer …</p>` },
+  bautagebuch: { titel: 'Bautagebuch', html:
+    `<h1>Bautagebuch / Baustellenprotokoll</h1>
+     <p style="color:#777">Objekt …&nbsp;·&nbsp;Datum ${TODAY}&nbsp;·&nbsp;Wetter …&nbsp;·&nbsp;Temperatur … °C</p>
+     <h2>Anwesende</h2><ul><li>… (Firma, Anzahl)</li></ul>
+     <h2>Ausgeführte Arbeiten</h2><ul><li>…</li></ul>
+     <h2>Lieferungen / Geräte</h2><ul><li>…</li></ul>
+     <h2>Besondere Vorkommnisse</h2><p>…</p>
+     <h2>Pendenzen</h2><ul><li>Aufgabe – verantwortlich – bis</li></ul>` },
+  maengelliste: { titel: 'Mängelliste', html:
+    `<h1>Mängel- / Abnahmeprotokoll</h1>
+     <p style="color:#777">Objekt …&nbsp;·&nbsp;Abnahme vom ${TODAY}&nbsp;·&nbsp;Teilnehmende …</p>
+     <table class="pdftab"><tbody>
+       <tr><td><strong>Nr.</strong></td><td><strong>Ort / Bauteil</strong></td><td><strong>Mangel</strong></td><td><strong>Verantwortlich</strong></td><td><strong>Frist</strong></td><td><strong>erledigt</strong></td></tr>
+       <tr><td>1</td><td>…</td><td>…</td><td>…</td><td>…</td><td>☐</td></tr>
+       <tr><td>2</td><td>…</td><td>…</td><td>…</td><td>…</td><td>☐</td></tr>
+     </tbody></table>
+     <p style="color:#777">Unterschrift Bauherrschaft …&nbsp;&nbsp;·&nbsp;&nbsp;Unterschrift Unternehmer …</p>` },
+  zahlungsplan: { titel: 'Zahlungsplan', html:
+    `<h1>Zahlungsplan</h1>
+     <p style="color:#777">Objekt …&nbsp;·&nbsp;Vertragssumme CHF 0.00&nbsp;·&nbsp;${TODAY}</p>
+     <table class="pdftab"><tbody>
+       <tr><td><strong>Rate</strong></td><td><strong>Zahlungsgrund / Baufortschritt</strong></td><td style="text-align:right"><strong>%</strong></td><td style="text-align:right"><strong>Betrag</strong></td><td><strong>fällig</strong></td></tr>
+       <tr><td>1</td><td>Bei Vertragsabschluss</td><td style="text-align:right">30</td><td style="text-align:right">0.00</td><td>…</td></tr>
+       <tr><td>2</td><td>Bei Baubeginn</td><td style="text-align:right">40</td><td style="text-align:right">0.00</td><td>…</td></tr>
+       <tr><td>3</td><td>Nach Abnahme / Bezug</td><td style="text-align:right">30</td><td style="text-align:right">0.00</td><td>…</td></tr>
+     </tbody></table>` }
 };
 function renderTemplateHint() {
   return '<div style="padding:8px 4px;display:flex;flex-direction:column;gap:4px">' +

@@ -4011,15 +4011,17 @@ async function pageTextItemsFor(page, pageH) {   // Textstücke einer beliebigen
   } catch (_) { }
   return items;
 }
-// Ein Absatz-Block → HTML. Gestapelte Zeilen bleiben gestapelt (<br>); nur echt umbrochene Zeilen (Zeile reicht bis rechts + nächste beginnt links) werden mit Leerzeichen zusammengezogen.
+const _isListLine = s => /^\s*([-–—•*·▪◦‣]|\d{1,3}[.)])\s/.test(s) || /^\s*[-–—•*·▪◦‣]\S/.test(s);
+// Ein Absatz-Block → HTML. Gestapelte Zeilen bleiben GESTAPELT (<br>); nur echt umbrochene Fliesstext-Zeilen werden zusammengezogen (vorige Zeile reicht fast ganz nach rechts, diese beginnt links, kein Listenpunkt, keine Satzende-Zeile davor).
 function blockToParaHtml(b, body) {
   const lines = (b.lines && b.lines.length) ? b.lines : b.text.split('\n').map(str => ({ str, x: b.x, maxx: b.right || (b.x + b.w) }));
-  const right = b.right || (b.x + b.w), tol = b.size * 1.6;
+  const right = b.right || (b.x + b.w);
   let inner = '';
   for (let i = 0; i < lines.length; i++) {
     const cur = lines[i], prev = lines[i - 1];
     if (i > 0) {
-      const wrapped = (right - prev.maxx) < tol && (cur.x - b.x) < tol;   // vorige Zeile voll + diese beginnt links → Fliesstext
+      const prevFull = prev.maxx >= right - b.size * 0.9, curLeft = (cur.x - b.x) <= b.size * 0.9;
+      const wrapped = prevFull && curLeft && !_isListLine(cur.str) && !/[.:!?]$/.test((prev.str || '').trim());
       inner += wrapped ? ' ' : '<br>';
     }
     inner += _htmlEsc(cur.str);
@@ -4057,12 +4059,19 @@ async function convertToPaper(pageNums) {
   const nums = (pageNums && pageNums.length) ? pageNums : Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1);
   status('In Submit Paper umwandeln …'); await new Promise(r => setTimeout(r, 10));
   try {
-    await loadPdfJs(); const pages = [];
+    await loadPdfJs(); const pages = []; let blockN = 0, substantial = 0;
     for (const n of nums) {
       const page = await pdfDoc.getPage(n), vp = page.getViewport({ scale: 1 });
-      pages.push({ typ: 'write', html: blocksToPaperHtml(groupTextBlocks(await pageTextItemsFor(page, vp.height))) });
+      const blocks = groupTextBlocks(await pageTextItemsFor(page, vp.height));
+      for (const b of blocks) { blockN++; if ((b.text || '').split(/\s+/).filter(Boolean).length >= 6 || (b.lines && b.lines.length >= 3)) substantial++; }   // „richtige" Textblöcke (Fliesstext) vs. verstreute Labels
+      pages.push({ typ: 'write', html: blocksToPaperHtml(blocks) });
     }
     if (!pages.some(p => p.html.replace(/<[^>]+>/g, '').trim().length)) { status(''); toast('Kein Text zum Übernehmen gefunden (evtl. gescanntes Bild-PDF).'); return; }
+    if (blockN >= 12 && substantial / blockN < 0.22) {   // viele winzige, verstreute Beschriftungen → sieht aus wie Plan/Zeichnung
+      status('');
+      if (!confirm('Dieses PDF sieht aus wie ein Plan/eine Zeichnung (viele verstreute Beschriftungen statt Fliesstext).\n\nDie Umwandlung liefert dann nur die einzelnen Beschriftungen – kein sauberes Textdokument. Trotzdem umwandeln?')) return;
+      status('In Submit Paper umwandeln …'); await new Promise(r => setTimeout(r, 10));
+    }
     const titel = (docName || 'Aus PDF').replace(/\.pdf$/i, '') + (nums.length < pdfDoc.numPages ? ' (S. ' + nums.join(',') + ')' : '');
     try { localStorage.setItem('submitpaper_import', JSON.stringify({ titel, pages, ts: Date.now() })); }
     catch (_) { status(''); toast('Text zu gross für die Übergabe – weniger Seiten wählen.'); return; }

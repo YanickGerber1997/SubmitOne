@@ -856,3 +856,12 @@ body.view-only #btnView{background:var(--accent);border-color:var(--accent)}
 body.view-only #btnView .i{stroke:#fff}
 /* dezenter Hinweisstreifen oben rechts */
 body.view-only .toolbar::after{content:"👁 Ansehen – keine Änderungen";position:absolute;right:12px;top:6px;background:var(--accent);color:#fff;font:600 11px/1 var(--font);padding:5px 10px;border-radius:8px;pointer-events:none;z-index:5}
+
+/* ===== Feel-Konsistenz mit Submit Paper: dezente, themenkonforme Scrollbalken ===== */
+/* (rib-row versteckt seinen Scrollbalken weiterhin – spezifischere Regel oben gewinnt) */
+html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink) 22%,transparent) transparent}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ink) 20%,transparent);border-radius:99px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--ink) 34%,transparent);background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}

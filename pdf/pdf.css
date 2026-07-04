@@ -828,3 +828,24 @@ body.has-tabs .build-pop{top:calc(var(--bar) + var(--tools) + var(--tabs) + var(
   .splash-word{font-size:24px;letter-spacing:5px}
   .modal-card{padding:18px}
 }
+
+/* ================= Design-Politur (v584): einheitliche Rundungen · Zustände · Schatten · Übergänge ================= */
+:root{ --pop-shadow:0 2px 8px rgba(20,24,40,.10), 0 18px 44px -10px rgba(20,24,40,.26); --r-btn:8px; --r-pop:12px; }
+/* Werkzeuge & Knöpfe: rund + weiche Übergänge + deutlicheres aktives Werkzeug */
+.tool{border-radius:var(--r-btn);transition:background .13s ease,color .13s ease,border-color .13s ease,box-shadow .13s ease}
+.tool.on{box-shadow:inset 0 0 0 1px var(--accent)}
+.btn{transition:background .13s ease,color .13s ease,border-color .13s ease,box-shadow .13s ease,transform .1s ease}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.swatch span{border-radius:5px}
+.stamp-grid .st-sym,.pal-row button{border-radius:6px}
+/* Tastatur-Fokus: klarer Akzent-Ring (nur bei Tab-Navigation, nicht bei Maus) */
+.tool:focus-visible,.btn:focus-visible,.qbtn:focus-visible,.rib-act:focus-visible,.foot-info:focus-visible,.fab-b:focus-visible,.rib-tab:focus-visible,.tab:focus-visible,.tab-add:focus-visible,.icon-btn:focus-visible,.sr-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-btn)}
+.modal-card input:focus-visible,.modal-card select:focus-visible,.modal-card textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+/* Popups & Leisten: gemeinsame Rundung + edler, mehrschichtiger Schatten */
+.palette,.stamp-pop,.fmt-pop,.ins-menu,.outline-pop,.grid-bar,.align-bar,.crop-bar,.selbar,.textbar,.layer-panel,.ctxmenu,.freerot,.findbar,.hdr-pop,.phasePop,.phase-pop{border-radius:var(--r-pop);box-shadow:var(--pop-shadow)}
+.modal-card{border-radius:16px;box-shadow:0 24px 70px -12px rgba(20,24,40,.42)}
+/* Sanftes Handling: Panels/Rails gleiten, Klick-Feedback */
+.list-panel,.side-rail,.comments,.plan-rail{transition:transform .18s cubic-bezier(.4,0,.2,1),opacity .18s ease}
+.fab-b,.qbtn{transition:background .13s ease,color .13s ease,border-color .13s ease,transform .1s ease}
+.fab-b:active,.qbtn:active{transform:scale(.93)}
+@media (prefers-reduced-motion: reduce){ *{transition:none !important} }

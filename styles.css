@@ -1799,3 +1799,17 @@ tr.rg-sub:hover td { background: rgba(0,0,0,.03); }
 .tier-state.warn::before { background: var(--s-red); }
 @media (max-width: 680px) { .tier-state { display: none; } .tier-badge { top: 8px; right: 8px; gap: 0; padding: 4px 5px; } }
 @media print { .tier-badge, .plan-banner, #planBanner { display: none !important; } }
+
+/* ===== Feel-Konsistenz mit Submit PDF/Paper: Scrollbalken · Klick-Feedback · Fokusring (Design bleibt bewusst blau) ===== */
+html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22%, transparent) transparent; }
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text) 20%, transparent); border-radius: 99px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text) 34%, transparent); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+/* Tastbares Klick-Feedback auf den Haupt-Knöpfen */
+.btn, .fb-btn { transition: background .14s ease, color .14s ease, border-color .14s ease, box-shadow .14s ease, transform .1s ease; }
+.btn:active, .fb-btn:active { transform: translateY(1px); }
+/* Tastatur-Fokusring (nur bei Tab-Navigation), Spezifität 0 → überschreibt nichts */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

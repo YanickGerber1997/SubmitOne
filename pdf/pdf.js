@@ -3961,10 +3961,12 @@ async function ensureTextItems(pv) {
   } catch (_) { }
   pv.textItems = items; return items;
 }
-// Textstücke zu ZEILEN und ABSÄTZEN gruppieren → ein editierbarer Block je Absatz (statt einer Box pro Zeile).
+// Textstücke zu ZEILEN und ABSÄTZEN gruppieren → ein Block je Absatz (statt einer Box pro Zeile).
 async function buildTextBlocks(pv) {
   if (pv.textBlocks) return pv.textBlocks;
-  const items = await ensureTextItems(pv);
+  pv.textBlocks = groupTextBlocks(await ensureTextItems(pv)); return pv.textBlocks;
+}
+function groupTextBlocks(items) {
   const its = items.slice().sort((a, b) => a.y - b.y || a.x - b.x);
   // 1) Zeilen: Items mit überlappender vertikaler Lage zusammenfassen
   const lines = [];
@@ -3992,8 +3994,50 @@ async function buildTextBlocks(pv) {
     }
     blocks.push({ lines: [L], x: L.x, maxx: L.maxx, y: L.y, maxy: L.maxy, size: L.size, fam: L.fam, bold: L.bold, italic: L.italic, lhs: [] });
   }
-  const out = blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, text: B.lines.map(l => l.str).join('\n'), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic }));
-  pv.textBlocks = out; return out;
+  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, text: B.lines.map(l => l.str).join('\n'), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic }));
+}
+/* ---------- Als Submit Paper öffnen: PDF-Text → editierbares Dokument (an /write/ übergeben) ---------- */
+function _htmlEsc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+async function pageTextItemsFor(page, pageH) {   // Textstücke einer beliebigen Seite (ohne pv) – y von oben
+  const items = [];
+  try {
+    const tc = await page.getTextContent(), styles = tc.styles || {};
+    for (const it of tc.items) {
+      if (!it.str || !it.str.trim()) continue;
+      const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10, top = (pageH - tr[5]) - fs * 0.82;
+      const s = ((styles[it.fontName] && styles[it.fontName].fontFamily) || '').toLowerCase();
+      items.push({ x: tr[4], y: top, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: /serif|times|roman/.test(s) ? 'times' : /mono|courier/.test(s) ? 'courier' : 'helv', bold: /bold/.test(s), italic: /italic|oblique/.test(s) });
+    }
+  } catch (_) { }
+  return items;
+}
+function blocksToPaperHtml(blocks) {   // Absätze → HTML (Überschrift bei grosser Schrift, fett/kursiv erhalten)
+  if (!blocks.length) return '<p></p>';
+  const sizes = blocks.map(b => b.size).slice().sort((a, b) => a - b), body = sizes[Math.floor(sizes.length / 2)] || 12;
+  const html = blocks.map(b => {
+    let t = _htmlEsc(b.text.split('\n').join(' ')).trim(); if (!t) return '';
+    if (b.size >= body * 1.4) return '<h2>' + t + '</h2>';
+    if (b.bold) t = '<strong>' + t + '</strong>'; if (b.italic) t = '<em>' + t + '</em>';
+    return '<p>' + t + '</p>';
+  }).filter(Boolean).join('\n');
+  return html || '<p></p>';
+}
+async function convertToPaper() {
+  if (!pdfDoc) return;
+  if (!confirm('Dieses PDF als editierbares Submit-Paper-Dokument öffnen?\n\nDer erkannte Text wird in ein Textdokument übernommen (Layout/Grafik gehen dabei verloren – das Original-PDF bleibt erhalten).')) return;
+  status('In Submit Paper umwandeln …'); await new Promise(r => setTimeout(r, 10));
+  try {
+    await loadPdfJs(); const pages = [];
+    for (let n = 1; n <= pdfDoc.numPages; n++) {
+      const page = await pdfDoc.getPage(n), vp = page.getViewport({ scale: 1 });
+      pages.push({ typ: 'write', html: blocksToPaperHtml(groupTextBlocks(await pageTextItemsFor(page, vp.height))) });
+    }
+    if (!pages.some(p => p.html.replace(/<[^>]+>/g, '').trim().length)) { status(''); toast('Kein Text zum Übernehmen gefunden (evtl. gescanntes Bild-PDF).'); return; }
+    const titel = (docName || 'Aus PDF').replace(/\.pdf$/i, '');
+    try { localStorage.setItem('submitpaper_import', JSON.stringify({ titel, pages, ts: Date.now() })); }
+    catch (_) { status(''); toast('Text zu gross für die Übergabe.'); return; }
+    status(''); location.href = '../write/index.html?import=1';
+  } catch (e) { status(''); console.error(e); toast('Umwandlung fehlgeschlagen.'); }
 }
 // Hintergrund- (häufigste) und Text-Farbe (dunkelste) im Kästchen abtasten
 function sampleBox(pv, box) {
@@ -7182,6 +7226,7 @@ function wire() {
   $('#projName').oninput = projPreviewUpd; $('#projSub').onchange = projPreviewUpd; $('#projFile').oninput = projPreviewUpd;
   $('#projName').onkeydown = e => { if (e.key === 'Enter') $('#projOk').click(); };
   $('#smHint3d').onclick = () => toast('OBJ-Export: unten „◳ 3D" öffnen → im 3D-Balken „⭳ OBJ".');
+  { const tp = $('#smToPaper'); if (tp) tp.onclick = convertToPaper; }
   let planKind = 'kopf', planPos = 'br';
   $('#footPlan').onclick = e => { e.stopPropagation(); const p = $('#planPop'); p.hidden = !p.hidden; };
   $('#pbBuild').onclick = e => { e.stopPropagation(); const p = $('#buildPop'); if (p.hidden) openBuildPop(); else p.hidden = true; };

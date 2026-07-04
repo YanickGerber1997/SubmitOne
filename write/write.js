@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v21';
+const WRITE_VERSION = 'v22';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -3182,10 +3182,30 @@ function init() {
   try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (_) {}
   try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
   wire(); initLaunch();
-  // letztes oder neues Dokument
-  if (lib.currentId && lib.docs[lib.currentId]) openDoc(lib.currentId);
-  else if (lib.order.length && lib.docs[lib.order[0]]) openDoc(lib.order[0]);
-  else createDoc();
+  // Übergabe aus Submit PDF? („Als Submit Paper öffnen")
+  let imported = false;
+  try {
+    const params = new URLSearchParams(location.search);
+    if (params.get('import') === '1') {
+      const raw = localStorage.getItem('submitpaper_import');
+      if (raw) {
+        localStorage.removeItem('submitpaper_import');
+        const data = JSON.parse(raw);
+        if (data && Array.isArray(data.pages) && data.pages.length) {
+          createDoc({ titel: data.titel || 'Aus PDF', pages: data.pages.map(p => ({ id: uid(), typ: p.typ === 'calc' ? 'calc' : 'write', html: p.html || '' })) });
+          imported = true;
+          try { history.replaceState(null, '', location.pathname); } catch (_) {}
+          toast('Aus PDF übernommen – ' + data.pages.length + (data.pages.length === 1 ? ' Seite' : ' Seiten') + ' (Text jetzt editierbar).');
+        }
+      }
+    }
+  } catch (_) {}
+  // sonst letztes oder neues Dokument
+  if (!imported) {
+    if (lib.currentId && lib.docs[lib.currentId]) openDoc(lib.currentId);
+    else if (lib.order.length && lib.docs[lib.order[0]]) openDoc(lib.order[0]);
+    else createDoc();
+  }
   renderList();
 }
 init();

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v371';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v372';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -707,6 +707,7 @@ async function startApp() {
   updateUndoButtons();
   initSidebarCollapse();
   initTooltips();
+  initGlobalTooltips();
   document.addEventListener('keydown', planKeydown);
   document.addEventListener('keydown', ganttKeydown);
   initGerberLaunch();
@@ -769,6 +770,29 @@ function initTooltips() {
     tip.style.top = (r.top + r.height / 2) + 'px';
   });
   nav.addEventListener('mouseout', () => { if (tip) tip.style.display = 'none'; });
+}
+
+// Globaler, schöner Tooltip für ALLE title-Attribute (ausser der Nav, die ihren eigenen hat) – wie Submit PDF/Paper
+function initGlobalTooltips() {
+  const tip = document.createElement('div'); tip.className = 'tip'; tip.style.display = 'none'; document.body.appendChild(tip);
+  let el = null, timer = null;
+  const hide = () => { clearTimeout(timer); if (el && el.dataset.tip != null) { el.setAttribute('title', el.dataset.tip); delete el.dataset.tip; } el = null; tip.style.display = 'none'; };
+  document.addEventListener('mouseover', e => {
+    const t = e.target.closest && e.target.closest('[title]'); if (!t || t === el) return;
+    if (t.closest('#mainNav')) return;   // Nav-Leiste hat ihren eigenen Tooltip (initTooltips)
+    hide(); const txt = t.getAttribute('title'); if (!txt) return; el = t;
+    timer = setTimeout(() => {
+      if (!el) return; el.dataset.tip = txt; el.removeAttribute('title');   // nativen Tooltip abschalten
+      tip.textContent = txt; tip.style.display = 'block';
+      const r = el.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+      const left = Math.max(8, Math.min(r.left + r.width / 2 - tw / 2, window.innerWidth - tw - 8));
+      let top = r.bottom + 8; if (top + th > window.innerHeight - 8) top = r.top - th - 8;
+      tip.style.left = left + 'px'; tip.style.top = top + 'px';
+    }, 340);
+  });
+  document.addEventListener('mouseout', e => { if (el && (!e.relatedTarget || !el.contains(e.relatedTarget))) hide(); });
+  document.addEventListener('mousedown', hide, true);
+  window.addEventListener('scroll', hide, true);
 }
 
 function initSidebarCollapse() {

@@ -1773,6 +1773,15 @@ tr.rg-sub:hover td { background: rgba(0,0,0,.03); }
   content: ''; position: absolute; right: 100%; top: 50%; transform: translateY(-50%);
   border: 6px solid transparent; border-right-color: #1b2533;
 }
+/* Globaler Hover-Tooltip (alle title-Attribute ausser Nav) – wie Submit PDF/Paper */
+.tip {
+  position: fixed; z-index: 600; background: #1b2533; color: #fff;
+  font-size: 12.5px; padding: 6px 10px; border-radius: 8px; pointer-events: none;
+  max-width: 280px; line-height: 1.35; box-shadow: 0 8px 24px rgba(0,0,0,.28);
+  animation: tipIn .12s ease;
+}
+@keyframes tipIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .tip { animation: none; } }
 
 /* --- Dauerhafte Tier-Anzeige (auf jeder Seite) – schlankes Pill mit Metall-Chip + Speicher-Status --- */
 .tier-badge {

@@ -2,20 +2,21 @@
    Submit Write — Schweizer, minimal, das Dokument ist der Held
    ============================================================ */
 :root{
-  --bg:#f4f5f7;          /* App-Hintergrund */
+  /* an Submit PDF angeglichen: warm/grün, dunklerer Canvas (Blatt kommt zur Geltung) */
+  --bg:#dcd8cd;          /* Canvas hinter dem Blatt (dunkler → Blatt „schwebt") */
   --surface:#ffffff;     /* Leisten / Karten */
-  --surface-2:#fbfbfc;
-  --side:#fafafb;        /* Seitenleiste */
-  --ink:#1d2330;         /* Haupttext UI */
-  --ink-soft:#5b6478;
-  --ink-faint:#98a0b0;
-  --line:#e7e9ee;        /* Trennlinien */
-  --line-soft:#eef0f4;
-  --accent:#2f6df6;
-  --accent-soft:#eaf1ff;
+  --surface-2:#f5f4ee;
+  --side:#f5f4ee;        /* Seitenleiste (warm) */
+  --ink:#1c242c;         /* Haupttext UI */
+  --ink-soft:#565d52;
+  --ink-faint:#9b9c8f;
+  --line:#dedcd2;        /* Trennlinien */
+  --line-soft:#ebe9e0;
+  --accent:#4f7a3c;      /* Herbstgrün wie Submit PDF */
+  --accent-soft:#e9efde;
   --paper:#ffffff;       /* Das Blatt */
   --paper-ink:#1a1e27;   /* Text auf dem Blatt */
-  --shadow:0 1px 2px rgba(20,24,40,.04), 0 12px 40px rgba(20,24,40,.10);
+  --shadow:0 0 0 1px rgba(20,24,40,.055), 0 2px 5px rgba(20,24,40,.09), 0 16px 40px -6px rgba(20,24,40,.20);
   --radius:12px;
   --radius-sm:8px;
   --side-w:248px;

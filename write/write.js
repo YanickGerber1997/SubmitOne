@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v33';
+const WRITE_VERSION = 'v34';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -602,7 +602,7 @@ function renderList() {
     el.className = 'doc-item' + (id === lib.currentId ? ' current' : '');
     el.innerHTML = `<span class="di-title">${esc(d.titel)}</span><span class="di-meta">${fmtDate(d.meta.geaendert)}${d.fav ? ' · ★' : ''}</span>`;
     el.onclick = () => openDoc(id);
-    el.oncontextmenu = (e) => { e.preventDefault(); docMenu(id); };
+    el.oncontextmenu = (e) => { e.preventDefault(); docMenu(id, e); };
     list.appendChild(el);
   });
 }
@@ -620,14 +620,45 @@ function renderEmptyState() {
     + `<div class="es-t">${f.t}</div><div class="es-s">${f.s}</div>`
     + (f.cta ? `<button class="empty-cta" id="esNew">+ Neues Dokument</button>` : '') + `</div>`;
 }
-function docMenu(id) {
-  const d = lib.docs[id];
-  const a = prompt(`„${d.titel}"\n\n1 = Favorit umschalten\n2 = Archivieren\n3 = In Papierkorb\n4 = Duplizieren\n5 = Endgültig löschen`, '');
-  if (a === '1') d.fav = !d.fav;
-  else if (a === '2') { d.folder = d.folder === 'archiv' ? 'dokumente' : 'archiv'; }
-  else if (a === '3') d.trashed = true;
-  else if (a === '4') { const c = newDocObject({ ...JSON.parse(JSON.stringify(d)), id: uid(), titel: d.titel + ' (Kopie)', folder: 'dokumente', trashed: false, fav: false }); lib.docs[c.id] = c; lib.order.unshift(c.id); }
-  else if (a === '5') { delete lib.docs[id]; lib.order = lib.order.filter(x => x !== id); if (lib.currentId === id) { lib.currentId = lib.order[0] || null; lib.currentId ? openDoc(lib.currentId) : createDoc(); } }
+// Echtes Rechtsklick-Menü fürs Dokument (statt Browser-prompt mit Zahlen)
+let ctxDocId = null;
+function docMenuItems(d) {
+  return d.trashed ? ['restore', 'purge'] : ['open', 'fav', 'rename', 'dup', 'arch', 'trash'];
+}
+const DOC_MENU = {
+  open:    { t: 'Öffnen' },
+  fav:     { t: d => d.fav ? 'Favorit entfernen' : 'Als Favorit ★' },
+  rename:  { t: 'Umbenennen …' },
+  dup:     { t: 'Duplizieren' },
+  arch:    { t: d => d.folder === 'archiv' ? 'Aus Archiv holen' : 'Archivieren' },
+  trash:   { t: 'In den Papierkorb', del: true },
+  restore: { t: 'Wiederherstellen' },
+  purge:   { t: 'Endgültig löschen', del: true },
+};
+function docMenu(id, ev) {
+  const d = lib.docs[id]; if (!d) return; ctxDocId = id;
+  const m = $('#ctxmenu');
+  m.innerHTML = `<span class="lbl">${esc(d.titel)}</span>` + docMenuItems(d).map(k => {
+    const mi = DOC_MENU[k], lbl = typeof mi.t === 'function' ? mi.t(d) : mi.t;
+    const sep = (k === 'trash' || k === 'purge') ? '<div class="sep"></div>' : '';
+    return `${sep}<button data-doc="${k}"${mi.del ? ' class="del"' : ''}><span>${lbl}</span></button>`;
+  }).join('');
+  m.hidden = false;
+  const x = ev ? ev.clientX : 240, y = ev ? ev.clientY : 200;
+  m.style.left = Math.min(x, window.innerWidth - m.offsetWidth - 8) + 'px';
+  m.style.top = Math.min(y, window.innerHeight - m.offsetHeight - 8) + 'px';
+}
+function docMenuAction(a) {
+  $('#ctxmenu').hidden = true;
+  const id = ctxDocId, d = lib.docs[id]; if (!d) return;
+  if (a === 'open') return openDoc(id);
+  if (a === 'fav') d.fav = !d.fav;
+  else if (a === 'rename') { const t = prompt('Neuer Name:', d.titel); if (t == null) return; d.titel = t.trim() || d.titel; if (id === lib.currentId) $('#docTitle').value = d.titel; }
+  else if (a === 'dup') { const c = newDocObject({ ...JSON.parse(JSON.stringify(d)), id: uid(), titel: d.titel + ' (Kopie)', folder: 'dokumente', trashed: false, fav: false }); lib.docs[c.id] = c; lib.order.unshift(c.id); }
+  else if (a === 'arch') d.folder = d.folder === 'archiv' ? 'dokumente' : 'archiv';
+  else if (a === 'trash') d.trashed = true;
+  else if (a === 'restore') d.trashed = false;
+  else if (a === 'purge') { if (!confirm(`„${d.titel}" endgültig löschen?`)) return; delete lib.docs[id]; lib.order = lib.order.filter(x => x !== id); if (lib.currentId === id) { lib.currentId = lib.order[0] || null; lib.currentId ? openDoc(lib.currentId) : createDoc(); } }
   persistLib(); renderList();
 }
 
@@ -1656,6 +1687,7 @@ function wire() {
     showContextMenu(e.clientX, e.clientY);
   });
   $('#ctxmenu').addEventListener('click', e => { const a = e.target.closest('button')?.dataset.ctx; if (a) ctxAction(a); });
+  $('#ctxmenu').addEventListener('click', e => { const a = e.target.closest('button')?.dataset.doc; if (a) docMenuAction(a); });
   document.addEventListener('click', () => $('#ctxmenu').hidden = true);
   $('#canvas').addEventListener('scroll', () => { $('#ctxmenu').hidden = true; });
 
@@ -3362,6 +3394,11 @@ function selfTest() {
     activeFolder = 'dokumente'; ok('Leerzustand Dokumente (mit CTA)', /esNew/.test(renderEmptyState()) && /Noch keine Dokumente/.test(renderEmptyState()));
     activeFolder = _af;
   }
+
+  // Dokument-Kontextmenü (echtes Menü statt prompt): richtige Aktionen je nach Zustand
+  ok('docMenuItems normal', docMenuItems({}).join(',') === 'open,fav,rename,dup,arch,trash');
+  ok('docMenuItems Papierkorb', docMenuItems({ trashed: true }).join(',') === 'restore,purge');
+  ok('DOC_MENU Favorit-Label wechselt', (typeof DOC_MENU.fav.t === 'function') && DOC_MENU.fav.t({ fav: true }).includes('entfernen') && !DOC_MENU.fav.t({ fav: false }).includes('entfernen'));
 
   return { R, pass, fail };
 }

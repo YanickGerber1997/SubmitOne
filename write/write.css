@@ -435,7 +435,9 @@ body[data-mode="write"] .wfbar{display:flex}
 .ctxmenu button:hover{background:var(--line-soft);color:var(--ink)}
 .ctxmenu button .km{color:var(--ink-faint);font-size:11px;font-variant-numeric:tabular-nums}
 .ctxmenu .sep{height:1px;background:var(--line);margin:5px 4px}
-.ctxmenu .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-faint);padding:7px 10px 3px}
+.ctxmenu .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-faint);padding:7px 10px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:212px}
+.ctxmenu button.del{color:var(--danger)}
+.ctxmenu button.del:hover{background:color-mix(in srgb,var(--danger) 12%,transparent);color:var(--danger)}
 
 /* ---------- Inspector ---------- */
 .inspector{background:var(--side);border-left:1px solid var(--line);overflow-y:auto;min-width:0}

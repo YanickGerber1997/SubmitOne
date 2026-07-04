@@ -4053,6 +4053,7 @@ function _parseNum(raw) {   // 4'269.75 / 4’269.75 / 1.234,55 / 1234,55 / 183.
   const m = s.match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null;
 }
 function _isNumCell(s) { const t = (s || '').trim(); return /\d/.test(t) && /^[-+]?[\d'’., \s]+%?$/.test(t) && _parseNum(t) != null; }
+function _isTotalDesc(s) { return /^\s*(total|zwischentotal|zwischensumme|(gesamt|end|netto|brutto|rechnungs)?betrag|(gesamt|zwischen)?summe|mwst|mehrwertsteuer|rundung|rabatt|skonto|netto|brutto|gesamt|inkl\.?\s|exkl\.?\s|akonto|schlusszahlung)/i.test(s || ''); }
 function _numDecimals(s) { const m = String(s).replace(/[’'\s]/g, '').match(/[.,](\d+)$/); return m ? m[1].length : 0; }
 function _fmtNum(n) { const neg = n < 0; n = Math.abs(Math.round(n * 100) / 100); const p = n.toFixed(2).split('.'); return (neg ? '-' : '') + p[0].replace(/\B(?=(\d{3})+(?!\d))/g, '’') + '.' + p[1]; }
 // nums: [{v,str,k}] → prüft, ob ein Wert das Produkt zweier anderer ist (Anzahl×Ansatz=Betrag). {ok, expected, cK} oder null.
@@ -4118,12 +4119,13 @@ function tableHtml(lines, first, last, cols, body) {
     } else {
       const nums = []; for (let k = 0; k < r.numTexts.length; k++) if (_isNumCell(r.numTexts[k])) nums.push({ v: _parseNum(r.numTexts[k]), str: r.numTexts[k], k: k + 1 });
       const chk = nums.length >= 3 ? _checkCalc(nums) : null;
+      const totalRow = _isTotalDesc(r.desc);
       let tds = `<td>${_htmlEsc(r.desc)}</td>`;
       for (let k = 0; k < r.numTexts.length; k++) { const col = k + 1, t = r.numTexts[k];
         if (chk && !chk.ok && chk.cK === col) { tds += `<td style="text-align:right;white-space:nowrap;background:#ffd6d6;color:#8a1f11"><strong>${_fmtNum(chk.expected)}</strong> ⚠ <s>${_htmlEsc(t)}</s></td>`; continue; }   // Rechenfehler → berechnetes Ergebnis rot, Original durchgestrichen
         tds += `<td${_isNumCell(t) ? ' style="text-align:right;white-space:nowrap"' : ''}>${_htmlEsc(t) || ''}</td>`;
       }
-      html += '<tr>' + tds + '</tr>';
+      html += `<tr${totalRow ? ' class="tot"' : ''}>` + tds + '</tr>';
     }
   }
   return html + '</table>';

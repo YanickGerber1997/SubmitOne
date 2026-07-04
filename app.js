@@ -13320,5 +13320,25 @@ function selfTest() {
     finally { state = _st; undoStack = _us; redoStack = _rs; lastSnap = _ls; lastSnapAt = _la; undoing = false; }
   }
 
+  // Migration („für immer": alte Daten öffnen → der Übersetzer ergänzt fehlende Felder + wandelt Altformate)
+  { const _st = state;
+    try {
+      state = { projekte: [{ id: 'p1', name: 'Alt',
+        entscheidungen: [{ id: 'e1', status: 'entschieden', thema: 'Küche neu' }],
+        vergaben: [{ id: 'v1', offerten: [{ firma: 'A', betrag: 100 }] }],
+        protokolle: [{ id: 'pr1', traktanden: [{ eintraege: [{ text: 'x', verantwortlich: 'B' }] }] }] }] };
+      migrate();
+      const p = state.projekte[0];
+      ok('Migration: fehlende Top-Arrays ergänzt', Array.isArray(state.kontakte) && Array.isArray(state.dokumente));
+      ok('Migration: Projekt-Felder ergänzt', Array.isArray(p.geschosseListe) && Array.isArray(p.auflagen) && Array.isArray(p.mitglieder) && Array.isArray(p.termine) && !!p.finanz);
+      eq('Migration: Status entschieden→gewaehlt', p.entscheidungen[0].status, 'gewaehlt');
+      eq('Migration: BKP aus Thema (Küche→258)', p.entscheidungen[0].bkp, '258');
+      ok('Migration: offerten→eingeladene (Altformat)', !!p.vergaben[0].eingeladene && p.vergaben[0].offerten === undefined && p.vergaben[0].eingeladene[0].status === 'offeriert' && p.vergaben[0].eingeladene[0].betrag === 100);
+      const it = p.protokolle[0].traktanden[0].eintraege[0];
+      ok('Migration: Traktanden-Defaults (art/erledigt/uebertragen)', it.art === 'pendenz' && it.erledigt === false && it.uebertragen === false);
+    } catch (e) { ok('Migration ohne Fehler', false, (e && e.message) || 'Fehler'); }
+    finally { state = _st; }
+  }
+
   return { R, pass, fail };
 }

@@ -97,12 +97,8 @@ body.has-planbar.has-tabs .list-panel,body.has-planbar.has-tabs .side-rail{top:c
 .ws-badge i{font-style:normal;color:var(--ink-faint);font-size:9.5px;text-transform:uppercase;letter-spacing:.02em}
 .ws-mat{font-size:11px;color:var(--ink-soft)}
 :root{
-  --bg:#f0efe9; --surface:#ffffff; --surface-2:#f5f4ee; --line:#dedcd2; --line-soft:#ebe9e0;
-  --ink:#1c242c; --ink-soft:#565d52; --ink-faint:#9b9c8f;
-  /* herbstliche Grüntöne */
-  --accent:#4f7a3c; --accent-soft:#e9efde; --accent-2:#6e7a3a; --accent-3:#34502b; --accent-4:#8a8a44;
-  --danger:#b4502f;
-  --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  /* Palette + Schrift → ../ui/tokens.css (gemeinsames Design-System) */
+  --bg:#f0efe9;   /* App-Hintergrund (Chrome), PDF-spezifisch */
   --bar:74px; --tools:94px; --tabs:36px; --planh:46px;
   --railw:54px; --listw:340px; --quickh:38px; --planrailw:50px;
 }

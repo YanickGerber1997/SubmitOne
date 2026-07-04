@@ -2,18 +2,9 @@
    Submit Write — Schweizer, minimal, das Dokument ist der Held
    ============================================================ */
 :root{
-  /* an Submit PDF angeglichen: warm/grün, dunklerer Canvas (Blatt kommt zur Geltung) */
+  /* Palette + Schrift → ../ui/tokens.css (gemeinsames Design-System). Hier nur Paper-spezifische Tokens. */
   --bg:#dcd8cd;          /* Canvas hinter dem Blatt (dunkler → Blatt „schwebt") */
-  --surface:#ffffff;     /* Leisten / Karten */
-  --surface-2:#f5f4ee;
   --side:#f5f4ee;        /* Seitenleiste (warm) */
-  --ink:#1c242c;         /* Haupttext UI */
-  --ink-soft:#565d52;
-  --ink-faint:#9b9c8f;
-  --line:#dedcd2;        /* Trennlinien */
-  --line-soft:#ebe9e0;
-  --accent:#4f7a3c;      /* Herbstgrün wie Submit PDF */
-  --accent-soft:#e9efde;
   --paper:#ffffff;       /* Das Blatt */
   --paper-ink:#1a1e27;   /* Text auf dem Blatt */
   --shadow:0 0 0 1px rgba(20,24,40,.055), 0 2px 5px rgba(20,24,40,.09), 0 16px 40px -6px rgba(20,24,40,.20);
@@ -21,7 +12,6 @@
   --radius-sm:8px;
   --side-w:248px;
   --insp-w:268px;
-  --font-ui:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   --font-brand:'Quicksand',sans-serif;
   --ease:cubic-bezier(.4,0,.2,1);
 }

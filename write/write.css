@@ -818,3 +818,12 @@ html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink) 22%,trans
 ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ink) 20%,transparent);border-radius:99px;border:3px solid transparent;background-clip:padding-box}
 ::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--ink) 34%,transparent);background-clip:padding-box}
 ::-webkit-scrollbar-corner{background:transparent}
+
+/* ================= Handling-Politur (v31): einheitliche, sanfte Ein-Animationen ================= */
+/* Dropdown-Menüs gleiten dezent auf (wie Kontextmenü/Bubble) statt hart aufzuploppen */
+@keyframes popIn{from{opacity:0;transform:translateY(-5px) scale(.985)}to{opacity:1;transform:none}}
+.menu:not([hidden]),.hdr-menu{animation:popIn .13s var(--ease);transform-origin:top}
+/* Ribbon-Wechsel (Start/Einfügen/Layout/Ansicht) blendet sanft ein statt hart umzuschalten */
+@keyframes ribIn{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}
+.formatbar.ribbon .ribpane:not([hidden]){animation:ribIn .16s var(--ease)}
+@media (prefers-reduced-motion:reduce){.menu:not([hidden]),.hdr-menu,.formatbar.ribbon .ribpane:not([hidden]),.bubble,.ctxmenu,.tip,.toast{animation:none !important}}

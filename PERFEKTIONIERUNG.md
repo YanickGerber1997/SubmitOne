@@ -73,7 +73,7 @@ Diese laufen als **eigene Sessions** (Phase 0) UND als **Disziplin** in jeder sp
 - **S1.5 — Rechnungen/Nachträge.** QR-Rechnung erfassen, Nachtrags-Fluss, Kosten-Auswirkung; Zahlen getestet. **DoD:** ein Rechnungs-Durchlauf inkl. Summenprüfung.
 
 ### PHASE 2 — „Nicht kaputtbar" + Für-immer-Format *(Vertrauensschicht)*
-- **S2.1 — Ansehen/Bearbeiten-Modus (global).** Default „Ansehen", bewusster „Bearbeiten"-Schalter; destruktive Aktionen gesperrt/versteckt. **DoD:** in Ansehen kann nichts zerstört werden.
+- **🟡 S2.1 — Ansehen/Bearbeiten-Modus.** **✅ In Submit PDF umgesetzt** (4. Juli 2026, opt-in, Standard = Bearbeiten → 0 Regression): Auge-Knopf `#btnView` → `setViewOnly`; Gates in `onPointerDown` (nur Text-Markieren erlaubt) + `#pages`-Doppelklick; CSS dimmt/sperrt Zeichen-Werkzeuge/Löschen/Drehen/Crop/Snip, Hinweisstreifen „👁 Ansehen – keine Änderungen". **Offen:** gleiches Muster in der **Suite** (`app.js`) global (dort ist die Rollen-Default-Frage relevant → Phase 6) und in Submit Paper.
 - **S2.2 — Undo/Redo-Audit.** Jede Änderung macht Snapshot; Redo sichtbar; Strg+Z/Y überall. **DoD:** Stichproben-Test „ändern → undo → identisch".
 - **S2.3 — Autosave + Verlauf.** Zeitbasierte Wiederherstellungspunkte + „Stand wiederherstellen"-Liste. **DoD:** letzten Stand aus Verlauf zurückholen.
 - **S2.4 — Datei-Format + Migration.** Version in jeder Datei, automatischer Übersetzer beim Öffnen; Mini-Beweis „speichern → schliessen → öffnen → identisch". **DoD:** alte Testdatei öffnet migriert und korrekt.

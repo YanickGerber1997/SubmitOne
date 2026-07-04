@@ -845,3 +845,14 @@ body.has-tabs .build-pop{top:calc(var(--bar) + var(--tools) + var(--tabs) + var(
 .fab-b,.qbtn{transition:background .13s ease,color .13s ease,border-color .13s ease,transform .1s ease}
 .fab-b:active,.qbtn:active{transform:scale(.93)}
 @media (prefers-reduced-motion: reduce){ *{transition:none !important} }
+
+/* ===== Ansehen-Modus (S2.1): nur betrachten, keine Änderungen. Standard AUS. ===== */
+body.view-only .toolbar .tool, body.view-only .fab-b, body.view-only #delSel,
+body.view-only #qRotL, body.view-only #qRotR, body.view-only #qCrop, body.view-only #qSnip,
+body.view-only #footPlan, body.view-only #footPhase{opacity:.32;pointer-events:none}
+body.view-only .tool[data-tool="select"], body.view-only .tool[data-tool="textsel"],
+body.view-only #btnView, body.view-only #btnFileMenu, body.view-only #btnToPaper{opacity:1;pointer-events:auto}
+body.view-only #btnView{background:var(--accent);border-color:var(--accent)}
+body.view-only #btnView .i{stroke:#fff}
+/* dezenter Hinweisstreifen oben rechts */
+body.view-only .toolbar::after{content:"👁 Ansehen – keine Änderungen";position:absolute;right:12px;top:6px;background:var(--accent);color:#fff;font:600 11px/1 var(--font);padding:5px 10px;border-radius:8px;pointer-events:none;z-index:5}

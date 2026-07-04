@@ -20,6 +20,7 @@ let formFields = {};       // {pageNum: [{name,type,left,top,w,h,...}]} – Geom
 let fieldTypes = {};       // {feldName: 'text'|'checkbox'|'radio'|'dropdown'}
 let formMode = false;      // „Formular ausfüllen"-Modus aktiv?
 let tool = 'select';
+let viewOnly = false;   // „Ansehen"-Modus: nur betrachten/scrollen/Text markieren – keine Änderungen (S2.1). Standard = Bearbeiten.
 let style = { color: '#1c242c', width: 1.5, size: 16 };   // Standard: dünn + schwarz (Plan-tauglich)
 function saveStyle() { try { localStorage.setItem('submitpdf.style', JSON.stringify({ color: style.color, width: style.width, size: style.size, penTidy })); } catch (_) { } }
 function loadStyle() { let s; try { s = JSON.parse(localStorage.getItem('submitpdf.style') || 'null'); } catch (_) { s = null; } if (!s) return; if (s.color) style.color = s.color; if (s.width) style.width = s.width; if (s.size) style.size = s.size; if (typeof s.penTidy === 'boolean') penTidy = s.penTidy; }
@@ -2091,6 +2092,7 @@ function wallDimPrimsToPdf(pg, prims, Y, font, degrees, dimc) {
 }
 function onPointerDown(pv, e) {
   if (e.button !== 0) return;
+  if (viewOnly && tool !== 'textsel') return;   // Ansehen-Modus: keine Zeichen-/Editier-Aktionen (Text markieren bleibt erlaubt)
   let p = evtToPage(pv, e);
   const idAttr = e.target.getAttribute && e.target.getAttribute('data-id');
   const hAttr = e.target.getAttribute && e.target.getAttribute('data-h');
@@ -4773,6 +4775,14 @@ function nudgeSel(key, d) {
 /* ---------- Werkzeug umschalten ---------- */
 function activateRibTab(t) { $$('.rib-tab').forEach(x => x.classList.toggle('on', x.dataset.tab === t)); $$('.rib-tools').forEach(g => g.hidden = g.dataset.tabgroup !== t); }
 let _scaleAfter = null;   // Werkzeug, zu dem nach dem Massstab-Setzen zurückgekehrt wird
+// „Ansehen"-Modus: nur betrachten/scrollen/Text markieren – schützt vor versehentlichen Änderungen (z. B. PDF zum Weitergeben). Standard = Bearbeiten.
+function setViewOnly(on) {
+  viewOnly = !!on;
+  document.body.classList.toggle('view-only', viewOnly);
+  const b = $('#btnView'); if (b) { b.classList.toggle('on', viewOnly); b.title = viewOnly ? 'Ansehen-Modus AN – hier klicken zum Bearbeiten' : 'Ansehen-Modus: nur betrachten, keine Änderungen'; }
+  if (viewOnly && tool !== 'select' && tool !== 'textsel') setTool('select');
+  toast(viewOnly ? '👁 Ansehen-Modus – keine Änderungen möglich' : '✎ Bearbeiten-Modus');
+}
 function setTool(t) {
   if (cropping && t !== 'select' && t !== 'crop') removeCropAnno();   // anderes Werkzeug → Zuschneiden verwerfen
   if (snipping && t !== 'select' && t !== 'snip') removeSnipAnno();   // anderes Werkzeug → Ausschnitt verwerfen
@@ -7541,6 +7551,7 @@ function wire() {
   $('#scaleRatio').onkeydown = e => { if (e.key === 'Enter') applyScale(); };
   // Doppelklick auf Mass-/Masslinie → eigenes Mass eintragen
   $('#pages').addEventListener('dblclick', e => {
+    if (viewOnly) return;   // Ansehen-Modus: kein Doppelklick-Bearbeiten
     if (editingId != null) return;   // schon im Bearbeiten-Modus (Klick hat bereits geöffnet)
     if (segDraft) { finishSegDraft(); return; }     // Doppelklick = Linie fertig
     if (wallDraft) { finishWallChain(); return; }   // Doppelklick = Wand-Kette fertig
@@ -7571,6 +7582,7 @@ function wire() {
   $('#qRotL').onclick = () => rotatePage(-90); $('#qRotR').onclick = () => rotatePage(90);
   $('#qCrop').onclick = () => setTool('crop');
   { const qs = $('#qSnip'); if (qs) qs.onclick = () => setTool('snip'); }
+  { const bv = $('#btnView'); if (bv) bv.onclick = () => setViewOnly(!viewOnly); }
   $('#footScale').onclick = () => openScale(0);   // 1:n-Eingabe (nicht Kalibrieren)
   $('#footFormat').onclick = e => { e.stopPropagation(); const p = $('#fmtPop'); p.hidden = !p.hidden; };
   $$('#fmtPop button').forEach(b => b.onclick = () => { $('#fmtPop').hidden = true; if (b.dataset.mount) { const [va, ha] = b.dataset.mount.split('-'); mountOnSheet(va, ha); } else changePageFormat(+b.dataset.w, +b.dataset.h); });

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v369';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v370';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -606,6 +606,7 @@ function teamSetRolle(pid, key, rolle) {
 }
 function teamRemove(pid, key) {
   const p = findProjekt(pid); if (!p) return;
+  if (!confirm('Dieses Mitglied wirklich aus dem Projekt-Team entfernen?')) return;
   p.mitglieder = (p.mitglieder || []).filter(x => teamKey(x) !== key);
   save(); actTeam(pid); toast('Mitglied entfernt');
 }
@@ -3823,6 +3824,7 @@ function ubAdd(pid, vid) {
 function ubDel(pid, vid, itemid) {
   if (gesperrt(pid)) return;
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  if (!confirm('Diesen Unterbruch wirklich löschen?')) return;
   v.unterbrueche = (v.unterbrueche || []).filter(u => u.id !== itemid);
   save(); rerenderGantt(pid); actUnterbruch(pid, vid);
 }
@@ -5603,7 +5605,8 @@ function toggleErinnerung(pid, rid) {
   r.erledigt = !r.erledigt; save(); router();
 }
 function removeErinnerung(pid, rid) {
-  const p = findProjekt(pid); p.erinnerungen = (p.erinnerungen || []).filter(x => x.id !== rid);
+  const p = findProjekt(pid); if (!p || !confirm('Diese Erinnerung wirklich löschen?')) return;
+  p.erinnerungen = (p.erinnerungen || []).filter(x => x.id !== rid);
   save(); closeModal(); router();
 }
 function projektNextStepsCard(p, limit) {
@@ -6063,6 +6066,7 @@ function addStandardBemusterung(pid) {
 }
 function removeEntscheidung(pid, eid) {
   const p = findProjekt(pid);
+  if (!p || !confirm('Diese Entscheidung wirklich löschen? (verknüpfte Budgetposition wird mitentfernt)')) return;
   (p.vergaben || []).forEach(v => { if (v.budgetposten && v.budgetposten.length) v.budgetposten = v.budgetposten.filter(b => b.enId !== eid); });   // verknüpfte Budgetposition mitlöschen
   p.entscheidungen = (p.entscheidungen || []).filter(x => x.id !== eid); save(); router();
 }
@@ -6400,6 +6404,7 @@ function updateProtokoll(pid, prid) {
 
 function delProtokoll(pid, prid) {
   const p = findProjekt(pid);
+  if (!p || !confirm('Dieses Protokoll wirklich löschen?')) return;
   p.protokolle = (p.protokolle || []).filter(x => x.id !== prid);
   save(); closeModal(); go(`#/projekt/${pid}/protokolle`); toast('Protokoll gelöscht', 'info');
 }
@@ -7622,6 +7627,7 @@ function saveDossierAdd(pid, phase) {
 }
 function rmDossierCustom(pid, did) {
   const p = findProjekt(pid); if (!p) return;
+  if (!confirm('Diese Dossier-Position wirklich löschen?')) return;
   p.dossierCustom = (p.dossierCustom || []).filter(x => x.id !== did);
   if (p.dossier) delete p.dossier[did];
   save(); router(); toast('Position entfernt');
@@ -7896,7 +7902,7 @@ function onGlobalColMenu(e) {
 }
 function m2t(min) { return String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0'); }
 function saveGTermTitle(id, text) { const t = (state.termine || []).find(x => x.id === id); if (!t || t.titel === text) return; t.titel = text; save(); }
-function removeGlobalTermin(id) { state.termine = (state.termine || []).filter(x => x.id !== id); save(); viewKalenderGlobal(); }
+function removeGlobalTermin(id) { if (!confirm('Diesen Termin wirklich löschen?')) return; state.termine = (state.termine || []).filter(x => x.id !== id); save(); viewKalenderGlobal(); }
 // Alle Termine eines Projekts (manuell + abgeleitet)
 function sammleTermine(p) {
   const ev = [];
@@ -8037,7 +8043,8 @@ function saveKalTermin(pid, tid) {
   save(); closeModal(); router(); toast('Termin gespeichert');
 }
 function removeKalTermin(pid, tid) {
-  const p = findProjekt(pid); p.termine = (p.termine || []).filter(x => x.id !== tid);
+  const p = findProjekt(pid); if (!p || !confirm('Diesen Termin wirklich löschen?')) return;
+  p.termine = (p.termine || []).filter(x => x.id !== tid);
   save(); closeModal(); router();
 }
 function kalNav(pid, delta) {
@@ -8830,7 +8837,8 @@ function saveGeschoss(pid, gid) {
   save(); closeModal(); router();
 }
 function removeGeschoss(pid, gid) {
-  const p = findProjekt(pid); p.geschosseListe = (p.geschosseListe || []).filter(x => x.id !== gid);
+  const p = findProjekt(pid); if (!p || !confirm('Dieses Geschoss (mit seinen Einheiten) wirklich löschen?')) return;
+  p.geschosseListe = (p.geschosseListe || []).filter(x => x.id !== gid);
   syncGebaeude(p); save(); router();
 }
 function actNewEinheit(pid, gid, eid) {
@@ -8858,6 +8866,7 @@ function saveEinheit(pid, gid, eid) {
 }
 function removeEinheit(pid, gid, eid) {
   const p = findProjekt(pid); const g = (p.geschosseListe || []).find(x => x.id === gid); if (!g) return;
+  if (!confirm('Diese Einheit wirklich löschen?')) return;
   g.einheiten = (g.einheiten || []).filter(x => x.id !== eid);
   syncGebaeude(p); save(); router();
 }
@@ -9478,7 +9487,8 @@ function setAuflageStatus(pid, aid, status) {
   a.status = status; save();
 }
 function removeAuflage(pid, aid) {
-  const p = findProjekt(pid); p.auflagen = (p.auflagen || []).filter(x => x.id !== aid); save(); router();
+  const p = findProjekt(pid); if (!p || !confirm('Diese Auflage wirklich löschen?')) return;
+  p.auflagen = (p.auflagen || []).filter(x => x.id !== aid); save(); router();
 }
 function addStandardAuflagen(pid) {
   const p = findProjekt(pid); p.auflagen = p.auflagen || [];
@@ -11561,6 +11571,7 @@ function saveInvite(pid, vid) {
 
 function removeInvite(pid, vid, eid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
+  if (!v || !confirm('Diesen eingeladenen Submittenten wirklich entfernen?')) return;
   v.eingeladene = (v.eingeladene || []).filter(x => x.id !== eid);
   save(); router();
 }
@@ -11823,6 +11834,7 @@ function setNachtragStatus(pid, vid, nid, val) {
 
 function removeNachtrag(pid, vid, nid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
+  if (!v || !confirm('Diesen Nachtrag wirklich löschen?')) return;
   v.nachtraege = (v.nachtraege || []).filter(x => x.id !== nid);
   save(); router();
 }
@@ -11920,6 +11932,7 @@ function toggleRbFrei(pid, vid, rgid) {
 
 function removeRechnung(pid, vid, rgid) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
+  if (!v || !confirm('Diese Rechnung wirklich löschen?')) return;
   v.rechnungen = (v.rechnungen || []).filter(x => x.id !== rgid);
   save(); router();
 }

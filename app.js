@@ -13279,5 +13279,18 @@ function selfTest() {
   eq('naechsteFrist früheste offene', naechsteFrist({ vergaben: [{ frist: '2026-03-01', status: 'offen' }, { frist: '2026-01-15', status: 'offen' }, { frist: '2020-01-01', status: 'abgeschlossen' }] }), '2026-01-15');
   ok('naechsteFrist ohne Frist → null', naechsteFrist({ vergaben: [{ status: 'offen' }] }) === null);
 
+  // --- Randfälle / Härtung (Bug-Hunt) ---
+  eq('parseDateFlexible 0.0.0 ungültig', parseDateFlexible('0.0.0'), '');
+  eq('parseDateFlexible 99.99.99 ungültig', parseDateFlexible('99.99.99'), '');
+  eq('parseDateFlexible leer', parseDateFlexible(''), '');
+  eq('addDays Schaltjahr 29.2.', addDays('2024-02-28', 1), '2024-02-29');
+  eq('addDays Nicht-Schaltjahr', addDays('2023-02-28', 1), '2023-03-01');
+  ok('chf negativ enthält Minus', chf(-5000).includes('-'));
+  eq('money negativ', money(-3.5), '-3.50');
+  eq('nachtragSumme leeres Objekt', nachtragSumme({}), 0);
+  eq('kostenZeile ohne Vergabe → Schätzung', kostenZeile({ status: VERGABE_STATUS[0].key, schaetzung: 8000 }).prognose, 8000);
+  eq('zahlungsplanCalc pct≠100 → Teil-Total', zahlungsplanCalc({ betrag: 100000, phasen: [{ pct: 30 }, { pct: 30 }] }).total, 60000);
+  eq('kostenDiff entfernt erkannt', kostenDiff({ positionen: [{ id: 9, prognose: 500, gewerk: 'X', bkp: '2' }] }, { positionen: [] }).rows[0].status, 'removed');
+
   return { R, pass, fail };
 }

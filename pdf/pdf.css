@@ -847,6 +847,10 @@ body.has-tabs .build-pop{top:calc(var(--bar) + var(--tools) + var(--tabs) + var(
 .list-panel,.side-rail,.comments,.plan-rail{transition:transform .18s cubic-bezier(.4,0,.2,1),opacity .18s ease}
 .fab-b,.qbtn{transition:background .13s ease,color .13s ease,border-color .13s ease,transform .1s ease}
 .fab-b:active,.qbtn:active{transform:scale(.93)}
+/* Tastbares Klick-Feedback auch auf der Haupt-Toolbar (wie Submit Paper) */
+.tool,.rib-act,.icon-btn,.sr-btn{transition:background .13s ease,color .13s ease,border-color .13s ease,box-shadow .13s ease,transform .1s ease}
+.tool:active,.rib-act:active,.icon-btn:active,.sr-btn:active{transform:scale(.92)}
+.btn:active{transform:translateY(1px)}
 @media (prefers-reduced-motion: reduce){ *{transition:none !important} }
 
 /* ===== Ansehen-Modus (S2.1): nur betrachten, keine Änderungen. Standard AUS. ===== */

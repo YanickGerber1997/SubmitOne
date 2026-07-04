@@ -4027,9 +4027,12 @@ function blockToParaHtml(b, body, pageRight) {
     inner += _htmlEsc(cur.str);
   }
   if (!inner.trim()) return '';
-  if (b.size >= body * 1.45 && lines.length === 1) return '<h2>' + inner + '</h2>';   // grosse Einzelzeile → Überschrift
+  const px = Math.max(9, Math.min(48, Math.round(b.size / body * 15)));   // Schriftgrösse relativ zur Grundschrift (Body ≈ 15px)
+  const lhR = Math.max(1, Math.min(2.2, (b.lh || b.size * 1.25) / b.size));   // Zeilenabstand aus dem Original
+  const st = `font-size:${px}px;line-height:${lhR.toFixed(2)}`;
+  if (b.size >= body * 1.45 && lines.length === 1) return `<h2 style="${st}">` + inner + '</h2>';   // grosse Einzelzeile → Überschrift
   if (b.bold) inner = '<strong>' + inner + '</strong>'; if (b.italic) inner = '<em>' + inner + '</em>';
-  return '<p>' + inner + '</p>';
+  return `<p style="${st}">` + inner + '</p>';
 }
 // Gemeinsamer rechter Textrand der Seite (dort bricht Fliesstext um) – 90-Perzentil der Zeilen-Enden
 function pageRightMargin(blocks) { const r = []; blocks.forEach(b => (b.lines || []).forEach(l => r.push(l.maxx))); if (!r.length) return 1e9; r.sort((a, b) => a - b); return r[Math.floor(r.length * 0.9)]; }
@@ -4038,6 +4041,79 @@ function blocksToPaperHtml(blocks) {
   const sizes = blocks.map(b => b.size).slice().sort((a, b) => a - b), body = sizes[Math.floor(sizes.length / 2)] || 12;
   const pr = pageRightMargin(blocks);
   const html = blocks.map(b => blockToParaHtml(b, body, pr)).filter(Boolean).join('\n');
+  return html || '<p></p>';
+}
+/* ---------- Rechnung/Kalkulation erkennen: Anzahl × Ansatz = Betrag, mit Neuberechnung + rot markierter Fehlerwarnung ---------- */
+function _parseNum(raw) {   // 4'269.75 / 4’269.75 / 1.234,55 / 1234,55 / 183.00
+  if (raw == null) return null;
+  let s = String(raw).trim().replace(/[’'`´ ]/g, '').replace(/\s/g, ''); if (!/\d/.test(s)) return null;
+  const hasDot = s.includes('.'), hasCom = s.includes(',');
+  if (hasDot && hasCom) { if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.'); else s = s.replace(/,/g, ''); }
+  else if (hasCom) { if (/,\d{1,2}$/.test(s)) s = s.replace(',', '.'); else s = s.replace(/,/g, ''); }
+  const m = s.match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null;
+}
+function _isNumCell(s) { const t = (s || '').trim(); return /\d/.test(t) && /^[-+]?[\d'’., \s]+%?$/.test(t) && _parseNum(t) != null; }
+function _numDecimals(s) { const m = String(s).replace(/[’'\s]/g, '').match(/[.,](\d+)$/); return m ? m[1].length : 0; }
+function _fmtNum(n) { const neg = n < 0; n = Math.abs(Math.round(n * 100) / 100); const p = n.toFixed(2).split('.'); return (neg ? '-' : '') + p[0].replace(/\B(?=(\d{3})+(?!\d))/g, '’') + '.' + p[1]; }
+// nums: [{v,str,k}] → prüft, ob ein Wert das Produkt zweier anderer ist (Anzahl×Ansatz=Betrag). {ok, expected, cK} oder null.
+function _checkCalc(nums) {
+  if (nums.length < 3) {   // genau 2 Zahlen: nur wenn eindeutig Anzahl×Ansatz-Zeile mit drittem Ergebnis nicht vorhanden → kein Check
+    return null;
+  }
+  const v = nums.map(n => n.v);
+  for (let a = 0; a < v.length; a++) for (let b = 0; b < v.length; b++) { if (a === b || !v[a] || !v[b]) continue;
+    for (let c = 0; c < v.length; c++) { if (c === a || c === b) continue;
+      const tol = Math.max(Math.pow(10, -Math.max(_numDecimals(nums[c].str), 2)) * 0.5, 0.005) + Math.abs(v[c]) * 1e-6;
+      if (Math.abs(v[a] * v[b] - v[c]) <= tol) return { ok: true, expected: Math.round(v[a] * v[b] * 100) / 100, cK: nums[c].k };
+    }
+  }
+  // kein exaktes Tripel gefunden, aber erste×zweite weicht klar von letzter ab → Rechenfehler markieren
+  if (v[0] > 0 && v[1] > 0 && v[0] < 1e5) { const prod = Math.round(v[0] * v[1] * 100) / 100; if (Math.abs(prod - v[v.length - 1]) > 0.02) return { ok: false, expected: prod, cK: nums[v.length - 1].k }; }
+  return null;
+}
+function _joinItems(items) { let str = ''; for (let i = 0; i < items.length; i++) { const it = items[i]; if (i > 0) { const pr = items[i - 1], gap = it.x - (pr.x + pr.w); if (gap > it.size * 0.2 && !/\s$/.test(str) && !/^\s/.test(it.str)) str += ' '; } str += it.str; } return str; }
+function itemsToLines(items) {   // Items → Zeilen (nach y), Items je Zeile nach x sortiert
+  const its = items.slice().sort((a, b) => a.y - b.y || a.x - b.x), lines = [];
+  for (const it of its) { const L = lines[lines.length - 1]; if (L && Math.abs(L.y - (it.y + it.h / 2)) < Math.min(L.size, it.size) * 0.55) { L.items.push(it); L.y = (L.y + it.y + it.h / 2) / 2; L.size = Math.max(L.size, it.size); } else lines.push({ y: it.y + it.h / 2, size: it.size, items: [it] }); }
+  lines.forEach(L => L.items.sort((a, b) => a.x - b.x));
+  return lines;
+}
+const _UNIT_RE = /^(Stk\.?|CHF|EUR|€|%|m2|m²|m3|m³|m|cm|mm|kg|g|h|Std\.?|Fr\.?|St|lfm|Pau?sch\.?|Pos\.?)$/i;
+function numberColumns(lines, pageW) {   // rechte Zahlen-/Einheiten-Spalten (linke Kante)
+  const xs = [], cut = pageW * 0.35;
+  lines.forEach(L => L.items.forEach(it => { if (it.x > cut && (_isNumCell(it.str) || _UNIT_RE.test(it.str.trim()))) xs.push(it.x); }));
+  xs.sort((a, b) => a - b); const cols = [];
+  for (const x of xs) { const last = cols[cols.length - 1]; if (last && x - last.max < 16) { last.max = x; last.xs.push(x); } else cols.push({ max: x, xs: [x] }); }
+  return cols.filter(c => c.xs.length >= 3).map(c => Math.min(...c.xs) - 4);
+}
+function tableRowHtml(L, cols, body) {
+  const cells = Array.from({ length: cols.length + 1 }, () => []);
+  for (const it of L.items) { let ci = 0; for (let k = 0; k < cols.length; k++) if (it.x >= cols[k] - 2) ci = k + 1; cells[ci].push(it); }
+  const texts = cells.map(_joinItems); if (!texts.some(t => t.trim())) return '';
+  const nums = []; for (let k = 1; k < texts.length; k++) if (_isNumCell(texts[k])) nums.push({ v: _parseNum(texts[k]), str: texts[k], k });
+  const chk = nums.length >= 3 ? _checkCalc(nums) : null;
+  let tds = '';
+  for (let k = 0; k < texts.length; k++) {
+    if (chk && !chk.ok && chk.cK === k) { tds += `<td style="text-align:right;white-space:nowrap;background:#ffd6d6;color:#8a1f11"><strong>${_fmtNum(chk.expected)}</strong> ⚠ <s>${_htmlEsc(texts[k])}</s></td>`; continue; }   // Rechenfehler → berechnetes Ergebnis rot, Original durchgestrichen
+    const numeric = k >= 1 && _isNumCell(texts[k]);
+    tds += `<td${numeric ? ' style="text-align:right;white-space:nowrap"' : ''}>${_htmlEsc(texts[k]) || ''}</td>`;
+  }
+  return '<tr>' + tds + '</tr>';
+}
+// Seite → HTML: Fliesstext + erkannte Tabellen/Kalkulationen (mit Neuberechnung)
+function pdfPageToPaperHtml(items, pageW) {
+  const lines = itemsToLines(items), cols = numberColumns(lines, pageW);
+  if (!cols.length) return blocksToPaperHtml(groupTextBlocks(items));   // keine Zahlenspalten → reiner Fliesstext
+  const rowHasNum = L => L.items.some(it => cols.some(cx => it.x >= cx - 2 && (_isNumCell(it.str) || _UNIT_RE.test(it.str.trim()))));
+  let first = -1, last = -1; lines.forEach((L, i) => { if (rowHasNum(L)) { if (first < 0) first = i; last = i; } });
+  const body = (() => { const s = lines.map(L => L.size).sort((a, b) => a - b); return s[Math.floor(s.length / 2)] || 12; })();
+  const preItems = lines.slice(0, first).flatMap(L => L.items), postItems = lines.slice(last + 1).flatMap(L => L.items);
+  let html = '';
+  if (preItems.length) html += blocksToPaperHtml(groupTextBlocks(preItems));
+  html += '<table style="width:100%;border-collapse:collapse;font-size:15px">';
+  for (let i = first; i <= last; i++) html += tableRowHtml(lines[i], cols, body);
+  html += '</table>';
+  if (postItems.length) html += blocksToPaperHtml(groupTextBlocks(postItems));
   return html || '<p></p>';
 }
 // „1-3, 5, 8-9" → [1,2,3,5,8,9] (begrenzt auf 1..max)
@@ -4065,12 +4141,13 @@ async function convertToPaper(pageNums) {
     await loadPdfJs(); const pages = []; let blockN = 0, substantial = 0;
     for (const n of nums) {
       const page = await pdfDoc.getPage(n), vp = page.getViewport({ scale: 1 });
-      const blocks = groupTextBlocks(await pageTextItemsFor(page, vp.height));
+      const items = await pageTextItemsFor(page, vp.height), blocks = groupTextBlocks(items);
       for (const b of blocks) { blockN++; if ((b.text || '').split(/\s+/).filter(Boolean).length >= 6 || (b.lines && b.lines.length >= 3)) substantial++; }   // „richtige" Textblöcke (Fliesstext) vs. verstreute Labels
-      pages.push({ typ: 'write', html: blocksToPaperHtml(blocks) });
+      pages.push({ typ: 'write', html: pdfPageToPaperHtml(items, vp.width) });
     }
     if (!pages.some(p => p.html.replace(/<[^>]+>/g, '').trim().length)) { status(''); toast('Kein Text zum Übernehmen gefunden (evtl. gescanntes Bild-PDF).'); return; }
-    if (blockN >= 12 && substantial / blockN < 0.22) {   // viele winzige, verstreute Beschriftungen → sieht aus wie Plan/Zeichnung
+    const hadTable = pages.some(p => /<table/.test(p.html));
+    if (!hadTable && blockN >= 16 && substantial / blockN < 0.14) {   // viele winzige, verstreute Beschriftungen, keine Tabellen → sieht aus wie Plan/Zeichnung
       status('');
       if (!confirm('Dieses PDF sieht aus wie ein Plan/eine Zeichnung (viele verstreute Beschriftungen statt Fliesstext).\n\nDie Umwandlung liefert dann nur die einzelnen Beschriftungen – kein sauberes Textdokument. Trotzdem umwandeln?')) return;
       status('In Submit Paper umwandeln …'); await new Promise(r => setTimeout(r, 10));

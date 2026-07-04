@@ -13221,5 +13221,18 @@ function selfTest() {
   eq('kostenDiff changed dProg', (kd.rows.find(r => r.status === 'changed') || {}).dProg, 200);
   ok('kostenDiff neu erkannt', kd.rows.some(r => r.status === 'new'));
 
+  // Termin↔Kosten-Verknüpfung (S1.1-Kern): Prognose jeder Vergabe wird über die Bau-Monate verteilt
+  const bpProj = { vergaben: [
+    { id: 1, bkp: '211', gewerk: 'A', status: 'vergeben', betrag: 12000, bauStart: '2026-01-01', bauEnde: '2026-03-31' },  // 3 Monate → 4000/Mt
+    { id: 2, bkp: '212', gewerk: 'B', status: 'vergeben', betrag: 6000, bauStart: '2026-02-01', bauEnde: '2026-02-28' },   // 1 Monat → 6000
+    { id: 3, bkp: '213', gewerk: 'C', status: 'vergeben', betrag: 5000 }                                                    // ohne Termin → fehlend
+  ] };
+  const bp = bauherrPlan(bpProj);
+  eq('bauherrPlan Monatskeys', bp.monate.map(m => m.key), ['2026-01', '2026-02', '2026-03']);
+  eq('bauherrPlan Monatsbeträge', bp.monate.map(m => m.betrag), [4000, 10000, 4000]);   // Feb: 4000 (A) + 6000 (B)
+  eq('bauherrPlan kumuliert Ende', bp.monate[2].cum, 18000);
+  eq('bauherrPlan Total (nur terminiert)', bp.total, 18000);
+  eq('bauherrPlan fehlend (ohne Termin)', bp.fehlend.length, 1);
+
   return { R, pass, fail };
 }

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v375';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v376';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -1663,6 +1663,39 @@ function go(hash) { location.hash = hash; }
    8) View: Dashboard
    --------------------------------------------------------------- */
 
+/* --- Persona-Schnellzugriff: „Wer bist du?" → direkter Weg zu den wichtigsten Werkzeugen (alle Ziele existieren) --- */
+const PERSONAS = [
+  { key: 'alle', label: 'Alle', ico: '◫' },
+  { key: 'bauleiter', label: 'Bauleiter', ico: '👷' },
+  { key: 'architekt', label: 'Architekt / PL', ico: '📐' },
+  { key: 'finanz', label: 'Finanzen', ico: '💰' },
+  { key: 'sekretariat', label: 'Sekretariat', ico: '🗂️' },
+];
+function getPersona() { try { return localStorage.getItem('so_persona') || 'alle'; } catch (_) { return 'alle'; } }
+function setPersona(k) { try { localStorage.setItem('so_persona', k); } catch (_) {} const h = location.hash; if (h === '' || h === '#/' || h.startsWith('#/dashboard')) viewDashboard(); }
+function personaActions(key) {
+  const A = {
+    neu:       { ico: '＋', label: 'Neues Projekt', act: 'new-projekt' },
+    projekte:  { ico: '▤', label: 'Projekte', href: '#/projekte' },
+    erfassen:  { ico: '⚡', label: 'Erfassen', href: '#/erfassen' },
+    pendenzen: { ico: '☑', label: 'Pendenzen', href: '#/pendenzen' },
+    kalender:  { ico: '📅', label: 'Kalender', href: '#/kalender' },
+    kontakte:  { ico: '👤', label: 'Kontakte', href: '#/kontakte' },
+    drucken:   { ico: '🖨', label: 'Drucken', href: '#/drucken' },
+    honorar:   { ico: '％', label: 'Honorar', href: '#/honorar' },
+    plan:      { ico: '📐', label: 'Plan öffnen', href: 'pdf/index.html', ext: true },
+    brief:     { ico: '✍', label: 'Brief / Offerte', href: 'write/index.html', ext: true },
+    rechnung:  { ico: '🧾', label: 'Rechnung prüfen', href: 'pdf/index.html', ext: true },
+  };
+  const sets = {
+    alle:        ['neu', 'erfassen', 'kalender', 'pendenzen', 'plan'],
+    bauleiter:   ['erfassen', 'pendenzen', 'kalender', 'plan', 'drucken'],
+    architekt:   ['neu', 'projekte', 'plan', 'brief', 'kontakte'],
+    finanz:      ['projekte', 'rechnung', 'honorar', 'kalender', 'drucken'],
+    sekretariat: ['kontakte', 'kalender', 'erfassen', 'brief', 'drucken'],
+  };
+  return (sets[key] || sets.alle).map(k => A[k]);
+}
 function viewDashboard() {
   const projekte = sichtbareProjekte();
   const todayI = todayIso();
@@ -1736,14 +1769,26 @@ function viewDashboard() {
       <span class="dash-muted" style="font-size:12px;min-width:32px;text-align:right" title="Bau-Fortschritt">${projektFortschritt(p)}%</span>
     </div>`; }).join('')}</div>` : emptyState('▤', 'Noch keine Projekte', 'Lege dein erstes Projekt an – Termine, Kosten und Ausschreibung an einem Ort.', { label: '+ Erstes Projekt anlegen', act: 'new-projekt' })}</div>`;
 
+  const persona = getPersona();
+  const szPills = PERSONAS.map(pr => `<button class="sz-pill${pr.key === persona ? ' on' : ''}" data-persona="${pr.key}" title="Schnellzugriff für ${esc(pr.label)}"><span class="sz-i">${pr.ico}</span>${esc(pr.label)}</button>`).join('');
+  const szChips = personaActions(persona).map(a => a.act
+    ? `<button class="sz-chip" data-act="${a.act}"><span class="sz-i">${a.ico}</span>${esc(a.label)}</button>`
+    : `<a class="sz-chip" href="${a.href}"${a.ext ? ' target="_blank" rel="noopener"' : ''}><span class="sz-i">${a.ico}</span>${esc(a.label)}${a.ext ? ' ↗' : ''}</a>`).join('');
+  const schnellzugriff = `<div class="card card-pad schnellzugriff">
+      <div class="sz-head"><span class="sz-title">Schnellzugriff</span><div class="sz-pills">${szPills}</div></div>
+      <div class="sz-chips">${szChips}</div>
+    </div>`;
+
   render(`
     <div class="page-head"><div><h1>Dashboard</h1><div class="sub">Überblick · Fristen, Termine &amp; Pendenzen aller Projekte</div></div><button class="btn" data-act="new-projekt">+ Neues Projekt</button></div>
+    ${schnellzugriff}
     <div class="kpi-row">${kpis}</div>
     <div class="two-col">
       <div>${fristPanel}${terminePanel}</div>
       <div>${pendPanel}${projPanel}</div>
     </div>
   `);
+  $$('.sz-pill').forEach(b => b.addEventListener('click', () => setPersona(b.dataset.persona)));
   $$('.pend-check').forEach(cb => cb.addEventListener('change', () => togglePendenz(cb.dataset.pid, cb.dataset.prid, cb.dataset.tid, cb.dataset.itemid)));
 }
 
@@ -13388,6 +13433,11 @@ function selfTest() {
   eq('initDecision: gültige Daten → nutzen', initDecision({ projekte: [] }, false), 'use');
   eq('initDecision: Lesefehler → Demo behalten (nichts überschreiben)', initDecision(null, true), 'keep-demo');
   eq('initDecision: wirklich leer → Erststart committen', initDecision(null, false), 'commit-demo');
+
+  // Persona-Schnellzugriff: rollenspezifische Wege, gültiger Fallback
+  ok('personaActions Bauleiter → Erfassen+Pendenzen', personaActions('bauleiter').some(a => a.href === '#/erfassen') && personaActions('bauleiter').some(a => a.href === '#/pendenzen'));
+  ok('personaActions Finanz → Honorar', personaActions('finanz').some(a => a.href === '#/honorar'));
+  ok('personaActions unbekannt → Fallback alle (mit Neues Projekt)', personaActions('xyz').length === personaActions('alle').length && personaActions('alle').some(a => a.act === 'new-projekt'));
 
   // Leerzustand: erweiterter emptyState (Sub-Text + Aktions-Knopf) rückwärtskompatibel
   ok('emptyState schlicht (nur Icon+Text)', /class="empty"/.test(emptyState('x', 'Leer')) && !/e-cta/.test(emptyState('x', 'Leer')) && !/e-sub/.test(emptyState('x', 'Leer')));

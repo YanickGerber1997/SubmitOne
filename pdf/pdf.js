@@ -4140,6 +4140,13 @@ function tableHtml(lines, first, last, cols, body) {
   }
   return html + '</table>';
 }
+// Fasst erkannte Rechenfehler (rot markierte Zellen) zu einem Hinweis oben im Dokument zusammen
+function _calcErrorBanner(pagesHtml) {
+  const n = pagesHtml.reduce((s, h) => s + (String(h).match(/background:#ffd6d6/g) || []).length, 0);
+  if (!n) return '';
+  return `<p style="background:#fff3cd;border:1px solid #e0c96b;border-radius:6px;padding:8px 12px;color:#7a5c00">`
+    + `<strong>⚠ ${n} mögliche${n === 1 ? 'r' : ''} Rechenfehler</strong> automatisch erkannt und rot markiert – bitte prüfen.</p>`;
+}
 // Seite → HTML: Fliesstext + erkannte Tabellen/Kalkulationen (mit Neuberechnung)
 function pdfPageToPaperHtml(items, pageW) {
   const lines = itemsToLines(items), cols = numberColumns(lines, pageW);
@@ -4190,6 +4197,8 @@ async function convertToPaper(pageNums) {
       if (!confirm('Dieses PDF sieht aus wie ein Plan/eine Zeichnung (viele verstreute Beschriftungen statt Fliesstext).\n\nDie Umwandlung liefert dann nur die einzelnen Beschriftungen – kein sauberes Textdokument. Trotzdem umwandeln?')) return;
       status('In Submit Paper umwandeln …'); await new Promise(r => setTimeout(r, 10));
     }
+    const banner = _calcErrorBanner(pages.map(p => p.html));   // erkannte Rechenfehler oben zusammenfassen (sonst leicht zu übersehen)
+    if (banner && pages[0]) pages[0].html = banner + pages[0].html;
     const titel = (docName || 'Aus PDF').replace(/\.pdf$/i, '') + (nums.length < pdfDoc.numPages ? ' (S. ' + nums.join(',') + ')' : '');
     try { localStorage.setItem('submitpaper_import', JSON.stringify({ titel, pages, ts: Date.now() })); }
     catch (_) { status(''); toast('Text zu gross für die Übergabe – weniger Seiten wählen.'); return; }
@@ -6241,6 +6250,8 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
       const html = tableHtml(lines, 0, 4, [190], 10);
       return (/1[’']234\.50/.test(html) && />183\.00</.test(html) && />250\.00</.test(html)) ? '' : html;
     });
+    A('_calcErrorBanner zählt Rechenfehler', () => { const b = _calcErrorBanner(['<td style="background:#ffd6d6">x</td>', 'ok', '<span style="background:#ffd6d6"></span>']); return (/2 mögliche/.test(b) && /Rechenfehler/.test(b)) ? '' : b; });
+    A('_calcErrorBanner leer ohne Fehler', () => _calcErrorBanner(['<p>ok</p>', 'nix']) === '' ? '' : 'nicht leer');
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

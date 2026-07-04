@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v28';
+const WRITE_VERSION = 'v29';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -64,6 +64,18 @@ const page = $('#page');
 const appEl = $('#app');
 const titleEl = $('#docTitle');
 const saveState = $('#saveState');
+let viewOnly = false;   // „Ansehen"-Modus: nur betrachten, keine Änderungen (S2.1). Standard = Bearbeiten.
+// Dokument nur betrachten (contenteditable aus, Menüband gesperrt) – zum Weitergeben/Präsentieren ohne versehentliches Ändern.
+function setViewOnly(on) {
+  viewOnly = !!on;
+  document.body.classList.toggle('view-only', viewOnly);
+  const ed = viewOnly ? 'false' : 'true';
+  [editor, $('#zoneH'), $('#zoneF')].forEach(el => { if (el) el.contentEditable = ed; });
+  if (titleEl) titleEl.readOnly = viewOnly;
+  const b = $('#btnView'); if (b) { b.classList.toggle('on', viewOnly); b.title = viewOnly ? 'Ansehen-Modus AN – hier klicken zum Bearbeiten' : 'Ansehen-Modus: nur betrachten, keine Änderungen'; }
+  if (viewOnly && typeof editingTd !== 'undefined' && editingTd) { try { endEdit(true); } catch (_) {} }
+  if (typeof toast === 'function') toast(viewOnly ? '👁 Ansehen-Modus – keine Änderungen möglich' : '✎ Bearbeiten-Modus');
+}
 
 /* ---------- Bibliothek (localStorage) ---------- */
 const LS_LIB = 'sw_lib_v1';
@@ -1699,6 +1711,7 @@ function wire() {
   $('#btnOpen').addEventListener('click', openFile);
   $('#btnSave').addEventListener('click', () => saveFile(false));
   $('#btnFocus').addEventListener('click', toggleFocus);
+  { const bv = $('#btnView'); if (bv) bv.addEventListener('click', () => setViewOnly(!viewOnly)); }
   $('#btnFocusExit').addEventListener('click', toggleFocus);
   $('#btnTheme').addEventListener('click', () => setTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark'));
 
@@ -3039,6 +3052,7 @@ function deleteRowAt(dr) {
 
 /* ---- Inline-Zellbearbeitung (direkt in der Zelle) ---- */
 function beginEdit(initial) {
+  if (viewOnly) return;   // Ansehen-Modus: keine Zell-Bearbeitung
   const td = tdAt(selC, selR); if (!td) return;
   editingTd = td;
   td.classList.add('celledit'); td.contentEditable = 'true';

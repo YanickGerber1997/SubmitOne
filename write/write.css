@@ -801,3 +801,10 @@ body[data-theme="dark"] .tip{background:#2a3140;border:1px solid #3a4150}
 /* Panels gleiten sanft */
 .navpane,.inspector{transition:background .15s ease}
 @media (prefers-reduced-motion: reduce){ *{transition:none !important} }
+
+/* ===== Ansehen-Modus (S2.1): nur betrachten, keine Änderungen. Standard AUS. ===== */
+body.view-only .formatbar,body.view-only .ribtabs{opacity:.4;pointer-events:none}
+body.view-only #btnView{background:var(--accent);border-color:var(--accent);color:#fff}
+body.view-only #btnView .i{stroke:#fff}
+body.view-only .editor,body.view-only .zone{caret-color:transparent}
+body.view-only .topbar::after{content:"👁 Ansehen – keine Änderungen";margin-left:8px;align-self:center;background:var(--accent);color:#fff;font:600 11px/1 var(--font-ui);padding:5px 10px;border-radius:8px;white-space:nowrap}

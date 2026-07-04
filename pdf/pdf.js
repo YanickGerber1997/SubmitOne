@@ -3994,7 +3994,7 @@ function groupTextBlocks(items) {
     }
     blocks.push({ lines: [L], x: L.x, maxx: L.maxx, y: L.y, maxy: L.maxy, size: L.size, fam: L.fam, bold: L.bold, italic: L.italic, lhs: [] });
   }
-  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, text: B.lines.map(l => l.str).join('\n'), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic }));
+  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic }));
 }
 /* ---------- Als Submit Paper öffnen: PDF-Text → editierbares Dokument (an /write/ übergeben) ---------- */
 function _htmlEsc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -4011,31 +4011,61 @@ async function pageTextItemsFor(page, pageH) {   // Textstücke einer beliebigen
   } catch (_) { }
   return items;
 }
-function blocksToPaperHtml(blocks) {   // Absätze → HTML (Überschrift bei grosser Schrift, fett/kursiv erhalten)
+// Ein Absatz-Block → HTML. Gestapelte Zeilen bleiben gestapelt (<br>); nur echt umbrochene Zeilen (Zeile reicht bis rechts + nächste beginnt links) werden mit Leerzeichen zusammengezogen.
+function blockToParaHtml(b, body) {
+  const lines = (b.lines && b.lines.length) ? b.lines : b.text.split('\n').map(str => ({ str, x: b.x, maxx: b.right || (b.x + b.w) }));
+  const right = b.right || (b.x + b.w), tol = b.size * 1.6;
+  let inner = '';
+  for (let i = 0; i < lines.length; i++) {
+    const cur = lines[i], prev = lines[i - 1];
+    if (i > 0) {
+      const wrapped = (right - prev.maxx) < tol && (cur.x - b.x) < tol;   // vorige Zeile voll + diese beginnt links → Fliesstext
+      inner += wrapped ? ' ' : '<br>';
+    }
+    inner += _htmlEsc(cur.str);
+  }
+  if (!inner.trim()) return '';
+  if (b.size >= body * 1.45 && lines.length === 1) return '<h2>' + inner + '</h2>';   // grosse Einzelzeile → Überschrift
+  if (b.bold) inner = '<strong>' + inner + '</strong>'; if (b.italic) inner = '<em>' + inner + '</em>';
+  return '<p>' + inner + '</p>';
+}
+function blocksToPaperHtml(blocks) {
   if (!blocks.length) return '<p></p>';
   const sizes = blocks.map(b => b.size).slice().sort((a, b) => a - b), body = sizes[Math.floor(sizes.length / 2)] || 12;
-  const html = blocks.map(b => {
-    let t = _htmlEsc(b.text.split('\n').join(' ')).trim(); if (!t) return '';
-    if (b.size >= body * 1.4) return '<h2>' + t + '</h2>';
-    if (b.bold) t = '<strong>' + t + '</strong>'; if (b.italic) t = '<em>' + t + '</em>';
-    return '<p>' + t + '</p>';
-  }).filter(Boolean).join('\n');
+  const html = blocks.map(b => blockToParaHtml(b, body)).filter(Boolean).join('\n');
   return html || '<p></p>';
 }
-async function convertToPaper() {
+// „1-3, 5, 8-9" → [1,2,3,5,8,9] (begrenzt auf 1..max)
+function parsePageRange(str, max) {
+  const out = new Set();
+  for (const part of (str || '').split(/[,\s]+/)) {
+    if (!part) continue;
+    const m = /^(\d+)\s*-\s*(\d+)$/.exec(part);
+    if (m) { let a = +m[1], z = +m[2]; if (a > z) [a, z] = [z, a]; for (let i = a; i <= z; i++) if (i >= 1 && i <= max) out.add(i); }
+    else { const n = +part; if (n >= 1 && n <= max) out.add(n); }
+  }
+  return [...out].sort((a, b) => a - b);
+}
+function openPaperDlg() {
+  if (!pdfDoc) return; const d = $('#paperDlg'); if (!d) { convertToPaper(); return; }
+  const r = d.querySelector('input[name="ppScope"][value="all"]'); if (r) r.checked = true;
+  const rg = $('#ppRange'); if (rg) rg.value = '';
+  d.hidden = false;
+}
+async function convertToPaper(pageNums) {
   if (!pdfDoc) return;
-  if (!confirm('Dieses PDF als editierbares Submit-Paper-Dokument öffnen?\n\nDer erkannte Text wird in ein Textdokument übernommen (Layout/Grafik gehen dabei verloren – das Original-PDF bleibt erhalten).')) return;
+  const nums = (pageNums && pageNums.length) ? pageNums : Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1);
   status('In Submit Paper umwandeln …'); await new Promise(r => setTimeout(r, 10));
   try {
     await loadPdfJs(); const pages = [];
-    for (let n = 1; n <= pdfDoc.numPages; n++) {
+    for (const n of nums) {
       const page = await pdfDoc.getPage(n), vp = page.getViewport({ scale: 1 });
       pages.push({ typ: 'write', html: blocksToPaperHtml(groupTextBlocks(await pageTextItemsFor(page, vp.height))) });
     }
     if (!pages.some(p => p.html.replace(/<[^>]+>/g, '').trim().length)) { status(''); toast('Kein Text zum Übernehmen gefunden (evtl. gescanntes Bild-PDF).'); return; }
-    const titel = (docName || 'Aus PDF').replace(/\.pdf$/i, '');
+    const titel = (docName || 'Aus PDF').replace(/\.pdf$/i, '') + (nums.length < pdfDoc.numPages ? ' (S. ' + nums.join(',') + ')' : '');
     try { localStorage.setItem('submitpaper_import', JSON.stringify({ titel, pages, ts: Date.now() })); }
-    catch (_) { status(''); toast('Text zu gross für die Übergabe.'); return; }
+    catch (_) { status(''); toast('Text zu gross für die Übergabe – weniger Seiten wählen.'); return; }
     status(''); location.href = '../write/index.html?import=1';
   } catch (e) { status(''); console.error(e); toast('Umwandlung fehlgeschlagen.'); }
 }
@@ -7226,7 +7256,16 @@ function wire() {
   $('#projName').oninput = projPreviewUpd; $('#projSub').onchange = projPreviewUpd; $('#projFile').oninput = projPreviewUpd;
   $('#projName').onkeydown = e => { if (e.key === 'Enter') $('#projOk').click(); };
   $('#smHint3d').onclick = () => toast('OBJ-Export: unten „◳ 3D" öffnen → im 3D-Balken „⭳ OBJ".');
-  { const tp = $('#smToPaper'); if (tp) tp.onclick = convertToPaper; const tb = $('#btnToPaper'); if (tb) tb.onclick = convertToPaper; }
+  { const tp = $('#smToPaper'); if (tp) tp.onclick = openPaperDlg; const tb = $('#btnToPaper'); if (tb) tb.onclick = openPaperDlg;
+    const pc = $('#ppCancel'); if (pc) pc.onclick = () => { $('#paperDlg').hidden = true; };
+    const pg = $('#ppGo'); if (pg) pg.onclick = () => {
+      const scope = (document.querySelector('input[name="ppScope"]:checked') || {}).value || 'all';
+      let nums = null;
+      if (scope === 'cur') nums = [curPage()];
+      else if (scope === 'range') { nums = parsePageRange($('#ppRange').value, pdfDoc.numPages); if (!nums.length) { toast('Bitte gültige Seiten angeben (z. B. 1-3, 5).'); return; } }
+      $('#paperDlg').hidden = true; convertToPaper(nums);
+    };
+    const rg = $('#ppRange'); if (rg) { rg.onfocus = () => { const r = document.querySelector('input[name="ppScope"][value="range"]'); if (r) r.checked = true; }; rg.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('#ppGo').click(); } }; } }
   let planKind = 'kopf', planPos = 'br';
   $('#footPlan').onclick = e => { e.stopPropagation(); const p = $('#planPop'); p.hidden = !p.hidden; };
   $('#pbBuild').onclick = e => { e.stopPropagation(); const p = $('#buildPop'); if (p.hidden) openBuildPop(); else p.hidden = true; };

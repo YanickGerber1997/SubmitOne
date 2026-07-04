@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v34';
+const WRITE_VERSION = 'v35';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -767,13 +767,35 @@ const TEMPLATES = {
        <tr><td>3</td><td>Nach Abnahme / Bezug</td><td style="text-align:right">30</td><td style="text-align:right">0.00</td><td>…</td></tr>
      </tbody></table>` }
 };
+// Vorlagen-Galerie: Kurzbeschreibung + Kategorie-Icon je Vorlage (bessere Auffindbarkeit)
+const TMPL_META = {
+  brief:             { d: 'Formeller Geschäftsbrief mit Absender & Datum', i: 'doc' },
+  rechnung:          { d: 'Rechnung mit Positionen & Total', i: 'money' },
+  angebot:           { d: 'Angebot / Offerte mit Leistungen & Preis', i: 'money' },
+  projektplan:       { d: 'Projektübersicht mit Meilensteinen', i: 'list' },
+  protokoll:         { d: 'Sitzungsprotokoll mit Traktanden', i: 'doc' },
+  lebenslauf:        { d: 'Strukturierter Lebenslauf (CV)', i: 'doc' },
+  kostenvoranschlag: { d: 'Baukostenschätzung nach Positionen', i: 'money' },
+  regierapport:      { d: 'Rapport für Regiearbeiten (Std./Material)', i: 'list' },
+  bautagebuch:       { d: 'Tägliche Bau-Notizen & Wetter', i: 'list' },
+  maengelliste:      { d: 'Mängel erfassen, verorten, abhaken', i: 'list' },
+  zahlungsplan:      { d: 'Ratenplan nach Baufortschritt', i: 'money' },
+};
+const TMPL_ICO = {
+  doc:   '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  money: '<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.4"/><path d="M6 9v6M18 9v6"/>',
+  list:  '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
+};
 function renderTemplateHint() {
-  return '<div style="padding:8px 4px;display:flex;flex-direction:column;gap:4px">' +
-    Object.entries(TEMPLATES).map(([k, t]) => `<button class="snav tmpl" data-tmpl="${k}"><svg viewBox="0 0 24 24" class="i"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span>${t.titel}</span></button>`).join('') +
+  return '<div class="tmpl-gallery">' +
+    Object.entries(TEMPLATES).map(([k, t]) => {
+      const m = TMPL_META[k] || {}, ico = TMPL_ICO[m.i] || TMPL_ICO.doc;
+      return `<button class="tmpl-card" data-tmpl="${k}"><span class="tc-ico"><svg viewBox="0 0 24 24" class="i">${ico}</svg></span><span class="tc-tx"><span class="tc-t">${esc(t.titel)}</span><span class="tc-d">${m.d || 'Vorlage'}</span></span></button>`;
+    }).join('') +
     '</div>';
 }
 function bindTemplateHint() {
-  $$('.tmpl').forEach(b => b.onclick = () => {
+  $$('.tmpl-card').forEach(b => b.onclick = () => {
     const t = TEMPLATES[b.dataset.tmpl];
     createDoc({ titel: t.titel, html: t.html });
     activeFolder = 'dokumente';
@@ -3399,6 +3421,11 @@ function selfTest() {
   ok('docMenuItems normal', docMenuItems({}).join(',') === 'open,fav,rename,dup,arch,trash');
   ok('docMenuItems Papierkorb', docMenuItems({ trashed: true }).join(',') === 'restore,purge');
   ok('DOC_MENU Favorit-Label wechselt', (typeof DOC_MENU.fav.t === 'function') && DOC_MENU.fav.t({ fav: true }).includes('entfernen') && !DOC_MENU.fav.t({ fav: false }).includes('entfernen'));
+
+  // Vorlagen-Galerie: eine Karte je Vorlage, mit Beschreibung
+  { const g = renderTemplateHint(); const cards = (g.match(/tmpl-card/g) || []).length;
+    ok('Vorlagen-Galerie: Karte je Vorlage', cards === Object.keys(TEMPLATES).length);
+    ok('Vorlagen-Galerie: Beschreibungen vorhanden', /Ratenplan nach Baufortschritt/.test(g) && /tc-d/.test(g)); }
 
   return { R, pass, fail };
 }

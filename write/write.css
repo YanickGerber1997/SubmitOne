@@ -112,6 +112,17 @@ button{font-family:inherit;cursor:pointer}
 .empty-cta{margin-top:12px;padding:8px 15px;border:none;border-radius:var(--radius-sm);background:var(--accent);color:#fff;font-size:12.5px;font-weight:600;box-shadow:0 2px 8px color-mix(in srgb,var(--accent) 30%,transparent);transition:transform .12s var(--ease),box-shadow .2s var(--ease)}
 .empty-cta:hover{transform:translateY(-1px);box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 38%,transparent)}
 .empty-cta:active{transform:translateY(0)}
+/* Vorlagen-Galerie (Karten mit Icon + Kurzbeschreibung) */
+.tmpl-gallery{display:flex;flex-direction:column;gap:7px;padding:8px 6px}
+.tmpl-card{display:flex;gap:10px;align-items:flex-start;text-align:left;width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer;transition:border-color .14s,background .14s,transform .1s,box-shadow .14s}
+.tmpl-card:hover{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 2px 10px color-mix(in srgb,var(--accent) 14%,transparent)}
+.tmpl-card:active{transform:translateY(1px)}
+.tmpl-card .tc-ico{flex:0 0 auto;width:30px;height:30px;border-radius:8px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;transition:background .14s}
+.tmpl-card .tc-ico .i{width:17px;height:17px}
+.tmpl-card:hover .tc-ico{background:var(--surface)}
+.tmpl-card .tc-tx{display:flex;flex-direction:column;min-width:0}
+.tmpl-card .tc-t{font-size:13px;font-weight:600;color:var(--ink)}
+.tmpl-card .tc-d{font-size:11px;color:var(--ink-faint);line-height:1.35;margin-top:1px}
 .side-foot{padding:10px 14px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px}
 .foot-link{display:flex;align-items:center;gap:7px;background:none;border:none;color:var(--ink-soft);font-size:12.5px;font-weight:500;padding:4px 6px;border-radius:6px}
 .foot-link:hover{background:var(--line-soft);color:var(--ink)}

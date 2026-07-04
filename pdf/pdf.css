@@ -878,3 +878,7 @@ html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink) 22%,trans
 @keyframes pdfPopIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
 .palette:not([hidden]),.stamp-pop:not([hidden]),.fmt-pop:not([hidden]),.ins-menu:not([hidden]),.outline-pop:not([hidden]),.ctxmenu:not([hidden]),.hdr-pop:not([hidden]){animation:pdfPopIn .13s cubic-bezier(.4,0,.2,1)}
 @media (prefers-reduced-motion:reduce){.palette,.stamp-pop,.fmt-pop,.ins-menu,.outline-pop,.ctxmenu,.hdr-pop{animation:none !important}}
+
+/* ===== Schöne Hover-Tooltips (wie Submit Paper) statt der trägen Browser-title-Tooltips ===== */
+.tip{position:fixed;z-index:600;background:var(--ink);color:#fff;font-size:12px;font-family:var(--font);padding:6px 10px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.28);pointer-events:none;max-width:280px;line-height:1.35;animation:tipIn .12s ease}
+@keyframes tipIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}

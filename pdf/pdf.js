@@ -7880,3 +7880,27 @@ if ('launchQueue' in window) {
 }
 // Geteilte Datei vom Handy (Teilen-Ziel)
 if (new URLSearchParams(location.search).get('shared')) { window.addEventListener('load', () => setTimeout(loadSharedFile, 300)); }
+
+// Schöne Hover-Tooltips aus den title-Attributen (wie Submit Paper) – ersetzt die trägen Browser-Tooltips
+function initTooltips() {
+  if (document.getElementById('tip')) return;
+  const tip = document.createElement('div'); tip.id = 'tip'; tip.className = 'tip'; tip.hidden = true; document.body.appendChild(tip);
+  let tipEl = null, tipTimer = null;
+  const hideTip = () => { clearTimeout(tipTimer); if (tipEl && tipEl.dataset.tip != null) { tipEl.setAttribute('title', tipEl.dataset.tip); delete tipEl.dataset.tip; } tipEl = null; tip.hidden = true; };
+  document.addEventListener('mouseover', e => {
+    const t = e.target.closest && e.target.closest('[title]'); if (!t || t === tipEl) return;
+    hideTip(); const txt = t.getAttribute('title'); if (!txt) return; tipEl = t;
+    tipTimer = setTimeout(() => {
+      if (!tipEl) return; tipEl.dataset.tip = txt; tipEl.removeAttribute('title');
+      tip.textContent = txt; tip.hidden = false;
+      const r = tipEl.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+      const left = Math.max(8, Math.min(r.left + r.width / 2 - tw / 2, window.innerWidth - tw - 8));
+      let top = r.bottom + 8; if (top + th > window.innerHeight - 8) top = r.top - th - 8;
+      tip.style.left = left + 'px'; tip.style.top = top + 'px';
+    }, 320);
+  });
+  document.addEventListener('mouseout', e => { if (tipEl && (!e.relatedTarget || !tipEl.contains(e.relatedTarget))) hideTip(); });
+  document.addEventListener('mousedown', hideTip, true);
+  window.addEventListener('scroll', hideTip, true);
+}
+if (document.body) initTooltips(); else document.addEventListener('DOMContentLoaded', initTooltips);

@@ -6222,6 +6222,11 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('checkCalc Fehler (3×12.5=37.0)', () => { const c = _checkCalc([{ v: 3, str: '3', k: 1 }, { v: 12.5, str: '12.50', k: 2 }, { v: 37.0, str: '37.00', k: 3 }]); return (c && !c.ok && c.expected === 37.5) ? '' : 'erwartet Fehler+37.5: ' + JSON.stringify(c); });
     A('fmtNum Schweizer Tausender', () => (_fmtNum(4269.75) === '4’269.75' && _fmtNum(1000) === '1’000.00') ? '' : 'got ' + _fmtNum(4269.75));
     A('isTotalDesc erkennt Total/MwSt', () => (_isTotalDesc('Total Möbel') && _isTotalDesc('MwSt 8,1%') && _isTotalDesc('Zwischentotal') && !_isTotalDesc('Legrabox seidenweiss')) ? '' : 'fail');
+    A('isListLine erkennt Aufzählung', () => (_isListLine('- Punkt') && _isListLine('1. Punkt') && _isListLine('• Punkt') && !_isListLine('Normaler Text')) ? '' : 'fail');
+    A('blockToParaHtml stapelt kurze Zeilen (<br>)', () => { const b = { x: 0, size: 10, lh: 12, right: 40, lines: [{ str: 'Zeile A', x: 0, maxx: 40 }, { str: 'Zeile B', x: 0, maxx: 40 }] }; const h = blockToParaHtml(b, 10, 500); return /Zeile A<br>Zeile B/.test(h) ? '' : h; });
+    A('blockToParaHtml führt Fliesstext zusammen (Leerzeichen)', () => { const b = { x: 0, size: 10, lh: 12, right: 498, lines: [{ str: 'lange Zeile bis Rand', x: 0, maxx: 498 }, { str: 'weiter', x: 0, maxx: 40 }] }; const h = blockToParaHtml(b, 10, 500); return /Rand weiter/.test(h) ? '' : h; });
+    A('blockToParaHtml Überschrift bei grosser Einzelzeile', () => { const b = { x: 0, size: 20, lh: 24, right: 60, lines: [{ str: 'Titel', x: 0, maxx: 60 }] }; return /<h2/.test(blockToParaHtml(b, 10, 500)) ? '' : 'kein h2'; });
+    A('tableHtml Rechenfehler → rot markiert', () => { const lines = [{ items: [{ x: 0, y: 0, w: 60, size: 10, str: 'Pos' }, { x: 100, y: 0, w: 12, size: 10, str: '3' }, { x: 150, y: 0, w: 20, size: 10, str: '12.50' }, { x: 200, y: 0, w: 24, size: 10, str: '37.00' }] }]; const html = tableHtml(lines, 0, 0, [90, 140, 190], 10); return (/background:#ffd6d6/.test(html) && /37[’']?\.50/.test(html) && /<s>37\.00<\/s>/.test(html)) ? '' : html; });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

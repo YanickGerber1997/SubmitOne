@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v35';
+const WRITE_VERSION = 'v36';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -2992,13 +2992,18 @@ function updateRulerSel() {
 }
 let anchorC = 0, anchorR = 0, editingTd = null;
 function rangeBounds() { return { c1: Math.min(anchorC, selC), c2: Math.max(anchorC, selC), r1: Math.min(anchorR, selR), r2: Math.max(anchorR, selR) }; }
+// Namensfeld: Einzelzelle → „A1", Bereich → „ZeilenxSpalten" (wie Excel beim Ziehen)
+function selRefLabel(c1, c2, r1, r2, activeKey) {
+  const rows = r2 - r1 + 1, cols = c2 - c1 + 1;
+  return (rows === 1 && cols === 1) ? activeKey : `${rows}×${cols}`;
+}
 function roundN(x) { return Math.round(x * 100) / 100; }
 function highlightSel() {
   allTd('td.sel, td.active').forEach(td => td.classList.remove('sel', 'active'));
   const { c1, c2, r1, r2 } = rangeBounds();
   for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const td = tdAt(c, r); if (td) td.classList.add('sel'); }
   const act = tdAt(selC, selR);
-  if (act) { act.classList.add('active'); $('#cellRef').textContent = cellKey(selC, selR); $('#formulaInput').value = gridCellRaw(selC, selR); }
+  if (act) { act.classList.add('active'); $('#cellRef').textContent = selRefLabel(c1, c2, r1, r2, cellKey(selC, selR)); $('#formulaInput').value = gridCellRaw(selC, selR); }
   updateRulerSel();   // aktive Spalte/Zeile in den Lineal-Leisten hervorheben
   updateCalcStat();
   syncCalcToolbar();  // Menüband (F/K/U, Ausrichtung, Schrift) auf die aktive Zelle spiegeln
@@ -3426,6 +3431,11 @@ function selfTest() {
   { const g = renderTemplateHint(); const cards = (g.match(/tmpl-card/g) || []).length;
     ok('Vorlagen-Galerie: Karte je Vorlage', cards === Object.keys(TEMPLATES).length);
     ok('Vorlagen-Galerie: Beschreibungen vorhanden', /Ratenplan nach Baufortschritt/.test(g) && /tc-d/.test(g)); }
+
+  // Calc-Namensfeld: Einzelzelle vs. Bereichsgrösse (Zeilen×Spalten)
+  ok('selRefLabel Einzelzelle', selRefLabel(0, 0, 0, 0, 'A1') === 'A1');
+  ok('selRefLabel Bereich 3×2', selRefLabel(0, 1, 0, 2, 'A1') === '3×2');
+  ok('selRefLabel Zeile 1×4', selRefLabel(0, 3, 5, 5, 'A6') === '1×4');
 
   return { R, pass, fail };
 }

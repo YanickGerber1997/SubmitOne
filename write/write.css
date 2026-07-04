@@ -372,6 +372,10 @@ body[data-mode="slides"] .editor img{max-width:100%}
 .editor .pdftab tr:last-child td,.pv-page .pdftab tr:last-child td{border-bottom:none}
 .editor .pdftab td[colspan],.pv-page .pdftab td[colspan]{border-bottom:none;padding-top:8px}   /* Abschnitts-Überschriften: kein Trennstrich, etwas Luft darüber */
 .editor .pdftab tr.tot td,.pv-page .pdftab tr.tot td{font-weight:700;border-top:1.5px solid var(--ink-soft);border-bottom:none;padding-top:7px}   /* Total-/Summenzeile: fett + Linie darüber */
+/* Feinschliff Positionsliste: Ziffern richten sich untereinander aus, mehr Luft zwischen den Spalten */
+.editor .pdftab td,.pv-page .pdftab td{font-variant-numeric:tabular-nums}
+.editor .pdftab td:not(:first-child),.pv-page .pdftab td:not(:first-child){padding-left:20px}
+.editor .pdftab td[colspan],.pv-page .pdftab td[colspan]{padding-left:0}
 .editor img{max-width:100%;border-radius:6px}
 .editor:focus{outline:none}
 

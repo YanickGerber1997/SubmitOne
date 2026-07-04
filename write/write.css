@@ -78,10 +78,10 @@ button{font-family:inherit;cursor:pointer}
 .new-doc{
   margin:6px 14px 12px; padding:10px 12px; display:flex;align-items:center;gap:9px;
   background:var(--accent); color:#fff; border:none; border-radius:var(--radius-sm);
-  font-weight:600; font-size:13.5px; box-shadow:0 2px 8px rgba(47,109,246,.28);
+  font-weight:600; font-size:13.5px; box-shadow:0 2px 8px color-mix(in srgb, var(--accent) 30%, transparent);
   transition:transform .12s var(--ease), box-shadow .2s var(--ease);
 }
-.new-doc:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(47,109,246,.36)}
+.new-doc:hover{transform:translateY(-1px);box-shadow:0 4px 14px color-mix(in srgb, var(--accent) 38%, transparent)}
 .new-doc .i{width:17px;height:17px;stroke:#fff}
 .side-nav{display:flex;flex-direction:column;gap:1px;padding:0 8px}
 .snav{
@@ -388,7 +388,7 @@ body[data-mode="write"] .wfbar{display:flex}
 .app.lines-off .cgrid th,.app.lines-off .cgrid td{border-color:transparent}
 .app.lines-off .calc-colruler,.app.lines-off .calc-rowruler{display:none}
 .cellpos{min-width:62px;color:var(--ink-soft);font-weight:600;font-variant-numeric:tabular-nums}
-.cell-hi{position:fixed;pointer-events:none;z-index:40;border:2px solid var(--accent);background:rgba(47,109,246,.10);border-radius:3px}
+.cell-hi{position:fixed;pointer-events:none;z-index:40;border:2px solid var(--accent);background:color-mix(in srgb, var(--accent) 12%, transparent);border-radius:3px}
 .grid-toggle{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;transition:.15s}
 .grid-toggle .i{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7}
 .grid-toggle:hover{border-color:var(--accent)}
@@ -645,7 +645,7 @@ body[data-theme="dark"] .editor .sp-err{text-decoration-color:#ff7a70}
 .pv-page img{max-width:100%}
 .pv-page .sp-err{text-decoration:none}
 .preview-scroll.hy .pv-c{hyphens:auto;-webkit-hyphens:auto}
-.pv-page blockquote{border-left:3px solid #2f6df6;padding-left:12px;color:#555;font-style:italic;margin:.6em 0}
+.pv-page blockquote{border-left:3px solid var(--accent);padding-left:12px;color:#555;font-style:italic;margin:.6em 0}
 .pv-page .toc{border:1px solid #e3e3e3;border-radius:8px;padding:12px 16px;background:#fafafa}
 .pv-page .toc a{display:block;color:#1a1e27;text-decoration:none;padding:2px 0}
 .pv-grid{border-collapse:collapse;width:auto;max-width:100%;font-size:11pt;line-height:1.7}
@@ -808,3 +808,13 @@ body.view-only #btnView{background:var(--accent);border-color:var(--accent);colo
 body.view-only #btnView .i{stroke:#fff}
 body.view-only .editor,body.view-only .zone{caret-color:transparent}
 body.view-only .topbar::after{content:"👁 Ansehen – keine Änderungen";margin-left:8px;align-self:center;background:var(--accent);color:#fff;font:600 11px/1 var(--font-ui);padding:5px 10px;border-radius:8px;white-space:nowrap}
+
+/* ================= Design-Politur (v31): Farb-Konsistenz + feine Scrollbalken ================= */
+/* Blaue Alt-Werte → akzent-abgeleitet (folgt dem Modus: Write/Calc grün, Slides orange) bei .new-doc-Schatten, .cell-hi, Vorschau-Zitat (oben ersetzt). */
+/* Dezente, themenkonforme Scrollbalken – ruhiger und edler als der Browser-Standard */
+html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink) 22%,transparent) transparent}
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ink) 20%,transparent);border-radius:99px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--ink) 34%,transparent);background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}

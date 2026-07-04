@@ -730,6 +730,7 @@ function scheduleSharpen() {    // nach kurzer Ruhe: scharfe Kachel für die sic
     // Position einrasten; scharfe (2× überabgetastete) Kachel über den sichtbaren Ausschnitt – für ALLE sichtbaren Seiten.
     for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (b >= top && t <= bot) { snapPos(pv); if (pv.rendered) renderTile(pv); } }
     if (tool === 'textsel') buildTextVisible();
+    if (tool === 'edittext') buildBlocksVisible();
   }, 55);
 }
 // Horizontale Zentrierung aufs Gerätepixel einrasten (sonst landet die Seite auf einem halben Pixel → leichtes Verwischen).
@@ -1615,15 +1616,27 @@ function evtToPage(pv, e) {
 }
 
 /* ---------- Werkzeuge / Interaktion ---------- */
+// Dezentes Overlay im „Text bearbeiten"-Modus: zeigt, welchen Absatz ein Klick trifft
+function setEditHover(pv, b) {
+  const old = pv.svg.querySelector('.edit-hover'); if (old) old.remove();
+  if (!b) return;
+  pv.svg.appendChild(svgEl('rect', { class: 'edit-hover', x: b.x - 2, y: b.y - 1, width: b.w + 4, height: b.h + 2, rx: 3, fill: 'rgba(74,143,87,.10)', stroke: '#3a8f57', 'stroke-width': 1, 'stroke-dasharray': '5 3', 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' }));
+}
+function buildBlocksVisible() {   // Absätze der sichtbaren Seiten vorab berechnen (für flüssiges Hover im edittext-Modus)
+  const host = $('#pages'), top = host.scrollTop - 200, bot = host.scrollTop + host.clientHeight + 200;
+  for (const pv of pageViews) { const t = pv.wrap.offsetTop, b = t + pv.wrap.offsetHeight; if (pv.page && !pv.textBlocks && b >= top && t <= bot) buildTextBlocks(pv); }
+}
 function bindPageEvents(pv) {
   pv.svg.addEventListener('pointerdown', e => onPointerDown(pv, e));
-  pv.svg.addEventListener('pointermove', e => {                       // Hover-Vorschau im Auswahl-Modus
-    if (tool !== 'select' || e.buttons) return;
+  pv.svg.addEventListener('pointermove', e => {                       // Hover-Vorschau
+    if (e.buttons) return;
+    if (tool === 'edittext') { const bl = pv.textBlocks; if (bl) { const p = evtToPage(pv, e); setEditHover(pv, bl.find(b => p.x >= b.x - 3 && p.x <= b.x + b.w + 3 && p.y >= b.y - 2 && p.y <= b.y + b.h + 2)); } return; }
+    if (tool !== 'select') return;
     const id = (e.target.getAttribute && e.target.getAttribute('data-id')) || null;
     if (id === pv._hoverId) return; pv._hoverId = id;
     const ha = id ? findAnno(pv.num, +id) : null; setHover(pv, (ha && ha.locked) ? null : ha);
   });
-  pv.svg.addEventListener('pointerleave', () => { pv._hoverId = null; setHover(pv, null); });
+  pv.svg.addEventListener('pointerleave', () => { pv._hoverId = null; setHover(pv, null); setEditHover(pv, null); });
 }
 // Punkt aufs cm-Raster einrasten (nur wenn Raster an) – Linien/Formen/Text/Box „greifen"
 function snapPt(x, y) { if (!gridOn) return { x, y }; const c = gridCellPt(); if (c <= 0) return { x, y }; return { x: Math.round((x - gridOffX) / c) * c + gridOffX, y: Math.round((y - gridOffY) / c) * c + gridOffY }; }
@@ -4001,14 +4014,14 @@ async function editTextAt(pv, p) {
   if (!pv.page) return;
   // 1) Bereits editierbare Stelle getroffen → sofort tippen (kein Doppelklick, kein Auswählen)
   const existing = (getAnnos(pv.num) || []).filter(a => a.type === 'edit').find(a => p.x >= a.x - 2 && p.x <= a.x + a.w + 2 && p.y >= a.y - 2 && p.y <= a.y + a.h + 2);
-  if (existing) { sel = null; drawAnnos(pv); openEditEdit(pv, existing, false); return; }   // kein Auswahl-Rahmen → direkt tippen
+  if (existing) { sel = null; drawAnnos(pv); openEditEdit(pv, existing, false, p); return; }   // kein Auswahl-Rahmen → direkt tippen, Cursor an die Klickstelle
   // 2) Absatz an der Klickstelle → abdecken + direkt editieren
   const blocks = await buildTextBlocks(pv);
   const hit = blocks.find(b => p.x >= b.x - 3 && p.x <= b.x + b.w + 3 && p.y >= b.y - 2 && p.y <= b.y + b.h + 2);
   let a;
   if (hit) {
     const s = sampleBox(pv, hit); a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic };
-    pushUndo(); pushAnno(pv.num, a); sel = null; drawAnnos(pv); openEditEdit(pv, a, false);
+    pushUndo(); pushAnno(pv.num, a); sel = null; drawAnnos(pv); openEditEdit(pv, a, false, p);
   } else {
     a = { id: nextId++, type: 'edit', x: p.x, y: p.y - style.size * 0.82, w: 140, h: style.size * 1.3, text: '', size: style.size, lh: style.size * 1.3, color: style.color, bg: 'transparent' };
     pushUndo(); pushAnno(pv.num, a); sel = null; drawAnnos(pv); openEditEdit(pv, a, true);   // leere Stelle: direkt tippen
@@ -4074,7 +4087,18 @@ async function startHighlight(pv, e, p) {
   };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
-function openEditEdit(pv, a, isNew) {
+// Cursor an die Klickstelle setzen (Zeile aus y, Zeichen aus x per Textbreiten-Messung)
+function caretOffsetAt(a, val, clickPt) {
+  const lh = a.lh || a.size * 1.25, lines = val.split('\n');
+  const li = Math.max(0, Math.min(lines.length - 1, Math.floor((clickPt.y - a.y) / lh)));
+  const xoff = Math.max(0, clickPt.x - a.x - 1), line = lines[li];
+  const ctx = caretOffsetAt._c || (caretOffsetAt._c = document.createElement('canvas').getContext('2d'));
+  ctx.font = (a.italic ? 'italic ' : '') + (a.bold ? '700 ' : '') + a.size + 'px ' + cssFontStack(a.fam);
+  let ci = line.length;
+  for (let k = 1; k <= line.length; k++) { const w = ctx.measureText(line.slice(0, k)).width, wp = ctx.measureText(line.slice(0, k - 1)).width; if ((w + wp) / 2 >= xoff) { ci = k - 1; break; } }
+  let off = 0; for (let i = 0; i < li; i++) off += lines[i].length + 1; return off + ci;
+}
+function openEditEdit(pv, a, isNew, clickPt) {
   const sc = pv.scale, lh = a.lh || a.size * 1.25;
   _editingId = a.id; drawAnnos(pv);   // Text der Stelle ausblenden (nur Abdeckung bleibt) → keine Doppel-Anzeige
   const ta = document.createElement('textarea'); ta.className = 'textedit'; ta.value = a.text || '';
@@ -4085,16 +4109,38 @@ function openEditEdit(pv, a, isNew) {
   ta.style.fontFamily = cssFontStack(a.fam); if (a.bold) ta.style.fontWeight = 'bold'; if (a.italic) ta.style.fontStyle = 'italic';
   pv.inner.appendChild(ta);
   const autoH = () => { ta.style.height = 'auto'; ta.style.height = Math.max(a.h * sc, ta.scrollHeight) + 'px'; };
-  autoH(); ta.focus(); if (isNew) ta.select();
-  const multiline = (a.text || '').indexOf('\n') >= 0 || a.h > a.size * 1.9;   // Absatz vs. Einzeiler
-  let done = false;
-  const commit = () => { if (done) return; done = true; _editingId = null; a.text = ta.value.replace(/[ \t]+$/, ''); ta.remove(); if (!a.text.trim() && isNew) { const arr = getAnnos(pv.num); const i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); } drawAnnos(pv); saveState(); };   // im edittext-Modus bleiben → nächsten Absatz direkt anklicken
-  ta.addEventListener('blur', commit);
-  ta.addEventListener('keydown', ev => {   // Esc/Klick daneben = fertig · Einzeiler: Enter = fertig · Absatz: Enter = neue Zeile, Strg+Enter = fertig
-    if (ev.key === 'Escape') { ev.preventDefault(); ta.blur(); }
+  autoH(); ta.focus();
+  if (isNew) ta.select();
+  else if (clickPt) { try { const o = caretOffsetAt(a, ta.value, clickPt); ta.setSelectionRange(o, o); } catch (_) { } }   // Cursor an die Klickstelle
+  const orig = a.text || '', multiline = orig.indexOf('\n') >= 0 || a.h > a.size * 1.9;   // Absatz vs. Einzeiler
+  let done = false, cancelled = false;
+  const finish = () => {
+    if (done) return; done = true; _editingId = null; ta.remove();
+    if (cancelled) { a.text = orig; if (isNew) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); } }   // Esc → Änderung verwerfen
+    else { a.text = ta.value.replace(/[ \t]+$/, ''); if (!a.text.trim() && isNew) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); } }
+    drawAnnos(pv); saveState();
+  };
+  ta.addEventListener('blur', finish);
+  ta.addEventListener('keydown', ev => {   // Esc = verwerfen · Tab = nächster Absatz · Einzeiler: Enter = fertig · Absatz: Enter = neue Zeile, Strg+Enter = fertig
+    if (ev.key === 'Escape') { ev.preventDefault(); cancelled = true; ta.blur(); }
+    else if (ev.key === 'Tab') { ev.preventDefault(); const d = ev.shiftKey ? -1 : 1; ta.blur(); editNextBlock(pv, a, d); }
     else if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey || (!ev.shiftKey && !multiline))) { ev.preventDefault(); ta.blur(); }
   });
   ta.addEventListener('input', autoH);
+}
+// Tab/Shift+Tab im Bearbeiten-Modus → nächsten/vorigen Absatz öffnen (Lesereihenfolge)
+function editNextBlock(pv, curA, dir) {
+  const blocks = pv.textBlocks; if (!blocks || !blocks.length) return;
+  const sorted = blocks.slice().sort((p, q) => p.y - q.y || p.x - q.x);
+  const idx = sorted.findIndex(b => Math.abs(b.x - curA.x) < 4 && Math.abs(b.y - curA.y) < 4);
+  const ni = (idx < 0 ? 0 : idx + dir); if (ni < 0 || ni >= sorted.length) return;
+  const nb = sorted[ni];
+  setTimeout(() => {
+    const ex = (getAnnos(pv.num) || []).filter(x => x.type === 'edit').find(x => Math.abs(x.x - nb.x) < 4 && Math.abs(x.y - nb.y) < 4);
+    if (ex) { openEditEdit(pv, ex, false); return; }
+    const s = sampleBox(pv, nb), a2 = { id: nextId++, type: 'edit', x: nb.x, y: nb.y, w: Math.max(nb.w, nb.size), h: nb.h, text: nb.text, size: nb.size, lh: nb.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: nb.fam, bold: nb.bold, italic: nb.italic };
+    pushUndo(); pushAnno(pv.num, a2); openEditEdit(pv, a2, false);
+  }, 0);
 }
 // Bestehende Text-Box bearbeiten (öffnet den Box-Editor mit Format-Leiste)
 function openTextAnnoEdit(pv, a) { openTextBox(pv, a, false); }
@@ -4554,6 +4600,7 @@ function setTool(t) {
   pageViews.forEach(p => { p._hoverId = null; const h = p.svg && p.svg.querySelector('.hover-layer'); if (h) h.remove(); });   // Hover bei Werkzeugwechsel löschen
   $('#pages').classList.toggle('mode-text', t === 'textsel');   // Text-Auswahl-Modus
   { const eb = $('#editBar'); if (eb) eb.hidden = (t !== 'edittext'); }   // „Text bearbeiten"-Leiste (ganze Seite editierbar)
+  if (t === 'edittext') buildBlocksVisible(); else pageViews.forEach(pv => setEditHover(pv, null));   // Absätze für Hover bereitstellen / Hover entfernen
   if (t === 'textsel') buildTextVisible();
   if (t === 'measure' && !docScale && !setTool._measHint) { setTool._measHint = true; toast('Tipp: Für echte Masse zuerst den Massstab setzen (1:n).'); }
   if (t === 'curve' && !setTool._curveHint) { setTool._curveHint = true; toast('Kurve: Klick = Ecke (gerade) · Klick+Ziehen = Kurve · Enter/Doppelklick = fertig · Esc = abbrechen'); }

@@ -4371,7 +4371,7 @@ function refreshComments() {
   const list = $('#commList'); if (!list) return; list.innerHTML = '';
   const items = [];
   for (const n of Object.keys(annos)) for (const a of annos[n]) if (a.type === 'note' && a.text) items.push({ n: +n, a });
-  if (!items.length) { list.innerHTML = '<div class="comm-empty">Noch keine Kommentare. Werkzeug „Kommentar" wählen und in den Plan klicken.</div>'; return; }
+  if (!items.length) { list.innerHTML = '<div class="comm-empty"><svg viewBox="0 0 24 24" class="es-ico"><path d="M4 5h16v11H9l-4 4v-4H4z"/></svg><div class="es-t">Noch keine Kommentare</div><div class="es-s">Wähle das Werkzeug <b>Kommentar</b> und klicke in den Plan, um eine Notiz zu setzen.</div></div>'; return; }
   items.sort((x, y) => x.n - y.n);
   for (const it of items) { const d = document.createElement('div'); d.className = 'comm-item'; d.innerHTML = `<div class="ci-pg">Seite ${it.n}</div><div class="ci-tx"></div>`; d.querySelector('.ci-tx').textContent = it.a.text; d.onclick = () => { gotoPage(it.n); sel = { num: it.n, id: it.a.id }; const pv = pageViews.find(p => p.num === it.n); if (pv) drawAnnos(pv); }; list.appendChild(d); }
 }

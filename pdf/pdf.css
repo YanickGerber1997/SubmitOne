@@ -522,7 +522,10 @@ body.has-planbar.has-tabs .work{top:calc(var(--bar) + var(--tools) + var(--tabs)
 .comm-item:hover{border-color:var(--accent)}
 .comm-item .ci-pg{font-size:11px;color:var(--ink-faint);font-weight:600;margin-bottom:3px}
 .comm-item .ci-tx{font-size:13px;color:var(--ink);white-space:pre-wrap;word-break:break-word}
-.comm-empty{color:var(--ink-faint);font-size:13px;padding:8px 4px}
+.comm-empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:5px;padding:34px 18px 20px;color:var(--ink-faint)}
+.comm-empty .es-ico{width:34px;height:34px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;opacity:.5;margin-bottom:3px}
+.comm-empty .es-t{font-size:13.5px;font-weight:600;color:var(--ink-soft)}
+.comm-empty .es-s{font-size:12px;line-height:1.45;max-width:210px}
 
 /* Drop / Status / Toast */
 .drop{position:absolute;inset:var(--bar) 0 0 0;display:flex;align-items:center;justify-content:center;background-color:#f6f3f0;background-image:url('bg-left.png'),url('bg-right.png');background-position:left center,right center;background-size:auto 100%,auto 100%;background-repeat:no-repeat;z-index:5}

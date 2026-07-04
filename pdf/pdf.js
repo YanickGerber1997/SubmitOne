@@ -3979,7 +3979,7 @@ function groupTextBlocks(items) {
   for (const L of lines) {
     L.items.sort((a, b) => a.x - b.x);
     let str = '';
-    for (let i = 0; i < L.items.length; i++) { const it = L.items[i]; if (i > 0) { const pr = L.items[i - 1], gap = it.x - (pr.x + pr.w); if (gap > it.size * 0.28 && !/\s$/.test(str) && !/^\s/.test(it.str)) str += ' '; } str += it.str; }
+    for (let i = 0; i < L.items.length; i++) { const it = L.items[i]; if (i > 0) { const pr = L.items[i - 1], gap = it.x - (pr.x + pr.w); if (gap > it.size * 0.2 && !/\s$/.test(str) && !/^\s/.test(it.str)) str += ' '; } str += it.str; }
     L.str = str; const dom = L.items.reduce((a, b) => (b.w > a.w ? b : a), L.items[0]); L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic;
   }
   lines.sort((a, b) => a.y - b.y);
@@ -4013,15 +4013,15 @@ async function pageTextItemsFor(page, pageH) {   // Textstücke einer beliebigen
 }
 const _isListLine = s => /^\s*([-–—•*·▪◦‣]|\d{1,3}[.)])\s/.test(s) || /^\s*[-–—•*·▪◦‣]\S/.test(s);
 // Ein Absatz-Block → HTML. Gestapelte Zeilen bleiben GESTAPELT (<br>); nur echt umbrochene Fliesstext-Zeilen werden zusammengezogen (vorige Zeile reicht fast ganz nach rechts, diese beginnt links, kein Listenpunkt, keine Satzende-Zeile davor).
-function blockToParaHtml(b, body) {
+function blockToParaHtml(b, body, pageRight) {
   const lines = (b.lines && b.lines.length) ? b.lines : b.text.split('\n').map(str => ({ str, x: b.x, maxx: b.right || (b.x + b.w) }));
-  const right = b.right || (b.x + b.w);
   let inner = '';
   for (let i = 0; i < lines.length; i++) {
     const cur = lines[i], prev = lines[i - 1];
     if (i > 0) {
-      const prevFull = prev.maxx >= right - b.size * 0.9, curLeft = (cur.x - b.x) <= b.size * 0.9;
-      const wrapped = prevFull && curLeft && !_isListLine(cur.str) && !/[.:!?]$/.test((prev.str || '').trim());
+      const prevReaches = prev.maxx >= pageRight - b.size * 2.5;   // vorige Zeile reicht bis zum SEITEN-Textrand → umbrochener Fliesstext
+      const curLeft = (cur.x - b.x) <= b.size * 1.2;               // diese Zeile beginnt links
+      const wrapped = prevReaches && curLeft && !_isListLine(cur.str) && !/[.:!?]$/.test((prev.str || '').trim());
       inner += wrapped ? ' ' : '<br>';
     }
     inner += _htmlEsc(cur.str);
@@ -4031,10 +4031,13 @@ function blockToParaHtml(b, body) {
   if (b.bold) inner = '<strong>' + inner + '</strong>'; if (b.italic) inner = '<em>' + inner + '</em>';
   return '<p>' + inner + '</p>';
 }
+// Gemeinsamer rechter Textrand der Seite (dort bricht Fliesstext um) – 90-Perzentil der Zeilen-Enden
+function pageRightMargin(blocks) { const r = []; blocks.forEach(b => (b.lines || []).forEach(l => r.push(l.maxx))); if (!r.length) return 1e9; r.sort((a, b) => a - b); return r[Math.floor(r.length * 0.9)]; }
 function blocksToPaperHtml(blocks) {
   if (!blocks.length) return '<p></p>';
   const sizes = blocks.map(b => b.size).slice().sort((a, b) => a - b), body = sizes[Math.floor(sizes.length / 2)] || 12;
-  const html = blocks.map(b => blockToParaHtml(b, body)).filter(Boolean).join('\n');
+  const pr = pageRightMargin(blocks);
+  const html = blocks.map(b => blockToParaHtml(b, body, pr)).filter(Boolean).join('\n');
   return html || '<p></p>';
 }
 // „1-3, 5, 8-9" → [1,2,3,5,8,9] (begrenzt auf 1..max)

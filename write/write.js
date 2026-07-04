@@ -3260,3 +3260,54 @@ function init() {
   renderList();
 }
 init();
+
+/* ============================================================
+   HEADLESS-SELBSTTEST · Submit Paper (S0.2)
+   Aufruf:  node write/test/selftest-node.js   → prüft DOM-freie Kernlogik.
+   ============================================================ */
+function selfTest() {
+  const R = []; let pass = 0, fail = 0;
+  const ok = (name, cond, msg) => { const good = !!cond; R.push({ name, ok: good, msg: good ? '' : (msg || '') }); good ? pass++ : fail++; };
+  const eq = (name, got, exp) => ok(name, JSON.stringify(got) === JSON.stringify(exp), 'erwartet ' + JSON.stringify(exp) + ', bekam ' + JSON.stringify(got));
+
+  // A1-Adressierung (Spalten/Zeilen ↔ Bezug)
+  eq('colToIdx A', colToIdx('A'), 0);
+  eq('colToIdx B', colToIdx('B'), 1);
+  eq('colToIdx AA', colToIdx('AA'), 26);
+  eq('idxToCol 0', idxToCol(0), 'A');
+  eq('idxToCol 26', idxToCol(26), 'AA');
+  eq('cellKey C5', cellKey(2, 4), 'C5');
+  eq('Roundtrip Spalte', idxToCol(colToIdx('AZ')), 'AZ');
+
+  // Zahl-Umwandlung
+  eq('toNum Komma', toNum('3,5'), 3.5);
+  eq('toNum leer', toNum(''), 0);
+  eq('toNum bool', toNum(true), 1);
+
+  // Formel-Engine (rein): Arithmetik, Klammern, Potenz, Vergleiche, Passthrough
+  eq('Punkt-vor-Strich', evalRaw('=2+3*4'), 14);
+  eq('Klammern', evalRaw('=(2+3)*4'), 20);
+  eq('Division', evalRaw('=10/4'), 2.5);
+  eq('Potenz', evalRaw('=2^10'), 1024);
+  eq('Zahl-Passthrough', evalRaw('42'), 42);
+  eq('Text-Passthrough', evalRaw('hallo'), 'hallo');
+  eq('Vergleich WAHR', evalRaw('=5>3'), 'WAHR');
+  eq('Vergleich FALSCH', evalRaw('=5<3'), 'FALSCH');
+
+  // Formel mit Zellbezügen: cellText im Test DOM-frei machen (echtes DOM fehlt headless)
+  cellText = function (frag) { return String(frag == null ? '' : frag).replace(/<[^>]*>/g, '').replace(/​/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim(); };
+  const saved = curGrid;
+  curGrid = { cols: 3, zeilen: [{ tag: 'p', cells: ['2', '3', '=A1*B1'] }, { tag: 'p', cells: ['=A1+B1', '=SUMME(A1:C1)', ''] }] };
+  eq('Zelle A1*B1 = 6', evalCell(2, 0), 6);
+  eq('Zelle A1+B1 = 5', evalCell(0, 1), 5);
+  eq('Zelle SUMME(A1:C1) = 11', evalCell(1, 1), 11);   // 2 + 3 + 6
+  curGrid = { cols: 1, zeilen: [{ tag: 'p', cells: ['=A1'] }] };
+  eq('Zirkelbezug erkannt', evalCell(0, 0), '#ZIRKEL');
+  curGrid = saved;
+
+  // gridToHtml (rein)
+  const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
+  ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  return { R, pass, fail };
+}

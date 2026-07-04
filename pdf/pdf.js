@@ -4086,19 +4086,47 @@ function numberColumns(lines, pageW) {   // rechte Zahlen-/Einheiten-Spalten (li
   for (const x of xs) { const last = cols[cols.length - 1]; if (last && x - last.max < 16) { last.max = x; last.xs.push(x); } else cols.push({ max: x, xs: [x] }); }
   return cols.filter(c => c.xs.length >= 3).map(c => Math.min(...c.xs) - 4);
 }
-function tableRowHtml(L, cols, body) {
-  const cells = Array.from({ length: cols.length + 1 }, () => []);
-  for (const it of L.items) { let ci = 0; for (let k = 0; k < cols.length; k++) if (it.x >= cols[k] - 2) ci = k + 1; cells[ci].push(it); }
-  const texts = cells.map(_joinItems); if (!texts.some(t => t.trim())) return '';
-  const nums = []; for (let k = 1; k < texts.length; k++) if (_isNumCell(texts[k])) nums.push({ v: _parseNum(texts[k]), str: texts[k], k });
-  const chk = nums.length >= 3 ? _checkCalc(nums) : null;
-  let tds = '';
-  for (let k = 0; k < texts.length; k++) {
-    if (chk && !chk.ok && chk.cK === k) { tds += `<td style="text-align:right;white-space:nowrap;background:#ffd6d6;color:#8a1f11"><strong>${_fmtNum(chk.expected)}</strong> ⚠ <s>${_htmlEsc(texts[k])}</s></td>`; continue; }   // Rechenfehler → berechnetes Ergebnis rot, Original durchgestrichen
-    const numeric = k >= 1 && _isNumCell(texts[k]);
-    tds += `<td${numeric ? ' style="text-align:right;white-space:nowrap"' : ''}>${_htmlEsc(texts[k]) || ''}</td>`;
+// Tabellenbereich → HTML. Zusammenhängende Beschreibungszeilen werden in EINER Zelle zusammengefasst (nicht in viele leere Zeilen zerrissen); Abschnitts-Überschriften (enden mit „:") = eigene fette Zeile über volle Breite.
+function tableHtml(lines, first, last, cols, body) {
+  const ncol = cols.length + 1;
+  const rights = []; for (let i = first; i <= last; i++) rights.push(Math.max(...lines[i].items.map(it => it.x + it.w)));
+  rights.sort((a, b) => a - b); const pageRight = rights[Math.floor(rights.length * 0.9)] || 1e9;
+  const rows = [];
+  for (let i = first; i <= last; i++) {
+    const L = lines[i], cells = Array.from({ length: ncol }, () => []);
+    for (const it of L.items) { let ci = 0; for (let k = 0; k < cols.length; k++) if (it.x >= cols[k] - 2) ci = k + 1; cells[ci].push(it); }
+    const texts = cells.map(_joinItems); if (!texts.some(t => t.trim())) continue;
+    const descItems = cells[0], hasNum = texts.slice(1).some(t => t.trim());
+    const dx = descItems.length ? descItems[0].x : 0, dmax = descItems.length ? Math.max(...descItems.map(it => it.x + it.w)) : 0;
+    const heading = /[:：]\s*$/.test(texts[0].trim());
+    if (!hasNum) {
+      const prev = rows[rows.length - 1];
+      if (prev && prev.descOnly && !prev.heading && !heading && texts[0].trim()) prev.dl.push({ str: texts[0], x: dx, maxx: dmax });
+      else rows.push({ descOnly: true, heading, dl: [{ str: texts[0], x: dx, maxx: dmax }] });
+    } else rows.push({ descOnly: false, desc: texts[0], numTexts: texts.slice(1) });
   }
-  return '<tr>' + tds + '</tr>';
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:15px">';
+  for (const r of rows) {
+    if (r.descOnly) {
+      let inner = '';
+      for (let i = 0; i < r.dl.length; i++) { const cur = r.dl[i], prev = r.dl[i - 1];
+        if (i > 0) { const wrapped = prev.maxx >= pageRight - body * 2.5 && (cur.x - r.dl[0].x) <= body * 1.5 && !_isListLine(cur.str) && !/[.:!?]$/.test((prev.str || '').trim()); inner += wrapped ? ' ' : '<br>'; }
+        inner += _htmlEsc(cur.str);
+      }
+      if (!inner.trim()) continue;
+      html += r.heading ? `<tr><td colspan="${ncol}" style="padding-top:5px"><strong>${inner}</strong></td></tr>` : `<tr><td colspan="${ncol}">${inner}</td></tr>`;
+    } else {
+      const nums = []; for (let k = 0; k < r.numTexts.length; k++) if (_isNumCell(r.numTexts[k])) nums.push({ v: _parseNum(r.numTexts[k]), str: r.numTexts[k], k: k + 1 });
+      const chk = nums.length >= 3 ? _checkCalc(nums) : null;
+      let tds = `<td>${_htmlEsc(r.desc)}</td>`;
+      for (let k = 0; k < r.numTexts.length; k++) { const col = k + 1, t = r.numTexts[k];
+        if (chk && !chk.ok && chk.cK === col) { tds += `<td style="text-align:right;white-space:nowrap;background:#ffd6d6;color:#8a1f11"><strong>${_fmtNum(chk.expected)}</strong> ⚠ <s>${_htmlEsc(t)}</s></td>`; continue; }   // Rechenfehler → berechnetes Ergebnis rot, Original durchgestrichen
+        tds += `<td${_isNumCell(t) ? ' style="text-align:right;white-space:nowrap"' : ''}>${_htmlEsc(t) || ''}</td>`;
+      }
+      html += '<tr>' + tds + '</tr>';
+    }
+  }
+  return html + '</table>';
 }
 // Seite → HTML: Fliesstext + erkannte Tabellen/Kalkulationen (mit Neuberechnung)
 function pdfPageToPaperHtml(items, pageW) {
@@ -4110,9 +4138,7 @@ function pdfPageToPaperHtml(items, pageW) {
   const preItems = lines.slice(0, first).flatMap(L => L.items), postItems = lines.slice(last + 1).flatMap(L => L.items);
   let html = '';
   if (preItems.length) html += blocksToPaperHtml(groupTextBlocks(preItems));
-  html += '<table style="width:100%;border-collapse:collapse;font-size:15px">';
-  for (let i = first; i <= last; i++) html += tableRowHtml(lines[i], cols, body);
-  html += '</table>';
+  html += tableHtml(lines, first, last, cols, body);
   if (postItems.length) html += blocksToPaperHtml(groupTextBlocks(postItems));
   return html || '<p></p>';
 }

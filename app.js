@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v378';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v379';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -1706,6 +1706,17 @@ function personaPrimary(persona) {
     sekretariat: ['overview', 'listen', 'kalender', 'protokolle', 'dossier', 'pendenzen'],
   };
   return P[persona] || P.alle;
+}
+// Persona-gerechte Reihenfolge der Schnell-Erfassung (wichtigste Art zuerst)
+function personaErfassenOrder(persona) {
+  const O = {
+    alle:        ['pendenz', 'termin', 'rechnung', 'protokoll', 'vergabe', 'kontakt', 'projekt'],
+    bauleiter:   ['pendenz', 'termin', 'protokoll', 'rechnung', 'vergabe', 'kontakt', 'projekt'],
+    architekt:   ['vergabe', 'projekt', 'termin', 'protokoll', 'pendenz', 'rechnung', 'kontakt'],
+    finanz:      ['rechnung', 'vergabe', 'pendenz', 'termin', 'protokoll', 'kontakt', 'projekt'],
+    sekretariat: ['kontakt', 'termin', 'protokoll', 'pendenz', 'rechnung', 'vergabe', 'projekt'],
+  };
+  return O[persona] || O.alle;
 }
 function personaChosen() { try { return localStorage.getItem('so_persona') !== null; } catch (_) { return true; } }   // Speicher kaputt → nicht nerven
 // Erststart: Persona einmal aktiv abfragen (freundliche Karte, überspringbar)
@@ -8751,17 +8762,22 @@ function viewDrucken() {
 
 /* --- Erfassen: zentraler Schnell-Erfassungs-Reiter (Gegenstück zu Drucken) --- */
 function viewErfassen() {
-  const card = (kind, ico, label, desc) => `<button class="btn secondary" data-act="erfassen" data-kind="${kind}" style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;height:auto;padding:13px 15px;white-space:normal"><span style="font-weight:700;font-size:13.5px">${ico} ${label}</span><span class="muted" style="font-size:11.5px;font-weight:400">${desc}</span></button>`;
+  const M = {
+    pendenz:   ['📋', 'Pendenz', 'Aufgabe / To-do für ein Projekt'],
+    termin:    ['📅', 'Termin', 'Kalendereintrag mit Datum & Zeit'],
+    rechnung:  ['🧾', 'Rechnung', 'Teil-/Schlussrechnung zu einem Gewerk'],
+    protokoll: ['📝', 'Protokoll / Aktennotiz', 'Sitzung oder Notiz festhalten'],
+    vergabe:   ['◫', 'Arbeitsbeschrieb', 'Gewerk / Kostenschätzung anlegen'],
+    kontakt:   ['👤', 'Kontakt', 'Firma / Person zur Adressliste'],
+    projekt:   ['➕', 'Neues Projekt', 'Bauprojekt anlegen'],
+  };
+  const persona = getPersona();
+  const card = (kind, rec) => { const m = M[kind]; return `<button class="btn secondary erfassen-card${rec ? ' recommended' : ''}" data-act="erfassen" data-kind="${kind}" style="position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;height:auto;padding:13px 15px;white-space:normal">${rec ? '<span class="ef-rec">Für dich</span>' : ''}<span style="font-weight:700;font-size:13.5px">${m[0]} ${m[1]}</span><span class="muted" style="font-size:11.5px;font-weight:400">${m[2]}</span></button>`; };
+  const order = personaErfassenOrder(persona);
   render(`
     <div class="page-head"><div><h1>Erfassen</h1><div class="sub">Schnell festhalten – Art wählen, Projekt angeben, fertig</div></div></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-top:6px">
-      ${card('pendenz', '📋', 'Pendenz', 'Aufgabe / To-do für ein Projekt')}
-      ${card('termin', '📅', 'Termin', 'Kalendereintrag mit Datum & Zeit')}
-      ${card('rechnung', '🧾', 'Rechnung', 'Teil-/Schlussrechnung zu einem Gewerk')}
-      ${card('protokoll', '📝', 'Protokoll / Aktennotiz', 'Sitzung oder Notiz festhalten')}
-      ${card('vergabe', '◫', 'Arbeitsbeschrieb', 'Gewerk / Kostenschätzung anlegen')}
-      ${card('kontakt', '👤', 'Kontakt', 'Firma / Person zur Adressliste')}
-      ${card('projekt', '➕', 'Neues Projekt', 'Bauprojekt anlegen')}
+      ${order.map((k, i) => card(k, i === 0 && persona !== 'alle')).join('')}
     </div>
     <p class="muted" style="font-size:12px;margin-top:14px">„Pendenz", „Termin" &amp; „Rechnung" fragen zuerst nach dem Projekt – so landet alles am richtigen Ort.</p>
   `);
@@ -13467,6 +13483,9 @@ function selfTest() {
   ok('personaPrimary: Overview zuerst + 6 Reiter je Rolle', ['alle', 'bauleiter', 'architekt', 'finanz', 'sekretariat'].every(k => personaPrimary(k)[0] === 'overview' && personaPrimary(k).length === 6));
   ok('personaPrimary Finanz → Kosten+Rechnungen primär', personaPrimary('finanz').includes('kosten') && personaPrimary('finanz').includes('rechnungen'));
   ok('personaPrimary Bauleiter → Pendenzen+Protokolle primär', personaPrimary('bauleiter').includes('pendenzen') && personaPrimary('bauleiter').includes('protokolle'));
+  ok('personaErfassenOrder Finanz → Rechnung zuerst', personaErfassenOrder('finanz')[0] === 'rechnung');
+  ok('personaErfassenOrder Bauleiter → Pendenz zuerst', personaErfassenOrder('bauleiter')[0] === 'pendenz');
+  ok('personaErfassenOrder vollständig (7 Arten, keine Dubletten)', (() => { const o = personaErfassenOrder('architekt'); return o.length === 7 && new Set(o).size === 7; })());
 
   // Leerzustand: erweiterter emptyState (Sub-Text + Aktions-Knopf) rückwärtskompatibel
   ok('emptyState schlicht (nur Icon+Text)', /class="empty"/.test(emptyState('x', 'Leer')) && !/e-cta/.test(emptyState('x', 'Leer')) && !/e-sub/.test(emptyState('x', 'Leer')));

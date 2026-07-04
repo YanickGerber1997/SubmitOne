@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v29';
+const WRITE_VERSION = 'v30';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -1564,6 +1564,7 @@ function wire() {
   });
   // Tastatur (Navigation, Inline-Edit, Bereich mit Umschalt) – für Gitter UND Blatt
   const calcKey = e => {
+    if (viewOnly && !e.key.startsWith('Arrow')) return;   // Ansehen-Modus: keine Zell-Bearbeitung (Pfeil-Navigation bleibt)
     if (document.activeElement === $('#formulaInput')) return;
     if (editingTd) {
       if (e.key === 'Enter' && (e.altKey || e.shiftKey)) { e.preventDefault(); document.execCommand('insertHTML', false, '<br>'); }  // Zeilenumbruch in der Zelle
@@ -1775,6 +1776,7 @@ function wire() {
   // Tastenkürzel
   document.addEventListener('keydown', e => {
     const mod = e.ctrlKey || e.metaKey;
+    if (viewOnly && (e.key === 'Delete' || e.key === 'Backspace')) return;   // Ansehen-Modus: nichts löschen
     // markiertes Bild löschen
     if ((e.key === 'Delete' || e.key === 'Backspace')) {
       const im = $('img.sel', editor); if (im) { e.preventDefault(); im.remove(); afterEdit(); return; }

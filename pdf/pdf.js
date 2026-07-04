@@ -7722,6 +7722,11 @@ function wire() {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && pdfDoc) { e.preventDefault(); openFind(); return; }   // Suche – auch wenn ein Feld fokussiert ist
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (e.key === 'Escape') e.target.blur(); return; }
     const mod = e.ctrlKey || e.metaKey;
+    if (viewOnly) {   // Ansehen-Modus: nur Ansicht/Navigation zulassen (Entf/Einfügen/Duplizieren/Undo/Werkzeug-Tasten blockiert)
+      const allow = e.key === 'Escape' || e.key === ' ' || e.key === '?' || (e.shiftKey && e.key === '/') ||
+        (mod && ['c', 'f', 's', 'p', 'o'].includes(e.key.toLowerCase())) || (mod && ['+', '=', '-', '0'].includes(e.key));
+      if (!allow) return;
+    }
     if (e.key === 'Enter' && areaDraft) { e.preventDefault(); finishArea(); return; }   // Fläche abschliessen
     if (e.key === 'Enter' && profDraft) { e.preventDefault(); finishProfile(); return; }   // Profil-Pfad abschliessen
     if (e.key === 'Enter' && penDraft) { e.preventDefault(); finishCurve(); return; }   // Kurve abschliessen

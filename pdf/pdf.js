@@ -11,6 +11,7 @@ const PDFLIB = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js'
 let pdfjs = null, pdfDoc = null, curBytes = null, docName = 'dokument.pdf';
 let docs = [], active = -1;   // mehrere offene Dokumente (Tabs); active = Index des sichtbaren
 let zoom = 'auto', pageViews = [], renderTok = 0;
+let _editingId = null;   // gerade inline getippte Edit-Stelle (transient, nicht gespeichert) → deren Text nicht doppelt zeichnen
 let annos = {};            // {pageNum: [anno]}
 let pageRot = {};          // {pageNum: 0/90/180/270} – gespeicherte 90°-Drehung
 let viewRot = {};          // {pageNum: deg} – freie Ansichts-Drehung (Norden), NICHT gespeichert
@@ -1443,11 +1444,14 @@ function drawOne(svg, a, pv) {
     hit = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'edit') {
     const g = svgEl('g', { 'data-id': a.id });
-    g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: a.bg || '#fff', stroke: 'none' }));   // alte Stelle überdecken
-    const t = svgEl('text', { x: a.x + 1, y: a.y + 1, fill: a.color, 'font-size': a.size, 'font-family': cssFontStack(a.fam) });
-    if (a.bold) t.setAttribute('font-weight', 'bold'); if (a.italic) t.setAttribute('font-style', 'italic');
-    (a.text || '').split('\n').forEach((ln, i) => { const ts = svgEl('tspan', { x: a.x + 1, dy: i === 0 ? 0 : a.size * 1.25 }); ts.textContent = ln || ' '; t.appendChild(ts); });
-    g.appendChild(t); svg.appendChild(g); el = g;
+    if (a.bg && a.bg !== 'transparent') g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: a.bg, stroke: 'none' }));   // alte Stelle überdecken (nur wenn Abdeckung gewünscht)
+    if (a.id !== _editingId) {   // während des Tippens zeigt die Textarea den Text – nicht doppelt zeichnen
+      const t = svgEl('text', { x: a.x + 1, y: a.y + 1, fill: a.color, 'font-size': a.size, 'font-family': cssFontStack(a.fam) });
+      if (a.bold) t.setAttribute('font-weight', 'bold'); if (a.italic) t.setAttribute('font-style', 'italic');
+      (a.text || '').split('\n').forEach((ln, i) => { const ts = svgEl('tspan', { x: a.x + 1, dy: i === 0 ? 0 : (a.lh || a.size * 1.25) }); ts.textContent = ln || ' '; t.appendChild(ts); });
+      g.appendChild(t);
+    }
+    svg.appendChild(g); el = g;
     const hit2 = svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit2);
   } else if (a.type === 'note') {
     const g = svgEl('g', { class: 'note-pin', 'data-id': a.id });
@@ -3944,6 +3948,40 @@ async function ensureTextItems(pv) {
   } catch (_) { }
   pv.textItems = items; return items;
 }
+// Textstücke zu ZEILEN und ABSÄTZEN gruppieren → ein editierbarer Block je Absatz (statt einer Box pro Zeile).
+async function buildTextBlocks(pv) {
+  if (pv.textBlocks) return pv.textBlocks;
+  const items = await ensureTextItems(pv);
+  const its = items.slice().sort((a, b) => a.y - b.y || a.x - b.x);
+  // 1) Zeilen: Items mit überlappender vertikaler Lage zusammenfassen
+  const lines = [];
+  for (const it of its) {
+    const cy = it.y + it.h / 2; let L = null;
+    for (let i = lines.length - 1; i >= 0 && i >= lines.length - 5; i--) { const c = lines[i]; if (Math.abs(c.cy - cy) < Math.min(c.h, it.h) * 0.55) { L = c; break; } }
+    if (L) { L.items.push(it); L.x = Math.min(L.x, it.x); L.maxx = Math.max(L.maxx, it.x + it.w); L.y = Math.min(L.y, it.y); L.maxy = Math.max(L.maxy, it.y + it.h); L.h = L.maxy - L.y; L.cy = (L.y + L.maxy) / 2; L.size = Math.max(L.size, it.size); }
+    else lines.push({ items: [it], x: it.x, maxx: it.x + it.w, y: it.y, maxy: it.y + it.h, h: it.h, cy, size: it.size });
+  }
+  for (const L of lines) {
+    L.items.sort((a, b) => a.x - b.x);
+    let str = '';
+    for (let i = 0; i < L.items.length; i++) { const it = L.items[i]; if (i > 0) { const pr = L.items[i - 1], gap = it.x - (pr.x + pr.w); if (gap > it.size * 0.28 && !/\s$/.test(str) && !/^\s/.test(it.str)) str += ' '; } str += it.str; }
+    L.str = str; const dom = L.items.reduce((a, b) => (b.w > a.w ? b : a), L.items[0]); L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic;
+  }
+  lines.sort((a, b) => a.y - b.y);
+  // 2) Absätze: aufeinanderfolgende Zeilen mit ähnlicher linker Kante + Zeilenabstand ~ Zeilenhöhe + ähnlicher Grösse
+  const blocks = [];
+  for (const L of lines) {
+    const B = blocks[blocks.length - 1], prev = B && B.lines[B.lines.length - 1];
+    if (B && prev) {
+      const gap = L.y - prev.maxy, lh = L.y - prev.y;
+      const sameLeft = Math.abs(L.x - B.x) < B.size * 1.7, sameSize = L.size / B.size < 1.35 && B.size / L.size < 1.35, closeV = gap < B.size * 1.1 && lh > 0;
+      if (sameLeft && sameSize && closeV) { B.lines.push(L); B.x = Math.min(B.x, L.x); B.maxx = Math.max(B.maxx, L.maxx); B.maxy = L.maxy; B.lhs.push(lh); continue; }
+    }
+    blocks.push({ lines: [L], x: L.x, maxx: L.maxx, y: L.y, maxy: L.maxy, size: L.size, fam: L.fam, bold: L.bold, italic: L.italic, lhs: [] });
+  }
+  const out = blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, text: B.lines.map(l => l.str).join('\n'), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic }));
+  pv.textBlocks = out; return out;
+}
 // Hintergrund- (häufigste) und Text-Farbe (dunkelste) im Kästchen abtasten
 function sampleBox(pv, box) {
   const cv = pv.canvas; if (!cv) return {};
@@ -3961,15 +3999,19 @@ function sampleBox(pv, box) {
 }
 async function editTextAt(pv, p) {
   if (!pv.page) return;
-  const items = await ensureTextItems(pv);
-  const hit = items.find(it => p.x >= it.x - 2 && p.x <= it.x + it.w + 2 && p.y >= it.y - 1 && p.y <= it.y + it.h + 1);
+  // 1) Bereits editierbare Stelle getroffen → sofort tippen (kein Doppelklick, kein Auswählen)
+  const existing = (getAnnos(pv.num) || []).filter(a => a.type === 'edit').find(a => p.x >= a.x - 2 && p.x <= a.x + a.w + 2 && p.y >= a.y - 2 && p.y <= a.y + a.h + 2);
+  if (existing) { sel = null; drawAnnos(pv); openEditEdit(pv, existing, false); return; }   // kein Auswahl-Rahmen → direkt tippen
+  // 2) Absatz an der Klickstelle → abdecken + direkt editieren
+  const blocks = await buildTextBlocks(pv);
+  const hit = blocks.find(b => p.x >= b.x - 3 && p.x <= b.x + b.w + 3 && p.y >= b.y - 2 && p.y <= b.y + b.h + 2);
   let a;
   if (hit) {
-    const s = sampleBox(pv, hit); a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.str, size: hit.size, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic };
-    pushUndo(); pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv);   // Treffer: auswählen → Optionen-Leiste (Überschreiben/Verschieben/Grösse)
+    const s = sampleBox(pv, hit); a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic };
+    pushUndo(); pushAnno(pv.num, a); sel = null; drawAnnos(pv); openEditEdit(pv, a, false);
   } else {
-    a = { id: nextId++, type: 'edit', x: p.x, y: p.y - style.size * 0.82, w: 120, h: style.size * 1.2, text: '', size: style.size, color: style.color, bg: '#ffffff' };
-    pushUndo(); pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); openEditEdit(pv, a, true);   // leere Stelle: direkt tippen
+    a = { id: nextId++, type: 'edit', x: p.x, y: p.y - style.size * 0.82, w: 140, h: style.size * 1.3, text: '', size: style.size, lh: style.size * 1.3, color: style.color, bg: 'transparent' };
+    pushUndo(); pushAnno(pv.num, a); sel = null; drawAnnos(pv); openEditEdit(pv, a, true);   // leere Stelle: direkt tippen
   }
 }
 // Ganze Seite auf einmal editierbar machen (wie Acrobat): jede erkannte Textstelle wird eine überschreibbare Edit-Stelle in passender Schrift.
@@ -3978,19 +4020,19 @@ async function editAllTextOnPage(pv) {
   pv = pv || pageViews.find(p => p.num === curPage()); if (!pv || !pv.page || _editAllBusy) return;
   _editAllBusy = true; status('Text wird eingelesen …'); await new Promise(r => setTimeout(r, 10));
   try {
-    const items = await ensureTextItems(pv);
-    if (!items.length) { toast('Auf dieser Seite wurde kein bearbeitbarer Text erkannt (evtl. gescanntes Bild).'); return; }
+    const blocks = await buildTextBlocks(pv);
+    if (!blocks.length) { toast('Auf dieser Seite wurde kein bearbeitbarer Text erkannt (evtl. gescanntes Bild).'); return; }
     const already = new Set((getAnnos(pv.num) || []).filter(a => a.type === 'edit').map(a => Math.round(a.x) + '|' + Math.round(a.y)));
-    if (items.length > 500 && !confirm(items.length + ' Textstellen editierbar machen? Das kann einen Moment dauern.')) return;
+    if (blocks.length > 300 && !confirm(blocks.length + ' Absätze editierbar machen? Das kann einen Moment dauern.')) return;
     pushUndo(); let added = 0;
-    for (const it of items) {
-      if (already.has(Math.round(it.x) + '|' + Math.round(it.y))) continue;   // schon editierbar → nicht doppelt
-      const s = sampleBox(pv, it);
-      pushAnno(pv.num, { id: nextId++, type: 'edit', x: it.x, y: it.y, w: Math.max(it.w, it.size), h: it.h, text: it.str, size: it.size, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: it.fam, bold: it.bold, italic: it.italic });
+    for (const b of blocks) {
+      if (already.has(Math.round(b.x) + '|' + Math.round(b.y))) continue;   // schon editierbar → nicht doppelt
+      const s = sampleBox(pv, b);
+      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic });
       added++;
     }
     drawAnnos(pv); saveState();
-    toast(added ? (added + ' Textstellen sind jetzt editierbar – Doppelklick auf eine Stelle zum Ändern.') : 'Alle Textstellen sind bereits editierbar.');
+    toast(added ? (added + ' Absätze sind editierbar – klick hinein und tippe.') : 'Alle Absätze sind bereits editierbar.');
   } catch (e) { console.error(e); toast('Text-Einlesen fehlgeschlagen.'); }
   finally { _editAllBusy = false; status(''); }
 }
@@ -4033,14 +4075,26 @@ async function startHighlight(pv, e, p) {
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 function openEditEdit(pv, a, isNew) {
-  const sc = pv.scale; const ta = document.createElement('textarea'); ta.className = 'textedit'; ta.value = a.text; ta.rows = 1;
-  ta.style.left = (a.x * sc) + 'px'; ta.style.top = (a.y * sc) + 'px'; ta.style.fontSize = (a.size * sc) + 'px'; ta.style.color = a.color; ta.style.background = a.bg; ta.style.minWidth = Math.max(40, a.w * sc) + 'px';
+  const sc = pv.scale, lh = a.lh || a.size * 1.25;
+  _editingId = a.id; drawAnnos(pv);   // Text der Stelle ausblenden (nur Abdeckung bleibt) → keine Doppel-Anzeige
+  const ta = document.createElement('textarea'); ta.className = 'textedit'; ta.value = a.text || '';
+  ta.style.left = (a.x * sc) + 'px'; ta.style.top = (a.y * sc) + 'px';
+  ta.style.fontSize = (a.size * sc) + 'px'; ta.style.lineHeight = (lh * sc) + 'px';
+  ta.style.color = a.color; ta.style.background = 'transparent';   // die Abdeckung darunter liefert den Hintergrund
+  ta.style.width = Math.max(60, a.w * sc + 10) + 'px';
   ta.style.fontFamily = cssFontStack(a.fam); if (a.bold) ta.style.fontWeight = 'bold'; if (a.italic) ta.style.fontStyle = 'italic';
-  pv.inner.appendChild(ta); ta.focus(); ta.select();
-  const commit = () => { a.text = ta.value.replace(/\s+$/, ''); ta.remove(); if (!a.text && isNew) { const arr = getAnnos(pv.num); const i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); } setTool('select'); drawAnnos(pv); saveState(); };
+  pv.inner.appendChild(ta);
+  const autoH = () => { ta.style.height = 'auto'; ta.style.height = Math.max(a.h * sc, ta.scrollHeight) + 'px'; };
+  autoH(); ta.focus(); if (isNew) ta.select();
+  const multiline = (a.text || '').indexOf('\n') >= 0 || a.h > a.size * 1.9;   // Absatz vs. Einzeiler
+  let done = false;
+  const commit = () => { if (done) return; done = true; _editingId = null; a.text = ta.value.replace(/[ \t]+$/, ''); ta.remove(); if (!a.text.trim() && isNew) { const arr = getAnnos(pv.num); const i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); } drawAnnos(pv); saveState(); };   // im edittext-Modus bleiben → nächsten Absatz direkt anklicken
   ta.addEventListener('blur', commit);
-  ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); ta.blur(); } else if (ev.key === 'Escape') { if (isNew) ta.value = ''; ta.blur(); } });
-  ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; });
+  ta.addEventListener('keydown', ev => {   // Esc/Klick daneben = fertig · Einzeiler: Enter = fertig · Absatz: Enter = neue Zeile, Strg+Enter = fertig
+    if (ev.key === 'Escape') { ev.preventDefault(); ta.blur(); }
+    else if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey || (!ev.shiftKey && !multiline))) { ev.preventDefault(); ta.blur(); }
+  });
+  ta.addEventListener('input', autoH);
 }
 // Bestehende Text-Box bearbeiten (öffnet den Box-Editor mit Format-Leiste)
 function openTextAnnoEdit(pv, a) { openTextBox(pv, a, false); }
@@ -4782,7 +4836,7 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
           else if (a.kind === 'label') { pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, borderColor: c, borderWidth: 2 }); const fs = a.h * 0.46, tw = font.widthOfTextAtSize(a.text || '', fs); pg.drawText(a.text || '', { x: a.x + (a.w - tw) / 2, y: Y(a.y + a.h) + (a.h - fs) / 2 + fs * 0.2, size: fs, font, color: c }); }
         }
         else if (a.type === 'cover') { const cc = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(cc.r, cc.g, cc.b) }); }
-        else if (a.type === 'edit') { const bg = parseColor(a.bg), tc2 = parseColor(a.color), ef = await getFont(a.fam, a.bold, a.italic); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); (a.text || '').split('\n').forEach((ln, i) => { try { pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font: ef, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { try { pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * a.size * 1.25), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { } } }); }
+        else if (a.type === 'edit') { const tc2 = parseColor(a.color), ef = await getFont(a.fam, a.bold, a.italic), elh = a.lh || a.size * 1.25; if (a.bg && a.bg !== 'transparent') { const bg = parseColor(a.bg); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); } (a.text || '').split('\n').forEach((ln, i) => { try { pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * elh), size: a.size, font: ef, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { try { pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * elh), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { } } }); }
         else if (a.type === 'img' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, opacity: a.opacity != null ? a.opacity : 1 }); }
         else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); if (a.caption) { const fs = Math.max(7, Math.min(11, a.h * 0.16)), cy = a.y + a.h + 2; pg.drawLine({ start: { x: a.x, y: Y(cy) }, end: { x: a.x + a.w, y: Y(cy) }, thickness: 0.7, color: rgb(.11, .14, .17) }); pg.drawText(a.caption, { x: a.x, y: Y(cy + fs + 1), size: fs, font, color: rgb(.11, .14, .17) }); } }
         // Schraffur (geclippt auf die Form)

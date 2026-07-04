@@ -13130,3 +13130,61 @@ function demoData() {
   projekte.forEach(p => (p.vergaben || []).forEach(v => { (v.eingeladene || []).forEach(e => addFull({ firma: e.firma, email: e.email })); if (v.firma) v.firma.split(',').forEach(f => addFull({ firma: f.trim() })); }));
   return { projekte, kontakte, dokumente: [], buero: { ...BUERO } };
 }
+
+/* ============================================================
+   HEADLESS-SELBSTTEST · Suite-Kern (S0.1)
+   Aufruf:  node test/selftest-node.js   → prüft reine Kernlogik ohne Browser.
+   Nur pure Funktionen testen (keine DOM-/State-Abhängigkeit).
+   ============================================================ */
+function selfTest() {
+  const R = []; let pass = 0, fail = 0;
+  const ok = (name, cond, msg) => { const good = !!cond; R.push({ name, ok: good, msg: good ? '' : (msg || '') }); good ? pass++ : fail++; };
+  const eq = (name, got, exp) => ok(name, JSON.stringify(got) === JSON.stringify(exp), 'erwartet ' + JSON.stringify(exp) + ', bekam ' + JSON.stringify(got));
+
+  // Text / ID
+  eq('esc maskiert HTML', esc('<a>&"\''), '&lt;a&gt;&amp;&quot;&#39;');
+  ok('uid mit Prefix', /^k_[a-z0-9]+$/.test(uid('k')));
+
+  // Geld
+  eq('chf(null) = –', chf(null), '–');
+  eq('chf(0)', chf(0), 'CHF 0');
+  eq('money(null) = –', money(null), '–');
+  eq('money(5.5)', money(5.5), '5.50');
+  eq('money(0)', money(0), '0.00');
+  eq('chfShort(0) = –', chfShort(0), '–');
+  eq('chfShort(500)', chfShort(500), '500');
+  eq('chfShort(2 Mio.)', chfShort(2e6), '2 Mio.');
+
+  // Datum
+  eq('fmtDate leer', fmtDate(''), '–');
+  eq('fmtDate CH', fmtDate('2026-06-09'), '09.06.2026');
+  eq('addDays +1', addDays('2026-06-09', 1), '2026-06-10');
+  eq('addDays Monatswechsel', addDays('2026-06-30', 1), '2026-07-01');
+  eq('addDays -1 Jahreswechsel', addDays('2026-01-01', -1), '2025-12-31');
+  eq('isoOf', isoOf(new Date(2026, 5, 9)), '2026-06-09');
+  eq('dayDiffISO', dayDiffISO('2026-06-01', '2026-06-10'), 9);
+  eq('parseDateFlexible dd.mm.yyyy', parseDateFlexible('9.6.2026'), '2026-06-09');
+  eq('parseDateFlexible yyyy-m-d', parseDateFlexible('2026-6-9'), '2026-06-09');
+  eq('parseDateFlexible ddmmyy', parseDateFlexible('090626'), '2026-06-09');
+  eq('parseDateFlexible ungültig', parseDateFlexible('31.2.2026'), '');
+  eq('parseDateFlexible Monatsname', parseDateFlexible('april 2026'), '2026-04-01');
+  eq('parseDateFlexible Saison', parseDateFlexible('sommer 2026'), '2026-06-01');
+
+  // BKP
+  eq('parseBkp mit Label', parseBkp('211.5 Baumeister'), { code: '211.5', label: 'Baumeister' });
+  eq('parseBkp nur Code', parseBkp('211'), { code: '211', label: '' });
+  eq('bkpBase', bkpBase('211.5'), '211');
+  ok('bkpCmp Reihenfolge', bkpCmp('211', '212') < 0);
+  eq('bkpCmp leer nach hinten', bkpCmp('', '211'), 1);
+
+  // Domänen-Rechnung (pur)
+  eq('teilSumme summiert (auch String)', teilSumme({ teilvergaben: [{ betrag: 100 }, { betrag: '50' }] }), 150);
+  const gs = gewerkeSorted({ vergaben: [{ bkp: '212', gewerk: 'B' }, { bkp: '211', gewerk: 'A' }] });
+  eq('gewerkeSorted nach BKP', gs.map(v => v.bkp), ['211', '212']);
+
+  // Firmen-UID
+  eq('fmtUid formatiert', fmtUid('CHE123456789'), 'CHE-123.456.789');
+  eq('fmtUid leer', fmtUid(''), '');
+
+  return { R, pass, fail };
+}

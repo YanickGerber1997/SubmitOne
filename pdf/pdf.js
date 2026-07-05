@@ -1392,7 +1392,7 @@ function drawOne(svg, a, pv) {
   } else if (a.type === 'area') {
     const g = svgEl('g', { 'data-id': a.id }), pts = a.pts, draft = a._cursor;
     const poly = pts.map(p => p[0] + ',' + p[1]).join(' ');
-    if (pts.length >= 2) g.appendChild(svgEl('polygon', { points: poly, fill: a.color, 'fill-opacity': a.room ? 0.08 : (a.cutout ? 0.5 : (a.belag ? 0.06 : 0.14)), stroke: 'none' }));
+    if (pts.length >= 2) g.appendChild(svgEl('polygon', { points: poly, fill: a.color, 'fill-opacity': a.room ? 0.08 : (a.cutout ? 0.5 : (a.belag ? 0.14 : 0.14)), stroke: 'none' }));
     if (a.belag) drawTileGrid(g, a, pv);   // Plattenspiegel (auf die Fläche geclippt)
     const line = (draft ? pts.concat([draft]) : pts).map(p => p[0] + ',' + p[1]).join(' ');
     if (!a.room) g.appendChild(svgEl('polyline', { points: line, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-dasharray': a.cutout ? '6 3' : null, 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));   // Raum: kein Umriss über die Wände; Aussparung gestrichelt
@@ -2431,7 +2431,7 @@ function areaClick(pv, p) {
     cancelArea(); pushUndo();
     const isSlab = tool === 'slab', isTerr = tool === 'terrain', isFloor = tool === 'floortile', isCut = tool === 'aussparung';
     const a = isSlab ? { id: nextId++, type: 'slab', pts: [[p.x, p.y]], color: '#5b6b86', base: Math.max(0, wallHeightM - 0.2), thick: 0.2 } :   // Decken-OBERKANTE auf Geschosshöhe (Unterkante = Geschosshöhe − Dicke) isTerr ? { id: nextId++, type: 'terrain', pts: [[p.x, p.y]], color: '#7a6a4a' } : isFloor ? { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: '#b5651d', width: 1.4, belag: { ...DEFAULT_BELAG } } : isCut ? { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: '#8a8f98', width: 1.2, cutout: 'Schrank' } : { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: style.color, width: style.width };
-    pushAnno(pv.num, a); areaDraft = { pv, a };
+    pushAnno(pv.num, a); areaDraft = { pv, a }; a._cursor = [p.x, p.y];   // sofort einen sichtbaren Startpunkt zeigen (Feedback beim ersten Klick)
     const onMove = ev => { if (!areaDraft) return; const q = evtToPage(areaDraft.pv, ev); areaDraft.a._cursor = [q.x, q.y]; drawAnnos(areaDraft.pv); };
     document.addEventListener('pointermove', onMove); areaDraft._onMove = onMove;
     drawAnnos(pv); if (isTerr && !areaClick._terrHint) { areaClick._terrHint = true; toast('Gelände/Terrain: Punkte klicken (offene Linie mit Erdreich-Symbol), Doppelklick/Enter = fertig.'); } else if (isSlab && !areaClick._slabHint) { areaClick._slabHint = true; toast('Decke/Boden: Ecken klicken, am Start schliessen (oder Enter). Höhe + Dicke oben in der Planungs-Leiste · erscheint in 3D.'); } else if (isFloor && !areaClick._floorHint) { areaClick._floorHint = true; toast(docScale ? 'Bodenbelag: Ecken klicken, am Start schliessen – der Plattenspiegel (60×60) erscheint automatisch. Mass/Fuge später anpassbar.' : 'Bodenbelag: Für echte Plattenzahlen zuerst den Massstab (1:n) setzen. Fläche ziehen geht trotzdem.'); } else if (!isSlab && !isTerr && !isFloor && !docScale && !areaClick._hint) { areaClick._hint = true; toast('Tipp: Für echte m² zuerst den Massstab setzen (1:n).'); }

@@ -4836,7 +4836,11 @@ async function convertToPaper(pageNums) {
     const banner = _calcErrorBanner(pages.map(p => p.html));   // erkannte Rechenfehler oben zusammenfassen (sonst leicht zu übersehen)
     if (banner && pages[0]) pages[0].html = banner + pages[0].html;
     const titel = (docName || 'Aus PDF').replace(/\.pdf$/i, '') + (nums.length < pdfDoc.numPages ? ' (S. ' + nums.join(',') + ')' : '');
-    try { localStorage.setItem('submitpaper_import', JSON.stringify({ titel, pages, ts: Date.now() })); }
+    // EIN durchgehendes Dokument (wie Word) statt viele Registerkarten – Seitenumbruch an jeder PDF-Seitengrenze, im A4-Layout sichtbar
+    const PB = '<div class="pagebreak" contenteditable="false">Seitenumbruch</div>';
+    const combined = pages.map(p => p.html).join(PB);
+    const outPages = [{ typ: 'write', html: combined }];
+    try { localStorage.setItem('submitpaper_import', JSON.stringify({ titel, pages: outPages, ts: Date.now() })); }
     catch (_) { status(''); toast('Text zu gross für die Übergabe – weniger Seiten wählen.'); return; }
     status(''); location.href = '../write/index.html?import=1';
   } catch (e) { status(''); console.error(e); toast('Umwandlung fehlgeschlagen.'); }

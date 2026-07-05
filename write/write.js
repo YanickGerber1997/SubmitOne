@@ -3398,7 +3398,8 @@ function init() {
           createDoc({ titel: data.titel || 'Aus PDF', pages: data.pages.map(p => ({ id: uid(), typ: p.typ === 'calc' ? 'calc' : 'write', html: p.html || '' })) });
           imported = true;
           try { history.replaceState(null, '', location.pathname); } catch (_) {}
-          toast('Aus PDF übernommen – ' + data.pages.length + (data.pages.length === 1 ? ' Seite' : ' Seiten') + ' (Text jetzt editierbar).');
+          const nPg = data.pages.reduce((s, p) => s + 1 + (((p.html || '').match(/class="pagebreak"/g) || []).length), 0);   // Seiten über Umbrüche zählen (ein durchgehendes Dokument)
+          toast('Aus PDF übernommen – ' + nPg + (nPg === 1 ? ' Seite' : ' Seiten') + ' (Text jetzt editierbar).');
         }
       }
     }

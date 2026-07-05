@@ -32,6 +32,15 @@ Reine, headless-getestete Funktionen in `pdf.js` (pdf selftest 60 → 64):
 - **S6 — Liste/Mengen.** In `computeQuantities`/Liste zwei Gruppen: **Bodenbeläge** (Raum · m² · Platten Stk · Aufbau) und **Wandflächen** (Wand · L×H · m² · Platten). Summen. Export/Druck.
 - **S7 — Feinschliff.** Beschriftung im Plan (Name + m² + „⌗ 60×60"), Muster-/Farbwahl, „ab hier verlegen"-Griff (Startpunkt ziehen), Kopfzeile je Platte.
 
+## Erweiterung „echte Ausschreibung" (Nutzer-Anforderung 5. Juli)
+Ziel-Ausgabe ist **Submit Paper**, nicht Excel — als **Ausschreibung** (Spalten: **Pos · Beschrieb · Ausmass · Einheit · Einheitspreis (leer) · Betrag (leer)**) ODER **Mengenauszug** (ohne Preisspalten). Zusätzlich müssen berücksichtigt werden:
+- **Anschlüsse** (Längen, lfm), getrennt nach **Anschluss Boden / Wand / Decke** und **Anschlüsse bei Fenstern** (Laibung/Anschlussfugen).
+- **Aussparungen** in Belagsflächen: **Schränke, Duschelemente** usw. → von der Fläche abziehen.
+
+- **✅ S8 — Export nach Submit Paper.** `buildBelagTableHtml(floors, walls, price)` (rein, getestet) + `exportBelagToPaper('ausschreibung'|'mengen')`; Übergabe via `submitpaper_import` → `../write/?import=1`. Zwei Knöpfe im „Beläge"-Tab. Pos-Nummern 1.1/1.2 + Zwischentotals.
+- **S9 — Anschlüsse.** Neues Werkzeug „Anschluss" (Polylinie = Länge, lfm) mit Kategorie **Boden/Wand/Decke/Fenster**; eigene Gruppen in Liste + Ausschreibung (Einheit lfm). Evtl. auto: Umfang einer Belagsfläche als Anschluss vorschlagen.
+- **S10 — Aussparungen.** In einer Belagsfläche Sub-Polygone (Schrank/Dusche) markieren → Netto-Fläche = brutto − Aussparungen; im Plattenspiegel ausgespart; in Liste/Ausschreibung als „abzüglich".
+
 ## Leitplanken
 - **Nicht-destruktiv & migrationssicher**: neue Felder additiv; alte Dokumente öffnen unverändert.
 - **Massstab-Pflicht** für m²/Platten: ohne `docScale` klar hinweisen (wie bei `area`).

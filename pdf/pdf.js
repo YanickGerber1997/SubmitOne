@@ -5569,11 +5569,12 @@ async function open3D() {
     const a = findAnnoAny(id); if (!a) { d3Sel.hidden = true; return; }
     const apply = () => { mk(true); pageViews.forEach(drawAnnos); markDirty(); };
     const row = (lbl, rid, val, unit, step) => '<label class="d3-sr"><span>' + lbl + '</span><input id="' + rid + '" type="number" step="' + (step || 1) + '" value="' + val + '">' + (unit ? '<em>' + unit + '</em>' : '') + '</label>';
-    const title = a.type === 'wall' ? 'Wand' : (a.belag ? 'Bodenbelag' : (a.wallface ? 'Wandbelag' : 'Bauteil'));
+    const title = a.type === 'wall' ? 'Wand' : (a.type === 'opening' ? (a.kind === 'window' ? 'Fenster' : 'Tür') : (a.belag ? 'Bodenbelag' : (a.wallface ? 'Wandbelag' : 'Bauteil')));
     let h = '<div class="d3-sel-h"><b>' + title + '</b><button id="d3SelX" title="Schliessen">✕</button></div>';
     if (a.type === 'wall') h += row('Stärke', 'sw_t', Math.round(ptsToCm(a.thick || wallThickPts())), 'cm') + row('Höhe', 'sw_h', a.h3d || wallHeightM, 'm', 0.05) + '<div class="d3-sr" style="gap:6px;margin-top:8px"><button class="btn" id="sw_win" style="flex:1">+ Fenster</button><button class="btn" id="sw_door" style="flex:1">+ Tür</button></div>';
     else if (a.belag) { const b = a.belag; h += row('Platte B', 'sb_w', b.tileW, 'cm') + row('Platte H', 'sb_h', b.tileH, 'cm') + row('Fuge', 'sb_j', b.joint != null ? b.joint : 3, 'mm') + row('Verschnitt', 'sb_v', b.waste != null ? b.waste : 8, '%'); }
     else if (a.wallface) { const b = a.belag || (a.belag = { ...DEFAULT_BELAG }); h += row('Höhe', 'swf_h', a.height || wallHeightM, 'm', 0.05) + row('Platte B', 'sb_w', b.tileW, 'cm') + row('Platte H', 'sb_h', b.tileH, 'cm'); }
+    else if (a.type === 'opening') { h += '<div class="d3-sr"><span>Art</span><span style="display:inline-flex;gap:4px"><button class="insp-mini' + (a.kind === 'window' ? ' on' : '') + '" id="so_kw" style="width:auto;padding:0 8px">Fenster</button><button class="insp-mini' + (a.kind === 'door' ? ' on' : '') + '" id="so_kd" style="width:auto;padding:0 8px">Tür</button></span></div>' + row('Breite', 'so_w', Math.round(ptsToCm(a.w || cmToPts(90))), 'cm') + row('Brüstung', 'so_s', a.sill || 0, 'm', 0.05) + row('Sturz', 'so_h', a.head || (a.kind === 'window' ? 2.1 : 2.0), 'm', 0.05); }
     else h += '<p class="d3-sr" style="opacity:.7">Für diesen Typ (noch) keine 3D-Einstellungen.</p>';
     d3Sel.innerHTML = h; d3Sel.hidden = false;
     d3Sel.querySelector('#d3SelX').onclick = () => { d3Sel.hidden = true; };
@@ -5583,6 +5584,9 @@ async function open3D() {
       const bdoor = d3Sel.querySelector('#sw_door'); if (bdoor) bdoor.onclick = () => { addOpeningToWall(a, 'door', curPage()); apply(); toast('Tür gesetzt (mittig) – im Grundriss verschieben/anpassen.'); }; }
     else if (a.belag) { bind('sb_w', v => a.belag.tileW = v); bind('sb_h', v => a.belag.tileH = v); bind('sb_j', v => a.belag.joint = v); bind('sb_v', v => a.belag.waste = v); }
     else if (a.wallface) { bind('swf_h', v => a.height = Math.max(0.1, v)); bind('sb_w', v => a.belag.tileW = v); bind('sb_h', v => a.belag.tileH = v); }
+    else if (a.type === 'opening') { bind('so_w', v => a.w = cmToPts(Math.max(20, v))); bind('so_s', v => a.sill = Math.max(0, v)); bind('so_h', v => a.head = Math.max((a.sill || 0) + 0.3, v));
+      const kw = d3Sel.querySelector('#so_kw'); if (kw) kw.onclick = () => { a.kind = 'window'; if (!a.sill) a.sill = 0.9; apply(); show3DSettings(id); };
+      const kd = d3Sel.querySelector('#so_kd'); if (kd) kd.onclick = () => { a.kind = 'door'; a.sill = 0; apply(); show3DSettings(id); }; }
   }
   const mk = keepCam => { const cam = keepCam && api && api.camState ? api.camState() : null; if (api) api.dispose(); const curWalls = arr.filter(a => a.type === 'wall' && layerVisible(a) && phaseVisible(a)); api = build3DScene(host, curWalls, arr, { initCam: cam, onEdit: () => { pageViews.forEach(drawAnnos); markDirty(); mk(true); applySun(); }, onPick: id => show3DSettings(id) }); if (addOn && api.setAddMode) api.setAddMode(true); };
   mk(false);
@@ -7158,7 +7162,7 @@ function build3DScene(host, walls, arr, opts) {
     const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
     const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0xece6d8, side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.006; fl.receiveShadow = true; scene.add(fl);
   }
-  const pickables = [];   // anklickbare Meshes (Belag-Flächen + unsichtbare Wand-Proxys) für „im 3D anklicken → Einstellungen"
+  const pickables = [], pickPrio = [];   // anklickbare Meshes: pickPrio (Öffnungen) hat Vorrang vor pickables (Wände/Beläge)
   // Bodenbeläge (a.belag) flach am Boden – in Belagsfarbe; Aussparungen als dunkle Flecken darüber
   for (const a of arr) if (a.type === 'area' && a.belag && a.pts && a.pts.length >= 3 && layerVisible(a) && phaseVisible(a)) {
     const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
@@ -7459,13 +7463,22 @@ function build3DScene(host, walls, arr, opts) {
     box.position.set((px1 + px2) / 2, lev(w) + ph / 2, (pz1 + pz2) / 2); box.rotation.y = Math.atan2(-(pz2 - pz1), px2 - px1);
     box.userData = { annoId: w.id, kind: 'wall' }; box.name = '__pick'; scene.add(box); pickables.push(box);
   }
+  for (const a of arr) if (a.type === 'opening' && layerVisible(a) && phaseVisible(a)) {   // Fenster/Tür anklickbar (Vorrang vor der Wand)
+    const w = walls.find(ww => ww.id === a.wallId); if (!w || a.x == null) continue;
+    const dxp = M(w.x2 - cx) - M(w.x1 - cx), dzp = M(w.y2 - cy) - M(w.y1 - cy);
+    const wd = Math.max(0.05, (a.w || cmToPts(90)) * perPt), th = Math.max(0.06, (a.thick || w.thick || wallThickPts()) * perPt) + 0.02;
+    const sill = a.sill || 0, head = a.head || (a.kind === 'window' ? 2.1 : 2.0), hh = Math.max(0.2, head - sill);
+    const box = new THREE.Mesh(new THREE.BoxGeometry(wd, hh, th), new THREE.MeshBasicMaterial({ visible: false }));
+    box.position.set(M(a.x - cx), lev(w) + sill + hh / 2, M(a.y - cy)); box.rotation.y = Math.atan2(-dzp, dxp);
+    box.userData = { annoId: a.id, kind: 'opening' }; box.name = '__pick'; scene.add(box); pickPrio.push(box);
+  }
   if (typeof opts.onPick === 'function') {
     const pRay = new THREE.Raycaster(), pNdc = new THREE.Vector2(), pDom = renderer.domElement; let pDX = 0, pDY = 0;
     const pkDown = ev => { pDX = ev.clientX; pDY = ev.clientY; };
     const pkUp = ev => {
       if (flyMode || Math.hypot(ev.clientX - pDX, ev.clientY - pDY) > 4) return;   // im Flug oder beim Ziehen nicht picken
       const r = pDom.getBoundingClientRect(); pNdc.x = ((ev.clientX - r.left) / r.width) * 2 - 1; pNdc.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
-      pRay.setFromCamera(pNdc, camera); const hit = pRay.intersectObjects(pickables, false)[0];
+      pRay.setFromCamera(pNdc, camera); const hit = pRay.intersectObjects(pickPrio, false)[0] || pRay.intersectObjects(pickables, false)[0];
       if (hit && hit.object.userData && hit.object.userData.annoId != null) opts.onPick(hit.object.userData.annoId, hit.object.userData.kind);
     };
     pDom.addEventListener('pointerdown', pkDown); pDom.addEventListener('pointerup', pkUp);

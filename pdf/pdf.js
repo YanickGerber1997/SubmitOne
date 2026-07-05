@@ -1453,15 +1453,20 @@ function drawOne(svg, a, pv) {
     if (a.bg && a.bg !== 'transparent') g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: a.bg, stroke: 'none' }));   // alte Stelle überdecken (nur wenn Abdeckung gewünscht)
     if (a.id !== _editingId) {   // während des Tippens zeigt die Textarea den Text – nicht doppelt zeichnen
       const baseY = (a.base != null ? a.base : a.y + a.size * 0.82);   // echte PDF-Grundlinie → exakte Höhe, schriftunabhängig
-      const t = svgEl('text', { y: baseY, fill: a.color, 'font-size': a.size, 'font-family': (a.ff || cssFontStack(a.fam)) });
+      const ff0 = a.ff || cssFontStack(a.fam);
+      const t = svgEl('text', { y: baseY, fill: a.color, 'font-size': a.size, 'font-family': ff0 });
       t.style.dominantBaseline = 'alphabetic';   // per Inline-Style, sonst gewinnt .anno text{dominant-baseline:hanging} und der Text sitzt zu tief
-      if (a.bold) t.setAttribute('font-weight', 'bold'); if (a.italic) t.setAttribute('font-style', 'italic'); if (a.underline) t.setAttribute('text-decoration', 'underline');
+      if (a.underline) t.setAttribute('text-decoration', 'underline');
       const elh = a.lh || a.size * 1.25;
       (a.text || '').split('\n').forEach((ln, i) => {
-        const o = a.lines0 && a.lines0[i], match = o && o.str === ln && o.w > 1;   // unveränderte Zeile → exakt auf Original-Breite/-Start legen (1:1)
-        const at = { x: (match ? o.x : a.x).toFixed ? (match ? o.x : a.x).toFixed(2) : (match ? o.x : a.x), dy: i === 0 ? 0 : elh };
-        if (match) { at.textLength = o.w.toFixed(2); at.lengthAdjust = 'spacingAndGlyphs'; }
-        const ts = svgEl('tspan', at); ts.textContent = ln || ' '; t.appendChild(ts);
+        const o = a.lines0 && a.lines0[i], match = o && o.str === ln && o.w > 1;   // unveränderte Zeile → exakt auf Original-Breite/-Start (1:1) + Original-Formatierung je Run
+        const lt = svgEl('tspan', { x: (match ? o.x : a.x).toFixed(2), dy: i === 0 ? 0 : elh });
+        if (match && o.w > 1) { lt.setAttribute('textLength', o.w.toFixed(2)); lt.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
+        const runs = (match && o.runs && o.runs.length) ? o.runs : null;
+        if (runs) {   // gemischte Formatierung innerhalb der Zeile 1:1
+          for (const r of runs) { const rs = svgEl('tspan', {}); if (r.bold) rs.setAttribute('font-weight', 'bold'); if (r.italic) rs.setAttribute('font-style', 'italic'); if (r.ff && r.ff !== ff0) rs.setAttribute('font-family', r.ff); rs.textContent = r.str; lt.appendChild(rs); }
+        } else { if (a.bold) lt.setAttribute('font-weight', 'bold'); if (a.italic) lt.setAttribute('font-style', 'italic'); lt.textContent = ln || ' '; }
+        t.appendChild(lt);
       });
       g.appendChild(t);
     }
@@ -4752,7 +4757,7 @@ async function editTextAt(pv, p) {
   let a;
   if (hit) {
     const s = sampleBox(pv, hit); if (pv.canvas) delete pv.canvas._cData; const ul = sampleUnderline(pv.canvas, hit.x, hit.right, hit.base, pv.pageW);
-    a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, base: hit.base, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic, ff: hit.ff, underline: ul, lines0: (hit.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x) })) };
+    a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, base: hit.base, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic, ff: hit.ff, underline: ul, lines0: (hit.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs })) };
     pushUndo(); pushAnno(pv.num, a); sel = null; drawAnnos(pv); openEditEdit(pv, a, false, p);
   } else {
     a = { id: nextId++, type: 'edit', x: p.x, y: p.y - style.size * 0.82, w: 140, h: style.size * 1.3, text: '', size: style.size, lh: style.size * 1.3, color: style.color, bg: 'transparent' };
@@ -4773,7 +4778,7 @@ async function editAllTextOnPage(pv) {
     for (const b of blocks) {
       if (already.has(Math.round(b.x) + '|' + Math.round(b.y))) continue;   // schon editierbar → nicht doppelt
       const s = sampleBox(pv, b);
-      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, base: b.base, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic, ff: b.ff, underline: sampleUnderline(pv.canvas, b.x, b.right, b.base, pv.pageW), lines0: (b.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x) })) });
+      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, base: b.base, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic, ff: b.ff, underline: sampleUnderline(pv.canvas, b.x, b.right, b.base, pv.pageW), lines0: (b.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs })) });
       added++;
     }
     drawAnnos(pv); saveState();
@@ -4874,7 +4879,7 @@ function editNextBlock(pv, curA, dir) {
   setTimeout(() => {
     const ex = (getAnnos(pv.num) || []).filter(x => x.type === 'edit').find(x => Math.abs(x.x - nb.x) < 4 && Math.abs(x.y - nb.y) < 4);
     if (ex) { openEditEdit(pv, ex, false); return; }
-    if (pv.canvas) delete pv.canvas._cData; const s = sampleBox(pv, nb), a2 = { id: nextId++, type: 'edit', x: nb.x, y: nb.y, base: nb.base, w: Math.max(nb.w, nb.size), h: nb.h, text: nb.text, size: nb.size, lh: nb.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: nb.fam, bold: nb.bold, italic: nb.italic, ff: nb.ff, underline: sampleUnderline(pv.canvas, nb.x, nb.right, nb.base, pv.pageW), lines0: (nb.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x) })) };
+    if (pv.canvas) delete pv.canvas._cData; const s = sampleBox(pv, nb), a2 = { id: nextId++, type: 'edit', x: nb.x, y: nb.y, base: nb.base, w: Math.max(nb.w, nb.size), h: nb.h, text: nb.text, size: nb.size, lh: nb.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: nb.fam, bold: nb.bold, italic: nb.italic, ff: nb.ff, underline: sampleUnderline(pv.canvas, nb.x, nb.right, nb.base, pv.pageW), lines0: (nb.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs })) };
     pushUndo(); pushAnno(pv.num, a2); openEditEdit(pv, a2, false);
   }, 0);
 }

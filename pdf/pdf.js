@@ -2436,6 +2436,7 @@ function tileStartPoint(minX, minY, maxX, maxY, corner, stepX, stepY) {
 }
 const DEFAULT_BELAG = { tileW: 60, tileH: 60, joint: 3, waste: 8, name: '' };   // Standard-Plattenmass 60×60, Fuge 3 mm, 8 % Verschnitt
 let _tileClip = 0;   // eindeutige clipPath-IDs fürs Plattenraster
+let selWin = null;   // aktuell im Inspector bearbeitetes Fenster { id: wandbelag-id, wi: index } → Fenster-Modus statt Wand-Modus
 // Plattenspiegel in eine Flächen-Gruppe zeichnen (Raster ab Startpunkt, auf das Polygon geclippt) – braucht Massstab
 function drawTileGrid(g, a, pv) {
   if (!a.belag || !docScale || !a.pts || a.pts.length < 3 || a._cursor) return;
@@ -3933,7 +3934,7 @@ function startGridShift(pv, e, annoId) {
   const a = findAnno(pv.num, annoId); if (!a || !a.wallface) return;
   const b = a.belag || (a.belag = { ...DEFAULT_BELAG });
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
-  const st = evtToPage(pv, e), u0 = b.offU || 0, n0 = b.offN || 0; sel = { num: pv.num, id: annoId }; pushUndo(); let moved = false;
+  const st = evtToPage(pv, e), u0 = b.offU || 0, n0 = b.offN || 0; sel = { num: pv.num, id: annoId }; selWin = null; pushUndo(); let moved = false;
   const move = ev => { moved = true; const q = evtToPage(pv, ev), rx = q.x - st.x, ry = q.y - st.y; b.offU = u0 + (rx * ux + ry * uy); b.offN = n0 + (rx * nx + ry * ny); requestDraw(pv); };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (moved) saveState(); else if (undoStack.length) { undoStack.pop(); drawAnnos(pv); } };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
@@ -3943,7 +3944,7 @@ function startWinResize(pv, e, annoId, wi) {
   const a = findAnno(pv.num, annoId); if (!a || !a.wallface || !a.fenster || !a.fenster[wi] || !docScale) return;
   const f = a.fenster[wi], perPt = docScale.perPt;
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux, gap = 8 / pv.scale;
-  sel = { num: pv.num, id: annoId }; pushUndo(); let moved = false;
+  sel = { num: pv.num, id: annoId }; selWin = { id: annoId, wi }; pushUndo(); let moved = false;
   const move = ev => { moved = true; const q = evtToPage(pv, ev), rx = q.x - a.x1, ry = q.y - a.y1;
     const cU = (f.t != null ? f.t : 0.5) * len, halfW = Math.max(0.05 / perPt, (rx * ux + ry * uy) - cU);
     f.w = Math.max(0.1, Math.round(2 * halfW * perPt * 100) / 100);
@@ -3959,7 +3960,7 @@ function startWinDrag(pv, e, annoId, wi) {
   const a = findAnno(pv.num, annoId); if (!a || !a.wallface || !a.fenster || !a.fenster[wi] || !docScale) return;
   const f = a.fenster[wi], perPt = docScale.perPt;
   const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux, gap = 8 / pv.scale;
-  sel = { num: pv.num, id: annoId }; pushUndo(); let moved = false;
+  sel = { num: pv.num, id: annoId }; selWin = { id: annoId, wi }; pushUndo(); let moved = false;
   const move = ev => { moved = true; const q = evtToPage(pv, ev), rx = q.x - a.x1, ry = q.y - a.y1;
     f.t = Math.max(0, Math.min(1, (rx * ux + ry * uy) / len));
     const fhpts = (f.h || 1.2) / perPt, sillPts = (rx * nx + ry * ny) - gap - fhpts / 2;
@@ -6347,6 +6348,27 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
   if (a.type === 'measure' && a.wallface) {
     const lenPts = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), lenM = docScale ? lenPts * docScale.perPt : 0, h = a.height || 2.5;
     const area = docScale ? wallFaceAreaM2(lenPts, docScale.perPt, h) : 0, b = a.belag || (a.belag = { ...DEFAULT_BELAG });
+    // ── FENSTER-MODUS: nur das gewählte Fenster (klarer, nicht überladen) ──
+    if (selWin && selWin.id === a.id && a.fenster && a.fenster[selWin.wi]) {
+      const i = selWin.wi, f = a.fenster[i];
+      let fh = '<h4>Fenster ' + (i + 1) + '<button class="insp-mini" id="wfBack" title="zurück zur Wand" style="float:right;width:auto;padding:0 8px">← Wand</button></h4>'
+        + '<div class="insp-row"><span class="insp-lbl">Position</span><input class="insp-num" style="width:60px" id="fPos" type="number" step="0.05" value="' + (Math.round(((f.t != null ? f.t : 0.5) * lenM) * 100) / 100) + '"> m ab links</div>'
+        + '<div class="insp-row"><span class="insp-lbl">Breite</span><input class="insp-num" style="width:60px" id="fW" type="number" min="1" value="' + Math.round((f.w || 1) * 100) + '"> cm</div>'
+        + '<div class="insp-row"><span class="insp-lbl">Höhe</span><input class="insp-num" style="width:60px" id="fH" type="number" min="1" value="' + Math.round((f.h || 1.2) * 100) + '"> cm</div>'
+        + '<div class="insp-row"><span class="insp-lbl">Brüstung</span><input class="insp-num" style="width:60px" id="fBr" type="number" min="0" value="' + Math.round((f.sill || 0.9) * 100) + '"> cm</div>';
+      fh += '<div class="insp-kv"><span>Laibung (2 Seiten)</span><b>' + (Math.round(2 * (f.h || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>'
+        + '<div class="insp-kv"><span>Bank / Sturz (je)</span><b>' + (Math.round((f.w || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>'
+        + '<p class="insp-hint">In der Ansicht: Fenster ziehen = verschieben · Eck-Anfasser = vergrössern.</p>';
+      body.innerHTML = fh;
+      const del = document.createElement('button'); del.className = 'insp-btn'; del.textContent = '🗑 Fenster entfernen'; body.appendChild(del);
+      del.onclick = () => { a.fenster.splice(i, 1); selWin = null; markDirty(); renderList(); pageViews.forEach(drawAnnos); };
+      const bk = body.querySelector('#wfBack'); if (bk) bk.onclick = () => { selWin = null; renderList(); };
+      const bindF = (id, fn) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (!isFinite(v)) return; fn(v); markDirty(); pageViews.forEach(drawAnnos); renderList(); }; };
+      bindF('#fPos', v => f.t = lenM > 0 ? Math.max(0, Math.min(1, v / lenM)) : 0.5);
+      bindF('#fW', v => f.w = Math.max(0.1, v / 100)); bindF('#fH', v => f.h = Math.max(0.1, v / 100)); bindF('#fBr', v => f.sill = Math.max(0, v / 100));
+      return;
+    }
+    // ── WAND-MODUS ──
     let html = '<h4>Wandbelag</h4>'
       + (docScale ? '<div class="insp-kv"><span>Länge</span><b>' + (Math.round(lenM * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>' : '')
       + '<div class="insp-row"><span class="insp-lbl">Höhe</span><input class="insp-num" style="width:60px" id="iWfH" type="number" step="0.05" min="0.1" value="' + h + '"> m</div>'
@@ -6365,14 +6387,8 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
       + '<div class="insp-row"><span class="insp-lbl">Wand seitlich</span><span id="anW" style="display:inline-flex;gap:3px">' + [0, 1, 2].map(n => '<button class="insp-mini' + ((ans.wand || 0) === n ? ' on' : '') + '" data-n="' + n + '" style="width:26px">' + n + '</button>').join('') + '</span></div>';
     if (docScale) html += '<div class="insp-kv"><span>Anschluss lfm gesamt</span><b>' + (Math.round(((ans.boden ? lenM : 0) + (ans.decke ? lenM : 0) + (ans.wand || 0) * h) * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>';
     const fen = a.fenster || [];
-    html += '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">Fenster / Aussparung <button class="insp-mini" id="fenAdd" style="width:auto;padding:0 8px;float:right">+ Fenster</button></div>';
-    html += fen.map((f, i) => '<div class="insp-row" style="flex-wrap:wrap;gap:3px 4px;align-items:center;border-bottom:1px solid var(--line-soft);padding-bottom:5px">'
-      + '<span class="insp-lbl" style="flex:0 0 100%;font-weight:600">Fenster ' + (i + 1) + '<button class="insp-mini" data-fdel="' + i + '" title="Fenster entfernen" style="width:auto;padding:0 7px;float:right">×</button></span>'
-      + '<span style="font-size:11px">Pos</span><input class="insp-num" style="width:46px" data-fi="' + i + '" data-fk="pos" type="number" step="0.05" value="' + (Math.round(((f.t != null ? f.t : 0.5) * lenM) * 100) / 100) + '"><span style="font-size:11px">m</span>'
-      + '<span style="font-size:11px">B</span><input class="insp-num" style="width:44px" data-fi="' + i + '" data-fk="w" type="number" min="1" value="' + Math.round((f.w || 1) * 100) + '">'
-      + '<span style="font-size:11px">H</span><input class="insp-num" style="width:44px" data-fi="' + i + '" data-fk="h" type="number" min="1" value="' + Math.round((f.h || 1.2) * 100) + '">'
-      + '<span style="font-size:11px">Br</span><input class="insp-num" style="width:44px" data-fi="' + i + '" data-fk="sill" type="number" min="0" value="' + Math.round((f.sill || 0.9) * 100) + '"><span style="font-size:11px">cm</span>'
-      + '</div>').join('');
+    html += '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">Fenster (' + fen.length + ') <button class="insp-mini" id="fenAdd" style="width:auto;padding:0 8px;float:right">+ Fenster</button></div>';
+    html += '<div class="insp-row" style="flex-wrap:wrap;gap:4px">' + (fen.length ? fen.map((f, i) => '<button class="insp-mini" data-fedit="' + i + '" style="width:auto;padding:0 9px">Fenster ' + (i + 1) + '</button>').join('') : '<span class="insp-lbl" style="font-size:11px">klick ein Fenster in der Ansicht oder „+ Fenster" – dann erscheinen dessen Einstellungen</span>') + '</div>';
     if (fen.length && docScale) html += '<div class="insp-kv"><span>Wandfläche netto</span><b>' + (Math.round(Math.max(0, area - fen.reduce((s, f) => s + (f.w || 0) * (f.h || 0), 0)) * 100) / 100).toFixed(2).replace('.', ',') + ' m²</b></div>';
     html += '<div class="insp-row"><span class="insp-lbl">Wand-Ansicht</span><span><button class="insp-mini' + (a.ansicht !== false ? ' on' : '') + '" id="wfElev" style="width:auto;padding:0 8px">' + (a.ansicht !== false ? 'sichtbar' : 'aus') + '</button></span></div>';
     body.innerHTML = html;
@@ -6387,9 +6403,8 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     const tgl = (id, key) => { const el = body.querySelector(id); if (el) el.onclick = () => { a.ans[key] = !a.ans[key]; markDirty(); renderList(); pageViews.forEach(drawAnnos); }; };
     tgl('#anB', 'boden'); tgl('#anD', 'decke');
     body.querySelectorAll('#anW .insp-mini').forEach(btn => btn.onclick = () => { a.ans.wand = +btn.dataset.n; markDirty(); renderList(); pageViews.forEach(drawAnnos); });
-    const fa = body.querySelector('#fenAdd'); if (fa) fa.onclick = () => { a.fenster = a.fenster || []; a.fenster.push({ t: 0.5, w: 1.0, h: 1.2, sill: 0.9 }); markDirty(); renderList(); pageViews.forEach(drawAnnos); };
-    body.querySelectorAll('[data-fdel]').forEach(btn => btn.onclick = () => { if (a.fenster) { a.fenster.splice(+btn.dataset.fdel, 1); markDirty(); renderList(); pageViews.forEach(drawAnnos); } });
-    body.querySelectorAll('input[data-fi]').forEach(el => el.onchange = () => { const i = +el.dataset.fi, k = el.dataset.fk, v = parseFloat((el.value || '').replace(',', '.')); if (!a.fenster || !a.fenster[i] || !isFinite(v)) return; if (k === 'pos') a.fenster[i].t = lenM > 0 ? Math.max(0, Math.min(1, v / lenM)) : 0.5; else a.fenster[i][k] = Math.max(0, v / 100); markDirty(); pageViews.forEach(drawAnnos); renderList(); });
+    const fa = body.querySelector('#fenAdd'); if (fa) fa.onclick = () => { a.fenster = a.fenster || []; a.fenster.push({ t: 0.5, w: 1.0, h: 1.2, sill: 0.9 }); selWin = { id: a.id, wi: a.fenster.length - 1 }; markDirty(); renderList(); pageViews.forEach(drawAnnos); };
+    body.querySelectorAll('[data-fedit]').forEach(btn => btn.onclick = () => { selWin = { id: a.id, wi: +btn.dataset.fedit }; renderList(); });
     const we = body.querySelector('#wfElev'); if (we) we.onclick = () => { a.ansicht = a.ansicht === false ? true : false; markDirty(); renderList(); pageViews.forEach(drawAnnos); };
     return;
   }
@@ -6405,6 +6420,7 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
   body.innerHTML = '<h4>' + (a.type || 'Bauteil') + '</h4><p class="lp2-empty">Für diesen Typ gibt es (noch) keine Inspector-Einstellungen. Doppelklick im Plan öffnet ggf. die Eingabe.</p>';
 }
 function syncInspector() {   // Auswahl gewechselt → Inspector zeigen/aktualisieren (Bauteil anwählen ⇒ Einstellungen rechts)
+  if (selWin && (!sel || selWin.id !== sel.id)) selWin = null;   // andere Auswahl → Fenster-Modus verlassen
   const id = sel ? sel.id : null; if (id === _lastInspId) return; _lastInspId = id;
   const p = document.getElementById('listPanel'); if (!p) return;
   const a = (id != null && sel) ? findAnno(sel.num, sel.id) : null;

@@ -3908,6 +3908,14 @@ function makeOpening(wall, kind) {
   return { id: nextId++, type: 'opening', wallId: wall.id, t, x: wall.x1 + dx * t, y: wall.y1 + dy * t, ang: Math.atan2(dy, dx), thick: wall.thick || wallThickPts(), w: cmToPts(kind === 'window' ? 100 : 90), kind, hinge: 1, swing: 1, sill: kind === 'window' ? 0.9 : 0, head: kind === 'window' ? 2.1 : 2.0, depth: lastOpenDepth, winType: kind === 'door' ? lastDoorType : lastWinType, winHinge: lastWinHinge, winMat: lastWinMat, color: wall.color || '#1c242c', layer: wall.layer };
 }
 function addOpeningToWall(wall, kind, pageNum) { if (!wall) return null; pushUndo(); const a = makeOpening(wall, kind); pushAnno(pageNum, a); saveState(); return a; }
+// Aus einem Wandbelag (Messlinie + Höhe + Fenster) eine echte 3D-Wand + Fenster-Öffnungen erzeugen (rein)
+function makeWallFromFace(a) {
+  const w = { id: nextId++, type: 'wall', x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, thick: wallThickPts(), just: wallJust, color: (wallHatch && wallHatch.color) || '#1c242c', fill: (wallHatch && wallHatch.fill) || '#ffffff', hatch: wallHatch ? { ...wallHatch } : null, width: 1.4, h3d: a.height || wallHeightM, dim: wallDimOn, layer: a.layer };
+  const dx = w.x2 - w.x1, dy = w.y2 - w.y1, ang = Math.atan2(dy, dx), ops = [];
+  for (const f of (a.fenster || [])) { const o = makeOpening(w, 'window'); o.t = f.t != null ? f.t : 0.5; o.w = cmToPts((f.w || 1) * 100); o.sill = f.sill != null ? f.sill : 0.9; o.head = o.sill + (f.h || 1.2); o.x = w.x1 + dx * o.t; o.y = w.y1 + dy * o.t; o.ang = ang; ops.push(o); }
+  return { wall: w, openings: ops };
+}
+function wallfaceToWall(a, pageNum) { pushUndo(); const { wall, openings } = makeWallFromFace(a); pushAnno(pageNum, wall); for (const o of openings) pushAnno(pageNum, o); sel = { num: pageNum, id: wall.id }; saveState(); return wall; }
 function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieben (sonst frei)
   const wall = a.wallId && getAnnos(pv.num).find(o => o.id === a.wallId && o.type === 'wall');
   if (!wall) return startMove(pv, e, a);
@@ -6306,6 +6314,8 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     if (fen.length && docScale) html += '<div class="insp-kv"><span>Wandfläche netto</span><b>' + (Math.round(Math.max(0, area - fen.reduce((s, f) => s + (f.w || 0) * (f.h || 0), 0)) * 100) / 100).toFixed(2).replace('.', ',') + ' m²</b></div>';
     html += '<div class="insp-row"><span class="insp-lbl">Wand-Ansicht</span><span><button class="insp-mini' + (a.ansicht !== false ? ' on' : '') + '" id="wfElev" style="width:auto;padding:0 8px">' + (a.ansicht !== false ? 'sichtbar' : 'aus') + '</button></span></div>';
     body.innerHTML = html;
+    const w3btn = document.createElement('button'); w3btn.className = 'insp-btn'; w3btn.textContent = '→ als 3D-Wand (mit Fenstern)'; body.appendChild(w3btn);
+    w3btn.onclick = () => { wallfaceToWall(a, pv.num); pageViews.forEach(drawAnnos); markDirty(); _listTab = 'sel'; renderList(); toast('3D-Wand mit Fenstern erstellt – „3D" oben öffnen. Der Wandbelag bleibt fürs Plättlibudget.'); };
     const hEl = body.querySelector('#iWfH'); if (hEl) hEl.onchange = () => { const v = parseFloat((hEl.value || '').replace(',', '.')); if (v > 0) { a.height = v; markDirty(); pageViews.forEach(drawAnnos); renderList(); } };
     const nm = body.querySelector('#iWfN'); if (nm) nm.onchange = () => { const v = nm.value.trim(); if (v) a.name = v; else delete a.name; markDirty(); pageViews.forEach(drawAnnos); };
     const bindB = (id, key) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (isFinite(v) && v >= 0) { a.belag[key] = v; markDirty(); pageViews.forEach(drawAnnos); renderList(); } }; };
@@ -6611,6 +6621,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('tilesForArea inkl. 10% Verschnitt', () => tilesForArea(10, 60, 60, 10) === Math.ceil((10 / 0.36) * 1.1) ? '' : 'fail');
     A('DEFAULT_BELAG Standard 60×60 / 3mm / 8%', () => (DEFAULT_BELAG.tileW === 60 && DEFAULT_BELAG.tileH === 60 && DEFAULT_BELAG.joint === 3 && DEFAULT_BELAG.waste === 8) ? '' : 'fail');
     A('tileStartPoint Ecken + Mitte', () => { const tl = tileStartPoint(0, 0, 100, 80, 'tl', 10, 10), tr = tileStartPoint(0, 0, 100, 80, 'tr', 10, 10), br = tileStartPoint(0, 0, 100, 80, 'br', 10, 10), ce = tileStartPoint(0, 0, 100, 80, 'center', 10, 10); return (tl[0] === 0 && tl[1] === 0 && tr[0] === 100 && tr[1] === 0 && br[0] === 100 && br[1] === 80 && ce[0] === 45 && ce[1] === 35) ? '' : 'fail'; });
+    A('makeWallFromFace: Wand + Fenster aus Wandbelag', () => { const r = makeWallFromFace({ x1: 0, y1: 0, x2: 400, y2: 0, height: 2.5, fenster: [{ t: 0.5, w: 1, h: 1.2, sill: 0.9 }] }); return (r.wall.type === 'wall' && r.wall.h3d === 2.5 && r.openings.length === 1 && r.openings[0].kind === 'window' && r.openings[0].x === 200 && r.openings[0].w > 0 && Math.abs(r.openings[0].sill - 0.9) < 1e-9) ? '' : JSON.stringify({ t: r.wall.type, n: r.openings.length, x: r.openings[0] && r.openings[0].x }); });
     A('makeOpening: Fenster mittig auf der Wand', () => { const o = makeOpening({ id: 5, x1: 0, y1: 0, x2: 100, y2: 0, thick: 10 }, 'window'); return (o.type === 'opening' && o.wallId === 5 && o.t === 0.5 && o.x === 50 && o.kind === 'window' && o.sill === 0.9) ? '' : JSON.stringify(o); });
     A('Ausschreibungs-Abschluss: MwSt + Total inkl.', () => { const h = belagTenderFooter(); return (/Total exkl\. MwSt/.test(h) && /MwSt 8,1 %/.test(h) && /Total inkl\. MwSt/.test(h)) ? '' : 'fail'; });
     A('Ausschreibungs-Kopf: Bauvorhaben/Datum/Massstab + Escaping', () => { const h = belagTenderHeader('Haus <A>', '05.07.2026', '1:50'); return (/Bauvorhaben:/.test(h) && /Haus &lt;A&gt;/.test(h) && /05\.07\.2026/.test(h) && /1:50/.test(h) && /Unternehmer/.test(h)) ? '' : 'fail'; });

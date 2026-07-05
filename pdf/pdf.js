@@ -1477,6 +1477,7 @@ function drawOne(svg, a, pv) {
     el = drawSection(svg, a, getAnnos(pv.num));
   } else if (a.type === 'chaindim') {
     el = drawChainDim(svg, a, pv);
+    if (a.anschluss && a.pts && a.pts.length) { const p0 = a.pts[0], t = svgEl('text', { x: p0[0], y: p0[1] - 8, fill: a.color, 'font-size': 11, 'font-weight': 600, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = 'Anschluss ' + (ANSCHLUSS_KAT[a.anschluss] || ''); svg.appendChild(t); }   // Anschluss-Kategorie im Plan
   } else if (a.type === 'dim') {
     drawDim(svg, a);
     hit = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'hit', 'data-id': a.id }); svg.appendChild(hit);

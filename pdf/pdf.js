@@ -1562,7 +1562,11 @@ function drawWallFaceElevation(svg, a, pv) {
     const wt = svgEl('text', { x: wcx.toFixed(2), y: wcy.toFixed(2), fill: col, 'font-size': 8, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: '#dfe8f2', 'stroke-width': 2, 'pointer-events': 'none' }); wt.textContent = Math.round((f.w || 1) * 100) + '×' + Math.round((f.h || 1) * 100); gg.appendChild(wt);
     if (selHere) { const hr = 4.5 / pv.scale, TR = [bx + ux * fw + nx * fh, by + uy * fw + ny * fh]; handles.push(svgEl('rect', { x: (TR[0] - hr).toFixed(2), y: (TR[1] - hr).toFixed(2), width: (2 * hr).toFixed(2), height: (2 * hr).toFixed(2), rx: (hr * 0.4).toFixed(2), fill: '#fff', stroke: col, 'stroke-width': 1.4, 'data-id': a.id, 'data-fwres': fi, style: 'cursor:nwse-resize' })); }   // Eck-Anfasser: Fenster vergrössern
   });
-  g.appendChild(gg); handles.forEach(hd => g.appendChild(hd)); svg.appendChild(g);
+  g.appendChild(gg); handles.forEach(hd => g.appendChild(hd));
+  // Bemassung der Ansicht: Länge (an der oberen Kante) + Höhe (an der linken Kante)
+  const midDC = [(D[0] + C[0]) / 2, (D[1] + C[1]) / 2], tL = svgEl('text', { x: (midDC[0] + nx * 11 / pv.scale).toFixed(2), y: (midDC[1] + ny * 11 / pv.scale).toFixed(2), fill: col, 'font-size': 9, 'font-weight': 600, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 2.5, 'pointer-events': 'none' }); tL.textContent = 'L ' + (Math.round(len * perPt * 100) / 100).toFixed(2).replace('.', ',') + ' m'; g.appendChild(tL);
+  const midAD = [(A[0] + D[0]) / 2, (A[1] + D[1]) / 2], tH = svgEl('text', { x: (midAD[0] - ux * 12 / pv.scale).toFixed(2), y: (midAD[1] - uy * 12 / pv.scale).toFixed(2), fill: col, 'font-size': 9, 'font-weight': 600, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 2.5, 'pointer-events': 'none' }); tH.textContent = 'H ' + (Math.round(h * 100) / 100).toFixed(2).replace('.', ',') + ' m'; g.appendChild(tH);
+  svg.appendChild(g);
 }
 // Nach dem Zeichnen eines Wandbelags/Anschlusses: auswählen, Inspector öffnen (bei Wandbelag Höhe-Feld fokussieren)
 function afterWallfaceDraw(pv, a) {

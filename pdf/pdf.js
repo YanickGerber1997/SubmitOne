@@ -1553,7 +1553,10 @@ function drawWallFaceElevation(svg, a, pv) {
   const colPts = (b.startCol > 0) ? (b.startCol / 100) / perPt : 0, startU = colPts > 0 ? colPts : oU;   // Anfangsspalte links (feste Breite), Raster rechts davon
   if (stepU > 1) for (let d = startU; d < len; d += stepU) { if (d < 0.5) continue; const isCol = colPts > 0 && Math.abs(d - colPts) < 0.01; gg.appendChild(svgEl('line', { x1: (A[0] + ux * d).toFixed(2), y1: (A[1] + uy * d).toFixed(2), x2: (D[0] + ux * d).toFixed(2), y2: (D[1] + uy * d).toFixed(2), stroke: col, 'stroke-width': isCol ? 1 : 0.5, 'stroke-opacity': isCol ? 0.8 : 0.5, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' })); }
   const sockPts = (b.sockel > 0) ? (b.sockel / 100) / perPt : 0, startN = sockPts > 0 ? sockPts : oN;   // Sockelreihe unten (feste Höhe), Raster darüber
-  const topPts = (b.top > 0) ? Math.min(Hpts, b.top / perPt) : Hpts;   // Fliesenhöhe (bis wohin geplättelt) – darüber Verputz
+  const topL = (b.top > 0) ? Math.min(Hpts, b.top / perPt) : Hpts;   // Fliesenhöhe links (bzw. ganze Wand)
+  const hasSplit = b.splitT > 0 && b.splitT < 1, splitU = hasSplit ? b.splitT * len : len;   // zwei Höhenzonen: links höher als rechts
+  const topR = hasSplit ? ((b.topR > 0) ? Math.min(Hpts, b.topR / perPt) : Hpts) : topL;
+  const topPts = Math.max(topL, topR);   // Raster bis zur höchsten Zone; die tiefere Zone wird oben von der Verputz-Stufe abgedeckt
   if (stepN > 1) for (let d = startN; d < topPts; d += stepN) { if (d < 0.5) continue; const isSock = sockPts > 0 && Math.abs(d - sockPts) < 0.01; gg.appendChild(svgEl('line', { x1: (A[0] + nx * d).toFixed(2), y1: (A[1] + ny * d).toFixed(2), x2: (B[0] + nx * d).toFixed(2), y2: (B[1] + ny * d).toFixed(2), stroke: col, 'stroke-width': isSock ? 1 : 0.5, 'stroke-opacity': isSock ? 0.8 : 0.5, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' })); }
   // Fenster (a.fenster: [{t: 0..1 Position entlang der Wand, w, h, sill}]) als Aussparung in der Ansicht (ziehbar)
   (a.fenster || []).forEach((f, fi) => {
@@ -1566,17 +1569,26 @@ function drawWallFaceElevation(svg, a, pv) {
     if (selHere) { const hr = 4.5 / pv.scale, TR = [bx + ux * fw + nx * fh, by + uy * fw + ny * fh]; handles.push(svgEl('rect', { x: (TR[0] - hr).toFixed(2), y: (TR[1] - hr).toFixed(2), width: (2 * hr).toFixed(2), height: (2 * hr).toFixed(2), rx: (hr * 0.4).toFixed(2), fill: '#fff', stroke: col, 'stroke-width': 1.4, 'data-id': a.id, 'data-fwres': fi, style: 'cursor:nwse-resize' })); }   // Eck-Anfasser: Fenster vergrössern
   });
   g.appendChild(gg); handles.forEach(hd => g.appendChild(hd));
-  // Verputz-Zone über der Fliesenhöhe: deckt das Raster ab (wirkt wie „Plättli hört hier auf") + eigene Beschriftung/Schraffur
-  if (topPts < Hpts - 0.5) {
-    const A2 = [A[0] + nx * topPts, A[1] + ny * topPts], B2 = [B[0] + nx * topPts, B[1] + ny * topPts];
-    const vq = [A2, B2, C, D].map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
+  // Verputz-Zone über der Fliesenhöhe (stufig bei geteilter Wand): deckt das Raster ab + eigene Beschriftung/Schraffur
+  if (topL < Hpts - 0.5 || topR < Hpts - 0.5) {
+    const P = (u, n) => [A[0] + ux * u + nx * n, A[1] + uy * u + ny * n];   // Wand- → Seitenkoordinaten
+    // Umriss der (stufigen) Verputzfläche: über der Plättli-Oberkante bis zur Wandhöhe
+    const outline = [P(0, topL), P(splitU, topL), P(splitU, topR), P(len, topR), P(len, Hpts), P(0, Hpts)];
+    const vq = outline.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
     const vpat = 'wfvp' + (_tileClip++), pat = svgEl('pattern', { id: vpat, width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
     pat.appendChild(svgEl('line', { x1: 0, y1: 0, x2: 0, y2: 6, stroke: '#b7ab93', 'stroke-width': 0.6 })); g.appendChild(pat);
     g.appendChild(svgEl('polygon', { points: vq, fill: '#f2ede3', 'fill-opacity': 0.95, stroke: 'none' }));   // deckt das Plattenraster darüber ab
     g.appendChild(svgEl('polygon', { points: vq, fill: 'url(#' + vpat + ')', stroke: col, 'stroke-width': 0.8, 'stroke-opacity': 0.6, 'vector-effect': 'non-scaling-stroke' }));
-    g.appendChild(svgEl('line', { x1: A2[0].toFixed(2), y1: A2[1].toFixed(2), x2: B2[0].toFixed(2), y2: B2[1].toFixed(2), stroke: col, 'stroke-width': 1.6, 'vector-effect': 'non-scaling-stroke' }));   // Fliesenoberkante betont
-    const vc = [(A2[0] + C[0]) / 2, (A2[1] + C[1]) / 2], vt = svgEl('text', { x: vc[0].toFixed(2), y: vc[1].toFixed(2), fill: '#7a6f58', 'font-size': 9, 'font-weight': 700, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: '#f2ede3', 'stroke-width': 2.5, 'pointer-events': 'none' });
-    vt.textContent = (b.oben || 'Verputz') + (docScale ? ' · ' + (Math.round(len * perPt * (h - topPts * perPt) * 100) / 100).toFixed(2).replace('.', ',') + ' m²' : ''); g.appendChild(vt);
+    // Fliesenoberkante(n) betont – bei Split mit senkrechter Stufe
+    const edge = (u1, n1, u2, n2) => { const a1 = P(u1, n1), a2 = P(u2, n2); g.appendChild(svgEl('line', { x1: a1[0].toFixed(2), y1: a1[1].toFixed(2), x2: a2[0].toFixed(2), y2: a2[1].toFixed(2), stroke: col, 'stroke-width': 1.6, 'vector-effect': 'non-scaling-stroke' })); };
+    edge(0, topL, splitU, topL); if (hasSplit) { edge(splitU, topL, splitU, topR); edge(splitU, topR, len, topR); }
+    const lbl = (u, nMid, m2) => { const c = P(u, nMid), t = svgEl('text', { x: c[0].toFixed(2), y: c[1].toFixed(2), fill: '#7a6f58', 'font-size': 9, 'font-weight': 700, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: '#f2ede3', 'stroke-width': 2.5, 'pointer-events': 'none' }); t.textContent = (b.oben || 'Verputz') + (docScale ? ' · ' + (Math.round(m2 * 100) / 100).toFixed(2).replace('.', ',') + ' m²' : ''); g.appendChild(t); };
+    if (hasSplit) {
+      if (topL < Hpts - 0.5) lbl(splitU / 2, (topL + Hpts) / 2, splitU * perPt * (h - topL * perPt));
+      if (topR < Hpts - 0.5) lbl((splitU + len) / 2, (topR + Hpts) / 2, (len - splitU) * perPt * (h - topR * perPt));
+    } else lbl(len / 2, (topL + Hpts) / 2, len * perPt * (h - topL * perPt));
+    // Griff zum Ziehen der Split-Grenze (nur wenn ausgewählt + geteilt)
+    if (selHere && hasSplit) { const gp = P(splitU, (Math.min(topL, topR) + Hpts) / 2), hr = 5 / pv.scale; g.appendChild(svgEl('rect', { x: (gp[0] - hr).toFixed(2), y: (gp[1] - hr).toFixed(2), width: (2 * hr).toFixed(2), height: (2 * hr).toFixed(2), rx: (hr * 0.4).toFixed(2), fill: '#fff', stroke: col, 'stroke-width': 1.4, 'data-id': a.id, 'data-wfsplit': 1, style: 'cursor:ew-resize' })); }
   }
   // Bemassung der Ansicht: Länge (an der oberen Kante) + Höhe (an der linken Kante)
   const midDC = [(D[0] + C[0]) / 2, (D[1] + C[1]) / 2], tL = svgEl('text', { x: (midDC[0] + nx * 11 / pv.scale).toFixed(2), y: (midDC[1] + ny * 11 / pv.scale).toFixed(2), fill: col, 'font-size': 9, 'font-weight': 600, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 2.5, 'pointer-events': 'none' }); tL.textContent = 'L ' + (Math.round(len * perPt * 100) / 100).toFixed(2).replace('.', ',') + ' m'; g.appendChild(tL);
@@ -1598,7 +1610,8 @@ function wfHoverMove(ev) {
   const oU = stepU > 0 ? ((((b.offU || 0) % stepU) + stepU) % stepU) : 0, oN = stepN > 0 ? ((((b.offN || 0) % stepN) + stepN) % stepN) : 0;
   const sockPts = (b.sockel > 0) ? (b.sockel / 100) / perPt : 0, startN = sockPts > 0 ? sockPts : oN;
   const colPts = (b.startCol > 0) ? (b.startCol / 100) / perPt : 0, startU = colPts > 0 ? colPts : oU;
-  const topPts = (b.top > 0) ? Math.min(Hpts, b.top / perPt) : Hpts;
+  const hasSplit = b.splitT > 0 && b.splitT < 1, topL = (b.top > 0) ? Math.min(Hpts, b.top / perPt) : Hpts;
+  const topR = hasSplit ? ((b.topR > 0) ? Math.min(Hpts, b.topR / perPt) : Hpts) : topL, topPts = (hasSplit && du >= b.splitT * len) ? topR : topL;
   const jU = Math.max(0, Math.min(len, startU + Math.round((du - startU) / stepU) * stepU)), jN = Math.max(0, Math.min(topPts, startN + Math.round((dn - startN) / stepN) * stepN));
   const g = svgEl('g', { 'pointer-events': 'none' }), HL = '#e8412e';
   g.appendChild(svgEl('line', { x1: (A[0] + ux * jU).toFixed(2), y1: (A[1] + uy * jU).toFixed(2), x2: (A[0] + ux * jU + nx * topPts).toFixed(2), y2: (A[1] + uy * jU + ny * topPts).toFixed(2), stroke: HL, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
@@ -2208,6 +2221,7 @@ function onPointerDown(pv, e) {
     if (e.target.getAttribute && e.target.getAttribute('data-frame') && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; zoomToClick(e.clientX, e.clientY); drawAnnos(pv); openFramePop(pv, oo, e.clientX, e.clientY); return; } }   // Klick auf Rahmen → direkt editieren
     { const fwAttr = e.target.getAttribute && e.target.getAttribute('data-fwin'); if (fwAttr != null && idAttr) { startWinDrag(pv, e, +idAttr, +fwAttr); return; } }   // Fenster in der Wand-Ansicht ziehen (Position + Höhe)
     { const frAttr = e.target.getAttribute && e.target.getAttribute('data-fwres'); if (frAttr != null && idAttr) { startWinResize(pv, e, +idAttr, +frAttr); return; } }   // Fenster vergrössern (Eck-Anfasser)
+    { const ws = e.target.getAttribute && e.target.getAttribute('data-wfsplit'); if (ws && idAttr) { startSplitDrag(pv, e, +idAttr); return; } }   // Wand-Ansicht: Höhen-Trennlinie (links/rechts) verschieben
     { const wg = e.target.getAttribute && e.target.getAttribute('data-wfgrid'); if (wg && idAttr) { startGridShift(pv, e, +idAttr); return; } }   // Wand-Ansicht: Platteneinteilung verschieben
     if (e.target.getAttribute && e.target.getAttribute('data-ah') && idAttr) { startAngleDrag(pv, e, +idAttr); return; }   // offenen Flügel ziehen → Öffnungswinkel
     { const rt = e.target.getAttribute && e.target.getAttribute('data-revt'); if (rt && idAttr) { startRevealLapDrag(pv, e, +idAttr, rt); return; } }   // Laibung-Lappung (Rahmen sichtbar) per Maus ziehen
@@ -3978,6 +3992,16 @@ function startGridShift(pv, e, annoId) {
   const st = evtToPage(pv, e), u0 = b.offU || 0, n0 = b.offN || 0; sel = { num: pv.num, id: annoId }; selWin = null; pushUndo(); let moved = false;
   const move = ev => { moved = true; const q = evtToPage(pv, ev), rx = q.x - st.x, ry = q.y - st.y; b.offU = u0 + (rx * ux + ry * uy); b.offN = n0 + (rx * nx + ry * ny); requestDraw(pv); };
   const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (moved) saveState(); else if (undoStack.length) { undoStack.pop(); drawAnnos(pv); } };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
+// Höhen-Trennlinie (links/rechts unterschiedlich hoch geplättelt) mit der Maus verschieben
+function startSplitDrag(pv, e, annoId) {
+  const a = findAnno(pv.num, annoId); if (!a || !a.wallface) return;
+  const b = a.belag || (a.belag = { ...DEFAULT_BELAG });
+  const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux, gap = 8 / pv.scale;
+  const A = [a.x1 + nx * gap, a.y1 + ny * gap]; sel = { num: pv.num, id: annoId }; selWin = null; pushUndo(); let moved = false;
+  const move = ev => { moved = true; const q = evtToPage(pv, ev), du = (q.x - A[0]) * ux + (q.y - A[1]) * uy; b.splitT = Math.max(0.05, Math.min(0.95, du / len)); requestDraw(pv); };
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (moved) { saveState(); if (typeof renderList === 'function') renderList(); } else if (undoStack.length) { undoStack.pop(); drawAnnos(pv); } };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
 }
 // Fenster in der Ansicht vergrössern (Eck-Anfasser oben-rechts): Breite aus Abstand zur Mitte, Höhe aus Abstand zur Brüstung
@@ -6424,7 +6448,11 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     if (docScale) html += '<div class="insp-row"><span class="insp-lbl">Versatz ↔ / ↕</span><input class="insp-num" style="width:46px" id="wfOffU" type="number" value="' + Math.round((b.offU || 0) * docScale.perPt * 100) + '"> <input class="insp-num" style="width:46px" id="wfOffN" type="number" value="' + Math.round((b.offN || 0) * docScale.perPt * 100) + '"> cm</div>';
     if (docScale) html += '<div class="insp-row"><span class="insp-lbl">Sockelreihe</span><input class="insp-num" style="width:60px" id="wfSock" type="number" min="0" value="' + Math.round(b.sockel || 0) + '"> cm (0 = keine)</div>';
     if (docScale) html += '<div class="insp-row"><span class="insp-lbl">Anfangsspalte</span><input class="insp-num" style="width:60px" id="wfCol" type="number" min="0" value="' + Math.round(b.startCol || 0) + '"> cm (0 = keine)</div>';
-    if (docScale) html += '<div class="insp-row"><span class="insp-lbl">Fliesenhöhe</span><input class="insp-num" style="width:56px" id="wfTop" type="number" step="0.05" min="0" value="' + (b.top || '') + '"> m · darüber <input class="insp-num" style="width:78px" id="wfOben" value="' + ((b.oben || 'Verputz').replace(/"/g, '&quot;')) + '"></div>';
+    if (docScale) html += '<div class="insp-row"><span class="insp-lbl">Fliesenhöhe' + (b.splitT > 0 && b.splitT < 1 ? ' links' : '') + '</span><input class="insp-num" style="width:56px" id="wfTop" type="number" step="0.05" min="0" value="' + (b.top || '') + '"> m · darüber <input class="insp-num" style="width:78px" id="wfOben" value="' + ((b.oben || 'Verputz').replace(/"/g, '&quot;')) + '"></div>';
+    if (docScale) { const spl = b.splitT > 0 && b.splitT < 1;
+      html += '<div class="insp-row"><span class="insp-lbl">' + (spl ? 'Fliesenhöhe rechts' : 'Höhe l/r geteilt') + '</span>' + (spl
+        ? '<input class="insp-num" style="width:56px" id="wfTopR" type="number" step="0.05" min="0" value="' + (b.topR || '') + '"> m bei <input class="insp-num" style="width:44px" id="wfSplit" type="number" min="5" max="95" value="' + Math.round((b.splitT || 0.5) * 100) + '"> % <button class="insp-mini" id="wfSplitOff" style="width:auto;padding:0 7px">×</button>'
+        : '<button class="insp-mini" id="wfSplitOn" style="width:auto;padding:0 8px">→ rechts andere Höhe</button>') + '</div>'; }
     html += '<div class="insp-row"><span class="insp-lbl">Untergrund</span><select class="insp-num" id="wfUg" style="width:128px">' + UNTERGRUND.map(u => '<option value="' + u + '"' + (a.untergrund === u ? ' selected' : '') + '>' + (u || '– wählen –') + '</option>').join('') + '</select></div>';
     const ans = a.ans || (a.ans = { boden: true, decke: true, wand: 2 });   // Anschlüsse (Randfugen) direkt aus der Wand
     html += '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">Anschlüsse (Randfugen)</div>'
@@ -6449,6 +6477,10 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     const sc = body.querySelector('#wfCol'); if (sc) sc.onchange = () => { const v = parseFloat((sc.value || '').replace(',', '.')); if (isFinite(v)) { a.belag.startCol = Math.max(0, v); markDirty(); pageViews.forEach(drawAnnos); renderList(); } };
     const tp = body.querySelector('#wfTop'); if (tp) tp.onchange = () => { const v = parseFloat((tp.value || '').replace(',', '.')); if (v > 0) a.belag.top = v; else delete a.belag.top; markDirty(); pageViews.forEach(drawAnnos); renderList(); };
     const ob = body.querySelector('#wfOben'); if (ob) ob.onchange = () => { const v = ob.value.trim(); if (v) a.belag.oben = v; else delete a.belag.oben; markDirty(); pageViews.forEach(drawAnnos); renderList(); };
+    const spOn = body.querySelector('#wfSplitOn'); if (spOn) spOn.onclick = () => { a.belag.splitT = 0.5; a.belag.topR = a.belag.top || Math.round((a.height || 2.5) * 0.6 * 100) / 100; markDirty(); pageViews.forEach(drawAnnos); renderList(); if (typeof syncInspector === 'function') syncInspector(); };
+    const spOff = body.querySelector('#wfSplitOff'); if (spOff) spOff.onclick = () => { delete a.belag.splitT; delete a.belag.topR; markDirty(); pageViews.forEach(drawAnnos); renderList(); if (typeof syncInspector === 'function') syncInspector(); };
+    const tpr = body.querySelector('#wfTopR'); if (tpr) tpr.onchange = () => { const v = parseFloat((tpr.value || '').replace(',', '.')); if (v > 0) a.belag.topR = v; else delete a.belag.topR; markDirty(); pageViews.forEach(drawAnnos); renderList(); };
+    const spl = body.querySelector('#wfSplit'); if (spl) spl.onchange = () => { const v = parseFloat((spl.value || '').replace(',', '.')); if (isFinite(v)) { a.belag.splitT = Math.max(0.05, Math.min(0.95, v / 100)); markDirty(); pageViews.forEach(drawAnnos); renderList(); } };
     const au = body.querySelector('#iWfAu'); if (au) au.onchange = () => { const v = au.value.trim(); if (v) a.aufbau = v; else delete a.aufbau; markDirty(); pageViews.forEach(drawAnnos); };
     const ug = body.querySelector('#wfUg'); if (ug) ug.onchange = () => { if (ug.value) a.untergrund = ug.value; else delete a.untergrund; markDirty(); renderList(); };
     const tgl = (id, key) => { const el = body.querySelector(id); if (el) el.onclick = () => { a.ans[key] = !a.ans[key]; markDirty(); renderList(); pageViews.forEach(drawAnnos); }; };
@@ -6500,9 +6532,13 @@ function belagData() {
       floors.push({ a, name: a.name || a.floor || '', grossM2: polyArea(a.pts) * pp * pp, poly: a.pts, b, aufbau: a.aufbau || '' });
     } else if (a.type === 'measure' && a.wallface) {
       const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), h = a.height || 2.5, b = a.belag || DEFAULT_BELAG, wl = len * pp;
-      const topH = (b.top > 0) ? Math.min(b.top, h) : h, gross = wallFaceAreaM2(len, pp, topH);   // nur bis Fliesenhöhe geplättelt
+      const topHl = (b.top > 0) ? Math.min(b.top, h) : h;   // Fliesenhöhe links (bzw. ganze Wand)
+      const hasSplit = b.splitT > 0 && b.splitT < 1, splitFrac = hasSplit ? b.splitT : 1;   // Wand in zwei Höhenzonen geteilt (links höher als rechts)
+      const topHr = hasSplit ? ((b.topR > 0) ? Math.min(b.topR, h) : h) : topHl;   // Fliesenhöhe rechts
+      const gross = wl * (splitFrac * topHl + (1 - splitFrac) * topHr);   // geplätteter Teil (beide Zonen)
       const fen = a.fenster || [], fenAr = fen.reduce((s, f) => s + (f.w || 0) * (f.h || 0), 0), m2 = Math.max(0, gross - fenAr);
-      walls.push({ a, name: a.name || '', m2, grossM2: gross, fenM2: fenAr, h, lenM: wl, tiles: tilesForArea(m2, b.tileW, b.tileH, b.waste || 0), b, aufbau: a.aufbau || '', verputzM2: (topH < h) ? wl * (h - topH) : 0, oben: b.oben || 'Verputz' });
+      const verputzM2 = Math.max(0, wl * (splitFrac * (h - topHl) + (1 - splitFrac) * (h - topHr)));
+      walls.push({ a, name: a.name || '', m2, grossM2: gross, fenM2: fenAr, h, lenM: wl, tiles: tilesForArea(m2, b.tileW, b.tileH, b.waste || 0), b, aufbau: a.aufbau || '', verputzM2, oben: b.oben || 'Verputz', topHl, topHr: hasSplit ? topHr : null });
       const ans = a.ans || { boden: true, decke: true, wand: 2 };   // Anschlüsse direkt aus der Wandgeometrie
       const nm = a.name ? a.name + ' – ' : '';
       if (ans.boden) anschluesse.push({ a, kat: 'boden', katLabel: 'Boden', name: nm + 'Wandbelag unten', lenM: wl });
@@ -6534,7 +6570,7 @@ function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten &
     + floors.map(r => '<tr><td>' + (_htmlEsc(r.name) || '–') + (r.aufbau ? '<div style="font-size:10px;color:var(--ink-soft)">' + _htmlEsc(r.aufbau) + '</div>' : '') + (r.cutM2 ? '<div style="font-size:10px;color:var(--ink-soft)">netto · abzügl. Aussparungen ' + fmt(r.cutM2) + ' m²</div>' : '') + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.m2) + ' m²</td><td style="text-align:right;white-space:nowrap">' + r.b.tileW + '×' + r.b.tileH + '</td><td style="text-align:right">' + r.tiles + '</td></tr>').join('')
     + '</tbody><tfoot><tr><th style="text-align:right">Summe</th><th style="text-align:right;white-space:nowrap">' + fmt(fm2) + ' m²</th><th></th><th style="text-align:right">' + ft + '</th></tr></tfoot></table>';
   if (walls.length) html += '<h4 style="margin-top:14px">Wandflächen (' + walls.length + ')</h4><table class="qty-tab"><thead><tr><th>Wand</th><th style="text-align:right">L×H</th><th style="text-align:right">Fläche</th><th style="text-align:right">Platten</th></tr></thead><tbody>'
-    + walls.map(r => '<tr><td>' + (_htmlEsc(r.name) || '–') + (r.aufbau ? '<div style="font-size:10px;color:var(--ink-soft)">' + _htmlEsc(r.aufbau) + '</div>' : '') + (r.verputzM2 ? '<div style="font-size:10px;color:var(--ink-soft)">+ ' + _htmlEsc(r.oben || 'Verputz') + ' oben ' + fmt(r.verputzM2) + ' m²</div>' : '') + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.lenM) + '×' + fmt(r.b && r.b.top > 0 ? Math.min(r.b.top, r.h) : r.h) + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.m2) + ' m²</td><td style="text-align:right">' + r.tiles + '</td></tr>').join('')
+    + walls.map(r => '<tr><td>' + (_htmlEsc(r.name) || '–') + (r.aufbau ? '<div style="font-size:10px;color:var(--ink-soft)">' + _htmlEsc(r.aufbau) + '</div>' : '') + (r.verputzM2 ? '<div style="font-size:10px;color:var(--ink-soft)">+ ' + _htmlEsc(r.oben || 'Verputz') + ' oben ' + fmt(r.verputzM2) + ' m²</div>' : '') + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.lenM) + '×' + (r.topHr != null ? fmt(r.topHl) + '/' + fmt(r.topHr) : fmt(r.topHl != null ? r.topHl : r.h)) + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.m2) + ' m²</td><td style="text-align:right">' + r.tiles + '</td></tr>').join('')
     + '</tbody><tfoot><tr><th style="text-align:right" colspan="2">Summe</th><th style="text-align:right;white-space:nowrap">' + fmt(wm2) + ' m²</th><th style="text-align:right">' + wt + '</th></tr></tfoot></table>';
   { const vp = walls.filter(r => r.verputzM2 > 0); if (vp.length) html += '<h4 style="margin-top:14px">Verputz / Wandabschluss (' + vp.length + ')</h4><table class="qty-tab"><thead><tr><th>Wand</th><th>Art</th><th style="text-align:right">Fläche</th></tr></thead><tbody>'
     + vp.map(r => '<tr><td>' + (_htmlEsc(r.name) || '–') + '</td><td>' + _htmlEsc(r.oben || 'Verputz') + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.verputzM2) + ' m²</td></tr>').join('')
@@ -6565,9 +6601,10 @@ function buildBelagTableHtml(floors, walls, price, anschluesse) {
   let rows = '', sec = 0;
   const ug = r => (r.a && r.a.untergrund) ? ' · auf ' + r.a.untergrund : '';
   if (floors.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Bodenbeläge</strong></td></tr>'; floors.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Bodenbelag') + ' · Platten ' + r.b.tileW + '×' + r.b.tileH + ug(r) + (r.aufbau ? ' · ' + r.aufbau : '') + (r.cutM2 ? ' · netto (abzügl. Aussparungen ' + fmt(r.cutM2) + ' m²)' : ''), r.m2, 'm²')); rows += zt('Bodenbeläge', floors.reduce((s, r) => s + r.m2, 0), 'm²'); }
-  if (walls.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Wandflächen</strong></td></tr>'; walls.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Wandbelag') + ' · H ' + fmt(r.b && r.b.top > 0 ? Math.min(r.b.top, r.h) : r.h) + ' m · Platten ' + r.b.tileW + '×' + r.b.tileH + ug(r) + (r.aufbau ? ' · ' + r.aufbau : '') + (r.fenM2 ? ' · netto (abzügl. Fenster ' + fmt(r.fenM2) + ' m²)' : ''), r.m2, 'm²')); rows += zt('Wandflächen', walls.reduce((s, r) => s + r.m2, 0), 'm²'); }
+  const wfH = r => (r.topHr != null) ? ('H links ' + fmt(r.topHl != null ? r.topHl : r.h) + ' / rechts ' + fmt(r.topHr) + ' m') : ('H ' + fmt(r.topHl != null ? r.topHl : (r.b && r.b.top > 0 ? Math.min(r.b.top, r.h) : r.h)) + ' m');
+  if (walls.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Wandflächen</strong></td></tr>'; walls.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Wandbelag') + ' · ' + wfH(r) + ' · Platten ' + r.b.tileW + '×' + r.b.tileH + ug(r) + (r.aufbau ? ' · ' + r.aufbau : '') + (r.fenM2 ? ' · netto (abzügl. Fenster ' + fmt(r.fenM2) + ' m²)' : ''), r.m2, 'm²')); rows += zt('Wandflächen', walls.reduce((s, r) => s + r.m2, 0), 'm²'); }
   const vp = walls.filter(r => r.verputzM2 > 0);
-  if (vp.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Verputz / Wandabschluss über Fliesenhöhe</strong></td></tr>'; vp.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Wand') + ' · ' + (r.oben || 'Verputz') + ' über Fliesenhöhe (H ' + fmt(r.b && r.b.top > 0 ? Math.min(r.b.top, r.h) : r.h) + '–' + fmt(r.h) + ' m)', r.verputzM2, 'm²')); rows += zt('Verputz / Wandabschluss', vp.reduce((s, r) => s + r.verputzM2, 0), 'm²'); }
+  if (vp.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Verputz / Wandabschluss über Fliesenhöhe</strong></td></tr>'; vp.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Wand') + ' · ' + (r.oben || 'Verputz') + ' über Fliesenhöhe (' + wfH(r) + ' bis H ' + fmt(r.h) + ' m)', r.verputzM2, 'm²')); rows += zt('Verputz / Wandabschluss', vp.reduce((s, r) => s + r.verputzM2, 0), 'm²'); }
   if (anschluesse.length) {
     sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Anschlüsse</strong></td></tr>';
     const byKat = {}; anschluesse.forEach(r => { byKat[r.kat] = byKat[r.kat] || { label: r.katLabel || r.kat, len: 0 }; byKat[r.kat].len += r.lenM; });
@@ -6776,6 +6813,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Anschluss als Polylinie (chaindim) → lfm', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'chaindim', anschluss: 'wand', pts: [[0, 0], [100, 0], [100, 100]] }] }; const d = belagData(); return (Math.abs(polylineLen([[0, 0], [100, 0], [100, 100]]) - 200) < 1e-6 && d.anschluesse.length === 1 && Math.abs(d.anschluesse[0].lenM - 2) < 1e-6 && d.anschluesse[0].kat === 'wand') ? '' : 'fail'; } finally { annos = sa; docScale = sd; } });
     A('belagData + Ausschreibung: Anschluss (lfm)', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', anschluss: 'boden', x1: 0, y1: 0, x2: 300, y2: 0 }] }; const d = belagData(); const ok1 = d.anschluesse.length === 1 && Math.abs(d.anschluesse[0].lenM - 3) < 1e-6; const html = buildBelagTableHtml([], [], false, d.anschluesse); return (ok1 && /Anschlüsse/.test(html) && /Anschluss Boden/.test(html) && /lfm/.test(html) && /3,00/.test(html)) ? '' : 'fail'; } finally { annos = sa; docScale = sd; } });
     A('Fliesenhöhe: geplättelt bis top, Verputz darüber', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', wallface: true, height: 2.5, x1: 0, y1: 0, x2: 400, y2: 0, ans: { boden: false, decke: false, wand: 0 }, belag: { tileW: 30, tileH: 30, waste: 0, top: 2.1, oben: 'Verputz' } }] }; const d = belagData(); const w = d.walls[0]; const html = buildBelagTableHtml([], d.walls, false); return (Math.abs(w.m2 - 4 * 2.1) < 1e-6 && Math.abs(w.verputzM2 - 4 * 0.4) < 1e-6 && w.oben === 'Verputz' && /Verputz \/ Wandabschluss/.test(html) && /1,60/.test(html)) ? '' : JSON.stringify({ m2: w.m2, vp: w.verputzM2 }); } finally { annos = sa; docScale = sd; } });
+    A('Fliesenhöhe geteilt: links höher als rechts (zwei Zonen)', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', wallface: true, height: 2.5, x1: 0, y1: 0, x2: 400, y2: 0, ans: { boden: false, decke: false, wand: 0 }, belag: { tileW: 30, tileH: 30, waste: 0, top: 2.2, splitT: 0.5, topR: 1.2, oben: 'Verputz' } }] }; const d = belagData(); const w = d.walls[0]; const geplt = 2 * 2.2 + 2 * 1.2, verp = 2 * (2.5 - 2.2) + 2 * (2.5 - 1.2); return (Math.abs(w.m2 - geplt) < 1e-6 && Math.abs(w.verputzM2 - verp) < 1e-6 && Math.abs(w.topHl - 2.2) < 1e-6 && Math.abs(w.topHr - 1.2) < 1e-6) ? '' : JSON.stringify({ m2: w.m2, vp: w.verputzM2, l: w.topHl, r: w.topHr }); } finally { annos = sa; docScale = sd; } });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

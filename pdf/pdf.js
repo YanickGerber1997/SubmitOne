@@ -3873,6 +3873,12 @@ function openingClick(pv, p) {
   const a = { id: nextId++, type: 'opening', wallId: nw.wall.id, t, x: nw.cx, y: nw.cy, ang: nw.ang, thick: nw.thick, w: lastOpenW || cmToPts(openKind === 'window' ? 100 : 90), kind: openKind, hinge: 1, swing: 1, sill: openKind === 'window' ? 0.9 : 0, head: openKind === 'window' ? 2.1 : 2.0, depth: lastOpenDepth, winType: openKind === 'door' ? lastDoorType : lastWinType, winHinge: lastWinHinge, winMat: lastWinMat, color: nw.wall.color || '#1c242c' };
   pushAnno(pv.num, a); sel = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
 }
+// Öffnung (Fenster/Tür) mittig auf eine Wand – reines Objekt (für 3D-Panel „+ Fenster/+ Tür")
+function makeOpening(wall, kind) {
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, t = 0.5;
+  return { id: nextId++, type: 'opening', wallId: wall.id, t, x: wall.x1 + dx * t, y: wall.y1 + dy * t, ang: Math.atan2(dy, dx), thick: wall.thick || wallThickPts(), w: cmToPts(kind === 'window' ? 100 : 90), kind, hinge: 1, swing: 1, sill: kind === 'window' ? 0.9 : 0, head: kind === 'window' ? 2.1 : 2.0, depth: lastOpenDepth, winType: kind === 'door' ? lastDoorType : lastWinType, winHinge: lastWinHinge, winMat: lastWinMat, color: wall.color || '#1c242c', layer: wall.layer };
+}
+function addOpeningToWall(wall, kind, pageNum) { if (!wall) return null; pushUndo(); const a = makeOpening(wall, kind); pushAnno(pageNum, a); saveState(); return a; }
 function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieben (sonst frei)
   const wall = a.wallId && getAnnos(pv.num).find(o => o.id === a.wallId && o.type === 'wall');
   if (!wall) return startMove(pv, e, a);
@@ -5565,14 +5571,16 @@ async function open3D() {
     const row = (lbl, rid, val, unit, step) => '<label class="d3-sr"><span>' + lbl + '</span><input id="' + rid + '" type="number" step="' + (step || 1) + '" value="' + val + '">' + (unit ? '<em>' + unit + '</em>' : '') + '</label>';
     const title = a.type === 'wall' ? 'Wand' : (a.belag ? 'Bodenbelag' : (a.wallface ? 'Wandbelag' : 'Bauteil'));
     let h = '<div class="d3-sel-h"><b>' + title + '</b><button id="d3SelX" title="Schliessen">✕</button></div>';
-    if (a.type === 'wall') h += row('Stärke', 'sw_t', Math.round(ptsToCm(a.thick || wallThickPts())), 'cm') + row('Höhe', 'sw_h', a.h3d || wallHeightM, 'm', 0.05);
+    if (a.type === 'wall') h += row('Stärke', 'sw_t', Math.round(ptsToCm(a.thick || wallThickPts())), 'cm') + row('Höhe', 'sw_h', a.h3d || wallHeightM, 'm', 0.05) + '<div class="d3-sr" style="gap:6px;margin-top:8px"><button class="btn" id="sw_win" style="flex:1">+ Fenster</button><button class="btn" id="sw_door" style="flex:1">+ Tür</button></div>';
     else if (a.belag) { const b = a.belag; h += row('Platte B', 'sb_w', b.tileW, 'cm') + row('Platte H', 'sb_h', b.tileH, 'cm') + row('Fuge', 'sb_j', b.joint != null ? b.joint : 3, 'mm') + row('Verschnitt', 'sb_v', b.waste != null ? b.waste : 8, '%'); }
     else if (a.wallface) { const b = a.belag || (a.belag = { ...DEFAULT_BELAG }); h += row('Höhe', 'swf_h', a.height || wallHeightM, 'm', 0.05) + row('Platte B', 'sb_w', b.tileW, 'cm') + row('Platte H', 'sb_h', b.tileH, 'cm'); }
     else h += '<p class="d3-sr" style="opacity:.7">Für diesen Typ (noch) keine 3D-Einstellungen.</p>';
     d3Sel.innerHTML = h; d3Sel.hidden = false;
     d3Sel.querySelector('#d3SelX').onclick = () => { d3Sel.hidden = true; };
     const bind = (rid, fn) => { const el = d3Sel.querySelector('#' + rid); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (isFinite(v)) { fn(v); apply(); } }; };
-    if (a.type === 'wall') { bind('sw_t', v => a.thick = cmToPts(Math.max(1, v))); bind('sw_h', v => a.h3d = Math.max(0.5, v)); }
+    if (a.type === 'wall') { bind('sw_t', v => a.thick = cmToPts(Math.max(1, v))); bind('sw_h', v => a.h3d = Math.max(0.5, v));
+      const bwin = d3Sel.querySelector('#sw_win'); if (bwin) bwin.onclick = () => { addOpeningToWall(a, 'window', curPage()); apply(); toast('Fenster gesetzt (mittig) – im Grundriss verschieben/anpassen.'); };
+      const bdoor = d3Sel.querySelector('#sw_door'); if (bdoor) bdoor.onclick = () => { addOpeningToWall(a, 'door', curPage()); apply(); toast('Tür gesetzt (mittig) – im Grundriss verschieben/anpassen.'); }; }
     else if (a.belag) { bind('sb_w', v => a.belag.tileW = v); bind('sb_h', v => a.belag.tileH = v); bind('sb_j', v => a.belag.joint = v); bind('sb_v', v => a.belag.waste = v); }
     else if (a.wallface) { bind('swf_h', v => a.height = Math.max(0.1, v)); bind('sb_w', v => a.belag.tileW = v); bind('sb_h', v => a.belag.tileH = v); }
   }
@@ -6546,6 +6554,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('tilesForArea inkl. 10% Verschnitt', () => tilesForArea(10, 60, 60, 10) === Math.ceil((10 / 0.36) * 1.1) ? '' : 'fail');
     A('DEFAULT_BELAG Standard 60×60 / 3mm / 8%', () => (DEFAULT_BELAG.tileW === 60 && DEFAULT_BELAG.tileH === 60 && DEFAULT_BELAG.joint === 3 && DEFAULT_BELAG.waste === 8) ? '' : 'fail');
     A('tileStartPoint Ecken + Mitte', () => { const tl = tileStartPoint(0, 0, 100, 80, 'tl', 10, 10), tr = tileStartPoint(0, 0, 100, 80, 'tr', 10, 10), br = tileStartPoint(0, 0, 100, 80, 'br', 10, 10), ce = tileStartPoint(0, 0, 100, 80, 'center', 10, 10); return (tl[0] === 0 && tl[1] === 0 && tr[0] === 100 && tr[1] === 0 && br[0] === 100 && br[1] === 80 && ce[0] === 45 && ce[1] === 35) ? '' : 'fail'; });
+    A('makeOpening: Fenster mittig auf der Wand', () => { const o = makeOpening({ id: 5, x1: 0, y1: 0, x2: 100, y2: 0, thick: 10 }, 'window'); return (o.type === 'opening' && o.wallId === 5 && o.t === 0.5 && o.x === 50 && o.kind === 'window' && o.sill === 0.9) ? '' : JSON.stringify(o); });
     A('Ausschreibungs-Abschluss: MwSt + Total inkl.', () => { const h = belagTenderFooter(); return (/Total exkl\. MwSt/.test(h) && /MwSt 8,1 %/.test(h) && /Total inkl\. MwSt/.test(h)) ? '' : 'fail'; });
     A('Ausschreibungs-Kopf: Bauvorhaben/Datum/Massstab + Escaping', () => { const h = belagTenderHeader('Haus <A>', '05.07.2026', '1:50'); return (/Bauvorhaben:/.test(h) && /Haus &lt;A&gt;/.test(h) && /05\.07\.2026/.test(h) && /1:50/.test(h) && /Unternehmer/.test(h)) ? '' : 'fail'; });
     A('Belag-Ausschreibung: Preisspalten nur im Ausschreibungs-Modus + Pos/Menge', () => { const floors = [{ name: 'Wohnen', m2: 24.5, b: { tileW: 60, tileH: 60 }, aufbau: 'OK FB' }]; const aus = buildBelagTableHtml(floors, [], true), men = buildBelagTableHtml(floors, [], false); return (/Einheitspreis/.test(aus) && /Betrag/.test(aus) && !/Einheitspreis/.test(men) && /Bodenbeläge/.test(aus) && /1\.1/.test(aus) && /24,50/.test(aus)) ? '' : 'fail'; });

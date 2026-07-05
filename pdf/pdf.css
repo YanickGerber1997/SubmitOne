@@ -879,6 +879,17 @@ html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink) 22%,trans
 .palette:not([hidden]),.stamp-pop:not([hidden]),.fmt-pop:not([hidden]),.ins-menu:not([hidden]),.outline-pop:not([hidden]),.ctxmenu:not([hidden]),.hdr-pop:not([hidden]){animation:pdfPopIn .13s cubic-bezier(.4,0,.2,1)}
 @media (prefers-reduced-motion:reduce){.palette,.stamp-pop,.fmt-pop,.ins-menu,.outline-pop,.ctxmenu,.hdr-pop{animation:none !important}}
 
+/* 3D: Einstell-Panel beim Anklicken einer Wand/Fläche */
+.d3-sel{position:absolute;top:64px;right:14px;z-index:8;width:206px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--pop-shadow);padding:10px 12px;font-family:var(--font);font-size:13px}
+.d3-sel[hidden]{display:none}
+.d3-sel-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.d3-sel-h b{font-size:14px}
+.d3-sel-h button{border:none;background:none;font-size:15px;cursor:pointer;color:var(--ink-soft);line-height:1}
+.d3-sr{display:flex;align-items:center;gap:6px;margin:5px 0}
+.d3-sr>span{flex:1;color:var(--ink-soft)}
+.d3-sr input{width:64px;border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:inherit;color:var(--ink)}
+.d3-sr em{font-style:normal;color:var(--ink-faint);width:24px}
+
 /* Kleine Auswahl-Knöpfe im Inspector (z. B. Plattenspiegel-Startecke) */
 .insp-mini{width:26px;height:24px;border:1px solid var(--line);background:var(--surface-2);border-radius:6px;cursor:pointer;font-size:13px;color:var(--ink-soft);line-height:1;padding:0}
 .insp-mini:hover{border-color:var(--accent);color:var(--accent)}

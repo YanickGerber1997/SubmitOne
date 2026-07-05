@@ -5550,7 +5550,26 @@ async function open3D() {
   const host = ov.querySelector('#d3Canvas');
   let api = null;
   let addOn = false;
-  const mk = keepCam => { const cam = keepCam && api && api.camState ? api.camState() : null; if (api) api.dispose(); const curWalls = arr.filter(a => a.type === 'wall' && layerVisible(a) && phaseVisible(a)); api = build3DScene(host, curWalls, arr, { initCam: cam, onEdit: () => { pageViews.forEach(drawAnnos); markDirty(); mk(true); applySun(); } }); if (addOn && api.setAddMode) api.setAddMode(true); };
+  const d3Sel = document.createElement('div'); d3Sel.className = 'd3-sel'; d3Sel.hidden = true; ov.appendChild(d3Sel);
+  const findAnnoAny = id => { for (const nn in annos) { const f = (annos[nn] || []).find(x => x.id === id); if (f) return f; } return null; };
+  function show3DSettings(id) {
+    const a = findAnnoAny(id); if (!a) { d3Sel.hidden = true; return; }
+    const apply = () => { mk(true); pageViews.forEach(drawAnnos); markDirty(); };
+    const row = (lbl, rid, val, unit, step) => '<label class="d3-sr"><span>' + lbl + '</span><input id="' + rid + '" type="number" step="' + (step || 1) + '" value="' + val + '">' + (unit ? '<em>' + unit + '</em>' : '') + '</label>';
+    const title = a.type === 'wall' ? 'Wand' : (a.belag ? 'Bodenbelag' : (a.wallface ? 'Wandbelag' : 'Bauteil'));
+    let h = '<div class="d3-sel-h"><b>' + title + '</b><button id="d3SelX" title="Schliessen">✕</button></div>';
+    if (a.type === 'wall') h += row('Stärke', 'sw_t', Math.round(ptsToCm(a.thick || wallThickPts())), 'cm') + row('Höhe', 'sw_h', a.h3d || wallHeightM, 'm', 0.05);
+    else if (a.belag) { const b = a.belag; h += row('Platte B', 'sb_w', b.tileW, 'cm') + row('Platte H', 'sb_h', b.tileH, 'cm') + row('Fuge', 'sb_j', b.joint != null ? b.joint : 3, 'mm') + row('Verschnitt', 'sb_v', b.waste != null ? b.waste : 8, '%'); }
+    else if (a.wallface) { const b = a.belag || (a.belag = { ...DEFAULT_BELAG }); h += row('Höhe', 'swf_h', a.height || wallHeightM, 'm', 0.05) + row('Platte B', 'sb_w', b.tileW, 'cm') + row('Platte H', 'sb_h', b.tileH, 'cm'); }
+    else h += '<p class="d3-sr" style="opacity:.7">Für diesen Typ (noch) keine 3D-Einstellungen.</p>';
+    d3Sel.innerHTML = h; d3Sel.hidden = false;
+    d3Sel.querySelector('#d3SelX').onclick = () => { d3Sel.hidden = true; };
+    const bind = (rid, fn) => { const el = d3Sel.querySelector('#' + rid); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (isFinite(v)) { fn(v); apply(); } }; };
+    if (a.type === 'wall') { bind('sw_t', v => a.thick = cmToPts(Math.max(1, v))); bind('sw_h', v => a.h3d = Math.max(0.5, v)); }
+    else if (a.belag) { bind('sb_w', v => a.belag.tileW = v); bind('sb_h', v => a.belag.tileH = v); bind('sb_j', v => a.belag.joint = v); bind('sb_v', v => a.belag.waste = v); }
+    else if (a.wallface) { bind('swf_h', v => a.height = Math.max(0.1, v)); bind('sb_w', v => a.belag.tileW = v); bind('sb_h', v => a.belag.tileH = v); }
+  }
+  const mk = keepCam => { const cam = keepCam && api && api.camState ? api.camState() : null; if (api) api.dispose(); const curWalls = arr.filter(a => a.type === 'wall' && layerVisible(a) && phaseVisible(a)); api = build3DScene(host, curWalls, arr, { initCam: cam, onEdit: () => { pageViews.forEach(drawAnnos); markDirty(); mk(true); applySun(); }, onPick: id => show3DSettings(id) }); if (addOn && api.setAddMode) api.setAddMode(true); };
   mk(false);
   if (walls.length) toast('3D-Editor: 🔵 Wandende (Snap) · ▭ grau Wand verschieben · 🌸 pink Höhe · 🟣 Möbel/Stütze · 🟡 drehen · 🟢 Fenster · Griff anklicken + Entf = löschen.');
   ov.querySelector('#d3h').onchange = e => { wallHeightM = Math.max(1, Math.min(20, parseFloat(e.target.value) || 2.6)); mk(true); };
@@ -7103,10 +7122,11 @@ function build3DScene(host, walls, arr, opts) {
     const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
     const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0xece6d8, side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.006; fl.receiveShadow = true; scene.add(fl);
   }
+  const pickables = [];   // anklickbare Meshes (Belag-Flächen + unsichtbare Wand-Proxys) für „im 3D anklicken → Einstellungen"
   // Bodenbeläge (a.belag) flach am Boden – in Belagsfarbe; Aussparungen als dunkle Flecken darüber
   for (const a of arr) if (a.type === 'area' && a.belag && a.pts && a.pts.length >= 3 && layerVisible(a) && phaseVisible(a)) {
     const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
-    const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: new THREE.Color(a.color || '#b5651d'), side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.008; fl.receiveShadow = true; fl.name = 'belagFloor'; fl.userData = { annoId: a.id, page: opts.page }; scene.add(fl);
+    const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: new THREE.Color(a.color || '#b5651d'), side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.008; fl.receiveShadow = true; fl.name = 'belagFloor'; fl.userData = { annoId: a.id, kind: 'belagFloor' }; scene.add(fl); pickables.push(fl);
   }
   for (const a of arr) if (a.type === 'area' && a.cutout && a.pts && a.pts.length >= 3 && layerVisible(a) && phaseVisible(a)) {
     const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
@@ -7117,7 +7137,7 @@ function build3DScene(host, walls, arr, opts) {
     const x1 = M(a.x1 - cx), z1 = M(a.y1 - cy), x2 = M(a.x2 - cx), z2 = M(a.y2 - cy), len = Math.hypot(x2 - x1, z2 - z1);
     if (len < 1e-4) continue; const h = a.height || H || 2.5, base = lev(a);
     const m = new THREE.Mesh(new THREE.PlaneGeometry(len, h), new THREE.MeshLambertMaterial({ color: new THREE.Color(a.color || '#2f6ea3'), side: THREE.DoubleSide }));
-    m.position.set((x1 + x2) / 2, base + h / 2, (z1 + z2) / 2); m.rotation.y = Math.atan2(-(z2 - z1), x2 - x1); m.receiveShadow = true; m.name = 'belagWall'; m.userData = { annoId: a.id, page: opts.page }; scene.add(m);
+    m.position.set((x1 + x2) / 2, base + h / 2, (z1 + z2) / 2); m.rotation.y = Math.atan2(-(z2 - z1), x2 - x1); m.receiveShadow = true; m.name = 'belagWall'; m.userData = { annoId: a.id, kind: 'belagWall' }; scene.add(m); pickables.push(m);
   }
   if (show3DSlabs && walls.length) {   // Geschossdecken / Bodenplatte: Wand-Footprint je Geschoss vereinigen → massive Platte (Oberkante = Geschoss-Höhenlage)
     const slabT = 0.2, slabMat = new THREE.MeshStandardMaterial({ color: 0xd6d3cb, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
@@ -7394,6 +7414,26 @@ function build3DScene(host, walls, arr, opts) {
     const onKey = ev => { if (/^(INPUT|TEXTAREA|SELECT)$/.test((ev.target && ev.target.tagName) || '')) return; if ((ev.key === 'Delete' || ev.key === 'Backspace') && armed) { ev.preventDefault(); const o = armed; armed = null; for (const nn in annos) { const i = (annos[nn] || []).indexOf(o); if (i >= 0) { annos[nn].splice(i, 1); if (o.type === 'wall') for (let j = annos[nn].length - 1; j >= 0; j--) if (annos[nn][j].type === 'opening' && annos[nn][j].wallId === o.id) annos[nn].splice(j, 1); break; } } setTimeout(() => opts.onEdit(), 0); } };
     dom.addEventListener('pointerdown', onDown); dom.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp); window.addEventListener('keydown', onKey);
     cleanups.push(() => { dom.removeEventListener('pointerdown', onDown); dom.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('keydown', onKey); });
+  }
+  // ── Anklicken → Einstellungen: unsichtbare Klick-Proxys je Wand; Raycast beim Klick → opts.onPick(annoId, kind) ──
+  for (const w of walls) {
+    const px1 = M(w.x1 - cx), pz1 = M(w.y1 - cy), px2 = M(w.x2 - cx), pz2 = M(w.y2 - cy), plen = Math.hypot(px2 - px1, pz2 - pz1);
+    if (plen < 1e-4) continue; const pth = Math.max(0.03, (w.thick || wallThickPts()) * perPt), ph = w.h3d || H;
+    const box = new THREE.Mesh(new THREE.BoxGeometry(plen, ph, pth), new THREE.MeshBasicMaterial({ visible: false }));
+    box.position.set((px1 + px2) / 2, lev(w) + ph / 2, (pz1 + pz2) / 2); box.rotation.y = Math.atan2(-(pz2 - pz1), px2 - px1);
+    box.userData = { annoId: w.id, kind: 'wall' }; box.name = '__pick'; scene.add(box); pickables.push(box);
+  }
+  if (typeof opts.onPick === 'function') {
+    const pRay = new THREE.Raycaster(), pNdc = new THREE.Vector2(), pDom = renderer.domElement; let pDX = 0, pDY = 0;
+    const pkDown = ev => { pDX = ev.clientX; pDY = ev.clientY; };
+    const pkUp = ev => {
+      if (flyMode || Math.hypot(ev.clientX - pDX, ev.clientY - pDY) > 4) return;   // im Flug oder beim Ziehen nicht picken
+      const r = pDom.getBoundingClientRect(); pNdc.x = ((ev.clientX - r.left) / r.width) * 2 - 1; pNdc.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
+      pRay.setFromCamera(pNdc, camera); const hit = pRay.intersectObjects(pickables, false)[0];
+      if (hit && hit.object.userData && hit.object.userData.annoId != null) opts.onPick(hit.object.userData.annoId, hit.object.userData.kind);
+    };
+    pDom.addEventListener('pointerdown', pkDown); pDom.addEventListener('pointerup', pkUp);
+    cleanups.push(() => { pDom.removeEventListener('pointerdown', pkDown); pDom.removeEventListener('pointerup', pkUp); });
   }
   // ── Fly-Modus: mit F umschalten. W/A/S/D bewegen, Maus ziehen = schauen, E/Leer hoch, Q/Strg runter, Shift = schneller ──
   let flyMode = false; const flyKeys = new Set(); let flyYaw = 0, flyPitch = 0, flyDrag = false, flyPX = 0, flyPY = 0; const flyDom = renderer.domElement;

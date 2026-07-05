@@ -4485,14 +4485,17 @@ function blockAlign(lines, pageLeft, pageRight) {
   if (lg > span * 0.25 && rg < span * 0.05) return 'right';
   return '';
 }
-function blocksToPaperHtml(blocks, colorFn, ulFn) {
-  if (!blocks.length) return '<p></p>';
+function blocksToPaperHtml(blocks, colorFn, ulFn, images) {
+  images = images || [];
+  if (!blocks.length && !images.length) return '<p></p>';
   if (colorFn) blocks.forEach(b => { try { const c = colorFn(b); if (c) b.color = c; } catch (_) { } });   // Textfarbe aus dem gerenderten Seitenbild übernehmen
   if (ulFn) blocks.forEach(b => (b.lines || []).forEach(l => { try { if (l.base != null && ulFn(l.x, l.maxx, l.base)) l._ul = true; } catch (_) { } }));   // Unterstreichung je Zeile
   const sizes = blocks.map(b => b.size).slice().sort((a, b) => a - b), body = sizes[Math.floor(sizes.length / 2)] || 12;
   const pr = pageRightMargin(blocks), pl = pageLeftMargin(blocks);
-  let prevBot = null;   // Absatzabstände aus den vertikalen Lücken des Originals übernehmen
-  const html = blocks.map(b => { const gapEm = (prevBot != null && body > 0) ? Math.max(0, (b.y - prevBot) / body) : 0; prevBot = b.y + b.h; return blockIsList(b) ? listBlockHtml(b, body, gapEm) : blockToParaHtml(b, body, pr, gapEm, pl); }).filter(Boolean).join('\n');
+  const els = blocks.map(b => ({ y: b.y, bot: b.y + b.h, b })).concat(images.map(im => ({ y: im.y, bot: im.y + (im.h || 0), im }))).sort((a, b) => a.y - b.y);   // Text + Bilder nach y einsortieren
+  let prevBot = null; const out = [];
+  for (const e of els) { const gapEm = (prevBot != null && body > 0) ? Math.max(0, (e.y - prevBot) / body) : 0; prevBot = e.bot; out.push(e.im ? e.im.html : (blockIsList(e.b) ? listBlockHtml(e.b, body, gapEm) : blockToParaHtml(e.b, body, pr, gapEm, pl))); }
+  const html = out.filter(Boolean).join('\n');
   return html || '<p></p>';
 }
 /* ---------- Rechnung/Kalkulation erkennen: Anzahl × Ansatz = Betrag, mit Neuberechnung + rot markierter Fehlerwarnung ---------- */
@@ -4638,12 +4641,14 @@ function _calcErrorBanner(pagesHtml) {
     + `<strong>⚠ ${n} mögliche${n === 1 ? 'r' : ''} Rechenfehler</strong> automatisch erkannt und rot markiert – bitte prüfen.</p>`;
 }
 // Seite → HTML: Fliesstext + erkannte Tabellen/Kalkulationen (mit Neuberechnung)
-function pdfPageToPaperHtml(items, pageW, colorFn, ulFn) {
+function pdfPageToPaperHtml(items, pageW, colorFn, ulFn, images) {
+  images = images || [];
+  const imgTop = () => images.map(im => im.html).join('');   // Bilder oben (wenn Interleave mit Tabellen zu komplex)
   const lines = itemsToLines(items), cols = numberColumns(lines, pageW);
   if (!cols.length) {   // keine Zahlenspalten → Fliesstext, aber ggf. allgemeine Text-Tabellen herausschneiden
     const tabs = detectTextTables(lines);
-    if (!tabs.length) return blocksToPaperHtml(groupTextBlocks(items), colorFn, ulFn);
-    let html = '', idx = 0;
+    if (!tabs.length) return blocksToPaperHtml(groupTextBlocks(items), colorFn, ulFn, images);   // Bilder sauber nach y einsortiert
+    let html = imgTop(), idx = 0;
     for (const t of tabs) {
       if (t.first > idx) html += blocksToPaperHtml(groupTextBlocks(lines.slice(idx, t.first).flatMap(L => L.items)), colorFn, ulFn);
       html += textTableHtml(lines, t.first, t.last, t.cols);
@@ -4656,7 +4661,7 @@ function pdfPageToPaperHtml(items, pageW, colorFn, ulFn) {
   let first = -1, last = -1; lines.forEach((L, i) => { if (rowHasNum(L)) { if (first < 0) first = i; last = i; } });
   const body = (() => { const s = lines.map(L => L.size).sort((a, b) => a - b); return s[Math.floor(s.length / 2)] || 12; })();
   const preItems = lines.slice(0, first).flatMap(L => L.items), postItems = lines.slice(last + 1).flatMap(L => L.items);
-  let html = '';
+  let html = imgTop();
   if (preItems.length) html += blocksToPaperHtml(groupTextBlocks(preItems), colorFn, ulFn);
   html += tableHtml(lines, first, last, cols, body);
   if (postItems.length) html += blocksToPaperHtml(groupTextBlocks(postItems), colorFn, ulFn);
@@ -4679,6 +4684,35 @@ function openPaperDlg() {
   const rg = $('#ppRange'); if (rg) rg.value = '';
   d.hidden = false;
 }
+// Bilder/Logos einer Seite: Bild-Regionen aus der Operator-Liste (CTM) finden und aus dem gerenderten Canvas ausschneiden → <img> nach y
+async function extractPageImages(page, cv, pageW, pageH) {
+  const out = []; if (!cv || !pdfjs || !pdfjs.OPS) return out;
+  const OPS = pdfjs.OPS; let ctm = [1, 0, 0, 1, 0, 0]; const stack = [];
+  const mul = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+  const comp = (m, a) => [m[0] * a[0] + m[2] * a[1], m[1] * a[0] + m[3] * a[1], m[0] * a[2] + m[2] * a[3], m[1] * a[2] + m[3] * a[3], m[0] * a[4] + m[2] * a[5] + m[4], m[1] * a[4] + m[3] * a[5] + m[5]];
+  const imgFns = [OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject, OPS.paintJpegXObject].filter(v => v != null);
+  const opl = await page.getOperatorList(), k = cv.width / pageW; const seen = new Set();
+  for (let i = 0; i < opl.fnArray.length && out.length < 15; i++) {
+    const fn = opl.fnArray[i];
+    if (fn === OPS.save) stack.push(ctm.slice());
+    else if (fn === OPS.restore) { if (stack.length) ctm = stack.pop(); }
+    else if (fn === OPS.transform) ctm = comp(ctm, opl.argsArray[i]);
+    else if (imgFns.indexOf(fn) >= 0) {
+      const cs = [mul(ctm, 0, 0), mul(ctm, 1, 0), mul(ctm, 1, 1), mul(ctm, 0, 1)], xs = cs.map(c => c[0]), ys = cs.map(c => c[1]);
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      const bx = { x: x0, y: pageH - y1, w: x1 - x0, h: y1 - y0 };
+      if (bx.w < 24 || bx.h < 24) continue;                                   // Icons/Striche überspringen
+      if (bx.w > pageW * 0.985 && bx.h > pageH * 0.985) continue;             // ganzseitiges Hintergrundbild überspringen
+      const key = Math.round(bx.x) + '|' + Math.round(bx.y) + '|' + Math.round(bx.w); if (seen.has(key)) continue; seen.add(key);
+      const sxp = Math.max(0, Math.round(bx.x * k)), syp = Math.max(0, Math.round(bx.y * k));
+      const swp = Math.min(cv.width - sxp, Math.round(bx.w * k)), shp = Math.min(cv.height - syp, Math.round(bx.h * k));
+      if (swp < 8 || shp < 8) continue;
+      let url; try { const ic = document.createElement('canvas'); ic.width = swp; ic.height = shp; ic.getContext('2d').drawImage(cv, sxp, syp, swp, shp, 0, 0, swp, shp); url = ic.toDataURL('image/jpeg', 0.82); } catch (_) { continue; }
+      out.push({ y: bx.y, h: bx.h, html: `<p style="margin:6px 0"><img src="${url}" style="max-width:100%;width:${Math.round(bx.w * 96 / 72)}px" alt=""></p>` });
+    }
+  }
+  return out;
+}
 async function convertToPaper(pageNums) {
   if (!pdfDoc) return;
   const nums = (pageNums && pageNums.length) ? pageNums : Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1);
@@ -4694,9 +4728,9 @@ async function convertToPaper(pageNums) {
       } catch (_) { }
       const blocks = groupTextBlocks(items);
       for (const b of blocks) { blockN++; if ((b.text || '').split(/\s+/).filter(Boolean).length >= 6 || (b.lines && b.lines.length >= 3)) substantial++; }   // „richtige" Textblöcke (Fliesstext) vs. verstreute Labels
-      let colorFn = null, ulFn = null;   // Textfarbe + Unterstreichung aus einem Offscreen-Render abtasten (bei überschaubarer Seitenzahl)
-      if (nums.length <= 40) { try { const sc = 1.3, cvp = page.getViewport({ scale: sc }), cv = document.createElement('canvas'); cv.width = Math.ceil(cvp.width); cv.height = Math.ceil(cvp.height); await page.render({ canvasContext: cv.getContext('2d', { willReadFrequently: true }), viewport: cvp }).promise; colorFn = b => sampleInkColor(cv, b, vp.width); ulFn = (x0, x1, by) => sampleUnderline(cv, x0, x1, by, vp.width); } catch (_) { colorFn = null; ulFn = null; } }
-      pages.push({ typ: 'write', html: pdfPageToPaperHtml(items, vp.width, colorFn, ulFn) });
+      let colorFn = null, ulFn = null, images = [];   // Textfarbe + Unterstreichung + Bilder aus einem Offscreen-Render (bei überschaubarer Seitenzahl)
+      if (nums.length <= 40) { try { const sc = 1.3, cvp = page.getViewport({ scale: sc }), cv = document.createElement('canvas'); cv.width = Math.ceil(cvp.width); cv.height = Math.ceil(cvp.height); await page.render({ canvasContext: cv.getContext('2d', { willReadFrequently: true }), viewport: cvp }).promise; colorFn = b => sampleInkColor(cv, b, vp.width); ulFn = (x0, x1, by) => sampleUnderline(cv, x0, x1, by, vp.width); images = await extractPageImages(page, cv, vp.width, vp.height); } catch (_) { colorFn = null; ulFn = null; images = []; } }
+      pages.push({ typ: 'write', html: pdfPageToPaperHtml(items, vp.width, colorFn, ulFn, images) });
     }
     if (!pages.some(p => p.html.replace(/<[^>]+>/g, '').trim().length)) { status(''); toast('Kein Text zum Übernehmen gefunden (evtl. gescanntes Bild-PDF).'); return; }
     const hadTable = pages.some(p => /<table/.test(p.html));
@@ -7161,6 +7195,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Unterstreichung am Pixelbild erkennen', () => { const W = 20, H = 10, data = new Uint8ClampedArray(W * H * 4).fill(255); for (let px = 2; px <= 18; px++) { const o = (6 * W + px) * 4; data[o] = 0; data[o + 1] = 0; data[o + 2] = 0; } const cv = { width: W, height: H, _cData: data }, yes = sampleUnderline(cv, 2, 18, 5, 20); const cv2 = { width: W, height: H, _cData: new Uint8ClampedArray(W * H * 4).fill(255) }, no = sampleUnderline(cv2, 2, 18, 5, 20); return (yes === true && no === false) ? '' : JSON.stringify({ yes, no }); });
     A('Text-Tabelle: 3×2 Raster erkannt, Prosa nicht', () => { const mk = (y, cs) => ({ y, size: 10, items: cs.map(c => ({ x: c[0], y, w: c[2] || 30, h: 12, size: 10, str: c[1] })) }); const tab = [mk(0, [[50, 'Name'], [200, 'Wert']]), mk(20, [[50, 'Apfel'], [200, '1']]), mk(40, [[50, 'Birne'], [200, '2']])]; const prose = [mk(0, [[50, 'Ein normaler Satz', 200]]), mk(20, [[50, 'noch ein Satz hier', 200]]), mk(40, [[50, 'und ein dritter Satz', 200]])]; const t1 = detectTextTables(tab), t2 = detectTextTables(prose); return (t1.length === 1 && t1[0].cols.length === 2 && t1[0].first === 0 && t1[0].last === 2 && t2.length === 0) ? '' : JSON.stringify({ t1, t2 }); });
     A('Text-Tabelle → HTML mit Zellen', () => { const mk = (y, cs) => ({ y, size: 10, items: cs.map(c => ({ x: c[0], y, w: 30, h: 12, size: 10, str: c[1] })) }); const lines = [mk(0, [[50, 'Name'], [200, 'Wert']]), mk(20, [[50, 'Apfel'], [200, '1']]), mk(40, [[50, 'Birne'], [200, '2']])]; const html = textTableHtml(lines, 0, 2, [50, 200]); return (/<table/.test(html) && (html.match(/<tr>/g) || []).length === 3 && /<td[^>]*>Apfel<\/td>/.test(html) && /<td[^>]*>1<\/td>/.test(html)) ? '' : html; });
+    A('PDF→Paper: Bilder nach y einsortiert (Logo oben)', () => { const blk = { text: 'Text', lines: [{ str: 'Text', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 100, h: 15 }; const imgs = [{ y: 5, h: 40, html: '<p><img src="x" alt=""></p>' }]; const html = blocksToPaperHtml([blk], null, null, imgs); return (html.indexOf('<img') >= 0 && html.indexOf('<img') < html.indexOf('Text')) ? '' : html; });
     A('PDF→Paper: Link-Run → <a href>', () => { const b = { text: 'Klick hier', lines: [{ str: 'Klick hier', x: 0, maxx: 80, runs: [{ str: 'Klick ', bold: false, italic: false, ff: 'Arial,sans-serif' }, { str: 'hier', bold: false, italic: false, ff: 'Arial,sans-serif', url: 'https://example.com' }] }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 80, y: 0, h: 15 }; const html = blockToParaHtml(b, 12, 500); return /<a href="https:\/\/example\.com">hier<\/a>/.test(html) ? '' : html; });
     A('PDF→Paper: unterstrichene Zeile → <u>', () => { const html = blocksToPaperHtml([{ text: 'Titel', lines: [{ str: 'Titel', x: 0, maxx: 60, base: 10, _ul: true }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 15 }]); return /<u>Titel<\/u>/.test(html) ? '' : html; });
     A('Hoch-/Tiefstellung in Runs erkannt (m²)', () => { const items = [{ x: 0, y: 0, w: 20, h: 12, size: 10, base: 10, str: 'm', fam: 'helv', ff: 'Arial,sans-serif', bold: false, italic: false }, { x: 21, y: -2, w: 6, h: 8, size: 7, base: 5, str: '2', fam: 'helv', ff: 'Arial,sans-serif', bold: false, italic: false }]; const blocks = groupTextBlocks(items); const runs = blocks[0].lines[0].runs; const html = blockToParaHtml(blocks[0], 10, 500); return (runs.length === 2 && runs[1].vp === 1 && runs[1].str === '2' && runs[0].str === 'm' && /<sup>2<\/sup>/.test(html)) ? '' : JSON.stringify({ runs, html }); });

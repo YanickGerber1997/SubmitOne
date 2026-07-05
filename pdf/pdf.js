@@ -4364,9 +4364,16 @@ function groupTextBlocks(items) {
   }
   for (const L of lines) {
     L.items.sort((a, b) => a.x - b.x);
-    let str = '';
-    for (let i = 0; i < L.items.length; i++) { const it = L.items[i]; if (i > 0) { const pr = L.items[i - 1], gap = it.x - (pr.x + pr.w); if (gap > it.size * 0.2 && !/\s$/.test(str) && !/^\s/.test(it.str)) str += ' '; } str += it.str; }
-    L.str = str; const dom = L.items.reduce((a, b) => (b.w > a.w ? b : a), L.items[0]); L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic; L.base = dom.base; L.ff = dom.ff;
+    let str = ''; const runs = [];   // Zeichenläufe mit eigener Formatierung (fett/kursiv/Schrift) → 1:1 gemischte Formatierung
+    for (let i = 0; i < L.items.length; i++) {
+      const it = L.items[i]; let piece = '';
+      if (i > 0) { const pr = L.items[i - 1], gap = it.x - (pr.x + pr.w); if (gap > it.size * 0.2 && !/\s$/.test(str) && !/^\s/.test(it.str)) piece = ' '; }
+      piece += it.str; str += piece;
+      const last = runs[runs.length - 1];
+      if (last && last.bold === !!it.bold && last.italic === !!it.italic && last.ff === it.ff) last.str += piece;
+      else runs.push({ str: piece, bold: !!it.bold, italic: !!it.italic, ff: it.ff });
+    }
+    L.str = str; L.runs = runs; const dom = L.items.reduce((a, b) => (b.w > a.w ? b : a), L.items[0]); L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic; L.base = dom.base; L.ff = dom.ff;
   }
   lines.sort((a, b) => a.y - b.y);
   // 2) Absätze: aufeinanderfolgende Zeilen mit ähnlicher linker Kante + Zeilenabstand ~ Zeilenhöhe + ähnlicher Grösse
@@ -4380,7 +4387,7 @@ function groupTextBlocks(items) {
     }
     blocks.push({ lines: [L], x: L.x, maxx: L.maxx, y: L.y, maxy: L.maxy, size: L.size, fam: L.fam, bold: L.bold, italic: L.italic, lhs: [] });
   }
-  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic, base: B.lines[0] && B.lines[0].base, ff: B.lines[0] && B.lines[0].ff }));
+  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx, runs: l.runs })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic, base: B.lines[0] && B.lines[0].base, ff: B.lines[0] && B.lines[0].ff }));
 }
 /* ---------- Als Submit Paper öffnen: PDF-Text → editierbares Dokument (an /write/ übergeben) ---------- */
 function _htmlEsc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -4401,7 +4408,10 @@ const _isListLine = s => /^\s*([-–—•*·▪◦‣]|\d{1,3}[.)])\s/.test(s) 
 // Ein Absatz-Block → HTML. Gestapelte Zeilen bleiben GESTAPELT (<br>); nur echt umbrochene Fliesstext-Zeilen werden zusammengezogen (vorige Zeile reicht fast ganz nach rechts, diese beginnt links, kein Listenpunkt, keine Satzende-Zeile davor).
 function blockToParaHtml(b, body, pageRight, gapEm, pageLeft) {
   const lines = (b.lines && b.lines.length) ? b.lines : b.text.split('\n').map(str => ({ str, x: b.x, maxx: b.right || (b.x + b.w) }));
-  let inner = '';
+  const baseFf = b.ff;   // gemischte Formatierung je Zeichenlauf (Run) 1:1 übernehmen
+  const runHtml = r => { let t = _htmlEsc(r.str); if (r.italic) t = '<em>' + t + '</em>'; if (r.bold) t = '<strong>' + t + '</strong>'; if (r.ff && r.ff !== baseFf) t = '<span style="font-family:' + r.ff.replace(/"/g, "'") + '">' + t + '</span>'; return t; };
+  const lineHtml = l => (l.runs && l.runs.length) ? l.runs.map(runHtml).join('') : _htmlEsc(l.str);
+  let inner = '', hasRuns = false;
   for (let i = 0; i < lines.length; i++) {
     const cur = lines[i], prev = lines[i - 1];
     if (i > 0) {
@@ -4410,7 +4420,8 @@ function blockToParaHtml(b, body, pageRight, gapEm, pageLeft) {
       const wrapped = prevReaches && curLeft && !_isListLine(cur.str) && !/[.:!?]$/.test((prev.str || '').trim());
       inner += wrapped ? ' ' : '<br>';
     }
-    inner += _htmlEsc(cur.str);
+    if (cur.runs && cur.runs.length) hasRuns = true;
+    inner += lineHtml(cur);
   }
   if (!inner.trim()) return '';
   const px = Math.max(9, Math.min(48, Math.round(b.size / body * 15)));   // Schriftgrösse relativ zur Grundschrift (Body ≈ 15px)
@@ -4419,8 +4430,8 @@ function blockToParaHtml(b, body, pageRight, gapEm, pageLeft) {
   const mt = (gapEm && gapEm > 0.05) ? `;margin:${Math.min(4, gapEm).toFixed(2)}em 0 0` : ';margin:0';   // Absatzabstand aus dem Original
   const al = (pageLeft != null) ? blockAlign(lines, pageLeft, pageRight) : '';   // zentriert / rechtsbündig übernehmen
   const st = `font-family:${ff};font-size:${px}px;line-height:${lhR.toFixed(2)}${mt}${al ? ';text-align:' + al : ''}`;
+  if (!hasRuns) { if (b.bold) inner = '<strong>' + inner + '</strong>'; if (b.italic) inner = '<em>' + inner + '</em>'; }   // ohne Run-Info: block-weit fett/kursiv
   if (b.size >= body * 1.45 && lines.length === 1) return `<h2 style="${st}">` + inner + '</h2>';   // grosse Einzelzeile → Überschrift
-  if (b.bold) inner = '<strong>' + inner + '</strong>'; if (b.italic) inner = '<em>' + inner + '</em>';
   return `<p style="${st}">` + inner + '</p>';
 }
 // Gemeinsamer rechter Textrand der Seite (dort bricht Fliesstext um) – 90-Perzentil der Zeilen-Enden
@@ -7019,6 +7030,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Font-Namen → echte CSS-Familie', () => { const ar = fontNameToCss('ABCDEF+Arial-BoldMT', ''), ca = fontNameToCss('Calibri', ''), ti = fontNameToCss('TimesNewRomanPSMT', ''), co = fontNameToCss('Courier', ''), ve = fontNameToCss('Verdana', ''); return (/^Arial/.test(ar) && /Calibri/.test(ca) && /Times New Roman/.test(ti) && /Courier New/.test(co) && /Verdana/.test(ve)) ? '' : JSON.stringify({ ar, ca, ti, co, ve }); });
     A('detectFontMeta: bold+italic + ff aus Fontnamen', () => { const stub = { commonObjs: { get: () => ({ name: 'Arial-BoldItalicMT' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (m.bold && m.italic && m.fam === 'helv' && /Arial/.test(m.ff)) ? '' : JSON.stringify(m); });
     A('PDF→Paper: Absatz übernimmt Schriftfamilie/Grösse', () => { const html = blockToParaHtml({ text: 'Hallo', lines: [{ str: 'Hallo', x: 0, maxx: 50 }], size: 12, lh: 15, fam: 'times', ff: '"Times New Roman",Times,serif', bold: false, italic: false, x: 0, right: 50 }, 12, 500); return (/font-family:'Times New Roman'/.test(html) && /font-size:15px/.test(html) && /<p /.test(html) && />Hallo</.test(html)) ? '' : html; });
+    A('PDF→Paper: gemischt fett innerhalb Absatz (Runs)', () => { const b = { text: 'Sehr wichtig!', lines: [{ str: 'Sehr wichtig!', x: 0, maxx: 120, runs: [{ str: 'Sehr ', bold: false, italic: false, ff: 'Arial,sans-serif' }, { str: 'wichtig', bold: true, italic: false, ff: 'Arial,sans-serif' }, { str: '!', bold: false, italic: false, ff: 'Arial,sans-serif' }] }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', bold: false, italic: false, x: 0, right: 120 }; const html = blockToParaHtml(b, 12, 500); return (/Sehr <strong>wichtig<\/strong>!/.test(html) && !/<strong>Sehr/.test(html)) ? '' : html; });
     A('Ausrichtung: zentriert / rechts / links erkennen', () => { const cen = blockAlign([{ x: 200, maxx: 400 }], 100, 500), rig = blockAlign([{ x: 380, maxx: 498 }], 100, 500), lef = blockAlign([{ x: 102, maxx: 480 }], 100, 500); return (cen === 'center' && rig === 'right' && lef === '') ? '' : JSON.stringify({ cen, rig, lef }); });
     A('PDF→Paper: zentrierter Absatz bekommt text-align:center', () => { const html = blockToParaHtml({ text: 'Titel', lines: [{ str: 'Titel', x: 210, maxx: 390 }], size: 18, lh: 22, fam: 'helv', ff: 'Arial,sans-serif', x: 210, right: 390 }, 12, 500, 0, 100); return /text-align:center/.test(html) ? '' : html; });
     A('Verlegemuster-Reihenversatz (Halbverband/Drittelverband/Kreuzfuge)', () => { const hv = [0, 1, 2, 3].map(r => tileRowShift('Halbverband', r)), dv = [0, 1, 2, 3].map(r => tileRowShift('Drittelverband', r)), kf = [0, 1, 2].map(r => tileRowShift('Kreuzfuge', r)); return (Math.abs(hv[0]) < 1e-9 && Math.abs(hv[1] - 0.5) < 1e-9 && Math.abs(hv[2]) < 1e-9 && Math.abs(hv[3] - 0.5) < 1e-9 && Math.abs(dv[1] - 1 / 3) < 1e-9 && Math.abs(dv[2] - 2 / 3) < 1e-9 && Math.abs(dv[3]) < 1e-9 && kf.every(v => v === 0)) ? '' : JSON.stringify({ hv, dv, kf }); });

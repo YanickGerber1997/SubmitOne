@@ -2589,7 +2589,7 @@ function drawTileGrid(g, a, pv) {
   const gin = rot ? svgEl('g', { transform: 'rotate(45 ' + cx.toFixed(2) + ' ' + cy.toFixed(2) + ')' }) : gg;   // Clip aussen (unrotierte Fläche), Raster innen gedreht
   let lx0 = minX, ly0 = minY, lx1 = maxX, ly1 = maxY;
   if (rot) { const d = Math.hypot(maxX - minX, maxY - minY) / 2 + Math.max(stepX, stepY); lx0 = cx - d; lx1 = cx + d; ly0 = cy - d; ly1 = cy + d; }   // erweitern, damit das gedrehte Raster die Fläche voll füllt
-  const sx = rot ? lx0 : ((b.start && b.start[0] != null) ? b.start[0] : minX), sy = rot ? ly0 : ((b.start && b.start[1] != null) ? b.start[1] : minY);
+  const sx = (rot ? lx0 : ((b.start && b.start[0] != null) ? b.start[0] : minX)) + (b.offX || 0), sy = (rot ? ly0 : ((b.start && b.start[1] != null) ? b.start[1] : minY)) + (b.offY || 0);   // + Feinversatz ↔/↕
   const hLine = (y) => gin.appendChild(svgEl('line', { x1: lx0, y1: y, x2: lx1, y2: y, stroke: col, 'stroke-width': 0.6, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
   const vSeg = (x, y0, y1) => gin.appendChild(svgEl('line', { x1: x, y1: y0, x2: x, y2: y1, stroke: col, 'stroke-width': 0.6, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
   const ys = []; for (let y = sy - Math.ceil((sy - ly0) / stepY) * stepY; y <= ly1 + 0.01; y += stepY) { ys.push(y); hLine(y); }
@@ -6468,6 +6468,7 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
         + ['tl:◰:oben links', 'tr:◳:oben rechts', 'bl:◱:unten links', 'br:◲:unten rechts', 'center:⊹:mittig (symmetrisch)'].map(s => { const [c, ic, ti] = s.split(':'); return '<button class="insp-mini' + (b.startCorner === c ? ' on' : (!b.startCorner && c === 'tl' ? ' on' : '')) + '" data-c="' + c + '" title="' + ti + '">' + ic + '</button>'; }).join('') + '</span></div>'
         + '<div class="insp-row"><span class="insp-lbl">Richtung</span><span id="iDir" style="display:inline-flex;gap:3px"><button class="insp-mini' + (b.angle !== 45 ? ' on' : '') + '" data-a="0" title="gerade">▦</button><button class="insp-mini' + (b.angle === 45 ? ' on' : '') + '" data-a="45" title="diagonal 45°">◇</button></span></div>';
       if (docScale && m2) bh += '<div class="insp-kv"><span>Platten (inkl. Verschnitt)</span><b>' + tilesForArea(m2, b.tileW, b.tileH, b.waste || 0) + ' Stk</b></div>';
+      if (docScale) bh += '<div class="insp-row"><span class="insp-lbl">Versatz ↔ / ↕</span><input class="insp-num" style="width:46px" id="flOffX" type="number" value="' + Math.round((b.offX || 0) * docScale.perPt * 100) + '"> <input class="insp-num" style="width:46px" id="flOffY" type="number" value="' + Math.round((b.offY || 0) * docScale.perPt * 100) + '"> cm</div>';
       bh += '<div class="insp-row"><span class="insp-lbl">Untergrund</span><select class="insp-num" id="flUg" style="width:128px">' + UNTERGRUND.map(u => '<option value="' + u + '"' + (a.untergrund === u ? ' selected' : '') + '>' + (u || '– wählen –') + '</option>').join('') + '</select></div>';
       bh += belagMaterialHtml(b) + leistHtml(a) + belagNoteHtml(a);
       body.insertAdjacentHTML('beforeend', bh);
@@ -6478,6 +6479,8 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     if (a.belag) {
       const bindNum = (id, key) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (isFinite(v) && v >= 0) { a.belag[key] = v; markDirty(); pageViews.forEach(drawAnnos); renderList(); } }; };
       bindNum('#iTW', 'tileW'); bindNum('#iTH', 'tileH'); bindNum('#iJ', 'joint'); bindNum('#iWa', 'waste');
+      const bindFlOff = (id, key) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (isFinite(v) && docScale) { a.belag[key] = (v / 100) / docScale.perPt; markDirty(); pageViews.forEach(drawAnnos); renderList(); } }; };
+      bindFlOff('#flOffX', 'offX'); bindFlOff('#flOffY', 'offY');
       bindBelagMaterial(body, a, a.belag); bindLeist(body, a); bindBelagNote(body, a);
       const au = body.querySelector('#iAu'); if (au) au.onchange = () => { const v = au.value.trim(); if (v) a.aufbau = v; else delete a.aufbau; markDirty(); pageViews.forEach(drawAnnos); };
       const fug = body.querySelector('#flUg'); if (fug) fug.onchange = () => { if (fug.value) a.untergrund = fug.value; else delete a.untergrund; markDirty(); renderList(); };

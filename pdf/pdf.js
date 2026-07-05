@@ -1568,6 +1568,29 @@ function drawWallFaceElevation(svg, a, pv) {
   const midAD = [(A[0] + D[0]) / 2, (A[1] + D[1]) / 2], tH = svgEl('text', { x: (midAD[0] - ux * 12 / pv.scale).toFixed(2), y: (midAD[1] - uy * 12 / pv.scale).toFixed(2), fill: col, 'font-size': 9, 'font-weight': 600, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 2.5, 'pointer-events': 'none' }); tH.textContent = 'H ' + (Math.round(h * 100) / 100).toFixed(2).replace('.', ',') + ' m'; g.appendChild(tH);
   svg.appendChild(g);
 }
+// Hover in der Wand-Ansicht: nächste Platten-Fuge (senkrecht + waagrecht) leicht hervorheben + Maß anschreiben (Abstand von links / Höhe)
+let _wfHoverEl = null;
+function wfHoverMove(ev) {
+  if (_wfHoverEl) { if (_wfHoverEl.parentNode) _wfHoverEl.parentNode.removeChild(_wfHoverEl); _wfHoverEl = null; }
+  if (ev.buttons || tool !== 'select' || !sel || !docScale) return;   // nur reines Drüberfahren (keine gedrückte Taste)
+  const pv = pageViews.find(p => p.num === sel.num); if (!pv || !pv.svg) return;
+  const a = findAnno(pv.num, sel.id); if (!a || !a.wallface || a.ansicht === false) return;
+  const perPt = docScale.perPt, h = a.height || 2.5, Hpts = h / perPt, dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy); if (len < 2) return;
+  const ux = dx / len, uy = dy / len, nx = -uy, ny = ux, gap = 8 / pv.scale, A = [a.x1 + nx * gap, a.y1 + ny * gap];
+  const q = evtToPage(pv, ev), rx = q.x - A[0], ry = q.y - A[1], du = rx * ux + ry * uy, dn = rx * nx + ry * ny;
+  if (du < -2 || du > len + 2 || dn < -2 || dn > Hpts + 2) return;   // ausserhalb der Ansicht
+  const b = a.belag || DEFAULT_BELAG, jw = Math.max(0, b.joint || 0) / 1000, stepU = ((b.tileW / 100) + jw) / perPt, stepN = ((b.tileH / 100) + jw) / perPt;
+  const oU = stepU > 0 ? ((((b.offU || 0) % stepU) + stepU) % stepU) : 0, oN = stepN > 0 ? ((((b.offN || 0) % stepN) + stepN) % stepN) : 0;
+  const jU = Math.max(0, Math.min(len, oU + Math.round((du - oU) / stepU) * stepU)), jN = Math.max(0, Math.min(Hpts, oN + Math.round((dn - oN) / stepN) * stepN));
+  const g = svgEl('g', { 'pointer-events': 'none' }), HL = '#e8412e';
+  g.appendChild(svgEl('line', { x1: (A[0] + ux * jU).toFixed(2), y1: (A[1] + uy * jU).toFixed(2), x2: (A[0] + ux * jU + nx * Hpts).toFixed(2), y2: (A[1] + uy * jU + ny * Hpts).toFixed(2), stroke: HL, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
+  g.appendChild(svgEl('line', { x1: (A[0] + nx * jN).toFixed(2), y1: (A[1] + ny * jN).toFixed(2), x2: (A[0] + ux * len + nx * jN).toFixed(2), y2: (A[1] + uy * len + ny * jN).toFixed(2), stroke: HL, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
+  const lab = (x, y, txt) => { const t = svgEl('text', { x: x.toFixed(2), y: y.toFixed(2), fill: HL, 'font-size': 9, 'font-weight': 700, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 2.5 }); t.textContent = txt; g.appendChild(t); };
+  lab(A[0] + ux * jU + nx * (Hpts + 8 / pv.scale), A[1] + uy * jU + ny * (Hpts + 8 / pv.scale), (Math.round(jU * perPt * 100) / 100).toFixed(2).replace('.', ',') + ' m');
+  lab(A[0] - ux * 11 / pv.scale + nx * jN, A[1] - uy * 11 / pv.scale + ny * jN, (Math.round(jN * perPt * 100) / 100).toFixed(2).replace('.', ',') + ' m');
+  pv.svg.appendChild(g); _wfHoverEl = g;
+}
+if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('pointermove', wfHoverMove);
 // Nach dem Zeichnen eines Wandbelags/Anschlusses: auswählen, Inspector öffnen (bei Wandbelag Höhe-Feld fokussieren)
 function afterWallfaceDraw(pv, a) {
   if (!a || (!a.wallface && !a.anschluss)) return false;

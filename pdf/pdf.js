@@ -7102,6 +7102,22 @@ function build3DScene(host, walls, arr, opts) {
     const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
     const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0xece6d8, side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.006; fl.receiveShadow = true; scene.add(fl);
   }
+  // Bodenbeläge (a.belag) flach am Boden – in Belagsfarbe; Aussparungen als dunkle Flecken darüber
+  for (const a of arr) if (a.type === 'area' && a.belag && a.pts && a.pts.length >= 3 && layerVisible(a) && phaseVisible(a)) {
+    const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
+    const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: new THREE.Color(a.color || '#b5651d'), side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.008; fl.receiveShadow = true; fl.name = 'belagFloor'; fl.userData = { annoId: a.id, page: opts.page }; scene.add(fl);
+  }
+  for (const a of arr) if (a.type === 'area' && a.cutout && a.pts && a.pts.length >= 3 && layerVisible(a) && phaseVisible(a)) {
+    const sh = new THREE.Shape(); a.pts.forEach((p, i) => { const X = M(p[0] - cx), Z = M(p[1] - cy); i ? sh.lineTo(X, Z) : sh.moveTo(X, Z); });
+    const fl = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0x8a8f98, side: THREE.DoubleSide })); fl.rotation.x = -Math.PI / 2; fl.position.y = lev(a) + 0.012; scene.add(fl);
+  }
+  // Wandbeläge (measure + wallface) als senkrechte Flächen (Länge × Höhe)
+  for (const a of arr) if (a.type === 'measure' && a.wallface && layerVisible(a) && phaseVisible(a)) {
+    const x1 = M(a.x1 - cx), z1 = M(a.y1 - cy), x2 = M(a.x2 - cx), z2 = M(a.y2 - cy), len = Math.hypot(x2 - x1, z2 - z1);
+    if (len < 1e-4) continue; const h = a.height || H || 2.5, base = lev(a);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(len, h), new THREE.MeshLambertMaterial({ color: new THREE.Color(a.color || '#2f6ea3'), side: THREE.DoubleSide }));
+    m.position.set((x1 + x2) / 2, base + h / 2, (z1 + z2) / 2); m.rotation.y = Math.atan2(-(z2 - z1), x2 - x1); m.receiveShadow = true; m.name = 'belagWall'; m.userData = { annoId: a.id, page: opts.page }; scene.add(m);
+  }
   if (show3DSlabs && walls.length) {   // Geschossdecken / Bodenplatte: Wand-Footprint je Geschoss vereinigen → massive Platte (Oberkante = Geschoss-Höhenlage)
     const slabT = 0.2, slabMat = new THREE.MeshStandardMaterial({ color: 0xd6d3cb, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
     const wth = w => { const ls = (w.layers && w.layers.length) ? w.layers.reduce((s, l) => s + (l.t || 0), 0) : 0; return Math.max(ls, w.thick || 0, cmToPts(12)); };

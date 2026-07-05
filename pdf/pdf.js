@@ -4429,7 +4429,7 @@ function blockToParaHtml(b, body, pageRight, gapEm, pageLeft) {
   const ff = (b.ff || cssFontStack(b.fam || 'helv')).replace(/"/g, "'");   // echte Schriftfamilie mitnehmen
   const mt = (gapEm && gapEm > 0.05) ? `;margin:${Math.min(4, gapEm).toFixed(2)}em 0 0` : ';margin:0';   // Absatzabstand aus dem Original
   const al = (pageLeft != null) ? blockAlign(lines, pageLeft, pageRight) : '';   // zentriert / rechtsbündig übernehmen
-  const st = `font-family:${ff};font-size:${px}px;line-height:${lhR.toFixed(2)}${mt}${al ? ';text-align:' + al : ''}`;
+  const st = `font-family:${ff};font-size:${px}px;line-height:${lhR.toFixed(2)}${mt}${al ? ';text-align:' + al : ''}${b.color ? ';color:' + b.color : ''}`;
   if (!hasRuns) { if (b.bold) inner = '<strong>' + inner + '</strong>'; if (b.italic) inner = '<em>' + inner + '</em>'; }   // ohne Run-Info: block-weit fett/kursiv
   if (b.size >= body * 1.45 && lines.length === 1) return `<h2 style="${st}">` + inner + '</h2>';   // grosse Einzelzeile → Überschrift
   return `<p style="${st}">` + inner + '</p>';
@@ -4447,8 +4447,9 @@ function blockAlign(lines, pageLeft, pageRight) {
   if (lg > span * 0.25 && rg < span * 0.05) return 'right';
   return '';
 }
-function blocksToPaperHtml(blocks) {
+function blocksToPaperHtml(blocks, colorFn) {
   if (!blocks.length) return '<p></p>';
+  if (colorFn) blocks.forEach(b => { try { const c = colorFn(b); if (c) b.color = c; } catch (_) { } });   // Textfarbe aus dem gerenderten Seitenbild übernehmen
   const sizes = blocks.map(b => b.size).slice().sort((a, b) => a - b), body = sizes[Math.floor(sizes.length / 2)] || 12;
   const pr = pageRightMargin(blocks), pl = pageLeftMargin(blocks);
   let prevBot = null;   // Absatzabstände aus den vertikalen Lücken des Originals übernehmen
@@ -4561,17 +4562,17 @@ function _calcErrorBanner(pagesHtml) {
     + `<strong>⚠ ${n} mögliche${n === 1 ? 'r' : ''} Rechenfehler</strong> automatisch erkannt und rot markiert – bitte prüfen.</p>`;
 }
 // Seite → HTML: Fliesstext + erkannte Tabellen/Kalkulationen (mit Neuberechnung)
-function pdfPageToPaperHtml(items, pageW) {
+function pdfPageToPaperHtml(items, pageW, colorFn) {
   const lines = itemsToLines(items), cols = numberColumns(lines, pageW);
-  if (!cols.length) return blocksToPaperHtml(groupTextBlocks(items));   // keine Zahlenspalten → reiner Fliesstext
+  if (!cols.length) return blocksToPaperHtml(groupTextBlocks(items), colorFn);   // keine Zahlenspalten → reiner Fliesstext
   const rowHasNum = L => L.items.some(it => cols.some(cx => it.x >= cx - 2 && (_isNumCell(it.str) || _UNIT_RE.test(it.str.trim()))));
   let first = -1, last = -1; lines.forEach((L, i) => { if (rowHasNum(L)) { if (first < 0) first = i; last = i; } });
   const body = (() => { const s = lines.map(L => L.size).sort((a, b) => a - b); return s[Math.floor(s.length / 2)] || 12; })();
   const preItems = lines.slice(0, first).flatMap(L => L.items), postItems = lines.slice(last + 1).flatMap(L => L.items);
   let html = '';
-  if (preItems.length) html += blocksToPaperHtml(groupTextBlocks(preItems));
+  if (preItems.length) html += blocksToPaperHtml(groupTextBlocks(preItems), colorFn);
   html += tableHtml(lines, first, last, cols, body);
-  if (postItems.length) html += blocksToPaperHtml(groupTextBlocks(postItems));
+  if (postItems.length) html += blocksToPaperHtml(groupTextBlocks(postItems), colorFn);
   return html || '<p></p>';
 }
 // „1-3, 5, 8-9" → [1,2,3,5,8,9] (begrenzt auf 1..max)
@@ -4601,7 +4602,9 @@ async function convertToPaper(pageNums) {
       const page = await pdfDoc.getPage(n), vp = page.getViewport({ scale: 1 });
       const items = await pageTextItemsFor(page, vp.height), blocks = groupTextBlocks(items);
       for (const b of blocks) { blockN++; if ((b.text || '').split(/\s+/).filter(Boolean).length >= 6 || (b.lines && b.lines.length >= 3)) substantial++; }   // „richtige" Textblöcke (Fliesstext) vs. verstreute Labels
-      pages.push({ typ: 'write', html: pdfPageToPaperHtml(items, vp.width) });
+      let colorFn = null;   // Textfarbe aus einem Offscreen-Render abtasten (bei überschaubarer Seitenzahl)
+      if (nums.length <= 40) { try { const sc = 1.3, cvp = page.getViewport({ scale: sc }), cv = document.createElement('canvas'); cv.width = Math.ceil(cvp.width); cv.height = Math.ceil(cvp.height); await page.render({ canvasContext: cv.getContext('2d', { willReadFrequently: true }), viewport: cvp }).promise; colorFn = b => sampleInkColor(cv, b, vp.width); } catch (_) { colorFn = null; } }
+      pages.push({ typ: 'write', html: pdfPageToPaperHtml(items, vp.width, colorFn) });
     }
     if (!pages.some(p => p.html.replace(/<[^>]+>/g, '').trim().length)) { status(''); toast('Kein Text zum Übernehmen gefunden (evtl. gescanntes Bild-PDF).'); return; }
     const hadTable = pages.some(p => /<table/.test(p.html));
@@ -4617,6 +4620,26 @@ async function convertToPaper(pageNums) {
     catch (_) { status(''); toast('Text zu gross für die Übergabe – weniger Seiten wählen.'); return; }
     status(''); location.href = '../write/index.html?import=1';
   } catch (e) { status(''); console.error(e); toast('Umwandlung fehlgeschlagen.'); }
+}
+// Text-Farbe eines Blocks aus dem gerenderten Seitenbild: Mittel der Pixel, die deutlich vom Hintergrund abweichen (fast-schwarz → null = Standard)
+function sampleInkColor(cv, box, pageW) {
+  if (!cv || !box || !(pageW > 0)) return null;
+  let data; try { data = cv.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, cv.width, cv.height).data; } catch (_) { return null; }
+  const k = cv.width / pageW, w = cv.width, h = cv.height, counts = {}, samp = [];
+  for (let i = 0; i <= 16; i++) for (let j = 0; j <= 6; j++) {
+    const px = Math.round((box.x + box.w * (i / 16)) * k), py = Math.round((box.y + box.h * (j / 6)) * k);
+    if (px < 0 || py < 0 || px >= w || py >= h) continue; const o = (py * w + px) * 4;
+    samp.push([data[o], data[o + 1], data[o + 2]]); const key = (data[o] >> 4) + ',' + (data[o + 1] >> 4) + ',' + (data[o + 2] >> 4); counts[key] = (counts[key] || 0) + 1;
+  }
+  if (samp.length < 4) return null;
+  let bgKey = null, bn = 0; for (const kk in counts) if (counts[kk] > bn) { bn = counts[kk]; bgKey = kk; }
+  const bg = bgKey.split(',').map(v => parseInt(v, 10) * 16 + 8);
+  let r = 0, g = 0, bl = 0, cnt = 0;
+  for (const p of samp) { if (Math.abs(p[0] - bg[0]) + Math.abs(p[1] - bg[1]) + Math.abs(p[2] - bg[2]) > 70) { r += p[0]; g += p[1]; bl += p[2]; cnt++; } }
+  if (cnt < 2) return null; r = Math.round(r / cnt); g = Math.round(g / cnt); bl = Math.round(bl / cnt);
+  if (r < 45 && g < 45 && bl < 45) return null;   // fast schwarz → Standard-Textfarbe
+  if (r > 232 && g > 232 && bl > 232) return null;   // fast weiss → wohl Artefakt, nicht übernehmen
+  return `rgb(${r},${g},${bl})`;
 }
 // Hintergrund- (häufigste) und Text-Farbe (dunkelste) im Kästchen abtasten
 function sampleBox(pv, box) {

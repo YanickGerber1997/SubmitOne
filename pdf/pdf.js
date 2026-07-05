@@ -1544,6 +1544,8 @@ const LEIST_KAT = {
   profilEck: { label: 'Eckprofil (Aussenecke)', einh: 'lfm', base: 'height' },
   sockel: { label: 'Sockel / Fussleiste', einh: 'lfm', base: 'perim' }
 };
+// Reihenversatz je Verlegemuster (Anteil einer Plattenbreite, 0..1): Halbverband = ½, Drittelverband = ⅓, sonst 0 (Kreuzfuge)
+function tileRowShift(pattern, row) { const f = /Halbverband/.test(pattern || '') ? 0.5 : /Drittelverband/.test(pattern || '') ? 1 / 3 : 0; return (((f * row) % 1) + 1) % 1; }
 // Material-/Verlege-Beschreibung eines Belags (für Ausschreibung/Liste)
 function belagMatDesc(b) {
   if (!b) return ''; const p = [];
@@ -1601,13 +1603,24 @@ function drawWallFaceElevation(svg, a, pv) {
   const gg = svgEl('g', { 'clip-path': 'url(#' + cid + ')' }), handles = [], selHere = sel && sel.id === a.id;
   const oU = stepU > 0 ? ((((b.offU || 0) % stepU) + stepU) % stepU) : 0, oN = stepN > 0 ? ((((b.offN || 0) % stepN) + stepN) % stepN) : 0;   // Raster-Versatz (verschiebbare Einteilung)
   const colPts = (b.startCol > 0) ? (b.startCol / 100) / perPt : 0, startU = colPts > 0 ? colPts : oU;   // Anfangsspalte links (feste Breite), Raster rechts davon
-  if (stepU > 1) for (let d = startU; d < len; d += stepU) { if (d < 0.5) continue; const isCol = colPts > 0 && Math.abs(d - colPts) < 0.01; gg.appendChild(svgEl('line', { x1: (A[0] + ux * d).toFixed(2), y1: (A[1] + uy * d).toFixed(2), x2: (D[0] + ux * d).toFixed(2), y2: (D[1] + uy * d).toFixed(2), stroke: col, 'stroke-width': isCol ? 1 : 0.5, 'stroke-opacity': isCol ? 0.8 : 0.5, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' })); }
   const sockPts = (b.sockel > 0) ? (b.sockel / 100) / perPt : 0, startN = sockPts > 0 ? sockPts : oN;   // Sockelreihe unten (feste Höhe), Raster darüber
   const topL = (b.top > 0) ? Math.min(Hpts, b.top / perPt) : Hpts;   // Fliesenhöhe links (bzw. ganze Wand)
   const hasSplit = b.splitT > 0 && b.splitT < 1, splitU = hasSplit ? b.splitT * len : len;   // zwei Höhenzonen: links höher als rechts
   const topR = hasSplit ? ((b.topR > 0) ? Math.min(Hpts, b.topR / perPt) : Hpts) : topL;
   const topPts = Math.max(topL, topR);   // Raster bis zur höchsten Zone; die tiefere Zone wird oben von der Verputz-Stufe abgedeckt
+  // waagrechte Fugen
   if (stepN > 1) for (let d = startN; d < topPts; d += stepN) { if (d < 0.5) continue; const isSock = sockPts > 0 && Math.abs(d - sockPts) < 0.01; gg.appendChild(svgEl('line', { x1: (A[0] + nx * d).toFixed(2), y1: (A[1] + ny * d).toFixed(2), x2: (B[0] + nx * d).toFixed(2), y2: (B[1] + ny * d).toFixed(2), stroke: col, 'stroke-width': isSock ? 1 : 0.5, 'stroke-opacity': isSock ? 0.8 : 0.5, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' })); }
+  // senkrechte Fugen – bei Halbverband/Drittelverband reihenweise versetzt (echtes Verlegemuster)
+  const pat = b.pattern || '', banded = /Halbverband|Drittelverband/.test(pat);
+  const vLine = (u, n0, n1, strong) => { if (u < 0.5 || u > len - 0.001) return; gg.appendChild(svgEl('line', { x1: (A[0] + ux * u + nx * n0).toFixed(2), y1: (A[1] + uy * u + ny * n0).toFixed(2), x2: (A[0] + ux * u + nx * n1).toFixed(2), y2: (A[1] + uy * u + ny * n1).toFixed(2), stroke: col, 'stroke-width': strong ? 1 : 0.5, 'stroke-opacity': strong ? 0.8 : 0.5, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' })); };
+  if (stepU > 1) {
+    if (!banded) { for (let d = startU; d < len; d += stepU) vLine(d, 0, topPts, colPts > 0 && Math.abs(d - colPts) < 0.01); }
+    else {
+      const bands = [0]; for (let d = startN; d < topPts - 0.01; d += stepN) if (d > 0.01) bands.push(d); bands.push(topPts);
+      for (let k = 0; k < bands.length - 1; k++) { const off = tileRowShift(pat, k) * stepU; for (let d = startU + off - stepU; d < len; d += stepU) vLine(d, bands[k], bands[k + 1], false); }
+      if (colPts > 0) vLine(colPts, 0, topPts, true);   // Anfangsspalte bleibt durchgehend
+    }
+  }
   // Öffnungen (a.fenster: [{t, w, h, sill, kind}]) als Aussparung in der Ansicht (ziehbar) – Tür ab Boden, Nische gestrichelt
   (a.fenster || []).forEach((f, fi) => {
     const kind = f.kind || 'fenster', fw = (f.w || 1) / perPt, fh = (f.h || 1) / perPt, sill = (kind === 'tuer' ? 0 : (f.sill != null ? f.sill : 0.9)) / perPt, cU = (f.t != null ? f.t : 0.5) * len;
@@ -2568,8 +2581,15 @@ function drawTileGrid(g, a, pv) {
   let lx0 = minX, ly0 = minY, lx1 = maxX, ly1 = maxY;
   if (rot) { const d = Math.hypot(maxX - minX, maxY - minY) / 2 + Math.max(stepX, stepY); lx0 = cx - d; lx1 = cx + d; ly0 = cy - d; ly1 = cy + d; }   // erweitern, damit das gedrehte Raster die Fläche voll füllt
   const sx = rot ? lx0 : ((b.start && b.start[0] != null) ? b.start[0] : minX), sy = rot ? ly0 : ((b.start && b.start[1] != null) ? b.start[1] : minY);
-  for (let x = sx - Math.ceil((sx - lx0) / stepX) * stepX; x <= lx1 + 0.01; x += stepX) gin.appendChild(svgEl('line', { x1: x, y1: ly0, x2: x, y2: ly1, stroke: col, 'stroke-width': 0.6, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
-  for (let y = sy - Math.ceil((sy - ly0) / stepY) * stepY; y <= ly1 + 0.01; y += stepY) gin.appendChild(svgEl('line', { x1: lx0, y1: y, x2: lx1, y2: y, stroke: col, 'stroke-width': 0.6, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
+  const hLine = (y) => gin.appendChild(svgEl('line', { x1: lx0, y1: y, x2: lx1, y2: y, stroke: col, 'stroke-width': 0.6, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
+  const vSeg = (x, y0, y1) => gin.appendChild(svgEl('line', { x1: x, y1: y0, x2: x, y2: y1, stroke: col, 'stroke-width': 0.6, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
+  const ys = []; for (let y = sy - Math.ceil((sy - ly0) / stepY) * stepY; y <= ly1 + 0.01; y += stepY) { ys.push(y); hLine(y); }
+  const xBase = sx - Math.ceil((sx - lx0) / stepX) * stepX, patF = b.pattern || '', bandedF = !rot && /Halbverband|Drittelverband/.test(patF);
+  if (!bandedF) { for (let x = xBase; x <= lx1 + 0.01; x += stepX) vSeg(x, ly0, ly1); }   // Kreuzfuge: durchgehende senkrechte Fugen
+  else {   // Halbverband/Drittelverband: senkrechte Fugen reihenweise versetzt
+    const edges = [ly0]; for (const y of ys) if (y > ly0 + 0.01 && y < ly1 - 0.01) edges.push(y); edges.push(ly1);
+    for (let k = 0; k < edges.length - 1; k++) { const off = tileRowShift(patF, k) * stepX; for (let x = xBase + off - stepX; x <= lx1 + 0.01; x += stepX) vSeg(x, edges[k], edges[k + 1]); }
+  }
   if (rot) gg.appendChild(gin);
   g.appendChild(gg);
 }
@@ -6909,6 +6929,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Zusatzleistung mit Mengen-Override', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, waste: 0 }, leist: { silikon: 12.5 }, pts: [[0, 0], [200, 0], [200, 100], [0, 100]] }] }; const d = belagData(); return (d.extras.length === 1 && Math.abs(d.extras[0].menge - 12.5) < 1e-6 && d.extras[0].einh === 'lfm') ? '' : JSON.stringify(d.extras); } finally { annos = sa; docScale = sd; } });
     A('Material + Weitere Leistungen im Ausschreibungstext', () => { const floors = [{ name: 'Bad', m2: 5, b: { tileW: 30, tileH: 60, material: 'Feinsteinzeug', color: 'anthrazit', pattern: 'Halbverband', fugeColor: 'grau' }, aufbau: '' }]; const extras = [{ art: 'abdichtung', label: 'Verbundabdichtung (Nassbereich)', einh: 'm²', menge: 5 }]; const html = buildBelagTableHtml(floors, [], true, [], extras, []); return (/Feinsteinzeug/.test(html) && /anthrazit/.test(html) && /Halbverband/.test(html) && /Fuge grau/.test(html) && /Weitere Leistungen/.test(html) && /Verbundabdichtung/.test(html)) ? '' : 'fail'; });
     A('Nischen-Sektion im Ausschreibungstext', () => { const nischen = [{ name: 'Dusche Nische', w: 0.3, h: 0.6, depth: 0.1, m2: 0.36 }]; const html = buildBelagTableHtml([], [], false, [], [], nischen); return (/Nischen \(innen geplättelt\)/.test(html) && /Dusche Nische/.test(html) && /30×60×T10/.test(html) && /0,36/.test(html)) ? '' : 'fail'; });
+    A('Verlegemuster-Reihenversatz (Halbverband/Drittelverband/Kreuzfuge)', () => { const hv = [0, 1, 2, 3].map(r => tileRowShift('Halbverband', r)), dv = [0, 1, 2, 3].map(r => tileRowShift('Drittelverband', r)), kf = [0, 1, 2].map(r => tileRowShift('Kreuzfuge', r)); return (Math.abs(hv[0]) < 1e-9 && Math.abs(hv[1] - 0.5) < 1e-9 && Math.abs(hv[2]) < 1e-9 && Math.abs(hv[3] - 0.5) < 1e-9 && Math.abs(dv[1] - 1 / 3) < 1e-9 && Math.abs(dv[2] - 2 / 3) < 1e-9 && Math.abs(dv[3]) < 1e-9 && kf.every(v => v === 0)) ? '' : JSON.stringify({ hv, dv, kf }); });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

@@ -1529,6 +1529,56 @@ function drawWallFaceLabel(svg, a, pv) {
 // Anschluss-Kategorien (Längen, lfm) für die Ausschreibung – Fenster separat: Laibung/Bank/Sturz
 const ANSCHLUSS_KAT = { boden: 'Boden', wand: 'Wand', decke: 'Decke', fenster: 'Fenster', laibung: 'Laibung', bank: 'Fensterbank', sturz: 'Sturz' };
 const UNTERGRUND = ['', 'Grundputz', 'Beton', 'Gipsplatte', 'alte Platten', 'Zementüberzug', 'Mauerwerk'];   // Verlege-Untergrund (leer = keiner)
+const VERLEGE_MUSTER = ['', 'Kreuzfuge', 'Halbverband', 'Diagonal 45°', 'Drittelverband', 'Fischgrät', 'Römischer Verband'];   // Verlegemuster (beschreibend + Diagonal setzt 45°)
+const VERLEGE_ART = ['', 'Dünnbett (kleben)', 'Dickbett', 'Fliese auf Fliese', 'lose verlegt'];   // Verlegeart
+const OEFFNUNG_KAT = { fenster: 'Fenster', tuer: 'Tür', nische: 'Nische' };   // Öffnungstyp in der Wand
+// Zusatzleistungen-Katalog (echte Ausschreibungs-Positionen). base = Bezug der Auto-Menge: area=Fläche m², perim=Umfang/Länge lfm, height=Wandhöhe lfm
+const LEIST_KAT = {
+  abdichtung: { label: 'Verbundabdichtung (Nassbereich)', einh: 'm²', base: 'area' },
+  grundierung: { label: 'Grundierung / Voranstrich', einh: 'm²', base: 'area' },
+  entkopplung: { label: 'Entkopplungsmatte', einh: 'm²', base: 'area' },
+  ausgleich: { label: 'Ausgleichs-/Spachtelmasse', einh: 'm²', base: 'area' },
+  dichtband: { label: 'Dichtband Ecken/Anschlüsse', einh: 'lfm', base: 'perim' },
+  silikon: { label: 'Elastische Randfuge (Silikon)', einh: 'lfm', base: 'perim' },
+  profilAbschl: { label: 'Abschlussprofil', einh: 'lfm', base: 'perim' },
+  profilEck: { label: 'Eckprofil (Aussenecke)', einh: 'lfm', base: 'height' },
+  sockel: { label: 'Sockel / Fussleiste', einh: 'lfm', base: 'perim' }
+};
+// Material-/Verlege-Beschreibung eines Belags (für Ausschreibung/Liste)
+function belagMatDesc(b) {
+  if (!b) return ''; const p = [];
+  if (b.material) p.push(b.material); if (b.color) p.push(b.color); if (b.pattern) p.push(b.pattern); if (b.laying) p.push(b.laying); if (b.fugeColor) p.push('Fuge ' + b.fugeColor);
+  return p.length ? ' · ' + p.join(', ') : '';
+}
+// Inspector-Baustein „Material" (Typ/Farbe/Muster/Verlegeart/Fugenfarbe) – für Boden- und Wandbelag gleich
+function belagMaterialHtml(b) {
+  const sel = (id, arr, val, ph) => '<select class="insp-num" id="' + id + '" style="width:134px"><option value="">' + ph + '</option>' + arr.filter(x => x).map(x => '<option' + (val === x ? ' selected' : '') + '>' + x + '</option>').join('') + '</select>';
+  return '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">Material</div>'
+    + '<div class="insp-row"><span class="insp-lbl">Typ/Name</span><input class="insp-num" style="width:134px" id="bMat" value="' + ((b.material || '').replace(/"/g, '&quot;')) + '" placeholder="z. B. Feinsteinzeug"></div>'
+    + '<div class="insp-row"><span class="insp-lbl">Farbe</span><input class="insp-num" style="width:134px" id="bCol" value="' + ((b.color || '').replace(/"/g, '&quot;')) + '" placeholder="z. B. anthrazit"></div>'
+    + '<div class="insp-row"><span class="insp-lbl">Muster</span>' + sel('bPat', VERLEGE_MUSTER, b.pattern, '– Verlegemuster –') + '</div>'
+    + '<div class="insp-row"><span class="insp-lbl">Verlegeart</span>' + sel('bLay', VERLEGE_ART, b.laying, '– Verlegeart –') + '</div>'
+    + '<div class="insp-row"><span class="insp-lbl">Fugenfarbe</span><input class="insp-num" style="width:134px" id="bFug" value="' + ((b.fugeColor || '').replace(/"/g, '&quot;')) + '" placeholder="z. B. grau"></div>';
+}
+function bindBelagMaterial(body, a, b) {
+  const t = (id, key) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = (el.value || '').trim(); if (v) b[key] = v; else delete b[key]; markDirty(); pageViews.forEach(drawAnnos); renderList(); }; };
+  t('#bMat', 'material'); t('#bCol', 'color'); t('#bFug', 'fugeColor');
+  const p = body.querySelector('#bPat'); if (p) p.onchange = () => { const v = p.value; if (v) b.pattern = v; else delete b.pattern; if (/Diagonal/.test(v)) b.angle = 45; markDirty(); pageViews.forEach(drawAnnos); renderList(); };
+  const l = body.querySelector('#bLay'); if (l) l.onchange = () => { const v = l.value; if (v) b.laying = v; else delete b.laying; markDirty(); renderList(); };
+}
+// Inspector-Baustein „Weitere Leistungen" (Abdichtung/Grundierung/Profile/Fugen/Sockel …) – Häkchen + optionale Menge (leer = auto aus Fläche)
+function leistHtml(a) {
+  const L = a.leist || {};
+  let h = '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">Weitere Leistungen</div>';
+  for (const k of Object.keys(LEIST_KAT)) { const on = !!L[k], ov = (typeof L[k] === 'number') ? L[k] : '';
+    h += '<div class="insp-row" style="align-items:center"><label class="insp-lbl" style="flex:1;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" data-leist="' + k + '"' + (on ? ' checked' : '') + '> ' + LEIST_KAT[k].label + '</label>'
+      + (on ? '<input class="insp-num" style="width:52px" data-leistm="' + k + '" type="number" step="0.01" min="0" value="' + ov + '" placeholder="auto"> ' + LEIST_KAT[k].einh : '') + '</div>'; }
+  return h;
+}
+function bindLeist(body, a) {
+  body.querySelectorAll('[data-leist]').forEach(cb => cb.onchange = () => { a.leist = a.leist || {}; const k = cb.dataset.leist; if (cb.checked) a.leist[k] = true; else delete a.leist[k]; if (!Object.keys(a.leist).length) delete a.leist; markDirty(); renderList(); });
+  body.querySelectorAll('[data-leistm]').forEach(inp => inp.onchange = () => { a.leist = a.leist || {}; const k = inp.dataset.leistm, v = parseFloat((inp.value || '').replace(',', '.')); a.leist[k] = (isFinite(v) && v > 0) ? v : true; markDirty(); renderList(); });
+}
 function drawAnschlussLabel(svg, a, pv) {
   const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2, len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
   let txt = 'Anschluss ' + (ANSCHLUSS_KAT[a.anschluss] || '');
@@ -1558,14 +1608,17 @@ function drawWallFaceElevation(svg, a, pv) {
   const topR = hasSplit ? ((b.topR > 0) ? Math.min(Hpts, b.topR / perPt) : Hpts) : topL;
   const topPts = Math.max(topL, topR);   // Raster bis zur höchsten Zone; die tiefere Zone wird oben von der Verputz-Stufe abgedeckt
   if (stepN > 1) for (let d = startN; d < topPts; d += stepN) { if (d < 0.5) continue; const isSock = sockPts > 0 && Math.abs(d - sockPts) < 0.01; gg.appendChild(svgEl('line', { x1: (A[0] + nx * d).toFixed(2), y1: (A[1] + ny * d).toFixed(2), x2: (B[0] + nx * d).toFixed(2), y2: (B[1] + ny * d).toFixed(2), stroke: col, 'stroke-width': isSock ? 1 : 0.5, 'stroke-opacity': isSock ? 0.8 : 0.5, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' })); }
-  // Fenster (a.fenster: [{t: 0..1 Position entlang der Wand, w, h, sill}]) als Aussparung in der Ansicht (ziehbar)
+  // Öffnungen (a.fenster: [{t, w, h, sill, kind}]) als Aussparung in der Ansicht (ziehbar) – Tür ab Boden, Nische gestrichelt
   (a.fenster || []).forEach((f, fi) => {
-    const fw = (f.w || 1) / perPt, fh = (f.h || 1) / perPt, sill = (f.sill || 0.9) / perPt, cU = (f.t != null ? f.t : 0.5) * len;
+    const kind = f.kind || 'fenster', fw = (f.w || 1) / perPt, fh = (f.h || 1) / perPt, sill = (kind === 'tuer' ? 0 : (f.sill != null ? f.sill : 0.9)) / perPt, cU = (f.t != null ? f.t : 0.5) * len;
     const bx = A[0] + ux * (cU - fw / 2) + nx * sill, by = A[1] + uy * (cU - fw / 2) + ny * sill;
     const fq = [[bx, by], [bx + ux * fw, by + uy * fw], [bx + ux * fw + nx * fh, by + uy * fw + ny * fh], [bx + nx * fh, by + ny * fh]].map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
-    gg.appendChild(svgEl('polygon', { points: fq, fill: '#dfe8f2', stroke: col, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke', 'data-id': a.id, 'data-fwin': fi, style: 'cursor:move' }));
-    const wcx = bx + ux * fw / 2 + nx * fh / 2, wcy = by + uy * fw / 2 + ny * fh / 2;   // Fenstermass B×H (cm) mittig ins Fenster
-    const wt = svgEl('text', { x: wcx.toFixed(2), y: wcy.toFixed(2), fill: col, 'font-size': 8, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: '#dfe8f2', 'stroke-width': 2, 'pointer-events': 'none' }); wt.textContent = Math.round((f.w || 1) * 100) + '×' + Math.round((f.h || 1) * 100); gg.appendChild(wt);
+    const fill = kind === 'tuer' ? '#eae2d4' : kind === 'nische' ? '#e6efe4' : '#dfe8f2';
+    const opAttr = { points: fq, fill, stroke: col, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke', 'data-id': a.id, 'data-fwin': fi, style: 'cursor:move' };
+    if (kind === 'nische') opAttr['stroke-dasharray'] = '4 3';
+    gg.appendChild(svgEl('polygon', opAttr));
+    const wcx = bx + ux * fw / 2 + nx * fh / 2, wcy = by + uy * fw / 2 + ny * fh / 2;   // Mass B×H (cm) mittig in die Öffnung
+    const wt = svgEl('text', { x: wcx.toFixed(2), y: wcy.toFixed(2), fill: col, 'font-size': 8, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: fill, 'stroke-width': 2, 'pointer-events': 'none' }); wt.textContent = (kind === 'tuer' ? 'Tür ' : kind === 'nische' ? 'Nische ' : '') + Math.round((f.w || 1) * 100) + '×' + Math.round((f.h || 1) * 100); gg.appendChild(wt);
     if (selHere) { const hr = 4.5 / pv.scale, TR = [bx + ux * fw + nx * fh, by + uy * fw + ny * fh]; handles.push(svgEl('rect', { x: (TR[0] - hr).toFixed(2), y: (TR[1] - hr).toFixed(2), width: (2 * hr).toFixed(2), height: (2 * hr).toFixed(2), rx: (hr * 0.4).toFixed(2), fill: '#fff', stroke: col, 'stroke-width': 1.4, 'data-id': a.id, 'data-fwres': fi, style: 'cursor:nwse-resize' })); }   // Eck-Anfasser: Fenster vergrössern
   });
   g.appendChild(gg); handles.forEach(hd => g.appendChild(hd));
@@ -6387,6 +6440,7 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
         + '<div class="insp-row"><span class="insp-lbl">Richtung</span><span id="iDir" style="display:inline-flex;gap:3px"><button class="insp-mini' + (b.angle !== 45 ? ' on' : '') + '" data-a="0" title="gerade">▦</button><button class="insp-mini' + (b.angle === 45 ? ' on' : '') + '" data-a="45" title="diagonal 45°">◇</button></span></div>';
       if (docScale && m2) bh += '<div class="insp-kv"><span>Platten (inkl. Verschnitt)</span><b>' + tilesForArea(m2, b.tileW, b.tileH, b.waste || 0) + ' Stk</b></div>';
       bh += '<div class="insp-row"><span class="insp-lbl">Untergrund</span><select class="insp-num" id="flUg" style="width:128px">' + UNTERGRUND.map(u => '<option value="' + u + '"' + (a.untergrund === u ? ' selected' : '') + '>' + (u || '– wählen –') + '</option>').join('') + '</select></div>';
+      bh += belagMaterialHtml(b) + leistHtml(a);
       body.insertAdjacentHTML('beforeend', bh);
     }
     const nm = body.querySelector('#iNm'), fl = body.querySelector('#iFl');
@@ -6395,6 +6449,7 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     if (a.belag) {
       const bindNum = (id, key) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (isFinite(v) && v >= 0) { a.belag[key] = v; markDirty(); pageViews.forEach(drawAnnos); renderList(); } }; };
       bindNum('#iTW', 'tileW'); bindNum('#iTH', 'tileH'); bindNum('#iJ', 'joint'); bindNum('#iWa', 'waste');
+      bindBelagMaterial(body, a, a.belag); bindLeist(body, a);
       const au = body.querySelector('#iAu'); if (au) au.onchange = () => { const v = au.value.trim(); if (v) a.aufbau = v; else delete a.aufbau; markDirty(); pageViews.forEach(drawAnnos); };
       const fug = body.querySelector('#flUg'); if (fug) fug.onchange = () => { if (fug.value) a.untergrund = fug.value; else delete a.untergrund; markDirty(); renderList(); };
       body.querySelectorAll('#iStart .insp-mini').forEach(btn => btn.onclick = () => {
@@ -6415,22 +6470,26 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     const area = docScale ? wallFaceAreaM2(lenPts, docScale.perPt, h) : 0, b = a.belag || (a.belag = { ...DEFAULT_BELAG });
     // ── FENSTER-MODUS: nur das gewählte Fenster (klarer, nicht überladen) ──
     if (selWin && selWin.id === a.id && a.fenster && a.fenster[selWin.wi]) {
-      const i = selWin.wi, f = a.fenster[i];
-      let fh = '<h4>Fenster ' + (i + 1) + '<button class="insp-mini" id="wfBack" title="zurück zur Wand" style="float:right;width:auto;padding:0 8px">← Wand</button></h4>'
+      const i = selWin.wi, f = a.fenster[i], kind = f.kind || 'fenster', kL = OEFFNUNG_KAT[kind] || 'Fenster';
+      let fh = '<h4>' + kL + ' ' + (i + 1) + '<button class="insp-mini" id="wfBack" title="zurück zur Wand" style="float:right;width:auto;padding:0 8px">← Wand</button></h4>'
+        + '<div class="insp-row"><span class="insp-lbl">Typ</span><span id="fKind" style="display:inline-flex;gap:3px">' + Object.keys(OEFFNUNG_KAT).map(k => '<button class="insp-mini' + (kind === k ? ' on' : '') + '" data-k="' + k + '" style="width:auto;padding:0 8px">' + OEFFNUNG_KAT[k] + '</button>').join('') + '</span></div>'
         + '<div class="insp-row"><span class="insp-lbl">Position</span><input class="insp-num" style="width:60px" id="fPos" type="number" step="0.05" value="' + (Math.round(((f.t != null ? f.t : 0.5) * lenM) * 100) / 100) + '"> m ab links</div>'
         + '<div class="insp-row"><span class="insp-lbl">Breite</span><input class="insp-num" style="width:60px" id="fW" type="number" min="1" value="' + Math.round((f.w || 1) * 100) + '"> cm</div>'
         + '<div class="insp-row"><span class="insp-lbl">Höhe</span><input class="insp-num" style="width:60px" id="fH" type="number" min="1" value="' + Math.round((f.h || 1.2) * 100) + '"> cm</div>'
-        + '<div class="insp-row"><span class="insp-lbl">Brüstung</span><input class="insp-num" style="width:60px" id="fBr" type="number" min="0" value="' + Math.round((f.sill || 0.9) * 100) + '"> cm</div>';
-      fh += '<div class="insp-kv"><span>Laibung (2 Seiten)</span><b>' + (Math.round(2 * (f.h || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>'
-        + '<div class="insp-kv"><span>Bank / Sturz (je)</span><b>' + (Math.round((f.w || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>'
-        + '<p class="insp-hint">In der Ansicht: Fenster ziehen = verschieben · Eck-Anfasser = vergrössern.</p>';
+        + (kind === 'tuer' ? '' : '<div class="insp-row"><span class="insp-lbl">' + (kind === 'nische' ? 'Höhe ab Boden' : 'Brüstung') + '</span><input class="insp-num" style="width:60px" id="fBr" type="number" min="0" value="' + Math.round((f.sill != null ? f.sill : 0.9) * 100) + '"> cm</div>')
+        + (kind === 'nische' ? '<div class="insp-row"><span class="insp-lbl">Tiefe</span><input class="insp-num" style="width:60px" id="fDep" type="number" min="0" value="' + Math.round((f.depth || 0) * 100) + '"> cm</div>' : '');
+      if (kind === 'nische') fh += '<div class="insp-kv"><span>Nische innen</span><b>' + (Math.round(((f.w || 0) * (f.h || 0) + 2 * ((f.w || 0) + (f.h || 0)) * (f.depth || 0)) * 100) / 100).toFixed(2).replace('.', ',') + ' m²</b></div>';
+      else fh += '<div class="insp-kv"><span>Laibung (2 Seiten)</span><b>' + (Math.round(2 * (f.h || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>'
+        + '<div class="insp-kv"><span>' + (kind === 'tuer' ? 'Sturz' : 'Bank / Sturz (je)') + '</span><b>' + (Math.round((f.w || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>';
+      fh += '<p class="insp-hint">In der Ansicht: Öffnung ziehen = verschieben · Eck-Anfasser = vergrössern.</p>';
       body.innerHTML = fh;
-      const del = document.createElement('button'); del.className = 'insp-btn'; del.textContent = '🗑 Fenster entfernen'; body.appendChild(del);
+      const del = document.createElement('button'); del.className = 'insp-btn'; del.textContent = '🗑 ' + kL + ' entfernen'; body.appendChild(del);
       del.onclick = () => { a.fenster.splice(i, 1); selWin = null; markDirty(); renderList(); pageViews.forEach(drawAnnos); };
       const bk = body.querySelector('#wfBack'); if (bk) bk.onclick = () => { selWin = null; renderList(); };
+      body.querySelectorAll('#fKind .insp-mini').forEach(btn => btn.onclick = () => { f.kind = btn.dataset.k; if (f.kind === 'tuer') f.sill = 0; markDirty(); renderList(); pageViews.forEach(drawAnnos); });
       const bindF = (id, fn) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (!isFinite(v)) return; fn(v); markDirty(); pageViews.forEach(drawAnnos); renderList(); }; };
       bindF('#fPos', v => f.t = lenM > 0 ? Math.max(0, Math.min(1, v / lenM)) : 0.5);
-      bindF('#fW', v => f.w = Math.max(0.1, v / 100)); bindF('#fH', v => f.h = Math.max(0.1, v / 100)); bindF('#fBr', v => f.sill = Math.max(0, v / 100));
+      bindF('#fW', v => f.w = Math.max(0.1, v / 100)); bindF('#fH', v => f.h = Math.max(0.1, v / 100)); bindF('#fBr', v => f.sill = Math.max(0, v / 100)); bindF('#fDep', v => f.depth = Math.max(0, v / 100));
       return;
     }
     // ── WAND-MODUS ──
@@ -6460,11 +6519,14 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
       + '<div class="insp-row"><span class="insp-lbl">Wand seitlich</span><span id="anW" style="display:inline-flex;gap:3px">' + [0, 1, 2].map(n => '<button class="insp-mini' + ((ans.wand || 0) === n ? ' on' : '') + '" data-n="' + n + '" style="width:26px">' + n + '</button>').join('') + '</span></div>';
     if (docScale) html += '<div class="insp-kv"><span>Anschluss lfm gesamt</span><b>' + (Math.round(((ans.boden ? lenM : 0) + (ans.decke ? lenM : 0) + (ans.wand || 0) * h) * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>';
     const fen = a.fenster || [];
-    html += '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">Fenster (' + fen.length + ') <button class="insp-mini" id="fenAdd" style="width:auto;padding:0 8px;float:right">+ Fenster</button></div>';
-    html += '<div class="insp-row" style="flex-wrap:wrap;gap:4px">' + (fen.length ? fen.map((f, i) => '<button class="insp-mini" data-fedit="' + i + '" style="width:auto;padding:0 9px">Fenster ' + (i + 1) + '</button>').join('') : '<span class="insp-lbl" style="font-size:11px">klick ein Fenster in der Ansicht oder „+ Fenster" – dann erscheinen dessen Einstellungen</span>') + '</div>';
+    html += '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">Öffnungen (' + fen.length + ')</div>';
+    html += '<div class="insp-row" style="gap:4px"><button class="insp-mini" data-fadd="fenster" style="width:auto;padding:0 8px">+ Fenster</button><button class="insp-mini" data-fadd="tuer" style="width:auto;padding:0 8px">+ Tür</button><button class="insp-mini" data-fadd="nische" style="width:auto;padding:0 8px">+ Nische</button></div>';
+    html += '<div class="insp-row" style="flex-wrap:wrap;gap:4px">' + (fen.length ? fen.map((f, i) => '<button class="insp-mini" data-fedit="' + i + '" style="width:auto;padding:0 9px">' + (OEFFNUNG_KAT[f.kind || 'fenster'] || 'Fenster') + ' ' + (i + 1) + '</button>').join('') : '<span class="insp-lbl" style="font-size:11px">Öffnung in der Ansicht anklicken oder oben hinzufügen – dann erscheinen deren Einstellungen</span>') + '</div>';
     if (fen.length && docScale) html += '<div class="insp-kv"><span>Wandfläche netto</span><b>' + (Math.round(Math.max(0, area - fen.reduce((s, f) => s + (f.w || 0) * (f.h || 0), 0)) * 100) / 100).toFixed(2).replace('.', ',') + ' m²</b></div>';
+    html += belagMaterialHtml(b) + leistHtml(a);
     html += '<div class="insp-row"><span class="insp-lbl">Wand-Ansicht</span><span><button class="insp-mini' + (a.ansicht !== false ? ' on' : '') + '" id="wfElev" style="width:auto;padding:0 8px">' + (a.ansicht !== false ? 'sichtbar' : 'aus') + '</button></span></div>';
     body.innerHTML = html;
+    bindBelagMaterial(body, a, b); bindLeist(body, a);
     const w3btn = document.createElement('button'); w3btn.className = 'insp-btn'; w3btn.textContent = '→ als 3D-Wand (mit Fenstern)'; body.appendChild(w3btn);
     w3btn.onclick = () => { wallfaceToWall(a, pv.num); pageViews.forEach(drawAnnos); markDirty(); _listTab = 'sel'; renderList(); toast('3D-Wand mit Fenstern erstellt – „3D" oben öffnen. Der Wandbelag bleibt fürs Plättlibudget.'); };
     const hEl = body.querySelector('#iWfH'); if (hEl) hEl.onchange = () => { const v = parseFloat((hEl.value || '').replace(',', '.')); if (v > 0) { a.height = v; markDirty(); pageViews.forEach(drawAnnos); renderList(); } };
@@ -6486,7 +6548,9 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     const tgl = (id, key) => { const el = body.querySelector(id); if (el) el.onclick = () => { a.ans[key] = !a.ans[key]; markDirty(); renderList(); pageViews.forEach(drawAnnos); }; };
     tgl('#anB', 'boden'); tgl('#anD', 'decke');
     body.querySelectorAll('#anW .insp-mini').forEach(btn => btn.onclick = () => { a.ans.wand = +btn.dataset.n; markDirty(); renderList(); pageViews.forEach(drawAnnos); });
-    const fa = body.querySelector('#fenAdd'); if (fa) fa.onclick = () => { a.fenster = a.fenster || []; a.fenster.push({ t: 0.5, w: 1.0, h: 1.2, sill: 0.9 }); selWin = { id: a.id, wi: a.fenster.length - 1 }; markDirty(); renderList(); pageViews.forEach(drawAnnos); };
+    body.querySelectorAll('[data-fadd]').forEach(btn => btn.onclick = () => { a.fenster = a.fenster || []; const k = btn.dataset.fadd;
+      const def = k === 'tuer' ? { t: 0.5, w: 0.9, h: 2.0, sill: 0, kind: 'tuer' } : k === 'nische' ? { t: 0.5, w: 0.3, h: 0.6, sill: 1.1, depth: 0.1, kind: 'nische' } : { t: 0.5, w: 1.0, h: 1.2, sill: 0.9, kind: 'fenster' };
+      a.fenster.push(def); selWin = { id: a.id, wi: a.fenster.length - 1 }; markDirty(); renderList(); pageViews.forEach(drawAnnos); });
     body.querySelectorAll('[data-fedit]').forEach(btn => btn.onclick = () => { selWin = { id: a.id, wi: +btn.dataset.fedit }; renderList(); });
     const we = body.querySelector('#wfElev'); if (we) we.onclick = () => { a.ansicht = a.ansicht === false ? true : false; markDirty(); renderList(); pageViews.forEach(drawAnnos); };
     return;
@@ -6522,7 +6586,7 @@ function fillRoomList(bodyEl) {   // Raumbuch in das Listen-Panel
 function openRoomList() { openListPanel('rooms'); }
 // Beläge sammeln: Bodenbeläge (area+belag) und Wandflächen (measure+wallface) über alle Seiten
 function belagData() {
-  const floors = [], walls = [], anschluesse = [], cutouts = []; if (!docScale) return { floors, walls, anschluesse, cutouts };
+  const floors = [], walls = [], anschluesse = [], cutouts = [], nischen = [], extras = []; if (!docScale) return { floors, walls, anschluesse, cutouts, nischen, extras };
   const pp = docScale.perPt;
   for (const n of Object.keys(annos)) for (const a of (annos[n] || [])) {
     if (a.type === 'area' && a.cutout && a.pts && a.pts.length >= 3) {
@@ -6544,10 +6608,17 @@ function belagData() {
       if (ans.boden) anschluesse.push({ a, kat: 'boden', katLabel: 'Boden', name: nm + 'Wandbelag unten', lenM: wl });
       if (ans.decke) anschluesse.push({ a, kat: 'decke', katLabel: 'Decke', name: nm + 'Wandbelag oben', lenM: wl });
       if (ans.wand) anschluesse.push({ a, kat: 'wand', katLabel: 'Wand', name: nm + 'Wandbelag seitlich', lenM: (ans.wand || 0) * h });
-      for (const f of fen) {   // Fenster separat: Bank (unten = Breite), Sturz (oben = Breite), Laibung (2 Seiten = 2×Höhe)
-        anschluesse.push({ a, kat: 'bank', katLabel: 'Fensterbank', name: nm + 'Fensterbank', lenM: f.w || 0 });
-        anschluesse.push({ a, kat: 'sturz', katLabel: 'Sturz', name: nm + 'Fenstersturz', lenM: f.w || 0 });
-        anschluesse.push({ a, kat: 'laibung', katLabel: 'Laibung', name: nm + 'Fensterlaibung', lenM: 2 * (f.h || 0) });
+      for (const f of fen) {   // Öffnung je nach Typ auszählen
+        const kind = f.kind || 'fenster', fw = f.w || 0, fhh = f.h || 0;
+        if (kind === 'nische') {   // Nische wird innen geplättelt: Rückwand + Laibungsflächen; Front als Abschlussprofil
+          const dep = f.depth || 0;
+          nischen.push({ a, name: nm + 'Nische', w: fw, h: fhh, depth: dep, m2: fw * fhh + 2 * (fw + fhh) * dep });
+          anschluesse.push({ a, kat: 'laibung', katLabel: 'Laibung', name: nm + 'Nischenkante', lenM: 2 * (fw + fhh) });
+          continue;
+        }
+        anschluesse.push({ a, kat: 'sturz', katLabel: 'Sturz', name: nm + (kind === 'tuer' ? 'Türsturz' : 'Fenstersturz'), lenM: fw });
+        anschluesse.push({ a, kat: 'laibung', katLabel: 'Laibung', name: nm + (kind === 'tuer' ? 'Türlaibung' : 'Fensterlaibung'), lenM: 2 * fhh });
+        if (kind !== 'tuer') anschluesse.push({ a, kat: 'bank', katLabel: 'Fensterbank', name: nm + 'Fensterbank', lenM: fw });   // Tür hat keine Bank
       }
     } else if ((a.type === 'measure' || a.type === 'chaindim') && a.anschluss) {
       const lp = a.type === 'chaindim' ? polylineLen(a.pts) : Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
@@ -6556,11 +6627,15 @@ function belagData() {
   }
   // Aussparungen von den Böden abziehen (Aussparungs-Schwerpunkt liegt in der Fläche) → Netto-Fläche
   floors.forEach(f => { let cut = 0; for (const c of cutouts) if (pointInPoly(c.c, f.poly)) cut += c.m2; f.cutM2 = cut; f.m2 = Math.max(0, f.grossM2 - cut); f.tiles = tilesForArea(f.m2, f.b.tileW, f.b.tileH, f.b.waste || 0); });
-  return { floors, walls, anschluesse, cutouts };
+  // Zusatzleistungen ableiten (Abdichtung/Grundierung/Profile/Fugen/Sockel …) – Auto-Menge aus der Fläche, überschreibbar
+  const pushExtras = (a, bv) => { const L = a.leist; if (!L) return; for (const k of Object.keys(LEIST_KAT)) { if (!L[k]) continue; const cat = LEIST_KAT[k], auto = bv[cat.base] || 0, menge = (typeof L[k] === 'number' && L[k] > 0) ? L[k] : auto; if (menge > 0) extras.push({ a, art: k, label: cat.label, einh: cat.einh, menge, name: a.name || '' }); } };
+  floors.forEach(f => pushExtras(f.a, { area: f.m2, perim: polylineLen(f.poly.concat([f.poly[0]])) * pp, height: 0 }));
+  walls.forEach(w => pushExtras(w.a, { area: w.m2, perim: w.lenM, height: w.h }));
+  return { floors, walls, anschluesse, cutouts, nischen, extras };
 }
 function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten & Summen
   if (!docScale) { bodyEl.innerHTML = '<p class="lp2-empty">Für Belags-Mengen zuerst den Massstab setzen (1:n) – unten in der Fusszeile.</p>'; return null; }
-  const { floors, walls, anschluesse } = belagData();
+  const { floors, walls, anschluesse, nischen, extras } = belagData();
   if (!floors.length && !walls.length && !anschluesse.length) { bodyEl.innerHTML = '<p class="lp2-empty">Noch keine Beläge. Zeichne mit <b>Bodenbelag</b> eine Fläche, mit <b>Wandbelag</b> eine Wand oder mit <b>Anschluss</b> eine Kante.</p>'; return null; }
   const fmt = x => (Math.round(x * 100) / 100).toFixed(2).replace('.', ',');
   const fm2 = floors.reduce((s, r) => s + r.m2, 0), ft = floors.reduce((s, r) => s + r.tiles, 0);
@@ -6582,6 +6657,13 @@ function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten &
       + Object.keys(byKat).map(k => '<tr><td>Anschluss ' + _htmlEsc(byKat[k].label) + '</td><td style="text-align:right">' + byKat[k].n + '</td><td style="text-align:right;white-space:nowrap">' + fmt(byKat[k].len) + ' m</td></tr>').join('')
       + '</tbody><tfoot><tr><th style="text-align:right" colspan="2">Summe</th><th style="text-align:right;white-space:nowrap">' + fmt(total) + ' m</th></tr></tfoot></table>';
   }
+  if (nischen && nischen.length) html += '<h4 style="margin-top:14px">Nischen (' + nischen.length + ')</h4><table class="qty-tab"><thead><tr><th>Nische</th><th style="text-align:right">Mass</th><th style="text-align:right">Fläche</th></tr></thead><tbody>'
+    + nischen.map(r => '<tr><td>' + (_htmlEsc(r.name) || 'Nische') + '</td><td style="text-align:right;white-space:nowrap">' + Math.round(r.w * 100) + '×' + Math.round(r.h * 100) + (r.depth ? '×T' + Math.round(r.depth * 100) : '') + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.m2) + ' m²</td></tr>').join('')
+    + '</tbody><tfoot><tr><th style="text-align:right" colspan="2">Summe</th><th style="text-align:right;white-space:nowrap">' + fmt(nischen.reduce((s, r) => s + r.m2, 0)) + ' m²</th></tr></tfoot></table>';
+  if (extras && extras.length) { const byArt = {}; extras.forEach(r => { byArt[r.art] = byArt[r.art] || { label: r.label, einh: r.einh, menge: 0 }; byArt[r.art].menge += r.menge; });
+    html += '<h4 style="margin-top:14px">Weitere Leistungen (' + Object.keys(byArt).length + ')</h4><table class="qty-tab"><thead><tr><th>Leistung</th><th style="text-align:right">Menge</th></tr></thead><tbody>'
+      + Object.keys(byArt).map(k => '<tr><td>' + _htmlEsc(byArt[k].label) + '</td><td style="text-align:right;white-space:nowrap">' + fmt(byArt[k].menge) + ' ' + byArt[k].einh + '</td></tr>').join('')
+      + '</tbody></table>'; }
   bodyEl.innerHTML = html;
   { const ba = bodyEl.querySelector('#belExpA'); if (ba) ba.onclick = () => exportBelagToPaper('ausschreibung'); const bm = bodyEl.querySelector('#belExpM'); if (bm) bm.onclick = () => exportBelagToPaper('mengen'); }
   return () => {
@@ -6592,17 +6674,19 @@ function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten &
 }
 function openBelagList() { openListPanel('belag'); }
 // Ausschreibungs-/Mengenauszug-Tabelle (rein) – Spalten: Pos · Beschrieb · Ausmass · Einheit (+ leere Einheitspreis/Betrag bei Ausschreibung)
-function buildBelagTableHtml(floors, walls, price, anschluesse) {
-  anschluesse = anschluesse || [];
+function buildBelagTableHtml(floors, walls, price, anschluesse, extras, nischen) {
+  anschluesse = anschluesse || []; extras = extras || []; nischen = nischen || [];
   const fmt = x => (Math.round(x * 100) / 100).toFixed(2).replace('.', ','), cols = price ? 6 : 4, pad = price ? '<td></td><td></td>' : '';
   const head = '<tr>' + ['Pos.', 'Beschrieb', 'Ausmass', 'Einh.'].concat(price ? ['Einheitspreis', 'Betrag'] : []).map(h => '<th>' + h + '</th>').join('') + '</tr>';
   const posRow = (pos, besch, menge, einh) => '<tr><td>' + pos + '</td><td>' + _htmlEsc(besch) + '</td><td style="text-align:right;white-space:nowrap">' + fmt(menge) + '</td><td>' + einh + '</td>' + pad + '</tr>';
   const zt = (title, sum, einh) => '<tr><td></td><td><em>Zwischentotal ' + title + '</em></td><td style="text-align:right;white-space:nowrap"><strong>' + fmt(sum) + '</strong></td><td>' + einh + '</td>' + pad + '</tr>';
   let rows = '', sec = 0;
   const ug = r => (r.a && r.a.untergrund) ? ' · auf ' + r.a.untergrund : '';
-  if (floors.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Bodenbeläge</strong></td></tr>'; floors.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Bodenbelag') + ' · Platten ' + r.b.tileW + '×' + r.b.tileH + ug(r) + (r.aufbau ? ' · ' + r.aufbau : '') + (r.cutM2 ? ' · netto (abzügl. Aussparungen ' + fmt(r.cutM2) + ' m²)' : ''), r.m2, 'm²')); rows += zt('Bodenbeläge', floors.reduce((s, r) => s + r.m2, 0), 'm²'); }
+  const mat = r => belagMatDesc(r.b);
+  if (floors.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Bodenbeläge</strong></td></tr>'; floors.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Bodenbelag') + ' · Platten ' + r.b.tileW + '×' + r.b.tileH + mat(r) + ug(r) + (r.aufbau ? ' · ' + r.aufbau : '') + (r.cutM2 ? ' · netto (abzügl. Aussparungen ' + fmt(r.cutM2) + ' m²)' : ''), r.m2, 'm²')); rows += zt('Bodenbeläge', floors.reduce((s, r) => s + r.m2, 0), 'm²'); }
   const wfH = r => (r.topHr != null) ? ('H links ' + fmt(r.topHl != null ? r.topHl : r.h) + ' / rechts ' + fmt(r.topHr) + ' m') : ('H ' + fmt(r.topHl != null ? r.topHl : (r.b && r.b.top > 0 ? Math.min(r.b.top, r.h) : r.h)) + ' m');
-  if (walls.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Wandflächen</strong></td></tr>'; walls.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Wandbelag') + ' · ' + wfH(r) + ' · Platten ' + r.b.tileW + '×' + r.b.tileH + ug(r) + (r.aufbau ? ' · ' + r.aufbau : '') + (r.fenM2 ? ' · netto (abzügl. Fenster ' + fmt(r.fenM2) + ' m²)' : ''), r.m2, 'm²')); rows += zt('Wandflächen', walls.reduce((s, r) => s + r.m2, 0), 'm²'); }
+  if (walls.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Wandflächen</strong></td></tr>'; walls.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Wandbelag') + ' · ' + wfH(r) + ' · Platten ' + r.b.tileW + '×' + r.b.tileH + mat(r) + ug(r) + (r.aufbau ? ' · ' + r.aufbau : '') + (r.fenM2 ? ' · netto (abzügl. Öffnungen ' + fmt(r.fenM2) + ' m²)' : ''), r.m2, 'm²')); rows += zt('Wandflächen', walls.reduce((s, r) => s + r.m2, 0), 'm²'); }
+  if (nischen.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Nischen (innen geplättelt)</strong></td></tr>'; nischen.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Nische') + ' ' + Math.round(r.w * 100) + '×' + Math.round(r.h * 100) + (r.depth ? '×T' + Math.round(r.depth * 100) : '') + ' cm', r.m2, 'm²')); rows += zt('Nischen', nischen.reduce((s, r) => s + r.m2, 0), 'm²'); }
   const vp = walls.filter(r => r.verputzM2 > 0);
   if (vp.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Verputz / Wandabschluss über Fliesenhöhe</strong></td></tr>'; vp.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Wand') + ' · ' + (r.oben || 'Verputz') + ' über Fliesenhöhe (' + wfH(r) + ' bis H ' + fmt(r.h) + ' m)', r.verputzM2, 'm²')); rows += zt('Verputz / Wandabschluss', vp.reduce((s, r) => s + r.verputzM2, 0), 'm²'); }
   if (anschluesse.length) {
@@ -6610,6 +6694,11 @@ function buildBelagTableHtml(floors, walls, price, anschluesse) {
     const byKat = {}; anschluesse.forEach(r => { byKat[r.kat] = byKat[r.kat] || { label: r.katLabel || r.kat, len: 0 }; byKat[r.kat].len += r.lenM; });
     let i = 0; Object.keys(byKat).forEach(k => { i++; rows += posRow(sec + '.' + i, 'Anschluss ' + byKat[k].label, byKat[k].len, 'lfm'); });
     rows += zt('Anschlüsse', anschluesse.reduce((s, r) => s + r.lenM, 0), 'lfm');
+  }
+  if (extras.length) {   // Weitere Leistungen (Abdichtung/Grundierung/Profile/Fugen/Sockel …), gruppiert je Art
+    sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Weitere Leistungen</strong></td></tr>';
+    const byArt = {}; extras.forEach(r => { byArt[r.art] = byArt[r.art] || { label: r.label, einh: r.einh, menge: 0 }; byArt[r.art].menge += r.menge; });
+    let i = 0; Object.keys(byArt).forEach(k => { i++; rows += posRow(sec + '.' + i, byArt[k].label, byArt[k].menge, byArt[k].einh); });
   }
   return '<table style="width:100%;border-collapse:collapse">' + head + rows + '</table>';
 }
@@ -6633,13 +6722,13 @@ function belagTenderFooter() {
 // Beläge als Ausschreibung (mit leerer Preisspalte) oder Mengenauszug nach Submit Paper übergeben
 function exportBelagToPaper(mode) {
   if (!docScale) { toast('Zuerst den Massstab (1:n) setzen – unten in der Fusszeile.'); return; }
-  const { floors, walls, anschluesse } = belagData();
+  const { floors, walls, anschluesse, nischen, extras } = belagData();
   if (!floors.length && !walls.length && !anschluesse.length) { toast('Noch keine Beläge zum Exportieren.'); return; }
   const price = mode === 'ausschreibung';
   let datum = ''; try { datum = new Date().toLocaleDateString('de-CH'); } catch (_) { }
   const html = '<h1>' + (price ? 'Ausschreibung' : 'Mengenauszug') + '</h1>'
     + belagTenderHeader((docName || '').replace(/\.pdf$/i, ''), datum, docScale.label || '–')
-    + buildBelagTableHtml(floors, walls, price, anschluesse)
+    + buildBelagTableHtml(floors, walls, price, anschluesse, extras, nischen)
     + (price ? belagTenderFooter() + '<p style="color:#777;font-size:12px">Einheitspreise bitte durch den Unternehmer eintragen.</p>' : '');
   const titel = (docName || 'Ausmass').replace(/\.pdf$/i, '') + (price ? ' – Ausschreibung' : ' – Mengenauszug');
   try { localStorage.setItem('submitpaper_import', JSON.stringify({ titel, pages: [{ typ: 'write', html }], ts: Date.now() })); }
@@ -6814,6 +6903,12 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('belagData + Ausschreibung: Anschluss (lfm)', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', anschluss: 'boden', x1: 0, y1: 0, x2: 300, y2: 0 }] }; const d = belagData(); const ok1 = d.anschluesse.length === 1 && Math.abs(d.anschluesse[0].lenM - 3) < 1e-6; const html = buildBelagTableHtml([], [], false, d.anschluesse); return (ok1 && /Anschlüsse/.test(html) && /Anschluss Boden/.test(html) && /lfm/.test(html) && /3,00/.test(html)) ? '' : 'fail'; } finally { annos = sa; docScale = sd; } });
     A('Fliesenhöhe: geplättelt bis top, Verputz darüber', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', wallface: true, height: 2.5, x1: 0, y1: 0, x2: 400, y2: 0, ans: { boden: false, decke: false, wand: 0 }, belag: { tileW: 30, tileH: 30, waste: 0, top: 2.1, oben: 'Verputz' } }] }; const d = belagData(); const w = d.walls[0]; const html = buildBelagTableHtml([], d.walls, false); return (Math.abs(w.m2 - 4 * 2.1) < 1e-6 && Math.abs(w.verputzM2 - 4 * 0.4) < 1e-6 && w.oben === 'Verputz' && /Verputz \/ Wandabschluss/.test(html) && /1,60/.test(html)) ? '' : JSON.stringify({ m2: w.m2, vp: w.verputzM2 }); } finally { annos = sa; docScale = sd; } });
     A('Fliesenhöhe geteilt: links höher als rechts (zwei Zonen)', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', wallface: true, height: 2.5, x1: 0, y1: 0, x2: 400, y2: 0, ans: { boden: false, decke: false, wand: 0 }, belag: { tileW: 30, tileH: 30, waste: 0, top: 2.2, splitT: 0.5, topR: 1.2, oben: 'Verputz' } }] }; const d = belagData(); const w = d.walls[0]; const geplt = 2 * 2.2 + 2 * 1.2, verp = 2 * (2.5 - 2.2) + 2 * (2.5 - 1.2); return (Math.abs(w.m2 - geplt) < 1e-6 && Math.abs(w.verputzM2 - verp) < 1e-6 && Math.abs(w.topHl - 2.2) < 1e-6 && Math.abs(w.topHr - 1.2) < 1e-6) ? '' : JSON.stringify({ m2: w.m2, vp: w.verputzM2, l: w.topHl, r: w.topHr }); } finally { annos = sa; docScale = sd; } });
+    A('Öffnung Tür: Sturz + Laibung, keine Bank; Fläche abgezogen', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', wallface: true, height: 2.5, x1: 0, y1: 0, x2: 400, y2: 0, ans: { boden: false, decke: false, wand: 0 }, fenster: [{ w: 0.9, h: 2, kind: 'tuer' }] }] }; const d = belagData(); const w = d.walls[0], bk = {}; d.anschluesse.forEach(r => bk[r.kat] = (bk[r.kat] || 0) + r.lenM); return (Math.abs(w.m2 - (10 - 1.8)) < 1e-6 && bk.bank === undefined && Math.abs(bk.sturz - 0.9) < 1e-6 && Math.abs(bk.laibung - 4) < 1e-6) ? '' : JSON.stringify({ m2: w.m2, bk }); } finally { annos = sa; docScale = sd; } });
+    A('Nische: innen geplättelt (m² + Laibungskante)', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', wallface: true, height: 2.5, x1: 0, y1: 0, x2: 400, y2: 0, ans: { boden: false, decke: false, wand: 0 }, fenster: [{ w: 0.3, h: 0.6, depth: 0.1, kind: 'nische' }] }] }; const d = belagData(); const w = d.walls[0], nk = d.nischen[0], bk = {}; d.anschluesse.forEach(r => bk[r.kat] = (bk[r.kat] || 0) + r.lenM); return (Math.abs(w.m2 - (10 - 0.18)) < 1e-6 && nk && Math.abs(nk.m2 - (0.18 + 0.18)) < 1e-6 && Math.abs(bk.laibung - 1.8) < 1e-6) ? '' : JSON.stringify({ m2: w.m2, n: nk && nk.m2, bk }); } finally { annos = sa; docScale = sd; } });
+    A('Zusatzleistungen: Abdichtung=Fläche, Sockel=Umfang', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, waste: 0 }, leist: { abdichtung: true, sockel: true }, pts: [[0, 0], [200, 0], [200, 100], [0, 100]] }] }; const d = belagData(); const byArt = {}; d.extras.forEach(r => byArt[r.art] = r); return (Math.abs(byArt.abdichtung.menge - 2) < 1e-6 && byArt.abdichtung.einh === 'm²' && Math.abs(byArt.sockel.menge - 6) < 1e-6 && byArt.sockel.einh === 'lfm') ? '' : JSON.stringify(d.extras.map(e => [e.art, e.menge])); } finally { annos = sa; docScale = sd; } });
+    A('Zusatzleistung mit Mengen-Override', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, waste: 0 }, leist: { silikon: 12.5 }, pts: [[0, 0], [200, 0], [200, 100], [0, 100]] }] }; const d = belagData(); return (d.extras.length === 1 && Math.abs(d.extras[0].menge - 12.5) < 1e-6 && d.extras[0].einh === 'lfm') ? '' : JSON.stringify(d.extras); } finally { annos = sa; docScale = sd; } });
+    A('Material + Weitere Leistungen im Ausschreibungstext', () => { const floors = [{ name: 'Bad', m2: 5, b: { tileW: 30, tileH: 60, material: 'Feinsteinzeug', color: 'anthrazit', pattern: 'Halbverband', fugeColor: 'grau' }, aufbau: '' }]; const extras = [{ art: 'abdichtung', label: 'Verbundabdichtung (Nassbereich)', einh: 'm²', menge: 5 }]; const html = buildBelagTableHtml(floors, [], true, [], extras, []); return (/Feinsteinzeug/.test(html) && /anthrazit/.test(html) && /Halbverband/.test(html) && /Fuge grau/.test(html) && /Weitere Leistungen/.test(html) && /Verbundabdichtung/.test(html)) ? '' : 'fail'; });
+    A('Nischen-Sektion im Ausschreibungstext', () => { const nischen = [{ name: 'Dusche Nische', w: 0.3, h: 0.6, depth: 0.1, m2: 0.36 }]; const html = buildBelagTableHtml([], [], false, [], [], nischen); return (/Nischen \(innen geplättelt\)/.test(html) && /Dusche Nische/.test(html) && /30×60×T10/.test(html) && /0,36/.test(html)) ? '' : 'fail'; });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

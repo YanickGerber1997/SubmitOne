@@ -1523,6 +1523,16 @@ function drawWallFaceLabel(svg, a, pv) {
   if (docScale) txt += ' · ' + (Math.round(wallFaceAreaM2(lenPts, docScale.perPt, h) * 100) / 100).toFixed(2).replace('.', ',') + ' m²';
   const t = svgEl('text', { x: mx + 4, y: my + 14, fill: a.color, 'font-size': 11, 'font-weight': 600, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = txt; svg.appendChild(t);
 }
+// Nach dem Zeichnen eines Wandbelags: auswählen, Inspector öffnen, Höhe-Feld fokussieren (Höhe direkt eintippen)
+function afterWallfaceDraw(pv, a) {
+  if (!a || !a.wallface) return false;
+  sel = { num: pv.num, id: a.id }; setTool('select'); _listTab = 'sel';
+  if (typeof openListPanel === 'function') openListPanel('sel');
+  if (typeof renderList === 'function') renderList();
+  drawAnnos(pv); saveState();
+  const el = document.getElementById('iWfH'); if (el) { try { el.focus(); el.select(); } catch (_) {} }
+  return true;
+}
 
 /* ---------- Auswahl / Griffe ---------- */
 function bbox(a) {
@@ -3068,6 +3078,7 @@ function startDraw(pv, e, p) {
     if (clk && (cur.type === 'line' || cur.type === 'arrow' || cur.type === 'measure' || cur.type === 'dim' || cur.type === 'wall' || cur.type === 'stairs' || cur.type === 'beam')) { startSegDraft(pv, cur); return; }   // Klick = Richtung anpeilen, dann 2. Klick oder L (Wand/Linie/Treppe/Unterzug)
     const b = bbox(cur); if (cur.type !== 'pen' && b.w < 3 && b.h < 3) { const arr = getAnnos(pv.num); arr.splice(arr.indexOf(cur), 1); undoStack.pop(); drawAnnos(pv); return; }
     if (isLineType(cur)) lastLine = { num: pv.num, id: cur.id };   // „L" wirkt auf die zuletzt gezeichnete Linie
+    if (afterWallfaceDraw(pv, cur)) return;   // Wandbelag → gleich Höhe eintippen
     sel = null; drawAnnos(pv); saveState();   // Werkzeug bleibt aktiv → mehrere zeichnen (V/Esc = auswählen)
   };
   document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
@@ -3099,7 +3110,9 @@ function segDraftLength() {   // „L" während des Zeichnens: exakte Länge in 
 function finishSegDraft() {
   if (!segDraft) return; const { pv, a, _onMove } = segDraft; document.removeEventListener('pointermove', _onMove); segDraft = null; hideDrawHud();
   const arr = getAnnos(pv.num); if (Math.hypot(a.x2 - a.x1, a.y2 - a.y1) < 2) { const i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); drawAnnos(pv); return; }
-  lastLine = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
+  lastLine = { num: pv.num, id: a.id };
+  if (afterWallfaceDraw(pv, a)) return;   // Wandbelag → gleich Höhe eintippen
+  drawAnnos(pv); saveState();
 }
 function cancelSegDraft() {
   if (!segDraft) return; const { pv, a, _onMove } = segDraft; document.removeEventListener('pointermove', _onMove);

@@ -6403,6 +6403,7 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
       + '<div class="insp-row"><span class="insp-lbl">Verschnitt</span><input class="insp-num" style="width:60px" id="iWfWa" type="number" min="0" value="' + (b.waste != null ? b.waste : 8) + '"> %</div>'
       + '<div class="insp-row"><span class="insp-lbl">Aufbau</span><input class="insp-num" style="width:120px" id="iWfAu" value="' + (a.aufbau ? a.aufbau.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. bis H 2.10"></div>';
     if (docScale && area) html += '<div class="insp-kv"><span>Platten (inkl. Verschnitt)</span><b>' + tilesForArea(area, b.tileW, b.tileH, b.waste || 0) + ' Stk</b></div>';
+    if (docScale) html += '<div class="insp-row"><span class="insp-lbl">Versatz ↔ / ↕</span><input class="insp-num" style="width:46px" id="wfOffU" type="number" value="' + Math.round((b.offU || 0) * docScale.perPt * 100) + '"> <input class="insp-num" style="width:46px" id="wfOffN" type="number" value="' + Math.round((b.offN || 0) * docScale.perPt * 100) + '"> cm</div>';
     html += '<div class="insp-row"><span class="insp-lbl">Untergrund</span><select class="insp-num" id="wfUg" style="width:128px">' + UNTERGRUND.map(u => '<option value="' + u + '"' + (a.untergrund === u ? ' selected' : '') + '>' + (u || '– wählen –') + '</option>').join('') + '</select></div>';
     const ans = a.ans || (a.ans = { boden: true, decke: true, wand: 2 });   // Anschlüsse (Randfugen) direkt aus der Wand
     html += '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">Anschlüsse (Randfugen)</div>'
@@ -6421,6 +6422,8 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     const nm = body.querySelector('#iWfN'); if (nm) nm.onchange = () => { const v = nm.value.trim(); if (v) a.name = v; else delete a.name; markDirty(); pageViews.forEach(drawAnnos); };
     const bindB = (id, key) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (isFinite(v) && v >= 0) { a.belag[key] = v; markDirty(); pageViews.forEach(drawAnnos); renderList(); } }; };
     bindB('#iWfTW', 'tileW'); bindB('#iWfTH', 'tileH'); bindB('#iWfJ', 'joint'); bindB('#iWfWa', 'waste');
+    const bindOff = (id, key) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (isFinite(v) && docScale) { a.belag[key] = (v / 100) / docScale.perPt; markDirty(); pageViews.forEach(drawAnnos); renderList(); } }; };
+    bindOff('#wfOffU', 'offU'); bindOff('#wfOffN', 'offN');
     const au = body.querySelector('#iWfAu'); if (au) au.onchange = () => { const v = au.value.trim(); if (v) a.aufbau = v; else delete a.aufbau; markDirty(); pageViews.forEach(drawAnnos); };
     const ug = body.querySelector('#wfUg'); if (ug) ug.onchange = () => { if (ug.value) a.untergrund = ug.value; else delete a.untergrund; markDirty(); renderList(); };
     const tgl = (id, key) => { const el = body.querySelector(id); if (el) el.onclick = () => { a.ans[key] = !a.ans[key]; markDirty(); renderList(); pageViews.forEach(drawAnnos); }; };

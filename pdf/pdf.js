@@ -4678,8 +4678,25 @@ function _calcErrorBanner(pagesHtml) {
     + `<strong>⚠ ${n} mögliche${n === 1 ? 'r' : ''} Rechenfehler</strong> automatisch erkannt und rot markiert – bitte prüfen.</p>`;
 }
 // Seite → HTML: Fliesstext + erkannte Tabellen/Kalkulationen (mit Neuberechnung)
-function pdfPageToPaperHtml(items, pageW, colorFn, ulFn, images, strikeFn) {
+// Zweispaltiges Layout erkennen: viel Text nur links bzw. nur rechts der Mitte, wenige Zeilen kreuzen die Mitte → Spaltentrennung (x) oder null
+function detectColumns(lines, pageW) {
+  if (!lines || lines.length < 8) return null;
+  const mid = pageW / 2, m = pageW * 0.03; let leftOnly = 0, rightOnly = 0, cross = 0;
+  for (const L of lines) { const x = L.items[0].x, mx = Math.max(...L.items.map(it => it.x + it.w)); if (mx < mid + m) leftOnly++; else if (x > mid - m) rightOnly++; else cross++; }
+  const t = lines.length;
+  return (leftOnly >= t * 0.3 && rightOnly >= t * 0.3 && cross < t * 0.15) ? mid : null;
+}
+function pdfPageToPaperHtml(items, pageW, colorFn, ulFn, images, strikeFn, noCol) {
   images = images || [];
+  if (!noCol) {   // mehrspaltig? → jede Spalte einzeln von oben nach unten (nicht global nach y zickzacken)
+    const split = detectColumns(itemsToLines(items), pageW);
+    if (split) {
+      const cen = it => it.x + (it.w || 0) / 2;
+      const L = items.filter(it => cen(it) < split), R = items.filter(it => cen(it) >= split);
+      const li = images.filter(im => (im.x + (im.w || 0) / 2) < split), ri = images.filter(im => (im.x + (im.w || 0) / 2) >= split);
+      return pdfPageToPaperHtml(L, pageW, colorFn, ulFn, li, strikeFn, true) + pdfPageToPaperHtml(R, pageW, colorFn, ulFn, ri, strikeFn, true);
+    }
+  }
   const imgTop = () => images.map(im => im.html).join('');   // Bilder oben (wenn Interleave mit Tabellen zu komplex)
   const lines = itemsToLines(items), cols = numberColumns(lines, pageW);
   if (!cols.length) {   // keine Zahlenspalten → Fliesstext, aber ggf. allgemeine Text-Tabellen herausschneiden
@@ -4745,7 +4762,7 @@ async function extractPageImages(page, cv, pageW, pageH) {
       const swp = Math.min(cv.width - sxp, Math.round(bx.w * k)), shp = Math.min(cv.height - syp, Math.round(bx.h * k));
       if (swp < 8 || shp < 8) continue;
       let url; try { const ic = document.createElement('canvas'); ic.width = swp; ic.height = shp; ic.getContext('2d').drawImage(cv, sxp, syp, swp, shp, 0, 0, swp, shp); url = ic.toDataURL('image/jpeg', 0.82); } catch (_) { continue; }
-      out.push({ y: bx.y, h: bx.h, html: `<p style="margin:6px 0"><img src="${url}" style="max-width:100%;width:${Math.round(bx.w * 96 / 72)}px" alt=""></p>` });
+      out.push({ x: bx.x, w: bx.w, y: bx.y, h: bx.h, html: `<p style="margin:6px 0"><img src="${url}" style="max-width:100%;width:${Math.round(bx.w * 96 / 72)}px" alt=""></p>` });
     }
   }
   return out;
@@ -7291,6 +7308,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('PDF→Paper: gemischt fett innerhalb Absatz (Runs)', () => { const b = { text: 'Sehr wichtig!', lines: [{ str: 'Sehr wichtig!', x: 0, maxx: 120, runs: [{ str: 'Sehr ', bold: false, italic: false, ff: 'Arial,sans-serif' }, { str: 'wichtig', bold: true, italic: false, ff: 'Arial,sans-serif' }, { str: '!', bold: false, italic: false, ff: 'Arial,sans-serif' }] }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', bold: false, italic: false, x: 0, right: 120 }; const html = blockToParaHtml(b, 12, 500); return (/Sehr <strong>wichtig<\/strong>!/.test(html) && !/<strong>Sehr/.test(html)) ? '' : html; });
     A('Textfarbe: dominanter Farbwert erkannt, uneinheitlich → null', () => { const W = 100, H = 20, d = new Uint8ClampedArray(W * H * 4).fill(255); for (let y = 8; y <= 12; y++) for (let x = 0; x < W; x++) { const o = (y * W + x) * 4; d[o] = 0; d[o + 1] = 0; d[o + 2] = 255; d[o + 3] = 255; } const col = sampleInkColor({ width: W, height: H, _cData: d }, { x: 0, y: 0, w: 100, h: 20 }, 100); const d2 = new Uint8ClampedArray(W * H * 4); for (let p = 0; p < W * H; p++) { const o = p * 4, v = (p * 37) % 256; d2[o] = v; d2[o + 1] = 255 - v; d2[o + 2] = (p * 53) % 256; d2[o + 3] = 255; } const col2 = sampleInkColor({ width: W, height: H, _cData: d2 }, { x: 0, y: 0, w: 100, h: 20 }, 100); return (/rgb\(0,0,25[0-9]\)/.test(col) && col2 === null) ? '' : JSON.stringify({ col, col2 }); });
     A('Unterstreichung am Pixelbild erkennen', () => { const W = 20, H = 10, data = new Uint8ClampedArray(W * H * 4).fill(255); for (let px = 2; px <= 18; px++) { const o = (6 * W + px) * 4; data[o] = 0; data[o + 1] = 0; data[o + 2] = 0; } const cv = { width: W, height: H, _cData: data }, yes = sampleUnderline(cv, 2, 18, 5, 20); const cv2 = { width: W, height: H, _cData: new Uint8ClampedArray(W * H * 4).fill(255) }, no = sampleUnderline(cv2, 2, 18, 5, 20); return (yes === true && no === false) ? '' : JSON.stringify({ yes, no }); });
+    A('Zweispalten-Layout erkannt, einspaltig nicht', () => { const mkL = (x, mx) => ({ items: [{ x, w: mx - x }] }); const two = []; for (let i = 0; i < 6; i++) two.push(mkL(20, 240)); for (let i = 0; i < 6; i++) two.push(mkL(310, 530)); const one = []; for (let i = 0; i < 12; i++) one.push(mkL(20, 530)); return (detectColumns(two, 560) === 280 && detectColumns(one, 560) === null) ? '' : JSON.stringify({ two: detectColumns(two, 560), one: detectColumns(one, 560) }); });
     A('Text-Tabelle: 3×2 Raster erkannt, Prosa nicht', () => { const mk = (y, cs) => ({ y, size: 10, items: cs.map(c => ({ x: c[0], y, w: c[2] || 30, h: 12, size: 10, str: c[1] })) }); const tab = [mk(0, [[50, 'Name'], [200, 'Wert']]), mk(20, [[50, 'Apfel'], [200, '1']]), mk(40, [[50, 'Birne'], [200, '2']])]; const prose = [mk(0, [[50, 'Ein normaler Satz', 200]]), mk(20, [[50, 'noch ein Satz hier', 200]]), mk(40, [[50, 'und ein dritter Satz', 200]])]; const t1 = detectTextTables(tab), t2 = detectTextTables(prose); return (t1.length === 1 && t1[0].cols.length === 2 && t1[0].first === 0 && t1[0].last === 2 && t2.length === 0) ? '' : JSON.stringify({ t1, t2 }); });
     A('Text-Tabelle → HTML mit Zellen', () => { const mk = (y, cs) => ({ y, size: 10, items: cs.map(c => ({ x: c[0], y, w: 30, h: 12, size: 10, str: c[1] })) }); const lines = [mk(0, [[50, 'Name'], [200, 'Wert']]), mk(20, [[50, 'Apfel'], [200, '1']]), mk(40, [[50, 'Birne'], [200, '2']])]; const html = textTableHtml(lines, 0, 2, [50, 200]); return (/<table/.test(html) && (html.match(/<tr>/g) || []).length === 3 && /<td[^>]*>Apfel<\/td>/.test(html) && /<td[^>]*>1<\/td>/.test(html)) ? '' : html; });
     A('PDF→Paper: Bilder nach y einsortiert (Logo oben)', () => { const blk = { text: 'Text', lines: [{ str: 'Text', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 100, h: 15 }; const imgs = [{ y: 5, h: 40, html: '<p><img src="x" alt=""></p>' }]; const html = blocksToPaperHtml([blk], null, null, imgs); return (html.indexOf('<img') >= 0 && html.indexOf('<img') < html.indexOf('Text')) ? '' : html; });

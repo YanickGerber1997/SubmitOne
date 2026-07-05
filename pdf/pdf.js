@@ -2336,6 +2336,28 @@ function areaLabel(pts) {
   if (docScale) { const m2 = apt * docScale.perPt * docScale.perPt; return m2 >= 0.01 ? (Math.round(m2 * 100) / 100).toString().replace('.', ',') + ' m²' : Math.round(m2 * 1e4) + ' cm²'; }
   const cm2 = apt * PT2MM * PT2MM / 100; return Math.round(cm2) + ' cm² (Papier)';
 }
+/* ============================================================
+   Belag / Platten – reiner Rechenkern (Plattenspiegel + Wandfläche)
+   Wird von den neuen Werkzeugen „Bodenbelag" und „Wandbelag" genutzt.
+   Rein & headless-getestet; keine DOM-Abhängigkeit.
+   ============================================================ */
+// Wandfläche in m²: Länge (PDF-Punkte) × Massstab (m/Punkt) × Höhe (m)
+function wallFaceAreaM2(lenPts, perPt, heightM) { return Math.max(0, lenPts * perPt) * Math.max(0, heightM); }
+// Plattenspiegel-Raster: Anzahl Spalten/Zeilen, die eine Fläche B×H (m) mit Plattenmass (cm) + Fuge (mm) belegen
+function tilePlan(widthM, heightM, tileWcm, tileHcm, jointMm) {
+  const jw = Math.max(0, jointMm || 0) / 1000;
+  const wu = tileWcm / 100 + jw, hu = tileHcm / 100 + jw;
+  const cols = (wu > 0 && widthM > 0) ? Math.max(1, Math.ceil((widthM - jw) / wu)) : 0;
+  const rows = (hu > 0 && heightM > 0) ? Math.max(1, Math.ceil((heightM - jw) / hu)) : 0;
+  const unitM2 = Math.round((tileWcm / 100) * (tileHcm / 100) * 1e4) / 1e4;
+  return { cols, rows, count: cols * rows, unitM2 };
+}
+// Netto-Plattenbedarf für eine Fläche (m²) inkl. Verschnitt (%), aufgerundet auf ganze Platten
+function tilesForArea(areaM2, tileWcm, tileHcm, wastePct) {
+  const unit = (tileWcm / 100) * (tileHcm / 100);
+  if (unit <= 0 || areaM2 <= 0) return 0;
+  return Math.ceil((areaM2 / unit) * (1 + Math.max(0, wastePct || 0) / 100));
+}
 function areaClick(pv, p) {
   if (!areaDraft || areaDraft.pv !== pv) {
     cancelArea(); pushUndo();
@@ -6256,6 +6278,10 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     });
     A('_calcErrorBanner zählt Rechenfehler', () => { const b = _calcErrorBanner(['<td style="background:#ffd6d6">x</td>', 'ok', '<span style="background:#ffd6d6"></span>']); return (/2 mögliche/.test(b) && /Rechenfehler/.test(b)) ? '' : b; });
     A('_calcErrorBanner leer ohne Fehler', () => _calcErrorBanner(['<p>ok</p>', 'nix']) === '' ? '' : 'nicht leer');
+    A('wallFaceAreaM2 = Länge×Höhe', () => Math.abs(wallFaceAreaM2(1000, 0.005, 2.5) - 12.5) < 1e-6 ? '' : 'fail');   // 1000pt×0.005=5m, ×2.5m = 12.5m²
+    A('tilePlan 3×2m / 60×60 / Fuge 3mm → 5×4=20', () => { const p = tilePlan(3, 2, 60, 60, 3); return (p.cols === 5 && p.rows === 4 && p.count === 20 && Math.abs(p.unitM2 - 0.36) < 1e-9) ? '' : JSON.stringify(p); });
+    A('tilePlan exakt aufgehend 2.4m / 60cm ohne Fuge → 4', () => { const p = tilePlan(2.4, 0.6, 60, 60, 0); return (p.cols === 4 && p.rows === 1) ? '' : JSON.stringify(p); });
+    A('tilesForArea inkl. 10% Verschnitt', () => tilesForArea(10, 60, 60, 10) === Math.ceil((10 / 0.36) * 1.1) ? '' : 'fail');
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

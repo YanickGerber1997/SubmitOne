@@ -4327,14 +4327,16 @@ function fontNameToCss(name, family) {
   return 'Arial,Helvetica,sans-serif';
 }
 function detectFontMeta(page, fontName, family) {
-  let nm = '';
-  try { const f = page && page.commonObjs.get(fontName); if (f && f.name) nm = f.name; } catch (_) { }
+  let nm = '', loaded = '';
+  try { const co = page && page.commonObjs, f = co && (typeof co.has !== 'function' || co.has(fontName)) ? co.get(fontName) : null; if (f) { if (f.name) nm = f.name; if (f.loadedName) loaded = f.loadedName; } } catch (_) { }
   const s = ((nm || '') + ' ' + (family || '')).toLowerCase();
   const bold = /bold|black|heavy|semibold|demibold|-bd|\bbd\b|extrab/.test(s);
   const italic = /italic|oblique|-it\b|\bit\b/.test(s);
   const mono = /mono|courier|consol|typewriter/.test(s) || family === 'monospace';
   const serif = !mono && (/times|roman|georgia|minion|garamond|antiqua|palatino|cambria|caslon|constantia/.test(s) || family === 'serif');   // NICHT bare 'serif' (matcht sonst in 'sans-serif')
-  return { fam: mono ? 'courier' : serif ? 'times' : 'helv', bold: !!bold, italic: !!italic, ff: fontNameToCss(nm, family) };
+  const mapped = fontNameToCss(nm, family);
+  // loaded = von pdf.js registrierte EINGEBETTETE Originalschrift → zuerst nutzen (wie Acrobat), unsere Zuordnung nur als Fallback
+  return { fam: mono ? 'courier' : serif ? 'times' : 'helv', bold: !!bold, italic: !!italic, ff: loaded ? '"' + loaded + '",' + mapped : mapped, ffMap: mapped, loaded };
 }
 // Textstücke der Seite mit Kästchen in Seitenkoordinaten (y-unten, Oberkante) – einmal berechnet, inkl. erkannter Schrift
 async function ensureTextItems(pv) {
@@ -4406,7 +4408,7 @@ async function pageTextItemsFor(page, pageH) {   // Textstücke einer beliebigen
       if (!it.str || !it.str.trim()) continue;
       const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10, base = pageH - tr[5], top = base - fs * 0.82;
       const fm = detectFontMeta(page, it.fontName, styles[it.fontName] && styles[it.fontName].fontFamily);
-      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic, ff: fm.ff });
+      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic, ff: fm.ffMap });   // Paper: portable Schriftzuordnung (kein pdf.js-loadedName)
     }
   } catch (_) { }
   return items;
@@ -7143,6 +7145,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('NPK-Position + Bemerkung im Ausschreibungstext', () => { const floors = [{ name: 'Bad', m2: 5, b: { tileW: 30, tileH: 30 }, a: { npk: '663.211', bemerkung: 'rutschhemmend R10' }, aufbau: '' }]; const html = buildBelagTableHtml(floors, [], false); return (/NPK 663\.211/.test(html) && /rutschhemmend R10/.test(html)) ? '' : 'fail'; });
     A('Font-Namen → echte CSS-Familie', () => { const ar = fontNameToCss('ABCDEF+Arial-BoldMT', ''), ca = fontNameToCss('Calibri', ''), ti = fontNameToCss('TimesNewRomanPSMT', ''), co = fontNameToCss('Courier', ''), ve = fontNameToCss('Verdana', ''); return (/^Arial/.test(ar) && /Calibri/.test(ca) && /Times New Roman/.test(ti) && /Courier New/.test(co) && /Verdana/.test(ve)) ? '' : JSON.stringify({ ar, ca, ti, co, ve }); });
     A('detectFontMeta: bold+italic + ff aus Fontnamen', () => { const stub = { commonObjs: { get: () => ({ name: 'Arial-BoldItalicMT' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (m.bold && m.italic && m.fam === 'helv' && /Arial/.test(m.ff)) ? '' : JSON.stringify(m); });
+    A('detectFontMeta: eingebettete Schrift (loadedName) zuerst, Mapping als Fallback', () => { const stub = { commonObjs: { has: () => true, get: () => ({ name: 'Arial', loadedName: 'g_d0_f1' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (/^"g_d0_f1",/.test(m.ff) && /Arial/.test(m.ff) && m.loaded === 'g_d0_f1' && /Arial/.test(m.ffMap) && !/g_d0_f1/.test(m.ffMap)) ? '' : JSON.stringify(m); });
     A('PDF→Paper: Absatz übernimmt Schriftfamilie/Grösse', () => { const html = blockToParaHtml({ text: 'Hallo', lines: [{ str: 'Hallo', x: 0, maxx: 50 }], size: 12, lh: 15, fam: 'times', ff: '"Times New Roman",Times,serif', bold: false, italic: false, x: 0, right: 50 }, 12, 500); return (/font-family:'Times New Roman'/.test(html) && /font-size:15px/.test(html) && /<p /.test(html) && />Hallo</.test(html)) ? '' : html; });
     A('PDF→Paper: gemischt fett innerhalb Absatz (Runs)', () => { const b = { text: 'Sehr wichtig!', lines: [{ str: 'Sehr wichtig!', x: 0, maxx: 120, runs: [{ str: 'Sehr ', bold: false, italic: false, ff: 'Arial,sans-serif' }, { str: 'wichtig', bold: true, italic: false, ff: 'Arial,sans-serif' }, { str: '!', bold: false, italic: false, ff: 'Arial,sans-serif' }] }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', bold: false, italic: false, x: 0, right: 120 }; const html = blockToParaHtml(b, 12, 500); return (/Sehr <strong>wichtig<\/strong>!/.test(html) && !/<strong>Sehr/.test(html)) ? '' : html; });
     A('Unterstreichung am Pixelbild erkennen', () => { const W = 20, H = 10, data = new Uint8ClampedArray(W * H * 4).fill(255); for (let px = 2; px <= 18; px++) { const o = (6 * W + px) * 4; data[o] = 0; data[o + 1] = 0; data[o + 2] = 0; } const cv = { width: W, height: H, _cData: data }, yes = sampleUnderline(cv, 2, 18, 5, 20); const cv2 = { width: W, height: H, _cData: new Uint8ClampedArray(W * H * 4).fill(255) }, no = sampleUnderline(cv2, 2, 18, 5, 20); return (yes === true && no === false) ? '' : JSON.stringify({ yes, no }); });

@@ -2367,6 +2367,14 @@ function tilesForArea(areaM2, tileWcm, tileHcm, wastePct) {
   if (unit <= 0 || areaM2 <= 0) return 0;
   return Math.ceil((areaM2 / unit) * (1 + Math.max(0, wastePct || 0) / 100));
 }
+// Startpunkt des Plattenrasters aus Bounding-Box + gewählter Ecke (center = mittig für symmetrische Randschnitte)
+function tileStartPoint(minX, minY, maxX, maxY, corner, stepX, stepY) {
+  if (corner === 'tr') return [maxX, minY];
+  if (corner === 'bl') return [minX, maxY];
+  if (corner === 'br') return [maxX, maxY];
+  if (corner === 'center') return [(minX + maxX) / 2 - (stepX || 0) / 2, (minY + maxY) / 2 - (stepY || 0) / 2];
+  return [minX, minY];   // 'tl' = Standard oben links
+}
 const DEFAULT_BELAG = { tileW: 60, tileH: 60, joint: 3, waste: 8, name: '' };   // Standard-Plattenmass 60×60, Fuge 3 mm, 8 % Verschnitt
 let _tileClip = 0;   // eindeutige clipPath-IDs fürs Plattenraster
 // Plattenspiegel in eine Flächen-Gruppe zeichnen (Raster ab Startpunkt, auf das Polygon geclippt) – braucht Massstab
@@ -6142,7 +6150,9 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
         + '<div class="insp-row"><span class="insp-lbl">Platte B×H</span><input class="insp-num" style="width:50px" id="iTW" type="number" min="1" value="' + b.tileW + '"> × <input class="insp-num" style="width:50px" id="iTH" type="number" min="1" value="' + b.tileH + '"> cm</div>'
         + '<div class="insp-row"><span class="insp-lbl">Fuge</span><input class="insp-num" style="width:60px" id="iJ" type="number" min="0" value="' + (b.joint != null ? b.joint : 3) + '"> mm</div>'
         + '<div class="insp-row"><span class="insp-lbl">Verschnitt</span><input class="insp-num" style="width:60px" id="iWa" type="number" min="0" value="' + (b.waste != null ? b.waste : 8) + '"> %</div>'
-        + '<div class="insp-row"><span class="insp-lbl">Aufbau</span><input class="insp-num" style="width:120px" id="iAu" value="' + (a.aufbau ? a.aufbau.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. OK FB / roher Boden"></div>';
+        + '<div class="insp-row"><span class="insp-lbl">Aufbau</span><input class="insp-num" style="width:120px" id="iAu" value="' + (a.aufbau ? a.aufbau.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. OK FB / roher Boden"></div>'
+        + '<div class="insp-row"><span class="insp-lbl">Start (von wo)</span><span id="iStart" style="display:inline-flex;gap:3px">'
+        + ['tl:◰:oben links', 'tr:◳:oben rechts', 'bl:◱:unten links', 'br:◲:unten rechts', 'center:⊹:mittig (symmetrisch)'].map(s => { const [c, ic, ti] = s.split(':'); return '<button class="insp-mini' + (b.startCorner === c ? ' on' : (!b.startCorner && c === 'tl' ? ' on' : '')) + '" data-c="' + c + '" title="' + ti + '">' + ic + '</button>'; }).join('') + '</span></div>';
       if (docScale && m2) bh += '<div class="insp-kv"><span>Platten (inkl. Verschnitt)</span><b>' + tilesForArea(m2, b.tileW, b.tileH, b.waste || 0) + ' Stk</b></div>';
       body.insertAdjacentHTML('beforeend', bh);
     }
@@ -6153,6 +6163,12 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
       const bindNum = (id, key) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (isFinite(v) && v >= 0) { a.belag[key] = v; markDirty(); pageViews.forEach(drawAnnos); renderList(); } }; };
       bindNum('#iTW', 'tileW'); bindNum('#iTH', 'tileH'); bindNum('#iJ', 'joint'); bindNum('#iWa', 'waste');
       const au = body.querySelector('#iAu'); if (au) au.onchange = () => { const v = au.value.trim(); if (v) a.aufbau = v; else delete a.aufbau; markDirty(); pageViews.forEach(drawAnnos); };
+      body.querySelectorAll('#iStart .insp-mini').forEach(btn => btn.onclick = () => {
+        const pts = a.pts; let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9; for (const q of pts) { if (q[0] < minX) minX = q[0]; if (q[0] > maxX) maxX = q[0]; if (q[1] < minY) minY = q[1]; if (q[1] > maxY) maxY = q[1]; }
+        const jw = Math.max(0, a.belag.joint || 0) / 1000, perPt = docScale ? docScale.perPt : 1, stepX = ((a.belag.tileW / 100) + jw) / perPt, stepY = ((a.belag.tileH / 100) + jw) / perPt;
+        a.belag.startCorner = btn.dataset.c; a.belag.start = tileStartPoint(minX, minY, maxX, maxY, btn.dataset.c, stepX, stepY);
+        markDirty(); pageViews.forEach(drawAnnos); renderList();
+      });
     }
     const tb = document.createElement('button'); tb.className = 'insp-btn'; tb.textContent = a.belag ? '⌗ Plattenspiegel entfernen' : '⌗ Plattenspiegel hinzufügen';
     tb.onclick = () => { pushUndo(); if (a.belag) delete a.belag; else { a.belag = { ...DEFAULT_BELAG }; if (a.color === '#4f7a3c' || !a.color) a.color = '#b5651d'; } markDirty(); pageViews.forEach(drawAnnos); renderList(); };
@@ -6390,6 +6406,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('tilePlan exakt aufgehend 2.4m / 60cm ohne Fuge → 4', () => { const p = tilePlan(2.4, 0.6, 60, 60, 0); return (p.cols === 4 && p.rows === 1) ? '' : JSON.stringify(p); });
     A('tilesForArea inkl. 10% Verschnitt', () => tilesForArea(10, 60, 60, 10) === Math.ceil((10 / 0.36) * 1.1) ? '' : 'fail');
     A('DEFAULT_BELAG Standard 60×60 / 3mm / 8%', () => (DEFAULT_BELAG.tileW === 60 && DEFAULT_BELAG.tileH === 60 && DEFAULT_BELAG.joint === 3 && DEFAULT_BELAG.waste === 8) ? '' : 'fail');
+    A('tileStartPoint Ecken + Mitte', () => { const tl = tileStartPoint(0, 0, 100, 80, 'tl', 10, 10), tr = tileStartPoint(0, 0, 100, 80, 'tr', 10, 10), br = tileStartPoint(0, 0, 100, 80, 'br', 10, 10), ce = tileStartPoint(0, 0, 100, 80, 'center', 10, 10); return (tl[0] === 0 && tl[1] === 0 && tr[0] === 100 && tr[1] === 0 && br[0] === 100 && br[1] === 80 && ce[0] === 45 && ce[1] === 35) ? '' : 'fail'; });
     A('belagData sammelt Boden + Wand mit m²', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, joint: 3, waste: 8 }, pts: [[0, 0], [100, 0], [100, 100], [0, 100]] }, { type: 'measure', wallface: true, height: 2.5, belag: { tileW: 60, tileH: 60, waste: 8 }, x1: 0, y1: 0, x2: 100, y2: 0 }] }; const d = belagData(); return (d.floors.length === 1 && Math.abs(d.floors[0].m2 - 1) < 1e-6 && d.walls.length === 1 && Math.abs(d.walls[0].m2 - 2.5) < 1e-6) ? '' : JSON.stringify({ f: d.floors.length, w: d.walls.length, fm: d.floors[0] && d.floors[0].m2, wm: d.walls[0] && d.walls[0].m2 }); } finally { annos = sa; docScale = sd; } });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };

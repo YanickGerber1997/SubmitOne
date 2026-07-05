@@ -4490,8 +4490,13 @@ function pageLeftMargin(blocks) { const r = []; blocks.forEach(b => (b.lines || 
 // Ausrichtung eines Absatzes aus seiner Lage zwischen linkem und rechtem Textrand ableiten
 function blockAlign(lines, pageLeft, pageRight) {
   if (!lines || !lines.length || !(pageRight > pageLeft)) return '';
+  const span = pageRight - pageLeft;
+  if (lines.length >= 3) {   // Blocksatz: alle Zeilen ausser der letzten reichen bündig an BEIDE Ränder
+    let full = 0; for (let i = 0; i < lines.length - 1; i++) { const l = lines[i]; if ((l.x - pageLeft) < span * 0.06 && (pageRight - (l.maxx != null ? l.maxx : l.x)) < span * 0.06) full++; }
+    if (full >= lines.length - 1) return 'justify';
+  }
   const lmin = Math.min(...lines.map(l => l.x)), rmax = Math.max(...lines.map(l => l.maxx != null ? l.maxx : l.x));
-  const span = pageRight - pageLeft, lg = lmin - pageLeft, rg = pageRight - rmax;
+  const lg = lmin - pageLeft, rg = pageRight - rmax;
   if (lg > span * 0.15 && Math.abs(lg - rg) < span * 0.12) return 'center';
   if (lg > span * 0.25 && rg < span * 0.05) return 'right';
   return '';
@@ -7220,6 +7225,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('PDF→Paper: Aufzählung → echte <ul>', () => { const html = blocksToPaperHtml([{ text: '- A\n- B', lines: [{ str: '- Apfel', x: 0, maxx: 60 }, { str: '- Birne', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 20 }]); return (/<ul/.test(html) && /<li>Apfel<\/li>/.test(html) && /<li>Birne<\/li>/.test(html)) ? '' : html; });
     A('PDF→Paper: nummerierte Liste → <ol start>', () => { const html = blocksToPaperHtml([{ text: '2. X\n3. Y', lines: [{ str: '2. Erstens', x: 0, maxx: 60 }, { str: '3. Zweitens', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 20 }]); return (/<ol[^>]*start="2"/.test(html) && /<li>Erstens<\/li>/.test(html) && /<li>Zweitens<\/li>/.test(html)) ? '' : html; });
     A('Ausrichtung: zentriert / rechts / links erkennen', () => { const cen = blockAlign([{ x: 200, maxx: 400 }], 100, 500), rig = blockAlign([{ x: 380, maxx: 498 }], 100, 500), lef = blockAlign([{ x: 102, maxx: 480 }], 100, 500); return (cen === 'center' && rig === 'right' && lef === '') ? '' : JSON.stringify({ cen, rig, lef }); });
+    A('Ausrichtung: Blocksatz (justify) erkennen', () => { const just = blockAlign([{ x: 100, maxx: 499 }, { x: 101, maxx: 498 }, { x: 100, maxx: 300 }], 100, 500); const ragged = blockAlign([{ x: 100, maxx: 460 }, { x: 100, maxx: 420 }, { x: 100, maxx: 300 }], 100, 500); return (just === 'justify' && ragged === '') ? '' : JSON.stringify({ just, ragged }); });
     A('PDF→Paper: zentrierter Absatz bekommt text-align:center', () => { const html = blockToParaHtml({ text: 'Titel', lines: [{ str: 'Titel', x: 210, maxx: 390 }], size: 18, lh: 22, fam: 'helv', ff: 'Arial,sans-serif', x: 210, right: 390 }, 12, 500, 0, 100); return /text-align:center/.test(html) ? '' : html; });
     A('Verlegemuster-Reihenversatz (Halbverband/Drittelverband/Kreuzfuge)', () => { const hv = [0, 1, 2, 3].map(r => tileRowShift('Halbverband', r)), dv = [0, 1, 2, 3].map(r => tileRowShift('Drittelverband', r)), kf = [0, 1, 2].map(r => tileRowShift('Kreuzfuge', r)); return (Math.abs(hv[0]) < 1e-9 && Math.abs(hv[1] - 0.5) < 1e-9 && Math.abs(hv[2]) < 1e-9 && Math.abs(hv[3] - 0.5) < 1e-9 && Math.abs(dv[1] - 1 / 3) < 1e-9 && Math.abs(dv[2] - 2 / 3) < 1e-9 && Math.abs(dv[3]) < 1e-9 && kf.every(v => v === 0)) ? '' : JSON.stringify({ hv, dv, kf }); });
   } finally { docScale = saved; }

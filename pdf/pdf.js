@@ -1550,15 +1550,15 @@ function drawWallFaceElevation(svg, a, pv) {
   const gg = svgEl('g', { 'clip-path': 'url(#' + cid + ')' });
   if (stepU > 1) for (let d = stepU; d < len; d += stepU) gg.appendChild(svgEl('line', { x1: (A[0] + ux * d).toFixed(2), y1: (A[1] + uy * d).toFixed(2), x2: (D[0] + ux * d).toFixed(2), y2: (D[1] + uy * d).toFixed(2), stroke: col, 'stroke-width': 0.5, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
   if (stepN > 1) for (let d = stepN; d < Hpts; d += stepN) gg.appendChild(svgEl('line', { x1: (A[0] + nx * d).toFixed(2), y1: (A[1] + ny * d).toFixed(2), x2: (B[0] + nx * d).toFixed(2), y2: (B[1] + ny * d).toFixed(2), stroke: col, 'stroke-width': 0.5, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
-  // Fenster (a.fenster: [{t: 0..1 Position entlang der Wand, w, h, sill}]) als Aussparung in der Ansicht
-  for (const f of (a.fenster || [])) {
+  // Fenster (a.fenster: [{t: 0..1 Position entlang der Wand, w, h, sill}]) als Aussparung in der Ansicht (ziehbar)
+  (a.fenster || []).forEach((f, fi) => {
     const fw = (f.w || 1) / perPt, fh = (f.h || 1) / perPt, sill = (f.sill || 0.9) / perPt, cU = (f.t != null ? f.t : 0.5) * len;
     const bx = A[0] + ux * (cU - fw / 2) + nx * sill, by = A[1] + uy * (cU - fw / 2) + ny * sill;
     const fq = [[bx, by], [bx + ux * fw, by + uy * fw], [bx + ux * fw + nx * fh, by + uy * fw + ny * fh], [bx + nx * fh, by + ny * fh]].map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
-    gg.appendChild(svgEl('polygon', { points: fq, fill: '#dfe8f2', stroke: col, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
+    gg.appendChild(svgEl('polygon', { points: fq, fill: '#dfe8f2', stroke: col, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke', 'data-id': a.id, 'data-fwin': fi, style: 'cursor:move' }));
     const wcx = bx + ux * fw / 2 + nx * fh / 2, wcy = by + uy * fw / 2 + ny * fh / 2;   // Fenstermass B×H (cm) mittig ins Fenster
     const wt = svgEl('text', { x: wcx.toFixed(2), y: wcy.toFixed(2), fill: col, 'font-size': 8, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: '#dfe8f2', 'stroke-width': 2 }); wt.textContent = Math.round((f.w || 1) * 100) + '×' + Math.round((f.h || 1) * 100); gg.appendChild(wt);
-  }
+  });
   g.appendChild(gg); svg.appendChild(g);
 }
 // Nach dem Zeichnen eines Wandbelags/Anschlusses: auswählen, Inspector öffnen (bei Wandbelag Höhe-Feld fokussieren)
@@ -2158,6 +2158,7 @@ function onPointerDown(pv, e) {
     const revAttr = e.target.getAttribute && e.target.getAttribute('data-rev');   // Klick auf eine Laibungs-Schicht im Grundriss → direkt editieren
     if (revAttr && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; zoomToReveal(e.target); drawAnnos(pv); openRevealLayerPop(pv, oo, revAttr, e.clientX, e.clientY); return; } }   // Laibung anklicken → zentriert auf die Schicht zoomen (Kanten gross & greifbar)
     if (e.target.getAttribute && e.target.getAttribute('data-frame') && idAttr) { const oo = findAnno(pv.num, +idAttr); if (oo && oo.type === 'opening') { sel = { num: pv.num, id: oo.id }; zoomToClick(e.clientX, e.clientY); drawAnnos(pv); openFramePop(pv, oo, e.clientX, e.clientY); return; } }   // Klick auf Rahmen → direkt editieren
+    { const fwAttr = e.target.getAttribute && e.target.getAttribute('data-fwin'); if (fwAttr != null && idAttr) { startWinDrag(pv, e, +idAttr, +fwAttr); return; } }   // Fenster in der Wand-Ansicht ziehen (Position + Höhe)
     if (e.target.getAttribute && e.target.getAttribute('data-ah') && idAttr) { startAngleDrag(pv, e, +idAttr); return; }   // offenen Flügel ziehen → Öffnungswinkel
     { const rt = e.target.getAttribute && e.target.getAttribute('data-revt'); if (rt && idAttr) { startRevealLapDrag(pv, e, +idAttr, rt); return; } }   // Laibung-Lappung (Rahmen sichtbar) per Maus ziehen
     { const ow = e.target.getAttribute && e.target.getAttribute('data-ow'); if (ow && idAttr) { startOpeningWidthDrag(pv, e, +idAttr, +ow); return; } }   // am kurzen Ende ziehen = Breite, Klick = auswählen
@@ -3918,6 +3919,21 @@ function makeWallFromFace(a) {
   return { wall: w, openings: ops };
 }
 function wallfaceToWall(a, pageNum) { pushUndo(); const { wall, openings } = makeWallFromFace(a); pushAnno(pageNum, wall); for (const o of openings) pushAnno(pageNum, o); sel = { num: pageNum, id: wall.id }; saveState(); return wall; }
+// Fenster in der Wand-Ansicht (Elevation) mit der Maus ziehen: entlang der Wand = Position (t), quer = Brüstung (sill)
+function startWinDrag(pv, e, annoId, wi) {
+  const a = findAnno(pv.num, annoId); if (!a || !a.wallface || !a.fenster || !a.fenster[wi] || !docScale) return;
+  const f = a.fenster[wi], perPt = docScale.perPt;
+  const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux, gap = 8 / pv.scale;
+  sel = { num: pv.num, id: annoId }; pushUndo(); let moved = false;
+  const move = ev => { moved = true; const q = evtToPage(pv, ev), rx = q.x - a.x1, ry = q.y - a.y1;
+    f.t = Math.max(0, Math.min(1, (rx * ux + ry * uy) / len));
+    const fhpts = (f.h || 1.2) / perPt, sillPts = (rx * nx + ry * ny) - gap - fhpts / 2;
+    f.sill = Math.max(0, Math.round(sillPts * perPt * 100) / 100);
+    requestDraw(pv);
+  };
+  const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); if (moved) { saveState(); if (typeof renderList === 'function') renderList(); } else if (undoStack.length) { undoStack.pop(); drawAnnos(pv); } };
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+}
 function startOpeningMove(pv, e, a) {   // Öffnung entlang ihrer Wand verschieben (sonst frei)
   const wall = a.wallId && getAnnos(pv.num).find(o => o.id === a.wallId && o.type === 'wall');
   if (!wall) return startMove(pv, e, a);

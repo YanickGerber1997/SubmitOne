@@ -1357,8 +1357,9 @@ function drawOne(svg, a, pv) {
     el = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, ...strokeAttrs(a), 'data-id': a.id });
     svg.appendChild(el);
     if (a.type === 'arrow') drawArrowHead(svg, a);
-    if (a.type === 'measure') drawMeasureLabel(svg, a, pv);
+    if (a.type === 'measure' && !a.anschluss) drawMeasureLabel(svg, a, pv);
     if (a.wallface) drawWallFaceLabel(svg, a, pv);   // Wandbelag: Höhe + Wandfläche
+    if (a.anschluss) drawAnschlussLabel(svg, a, pv);   // Anschluss: Art + Länge
     hit = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'hit', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'rect') {
     const hatched = a.hatch && a.hatch.type; if (hatched) appendHatch(svg, a);
@@ -1523,9 +1524,17 @@ function drawWallFaceLabel(svg, a, pv) {
   if (docScale) txt += ' · ' + (Math.round(wallFaceAreaM2(lenPts, docScale.perPt, h) * 100) / 100).toFixed(2).replace('.', ',') + ' m²';
   const t = svgEl('text', { x: mx + 4, y: my + 14, fill: a.color, 'font-size': 11, 'font-weight': 600, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = txt; svg.appendChild(t);
 }
-// Nach dem Zeichnen eines Wandbelags: auswählen, Inspector öffnen, Höhe-Feld fokussieren (Höhe direkt eintippen)
+// Anschluss-Kategorien (Längen, lfm) für die Ausschreibung
+const ANSCHLUSS_KAT = { boden: 'Boden', wand: 'Wand', decke: 'Decke', fenster: 'Fenster' };
+function drawAnschlussLabel(svg, a, pv) {
+  const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2, len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
+  let txt = 'Anschluss ' + (ANSCHLUSS_KAT[a.anschluss] || '');
+  if (docScale) txt += ' · ' + (Math.round(len * docScale.perPt * 100) / 100).toFixed(2).replace('.', ',') + ' m';
+  const t = svgEl('text', { x: mx + 4, y: my - 4, fill: a.color, 'font-size': 11, 'font-weight': 600, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = txt; svg.appendChild(t);
+}
+// Nach dem Zeichnen eines Wandbelags/Anschlusses: auswählen, Inspector öffnen (bei Wandbelag Höhe-Feld fokussieren)
 function afterWallfaceDraw(pv, a) {
-  if (!a || !a.wallface) return false;
+  if (!a || (!a.wallface && !a.anschluss)) return false;
   sel = { num: pv.num, id: a.id }; setTool('select'); _listTab = 'sel';
   if (typeof openListPanel === 'function') openListPanel('sel');
   if (typeof renderList === 'function') renderList();
@@ -3037,7 +3046,7 @@ function beautify(pts) {
 
 function startDraw(pv, e, p) {
   pushUndo();
-  if (!e.shiftKey && (tool === 'wall' || tool === 'line' || tool === 'arrow' || tool === 'measure' || tool === 'dim' || tool === 'stairs' || tool === 'beam' || tool === 'wallface')) {
+  if (!e.shiftKey && (tool === 'wall' || tool === 'line' || tool === 'arrow' || tool === 'measure' || tool === 'dim' || tool === 'stairs' || tool === 'beam' || tool === 'wallface' || tool === 'anschluss')) {
     const sp = snapWallPt(pv, p.x, p.y); if (sp) p = { x: sp.x, y: sp.y }; else if (gridOn) p = snapPt(p.x, p.y);   // Startpunkt auf Wand-Ende/-Achse einrasten → saubere Gehrung
   }
   let a;
@@ -3049,6 +3058,7 @@ function startDraw(pv, e, p) {
   else if (tool === 'stairs') a = { id: nextId++, type: 'stairs', x1: p.x, y1: p.y, x2: p.x, y2: p.y, width: stairWidthPts(), rise: stairRiseM, base: stairBaseM, color: style.color };   // Treppe = Lauf (Linie mit Breite + Höhe)
   else if (tool === 'beam') a = { id: nextId++, type: 'beam', x1: p.x, y1: p.y, x2: p.x, y2: p.y, width: beamWidthPts(), height: beamHM, color: style.color };   // Unterzug = Balken (Linie mit Breite + Höhe, unter der Decke)
   else if (tool === 'wallface') a = { id: nextId++, type: 'measure', x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: '#2f6ea3', width: 1.6, wallface: true, height: wallHeightM || 2.5, belag: { ...DEFAULT_BELAG } };   // Wandbelag = Messlinie + Höhe → Wandfläche
+  else if (tool === 'anschluss') a = { id: nextId++, type: 'measure', x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: '#8a5a2a', width: 2, anschluss: 'boden' };   // Anschluss = Messlinie mit Kategorie (lfm)
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   pushAnno(pv.num, a);
   if (a.type === 'wall' && wallBuildup) applyWallBuildup(a, wallBuildup.layers, wallBuildup.spacing);   // Standard-Aufbau übernehmen
@@ -4916,7 +4926,7 @@ function setTool(t) {
   if (pdfDoc) pageViews.forEach(p => drawAnnos(p));   // neu zeichnen → Schicht-Hilfsnetz erscheint/verschwindet je nach Werkzeug
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'snip', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'terrain', 'section', 'floortile', 'wallface'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'snip', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'terrain', 'section', 'floortile', 'wallface', 'anschluss'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -6217,13 +6227,22 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     const au = body.querySelector('#iWfAu'); if (au) au.onchange = () => { const v = au.value.trim(); if (v) a.aufbau = v; else delete a.aufbau; markDirty(); pageViews.forEach(drawAnnos); };
     return;
   }
+  if (a.type === 'measure' && a.anschluss) {
+    const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), lm = docScale ? len * docScale.perPt : 0;
+    body.innerHTML = '<h4>Anschluss</h4>' + (docScale ? '<div class="insp-kv"><span>Länge</span><b>' + (Math.round(lm * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>' : '')
+      + '<div class="insp-row"><span class="insp-lbl">Art</span><span id="iAk" style="display:inline-flex;gap:3px;flex-wrap:wrap">' + Object.keys(ANSCHLUSS_KAT).map(k => '<button class="insp-mini' + (a.anschluss === k ? ' on' : '') + '" data-k="' + k + '" style="width:auto;padding:0 8px">' + ANSCHLUSS_KAT[k] + '</button>').join('') + '</span></div>'
+      + '<div class="insp-row"><span class="insp-lbl">Name</span><input class="insp-num" style="width:120px" id="iAn" value="' + (a.name ? a.name.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Bad Sockel"></div>';
+    body.querySelectorAll('#iAk .insp-mini').forEach(btn => btn.onclick = () => { a.anschluss = btn.dataset.k; markDirty(); pageViews.forEach(drawAnnos); renderList(); });
+    const nm = body.querySelector('#iAn'); if (nm) nm.onchange = () => { const v = nm.value.trim(); if (v) a.name = v; else delete a.name; markDirty(); pageViews.forEach(drawAnnos); };
+    return;
+  }
   body.innerHTML = '<h4>' + (a.type || 'Bauteil') + '</h4><p class="lp2-empty">Für diesen Typ gibt es (noch) keine Inspector-Einstellungen. Doppelklick im Plan öffnet ggf. die Eingabe.</p>';
 }
 function syncInspector() {   // Auswahl gewechselt → Inspector zeigen/aktualisieren (Bauteil anwählen ⇒ Einstellungen rechts)
   const id = sel ? sel.id : null; if (id === _lastInspId) return; _lastInspId = id;
   const p = document.getElementById('listPanel'); if (!p || p.hidden) return;   // nur aktualisieren, wenn Panel offen (Einklappen wird respektiert)
   const a = (id != null && sel) ? findAnno(sel.num, sel.id) : null;
-  if (a && (a.type === 'opening' || a.type === 'wall' || a.type === 'area' || (a.type === 'measure' && a.wallface))) { _listTab = 'sel'; openListPanel('sel'); }   // Bauteil gewählt → Inspector zeigt Einstellungen
+  if (a && (a.type === 'opening' || a.type === 'wall' || a.type === 'area' || (a.type === 'measure' && (a.wallface || a.anschluss)))) { _listTab = 'sel'; openListPanel('sel'); }   // Bauteil gewählt → Inspector zeigt Einstellungen
   else if (_listTab === 'sel') renderList();   // abgewählt → Inspector leeren
 }
 function fillRoomList(bodyEl) {   // Raumbuch in das Listen-Panel
@@ -6237,7 +6256,7 @@ function fillRoomList(bodyEl) {   // Raumbuch in das Listen-Panel
 function openRoomList() { openListPanel('rooms'); }
 // Beläge sammeln: Bodenbeläge (area+belag) und Wandflächen (measure+wallface) über alle Seiten
 function belagData() {
-  const floors = [], walls = []; if (!docScale) return { floors, walls };
+  const floors = [], walls = [], anschluesse = []; if (!docScale) return { floors, walls, anschluesse };
   const pp = docScale.perPt;
   for (const n of Object.keys(annos)) for (const a of (annos[n] || [])) {
     if (a.type === 'area' && a.belag && a.pts && a.pts.length >= 3) {
@@ -6246,14 +6265,16 @@ function belagData() {
     } else if (a.type === 'measure' && a.wallface) {
       const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), h = a.height || 2.5, m2 = wallFaceAreaM2(len, pp, h), b = a.belag || DEFAULT_BELAG;
       walls.push({ a, name: a.name || '', m2, h, lenM: len * pp, tiles: tilesForArea(m2, b.tileW, b.tileH, b.waste || 0), b, aufbau: a.aufbau || '' });
+    } else if (a.type === 'measure' && a.anschluss) {
+      anschluesse.push({ a, kat: a.anschluss, katLabel: ANSCHLUSS_KAT[a.anschluss] || a.anschluss, name: a.name || '', lenM: Math.hypot(a.x2 - a.x1, a.y2 - a.y1) * pp });
     }
   }
-  return { floors, walls };
+  return { floors, walls, anschluesse };
 }
 function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten & Summen
   if (!docScale) { bodyEl.innerHTML = '<p class="lp2-empty">Für Belags-Mengen zuerst den Massstab setzen (1:n) – unten in der Fusszeile.</p>'; return null; }
-  const { floors, walls } = belagData();
-  if (!floors.length && !walls.length) { bodyEl.innerHTML = '<p class="lp2-empty">Noch keine Beläge. Zeichne mit <b>Bodenbelag</b> eine Fläche oder mit <b>Wandbelag</b> eine Wand.</p>'; return null; }
+  const { floors, walls, anschluesse } = belagData();
+  if (!floors.length && !walls.length && !anschluesse.length) { bodyEl.innerHTML = '<p class="lp2-empty">Noch keine Beläge. Zeichne mit <b>Bodenbelag</b> eine Fläche, mit <b>Wandbelag</b> eine Wand oder mit <b>Anschluss</b> eine Kante.</p>'; return null; }
   const fmt = x => (Math.round(x * 100) / 100).toFixed(2).replace('.', ',');
   const fm2 = floors.reduce((s, r) => s + r.m2, 0), ft = floors.reduce((s, r) => s + r.tiles, 0);
   const wm2 = walls.reduce((s, r) => s + r.m2, 0), wt = walls.reduce((s, r) => s + r.tiles, 0);
@@ -6264,6 +6285,13 @@ function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten &
   if (walls.length) html += '<h4 style="margin-top:14px">Wandflächen (' + walls.length + ')</h4><table class="qty-tab"><thead><tr><th>Wand</th><th style="text-align:right">L×H</th><th style="text-align:right">Fläche</th><th style="text-align:right">Platten</th></tr></thead><tbody>'
     + walls.map(r => '<tr><td>' + (_htmlEsc(r.name) || '–') + (r.aufbau ? '<div style="font-size:10px;color:var(--ink-soft)">' + _htmlEsc(r.aufbau) + '</div>' : '') + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.lenM) + '×' + fmt(r.h) + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.m2) + ' m²</td><td style="text-align:right">' + r.tiles + '</td></tr>').join('')
     + '</tbody><tfoot><tr><th style="text-align:right" colspan="2">Summe</th><th style="text-align:right;white-space:nowrap">' + fmt(wm2) + ' m²</th><th style="text-align:right">' + wt + '</th></tr></tfoot></table>';
+  if (anschluesse.length) {
+    const byKat = {}; anschluesse.forEach(r => { (byKat[r.kat] = byKat[r.kat] || { label: r.katLabel, len: 0, n: 0 }); byKat[r.kat].len += r.lenM; byKat[r.kat].n++; });
+    const total = anschluesse.reduce((s, r) => s + r.lenM, 0);
+    html += '<h4 style="margin-top:14px">Anschlüsse (' + anschluesse.length + ')</h4><table class="qty-tab"><thead><tr><th>Art</th><th style="text-align:right">Stk</th><th style="text-align:right">Länge</th></tr></thead><tbody>'
+      + Object.keys(byKat).map(k => '<tr><td>Anschluss ' + _htmlEsc(byKat[k].label) + '</td><td style="text-align:right">' + byKat[k].n + '</td><td style="text-align:right;white-space:nowrap">' + fmt(byKat[k].len) + ' m</td></tr>').join('')
+      + '</tbody><tfoot><tr><th style="text-align:right" colspan="2">Summe</th><th style="text-align:right;white-space:nowrap">' + fmt(total) + ' m</th></tr></tfoot></table>';
+  }
   bodyEl.innerHTML = html;
   { const ba = bodyEl.querySelector('#belExpA'); if (ba) ba.onclick = () => exportBelagToPaper('ausschreibung'); const bm = bodyEl.querySelector('#belExpM'); if (bm) bm.onclick = () => exportBelagToPaper('mengen'); }
   return () => {
@@ -6274,7 +6302,8 @@ function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten &
 }
 function openBelagList() { openListPanel('belag'); }
 // Ausschreibungs-/Mengenauszug-Tabelle (rein) – Spalten: Pos · Beschrieb · Ausmass · Einheit (+ leere Einheitspreis/Betrag bei Ausschreibung)
-function buildBelagTableHtml(floors, walls, price) {
+function buildBelagTableHtml(floors, walls, price, anschluesse) {
+  anschluesse = anschluesse || [];
   const fmt = x => (Math.round(x * 100) / 100).toFixed(2).replace('.', ','), cols = price ? 6 : 4, pad = price ? '<td></td><td></td>' : '';
   const head = '<tr>' + ['Pos.', 'Beschrieb', 'Ausmass', 'Einh.'].concat(price ? ['Einheitspreis', 'Betrag'] : []).map(h => '<th>' + h + '</th>').join('') + '</tr>';
   const posRow = (pos, besch, menge, einh) => '<tr><td>' + pos + '</td><td>' + _htmlEsc(besch) + '</td><td style="text-align:right;white-space:nowrap">' + fmt(menge) + '</td><td>' + einh + '</td>' + pad + '</tr>';
@@ -6282,17 +6311,23 @@ function buildBelagTableHtml(floors, walls, price) {
   let rows = '', sec = 0;
   if (floors.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Bodenbeläge</strong></td></tr>'; floors.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Bodenbelag') + ' · Platten ' + r.b.tileW + '×' + r.b.tileH + (r.aufbau ? ' · ' + r.aufbau : ''), r.m2, 'm²')); rows += zt('Bodenbeläge', floors.reduce((s, r) => s + r.m2, 0), 'm²'); }
   if (walls.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Wandflächen</strong></td></tr>'; walls.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Wandbelag') + ' · H ' + fmt(r.h || 0) + ' m · Platten ' + r.b.tileW + '×' + r.b.tileH + (r.aufbau ? ' · ' + r.aufbau : ''), r.m2, 'm²')); rows += zt('Wandflächen', walls.reduce((s, r) => s + r.m2, 0), 'm²'); }
+  if (anschluesse.length) {
+    sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Anschlüsse</strong></td></tr>';
+    const byKat = {}; anschluesse.forEach(r => { byKat[r.kat] = byKat[r.kat] || { label: r.katLabel || r.kat, len: 0 }; byKat[r.kat].len += r.lenM; });
+    let i = 0; Object.keys(byKat).forEach(k => { i++; rows += posRow(sec + '.' + i, 'Anschluss ' + byKat[k].label, byKat[k].len, 'lfm'); });
+    rows += zt('Anschlüsse', anschluesse.reduce((s, r) => s + r.lenM, 0), 'lfm');
+  }
   return '<table style="width:100%;border-collapse:collapse">' + head + rows + '</table>';
 }
 // Beläge als Ausschreibung (mit leerer Preisspalte) oder Mengenauszug nach Submit Paper übergeben
 function exportBelagToPaper(mode) {
   if (!docScale) { toast('Zuerst den Massstab (1:n) setzen – unten in der Fusszeile.'); return; }
-  const { floors, walls } = belagData();
-  if (!floors.length && !walls.length) { toast('Noch keine Beläge zum Exportieren.'); return; }
+  const { floors, walls, anschluesse } = belagData();
+  if (!floors.length && !walls.length && !anschluesse.length) { toast('Noch keine Beläge zum Exportieren.'); return; }
   const price = mode === 'ausschreibung';
   const html = '<h1>' + (price ? 'Ausschreibung' : 'Mengenauszug') + '</h1>'
     + '<p>' + _htmlEsc(docName || '') + (docScale.label ? ' · Massstab ' + docScale.label : '') + '</p>'
-    + buildBelagTableHtml(floors, walls, price)
+    + buildBelagTableHtml(floors, walls, price, anschluesse)
     + (price ? '<p style="color:#777;font-size:12px">Einheitspreise bitte durch den Unternehmer eintragen.</p>' : '');
   const titel = (docName || 'Ausmass').replace(/\.pdf$/i, '') + (price ? ' – Ausschreibung' : ' – Mengenauszug');
   try { localStorage.setItem('submitpaper_import', JSON.stringify({ titel, pages: [{ typ: 'write', html }], ts: Date.now() })); }
@@ -6456,6 +6491,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('tileStartPoint Ecken + Mitte', () => { const tl = tileStartPoint(0, 0, 100, 80, 'tl', 10, 10), tr = tileStartPoint(0, 0, 100, 80, 'tr', 10, 10), br = tileStartPoint(0, 0, 100, 80, 'br', 10, 10), ce = tileStartPoint(0, 0, 100, 80, 'center', 10, 10); return (tl[0] === 0 && tl[1] === 0 && tr[0] === 100 && tr[1] === 0 && br[0] === 100 && br[1] === 80 && ce[0] === 45 && ce[1] === 35) ? '' : 'fail'; });
     A('Belag-Ausschreibung: Preisspalten nur im Ausschreibungs-Modus + Pos/Menge', () => { const floors = [{ name: 'Wohnen', m2: 24.5, b: { tileW: 60, tileH: 60 }, aufbau: 'OK FB' }]; const aus = buildBelagTableHtml(floors, [], true), men = buildBelagTableHtml(floors, [], false); return (/Einheitspreis/.test(aus) && /Betrag/.test(aus) && !/Einheitspreis/.test(men) && /Bodenbeläge/.test(aus) && /1\.1/.test(aus) && /24,50/.test(aus)) ? '' : 'fail'; });
     A('belagData sammelt Boden + Wand mit m²', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, joint: 3, waste: 8 }, pts: [[0, 0], [100, 0], [100, 100], [0, 100]] }, { type: 'measure', wallface: true, height: 2.5, belag: { tileW: 60, tileH: 60, waste: 8 }, x1: 0, y1: 0, x2: 100, y2: 0 }] }; const d = belagData(); return (d.floors.length === 1 && Math.abs(d.floors[0].m2 - 1) < 1e-6 && d.walls.length === 1 && Math.abs(d.walls[0].m2 - 2.5) < 1e-6) ? '' : JSON.stringify({ f: d.floors.length, w: d.walls.length, fm: d.floors[0] && d.floors[0].m2, wm: d.walls[0] && d.walls[0].m2 }); } finally { annos = sa; docScale = sd; } });
+    A('belagData + Ausschreibung: Anschluss (lfm)', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', anschluss: 'boden', x1: 0, y1: 0, x2: 300, y2: 0 }] }; const d = belagData(); const ok1 = d.anschluesse.length === 1 && Math.abs(d.anschluesse[0].lenM - 3) < 1e-6; const html = buildBelagTableHtml([], [], false, d.anschluesse); return (ok1 && /Anschlüsse/.test(html) && /Anschluss Boden/.test(html) && /lfm/.test(html) && /3,00/.test(html)) ? '' : 'fail'; } finally { annos = sa; docScale = sd; } });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

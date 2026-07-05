@@ -5,27 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=606" />
-  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=606" />
-  <link rel="icon" href="favicon.png?v=606" />
-  <link rel="apple-touch-icon" href="favicon-192.png?v=606" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=607" />
+  <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png?v=607" />
+  <link rel="icon" href="favicon.png?v=607" />
+  <link rel="apple-touch-icon" href="favicon-192.png?v=607" />
   <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#1c242c" />
-  <link rel="stylesheet" href="../ui/tokens.css?v=606" />
-  <link rel="stylesheet" href="pdf.css?v=606" />
+  <link rel="stylesheet" href="../ui/tokens.css?v=607" />
+  <link rel="stylesheet" href="pdf.css?v=607" />
 </head>
 <body>
   <!-- Hervorhebungs-Schraffur (grün) für Hover über editierbaren Bauteilen -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><pattern id="hlHatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="rgba(26,154,78,0.12)"/><line x1="0" y1="0" x2="0" y2="6" stroke="#1a9a4e" stroke-width="1.3"/></pattern></defs></svg>
   <!-- Animierter Startbildschirm -->
   <div class="splash" id="splash">
-    <img class="splash-logo" src="logo.png?v=606" alt="Submit PDF" />
+    <img class="splash-logo" src="logo.png?v=607" alt="Submit PDF" />
   </div>
 
   <header class="topbar">
     <a class="brand" href="index.html" title="Submit PDF">
-      <img class="logomark" src="icon.png?v=606" alt="" aria-hidden="true" />
-      <img class="brand-word" src="wordmark.png?v=606" alt="Submit PDF" />
+      <img class="logomark" src="icon.png?v=607" alt="" aria-hidden="true" />
+      <img class="brand-word" src="wordmark.png?v=607" alt="Submit PDF" />
     </a>
     <span class="grow"></span>
     <div class="ui-zoom" title="Oberflächen-Zoom – macht Werkzeuge, Buttons und das Blatt grösser/kleiner (unabhängig vom Browser-Zoom). Klick auf die Prozentzahl = zurück auf 100%.">
@@ -125,6 +125,7 @@
       <button class="tool" data-tool="slab" title="Decke / Bodenplatte – Fläche klicken (Höhe + Dicke einstellbar), erscheint als Platte in 3D"><svg viewBox="0 0 24 24" class="i"><path d="M3 9l9-4 9 4-9 4z"/><path d="M3 9v4l9 4 9-4V9"/></svg></button>
       <button class="tool" data-tool="floortile" title="Bodenbelag / Platten – Raumfläche ziehen (am Start schliessen), Plattenspiegel 60×60 erscheint automatisch. Für echte Plattenzahlen Massstab (1:n) setzen."><svg viewBox="0 0 24 24" class="i"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></button>
       <button class="tool" data-tool="wallface" title="Wandbelag – Wand messen (A→B ziehen), Höhe eingeben → Wandfläche (L×H) + Plattenspiegel. In der Liste unter Wandflächen."><svg viewBox="0 0 24 24" class="i"><path d="M4 4h16v16H4z"/><path d="M4 9h16M4 14h16M10 4v16M16 4v16"/></svg></button>
+      <button class="tool" data-tool="anschluss" title="Anschluss – Kante messen (Länge, lfm), Art wählen: Anschluss Boden / Wand / Decke / Fenster. Erscheint in Liste & Ausschreibung."><svg viewBox="0 0 24 24" class="i"><path d="M4 20L20 4"/><path d="M4 20v-4M4 20h4"/><circle cx="20" cy="4" r="1.6"/></svg></button>
       <button class="tool" data-tool="stairs" title="Treppe (gerader Lauf) – Start klicken, Richtung + Länge, 2. Klick/L. Breite/Höhe/Stufen oben · 3D-Stufen. L/U über mehrere Läufe + Podest"><svg viewBox="0 0 24 24" class="i"><path d="M3 21v-3h4v-3h4v-3h4v-3h4v-3"/><path d="M3 21h4v-3h4v-3h4v-3h4v-3h4"/></svg></button>
       <button class="tool" data-tool="roof" title="Dach – Grundfläche aufziehen (Pult-/Satteldach, Traufe/First + Firstrichtung), 3D-Schräge"><svg viewBox="0 0 24 24" class="i"><path d="M2 13 12 4l10 9"/><path d="M5 11v9h14v-9"/><path d="M12 4v16"/></svg></button>
       <button class="tool" data-tool="beam" title="Unterzug (Balken unter der Decke) – Start klicken, Richtung + Länge, 2. Klick/L. Gestrichelt im Plan (überkopf), im 3D Box unter der Decke. Standard 24×40 cm."><svg viewBox="0 0 24 24" class="i"><path d="M3 9h18v6H3z"/><path d="M3 12h18"/></svg></button>
@@ -234,7 +235,7 @@
 
   <div class="drop" id="drop">
     <div class="drop-card">
-      <img class="drop-logo" src="logo.png?v=606" alt="Submit PDF" />
+      <img class="drop-logo" src="logo.png?v=607" alt="Submit PDF" />
       <div class="leitsatz">
         <p class="ls-q">„It's all about the Paper, submit to everyone."</p>
         <p class="ls-by">— Yanick Gerber</p>
@@ -828,7 +829,7 @@
 
   <div id="toast-root"></div>
 
-  <script src="pdf.js?v=606"></script>
+  <script src="pdf.js?v=607"></script>
   <script src="tauri-bridge.js"></script>
 </body>
 </html>

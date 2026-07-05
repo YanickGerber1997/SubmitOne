@@ -1358,6 +1358,7 @@ function drawOne(svg, a, pv) {
     svg.appendChild(el);
     if (a.type === 'arrow') drawArrowHead(svg, a);
     if (a.type === 'measure') drawMeasureLabel(svg, a, pv);
+    if (a.wallface) drawWallFaceLabel(svg, a, pv);   // Wandbelag: Höhe + Wandfläche
     hit = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'hit', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'rect') {
     const hatched = a.hatch && a.hatch.type; if (hatched) appendHatch(svg, a);
@@ -1514,6 +1515,13 @@ function lenLabel(a) { return fmtLen(Math.hypot(a.x2 - a.x1, a.y2 - a.y1)); }
 function drawMeasureLabel(svg, a, pv) {
   const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
   const t = svgEl('text', { x: mx + 4, y: my - 4, fill: a.color, 'font-size': 12 }); t.textContent = a.label || lenLabel(a); svg.appendChild(t);
+}
+// Wandbelag: Höhe + Wandfläche (Länge×Höhe) unter der Messlinie
+function drawWallFaceLabel(svg, a, pv) {
+  const lenPts = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2, h = a.height || 2.5;
+  let txt = 'H ' + (Math.round(h * 100) / 100).toString().replace('.', ',') + ' m';
+  if (docScale) txt += ' · ' + (Math.round(wallFaceAreaM2(lenPts, docScale.perPt, h) * 100) / 100).toFixed(2).replace('.', ',') + ' m²';
+  const t = svgEl('text', { x: mx + 4, y: my + 14, fill: a.color, 'font-size': 11, 'font-weight': 600, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = txt; svg.appendChild(t);
 }
 
 /* ---------- Auswahl / Griffe ---------- */
@@ -3006,7 +3014,7 @@ function beautify(pts) {
 
 function startDraw(pv, e, p) {
   pushUndo();
-  if (!e.shiftKey && (tool === 'wall' || tool === 'line' || tool === 'arrow' || tool === 'measure' || tool === 'dim' || tool === 'stairs' || tool === 'beam')) {
+  if (!e.shiftKey && (tool === 'wall' || tool === 'line' || tool === 'arrow' || tool === 'measure' || tool === 'dim' || tool === 'stairs' || tool === 'beam' || tool === 'wallface')) {
     const sp = snapWallPt(pv, p.x, p.y); if (sp) p = { x: sp.x, y: sp.y }; else if (gridOn) p = snapPt(p.x, p.y);   // Startpunkt auf Wand-Ende/-Achse einrasten → saubere Gehrung
   }
   let a;
@@ -3017,6 +3025,7 @@ function startDraw(pv, e, p) {
   else if (tool === 'wall') a = { id: nextId++, type: 'wall', x1: p.x, y1: p.y, x2: p.x, y2: p.y, thick: wallThickPts(), just: wallJust, color: (wallHatch && wallHatch.color) || style.color, fill: (wallHatch && wallHatch.fill) || '#ffffff', hatch: wallHatch ? { ...wallHatch } : null, width: 1.4, dim: wallDimOn };   // Wand = Linie mit Dicke
   else if (tool === 'stairs') a = { id: nextId++, type: 'stairs', x1: p.x, y1: p.y, x2: p.x, y2: p.y, width: stairWidthPts(), rise: stairRiseM, base: stairBaseM, color: style.color };   // Treppe = Lauf (Linie mit Breite + Höhe)
   else if (tool === 'beam') a = { id: nextId++, type: 'beam', x1: p.x, y1: p.y, x2: p.x, y2: p.y, width: beamWidthPts(), height: beamHM, color: style.color };   // Unterzug = Balken (Linie mit Breite + Höhe, unter der Decke)
+  else if (tool === 'wallface') a = { id: nextId++, type: 'measure', x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: '#2f6ea3', width: 1.6, wallface: true, height: wallHeightM || 2.5, belag: { ...DEFAULT_BELAG } };   // Wandbelag = Messlinie + Höhe → Wandfläche
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   pushAnno(pv.num, a);
   if (a.type === 'wall' && wallBuildup) applyWallBuildup(a, wallBuildup.layers, wallBuildup.spacing);   // Standard-Aufbau übernehmen
@@ -4881,7 +4890,7 @@ function setTool(t) {
   if (pdfDoc) pageViews.forEach(p => drawAnnos(p));   // neu zeichnen → Schicht-Hilfsnetz erscheint/verschwindet je nach Werkzeug
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'snip', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'terrain', 'section', 'floortile'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'snip', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'terrain', 'section', 'floortile', 'wallface'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -6149,13 +6158,35 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     body.appendChild(tb);
     return;
   }
+  if (a.type === 'measure' && a.wallface) {
+    const lenPts = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), lenM = docScale ? lenPts * docScale.perPt : 0, h = a.height || 2.5;
+    const area = docScale ? wallFaceAreaM2(lenPts, docScale.perPt, h) : 0, b = a.belag || (a.belag = { ...DEFAULT_BELAG });
+    let html = '<h4>Wandbelag</h4>'
+      + (docScale ? '<div class="insp-kv"><span>Länge</span><b>' + (Math.round(lenM * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>' : '')
+      + '<div class="insp-row"><span class="insp-lbl">Höhe</span><input class="insp-num" style="width:60px" id="iWfH" type="number" step="0.05" min="0.1" value="' + h + '"> m</div>'
+      + (docScale ? '<div class="insp-kv"><span>Wandfläche</span><b>' + (Math.round(area * 100) / 100).toFixed(2).replace('.', ',') + ' m²</b></div>' : '')
+      + '<div class="insp-row"><span class="insp-lbl">Name</span><input class="insp-num" style="width:120px" id="iWfN" value="' + (a.name ? a.name.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Bad Wand N"></div>'
+      + '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">⌗ Plattenspiegel</div>'
+      + '<div class="insp-row"><span class="insp-lbl">Platte B×H</span><input class="insp-num" style="width:50px" id="iWfTW" type="number" min="1" value="' + b.tileW + '"> × <input class="insp-num" style="width:50px" id="iWfTH" type="number" min="1" value="' + b.tileH + '"> cm</div>'
+      + '<div class="insp-row"><span class="insp-lbl">Fuge</span><input class="insp-num" style="width:60px" id="iWfJ" type="number" min="0" value="' + (b.joint != null ? b.joint : 3) + '"> mm</div>'
+      + '<div class="insp-row"><span class="insp-lbl">Verschnitt</span><input class="insp-num" style="width:60px" id="iWfWa" type="number" min="0" value="' + (b.waste != null ? b.waste : 8) + '"> %</div>'
+      + '<div class="insp-row"><span class="insp-lbl">Aufbau</span><input class="insp-num" style="width:120px" id="iWfAu" value="' + (a.aufbau ? a.aufbau.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. bis H 2.10"></div>';
+    if (docScale && area) html += '<div class="insp-kv"><span>Platten (inkl. Verschnitt)</span><b>' + tilesForArea(area, b.tileW, b.tileH, b.waste || 0) + ' Stk</b></div>';
+    body.innerHTML = html;
+    const hEl = body.querySelector('#iWfH'); if (hEl) hEl.onchange = () => { const v = parseFloat((hEl.value || '').replace(',', '.')); if (v > 0) { a.height = v; markDirty(); pageViews.forEach(drawAnnos); renderList(); } };
+    const nm = body.querySelector('#iWfN'); if (nm) nm.onchange = () => { const v = nm.value.trim(); if (v) a.name = v; else delete a.name; markDirty(); pageViews.forEach(drawAnnos); };
+    const bindB = (id, key) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (isFinite(v) && v >= 0) { a.belag[key] = v; markDirty(); pageViews.forEach(drawAnnos); renderList(); } }; };
+    bindB('#iWfTW', 'tileW'); bindB('#iWfTH', 'tileH'); bindB('#iWfJ', 'joint'); bindB('#iWfWa', 'waste');
+    const au = body.querySelector('#iWfAu'); if (au) au.onchange = () => { const v = au.value.trim(); if (v) a.aufbau = v; else delete a.aufbau; markDirty(); pageViews.forEach(drawAnnos); };
+    return;
+  }
   body.innerHTML = '<h4>' + (a.type || 'Bauteil') + '</h4><p class="lp2-empty">Für diesen Typ gibt es (noch) keine Inspector-Einstellungen. Doppelklick im Plan öffnet ggf. die Eingabe.</p>';
 }
 function syncInspector() {   // Auswahl gewechselt → Inspector zeigen/aktualisieren (Bauteil anwählen ⇒ Einstellungen rechts)
   const id = sel ? sel.id : null; if (id === _lastInspId) return; _lastInspId = id;
   const p = document.getElementById('listPanel'); if (!p || p.hidden) return;   // nur aktualisieren, wenn Panel offen (Einklappen wird respektiert)
   const a = (id != null && sel) ? findAnno(sel.num, sel.id) : null;
-  if (a && (a.type === 'opening' || a.type === 'wall' || a.type === 'area')) { _listTab = 'sel'; openListPanel('sel'); }   // Bauteil gewählt → Inspector zeigt Einstellungen
+  if (a && (a.type === 'opening' || a.type === 'wall' || a.type === 'area' || (a.type === 'measure' && a.wallface))) { _listTab = 'sel'; openListPanel('sel'); }   // Bauteil gewählt → Inspector zeigt Einstellungen
   else if (_listTab === 'sel') renderList();   // abgewählt → Inspector leeren
 }
 function fillRoomList(bodyEl) {   // Raumbuch in das Listen-Panel

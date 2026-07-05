@@ -6309,8 +6309,14 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
       + '<div class="insp-row"><span class="insp-lbl">Wand seitlich</span><span id="anW" style="display:inline-flex;gap:3px">' + [0, 1, 2].map(n => '<button class="insp-mini' + ((ans.wand || 0) === n ? ' on' : '') + '" data-n="' + n + '" style="width:26px">' + n + '</button>').join('') + '</span></div>';
     if (docScale) html += '<div class="insp-kv"><span>Anschluss lfm gesamt</span><b>' + (Math.round(((ans.boden ? lenM : 0) + (ans.decke ? lenM : 0) + (ans.wand || 0) * h) * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>';
     const fen = a.fenster || [];
-    html += '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">Fenster / Aussparung</div>'
-      + '<div class="insp-row"><span class="insp-lbl">Fenster (' + fen.length + ')</span><span style="display:inline-flex;gap:4px"><button class="insp-mini" id="fenAdd" style="width:auto;padding:0 8px">+ Fenster</button><button class="insp-mini" id="fenDel" style="width:auto;padding:0 8px">−</button></span></div>';
+    html += '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">Fenster / Aussparung <button class="insp-mini" id="fenAdd" style="width:auto;padding:0 8px;float:right">+ Fenster</button></div>';
+    html += fen.map((f, i) => '<div class="insp-row" style="flex-wrap:wrap;gap:3px 4px;align-items:center;border-bottom:1px solid var(--line-soft);padding-bottom:5px">'
+      + '<span class="insp-lbl" style="flex:0 0 100%;font-weight:600">Fenster ' + (i + 1) + '<button class="insp-mini" data-fdel="' + i + '" title="Fenster entfernen" style="width:auto;padding:0 7px;float:right">×</button></span>'
+      + '<span style="font-size:11px">Pos</span><input class="insp-num" style="width:46px" data-fi="' + i + '" data-fk="pos" type="number" step="0.05" value="' + (Math.round(((f.t != null ? f.t : 0.5) * lenM) * 100) / 100) + '"><span style="font-size:11px">m</span>'
+      + '<span style="font-size:11px">B</span><input class="insp-num" style="width:44px" data-fi="' + i + '" data-fk="w" type="number" min="1" value="' + Math.round((f.w || 1) * 100) + '">'
+      + '<span style="font-size:11px">H</span><input class="insp-num" style="width:44px" data-fi="' + i + '" data-fk="h" type="number" min="1" value="' + Math.round((f.h || 1.2) * 100) + '">'
+      + '<span style="font-size:11px">Br</span><input class="insp-num" style="width:44px" data-fi="' + i + '" data-fk="sill" type="number" min="0" value="' + Math.round((f.sill || 0.9) * 100) + '"><span style="font-size:11px">cm</span>'
+      + '</div>').join('');
     if (fen.length && docScale) html += '<div class="insp-kv"><span>Wandfläche netto</span><b>' + (Math.round(Math.max(0, area - fen.reduce((s, f) => s + (f.w || 0) * (f.h || 0), 0)) * 100) / 100).toFixed(2).replace('.', ',') + ' m²</b></div>';
     html += '<div class="insp-row"><span class="insp-lbl">Wand-Ansicht</span><span><button class="insp-mini' + (a.ansicht !== false ? ' on' : '') + '" id="wfElev" style="width:auto;padding:0 8px">' + (a.ansicht !== false ? 'sichtbar' : 'aus') + '</button></span></div>';
     body.innerHTML = html;
@@ -6324,8 +6330,9 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     const tgl = (id, key) => { const el = body.querySelector(id); if (el) el.onclick = () => { a.ans[key] = !a.ans[key]; markDirty(); renderList(); pageViews.forEach(drawAnnos); }; };
     tgl('#anB', 'boden'); tgl('#anD', 'decke');
     body.querySelectorAll('#anW .insp-mini').forEach(btn => btn.onclick = () => { a.ans.wand = +btn.dataset.n; markDirty(); renderList(); pageViews.forEach(drawAnnos); });
-    const fa = body.querySelector('#fenAdd'); if (fa) fa.onclick = () => { a.fenster = a.fenster || []; const n = a.fenster.length; a.fenster.push({ t: (n + 1) / (a.fenster.length + 2), w: 1.0, h: 1.2, sill: 0.9 }); markDirty(); renderList(); pageViews.forEach(drawAnnos); };
-    const fd = body.querySelector('#fenDel'); if (fd) fd.onclick = () => { if (a.fenster && a.fenster.length) { a.fenster.pop(); markDirty(); renderList(); pageViews.forEach(drawAnnos); } };
+    const fa = body.querySelector('#fenAdd'); if (fa) fa.onclick = () => { a.fenster = a.fenster || []; a.fenster.push({ t: 0.5, w: 1.0, h: 1.2, sill: 0.9 }); markDirty(); renderList(); pageViews.forEach(drawAnnos); };
+    body.querySelectorAll('[data-fdel]').forEach(btn => btn.onclick = () => { if (a.fenster) { a.fenster.splice(+btn.dataset.fdel, 1); markDirty(); renderList(); pageViews.forEach(drawAnnos); } });
+    body.querySelectorAll('input[data-fi]').forEach(el => el.onchange = () => { const i = +el.dataset.fi, k = el.dataset.fk, v = parseFloat((el.value || '').replace(',', '.')); if (!a.fenster || !a.fenster[i] || !isFinite(v)) return; if (k === 'pos') a.fenster[i].t = lenM > 0 ? Math.max(0, Math.min(1, v / lenM)) : 0.5; else a.fenster[i][k] = Math.max(0, v / 100); markDirty(); pageViews.forEach(drawAnnos); renderList(); });
     const we = body.querySelector('#wfElev'); if (we) we.onclick = () => { a.ansicht = a.ansicht === false ? true : false; markDirty(); renderList(); pageViews.forEach(drawAnnos); };
     return;
   }

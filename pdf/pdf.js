@@ -4916,7 +4916,7 @@ function setTool(t) {
   if (wallDraft && t !== 'wallchain') finishWallChain();            // anderes Werkzeug → Wand-Kette beenden
   if (cdimDraft && t !== 'chaindim' && t !== 'anschluss') finishChaindim();              // anderes Werkzeug → Kettenmass/Anschluss beenden
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
-  const ab = $('.tool.on[data-tool]'); if (ab) { const grp = ab.closest('.rib-tools'); if (grp && grp.hidden) activateRibTab(grp.dataset.tabgroup); }   // Reiter des aktiven Werkzeugs zeigen
+  const ab = $('.tool.on[data-tool]'); if (ab && !$('.plan-rail [data-tool="' + t + '"]')) { const grp = ab.closest('.rib-tools'); if (grp && grp.hidden) activateRibTab(grp.dataset.tabgroup); }   // Reiter des aktiven Werkzeugs zeigen – aber NICHT umschalten, wenn das Werkzeug in der linken Planungs-Spalte liegt (sonst doppelte Tools oben)
   const bs = $('#btnStamp'); if (bs) bs.classList.toggle('on', t === 'stamp');
   const bb = $('#btnBlock'); if (bb) bb.classList.toggle('on', t === 'block');
   const bpf = $('#btnProfile'); if (bpf) bpf.classList.toggle('on', t === 'profile');

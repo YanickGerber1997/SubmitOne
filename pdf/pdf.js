@@ -1390,7 +1390,8 @@ function drawOne(svg, a, pv) {
   } else if (a.type === 'area') {
     const g = svgEl('g', { 'data-id': a.id }), pts = a.pts, draft = a._cursor;
     const poly = pts.map(p => p[0] + ',' + p[1]).join(' ');
-    if (pts.length >= 2) g.appendChild(svgEl('polygon', { points: poly, fill: a.color, 'fill-opacity': a.room ? 0.08 : 0.14, stroke: 'none' }));
+    if (pts.length >= 2) g.appendChild(svgEl('polygon', { points: poly, fill: a.color, 'fill-opacity': a.room ? 0.08 : (a.belag ? 0.06 : 0.14), stroke: 'none' }));
+    if (a.belag) drawTileGrid(g, a, pv);   // Plattenspiegel (auf die Fläche geclippt)
     const line = (draft ? pts.concat([draft]) : pts).map(p => p[0] + ',' + p[1]).join(' ');
     if (!a.room) g.appendChild(svgEl('polyline', { points: line, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));   // Raum: kein Umriss über die Wände
     if (draft && pts.length) { const f = pts[0]; g.appendChild(svgEl('circle', { cx: f[0], cy: f[1], r: 4.5 / pv.scale, fill: '#fff', stroke: a.color, 'stroke-width': 1.5 })); }
@@ -2153,7 +2154,7 @@ function onPointerDown(pv, e) {
   if (tool === 'eraser') { startErase(pv, e); return; }
   if (tool === 'crop') { startCrop(pv, e, p); return; }
   if (tool === 'snip') { startSnip(pv, e, p); return; }
-  if (tool === 'area' || tool === 'slab' || tool === 'terrain') { areaClick(pv, p); return; }
+  if (tool === 'area' || tool === 'slab' || tool === 'terrain' || tool === 'floortile') { areaClick(pv, p); return; }
   if (tool === 'profile') { profileClick(pv, p); return; }
   if (tool === 'block') { placeBlock(pv, p); return; }
   if (tool === 'section') { startSection(pv, e, p); return; }
@@ -2358,15 +2359,33 @@ function tilesForArea(areaM2, tileWcm, tileHcm, wastePct) {
   if (unit <= 0 || areaM2 <= 0) return 0;
   return Math.ceil((areaM2 / unit) * (1 + Math.max(0, wastePct || 0) / 100));
 }
+const DEFAULT_BELAG = { tileW: 60, tileH: 60, joint: 3, waste: 8, name: '' };   // Standard-Plattenmass 60×60, Fuge 3 mm, 8 % Verschnitt
+let _tileClip = 0;   // eindeutige clipPath-IDs fürs Plattenraster
+// Plattenspiegel in eine Flächen-Gruppe zeichnen (Raster ab Startpunkt, auf das Polygon geclippt) – braucht Massstab
+function drawTileGrid(g, a, pv) {
+  if (!a.belag || !docScale || !a.pts || a.pts.length < 3 || a._cursor) return;
+  const b = a.belag, perPt = docScale.perPt, jw = Math.max(0, b.joint || 0) / 1000;
+  const stepX = ((b.tileW / 100) + jw) / perPt, stepY = ((b.tileH / 100) + jw) / perPt;
+  if (!(stepX > 1) || !(stepY > 1)) return;   // zu dichtes Raster → nichts zeichnen (Schutz)
+  const pts = a.pts; let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+  for (const p of pts) { if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1]; }
+  const cid = 'tile' + (_tileClip++);
+  const cp = svgEl('clipPath', { id: cid }); cp.appendChild(svgEl('polygon', { points: pts.map(p => p[0] + ',' + p[1]).join(' ') })); g.appendChild(cp);
+  const gg = svgEl('g', { 'clip-path': 'url(#' + cid + ')' }), col = a.color || '#b5651d';
+  const sx = (b.start && b.start[0] != null) ? b.start[0] : minX, sy = (b.start && b.start[1] != null) ? b.start[1] : minY;
+  for (let x = sx - Math.ceil((sx - minX) / stepX) * stepX; x <= maxX + 0.01; x += stepX) gg.appendChild(svgEl('line', { x1: x, y1: minY, x2: x, y2: maxY, stroke: col, 'stroke-width': 0.6, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
+  for (let y = sy - Math.ceil((sy - minY) / stepY) * stepY; y <= maxY + 0.01; y += stepY) gg.appendChild(svgEl('line', { x1: minX, y1: y, x2: maxX, y2: y, stroke: col, 'stroke-width': 0.6, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
+  g.appendChild(gg);
+}
 function areaClick(pv, p) {
   if (!areaDraft || areaDraft.pv !== pv) {
     cancelArea(); pushUndo();
-    const isSlab = tool === 'slab', isTerr = tool === 'terrain';
-    const a = isSlab ? { id: nextId++, type: 'slab', pts: [[p.x, p.y]], color: '#5b6b86', base: Math.max(0, wallHeightM - 0.2), thick: 0.2 } :   // Decken-OBERKANTE auf Geschosshöhe (Unterkante = Geschosshöhe − Dicke) isTerr ? { id: nextId++, type: 'terrain', pts: [[p.x, p.y]], color: '#7a6a4a' } : { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: style.color, width: style.width };
+    const isSlab = tool === 'slab', isTerr = tool === 'terrain', isFloor = tool === 'floortile';
+    const a = isSlab ? { id: nextId++, type: 'slab', pts: [[p.x, p.y]], color: '#5b6b86', base: Math.max(0, wallHeightM - 0.2), thick: 0.2 } :   // Decken-OBERKANTE auf Geschosshöhe (Unterkante = Geschosshöhe − Dicke) isTerr ? { id: nextId++, type: 'terrain', pts: [[p.x, p.y]], color: '#7a6a4a' } : isFloor ? { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: '#b5651d', width: 1.4, floor: true, belag: { ...DEFAULT_BELAG } } : { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: style.color, width: style.width };
     pushAnno(pv.num, a); areaDraft = { pv, a };
     const onMove = ev => { if (!areaDraft) return; const q = evtToPage(areaDraft.pv, ev); areaDraft.a._cursor = [q.x, q.y]; drawAnnos(areaDraft.pv); };
     document.addEventListener('pointermove', onMove); areaDraft._onMove = onMove;
-    drawAnnos(pv); if (isTerr && !areaClick._terrHint) { areaClick._terrHint = true; toast('Gelände/Terrain: Punkte klicken (offene Linie mit Erdreich-Symbol), Doppelklick/Enter = fertig.'); } else if (isSlab && !areaClick._slabHint) { areaClick._slabHint = true; toast('Decke/Boden: Ecken klicken, am Start schliessen (oder Enter). Höhe + Dicke oben in der Planungs-Leiste · erscheint in 3D.'); } else if (!isSlab && !isTerr && !docScale && !areaClick._hint) { areaClick._hint = true; toast('Tipp: Für echte m² zuerst den Massstab setzen (1:n).'); }
+    drawAnnos(pv); if (isTerr && !areaClick._terrHint) { areaClick._terrHint = true; toast('Gelände/Terrain: Punkte klicken (offene Linie mit Erdreich-Symbol), Doppelklick/Enter = fertig.'); } else if (isSlab && !areaClick._slabHint) { areaClick._slabHint = true; toast('Decke/Boden: Ecken klicken, am Start schliessen (oder Enter). Höhe + Dicke oben in der Planungs-Leiste · erscheint in 3D.'); } else if (isFloor && !areaClick._floorHint) { areaClick._floorHint = true; toast(docScale ? 'Bodenbelag: Ecken klicken, am Start schliessen – der Plattenspiegel (60×60) erscheint automatisch. Mass/Fuge später anpassbar.' : 'Bodenbelag: Für echte Plattenzahlen zuerst den Massstab (1:n) setzen. Fläche ziehen geht trotzdem.'); } else if (!isSlab && !isTerr && !isFloor && !docScale && !areaClick._hint) { areaClick._hint = true; toast('Tipp: Für echte m² zuerst den Massstab setzen (1:n).'); }
     return;
   }
   const a = areaDraft.a, f = a.pts[0];
@@ -4828,7 +4847,7 @@ function setViewOnly(on) {
 function setTool(t) {
   if (cropping && t !== 'select' && t !== 'crop') removeCropAnno();   // anderes Werkzeug → Zuschneiden verwerfen
   if (snipping && t !== 'select' && t !== 'snip') removeSnipAnno();   // anderes Werkzeug → Ausschnitt verwerfen
-  if (areaDraft && t !== 'area' && t !== 'slab' && t !== 'terrain') cancelArea();        // anderes Werkzeug → Flächen-/Decken-/Gelände-Polygon verwerfen
+  if (areaDraft && t !== 'area' && t !== 'slab' && t !== 'terrain' && t !== 'floortile') cancelArea();        // anderes Werkzeug → Flächen-/Decken-/Gelände-/Belag-Polygon verwerfen
   if (profDraft && t !== 'profile') finishProfile();                  // anderes Werkzeug → Profil-Pfad abschliessen
   if (penDraft && t !== 'curve') finishCurve();                      // anderes Werkzeug → Kurve abschliessen
   if (segDraft) cancelSegDraft();                                    // anderes Werkzeug → laufende Linie verwerfen
@@ -4861,7 +4880,7 @@ function setTool(t) {
   if (pdfDoc) pageViews.forEach(p => drawAnnos(p));   // neu zeichnen → Schicht-Hilfsnetz erscheint/verschwindet je nach Werkzeug
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'snip', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'terrain', 'section'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'snip', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'terrain', 'section', 'floortile'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */

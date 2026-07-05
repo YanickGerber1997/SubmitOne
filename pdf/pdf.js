@@ -1453,7 +1453,7 @@ function drawOne(svg, a, pv) {
     if (a.bg && a.bg !== 'transparent') g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: a.bg, stroke: 'none' }));   // alte Stelle überdecken (nur wenn Abdeckung gewünscht)
     if (a.id !== _editingId) {   // während des Tippens zeigt die Textarea den Text – nicht doppelt zeichnen
       const baseY = (a.base != null ? a.base : a.y + a.size * 0.82);   // echte PDF-Grundlinie → exakte Höhe, schriftunabhängig
-      const t = svgEl('text', { x: a.x, y: baseY, fill: a.color, 'font-size': a.size, 'font-family': cssFontStack(a.fam), 'dominant-baseline': 'alphabetic' });
+      const t = svgEl('text', { x: a.x, y: baseY, fill: a.color, 'font-size': a.size, 'font-family': (a.ff || cssFontStack(a.fam)), 'dominant-baseline': 'alphabetic' });
       if (a.bold) t.setAttribute('font-weight', 'bold'); if (a.italic) t.setAttribute('font-style', 'italic');
       (a.text || '').split('\n').forEach((ln, i) => { const ts = svgEl('tspan', { x: a.x, dy: i === 0 ? 0 : (a.lh || a.size * 1.25) }); ts.textContent = ln || ' '; t.appendChild(ts); });
       g.appendChild(t);
@@ -4287,21 +4287,42 @@ function parseColor(s) { if (!s) return { r: 0, g: 0, b: 0 }; if (s[0] === '#') 
 // Schrift-Familie (CSS) aus erkannter Klasse
 function cssFontStack(fam) { return fam === 'times' ? '"Times New Roman",Times,Georgia,serif' : fam === 'courier' ? '"Courier New",Consolas,monospace' : 'Arial,Helvetica,sans-serif'; }
 // Gemessene Oberlänge (px) der Ersatzschrift bei gegebener Grösse – um die Textarea exakt auf die PDF-Grundlinie zu legen
-function fontAscentPx(fam, bold, italic, px) {
+function fontAscentPx(family, bold, italic, px) {
   const ctx = fontAscentPx._c || (fontAscentPx._c = document.createElement('canvas').getContext('2d'));
-  ctx.font = (italic ? 'italic ' : '') + (bold ? 'bold ' : '') + px + 'px ' + cssFontStack(fam);
+  ctx.font = (italic ? 'italic ' : '') + (bold ? 'bold ' : '') + px + 'px ' + family;
   const m = ctx.measureText('Hg'); return (m && m.actualBoundingBoxAscent) ? m.actualBoundingBoxAscent : px * 0.8;
 }
 // Original-Schrift bestmöglich erkennen: Serif/Sans/Mono + fett + kursiv (aus PDF-Schriftname/-familie)
-function detectFontMeta(pv, fontName, family) {
+// Realen PDF-Schriftnamen → konkrete CSS-Schriftfamilie (mit Fallbacks), damit die Ersatzschrift möglichst genau der Originalschrift entspricht
+function fontNameToCss(name, family) {
+  const s = ((name || '') + ' ' + (family || '')).toLowerCase();
+  if (/calibri/.test(s)) return 'Calibri,"Segoe UI",sans-serif';
+  if (/segoe/.test(s)) return '"Segoe UI",sans-serif';
+  if (/verdana/.test(s)) return 'Verdana,Geneva,sans-serif';
+  if (/tahoma/.test(s)) return 'Tahoma,Geneva,sans-serif';
+  if (/candara/.test(s)) return 'Candara,sans-serif';
+  if (/gill ?sans|gillsans/.test(s)) return '"Gill Sans","Gill Sans MT",sans-serif';
+  if (/trebuchet/.test(s)) return '"Trebuchet MS",sans-serif';
+  if (/century gothic|centurygothic/.test(s)) return '"Century Gothic",sans-serif';
+  if (/frutiger|univers|myriad|helvetica|arial|helv|swiss|liberation ?sans/.test(s)) return 'Arial,Helvetica,sans-serif';
+  if (/cambria/.test(s)) return 'Cambria,Georgia,serif';
+  if (/constantia/.test(s)) return 'Constantia,Georgia,serif';
+  if (/georgia/.test(s)) return 'Georgia,serif';
+  if (/garamond|sabon/.test(s)) return 'Garamond,"Times New Roman",serif';
+  if (/palatino|book antiqua|antiqua/.test(s)) return '"Palatino Linotype","Book Antiqua",Palatino,serif';
+  if (/consol|courier|mono|typewriter/.test(s) || family === 'monospace') return '"Courier New",Consolas,monospace';
+  if (/minion|caslon|times|roman|liberation ?serif/.test(s) || family === 'serif') return '"Times New Roman",Times,serif';   // family 'sans-serif' fällt bewusst durch → Arial
+  return 'Arial,Helvetica,sans-serif';
+}
+function detectFontMeta(page, fontName, family) {
   let nm = '';
-  try { const f = pv.page.commonObjs.get(fontName); if (f && f.name) nm = f.name; } catch (_) { }
+  try { const f = page && page.commonObjs.get(fontName); if (f && f.name) nm = f.name; } catch (_) { }
   const s = ((nm || '') + ' ' + (family || '')).toLowerCase();
   const bold = /bold|black|heavy|semibold|demibold|-bd|\bbd\b|extrab/.test(s);
   const italic = /italic|oblique|-it\b|\bit\b/.test(s);
   const mono = /mono|courier|consol|typewriter/.test(s) || family === 'monospace';
-  const serif = !mono && (/times|serif|roman|georgia|minion|garamond|antiqua|palatino|cambria|caslon/.test(s) || family === 'serif');
-  return { fam: mono ? 'courier' : serif ? 'times' : 'helv', bold: !!bold, italic: !!italic };
+  const serif = !mono && (/times|roman|georgia|minion|garamond|antiqua|palatino|cambria|caslon|constantia/.test(s) || family === 'serif');   // NICHT bare 'serif' (matcht sonst in 'sans-serif')
+  return { fam: mono ? 'courier' : serif ? 'times' : 'helv', bold: !!bold, italic: !!italic, ff: fontNameToCss(nm, family) };
 }
 // Textstücke der Seite mit Kästchen in Seitenkoordinaten (y-unten, Oberkante) – einmal berechnet, inkl. erkannter Schrift
 async function ensureTextItems(pv) {
@@ -4314,8 +4335,8 @@ async function ensureTextItems(pv) {
       if (!it.str || !it.str.trim()) continue;
       const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10;
       const base = pv.pageH - tr[5], top = base - fs * 0.82;   // base = echte Grundlinie (y-unten → Seiten-y), top = Näherung Oberkante
-      const fm = detectFontMeta(pv, it.fontName, styles[it.fontName] && styles[it.fontName].fontFamily);
-      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic });
+      const fm = detectFontMeta(pv.page, it.fontName, styles[it.fontName] && styles[it.fontName].fontFamily);
+      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic, ff: fm.ff });
     }
   } catch (_) { }
   pv.textItems = items; return items;
@@ -4339,7 +4360,7 @@ function groupTextBlocks(items) {
     L.items.sort((a, b) => a.x - b.x);
     let str = '';
     for (let i = 0; i < L.items.length; i++) { const it = L.items[i]; if (i > 0) { const pr = L.items[i - 1], gap = it.x - (pr.x + pr.w); if (gap > it.size * 0.2 && !/\s$/.test(str) && !/^\s/.test(it.str)) str += ' '; } str += it.str; }
-    L.str = str; const dom = L.items.reduce((a, b) => (b.w > a.w ? b : a), L.items[0]); L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic; L.base = dom.base;
+    L.str = str; const dom = L.items.reduce((a, b) => (b.w > a.w ? b : a), L.items[0]); L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic; L.base = dom.base; L.ff = dom.ff;
   }
   lines.sort((a, b) => a.y - b.y);
   // 2) Absätze: aufeinanderfolgende Zeilen mit ähnlicher linker Kante + Zeilenabstand ~ Zeilenhöhe + ähnlicher Grösse
@@ -4353,7 +4374,7 @@ function groupTextBlocks(items) {
     }
     blocks.push({ lines: [L], x: L.x, maxx: L.maxx, y: L.y, maxy: L.maxy, size: L.size, fam: L.fam, bold: L.bold, italic: L.italic, lhs: [] });
   }
-  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic, base: B.lines[0] && B.lines[0].base }));
+  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic, base: B.lines[0] && B.lines[0].base, ff: B.lines[0] && B.lines[0].ff }));
 }
 /* ---------- Als Submit Paper öffnen: PDF-Text → editierbares Dokument (an /write/ übergeben) ---------- */
 function _htmlEsc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -4364,15 +4385,15 @@ async function pageTextItemsFor(page, pageH) {   // Textstücke einer beliebigen
     for (const it of tc.items) {
       if (!it.str || !it.str.trim()) continue;
       const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10, base = pageH - tr[5], top = base - fs * 0.82;
-      const s = ((styles[it.fontName] && styles[it.fontName].fontFamily) || '').toLowerCase();
-      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: /serif|times|roman/.test(s) ? 'times' : /mono|courier/.test(s) ? 'courier' : 'helv', bold: /bold/.test(s), italic: /italic|oblique/.test(s) });
+      const fm = detectFontMeta(page, it.fontName, styles[it.fontName] && styles[it.fontName].fontFamily);
+      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic, ff: fm.ff });
     }
   } catch (_) { }
   return items;
 }
 const _isListLine = s => /^\s*([-–—•*·▪◦‣]|\d{1,3}[.)])\s/.test(s) || /^\s*[-–—•*·▪◦‣]\S/.test(s);
 // Ein Absatz-Block → HTML. Gestapelte Zeilen bleiben GESTAPELT (<br>); nur echt umbrochene Fliesstext-Zeilen werden zusammengezogen (vorige Zeile reicht fast ganz nach rechts, diese beginnt links, kein Listenpunkt, keine Satzende-Zeile davor).
-function blockToParaHtml(b, body, pageRight) {
+function blockToParaHtml(b, body, pageRight, gapEm) {
   const lines = (b.lines && b.lines.length) ? b.lines : b.text.split('\n').map(str => ({ str, x: b.x, maxx: b.right || (b.x + b.w) }));
   let inner = '';
   for (let i = 0; i < lines.length; i++) {
@@ -4388,7 +4409,9 @@ function blockToParaHtml(b, body, pageRight) {
   if (!inner.trim()) return '';
   const px = Math.max(9, Math.min(48, Math.round(b.size / body * 15)));   // Schriftgrösse relativ zur Grundschrift (Body ≈ 15px)
   const lhR = Math.max(1, Math.min(2.2, (b.lh || b.size * 1.25) / b.size));   // Zeilenabstand aus dem Original
-  const st = `font-size:${px}px;line-height:${lhR.toFixed(2)}`;
+  const ff = (b.ff || cssFontStack(b.fam || 'helv')).replace(/"/g, "'");   // echte Schriftfamilie mitnehmen
+  const mt = (gapEm && gapEm > 0.05) ? `;margin:${Math.min(4, gapEm).toFixed(2)}em 0 0` : ';margin:0';   // Absatzabstand aus dem Original
+  const st = `font-family:${ff};font-size:${px}px;line-height:${lhR.toFixed(2)}${mt}`;
   if (b.size >= body * 1.45 && lines.length === 1) return `<h2 style="${st}">` + inner + '</h2>';   // grosse Einzelzeile → Überschrift
   if (b.bold) inner = '<strong>' + inner + '</strong>'; if (b.italic) inner = '<em>' + inner + '</em>';
   return `<p style="${st}">` + inner + '</p>';
@@ -4399,7 +4422,8 @@ function blocksToPaperHtml(blocks) {
   if (!blocks.length) return '<p></p>';
   const sizes = blocks.map(b => b.size).slice().sort((a, b) => a - b), body = sizes[Math.floor(sizes.length / 2)] || 12;
   const pr = pageRightMargin(blocks);
-  const html = blocks.map(b => blockToParaHtml(b, body, pr)).filter(Boolean).join('\n');
+  let prevBot = null;   // Absatzabstände aus den vertikalen Lücken des Originals übernehmen
+  const html = blocks.map(b => { const gapEm = (prevBot != null && body > 0) ? Math.max(0, (b.y - prevBot) / body) : 0; prevBot = b.y + b.h; return blockToParaHtml(b, body, pr, gapEm); }).filter(Boolean).join('\n');
   return html || '<p></p>';
 }
 /* ---------- Rechnung/Kalkulation erkennen: Anzahl × Ansatz = Betrag, mit Neuberechnung + rot markierter Fehlerwarnung ---------- */
@@ -4590,7 +4614,7 @@ async function editTextAt(pv, p) {
   const hit = blocks.find(b => p.x >= b.x - 3 && p.x <= b.x + b.w + 3 && p.y >= b.y - 2 && p.y <= b.y + b.h + 2);
   let a;
   if (hit) {
-    const s = sampleBox(pv, hit); a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, base: hit.base, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic };
+    const s = sampleBox(pv, hit); a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, base: hit.base, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic, ff: hit.ff };
     pushUndo(); pushAnno(pv.num, a); sel = null; drawAnnos(pv); openEditEdit(pv, a, false, p);
   } else {
     a = { id: nextId++, type: 'edit', x: p.x, y: p.y - style.size * 0.82, w: 140, h: style.size * 1.3, text: '', size: style.size, lh: style.size * 1.3, color: style.color, bg: 'transparent' };
@@ -4611,7 +4635,7 @@ async function editAllTextOnPage(pv) {
     for (const b of blocks) {
       if (already.has(Math.round(b.x) + '|' + Math.round(b.y))) continue;   // schon editierbar → nicht doppelt
       const s = sampleBox(pv, b);
-      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, base: b.base, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic });
+      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, base: b.base, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic, ff: b.ff });
       added++;
     }
     drawAnnos(pv); saveState();
@@ -4663,7 +4687,7 @@ function caretOffsetAt(a, val, clickPt) {
   const li = Math.max(0, Math.min(lines.length - 1, Math.floor((clickPt.y - a.y) / lh)));
   const xoff = Math.max(0, clickPt.x - a.x), line = lines[li];
   const ctx = caretOffsetAt._c || (caretOffsetAt._c = document.createElement('canvas').getContext('2d'));
-  ctx.font = (a.italic ? 'italic ' : '') + (a.bold ? '700 ' : '') + a.size + 'px ' + cssFontStack(a.fam);
+  ctx.font = (a.italic ? 'italic ' : '') + (a.bold ? '700 ' : '') + a.size + 'px ' + (a.ff || cssFontStack(a.fam));
   let ci = line.length;
   for (let k = 1; k <= line.length; k++) { const w = ctx.measureText(line.slice(0, k)).width, wp = ctx.measureText(line.slice(0, k - 1)).width; if ((w + wp) / 2 >= xoff) { ci = k - 1; break; } }
   let off = 0; for (let i = 0; i < li; i++) off += lines[i].length + 1; return off + ci;
@@ -4675,11 +4699,12 @@ function openEditEdit(pv, a, isNew, clickPt) {
   ta.style.padding = '0'; ta.style.left = (a.x * sc) + 'px';
   ta.style.fontSize = (a.size * sc) + 'px'; ta.style.lineHeight = (lh * sc) + 'px';
   // Textarea so legen, dass ihre erste Grundlinie GENAU auf der PDF-Grundlinie sitzt (deckungsgleich mit der SVG-Ausgabe → kein Springen)
-  const baseY = (a.base != null ? a.base : a.y + a.size * 0.82) * sc, ascPx = fontAscentPx(a.fam, a.bold, a.italic, a.size * sc), halfLead = Math.max(0, (lh - a.size) * sc / 2);
+  const fam = a.ff || cssFontStack(a.fam);
+  const baseY = (a.base != null ? a.base : a.y + a.size * 0.82) * sc, ascPx = fontAscentPx(fam, a.bold, a.italic, a.size * sc), halfLead = Math.max(0, (lh - a.size) * sc / 2);
   ta.style.top = (baseY - ascPx - halfLead) + 'px';
   ta.style.color = a.color; ta.style.background = 'transparent';   // die Abdeckung darunter liefert den Hintergrund
   ta.style.width = Math.max(60, a.w * sc + 10) + 'px';
-  ta.style.fontFamily = cssFontStack(a.fam); if (a.bold) ta.style.fontWeight = 'bold'; if (a.italic) ta.style.fontStyle = 'italic';
+  ta.style.fontFamily = fam; if (a.bold) ta.style.fontWeight = 'bold'; if (a.italic) ta.style.fontStyle = 'italic';
   pv.inner.appendChild(ta);
   const autoH = () => { ta.style.height = 'auto'; ta.style.height = Math.max(a.h * sc, ta.scrollHeight) + 'px'; };
   autoH(); ta.focus();
@@ -4711,7 +4736,7 @@ function editNextBlock(pv, curA, dir) {
   setTimeout(() => {
     const ex = (getAnnos(pv.num) || []).filter(x => x.type === 'edit').find(x => Math.abs(x.x - nb.x) < 4 && Math.abs(x.y - nb.y) < 4);
     if (ex) { openEditEdit(pv, ex, false); return; }
-    const s = sampleBox(pv, nb), a2 = { id: nextId++, type: 'edit', x: nb.x, y: nb.y, w: Math.max(nb.w, nb.size), h: nb.h, text: nb.text, size: nb.size, lh: nb.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: nb.fam, bold: nb.bold, italic: nb.italic };
+    const s = sampleBox(pv, nb), a2 = { id: nextId++, type: 'edit', x: nb.x, y: nb.y, base: nb.base, w: Math.max(nb.w, nb.size), h: nb.h, text: nb.text, size: nb.size, lh: nb.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: nb.fam, bold: nb.bold, italic: nb.italic, ff: nb.ff };
     pushUndo(); pushAnno(pv.num, a2); openEditEdit(pv, a2, false);
   }, 0);
 }
@@ -6973,6 +6998,9 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Nischen-Sektion im Ausschreibungstext', () => { const nischen = [{ name: 'Dusche Nische', w: 0.3, h: 0.6, depth: 0.1, m2: 0.36 }]; const html = buildBelagTableHtml([], [], false, [], [], nischen); return (/Nischen \(innen geplättelt\)/.test(html) && /Dusche Nische/.test(html) && /30×60×T10/.test(html) && /0,36/.test(html)) ? '' : 'fail'; });
     A('Fugenmörtel kg/m² (Herstellerformel) + Materialsummary', () => { const g = fugenmoertelKgM2(10, 10, 3, 6, 1.6); const ms = belagMaterialSummary([{ m2: 10, tiles: 30, b: { tileW: 10, tileH: 10, joint: 3 } }], []); return (Math.abs(g - 0.576) < 1e-6 && Math.abs(ms.kleberKg - 45) < 1e-6 && Math.abs(ms.groutKg - 10 * fugenmoertelKgM2(10, 10, 3)) < 1e-6 && ms.tiles === 30) ? '' : JSON.stringify({ g, ms }); });
     A('NPK-Position + Bemerkung im Ausschreibungstext', () => { const floors = [{ name: 'Bad', m2: 5, b: { tileW: 30, tileH: 30 }, a: { npk: '663.211', bemerkung: 'rutschhemmend R10' }, aufbau: '' }]; const html = buildBelagTableHtml(floors, [], false); return (/NPK 663\.211/.test(html) && /rutschhemmend R10/.test(html)) ? '' : 'fail'; });
+    A('Font-Namen → echte CSS-Familie', () => { const ar = fontNameToCss('ABCDEF+Arial-BoldMT', ''), ca = fontNameToCss('Calibri', ''), ti = fontNameToCss('TimesNewRomanPSMT', ''), co = fontNameToCss('Courier', ''), ve = fontNameToCss('Verdana', ''); return (/^Arial/.test(ar) && /Calibri/.test(ca) && /Times New Roman/.test(ti) && /Courier New/.test(co) && /Verdana/.test(ve)) ? '' : JSON.stringify({ ar, ca, ti, co, ve }); });
+    A('detectFontMeta: bold+italic + ff aus Fontnamen', () => { const stub = { commonObjs: { get: () => ({ name: 'Arial-BoldItalicMT' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (m.bold && m.italic && m.fam === 'helv' && /Arial/.test(m.ff)) ? '' : JSON.stringify(m); });
+    A('PDF→Paper: Absatz übernimmt Schriftfamilie/Grösse', () => { const html = blockToParaHtml({ text: 'Hallo', lines: [{ str: 'Hallo', x: 0, maxx: 50 }], size: 12, lh: 15, fam: 'times', ff: '"Times New Roman",Times,serif', bold: false, italic: false, x: 0, right: 50 }, 12, 500); return (/font-family:'Times New Roman'/.test(html) && /font-size:15px/.test(html) && /<p /.test(html) && />Hallo</.test(html)) ? '' : html; });
     A('Verlegemuster-Reihenversatz (Halbverband/Drittelverband/Kreuzfuge)', () => { const hv = [0, 1, 2, 3].map(r => tileRowShift('Halbverband', r)), dv = [0, 1, 2, 3].map(r => tileRowShift('Drittelverband', r)), kf = [0, 1, 2].map(r => tileRowShift('Kreuzfuge', r)); return (Math.abs(hv[0]) < 1e-9 && Math.abs(hv[1] - 0.5) < 1e-9 && Math.abs(hv[2]) < 1e-9 && Math.abs(hv[3] - 0.5) < 1e-9 && Math.abs(dv[1] - 1 / 3) < 1e-9 && Math.abs(dv[2] - 2 / 3) < 1e-9 && Math.abs(dv[3]) < 1e-9 && kf.every(v => v === 0)) ? '' : JSON.stringify({ hv, dv, kf }); });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };

@@ -4365,6 +4365,7 @@ async function ensureTextItems(pv) {
       const fm = detectFontMeta(pv.page, it.fontName, styles[it.fontName] && styles[it.fontName].fontFamily);
       items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: _deLig(it.str), size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic, ff: fm.ff });
     }
+    _applyFillColors(items, await pageFillColors(pv.page, pv.pageH));   // zuverlässige Textfarbe (Inhaltsstrom) auch fürs Bearbeiten
   } catch (_) { }
   pv.textItems = items; return items;
 }
@@ -4765,6 +4766,14 @@ async function pageFillColors(page, PH) {
   return cs;
 }
 function _nearBlackRGB(s) { const m = /rgb\((\d+),(\d+),(\d+)\)/.exec(s || ''); return m ? (+m[1] < 45 && +m[2] < 45 && +m[3] < 45) : false; }
+// Inhaltsstrom-Farben den Textstücken zuordnen (enge Toleranz; nur wenn genug passt, sonst verwerfen → Pixel-Fallback)
+function _applyFillColors(items, fills) {
+  if (!fills || !fills.length || !items.length) return;
+  const byY = new Map(); for (const f of fills) { const key = Math.round(f.by); (byY.get(key) || byY.set(key, []).get(key)).push(f); }
+  let matched = 0;
+  for (const it of items) { let best = null, bd = 1e9; for (let dy = -2; dy <= 2; dy++) { const arr = byY.get(Math.round(it.base) + dy); if (arr) for (const f of arr) { const d = Math.abs(f.x - it.x); if (d < bd) { bd = d; best = f; } } } if (best && bd < Math.max(4, it.size * 0.7)) { matched++; if (best.rgb) it.fill = best.rgb; } }
+  if (matched < items.length * 0.4) items.forEach(it => { delete it.fill; });
+}
 async function convertToPaper(pageNums) {
   if (!pdfDoc) return;
   const nums = (pageNums && pageNums.length) ? pageNums : Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1);
@@ -4778,15 +4787,7 @@ async function convertToPaper(pageNums) {
         const links = (await page.getAnnotations()).filter(a => a.subtype === 'Link' && a.url).map(a => { const r = a.rect; return { x0: Math.min(r[0], r[2]), x1: Math.max(r[0], r[2]), top: vp.height - Math.max(r[1], r[3]), bot: vp.height - Math.min(r[1], r[3]), url: a.url }; });
         if (links.length) for (const it of items) { const cx = it.x + (it.w || 0) / 2, cy = it.y + it.h / 2, L = links.find(l => cx >= l.x0 - 1 && cx <= l.x1 + 1 && cy >= l.top - 2 && cy <= l.bot + 2); if (L) it.url = L.url; }
       } catch (_) { }
-      try {   // zuverlässige Textfarbe aus dem Inhaltsstrom den Textstücken zuordnen (enge Toleranz; nur wenn genug passt)
-        const fills = await pageFillColors(page, vp.height);
-        if (fills.length) {
-          const byY = new Map(); for (const f of fills) { const key = Math.round(f.by); (byY.get(key) || byY.set(key, []).get(key)).push(f); }
-          let matched = 0;
-          for (const it of items) { let best = null, bd = 1e9; for (let dy = -2; dy <= 2; dy++) { const arr = byY.get(Math.round(it.base) + dy); if (arr) for (const f of arr) { const d = Math.abs(f.x - it.x); if (d < bd) { bd = d; best = f; } } } if (best && bd < Math.max(4, it.size * 0.7)) { matched++; if (best.rgb) it.fill = best.rgb; } }
-          if (matched < items.length * 0.4) items.forEach(it => { delete it.fill; });   // Korrelation unsicher → verwerfen, Pixel-Methode nutzen
-        }
-      } catch (_) { }
+      try { _applyFillColors(items, await pageFillColors(page, vp.height)); } catch (_) { }   // zuverlässige Textfarbe aus dem Inhaltsstrom
       const blocks = groupTextBlocks(items);
       for (const b of blocks) { blockN++; if ((b.text || '').split(/\s+/).filter(Boolean).length >= 6 || (b.lines && b.lines.length >= 3)) substantial++; }   // „richtige" Textblöcke (Fliesstext) vs. verstreute Labels
       let colorFn = null, ulFn = null, images = [];   // Textfarbe + Unterstreichung + Bilder aus einem Offscreen-Render (bei überschaubarer Seitenzahl)
@@ -4869,7 +4870,8 @@ async function editTextAt(pv, p) {
   let a;
   if (hit) {
     const s = sampleBox(pv, hit); if (pv.canvas) delete pv.canvas._cData; const inkC = sampleInkColor(pv.canvas, hit, pv.pageW), ul = sampleUnderline(pv.canvas, hit.x, hit.right, hit.base, pv.pageW);
-    a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, base: hit.base, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: inkC || s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic, ff: hit.ff, underline: ul, lines0: (hit.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) };
+    const col0 = (hit.csColor && !_nearBlackRGB(hit.csColor)) ? hit.csColor : (inkC || s.ink || '#111111');   // Inhaltsstrom-Farbe hat Vorrang
+    a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, base: hit.base, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: col0, bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic, ff: hit.ff, underline: ul, lines0: (hit.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) };
     pushUndo(); pushAnno(pv.num, a); sel = null; drawAnnos(pv); openEditEdit(pv, a, false, p);
   } else {
     a = { id: nextId++, type: 'edit', x: p.x, y: p.y - style.size * 0.82, w: 140, h: style.size * 1.3, text: '', size: style.size, lh: style.size * 1.3, color: style.color, bg: 'transparent' };
@@ -4889,8 +4891,8 @@ async function editAllTextOnPage(pv) {
     pushUndo(); let added = 0; if (pv.canvas) delete pv.canvas._cData;
     for (const b of blocks) {
       if (already.has(Math.round(b.x) + '|' + Math.round(b.y))) continue;   // schon editierbar → nicht doppelt
-      const s = sampleBox(pv, b);
-      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, base: b.base, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: sampleInkColor(pv.canvas, b, pv.pageW) || s.ink || '#111111', bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic, ff: b.ff, underline: sampleUnderline(pv.canvas, b.x, b.right, b.base, pv.pageW), lines0: (b.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) });
+      const s = sampleBox(pv, b), bcol = (b.csColor && !_nearBlackRGB(b.csColor)) ? b.csColor : (sampleInkColor(pv.canvas, b, pv.pageW) || s.ink || '#111111');
+      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, base: b.base, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: bcol, bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic, ff: b.ff, underline: sampleUnderline(pv.canvas, b.x, b.right, b.base, pv.pageW), lines0: (b.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) });
       added++;
     }
     drawAnnos(pv); saveState();
@@ -4991,7 +4993,7 @@ function editNextBlock(pv, curA, dir) {
   setTimeout(() => {
     const ex = (getAnnos(pv.num) || []).filter(x => x.type === 'edit').find(x => Math.abs(x.x - nb.x) < 4 && Math.abs(x.y - nb.y) < 4);
     if (ex) { openEditEdit(pv, ex, false); return; }
-    if (pv.canvas) delete pv.canvas._cData; const s = sampleBox(pv, nb), a2 = { id: nextId++, type: 'edit', x: nb.x, y: nb.y, base: nb.base, w: Math.max(nb.w, nb.size), h: nb.h, text: nb.text, size: nb.size, lh: nb.lh, color: sampleInkColor(pv.canvas, nb, pv.pageW) || s.ink || '#111111', bg: s.bg || '#ffffff', fam: nb.fam, bold: nb.bold, italic: nb.italic, ff: nb.ff, underline: sampleUnderline(pv.canvas, nb.x, nb.right, nb.base, pv.pageW), lines0: (nb.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) };
+    if (pv.canvas) delete pv.canvas._cData; const s = sampleBox(pv, nb), ncol = (nb.csColor && !_nearBlackRGB(nb.csColor)) ? nb.csColor : (sampleInkColor(pv.canvas, nb, pv.pageW) || s.ink || '#111111'), a2 = { id: nextId++, type: 'edit', x: nb.x, y: nb.y, base: nb.base, w: Math.max(nb.w, nb.size), h: nb.h, text: nb.text, size: nb.size, lh: nb.lh, color: ncol, bg: s.bg || '#ffffff', fam: nb.fam, bold: nb.bold, italic: nb.italic, ff: nb.ff, underline: sampleUnderline(pv.canvas, nb.x, nb.right, nb.base, pv.pageW), lines0: (nb.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) };
     pushUndo(); pushAnno(pv.num, a2); openEditEdit(pv, a2, false);
   }, 0);
 }

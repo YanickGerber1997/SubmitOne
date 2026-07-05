@@ -4447,7 +4447,11 @@ function blockToParaHtml(b, body, pageRight, gapEm, pageLeft) {
       const prevReaches = prev.maxx >= pageRight - b.size * 2.5;   // vorige Zeile reicht bis zum SEITEN-Textrand → umbrochener Fliesstext
       const curLeft = (cur.x - b.x) <= b.size * 1.2;               // diese Zeile beginnt links
       const wrapped = prevReaches && curLeft && !_isListLine(cur.str) && !/[.:!?]$/.test((prev.str || '').trim());
-      inner += wrapped ? ' ' : '<br>';
+      if (wrapped) {
+        const hy = /[a-zäöüßA-ZÄÖÜ]-$/.test(inner);   // Zeile endet auf Buchstabe+Bindestrich
+        if (hy && /^[a-zäöüß]/.test(cur.str)) inner = inner.slice(0, -1);   // echte Silbentrennung → Bindestrich weg
+        else if (!hy) inner += ' ';                    // Kompositum (Nord-Osten): Bindestrich bleibt, aber ohne Leerzeichen
+      } else inner += '<br>';
     }
     if (cur.runs && cur.runs.length) hasRuns = true;
     inner += lineHtml(cur);
@@ -4600,7 +4604,8 @@ function tableHtml(lines, first, last, cols, body) {
     if (r.descOnly) {
       let inner = '';
       for (let i = 0; i < r.dl.length; i++) { const cur = r.dl[i], prev = r.dl[i - 1];
-        if (i > 0) { const wrapped = prev.maxx >= pageRight - body * 2.5 && (cur.x - r.dl[0].x) <= body * 1.5 && !_isListLine(cur.str) && !/[.:!?]$/.test((prev.str || '').trim()); inner += wrapped ? ' ' : '<br>'; }
+        if (i > 0) { const wrapped = prev.maxx >= pageRight - body * 2.5 && (cur.x - r.dl[0].x) <= body * 1.5 && !_isListLine(cur.str) && !/[.:!?]$/.test((prev.str || '').trim());
+          if (wrapped) { const hy = /[a-zäöüßA-ZÄÖÜ]-$/.test(inner); if (hy && /^[a-zäöüß]/.test(cur.str)) inner = inner.slice(0, -1); else if (!hy) inner += ' '; } else inner += '<br>'; }
         inner += _htmlEsc(cur.str);
       }
       if (!inner.trim()) continue;
@@ -7153,6 +7158,8 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Text-Tabelle → HTML mit Zellen', () => { const mk = (y, cs) => ({ y, size: 10, items: cs.map(c => ({ x: c[0], y, w: 30, h: 12, size: 10, str: c[1] })) }); const lines = [mk(0, [[50, 'Name'], [200, 'Wert']]), mk(20, [[50, 'Apfel'], [200, '1']]), mk(40, [[50, 'Birne'], [200, '2']])]; const html = textTableHtml(lines, 0, 2, [50, 200]); return (/<table/.test(html) && (html.match(/<tr>/g) || []).length === 3 && /<td[^>]*>Apfel<\/td>/.test(html) && /<td[^>]*>1<\/td>/.test(html)) ? '' : html; });
     A('PDF→Paper: Link-Run → <a href>', () => { const b = { text: 'Klick hier', lines: [{ str: 'Klick hier', x: 0, maxx: 80, runs: [{ str: 'Klick ', bold: false, italic: false, ff: 'Arial,sans-serif' }, { str: 'hier', bold: false, italic: false, ff: 'Arial,sans-serif', url: 'https://example.com' }] }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 80, y: 0, h: 15 }; const html = blockToParaHtml(b, 12, 500); return /<a href="https:\/\/example\.com">hier<\/a>/.test(html) ? '' : html; });
     A('PDF→Paper: unterstrichene Zeile → <u>', () => { const html = blocksToPaperHtml([{ text: 'Titel', lines: [{ str: 'Titel', x: 0, maxx: 60, base: 10, _ul: true }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 15 }]); return /<u>Titel<\/u>/.test(html) ? '' : html; });
+    A('PDF→Paper: Silbentrennung am Zeilenende zusammenfügen', () => { const b = { text: 'Be-\nmerkung folgt', lines: [{ str: 'Be-', x: 0, maxx: 498 }, { str: 'merkung folgt', x: 0, maxx: 90 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 498, y: 0, h: 30 }; const html = blockToParaHtml(b, 12, 500); return (/Bemerkung folgt/.test(html) && !/Be-\s*merkung/.test(html)) ? '' : html; });
+    A('PDF→Paper: Kompositum behält Bindestrich, ohne Leerzeichen', () => { const b = { text: 'Nord-\nOsten', lines: [{ str: 'Nord-', x: 0, maxx: 498 }, { str: 'Osten', x: 0, maxx: 80 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 498, y: 0, h: 30 }; const html = blockToParaHtml(b, 12, 500); return (/Nord-Osten/.test(html) && !/Nord- Osten/.test(html)) ? '' : html; });
     A('PDF→Paper: Aufzählung → echte <ul>', () => { const html = blocksToPaperHtml([{ text: '- A\n- B', lines: [{ str: '- Apfel', x: 0, maxx: 60 }, { str: '- Birne', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 20 }]); return (/<ul/.test(html) && /<li>Apfel<\/li>/.test(html) && /<li>Birne<\/li>/.test(html)) ? '' : html; });
     A('PDF→Paper: nummerierte Liste → <ol start>', () => { const html = blocksToPaperHtml([{ text: '2. X\n3. Y', lines: [{ str: '2. Erstens', x: 0, maxx: 60 }, { str: '3. Zweitens', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 20 }]); return (/<ol[^>]*start="2"/.test(html) && /<li>Erstens<\/li>/.test(html) && /<li>Zweitens<\/li>/.test(html)) ? '' : html; });
     A('Ausrichtung: zentriert / rechts / links erkennen', () => { const cen = blockAlign([{ x: 200, maxx: 400 }], 100, 500), rig = blockAlign([{ x: 380, maxx: 498 }], 100, 500), lef = blockAlign([{ x: 102, maxx: 480 }], 100, 500); return (cen === 'center' && rig === 'right' && lef === '') ? '' : JSON.stringify({ cen, rig, lef }); });

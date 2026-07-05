@@ -2185,7 +2185,7 @@ function onPointerDown(pv, e) {
   if (tool === 'profile') { profileClick(pv, p); return; }
   if (tool === 'block') { placeBlock(pv, p); return; }
   if (tool === 'section') { startSection(pv, e, p); return; }
-  if (tool === 'chaindim') { chaindimClick(pv, p); return; }
+  if (tool === 'chaindim' || tool === 'anschluss') { chaindimClick(pv, p); return; }
   if (tool === 'opening' || tool === 'window') { openKind = tool === 'window' ? 'window' : 'door'; openingClick(pv, p); return; }
   if (tool === 'edittext') { editTextAt(pv, p); return; }
   if (tool === 'text') { createText(pv, p); return; }
@@ -2358,6 +2358,7 @@ async function snipDo(kind) {   // kind: 'pdf' | 'copy' | 'mail'
 /* ---------- Fläche messen (Polygon, m²) ---------- */
 function polyArea(pts) { let s = 0; for (let i = 0; i < pts.length; i++) { const [x1, y1] = pts[i], [x2, y2] = pts[(i + 1) % pts.length]; s += x1 * y2 - x2 * y1; } return Math.abs(s) / 2; }
 function centroid(pts) { let x = 0, y = 0; for (const p of pts) { x += p[0]; y += p[1]; } return [x / pts.length, y / pts.length]; }
+function polylineLen(pts) { let s = 0; for (let i = 1; i < (pts || []).length; i++) s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return s; }   // Polylinien-Gesamtlänge (offen)
 function pointInPoly(p, pts) { let inside = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1]; if (((yi > p[1]) !== (yj > p[1])) && (p[0] < (xj - xi) * (p[1] - yi) / ((yj - yi) || 1e-9) + xi)) inside = !inside; } return inside; }
 function areaLabel(pts) {
   const apt = polyArea(pts);
@@ -2555,7 +2556,8 @@ function chaindimClick(pv, p) {
   { const an = anchorSnap(pv, p.x, p.y); if (an) p = an; else if (gridOn) p = snapPt(p.x, p.y); }   // an Endpunkte/Raster
   if (!cdimDraft || cdimDraft.pv !== pv) {
     cancelChaindim(); pushUndo();
-    const a = { id: nextId++, type: 'chaindim', pts: [[p.x, p.y]], color: style.color };
+    const a = { id: nextId++, type: 'chaindim', pts: [[p.x, p.y]], color: tool === 'anschluss' ? '#8a5a2a' : style.color };
+    if (tool === 'anschluss') a.anschluss = 'boden';   // Anschluss = getaggtes Kettenmass (Polylinie, lfm)
     pushAnno(pv.num, a); cdimDraft = { pv, a };
     const onMove = ev => { if (!cdimDraft) return; let q = evtToPage(pv, ev); const an = anchorSnap(pv, q.x, q.y, a.id); if (an) q = an; else if (gridOn) q = snapPt(q.x, q.y); cdimDraft.a._cursor = [q.x, q.y]; drawAnnos(pv); };
     document.addEventListener('pointermove', onMove); cdimDraft._onMove = onMove;
@@ -2569,6 +2571,7 @@ function finishChaindim() {
   delete a._cursor; cdimDraft = null;
   if (a.pts.length < 2) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); drawAnnos(pv); return; }
   sel = { num: pv.num, id: a.id }; drawAnnos(pv); saveState();
+  if (a.anschluss) { _listTab = 'sel'; if (typeof openListPanel === 'function') openListPanel('sel'); }   // Anschluss fertig → Art wählen
 }
 function cancelChaindim() {
   if (!cdimDraft) return; const { pv, a, _onMove } = cdimDraft; document.removeEventListener('pointermove', _onMove);
@@ -3065,7 +3068,6 @@ function startDraw(pv, e, p) {
   else if (tool === 'stairs') a = { id: nextId++, type: 'stairs', x1: p.x, y1: p.y, x2: p.x, y2: p.y, width: stairWidthPts(), rise: stairRiseM, base: stairBaseM, color: style.color };   // Treppe = Lauf (Linie mit Breite + Höhe)
   else if (tool === 'beam') a = { id: nextId++, type: 'beam', x1: p.x, y1: p.y, x2: p.x, y2: p.y, width: beamWidthPts(), height: beamHM, color: style.color };   // Unterzug = Balken (Linie mit Breite + Höhe, unter der Decke)
   else if (tool === 'wallface') a = { id: nextId++, type: 'measure', x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: '#2f6ea3', width: 1.6, wallface: true, height: wallHeightM || 2.5, belag: { ...DEFAULT_BELAG } };   // Wandbelag = Messlinie + Höhe → Wandfläche
-  else if (tool === 'anschluss') a = { id: nextId++, type: 'measure', x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: '#8a5a2a', width: 2, anschluss: 'boden' };   // Anschluss = Messlinie mit Kategorie (lfm)
   else a = { id: nextId++, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color: style.color, width: style.width }; // line/arrow/measure
   pushAnno(pv.num, a);
   if (a.type === 'wall' && wallBuildup) applyWallBuildup(a, wallBuildup.layers, wallBuildup.spacing);   // Standard-Aufbau übernehmen
@@ -4911,7 +4913,7 @@ function setTool(t) {
   if (penDraft && t !== 'curve') finishCurve();                      // anderes Werkzeug → Kurve abschliessen
   if (segDraft) cancelSegDraft();                                    // anderes Werkzeug → laufende Linie verwerfen
   if (wallDraft && t !== 'wallchain') finishWallChain();            // anderes Werkzeug → Wand-Kette beenden
-  if (cdimDraft && t !== 'chaindim') finishChaindim();              // anderes Werkzeug → Kettenmass beenden
+  if (cdimDraft && t !== 'chaindim' && t !== 'anschluss') finishChaindim();              // anderes Werkzeug → Kettenmass/Anschluss beenden
   tool = t; $$('.tool[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); applyToolCursor();
   const ab = $('.tool.on[data-tool]'); if (ab) { const grp = ab.closest('.rib-tools'); if (grp && grp.hidden) activateRibTab(grp.dataset.tabgroup); }   // Reiter des aktiven Werkzeugs zeigen
   const bs = $('#btnStamp'); if (bs) bs.classList.toggle('on', t === 'stamp');
@@ -6274,8 +6276,8 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     const au = body.querySelector('#iWfAu'); if (au) au.onchange = () => { const v = au.value.trim(); if (v) a.aufbau = v; else delete a.aufbau; markDirty(); pageViews.forEach(drawAnnos); };
     return;
   }
-  if (a.type === 'measure' && a.anschluss) {
-    const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), lm = docScale ? len * docScale.perPt : 0;
+  if (a.anschluss && (a.type === 'measure' || a.type === 'chaindim')) {
+    const len = a.type === 'chaindim' ? polylineLen(a.pts) : Math.hypot(a.x2 - a.x1, a.y2 - a.y1), lm = docScale ? len * docScale.perPt : 0;
     body.innerHTML = '<h4>Anschluss</h4>' + (docScale ? '<div class="insp-kv"><span>Länge</span><b>' + (Math.round(lm * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>' : '')
       + '<div class="insp-row"><span class="insp-lbl">Art</span><span id="iAk" style="display:inline-flex;gap:3px;flex-wrap:wrap">' + Object.keys(ANSCHLUSS_KAT).map(k => '<button class="insp-mini' + (a.anschluss === k ? ' on' : '') + '" data-k="' + k + '" style="width:auto;padding:0 8px">' + ANSCHLUSS_KAT[k] + '</button>').join('') + '</span></div>'
       + '<div class="insp-row"><span class="insp-lbl">Name</span><input class="insp-num" style="width:120px" id="iAn" value="' + (a.name ? a.name.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Bad Sockel"></div>';
@@ -6289,7 +6291,7 @@ function syncInspector() {   // Auswahl gewechselt → Inspector zeigen/aktualis
   const id = sel ? sel.id : null; if (id === _lastInspId) return; _lastInspId = id;
   const p = document.getElementById('listPanel'); if (!p || p.hidden) return;   // nur aktualisieren, wenn Panel offen (Einklappen wird respektiert)
   const a = (id != null && sel) ? findAnno(sel.num, sel.id) : null;
-  if (a && (a.type === 'opening' || a.type === 'wall' || a.type === 'area' || (a.type === 'measure' && (a.wallface || a.anschluss)))) { _listTab = 'sel'; openListPanel('sel'); }   // Bauteil gewählt → Inspector zeigt Einstellungen
+  if (a && (a.type === 'opening' || a.type === 'wall' || a.type === 'area' || (a.type === 'measure' && (a.wallface || a.anschluss)) || (a.type === 'chaindim' && a.anschluss))) { _listTab = 'sel'; openListPanel('sel'); }   // Bauteil gewählt → Inspector zeigt Einstellungen
   else if (_listTab === 'sel') renderList();   // abgewählt → Inspector leeren
 }
 function fillRoomList(bodyEl) {   // Raumbuch in das Listen-Panel
@@ -6314,8 +6316,9 @@ function belagData() {
     } else if (a.type === 'measure' && a.wallface) {
       const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), h = a.height || 2.5, m2 = wallFaceAreaM2(len, pp, h), b = a.belag || DEFAULT_BELAG;
       walls.push({ a, name: a.name || '', m2, h, lenM: len * pp, tiles: tilesForArea(m2, b.tileW, b.tileH, b.waste || 0), b, aufbau: a.aufbau || '' });
-    } else if (a.type === 'measure' && a.anschluss) {
-      anschluesse.push({ a, kat: a.anschluss, katLabel: ANSCHLUSS_KAT[a.anschluss] || a.anschluss, name: a.name || '', lenM: Math.hypot(a.x2 - a.x1, a.y2 - a.y1) * pp });
+    } else if ((a.type === 'measure' || a.type === 'chaindim') && a.anschluss) {
+      const lp = a.type === 'chaindim' ? polylineLen(a.pts) : Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
+      anschluesse.push({ a, kat: a.anschluss, katLabel: ANSCHLUSS_KAT[a.anschluss] || a.anschluss, name: a.name || '', lenM: lp * pp });
     }
   }
   // Aussparungen von den Böden abziehen (Aussparungs-Schwerpunkt liegt in der Fläche) → Netto-Fläche
@@ -6564,6 +6567,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Belag-Ausschreibung: Preisspalten nur im Ausschreibungs-Modus + Pos/Menge', () => { const floors = [{ name: 'Wohnen', m2: 24.5, b: { tileW: 60, tileH: 60 }, aufbau: 'OK FB' }]; const aus = buildBelagTableHtml(floors, [], true), men = buildBelagTableHtml(floors, [], false); return (/Einheitspreis/.test(aus) && /Betrag/.test(aus) && !/Einheitspreis/.test(men) && /Bodenbeläge/.test(aus) && /1\.1/.test(aus) && /24,50/.test(aus)) ? '' : 'fail'; });
     A('belagData sammelt Boden + Wand mit m²', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, joint: 3, waste: 8 }, pts: [[0, 0], [100, 0], [100, 100], [0, 100]] }, { type: 'measure', wallface: true, height: 2.5, belag: { tileW: 60, tileH: 60, waste: 8 }, x1: 0, y1: 0, x2: 100, y2: 0 }] }; const d = belagData(); return (d.floors.length === 1 && Math.abs(d.floors[0].m2 - 1) < 1e-6 && d.walls.length === 1 && Math.abs(d.walls[0].m2 - 2.5) < 1e-6) ? '' : JSON.stringify({ f: d.floors.length, w: d.walls.length, fm: d.floors[0] && d.floors[0].m2, wm: d.walls[0] && d.walls[0].m2 }); } finally { annos = sa; docScale = sd; } });
     A('Aussparung: Netto = Brutto − Aussparung', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, waste: 0 }, pts: [[0, 0], [200, 0], [200, 100], [0, 100]] }, { type: 'area', cutout: 'Schrank', pts: [[10, 10], [60, 10], [60, 60], [10, 60]] }] }; const d = belagData(); const f = d.floors[0]; return (Math.abs(f.grossM2 - 2) < 1e-6 && Math.abs(f.cutM2 - 0.25) < 1e-6 && Math.abs(f.m2 - 1.75) < 1e-6 && d.cutouts.length === 1) ? '' : JSON.stringify({ g: f.grossM2, c: f.cutM2, n: f.m2 }); } finally { annos = sa; docScale = sd; } });
+    A('Anschluss als Polylinie (chaindim) → lfm', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'chaindim', anschluss: 'wand', pts: [[0, 0], [100, 0], [100, 100]] }] }; const d = belagData(); return (Math.abs(polylineLen([[0, 0], [100, 0], [100, 100]]) - 200) < 1e-6 && d.anschluesse.length === 1 && Math.abs(d.anschluesse[0].lenM - 2) < 1e-6 && d.anschluesse[0].kat === 'wand') ? '' : 'fail'; } finally { annos = sa; docScale = sd; } });
     A('belagData + Ausschreibung: Anschluss (lfm)', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', anschluss: 'boden', x1: 0, y1: 0, x2: 300, y2: 0 }] }; const d = belagData(); const ok1 = d.anschluesse.length === 1 && Math.abs(d.anschluesse[0].lenM - 3) < 1e-6; const html = buildBelagTableHtml([], [], false, d.anschluesse); return (ok1 && /Anschlüsse/.test(html) && /Anschluss Boden/.test(html) && /lfm/.test(html) && /3,00/.test(html)) ? '' : 'fail'; } finally { annos = sa; docScale = sd; } });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };

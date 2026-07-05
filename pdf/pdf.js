@@ -7505,6 +7505,16 @@ function convertLineToWall(pv, annoId) {
   _listTab = 'sel'; if (typeof openListPanel === 'function') openListPanel('sel');
   toast('Linie ist jetzt eine Wand – Stärke rechts einstellen, dann Fenster/Türen einfügen und „3D" ansehen.');
 }
+// Kanonische Geometrie: aus einer bestehenden Wand direkt einen Wandbelag (Plättli-Fläche) ableiten – nutzt Länge + Höhe der Wand
+function wallToWallface(pv, annoId) {
+  const w = findAnno(pv.num, annoId); if (!w || w.type !== 'wall') return;
+  pushUndo();
+  const a = { id: nextId++, type: 'measure', x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, color: '#2f6ea3', width: 1.6, wallface: true, height: w.h3d || wallHeightM || 2.5, belag: { ...DEFAULT_BELAG }, layer: w.layer };
+  pushAnno(pv.num, a);
+  sel = { num: pv.num, id: a.id }; setTool('select'); markDirty(); pageViews.forEach(drawAnnos); saveState();
+  _listTab = 'sel'; if (typeof openListPanel === 'function') openListPanel('sel');
+  toast('Wandbelag aus der Wand abgeleitet (Länge × Höhe) – Höhe/Platten rechts anpassen.');
+}
 function showCtx(x, y, pv, annoId) {
   const m = $('#ctxmenu'); m.innerHTML = '';
   const add = (label, mi, act, cls) => { const b = document.createElement('button'); if (cls) b.className = cls; b.innerHTML = `<span class="mi">${mi}</span><span>${label}</span>`; b.onclick = () => { hideCtx(); act(); }; m.appendChild(b); };
@@ -7524,6 +7534,7 @@ function showCtx(x, y, pv, annoId) {
     add('Nach hinten', '⬇', () => reorderAnno(pv, annoId, false));
     const ca = findAnno(pv.num, annoId);
     if (ca && (ca.type === 'line' || ca.type === 'arrow' || ca.type === 'measure')) { add('→ In Wand umwandeln', '🧱', () => convertLineToWall(pv, annoId)); }   // nahtlos: Linie → Wand (Stärke, dann Fenster/Türen, 3D)
+    if (ca && ca.type === 'wall') { add('→ Wandbelag ableiten (Plättli)', '⌗', () => wallToWallface(pv, annoId)); }   // Wand → Wandfläche fürs Plättlibudget (Länge × Höhe)
     if (ca && ca.type === 'img') { add('Bild anpassen …', '◑', () => openImgAdjust(pv, ca)); add((ca.opacity != null && ca.opacity < 1) ? 'Volle Deckkraft' : 'Als Vorlage dimmen (nachzeichnen)', '◐', () => { pushUndo(); ca.opacity = (ca.opacity != null && ca.opacity < 1) ? 1 : 0.3; reorderAnno(pv, annoId, false); drawAnnos(pv); saveState(); }); }
     sep();
   } else if (clipAnno) {

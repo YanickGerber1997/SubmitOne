@@ -4405,6 +4405,26 @@ async function pageTextItemsFor(page, pageH) {   // Textstücke einer beliebigen
   return items;
 }
 const _isListLine = s => /^\s*([-–—•*·▪◦‣]|\d{1,3}[.)])\s/.test(s) || /^\s*[-–—•*·▪◦‣]\S/.test(s);
+const _listStrip = s => (s || '').replace(/^\s*([-–—•*·▪◦‣]|\d{1,3}[.)])\s*/, '');
+// Absatz ist eine Aufzählung? (mind. 2 Listenzeilen) → als echte <ul>/<ol> ausgeben
+function blockIsList(b) { const ls = (b.lines || []).filter(l => _isListLine(l.str)); return ls.length >= 2; }
+function listBlockHtml(b, body, gapEm) {
+  const lines = b.lines || [], items = [];
+  for (const l of lines) {
+    if (_isListLine(l.str)) items.push(_htmlEsc(_listStrip(l.str)));
+    else if (items.length) items[items.length - 1] += ' ' + _htmlEsc(l.str);   // umbrochene Fortsetzungszeile an das laufende Item
+    else items.push(_htmlEsc(l.str));
+  }
+  if (!items.length) return '';
+  const ordered = /^\s*\d{1,3}[.)]/.test((lines[0] && lines[0].str) || '');
+  const px = Math.max(9, Math.min(48, Math.round(b.size / body * 15))), lhR = Math.max(1, Math.min(2.2, (b.lh || b.size * 1.25) / b.size));
+  const ff = (b.ff || cssFontStack(b.fam || 'helv')).replace(/"/g, "'");
+  const mt = (gapEm && gapEm > 0.05) ? `;margin:${Math.min(4, gapEm).toFixed(2)}em 0 0` : ';margin:0';
+  const st = `font-family:${ff};font-size:${px}px;line-height:${lhR.toFixed(2)}${mt};padding-left:1.6em${b.color ? ';color:' + b.color : ''}`;
+  const tag = ordered ? 'ol' : 'ul', start = ordered ? parseInt((((lines[0] && lines[0].str) || '').match(/\d{1,3}/) || ['1'])[0], 10) : 1;
+  const startAttr = (ordered && start > 1) ? ` start="${start}"` : '';
+  return `<${tag} style="${st}"${startAttr}>` + items.map(t => `<li>${t}</li>`).join('') + `</${tag}>`;
+}
 // Ein Absatz-Block → HTML. Gestapelte Zeilen bleiben GESTAPELT (<br>); nur echt umbrochene Fliesstext-Zeilen werden zusammengezogen (vorige Zeile reicht fast ganz nach rechts, diese beginnt links, kein Listenpunkt, keine Satzende-Zeile davor).
 function blockToParaHtml(b, body, pageRight, gapEm, pageLeft) {
   const lines = (b.lines && b.lines.length) ? b.lines : b.text.split('\n').map(str => ({ str, x: b.x, maxx: b.right || (b.x + b.w) }));
@@ -4453,7 +4473,7 @@ function blocksToPaperHtml(blocks, colorFn) {
   const sizes = blocks.map(b => b.size).slice().sort((a, b) => a - b), body = sizes[Math.floor(sizes.length / 2)] || 12;
   const pr = pageRightMargin(blocks), pl = pageLeftMargin(blocks);
   let prevBot = null;   // Absatzabstände aus den vertikalen Lücken des Originals übernehmen
-  const html = blocks.map(b => { const gapEm = (prevBot != null && body > 0) ? Math.max(0, (b.y - prevBot) / body) : 0; prevBot = b.y + b.h; return blockToParaHtml(b, body, pr, gapEm, pl); }).filter(Boolean).join('\n');
+  const html = blocks.map(b => { const gapEm = (prevBot != null && body > 0) ? Math.max(0, (b.y - prevBot) / body) : 0; prevBot = b.y + b.h; return blockIsList(b) ? listBlockHtml(b, body, gapEm) : blockToParaHtml(b, body, pr, gapEm, pl); }).filter(Boolean).join('\n');
   return html || '<p></p>';
 }
 /* ---------- Rechnung/Kalkulation erkennen: Anzahl × Ansatz = Betrag, mit Neuberechnung + rot markierter Fehlerwarnung ---------- */
@@ -7054,6 +7074,8 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('detectFontMeta: bold+italic + ff aus Fontnamen', () => { const stub = { commonObjs: { get: () => ({ name: 'Arial-BoldItalicMT' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (m.bold && m.italic && m.fam === 'helv' && /Arial/.test(m.ff)) ? '' : JSON.stringify(m); });
     A('PDF→Paper: Absatz übernimmt Schriftfamilie/Grösse', () => { const html = blockToParaHtml({ text: 'Hallo', lines: [{ str: 'Hallo', x: 0, maxx: 50 }], size: 12, lh: 15, fam: 'times', ff: '"Times New Roman",Times,serif', bold: false, italic: false, x: 0, right: 50 }, 12, 500); return (/font-family:'Times New Roman'/.test(html) && /font-size:15px/.test(html) && /<p /.test(html) && />Hallo</.test(html)) ? '' : html; });
     A('PDF→Paper: gemischt fett innerhalb Absatz (Runs)', () => { const b = { text: 'Sehr wichtig!', lines: [{ str: 'Sehr wichtig!', x: 0, maxx: 120, runs: [{ str: 'Sehr ', bold: false, italic: false, ff: 'Arial,sans-serif' }, { str: 'wichtig', bold: true, italic: false, ff: 'Arial,sans-serif' }, { str: '!', bold: false, italic: false, ff: 'Arial,sans-serif' }] }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', bold: false, italic: false, x: 0, right: 120 }; const html = blockToParaHtml(b, 12, 500); return (/Sehr <strong>wichtig<\/strong>!/.test(html) && !/<strong>Sehr/.test(html)) ? '' : html; });
+    A('PDF→Paper: Aufzählung → echte <ul>', () => { const html = blocksToPaperHtml([{ text: '- A\n- B', lines: [{ str: '- Apfel', x: 0, maxx: 60 }, { str: '- Birne', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 20 }]); return (/<ul/.test(html) && /<li>Apfel<\/li>/.test(html) && /<li>Birne<\/li>/.test(html)) ? '' : html; });
+    A('PDF→Paper: nummerierte Liste → <ol start>', () => { const html = blocksToPaperHtml([{ text: '2. X\n3. Y', lines: [{ str: '2. Erstens', x: 0, maxx: 60 }, { str: '3. Zweitens', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 20 }]); return (/<ol[^>]*start="2"/.test(html) && /<li>Erstens<\/li>/.test(html) && /<li>Zweitens<\/li>/.test(html)) ? '' : html; });
     A('Ausrichtung: zentriert / rechts / links erkennen', () => { const cen = blockAlign([{ x: 200, maxx: 400 }], 100, 500), rig = blockAlign([{ x: 380, maxx: 498 }], 100, 500), lef = blockAlign([{ x: 102, maxx: 480 }], 100, 500); return (cen === 'center' && rig === 'right' && lef === '') ? '' : JSON.stringify({ cen, rig, lef }); });
     A('PDF→Paper: zentrierter Absatz bekommt text-align:center', () => { const html = blockToParaHtml({ text: 'Titel', lines: [{ str: 'Titel', x: 210, maxx: 390 }], size: 18, lh: 22, fam: 'helv', ff: 'Arial,sans-serif', x: 210, right: 390 }, 12, 500, 0, 100); return /text-align:center/.test(html) ? '' : html; });
     A('Verlegemuster-Reihenversatz (Halbverband/Drittelverband/Kreuzfuge)', () => { const hv = [0, 1, 2, 3].map(r => tileRowShift('Halbverband', r)), dv = [0, 1, 2, 3].map(r => tileRowShift('Drittelverband', r)), kf = [0, 1, 2].map(r => tileRowShift('Kreuzfuge', r)); return (Math.abs(hv[0]) < 1e-9 && Math.abs(hv[1] - 0.5) < 1e-9 && Math.abs(hv[2]) < 1e-9 && Math.abs(hv[3] - 0.5) < 1e-9 && Math.abs(dv[1] - 1 / 3) < 1e-9 && Math.abs(dv[2] - 2 / 3) < 1e-9 && Math.abs(dv[3]) < 1e-9 && kf.every(v => v === 0)) ? '' : JSON.stringify({ hv, dv, kf }); });

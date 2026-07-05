@@ -6109,6 +6109,7 @@ function renderList() {   // aktuellen Tab in den Panel-Body rendern (Inspector 
   else if (_listTab === 'qty') _listCopyFn = fillQtyList(body);
   else if (_listTab === 'schedule') _listCopyFn = fillScheduleList(body);
   else if (_listTab === 'walls') _listCopyFn = fillWallList(body);
+  else if (_listTab === 'belag') _listCopyFn = fillBelagList(body);
 }
 function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des gewählten Bauteils (wie ein Inspector)
   const a = sel ? findAnno(sel.num, sel.id) : null, pv = sel ? pageViews.find(p => p.num === sel.num) : null;
@@ -6198,6 +6199,43 @@ function fillRoomList(bodyEl) {   // Raumbuch in das Listen-Panel
   return () => { const tsv = 'Ebene\tRaum\tFläche m²\tUmfang m\tBodenbelag\n' + rooms.map(r => r.floor + '\t' + (r.a.name || '') + '\t' + (Math.round(r.m2 * 100) / 100).toString().replace('.', ',') + '\t' + (Math.round(r.um * 100) / 100).toString().replace('.', ',') + '\t' + (r.a.floor || '')).join('\n') + '\nSumme\t\t' + (Math.round(total * 100) / 100).toString().replace('.', ','); if (navigator.clipboard) navigator.clipboard.writeText(tsv); toast('Raumbuch kopiert (Excel-tauglich).'); };
 }
 function openRoomList() { openListPanel('rooms'); }
+// Beläge sammeln: Bodenbeläge (area+belag) und Wandflächen (measure+wallface) über alle Seiten
+function belagData() {
+  const floors = [], walls = []; if (!docScale) return { floors, walls };
+  const pp = docScale.perPt;
+  for (const n of Object.keys(annos)) for (const a of (annos[n] || [])) {
+    if (a.type === 'area' && a.belag && a.pts && a.pts.length >= 3) {
+      const m2 = polyArea(a.pts) * pp * pp, b = a.belag;
+      floors.push({ a, name: a.name || a.floor || '', m2, tiles: tilesForArea(m2, b.tileW, b.tileH, b.waste || 0), b, aufbau: a.aufbau || '' });
+    } else if (a.type === 'measure' && a.wallface) {
+      const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), h = a.height || 2.5, m2 = wallFaceAreaM2(len, pp, h), b = a.belag || DEFAULT_BELAG;
+      walls.push({ a, name: a.name || '', m2, h, lenM: len * pp, tiles: tilesForArea(m2, b.tileW, b.tileH, b.waste || 0), b, aufbau: a.aufbau || '' });
+    }
+  }
+  return { floors, walls };
+}
+function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten & Summen
+  if (!docScale) { bodyEl.innerHTML = '<p class="lp2-empty">Für Belags-Mengen zuerst den Massstab setzen (1:n) – unten in der Fusszeile.</p>'; return null; }
+  const { floors, walls } = belagData();
+  if (!floors.length && !walls.length) { bodyEl.innerHTML = '<p class="lp2-empty">Noch keine Beläge. Zeichne mit <b>Bodenbelag</b> eine Fläche oder mit <b>Wandbelag</b> eine Wand.</p>'; return null; }
+  const fmt = x => (Math.round(x * 100) / 100).toFixed(2).replace('.', ',');
+  const fm2 = floors.reduce((s, r) => s + r.m2, 0), ft = floors.reduce((s, r) => s + r.tiles, 0);
+  const wm2 = walls.reduce((s, r) => s + r.m2, 0), wt = walls.reduce((s, r) => s + r.tiles, 0);
+  let html = '';
+  if (floors.length) html += '<h4>Bodenbeläge (' + floors.length + ')</h4><table class="qty-tab"><thead><tr><th>Raum</th><th style="text-align:right">Fläche</th><th style="text-align:right">Platte</th><th style="text-align:right">Platten</th></tr></thead><tbody>'
+    + floors.map(r => '<tr><td>' + (_htmlEsc(r.name) || '–') + (r.aufbau ? '<div style="font-size:10px;color:var(--ink-soft)">' + _htmlEsc(r.aufbau) + '</div>' : '') + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.m2) + ' m²</td><td style="text-align:right;white-space:nowrap">' + r.b.tileW + '×' + r.b.tileH + '</td><td style="text-align:right">' + r.tiles + '</td></tr>').join('')
+    + '</tbody><tfoot><tr><th style="text-align:right">Summe</th><th style="text-align:right;white-space:nowrap">' + fmt(fm2) + ' m²</th><th></th><th style="text-align:right">' + ft + '</th></tr></tfoot></table>';
+  if (walls.length) html += '<h4 style="margin-top:14px">Wandflächen (' + walls.length + ')</h4><table class="qty-tab"><thead><tr><th>Wand</th><th style="text-align:right">L×H</th><th style="text-align:right">Fläche</th><th style="text-align:right">Platten</th></tr></thead><tbody>'
+    + walls.map(r => '<tr><td>' + (_htmlEsc(r.name) || '–') + (r.aufbau ? '<div style="font-size:10px;color:var(--ink-soft)">' + _htmlEsc(r.aufbau) + '</div>' : '') + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.lenM) + '×' + fmt(r.h) + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.m2) + ' m²</td><td style="text-align:right">' + r.tiles + '</td></tr>').join('')
+    + '</tbody><tfoot><tr><th style="text-align:right" colspan="2">Summe</th><th style="text-align:right;white-space:nowrap">' + fmt(wm2) + ' m²</th><th style="text-align:right">' + wt + '</th></tr></tfoot></table>';
+  bodyEl.innerHTML = html;
+  return () => {
+    const tsv = 'Bodenbeläge\nRaum\tFläche m²\tPlatte\tPlatten\n' + floors.map(r => (r.name || '') + '\t' + fmt(r.m2) + '\t' + r.b.tileW + '×' + r.b.tileH + '\t' + r.tiles).join('\n') + '\nSumme\t' + fmt(fm2) + '\t\t' + ft
+      + '\n\nWandflächen\nWand\tL×H\tFläche m²\tPlatten\n' + walls.map(r => (r.name || '') + '\t' + fmt(r.lenM) + '×' + fmt(r.h) + '\t' + fmt(r.m2) + '\t' + r.tiles).join('\n') + '\nSumme\t\t' + fmt(wm2) + '\t' + wt;
+    if (navigator.clipboard) navigator.clipboard.writeText(tsv); toast('Belags-Liste kopiert (Excel-tauglich).');
+  };
+}
+function openBelagList() { openListPanel('belag'); }
 function geoToLocal(gj) {   // GeoJSON (lon/lat) → lokale Meter (äquirektangulär um den Schwerpunkt), Nord = oben
   const feats = gj && gj.type === 'FeatureCollection' ? (gj.features || []) : gj && gj.type === 'Feature' ? [gj] : gj && gj.type ? [{ geometry: gj }] : [];
   const rings = [], collect = geom => {
@@ -6352,6 +6390,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('tilePlan exakt aufgehend 2.4m / 60cm ohne Fuge → 4', () => { const p = tilePlan(2.4, 0.6, 60, 60, 0); return (p.cols === 4 && p.rows === 1) ? '' : JSON.stringify(p); });
     A('tilesForArea inkl. 10% Verschnitt', () => tilesForArea(10, 60, 60, 10) === Math.ceil((10 / 0.36) * 1.1) ? '' : 'fail');
     A('DEFAULT_BELAG Standard 60×60 / 3mm / 8%', () => (DEFAULT_BELAG.tileW === 60 && DEFAULT_BELAG.tileH === 60 && DEFAULT_BELAG.joint === 3 && DEFAULT_BELAG.waste === 8) ? '' : 'fail');
+    A('belagData sammelt Boden + Wand mit m²', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, joint: 3, waste: 8 }, pts: [[0, 0], [100, 0], [100, 100], [0, 100]] }, { type: 'measure', wallface: true, height: 2.5, belag: { tileW: 60, tileH: 60, waste: 8 }, x1: 0, y1: 0, x2: 100, y2: 0 }] }; const d = belagData(); return (d.floors.length === 1 && Math.abs(d.floors[0].m2 - 1) < 1e-6 && d.walls.length === 1 && Math.abs(d.walls[0].m2 - 2.5) < 1e-6) ? '' : JSON.stringify({ f: d.floors.length, w: d.walls.length, fm: d.floors[0] && d.floors[0].m2, wm: d.walls[0] && d.walls[0].m2 }); } finally { annos = sa; docScale = sd; } });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

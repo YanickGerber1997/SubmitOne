@@ -2381,7 +2381,7 @@ function areaClick(pv, p) {
   if (!areaDraft || areaDraft.pv !== pv) {
     cancelArea(); pushUndo();
     const isSlab = tool === 'slab', isTerr = tool === 'terrain', isFloor = tool === 'floortile';
-    const a = isSlab ? { id: nextId++, type: 'slab', pts: [[p.x, p.y]], color: '#5b6b86', base: Math.max(0, wallHeightM - 0.2), thick: 0.2 } :   // Decken-OBERKANTE auf Geschosshöhe (Unterkante = Geschosshöhe − Dicke) isTerr ? { id: nextId++, type: 'terrain', pts: [[p.x, p.y]], color: '#7a6a4a' } : isFloor ? { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: '#b5651d', width: 1.4, floor: true, belag: { ...DEFAULT_BELAG } } : { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: style.color, width: style.width };
+    const a = isSlab ? { id: nextId++, type: 'slab', pts: [[p.x, p.y]], color: '#5b6b86', base: Math.max(0, wallHeightM - 0.2), thick: 0.2 } :   // Decken-OBERKANTE auf Geschosshöhe (Unterkante = Geschosshöhe − Dicke) isTerr ? { id: nextId++, type: 'terrain', pts: [[p.x, p.y]], color: '#7a6a4a' } : isFloor ? { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: '#b5651d', width: 1.4, belag: { ...DEFAULT_BELAG } } : { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: style.color, width: style.width };
     pushAnno(pv.num, a); areaDraft = { pv, a };
     const onMove = ev => { if (!areaDraft) return; const q = evtToPage(areaDraft.pv, ev); areaDraft.a._cursor = [q.x, q.y]; drawAnnos(areaDraft.pv); };
     document.addEventListener('pointermove', onMove); areaDraft._onMove = onMove;
@@ -2397,6 +2397,7 @@ function finishArea() {
   delete a._cursor; areaDraft = null;
   if (a.pts.length < (a.type === 'terrain' ? 2 : 3)) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); drawAnnos(pv); setTool('select'); return; }
   sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
+  if (a.belag) { _listTab = 'sel'; if (typeof openListPanel === 'function') openListPanel('sel'); }   // Bodenbelag fertig → Platten-Einstellungen gleich zeigen
 }
 function cancelArea() {
   if (!areaDraft) return; const { pv, a, _onMove } = areaDraft; document.removeEventListener('pointermove', _onMove);
@@ -6125,9 +6126,27 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     body.innerHTML = '<h4>Fläche / Raum</h4>' + (m2 ? '<div class="insp-kv"><span>Fläche</span><b>' + (Math.round(m2 * 100) / 100).toFixed(2).replace('.', ',') + ' m²</b></div>' : '') +
       '<div class="insp-row"><span class="insp-lbl">Raumname</span><input class="insp-num" style="width:120px" id="iNm" value="' + (a.name ? a.name.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Wohnen"></div>' +
       '<div class="insp-row"><span class="insp-lbl">Bodenbelag</span><input class="insp-num" style="width:120px" id="iFl" value="' + (a.floor ? a.floor.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. Parkett"></div>';
+    if (a.belag) {
+      const b = a.belag;
+      let bh = '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">⌗ Plattenspiegel</div>'
+        + '<div class="insp-row"><span class="insp-lbl">Platte B×H</span><input class="insp-num" style="width:50px" id="iTW" type="number" min="1" value="' + b.tileW + '"> × <input class="insp-num" style="width:50px" id="iTH" type="number" min="1" value="' + b.tileH + '"> cm</div>'
+        + '<div class="insp-row"><span class="insp-lbl">Fuge</span><input class="insp-num" style="width:60px" id="iJ" type="number" min="0" value="' + (b.joint != null ? b.joint : 3) + '"> mm</div>'
+        + '<div class="insp-row"><span class="insp-lbl">Verschnitt</span><input class="insp-num" style="width:60px" id="iWa" type="number" min="0" value="' + (b.waste != null ? b.waste : 8) + '"> %</div>'
+        + '<div class="insp-row"><span class="insp-lbl">Aufbau</span><input class="insp-num" style="width:120px" id="iAu" value="' + (a.aufbau ? a.aufbau.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. OK FB / roher Boden"></div>';
+      if (docScale && m2) bh += '<div class="insp-kv"><span>Platten (inkl. Verschnitt)</span><b>' + tilesForArea(m2, b.tileW, b.tileH, b.waste || 0) + ' Stk</b></div>';
+      body.insertAdjacentHTML('beforeend', bh);
+    }
     const nm = body.querySelector('#iNm'), fl = body.querySelector('#iFl');
     if (nm) nm.onchange = () => { const v = nm.value.trim(); if (v) a.name = v; else delete a.name; markDirty(); pageViews.forEach(drawAnnos); };
     if (fl) fl.onchange = () => { const v = fl.value.trim(); if (v) a.floor = v; else delete a.floor; markDirty(); pageViews.forEach(drawAnnos); };
+    if (a.belag) {
+      const bindNum = (id, key) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (isFinite(v) && v >= 0) { a.belag[key] = v; markDirty(); pageViews.forEach(drawAnnos); renderList(); } }; };
+      bindNum('#iTW', 'tileW'); bindNum('#iTH', 'tileH'); bindNum('#iJ', 'joint'); bindNum('#iWa', 'waste');
+      const au = body.querySelector('#iAu'); if (au) au.onchange = () => { const v = au.value.trim(); if (v) a.aufbau = v; else delete a.aufbau; markDirty(); pageViews.forEach(drawAnnos); };
+    }
+    const tb = document.createElement('button'); tb.className = 'insp-btn'; tb.textContent = a.belag ? '⌗ Plattenspiegel entfernen' : '⌗ Plattenspiegel hinzufügen';
+    tb.onclick = () => { pushUndo(); if (a.belag) delete a.belag; else { a.belag = { ...DEFAULT_BELAG }; if (a.color === '#4f7a3c' || !a.color) a.color = '#b5651d'; } markDirty(); pageViews.forEach(drawAnnos); renderList(); };
+    body.appendChild(tb);
     return;
   }
   body.innerHTML = '<h4>' + (a.type || 'Bauteil') + '</h4><p class="lp2-empty">Für diesen Typ gibt es (noch) keine Inspector-Einstellungen. Doppelklick im Plan öffnet ggf. die Eingabe.</p>';
@@ -6301,6 +6320,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('tilePlan 3×2m / 60×60 / Fuge 3mm → 5×4=20', () => { const p = tilePlan(3, 2, 60, 60, 3); return (p.cols === 5 && p.rows === 4 && p.count === 20 && Math.abs(p.unitM2 - 0.36) < 1e-9) ? '' : JSON.stringify(p); });
     A('tilePlan exakt aufgehend 2.4m / 60cm ohne Fuge → 4', () => { const p = tilePlan(2.4, 0.6, 60, 60, 0); return (p.cols === 4 && p.rows === 1) ? '' : JSON.stringify(p); });
     A('tilesForArea inkl. 10% Verschnitt', () => tilesForArea(10, 60, 60, 10) === Math.ceil((10 / 0.36) * 1.1) ? '' : 'fail');
+    A('DEFAULT_BELAG Standard 60×60 / 3mm / 8%', () => (DEFAULT_BELAG.tileW === 60 && DEFAULT_BELAG.tileH === 60 && DEFAULT_BELAG.joint === 3 && DEFAULT_BELAG.waste === 8) ? '' : 'fail');
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };
 }

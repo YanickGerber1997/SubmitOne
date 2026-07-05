@@ -1453,7 +1453,8 @@ function drawOne(svg, a, pv) {
     if (a.bg && a.bg !== 'transparent') g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: a.bg, stroke: 'none' }));   // alte Stelle überdecken (nur wenn Abdeckung gewünscht)
     if (a.id !== _editingId) {   // während des Tippens zeigt die Textarea den Text – nicht doppelt zeichnen
       const baseY = (a.base != null ? a.base : a.y + a.size * 0.82);   // echte PDF-Grundlinie → exakte Höhe, schriftunabhängig
-      const t = svgEl('text', { y: baseY, fill: a.color, 'font-size': a.size, 'font-family': (a.ff || cssFontStack(a.fam)), 'dominant-baseline': 'alphabetic' });
+      const t = svgEl('text', { y: baseY, fill: a.color, 'font-size': a.size, 'font-family': (a.ff || cssFontStack(a.fam)) });
+      t.style.dominantBaseline = 'alphabetic';   // per Inline-Style, sonst gewinnt .anno text{dominant-baseline:hanging} und der Text sitzt zu tief
       if (a.bold) t.setAttribute('font-weight', 'bold'); if (a.italic) t.setAttribute('font-style', 'italic'); if (a.underline) t.setAttribute('text-decoration', 'underline');
       const elh = a.lh || a.size * 1.25;
       (a.text || '').split('\n').forEach((ln, i) => {
@@ -4383,7 +4384,8 @@ function groupTextBlocks(items) {
     if (B && prev) {
       const gap = L.y - prev.maxy, lh = L.y - prev.y;
       const sameLeft = Math.abs(L.x - B.x) < B.size * 1.7, sameSize = L.size / B.size < 1.35 && B.size / L.size < 1.35, closeV = gap < B.size * 1.1 && lh > 0;
-      if (sameLeft && sameSize && closeV) { B.lines.push(L); B.x = Math.min(B.x, L.x); B.maxx = Math.max(B.maxx, L.maxx); B.maxy = L.maxy; B.lhs.push(lh); continue; }
+      const sameStyle = (!!L.bold === !!B.bold) && (!!L.italic === !!B.italic);   // fette/kursive Zeile nicht mit normalen Zeilen zu EINEM Absatz mischen
+      if (sameLeft && sameSize && closeV && sameStyle) { B.lines.push(L); B.x = Math.min(B.x, L.x); B.maxx = Math.max(B.maxx, L.maxx); B.maxy = L.maxy; B.lhs.push(lh); continue; }
     }
     blocks.push({ lines: [L], x: L.x, maxx: L.maxx, y: L.y, maxy: L.maxy, size: L.size, fam: L.fam, bold: L.bold, italic: L.italic, lhs: [] });
   }

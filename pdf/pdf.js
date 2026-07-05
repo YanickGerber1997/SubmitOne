@@ -1546,6 +1546,18 @@ const LEIST_KAT = {
 };
 // Reihenversatz je Verlegemuster (Anteil einer Plattenbreite, 0..1): Halbverband = ½, Drittelverband = ⅓, sonst 0 (Kreuzfuge)
 function tileRowShift(pattern, row) { const f = /Halbverband/.test(pattern || '') ? 0.5 : /Drittelverband/.test(pattern || '') ? 1 / 3 : 0; return (((f * row) % 1) + 1) % 1; }
+// Fugenmörtel-Bedarf (kg/m²) – Standard-Herstellerformel: ((L+B)/(L·B)) · Fugenbreite · Fugentiefe · Dichte (alle mm, Dichte kg/dm³)
+function fugenmoertelKgM2(tileWcm, tileHcm, jointMm, depthMm, dichte) {
+  const L = (tileWcm || 0) * 10, B = (tileHcm || 0) * 10, d = jointMm || 0, t = depthMm || 8, r = dichte || 1.6;
+  return (L > 0 && B > 0) ? ((L + B) / (L * B)) * d * t * r : 0;
+}
+// Materialbedarf (Richtwerte) über alle Boden-/Wandflächen: Platten, Fliesenkleber (kg), Fugenmörtel (kg)
+function belagMaterialSummary(floors, walls, kleberFactor) {
+  let m2 = 0, tiles = 0, grout = 0;
+  const add = r => { const a = r.m2 || 0, b = r.b || {}; m2 += a; tiles += r.tiles || 0; grout += a * fugenmoertelKgM2(b.tileW, b.tileH, b.joint != null ? b.joint : 3, b.depthMm, b.dichte); };
+  (floors || []).forEach(add); (walls || []).forEach(add);
+  return { m2, tiles, groutKg: grout, kleberKg: m2 * (kleberFactor || 4.5) };
+}
 // Material-/Verlege-Beschreibung eines Belags (für Ausschreibung/Liste)
 function belagMatDesc(b) {
   if (!b) return ''; const p = [];
@@ -6696,6 +6708,12 @@ function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten &
     html += '<h4 style="margin-top:14px">Weitere Leistungen (' + Object.keys(byArt).length + ')</h4><table class="qty-tab"><thead><tr><th>Leistung</th><th style="text-align:right">Menge</th></tr></thead><tbody>'
       + Object.keys(byArt).map(k => '<tr><td>' + _htmlEsc(byArt[k].label) + '</td><td style="text-align:right;white-space:nowrap">' + fmt(byArt[k].menge) + ' ' + byArt[k].einh + '</td></tr>').join('')
       + '</tbody></table>'; }
+  if (floors.length || walls.length) { const ms = belagMaterialSummary(floors, walls);   // Richtwerte für den Einkauf (Produkt/Zahnung anpassen)
+    html += '<h4 style="margin-top:14px">Materialbedarf (Richtwerte)</h4><table class="qty-tab"><tbody>'
+      + '<tr><td>Platten inkl. Verschnitt</td><td style="text-align:right;white-space:nowrap">' + ms.tiles + ' Stk</td></tr>'
+      + '<tr><td>Fliesenkleber ~</td><td style="text-align:right;white-space:nowrap">' + fmt(ms.kleberKg) + ' kg</td></tr>'
+      + '<tr><td>Fugenmörtel ~</td><td style="text-align:right;white-space:nowrap">' + fmt(ms.groutKg) + ' kg</td></tr>'
+      + '</tbody></table><p class="lp2-empty" style="text-align:left;font-size:10px;margin-top:4px">Richtwerte – je nach Produkt, Zahnung und Plattendicke anpassen.</p>'; }
   bodyEl.innerHTML = html;
   { const ba = bodyEl.querySelector('#belExpA'); if (ba) ba.onclick = () => exportBelagToPaper('ausschreibung'); const bm = bodyEl.querySelector('#belExpM'); if (bm) bm.onclick = () => exportBelagToPaper('mengen'); }
   return () => {
@@ -6943,6 +6961,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Zusatzleistung mit Mengen-Override', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, waste: 0 }, leist: { silikon: 12.5 }, pts: [[0, 0], [200, 0], [200, 100], [0, 100]] }] }; const d = belagData(); return (d.extras.length === 1 && Math.abs(d.extras[0].menge - 12.5) < 1e-6 && d.extras[0].einh === 'lfm') ? '' : JSON.stringify(d.extras); } finally { annos = sa; docScale = sd; } });
     A('Material + Weitere Leistungen im Ausschreibungstext', () => { const floors = [{ name: 'Bad', m2: 5, b: { tileW: 30, tileH: 60, material: 'Feinsteinzeug', color: 'anthrazit', pattern: 'Halbverband', fugeColor: 'grau' }, aufbau: '' }]; const extras = [{ art: 'abdichtung', label: 'Verbundabdichtung (Nassbereich)', einh: 'm²', menge: 5 }]; const html = buildBelagTableHtml(floors, [], true, [], extras, []); return (/Feinsteinzeug/.test(html) && /anthrazit/.test(html) && /Halbverband/.test(html) && /Fuge grau/.test(html) && /Weitere Leistungen/.test(html) && /Verbundabdichtung/.test(html)) ? '' : 'fail'; });
     A('Nischen-Sektion im Ausschreibungstext', () => { const nischen = [{ name: 'Dusche Nische', w: 0.3, h: 0.6, depth: 0.1, m2: 0.36 }]; const html = buildBelagTableHtml([], [], false, [], [], nischen); return (/Nischen \(innen geplättelt\)/.test(html) && /Dusche Nische/.test(html) && /30×60×T10/.test(html) && /0,36/.test(html)) ? '' : 'fail'; });
+    A('Fugenmörtel kg/m² (Herstellerformel) + Materialsummary', () => { const g = fugenmoertelKgM2(10, 10, 3, 6, 1.6); const ms = belagMaterialSummary([{ m2: 10, tiles: 30, b: { tileW: 10, tileH: 10, joint: 3 } }], []); return (Math.abs(g - 0.576) < 1e-6 && Math.abs(ms.kleberKg - 45) < 1e-6 && Math.abs(ms.groutKg - 10 * fugenmoertelKgM2(10, 10, 3)) < 1e-6 && ms.tiles === 30) ? '' : JSON.stringify({ g, ms }); });
     A('NPK-Position + Bemerkung im Ausschreibungstext', () => { const floors = [{ name: 'Bad', m2: 5, b: { tileW: 30, tileH: 30 }, a: { npk: '663.211', bemerkung: 'rutschhemmend R10' }, aufbau: '' }]; const html = buildBelagTableHtml(floors, [], false); return (/NPK 663\.211/.test(html) && /rutschhemmend R10/.test(html)) ? '' : 'fail'; });
     A('Verlegemuster-Reihenversatz (Halbverband/Drittelverband/Kreuzfuge)', () => { const hv = [0, 1, 2, 3].map(r => tileRowShift('Halbverband', r)), dv = [0, 1, 2, 3].map(r => tileRowShift('Drittelverband', r)), kf = [0, 1, 2].map(r => tileRowShift('Kreuzfuge', r)); return (Math.abs(hv[0]) < 1e-9 && Math.abs(hv[1] - 0.5) < 1e-9 && Math.abs(hv[2]) < 1e-9 && Math.abs(hv[3] - 0.5) < 1e-9 && Math.abs(dv[1] - 1 / 3) < 1e-9 && Math.abs(dv[2] - 2 / 3) < 1e-9 && Math.abs(dv[3]) < 1e-9 && kf.every(v => v === 0)) ? '' : JSON.stringify({ hv, dv, kf }); });
   } finally { docScale = saved; }

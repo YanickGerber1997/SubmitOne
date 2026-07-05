@@ -1359,6 +1359,7 @@ function drawOne(svg, a, pv) {
     if (a.type === 'arrow') drawArrowHead(svg, a);
     if (a.type === 'measure' && !a.anschluss) drawMeasureLabel(svg, a, pv);
     if (a.wallface) drawWallFaceLabel(svg, a, pv);   // Wandbelag: Höhe + Wandfläche
+    if (a.wallface && a.ansicht !== false) drawWallFaceElevation(svg, a, pv);   // Wand-Ansicht mit Plattenspiegel (+ Fenster)
     if (a.anschluss) drawAnschlussLabel(svg, a, pv);   // Anschluss: Art + Länge
     hit = svgEl('line', { x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, class: 'hit', 'data-id': a.id }); svg.appendChild(hit);
   } else if (a.type === 'rect') {
@@ -1532,6 +1533,31 @@ function drawAnschlussLabel(svg, a, pv) {
   let txt = 'Anschluss ' + (ANSCHLUSS_KAT[a.anschluss] || '');
   if (docScale) txt += ' · ' + (Math.round(len * docScale.perPt * 100) / 100).toFixed(2).replace('.', ',') + ' m';
   const t = svgEl('text', { x: mx + 4, y: my - 4, fill: a.color, 'font-size': 11, 'font-weight': 600, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); t.textContent = txt; svg.appendChild(t);
+}
+// Wand-Ansicht (Elevation): die Wand klappt von der Messlinie senkrecht ab → Rechteck Länge×Höhe mit Plattenspiegel (+ Fenster) in Ansicht
+function drawWallFaceElevation(svg, a, pv) {
+  if (!docScale) return;
+  const perPt = docScale.perPt, h = a.height || 2.5, Hpts = h / perPt;
+  const dx = a.x2 - a.x1, dy = a.y2 - a.y1, len = Math.hypot(dx, dy); if (len < 2) return;
+  const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;           // Wandrichtung + Normale (Abklapp-Seite)
+  const gap = 8 / pv.scale, ox = nx * gap, oy = ny * gap;
+  const A = [a.x1 + ox, a.y1 + oy], B = [a.x2 + ox, a.y2 + oy], C = [B[0] + nx * Hpts, B[1] + ny * Hpts], D = [A[0] + nx * Hpts, A[1] + ny * Hpts];
+  const quad = [A, B, C, D].map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' '), col = a.color || '#2f6ea3';
+  const g = svgEl('g', {});
+  g.appendChild(svgEl('polygon', { points: quad, fill: '#ffffff', 'fill-opacity': 0.88, stroke: col, 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' }));
+  const b = a.belag || DEFAULT_BELAG, jw = Math.max(0, b.joint || 0) / 1000, stepU = ((b.tileW / 100) + jw) / perPt, stepN = ((b.tileH / 100) + jw) / perPt;
+  const cid = 'wfel' + (_tileClip++), cp = svgEl('clipPath', { id: cid }); cp.appendChild(svgEl('polygon', { points: quad })); g.appendChild(cp);
+  const gg = svgEl('g', { 'clip-path': 'url(#' + cid + ')' });
+  if (stepU > 1) for (let d = stepU; d < len; d += stepU) gg.appendChild(svgEl('line', { x1: (A[0] + ux * d).toFixed(2), y1: (A[1] + uy * d).toFixed(2), x2: (D[0] + ux * d).toFixed(2), y2: (D[1] + uy * d).toFixed(2), stroke: col, 'stroke-width': 0.5, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
+  if (stepN > 1) for (let d = stepN; d < Hpts; d += stepN) gg.appendChild(svgEl('line', { x1: (A[0] + nx * d).toFixed(2), y1: (A[1] + ny * d).toFixed(2), x2: (B[0] + nx * d).toFixed(2), y2: (B[1] + ny * d).toFixed(2), stroke: col, 'stroke-width': 0.5, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
+  // Fenster (a.fenster: [{t: 0..1 Position entlang der Wand, w, h, sill}]) als Aussparung in der Ansicht
+  for (const f of (a.fenster || [])) {
+    const fw = (f.w || 1) / perPt, fh = (f.h || 1) / perPt, sill = (f.sill || 0.9) / perPt, cU = (f.t != null ? f.t : 0.5) * len;
+    const bx = A[0] + ux * (cU - fw / 2) + nx * sill, by = A[1] + uy * (cU - fw / 2) + ny * sill;
+    const fq = [[bx, by], [bx + ux * fw, by + uy * fw], [bx + ux * fw + nx * fh, by + uy * fw + ny * fh], [bx + nx * fh, by + ny * fh]].map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
+    gg.appendChild(svgEl('polygon', { points: fq, fill: '#dfe8f2', stroke: col, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
+  }
+  g.appendChild(gg); svg.appendChild(g);
 }
 // Nach dem Zeichnen eines Wandbelags/Anschlusses: auswählen, Inspector öffnen (bei Wandbelag Höhe-Feld fokussieren)
 function afterWallfaceDraw(pv, a) {
@@ -6274,6 +6300,11 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
       + '<div class="insp-row"><span class="insp-lbl">Boden / Decke</span><span style="display:inline-flex;gap:3px"><button class="insp-mini' + (ans.boden ? ' on' : '') + '" id="anB" style="width:auto;padding:0 8px">Boden</button><button class="insp-mini' + (ans.decke ? ' on' : '') + '" id="anD" style="width:auto;padding:0 8px">Decke</button></span></div>'
       + '<div class="insp-row"><span class="insp-lbl">Wand seitlich</span><span id="anW" style="display:inline-flex;gap:3px">' + [0, 1, 2].map(n => '<button class="insp-mini' + ((ans.wand || 0) === n ? ' on' : '') + '" data-n="' + n + '" style="width:26px">' + n + '</button>').join('') + '</span></div>';
     if (docScale) html += '<div class="insp-kv"><span>Anschluss lfm gesamt</span><b>' + (Math.round(((ans.boden ? lenM : 0) + (ans.decke ? lenM : 0) + (ans.wand || 0) * h) * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>';
+    const fen = a.fenster || [];
+    html += '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">Fenster / Aussparung</div>'
+      + '<div class="insp-row"><span class="insp-lbl">Fenster (' + fen.length + ')</span><span style="display:inline-flex;gap:4px"><button class="insp-mini" id="fenAdd" style="width:auto;padding:0 8px">+ Fenster</button><button class="insp-mini" id="fenDel" style="width:auto;padding:0 8px">−</button></span></div>';
+    if (fen.length && docScale) html += '<div class="insp-kv"><span>Wandfläche netto</span><b>' + (Math.round(Math.max(0, area - fen.reduce((s, f) => s + (f.w || 0) * (f.h || 0), 0)) * 100) / 100).toFixed(2).replace('.', ',') + ' m²</b></div>';
+    html += '<div class="insp-row"><span class="insp-lbl">Wand-Ansicht</span><span><button class="insp-mini' + (a.ansicht !== false ? ' on' : '') + '" id="wfElev" style="width:auto;padding:0 8px">' + (a.ansicht !== false ? 'sichtbar' : 'aus') + '</button></span></div>';
     body.innerHTML = html;
     const hEl = body.querySelector('#iWfH'); if (hEl) hEl.onchange = () => { const v = parseFloat((hEl.value || '').replace(',', '.')); if (v > 0) { a.height = v; markDirty(); pageViews.forEach(drawAnnos); renderList(); } };
     const nm = body.querySelector('#iWfN'); if (nm) nm.onchange = () => { const v = nm.value.trim(); if (v) a.name = v; else delete a.name; markDirty(); pageViews.forEach(drawAnnos); };
@@ -6283,6 +6314,9 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     const tgl = (id, key) => { const el = body.querySelector(id); if (el) el.onclick = () => { a.ans[key] = !a.ans[key]; markDirty(); renderList(); pageViews.forEach(drawAnnos); }; };
     tgl('#anB', 'boden'); tgl('#anD', 'decke');
     body.querySelectorAll('#anW .insp-mini').forEach(btn => btn.onclick = () => { a.ans.wand = +btn.dataset.n; markDirty(); renderList(); pageViews.forEach(drawAnnos); });
+    const fa = body.querySelector('#fenAdd'); if (fa) fa.onclick = () => { a.fenster = a.fenster || []; const n = a.fenster.length; a.fenster.push({ t: (n + 1) / (a.fenster.length + 2), w: 1.0, h: 1.2, sill: 0.9 }); markDirty(); renderList(); pageViews.forEach(drawAnnos); };
+    const fd = body.querySelector('#fenDel'); if (fd) fd.onclick = () => { if (a.fenster && a.fenster.length) { a.fenster.pop(); markDirty(); renderList(); pageViews.forEach(drawAnnos); } };
+    const we = body.querySelector('#wfElev'); if (we) we.onclick = () => { a.ansicht = a.ansicht === false ? true : false; markDirty(); renderList(); pageViews.forEach(drawAnnos); };
     return;
   }
   if (a.anschluss && (a.type === 'measure' || a.type === 'chaindim')) {
@@ -6323,13 +6357,15 @@ function belagData() {
       const b = a.belag;
       floors.push({ a, name: a.name || a.floor || '', grossM2: polyArea(a.pts) * pp * pp, poly: a.pts, b, aufbau: a.aufbau || '' });
     } else if (a.type === 'measure' && a.wallface) {
-      const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), h = a.height || 2.5, m2 = wallFaceAreaM2(len, pp, h), b = a.belag || DEFAULT_BELAG, wl = len * pp;
-      walls.push({ a, name: a.name || '', m2, h, lenM: wl, tiles: tilesForArea(m2, b.tileW, b.tileH, b.waste || 0), b, aufbau: a.aufbau || '' });
+      const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), h = a.height || 2.5, gross = wallFaceAreaM2(len, pp, h), b = a.belag || DEFAULT_BELAG, wl = len * pp;
+      const fen = a.fenster || [], fenAr = fen.reduce((s, f) => s + (f.w || 0) * (f.h || 0), 0), m2 = Math.max(0, gross - fenAr);
+      walls.push({ a, name: a.name || '', m2, grossM2: gross, fenM2: fenAr, h, lenM: wl, tiles: tilesForArea(m2, b.tileW, b.tileH, b.waste || 0), b, aufbau: a.aufbau || '' });
       const ans = a.ans || { boden: true, decke: true, wand: 2 };   // Anschlüsse direkt aus der Wandgeometrie
       const nm = a.name ? a.name + ' – ' : '';
       if (ans.boden) anschluesse.push({ a, kat: 'boden', katLabel: 'Boden', name: nm + 'Wandbelag unten', lenM: wl });
       if (ans.decke) anschluesse.push({ a, kat: 'decke', katLabel: 'Decke', name: nm + 'Wandbelag oben', lenM: wl });
       if (ans.wand) anschluesse.push({ a, kat: 'wand', katLabel: 'Wand', name: nm + 'Wandbelag seitlich', lenM: (ans.wand || 0) * h });
+      if (fen.length) anschluesse.push({ a, kat: 'fenster', katLabel: 'Fenster', name: nm + 'Fensteranschluss', lenM: fen.reduce((s, f) => s + 2 * ((f.w || 0) + (f.h || 0)), 0) });
     } else if ((a.type === 'measure' || a.type === 'chaindim') && a.anschluss) {
       const lp = a.type === 'chaindim' ? polylineLen(a.pts) : Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
       anschluesse.push({ a, kat: a.anschluss, katLabel: ANSCHLUSS_KAT[a.anschluss] || a.anschluss, name: a.name || '', lenM: lp * pp });
@@ -6581,6 +6617,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Belag-Ausschreibung: Preisspalten nur im Ausschreibungs-Modus + Pos/Menge', () => { const floors = [{ name: 'Wohnen', m2: 24.5, b: { tileW: 60, tileH: 60 }, aufbau: 'OK FB' }]; const aus = buildBelagTableHtml(floors, [], true), men = buildBelagTableHtml(floors, [], false); return (/Einheitspreis/.test(aus) && /Betrag/.test(aus) && !/Einheitspreis/.test(men) && /Bodenbeläge/.test(aus) && /1\.1/.test(aus) && /24,50/.test(aus)) ? '' : 'fail'; });
     A('belagData sammelt Boden + Wand mit m²', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, joint: 3, waste: 8 }, pts: [[0, 0], [100, 0], [100, 100], [0, 100]] }, { type: 'measure', wallface: true, height: 2.5, belag: { tileW: 60, tileH: 60, waste: 8 }, x1: 0, y1: 0, x2: 100, y2: 0 }] }; const d = belagData(); return (d.floors.length === 1 && Math.abs(d.floors[0].m2 - 1) < 1e-6 && d.walls.length === 1 && Math.abs(d.walls[0].m2 - 2.5) < 1e-6) ? '' : JSON.stringify({ f: d.floors.length, w: d.walls.length, fm: d.floors[0] && d.floors[0].m2, wm: d.walls[0] && d.walls[0].m2 }); } finally { annos = sa; docScale = sd; } });
     A('Aussparung: Netto = Brutto − Aussparung', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, waste: 0 }, pts: [[0, 0], [200, 0], [200, 100], [0, 100]] }, { type: 'area', cutout: 'Schrank', pts: [[10, 10], [60, 10], [60, 60], [10, 60]] }] }; const d = belagData(); const f = d.floors[0]; return (Math.abs(f.grossM2 - 2) < 1e-6 && Math.abs(f.cutM2 - 0.25) < 1e-6 && Math.abs(f.m2 - 1.75) < 1e-6 && d.cutouts.length === 1) ? '' : JSON.stringify({ g: f.grossM2, c: f.cutM2, n: f.m2 }); } finally { annos = sa; docScale = sd; } });
+    A('Wandbelag: Fenster → Netto-Fläche + Anschluss Fenster', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', wallface: true, height: 2.5, x1: 0, y1: 0, x2: 400, y2: 0, ans: { boden: false, decke: false, wand: 0 }, fenster: [{ w: 1, h: 1, sill: 0.9 }] }] }; const d = belagData(); const w = d.walls[0], f = d.anschluesse.find(x => x.kat === 'fenster'); return (Math.abs(w.grossM2 - 10) < 1e-6 && Math.abs(w.m2 - 9) < 1e-6 && f && Math.abs(f.lenM - 4) < 1e-6) ? '' : JSON.stringify({ g: w.grossM2, n: w.m2, f: f && f.lenM }); } finally { annos = sa; docScale = sd; } });
     A('Wandbelag erzeugt Anschlüsse (Boden/Decke=Länge, Wand=n×Höhe)', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', wallface: true, height: 2.5, x1: 0, y1: 0, x2: 300, y2: 0, ans: { boden: true, decke: true, wand: 2 } }] }; const d = belagData(); const bk = {}; d.anschluesse.forEach(r => bk[r.kat] = (bk[r.kat] || 0) + r.lenM); return (Math.abs(bk.boden - 3) < 1e-6 && Math.abs(bk.decke - 3) < 1e-6 && Math.abs(bk.wand - 5) < 1e-6) ? '' : JSON.stringify(bk); } finally { annos = sa; docScale = sd; } });
     A('Anschluss als Polylinie (chaindim) → lfm', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'chaindim', anschluss: 'wand', pts: [[0, 0], [100, 0], [100, 100]] }] }; const d = belagData(); return (Math.abs(polylineLen([[0, 0], [100, 0], [100, 100]]) - 200) < 1e-6 && d.anschluesse.length === 1 && Math.abs(d.anschluesse[0].lenM - 2) < 1e-6 && d.anschluesse[0].kat === 'wand') ? '' : 'fail'; } finally { annos = sa; docScale = sd; } });
     A('belagData + Ausschreibung: Anschluss (lfm)', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', anschluss: 'boden', x1: 0, y1: 0, x2: 300, y2: 0 }] }; const d = belagData(); const ok1 = d.anschluesse.length === 1 && Math.abs(d.anschluesse[0].lenM - 3) < 1e-6; const html = buildBelagTableHtml([], [], false, d.anschluesse); return (ok1 && /Anschlüsse/.test(html) && /Anschluss Boden/.test(html) && /lfm/.test(html) && /3,00/.test(html)) ? '' : 'fail'; } finally { annos = sa; docScale = sd; } });

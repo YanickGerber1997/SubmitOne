@@ -4336,6 +4336,9 @@ function fontNameToCss(name, family) {
   if (/minion|caslon|times|roman|liberation ?serif/.test(s) || family === 'serif') return '"Times New Roman",Times,serif';   // family 'sans-serif' fällt bewusst durch → Arial
   return 'Arial,Helvetica,sans-serif';
 }
+// Ligaturen (ﬀﬁﬂﬃﬄﬅﬆ Ĳĳ) → Buchstaben, damit Bearbeiten/Kopieren sauber ist (Original-Breite bleibt via textLength erhalten)
+const _LIG = { 'ﬀ': 'ff', 'ﬁ': 'fi', 'ﬂ': 'fl', 'ﬃ': 'ffi', 'ﬄ': 'ffl', 'ﬅ': 'ft', 'ﬆ': 'st', 'Ĳ': 'IJ', 'ĳ': 'ij' };
+function _deLig(s) { return (s && /[ﬀ-ﬆĲĳ]/.test(s)) ? s.replace(/[ﬀ-ﬆĲĳ]/g, c => _LIG[c] || c) : s; }
 function detectFontMeta(page, fontName, family) {
   let nm = '', loaded = '';
   try { const co = page && page.commonObjs, f = co && (typeof co.has !== 'function' || co.has(fontName)) ? co.get(fontName) : null; if (f) { if (f.name) nm = f.name; if (f.loadedName) loaded = f.loadedName; } } catch (_) { }
@@ -4360,7 +4363,7 @@ async function ensureTextItems(pv) {
       const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10;
       const base = pv.pageH - tr[5], top = base - fs * 0.82;   // base = echte Grundlinie (y-unten → Seiten-y), top = Näherung Oberkante
       const fm = detectFontMeta(pv.page, it.fontName, styles[it.fontName] && styles[it.fontName].fontFamily);
-      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic, ff: fm.ff });
+      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: _deLig(it.str), size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic, ff: fm.ff });
     }
   } catch (_) { }
   pv.textItems = items; return items;
@@ -4424,7 +4427,7 @@ async function pageTextItemsFor(page, pageH) {   // Textstücke einer beliebigen
       if (!it.str || !it.str.trim()) continue;
       const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10, base = pageH - tr[5], top = base - fs * 0.82;
       const fm = detectFontMeta(page, it.fontName, styles[it.fontName] && styles[it.fontName].fontFamily);
-      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic, ff: fm.ffMap });   // Paper: portable Schriftzuordnung (kein pdf.js-loadedName)
+      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: _deLig(it.str), size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic, ff: fm.ffMap });   // Paper: portable Schriftzuordnung (kein pdf.js-loadedName)
     }
   } catch (_) { }
   return items;
@@ -7211,6 +7214,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Fugenmörtel kg/m² (Herstellerformel) + Materialsummary', () => { const g = fugenmoertelKgM2(10, 10, 3, 6, 1.6); const ms = belagMaterialSummary([{ m2: 10, tiles: 30, b: { tileW: 10, tileH: 10, joint: 3 } }], []); return (Math.abs(g - 0.576) < 1e-6 && Math.abs(ms.kleberKg - 45) < 1e-6 && Math.abs(ms.groutKg - 10 * fugenmoertelKgM2(10, 10, 3)) < 1e-6 && ms.tiles === 30) ? '' : JSON.stringify({ g, ms }); });
     A('NPK-Position + Bemerkung im Ausschreibungstext', () => { const floors = [{ name: 'Bad', m2: 5, b: { tileW: 30, tileH: 30 }, a: { npk: '663.211', bemerkung: 'rutschhemmend R10' }, aufbau: '' }]; const html = buildBelagTableHtml(floors, [], false); return (/NPK 663\.211/.test(html) && /rutschhemmend R10/.test(html)) ? '' : 'fail'; });
     A('Font-Namen → echte CSS-Familie', () => { const ar = fontNameToCss('ABCDEF+Arial-BoldMT', ''), ca = fontNameToCss('Calibri', ''), ti = fontNameToCss('TimesNewRomanPSMT', ''), co = fontNameToCss('Courier', ''), ve = fontNameToCss('Verdana', ''); return (/^Arial/.test(ar) && /Calibri/.test(ca) && /Times New Roman/.test(ti) && /Courier New/.test(co) && /Verdana/.test(ve)) ? '' : JSON.stringify({ ar, ca, ti, co, ve }); });
+    A('Ligaturen → Buchstaben', () => (_deLig('eﬃzient ﬂießt ﬁx') === 'effizient fließt fix' && _deLig('normal') === 'normal') ? '' : _deLig('eﬃzient ﬂießt ﬁx'));
     A('detectFontMeta: bold+italic + ff aus Fontnamen', () => { const stub = { commonObjs: { get: () => ({ name: 'Arial-BoldItalicMT' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (m.bold && m.italic && m.fam === 'helv' && /Arial/.test(m.ff)) ? '' : JSON.stringify(m); });
     A('detectFontMeta: eingebettete Schrift (loadedName) zuerst, Mapping als Fallback', () => { const stub = { commonObjs: { has: () => true, get: () => ({ name: 'Arial', loadedName: 'g_d0_f1' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (/^"g_d0_f1",/.test(m.ff) && /Arial/.test(m.ff) && m.loaded === 'g_d0_f1' && /Arial/.test(m.ffMap) && !/g_d0_f1/.test(m.ffMap)) ? '' : JSON.stringify(m); });
     A('PDF→Paper: Absatz übernimmt Schriftfamilie/Grösse', () => { const html = blockToParaHtml({ text: 'Hallo', lines: [{ str: 'Hallo', x: 0, maxx: 50 }], size: 12, lh: 15, fam: 'times', ff: '"Times New Roman",Times,serif', bold: false, italic: false, x: 0, right: 50 }, 12, 500); return (/font-family:'Times New Roman'/.test(html) && /font-size:15px/.test(html) && /<p /.test(html) && />Hallo</.test(html)) ? '' : html; });

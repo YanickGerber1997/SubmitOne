@@ -4387,7 +4387,7 @@ function groupTextBlocks(items) {
     }
     blocks.push({ lines: [L], x: L.x, maxx: L.maxx, y: L.y, maxy: L.maxy, size: L.size, fam: L.fam, bold: L.bold, italic: L.italic, lhs: [] });
   }
-  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx, runs: l.runs })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic, base: B.lines[0] && B.lines[0].base, ff: B.lines[0] && B.lines[0].ff }));
+  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx, runs: l.runs, base: l.base })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic, base: B.lines[0] && B.lines[0].base, ff: B.lines[0] && B.lines[0].ff }));
 }
 /* ---------- Als Submit Paper öffnen: PDF-Text → editierbares Dokument (an /write/ übergeben) ---------- */
 function _htmlEsc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -4409,11 +4409,11 @@ const _listStrip = s => (s || '').replace(/^\s*([-–—•*·▪◦‣]|\d{1,3}
 // Absatz ist eine Aufzählung? (mind. 2 Listenzeilen) → als echte <ul>/<ol> ausgeben
 function blockIsList(b) { const ls = (b.lines || []).filter(l => _isListLine(l.str)); return ls.length >= 2; }
 function listBlockHtml(b, body, gapEm) {
-  const lines = b.lines || [], items = [];
+  const lines = b.lines || [], items = [], u = (t, on) => on ? '<u>' + t + '</u>' : t;
   for (const l of lines) {
-    if (_isListLine(l.str)) items.push(_htmlEsc(_listStrip(l.str)));
-    else if (items.length) items[items.length - 1] += ' ' + _htmlEsc(l.str);   // umbrochene Fortsetzungszeile an das laufende Item
-    else items.push(_htmlEsc(l.str));
+    if (_isListLine(l.str)) items.push(u(_htmlEsc(_listStrip(l.str)), l._ul));
+    else if (items.length) items[items.length - 1] += ' ' + u(_htmlEsc(l.str), l._ul);   // umbrochene Fortsetzungszeile an das laufende Item
+    else items.push(u(_htmlEsc(l.str), l._ul));
   }
   if (!items.length) return '';
   const ordered = /^\s*\d{1,3}[.)]/.test((lines[0] && lines[0].str) || '');
@@ -4430,7 +4430,7 @@ function blockToParaHtml(b, body, pageRight, gapEm, pageLeft) {
   const lines = (b.lines && b.lines.length) ? b.lines : b.text.split('\n').map(str => ({ str, x: b.x, maxx: b.right || (b.x + b.w) }));
   const baseFf = b.ff;   // gemischte Formatierung je Zeichenlauf (Run) 1:1 übernehmen
   const runHtml = r => { let t = _htmlEsc(r.str); if (r.italic) t = '<em>' + t + '</em>'; if (r.bold) t = '<strong>' + t + '</strong>'; if (r.ff && r.ff !== baseFf) t = '<span style="font-family:' + r.ff.replace(/"/g, "'") + '">' + t + '</span>'; return t; };
-  const lineHtml = l => (l.runs && l.runs.length) ? l.runs.map(runHtml).join('') : _htmlEsc(l.str);
+  const lineHtml = l => { const h = (l.runs && l.runs.length) ? l.runs.map(runHtml).join('') : _htmlEsc(l.str); return l._ul ? '<u>' + h + '</u>' : h; };
   let inner = '', hasRuns = false;
   for (let i = 0; i < lines.length; i++) {
     const cur = lines[i], prev = lines[i - 1];
@@ -4467,9 +4467,10 @@ function blockAlign(lines, pageLeft, pageRight) {
   if (lg > span * 0.25 && rg < span * 0.05) return 'right';
   return '';
 }
-function blocksToPaperHtml(blocks, colorFn) {
+function blocksToPaperHtml(blocks, colorFn, ulFn) {
   if (!blocks.length) return '<p></p>';
   if (colorFn) blocks.forEach(b => { try { const c = colorFn(b); if (c) b.color = c; } catch (_) { } });   // Textfarbe aus dem gerenderten Seitenbild übernehmen
+  if (ulFn) blocks.forEach(b => (b.lines || []).forEach(l => { try { if (l.base != null && ulFn(l.x, l.maxx, l.base)) l._ul = true; } catch (_) { } }));   // Unterstreichung je Zeile
   const sizes = blocks.map(b => b.size).slice().sort((a, b) => a - b), body = sizes[Math.floor(sizes.length / 2)] || 12;
   const pr = pageRightMargin(blocks), pl = pageLeftMargin(blocks);
   let prevBot = null;   // Absatzabstände aus den vertikalen Lücken des Originals übernehmen
@@ -4582,17 +4583,17 @@ function _calcErrorBanner(pagesHtml) {
     + `<strong>⚠ ${n} mögliche${n === 1 ? 'r' : ''} Rechenfehler</strong> automatisch erkannt und rot markiert – bitte prüfen.</p>`;
 }
 // Seite → HTML: Fliesstext + erkannte Tabellen/Kalkulationen (mit Neuberechnung)
-function pdfPageToPaperHtml(items, pageW, colorFn) {
+function pdfPageToPaperHtml(items, pageW, colorFn, ulFn) {
   const lines = itemsToLines(items), cols = numberColumns(lines, pageW);
-  if (!cols.length) return blocksToPaperHtml(groupTextBlocks(items), colorFn);   // keine Zahlenspalten → reiner Fliesstext
+  if (!cols.length) return blocksToPaperHtml(groupTextBlocks(items), colorFn, ulFn);   // keine Zahlenspalten → reiner Fliesstext
   const rowHasNum = L => L.items.some(it => cols.some(cx => it.x >= cx - 2 && (_isNumCell(it.str) || _UNIT_RE.test(it.str.trim()))));
   let first = -1, last = -1; lines.forEach((L, i) => { if (rowHasNum(L)) { if (first < 0) first = i; last = i; } });
   const body = (() => { const s = lines.map(L => L.size).sort((a, b) => a - b); return s[Math.floor(s.length / 2)] || 12; })();
   const preItems = lines.slice(0, first).flatMap(L => L.items), postItems = lines.slice(last + 1).flatMap(L => L.items);
   let html = '';
-  if (preItems.length) html += blocksToPaperHtml(groupTextBlocks(preItems), colorFn);
+  if (preItems.length) html += blocksToPaperHtml(groupTextBlocks(preItems), colorFn, ulFn);
   html += tableHtml(lines, first, last, cols, body);
-  if (postItems.length) html += blocksToPaperHtml(groupTextBlocks(postItems), colorFn);
+  if (postItems.length) html += blocksToPaperHtml(groupTextBlocks(postItems), colorFn, ulFn);
   return html || '<p></p>';
 }
 // „1-3, 5, 8-9" → [1,2,3,5,8,9] (begrenzt auf 1..max)
@@ -4622,9 +4623,9 @@ async function convertToPaper(pageNums) {
       const page = await pdfDoc.getPage(n), vp = page.getViewport({ scale: 1 });
       const items = await pageTextItemsFor(page, vp.height), blocks = groupTextBlocks(items);
       for (const b of blocks) { blockN++; if ((b.text || '').split(/\s+/).filter(Boolean).length >= 6 || (b.lines && b.lines.length >= 3)) substantial++; }   // „richtige" Textblöcke (Fliesstext) vs. verstreute Labels
-      let colorFn = null;   // Textfarbe aus einem Offscreen-Render abtasten (bei überschaubarer Seitenzahl)
-      if (nums.length <= 40) { try { const sc = 1.3, cvp = page.getViewport({ scale: sc }), cv = document.createElement('canvas'); cv.width = Math.ceil(cvp.width); cv.height = Math.ceil(cvp.height); await page.render({ canvasContext: cv.getContext('2d', { willReadFrequently: true }), viewport: cvp }).promise; colorFn = b => sampleInkColor(cv, b, vp.width); } catch (_) { colorFn = null; } }
-      pages.push({ typ: 'write', html: pdfPageToPaperHtml(items, vp.width, colorFn) });
+      let colorFn = null, ulFn = null;   // Textfarbe + Unterstreichung aus einem Offscreen-Render abtasten (bei überschaubarer Seitenzahl)
+      if (nums.length <= 40) { try { const sc = 1.3, cvp = page.getViewport({ scale: sc }), cv = document.createElement('canvas'); cv.width = Math.ceil(cvp.width); cv.height = Math.ceil(cvp.height); await page.render({ canvasContext: cv.getContext('2d', { willReadFrequently: true }), viewport: cvp }).promise; colorFn = b => sampleInkColor(cv, b, vp.width); ulFn = (x0, x1, by) => sampleUnderline(cv, x0, x1, by, vp.width); } catch (_) { colorFn = null; ulFn = null; } }
+      pages.push({ typ: 'write', html: pdfPageToPaperHtml(items, vp.width, colorFn, ulFn) });
     }
     if (!pages.some(p => p.html.replace(/<[^>]+>/g, '').trim().length)) { status(''); toast('Kein Text zum Übernehmen gefunden (evtl. gescanntes Bild-PDF).'); return; }
     const hadTable = pages.some(p => /<table/.test(p.html));
@@ -4641,10 +4642,20 @@ async function convertToPaper(pageNums) {
     status(''); location.href = '../write/index.html?import=1';
   } catch (e) { status(''); console.error(e); toast('Umwandlung fehlgeschlagen.'); }
 }
+// Pixel-Daten eines Canvas einmal lesen und cachen (mehrere Sampler teilen sich das Bild)
+function _canvasData(cv) { if (!cv) return null; if (cv._cData !== undefined) return cv._cData; try { cv._cData = cv.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, cv.width, cv.height).data; } catch (_) { cv._cData = null; } return cv._cData; }
+// Unterstreichung: knapp unter der Grundlinie eine durchgehend dunkle waagrechte Linie über die Textbreite?
+function sampleUnderline(cv, x0, x1, baseY, pageW) {
+  const data = _canvasData(cv); if (!data || !(x1 > x0) || !(pageW > 0)) return false;
+  const k = cv.width / pageW, w = cv.width, h = cv.height;
+  const px0 = Math.max(0, Math.round(x0 * k)), px1 = Math.min(w - 1, Math.round(x1 * k)); if (px1 - px0 < 5) return false;
+  for (let dy = 1; dy <= 5; dy++) { const py = Math.round((baseY + dy) * k); if (py < 0 || py >= h) continue; let dark = 0, tot = 0; for (let px = px0; px <= px1; px += 2) { const o = (py * w + px) * 4; tot++; if (data[o] + data[o + 1] + data[o + 2] < 360) dark++; } if (tot > 4 && dark / tot > 0.6) return true; }
+  return false;
+}
 // Text-Farbe eines Blocks aus dem gerenderten Seitenbild: Mittel der Pixel, die deutlich vom Hintergrund abweichen (fast-schwarz → null = Standard)
 function sampleInkColor(cv, box, pageW) {
   if (!cv || !box || !(pageW > 0)) return null;
-  let data; try { data = cv.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, cv.width, cv.height).data; } catch (_) { return null; }
+  const data = _canvasData(cv); if (!data) return null;
   const k = cv.width / pageW, w = cv.width, h = cv.height, counts = {}, samp = [];
   for (let i = 0; i <= 16; i++) for (let j = 0; j <= 6; j++) {
     const px = Math.round((box.x + box.w * (i / 16)) * k), py = Math.round((box.y + box.h * (j / 6)) * k);
@@ -7074,6 +7085,8 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('detectFontMeta: bold+italic + ff aus Fontnamen', () => { const stub = { commonObjs: { get: () => ({ name: 'Arial-BoldItalicMT' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (m.bold && m.italic && m.fam === 'helv' && /Arial/.test(m.ff)) ? '' : JSON.stringify(m); });
     A('PDF→Paper: Absatz übernimmt Schriftfamilie/Grösse', () => { const html = blockToParaHtml({ text: 'Hallo', lines: [{ str: 'Hallo', x: 0, maxx: 50 }], size: 12, lh: 15, fam: 'times', ff: '"Times New Roman",Times,serif', bold: false, italic: false, x: 0, right: 50 }, 12, 500); return (/font-family:'Times New Roman'/.test(html) && /font-size:15px/.test(html) && /<p /.test(html) && />Hallo</.test(html)) ? '' : html; });
     A('PDF→Paper: gemischt fett innerhalb Absatz (Runs)', () => { const b = { text: 'Sehr wichtig!', lines: [{ str: 'Sehr wichtig!', x: 0, maxx: 120, runs: [{ str: 'Sehr ', bold: false, italic: false, ff: 'Arial,sans-serif' }, { str: 'wichtig', bold: true, italic: false, ff: 'Arial,sans-serif' }, { str: '!', bold: false, italic: false, ff: 'Arial,sans-serif' }] }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', bold: false, italic: false, x: 0, right: 120 }; const html = blockToParaHtml(b, 12, 500); return (/Sehr <strong>wichtig<\/strong>!/.test(html) && !/<strong>Sehr/.test(html)) ? '' : html; });
+    A('Unterstreichung am Pixelbild erkennen', () => { const W = 20, H = 10, data = new Uint8ClampedArray(W * H * 4).fill(255); for (let px = 2; px <= 18; px++) { const o = (6 * W + px) * 4; data[o] = 0; data[o + 1] = 0; data[o + 2] = 0; } const cv = { width: W, height: H, _cData: data }, yes = sampleUnderline(cv, 2, 18, 5, 20); const cv2 = { width: W, height: H, _cData: new Uint8ClampedArray(W * H * 4).fill(255) }, no = sampleUnderline(cv2, 2, 18, 5, 20); return (yes === true && no === false) ? '' : JSON.stringify({ yes, no }); });
+    A('PDF→Paper: unterstrichene Zeile → <u>', () => { const html = blocksToPaperHtml([{ text: 'Titel', lines: [{ str: 'Titel', x: 0, maxx: 60, base: 10, _ul: true }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 15 }]); return /<u>Titel<\/u>/.test(html) ? '' : html; });
     A('PDF→Paper: Aufzählung → echte <ul>', () => { const html = blocksToPaperHtml([{ text: '- A\n- B', lines: [{ str: '- Apfel', x: 0, maxx: 60 }, { str: '- Birne', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 20 }]); return (/<ul/.test(html) && /<li>Apfel<\/li>/.test(html) && /<li>Birne<\/li>/.test(html)) ? '' : html; });
     A('PDF→Paper: nummerierte Liste → <ol start>', () => { const html = blocksToPaperHtml([{ text: '2. X\n3. Y', lines: [{ str: '2. Erstens', x: 0, maxx: 60 }, { str: '3. Zweitens', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 20 }]); return (/<ol[^>]*start="2"/.test(html) && /<li>Erstens<\/li>/.test(html) && /<li>Zweitens<\/li>/.test(html)) ? '' : html; });
     A('Ausrichtung: zentriert / rechts / links erkennen', () => { const cen = blockAlign([{ x: 200, maxx: 400 }], 100, 500), rig = blockAlign([{ x: 380, maxx: 498 }], 100, 500), lef = blockAlign([{ x: 102, maxx: 480 }], 100, 500); return (cen === 'center' && rig === 'right' && lef === '') ? '' : JSON.stringify({ cen, rig, lef }); });

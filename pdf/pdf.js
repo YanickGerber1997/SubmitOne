@@ -1464,7 +1464,7 @@ function drawOne(svg, a, pv) {
         if (match && o.w > 1) { lt.setAttribute('textLength', o.w.toFixed(2)); lt.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
         const runs = (match && o.runs && o.runs.length) ? o.runs : null;
         if (runs) {   // gemischte Formatierung innerhalb der Zeile 1:1
-          for (const r of runs) { const rs = svgEl('tspan', {}); if (r.bold) rs.setAttribute('font-weight', 'bold'); if (r.italic) rs.setAttribute('font-style', 'italic'); if (r.ff && r.ff !== ff0) rs.setAttribute('font-family', r.ff); rs.textContent = r.str; lt.appendChild(rs); }
+          for (const r of runs) { const rs = svgEl('tspan', {}); if (r.bold) rs.setAttribute('font-weight', 'bold'); if (r.italic) rs.setAttribute('font-style', 'italic'); if (r.ff && r.ff !== ff0) rs.setAttribute('font-family', r.ff); if (r.vp) { rs.setAttribute('baseline-shift', r.vp === 1 ? 'super' : 'sub'); rs.setAttribute('font-size', (a.size * 0.72).toFixed(1)); } rs.textContent = r.str; lt.appendChild(rs); }
         } else { if (a.bold) lt.setAttribute('font-weight', 'bold'); if (a.italic) lt.setAttribute('font-style', 'italic'); lt.textContent = ln || ' '; }
         t.appendChild(lt);
       });
@@ -4372,16 +4372,21 @@ function groupTextBlocks(items) {
   }
   for (const L of lines) {
     L.items.sort((a, b) => a.x - b.x);
-    let str = ''; const runs = [];   // Zeichenläufe mit eigener Formatierung (fett/kursiv/Schrift) → 1:1 gemischte Formatierung
+    const dom = L.items.reduce((a, b) => (b.w > a.w ? b : a), L.items[0]);   // Hauptschrift der Zeile (breitestes Stück) als Referenz für Hoch-/Tiefstellung
+    const mS = dom.size || L.size, mB = (dom.base != null ? dom.base : L.y);
+    let str = ''; const runs = [];   // Zeichenläufe mit eigener Formatierung (fett/kursiv/Schrift/hoch-tief) → 1:1 gemischte Formatierung
     for (let i = 0; i < L.items.length; i++) {
-      const it = L.items[i]; let piece = '';
-      if (i > 0) { const pr = L.items[i - 1], gap = it.x - (pr.x + pr.w); if (gap > it.size * 0.2 && !/\s$/.test(str) && !/^\s/.test(it.str)) piece = ' '; }
+      const it = L.items[i];
+      let vp = 0;   // 1 = hochgestellt, -1 = tiefgestellt (kleiner + über/unter der Grundlinie)
+      if (it.base != null && it.size < mS * 0.86) { if (it.base < mB - mS * 0.12) vp = 1; else if (it.base > mB + mS * 0.08) vp = -1; }
+      let piece = '';
+      if (i > 0 && vp === 0) { const pr = L.items[i - 1], gap = it.x - (pr.x + pr.w); if (gap > it.size * 0.2 && !/\s$/.test(str) && !/^\s/.test(it.str)) piece = ' '; }
       piece += it.str; str += piece;
       const last = runs[runs.length - 1];
-      if (last && last.bold === !!it.bold && last.italic === !!it.italic && last.ff === it.ff && last.url === it.url) last.str += piece;
-      else runs.push({ str: piece, bold: !!it.bold, italic: !!it.italic, ff: it.ff, url: it.url });
+      if (last && last.bold === !!it.bold && last.italic === !!it.italic && last.ff === it.ff && last.url === it.url && last.vp === vp) last.str += piece;
+      else runs.push({ str: piece, bold: !!it.bold, italic: !!it.italic, ff: it.ff, url: it.url, vp });
     }
-    L.str = str; L.runs = runs; const dom = L.items.reduce((a, b) => (b.w > a.w ? b : a), L.items[0]); L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic; L.base = dom.base; L.ff = dom.ff;
+    L.str = str; L.runs = runs; L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic; L.base = dom.base; L.ff = dom.ff;
   }
   lines.sort((a, b) => a.y - b.y);
   // 2) Absätze: aufeinanderfolgende Zeilen mit ähnlicher linker Kante + Zeilenabstand ~ Zeilenhöhe + ähnlicher Grösse
@@ -4438,7 +4443,7 @@ function listBlockHtml(b, body, gapEm) {
 function blockToParaHtml(b, body, pageRight, gapEm, pageLeft) {
   const lines = (b.lines && b.lines.length) ? b.lines : b.text.split('\n').map(str => ({ str, x: b.x, maxx: b.right || (b.x + b.w) }));
   const baseFf = b.ff;   // gemischte Formatierung je Zeichenlauf (Run) 1:1 übernehmen
-  const runHtml = r => { let t = _htmlEsc(r.str); if (r.italic) t = '<em>' + t + '</em>'; if (r.bold) t = '<strong>' + t + '</strong>'; if (r.ff && r.ff !== baseFf) t = '<span style="font-family:' + r.ff.replace(/"/g, "'") + '">' + t + '</span>'; if (r.url) t = '<a href="' + _htmlEsc(r.url).replace(/"/g, '&quot;') + '">' + t + '</a>'; return t; };
+  const runHtml = r => { let t = _htmlEsc(r.str); if (r.vp === 1) t = '<sup>' + t + '</sup>'; else if (r.vp === -1) t = '<sub>' + t + '</sub>'; if (r.italic) t = '<em>' + t + '</em>'; if (r.bold) t = '<strong>' + t + '</strong>'; if (r.ff && r.ff !== baseFf) t = '<span style="font-family:' + r.ff.replace(/"/g, "'") + '">' + t + '</span>'; if (r.url) t = '<a href="' + _htmlEsc(r.url).replace(/"/g, '&quot;') + '">' + t + '</a>'; return t; };
   const lineHtml = l => { const h = (l.runs && l.runs.length) ? l.runs.map(runHtml).join('') : _htmlEsc(l.str); return l._ul ? '<u>' + h + '</u>' : h; };
   let inner = '', hasRuns = false;
   for (let i = 0; i < lines.length; i++) {
@@ -7158,6 +7163,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Text-Tabelle → HTML mit Zellen', () => { const mk = (y, cs) => ({ y, size: 10, items: cs.map(c => ({ x: c[0], y, w: 30, h: 12, size: 10, str: c[1] })) }); const lines = [mk(0, [[50, 'Name'], [200, 'Wert']]), mk(20, [[50, 'Apfel'], [200, '1']]), mk(40, [[50, 'Birne'], [200, '2']])]; const html = textTableHtml(lines, 0, 2, [50, 200]); return (/<table/.test(html) && (html.match(/<tr>/g) || []).length === 3 && /<td[^>]*>Apfel<\/td>/.test(html) && /<td[^>]*>1<\/td>/.test(html)) ? '' : html; });
     A('PDF→Paper: Link-Run → <a href>', () => { const b = { text: 'Klick hier', lines: [{ str: 'Klick hier', x: 0, maxx: 80, runs: [{ str: 'Klick ', bold: false, italic: false, ff: 'Arial,sans-serif' }, { str: 'hier', bold: false, italic: false, ff: 'Arial,sans-serif', url: 'https://example.com' }] }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 80, y: 0, h: 15 }; const html = blockToParaHtml(b, 12, 500); return /<a href="https:\/\/example\.com">hier<\/a>/.test(html) ? '' : html; });
     A('PDF→Paper: unterstrichene Zeile → <u>', () => { const html = blocksToPaperHtml([{ text: 'Titel', lines: [{ str: 'Titel', x: 0, maxx: 60, base: 10, _ul: true }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 15 }]); return /<u>Titel<\/u>/.test(html) ? '' : html; });
+    A('Hoch-/Tiefstellung in Runs erkannt (m²)', () => { const items = [{ x: 0, y: 0, w: 20, h: 12, size: 10, base: 10, str: 'm', fam: 'helv', ff: 'Arial,sans-serif', bold: false, italic: false }, { x: 21, y: -2, w: 6, h: 8, size: 7, base: 5, str: '2', fam: 'helv', ff: 'Arial,sans-serif', bold: false, italic: false }]; const blocks = groupTextBlocks(items); const runs = blocks[0].lines[0].runs; const html = blockToParaHtml(blocks[0], 10, 500); return (runs.length === 2 && runs[1].vp === 1 && runs[1].str === '2' && runs[0].str === 'm' && /<sup>2<\/sup>/.test(html)) ? '' : JSON.stringify({ runs, html }); });
     A('PDF→Paper: Silbentrennung am Zeilenende zusammenfügen', () => { const b = { text: 'Be-\nmerkung folgt', lines: [{ str: 'Be-', x: 0, maxx: 498 }, { str: 'merkung folgt', x: 0, maxx: 90 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 498, y: 0, h: 30 }; const html = blockToParaHtml(b, 12, 500); return (/Bemerkung folgt/.test(html) && !/Be-\s*merkung/.test(html)) ? '' : html; });
     A('PDF→Paper: Kompositum behält Bindestrich, ohne Leerzeichen', () => { const b = { text: 'Nord-\nOsten', lines: [{ str: 'Nord-', x: 0, maxx: 498 }, { str: 'Osten', x: 0, maxx: 80 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 498, y: 0, h: 30 }; const html = blockToParaHtml(b, 12, 500); return (/Nord-Osten/.test(html) && !/Nord- Osten/.test(html)) ? '' : html; });
     A('PDF→Paper: Aufzählung → echte <ul>', () => { const html = blocksToPaperHtml([{ text: '- A\n- B', lines: [{ str: '- Apfel', x: 0, maxx: 60 }, { str: '- Birne', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 20 }]); return (/<ul/.test(html) && /<li>Apfel<\/li>/.test(html) && /<li>Birne<\/li>/.test(html)) ? '' : html; });

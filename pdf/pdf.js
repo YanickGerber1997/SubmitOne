@@ -6406,10 +6406,11 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
 }
 function syncInspector() {   // Auswahl gewechselt → Inspector zeigen/aktualisieren (Bauteil anwählen ⇒ Einstellungen rechts)
   const id = sel ? sel.id : null; if (id === _lastInspId) return; _lastInspId = id;
-  const p = document.getElementById('listPanel'); if (!p || p.hidden) return;   // nur aktualisieren, wenn Panel offen (Einklappen wird respektiert)
+  const p = document.getElementById('listPanel'); if (!p) return;
   const a = (id != null && sel) ? findAnno(sel.num, sel.id) : null;
-  if (a && (a.type === 'opening' || a.type === 'wall' || a.type === 'area' || (a.type === 'measure' && (a.wallface || a.anschluss)) || (a.type === 'chaindim' && a.anschluss))) { _listTab = 'sel'; openListPanel('sel'); }   // Bauteil gewählt → Inspector zeigt Einstellungen
-  else if (_listTab === 'sel') renderList();   // abgewählt → Inspector leeren
+  const rich = a && (a.type === 'opening' || a.type === 'wall' || a.type === 'area' || (a.type === 'measure' && (a.wallface || a.anschluss)) || (a.type === 'chaindim' && a.anschluss));
+  if (rich) { _listTab = 'sel'; openListPanel('sel'); }   // Bauteil gewählt → Inspector öffnet sich automatisch mit den Einstellungen (auch wenn er zu war)
+  else if (!p.hidden && _listTab === 'sel') renderList();   // abgewählt (Panel offen) → Inspector leeren
 }
 function fillRoomList(bodyEl) {   // Raumbuch in das Listen-Panel
   const rooms = roomData(), total = rooms.reduce((s, r) => s + r.m2, 0);

@@ -4524,6 +4524,42 @@ function numberColumns(lines, pageW) {   // rechte Zahlen-/Einheiten-Spalten (li
   for (const x of xs) { const last = cols[cols.length - 1]; if (last && x - last.max < 16) { last.max = x; last.xs.push(x); } else cols.push({ max: x, xs: [x] }); }
   return cols.filter(c => c.xs.length >= 3).map(c => Math.min(...c.xs) - 4);
 }
+// Eine Zeile in Zellen zerlegen: grosse waagrechte Lücke (> 1.4× Schriftgrösse) = Spaltentrennung (Wortabstände sind viel kleiner)
+function _lineCells(L) {
+  const cells = []; let cur = null;
+  for (const it of L.items) {
+    if (cur && (it.x - cur.maxx) <= L.size * 1.4) { cur.items.push(it); cur.maxx = it.x + it.w; }
+    else { cur = { x: it.x, maxx: it.x + it.w, items: [it] }; cells.push(cur); }
+  }
+  return cells;
+}
+// Allgemeine Text-Tabellen (ohne Zahlenspalten) konservativ erkennen: ≥3 zusammenhängende mehrspaltige Zeilen mit ≥2 stabilen Spalten
+function detectTextTables(lines) {
+  const cellsPer = lines.map(_lineCells), tabs = [], n = lines.length; let i = 0;
+  while (i < n) {
+    if (cellsPer[i].length < 2) { i++; continue; }
+    let j = i; while (j + 1 < n && cellsPer[j + 1].length >= 2 && (lines[j + 1].y - lines[j].y) < lines[j].size * 2.5) j++;
+    const rows = j - i + 1;
+    if (rows >= 3) {
+      const starts = []; for (let k = i; k <= j; k++) for (const c of cellsPer[k]) starts.push(c.x);
+      starts.sort((a, b) => a - b); const cols = [];
+      for (const x of starts) { const last = cols[cols.length - 1]; if (last && x - last.max < lines[i].size * 1.5) { last.max = x; last.xs.push(x); } else cols.push({ max: x, xs: [x] }); }
+      const colX = cols.filter(c => c.xs.length >= Math.max(2, Math.floor(rows * 0.5))).map(c => Math.min(...c.xs));
+      if (colX.length >= 2) tabs.push({ first: i, last: j, cols: colX });
+    }
+    i = j + 1;
+  }
+  return tabs;
+}
+function textTableHtml(lines, first, last, colX) {
+  let html = '<table class="pdftab" style="width:100%;border-collapse:collapse;font-size:15px">';
+  for (let i = first; i <= last; i++) {
+    const L = lines[i], cells = colX.map(() => []);
+    for (const it of L.items) { let ci = 0; for (let k = 0; k < colX.length; k++) if (it.x >= colX[k] - 2) ci = k; cells[ci].push(it); }
+    html += '<tr>' + cells.map(c => `<td style="border:1px solid #ccc;padding:2px 6px">${_htmlEsc(_joinItems(c))}</td>`).join('') + '</tr>';
+  }
+  return html + '</table>';
+}
 // Tabellenbereich → HTML. Zusammenhängende Beschreibungszeilen werden in EINER Zelle zusammengefasst (nicht in viele leere Zeilen zerrissen); Abschnitts-Überschriften (enden mit „:") = eigene fette Zeile über volle Breite.
 function tableHtml(lines, first, last, cols, body) {
   const ncol = cols.length + 1;
@@ -4585,7 +4621,18 @@ function _calcErrorBanner(pagesHtml) {
 // Seite → HTML: Fliesstext + erkannte Tabellen/Kalkulationen (mit Neuberechnung)
 function pdfPageToPaperHtml(items, pageW, colorFn, ulFn) {
   const lines = itemsToLines(items), cols = numberColumns(lines, pageW);
-  if (!cols.length) return blocksToPaperHtml(groupTextBlocks(items), colorFn, ulFn);   // keine Zahlenspalten → reiner Fliesstext
+  if (!cols.length) {   // keine Zahlenspalten → Fliesstext, aber ggf. allgemeine Text-Tabellen herausschneiden
+    const tabs = detectTextTables(lines);
+    if (!tabs.length) return blocksToPaperHtml(groupTextBlocks(items), colorFn, ulFn);
+    let html = '', idx = 0;
+    for (const t of tabs) {
+      if (t.first > idx) html += blocksToPaperHtml(groupTextBlocks(lines.slice(idx, t.first).flatMap(L => L.items)), colorFn, ulFn);
+      html += textTableHtml(lines, t.first, t.last, t.cols);
+      idx = t.last + 1;
+    }
+    if (idx < lines.length) html += blocksToPaperHtml(groupTextBlocks(lines.slice(idx).flatMap(L => L.items)), colorFn, ulFn);
+    return html || '<p></p>';
+  }
   const rowHasNum = L => L.items.some(it => cols.some(cx => it.x >= cx - 2 && (_isNumCell(it.str) || _UNIT_RE.test(it.str.trim()))));
   let first = -1, last = -1; lines.forEach((L, i) => { if (rowHasNum(L)) { if (first < 0) first = i; last = i; } });
   const body = (() => { const s = lines.map(L => L.size).sort((a, b) => a - b); return s[Math.floor(s.length / 2)] || 12; })();
@@ -7091,6 +7138,8 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('PDF→Paper: Absatz übernimmt Schriftfamilie/Grösse', () => { const html = blockToParaHtml({ text: 'Hallo', lines: [{ str: 'Hallo', x: 0, maxx: 50 }], size: 12, lh: 15, fam: 'times', ff: '"Times New Roman",Times,serif', bold: false, italic: false, x: 0, right: 50 }, 12, 500); return (/font-family:'Times New Roman'/.test(html) && /font-size:15px/.test(html) && /<p /.test(html) && />Hallo</.test(html)) ? '' : html; });
     A('PDF→Paper: gemischt fett innerhalb Absatz (Runs)', () => { const b = { text: 'Sehr wichtig!', lines: [{ str: 'Sehr wichtig!', x: 0, maxx: 120, runs: [{ str: 'Sehr ', bold: false, italic: false, ff: 'Arial,sans-serif' }, { str: 'wichtig', bold: true, italic: false, ff: 'Arial,sans-serif' }, { str: '!', bold: false, italic: false, ff: 'Arial,sans-serif' }] }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', bold: false, italic: false, x: 0, right: 120 }; const html = blockToParaHtml(b, 12, 500); return (/Sehr <strong>wichtig<\/strong>!/.test(html) && !/<strong>Sehr/.test(html)) ? '' : html; });
     A('Unterstreichung am Pixelbild erkennen', () => { const W = 20, H = 10, data = new Uint8ClampedArray(W * H * 4).fill(255); for (let px = 2; px <= 18; px++) { const o = (6 * W + px) * 4; data[o] = 0; data[o + 1] = 0; data[o + 2] = 0; } const cv = { width: W, height: H, _cData: data }, yes = sampleUnderline(cv, 2, 18, 5, 20); const cv2 = { width: W, height: H, _cData: new Uint8ClampedArray(W * H * 4).fill(255) }, no = sampleUnderline(cv2, 2, 18, 5, 20); return (yes === true && no === false) ? '' : JSON.stringify({ yes, no }); });
+    A('Text-Tabelle: 3×2 Raster erkannt, Prosa nicht', () => { const mk = (y, cs) => ({ y, size: 10, items: cs.map(c => ({ x: c[0], y, w: c[2] || 30, h: 12, size: 10, str: c[1] })) }); const tab = [mk(0, [[50, 'Name'], [200, 'Wert']]), mk(20, [[50, 'Apfel'], [200, '1']]), mk(40, [[50, 'Birne'], [200, '2']])]; const prose = [mk(0, [[50, 'Ein normaler Satz', 200]]), mk(20, [[50, 'noch ein Satz hier', 200]]), mk(40, [[50, 'und ein dritter Satz', 200]])]; const t1 = detectTextTables(tab), t2 = detectTextTables(prose); return (t1.length === 1 && t1[0].cols.length === 2 && t1[0].first === 0 && t1[0].last === 2 && t2.length === 0) ? '' : JSON.stringify({ t1, t2 }); });
+    A('Text-Tabelle → HTML mit Zellen', () => { const mk = (y, cs) => ({ y, size: 10, items: cs.map(c => ({ x: c[0], y, w: 30, h: 12, size: 10, str: c[1] })) }); const lines = [mk(0, [[50, 'Name'], [200, 'Wert']]), mk(20, [[50, 'Apfel'], [200, '1']]), mk(40, [[50, 'Birne'], [200, '2']])]; const html = textTableHtml(lines, 0, 2, [50, 200]); return (/<table/.test(html) && (html.match(/<tr>/g) || []).length === 3 && /<td[^>]*>Apfel<\/td>/.test(html) && /<td[^>]*>1<\/td>/.test(html)) ? '' : html; });
     A('PDF→Paper: Link-Run → <a href>', () => { const b = { text: 'Klick hier', lines: [{ str: 'Klick hier', x: 0, maxx: 80, runs: [{ str: 'Klick ', bold: false, italic: false, ff: 'Arial,sans-serif' }, { str: 'hier', bold: false, italic: false, ff: 'Arial,sans-serif', url: 'https://example.com' }] }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 80, y: 0, h: 15 }; const html = blockToParaHtml(b, 12, 500); return /<a href="https:\/\/example\.com">hier<\/a>/.test(html) ? '' : html; });
     A('PDF→Paper: unterstrichene Zeile → <u>', () => { const html = blocksToPaperHtml([{ text: 'Titel', lines: [{ str: 'Titel', x: 0, maxx: 60, base: 10, _ul: true }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 15 }]); return /<u>Titel<\/u>/.test(html) ? '' : html; });
     A('PDF→Paper: Aufzählung → echte <ul>', () => { const html = blocksToPaperHtml([{ text: '- A\n- B', lines: [{ str: '- Apfel', x: 0, maxx: 60 }, { str: '- Birne', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 20 }]); return (/<ul/.test(html) && /<li>Apfel<\/li>/.test(html) && /<li>Birne<\/li>/.test(html)) ? '' : html; });

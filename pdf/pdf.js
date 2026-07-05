@@ -4399,7 +4399,7 @@ function groupTextBlocks(items) {
       if (last && last.bold === !!it.bold && last.italic === !!it.italic && last.ff === it.ff && last.url === it.url && last.vp === vp) last.str += piece;
       else runs.push({ str: piece, bold: !!it.bold, italic: !!it.italic, ff: it.ff, url: it.url, vp });
     }
-    L.str = str; L.runs = runs; L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic; L.base = dom.base; L.ff = dom.ff;
+    L.str = str; L.runs = runs; L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic; L.base = dom.base; L.ff = dom.ff; L.csColor = dom.fill;
     L.segs = _lineCells(L).map(c => ({ str: _joinItems(c.items), x: c.x, w: Math.max(0, c.maxx - c.x) }));   // Segmente (durch grosse Lücken/Tabs getrennt) mit eigener x/Breite
   }
   lines.sort((a, b) => a.y - b.y);
@@ -4415,7 +4415,7 @@ function groupTextBlocks(items) {
     }
     blocks.push({ lines: [L], x: L.x, maxx: L.maxx, y: L.y, maxy: L.maxy, size: L.size, fam: L.fam, bold: L.bold, italic: L.italic, lhs: [] });
   }
-  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx, runs: l.runs, base: l.base, segs: l.segs })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic, base: B.lines[0] && B.lines[0].base, ff: B.lines[0] && B.lines[0].ff }));
+  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx, runs: l.runs, base: l.base, segs: l.segs })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic, base: B.lines[0] && B.lines[0].base, ff: B.lines[0] && B.lines[0].ff, csColor: B.lines[0] && B.lines[0].csColor }));
 }
 /* ---------- Als Submit Paper öffnen: PDF-Text → editierbares Dokument (an /write/ übergeben) ---------- */
 function _htmlEsc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -4507,7 +4507,10 @@ function blockAlign(lines, pageLeft, pageRight) {
 function blocksToPaperHtml(blocks, colorFn, ulFn, images) {
   images = images || [];
   if (!blocks.length && !images.length) return '<p></p>';
-  if (colorFn) blocks.forEach(b => { try { const c = colorFn(b); if (c) b.color = c; } catch (_) { } });   // Textfarbe aus dem gerenderten Seitenbild übernehmen
+  blocks.forEach(b => {   // Textfarbe: Inhaltsstrom (zuverlässig) hat Vorrang, sonst Pixel-Abtastung
+    if (b.csColor && !_nearBlackRGB(b.csColor)) b.color = b.csColor;
+    else if (!b.csColor && colorFn) { try { const c = colorFn(b); if (c) b.color = c; } catch (_) { } }
+  });
   if (ulFn) blocks.forEach(b => (b.lines || []).forEach(l => { try { if (l.base != null && ulFn(l.x, l.maxx, l.base)) l._ul = true; } catch (_) { } }));   // Unterstreichung je Zeile
   const sizes = blocks.map(b => b.size).slice().sort((a, b) => a - b), body = sizes[Math.floor(sizes.length / 2)] || 12;
   const pr = pageRightMargin(blocks), pl = pageLeftMargin(blocks);
@@ -4732,6 +4735,36 @@ async function extractPageImages(page, cv, pageW, pageH) {
   }
   return out;
 }
+// Füllfarbe je Text-Operator aus dem Inhaltsstrom (zuverlässige Textfarbe – wie Acrobat), mit CTM/Text-Matrix-Verfolgung. Liefert [{x, by(top-down), rgb|null}]
+async function pageFillColors(page, PH) {
+  const OPS = pdfjs.OPS, opl = await page.getOperatorList(), cs = [], stack = [];
+  let ctm = [1, 0, 0, 1, 0, 0], tm = [1, 0, 0, 1, 0, 0], tlm = [1, 0, 0, 1, 0, 0], leading = 0, fill = [0, 0, 0];
+  const comp = (m, a) => [m[0] * a[0] + m[2] * a[1], m[1] * a[0] + m[3] * a[1], m[0] * a[2] + m[2] * a[3], m[1] * a[2] + m[3] * a[3], m[0] * a[4] + m[2] * a[5] + m[4], m[1] * a[4] + m[3] * a[5] + m[5]];
+  const cl = v => Math.max(0, Math.min(255, Math.round(v))), rgb = () => fill ? `rgb(${cl(fill[0])},${cl(fill[1])},${cl(fill[2])})` : null;
+  const nrm = a => a.map(v => v <= 1 ? v * 255 : v), rec = () => { const f = comp(ctm, tm); cs.push({ x: f[4], by: PH - f[5], rgb: rgb() }); };
+  const td = (tx, ty) => { tlm = comp(tlm, [1, 0, 0, 1, tx, ty]); tm = tlm.slice(); };
+  for (let i = 0; i < opl.fnArray.length; i++) {
+    const fn = opl.fnArray[i], a = opl.argsArray[i];
+    if (fn === OPS.save) stack.push(ctm.slice());
+    else if (fn === OPS.restore) { if (stack.length) ctm = stack.pop(); }
+    else if (fn === OPS.transform) ctm = comp(ctm, a);
+    else if (fn === OPS.beginText) { tm = [1, 0, 0, 1, 0, 0]; tlm = tm.slice(); }
+    else if (fn === OPS.setTextMatrix) { tm = a.slice(); tlm = a.slice(); }
+    else if (fn === OPS.setLeading) leading = a[0];
+    else if (fn === OPS.setLeadingMoveText) { leading = -a[1]; td(a[0], a[1]); }
+    else if (fn === OPS.moveText) td(a[0], a[1]);
+    else if (fn === OPS.nextLine) td(0, -leading);
+    else if (fn === OPS.setFillRGBColor) { const c = nrm(a); fill = [c[0], c[1], c[2]]; }
+    else if (fn === OPS.setFillGray) { const v = a[0] <= 1 ? a[0] * 255 : a[0]; fill = [v, v, v]; }
+    else if (fn === OPS.setFillCMYKColor) { const c = a[0], m = a[1], y = a[2], k = a[3]; fill = [255 * (1 - c) * (1 - k), 255 * (1 - m) * (1 - k), 255 * (1 - y) * (1 - k)]; }
+    else if (fn === OPS.setFillColor || fn === OPS.setFillColorN || fn === OPS.setFillColorSpace) fill = null;   // unbekannter Farbraum → Pixel-Fallback
+    else if (fn === OPS.showText || fn === OPS.showSpacedText) rec();
+    else if (fn === OPS.nextLineShowText) { td(0, -leading); rec(); }
+    else if (fn === OPS.nextLineSetSpacingShowText) { leading = -a[1]; td(0, -leading); rec(); }
+  }
+  return cs;
+}
+function _nearBlackRGB(s) { const m = /rgb\((\d+),(\d+),(\d+)\)/.exec(s || ''); return m ? (+m[1] < 45 && +m[2] < 45 && +m[3] < 45) : false; }
 async function convertToPaper(pageNums) {
   if (!pdfDoc) return;
   const nums = (pageNums && pageNums.length) ? pageNums : Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1);
@@ -4744,6 +4777,15 @@ async function convertToPaper(pageNums) {
       try {   // Links (klickbar) aus den PDF-Annotationen den Textstücken zuordnen
         const links = (await page.getAnnotations()).filter(a => a.subtype === 'Link' && a.url).map(a => { const r = a.rect; return { x0: Math.min(r[0], r[2]), x1: Math.max(r[0], r[2]), top: vp.height - Math.max(r[1], r[3]), bot: vp.height - Math.min(r[1], r[3]), url: a.url }; });
         if (links.length) for (const it of items) { const cx = it.x + (it.w || 0) / 2, cy = it.y + it.h / 2, L = links.find(l => cx >= l.x0 - 1 && cx <= l.x1 + 1 && cy >= l.top - 2 && cy <= l.bot + 2); if (L) it.url = L.url; }
+      } catch (_) { }
+      try {   // zuverlässige Textfarbe aus dem Inhaltsstrom den Textstücken zuordnen (enge Toleranz; nur wenn genug passt)
+        const fills = await pageFillColors(page, vp.height);
+        if (fills.length) {
+          const byY = new Map(); for (const f of fills) { const key = Math.round(f.by); (byY.get(key) || byY.set(key, []).get(key)).push(f); }
+          let matched = 0;
+          for (const it of items) { let best = null, bd = 1e9; for (let dy = -2; dy <= 2; dy++) { const arr = byY.get(Math.round(it.base) + dy); if (arr) for (const f of arr) { const d = Math.abs(f.x - it.x); if (d < bd) { bd = d; best = f; } } } if (best && bd < Math.max(4, it.size * 0.7)) { matched++; if (best.rgb) it.fill = best.rgb; } }
+          if (matched < items.length * 0.4) items.forEach(it => { delete it.fill; });   // Korrelation unsicher → verwerfen, Pixel-Methode nutzen
+        }
       } catch (_) { }
       const blocks = groupTextBlocks(items);
       for (const b of blocks) { blockN++; if ((b.text || '').split(/\s+/).filter(Boolean).length >= 6 || (b.lines && b.lines.length >= 3)) substantial++; }   // „richtige" Textblöcke (Fliesstext) vs. verstreute Labels
@@ -7215,6 +7257,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('NPK-Position + Bemerkung im Ausschreibungstext', () => { const floors = [{ name: 'Bad', m2: 5, b: { tileW: 30, tileH: 30 }, a: { npk: '663.211', bemerkung: 'rutschhemmend R10' }, aufbau: '' }]; const html = buildBelagTableHtml(floors, [], false); return (/NPK 663\.211/.test(html) && /rutschhemmend R10/.test(html)) ? '' : 'fail'; });
     A('Font-Namen → echte CSS-Familie', () => { const ar = fontNameToCss('ABCDEF+Arial-BoldMT', ''), ca = fontNameToCss('Calibri', ''), ti = fontNameToCss('TimesNewRomanPSMT', ''), co = fontNameToCss('Courier', ''), ve = fontNameToCss('Verdana', ''); return (/^Arial/.test(ar) && /Calibri/.test(ca) && /Times New Roman/.test(ti) && /Courier New/.test(co) && /Verdana/.test(ve)) ? '' : JSON.stringify({ ar, ca, ti, co, ve }); });
     A('Ligaturen → Buchstaben', () => (_deLig('eﬃzient ﬂießt ﬁx') === 'effizient fließt fix' && _deLig('normal') === 'normal') ? '' : _deLig('eﬃzient ﬂießt ﬁx'));
+    A('Inhaltsstrom-Farbe: near-black Erkennung + Vorrang', () => { const nb = _nearBlackRGB('rgb(0,0,0)') && _nearBlackRGB('rgb(30,30,30)') && !_nearBlackRGB('rgb(200,0,0)') && !_nearBlackRGB(''); const html = blocksToPaperHtml([{ text: 'X', lines: [{ str: 'X', x: 0, maxx: 20 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial', x: 0, right: 20, y: 0, h: 15, csColor: 'rgb(200,0,0)' }], () => 'rgb(0,128,0)', null); return (nb && /color:rgb\(200,0,0\)/.test(html) && !/0,128,0/.test(html)) ? '' : JSON.stringify({ nb, html }); });
     A('detectFontMeta: bold+italic + ff aus Fontnamen', () => { const stub = { commonObjs: { get: () => ({ name: 'Arial-BoldItalicMT' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (m.bold && m.italic && m.fam === 'helv' && /Arial/.test(m.ff)) ? '' : JSON.stringify(m); });
     A('detectFontMeta: eingebettete Schrift (loadedName) zuerst, Mapping als Fallback', () => { const stub = { commonObjs: { has: () => true, get: () => ({ name: 'Arial', loadedName: 'g_d0_f1' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (/^"g_d0_f1",/.test(m.ff) && /Arial/.test(m.ff) && m.loaded === 'g_d0_f1' && /Arial/.test(m.ffMap) && !/g_d0_f1/.test(m.ffMap)) ? '' : JSON.stringify(m); });
     A('PDF→Paper: Absatz übernimmt Schriftfamilie/Grösse', () => { const html = blockToParaHtml({ text: 'Hallo', lines: [{ str: 'Hallo', x: 0, maxx: 50 }], size: 12, lh: 15, fam: 'times', ff: '"Times New Roman",Times,serif', bold: false, italic: false, x: 0, right: 50 }, 12, 500); return (/font-family:'Times New Roman'/.test(html) && /font-size:15px/.test(html) && /<p /.test(html) && />Hallo</.test(html)) ? '' : html; });

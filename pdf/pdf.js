@@ -1550,7 +1550,8 @@ function drawWallFaceElevation(svg, a, pv) {
   const cid = 'wfel' + (_tileClip++), cp = svgEl('clipPath', { id: cid }); cp.appendChild(svgEl('polygon', { points: quad })); g.appendChild(cp);
   const gg = svgEl('g', { 'clip-path': 'url(#' + cid + ')' }), handles = [], selHere = sel && sel.id === a.id;
   const oU = stepU > 0 ? ((((b.offU || 0) % stepU) + stepU) % stepU) : 0, oN = stepN > 0 ? ((((b.offN || 0) % stepN) + stepN) % stepN) : 0;   // Raster-Versatz (verschiebbare Einteilung)
-  if (stepU > 1) for (let d = oU; d < len; d += stepU) { if (d < 0.5) continue; gg.appendChild(svgEl('line', { x1: (A[0] + ux * d).toFixed(2), y1: (A[1] + uy * d).toFixed(2), x2: (D[0] + ux * d).toFixed(2), y2: (D[1] + uy * d).toFixed(2), stroke: col, 'stroke-width': 0.5, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' })); }
+  const colPts = (b.startCol > 0) ? (b.startCol / 100) / perPt : 0, startU = colPts > 0 ? colPts : oU;   // Anfangsspalte links (feste Breite), Raster rechts davon
+  if (stepU > 1) for (let d = startU; d < len; d += stepU) { if (d < 0.5) continue; const isCol = colPts > 0 && Math.abs(d - colPts) < 0.01; gg.appendChild(svgEl('line', { x1: (A[0] + ux * d).toFixed(2), y1: (A[1] + uy * d).toFixed(2), x2: (D[0] + ux * d).toFixed(2), y2: (D[1] + uy * d).toFixed(2), stroke: col, 'stroke-width': isCol ? 1 : 0.5, 'stroke-opacity': isCol ? 0.8 : 0.5, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' })); }
   const sockPts = (b.sockel > 0) ? (b.sockel / 100) / perPt : 0, startN = sockPts > 0 ? sockPts : oN;   // Sockelreihe unten (feste Höhe), Raster darüber
   if (stepN > 1) for (let d = startN; d < Hpts; d += stepN) { if (d < 0.5) continue; const isSock = sockPts > 0 && Math.abs(d - sockPts) < 0.01; gg.appendChild(svgEl('line', { x1: (A[0] + nx * d).toFixed(2), y1: (A[1] + ny * d).toFixed(2), x2: (B[0] + nx * d).toFixed(2), y2: (B[1] + ny * d).toFixed(2), stroke: col, 'stroke-width': isSock ? 1 : 0.5, 'stroke-opacity': isSock ? 0.8 : 0.5, 'vector-effect': 'non-scaling-stroke', 'pointer-events': 'none' })); }
   // Fenster (a.fenster: [{t: 0..1 Position entlang der Wand, w, h, sill}]) als Aussparung in der Ansicht (ziehbar)
@@ -1583,7 +1584,8 @@ function wfHoverMove(ev) {
   const b = a.belag || DEFAULT_BELAG, jw = Math.max(0, b.joint || 0) / 1000, stepU = ((b.tileW / 100) + jw) / perPt, stepN = ((b.tileH / 100) + jw) / perPt;
   const oU = stepU > 0 ? ((((b.offU || 0) % stepU) + stepU) % stepU) : 0, oN = stepN > 0 ? ((((b.offN || 0) % stepN) + stepN) % stepN) : 0;
   const sockPts = (b.sockel > 0) ? (b.sockel / 100) / perPt : 0, startN = sockPts > 0 ? sockPts : oN;
-  const jU = Math.max(0, Math.min(len, oU + Math.round((du - oU) / stepU) * stepU)), jN = Math.max(0, Math.min(Hpts, startN + Math.round((dn - startN) / stepN) * stepN));
+  const colPts = (b.startCol > 0) ? (b.startCol / 100) / perPt : 0, startU = colPts > 0 ? colPts : oU;
+  const jU = Math.max(0, Math.min(len, startU + Math.round((du - startU) / stepU) * stepU)), jN = Math.max(0, Math.min(Hpts, startN + Math.round((dn - startN) / stepN) * stepN));
   const g = svgEl('g', { 'pointer-events': 'none' }), HL = '#e8412e';
   g.appendChild(svgEl('line', { x1: (A[0] + ux * jU).toFixed(2), y1: (A[1] + uy * jU).toFixed(2), x2: (A[0] + ux * jU + nx * Hpts).toFixed(2), y2: (A[1] + uy * jU + ny * Hpts).toFixed(2), stroke: HL, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
   g.appendChild(svgEl('line', { x1: (A[0] + nx * jN).toFixed(2), y1: (A[1] + ny * jN).toFixed(2), x2: (A[0] + ux * len + nx * jN).toFixed(2), y2: (A[1] + uy * len + ny * jN).toFixed(2), stroke: HL, 'stroke-width': 1.4, 'vector-effect': 'non-scaling-stroke' }));
@@ -6407,6 +6409,7 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     if (docScale && area) html += '<div class="insp-kv"><span>Platten (inkl. Verschnitt)</span><b>' + tilesForArea(area, b.tileW, b.tileH, b.waste || 0) + ' Stk</b></div>';
     if (docScale) html += '<div class="insp-row"><span class="insp-lbl">Versatz ↔ / ↕</span><input class="insp-num" style="width:46px" id="wfOffU" type="number" value="' + Math.round((b.offU || 0) * docScale.perPt * 100) + '"> <input class="insp-num" style="width:46px" id="wfOffN" type="number" value="' + Math.round((b.offN || 0) * docScale.perPt * 100) + '"> cm</div>';
     if (docScale) html += '<div class="insp-row"><span class="insp-lbl">Sockelreihe</span><input class="insp-num" style="width:60px" id="wfSock" type="number" min="0" value="' + Math.round(b.sockel || 0) + '"> cm (0 = keine)</div>';
+    if (docScale) html += '<div class="insp-row"><span class="insp-lbl">Anfangsspalte</span><input class="insp-num" style="width:60px" id="wfCol" type="number" min="0" value="' + Math.round(b.startCol || 0) + '"> cm (0 = keine)</div>';
     html += '<div class="insp-row"><span class="insp-lbl">Untergrund</span><select class="insp-num" id="wfUg" style="width:128px">' + UNTERGRUND.map(u => '<option value="' + u + '"' + (a.untergrund === u ? ' selected' : '') + '>' + (u || '– wählen –') + '</option>').join('') + '</select></div>';
     const ans = a.ans || (a.ans = { boden: true, decke: true, wand: 2 });   // Anschlüsse (Randfugen) direkt aus der Wand
     html += '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">Anschlüsse (Randfugen)</div>'
@@ -6428,6 +6431,7 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     const bindOff = (id, key) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (isFinite(v) && docScale) { a.belag[key] = (v / 100) / docScale.perPt; markDirty(); pageViews.forEach(drawAnnos); renderList(); } }; };
     bindOff('#wfOffU', 'offU'); bindOff('#wfOffN', 'offN');
     const so = body.querySelector('#wfSock'); if (so) so.onchange = () => { const v = parseFloat((so.value || '').replace(',', '.')); if (isFinite(v)) { a.belag.sockel = Math.max(0, v); markDirty(); pageViews.forEach(drawAnnos); renderList(); } };
+    const sc = body.querySelector('#wfCol'); if (sc) sc.onchange = () => { const v = parseFloat((sc.value || '').replace(',', '.')); if (isFinite(v)) { a.belag.startCol = Math.max(0, v); markDirty(); pageViews.forEach(drawAnnos); renderList(); } };
     const au = body.querySelector('#iWfAu'); if (au) au.onchange = () => { const v = au.value.trim(); if (v) a.aufbau = v; else delete a.aufbau; markDirty(); pageViews.forEach(drawAnnos); };
     const ug = body.querySelector('#wfUg'); if (ug) ug.onchange = () => { if (ug.value) a.untergrund = ug.value; else delete a.untergrund; markDirty(); renderList(); };
     const tgl = (id, key) => { const el = body.querySelector(id); if (el) el.onclick = () => { a.ans[key] = !a.ans[key]; markDirty(); renderList(); pageViews.forEach(drawAnnos); }; };

@@ -1556,6 +1556,8 @@ function drawWallFaceElevation(svg, a, pv) {
     const bx = A[0] + ux * (cU - fw / 2) + nx * sill, by = A[1] + uy * (cU - fw / 2) + ny * sill;
     const fq = [[bx, by], [bx + ux * fw, by + uy * fw], [bx + ux * fw + nx * fh, by + uy * fw + ny * fh], [bx + nx * fh, by + ny * fh]].map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ');
     gg.appendChild(svgEl('polygon', { points: fq, fill: '#dfe8f2', stroke: col, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
+    const wcx = bx + ux * fw / 2 + nx * fh / 2, wcy = by + uy * fw / 2 + ny * fh / 2;   // Fenstermass B×H (cm) mittig ins Fenster
+    const wt = svgEl('text', { x: wcx.toFixed(2), y: wcy.toFixed(2), fill: col, 'font-size': 8, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'paint-order': 'stroke', stroke: '#dfe8f2', 'stroke-width': 2 }); wt.textContent = Math.round((f.w || 1) * 100) + '×' + Math.round((f.h || 1) * 100); gg.appendChild(wt);
   }
   g.appendChild(gg); svg.appendChild(g);
 }

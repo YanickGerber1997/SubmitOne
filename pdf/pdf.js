@@ -2388,9 +2388,14 @@ function drawTileGrid(g, a, pv) {
   const cid = 'tile' + (_tileClip++);
   const cp = svgEl('clipPath', { id: cid }); cp.appendChild(svgEl('polygon', { points: pts.map(p => p[0] + ',' + p[1]).join(' ') })); g.appendChild(cp);
   const gg = svgEl('g', { 'clip-path': 'url(#' + cid + ')' }), col = a.color || '#b5651d';
-  const sx = (b.start && b.start[0] != null) ? b.start[0] : minX, sy = (b.start && b.start[1] != null) ? b.start[1] : minY;
-  for (let x = sx - Math.ceil((sx - minX) / stepX) * stepX; x <= maxX + 0.01; x += stepX) gg.appendChild(svgEl('line', { x1: x, y1: minY, x2: x, y2: maxY, stroke: col, 'stroke-width': 0.6, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
-  for (let y = sy - Math.ceil((sy - minY) / stepY) * stepY; y <= maxY + 0.01; y += stepY) gg.appendChild(svgEl('line', { x1: minX, y1: y, x2: maxX, y2: y, stroke: col, 'stroke-width': 0.6, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
+  const rot = b.angle === 45, cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  const gin = rot ? svgEl('g', { transform: 'rotate(45 ' + cx.toFixed(2) + ' ' + cy.toFixed(2) + ')' }) : gg;   // Clip aussen (unrotierte Fläche), Raster innen gedreht
+  let lx0 = minX, ly0 = minY, lx1 = maxX, ly1 = maxY;
+  if (rot) { const d = Math.hypot(maxX - minX, maxY - minY) / 2 + Math.max(stepX, stepY); lx0 = cx - d; lx1 = cx + d; ly0 = cy - d; ly1 = cy + d; }   // erweitern, damit das gedrehte Raster die Fläche voll füllt
+  const sx = rot ? lx0 : ((b.start && b.start[0] != null) ? b.start[0] : minX), sy = rot ? ly0 : ((b.start && b.start[1] != null) ? b.start[1] : minY);
+  for (let x = sx - Math.ceil((sx - lx0) / stepX) * stepX; x <= lx1 + 0.01; x += stepX) gin.appendChild(svgEl('line', { x1: x, y1: ly0, x2: x, y2: ly1, stroke: col, 'stroke-width': 0.6, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
+  for (let y = sy - Math.ceil((sy - ly0) / stepY) * stepY; y <= ly1 + 0.01; y += stepY) gin.appendChild(svgEl('line', { x1: lx0, y1: y, x2: lx1, y2: y, stroke: col, 'stroke-width': 0.6, 'stroke-opacity': 0.5, 'vector-effect': 'non-scaling-stroke' }));
+  if (rot) gg.appendChild(gin);
   g.appendChild(gg);
 }
 function areaClick(pv, p) {
@@ -6152,7 +6157,8 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
         + '<div class="insp-row"><span class="insp-lbl">Verschnitt</span><input class="insp-num" style="width:60px" id="iWa" type="number" min="0" value="' + (b.waste != null ? b.waste : 8) + '"> %</div>'
         + '<div class="insp-row"><span class="insp-lbl">Aufbau</span><input class="insp-num" style="width:120px" id="iAu" value="' + (a.aufbau ? a.aufbau.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. OK FB / roher Boden"></div>'
         + '<div class="insp-row"><span class="insp-lbl">Start (von wo)</span><span id="iStart" style="display:inline-flex;gap:3px">'
-        + ['tl:◰:oben links', 'tr:◳:oben rechts', 'bl:◱:unten links', 'br:◲:unten rechts', 'center:⊹:mittig (symmetrisch)'].map(s => { const [c, ic, ti] = s.split(':'); return '<button class="insp-mini' + (b.startCorner === c ? ' on' : (!b.startCorner && c === 'tl' ? ' on' : '')) + '" data-c="' + c + '" title="' + ti + '">' + ic + '</button>'; }).join('') + '</span></div>';
+        + ['tl:◰:oben links', 'tr:◳:oben rechts', 'bl:◱:unten links', 'br:◲:unten rechts', 'center:⊹:mittig (symmetrisch)'].map(s => { const [c, ic, ti] = s.split(':'); return '<button class="insp-mini' + (b.startCorner === c ? ' on' : (!b.startCorner && c === 'tl' ? ' on' : '')) + '" data-c="' + c + '" title="' + ti + '">' + ic + '</button>'; }).join('') + '</span></div>'
+        + '<div class="insp-row"><span class="insp-lbl">Richtung</span><span id="iDir" style="display:inline-flex;gap:3px"><button class="insp-mini' + (b.angle !== 45 ? ' on' : '') + '" data-a="0" title="gerade">▦</button><button class="insp-mini' + (b.angle === 45 ? ' on' : '') + '" data-a="45" title="diagonal 45°">◇</button></span></div>';
       if (docScale && m2) bh += '<div class="insp-kv"><span>Platten (inkl. Verschnitt)</span><b>' + tilesForArea(m2, b.tileW, b.tileH, b.waste || 0) + ' Stk</b></div>';
       body.insertAdjacentHTML('beforeend', bh);
     }
@@ -6169,6 +6175,7 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
         a.belag.startCorner = btn.dataset.c; a.belag.start = tileStartPoint(minX, minY, maxX, maxY, btn.dataset.c, stepX, stepY);
         markDirty(); pageViews.forEach(drawAnnos); renderList();
       });
+      body.querySelectorAll('#iDir .insp-mini').forEach(btn => btn.onclick = () => { a.belag.angle = +btn.dataset.a; markDirty(); pageViews.forEach(drawAnnos); renderList(); });
     }
     const tb = document.createElement('button'); tb.className = 'insp-btn'; tb.textContent = a.belag ? '⌗ Plattenspiegel entfernen' : '⌗ Plattenspiegel hinzufügen';
     tb.onclick = () => { pushUndo(); if (a.belag) delete a.belag; else { a.belag = { ...DEFAULT_BELAG }; if (a.color === '#4f7a3c' || !a.color) a.color = '#b5651d'; } markDirty(); pageViews.forEach(drawAnnos); renderList(); };

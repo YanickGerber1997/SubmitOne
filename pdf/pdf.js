@@ -4773,27 +4773,29 @@ function sampleUnderline(cv, x0, x1, baseY, pageW) {
   for (let dy = 1; dy <= 5; dy++) { const py = Math.round((baseY + dy) * k); if (py < 0 || py >= h) continue; let dark = 0, tot = 0; for (let px = px0; px <= px1; px += 2) { const o = (py * w + px) * 4; tot++; if (data[o] + data[o + 1] + data[o + 2] < 360) dark++; } if (tot > 4 && dark / tot > 0.6) return true; }
   return false;
 }
-// Text-Farbe eines Blocks aus dem gerenderten Seitenbild: Mittel der Pixel, die deutlich vom Hintergrund abweichen (fast-schwarz → null = Standard)
+// Text-Farbe eines Blocks aus dem gerenderten Seitenbild: dichte Abtastung, Hintergrund = häufigste Farbe, Tinte = häufigster Kern-Farbwert (Modus) der abweichenden Pixel. Nur wenn dieser klar dominiert (sonst Standard-Schwarz).
 function sampleInkColor(cv, box, pageW) {
   if (!cv || !box || !(pageW > 0)) return null;
   const data = _canvasData(cv); if (!data) return null;
-  const k = cv.width / pageW, w = cv.width, h = cv.height, counts = {}, samp = [];
-  for (let i = 0; i <= 16; i++) for (let j = 0; j <= 6; j++) {
-    const px = Math.round((box.x + box.w * (i / 16)) * k), py = Math.round((box.y + box.h * (j / 6)) * k);
+  const k = cv.width / pageW, w = cv.width, h = cv.height, bgCounts = {}, samp = [];
+  const NI = 24, NJ = 10;
+  for (let i = 0; i <= NI; i++) for (let j = 0; j <= NJ; j++) {
+    const px = Math.round((box.x + box.w * (i / NI)) * k), py = Math.round((box.y + box.h * (j / NJ)) * k);
     if (px < 0 || py < 0 || px >= w || py >= h) continue; const o = (py * w + px) * 4;
-    samp.push([data[o], data[o + 1], data[o + 2]]); const key = (data[o] >> 4) + ',' + (data[o + 1] >> 4) + ',' + (data[o + 2] >> 4); counts[key] = (counts[key] || 0) + 1;
+    samp.push([data[o], data[o + 1], data[o + 2]]); const key = (data[o] >> 4) + ',' + (data[o + 1] >> 4) + ',' + (data[o + 2] >> 4); bgCounts[key] = (bgCounts[key] || 0) + 1;
   }
-  if (samp.length < 4) return null;
-  let bgKey = null, bn = 0; for (const kk in counts) if (counts[kk] > bn) { bn = counts[kk]; bgKey = kk; }
+  if (samp.length < 6) return null;
+  let bgKey = null, bn = 0; for (const kk in bgCounts) if (bgCounts[kk] > bn) { bn = bgCounts[kk]; bgKey = kk; }
   const bg = bgKey.split(',').map(v => parseInt(v, 10) * 16 + 8);
-  let r = 0, g = 0, bl = 0, cnt = 0;
-  for (const p of samp) { if (Math.abs(p[0] - bg[0]) + Math.abs(p[1] - bg[1]) + Math.abs(p[2] - bg[2]) > 70) { r += p[0]; g += p[1]; bl += p[2]; cnt++; } }
-  if (cnt < 3) return null; r = Math.round(r / cnt); g = Math.round(g / cnt); bl = Math.round(bl / cnt);
-  if (r < 45 && g < 45 && bl < 45) return null;   // fast schwarz → Standard-Textfarbe
-  if (r > 232 && g > 232 && bl > 232) return null;   // fast weiss → wohl Artefakt, nicht übernehmen
-  let dev = 0, dc = 0;   // Konsistenz: weichen die Textpixel einheitlich in EINE Farbe ab? sonst (Text über Bild/Muster) lieber Standard
-  for (const p of samp) { if (Math.abs(p[0] - bg[0]) + Math.abs(p[1] - bg[1]) + Math.abs(p[2] - bg[2]) > 70) { dev += Math.abs(p[0] - r) + Math.abs(p[1] - g) + Math.abs(p[2] - bl); dc++; } }
-  if (dc && dev / dc > 90) return null;
+  // Tinte = abweichende Pixel (Glyphenkerne), gebucketet; dominanter Bucket = echte Textfarbe (robust gegen Kantenglättung)
+  const ink = {}; let dev = 0;
+  for (const p of samp) { if (Math.abs(p[0] - bg[0]) + Math.abs(p[1] - bg[1]) + Math.abs(p[2] - bg[2]) > 80) { dev++; const key = (p[0] >> 4) + ',' + (p[1] >> 4) + ',' + (p[2] >> 4), b = ink[key] || (ink[key] = { n: 0, r: 0, g: 0, b: 0 }); b.n++; b.r += p[0]; b.g += p[1]; b.b += p[2]; } }
+  if (dev < 4) return null;
+  let best = null, bnn = 0; for (const kk in ink) if (ink[kk].n > bnn) { bnn = ink[kk].n; best = ink[kk]; }
+  if (!best || bnn / dev < 0.45) return null;   // kein klar dominierender Farbwert → Text über Bild/Muster → Standard
+  const r = Math.round(best.r / best.n), g = Math.round(best.g / best.n), bl = Math.round(best.b / best.n);
+  if (r < 45 && g < 45 && bl < 45) return null;      // fast schwarz → Standard-Textfarbe
+  if (r > 232 && g > 232 && bl > 232) return null;   // fast weiss → Artefakt
   return `rgb(${r},${g},${bl})`;
 }
 // Hintergrund- (häufigste) und Text-Farbe (dunkelste) im Kästchen abtasten
@@ -7213,6 +7215,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('detectFontMeta: eingebettete Schrift (loadedName) zuerst, Mapping als Fallback', () => { const stub = { commonObjs: { has: () => true, get: () => ({ name: 'Arial', loadedName: 'g_d0_f1' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (/^"g_d0_f1",/.test(m.ff) && /Arial/.test(m.ff) && m.loaded === 'g_d0_f1' && /Arial/.test(m.ffMap) && !/g_d0_f1/.test(m.ffMap)) ? '' : JSON.stringify(m); });
     A('PDF→Paper: Absatz übernimmt Schriftfamilie/Grösse', () => { const html = blockToParaHtml({ text: 'Hallo', lines: [{ str: 'Hallo', x: 0, maxx: 50 }], size: 12, lh: 15, fam: 'times', ff: '"Times New Roman",Times,serif', bold: false, italic: false, x: 0, right: 50 }, 12, 500); return (/font-family:'Times New Roman'/.test(html) && /font-size:15px/.test(html) && /<p /.test(html) && />Hallo</.test(html)) ? '' : html; });
     A('PDF→Paper: gemischt fett innerhalb Absatz (Runs)', () => { const b = { text: 'Sehr wichtig!', lines: [{ str: 'Sehr wichtig!', x: 0, maxx: 120, runs: [{ str: 'Sehr ', bold: false, italic: false, ff: 'Arial,sans-serif' }, { str: 'wichtig', bold: true, italic: false, ff: 'Arial,sans-serif' }, { str: '!', bold: false, italic: false, ff: 'Arial,sans-serif' }] }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', bold: false, italic: false, x: 0, right: 120 }; const html = blockToParaHtml(b, 12, 500); return (/Sehr <strong>wichtig<\/strong>!/.test(html) && !/<strong>Sehr/.test(html)) ? '' : html; });
+    A('Textfarbe: dominanter Farbwert erkannt, uneinheitlich → null', () => { const W = 100, H = 20, d = new Uint8ClampedArray(W * H * 4).fill(255); for (let y = 8; y <= 12; y++) for (let x = 0; x < W; x++) { const o = (y * W + x) * 4; d[o] = 0; d[o + 1] = 0; d[o + 2] = 255; d[o + 3] = 255; } const col = sampleInkColor({ width: W, height: H, _cData: d }, { x: 0, y: 0, w: 100, h: 20 }, 100); const d2 = new Uint8ClampedArray(W * H * 4); for (let p = 0; p < W * H; p++) { const o = p * 4, v = (p * 37) % 256; d2[o] = v; d2[o + 1] = 255 - v; d2[o + 2] = (p * 53) % 256; d2[o + 3] = 255; } const col2 = sampleInkColor({ width: W, height: H, _cData: d2 }, { x: 0, y: 0, w: 100, h: 20 }, 100); return (/rgb\(0,0,25[0-9]\)/.test(col) && col2 === null) ? '' : JSON.stringify({ col, col2 }); });
     A('Unterstreichung am Pixelbild erkennen', () => { const W = 20, H = 10, data = new Uint8ClampedArray(W * H * 4).fill(255); for (let px = 2; px <= 18; px++) { const o = (6 * W + px) * 4; data[o] = 0; data[o + 1] = 0; data[o + 2] = 0; } const cv = { width: W, height: H, _cData: data }, yes = sampleUnderline(cv, 2, 18, 5, 20); const cv2 = { width: W, height: H, _cData: new Uint8ClampedArray(W * H * 4).fill(255) }, no = sampleUnderline(cv2, 2, 18, 5, 20); return (yes === true && no === false) ? '' : JSON.stringify({ yes, no }); });
     A('Text-Tabelle: 3×2 Raster erkannt, Prosa nicht', () => { const mk = (y, cs) => ({ y, size: 10, items: cs.map(c => ({ x: c[0], y, w: c[2] || 30, h: 12, size: 10, str: c[1] })) }); const tab = [mk(0, [[50, 'Name'], [200, 'Wert']]), mk(20, [[50, 'Apfel'], [200, '1']]), mk(40, [[50, 'Birne'], [200, '2']])]; const prose = [mk(0, [[50, 'Ein normaler Satz', 200]]), mk(20, [[50, 'noch ein Satz hier', 200]]), mk(40, [[50, 'und ein dritter Satz', 200]])]; const t1 = detectTextTables(tab), t2 = detectTextTables(prose); return (t1.length === 1 && t1[0].cols.length === 2 && t1[0].first === 0 && t1[0].last === 2 && t2.length === 0) ? '' : JSON.stringify({ t1, t2 }); });
     A('Text-Tabelle → HTML mit Zellen', () => { const mk = (y, cs) => ({ y, size: 10, items: cs.map(c => ({ x: c[0], y, w: 30, h: 12, size: 10, str: c[1] })) }); const lines = [mk(0, [[50, 'Name'], [200, 'Wert']]), mk(20, [[50, 'Apfel'], [200, '1']]), mk(40, [[50, 'Birne'], [200, '2']])]; const html = textTableHtml(lines, 0, 2, [50, 200]); return (/<table/.test(html) && (html.match(/<tr>/g) || []).length === 3 && /<td[^>]*>Apfel<\/td>/.test(html) && /<td[^>]*>1<\/td>/.test(html)) ? '' : html; });

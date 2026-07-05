@@ -1453,9 +1453,15 @@ function drawOne(svg, a, pv) {
     if (a.bg && a.bg !== 'transparent') g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: a.bg, stroke: 'none' }));   // alte Stelle überdecken (nur wenn Abdeckung gewünscht)
     if (a.id !== _editingId) {   // während des Tippens zeigt die Textarea den Text – nicht doppelt zeichnen
       const baseY = (a.base != null ? a.base : a.y + a.size * 0.82);   // echte PDF-Grundlinie → exakte Höhe, schriftunabhängig
-      const t = svgEl('text', { x: a.x, y: baseY, fill: a.color, 'font-size': a.size, 'font-family': (a.ff || cssFontStack(a.fam)), 'dominant-baseline': 'alphabetic' });
+      const t = svgEl('text', { y: baseY, fill: a.color, 'font-size': a.size, 'font-family': (a.ff || cssFontStack(a.fam)), 'dominant-baseline': 'alphabetic' });
       if (a.bold) t.setAttribute('font-weight', 'bold'); if (a.italic) t.setAttribute('font-style', 'italic');
-      (a.text || '').split('\n').forEach((ln, i) => { const ts = svgEl('tspan', { x: a.x, dy: i === 0 ? 0 : (a.lh || a.size * 1.25) }); ts.textContent = ln || ' '; t.appendChild(ts); });
+      const elh = a.lh || a.size * 1.25;
+      (a.text || '').split('\n').forEach((ln, i) => {
+        const o = a.lines0 && a.lines0[i], match = o && o.str === ln && o.w > 1;   // unveränderte Zeile → exakt auf Original-Breite/-Start legen (1:1)
+        const at = { x: (match ? o.x : a.x).toFixed ? (match ? o.x : a.x).toFixed(2) : (match ? o.x : a.x), dy: i === 0 ? 0 : elh };
+        if (match) { at.textLength = o.w.toFixed(2); at.lengthAdjust = 'spacingAndGlyphs'; }
+        const ts = svgEl('tspan', at); ts.textContent = ln || ' '; t.appendChild(ts);
+      });
       g.appendChild(t);
     }
     svg.appendChild(g); el = g;
@@ -4393,7 +4399,7 @@ async function pageTextItemsFor(page, pageH) {   // Textstücke einer beliebigen
 }
 const _isListLine = s => /^\s*([-–—•*·▪◦‣]|\d{1,3}[.)])\s/.test(s) || /^\s*[-–—•*·▪◦‣]\S/.test(s);
 // Ein Absatz-Block → HTML. Gestapelte Zeilen bleiben GESTAPELT (<br>); nur echt umbrochene Fliesstext-Zeilen werden zusammengezogen (vorige Zeile reicht fast ganz nach rechts, diese beginnt links, kein Listenpunkt, keine Satzende-Zeile davor).
-function blockToParaHtml(b, body, pageRight, gapEm) {
+function blockToParaHtml(b, body, pageRight, gapEm, pageLeft) {
   const lines = (b.lines && b.lines.length) ? b.lines : b.text.split('\n').map(str => ({ str, x: b.x, maxx: b.right || (b.x + b.w) }));
   let inner = '';
   for (let i = 0; i < lines.length; i++) {
@@ -4411,19 +4417,31 @@ function blockToParaHtml(b, body, pageRight, gapEm) {
   const lhR = Math.max(1, Math.min(2.2, (b.lh || b.size * 1.25) / b.size));   // Zeilenabstand aus dem Original
   const ff = (b.ff || cssFontStack(b.fam || 'helv')).replace(/"/g, "'");   // echte Schriftfamilie mitnehmen
   const mt = (gapEm && gapEm > 0.05) ? `;margin:${Math.min(4, gapEm).toFixed(2)}em 0 0` : ';margin:0';   // Absatzabstand aus dem Original
-  const st = `font-family:${ff};font-size:${px}px;line-height:${lhR.toFixed(2)}${mt}`;
+  const al = (pageLeft != null) ? blockAlign(lines, pageLeft, pageRight) : '';   // zentriert / rechtsbündig übernehmen
+  const st = `font-family:${ff};font-size:${px}px;line-height:${lhR.toFixed(2)}${mt}${al ? ';text-align:' + al : ''}`;
   if (b.size >= body * 1.45 && lines.length === 1) return `<h2 style="${st}">` + inner + '</h2>';   // grosse Einzelzeile → Überschrift
   if (b.bold) inner = '<strong>' + inner + '</strong>'; if (b.italic) inner = '<em>' + inner + '</em>';
   return `<p style="${st}">` + inner + '</p>';
 }
 // Gemeinsamer rechter Textrand der Seite (dort bricht Fliesstext um) – 90-Perzentil der Zeilen-Enden
 function pageRightMargin(blocks) { const r = []; blocks.forEach(b => (b.lines || []).forEach(l => r.push(l.maxx))); if (!r.length) return 1e9; r.sort((a, b) => a - b); return r[Math.floor(r.length * 0.9)]; }
+// Linker Textrand der Seite – 10-Perzentil der Zeilen-Anfänge (für Ausrichtungs-Erkennung zentriert/rechts)
+function pageLeftMargin(blocks) { const r = []; blocks.forEach(b => (b.lines || []).forEach(l => r.push(l.x))); if (!r.length) return 0; r.sort((a, b) => a - b); return r[Math.floor(r.length * 0.1)]; }
+// Ausrichtung eines Absatzes aus seiner Lage zwischen linkem und rechtem Textrand ableiten
+function blockAlign(lines, pageLeft, pageRight) {
+  if (!lines || !lines.length || !(pageRight > pageLeft)) return '';
+  const lmin = Math.min(...lines.map(l => l.x)), rmax = Math.max(...lines.map(l => l.maxx != null ? l.maxx : l.x));
+  const span = pageRight - pageLeft, lg = lmin - pageLeft, rg = pageRight - rmax;
+  if (lg > span * 0.15 && Math.abs(lg - rg) < span * 0.12) return 'center';
+  if (lg > span * 0.25 && rg < span * 0.05) return 'right';
+  return '';
+}
 function blocksToPaperHtml(blocks) {
   if (!blocks.length) return '<p></p>';
   const sizes = blocks.map(b => b.size).slice().sort((a, b) => a - b), body = sizes[Math.floor(sizes.length / 2)] || 12;
-  const pr = pageRightMargin(blocks);
+  const pr = pageRightMargin(blocks), pl = pageLeftMargin(blocks);
   let prevBot = null;   // Absatzabstände aus den vertikalen Lücken des Originals übernehmen
-  const html = blocks.map(b => { const gapEm = (prevBot != null && body > 0) ? Math.max(0, (b.y - prevBot) / body) : 0; prevBot = b.y + b.h; return blockToParaHtml(b, body, pr, gapEm); }).filter(Boolean).join('\n');
+  const html = blocks.map(b => { const gapEm = (prevBot != null && body > 0) ? Math.max(0, (b.y - prevBot) / body) : 0; prevBot = b.y + b.h; return blockToParaHtml(b, body, pr, gapEm, pl); }).filter(Boolean).join('\n');
   return html || '<p></p>';
 }
 /* ---------- Rechnung/Kalkulation erkennen: Anzahl × Ansatz = Betrag, mit Neuberechnung + rot markierter Fehlerwarnung ---------- */
@@ -4614,7 +4632,7 @@ async function editTextAt(pv, p) {
   const hit = blocks.find(b => p.x >= b.x - 3 && p.x <= b.x + b.w + 3 && p.y >= b.y - 2 && p.y <= b.y + b.h + 2);
   let a;
   if (hit) {
-    const s = sampleBox(pv, hit); a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, base: hit.base, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic, ff: hit.ff };
+    const s = sampleBox(pv, hit); a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, base: hit.base, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic, ff: hit.ff, lines0: (hit.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x) })) };
     pushUndo(); pushAnno(pv.num, a); sel = null; drawAnnos(pv); openEditEdit(pv, a, false, p);
   } else {
     a = { id: nextId++, type: 'edit', x: p.x, y: p.y - style.size * 0.82, w: 140, h: style.size * 1.3, text: '', size: style.size, lh: style.size * 1.3, color: style.color, bg: 'transparent' };
@@ -4635,7 +4653,7 @@ async function editAllTextOnPage(pv) {
     for (const b of blocks) {
       if (already.has(Math.round(b.x) + '|' + Math.round(b.y))) continue;   // schon editierbar → nicht doppelt
       const s = sampleBox(pv, b);
-      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, base: b.base, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic, ff: b.ff });
+      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, base: b.base, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic, ff: b.ff, lines0: (b.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x) })) });
       added++;
     }
     drawAnnos(pv); saveState();
@@ -4736,7 +4754,7 @@ function editNextBlock(pv, curA, dir) {
   setTimeout(() => {
     const ex = (getAnnos(pv.num) || []).filter(x => x.type === 'edit').find(x => Math.abs(x.x - nb.x) < 4 && Math.abs(x.y - nb.y) < 4);
     if (ex) { openEditEdit(pv, ex, false); return; }
-    const s = sampleBox(pv, nb), a2 = { id: nextId++, type: 'edit', x: nb.x, y: nb.y, base: nb.base, w: Math.max(nb.w, nb.size), h: nb.h, text: nb.text, size: nb.size, lh: nb.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: nb.fam, bold: nb.bold, italic: nb.italic, ff: nb.ff };
+    const s = sampleBox(pv, nb), a2 = { id: nextId++, type: 'edit', x: nb.x, y: nb.y, base: nb.base, w: Math.max(nb.w, nb.size), h: nb.h, text: nb.text, size: nb.size, lh: nb.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: nb.fam, bold: nb.bold, italic: nb.italic, ff: nb.ff, lines0: (nb.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x) })) };
     pushUndo(); pushAnno(pv.num, a2); openEditEdit(pv, a2, false);
   }, 0);
 }
@@ -5489,7 +5507,7 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
           else if (a.kind === 'label') { pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, borderColor: c, borderWidth: 2 }); const fs = a.h * 0.46, tw = font.widthOfTextAtSize(a.text || '', fs); pg.drawText(a.text || '', { x: a.x + (a.w - tw) / 2, y: Y(a.y + a.h) + (a.h - fs) / 2 + fs * 0.2, size: fs, font, color: c }); }
         }
         else if (a.type === 'cover') { const cc = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(cc.r, cc.g, cc.b) }); }
-        else if (a.type === 'edit') { const tc2 = parseColor(a.color), ef = await getFont(a.fam, a.bold, a.italic), elh = a.lh || a.size * 1.25, eBase = (a.base != null ? a.base : a.y + a.size * 0.82); if (a.bg && a.bg !== 'transparent') { const bg = parseColor(a.bg); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); } (a.text || '').split('\n').forEach((ln, i) => { try { pg.drawText(ln, { x: a.x, y: Y(eBase + i * elh), size: a.size, font: ef, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { try { pg.drawText(ln, { x: a.x, y: Y(eBase + i * elh), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { } } }); }
+        else if (a.type === 'edit') { const tc2 = parseColor(a.color), ef = await getFont(a.fam, a.bold, a.italic), elh = a.lh || a.size * 1.25, eBase = (a.base != null ? a.base : a.y + a.size * 0.82); if (a.bg && a.bg !== 'transparent') { const bg = parseColor(a.bg); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); } (a.text || '').split('\n').forEach((ln, i) => { const o = a.lines0 && a.lines0[i], lx = (o && o.str === ln) ? o.x : a.x; try { pg.drawText(ln, { x: lx, y: Y(eBase + i * elh), size: a.size, font: ef, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { try { pg.drawText(ln, { x: lx, y: Y(eBase + i * elh), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { } } }); }
         else if (a.type === 'img' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, opacity: a.opacity != null ? a.opacity : 1 }); }
         else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); if (a.caption) { const fs = Math.max(7, Math.min(11, a.h * 0.16)), cy = a.y + a.h + 2; pg.drawLine({ start: { x: a.x, y: Y(cy) }, end: { x: a.x + a.w, y: Y(cy) }, thickness: 0.7, color: rgb(.11, .14, .17) }); pg.drawText(a.caption, { x: a.x, y: Y(cy + fs + 1), size: fs, font, color: rgb(.11, .14, .17) }); } }
         // Schraffur (geclippt auf die Form)
@@ -7001,6 +7019,8 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Font-Namen → echte CSS-Familie', () => { const ar = fontNameToCss('ABCDEF+Arial-BoldMT', ''), ca = fontNameToCss('Calibri', ''), ti = fontNameToCss('TimesNewRomanPSMT', ''), co = fontNameToCss('Courier', ''), ve = fontNameToCss('Verdana', ''); return (/^Arial/.test(ar) && /Calibri/.test(ca) && /Times New Roman/.test(ti) && /Courier New/.test(co) && /Verdana/.test(ve)) ? '' : JSON.stringify({ ar, ca, ti, co, ve }); });
     A('detectFontMeta: bold+italic + ff aus Fontnamen', () => { const stub = { commonObjs: { get: () => ({ name: 'Arial-BoldItalicMT' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (m.bold && m.italic && m.fam === 'helv' && /Arial/.test(m.ff)) ? '' : JSON.stringify(m); });
     A('PDF→Paper: Absatz übernimmt Schriftfamilie/Grösse', () => { const html = blockToParaHtml({ text: 'Hallo', lines: [{ str: 'Hallo', x: 0, maxx: 50 }], size: 12, lh: 15, fam: 'times', ff: '"Times New Roman",Times,serif', bold: false, italic: false, x: 0, right: 50 }, 12, 500); return (/font-family:'Times New Roman'/.test(html) && /font-size:15px/.test(html) && /<p /.test(html) && />Hallo</.test(html)) ? '' : html; });
+    A('Ausrichtung: zentriert / rechts / links erkennen', () => { const cen = blockAlign([{ x: 200, maxx: 400 }], 100, 500), rig = blockAlign([{ x: 380, maxx: 498 }], 100, 500), lef = blockAlign([{ x: 102, maxx: 480 }], 100, 500); return (cen === 'center' && rig === 'right' && lef === '') ? '' : JSON.stringify({ cen, rig, lef }); });
+    A('PDF→Paper: zentrierter Absatz bekommt text-align:center', () => { const html = blockToParaHtml({ text: 'Titel', lines: [{ str: 'Titel', x: 210, maxx: 390 }], size: 18, lh: 22, fam: 'helv', ff: 'Arial,sans-serif', x: 210, right: 390 }, 12, 500, 0, 100); return /text-align:center/.test(html) ? '' : html; });
     A('Verlegemuster-Reihenversatz (Halbverband/Drittelverband/Kreuzfuge)', () => { const hv = [0, 1, 2, 3].map(r => tileRowShift('Halbverband', r)), dv = [0, 1, 2, 3].map(r => tileRowShift('Drittelverband', r)), kf = [0, 1, 2].map(r => tileRowShift('Kreuzfuge', r)); return (Math.abs(hv[0]) < 1e-9 && Math.abs(hv[1] - 0.5) < 1e-9 && Math.abs(hv[2]) < 1e-9 && Math.abs(hv[3] - 0.5) < 1e-9 && Math.abs(dv[1] - 1 / 3) < 1e-9 && Math.abs(dv[2] - 2 / 3) < 1e-9 && Math.abs(dv[3]) < 1e-9 && kf.every(v => v === 0)) ? '' : JSON.stringify({ hv, dv, kf }); });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };

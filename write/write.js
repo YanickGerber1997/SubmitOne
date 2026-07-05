@@ -377,7 +377,7 @@ function ingestGdoc(text, handle) {
       const typ = (p && p.typ === 'calc') ? 'calc' : 'write';
       let html = sanitizeHtml((p && p.html) || '');
       if (!html && p && p.tabelle && p.tabelle.cells) html = tabelleToHtml(p.tabelle);   // sehr alte Calc-Seite
-      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {}, notiz: (p && typeof p.notiz === 'string') ? p.notiz : '', fill: (p && p.fill && typeof p.fill === 'object') ? p.fill : {}, txtcol: (p && p.txtcol && typeof p.txtcol === 'object') ? p.txtcol : {}, rowH: (p && p.rowH && typeof p.rowH === 'object') ? p.rowH : {}, merges: Array.isArray(p && p.merges) ? p.merges : [], borders: (p && p.borders && typeof p.borders === 'object') ? p.borders : {}, dispCols: (p && +p.dispCols) || 0, dispRows: (p && +p.dispRows) || 0 };
+      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, cfmt: (p && p.cfmt && typeof p.cfmt === 'object') ? p.cfmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {}, notiz: (p && typeof p.notiz === 'string') ? p.notiz : '', fill: (p && p.fill && typeof p.fill === 'object') ? p.fill : {}, txtcol: (p && p.txtcol && typeof p.txtcol === 'object') ? p.txtcol : {}, rowH: (p && p.rowH && typeof p.rowH === 'object') ? p.rowH : {}, merges: Array.isArray(p && p.merges) ? p.merges : [], borders: (p && p.borders && typeof p.borders === 'object') ? p.borders : {}, dispCols: (p && +p.dispCols) || 0, dispRows: (p && +p.dispRows) || 0 };
     });
     if (!d.seiten.length) d.seiten = [{ id: uid(), typ: 'write', html: '' }];
     d.aktiv = 0;
@@ -1323,26 +1323,56 @@ function d_title() { return doc ? doc.titel : ''; }
 function xlsxRefToRC(ref) { const m = /^([A-Z]+)(\d+)$/.exec(ref || ''); if (!m) return { col: 0, r: 0 }; let col = 0; for (const ch of m[1]) col = col * 26 + (ch.charCodeAt(0) - 64); return { col: col - 1, r: (+m[2]) - 1 }; }
 function xlsxSharedStrings(xml) { const out = []; if (!xml) return out; const x = new DOMParser().parseFromString(xml, 'application/xml'); for (const si of x.getElementsByTagName('si')) { let s = ''; for (const t of si.getElementsByTagName('t')) s += t.textContent; out.push(s); } return out; }
 function xlsxRels(xml) { const r = {}; if (!xml) return r; const x = new DOMParser().parseFromString(xml, 'application/xml'); for (const e of x.getElementsByTagName('Relationship')) { const id = e.getAttribute('Id'), t = e.getAttribute('Target'); if (id && t) r[id] = t; } return r; }
-function xlsxStyles(xml) {
-  const fmts = []; if (!xml) return fmts;
+const XLSX_IDX = { 0: '#000000', 1: '#ffffff', 2: '#ff0000', 3: '#00ff00', 4: '#0000ff', 5: '#ffff00', 6: '#ff00ff', 7: '#00ffff', 8: '#000000', 9: '#ffffff', 10: '#ff0000', 11: '#00ff00', 12: '#0000ff', 13: '#ffff00', 14: '#ff00ff', 15: '#00ffff', 64: '' };
+function xlsxHexFromArgb(argb) { if (!argb) return ''; argb = argb.replace(/^#/, ''); if (argb.length === 8) argb = argb.slice(2); return /^[0-9a-fA-F]{6}$/.test(argb) ? '#' + argb.toLowerCase() : ''; }
+function xlsxTint(hex, tint) { if (!tint) return hex; const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex); if (!m) return hex; const f = v => { let c = parseInt(v, 16) / 255; c = tint < 0 ? c * (1 + tint) : c * (1 - tint) + tint; return ('0' + Math.round(Math.max(0, Math.min(1, c)) * 255).toString(16)).slice(-2); }; return '#' + f(m[1]) + f(m[2]) + f(m[3]); }
+function xlsxColor(el, theme) {
+  if (!el) return ''; const rgb = el.getAttribute('rgb'); if (rgb) return xlsxHexFromArgb(rgb);
+  const th = el.getAttribute('theme');
+  if (th != null && theme) { const order = ['lt1', 'dk1', 'lt2', 'dk2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6', 'hlink', 'folHlink']; let hex = theme.colors[order[+th]] || ''; const tint = parseFloat(el.getAttribute('tint') || '0'); return hex && tint ? xlsxTint(hex, tint) : hex; }
+  const idx = el.getAttribute('indexed'); if (idx != null) return XLSX_IDX[+idx] || '';
+  return '';
+}
+function xlsxStyles(xml, theme) {
+  const out = { xfs: [] }; if (!xml) return out;
   const x = new DOMParser().parseFromString(xml, 'application/xml');
   const custom = {}; for (const nf of x.getElementsByTagName('numFmt')) custom[nf.getAttribute('numFmtId')] = nf.getAttribute('formatCode') || '';
   const code2fmt = code => { if (!code || /general/i.test(code)) return ''; if (/\b(yy|mm|dd|d\/|m\/|h:|hh)/i.test(code) || /[dmy]{2,}/i.test(code)) return 'date'; if (code.indexOf('%') >= 0) return 'pct'; if (/[$€£]|CHF|"kr"|Fr\./.test(code)) return 'chf'; if (/0\.00/.test(code)) return 'num2'; if (/#,##0|^0(;|$)/.test(code)) return 'num0'; return ''; };
   const builtinDate = new Set(['14', '15', '16', '17', '18', '19', '20', '21', '22', '45', '46', '47']);
   const builtin = { '1': 'num0', '2': 'num2', '3': 'num0', '4': 'num2', '9': 'pct', '10': 'pct', '37': 'num0', '38': 'num0', '39': 'num2', '40': 'num2', '41': 'num0', '42': 'chf', '43': 'num2', '44': 'chf' };
+  const numOf = id => builtinDate.has(id) ? 'date' : (builtin[id] || (custom[id] ? code2fmt(custom[id]) : ''));
+  const kids = (p, n) => p ? [...p.children].filter(c => c.nodeName === n) : [];
+  // Schriften
+  const fonts = []; const fontsEl = x.getElementsByTagName('fonts')[0];
+  if (fontsEl) for (const fo of kids(fontsEl, 'font')) { const f = {}; if (kids(fo, 'b').length) f.b = 1; if (kids(fo, 'i').length) f.i = 1; if (kids(fo, 'u').length) f.u = 1; if (kids(fo, 'strike').length) f.s = 1; const sz = kids(fo, 'sz')[0]; if (sz) f.sz = Math.round(+sz.getAttribute('val') * 96 / 72); const nm = kids(fo, 'name')[0] || kids(fo, 'rFont')[0]; if (nm) f.fam = nm.getAttribute('val'); const col = kids(fo, 'color')[0]; if (col) f.color = xlsxColor(col, theme); fonts.push(f); }
+  // Füllungen
+  const fills = []; const fillsEl = x.getElementsByTagName('fills')[0];
+  if (fillsEl) for (const fl of kids(fillsEl, 'fill')) { const pf = kids(fl, 'patternFill')[0]; let c = ''; if (pf && pf.getAttribute('patternType') && pf.getAttribute('patternType') !== 'none') { const fg = kids(pf, 'fgColor')[0]; c = xlsxColor(fg, theme); } fills.push(c); }
+  // Rahmen (welche Seiten haben eine Linie)
+  const borders = []; const bordersEl = x.getElementsByTagName('borders')[0];
+  if (bordersEl) for (const bd of kids(bordersEl, 'border')) { let sides = ''; const has = n => { const e = kids(bd, n)[0]; return e && e.getAttribute('style') && e.getAttribute('style') !== 'none'; }; if (has('top')) sides += 't'; if (has('bottom')) sides += 'b'; if (has('left')) sides += 'l'; if (has('right')) sides += 'r'; borders.push(sides); }
+  // Zellformate
   const cellXfs = x.getElementsByTagName('cellXfs')[0];
-  if (cellXfs) for (const xf of cellXfs.getElementsByTagName('xf')) { const id = xf.getAttribute('numFmtId') || '0'; let f = builtinDate.has(id) ? 'date' : (builtin[id] || ''); if (!f && custom[id]) f = code2fmt(custom[id]); fmts.push(f); }
-  return fmts;
+  if (cellXfs) for (const xf of kids(cellXfs, 'xf')) {
+    const o = { fmt: numOf(xf.getAttribute('numFmtId') || '0') };
+    if (xf.getAttribute('applyFont') !== '0') { const fi = +(xf.getAttribute('fontId') || 0); if (fonts[fi]) o.font = fonts[fi]; }
+    if (xf.getAttribute('applyFill') !== '0') { const li = +(xf.getAttribute('fillId') || 0); if (fills[li]) o.fill = fills[li]; }
+    if (xf.getAttribute('applyBorder') !== '0') { const bi = +(xf.getAttribute('borderId') || 0); if (borders[bi]) o.border = borders[bi]; }
+    const al = kids(xf, 'alignment')[0]; if (al) { const h = al.getAttribute('horizontal'); if (h === 'center' || h === 'right' || h === 'left') o.al = h; }
+    out.xfs.push(o);
+  }
+  return out;
 }
 function xlsxSerialToDate(n) { if (!isFinite(n)) return ''; const ms = Math.round((n - 25569) * 86400000); const d = new Date(ms); if (isNaN(d)) return ''; const p = x => ('0' + x).slice(-2); return p(d.getUTCDate()) + '.' + p(d.getUTCMonth() + 1) + '.' + d.getUTCFullYear(); }
-function xlsxSheetToPage(xml, sst, styleFmts) {
+function xlsxSheetToPage(xml, sst, styles) {
   const x = new DOMParser().parseFromString(xml, 'application/xml');
-  const rows = [], fmtMap = {}; let maxC = 0;
+  const xfs = styles.xfs || [];
+  const rows = [], fmtMap = {}, fill = {}, txtcol = {}, borders = {}, cfmt = {}; let maxC = 0;
   for (const row of x.getElementsByTagName('row')) {
     for (const c of row.getElementsByTagName('c')) {
       const { col, r } = xlsxRefToRC(c.getAttribute('r')); const t = c.getAttribute('t'), s = c.getAttribute('s');
       const vEl = c.getElementsByTagName('v')[0], isEl = c.getElementsByTagName('is')[0];
-      const sf = s != null ? styleFmts[+s] : '';
+      const xf = s != null ? xfs[+s] : null, sf = xf ? xf.fmt : '';
       let val = '';
       if (t === 's') val = sst[+(vEl ? vEl.textContent : 0)] || '';
       else if (t === 'inlineStr' && isEl) val = isEl.textContent;
@@ -1353,11 +1383,20 @@ function xlsxSheetToPage(xml, sst, styleFmts) {
       while (rows[r].length <= col) rows[r].push('');
       rows[r][col] = esc(val);
       if (col > maxC) maxC = col;
-      if (sf && sf !== 'date') fmtMap[col + ',' + r] = sf;
+      const key = col + ',' + r;
+      if (sf && sf !== 'date') fmtMap[key] = sf;
+      if (xf) {   // Zell-Styling aus Excel übernehmen
+        if (xf.fill) fill[key] = xf.fill;
+        if (xf.border) borders[key] = xf.border;
+        const cf = {}; const f = xf.font;
+        if (f) { if (f.b) cf.b = 1; if (f.i) cf.i = 1; if (f.u) cf.u = 1; if (f.s) cf.s = 1; if (f.fam) cf.fam = f.fam; if (f.sz) cf.sz = f.sz; if (f.color) txtcol[key] = f.color; }
+        if (xf.al) cf.al = xf.al;
+        if (Object.keys(cf).length) cfmt[key] = cf;
+      }
     }
   }
   const merges = []; for (const mc of x.getElementsByTagName('mergeCell')) { const ref = (mc.getAttribute('ref') || '').split(':'); if (ref.length === 2) { const a = xlsxRefToRC(ref[0]), b = xlsxRefToRC(ref[1]); merges.push({ c: Math.min(a.col, b.col), r: Math.min(a.r, b.r), cs: Math.abs(b.col - a.col) + 1, rs: Math.abs(b.r - a.r) + 1 }); } }
-  const colPx = {}; for (const col of x.getElementsByTagName('col')) { const mn = +col.getAttribute('min'), mx = +col.getAttribute('max'), w = +col.getAttribute('width'); if (w > 0) for (let ci = mn - 1; ci <= mx - 1; ci++) colPx[ci] = Math.round(w * 7 + 5); }
+  const colPx = {}, colW = {}; for (const col of x.getElementsByTagName('col')) { const mn = +col.getAttribute('min'), mx = +col.getAttribute('max'), w = +col.getAttribute('width'); if (w > 0) for (let ci = mn - 1; ci <= mx - 1; ci++) { const px = Math.round(w * 7 + 5); colPx[ci] = px; colW[ci] = px; } }
   // Spaltenpositionen (mm) → COLSEPs mit data-tab (gleiche Engine wie Word: Tabs = Spalten in Write & Calc)
   const stops = []; let cum = 0; for (let c = 0; c < maxC; c++) { cum += (colPx[c] || 64); stops[c] = Math.round(cum / MM * 10) / 10; }
   let html = '';
@@ -1366,14 +1405,15 @@ function xlsxSheetToPage(xml, sst, styleFmts) {
     for (let c = 0; c < n; c++) { inner += (cells[c] || ''); if (c < n - 1) inner += stops[c] != null ? `<span class="colsep" data-tab="${stops[c]}" contenteditable="false">⇥</span>` : COLSEP; }
     html += `<p>${inner || '<br>'}</p>`;
   }
-  return { id: uid(), typ: 'calc', html: html || '<p><br></p>', fmt: fmtMap, merges, colW: {}, fill: {}, txtcol: {}, borders: {}, cfmt: {}, notiz: '' };
+  return { id: uid(), typ: 'calc', html: html || '<p><br></p>', fmt: fmtMap, merges, colW, fill, txtcol, borders, cfmt, notiz: '' };
 }
 async function importXlsx(file) {
   toast('Öffne Excel-Datei …');
   let zip; try { zip = await unzipRead(await file.arrayBuffer()); } catch (_) { toast('Datei nicht lesbar (kein gültiges .xlsx).'); return; }
   const dec = new TextDecoder(), get = n => zip[n] ? dec.decode(zip[n]) : '';
   const sst = xlsxSharedStrings(get('xl/sharedStrings.xml'));
-  const styleFmts = xlsxStyles(get('xl/styles.xml'));
+  const theme = dxParseTheme(get('xl/theme/theme1.xml'));
+  const styles = xlsxStyles(get('xl/styles.xml'), theme);
   const rels = xlsxRels(get('xl/_rels/workbook.xml.rels'));
   const wbXml = get('xl/workbook.xml'); if (!wbXml) { toast('Keine Arbeitsmappe gefunden.'); return; }
   const wb = new DOMParser().parseFromString(wbXml, 'application/xml');
@@ -1382,7 +1422,7 @@ async function importXlsx(file) {
     const rid = s.getAttribute('r:id'); let tgt = (rid && rels[rid]) || 'worksheets/sheet1.xml';
     tgt = tgt.replace(/^\//, ''); if (!tgt.startsWith('xl/')) tgt = 'xl/' + tgt;
     const xml = get(tgt); if (!xml) continue;
-    pages.push(xlsxSheetToPage(xml, sst, styleFmts));
+    pages.push(xlsxSheetToPage(xml, sst, styles));
   }
   if (!pages.length) { toast('Keine Tabellen gefunden.'); return; }
   createDoc({ titel: (file.name || 'Tabelle').replace(/\.xlsx$/i, ''), pages });
@@ -3468,6 +3508,12 @@ function selfTest() {
     ok('Export-HTML Titel escaped', /T &amp; Co/.test(shell));
     doc = _d;
   }
+
+  // Excel-Farben: ARGB, Theme+Tint, indexiert
+  eq('xlsx ARGB → Hex', xlsxHexFromArgb('FF3366CC'), '#3366cc');
+  eq('xlsx Indexed 2 = rot', xlsxColor({ getAttribute: a => a === 'indexed' ? '2' : null }, null), '#ff0000');
+  ok('xlsx Theme+Tint heller', (() => { const th = { colors: { dk1: '#000000' } }; const el = { getAttribute: a => a === 'theme' ? '1' : a === 'tint' ? '0.5' : null }; const c = xlsxColor(el, th); return /^#[0-9a-f]{6}$/.test(c) && c !== '#000000'; })());
+  ok('xlsx Tint 0 unveraendert', xlsxTint('#3366cc', 0) === '#3366cc');
 
   return { R, pass, fail };
 }

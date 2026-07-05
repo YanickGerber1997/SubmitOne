@@ -4423,7 +4423,8 @@ function groupTextBlocks(items) {
       const gap = L.y - prev.maxy, lh = L.y - prev.y;
       const sameLeft = Math.abs(L.x - B.x) < B.size * 1.7, sameSize = L.size / B.size < 1.35 && B.size / L.size < 1.35, closeV = gap < B.size * 1.1 && lh > 0;
       const sameStyle = (!!L.bold === !!B.bold) && (!!L.italic === !!B.italic);   // fette/kursive Zeile nicht mit normalen Zeilen zu EINEM Absatz mischen
-      if (sameLeft && sameSize && closeV && sameStyle) { B.lines.push(L); B.x = Math.min(B.x, L.x); B.maxx = Math.max(B.maxx, L.maxx); B.maxy = L.maxy; B.lhs.push(lh); continue; }
+      const newParaIndent = (L.x - B.x) > B.size * 0.8 && B.lines.some(l => Math.abs(l.x - B.x) < B.size * 0.5);   // eingerückte Zeile über einem Body-links-Absatz = neuer Absatz
+      if (sameLeft && sameSize && closeV && sameStyle && !newParaIndent) { B.lines.push(L); B.x = Math.min(B.x, L.x); B.maxx = Math.max(B.maxx, L.maxx); B.maxy = L.maxy; B.lhs.push(lh); continue; }
     }
     blocks.push({ lines: [L], x: L.x, maxx: L.maxx, y: L.y, maxy: L.maxy, size: L.size, fam: L.fam, bold: L.bold, italic: L.italic, lhs: [] });
   }

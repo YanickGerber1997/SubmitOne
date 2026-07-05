@@ -1452,9 +1452,10 @@ function drawOne(svg, a, pv) {
     const g = svgEl('g', { 'data-id': a.id });
     if (a.bg && a.bg !== 'transparent') g.appendChild(svgEl('rect', { x: a.x, y: a.y, width: a.w, height: a.h, fill: a.bg, stroke: 'none' }));   // alte Stelle überdecken (nur wenn Abdeckung gewünscht)
     if (a.id !== _editingId) {   // während des Tippens zeigt die Textarea den Text – nicht doppelt zeichnen
-      const t = svgEl('text', { x: a.x + 1, y: a.y + 1, fill: a.color, 'font-size': a.size, 'font-family': cssFontStack(a.fam) });
+      const baseY = (a.base != null ? a.base : a.y + a.size * 0.82);   // echte PDF-Grundlinie → exakte Höhe, schriftunabhängig
+      const t = svgEl('text', { x: a.x, y: baseY, fill: a.color, 'font-size': a.size, 'font-family': cssFontStack(a.fam), 'dominant-baseline': 'alphabetic' });
       if (a.bold) t.setAttribute('font-weight', 'bold'); if (a.italic) t.setAttribute('font-style', 'italic');
-      (a.text || '').split('\n').forEach((ln, i) => { const ts = svgEl('tspan', { x: a.x + 1, dy: i === 0 ? 0 : (a.lh || a.size * 1.25) }); ts.textContent = ln || ' '; t.appendChild(ts); });
+      (a.text || '').split('\n').forEach((ln, i) => { const ts = svgEl('tspan', { x: a.x, dy: i === 0 ? 0 : (a.lh || a.size * 1.25) }); ts.textContent = ln || ' '; t.appendChild(ts); });
       g.appendChild(t);
     }
     svg.appendChild(g); el = g;
@@ -4284,7 +4285,13 @@ function buildTextBar(pv, a, ta, restyle, autoH) {
 /* ---------- Vorhandenen Text bearbeiten (überdecken + neu schreiben) ---------- */
 function parseColor(s) { if (!s) return { r: 0, g: 0, b: 0 }; if (s[0] === '#') return hexToRgb(s); const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(s); return m ? { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255 } : { r: 0, g: 0, b: 0 }; }
 // Schrift-Familie (CSS) aus erkannter Klasse
-function cssFontStack(fam) { return fam === 'times' ? 'Georgia,"Times New Roman",serif' : fam === 'courier' ? 'Consolas,"Courier New",monospace' : 'Helvetica,Arial,sans-serif'; }
+function cssFontStack(fam) { return fam === 'times' ? '"Times New Roman",Times,Georgia,serif' : fam === 'courier' ? '"Courier New",Consolas,monospace' : 'Arial,Helvetica,sans-serif'; }
+// Gemessene Oberlänge (px) der Ersatzschrift bei gegebener Grösse – um die Textarea exakt auf die PDF-Grundlinie zu legen
+function fontAscentPx(fam, bold, italic, px) {
+  const ctx = fontAscentPx._c || (fontAscentPx._c = document.createElement('canvas').getContext('2d'));
+  ctx.font = (italic ? 'italic ' : '') + (bold ? 'bold ' : '') + px + 'px ' + cssFontStack(fam);
+  const m = ctx.measureText('Hg'); return (m && m.actualBoundingBoxAscent) ? m.actualBoundingBoxAscent : px * 0.8;
+}
 // Original-Schrift bestmöglich erkennen: Serif/Sans/Mono + fett + kursiv (aus PDF-Schriftname/-familie)
 function detectFontMeta(pv, fontName, family) {
   let nm = '';
@@ -4306,9 +4313,9 @@ async function ensureTextItems(pv) {
     for (const it of tc.items) {
       if (!it.str || !it.str.trim()) continue;
       const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10;
-      const top = (pv.pageH - tr[5]) - fs * 0.82;
+      const base = pv.pageH - tr[5], top = base - fs * 0.82;   // base = echte Grundlinie (y-unten → Seiten-y), top = Näherung Oberkante
       const fm = detectFontMeta(pv, it.fontName, styles[it.fontName] && styles[it.fontName].fontFamily);
-      items.push({ x: tr[4], y: top, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic });
+      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic });
     }
   } catch (_) { }
   pv.textItems = items; return items;
@@ -4332,7 +4339,7 @@ function groupTextBlocks(items) {
     L.items.sort((a, b) => a.x - b.x);
     let str = '';
     for (let i = 0; i < L.items.length; i++) { const it = L.items[i]; if (i > 0) { const pr = L.items[i - 1], gap = it.x - (pr.x + pr.w); if (gap > it.size * 0.2 && !/\s$/.test(str) && !/^\s/.test(it.str)) str += ' '; } str += it.str; }
-    L.str = str; const dom = L.items.reduce((a, b) => (b.w > a.w ? b : a), L.items[0]); L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic;
+    L.str = str; const dom = L.items.reduce((a, b) => (b.w > a.w ? b : a), L.items[0]); L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic; L.base = dom.base;
   }
   lines.sort((a, b) => a.y - b.y);
   // 2) Absätze: aufeinanderfolgende Zeilen mit ähnlicher linker Kante + Zeilenabstand ~ Zeilenhöhe + ähnlicher Grösse
@@ -4346,7 +4353,7 @@ function groupTextBlocks(items) {
     }
     blocks.push({ lines: [L], x: L.x, maxx: L.maxx, y: L.y, maxy: L.maxy, size: L.size, fam: L.fam, bold: L.bold, italic: L.italic, lhs: [] });
   }
-  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic }));
+  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic, base: B.lines[0] && B.lines[0].base }));
 }
 /* ---------- Als Submit Paper öffnen: PDF-Text → editierbares Dokument (an /write/ übergeben) ---------- */
 function _htmlEsc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -4356,9 +4363,9 @@ async function pageTextItemsFor(page, pageH) {   // Textstücke einer beliebigen
     const tc = await page.getTextContent(), styles = tc.styles || {};
     for (const it of tc.items) {
       if (!it.str || !it.str.trim()) continue;
-      const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10, top = (pageH - tr[5]) - fs * 0.82;
+      const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10, base = pageH - tr[5], top = base - fs * 0.82;
       const s = ((styles[it.fontName] && styles[it.fontName].fontFamily) || '').toLowerCase();
-      items.push({ x: tr[4], y: top, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: /serif|times|roman/.test(s) ? 'times' : /mono|courier/.test(s) ? 'courier' : 'helv', bold: /bold/.test(s), italic: /italic|oblique/.test(s) });
+      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: it.str, size: fs, fam: /serif|times|roman/.test(s) ? 'times' : /mono|courier/.test(s) ? 'courier' : 'helv', bold: /bold/.test(s), italic: /italic|oblique/.test(s) });
     }
   } catch (_) { }
   return items;
@@ -4583,7 +4590,7 @@ async function editTextAt(pv, p) {
   const hit = blocks.find(b => p.x >= b.x - 3 && p.x <= b.x + b.w + 3 && p.y >= b.y - 2 && p.y <= b.y + b.h + 2);
   let a;
   if (hit) {
-    const s = sampleBox(pv, hit); a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic };
+    const s = sampleBox(pv, hit); a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, base: hit.base, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic };
     pushUndo(); pushAnno(pv.num, a); sel = null; drawAnnos(pv); openEditEdit(pv, a, false, p);
   } else {
     a = { id: nextId++, type: 'edit', x: p.x, y: p.y - style.size * 0.82, w: 140, h: style.size * 1.3, text: '', size: style.size, lh: style.size * 1.3, color: style.color, bg: 'transparent' };
@@ -4604,7 +4611,7 @@ async function editAllTextOnPage(pv) {
     for (const b of blocks) {
       if (already.has(Math.round(b.x) + '|' + Math.round(b.y))) continue;   // schon editierbar → nicht doppelt
       const s = sampleBox(pv, b);
-      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic });
+      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, base: b.base, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic });
       added++;
     }
     drawAnnos(pv); saveState();
@@ -4654,7 +4661,7 @@ async function startHighlight(pv, e, p) {
 function caretOffsetAt(a, val, clickPt) {
   const lh = a.lh || a.size * 1.25, lines = val.split('\n');
   const li = Math.max(0, Math.min(lines.length - 1, Math.floor((clickPt.y - a.y) / lh)));
-  const xoff = Math.max(0, clickPt.x - a.x - 1), line = lines[li];
+  const xoff = Math.max(0, clickPt.x - a.x), line = lines[li];
   const ctx = caretOffsetAt._c || (caretOffsetAt._c = document.createElement('canvas').getContext('2d'));
   ctx.font = (a.italic ? 'italic ' : '') + (a.bold ? '700 ' : '') + a.size + 'px ' + cssFontStack(a.fam);
   let ci = line.length;
@@ -4665,8 +4672,11 @@ function openEditEdit(pv, a, isNew, clickPt) {
   const sc = pv.scale, lh = a.lh || a.size * 1.25;
   _editingId = a.id; drawAnnos(pv);   // Text der Stelle ausblenden (nur Abdeckung bleibt) → keine Doppel-Anzeige
   const ta = document.createElement('textarea'); ta.className = 'textedit'; ta.value = a.text || '';
-  ta.style.left = (a.x * sc) + 'px'; ta.style.top = (a.y * sc) + 'px';
+  ta.style.padding = '0'; ta.style.left = (a.x * sc) + 'px';
   ta.style.fontSize = (a.size * sc) + 'px'; ta.style.lineHeight = (lh * sc) + 'px';
+  // Textarea so legen, dass ihre erste Grundlinie GENAU auf der PDF-Grundlinie sitzt (deckungsgleich mit der SVG-Ausgabe → kein Springen)
+  const baseY = (a.base != null ? a.base : a.y + a.size * 0.82) * sc, ascPx = fontAscentPx(a.fam, a.bold, a.italic, a.size * sc), halfLead = Math.max(0, (lh - a.size) * sc / 2);
+  ta.style.top = (baseY - ascPx - halfLead) + 'px';
   ta.style.color = a.color; ta.style.background = 'transparent';   // die Abdeckung darunter liefert den Hintergrund
   ta.style.width = Math.max(60, a.w * sc + 10) + 'px';
   ta.style.fontFamily = cssFontStack(a.fam); if (a.bold) ta.style.fontWeight = 'bold'; if (a.italic) ta.style.fontStyle = 'italic';
@@ -5454,7 +5464,7 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
           else if (a.kind === 'label') { pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, borderColor: c, borderWidth: 2 }); const fs = a.h * 0.46, tw = font.widthOfTextAtSize(a.text || '', fs); pg.drawText(a.text || '', { x: a.x + (a.w - tw) / 2, y: Y(a.y + a.h) + (a.h - fs) / 2 + fs * 0.2, size: fs, font, color: c }); }
         }
         else if (a.type === 'cover') { const cc = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(cc.r, cc.g, cc.b) }); }
-        else if (a.type === 'edit') { const tc2 = parseColor(a.color), ef = await getFont(a.fam, a.bold, a.italic), elh = a.lh || a.size * 1.25; if (a.bg && a.bg !== 'transparent') { const bg = parseColor(a.bg); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); } (a.text || '').split('\n').forEach((ln, i) => { try { pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * elh), size: a.size, font: ef, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { try { pg.drawText(ln, { x: a.x + 1, y: Y(a.y + a.size + i * elh), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { } } }); }
+        else if (a.type === 'edit') { const tc2 = parseColor(a.color), ef = await getFont(a.fam, a.bold, a.italic), elh = a.lh || a.size * 1.25, eBase = (a.base != null ? a.base : a.y + a.size * 0.82); if (a.bg && a.bg !== 'transparent') { const bg = parseColor(a.bg); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); } (a.text || '').split('\n').forEach((ln, i) => { try { pg.drawText(ln, { x: a.x, y: Y(eBase + i * elh), size: a.size, font: ef, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { try { pg.drawText(ln, { x: a.x, y: Y(eBase + i * elh), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { } } }); }
         else if (a.type === 'img' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, opacity: a.opacity != null ? a.opacity : 1 }); }
         else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); if (a.caption) { const fs = Math.max(7, Math.min(11, a.h * 0.16)), cy = a.y + a.h + 2; pg.drawLine({ start: { x: a.x, y: Y(cy) }, end: { x: a.x + a.w, y: Y(cy) }, thickness: 0.7, color: rgb(.11, .14, .17) }); pg.drawText(a.caption, { x: a.x, y: Y(cy + fs + 1), size: fs, font, color: rgb(.11, .14, .17) }); } }
         // Schraffur (geclippt auf die Form)

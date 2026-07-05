@@ -7442,6 +7442,20 @@ function rotateImg() {
   const im = new Image(); im.onload = () => { const cv = document.createElement('canvas'); cv.width = im.naturalHeight; cv.height = im.naturalWidth; const ctx = cv.getContext('2d'); ctx.translate(cv.width / 2, cv.height / 2); ctx.rotate(Math.PI / 2); ctx.drawImage(im, -im.naturalWidth / 2, -im.naturalHeight / 2); a.orig = cv.toDataURL('image/png'); const t = a.w; a.w = a.h; a.h = t; applyImgFilters(); }; im.src = a.orig;
 }
 function hideCtx() { $('#ctxmenu').hidden = true; }
+// Kanonische Geometrie: aus einer gezeichneten Linie/Messlinie/Wandbelag nahtlos eine echte Wand machen
+// (bekommt Stärke → danach Fenster/Türen einfügen + 3D). Endpunkte bleiben, additive Umwandlung.
+function convertLineToWall(pv, annoId) {
+  const a = findAnno(pv.num, annoId); if (!a || a.x1 == null) return;
+  pushUndo();
+  a.type = 'wall'; a.thick = wallThickPts(); a.just = wallJust; a.width = 1.4; a.dim = wallDimOn;
+  a.fill = (wallHatch && wallHatch.fill) || '#ffffff'; a.color = (wallHatch && wallHatch.color) || a.color || '#1c242c';
+  a.hatch = wallHatch ? { ...wallHatch } : null;
+  delete a.wallface; delete a.belag; delete a.height; delete a.label; delete a.aufbau;   // Belag-/Mess-Reste entfernen
+  if (wallBuildup) applyWallBuildup(a, wallBuildup.layers, wallBuildup.spacing);   // Standard-Aufbau (falls gesetzt)
+  sel = { num: pv.num, id: annoId }; markDirty(); pageViews.forEach(drawAnnos); saveState();
+  _listTab = 'sel'; if (typeof openListPanel === 'function') openListPanel('sel');
+  toast('Linie ist jetzt eine Wand – Stärke rechts einstellen, dann Fenster/Türen einfügen und „3D" ansehen.');
+}
 function showCtx(x, y, pv, annoId) {
   const m = $('#ctxmenu'); m.innerHTML = '';
   const add = (label, mi, act, cls) => { const b = document.createElement('button'); if (cls) b.className = cls; b.innerHTML = `<span class="mi">${mi}</span><span>${label}</span>`; b.onclick = () => { hideCtx(); act(); }; m.appendChild(b); };
@@ -7460,6 +7474,7 @@ function showCtx(x, y, pv, annoId) {
     add('Nach vorne', '⬆', () => reorderAnno(pv, annoId, true));
     add('Nach hinten', '⬇', () => reorderAnno(pv, annoId, false));
     const ca = findAnno(pv.num, annoId);
+    if (ca && (ca.type === 'line' || ca.type === 'arrow' || ca.type === 'measure')) { add('→ In Wand umwandeln', '🧱', () => convertLineToWall(pv, annoId)); }   // nahtlos: Linie → Wand (Stärke, dann Fenster/Türen, 3D)
     if (ca && ca.type === 'img') { add('Bild anpassen …', '◑', () => openImgAdjust(pv, ca)); add((ca.opacity != null && ca.opacity < 1) ? 'Volle Deckkraft' : 'Als Vorlage dimmen (nachzeichnen)', '◐', () => { pushUndo(); ca.opacity = (ca.opacity != null && ca.opacity < 1) ? 1 : 0.3; reorderAnno(pv, annoId, false); drawAnnos(pv); saveState(); }); }
     sep();
   } else if (clipAnno) {

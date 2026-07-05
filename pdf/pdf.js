@@ -6269,12 +6269,20 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
       + '<div class="insp-row"><span class="insp-lbl">Verschnitt</span><input class="insp-num" style="width:60px" id="iWfWa" type="number" min="0" value="' + (b.waste != null ? b.waste : 8) + '"> %</div>'
       + '<div class="insp-row"><span class="insp-lbl">Aufbau</span><input class="insp-num" style="width:120px" id="iWfAu" value="' + (a.aufbau ? a.aufbau.replace(/"/g, '&quot;') : '') + '" placeholder="z. B. bis H 2.10"></div>';
     if (docScale && area) html += '<div class="insp-kv"><span>Platten (inkl. Verschnitt)</span><b>' + tilesForArea(area, b.tileW, b.tileH, b.waste || 0) + ' Stk</b></div>';
+    const ans = a.ans || (a.ans = { boden: true, decke: true, wand: 2 });   // Anschlüsse (Randfugen) direkt aus der Wand
+    html += '<div class="insp-lbl" style="margin-top:10px;font-weight:700;color:var(--ink)">Anschlüsse (Randfugen)</div>'
+      + '<div class="insp-row"><span class="insp-lbl">Boden / Decke</span><span style="display:inline-flex;gap:3px"><button class="insp-mini' + (ans.boden ? ' on' : '') + '" id="anB" style="width:auto;padding:0 8px">Boden</button><button class="insp-mini' + (ans.decke ? ' on' : '') + '" id="anD" style="width:auto;padding:0 8px">Decke</button></span></div>'
+      + '<div class="insp-row"><span class="insp-lbl">Wand seitlich</span><span id="anW" style="display:inline-flex;gap:3px">' + [0, 1, 2].map(n => '<button class="insp-mini' + ((ans.wand || 0) === n ? ' on' : '') + '" data-n="' + n + '" style="width:26px">' + n + '</button>').join('') + '</span></div>';
+    if (docScale) html += '<div class="insp-kv"><span>Anschluss lfm gesamt</span><b>' + (Math.round(((ans.boden ? lenM : 0) + (ans.decke ? lenM : 0) + (ans.wand || 0) * h) * 100) / 100).toFixed(2).replace('.', ',') + ' m</b></div>';
     body.innerHTML = html;
     const hEl = body.querySelector('#iWfH'); if (hEl) hEl.onchange = () => { const v = parseFloat((hEl.value || '').replace(',', '.')); if (v > 0) { a.height = v; markDirty(); pageViews.forEach(drawAnnos); renderList(); } };
     const nm = body.querySelector('#iWfN'); if (nm) nm.onchange = () => { const v = nm.value.trim(); if (v) a.name = v; else delete a.name; markDirty(); pageViews.forEach(drawAnnos); };
     const bindB = (id, key) => { const el = body.querySelector(id); if (el) el.onchange = () => { const v = parseFloat((el.value || '').replace(',', '.')); if (isFinite(v) && v >= 0) { a.belag[key] = v; markDirty(); pageViews.forEach(drawAnnos); renderList(); } }; };
     bindB('#iWfTW', 'tileW'); bindB('#iWfTH', 'tileH'); bindB('#iWfJ', 'joint'); bindB('#iWfWa', 'waste');
     const au = body.querySelector('#iWfAu'); if (au) au.onchange = () => { const v = au.value.trim(); if (v) a.aufbau = v; else delete a.aufbau; markDirty(); pageViews.forEach(drawAnnos); };
+    const tgl = (id, key) => { const el = body.querySelector(id); if (el) el.onclick = () => { a.ans[key] = !a.ans[key]; markDirty(); renderList(); pageViews.forEach(drawAnnos); }; };
+    tgl('#anB', 'boden'); tgl('#anD', 'decke');
+    body.querySelectorAll('#anW .insp-mini').forEach(btn => btn.onclick = () => { a.ans.wand = +btn.dataset.n; markDirty(); renderList(); pageViews.forEach(drawAnnos); });
     return;
   }
   if (a.anschluss && (a.type === 'measure' || a.type === 'chaindim')) {
@@ -6315,8 +6323,13 @@ function belagData() {
       const b = a.belag;
       floors.push({ a, name: a.name || a.floor || '', grossM2: polyArea(a.pts) * pp * pp, poly: a.pts, b, aufbau: a.aufbau || '' });
     } else if (a.type === 'measure' && a.wallface) {
-      const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), h = a.height || 2.5, m2 = wallFaceAreaM2(len, pp, h), b = a.belag || DEFAULT_BELAG;
-      walls.push({ a, name: a.name || '', m2, h, lenM: len * pp, tiles: tilesForArea(m2, b.tileW, b.tileH, b.waste || 0), b, aufbau: a.aufbau || '' });
+      const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), h = a.height || 2.5, m2 = wallFaceAreaM2(len, pp, h), b = a.belag || DEFAULT_BELAG, wl = len * pp;
+      walls.push({ a, name: a.name || '', m2, h, lenM: wl, tiles: tilesForArea(m2, b.tileW, b.tileH, b.waste || 0), b, aufbau: a.aufbau || '' });
+      const ans = a.ans || { boden: true, decke: true, wand: 2 };   // Anschlüsse direkt aus der Wandgeometrie
+      const nm = a.name ? a.name + ' – ' : '';
+      if (ans.boden) anschluesse.push({ a, kat: 'boden', katLabel: 'Boden', name: nm + 'Wandbelag unten', lenM: wl });
+      if (ans.decke) anschluesse.push({ a, kat: 'decke', katLabel: 'Decke', name: nm + 'Wandbelag oben', lenM: wl });
+      if (ans.wand) anschluesse.push({ a, kat: 'wand', katLabel: 'Wand', name: nm + 'Wandbelag seitlich', lenM: (ans.wand || 0) * h });
     } else if ((a.type === 'measure' || a.type === 'chaindim') && a.anschluss) {
       const lp = a.type === 'chaindim' ? polylineLen(a.pts) : Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
       anschluesse.push({ a, kat: a.anschluss, katLabel: ANSCHLUSS_KAT[a.anschluss] || a.anschluss, name: a.name || '', lenM: lp * pp });
@@ -6568,6 +6581,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('Belag-Ausschreibung: Preisspalten nur im Ausschreibungs-Modus + Pos/Menge', () => { const floors = [{ name: 'Wohnen', m2: 24.5, b: { tileW: 60, tileH: 60 }, aufbau: 'OK FB' }]; const aus = buildBelagTableHtml(floors, [], true), men = buildBelagTableHtml(floors, [], false); return (/Einheitspreis/.test(aus) && /Betrag/.test(aus) && !/Einheitspreis/.test(men) && /Bodenbeläge/.test(aus) && /1\.1/.test(aus) && /24,50/.test(aus)) ? '' : 'fail'; });
     A('belagData sammelt Boden + Wand mit m²', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, joint: 3, waste: 8 }, pts: [[0, 0], [100, 0], [100, 100], [0, 100]] }, { type: 'measure', wallface: true, height: 2.5, belag: { tileW: 60, tileH: 60, waste: 8 }, x1: 0, y1: 0, x2: 100, y2: 0 }] }; const d = belagData(); return (d.floors.length === 1 && Math.abs(d.floors[0].m2 - 1) < 1e-6 && d.walls.length === 1 && Math.abs(d.walls[0].m2 - 2.5) < 1e-6) ? '' : JSON.stringify({ f: d.floors.length, w: d.walls.length, fm: d.floors[0] && d.floors[0].m2, wm: d.walls[0] && d.walls[0].m2 }); } finally { annos = sa; docScale = sd; } });
     A('Aussparung: Netto = Brutto − Aussparung', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, waste: 0 }, pts: [[0, 0], [200, 0], [200, 100], [0, 100]] }, { type: 'area', cutout: 'Schrank', pts: [[10, 10], [60, 10], [60, 60], [10, 60]] }] }; const d = belagData(); const f = d.floors[0]; return (Math.abs(f.grossM2 - 2) < 1e-6 && Math.abs(f.cutM2 - 0.25) < 1e-6 && Math.abs(f.m2 - 1.75) < 1e-6 && d.cutouts.length === 1) ? '' : JSON.stringify({ g: f.grossM2, c: f.cutM2, n: f.m2 }); } finally { annos = sa; docScale = sd; } });
+    A('Wandbelag erzeugt Anschlüsse (Boden/Decke=Länge, Wand=n×Höhe)', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', wallface: true, height: 2.5, x1: 0, y1: 0, x2: 300, y2: 0, ans: { boden: true, decke: true, wand: 2 } }] }; const d = belagData(); const bk = {}; d.anschluesse.forEach(r => bk[r.kat] = (bk[r.kat] || 0) + r.lenM); return (Math.abs(bk.boden - 3) < 1e-6 && Math.abs(bk.decke - 3) < 1e-6 && Math.abs(bk.wand - 5) < 1e-6) ? '' : JSON.stringify(bk); } finally { annos = sa; docScale = sd; } });
     A('Anschluss als Polylinie (chaindim) → lfm', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'chaindim', anschluss: 'wand', pts: [[0, 0], [100, 0], [100, 100]] }] }; const d = belagData(); return (Math.abs(polylineLen([[0, 0], [100, 0], [100, 100]]) - 200) < 1e-6 && d.anschluesse.length === 1 && Math.abs(d.anschluesse[0].lenM - 2) < 1e-6 && d.anschluesse[0].kat === 'wand') ? '' : 'fail'; } finally { annos = sa; docScale = sd; } });
     A('belagData + Ausschreibung: Anschluss (lfm)', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', anschluss: 'boden', x1: 0, y1: 0, x2: 300, y2: 0 }] }; const d = belagData(); const ok1 = d.anschluesse.length === 1 && Math.abs(d.anschluesse[0].lenM - 3) < 1e-6; const html = buildBelagTableHtml([], [], false, d.anschluesse); return (ok1 && /Anschlüsse/.test(html) && /Anschluss Boden/.test(html) && /lfm/.test(html) && /3,00/.test(html)) ? '' : 'fail'; } finally { annos = sa; docScale = sd; } });
   } finally { docScale = saved; }

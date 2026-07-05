@@ -6366,6 +6366,15 @@ function belagTenderHeader(bauvorhaben, datum, massstab) {
     + '<tr><td style="border:none;padding:2px 0" colspan="2"><b>Unternehmer / Firma:</b> _________________________________________</td></tr>'
     + '</table>';
 }
+// Abschluss-Block einer Ausschreibung (leere Linien für den Unternehmer): Total exkl. · MwSt · Total inkl.
+function belagTenderFooter() {
+  const line = 'border:none;padding:3px 0;border-bottom:1px solid #999';
+  return '<table style="width:100%;border-collapse:collapse;margin-top:10px;border:none">'
+    + '<tr><td style="border:none;padding:3px 0;text-align:right;width:70%"><b>Total exkl. MwSt (CHF):</b></td><td style="' + line + '">&nbsp;</td></tr>'
+    + '<tr><td style="border:none;padding:3px 0;text-align:right">MwSt 8,1 % (CHF):</td><td style="' + line + '">&nbsp;</td></tr>'
+    + '<tr><td style="border:none;padding:3px 0;text-align:right"><b>Total inkl. MwSt (CHF):</b></td><td style="border:none;padding:3px 0;border-bottom:2px solid #333">&nbsp;</td></tr>'
+    + '</table>';
+}
 // Beläge als Ausschreibung (mit leerer Preisspalte) oder Mengenauszug nach Submit Paper übergeben
 function exportBelagToPaper(mode) {
   if (!docScale) { toast('Zuerst den Massstab (1:n) setzen – unten in der Fusszeile.'); return; }
@@ -6376,7 +6385,7 @@ function exportBelagToPaper(mode) {
   const html = '<h1>' + (price ? 'Ausschreibung' : 'Mengenauszug') + '</h1>'
     + belagTenderHeader((docName || '').replace(/\.pdf$/i, ''), datum, docScale.label || '–')
     + buildBelagTableHtml(floors, walls, price, anschluesse)
-    + (price ? '<p style="color:#777;font-size:12px">Einheitspreise bitte durch den Unternehmer eintragen.</p>' : '');
+    + (price ? belagTenderFooter() + '<p style="color:#777;font-size:12px">Einheitspreise bitte durch den Unternehmer eintragen.</p>' : '');
   const titel = (docName || 'Ausmass').replace(/\.pdf$/i, '') + (price ? ' – Ausschreibung' : ' – Mengenauszug');
   try { localStorage.setItem('submitpaper_import', JSON.stringify({ titel, pages: [{ typ: 'write', html }], ts: Date.now() })); }
   catch (_) { toast('Export zu gross.'); return; }
@@ -6537,6 +6546,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('tilesForArea inkl. 10% Verschnitt', () => tilesForArea(10, 60, 60, 10) === Math.ceil((10 / 0.36) * 1.1) ? '' : 'fail');
     A('DEFAULT_BELAG Standard 60×60 / 3mm / 8%', () => (DEFAULT_BELAG.tileW === 60 && DEFAULT_BELAG.tileH === 60 && DEFAULT_BELAG.joint === 3 && DEFAULT_BELAG.waste === 8) ? '' : 'fail');
     A('tileStartPoint Ecken + Mitte', () => { const tl = tileStartPoint(0, 0, 100, 80, 'tl', 10, 10), tr = tileStartPoint(0, 0, 100, 80, 'tr', 10, 10), br = tileStartPoint(0, 0, 100, 80, 'br', 10, 10), ce = tileStartPoint(0, 0, 100, 80, 'center', 10, 10); return (tl[0] === 0 && tl[1] === 0 && tr[0] === 100 && tr[1] === 0 && br[0] === 100 && br[1] === 80 && ce[0] === 45 && ce[1] === 35) ? '' : 'fail'; });
+    A('Ausschreibungs-Abschluss: MwSt + Total inkl.', () => { const h = belagTenderFooter(); return (/Total exkl\. MwSt/.test(h) && /MwSt 8,1 %/.test(h) && /Total inkl\. MwSt/.test(h)) ? '' : 'fail'; });
     A('Ausschreibungs-Kopf: Bauvorhaben/Datum/Massstab + Escaping', () => { const h = belagTenderHeader('Haus <A>', '05.07.2026', '1:50'); return (/Bauvorhaben:/.test(h) && /Haus &lt;A&gt;/.test(h) && /05\.07\.2026/.test(h) && /1:50/.test(h) && /Unternehmer/.test(h)) ? '' : 'fail'; });
     A('Belag-Ausschreibung: Preisspalten nur im Ausschreibungs-Modus + Pos/Menge', () => { const floors = [{ name: 'Wohnen', m2: 24.5, b: { tileW: 60, tileH: 60 }, aufbau: 'OK FB' }]; const aus = buildBelagTableHtml(floors, [], true), men = buildBelagTableHtml(floors, [], false); return (/Einheitspreis/.test(aus) && /Betrag/.test(aus) && !/Einheitspreis/.test(men) && /Bodenbeläge/.test(aus) && /1\.1/.test(aus) && /24,50/.test(aus)) ? '' : 'fail'; });
     A('belagData sammelt Boden + Wand mit m²', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, joint: 3, waste: 8 }, pts: [[0, 0], [100, 0], [100, 100], [0, 100]] }, { type: 'measure', wallface: true, height: 2.5, belag: { tileW: 60, tileH: 60, waste: 8 }, x1: 0, y1: 0, x2: 100, y2: 0 }] }; const d = belagData(); return (d.floors.length === 1 && Math.abs(d.floors[0].m2 - 1) < 1e-6 && d.walls.length === 1 && Math.abs(d.walls[0].m2 - 2.5) < 1e-6) ? '' : JSON.stringify({ f: d.floors.length, w: d.walls.length, fm: d.floors[0] && d.floors[0].m2, wm: d.walls[0] && d.walls[0].m2 }); } finally { annos = sa; docScale = sd; } });

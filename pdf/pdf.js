@@ -2404,8 +2404,15 @@ function drawTileGrid(g, a, pv) {
   if (!(stepX > 1) || !(stepY > 1)) return;   // zu dichtes Raster → nichts zeichnen (Schutz)
   const pts = a.pts; let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
   for (const p of pts) { if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1]; }
-  const cid = 'tile' + (_tileClip++);
-  const cp = svgEl('clipPath', { id: cid }); cp.appendChild(svgEl('polygon', { points: pts.map(p => p[0] + ',' + p[1]).join(' ') })); g.appendChild(cp);
+  const cid = 'tile' + (_tileClip++), cp = svgEl('clipPath', { id: cid });
+  // Aussparungen (Schwerpunkt in der Fläche) als echtes Loch aus dem Raster ausschneiden – via polygonClipping, sonst einfacher Umriss
+  const PC = window.polygonClipping, cuts = [];
+  if (PC && pv) { const pa = getAnnos(pv.num) || []; for (const c of pa) if (c !== a && c.type === 'area' && c.cutout && c.pts && c.pts.length >= 3 && pointInPoly(centroid(c.pts), pts)) cuts.push([c.pts.map(p => [p[0], p[1]])]); }
+  if (cuts.length) {
+    try { const res = PC.difference([pts.map(p => [p[0], p[1]])], ...cuts); let d = ''; for (const poly of res) for (const ring of poly) { if (ring.length < 3) continue; d += 'M' + ring.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join('L') + 'Z'; } cp.appendChild(svgEl('path', { d, 'clip-rule': 'evenodd' })); }
+    catch (_) { cp.appendChild(svgEl('polygon', { points: pts.map(p => p[0] + ',' + p[1]).join(' ') })); }
+  } else cp.appendChild(svgEl('polygon', { points: pts.map(p => p[0] + ',' + p[1]).join(' ') }));
+  g.appendChild(cp);
   const gg = svgEl('g', { 'clip-path': 'url(#' + cid + ')' }), col = a.color || '#b5651d';
   const rot = b.angle === 45, cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
   const gin = rot ? svgEl('g', { transform: 'rotate(45 ' + cx.toFixed(2) + ' ' + cy.toFixed(2) + ')' }) : gg;   // Clip aussen (unrotierte Fläche), Raster innen gedreht

@@ -1458,6 +1458,7 @@ function drawOne(svg, a, pv) {
       t.style.dominantBaseline = 'alphabetic';   // per Inline-Style, sonst gewinnt .anno text{dominant-baseline:hanging} und der Text sitzt zu tief
       { const dec = []; if (a.underline) dec.push('underline'); if (a.strike) dec.push('line-through'); if (dec.length) t.setAttribute('text-decoration', dec.join(' ')); }
       const elh = a.lh || a.size * 1.25;
+      const aw = a.weight || 400, setW = (el, w, bold) => { const ww = w || 400; if (ww !== 400 && ww !== 700) el.setAttribute('font-weight', ww); else if (bold || ww === 700) el.setAttribute('font-weight', 'bold'); };
       (a.text || '').split('\n').forEach((ln, i) => {
         const o = a.lines0 && a.lines0[i], match = o && o.str === ln;
         const segs = (match && o.segs && o.segs.length > 1) ? o.segs : null;
@@ -1465,7 +1466,7 @@ function drawOne(svg, a, pv) {
           segs.forEach((sg, si) => {
             const st = svgEl('tspan', { x: sg.x.toFixed(2), dy: si === 0 ? (i === 0 ? 0 : elh) : 0 });
             if (sg.w > 1) { st.setAttribute('textLength', sg.w.toFixed(2)); st.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
-            if (a.bold) st.setAttribute('font-weight', 'bold'); if (a.italic) st.setAttribute('font-style', 'italic'); st.textContent = sg.str || ' '; t.appendChild(st);
+            setW(st, aw, a.bold); if (a.italic) st.setAttribute('font-style', 'italic'); st.textContent = sg.str || ' '; t.appendChild(st);
           });
           return;
         }
@@ -1474,8 +1475,8 @@ function drawOne(svg, a, pv) {
         if (matchW) { lt.setAttribute('textLength', o.w.toFixed(2)); lt.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
         const runs = (match && o.runs && o.runs.length) ? o.runs : null;
         if (runs) {   // gemischte Formatierung innerhalb der Zeile 1:1
-          for (const r of runs) { const rs = svgEl('tspan', {}); if (r.bold) rs.setAttribute('font-weight', 'bold'); if (r.italic) rs.setAttribute('font-style', 'italic'); if (r.ff && r.ff !== ff0) rs.setAttribute('font-family', r.ff); if (r.fill && !_nearBlackRGB(r.fill) && r.fill !== a.color) rs.setAttribute('fill', r.fill); if (r.vp) { rs.setAttribute('baseline-shift', r.vp === 1 ? 'super' : 'sub'); rs.setAttribute('font-size', (a.size * 0.72).toFixed(1)); } rs.textContent = r.str; lt.appendChild(rs); }
-        } else { if (a.bold) lt.setAttribute('font-weight', 'bold'); if (a.italic) lt.setAttribute('font-style', 'italic'); lt.textContent = ln || ' '; }
+          for (const r of runs) { const rs = svgEl('tspan', {}); setW(rs, r.weight, r.bold); if (r.italic) rs.setAttribute('font-style', 'italic'); if (r.ff && r.ff !== ff0) rs.setAttribute('font-family', r.ff); if (r.fill && !_nearBlackRGB(r.fill) && r.fill !== a.color) rs.setAttribute('fill', r.fill); if (r.vp) { rs.setAttribute('baseline-shift', r.vp === 1 ? 'super' : 'sub'); rs.setAttribute('font-size', (a.size * 0.72).toFixed(1)); } rs.textContent = r.str; lt.appendChild(rs); }
+        } else { setW(lt, aw, a.bold); if (a.italic) lt.setAttribute('font-style', 'italic'); lt.textContent = ln || ' '; }
         t.appendChild(lt);
       });
       g.appendChild(t);
@@ -4343,13 +4344,23 @@ function detectFontMeta(page, fontName, family) {
   let nm = '', loaded = '';
   try { const co = page && page.commonObjs, f = co && (typeof co.has !== 'function' || co.has(fontName)) ? co.get(fontName) : null; if (f) { if (f.name) nm = f.name; if (f.loadedName) loaded = f.loadedName; } } catch (_) { }
   const s = ((nm || '') + ' ' + (family || '')).toLowerCase();
-  const bold = /bold|black|heavy|semibold|demibold|-bd|\bbd\b|extrab/.test(s);
+  // volle Stärke-Achse aus dem Schriftnamen (Reihenfolge wichtig: extralight vor light, extrabold vor bold)
+  let weight = 400;
+  if (/thin|hairline/.test(s)) weight = 100;
+  else if (/extralight|ultralight|extra-light|ultra-light/.test(s)) weight = 200;
+  else if (/light/.test(s)) weight = 300;
+  else if (/extrabold|ultrabold|extra-bold|ultra-bold/.test(s)) weight = 800;
+  else if (/black|heavy/.test(s)) weight = 900;
+  else if (/semibold|demibold|semi-bold|demi-bold/.test(s)) weight = 600;
+  else if (/bold|-bd|\bbd\b/.test(s)) weight = 700;
+  else if (/medium|\bmed\b/.test(s)) weight = 500;
+  const bold = weight >= 600;
   const italic = /italic|oblique|-it\b|\bit\b/.test(s);
   const mono = /mono|courier|consol|typewriter/.test(s) || family === 'monospace';
   const serif = !mono && (/times|roman|georgia|minion|garamond|antiqua|palatino|cambria|caslon|constantia/.test(s) || family === 'serif');   // NICHT bare 'serif' (matcht sonst in 'sans-serif')
   const mapped = fontNameToCss(nm, family);
   // loaded = von pdf.js registrierte EINGEBETTETE Originalschrift → zuerst nutzen (wie Acrobat), unsere Zuordnung nur als Fallback
-  return { fam: mono ? 'courier' : serif ? 'times' : 'helv', bold: !!bold, italic: !!italic, ff: loaded ? '"' + loaded + '",' + mapped : mapped, ffMap: mapped, loaded };
+  return { fam: mono ? 'courier' : serif ? 'times' : 'helv', bold: bold, weight, italic: !!italic, ff: loaded ? '"' + loaded + '",' + mapped : mapped, ffMap: mapped, loaded };
 }
 // Textstücke der Seite mit Kästchen in Seitenkoordinaten (y-unten, Oberkante) – einmal berechnet, inkl. erkannter Schrift
 async function ensureTextItems(pv) {
@@ -4363,7 +4374,7 @@ async function ensureTextItems(pv) {
       const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10;
       const base = pv.pageH - tr[5], top = base - fs * 0.82;   // base = echte Grundlinie (y-unten → Seiten-y), top = Näherung Oberkante
       const fm = detectFontMeta(pv.page, it.fontName, styles[it.fontName] && styles[it.fontName].fontFamily);
-      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: _deLig(it.str), size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic, ff: fm.ff });
+      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: _deLig(it.str), size: fs, fam: fm.fam, bold: fm.bold, weight: fm.weight, italic: fm.italic, ff: fm.ff });
     }
     _applyFillColors(items, await pageFillColors(pv.page, pv.pageH));   // zuverlässige Textfarbe (Inhaltsstrom) auch fürs Bearbeiten
   } catch (_) { }
@@ -4397,10 +4408,10 @@ function groupTextBlocks(items) {
       if (i > 0 && vp === 0) { const pr = L.items[i - 1], gap = it.x - (pr.x + pr.w); if (gap > it.size * 0.2 && !/\s$/.test(str) && !/^\s/.test(it.str)) piece = ' '; }
       piece += it.str; str += piece;
       const last = runs[runs.length - 1];
-      if (last && last.bold === !!it.bold && last.italic === !!it.italic && last.ff === it.ff && last.url === it.url && last.vp === vp && last.fill === it.fill) last.str += piece;
-      else runs.push({ str: piece, bold: !!it.bold, italic: !!it.italic, ff: it.ff, url: it.url, vp, fill: it.fill });
+      if (last && last.bold === !!it.bold && last.weight === (it.weight || 400) && last.italic === !!it.italic && last.ff === it.ff && last.url === it.url && last.vp === vp && last.fill === it.fill) last.str += piece;
+      else runs.push({ str: piece, bold: !!it.bold, weight: it.weight || 400, italic: !!it.italic, ff: it.ff, url: it.url, vp, fill: it.fill });
     }
-    L.str = str; L.runs = runs; L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic; L.base = dom.base; L.ff = dom.ff; L.csColor = dom.fill;
+    L.str = str; L.runs = runs; L.fam = dom.fam; L.bold = dom.bold; L.weight = dom.weight; L.italic = dom.italic; L.base = dom.base; L.ff = dom.ff; L.csColor = dom.fill;
     L.segs = _lineCells(L).map(c => ({ str: _joinItems(c.items), x: c.x, w: Math.max(0, c.maxx - c.x) }));   // Segmente (durch grosse Lücken/Tabs getrennt) mit eigener x/Breite
   }
   lines.sort((a, b) => a.y - b.y);
@@ -4416,7 +4427,7 @@ function groupTextBlocks(items) {
     }
     blocks.push({ lines: [L], x: L.x, maxx: L.maxx, y: L.y, maxy: L.maxy, size: L.size, fam: L.fam, bold: L.bold, italic: L.italic, lhs: [] });
   }
-  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx, runs: l.runs, base: l.base, segs: l.segs })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic, base: B.lines[0] && B.lines[0].base, ff: B.lines[0] && B.lines[0].ff, csColor: B.lines[0] && B.lines[0].csColor }));
+  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx, runs: l.runs, base: l.base, segs: l.segs })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, weight: B.lines[0] && B.lines[0].weight, italic: B.italic, base: B.lines[0] && B.lines[0].base, ff: B.lines[0] && B.lines[0].ff, csColor: B.lines[0] && B.lines[0].csColor }));
 }
 /* ---------- Als Submit Paper öffnen: PDF-Text → editierbares Dokument (an /write/ übergeben) ---------- */
 function _htmlEsc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -4428,7 +4439,7 @@ async function pageTextItemsFor(page, pageH) {   // Textstücke einer beliebigen
       if (!it.str || !it.str.trim()) continue;
       const tr = it.transform, fs = Math.hypot(tr[1], tr[3]) || it.height || 10, base = pageH - tr[5], top = base - fs * 0.82;
       const fm = detectFontMeta(page, it.fontName, styles[it.fontName] && styles[it.fontName].fontFamily);
-      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: _deLig(it.str), size: fs, fam: fm.fam, bold: fm.bold, italic: fm.italic, ff: fm.ffMap });   // Paper: portable Schriftzuordnung (kein pdf.js-loadedName)
+      items.push({ x: tr[4], y: top, base, w: it.width || fs * it.str.length * 0.5, h: fs * 1.2, str: _deLig(it.str), size: fs, fam: fm.fam, bold: fm.bold, weight: fm.weight, italic: fm.italic, ff: fm.ffMap });   // Paper: portable Schriftzuordnung (kein pdf.js-loadedName)
     }
   } catch (_) { }
   return items;
@@ -4457,8 +4468,8 @@ function listBlockHtml(b, body, gapEm) {
 // Ein Absatz-Block → HTML. Gestapelte Zeilen bleiben GESTAPELT (<br>); nur echt umbrochene Fliesstext-Zeilen werden zusammengezogen (vorige Zeile reicht fast ganz nach rechts, diese beginnt links, kein Listenpunkt, keine Satzende-Zeile davor).
 function blockToParaHtml(b, body, pageRight, gapEm, pageLeft) {
   const lines = (b.lines && b.lines.length) ? b.lines : b.text.split('\n').map(str => ({ str, x: b.x, maxx: b.right || (b.x + b.w) }));
-  const baseFf = b.ff, baseColor = b.color;   // gemischte Formatierung je Zeichenlauf (Run) 1:1 übernehmen
-  const runHtml = r => { let t = _htmlEsc(r.str); if (r.vp === 1) t = '<sup>' + t + '</sup>'; else if (r.vp === -1) t = '<sub>' + t + '</sub>'; if (r.italic) t = '<em>' + t + '</em>'; if (r.bold) t = '<strong>' + t + '</strong>'; const sty = (r.ff && r.ff !== baseFf ? 'font-family:' + r.ff.replace(/"/g, "'") : '') + (r.fill && !_nearBlackRGB(r.fill) && r.fill !== baseColor ? (r.ff && r.ff !== baseFf ? ';' : '') + 'color:' + r.fill : ''); if (sty) t = '<span style="' + sty + '">' + t + '</span>'; if (r.url) t = '<a href="' + _htmlEsc(r.url).replace(/"/g, '&quot;') + '">' + t + '</a>'; return t; };
+  const baseFf = b.ff, baseColor = b.color, baseW = b.weight || 400;   // gemischte Formatierung je Zeichenlauf (Run) 1:1 übernehmen
+  const runHtml = r => { let t = _htmlEsc(r.str); if (r.vp === 1) t = '<sup>' + t + '</sup>'; else if (r.vp === -1) t = '<sub>' + t + '</sub>'; if (r.italic) t = '<em>' + t + '</em>'; if (r.bold) t = '<strong>' + t + '</strong>'; const s = []; if (r.ff && r.ff !== baseFf) s.push('font-family:' + r.ff.replace(/"/g, "'")); if (r.fill && !_nearBlackRGB(r.fill) && r.fill !== baseColor) s.push('color:' + r.fill); const rw = r.weight || 400; if (rw !== 400 && rw !== 700 && rw !== baseW) s.push('font-weight:' + rw); if (s.length) t = '<span style="' + s.join(';') + '">' + t + '</span>'; if (r.url) t = '<a href="' + _htmlEsc(r.url).replace(/"/g, '&quot;') + '">' + t + '</a>'; return t; };
   const lineHtml = l => { let h = (l.runs && l.runs.length) ? l.runs.map(runHtml).join('') : _htmlEsc(l.str); if (l._strike) h = '<s>' + h + '</s>'; if (l._ul) h = '<u>' + h + '</u>'; return h; };
   let inner = '', hasRuns = false;
   for (let i = 0; i < lines.length; i++) {
@@ -4482,7 +4493,8 @@ function blockToParaHtml(b, body, pageRight, gapEm, pageLeft) {
   const ff = (b.ff || cssFontStack(b.fam || 'helv')).replace(/"/g, "'");   // echte Schriftfamilie mitnehmen
   const mt = (gapEm && gapEm > 0.05) ? `;margin:${Math.min(4, gapEm).toFixed(2)}em 0 0` : ';margin:0';   // Absatzabstand aus dem Original
   const al = (pageLeft != null) ? blockAlign(lines, pageLeft, pageRight) : '';   // zentriert / rechtsbündig übernehmen
-  const st = `font-family:${ff};font-size:${px}px;line-height:${lhR.toFixed(2)}${mt}${al ? ';text-align:' + al : ''}${b.color ? ';color:' + b.color : ''}`;
+  const bw = b.weight || 400, wStr = (bw !== 400 && bw !== 700) ? ';font-weight:' + bw : '';   // Light/Medium/SemiBold/Black als exakte Stärke
+  const st = `font-family:${ff};font-size:${px}px;line-height:${lhR.toFixed(2)}${mt}${al ? ';text-align:' + al : ''}${b.color ? ';color:' + b.color : ''}${wStr}`;
   if (!hasRuns) { if (b.bold) inner = '<strong>' + inner + '</strong>'; if (b.italic) inner = '<em>' + inner + '</em>'; }   // ohne Run-Info: block-weit fett/kursiv
   if (b.size >= body * 1.45 && lines.length === 1) return `<h2 style="${st}">` + inner + '</h2>';   // grosse Einzelzeile → Überschrift
   return `<p style="${st}">` + inner + '</p>';
@@ -4880,7 +4892,7 @@ async function editTextAt(pv, p) {
   if (hit) {
     const s = sampleBox(pv, hit); if (pv.canvas) delete pv.canvas._cData; const inkC = sampleInkColor(pv.canvas, hit, pv.pageW), ul = sampleUnderline(pv.canvas, hit.x, hit.right, hit.base, pv.pageW);
     const col0 = (hit.csColor && !_nearBlackRGB(hit.csColor)) ? hit.csColor : (inkC || s.ink || '#111111');   // Inhaltsstrom-Farbe hat Vorrang
-    a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, base: hit.base, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: col0, bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic, ff: hit.ff, underline: ul, strike: sampleStrike(pv.canvas, hit.x, hit.right, hit.base, hit.size, pv.pageW), lines0: (hit.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) };
+    a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, base: hit.base, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: col0, bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, weight: hit.weight, italic: hit.italic, ff: hit.ff, underline: ul, strike: sampleStrike(pv.canvas, hit.x, hit.right, hit.base, hit.size, pv.pageW), lines0: (hit.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) };
     pushUndo(); pushAnno(pv.num, a); sel = null; drawAnnos(pv); openEditEdit(pv, a, false, p);
   } else {
     a = { id: nextId++, type: 'edit', x: p.x, y: p.y - style.size * 0.82, w: 140, h: style.size * 1.3, text: '', size: style.size, lh: style.size * 1.3, color: style.color, bg: 'transparent' };
@@ -4901,7 +4913,7 @@ async function editAllTextOnPage(pv) {
     for (const b of blocks) {
       if (already.has(Math.round(b.x) + '|' + Math.round(b.y))) continue;   // schon editierbar → nicht doppelt
       const s = sampleBox(pv, b), bcol = (b.csColor && !_nearBlackRGB(b.csColor)) ? b.csColor : (sampleInkColor(pv.canvas, b, pv.pageW) || s.ink || '#111111');
-      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, base: b.base, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: bcol, bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic, ff: b.ff, underline: sampleUnderline(pv.canvas, b.x, b.right, b.base, pv.pageW), strike: sampleStrike(pv.canvas, b.x, b.right, b.base, b.size, pv.pageW), lines0: (b.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) });
+      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, base: b.base, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: bcol, bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, weight: b.weight, italic: b.italic, ff: b.ff, underline: sampleUnderline(pv.canvas, b.x, b.right, b.base, pv.pageW), strike: sampleStrike(pv.canvas, b.x, b.right, b.base, b.size, pv.pageW), lines0: (b.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) });
       added++;
     }
     drawAnnos(pv); saveState();
@@ -5002,7 +5014,7 @@ function editNextBlock(pv, curA, dir) {
   setTimeout(() => {
     const ex = (getAnnos(pv.num) || []).filter(x => x.type === 'edit').find(x => Math.abs(x.x - nb.x) < 4 && Math.abs(x.y - nb.y) < 4);
     if (ex) { openEditEdit(pv, ex, false); return; }
-    if (pv.canvas) delete pv.canvas._cData; const s = sampleBox(pv, nb), ncol = (nb.csColor && !_nearBlackRGB(nb.csColor)) ? nb.csColor : (sampleInkColor(pv.canvas, nb, pv.pageW) || s.ink || '#111111'), a2 = { id: nextId++, type: 'edit', x: nb.x, y: nb.y, base: nb.base, w: Math.max(nb.w, nb.size), h: nb.h, text: nb.text, size: nb.size, lh: nb.lh, color: ncol, bg: s.bg || '#ffffff', fam: nb.fam, bold: nb.bold, italic: nb.italic, ff: nb.ff, underline: sampleUnderline(pv.canvas, nb.x, nb.right, nb.base, pv.pageW), strike: sampleStrike(pv.canvas, nb.x, nb.right, nb.base, nb.size, pv.pageW), lines0: (nb.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) };
+    if (pv.canvas) delete pv.canvas._cData; const s = sampleBox(pv, nb), ncol = (nb.csColor && !_nearBlackRGB(nb.csColor)) ? nb.csColor : (sampleInkColor(pv.canvas, nb, pv.pageW) || s.ink || '#111111'), a2 = { id: nextId++, type: 'edit', x: nb.x, y: nb.y, base: nb.base, w: Math.max(nb.w, nb.size), h: nb.h, text: nb.text, size: nb.size, lh: nb.lh, color: ncol, bg: s.bg || '#ffffff', fam: nb.fam, bold: nb.bold, weight: nb.weight, italic: nb.italic, ff: nb.ff, underline: sampleUnderline(pv.canvas, nb.x, nb.right, nb.base, pv.pageW), strike: sampleStrike(pv.canvas, nb.x, nb.right, nb.base, nb.size, pv.pageW), lines0: (nb.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) };
     pushUndo(); pushAnno(pv.num, a2); openEditEdit(pv, a2, false);
   }, 0);
 }
@@ -7268,6 +7280,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('NPK-Position + Bemerkung im Ausschreibungstext', () => { const floors = [{ name: 'Bad', m2: 5, b: { tileW: 30, tileH: 30 }, a: { npk: '663.211', bemerkung: 'rutschhemmend R10' }, aufbau: '' }]; const html = buildBelagTableHtml(floors, [], false); return (/NPK 663\.211/.test(html) && /rutschhemmend R10/.test(html)) ? '' : 'fail'; });
     A('Font-Namen → echte CSS-Familie', () => { const ar = fontNameToCss('ABCDEF+Arial-BoldMT', ''), ca = fontNameToCss('Calibri', ''), ti = fontNameToCss('TimesNewRomanPSMT', ''), co = fontNameToCss('Courier', ''), ve = fontNameToCss('Verdana', ''); return (/^Arial/.test(ar) && /Calibri/.test(ca) && /Times New Roman/.test(ti) && /Courier New/.test(co) && /Verdana/.test(ve)) ? '' : JSON.stringify({ ar, ca, ti, co, ve }); });
     A('Ligaturen → Buchstaben', () => (_deLig('eﬃzient ﬂießt ﬁx') === 'effizient fließt fix' && _deLig('normal') === 'normal') ? '' : _deLig('eﬃzient ﬂießt ﬁx'));
+    A('Schriftstärke: Light/Medium/Black + font-weight', () => { const st = f => detectFontMeta({ commonObjs: { get: () => ({ name: f }) } }, 'x', '').weight; const okW = st('Helvetica-Light') === 300 && st('Roboto-Medium') === 500 && st('Arial-Black') === 900 && st('Foo-SemiBold') === 600 && st('Foo-Bold') === 700 && st('Foo-Regular') === 400 && st('X-ExtraLight') === 200; const html = blockToParaHtml({ text: 'H', lines: [{ str: 'H', x: 0, maxx: 20 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial', weight: 300, x: 0, right: 20, y: 0, h: 15 }, 12, 500); return (okW && /font-weight:300/.test(html)) ? '' : JSON.stringify({ okW, html }); });
     A('Inhaltsstrom-Farbe: near-black Erkennung + Vorrang', () => { const nb = _nearBlackRGB('rgb(0,0,0)') && _nearBlackRGB('rgb(30,30,30)') && !_nearBlackRGB('rgb(200,0,0)') && !_nearBlackRGB(''); const html = blocksToPaperHtml([{ text: 'X', lines: [{ str: 'X', x: 0, maxx: 20 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial', x: 0, right: 20, y: 0, h: 15, csColor: 'rgb(200,0,0)' }], () => 'rgb(0,128,0)', null); return (nb && /color:rgb\(200,0,0\)/.test(html) && !/0,128,0/.test(html)) ? '' : JSON.stringify({ nb, html }); });
     A('detectFontMeta: bold+italic + ff aus Fontnamen', () => { const stub = { commonObjs: { get: () => ({ name: 'Arial-BoldItalicMT' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (m.bold && m.italic && m.fam === 'helv' && /Arial/.test(m.ff)) ? '' : JSON.stringify(m); });
     A('detectFontMeta: eingebettete Schrift (loadedName) zuerst, Mapping als Fallback', () => { const stub = { commonObjs: { has: () => true, get: () => ({ name: 'Arial', loadedName: 'g_d0_f1' }) } }; const m = detectFontMeta(stub, 'f1', 'sans-serif'); return (/^"g_d0_f1",/.test(m.ff) && /Arial/.test(m.ff) && m.loaded === 'g_d0_f1' && /Arial/.test(m.ffMap) && !/g_d0_f1/.test(m.ffMap)) ? '' : JSON.stringify(m); });

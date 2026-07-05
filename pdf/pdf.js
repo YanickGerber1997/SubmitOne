@@ -4370,8 +4370,8 @@ function groupTextBlocks(items) {
       if (i > 0) { const pr = L.items[i - 1], gap = it.x - (pr.x + pr.w); if (gap > it.size * 0.2 && !/\s$/.test(str) && !/^\s/.test(it.str)) piece = ' '; }
       piece += it.str; str += piece;
       const last = runs[runs.length - 1];
-      if (last && last.bold === !!it.bold && last.italic === !!it.italic && last.ff === it.ff) last.str += piece;
-      else runs.push({ str: piece, bold: !!it.bold, italic: !!it.italic, ff: it.ff });
+      if (last && last.bold === !!it.bold && last.italic === !!it.italic && last.ff === it.ff && last.url === it.url) last.str += piece;
+      else runs.push({ str: piece, bold: !!it.bold, italic: !!it.italic, ff: it.ff, url: it.url });
     }
     L.str = str; L.runs = runs; const dom = L.items.reduce((a, b) => (b.w > a.w ? b : a), L.items[0]); L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic; L.base = dom.base; L.ff = dom.ff;
   }
@@ -4429,7 +4429,7 @@ function listBlockHtml(b, body, gapEm) {
 function blockToParaHtml(b, body, pageRight, gapEm, pageLeft) {
   const lines = (b.lines && b.lines.length) ? b.lines : b.text.split('\n').map(str => ({ str, x: b.x, maxx: b.right || (b.x + b.w) }));
   const baseFf = b.ff;   // gemischte Formatierung je Zeichenlauf (Run) 1:1 übernehmen
-  const runHtml = r => { let t = _htmlEsc(r.str); if (r.italic) t = '<em>' + t + '</em>'; if (r.bold) t = '<strong>' + t + '</strong>'; if (r.ff && r.ff !== baseFf) t = '<span style="font-family:' + r.ff.replace(/"/g, "'") + '">' + t + '</span>'; return t; };
+  const runHtml = r => { let t = _htmlEsc(r.str); if (r.italic) t = '<em>' + t + '</em>'; if (r.bold) t = '<strong>' + t + '</strong>'; if (r.ff && r.ff !== baseFf) t = '<span style="font-family:' + r.ff.replace(/"/g, "'") + '">' + t + '</span>'; if (r.url) t = '<a href="' + _htmlEsc(r.url).replace(/"/g, '&quot;') + '">' + t + '</a>'; return t; };
   const lineHtml = l => { const h = (l.runs && l.runs.length) ? l.runs.map(runHtml).join('') : _htmlEsc(l.str); return l._ul ? '<u>' + h + '</u>' : h; };
   let inner = '', hasRuns = false;
   for (let i = 0; i < lines.length; i++) {
@@ -4621,7 +4621,12 @@ async function convertToPaper(pageNums) {
     await loadPdfJs(); const pages = []; let blockN = 0, substantial = 0;
     for (const n of nums) {
       const page = await pdfDoc.getPage(n), vp = page.getViewport({ scale: 1 });
-      const items = await pageTextItemsFor(page, vp.height), blocks = groupTextBlocks(items);
+      const items = await pageTextItemsFor(page, vp.height);
+      try {   // Links (klickbar) aus den PDF-Annotationen den Textstücken zuordnen
+        const links = (await page.getAnnotations()).filter(a => a.subtype === 'Link' && a.url).map(a => { const r = a.rect; return { x0: Math.min(r[0], r[2]), x1: Math.max(r[0], r[2]), top: vp.height - Math.max(r[1], r[3]), bot: vp.height - Math.min(r[1], r[3]), url: a.url }; });
+        if (links.length) for (const it of items) { const cx = it.x + (it.w || 0) / 2, cy = it.y + it.h / 2, L = links.find(l => cx >= l.x0 - 1 && cx <= l.x1 + 1 && cy >= l.top - 2 && cy <= l.bot + 2); if (L) it.url = L.url; }
+      } catch (_) { }
+      const blocks = groupTextBlocks(items);
       for (const b of blocks) { blockN++; if ((b.text || '').split(/\s+/).filter(Boolean).length >= 6 || (b.lines && b.lines.length >= 3)) substantial++; }   // „richtige" Textblöcke (Fliesstext) vs. verstreute Labels
       let colorFn = null, ulFn = null;   // Textfarbe + Unterstreichung aus einem Offscreen-Render abtasten (bei überschaubarer Seitenzahl)
       if (nums.length <= 40) { try { const sc = 1.3, cvp = page.getViewport({ scale: sc }), cv = document.createElement('canvas'); cv.width = Math.ceil(cvp.width); cv.height = Math.ceil(cvp.height); await page.render({ canvasContext: cv.getContext('2d', { willReadFrequently: true }), viewport: cvp }).promise; colorFn = b => sampleInkColor(cv, b, vp.width); ulFn = (x0, x1, by) => sampleUnderline(cv, x0, x1, by, vp.width); } catch (_) { colorFn = null; ulFn = null; } }
@@ -7086,6 +7091,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('PDF→Paper: Absatz übernimmt Schriftfamilie/Grösse', () => { const html = blockToParaHtml({ text: 'Hallo', lines: [{ str: 'Hallo', x: 0, maxx: 50 }], size: 12, lh: 15, fam: 'times', ff: '"Times New Roman",Times,serif', bold: false, italic: false, x: 0, right: 50 }, 12, 500); return (/font-family:'Times New Roman'/.test(html) && /font-size:15px/.test(html) && /<p /.test(html) && />Hallo</.test(html)) ? '' : html; });
     A('PDF→Paper: gemischt fett innerhalb Absatz (Runs)', () => { const b = { text: 'Sehr wichtig!', lines: [{ str: 'Sehr wichtig!', x: 0, maxx: 120, runs: [{ str: 'Sehr ', bold: false, italic: false, ff: 'Arial,sans-serif' }, { str: 'wichtig', bold: true, italic: false, ff: 'Arial,sans-serif' }, { str: '!', bold: false, italic: false, ff: 'Arial,sans-serif' }] }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', bold: false, italic: false, x: 0, right: 120 }; const html = blockToParaHtml(b, 12, 500); return (/Sehr <strong>wichtig<\/strong>!/.test(html) && !/<strong>Sehr/.test(html)) ? '' : html; });
     A('Unterstreichung am Pixelbild erkennen', () => { const W = 20, H = 10, data = new Uint8ClampedArray(W * H * 4).fill(255); for (let px = 2; px <= 18; px++) { const o = (6 * W + px) * 4; data[o] = 0; data[o + 1] = 0; data[o + 2] = 0; } const cv = { width: W, height: H, _cData: data }, yes = sampleUnderline(cv, 2, 18, 5, 20); const cv2 = { width: W, height: H, _cData: new Uint8ClampedArray(W * H * 4).fill(255) }, no = sampleUnderline(cv2, 2, 18, 5, 20); return (yes === true && no === false) ? '' : JSON.stringify({ yes, no }); });
+    A('PDF→Paper: Link-Run → <a href>', () => { const b = { text: 'Klick hier', lines: [{ str: 'Klick hier', x: 0, maxx: 80, runs: [{ str: 'Klick ', bold: false, italic: false, ff: 'Arial,sans-serif' }, { str: 'hier', bold: false, italic: false, ff: 'Arial,sans-serif', url: 'https://example.com' }] }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 80, y: 0, h: 15 }; const html = blockToParaHtml(b, 12, 500); return /<a href="https:\/\/example\.com">hier<\/a>/.test(html) ? '' : html; });
     A('PDF→Paper: unterstrichene Zeile → <u>', () => { const html = blocksToPaperHtml([{ text: 'Titel', lines: [{ str: 'Titel', x: 0, maxx: 60, base: 10, _ul: true }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 15 }]); return /<u>Titel<\/u>/.test(html) ? '' : html; });
     A('PDF→Paper: Aufzählung → echte <ul>', () => { const html = blocksToPaperHtml([{ text: '- A\n- B', lines: [{ str: '- Apfel', x: 0, maxx: 60 }, { str: '- Birne', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 20 }]); return (/<ul/.test(html) && /<li>Apfel<\/li>/.test(html) && /<li>Birne<\/li>/.test(html)) ? '' : html; });
     A('PDF→Paper: nummerierte Liste → <ol start>', () => { const html = blocksToPaperHtml([{ text: '2. X\n3. Y', lines: [{ str: '2. Erstens', x: 0, maxx: 60 }, { str: '3. Zweitens', x: 0, maxx: 60 }], size: 12, lh: 15, fam: 'helv', ff: 'Arial,sans-serif', x: 0, right: 60, y: 0, h: 20 }]); return (/<ol[^>]*start="2"/.test(html) && /<li>Erstens<\/li>/.test(html) && /<li>Zweitens<\/li>/.test(html)) ? '' : html; });

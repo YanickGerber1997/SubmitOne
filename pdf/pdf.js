@@ -1392,12 +1392,12 @@ function drawOne(svg, a, pv) {
   } else if (a.type === 'area') {
     const g = svgEl('g', { 'data-id': a.id }), pts = a.pts, draft = a._cursor;
     const poly = pts.map(p => p[0] + ',' + p[1]).join(' ');
-    if (pts.length >= 2) g.appendChild(svgEl('polygon', { points: poly, fill: a.color, 'fill-opacity': a.room ? 0.08 : (a.belag ? 0.06 : 0.14), stroke: 'none' }));
+    if (pts.length >= 2) g.appendChild(svgEl('polygon', { points: poly, fill: a.color, 'fill-opacity': a.room ? 0.08 : (a.cutout ? 0.5 : (a.belag ? 0.06 : 0.14)), stroke: 'none' }));
     if (a.belag) drawTileGrid(g, a, pv);   // Plattenspiegel (auf die Fläche geclippt)
     const line = (draft ? pts.concat([draft]) : pts).map(p => p[0] + ',' + p[1]).join(' ');
-    if (!a.room) g.appendChild(svgEl('polyline', { points: line, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));   // Raum: kein Umriss über die Wände
+    if (!a.room) g.appendChild(svgEl('polyline', { points: line, fill: 'none', stroke: a.color, 'stroke-width': a.width || 2, 'stroke-dasharray': a.cutout ? '6 3' : null, 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke' }));   // Raum: kein Umriss über die Wände; Aussparung gestrichelt
     if (draft && pts.length) { const f = pts[0]; g.appendChild(svgEl('circle', { cx: f[0], cy: f[1], r: 4.5 / pv.scale, fill: '#fff', stroke: a.color, 'stroke-width': 1.5 })); }
-    if (pts.length >= 3) { const ct = centroid(pts), t = svgEl('text', { x: ct[0], y: ct[1], fill: a.color, 'font-size': 12, 'text-anchor': 'middle', 'font-weight': 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); if (a.name) { const t1 = svgEl('tspan', { x: ct[0], dy: '-0.6em' }); t1.textContent = a.name; const t2 = svgEl('tspan', { x: ct[0], dy: '1.2em', 'font-weight': 400 }); t2.textContent = areaLabel(pts); t.append(t1, t2); } else t.textContent = areaLabel(pts); g.appendChild(t); }
+    if (pts.length >= 3) { const ct = centroid(pts), dispNm = a.cutout ? ('Aussparung' + (typeof a.cutout === 'string' && a.cutout ? ' ' + a.cutout : '')) : a.name, t = svgEl('text', { x: ct[0], y: ct[1], fill: a.color, 'font-size': 12, 'text-anchor': 'middle', 'font-weight': 700, 'paint-order': 'stroke', stroke: '#fff', 'stroke-width': 3 }); if (dispNm) { const t1 = svgEl('tspan', { x: ct[0], dy: '-0.6em' }); t1.textContent = dispNm; const t2 = svgEl('tspan', { x: ct[0], dy: '1.2em', 'font-weight': 400 }); t2.textContent = (a.cutout ? '− ' : '') + areaLabel(pts); t.append(t1, t2); } else t.textContent = areaLabel(pts); g.appendChild(t); }
     svg.appendChild(g); el = g;
     if (!draft && pts.length >= 3) { hit = svgEl('polygon', { points: poly, fill: 'transparent', 'data-id': a.id }); svg.appendChild(hit); }
   } else if (a.type === 'slab') {
@@ -2181,7 +2181,7 @@ function onPointerDown(pv, e) {
   if (tool === 'eraser') { startErase(pv, e); return; }
   if (tool === 'crop') { startCrop(pv, e, p); return; }
   if (tool === 'snip') { startSnip(pv, e, p); return; }
-  if (tool === 'area' || tool === 'slab' || tool === 'terrain' || tool === 'floortile') { areaClick(pv, p); return; }
+  if (tool === 'area' || tool === 'slab' || tool === 'terrain' || tool === 'floortile' || tool === 'aussparung') { areaClick(pv, p); return; }
   if (tool === 'profile') { profileClick(pv, p); return; }
   if (tool === 'block') { placeBlock(pv, p); return; }
   if (tool === 'section') { startSection(pv, e, p); return; }
@@ -2420,8 +2420,8 @@ function drawTileGrid(g, a, pv) {
 function areaClick(pv, p) {
   if (!areaDraft || areaDraft.pv !== pv) {
     cancelArea(); pushUndo();
-    const isSlab = tool === 'slab', isTerr = tool === 'terrain', isFloor = tool === 'floortile';
-    const a = isSlab ? { id: nextId++, type: 'slab', pts: [[p.x, p.y]], color: '#5b6b86', base: Math.max(0, wallHeightM - 0.2), thick: 0.2 } :   // Decken-OBERKANTE auf Geschosshöhe (Unterkante = Geschosshöhe − Dicke) isTerr ? { id: nextId++, type: 'terrain', pts: [[p.x, p.y]], color: '#7a6a4a' } : isFloor ? { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: '#b5651d', width: 1.4, belag: { ...DEFAULT_BELAG } } : { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: style.color, width: style.width };
+    const isSlab = tool === 'slab', isTerr = tool === 'terrain', isFloor = tool === 'floortile', isCut = tool === 'aussparung';
+    const a = isSlab ? { id: nextId++, type: 'slab', pts: [[p.x, p.y]], color: '#5b6b86', base: Math.max(0, wallHeightM - 0.2), thick: 0.2 } :   // Decken-OBERKANTE auf Geschosshöhe (Unterkante = Geschosshöhe − Dicke) isTerr ? { id: nextId++, type: 'terrain', pts: [[p.x, p.y]], color: '#7a6a4a' } : isFloor ? { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: '#b5651d', width: 1.4, belag: { ...DEFAULT_BELAG } } : isCut ? { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: '#8a8f98', width: 1.2, cutout: 'Schrank' } : { id: nextId++, type: 'area', pts: [[p.x, p.y]], color: style.color, width: style.width };
     pushAnno(pv.num, a); areaDraft = { pv, a };
     const onMove = ev => { if (!areaDraft) return; const q = evtToPage(areaDraft.pv, ev); areaDraft.a._cursor = [q.x, q.y]; drawAnnos(areaDraft.pv); };
     document.addEventListener('pointermove', onMove); areaDraft._onMove = onMove;
@@ -2437,7 +2437,7 @@ function finishArea() {
   delete a._cursor; areaDraft = null;
   if (a.pts.length < (a.type === 'terrain' ? 2 : 3)) { const arr = getAnnos(pv.num), i = arr.indexOf(a); if (i >= 0) arr.splice(i, 1); if (undoStack.length) undoStack.pop(); drawAnnos(pv); setTool('select'); return; }
   sel = { num: pv.num, id: a.id }; setTool('select'); drawAnnos(pv); saveState();
-  if (a.belag) { _listTab = 'sel'; if (typeof openListPanel === 'function') openListPanel('sel'); }   // Bodenbelag fertig → Platten-Einstellungen gleich zeigen
+  if (a.belag || a.cutout) { _listTab = 'sel'; if (typeof openListPanel === 'function') openListPanel('sel'); }   // Bodenbelag/Aussparung fertig → Einstellungen gleich zeigen
 }
 function cancelArea() {
   if (!areaDraft) return; const { pv, a, _onMove } = areaDraft; document.removeEventListener('pointermove', _onMove);
@@ -4893,7 +4893,7 @@ function setViewOnly(on) {
 function setTool(t) {
   if (cropping && t !== 'select' && t !== 'crop') removeCropAnno();   // anderes Werkzeug → Zuschneiden verwerfen
   if (snipping && t !== 'select' && t !== 'snip') removeSnipAnno();   // anderes Werkzeug → Ausschnitt verwerfen
-  if (areaDraft && t !== 'area' && t !== 'slab' && t !== 'terrain' && t !== 'floortile') cancelArea();        // anderes Werkzeug → Flächen-/Decken-/Gelände-/Belag-Polygon verwerfen
+  if (areaDraft && t !== 'area' && t !== 'slab' && t !== 'terrain' && t !== 'floortile' && t !== 'aussparung') cancelArea();        // anderes Werkzeug → Flächen-/Decken-/Gelände-/Belag-/Aussparungs-Polygon verwerfen
   if (profDraft && t !== 'profile') finishProfile();                  // anderes Werkzeug → Profil-Pfad abschliessen
   if (penDraft && t !== 'curve') finishCurve();                      // anderes Werkzeug → Kurve abschliessen
   if (segDraft) cancelSegDraft();                                    // anderes Werkzeug → laufende Linie verwerfen
@@ -4926,7 +4926,7 @@ function setTool(t) {
   if (pdfDoc) pageViews.forEach(p => drawAnnos(p));   // neu zeichnen → Schicht-Hilfsnetz erscheint/verschwindet je nach Werkzeug
 }
 function applyToolCursor() {
-  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'snip', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'terrain', 'section', 'floortile', 'wallface', 'anschluss'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
+  pageViews.forEach(pv => { pv.wrap.classList.toggle('tool-draw', ['pen', 'line', 'arrow', 'rect', 'oval', 'measure', 'dim', 'calibrate', 'note', 'sig', 'highlight', 'stamp', 'eraser', 'crop', 'snip', 'area', 'arc', 'curve', 'wall', 'wallchain', 'chaindim', 'opening', 'window', 'slab', 'stairs', 'beam', 'roof', 'block', 'profile', 'terrain', 'section', 'floortile', 'wallface', 'anschluss', 'aussparung'].includes(tool)); pv.wrap.classList.toggle('tool-text', tool === 'text' || tool === 'edittext'); });
 }
 
 /* ---------- Speichern / PDF erzeugen (pdf-lib) ---------- */
@@ -6167,6 +6167,14 @@ function fillSelectionInspector(body) {   // „Auswahl"-Tab: Einstellungen des 
     body.insertAdjacentHTML('beforeend', '<p class="insp-hint">Ausrichtung/Farbe in der Planungsleiste. Im Schnitt sind die Höhen direkt ziehbar.</p>');
     return;
   }
+  if (a.type === 'area' && a.cutout) {
+    const m2 = docScale ? polyArea(a.pts || []) * docScale.perPt * docScale.perPt : 0;
+    body.innerHTML = '<h4>Aussparung</h4>' + (m2 ? '<div class="insp-kv"><span>Fläche</span><b>' + (Math.round(m2 * 100) / 100).toFixed(2).replace('.', ',') + ' m²</b></div>' : '')
+      + '<div class="insp-row"><span class="insp-lbl">Art</span><span id="iCk" style="display:inline-flex;gap:3px;flex-wrap:wrap">' + ['Schrank', 'Dusche', 'Wanne', 'frei'].map(k => '<button class="insp-mini' + (a.cutout === k ? ' on' : '') + '" data-k="' + k + '" style="width:auto;padding:0 8px">' + k + '</button>').join('') + '</span></div>';
+    body.querySelectorAll('#iCk .insp-mini').forEach(btn => btn.onclick = () => { a.cutout = btn.dataset.k; markDirty(); pageViews.forEach(drawAnnos); renderList(); });
+    body.insertAdjacentHTML('beforeend', '<p class="insp-hint">Wird von der darunterliegenden Belagsfläche abgezogen → Netto-Fläche in Liste & Ausschreibung.</p>');
+    return;
+  }
   if (a.type === 'area') {
     const m2 = docScale ? polyArea(a.pts || []) * docScale.perPt * docScale.perPt : 0;
     body.innerHTML = '<h4>Fläche / Raum</h4>' + (m2 ? '<div class="insp-kv"><span>Fläche</span><b>' + (Math.round(m2 * 100) / 100).toFixed(2).replace('.', ',') + ' m²</b></div>' : '') +
@@ -6256,12 +6264,14 @@ function fillRoomList(bodyEl) {   // Raumbuch in das Listen-Panel
 function openRoomList() { openListPanel('rooms'); }
 // Beläge sammeln: Bodenbeläge (area+belag) und Wandflächen (measure+wallface) über alle Seiten
 function belagData() {
-  const floors = [], walls = [], anschluesse = []; if (!docScale) return { floors, walls, anschluesse };
+  const floors = [], walls = [], anschluesse = [], cutouts = []; if (!docScale) return { floors, walls, anschluesse, cutouts };
   const pp = docScale.perPt;
   for (const n of Object.keys(annos)) for (const a of (annos[n] || [])) {
-    if (a.type === 'area' && a.belag && a.pts && a.pts.length >= 3) {
-      const m2 = polyArea(a.pts) * pp * pp, b = a.belag;
-      floors.push({ a, name: a.name || a.floor || '', m2, tiles: tilesForArea(m2, b.tileW, b.tileH, b.waste || 0), b, aufbau: a.aufbau || '' });
+    if (a.type === 'area' && a.cutout && a.pts && a.pts.length >= 3) {
+      cutouts.push({ a, name: (typeof a.cutout === 'string' && a.cutout) ? a.cutout : 'Aussparung', m2: polyArea(a.pts) * pp * pp, c: centroid(a.pts) });
+    } else if (a.type === 'area' && a.belag && a.pts && a.pts.length >= 3) {
+      const b = a.belag;
+      floors.push({ a, name: a.name || a.floor || '', grossM2: polyArea(a.pts) * pp * pp, poly: a.pts, b, aufbau: a.aufbau || '' });
     } else if (a.type === 'measure' && a.wallface) {
       const len = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), h = a.height || 2.5, m2 = wallFaceAreaM2(len, pp, h), b = a.belag || DEFAULT_BELAG;
       walls.push({ a, name: a.name || '', m2, h, lenM: len * pp, tiles: tilesForArea(m2, b.tileW, b.tileH, b.waste || 0), b, aufbau: a.aufbau || '' });
@@ -6269,7 +6279,9 @@ function belagData() {
       anschluesse.push({ a, kat: a.anschluss, katLabel: ANSCHLUSS_KAT[a.anschluss] || a.anschluss, name: a.name || '', lenM: Math.hypot(a.x2 - a.x1, a.y2 - a.y1) * pp });
     }
   }
-  return { floors, walls, anschluesse };
+  // Aussparungen von den Böden abziehen (Aussparungs-Schwerpunkt liegt in der Fläche) → Netto-Fläche
+  floors.forEach(f => { let cut = 0; for (const c of cutouts) if (pointInPoly(c.c, f.poly)) cut += c.m2; f.cutM2 = cut; f.m2 = Math.max(0, f.grossM2 - cut); f.tiles = tilesForArea(f.m2, f.b.tileW, f.b.tileH, f.b.waste || 0); });
+  return { floors, walls, anschluesse, cutouts };
 }
 function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten & Summen
   if (!docScale) { bodyEl.innerHTML = '<p class="lp2-empty">Für Belags-Mengen zuerst den Massstab setzen (1:n) – unten in der Fusszeile.</p>'; return null; }
@@ -6280,7 +6292,7 @@ function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten &
   const wm2 = walls.reduce((s, r) => s + r.m2, 0), wt = walls.reduce((s, r) => s + r.tiles, 0);
   let html = '<div style="display:flex;gap:6px;margin-bottom:10px"><button class="insp-btn" id="belExpA" style="width:auto;flex:1" title="Als Ausschreibung nach Submit Paper (mit leerer Preisspalte)">→ Ausschreibung</button><button class="insp-btn" id="belExpM" style="width:auto;flex:1" title="Als Mengenauszug nach Submit Paper (ohne Preisspalte)">→ Mengenauszug</button></div>';
   if (floors.length) html += '<h4>Bodenbeläge (' + floors.length + ')</h4><table class="qty-tab"><thead><tr><th>Raum</th><th style="text-align:right">Fläche</th><th style="text-align:right">Platte</th><th style="text-align:right">Platten</th></tr></thead><tbody>'
-    + floors.map(r => '<tr><td>' + (_htmlEsc(r.name) || '–') + (r.aufbau ? '<div style="font-size:10px;color:var(--ink-soft)">' + _htmlEsc(r.aufbau) + '</div>' : '') + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.m2) + ' m²</td><td style="text-align:right;white-space:nowrap">' + r.b.tileW + '×' + r.b.tileH + '</td><td style="text-align:right">' + r.tiles + '</td></tr>').join('')
+    + floors.map(r => '<tr><td>' + (_htmlEsc(r.name) || '–') + (r.aufbau ? '<div style="font-size:10px;color:var(--ink-soft)">' + _htmlEsc(r.aufbau) + '</div>' : '') + (r.cutM2 ? '<div style="font-size:10px;color:var(--ink-soft)">netto · abzügl. Aussparungen ' + fmt(r.cutM2) + ' m²</div>' : '') + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.m2) + ' m²</td><td style="text-align:right;white-space:nowrap">' + r.b.tileW + '×' + r.b.tileH + '</td><td style="text-align:right">' + r.tiles + '</td></tr>').join('')
     + '</tbody><tfoot><tr><th style="text-align:right">Summe</th><th style="text-align:right;white-space:nowrap">' + fmt(fm2) + ' m²</th><th></th><th style="text-align:right">' + ft + '</th></tr></tfoot></table>';
   if (walls.length) html += '<h4 style="margin-top:14px">Wandflächen (' + walls.length + ')</h4><table class="qty-tab"><thead><tr><th>Wand</th><th style="text-align:right">L×H</th><th style="text-align:right">Fläche</th><th style="text-align:right">Platten</th></tr></thead><tbody>'
     + walls.map(r => '<tr><td>' + (_htmlEsc(r.name) || '–') + (r.aufbau ? '<div style="font-size:10px;color:var(--ink-soft)">' + _htmlEsc(r.aufbau) + '</div>' : '') + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.lenM) + '×' + fmt(r.h) + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.m2) + ' m²</td><td style="text-align:right">' + r.tiles + '</td></tr>').join('')
@@ -6309,7 +6321,7 @@ function buildBelagTableHtml(floors, walls, price, anschluesse) {
   const posRow = (pos, besch, menge, einh) => '<tr><td>' + pos + '</td><td>' + _htmlEsc(besch) + '</td><td style="text-align:right;white-space:nowrap">' + fmt(menge) + '</td><td>' + einh + '</td>' + pad + '</tr>';
   const zt = (title, sum, einh) => '<tr><td></td><td><em>Zwischentotal ' + title + '</em></td><td style="text-align:right;white-space:nowrap"><strong>' + fmt(sum) + '</strong></td><td>' + einh + '</td>' + pad + '</tr>';
   let rows = '', sec = 0;
-  if (floors.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Bodenbeläge</strong></td></tr>'; floors.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Bodenbelag') + ' · Platten ' + r.b.tileW + '×' + r.b.tileH + (r.aufbau ? ' · ' + r.aufbau : ''), r.m2, 'm²')); rows += zt('Bodenbeläge', floors.reduce((s, r) => s + r.m2, 0), 'm²'); }
+  if (floors.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Bodenbeläge</strong></td></tr>'; floors.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Bodenbelag') + ' · Platten ' + r.b.tileW + '×' + r.b.tileH + (r.aufbau ? ' · ' + r.aufbau : '') + (r.cutM2 ? ' · netto (abzügl. Aussparungen ' + fmt(r.cutM2) + ' m²)' : ''), r.m2, 'm²')); rows += zt('Bodenbeläge', floors.reduce((s, r) => s + r.m2, 0), 'm²'); }
   if (walls.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Wandflächen</strong></td></tr>'; walls.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Wandbelag') + ' · H ' + fmt(r.h || 0) + ' m · Platten ' + r.b.tileW + '×' + r.b.tileH + (r.aufbau ? ' · ' + r.aufbau : ''), r.m2, 'm²')); rows += zt('Wandflächen', walls.reduce((s, r) => s + r.m2, 0), 'm²'); }
   if (anschluesse.length) {
     sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Anschlüsse</strong></td></tr>';
@@ -6491,6 +6503,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('tileStartPoint Ecken + Mitte', () => { const tl = tileStartPoint(0, 0, 100, 80, 'tl', 10, 10), tr = tileStartPoint(0, 0, 100, 80, 'tr', 10, 10), br = tileStartPoint(0, 0, 100, 80, 'br', 10, 10), ce = tileStartPoint(0, 0, 100, 80, 'center', 10, 10); return (tl[0] === 0 && tl[1] === 0 && tr[0] === 100 && tr[1] === 0 && br[0] === 100 && br[1] === 80 && ce[0] === 45 && ce[1] === 35) ? '' : 'fail'; });
     A('Belag-Ausschreibung: Preisspalten nur im Ausschreibungs-Modus + Pos/Menge', () => { const floors = [{ name: 'Wohnen', m2: 24.5, b: { tileW: 60, tileH: 60 }, aufbau: 'OK FB' }]; const aus = buildBelagTableHtml(floors, [], true), men = buildBelagTableHtml(floors, [], false); return (/Einheitspreis/.test(aus) && /Betrag/.test(aus) && !/Einheitspreis/.test(men) && /Bodenbeläge/.test(aus) && /1\.1/.test(aus) && /24,50/.test(aus)) ? '' : 'fail'; });
     A('belagData sammelt Boden + Wand mit m²', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, joint: 3, waste: 8 }, pts: [[0, 0], [100, 0], [100, 100], [0, 100]] }, { type: 'measure', wallface: true, height: 2.5, belag: { tileW: 60, tileH: 60, waste: 8 }, x1: 0, y1: 0, x2: 100, y2: 0 }] }; const d = belagData(); return (d.floors.length === 1 && Math.abs(d.floors[0].m2 - 1) < 1e-6 && d.walls.length === 1 && Math.abs(d.walls[0].m2 - 2.5) < 1e-6) ? '' : JSON.stringify({ f: d.floors.length, w: d.walls.length, fm: d.floors[0] && d.floors[0].m2, wm: d.walls[0] && d.walls[0].m2 }); } finally { annos = sa; docScale = sd; } });
+    A('Aussparung: Netto = Brutto − Aussparung', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, waste: 0 }, pts: [[0, 0], [200, 0], [200, 100], [0, 100]] }, { type: 'area', cutout: 'Schrank', pts: [[10, 10], [60, 10], [60, 60], [10, 60]] }] }; const d = belagData(); const f = d.floors[0]; return (Math.abs(f.grossM2 - 2) < 1e-6 && Math.abs(f.cutM2 - 0.25) < 1e-6 && Math.abs(f.m2 - 1.75) < 1e-6 && d.cutouts.length === 1) ? '' : JSON.stringify({ g: f.grossM2, c: f.cutM2, n: f.m2 }); } finally { annos = sa; docScale = sd; } });
     A('belagData + Ausschreibung: Anschluss (lfm)', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'measure', anschluss: 'boden', x1: 0, y1: 0, x2: 300, y2: 0 }] }; const d = belagData(); const ok1 = d.anschluesse.length === 1 && Math.abs(d.anschluesse[0].lenM - 3) < 1e-6; const html = buildBelagTableHtml([], [], false, d.anschluesse); return (ok1 && /Anschlüsse/.test(html) && /Anschluss Boden/.test(html) && /lfm/.test(html) && /3,00/.test(html)) ? '' : 'fail'; } finally { annos = sa; docScale = sd; } });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };

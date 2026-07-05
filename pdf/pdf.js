@@ -6257,7 +6257,7 @@ function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten &
   const fmt = x => (Math.round(x * 100) / 100).toFixed(2).replace('.', ',');
   const fm2 = floors.reduce((s, r) => s + r.m2, 0), ft = floors.reduce((s, r) => s + r.tiles, 0);
   const wm2 = walls.reduce((s, r) => s + r.m2, 0), wt = walls.reduce((s, r) => s + r.tiles, 0);
-  let html = '';
+  let html = '<div style="display:flex;gap:6px;margin-bottom:10px"><button class="insp-btn" id="belExpA" style="width:auto;flex:1" title="Als Ausschreibung nach Submit Paper (mit leerer Preisspalte)">→ Ausschreibung</button><button class="insp-btn" id="belExpM" style="width:auto;flex:1" title="Als Mengenauszug nach Submit Paper (ohne Preisspalte)">→ Mengenauszug</button></div>';
   if (floors.length) html += '<h4>Bodenbeläge (' + floors.length + ')</h4><table class="qty-tab"><thead><tr><th>Raum</th><th style="text-align:right">Fläche</th><th style="text-align:right">Platte</th><th style="text-align:right">Platten</th></tr></thead><tbody>'
     + floors.map(r => '<tr><td>' + (_htmlEsc(r.name) || '–') + (r.aufbau ? '<div style="font-size:10px;color:var(--ink-soft)">' + _htmlEsc(r.aufbau) + '</div>' : '') + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.m2) + ' m²</td><td style="text-align:right;white-space:nowrap">' + r.b.tileW + '×' + r.b.tileH + '</td><td style="text-align:right">' + r.tiles + '</td></tr>').join('')
     + '</tbody><tfoot><tr><th style="text-align:right">Summe</th><th style="text-align:right;white-space:nowrap">' + fmt(fm2) + ' m²</th><th></th><th style="text-align:right">' + ft + '</th></tr></tfoot></table>';
@@ -6265,6 +6265,7 @@ function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten &
     + walls.map(r => '<tr><td>' + (_htmlEsc(r.name) || '–') + (r.aufbau ? '<div style="font-size:10px;color:var(--ink-soft)">' + _htmlEsc(r.aufbau) + '</div>' : '') + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.lenM) + '×' + fmt(r.h) + '</td><td style="text-align:right;white-space:nowrap">' + fmt(r.m2) + ' m²</td><td style="text-align:right">' + r.tiles + '</td></tr>').join('')
     + '</tbody><tfoot><tr><th style="text-align:right" colspan="2">Summe</th><th style="text-align:right;white-space:nowrap">' + fmt(wm2) + ' m²</th><th style="text-align:right">' + wt + '</th></tr></tfoot></table>';
   bodyEl.innerHTML = html;
+  { const ba = bodyEl.querySelector('#belExpA'); if (ba) ba.onclick = () => exportBelagToPaper('ausschreibung'); const bm = bodyEl.querySelector('#belExpM'); if (bm) bm.onclick = () => exportBelagToPaper('mengen'); }
   return () => {
     const tsv = 'Bodenbeläge\nRaum\tFläche m²\tPlatte\tPlatten\n' + floors.map(r => (r.name || '') + '\t' + fmt(r.m2) + '\t' + r.b.tileW + '×' + r.b.tileH + '\t' + r.tiles).join('\n') + '\nSumme\t' + fmt(fm2) + '\t\t' + ft
       + '\n\nWandflächen\nWand\tL×H\tFläche m²\tPlatten\n' + walls.map(r => (r.name || '') + '\t' + fmt(r.lenM) + '×' + fmt(r.h) + '\t' + fmt(r.m2) + '\t' + r.tiles).join('\n') + '\nSumme\t\t' + fmt(wm2) + '\t' + wt;
@@ -6272,6 +6273,32 @@ function fillBelagList(bodyEl) {   // Boden-/Wandbeläge mit Flächen, Platten &
   };
 }
 function openBelagList() { openListPanel('belag'); }
+// Ausschreibungs-/Mengenauszug-Tabelle (rein) – Spalten: Pos · Beschrieb · Ausmass · Einheit (+ leere Einheitspreis/Betrag bei Ausschreibung)
+function buildBelagTableHtml(floors, walls, price) {
+  const fmt = x => (Math.round(x * 100) / 100).toFixed(2).replace('.', ','), cols = price ? 6 : 4, pad = price ? '<td></td><td></td>' : '';
+  const head = '<tr>' + ['Pos.', 'Beschrieb', 'Ausmass', 'Einh.'].concat(price ? ['Einheitspreis', 'Betrag'] : []).map(h => '<th>' + h + '</th>').join('') + '</tr>';
+  const posRow = (pos, besch, menge, einh) => '<tr><td>' + pos + '</td><td>' + _htmlEsc(besch) + '</td><td style="text-align:right;white-space:nowrap">' + fmt(menge) + '</td><td>' + einh + '</td>' + pad + '</tr>';
+  const zt = (title, sum, einh) => '<tr><td></td><td><em>Zwischentotal ' + title + '</em></td><td style="text-align:right;white-space:nowrap"><strong>' + fmt(sum) + '</strong></td><td>' + einh + '</td>' + pad + '</tr>';
+  let rows = '', sec = 0;
+  if (floors.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Bodenbeläge</strong></td></tr>'; floors.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Bodenbelag') + ' · Platten ' + r.b.tileW + '×' + r.b.tileH + (r.aufbau ? ' · ' + r.aufbau : ''), r.m2, 'm²')); rows += zt('Bodenbeläge', floors.reduce((s, r) => s + r.m2, 0), 'm²'); }
+  if (walls.length) { sec++; rows += '<tr><td colspan="' + cols + '"><strong>' + sec + '  Wandflächen</strong></td></tr>'; walls.forEach((r, i) => rows += posRow(sec + '.' + (i + 1), (r.name || 'Wandbelag') + ' · H ' + fmt(r.h || 0) + ' m · Platten ' + r.b.tileW + '×' + r.b.tileH + (r.aufbau ? ' · ' + r.aufbau : ''), r.m2, 'm²')); rows += zt('Wandflächen', walls.reduce((s, r) => s + r.m2, 0), 'm²'); }
+  return '<table style="width:100%;border-collapse:collapse">' + head + rows + '</table>';
+}
+// Beläge als Ausschreibung (mit leerer Preisspalte) oder Mengenauszug nach Submit Paper übergeben
+function exportBelagToPaper(mode) {
+  if (!docScale) { toast('Zuerst den Massstab (1:n) setzen – unten in der Fusszeile.'); return; }
+  const { floors, walls } = belagData();
+  if (!floors.length && !walls.length) { toast('Noch keine Beläge zum Exportieren.'); return; }
+  const price = mode === 'ausschreibung';
+  const html = '<h1>' + (price ? 'Ausschreibung' : 'Mengenauszug') + '</h1>'
+    + '<p>' + _htmlEsc(docName || '') + (docScale.label ? ' · Massstab ' + docScale.label : '') + '</p>'
+    + buildBelagTableHtml(floors, walls, price)
+    + (price ? '<p style="color:#777;font-size:12px">Einheitspreise bitte durch den Unternehmer eintragen.</p>' : '');
+  const titel = (docName || 'Ausmass').replace(/\.pdf$/i, '') + (price ? ' – Ausschreibung' : ' – Mengenauszug');
+  try { localStorage.setItem('submitpaper_import', JSON.stringify({ titel, pages: [{ typ: 'write', html }], ts: Date.now() })); }
+  catch (_) { toast('Export zu gross.'); return; }
+  toast('Öffne in Submit Paper …'); location.href = '../write/index.html?import=1';
+}
 function geoToLocal(gj) {   // GeoJSON (lon/lat) → lokale Meter (äquirektangulär um den Schwerpunkt), Nord = oben
   const feats = gj && gj.type === 'FeatureCollection' ? (gj.features || []) : gj && gj.type === 'Feature' ? [gj] : gj && gj.type ? [{ geometry: gj }] : [];
   const rings = [], collect = geom => {
@@ -6427,6 +6454,7 @@ function selfTest() {   // prüft die Kern-Rechenpfade (kein DOM nötig); fängt
     A('tilesForArea inkl. 10% Verschnitt', () => tilesForArea(10, 60, 60, 10) === Math.ceil((10 / 0.36) * 1.1) ? '' : 'fail');
     A('DEFAULT_BELAG Standard 60×60 / 3mm / 8%', () => (DEFAULT_BELAG.tileW === 60 && DEFAULT_BELAG.tileH === 60 && DEFAULT_BELAG.joint === 3 && DEFAULT_BELAG.waste === 8) ? '' : 'fail');
     A('tileStartPoint Ecken + Mitte', () => { const tl = tileStartPoint(0, 0, 100, 80, 'tl', 10, 10), tr = tileStartPoint(0, 0, 100, 80, 'tr', 10, 10), br = tileStartPoint(0, 0, 100, 80, 'br', 10, 10), ce = tileStartPoint(0, 0, 100, 80, 'center', 10, 10); return (tl[0] === 0 && tl[1] === 0 && tr[0] === 100 && tr[1] === 0 && br[0] === 100 && br[1] === 80 && ce[0] === 45 && ce[1] === 35) ? '' : 'fail'; });
+    A('Belag-Ausschreibung: Preisspalten nur im Ausschreibungs-Modus + Pos/Menge', () => { const floors = [{ name: 'Wohnen', m2: 24.5, b: { tileW: 60, tileH: 60 }, aufbau: 'OK FB' }]; const aus = buildBelagTableHtml(floors, [], true), men = buildBelagTableHtml(floors, [], false); return (/Einheitspreis/.test(aus) && /Betrag/.test(aus) && !/Einheitspreis/.test(men) && /Bodenbeläge/.test(aus) && /1\.1/.test(aus) && /24,50/.test(aus)) ? '' : 'fail'; });
     A('belagData sammelt Boden + Wand mit m²', () => { const sa = annos, sd = docScale; try { docScale = { perPt: 0.01, label: 't' }; annos = { 1: [{ type: 'area', belag: { tileW: 60, tileH: 60, joint: 3, waste: 8 }, pts: [[0, 0], [100, 0], [100, 100], [0, 100]] }, { type: 'measure', wallface: true, height: 2.5, belag: { tileW: 60, tileH: 60, waste: 8 }, x1: 0, y1: 0, x2: 100, y2: 0 }] }; const d = belagData(); return (d.floors.length === 1 && Math.abs(d.floors[0].m2 - 1) < 1e-6 && d.walls.length === 1 && Math.abs(d.walls[0].m2 - 2.5) < 1e-6) ? '' : JSON.stringify({ f: d.floors.length, w: d.walls.length, fm: d.floors[0] && d.floors[0].m2, wm: d.walls[0] && d.walls[0].m2 }); } finally { annos = sa; docScale = sd; } });
   } finally { docScale = saved; }
   return { R, pass: R.filter(r => r.ok).length, fail: R.filter(r => !r.ok).length };

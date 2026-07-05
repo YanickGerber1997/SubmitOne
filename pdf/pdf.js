@@ -1459,9 +1459,19 @@ function drawOne(svg, a, pv) {
       if (a.underline) t.setAttribute('text-decoration', 'underline');
       const elh = a.lh || a.size * 1.25;
       (a.text || '').split('\n').forEach((ln, i) => {
-        const o = a.lines0 && a.lines0[i], match = o && o.str === ln && o.w > 1;   // unveränderte Zeile → exakt auf Original-Breite/-Start (1:1) + Original-Formatierung je Run
+        const o = a.lines0 && a.lines0[i], match = o && o.str === ln;
+        const segs = (match && o.segs && o.segs.length > 1) ? o.segs : null;
+        if (segs) {   // Tab-Stops: jedes Segment an seiner Original-x + eigener Breite (NICHT über die ganze Zeile strecken)
+          segs.forEach((sg, si) => {
+            const st = svgEl('tspan', { x: sg.x.toFixed(2), dy: si === 0 ? (i === 0 ? 0 : elh) : 0 });
+            if (sg.w > 1) { st.setAttribute('textLength', sg.w.toFixed(2)); st.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
+            if (a.bold) st.setAttribute('font-weight', 'bold'); if (a.italic) st.setAttribute('font-style', 'italic'); st.textContent = sg.str || ' '; t.appendChild(st);
+          });
+          return;
+        }
+        const matchW = match && o.w > 1;   // unveränderte Einzel-Segment-Zeile → exakt auf Original-Breite (1:1) + Runs
         const lt = svgEl('tspan', { x: (match ? o.x : a.x).toFixed(2), dy: i === 0 ? 0 : elh });
-        if (match && o.w > 1) { lt.setAttribute('textLength', o.w.toFixed(2)); lt.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
+        if (matchW) { lt.setAttribute('textLength', o.w.toFixed(2)); lt.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
         const runs = (match && o.runs && o.runs.length) ? o.runs : null;
         if (runs) {   // gemischte Formatierung innerhalb der Zeile 1:1
           for (const r of runs) { const rs = svgEl('tspan', {}); if (r.bold) rs.setAttribute('font-weight', 'bold'); if (r.italic) rs.setAttribute('font-style', 'italic'); if (r.ff && r.ff !== ff0) rs.setAttribute('font-family', r.ff); if (r.vp) { rs.setAttribute('baseline-shift', r.vp === 1 ? 'super' : 'sub'); rs.setAttribute('font-size', (a.size * 0.72).toFixed(1)); } rs.textContent = r.str; lt.appendChild(rs); }
@@ -4387,6 +4397,7 @@ function groupTextBlocks(items) {
       else runs.push({ str: piece, bold: !!it.bold, italic: !!it.italic, ff: it.ff, url: it.url, vp });
     }
     L.str = str; L.runs = runs; L.fam = dom.fam; L.bold = dom.bold; L.italic = dom.italic; L.base = dom.base; L.ff = dom.ff;
+    L.segs = _lineCells(L).map(c => ({ str: _joinItems(c.items), x: c.x, w: Math.max(0, c.maxx - c.x) }));   // Segmente (durch grosse Lücken/Tabs getrennt) mit eigener x/Breite
   }
   lines.sort((a, b) => a.y - b.y);
   // 2) Absätze: aufeinanderfolgende Zeilen mit ähnlicher linker Kante + Zeilenabstand ~ Zeilenhöhe + ähnlicher Grösse
@@ -4401,7 +4412,7 @@ function groupTextBlocks(items) {
     }
     blocks.push({ lines: [L], x: L.x, maxx: L.maxx, y: L.y, maxy: L.maxy, size: L.size, fam: L.fam, bold: L.bold, italic: L.italic, lhs: [] });
   }
-  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx, runs: l.runs, base: l.base })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic, base: B.lines[0] && B.lines[0].base, ff: B.lines[0] && B.lines[0].ff }));
+  return blocks.map(B => ({ x: B.x, y: B.y, w: Math.max(B.maxx - B.x, B.size), h: B.maxy - B.y, right: B.maxx, text: B.lines.map(l => l.str).join('\n'), lines: B.lines.map(l => ({ str: l.str, x: l.x, maxx: l.maxx, runs: l.runs, base: l.base, segs: l.segs })), size: B.size, lh: B.lhs.length ? B.lhs.reduce((a, b) => a + b, 0) / B.lhs.length : B.size * 1.25, fam: B.fam, bold: B.bold, italic: B.italic, base: B.lines[0] && B.lines[0].base, ff: B.lines[0] && B.lines[0].ff }));
 }
 /* ---------- Als Submit Paper öffnen: PDF-Text → editierbares Dokument (an /write/ übergeben) ---------- */
 function _htmlEsc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -4772,9 +4783,12 @@ function sampleInkColor(cv, box, pageW) {
   const bg = bgKey.split(',').map(v => parseInt(v, 10) * 16 + 8);
   let r = 0, g = 0, bl = 0, cnt = 0;
   for (const p of samp) { if (Math.abs(p[0] - bg[0]) + Math.abs(p[1] - bg[1]) + Math.abs(p[2] - bg[2]) > 70) { r += p[0]; g += p[1]; bl += p[2]; cnt++; } }
-  if (cnt < 2) return null; r = Math.round(r / cnt); g = Math.round(g / cnt); bl = Math.round(bl / cnt);
+  if (cnt < 3) return null; r = Math.round(r / cnt); g = Math.round(g / cnt); bl = Math.round(bl / cnt);
   if (r < 45 && g < 45 && bl < 45) return null;   // fast schwarz → Standard-Textfarbe
   if (r > 232 && g > 232 && bl > 232) return null;   // fast weiss → wohl Artefakt, nicht übernehmen
+  let dev = 0, dc = 0;   // Konsistenz: weichen die Textpixel einheitlich in EINE Farbe ab? sonst (Text über Bild/Muster) lieber Standard
+  for (const p of samp) { if (Math.abs(p[0] - bg[0]) + Math.abs(p[1] - bg[1]) + Math.abs(p[2] - bg[2]) > 70) { dev += Math.abs(p[0] - r) + Math.abs(p[1] - g) + Math.abs(p[2] - bl); dc++; } }
+  if (dc && dev / dc > 90) return null;
   return `rgb(${r},${g},${bl})`;
 }
 // Hintergrund- (häufigste) und Text-Farbe (dunkelste) im Kästchen abtasten
@@ -4803,7 +4817,7 @@ async function editTextAt(pv, p) {
   let a;
   if (hit) {
     const s = sampleBox(pv, hit); if (pv.canvas) delete pv.canvas._cData; const ul = sampleUnderline(pv.canvas, hit.x, hit.right, hit.base, pv.pageW);
-    a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, base: hit.base, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic, ff: hit.ff, underline: ul, lines0: (hit.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs })) };
+    a = { id: nextId++, type: 'edit', x: hit.x, y: hit.y, base: hit.base, w: Math.max(hit.w, hit.size), h: hit.h, text: hit.text, size: hit.size, lh: hit.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: hit.fam, bold: hit.bold, italic: hit.italic, ff: hit.ff, underline: ul, lines0: (hit.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) };
     pushUndo(); pushAnno(pv.num, a); sel = null; drawAnnos(pv); openEditEdit(pv, a, false, p);
   } else {
     a = { id: nextId++, type: 'edit', x: p.x, y: p.y - style.size * 0.82, w: 140, h: style.size * 1.3, text: '', size: style.size, lh: style.size * 1.3, color: style.color, bg: 'transparent' };
@@ -4824,7 +4838,7 @@ async function editAllTextOnPage(pv) {
     for (const b of blocks) {
       if (already.has(Math.round(b.x) + '|' + Math.round(b.y))) continue;   // schon editierbar → nicht doppelt
       const s = sampleBox(pv, b);
-      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, base: b.base, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic, ff: b.ff, underline: sampleUnderline(pv.canvas, b.x, b.right, b.base, pv.pageW), lines0: (b.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs })) });
+      pushAnno(pv.num, { id: nextId++, type: 'edit', x: b.x, y: b.y, base: b.base, w: Math.max(b.w, b.size), h: b.h, text: b.text, size: b.size, lh: b.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: b.fam, bold: b.bold, italic: b.italic, ff: b.ff, underline: sampleUnderline(pv.canvas, b.x, b.right, b.base, pv.pageW), lines0: (b.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) });
       added++;
     }
     drawAnnos(pv); saveState();
@@ -4925,7 +4939,7 @@ function editNextBlock(pv, curA, dir) {
   setTimeout(() => {
     const ex = (getAnnos(pv.num) || []).filter(x => x.type === 'edit').find(x => Math.abs(x.x - nb.x) < 4 && Math.abs(x.y - nb.y) < 4);
     if (ex) { openEditEdit(pv, ex, false); return; }
-    if (pv.canvas) delete pv.canvas._cData; const s = sampleBox(pv, nb), a2 = { id: nextId++, type: 'edit', x: nb.x, y: nb.y, base: nb.base, w: Math.max(nb.w, nb.size), h: nb.h, text: nb.text, size: nb.size, lh: nb.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: nb.fam, bold: nb.bold, italic: nb.italic, ff: nb.ff, underline: sampleUnderline(pv.canvas, nb.x, nb.right, nb.base, pv.pageW), lines0: (nb.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs })) };
+    if (pv.canvas) delete pv.canvas._cData; const s = sampleBox(pv, nb), a2 = { id: nextId++, type: 'edit', x: nb.x, y: nb.y, base: nb.base, w: Math.max(nb.w, nb.size), h: nb.h, text: nb.text, size: nb.size, lh: nb.lh, color: s.ink || '#111111', bg: s.bg || '#ffffff', fam: nb.fam, bold: nb.bold, italic: nb.italic, ff: nb.ff, underline: sampleUnderline(pv.canvas, nb.x, nb.right, nb.base, pv.pageW), lines0: (nb.lines || []).map(l => ({ str: l.str, x: l.x, w: Math.max(0, l.maxx - l.x), runs: l.runs, segs: l.segs })) };
     pushUndo(); pushAnno(pv.num, a2); openEditEdit(pv, a2, false);
   }, 0);
 }
@@ -5678,7 +5692,9 @@ async function buildPdfBytes(visibleOnly, embed, nativeExport) {
           else if (a.kind === 'label') { pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, borderColor: c, borderWidth: 2 }); const fs = a.h * 0.46, tw = font.widthOfTextAtSize(a.text || '', fs); pg.drawText(a.text || '', { x: a.x + (a.w - tw) / 2, y: Y(a.y + a.h) + (a.h - fs) / 2 + fs * 0.2, size: fs, font, color: c }); }
         }
         else if (a.type === 'cover') { const cc = parseColor(a.color); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(cc.r, cc.g, cc.b) }); }
-        else if (a.type === 'edit') { const tc2 = parseColor(a.color), ef = await getFont(a.fam, a.bold, a.italic), elh = a.lh || a.size * 1.25, eBase = (a.base != null ? a.base : a.y + a.size * 0.82); if (a.bg && a.bg !== 'transparent') { const bg = parseColor(a.bg); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); } (a.text || '').split('\n').forEach((ln, i) => { const o = a.lines0 && a.lines0[i], lx = (o && o.str === ln) ? o.x : a.x; const yb = eBase + i * elh; try { pg.drawText(ln, { x: lx, y: Y(yb), size: a.size, font: ef, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { try { pg.drawText(ln, { x: lx, y: Y(yb), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { } } if (a.underline && ln) { try { const lw = (o && o.w) ? o.w : ef.widthOfTextAtSize(ln, a.size); pg.drawLine({ start: { x: lx, y: Y(yb + a.size * 0.12) }, end: { x: lx + lw, y: Y(yb + a.size * 0.12) }, thickness: Math.max(0.5, a.size * 0.06), color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { } } }); }
+        else if (a.type === 'edit') { const tc2 = parseColor(a.color), ef = await getFont(a.fam, a.bold, a.italic), elh = a.lh || a.size * 1.25, eBase = (a.base != null ? a.base : a.y + a.size * 0.82); if (a.bg && a.bg !== 'transparent') { const bg = parseColor(a.bg); pg.drawRectangle({ x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, color: rgb(bg.r, bg.g, bg.b) }); } (a.text || '').split('\n').forEach((ln, i) => { const o = a.lines0 && a.lines0[i], yb = eBase + i * elh; const drawSeg = (txt, sx, sw) => { try { pg.drawText(txt, { x: sx, y: Y(yb), size: a.size, font: ef, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { try { pg.drawText(txt, { x: sx, y: Y(yb), size: a.size, font, color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { } } if (a.underline && txt) { try { const lw = sw || ef.widthOfTextAtSize(txt, a.size); pg.drawLine({ start: { x: sx, y: Y(yb + a.size * 0.12) }, end: { x: sx + lw, y: Y(yb + a.size * 0.12) }, thickness: Math.max(0.5, a.size * 0.06), color: rgb(tc2.r, tc2.g, tc2.b) }); } catch (_) { } } };
+          if (o && o.str === ln && o.segs && o.segs.length > 1) { for (const sg of o.segs) drawSeg(sg.str, sg.x, sg.w); }   // Tab-Stops: Segmente an ihrer x
+          else drawSeg(ln, (o && o.str === ln) ? o.x : a.x, (o && o.w) ? o.w : 0); }); }
         else if (a.type === 'img' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h, opacity: a.opacity != null ? a.opacity : 1 }); }
         else if (a.type === 'sig' && a.data) { let img = sigCache[a.data]; if (!img) { const bytes = Uint8Array.from(atob(a.data.split(',')[1]), ch => ch.charCodeAt(0)); img = sigCache[a.data] = await doc.embedPng(bytes); } pg.drawImage(img, { x: a.x, y: Y(a.y + a.h), width: a.w, height: a.h }); if (a.caption) { const fs = Math.max(7, Math.min(11, a.h * 0.16)), cy = a.y + a.h + 2; pg.drawLine({ start: { x: a.x, y: Y(cy) }, end: { x: a.x + a.w, y: Y(cy) }, thickness: 0.7, color: rgb(.11, .14, .17) }); pg.drawText(a.caption, { x: a.x, y: Y(cy + fs + 1), size: fs, font, color: rgb(.11, .14, .17) }); } }
         // Schraffur (geclippt auf die Form)

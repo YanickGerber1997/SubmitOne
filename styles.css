@@ -77,20 +77,22 @@ button { font-family: inherit; cursor: pointer; }
    Nur aktiv, wenn als installierte App im WCO-Modus gestartet – im Browser/Standalone unverändert. */
 .wco-bar { display: none; }
 @media (display-mode: window-controls-overlay) {
-  .wco-bar { display: block; position: fixed; top: 0; left: env(titlebar-area-x, 0); width: env(titlebar-area-width, 100%); height: env(titlebar-area-height, 34px); background: #22331d; -webkit-app-region: drag; app-region: drag; z-index: 120; }
+  .wco-bar { display: block; position: fixed; top: 0; left: env(titlebar-area-x, 0); width: env(titlebar-area-width, 100%); height: env(titlebar-area-height, 34px); background: #3a5d31; -webkit-app-region: drag; app-region: drag; z-index: 120; }
   #app { margin-top: env(titlebar-area-height, 34px); min-height: calc(100vh - env(titlebar-area-height, 34px)); }
   .sidebar { top: env(titlebar-area-height, 34px); height: calc(100vh - env(titlebar-area-height, 34px)); }
 }
 
 .sidebar {
-  background: #22331d;
-  color: #cdd4c2;
+  background: linear-gradient(180deg, #3a5d31 0%, #2d4a23 100%);   /* klares Grün mit Tiefe */
+  color: #e4e9d7;
   display: flex;
   flex-direction: column;
   padding: 18px 14px;
   position: sticky;
   top: 0;
   height: 100vh;
+  border-right: 1px solid rgba(0,0,0,.16);
+  box-shadow: inset -1px 0 0 rgba(184,145,47,.22);   /* feine Gold-Kante als Abgrenzung */
 }
 
 .brand {
@@ -110,7 +112,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 .brand-text { display: flex; flex-direction: column; line-height: 1.25; }
 .brand-text strong { color: #fff; font-size: 15px; }
-.brand-text span { font-size: 11px; color: #9aa48c; }
+.brand-text span { font-size: 11px; color: #cdb877; }
 
 /* ===== Logo „submitone" (gezeichnet; hell = Default, on-dark = Sidebar) ===== */
 .logo { --lg-ink:#232b35; --lg-accent:#7c1d2c; display:inline-flex; align-items:center; gap:7px; line-height:1; }
@@ -152,11 +154,11 @@ button { font-family: inherit; cursor: pointer; }
   display: flex; align-items: center; gap: 11px;
   padding: 6px 12px;
   border-radius: var(--radius-sm);
-  color: #b9c1ac;
+  color: #d7ddc7;
   font-weight: 500;
   transition: background .12s, color .12s;
 }
-.nav a:hover { background: rgba(255,255,255,.05); color: #fff; }
+.nav a:hover { background: rgba(255,255,255,.09); color: #fff; }
 .nav a.active { background: var(--gold); color: #22331d; font-weight: 600; }
 .nav-ico { width: 20px; display: inline-flex; align-items: center; justify-content: center; opacity: .92; flex: none; }
 .nav-ico svg { width: 18px; height: 18px; display: block; }

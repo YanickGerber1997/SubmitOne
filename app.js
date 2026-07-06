@@ -408,20 +408,29 @@ async function logout() {
 
 async function boot() {
   if (cloudEnabled) {
-    supa = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
-    db.use(CloudAdapter);
-    // Passwort zurücksetzen: nach Klick auf den Reset-Link kommt der Nutzer im Recovery-Modus zurück
-    supa.auth.onAuthStateChange(async (event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        const np = window.prompt('Neues Passwort eingeben (mindestens 6 Zeichen):');
-        if (np && np.length >= 6) {
-          const { error } = await supa.auth.updateUser({ password: np });
-          toast(error ? ('Fehler: ' + error.message) : 'Passwort geändert – du bist angemeldet.', error ? 'info' : 'ok');
+    try {   // Cloud-Start robust: wenn Supabase hängt/fehlschlägt, NICHT die ganze App blockieren → lokaler Modus
+      supa = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY);
+      db.use(CloudAdapter);
+      // Passwort zurücksetzen: nach Klick auf den Reset-Link kommt der Nutzer im Recovery-Modus zurück
+      supa.auth.onAuthStateChange(async (event) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          const np = window.prompt('Neues Passwort eingeben (mindestens 6 Zeichen):');
+          if (np && np.length >= 6) {
+            const { error } = await supa.auth.updateUser({ password: np });
+            toast(error ? ('Fehler: ' + error.message) : 'Passwort geändert – du bist angemeldet.', error ? 'info' : 'ok');
+          }
         }
-      }
-    });
-    const { data } = await supa.auth.getSession();
-    if (!data.session) { renderLogin(); return; }
+      });
+      const res = await Promise.race([   // Timeout, falls die Sitzungsabfrage hängt (Netzwerk/Projekt pausiert)
+        supa.auth.getSession(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Zeitüberschreitung')), 6000))
+      ]);
+      if (!res.data.session) { renderLogin(); return; }
+    } catch (e) {
+      console.warn('Cloud-Start fehlgeschlagen – lokaler Modus:', e);
+      db.use(LocalAdapter);   // App lädt IMMER (offline/Cloud-Problem → lokale Daten)
+      if (typeof toast === 'function') setTimeout(() => toast('Cloud nicht erreichbar – lokaler Modus. Deine Daten auf diesem Gerät bleiben nutzbar.', 'info'), 800);
+    }
   }
   await startApp();
 }

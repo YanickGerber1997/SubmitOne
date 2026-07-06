@@ -14,11 +14,11 @@
   ];
 
   var css = [
-    '.so-sw{position:fixed;z-index:2147483000;left:50%;bottom:14px;transform:translateX(-50%);',
+    '.so-sw{position:fixed;z-index:2147483000;right:16px;top:10px;',
     'font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-user-select:none;user-select:none;',
     'display:flex;align-items:stretch;gap:2px;padding:3px;border-radius:999px;',
-    'background:rgba(20,26,38,.82);box-shadow:0 4px 18px rgba(0,0,0,.28);backdrop-filter:blur(6px);',
-    'opacity:.55;transition:opacity .15s ease}',
+    'background:rgba(20,26,38,.94);box-shadow:0 4px 18px rgba(0,0,0,.35);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);',
+    'opacity:.96;transition:opacity .15s ease}',
     '.so-sw:hover{opacity:1}',
     '.so-sw.drag{opacity:1;cursor:grabbing}',
     '.so-sw a,.so-sw button{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:6px;',

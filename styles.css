@@ -74,8 +74,8 @@ button { font-family: inherit; cursor: pointer; }
 }
 
 .sidebar {
-  background: #1c2a1a;
-  color: #c8d2e3;
+  background: #22331d;
+  color: #cdd4c2;
   display: flex;
   flex-direction: column;
   padding: 18px 14px;
@@ -101,7 +101,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 .brand-text { display: flex; flex-direction: column; line-height: 1.25; }
 .brand-text strong { color: #fff; font-size: 15px; }
-.brand-text span { font-size: 11px; color: #7f8db0; }
+.brand-text span { font-size: 11px; color: #9aa48c; }
 
 /* ===== Logo „submitone" (gezeichnet; hell = Default, on-dark = Sidebar) ===== */
 .logo { --lg-ink:#232b35; --lg-accent:#7c1d2c; display:inline-flex; align-items:center; gap:7px; line-height:1; }
@@ -143,12 +143,12 @@ button { font-family: inherit; cursor: pointer; }
   display: flex; align-items: center; gap: 11px;
   padding: 6px 12px;
   border-radius: var(--radius-sm);
-  color: #aab6cf;
+  color: #b9c1ac;
   font-weight: 500;
   transition: background .12s, color .12s;
 }
 .nav a:hover { background: rgba(255,255,255,.05); color: #fff; }
-.nav a.active { background: var(--brand); color: #fff; }
+.nav a.active { background: var(--gold); color: #22331d; font-weight: 600; }
 .nav-ico { width: 20px; display: inline-flex; align-items: center; justify-content: center; opacity: .92; flex: none; }
 .nav-ico svg { width: 18px; height: 18px; display: block; }
 
@@ -566,7 +566,7 @@ table.grid tbody tr.clickable:hover { background: var(--surface-2); }
 .ktable th, .ktable td { padding: 9px 12px; }
 .ktable tr.kgroup td { background: #eef2f8; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .3px; color: var(--text-soft); }
 .ktable tr.ksub td { background: var(--surface-2); font-weight: 600; border-top: 1px solid var(--border-2); }
-.ktable tr.ktotal td { background: #1c2a1a; color: #fff; font-weight: 700; font-size: 13.5px; }
+.ktable tr.ktotal td { background: #22331d; color: #fff; font-weight: 700; font-size: 13.5px; }
 .ktable tr.ktotal td.over { color: #ff9a9a; }
 .ktable tr.ktotal td.under { color: #9ae6b4; }
 /* Seiten-Scroll (kein eigener Scrollbalken) – der Spaltenkopf läuft als Overlay mit, wie im Terminprogramm. */
@@ -1499,7 +1499,7 @@ table.va input[type=number] { -moz-appearance: textfield; }
 @keyframes pop  { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 
 /* ============================ Login ============================ */
-.login-overlay { position: fixed; inset: 0; z-index: 300; background: #1c2a1a; display: grid; place-items: center; padding: 20px; }
+.login-overlay { position: fixed; inset: 0; z-index: 300; background: #22331d; display: grid; place-items: center; padding: 20px; }
 .login-card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 30px 28px; width: min(380px, 100%); text-align: center; }
 .login-card .field { text-align: left; }
 .login-card .brand-logo { font-size: 18px; }
@@ -1553,7 +1553,7 @@ table.va input[type=number] { -moz-appearance: textfield; }
 
 #toast-root { position: fixed; bottom: 22px; right: 22px; display: flex; flex-direction: column; gap: 10px; z-index: 200; }
 .toast {
-  background: #1c2a1a; color: #fff; padding: 12px 16px; border-radius: var(--radius-sm);
+  background: #22331d; color: #fff; padding: 12px 16px; border-radius: var(--radius-sm);
   box-shadow: var(--shadow-lg); font-size: 13px; display: flex; align-items: center; gap: 10px;
   animation: slidein .18s ease;
 }

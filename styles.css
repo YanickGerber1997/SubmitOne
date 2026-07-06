@@ -73,6 +73,15 @@ button { font-family: inherit; cursor: pointer; }
   min-height: 100vh;
 }
 
+/* Randlose App (Window-Controls-Overlay): oben eine schmale ziehbare Fensterleiste in Marken-Grün, App darunter.
+   Nur aktiv, wenn als installierte App im WCO-Modus gestartet – im Browser/Standalone unverändert. */
+.wco-bar { display: none; }
+@media (display-mode: window-controls-overlay) {
+  .wco-bar { display: block; position: fixed; top: 0; left: env(titlebar-area-x, 0); width: env(titlebar-area-width, 100%); height: env(titlebar-area-height, 34px); background: #22331d; -webkit-app-region: drag; app-region: drag; z-index: 120; }
+  #app { margin-top: env(titlebar-area-height, 34px); min-height: calc(100vh - env(titlebar-area-height, 34px)); }
+  .sidebar { top: env(titlebar-area-height, 34px); height: calc(100vh - env(titlebar-area-height, 34px)); }
+}
+
 .sidebar {
   background: #22331d;
   color: #cdd4c2;

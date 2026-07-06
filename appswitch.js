@@ -31,7 +31,8 @@
     '.so-sw .so-min:hover{background:rgba(255,255,255,.12);color:#fff}',
     '.so-sw.mini a.other,.so-sw.mini .so-lbl{display:none}',
     '.so-sw.mini a.cur{background:transparent;color:#e8edf6;cursor:pointer}',
-    '@media(max-width:640px){.so-sw .so-lbl{display:none}}'
+    '@media(max-width:640px){.so-sw .so-lbl{display:none}}',
+    '@media(display-mode:window-controls-overlay){.so-sw{top:calc(env(titlebar-area-height,34px) + 6px)}}'   // randlose App: Pille unter die Fensterleiste, nicht über die Fenster-Knöpfe'
   ].join('');
   var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
 

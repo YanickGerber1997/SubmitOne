@@ -747,7 +747,9 @@ async function startApp() {
   window.addEventListener('hashchange', router);
   router();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js').then(reg => { try { reg.update(); } catch (_) {} }).catch(() => {});
+    let swReloaded = false;   // neue Version übernimmt → einmal automatisch neu laden (kein manuelles Cache-Leeren mehr)
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (swReloaded) return; swReloaded = true; location.reload(); });
   }
   if (cloudEnabled) subscribeCloud();
 }

@@ -61,6 +61,8 @@ html, body {
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
 }
+/* Dezentes Marken-Hintergrundbild (heller Schleier, damit alles lesbar bleibt) – hinter dem Inhalt */
+body { background: linear-gradient(rgba(245,244,238,.86), rgba(245,244,238,.88)), url('pdf/bg.jpg') center center / cover no-repeat fixed; }
 
 a { color: inherit; text-decoration: none; }
 button { font-family: inherit; cursor: pointer; }

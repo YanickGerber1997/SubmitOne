@@ -47,6 +47,9 @@ body{
   -webkit-font-smoothing:antialiased; overflow:hidden;
   transition:background .3s var(--ease), color .3s var(--ease);
 }
+/* Dezentes Marken-Hintergrundbild hinter dem Blatt (heller Schleier) */
+body{ background: linear-gradient(rgba(220,216,205,.80), rgba(220,216,205,.84)), url('../pdf/bg.jpg') center center / cover no-repeat fixed; }
+body[data-theme="dark"]{ background: linear-gradient(rgba(14,17,24,.86), rgba(14,17,24,.90)), url('../pdf/bg.jpg') center center / cover no-repeat fixed; }
 .i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;
    stroke-linecap:round;stroke-linejoin:round;display:block}
 button{font-family:inherit;cursor:pointer}

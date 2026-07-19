@@ -1779,6 +1779,14 @@ function wire() {
   pgEl.addEventListener('mousedown', e => {
     const td = e.target.closest('td[data-c]'); if (!td) return;
     if (editingTd && editingTd !== td) endEdit(true);
+    if (dokumentModus() && !e.shiftKey) {
+      // Word-Gefuehl: ein Klick setzt den Cursor in den Text, statt eine Zelle zu markieren
+      const x = e.clientX, y = e.clientY;
+      selectCell(+td.dataset.c, +td.dataset.r);
+      if (!editingTd) beginEdit();
+      setzeCursorAn(x, y);
+      return;
+    }
     gridDragging = true; e.preventDefault();
     selectCell(+td.dataset.c, +td.dataset.r, e.shiftKey); calcFocus();
   });
@@ -1809,7 +1817,14 @@ function wire() {
     if (document.activeElement === $('#formulaInput')) return;
     if (editingTd) {
       if (e.key === 'Enter' && (e.altKey || e.shiftKey)) { e.preventDefault(); document.execCommand('insertHTML', false, '<br>'); }  // Zeilenumbruch in der Zelle
-      else if (e.key === 'Enter') { e.preventDefault(); endEdit(true); const m = mergeAt(selC, selR); selectCell(selC, (m ? m.r + m.rs : selR + 1)); calcFocus(); }
+      else if (e.key === 'Enter') {
+        e.preventDefault(); endEdit(true);
+        if (dokumentModus()) {                      // Word-Gefuehl: Enter oeffnet einen neuen Absatz darunter
+          zeileEinfuegen(selR);
+          activePage().html = gridToHtml(curGrid); renderCalc();
+          selectCell(0, selR + 1); beginEdit(); scheduleSave();
+        } else { const m = mergeAt(selC, selR); selectCell(selC, (m ? m.r + m.rs : selR + 1)); calcFocus(); }
+      }
       else if (e.key === 'Tab') { e.preventDefault(); endEdit(true); const m = mergeAt(selC, selR); selectCell((m ? m.c + m.cs : selC + 1), selR); calcFocus(); }
       else if (e.key === 'Escape') { e.preventDefault(); endEdit(false); calcFocus(); }
       return;
@@ -2672,6 +2687,12 @@ function pageMode(p) { return p.typ === 'calc' ? 'calc' : 'write'; }
    ueber die volle Breite gesetzt und ist damit ein normaler Absatz. Der Gitter-Knopf
    wechselt daher KEINEN Dokumenttyp, er blendet nur die Linien ein und aus.
    Sichtbar nur bei linien === true: bestehende und neue Dokumente starten als Dokument. */
+function dokumentModus() { const p = (typeof activePage === 'function') ? activePage() : null; return !!(p && p.typ === 'calc' && p.linien !== true); }
+/* Neue Zeile unter r einfuegen - im Dokumentmodus ist das schlicht ein neuer Absatz */
+function zeileEinfuegen(r) {
+  if (!curGrid) return;
+  curGrid.zeilen.splice(r + 1, 0, { tag: 'p', attrs: '', cells: [''] });
+}
 function gitterSichtbar(p) { return !!(p && p.typ === 'calc' && p.linien === true); }
 function gitterUmschalten(p) { if (!p) return false; p.linien = !gitterSichtbar(p); return p.linien; }
 function syncGridToggle() { const gt = $('#gridToggle'); if (!gt || !doc) return; gt.classList.toggle('on', gitterSichtbar(activePage())); }
@@ -2683,7 +2704,12 @@ function renderActivePage() {
   appEl.classList.toggle('calc-mode', calc);
   appEl.classList.toggle('lines-off', calc && !gitterSichtbar(p));   // Linien gehoeren zur SEITE, nicht zur App
   syncGridToggle();   // „Gitter"-Knopf spiegelt, ob die Linien sichtbar sind
-  if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; calcFitRows = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
+  if (calc) {
+    $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; calcFitRows = 0;
+    applyFormat(); renderCalc(); selectCell(0, 0); applyZoom();
+    // Dokumentmodus: Cursor steht sofort im Text, man kann losschreiben (kein Zellzeiger)
+    if (dokumentModus() && !viewOnly) setTimeout(() => { try { if (!editingTd) beginEdit(); } catch (_) {} }, 0);
+  }
   else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.sp-err', editor).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); $$('.pgbreak-gap', editor).forEach(g => g.remove()); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.fx', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); alignColseps(); paginateLater(); recomputeFormulas(); }
 }
 // Typ der AKTIVEN Seite wechseln (Modus-Pille)
@@ -3374,6 +3400,15 @@ function deleteRowAt(dr) {
 }
 
 /* ---- Inline-Zellbearbeitung (direkt in der Zelle) ---- */
+function setzeCursorAn(x, y) {
+  try {
+    let rg = null;
+    if (document.caretRangeFromPoint) rg = document.caretRangeFromPoint(x, y);
+    else if (document.caretPositionFromPoint) { const p = document.caretPositionFromPoint(x, y); if (p) { rg = document.createRange(); rg.setStart(p.offsetNode, p.offset); rg.collapse(true); } }
+    if (!rg || !editingTd || !editingTd.contains(rg.startContainer)) return;   // ausserhalb der Zelle: Cursor bleibt am Ende
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rg);
+  } catch (_) {}
+}
 function beginEdit(initial) {
   if (viewOnly) return;   // Ansehen-Modus: keine Zell-Bearbeitung
   const td = tdAt(selC, selR); if (!td) return;
@@ -3666,6 +3701,29 @@ function selfTest() {
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  // --- Dokumentmodus: fuehlt sich an wie Word (nur Cursor, Enter = neuer Absatz) ---
+  ok('zeileEinfuegen setzt einen leeren Absatz darunter', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, zeilen: [{ tag: 'p', attrs: '', cells: ['eins'] }, { tag: 'p', attrs: '', cells: ['zwei'] }], colStops: [] };
+    zeileEinfuegen(0);
+    const r = curGrid.zeilen.map(z => z.cells[0]).join('|');
+    curGrid = alt;
+    return r === 'eins||zwei';
+  })());
+  ok('zeileEinfuegen am Ende haengt an', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, zeilen: [{ tag: 'p', attrs: '', cells: ['a'] }], colStops: [] };
+    zeileEinfuegen(0);
+    const n = curGrid.zeilen.length; curGrid = alt; return n === 2;
+  })());
+  ok('neue Zeile ist ein normaler Absatz (wird zu <p>)', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, zeilen: [{ tag: 'p', attrs: '', cells: ['x'] }], colStops: [] };
+    zeileEinfuegen(0);
+    const h = gridToHtml(curGrid); curGrid = alt;
+    return h === '<p>x</p><p><br></p>';
+  })());
 
   // --- Grundmodell: das Raster IST das Blatt; der Knopf zeigt nur die Linien ---
   ok('neues Dokument startet im Raster (Raster = Grundgeruest)',

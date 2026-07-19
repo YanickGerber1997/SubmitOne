@@ -623,6 +623,14 @@ body[data-theme="dark"] .editor .sp-err{text-decoration-color:#ff7a70}
 .cgrid thead th.cg-col.colsel,.cgrid .cg-row.rowsel{background:var(--accent-soft);color:var(--accent)}
 /* Gitter unsichtbar: das Blatt bleibt ein Raster, sieht aber wie ein Dokument aus */
 .app.lines-off .cgrid th,.app.lines-off .cgrid td{border-color:transparent}
+/* Dokumentmodus: es soll sich wie Word anfuehlen - nur ein Cursor, kein Zellrahmen,
+   kein Zellzeiger, keine Markierungsfarbe. Der Text steht einfach auf dem Blatt. */
+.app.lines-off .cgrid td{cursor:text;vertical-align:top}
+.app.lines-off .cgrid td.sel{background:none}
+.app.lines-off .cgrid td.active{background:none;box-shadow:none}
+.app.lines-off .cgrid td.celledit{outline:none;background:none;white-space:pre-wrap;overflow:visible}
+.app.lines-off .cgrid td.sel::selection,.app.lines-off .cgrid td::selection{background:var(--accent-soft)}
+.app.lines-off #cellHi{display:none}
 .app.lines-off .calc-colruler,.app.lines-off .calc-rowruler{display:none}
 .cgrid td.textcell{text-align:left;vertical-align:top}                 /* Absatz/Überschrift über volle Blattbreite (wie Write) – gleiche Grössen & Abstände */
 .cgrid td.textcell.h1{font-size:1.875em;font-weight:700;line-height:1.2;letter-spacing:-.02em;padding-top:.3em;padding-bottom:.35em}

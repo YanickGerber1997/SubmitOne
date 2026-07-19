@@ -5100,6 +5100,24 @@ function druckDokNachPaper() {
   }, { onError: () => toast('Uebergabe zu gross.', 'warn') });
 }
 
+/* Bildschirmleiste der Druckvorschau - EINMAL definiert, von beiden Druckwegen genutzt.
+   Im Ausdruck via @media print unsichtbar. */
+const DRUCK_LEISTE_CSS = `
+    .scrbar{ position:fixed; top:0; left:0; right:0; height:34px; display:flex; align-items:center; gap:6px;
+      padding:0 10px; background:#f1efe6; border-bottom:1px solid #c5c1af; font-size:12px; z-index:9;
+      font-family:'Helvetica Neue','Segoe UI',Arial,sans-serif; }
+    .scrbar button{ font:inherit; font-weight:600; height:24px; padding:0 10px; cursor:pointer;
+      border:1px solid #a8a390; background:#fff; color:#1c242c; }
+    .scrbar button.pri{ background:#4f7a3c; border-color:#4f7a3c; color:#fff; }
+    .scrbar .sp{ margin-left:auto; color:#565d52; }
+    body{ padding-top:34px; }
+    @media print{ .scrbar{ display:none !important; } body{ padding-top:0 !important; } }`;
+const DRUCK_LEISTE_HTML = `<div class="scrbar">
+    <button class="pri" onclick="window.print()">Drucken / PDF</button>
+    <button onclick="try{ (window.__toPaper||window.opener.druckDokNachPaper)(); }catch(e){ alert('Submit Paper konnte nicht geoeffnet werden.'); }">In Submit Paper oeffnen</button>
+    <span class="sp">In Paper landet die Liste als rechenbares Gitter.</span>
+  </div>`;
+
 function openPrintDoc(title, subtitleHtml, inner, opts) {
   opts = opts || {};
   const b = state.buero || BUERO;
@@ -5156,7 +5174,7 @@ function openPrintDoc(title, subtitleHtml, inner, opts) {
     ? `<div class="ft"><span><b>${esc(b.firma || '')}</b> · ${esc(mwstNote())}</span><span>${fmtDate(todayIso())}</span></div>`
     : `<div class="ft"><span>${esc(b.firma || 'submit one')} · ${esc(mwstNote())}</span><span>${fmtDate(todayIso())}</span></div>`;
   const html = `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>${esc(title)}</title>
-  <style>${design === 'modern' ? styleModern : styleStandard}${opts.extraCss || ''}</style></head><body><div class="page">
+  <style>${design === 'modern' ? styleModern : styleStandard}${opts.extraCss || ''}${DRUCK_LEISTE_CSS}</style></head><body>${DRUCK_LEISTE_HTML}<div class="page">
     ${design === 'modern' ? '<div class="accent-top"></div>' : ''}
     <div class="lh"><div class="logo">${logo}</div><div class="meta">${addr}</div></div>
     <h1>${esc(title)}</h1>
@@ -5166,7 +5184,7 @@ function openPrintDoc(title, subtitleHtml, inner, opts) {
   </div>
   <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>
   </body></html>`;
-  letztesDruckDok = { title: opts.title || title || '', objekt: opts.objekt || '', modul: opts.modul || '', sheets: sheets };
+  letztesDruckDok = { title: title || '', objekt: opts.objekt || '', modul: opts.modul || '', sheets: [{ html: inner || '' }] };
   const w = window.open('', '_blank');
   if (!w) { toast('Bitte Popups für PDF erlauben', 'info'); return; }
   w.document.write(html); w.document.close();
@@ -5237,26 +5255,15 @@ function openSheetDoc(opts) {
     table.t td.num,table.t th.num{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
     .muted{ color:#9aa4b1; } .conf{ display:inline-block; background:#fbe9ea; color:#a01b2b; border:1px solid #e7b3ba; border-radius: 0; padding:2px 8px; font-size:10px; font-weight:700; }
     ${opts.extraCss || ''}
-    /* Leiste nur am Bildschirm: im Ausdruck darf davon nichts erscheinen */
-    .scrbar{ position:fixed; top:0; left:0; right:0; height:34px; display:flex; align-items:center; gap:6px;
-      padding:0 10px; background:#f1efe6; border-bottom:1px solid #c5c1af; font-size:12px; z-index:9; }
-    .scrbar button{ font:inherit; font-weight:600; height:24px; padding:0 10px; cursor:pointer;
-      border:1px solid #a8a390; background:#fff; color:#1c242c; }
-    .scrbar button.pri{ background:#4f7a3c; border-color:#4f7a3c; color:#fff; }
-    .scrbar .sp{ margin-left:auto; color:#565d52; }
-    body{ padding-top:34px; }
-    @media print{ .scrbar{ display:none !important; } body{ padding-top:0; } }
-  </style></head><body>
-  <div class="scrbar">
-    <button class="pri" onclick="window.print()">Drucken / PDF</button>
-    <button onclick="try{ (window.__toPaper||window.opener.druckDokNachPaper)(); }catch(e){ alert('Submit Paper konnte nicht geoeffnet werden.'); }">In Submit Paper oeffnen</button>
-    <span class="sp">In Paper landet die Liste als rechenbares Gitter.</span>
-  </div>${pages}
+    ${DRUCK_LEISTE_CSS}
+  </style></head><body>${DRUCK_LEISTE_HTML}${pages}
   <script>window.onload=function(){ setTimeout(function(){ try{window.focus();}catch(e){} window.print(); }, 250); };<\/script>
   </body></html>`;
+  letztesDruckDok = { title: opts.title || '', objekt: opts.objekt || '', modul: opts.modul || '', sheets: sheets };
   const w = window.open('', '_blank');
   if (!w) { toast('Bitte Popups für PDF erlauben', 'info'); return; }
   w.document.write(html); w.document.close();
+  try { w.__toPaper = druckDokNachPaper; } catch (_) {}
 }
 
 function pdfSubmittenten(pid, mitBetrag) {
@@ -13504,6 +13511,29 @@ function selfTest() {
   eq('initDecision: Lesefehler → Demo behalten (nichts überschreiben)', initDecision(null, true), 'keep-demo');
   eq('initDecision: wirklich leer → Erststart committen', initDecision(null, false), 'commit-demo');
 
+  let __druckFehler = '', __druckFehler2 = '';
+  // Fenster-Attrappe: der Test prueft den CODE, nicht den Browser
+  const __openAlt = window.open;
+  let __gedruckt = null;
+  window.open = () => ({ document: { write: h => { __gedruckt = h; }, close() {} } });
+  // Druckwege wirklich AUSFUEHREN: eine Syntaxpruefung haette den Fehler
+  // 'sheets is not defined' in openPrintDoc nicht gefunden - erst der Aufruf tut es.
+  ok('openPrintDoc laeuft ohne Ausnahme durch', (() => {
+    try { openPrintDoc('Testtitel', 'Untertitel', '<table class="t"><tr><td>a</td></tr></table>', {}); return true; }
+    catch (e) { __druckFehler = (e && e.message) || String(e); return false; }
+  })(), __druckFehler);
+  ok('openPrintDoc fuellt letztesDruckDok (sonst bleibt der Paper-Knopf wirkungslos)',
+    !!(letztesDruckDok && Array.isArray(letztesDruckDok.sheets) && letztesDruckDok.sheets.length));
+  ok('openSheetDoc laeuft ohne Ausnahme durch und fuellt letztesDruckDok', (() => {
+    try { openSheetDoc({ title: 'Buch', sheets: [{ html: '<p>x</p>' }, { html: '<p>y</p>' }] }); }
+    catch (e) { __druckFehler2 = (e && e.message) || String(e); return false; }
+    return !!(letztesDruckDok && letztesDruckDok.sheets && letztesDruckDok.sheets.length === 2);
+  })(), __druckFehler2);
+  ok('erzeugtes Druck-HTML enthaelt die Leiste und den Inhalt',
+    !!__gedruckt && /class="scrbar"/.test(__gedruckt) && /<\/html>/.test(__gedruckt), (__gedruckt || '').slice(0, 60));
+  window.open = __openAlt;
+  ok('Druckleiste ist im Ausdruck ausgeblendet', /@media print\{[^}]*\.scrbar\{ display:none/.test(DRUCK_LEISTE_CSS));
+  ok('Druckleiste hat beide Knoepfe', /window\.print\(\)/.test(DRUCK_LEISTE_HTML) && /__toPaper/.test(DRUCK_LEISTE_HTML));
   // Bruecke nach Submit Paper: EIN Weg fuer alle 18 Druckdokumente
   ok('druckDokNachPaper vorhanden', typeof druckDokNachPaper === 'function');
   ok('ohne Druckdokument passiert nichts Schlimmes', (() => {

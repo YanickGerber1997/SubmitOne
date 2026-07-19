@@ -943,6 +943,10 @@ const TODAY = new Date().toLocaleDateString('de-CH');
    Sie sind zugleich ein Funktionstest: wer eine davon oeffnet, sieht sofort, ob Formeln,
    Einheiten, Summen und Seitenzahlen stimmen. */
 const Z = (...zellen) => '<p>' + zellen.join(COLSEP) + '</p>';
+/* Echte Ueberschrift statt einer fett formatierten Zelle: eine Ueberschriftszeile nimmt
+   in BEIDEN Ansichten die volle Blattbreite und traegt die Schriftgroessen des Dokuments -
+   eine Zelle mit font-size wuerde in Calc nur in Spalte A stehen. */
+const H = (text, stufe) => '<h' + (stufe || 1) + '>' + text + '</h' + (stufe || 1) + '>';
 function rasterVorlage(zeilen, fmt, cfmt, colW) {
   // Leitet auf dokVorlage um, damit AUCH diese Vorlagen Briefkopf und Fusszeile
   // mit Seitenzahl bekommen - sonst waeren es halbe Dokumente.
@@ -1010,11 +1014,11 @@ function positionsBlock(z, kopfZeile, anzahl, startRow, spalten) {
 }
 
 const TEMPLATES = {
-  brief: { titel: 'Geschaeftsbrief', bauen: () => {
+  brief: { titel: 'Geschäftsbrief', bauen: () => {
     const z = [];
     z.push(Z([buerofeld('firma', 'Ihre Firma'), buerofeld('strasse', ''), buerofeld('plzort', '')].filter(Boolean).join(', ')));
     z.push(Z(''));
-    z.push(Z('Empfaenger AG'));
+    z.push(Z('Empfänger AG'));
     z.push(Z('z. H. Frau Muster'));
     z.push(Z('Beispielweg 5'));
     z.push(Z('3000 Bern'));
@@ -1027,7 +1031,7 @@ const TEMPLATES = {
     z.push(Z(''));
     z.push(Z('Hier steht der Inhalt Ihres Schreibens.'));
     z.push(Z(''));
-    z.push(Z('Freundliche Gruesse'));
+    z.push(Z('Freundliche Grüsse'));
     z.push(Z(''));
     z.push(Z(buerofeld('firma', 'Ihre Firma')));
     z.push(Z(''));
@@ -1040,10 +1044,10 @@ const TEMPLATES = {
 
   angebot: { titel: 'Offerte', bauen: () => {
     const z = [];
-    z.push(Z('OFFERTE'));
+    z.push(H('Offerte'));
     z.push(Z('Offert-Nr.', '2026-001', 'Datum', TODAY));
     z.push(Z('Projekt', '...', 'Gewerk / BKP', '...'));
-    z.push(Z('Bauherrschaft', '...', 'Gueltig bis', '...'));
+    z.push(Z('Bauherrschaft', '...', 'Gültig bis', '...'));
     z.push(Z(''));
     z.push(Z('Pos.', 'Leistung', 'Menge', 'Einheit', 'Einheitspreis', 'Betrag'));
     for (let i = 0; i < 10; i++) {
@@ -1055,11 +1059,11 @@ const TEMPLATES = {
     z.push(Z('', 'MWST ' + MWST + ' %', '', '', '', '=F' + zt + '*' + (MWST / 100)));
     z.push(Z('', 'TOTAL inkl. MWST', '', '', '', '=F' + zt + '+F' + mw));
     z.push(Z(''));
-    z.push(Z('BEDINGUNGEN'));
+    z.push(H('Bedingungen', 2));
     z.push(Z('Vertragsgrundlage', 'SIA 118, Ausgabe 2013'));
     z.push(Z('Preisbasis', 'fest bis Bauvollendung, keine Teuerung'));
     z.push(Z('Zahlungskonditionen', '30 Tage netto, 2 % Skonto innert 10 Tagen'));
-    z.push(Z('Ausfuehrung', 'gemaess Terminprogramm der Bauleitung'));
+    z.push(Z('Ausführung', 'gemäss Terminprogramm der Bauleitung'));
     z.push(Z(''));
     z.push(Z('Ort, Datum', '', 'Unternehmer', ''));
     z.push(Z('..............................', '', '..............................', ''));
@@ -1068,13 +1072,12 @@ const TEMPLATES = {
     const cfmt = fettZeile({}, 5, [0, 1, 2, 3, 4, 5]);
     fettZeile(cfmt, 18, [1, 5]);
     fettZeile(cfmt, 20, [0]);
-    cfmt['0,0'] = { b: true, sz: 20 };
     return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 44, 1: 220, 2: 70, 3: 66, 4: 100, 5: 110 } });
   } },
 
   rechnung: { titel: 'Rechnung', bauen: () => {
     const z = [];
-    z.push(Z('RECHNUNG'));
+    z.push(H('Rechnung'));
     z.push(Z('Rechnungs-Nr.', '2026-001', 'Datum', TODAY));
     z.push(Z('Projekt', '...', 'Leistungszeitraum', '...'));
     z.push(Z('An', '...', 'Ihre Bestellung', '...'));
@@ -1096,13 +1099,12 @@ const TEMPLATES = {
     for (let r = 6; r <= 18; r++) { fmt['4,' + r] = 'chf'; fmt['5,' + r] = 'chf'; }
     const cfmt = fettZeile({}, 5, [0, 1, 2, 3, 4, 5]);
     fettZeile(cfmt, 17, [1, 5]);
-    cfmt['0,0'] = { b: true, sz: 20 };
     return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 44, 1: 220, 2: 70, 3: 66, 4: 100, 5: 110 } });
   } },
 
   protokoll: { titel: 'Sitzungsprotokoll', bauen: () => {
     const z = [];
-    z.push(Z('SITZUNGSPROTOKOLL'));
+    z.push(H('Sitzungsprotokoll'));
     z.push(Z('Projekt', '...', 'Nr.', '1'));
     z.push(Z('Datum / Zeit', TODAY, 'Ort', 'Baustelle'));
     z.push(Z('Leitung', '...', 'Protokoll', '...'));
@@ -1114,20 +1116,19 @@ const TEMPLATES = {
     z.push(Z('Nr.', 'Traktandum / Beschluss', 'Wer', 'Bis wann', 'Status'));
     for (let i = 0; i < 10; i++) z.push(Z(String(i + 1), '', '', '', 'offen'));
     z.push(Z(''));
-    z.push(Z('Naechste Sitzung', '...'));
+    z.push(Z('Nächste Sitzung', '...'));
     z.push(Z('Einsprachen innert 10 Tagen an die Bauleitung, sonst gilt das Protokoll als genehmigt.'));
     const cfmt = fettZeile({}, 9, [0, 1, 2, 3, 4]);
-    cfmt['0,0'] = { b: true, sz: 20 };
     return dokVorlage(z, { cfmt: cfmt, colW: { 0: 44, 1: 270, 2: 100, 3: 100, 4: 100 } });
   } },
 
   bautagebuch: { titel: 'Bautagebuch', bauen: () => {
     const z = [];
-    z.push(Z('BAUTAGEBUCH'));
+    z.push(H('Bautagebuch'));
     z.push(Z('Projekt', '...', 'Tag', TODAY));
-    z.push(Z('Wetter', 'bewoelkt', 'Temperatur', '... Grad'));
+    z.push(Z('Wetter', 'bewölkt', 'Temperatur', '… °C'));
     z.push(Z(''));
-    z.push(Z('Firma / Gewerk', 'Personen', 'Stunden', 'Ausgefuehrte Arbeiten'));
+    z.push(Z('Firma / Gewerk', 'Personen', 'Stunden', 'Ausgeführte Arbeiten'));
     for (let i = 0; i < 8; i++) z.push(Z('', '', '', ''));
     const e = 6, l = 13;
     z.push(Z('TOTAL', '=SUMME(B' + e + ':B' + l + ')', '=SUMME(C' + e + ':C' + l + ')', ''));
@@ -1139,13 +1140,12 @@ const TEMPLATES = {
     z.push(Z('Visum Bauleitung', '..............................'));
     const cfmt = fettZeile({}, 4, [0, 1, 2, 3]);
     fettZeile(cfmt, 14, [0, 1, 2]);
-    cfmt['0,0'] = { b: true, sz: 20 };
     return dokVorlage(z, { linien: true, cfmt: cfmt, colW: { 0: 180, 1: 80, 2: 80, 3: 275 } });
   } },
 
   regierapport: { titel: 'Regierapport', bauen: () => {
     const z = [];
-    z.push(Z('REGIERAPPORT'));
+    z.push(H('Regierapport'));
     z.push(Z('Rapport-Nr.', '1', 'Datum', TODAY));
     z.push(Z('Projekt', '...', 'Gewerk', '...'));
     z.push(Z('Bestellt durch', '...', 'Grund der Regie', '...'));
@@ -1171,13 +1171,12 @@ const TEMPLATES = {
     const cfmt = fettZeile({}, 5, [0, 1, 2, 3, 4]);
     fettZeile(cfmt, 12, [0, 1, 2, 3, 4]);
     fettZeile(cfmt, 19, [3, 4]);
-    cfmt['0,0'] = { b: true, sz: 20 };
     return dokVorlage(z, { linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 170, 1: 140, 2: 90, 3: 100, 4: 115 } });
   } },
 
-  maengelliste: { titel: 'Maengelliste', bauen: () => {
+  maengelliste: { titel: 'Mängelliste', bauen: () => {
     const z = [];
-    z.push(Z('MAENGELLISTE'));
+    z.push(H('Mängelliste'));
     z.push(Z('Projekt', '...', 'Datum', TODAY));
     z.push(Z('Aufgenommen durch', '...', 'Abnahme', '...'));
     z.push(Z(''));
@@ -1185,12 +1184,11 @@ const TEMPLATES = {
     for (let i = 0; i < 14; i++) z.push(Z(String(i + 1), '', '', '', '', 'offen', ''));
     const e = 6, l = 19;
     z.push(Z(''));
-    z.push(Z('', 'Offene Maengel', '=ZAEHLENWENN(F' + e + ':F' + l + ';"offen")'));
-    z.push(Z('', 'Erledigte Maengel', '=ZAEHLENWENN(F' + e + ':F' + l + ';"erledigt")'));
+    z.push(Z('', 'Offene Mängel', '=ZAEHLENWENN(F' + e + ':F' + l + ';"offen")'));
+    z.push(Z('', 'Erledigte Mängel', '=ZAEHLENWENN(F' + e + ':F' + l + ';"erledigt")'));
     z.push(Z(''));
-    z.push(Z('Die Maengel sind bis zur genannten Frist zu beheben (SIA 118 Art. 169).'));
+    z.push(Z('Die Mängel sind bis zur genannten Frist zu beheben (SIA 118 Art. 169).'));
     const cfmt = fettZeile({}, 4, [0, 1, 2, 3, 4, 5, 6]);
-    cfmt['0,0'] = { b: true, sz: 20 };
     return dokVorlage(z, { quer: true, linien: true, cfmt: cfmt, colW: { 0: 50, 1: 150, 2: 150, 3: 300, 4: 110, 5: 100, 6: 90 } });
   } },
 
@@ -1199,11 +1197,11 @@ const TEMPLATES = {
                ['Fenster eingebaut', '15'], ['Innenausbau fertig', '20'], ['Abnahme', '10'],
                ['Nach Garantiefrist', '5']];
     const z = [];
-    z.push(Z('ZAHLUNGSPLAN'));
+    z.push(H('Zahlungsplan'));
     z.push(Z('Projekt', '...', 'Datum', TODAY));
     z.push(Z('Unternehmer', '...', 'Werkvertragssumme', '0'));
     z.push(Z(''));
-    z.push(Z('Rate', 'Zahlungsgrund', 'Anteil', 'Betrag', 'Faellig am', 'Bezahlt am'));
+    z.push(Z('Rate', 'Zahlungsgrund', 'Anteil', 'Betrag', 'Fällig am', 'Bezahlt am'));
     R.forEach((x, i) => {
       const r = 6 + i;
       z.push(Z(String(i + 1), x[0], (Number(x[1]) / 100).toString(), '=$D$3*C' + r, '', ''));
@@ -1211,21 +1209,20 @@ const TEMPLATES = {
     const e = 6, l = 5 + R.length;
     z.push(Z('', 'TOTAL', '=SUMME(C' + e + ':C' + l + ')', '=SUMME(D' + e + ':D' + l + ')'));
     z.push(Z(''));
-    z.push(Z('Rueckbehalt 10 % bis Ablauf der Garantiefrist bzw. gegen Garantieschein (SIA 118 Art. 150).'));
+    z.push(Z('Rückbehalt 10 % bis Ablauf der Garantiefrist bzw. gegen Garantieschein (SIA 118 Art. 150).'));
     const fmt = {};
     for (let r = 5; r <= l; r++) { fmt['2,' + r] = 'pct'; fmt['3,' + r] = 'chf'; }
     fmt['3,2'] = 'chf';
     const cfmt = fettZeile({}, 4, [0, 1, 2, 3, 4, 5]);
     fettZeile(cfmt, l, [1, 2, 3]);
-    cfmt['0,0'] = { b: true, sz: 20 };
     return dokVorlage(z, { linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 50, 1: 180, 2: 70, 3: 110, 4: 105, 5: 100 } });
   } },
 
   kostenvoranschlag: { titel: 'Kostenvoranschlag', bauen: () => {
     const z = [];
-    z.push(Z('KOSTENVORANSCHLAG'));
+    z.push(H('Kostenvoranschlag'));
     z.push(Z('Projekt', '...', 'Datum', TODAY));
-    z.push(Z('Genauigkeit', 'plus/minus 10 %', 'Preisstand', TODAY));
+    z.push(Z('Genauigkeit', '± 10 %', 'Preisstand', TODAY));
     z.push(Z(''));
     z.push(Z('BKP', 'Bezeichnung', 'Menge', 'Einheit', 'Einheitspreis', 'Betrag'));
     for (let i = 0; i < 12; i++) {
@@ -1240,23 +1237,22 @@ const TEMPLATES = {
     for (let r = 5; r <= 20; r++) { fmt['4,' + r] = 'chf'; fmt['5,' + r] = 'chf'; }
     const cfmt = fettZeile({}, 4, [0, 1, 2, 3, 4, 5]);
     fettZeile(cfmt, 19, [1, 5]);
-    cfmt['0,0'] = { b: true, sz: 20 };
     return dokVorlage(z, { linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 55, 1: 210, 2: 70, 3: 66, 4: 100, 5: 110 } });
   } },
 
   abnahme: { titel: 'Abnahmeprotokoll', bauen: () => {
     const z = [];
-    z.push(Z('ABNAHMEPROTOKOLL'));
+    z.push(H('Abnahmeprotokoll'));
     z.push(Z('Projekt', '...', 'Datum', TODAY));
     z.push(Z('Gewerk / BKP', '...', 'Werkvertrag vom', '...'));
     z.push(Z('Unternehmer', '...', 'Bauleitung', '...'));
     z.push(Z(''));
-    z.push(Z('ERGEBNIS DER ABNAHME'));
+    z.push(H('Ergebnis der Abnahme', 2));
     z.push(Z('Das Werk wird abgenommen', 'ja / nein'));
-    z.push(Z('Abnahme unter Vorbehalt der Maengel gemaess Liste', 'ja / nein'));
+    z.push(Z('Abnahme unter Vorbehalt der Mängel gemäss Liste', 'ja / nein'));
     z.push(Z('Beginn der Garantiefrist', '...'));
-    z.push(Z('Dauer der Garantie', '2 Jahre, verdeckte Maengel 5 Jahre (SIA 118 Art. 172/180)'));
-    z.push(Z('Rueckbehalt', '10 % bis Ablauf der Ruegefrist'));
+    z.push(Z('Dauer der Garantie', '2 Jahre, verdeckte Mängel 5 Jahre (SIA 118 Art. 172/180)'));
+    z.push(Z('Rückbehalt', '10 % bis Ablauf der Rügefrist'));
     z.push(Z(''));
     z.push(Z('Nr.', 'Festgestellter Mangel', 'Frist', 'Erledigt am'));
     for (let i = 0; i < 8; i++) z.push(Z(String(i + 1), '', '', ''));
@@ -1264,7 +1260,6 @@ const TEMPLATES = {
     z.push(Z('Unternehmer', '..............................', 'Bauleitung', '..............................'));
     const cfmt = fettZeile({}, 5, [0]);
     fettZeile(cfmt, 12, [0, 1, 2, 3]);
-    cfmt['0,0'] = { b: true, sz: 20 };
     return dokVorlage(z, { cfmt: cfmt, colW: { 0: 50, 1: 300, 2: 130, 3: 125 } });
   } },
 
@@ -1272,15 +1267,15 @@ const TEMPLATES = {
   // Bewusst Rasterzeilen statt HTML-Tabellen: nur so rechnen Formeln, greifen
   // Zahlenformate und laesst sich weiterarbeiten. Zugleich ein Funktionstest -
   // wer eine oeffnet, sieht sofort, ob Formeln, Einheiten und Summen stimmen.
-  baukosten: { titel: 'Baukostenuebersicht (BKP)', bauen: () => {
-    const B = [['0', 'Grundstueck'], ['1', 'Vorbereitungsarbeiten'], ['2', 'Gebaeude'],
+  baukosten: { titel: 'Baukostenübersicht (BKP)', bauen: () => {
+    const B = [['0', 'Grundstück'], ['1', 'Vorbereitungsarbeiten'], ['2', 'Gebäude'],
                ['3', 'Betriebseinrichtungen'], ['4', 'Umgebung'], ['5', 'Baunebenkosten'],
                ['6', 'Reserve'], ['9', 'Ausstattung']];
     const z = [];
-    z.push(Z('BAUKOSTENUEBERSICHT NACH BKP'));
+    z.push(H('Baukostenübersicht nach BKP'));
     z.push(Z('Projekt', '...', 'Stand', TODAY));
     z.push(Z(''));
-    z.push(Z('BKP', 'Bezeichnung', 'Kostenschaetzung', 'Voranschlag', 'Prognose', 'Abweichung', 'Anteil'));
+    z.push(Z('BKP', 'Bezeichnung', 'Kostenschätzung', 'Voranschlag', 'Prognose', 'Abweichung', 'Anteil'));
     B.forEach((b, i) => {
       const r = 5 + i;
       z.push(Z(b[0], b[1], '0', '0', '0',
@@ -1295,22 +1290,21 @@ const TEMPLATES = {
       '=SUMME(F' + erste + ':F' + letzte + ')',
       '=WENNFEHLER(F' + tot + '/D' + tot + ';0)'));
     z.push(Z(''));
-    z.push(Z('', 'davon Gebaeude (BKP 2)', '', '', '=SUMMEWENN(A' + erste + ':A' + letzte + ';"2";E' + erste + ':E' + letzte + ')'));
+    z.push(Z('', 'davon Gebäude (BKP 2)', '', '', '=SUMMEWENN(A' + erste + ':A' + letzte + ';"2";E' + erste + ':E' + letzte + ')'));
     const fmt = {};
     [2, 3, 4, 5].forEach(c => spaltenFormat(fmt, c, erste - 1, tot - 1, 'chf'));
     spaltenFormat(fmt, 6, erste - 1, tot - 1, 'pct');
     fmt['4,' + (tot + 1)] = 'chf';
     const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5, 6]);
     fettZeile(cfmt, tot - 1, [1, 2, 3, 4, 5, 6]);
-    cfmt['0,0'] = { b: true, sz: 20 };
     return dokVorlage(z, { quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 230, 2: 130, 3: 130, 4: 130, 5: 130, 6: 90 } });
   } },
 
   terminprogramm: { titel: 'Terminprogramm', bauen: () => {
-    const G = ['Baumeister', 'Zimmermann', 'Spengler / Bedachung', 'Fenster', 'Elektro', 'Sanitaer',
-               'Heizung', 'Gipser', 'Schreiner', 'Bodenbelaege', 'Maler', 'Reinigung'];
+    const G = ['Baumeister', 'Zimmermann', 'Spengler / Bedachung', 'Fenster', 'Elektro', 'Sanitär',
+               'Heizung', 'Gipser', 'Schreiner', 'Bodenbeläge', 'Maler', 'Reinigung'];
     const z = [];
-    z.push(Z('TERMINPROGRAMM'));
+    z.push(H('Terminprogramm'));
     z.push(Z('Projekt', '...', 'Stand', TODAY));
     z.push(Z(''));
     z.push(Z('Gewerk', 'Start', 'Ende', 'Kalendertage', 'Arbeitstage', 'Bemerkung'));
@@ -1327,19 +1321,18 @@ const TEMPLATES = {
       '=SUMME(E' + erste + ':E' + letzte + ')',
       'nicht der Kalenderzeitraum'));
     z.push(Z(''));
-    z.push(Z('Datum eintragen als 01.03.2026 - die Dauer rechnet sich selbst.'));
+    z.push(Z('Datum eintragen als 01.03.2026 – die Dauer rechnet sich selbst.'));
     const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5]);
-    cfmt['0,0'] = { b: true, sz: 20 };
     fettZeile(cfmt, letzte + 1, [0, 3, 4]);
     return dokVorlage(z, { quer: true, linien: true, cfmt: cfmt, colW: { 0: 200, 1: 110, 2: 110, 3: 120, 4: 120, 5: 280 } });
   } },
 
   ausmass: { titel: 'Ausmassblatt', bauen: () => {
     const z = [];
-    z.push(Z('AUSMASS'));
+    z.push(H('Ausmass'));
     z.push(Z('Projekt', '...', 'Gewerk', '...', 'Datum', TODAY));
     z.push(Z(''));
-    z.push(Z('Pos.', 'Bezeichnung', 'Anzahl', 'Laenge', 'Breite', 'Menge', 'Einheit'));
+    z.push(Z('Pos.', 'Bezeichnung', 'Anzahl', 'Länge', 'Breite', 'Menge', 'Einheit'));
     for (let i = 0; i < 12; i++) {
       const r = 5 + i;
       z.push(Z(String(i + 1), '', '', '', '',
@@ -1351,16 +1344,15 @@ const TEMPLATES = {
     spaltenFormat(fmt, 5, erste - 1, letzte, 'm2');
     const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5, 6]);
     fettZeile(cfmt, letzte, [1, 5]);
-    cfmt['0,0'] = { b: true, sz: 20 };
     return dokVorlage(z, { quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 280, 2: 100, 3: 100, 4: 100, 5: 140, 6: 90 } });
   } },
 
   preisspiegel: { titel: 'Offertvergleich (Preisspiegel)', bauen: () => {
     const z = [];
-    z.push(Z('OFFERTVERGLEICH'));
+    z.push(H('Offertvergleich'));
     z.push(Z('Projekt', '...', 'Gewerk', '...', 'Datum', TODAY));
     z.push(Z(''));
-    z.push(Z('Pos.', 'Leistung', 'Firma A', 'Firma B', 'Firma C', 'guenstigste', 'Differenz A'));
+    z.push(Z('Pos.', 'Leistung', 'Firma A', 'Firma B', 'Firma C', 'günstigste', 'Differenz A'));
     for (let i = 0; i < 8; i++) {
       const r = 5 + i;
       z.push(Z(String(i + 1), '', '0', '0', '0',
@@ -1374,19 +1366,18 @@ const TEMPLATES = {
       '=SUMME(F' + erste + ':F' + letzte + ')',
       '=C' + tot + '-F' + tot));
     z.push(Z(''));
-    z.push(Z('', 'Positionen, bei denen A am guenstigsten ist',
+    z.push(Z('', 'Positionen, bei denen A am günstigsten ist',
       '=ZAEHLENWENN(G' + erste + ':G' + letzte + ';"=0")'));
     const fmt = {};
     [2, 3, 4, 5, 6].forEach(c => spaltenFormat(fmt, c, erste - 1, tot - 1, 'chf'));
     const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5, 6]);
     fettZeile(cfmt, tot - 1, [1, 2, 3, 4, 5, 6]);
-    cfmt['0,0'] = { b: true, sz: 20 };
     return dokVorlage(z, { quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 260, 2: 130, 3: 130, 4: 130, 5: 130, 6: 110 } });
   } },
 
   beiblatt: { titel: 'Beiblatt zur Offerte', bauen: () => {
     const z = [];
-    z.push(Z('BEIBLATT ZUR OFFERTE'));
+    z.push(H('Beiblatt zur Offerte'));
     z.push(Z(''));
     z.push(Z('Projekt', '...'));
     z.push(Z('Bauherrschaft', '...'));
@@ -1394,24 +1385,24 @@ const TEMPLATES = {
     z.push(Z('Unternehmer', '...'));
     z.push(Z('Offerte vom', TODAY));
     z.push(Z(''));
-    z.push(Z('BEDINGUNGEN'));
+    z.push(H('Bedingungen', 2));
     [['Vertragsgrundlage', 'SIA 118, Ausgabe 2013'],
      ['Preisbasis', 'fest bis Bauvollendung, keine Teuerung'],
      ['Skonto', '2 % innert 30 Tagen'],
-     ['Rueckbehalt', '10 % bis Abnahme, danach Garantieschein'],
-     ['Garantie', '2 Jahre ab Abnahme, verdeckte Maengel 5 Jahre'],
-     ['Ausfuehrung', 'gemaess Terminprogramm'],
+     ['Rückbehalt', '10 % bis Abnahme, danach Garantieschein'],
+     ['Garantie', '2 Jahre ab Abnahme, verdeckte Mängel 5 Jahre'],
+     ['Ausführung', 'gemäss Terminprogramm'],
      ['Regiearbeiten', 'nur nach schriftlicher Bestellung'],
-     ['Baureinigung', 'taeglich durch Unternehmer'],
+     ['Baureinigung', 'täglich durch Unternehmer'],
      ['Versicherung', 'Bauwesenversicherung durch Bauherrschaft']].forEach(p => z.push(Z(p[0], p[1])));
     z.push(Z(''));
-    z.push(Z('BEMERKUNGEN'));
+    z.push(H('Bemerkungen', 2));
     z.push(Z('...'));
     z.push(Z(''));
     z.push(Z('Ort, Datum', '', 'Unternehmer', ''));
     z.push(Z(''));
     z.push(Z('..............................', '', '..............................', ''));
-    const cfmt = { '0,0': { b: true, sz: 20 } };
+    const cfmt = {};
     fettZeile(cfmt, 8, [0]);
     fettZeile(cfmt, 19, [0]);
     [2, 3, 4, 5, 6].forEach(r => fettZeile(cfmt, r, [0]));
@@ -1420,20 +1411,20 @@ const TEMPLATES = {
 };
 // Vorlagen-Galerie: Kurzbeschreibung + Kategorie-Icon je Vorlage (bessere Auffindbarkeit)
 const TMPL_META = {
-  brief:             { d: 'Schweizer Geschaeftsbrief mit Briefkopf und Beilagen', i: 'doc' },
+  brief:             { d: 'Schweizer Geschäftsbrief mit Briefkopf und Beilagen', i: 'doc' },
   angebot:           { d: 'Offerte nach SIA 118, rechnet MWST und Total', i: 'money' },
   rechnung:          { d: 'Rechnung mit MWST 8.1 %, Skonto und Zahlungsangaben', i: 'money' },
   protokoll:         { d: 'Sitzungsprotokoll mit Traktanden, Terminen und Verteiler', i: 'doc' },
   bautagebuch:       { d: 'Tagesrapport: Wetter, Firmen, Stunden, Vorkommnisse', i: 'list' },
   regierapport:      { d: 'Regiearbeiten mit Stunden, Material und Visum', i: 'list' },
-  maengelliste:      { d: 'Maengel mit Frist und Status, zaehlt offen und erledigt', i: 'list' },
+  maengelliste:      { d: 'Mängel mit Frist und Status, zählt offen und erledigt', i: 'list' },
   zahlungsplan:      { d: 'Raten nach Baufortschritt, rechnet aus der Vertragssumme', i: 'money' },
   kostenvoranschlag: { d: 'Kostenvoranschlag mit Unvorhergesehenem und Total', i: 'money' },
-  abnahme:           { d: 'Abnahmeprotokoll mit Garantiefristen und Maengeln', i: 'doc' },
-  baukosten:         { d: 'BKP 0-9, Voranschlag/Prognose, rechnet Abweichung', i: 'money' },
-  terminprogramm:    { d: 'Gewerke mit Start/Ende, rechnet Kalender- und Arbeitstage', i: 'list' },
-  ausmass:           { d: 'Ausmassblatt, rechnet Mengen in m2', i: 'list' },
-  preisspiegel:      { d: 'Drei Offerten vergleichen, findet die guenstigste', i: 'money' },
+  abnahme:           { d: 'Abnahmeprotokoll mit Garantiefristen und Mängeln', i: 'doc' },
+  baukosten:         { d: 'BKP 0–9, Voranschlag und Prognose, rechnet die Abweichung', i: 'money' },
+  terminprogramm:    { d: 'Gewerke mit Start und Ende, rechnet Kalender- und Arbeitstage', i: 'list' },
+  ausmass:           { d: 'Ausmassblatt, rechnet die Mengen in m²', i: 'list' },
+  preisspiegel:      { d: 'Drei Offerten vergleichen, findet die günstigste', i: 'money' },
   beiblatt:          { d: 'Beiblatt zur Offerte: Bedingungen nach SIA 118', i: 'doc' },
 };
 const TMPL_ICO = {
@@ -4865,6 +4856,21 @@ function selfTest() {
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
 
+  // --- Schreibweise: fehlende Umlaute sehen in einem Schweizer Dokument kaputt aus ---
+  // Bewusst eine Liste bekannter Woerter statt einer allgemeinen Regel: 'ss' ist im
+  // Schweizer Deutsch immer richtig (kein Eszett), und 'ue' steckt auch in
+  // 'eventuell' oder 'individuell' - eine breite Regel gaebe nur Fehlalarme.
+  let __ohneUmlaut = [];
+  {
+    const falsch = /(Maengel|Baukostenueber|Gebaeude|Grundstueck|Sanitaer|Bodenbelaege|Laenge|guenstig|Rueckbehalt|Ausfuehrung|gemaess|Geschaefts|Empfaenger|Gruesse|Naechste|Ausgefuehrt|Faellig|zaehlt|Kostenschaetzung|Maengelliste|Rueckgaengig|Uebersicht|maessig|Waehrung|fuer|ueber(?!s)|Groesse|Hoehe|Flaeche|Traeger|Stuetze|Tuer)/i;
+    Object.keys(TEMPLATES).forEach(k => {
+      const texte = [TEMPLATES[k].titel, (TMPL_META[k] || {}).d || ''];
+      texte.forEach(t => { if (falsch.test(String(t))) __ohneUmlaut.push(k + ': ' + t); });
+    });
+  }
+  ok('Vorlagen-Titel und Beschreibungen benutzen echte Umlaute',
+    __ohneUmlaut.length === 0, __ohneUmlaut.join(' | '));
+
   // --- Layout der Vorlagen: passt alles aufs Blatt? ---
   // Sehen kann ein Test das nicht - nachrechnen schon. Genau das faengt
   // "Zellen komisch unterbrochen": zu breite Spalten werden umbrochen.
@@ -5083,7 +5089,7 @@ function selfTest() {
     // Spalten: C=Schaetzung(2) D=Voranschlag(3) E=Prognose(4) F=Abweichung(5) G=Anteil(6)
     curGrid = { cols: 7, colStops: [], zeilen: [
       { tag: 'p', attrs: '', cells: ['1', 'Vorbereitung', '100', '100', '120', '=E1-D1', '=WENNFEHLER(F1/D1;0)'] },
-      { tag: 'p', attrs: '', cells: ['2', 'Gebaeude', '900', '900', '880', '=E2-D2', '=WENNFEHLER(F2/D2;0)'] },
+      { tag: 'p', attrs: '', cells: ['2', 'Gebäude', '900', '900', '880', '=E2-D2', '=WENNFEHLER(F2/D2;0)'] },
       { tag: 'p', attrs: '', cells: ['', 'TOTAL', '=SUMME(C1:C2)', '=SUMME(D1:D2)', '=SUMME(E1:E2)', '=SUMME(F1:F2)'] },
     ] };
     const abw1 = evalCell(5, 0), anteil1 = evalCell(6, 0);

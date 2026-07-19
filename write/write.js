@@ -70,7 +70,9 @@ function setViewOnly(on) {
   viewOnly = !!on;
   document.body.classList.toggle('view-only', viewOnly);
   const ed = viewOnly ? 'false' : 'true';
-  [editor, $('#zoneH'), $('#zoneF')].forEach(el => { if (el) el.contentEditable = ed; });
+  if (editor) editor.contentEditable = ed;
+  hfBearbeitbar($('#zoneH'), ed === 'true' || ed === true);
+  hfBearbeitbar($('#zoneF'), ed === 'true' || ed === true);
   if (titleEl) titleEl.readOnly = viewOnly;
   const b = $('#btnView'); if (b) { b.classList.toggle('on', viewOnly); b.title = viewOnly ? 'Ansehen-Modus AN – hier klicken zum Bearbeiten' : 'Ansehen-Modus: nur betrachten, keine Änderungen'; }
   if (viewOnly && typeof editingTd !== 'undefined' && editingTd) { try { endEdit(true); } catch (_) {} }
@@ -325,10 +327,11 @@ function openDoc(id) {
   verlaufZurueckStapel.length = 0; verlaufVorStapel.length = 0; standJetzt = null;   // Verlauf gehoert zum Dokument
   clearTimeout(saveTimer);
   doc = migrateDoc(d); fileHandle = null;
-  $('#zoneH').innerHTML = sanitizeHtml(d.kopf || '');
-  $('#zoneF').innerHTML = sanitizeHtml(d.fuss || '');
+  $('#zoneH').innerHTML = hfNorm(sanitizeHtml(d.kopf || ''));
+  $('#zoneF').innerHTML = hfNorm(sanitizeHtml(d.fuss || ''));
   titleEl.value = d.titel || 'Unbenanntes Dokument';
   applySettings();
+  hfAufbauen();
   renderPageNav();
   setTimeout(verlaufZuruecksetzen, 0);   // Ausgangsstand erst nach dem Aufbau merken
   renderActivePage();
@@ -486,6 +489,42 @@ function zelleSpiegeln() {
 /* beenden=true nur dort, wo die Seite gewechselt oder umgebaut wird (Seitenwechsel, neue Seite,
    Typwechsel). Beim Autospeichern MUSS es false bleiben - sonst schliesst sich die Zelle
    mitten im Satz und der Cursor ist weg. Genau das war der Grund fuer 'es bricht einfach ab'. */
+/* ---- Kopf- und Fusszeile: drei Felder (links / Mitte / rechts), jedes mehrzeilig ----
+   Gespeichert wird weiterhin EIN HTML-String - die Dreiteilung steckt als Struktur darin.
+   Dadurch funktionieren Druck, Seitenwiederholung und Platzhalter unveraendert weiter.
+   Alte Dokumente mit einer einzelnen Zeile wandern ins linke Feld. */
+const HF_LEER = '<div class="hf"><div class="hf-l"></div><div class="hf-m"></div><div class="hf-r"></div></div>';
+function hfNorm(html) {
+  const t = String(html == null ? '' : html);
+  if (/class="hf"/.test(t)) return t;
+  if (!t.trim()) return HF_LEER;
+  return '<div class="hf"><div class="hf-l">' + t + '</div><div class="hf-m"></div><div class="hf-r"></div></div>';
+}
+/* Dreiteilige Zeile aus einzelnen Feldern bauen - fuer Vorlagen */
+function hfBau(links, mitte, rechts) {
+  return '<div class="hf"><div class="hf-l">' + (links || '') + '</div>'
+    + '<div class="hf-m">' + (mitte || '') + '</div>'
+    + '<div class="hf-r">' + (rechts || '') + '</div></div>';
+}
+/* Die drei Felder einzeln bearbeitbar machen; die Zone selbst NICHT, sonst wuerde
+   die Eingabetaste die Struktur zerlegen statt eine Zeile im Feld zu erzeugen. */
+function hfBearbeitbar(zone, an) {
+  if (!zone) return;
+  zone.contentEditable = 'false';
+  $$('.hf-l, .hf-m, .hf-r', zone).forEach(f => { f.contentEditable = an ? 'true' : 'false'; });
+}
+function hfAufbauen() {
+  [['#zoneH', 'Kopfzeile'], ['#zoneF', 'Fusszeile']].forEach(([sel, was]) => {
+    const z = $(sel); if (!z) return;
+    if (!$('.hf', z)) z.innerHTML = hfNorm(z.innerHTML);
+    // Beschriftung der leeren Felder nur zur Anzeige setzen, nicht speichern -
+    // der Sanitizer wuerde das Attribut beim Laden ohnehin entfernen.
+    const b = { 'hf-l': was + ' links', 'hf-m': 'Mitte', 'hf-r': 'rechts' };
+    Object.keys(b).forEach(k => { const f = $('.' + k, z); if (f) f.dataset.ph = b[k]; });
+    hfBearbeitbar(z, !viewOnly);
+  });
+}
+
 function capturePage(beenden) {
   const p = activePage(); if (!p) return;
   if (p.typ === 'calc') {
@@ -538,7 +577,7 @@ function standAnwenden(json) {
     doc.titel = d.titel || doc.titel; doc.einstellungen = d.einstellungen || doc.einstellungen;
     doc.rasterCols = d.rasterCols || doc.rasterCols;
     if (doc.aktiv >= doc.seiten.length) doc.aktiv = doc.seiten.length - 1;   // Seite kann weggefallen sein
-    $('#zoneH').innerHTML = doc.kopf; $('#zoneF').innerHTML = doc.fuss;
+    $('#zoneH').innerHTML = hfNorm(doc.kopf); $('#zoneF').innerHTML = hfNorm(doc.fuss);
     if (titleEl) titleEl.value = doc.titel;
     applyPageSetup(); renderActivePage(); renderPageNav();
     persistLibGeprueft(); renderList();
@@ -1054,14 +1093,15 @@ function buerofeld(k, ersatz) { const v = (buero && buero[k] || '').trim(); retu
 /* Briefkopf aus den eigenen Angaben - fehlende Felder fallen still weg, statt leere
    Trennpunkte stehenzulassen. */
 function kopfAusBuero() {
-  const teile = [buerofeld('strasse', ''), buerofeld('plzort', ''), buerofeld('tel', ''), buerofeld('mail', '')].filter(Boolean);
-  const firma = buerofeld('firma', 'Ihre Firma');
-  return '<span style="font-weight:700">' + esc(firma) + '</span>'
-    + (teile.length ? ' &nbsp;&middot;&nbsp; ' + teile.map(esc).join(' &nbsp;&middot;&nbsp; ') : '');
+  const firma = '<span style="font-weight:700">' + esc(buerofeld('firma', 'Ihre Firma')) + '</span>';
+  const anschrift = [buerofeld('strasse', ''), buerofeld('plzort', '')].filter(Boolean).map(esc).join(', ');
+  const kontakt = [buerofeld('tel', ''), buerofeld('mail', '')].filter(Boolean).map(esc).join(' &middot; ');
+  // links die Firma, rechts die Erreichbarkeit - die Mitte bleibt frei fuer den Nutzer
+  return hfBau(firma + (anschrift ? '<br>' + anschrift : ''), '', kontakt);
 }
 function fussAusBuero() {
-  const teile = [buerofeld('firma', 'Ihre Firma'), buerofeld('mwst', '')].filter(Boolean);
-  return teile.map(esc).join(' &nbsp;&middot;&nbsp; ') + ' &nbsp;&middot;&nbsp; Seite {Seite} von {Seiten}';
+  const links = [buerofeld('firma', 'Ihre Firma'), buerofeld('mwst', '')].filter(Boolean).map(esc).join(' &middot; ');
+  return hfBau(links, '', 'Seite {Seite} von {Seiten}');
 }
 const KOPF_STD = '<span style="font-weight:700">Musterbau AG</span> &nbsp;&middot;&nbsp; Musterstrasse 1 &nbsp;&middot;&nbsp; 3000 Bern &nbsp;&middot;&nbsp; 031 000 00 00 &nbsp;&middot;&nbsp; info@musterbau.ch';
 const FUSS_STD = 'Musterbau AG &nbsp;&middot;&nbsp; CHE-123.456.789 MWST &nbsp;&middot;&nbsp; Seite {Seite} von {Seiten}';
@@ -2988,7 +3028,7 @@ function wire() {
   // Kopf-/Fusszeile (eigene Felder – immer erreichbar, nie im Textfluss)
   ['#zoneH', '#zoneF'].forEach(s => {
     const z = $(s);
-    z.addEventListener('input', () => { syncHFfromMaster(); scheduleSave(); });
+    z.addEventListener('input', () => { syncHFfromMaster(); scheduleSave(); });   // Ereignis steigt aus den drei Feldern auf
     z.addEventListener('paste', e => { const html = e.clipboardData?.getData('text/html'); if (html) { e.preventDefault(); document.execCommand('insertHTML', false, sanitizeHtml(html)); syncHFfromMaster(); scheduleSave(); } });
   });
 
@@ -3609,8 +3649,10 @@ function doInsert(kind) {
   if (kind === 'seitenzahl') {   // Platzhalter in die Fusszeile - wird beim Drucken je Blatt ersetzt
     const f = $('#zoneF'); if (!f) return;
     const txt = 'Seite {Seite} von {Seiten}';
-    if (document.activeElement === f) { try { document.execCommand('insertText', false, txt); } catch (_) { f.innerHTML += ' ' + txt; } }
-    else f.innerHTML = (f.innerHTML.trim() ? f.innerHTML + ' &nbsp; ' : '') + txt;
+    if (!$('.hf', f)) f.innerHTML = hfNorm(f.innerHTML);
+    const ziel = $('.hf-r', f);          // Seitenzahl gehoert nach rechts
+    if (ziel) ziel.innerHTML = txt; else f.innerHTML += ' ' + txt;
+    hfBearbeitbar(f, true);
     syncHFfromMaster(); scheduleSave();   // syncHF(el) braucht ein Element - hier ist der Master gemeint
     toast('Seitenzahl in der Fusszeile – beim Drucken wird sie je Blatt eingesetzt.');
     return;
@@ -3621,7 +3663,7 @@ function doInsert(kind) {
   else if (kind === 'table') insertTable();
   else if (kind === 'toc') insertTOC();
   else if (kind === 'hr') { editor.focus(); document.execCommand('insertHTML', false, '<hr><p><br></p>'); afterEdit(); }
-  else if (kind === 'header') { const z = $('#zoneH'); z.focus(); z.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  else if (kind === 'header') { const z = $('#zoneH'); const f = $('.hf-l', z) || z; f.focus(); z.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   else if (kind === 'footer') { const z = $('#zoneF'); z.focus(); z.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
 }
 function insertTOC() {
@@ -5248,6 +5290,46 @@ function selfTest() {
     /Segoe UI/.test(SCHRIFT_STD) && /Helvetica/.test(SCHRIFT_STD) && /Arial/.test(SCHRIFT_STD));
   ok('neues Dokument setzt dichter als Bildschirmtypografie',
     newDocObject().einstellungen.schriftgroesse === 14 && newDocObject().einstellungen.zeilenabstand < 1.6);
+
+  // --- Kopf- und Fusszeile: drei Felder, mehrzeilig ---
+  ok('leere Kopfzeile bekommt die Dreiteilung', (() => {
+    const h = hfNorm('');
+    return /hf-l/.test(h) && /hf-m/.test(h) && /hf-r/.test(h);
+  })());
+  ok('altes einzeiliges Dokument wandert ins linke Feld', (() => {
+    const h = hfNorm('Musterbau AG');
+    return /<div class="hf-l">Musterbau AG<\/div>/.test(h) && /hf-r/.test(h);
+  })());
+  ok('bereits dreiteilige Kopfzeile wird nicht nochmals verpackt', (() => {
+    const einmal = hfNorm('');
+    return hfNorm(einmal) === einmal;
+  })());
+  ok('hfBau setzt die drei Felder an die richtige Stelle', (() => {
+    const h = hfBau('L', 'M', 'R');
+    return h.indexOf('hf-l">L') > 0 && h.indexOf('hf-m">M') > 0 && h.indexOf('hf-r">R') > 0;
+  })());
+  ok('mehrere Zeilen je Feld sind moeglich', (() => {
+    const h = hfBau('Zeile1<br>Zeile2', '', '');
+    return /Zeile1<br>Zeile2/.test(h);
+  })());
+  ok('Briefkopf aus den Firmenangaben ist dreiteilig: Firma links, Kontakt rechts', (() => {
+    const alt = buero;
+    buero = Object.assign({}, BUERO_STD, { firma: 'Gerber Bau AG', plzort: '3000 Bern', tel: '031 000 00 00' });
+    const k = kopfAusBuero();
+    buero = alt;
+    return /hf-l">.*Gerber Bau AG/.test(k) && /hf-r">031 000 00 00/.test(k);
+  })());
+  ok('Fusszeile: Firma links, Seitenzahl rechts', (() => {
+    const alt = buero;
+    buero = Object.assign({}, BUERO_STD, { firma: 'Gerber Bau AG' });
+    const f = fussAusBuero();
+    buero = alt;
+    return /hf-l">Gerber Bau AG/.test(f) && /hf-r">Seite \{Seite\} von \{Seiten\}/.test(f);
+  })());
+  ok('Platzhalter werden auch in der dreiteiligen Fusszeile ersetzt',
+    seitenzahlenEinsetzen(hfBau('Firma', '', 'Seite {Seite} von {Seiten}'), 2, 5).indexOf('Seite 2 von 5') > 0);
+  ok('die Struktur ueberlebt den Sanitizer (div und class sind erlaubt)',
+    ALLOWED_TAGS.has('DIV') && ALLOWED_ATTR['*'].includes('class'));
 
   // --- Vergabe, Vertrag, Abschluss: rechnen die neuen Vorlagen richtig? ---
   ok('der Vorlagensatz deckt den ganzen Ablauf ab', (() => {

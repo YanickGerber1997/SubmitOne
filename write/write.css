@@ -273,6 +273,16 @@ button{font-family:inherit;cursor:pointer}
 .page.quer{width:297mm;min-height:210mm}
 /* Kopf-/Fusszeile = eigene Felder, getrennt vom Fliesstext (immer erreichbar, nie kaputt).
    Blatt = Flex-Spalte → Kopf IMMER ganz oben, Fuss IMMER ganz unten. Höhen einstellbar. */
+/* Kopf-/Fusszeile dreiteilig: links, Mitte, rechts - jedes Feld mehrzeilig.
+   Genau die Aufteilung, die man aus Word kennt. */
+.hf{display:flex;align-items:flex-start;gap:10px;width:100%}
+.hf>div{flex:1 1 0;min-width:0;outline:none}
+.hf-l{text-align:left}
+.hf-m{text-align:center}
+.hf-r{text-align:right}
+.hf>div:empty::before{content:attr(data-ph);color:var(--ink-faint);opacity:.5}
+.hf>div:focus{background:rgba(79,122,60,.06)}
+@media print{.hf>div:empty::before{content:''}.hf>div:focus{background:none}}
 .zone{outline:none;font-size:13px;color:var(--ink-soft);position:relative;z-index:2;flex:0 0 auto}
 .zone-h{padding-top:var(--mt,18mm);padding-bottom:4mm;min-height:var(--kopfH,14mm);border-bottom:1px dashed var(--line)}
 .zone-f{padding-top:4mm;padding-bottom:var(--mb,18mm);min-height:var(--fussH,14mm);border-top:1px dashed var(--line)}

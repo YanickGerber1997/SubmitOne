@@ -2124,6 +2124,40 @@ function htmlToMarkdown(root) {
   });
   return out.replace(/\n{3,}/g, '\n\n').trim() + '\n';
 }
+/* Eine Zelle fuer CSV absichern: Trennzeichen, Anfuehrungszeichen und Zeilenumbrueche
+   muessen in Anfuehrungszeichen, enthaltene Anfuehrungszeichen werden verdoppelt.
+   Ohne das zerschiesst ein einziges Semikolon in einer Bemerkung die ganze Datei. */
+function csvFeld(text, trenn) {
+  const t = String(text == null ? '' : text);
+  if (t.indexOf(trenn) < 0 && t.indexOf('"') < 0 && t.indexOf(NL) < 0 && t.indexOf(CR) < 0) return t;
+  return '"' + t.split('"').join('""') + '"';
+}
+/* Rasterzeilen als CSV. Semikolon als Trenner, weil Excel im deutschen Sprachraum
+   das erwartet und Zahlen mit Dezimalkomma sonst zerfallen. */
+function gridAlsCsv(zeilen, trenn) {
+  const t = trenn || ';';
+  return (zeilen || []).map(z => (z.cells || []).map(c => csvFeld(plainText(c), t)).join(t)).join(NL);
+}
+/* Wie CSV, aber mit den ANGEZEIGTEN Werten: Formeln als Ergebnis, Zahlenformate angewandt -
+   der Empfaenger will die Zahl sehen, nicht die Formel. */
+function blattAlsCsv(trenn) {
+  const t = trenn || ';';
+  if (!curGrid) return '';
+  const ur = calcUsedRange();
+  const zeilen = [];
+  for (let r = 0; r <= ur.maxR; r++) {
+    const spalten = [];
+    for (let c = 0; c <= ur.maxC; c++) {
+      let v; try { v = evalCell(c, r); } catch (_) { v = ''; }
+      const f = curFmt()[c + ',' + r];
+      if (typeof v === 'number' && f) v = fmtNum(v, f);
+      spalten.push(csvFeld(v == null ? '' : String(v), t));
+    }
+    zeilen.push(spalten.join(t));
+  }
+  return zeilen.join(NL);
+}
+
 function doExport(kind) {
   if (!doc) return;
   captureDoc();
@@ -2134,6 +2168,13 @@ function doExport(kind) {
   else if (kind === 'md') { download(name + '.md', htmlToMarkdown(mdRoot), 'text/markdown'); toast('Markdown exportiert'); }
   else if (kind === 'docx') { buildDocx(); }
   else if (kind === 'odt') { buildOdt(); }
+  else if (kind === 'csv') {
+    if (activePage().typ !== 'calc') { toast('CSV gibt es fuer Rasterblaetter.'); return; }
+    if (!curGrid) curGrid = htmlToGrid(activePage().html);
+    // BOM voran, sonst zeigt Excel Umlaute falsch an
+    download(name + '.csv', String.fromCharCode(65279) + blattAlsCsv(';'), 'text/csv');
+    toast('CSV exportiert (Semikolon getrennt, fuer Excel)');
+  }
 }
 
 /* ============================================================
@@ -4443,6 +4484,11 @@ function beginEdit(initial) {
   const td = tdAt(selC, selR); if (!td) return;
   editingTd = td;
   td.classList.add('celledit'); td.contentEditable = 'true';
+  // Rechtschreibpruefung des Browsers (vollstaendiges Woerterbuch) auch im Raster.
+  // Die eigene Pruefung greift nur im Fliesstext-Editor - und der wird nicht mehr benutzt,
+  // seit jede Seite ein Rasterblatt ist. Ohne das schreibt man voellig ungeprueft.
+  td.spellcheck = true;
+  td.setAttribute('lang', 'de-CH');
   if (initial != null) td.textContent = initial;             // direkt lostippen ersetzt den Inhalt
   else td.innerHTML = gridGet(curGrid, selC, selR) || '';    // vorhandenen Inhalt (inkl. Zeilenumbrüche) bearbeiten
   td.focus();
@@ -4616,7 +4662,9 @@ function unwrapSpell(root) { $$('.sp-err', root).forEach(s => s.replaceWith(docu
 function cleanEditorHTML() { const c = editor.cloneNode(true); c.querySelectorAll('.sp-err').forEach(s => s.replaceWith(document.createTextNode(s.textContent))); c.querySelectorAll('.pgbreak-gap').forEach(g => g.remove()); return c.innerHTML; }
 function spellcheckNow() {
   if (!doc || !spellOn) return;
-  if (activePage() && activePage().typ === 'calc') return;     // nur Fliesstext prüfen
+  // HINWEIS: greift nur im Fliesstext-Editor. Seit jede Seite ein Rasterblatt ist, laeuft diese
+  // Pruefung faktisch nicht mehr - im Raster uebernimmt die Browser-Pruefung (siehe beginEdit).
+  if (activePage() && activePage().typ === 'calc') return;
   const off = caretOffset(editor);
   unwrapSpell(editor);
   const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, {
@@ -4962,6 +5010,24 @@ function selfTest() {
     curGrid = alt;
     return kal === 7 && arb === 5 && leer === '';
   })());
+
+  // --- CSV-Export ---
+  ok('einfaches Feld bleibt unangetastet', csvFeld('Beton', ';') === 'Beton');
+  ok('Feld mit Trennzeichen kommt in Anfuehrungszeichen',
+    csvFeld('Beton; wasserdicht', ';') === '"Beton; wasserdicht"');
+  ok('enthaltene Anfuehrungszeichen werden verdoppelt',
+    csvFeld('Rohr 2" Durchmesser', ';') === '"Rohr 2"" Durchmesser"');
+  ok('Zeilenumbruch in der Zelle bricht die Datei nicht',
+    csvFeld('Zeile1' + NL + 'Zeile2', ';') === '"Zeile1' + NL + 'Zeile2"');
+  ok('leeres Feld bleibt leer', csvFeld('', ';') === '' && csvFeld(null, ';') === '');
+  ok('Komma als Trenner beachtet das Komma, nicht das Semikolon',
+    csvFeld('a,b', ',') === '"a,b"' && csvFeld('a,b', ';') === 'a,b');
+  ok('gridAlsCsv baut Zeilen und Spalten', (() => {
+    const z = [{ cells: ['Pos', 'Menge'] }, { cells: ['Beton', '12.5'] }];
+    return gridAlsCsv(z, ';') === 'Pos;Menge' + NL + 'Beton;12.5';
+  })());
+  ok('gridAlsCsv nimmt Auszeichnung weg (nur Werte)',
+    gridAlsCsv([{ cells: ['<b>fett</b>'] }], ';') === 'fett');
 
   // --- Sortieren ---
   ok('Sortieren nach Zahl statt nach Zeichen (10 kommt nach 9)', (() => {

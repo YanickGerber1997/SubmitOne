@@ -1879,11 +1879,12 @@ function wire() {
     const td = e.target.closest('td[data-c]'); if (!td) return;
     if (editingTd && editingTd !== td) endEdit(true);
     if (dokumentModus() && !e.shiftKey) {
-      // Word-Gefuehl: ein Klick setzt den Cursor in den Text, statt eine Zelle zu markieren
-      const x = e.clientX, y = e.clientY;
-      selectCell(+td.dataset.c, +td.dataset.r);
+      // Write-Modus: eine Zeile ist EINE durchgehende Zeile wie in Word. Egal in welche Spalte
+      // geklickt wird - man landet immer vorne in der Zeile. Spalten gibt es sichtbar nur in Calc.
+      const x = e.clientX, y = e.clientY, r = +td.dataset.r;
+      selectCell(0, r);
       if (!editingTd) beginEdit();
-      setzeCursorAn(x, y);
+      setzeCursorAn(x, y);   // innerhalb der Zeile an die Klickstelle, sonst ans Textende
       return;
     }
     gridDragging = true; e.preventDefault();
@@ -1932,6 +1933,22 @@ function wire() {
       }
       else if (e.key === 'Tab') { e.preventDefault(); endEdit(true); const m = mergeAt(selC, selR); selectCell((m ? m.c + m.cs : selC + 1), selR); calcFocus(); }
       else if (e.key === 'Escape') { e.preventDefault(); endEdit(false); calcFocus(); }
+      else if (dokumentModus() && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        const ziel = selR + (e.key === 'ArrowDown' ? 1 : -1);      // Word-Gefuehl: Pfeile wechseln die Zeile
+        if (ziel < 0) return;
+        e.preventDefault(); zelleSpiegeln();
+        if (editingTd) { editingTd.contentEditable = 'false'; editingTd.classList.remove('celledit'); editingTd = null; }
+        selectCell(0, ziel); beginEdit();
+      }
+      else if (dokumentModus() && e.key === 'Backspace' && selR > 0 && cursorAmZeilenAnfang()) {
+        e.preventDefault(); zelleSpiegeln();                       // Rueckschritt am Zeilenanfang haengt an die Zeile darueber an
+        if (editingTd) { editingTd.contentEditable = 'false'; editingTd.classList.remove('celledit'); editingTd = null; }
+        const naht = zeilenVerbinden(selR);
+        activePage().html = gridToHtml(curGrid); renderCalc();
+        selectCell(0, selR - 1); beginEdit();
+        if (editingTd && naht >= 0) cursorAnTextPos(editingTd, naht);
+        scheduleSave();
+      }
       return;
     }
     const k = e.key, ext = e.shiftKey;
@@ -2800,9 +2817,31 @@ function zeileEinfuegen(r) {
   if (!curGrid) return;
   curGrid.zeilen.splice(r + 1, 0, { tag: 'p', attrs: '', cells: [''] });
 }
+/* Zeile r an die darueberliegende anhaengen und entfernen - das Gegenstueck zu zeileEinfuegen.
+   Rueckgabe: Textlaenge der oberen Zeile VOR dem Anhaengen = Position der Nahtstelle. */
+function rohText(h) {   // wie plainText, aber OHNE Leerzeichen zu kuerzen - fuer Cursor-Positionen
+  return String(h == null ? '' : h).replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+}
+function zeilenVerbinden(r) {
+  if (!curGrid || r < 1 || r >= curGrid.zeilen.length) return -1;
+  const oben = curGrid.zeilen[r - 1], unten = curGrid.zeilen[r];
+  const vorher = oben.cells[0] || '';
+  const naht = rohText(vorher).length;   // Leerzeichen zaehlen mit, sonst sitzt der Cursor daneben
+  oben.cells[0] = vorher + (unten.cells[0] || '');
+  for (let i = 1; i < unten.cells.length; i++) if ((unten.cells[i] || '') !== '') oben.cells[i] = (oben.cells[i] || '') + unten.cells[i];
+  curGrid.zeilen.splice(r, 1);
+  return naht;
+}
 function gitterSichtbar(p) { return !!(p && p.typ === 'calc' && p.linien === true); }
 function gitterUmschalten(p) { if (!p) return false; p.linien = !gitterSichtbar(p); return p.linien; }
-function syncGridToggle() { const gt = $('#gridToggle'); if (!gt || !doc) return; gt.classList.toggle('on', gitterSichtbar(activePage())); }
+function syncGridToggle() {
+  const gt = $('#gridToggle'); if (!gt || !doc) return;
+  const an = gitterSichtbar(activePage());
+  gt.classList.toggle('on', an);
+  const l = $('#gridToggleLbl'); if (l) l.textContent = an ? 'Calc' : 'Write';   // zeigt, worin man gerade schreibt
+  gt.title = an ? 'Calc – Raster sichtbar, Zellen rechnen. Klicken: zurück zu Write' : 'Write – schreiben wie in Word. Klicken: Raster zeigen (Calc)';
+}
 function renderActivePage() {
   if (!doc) return;
   const p = activePage(), m = pageMode(p);
@@ -3513,6 +3552,31 @@ function deleteRowAt(dr) {
 }
 
 /* ---- Inline-Zellbearbeitung (direkt in der Zelle) ---- */
+function cursorAnTextPos(el, pos) {
+  try {
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n, acc = 0;
+    while ((n = w.nextNode())) {
+      const len = (n.nodeValue || '').length;
+      if (acc + len >= pos) {
+        const rg = document.createRange(); rg.setStart(n, Math.max(0, pos - acc)); rg.collapse(true);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rg); return true;
+      }
+      acc += len;
+    }
+    const rg = document.createRange(); rg.selectNodeContents(el); rg.collapse(false);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rg);
+  } catch (_) {}
+  return false;
+}
+function cursorAmZeilenAnfang() {
+  try {
+    const sel = getSelection();
+    if (!sel || !sel.isCollapsed || !editingTd) return false;
+    const rg = sel.getRangeAt(0).cloneRange();
+    rg.selectNodeContents(editingTd); rg.setEnd(sel.anchorNode, sel.anchorOffset);
+    return rg.toString().length === 0;
+  } catch (_) { return false; }
+}
 function setzeCursorAn(x, y) {
   try {
     let rg = null;
@@ -3818,6 +3882,44 @@ function selfTest() {
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  // --- Write-Modus: eine Zeile ist EINE Zeile (wie Word), Absaetze verbinden/trennen ---
+  ok('zeilenVerbinden haengt die Zeile an die darueberliegende an', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, zeilen: [{ tag: 'p', attrs: '', cells: ['Hallo '] }, { tag: 'p', attrs: '', cells: ['Welt'] }], colStops: [] };
+    const naht = zeilenVerbinden(1);
+    const txt = curGrid.zeilen[0].cells[0], n = curGrid.zeilen.length;
+    curGrid = alt;
+    return txt === 'Hallo Welt' && n === 1 && naht === 6;
+  })());
+  ok('rohText kuerzt Leerzeichen NICHT (plainText schon) - sonst sitzt der Cursor daneben',
+    rohText('Hallo ') === 'Hallo ' && plainText('Hallo ') === 'Hallo');
+  ok('zeilenVerbinden meldet die Nahtstelle (dort steht danach der Cursor)', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, zeilen: [{ tag: 'p', attrs: '', cells: ['<b>Fett</b>'] }, { tag: 'p', attrs: '', cells: ['x'] }], colStops: [] };
+    const naht = zeilenVerbinden(1); curGrid = alt;
+    return naht === 4;   // Textlaenge OHNE Auszeichnung
+  })());
+  ok('zeilenVerbinden nimmt weitere Spalten mit (nichts geht verloren)', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 2, zeilen: [{ tag: 'p', attrs: '', cells: ['a', 'b'] }, { tag: 'p', attrs: '', cells: ['c', 'd'] }], colStops: [] };
+    zeilenVerbinden(1);
+    const z = curGrid.zeilen[0].cells.join('|'); curGrid = alt;
+    return z === 'ac|bd';
+  })());
+  ok('zeilenVerbinden in der ersten Zeile tut nichts (kein Absturz)', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, zeilen: [{ tag: 'p', attrs: '', cells: ['a'] }], colStops: [] };
+    const r = zeilenVerbinden(0), n = curGrid.zeilen.length; curGrid = alt;
+    return r === -1 && n === 1;
+  })());
+  ok('Einfuegen und Verbinden heben sich auf', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, zeilen: [{ tag: 'p', attrs: '', cells: ['Text'] }], colStops: [] };
+    zeileEinfuegen(0); zeilenVerbinden(1);
+    const r = curGrid.zeilen.length === 1 && curGrid.zeilen[0].cells[0] === 'Text';
+    curGrid = alt; return r;
+  })());
 
   // --- Schreibfluss: Autospeichern darf die laufende Zellbearbeitung nicht beenden ---
   ok('capturePage nimmt einen Parameter (beenden) - sonst schliesst Autospeichern die Zelle',

@@ -150,53 +150,116 @@ function activePage() { return doc.seiten[doc.aktiv]; }
 let curGrid = null;   // aktuelles Raster der aktiven Seite (Calc-Ansicht)
 const COLSEP = '<span class="colsep" contenteditable="false">⇥</span>';
 function cellText(frag) { const d = document.createElement('div'); d.innerHTML = frag || ''; return (d.textContent || '').replace(/​/g, '').trim(); }
+const BLOCK_KEEP = /^(p|h1|h2|h3|h4|blockquote|pre)$/;   // MUSS Teilmenge von ALLOWED_TAGS sein – sonst entfernt sanitizeHtml den Tag beim Zurueckschalten stillschweigend
+function plainText(frag) {   // DOM-frei (auch im Node-Test nutzbar): reiner Text zum Vergleichen
+  return String(frag || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/​/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ').trim();
+}
+function attrStr(el) {   // ALLE Attribute des Blocks bewahren – hier steckt Ausrichtung, Einzug, Farbe
+  return [...((el && el.attributes) || [])].map(a => ` ${a.name}="${esc(a.value)}"`).join('');
+}
 function htmlToGrid(html) {
   const tpl = document.createElement('template'); tpl.innerHTML = html || '';
   const zeilen = [], stops = [];   // stops[i] = Position (mm ab Rand), an der Spalte i endet → gemeinsame Spalten für Write & Calc
-  const blockRow = b => {
+  let grp = 0;
+  const blockRow = (b, extra) => {
     const cells = []; let cur = '';
     b.childNodes.forEach(n => {
       if (n.nodeType === 1 && n.classList && n.classList.contains('colsep')) {
         if (n.dataset && n.dataset.tab) { const i = cells.length, v = parseFloat(n.dataset.tab); if (v > 0) stops[i] = Math.max(stops[i] || 0, v); }
         cells.push(cur); cur = '';
       }
-      else if (n.nodeType === 3 && n.textContent.indexOf('\t') >= 0) {       // echte Tabs im Text = Spalten
-        const parts = n.textContent.split('\t');
+      else if (n.nodeType === 3 && n.textContent.indexOf('	') >= 0) {       // echte Tabs im Text = Spalten
+        const parts = n.textContent.split('	');
         parts.forEach((p, idx) => { if (idx > 0) { cells.push(cur); cur = ''; } cur += esc(p); });
       }
       else cur += (n.nodeType === 1 ? n.outerHTML : esc(n.textContent));
     });
     cells.push(cur);
-    zeilen.push({ tag: (b.tagName || 'P').toLowerCase(), cells });
+    zeilen.push(Object.assign({ tag: (b.tagName || 'P').toLowerCase(), attrs: attrStr(b), cells }, extra || {}));
+  };
+  // Bloecke, die das Raster nicht verlustfrei zerlegen kann, kommen als „raw" durch:
+  // im Gitter lesbar als Text, beim Zurueckschalten 1:1 im Original – solange sie nicht bearbeitet wurden.
+  const rawRows = (b, rows) => {
+    const id = ++grp, raw = b.outerHTML, key = plainText(raw);
+    (rows && rows.length ? rows : [{ tag: 'p', cells: [esc(plainText(raw))] }])
+      .forEach((r, i) => zeilen.push(Object.assign({ attrs: '' }, r, { rawId: id, raw: i === 0 ? raw : '', rawKey: i === 0 ? key : '' })));
   };
   [...tpl.content.children].forEach(b => {
-    if (b.tagName === 'TABLE') {                                            // echte Write-Tabelle = Gitterzeilen
-      b.querySelectorAll('tr').forEach(tr => {
-        const cells = [...tr.children].map(td => td.innerHTML.trim());
-        zeilen.push({ tag: 'p', cells: cells.length ? cells : [''] });
+    const tn = (b.tagName || 'P').toLowerCase();
+    if (tn === 'table') {                                                   // echte Write-Tabelle: Struktur merken, damit sie Tabelle bleibt
+      const id = ++grp, tAttrs = attrStr(b);
+      const trs = [...b.querySelectorAll('tr')];
+      if (!trs.length) { rawRows(b); return; }
+      trs.forEach(tr => {
+        const tds = [...tr.children];
+        zeilen.push({
+          tag: 'p', attrs: '', cells: tds.length ? tds.map(td => td.innerHTML.trim()) : [''],
+          tbl: id, tblAttrs: tAttrs, trAttrs: attrStr(tr),
+          cellTag: tds.map(td => (td.tagName || 'TD').toLowerCase()), cellAttrs: tds.map(td => attrStr(td)),
+        });
       });
-    } else if (b.classList && b.classList.contains('toc')) {                // Inhaltsverzeichnis: saubere Zeilen, nicht als Wort-Salat
-      zeilen.push({ tag: 'h3', cells: ['Inhaltsverzeichnis'] });
-      const links = b.querySelectorAll('.toc-list a, a[data-go]');
-      links.forEach(a => { const t = (a.textContent || '').trim(); if (t) zeilen.push({ tag: 'p', cells: [esc(t)] }); });
-      if (!links.length) zeilen.push({ tag: 'p', cells: [''] });
-    } else blockRow(b);
+    } else if (tn === 'ul' || tn === 'ol') {                                 // Liste: je Punkt eine Zeile, bleibt beim Zurueck eine Liste
+      const id = ++grp, lAttrs = attrStr(b);
+      const lis = [...b.children].filter(x => x.tagName === 'LI');
+      if (!lis.length) { rawRows(b); return; }
+      lis.forEach(li => blockRow(li, { list: tn, listId: id, listAttrs: lAttrs }));
+    } else if (b.classList && b.classList.contains('toc')) {                 // Inhaltsverzeichnis: lesbar im Raster, unveraendert zurueck
+      const rows = [{ tag: 'h3', cells: ['Inhaltsverzeichnis'] }];
+      b.querySelectorAll('.toc-list a, a[data-go]').forEach(a => {
+        const t = (a.textContent || '').trim(); if (t) rows.push({ tag: 'p', cells: [esc(t)] });
+      });
+      rawRows(b, rows);
+    } else if (BLOCK_KEEP.test(tn)) blockRow(b);
+    else rawRows(b);                                                         // div/figure/… unangetastet durchreichen
   });
-  if (!zeilen.length) zeilen.push({ tag: 'p', cells: [''] });
+  if (!zeilen.length) zeilen.push({ tag: 'p', attrs: '', cells: [''] });
   return { cols: Math.max(1, ...zeilen.map(z => z.cells.length)), zeilen, colStops: stops };
 }
 function colsepAt(i, grid) {   // Spaltentrenner – mit Tab-Position (mm), falls bekannt
   const pos = grid && grid.colStops && grid.colStops[i];
   return pos != null ? `<span class="colsep" data-tab="${pos}" contenteditable="false">⇥</span>` : COLSEP;
 }
+function gridBlock(z, grid) {   // eine normale Zeile → Absatz/Ueberschrift, Attribute bleiben erhalten
+  const tag = BLOCK_KEEP.test(z.tag || '') ? z.tag : 'p';
+  const cells = (z.cells && z.cells.length ? z.cells : ['']).slice();
+  while (cells.length > 1 && (cells[cells.length - 1] || '') === '') cells.pop();   // leere End-Spalten weg → keine überflüssigen Tabs in Write
+  let inner = ''; cells.forEach((c, i) => { inner += (c || ''); if (i < cells.length - 1) inner += colsepAt(i, grid); });
+  return `<${tag}${z.attrs || ''}>${inner || '<br>'}</${tag}>`;
+}
 function gridToHtml(grid) {
-  return grid.zeilen.map(z => {
-    const tag = /^h[1-3]$/.test(z.tag) ? z.tag : 'p';
-    const cells = (z.cells.length ? z.cells : ['']).slice();
-    while (cells.length > 1 && (cells[cells.length - 1] || '') === '') cells.pop();   // leere End-Spalten weg → keine überflüssigen Tabs in Write
-    let inner = ''; cells.forEach((c, i) => { inner += (c || ''); if (i < cells.length - 1) inner += colsepAt(i, grid); });
-    return `<${tag}>${inner || '<br>'}</${tag}>`;
-  }).join('') || '<p><br></p>';
+  const rows = (grid && grid.zeilen) || [];
+  const nimm = (i, pruef) => { const g = []; while (i < rows.length && pruef(rows[i])) g.push(rows[i++]); return [g, i]; };
+  let out = '', i = 0;
+  while (i < rows.length) {
+    const z = rows[i];
+    if (z.rawId) {                                    // Sonderblock: unveraendert → Original zurueck, bearbeitet → als Absaetze
+      const id = z.rawId; let g; [g, i] = nimm(i, r => r.rawId === id);
+      const jetzt = plainText(g.map(r => (r.cells || []).join(' ')).join(' '));
+      out += (jetzt === (z.rawKey || '') && z.raw) ? z.raw : g.map(r => gridBlock(r, grid)).join('');
+      continue;
+    }
+    if (z.tbl) {                                      // Tabelle bleibt Tabelle
+      const id = z.tbl; let g; [g, i] = nimm(i, r => r.tbl === id);
+      out += `<table${z.tblAttrs || ''}><tbody>` + g.map(r => {
+        const ct = r.cellTag || [], ca = r.cellAttrs || [];
+        return `<tr${r.trAttrs || ''}>` + (r.cells || ['']).map((c, k) =>
+          `<${ct[k] || 'td'}${ca[k] || ''}>${c || ''}</${ct[k] || 'td'}>`).join('') + '</tr>';
+      }).join('') + '</tbody></table>';
+      continue;
+    }
+    if (z.listId) {                                   // Liste bleibt Liste
+      const id = z.listId; let g; [g, i] = nimm(i, r => r.listId === id);
+      out += `<${z.list || 'ul'}${z.listAttrs || ''}>` + g.map(r => {
+        const inner = gridBlock(Object.assign({}, r, { tag: 'p', attrs: '' }), grid).replace(/^<p>|<\/p>$/g, '');
+        return `<li${r.attrs || ''}>${inner}</li>`;
+      }).join('') + `</${z.list || 'ul'}>`;
+      continue;
+    }
+    out += gridBlock(z, grid); i++;
+  }
+  return out || '<p><br></p>';
 }
 function gridGet(grid, c, r) { const z = grid.zeilen[r]; return z ? (z.cells[c] || '') : ''; }
 function gridEnsure(grid, c, r) {
@@ -1613,11 +1676,12 @@ function wire() {
   $('#pvClose').addEventListener('click', () => $('#previewOverlay').hidden = true);
   $('#pvPrint').addEventListener('click', printFromPreview);
 
-  // „Gitter"-Schalter: Calc ist das Grundgerüst – der Knopf blendet NUR die Linien ein/aus (kein Engine-Wechsel)
+  // „Gitter"-Schalter: EIN Mechanismus – an = Raster (Calc), aus = Dokument (Write). Symmetrisch, jederzeit zurueck.
+  // Vorher gab es zwei ueberlagerte Wege (Typwechsel UND eine globale Linien-Klasse); das war der Grund,
+  // warum sich das Umschalten je nach Vorgeschichte der Seite anders verhielt.
   $('#gridToggle').addEventListener('click', () => {
     if (!doc) return;
-    if (activePage().typ !== 'calc') { setPageType('calc'); appEl.classList.remove('lines-off'); syncGridToggle(); return; }   // Alt-Dokumente einmalig ins Raster
-    appEl.classList.toggle('lines-off');   // Linien aus = Dokumentansicht, Linien an = Raster
+    setPageType(activePage().typ === 'calc' ? 'write' : 'calc');
     syncGridToggle();
   });
   // Formelzeile im Write-Blatt (Etappe 3): Enter schreibt Wert/Formel-Ergebnis in die angeklickte Zelle
@@ -2532,7 +2596,7 @@ function printFromPreview() {
    ============================================================ */
 const MODE_META = { write: ['✍', 'Submit Write'], calc: ['▦', 'Submit Calc'] };
 function pageMode(p) { return p.typ === 'calc' ? 'calc' : 'write'; }
-function syncGridToggle() { const gt = $('#gridToggle'); if (!gt || !doc) return; gt.classList.toggle('on', activePage().typ === 'calc' && !appEl.classList.contains('lines-off')); }
+function syncGridToggle() { const gt = $('#gridToggle'); if (!gt || !doc) return; gt.classList.toggle('on', activePage().typ === 'calc'); }
 function renderActivePage() {
   if (!doc) return;
   const p = activePage(), m = pageMode(p);
@@ -3477,6 +3541,46 @@ function selfTest() {
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  // --- Gitter <-> Dokument: verlustfrei umschalten (der Kern des „Gitter"-Schalters) ---
+  const G = (zeilen, extra) => gridToHtml(Object.assign({ cols: 2, zeilen, colStops: [] }, extra || {}));
+  ok('Ausrichtung/Einzug bleiben (Block-Attribute)',
+    /<p style="text-align:center">Mitte<\/p>/.test(G([{ tag: 'p', attrs: ' style="text-align:center"', cells: ['Mitte'] }])));
+  ok('BLOCK_KEEP ist Teilmenge von ALLOWED_TAGS (sonst raeumt sanitizeHtml still auf)',
+    ['p','h1','h2','h3','h4','blockquote','pre'].every(t => BLOCK_KEEP.test(t) && ALLOWED_TAGS.has(t.toUpperCase()))
+    && !BLOCK_KEEP.test('h5') && !BLOCK_KEEP.test('h6'));
+  ok('Ueberschrift h4 bleibt h4 (frueher zu <p> plattgemacht)',
+    /<h4>Vier<\/h4>/.test(G([{ tag: 'h4', attrs: '', cells: ['Vier'] }])));
+  ok('unbekannter Tag faellt sicher auf <p> zurueck',
+    /^<p>X<\/p>$/.test(G([{ tag: 'script', attrs: '', cells: ['X'] }])));
+  ok('Liste bleibt Liste (frueher Wortsalat in einer Zelle)', (() => {
+    const r = G([{ tag: 'li', attrs: '', cells: ['eins'], list: 'ul', listId: 1, listAttrs: '' },
+                 { tag: 'li', attrs: '', cells: ['zwei'], list: 'ul', listId: 1, listAttrs: '' }]);
+    return /^<ul><li>eins<\/li><li>zwei<\/li><\/ul>$/.test(r);
+  })());
+  ok('nummerierte Liste behaelt ihren Typ',
+    /^<ol[\s>]/.test(G([{ tag: 'li', attrs: '', cells: ['a'], list: 'ol', listId: 2, listAttrs: '' }])));
+  ok('Tabelle bleibt Tabelle (frueher unwiederbringlich zu Absaetzen)', (() => {
+    const r = G([{ tag: 'p', attrs: '', cells: ['A', 'B'], tbl: 3, tblAttrs: '', trAttrs: '', cellTag: ['th', 'td'], cellAttrs: ['', ''] }]);
+    return /<table><tbody><tr><th>A<\/th><td>B<\/td><\/tr><\/tbody><\/table>/.test(r);
+  })());
+  ok('zwei Tabellen verschmelzen NICHT', (() => {
+    const r = G([{ tag: 'p', attrs: '', cells: ['1'], tbl: 1, cellTag: ['td'], cellAttrs: [''] },
+                 { tag: 'p', attrs: '', cells: ['2'], tbl: 2, cellTag: ['td'], cellAttrs: [''] }]);
+    return (r.match(/<table>/g) || []).length === 2;
+  })());
+  ok('unveraenderter Sonderblock kommt 1:1 zurueck (Inhaltsverzeichnis, Figur)', (() => {
+    const raw = '<div class="toc"><b>Inhalt</b></div>';
+    return G([{ tag: 'p', attrs: '', cells: ['Inhalt'], rawId: 9, raw, rawKey: plainText(raw) }]) === raw;
+  })());
+  ok('BEARBEITETER Sonderblock wird zu Absaetzen (Aenderung geht nicht verloren)', (() => {
+    const raw = '<div class="toc"><b>Inhalt</b></div>';
+    const r = G([{ tag: 'p', attrs: '', cells: ['Neuer Text'], rawId: 9, raw, rawKey: plainText(raw) }]);
+    return r === '<p>Neuer Text</p>';
+  })());
+  ok('leeres Gitter ergibt einen leeren Absatz', gridToHtml({ zeilen: [] }) === '<p><br></p>');
+  ok('plainText ist DOM-frei und vergleichbar',
+    plainText('<b>Hallo</b>&nbsp;&amp; <i>Welt</i>') === 'Hallo & Welt');
 
   // Leerzustand (erster Eindruck): ordner-spezifisch, Aktions-Knopf nur bei „Dokumente"
   { const _af = activeFolder;

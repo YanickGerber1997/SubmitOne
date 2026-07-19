@@ -385,9 +385,17 @@ function setDirty(v) {
    Ziehen ergibt einen Bereich. */
 let punktModus = null;   // { c1, r1, len } - len = Laenge des zuletzt eingesetzten Bezugs
 
-function formelEingabe() {
-  return !!editingTd && /^\s*=/.test(editingTd.textContent || '');
+/* Wo wird gerade eine Formel getippt? Zwei Orte sind moeglich und beide muessen
+   funktionieren: in der ZELLE (man tippt = und schreibt weiter) und in der
+   FORMELZEILE oben (der aus Excel gewohnte Weg). Vorher war nur die Zelle abgedeckt. */
+function formelZiel() {
+  const fi = $('#formulaInput');
+  if (fi && document.activeElement === fi && /^\s*=/.test(fi.value || '')) return fi;
+  // Nullbreite-Zeichen entfernen: sie stehen sonst vor dem = und die Pruefung schlaegt fehl
+  if (editingTd && /^\s*=/.test((editingTd.textContent || '').replace(/\u200b/g, ''))) return editingTd;
+  return null;
 }
+function formelEingabe() { return !!formelZiel(); }
 /* Adresse bzw. Bereich aus zwei Eckpunkten - rein, im Test pruefbar */
 function bezugText(c1, r1, c2, r2) {
   const a = cellKey(c1, r1);
@@ -395,15 +403,40 @@ function bezugText(c1, r1, c2, r2) {
   return cellKey(Math.min(c1, c2), Math.min(r1, r2)) + ':' + cellKey(Math.max(c1, c2), Math.max(r1, r2));
 }
 function bezugEinsetzen(text) {
-  if (!editingTd) return;
-  try {
-    editingTd.focus();
-    if (punktModus && punktModus.len > 0) {
-      for (let i = 0; i < punktModus.len; i++) document.execCommand('delete');   // vorherigen Bezug ersetzen
-    }
-    document.execCommand('insertText', false, text);
+  const ziel = formelZiel(); if (!ziel) return;
+  const weg = (punktModus && punktModus.len) || 0;
+  // Fall 1: Formelzeile (ein echtes Eingabefeld) - ueber die Cursorposition
+  if (ziel.tagName === 'INPUT') {
+    const p = ziel.selectionStart == null ? ziel.value.length : ziel.selectionStart;
+    const von = Math.max(0, p - weg);
+    ziel.value = ziel.value.slice(0, von) + text + ziel.value.slice(p);
+    const neu = von + text.length;
+    try { ziel.setSelectionRange(neu, neu); } catch (_) {}
+    ziel.focus();
     if (punktModus) punktModus.len = text.length;
-  } catch (_) {}
+    return;
+  }
+  // Fall 2: Zelle (contenteditable)
+  try {
+    ziel.focus();
+    if (weg > 0) for (let i = 0; i < weg; i++) document.execCommand('delete');
+    const ok = document.execCommand('insertText', false, text);
+    if (ok === false) throw new Error('insertText abgelehnt');
+  } catch (_) {
+    // Rueckfallweg, falls der Browser den Befehl verweigert: Textknoten von Hand setzen
+    try {
+      const sel = getSelection();
+      if (sel && sel.rangeCount) {
+        const rg = sel.getRangeAt(0);
+        rg.deleteContents();
+        const kn = document.createTextNode(text);
+        rg.insertNode(kn);
+        rg.setStartAfter(kn); rg.collapse(true);
+        sel.removeAllRanges(); sel.addRange(rg);
+      } else ziel.textContent = (ziel.textContent || '') + text;
+    } catch (_) { ziel.textContent = (ziel.textContent || '') + text; }
+  }
+  if (punktModus) punktModus.len = text.length;
 }
 function punktZeigen(c1, r1, c2, r2) {
   $$('#pageGrid td.pmref').forEach(t => t.classList.remove('pmref'));
@@ -2430,7 +2463,7 @@ function wire() {
       return;
     }
     const td = e.target.closest('td[data-c]'); if (!td) return;
-    if (formelEingabe() && td !== editingTd) {
+    if (formelEingabe() && td !== editingTd) {   // gilt fuer Zelle UND Formelzeile
       // Formel offen: Klick setzt den Bezug ein, statt die Auswahl umzustellen
       e.preventDefault();
       const c = +td.dataset.c, r = +td.dataset.r;
@@ -5328,6 +5361,51 @@ function selfTest() {
     bereichAusfuellen(0, 0, 0, 0, 0, 1);
     const q = cellText(gridGet(curGrid, 0, 0)); curGrid = alt;
     return q === 'Quelle';
+  })());
+
+  // --- Bezug per Klick: das Einsetzen selbst durchspielen ---
+  ok('Klick setzt den Bezug an der Cursorstelle in die Formel', (() => {
+    const altZ = formelZiel, altP = punktModus;
+    const feld = { tagName: 'INPUT', value: '=SUMME(', selectionStart: 7,
+                   setSelectionRange(x) { this.selectionStart = x; }, focus() {} };
+    formelZiel = () => feld;
+    punktModus = { c1: 0, r1: 0, len: 0 };
+    bezugEinsetzen('A1');
+    const nach1 = feld.value;
+    bezugEinsetzen('A1:B3');            // waehrend des Ziehens: ersetzt den vorherigen Bezug
+    const nach2 = feld.value;
+    formelZiel = altZ; punktModus = altP;
+    return nach1 === '=SUMME(A1' && nach2 === '=SUMME(A1:B3';
+  })());
+  ok('nach dem Loslassen kommt ein ZWEITER Bezug dazu, statt den ersten zu ersetzen', (() => {
+    const altZ = formelZiel, altP = punktModus;
+    const feld = { tagName: 'INPUT', value: '=A1+', selectionStart: 4,
+                   setSelectionRange(x) { this.selectionStart = x; }, focus() {} };
+    formelZiel = () => feld;
+    punktModus = { c1: 0, r1: 0, len: 0 };   // len 0 = neuer Bezug (wird beim Loslassen gesetzt)
+    bezugEinsetzen('B2');
+    const v = feld.value;
+    formelZiel = altZ; punktModus = altP;
+    return v === '=A1+B2';
+  })());
+  ok('Bezug wird MITTEN in die Formel eingesetzt, nicht angehaengt', (() => {
+    const altZ = formelZiel, altP = punktModus;
+    const feld = { tagName: 'INPUT', value: '=+2', selectionStart: 1,
+                   setSelectionRange(x) { this.selectionStart = x; }, focus() {} };
+    formelZiel = () => feld;
+    punktModus = { c1: 0, r1: 0, len: 0 };
+    bezugEinsetzen('C7');
+    const v = feld.value;
+    formelZiel = altZ; punktModus = altP;
+    return v === '=C7+2';
+  })());
+  ok('ohne offene Formel passiert nichts', (() => {
+    const altZ = formelZiel;
+    formelZiel = () => null;
+    let fehler = false;
+    try { bezugEinsetzen('A1'); } catch (_) { fehler = true; }
+    formelZiel = altZ;
+    return !fehler;
   })());
 
   // --- Bezug per Klick ("Zeigen") ---

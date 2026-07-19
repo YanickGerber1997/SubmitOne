@@ -1136,6 +1136,15 @@ function blattBreitePx(quer) {
   const m = (doc && doc.einstellungen && doc.einstellungen.margins) || { left: 22, right: 22 };
   return ((quer ? 297 : 210) - (m.left || 22) - (m.right || 22)) * MM;
 }
+/* Gleich breite Spalten, die das Blatt genau ausfuellen. Fuer Dokumente ohne echte
+   Tabelle (Brief, Vertrag): der Text laeuft ueber alle Spalten, die Aufteilung ist
+   sauber und nichts steht ueber dem Rand. */
+function spaltenGleich(anzahl, quer) {
+  const w = Math.floor(blattBreitePx(quer) / anzahl);
+  const o = {};
+  for (let c = 0; c < anzahl; c++) o[c] = w;
+  return o;
+}
 function dokVorlage(zeilen, opt) {
   opt = opt || {};
   return {
@@ -1144,7 +1153,10 @@ function dokVorlage(zeilen, opt) {
     pages: [Object.assign({
       id: uid(), typ: 'calc', linien: !!opt.linien, html: zeilen.join(''),
       fmt: opt.fmt || {}, cfmt: opt.cfmt || {}, colW: opt.colW || {},
-      fill: opt.fill || {}, txtcol: {}, borders: opt.borders || {}, rowH: {}, merges: [], dispCols: 0, dispRows: 0,
+      fill: opt.fill || {}, txtcol: {}, borders: opt.borders || {}, rowH: {}, merges: [],
+      // Spaltenzahl festnageln: ohne das haengt das Raster weitere Spalten in Standardbreite
+      // an, und die Summe laeuft ueber den Blattrand - dann wirkt alles nach rechts geschoben.
+      dispCols: Object.keys(opt.colW || {}).length || 0, dispRows: 0,
     }, opt.quer ? { format: 'A4', ausrichtung: 'quer' } : {})],
   };
 }
@@ -1184,7 +1196,7 @@ const TEMPLATES = {
     z.push(Z(''));
     z.push(Z('Beilagen: keine'));
     const cfmt = { '0,9': { b: true } };
-    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 610 } });
+    return dokVorlage(z, { cfmt: cfmt, colW: spaltenGleich(6) });   // sechs gleiche Spalten, Text laeuft darueber
   } },
 
   angebot: { titel: 'Offerte', bauen: () => {
@@ -1457,7 +1469,7 @@ const TEMPLATES = {
     kopfzeileGestalten(cfmt, fill, borders, 3, [0, 1, 2, 3, 4, 5, 6]);
     summenzeileGestalten(cfmt, borders, tot - 1, [1, 2, 3, 4, 5, 6]);
     [2, 3, 4, 5, 6].forEach(c => spalteRechts(cfmt, c, 4, tot - 1));
-    return dokVorlage(z, { fill: fill, borders: borders, quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 230, 2: 130, 3: 130, 4: 130, 5: 130, 6: 90 } });
+    return dokVorlage(z, { fill: fill, borders: borders, quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 270, 2: 132, 3: 132, 4: 132, 5: 132, 6: 96 } });
   } },
 
   terminprogramm: { titel: 'Terminprogramm', bauen: () => {
@@ -1508,7 +1520,7 @@ const TEMPLATES = {
     kopfzeileGestalten(cfmt, fill, borders, 3, [0, 1, 2, 3, 4, 5, 6]);
     summenzeileGestalten(cfmt, borders, letzte, [1, 5]);
     [2, 3, 4, 5].forEach(c => spalteRechts(cfmt, c, 4, letzte));
-    return dokVorlage(z, { fill: fill, borders: borders, quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 280, 2: 100, 3: 100, 4: 100, 5: 140, 6: 90 } });
+    return dokVorlage(z, { fill: fill, borders: borders, quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 320, 2: 110, 3: 110, 4: 110, 5: 150, 6: 80 } });
   } },
 
   preisspiegel: { titel: 'Offertvergleich (Preisspiegel)', bauen: () => {
@@ -1600,7 +1612,7 @@ const TEMPLATES = {
     [2, 3, 5].forEach(c => spaltenFormat(fmt, c, 6, 15, 'chf'));
     fmt['2,15'] = 'num0';
     return dokVorlage(z, { quer: true, linien: true, fill: fill, borders: borders, fmt: fmt, cfmt: cfmt,
-      colW: { 0: 44, 1: 240, 2: 140, 3: 110, 4: 100, 5: 140, 6: 70 } });
+      colW: { 0: 50, 1: 280, 2: 150, 3: 120, 4: 110, 5: 150, 6: 85 } });
   } },
 
   vergabeantrag: { titel: 'Vergabeantrag', bauen: () => {
@@ -5493,6 +5505,22 @@ function selfTest() {
     for (let c = 0; c < spalten; c++) if (!(p.colW && p.colW[c] > 0)) __ohneBreite.push(k + ' Sp.' + c);
   });
   ok('jede Vorlage gibt jeder benutzten Spalte eine Breite', __ohneBreite.length === 0, __ohneBreite.join(', '));
+  // Die Spalten muessen das Blatt nicht nur PASSEN, sondern auch FUELLEN -
+  // sonst klebt der Inhalt links und rechts bleibt ein leerer Streifen.
+  let __schmal = [];
+  Object.keys(TEMPLATES).forEach(k => {
+    const p = TEMPLATES[k].bauen().pages[0];
+    const summe = Object.keys(p.colW || {}).reduce((t, c) => t + (p.colW[c] || 0), 0);
+    const platz = blattBreitePx(p.ausrichtung === 'quer');
+    const anteil = summe / platz;
+    if (anteil < 0.95 || anteil > 1) __schmal.push(k + ' ' + Math.round(anteil * 100) + '%');
+  });
+  ok('die Spalten jeder Vorlage fuellen ihr Blatt (95-100 %)', __schmal.length === 0, __schmal.join(', '));
+  ok('die Spaltenzahl ist je Vorlage festgenagelt (sonst haengt das Raster weitere an)',
+    Object.keys(TEMPLATES).every(k => {
+      const p = TEMPLATES[k].bauen().pages[0];
+      return p.dispCols === Object.keys(p.colW || {}).length && p.dispCols > 0;
+    }));
   ok('die Spalten jeder Vorlage passen auf ihr Blatt', (() => {
     const zuBreit = [];
     Object.keys(TEMPLATES).forEach(k => {

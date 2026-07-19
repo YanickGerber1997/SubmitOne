@@ -2697,7 +2697,7 @@ function doInsert(kind) {
     const txt = 'Seite {Seite} von {Seiten}';
     if (document.activeElement === f) { try { document.execCommand('insertText', false, txt); } catch (_) { f.innerHTML += ' ' + txt; } }
     else f.innerHTML = (f.innerHTML.trim() ? f.innerHTML + ' &nbsp; ' : '') + txt;
-    syncHF(); scheduleSave();
+    syncHFfromMaster(); scheduleSave();   // syncHF(el) braucht ein Element - hier ist der Master gemeint
     toast('Seitenzahl in der Fusszeile – beim Drucken wird sie je Blatt eingesetzt.');
     return;
   }

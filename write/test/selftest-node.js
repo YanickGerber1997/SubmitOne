@@ -59,6 +59,18 @@ catch (e) { console.log('LADEFEHLER beim Auswerten von write.js:\n', (e && e.sta
 
 if (sandbox.__ERR) { console.log('SELFTEST-FEHLER:\n', sandbox.__ERR); process.exit(1); }
 const R = sandbox.__R;
+if (R) {  // Quelltext-Waechter: Aufrufe, die zur Laufzeit sicher fehlschlagen wuerden
+  const src0 = fs.readFileSync(file, 'utf8');
+  const pruef = [
+    ['syncHF() ohne Element', /[^a-zA-Z_$]syncHF\(\s*\)/],
+    ['capturePage(true) fehlt beim Seitenwechsel', /switchPage[\s\S]{0,120}capturePage\(\s*\)/],
+  ];
+  pruef.forEach(([name, re]) => {
+    const schlecht = re.test(src0);
+    R.R.push({ name: 'Quelltext: ' + name, ok: !schlecht });
+    schlecht ? R.fail++ : R.pass++;
+  });
+}
 if (!R) { console.log('Kein Ergebnis – selfTest() nicht erreichbar.'); process.exit(1); }
 console.log('\n=== SUBMIT PAPER · Selbsttest (headless) ===');
 for (const r of R.R) console.log((r.ok ? 'OK   ' : 'FAIL ') + '| ' + r.name + (r.msg ? '  → ' + r.msg : ''));

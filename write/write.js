@@ -290,6 +290,7 @@ function tabelleToHtml(tab) {   // alte Calc-Tabelle → HTML-Zeilen (Migration)
 
 function openDoc(id) {
   const d = lib.docs[id]; if (!d) return;
+  verlaufZurueckStapel.length = 0; verlaufVorStapel.length = 0; standJetzt = null;   // Verlauf gehoert zum Dokument
   if (doc && doc.id !== id && dirty) { clearTimeout(saveTimer); autosave(); }  // alten Stand sichern, bevor gewechselt wird
   clearTimeout(saveTimer);
   doc = migrateDoc(d); fileHandle = null;
@@ -298,6 +299,7 @@ function openDoc(id) {
   titleEl.value = d.titel || 'Unbenanntes Dokument';
   applySettings();
   renderPageNav();
+  setTimeout(verlaufZuruecksetzen, 0);   // Ausgangsstand erst nach dem Aufbau merken
   renderActivePage();
   lib.currentId = id; persistLib();
   setDirty(false); renderList();
@@ -345,6 +347,82 @@ function capturePage() {
   if (p.typ === 'calc') { if (editingTd) endEdit(true); if (curGrid) p.html = gridToHtml(curGrid); }   // offene Zellbearbeitung zuerst sichern
   else p.html = cleanEditorHTML();   // ohne Rechtschreib-Markierungen speichern
 }
+/* ============ Rückgängig / Wiederholen ============
+   Schnappschuss-Verlauf des ganzen Dokuments. Angesetzt in autosave(), weil dort
+   captureDoc() gerade alles eingesammelt hat (offene Zellbearbeitung, Kopf/Fuss, Titel) -
+   das ist der einzige Punkt, an dem der Zustand garantiert vollstaendig ist.
+   Ein Schritt = ein Tipp-Schub (autosave ist auf 800 ms gebremst), nicht ein Zeichen. */
+const VERLAUF_MAX = 80;
+let verlaufZurueckStapel = [], verlaufVorStapel = [], standJetzt = null, verlaufLaeuft = false;
+
+function verlaufZuruecksetzen() {
+  verlaufZurueckStapel.length = 0; verlaufVorStapel.length = 0;
+  standJetzt = schnappschuss();          // Ausgangsstand: der geoeffnete Zustand
+  syncVerlaufKnoepfe();
+}
+function schnappschuss() {
+  if (!doc) return null;
+  try {
+    return JSON.stringify({ seiten: doc.seiten, kopf: doc.kopf, fuss: doc.fuss, titel: doc.titel,
+      einstellungen: doc.einstellungen, rasterCols: doc.rasterCols });
+  } catch (_) { return null; }
+}
+function verlaufMerken() {
+  if (verlaufLaeuft) return;                 // eigene Wiederherstellung nicht als Aenderung zaehlen
+  const neu = schnappschuss(); if (!neu) return;
+  if (standJetzt && standJetzt !== neu) {
+    verlaufZurueckStapel.push(standJetzt);
+    if (verlaufZurueckStapel.length > VERLAUF_MAX) verlaufZurueckStapel.shift();
+    verlaufVorStapel.length = 0;             // neue Aenderung -> Wiederholen verfaellt (wie ueberall)
+  }
+  standJetzt = neu;
+  syncVerlaufKnoepfe();
+}
+function standAnwenden(json) {
+  let d; try { d = JSON.parse(json); } catch (_) { return false; }
+  if (!d || !Array.isArray(d.seiten) || !d.seiten.length) return false;
+  verlaufLaeuft = true;
+  try {
+    if (editingTd) endEdit(false);           // offene Zellbearbeitung verwerfen, sonst schreibt sie zurueck
+    doc.seiten = d.seiten; doc.kopf = d.kopf || ''; doc.fuss = d.fuss || '';
+    doc.titel = d.titel || doc.titel; doc.einstellungen = d.einstellungen || doc.einstellungen;
+    doc.rasterCols = d.rasterCols || doc.rasterCols;
+    if (doc.aktiv >= doc.seiten.length) doc.aktiv = doc.seiten.length - 1;   // Seite kann weggefallen sein
+    $('#zoneH').innerHTML = doc.kopf; $('#zoneF').innerHTML = doc.fuss;
+    if (titleEl) titleEl.value = doc.titel;
+    applyPageSetup(); renderActivePage(); renderPageNav();
+    persistLib(); renderList();
+  } finally { verlaufLaeuft = false; }
+  return true;
+}
+function verlaufZurueck() {
+  if (!doc) return false;
+  captureDoc();
+  verlaufMerken();   // seit dem letzten Speichern getippt? -> das ist ein eigener Schritt, sonst faellt er unter den Tisch
+  if (!verlaufZurueckStapel.length) { toast('Nichts zum Rückgängigmachen.'); return false; }
+  const jetzt = schnappschuss();
+  const ziel = verlaufZurueckStapel.pop();
+  if (!standAnwenden(ziel)) return false;
+  if (jetzt) verlaufVorStapel.push(jetzt);
+  standJetzt = ziel; syncVerlaufKnoepfe();
+  return true;
+}
+function verlaufVor() {
+  if (!doc || !verlaufVorStapel.length) { toast('Nichts zum Wiederholen.'); return false; }
+  captureDoc();
+  const jetzt = schnappschuss();
+  const ziel = verlaufVorStapel.pop();
+  if (!standAnwenden(ziel)) return false;
+  if (jetzt) verlaufZurueckStapel.push(jetzt);
+  standJetzt = ziel; syncVerlaufKnoepfe();
+  return true;
+}
+function syncVerlaufKnoepfe() {
+  const u = $('#btnUndo'), r = $('#btnRedo');
+  if (u) u.disabled = !verlaufZurueckStapel.length;
+  if (r) r.disabled = !verlaufVorStapel.length;
+}
+
 function captureDoc() {
   if (!doc) return;
   capturePage();
@@ -356,6 +434,7 @@ function captureDoc() {
 function autosave() {
   if (!doc) return;
   captureDoc();
+  verlaufMerken();
   if (persistLib()) { setDirty(false); renderList(); }
   else { saveState.classList.remove('saving'); saveState.classList.add('dirty'); $('.lbl', saveState).textContent = 'Speicher voll!'; warnQuota(); }
 }
@@ -1806,6 +1885,9 @@ function wire() {
     activePage().html = gridToHtml(curGrid); renderCalc(); selectCell(selC, selR); calcFocus(); scheduleSave();
   };
   { const b = $('#btnAutoSum'); if (b) b.addEventListener('click', autoSumKlick); }
+  { const u = $('#btnUndo'), r = $('#btnRedo');
+    if (u) u.addEventListener('click', verlaufZurueck);
+    if (r) r.addEventListener('click', verlaufVor); }
   $('#formulaInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); commitCell(e.target.value); selectCell(selC, selR + 1); calcFocus(); }
     else if (e.key === 'Tab') { e.preventDefault(); commitCell(e.target.value); selectCell(selC + 1, selR); calcFocus(); }
@@ -2063,7 +2145,9 @@ function wire() {
     if ((e.key === 'Delete' || e.key === 'Backspace')) {
       const im = $('img.sel', editor); if (im) { e.preventDefault(); im.remove(); afterEdit(); return; }
     }
-    if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); printPreview(); }   // Strg+P → eigene Druckvorschau
+    if (mod && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); verlaufZurueck(); }        // Strg+Z
+    else if (mod && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { e.preventDefault(); verlaufVor(); }   // Strg+Y / Strg+Umschalt+Z
+    else if (mod && e.key.toLowerCase() === 'p') { e.preventDefault(); printPreview(); }   // Strg+P → eigene Druckvorschau
     else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveFile(e.shiftKey); }
     else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); openFile(); }
     else if (mod && e.key.toLowerCase() === 'n') { e.preventDefault(); createDoc(); }
@@ -3707,6 +3791,56 @@ function selfTest() {
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  // --- Rueckgaengig / Wiederholen: Stapel-Logik ---
+  ok('Verlauf: Schnappschuss bildet Seiten, Kopf, Fuss und Titel ab', (() => {
+    const alt = doc;
+    doc = { seiten: [{ typ: 'calc', html: '<p>a</p>' }], kopf: 'K', fuss: 'F', titel: 'T', einstellungen: {}, rasterCols: 6 };
+    const j = schnappschuss(); doc = alt;
+    return /"html":"<p>a<\/p>"/.test(j) && /"kopf":"K"/.test(j) && /"fuss":"F"/.test(j) && /"titel":"T"/.test(j);
+  })());
+  ok('Verlauf: gleiche Aenderung zweimal legt nur EINEN Schritt ab', (() => {
+    const ad = doc, az = verlaufZurueckStapel.slice(), av = verlaufVorStapel.slice(), aj = standJetzt;
+    doc = { seiten: [{ typ: 'calc', html: '<p>1</p>' }], kopf: '', fuss: '', titel: 'T', einstellungen: {}, rasterCols: 6 };
+    verlaufZurueckStapel.length = 0; verlaufVorStapel.length = 0; standJetzt = schnappschuss();
+    verlaufMerken();                                   // nichts geaendert -> kein Schritt
+    const nach1 = verlaufZurueckStapel.length;
+    doc.seiten[0].html = '<p>2</p>'; verlaufMerken();   // geaendert -> ein Schritt
+    const nach2 = verlaufZurueckStapel.length;
+    verlaufMerken();                                   // unveraendert -> kein weiterer
+    const nach3 = verlaufZurueckStapel.length;
+    doc = ad; verlaufZurueckStapel.length = 0; verlaufZurueckStapel.push(...az); verlaufVorStapel.length = 0; verlaufVorStapel.push(...av); standJetzt = aj;
+    return nach1 === 0 && nach2 === 1 && nach3 === 1;
+  })());
+  ok('Verlauf: neue Aenderung laesst Wiederholen verfallen', (() => {
+    const ad = doc, az = verlaufZurueckStapel.slice(), av = verlaufVorStapel.slice(), aj = standJetzt;
+    doc = { seiten: [{ typ: 'calc', html: '<p>1</p>' }], kopf: '', fuss: '', titel: 'T', einstellungen: {}, rasterCols: 6 };
+    verlaufZurueckStapel.length = 0; verlaufVorStapel.length = 0; standJetzt = schnappschuss();
+    verlaufVorStapel.push('irgendwas');
+    doc.seiten[0].html = '<p>2</p>'; verlaufMerken();
+    const leer = verlaufVorStapel.length === 0;
+    doc = ad; verlaufZurueckStapel.length = 0; verlaufZurueckStapel.push(...az); verlaufVorStapel.length = 0; verlaufVorStapel.push(...av); standJetzt = aj;
+    return leer;
+  })());
+  ok('Verlauf: Stapel waechst nicht unbegrenzt (Grenze ' + VERLAUF_MAX + ')', (() => {
+    const ad = doc, az = verlaufZurueckStapel.slice(), av = verlaufVorStapel.slice(), aj = standJetzt;
+    doc = { seiten: [{ typ: 'calc', html: '<p>0</p>' }], kopf: '', fuss: '', titel: 'T', einstellungen: {}, rasterCols: 6 };
+    verlaufZurueckStapel.length = 0; verlaufVorStapel.length = 0; standJetzt = schnappschuss();
+    for (let i = 1; i <= VERLAUF_MAX + 25; i++) { doc.seiten[0].html = '<p>' + i + '</p>'; verlaufMerken(); }
+    const n = verlaufZurueckStapel.length;
+    doc = ad; verlaufZurueckStapel.length = 0; verlaufZurueckStapel.push(...az); verlaufVorStapel.length = 0; verlaufVorStapel.push(...av); standJetzt = aj;
+    return n === VERLAUF_MAX;
+  })());
+  ok('Verlauf: kaputter Schnappschuss wird abgewiesen (kein Datenverlust)',
+    standAnwenden('kein json') === false && standAnwenden('{"seiten":[]}') === false);
+  ok('Verlauf: Wiederherstellung zaehlt nicht als neue Aenderung (verlaufLaeuft)', (() => {
+    const az = verlaufZurueckStapel.slice(), aj = standJetzt;
+    verlaufLaeuft = true; const vorher = verlaufZurueckStapel.length;
+    verlaufMerken();
+    const nachher = verlaufZurueckStapel.length; verlaufLaeuft = false;
+    verlaufZurueckStapel.length = 0; verlaufZurueckStapel.push(...az); standJetzt = aj;
+    return vorher === nachher;
+  })());
 
   // --- Einheiten (Bauwesen): Anzeige mit Einheit, Wert bleibt rechenbar ---
   ok('Stk. ohne erzwungene Nachkommastellen', fmtNum(12, 'stk') === "12 Stk." && fmtNum(12.5, 'stk') === "12.5 Stk.");

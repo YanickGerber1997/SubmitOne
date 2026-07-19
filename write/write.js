@@ -2133,7 +2133,22 @@ function wire() {
           selectCell(0, selR + 1); beginEdit(); scheduleSave();
         } else { endEdit(true); const m = mergeAt(selC, selR); selectCell(selC, (m ? m.r + m.rs : selR + 1)); calcFocus(); }
       }
-      else if (e.key === 'Tab') { e.preventDefault(); endEdit(true); const m = mergeAt(selC, selR); selectCell((m ? m.c + m.cs : selC + 1), selR); calcFocus(); }
+      else if (e.key === 'Tab') {
+        e.preventDefault();
+        if (dokumentModus() && !e.shiftKey) {
+          // In einer durchgehenden Write-Zeile gibt es noch keine zweite Zelle: erst anlegen,
+          // dann springen. Dadurch wird die Zeile zur Rasterzeile und zeigt zwei Spalten.
+          // Bewusst OHNE Speichern - bleibt die neue Spalte leer, faellt sie von selbst wieder weg.
+          zelleSpiegeln();
+          if (editingTd) { editingTd.contentEditable = 'false'; editingTd.classList.remove('celledit'); editingTd = null; }
+          gridEnsure(curGrid, selC + 1, selR);
+          renderCalc();
+          selectCell(selC + 1, selR); beginEdit();
+          return;
+        }
+        endEdit(true); const m = mergeAt(selC, selR);
+        selectCell(e.shiftKey ? Math.max(0, selC - 1) : (m ? m.c + m.cs : selC + 1), selR); calcFocus();
+      }
       else if (e.key === 'Escape') { e.preventDefault(); endEdit(false); calcFocus(); }
       else if (dokumentModus() && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         const ziel = selR + (e.key === 'ArrowDown' ? 1 : -1);      // Word-Gefuehl: Pfeile wechseln die Zeile
@@ -3568,7 +3583,12 @@ function isNumericText(t) { return t !== '' && /\d/.test(t) && /^-?[\d'’.,\s]+
 function isTextRow(r) {
   const z = curGrid && curGrid.zeilen[r]; if (!z || z.cells.length !== 1) return false;
   if (curMerges().some(mg => r >= mg.r && r < mg.r + mg.rs)) return false;
-  return /^h[1-3]$/.test(z.tag || '');   // nur explizite Überschriften nehmen die volle Breite – normaler Text nur die nötigen Spalten (Auto-Verbinden)
+  // WRITE: eine Zeile mit Inhalt nur in der ersten Spalte ist eine DURCHGEHENDE Zeile
+  // ueber die ganze Blattbreite - man schreibt wie in Word, im Hintergrund waechst eine Zelle.
+  // Sobald die Zeile eine zweite Spalte hat (Tab), wird sie wieder zur Rasterzeile.
+  if (typeof dokumentModus === 'function' && dokumentModus()) return true;
+  // CALC: nur explizite Ueberschriften nehmen die volle Breite - sonst sieht man die Zellen.
+  return /^h[1-3]$/.test(z.tag || '');
 }
 // liefert {html, cls} für eine Zelle – berücksichtigt Formel-Ergebnis und Zahlenformat
 function cellStyle(c, r) {
@@ -4449,6 +4469,42 @@ function selfTest() {
     const kal = evalCell(3, 0), arb = evalCell(4, 0), leer = evalCell(3, 1);
     curGrid = alt;
     return kal === 7 && arb === 5 && leer === '';
+  })());
+
+  // --- Write: eine Zeile ist eine durchgehende Zeile, Calc zeigt die Zellen ---
+  ok('Write: Zeile mit Inhalt nur in Spalte A nimmt die volle Blattbreite', (() => {
+    const aG = curGrid, aD = doc;
+    doc = { seiten: [{ typ: 'calc', linien: false, merges: [] }], aktiv: 0, einstellungen: {} };
+    curGrid = { cols: 1, colStops: [], zeilen: [{ tag: 'p', attrs: '', cells: ['Ein langer Satz'] }] };
+    const inWrite = isTextRow(0);
+    doc.seiten[0].linien = true;                       // dieselbe Zeile in Calc
+    const inCalc = isTextRow(0);
+    curGrid = aG; doc = aD;
+    return inWrite === true && inCalc === false;       // Write: durchgehend, Calc: Zelle
+  })());
+  ok('Write: leere Zeile ist ebenfalls durchgehend (Cursor startet ganz links)', (() => {
+    const aG = curGrid, aD = doc;
+    doc = { seiten: [{ typ: 'calc', linien: false, merges: [] }], aktiv: 0, einstellungen: {} };
+    curGrid = { cols: 1, colStops: [], zeilen: [{ tag: 'p', attrs: '', cells: [''] }] };
+    const r = isTextRow(0); curGrid = aG; doc = aD; return r === true;
+  })());
+  ok('Write: sobald die Zeile zwei Spalten hat, ist sie wieder eine Rasterzeile', (() => {
+    const aG = curGrid, aD = doc;
+    doc = { seiten: [{ typ: 'calc', linien: false, merges: [] }], aktiv: 0, einstellungen: {} };
+    curGrid = { cols: 2, colStops: [], zeilen: [{ tag: 'p', attrs: '', cells: ['links', 'rechts'] }] };
+    const r = isTextRow(0); curGrid = aG; doc = aD; return r === false;
+  })());
+  ok('Calc: Ueberschriften nehmen weiterhin die volle Breite', (() => {
+    const aG = curGrid, aD = doc;
+    doc = { seiten: [{ typ: 'calc', linien: true, merges: [] }], aktiv: 0, einstellungen: {} };
+    curGrid = { cols: 1, colStops: [], zeilen: [{ tag: 'h1', attrs: '', cells: ['Titel'] }] };
+    const r = isTextRow(0); curGrid = aG; doc = aD; return r === true;
+  })());
+  ok('verbundene Zellen bleiben verbunden (keine Textzeile daraus machen)', (() => {
+    const aG = curGrid, aD = doc;
+    doc = { seiten: [{ typ: 'calc', linien: false, merges: [{ c: 0, r: 0, cs: 2, rs: 1 }] }], aktiv: 0, einstellungen: {} };
+    curGrid = { cols: 1, colStops: [], zeilen: [{ tag: 'p', attrs: '', cells: ['x'] }] };
+    const r = isTextRow(0); curGrid = aG; doc = aD; return r === false;
   })());
 
   // --- P4: Seitenzahlen als Platzhalter ---

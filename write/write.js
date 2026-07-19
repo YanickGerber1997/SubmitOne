@@ -3734,12 +3734,24 @@ function renderSheet() {
       if (r > ur.maxR) cl.push('pad');
       body += `<td data-c="0" data-r="${r}" colspan="${cols}" class="${cl.join(' ')}"${dsp.style ? ` style="${dsp.style}"` : ''}>${dsp.html}</td>`;
     } else {
+      let ueberlauf = 0;   // von einem uebergelaufenen Text bereits belegte Spalten
       for (let c = 0; c < cols; c++) {
+        if (ueberlauf > 0) { ueberlauf--; continue; }
         if (isCovered(c, r)) continue;   // von einer Verbindung überdeckt → keine Zelle
         const dsp = cellDisplay(c, r), cl = [];
         if (dsp.cls) cl.push(dsp.cls);
         if (c > ur.maxC || r > ur.maxR) cl.push('pad');
-        const mg = mergeAt(c, r), span = (mg && mg.c === c && mg.r === r) ? ` colspan="${mg.cs}" rowspan="${mg.rs}"` : '';
+        const mg = mergeAt(c, r);
+        let span = (mg && mg.c === c && mg.r === r) ? ` colspan="${mg.cs}" rowspan="${mg.rs}"` : '';
+        if (!mg) {
+          // Text laeuft in folgende LEERE Spalten - dieselbe Breite wie in Write.
+          const roh = gridGet(curGrid, c, r), txt = plainText(dsp.html);
+          if (txt && !/<br/i.test(String(roh))) {
+            const nsp = ueberlaufSpanne(gridColPx, c, measureCellText(txt) + 18, cols,
+              k => cellEmpty(k, r) && !mergeAt(k, r));
+            if (nsp > 1) { span = ` colspan="${nsp}"`; ueberlauf = nsp - 1; }
+          }
+        }
         body += `<td data-c="${c}" data-r="${r}"${span}${cl.length ? ` class="${cl.join(' ')}"` : ''}${dsp.style ? ` style="${dsp.style}"` : ''}>${dsp.html}</td>`;
       }
     }
@@ -4129,6 +4141,16 @@ function measureCellText(txt) {
 }
 function cellEmpty(c, r) { return cellText(gridGet(curGrid, c, r)) === ''; }
 // Text läuft über die Zelle hinaus → folgende leere Zellen automatisch verbinden (eine Zeile, kein Umbruch)
+/* Wie viele Spalten braucht ein Text, der breiter ist als seine Zelle?
+   Er darf nur in FOLGENDE LEERE Spalten laufen - wie in Excel. Rein, im Test pruefbar. */
+function ueberlaufSpanne(breiten, c, textBreite, maxSpalten, istFrei) {
+  let span = 1, platz = (breiten && breiten[c]) || 80;
+  while (textBreite > platz && c + span < maxSpalten && istFrei(c + span)) {
+    platz += (breiten && breiten[c + span]) || 80;
+    span++;
+  }
+  return span;
+}
 function autoMergeOverflow(c, r) {
   if (!curGrid || isTextRow(r)) return;
   const cur = mergeAt(c, r);
@@ -4139,9 +4161,8 @@ function autoMergeOverflow(c, r) {
   const txt = gridCellRaw(c, r), raw = gridGet(curGrid, c, r);
   let span = 1;
   if (txt && !/<br/i.test(raw) && txt[0] !== '=') {   // mehrzeilige Zellen (Alt+Enter) nicht verbinden
-    const need = measureCellText(txt) + 18;
-    let avail = gridColPx[c] || 80;
-    while (need > avail && c + span < gridCols && cellEmpty(c + span, r) && !mergeAt(c + span, r)) { avail += gridColPx[c + span] || 80; span++; }
+    span = ueberlaufSpanne(gridColPx, c, measureCellText(txt) + 18, gridCols,
+      k => cellEmpty(k, r) && !mergeAt(k, r));
   }
   if (span > 1) ms.push({ c, r, cs: span, rs: 1, auto: true });
   if (span > 1 || cur) { activePage().html = gridToHtml(curGrid); renderCalc(); selectCell(c, r); scheduleSave(); }
@@ -4486,6 +4507,21 @@ function selfTest() {
     curGrid = alt;
     return kal === 7 && arb === 5 && leer === '';
   })());
+
+  // --- Ueberlauf: langer Text nimmt in Calc dieselbe Breite wie in Write ---
+  ok('kurzer Text bleibt in seiner Spalte', ueberlaufSpanne([100, 100, 100], 0, 40, 3, () => true) === 1);
+  ok('langer Text laeuft ueber so viele Spalten wie noetig',
+    ueberlaufSpanne([100, 100, 100, 100], 0, 250, 4, () => true) === 3);
+  ok('Ueberlauf stoppt an einer belegten Spalte',
+    ueberlaufSpanne([100, 100, 100], 0, 250, 3, k => k !== 1) === 1);
+  ok('Ueberlauf stoppt am Blattrand (letzte Spalte)',
+    ueberlaufSpanne([100, 100], 0, 900, 2, () => true) === 2);
+  ok('Ueberlauf beachtet unterschiedliche Spaltenbreiten',
+    ueberlaufSpanne([50, 300, 50], 0, 300, 3, () => true) === 2);
+  ok('Ueberlauf ab einer spaeteren Spalte gerechnet',
+    ueberlaufSpanne([100, 100, 100, 100], 2, 150, 4, () => true) === 2);
+  ok('fehlende Breitenangabe faellt auf einen Standard zurueck (kein Endlosdurchlauf)',
+    ueberlaufSpanne([], 0, 500, 4, () => true) === 4);
 
   // --- Write: eine Zeile ist eine durchgehende Zeile, Calc zeigt die Zellen ---
   ok('Write: Zeile mit Inhalt nur in Spalte A nimmt die volle Blattbreite', (() => {

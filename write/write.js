@@ -3021,6 +3021,12 @@ function fmtNum(n, f) {
   if (!isFinite(n)) return String(n);
   if (f === 'pct') return (n * 100).toLocaleString('de-CH', { maximumFractionDigits: 2 }) + ' %';
   if (f === 'chf') return 'CHF ' + n.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Einheiten fuers Bauwesen: die ZAHL bleibt eine Zahl, nur die Anzeige traegt die Einheit
+  // -> Summen und Formeln rechnen weiter (anders als eine getippte Einheit im Text)
+  if (f === 'stk') return n.toLocaleString('de-CH', { maximumFractionDigits: 2 }) + ' Stk.';
+  if (f === 'm2') return n.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' m²';
+  if (f === 'm3') return n.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' m³';
+  if (f === 'lfm') return n.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' lfm';
   if (f === 'num2') return n.toLocaleString('de-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (f === 'num0') return Math.round(n).toLocaleString('de-CH');
   return n.toLocaleString('de-CH');
@@ -3701,6 +3707,21 @@ function selfTest() {
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  // --- Einheiten (Bauwesen): Anzeige mit Einheit, Wert bleibt rechenbar ---
+  ok('Stk. ohne erzwungene Nachkommastellen', fmtNum(12, 'stk') === "12 Stk." && fmtNum(12.5, 'stk') === "12.5 Stk.");
+  ok('m2 mit zwei Nachkommastellen', fmtNum(12.5, 'm2') === "12.50 m²");
+  ok('m3 mit zwei Nachkommastellen', fmtNum(3, 'm3') === "3.00 m³");
+  ok('lfm mit zwei Nachkommastellen', fmtNum(7.25, 'lfm') === "7.25 lfm");
+  ok('Tausendertrennung auch mit Einheit', /1’?'?\s?000/.test(fmtNum(1000, 'm2').replace(/’/g, "'")) || fmtNum(1000, 'm2').indexOf('000') > 0);
+  ok('Einheit ist nur ANZEIGE - der Wert bleibt eine Zahl (Summen rechnen weiter)', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, zeilen: [{ tag: 'p', attrs: '', cells: ['12.5'] }, { tag: 'p', attrs: '', cells: ['7.5'] }], colStops: [] };
+    const v = evalRaw('=SUMME(A1:A2)', new Set());
+    curGrid = alt;
+    return v === 20;
+  })());
+  ok('unbekanntes Format faellt auf reine Zahl zurueck', fmtNum(5, 'gibtsnicht') === (5).toLocaleString('de-CH'));
 
   // --- Dokumentmodus: fuehlt sich an wie Word (nur Cursor, Enter = neuer Absatz) ---
   ok('zeileEinfuegen setzt einen leeren Absatz darunter', (() => {

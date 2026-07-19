@@ -1510,6 +1510,247 @@ const TEMPLATES = {
     [2, 3, 4, 5, 6].forEach(r => fettZeile(cfmt, r, [0]));
     return dokVorlage(z, { fill: fill, borders: borders, cfmt: cfmt, colW: { 0: 180, 1: 200, 2: 130, 3: 100 } });   // 4 Spalten wegen der Unterschriftenzeile
   } },
+
+  // ---------------- Vergabe, Vertrag, Abschluss ----------------
+  offertoeffnung: { titel: 'Offertöffnungsprotokoll', bauen: () => {
+    const z = [];
+    z.push(H('Offertöffnungsprotokoll'));
+    z.push(Z('Projekt', '…', 'Datum', TODAY));
+    z.push(Z('Gewerk / BKP', '…', 'Ort', '…'));
+    z.push(Z('Anwesend', '…'));
+    z.push(Z(''));
+    z.push(Z('Nr.', 'Unternehmer', 'Offertsumme exkl.', 'Rabatt', 'Skonto', 'Bereinigt', 'Rang'));
+    for (let i = 0; i < 7; i++) {
+      const r = 7 + i;
+      z.push(Z(String(i + 1), '', '0', '0', '', '=C' + r + '-D' + r, ''));
+    }
+    z.push(Z(''));
+    z.push(Z('', 'Eingegangene Offerten', '=ANZAHL2(B7:B13)'));
+    z.push(Z('', 'Günstigste bereinigte Offerte', '=MIN(F7:F13)'));
+    z.push(Z(''));
+    z.push(Z('Die Offerten wurden in Anwesenheit der Beteiligten geöffnet und verlesen.'));
+    z.push(Z('Unterschriften', '..............................', '..............................'));
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 5, [0, 1, 2, 3, 4, 5, 6]);
+    summenzeileGestalten(cfmt, borders, 13, [1, 2]);
+    [2, 3, 5].forEach(c => spalteRechts(cfmt, c, 6, 15));
+    const fmt = {};
+    [2, 3, 5].forEach(c => spaltenFormat(fmt, c, 6, 15, 'chf'));
+    fmt['2,15'] = 'num0';
+    return dokVorlage(z, { quer: true, linien: true, fill: fill, borders: borders, fmt: fmt, cfmt: cfmt,
+      colW: { 0: 44, 1: 240, 2: 140, 3: 110, 4: 100, 5: 140, 6: 70 } });
+  } },
+
+  vergabeantrag: { titel: 'Vergabeantrag', bauen: () => {
+    const z = [];
+    z.push(H('Vergabeantrag an die Bauherrschaft'));
+    z.push(Z('Projekt', '…', 'Datum', TODAY));
+    z.push(Z('Gewerk / BKP', '…', 'Antrag Nr.', '1'));
+    z.push(Z(''));
+    z.push(H('Vergleich der Offerten', 2));
+    z.push(Z('Unternehmer', 'Offertsumme', 'Bereinigt', 'Bemerkung'));
+    for (let i = 0; i < 4; i++) z.push(Z('', '0', '0', ''));
+    z.push(Z(''));
+    z.push(H('Antrag', 2));
+    z.push(Z('Vergabe an', '…'));
+    z.push(Z('Vergabesumme exkl. MWST', '0'));
+    z.push(Z('MWST ' + MWST + ' %', '=B14*' + (MWST / 100)));
+    z.push(Z('Vergabesumme inkl. MWST', '=B14+B15'));
+    z.push(Z('Kostenvoranschlag', '0'));
+    z.push(Z('Abweichung zum Voranschlag', '=B14-B17'));
+    z.push(Z('Begründung', '…'));
+    z.push(Z(''));
+    z.push(Z('Antrag Bauleitung', '..............................', 'Entscheid Bauherrschaft', 'genehmigt / abgelehnt'));
+    z.push(Z('Datum', '', 'Unterschrift', '..............................'));
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 5, [0, 1, 2, 3]);
+    summenzeileGestalten(cfmt, borders, 15, [0, 1]);
+    spalteRechts(cfmt, 1, 6, 17); spalteRechts(cfmt, 2, 6, 9);
+    const fmt = {};
+    spaltenFormat(fmt, 1, 6, 17, 'chf'); spaltenFormat(fmt, 2, 6, 9, 'chf');
+    return dokVorlage(z, { fill: fill, borders: borders, fmt: fmt, cfmt: cfmt,
+      colW: { 0: 220, 1: 150, 2: 130, 3: 110 } });
+  } },
+
+  werkvertrag: { titel: 'Werkvertrag', bauen: () => {
+    const z = [];
+    z.push(H('Werkvertrag'));
+    z.push(Z(''));
+    z.push(H('Vertragsparteien', 2));
+    z.push(Z('Bauherrschaft', '…'));
+    z.push(Z('vertreten durch', '…'));
+    z.push(Z('Unternehmer', '…'));
+    z.push(Z('vertreten durch', '…'));
+    z.push(Z(''));
+    z.push(H('Gegenstand', 2));
+    z.push(Z('Projekt', '…'));
+    z.push(Z('Gewerk / BKP', '…'));
+    z.push(Z('Leistung', 'gemäss Offerte vom …'));
+    z.push(Z(''));
+    z.push(H('Vergütung', 2));
+    z.push(Z('Vergütungsart', 'Einheitspreise / Pauschale / Regie'));
+    z.push(Z('Vertragssumme exkl. MWST', '0'));
+    z.push(Z('MWST ' + MWST + ' %', '=B16*' + (MWST / 100)));
+    z.push(Z('Total inkl. MWST', '=B16+B17'));
+    z.push(Z('Skonto', '2 % innert 30 Tagen'));
+    z.push(Z('Teuerung', 'fest bis Bauvollendung'));
+    z.push(Z(''));
+    z.push(H('Termine', 2));
+    z.push(Z('Baubeginn', '…'));
+    z.push(Z('Bauvollendung', '…'));
+    z.push(Z('Konventionalstrafe', '… pro Arbeitstag Verzug'));
+    z.push(Z(''));
+    z.push(H('Weitere Bestimmungen', 2));
+    z.push(Z('Vertragsgrundlage', 'SIA 118, Ausgabe 2013'));
+    z.push(Z('Garantie', '2 Jahre ab Abnahme, verdeckte Mängel 5 Jahre'));
+    z.push(Z('Rückbehalt', '10 % bis Ablauf der Rügefrist'));
+    z.push(Z('Versicherung', 'Bauwesenversicherung durch Bauherrschaft'));
+    z.push(Z('Gerichtsstand', '…'));
+    z.push(Z(''));
+    z.push(Z('Ort, Datum', '…', 'Bauherrschaft', 'Unternehmer'));
+    z.push(Z('', '', '..............................', '..............................'));
+    const cfmt = {}, fill = {}, borders = {};
+    summenzeileGestalten(cfmt, borders, 17, [0, 1]);
+    spalteRechts(cfmt, 1, 15, 17);
+    const fmt = {};
+    spaltenFormat(fmt, 1, 15, 17, 'chf');
+    return dokVorlage(z, { fill: fill, borders: borders, fmt: fmt, cfmt: cfmt,
+      colW: { 0: 200, 1: 180, 2: 130, 3: 100 } });
+  } },
+
+  nachtrag: { titel: 'Nachtrag zum Werkvertrag', bauen: () => {
+    const z = [];
+    z.push(H('Nachtrag zum Werkvertrag'));
+    z.push(Z('Nachtrag Nr.', '1', 'Datum', TODAY));
+    z.push(Z('Projekt', '…', 'Gewerk / BKP', '…'));
+    z.push(Z('Unternehmer', '…', 'Werkvertrag vom', '…'));
+    z.push(Z(''));
+    z.push(Z('Grund des Nachtrags', '…'));
+    z.push(Z(''));
+    z.push(Z('Pos.', 'Leistung', 'Menge', 'Einheit', 'Einheitspreis', 'Betrag'));
+    for (let i = 0; i < 8; i++) {
+      const r = 9 + i;
+      z.push(Z(String(i + 1), '', '', '', '', '=WENNFEHLER(C' + r + '*E' + r + ';"")'));
+    }
+    z.push(Z('', 'Total Nachtrag exkl. MWST', '', '', '', '=SUMME(F9:F16)'));
+    z.push(Z(''));
+    z.push(Z('', 'Bisherige Vertragssumme', '', '', '', '0'));
+    z.push(Z('', 'Neue Vertragssumme', '', '', '', '=F19+F17'));
+    z.push(Z(''));
+    z.push(Z('Ort, Datum', '…', 'Unternehmer', 'Bauleitung'));
+    z.push(Z('', '', '..............................', '..............................'));
+    z.push(Z('Nachträge sind nur mit schriftlicher Genehmigung der Bauleitung verrechenbar.'));
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 7, [0, 1, 2, 3, 4, 5]);
+    summenzeileGestalten(cfmt, borders, 16, [1, 5]);
+    summenzeileGestalten(cfmt, borders, 19, [1, 5]);
+    [2, 4, 5].forEach(c => spalteRechts(cfmt, c, 8, 19));
+    const fmt = {};
+    [4, 5].forEach(c => spaltenFormat(fmt, c, 7, 19, 'chf'));
+    return dokVorlage(z, { linien: true, fill: fill, borders: borders, fmt: fmt, cfmt: cfmt,
+      colW: { 0: 44, 1: 220, 2: 70, 3: 66, 4: 100, 5: 110 } });
+  } },
+
+  schlussabrechnung: { titel: 'Schlussabrechnung', bauen: () => {
+    const z = [];
+    z.push(H('Schlussabrechnung'));
+    z.push(Z('Projekt', '…', 'Datum', TODAY));
+    z.push(Z('Unternehmer', '…', 'Gewerk / BKP', '…'));
+    z.push(Z(''));
+    z.push(Z('Position', 'Betrag', 'Bemerkung'));
+    z.push(Z('Werkvertragssumme exkl. MWST', '0', ''));
+    z.push(Z('Genehmigte Nachträge', '0', ''));
+    z.push(Z('Regiearbeiten', '0', ''));
+    z.push(Z('Abzüge / Minderleistungen', '0', ''));
+    z.push(Z('Zwischentotal exkl. MWST', '=B6+B7+B8-B9', ''));
+    z.push(Z('MWST ' + MWST + ' %', '=B10*' + (MWST / 100), ''));
+    z.push(Z('Total inkl. MWST', '=B10+B11', ''));
+    z.push(Z('Bereits bezahlte Akontozahlungen', '0', ''));
+    z.push(Z('Rückbehalt 10 %', '=B12*0.1', 'bis Ablauf der Rügefrist'));
+    z.push(Z('Restzahlung', '=B12-B13-B14', ''));
+    z.push(Z(''));
+    z.push(Z('Der Rückbehalt wird nach Ablauf der Rügefrist oder gegen Garantieschein freigegeben.'));
+    z.push(Z('Geprüft Bauleitung', '..............................', 'Unternehmer', '..............................'));
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 4, [0, 1, 2]);
+    summenzeileGestalten(cfmt, borders, 9, [0, 1]);
+    summenzeileGestalten(cfmt, borders, 11, [0, 1]);
+    summenzeileGestalten(cfmt, borders, 14, [0, 1]);
+    spalteRechts(cfmt, 1, 5, 14);
+    const fmt = {};
+    spaltenFormat(fmt, 1, 5, 14, 'chf');
+    return dokVorlage(z, { linien: true, fill: fill, borders: borders, fmt: fmt, cfmt: cfmt,
+      colW: { 0: 280, 1: 140, 2: 100, 3: 90 } });
+  } },
+
+  garantien: { titel: 'Garantieverzeichnis', bauen: () => {
+    const z = [];
+    z.push(H('Garantieverzeichnis'));
+    z.push(Z('Projekt', '…', 'Stand', TODAY));
+    z.push(Z(''));
+    z.push(Z('Gewerk', 'Unternehmer', 'Abnahme', 'Jahre', 'Ablauf', 'Status', 'Bemerkung'));
+    for (let i = 0; i < 12; i++) {
+      const r = 5 + i;
+      z.push(Z('', '', '', '2', '=WENNFEHLER(DATUMPLUS(C' + r + ';D' + r + '*365);"")', 'offen', ''));
+    }
+    z.push(Z(''));
+    z.push(Z('', 'Offene Garantien', '=ZAEHLENWENN(F5:F16;"offen")'));
+    z.push(Z(''));
+    z.push(Z('Abnahmedatum eintragen – der Ablauf rechnet sich selbst (SIA 118 Art. 172/180).'));
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 3, [0, 1, 2, 3, 4, 5, 6]);
+    spalteRechts(cfmt, 3, 4, 15);
+    return dokVorlage(z, { quer: true, linien: true, fill: fill, borders: borders, cfmt: cfmt,
+      colW: { 0: 170, 1: 180, 2: 100, 3: 90, 4: 110, 5: 100, 6: 190 } });
+  } },
+
+  entscheide: { titel: 'Entscheidungsliste Bauherrschaft', bauen: () => {
+    const z = [];
+    z.push(H('Entscheidungsliste Bauherrschaft'));
+    z.push(Z('Projekt', '…', 'Stand', TODAY));
+    z.push(Z(''));
+    z.push(Z('Nr.', 'Thema', 'Varianten', 'Kostenfolge', 'Entscheid bis', 'Status', 'Entschieden am'));
+    for (let i = 0; i < 12; i++) z.push(Z(String(i + 1), '', '', '0', '', 'offen', ''));
+    z.push(Z(''));
+    z.push(Z('', 'Offene Entscheide', '=ZAEHLENWENN(F5:F16;"offen")'));
+    z.push(Z('', 'Summe der Kostenfolgen', '', '=SUMME(D5:D16)'));
+    z.push(Z(''));
+    z.push(Z('Ohne rechtzeitigen Entscheid können Termine und Kosten nicht gehalten werden.'));
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 3, [0, 1, 2, 3, 4, 5, 6]);
+    summenzeileGestalten(cfmt, borders, 18, [1, 3]);
+    spalteRechts(cfmt, 3, 4, 18);
+    const fmt = {};
+    spaltenFormat(fmt, 3, 4, 18, 'chf');
+    return dokVorlage(z, { quer: true, linien: true, fill: fill, borders: borders, fmt: fmt, cfmt: cfmt,
+      colW: { 0: 44, 1: 200, 2: 200, 3: 120, 4: 120, 5: 120, 6: 130 } });
+  } },
+
+  bestellung: { titel: 'Materialbestellung', bauen: () => {
+    const z = [];
+    z.push(H('Materialbestellung'));
+    z.push(Z('Bestell-Nr.', '1', 'Datum', TODAY));
+    z.push(Z('Lieferant', '…', 'Projekt', '…'));
+    z.push(Z('Lieferadresse', '…', 'Liefertermin', '…'));
+    z.push(Z(''));
+    z.push(Z('Pos.', 'Artikel', 'Menge', 'Einheit', 'Einheitspreis', 'Betrag'));
+    for (let i = 0; i < 8; i++) {
+      const r = 7 + i;
+      z.push(Z(String(i + 1), '', '', 'Stk', '', '=WENNFEHLER(C' + r + '*E' + r + ';"")'));
+    }
+    z.push(Z('', 'Total exkl. MWST', '', '', '', '=SUMME(F7:F14)'));
+    z.push(Z(''));
+    z.push(Z('Lieferschein an die Baustelle. Teillieferungen nur nach Absprache mit der Bauleitung.'));
+    z.push(Z('Bestellt durch', '..............................'));
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 5, [0, 1, 2, 3, 4, 5]);
+    summenzeileGestalten(cfmt, borders, 14, [1, 5]);
+    [2, 4, 5].forEach(c => spalteRechts(cfmt, c, 6, 14));
+    const fmt = {};
+    [4, 5].forEach(c => spaltenFormat(fmt, c, 5, 14, 'chf'));
+    return dokVorlage(z, { linien: true, fill: fill, borders: borders, fmt: fmt, cfmt: cfmt,
+      colW: { 0: 44, 1: 220, 2: 70, 3: 66, 4: 100, 5: 110 } });
+  } },
 };
 // Vorlagen-Galerie: Kurzbeschreibung + Kategorie-Icon je Vorlage (bessere Auffindbarkeit)
 const TMPL_META = {
@@ -1528,6 +1769,14 @@ const TMPL_META = {
   ausmass:           { d: 'Ausmassblatt, rechnet die Mengen in m²', i: 'list' },
   preisspiegel:      { d: 'Drei Offerten vergleichen, findet die günstigste', i: 'money' },
   beiblatt:          { d: 'Beiblatt zur Offerte: Bedingungen nach SIA 118', i: 'doc' },
+  offertoeffnung:    { d: 'Offertöffnung: Submittenten, bereinigte Summen, Rang', i: 'list' },
+  vergabeantrag:     { d: 'Vergabeantrag an die Bauherrschaft mit Vergleich und Entscheid', i: 'money' },
+  werkvertrag:       { d: 'Werkvertrag nach SIA 118: Vergütung, Termine, Garantie', i: 'doc' },
+  nachtrag:          { d: 'Nachtrag zum Werkvertrag, rechnet die neue Vertragssumme', i: 'money' },
+  schlussabrechnung: { d: 'Schlussabrechnung mit Nachträgen, Rückbehalt und Restzahlung', i: 'money' },
+  garantien:         { d: 'Garantieverzeichnis, rechnet den Ablauf aus dem Abnahmedatum', i: 'list' },
+  entscheide:        { d: 'Entscheide der Bauherrschaft mit Frist und Kostenfolge', i: 'list' },
+  bestellung:        { d: 'Materialbestellung mit Liefertermin und Total', i: 'money' },
 };
 const TMPL_ICO = {
   doc:   '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
@@ -4999,6 +5248,93 @@ function selfTest() {
     /Segoe UI/.test(SCHRIFT_STD) && /Helvetica/.test(SCHRIFT_STD) && /Arial/.test(SCHRIFT_STD));
   ok('neues Dokument setzt dichter als Bildschirmtypografie',
     newDocObject().einstellungen.schriftgroesse === 14 && newDocObject().einstellungen.zeilenabstand < 1.6);
+
+  // --- Vergabe, Vertrag, Abschluss: rechnen die neuen Vorlagen richtig? ---
+  ok('der Vorlagensatz deckt den ganzen Ablauf ab', (() => {
+    const noetig = ['kostenvoranschlag', 'angebot', 'offertoeffnung', 'preisspiegel', 'vergabeantrag',
+                    'werkvertrag', 'beiblatt', 'terminprogramm', 'bautagebuch', 'protokoll',
+                    'regierapport', 'nachtrag', 'ausmass', 'rechnung', 'zahlungsplan',
+                    'abnahme', 'maengelliste', 'garantien', 'schlussabrechnung',
+                    'entscheide', 'bestellung', 'baukosten', 'brief'];
+    return noetig.every(k => TEMPLATES[k]);
+  })());
+  ok('Rechenweg Nachtrag: Total und neue Vertragssumme', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 6, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['1', 'Mehrleistung', '10', 'm2', '80', '=C1*E1'] },
+      { tag: 'p', attrs: '', cells: ['2', 'Mehrleistung', '5', 'm2', '120', '=C2*E2'] },
+      { tag: 'p', attrs: '', cells: ['', 'Total Nachtrag', '', '', '', '=SUMME(F1:F2)'] },
+      { tag: 'p', attrs: '', cells: ['', 'Bisherige Summe', '', '', '', '200000'] },
+      { tag: 'p', attrs: '', cells: ['', 'Neue Summe', '', '', '', '=F4+F3'] },
+    ] };
+    const tot = evalCell(5, 2), neu = evalCell(5, 4);
+    curGrid = alt;
+    return tot === 1400 && neu === 201400;
+  })());
+  ok('Rechenweg Schlussabrechnung: Zwischentotal, MWST, Rueckbehalt, Restzahlung', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 2, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['x', ''] },                    // Kopfzeile
+      { tag: 'p', attrs: '', cells: ['Werkvertrag', '100000'] },    // B2
+      { tag: 'p', attrs: '', cells: ['Nachtraege', '10000'] },      // B3
+      { tag: 'p', attrs: '', cells: ['Regie', '5000'] },            // B4
+      { tag: 'p', attrs: '', cells: ['Abzuege', '3000'] },          // B5
+      { tag: 'p', attrs: '', cells: ['Zwischentotal', '=B2+B3+B4-B5'] },   // B6 = 112000
+      { tag: 'p', attrs: '', cells: ['MWST', '=B6*0.081'] },        // B7 = 9072
+      { tag: 'p', attrs: '', cells: ['Total', '=B6+B7'] },          // B8 = 121072
+      { tag: 'p', attrs: '', cells: ['Akonto', '100000'] },         // B9
+      { tag: 'p', attrs: '', cells: ['Rueckbehalt', '=B8*0.1'] },   // B10 = 12107.2
+      { tag: 'p', attrs: '', cells: ['Restzahlung', '=B8-B9-B10'] },// B11
+    ] };
+    const zw = evalCell(1, 5), tot = evalCell(1, 7), rest = evalCell(1, 10);
+    curGrid = alt;
+    return zw === 112000 && tot === 121072 && Math.abs(rest - 8964.8) < 0.01;
+  })());
+  ok('Rechenweg Garantieverzeichnis: Ablauf aus Abnahme plus Jahren', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 5, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['Baumeister', 'AG', '01.03.2026', '2',
+        '=WENNFEHLER(DATUMPLUS(C1;D1*365);"")'] },
+      { tag: 'p', attrs: '', cells: ['Maler', '', '', '2',
+        '=WENNFEHLER(DATUMPLUS(C2;D2*365);"")'] },
+    ] };
+    const ablauf = evalCell(4, 0), leer = evalCell(4, 1);
+    curGrid = alt;
+    return /2028/.test(String(ablauf)) && leer === '';
+  })());
+  ok('Rechenweg Offertoeffnung: bereinigte Summe und guenstigste', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 6, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['1', 'A AG', '120000', '5000', '', '=C1-D1'] },
+      { tag: 'p', attrs: '', cells: ['2', 'B AG', '118000', '0', '', '=C2-D2'] },
+    ] };
+    const a = evalCell(5, 0), b = evalCell(5, 1);
+    const min = evalRaw('=MIN(F1:F2)', new Set());
+    const anzahl = evalRaw('=ANZAHL2(B1:B2)', new Set());
+    curGrid = alt;
+    return a === 115000 && b === 118000 && min === 115000 && anzahl === 2;
+  })());
+  ok('Rechenweg Vergabeantrag: MWST und Abweichung zum Voranschlag', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 2, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['Vergabesumme', '115000'] },      // B1
+      { tag: 'p', attrs: '', cells: ['MWST', '=B1*0.081'] },           // B2
+      { tag: 'p', attrs: '', cells: ['Total', '=B1+B2'] },             // B3
+      { tag: 'p', attrs: '', cells: ['Voranschlag', '120000'] },       // B4
+      { tag: 'p', attrs: '', cells: ['Abweichung', '=B1-B4'] },        // B5
+    ] };
+    const mwst = evalCell(1, 1), abw = evalCell(1, 4);
+    curGrid = alt;
+    return Math.abs(mwst - 9315) < 0.01 && abw === -5000;
+  })());
+  ok('Nachtrag und Werkvertrag nennen die vertragliche Grundlage', (() => {
+    return /schriftlicher Genehmigung/.test(TEMPLATES.nachtrag.bauen().pages[0].html)
+      && /SIA 118/.test(TEMPLATES.werkvertrag.bauen().pages[0].html);
+  })());
+  ok('Garantieverzeichnis und Entscheidungsliste zaehlen offene Punkte', (() => {
+    return /ZAEHLENWENN\(F5:F16;"offen"\)/.test(TEMPLATES.garantien.bauen().pages[0].html)
+      && /ZAEHLENWENN\(F5:F16;"offen"\)/.test(TEMPLATES.entscheide.bauen().pages[0].html);
+  })());
 
   // --- Layout der Vorlagen: passt alles aufs Blatt? ---
   // Sehen kann ein Test das nicht - nachrechnen schon. Genau das faengt

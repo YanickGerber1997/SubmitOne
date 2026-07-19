@@ -342,9 +342,23 @@ function setDirty(v) {
   saveState.classList.toggle('dirty', v);
   $('.lbl', saveState).textContent = v ? 'Nicht gespeichert' : 'Gespeichert';
 }
-function capturePage() {
+/* Inhalt der GERADE bearbeiteten Zelle ins Raster spiegeln, ohne die Bearbeitung zu beenden.
+   Das Autospeichern darf den Schreibfluss nicht unterbrechen. */
+function zelleSpiegeln() {
+  if (!editingTd || !curGrid) return false;
+  gridEnsure(curGrid, selC, selR);
+  curGrid.zeilen[selR].cells[selC] = readCellHtml(editingTd) || '';
+  return true;
+}
+/* beenden=true nur dort, wo die Seite gewechselt oder umgebaut wird (Seitenwechsel, neue Seite,
+   Typwechsel). Beim Autospeichern MUSS es false bleiben - sonst schliesst sich die Zelle
+   mitten im Satz und der Cursor ist weg. Genau das war der Grund fuer 'es bricht einfach ab'. */
+function capturePage(beenden) {
   const p = activePage(); if (!p) return;
-  if (p.typ === 'calc') { if (editingTd) endEdit(true); if (curGrid) p.html = gridToHtml(curGrid); }   // offene Zellbearbeitung zuerst sichern
+  if (p.typ === 'calc') {
+    if (editingTd) { if (beenden) endEdit(true); else zelleSpiegeln(); }
+    if (curGrid) p.html = gridToHtml(curGrid);
+  }
   else p.html = cleanEditorHTML();   // ohne Rechtschreib-Markierungen speichern
 }
 /* ============ Rückgängig / Wiederholen ============
@@ -1797,9 +1811,15 @@ function wire() {
   $('#gridToggle').addEventListener('click', () => {
     if (!doc) return;
     const p = activePage();
-    if (p.typ !== 'calc') { setPageType('calc'); p.linien = true; }   // sehr alte Seite einmalig ins Raster holen
-    else gitterUmschalten(p);
-    renderActivePage(); syncGridToggle(); scheduleSave();
+    if (p.typ !== 'calc') { setPageType('calc'); p.linien = true; renderActivePage(); syncGridToggle(); scheduleSave(); return; }
+    // Nur die Linien wechseln: NICHT ueber renderActivePage gehen. Das las die Seite neu aus
+    // p.html ein - also aus einem Stand, der die zuletzt getippten Zeichen noch nicht enthielt.
+    // Genau dadurch verschwand oder aenderte sich Text beim Umschalten.
+    if (editingTd) endEdit(true);            // laufende Zelle sauber uebernehmen
+    gitterUmschalten(p);
+    appEl.classList.toggle('lines-off', !gitterSichtbar(p));
+    renderCalc();                            // nur neu zeichnen - keine Umwandlung, kein Datenweg
+    syncGridToggle(); scheduleSave();
   });
   // Formelzeile im Write-Blatt (Etappe 3): Enter schreibt Wert/Formel-Ergebnis in die angeklickte Zelle
   $('#wfInput').addEventListener('keydown', e => {
@@ -1900,12 +1920,15 @@ function wire() {
     if (editingTd) {
       if (e.key === 'Enter' && (e.altKey || e.shiftKey)) { e.preventDefault(); document.execCommand('insertHTML', false, '<br>'); }  // Zeilenumbruch in der Zelle
       else if (e.key === 'Enter') {
-        e.preventDefault(); endEdit(true);
+        e.preventDefault();
         if (dokumentModus()) {                      // Word-Gefuehl: Enter oeffnet einen neuen Absatz darunter
+          zelleSpiegeln();                          // Inhalt uebernehmen OHNE Neuaufbau ...
+          if (editingTd) { editingTd.contentEditable = 'false'; editingTd.classList.remove('celledit'); editingTd = null; }
           zeileEinfuegen(selR);
-          activePage().html = gridToHtml(curGrid); renderCalc();
+          activePage().html = gridToHtml(curGrid);
+          renderCalc();                             // ... dann genau EINMAL neu zeichnen (vorher zweimal je Absatz)
           selectCell(0, selR + 1); beginEdit(); scheduleSave();
-        } else { const m = mergeAt(selC, selR); selectCell(selC, (m ? m.r + m.rs : selR + 1)); calcFocus(); }
+        } else { endEdit(true); const m = mergeAt(selC, selR); selectCell(selC, (m ? m.r + m.rs : selR + 1)); calcFocus(); }
       }
       else if (e.key === 'Tab') { e.preventDefault(); endEdit(true); const m = mergeAt(selC, selR); selectCell((m ? m.c + m.cs : selC + 1), selR); calcFocus(); }
       else if (e.key === 'Escape') { e.preventDefault(); endEdit(false); calcFocus(); }
@@ -2800,17 +2823,17 @@ function renderActivePage() {
 function setPageType(typ) {
   if (!doc) return;
   const p = activePage(); const t = typ === 'calc' ? 'calc' : 'write'; if (p.typ === t) return;
-  capturePage();
+  capturePage(true);
   p.typ = t;
   if (p.html == null) p.html = '';
   renderActivePage(); renderPageNav(); scheduleSave();
 }
 function switchPage(i) {
   if (i === doc.aktiv || i < 0 || i >= doc.seiten.length) return;
-  capturePage(); doc.aktiv = i; renderActivePage(); renderPageNav(); scheduleSave();
+  capturePage(true); doc.aktiv = i; renderActivePage(); renderPageNav(); scheduleSave();
 }
 function addPage(typ) {
-  capturePage();
+  capturePage(true);
   const t = typ === 'calc' ? 'calc' : 'write';
   const p = { id: uid(), typ: t, html: '' };
   doc.seiten.push(p); doc.aktiv = doc.seiten.length - 1;
@@ -3515,6 +3538,10 @@ function beginEdit(initial) {
 // während des Tippens: Text breiter als die Zelle → folgende LEERE Zellen live aufnehmen (nur so viele wie nötig)
 function liveExtendCell() {
   const td = editingTd; if (!td || td.classList.contains('textcell')) return;
+  // Dokumentmodus: Text bricht um wie ein Absatz. Ohne das setzt die Zeile unten
+  // white-space:nowrap als Inline-Stil und schiebt den Text in die Nachbarspalten -
+  // das las sich beim Schreiben wie ein Haenger.
+  if (typeof dokumentModus === 'function' && dokumentModus()) { td.style.whiteSpace = 'pre-wrap'; return; }
   td.style.whiteSpace = 'nowrap';   // erst in einer Zeile wachsen
   let guard = 0;
   while (td.scrollWidth > td.clientWidth + 1 && guard++ < 40) {
@@ -3791,6 +3818,16 @@ function selfTest() {
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  // --- Schreibfluss: Autospeichern darf die laufende Zellbearbeitung nicht beenden ---
+  ok('capturePage nimmt einen Parameter (beenden) - sonst schliesst Autospeichern die Zelle',
+    capturePage.length === 1);
+  ok('zelleSpiegeln vorhanden (uebernimmt Inhalt ohne die Bearbeitung zu beenden)',
+    typeof zelleSpiegeln === 'function');
+  ok('zelleSpiegeln ohne offene Zelle tut nichts und stuerzt nicht ab', (() => {
+    const alt = editingTd; editingTd = null;
+    const r = zelleSpiegeln(); editingTd = alt; return r === false;
+  })());
 
   // --- Rueckgaengig / Wiederholen: Stapel-Logik ---
   ok('Verlauf: Schnappschuss bildet Seiten, Kopf, Fuss und Titel ab', (() => {

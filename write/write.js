@@ -941,116 +941,296 @@ const TODAY = new Date().toLocaleDateString('de-CH');
    Einheiten, Summen und Seitenzahlen stimmen. */
 const Z = (...zellen) => '<p>' + zellen.join(COLSEP) + '</p>';
 function rasterVorlage(zeilen, fmt, cfmt, colW) {
-  return { pages: [{ id: uid(), typ: 'calc', linien: true, html: zeilen.join(''),
-    fmt: fmt || {}, cfmt: cfmt || {}, colW: colW || {}, fill: {}, txtcol: {}, borders: {}, rowH: {}, merges: [],
-    dispCols: 0, dispRows: 0 }] };
+  // Leitet auf dokVorlage um, damit AUCH diese Vorlagen Briefkopf und Fusszeile
+  // mit Seitenzahl bekommen - sonst waeren es halbe Dokumente.
+  return dokVorlage(zeilen, { fmt: fmt, cfmt: cfmt, colW: colW, linien: true });
 }
 /* Zahlenformat auf eine ganze Spalte legen (Zeilen von..bis) */
 function spaltenFormat(fmt, spalte, von, bis, art) { for (let r = von; r <= bis; r++) fmt[spalte + ',' + r] = art; return fmt; }
 function fettZeile(cfmt, r, spalten) { spalten.forEach(c => { cfmt[c + ',' + r] = Object.assign({}, cfmt[c + ',' + r], { b: true }); }); return cfmt; }
 
+const KOPF_STD = '<span style="font-weight:700">Musterbau AG</span> &nbsp;&middot;&nbsp; Musterstrasse 1 &nbsp;&middot;&nbsp; 3000 Bern &nbsp;&middot;&nbsp; 031 000 00 00 &nbsp;&middot;&nbsp; info@musterbau.ch';
+const FUSS_STD = 'Musterbau AG &nbsp;&middot;&nbsp; CHE-123.456.789 MWST &nbsp;&middot;&nbsp; Seite {Seite} von {Seiten}';
+const MWST = 8.1;   // Schweizer Normalsatz
+
+function dokVorlage(zeilen, opt) {
+  opt = opt || {};
+  return {
+    kopf: opt.kopf != null ? opt.kopf : KOPF_STD,
+    fuss: opt.fuss != null ? opt.fuss : FUSS_STD,
+    pages: [{ id: uid(), typ: 'calc', linien: !!opt.linien, html: zeilen.join(''),
+      fmt: opt.fmt || {}, cfmt: opt.cfmt || {}, colW: opt.colW || {},
+      fill: {}, txtcol: {}, borders: {}, rowH: {}, merges: [], dispCols: 0, dispRows: 0 }],
+  };
+}
+/* Positionsblock mit Einzelpreis, Betrag und Summenzeile - der Kern jeder Offerte/Rechnung */
+function positionsBlock(z, kopfZeile, anzahl, startRow, spalten) {
+  z.push(Z.apply(null, kopfZeile));
+  for (let i = 0; i < anzahl; i++) {
+    const r = startRow + i;
+    z.push(Z(String(i + 1), '', '', '', '', '=WENNFEHLER(D' + r + '*E' + r + ';"")'));
+  }
+  return { erste: startRow, letzte: startRow + anzahl - 1 };
+}
+
 const TEMPLATES = {
-  brief: { titel: 'Brief', html:
-    `<p style="text-align:right;color:#777">Yanick Gerber&nbsp;·&nbsp;Musterstrasse 1&nbsp;·&nbsp;3000 Bern</p>
-     <p><br></p><p><br></p>
-     <p>Empfänger AG<br>z.&nbsp;H. Frau Muster<br>Beispielweg 5<br>3000 Bern</p>
-     <p><br></p><p style="text-align:right">Bern, ${TODAY}</p><p><br></p>
-     <h2>Betreff der Mitteilung</h2>
-     <p>Sehr geehrte Damen und Herren</p>
-     <p>Hier steht der Inhalt Ihres Schreibens. Ersetzen Sie diesen Text durch Ihr Anliegen.</p>
-     <p><br></p><p>Freundliche Grüsse</p><p><br></p><p>Yanick Gerber</p>` },
-  rechnung: { titel: 'Rechnung', html:
-    `<h1>Rechnung</h1>
-     <p style="color:#777">Rechnungsnr. 2026-001&nbsp;·&nbsp;Datum ${TODAY}&nbsp;·&nbsp;zahlbar innert 30 Tagen</p>
-     <p><b>An</b><br>Kunde AG<br>Adresse<br>PLZ Ort</p>
-     <table><tbody>
-       <tr><th style="text-align:left">Beschreibung</th><th>Menge</th><th>Einzelpreis</th><th>Betrag</th></tr>
-       <tr><td>Leistung 1</td><td>1</td><td>CHF 0.00</td><td>CHF 0.00</td></tr>
-       <tr><td>Leistung 2</td><td>1</td><td>CHF 0.00</td><td>CHF 0.00</td></tr>
-     </tbody></table>
-     <p style="text-align:right">Zwischensumme&nbsp;&nbsp;CHF 0.00<br>MwSt 8,1&nbsp;%&nbsp;&nbsp;CHF 0.00<br><b>Total&nbsp;&nbsp;CHF 0.00</b></p>
-     <p style="color:#777">Zahlbar auf IBAN CH00 0000 0000 0000 0000 0</p>` },
-  angebot: { titel: 'Angebot', html:
-    `<h1>Angebot</h1>
-     <p style="color:#777">Angebot-Nr. 2026-001&nbsp;·&nbsp;${TODAY}&nbsp;·&nbsp;gültig 30 Tage</p>
-     <p>Sehr geehrte Damen und Herren</p>
-     <p>Gerne unterbreiten wir Ihnen folgendes Angebot:</p>
-     <h2>Leistungen</h2><ul><li>Leistung 1</li><li>Leistung 2</li><li>Leistung 3</li></ul>
-     <h2>Preis</h2><p>Pauschal <b>CHF 0.00</b> exkl. MwSt.</p>
-     <h2>Konditionen</h2><p>Zahlungsziel 30 Tage · Ausführung nach Absprache.</p>
-     <p><br></p><p>Freundliche Grüsse<br>Yanick Gerber</p>` },
-  projektplan: { titel: 'Projektplan', html:
-    `<h1>Projektplan</h1>
-     <p style="color:#777">Projekt …&nbsp;·&nbsp;Verantwortlich Yanick Gerber&nbsp;·&nbsp;Stand ${TODAY}</p>
-     <h2>Ausgangslage &amp; Ziel</h2><p>Worum geht es, was soll erreicht werden?</p>
-     <h2>Meilensteine</h2><ol><li>Start – </li><li>Umsetzung – </li><li>Abschluss – </li></ol>
-     <h2>Aufgaben</h2><ul><li>Aufgabe – verantwortlich – bis</li></ul>
-     <h2>Risiken</h2><ul><li>Risiko – Massnahme</li></ul>` },
-  protokoll: { titel: 'Sitzungsprotokoll', html:
-    `<h1>Sitzungsprotokoll</h1>
-     <p style="color:#777">Datum ${TODAY}&nbsp;·&nbsp;Ort …&nbsp;·&nbsp;Protokoll Yanick Gerber</p>
-     <p><b>Teilnehmende</b>&nbsp;&nbsp;…</p>
-     <h2>Traktanden</h2><ol><li></li><li></li></ol>
-     <h2>Beschlüsse</h2><ul><li></li></ul>
-     <h2>Pendenzen</h2><ul><li>Aufgabe – verantwortlich – bis</li></ul>` },
-  lebenslauf: { titel: 'Lebenslauf', html:
-    `<h1>Vorname Nachname</h1>
-     <p style="color:#777">Adresse&nbsp;·&nbsp;0000 Ort&nbsp;·&nbsp;mail@example.ch&nbsp;·&nbsp;079 000 00 00</p>
-     <h2>Profil</h2><p>Kurzer Beschrieb in zwei, drei Sätzen.</p>
-     <h2>Berufserfahrung</h2><p><b>2022 – heute&nbsp;·&nbsp;Position</b><br>Firma, Ort<br>Wichtigste Aufgaben und Erfolge.</p>
-     <h2>Ausbildung</h2><p><b>Jahr&nbsp;·&nbsp;Abschluss</b><br>Schule, Ort</p>
-     <h2>Kenntnisse</h2><ul><li>Sprachen: …</li><li>IT: …</li></ul>` },
-  kostenvoranschlag: { titel: 'Kostenvoranschlag', html:
-    `<h1>Kostenvoranschlag</h1>
-     <p style="color:#777">Objekt …&nbsp;·&nbsp;Bauherrschaft …&nbsp;·&nbsp;${TODAY}</p>
-     <table class="pdftab"><tbody>
-       <tr><td><strong>Pos.</strong></td><td><strong>Leistung</strong></td><td style="text-align:right"><strong>Menge</strong></td><td><strong>Einheit</strong></td><td style="text-align:right"><strong>Ansatz</strong></td><td style="text-align:right"><strong>Betrag</strong></td></tr>
-       <tr><td>1</td><td>Baumeisterarbeiten</td><td style="text-align:right">1</td><td>pausch.</td><td style="text-align:right">0.00</td><td style="text-align:right">0.00</td></tr>
-       <tr><td>2</td><td>…</td><td style="text-align:right"></td><td></td><td style="text-align:right"></td><td style="text-align:right">0.00</td></tr>
-     </tbody></table>
-     <p style="text-align:right">Zwischentotal&nbsp;&nbsp;CHF 0.00<br>MwSt 8,1&nbsp;%&nbsp;&nbsp;CHF 0.00<br><strong>Total inkl. MwSt&nbsp;&nbsp;CHF 0.00</strong></p>
-     <p style="color:#777">Unverbindlicher Richtpreis · Genauigkeit ± 15 % · gültig 60 Tage.</p>` },
-  regierapport: { titel: 'Regierapport', html:
-    `<h1>Regie- / Arbeitsrapport</h1>
-     <p style="color:#777">Objekt …&nbsp;·&nbsp;Datum ${TODAY}&nbsp;·&nbsp;Rapport-Nr. …</p>
-     <h2>Arbeitsstunden</h2>
-     <table class="pdftab"><tbody>
-       <tr><td><strong>Mitarbeiter</strong></td><td><strong>Tätigkeit</strong></td><td style="text-align:right"><strong>Std.</strong></td><td style="text-align:right"><strong>Ansatz</strong></td><td style="text-align:right"><strong>Betrag</strong></td></tr>
-       <tr><td>…</td><td>…</td><td style="text-align:right">0.0</td><td style="text-align:right">0.00</td><td style="text-align:right">0.00</td></tr>
-     </tbody></table>
-     <h2>Material</h2>
-     <table class="pdftab"><tbody>
-       <tr><td><strong>Material</strong></td><td style="text-align:right"><strong>Menge</strong></td><td><strong>Einheit</strong></td><td style="text-align:right"><strong>Betrag</strong></td></tr>
-       <tr><td>…</td><td style="text-align:right"></td><td></td><td style="text-align:right">0.00</td></tr>
-     </tbody></table>
-     <p style="text-align:right"><strong>Total&nbsp;&nbsp;CHF 0.00</strong></p>
-     <p style="color:#777">Visum Bauleitung …&nbsp;&nbsp;·&nbsp;&nbsp;Visum Unternehmer …</p>` },
-  bautagebuch: { titel: 'Bautagebuch', html:
-    `<h1>Bautagebuch / Baustellenprotokoll</h1>
-     <p style="color:#777">Objekt …&nbsp;·&nbsp;Datum ${TODAY}&nbsp;·&nbsp;Wetter …&nbsp;·&nbsp;Temperatur … °C</p>
-     <h2>Anwesende</h2><ul><li>… (Firma, Anzahl)</li></ul>
-     <h2>Ausgeführte Arbeiten</h2><ul><li>…</li></ul>
-     <h2>Lieferungen / Geräte</h2><ul><li>…</li></ul>
-     <h2>Besondere Vorkommnisse</h2><p>…</p>
-     <h2>Pendenzen</h2><ul><li>Aufgabe – verantwortlich – bis</li></ul>` },
-  maengelliste: { titel: 'Mängelliste', html:
-    `<h1>Mängel- / Abnahmeprotokoll</h1>
-     <p style="color:#777">Objekt …&nbsp;·&nbsp;Abnahme vom ${TODAY}&nbsp;·&nbsp;Teilnehmende …</p>
-     <table class="pdftab"><tbody>
-       <tr><td><strong>Nr.</strong></td><td><strong>Ort / Bauteil</strong></td><td><strong>Mangel</strong></td><td><strong>Verantwortlich</strong></td><td><strong>Frist</strong></td><td><strong>erledigt</strong></td></tr>
-       <tr><td>1</td><td>…</td><td>…</td><td>…</td><td>…</td><td>☐</td></tr>
-       <tr><td>2</td><td>…</td><td>…</td><td>…</td><td>…</td><td>☐</td></tr>
-     </tbody></table>
-     <p style="color:#777">Unterschrift Bauherrschaft …&nbsp;&nbsp;·&nbsp;&nbsp;Unterschrift Unternehmer …</p>` },
-  zahlungsplan: { titel: 'Zahlungsplan', html:
-    `<h1>Zahlungsplan</h1>
-     <p style="color:#777">Objekt …&nbsp;·&nbsp;Vertragssumme CHF 0.00&nbsp;·&nbsp;${TODAY}</p>
-     <table class="pdftab"><tbody>
-       <tr><td><strong>Rate</strong></td><td><strong>Zahlungsgrund / Baufortschritt</strong></td><td style="text-align:right"><strong>%</strong></td><td style="text-align:right"><strong>Betrag</strong></td><td><strong>fällig</strong></td></tr>
-       <tr><td>1</td><td>Bei Vertragsabschluss</td><td style="text-align:right">30</td><td style="text-align:right">0.00</td><td>…</td></tr>
-       <tr><td>2</td><td>Bei Baubeginn</td><td style="text-align:right">40</td><td style="text-align:right">0.00</td><td>…</td></tr>
-       <tr><td>3</td><td>Nach Abnahme / Bezug</td><td style="text-align:right">30</td><td style="text-align:right">0.00</td><td>…</td></tr>
-     </tbody></table>` },
+  brief: { titel: 'Geschaeftsbrief', bauen: () => {
+    const z = [];
+    z.push(Z('Musterbau AG, Musterstrasse 1, 3000 Bern'));
+    z.push(Z(''));
+    z.push(Z('Empfaenger AG'));
+    z.push(Z('z. H. Frau Muster'));
+    z.push(Z('Beispielweg 5'));
+    z.push(Z('3000 Bern'));
+    z.push(Z(''));
+    z.push(Z('Bern, ' + TODAY));
+    z.push(Z(''));
+    z.push(Z('Betreff des Schreibens'));
+    z.push(Z(''));
+    z.push(Z('Sehr geehrte Damen und Herren'));
+    z.push(Z(''));
+    z.push(Z('Hier steht der Inhalt Ihres Schreibens.'));
+    z.push(Z(''));
+    z.push(Z('Freundliche Gruesse'));
+    z.push(Z(''));
+    z.push(Z('Musterbau AG'));
+    z.push(Z(''));
+    z.push(Z('Yanick Gerber, Bauleiter'));
+    z.push(Z(''));
+    z.push(Z('Beilagen: keine'));
+    const cfmt = { '0,9': { b: true } };
+    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 480 } });
+  } },
+
+  angebot: { titel: 'Offerte', bauen: () => {
+    const z = [];
+    z.push(Z('OFFERTE'));
+    z.push(Z('Offert-Nr.', '2026-001', 'Datum', TODAY));
+    z.push(Z('Projekt', '...', 'Gewerk / BKP', '...'));
+    z.push(Z('Bauherrschaft', '...', 'Gueltig bis', '...'));
+    z.push(Z(''));
+    z.push(Z('Pos.', 'Leistung', 'Menge', 'Einheit', 'Einheitspreis', 'Betrag'));
+    for (let i = 0; i < 10; i++) {
+      const r = 7 + i;
+      z.push(Z(String(i + 1), '', '', 'm2', '', '=WENNFEHLER(C' + r + '*E' + r + ';"")'));
+    }
+    const e = 7, l = 16, zt = 17, mw = 18;
+    z.push(Z('', 'Zwischentotal', '', '', '', '=SUMME(F' + e + ':F' + l + ')'));
+    z.push(Z('', 'MWST ' + MWST + ' %', '', '', '', '=F' + zt + '*' + (MWST / 100)));
+    z.push(Z('', 'TOTAL inkl. MWST', '', '', '', '=F' + zt + '+F' + mw));
+    z.push(Z(''));
+    z.push(Z('BEDINGUNGEN'));
+    z.push(Z('Vertragsgrundlage', 'SIA 118, Ausgabe 2013'));
+    z.push(Z('Preisbasis', 'fest bis Bauvollendung, keine Teuerung'));
+    z.push(Z('Zahlungskonditionen', '30 Tage netto, 2 % Skonto innert 10 Tagen'));
+    z.push(Z('Ausfuehrung', 'gemaess Terminprogramm der Bauleitung'));
+    z.push(Z(''));
+    z.push(Z('Ort, Datum', '', 'Unternehmer', ''));
+    z.push(Z('..............................', '', '..............................', ''));
+    const fmt = {};
+    for (let r = 6; r <= 18; r++) { fmt['4,' + r] = 'chf'; fmt['5,' + r] = 'chf'; }
+    const cfmt = fettZeile({}, 5, [0, 1, 2, 3, 4, 5]);
+    fettZeile(cfmt, 18, [1, 5]);
+    fettZeile(cfmt, 20, [0]);
+    cfmt['0,0'] = { b: true, sz: 20 };
+    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 44, 1: 250 } });
+  } },
+
+  rechnung: { titel: 'Rechnung', bauen: () => {
+    const z = [];
+    z.push(Z('RECHNUNG'));
+    z.push(Z('Rechnungs-Nr.', '2026-001', 'Datum', TODAY));
+    z.push(Z('Projekt', '...', 'Leistungszeitraum', '...'));
+    z.push(Z('An', '...', 'Ihre Bestellung', '...'));
+    z.push(Z(''));
+    z.push(Z('Pos.', 'Leistung', 'Menge', 'Einheit', 'Einheitspreis', 'Betrag'));
+    for (let i = 0; i < 8; i++) {
+      const r = 7 + i;
+      z.push(Z(String(i + 1), '', '', 'Stk', '', '=WENNFEHLER(C' + r + '*E' + r + ';"")'));
+    }
+    const e = 7, l = 14, zt = 15, mw = 16, tot = 17;
+    z.push(Z('', 'Zwischentotal', '', '', '', '=SUMME(F' + e + ':F' + l + ')'));
+    z.push(Z('', 'MWST ' + MWST + ' %', '', '', '', '=F' + zt + '*' + (MWST / 100)));
+    z.push(Z('', 'TOTAL inkl. MWST', '', '', '', '=F' + zt + '+F' + mw));
+    z.push(Z('', 'Skonto 2 % bei Zahlung innert 10 Tagen', '', '', '', '=F' + tot + '*0.02'));
+    z.push(Z(''));
+    z.push(Z('Zahlbar innert 30 Tagen netto auf CH00 0000 0000 0000 0000 0'));
+    z.push(Z('MWST-Nr. CHE-123.456.789 MWST'));
+    const fmt = {};
+    for (let r = 6; r <= 18; r++) { fmt['4,' + r] = 'chf'; fmt['5,' + r] = 'chf'; }
+    const cfmt = fettZeile({}, 5, [0, 1, 2, 3, 4, 5]);
+    fettZeile(cfmt, 17, [1, 5]);
+    cfmt['0,0'] = { b: true, sz: 20 };
+    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 44, 1: 250 } });
+  } },
+
+  protokoll: { titel: 'Sitzungsprotokoll', bauen: () => {
+    const z = [];
+    z.push(Z('SITZUNGSPROTOKOLL'));
+    z.push(Z('Projekt', '...', 'Nr.', '1'));
+    z.push(Z('Datum / Zeit', TODAY, 'Ort', 'Baustelle'));
+    z.push(Z('Leitung', '...', 'Protokoll', '...'));
+    z.push(Z(''));
+    z.push(Z('Teilnehmende', '...'));
+    z.push(Z('Entschuldigt', '...'));
+    z.push(Z('Verteiler', 'Teilnehmende, Bauherrschaft, Architekt'));
+    z.push(Z(''));
+    z.push(Z('Nr.', 'Traktandum / Beschluss', 'Wer', 'Bis wann', 'Status'));
+    for (let i = 0; i < 10; i++) z.push(Z(String(i + 1), '', '', '', 'offen'));
+    z.push(Z(''));
+    z.push(Z('Naechste Sitzung', '...'));
+    z.push(Z('Einsprachen innert 10 Tagen an die Bauleitung, sonst gilt das Protokoll als genehmigt.'));
+    const cfmt = fettZeile({}, 9, [0, 1, 2, 3, 4]);
+    cfmt['0,0'] = { b: true, sz: 20 };
+    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 44, 1: 300 } });
+  } },
+
+  bautagebuch: { titel: 'Bautagebuch', bauen: () => {
+    const z = [];
+    z.push(Z('BAUTAGEBUCH'));
+    z.push(Z('Projekt', '...', 'Tag', TODAY));
+    z.push(Z('Wetter', 'bewoelkt', 'Temperatur', '... Grad'));
+    z.push(Z(''));
+    z.push(Z('Firma / Gewerk', 'Personen', 'Stunden', 'Ausgefuehrte Arbeiten'));
+    for (let i = 0; i < 8; i++) z.push(Z('', '', '', ''));
+    const e = 6, l = 13;
+    z.push(Z('TOTAL', '=SUMME(B' + e + ':B' + l + ')', '=SUMME(C' + e + ':C' + l + ')', ''));
+    z.push(Z(''));
+    z.push(Z('Lieferungen', '...'));
+    z.push(Z('Besondere Vorkommnisse', '...'));
+    z.push(Z('Anordnungen der Bauleitung', '...'));
+    z.push(Z(''));
+    z.push(Z('Visum Bauleitung', '..............................'));
+    const cfmt = fettZeile({}, 4, [0, 1, 2, 3]);
+    fettZeile(cfmt, 14, [0, 1, 2]);
+    cfmt['0,0'] = { b: true, sz: 20 };
+    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 200, 3: 300 } });
+  } },
+
+  regierapport: { titel: 'Regierapport', bauen: () => {
+    const z = [];
+    z.push(Z('REGIERAPPORT'));
+    z.push(Z('Rapport-Nr.', '1', 'Datum', TODAY));
+    z.push(Z('Projekt', '...', 'Gewerk', '...'));
+    z.push(Z('Bestellt durch', '...', 'Grund der Regie', '...'));
+    z.push(Z(''));
+    z.push(Z('Mitarbeiter', 'Funktion', 'Stunden', 'Ansatz', 'Betrag'));
+    for (let i = 0; i < 5; i++) {
+      const r = 7 + i;
+      z.push(Z('', '', '', '', '=WENNFEHLER(C' + r + '*D' + r + ';"")'));
+    }
+    z.push(Z(''));
+    z.push(Z('Material / Maschinen', 'Menge', 'Einheit', 'Ansatz', 'Betrag'));
+    for (let i = 0; i < 4; i++) {
+      const r = 14 + i;
+      z.push(Z('', '', '', '', '=WENNFEHLER(B' + r + '*D' + r + ';"")'));
+    }
+    z.push(Z(''));
+    z.push(Z('', '', '', 'TOTAL', '=SUMME(E7:E11)+SUMME(E14:E17)'));
+    z.push(Z(''));
+    z.push(Z('Visum Unternehmer', '..............................', 'Visum Bauleitung', '..............................'));
+    z.push(Z('Nur mit Visum der Bauleitung verrechenbar (SIA 118 Art. 46).'));
+    const fmt = {};
+    for (let r = 6; r <= 19; r++) { fmt['3,' + r] = 'chf'; fmt['4,' + r] = 'chf'; }
+    const cfmt = fettZeile({}, 5, [0, 1, 2, 3, 4]);
+    fettZeile(cfmt, 12, [0, 1, 2, 3, 4]);
+    fettZeile(cfmt, 19, [3, 4]);
+    cfmt['0,0'] = { b: true, sz: 20 };
+    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 200 } });
+  } },
+
+  maengelliste: { titel: 'Maengelliste', bauen: () => {
+    const z = [];
+    z.push(Z('MAENGELLISTE'));
+    z.push(Z('Projekt', '...', 'Datum', TODAY));
+    z.push(Z('Aufgenommen durch', '...', 'Abnahme', '...'));
+    z.push(Z(''));
+    z.push(Z('Nr.', 'Ort / Raum', 'Gewerk', 'Mangel', 'Frist', 'Status', 'Visum'));
+    for (let i = 0; i < 14; i++) z.push(Z(String(i + 1), '', '', '', '', 'offen', ''));
+    const e = 6, l = 19;
+    z.push(Z(''));
+    z.push(Z('', 'Offene Maengel', '=ZAEHLENWENN(F' + e + ':F' + l + ';"offen")'));
+    z.push(Z('', 'Erledigte Maengel', '=ZAEHLENWENN(F' + e + ':F' + l + ';"erledigt")'));
+    z.push(Z(''));
+    z.push(Z('Die Maengel sind bis zur genannten Frist zu beheben (SIA 118 Art. 169).'));
+    const cfmt = fettZeile({}, 4, [0, 1, 2, 3, 4, 5, 6]);
+    cfmt['0,0'] = { b: true, sz: 20 };
+    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 44, 3: 280 } });
+  } },
+
+  zahlungsplan: { titel: 'Zahlungsplan', bauen: () => {
+    const R = [['Vertragsunterzeichnung', '10'], ['Baubeginn', '15'], ['Rohbau fertig', '25'],
+               ['Fenster eingebaut', '15'], ['Innenausbau fertig', '20'], ['Abnahme', '10'],
+               ['Nach Garantiefrist', '5']];
+    const z = [];
+    z.push(Z('ZAHLUNGSPLAN'));
+    z.push(Z('Projekt', '...', 'Datum', TODAY));
+    z.push(Z('Unternehmer', '...', 'Werkvertragssumme', '0'));
+    z.push(Z(''));
+    z.push(Z('Rate', 'Zahlungsgrund', 'Anteil', 'Betrag', 'Faellig am', 'Bezahlt am'));
+    R.forEach((x, i) => {
+      const r = 6 + i;
+      z.push(Z(String(i + 1), x[0], (Number(x[1]) / 100).toString(), '=$D$3*C' + r, '', ''));
+    });
+    const e = 6, l = 5 + R.length;
+    z.push(Z('', 'TOTAL', '=SUMME(C' + e + ':C' + l + ')', '=SUMME(D' + e + ':D' + l + ')'));
+    z.push(Z(''));
+    z.push(Z('Rueckbehalt 10 % bis Ablauf der Garantiefrist bzw. gegen Garantieschein (SIA 118 Art. 150).'));
+    const fmt = {};
+    for (let r = 5; r <= l; r++) { fmt['2,' + r] = 'pct'; fmt['3,' + r] = 'chf'; }
+    fmt['3,2'] = 'chf';
+    const cfmt = fettZeile({}, 4, [0, 1, 2, 3, 4, 5]);
+    fettZeile(cfmt, l, [1, 2, 3]);
+    cfmt['0,0'] = { b: true, sz: 20 };
+    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 50, 1: 240 } });
+  } },
+
+  kostenvoranschlag: { titel: 'Kostenvoranschlag', bauen: () => {
+    const z = [];
+    z.push(Z('KOSTENVORANSCHLAG'));
+    z.push(Z('Projekt', '...', 'Datum', TODAY));
+    z.push(Z('Genauigkeit', 'plus/minus 10 %', 'Preisstand', TODAY));
+    z.push(Z(''));
+    z.push(Z('BKP', 'Bezeichnung', 'Menge', 'Einheit', 'Einheitspreis', 'Betrag'));
+    for (let i = 0; i < 12; i++) {
+      const r = 6 + i;
+      z.push(Z('', '', '', 'm2', '', '=WENNFEHLER(C' + r + '*E' + r + ';"")'));
+    }
+    const e = 6, l = 17, zt = 18, un = 19;
+    z.push(Z('', 'Zwischentotal', '', '', '', '=SUMME(F' + e + ':F' + l + ')'));
+    z.push(Z('', 'Unvorhergesehenes 5 %', '', '', '', '=F' + zt + '*0.05'));
+    z.push(Z('', 'TOTAL exkl. MWST', '', '', '', '=F' + zt + '+F' + un));
+    const fmt = {};
+    for (let r = 5; r <= 20; r++) { fmt['4,' + r] = 'chf'; fmt['5,' + r] = 'chf'; }
+    const cfmt = fettZeile({}, 4, [0, 1, 2, 3, 4, 5]);
+    fettZeile(cfmt, 19, [1, 5]);
+    cfmt['0,0'] = { b: true, sz: 20 };
+    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 250 } });
+  } },
+
+  abnahme: { titel: 'Abnahmeprotokoll', bauen: () => {
+    const z = [];
+    z.push(Z('ABNAHMEPROTOKOLL'));
+    z.push(Z('Projekt', '...', 'Datum', TODAY));
+    z.push(Z('Gewerk / BKP', '...', 'Werkvertrag vom', '...'));
+    z.push(Z('Unternehmer', '...', 'Bauleitung', '...'));
+    z.push(Z(''));
+    z.push(Z('ERGEBNIS DER ABNAHME'));
+    z.push(Z('Das Werk wird abgenommen', 'ja / nein'));
+    z.push(Z('Abnahme unter Vorbehalt der Maengel gemaess Liste', 'ja / nein'));
+    z.push(Z('Beginn der Garantiefrist', '...'));
+    z.push(Z('Dauer der Garantie', '2 Jahre, verdeckte Maengel 5 Jahre (SIA 118 Art. 172/180)'));
+    z.push(Z('Rueckbehalt', '10 % bis Ablauf der Ruegefrist'));
+    z.push(Z(''));
+    z.push(Z('Nr.', 'Festgestellter Mangel', 'Frist', 'Erledigt am'));
+    for (let i = 0; i < 8; i++) z.push(Z(String(i + 1), '', '', ''));
+    z.push(Z(''));
+    z.push(Z('Unternehmer', '..............................', 'Bauleitung', '..............................'));
+    const cfmt = fettZeile({}, 5, [0]);
+    fettZeile(cfmt, 12, [0, 1, 2, 3]);
+    cfmt['0,0'] = { b: true, sz: 20 };
+    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 60, 1: 320 } });
+  } },
 
   // ---------------- Rechnende Bau-Vorlagen ----------------
   // Bewusst Rasterzeilen statt HTML-Tabellen: nur so rechnen Formeln, greifen
@@ -1204,17 +1384,16 @@ const TEMPLATES = {
 };
 // Vorlagen-Galerie: Kurzbeschreibung + Kategorie-Icon je Vorlage (bessere Auffindbarkeit)
 const TMPL_META = {
-  brief:             { d: 'Formeller Geschäftsbrief mit Absender & Datum', i: 'doc' },
-  rechnung:          { d: 'Rechnung mit Positionen & Total', i: 'money' },
-  angebot:           { d: 'Angebot / Offerte mit Leistungen & Preis', i: 'money' },
-  projektplan:       { d: 'Projektübersicht mit Meilensteinen', i: 'list' },
-  protokoll:         { d: 'Sitzungsprotokoll mit Traktanden', i: 'doc' },
-  lebenslauf:        { d: 'Strukturierter Lebenslauf (CV)', i: 'doc' },
-  kostenvoranschlag: { d: 'Baukostenschätzung nach Positionen', i: 'money' },
-  regierapport:      { d: 'Rapport für Regiearbeiten (Std./Material)', i: 'list' },
-  bautagebuch:       { d: 'Tägliche Bau-Notizen & Wetter', i: 'list' },
-  maengelliste:      { d: 'Mängel erfassen, verorten, abhaken', i: 'list' },
-  zahlungsplan:      { d: 'Ratenplan nach Baufortschritt', i: 'money' },
+  brief:             { d: 'Schweizer Geschaeftsbrief mit Briefkopf und Beilagen', i: 'doc' },
+  angebot:           { d: 'Offerte nach SIA 118, rechnet MWST und Total', i: 'money' },
+  rechnung:          { d: 'Rechnung mit MWST 8.1 %, Skonto und Zahlungsangaben', i: 'money' },
+  protokoll:         { d: 'Sitzungsprotokoll mit Traktanden, Terminen und Verteiler', i: 'doc' },
+  bautagebuch:       { d: 'Tagesrapport: Wetter, Firmen, Stunden, Vorkommnisse', i: 'list' },
+  regierapport:      { d: 'Regiearbeiten mit Stunden, Material und Visum', i: 'list' },
+  maengelliste:      { d: 'Maengel mit Frist und Status, zaehlt offen und erledigt', i: 'list' },
+  zahlungsplan:      { d: 'Raten nach Baufortschritt, rechnet aus der Vertragssumme', i: 'money' },
+  kostenvoranschlag: { d: 'Kostenvoranschlag mit Unvorhergesehenem und Total', i: 'money' },
+  abnahme:           { d: 'Abnahmeprotokoll mit Garantiefristen und Maengeln', i: 'doc' },
   baukosten:         { d: 'BKP 0-9, Voranschlag/Prognose, rechnet Abweichung', i: 'money' },
   terminprogramm:    { d: 'Gewerke mit Start/Ende, rechnet Kalender- und Arbeitstage', i: 'list' },
   ausmass:           { d: 'Ausmassblatt, rechnet Mengen in m2', i: 'list' },
@@ -4503,6 +4682,82 @@ function selfTest() {
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
 
+  // --- Vorlagen als echte Geschaeftsdokumente ---
+  ok('jede Vorlage bringt Briefkopf und Fusszeile mit', (() => {
+    return Object.keys(TEMPLATES).every(k => {
+      const v = TEMPLATES[k].bauen();
+      return typeof v.kopf === 'string' && typeof v.fuss === 'string';
+    });
+  })());
+  ok('die Fusszeile jeder Vorlage traegt die Seitenzahl',
+    Object.keys(TEMPLATES).every(k => /\{Seite\}/.test(TEMPLATES[k].bauen().fuss)));
+  ok('Offerte und Rechnung rechnen mit dem Schweizer MWST-Satz',
+    MWST === 8.1 && /MWST 8.1 %/.test(TEMPLATES.angebot.bauen().pages[0].html));
+  ok('Rechnung nennt MWST-Nummer und Zahlungsfrist', (() => {
+    const h = TEMPLATES.rechnung.bauen().pages[0].html;
+    return /CHE-/.test(h) && /30 Tagen/.test(h) && /Skonto/.test(h);
+  })());
+  ok('Offerte, Abnahme, Beiblatt und Regierapport nennen SIA 118',
+    ['angebot', 'abnahme', 'beiblatt', 'regierapport'].every(k => /SIA 118/.test(TEMPLATES[k].bauen().pages[0].html)));
+  ok('Maengelliste zaehlt offene und erledigte Maengel', (() => {
+    const h = TEMPLATES.maengelliste.bauen().pages[0].html;
+    return /ZAEHLENWENN\(F6:F19;"offen"\)/.test(h) && /"erledigt"/.test(h);
+  })());
+  ok('Zahlungsplan rechnet die Raten aus der Vertragssumme (fester Bezug)', (() => {
+    const h = TEMPLATES.zahlungsplan.bauen().pages[0].html;
+    return /=\$D\$3\*C6/.test(h);
+  })());
+
+  // Rechenwege der neuen Vorlagen an echten Zahlen
+  ok('Rechenweg Offerte: Betrag, Zwischentotal, MWST und Total stimmen', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 6, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['1', 'Pos', '10', 'm2', '25', '=C1*E1'] },
+      { tag: 'p', attrs: '', cells: ['2', 'Pos', '4', 'm2', '50', '=C2*E2'] },
+      { tag: 'p', attrs: '', cells: ['', 'Zwischentotal', '', '', '', '=SUMME(F1:F2)'] },
+      { tag: 'p', attrs: '', cells: ['', 'MWST', '', '', '', '=F3*0.081'] },
+      { tag: 'p', attrs: '', cells: ['', 'Total', '', '', '', '=F3+F4'] },
+    ] };
+    const zwischen = evalCell(5, 2), mwst = evalCell(5, 3), total = evalCell(5, 4);
+    curGrid = alt;
+    return zwischen === 450 && mwst === 36.45 && total === 486.45;
+  })());
+  ok('Rechenweg Zahlungsplan: fester Bezug auf die Vertragssumme', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 4, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['', '', '', '200000'] },
+      { tag: 'p', attrs: '', cells: ['1', 'Rate', '0.1', '=$D$1*C2'] },
+      { tag: 'p', attrs: '', cells: ['2', 'Rate', '0.25', '=$D$1*C3'] },
+    ] };
+    const a = evalCell(3, 1), b = evalCell(3, 2);
+    curGrid = alt;
+    return a === 20000 && b === 50000;
+  })());
+  ok('Rechenweg Regierapport: Stunden mal Ansatz, Total ueber beide Bloecke', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 5, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['Meier', 'Polier', '8', '95', '=C1*D1'] },
+      { tag: 'p', attrs: '', cells: ['Muster', 'Handlanger', '8', '75', '=C2*D2'] },
+      { tag: 'p', attrs: '', cells: ['Bagger', '2', 'Std', '180', '=B3*D3'] },
+      { tag: 'p', attrs: '', cells: ['', '', '', 'TOTAL', '=SUMME(E1:E2)+SUMME(E3:E3)'] },
+    ] };
+    const total = evalCell(4, 3);
+    curGrid = alt;
+    return total === 8 * 95 + 8 * 75 + 2 * 180;
+  })());
+  ok('Rechenweg Maengelliste: ZAEHLENWENN zaehlt nur die offenen', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 6, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['1', '', '', '', '', 'offen'] },
+      { tag: 'p', attrs: '', cells: ['2', '', '', '', '', 'erledigt'] },
+      { tag: 'p', attrs: '', cells: ['3', '', '', '', '', 'offen'] },
+    ] };
+    const offen = evalRaw('=ZAEHLENWENN(F1:F3;"offen")', new Set());
+    const fertig = evalRaw('=ZAEHLENWENN(F1:F3;"erledigt")', new Set());
+    curGrid = alt;
+    return offen === 2 && fertig === 1;
+  })());
+
   // --- Datum: Grundlage fuers Terminprogramm ---
   ok('Datum wird in Schweizer und in ISO-Schreibweise gelesen', (() => {
     const a = datumParsen('01.03.2026'), b = datumParsen('2026-03-01');
@@ -5106,7 +5361,7 @@ function selfTest() {
   // Vorlagen-Galerie: eine Karte je Vorlage, mit Beschreibung
   { const g = renderTemplateHint(); const cards = (g.match(/tmpl-card/g) || []).length;
     ok('Vorlagen-Galerie: Karte je Vorlage', cards === Object.keys(TEMPLATES).length);
-    ok('Vorlagen-Galerie: Beschreibungen vorhanden', /Ratenplan nach Baufortschritt/.test(g) && /tc-d/.test(g)); }
+    ok('Vorlagen-Galerie: Beschreibungen vorhanden', /Raten nach Baufortschritt/.test(g) && /tc-d/.test(g)); }
 
   // Calc-Namensfeld: Einzelzelle vs. Bereichsgrösse (Zeilen×Spalten)
   ok('selRefLabel Einzelzelle', selRefLabel(0, 0, 0, 0, 'A1') === 'A1');

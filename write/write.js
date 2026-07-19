@@ -3400,7 +3400,14 @@ function verschiebeFormel(f, dc, dr) {
 /* ---- Formel-Engine (Excel-artig): + - * / ^, Klammern, Vergleiche, Funktionen, Verschachtelung ---- */
 function gridCellRaw(c, r) { return cellText(gridGet(curGrid, c, r)); }
 function toNum(v) { if (typeof v === 'number') return v; if (v === true) return 1; if (!v) return 0; const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? 0 : n; }
-function evalCell(c, r) { return evalRaw(gridCellRaw(c, r), new Set([c + ',' + r])); }
+let _formelCache = null;   // gilt nur waehrend EINER Zeichnung; danach wieder null
+function evalCell(c, r) {
+  const k = c + ',' + r;
+  if (_formelCache && _formelCache.has(k)) return _formelCache.get(k);
+  const v = evalRaw(gridCellRaw(c, r), new Set([k]));
+  if (_formelCache) _formelCache.set(k, v);
+  return v;
+}
 function evalRaw(raw, seen) {
   if (raw == null || raw === '') return '';
   const s = String(raw).trim();
@@ -3415,9 +3422,12 @@ function evalRaw(raw, seen) {
 function refVal(ref, seen) {
   const m = /^([A-Z]+)(\d+)$/.exec(String(ref).toUpperCase().replace(/\$/g, '')); if (!m) return 0;
   const c = colToIdx(m[1]), r = +m[2] - 1, key = c + ',' + r;
-  if (seen.has(key)) throw 'circ';
+  if (seen.has(key)) throw 'circ';          // Zirkelpruefung IMMER zuerst - vor dem Zwischenspeicher
+  if (_formelCache && _formelCache.has(key)) return _formelCache.get(key);
   const ns = new Set(seen); ns.add(key);
-  return evalRaw(gridCellRaw(c, r), ns);
+  const v = evalRaw(gridCellRaw(c, r), ns);
+  if (_formelCache) _formelCache.set(key, v);   // fertig gerechnet heisst: kein Zirkel auf diesem Weg
+  return v;
 }
 function rangeVals(a, b, seen) {
   const m1 = /^([A-Z]+)(\d+)$/.exec(String(a).toUpperCase().replace(/\$/g, '')), m2 = /^([A-Z]+)(\d+)$/.exec(String(b).toUpperCase().replace(/\$/g, ''));
@@ -3535,12 +3545,23 @@ function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen
 }
 let gridCols = 1, gridRows = 1, calcFitRows = 0;
 let _spaltenBild = '';
+/* Nutzbare Hoehe eines Rasterblatts. Steht bewusst an EINER Stelle - vorher rechneten
+   renderSheet, fitCalcRows und calcPaginate mit leicht verschiedenen Formeln (6px Unterschied),
+   und genau diese 6px entscheiden, ob die letzte Zeile noch aufs Blatt passt. */
+function calcNutzhoehe() {
+  const hH = ($('#zoneH') || {}).offsetHeight || 60;
+  const fH = ($('#zoneF') || {}).offsetHeight || 60;
+  return pageDims().h * MM - hH - fH - 12 * MM - 6;
+}
 function renderCalc() {
+  _formelCache = new Map();   // eine Zeichnung = ein Stand; danach wieder frisch rechnen
+  try {
   renderSheet(); fitCalcRows(); calcPaginate(); buildCalcRulers(); highlightSel(); updateStats(); updatePages();
   // Das Lineal nur auffrischen, wenn sich die Spaltenaufteilung wirklich geaendert hat -
   // sonst wird es bei jedem Tastendruck neu gebaut.
   const bild = (gridColPx || []).join(',');
   if (bild !== _spaltenBild) { _spaltenBild = bild; drawRuler(); }
+  } finally { _formelCache = null; }
 }
 // Calc bei Inhalt > A4 in mehrere A4-Blätter aufteilen (Lücke mit Fuss-/Kopfzeile, wie Write)
 function calcPaginate() {
@@ -3548,7 +3569,7 @@ function calcPaginate() {
   const t = gEl(); if (!t) return; const tbody = t.querySelector('tbody'); if (!tbody) return;
   const z = parseFloat(page.style.zoom) || 1;
   const hH = $('#zoneH').offsetHeight || 60, fH = $('#zoneF').offsetHeight || 60;
-  const usable = pageDims().h * MM - hH - fH - 12 * MM - 6;
+  const usable = calcNutzhoehe();
   const fh = $('#zoneF').innerHTML, hh = $('#zoneH').innerHTML, cols = gridCols;
   const rows = [...tbody.children].filter(r => !r.classList.contains('cgap'));
   let used = 0;
@@ -3572,7 +3593,7 @@ function fitCalcRows() {
   const usedRows = Math.max(0, calcUsedRange().maxR + 1);
   let contentH = 0; for (let i = 0; i < usedRows && i < trs.length; i++) contentH += trs[i].getBoundingClientRect().height / z;   // echte Höhe des Inhalts
   const hH = $('#zoneH').offsetHeight || 60, fH = $('#zoneF').offsetHeight || 60;
-  const usable = pageDims().h * MM - hH - fH - 12 * MM - 6;        // A4-Inhaltshöhe
+  const usable = calcNutzhoehe();        // A4-Inhaltshöhe (gemeinsame Rechnung)
   const emptyRows = Math.max(0, Math.floor((usable - contentH) / rowH));   // nur den REST mit Leerzeilen füllen
   const want = usedRows + emptyRows;
   if (want !== gridRows && want >= usedRows) { calcFitRows = want; renderSheet(); }
@@ -3727,7 +3748,7 @@ function renderSheet() {
   const hH = $('#zoneH').offsetHeight || 60, fH = $('#zoneF').offsetHeight || 60;
   const fs = +(doc.einstellungen.schriftgroesse) || 16, lh = +(doc.einstellungen.zeilenabstand) || 1.5;
   const rowHpx = Math.max(20, Math.round(Math.max(1.7 * fs, lh * fs)) + 8);   // Zellenhöhe inkl. Padding/Rahmen
-  const availPx = d.h * MM - hH - fH - 12 * MM;                                // Blatt minus Kopf/Fuss/Innenabstand
+  const availPx = calcNutzhoehe();                                             // gemeinsame Rechnung – sonst eine Zeile zu viel
   const rowsPP = Math.max(8, Math.floor(availPx / rowHpx));
   const rows = Math.max(ext.rows, wantR > 0 ? wantR : (calcFitRows || rowsPP));
   gridCols = cols; gridRows = rows;
@@ -4532,6 +4553,50 @@ function selfTest() {
     curGrid = alt;
     return kal === 7 && arb === 5 && leer === '';
   })());
+
+  // --- Formel-Zwischenspeicher: schneller, aber darf nichts verfaelschen ---
+  ok('Zwischenspeicher liefert dieselben Werte wie ohne', (() => {
+    const aG = curGrid, aC = _formelCache;
+    curGrid = { cols: 2, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['5', '=A1*2'] },
+      { tag: 'p', attrs: '', cells: ['=B1+1', '=A2*10'] },
+    ] };
+    _formelCache = null;  const ohne = [evalCell(1, 0), evalCell(0, 1), evalCell(1, 1)].join('|');
+    _formelCache = new Map(); const mit = [evalCell(1, 0), evalCell(0, 1), evalCell(1, 1)].join('|');
+    _formelCache = aC; curGrid = aG;
+    return ohne === mit && mit === '10|11|110';
+  })());
+  ok('Zirkelbezug wird AUCH mit Zwischenspeicher erkannt', (() => {
+    const aG = curGrid, aC = _formelCache;
+    curGrid = { cols: 1, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['=A2'] },
+      { tag: 'p', attrs: '', cells: ['=A1'] },
+    ] };
+    _formelCache = new Map();
+    const v = evalCell(0, 0);
+    _formelCache = aC; curGrid = aG;
+    return v === '#ZIRKEL';
+  })());
+  ok('Zwischenspeicher rechnet eine Kette nur einmal durch', (() => {
+    const aG = curGrid, aC = _formelCache;
+    let zugriffe = 0;
+    const echt = gridCellRaw;
+    curGrid = { cols: 1, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['1'] }, { tag: 'p', attrs: '', cells: ['=A1+1'] },
+      { tag: 'p', attrs: '', cells: ['=A2+1'] }, { tag: 'p', attrs: '', cells: ['=A3+1'] },
+    ] };
+    gridCellRaw = (c, r) => { zugriffe++; return echt(c, r); };
+    _formelCache = new Map();
+    [0, 1, 2, 3].forEach(r => evalCell(0, r));
+    const mit = zugriffe;
+    zugriffe = 0; _formelCache = null;
+    [0, 1, 2, 3].forEach(r => evalCell(0, r));
+    const ohne = zugriffe;
+    gridCellRaw = echt; _formelCache = aC; curGrid = aG;
+    return mit < ohne && mit <= 5;
+  })());
+  ok('nach der Zeichnung ist der Zwischenspeicher wieder zu (kein alter Stand)', _formelCache === null);
+  ok('calcNutzhoehe steht an einer Stelle', typeof calcNutzhoehe === 'function');
 
   // --- Schreibfluss: Cursor umsetzen darf die Tabelle nicht neu aufbauen ---
   ok('zelleSchliessen vorhanden (uebernimmt und schliesst ohne Neuaufbau)', typeof zelleSchliessen === 'function');

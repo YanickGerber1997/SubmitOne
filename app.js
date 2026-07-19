@@ -684,7 +684,7 @@ function actAbo() {
     <div style="margin-top:18px">
       <div style="font-weight:700;font-size:13px;margin-bottom:2px">Individuell – nur einzelne Module</div>
       <div class="muted" style="font-size:11.5px;margin-bottom:8px">Alle Module sind im Free benutzbar; bezahlt wird fürs <b>💾 Speichern</b>. Einzeln buchbar – in Summe aber <b>teurer als das passende Paket</b>. <b>Kontakte, Kalender &amp; Arbeitsplanung sind gratis dabei</b>, sobald mindestens ein Modul gebucht ist. „Basic" enthält die Basis-Funktionen, „Premium" alles.</div>
-      <div class="muted" style="font-size:11.5px;margin:-2px 0 10px;padding:7px 10px;background:#eefaf2;border:1px solid #bfe6cd;border-radius:8px;color:#1d6b3a">✓ <b>Fair-Preis:</b> Du zahlst nie mehr als das Paket. Ab <b>15.– Basic-Modulen</b> bekommst du automatisch <b>ganz Basic</b>, ab <b>25.– total</b> automatisch <b>Premium (alles)</b>.</div>
+      <div class="muted" style="font-size:11.5px;margin:-2px 0 10px;padding:7px 10px;background:#eefaf2;border:1px solid #bfe6cd;border-radius: 0;color:#1d6b3a">✓ <b>Fair-Preis:</b> Du zahlst nie mehr als das Paket. Ab <b>15.– Basic-Modulen</b> bekommst du automatisch <b>ganz Basic</b>, ab <b>25.– total</b> automatisch <b>Premium (alles)</b>.</div>
       <div class="mod-list">${modRows}</div>
     </div>
     <p class="muted" style="font-size:11.5px;margin:14px 0 0">Preise CHF/Monat (Richtwerte, anpassbar). Bezahlung über Stripe – sobald die Zahlungslinks in config.js eingetragen sind, führt „freischalten" direkt zur Kasse.</p>
@@ -2154,7 +2154,7 @@ function viewKosten(id) {
       const z = kostenZeile(v); add(sub, z); add(tot, z);
       const d = z.vergeben ? (z.endsumme - z.wv) : null;   // +/− = WV → Endsumme
       const hatBt = (p.bauteile || []).length;
-      const btSel = hatBt ? `<div style="margin-top:3px"><select class="bt-gw" data-pid="${p.id}" data-vid="${v.id}" onclick="event.stopPropagation()" title="Teilprojekt" style="font-size:11px;padding:1px 5px;border:1px solid var(--border);border-radius:4px;max-width:200px">${bauteilOptionsHtml(p, v.bauteil)}</select></div>` : '';
+      const btSel = hatBt ? `<div style="margin-top:3px"><select class="bt-gw" data-pid="${p.id}" data-vid="${v.id}" onclick="event.stopPropagation()" title="Teilprojekt" style="font-size:11px;padding:1px 5px;border:1px solid var(--border);border-radius: 0;max-width:200px">${bauteilOptionsHtml(p, v.bauteil)}</select></div>` : '';
       const open = kostOpen.has(v.id);
       const ein = (v.eingeladene || []).length, off = offertenOf(v).length;
       const untCell = v.firma ? `<span title="vergeben an ${esc(v.firma)}">${esc(v.firma)}</span>` : (ein ? `<span class="muted">${ein} eingeladen${off ? ` · ${off} Offerte${off === 1 ? '' : 'n'}` : ''}</span>` : '<span class="muted">nicht ausgeschrieben</span>');
@@ -2190,13 +2190,13 @@ function viewKosten(id) {
         </td></tr>`;
         rows += (v.nachtraege || []).map(n => { const nc = n.status === 'genehmigt' ? 'green' : (n.status === 'abgelehnt' ? 'grey' : 'amber'); return `<tr class="rg-sub">
           <td></td>
-          <td colspan="5"><span class="muted">↳ Nachtrag${n.nr ? ' ' + esc(n.nr) : ''}:</span> ${esc(n.titel || '')} <span class="st ${nc}" style="font-size:9px;padding:1px 6px">${esc(n.status || 'offen')}</span>${hatBt ? ` · <select class="bt-nt" data-pid="${p.id}" data-vid="${v.id}" data-nid="${n.id}" title="Teilprojekt des Nachtrags" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius:4px">${bauteilOptionsHtml(p, n.bauteil)}</select>` : ''}</td>
+          <td colspan="5"><span class="muted">↳ Nachtrag${n.nr ? ' ' + esc(n.nr) : ''}:</span> ${esc(n.titel || '')} <span class="st ${nc}" style="font-size:9px;padding:1px 6px">${esc(n.status || 'offen')}</span>${hatBt ? ` · <select class="bt-nt" data-pid="${p.id}" data-vid="${v.id}" data-nid="${n.id}" title="Teilprojekt des Nachtrags" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius: 0">${bauteilOptionsHtml(p, n.bauteil)}</select>` : ''}</td>
           <td class="num">${mB(n.betrag)}</td>
           <td colspan="4"></td>
         </tr>`; }).join('');
         rows += (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => `<tr class="rg-sub">
           <td></td>
-          <td colspan="6"><span class="muted">↳ ${r.datum ? fmtDate(r.datum) : '—'}</span> ${esc(r.text || (r.art === 'gutschrift' ? 'Gutschrift' : 'Rechnung'))}${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''} · ${money(rgSigned(r))}${hatBt ? ` · <select class="bt-rg" data-pid="${p.id}" data-vid="${v.id}" data-rgid="${r.id}" title="Teilprojekt der Rechnung" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius:4px">${bauteilOptionsHtml(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)}</select>` : ''}</td>
+          <td colspan="6"><span class="muted">↳ ${r.datum ? fmtDate(r.datum) : '—'}</span> ${esc(r.text || (r.art === 'gutschrift' ? 'Gutschrift' : 'Rechnung'))}${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''} · ${money(rgSigned(r))}${hatBt ? ` · <select class="bt-rg" data-pid="${p.id}" data-vid="${v.id}" data-rgid="${r.id}" title="Teilprojekt der Rechnung" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius: 0">${bauteilOptionsHtml(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)}</select>` : ''}</td>
           <td></td>
           <td class="num">${mB(rgSigned(r))}</td>
           <td></td><td></td>
@@ -2330,7 +2330,7 @@ let feinWeeks = 4;        // sichtbare Wochen im Vierteltag-Zoom (einstellbar)
 let feinZoom = 1;         // Tagesbreiten-Faktor (Zoom)
 let _feinDays = [], _feinQW = 15, _feinViewStart = null;   // Laufzeit-Kontext fürs Zeichnen/Scrollen
 function feinSubToggle(p) {
-  return `<div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:12px">
+  return `<div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius: 0;padding:3px;margin-bottom:12px">
     <button class="btn sm ${feinSub === 'viertel' ? '' : 'secondary'}" data-act="fein-sub" data-pid="${p.id}" data-kind="viertel" type="button" style="border:none">📐 Vierteltag (Detail + Zusatzbalken)</button>
     <button class="btn sm ${feinSub === 'stunden' ? '' : 'secondary'}" data-act="fein-sub" data-pid="${p.id}" data-kind="stunden" type="button" style="border:none">⏱ Stunden (Tagesablauf)</button>
   </div>`;
@@ -3234,7 +3234,7 @@ function ganttColHex(v) {
 // Farb-Editor: vordefinierte Farben (Status/Gewerke, Unternehmer, Phasen) überschreiben
 function colorRow(group, key, label, cur) {
   return `<label class="field" style="flex-direction:row;align-items:center;gap:10px;justify-content:space-between;font-weight:500">
-    <span style="display:flex;align-items:center;gap:8px"><span style="width:14px;height:14px;border-radius:3px;background:${cur};display:inline-block"></span>${esc(label)}</span>
+    <span style="display:flex;align-items:center;gap:8px"><span style="width:14px;height:14px;border-radius: 0;background:${cur};display:inline-block"></span>${esc(label)}</span>
     <input type="color" value="${cur}" data-act="gantt-color-set" data-group="${group}" data-ckey="${esc(key)}" style="width:48px;height:30px;border:none;background:none;cursor:pointer;padding:0">
   </label>`;
 }
@@ -5076,7 +5076,7 @@ function viewListen(pid) {
     </div>
     ${projektTabs(p, 'listen')}
 
-    <div class="seg" style="display:inline-flex;gap:4px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:16px">
+    <div class="seg" style="display:inline-flex;gap:4px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--border);border-radius: 0;padding:3px;margin-bottom:16px">
       ${tabBtn('subm', 'Submittentenliste')}${tabBtn('unt', 'Unternehmerliste')}${tabBtn('eig', 'Eigentümerliste')}${tabBtn('bem', 'Bemusterung')}
     </div>
 
@@ -5115,7 +5115,7 @@ function openPrintDoc(title, subtitleHtml, inner, opts) {
     .lh{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;border-bottom:2px solid #7c1d2c;padding-bottom:12px;}
     .lh .meta{text-align:right;font-size:10px;color:#6b7480;max-width:54%;line-height:1.5;} .lg-name{font-weight:800;font-size:18px;color:#1b2533;letter-spacing:.3px;}
     h1{font-size:20px;margin:18px 0 0;letter-spacing:.2px;color:#1b2533;}
-    h1::after{content:"";display:block;width:44px;height:3px;background:#7c1d2c;margin-top:6px;border-radius:2px;}
+    h1::after{content:"";display:block;width:44px;height:3px;background:#7c1d2c;margin-top:6px;border-radius: 0;}
     .sub{color:#6b7480;font-size:11.5px;margin:9px 0 16px;}
     table.t{width:100%;border-collapse:collapse;margin-bottom:10px;}
     table.t th{background:#f3f5f9;text-align:left;padding:7px 9px;font-size:10.5px;font-weight:700;color:#46505e;border-bottom:1.5px solid #c9d2de;}
@@ -5123,7 +5123,7 @@ function openPrintDoc(title, subtitleHtml, inner, opts) {
     table.t td.num,table.t th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
     .gw{font-weight:700;margin:15px 0 5px;font-size:13px;color:#1b2533;}
     .muted{color:#9aa4b1;}
-    .conf{display:inline-block;background:#fbe9ea;color:#a01b2b;border:1px solid #e7b3ba;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;}
+    .conf{display:inline-block;background:#fbe9ea;color:#a01b2b;border:1px solid #e7b3ba;border-radius: 0;padding:2px 8px;font-size:10px;font-weight:700;}
     .ft{margin-top:22px;border-top:1px solid #e7ebf1;padding-top:8px;color:#9aa4b1;font-size:9.5px;display:flex;justify-content:space-between;}
     table.t thead{display:table-header-group;} table.t tr{page-break-inside:avoid;}
     @media print{.page{padding:0;}${pg}}`;
@@ -5147,7 +5147,7 @@ function openPrintDoc(title, subtitleHtml, inner, opts) {
     .gw{font-family:Georgia,'Times New Roman',serif;font-weight:400;margin:24px 0 9px;font-size:14.5px;color:#1b2230;letter-spacing:.5px;}
     .gw::before{content:"";display:inline-block;width:16px;height:1.5px;background:#7c1d2c;vertical-align:middle;margin-right:9px;margin-bottom:3px;}
     .muted{color:#b4bac1;}
-    .conf{display:inline-block;border:1px solid #7c1d2c;color:#7c1d2c;border-radius:2px;padding:2px 10px;font-size:8.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;}
+    .conf{display:inline-block;border:1px solid #7c1d2c;color:#7c1d2c;border-radius: 0;padding:2px 10px;font-size:8.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;}
     .ft{margin-top:36px;border-top:1px solid #e6e9ed;padding-top:11px;color:#aab2bd;font-size:8.5px;display:flex;justify-content:space-between;letter-spacing:.5px;text-transform:uppercase;}
     table.t thead{display:table-header-group;} table.t tr{page-break-inside:avoid;}
     @media print{${pg}}`;
@@ -5232,7 +5232,7 @@ function openSheetDoc(opts) {
     table.t th{ background:#f3f5f9; text-align:left; padding:6px 9px; font-size:9px; font-weight:700; color:#46505e; border-bottom:1.5px solid #c9d2de; }
     table.t td{ padding:5px 9px; border-bottom:1px solid #e7ebf1; vertical-align:top; }
     table.t td.num,table.t th.num{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
-    .muted{ color:#9aa4b1; } .conf{ display:inline-block; background:#fbe9ea; color:#a01b2b; border:1px solid #e7b3ba; border-radius:5px; padding:2px 8px; font-size:10px; font-weight:700; }
+    .muted{ color:#9aa4b1; } .conf{ display:inline-block; background:#fbe9ea; color:#a01b2b; border:1px solid #e7b3ba; border-radius: 0; padding:2px 8px; font-size:10px; font-weight:700; }
     ${opts.extraCss || ''}
   </style></head><body>${pages}
   <script>window.onload=function(){ setTimeout(function(){ try{window.focus();}catch(e){} window.print(); }, 250); };<\/script>
@@ -5696,7 +5696,7 @@ function erinnerungenCard(p) {
     ${list.length ? `<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">${list.slice(0, 14).map(r => {
       const ueber = !r.erledigt && r.datum && r.datum < t0;
       const bald = !r.erledigt && r.datum && r.datum >= t0 && (dISO(r.datum) - today()) / 86400000 <= 7;
-      return `<div style="display:flex;align-items:center;gap:10px;padding:7px 11px;border:1px solid var(--border);border-radius:9px;${r.erledigt ? 'opacity:.55' : ''}">
+      return `<div style="display:flex;align-items:center;gap:10px;padding:7px 11px;border:1px solid var(--border);border-radius: 0;${r.erledigt ? 'opacity:.55' : ''}">
         <input type="checkbox" data-act="erinnerung-done" data-pid="${p.id}" data-rid="${r.id}"${r.erledigt ? ' checked' : ''} title="erledigt">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;${r.erledigt ? 'text-decoration:line-through' : ''}">${ERIN_ART[r.art]?.icon || '🔔'} ${esc(r.titel || 'Erinnerung')}</div>
@@ -5834,7 +5834,7 @@ function vergabeLabel(v) { return `${v.bkp ? 'BKP ' + v.bkp + ' ' : ''}${v.gewer
 
 // Generische Live-Suche in Kontakten (für mehrere Dialoge)
 function kontaktPickButton(k) {
-  return `<button type="button" data-id="${k.id}" class="ks-hit" style="display:block;width:100%;text-align:left;padding:7px 9px;border:1px solid var(--border);border-radius:7px;margin-bottom:5px;background:var(--surface);cursor:pointer;font-size:13px"><strong>${esc(k.firma)}</strong>${k.kategorie ? ` <span class="muted">· ${esc(k.kategorie)}</span>` : ''}${k.ort ? ` <span class="muted">· ${esc(k.ort)}</span>` : ''}</button>`;
+  return `<button type="button" data-id="${k.id}" class="ks-hit" style="display:block;width:100%;text-align:left;padding:7px 9px;border:1px solid var(--border);border-radius: 0;margin-bottom:5px;background:var(--surface);cursor:pointer;font-size:13px"><strong>${esc(k.firma)}</strong>${k.kategorie ? ` <span class="muted">· ${esc(k.kategorie)}</span>` : ''}${k.ort ? ` <span class="muted">· ${esc(k.ort)}</span>` : ''}</button>`;
 }
 function attachKontaktSuche(searchId, resultsId, onPick) {
   const sr = $('#' + searchId); if (!sr) return;
@@ -5889,7 +5889,7 @@ function viewBauherr(pid) {
   const selEig = (selW && selW !== 'alle' && selW !== '') ? eigOf(selW) : '';
   const selKontakt = (() => { const h = einheiten.find(x => x.u.id === selW); return h ? (h.u.eigKontakt || '') : ''; })();
   const segB = (kind, label, active) => `<button class="btn sm ${active ? '' : 'secondary'}" data-act="bauherr-wohnung" data-pid="${p.id}" data-kind="${kind}" type="button" style="border:none">${label}</button>`;
-  const whgChips = hasWhg ? `<div class="seg" style="display:inline-flex;gap:4px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:14px">
+  const whgChips = hasWhg ? `<div class="seg" style="display:inline-flex;gap:4px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--border);border-radius: 0;padding:3px;margin-bottom:14px">
     ${segB('alle', 'Alle', selW === 'alle')}
     ${einheiten.map(x => segB(x.u.id, `${esc(x.u.name || 'Einheit')}${x.u.eigentuemer ? ' · ' + esc(x.u.eigentuemer) : ''}`, selW === x.u.id)).join('')}
     ${segB('', 'Zusätze', selW === '')}
@@ -6003,7 +6003,7 @@ function viewBauherr(pid) {
     </tr>`;
   };
   const detailTable = list => `<table class="grid t-compact"><thead><tr><th style="width:50px">BKP</th><th style="width:104px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:92px">Budget</th><th class="num" style="width:92px">Tatsächlich</th><th class="num" style="width:78px">Δ</th><th style="width:50px"></th></tr></thead><tbody>${list.map(entRowFull).join('')}</tbody></table>`;
-  const kostenBox = k => { const dcol = k.delta > 0.5 ? 'var(--s-red)' : (k.delta < -0.5 ? 'var(--s-green)' : 'inherit'); return `<div style="margin-top:8px;padding:9px 12px;background:var(--surface-2);border-radius:8px;font-size:12.5px;line-height:1.85;max-width:440px;margin-left:auto">
+  const kostenBox = k => { const dcol = k.delta > 0.5 ? 'var(--s-red)' : (k.delta < -0.5 ? 'var(--s-green)' : 'inherit'); return `<div style="margin-top:8px;padding:9px 12px;background:var(--surface-2);border-radius: 0;font-size:12.5px;line-height:1.85;max-width:440px;margin-left:auto">
     <div style="display:flex;justify-content:space-between"><span class="muted">Budget (im Werkvertrag)</span>${chf(k.budgetWV)}</div>
     <div style="display:flex;justify-content:space-between"><span class="muted">Nach Auswahl (netto)</span><b>${chf(k.nachAuswahl)}</b></div>
     <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid var(--border);margin-top:3px;padding-top:3px;color:${dcol}"><span>= Mehr-/Minderkosten</span>${(k.delta > 0 ? '+' : '') + chf(k.delta)}</div>
@@ -6078,7 +6078,7 @@ function actNewEntscheidung(pid, eid) {
       ${wohnungSelect || '<label class="field">&nbsp;</label>'}
     </div>
     ${einhListe.length ? `<label class="field" style="margin-top:2px">Zusatz – gilt für mehrere Eigentümer <span class="muted" style="font-weight:400;font-size:11px">(Mehrfachauswahl; erscheint dann bei jedem)</span>
-      <div style="display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:5px;padding:8px 10px;border:1px solid var(--border);border-radius:8px">${einhListe.map(x => `<label style="display:flex;gap:5px;align-items:center;font-size:12.5px;font-weight:400;cursor:pointer"><input type="checkbox" class="en-multi" value="${x.u.id}"${(e && (e.wohnungen || []).includes(x.u.id)) ? ' checked' : ''}> ${esc(x.u.name || 'Einheit')}${x.u.eigentuemer ? ' · ' + esc(x.u.eigentuemer) : ''}</label>`).join('')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:5px;padding:8px 10px;border:1px solid var(--border);border-radius: 0">${einhListe.map(x => `<label style="display:flex;gap:5px;align-items:center;font-size:12.5px;font-weight:400;cursor:pointer"><input type="checkbox" class="en-multi" value="${x.u.id}"${(e && (e.wohnungen || []).includes(x.u.id)) ? ' checked' : ''}> ${esc(x.u.name || 'Einheit')}${x.u.eigentuemer ? ' · ' + esc(x.u.eigentuemer) : ''}</label>`).join('')}</div>
       <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Angekreuzt = der Punkt erscheint bei jedem dieser Eigentümer (überschreibt die einzelne Wohnung oben).</span>
     </label>` : ''}
     <hr style="border:none;border-top:1px solid var(--border);margin:14px 0 10px">
@@ -6759,7 +6759,7 @@ function pdfProtokoll(pid, prid) {
     .hd .logo { font-weight: 700; color: #1f6feb; font-size: 16px; }
     table.meta { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
     table.meta td { padding: 4px 0; font-size: 12px; }
-    .people { background: #f4f6f9; border: 1px solid #e4e8ee; border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; }
+    .people { background: #f4f6f9; border: 1px solid #e4e8ee; border-radius: 0; padding: 10px 12px; margin-bottom: 16px; }
     .people b { color: #1b2533; }
     h3 { font-size: 13.5px; margin: 18px 0 6px; color: #1f6feb; }
     table.t { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
@@ -7802,7 +7802,7 @@ function viewEinstellungen() {
       <label class="field">Logo
         <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
           ${b.logo
-            ? `<img src="${b.logo}" alt="Logo" style="max-height:54px;max-width:180px;border:1px solid var(--border);border-radius:6px;padding:4px;background:#fff">
+            ? `<img src="${b.logo}" alt="Logo" style="max-height:54px;max-width:180px;border:1px solid var(--border);border-radius: 0;padding:4px;background:#fff">
                <button class="btn sm ghost" data-act="rm-logo">Logo entfernen</button>`
             : `<span class="muted" style="font-size:13px">Kein Logo</span>`}
           <input type="file" id="b_logo" accept="image/*" style="font-size:13px">
@@ -8125,7 +8125,7 @@ function viewKalender(pid) {
       <button class="btn" data-act="kal-add" data-pid="${p.id}" data-kind="${addDate}">+ Termin</button></div>
     ${projektTabs(p, 'kalender')}
 
-    <div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;margin-bottom:16px">
+    <div class="seg" style="display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius: 0;padding:3px;margin-bottom:16px">
       <button class="btn sm ${kalMode === 'kalender' ? '' : 'secondary'}" data-act="kal-mode" data-pid="${p.id}" data-mode="kalender" type="button" style="border:none">📅 Kalender</button>
       <button class="btn sm ${kalMode === 'agenda' ? '' : 'secondary'}" data-act="kal-mode" data-pid="${p.id}" data-mode="agenda" type="button" style="border:none">📋 Agenda${fut.length ? ' (' + fut.length + ')' : ''}</button>
     </div>
@@ -10268,7 +10268,7 @@ function viewSolar(pid) {
           ${fld('s_eivm', 'Förderung EIV / KLEIV', r0.eivAuto ? r0.eiv : s.eivManual, 'CHF', 'Auto = ~' + SOLAR_FOERDER_M2 + ' CHF/m² Dachfläche (60 m² ≈ 6\'000) – passt sich live an. Eigenen Wert eintragen; Feld leeren = wieder automatisch.')}
         </div>
 
-        <div style="background:var(--brand-soft);border-radius:10px;padding:12px 14px;margin-top:16px">
+        <div style="background:var(--brand-soft);border-radius: 0;padding:12px 14px;margin-top:16px">
           <div style="font-weight:700;font-size:13px;margin-bottom:6px">Investition &amp; Förderung – live</div>
           <div id="solarInvestBox">${solarInvestHtml(solarCalc(s))}</div>
         </div>
@@ -11266,7 +11266,7 @@ function pdfGantt(pid, paper, range) {
       <div class="pg-main"><div class="pg-head">${headBands}</div><div class="pg-rows" style="height:${hmm}mm">${deco}${mainArr.slice(a, b).join('')}${linkLayer(a, b)}${holLabels}</div></div>
     </div>`;
   }).join('');
-  const legend = GANTT_LEGEND.map(([k, l]) => `<span style="display:inline-block;margin-right:10px"><span style="display:inline-block;width:11px;height:8px;border-radius:2px;background:${GANTT_COLS[k]};vertical-align:middle;margin-right:3px"></span>${l}</span>`).join('');
+  const legend = GANTT_LEGEND.map(([k, l]) => `<span style="display:inline-block;margin-right:10px"><span style="display:inline-block;width:11px;height:8px;border-radius: 0;background:${GANTT_COLS[k]};vertical-align:middle;margin-right:3px"></span>${l}</span>`).join('');
 
   const css = `@page{size:${PD.w}mm ${PD.h}mm;margin:8mm;}
     .lh{padding-bottom:5px;} h1{font-size:14px;margin:5px 0 0;} h1::after{display:none;} .sub{margin:2px 0 6px;font-size:9.5px;} .ft{display:none;}
@@ -11293,19 +11293,19 @@ function pdfGantt(pid, paper, range) {
     .pg-mark{position:absolute;top:0;bottom:0;width:1.1px;z-index:2;}
     .pg-mark-lbl{position:absolute;top:0;bottom:0;z-index:4;}
     .pg-mark-lbl span{position:absolute;top:.3mm;left:.3px;font-size:5.5px;line-height:1;font-weight:700;writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;}
-    .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:1.4mm;box-shadow:inset 0 0 0 .2px rgba(0,0,0,.08), 0 .2px .4px rgba(0,0,0,.12);display:flex;align-items:center;overflow:hidden;}
+    .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius: 0;box-shadow:inset 0 0 0 .2px rgba(0,0,0,.08), 0 .2px .4px rgba(0,0,0,.12);display:flex;align-items:center;overflow:hidden;}
     .pgb-l{color:#fff;font-size:6.6px;font-weight:600;line-height:1;padding:0 1.2mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .pgb-out{position:absolute;top:50%;transform:translateY(-50%);font-size:6.6px;font-weight:600;color:#222b36;white-space:nowrap;padding-left:1mm;}
     .pgb-out.sub{font-size:6px;font-weight:500;color:#5b6573;}
     .pg-si{color:#6b7480;font-weight:400;font-size:7px;}
-    .pg-bar.sub{opacity:.9;border-radius:1mm;} .pg-bar.sub .pgb-l{font-size:6px;}
+    .pg-bar.sub{opacity:.9;border-radius: 0;} .pg-bar.sub .pgb-l{font-size:6px;}
     .pg-lk{position:absolute;z-index:3;}
     .pg-lk.h{height:0;border-top:.4mm solid #8a93a0;}
     .pg-lk.v{width:0;border-left:.4mm solid #8a93a0;}
     .pg-lk.a{width:0;height:0;border-left:1.4mm solid #8a93a0;border-top:1mm solid transparent;border-bottom:1mm solid transparent;margin-left:-1.4mm;margin-top:-1mm;}
     .pg-srow.sub{color:#5b6573;padding-left:5mm;font-size:${fs - 0.5}px;}
-    .pg-bestell{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;background:repeating-linear-gradient(45deg,rgba(120,140,170,.18),rgba(120,140,170,.18) 3px,rgba(120,140,170,.32) 3px,rgba(120,140,170,.32) 6px);border:.4px dashed rgba(110,130,160,.6);}
-    .pg-nach{position:absolute;top:50%;transform:translateY(-50%);border-radius:2px;background:repeating-linear-gradient(-45deg,rgba(180,140,90,.18),rgba(180,140,90,.18) 3px,rgba(180,140,90,.34) 3px,rgba(180,140,90,.34) 6px);border:.4px dashed rgba(170,130,80,.6);}
+    .pg-bestell{position:absolute;top:50%;transform:translateY(-50%);border-radius: 0;background:repeating-linear-gradient(45deg,rgba(120,140,170,.18),rgba(120,140,170,.18) 3px,rgba(120,140,170,.32) 3px,rgba(120,140,170,.32) 6px);border:.4px dashed rgba(110,130,160,.6);}
+    .pg-nach{position:absolute;top:50%;transform:translateY(-50%);border-radius: 0;background:repeating-linear-gradient(-45deg,rgba(180,140,90,.18),rgba(180,140,90,.18) 3px,rgba(180,140,90,.34) 3px,rgba(180,140,90,.34) 6px);border:.4px dashed rgba(170,130,80,.6);}
     .pg{break-inside:avoid;margin-bottom:4mm;} .pg.brk{break-before:page;}`;
   const inner = `${pagesHtml}
   <div style="margin-top:3mm;font-size:8px;color:#6b7480">${legend} &nbsp;·&nbsp; <span style="opacity:.8">🟫 Bestellfrist · Nachlauf (schraffiert) · ↳ Untertermin</span></div>`;
@@ -11347,7 +11347,7 @@ function pdfGrobGantt(p, paper) {
     .pg-rows{position:relative;}
     .pg-row{position:relative;border-bottom:1px solid #f2f4f8;}
     .pg-grid{position:absolute;top:0;bottom:0;width:1px;background:#eef1f5;} .pg-grid.mo{background:#cfd7e3;}
-    .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius:3px;color:#fff;font-size:8px;font-weight:600;display:flex;align-items:center;padding:0 2mm;overflow:hidden;white-space:nowrap;}`;
+    .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius: 0;color:#fff;font-size:8px;font-weight:600;display:flex;align-items:center;padding:0 2mm;overflow:hidden;white-space:nowrap;}`;
   const inner = `<div class="pg"><div class="pg-side"><div class="pg-shead">Bauphase</div>${sideHtml}</div><div class="pg-main"><div class="pg-head">${moBand}</div><div class="pg-rows">${gridV}${rowsHtml}</div></div></div>`;
   openPrintDoc('Grobplanung / Bauphasen', `${esc(p.name)} · ${esc(p.ort)} · ${fmtDate(min)} – ${fmtDate(max)}`, inner, { landscape: true, extraCss: css });
 }
@@ -12216,7 +12216,7 @@ function openQrRechnungForm(pid, vid, qr) {
   const refDisp = fmtQrRef(qr.referenz, qr.referenzTyp);
   const fremdWaehrung = qr.waehrung && qr.waehrung !== 'CHF';
   openModal('Rechnung aus QR übernehmen', `
-    <div style="background:var(--brand-soft);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12.5px;line-height:1.6">
+    <div style="background:var(--brand-soft);border-radius: 0;padding:10px 12px;margin-bottom:14px;font-size:12.5px;line-height:1.6">
       <strong>✓ Aus QR-Code gelesen</strong><br>
       Kreditor: <strong>${esc(qr.kreditor || '–')}</strong><br>
       IBAN: ${esc(qr.iban || '–')}<br>
@@ -12748,7 +12748,7 @@ function initGerberLaunch() {
 
 function resetDemo() {
   const warn = cloudEnabled
-    ? `<div style="background:#fdecec;border:1px solid var(--s-red);border-radius:8px;padding:10px 12px;font-size:13px;color:#7a1d1d">
+    ? `<div style="background:#fdecec;border:1px solid var(--s-red);border-radius: 0;padding:10px 12px;font-size:13px;color:#7a1d1d">
          <strong>⚠ Cloud-Modus:</strong> Dies überschreibt den <strong>gemeinsamen Arbeitsbereich für alle</strong> mit den Demodaten. Alle bestehenden Projekte, Vergaben, Protokolle usw. gehen verloren und werden auf allen Geräten synchronisiert.
        </div>`
     : `<p class="muted" style="font-size:13px;margin-top:0">Dies ersetzt alle aktuellen Daten in diesem Browser durch die <strong>Demodaten</strong>: Römerstrasse 31, Kunoweg 20, Kinderheim Heimelig – inkl. <strong>Submittentenliste &amp; Kontakte</strong> (Römerstrasse).</p>`;

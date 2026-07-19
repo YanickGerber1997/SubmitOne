@@ -1374,6 +1374,18 @@ function phasenBar(p) {
   </div>`;
 }
 
+/* Ribbon-Gruppen: die 19 Projektreiter nach FUNKTION gebuendelt.
+   Feste Plaetze fuer alle - keine Rolle verschiebt hier etwas (Muskelgedaechtnis). */
+const PROJ_GRUPPEN = [
+  { key: 'projekt',   label: 'Projekt',   tabs: ['overview', 'dossier', 'auflagen', 'bauherr'] },
+  { key: 'vergabe',   label: 'Vergabe',   tabs: ['gewerke', 'optionen'] },
+  { key: 'kosten',    label: 'Kosten',    tabs: ['kosten', 'rechnungen', 'nachtraege', 'zahlungsplan', 'finanz', 'honorar'] },
+  { key: 'termine',   label: 'Termine',   tabs: ['termine', 'kalender', 'pendenzen', 'protokolle'] },
+  { key: 'kontakte',  label: 'Kontakte',  tabs: ['listen'] },
+  { key: 'werkzeuge', label: 'Werkzeuge', tabs: ['solar', 'uwert'] },
+];
+function projGruppeVon(tabKey) { return PROJ_GRUPPEN.find(g => g.tabs.includes(tabKey)) || PROJ_GRUPPEN[0]; }
+
 function projektTabs(p, active, toolbar) {
   const openP = offenePendenzen(p).length;
   const pendBadge = openP ? ` <span class="tab-badge">${openP}</span>` : '';
@@ -1398,30 +1410,26 @@ function projektTabs(p, active, toolbar) {
     { key: 'uwert', href: `#/projekt/${p.id}/uwert`, label: 'U-Wert' },
     { key: 'honorar', href: `#/projekt/${p.id}/honorar`, label: 'Honorar' },
   ].filter(it => !versteckteTabs(p).includes(it.key));   // Rollen-Matrix: ausgeblendete Reiter weglassen
-  // Unterreiter auch in der Sidebar unter „Projekte" anzeigen (volle Liste)
+  const byKey = {}; items.forEach(it => byKey[it.key] = it);
+  const gruppen = PROJ_GRUPPEN.map(g => ({ ...g, items: g.tabs.map(k => byKey[k]).filter(Boolean) })).filter(g => g.items.length);
+  const grp = gruppen.find(g => g.tabs.includes(active)) || gruppen[0];
+
+  // Seitenleiste: nach Gruppen gegliedert statt 19 Eintraege am Stueck
   const sub = $('#projSubnav');
   if (sub) sub.innerHTML = `<div class="subnav-title" title="${esc(p.name)}">${esc(p.name)}</div>` +
-    items.map(it => `<a class="subnav-link ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('');
-  // In-Page-Reiter: häufige primär, Rest unter „Mehr ▾" (kompakt, halbschirm-tauglich)
-  const primary = personaPrimary(getPersona());   // Persona bestimmt die primär sichtbaren Reiter (nicht-destruktiv, Rest unter „Mehr ▾")
-  const prim = items.filter(it => primary.includes(it.key));
-  const more = items.filter(it => !primary.includes(it.key));
-  const moreActive = more.some(it => it.key === active);
+    gruppen.map(g => `<div class="subnav-grp">${esc(g.label)}</div>` +
+      g.items.map(it => `<a class="subnav-link ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')).join('');
+
+  // Ribbon: Zeile 1 = Gruppen (feste Plaetze), Zeile 2 = Werkzeuge der aktiven Gruppe
   return `<div class="proj-sticky">
-    <div class="ptabs">
-      ${prim.map(it => `<a class="ptab ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')}
-      <div class="ptab-more">
-        <button class="ptab ${moreActive ? 'active' : ''}" data-act="ptabs-more">${moreActive ? (more.find(it => it.key === active).label + ' ') : 'Mehr '}▾</button>
-        <div class="ptab-menu" id="ptabMenu" hidden>${more.map(it => `<a class="${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')}</div>
-      </div>
+    <div class="ribbon-tabs">
+      ${gruppen.map(g => `<a class="rib-tab ${g.key === grp.key ? 'active' : ''}" href="${g.items[0].href}">${esc(g.label)}</a>`).join('')}
+    </div>
+    <div class="ribbon-tools">
+      ${grp.items.map(it => `<a class="rib-tool ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')}
     </div>
     ${toolbar ? `<div class="page-toolbar">${toolbar}</div>` : ''}
   </div>`;
-}
-function ptabsMoreToggle() {
-  const m = document.getElementById('ptabMenu'); if (!m) return;
-  const show = m.hidden; m.hidden = !show;
-  if (show) { const away = e => { if (!e.target.closest('.ptab-more')) { m.hidden = true; document.removeEventListener('mousedown', away); } }; setTimeout(() => document.addEventListener('mousedown', away), 0); }
 }
 
 function emptyState(ico, text, sub, action) {
@@ -1674,74 +1682,20 @@ function go(hash) { location.hash = hash; }
    8) View: Dashboard
    --------------------------------------------------------------- */
 
-/* --- Persona-Schnellzugriff: „Wer bist du?" → direkter Weg zu den wichtigsten Werkzeugen (alle Ziele existieren) --- */
-const PERSONAS = [
-  { key: 'alle', label: 'Alle', ico: '◫' },
-  { key: 'bauleiter', label: 'Bauleiter', ico: '👷' },
-  { key: 'architekt', label: 'Architekt / PL', ico: '📐' },
-  { key: 'finanz', label: 'Finanzen', ico: '💰' },
-  { key: 'sekretariat', label: 'Sekretariat', ico: '🗂️' },
+/* --- Schnellzugriff: fuer ALLE gleich. Feste Plaetze schlagen persoenliche Sortierung -
+   nur so bildet sich Muskelgedaechtnis (wie Werkzeugleisten in ArchiCAD/Word). --- */
+const SCHNELLZUGRIFF = [
+  { ico: '＋', label: 'Neues Projekt', act: 'new-projekt' },
+  { ico: '⚡', label: 'Erfassen',      href: '#/erfassen' },
+  { ico: '📅', label: 'Kalender',      href: '#/kalender' },
+  { ico: '☑', label: 'Pendenzen',     href: '#/pendenzen' },
+  { ico: '▤', label: 'Projekte',      href: '#/projekte' },
+  { ico: '📐', label: 'Plan öffnen',   href: 'pdf/index.html', ext: true },
+  { ico: '✍', label: 'Brief / Offerte', href: 'write/index.html', ext: true },
 ];
-function getPersona() { try { return localStorage.getItem('so_persona') || 'alle'; } catch (_) { return 'alle'; } }
-function setPersona(k) { try { localStorage.setItem('so_persona', k); } catch (_) {} const h = location.hash; if (h === '' || h === '#/' || h.startsWith('#/dashboard')) viewDashboard(); }
-function personaActions(key) {
-  const A = {
-    neu:       { ico: '＋', label: 'Neues Projekt', act: 'new-projekt' },
-    projekte:  { ico: '▤', label: 'Projekte', href: '#/projekte' },
-    erfassen:  { ico: '⚡', label: 'Erfassen', href: '#/erfassen' },
-    pendenzen: { ico: '☑', label: 'Pendenzen', href: '#/pendenzen' },
-    kalender:  { ico: '📅', label: 'Kalender', href: '#/kalender' },
-    kontakte:  { ico: '👤', label: 'Kontakte', href: '#/kontakte' },
-    drucken:   { ico: '🖨', label: 'Drucken', href: '#/drucken' },
-    honorar:   { ico: '％', label: 'Honorar', href: '#/honorar' },
-    plan:      { ico: '📐', label: 'Plan öffnen', href: 'pdf/index.html', ext: true },
-    brief:     { ico: '✍', label: 'Brief / Offerte', href: 'write/index.html', ext: true },
-    rechnung:  { ico: '🧾', label: 'Rechnung prüfen', href: 'pdf/index.html', ext: true },
-  };
-  const sets = {
-    alle:        ['neu', 'erfassen', 'kalender', 'pendenzen', 'plan'],
-    bauleiter:   ['erfassen', 'pendenzen', 'kalender', 'plan', 'drucken'],
-    architekt:   ['neu', 'projekte', 'plan', 'brief', 'kontakte'],
-    finanz:      ['projekte', 'rechnung', 'honorar', 'kalender', 'drucken'],
-    sekretariat: ['kontakte', 'kalender', 'erfassen', 'brief', 'drucken'],
-  };
-  return (sets[key] || sets.alle).map(k => A[k]);
-}
-// Persona bestimmt, welche Projekt-Reiter PRIMÄR sichtbar sind (Rest unter „Mehr ▾") – versteckt nichts, ordnet nur
-function personaPrimary(persona) {
-  const P = {
-    alle:        ['overview', 'gewerke', 'kalender', 'listen', 'kosten', 'termine'],
-    bauleiter:   ['overview', 'termine', 'pendenzen', 'protokolle', 'kalender', 'gewerke'],
-    architekt:   ['overview', 'gewerke', 'kosten', 'termine', 'listen', 'dossier'],
-    finanz:      ['overview', 'kosten', 'rechnungen', 'zahlungsplan', 'nachtraege', 'honorar'],
-    sekretariat: ['overview', 'listen', 'kalender', 'protokolle', 'dossier', 'pendenzen'],
-  };
-  return P[persona] || P.alle;
-}
-// Persona-gerechte Reihenfolge der Schnell-Erfassung (wichtigste Art zuerst)
-function personaErfassenOrder(persona) {
-  const O = {
-    alle:        ['pendenz', 'termin', 'rechnung', 'protokoll', 'vergabe', 'kontakt', 'projekt'],
-    bauleiter:   ['pendenz', 'termin', 'protokoll', 'rechnung', 'vergabe', 'kontakt', 'projekt'],
-    architekt:   ['vergabe', 'projekt', 'termin', 'protokoll', 'pendenz', 'rechnung', 'kontakt'],
-    finanz:      ['rechnung', 'vergabe', 'pendenz', 'termin', 'protokoll', 'kontakt', 'projekt'],
-    sekretariat: ['kontakt', 'termin', 'protokoll', 'pendenz', 'rechnung', 'vergabe', 'projekt'],
-  };
-  return O[persona] || O.alle;
-}
-function personaChosen() { try { return localStorage.getItem('so_persona') !== null; } catch (_) { return true; } }   // Speicher kaputt → nicht nerven
-// Erststart: Persona einmal aktiv abfragen (freundliche Karte, überspringbar)
-function personaOnboardCard() {
-  const choices = PERSONAS.filter(p => p.key !== 'alle').map(p =>
-    `<button class="ob-choice" data-persona="${p.key}"><span class="ob-ico">${p.ico}</span><span class="ob-l">${esc(p.label)}</span></button>`).join('');
-  return `<div class="card card-pad onboard">
-      <div class="ob-head"><span class="ob-badge">Willkommen 👋</span>
-        <h2 class="ob-title">Wofür nutzt du SubmitOne?</h2>
-        <p class="ob-sub">Wähle deine Rolle – dann zeigt dir das Dashboard oben sofort die passenden Werkzeuge. Jederzeit änderbar.</p></div>
-      <div class="ob-choices">${choices}</div>
-      <button class="ob-skip" data-persona="alle">Erstmal umschauen →</button>
-    </div>`;
-}
+// Erfassen: feste Reihenfolge (haeufigste Art zuerst), fuer alle identisch
+const ERFASSEN_ORDER = ['pendenz', 'termin', 'rechnung', 'protokoll', 'vergabe', 'kontakt', 'projekt'];
+
 function viewDashboard() {
   const projekte = sichtbareProjekte();
   const todayI = todayIso();
@@ -1815,16 +1769,13 @@ function viewDashboard() {
       <span class="dash-muted" style="font-size:12px;min-width:32px;text-align:right" title="Bau-Fortschritt">${projektFortschritt(p)}%</span>
     </div>`; }).join('')}</div>` : emptyState('▤', 'Noch keine Projekte', 'Lege dein erstes Projekt an – Termine, Kosten und Ausschreibung an einem Ort.', { label: '+ Erstes Projekt anlegen', act: 'new-projekt' })}</div>`;
 
-  const persona = getPersona();
-  const szPills = PERSONAS.map(pr => `<button class="sz-pill${pr.key === persona ? ' on' : ''}" data-persona="${pr.key}" title="Schnellzugriff für ${esc(pr.label)}"><span class="sz-i">${pr.ico}</span>${esc(pr.label)}</button>`).join('');
-  const szChips = personaActions(persona).map(a => a.act
+  const szChips = SCHNELLZUGRIFF.map(a => a.act
     ? `<button class="sz-chip" data-act="${a.act}"><span class="sz-i">${a.ico}</span>${esc(a.label)}</button>`
     : `<a class="sz-chip" href="${a.href}"${a.ext ? ' target="_blank" rel="noopener"' : ''}><span class="sz-i">${a.ico}</span>${esc(a.label)}${a.ext ? ' ↗' : ''}</a>`).join('');
-  const schnellzugriff = `<div class="card card-pad schnellzugriff">
-      <div class="sz-head"><span class="sz-title">Schnellzugriff</span><div class="sz-pills">${szPills}</div></div>
+  const topCard = `<div class="card card-pad schnellzugriff">
+      <div class="sz-head"><span class="sz-title">Schnellzugriff</span></div>
       <div class="sz-chips">${szChips}</div>
     </div>`;
-  const topCard = personaChosen() ? schnellzugriff : personaOnboardCard();   // Erststart → Persona abfragen, sonst Schnellzugriff
 
   render(`
     <div class="page-head"><div><h1>Dashboard</h1><div class="sub">Überblick · Fristen, Termine &amp; Pendenzen aller Projekte</div></div><button class="btn" data-act="new-projekt">+ Neues Projekt</button></div>
@@ -1835,7 +1786,6 @@ function viewDashboard() {
       <div>${pendPanel}${projPanel}</div>
     </div>
   `);
-  $$('.sz-pill, .ob-choice, .ob-skip').forEach(b => b.addEventListener('click', () => setPersona(b.dataset.persona)));
   $$('.pend-check').forEach(cb => cb.addEventListener('change', () => togglePendenz(cb.dataset.pid, cb.dataset.prid, cb.dataset.tid, cb.dataset.itemid)));
 }
 
@@ -8782,13 +8732,12 @@ function viewErfassen() {
     kontakt:   ['👤', 'Kontakt', 'Firma / Person zur Adressliste'],
     projekt:   ['➕', 'Neues Projekt', 'Bauprojekt anlegen'],
   };
-  const persona = getPersona();
   const card = (kind, rec) => { const m = M[kind]; return `<button class="btn secondary erfassen-card${rec ? ' recommended' : ''}" data-act="erfassen" data-kind="${kind}" style="position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;height:auto;padding:13px 15px;white-space:normal">${rec ? '<span class="ef-rec">Für dich</span>' : ''}<span style="font-weight:700;font-size:13.5px">${m[0]} ${m[1]}</span><span class="muted" style="font-size:11.5px;font-weight:400">${m[2]}</span></button>`; };
-  const order = personaErfassenOrder(persona);
+  const order = ERFASSEN_ORDER;
   render(`
     <div class="page-head"><div><h1>Erfassen</h1><div class="sub">Schnell festhalten – Art wählen, Projekt angeben, fertig</div></div></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-top:6px">
-      ${order.map((k, i) => card(k, i === 0 && persona !== 'alle')).join('')}
+      ${order.map(k => card(k, false)).join('')}
     </div>
     <p class="muted" style="font-size:12px;margin-top:14px">„Pendenz", „Termin" &amp; „Rechnung" fragen zuerst nach dem Projekt – so landet alles am richtigen Ort.</p>
   `);
@@ -12870,7 +12819,6 @@ document.addEventListener('click', e => {
     case 'gw-action':    gewerkAction(pid, vid, act.dataset.action); break;
     case 'set-status':   setVergabeStatus(pid, vid, act.dataset.status); break;
     case 'zuschlag-an':  zuschlagAn(pid, vid, eid); break;
-    case 'ptabs-more':   ptabsMoreToggle(); break;
     case 'save-vergabe': saveVergabe(pid); break;
     case 'ks-edit':      actKostenschaetzung(pid, vid); break;
     case 'ks-pos-add':   ksPosAdd(); break;
@@ -13486,17 +13434,22 @@ function selfTest() {
   eq('initDecision: Lesefehler → Demo behalten (nichts überschreiben)', initDecision(null, true), 'keep-demo');
   eq('initDecision: wirklich leer → Erststart committen', initDecision(null, false), 'commit-demo');
 
-  // Persona-Schnellzugriff: rollenspezifische Wege, gültiger Fallback
-  ok('personaActions Bauleiter → Erfassen+Pendenzen', personaActions('bauleiter').some(a => a.href === '#/erfassen') && personaActions('bauleiter').some(a => a.href === '#/pendenzen'));
-  ok('personaActions Finanz → Honorar', personaActions('finanz').some(a => a.href === '#/honorar'));
-  ok('personaActions unbekannt → Fallback alle (mit Neues Projekt)', personaActions('xyz').length === personaActions('alle').length && personaActions('alle').some(a => a.act === 'new-projekt'));
-  ok('personaOnboardCard: 4 Rollen + Umschauen', ['bauleiter', 'architekt', 'finanz', 'sekretariat', 'alle'].every(k => new RegExp('data-persona="' + k + '"').test(personaOnboardCard())) && /ob-choice/.test(personaOnboardCard()) && /ob-skip/.test(personaOnboardCard()));
-  ok('personaPrimary: Overview zuerst + 6 Reiter je Rolle', ['alle', 'bauleiter', 'architekt', 'finanz', 'sekretariat'].every(k => personaPrimary(k)[0] === 'overview' && personaPrimary(k).length === 6));
-  ok('personaPrimary Finanz → Kosten+Rechnungen primär', personaPrimary('finanz').includes('kosten') && personaPrimary('finanz').includes('rechnungen'));
-  ok('personaPrimary Bauleiter → Pendenzen+Protokolle primär', personaPrimary('bauleiter').includes('pendenzen') && personaPrimary('bauleiter').includes('protokolle'));
-  ok('personaErfassenOrder Finanz → Rechnung zuerst', personaErfassenOrder('finanz')[0] === 'rechnung');
-  ok('personaErfassenOrder Bauleiter → Pendenz zuerst', personaErfassenOrder('bauleiter')[0] === 'pendenz');
-  ok('personaErfassenOrder vollständig (7 Arten, keine Dubletten)', (() => { const o = personaErfassenOrder('architekt'); return o.length === 7 && new Set(o).size === 7; })());
+  // Ribbon-Gruppen: feste Plaetze, jeder Reiter genau einmal, nichts verloren
+  ok('PROJ_GRUPPEN: 6 Gruppen', PROJ_GRUPPEN.length === 6);
+  ok('PROJ_GRUPPEN: alle 19 Projektreiter genau einmal (nichts verloren, nichts doppelt)', (() => {
+    const alle = ['overview','gewerke','kalender','listen','kosten','rechnungen','termine','pendenzen','dossier','auflagen','protokolle','nachtraege','optionen','finanz','zahlungsplan','bauherr','solar','uwert','honorar'];
+    const inGrp = PROJ_GRUPPEN.flatMap(g => g.tabs);
+    return inGrp.length === 19 && new Set(inGrp).size === 19 && alle.every(k => inGrp.includes(k));
+  })());
+  ok('projGruppeVon: Honorar liegt bei Kosten', projGruppeVon('honorar').key === 'kosten');
+  ok('projGruppeVon: Protokolle liegen bei Termine', projGruppeVon('termine').key === 'termine' && projGruppeVon('protokolle').key === 'termine');
+  ok('projGruppeVon: unbekannt → erste Gruppe (kein Absturz)', projGruppeVon('gibtsnicht').key === 'projekt');
+  ok('Uebersicht ist erster Reiter der ersten Gruppe', PROJ_GRUPPEN[0].tabs[0] === 'overview');
+  // Schnellzugriff + Erfassen: fuer alle identisch (keine Personas mehr)
+  ok('SCHNELLZUGRIFF: Neues Projekt + Erfassen vorhanden', SCHNELLZUGRIFF.some(a => a.act === 'new-projekt') && SCHNELLZUGRIFF.some(a => a.href === '#/erfassen'));
+  ok('SCHNELLZUGRIFF: jeder Eintrag hat Ziel (act oder href)', SCHNELLZUGRIFF.every(a => a.act || a.href));
+  ok('ERFASSEN_ORDER vollständig (7 Arten, keine Dubletten)', ERFASSEN_ORDER.length === 7 && new Set(ERFASSEN_ORDER).size === 7);
+  ok('keine Persona-Funktionen mehr (feste Plaetze)', typeof globalThis.personaPrimary === 'undefined' && typeof globalThis.getPersona === 'undefined');
 
   // Leerzustand: erweiterter emptyState (Sub-Text + Aktions-Knopf) rückwärtskompatibel
   ok('emptyState schlicht (nur Icon+Text)', /class="empty"/.test(emptyState('x', 'Leer')) && !/e-cta/.test(emptyState('x', 'Leer')) && !/e-sub/.test(emptyState('x', 'Leer')));

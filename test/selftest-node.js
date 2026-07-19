@@ -60,6 +60,16 @@ catch (e) { console.log('LADEFEHLER beim Auswerten von app.js:\n', (e && e.stack
 
 if (sandbox.__ERR) { console.log('SELFTEST-FEHLER:\n', sandbox.__ERR); process.exit(1); }
 const R = sandbox.__R;
+if (R) {  // CSS-Integritaet: unausgeglichene Klammern zerstoeren stumm ganze Regelbloecke
+  const css = fs.readFileSync(__dirname + '/../styles.css', 'utf8');
+  const bal = (css.split('{').length - 1) - (css.split('}').length - 1);
+  let d = 0, orphan = 0;
+  css.split(String.fromCharCode(10)).forEach((l, i) => { d += (l.split('{').length - 1) - (l.split('}').length - 1); if (d < 0 && !orphan) orphan = i + 1; });
+  R.R.push({ name: 'styles.css: Klammern ausgeglichen', ok: bal === 0, msg: bal === 0 ? '' : 'Differenz ' + bal });
+  R.R.push({ name: 'styles.css: keine verwaiste schliessende Klammer', ok: !orphan, msg: orphan ? 'Zeile ' + orphan : '' });
+  bal === 0 ? R.pass++ : R.fail++;
+  orphan ? R.fail++ : R.pass++;
+}
 if (!R) { console.log('Kein Ergebnis – selfTest() nicht erreichbar.'); process.exit(1); }
 console.log('\n=== SUBMITONE · Suite-Kern · Selbsttest (headless) ===');
 for (const r of R.R) console.log((r.ok ? 'OK   ' : 'FAIL ') + '| ' + r.name + (r.msg ? '  → ' + r.msg : ''));

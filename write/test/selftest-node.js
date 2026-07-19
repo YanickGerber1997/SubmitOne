@@ -75,7 +75,11 @@ if (R) {  // CSS-Waechter: im JS verwendete Klassen muessen im Stylesheet existi
   // Anlass: ich habe zweimal eine Klasse benutzt (rib-sep, rcol), die es gar nicht gab -
   // das Element bleibt dann unsichtbar oder unformatiert, ohne jede Fehlermeldung.
   const cssTxt = fs.readFileSync(__dirname + '/../write.css', 'utf8');
-  const jsTxt = fs.readFileSync(file, 'utf8');
+  let jsTxt = fs.readFileSync(file, 'utf8');
+  // Den Selbsttest ausklammern: dort stehen erfundene Klassennamen als Testdaten,
+  // die es im Stylesheet natuerlich nicht gibt - sonst nur Fehlalarme.
+  const stStart = jsTxt.indexOf('function selfTest');
+  if (stStart > 0) jsTxt = jsTxt.slice(0, stStart);
   const gefunden = new Set();
   const re = /class="([a-zA-Z][a-zA-Z0-9 _-]*)"/g;
   let mm;

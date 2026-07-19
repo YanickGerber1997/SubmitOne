@@ -3666,7 +3666,19 @@ function buildSymbolMenu() {
   m.innerHTML = syms.map(s => `<button data-sym="${esc(s)}" title="${esc(s)} einfügen">${esc(s)}</button>`).join('');
 }
 function insertDate() { const d = new Date().toLocaleDateString('de-CH', { day: '2-digit', month: 'long', year: 'numeric' }); editor.focus(); document.execCommand('insertText', false, d); afterEdit(); }
-function insertPageBreak() { editor.focus(); document.execCommand('insertHTML', false, '<div class="pagebreak" contenteditable="false">Seitenumbruch</div><p><br></p>'); afterEdit(); }
+function insertPageBreak() {
+  // Auf einem Rasterblatt gehoert der Umbruch an die ZEILE, nicht in den Fliesstext -
+  // der alte Weg schrieb in den Editor, der seit dem Umbau nicht mehr benutzt wird.
+  if (doc && activePage() && activePage().typ === 'calc') {
+    if (!curGrid) return;
+    if (editingTd) zelleSchliessen();
+    const an = zeileUmbruchSchalten(selR);
+    activePage().html = gridToHtml(curGrid); renderCalc(); selectCell(selC, selR); scheduleSave();
+    toast(an ? 'Seitenumbruch vor dieser Zeile' : 'Seitenumbruch entfernt');
+    return;
+  }
+  editor.focus(); document.execCommand('insertHTML', false, '<div class="pagebreak" contenteditable="false">Seitenumbruch</div><p><br></p>'); afterEdit();
+}
 function toggleDropcap() {
   const sel = getSelection(); let n = sel.anchorNode; n = (n && n.nodeType === 1) ? n : (n ? n.parentElement : null);
   const p = n && n.closest('p,h1,h2,h3,blockquote');
@@ -3857,6 +3869,9 @@ function previewCalc() {
       td.textContent = String(v);
       tr.appendChild(td);
     }
+    if (zeileHatUmbruch(curGrid.zeilen[r]) && used > 0) {    // manueller Seitenumbruch
+      p = neueSeite(); seiten.push(p); tb = p.querySelector('tbody'); used = 0;
+    }
     tb.appendChild(tr);
     const h = tr.getBoundingClientRect().height;
     if (used + h > avail && used > 0) { p = neueSeite(); seiten.push(p); tb = p.querySelector('tbody'); tb.appendChild(tr); used = h; }
@@ -3932,6 +3947,30 @@ function pageMode(p) { return p.typ === 'calc' ? 'calc' : 'write'; }
    Sichtbar nur bei linien === true: bestehende und neue Dokumente starten als Dokument. */
 function dokumentModus() { const p = (typeof activePage === 'function') ? activePage() : null; return !!(p && p.typ === 'calc' && p.linien !== true); }
 /* Neue Zeile unter r einfuegen - im Dokumentmodus ist das schlicht ein neuer Absatz */
+/* Eine Klasse in den Attributen einer Rasterzeile setzen oder entfernen.
+   Die Attribute reisen durch die Umwandlung mit (v42), deshalb ueberlebt der
+   Seitenumbruch Speichern, Oeffnen und den Wechsel zwischen Write und Calc. */
+function attrKlasse(attrs, klasse, an) {
+  let a = String(attrs == null ? '' : attrs);
+  const m = /class="([^"]*)"/.exec(a);
+  let liste = m ? m[1].split(/\s+/).filter(Boolean) : [];
+  liste = liste.filter(x => x !== klasse);
+  if (an) liste.push(klasse);
+  const neu = liste.length ? 'class="' + liste.join(' ') + '"' : '';
+  if (m) a = a.replace(m[0], neu);
+  else if (neu) a = a + ' ' + neu;
+  a = a.replace(/\s{2,}/g, ' ').replace(/\s+$/, '');
+  if (a && a.charAt(0) !== ' ') a = ' ' + a;
+  return a === ' ' ? '' : a;
+}
+const UMBRUCH_KLASSE = 'pgbefore';
+function zeileHatUmbruch(z) { return !!(z && /(^|\s|")pgbefore(\s|")/.test(z.attrs || '')); }
+function zeileUmbruchSchalten(r) {
+  const z = curGrid && curGrid.zeilen[r]; if (!z) return false;
+  const an = !zeileHatUmbruch(z);
+  z.attrs = attrKlasse(z.attrs, UMBRUCH_KLASSE, an);
+  return an;
+}
 function zeileEinfuegen(r) {
   if (!curGrid) return;
   curGrid.zeilen.splice(r + 1, 0, { tag: 'p', attrs: '', cells: [''] });
@@ -4343,7 +4382,8 @@ function calcPaginate() {
   let used = 0;
   rows.forEach(tr => {
     const h = tr.getBoundingClientRect().height / z;
-    if (used + h > usable && used > 0) {
+    const erzwungen = tr.classList.contains(UMBRUCH_KLASSE);
+    if ((erzwungen || used + h > usable) && used > 0) {
       const gap = document.createElement('tr'); gap.className = 'cgap';
       gap.innerHTML = `<td colspan="${cols}"><div class="pg-fill" style="height:${Math.max(0, usable - used)}px"></div><div class="pg-foot" style="height:${fH}px">${fh}</div><div class="pg-mid"></div><div class="pg-head" style="height:${hH}px">${hh}</div></td>`;
       tbody.insertBefore(gap, tr); used = h;
@@ -4540,7 +4580,10 @@ function renderSheet() {
     const isHead = !!(z && /^h[1-3]$/.test(z.tag || ''));
     const textRow = isTextRow(r);
     const trStyle = rh[r] ? ` style="height:${rh[r]}px"` : '';
-    body += `<tr${r > ur.maxR ? ' class="pad"' : ''}${trStyle}>`;
+    const trKl = [];
+    if (r > ur.maxR) trKl.push('pad');
+    if (zeileHatUmbruch(z)) trKl.push(UMBRUCH_KLASSE);       // manueller Seitenumbruch vor dieser Zeile
+    body += `<tr${trKl.length ? ' class="' + trKl.join(' ') + '"' : ''}${trStyle}>`;
     if (textRow) {
       const dsp = cellDisplay(0, r), cl = ['textcell'];
       if (isHead) cl.push(z.tag);
@@ -5324,6 +5367,42 @@ function selfTest() {
     /Segoe UI/.test(SCHRIFT_STD) && /Helvetica/.test(SCHRIFT_STD) && /Arial/.test(SCHRIFT_STD));
   ok('neues Dokument setzt dichter als Bildschirmtypografie',
     newDocObject().einstellungen.schriftgroesse === 14 && newDocObject().einstellungen.zeilenabstand < 1.6);
+
+  // --- Manueller Seitenumbruch auf dem Rasterblatt ---
+  ok('Klasse wird in leere Attribute gesetzt', attrKlasse('', 'pgbefore', true) === ' class="pgbefore"');
+  ok('bestehende Klassen bleiben erhalten',
+    attrKlasse(' class="wichtig"', 'pgbefore', true) === ' class="wichtig pgbefore"');
+  ok('Klasse wird sauber entfernt',
+    attrKlasse(' class="wichtig pgbefore"', 'pgbefore', false) === ' class="wichtig"');
+  ok('letzte Klasse entfernt das ganze Attribut',
+    attrKlasse(' class="pgbefore"', 'pgbefore', false) === '');
+  ok('zweimal setzen ergibt nicht zwei Eintraege',
+    attrKlasse(attrKlasse('', 'pgbefore', true), 'pgbefore', true) === ' class="pgbefore"');
+  ok('andere Attribute bleiben unangetastet', (() => {
+    const a = attrKlasse(' style="text-align:center"', 'pgbefore', true);
+    return /style="text-align:center"/.test(a) && /class="pgbefore"/.test(a);
+  })());
+  ok('zeileHatUmbruch erkennt die Marke und verwechselt sie nicht', (() => {
+    return zeileHatUmbruch({ attrs: ' class="pgbefore"' })
+      && zeileHatUmbruch({ attrs: ' class="a pgbefore b"' })
+      && !zeileHatUmbruch({ attrs: ' class="pgbefore-nicht"' })
+      && !zeileHatUmbruch({ attrs: '' })
+      && !zeileHatUmbruch(null);
+  })());
+  ok('Umschalten setzt und entfernt den Umbruch an der Zeile', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, colStops: [], zeilen: [{ tag: 'p', attrs: '', cells: ['x'] }] };
+    const an = zeileUmbruchSchalten(0), hat1 = zeileHatUmbruch(curGrid.zeilen[0]);
+    const aus = zeileUmbruchSchalten(0), hat2 = zeileHatUmbruch(curGrid.zeilen[0]);
+    curGrid = alt;
+    return an === true && hat1 === true && aus === false && hat2 === false;
+  })());
+  ok('der Umbruch ueberlebt die Umwandlung ins Dokument und zurueck', (() => {
+    const h = gridToHtml({ cols: 1, colStops: [], zeilen: [
+      { tag: 'p', attrs: ' class="pgbefore"', cells: ['Bedingungen'] },
+    ] });
+    return h === '<p class="pgbefore">Bedingungen</p>';
+  })());
 
   // --- Woerter und Zeichen zaehlen ---
   ok('zaehlt Woerter und Zeichen ueber alle Zellen', (() => {

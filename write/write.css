@@ -651,6 +651,9 @@ body[data-theme="dark"] .editor .sp-err{text-decoration-color:#ff7a70}
 .cgrid .fillgrip{position:absolute;right:-3px;bottom:-3px;width:7px;height:7px;background:var(--accent);border:1px solid #fff;cursor:crosshair;z-index:6}
 .cgrid td.fillziel{outline:1px dashed var(--accent);outline-offset:-1px}
 /* Zellen, die gerade per Klick in eine Formel gezeigt werden */
+/* Zeile mit manuellem Seitenumbruch: feine Marke, druckt nicht mit */
+.cgrid tr.pgbefore>td{border-top:2px dashed var(--accent)}
+@media print{.cgrid tr.pgbefore>td{border-top:none}}
 .cgrid td.pmref{outline:2px dashed var(--accent);outline-offset:-2px;background:var(--accent-soft)}
 .cgrid td.celledit{outline:none;background:none;white-space:pre-wrap;overflow:visible}
 .app.lines-off .cgrid td.sel::selection,.app.lines-off .cgrid td::selection{background:var(--accent-soft)}

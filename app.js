@@ -1631,7 +1631,37 @@ function render(html, actions) {
   if (location.hash !== _lastRenderHash) { window.scrollTo(0, 0); _lastRenderHash = location.hash; }
 }
 
+/* Statuszeile unten: auf JEDER Seite gleich - links wo bin ich, rechts Umfang + Speicherort.
+   Module koennen ueber setStatusExtra() eine seitenspezifische Zahl beisteuern (z.B. Summe). */
+const MODUL_LABEL = {
+  dashboard: 'Dashboard', projekte: 'Projekte', projekt: 'Projekt', kalender: 'Kalender',
+  pendenzen: 'Pendenzen', planung: 'Arbeitsplanung', erfassen: 'Erfassen', drucken: 'Drucken',
+  honorar: 'Honorar', kontakte: 'Kontakte', kontakt: 'Kontakte', dokumente: 'Dokumente',
+  einstellungen: 'Einstellungen',
+};
+let statusExtra = '';
+function setStatusExtra(t) { statusExtra = t || ''; renderStatusBar(); }
+function statusTexte() {
+  const seg = (location.hash || '#/dashboard').replace(/^#\//, '').split('/');
+  const mod = MODUL_LABEL[seg[0]] || 'SubmitOne';
+  const p = (seg[0] === 'projekt' && seg[1]) ? findProjekt(seg[1]) : null;
+  const grp = (seg[0] === 'projekt') ? projGruppeVon(seg[2] || 'overview').label : '';
+  const n = ((state && state.projekte) || []).length;
+  return {
+    links: [mod, p && p.name, grp].filter(Boolean),
+    rechts: [statusExtra, n + ' Projekt' + (n === 1 ? '' : 'e'), cloudEnabled ? 'Cloud' : 'Lokal'].filter(Boolean),
+  };
+}
+function renderStatusBar() {
+  const el = document.getElementById('statusBar'); if (!el) return;
+  const t = statusTexte();
+  el.innerHTML = `<span class="sb-l">${t.links.map(esc).join(' · ')}</span>`
+               + `<span class="sb-r">${t.rechts.map(esc).join(' · ')}</span>`;
+}
+
 function router() {
+  setTimeout(renderStatusBar, 0);
+  statusExtra = '';   // jede Seite startet ohne Zusatz; Module setzen ihn selbst
   const parts = parseHash();
   const [root, a, sub, b] = parts;
 
@@ -2066,6 +2096,7 @@ function viewKosten(id) {
   const p = findProjekt(id);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const vs = (p.vergaben || []).slice().sort((a, b) => (a.bkp || '').localeCompare(b.bkp || ''));
+  setStatusExtra(vs.length + ' Gewerk' + (vs.length === 1 ? '' : 'e') + ' · Prognose ' + chf(vs.reduce((t, v) => t + kostenZeile(v).prognose, 0)));
 
   const toolbar = `
     <button class="btn sm secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">🖨 Kostenschätzung</button>
@@ -4684,6 +4715,7 @@ function viewPendenzen(pid) {
   const offen = offenePendenzen(p);
   const erledigt = erledigtePendenzen(p);
   const ueberfaellig = offen.filter(x => x.it.termin && daysUntil(x.it.termin) < 0).length;
+  setStatusExtra(offen.length + ' offen' + (ueberfaellig ? ' · ' + ueberfaellig + ' überfällig' : '') + ' · ' + erledigt.length + ' erledigt');
 
   const kpi = (l, v, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:21px${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div></div>`;
   const herkunft = x => x.pr
@@ -9590,6 +9622,9 @@ function addStandardAuflagen(pid) {
 
 function viewRechnungen(pid) {
   const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
+  setTimeout(() => { try { const g = gewerkeSorted(p).filter(v => isVergeben(v) || (v.rechnungen || []).length);
+    let so = 0, fa = 0; g.forEach(v => { const z = kostenZeile(v); so += z.prognose; fa += z.fakturiert; });
+    setStatusExtra('Soll ' + chf(so) + ' · fakturiert ' + chf(fa) + ' · offen ' + chf(so - fa)); } catch (_) {} }, 0);
   const gw = gewerkeSorted(p).filter(v => isVergeben(v) || (v.rechnungen || []).length);
   let tSoll = 0, tFak = 0, tBez = 0, tPlatz = 0;
   const rows = gw.map(v => {
@@ -13434,6 +13469,18 @@ function selfTest() {
   eq('initDecision: Lesefehler → Demo behalten (nichts überschreiben)', initDecision(null, true), 'keep-demo');
   eq('initDecision: wirklich leer → Erststart committen', initDecision(null, false), 'commit-demo');
 
+  // Statuszeile: auf jeder Seite vorhanden und aussagekraeftig
+  ok('MODUL_LABEL deckt alle 10 Hauptreiter ab', ['dashboard','projekte','kalender','pendenzen','planung','erfassen','drucken','kontakte','dokumente','einstellungen'].every(k => MODUL_LABEL[k]));
+  ok('statusTexte: links Modul, rechts Umfang + Speicherort', (() => {
+    const t = statusTexte();
+    return Array.isArray(t.links) && Array.isArray(t.rechts) && t.links.length >= 1
+      && t.rechts.some(x => /Projekt/.test(x)) && t.rechts.some(x => x === 'Cloud' || x === 'Lokal');
+  })());
+  ok('setStatusExtra taucht in der Statuszeile auf und wird pro Seite zurueckgesetzt', (() => {
+    setStatusExtra('Summe 1234'); const mit = statusTexte().rechts.includes('Summe 1234');
+    statusExtra = ''; const ohne = !statusTexte().rechts.includes('Summe 1234');
+    return mit && ohne;
+  })());
   // Ribbon-Gruppen: feste Plaetze, jeder Reiter genau einmal, nichts verloren
   ok('PROJ_GRUPPEN: 6 Gruppen', PROJ_GRUPPEN.length === 6);
   ok('PROJ_GRUPPEN: alle 19 Projektreiter genau einmal (nichts verloren, nichts doppelt)', (() => {

@@ -400,12 +400,28 @@ body.modul-fokus .proj-sticky { top: 0; }
 
 /* ============================ Kopfzeile ============================ */
 
+/* Seitenkopf kompakt: eine Zeile statt Titelblock - Titel und Beschreibung nebeneinander.
+   Spart rund 35px auf JEDER Seite; im Werkzeug zaehlt Arbeitsflaeche mehr als Typografie. */
 .page-head {
-  display: flex; align-items: flex-end; justify-content: space-between;
-  gap: 16px; margin-bottom: 12px; flex-wrap: wrap;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 8px; flex-wrap: wrap; min-height: 26px;
+  border-bottom: 1px solid var(--border); padding-bottom: 6px;
 }
-.page-head h1 { margin: 0; font-size: 23px; font-weight: 700; letter-spacing: -.3px; }
-.page-head .sub { color: var(--text-soft); margin-top: 3px; font-size: 13px; }
+.page-head > div:first-child { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.page-head h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: 0; white-space: nowrap; }
+.page-head .sub { color: var(--text-faint); margin-top: 0; font-size: 11.5px; }
+
+/* ---- Statuszeile unten: auf jeder Seite gleich (wie Word/ArchiCAD) ---- */
+.statusbar {
+  position: fixed; left: var(--sidebar-w); right: 0; bottom: 0; height: 22px; z-index: 40;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 0 10px; background: var(--surface-2); border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-soft); font-variant-numeric: tabular-nums;
+}
+.statusbar .sb-l { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.statusbar .sb-r { white-space: nowrap; }
+#app.collapsed ~ .statusbar { left: 68px; }   /* passend zu #app.collapsed --sidebar-w: 68px */
+.content { padding-bottom: 32px !important; }
 .breadcrumb { color: var(--text-faint); font-size: 12.5px; margin-bottom: 6px; }
 .breadcrumb a:hover { color: var(--brand); }
 
@@ -760,7 +776,9 @@ tr.done-row { background: #fbfdfb; }
   font-size: 9.5px; text-transform: uppercase; letter-spacing: .7px; color: var(--text-faint);
   font-weight: 700; padding: 6px 12px 2px 22px;
 }
-.page-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 5px 0; }
+.page-toolbar { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; padding: 3px 4px; background: var(--surface); border: 1px solid var(--border); border-top: none; margin-bottom: 8px; }
+.page-toolbar .tb-sep { width: 1px; height: 18px; background: var(--border); margin: 0 5px; flex: none; }
+.page-toolbar .tb-right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 /* Dashboard-Unterreiter (zweite Ebene: Generell / Ausschreibung / Termin / Kosten / Pendenzen) */
 .dash-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 16px; }
 .dash-tab { padding: 6px 13px; font-size: 13px; font-weight: 600; color: var(--text-soft); background: var(--surface-2); border: 1px solid var(--border); border-radius: 0; cursor: pointer; font-family: inherit; }
@@ -1646,6 +1664,8 @@ table.va input[type=number] { -moz-appearance: textfield; }
   .nav-ico { font-size: 19px; opacity: 1; }
 
   .content { padding: 16px 14px calc(80px + env(safe-area-inset-bottom)); max-width: 100%; }
+  .statusbar { display: none; }   /* unten liegt hier die Reiterleiste */
+  .content { padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important; }
 
   /* Kopfzeilen & Aktionsgruppen umbrechen */
   .page-head { align-items: flex-start; }

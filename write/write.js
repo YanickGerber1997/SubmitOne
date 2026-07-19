@@ -4958,10 +4958,10 @@ function beginEdit(initial) {
 // während des Tippens: Text breiter als die Zelle → folgende LEERE Zellen live aufnehmen (nur so viele wie nötig)
 function liveExtendCell() {
   const td = editingTd; if (!td || td.classList.contains('textcell')) return;
-  // Dokumentmodus: Text bricht um wie ein Absatz. Ohne das setzt die Zeile unten
-  // white-space:nowrap als Inline-Stil und schiebt den Text in die Nachbarspalten -
-  // das las sich beim Schreiben wie ein Haenger.
-  if (typeof dokumentModus === 'function' && dokumentModus()) { td.style.whiteSpace = 'pre-wrap'; return; }
+  // Beim Schreiben waechst die Zelle ueber die Spalten: sie nimmt die naechste FREIE
+   // Spalte auf, dann die uebernaechste - im Hintergrund werden die Zellen verbunden.
+  // Ist die naechste Spalte belegt oder das Blatt zu Ende, bricht der Text um statt
+  // fremde Inhalte zu ueberdecken. Gilt in Write UND Calc: es ist dieselbe Mechanik.
   td.style.whiteSpace = 'nowrap';   // erst in einer Zeile wachsen
   let guard = 0;
   while (td.scrollWidth > td.clientWidth + 1 && guard++ < 40) {

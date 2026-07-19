@@ -59,6 +59,18 @@ catch (e) { console.log('LADEFEHLER beim Auswerten von write.js:\n', (e && e.sta
 
 if (sandbox.__ERR) { console.log('SELFTEST-FEHLER:\n', sandbox.__ERR); process.exit(1); }
 const R = sandbox.__R;
+if (R) {  // Verhaltens-Waechter am Quelltext (einfache Textsuche, keine Regex-Fallen)
+  const q = fs.readFileSync(file, 'utf8');
+  const von = q.indexOf('function liveExtendCell');
+  const bis = q.indexOf('function endEdit', von);
+  const rumpf = von >= 0 && bis > von ? q.slice(von, bis) : '';
+  // Die Zelle muss beim Schreiben ueber die Spalten wachsen - auch im Write-Modus.
+  // Ein frueher Ausstieg bei dokumentModus() hat genau das einmal verhindert.
+  const bricht = rumpf.indexOf('dokumentModus()) { td.style') >= 0 || rumpf.indexOf('dokumentModus()) return') >= 0;
+  R.R.push({ name: 'Zellen wachsen beim Schreiben ueber die Spalten (kein Ausstieg im Write-Modus)', ok: !bricht });
+  bricht ? R.fail++ : R.pass++;
+}
+
 if (R) {  // CSS-Waechter: im JS verwendete Klassen muessen im Stylesheet existieren.
   // Anlass: ich habe zweimal eine Klasse benutzt (rib-sep, rcol), die es gar nicht gab -
   // das Element bleibt dann unsichtbar oder unformatiert, ohne jede Fehlermeldung.

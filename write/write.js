@@ -135,6 +135,7 @@ function migrateDoc(d) {
     if (p.tabelle && p.tabelle.cells && p.html == null) p.html = tabelleToHtml(p.tabelle);  // alte Calc-Seite → HTML
     if (p.html == null) p.html = '';
     p.typ = (p.typ === 'calc') ? 'calc' : 'write';   // Slides entfernt → als Write
+    p.linien = (p.linien === true);   // Gitterlinien gehoeren zur Seite und werden mitgespeichert
     delete p.tabelle;
   });
   if (d.einstellungen) delete d.einstellungen.modus;
@@ -448,7 +449,7 @@ function ingestGdoc(text, handle) {
       const typ = (p && p.typ === 'calc') ? 'calc' : 'write';
       let html = sanitizeHtml((p && p.html) || '');
       if (!html && p && p.tabelle && p.tabelle.cells) html = tabelleToHtml(p.tabelle);   // sehr alte Calc-Seite
-      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, cfmt: (p && p.cfmt && typeof p.cfmt === 'object') ? p.cfmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {}, notiz: (p && typeof p.notiz === 'string') ? p.notiz : '', fill: (p && p.fill && typeof p.fill === 'object') ? p.fill : {}, txtcol: (p && p.txtcol && typeof p.txtcol === 'object') ? p.txtcol : {}, rowH: (p && p.rowH && typeof p.rowH === 'object') ? p.rowH : {}, merges: Array.isArray(p && p.merges) ? p.merges : [], borders: (p && p.borders && typeof p.borders === 'object') ? p.borders : {}, dispCols: (p && +p.dispCols) || 0, dispRows: (p && +p.dispRows) || 0 };
+      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, cfmt: (p && p.cfmt && typeof p.cfmt === 'object') ? p.cfmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {}, notiz: (p && typeof p.notiz === 'string') ? p.notiz : '', fill: (p && p.fill && typeof p.fill === 'object') ? p.fill : {}, txtcol: (p && p.txtcol && typeof p.txtcol === 'object') ? p.txtcol : {}, rowH: (p && p.rowH && typeof p.rowH === 'object') ? p.rowH : {}, merges: Array.isArray(p && p.merges) ? p.merges : [], borders: (p && p.borders && typeof p.borders === 'object') ? p.borders : {}, dispCols: (p && +p.dispCols) || 0, dispRows: (p && +p.dispRows) || 0, linien: (p && p.linien === true) };
     });
     if (!d.seiten.length) d.seiten = [{ id: uid(), typ: 'write', html: '' }];
     d.aktiv = 0;
@@ -1716,8 +1717,10 @@ function wire() {
   // warum sich das Umschalten je nach Vorgeschichte der Seite anders verhielt.
   $('#gridToggle').addEventListener('click', () => {
     if (!doc) return;
-    setPageType(activePage().typ === 'calc' ? 'write' : 'calc');
-    syncGridToggle();
+    const p = activePage();
+    if (p.typ !== 'calc') { setPageType('calc'); p.linien = true; }   // sehr alte Seite einmalig ins Raster holen
+    else gitterUmschalten(p);
+    renderActivePage(); syncGridToggle(); scheduleSave();
   });
   // Formelzeile im Write-Blatt (Etappe 3): Enter schreibt Wert/Formel-Ergebnis in die angeklickte Zelle
   $('#wfInput').addEventListener('keydown', e => {
@@ -2665,13 +2668,20 @@ function printFromPreview() {
    ============================================================ */
 const MODE_META = { write: ['✍', 'Submit Write'], calc: ['▦', 'Submit Calc'] };
 function pageMode(p) { return p.typ === 'calc' ? 'calc' : 'write'; }
-function syncGridToggle() { const gt = $('#gridToggle'); if (!gt || !doc) return; gt.classList.toggle('on', activePage().typ === 'calc'); }
+/* Das Raster ist das Grundgeruest jeder Seite - eine einzellige Zeile wird als textcell
+   ueber die volle Breite gesetzt und ist damit ein normaler Absatz. Der Gitter-Knopf
+   wechselt daher KEINEN Dokumenttyp, er blendet nur die Linien ein und aus.
+   Sichtbar nur bei linien === true: bestehende und neue Dokumente starten als Dokument. */
+function gitterSichtbar(p) { return !!(p && p.typ === 'calc' && p.linien === true); }
+function gitterUmschalten(p) { if (!p) return false; p.linien = !gitterSichtbar(p); return p.linien; }
+function syncGridToggle() { const gt = $('#gridToggle'); if (!gt || !doc) return; gt.classList.toggle('on', gitterSichtbar(activePage())); }
 function renderActivePage() {
   if (!doc) return;
   const p = activePage(), m = pageMode(p);
   document.body.dataset.mode = m;
   const calc = (m === 'calc');
   appEl.classList.toggle('calc-mode', calc);
+  appEl.classList.toggle('lines-off', calc && !gitterSichtbar(p));   // Linien gehoeren zur SEITE, nicht zur App
   syncGridToggle();   // „Gitter"-Knopf spiegelt, ob die Linien sichtbar sind
   if (calc) { $('#findbar').hidden = true; curGrid = htmlToGrid(p.html || ''); selC = 0; selR = 0; calcFitRows = 0; applyFormat(); renderCalc(); selectCell(0, 0); applyZoom(); }
   else { curGrid = null; editor.innerHTML = sanitizeHtml(p.html || ''); $$('.sp-err', editor).forEach(s => s.replaceWith(document.createTextNode(s.textContent))); $$('.pgbreak-gap', editor).forEach(g => g.remove()); $$('.colsep', editor).forEach(s => s.contentEditable = 'false'); $$('.fx', editor).forEach(s => s.contentEditable = 'false'); $$('.toc', editor).forEach(t => t.contentEditable = 'false'); applyFormat(); applyZoom(); refreshAll(); alignColseps(); paginateLater(); recomputeFormulas(); }
@@ -3656,6 +3666,32 @@ function selfTest() {
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  // --- Grundmodell: das Raster IST das Blatt; der Knopf zeigt nur die Linien ---
+  ok('neues Dokument startet im Raster (Raster = Grundgeruest)',
+    newDocObject().seiten[0].typ === 'calc');
+  ok('neues Dokument hat Kopf- und Fusszeile', (() => {
+    const d = newDocObject(); return typeof d.kopf === 'string' && typeof d.fuss === 'string';
+  })());
+  ok('Gitterlinien sind anfangs AUS (man sieht ein Dokument, kein Tabellenblatt)',
+    gitterSichtbar({ typ: 'calc' }) === false && gitterSichtbar({ typ: 'calc', linien: false }) === false);
+  ok('Gitterlinien an, wenn die SEITE es sagt', gitterSichtbar({ typ: 'calc', linien: true }) === true);
+  ok('Umschalten aendert NUR die Linien, nie den Seitentyp', (() => {
+    const p = { typ: 'calc', linien: false, html: '<p>x</p>' };
+    gitterUmschalten(p); const an = (p.linien === true && p.typ === 'calc');
+    gitterUmschalten(p); const aus = (p.linien === false && p.typ === 'calc');
+    return an && aus;
+  })());
+  ok('Linien gehoeren zur Seite: zwei Seiten sind unabhaengig', (() => {
+    const a = { typ: 'calc', linien: false }, b = { typ: 'calc', linien: false };
+    gitterUmschalten(a);
+    return gitterSichtbar(a) === true && gitterSichtbar(b) === false;
+  })());
+  ok('Umschalten ist umkehrbar (Zustand kehrt zurueck)', (() => {
+    const p = { typ: 'calc', linien: false };
+    gitterUmschalten(p); gitterUmschalten(p);
+    return p.linien === false;
+  })());
 
   // --- Excel-Gewohnheiten: absolute Bezuege, Ausfuellen, AutoSumme, Auswahl-Kennzahlen ---
   ok('absoluter Bezug $A$1 wird gerechnet (frueher gar nicht erkannt)', evalRaw('=$A$1+0') === evalRaw('=A1+0'));

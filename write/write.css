@@ -621,6 +621,9 @@ body[data-theme="dark"] .editor .sp-err{text-decoration-color:#ff7a70}
 .cgrid .cg-row{position:sticky;left:0;z-index:2;background:var(--surface-2);color:var(--ink-soft);font-size:.7em;font-weight:600;text-align:center;vertical-align:middle;border-color:var(--line)}
 .cgrid .cg-corner{position:sticky;left:0;top:0;z-index:4;background:var(--surface-2);border-color:var(--line)}
 .cgrid thead th.cg-col.colsel,.cgrid .cg-row.rowsel{background:var(--accent-soft);color:var(--accent)}
+/* Gitter unsichtbar: das Blatt bleibt ein Raster, sieht aber wie ein Dokument aus */
+.app.lines-off .cgrid th,.app.lines-off .cgrid td{border-color:transparent}
+.app.lines-off .calc-colruler,.app.lines-off .calc-rowruler{display:none}
 .cgrid td.textcell{text-align:left;vertical-align:top}                 /* Absatz/Überschrift über volle Blattbreite (wie Write) – gleiche Grössen & Abstände */
 .cgrid td.textcell.h1{font-size:1.875em;font-weight:700;line-height:1.2;letter-spacing:-.02em;padding-top:.3em;padding-bottom:.35em}
 .cgrid td.textcell.h2{font-size:1.44em;font-weight:600;line-height:1.25;letter-spacing:-.01em;padding-top:.7em;padding-bottom:.3em}

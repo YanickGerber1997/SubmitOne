@@ -425,6 +425,7 @@ body[data-mode="write"] .wfbar{display:flex}
 .fb-text-btn .caret{color:var(--ink-faint);font-size:11px}
 .menu .mi{display:inline-block;width:20px;text-align:center}
 .menu-sep{height:1px;background:var(--line);margin:5px 6px;display:block}
+.rib-sep{width:1px;height:18px;background:var(--line);margin:0 5px;flex:none;display:inline-block;vertical-align:middle}   /* Trenner zwischen Befehlsgruppen im Menueband */
 
 /* Einklappbare Icon-Leiste (links) – alles sichtbar, Hover = Info via title */
 .app.side-rail{grid-template-columns:58px var(--nav-w) minmax(0,1fr) 0}

@@ -3449,32 +3449,36 @@ function init() {
   try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (_) {}
   try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
   wire(); initLaunch();
-  // Übergabe aus Submit PDF? („Als Submit Paper öffnen")
-  let imported = false;
-  try {
-    const params = new URLSearchParams(location.search);
-    if (params.get('import') === '1') {
-      const raw = localStorage.getItem('submitpaper_import');
-      if (raw) {
-        localStorage.removeItem('submitpaper_import');
-        const data = JSON.parse(raw);
-        if (data && Array.isArray(data.pages) && data.pages.length) {
-          createDoc({ titel: data.titel || 'Aus PDF', pages: data.pages.map(p => ({ id: uid(), typ: p.typ === 'calc' ? 'calc' : 'write', html: p.html || '' })) });
-          imported = true;
-          try { history.replaceState(null, '', location.pathname); } catch (_) {}
-          const nPg = data.pages.reduce((s, p) => s + 1 + (((p.html || '').match(/class="pagebreak"/g) || []).length), 0);   // Seiten über Umbrüche zählen (ein durchgehendes Dokument)
-          toast('Aus PDF übernommen – ' + nPg + (nPg === 1 ? ' Seite' : ' Seiten') + ' (Text jetzt editierbar).');
-        }
-      }
-    }
-  } catch (_) {}
-  // sonst letztes oder neues Dokument
-  if (!imported) {
+  // Uebergabe aus SubmitOne oder Submit PDF (gemeinsame Bruecke, siehe ../bridge.js)
+  const zuletztOeffnen = () => {
     if (lib.currentId && lib.docs[lib.currentId]) openDoc(lib.currentId);
     else if (lib.order.length && lib.docs[lib.order[0]]) openDoc(lib.order[0]);
     else createDoc();
-  }
-  renderList();
+    renderList();
+  };
+  const uebernehmen = data => {
+    if (!data || !Array.isArray(data.pages) || !data.pages.length) return false;
+    const q = data.quelle || {};
+    createDoc({
+      titel: data.titel || 'Uebernommen',
+      pages: data.pages.map(p => ({ id: uid(), typ: p.typ === 'calc' ? 'calc' : 'write', html: p.html || '' })),
+    });
+    try { history.replaceState(null, '', location.pathname); } catch (_) {}
+    const n = window.SubmitBridge ? SubmitBridge.countPages(data.pages) : data.pages.length;
+    const woher = q.app === 'one' ? 'SubmitOne' : q.app === 'pdf' ? 'Submit PDF' : 'Uebergabe';
+    toast('Aus ' + woher + ' uebernommen – ' + n + (n === 1 ? ' Seite' : ' Seiten')
+      + (q.projekt ? ' · ' + q.projekt : '') + '.');
+    renderList();
+    return true;
+  };
+  let holt = false;
+  try {
+    if (new URLSearchParams(location.search).get('import') === '1' && window.SubmitBridge) {
+      holt = true;
+      SubmitBridge.receive().then(d => { if (!uebernehmen(d)) zuletztOeffnen(); }).catch(zuletztOeffnen);
+    }
+  } catch (_) { holt = false; }
+  if (!holt) zuletztOeffnen();
 }
 init();
 

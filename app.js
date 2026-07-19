@@ -5081,6 +5081,25 @@ function druckDesign() {
   if (d === 'modern' && cloudEnabled && ent !== null && !canModul('design')) d = 'standard';   // Premium-Gating
   return d;
 }
+/* Zuletzt erzeugtes Druckdokument. Alle 18 Ausgaben laufen durch openPrintDoc -
+   deshalb genuegt es, hier zu merken, um jede davon nach Submit Paper geben zu koennen. */
+let letztesDruckDok = null;
+/* Tabellen des letzten Druckdokuments als rechenbares Gitter an Submit Paper geben.
+   Bewusst als typ:'calc' - der Nutzer will darin weiterrechnen, nicht ein totes Abbild. */
+function druckDokNachPaper() {
+  if (!letztesDruckDok || !window.SubmitBridge) { toast('Kein Dokument zum Uebergeben.', 'info'); return; }
+  const d = letztesDruckDok;
+  const inhalt = (d.sheets || []).map(sh =>
+    (sh.secTitle ? `<h2>${esc(sh.secTitle)}</h2>` : '') + (sh.html || '')).join('');
+  const kopf = `<h1>${esc(d.title || 'Dokument')}</h1>`
+    + (d.objekt ? `<p>${esc(d.objekt)}</p>` : '');
+  SubmitBridge.sendToPaper({
+    titel: [d.title, d.objekt].filter(Boolean).join(' - ') || 'Aus SubmitOne',
+    pages: [{ typ: 'calc', html: kopf + inhalt }],
+    quelle: { app: 'one', modul: d.modul || '', projekt: d.objekt || '' },
+  }, { onError: () => toast('Uebergabe zu gross.', 'warn') });
+}
+
 function openPrintDoc(title, subtitleHtml, inner, opts) {
   opts = opts || {};
   const b = state.buero || BUERO;
@@ -5147,9 +5166,11 @@ function openPrintDoc(title, subtitleHtml, inner, opts) {
   </div>
   <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>
   </body></html>`;
+  letztesDruckDok = { title: opts.title || title || '', objekt: opts.objekt || '', modul: opts.modul || '', sheets: sheets };
   const w = window.open('', '_blank');
   if (!w) { toast('Bitte Popups für PDF erlauben', 'info'); return; }
   w.document.write(html); w.document.close();
+  try { w.__toPaper = druckDokNachPaper; } catch (_) {}   // Knopf im Vorschaufenster ruft zurueck
 }
 
 // Profi-Druck via Paged.js: echtes Deckblatt, Inhaltsverzeichnis, „Seite X / Y", laufende Kopf-/Fusszeile.
@@ -5216,7 +5237,21 @@ function openSheetDoc(opts) {
     table.t td.num,table.t th.num{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
     .muted{ color:#9aa4b1; } .conf{ display:inline-block; background:#fbe9ea; color:#a01b2b; border:1px solid #e7b3ba; border-radius: 0; padding:2px 8px; font-size:10px; font-weight:700; }
     ${opts.extraCss || ''}
-  </style></head><body>${pages}
+    /* Leiste nur am Bildschirm: im Ausdruck darf davon nichts erscheinen */
+    .scrbar{ position:fixed; top:0; left:0; right:0; height:34px; display:flex; align-items:center; gap:6px;
+      padding:0 10px; background:#f1efe6; border-bottom:1px solid #c5c1af; font-size:12px; z-index:9; }
+    .scrbar button{ font:inherit; font-weight:600; height:24px; padding:0 10px; cursor:pointer;
+      border:1px solid #a8a390; background:#fff; color:#1c242c; }
+    .scrbar button.pri{ background:#4f7a3c; border-color:#4f7a3c; color:#fff; }
+    .scrbar .sp{ margin-left:auto; color:#565d52; }
+    body{ padding-top:34px; }
+    @media print{ .scrbar{ display:none !important; } body{ padding-top:0; } }
+  </style></head><body>
+  <div class="scrbar">
+    <button class="pri" onclick="window.print()">Drucken / PDF</button>
+    <button onclick="try{ (window.__toPaper||window.opener.druckDokNachPaper)(); }catch(e){ alert('Submit Paper konnte nicht geoeffnet werden.'); }">In Submit Paper oeffnen</button>
+    <span class="sp">In Paper landet die Liste als rechenbares Gitter.</span>
+  </div>${pages}
   <script>window.onload=function(){ setTimeout(function(){ try{window.focus();}catch(e){} window.print(); }, 250); };<\/script>
   </body></html>`;
   const w = window.open('', '_blank');
@@ -13469,6 +13504,14 @@ function selfTest() {
   eq('initDecision: Lesefehler → Demo behalten (nichts überschreiben)', initDecision(null, true), 'keep-demo');
   eq('initDecision: wirklich leer → Erststart committen', initDecision(null, false), 'commit-demo');
 
+  // Bruecke nach Submit Paper: EIN Weg fuer alle 18 Druckdokumente
+  ok('druckDokNachPaper vorhanden', typeof druckDokNachPaper === 'function');
+  ok('ohne Druckdokument passiert nichts Schlimmes', (() => {
+    const alt = letztesDruckDok; letztesDruckDok = null;
+    let warn = false; const t = window.toast; window.toast = () => { warn = true; };
+    try { druckDokNachPaper(); } catch (e) { window.toast = t; letztesDruckDok = alt; return false; }
+    window.toast = t; letztesDruckDok = alt; return true;
+  })());
   // Statuszeile: auf jeder Seite vorhanden und aussagekraeftig
   ok('MODUL_LABEL deckt alle 10 Hauptreiter ab', ['dashboard','projekte','kalender','pendenzen','planung','erfassen','drucken','kontakte','dokumente','einstellungen'].every(k => MODUL_LABEL[k]));
   ok('statusTexte: links Modul, rechts Umfang + Speicherort', (() => {

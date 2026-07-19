@@ -4840,9 +4840,10 @@ async function convertToPaper(pageNums) {
     const PB = '<div class="pagebreak" contenteditable="false">Seitenumbruch</div>';
     const combined = pages.map(p => p.html).join(PB);
     const outPages = [{ typ: 'write', html: combined }];
-    try { localStorage.setItem('submitpaper_import', JSON.stringify({ titel, pages: outPages, ts: Date.now() })); }
-    catch (_) { status(''); toast('Text zu gross für die Übergabe – weniger Seiten wählen.'); return; }
-    status(''); location.href = '../write/index.html?import=1';
+    if (!window.SubmitBridge) { status(''); toast('Übergabe nicht verfügbar.'); return; }
+    status('');
+    SubmitBridge.sendToPaper({ titel, pages: outPages, quelle: { app: 'pdf', modul: 'seiten', datei: docName || '' } },
+      { onError: () => toast('Text zu gross für die Übergabe – weniger Seiten wählen.') });
   } catch (e) { status(''); console.error(e); toast('Umwandlung fehlgeschlagen.'); }
 }
 // Pixel-Daten eines Canvas einmal lesen und cachen (mehrere Sampler teilen sich das Bild)
@@ -7122,9 +7123,11 @@ function exportBelagToPaper(mode) {
     + buildBelagTableHtml(floors, walls, price, anschluesse, extras, nischen)
     + (price ? belagTenderFooter() + '<p style="color:#777;font-size:12px">Einheitspreise bitte durch den Unternehmer eintragen.</p>' : '');
   const titel = (docName || 'Ausmass').replace(/\.pdf$/i, '') + (price ? ' – Ausschreibung' : ' – Mengenauszug');
-  try { localStorage.setItem('submitpaper_import', JSON.stringify({ titel, pages: [{ typ: 'write', html }], ts: Date.now() })); }
-  catch (_) { toast('Export zu gross.'); return; }
-  toast('Öffne in Submit Paper …'); location.href = '../write/index.html?import=1';
+  if (!window.SubmitBridge) { toast('Übergabe nicht verfügbar.'); return; }
+  toast('Öffne in Submit Paper …');
+  // als Gitter: Mengen und Preise sollen in Paper weitergerechnet werden koennen
+  SubmitBridge.sendToPaper({ titel, pages: [{ typ: 'calc', html }], quelle: { app: 'pdf', modul: price ? 'ausschreibung' : 'mengenauszug', datei: docName || '' } },
+    { onError: () => toast('Export zu gross.') });
 }
 function geoToLocal(gj) {   // GeoJSON (lon/lat) → lokale Meter (äquirektangulär um den Schwerpunkt), Nord = oben
   const feats = gj && gj.type === 'FeatureCollection' ? (gj.features || []) : gj && gj.type === 'Feature' ? [gj] : gj && gj.type ? [{ geometry: gj }] : [];

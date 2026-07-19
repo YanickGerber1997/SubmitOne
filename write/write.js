@@ -174,6 +174,9 @@ function htmlToGrid(html) {
         const parts = n.textContent.split('	');
         parts.forEach((p, idx) => { if (idx > 0) { cells.push(cur); cur = ''; } cur += esc(p); });
       }
+      else if (n.nodeType === 1 && n.classList && n.classList.contains('fx') && n.getAttribute('data-fx')) {
+        cur += esc(n.getAttribute('data-fx'));      // Formel-Marke → im Raster steht die FORMEL, nicht ihr Ergebnis
+      }
       else cur += (n.nodeType === 1 ? n.outerHTML : esc(n.textContent));
     });
     cells.push(cur);
@@ -221,11 +224,16 @@ function colsepAt(i, grid) {   // Spaltentrenner – mit Tab-Position (mm), fall
   const pos = grid && grid.colStops && grid.colStops[i];
   return pos != null ? `<span class="colsep" data-tab="${pos}" contenteditable="false">⇥</span>` : COLSEP;
 }
+function zelleNachDokument(c) {   // Formelzelle → fx-Marke (Dokument zeigt den Wert, die Formel reist mit)
+  const t = plainText(c);
+  if (t[0] !== '=' || /class="fx"/.test(String(c))) return c || '';
+  return `<span class="fx" data-fx="${esc(t)}" contenteditable="false"></span>`;   // Text füllt recomputeFormulas()
+}
 function gridBlock(z, grid) {   // eine normale Zeile → Absatz/Ueberschrift, Attribute bleiben erhalten
   const tag = BLOCK_KEEP.test(z.tag || '') ? z.tag : 'p';
   const cells = (z.cells && z.cells.length ? z.cells : ['']).slice();
   while (cells.length > 1 && (cells[cells.length - 1] || '') === '') cells.pop();   // leere End-Spalten weg → keine überflüssigen Tabs in Write
-  let inner = ''; cells.forEach((c, i) => { inner += (c || ''); if (i < cells.length - 1) inner += colsepAt(i, grid); });
+  let inner = ''; cells.forEach((c, i) => { inner += zelleNachDokument(c); if (i < cells.length - 1) inner += colsepAt(i, grid); });
   return `<${tag}${z.attrs || ''}>${inner || '<br>'}</${tag}>`;
 }
 function gridToHtml(grid) {
@@ -581,6 +589,24 @@ function updateStats() {
   ].map(([l, n]) => `<div class="stat-cell"><div class="sc-n">${n}</div><div class="sc-l">${l}</div></div>`).join('');
 }
 // Statistik für Calc-Seiten (echte Zell-/Zeilen-/Spaltenzahlen statt veraltetem Write-Text)
+/* Kennzahlen der Markierung – wie die Statusleiste in Excel. Rein rechnend, im Test pruefbar. */
+function auswahlStatistik(c1, c2, r1, r2) {
+  const zahlen = [];
+  let belegt = 0;
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) {
+    let v; try { v = evalCell(c, r); } catch (_) { v = ''; }
+    if (v !== '' && v != null) belegt++;
+    if (typeof v === 'number' && isFinite(v)) zahlen.push(v);
+  }
+  const summe = zahlen.reduce((a, b) => a + b, 0);
+  return {
+    anzahl: belegt, zahlen: zahlen.length,
+    summe: zahlen.length ? Math.round(summe * 1e10) / 1e10 : null,
+    mittel: zahlen.length ? Math.round((summe / zahlen.length) * 1e10) / 1e10 : null,
+    min: zahlen.length ? Math.min(...zahlen) : null,
+    max: zahlen.length ? Math.max(...zahlen) : null,
+  };
+}
 function updateStatsCalc() {
   const ur = curGrid ? calcUsedRange() : { maxR: -1, maxC: -1 };
   const rows = Math.max(0, ur.maxR + 1), cols = Math.max(0, ur.maxC + 1);
@@ -591,9 +617,18 @@ function updateStatsCalc() {
   $('#stPars').textContent = rows + (rows === 1 ? ' Zeile' : ' Zeilen');
   $('#stPages').textContent = '1 Seite';
   $('#stRead').textContent = 'Tabelle';
-  $('#statGrid').innerHTML = [
-    ['Zellen', filled], ['Zeilen', rows], ['Spalten', cols], ['Version', 'v' + (doc?.meta.version || 1)]
-  ].map(([l, n]) => `<div class="stat-cell"><div class="sc-n">${n}</div><div class="sc-l">${l}</div></div>`).join('');
+  // Markierung: sobald mehr als eine Zelle gewaehlt ist, zaehlen Summe/Mittelwert mehr als die Dokumentzahlen
+  const rb = (typeof rangeBounds === 'function' && curGrid) ? rangeBounds() : null;
+  const mehr = rb && (rb.c1 !== rb.c2 || rb.r1 !== rb.r2);
+  let felder;
+  if (mehr) {
+    const st = auswahlStatistik(rb.c1, rb.c2, rb.r1, rb.r2);
+    const z = n => (n == null ? '–' : new Intl.NumberFormat('de-CH').format(n));
+    felder = [['Summe', z(st.summe)], ['Mittelwert', z(st.mittel)], ['Anzahl', st.anzahl], ['Zahlen', st.zahlen]];
+    $('#stRead').textContent = 'Summe ' + z(st.summe);
+  } else felder = [['Zellen', filled], ['Zeilen', rows], ['Spalten', cols], ['Version', 'v' + (doc?.meta.version || 1)]];
+  $('#statGrid').innerHTML = felder
+    .map(([l, n]) => `<div class="stat-cell"><div class="sc-n">${n}</div><div class="sc-l">${l}</div></div>`).join('');
 }
 
 // Spaltentrenner (Tabs) in Write auf dieselben Spaltenpositionen wie Calc ausrichten
@@ -1751,6 +1786,15 @@ function wire() {
   $('#ctxmenu').addEventListener('click', e => { const g = e.target.closest('button')?.dataset.g; if (g) gridMenuAction(g); });
 
   // Formelzeile
+  // AutoSumme auch als Knopf – ueber ein Tastenkuerzel allein findet das niemand
+  const autoSumKlick = () => {
+    if (!doc || !curGrid || activePage().typ !== 'calc') { toast('AutoSumme wirkt im Gitter.'); return; }
+    const f = autoSummeFormel(selC, selR);
+    if (!f) { toast('Kein Zahlenblock über oder links von der Zelle.'); return; }
+    gridEnsure(curGrid, selC, selR); curGrid.zeilen[selR].cells[selC] = f;
+    activePage().html = gridToHtml(curGrid); renderCalc(); selectCell(selC, selR); calcFocus(); scheduleSave();
+  };
+  { const b = $('#btnAutoSum'); if (b) b.addEventListener('click', autoSumKlick); }
   $('#formulaInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); commitCell(e.target.value); selectCell(selC, selR + 1); calcFocus(); }
     else if (e.key === 'Tab') { e.preventDefault(); commitCell(e.target.value); selectCell(selC + 1, selR); calcFocus(); }
@@ -1771,11 +1815,36 @@ function wire() {
     if (e.ctrlKey || e.metaKey) {
       const lk = k.toLowerCase();
       if (lk === 'a') { e.preventDefault(); selectAllCells(); return; }
+      if (lk === 'd' || lk === 'r') {   // Strg+D / Strg+R: nach unten / nach rechts ausfuellen (wie Excel)
+        e.preventDefault();
+        if (fuelleAus(lk === 'd' ? 'unten' : 'rechts')) { activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave(); }
+        return;
+      }
+      if (k === 'Home') { e.preventDefault(); selectCell(0, 0, ext); return; }          // Strg+Pos1 → A1
+      if (k === 'ArrowDown' || k === 'ArrowUp' || k === 'ArrowRight' || k === 'ArrowLeft') {
+        e.preventDefault();                                                             // Strg+Pfeil → an den Rand des Blocks
+        const ur = calcUsedRange();
+        if (k === 'ArrowDown') selectCell(selC, Math.max(selR, ur.maxR), ext);
+        else if (k === 'ArrowUp') selectCell(selC, 0, ext);
+        else if (k === 'ArrowRight') selectCell(Math.max(selC, ur.maxC), selR, ext);
+        else selectCell(0, selR, ext);
+        return;
+      }
       if (lk === 'b') { e.preventDefault(); toggleCellFmt('b'); return; }
       if (lk === 'i') { e.preventDefault(); toggleCellFmt('i'); return; }
       if (lk === 'u') { e.preventDefault(); toggleCellFmt('u'); return; }
     }
-    if (k === 'ArrowDown') { e.preventDefault(); selectCell(selC, selR + 1, ext); }
+    if (e.altKey && (k === '=' || k === '+')) {   // Alt+= : AutoSumme
+      e.preventDefault();
+      const f = autoSummeFormel(selC, selR);
+      if (!f) { toast('Kein Zahlenblock über oder links von der Zelle.'); return; }
+      gridEnsure(curGrid, selC, selR); curGrid.zeilen[selR].cells[selC] = f;
+      activePage().html = gridToHtml(curGrid); renderCalc(); selectCell(selC, selR); scheduleSave();
+      return;
+    }
+    if (k === 'Home') { e.preventDefault(); selectCell(0, selR, ext); }                  // Pos1 → Zeilenanfang
+    else if (k === 'End') { e.preventDefault(); selectCell(Math.max(0, calcUsedRange().maxC), selR, ext); }
+    else if (k === 'ArrowDown') { e.preventDefault(); selectCell(selC, selR + 1, ext); }
     else if (k === 'ArrowUp') { e.preventDefault(); selectCell(selC, selR - 1, ext); }
     else if (k === 'ArrowRight') { e.preventDefault(); selectCell(selC + 1, selR, ext); }
     else if (k === 'ArrowLeft') { e.preventDefault(); selectCell(selC - 1, selR, ext); }
@@ -2724,6 +2793,19 @@ function drawWriteCellHi(rowEl, col) {
   } catch (_) { hi.hidden = true; }
 }
 
+/* Formel um dc Spalten / dr Zeilen verschieben – wie Excel beim Ausfuellen und Kopieren.
+   Relative Bezuege wandern mit, mit $ festgehaltene bleiben stehen. Rein: im Test pruefbar. */
+function verschiebeFormel(f, dc, dr) {
+  const t = String(f == null ? '' : f);
+  if (t[0] !== '=') return t;
+  return t.replace(/(\$?)([A-Za-z]+)(\$?)(\d+)/g, (all, ds, sp, dz, zi) => {
+    let c = colToIdx(sp.toUpperCase()), r = +zi;
+    if (!ds) c += dc;
+    if (!dz) r += dr;
+    if (c < 0 || r < 1) return '#BEZUG';
+    return ds + idxToCol(c) + dz + r;
+  });
+}
 /* ---- Formel-Engine (Excel-artig): + - * / ^, Klammern, Vergleiche, Funktionen, Verschachtelung ---- */
 function gridCellRaw(c, r) { return cellText(gridGet(curGrid, c, r)); }
 function toNum(v) { if (typeof v === 'number') return v; if (v === true) return 1; if (!v) return 0; const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? 0 : n; }
@@ -2740,14 +2822,14 @@ function evalRaw(raw, seen) {
   } catch (e) { return e === 'circ' ? '#ZIRKEL' : '#FEHLER'; }
 }
 function refVal(ref, seen) {
-  const m = /^([A-Z]+)(\d+)$/.exec(ref.toUpperCase()); if (!m) return 0;
+  const m = /^([A-Z]+)(\d+)$/.exec(String(ref).toUpperCase().replace(/\$/g, '')); if (!m) return 0;
   const c = colToIdx(m[1]), r = +m[2] - 1, key = c + ',' + r;
   if (seen.has(key)) throw 'circ';
   const ns = new Set(seen); ns.add(key);
   return evalRaw(gridCellRaw(c, r), ns);
 }
 function rangeVals(a, b, seen) {
-  const m1 = /^([A-Z]+)(\d+)$/.exec(a.toUpperCase()), m2 = /^([A-Z]+)(\d+)$/.exec(b.toUpperCase());
+  const m1 = /^([A-Z]+)(\d+)$/.exec(String(a).toUpperCase().replace(/\$/g, '')), m2 = /^([A-Z]+)(\d+)$/.exec(String(b).toUpperCase().replace(/\$/g, ''));
   const c1 = colToIdx(m1[1]), r1 = +m1[2], c2 = colToIdx(m2[1]), r2 = +m2[2], out = [];
   for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c++)
     for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r++) out.push(refVal(idxToCol(c) + r, seen));
@@ -2781,7 +2863,7 @@ function evalFormula(src, seen) {
     const args = []; ws(); if (src[i] === ')') return args;
     for (; ;) {
       ws();
-      const rm = /^([A-Za-z]+\d+):([A-Za-z]+\d+)/.exec(src.slice(i));
+      const rm = /^(\$?[A-Za-z]+\$?\d+):(\$?[A-Za-z]+\$?\d+)/.exec(src.slice(i));
       if (rm) { i += rm[0].length; args.push({ range: true, vals: rangeVals(rm[1], rm[2], seen) }); }
       else args.push({ val: parseExpr() });
       ws(); if (src[i] === ';' || src[i] === ',') { i++; continue; }
@@ -2795,9 +2877,9 @@ function evalFormula(src, seen) {
     if (src[i] === '"') { i++; let str = ''; while (i < src.length && src[i] !== '"') str += src[i++]; if (src[i] === '"') i++; return str; }
     let m = /^\d+(\.\d+)?/.exec(src.slice(i));
     if (m) { i += m[0].length; return parseFloat(m[0]); }
-    m = /^[A-Za-z]+\d*/.exec(src.slice(i));
+    m = /^\$?[A-Za-z]+\$?\d*/.exec(src.slice(i));
     if (m) {
-      const id = m[0].toUpperCase(); i += m[0].length; ws();
+      const id = m[0].toUpperCase().replace(/\$/g, ''); i += m[0].length; ws();
       if (src[i] === '(') { i++; const a = parseArgs(); ws(); if (src[i] === ')') i++; return callFn(id, a); }
       if (/^[A-Z]+\d+$/.test(id)) return refVal(id, seen);
       if (id === 'WAHR' || id === 'TRUE') return true;
@@ -3118,6 +3200,35 @@ function updateRulerSel() {
   $$('#rowRuler .rr-seg').forEach(e => e.classList.toggle('on', +e.dataset.r >= r1 && +e.dataset.r <= r2));
 }
 let anchorC = 0, anchorR = 0, editingTd = null;
+/* Ausfuellen wie in Excel: oberste Zeile bzw. linke Spalte der Markierung in den Rest kopieren,
+   Formeln dabei mitverschieben (relative Bezuege wandern, $-Bezuege bleiben). */
+function fuelleAus(richtung) {
+  if (!curGrid) return false;
+  const { c1, c2, r1, r2 } = rangeBounds();
+  if (richtung === 'unten' && r2 <= r1) return false;
+  if (richtung === 'rechts' && c2 <= c1) return false;
+  for (let c = c1; c <= c2; c++) for (let r = r1; r <= r2; r++) {
+    if (richtung === 'unten' && r === r1) continue;
+    if (richtung === 'rechts' && c === c1) continue;
+    const qc = richtung === 'rechts' ? c1 : c, qr = richtung === 'unten' ? r1 : r;
+    const quelle = gridGet(curGrid, qc, qr);
+    gridEnsure(curGrid, c, r);
+    const roh = cellText(quelle);
+    curGrid.zeilen[r].cells[c] = (roh[0] === '=') ? verschiebeFormel(roh, c - qc, r - qr) : quelle;
+  }
+  return true;
+}
+/* AutoSumme: Zahlenblock oberhalb (bzw. links) finden und =SUMME(...) einsetzen – wie Alt+= in Excel */
+function autoSummeFormel(c, r) {
+  if (!curGrid) return null;
+  let n = 0;
+  while (r - n - 1 >= 0 && String(cellText(gridGet(curGrid, c, r - n - 1))) !== '') n++;
+  if (n >= 1) return '=SUMME(' + idxToCol(c) + (r - n + 1) + ':' + idxToCol(c) + r + ')';
+  let m = 0;
+  while (c - m - 1 >= 0 && String(cellText(gridGet(curGrid, c - m - 1, r))) !== '') m++;
+  if (m >= 1) return '=SUMME(' + idxToCol(c - m) + (r + 1) + ':' + idxToCol(c - 1) + (r + 1) + ')';
+  return null;
+}
 function rangeBounds() { return { c1: Math.min(anchorC, selC), c2: Math.max(anchorC, selC), r1: Math.min(anchorR, selR), r2: Math.max(anchorR, selR) }; }
 // Namensfeld: Einzelzelle → „A1", Bereich → „ZeilenxSpalten" (wie Excel beim Ziehen)
 function selRefLabel(c1, c2, r1, r2, activeKey) {
@@ -3545,6 +3656,33 @@ function selfTest() {
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  // --- Excel-Gewohnheiten: absolute Bezuege, Ausfuellen, AutoSumme, Auswahl-Kennzahlen ---
+  ok('absoluter Bezug $A$1 wird gerechnet (frueher gar nicht erkannt)', evalRaw('=$A$1+0') === evalRaw('=A1+0'));
+  ok('gemischter Bezug $A1 wird gerechnet', evalRaw('=$A1+0') === evalRaw('=A1+0'));
+  ok('Bereich mit $ wird gerechnet', evalRaw('=SUMME($A$1:$A$2)') === evalRaw('=SUMME(A1:A2)'));
+  ok('verschiebeFormel: relative Bezuege wandern mit', verschiebeFormel('=A1+B2', 1, 2) === '=B3+C4');
+  ok('verschiebeFormel: $ haelt Spalte UND Zeile fest', verschiebeFormel('=$A$1', 3, 5) === '=$A$1');
+  ok('verschiebeFormel: $A1 haelt nur die Spalte', verschiebeFormel('=$A1', 2, 1) === '=$A2');
+  ok('verschiebeFormel: A$1 haelt nur die Zeile', verschiebeFormel('=A$1', 1, 4) === '=B$1');
+  ok('verschiebeFormel: Bereiche wandern vollstaendig', verschiebeFormel('=SUMME(A1:A3)', 1, 0) === '=SUMME(B1:B3)');
+  ok('verschiebeFormel: Funktionsname bleibt unangetastet', /^=SUMME\(/.test(verschiebeFormel('=SUMME(A1:A2)', 0, 1)));
+  ok('verschiebeFormel: ueber den Rand ergibt #BEZUG (kein stiller Unsinn)', /#BEZUG/.test(verschiebeFormel('=A1', -5, 0)));
+  ok('verschiebeFormel laesst reinen Text in Ruhe', verschiebeFormel('Hallo A1', 3, 3) === 'Hallo A1');
+  ok('auswahlStatistik/fuelleAus/autoSummeFormel vorhanden',
+    [auswahlStatistik, fuelleAus, autoSummeFormel].every(f => typeof f === 'function'));
+
+  // --- Formeln ueberleben den Wechsel Gitter <-> Dokument (vorher wurden sie zu totem Text) ---
+  ok('Formelzelle wird im Dokument zur fx-Marke (Wert sichtbar, Formel bleibt)', (() => {
+    const h = gridToHtml({ cols: 1, zeilen: [{ tag: 'p', attrs: '', cells: ['=SUMME(A1:A2)'] }], colStops: [] });
+    return /class="fx"/.test(h) && /data-fx="=SUMME\(A1:A2\)"/.test(h);
+  })());
+  ok('normale Zelle bleibt unangetastet',
+    gridToHtml({ cols: 1, zeilen: [{ tag: 'p', attrs: '', cells: ['Hallo'] }], colStops: [] }) === '<p>Hallo</p>');
+  ok('bestehende fx-Marke wird nicht doppelt verpackt', (() => {
+    const c = '<span class="fx" data-fx="=A1">5</span>';
+    return gridToHtml({ cols: 1, zeilen: [{ tag: 'p', attrs: '', cells: [c] }], colStops: [] }) === '<p>' + c + '</p>';
+  })());
 
   // --- Gitter <-> Dokument: verlustfrei umschalten (der Kern des „Gitter"-Schalters) ---
   const G = (zeilen, extra) => gridToHtml(Object.assign({ cols: 2, zeilen, colStops: [] }, extra || {}));

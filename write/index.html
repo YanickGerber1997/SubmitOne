@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../ui/tokens.css?v=40" />
-  <link rel="stylesheet" href="write.css?v=42" />
+  <link rel="stylesheet" href="write.css?v=44" />
 </head>
 <body data-theme="light">
 
@@ -297,6 +297,7 @@
         <span class="cell-ref" id="cellRef">A1</span>
         <span class="fx">fx</span>
         <input class="formula-input" id="formulaInput" placeholder="Wert oder =Formel, z. B. =SUMME(A1:A5)  ·  =WENN(A1>0;&quot;ja&quot;;&quot;nein&quot;)" spellcheck="false" />
+        <button class="fb-btn sm" id="btnAutoSum" title="AutoSumme (Alt+=) – summiert den Zahlenblock darüber oder links">Σ</button>
         <span class="calc-stat" id="calcStat"></span>
         <span class="grow"></span>
         <span class="cb-fmt" title="Zahlenformat der Auswahl">
@@ -473,7 +474,7 @@
   <div class="tip" id="tip" hidden></div>
   <div id="toast-root"></div>
 
-  <script src="write.js?v=43"></script>
+  <script src="write.js?v=44"></script>
   <script src="../appswitch.js?v=3"></script>
 <script src="../bridge.js?v=1"></script>
 </body>

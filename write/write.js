@@ -369,6 +369,19 @@ function setDirty(v) {
 }
 /* Inhalt der GERADE bearbeiteten Zelle ins Raster spiegeln, ohne die Bearbeitung zu beenden.
    Das Autospeichern darf den Schreibfluss nicht unterbrechen. */
+/* Bearbeitung beenden, Inhalt ins Raster uebernehmen, aber die Tabelle NICHT neu aufbauen.
+   Fuer den blossen Wechsel des Cursors in eine andere Zeile: endEdit() wuerde ueber
+   commitCellHtml die ganze Tabelle neu zeichnen - das flackert und verschiebt die Zeilen,
+   waehrend man gerade eine Stelle angeklickt hat. */
+function zelleSchliessen() {
+  if (!editingTd) return false;
+  zelleSpiegeln();
+  editingTd.contentEditable = 'false';
+  editingTd.classList.remove('celledit');
+  editingTd.style.whiteSpace = '';
+  editingTd = null;
+  return true;
+}
 function zelleSpiegeln() {
   if (!editingTd || !curGrid) return false;
   gridEnsure(curGrid, selC, selR);
@@ -2079,7 +2092,9 @@ function wire() {
   let gridDragging = false;
   pgEl.addEventListener('mousedown', e => {
     const td = e.target.closest('td[data-c]'); if (!td) return;
-    if (editingTd && editingTd !== td) endEdit(true);
+    // Im Write-Modus die alte Zelle nur schliessen, nicht die Tabelle neu aufbauen -
+    // sonst verschiebt sich das Blatt genau in dem Moment, in dem man hinklickt.
+    if (editingTd && editingTd !== td) { if (dokumentModus()) zelleSchliessen(); else endEdit(true); }
     if (dokumentModus() && !e.shiftKey) {
       // Write-Modus: eine Zeile ist EINE durchgehende Zeile wie in Word. Egal in welche Spalte
       // geklickt wird - man landet immer vorne in der Zeile. Spalten gibt es sichtbar nur in Calc.
@@ -2125,8 +2140,7 @@ function wire() {
       else if (e.key === 'Enter') {
         e.preventDefault();
         if (dokumentModus()) {                      // Word-Gefuehl: Enter oeffnet einen neuen Absatz darunter
-          zelleSpiegeln();                          // Inhalt uebernehmen OHNE Neuaufbau ...
-          if (editingTd) { editingTd.contentEditable = 'false'; editingTd.classList.remove('celledit'); editingTd = null; }
+          zelleSchliessen();                        // Inhalt uebernehmen OHNE Neuaufbau ...
           zeileEinfuegen(selR);
           activePage().html = gridToHtml(curGrid);
           renderCalc();                             // ... dann genau EINMAL neu zeichnen (vorher zweimal je Absatz)
@@ -2139,11 +2153,17 @@ function wire() {
           // In einer durchgehenden Write-Zeile gibt es noch keine zweite Zelle: erst anlegen,
           // dann springen. Dadurch wird die Zeile zur Rasterzeile und zeigt zwei Spalten.
           // Bewusst OHNE Speichern - bleibt die neue Spalte leer, faellt sie von selbst wieder weg.
-          zelleSpiegeln();
-          if (editingTd) { editingTd.contentEditable = 'false'; editingTd.classList.remove('celledit'); editingTd = null; }
+          const zeile = curGrid.zeilen[selR];
+          const neuAnlegen = !zeile || zeile.cells.length <= selC + 1;
+          zelleSchliessen();
           gridEnsure(curGrid, selC + 1, selR);
-          renderCalc();
+          if (neuAnlegen) renderCalc();          // Zeile wird zur Rasterzeile - Neuaufbau noetig
           selectCell(selC + 1, selR); beginEdit();
+          return;
+        }
+        if (dokumentModus() && e.shiftKey) {          // Umschalt+Tab: eine Spalte zurueck, ohne Neuaufbau
+          zelleSchliessen();
+          selectCell(Math.max(0, selC - 1), selR); beginEdit();
           return;
         }
         endEdit(true); const m = mergeAt(selC, selR);
@@ -2153,13 +2173,11 @@ function wire() {
       else if (dokumentModus() && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         const ziel = selR + (e.key === 'ArrowDown' ? 1 : -1);      // Word-Gefuehl: Pfeile wechseln die Zeile
         if (ziel < 0) return;
-        e.preventDefault(); zelleSpiegeln();
-        if (editingTd) { editingTd.contentEditable = 'false'; editingTd.classList.remove('celledit'); editingTd = null; }
+        e.preventDefault(); zelleSchliessen();
         selectCell(0, ziel); beginEdit();
       }
       else if (dokumentModus() && e.key === 'Backspace' && selR > 0 && cursorAmZeilenAnfang()) {
-        e.preventDefault(); zelleSpiegeln();                       // Rueckschritt am Zeilenanfang haengt an die Zeile darueber an
-        if (editingTd) { editingTd.contentEditable = 'false'; editingTd.classList.remove('celledit'); editingTd = null; }
+        e.preventDefault(); zelleSchliessen();                     // Rueckschritt am Zeilenanfang haengt an die Zeile darueber an
         const naht = zeilenVerbinden(selR);
         activePage().html = gridToHtml(curGrid); renderCalc();
         selectCell(0, selR - 1); beginEdit();
@@ -3516,7 +3534,14 @@ function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen
   return { cols: Math.max(1, ...z.map(x => x.cells.length)), rows: z.length };
 }
 let gridCols = 1, gridRows = 1, calcFitRows = 0;
-function renderCalc() { renderSheet(); fitCalcRows(); calcPaginate(); buildCalcRulers(); highlightSel(); updateStats(); updatePages(); drawRuler(); }
+let _spaltenBild = '';
+function renderCalc() {
+  renderSheet(); fitCalcRows(); calcPaginate(); buildCalcRulers(); highlightSel(); updateStats(); updatePages();
+  // Das Lineal nur auffrischen, wenn sich die Spaltenaufteilung wirklich geaendert hat -
+  // sonst wird es bei jedem Tastendruck neu gebaut.
+  const bild = (gridColPx || []).join(',');
+  if (bild !== _spaltenBild) { _spaltenBild = bild; drawRuler(); }
+}
 // Calc bei Inhalt > A4 in mehrere A4-Blätter aufteilen (Lücke mit Fuss-/Kopfzeile, wie Write)
 function calcPaginate() {
   if (!doc || activePage().typ !== 'calc') return;
@@ -4506,6 +4531,13 @@ function selfTest() {
     const kal = evalCell(3, 0), arb = evalCell(4, 0), leer = evalCell(3, 1);
     curGrid = alt;
     return kal === 7 && arb === 5 && leer === '';
+  })());
+
+  // --- Schreibfluss: Cursor umsetzen darf die Tabelle nicht neu aufbauen ---
+  ok('zelleSchliessen vorhanden (uebernimmt und schliesst ohne Neuaufbau)', typeof zelleSchliessen === 'function');
+  ok('zelleSchliessen ohne offene Zelle tut nichts', (() => {
+    const alt = editingTd; editingTd = null;
+    const r = zelleSchliessen(); editingTd = alt; return r === false;
   })());
 
   // --- Ueberlauf: langer Text nimmt in Calc dieselbe Breite wie in Write ---

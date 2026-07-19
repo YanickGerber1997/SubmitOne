@@ -880,16 +880,38 @@ function auswahlStatistik(c1, c2, r1, r2) {
     max: zahlen.length ? Math.max(...zahlen) : null,
   };
 }
+/* Woerter und Zeichen ueber das ganze Blatt. Rein rechnend, im Test pruefbar.
+   Formeln zaehlen mit ihrem ERGEBNIS, nicht mit ihrem Quelltext - gezaehlt wird,
+   was auf dem Papier steht. */
+function blattStatistik() {
+  let woerter = 0, zeichen = 0, zellen = 0;
+  if (!curGrid) return { woerter, zeichen, zellen };
+  curGrid.zeilen.forEach((z, r) => (z.cells || []).forEach((c, ci) => {
+    let t = cellText(c);
+    if (t === '') return;
+    zellen++;
+    if (t.charAt(0) === '=') { let v; try { v = evalCell(ci, r); } catch (_) { v = ''; } t = (v == null ? '' : String(v)); }
+    zeichen += t.length;
+    const w = t.trim().split(/\s+/).filter(Boolean);
+    woerter += w.length;
+  }));
+  return { woerter, zeichen, zellen };
+}
+
 function updateStatsCalc() {
   const ur = curGrid ? calcUsedRange() : { maxR: -1, maxC: -1 };
   const rows = Math.max(0, ur.maxR + 1), cols = Math.max(0, ur.maxC + 1);
   let filled = 0;
   if (curGrid) curGrid.zeilen.forEach(z => z.cells.forEach(c => { if (cellText(c) !== '') filled++; }));
-  $('#stWords').textContent = filled + (filled === 1 ? ' Zelle' : ' Zellen');
-  $('#stChars').textContent = cols + (cols === 1 ? ' Spalte' : ' Spalten');
+  const st = blattStatistik();
+  const bl = $('#pageGrid') ? Math.max(1, $$('#pageGrid tr.cgap').length + 1) : 1;
+  $('#stWords').textContent = st.woerter + (st.woerter === 1 ? ' Wort' : ' Wörter');
+  $('#stChars').textContent = st.zeichen + (st.zeichen === 1 ? ' Zeichen' : ' Zeichen');
   $('#stPars').textContent = rows + (rows === 1 ? ' Zeile' : ' Zeilen');
-  $('#stPages').textContent = '1 Seite';
-  $('#stRead').textContent = 'Tabelle';
+  $('#stPages').textContent = bl + (bl === 1 ? ' Seite' : ' Seiten');
+  { const e = $('#stCells'); if (e) e.textContent = st.zellen + (st.zellen === 1 ? ' Zelle' : ' Zellen'); }
+  { const e = $('#stCols'); if (e) e.textContent = cols + (cols === 1 ? ' Spalte' : ' Spalten'); }
+  $('#stRead').textContent = Math.max(1, Math.round(st.woerter / 200)) + ' Min. Lesezeit';
   // Markierung: sobald mehr als eine Zelle gewaehlt ist, zaehlen Summe/Mittelwert mehr als die Dokumentzahlen
   const rb = (typeof rangeBounds === 'function' && curGrid) ? rangeBounds() : null;
   const mehr = rb && (rb.c1 !== rb.c2 || rb.r1 !== rb.r2);
@@ -5290,6 +5312,49 @@ function selfTest() {
     /Segoe UI/.test(SCHRIFT_STD) && /Helvetica/.test(SCHRIFT_STD) && /Arial/.test(SCHRIFT_STD));
   ok('neues Dokument setzt dichter als Bildschirmtypografie',
     newDocObject().einstellungen.schriftgroesse === 14 && newDocObject().einstellungen.zeilenabstand < 1.6);
+
+  // --- Woerter und Zeichen zaehlen ---
+  ok('zaehlt Woerter und Zeichen ueber alle Zellen', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 2, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['Beton liefern', 'Bern'] },
+      { tag: 'p', attrs: '', cells: ['', ''] },
+    ] };
+    const st = blattStatistik(); curGrid = alt;
+    return st.woerter === 3 && st.zeichen === ('Beton liefern'.length + 'Bern'.length) && st.zellen === 2;
+  })());
+  ok('leere Zellen zaehlen nicht mit', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 3, colStops: [], zeilen: [{ tag: 'p', attrs: '', cells: ['', 'x', ''] }] };
+    const st = blattStatistik(); curGrid = alt;
+    return st.zellen === 1 && st.woerter === 1;
+  })());
+  ok('eine Formel zaehlt mit ihrem ERGEBNIS, nicht mit ihrem Quelltext', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 2, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['5', '=A1*4'] },
+    ] };
+    const st = blattStatistik(); curGrid = alt;
+    // '5' und '20' -> 2 Woerter, 3 Zeichen. Der Quelltext '=A1*4' haette 5 Zeichen.
+    return st.woerter === 2 && st.zeichen === 3;
+  })());
+  ok('mehrere Leerzeichen ergeben nicht mehr Woerter', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, colStops: [], zeilen: [{ tag: 'p', attrs: '', cells: ['a   b'] }] };
+    const st = blattStatistik(); curGrid = alt;
+    return st.woerter === 2;
+  })());
+  ok('leeres Blatt zaehlt null', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, colStops: [], zeilen: [{ tag: 'p', attrs: '', cells: [''] }] };
+    const st = blattStatistik(); curGrid = alt;
+    return st.woerter === 0 && st.zeichen === 0 && st.zellen === 0;
+  })());
+  ok('ohne Raster stuerzt die Zaehlung nicht ab', (() => {
+    const alt = curGrid; curGrid = null;
+    const st = blattStatistik(); curGrid = alt;
+    return st.woerter === 0;
+  })());
 
   // --- Kopf- und Fusszeile: drei Felder, mehrzeilig ---
   ok('leere Kopfzeile bekommt die Dreiteilung', (() => {

@@ -123,13 +123,19 @@ function warnQuota() {
   setTimeout(() => { quotaWarned = false; }, 30000);
 }
 
+/* Schriftstapel mit echten Rueckfallebenen. Inter wird von Google geladen und fehlt
+   offline - dann greift Segoe UI (Windows) bzw. Helvetica Neue (Mac) statt einer
+   beliebigen Systemschrift. */
+const SCHRIFT_STD = "'Inter','Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif";
+const SCHRIFT_SCHMAL = "'Inter Tight','Arial Narrow','Segoe UI',Arial,sans-serif";
+
 function newDocObject(partial = {}) {
   const t = nowIso();
   return Object.assign({
     id: uid(), titel: 'Unbenanntes Dokument', kopf: '', fuss: '',
     seiten: [{ id: uid(), typ: 'calc', html: '' }], aktiv: 0,   // Standard = Calc-Raster (Zeilen/Spalten als Leinwand)
     rasterCols: 6,
-    einstellungen: { schriftart: "'Inter', sans-serif", schriftgroesse: 16, zeilenabstand: 1.7, ausrichtung: 'hoch', format: 'A4', margins: { top: 18, right: 22, bottom: 18, left: 22 }, kopfH: 14, fussH: 14, tabs: [] },
+    einstellungen: { schriftart: SCHRIFT_STD, schriftgroesse: 14, zeilenabstand: 1.45, ausrichtung: 'hoch', format: 'A4', margins: { top: 18, right: 22, bottom: 18, left: 22 }, kopfH: 14, fussH: 14, tabs: [] },
     meta: { erstellt: t, geaendert: t, autor: 'Yanick Gerber', version: 1 },
     folder: 'dokumente', fav: false, trashed: false
   }, partial);
@@ -952,6 +958,30 @@ function rasterVorlage(zeilen, fmt, cfmt, colW) {
   // mit Seitenzahl bekommen - sonst waeren es halbe Dokumente.
   return dokVorlage(zeilen, { fmt: fmt, cfmt: cfmt, colW: colW, linien: true });
 }
+/* ---- Einheitliches Tabellen-Design fuer alle Vorlagen ----
+   Was ein Blatt professionell aussehen laesst, sind nicht mehr Linien, sondern die
+   richtigen: Flaeche und Unterkante am Kopf, eine Oberkante ueber der Summe, sonst nichts. */
+const KOPF_FLAECHE = '#eef1ea';   // sehr helles Gruengrau, druckt sauber
+
+function kopfzeileGestalten(cfmt, fill, borders, zeile, spalten) {
+  spalten.forEach(c => {
+    cfmt[c + ',' + zeile] = Object.assign({}, cfmt[c + ',' + zeile], { b: true });
+    fill[c + ',' + zeile] = KOPF_FLAECHE;
+    borders[c + ',' + zeile] = 'b';           // Linie unter der Kopfzeile
+  });
+}
+function summenzeileGestalten(cfmt, borders, zeile, spalten) {
+  spalten.forEach(c => {
+    cfmt[c + ',' + zeile] = Object.assign({}, cfmt[c + ',' + zeile], { b: true });
+    borders[c + ',' + zeile] = 't';           // Linie ueber der Summe
+  });
+}
+/* Zahlenspalten rechtsbuendig - Betraege gehoeren an die rechte Kante, sonst
+   sieht eine Kostenaufstellung unruhig aus. */
+function spalteRechts(cfmt, spalte, von, bis) {
+  for (let r = von; r <= bis; r++) cfmt[spalte + ',' + r] = Object.assign({}, cfmt[spalte + ',' + r], { al: 'right' });
+  return cfmt;
+}
 /* Zahlenformat auf eine ganze Spalte legen (Zeilen von..bis) */
 function spaltenFormat(fmt, spalte, von, bis, art) { for (let r = von; r <= bis; r++) fmt[spalte + ',' + r] = art; return fmt; }
 function fettZeile(cfmt, r, spalten) { spalten.forEach(c => { cfmt[c + ',' + r] = Object.assign({}, cfmt[c + ',' + r], { b: true }); }); return cfmt; }
@@ -999,7 +1029,7 @@ function dokVorlage(zeilen, opt) {
     pages: [Object.assign({
       id: uid(), typ: 'calc', linien: !!opt.linien, html: zeilen.join(''),
       fmt: opt.fmt || {}, cfmt: opt.cfmt || {}, colW: opt.colW || {},
-      fill: {}, txtcol: {}, borders: {}, rowH: {}, merges: [], dispCols: 0, dispRows: 0,
+      fill: opt.fill || {}, txtcol: {}, borders: opt.borders || {}, rowH: {}, merges: [], dispCols: 0, dispRows: 0,
     }, opt.quer ? { format: 'A4', ausrichtung: 'quer' } : {})],
   };
 }
@@ -1069,10 +1099,11 @@ const TEMPLATES = {
     z.push(Z('..............................', '', '..............................', ''));
     const fmt = {};
     for (let r = 6; r <= 18; r++) { fmt['4,' + r] = 'chf'; fmt['5,' + r] = 'chf'; }
-    const cfmt = fettZeile({}, 5, [0, 1, 2, 3, 4, 5]);
-    fettZeile(cfmt, 18, [1, 5]);
-    fettZeile(cfmt, 20, [0]);
-    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 44, 1: 220, 2: 70, 3: 66, 4: 100, 5: 110 } });
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 5, [0, 1, 2, 3, 4, 5]);
+    summenzeileGestalten(cfmt, borders, 18, [1, 5]);
+    [2, 4, 5].forEach(c => spalteRechts(cfmt, c, 6, 19));
+    return dokVorlage(z, { fill: fill, borders: borders, fmt: fmt, cfmt: cfmt, colW: { 0: 44, 1: 220, 2: 70, 3: 66, 4: 100, 5: 110 } });
   } },
 
   rechnung: { titel: 'Rechnung', bauen: () => {
@@ -1097,9 +1128,11 @@ const TEMPLATES = {
     z.push(Z(buerofeld('mwst', 'MWST-Nummer in den Firmenangaben hinterlegen')));
     const fmt = {};
     for (let r = 6; r <= 18; r++) { fmt['4,' + r] = 'chf'; fmt['5,' + r] = 'chf'; }
-    const cfmt = fettZeile({}, 5, [0, 1, 2, 3, 4, 5]);
-    fettZeile(cfmt, 17, [1, 5]);
-    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 44, 1: 220, 2: 70, 3: 66, 4: 100, 5: 110 } });
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 5, [0, 1, 2, 3, 4, 5]);
+    summenzeileGestalten(cfmt, borders, 17, [1, 5]);
+    [2, 4, 5].forEach(c => spalteRechts(cfmt, c, 6, 18));
+    return dokVorlage(z, { fill: fill, borders: borders, fmt: fmt, cfmt: cfmt, colW: { 0: 44, 1: 220, 2: 70, 3: 66, 4: 100, 5: 110 } });
   } },
 
   protokoll: { titel: 'Sitzungsprotokoll', bauen: () => {
@@ -1118,8 +1151,9 @@ const TEMPLATES = {
     z.push(Z(''));
     z.push(Z('Nächste Sitzung', '...'));
     z.push(Z('Einsprachen innert 10 Tagen an die Bauleitung, sonst gilt das Protokoll als genehmigt.'));
-    const cfmt = fettZeile({}, 9, [0, 1, 2, 3, 4]);
-    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 44, 1: 270, 2: 100, 3: 100, 4: 100 } });
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 9, [0, 1, 2, 3, 4]);
+    return dokVorlage(z, { fill: fill, borders: borders, cfmt: cfmt, colW: { 0: 44, 1: 270, 2: 100, 3: 100, 4: 100 } });
   } },
 
   bautagebuch: { titel: 'Bautagebuch', bauen: () => {
@@ -1138,9 +1172,11 @@ const TEMPLATES = {
     z.push(Z('Anordnungen der Bauleitung', '...'));
     z.push(Z(''));
     z.push(Z('Visum Bauleitung', '..............................'));
-    const cfmt = fettZeile({}, 4, [0, 1, 2, 3]);
-    fettZeile(cfmt, 14, [0, 1, 2]);
-    return dokVorlage(z, { linien: true, cfmt: cfmt, colW: { 0: 180, 1: 80, 2: 80, 3: 275 } });
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 4, [0, 1, 2, 3]);
+    summenzeileGestalten(cfmt, borders, 14, [0, 1, 2]);
+    [1, 2].forEach(c => spalteRechts(cfmt, c, 5, 14));
+    return dokVorlage(z, { fill: fill, borders: borders, linien: true, cfmt: cfmt, colW: { 0: 180, 1: 80, 2: 80, 3: 275 } });
   } },
 
   regierapport: { titel: 'Regierapport', bauen: () => {
@@ -1168,10 +1204,12 @@ const TEMPLATES = {
     z.push(Z('Nur mit Visum der Bauleitung verrechenbar (SIA 118 Art. 46).'));
     const fmt = {};
     for (let r = 6; r <= 19; r++) { fmt['3,' + r] = 'chf'; fmt['4,' + r] = 'chf'; }
-    const cfmt = fettZeile({}, 5, [0, 1, 2, 3, 4]);
-    fettZeile(cfmt, 12, [0, 1, 2, 3, 4]);
-    fettZeile(cfmt, 19, [3, 4]);
-    return dokVorlage(z, { linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 170, 1: 140, 2: 90, 3: 100, 4: 115 } });
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 5, [0, 1, 2, 3, 4]);
+    kopfzeileGestalten(cfmt, fill, borders, 12, [0, 1, 2, 3, 4]);
+    summenzeileGestalten(cfmt, borders, 19, [3, 4]);
+    [2, 3, 4].forEach(c => spalteRechts(cfmt, c, 6, 19));
+    return dokVorlage(z, { fill: fill, borders: borders, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 170, 1: 140, 2: 90, 3: 100, 4: 115 } });
   } },
 
   maengelliste: { titel: 'Mängelliste', bauen: () => {
@@ -1188,8 +1226,9 @@ const TEMPLATES = {
     z.push(Z('', 'Erledigte Mängel', '=ZAEHLENWENN(F' + e + ':F' + l + ';"erledigt")'));
     z.push(Z(''));
     z.push(Z('Die Mängel sind bis zur genannten Frist zu beheben (SIA 118 Art. 169).'));
-    const cfmt = fettZeile({}, 4, [0, 1, 2, 3, 4, 5, 6]);
-    return dokVorlage(z, { quer: true, linien: true, cfmt: cfmt, colW: { 0: 50, 1: 150, 2: 150, 3: 300, 4: 110, 5: 100, 6: 90 } });
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 4, [0, 1, 2, 3, 4, 5, 6]);
+    return dokVorlage(z, { fill: fill, borders: borders, quer: true, linien: true, cfmt: cfmt, colW: { 0: 50, 1: 150, 2: 150, 3: 300, 4: 110, 5: 100, 6: 90 } });
   } },
 
   zahlungsplan: { titel: 'Zahlungsplan', bauen: () => {
@@ -1213,9 +1252,11 @@ const TEMPLATES = {
     const fmt = {};
     for (let r = 5; r <= l; r++) { fmt['2,' + r] = 'pct'; fmt['3,' + r] = 'chf'; }
     fmt['3,2'] = 'chf';
-    const cfmt = fettZeile({}, 4, [0, 1, 2, 3, 4, 5]);
-    fettZeile(cfmt, l, [1, 2, 3]);
-    return dokVorlage(z, { linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 50, 1: 180, 2: 70, 3: 110, 4: 105, 5: 100 } });
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 4, [0, 1, 2, 3, 4, 5]);
+    summenzeileGestalten(cfmt, borders, l, [1, 2, 3]);
+    [2, 3].forEach(c => spalteRechts(cfmt, c, 5, l));
+    return dokVorlage(z, { fill: fill, borders: borders, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 50, 1: 180, 2: 70, 3: 110, 4: 105, 5: 100 } });
   } },
 
   kostenvoranschlag: { titel: 'Kostenvoranschlag', bauen: () => {
@@ -1235,9 +1276,11 @@ const TEMPLATES = {
     z.push(Z('', 'TOTAL exkl. MWST', '', '', '', '=F' + zt + '+F' + un));
     const fmt = {};
     for (let r = 5; r <= 20; r++) { fmt['4,' + r] = 'chf'; fmt['5,' + r] = 'chf'; }
-    const cfmt = fettZeile({}, 4, [0, 1, 2, 3, 4, 5]);
-    fettZeile(cfmt, 19, [1, 5]);
-    return dokVorlage(z, { linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 55, 1: 210, 2: 70, 3: 66, 4: 100, 5: 110 } });
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 4, [0, 1, 2, 3, 4, 5]);
+    summenzeileGestalten(cfmt, borders, 19, [1, 5]);
+    [2, 4, 5].forEach(c => spalteRechts(cfmt, c, 5, 19));
+    return dokVorlage(z, { fill: fill, borders: borders, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 55, 1: 210, 2: 70, 3: 66, 4: 100, 5: 110 } });
   } },
 
   abnahme: { titel: 'Abnahmeprotokoll', bauen: () => {
@@ -1258,9 +1301,9 @@ const TEMPLATES = {
     for (let i = 0; i < 8; i++) z.push(Z(String(i + 1), '', '', ''));
     z.push(Z(''));
     z.push(Z('Unternehmer', '..............................', 'Bauleitung', '..............................'));
-    const cfmt = fettZeile({}, 5, [0]);
-    fettZeile(cfmt, 12, [0, 1, 2, 3]);
-    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 50, 1: 300, 2: 130, 3: 125 } });
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 12, [0, 1, 2, 3]);
+    return dokVorlage(z, { fill: fill, borders: borders, cfmt: cfmt, colW: { 0: 50, 1: 300, 2: 130, 3: 125 } });
   } },
 
   // ---------------- Rechnende Bau-Vorlagen ----------------
@@ -1295,9 +1338,11 @@ const TEMPLATES = {
     [2, 3, 4, 5].forEach(c => spaltenFormat(fmt, c, erste - 1, tot - 1, 'chf'));
     spaltenFormat(fmt, 6, erste - 1, tot - 1, 'pct');
     fmt['4,' + (tot + 1)] = 'chf';
-    const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5, 6]);
-    fettZeile(cfmt, tot - 1, [1, 2, 3, 4, 5, 6]);
-    return dokVorlage(z, { quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 230, 2: 130, 3: 130, 4: 130, 5: 130, 6: 90 } });
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 3, [0, 1, 2, 3, 4, 5, 6]);
+    summenzeileGestalten(cfmt, borders, tot - 1, [1, 2, 3, 4, 5, 6]);
+    [2, 3, 4, 5, 6].forEach(c => spalteRechts(cfmt, c, 4, tot - 1));
+    return dokVorlage(z, { fill: fill, borders: borders, quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 230, 2: 130, 3: 130, 4: 130, 5: 130, 6: 90 } });
   } },
 
   terminprogramm: { titel: 'Terminprogramm', bauen: () => {
@@ -1322,9 +1367,11 @@ const TEMPLATES = {
       'nicht der Kalenderzeitraum'));
     z.push(Z(''));
     z.push(Z('Datum eintragen als 01.03.2026 – die Dauer rechnet sich selbst.'));
-    const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5]);
-    fettZeile(cfmt, letzte + 1, [0, 3, 4]);
-    return dokVorlage(z, { quer: true, linien: true, cfmt: cfmt, colW: { 0: 200, 1: 110, 2: 110, 3: 120, 4: 120, 5: 280 } });
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 3, [0, 1, 2, 3, 4, 5]);
+    summenzeileGestalten(cfmt, borders, letzte + 1, [0, 3, 4]);
+    [3, 4].forEach(c => spalteRechts(cfmt, c, 4, letzte + 1));
+    return dokVorlage(z, { fill: fill, borders: borders, quer: true, linien: true, cfmt: cfmt, colW: { 0: 200, 1: 110, 2: 110, 3: 120, 4: 120, 5: 280 } });
   } },
 
   ausmass: { titel: 'Ausmassblatt', bauen: () => {
@@ -1342,9 +1389,11 @@ const TEMPLATES = {
     z.push(Z('', 'TOTAL', '', '', '', '=SUMME(F' + erste + ':F' + letzte + ')'));
     const fmt = {};
     spaltenFormat(fmt, 5, erste - 1, letzte, 'm2');
-    const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5, 6]);
-    fettZeile(cfmt, letzte, [1, 5]);
-    return dokVorlage(z, { quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 280, 2: 100, 3: 100, 4: 100, 5: 140, 6: 90 } });
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 3, [0, 1, 2, 3, 4, 5, 6]);
+    summenzeileGestalten(cfmt, borders, letzte, [1, 5]);
+    [2, 3, 4, 5].forEach(c => spalteRechts(cfmt, c, 4, letzte));
+    return dokVorlage(z, { fill: fill, borders: borders, quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 280, 2: 100, 3: 100, 4: 100, 5: 140, 6: 90 } });
   } },
 
   preisspiegel: { titel: 'Offertvergleich (Preisspiegel)', bauen: () => {
@@ -1370,9 +1419,11 @@ const TEMPLATES = {
       '=ZAEHLENWENN(G' + erste + ':G' + letzte + ';"=0")'));
     const fmt = {};
     [2, 3, 4, 5, 6].forEach(c => spaltenFormat(fmt, c, erste - 1, tot - 1, 'chf'));
-    const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5, 6]);
-    fettZeile(cfmt, tot - 1, [1, 2, 3, 4, 5, 6]);
-    return dokVorlage(z, { quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 260, 2: 130, 3: 130, 4: 130, 5: 130, 6: 110 } });
+    const cfmt = {}, fill = {}, borders = {};
+    kopfzeileGestalten(cfmt, fill, borders, 3, [0, 1, 2, 3, 4, 5, 6]);
+    summenzeileGestalten(cfmt, borders, tot - 1, [1, 2, 3, 4, 5, 6]);
+    [2, 3, 4, 5, 6].forEach(c => spalteRechts(cfmt, c, 4, tot - 1));
+    return dokVorlage(z, { fill: fill, borders: borders, quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 260, 2: 130, 3: 130, 4: 130, 5: 130, 6: 110 } });
   } },
 
   beiblatt: { titel: 'Beiblatt zur Offerte', bauen: () => {
@@ -1402,11 +1453,9 @@ const TEMPLATES = {
     z.push(Z('Ort, Datum', '', 'Unternehmer', ''));
     z.push(Z(''));
     z.push(Z('..............................', '', '..............................', ''));
-    const cfmt = {};
-    fettZeile(cfmt, 8, [0]);
-    fettZeile(cfmt, 19, [0]);
+    const cfmt = {}, fill = {}, borders = {};
     [2, 3, 4, 5, 6].forEach(r => fettZeile(cfmt, r, [0]));
-    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 180, 1: 200, 2: 130, 3: 100 } });   // 4 Spalten wegen der Unterschriftenzeile
+    return dokVorlage(z, { fill: fill, borders: borders, cfmt: cfmt, colW: { 0: 180, 1: 200, 2: 130, 3: 100 } });   // 4 Spalten wegen der Unterschriftenzeile
   } },
 };
 // Vorlagen-Galerie: Kurzbeschreibung + Kategorie-Icon je Vorlage (bessere Auffindbarkeit)
@@ -4870,6 +4919,33 @@ function selfTest() {
   }
   ok('Vorlagen-Titel und Beschreibungen benutzen echte Umlaute',
     __ohneUmlaut.length === 0, __ohneUmlaut.join(' | '));
+
+  // --- Tabellen-Design: Kopfzeile und Summen erkennbar ---
+  ok('jede Tabellen-Vorlage hat eine gestaltete Kopfzeile (Flaeche + Linie + fett)', (() => {
+    const mitTabelle = ['angebot', 'rechnung', 'protokoll', 'bautagebuch', 'regierapport',
+      'maengelliste', 'zahlungsplan', 'kostenvoranschlag', 'abnahme',
+      'baukosten', 'terminprogramm', 'ausmass', 'preisspiegel'];
+    return mitTabelle.every(k => {
+      const p = TEMPLATES[k].bauen().pages[0];
+      const hatFlaeche = Object.keys(p.fill || {}).length > 0;
+      const hatLinie = Object.values(p.borders || {}).some(v => String(v).indexOf('b') >= 0);
+      const hatFett = Object.values(p.cfmt || {}).some(v => v && v.b);
+      return hatFlaeche && hatLinie && hatFett;
+    });
+  })());
+  ok('Vorlagen mit Summe haben eine Linie ueber der Summenzeile', (() => {
+    return ['angebot', 'rechnung', 'baukosten', 'ausmass', 'preisspiegel', 'zahlungsplan']
+      .every(k => Object.values(TEMPLATES[k].bauen().pages[0].borders || {}).some(v => String(v).indexOf('t') >= 0));
+  })());
+  ok('Betragsspalten sind rechtsbuendig', (() => {
+    const p = TEMPLATES.angebot.bauen().pages[0];
+    return Object.keys(p.cfmt).some(k => p.cfmt[k] && p.cfmt[k].al === 'right');
+  })());
+  ok('Kopfzeilenflaeche ist hell genug zum Drucken', /^#[e-f]/i.test(KOPF_FLAECHE));
+  ok('Grundschrift hat echte Rueckfallebenen (Inter kommt von Google, fehlt offline)',
+    /Segoe UI/.test(SCHRIFT_STD) && /Helvetica/.test(SCHRIFT_STD) && /Arial/.test(SCHRIFT_STD));
+  ok('neues Dokument setzt dichter als Bildschirmtypografie',
+    newDocObject().einstellungen.schriftgroesse === 14 && newDocObject().einstellungen.zeilenabstand < 1.6);
 
   // --- Layout der Vorlagen: passt alles aufs Blatt? ---
   // Sehen kann ein Test das nicht - nachrechnen schon. Genau das faengt

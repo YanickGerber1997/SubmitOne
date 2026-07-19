@@ -616,7 +616,8 @@ body[data-theme="dark"] .editor .sp-err{text-decoration-color:#ff7a70}
 .cgrid col.cg-gut{width:30px}
 .cgrid th,.cgrid td{border:1px solid var(--line)}   /* klare Gitterlinien wie Excel */
 .cgrid th{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.cgrid td{background:var(--paper);color:var(--paper-ink);padding:2px 7px;height:23px;cursor:cell;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;vertical-align:middle}   /* kompakte Excel-Zeilen, vertikal zentriert */
+/* Ziffern gleich breit: nur so stehen Betraege in einer Spalte sauber untereinander */
+.cgrid td{font-variant-numeric:tabular-nums;background:var(--paper);color:var(--paper-ink);padding:2px 7px;height:23px;cursor:cell;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;vertical-align:middle}   /* kompakte Excel-Zeilen, vertikal zentriert */
 /* Spalten-/Zeilenköpfe = das Lineal in Calc: bleiben beim Scrollen oben/links stehen */
 .cgrid thead th{position:sticky;top:0;z-index:3;background:var(--surface-2);color:var(--ink-soft);font-size:.7em;font-weight:600;text-align:center;height:17px;letter-spacing:.3px;border-color:var(--line)}
 .cgrid th.cg-col{position:sticky}

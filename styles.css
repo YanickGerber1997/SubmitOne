@@ -46,17 +46,17 @@
   --brand-2:    #3f6630;
   --brand-tint: #f2f6ea;
   /* Form-Skala – konsequent überall verwenden */
-  --radius-xs: 6px;
-  --radius-lg: 16px;
+  --radius-xs: 4px;
+  --radius-lg: 11px;
   --radius-pill: 999px;
   /* Fokus-Ring (Barrierefreiheit, einheitlich) */
   --ring: 0 0 0 3px rgba(79,122,60,.28);
-  --radius:    12px;
-  --radius-sm: 8px;
+  --radius:    8px;
+  --radius-sm: 6px;
   --shadow:    0 1px 2px rgba(42,38,26,.04), 0 4px 16px rgba(42,38,26,.06);
   --shadow-lg: 0 12px 40px rgba(42,38,26,.18);
 
-  --sidebar-w: 248px;
+  --sidebar-w: 208px;
 }
 
 * { box-sizing: border-box; }
@@ -67,7 +67,7 @@ html, body {
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   color: var(--text);
   background: var(--bg);
-  font-size: 14px;
+  font-size: 13px;
   -webkit-font-smoothing: antialiased;
 }
 /* Ruhige Arbeitsfläche: KEIN Fotohintergrund hinter der Oberfläche (die Landschaft legte eine zweite Grünschicht
@@ -198,7 +198,7 @@ button { font-family: inherit; cursor: pointer; }
 .btn-ghost-sm:hover { background: rgba(255,255,255,.12); }
 .ver { color: #676b5f; font-size: 11px; text-align: center; margin-top: 4px; }
 
-.content { padding: 20px 26px 56px; max-width: 1800px; width: 100%; min-width: 0; margin: 0 auto; }
+.content { padding: 12px 14px 28px; max-width: none; width: 100%; min-width: 0; margin: 0; }
 #view { min-width: 0; }
 
 /* Modul-Fokus + Vollbild: kleine, immer erreichbare Schaltleiste */
@@ -212,7 +212,7 @@ body.modul-fokus #app { grid-template-columns: 1fr; }
 body.modul-fokus .sidebar { display: none; }
 body.modul-fokus .detail-head { display: none; }
 body.modul-fokus .ptabs { display: none; }
-body.modul-fokus .content { padding: 6px 12px 24px; max-width: none; }
+body.modul-fokus .content { padding: 6px 10px 16px; max-width: none; }
 body.modul-fokus .proj-sticky { top: 0; }
 @media (max-width: 760px) { .focusbar .fb-t { display: none; } }
 
@@ -402,7 +402,7 @@ body.modul-fokus .proj-sticky { top: 0; }
 
 .page-head {
   display: flex; align-items: flex-end; justify-content: space-between;
-  gap: 16px; margin-bottom: 22px; flex-wrap: wrap;
+  gap: 16px; margin-bottom: 12px; flex-wrap: wrap;
 }
 .page-head h1 { margin: 0; font-size: 23px; font-weight: 700; letter-spacing: -.3px; }
 .page-head .sub { color: var(--text-soft); margin-top: 3px; font-size: 13px; }
@@ -430,7 +430,7 @@ body.modul-fokus .proj-sticky { top: 0; }
 /* ============================ KPI-Karten ============================ */
 
 .kpi-row {
-  display: grid; gap: 16px; margin-bottom: 24px;
+  display: grid; gap: 16px; margin-bottom: 14px;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
 }
 .kpi {
@@ -439,7 +439,7 @@ body.modul-fokus .proj-sticky { top: 0; }
 }
 .kpi .k-label { color: var(--text-soft); font-size: 12.5px; font-weight: 500; display: flex; align-items: center; gap: 7px; }
 .kpi .k-ico { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-size: 14px; }
-.kpi .k-value { font-size: 27px; font-weight: 700; margin-top: 10px; letter-spacing: -.5px; }
+.kpi .k-value { font-size: 20px; font-weight: 700; margin-top: 4px; letter-spacing: -.3px; }
 .kpi .k-foot { color: var(--text-faint); font-size: 12px; margin-top: 3px; }
 .k-ico.blue { background: var(--brand-soft); color: var(--brand); }
 .k-ico.amber { background: #fdf2dc; color: var(--s-amber); }
@@ -469,7 +469,7 @@ body.modul-fokus .proj-sticky { top: 0; }
 .dash-row .pend-check { flex: none; }
 
 /* ============================ Dossier (Projektunterlagen-Checkliste) ============================ */
-.dos-phase-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.dos-phase-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 11px; border-bottom: 1px solid var(--border); }
 .dos-phase-t { font-weight: 700; font-size: 14px; }
 .dos-phase-p { font-size: 12px; color: var(--text-soft); font-weight: 600; display: flex; align-items: center; gap: 10px; min-width: 160px; }
 .dos-phase-p .progress { flex: 1; }
@@ -570,7 +570,7 @@ table.grid { width: 100%; border-collapse: collapse; }
 table.grid th {
   text-align: left; font-size: 11.5px; font-weight: 600; text-transform: uppercase;
   letter-spacing: .4px; color: var(--text-faint);
-  padding: 11px 16px; border-bottom: 1px solid var(--border); background: var(--surface-2);
+  padding: 8px 11px; border-bottom: 1px solid var(--border); background: var(--surface-2);
 }
 table.grid td { padding: 13px 16px; border-bottom: 1px solid var(--border); font-size: 13.5px; vertical-align: middle; }
 table.grid tr:last-child td { border-bottom: none; }
@@ -601,13 +601,13 @@ table.grid tbody tr.clickable:hover { background: var(--surface-2); }
 .kost-stickyhead th { background: var(--surface-2); }
 /* Aufklapp-Panel je Gewerk (Baubeschrieb / Schätzung / Stand) */
 .ktable tr.kost-row.open > td { background: var(--brand-soft); }
-.ktable tr.kost-info > td { background: #fbfaf5; padding: 12px 16px; }
+.ktable tr.kost-info > td { background: #fbfaf5; padding: 8px 11px; }
 .kost-info-grid { display: flex; flex-wrap: wrap; gap: 22px; }
 .kost-info-main { flex: 2 1 280px; min-width: 0; }
 .kost-info-side { flex: 1 1 200px; min-width: 0; }
 .kost-info-h { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--text-soft); margin-bottom: 4px; }
 /* Kompakte Kennzahlen-Leiste (Baukosten) – alle Zahlen auf einen Blick statt 4 grosse Karten */
-.k-strip { display: flex; flex-wrap: wrap; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 16px; }
+.k-strip { display: flex; flex-wrap: wrap; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
 .k-strip .ks { flex: 1 1 120px; background: var(--surface); padding: 8px 12px; }
 .k-strip .ks span { display: block; font-size: 11px; color: var(--text-soft); white-space: nowrap; }
 .k-strip .ks b { font-size: 16px; font-weight: 700; letter-spacing: -.3px; }
@@ -651,7 +651,7 @@ table.grid tbody tr.clickable:hover { background: var(--surface-2); }
   display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap;
   margin-bottom: 8px;
 }
-.detail-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(124px,1fr)); gap: 9px; margin-bottom: 16px; }
+.detail-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(124px,1fr)); gap: 9px; margin-bottom: 10px; }
 .dstat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px 11px; }
 .dstat .l { color: var(--text-faint); font-size: 11px; line-height: 1.25; }
 .dstat .v { font-size: 15px; font-weight: 700; margin-top: 2px; }
@@ -737,7 +737,7 @@ tr.done-row { background: #fbfdfb; }
 .proj-sticky { position: sticky; top: 47px; z-index: 20; background: var(--bg); margin-bottom: 10px; box-shadow: 0 6px 8px -8px rgba(42,38,26,.25); }
 .proj-sticky .ptabs { margin-bottom: 0; }
 .page-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 5px 0; }
-.ptabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; flex-wrap: wrap; }
+.ptabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 12px; flex-wrap: wrap; }
 .ptab {
   padding: 9px 16px; font-size: 13.5px; font-weight: 600; color: var(--text-soft);
   border-bottom: 2px solid transparent; margin-bottom: -1px;
@@ -1383,7 +1383,7 @@ button.ptab { background: none; border: none; border-bottom: 2px solid transpare
 
 /* ============================ Formularfelder / Filter ============================ */
 
-.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
 .input, .select {
   background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius-sm);
   padding: 9px 12px; font-size: 13px; color: var(--text); outline: none; min-width: 0;
@@ -1432,7 +1432,7 @@ label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(42,38,26,.45);
   -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);   /* Hintergrund sanft unscharf → Fokus aufs Modal */
-  display: grid; place-items: center; z-index: 100; padding: 24px;
+  display: grid; place-items: center; z-index: 100; padding: 14px;
   animation: fade .12s ease;
 }
 .modal {
@@ -1453,7 +1453,7 @@ label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px
 .pd-firma span:first-of-type { font-weight: 500; }
 /* Preisspiegel-Konditionen (Offerte/Abgebot/Vergabe) */
 .kond-wrap { display: flex; flex-direction: column; gap: 14px; }
-.kond-stage { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.kond-stage { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
 .kond-h { font-weight: 700; font-size: 13.5px; margin-bottom: 8px; }
 .kond-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 /* Vergabeantrag / Offertvergleich (Firmen als Spalten) */
@@ -1522,8 +1522,8 @@ table.va input[type=number] { -moz-appearance: textfield; }
 @keyframes pop  { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 
 /* ============================ Login ============================ */
-.login-overlay { position: fixed; inset: 0; z-index: 300; background: #22331d; display: grid; place-items: center; padding: 20px; }
-.login-card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 30px 28px; width: min(380px, 100%); text-align: center; }
+.login-overlay { position: fixed; inset: 0; z-index: 300; background: #22331d; display: grid; place-items: center; padding: 12px; }
+.login-card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 16px 18px; width: min(380px, 100%); text-align: center; }
 .login-card .field { text-align: left; }
 .login-card .brand-logo { font-size: 18px; }
 
@@ -1576,7 +1576,7 @@ table.va input[type=number] { -moz-appearance: textfield; }
 
 #toast-root { position: fixed; bottom: 22px; right: 22px; display: flex; flex-direction: column; gap: 10px; z-index: 200; }
 .toast {
-  background: #22331d; color: #fff; padding: 12px 16px; border-radius: var(--radius-sm);
+  background: #22331d; color: #fff; padding: 8px 11px; border-radius: var(--radius-sm);
   box-shadow: var(--shadow-lg); font-size: 13px; display: flex; align-items: center; gap: 10px;
   animation: slidein .18s ease;
 }
@@ -1586,11 +1586,11 @@ table.va input[type=number] { -moz-appearance: textfield; }
 
 /* ============================ Empty / Misc ============================ */
 
-.empty { text-align: center; padding: 50px 20px; color: var(--text-faint); }
+.empty { text-align: center; padding: 26px 16px; color: var(--text-faint); }
 .empty .e-ico { font-size: 34px; opacity: .4; }
 .empty p { margin: 10px 0 0; }
 .empty .e-sub { margin: 6px auto 0; max-width: 340px; font-size: 12.5px; line-height: 1.5; color: var(--text-faint); }
-.empty .e-cta { margin-top: 16px; }
+.empty .e-cta { margin-top: 10px; }
 
 .tag { display: inline-block; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-soft);
        padding: 2px 9px; border-radius: 6px; font-size: 11.5px; font-weight: 500; }
@@ -1606,7 +1606,7 @@ table.va input[type=number] { -moz-appearance: textfield; }
 /* Mittlere Breiten (z.B. Fenster halb): Sidebar standardmässig eingeklappt (per JS),
    aber mit Ausklapp-Knopf bedienbar – Steuerung läuft über #app.collapsed. */
 @media (min-width: 761px) and (max-width: 1120px) {
-  .content { padding: 22px 22px 60px; }
+  .content { padding: 14px 14px 30px; }
 }
 
 /* ============================ Mobile (Handy) ============================ */
@@ -1670,7 +1670,7 @@ table.va input[type=number] { -moz-appearance: textfield; }
   .form-row { grid-template-columns: 1fr; }
 
   /* grössere Tap-Ziele */
-  .btn { padding: 11px 16px; }
+  .btn { padding: 8px 11px; }
   .btn.sm { padding: 8px 12px; }
 }
 @keyframes sheet { from { transform: translateY(100%); } }
@@ -1708,7 +1708,7 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .ccf-inner { display: flex; flex-direction: column; }
 .ccf-row {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  padding: 12px 14px; border-top: 1px solid var(--border);
+  padding: 8px 10px; border-top: 1px solid var(--border);
 }
 .ccf-row:first-child { border-top: none; }
 .ccf-txt { flex: 1 1 240px; font-size: 13px; color: var(--text); }
@@ -1813,7 +1813,7 @@ tr.rg-sub:hover td { background: rgba(0,0,0,.03); }
 @media (prefers-reduced-motion: reduce) { .tip, .modal, .modal-backdrop { animation: none; } }
 
 /* --- Persona-Schnellzugriff (Dashboard-Einstieg: schneller Weg zu den Tools) --- */
-.schnellzugriff { margin-bottom: 18px; }
+.schnellzugriff { margin-bottom: 10px; }
 .sz-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .sz-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); }
 .sz-pills { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
@@ -1826,7 +1826,7 @@ tr.rg-sub:hover td { background: rgba(0,0,0,.03); }
 .sz-chip:active { transform: translateY(1px); }
 .sz-chip .sz-i, .sz-pill .sz-i { font-size: 14px; line-height: 1; }
 /* Erststart-Onboarding (Persona einmal aktiv abfragen) */
-.onboard { margin-bottom: 18px; border: 1px solid var(--brand-soft); }
+.onboard { margin-bottom: 10px; border: 1px solid var(--brand-soft); }
 .ob-head { margin-bottom: 14px; }
 .ob-badge { font-size: 12px; font-weight: 700; color: var(--brand); background: var(--brand-soft); padding: 3px 10px; border-radius: 99px; }
 .ob-title { margin: 10px 0 4px; font-size: 18px; }

@@ -885,6 +885,21 @@ function docMenuAction(a) {
 
 /* ---------- Vorlagen ---------- */
 const TODAY = new Date().toLocaleDateString('de-CH');
+/* ---- Rechnende Rastervorlagen ----
+   Bewusst als Rasterzeilen (Zellen durch COLSEP getrennt), nicht als HTML-Tabelle:
+   nur so rechnen die Formeln, greifen die Zahlenformate und laesst sich weiterarbeiten.
+   Sie sind zugleich ein Funktionstest: wer eine davon oeffnet, sieht sofort, ob Formeln,
+   Einheiten, Summen und Seitenzahlen stimmen. */
+const Z = (...zellen) => '<p>' + zellen.join(COLSEP) + '</p>';
+function rasterVorlage(zeilen, fmt, cfmt, colW) {
+  return { pages: [{ id: uid(), typ: 'calc', linien: true, html: zeilen.join(''),
+    fmt: fmt || {}, cfmt: cfmt || {}, colW: colW || {}, fill: {}, txtcol: {}, borders: {}, rowH: {}, merges: [],
+    dispCols: 0, dispRows: 0 }] };
+}
+/* Zahlenformat auf eine ganze Spalte legen (Zeilen von..bis) */
+function spaltenFormat(fmt, spalte, von, bis, art) { for (let r = von; r <= bis; r++) fmt[spalte + ',' + r] = art; return fmt; }
+function fettZeile(cfmt, r, spalten) { spalten.forEach(c => { cfmt[c + ',' + r] = Object.assign({}, cfmt[c + ',' + r], { b: true }); }); return cfmt; }
+
 const TEMPLATES = {
   brief: { titel: 'Brief', html:
     `<p style="text-align:right;color:#777">Yanick Gerber&nbsp;·&nbsp;Musterstrasse 1&nbsp;·&nbsp;3000 Bern</p>
@@ -986,7 +1001,157 @@ const TEMPLATES = {
        <tr><td>1</td><td>Bei Vertragsabschluss</td><td style="text-align:right">30</td><td style="text-align:right">0.00</td><td>…</td></tr>
        <tr><td>2</td><td>Bei Baubeginn</td><td style="text-align:right">40</td><td style="text-align:right">0.00</td><td>…</td></tr>
        <tr><td>3</td><td>Nach Abnahme / Bezug</td><td style="text-align:right">30</td><td style="text-align:right">0.00</td><td>…</td></tr>
-     </tbody></table>` }
+     </tbody></table>` },
+
+  // ---------------- Rechnende Bau-Vorlagen ----------------
+  // Bewusst Rasterzeilen statt HTML-Tabellen: nur so rechnen Formeln, greifen
+  // Zahlenformate und laesst sich weiterarbeiten. Zugleich ein Funktionstest -
+  // wer eine oeffnet, sieht sofort, ob Formeln, Einheiten und Summen stimmen.
+  baukosten: { titel: 'Baukostenuebersicht (BKP)', bauen: () => {
+    const B = [['0', 'Grundstueck'], ['1', 'Vorbereitungsarbeiten'], ['2', 'Gebaeude'],
+               ['3', 'Betriebseinrichtungen'], ['4', 'Umgebung'], ['5', 'Baunebenkosten'],
+               ['6', 'Reserve'], ['9', 'Ausstattung']];
+    const z = [];
+    z.push(Z('BAUKOSTENUEBERSICHT NACH BKP'));
+    z.push(Z('Projekt', '...', 'Stand', TODAY));
+    z.push(Z(''));
+    z.push(Z('BKP', 'Bezeichnung', 'Kostenschaetzung', 'Voranschlag', 'Prognose', 'Abweichung', 'Anteil'));
+    B.forEach((b, i) => {
+      const r = 5 + i;
+      z.push(Z(b[0], b[1], '0', '0', '0',
+        '=E' + r + '-D' + r,
+        '=WENNFEHLER(F' + r + '/D' + r + ';0)'));
+    });
+    const erste = 5, letzte = 4 + B.length, tot = letzte + 1;
+    z.push(Z('', 'TOTAL',
+      '=SUMME(C' + erste + ':C' + letzte + ')',
+      '=SUMME(D' + erste + ':D' + letzte + ')',
+      '=SUMME(E' + erste + ':E' + letzte + ')',
+      '=SUMME(F' + erste + ':F' + letzte + ')',
+      '=WENNFEHLER(F' + tot + '/D' + tot + ';0)'));
+    z.push(Z(''));
+    z.push(Z('', 'davon Gebaeude (BKP 2)', '', '', '=SUMMEWENN(A' + erste + ':A' + letzte + ';"2";E' + erste + ':E' + letzte + ')'));
+    const fmt = {};
+    [2, 3, 4, 5].forEach(c => spaltenFormat(fmt, c, erste - 1, tot - 1, 'chf'));
+    spaltenFormat(fmt, 6, erste - 1, tot - 1, 'pct');
+    fmt['4,' + (tot + 1)] = 'chf';
+    const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5, 6]);
+    fettZeile(cfmt, tot - 1, [1, 2, 3, 4, 5, 6]);
+    cfmt['0,0'] = { b: true, sz: 20 };
+    return rasterVorlage(z, fmt, cfmt, { 0: 60, 1: 240 });
+  } },
+
+  terminprogramm: { titel: 'Terminprogramm', bauen: () => {
+    const G = ['Baumeister', 'Zimmermann', 'Spengler / Bedachung', 'Fenster', 'Elektro', 'Sanitaer',
+               'Heizung', 'Gipser', 'Schreiner', 'Bodenbelaege', 'Maler', 'Reinigung'];
+    const z = [];
+    z.push(Z('TERMINPROGRAMM'));
+    z.push(Z('Projekt', '...', 'Stand', TODAY));
+    z.push(Z(''));
+    z.push(Z('Gewerk', 'Start', 'Ende', 'Kalendertage', 'Arbeitstage', 'Bemerkung'));
+    G.forEach((g, i) => {
+      const r = 5 + i;
+      z.push(Z(g, '', '',
+        '=WENNFEHLER(TAGE(B' + r + ';C' + r + ');"")',
+        '=WENNFEHLER(ARBEITSTAGE(B' + r + ';C' + r + ');"")', ''));
+    });
+    const erste = 5, letzte = 4 + G.length;
+    z.push(Z(''));
+    z.push(Z('Summe Einzeldauern', '', '',
+      '=SUMME(D' + erste + ':D' + letzte + ')',
+      '=SUMME(E' + erste + ':E' + letzte + ')',
+      'nicht der Kalenderzeitraum'));
+    z.push(Z(''));
+    z.push(Z('Datum eintragen als 01.03.2026 - die Dauer rechnet sich selbst.'));
+    const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5]);
+    cfmt['0,0'] = { b: true, sz: 20 };
+    fettZeile(cfmt, letzte + 1, [0, 3, 4]);
+    return rasterVorlage(z, {}, cfmt, { 0: 200, 5: 260 });
+  } },
+
+  ausmass: { titel: 'Ausmassblatt', bauen: () => {
+    const z = [];
+    z.push(Z('AUSMASS'));
+    z.push(Z('Projekt', '...', 'Gewerk', '...', 'Datum', TODAY));
+    z.push(Z(''));
+    z.push(Z('Pos.', 'Bezeichnung', 'Anzahl', 'Laenge', 'Breite', 'Menge', 'Einheit'));
+    for (let i = 0; i < 12; i++) {
+      const r = 5 + i;
+      z.push(Z(String(i + 1), '', '', '', '',
+        '=WENNFEHLER(C' + r + '*D' + r + '*E' + r + ';"")', 'm2'));
+    }
+    const erste = 5, letzte = 16;
+    z.push(Z('', 'TOTAL', '', '', '', '=SUMME(F' + erste + ':F' + letzte + ')'));
+    const fmt = {};
+    spaltenFormat(fmt, 5, erste - 1, letzte, 'm2');
+    const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5, 6]);
+    fettZeile(cfmt, letzte, [1, 5]);
+    cfmt['0,0'] = { b: true, sz: 20 };
+    return rasterVorlage(z, fmt, cfmt, { 1: 260 });
+  } },
+
+  preisspiegel: { titel: 'Offertvergleich (Preisspiegel)', bauen: () => {
+    const z = [];
+    z.push(Z('OFFERTVERGLEICH'));
+    z.push(Z('Projekt', '...', 'Gewerk', '...', 'Datum', TODAY));
+    z.push(Z(''));
+    z.push(Z('Pos.', 'Leistung', 'Firma A', 'Firma B', 'Firma C', 'guenstigste', 'Differenz A'));
+    for (let i = 0; i < 8; i++) {
+      const r = 5 + i;
+      z.push(Z(String(i + 1), '', '0', '0', '0',
+        '=MIN(C' + r + ':E' + r + ')', '=C' + r + '-F' + r));
+    }
+    const erste = 5, letzte = 12, tot = 13;
+    z.push(Z('', 'TOTAL',
+      '=SUMME(C' + erste + ':C' + letzte + ')',
+      '=SUMME(D' + erste + ':D' + letzte + ')',
+      '=SUMME(E' + erste + ':E' + letzte + ')',
+      '=SUMME(F' + erste + ':F' + letzte + ')',
+      '=C' + tot + '-F' + tot));
+    z.push(Z(''));
+    z.push(Z('', 'Positionen, bei denen A am guenstigsten ist',
+      '=ZAEHLENWENN(G' + erste + ':G' + letzte + ';"=0")'));
+    const fmt = {};
+    [2, 3, 4, 5, 6].forEach(c => spaltenFormat(fmt, c, erste - 1, tot - 1, 'chf'));
+    const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5, 6]);
+    fettZeile(cfmt, tot - 1, [1, 2, 3, 4, 5, 6]);
+    cfmt['0,0'] = { b: true, sz: 20 };
+    return rasterVorlage(z, fmt, cfmt, { 1: 260 });
+  } },
+
+  beiblatt: { titel: 'Beiblatt zur Offerte', bauen: () => {
+    const z = [];
+    z.push(Z('BEIBLATT ZUR OFFERTE'));
+    z.push(Z(''));
+    z.push(Z('Projekt', '...'));
+    z.push(Z('Bauherrschaft', '...'));
+    z.push(Z('Gewerk / BKP', '...'));
+    z.push(Z('Unternehmer', '...'));
+    z.push(Z('Offerte vom', TODAY));
+    z.push(Z(''));
+    z.push(Z('BEDINGUNGEN'));
+    [['Vertragsgrundlage', 'SIA 118, Ausgabe 2013'],
+     ['Preisbasis', 'fest bis Bauvollendung, keine Teuerung'],
+     ['Skonto', '2 % innert 30 Tagen'],
+     ['Rueckbehalt', '10 % bis Abnahme, danach Garantieschein'],
+     ['Garantie', '2 Jahre ab Abnahme, verdeckte Maengel 5 Jahre'],
+     ['Ausfuehrung', 'gemaess Terminprogramm'],
+     ['Regiearbeiten', 'nur nach schriftlicher Bestellung'],
+     ['Baureinigung', 'taeglich durch Unternehmer'],
+     ['Versicherung', 'Bauwesenversicherung durch Bauherrschaft']].forEach(p => z.push(Z(p[0], p[1])));
+    z.push(Z(''));
+    z.push(Z('BEMERKUNGEN'));
+    z.push(Z('...'));
+    z.push(Z(''));
+    z.push(Z('Ort, Datum', '', 'Unternehmer', ''));
+    z.push(Z(''));
+    z.push(Z('..............................', '', '..............................', ''));
+    const cfmt = { '0,0': { b: true, sz: 20 } };
+    fettZeile(cfmt, 8, [0]);
+    fettZeile(cfmt, 19, [0]);
+    [2, 3, 4, 5, 6].forEach(r => fettZeile(cfmt, r, [0]));
+    return rasterVorlage(z, {}, cfmt, { 0: 200, 1: 320 });
+  } },
 };
 // Vorlagen-Galerie: Kurzbeschreibung + Kategorie-Icon je Vorlage (bessere Auffindbarkeit)
 const TMPL_META = {
@@ -1001,11 +1166,17 @@ const TMPL_META = {
   bautagebuch:       { d: 'Tägliche Bau-Notizen & Wetter', i: 'list' },
   maengelliste:      { d: 'Mängel erfassen, verorten, abhaken', i: 'list' },
   zahlungsplan:      { d: 'Ratenplan nach Baufortschritt', i: 'money' },
+  baukosten:         { d: 'BKP 0-9, Voranschlag/Prognose, rechnet Abweichung', i: 'money' },
+  terminprogramm:    { d: 'Gewerke mit Start/Ende, rechnet Kalender- und Arbeitstage', i: 'list' },
+  ausmass:           { d: 'Ausmassblatt, rechnet Mengen in m2', i: 'list' },
+  preisspiegel:      { d: 'Drei Offerten vergleichen, findet die guenstigste', i: 'money' },
+  beiblatt:          { d: 'Beiblatt zur Offerte: Bedingungen nach SIA 118', i: 'doc' },
 };
 const TMPL_ICO = {
   doc:   '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   money: '<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.4"/><path d="M6 9v6M18 9v6"/>',
   list:  '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
+
 };
 function renderTemplateHint() {
   return '<div class="tmpl-gallery">' +
@@ -1018,7 +1189,9 @@ function renderTemplateHint() {
 function bindTemplateHint() {
   $$('.tmpl-card').forEach(b => b.onclick = () => {
     const t = TEMPLATES[b.dataset.tmpl];
-    createDoc({ titel: t.titel, html: t.html });
+    // Rechnende Vorlagen liefern fertige Rasterseiten (mit Formeln und Zahlenformaten),
+    // die aelteren liefern schlichtes HTML.
+    createDoc(t.bauen ? Object.assign({ titel: t.titel }, t.bauen()) : { titel: t.titel, html: t.html });
     activeFolder = 'dokumente';
     $$('.snav[data-folder]').forEach(x => x.classList.toggle('active', x.dataset.folder === 'dokumente'));
     toast('Vorlage „' + t.titel + '" erstellt');
@@ -3122,6 +3295,40 @@ function kriteriumPasst(wert, krit) {
   switch (op) { case '<>': return a !== b; case '<': return a < b; case '>': return a > b;
     case '<=': return a <= b; case '>=': return a >= b; default: return a === b; }
 }
+/* Datum: im Bauwesen wird '01.03.2026' geschrieben, aus Excel kommt '2026-03-01'.
+   Beide Schreibweisen werden gelesen. Rein - im Test pruefbar. */
+function datumParsen(v) {
+  if (v == null || v === '') return null;
+  const t = String(v).trim();
+  let m = /^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})$/.exec(t);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+  m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  return null;
+}
+function datumText(d) {
+  if (!(d instanceof Date) || isNaN(d)) return '#WERT';
+  const z = n => (n < 10 ? '0' : '') + n;
+  return z(d.getDate()) + '.' + z(d.getMonth() + 1) + '.' + d.getFullYear();
+}
+function tageZwischen(a, b) {          // Kalendertage, Endtag eingeschlossen (wie im Bauprogramm gelesen)
+  const d1 = datumParsen(a), d2 = datumParsen(b);
+  if (!d1 || !d2) return '#WERT';
+  return Math.round((d2 - d1) / 86400000) + 1;
+}
+function arbeitstage(a, b) {           // ohne Samstag und Sonntag
+  const d1 = datumParsen(a), d2 = datumParsen(b);
+  if (!d1 || !d2) return '#WERT';
+  if (d2 < d1) return -arbeitstage(b, a);
+  let n = 0; const d = new Date(d1.getTime());
+  while (d <= d2) { const w = d.getDay(); if (w !== 0 && w !== 6) n++; d.setDate(d.getDate() + 1); }
+  return n;
+}
+function datumPlus(a, tage) {
+  const d = datumParsen(a); if (!d) return '#WERT';
+  d.setDate(d.getDate() + Math.round(toNum(tage)));
+  return datumText(d);
+}
 function istFehler(v) {
   // Division durch null ergibt INTERN Infinity und wird erst ganz am Schluss zu '#FEHLER'.
   // Mitten in einer Formel muss WENNFEHLER das ebenfalls als Fehler sehen.
@@ -3198,6 +3405,11 @@ function evalFormula(src, seen) {
       case 'UND': case 'AND': { let alle = true; args.forEach(a => { const vs = a.range ? a.vals : [a.val]; vs.forEach(v => { if (!(v === true || (typeof v === 'number' && v !== 0))) alle = false; }); }); return alle; }
       case 'ODER': case 'OR': { let eins = false; args.forEach(a => { const vs = a.range ? a.vals : [a.val]; vs.forEach(v => { if (v === true || (typeof v === 'number' && v !== 0)) eins = true; }); }); return eins; }
       case 'NICHT': case 'NOT': { const v = args[0] && args[0].val; return !(v === true || (typeof v === 'number' && v !== 0)); }
+      // --- Datum: fuer Terminprogramme ---
+      case 'HEUTE': case 'TODAY': return datumText(new Date());
+      case 'TAGE': case 'DAYS': return tageZwischen(args[0] && args[0].val, args[1] && args[1].val);
+      case 'ARBEITSTAGE': case 'NETWORKDAYS': return arbeitstage(args[0] && args[0].val, args[1] && args[1].val);
+      case 'DATUMPLUS': case 'EDATE': return datumPlus(args[0] && args[0].val, args[1] && args[1].val);
       case 'VERKETTEN': case 'TEXTKETTE': case 'CONCAT': { let t = ''; args.forEach(a => { const vs = a.range ? a.vals : [a.val]; vs.forEach(v => { t += (v == null ? '' : String(v)); }); }); return t; }
       case 'ZAEHLENWENN': case 'ZÄHLENWENN': case 'COUNTIF': {
         const vs = (args[0] && args[0].range) ? args[0].vals : [args[0] && args[0].val];
@@ -4128,6 +4340,116 @@ function selfTest() {
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  // --- Datum: Grundlage fuers Terminprogramm ---
+  ok('Datum wird in Schweizer und in ISO-Schreibweise gelesen', (() => {
+    const a = datumParsen('01.03.2026'), b = datumParsen('2026-03-01');
+    return a && b && a.getTime() === b.getTime();
+  })());
+  ok('Unsinn als Datum ergibt null (statt einem falschen Tag)',
+    datumParsen('kein Datum') === null && datumParsen('') === null && datumParsen(null) === null);
+  ok('TAGE zaehlt Kalendertage mit Endtag', tageZwischen('01.03.2026', '03.03.2026') === 3);
+  ok('TAGE ueber den Monatswechsel', tageZwischen('28.02.2026', '02.03.2026') === 3);
+  ok('TAGE im Schaltjahr (2028 hat einen 29. Februar)', tageZwischen('28.02.2028', '01.03.2028') === 3);
+  ok('ARBEITSTAGE laesst Samstag und Sonntag weg', arbeitstage('02.03.2026', '08.03.2026') === 5);
+  ok('ARBEITSTAGE eines einzelnen Werktags ist 1', arbeitstage('04.03.2026', '04.03.2026') === 1);
+  ok('ARBEITSTAGE eines Sonntags ist 0', arbeitstage('08.03.2026', '08.03.2026') === 0);
+  ok('ungueltiges Datum ergibt #WERT statt einer Zahl',
+    tageZwischen('x', '01.03.2026') === '#WERT' && arbeitstage('01.03.2026', 'x') === '#WERT');
+  ok('DATUMPLUS rechnet Tage dazu', datumPlus('28.02.2026', 1) === '01.03.2026');
+  ok('Datumsfunktionen sind in Formeln erreichbar',
+    evalRaw('=TAGE("01.03.2026";"03.03.2026")') === 3 && evalRaw('=ARBEITSTAGE("02.03.2026";"08.03.2026")') === 5);
+
+  // --- Vorlagen: bauen sie sich, und rechnen sie wirklich? ---
+  ok('jede Vorlage hat eine Beschreibung (sonst steht nur "Vorlage" in der Galerie)',
+    Object.keys(TEMPLATES).every(k => TMPL_META[k] && TMPL_META[k].d));
+  ok('alle rechnenden Vorlagen bauen sich ohne Fehler und liefern eine Rasterseite', (() => {
+    return Object.keys(TEMPLATES).filter(k => TEMPLATES[k].bauen).every(k => {
+      const v = TEMPLATES[k].bauen();
+      const p = v && v.pages && v.pages[0];
+      return p && p.typ === 'calc' && typeof p.html === 'string' && p.html.length > 50;
+    });
+  })());
+  ok('Baukostenuebersicht enthaelt Summen, Abweichung und SUMMEWENN', (() => {
+    const h = TEMPLATES.baukosten.bauen().pages[0].html;
+    return /=SUMME\(C5:C12\)/.test(h) && /=E5-D5/.test(h) && /=SUMMEWENN\(/.test(h) && /=WENNFEHLER\(/.test(h);
+  })());
+  ok('Baukostenuebersicht legt CHF- und Prozentformat auf die Spalten', (() => {
+    const f = TEMPLATES.baukosten.bauen().pages[0].fmt;
+    return f['2,4'] === 'chf' && f['4,4'] === 'chf' && f['6,4'] === 'pct';
+  })());
+  ok('Terminprogramm rechnet Kalender- und Arbeitstage', (() => {
+    const h = TEMPLATES.terminprogramm.bauen().pages[0].html;
+    return /=WENNFEHLER\(TAGE\(B5;C5\)/.test(h) && /=WENNFEHLER\(ARBEITSTAGE\(B5;C5\)/.test(h);
+  })());
+  ok('Ausmassblatt rechnet Mengen und formatiert sie als m2', (() => {
+    const v = TEMPLATES.ausmass.bauen().pages[0];
+    return /=WENNFEHLER\(C5\*D5\*E5/.test(v.html) && v.fmt['5,4'] === 'm2';
+  })());
+  ok('Preisspiegel findet die guenstigste Offerte und zaehlt die Treffer', (() => {
+    const h = TEMPLATES.preisspiegel.bauen().pages[0].html;
+    return /=MIN\(C5:E5\)/.test(h) && /=ZAEHLENWENN\(/.test(h);
+  })());
+  ok('Beiblatt nennt die Vertragsgrundlage SIA 118', /SIA 118/.test(TEMPLATES.beiblatt.bauen().pages[0].html));
+  ok('Vorlagen-Zellen sind durch Spaltentrenner getrennt (echte Rasterzeilen)',
+    TEMPLATES.baukosten.bauen().pages[0].html.indexOf('class="colsep"') > 0);
+
+  // Die Rechenwege der Vorlagen an echten Zahlen durchspielen
+  ok('Rechenweg Baukosten: Summe, Abweichung und Anteil stimmen', (() => {
+    const alt = curGrid;
+    // Spalten: C=Schaetzung(2) D=Voranschlag(3) E=Prognose(4) F=Abweichung(5) G=Anteil(6)
+    curGrid = { cols: 7, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['1', 'Vorbereitung', '100', '100', '120', '=E1-D1', '=WENNFEHLER(F1/D1;0)'] },
+      { tag: 'p', attrs: '', cells: ['2', 'Gebaeude', '900', '900', '880', '=E2-D2', '=WENNFEHLER(F2/D2;0)'] },
+      { tag: 'p', attrs: '', cells: ['', 'TOTAL', '=SUMME(C1:C2)', '=SUMME(D1:D2)', '=SUMME(E1:E2)', '=SUMME(F1:F2)'] },
+    ] };
+    const abw1 = evalCell(5, 0), anteil1 = evalCell(6, 0);
+    const totE = evalCell(4, 2), totF = evalCell(5, 2);
+    curGrid = alt;
+    return abw1 === 20 && anteil1 === 0.2 && totE === 1000 && totF === 0;
+  })());
+  ok('Rechenweg Baukosten: SUMMEWENN summiert nur die gewaehlte BKP-Gruppe', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 5, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['1', 'a', '', '', '100'] },
+      { tag: 'p', attrs: '', cells: ['2', 'b', '', '', '900'] },
+      { tag: 'p', attrs: '', cells: ['2', 'c', '', '', '50'] },
+    ] };
+    const v = evalRaw('=SUMMEWENN(A1:A3;"2";E1:E3)', new Set());
+    curGrid = alt;
+    return v === 950;
+  })());
+  ok('Rechenweg Ausmass: Menge = Anzahl x Laenge x Breite, leere Zeile bleibt leer', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 6, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['1', 'Wand', '2', '5', '2.5', '=WENNFEHLER(C1*D1*E1;"")'] },
+      { tag: 'p', attrs: '', cells: ['2', '', '', '', '', '=WENNFEHLER(C2*D2*E2;"")'] },
+    ] };
+    const m1 = evalCell(5, 0), m2 = evalCell(5, 1);
+    curGrid = alt;
+    return m1 === 25 && m2 === 0;
+  })());
+  ok('Rechenweg Preisspiegel: MIN findet die guenstigste, Differenz stimmt', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 7, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['1', 'Pos', '1200', '980', '1100', '=MIN(C1:E1)', '=C1-F1'] },
+    ] };
+    const min = evalCell(5, 0), diff = evalCell(6, 0);
+    curGrid = alt;
+    return min === 980 && diff === 220;
+  })());
+  ok('Rechenweg Terminprogramm: Dauer aus zwei Daten', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 5, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['Baumeister', '02.03.2026', '08.03.2026',
+        '=WENNFEHLER(TAGE(B1;C1);"")', '=WENNFEHLER(ARBEITSTAGE(B1;C1);"")'] },
+      { tag: 'p', attrs: '', cells: ['Zimmermann', '', '',
+        '=WENNFEHLER(TAGE(B2;C2);"")', '=WENNFEHLER(ARBEITSTAGE(B2;C2);"")'] },
+    ] };
+    const kal = evalCell(3, 0), arb = evalCell(4, 0), leer = evalCell(3, 1);
+    curGrid = alt;
+    return kal === 7 && arb === 5 && leer === '';
+  })());
 
   // --- P4: Seitenzahlen als Platzhalter ---
   ok('Platzhalter {Seite} und {Seiten} werden ersetzt',

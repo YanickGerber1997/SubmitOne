@@ -96,10 +96,26 @@ function loadLib() {
         currentId: raw.currentId || null
       };
     }
-  } catch (_) {}
+  } catch (e) {
+    // Beschaedigte Bibliothek (z.B. halb geschriebene Daten nach vollem Speicher):
+    // NICHT einfach leer weitermachen - der naechste Speichervorgang wuerde sie ueberschreiben.
+    // Deshalb erst eine Sicherung unter eigenem Schluessel ablegen und den Nutzer warnen.
+    try {
+      const roh = localStorage.getItem(LS_LIB);
+      if (roh) localStorage.setItem(LS_LIB + '_defekt', roh);
+    } catch (_) {}
+    setTimeout(() => { try { toast('Bibliothek war beschädigt – eine Sicherung wurde abgelegt. Bitte melden.'); } catch (_) {} }, 800);
+  }
   return { docs: {}, order: [], currentId: null };
 }
 function persistLib() { try { localStorage.setItem(LS_LIB, JSON.stringify(lib)); return true; } catch (_) { return false; } }
+/* Ueberall dort verwenden, wo bisher persistLib() ohne Pruefung stand: bei vollem Speicher
+   arbeitete der Nutzer sonst ins Leere, waehrend die Anzeige 'Gespeichert' meldete. */
+function persistLibGeprueft() {
+  if (persistLib()) return true;
+  warnQuota(); setDirty(true);
+  return false;
+}
 let quotaWarned = false;
 function warnQuota() {
   if (quotaWarned) return; quotaWarned = true;
@@ -186,9 +202,14 @@ function htmlToGrid(html) {
   // Bloecke, die das Raster nicht verlustfrei zerlegen kann, kommen als „raw" durch:
   // im Gitter lesbar als Text, beim Zurueckschalten 1:1 im Original – solange sie nicht bearbeitet wurden.
   const rawRows = (b, rows) => {
-    const id = ++grp, raw = b.outerHTML, key = plainText(raw);
-    (rows && rows.length ? rows : [{ tag: 'p', cells: [esc(plainText(raw))] }])
-      .forEach((r, i) => zeilen.push(Object.assign({ attrs: '' }, r, { rawId: id, raw: i === 0 ? raw : '', rawKey: i === 0 ? key : '' })));
+    const id = ++grp, raw = b.outerHTML;
+    const zs = (rows && rows.length) ? rows : [{ tag: 'p', cells: [esc(plainText(raw))] }];
+    // Schluessel aus den ERSATZZEILEN bilden, nicht aus dem Original: beim Inhaltsverzeichnis
+    // enthaelt das Original auch Knopfbeschriftungen, die in den Zeilen nie vorkommen -
+    // der Vergleich beim Rueckweg konnte deshalb NIE zutreffen und warf das Original immer weg.
+    const key = plainText(zs.map(r => (r.cells || []).join(' ')).join(' '));
+    // raw/rawKey/rawN auf JEDE Zeile: wird die erste geloescht, ist das Original sonst verloren.
+    zs.forEach(r => zeilen.push(Object.assign({ attrs: '' }, r, { rawId: id, raw, rawKey: key, rawN: zs.length })));
   };
   [...tpl.content.children].forEach(b => {
     const tn = (b.tagName || 'P').toLowerCase();
@@ -245,8 +266,11 @@ function gridToHtml(grid) {
     const z = rows[i];
     if (z.rawId) {                                    // Sonderblock: unveraendert → Original zurueck, bearbeitet → als Absaetze
       const id = z.rawId; let g; [g, i] = nimm(i, r => r.rawId === id);
+      // Original nur zurueckgeben, wenn die Gruppe VOLLSTAENDIG und unveraendert ist.
+      // Sonst (Zeile geloescht, Zeile eingefuegt, Text bearbeitet) gewinnt das Bearbeitete.
       const jetzt = plainText(g.map(r => (r.cells || []).join(' ')).join(' '));
-      out += (jetzt === (z.rawKey || '') && z.raw) ? z.raw : g.map(r => gridBlock(r, grid)).join('');
+      const vollstaendig = !z.rawN || g.length === z.rawN;
+      out += (vollstaendig && jetzt === (z.rawKey || '') && z.raw) ? z.raw : g.map(r => gridBlock(r, grid)).join('');
       continue;
     }
     if (z.tbl) {                                      // Tabelle bleibt Tabelle
@@ -290,8 +314,9 @@ function tabelleToHtml(tab) {   // alte Calc-Tabelle → HTML-Zeilen (Migration)
 
 function openDoc(id) {
   const d = lib.docs[id]; if (!d) return;
+  if (doc && dirty) { clearTimeout(saveTimer); autosave(); }   // laufenden Tippschub IMMER zuerst sichern
+  if (doc && doc.id === id) { renderList(); return; }          // schon offen: nichts neu aufbauen (verwarf sonst das zuletzt Getippte)
   verlaufZurueckStapel.length = 0; verlaufVorStapel.length = 0; standJetzt = null;   // Verlauf gehoert zum Dokument
-  if (doc && doc.id !== id && dirty) { clearTimeout(saveTimer); autosave(); }  // alten Stand sichern, bevor gewechselt wird
   clearTimeout(saveTimer);
   doc = migrateDoc(d); fileHandle = null;
   $('#zoneH').innerHTML = sanitizeHtml(d.kopf || '');
@@ -301,7 +326,7 @@ function openDoc(id) {
   renderPageNav();
   setTimeout(verlaufZuruecksetzen, 0);   // Ausgangsstand erst nach dem Aufbau merken
   renderActivePage();
-  lib.currentId = id; persistLib();
+  lib.currentId = id; persistLibGeprueft();
   setDirty(false); renderList();
 }
 function createDoc(partial) {
@@ -309,7 +334,7 @@ function createDoc(partial) {
   if (partial && Array.isArray(partial.pages) && partial.pages.length) { d.seiten = partial.pages; d.aktiv = 0; }
   else if (partial && partial.html != null) { d.seiten = [{ id: uid(), typ: 'write', html: partial.html }]; d.aktiv = 0; }
   delete d.pages; delete d.html;
-  lib.docs[d.id] = d; lib.order.unshift(d.id); persistLib();
+  lib.docs[d.id] = d; lib.order.unshift(d.id); persistLibGeprueft();
   openDoc(d.id);
   return d;
 }
@@ -405,7 +430,7 @@ function standAnwenden(json) {
     $('#zoneH').innerHTML = doc.kopf; $('#zoneF').innerHTML = doc.fuss;
     if (titleEl) titleEl.value = doc.titel;
     applyPageSetup(); renderActivePage(); renderPageNav();
-    persistLib(); renderList();
+    persistLibGeprueft(); renderList();
   } finally { verlaufLaeuft = false; }
   return true;
 }
@@ -542,7 +567,11 @@ function ingestGdoc(text, handle) {
       const typ = (p && p.typ === 'calc') ? 'calc' : 'write';
       let html = sanitizeHtml((p && p.html) || '');
       if (!html && p && p.tabelle && p.tabelle.cells) html = tabelleToHtml(p.tabelle);   // sehr alte Calc-Seite
-      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, cfmt: (p && p.cfmt && typeof p.cfmt === 'object') ? p.cfmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {}, notiz: (p && typeof p.notiz === 'string') ? p.notiz : '', fill: (p && p.fill && typeof p.fill === 'object') ? p.fill : {}, txtcol: (p && p.txtcol && typeof p.txtcol === 'object') ? p.txtcol : {}, rowH: (p && p.rowH && typeof p.rowH === 'object') ? p.rowH : {}, merges: Array.isArray(p && p.merges) ? p.merges : [], borders: (p && p.borders && typeof p.borders === 'object') ? p.borders : {}, dispCols: (p && +p.dispCols) || 0, dispRows: (p && +p.dispRows) || 0, linien: (p && p.linien === true) };
+      return { id: uid(), typ, html, fmt: (p && p.fmt && typeof p.fmt === 'object') ? p.fmt : {}, cfmt: (p && p.cfmt && typeof p.cfmt === 'object') ? p.cfmt : {}, colW: (p && p.colW && typeof p.colW === 'object') ? p.colW : {}, notiz: (p && typeof p.notiz === 'string') ? p.notiz : '', fill: (p && p.fill && typeof p.fill === 'object') ? p.fill : {}, txtcol: (p && p.txtcol && typeof p.txtcol === 'object') ? p.txtcol : {}, rowH: (p && p.rowH && typeof p.rowH === 'object') ? p.rowH : {}, merges: Array.isArray(p && p.merges) ? p.merges : [], borders: (p && p.borders && typeof p.borders === 'object') ? p.borders : {}, dispCols: (p && +p.dispCols) || 0, dispRows: (p && +p.dispRows) || 0, linien: (p && p.linien === true),
+        // Format/Ausrichtung gehoeren zur SEITE (setFormat/setOrientation schreiben sie dorthin).
+        // Fehlten sie hier, fiel eine A3-quer-Seite beim Oeffnen auf die Voreinstellung zurueck.
+        ...(p && typeof p.format === 'string' ? { format: p.format } : {}),
+        ...(p && typeof p.ausrichtung === 'string' ? { ausrichtung: p.ausrichtung } : {}) };
     });
     if (!d.seiten.length) d.seiten = [{ id: uid(), typ: 'write', html: '' }];
     d.aktiv = 0;
@@ -554,7 +583,7 @@ function ingestGdoc(text, handle) {
     migrateDoc(d);
   }
   lib.docs[d.id] = d; lib.order.unshift(d.id);
-  if (!persistLib()) warnQuota();
+  if (!persistLibGeprueft()) return;
   openDoc(d.id); fileHandle = handle || null;
   toast('Geöffnet: ' + d.titel);
 }
@@ -851,7 +880,7 @@ function docMenuAction(a) {
   else if (a === 'trash') d.trashed = true;
   else if (a === 'restore') d.trashed = false;
   else if (a === 'purge') { if (!confirm(`„${d.titel}" endgültig löschen?`)) return; delete lib.docs[id]; lib.order = lib.order.filter(x => x !== id); if (lib.currentId === id) { lib.currentId = lib.order[0] || null; lib.currentId ? openDoc(lib.currentId) : createDoc(); } }
-  persistLib(); renderList();
+  persistLibGeprueft(); renderList();
 }
 
 /* ---------- Vorlagen ---------- */
@@ -3463,15 +3492,37 @@ function commitCellHtml(html) {                   // speichert bereits sicheres 
   renderCalc(); scheduleSave();
 }
 // Inhalt einer bearbeiteten Zelle einlesen: nur Text + Zeilenumbrüche (<br>) behalten
+/* Auszeichnung, die in einer Zelle erhalten bleiben MUSS. Vorher wurde jeder Knoten
+   ausser <br>/<div>/<p> auf reinen Text reduziert - dadurch verlor eine Zelle beim
+   blossen Wegklicken (oder beim Autospeichern) Fett/Kursiv/Links, und ein eingefuegtes
+   Bild verschwand ersatzlos. */
+const ZELL_INLINE = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'SPAN', 'FONT', 'A', 'SUB', 'SUP', 'MARK', 'CODE', 'IMG']);
+function zellAttrs(el) {
+  const tag = el.tagName;
+  return [...((el && el.attributes) || [])].filter(a => {
+    const n = a.name.toLowerCase();
+    if (n.startsWith('on')) return false;                       // niemals Ereignis-Attribute
+    return ALLOWED_ATTR['*'].includes(n) || (ALLOWED_ATTR[tag] || []).includes(n);
+  }).map(a => ` ${a.name}="${esc(a.value)}"`).join('');
+}
 function readCellHtml(td) {
   let h = '';
-  td.childNodes.forEach(n => {
-    if (n.nodeType === 3) h += esc(n.nodeValue.replace(/​/g, ''));
-    else if (n.tagName === 'BR') h += '<br>';
-    else if (n.tagName === 'DIV' || n.tagName === 'P') { if (h && !/<br>$/.test(h)) h += '<br>'; h += esc(n.textContent); }
-    else h += esc(n.textContent);
-  });
-  return h.replace(/(<br>)+$/,'');
+  const teil = n => {
+    if (n.nodeType === 3) { h += esc(n.nodeValue.replace(/​/g, '')); return; }
+    if (n.nodeType !== 1) return;
+    const tag = n.tagName;
+    if (tag === 'BR') { h += '<br>'; return; }
+    if (tag === 'DIV' || tag === 'P') { if (h && !/<br>$/.test(h)) h += '<br>'; n.childNodes.forEach(teil); return; }
+    if (ZELL_INLINE.has(tag)) {
+      const t = tag.toLowerCase(), at = zellAttrs(n);
+      if (tag === 'IMG') { h += `<img${at}>`; return; }
+      h += `<${t}${at}>`; n.childNodes.forEach(teil); h += `</${t}>`;
+      return;
+    }
+    n.childNodes.forEach(teil);                                  // unbekannter Tag: Inhalt behalten, Huelle weg
+  };
+  td.childNodes.forEach(teil);
+  return h.replace(/(<br>)+$/, '');
 }
 // Spaltenbreite mit Maus ziehen (am Spaltenkopf-Rand)
 function startColResize(c, e) {
@@ -3882,6 +3933,63 @@ function selfTest() {
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  // --- P1/P2: stille Datenverluste und ihre Waechter ---
+  ok('Zell-Auszeichnung bleibt erhalten: ZELL_INLINE deckt Fett/Kursiv/Link/Bild ab',
+    ['B','I','U','S','SPAN','A','IMG','SUB','SUP','MARK'].every(t => ZELL_INLINE.has(t)));
+  ok('ZELL_INLINE ist Teilmenge von ALLOWED_TAGS (sonst raeumt sanitizeHtml es beim Laden weg)',
+    [...ZELL_INLINE].every(t => ALLOWED_TAGS.has(t)));
+  // Waechter fuer die Attributliste: streicht jemand data-fx oder data-tab, verlieren
+  // ALLE bestehenden Dokumente beim Oeffnen ihre Formeln bzw. Spaltenpositionen - lautlos.
+  ok('ALLOWED_ATTR schuetzt data-fx (Formeln) und data-tab (Spaltenpositionen)',
+    ALLOWED_ATTR.SPAN.includes('data-fx') && ALLOWED_ATTR.SPAN.includes('data-tab'));
+  ok('ALLOWED_ATTR schuetzt class/style (Ausrichtung, Spaltentrenner) und colspan/rowspan',
+    ALLOWED_ATTR['*'].includes('class') && ALLOWED_ATTR['*'].includes('style')
+    && ALLOWED_ATTR.TD.includes('colspan') && ALLOWED_ATTR.TH.includes('rowspan'));
+  ok('ALLOWED_ATTR schuetzt contenteditable (Marken bleiben unantastbar)',
+    ALLOWED_ATTR.SPAN.includes('contenteditable'));
+
+  // Speichern/Laden-Rundlauf ohne DOM: sanitizeHtml wird wie cellText oben ersetzt
+  ok('Speichern/Laden erhaelt Seitenformat, Ausrichtung, Zellformate und Gitter-Zustand', (() => {
+    const sAlt = sanitizeHtml, dAlt = doc, lAlt = lib, oAlt = openDoc, tAlt = toast;
+    try {
+      sanitizeHtml = x => x;                 // DOM-frei pruefbar machen (wie cellText weiter oben)
+      openDoc = () => {}; toast = () => {};  // ingestGdoc oeffnet und meldet sonst
+      lib = { docs: {}, order: [], currentId: null };
+      const quelle = JSON.stringify({       // ingestGdoc erwartet TEXT, nicht ein Objekt
+        format: 'paper', formatVersion: FORMAT_VERSION, typ: 'dokument',
+        meta: { titel: 'T', erstellt: nowIso(), geaendert: nowIso(), version: 1 },
+        inhalt: { kopf: 'K', fuss: 'F', seiten: [
+          { typ: 'calc', html: '<p>a</p>', format: 'A3', ausrichtung: 'quer', linien: true,
+            fmt: { '0,0': 'm2' }, cfmt: { '0,0': { b: true } }, colW: { '0': 120 },
+            merges: [{ c: 0, r: 0, cs: 2, rs: 1 }], dispCols: 8, dispRows: 40 },
+        ] },
+        einstellungen: { schriftgroesse: 16 },
+      });
+      ingestGdoc(quelle);
+      const d = lib.docs[lib.order[0]], p = (d && d.seiten && d.seiten[0]) || {};
+      return d && d.kopf === 'K' && d.fuss === 'F'
+        && p.format === 'A3' && p.ausrichtung === 'quer' && p.linien === true
+        && p.html === '<p>a</p>' && p.fmt['0,0'] === 'm2' && p.cfmt['0,0'].b === true
+        && p.colW['0'] === 120 && p.merges.length === 1 && p.dispCols === 8 && p.dispRows === 40;
+    } catch (e) { return false; }
+    finally { sanitizeHtml = sAlt; doc = dAlt; lib = lAlt; openDoc = oAlt; toast = tAlt; }
+  })());
+
+  // Sonderbloecke (Inhaltsverzeichnis, Figur): Original nur zurueck, wenn Gruppe vollstaendig
+  ok('Sonderblock kommt zurueck, wenn die Gruppe vollstaendig und unveraendert ist', (() => {
+    const raw = '<div class="toc"><b>Inhalt</b></div>';
+    const z = [{ tag: 'h3', attrs: '', cells: ['Inhaltsverzeichnis'], rawId: 5, raw, rawKey: plainText('Inhaltsverzeichnis Kapitel'), rawN: 2 },
+               { tag: 'p', attrs: '', cells: ['Kapitel'], rawId: 5, raw, rawKey: plainText('Inhaltsverzeichnis Kapitel'), rawN: 2 }];
+    return gridToHtml({ cols: 1, zeilen: z, colStops: [] }) === raw;
+  })());
+  ok('fehlt eine Zeile der Gruppe, gewinnt das Bearbeitete (kein Wiederauferstehen)', (() => {
+    const raw = '<div class="toc"><b>Inhalt</b></div>';
+    const z = [{ tag: 'h3', attrs: '', cells: ['Inhaltsverzeichnis'], rawId: 5, raw, rawKey: plainText('Inhaltsverzeichnis Kapitel'), rawN: 2 }];
+    return gridToHtml({ cols: 1, zeilen: z, colStops: [] }) === '<h3>Inhaltsverzeichnis</h3>';
+  })());
+  ok('persistLibGeprueft meldet Fehlschlag zurueck statt ihn zu verschlucken',
+    typeof persistLibGeprueft === 'function');
 
   // --- Write-Modus: eine Zeile ist EINE Zeile (wie Word), Absaetze verbinden/trennen ---
   ok('zeilenVerbinden haengt die Zeile an die darueberliegende an', (() => {

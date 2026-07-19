@@ -460,7 +460,10 @@ function verlaufMerken() {
   const neu = schnappschuss(); if (!neu) return;
   if (standJetzt && standJetzt !== neu) {
     verlaufZurueckStapel.push(standJetzt);
-    if (verlaufZurueckStapel.length > VERLAUF_MAX) verlaufZurueckStapel.shift();
+    // Grosse Dokumente (eingebettete Bilder) wuerden mit 80 vollstaendigen Kopien den
+    // Arbeitsspeicher sprengen - dann lieber weniger Schritte als ein Absturz.
+    const grenze = neu.length > 400000 ? 8 : (neu.length > 120000 ? 25 : VERLAUF_MAX);
+    while (verlaufZurueckStapel.length > grenze) verlaufZurueckStapel.shift();
     verlaufVorStapel.length = 0;             // neue Aenderung -> Wiederholen verfaellt (wie ueberall)
   }
   standJetzt = neu;
@@ -2304,8 +2307,14 @@ function wire() {
   $('#rowRuler').addEventListener('contextmenu', e => { const seg = e.target.closest('.rr-seg'); if (!seg) return; e.preventDefault(); openHeaderMenu('row', +seg.dataset.r, e.clientX, e.clientY); });
   $('#canvas').addEventListener('scroll', () => { if (appEl.classList.contains('calc-mode')) $('#colRuler').style.top = $('#canvas').scrollTop + 'px'; else buildWriteRulers(); });
   // Maus: Auswahl + Bereich ziehen (delegiert auf #pageGrid)
-  let gridDragging = false, punktZiehen = false;
+  let gridDragging = false, punktZiehen = false, fuellZug = null;
   pgEl.addEventListener('mousedown', e => {
+    if (e.target.classList && e.target.classList.contains('fillgrip')) {
+      e.preventDefault(); e.stopPropagation();
+      const b = rangeBounds();
+      fuellZug = { c1: b.c1, c2: b.c2, r1: b.r1, r2: b.r2 };
+      return;
+    }
     const td = e.target.closest('td[data-c]'); if (!td) return;
     if (formelEingabe() && td !== editingTd) {
       // Formel offen: Klick setzt den Bezug ein, statt die Auswahl umzustellen
@@ -2334,6 +2343,18 @@ function wire() {
     selectCell(+td.dataset.c, +td.dataset.r, e.shiftKey); calcFocus();
   });
   pgEl.addEventListener('mousemove', e => {
+    if (fuellZug) {
+      const td = e.target.closest('td[data-c]'); if (!td) return;
+      const c = +td.dataset.c, r = +td.dataset.r;
+      // Vorschau: den Zielbereich markieren, damit man sieht, wie weit gefuellt wird
+      allTd('td.fillziel').forEach(x => x.classList.remove('fillziel'));
+      for (let rr = fuellZug.r1; rr <= Math.max(fuellZug.r2, r); rr++)
+        for (let cc = fuellZug.c1; cc <= Math.max(fuellZug.c2, c); cc++) {
+          const t = tdAt(cc, rr); if (t) t.classList.add('fillziel');
+        }
+      fuellZug.zielC = Math.max(fuellZug.c2, c); fuellZug.zielR = Math.max(fuellZug.r2, r);
+      return;
+    }
     if (punktZiehen && punktModus) {
       const td = e.target.closest('td[data-c]'); if (!td) return;
       const c = +td.dataset.c, r = +td.dataset.r;
@@ -2343,6 +2364,16 @@ function wire() {
     }
     if (!gridDragging) return; const td = e.target.closest('td[data-c]'); if (td) selectCell(+td.dataset.c, +td.dataset.r, true); });
   document.addEventListener('mouseup', () => {
+    if (fuellZug) {
+      const f = fuellZug; fuellZug = null;
+      allTd('td.fillziel').forEach(x => x.classList.remove('fillziel'));
+      if (f.zielC != null && bereichAusfuellen(f.c1, f.c2, f.r1, f.r2, f.zielC, f.zielR)) {
+        activePage().html = gridToHtml(curGrid); renderCalc();
+        selectCell(f.c1, f.r1); selectCell(f.zielC, f.zielR, true);   // Ergebnis markiert lassen
+        scheduleSave();
+      }
+      return;
+    }
     gridDragging = false;
     // Nach dem Loslassen zaehlt der naechste Klick als NEUER Bezug (=A1+B2), nicht als Ersatz
     if (punktZiehen) { punktZiehen = false; if (punktModus) punktModus.len = 0; }
@@ -4108,6 +4139,26 @@ function updateRulerSel() {
 let anchorC = 0, anchorR = 0, editingTd = null;
 /* Ausfuellen wie in Excel: oberste Zeile bzw. linke Spalte der Markierung in den Rest kopieren,
    Formeln dabei mitverschieben (relative Bezuege wandern, $-Bezuege bleiben). */
+/* Ausfuellen ueber einen gezogenen Bereich: der markierte Block wird wiederholt,
+   bis das Ziel gefuellt ist - genau wie beim Ziehen am Ausfuellkaestchen in Excel.
+   Formeln wandern mit (relative Bezuege verschoben, $-Bezuege fest). */
+function bereichAusfuellen(c1, c2, r1, r2, zielC, zielR) {
+  if (!curGrid) return false;
+  const hoch = r2 - r1 + 1, breit = c2 - c1 + 1;
+  const bisC = Math.max(c2, zielC), bisR = Math.max(r2, zielR);
+  if (bisC === c2 && bisR === r2) return false;
+  for (let r = r1; r <= bisR; r++) {
+    for (let c = c1; c <= bisC; c++) {
+      if (r <= r2 && c <= c2) continue;                       // Quellblock bleibt unangetastet
+      const qc = c1 + ((c - c1) % breit), qr = r1 + ((r - r1) % hoch);
+      const quelle = gridGet(curGrid, qc, qr);
+      gridEnsure(curGrid, c, r);
+      const roh = cellText(quelle);
+      curGrid.zeilen[r].cells[c] = (roh.charAt(0) === '=') ? verschiebeFormel(roh, c - qc, r - qr) : quelle;
+    }
+  }
+  return true;
+}
 function fuelleAus(richtung) {
   if (!curGrid) return false;
   const { c1, c2, r1, r2 } = rangeBounds();
@@ -4194,10 +4245,21 @@ function selRefLabel(c1, c2, r1, r2, activeKey) {
 function roundN(x) { return Math.round(x * 100) / 100; }
 function highlightSel() {
   allTd('td.sel, td.active').forEach(td => td.classList.remove('sel', 'active'));
+  $$('#pageGrid .fillgrip').forEach(g => g.remove());
   const { c1, c2, r1, r2 } = rangeBounds();
   for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const td = tdAt(c, r); if (td) td.classList.add('sel'); }
   const act = tdAt(selC, selR);
   if (act) { act.classList.add('active'); $('#cellRef').textContent = selRefLabel(c1, c2, r1, r2, cellKey(selC, selR)); $('#formulaInput').value = gridCellRaw(selC, selR); }
+  // Ausfuellkaestchen an die untere rechte Ecke der Markierung - die Geste aus Excel
+  if (!viewOnly && !dokumentModus()) {
+    const eck = tdAt(c2, r2);
+    if (eck && !eck.querySelector('.fillgrip')) {
+      const g = document.createElement('span');
+      g.className = 'fillgrip';
+      g.title = 'Ziehen: Inhalt und Formeln nach unten oder rechts ausfuellen';
+      eck.appendChild(g);
+    }
+  }
   updateRulerSel();   // aktive Spalte/Zeile in den Lineal-Leisten hervorheben
   updateCalcStat();
   syncCalcToolbar();  // Menüband (F/K/U, Ausrichtung, Schrift) auf die aktive Zelle spiegeln
@@ -4455,10 +4517,30 @@ function autoMergeOverflow(c, r) {
 /* ---- Zeilen/Spalten einfügen·löschen (Rechtsklick im Gitter) ---- */
 function showGridMenu(x, y) {
   const m = $('#ctxmenu');
-  m.innerHTML = '<button data-g="rowAbove">Zeile oberhalb einfügen</button><button data-g="rowBelow">Zeile unterhalb einfügen</button><button data-g="rowDel">Zeile löschen</button><div class="sep"></div><button data-g="colLeft">Spalte links einfügen</button><button data-g="colRight">Spalte rechts einfügen</button><button data-g="colDel">Spalte löschen</button><div class="sep"></div><button data-g="clear">Inhalt löschen</button>';
+  m.innerHTML = '<button data-g="rowAbove">Zeile oberhalb einfügen</button><button data-g="rowBelow">Zeile unterhalb einfügen</button><button data-g="rowDel">Zeile löschen</button><div class="sep"></div><button data-g="colLeft">Spalte links einfügen</button><button data-g="colRight">Spalte rechts einfügen</button><button data-g="colDel">Spalte löschen</button><div class="sep"></div><button data-g="sortAuf">Nach dieser Spalte sortieren (A–Z)</button><button data-g="sortAb">Nach dieser Spalte sortieren (Z–A)</button><div class="sep"></div><button data-g="clear">Inhalt löschen</button>';
   m.hidden = false;
   m.style.left = Math.min(x, window.innerWidth - m.offsetWidth - 8) + 'px';
   m.style.top = Math.min(y, window.innerHeight - m.offsetHeight - 8) + 'px';
+}
+/* Zeilen nach einer Spalte sortieren. Zahlen numerisch, Text alphabetisch nach
+   Schweizer Regeln, LEERE ZELLEN immer ans Ende (sonst stehen halbfertige Zeilen zuoberst).
+   Rein: bekommt Zeilen, gibt neu geordnete Zeilen zurueck - im Test pruefbar. */
+function zeilenSortieren(zeilen, spalte, absteigend) {
+  const wert = z => cellText((z.cells || [])[spalte] || '');
+  const zahl = t => { const x = parseFloat(String(t).replace(/'/g, '').replace(',', '.')); return isNaN(x) ? null : x; };
+  const kopie = (zeilen || []).slice();
+  kopie.sort((a, b) => {
+    const ta = wert(a), tb = wert(b);
+    if (ta === '' && tb === '') return 0;
+    if (ta === '') return 1;                      // leer immer ans Ende, auch absteigend
+    if (tb === '') return -1;
+    const za = zahl(ta), zb = zahl(tb);
+    let v;
+    if (za !== null && zb !== null) v = za - zb;
+    else v = ta.localeCompare(tb, 'de-CH', { numeric: true, sensitivity: 'base' });
+    return absteigend ? -v : v;
+  });
+  return kopie;
 }
 function gridMenuAction(g) {
   $('#ctxmenu').hidden = true;
@@ -4469,6 +4551,19 @@ function gridMenuAction(g) {
   else if (g === 'colLeft') { curGrid.zeilen.forEach(z => z.cells.splice(selC, 0, '')); curGrid.cols++; }
   else if (g === 'colRight') { curGrid.zeilen.forEach(z => z.cells.splice(selC + 1, 0, '')); curGrid.cols++; }
   else if (g === 'colDel') { curGrid.zeilen.forEach(z => z.cells.splice(selC, 1)); curGrid.cols = Math.max(1, curGrid.cols - 1); }
+  else if (g === 'sortAuf' || g === 'sortAb') {
+    // Nur die markierten Zeilen sortieren; ist nur eine Zelle gewaehlt, alle belegten Zeilen.
+    const b = rangeBounds();
+    const mehrere = b.r2 > b.r1;
+    const von = mehrere ? b.r1 : 0;
+    const bis = mehrere ? b.r2 : calcUsedRange().maxR;
+    if (bis > von) {
+      const teil = curGrid.zeilen.slice(von, bis + 1);
+      const neu = zeilenSortieren(teil, selC, g === 'sortAb');
+      curGrid.zeilen.splice(von, teil.length, ...neu);
+      toast((bis - von + 1) + ' Zeilen nach Spalte ' + idxToCol(selC) + ' sortiert');
+    }
+  }
   else if (g === 'clear') { const { c1, c2, r1, r2 } = rangeBounds(); for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) if (curGrid.zeilen[r]) curGrid.zeilen[r].cells[c] = ''; }
   activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave();
 }
@@ -4866,6 +4961,102 @@ function selfTest() {
     const kal = evalCell(3, 0), arb = evalCell(4, 0), leer = evalCell(3, 1);
     curGrid = alt;
     return kal === 7 && arb === 5 && leer === '';
+  })());
+
+  // --- Sortieren ---
+  ok('Sortieren nach Zahl statt nach Zeichen (10 kommt nach 9)', (() => {
+    const zz = t => ({ tag: 'p', attrs: '', cells: [t] });
+    const r = zeilenSortieren([zz('10'), zz('9'), zz('100')], 0, false).map(x => x.cells[0]).join(',');
+    return r === '9,10,100';
+  })());
+  ok('Sortieren nach Text alphabetisch, Gross/Klein egal', (() => {
+    const zz = t => ({ tag: 'p', attrs: '', cells: [t] });
+    const r = zeilenSortieren([zz('Zimmermann'), zz('baumeister'), zz('Elektro')], 0, false).map(x => x.cells[0]).join(',');
+    return r === 'baumeister,Elektro,Zimmermann';
+  })());
+  ok('absteigend dreht die Reihenfolge um', (() => {
+    const zz = t => ({ tag: 'p', attrs: '', cells: [t] });
+    const r = zeilenSortieren([zz('1'), zz('3'), zz('2')], 0, true).map(x => x.cells[0]).join(',');
+    return r === '3,2,1';
+  })());
+  ok('leere Zellen stehen IMMER am Ende - auch absteigend', (() => {
+    const zz = t => ({ tag: 'p', attrs: '', cells: [t] });
+    const auf = zeilenSortieren([zz('b'), zz(''), zz('a')], 0, false).map(x => x.cells[0]).join(',');
+    const ab = zeilenSortieren([zz('b'), zz(''), zz('a')], 0, true).map(x => x.cells[0]).join(',');
+    return auf === 'a,b,' && ab === 'b,a,';
+  })());
+  ok('Sortieren nach einer spaeteren Spalte', (() => {
+    const z2 = (a, b) => ({ tag: 'p', attrs: '', cells: [a, b] });
+    const r = zeilenSortieren([z2('x', '3'), z2('y', '1'), z2('z', '2')], 1, false).map(x => x.cells[0]).join('');
+    return r === 'yzx';
+  })());
+  ok('Sortieren laesst die urspruengliche Liste unangetastet', (() => {
+    const zz = t => ({ tag: 'p', attrs: '', cells: [t] });
+    const liste = [zz('b'), zz('a')];
+    zeilenSortieren(liste, 0, false);
+    return liste[0].cells[0] === 'b';
+  })());
+  ok('Sortieren vertraegt Apostroph-Tausender', (() => {
+    const zz = t => ({ tag: 'p', attrs: '', cells: [t] });
+    const r = zeilenSortieren([zz("1'200"), zz('900')], 0, false).map(x => x.cells[0]).join(',');
+    return r === "900,1'200";
+  })());
+
+  // --- Ausfuellen durch Ziehen (Ausfuellkaestchen) ---
+  ok('Ausfuellen nach unten wiederholt den Block und verschiebt Formeln', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 2, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['10', '=A1*2'] },
+      { tag: 'p', attrs: '', cells: ['20', ''] },
+      { tag: 'p', attrs: '', cells: ['30', ''] },
+    ] };
+    bereichAusfuellen(1, 1, 0, 0, 1, 2);           // B1 nach B2 und B3 ziehen
+    const b2 = cellText(gridGet(curGrid, 1, 1)), b3 = cellText(gridGet(curGrid, 1, 2));
+    curGrid = alt;
+    return b2 === '=A2*2' && b3 === '=A3*2';
+  })());
+  ok('Ausfuellen nach rechts verschiebt die Spalte', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 4, colStops: [], zeilen: [{ tag: 'p', attrs: '', cells: ['=A1', '', '', ''] }] };
+    bereichAusfuellen(0, 0, 0, 0, 2, 0);
+    const b = cellText(gridGet(curGrid, 1, 0)), c = cellText(gridGet(curGrid, 2, 0));
+    curGrid = alt;
+    return b === '=B1' && c === '=C1';
+  })());
+  ok('ein mehrzeiliger Block wiederholt sich zyklisch', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['A'] }, { tag: 'p', attrs: '', cells: ['B'] },
+      { tag: 'p', attrs: '', cells: [''] }, { tag: 'p', attrs: '', cells: [''] },
+    ] };
+    bereichAusfuellen(0, 0, 0, 1, 0, 3);
+    const r = curGrid.zeilen.map(z => cellText(z.cells[0])).join('');
+    curGrid = alt;
+    return r === 'ABAB';
+  })());
+  ok('reiner Text wird kopiert, nicht verschoben', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['Beton C25/30'] }, { tag: 'p', attrs: '', cells: [''] },
+    ] };
+    bereichAusfuellen(0, 0, 0, 0, 0, 1);
+    const v = cellText(gridGet(curGrid, 0, 1)); curGrid = alt;
+    return v === 'Beton C25/30';
+  })());
+  ok('Ziehen ohne Vergroesserung aendert nichts', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, colStops: [], zeilen: [{ tag: 'p', attrs: '', cells: ['x'] }] };
+    const r = bereichAusfuellen(0, 0, 0, 0, 0, 0); curGrid = alt;
+    return r === false;
+  })());
+  ok('der Quellblock selbst bleibt unangetastet', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 1, colStops: [], zeilen: [
+      { tag: 'p', attrs: '', cells: ['Quelle'] }, { tag: 'p', attrs: '', cells: [''] },
+    ] };
+    bereichAusfuellen(0, 0, 0, 0, 0, 1);
+    const q = cellText(gridGet(curGrid, 0, 0)); curGrid = alt;
+    return q === 'Quelle';
   })());
 
   // --- Bezug per Klick ("Zeigen") ---

@@ -419,6 +419,19 @@
           </div>
         </div>
         <div class="insp-block">
+          <div class="insp-lbl">Firmenangaben (für Vorlagen)</div>
+          <div class="setup-grid">
+            <label><span class="cap">Firma</span><span class="val"><input type="text" id="buFirma" placeholder="Musterbau AG"></span></label>
+            <label><span class="cap">Strasse</span><span class="val"><input type="text" id="buStrasse" placeholder="Musterstrasse 1"></span></label>
+            <label><span class="cap">PLZ / Ort</span><span class="val"><input type="text" id="buPlzort" placeholder="3000 Bern"></span></label>
+            <label><span class="cap">Telefon</span><span class="val"><input type="text" id="buTel" placeholder="031 000 00 00"></span></label>
+            <label><span class="cap">E-Mail</span><span class="val"><input type="text" id="buMail" placeholder="info@firma.ch"></span></label>
+            <label><span class="cap">MWST-Nr.</span><span class="val"><input type="text" id="buMwst" placeholder="CHE-123.456.789 MWST"></span></label>
+            <label><span class="cap">IBAN</span><span class="val"><input type="text" id="buIban" placeholder="CH00 0000 0000 0000 0"></span></label>
+          </div>
+          <p class="muted" style="font-size:11px;margin:6px 0 0">Wird in neuen Vorlagen als Briefkopf und Fusszeile verwendet.</p>
+        </div>
+        <div class="insp-block">
           <div class="insp-lbl">Seite einrichten</div>
           <div class="setup-grid">
             <label><span class="cap">Rand oben</span><span class="val"><input type="number" id="mTop" min="0" max="60" step="1">mm</span></label>
@@ -483,7 +496,7 @@
   <div class="tip" id="tip" hidden></div>
   <div id="toast-root"></div>
 
-  <script src="write.js?v=64"></script>
+  <script src="write.js?v=65"></script>
   <script src="../appswitch.js?v=3"></script>
 <script src="../bridge.js?v=1"></script>
 </body>

@@ -952,18 +952,51 @@ function rasterVorlage(zeilen, fmt, cfmt, colW) {
 function spaltenFormat(fmt, spalte, von, bis, art) { for (let r = von; r <= bis; r++) fmt[spalte + ',' + r] = art; return fmt; }
 function fettZeile(cfmt, r, spalten) { spalten.forEach(c => { cfmt[c + ',' + r] = Object.assign({}, cfmt[c + ',' + r], { b: true }); }); return cfmt; }
 
+/* ---- Eigene Firmenangaben ----
+   Alle Vorlagen greifen darauf zu. Wer sie einmal eintraegt, bekommt jede Vorlage
+   sofort mit dem eigenen Briefkopf - vorher stand ueberall 'Musterbau AG'. */
+const LS_BUERO = 'sw_buero_v1';
+const BUERO_STD = { firma: '', strasse: '', plzort: '', tel: '', mail: '', mwst: '', iban: '' };
+let buero = ladeBuero();
+function ladeBuero() {
+  try { const r = JSON.parse(localStorage.getItem(LS_BUERO) || 'null'); return Object.assign({}, BUERO_STD, r || {}); }
+  catch (_) { return Object.assign({}, BUERO_STD); }
+}
+function speichereBuero() { try { localStorage.setItem(LS_BUERO, JSON.stringify(buero)); return true; } catch (_) { return false; } }
+function buerofeld(k, ersatz) { const v = (buero && buero[k] || '').trim(); return v || ersatz; }
+/* Briefkopf aus den eigenen Angaben - fehlende Felder fallen still weg, statt leere
+   Trennpunkte stehenzulassen. */
+function kopfAusBuero() {
+  const teile = [buerofeld('strasse', ''), buerofeld('plzort', ''), buerofeld('tel', ''), buerofeld('mail', '')].filter(Boolean);
+  const firma = buerofeld('firma', 'Ihre Firma');
+  return '<span style="font-weight:700">' + esc(firma) + '</span>'
+    + (teile.length ? ' &nbsp;&middot;&nbsp; ' + teile.map(esc).join(' &nbsp;&middot;&nbsp; ') : '');
+}
+function fussAusBuero() {
+  const teile = [buerofeld('firma', 'Ihre Firma'), buerofeld('mwst', '')].filter(Boolean);
+  return teile.map(esc).join(' &nbsp;&middot;&nbsp; ') + ' &nbsp;&middot;&nbsp; Seite {Seite} von {Seiten}';
+}
 const KOPF_STD = '<span style="font-weight:700">Musterbau AG</span> &nbsp;&middot;&nbsp; Musterstrasse 1 &nbsp;&middot;&nbsp; 3000 Bern &nbsp;&middot;&nbsp; 031 000 00 00 &nbsp;&middot;&nbsp; info@musterbau.ch';
 const FUSS_STD = 'Musterbau AG &nbsp;&middot;&nbsp; CHE-123.456.789 MWST &nbsp;&middot;&nbsp; Seite {Seite} von {Seiten}';
 const MWST = 8.1;   // Schweizer Normalsatz
 
+/* Nutzbare Blattbreite in Pixel - dieselbe Rechnung wie beim Zeichnen. Damit laesst sich
+   VOR dem Zeichnen pruefen, ob die Spalten einer Vorlage ueberhaupt aufs Blatt passen;
+   sonst werden Zellen umbrochen und das Blatt sieht unsauber aus. */
+function blattBreitePx(quer) {
+  const m = (doc && doc.einstellungen && doc.einstellungen.margins) || { left: 22, right: 22 };
+  return ((quer ? 297 : 210) - (m.left || 22) - (m.right || 22)) * MM;
+}
 function dokVorlage(zeilen, opt) {
   opt = opt || {};
   return {
-    kopf: opt.kopf != null ? opt.kopf : KOPF_STD,
-    fuss: opt.fuss != null ? opt.fuss : FUSS_STD,
-    pages: [{ id: uid(), typ: 'calc', linien: !!opt.linien, html: zeilen.join(''),
+    kopf: opt.kopf != null ? opt.kopf : kopfAusBuero(),
+    fuss: opt.fuss != null ? opt.fuss : fussAusBuero(),
+    pages: [Object.assign({
+      id: uid(), typ: 'calc', linien: !!opt.linien, html: zeilen.join(''),
       fmt: opt.fmt || {}, cfmt: opt.cfmt || {}, colW: opt.colW || {},
-      fill: {}, txtcol: {}, borders: {}, rowH: {}, merges: [], dispCols: 0, dispRows: 0 }],
+      fill: {}, txtcol: {}, borders: {}, rowH: {}, merges: [], dispCols: 0, dispRows: 0,
+    }, opt.quer ? { format: 'A4', ausrichtung: 'quer' } : {})],
   };
 }
 /* Positionsblock mit Einzelpreis, Betrag und Summenzeile - der Kern jeder Offerte/Rechnung */
@@ -979,14 +1012,14 @@ function positionsBlock(z, kopfZeile, anzahl, startRow, spalten) {
 const TEMPLATES = {
   brief: { titel: 'Geschaeftsbrief', bauen: () => {
     const z = [];
-    z.push(Z('Musterbau AG, Musterstrasse 1, 3000 Bern'));
+    z.push(Z([buerofeld('firma', 'Ihre Firma'), buerofeld('strasse', ''), buerofeld('plzort', '')].filter(Boolean).join(', ')));
     z.push(Z(''));
     z.push(Z('Empfaenger AG'));
     z.push(Z('z. H. Frau Muster'));
     z.push(Z('Beispielweg 5'));
     z.push(Z('3000 Bern'));
     z.push(Z(''));
-    z.push(Z('Bern, ' + TODAY));
+    z.push(Z((buerofeld('plzort', '').replace(/^\d+\s*/, '') || 'Ort') + ', ' + TODAY));
     z.push(Z(''));
     z.push(Z('Betreff des Schreibens'));
     z.push(Z(''));
@@ -996,13 +1029,13 @@ const TEMPLATES = {
     z.push(Z(''));
     z.push(Z('Freundliche Gruesse'));
     z.push(Z(''));
-    z.push(Z('Musterbau AG'));
+    z.push(Z(buerofeld('firma', 'Ihre Firma')));
     z.push(Z(''));
-    z.push(Z('Yanick Gerber, Bauleiter'));
+    z.push(Z('..............................'));
     z.push(Z(''));
     z.push(Z('Beilagen: keine'));
     const cfmt = { '0,9': { b: true } };
-    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 480 } });
+    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 610 } });
   } },
 
   angebot: { titel: 'Offerte', bauen: () => {
@@ -1036,7 +1069,7 @@ const TEMPLATES = {
     fettZeile(cfmt, 18, [1, 5]);
     fettZeile(cfmt, 20, [0]);
     cfmt['0,0'] = { b: true, sz: 20 };
-    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 44, 1: 250 } });
+    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 44, 1: 220, 2: 70, 3: 66, 4: 100, 5: 110 } });
   } },
 
   rechnung: { titel: 'Rechnung', bauen: () => {
@@ -1057,14 +1090,14 @@ const TEMPLATES = {
     z.push(Z('', 'TOTAL inkl. MWST', '', '', '', '=F' + zt + '+F' + mw));
     z.push(Z('', 'Skonto 2 % bei Zahlung innert 10 Tagen', '', '', '', '=F' + tot + '*0.02'));
     z.push(Z(''));
-    z.push(Z('Zahlbar innert 30 Tagen netto auf CH00 0000 0000 0000 0000 0'));
-    z.push(Z('MWST-Nr. CHE-123.456.789 MWST'));
+    z.push(Z('Zahlbar innert 30 Tagen netto auf ' + buerofeld('iban', 'IBAN in den Firmenangaben hinterlegen')));
+    z.push(Z(buerofeld('mwst', 'MWST-Nummer in den Firmenangaben hinterlegen')));
     const fmt = {};
     for (let r = 6; r <= 18; r++) { fmt['4,' + r] = 'chf'; fmt['5,' + r] = 'chf'; }
     const cfmt = fettZeile({}, 5, [0, 1, 2, 3, 4, 5]);
     fettZeile(cfmt, 17, [1, 5]);
     cfmt['0,0'] = { b: true, sz: 20 };
-    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 44, 1: 250 } });
+    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 44, 1: 220, 2: 70, 3: 66, 4: 100, 5: 110 } });
   } },
 
   protokoll: { titel: 'Sitzungsprotokoll', bauen: () => {
@@ -1085,7 +1118,7 @@ const TEMPLATES = {
     z.push(Z('Einsprachen innert 10 Tagen an die Bauleitung, sonst gilt das Protokoll als genehmigt.'));
     const cfmt = fettZeile({}, 9, [0, 1, 2, 3, 4]);
     cfmt['0,0'] = { b: true, sz: 20 };
-    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 44, 1: 300 } });
+    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 44, 1: 270, 2: 100, 3: 100, 4: 100 } });
   } },
 
   bautagebuch: { titel: 'Bautagebuch', bauen: () => {
@@ -1107,7 +1140,7 @@ const TEMPLATES = {
     const cfmt = fettZeile({}, 4, [0, 1, 2, 3]);
     fettZeile(cfmt, 14, [0, 1, 2]);
     cfmt['0,0'] = { b: true, sz: 20 };
-    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 200, 3: 300 } });
+    return dokVorlage(z, { linien: true, cfmt: cfmt, colW: { 0: 180, 1: 80, 2: 80, 3: 275 } });
   } },
 
   regierapport: { titel: 'Regierapport', bauen: () => {
@@ -1139,7 +1172,7 @@ const TEMPLATES = {
     fettZeile(cfmt, 12, [0, 1, 2, 3, 4]);
     fettZeile(cfmt, 19, [3, 4]);
     cfmt['0,0'] = { b: true, sz: 20 };
-    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 200 } });
+    return dokVorlage(z, { linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 170, 1: 140, 2: 90, 3: 100, 4: 115 } });
   } },
 
   maengelliste: { titel: 'Maengelliste', bauen: () => {
@@ -1158,7 +1191,7 @@ const TEMPLATES = {
     z.push(Z('Die Maengel sind bis zur genannten Frist zu beheben (SIA 118 Art. 169).'));
     const cfmt = fettZeile({}, 4, [0, 1, 2, 3, 4, 5, 6]);
     cfmt['0,0'] = { b: true, sz: 20 };
-    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 44, 3: 280 } });
+    return dokVorlage(z, { quer: true, linien: true, cfmt: cfmt, colW: { 0: 50, 1: 150, 2: 150, 3: 300, 4: 110, 5: 100, 6: 90 } });
   } },
 
   zahlungsplan: { titel: 'Zahlungsplan', bauen: () => {
@@ -1185,7 +1218,7 @@ const TEMPLATES = {
     const cfmt = fettZeile({}, 4, [0, 1, 2, 3, 4, 5]);
     fettZeile(cfmt, l, [1, 2, 3]);
     cfmt['0,0'] = { b: true, sz: 20 };
-    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 50, 1: 240 } });
+    return dokVorlage(z, { linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 50, 1: 180, 2: 70, 3: 110, 4: 105, 5: 100 } });
   } },
 
   kostenvoranschlag: { titel: 'Kostenvoranschlag', bauen: () => {
@@ -1208,7 +1241,7 @@ const TEMPLATES = {
     const cfmt = fettZeile({}, 4, [0, 1, 2, 3, 4, 5]);
     fettZeile(cfmt, 19, [1, 5]);
     cfmt['0,0'] = { b: true, sz: 20 };
-    return dokVorlage(z, { fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 250 } });
+    return dokVorlage(z, { linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 55, 1: 210, 2: 70, 3: 66, 4: 100, 5: 110 } });
   } },
 
   abnahme: { titel: 'Abnahmeprotokoll', bauen: () => {
@@ -1232,7 +1265,7 @@ const TEMPLATES = {
     const cfmt = fettZeile({}, 5, [0]);
     fettZeile(cfmt, 12, [0, 1, 2, 3]);
     cfmt['0,0'] = { b: true, sz: 20 };
-    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 60, 1: 320 } });
+    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 50, 1: 300, 2: 130, 3: 125 } });
   } },
 
   // ---------------- Rechnende Bau-Vorlagen ----------------
@@ -1270,7 +1303,7 @@ const TEMPLATES = {
     const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5, 6]);
     fettZeile(cfmt, tot - 1, [1, 2, 3, 4, 5, 6]);
     cfmt['0,0'] = { b: true, sz: 20 };
-    return rasterVorlage(z, fmt, cfmt, { 0: 60, 1: 240 });
+    return dokVorlage(z, { quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 230, 2: 130, 3: 130, 4: 130, 5: 130, 6: 90 } });
   } },
 
   terminprogramm: { titel: 'Terminprogramm', bauen: () => {
@@ -1298,7 +1331,7 @@ const TEMPLATES = {
     const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5]);
     cfmt['0,0'] = { b: true, sz: 20 };
     fettZeile(cfmt, letzte + 1, [0, 3, 4]);
-    return rasterVorlage(z, {}, cfmt, { 0: 200, 5: 260 });
+    return dokVorlage(z, { quer: true, linien: true, cfmt: cfmt, colW: { 0: 200, 1: 110, 2: 110, 3: 120, 4: 120, 5: 280 } });
   } },
 
   ausmass: { titel: 'Ausmassblatt', bauen: () => {
@@ -1319,7 +1352,7 @@ const TEMPLATES = {
     const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5, 6]);
     fettZeile(cfmt, letzte, [1, 5]);
     cfmt['0,0'] = { b: true, sz: 20 };
-    return rasterVorlage(z, fmt, cfmt, { 1: 260 });
+    return dokVorlage(z, { quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 280, 2: 100, 3: 100, 4: 100, 5: 140, 6: 90 } });
   } },
 
   preisspiegel: { titel: 'Offertvergleich (Preisspiegel)', bauen: () => {
@@ -1348,7 +1381,7 @@ const TEMPLATES = {
     const cfmt = fettZeile({}, 3, [0, 1, 2, 3, 4, 5, 6]);
     fettZeile(cfmt, tot - 1, [1, 2, 3, 4, 5, 6]);
     cfmt['0,0'] = { b: true, sz: 20 };
-    return rasterVorlage(z, fmt, cfmt, { 1: 260 });
+    return dokVorlage(z, { quer: true, linien: true, fmt: fmt, cfmt: cfmt, colW: { 0: 60, 1: 260, 2: 130, 3: 130, 4: 130, 5: 130, 6: 110 } });
   } },
 
   beiblatt: { titel: 'Beiblatt zur Offerte', bauen: () => {
@@ -1382,7 +1415,7 @@ const TEMPLATES = {
     fettZeile(cfmt, 8, [0]);
     fettZeile(cfmt, 19, [0]);
     [2, 3, 4, 5, 6].forEach(r => fettZeile(cfmt, r, [0]));
-    return rasterVorlage(z, {}, cfmt, { 0: 200, 1: 320 });
+    return dokVorlage(z, { cfmt: cfmt, colW: { 0: 180, 1: 200, 2: 130, 3: 100 } });   // 4 Spalten wegen der Unterschriftenzeile
   } },
 };
 // Vorlagen-Galerie: Kurzbeschreibung + Kategorie-Icon je Vorlage (bessere Auffindbarkeit)
@@ -2433,6 +2466,13 @@ function wire() {
     activePage().html = gridToHtml(curGrid); renderCalc(); selectCell(selC, selR); calcFocus(); scheduleSave();
   };
   { const b = $('#btnAutoSum'); if (b) b.addEventListener('click', autoSumKlick); }
+  // Firmenangaben: sofort speichern, keine Bestaetigung noetig
+  [['buFirma', 'firma'], ['buStrasse', 'strasse'], ['buPlzort', 'plzort'], ['buTel', 'tel'],
+   ['buMail', 'mail'], ['buMwst', 'mwst'], ['buIban', 'iban']].forEach(([id, key]) => {
+    const el = $('#' + id); if (!el) return;
+    el.value = buero[key] || '';
+    el.addEventListener('input', () => { buero[key] = el.value; speichereBuero(); });
+  });
   { const u = $('#btnUndo'), r = $('#btnRedo');
     if (u) u.addEventListener('click', verlaufZurueck);
     if (r) r.addEventListener('click', verlaufVor); }
@@ -4825,6 +4865,47 @@ function selfTest() {
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
 
+  // --- Layout der Vorlagen: passt alles aufs Blatt? ---
+  // Sehen kann ein Test das nicht - nachrechnen schon. Genau das faengt
+  // "Zellen komisch unterbrochen": zu breite Spalten werden umbrochen.
+  let __ohneBreite = [];
+  Object.keys(TEMPLATES).forEach(k => {
+    const p = TEMPLATES[k].bauen().pages[0];
+    const spalten = Math.max.apply(null, p.html.split('<p>').map(z => z.split('class="colsep"').length));
+    for (let c = 0; c < spalten; c++) if (!(p.colW && p.colW[c] > 0)) __ohneBreite.push(k + ' Sp.' + c);
+  });
+  ok('jede Vorlage gibt jeder benutzten Spalte eine Breite', __ohneBreite.length === 0, __ohneBreite.join(', '));
+  ok('die Spalten jeder Vorlage passen auf ihr Blatt', (() => {
+    const zuBreit = [];
+    Object.keys(TEMPLATES).forEach(k => {
+      const p = TEMPLATES[k].bauen().pages[0];
+      const summe = Object.keys(p.colW || {}).reduce((t, c) => t + (p.colW[c] || 0), 0);
+      const platz = blattBreitePx(p.ausrichtung === 'quer');
+      if (summe > platz) zuBreit.push(k + ' ' + Math.round(summe) + '>' + Math.round(platz));
+    });
+    return zuBreit.length === 0;
+  })());
+  ok('breite Listen stehen im Querformat', (() => {
+    return ['baukosten', 'terminprogramm', 'ausmass', 'preisspiegel', 'maengelliste']
+      .every(k => TEMPLATES[k].bauen().pages[0].ausrichtung === 'quer');
+  })());
+  ok('Versanddokumente stehen im Hochformat und ohne Raster', (() => {
+    return ['brief', 'angebot', 'rechnung', 'protokoll', 'abnahme', 'beiblatt']
+      .every(k => {
+        const p = TEMPLATES[k].bauen().pages[0];
+        return p.ausrichtung !== 'quer' && p.linien !== true;
+      });
+  })());
+  ok('Arbeitsblaetter oeffnen mit sichtbarem Raster', (() => {
+    return ['bautagebuch', 'regierapport', 'maengelliste', 'zahlungsplan', 'kostenvoranschlag',
+            'baukosten', 'terminprogramm', 'ausmass', 'preisspiegel']
+      .every(k => TEMPLATES[k].bauen().pages[0].linien === true);
+  })());
+  ok('Querformat wird als Seiteneigenschaft gespeichert (ueberlebt Speichern/Oeffnen)', (() => {
+    const p = TEMPLATES.baukosten.bauen().pages[0];
+    return p.format === 'A4' && p.ausrichtung === 'quer';
+  })());
+
   // --- Vorlagen als echte Geschaeftsdokumente ---
   ok('jede Vorlage bringt Briefkopf und Fusszeile mit', (() => {
     return Object.keys(TEMPLATES).every(k => {
@@ -4836,9 +4917,51 @@ function selfTest() {
     Object.keys(TEMPLATES).every(k => /\{Seite\}/.test(TEMPLATES[k].bauen().fuss)));
   ok('Offerte und Rechnung rechnen mit dem Schweizer MWST-Satz',
     MWST === 8.1 && /MWST 8.1 %/.test(TEMPLATES.angebot.bauen().pages[0].html));
-  ok('Rechnung nennt MWST-Nummer und Zahlungsfrist', (() => {
+  ok('Rechnung nennt Zahlungsfrist, Skonto und MWST-Angabe', (() => {
     const h = TEMPLATES.rechnung.bauen().pages[0].html;
-    return /CHE-/.test(h) && /30 Tagen/.test(h) && /Skonto/.test(h);
+    return /30 Tagen/.test(h) && /Skonto/.test(h) && /MWST/.test(h);
+  })());
+  ok('Rechnung uebernimmt hinterlegte IBAN und MWST-Nummer', (() => {
+    const alt = buero;
+    buero = Object.assign({}, BUERO_STD, { iban: 'CH99 1234', mwst: 'CHE-999.888.777 MWST' });
+    const h = TEMPLATES.rechnung.bauen().pages[0].html;
+    buero = alt;
+    return /CH99 1234/.test(h) && /CHE-999.888.777/.test(h);
+  })());
+  ok('ohne hinterlegte Angaben steht ein Hinweis statt einer erfundenen Nummer', (() => {
+    const alt = buero;
+    buero = Object.assign({}, BUERO_STD);
+    const h = TEMPLATES.rechnung.bauen().pages[0].html;
+    buero = alt;
+    return /hinterlegen/.test(h) && !/CHE-123/.test(h);
+  })());
+  ok('Briefkopf baut sich aus den Firmenangaben', (() => {
+    const alt = buero;
+    buero = Object.assign({}, BUERO_STD, { firma: 'Gerber Bau AG', plzort: '3000 Bern' });
+    const k = kopfAusBuero();
+    buero = alt;
+    return /Gerber Bau AG/.test(k) && /3000 Bern/.test(k);
+  })());
+  ok('fehlende Felder lassen keine leeren Trennpunkte stehen', (() => {
+    const alt = buero;
+    buero = Object.assign({}, BUERO_STD, { firma: 'Nur Firma' });
+    const k = kopfAusBuero();
+    buero = alt;
+    return k.indexOf('&middot;') < 0;
+  })());
+  ok('Firmenangaben werden escaped (kein Markup aus einem Firmennamen)', (() => {
+    const alt = buero;
+    buero = Object.assign({}, BUERO_STD, { firma: '<b>x</b>' });
+    const k = kopfAusBuero();
+    buero = alt;
+    return /&lt;b&gt;/.test(k);
+  })());
+  ok('Fusszeile traegt Firma und Seitenzahl', (() => {
+    const alt = buero;
+    buero = Object.assign({}, BUERO_STD, { firma: 'Gerber Bau AG' });
+    const f = fussAusBuero();
+    buero = alt;
+    return /Gerber Bau AG/.test(f) && /\{Seite\} von \{Seiten\}/.test(f);
   })());
   ok('Offerte, Abnahme, Beiblatt und Regierapport nennen SIA 118',
     ['angebot', 'abnahme', 'beiblatt', 'regierapport'].every(k => /SIA 118/.test(TEMPLATES[k].bauen().pages[0].html)));

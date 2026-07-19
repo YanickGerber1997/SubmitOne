@@ -402,9 +402,29 @@ function bezugText(c1, r1, c2, r2) {
   if (c1 === c2 && r1 === r2) return a;
   return cellKey(Math.min(c1, c2), Math.min(r1, r2)) + ':' + cellKey(Math.max(c1, c2), Math.max(r1, r2));
 }
+/* Was steht in der Formel VOR der Einfuegestelle - ohne den zuletzt eingesetzten Bezug?
+   Daran entscheidet sich, ob aus einem gezogenen Bereich automatisch eine Summe wird. */
+function formelBisher(ziel, weg) {
+  if (!ziel) return '';
+  if (ziel.tagName === 'INPUT') {
+    const p = ziel.selectionStart == null ? ziel.value.length : ziel.selectionStart;
+    return ziel.value.slice(0, Math.max(0, p - weg));
+  }
+  const t = (ziel.textContent || '').replace(/\u200b/g, '');
+  return t.slice(0, Math.max(0, t.length - weg));
+}
+/* Steht bisher nur ein Gleichzeichen und wird ein BEREICH gezogen, ist ein nackter
+   Bereich (=A1:A5) keine gueltige Formel - gemeint ist praktisch immer die Summe.
+   Bei einer einzelnen Zelle bleibt es beim blossen Bezug (=A1 ist sinnvoll). */
+function bezugMitSumme(bisher, text) {
+  const nurGleich = /^\s*=\s*$/.test(bisher || '');
+  const istBereich = String(text).indexOf(':') > 0;
+  return (nurGleich && istBereich) ? 'SUMME(' + text + ')' : text;
+}
 function bezugEinsetzen(text) {
   const ziel = formelZiel(); if (!ziel) return;
   const weg = (punktModus && punktModus.len) || 0;
+  text = bezugMitSumme(formelBisher(ziel, weg), text);
   // Fall 1: Formelzeile (ein echtes Eingabefeld) - ueber die Cursorposition
   if (ziel.tagName === 'INPUT') {
     const p = ziel.selectionStart == null ? ziel.value.length : ziel.selectionStart;
@@ -5361,6 +5381,45 @@ function selfTest() {
     bereichAusfuellen(0, 0, 0, 0, 0, 1);
     const q = cellText(gridGet(curGrid, 0, 0)); curGrid = alt;
     return q === 'Quelle';
+  })());
+
+  // --- Nach blossem = ergibt ein gezogener Bereich die Summe ---
+  ok('nach nur = wird aus einem Bereich automatisch die Summe',
+    bezugMitSumme('=', 'A1:A5') === 'SUMME(A1:A5)');
+  ok('eine einzelne Zelle bleibt ein blosser Bezug (=A1 ist sinnvoll)',
+    bezugMitSumme('=', 'A1') === 'A1');
+  ok('in einer angefangenen Formel wird NICHT gesummt', (() => {
+    return bezugMitSumme('=SUMME(', 'A1:A5') === 'A1:A5'
+      && bezugMitSumme('=A1+', 'B1:B5') === 'B1:B5'
+      && bezugMitSumme('=MITTELWERT(', 'A1:A9') === 'A1:A9';
+  })());
+  ok('Leerzeichen nach dem Gleichzeichen aendern nichts',
+    bezugMitSumme('= ', 'A1:B2') === 'SUMME(A1:B2)');
+  ok('Auto-Summe greift im ganzen Ablauf: = tippen, Bereich ziehen', (() => {
+    const altZ = formelZiel, altP = punktModus;
+    const feld = { tagName: 'INPUT', value: '=', selectionStart: 1,
+                   setSelectionRange(x) { this.selectionStart = x; }, focus() {} };
+    formelZiel = () => feld;
+    punktModus = { c1: 0, r1: 0, len: 0 };
+    bezugEinsetzen('A1');            // Klick auf die erste Zelle
+    const nach1 = feld.value;
+    bezugEinsetzen('A1:A5');         // ueber den Bereich gezogen
+    const nach2 = feld.value;
+    formelZiel = altZ; punktModus = altP;
+    return nach1 === '=A1' && nach2 === '=SUMME(A1:A5)';
+  })());
+  ok('zurueckgezogen auf eine Zelle verschwindet die Summe wieder', (() => {
+    const altZ = formelZiel, altP = punktModus;
+    const feld = { tagName: 'INPUT', value: '=', selectionStart: 1,
+                   setSelectionRange(x) { this.selectionStart = x; }, focus() {} };
+    formelZiel = () => feld;
+    punktModus = { c1: 0, r1: 0, len: 0 };
+    bezugEinsetzen('A1:A5');
+    const mit = feld.value;
+    bezugEinsetzen('A1');            // wieder zusammengezogen
+    const ohne = feld.value;
+    formelZiel = altZ; punktModus = altP;
+    return mit === '=SUMME(A1:A5)' && ohne === '=A1';
   })());
 
   // --- Bezug per Klick: das Einsetzen selbst durchspielen ---

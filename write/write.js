@@ -373,6 +373,42 @@ function setDirty(v) {
    Fuer den blossen Wechsel des Cursors in eine andere Zeile: endEdit() wuerde ueber
    commitCellHtml die ganze Tabelle neu zeichnen - das flackert und verschiebt die Zeilen,
    waehrend man gerade eine Stelle angeklickt hat. */
+/* ---- Bezug per Klick ("Zeigen" wie in Excel) ----
+   Steht in der Zelle eine Formel, waehlt ein Klick auf eine andere Zelle nicht die
+   Auswahl um, sondern setzt deren Adresse an der Cursorstelle in die Formel ein.
+   Ziehen ergibt einen Bereich. */
+let punktModus = null;   // { c1, r1, len } - len = Laenge des zuletzt eingesetzten Bezugs
+
+function formelEingabe() {
+  return !!editingTd && /^\s*=/.test(editingTd.textContent || '');
+}
+/* Adresse bzw. Bereich aus zwei Eckpunkten - rein, im Test pruefbar */
+function bezugText(c1, r1, c2, r2) {
+  const a = cellKey(c1, r1);
+  if (c1 === c2 && r1 === r2) return a;
+  return cellKey(Math.min(c1, c2), Math.min(r1, r2)) + ':' + cellKey(Math.max(c1, c2), Math.max(r1, r2));
+}
+function bezugEinsetzen(text) {
+  if (!editingTd) return;
+  try {
+    editingTd.focus();
+    if (punktModus && punktModus.len > 0) {
+      for (let i = 0; i < punktModus.len; i++) document.execCommand('delete');   // vorherigen Bezug ersetzen
+    }
+    document.execCommand('insertText', false, text);
+    if (punktModus) punktModus.len = text.length;
+  } catch (_) {}
+}
+function punktZeigen(c1, r1, c2, r2) {
+  $$('#pageGrid td.pmref').forEach(t => t.classList.remove('pmref'));
+  if (c1 == null) return;
+  for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r++)
+    for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c++) {
+      const td = tdAt(c, r); if (td) td.classList.add('pmref');
+    }
+}
+function punktBeenden() { punktModus = null; punktZeigen(null); }
+
 function zelleSchliessen() {
   if (!editingTd) return false;
   zelleSpiegeln();
@@ -2089,9 +2125,20 @@ function wire() {
   $('#rowRuler').addEventListener('contextmenu', e => { const seg = e.target.closest('.rr-seg'); if (!seg) return; e.preventDefault(); openHeaderMenu('row', +seg.dataset.r, e.clientX, e.clientY); });
   $('#canvas').addEventListener('scroll', () => { if (appEl.classList.contains('calc-mode')) $('#colRuler').style.top = $('#canvas').scrollTop + 'px'; else buildWriteRulers(); });
   // Maus: Auswahl + Bereich ziehen (delegiert auf #pageGrid)
-  let gridDragging = false;
+  let gridDragging = false, punktZiehen = false;
   pgEl.addEventListener('mousedown', e => {
     const td = e.target.closest('td[data-c]'); if (!td) return;
+    if (formelEingabe() && td !== editingTd) {
+      // Formel offen: Klick setzt den Bezug ein, statt die Auswahl umzustellen
+      e.preventDefault();
+      const c = +td.dataset.c, r = +td.dataset.r;
+      punktModus = { c1: c, r1: r, len: 0 };
+      bezugEinsetzen(bezugText(c, r, c, r));
+      punktZeigen(c, r, c, r);
+      punktZiehen = true;
+      return;
+    }
+    punktBeenden();
     // Im Write-Modus die alte Zelle nur schliessen, nicht die Tabelle neu aufbauen -
     // sonst verschiebt sich das Blatt genau in dem Moment, in dem man hinklickt.
     if (editingTd && editingTd !== td) { if (dokumentModus()) zelleSchliessen(); else endEdit(true); }
@@ -2107,8 +2154,20 @@ function wire() {
     gridDragging = true; e.preventDefault();
     selectCell(+td.dataset.c, +td.dataset.r, e.shiftKey); calcFocus();
   });
-  pgEl.addEventListener('mousemove', e => { if (!gridDragging) return; const td = e.target.closest('td[data-c]'); if (td) selectCell(+td.dataset.c, +td.dataset.r, true); });
-  document.addEventListener('mouseup', () => { gridDragging = false; });
+  pgEl.addEventListener('mousemove', e => {
+    if (punktZiehen && punktModus) {
+      const td = e.target.closest('td[data-c]'); if (!td) return;
+      const c = +td.dataset.c, r = +td.dataset.r;
+      bezugEinsetzen(bezugText(punktModus.c1, punktModus.r1, c, r));
+      punktZeigen(punktModus.c1, punktModus.r1, c, r);
+      return;
+    }
+    if (!gridDragging) return; const td = e.target.closest('td[data-c]'); if (td) selectCell(+td.dataset.c, +td.dataset.r, true); });
+  document.addEventListener('mouseup', () => {
+    gridDragging = false;
+    // Nach dem Loslassen zaehlt der naechste Klick als NEUER Bezug (=A1+B2), nicht als Ersatz
+    if (punktZiehen) { punktZiehen = false; if (punktModus) punktModus.len = 0; }
+  });
   pgEl.addEventListener('dblclick', e => { const td = e.target.closest('td[data-c]'); if (td) { selectCell(+td.dataset.c, +td.dataset.r); beginEdit(); } });
   pgEl.addEventListener('contextmenu', e => { const td = e.target.closest('td[data-c]'); if (!td) return; e.preventDefault(); if (!td.classList.contains('sel')) selectCell(+td.dataset.c, +td.dataset.r); showGridMenu(e.clientX, e.clientY); });
   $('#ctxmenu').addEventListener('click', e => { const g = e.target.closest('button')?.dataset.g; if (g) gridMenuAction(g); });
@@ -4552,6 +4611,26 @@ function selfTest() {
     const kal = evalCell(3, 0), arb = evalCell(4, 0), leer = evalCell(3, 1);
     curGrid = alt;
     return kal === 7 && arb === 5 && leer === '';
+  })());
+
+  // --- Bezug per Klick ("Zeigen") ---
+  ok('einzelne Zelle ergibt eine Adresse', bezugText(0, 0, 0, 0) === 'A1' && bezugText(2, 4, 2, 4) === 'C5');
+  ok('gezogener Bereich ergibt A1:B5', bezugText(0, 0, 1, 4) === 'A1:B5');
+  ok('Bereich stimmt auch, wenn man rueckwaerts zieht', bezugText(1, 4, 0, 0) === 'A1:B5');
+  ok('einzeilig gezogen ergibt eine Zeile', bezugText(0, 2, 3, 2) === 'A3:D3');
+  ok('formelEingabe erkennt nur echte Formeln', (() => {
+    const alt = editingTd;
+    editingTd = { textContent: '=SUMME(' };  const ja = formelEingabe();
+    editingTd = { textContent: ' =A1' };     const jaMitLeer = formelEingabe();
+    editingTd = { textContent: 'Beton' };    const nein = formelEingabe();
+    editingTd = null;                        const ohne = formelEingabe();
+    editingTd = alt;
+    return ja && jaMitLeer && !nein && !ohne;
+  })());
+  ok('punktBeenden raeumt den Zustand auf', (() => {
+    punktModus = { c1: 0, r1: 0, len: 3 };
+    punktBeenden();
+    return punktModus === null;
   })());
 
   // --- Formel-Zwischenspeicher: schneller, aber darf nichts verfaelschen ---

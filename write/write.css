@@ -635,7 +635,9 @@ body[data-theme="dark"] .editor .sp-err{text-decoration-color:#ff7a70}
 .app.lines-off .cgrid td{cursor:text;vertical-align:top}
 .app.lines-off .cgrid td.sel{background:none}
 .app.lines-off .cgrid td.active{background:none;box-shadow:none}
-.app.lines-off .cgrid td.celledit{outline:none;background:none;white-space:pre-wrap;overflow:visible}
+.app.lines-off /* Zellen, die gerade per Klick in eine Formel gezeigt werden */
+.cgrid td.pmref{outline:2px dashed var(--accent);outline-offset:-2px;background:var(--accent-soft)}
+.cgrid td.celledit{outline:none;background:none;white-space:pre-wrap;overflow:visible}
 .app.lines-off .cgrid td.sel::selection,.app.lines-off .cgrid td::selection{background:var(--accent-soft)}
 .app.lines-off #cellHi{display:none}
 .app.lines-off .calc-colruler,.app.lines-off .calc-rowruler{display:none}

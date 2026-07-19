@@ -2793,7 +2793,10 @@ function drawRuler() {
   if (!doc) return;
   const wrap = $('#rulerWrap'), r = $('#ruler');
   // In Calc sind die Spalten-/Zeilenköpfe selbst das Lineal → cm-Lineal ausblenden
-  if (appEl.classList.contains('focus') || appEl.classList.contains('slides-mode') || appEl.classList.contains('calc-mode')) { wrap.style.display = 'none'; return; }
+  // Nur im echten Calc ausblenden - dort sind die Spalten-/Zeilenkoepfe selbst das Lineal.
+  // In Write wird es gebraucht: dort stehen die Spaltengrenzen als Marken, wie Tabstopps in Word.
+  const echtesCalc = appEl.classList.contains('calc-mode') && typeof gitterSichtbar === 'function' && gitterSichtbar(activePage());
+  if (appEl.classList.contains('focus') || echtesCalc) { wrap.style.display = 'none'; return; }
   wrap.style.display = '';
   const z = parseFloat(page.style.zoom) || 1;
   const wmm = pageWidthMm(), wpx = wmm * MM * z;
@@ -2803,12 +2806,25 @@ function drawRuler() {
   html += `<div class="rmargin left" style="width:${m.left * MM * z}px"></div>`;
   html += `<div class="rmargin right" style="width:${m.right * MM * z}px"></div>`;
   (doc.einstellungen.tabs || []).forEach((t, i) => { html += `<div class="rtab" data-i="${i}" style="left:${t * MM * z}px" title="Tabstopp – Klick entfernt"></div>`; });
+  // Spaltengrenzen: die Spalten EXISTIEREN auch in Write - sie sind die Tabstopps, nur als Zellen
+  // gedacht. Sichtbar im Lineal statt als Linien im Blatt: man sieht, wo Tab landet, ohne Gitter.
+  if (Array.isArray(gridColPx) && gridColPx.length > 1) {
+    let x = m.left * MM;
+    for (let c = 0; c < gridColPx.length - 1; c++) {
+      x += gridColPx[c] || 0;   // Spaltenbreiten liegen in px bei Zoom 1 vor
+      html += `<div class="rcol" data-c="${c}" style="left:${x * z}px" title="Spalte ${idxToCol(c)} | ${idxToCol(c + 1)} – ziehen verschiebt die Grenze"></div>`;
+    }
+  }
   html += `<div class="rhandle" id="rhLeft" style="left:${m.left * MM * z}px" title="Linker Rand"></div>`;
   html += `<div class="rhandle" id="rhRight" style="left:${(wmm - m.right) * MM * z}px" title="Rechter Rand"></div>`;
   r.innerHTML = html;
   $('#rhLeft').addEventListener('mousedown', e => startMarginDrag('left', e));
   $('#rhRight').addEventListener('mousedown', e => startMarginDrag('right', e));
   $$('#ruler .rtab').forEach(t => t.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); doc.einstellungen.tabs.splice(+t.dataset.i, 1); drawRuler(); scheduleSave(); }));
+  $$('#ruler .rcol').forEach(t => t.addEventListener('mousedown', e => {
+    e.preventDefault(); e.stopPropagation();
+    startColResize(+t.dataset.c, e);          // dieselbe Mechanik wie der Griff im Calc-Spaltenkopf
+  }));
 }
 function rulerMm(clientX) { const r = $('#ruler').getBoundingClientRect(); const z = parseFloat(page.style.zoom) || 1; return Math.max(0, Math.min(pageWidthMm(), (clientX - r.left) / (MM * z))); }
 function startMarginDrag(which, e) {
@@ -3500,7 +3516,7 @@ function calcExtent() {   // Struktur: max. Spalten über alle Zeilen, Zeilen
   return { cols: Math.max(1, ...z.map(x => x.cells.length)), rows: z.length };
 }
 let gridCols = 1, gridRows = 1, calcFitRows = 0;
-function renderCalc() { renderSheet(); fitCalcRows(); calcPaginate(); buildCalcRulers(); highlightSel(); updateStats(); updatePages(); }
+function renderCalc() { renderSheet(); fitCalcRows(); calcPaginate(); buildCalcRulers(); highlightSel(); updateStats(); updatePages(); drawRuler(); }
 // Calc bei Inhalt > A4 in mehrere A4-Blätter aufteilen (Lücke mit Fuss-/Kopfzeile, wie Write)
 function calcPaginate() {
   if (!doc || activePage().typ !== 'calc') return;

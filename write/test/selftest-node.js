@@ -59,6 +59,21 @@ catch (e) { console.log('LADEFEHLER beim Auswerten von write.js:\n', (e && e.sta
 
 if (sandbox.__ERR) { console.log('SELFTEST-FEHLER:\n', sandbox.__ERR); process.exit(1); }
 const R = sandbox.__R;
+if (R) {  // CSS-Waechter: im JS verwendete Klassen muessen im Stylesheet existieren.
+  // Anlass: ich habe zweimal eine Klasse benutzt (rib-sep, rcol), die es gar nicht gab -
+  // das Element bleibt dann unsichtbar oder unformatiert, ohne jede Fehlermeldung.
+  const cssTxt = fs.readFileSync(__dirname + '/../write.css', 'utf8');
+  const jsTxt = fs.readFileSync(file, 'utf8');
+  const gefunden = new Set();
+  const re = /class="([a-zA-Z][a-zA-Z0-9 _-]*)"/g;
+  let mm;
+  while ((mm = re.exec(jsTxt))) mm[1].split(/\s+/).forEach(k => { if (k) gefunden.add(k); });
+  const fehlend = [...gefunden].filter(k => !new RegExp('\.' + k + '(?![a-zA-Z0-9_-])').test(cssTxt));
+  R.R.push({ name: 'CSS: jede im JS gesetzte Klasse hat eine Regel (' + gefunden.size + ' geprueft)',
+             ok: fehlend.length === 0, msg: fehlend.join(', ') });
+  fehlend.length ? R.fail++ : R.pass++;
+}
+
 if (R) {  // Quelltext-Waechter: Aufrufe, die zur Laufzeit sicher fehlschlagen wuerden
   const src0 = fs.readFileSync(file, 'utf8');
   const pruef = [

@@ -361,6 +361,12 @@ body[data-mode="slides"] .editor img{max-width:100%}
 .rhandle::after{content:'';position:absolute;left:5px;top:3px;width:2px;height:20px;background:var(--accent);border-radius:2px}
 .rhandle:hover::after{width:3px;left:4.5px}
 .rtab{position:absolute;bottom:1px;width:0;height:0;margin-left:-4px;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:6px solid var(--ink-soft);cursor:pointer}
+/* Spaltengrenze im Lineal: die Spalten existieren auch in Write - sie sind die Tabstopps,
+   nur als Zellen gedacht. Im Lineal sichtbar, damit das Blatt selbst frei von Linien bleibt. */
+.rcol{position:absolute;top:0;bottom:0;width:9px;margin-left:-4px;cursor:col-resize}
+.rcol::before{content:'';position:absolute;left:4px;top:2px;bottom:2px;width:1px;background:var(--accent);opacity:.45}
+.rcol::after{content:'';position:absolute;left:1px;bottom:0;width:7px;height:3px;background:var(--accent);opacity:.75}
+.rcol:hover::before,.rcol:hover::after{opacity:1}
 .editor:empty::before{content:attr(data-ph);color:var(--ink-faint)}
 .editor>*:first-child{margin-top:0}
 .editor h1{font-size:30px;font-weight:700;line-height:1.2;margin:.4em 0 .35em;letter-spacing:-.4px}

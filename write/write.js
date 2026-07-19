@@ -2024,6 +2024,40 @@ function wire() {
   };
   pgEl.addEventListener('keydown', calcKey);
 
+  // Kopieren / Ausschneiden / Einfuegen im Raster (nur wenn keine Zelle offen ist -
+  // waehrend des Schreibens gilt das normale Verhalten innerhalb der Zelle)
+  const imRaster = () => doc && curGrid && activePage().typ === 'calc' && !editingTd
+    && (document.activeElement === pgEl || pgEl.contains(document.activeElement));
+  const kopieren = (e, ausschneiden) => {
+    if (!imRaster()) return;
+    const { c1, c2, r1, r2 } = rangeBounds();
+    zwischenablage = bereichLesen(c1, c2, r1, r2);
+    const text = bereichAlsText(zwischenablage.zeilen);
+    zwischenablage.text = text;
+    try { e.clipboardData.setData('text/plain', text); e.preventDefault(); } catch (_) { return; }
+    if (ausschneiden && !viewOnly) {
+      bereichLeeren(c1, c2, r1, r2);
+      activePage().html = gridToHtml(curGrid); renderCalc(); scheduleSave();
+    }
+  };
+  document.addEventListener('copy', e => kopieren(e, false));
+  document.addEventListener('cut', e => kopieren(e, true));
+  document.addEventListener('paste', e => {
+    if (!imRaster() || viewOnly) return;
+    let text = ''; try { text = e.clipboardData.getData('text/plain') || ''; } catch (_) {}
+    if (!text) return;
+    e.preventDefault();
+    // Stammt der Text aus unserer eigenen Kopie? Dann die reiche Fassung nehmen (Formeln + Formate).
+    const daten = (zwischenablage && zwischenablage.text === text)
+      ? zwischenablage
+      : { zeilen: textAlsBereich(text).map(z => z.map(esc)), fmt: {}, cfmt: {}, c1: selC, r1: selR };
+    if (!bereichEinfuegen(daten, selC, selR)) return;
+    activePage().html = gridToHtml(curGrid); renderCalc();
+    const h = daten.zeilen.length, b = daten.zeilen[0].length;
+    selectCell(selC, selR); selectCell(selC + b - 1, selR + h - 1, true);   // Eingefuegtes markieren, wie Excel
+    calcFocus(); scheduleSave();
+  });
+
   // Zoom & Ausrichtung
   $('#zoomIn').addEventListener('click', () => zoomStep(.1));
   $('#zoomOut').addEventListener('click', () => zoomStep(-.1));
@@ -3004,6 +3038,30 @@ function drawWriteCellHi(rowEl, col) {
   } catch (_) { hi.hidden = true; }
 }
 
+/* Kriterium wie in Excel: ">100", "<=5", "<>0", "=Text" oder schlicht ein Wert.
+   Zahlen werden als Zahlen verglichen, alles andere als Text (Gross/Klein egal). */
+function kriteriumPasst(wert, krit) {
+  const k = String(krit == null ? '' : krit).trim();
+  const m = /^(<=|>=|<>|<|>|=)?\s*(.*)$/.exec(k);
+  const op = m[1] || '=', roh = m[2];
+  const zahlKrit = parseFloat(String(roh).replace(',', '.'));
+  const beide = (typeof wert === 'number' || (wert !== '' && !isNaN(parseFloat(wert)))) && !isNaN(zahlKrit);
+  if (beide) {
+    const a = typeof wert === 'number' ? wert : parseFloat(String(wert).replace(',', '.'));
+    switch (op) { case '<': return a < zahlKrit; case '>': return a > zahlKrit;
+      case '<=': return a <= zahlKrit; case '>=': return a >= zahlKrit;
+      case '<>': return a !== zahlKrit; default: return a === zahlKrit; }
+  }
+  const a = String(wert == null ? '' : wert).trim().toLowerCase(), b = String(roh).trim().toLowerCase();
+  switch (op) { case '<>': return a !== b; case '<': return a < b; case '>': return a > b;
+    case '<=': return a <= b; case '>=': return a >= b; default: return a === b; }
+}
+function istFehler(v) {
+  // Division durch null ergibt INTERN Infinity und wird erst ganz am Schluss zu '#FEHLER'.
+  // Mitten in einer Formel muss WENNFEHLER das ebenfalls als Fehler sehen.
+  return (typeof v === 'string' && v.charAt(0) === '#') || (typeof v === 'number' && !isFinite(v));
+}
+
 /* Formel um dc Spalten / dr Zeilen verschieben – wie Excel beim Ausfuellen und Kopieren.
    Relative Bezuege wandern mit, mit $ festgehaltene bleiben stehen. Rein: im Test pruefbar. */
 function verschiebeFormel(f, dc, dr) {
@@ -3067,6 +3125,27 @@ function evalFormula(src, seen) {
       case 'POTENZ': case 'POWER': return Math.pow(toNum(args[0] && args[0].val), toNum(args[1] && args[1].val));
       case 'GANZZAHL': case 'INT': return Math.floor(toNum(args[0] && args[0].val));
       case 'WENN': case 'IF': { const c = args[0] && args[0].val; const t = (c === true || (typeof c === 'number' && c !== 0)); return t ? (args[1] ? args[1].val : 0) : (args[2] ? args[2].val : 0); }
+      // --- Ergaenzungen fuer Bau-Kostenzusammenstellungen ---
+      case 'WENNFEHLER': case 'IFERROR': { const v = args[0] ? args[0].val : ''; return istFehler(v) ? (args[1] ? args[1].val : '') : v; }
+      case 'AUFRUNDEN': case 'ROUNDUP': { const f = Math.pow(10, args[1] ? toNum(args[1].val) : 0); const x = toNum(args[0] && args[0].val); return (x < 0 ? -Math.ceil(-x * f) : Math.ceil(x * f)) / f; }
+      case 'ABRUNDEN': case 'ROUNDDOWN': { const f = Math.pow(10, args[1] ? toNum(args[1].val) : 0); const x = toNum(args[0] && args[0].val); return (x < 0 ? -Math.floor(-x * f) : Math.floor(x * f)) / f; }
+      case 'UND': case 'AND': { let alle = true; args.forEach(a => { const vs = a.range ? a.vals : [a.val]; vs.forEach(v => { if (!(v === true || (typeof v === 'number' && v !== 0))) alle = false; }); }); return alle; }
+      case 'ODER': case 'OR': { let eins = false; args.forEach(a => { const vs = a.range ? a.vals : [a.val]; vs.forEach(v => { if (v === true || (typeof v === 'number' && v !== 0)) eins = true; }); }); return eins; }
+      case 'NICHT': case 'NOT': { const v = args[0] && args[0].val; return !(v === true || (typeof v === 'number' && v !== 0)); }
+      case 'VERKETTEN': case 'TEXTKETTE': case 'CONCAT': { let t = ''; args.forEach(a => { const vs = a.range ? a.vals : [a.val]; vs.forEach(v => { t += (v == null ? '' : String(v)); }); }); return t; }
+      case 'ZAEHLENWENN': case 'ZÄHLENWENN': case 'COUNTIF': {
+        const vs = (args[0] && args[0].range) ? args[0].vals : [args[0] && args[0].val];
+        const k = args[1] ? args[1].val : '';
+        return vs.filter(v => kriteriumPasst(v, k)).length;
+      }
+      case 'SUMMEWENN': case 'SUMIF': {
+        const vs = (args[0] && args[0].range) ? args[0].vals : [args[0] && args[0].val];
+        const k = args[1] ? args[1].val : '';
+        const sum = (args[2] && args[2].range) ? args[2].vals : vs;   // dritter Bereich = Summenbereich
+        let t = 0;
+        vs.forEach((v, i) => { if (kriteriumPasst(v, k)) t += toNum(sum[i]); });
+        return t;
+      }
       default: return '#NAME';
     }
   }
@@ -3445,6 +3524,56 @@ function autoSummeFormel(c, r) {
   while (c - m - 1 >= 0 && String(cellText(gridGet(curGrid, c - m - 1, r))) !== '') m++;
   if (m >= 1) return '=SUMME(' + idxToCol(c - m) + (r + 1) + ':' + idxToCol(c - 1) + (r + 1) + ')';
   return null;
+}
+/* ============ Zellbereiche kopieren / ausschneiden / einfuegen ============
+   Fehlte bisher vollstaendig - fuer Ausmasslisten der wichtigste Handgriff ueberhaupt.
+   Der Austausch nach aussen laeuft ueber Tabulator-Text (TSV), das versteht Excel direkt.
+   Innerhalb von Paper wird zusaetzlich die reiche Fassung gemerkt (Formeln + Zellformate). */
+let zwischenablage = null;
+const TAB = String.fromCharCode(9), NL = String.fromCharCode(10), CR = String.fromCharCode(13);
+
+function bereichLesen(c1, c2, r1, r2) {
+  const zeilen = [], fmt = {}, cfmt = {};
+  const F = curFmt(), C = curCfmt();
+  for (let r = r1; r <= r2; r++) {
+    const zeile = [];
+    for (let c = c1; c <= c2; c++) {
+      zeile.push(gridGet(curGrid, c, r) || '');
+      const von = c + ',' + r, nach = (c - c1) + ',' + (r - r1);
+      if (F[von]) fmt[nach] = F[von];
+      if (C[von]) cfmt[nach] = C[von];
+    }
+    zeilen.push(zeile);
+  }
+  return { zeilen, fmt, cfmt, c1, r1 };
+}
+function bereichAlsText(zeilen) {   // TSV - Tabulator trennt Spalten, Zeilenumbruch die Zeilen
+  const weg = new RegExp('[' + TAB + NL + CR + ']', 'g');
+  return (zeilen || []).map(z => z.map(c => plainText(c).replace(weg, ' ')).join(TAB)).join(NL);
+}
+function textAlsBereich(text) {
+  let t = String(text == null ? '' : text);
+  while (t.length && (t.charAt(t.length - 1) === NL || t.charAt(t.length - 1) === CR)) t = t.slice(0, -1);
+  return t.split(new RegExp(CR + '?' + NL)).map(z => z.split(TAB));
+}
+function bereichEinfuegen(daten, zc, zr) {
+  if (!curGrid || !daten || !daten.zeilen || !daten.zeilen.length) return false;
+  const dc = zc - (daten.c1 || 0), dr = zr - (daten.r1 || 0);
+  const F = curFmt(), C = curCfmt();
+  daten.zeilen.forEach((zeile, i) => zeile.forEach((wert, j) => {
+    const c = zc + j, r = zr + i;
+    gridEnsure(curGrid, c, r);
+    const roh = cellText(wert);
+    // Formeln wandern mit - relative Bezuege verschoben, $-Bezuege fest (wie Excel)
+    curGrid.zeilen[r].cells[c] = (roh.charAt(0) === '=') ? verschiebeFormel(roh, dc, dr) : wert;
+    const her = j + ',' + i, hin = c + ',' + r;
+    if (daten.fmt && daten.fmt[her]) F[hin] = daten.fmt[her];
+    if (daten.cfmt && daten.cfmt[her]) C[hin] = daten.cfmt[her];
+  }));
+  return true;
+}
+function bereichLeeren(c1, c2, r1, r2) {
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { gridEnsure(curGrid, c, r); curGrid.zeilen[r].cells[c] = ''; }
 }
 function rangeBounds() { return { c1: Math.min(anchorC, selC), c2: Math.max(anchorC, selC), r1: Math.min(anchorR, selR), r2: Math.max(anchorR, selR) }; }
 // Namensfeld: Einzelzelle → „A1", Bereich → „ZeilenxSpalten" (wie Excel beim Ziehen)
@@ -3933,6 +4062,54 @@ function selfTest() {
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  // --- P3: Zellbereiche kopieren/einfuegen + Bau-Formeln ---
+  ok('bereichAlsText baut Tabulator-Text (Excel versteht das direkt)',
+    bereichAlsText([['a', 'b'], ['c', 'd']]) === 'a' + TAB + 'b' + NL + 'c' + TAB + 'd');
+  ok('bereichAlsText nimmt Auszeichnung weg (nur Werte in die Zwischenablage)',
+    bereichAlsText([['<b>fett</b>']]) === 'fett');
+  ok('textAlsBereich liest Tabulator-Text zurueck',
+    JSON.stringify(textAlsBereich('a' + TAB + 'b' + NL + 'c' + TAB + 'd')) === JSON.stringify([['a', 'b'], ['c', 'd']]));
+  ok('textAlsBereich vertraegt Windows-Zeilenenden und Leerzeile am Schluss',
+    JSON.stringify(textAlsBereich('a' + TAB + 'b' + CR + NL + 'c' + TAB + 'd' + CR + NL)) === JSON.stringify([['a', 'b'], ['c', 'd']]));
+  ok('Rundlauf Kopieren -> Einfuegen ohne Verlust', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 2, zeilen: [{ tag: 'p', attrs: '', cells: ['1', '2'] }, { tag: 'p', attrs: '', cells: ['3', '4'] }], colStops: [] };
+    const t = bereichAlsText(bereichLesen(0, 1, 0, 1).zeilen);
+    const r = JSON.stringify(textAlsBereich(t)) === JSON.stringify([['1', '2'], ['3', '4']]);
+    curGrid = alt; return r;
+  })());
+  ok('Einfuegen verschiebt Formeln mit (relativ wandert, $ bleibt)', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 3, zeilen: [{ tag: 'p', attrs: '', cells: ['=A1+$B$1', '', ''] }], colStops: [] };
+    bereichEinfuegen({ zeilen: [['=A1+$B$1']], fmt: {}, cfmt: {}, c1: 0, r1: 0 }, 1, 0);
+    const v = cellText(gridGet(curGrid, 1, 0)); curGrid = alt;
+    return v === '=B1+$B$1';
+  })());
+  ok('Einfuegen von reinem Text laesst Text unveraendert', (() => {
+    const alt = curGrid;
+    curGrid = { cols: 2, zeilen: [{ tag: 'p', attrs: '', cells: ['', ''] }], colStops: [] };
+    bereichEinfuegen({ zeilen: [['Beton', '12.5']], c1: 0, r1: 0 }, 0, 0);
+    const v = [cellText(gridGet(curGrid, 0, 0)), cellText(gridGet(curGrid, 1, 0))].join('|'); curGrid = alt;
+    return v === 'Beton|12.5';
+  })());
+  ok('Einfuegen ohne Daten tut nichts', bereichEinfuegen(null, 0, 0) === false && bereichEinfuegen({ zeilen: [] }, 0, 0) === false);
+
+  // Kriterien und neue Funktionen
+  ok('kriteriumPasst: Zahlenvergleiche', kriteriumPasst(120, '>100') && !kriteriumPasst(80, '>100')
+    && kriteriumPasst(5, '<=5') && kriteriumPasst(3, '<>4'));
+  ok('kriteriumPasst: Text ohne Gross/Klein-Unterschied', kriteriumPasst('Beton', 'beton') && !kriteriumPasst('Holz', 'beton'));
+  ok('kriteriumPasst: blosser Wert bedeutet gleich', kriteriumPasst(7, '7') && kriteriumPasst('x', 'x'));
+  ok('WENNFEHLER faengt Fehler ab', evalRaw('=WENNFEHLER(1/0;"kein Wert")') === 'kein Wert');
+  ok('WENNFEHLER laesst gute Werte durch', evalRaw('=WENNFEHLER(6/2;"x")') === 3);
+  ok('AUFRUNDEN / ABRUNDEN auf Stellen', evalRaw('=AUFRUNDEN(12.341;2)') === 12.35 && evalRaw('=ABRUNDEN(12.349;2)') === 12.34);
+  ok('AUFRUNDEN bei negativen Zahlen rundet vom Null weg', evalRaw('=AUFRUNDEN(-12.341;2)') === -12.35);
+  ok('UND / ODER / NICHT', evalRaw('=UND(1>0;2>1)') === 'WAHR' && evalRaw('=ODER(1>2;2>1)') === 'WAHR'
+    && evalRaw('=UND(1>2;2>1)') === 'FALSCH' && evalRaw('=NICHT(1>2)') === 'WAHR');
+  ok('VERKETTEN fuegt zusammen', evalRaw('=VERKETTEN("NPK ";"113")') === 'NPK 113');
+  ok('istFehler erkennt Fehlerwerte UND Unendlich (Division durch null)',
+    istFehler('#FEHLER') && istFehler('#ZIRKEL') && istFehler(Infinity) && istFehler(NaN)
+    && !istFehler('3') && !istFehler(0) && !istFehler(-5));
 
   // --- P1/P2: stille Datenverluste und ihre Waechter ---
   ok('Zell-Auszeichnung bleibt erhalten: ZELL_INLINE deckt Fett/Kursiv/Link/Bild ab',

@@ -2692,6 +2692,15 @@ function setColumns(n) {
   scheduleSave();
 }
 function doInsert(kind) {
+  if (kind === 'seitenzahl') {   // Platzhalter in die Fusszeile - wird beim Drucken je Blatt ersetzt
+    const f = $('#zoneF'); if (!f) return;
+    const txt = 'Seite {Seite} von {Seiten}';
+    if (document.activeElement === f) { try { document.execCommand('insertText', false, txt); } catch (_) { f.innerHTML += ' ' + txt; } }
+    else f.innerHTML = (f.innerHTML.trim() ? f.innerHTML + ' &nbsp; ' : '') + txt;
+    syncHF(); scheduleSave();
+    toast('Seitenzahl in der Fusszeile – beim Drucken wird sie je Blatt eingesetzt.');
+    return;
+  }
   if (inCalc() && ['link', 'image', 'table', 'toc', 'hr'].includes(kind)) { toast('In Calc-Zellen nicht verfügbar – nutze die Tabellen-Werkzeuge (Rahmen, Verbinden, ±Sp/±Z).'); return; }
   if (kind === 'link') insertLink();
   else if (kind === 'image') $('#imgInput').click();
@@ -2792,6 +2801,31 @@ function setLineHeight(v) {
   $$('#segLine button').forEach(x => x.classList.toggle('on', +x.dataset.line === v));
   $('#selLine').value = String(v); scheduleSave();
 }
+/* Platzhalter in Kopf- und Fusszeile. Word loest das ueber Felder; hier reicht ein
+   Platzhalter, den man frei plazieren und mit Text mischen kann ('Seite {Seite} von {Seiten}').
+   Ersetzt wird erst beim Seitenaufbau - vorher weiss niemand, wie viele Seiten es sind. */
+const PLATZHALTER = ['{Seite}', '{Seiten}', '{Datum}', '{Titel}'];
+function seitenzahlenEinsetzen(html, nr, gesamt, titel, datum) {
+  return String(html == null ? '' : html)
+    .replace(/\{\s*seite\s*\}/gi, String(nr))
+    .replace(/\{\s*seiten\s*\}/gi, String(gesamt))
+    .replace(/\{\s*titel\s*\}/gi, esc(titel || ''))
+    .replace(/\{\s*datum\s*\}/gi, esc(datum || ''));
+}
+/* Platzhalter auf allen aufgebauten Vorschauseiten ersetzen */
+function seitenzahlenAufSeiten(seiten) {
+  let datum = ''; try { datum = new Date().toLocaleDateString('de-CH'); } catch (_) {}
+  const titel = (doc && doc.titel) || '';
+  const n = seiten.length;
+  seiten.forEach((p, i) => {
+    ['.pv-h', '.pv-f'].forEach(sel => {
+      const el = p.querySelector(sel); if (!el) return;
+      const roh = el.dataset.roh != null ? el.dataset.roh : (el.dataset.roh = el.innerHTML);
+      el.innerHTML = seitenzahlenEinsetzen(roh, i + 1, n, titel, datum);
+    });
+  });
+}
+
 function previewCalc() {
   if (!curGrid) curGrid = htmlToGrid(activePage().html);
   let maxR = -1, maxC = -1;
@@ -2807,8 +2841,39 @@ function previewCalc() {
   tbl += '</table>';
   const scroll = $('#previewScroll');
   $('#previewOverlay').hidden = false;
-  scroll.innerHTML = `<div class="pv-page${quer ? ' quer' : ''}"><div class="pv-h">${$('#zoneH').innerHTML}</div><div class="pv-c">${tbl}</div><div class="pv-f"><span>${$('#zoneF').innerHTML}</span><span class="pv-num"></span></div></div>`;
-  $('#pvInfo').textContent = 'Tabelle · ' + (maxR + 1) + ' × ' + (maxC + 1) + (quer ? ' · Querformat' : ' · Hochformat');
+  scroll.innerHTML = '';
+  const kopf = $('#zoneH').innerHTML, fuss = $('#zoneF').innerHTML;
+  const neueSeite = () => {
+    const p = document.createElement('div'); p.className = 'pv-page' + (quer ? ' quer' : '');
+    p.innerHTML = `<div class="pv-h">${kopf}</div><div class="pv-c"><table class="pv-grid"><tbody></tbody></table></div>`
+      + `<div class="pv-f"><span>${fuss}</span><span class="pv-num"></span></div>`;
+    scroll.appendChild(p); return p;
+  };
+  // Vorher lag die GANZE Tabelle auf einem einzigen Blatt - bei langen Listen lief sie
+  // ueber den Rand und Kopf-/Fusszeile erschienen nur auf der ersten Seite.
+  let p = neueSeite(), tb = p.querySelector('tbody');
+  const seiten = [p];
+  const pageHpx = (quer ? 210 : 297) * MM;
+  const headH = p.querySelector('.pv-h').offsetHeight, footH = p.querySelector('.pv-f').offsetHeight;
+  const cp = getComputedStyle(p.querySelector('.pv-c'));
+  const avail = pageHpx - headH - footH - (parseFloat(cp.paddingTop) || 0) - (parseFloat(cp.paddingBottom) || 0) - 2;
+  let used = 0;
+  for (let r = 0; r <= maxR; r++) {
+    const tr = document.createElement('tr');
+    for (let c = 0; c <= maxC; c++) {
+      const v = evalCell(c, r);
+      const td = document.createElement('td');
+      if (typeof v === 'number') td.className = 'num';
+      td.textContent = String(v);
+      tr.appendChild(td);
+    }
+    tb.appendChild(tr);
+    const h = tr.getBoundingClientRect().height;
+    if (used + h > avail && used > 0) { p = neueSeite(); seiten.push(p); tb = p.querySelector('tbody'); tb.appendChild(tr); used = h; }
+    else used += h;
+  }
+  seitenzahlenAufSeiten(seiten);
+  $('#pvInfo').textContent = 'Tabelle · ' + (maxR + 1) + ' × ' + (maxC + 1) + ' · ' + seiten.length + (seiten.length === 1 ? ' Seite' : ' Seiten') + (quer ? ' · Querformat' : ' · Hochformat');
   scroll.scrollTop = 0;
 }
 function printPreview() {
@@ -2846,7 +2911,8 @@ function printPreview() {
       c.removeChild(clone); nextPage(); c.appendChild(clone); used = outerH(clone);
     } else used += h;
   });
-  pages.forEach(pg => pg.querySelector('.pv-num').textContent = '');   // keine automatischen Seitenzahlen (Viewer = Druck)
+  pages.forEach(pg => pg.querySelector('.pv-num').textContent = '');   // Seitenzahl kommt ueber den Platzhalter {Seite}, nicht automatisch
+  seitenzahlenAufSeiten(pages);
   if (doc.einstellungen.erstSeiteOhne && pages[0]) { pages[0].querySelector('.pv-h').innerHTML = ''; pages[0].querySelector('.pv-f span:first-child').innerHTML = ''; }
   $('#pvInfo').textContent = pages.length + (pages.length === 1 ? ' Seite' : ' Seiten') + ' · ' + (quer ? 'Querformat' : 'Hochformat');
   scroll.scrollTop = 0;
@@ -4062,6 +4128,27 @@ function selfTest() {
   // gridToHtml (rein)
   const h = gridToHtml({ cols: 2, zeilen: [{ tag: 'p', cells: ['a', 'b'] }, { tag: 'h2', cells: ['Titel'] }], colStops: [] });
   ok('gridToHtml baut HTML', /a/.test(h) && /b/.test(h) && /<h2>Titel<\/h2>/.test(h), h);
+
+  // --- P4: Seitenzahlen als Platzhalter ---
+  ok('Platzhalter {Seite} und {Seiten} werden ersetzt',
+    seitenzahlenEinsetzen('Seite {Seite} von {Seiten}', 3, 7) === 'Seite 3 von 7');
+  ok('Platzhalter sind unabhaengig von Gross-/Kleinschreibung und Leerzeichen',
+    seitenzahlenEinsetzen('{seite}/{ SEITEN }', 2, 9) === '2/9');
+  ok('mehrere gleiche Platzhalter werden alle ersetzt',
+    seitenzahlenEinsetzen('{Seite}-{Seite}', 4, 4) === '4-4');
+  ok('Titel und Datum als Platzhalter',
+    seitenzahlenEinsetzen('{Titel} · {Datum}', 1, 1, 'Offerte', '19.07.2026') === 'Offerte · 19.07.2026');
+  ok('Titel wird escaped (kein eingeschleustes Markup aus dem Dokumentnamen)',
+    seitenzahlenEinsetzen('{Titel}', 1, 1, '<b>x</b>') === '&lt;b&gt;x&lt;/b&gt;');
+  ok('Text ohne Platzhalter bleibt unveraendert',
+    seitenzahlenEinsetzen('Musterfirma AG', 1, 5) === 'Musterfirma AG');
+  ok('leere Kopfzeile vertraegt sich', seitenzahlenEinsetzen(null, 1, 1) === '' && seitenzahlenEinsetzen('', 2, 3) === '');
+  ok('PLATZHALTER-Liste nennt alle unterstuetzten', (() => {
+    return PLATZHALTER.every(p => {
+      const name = p.slice(1, -1);
+      return seitenzahlenEinsetzen(p, 1, 1, 'T', 'D') !== p;   // jeder Platzhalter wird tatsaechlich ersetzt
+    });
+  })());
 
   // --- P3: Zellbereiche kopieren/einfuegen + Bau-Formeln ---
   ok('bereichAlsText baut Tabulator-Text (Excel versteht das direkt)',

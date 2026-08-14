@@ -105,9 +105,23 @@ p:last-child { margin-bottom: 0; }
 
 :focus-visible { outline: none; box-shadow: var(--ring); border-radius: var(--rund-s); }
 
-/* ---------- 3) Bausteine --------------------------------------------- */
+/* ---------- 3) Bausteine ---------------------------------------------
 
-.knopf {
+   SubmitOne nennt dieselben Dinge anders: .btn, .input, .select, .card,
+   .modal. Diese Namen stehen hier als Zweitname an derselben Regel, statt
+   in styles.css ein zweites Mal beschrieben zu werden. Zwei Namen sind
+   einer zu viel — aber 464 Knopf-Stellen umzubenennen ginge nicht
+   verlässlich: etliche bauen den Klassennamen erst zur Laufzeit
+   (class="btn${ist ? '' : ' ghost'}"), und dort trifft keine mechanische
+   Ersetzung. Die Zuordnung gehört deshalb an die Stelle, wo der Baustein
+   definiert ist, und nicht verteilt in die Vorlagen.
+
+   Eine Umkehrung ist dabei zu beachten: In SubZeit ist das nackte .knopf
+   der Umriss und .knopf-haupt der gefüllte Knopf. In SubmitOne ist das
+   nackte .btn der gefüllte, und .secondary dreht auf Umriss zurück. Beide
+   Lesarten stehen unten nebeneinander; die Form ist dieselbe. */
+
+.knopf, .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -124,16 +138,38 @@ p:last-child { margin-bottom: 0; }
     white-space: nowrap;
     transition: background .12s var(--weich), border-color .12s var(--weich);
 }
-.knopf:hover:not(:disabled) { background: var(--flaeche-3); border-color: var(--kante-stark); }
-.knopf:disabled { opacity: .4; cursor: default; }
+.knopf:hover:not(:disabled),
+.btn:hover:not(:disabled) { background: var(--flaeche-3); border-color: var(--kante-stark); }
+.knopf:disabled, .btn:disabled { opacity: .4; cursor: default; }
+.knopf:active, .btn:active { transform: translateY(1px); }
 
-.knopf-haupt { background: var(--v-600); border-color: var(--v-600); color: #fff; }
-.knopf-haupt:hover:not(:disabled) { background: var(--v-700); border-color: var(--v-700); }
+/* Gefüllt. In SubmitOne ist das die Vorgabe des nackten .btn. */
+.knopf-haupt, .btn { background: var(--v-600); border-color: var(--v-600); color: #fff; }
+.knopf-haupt:hover:not(:disabled),
+.btn:hover:not(:disabled) { background: var(--v-700); border-color: var(--v-700); }
 
+/* Umriss. In SubZeit das nackte .knopf, in SubmitOne .secondary — das den
+   gefüllten Grund des nackten .btn wieder zurücknimmt. */
+.btn.secondary { background: var(--flaeche); border-color: var(--kante); color: var(--text); }
+.btn.secondary:hover:not(:disabled) { background: var(--flaeche-3); border-color: var(--kante-stark); }
+
+/* Still. .knopf-still bleibt, was es war — es steht auf der schlichten
+   Grundform, der nur der Grund fehlt. .btn.ghost muss dagegen erst den
+   gefüllten Zustand des nackten .btn zurücknehmen, um dort anzukommen. */
 .knopf-still { background: transparent; }
-.knopf-winzig { padding: .1875rem .4375rem; font-size: var(--t-xs); }
+.btn.ghost { background: transparent; border-color: var(--kante); color: var(--text); }
+.btn.ghost:hover:not(:disabled) { background: var(--flaeche-3); border-color: var(--kante-stark); color: var(--text); }
 
-.knopf-gefahr { background: var(--gefahr); border-color: var(--gefahr); color: #fff; }
+.knopf-winzig, .btn.sm, .btn.xs { padding: .1875rem .4375rem; font-size: var(--t-xs); }
+
+/* Der Zeigehinweis auf .knopf-gefahr ist neu, und er ändert SubZeit ein
+   wenig: Bisher griff dort die Grundform, ein roter Knopf wurde unter dem
+   Zeiger also grau. Das war ein Fehler, kein Entwurf. Ihn beizubehalten,
+   nur damit beide Programme gleich bleiben, wäre der falsche Weg herum —
+   also ist er in beiden behoben. */
+.knopf-gefahr, .btn.danger { background: var(--gefahr); border-color: var(--gefahr); color: #fff; }
+.knopf-gefahr:hover:not(:disabled),
+.btn.danger:hover:not(:disabled) { background: var(--gefahr); border-color: var(--gefahr); filter: brightness(.92); }
 .knopf-gefahr-still { border-color: transparent; color: var(--gefahr); background: transparent; }
 .knopf-gefahr-still:hover { background: var(--gefahr-weich); }
 

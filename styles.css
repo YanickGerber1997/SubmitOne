@@ -455,21 +455,16 @@ body.modul-fokus .proj-sticky { top: 0; }
 
 /* ============================ Buttons ============================ */
 
-.btn {
-  display: inline-flex; align-items: center; gap: 7px;
-  background: var(--brand); color: #fff; border: none;
-  padding: 4px 11px; border-radius: var(--radius);
-  font-weight: 600; font-size: var(--t-s); height: 26px;
-  transition: background .12s, transform .05s;
-}
-.btn:hover { background: var(--brand-dark); }
-.btn:active { transform: translateY(1px); }
-.btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border-2); }
-.btn.secondary:hover { background: var(--surface-2); }
-.btn.ghost { background: transparent; color: var(--text-soft); }
-.btn.ghost:hover { background: var(--surface-2); color: var(--text); }
-.btn.sm { padding: 6px 11px; font-size: var(--t-xs); }
-.btn.danger { background: var(--s-red); }
+/* .btn, .secondary, .ghost, .sm, .danger stehen in ui/bausteine.css an
+   derselben Regel wie .knopf — ein Knopf, zwei Namen, eine Form. Hier
+   stand bis zum 14.08.2026 eine zweite Beschreibung: gefüllt in --brand,
+   feste Höhe 26px, eigene Polsterung. Nebeneinander gehalten waren die
+   beiden Knöpfe erkennbar verschieden, ohne dass jemand sagen konnte,
+   welcher der richtige ist.
+
+   Die feste Höhe ist dabei ersatzlos weg. Ein Knopf, der seine Höhe aus
+   Polsterung und Schrift bekommt, wächst mit der Schrift mit; 26px hätten
+   den 14px-Text eingeklemmt. */
 
 /* ============================ KPI-Karten ============================ */
 
@@ -1941,7 +1936,9 @@ table.va input[type=number] { -moz-appearance: textfield; }
 @keyframes sheet { from { transform: translateY(100%); } }
 
 /* --- Garantierückbehalt: kleiner Inline-Button in der Rechnungstabelle --- */
-.btn.xs { padding: 3px 8px; font-size: var(--t-2xs); line-height: 1.3; border-radius: var(--radius); }
+/* .btn.xs teilt sich die kleine Form mit .btn.sm und .knopf-winzig
+   (ui/bausteine.css). SubmitOne hatte zwei kleine Grössen, SubZeit hat
+   eine — jetzt beide eine. */
 
 /* --- Vergabe-Art-Modal: Sektionen (Sichtbarkeit per JS) --- */
 .va-sec { margin-top: 10px; }
@@ -2142,8 +2139,10 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text) 34%, transparent); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 /* Tastbares Klick-Feedback auf den Haupt-Knöpfen */
-.btn, .fb-btn { transition: background .14s ease, color .14s ease, border-color .14s ease, box-shadow .14s ease, transform .1s ease; }
-.btn:active, .fb-btn:active { transform: translateY(1px); }
+/* Der Übergang des Knopfes kommt aus bausteine.css; hier bleibt nur, was
+   .fb-btn (Fokusleiste) davon braucht. */
+.fb-btn { transition: background .14s ease, color .14s ease, border-color .14s ease, box-shadow .14s ease, transform .1s ease; }
+.fb-btn:active { transform: translateY(1px); }
 /* Tastatur-Fokusring (nur bei Tab-Navigation), Spezifität 0 → überschreibt nichts */
 :where(button, a, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: var(--radius); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

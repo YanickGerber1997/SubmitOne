@@ -71,6 +71,12 @@
   --shadow-lg: var(--schatten-l);
 
   --sidebar-w: 208px;
+
+  /* Wie viel am unteren Rand belegt ist. appswitch.js hebt die
+     Umschaltpille um genau diesen Betrag an, damit sie nicht auf den
+     Knöpfen sitzt. Hier: die 22px hohe Statuszeile plus etwas Luft.
+     Auf dem Handy steht der Wert am Ende der Datei neu. */
+  --so-sw-abstand: 26px;
 }
 
 * { box-sizing: border-box; }
@@ -190,6 +196,9 @@ button { font-family: inherit; cursor: pointer; }
 .sidebar-toggle:hover { background: rgba(0,0,0,.05); color: var(--text); border-color: var(--border-2); }
 
 .nav { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+/* «Mehr» gibt es nur auf dem Handy — in der Seitenleiste stehen ohnehin
+   alle Punkte untereinander. Siehe den Block ganz unten. */
+.nav-mehr { display: none; }
 .nav a {
   display: flex; align-items: center; gap: 11px;
   padding: 6px 12px;
@@ -1872,6 +1881,10 @@ table.va input[type=number] { -moz-appearance: textfield; }
 @media (max-width: 760px) {
   #app { display: block; }
 
+  /* Unten liegt hier die Reiterleiste (60px), nicht die Statuszeile.
+     Die Umschaltpille muss entsprechend höher. */
+  :root { --so-sw-abstand: 68px; }
+
   /* Sidebar wird zur fixen unteren Tab-Leiste */
   .sidebar {
     position: fixed; left: 0; right: 0; bottom: 0; top: auto; height: 60px;
@@ -1879,15 +1892,39 @@ table.va input[type=number] { -moz-appearance: textfield; }
     border-top: 1px solid var(--border); box-shadow: 0 -2px 12px rgba(30,24,60,.12);
     padding-bottom: env(safe-area-inset-bottom);
   }
-  .brand, .sidebar-foot, .sidebar-toggle { display: none; }
-  /* viele Reiter: horizontal scrollbar statt zerquetscht */
-  .nav { flex-direction: row; flex: 1; gap: 0; margin: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-  .nav::-webkit-scrollbar { display: none; }
+  /* Auch gegen «#app.collapsed .sidebar-foot» weiter oben, das auf dem
+     Handy sonst gewinnt: Die Seitenleiste ist hier eingeklappt, und diese
+     Regel holte die Fusszeile zurück — der Zurück-Knopf schwebte dann
+     mitten auf der Reiterleiste, halb verdeckt und trotzdem anklickbar. */
+  #app .brand, #app .sidebar-toggle,
+  #app .sidebar-foot, #app.collapsed .sidebar-foot { display: none; }
+
+  /* Die Fokusleiste sass oben rechts genau auf den Zurück-/Vor-Knöpfen der
+     Kopfzeile — beides Tippflächen, eine davon unerreichbar. Auf dem Handy
+     wandert sie nach unten links, der Umschaltpille gegenüber. */
+  .focusbar {
+    top: auto; right: auto; left: 12px;
+    bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+    opacity: 1;
+  }
+
+  /* Vier feste Plätze und «Mehr».
+
+     Bis zum 14.08.2026 standen hier alle elf Punkte in einer Reihe, die
+     seitlich rollte — mit `scrollbar-width: none`, also ohne jeden Hinweis
+     darauf. Auf einem 390px-Bildschirm waren fünf sichtbar; die anderen
+     sechs waren zwar erreichbar, aber nichts zeigte, dass es sie gibt.
+     Eine Funktion, von der man nicht weiss, dass sie da ist, ist keine. */
+  .nav { flex-direction: row; flex: 1; gap: 0; margin: 0; overflow: visible; }
   .subnav { display: none; }
-  .nav a {
-    flex: 1 0 62px; flex-direction: column; align-items: center; justify-content: center;
+  .nav a:not([data-mobil]) { display: none; }
+  .nav a, .nav-mehr {
+    flex: 1 1 0; min-width: 0; flex-direction: column; align-items: center; justify-content: center;
     gap: 3px; padding: 8px 2px; font-size: var(--t-2xs); font-weight: 600; border-radius: var(--radius); color: var(--text-soft);
   }
+  .nav-mehr { display: inline-flex; border: 0; background: transparent; font-family: inherit; }
+  .nav-mehr .nav-ico { font-size: var(--t-xl); line-height: 1; }
+  .nav-mehr.offen { color: var(--brand); }
   .nav a span:not(.nav-ico) { line-height: 1; }
   .nav a:hover { background: transparent; }
   .nav a.active { background: transparent; color: var(--brand); box-shadow: inset 0 2px 0 var(--brand); }
@@ -1940,6 +1977,22 @@ table.va input[type=number] { -moz-appearance: textfield; }
 /* .btn.xs teilt sich die kleine Form mit .btn.sm und .knopf-winzig
    (ui/bausteine.css). SubmitOne hatte zwei kleine Grössen, SubZeit hat
    eine — jetzt beide eine. */
+
+/* --- Das Blatt hinter «Mehr» (untere Leiste, Handy) ---------------------
+   Grosse Zeilen statt kleiner Symbole: Auf dem Handy wird mit dem Daumen
+   getroffen, nicht mit einem Mauszeiger. 48px hoch ist das Mass, unter dem
+   Fehlgriffe anfangen. */
+.navblatt { display: flex; flex-direction: column; gap: 2px; }
+.navblatt-punkt {
+  display: flex; align-items: center; gap: 13px;
+  min-height: 48px; padding: 0 10px;
+  border-radius: var(--radius); color: var(--text);
+  font-size: var(--t-m); font-weight: 500;
+}
+.navblatt-punkt:hover { background: var(--surface-2); }
+.navblatt-punkt.aktiv { background: var(--brand); color: #fff; }
+.navblatt-ico { display: inline-flex; width: 22px; flex: none; }
+.navblatt-ico svg { width: 22px; height: 22px; }
 
 /* --- Vergabe-Art-Modal: Sektionen (Sichtbarkeit per JS) --- */
 .va-sec { margin-top: 10px; }

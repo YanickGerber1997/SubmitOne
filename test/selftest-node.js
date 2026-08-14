@@ -142,6 +142,35 @@ if (R) {  // CSS-Integritaet: unausgeglichene Klammern zerstoeren stumm ganze Re
   push('SKALA: html behaelt die rem-Basis des Browsers', !htmlSchrift,
        'eine html-Regel setzt font-size - dann bedeutet --t-m nicht mehr 14px');
 
+  /* Handy: kein Bereich darf unerreichbar werden.
+
+     Bis zum 14.08.2026 standen alle elf Punkte in einer Reihe, die seitlich
+     rollte - mit verstecktem Rollbalken. Auf 390px waren fuenf sichtbar,
+     sechs faktisch verborgen. Jetzt tragen vier einen festen Platz und der
+     Rest liegt hinter "Mehr". Faellt der Knopf weg oder bekommt ein
+     Bereich versehentlich data-mobil, ist die Leiste wieder zu voll. */
+  const seite = lies('index.html') || '';
+  const bereiche = (seite.match(/data-nav="/g) || []).length;
+  const feste = (seite.match(/data-mobil="1"/g) || []).length;
+  push('HANDY: "Mehr" fuehrt zu den uebrigen Bereichen', seite.indexOf('id="btnNavMehr"') >= 0,
+       'der Knopf fehlt in index.html - die uebrigen Bereiche waeren unerreichbar');
+  push('HANDY: hoechstens vier feste Plaetze in der Reiterleiste', feste > 0 && feste <= 4,
+       feste + ' Punkte mit data-mobil (von ' + bereiche + ') - mehr als vier passen auf 390px nicht');
+  const jsq = fs.readFileSync(__dirname + '/../app.js', 'utf8');
+  // Definiert UND aufgerufen. Auf die Reihenfolge im Text kommt es nicht
+  // an - Funktionsdeklarationen werden hochgezogen, der Aufruf steht hier
+  // tatsaechlich weiter oben als die Definition.
+  push('HANDY: das Blatt liest die Bereiche aus der Navigation',
+       /function\s+initNavMehr\b/.test(jsq) && /(^|[^.\w])initNavMehr\(\)\s*;/m.test(jsq),
+       'initNavMehr fehlt oder wird nicht aufgerufen');
+
+  /* Die Umschaltpille darf nicht auf den Knoepfen sitzen. appswitch.js
+     hebt sie um --so-sw-abstand an; die App muss den Wert setzen. */
+  const swjs = lies('appswitch.js') || '';
+  push('HANDY: Umschaltpille beachtet den belegten unteren Rand',
+       swjs.indexOf('--so-sw-abstand') >= 0 && ohneKommentar.indexOf('--so-sw-abstand') >= 0,
+       'appswitch.js oder styles.css kennt --so-sw-abstand nicht');
+
   /* Die Palette vor Violett darf nicht zurueckkriechen. Diese Werte sind
      nicht theoretisch: Sie standen am 14.08.2026 noch an 57 Stellen in
      styles.css, teils DIREKT neben var(--brand) - .cal-day.today hatte

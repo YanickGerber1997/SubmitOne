@@ -4,17 +4,46 @@
 (function () {
   if (window.__soAppSwitch) return; window.__soAppSwitch = 1;
 
+  /* Wo die Apps liegen, ist lokal und auf dem Server verschieden:
+
+       lokal    SubmitOne an der Wurzel, daneben write/  pdf/  submit/zeit/
+       Server   Verkaufsseite an der Wurzel, daneben one/ paper/ pdf/ zeit/
+
+     Deshalb darf das Paket es vorgeben. Steht window.SO_APPS nicht da,
+     gilt der bisherige Weg — der Arbeitsordner laeuft unveraendert weiter. */
+  var L = window.SO_APPS || null;
+
   var p = location.pathname;
-  var cur = /\/pdf(\/|$)/.test(p) ? 'pdf' : /\/write(\/|$)/.test(p) ? 'paper' : 'one';
-  var base = (cur === 'one') ? './' : '../';   // Wurzel relativ zur aktuellen App
+  var cur = /\/(pdf)(\/|$)/.test(p) ? 'pdf'
+          : /\/(write|paper)(\/|$)/.test(p) ? 'paper'
+          : /\/zeit(\/|$)/.test(p) ? 'zeit'
+          : 'one';
+
+  var base = L ? L.basis : ((cur === 'one') ? './' : '../');   // Wurzel relativ zur aktuellen App
   var APPS = [
-    { k: 'one',   name: 'SubmitOne',    short: 'One',   href: base,            ico: '▦' },
-    { k: 'paper', name: 'Submit Paper', short: 'Paper', href: base + 'write/', ico: '📝' },
-    { k: 'pdf',   name: 'Submit PDF',   short: 'PDF',   href: base + 'pdf/',   ico: '📐' }
+    { k: 'one',   name: 'SubmitOne',    short: 'One',   href: base + (L ? L.one   : ''),         ico: '▦' },
+    { k: 'paper', name: 'Submit Paper', short: 'Paper', href: base + (L ? L.paper : 'write/'),   ico: '📝' },
+    { k: 'pdf',   name: 'Submit PDF',   short: 'PDF',   href: base + (L ? L.pdf   : 'pdf/'),     ico: '📐' },
+    { k: 'zeit',  name: 'SubZeit',      short: 'Zeit',  href: base + (L ? L.zeit  : 'submit/zeit/'), ico: '⏱' }
   ];
 
+  /* Unten rechts statt oben rechts: Oben liegen in SubmitOne die Knopfleiste
+     und in Paper/PDF die Werkzeugleisten - dort verdeckte die Pille Knoepfe.
+     Unten ist in allen vier Apps Platz. Verschieben und Merken bleiben.
+
+     "Unten ist Platz" stimmte allerdings nicht ueberall: In SubmitOne liegt
+     dort eine 22px hohe Statuszeile, und auf dem Handy die 60px hohe
+     Reiterleiste - die Pille sass beidem genau auf den Knoepfen. Statt hier
+     die Masse anderer Apps nachzufuehren (die sich aendern, ohne dass diese
+     Datei es erfaehrt), sagt jede App selbst, wie viel unten belegt ist:
+
+         :root { --so-sw-abstand: 26px; }
+
+     Ohne Angabe bleibt es beim alten Wert. Der Sicherheitsabstand des
+     Geraets (Home-Balken auf dem iPhone) kommt immer dazu. */
   var css = [
-    '.so-sw{position:fixed;z-index:2147483000;right:16px;top:10px;',
+    '.so-sw{position:fixed;z-index:2147483000;right:16px;',
+    'bottom:calc(16px + env(safe-area-inset-bottom, 0px) + var(--so-sw-abstand, 0px));',
     'font:600 12px/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-user-select:none;user-select:none;',
     'display:flex;align-items:stretch;gap:2px;padding:3px;border-radius:999px;',
     'background:rgba(20,26,38,.94);box-shadow:0 4px 18px rgba(0,0,0,.35);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);',
@@ -54,11 +83,14 @@
   function saveState() {
     try { localStorage.setItem('so_appsw', JSON.stringify({ l: bar.style.left, t: bar.style.top, b: bar.style.bottom, tr: bar.style.transform, mini: bar.classList.contains('mini') })); } catch (_) { }
   }
+  /* Eingeklappt beginnen: als kleine Marke stoert sie nirgends, ein Tipp
+     darauf klappt sie auf. Wer sie einmal offen laesst, bekommt sie offen. */
   try {
-    var s = JSON.parse(localStorage.getItem('so_appsw') || '{}');
-    if (s.mini) bar.classList.add('mini');
+    var roh = localStorage.getItem('so_appsw');
+    var s = JSON.parse(roh || '{}');
+    if (roh === null || s.mini) bar.classList.add('mini');
     if (s.t || s.l) { bar.style.left = s.l || ''; bar.style.top = s.t || ''; bar.style.bottom = s.b || ''; bar.style.transform = s.tr || 'none'; }
-  } catch (_) { }
+  } catch (_) { bar.classList.add('mini'); }
 
   // Verschieben (Griff)
   var dx = 0, dy = 0, dragging = false;

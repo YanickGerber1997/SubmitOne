@@ -826,6 +826,7 @@ async function startApp() {
   updateUndoButtons();
   initSidebarCollapse();
   initTooltips();
+  initNavMehr();
   initGlobalTooltips();
   document.addEventListener('keydown', planKeydown);
   document.addEventListener('keydown', ganttKeydown);
@@ -875,6 +876,40 @@ async function renderUserChip() {
 
 // Sidebar ein-/ausklappen (nur Symbole) – Zustand browser-lokal gemerkt
 // Eigener, schönerer Tooltip für die Menü-Symbole (ersetzt den nativen title-Tooltip, v.a. eingeklappt)
+/* ---------------------------------------------------------------
+   «Mehr» in der unteren Leiste (nur Handy)
+
+   Auf schmalen Bildschirmen tragen vier Bereiche einen festen Platz
+   (data-mobil im Markup); die übrigen sieben liegen hinter diesem Knopf.
+   Er liest die Liste aus der Navigation selbst, statt sie ein zweites Mal
+   aufzuzählen — so kann sie nicht auseinanderlaufen, wenn ein Bereich
+   dazukommt oder wegfällt.
+   --------------------------------------------------------------- */
+function initNavMehr() {
+  const knopf = $('#btnNavMehr'), nav = $('#mainNav');
+  if (!knopf || !nav) return;
+
+  knopf.addEventListener('click', () => {
+    const punkte = [...nav.querySelectorAll('a[data-nav]')];
+    const jetzt = (location.hash || '#/dashboard').split('?')[0];
+    const zeilen = punkte.map(a => {
+      const name = (a.querySelector('.nav-txt') || {}).textContent || a.dataset.nav;
+      const ico = (a.querySelector('.nav-ico') || {}).innerHTML || '';
+      const hier = a.getAttribute('href') === jetzt;
+      return `<a class="navblatt-punkt${hier ? ' aktiv' : ''}" href="${esc(a.getAttribute('href'))}" data-close="1">
+                <span class="navblatt-ico">${ico}</span><span>${esc(name)}</span>
+              </a>`;
+    }).join('');
+    openModal('Bereiche', `<div class="navblatt">${zeilen}</div>`, '');
+    // Ein Tipp auf einen Bereich wechselt und schliesst — ohne diesen
+    // Schritt bliebe das Blatt über der Seite stehen, die es geöffnet hat.
+    const wurzel = $('#modal-root');
+    wurzel.querySelectorAll('.navblatt-punkt').forEach(a => {
+      a.addEventListener('click', () => setTimeout(closeModal, 0));
+    });
+  });
+}
+
 function initTooltips() {
   const nav = $('#mainNav'), app = $('#app'); if (!nav || !app) return;
   let tip = null;

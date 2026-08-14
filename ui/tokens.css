@@ -53,6 +53,28 @@
 
   --danger:#c02626;
 
+  /* ---- Bereichsfarben ------------------------------------------------
+     Sechs Familien, damit sich ein Bereich an seiner Farbe merken lässt.
+     Violett bleibt die Marke — es färbt die Hülle des Programms; diese
+     hier färben, worin man gerade arbeitet.
+
+     ABGRENZUNG, die wichtig ist: Rot, Grün und Gelb tragen im Programm
+     bereits eine Bedeutung — überschritten, erledigt, Warnung. Deshalb
+     gelten die Bereichsfarben NUR für Navigation und Kapitelmarken, nie
+     als Fläche über Daten. Innerhalb eines Kapitels heisst Rot weiter
+     «überschritten», auch wenn das Kapitel selbst rot heisst.
+
+     Alle Werte durchgerechnet (WCAG): -voll trägt weisse Schrift ab
+     4.78:1, -text auf Weiss ab 6.37:1, -text auf -weich ab 5.62:1. Der
+     schwierigste war Gelb; es ist deshalb ein dunkles Ocker und kein
+     Signalgelb — ein helles Gelb trägt keine Schrift. */
+  --b-gruen-voll:#15794a;   --b-gruen-text:#0d5636;   --b-gruen-weich:#e3f4ea;
+  --b-gelb-voll:#8f6a12;    --b-gelb-text:#7a5a0e;    --b-gelb-weich:#fbf0d6;
+  --b-rot-voll:#c0342b;     --b-rot-text:#9c2820;     --b-rot-weich:#fbe9e7;
+  --b-blau-voll:#1f5fc0;    --b-blau-text:#194d9c;    --b-blau-weich:#e6effc;
+  --b-tuerkis-voll:#0c807c; --b-tuerkis-text:#095f5c; --b-tuerkis-weich:#dff3f2;
+  --b-grau-voll:#55556b;    --b-grau-text:#414154;    --b-grau-weich:#ececf4;
+
   /* ---- Schrift (beide Namen zeigen auf dieselbe Familie) ---- */
   --font:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   --font-ui:var(--font);

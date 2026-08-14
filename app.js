@@ -1573,13 +1573,23 @@ function phasenBar(p) {
 
 /* Ribbon-Gruppen: die 19 Projektreiter nach FUNKTION gebuendelt.
    Feste Plaetze fuer alle - keine Rolle verschiebt hier etwas (Muskelgedaechtnis). */
+/* Sechs Gruppen, sechs Farben.
+
+   Die Farbe ist keine Verzierung, sondern eine Merkhilfe: Wer «rot» denkt,
+   denkt Kosten, ohne zu lesen. Violett bleibt die Marke und faerbt die
+   Huelle des Programms — diese hier faerben, worin man gerade arbeitet.
+   Die Werte stehen in ui/tokens.css (--b-*), durchgerechnet auf Kontrast.
+
+   Eigentuemerwuensche standen bis zum 14.08.2026 unter «Projekt». Sie
+   gehoeren zur Vergabe: Was die Eigentuemerschaft wuenscht, entscheidet,
+   was ausgeschrieben und vergeben wird — nicht, wie das Projekt heisst. */
 const PROJ_GRUPPEN = [
-  { key: 'projekt',   label: 'Projekt',   tabs: ['overview', 'dossier', 'auflagen', 'bauherr'] },
-  { key: 'vergabe',   label: 'Vergabe',   tabs: ['gewerke', 'optionen'] },
-  { key: 'kosten',    label: 'Kosten',    tabs: ['kosten', 'rechnungen', 'nachtraege', 'zahlungsplan', 'finanz', 'honorar'] },
-  { key: 'termine',   label: 'Termine',   tabs: ['termine', 'kalender', 'pendenzen', 'protokolle'] },
-  { key: 'kontakte',  label: 'Kontakte',  tabs: ['listen'] },
-  { key: 'werkzeuge', label: 'Werkzeuge', tabs: ['solar', 'uwert'] },
+  { key: 'projekt',   label: 'Projekt',   farbe: 'gruen',   tabs: ['overview', 'dossier', 'auflagen'] },
+  { key: 'vergabe',   label: 'Vergabe',   farbe: 'gelb',    tabs: ['gewerke', 'optionen', 'bauherr'] },
+  { key: 'kosten',    label: 'Kosten',    farbe: 'rot',     tabs: ['kosten', 'rechnungen', 'nachtraege', 'zahlungsplan', 'finanz', 'honorar'] },
+  { key: 'termine',   label: 'Termine',   farbe: 'blau',    tabs: ['termine', 'kalender', 'pendenzen', 'protokolle'] },
+  { key: 'kontakte',  label: 'Kontakte',  farbe: 'tuerkis', tabs: ['listen'] },
+  { key: 'werkzeuge', label: 'Werkzeuge', farbe: 'grau',    tabs: ['solar', 'uwert'] },
 ];
 function projGruppeVon(tabKey) { return PROJ_GRUPPEN.find(g => g.tabs.includes(tabKey)) || PROJ_GRUPPEN[0]; }
 
@@ -1672,11 +1682,18 @@ function projektTabs(p, active, toolbar) {
        <span class="nav-txt">Alle Projekte</span>
      </a>
      <div class="subnav-title" title="${esc(p.name)}">${esc(p.name)}</div>` +
-    gruppen.map(g => `<div class="subnav-grp">${esc(g.label)}</div>` +
-      g.items.map(it => `<a class="subnav-link ${active === it.key ? 'active' : ''}" href="${it.href}" title="${esc(g.label)} · ${esc(it.label.replace(/<[^>]*>/g, '').trim())}">
+    gruppen.map(g => `<div class="subnav-grp" data-farbe="${g.farbe || 'grau'}">${esc(g.label)}</div>` +
+      g.items.map(it => `<a class="subnav-link ${active === it.key ? 'active' : ''}" data-farbe="${g.farbe || 'grau'}" href="${it.href}" title="${esc(g.label)} · ${esc(it.label.replace(/<[^>]*>/g, '').trim())}">
           <span class="nav-ico" aria-hidden="true">${P_ICO[it.key] || P_ICO.overview}</span>
           <span class="nav-txt">${it.label}</span>
         </a>`).join('')).join('');
+
+  /* Die Gruppenfarbe wandert mit in die Seite: Sonst hätte man einen
+     bunten Rand um einen violetten Inhalt, und die Merkhilfe endete an
+     der Kante der Seitenleiste. Getragen wird sie von den Sektionsmarken
+     und den Seitenreitern — nicht von Knöpfen und nicht von Daten. */
+  const ansicht = $('#view');
+  if (ansicht) ansicht.setAttribute('data-farbe', grp.farbe || 'grau');
 
   // Oben bleibt nur, was zur Seite selbst gehört — die Navigation steht links.
   return toolbar ? `<div class="proj-sticky"><div class="page-toolbar">${toolbar}</div></div>` : '';
@@ -1842,6 +1859,8 @@ function setActiveNav(key) {
   // verlässt, soll die Hauptbereiche zurückbekommen.
   const sub = $('#projSubnav'); if (sub) sub.innerHTML = '';
   const nav = $('#mainNav'); if (nav) nav.classList.remove('im-projekt');
+  // Ausserhalb eines Projekts gibt es keine Gruppenfarbe – zurueck auf Violett.
+  const ansicht = $('#view'); if (ansicht) ansicht.removeAttribute('data-farbe');
 }
 
 let _lastRenderHash = null;

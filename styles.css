@@ -231,8 +231,11 @@ button { font-family: inherit; cursor: pointer; }
 }
 .nav a:hover { background: rgba(0,0,0,.05); color: var(--text); }
 .nav a.active { background: var(--brand); color: #fff; font-weight: 600; }
-.nav-ico { width: 20px; display: inline-flex; align-items: center; justify-content: center; opacity: .92; flex: none; }
-.nav-ico svg { width: 18px; height: 18px; display: block; }
+/* 22px statt 18px. Bei 18px waren die Zeichen im eingeklappten Zustand —
+   wo sie das Einzige sind, was bleibt — zu klein, um sie auseinander-
+   zuhalten. Der Kasten wächst mit, damit die Zeilenhöhe stimmt. */
+.nav-ico { width: 24px; display: inline-flex; align-items: center; justify-content: center; opacity: .92; flex: none; }
+.nav-ico svg { width: 22px; height: 22px; display: block; }
 
 /* Projekt-Unterreiter in der Sidebar */
 /* ---- Projektnavigation: die Seitenleiste eine Ebene tiefer -------------
@@ -264,7 +267,36 @@ button { font-family: inherit; cursor: pointer; }
 }
 .subnav-link .nav-txt { overflow: hidden; text-overflow: ellipsis; }
 .subnav-link:hover { background: var(--surface-2); color: var(--text); }
-.subnav-link.active { color: #fff; background: var(--brand); font-weight: 600; }
+
+/* ---- Jede Gruppe ihre Farbe ----
+   Merkhilfe statt Schmuck: «rot» heisst Kosten, ohne dass man liest.
+   Die Farbe liegt auf dem Zeichen und auf dem aktiven Kapitel — nie als
+   Fläche über Daten. Innerhalb eines Kapitels behalten Rot und Grün ihre
+   Statusbedeutung («überschritten», «erledigt»); deshalb bleibt die
+   Bereichsfarbe hier, in der Navigation.
+
+   Der Griff des Programms bleibt violett: die Marke färbt die Hülle,
+   diese Farben färben, worin man arbeitet. */
+.subnav-link[data-farbe] .nav-ico { color: var(--bf-text); }
+.subnav-link:hover[data-farbe] { background: var(--bf-weich); color: var(--bf-text); }
+.subnav-link.active[data-farbe] { background: var(--bf-voll); color: #fff; font-weight: 600; }
+.subnav-link.active[data-farbe] .nav-ico { color: #fff; }
+.subnav-grp[data-farbe] { color: var(--bf-text); border-top-color: var(--bf-weich); }
+/* Ein kurzer Strich in der Gruppenfarbe vor dem Titel — er bündelt die
+   Kapitel darunter optisch zu einem Block. */
+.subnav-grp[data-farbe]::before {
+  content: ''; display: inline-block; width: 12px; height: 2px;
+  background: var(--bf-voll); vertical-align: middle;
+  margin-right: 7px; margin-bottom: 2px; border-radius: 1px;
+}
+
+[data-farbe="gruen"]   { --bf-voll: var(--b-gruen-voll);   --bf-text: var(--b-gruen-text);   --bf-weich: var(--b-gruen-weich); }
+[data-farbe="gelb"]    { --bf-voll: var(--b-gelb-voll);    --bf-text: var(--b-gelb-text);    --bf-weich: var(--b-gelb-weich); }
+[data-farbe="rot"]     { --bf-voll: var(--b-rot-voll);     --bf-text: var(--b-rot-text);     --bf-weich: var(--b-rot-weich); }
+[data-farbe="blau"]    { --bf-voll: var(--b-blau-voll);    --bf-text: var(--b-blau-text);    --bf-weich: var(--b-blau-weich); }
+[data-farbe="tuerkis"] { --bf-voll: var(--b-tuerkis-voll); --bf-text: var(--b-tuerkis-text); --bf-weich: var(--b-tuerkis-weich); }
+[data-farbe="grau"]    { --bf-voll: var(--b-grau-voll);    --bf-text: var(--b-grau-text);    --bf-weich: var(--b-grau-weich); }
+
 .subnav-link.active .tab-badge { background: rgba(255,255,255,.28); color: #fff; }
 
 /* Eingeklappt bleiben die Zeichen — und nur mit ihnen wird navigiert.
@@ -565,8 +597,12 @@ body.modul-fokus .proj-sticky { top: 0; }
   margin: 0 0 9px; padding: 0 0 5px 9px; position: relative;
   border-bottom: 1px solid var(--border);
 }
-.section-head::before {   /* gruener Marker: macht jede Sektion auf einen Blick auffindbar */
-  content: ''; position: absolute; left: 0; top: 1px; bottom: 7px; width: 3px; background: var(--brand);
+/* Der Marker macht jede Sektion auf einen Blick auffindbar — und trägt im
+   Projekt die Farbe der Gruppe, in der man gerade steht (--bf-voll wird
+   von #view[data-farbe] gesetzt). Ausserhalb bleibt es beim Marken-Violett. */
+.section-head::before {
+  content: ''; position: absolute; left: 0; top: 1px; bottom: 7px; width: 3px;
+  background: var(--bf-voll, var(--brand));
 }
 .section-head h2 { margin: 0; font-size: var(--t-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text); }
 .section-head .hint { color: var(--text-faint); font-size: var(--t-xs); }
@@ -889,7 +925,9 @@ tr.done-row { background: #fbfdfb; }
 .dash-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 16px; }
 .dash-tab { padding: 6px 13px; font-size: var(--t-s); font-weight: 600; color: var(--text-soft); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; font-family: inherit; }
 .dash-tab:hover { color: var(--text); border-color: var(--border-2); }
-.dash-tab.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+/* Der aktive Seitenreiter trägt dieselbe Farbe wie das Kapitel links —
+   so gehören Navigation und Seite sichtbar zusammen. */
+.dash-tab.active { background: var(--bf-voll, var(--brand)); color: #fff; border-color: var(--bf-voll, var(--brand)); }
 
 /* Gewerk-Umschalter (Detailseite) */
 .gw-switch { display: inline-flex; align-items: center; gap: 6px; }

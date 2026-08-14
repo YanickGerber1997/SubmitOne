@@ -1,0 +1,765 @@
+/* =====================================================================
+   SubZeit — was nur dieses Modul braucht
+   Die gemeinsame Gestaltung steht in ../../ui/tokens.css (Farben) und
+   ../../ui/bausteine.css (Knopf, Karte, Eingabe, Fenster, Dunkelmodus).
+   ===================================================================== */
+
+/* ---------- Gerüst --------------------------------------------------- */
+
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+.kopfleiste {
+    display: flex;
+    align-items: center;
+    gap: .625rem;
+    height: 48px;
+    padding: 0 .875rem;
+    border-bottom: 1px solid var(--kante);
+    background: var(--flaeche);
+    flex: none;
+}
+
+.marke {
+    display: inline-flex;
+    align-items: center;
+    gap: .4375rem;
+    font-family: var(--schrift-marke);
+    font-weight: 700;
+    font-size: var(--t-m);
+    letter-spacing: .01em;
+}
+.marke img { border-radius: 6px; }
+
+.datei {
+    display: inline-flex;
+    align-items: center;
+    gap: .375rem;
+    padding-left: .625rem;
+    margin-left: .375rem;
+    border-left: 1px solid var(--kante);
+    font-size: var(--t-s);
+    color: var(--text-leise);
+}
+.datei-punkt { width: 7px; height: 7px; border-radius: 50%; background: var(--warnung); }
+
+.knopf-uhr { border-color: var(--gut); color: var(--gut); }
+.uhr-punkt {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--gut);
+    animation: pulsen 1.6s infinite;
+}
+@keyframes pulsen { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
+.rumpf { display: flex; flex: 1; min-height: 0; }
+
+.seitenleiste {
+    width: 178px;
+    flex: none;
+    padding: .625rem .5rem;
+    border-right: 1px solid var(--kante);
+    background: var(--flaeche);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.nav {
+    padding: .4375rem .625rem;
+    border: 0;
+    border-radius: var(--rund);
+    background: transparent;
+    color: var(--text-leise);
+    font: inherit;
+    font-size: var(--t-s);
+    text-align: left;
+    cursor: pointer;
+}
+.nav:hover { background: var(--flaeche-3); color: var(--text); }
+.nav.aktiv { background: var(--v-600); color: #fff; font-weight: 560; }
+
+.inhalt { flex: 1; min-width: 0; overflow-y: auto; padding: .875rem; }
+.seite { display: flex; flex-direction: column; gap: .875rem; }
+
+.seitenkopf { display: flex; align-items: center; gap: .625rem; flex-wrap: wrap; }
+.seitenkopf-unter { font-size: var(--t-xs); color: var(--text-still); }
+
+.dreispalt { display: grid; grid-template-columns: 214px minmax(0, 1fr) 300px; gap: .875rem; align-items: start; }
+.zweispalt { display: grid; grid-template-columns: 214px minmax(0, 1fr); gap: .875rem; align-items: start; }
+.zweispalt-breit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .875rem; align-items: start; }
+.mitte, .rechts { display: flex; flex-direction: column; gap: .875rem; min-width: 0; }
+
+@media (max-width: 1400px) { .dreispalt { grid-template-columns: 200px minmax(0, 1fr); } .rechts { display: none; } }
+@media (max-width: 1000px) { .dreispalt, .zweispalt, .zweispalt-breit { grid-template-columns: 1fr; } }
+
+/* ---------- Einstieg ------------------------------------------------- */
+
+.einstieg { display: grid; place-items: center; min-height: 100vh; padding: 1.5rem; }
+.einstieg-karte {
+    width: min(420px, 100%);
+    padding: 2.25rem;
+    border: 1px solid var(--kante);
+    border-radius: var(--rund-xl);
+    background: var(--flaeche);
+    box-shadow: var(--schatten-m);
+    text-align: center;
+}
+.einstieg-marke { margin: 0 auto 1.25rem; border-radius: 16px; }
+.einstieg-karte h1 { font-size: var(--t-2xl); }
+.einstieg-satz { margin-top: .625rem; color: var(--text-leise); font-size: var(--t-m); }
+.einstieg-knoepfe { display: flex; gap: .5rem; justify-content: center; margin-top: 1.25rem; }
+.einstieg-karte > .knopf-haupt { width: 100%; margin-top: 1.25rem; }
+.einstieg-klein { margin-top: 1rem; font-size: var(--t-xs); color: var(--text-still); }
+
+/* ---------- Schnellerfassung ----------------------------------------- */
+
+.schnell { display: flex; align-items: center; gap: .5rem; padding: .375rem .75rem; }
+.schnell-zeichen { color: var(--text-still); font-size: var(--t-l); }
+.schnell-feld { flex: 1; border: 0; background: transparent; font: inherit; font-size: var(--t-m); color: var(--text); }
+.schnell-feld:focus { outline: none; }
+.schnell kbd {
+    padding: .0625rem .3125rem;
+    border: 1px solid var(--kante);
+    border-radius: var(--rund-s);
+    font-size: var(--t-2xs);
+    color: var(--text-still);
+}
+
+/* ---------- Die Zeitbahn --------------------------------------------- */
+
+.bahn-karte { display: flex; }
+
+.projektleiste {
+    width: 168px;
+    flex: none;
+    padding: .625rem;
+    border-right: 1px solid var(--kante);
+    background: var(--flaeche-2);
+    display: flex;
+    flex-direction: column;
+    gap: .1875rem;
+}
+.projektleiste-titel {
+    font-size: var(--t-2xs);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-weight: 700;
+    color: var(--text-still);
+    margin-bottom: .25rem;
+}
+.projektknopf {
+    display: flex;
+    align-items: center;
+    gap: .4375rem;
+    padding: .3125rem .375rem;
+    border: 1px solid transparent;
+    border-radius: var(--rund);
+    background: transparent;
+    font: inherit;
+    font-size: var(--t-xs);
+    text-align: left;
+    cursor: pointer;
+    color: var(--text);
+}
+.projektknopf:hover { background: var(--flaeche-3); }
+.projektknopf.gewaehlt { border-color: var(--v-600); background: var(--flaeche); }
+.projektknopf-strich { width: 3px; align-self: stretch; min-height: 20px; border-radius: 2px; background: var(--farbe); }
+.projektknopf-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.projektknopf-zahl { font-size: var(--t-2xs); color: var(--text-still); }
+.projektleiste-hinweis { margin-top: auto; padding-top: .625rem; font-size: var(--t-2xs); color: var(--text-still); }
+
+/* Das Feld, in das das gemeinsame Wochenraster gezeichnet wird
+   (submit/kern/wochenraster.js). Es bringt sein Aussehen selbst mit —
+   hier steht nur, wie viel Platz es bekommt.
+
+   Seit dem 14.08.2026 zeichnet SubZeit nicht mehr selbst. Die Regeln
+   unter `.bahn*` weiter unten gelten deshalb nur noch dem, was SubZeit
+   in einen Block hineinlegt; das Gerüst kommt aus ui/wochenraster.css. */
+.bahn-feld {
+    flex: 1;
+    min-width: 0;
+    max-height: clamp(340px, calc(100vh - 15rem), 900px);
+    overflow: auto;
+}
+/* Wochenende: ruhiger Grund, damit die Arbeitswoche hervortritt. */
+.bahn-feld .wr-spalte.wochenende { background: var(--flaeche-2); }
+
+.bahn {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    height: clamp(340px, calc(100vh - 15rem), 900px);
+    overflow: hidden;
+}
+
+.bahn-leiste, .bahn-spalte { display: flex; flex-direction: column; }
+.bahn-leiste { border-right: 1px solid var(--kante-stark); background: var(--flaeche-2); }
+.bahn-leiste-koerper, .bahn-flaeche { position: relative; flex: 1; min-height: 0; }
+
+.bahn-kopf {
+    display: flex;
+    align-items: center;
+    gap: .375rem;
+    height: 42px;
+    padding: 0 .5rem;
+    border: 0;
+    border-bottom: 1px solid var(--kante-stark);
+    background: var(--flaeche-2);
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    overflow: hidden;
+}
+.bahn-kopf:hover { background: var(--flaeche-3); }
+.bahn-leiste-kopf { justify-content: center; cursor: default; font-size: var(--t-2xs); font-weight: 700; color: var(--text-still); }
+.bahn-leiste-kopf:hover { background: var(--flaeche-2); }
+
+.bahn-kopf-tag { min-width: 0; }
+.bahn-kopf-name { display: block; font-size: var(--t-s); font-weight: 620; line-height: 1.15; }
+.bahn-kopf-datum { display: block; font-size: var(--t-2xs); color: var(--text-still); line-height: 1.15; }
+.bahn-kopf-zahlen { margin-left: auto; text-align: right; }
+.bahn-kopf-summe { display: block; font-size: var(--t-s); font-weight: 640; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.bahn-kopf-differenz { display: block; font-size: var(--t-2xs); font-variant-numeric: tabular-nums; line-height: 1.15; }
+.bahn-kopf-differenz.gut { color: var(--gut); }
+.bahn-kopf-differenz.fehlt { color: var(--gefahr); }
+
+/* Mehrere Tage nebeneinander: zwei Zeilen, sonst stossen Tag und Summe zusammen. */
+.bahn.woche .bahn-kopf { flex-direction: column; align-items: center; justify-content: center; gap: 1px; height: 44px; padding: 0 .25rem; }
+.bahn.woche .bahn-kopf-tag,
+.bahn.woche .bahn-kopf-zahlen { display: flex; align-items: baseline; gap: .3125rem; margin: 0; }
+.bahn.woche .bahn-kopf-name,
+.bahn.woche .bahn-kopf-datum,
+.bahn.woche .bahn-kopf-summe,
+.bahn.woche .bahn-kopf-differenz { display: inline; }
+.bahn.dicht .bahn-kopf { height: 40px; }
+.bahn.dicht .bahn-kopf-datum { display: none; }
+
+.bahn-strich {
+    position: absolute;
+    right: .375rem;
+    margin-top: 1px;
+    font-size: var(--t-2xs);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-leise);
+    line-height: 1.1;
+}
+.bahn-strich.leise { font-size: 10px; color: var(--text-still); }
+
+.bahn-spalten { display: grid; grid-template-columns: repeat(var(--spalten, 1), minmax(0, 1fr)); }
+.bahn-spalte + .bahn-spalte { border-left: 1px solid var(--kante-stark); }
+.bahn-spalte.wochenende .bahn-flaeche { background: var(--flaeche-2); }
+.bahn-spalte.heute .bahn-flaeche { background: color-mix(in srgb, var(--v-600) 5%, transparent); }
+.bahn-spalte.heute .bahn-kopf { background: var(--v-100); box-shadow: inset 0 2px 0 var(--v-600); }
+
+.bahn-flaeche { cursor: crosshair; user-select: none; touch-action: none; }
+.bahn.zieht .bahn-flaeche { cursor: ns-resize; }
+
+/* Rasterlinien: volle Stunde kräftig, halbe leichter, Viertelstunde angedeutet.
+   Als Verlauf statt hunderter Elemente. */
+.bahn-band {
+    position: absolute;
+    left: 0; right: 0;
+    pointer-events: none;
+    background-image:
+        repeating-linear-gradient(to bottom, var(--kante-stark) 0 1px, transparent 1px calc(100% / var(--stunden))),
+        repeating-linear-gradient(to bottom, var(--kante) 0 1px, transparent 1px calc(100% / var(--stunden) / 2)),
+        repeating-linear-gradient(to bottom,
+            color-mix(in srgb, var(--kante) 45%, transparent) 0 1px,
+            transparent 1px calc(100% / var(--stunden) / 4));
+}
+/* Die gestauchten Randstunden: sichtbar und bespielbar, aber leise. */
+.bahn-band.nacht {
+    background-image: repeating-linear-gradient(to bottom, var(--kante) 0 1px, transparent 1px calc(100% / var(--stunden)));
+    background-color: color-mix(in srgb, var(--text) 3.5%, transparent);
+}
+.bahn-band.nacht::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(-45deg, transparent 0 7px,
+        color-mix(in srgb, var(--text) 3%, transparent) 7px 8px);
+}
+
+.bahn-jetzt {
+    position: absolute;
+    left: 0; right: 0;
+    border-top: 2px solid var(--gefahr);
+    pointer-events: none;
+    z-index: 3;
+}
+.bahn-jetzt::before {
+    content: "";
+    position: absolute;
+    left: -4px; top: -5px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--gefahr);
+}
+
+.bahn-band-tag {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    padding-top: .5rem;
+    background: color-mix(in srgb, var(--farbe) 12%, transparent);
+    border-left: 3px solid var(--farbe);
+    pointer-events: none;
+}
+.bahn-band-tag span {
+    padding: .125rem .4375rem;
+    border-radius: var(--rund-s);
+    background: var(--farbe);
+    color: #fff;
+    font-size: var(--t-2xs);
+    font-weight: 600;
+}
+
+.bahn-hinweis {
+    position: absolute;
+    left: 50%;
+    transform: translate(-50%, -120%);
+    padding: .125rem .4375rem;
+    border-radius: var(--rund-s);
+    background: var(--text);
+    color: #fff;
+    font-size: var(--t-2xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 6;
+}
+
+.bahn-leer {
+    position: absolute;
+    top: 28%; left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    color: var(--text-still);
+    pointer-events: none;
+}
+.bahn-leer-gross { font-weight: 620; }
+.bahn-leer-klein { font-size: var(--t-xs); margin-top: .1875rem; }
+
+/* ---------- Blöcke --------------------------------------------------- */
+
+.block {
+    position: absolute;
+    left: 5px; right: 5px;
+    display: flex;
+    gap: .375rem;
+    min-height: 16px;
+    padding: .1875rem .3125rem;
+    border-radius: var(--rund);
+    background: color-mix(in srgb, var(--farbe) 14%, var(--flaeche));
+    border: 1px solid color-mix(in srgb, var(--farbe) 45%, transparent);
+    box-shadow: var(--schatten-xs);
+    overflow: hidden;
+    cursor: grab;
+    z-index: 2;
+}
+.block:hover { border-color: var(--farbe); }
+.block.aktiv { cursor: grabbing; box-shadow: var(--schatten-m); z-index: 8; }
+.block.vorschau { background: color-mix(in srgb, var(--v-600) 16%, var(--flaeche)); border-color: var(--v-600); }
+.block.laeuft { border-style: dashed; }
+
+.block-strich { width: 3px; flex: none; border-radius: 2px; background: var(--farbe); }
+.block-text { min-width: 0; flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.block-titel { font-size: var(--t-xs); font-weight: 600; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.block-unter { font-size: 10.5px; color: var(--text-leise); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.block-weg {
+    align-self: flex-start;
+    width: 16px; height: 16px;
+    border: 0; border-radius: var(--rund-s);
+    background: transparent;
+    color: var(--text-still);
+    font-size: 13px; line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+}
+.block:hover .block-weg { opacity: 1; }
+.block-weg:hover { background: var(--gefahr-weich); color: var(--gefahr); }
+
+.block-griff { position: absolute; left: 0; right: 0; height: 6px; cursor: ns-resize; }
+.block-griff[data-kante="oben"] { top: 0; }
+.block-griff[data-kante="unten"] { bottom: 0; }
+
+/* Vorschläge lassen einen Zug durch: Klick übernimmt, Ziehen legt eigene Zeit an. */
+.schemen {
+    background: transparent;
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--farbe) 55%, transparent);
+    box-shadow: none;
+    opacity: .82;
+    z-index: 1;
+}
+.schemen .block-titel { font-weight: 500; }
+
+/* In der Woche zählt jeder Pixel. */
+.bahn.woche .block { left: 2px; right: 2px; padding: .0625rem .25rem; gap: .25rem; border-radius: 5px; }
+.bahn.woche .block-strich { width: 2.5px; }
+.bahn.woche .block-titel { font-size: 10.5px; font-weight: 560; }
+.bahn.woche .block-unter { display: none; }
+.bahn.woche .schemen .block-unter { display: block; font-size: 9.5px; }
+
+/* ---------- Karten rechts -------------------------------------------- */
+
+.uhr-zahl { font-size: var(--t-3xl); font-weight: 300; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.uhr-zahl.laeuft { color: var(--gut); }
+
+.bilanz-gross { font-size: var(--t-2xl); font-weight: 640; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+.bilanz-von { font-size: var(--t-xs); color: var(--text-still); }
+.balken { height: 6px; border-radius: 3px; background: var(--flaeche-3); overflow: hidden; }
+.balken span { display: block; height: 100%; background: var(--v-600); }
+
+.aufgabe { display: flex; gap: .5rem; align-items: flex-start; padding: .25rem 0; }
+.aufgabe + .aufgabe { border-top: 1px solid var(--kante); }
+.aufgabe-text { flex: 1; min-width: 0; cursor: pointer; }
+.aufgabe-titel { font-size: var(--t-s); }
+.aufgabe-unter { font-size: var(--t-2xs); color: var(--text-still); }
+
+/* ---------- Kalender ------------------------------------------------- */
+
+.kalender { position: sticky; top: 0; }
+.kalender-abstand {
+    display: flex;
+    align-items: center;
+    gap: .375rem;
+    width: 100%;
+    padding: .3125rem .625rem;
+    border: 0;
+    border-bottom: 1px solid var(--kante);
+    background: var(--v-100);
+    color: var(--v-700);
+    font: inherit;
+    font-size: var(--t-2xs);
+    font-weight: 620;
+    text-align: left;
+    cursor: pointer;
+}
+.kalender-abstand.jetzt { background: var(--flaeche-2); color: var(--text-leise); cursor: default; }
+.kalender-zurueck {
+    margin-left: auto;
+    padding: 0 .3125rem;
+    border-radius: var(--rund-s);
+    background: var(--v-600);
+    color: #fff;
+    font-size: 10px;
+}
+.kalender-monate { display: flex; flex-direction: column; padding: .5rem .625rem .625rem; }
+
+.kal-monat + .kal-monat { margin-top: .5rem; padding-top: .5rem; border-top: 1px solid var(--kante); }
+.kal-titel { display: flex; align-items: baseline; gap: .3125rem; padding: 0 .125rem .3125rem; }
+.kal-name { font-size: var(--t-xs); font-weight: 700; }
+.kal-jahr { font-size: 10px; color: var(--text-still); font-variant-numeric: tabular-nums; }
+
+.kal-raster { display: flex; flex-direction: column; gap: 1px; }
+.kal-zeile {
+    display: grid;
+    grid-template-columns: 1.35rem repeat(7, minmax(0, 1fr));
+    gap: 1px;
+    align-items: center;
+    border-radius: var(--rund-s);
+}
+.kal-kopf { margin-bottom: 2px; }
+.kal-wochentag, .kal-kw-kopf {
+    font-size: 9px; font-weight: 700; text-align: center;
+    color: var(--text-still); letter-spacing: .02em;
+}
+.kal-zeile.aktuell { background: var(--v-100); box-shadow: inset 0 0 0 1px var(--v-300); }
+
+.kal-kw {
+    padding: 0; border: 0; border-radius: var(--rund-s);
+    background: none; color: var(--text-still);
+    font: inherit; font-size: 9px; font-variant-numeric: tabular-nums;
+    text-align: center; cursor: pointer;
+}
+.kal-kw:hover { background: var(--flaeche-3); color: var(--text); }
+.kal-zeile.aktuell .kal-kw { color: var(--v-700); font-weight: 700; }
+
+.kal-tag {
+    aspect-ratio: 1;
+    display: grid; place-items: center;
+    border: 1px solid transparent; border-radius: var(--rund-s);
+    background: none; color: var(--text);
+    font: inherit; font-size: 10px; font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+.kal-tag:hover { background: var(--flaeche-3); border-color: var(--kante-stark); }
+.kal-tag.fremd { color: var(--text-still); opacity: .55; }
+.kal-tag.wochenende { color: var(--text-leise); }
+.kal-tag.voll { background: var(--gut); color: #fff; font-weight: 620; opacity: 1; }
+.kal-tag.teil { background: var(--warnung); color: #fff; font-weight: 620; opacity: 1; }
+.kal-tag.fremd.voll, .kal-tag.fremd.teil { opacity: .45; }
+.kal-tag.heute { box-shadow: inset 0 0 0 1.5px var(--text); font-weight: 700; }
+.kal-tag.gewaehlt { border-color: var(--v-600); box-shadow: 0 0 0 1.5px var(--v-600); font-weight: 700; }
+
+.kal-legende {
+    display: flex; flex-direction: column; gap: .25rem;
+    padding: .5rem .625rem;
+    border-top: 1px solid var(--kante);
+    font-size: 10px; color: var(--text-still);
+}
+.kal-legende span { display: inline-flex; align-items: center; gap: .3125rem; }
+
+/* ---------- Wochenplanung -------------------------------------------- */
+
+.wochenplan { display: flex; flex-direction: column; gap: .875rem; }
+.wochenplan-tage {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 1px;
+    border: 1px solid var(--kante-stark);
+    border-radius: var(--rund-l);
+    overflow: hidden;
+    background: var(--kante-stark);
+}
+.wp-tag { display: flex; flex-direction: column; min-height: 240px; padding: .5rem; background: var(--flaeche); }
+.wp-tag.heute { background: color-mix(in srgb, var(--v-600) 6%, var(--flaeche)); }
+.wp-tag-kopf { display: flex; flex-direction: column; margin-bottom: .5rem; font-size: var(--t-xs); }
+.wp-band {
+    padding: .125rem .375rem; margin-bottom: .375rem;
+    border-radius: var(--rund-s);
+    background: var(--warnung-weich); color: var(--warnung);
+    font-size: 10px; font-weight: 600;
+}
+.wp-liste { flex: 1; display: flex; flex-direction: column; gap: .25rem; }
+.wp-aufgabe {
+    padding: .25rem .375rem;
+    border-left: 2px solid var(--v-400);
+    border-radius: 0 var(--rund-s) var(--rund-s) 0;
+    background: var(--flaeche-2);
+    font-size: var(--t-xs);
+    cursor: pointer;
+}
+.wp-aufgabe.fertig { opacity: .5; text-decoration: line-through; }
+.wp-plus {
+    margin-top: auto;
+    padding: .25rem;
+    border: 1px dashed var(--kante-stark);
+    border-radius: var(--rund-s);
+    background: transparent;
+    color: var(--text-still);
+    font: inherit; font-size: 10px; cursor: pointer;
+}
+.wp-plus:hover { border-color: var(--v-600); color: var(--v-700); }
+.wp-summe { margin-top: .375rem; font-size: var(--t-2xs); color: var(--text-still); font-variant-numeric: tabular-nums; }
+
+.ziel + .ziel { margin-top: .375rem; }
+
+/* ---------- Absenzen und Einstellungen ------------------------------- */
+
+.feiertagsliste { display: flex; flex-direction: column; max-height: 440px; overflow-y: auto; }
+.feiertag {
+    display: grid;
+    grid-template-columns: 18px 52px minmax(0, 1fr) auto;
+    gap: .5rem;
+    align-items: center;
+    padding: .3125rem .25rem;
+    font-size: var(--t-xs);
+    cursor: pointer;
+    border-radius: var(--rund-s);
+}
+.feiertag:hover { background: var(--flaeche-2); }
+.feiertag:not(.gilt) { color: var(--text-still); }
+.feiertag-datum { font-variant-numeric: tabular-nums; color: var(--text-still); }
+.feiertag-name em { font-style: normal; color: var(--text-still); }
+.feiertag-wo { font-size: 10px; color: var(--text-still); text-align: right; }
+
+.wahlfeld {
+    display: flex; gap: .5rem; align-items: flex-start;
+    padding: .625rem;
+    border: 1px solid var(--kante);
+    border-radius: var(--rund);
+    cursor: pointer;
+}
+.wahlfeld + .wahlfeld { margin-top: .375rem; }
+.wahlfeld.gewaehlt { border-color: var(--v-600); background: color-mix(in srgb, var(--v-600) 6%, transparent); }
+
+.sollraster { display: grid; grid-template-columns: repeat(7, 1fr); gap: .25rem; }
+.soll-tag { display: flex; flex-direction: column; gap: .1875rem; font-size: 10px; text-align: center; color: var(--text-still); }
+.soll-tag .eingabe { padding: .25rem; text-align: center; font-size: var(--t-xs); }
+
+/* ---------- Auswertung ----------------------------------------------- */
+
+.rang { display: grid; grid-template-columns: minmax(0, 1fr) 140px 70px; gap: .625rem; align-items: center; padding: .25rem 0; }
+.rang-name { font-size: var(--t-s); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rang-balken { height: 8px; border-radius: 4px; background: var(--flaeche-3); overflow: hidden; }
+.rang-balken i { display: block; height: 100%; }
+.rang-zahl { font-size: var(--t-s); text-align: right; font-variant-numeric: tabular-nums; color: var(--text-leise); }
+
+/* ---------- Freigaben und Rechnungen --------------------------------- */
+
+.nav-zahl {
+    margin-left: .375rem;
+    padding: 0 .3125rem;
+    border-radius: 999px;
+    background: var(--warnung);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+}
+.nav.aktiv .nav-zahl { background: rgba(255, 255, 255, .28); }
+
+.stufe-marke {
+    margin-top: auto;
+    padding: .375rem .625rem;
+    border-radius: var(--rund);
+    background: var(--flaeche-2);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-weight: 700;
+    color: var(--text-still);
+    text-align: center;
+}
+
+/* Das Monatsraster: sehen statt lesen. */
+.faktura { padding: .625rem .875rem .875rem; overflow-x: auto; }
+.faktura-zeile {
+    display: grid;
+    grid-template-columns: 190px repeat(12, minmax(24px, 1fr));
+    gap: 3px;
+    align-items: center;
+}
+.faktura-zeile + .faktura-zeile { margin-top: 3px; }
+.faktura-kopf { margin-bottom: .25rem; }
+.faktura-monat { font-size: 9px; text-align: center; color: var(--text-still); font-weight: 700; }
+.faktura-name {
+    display: flex; align-items: center; gap: .375rem;
+    font-size: var(--t-xs);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.faktura-feld {
+    height: 22px;
+    border: 1px solid var(--kante);
+    border-radius: var(--rund-s);
+    background: var(--flaeche-2);
+    cursor: pointer;
+    padding: 0;
+}
+.faktura-feld:hover { border-color: var(--text); }
+.faktura-feld.nichts { background: transparent; border-style: dashed; cursor: default; }
+.faktura-feld.intern { background: repeating-linear-gradient(-45deg, var(--flaeche-2) 0 4px, var(--flaeche-3) 4px 8px); }
+.faktura-feld.offen  { background: var(--warnung-weich); border-color: var(--warnung); }
+.faktura-feld.entwurf{ background: var(--info-weich); border-color: var(--info); }
+.faktura-feld.gestellt { background: var(--info); border-color: var(--info); }
+.faktura-feld.ueberfaellig { background: var(--gefahr); border-color: var(--gefahr); }
+.faktura-feld.bezahlt { background: var(--gut); border-color: var(--gut); }
+
+.faktura-legende { display: flex; gap: .625rem; flex-wrap: wrap; font-size: 10px; color: var(--text-still); }
+.faktura-legende span { display: inline-flex; align-items: center; gap: .25rem; }
+.faktura-punkt { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--kante); }
+.faktura-punkt.offen { background: var(--warnung-weich); border-color: var(--warnung); }
+.faktura-punkt.entwurf { background: var(--info-weich); border-color: var(--info); }
+.faktura-punkt.gestellt { background: var(--info); border-color: var(--info); }
+.faktura-punkt.ueberfaellig { background: var(--gefahr); border-color: var(--gefahr); }
+.faktura-punkt.bezahlt { background: var(--gut); border-color: var(--gut); }
+
+.stand {
+    padding: .0625rem .4375rem;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 620;
+}
+.stand.entwurf { background: var(--flaeche-3); color: var(--text-leise); }
+.stand.gestellt { background: var(--info-weich); color: var(--info); }
+.stand.ueberfaellig { background: var(--gefahr-weich); color: var(--gefahr); }
+.stand.bezahlt { background: var(--gut-weich); color: var(--gut); }
+.stand.storniert { background: var(--flaeche-3); color: var(--text-still); text-decoration: line-through; }
+
+.vorschau {
+    margin-top: .875rem;
+    padding: .875rem;
+    border-radius: var(--rund);
+    background: var(--flaeche-2);
+    text-align: center;
+}
+.vorschau-gross { font-size: var(--t-2xl); font-weight: 640; font-variant-numeric: tabular-nums; }
+
+.rechnung-summe {
+    margin-left: auto;
+    margin-top: .875rem;
+    width: min(280px, 100%);
+    font-size: var(--t-s);
+}
+.rechnung-summe .zeile { padding: .1875rem 0; }
+.rechnung-summe .gross {
+    margin-top: .25rem;
+    padding-top: .5rem;
+    border-top: 1.5px solid var(--kante-stark);
+    font-size: var(--t-l);
+}
+/* Läuft SubZeit in einer Mappe, soll man das sehen. */
+.datei-mappe {
+    padding: .0625rem .375rem;
+    border-radius: 999px;
+    background: var(--v-100);
+    color: var(--v-700);
+    font-size: 10px;
+    font-weight: 620;
+}
+@media (prefers-color-scheme: dark) { .datei-mappe { background: #251c46; color: var(--v-300); } }
+
+/* ---------- Rapport ---------------------------------------------------
+   Ein Blatt Stunden, keine Rechnung. Oben die Regler, darunter das
+   Blatt, wie es aus dem Drucker kommt — man sieht beim Einstellen
+   bereits das Ergebnis, statt es sich vorstellen zu müssen. */
+
+.knopf-klein { padding: .25rem .5625rem; font-size: var(--t-xs); }
+
+.rp-steuer { margin-bottom: 1rem; }
+.rp-reihe { display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: flex-end; }
+.rp-reihe + .rp-reihe { margin-top: .875rem; padding-top: .875rem; border-top: 1px solid var(--kante); }
+.rp-feld { min-width: 0; }
+.rp-marke { font-size: var(--t-2xs); font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--text-still); margin-bottom: .3125rem; }
+.rp-knoepfe { display: flex; flex-wrap: wrap; gap: .3125rem; }
+.rp-feld .eingabe { min-width: 9.5rem; }
+
+/* Das Blatt selbst: ruhig, viel Weissraum, Zahlen tabellarisch. */
+.rp-blatt { padding: 1.75rem 1.875rem 1.25rem; }
+.rp-kopf { display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 1.5rem; padding-bottom: 1rem; border-bottom: 2px solid var(--text); }
+.rp-titel { font-size: 1.375rem; font-weight: 680; letter-spacing: -.01em; line-height: 1.2; }
+.rp-unter { font-size: var(--t-xs); color: var(--text-still); line-height: 1.5; }
+.rp-kopf-l .rp-unter:first-of-type { margin-top: .25rem; color: var(--text); font-weight: 560; }
+.rp-kopf-r { text-align: right; flex: none; }
+.rp-gross { font-size: 1.75rem; font-weight: 700; font-variant-numeric: tabular-nums;
+    line-height: 1.15; letter-spacing: -.02em; }
+
+.rp-leib { padding-top: .25rem; }
+.rp-gruppe { margin-top: 1.125rem; break-inside: avoid; }
+.rp-gruppe-kopf { display: flex; align-items: baseline; gap: .5rem;
+    padding: .3125rem 0; border-bottom: 1px solid var(--kante-stark); }
+.rp-punkt { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; }
+.rp-gruppe-titel { font-weight: 640; font-size: var(--t-s); }
+.rp-gruppe-summe { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.rp-tabelle { width: 100%; border-collapse: collapse; }
+.rp-tabelle td { padding: .3125rem .25rem; border-bottom: 1px solid var(--kante);
+    font-size: var(--t-xs); vertical-align: top; }
+.rp-tabelle tr:last-child td { border-bottom: none; }
+.rp-tag { width: 7.5rem; color: var(--text-still); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rp-was { width: auto; }
+.rp-dauer { width: 4.5rem; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.rp-fuss { display: flex; justify-content: space-between; gap: 1rem; margin-top: 1.5rem;
+    padding-top: .625rem; border-top: 1px solid var(--kante);
+    font-size: var(--t-2xs); color: var(--text-still); }
+
+/* Gedruckt wird das Blatt — sonst nichts. Kein Menü, keine Regler,
+   keine Schaltflächen: Was auf Papier nicht bedienbar ist, gehört
+   auch nicht darauf. */
+@media print {
+    @page { size: A4; margin: 14mm 15mm; }
+    .seitenleiste, .kopfleiste, .rp-steuer, .seitenkopf,
+    .meldung, .datei-mappe { display: none !important; }
+    body, .inhalt, .seite, .rp-seite { margin: 0; padding: 0; background: #fff; display: block; }
+    .rp-blatt { border: none; box-shadow: none; padding: 0; background: #fff; }
+    .rp-gruppe-kopf { border-bottom-color: #444; }
+    .rp-kopf { border-bottom-color: #000; }
+    .rp-tabelle td { border-bottom-color: #ddd; }
+}

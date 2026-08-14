@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="de-CH">
+<head>
+<meta charset="utf-8">
+    <meta name="author" content="Gerber-Soft">
+    <meta name="copyright" content="© 2026 Gerber-Soft. Alle Rechte vorbehalten.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SubmitOne — Projektmappe</title>
+<meta name="theme-color" content="#0b0a12">
+
+<link rel="icon" href="ui/marke.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="ui/marke-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Quicksand:wght@600;700&display=swap">
+
+<!-- Farben und Bausteine liegen in ui\ an der Wurzel, gemeinsam mit den
+     anderen Apps. Nur mappe.css gehört allein der Projektmappe. -->
+<link rel="stylesheet" href="../ui/tokens.css">
+<link rel="stylesheet" href="../ui/bausteine.css">
+<link rel="stylesheet" href="ui/mappe.css">
+</head>
+<body>
+
+<div id="app"></div>
+
+<!-- Umschaltpille: die Mappe liegt eine Ebene tief (submit/ lokal, mappe/ auf
+     dem Server). Auf dem Server ersetzt paket.ps1 die Angabe. -->
+<script>window.SO_APPS={basis:'../',one:'',paper:'write/',pdf:'pdf/',zeit:'submit/zeit/'};</script>
+<script src="../appswitch.js"></script>
+
+<script src="kern/kern.js"></script>
+<script src="kern/mappe.js"></script>
+
+<script>
+/* =====================================================================
+   Die Projektmappe
+   ---------------------------------------------------------------------
+   Sie hält Kopf, Gewerke und die Modul-Dokumente zusammen. Ein Modul
+   wird von hier geöffnet und arbeitet dann in der Mappe – die Datei
+   bleibt dieselbe.
+   ===================================================================== */
+'use strict';
+
+(function () {
+
+    let mappe = null;
+    let offen = false;      // seit dem letzten Speichern verändert
+
+    const wurzel = document.getElementById('app');
+
+    function zeichne() {
+        Ui.leere(wurzel);
+        wurzel.appendChild(mappe ? ansicht() : einstieg());
+    }
+
+    function aendere(tat) {
+        tat(mappe);
+        offen = true;
+        zeichne();
+    }
+
+    /* ---------- Einstieg ---------- */
+
+    function einstieg() {
+        return Ui.el('div.einstieg', {},
+            Ui.el('div.einstieg-karte', {},
+                Ui.el('img.einstieg-marke', { src: 'ui/marke.svg', alt: '', width: 64, height: 64 }),
+                Ui.el('h1', {}, 'SubmitOne'),
+                Ui.el('p.einstieg-satz', {},
+                    'Die Projektmappe hält Termine, Kosten, Zeit und Papier eines Bauvorhabens ',
+                    'zusammen — mit einer gemeinsamen Gewerkliste. Alles in einer Datei, die Ihnen gehört.'),
+
+                Ui.el('div.einstieg-knoepfe', {},
+                    Ui.el('button.knopf.knopf-haupt', {
+                        onclick: async () => {
+                            const name = await frageName();
+                            if (name === null) return;
+                            mappe = await Mappe.neu(name);
+                            mappe.kopf.projekt = name;
+                            offen = true;
+                            zeichne();
+                        }
+                    }, 'Neues Projekt'),
+                    Ui.el('button.knopf.knopf-still', {
+                        onclick: async () => {
+                            try {
+                                const geladen = await Mappe.oeffnen();
+                                if (geladen) { mappe = geladen; offen = false; zeichne(); }
+                            } catch (f) {
+                                if (f.name !== 'AbortError') Ui.meldung(f.message, 'warnung');
+                            }
+                        }
+                    }, 'Mappe öffnen')),
+
+                Ui.el('p.einstieg-klein', {},
+                    Mappe.kannDatei
+                        ? 'Ihre Mappe wird direkt beschrieben — wie bei Word oder Excel.'
+                        : 'Dieser Browser kann Dateien nicht direkt beschreiben. Mit Chrome oder Edge geht es unmittelbar.'),
+
+                Ui.el('p.einstieg-klein', {},
+                    Ui.el('a', { href: 'zeit/' }, 'SubZeit ohne Mappe öffnen →'))));
+    }
+
+    async function frageName() {
+        const feld = Ui.el('input.eingabe', { placeholder: 'Neubau Werkhalle' });
+        const f = Ui.fenster({
+            titel: 'Neues Projekt',
+            inhalt: Ui.feld('Projektname', feld),
+            knoepfe: [
+                Ui.el('span.abstand'),
+                Ui.el('button.knopf.knopf-still', { onclick: () => f.schliesse(null) }, 'Abbrechen'),
+                Ui.el('button.knopf.knopf-haupt', {
+                    onclick: () => f.schliesse(feld.value.trim() || 'Neues Projekt')
+                }, 'Anlegen')
+            ]
+        });
+        return f.versprechen;
+    }
+
+    /* ---------- Die Mappe ---------- */
+
+    function ansicht() {
+        return Ui.el('div', {}, kopfleiste(), Ui.el('main.mappe', {},
+            projektkopf(), werkzeuge(), gewerkliste()));
+    }
+
+    function kopfleiste() {
+        return Ui.el('header.kopfleiste', {},
+            Ui.el('div.marke', {},
+                Ui.el('img', { src: 'ui/marke.svg', alt: '', width: 26, height: 26 }),
+                Ui.el('span', {}, 'SubmitOne')),
+            Ui.el('div.datei', {},
+                Ui.el('span.datei-name', {}, mappe.kopf.projekt || Mappe.name),
+                offen ? Ui.el('span.datei-punkt', { title: 'Nicht gespeichert' }) : null),
+            Ui.el('div.abstand'),
+            Ui.el('button.knopf.knopf-still', {
+                onclick: async () => {
+                    try { await Mappe.speichernUnter(mappe); offen = false; Ui.meldung('Gespeichert', 'gut'); zeichne(); }
+                    catch (f) { if (f.name !== 'AbortError') Ui.meldung(f.message, 'warnung'); }
+                }
+            }, 'Speichern unter …'),
+            Ui.el('button.knopf.knopf-haupt', {
+                onclick: async () => {
+                    try { await Mappe.speichern(mappe); offen = false; Ui.meldung('Gespeichert', 'gut'); zeichne(); }
+                    catch (f) { if (f.name !== 'AbortError') Ui.meldung(f.message, 'warnung'); }
+                }
+            }, 'Speichern'));
+    }
+
+    function projektkopf() {
+        const felder = [
+            ['projekt', 'Projekt'], ['bauherr', 'Bauherrschaft'],
+            ['ort', 'Ort'], ['bauleitung', 'Bauleitung']
+        ];
+
+        return Ui.el('section.karte', {},
+            Ui.el('div.karte-kopf', {}, Ui.el('h3', {}, 'Projekt')),
+            Ui.el('div.karte-leib', {},
+                Ui.el('div.kopf-raster', {}, felder.map(([schluessel, name]) =>
+                    Ui.feld(name, Ui.el('input.eingabe', {
+                        value: mappe.kopf[schluessel] || '',
+                        onchange: e => aendere(m => { m.kopf[schluessel] = e.target.value.trim(); })
+                    })))),
+                Ui.el('p.leise.klein', {},
+                    'Diese Angaben gelten für alle Werkzeuge der Mappe. ',
+                    'Einmal ändern genügt.')));
+    }
+
+    /* ---------- Werkzeuge ---------- */
+
+    function werkzeuge() {
+        return Ui.el('section', {},
+            Ui.el('h2.abschnitt', {}, 'Werkzeuge'),
+            Ui.el('div.werkzeuge', {},
+                Object.entries(Mappe.MODULE).map(([schluessel, m]) => {
+                    const drin = !!mappe.module[schluessel];
+                    const zahl = drin ? umfang(schluessel) : null;
+
+                    return Ui.el('div.wz-karte' + (m.da ? '' : '.kommt'), {},
+                        Ui.el('div.wz-kopf', {},
+                            Ui.el('strong', {}, m.name),
+                            drin ? Ui.el('span.wz-marke.drin', {}, 'in der Mappe')
+                                 : Ui.el('span.wz-marke', {}, m.da ? 'noch nicht angelegt' : 'kommt später')),
+                        Ui.el('p.leise.klein', {}, m.satz),
+                        zahl ? Ui.el('p.wz-zahl', {}, zahl) : null,
+
+                        m.da ? Ui.el('div.wz-knoepfe', {},
+                            Ui.el('button.knopf' + (drin ? '' : '.knopf-haupt'), {
+                                onclick: () => oeffneModul(schluessel)
+                            }, drin ? 'Öffnen' : 'Anlegen und öffnen'),
+
+                            drin ? Ui.el('button.knopf.knopf-still', {
+                                onclick: () => Mappe.herausloesen(mappe, schluessel),
+                                title: 'Als eigene Datei zum Versenden'
+                            }, 'Herauslösen') : null,
+
+                            Ui.el('button.knopf.knopf-still', {
+                                onclick: () => einhaengenFenster(schluessel),
+                                title: 'Eine Modul-Datei in dieses Projekt holen'
+                            }, 'Einhängen …')) : null);
+                })));
+    }
+
+    function umfang(schluessel) {
+        const dok = mappe.module[schluessel];
+        if (schluessel === 'zeit' && dok) {
+            const minuten = (dok.eintraege || [])
+                .filter(e => Number.isFinite(e.bis))
+                .reduce((s, e) => {
+                    let ende = e.bis; if (ende <= e.von) ende += 1440;
+                    return s + Math.max(0, ende - e.von - (e.pause || 0));
+                }, 0);
+            return `${(dok.eintraege || []).length} Einträge · ${Hilf.dauer(minuten)}`;
+        }
+        return null;
+    }
+
+    async function oeffneModul(schluessel) {
+        if (!mappe.module[schluessel]) {
+            // Beim Anlegen bekommt das Modul den Projekt-Kopf mit.
+            aendere(m => { m.module[schluessel] = null; });
+        }
+
+        if (offen || !Mappe.hatDatei) {
+            const weiter = await Ui.frage(
+                Mappe.hatDatei
+                    ? 'Die Mappe hat ungespeicherte Änderungen. Zuerst speichern?'
+                    : 'Die Mappe ist noch nicht als Datei gespeichert. Jetzt speichern?',
+                'Speichern');
+            if (weiter) {
+                try { await Mappe.speichern(mappe); offen = false; }
+                catch (f) { if (f.name !== 'AbortError') { Ui.meldung(f.message, 'warnung'); return; } }
+            }
+        }
+
+        // Das Modul findet die Mappe über den abgelegten Dateigriff wieder.
+        sessionStorage.setItem('submit.modul', schluessel);
+        location.href = Mappe.MODULE[schluessel].ordner + '/?mappe=1';
+    }
+
+    function einhaengenFenster(schluessel) {
+        const feld = Ui.el('input', { type: 'file', accept: '.sub' + schluessel + ',.json,application/json' });
+
+        const f = Ui.fenster({
+            titel: Mappe.MODULE[schluessel].name + ' einhängen',
+            unterzeile: 'Eine Datei, die woanders gebaut wurde, in dieses Projekt holen.',
+            inhalt: Ui.el('div', {},
+                Ui.feld('Datei', feld),
+                Ui.el('p.leise.klein', {},
+                    'Die Gewerke werden nach BKP abgeglichen. Was es hier noch nicht gibt, ',
+                    'wird angelegt — nichts wird stillschweigend zusammengeführt.')),
+            knoepfe: [
+                Ui.el('span.abstand'),
+                Ui.el('button.knopf.knopf-still', { onclick: () => f.schliesse() }, 'Abbrechen'),
+                Ui.el('button.knopf.knopf-haupt', {
+                    onclick: async () => {
+                        const datei = feld.files && feld.files[0];
+                        if (!datei) { Ui.meldung('Keine Datei gewählt.', 'warnung'); return; }
+
+                        try {
+                            const fremd = JSON.parse(await datei.text());
+                            const ergebnis = Mappe.einhaengen(mappe, schluessel, fremd);
+                            offen = true;
+                            f.schliesse();
+                            zeichne();
+                            Ui.meldung(
+                                `Eingehängt · ${ergebnis.verknuepft} Gewerke verknüpft, ${ergebnis.neue} neu`,
+                                'gut');
+                        } catch (fehler) {
+                            Ui.meldung('Die Datei liess sich nicht lesen: ' + fehler.message, 'warnung');
+                        }
+                    }
+                }, 'Einhängen')
+            ]
+        });
+    }
+
+    /* ---------- Gewerke ---------- */
+
+    function gewerkliste() {
+        return Ui.el('section', {},
+            Ui.el('div.abschnitt-zeile', {},
+                Ui.el('h2.abschnitt', {}, 'Gewerke'),
+                Ui.el('span.abstand'),
+                Ui.el('button.knopf.knopf-still', { onclick: bkpVorlage }, 'BKP-Vorlage einsetzen'),
+                Ui.el('button.knopf.knopf-haupt', { onclick: () => gewerkFenster(null) }, 'Gewerk anlegen')),
+
+            Ui.el('p.leise.klein.abschnitt-satz', {},
+                'Das gemeinsame Objekt aller Werkzeuge. SubTermin zeigt den Balken, ',
+                'SubKosten die Zahlen, SubZeit die Stunden — es ist dasselbe Gewerk.'),
+
+            mappe.gewerke.length
+                ? Ui.el('div.karte', {},
+                    Ui.el('table.tabelle', {},
+                        Ui.el('thead', {}, Ui.el('tr', {},
+                            Ui.el('th', {}, ''), Ui.el('th', {}, 'BKP'),
+                            Ui.el('th', {}, 'Gewerk'), Ui.el('th', {}, ''))),
+                        Ui.el('tbody', {}, mappe.gewerke.map(g => Ui.el('tr', {},
+                            Ui.el('td', {}, Ui.el('i.punkt', { stil: { background: g.farbe } })),
+                            Ui.el('td', {}, Ui.el('strong', {}, g.bkp || '—')),
+                            Ui.el('td', {}, g.name),
+                            Ui.el('td.zahl', {},
+                                Ui.el('button.knopf.knopf-winzig', {
+                                    onclick: () => gewerkFenster(g.id)
+                                }, 'Ändern')))))))
+
+                : Ui.el('div.karte.leer', {},
+                    Ui.el('p', {}, 'Noch keine Gewerke.'),
+                    Ui.el('p.leise', {}, 'Ohne Gewerke lässt sich arbeiten — mit ihnen greifen die Werkzeuge ineinander.')));
+    }
+
+    function gewerkFenster(id) {
+        const vorhanden = id ? Mappe.gewerk(mappe, id) : null;
+        const bkpFeld = Ui.el('input.eingabe', { value: vorhanden ? vorhanden.bkp : '', placeholder: '211' });
+        const nameFeld = Ui.el('input.eingabe', { value: vorhanden ? vorhanden.name : '', placeholder: 'Baumeisterarbeiten' });
+        const farbeFeld = Ui.el('input.eingabe.farbe', {
+            type: 'color', value: vorhanden ? vorhanden.farbe : Mappe.farbeFuer(mappe.gewerke.length)
+        });
+
+        const f = Ui.fenster({
+            titel: vorhanden ? 'Gewerk ändern' : 'Neues Gewerk',
+            inhalt: Ui.el('div', {},
+                Ui.el('div.form-zwei', {}, Ui.feld('BKP', bkpFeld), Ui.feld('Farbe', farbeFeld)),
+                Ui.feld('Bezeichnung', nameFeld)),
+            knoepfe: [
+                vorhanden ? Ui.el('button.knopf.knopf-gefahr-still', {
+                    onclick: async () => {
+                        if (!await Ui.frage('Gewerk löschen? Zuordnungen in den Werkzeugen gehen verloren.')) return;
+                        aendere(m => { m.gewerke = m.gewerke.filter(g => g.id !== id); });
+                        f.schliesse();
+                    }
+                }, 'Löschen') : null,
+                Ui.el('span.abstand'),
+                Ui.el('button.knopf.knopf-still', { onclick: () => f.schliesse() }, 'Abbrechen'),
+                Ui.el('button.knopf.knopf-haupt', {
+                    onclick: () => {
+                        if (!nameFeld.value.trim()) { Ui.meldung('Eine Bezeichnung fehlt.', 'warnung'); return; }
+                        aendere(m => {
+                            if (vorhanden) {
+                                vorhanden.bkp = bkpFeld.value.trim();
+                                vorhanden.name = nameFeld.value.trim();
+                                vorhanden.farbe = farbeFeld.value;
+                                m.gewerke.sort((a, b) => a.bkp.localeCompare(b.bkp, 'de', { numeric: true }));
+                            } else {
+                                Mappe.gewerkAnlegen(m, bkpFeld.value, nameFeld.value, farbeFeld.value);
+                            }
+                        });
+                        f.schliesse();
+                    }
+                }, 'Speichern')
+            ]
+        });
+    }
+
+    /* Die üblichen BKP-Hauptgruppen des Hochbaus – als Anfang, nicht als Gesetz. */
+    const BKP = [
+        ['112', 'Abbrüche'], ['113', 'Baugrubenaushub'],
+        ['211', 'Baumeisterarbeiten'], ['213', 'Montagebau in Holz'],
+        ['214', 'Montagebau in Stahl'], ['221', 'Fenster'], ['222', 'Spenglerarbeiten'],
+        ['224', 'Bedachungsarbeiten'], ['225', 'Abdichtungen'], ['226', 'Fassadenputz'],
+        ['228', 'Storen und Rollläden'], ['230', 'Elektroanlagen'],
+        ['240', 'Heizungsanlagen'], ['244', 'Lüftungsanlagen'], ['250', 'Sanitäranlagen'],
+        ['258', 'Küche'], ['271', 'Gipserarbeiten'], ['272', 'Metallbauarbeiten'],
+        ['273', 'Schreinerarbeiten'], ['281', 'Bodenbeläge'], ['285', 'Malerarbeiten'],
+        ['287', 'Baureinigung'], ['421', 'Gärtnerarbeiten']
+    ];
+
+    async function bkpVorlage() {
+        if (mappe.gewerke.length && !await Ui.frage(
+            'Die Vorlage ergänzt die üblichen BKP-Positionen. Vorhandene bleiben unangetastet. Fortfahren?',
+            'Einsetzen')) return;
+
+        let neue = 0;
+        aendere(m => {
+            BKP.forEach(([bkp, name]) => {
+                if (m.gewerke.some(g => g.bkp === bkp)) return;
+                Mappe.gewerkAnlegen(m, bkp, name);
+                neue++;
+            });
+        });
+        Ui.meldung(`${neue} Gewerke eingesetzt`, 'gut');
+    }
+
+    /* ---------- Start ---------- */
+
+    (async function start() {
+        // Kommt jemand aus einem Modul zurück, ist die Mappe noch da.
+        try {
+            const geladen = await Mappe.letzteOeffnen();
+            if (geladen) { mappe = geladen; offen = false; }
+        } catch (e) { /* dann eben der Einstieg */ }
+
+        zeichne();
+
+        window.addEventListener('beforeunload', e => {
+            if (!offen) return;
+            e.preventDefault();
+            e.returnValue = '';
+        });
+    })();
+})();
+</script>
+</body>
+</html>

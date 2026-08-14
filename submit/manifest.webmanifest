@@ -1,0 +1,21 @@
+{
+  "name": "Submit Projektmappe",
+  "short_name": "Mappe",
+  "description": "Die Projektmappe: Projektkopf, Gewerke nach BKP und die Module eines Bauvorhabens.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#7132e3",
+  "lang": "de-CH",
+  "icons": [
+    { "src": "ui/marke.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "ui/marke-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "ui/marke-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "ui/marke-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "file_handlers": [
+    { "action": ".", "accept": { "application/json": [".submit"] } }
+  ]
+}

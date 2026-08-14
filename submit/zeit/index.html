@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="de-CH">
+<head>
+<meta charset="utf-8">
+    <meta name="author" content="Gerber-Soft">
+    <meta name="copyright" content="© 2026 Gerber-Soft. Alle Rechte vorbehalten.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SubZeit</title>
+<meta name="description" content="Zeit erfassen und planen im Viertelstundentakt. Läuft im Browser, die Daten bleiben in Ihrer Datei.">
+<meta name="theme-color" content="#0b0a12">
+
+<link rel="icon" href="../ui/marke.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../ui/marke-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Quicksand:wght@600;700&display=swap">
+
+<!-- Farben, Bausteine und Wochenraster liegen in ui\ an der Wurzel — dieselben
+     Dateien laden SubmitOne, Submit Paper, Submit PDF und die Projektmappe.
+     Was hier gleich aussieht, sieht dort gleich aus, weil es dieselbe Zeile ist. -->
+<link rel="stylesheet" href="../../ui/tokens.css">
+<link rel="stylesheet" href="../../ui/bausteine.css">
+<link rel="stylesheet" href="../../ui/wochenraster.css">
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+
+<div id="app"></div>
+
+<!-- Der Kern zuerst: Fachlogik und Oberfläche bauen darauf auf. -->
+<!-- Umschaltpille: der Weg zurueck zu One, Paper und PDF. SubZeit liegt zwei
+     Ebenen tief (submit/zeit/ lokal, mappe/zeit/ auf dem Server), deshalb eine
+     eigene Angabe. Auf dem Server ersetzt paket.ps1 sie. -->
+<script>window.SO_APPS={basis:'../../',one:'',paper:'write/',pdf:'pdf/',zeit:'submit/zeit/'};</script>
+<script src="../../appswitch.js"></script>
+
+<script src="../kern/kern.js"></script>
+<script src="../kern/mappe.js"></script>
+<!-- Arbeitsordner: dieselben Bauvorhaben wie SubmitOne. Reihenfolge zaehlt,
+     ordner.js greift beim Laden auf Uebersetzer zu. -->
+<script src="../kern/uebersetzer.js"></script>
+<script src="../kern/ordner.js"></script>
+<script src="../kern/ablage-browser.js"></script>
+<!-- Die Zeitrechnung teilt sich SubZeit mit SubmitOne. Muss vor fach.js
+     stehen, das nur noch an sie weiterreicht. -->
+<script src="../kern/zeitrechnung.js"></script>
+<script src="../kern/wochenraster.js"></script>
+<script src="fach.js"></script>
+<script src="bahn.js"></script>
+<script src="app.js"></script>
+
+<script>
+/* =====================================================================
+   Start
+   ---------------------------------------------------------------------
+   Drei Wege hinein, in dieser Reihenfolge:
+     1. Doppelklick auf eine Datei im Explorer (launchQueue)
+     2. Ein Zwischenstand, der noch im Browser liegt
+     3. Der Einstiegsbildschirm
+   ===================================================================== */
+(function () {
+    'use strict';
+
+    // Windows reicht eine Datei herein, wenn die App als Programm für
+    // .submitzeit angemeldet ist. Das ist das Word-Verhalten.
+    if ('launchQueue' in window && 'files' in LaunchParams.prototype) {
+        launchQueue.setConsumer(async params => {
+            if (!params.files || !params.files.length) return;
+            try {
+                await Ablage.ausGriff(params.files[0]);
+                Ui.meldung('Geöffnet: ' + Ablage.name, 'gut');
+            } catch (fehler) {
+                Ui.meldung('Die Datei liess sich nicht öffnen: ' + fehler.message, 'warnung');
+            }
+        });
+    }
+
+    // Kommt der Aufruf aus einer Projektmappe, arbeitet SubZeit in ihr:
+    // dieselbe Datei, geteilte Gewerke, geteilter Projektkopf.
+    if (new URLSearchParams(location.search).has('mappe')) {
+        Mappe.letzteOeffnen()
+            .then(mappe => {
+                if (!mappe) {
+                    Ui.meldung('Die Mappe wurde nicht gefunden — SubZeit läuft allein.', 'warnung');
+                    App.start();
+                    return;
+                }
+                App.inMappe(mappe);
+            })
+            .catch(() => App.start());
+    } else {
+        // Der zuletzt gewählte Arbeitsordner, ohne Nachfrage: Gilt die
+        // Erlaubnis noch, sind dieselben Bauvorhaben da wie in SubmitOne.
+        // Gilt sie nicht mehr, erscheint der Einstiegsbildschirm — dort
+        // steht «Arbeitsordner öffnen».
+        App.imOrdner(true)
+            .then(erfolg => { if (!erfolg) App.start(); })
+            .catch(() => App.start());
+    }
+
+    // Ohne HTTPS gibt es keinen Dienstarbeiter – lokal über file:// deshalb
+    // stillschweigend überspringen.
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js').catch(() => { /* läuft auch ohne */ });
+        });
+    }
+
+    // Messung, sobald sie erreichbar ist. Fehlt sie, stört das nichts.
+    if (window.Spur) {
+        Spur.zustand({
+            app: 'time',
+            stufe: (Daten.doc && Daten.doc.einstellungen.stufe) || '',
+            fassung: '1.0'
+        });
+    }
+})();
+</script>
+
+<!-- Messung: nur wirksam, wenn submitone.ch erreichbar ist. -->
+<script src="https://submitone.ch/telemetrie.js" data-app="time"
+        data-ziel="https://submitone.ch/api/" defer></script>
+</body>
+</html>

@@ -1,0 +1,115 @@
+/* =====================================================================
+   SubmitOne — die Projektmappe
+   Nur, was diese Ansicht braucht. Farben in ../../ui/tokens.css,
+   Bausteine in ../../ui/bausteine.css.
+   ===================================================================== */
+
+.kopfleiste {
+    display: flex;
+    align-items: center;
+    gap: .625rem;
+    height: 48px;
+    padding: 0 .875rem;
+    border-bottom: 1px solid var(--kante);
+    background: var(--flaeche);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.marke {
+    display: inline-flex;
+    align-items: center;
+    gap: .4375rem;
+    font-family: var(--schrift-marke);
+    font-weight: 700;
+    font-size: var(--t-m);
+}
+.marke img { border-radius: 6px; }
+
+.datei {
+    display: inline-flex;
+    align-items: center;
+    gap: .375rem;
+    padding-left: .625rem;
+    margin-left: .375rem;
+    border-left: 1px solid var(--kante);
+    font-size: var(--t-s);
+    color: var(--text-leise);
+}
+.datei-punkt { width: 7px; height: 7px; border-radius: 50%; background: var(--warnung); }
+
+.mappe {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem 3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+}
+
+.abschnitt { font-size: var(--t-xl); letter-spacing: -.025em; }
+.abschnitt-zeile { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.abschnitt-satz { margin: .5rem 0 1rem; max-width: 52ch; }
+
+.kopf-raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .75rem; }
+.kopf-raster .feld + .feld { margin-top: 0; }
+
+/* ---------- Die Werkzeugkacheln ---------- */
+
+.werkzeuge {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: .875rem;
+    margin-top: 1rem;
+}
+
+.wz-karte {
+    display: flex;
+    flex-direction: column;
+    gap: .375rem;
+    padding: 1rem;
+    border: 1px solid var(--kante);
+    border-radius: var(--rund-l);
+    background: var(--flaeche);
+}
+/* Was noch nicht existiert, tritt zurück – ohne zu verschwinden. */
+.wz-karte.kommt { border-style: dashed; opacity: .6; }
+
+.wz-kopf { display: flex; align-items: center; gap: .5rem; }
+.wz-kopf strong { font-size: var(--t-l); letter-spacing: -.015em; }
+
+/* Nicht .marke nennen: So heisst bereits das Logo in der Kopfleiste, und
+   die zweite Regel überschriebe die erste. */
+.wz-marke {
+    margin-left: auto;
+    padding: .0625rem .4375rem;
+    border-radius: 999px;
+    background: var(--flaeche-3);
+    color: var(--text-still);
+    font-size: 10px;
+    font-weight: 620;
+}
+.wz-marke.drin { background: var(--gut-weich); color: var(--gut); }
+
+.wz-zahl { font-size: var(--t-xs); color: var(--text-leise); font-variant-numeric: tabular-nums; }
+.wz-knoepfe { display: flex; flex-wrap: wrap; gap: .375rem; margin-top: auto; padding-top: .625rem; }
+
+/* ---------- Einstieg ---------- */
+
+.einstieg { display: grid; place-items: center; min-height: 100vh; padding: 1.5rem; }
+.einstieg-karte {
+    width: min(440px, 100%);
+    padding: 2.25rem;
+    border: 1px solid var(--kante);
+    border-radius: var(--rund-xl);
+    background: var(--flaeche);
+    box-shadow: var(--schatten-m);
+    text-align: center;
+}
+.einstieg-marke { margin: 0 auto 1.25rem; border-radius: 16px; }
+.einstieg-karte h1 { font-size: var(--t-2xl); }
+.einstieg-satz { margin-top: .625rem; color: var(--text-leise); }
+.einstieg-knoepfe { display: flex; gap: .5rem; justify-content: center; margin-top: 1.5rem; }
+.einstieg-klein { margin-top: 1rem; font-size: var(--t-xs); color: var(--text-still); }
+.einstieg-klein a { color: var(--v-600); }

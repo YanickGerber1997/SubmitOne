@@ -86,7 +86,7 @@ html, body {
 
 /* Die Grundschrift steht auf body, NICHT auf html.
 
-   Bis zum 14.08.2026 stand hier «html, body { font-size: 12.5px }». Das
+   Bis zum 14.08.2026 stand hier «html, body { font-size: var(--t-s) }». Das
    setzt zugleich die rem-Basis: Ein rem war damit 12.5px statt 16px. So
    lange alle Grössen in Pixeln standen, fiel das nicht auf. Mit der
    gemeinsamen Skala fiele es sofort auf, und zwar falsch herum — --t-m
@@ -2106,31 +2106,10 @@ tr.rg-sub:hover td { background: rgba(0,0,0,.03); }
 .erfassen-card.recommended { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
 .ef-rec { position: absolute; top: 9px; right: 10px; font-size: var(--t-2xs); font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #fff; background: var(--brand); padding: 2px 7px; border-radius: var(--radius); }
 
-/* --- Dauerhafte Tier-Anzeige (auf jeder Seite) – schlankes Pill mit Metall-Chip + Speicher-Status --- */
-.tier-badge {
-  position: fixed; top: 10px; right: 14px; z-index: 300;
-  display: inline-flex; align-items: center; gap: 9px;
-  background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius);
-  padding: 4px 13px 4px 5px; cursor: pointer; font-size: var(--t-xs);
-  box-shadow: 0 3px 12px rgba(0,0,0,.12);
-}
-.tier-badge:hover { border-color: var(--border-2); box-shadow: 0 4px 16px rgba(0,0,0,.18); }
-.tier-chip {
-  font-weight: 800; font-size: var(--t-2xs); letter-spacing: .5px; text-transform: uppercase;
-  padding: 3px 11px; border-radius: var(--radius); color: #3a2f12; border: 1px solid rgba(0,0,0,.08);
-}
-.tier-chip.t-gold   { background: linear-gradient(135deg,#f7e6a8,#e7c65f); }
-.tier-chip.t-silber { background: linear-gradient(135deg,#f4f2ea,#d0ccbf); color:#383a33; }
-.tier-chip.t-bronze { background: linear-gradient(135deg,#eccaa3,#cf935f); color:#3a2410; }
-.tier-chip.t-platin { background: linear-gradient(135deg,#eef3e4,#cdc7b6); color:#2f332b; }
-.tier-chip.t-amber  { background: linear-gradient(135deg,#ffe9b8,#ffd279); color:#5a4209; }
-.tier-chip.t-grey   { background: linear-gradient(135deg,var(--grund),var(--line)); color:var(--ink-soft); }
-.tier-state { display: inline-flex; align-items: center; gap: 6px; color: var(--text-soft); font-weight: 500; font-size: var(--t-xs); }
-.tier-state::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--s-green); }
-.tier-state.warn { color: var(--s-red); }
-.tier-state.warn::before { background: var(--s-red); }
-@media (max-width: 680px) { .tier-state { display: none; } .tier-badge { top: 8px; right: 8px; gap: 0; padding: 4px 5px; } }
-@media print { .tier-badge, .plan-banner, #planBanner { display: none !important; } }
+/* Die Tier-Pille (.tier-badge / .tier-chip / .tier-state) ist am
+   14.08.2026 entfernt worden — samt der sechs Metall-Verläufe, die als
+   einzige Stelle im Programm noch Gold, Bronze und Platin trugen. */
+@media print { .plan-banner, #planBanner { display: none !important; } }
 
 /* ===== Feel-Konsistenz mit Submit PDF/Paper: Scrollbalken · Klick-Feedback · Fokusring (Design bleibt bewusst blau) ===== */
 html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22%, transparent) transparent; }

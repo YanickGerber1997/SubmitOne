@@ -634,25 +634,14 @@ function planLabel() {
   const p = effektivPlan(ent);
   return PLAN_LABELS[p] || (p.charAt(0).toUpperCase() + p.slice(1));
 }
-// Aktuelles Tier + Speicher-Status für die dauerhafte Anzeige auf jeder Seite
-function tierInfo() {
-  if (!cloudEnabled) return { label: 'Lokal', cls: 'grey', save: 'nur lokal', saved: false };
-  const p = effektivPlan(ent);
-  const hatModule = ent && Array.isArray(ent.module) && ent.module.length;
-  if (p === 'trial')    return { label: 'Test',        cls: 'amber',  save: 'gespeichert', saved: true };
-  if (p === 'basis')    return { label: 'Basic',       cls: 'silber', save: 'gespeichert', saved: true };
-  if (p === 'komplett') return { label: 'Premium',     cls: 'gold',   save: 'gespeichert', saved: true };
-  if (p === 'modul' || hatModule) return { label: 'Individuell', cls: 'platin', save: 'gespeichert', saved: true };
-  return { label: 'Free', cls: 'bronze', save: 'nicht gespeichert', saved: false };
-}
-function renderTierBadge() {
-  let b = $('#tierBadge');
-  if (!b) { b = document.createElement('button'); b.id = 'tierBadge'; b.type = 'button'; b.onclick = actAbo; document.body.appendChild(b); }
-  const t = tierInfo();
-  b.className = 'tier-badge';
-  b.title = 'Plan ansehen & ändern';
-  b.innerHTML = `<span class="tier-chip t-${t.cls}">${esc(t.label)}</span><span class="tier-state ${t.saved ? 'ok' : 'warn'}">${esc(t.save)}</span>`;
-}
+/* Die dauerhafte Tier-Pille oben rechts ist am 14.08.2026 entfernt worden
+   (Entscheid des Nutzers). Sie sass fest über jeder Seite, zeigte auf jedem
+   Bildschirm «LOKAL · nur lokal» und führte mit einem Klick auf die
+   Abo-Seite — ein Verkaufshinweis, der immer im Bild stand.
+
+   Ersatzlos: Der Plan steht weiterhin im Benutzer-Chip unten in der
+   Seitenleiste, und die Abo-Ansicht bleibt über die Einstellungen
+   erreichbar. Was weg ist, ist die dauernde Anzeige. */
 
 /* ---- Mitglieder & Rollen pro Projekt (Schritt 1: Verwaltung; Sichtbarkeits-Gating folgt) ---- */
 const MITGLIED_ROLLEN = [
@@ -848,7 +837,6 @@ async function startApp() {
   const ver = $('.ver'); if (ver) ver.innerHTML = 'Prototyp · ' + esc(APP_VERSION) + '<br><span style="opacity:.72">© 2026 Gerber-Soft</span>';
   renderUserChip();
   renderPlanBanner();
-  renderTierBadge();
   window.addEventListener('hashchange', router);
   router();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {

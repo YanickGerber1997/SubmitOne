@@ -64,16 +64,23 @@
      als Fläche über Daten. Innerhalb eines Kapitels heisst Rot weiter
      «überschritten», auch wenn das Kapitel selbst rot heisst.
 
+     Der Ton ist herbstlich und gedeckt, nicht signalhaft: Moos statt
+     Signalgrün, Rost statt Feuerrot, Schiefer statt Himmelblau. Das ist
+     kein Geschmack, sondern Notwendigkeit — je näher eine Bereichsfarbe
+     am reinen Signalton liegt, desto eher liest man sie als Statusmeldung.
+     Gedeckte Töne tragen Bedeutung, ohne zu rufen.
+
      Alle Werte durchgerechnet (WCAG): -voll trägt weisse Schrift ab
-     4.78:1, -text auf Weiss ab 6.37:1, -text auf -weich ab 5.62:1. Der
-     schwierigste war Gelb; es ist deshalb ein dunkles Ocker und kein
-     Signalgelb — ein helles Gelb trägt keine Schrift. */
-  --b-gruen-voll:#15794a;   --b-gruen-text:#0d5636;   --b-gruen-weich:#e3f4ea;
-  --b-gelb-voll:#8f6a12;    --b-gelb-text:#7a5a0e;    --b-gelb-weich:#fbf0d6;
-  --b-rot-voll:#c0342b;     --b-rot-text:#9c2820;     --b-rot-weich:#fbe9e7;
-  --b-blau-voll:#1f5fc0;    --b-blau-text:#194d9c;    --b-blau-weich:#e6effc;
-  --b-tuerkis-voll:#0c807c; --b-tuerkis-text:#095f5c; --b-tuerkis-weich:#dff3f2;
-  --b-grau-voll:#55556b;    --b-grau-text:#414154;    --b-grau-weich:#ececf4;
+     4.53:1, -text auf Weiss ab 7.01:1, -text auf -weich ab 6.12:1. Der
+     schwierigste war Ocker — ein helles Gelb trägt keine Schrift.
+
+     -weich ist der Hintergrund einer Gruppe, -rand ihre Kante. */
+  --b-gruen-voll:#4d6a3d;   --b-gruen-text:#3b5230;   --b-gruen-weich:#eef2e8;   --b-gruen-rand:#d5dfc9;
+  --b-gelb-voll:#96701c;    --b-gelb-text:#725415;    --b-gelb-weich:#f7efdc;    --b-gelb-rand:#e8d8b0;
+  --b-rot-voll:#a8492f;     --b-rot-text:#853825;     --b-rot-weich:#f8ebe6;     --b-rot-rand:#eccec2;
+  --b-blau-voll:#3c6280;    --b-blau-text:#2e4c64;    --b-blau-weich:#eaf0f5;    --b-blau-rand:#c9d8e4;
+  --b-tuerkis-voll:#3d6f68; --b-tuerkis-text:#2e544f; --b-tuerkis-weich:#e9f1ef; --b-tuerkis-rand:#c6dbd6;
+  --b-grau-voll:#6b6357;    --b-grau-text:#514b42;    --b-grau-weich:#f2f0ed;    --b-grau-rand:#dcd7cf;
 
   /* ---- Schrift (beide Namen zeigen auf dieselbe Familie) ---- */
   --font:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;

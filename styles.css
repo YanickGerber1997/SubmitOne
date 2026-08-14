@@ -162,7 +162,10 @@ button { font-family: inherit; cursor: pointer; }
 /* ===== Logo „submitone" (gezeichnet; hell = Default, on-dark = Sidebar) ===== */
 .logo { --lg-ink:var(--ink); --lg-accent:#7132e3; display:inline-flex; align-items:center; gap:7px; line-height:1; }   /* „One" in Marken-Violett */
 .logo.on-dark { --lg-ink:#ffffff; --lg-accent:#d9b862; }   /* echte dunkle Flächen (z. B. Login) */
-.sidebar .logo.on-dark { --lg-ink:var(--ink); --lg-accent:#7132e3; }   /* helle Leiste: dunkler Schriftzug, „One" in Violett */
+/* Helle Leiste: dunkler Schriftzug, „One" in Marken-Violett — und im
+   Projekt in der Farbe des Bereichs, in dem man steht. Das Zeichen oben
+   sagt dann dasselbe wie die Leiste darunter. */
+.sidebar .logo.on-dark { --lg-ink:var(--ink); --lg-accent:var(--bf-voll, #7132e3); }
 .logo-word { font-family:'Quicksand', system-ui, sans-serif; font-weight:600; font-size: var(--t-xl); letter-spacing:.2px; }
 .logo .lw-a { color:var(--lg-ink); }
 .logo .lw-b { color:var(--lg-accent); }
@@ -195,11 +198,11 @@ button { font-family: inherit; cursor: pointer; }
 .sidebar-toggle {
   position: absolute; top: 50%; right: -13px; transform: translateY(-50%);
   width: 26px; height: 26px; margin: 0; padding: 0; z-index: 12;
-  background: var(--brand); border: 2px solid var(--surface);
+  background: var(--bf-voll, var(--brand)); border: 2px solid var(--surface);
   color: #fff; border-radius: 50%; cursor: pointer;
   font-size: 0; line-height: 0;                    /* das «« im Markup wird ersetzt */
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 8px rgba(113,50,227,.35);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--bf-voll, var(--brand)) 35%, transparent);
   opacity: .55;
   transition: opacity .15s, background .15s, transform .15s;
 }
@@ -277,25 +280,68 @@ button { font-family: inherit; cursor: pointer; }
 
    Der Griff des Programms bleibt violett: die Marke färbt die Hülle,
    diese Farben färben, worin man arbeitet. */
+/* Eine Gruppe ist ein Block, nicht eine Überschrift mit Nachbarn: eigener
+   Grund, eigene Kante, eigene Farbe. Geschlossen ist sie eine Zeile,
+   offen zeigt sie ihre Kapitel — deshalb rollt hier nichts mehr. */
+.subnav-gruppe {
+  border: 1px solid transparent; border-radius: var(--radius);
+  margin-bottom: 3px; overflow: hidden;
+  transition: background .14s, border-color .14s;
+}
+.subnav-gruppe.offen { background: var(--bf-weich); border-color: var(--bf-rand); padding-bottom: 3px; }
+
+.subnav-grp {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 10px; cursor: pointer;
+  font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: .7px;
+  font-weight: 700; color: var(--bf-text);
+  border: 0; margin: 0; background: transparent;
+}
+.subnav-gruppe:not(.offen) .subnav-grp:hover { background: var(--bf-weich); }
+.subnav-grp .nav-txt { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.subnav-grp-punkt { width: 9px; height: 9px; border-radius: 3px; background: var(--bf-voll); flex: none; }
+.subnav-grp-zahl { font-size: var(--t-2xs); font-weight: 600; opacity: .6; font-variant-numeric: tabular-nums; }
+.subnav-gruppe.offen .subnav-grp-zahl { display: none; }
+
+/* Geschlossene Gruppen zeigen ihre Kapitel nicht — genau das schafft den
+   Platz, der vorher fehlte. */
+.subnav-gruppe:not(.offen) .subnav-link { display: none; }
+
+.subnav-link[data-farbe] { margin: 0 4px; }
 .subnav-link[data-farbe] .nav-ico { color: var(--bf-text); }
-.subnav-link:hover[data-farbe] { background: var(--bf-weich); color: var(--bf-text); }
+.subnav-link:hover[data-farbe] { background: #fff; color: var(--bf-text); }
 .subnav-link.active[data-farbe] { background: var(--bf-voll); color: #fff; font-weight: 600; }
 .subnav-link.active[data-farbe] .nav-ico { color: #fff; }
-.subnav-grp[data-farbe] { color: var(--bf-text); border-top-color: var(--bf-weich); }
-/* Ein kurzer Strich in der Gruppenfarbe vor dem Titel — er bündelt die
-   Kapitel darunter optisch zu einem Block. */
-.subnav-grp[data-farbe]::before {
-  content: ''; display: inline-block; width: 12px; height: 2px;
-  background: var(--bf-voll); vertical-align: middle;
-  margin-right: 7px; margin-bottom: 2px; border-radius: 1px;
-}
 
-[data-farbe="gruen"]   { --bf-voll: var(--b-gruen-voll);   --bf-text: var(--b-gruen-text);   --bf-weich: var(--b-gruen-weich); }
-[data-farbe="gelb"]    { --bf-voll: var(--b-gelb-voll);    --bf-text: var(--b-gelb-text);    --bf-weich: var(--b-gelb-weich); }
-[data-farbe="rot"]     { --bf-voll: var(--b-rot-voll);     --bf-text: var(--b-rot-text);     --bf-weich: var(--b-rot-weich); }
-[data-farbe="blau"]    { --bf-voll: var(--b-blau-voll);    --bf-text: var(--b-blau-text);    --bf-weich: var(--b-blau-weich); }
-[data-farbe="tuerkis"] { --bf-voll: var(--b-tuerkis-voll); --bf-text: var(--b-tuerkis-text); --bf-weich: var(--b-tuerkis-weich); }
-[data-farbe="grau"]    { --bf-voll: var(--b-grau-voll);    --bf-text: var(--b-grau-text);    --bf-weich: var(--b-grau-weich); }
+[data-farbe="gruen"]   { --bf-voll: var(--b-gruen-voll);   --bf-text: var(--b-gruen-text);   --bf-weich: var(--b-gruen-weich);   --bf-rand: var(--b-gruen-rand); }
+[data-farbe="gelb"]    { --bf-voll: var(--b-gelb-voll);    --bf-text: var(--b-gelb-text);    --bf-weich: var(--b-gelb-weich);    --bf-rand: var(--b-gelb-rand); }
+[data-farbe="rot"]     { --bf-voll: var(--b-rot-voll);     --bf-text: var(--b-rot-text);     --bf-weich: var(--b-rot-weich);     --bf-rand: var(--b-rot-rand); }
+[data-farbe="blau"]    { --bf-voll: var(--b-blau-voll);    --bf-text: var(--b-blau-text);    --bf-weich: var(--b-blau-weich);    --bf-rand: var(--b-blau-rand); }
+[data-farbe="tuerkis"] { --bf-voll: var(--b-tuerkis-voll); --bf-text: var(--b-tuerkis-text); --bf-weich: var(--b-tuerkis-weich); --bf-rand: var(--b-tuerkis-rand); }
+[data-farbe="grau"]    { --bf-voll: var(--b-grau-voll);    --bf-text: var(--b-grau-text);    --bf-weich: var(--b-grau-weich);    --bf-rand: var(--b-grau-rand); }
+
+/* ---- Die Farbe zieht in den Bereich hinein ----------------------------
+   Wer die Kosten öffnet, soll dort nicht auf Violett stossen. #view trägt
+   die Gruppenfarbe (gesetzt in projektTabs), und innerhalb davon IST
+   --brand die Bereichsfarbe. Damit folgen Knöpfe, Marken und Hervor-
+   hebungen von selbst — ohne dass jede einzelne Regel angefasst wird.
+
+   Violett bleibt ausserhalb: Seitenleiste, Kopfzeile, Dashboard. Die
+   Marke färbt die Hülle, der Bereich färbt, worin man arbeitet.
+
+   NICHT betroffen sind die Statusfarben --s-red, --s-green, --s-amber:
+   Sie sind eigene Namen und bedeuten weiter «überschritten», «erledigt»,
+   «Warnung» — auch im roten Kapitel Kosten. */
+#app[data-farbe] #view {
+  --brand: var(--bf-voll);
+  --brand-dark: var(--bf-text);
+  --brand-soft: var(--bf-weich);
+  --brand-tint: var(--bf-weich);
+  /* Der gefüllte Knopf liest --akzent-voll (ui/bausteine.css). */
+  --akzent-voll: var(--bf-voll);
+  --akzent-tief: var(--bf-text);
+  --ring: 0 0 0 3px color-mix(in srgb, var(--bf-voll) 30%, transparent);
+}
 
 .subnav-link.active .tab-badge { background: rgba(255,255,255,.28); color: #fff; }
 
@@ -303,8 +349,14 @@ button { font-family: inherit; cursor: pointer; }
    Bis zum 14.08.2026 stand hier «display: none»: Eingeklappt verschwand
    die Projektnavigation ganz, man kam aus dem Kapitel nicht mehr heraus,
    ohne erst wieder aufzuklappen. */
-#app.collapsed .subnav-title,
-#app.collapsed .subnav-grp { display: none; }
+#app.collapsed .subnav-title { display: none; }
+/* Die Gruppenköpfe bleiben — als reine Farbpunkte. Ohne sie käme man
+   eingeklappt nur noch in der offenen Gruppe herum und nicht mehr
+   heraus; genau der Fehler, den die Leiste vorher schon hatte. */
+#app.collapsed .subnav-grp { justify-content: center; padding: 8px 0; }
+#app.collapsed .subnav-grp .nav-txt,
+#app.collapsed .subnav-grp-zahl { display: none; }
+#app.collapsed .subnav-grp-punkt { width: 12px; height: 12px; border-radius: 4px; }
 #app.collapsed .subnav-link,
 #app.collapsed .subnav-zurueck { justify-content: center; gap: 0; padding: 8px 0; }
 #app.collapsed .subnav-zurueck { margin-bottom: 6px; border-bottom: 1px solid var(--border); border-radius: 0; }

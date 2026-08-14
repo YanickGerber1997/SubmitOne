@@ -1682,18 +1682,43 @@ function projektTabs(p, active, toolbar) {
        <span class="nav-txt">Alle Projekte</span>
      </a>
      <div class="subnav-title" title="${esc(p.name)}">${esc(p.name)}</div>` +
-    gruppen.map(g => `<div class="subnav-grp" data-farbe="${g.farbe || 'grau'}">${esc(g.label)}</div>` +
-      g.items.map(it => `<a class="subnav-link ${active === it.key ? 'active' : ''}" data-farbe="${g.farbe || 'grau'}" href="${it.href}" title="${esc(g.label)} · ${esc(it.label.replace(/<[^>]*>/g, '').trim())}">
-          <span class="nav-ico" aria-hidden="true">${P_ICO[it.key] || P_ICO.overview}</span>
-          <span class="nav-txt">${it.label}</span>
-        </a>`).join('')).join('');
+    /* Nur die Gruppe, in der man steht, zeigt ihre Kapitel.
+
+       Nicht aus Geschmack, sondern gerechnet: Alle 19 Kapitel am Stück
+       brauchen 918px. In der Seitenleiste stehen bei 900px Fensterhöhe
+       677px zur Verfügung, bei 768px nur 545px — es fehlten bis zu 373px,
+       und die Liste rollte. Grössere Zeichen, 19 Einträge und kein Rollen
+       gehen in einer flachen Liste nicht zusammen.
+
+       Aufgeklappt braucht die grösste Gruppe (Kosten, 6 Kapitel) mit allen
+       sechs Köpfen rund 410px. Das passt auch auf einen kleinen Laptop —
+       und die farbigen Gruppenköpfe tragen die Gliederung, die die lange
+       Liste vorher nur behauptet hat. */
+    gruppen.map(g => {
+      const offen = g.key === grp.key;
+      const f = g.farbe || 'grau';
+      return `<div class="subnav-gruppe${offen ? ' offen' : ''}" data-farbe="${f}">
+        <a class="subnav-grp" href="${g.items[0].href}" title="${esc(g.label)}: ${g.items.map(i => i.label.replace(/<[^>]*>/g, '').trim()).join(', ')}">
+          <span class="subnav-grp-punkt" aria-hidden="true"></span>
+          <span class="nav-txt">${esc(g.label)}</span>
+          <span class="subnav-grp-zahl">${g.items.length}</span>
+        </a>` +
+        g.items.map(it => `<a class="subnav-link ${active === it.key ? 'active' : ''}" data-farbe="${f}" href="${it.href}" title="${esc(g.label)} · ${esc(it.label.replace(/<[^>]*>/g, '').trim())}">
+            <span class="nav-ico" aria-hidden="true">${P_ICO[it.key] || P_ICO.overview}</span>
+            <span class="nav-txt">${it.label}</span>
+          </a>`).join('') + `</div>`;
+    }).join('');
 
   /* Die Gruppenfarbe wandert mit in die Seite: Sonst hätte man einen
      bunten Rand um einen violetten Inhalt, und die Merkhilfe endete an
      der Kante der Seitenleiste. Getragen wird sie von den Sektionsmarken
-     und den Seitenreitern — nicht von Knöpfen und nicht von Daten. */
-  const ansicht = $('#view');
-  if (ansicht) ansicht.setAttribute('data-farbe', grp.farbe || 'grau');
+     und den Seitenreitern — nicht von Knöpfen und nicht von Daten.
+
+     Die Marke sitzt auf #app, nicht auf #view: Nur so erreicht sie auch
+     die Seitenleiste — Logo und Klappgriff sollen die Farbe des Bereichs
+     tragen, in dem man gerade steht. */
+  const huelle = $('#app');
+  if (huelle) huelle.setAttribute('data-farbe', grp.farbe || 'grau');
 
   // Oben bleibt nur, was zur Seite selbst gehört — die Navigation steht links.
   return toolbar ? `<div class="proj-sticky"><div class="page-toolbar">${toolbar}</div></div>` : '';
@@ -1860,7 +1885,7 @@ function setActiveNav(key) {
   const sub = $('#projSubnav'); if (sub) sub.innerHTML = '';
   const nav = $('#mainNav'); if (nav) nav.classList.remove('im-projekt');
   // Ausserhalb eines Projekts gibt es keine Gruppenfarbe – zurueck auf Violett.
-  const ansicht = $('#view'); if (ansicht) ansicht.removeAttribute('data-farbe');
+  const huelle = $('#app'); if (huelle) huelle.removeAttribute('data-farbe');
 }
 
 let _lastRenderHash = null;

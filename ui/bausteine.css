@@ -143,10 +143,16 @@ p:last-child { margin-bottom: 0; }
 .knopf:disabled, .btn:disabled { opacity: .4; cursor: default; }
 .knopf:active, .btn:active { transform: translateY(1px); }
 
-/* Gefüllt. In SubmitOne ist das die Vorgabe des nackten .btn. */
-.knopf-haupt, .btn { background: var(--v-600); border-color: var(--v-600); color: #fff; }
+/* Gefüllt. In SubmitOne ist das die Vorgabe des nackten .btn.
+
+   Der Grund kommt über --akzent-voll, nicht direkt aus --v-600. So kann
+   ein Bereich ihn übernehmen: SubmitOne setzt in einem Projektkapitel die
+   Gruppenfarbe (rot in den Kosten, grün im Projekt), und der Hauptknopf
+   folgt, ohne dass diese Regel etwas davon wissen muss. Ohne Angabe
+   bleibt es beim Marken-Violett — SubZeit und die Mappe merken nichts. */
+.knopf-haupt, .btn { background: var(--akzent-voll, var(--v-600)); border-color: var(--akzent-voll, var(--v-600)); color: #fff; }
 .knopf-haupt:hover:not(:disabled),
-.btn:hover:not(:disabled) { background: var(--v-700); border-color: var(--v-700); }
+.btn:hover:not(:disabled) { background: var(--akzent-tief, var(--v-700)); border-color: var(--akzent-tief, var(--v-700)); }
 
 /* Umriss. In SubZeit das nackte .knopf, in SubmitOne .secondary — das den
    gefüllten Grund des nackten .btn wieder zurücknimmt. */

@@ -14,6 +14,8 @@ const APP_VERSION = 'v379';   // sichtbarer Build-Indikator (Sidebar-Fuss) – m
    ------------------------------------------------------------
    KERN (kein Modul):
      · State/Speichern/Undo:  save · snapshotForUndo · undo · db/state
+     · Ordner-Modus (Dateien): ordnerWaehlen · ordnerStillFortsetzen · ordnerVerlassen ·
+                              ordnerAktiv — Adapter in submit/kern/, siehe docs/SPEICHERN.md
      · Router/Render:         render · route (hashchange) · parseHash
      · Helfer:                uid · esc · chf · chfShort · money · fmtDate · addDays ·
                               parseDateFlexible · parseBkp · bkpBase · bkpCmp · gewerkeSorted
@@ -151,6 +153,107 @@ const db = {
     try { dbAdapter.save(state); } catch (e) { console.warn('Speichern fehlgeschlagen:', e); }
   },
 };
+
+/* ============================================================
+   Ordner-Modus – Dateien statt localStorage
+   ------------------------------------------------------------
+   Ein Arbeitsordner auf der Platte (NAS oder OneDrive), darin je
+   Bauvorhaben ein Ordner mit einer .submit-Datei:
+
+     Arbeitsordner\Sanierung Müller\Sanierung Müller.submit
+     Arbeitsordner\Allgemein.subone        (Kontakte, Dokumente)
+
+   Der Adapter dazu steht in submit/kern/ordner.js, die Dateizugriffe
+   in submit/kern/ablage-browser.js, die Umrechnung Projekt ⇄ Mappe in
+   submit/kern/uebersetzer.js. Siehe docs/SPEICHERN.md.
+
+   Wichtig: localStorage wird NICHT gelöscht. Der Weg zurück bleibt
+   offen, solange sich der Ordner-Modus nicht bewährt hat.
+   ============================================================ */
+
+let ordnerAdapter = null;
+let ordnerName = '';
+
+function ordnerAktiv() { return !!ordnerAdapter && dbAdapter === ordnerAdapter; }
+function ordnerMoeglich() { return !!(window.AblageBrowser && window.Ordner && window.Uebersetzer && AblageBrowser.kann()); }
+function ordnerMeldung(t) { if (typeof toast === 'function') toast(t, 'info'); }
+
+/* Entprellt und fire-and-forget – db.commit() ruft save() ohne await,
+   deshalb darf hier nie eine Zusage unbehandelt scheitern. */
+function ordnerErzeugen(ablage) {
+  const roh = Ordner.erstelle(ablage, {
+    beiFehler: f => f.forEach(x => ordnerMeldung('Projekt „' + x.ordner + '" ist unlesbar: ' + x.grund)),
+    beiKonflikt: k => k.forEach(x => ordnerMeldung('„' + x.name + '" wurde inzwischen von jemand anderem geändert – dein Stand wurde NICHT überschrieben.')),
+  });
+  let timer = null, offen = null;
+  return {
+    name: 'ordner',
+    load: () => roh.load(),
+    save(s) {
+      offen = s;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const stand = offen; offen = null;
+        roh.save(stand).catch(e => { console.warn('Speichern in den Ordner fehlgeschlagen:', e); ordnerMeldung('Speichern in den Ordner fehlgeschlagen: ' + e.message); });
+      }, 800);
+    },
+  };
+}
+
+/* Beim Start den zuletzt gewählten Ordner nehmen – aber NICHT nachfragen.
+   Ein Berechtigungsdialog, den niemand angefordert hat, wird weggeklickt.
+   Muss vor db.init() laufen, weil db.init() bereits über den Adapter lädt. */
+async function ordnerStillFortsetzen() {
+  if (cloudEnabled || !ordnerMoeglich()) return;
+  try {
+    const gefunden = await AblageBrowser.letzter(false);
+    if (!gefunden) return;
+    ordnerAdapter = ordnerErzeugen(gefunden.ablage);
+    ordnerName = gefunden.name;
+    db.use(ordnerAdapter);
+  } catch (e) { console.warn('Arbeitsordner nicht verfügbar – lokaler Modus:', e); }
+}
+
+async function ordnerWaehlen() {
+  if (!ordnerMoeglich()) { ordnerMeldung('Einen Ordner öffnen können nur Chrome und Edge am Rechner.'); return; }
+  let gefunden = null;
+  try { gefunden = await AblageBrowser.waehlen(); }
+  catch (e) { ordnerMeldung(e.message); return; }
+  if (!gefunden) return;                                    // abgebrochen
+
+  const adapter = ordnerErzeugen(gefunden.ablage);
+  let vorhanden = null;
+  try { vorhanden = await adapter.load(); }
+  catch (e) { ordnerMeldung('Der Ordner konnte nicht gelesen werden: ' + e.message); return; }
+
+  if (vorhanden) {                                          // Ordner hat schon Projekte → sie gewinnen
+    state = vorhanden; migrate();
+    ordnerMeldung(state.projekte.length + ' Projekt(e) aus „' + gefunden.name + '" geladen.');
+  } else {                                                  // leerer Ordner → Umzug des jetzigen Stands
+    try { await adapter.save(state); }
+    catch (e) { ordnerMeldung('Schreiben in den Ordner fehlgeschlagen: ' + e.message); return; }
+    ordnerMeldung(state.projekte.length + ' Projekt(e) nach „' + gefunden.name + '" übernommen.');
+  }
+
+  ordnerAdapter = adapter; ordnerName = gefunden.name;
+  db.use(adapter);
+  await AblageBrowser.merken(gefunden.griff);
+  lastSnap = JSON.stringify(state); lastSnapAt = Date.now();   // Undo neu ausrichten
+  undoStack = []; redoStack = []; updateUndoButtons();
+  router();
+}
+
+/* Zurück auf den Browser-Speicher. Die Dateien im Ordner bleiben liegen. */
+async function ordnerVerlassen() {
+  ordnerAdapter = null; ordnerName = '';
+  await AblageBrowser.vergessen();
+  db.use(LocalAdapter);
+  await db.init();
+  lastSnap = JSON.stringify(state); lastSnapAt = Date.now();
+  undoStack = []; redoStack = []; updateUndoButtons();
+  ordnerMeldung('Zurück im Browser-Speicher. Die Dateien im Ordner bleiben unverändert.');
+  router();
+}
 
 // Kompatibilitäts-Wrapper: bestehende save()-Aufrufe gehen über den Adapter
 function save() { snapshotForUndo(); db.commit(); }
@@ -352,17 +455,17 @@ function renderLogin(msg, mode) {
           <span class="logo-word"><span class="lw-a">Submit</span><span class="lw-b">One</span></span>
           <svg class="logo-tick" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" class="end"/><path d="M6.6 12.4 l3.4 3.6 l7-8.6" class="chk"/></svg>
         </div>
-        <p class="muted" style="margin:0 0 16px;font-size:13px">${mode === 'up' ? 'Neues Konto erstellen' : 'Mit E-Mail anmelden'}</p>
+        <p class="muted" style="margin:0 0 16px;font-size:var(--t-s, 13px)">${mode === 'up' ? 'Neues Konto erstellen' : 'Mit E-Mail anmelden'}</p>
         ${mode === 'up' ? `<div class="form-row" style="margin-bottom:10px">
           <label class="field">Vorname <input class="input" id="lg_vor" autocapitalize="words" spellcheck="false"></label>
           <label class="field">Nachname <input class="input" id="lg_nach" autocapitalize="words" spellcheck="false"></label>
         </div>` : ''}
         <label class="field">E-Mail <input class="input" id="lg_email" type="email" autocomplete="username" spellcheck="false"></label>
         <label class="field" style="margin-top:10px">Passwort <input class="input" id="lg_pw" type="password" autocomplete="${mode === 'up' ? 'new-password' : 'current-password'}"></label>
-        <div id="lg_msg" style="min-height:18px;font-size:12.5px;color:var(--s-red);margin:8px 0">${msg ? esc(msg) : ''}</div>
+        <div id="lg_msg" style="min-height:18px;font-size:var(--t-s, 12.5px);color:var(--s-red);margin:8px 0">${msg ? esc(msg) : ''}</div>
         <button class="btn" id="lg_go" style="width:100%">${mode === 'up' ? 'Konto erstellen' : 'Anmelden'}</button>
         ${mode === 'in' ? `<button class="btn-ghost-sm" id="lg_forgot" style="width:100%;margin-top:8px">Passwort vergessen?</button>` : ''}
-        <div class="muted" style="font-size:12px;margin:14px 0 6px">${mode === 'up' ? 'Schon ein Konto?' : 'Noch kein Konto?'}</div>
+        <div class="muted" style="font-size:var(--t-xs, 12px);margin:14px 0 6px">${mode === 'up' ? 'Schon ein Konto?' : 'Noch kein Konto?'}</div>
         <button class="btn secondary" id="lg_switch" style="width:100%">${mode === 'up' ? 'Zur Anmeldung' : 'Neues Konto erstellen'}</button>
       </div>
     </div>`);
@@ -591,20 +694,20 @@ function actTeam(pid) {
   const rows = mit.length ? mit.map(m => {
     const nm = ((m.vorname || '') + ' ' + (m.nachname || '')).trim();
     return `<div class="team-row">
-      <div style="flex:1"><div style="font-weight:600">${esc(nm || m.email || m.slug)}</div><div class="muted" style="font-size:11px">${esc(m.email || m.slug)}${teamKey(m) === meKey ? ' · du' : ''}</div></div>
+      <div style="flex:1"><div style="font-weight:600">${esc(nm || m.email || m.slug)}</div><div class="muted" style="font-size:var(--t-2xs, 11px)">${esc(m.email || m.slug)}${teamKey(m) === meKey ? ' · du' : ''}</div></div>
       <select class="select team-rolle" data-key="${esc(teamKey(m))}" style="width:160px;padding:5px 8px">${MITGLIED_ROLLEN.map(r => `<option value="${r.key}"${m.rolle === r.key ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}</select>
       <button class="x-btn" data-act="team-rm" data-pid="${pid}" data-key="${esc(teamKey(m))}" title="entfernen">×</button>
     </div>`;
-  }).join('') : '<p class="muted" style="font-size:13px;padding:6px 0">Noch keine Mitglieder – unten jemanden einladen.</p>';
+  }).join('') : '<p class="muted" style="font-size:var(--t-s, 13px);padding:6px 0">Noch keine Mitglieder – unten jemanden einladen.</p>';
   openModal('Team – ' + esc(p.name), `
-    <div class="muted" style="font-size:12px;margin:-4px 0 8px">Wer am Projekt mitarbeitet (per E-Mail) und mit welcher Rolle. <b>Hinweis:</b> die Person muss sich mit genau dieser E-Mail registrieren/anmelden, dann sieht sie das Projekt.</div>
+    <div class="muted" style="font-size:var(--t-xs, 12px);margin:-4px 0 8px">Wer am Projekt mitarbeitet (per E-Mail) und mit welcher Rolle. <b>Hinweis:</b> die Person muss sich mit genau dieser E-Mail registrieren/anmelden, dann sieht sie das Projekt.</div>
     <div id="teamRows">${rows}</div>
     <hr style="border:none;border-top:1px solid var(--border);margin:10px 0 8px">
-    <div style="font-weight:600;font-size:13px;margin-bottom:6px">Mitglied einladen</div>
+    <div style="font-weight:600;font-size:var(--t-s, 13px);margin-bottom:6px">Mitglied einladen</div>
     <label class="field">E-Mail <input class="input" id="tm_email" type="email" placeholder="name@firma.ch"></label>
     <div class="form-row" style="margin-top:6px">
-      <label class="field">Vorname <span class="muted" style="font-weight:400;font-size:11px">(optional)</span> <input class="input" id="tm_vor"></label>
-      <label class="field">Nachname <span class="muted" style="font-weight:400;font-size:11px">(optional)</span> <input class="input" id="tm_nach"></label>
+      <label class="field">Vorname <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(optional)</span> <input class="input" id="tm_vor"></label>
+      <label class="field">Nachname <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(optional)</span> <input class="input" id="tm_nach"></label>
     </div>
     <div class="form-row">
       <label class="field">Rolle <select class="select" id="tm_rolle">${MITGLIED_ROLLEN.map(r => `<option value="${r.key}"${r.key === 'bauleitung' ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}</select></label>
@@ -657,7 +760,7 @@ function actAbo() {
     const aktiv = (plan === pl.key) || (istTest && pl.key === 'komplett');
     const upgrade = !aktiv && pl.key !== 'gratis' && plan !== 'komplett';
     return `<div class="plan-card${aktiv ? ' aktiv' : ''}">
-      <div class="plan-name">${esc(pl.name)}${aktiv ? ' <span class="st green" style="font-size:9.5px;padding:1px 6px">aktiv</span>' : ''}</div>
+      <div class="plan-name">${esc(pl.name)}${aktiv ? ' <span class="st green" style="font-size:var(--t-2xs, 9.5px);padding:1px 6px">aktiv</span>' : ''}</div>
       <div class="plan-preis">${pl.preis === '0' ? 'gratis' : 'CHF ' + pl.preis + '<span>/Mt</span>'}</div>
       <ul class="plan-feat">${pl.features.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
       ${upgrade ? `<button class="btn sm" data-act="upgrade" data-plan="${pl.key}">Upgraden</button>` : '<div style="height:4px"></div>'}
@@ -668,10 +771,10 @@ function actAbo() {
     const hat = komplett || canModul(m.key);
     const head = m.inkl
       ? `<span class="mod-name">${esc(m.name)} <span class="mod-tier mt-inkl">inklusive</span></span>
-         <span class="muted" style="font-size:11px;white-space:nowrap">bei jedem Modul dabei</span>`
+         <span class="muted" style="font-size:var(--t-2xs, 11px);white-space:nowrap">bei jedem Modul dabei</span>`
       : `<span class="mod-name">${esc(m.name)} <span class="mod-tier mt-${m.tier}">${m.tier === 'basic' ? 'Basic' : 'Premium'}</span>${m.neu ? ' <span class="mod-tier mt-neu">neu</span>' : ''}</span>
-         <span class="mod-preis">CHF ${esc(m.preis)}<span style="font-size:10px;color:var(--text-soft)">/Mt</span></span>
-         ${hat ? '<span class="st green" style="font-size:9.5px;padding:1px 7px">freigeschaltet</span>'
+         <span class="mod-preis">CHF ${esc(m.preis)}<span style="font-size:var(--t-2xs, 10px);color:var(--text-soft)">/Mt</span></span>
+         ${hat ? '<span class="st green" style="font-size:var(--t-2xs, 9.5px);padding:1px 7px">freigeschaltet</span>'
                : `<button class="btn xs" data-act="upgrade" data-plan="mod_${m.key}">freischalten</button>`}`;
     return `<div class="mod-row">
       <div class="mod-head">${head}</div>
@@ -679,15 +782,15 @@ function actAbo() {
     </div>`;
   }).join('');
   openModal('Dein Plan', `
-    <div class="muted" style="margin:-4px 0 14px;font-size:13px">${esc(status)}</div>
+    <div class="muted" style="margin:-4px 0 14px;font-size:var(--t-s, 13px)">${esc(status)}</div>
     <div class="plan-grid">${cards}</div>
     <div style="margin-top:18px">
-      <div style="font-weight:700;font-size:13px;margin-bottom:2px">Individuell – nur einzelne Module</div>
-      <div class="muted" style="font-size:11.5px;margin-bottom:8px">Alle Module sind im Free benutzbar; bezahlt wird fürs <b>💾 Speichern</b>. Einzeln buchbar – in Summe aber <b>teurer als das passende Paket</b>. <b>Kontakte, Kalender &amp; Arbeitsplanung sind gratis dabei</b>, sobald mindestens ein Modul gebucht ist. „Basic" enthält die Basis-Funktionen, „Premium" alles.</div>
-      <div class="muted" style="font-size:11.5px;margin:-2px 0 10px;padding:7px 10px;background:#eefaf2;border:1px solid #bfe6cd;border-radius: 0;color:#1d6b3a">✓ <b>Fair-Preis:</b> Du zahlst nie mehr als das Paket. Ab <b>15.– Basic-Modulen</b> bekommst du automatisch <b>ganz Basic</b>, ab <b>25.– total</b> automatisch <b>Premium (alles)</b>.</div>
+      <div style="font-weight:700;font-size:var(--t-s, 13px);margin-bottom:2px">Individuell – nur einzelne Module</div>
+      <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:8px">Alle Module sind im Free benutzbar; bezahlt wird fürs <b>💾 Speichern</b>. Einzeln buchbar – in Summe aber <b>teurer als das passende Paket</b>. <b>Kontakte, Kalender &amp; Arbeitsplanung sind gratis dabei</b>, sobald mindestens ein Modul gebucht ist. „Basic" enthält die Basis-Funktionen, „Premium" alles.</div>
+      <div class="muted" style="font-size:var(--t-xs, 11.5px);margin:-2px 0 10px;padding:7px 10px;background:#eefaf2;border:1px solid #bfe6cd;border-radius: 0;color:#1d6b3a">✓ <b>Fair-Preis:</b> Du zahlst nie mehr als das Paket. Ab <b>15.– Basic-Modulen</b> bekommst du automatisch <b>ganz Basic</b>, ab <b>25.– total</b> automatisch <b>Premium (alles)</b>.</div>
       <div class="mod-list">${modRows}</div>
     </div>
-    <p class="muted" style="font-size:11.5px;margin:14px 0 0">Preise CHF/Monat (Richtwerte, anpassbar). Bezahlung über Stripe – sobald die Zahlungslinks in config.js eingetragen sind, führt „freischalten" direkt zur Kasse.</p>
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:14px 0 0">Preise CHF/Monat (Richtwerte, anpassbar). Bezahlung über Stripe – sobald die Zahlungslinks in config.js eingetragen sind, führt „freischalten" direkt zur Kasse.</p>
   `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
 }
 function openCheckout(plan) {
@@ -722,6 +825,7 @@ function initFokusbar() {
   }
 }
 async function startApp() {
+  await ordnerStillFortsetzen();   // Arbeitsordner vor db.init() setzen – sonst lädt db aus localStorage
   await db.init();
   lastSnap = JSON.stringify(state); lastSnapAt = Date.now();   // Undo-Ausgangspunkt
   if (cloudEnabled) await loadEntitlements();
@@ -736,11 +840,12 @@ async function startApp() {
   initGlobalTooltips();
   document.addEventListener('keydown', planKeydown);
   document.addEventListener('keydown', ganttKeydown);
+  document.addEventListener('keydown', druckKeydown);
   initGerberLaunch();
   initFokusbar();
   document.addEventListener('mousemove', planDragMove);
   document.addEventListener('mouseup', planDragUp);
-  const ver = $('.ver'); if (ver) ver.textContent = 'Prototyp · ' + APP_VERSION;
+  const ver = $('.ver'); if (ver) ver.innerHTML = 'Prototyp · ' + esc(APP_VERSION) + '<br><span style="opacity:.72">© 2026 Gerber-Soft</span>';
   renderUserChip();
   renderPlanBanner();
   renderTierBadge();
@@ -849,6 +954,27 @@ function migrate() {
   if (!Array.isArray(state.projekte)) { state.projekte = []; changed = true; }
   if (!Array.isArray(state.kontakte)) { state.kontakte = []; changed = true; }
   if (!Array.isArray(state.dokumente)) { state.dokumente = []; changed = true; }
+
+  /* ---- Einmalige Übernahme aus dem Browserspeicher (13.08.2026) ----
+     Arbeitsplanung und Honorar lagen nur in localStorage: nicht im
+     Voll-Backup, nicht in der Projektdatei, beim Browserwechsel verloren.
+     Ab jetzt stehen sie in `state`. Der alte Schlüssel bleibt vorerst
+     liegen – erst löschen, wenn sich die Übernahme bewährt hat. */
+  if (state.planung === undefined) {
+    state.planung = [];
+    try { const alt = JSON.parse(localStorage.getItem('so_planung') || 'null'); if (Array.isArray(alt)) state.planung = alt; } catch (_) {}
+    changed = true;
+  }
+  if (state.honorar === undefined) {
+    state.honorar = null;
+    try { const alt = JSON.parse(localStorage.getItem('so_honorar') || 'null'); if (alt) state.honorar = alt; } catch (_) {}
+    changed = true;
+  }
+  if (!Array.isArray(state.planBausteine)) {
+    state.planBausteine = [];
+    try { const alt = JSON.parse(localStorage.getItem('so_plan_tpldur') || 'null'); if (Array.isArray(alt)) state.planBausteine = alt; } catch (_) {}
+    changed = true;
+  }
   for (const p of state.projekte) {
     if (!p.protokolle) { p.protokolle = []; changed = true; }
     if (!p.entscheidungen) { p.entscheidungen = []; changed = true; }
@@ -1046,7 +1172,7 @@ function projektVolumen(p) {
 }
 
 /* --- Offerten & Summen einer Vergabe --- */
-// Preisspiegel-Rechnung (wie Vergabeantrag Hefti):
+// Preisspiegel-Rechnung (wie im üblichen Vergabeantrag):
 // Brutto − Rabatt% = Z.-Summe − Skonto% = Netto − Allg.Abz% = Z.-Summe; + MwSt 8.1% = Netto inkl. MwSt
 function condParts(c) {
   if (!c) return null;
@@ -1063,11 +1189,16 @@ function condParts(c) {
   let running = netto - allgBetrag;
   const extra = (c.extraAbz || []).map(a => { const betrag = a.art === 'chf' ? (Number(a.wert) || 0) : running * ((Number(a.wert) || 0) / 100); running -= betrag; return { name: a.name || 'Abzug', art: a.art || 'pct', wert: a.wert, betrag }; });
   const zsumme2 = running;
-  const mwst = zsumme2 * 0.081;
-  return { brutto: b, rabattP, rabattBetrag, zsumme1, skontoP, skontoBetrag, netto, allgP, allgBetrag, extra, zsumme2, mwst, total: zsumme2 + mwst, allgLabel: c.weitereAbzLabel || 'Allg. Abzüge' };
+  // Satz nicht festnageln: 7.7 % vor 2024, 8.1 % danach, und das Büro kann ihn setzen.
+  const mwstP = (c.mwst != null && c.mwst !== '') ? (Number(c.mwst) || 0) : mwstSatz();
+  const mwst = zsumme2 * mwstP / 100;
+  return { brutto: b, rabattP, rabattBetrag, zsumme1, skontoP, skontoBetrag, netto, allgP, allgBetrag, extra, zsumme2, mwstP, mwst, total: zsumme2 + mwst, allgLabel: c.weitereAbzLabel || 'Allg. Abzüge' };
 }
-// Massgeblicher Netto-Vergleichswert = Z.-Summe nach allen Abzügen (exkl. MwSt)
-function condNetto(c) { const r = condParts(c); return r ? r.zsumme2 : null; }
+/* Der Vergleichswert einer Stufe — und zwar in derselben Währung wie alle
+   anderen Zahlen des Büros. Rechnet das Büro inkl. MwSt (Einstellungen →
+   Büro), muss die Steuer dazu; sonst wäre der Werkvertrag um 8.1 % zu klein
+   und stünde neben einem Kostenvoranschlag, der sie enthält. */
+function condNetto(c) { const r = condParts(c); return r ? rp5(preiseInkl() ? r.total : r.zsumme2) : null; }
 // Netto je Stufe (Fallback: Legacy-Einzelbetrag e.betrag = Offerte)
 function eOff(e) { if (e.offerte && e.offerte.brutto != null && e.offerte.brutto !== '') return condNetto(e.offerte); return e.betrag != null ? e.betrag : null; }
 function eAbg(e) { return (e.abgebot && e.abgebot.brutto != null && e.abgebot.brutto !== '') ? condNetto(e.abgebot) : null; }
@@ -1102,7 +1233,7 @@ function budgetBreakdownHtml(p, b) {
   const mwB = dz != null ? dz * mw / 100 : null, endB = dz != null ? dz + mwB : null;
   const r = (lbl, val, st) => `<div style="display:flex;justify-content:space-between;gap:18px;${st || ''}"><span>${lbl}</span><span style="white-space:nowrap">${val}</span></div>`;
   const dcol = delta == null ? '' : (delta > 0.5 ? 'color:var(--s-red)' : (delta < -0.5 ? 'color:var(--s-green)' : ''));
-  return `<div style="padding:11px 16px;background:var(--surface-2);font-size:12.5px;line-height:1.85;max-width:460px">
+  return `<div style="padding:11px 16px;background:var(--surface-2);font-size:var(--t-s, 12.5px);line-height:1.85;max-width:460px">
     ${cp ? `${r('Offerte Brutto', chf(cp.brutto))}
       ${r(`− Rabatt ${cp.rabattP}%`, '− ' + chf(cp.rabattBetrag), 'color:var(--text-soft)')}
       ${r(`− Skonto ${cp.skontoP}%`, '− ' + chf(cp.skontoBetrag), 'color:var(--text-soft)')}
@@ -1130,7 +1261,26 @@ function rechnungBezahlt(v)        { return (v.rechnungen || []).filter(r => r.b
 function rechnungTotal(v)          { return (v.rechnungen || []).reduce((a, r) => a + rgSigned(r), 0); }
 // Noch einbehaltener Garantierückbehalt (bezahlte Rechnungen, Rückbehalt noch nicht freigegeben)
 function rechnungRueckbehalt(v)    { return (v.rechnungen || []).filter(r => r.bezahlt && !r.rbFrei).reduce((a, r) => a + rgRueckbehalt(r), 0); }
-function kvRev(v)           { return bestBetrag(v); }                 // günstigste Offerte (revidierter KV)
+/* Der revidierte Kostenvoranschlag einer Position.
+
+   Normalfall: die günstigste Offerte — damit ist die erste Schätzung
+   durch einen Preis vom Markt ersetzt.
+
+   Gibt es keine Offerte, zählt eine gesetzte eigene Prognose. Bis zum
+   14.08.2026 fiel der revidierte KV in diesem Fall auf die URSPRÜNGLICHE
+   Schätzung zurück. Bei der Römerstrasse hiess das: Reserve mit 50'000
+   statt der abgeklärten 20'000, Baunebenkosten mit 40'000 statt 10'000 —
+   der revidierte KV war um 60'000 zu hoch und damit genau das Gegenteil
+   von revidiert.
+
+   Erst wenn weder Offerte noch Prognose vorliegen, gibt es keinen
+   revidierten Wert; dann greift in kostenZeile() die Schätzung. */
+function kvRev(v) {
+  const offerte = bestBetrag(v);
+  if (offerte != null) return offerte;
+  if (hatEigenePrognose(v)) return Number(v.prognoseEigen) || 0;
+  return null;
+}
 
 // Eine Kostenzeile einer Vergabe (analog Baukostenübersicht)
 function kostenZeile(v) {
@@ -1142,7 +1292,12 @@ function kostenZeile(v) {
   const budget = budgetSumme(v);   // Info – steckt im WV
   const bdelta = budgetDelta(v);   // wirkt erst, wenn eine Auswahl getroffen wurde (Ist − Budget)
   // Abrechnungsprognose: vergeben → WV + Nachträge + Rapporte; sonst beste bekannte Schätzung; + Budget-Differenz
-  const prognose = (isVergeben(v) ? (wv + nt + rap) : (rev != null ? rev : kv)) + bdelta;
+  // Entfallene Position: zählt mit null. Der KV bleibt stehen, damit die
+  // Über-/Unterschreitung die Einsparung zeigt.
+  const grundlage = hatEigenePrognose(v) ? (Number(v.prognoseEigen) || 0)
+    : (isVergeben(v) ? (wv + nt + rap) : (rev != null ? rev : kv));
+  const prognose = istEntfallen(v) ? 0
+    : grundlage + bdelta + (hatEigenePrognose(v) ? (nt + rap) : 0);
   const bezahlt = rechnungBezahlt(v);
   const fakturiert = rechnungTotal(v);
   const offen = prognose - bezahlt;
@@ -1189,16 +1344,16 @@ function actKostenVersionen(pid) {
     const tot = (ver.snapshot.positionen || []).reduce((s, x) => s + (x.prognose || 0), 0);
     return `<div class="regel-row"><span><b>${esc(ver.name)}</b> <span class="muted">· ${fmtDate(ver.datum)} · Prognose ${money(tot)}</span></span>
       <span style="display:flex;gap:6px"><button class="btn sm ghost" data-act="kosten-vgl" data-pid="${pid}" data-vid="${ver.id}" data-mode="cur" title="Mit aktuellem Stand vergleichen">↔ aktuell</button><button class="btn sm ghost danger" data-act="kosten-vers-del" data-pid="${pid}" data-vid="${ver.id}" title="Version löschen">🗑</button></span></div>`;
-  }).join('') : '<p class="muted" style="font-size:12.5px">Noch keine Version gesichert.</p>';
+  }).join('') : '<p class="muted" style="font-size:var(--t-s, 12.5px)">Noch keine Version gesichert.</p>';
   const lastVer = p.kostenVersionen[p.kostenVersionen.length - 1];
   openModal('Baukosten – Versionen & Vergleich', `
     <div class="card card-pad" style="margin-bottom:12px;background:var(--surface-2)"><b>Aktueller Stand:</b> Prognose <b>${money(curTot)}</b> · ${cur.positionen.length} Positionen
       ${lastVer ? ` &nbsp;·&nbsp; <button class="btn sm" data-act="kosten-vgl" data-pid="${pid}" data-vid="${lastVer.id}" data-mode="cur">📋 Was hat sich seit „${esc(lastVer.name)}" geändert?</button>` : ''}</div>
     <label class="field">Neuen Stand sichern als <input class="input" id="kv_name" placeholder="z.B. Abgabe ${MON_KURZ[dISO(todayIso()).getMonth()]} ${dISO(todayIso()).getFullYear()}"></label>
     <button class="btn" data-act="kosten-vers-neu" data-pid="${pid}" style="margin-top:8px">+ Aktuellen Stand als Version sichern</button>
-    <div class="section-head" style="margin-top:16px"><h2 style="font-size:15px">Gesicherte Stände</h2></div>
+    <div class="section-head" style="margin-top:16px"><h2 style="font-size:var(--t-l, 15px)">Gesicherte Stände</h2></div>
     <div style="display:flex;flex-direction:column;gap:6px">${rows}</div>
-    <p class="muted" style="font-size:11.5px;margin-top:8px">Tipp: vor jeder Abgabe „Stand sichern". Dann kannst du jederzeit zwei Stände vergleichen und siehst genau, was sich geändert hat (Prognose, Zahlungen, neue/entfallene Positionen).</p>
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin-top:8px">Tipp: vor jeder Abgabe „Stand sichern". Dann kannst du jederzeit zwei Stände vergleichen und siehst genau, was sich geändert hat (Prognose, Zahlungen, neue/entfallene Positionen).</p>
   `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
 }
 function kostenVersNeu(pid) {
@@ -1221,16 +1376,16 @@ function actKostenVergleich(pid, vid, mode) {
   const cls = n => n > 0.5 ? 'style="color:#b91c1c;font-weight:600"' : (n < -0.5 ? 'style="color:#15803d;font-weight:600"' : 'class="muted"');
   const stTxt = { changed: '~ geändert', new: '🟢 neu', removed: '🔴 entfällt' };
   const body = d.rows.length ? d.rows.map(r => `<tr>
-      <td class="bkp-code">${esc(r.bkp)}</td><td>${esc(r.gewerk)} <span class="muted" style="font-size:10px">${stTxt[r.status]}</span></td>
+      <td class="bkp-code">${esc(r.bkp)}</td><td>${esc(r.gewerk)} <span class="muted" style="font-size:var(--t-2xs, 10px)">${stTxt[r.status]}</span></td>
       <td class="num">${r.a ? money(r.a.prognose) : '–'}</td>
       <td class="num">${r.b ? money(r.b.prognose) : '–'}</td>
       <td class="num" ${cls(r.dProg)}>${fmt(r.dProg)}</td>
     </tr>`).join('') : '<tr><td colspan="5" class="muted" style="text-align:center;padding:14px">Keine Änderungen.</td></tr>';
   openModal('Vergleich: ' + esc(labelA) + ' → ' + esc(labelB), `
-    <div class="card card-pad" style="margin-bottom:10px;background:${Math.abs(d.dTot) > 0.5 ? '#fff7ed' : '#ecfdf5'};border:1px solid ${Math.abs(d.dTot) > 0.5 ? '#fdba74' : '#a7f3d0'};font-size:13px">
+    <div class="card card-pad" style="margin-bottom:10px;background:${Math.abs(d.dTot) > 0.5 ? '#fff7ed' : '#ecfdf5'};border:1px solid ${Math.abs(d.dTot) > 0.5 ? '#fdba74' : '#a7f3d0'};font-size:var(--t-s, 13px)">
       <b>Total Prognose:</b> ${money(d.totA)} → ${money(d.totB)} &nbsp; <b ${cls(d.dTot)}>(${fmt(d.dTot)})</b> &nbsp;·&nbsp; ${d.rows.length} Änderung(en)
     </div>
-    <div style="max-height:55vh;overflow:auto"><table class="grid" style="font-size:12.5px"><thead><tr><th>BKP</th><th>Position</th><th class="num">${esc(labelA.split(' (')[0])}</th><th class="num">${esc(labelB)}</th><th class="num">Δ</th></tr></thead><tbody>${body}</tbody></table></div>
+    <div style="max-height:55vh;overflow:auto"><table class="grid" style="font-size:var(--t-s, 12.5px)"><thead><tr><th>BKP</th><th>Position</th><th class="num">${esc(labelA.split(' (')[0])}</th><th class="num">${esc(labelB)}</th><th class="num">Δ</th></tr></thead><tbody>${body}</tbody></table></div>
   `, `<button class="btn" data-close="1">Schliessen</button>`);
 }
 
@@ -1265,7 +1420,7 @@ function vergabeFirmaLabel(v) {
 function vergabeArtCard(v) {
   if (v.teilvergaben && v.teilvergaben.length) {
     return `<div class="card card-pad" style="margin-bottom:18px">
-      <h2 style="margin:0 0 8px;font-size:15px">Teilvergabe – ${v.teilvergaben.length} Firma${v.teilvergaben.length === 1 ? '' : 'en'}</h2>
+      <h2 style="margin:0 0 8px;font-size:var(--t-l, 15px)">Teilvergabe – ${v.teilvergaben.length} Firma${v.teilvergaben.length === 1 ? '' : 'en'}</h2>
       <table class="grid"><thead><tr><th>Firma</th><th class="num" style="width:160px">Vergabesumme</th></tr></thead><tbody>
         ${v.teilvergaben.map(t => `<tr><td>${esc(t.firma || '—')}</td><td class="num">${chf(t.betrag)}</td></tr>`).join('')}
         <tr><td><b>Total</b></td><td class="num"><b>${chf(teilSumme(v))}</b></td></tr>
@@ -1273,9 +1428,9 @@ function vergabeArtCard(v) {
   }
   if (v.argePartner && v.argePartner.length) {
     return `<div class="card card-pad" style="margin-bottom:18px">
-      <h2 style="margin:0 0 6px;font-size:15px">ARGE / Bietergemeinschaft</h2>
-      <div style="font-size:13.5px">${v.argePartner.map(p => `<span class="st blue" style="margin:0 6px 6px 0;display:inline-block">${esc(p)}</span>`).join('')}</div>
-      <p class="muted" style="font-size:12px;margin:6px 0 0">Ein gemeinsamer Werkvertrag, eine Vergabesumme. Federführung: <strong>${esc(v.firma || v.argePartner[0])}</strong></p></div>`;
+      <h2 style="margin:0 0 6px;font-size:var(--t-l, 15px)">ARGE / Bietergemeinschaft</h2>
+      <div style="font-size:var(--t-m, 13.5px)">${v.argePartner.map(p => `<span class="st blue" style="margin:0 6px 6px 0;display:inline-block">${esc(p)}</span>`).join('')}</div>
+      <p class="muted" style="font-size:var(--t-xs, 12px);margin:6px 0 0">Ein gemeinsamer Werkvertrag, eine Vergabesumme. Federführung: <strong>${esc(v.firma || v.argePartner[0])}</strong></p></div>`;
   }
   return '';
 }
@@ -1338,11 +1493,11 @@ function statusPill(v) {
 function vergabeMarken(v) {
   const m = [];
   const nt = v.nachtraege || [];
-  if (nt.length) { const offen = nt.filter(n => n.status === 'offen').length; m.push(`<span class="st ${offen ? 'amber' : 'green'}" style="font-size:10px;padding:2px 7px">Nachträge ${nt.length}${offen ? ' · ' + offen + ' offen' : ' · erledigt'}</span>`); }
+  if (nt.length) { const offen = nt.filter(n => n.status === 'offen').length; m.push(`<span class="st ${offen ? 'amber' : 'green'}" style="font-size:var(--t-2xs, 10px);padding:2px 7px">Nachträge ${nt.length}${offen ? ' · ' + offen + ' offen' : ' · erledigt'}</span>`); }
   const rap = v.rapporte || [];
-  if (rap.length) m.push(`<span class="st teal" style="font-size:10px;padding:2px 7px">Regie ${rap.length}</span>`);
+  if (rap.length) m.push(`<span class="st teal" style="font-size:var(--t-2xs, 10px);padding:2px 7px">Regie ${rap.length}</span>`);
   const rg = v.rechnungen || [];
-  if (rg.length) { const offen = rg.filter(r => !r.bezahlt).length; m.push(`<span class="st ${offen ? 'amber' : 'green'}" style="font-size:10px;padding:2px 7px">Rechnungen ${rg.length}${offen ? ' · ' + offen + ' offen' : ' · bezahlt'}</span>`); }
+  if (rg.length) { const offen = rg.filter(r => !r.bezahlt).length; m.push(`<span class="st ${offen ? 'amber' : 'green'}" style="font-size:var(--t-2xs, 10px);padding:2px 7px">Rechnungen ${rg.length}${offen ? ' · ' + offen + ' offen' : ' · bezahlt'}</span>`); }
   return m.join(' ');
 }
 
@@ -1364,7 +1519,7 @@ function phasenBar(p) {
   const { counts, total } = phasenVerteilung(p);
   const active = PHASEN.filter(ph => counts[ph.key] > 0);
   return `<div class="card card-pad" style="margin-bottom:18px">
-    <div class="section-head" style="margin-top:0;margin-bottom:12px"><h2 style="font-size:15px">Phasen-Verteilung</h2><span class="hint">${total} Vergabe${total === 1 ? '' : 'n'}</span></div>
+    <div class="section-head" style="margin-top:0;margin-bottom:12px"><h2 style="font-size:var(--t-l, 15px)">Phasen-Verteilung</h2><span class="hint">${total} Vergabe${total === 1 ? '' : 'n'}</span></div>
     <div class="phasebar">
       ${active.length ? active.map(ph => `<div class="pb-seg" style="flex:${counts[ph.key]};background:${PHASE_COLOR[ph.key]}" title="${esc(ph.label)}: ${counts[ph.key]}"><span>${counts[ph.key]}</span></div>`).join('') : '<div class="pb-seg" style="flex:1;background:var(--border-2)"></div>'}
     </div>
@@ -1694,6 +1849,7 @@ function router() {
     case 'kalender':      setActiveNav('kalender');      return viewKalenderGlobal();
     case 'pendenzen':     setActiveNav('pendenzen');     return viewPendenzenGlobal();
     case 'planung':       setActiveNav('planung');       return viewPlanung();
+    case 'stunden':       setActiveNav('stunden');       return viewStunden();
     case 'erfassen':      setActiveNav('erfassen');      return viewErfassen();
     case 'drucken':       setActiveNav('drucken');       return viewDrucken();
     case 'honorar':       setActiveNav('honorar'); honorarPid = null; return viewHonorar();
@@ -1707,6 +1863,50 @@ function router() {
 }
 
 function go(hash) { location.hash = hash; }
+
+/* =====================================================================
+   Strg+P — drucken, was man gerade ansieht
+   ---------------------------------------------------------------------
+   Der Browser druckt sonst die Bildschirmseite: Navigation, Knöpfe,
+   Formularfelder. Das ist nie das, was gemeint war. Wer auf dem
+   Zahlungsplan steht und Strg+P drückt, will den Zahlungsplan.
+
+   Deshalb kennt jede Ansicht ihren Ausdruck. Fehlt einer, sagt das
+   Programm es — besser als ein Blatt mit der Seitenleiste darauf.
+   ===================================================================== */
+function druckAnsicht(ereignis) {
+  const [root, a, sub] = parseHash();
+
+  /* Je Ansicht das Blatt, das dazugehört. Manche brauchen erst eine
+     Auswahl — dann öffnet sich das Menü, das es auch beim Klick gibt. */
+  const proAnsicht = {
+    'projekt/zahlungsplan': () => pdfZahlungsplanMenu(ereignis, a),
+    'projekt/kosten':       () => actPdfBaukosten(a),
+    'projekt/termine':      () => actGanttPrint(a),
+    'projekt/rechnungen':   () => pdfRechnungskontrolle(a),
+    'projekt/gewerke':      () => pdfUnternehmer(a),
+    /* pdfHonorar() nimmt keine Kennung — es rechnet mit `honorarPid`,
+       und die hat der Router beim Öffnen der Ansicht bereits gesetzt. */
+    'projekt/honorar':      () => pdfHonorar(),
+    'honorar':              () => pdfHonorar(),
+    'projekt/bauherr':      () => pdfEntscheidungen(a),
+    'projekt/dossier':      () => pdfDossier(a),
+    'stunden':              () => pdfStunden(),
+    'drucken':              () => toast('Hier unten das gewünschte Blatt wählen', 'info')
+  };
+
+  const schluessel = (root === 'projekt' && sub) ? 'projekt/' + sub : root;
+  const machen = proAnsicht[schluessel];
+
+  if (typeof machen !== 'function') {
+    toast('Für diese Ansicht gibt es kein Blatt — unter «Drucken» stehen alle.', 'info');
+    return false;
+  }
+  try { machen(); } catch (e) {
+    toast('Der Ausdruck liess sich nicht erzeugen: ' + e.message, 'warn');
+  }
+  return true;
+}
 
 /* ---------------------------------------------------------------
    8) View: Dashboard
@@ -1775,16 +1975,16 @@ function viewDashboard() {
   const terminePanel = sect('Anstehende Termine', 'alle Projekte') + `<div class="card card-pad" style="margin-bottom:18px">${termine.length ? `<div class="dash-list">${termine.map(e => `
     <div class="dash-row">
       <i class="cal-dot ${projColor(e.idx, e.p)}"></i>
-      <span class="dash-muted" style="min-width:92px;font-size:12px">${fmtDate(e.datum)}${e.zeit ? ' · ' + esc(e.zeit) : ''}</span>
+      <span class="dash-muted" style="min-width:92px;font-size:var(--t-xs, 12px)">${fmtDate(e.datum)}${e.zeit ? ' · ' + esc(e.zeit) : ''}</span>
       <span class="dr-main">${esc(e.titel)}<div class="dr-sub">${esc(e.p.name)}</div></span>
-    </div>`).join('')}</div>` : '<p class="muted" style="margin:0;font-size:13px">Keine anstehenden Termine.</p>'}</div>`;
+    </div>`).join('')}</div>` : '<p class="muted" style="margin:0;font-size:var(--t-s, 13px)">Keine anstehenden Termine.</p>'}</div>`;
 
   // Panel: Offene Pendenzen
   const pendPanel = sect('Offene Pendenzen', allPend.length ? `${allPend.length}${pendUeber ? ` · ${pendUeber} überfällig` : ''}` : '') + `<div class="card card-pad" style="margin-bottom:18px">${allPend.length ? `<div class="dash-list">${allPend.slice(0, 8).map(({ p, idx, x }) => `
     <div class="dash-row">
       <input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="erledigt">
       <span class="dr-main">${esc(x.it.text)}${pendFirmenChips(x.it)}<div class="dr-sub"><i class="cal-dot ${projColor(idx, p)}" style="width:7px;height:7px"></i> <a href="#/projekt/${p.id}/pendenzen">${esc(p.name)}</a></div></span>
-      <span class="frist ${fristClass(x.it.termin, false)}" style="font-size:11.5px;white-space:nowrap">${x.it.termin ? fristText(x.it.termin, false) : '–'}</span>
+      <span class="frist ${fristClass(x.it.termin, false)}" style="font-size:var(--t-xs, 11.5px);white-space:nowrap">${x.it.termin ? fristText(x.it.termin, false) : '–'}</span>
     </div>`).join('')}</div>${allPend.length > 8 ? `<a class="hint" href="#/pendenzen" style="display:inline-block;margin-top:10px">Alle ${allPend.length} anzeigen →</a>` : ''}` : emptyState('✓', 'Keine offenen Pendenzen.')}</div>`;
 
   // Panel: Projekte (kompakt) + Dossier-Vollständigkeit
@@ -1796,7 +1996,7 @@ function viewDashboard() {
       <i class="cal-dot ${projColor(projekte.indexOf(p), p)}"></i>
       <span class="dr-main">${esc(p.name)}<div class="dr-sub">${esc(p.ort || '')} · <a href="#/projekt/${p.id}/dossier" onclick="event.stopPropagation()">Unterlagen <span style="color:var(--${docCls(dp)});font-weight:600">${dp}%</span></a></div></span>
       ${phaseBadge(dominantPhase(p))}
-      <span class="dash-muted" style="font-size:12px;min-width:32px;text-align:right" title="Bau-Fortschritt">${projektFortschritt(p)}%</span>
+      <span class="dash-muted" style="font-size:var(--t-xs, 12px);min-width:32px;text-align:right" title="Bau-Fortschritt">${projektFortschritt(p)}%</span>
     </div>`; }).join('')}</div>` : emptyState('▤', 'Noch keine Projekte', 'Lege dein erstes Projekt an – Termine, Kosten und Ausschreibung an einem Ort.', { label: '+ Erstes Projekt anlegen', act: 'new-projekt' })}</div>`;
 
   const szChips = SCHNELLZUGRIFF.map(a => a.act
@@ -1933,10 +2133,10 @@ function dashAusschreibung(p) {
       <div class="dstat"><div class="l">Offen</div><div class="v">${offenV}</div></div>
       <div class="dstat"><div class="l">Einladungen versendet</div><div class="v">${versendet}</div></div>
       <div class="dstat"><div class="l">Offerten erhalten</div><div class="v">${offerten}</div></div>
-      <div class="dstat"><div class="l">Offene Fristen</div><div class="v" style="color:${ueberf ? '#dc2626' : 'inherit'}">${mitFrist}${ueberf ? ` <span style="font-size:12px">(${ueberf} überfällig)</span>` : ''}</div></div>
+      <div class="dstat"><div class="l">Offene Fristen</div><div class="v" style="color:${ueberf ? '#dc2626' : 'inherit'}">${mitFrist}${ueberf ? ` <span style="font-size:var(--t-xs, 12px)">(${ueberf} überfällig)</span>` : ''}</div></div>
     </div>
     ${projektNextStepsCard(p) || '<p class="muted" style="margin-top:14px">Keine offenen Ausschreibungen.</p>'}
-    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn secondary" href="#/projekt/${p.id}/listen">Zur Submittentenliste →</a><button class="btn secondary" data-act="firmen-to-kontakte" data-pid="${p.id}" title="Alle Unternehmer dieses Projekts als Kontakte anlegen (für saubere Verwaltung)">👥 Firmen → Kontakte</button>${/römerstrasse|rö\s?31/i.test(p.name || '') ? `<button class="btn" data-act="import-ro31-subm" data-pid="${p.id}" title="Submittentenliste aus dem PDF (P. Hefti) importieren: Firmen als Kontakte + als Submittenten bei den passenden BKP-Gewerken">📋 Submittentenliste importieren</button>` : ''}</div>`;
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn secondary" href="#/projekt/${p.id}/listen">Zur Submittentenliste →</a><button class="btn secondary" data-act="firmen-to-kontakte" data-pid="${p.id}" title="Alle Unternehmer dieses Projekts als Kontakte anlegen (für saubere Verwaltung)">👥 Firmen → Kontakte</button>${RO31_SUBMITTENTEN.length ? `<button class="btn" data-act="import-ro31-subm" data-pid="${p.id}" title="Vorbereitete Submittentenliste importieren: Firmen als Kontakte + als Submittenten bei den passenden BKP-Gewerken">📋 Submittentenliste importieren</button>` : ''}</div>`;
 }
 function dashTermin(p) {
   const ek = eckDaten(p); const vs = gewerkeSorted(p);
@@ -1944,9 +2144,9 @@ function dashTermin(p) {
   const laufend = dated.filter(v => v.bauStart <= today && v.bauEnde >= today);
   const kommend = dated.filter(v => v.bauStart > today).slice().sort((a, b) => a.bauStart.localeCompare(b.bauStart)).slice(0, 8);
   return `<div class="detail-stats">
-      <div class="dstat"><div class="l">Baustart</div><div class="v" style="font-size:15px">${ek.baustart ? fmtDate(ek.baustart) : '–'}</div></div>
-      <div class="dstat"><div class="l">Bauende</div><div class="v" style="font-size:15px">${ek.bauende ? fmtDate(ek.bauende) : '–'}</div></div>
-      <div class="dstat"><div class="l">Bezug</div><div class="v" style="font-size:15px">${ek.bezug ? fmtDate(ek.bezug) : '–'}</div></div>
+      <div class="dstat"><div class="l">Baustart</div><div class="v" style="font-size:var(--t-l, 15px)">${ek.baustart ? fmtDate(ek.baustart) : '–'}</div></div>
+      <div class="dstat"><div class="l">Bauende</div><div class="v" style="font-size:var(--t-l, 15px)">${ek.bauende ? fmtDate(ek.bauende) : '–'}</div></div>
+      <div class="dstat"><div class="l">Bezug</div><div class="v" style="font-size:var(--t-l, 15px)">${ek.bezug ? fmtDate(ek.bezug) : '–'}</div></div>
       <div class="dstat"><div class="l">Datierte Gewerke</div><div class="v">${dated.length} / ${vs.length}</div></div>
       <div class="dstat"><div class="l">Laufend</div><div class="v">${laufend.length}</div></div>
     </div>
@@ -1981,7 +2181,7 @@ function viewProjektDetail(id) {
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
       <div>
-        <h1 style="margin:0;font-size:23px">${esc(p.name)}</h1>
+        <h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1>
         <div class="sub" style="margin-top:5px">📍 ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} · Projektleitung: ${esc(p.projektleiter)}</div>
       </div>
       <div style="display:flex;gap:10px;align-items:center">
@@ -2006,7 +2206,7 @@ function viewProjektDetail(id) {
       ${p.geschosse ? `<div class="dstat"><div class="l">Geschosse</div><div class="v">${p.geschosse}</div></div>` : ''}
       ${p.flaeche ? `<div class="dstat"><div class="l">Fläche</div><div class="v">${p.flaeche.toLocaleString('de-CH')} m²</div></div>` : ''}
       ${p.volumen ? `<div class="dstat"><div class="l">Volumen</div><div class="v">${p.volumen.toLocaleString('de-CH')} m³</div></div>` : ''}
-      <div class="dstat"><div class="l">Termin</div><div class="v" style="font-size:15px">${fmtDate(p.start)} – ${fmtDate(p.ende)}</div></div>
+      <div class="dstat"><div class="l">Termin</div><div class="v" style="font-size:var(--t-l, 15px)">${fmtDate(p.start)} – ${fmtDate(p.ende)}</div></div>
     </div>
 
     ${erinnerungenCard(p)}
@@ -2054,11 +2254,34 @@ function viewGewerke(pid) {
   }
   const toolbar = `<button class="btn sm" data-act="new-vergabe" data-pid="${p.id}" style="margin-left:auto">+ Arbeitsbeschrieb</button>`;
   render(`
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Gewerke · BKP-Detailansichten</div></div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Gewerke · BKP-Detailansichten</div></div></div>
     ${projektTabs(p, 'gewerke', toolbar)}
     ${emptyState('◫', 'Noch keine Gewerke. Mit „+ Arbeitsbeschrieb" anlegen.')}`);
 }
-let kostenBrutto = false;   // Baukostenübersicht: false = netto (exkl. MwSt), true = brutto (inkl.)
+/* Welche ANSICHT gerade gewünscht ist: false = netto (exkl. MwSt), true = brutto.
+   Gilt für alle Auswertungen — Baukostenübersicht, Zahlungsplan, Steuern —,
+   damit nicht zwei Blätter nebeneinanderliegen, die verschieden rechnen. */
+let kostenBrutto = false;
+
+/* Umrechnung in die gewünschte Richtung.
+
+   Der Unterschied, an dem sich schon einmal ein Fehler festgesetzt hat:
+     preiseInkl()   wie die Beträge GESPEICHERT sind (Einstellung Büro)
+     kostenBrutto   was man gerade SEHEN will
+
+   Am 14.08.2026 rechnete die Anzeige stur «+ MwSt», auch wenn die Zahlen
+   längst brutto gespeichert waren — die Steuer wurde ein zweites Mal
+   aufgeschlagen, und der Knopf machte die Summe grösser statt kleiner.
+   Deshalb steht die Umrechnung jetzt an EINER Stelle. */
+function mwstFaktor() { return 1 + mwstSatz() / 100; }
+/** Betrag in der gewählten Ansicht, fertig gesetzt — für Druckseiten. */
+function moneyA(n) { return money(inAnsicht(n)); }
+function alsBrutto(n) { return preiseInkl() ? (Number(n) || 0) : (Number(n) || 0) * mwstFaktor(); }
+function alsNetto(n)  { return preiseInkl() ? (Number(n) || 0) / mwstFaktor() : (Number(n) || 0); }
+/** Betrag in der gewählten Ansicht. */
+function inAnsicht(n) { return kostenBrutto ? alsBrutto(n) : alsNetto(n); }
+/** Beschriftung dazu — gehört auf jedes Blatt, das Zahlen zeigt. */
+function ansichtNote() { return kostenBrutto ? 'inkl. ' + mwstSatz() + ' % MwSt' : 'exkl. MwSt'; }
 let kostOpen = new Set();   // aufgeklappte Gewerk-Zeilen in der Baukostenübersicht (Baubeschrieb/Nachträge/Rechnungen)
 // Mitlaufender Spaltenkopf (wie Gantt): Seite scrollt, ein fixes Overlay zeigt den Kopf unter der Toolbar
 let _kshUpdate = null;
@@ -2095,19 +2318,28 @@ function setupKostStickyHead() {
 function viewKosten(id) {
   const p = findProjekt(id);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
-  const vs = (p.vergaben || []).slice().sort((a, b) => (a.bkp || '').localeCompare(b.bkp || ''));
+  // Positionen, die nur Termine tragen, erscheinen hier nicht: Ihr Geld steckt
+  // im Hauptvertrag des Sammelauftrags (211.3/.4/.5 in 211). Eine Zeile mit
+  // 0.00 wäre irreführend. Umschaltbar im Gewerk unter «Sammelvergabe».
+  const vs = (p.vergaben || []).filter(weistAus).slice().sort((a, b) => (a.bkp || '').localeCompare(b.bkp || ''));
   setStatusExtra(vs.length + ' Gewerk' + (vs.length === 1 ? '' : 'e') + ' · Prognose ' + chf(vs.reduce((t, v) => t + kostenZeile(v).prognose, 0)));
 
   const toolbar = `
     <button class="btn sm secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">🖨 Kostenschätzung</button>
     <button class="btn sm secondary" data-act="pdf-baukosten" data-pid="${p.id}">🖨 Baukostenübersicht</button>
-    <button class="btn sm ${kostenBrutto ? '' : 'secondary'}" data-act="kosten-brutto" data-pid="${p.id}" title="Reine Anzeige: Beträge netto (exkl.) oder brutto (inkl. ${mwstSatz()}% MwSt). Ändert die gespeicherten Zahlen nicht.">${kostenBrutto ? `Anzeige: Brutto (inkl. ${mwstSatz()}%)` : 'Anzeige: Netto (exkl. MwSt)'}</button>
+    ${/* Ohne die Wörter «brutto» und «netto». Sie bedeuten im Bauwesen etwas
+          anderes als in der Mehrwertsteuer: In einer Offerte ist die
+          Bruttosumme die Summe VOR Rabatt und Skonto, die Nettosumme die
+          danach — beide ohne MwSt. Bei der Steuer heisst netto «ohne MwSt»
+          und brutto «mit MwSt». Dieselben zwei Wörter, zwei Bedeutungen,
+          ein Programm. Hier zählt nur die Steuer, also steht sie da. */''}
+    <button class="btn sm ${kostenBrutto ? '' : 'secondary'}" data-act="kosten-brutto" data-pid="${p.id}" title="Reine Anzeige – ändert die gespeicherten Zahlen nicht. Gespeichert sind sie ${preiseInkl() ? 'inkl.' : 'exkl.'} MwSt.">Anzeige: ${kostenBrutto ? `inkl. ${mwstSatz()} % MwSt` : 'exkl. MwSt'}</button>
     ${katToggleBtn()}
     <button class="btn sm secondary" data-act="kosten-versionen" data-pid="${p.id}" title="Kostenstände sichern & vergleichen (z.B. monatliche Abgaben)" style="margin-left:auto">📊 Versionen${(p.kostenVersionen || []).length ? ' (' + p.kostenVersionen.length + ')' : ''}</button>
     <button class="btn sm" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>`;
   const head = `
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Baukostenübersicht nach BKP · Stand ${fmtDate(todayIso())}</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Baukostenübersicht nach BKP · Stand ${fmtDate(todayIso())}</div></div>
     </div>
     ${projektTabs(p, 'kosten', toolbar)}
   `;
@@ -2120,11 +2352,25 @@ function viewKosten(id) {
   const blank = () => ({ kv: 0, rev: 0, wv: 0, nt: 0, prognose: 0, endsumme: 0, bezahlt: 0, fakturiert: 0, offen: 0, offenRg: 0, dWvEnd: 0 });
   const add = (acc, z) => { acc.kv += z.kv; acc.rev += (z.rev != null ? z.rev : z.kv); acc.wv += z.wv; acc.nt += z.nt; acc.prognose += z.prognose; acc.endsumme += z.endsumme; acc.bezahlt += z.bezahlt; acc.fakturiert += z.fakturiert; acc.offen += z.offen; acc.offenRg += z.offenRg; acc.dWvEnd += (z.vergeben ? z.endsumme - z.wv : 0); };
   const dCls = d => d > 0.5 ? 'over' : (d < -0.5 ? 'under' : '');
-  const sh = t => `<div style="font-weight:400;font-size:9px;color:#9aa4b1;margin-top:1px">${t}</div>`;
+  const sh = t => `<div style="font-weight:400;font-size:var(--t-2xs, 9px);color:#9aa4b1;margin-top:1px">${t}</div>`;
   const mw = mwstSatz();
-  // Beträge sind NETTO (exkl. MwSt) – MwSt/Rabatt/Skonto werden je Gewerk in den Konditionen gerechnet.
-  // „Brutto" ist reine ANZEIGE (+MwSt), verändert die Daten nicht.
-  const mB = n => kostenBrutto ? `${money(n * (1 + mw / 100))}<div class="kb-net">${money(n)} <span style="opacity:.65">netto</span></div>` : money(n);
+  /* Zwei verschiedene Dinge, die man nicht verwechseln darf:
+
+       preiseInkl()    Wie sind die Beträge GESPEICHERT? Netto oder brutto?
+                       Einstellung je Büro (Einstellungen → Büro).
+       kostenBrutto    Welche ANSICHT will man gerade sehen?
+
+     Bis 14.08.2026 rechnete die Anzeige immer «+ MwSt» — auch wenn die Zahlen
+     schon brutto gespeichert waren. Dann wurde die MwSt ein zweites Mal
+     aufgeschlagen, und der Knopf machte die Summe grösser statt kleiner.
+     Jetzt wird in die gewünschte Richtung umgerechnet. */
+  const zweitzeile = (haupt, neben, wort) =>
+    `${money(haupt)}<div class="kb-net">${money(neben)} <span style="opacity:.65">${wort}</span></div>`;
+  const mB = n => {
+    if (kostenBrutto === preiseInkl()) return money(n);          // Ansicht = Speicherung
+    return kostenBrutto ? zweitzeile(alsBrutto(n), n, 'netto')
+                        : zweitzeile(alsNetto(n), n, 'inkl. MwSt');
+  };
   const tot = blank();
 
   let body = '';
@@ -2135,7 +2381,7 @@ function viewKosten(id) {
       const z = kostenZeile(v); add(sub, z); add(tot, z);
       const d = z.vergeben ? (z.endsumme - z.wv) : null;   // +/− = WV → Endsumme
       const hatBt = (p.bauteile || []).length;
-      const btSel = hatBt ? `<div style="margin-top:3px"><select class="bt-gw" data-pid="${p.id}" data-vid="${v.id}" onclick="event.stopPropagation()" title="Teilprojekt" style="font-size:11px;padding:1px 5px;border:1px solid var(--border);border-radius: 0;max-width:200px">${bauteilOptionsHtml(p, v.bauteil)}</select></div>` : '';
+      const btSel = hatBt ? `<div style="margin-top:3px"><select class="bt-gw" data-pid="${p.id}" data-vid="${v.id}" onclick="event.stopPropagation()" title="Teilprojekt" style="font-size:var(--t-2xs, 11px);padding:1px 5px;border:1px solid var(--border);border-radius: 0;max-width:200px">${bauteilOptionsHtml(p, v.bauteil)}</select></div>` : '';
       const open = kostOpen.has(v.id);
       const ein = (v.eingeladene || []).length, off = offertenOf(v).length;
       const untCell = v.firma ? `<span title="vergeben an ${esc(v.firma)}">${esc(v.firma)}</span>` : (ein ? `<span class="muted">${ein} eingeladen${off ? ` · ${off} Offerte${off === 1 ? '' : 'n'}` : ''}</span>` : '<span class="muted">nicht ausgeschrieben</span>');
@@ -2147,7 +2393,7 @@ function viewKosten(id) {
         <td class="num">${z.rev != null && Math.abs(z.rev - z.kv) > 0.5 ? `${mB(z.rev)} <span class="chg-delta ${z.rev > z.kv ? 'up' : 'dn'}" title="Änderung gegenüber Erst-KV">${z.rev > z.kv ? '▲' : '▼'}</span>` : (z.rev != null ? mB(z.rev) : `<span class="muted">${mB(z.kv)}</span>`)}</td>
         <td class="num">${z.vergeben ? mB(z.wv) : '–'}</td>
         <td class="num">${z.nt ? mB(z.nt) : '–'}</td>
-        <td class="num"><strong>${mB(z.endsumme)}</strong>${z.hatSchluss ? ' <span class="muted" style="font-size:9px">SR</span>' : ''}</td>
+        <td class="num"><strong>${mB(z.endsumme)}</strong>${z.hatSchluss ? ' <span class="muted" style="font-size:var(--t-2xs, 9px)">SR</span>' : ''}</td>
         <td class="num">${z.fakturiert ? mB(z.fakturiert) : '–'}</td>
         <td class="num">${z.offenRg ? mB(z.offenRg) : '–'}</td>
         <td class="num ${dCls(d || 0)}">${d != null && Math.abs(d) > 0.5 ? mB(d) : '–'}</td>
@@ -2157,27 +2403,27 @@ function viewKosten(id) {
           <div class="kost-info-grid">
             <div class="kost-info-main">
               <div class="kost-info-h">Baubeschrieb / Schätzung</div>
-              <div style="font-size:13px;white-space:pre-wrap">${v.beschrieb ? esc(v.beschrieb) : '<span class="muted">– kein Beschrieb. Mit „✎ Kostenschätzung" erfassen (Beschrieb + Positionen).</span>'}</div>
+              <div style="font-size:var(--t-s, 13px);white-space:pre-wrap">${v.beschrieb ? esc(v.beschrieb) : '<span class="muted">– kein Beschrieb. Mit „✎ Kostenschätzung" erfassen (Beschrieb + Positionen).</span>'}</div>
               ${(v.ksPositionen && v.ksPositionen.length) ? `<table class="grid" style="margin-top:8px"><tbody>${v.ksPositionen.map(pos => `<tr><td>${esc(pos.text || 'Position')}</td><td class="num">${mB(pos.betrag)}</td></tr>`).join('')}<tr><td><b>Total KV</b></td><td class="num"><b>${mB(v.schaetzung)}</b></td></tr></tbody></table>` : ''}
             </div>
             <div class="kost-info-side">
               <div class="kost-info-h">Stand &amp; Unternehmer</div>
-              <div style="font-size:13px;margin-bottom:6px">${statusPill(v)}</div>
-              <div class="muted" style="font-size:12.5px">${esc(gewerkSteps(v).hint)}</div>
-              <div style="font-size:12.5px;margin-top:6px">${ein ? `${ein} Unternehmer eingeladen${off ? `, ${off} Offerte${off === 1 ? '' : 'n'} erhalten` : ''}` : 'noch nicht ausgeschrieben'}${v.firma ? ` · vergeben an <b>${esc(v.firma)}</b>` : ''}</div>
+              <div style="font-size:var(--t-s, 13px);margin-bottom:6px">${statusPill(v)}</div>
+              <div class="muted" style="font-size:var(--t-s, 12.5px)">${esc(gewerkSteps(v).hint)}</div>
+              <div style="font-size:var(--t-s, 12.5px);margin-top:6px">${ein ? `${ein} Unternehmer eingeladen${off ? `, ${off} Offerte${off === 1 ? '' : 'n'} erhalten` : ''}` : 'noch nicht ausgeschrieben'}${v.firma ? ` · vergeben an <b>${esc(v.firma)}</b>` : ''}</div>
               <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><a class="btn sm" href="#/projekt/${p.id}/vergabe/${v.id}">Detail / Ausschreibung ↗</a><button class="btn sm secondary" data-act="ks-edit" data-pid="${p.id}" data-vid="${v.id}">✎ Kostenschätzung</button></div>
             </div>
           </div>
         </td></tr>`;
         rows += (v.nachtraege || []).map(n => { const nc = n.status === 'genehmigt' ? 'green' : (n.status === 'abgelehnt' ? 'grey' : 'amber'); return `<tr class="rg-sub">
           <td></td>
-          <td colspan="5"><span class="muted">↳ Nachtrag${n.nr ? ' ' + esc(n.nr) : ''}:</span> ${esc(n.titel || '')} <span class="st ${nc}" style="font-size:9px;padding:1px 6px">${esc(n.status || 'offen')}</span>${hatBt ? ` · <select class="bt-nt" data-pid="${p.id}" data-vid="${v.id}" data-nid="${n.id}" title="Teilprojekt des Nachtrags" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius: 0">${bauteilOptionsHtml(p, n.bauteil)}</select>` : ''}</td>
+          <td colspan="5"><span class="muted">↳ Nachtrag${n.nr ? ' ' + esc(n.nr) : ''}:</span> ${esc(n.titel || '')} <span class="st ${nc}" style="font-size:var(--t-2xs, 9px);padding:1px 6px">${esc(n.status || 'offen')}</span>${hatBt ? ` · <select class="bt-nt" data-pid="${p.id}" data-vid="${v.id}" data-nid="${n.id}" title="Teilprojekt des Nachtrags" style="font-size:var(--t-2xs, 10px);padding:0 3px;border:1px solid var(--border);border-radius: 0">${bauteilOptionsHtml(p, n.bauteil)}</select>` : ''}</td>
           <td class="num">${mB(n.betrag)}</td>
           <td colspan="4"></td>
         </tr>`; }).join('');
-        rows += (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => `<tr class="rg-sub">
+        rows += (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => `<tr class="rg-sub" id="rg-${r.id}">
           <td></td>
-          <td colspan="6"><span class="muted">↳ ${r.datum ? fmtDate(r.datum) : '—'}</span> ${esc(r.text || (r.art === 'gutschrift' ? 'Gutschrift' : 'Rechnung'))}${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''} · ${money(rgSigned(r))}${hatBt ? ` · <select class="bt-rg" data-pid="${p.id}" data-vid="${v.id}" data-rgid="${r.id}" title="Teilprojekt der Rechnung" style="font-size:10px;padding:0 3px;border:1px solid var(--border);border-radius: 0">${bauteilOptionsHtml(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)}</select>` : ''}</td>
+          <td colspan="6"><span class="muted">↳ ${r.datum ? fmtDate(r.datum) : '—'}</span> ${esc(r.text || (r.art === 'gutschrift' ? 'Gutschrift' : 'Rechnung'))}${r.nr ? ` <span class="muted">${esc(r.nr)}</span>` : ''} · ${money(rgSigned(r))}${hatBt ? ` · <select class="bt-rg" data-pid="${p.id}" data-vid="${v.id}" data-rgid="${r.id}" title="Teilprojekt der Rechnung" style="font-size:var(--t-2xs, 10px);padding:0 3px;border:1px solid var(--border);border-radius: 0">${bauteilOptionsHtml(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)}</select>` : ''}</td>
           <td></td>
           <td class="num">${mB(rgSigned(r))}</td>
           <td></td><td></td>
@@ -2188,7 +2434,7 @@ function viewKosten(id) {
           const dlt = (b.ist != null && b.ist !== '') ? (Number(b.ist) || 0) - (Number(b.betrag) || 0) : null;
           return `<tr class="rg-sub">
             <td></td>
-            <td colspan="6"><span class="muted">↳ Budget${b.eig ? ' (Eigentümerwunsch)' : ''}:</span> ${esc(b.text || 'Position')}${b.wohnung ? ` <span class="muted">[${esc(einheitName(p, b.wohnung))}]</span>` : ''} <span class="st ${sc}" style="font-size:9px;padding:1px 6px">${src}</span> · WV ${money(b.betrag)}${b.ist != null && b.ist !== '' ? ` · nach Auswahl ${money(b.ist)}` : ''}</td>
+            <td colspan="6"><span class="muted">↳ Budget${b.eig ? ' (Eigentümerwunsch)' : ''}:</span> ${esc(b.text || 'Position')}${b.wohnung ? ` <span class="muted">[${esc(einheitName(p, b.wohnung))}]</span>` : ''} <span class="st ${sc}" style="font-size:var(--t-2xs, 9px);padding:1px 6px">${src}</span> · WV ${money(b.betrag)}${b.ist != null && b.ist !== '' ? ` · nach Auswahl ${money(b.ist)}` : ''}</td>
             <td></td>
             <td class="num ${dlt ? (dlt > 0 ? 'over' : 'under') : ''}">${dlt ? (dlt > 0 ? '+' : '') + mB(dlt) : ''}</td>
             <td></td><td></td>
@@ -2220,10 +2466,12 @@ function viewKosten(id) {
       ${ks('Prognose', tot.endsumme, 'hl')}
       ${ks('Bezahlt', tot.fakturiert)}
       ${ks('Offen', tot.offenRg)}
-      ${ks('inkl. ' + mwstSatz() + '% MwSt', tot.endsumme * (1 + mw / 100), 'mwst')}
+      ${preiseInkl()
+        ? ks('exkl. ' + mwstSatz() + '% MwSt', alsNetto(tot.endsumme), 'mwst')
+        : ks('inkl. ' + mwstSatz() + '% MwSt', alsBrutto(tot.endsumme), 'mwst')}
     </div>
-    <p class="muted" style="font-size:12px;margin:-2px 0 10px">Alle Beträge <b>netto</b> (exkl. MwSt). MwSt, Rabatt &amp; Skonto werden <b>je Gewerk in den Konditionen</b> gerechnet. Der „Anzeige: Brutto"-Knopf zeigt zusätzlich inkl. ${mwstSatz()} % MwSt – ohne die Daten zu verändern.</p>
-    ${(p.volumen || p.flaeche) ? `<p class="muted" style="font-size:12px;margin:-6px 0 12px">Kubische Kennzahlen für die Kostenschätzungs-Gegenüberstellung${p.volumen ? ` · GV ${p.volumen.toLocaleString('de-CH')} m³` : ''}${p.flaeche ? ` · BGF ${p.flaeche.toLocaleString('de-CH')} m²` : ''}. Gebäudedaten unter „Übersicht → ✎ Bearbeiten".</p>` : ''}
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin:-2px 0 10px">Alle Beträge <b>${preiseInkl() ? 'inkl. ' + mwstSatz() + ' % MwSt' : 'netto (exkl. MwSt)'}</b> — Einstellung unter <em>Einstellungen → Büro</em>. Rabatt &amp; Skonto werden <b>je Gewerk in den Konditionen</b> gerechnet. Der Anzeige-Knopf rechnet nur um, er verändert die Daten nicht.</p>
+    ${(p.volumen || p.flaeche) ? `<p class="muted" style="font-size:var(--t-xs, 12px);margin:-6px 0 12px">Kubische Kennzahlen für die Kostenschätzungs-Gegenüberstellung${p.volumen ? ` · GV ${p.volumen.toLocaleString('de-CH')} m³` : ''}${p.flaeche ? ` · BGF ${p.flaeche.toLocaleString('de-CH')} m²` : ''}. Gebäudedaten unter „Übersicht → ✎ Bearbeiten".</p>` : ''}
     <div class="card ktable-wrap">
       <table class="grid ktable">
         <thead><tr>
@@ -2244,7 +2492,7 @@ function viewKosten(id) {
     </div>
     ${optionenCard(p, tot.kv, tot.prognose)}
     ${teilprojektCard(p, tot.prognose)}
-    <p class="muted" style="font-size:12.5px;margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = verhandelte Vergabesumme · Prognose = WV + Nachträge (bei Schlussrechnung „SR" = effektive Endsumme) · Rechnung = Summe eingetragener Rechnungen · Offen = Endsumme − Rechnungen (nie negativ) · +/− = WV gegen Endsumme (rot = Überschreitung). Unter jedem Gewerk: Nachträge (mit Status) &amp; Rechnungen; Teilprojekt-Dropdown je Gewerk/Nachtrag. <b>Zeile anklicken = aufklappen</b> (Baubeschrieb, Nachträge, Rechnungen); „Detail / Ausschreibung ↗" öffnet das Gewerk.</p>
+    <p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = verhandelte Vergabesumme · Prognose = WV + Nachträge (bei Schlussrechnung „SR" = effektive Endsumme) · Rechnung = Summe eingetragener Rechnungen · Offen = Endsumme − Rechnungen (nie negativ) · +/− = WV gegen Endsumme (rot = Überschreitung). Unter jedem Gewerk: Nachträge (mit Status) &amp; Rechnungen; Teilprojekt-Dropdown je Gewerk/Nachtrag. <b>Zeile anklicken = aufklappen</b> (Baubeschrieb, Nachträge, Rechnungen); „Detail / Ausschreibung ↗" öffnet das Gewerk.</p>
   `);
   requestAnimationFrame(setupKostStickyHead);
 }
@@ -2365,11 +2613,11 @@ function gIcon(name) { return `<svg viewBox="0 0 24 24" width="22" height="22" f
 function bigBtn(act, icon, label, o) { o = o || {}; return `<button class="g-bigbtn${o.on ? ' on' : ''}" data-act="${act}" data-pid="${o.pid}"${o.kind != null ? ` data-kind="${o.kind}"` : ''} title="${esc(o.title || label)}"><span class="bb-ico">${gIcon(icon)}</span><span class="bb-lbl">${esc(label)}</span></button>`; }
 const rgroup = (label, btns) => `<div class="g-rgroup"><div class="g-rgroup-btns">${btns}</div><div class="g-rgroup-lbl">${esc(label)}</div></div>`;
 // Schrift-Stepper (− Wert +) für die Ribbon-Tools
-const gFontStep = (act, pid, val) => `<div class="g-zoom" title="Schriftgrösse"><button data-act="${act}" data-pid="${pid}" data-kind="out" title="kleiner" style="font-size:11px">A</button><button data-act="${act}" data-pid="${pid}" data-kind="reset" style="min-width:26px" title="Standard">${val}</button><button data-act="${act}" data-pid="${pid}" data-kind="in" title="grösser" style="font-size:15px">A</button></div>`;
+const gFontStep = (act, pid, val) => `<div class="g-zoom" title="Schriftgrösse"><button data-act="${act}" data-pid="${pid}" data-kind="out" title="kleiner" style="font-size:var(--t-2xs, 11px)">A</button><button data-act="${act}" data-pid="${pid}" data-kind="reset" style="min-width:26px" title="Standard">${val}</button><button data-act="${act}" data-pid="${pid}" data-kind="in" title="grösser" style="font-size:var(--t-l, 15px)">A</button></div>`;
 // Versionsleiste (wie Zahlungsplan): Versionen umschalten / neu / umbenennen / löschen / sperren
 function ganttVersionBar(p) {
   const gespr = terminGesperrt(p);
-  return `<div class="g-verbar"><span class="muted" style="font-size:11px">Version</span>${terminVersList(p).map(v => `<button class="btn sm ${v.id === p.terminVersAktiv ? '' : 'secondary'}" data-act="tv-switch" data-pid="${p.id}" data-vid="${v.id}" title="Zu dieser Version wechseln">${esc(v.name || 'Version')}${v.gesperrt ? ' 🔒' : ''}</button>`).join('')}<button class="btn sm secondary" data-act="tv-new" data-pid="${p.id}" title="Neue Version (Kopie der aktuellen)">+ Version</button><button class="btn sm ico secondary" data-act="tv-rename" data-pid="${p.id}" title="Version umbenennen">✎</button><button class="btn sm ico secondary" data-act="tv-del" data-pid="${p.id}" title="Version löschen">🗑</button><button class="btn sm ico ${gespr ? '' : 'secondary'}" data-act="tv-lock" data-pid="${p.id}" title="${gespr ? 'Version entsperren' : 'Version sperren (abschliessen)'}">${gespr ? '🔒' : '🔓'}</button></div>`;
+  return `<div class="g-verbar"><span class="muted" style="font-size:var(--t-2xs, 11px)">Version</span>${terminVersList(p).map(v => `<button class="btn sm ${v.id === p.terminVersAktiv ? '' : 'secondary'}" data-act="tv-switch" data-pid="${p.id}" data-vid="${v.id}" title="Zu dieser Version wechseln">${esc(v.name || 'Version')}${v.gesperrt ? ' 🔒' : ''}</button>`).join('')}<button class="btn sm secondary" data-act="tv-new" data-pid="${p.id}" title="Neue Version (Kopie der aktuellen)">+ Version</button><button class="btn sm ico secondary" data-act="tv-rename" data-pid="${p.id}" title="Version umbenennen">✎</button><button class="btn sm ico secondary" data-act="tv-del" data-pid="${p.id}" title="Version löschen">🗑</button><button class="btn sm ico ${gespr ? '' : 'secondary'}" data-act="tv-lock" data-pid="${p.id}" title="${gespr ? 'Version entsperren' : 'Version sperren (abschliessen)'}">${gespr ? '🔒' : '🔓'}</button></div>`;
 }
 // Kompakte Box ganz oben: Modus (Detail/Grob/Fein) + darunter die Versionsleiste
 function ganttModeToggle(p) {
@@ -2421,7 +2669,7 @@ function ganttRibbonTabs(p) {
     rgroup('Schrift Seite', gFontStep('gantt-sidefont', p.id, ganttSideFont));
   else if (ganttTab === 'anzeige') b =
     rgroup('Fokus', bigBtn('gantt-focus', 'focus', 'Fokus', { pid: p.id, on: ganttFocus, title: 'Fokus: nur aktive Zeilen im sichtbaren Zeitausschnitt' }) + bigBtn('gantt-dist', 'arrBoth', 'Distanz', { pid: p.id, on: ganttDist, title: 'Auf leeren Zeilen anschreiben, wie weit der Balken vom sichtbaren Ausschnitt entfernt ist (← zurück / vorne →), in Tagen' })) +
-    rgroup('Filter', bigBtn('gantt-hideundated', 'filter', 'Nur Termin', { pid: p.id, on: ganttHideUndated, title: 'Nur Gewerke mit Termin anzeigen (termin-lose wie Reserve ausblenden)' }) + bigBtn('gantt-done', 'check', 'Erfüllt: ' + DONE_NAMES[ganttDone], { pid: p.id, on: ganttDone !== 'show', title: 'Erfüllte Termine: Zeigen → Ausgrauen → Ausblenden' })) +
+    rgroup('Filter', bigBtn('gantt-alle', 'auge', 'Auch ausgeblendete', { pid: p.id, on: ganttAlleZeigen, title: 'Positionen zeigen, die nicht ins Terminprogramm gehören (je Gewerk eingestellt). Nur zur Übersicht — im Druck bleiben sie weg.' }) + bigBtn('gantt-hideundated', 'filter', 'Nur Termin', { pid: p.id, on: ganttHideUndated, title: 'Nur Gewerke mit Termin anzeigen (termin-lose wie Reserve ausblenden)' }) + bigBtn('gantt-done', 'check', 'Erfüllt: ' + DONE_NAMES[ganttDone], { pid: p.id, on: ganttDone !== 'show', title: 'Erfüllte Termine: Zeigen → Ausgrauen → Ausblenden' })) +
     rgroup('Vergleich', bigBtn('gantt-basecmp', 'delta', ganttBaseCompare && ganttBaselineVer(p) ? 'Δ ' + ganttBaselineVer(p).name : 'Δ Version', { pid: p.id, on: ganttBaseCompare, title: 'Vergleichsversion wählen – ⟳ am Balken zeigt „war → jetzt"; im Menü auch „Verschiebungen anzeigen"' }));
   else if (ganttTab === 'ablauf') b =
     rgroup('Eckdaten', bigBtn('eckdaten', 'flag', 'Baustart', { pid: p.id, on: !!(p.baustart || p.bauende), title: 'Baustart / Bauende / Bezug' }) + bigBtn('feiertage', 'star', 'Feiertage', { pid: p.id, on: !!p.kanton, title: 'Feiertage / Kanton' + (p.kanton ? ' ' + p.kanton : '') })) +
@@ -2463,12 +2711,12 @@ let _grobPxPerDay = 2;
 /* ===== 🟦 MODUL: TERMINE (SubTermin) — Gantt (grob/fein/Viertel), Bauprogramm, Baseline ===== */
 function viewGrobGantt(p) {
   const head = `
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Grobplanung · Bauphasen aus dem Detailprogramm (Planung, Rohbau, Innenausbau …)</div></div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Grobplanung · Bauphasen aus dem Detailprogramm (Planung, Rohbau, Innenausbau …)</div></div></div>
     ${projektTabs(p, 'termine')}
     ${ganttModeToggle(p)}`;
   const vs = gewerkeSorted(p).filter(v => v.bauStart && v.bauEnde);
   if (!vs.length) {
-    render(head + `<p class="muted" style="font-size:12.5px;margin:-2px 0 12px">Die Grobphasen entstehen <b>automatisch aus dem Detailprogramm</b>: setze im „📋 Detailprogramm" die Bau-Termine (Start/Ende) der Gewerke – sie werden hier zu groben Bauphasen zusammengefasst.</p>` + emptyState('🗓', 'Noch keine datierten Gewerke im Detailprogramm.'));
+    render(head + `<p class="muted" style="font-size:var(--t-s, 12.5px);margin:-2px 0 12px">Die Grobphasen entstehen <b>automatisch aus dem Detailprogramm</b>: setze im „📋 Detailprogramm" die Bau-Termine (Start/Ende) der Gewerke – sie werden hier zu groben Bauphasen zusammengefasst.</p>` + emptyState('🗓', 'Noch keine datierten Gewerke im Detailprogramm.'));
     return;
   }
   const map = {};
@@ -2493,13 +2741,13 @@ function viewGrobGantt(p) {
   const rows = phases.map(x => {
     const left = xOf(x.start), w = Math.max(xOf(x.ende) - left, 22);
     return `<div class="grob-row">
-      <div class="grob-name" style="width:210px"><span class="p-dot" style="background:${x.ph.col}"></span><span class="gnm">${esc(x.ph.label)}</span><div class="muted" style="font-size:11px">${x.items.length} Gewerke · ${esc(fmtDate(x.start))} – ${esc(fmtDate(x.ende))}</div></div>
+      <div class="grob-name" style="width:210px"><span class="p-dot" style="background:${x.ph.col}"></span><span class="gnm">${esc(x.ph.label)}</span><div class="muted" style="font-size:var(--t-2xs, 11px)">${x.items.length} Gewerke · ${esc(fmtDate(x.start))} – ${esc(fmtDate(x.ende))}</div></div>
       <div class="grob-track" style="width:${trackW}px">${months.map((c, ci) => `<span class="grob-cell" style="left:${ci * colW}px;width:${colW}px"></span>`).join('')}<div class="grob-bar" data-pid="${p.id}" data-phase="${x.ph.key}" style="left:${left}px;width:${w - 3}px;background:${x.ph.col}" title="${esc(x.ph.label)} · ziehen = ganze Phase verschieben · ${x.items.map(v => (v.bkp ? v.bkp + ' ' : '') + v.gewerk).join(', ')}">${esc(x.ph.label)}</div></div>
     </div>`;
   }).join('');
   render(head + `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-2px 0 10px">
-      <p class="muted" style="font-size:12.5px;margin:0;flex:1;min-width:240px">Bauphasen aus dem <b>Detailprogramm</b> (Spanne = frühester Start bis spätestes Ende). <b>Phase ziehen</b> = alle ihre Gewerke verschieben${ganttChain ? ' (verkettete Nachfolger laufen mit)' : ''}. Zuordnung im Detailprogramm ändern (Phasen-Punkt).</p>
+      <p class="muted" style="font-size:var(--t-s, 12.5px);margin:0;flex:1;min-width:240px">Bauphasen aus dem <b>Detailprogramm</b> (Spanne = frühester Start bis spätestes Ende). <b>Phase ziehen</b> = alle ihre Gewerke verschieben${ganttChain ? ' (verkettete Nachfolger laufen mit)' : ''}. Zuordnung im Detailprogramm ändern (Phasen-Punkt).</p>
       <div class="g-zoom" title="Zoom"><button data-act="grob-zoom" data-pid="${p.id}" data-kind="out" title="schmaler">−</button><button data-act="grob-zoom" data-pid="${p.id}" data-kind="reset" style="min-width:46px">${Math.round(grobZoom * 100)}%</button><button data-act="grob-zoom" data-pid="${p.id}" data-kind="in" title="breiter">+</button></div>
     </div>
     <div class="card" style="padding:0;overflow:auto"><div class="grob-wrap" style="min-width:${210 + trackW}px">
@@ -2551,7 +2799,7 @@ function ausSetDate(pid, vid, field, val, grob) {
 }
 function viewAusschreibGantt(p) {
   const head = `
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Ausschreibungsprogramm · wann wird welches Gewerk ausgeschrieben/vergeben (eigene Spur, parallel zum Bauprogramm)</div></div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Ausschreibungsprogramm · wann wird welches Gewerk ausgeschrieben/vergeben (eigene Spur, parallel zum Bauprogramm)</div></div></div>
     ${projektTabs(p, 'termine')}
     ${ganttModeToggle(p)}`;
   const vs = gewerkeSorted(p);
@@ -2591,7 +2839,7 @@ function viewAusschreibGantt(p) {
   }).join('');
   render(head + `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-2px 0 10px">
-      <p class="muted" style="font-size:12.5px;margin:0;flex:1;min-width:240px">Trage je Gewerk ein, <b>wann ausgeschrieben/vergeben</b> wird – grob möglich: „Frühling 26", „April 26 – Mai 26", nur <b>ab</b> (Start) oder nur <b>bis</b> (Ende). Unabhängig vom Bauprogramm.</p>
+      <p class="muted" style="font-size:var(--t-s, 12.5px);margin:0;flex:1;min-width:240px">Trage je Gewerk ein, <b>wann ausgeschrieben/vergeben</b> wird – grob möglich: „Frühling 26", „April 26 – Mai 26", nur <b>ab</b> (Start) oder nur <b>bis</b> (Ende). Unabhängig vom Bauprogramm.</p>
       <div class="g-zoom" title="Zoom"><button data-act="aus-zoom" data-pid="${p.id}" data-kind="out" title="schmaler">−</button><button data-act="aus-zoom" data-pid="${p.id}" data-kind="reset" style="min-width:46px">${Math.round(ausZoom * 100)}%</button><button data-act="aus-zoom" data-pid="${p.id}" data-kind="in" title="breiter">+</button></div>
     </div>
     <div class="card" style="padding:0;overflow:auto"><div class="grob-wrap" style="min-width:${NAMEW + trackW}px">
@@ -2626,12 +2874,12 @@ function viewFeinStunden(p) {
     }).join('');
     const kchips = (c.vid ? komm.filter(k => k.vid === c.vid) : []).map(k => `<div class="od-komm" title="${esc(k.text)}">▸ ${esc(k.text)}</div>`).join('');
     return `<div class="od-col" data-pid="${p.id}" data-vid="${c.vid}" data-h0="${H0}" data-hpx="${hourPx}">
-      <div class="od-colhead" style="border-top:3px solid ${c.col}"><b>${esc(c.label)}</b>${c.sub ? `<div class="muted" style="font-size:10.5px">${esc(c.sub)}</div>` : ''}${kchips ? `<div class="od-komms">${kchips}</div>` : ''}</div>
+      <div class="od-colhead" style="border-top:3px solid ${c.col}"><b>${esc(c.label)}</b>${c.sub ? `<div class="muted" style="font-size:var(--t-2xs, 10.5px)">${esc(c.sub)}</div>` : ''}${kchips ? `<div class="od-komms">${kchips}</div>` : ''}</div>
       <div class="od-body" style="height:${totalH}px">${gridLines}${nowMark}${evs}</div>
     </div>`;
   }).join('');
   const head = `
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Feinprogramm · Tagesablauf (Outlook-Stil) – Unternehmer vor Ort, Aufgaben einteilen</div></div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Feinprogramm · Tagesablauf (Outlook-Stil) – Unternehmer vor Ort, Aufgaben einteilen</div></div></div>
     ${projektTabs(p, 'termine')}
     ${ganttModeToggle(p)}
     ${feinSubToggle(p)}`;
@@ -2641,8 +2889,8 @@ function viewFeinStunden(p) {
       <button class="btn sm secondary" data-act="fein-day" data-pid="${p.id}" data-kind="today">Heute</button>
       <button class="btn sm secondary" data-act="fein-day" data-pid="${p.id}" data-kind="next">Tag ›</button>
       <input class="input" type="date" id="fein-day-pick" value="${day}" style="width:150px;height:30px">
-      <b style="font-size:14px">${esc(wochentag(day))}, ${esc(fmtDate(day))}</b>
-      <span class="muted" style="font-size:12px;margin-left:auto">${onsite.length} Unternehmer vor Ort · in einer Spalte <b>ziehen</b> = Aufgabe einteilen</span>
+      <b style="font-size:var(--t-m, 14px)">${esc(wochentag(day))}, ${esc(fmtDate(day))}</b>
+      <span class="muted" style="font-size:var(--t-xs, 12px);margin-left:auto">${onsite.length} Unternehmer vor Ort · in einer Spalte <b>ziehen</b> = Aufgabe einteilen</span>
     </div>
     <div class="card" style="padding:0;overflow:auto"><div class="od-wrap">
       <div class="od-gutter" style="width:${gutterW}px"><div class="od-colhead"></div><div class="od-body" style="height:${totalH}px">${hourLabels}</div></div>
@@ -2706,7 +2954,7 @@ function removeFeinBlock(pid, bid) {
 // Feinprogramm: Zoom des Detailprogramms (3 Wochen) – echte Balken änderbar + Kommentare „ab diesem Tag …"
 function viewFeinViertel(p) {
   const head = `
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Feinprogramm · Zoom des Detailprogramms (3 Wochen) – Balken anklicken ändert die echten Termine; Kommentare „ab diesem Tag …" auf die Balken schreiben</div></div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Feinprogramm · Zoom des Detailprogramms (3 Wochen) – Balken anklicken ändert die echten Termine; Kommentare „ab diesem Tag …" auf die Balken schreiben</div></div></div>
     ${projektTabs(p, 'termine')}
     ${ganttModeToggle(p)}
     ${feinSubToggle(p)}`;
@@ -2765,7 +3013,7 @@ function viewFeinViertel(p) {
     }
     bar += hmarks;
     const insertStrip = (kind, vid) => `<div class="qv-insert" data-act="fein-insert" data-pid="${p.id}" data-kind="${kind}" data-vid="${vid}" title="Neue ${kind === 'gewerk' ? 'Hauptzeile (Gewerk)' : 'Unterzeile (Untertermin)'} einfügen"><span>+ ${kind === 'gewerk' ? 'Gewerk' : 'Untertermin'}</span></div>`;
-    const gName = `<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;min-width:0"><span class="bkp-code">${esc(v.bkp || '')}</span> <b data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}" style="cursor:pointer" title="Gewerk bearbeiten / umbenennen">${esc(v.firma || v.gewerk)}</b><div class="muted" style="font-size:10.5px">${esc(v.firma ? v.gewerk : 'noch nicht vergeben')}</div></div><button class="x-btn" data-act="fein-add-vorgang" data-pid="${p.id}" data-vid="${v.id}" title="Unterzeile (Untertermin) hinzufügen">＋</button></div>`;
+    const gName = `<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;min-width:0"><span class="bkp-code">${esc(v.bkp || '')}</span> <b data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}" style="cursor:pointer" title="Gewerk bearbeiten / umbenennen">${esc(v.firma || v.gewerk)}</b><div class="muted" style="font-size:var(--t-2xs, 10.5px)">${esc(v.firma ? v.gewerk : 'noch nicht vergeben')}</div></div><button class="x-btn" data-act="fein-add-vorgang" data-pid="${p.id}" data-vid="${v.id}" title="Unterzeile (Untertermin) hinzufügen">＋</button></div>`;
     let out = trackRow(v.id, '', gName, bar, false, !gDated);
     (v.vorgaenge || []).forEach(o => {
       const oDated = o.start && o.ende;
@@ -2785,10 +3033,10 @@ function viewFeinViertel(p) {
   render(head + `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <button class="btn sm secondary" data-act="fein-scroll-today" data-pid="${p.id}">→ Heute</button>
-      <span class="muted" style="font-size:12.5px">${esc(fmtDate(von))} – ${esc(fmtDate(bis))} · ganzes Projekt</span>
+      <span class="muted" style="font-size:var(--t-s, 12.5px)">${esc(fmtDate(von))} – ${esc(fmtDate(bis))} · ganzes Projekt</span>
       <div class="g-zoom" title="Zoom (Tagesbreite)"><button data-act="fein-zoom" data-pid="${p.id}" data-kind="out" title="schmaler">−</button><button data-act="fein-zoom" data-pid="${p.id}" data-kind="reset" style="min-width:46px">${Math.round(feinZoom * 100)}%</button><button data-act="fein-zoom" data-pid="${p.id}" data-kind="in" title="breiter">+</button></div>
       <button class="btn sm secondary" data-act="new-vergabe" data-pid="${p.id}">+ Gewerk</button>
-      <span class="muted" style="font-size:12px;margin-left:auto">Frei horizontal scrollen · leere Zeile <b>ziehen</b> = Balken · Balken anklicken = ändern · oben klicken = Kommentar</span>
+      <span class="muted" style="font-size:var(--t-xs, 12px);margin-left:auto">Frei horizontal scrollen · leere Zeile <b>ziehen</b> = Balken · Balken anklicken = ändern · oben klicken = Kommentar</span>
     </div>
     ${feinMiniMap(p, vs, von, bis)}
     <div class="card qv-scroll" style="padding:0;overflow:auto"><div class="qv-wrap" style="min-width:${nameW + trackW}px">
@@ -2912,7 +3160,7 @@ function actFeinKommentar(pid, vid, oid, datum, kid) {
   const og = (k ? k.oid : oid) ? (v && (v.vorgaenge || []).find(x => x.id === (k ? k.oid : oid))) : null;
   const wer = (og && og.titel) || (v && (v.firma || v.gewerk)) || '';
   openModal(k ? 'Kommentar bearbeiten' : 'Kommentar ab ' + fmtDate(k ? k.datum : datum), `
-    <div class="muted" style="font-size:12px;margin-bottom:8px">${esc(wer)} · ab ${esc(fmtDate(k ? k.datum : datum))}</div>
+    <div class="muted" style="font-size:var(--t-xs, 12px);margin-bottom:8px">${esc(wer)} · ab ${esc(fmtDate(k ? k.datum : datum))}</div>
     <label class="field">Anweisung <input class="input" id="qk_text" value="${k ? esc(k.text || '') : ''}" placeholder="z.B. ab hier 2. Etappe, Material liefern, anderer Bereich …"></label>
   `, `${k ? `<button class="btn ghost danger" data-act="fein-komm-rm" data-pid="${pid}" data-kid="${kid}">🗑 Löschen</button>` : ''}<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="fein-komm-save" data-pid="${pid}" data-vid="${k ? k.vid : vid}" data-oid="${k ? (k.oid || '') : (oid || '')}" data-datum="${k ? k.datum : datum}"${k ? ` data-kid="${kid}"` : ''}>${k ? '💾 Speichern' : '+ Hinzufügen'}</button>`);
   setTimeout(() => $('#qk_text')?.focus(), 30);
@@ -3085,7 +3333,14 @@ let ganttFenster = true;         // Auto-Oberbalken als grosses Fenster über di
 let ganttPhaseBands = false;     // senkrechte Phasen-Zeit-Bänder im Hintergrund (wann läuft welche Phase)
 let ganttPhaseStripe = false;    // farbiger Phasen-Streifen je Gewerk-Zeile (welche Phase pro Zeile)
 let ganttRaster = true;          // Sitzungsraster-Linien im Gantt einblenden
-let ganttRowH = 38;              // Zeilenhöhe im Gantt (26–60, lesbar begrenzt)
+/* Zeilenhöhe im Bauprogramm. Ab 18 px — flacher als bisher, weil auf ein
+   A3 mit vierzig Gewerken sonst nichts geht. Bleibt gespeichert: wer flach
+   arbeitet, will nicht nach jedem Neuladen wieder klicken. */
+const ROWH_MIN = 18, ROWH_MAX = 60, ROWH_STD = 30;
+let ganttRowH = (() => {
+  try { const n = Number(localStorage.getItem('so_gantt_rowh')); return (n >= ROWH_MIN && n <= ROWH_MAX) ? n : ROWH_STD; }
+  catch (_) { return ROWH_STD; }
+})();
 let ganttFont = 11;              // Schriftgrösse im Gantt (Balken-Labels, px; 8–16)
 let ganttSideFont = 12;          // Schriftgrösse der linken Seitenleiste (Gewerke/BKP/Nr., px; 8–18)
 let ganttPad = 1;                // Rand (Monate) links/rechts um das Programm (Scroll-Spielraum)
@@ -3095,6 +3350,11 @@ let ganttDist = false;           // auf leeren Zeilen anschreiben, wie weit der 
 let ganttFeier = 'band';         // Feiertags-Darstellung: 'band' (horizontal) | 'diag' (45° schräg) | 'vert' (vertikal im Chart, ohne Band)
 let ganttLinkFront = false;      // Verbindungslinien über (true) oder hinter (false) den Balken
 let ganttHideUndated = false;    // termin-lose Gewerke (z.B. Reserve) im Gantt ausblenden
+/* Positionen, die dauerhaft nicht ins Terminprogramm gehören, werden je Gewerk
+   gekennzeichnet (v.imTermin = false). Dieser Schalter holt sie vorübergehend
+   zurück — zur Übersicht, nicht zum Drucken. */
+let ganttAlleZeigen = false;
+function zeigtImTermin(v) { return !(v && v.imTermin === false); }
 let ganttBaseCompare = false;    // pro Balken Abweichung gegenüber Baseline-Version (war → jetzt) anzeigen
 let ganttBaseVid = '';           // gewählte Vergleichsversion ('' = zuletzt gesperrte/letzte)
 let ganttDone = 'show';          // erfüllte Termine: 'show' | 'dim' (ausgrauen) | 'hide' (ausblenden)
@@ -3206,10 +3466,79 @@ function actFocusAdd(e, pid) {
 function hexA(hex, a) { const h = String(hex).replace('#', ''); if (h.length < 6) return hex; return `rgba(${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)},${a})`; }
 const GANTT_FIRMA_PALETTE = ['#1f6feb', '#16a34a', '#ea7a3c', '#7c3aed', '#0d9488', '#dc2626', '#a16207', '#db2777', '#0891b2', '#65a30d', '#9333ea', '#0f766e', '#b45309', '#2563eb'];
 function firmaColHex(name) { if (!name) return '#94a3b8'; let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0; return GANTT_FIRMA_PALETTE[h % GANTT_FIRMA_PALETTE.length]; }
+
+/* ---------------------------------------------------------------------
+   Gewerkfarben
+   ---------------------------------------------------------------------
+   Ein Unternehmer bekommt die Farbe seines Handwerks, nicht eine aus
+   dem Zufallstopf. Wer den Bauplan zehn Jahre liest, erkennt Heizung an
+   Rot und Sanitär an Blau, ohne die Beschriftung zu lesen.
+
+   Die Töne sind absichtlich gedämpft — herbstlich, wie auf einem
+   gedruckten Bauprogramm. Kräftige Farben erschlagen ein Blatt, auf dem
+   dreissig Balken nebeneinanderliegen.
+
+   Gefunden wird eine Familie zuerst über die BKP-Nummer, dann über ein
+   Stichwort im Gewerknamen. Das zweite ist kein Notnagel: Ein Detail-
+   händler oder ein Immobilienverwalter hat keine BKP-Nummern, und die
+   Farbe soll trotzdem sitzen.
+   --------------------------------------------------------------------- */
+const GEWERK_FAMILIEN = [
+  // key          Beschriftung             Farbe      BKP-Anfänge                    Stichwörter
+  { key: 'baustelle', label: 'Baustelle, Vorbereitung', col: '#b0b4b8', bkp: ['10', '12', '289'], wort: ['baugespann', 'sicherung', 'inbetriebnahme', 'bezug', 'baustelle', 'provisor', 'installationsplatz', 'baubetrieb'] },
+  { key: 'abbruch', label: 'Abbruch, Rückbau',    col: '#8a8f93', bkp: ['111', '112', '113', '117'], wort: ['abbruch', 'rückbau', 'demont', 'entsorg'] },
+  { key: 'bau',     label: 'Baumeister, Roharbeit', col: '#7d8286', bkp: ['201', '211', '212', '213'], wort: ['baumeister', 'maurer', 'beton', 'kernbohr', 'aushub', 'baugrube'] },
+  { key: 'geruest', label: 'Gerüste',             col: '#8fb8d8', bkp: ['211.1', '211.2'],           wort: ['gerüst'] },
+  { key: 'holzbau', label: 'Holzbau, Zimmerei',   col: '#a8845c', bkp: ['214', '215'],               wort: ['holzbau', 'zimmer', 'sparren'] },
+  { key: 'dach',    label: 'Bedachung, Abdichtung', col: '#9c4a52', bkp: ['224', '225', '227.1'],    wort: ['bedachung', 'steildach', 'flachdach', 'abdicht', 'ziegel'] },
+  { key: 'spengler', label: 'Spengler',           col: '#a8adb2', bkp: ['222', '223'],               wort: ['spengler', 'blitzschutz', 'dachwasser'] },
+  { key: 'fenster', label: 'Fenster, Aussentüren', col: '#7fa06b', bkp: ['221'],                     wort: ['fenster', 'aussentür', 'verglas'] },
+  { key: 'huelle',  label: 'Dämmung, Verputz aussen', col: '#9d8ab8', bkp: ['226', '227', '229'],    wort: ['dämmung', 'fassade', 'aussenwärme', 'verputz'] },
+  { key: 'storen',  label: 'Sonnen- und Wetterschutz', col: '#8fb8d8', bkp: ['228'],                 wort: ['storen', 'sonnenschutz', 'wetterschutz', 'rollladen', 'lamellen'] },
+  { key: 'elektro', label: 'Elektro, Strom',      col: '#c99a5e', bkp: ['230', '231', '232', '233', '235', '236'], wort: ['elektro', 'strom', 'beleucht', 'schwachstrom'] },
+  { key: 'pv',      label: 'Photovoltaik',        col: '#9d8ab8', bkp: ['234'],                      wort: ['photovolt', 'pv-', 'solar'] },
+  { key: 'heizung', label: 'Heizung, Lüftung',    col: '#c25f42', bkp: ['240', '241', '242', '243', '244', '245'], wort: ['heizung', 'wärmepumpe', 'lüftung', 'kälte'] },
+  { key: 'sanitaer', label: 'Sanitär',            col: '#4a6c96', bkp: ['250', '251', '252', '253', '254', '255', '256'], wort: ['sanitär', 'apparate', 'wasser'] },
+  { key: 'transport', label: 'Aufzüge, Transport', col: '#8a8f93', bkp: ['260', '261', '262'],       wort: ['aufzug', 'lift', 'hebe'] },
+  { key: 'gipser',  label: 'Gipser, Maler, Platten', col: '#9d8ab8', bkp: ['271', '272.5', '281.6', '281.7', '283', '285'], wort: ['gipser', 'trockenbau', 'maler', 'platten', 'keramisch', 'grundputz', 'tapez'] },
+  { key: 'metall',  label: 'Metallbau, Schlosser', col: '#7d8286', bkp: ['272', '273.5'],            wort: ['metallbau', 'schlosser', 'geländer', 'stahl'] },
+  { key: 'schreiner', label: 'Schreiner, Küche, Parkett', col: '#c0a377', bkp: ['273', '274', '275', '258', '281.0', '281.1', '281.2', '281.3', '281.4', '281.5', '282'], wort: ['schreiner', 'innentür', 'küche', 'parkett', 'schliessanlage', 'einbaumöbel'] },
+  { key: 'boden',   label: 'Unterlagsböden',      col: '#b8bcc0', bkp: ['280', '281'],               wort: ['unterlagsboden', 'estrich'] },
+  { key: 'reinigung', label: 'Baureinigung',      col: '#a3aa76', bkp: ['287'],                      wort: ['reinigung'] },
+  { key: 'umgebung', label: 'Umgebung, Gärtner',  col: '#8d9c5e', bkp: ['4'],                        wort: ['umgebung', 'gärtner', 'bepflanz', 'pflästerung', 'garten'] },
+  { key: 'honorar', label: 'Honorare, Nebenkosten', col: '#b8bcc0', bkp: ['19', '29', '5'],          wort: ['honorar', 'ingenieur', 'architekt', 'geometer', 'bauherr', 'reserve', 'übriges', 'gebühr', 'bewilligung'] }
+];
+const GEWERK_FAM_BY_KEY = Object.fromEntries(GEWERK_FAMILIEN.map(f => [f.key, f]));
+
+/** Welche Familie? BKP zuerst — die längste passende Nummer gewinnt, damit
+    211.1 Gerüst schlägt und nicht beim Baumeister landet. */
+function familieVon(v) {
+  const bkp = String((v && v.bkp) || '').trim();
+  if (bkp) {
+    let best = null, bestLen = -1;
+    for (const f of GEWERK_FAMILIEN) for (const pre of f.bkp) {
+      if ((bkp === pre || bkp.startsWith(pre)) && pre.length > bestLen) { best = f; bestLen = pre.length; }
+    }
+    if (best) return best;
+  }
+  const txt = ((v && v.gewerk) || '').toLowerCase();
+  if (txt) for (const f of GEWERK_FAMILIEN) if (f.wort.some(w => txt.includes(w))) return f;
+  return null;
+}
+
+/** Die Farbe eines Gewerks — eigene Wahl schlägt Familie schlägt Namenszufall. */
+function gewerkColHex(v) {
+  const ov = (state.ganttColors || {}).gewerk || {};
+  const fam = familieVon(v);
+  if (fam && ov[fam.key]) return ov[fam.key];
+  if (fam) return fam.col;
+  return firmaColHex(v && v.firma);
+}
 function ganttColHex(v) {
   const ov = state.ganttColors || {};
   if (ganttColorMode === 'phase') { const k = phaseOf(v); return (ov.phase && ov.phase[k]) || phaseColOf(v); }
-  if (ganttColorMode === 'firma') { const f = v.firma || 'nicht vergeben'; return (ov.firma && ov.firma[f]) || firmaColHex(v.firma); }
+  // Unternehmerfarbe: eigene Wahl zuerst, sonst die Farbe seines Handwerks.
+  if (ganttColorMode === 'firma') { const f = v.firma || 'nicht vergeben'; return (ov.firma && ov.firma[f]) || gewerkColHex(v); }
   const k = ganttColKey(v); return (ov.status && ov.status[k]) || GANTT_COLS[k];
 }
 // Farb-Editor: vordefinierte Farben (Status/Gewerke, Unternehmer, Phasen) überschreiben
@@ -3225,8 +3554,23 @@ function actGanttColors(pid) {
   let rows = '', kind = '', titel = '';
   if (ganttColorMode === 'firma') {
     kind = 'firma'; titel = 'Unternehmer';
-    const seen = []; (p.vergaben || []).forEach(v => { const f = v.firma || 'nicht vergeben'; if (!seen.includes(f)) seen.push(f); });
-    rows = seen.map(f => colorRow('firma', f, f, (ov.firma && ov.firma[f]) || firmaColHex(f === 'nicht vergeben' ? '' : f))).join('');
+    /* Zuerst die Handwerke — sie geben jedem Unternehmer seine Farbe.
+       Wer eine davon ändert, ändert alle Betriebe dieses Handwerks auf
+       einmal; darunter lässt sich ein einzelner Betrieb ausnehmen. */
+    const benutzt = [];
+    (p.vergaben || []).forEach(v => { const f = familieVon(v); if (f && !benutzt.includes(f.key)) benutzt.push(f.key); });
+    if (benutzt.length) {
+      rows += `<p class="muted" style="font-size:var(--t-xs, 12px);margin:0 0 2px">Handwerke — gilt für alle Betriebe dieses Fachs</p>`
+        + benutzt.map(k => { const f = GEWERK_FAM_BY_KEY[k]; return colorRow('gewerk', k, f.label, (ov.gewerk && ov.gewerk[k]) || f.col); }).join('');
+    }
+    const seen = []; (p.vergaben || []).forEach(v => { const f = v.firma || 'nicht vergeben'; if (f !== 'nicht vergeben' && !seen.includes(f)) seen.push(f); });
+    if (seen.length) {
+      rows += `<p class="muted" style="font-size:var(--t-xs, 12px);margin:14px 0 2px">Einzelne Betriebe — überschreibt das Handwerk</p>`
+        + seen.map(f => {
+            const v = (p.vergaben || []).find(x => x.firma === f);
+            return colorRow('firma', f, f, (ov.firma && ov.firma[f]) || gewerkColHex(v));
+          }).join('');
+    }
   } else if (ganttColorMode === 'phase') {
     kind = 'phase'; titel = 'Phasen';
     rows = BAU_PHASEN.map(ph => colorRow('phase', ph.key, ph.label, (ov.phase && ov.phase[ph.key]) || ph.col)).join('');
@@ -3235,7 +3579,7 @@ function actGanttColors(pid) {
     rows = GANTT_LEGEND.map(([k, l]) => colorRow('status', k, l, (ov.status && ov.status[k]) || GANTT_COLS[k])).join('');
   }
   openModal('Farben anpassen – ' + titel, `
-    <p class="muted" style="font-size:12px;margin:0 0 12px">Farbe je Eintrag wählen – gilt für den aktuell gewählten Farbmodus (oben „Farbe"-Knopf). Die Kräftigkeit stellst du separat ein.</p>
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin:0 0 12px">Farbe je Eintrag wählen – gilt für den aktuell gewählten Farbmodus (oben „Farbe"-Knopf). Die Kräftigkeit stellst du separat ein.</p>
     <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
   `, `<button class="btn ghost" data-act="gantt-colors-reset" data-pid="${pid}" data-kind="${kind}">Auf Standard zurück</button><button class="btn" data-close="1">Fertig</button>`);
   $$('input[data-act="gantt-color-set"]').forEach(inp => inp.addEventListener('input', () => setGanttColor(inp.dataset.group, inp.dataset.ckey, inp.value)));
@@ -3278,6 +3622,11 @@ function viewTermine(id) {
     return bkpCmp(a.bkp, b.bkp) || (a.gewerk || '').localeCompare(b.gewerk || '');
   });
   const offene = vs.filter(v => !(v.bauStart && v.bauEnde));
+  // Positionen, die bewusst nicht ins Terminprogramm gehören (121 Sicherung
+  // vorhandener Anlagen, Honorare, Gebühren). Sie bleiben in den Kosten stehen.
+  // Der Knopf «auch ausgeblendete» holt sie zur Übersicht zurück.
+  const versteckte = vs.filter(v => !zeigtImTermin(v)).length;
+  if (!ganttAlleZeigen) vs = vs.filter(zeigtImTermin);
   if (ganttHideUndated) vs = vs.filter(v => (v.bauStart && v.bauEnde) || (v.vorgaenge || []).some(o => o.start && o.ende));   // termin-lose Gewerke (z.B. Reserve) ausblenden
   if (ganttDone === 'hide') vs = vs.filter(v => !v.erfuellt);   // erfüllte Gewerke ausblenden
 
@@ -3294,7 +3643,7 @@ function viewTermine(id) {
   const head = `
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Terminprogramm</div></div>
       ${offene.length ? `<span class="tag">${offene.length} ohne Termin</span>` : ''}
     </div>
     ${projektTabs(p, 'termine', ganttRibbonTabs(p))}
@@ -3425,6 +3774,25 @@ function viewTermine(id) {
   const rasterLabel = (p.sitzungsraster && p.sitzungsraster.label) || 'Sitzung';
   const sitzLayer = (ganttRaster ? rasterDaten(p, rangeStartISO, isoOf(rangeEnd)) : []).map(d => `<div class="g-sitzung" style="left:${leftPx(d)}px" title="${esc(rasterLabel)} · ${fmtDate(d)}"></div>`).join('');
 
+  /* Bauunterbrüche: Sommerferien, Weihnachten, Betriebsferien.
+     Anders als Feiertage dauern sie mehrere Wochen — deshalb ein breites Band
+     mit waagrechter Beschriftung statt eines Strichs. Ohne diese Darstellung
+     sieht niemand, warum im Juli nichts läuft. */
+  const unterbrueche = (p.bauunterbrueche || []).map(u => {
+    const von = new Date(u.von + 'T12:00:00'), bis = new Date(u.bis + 'T12:00:00');
+    if (isNaN(+von) || isNaN(+bis) || bis < rangeStart || von > rangeEnd) return null;
+    const a = von < rangeStart ? rangeStart : von;
+    const b = bis > rangeEnd ? rangeEnd : bis;
+    const links = dayDiff(rangeStart, a) * pxPerDay;
+    const breite = Math.max((dayDiff(a, b) + 1) * pxPerDay, 2);
+    return { u, links, breite };
+  }).filter(Boolean);
+
+  const unterbruchBands = unterbrueche.map(x =>
+    `<div class="g-unterbruch" style="left:${x.links}px;width:${x.breite}px" title="${esc(x.u.titel)} · ${fmtDate(x.u.von)} – ${fmtDate(x.u.bis)}"><span>${esc(x.u.titel)}</span></div>`).join('');
+  const unterbruchShade = unterbrueche.map(x =>
+    `<div class="g-unterbruch" style="left:${x.links}px;width:${x.breite}px"></div>`).join('');
+
   // Feiertage: nur Bänder (Schattierung) – die Beschriftung kommt ins Kopf-Band, NICHT über die Balken
   const hols = feiertageInRange(rangeStart, rangeEnd);
   const holBands = hols.map(f => `<div class="g-holiday" style="left:${dayDiff(rangeStart, f.d) * pxPerDay}px;width:${Math.max(pxPerDay, 2)}px" title="${esc(f.n)} ${fmtDate(isoOf(f.d))}">${ganttFeier === 'vert' ? `<span>${esc(f.n)}</span>` : ''}</div>`).join('');
@@ -3452,7 +3820,7 @@ function viewTermine(id) {
   // Hintergrund-Ebene fürs Event-Band: dieselben Spaltenlinien/Wochenend-Einfärbung (bgCells) + Feiertags-Schattierung,
   // damit Gitter und Einfärbung HINTER der Baustart-/heute-/Feiertags-Beschriftung durchlaufen (Band wird transparent).
   const holShade = hols.map(f => `<div class="g-holiday" style="left:${dayDiff(rangeStart, f.d) * pxPerDay}px;width:${Math.max(pxPerDay, 2)}px"></div>`).join('');
-  const evBg = `<div class="g-ev-bg"><div class="g-bg">${bgCells}</div>${holShade}</div>`;
+  const evBg = `<div class="g-ev-bg"><div class="g-bg">${bgCells}</div>${unterbruchShade}${holShade}</div>`;
   let eventBand = '', eventBandH = 0;
   if (ganttFeier === 'diag') {
     eventBandH = evItems.length ? 56 : 0;
@@ -3487,8 +3855,14 @@ function viewTermine(id) {
   }
   // Regel-Hinweise: feste Abhängigkeiten (z.B. „Gerüst muss vor Wände EG") – warnt bei Verstoss
   const rViol = [];
-  (p.regeln || []).filter(r => r.aktiv !== false).forEach(r => { const a = findVergabe(p, r.aVid), b = findVergabe(p, r.bVid); const msg = regelVerletzt(a, b, r.rel); if (a && b && msg) rViol.push(`<b>${esc(a.gewerk)}</b> ${msg}`); });
-  const regelBanner = rViol.length ? `<div class="g-warn g-warn-rule">📐 <b>Regel-Hinweis:</b> ${rViol.join(' · ')}<button class="g-warn-x" data-act="regeln-open" data-pid="${p.id}" title="Regeln bearbeiten">⚙</button></div>` : '';
+  (p.regeln || []).forEach(r => { const s = regelStatus(p, r); if (s.stand === 'verletzt') { const a = findVergabe(p, r.aVid); rViol.push(`<b>${esc(a.gewerk)}</b> ${s.grund}`); } });
+  /* Der Banner sagt jetzt die Bilanz, nicht nur die Verstösse — und er
+     bleibt stehen, wenn alles stimmt. Wer nur bei Fehlern etwas sieht,
+     weiss nie, ob überhaupt geprüft wurde. */
+  const bil = regelBilanz(p);
+  const regelBanner = !bil.total ? '' : (rViol.length
+    ? `<div class="g-warn g-warn-rule">📐 <b>${bil.verletzt} von ${bil.total} Regeln verletzt:</b> ${rViol.slice(0, 2).join(' · ')}${rViol.length > 2 ? ` · und ${rViol.length - 2} weitere` : ''}<button class="g-warn-x" data-act="regeln-open" data-pid="${p.id}" title="Alle Regeln prüfen">Alle ansehen</button></div>`
+    : `<div class="g-warn g-warn-ok">📐 <b>Alle ${bil.total} Regeln eingehalten</b>${bil.erklaert ? ` · ${bil.erklaert} mit Begründung abgenommen` : ''}${bil.offen ? ` · ${bil.offen} noch ohne Termin` : ''}<button class="g-warn-x" data-act="regeln-open" data-pid="${p.id}" title="Alle Regeln prüfen">Ansehen</button></div>`);
 
   const ROW_H = ganttRowH;
   const kontaktByFirma = f => (state.kontakte || []).find(k => k.firma === f);
@@ -3660,7 +4034,8 @@ function viewTermine(id) {
         <div class="g-rows">
           <div class="g-bg">${bgCells}</div>
           ${phaseBandsHtml}
-          ${holBands}
+          ${unterbruchBands}
+      ${holBands}
           ${sitzLayer}
           ${todayLeft != null ? `<div class="g-today" style="left:${todayLeft}px"></div>` : ''}
           ${markBands}
@@ -3676,15 +4051,18 @@ function viewTermine(id) {
       ${zoomCtrl}${scaleCtrl}
       <span class="g-tb-sep"></span>
       <div class="g-zoom" title="Zeilenhöhe"><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="out" title="flacher">≡</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="reset" style="min-width:30px" title="Standard">${ganttRowH}</button><button data-act="gantt-rowh" data-pid="${p.id}" data-kind="in" title="höher">☰</button></div>
+      <span class="g-tb-sep"></span>
+      <button class="btn sm" data-act="gantt-print" data-pid="${p.id}" title="Bauprogramm drucken – Blattformat wählbar (Strg+P)">🖨 Drucken</button>
     </div>
     <div class="g-legend">
       ${(() => {
-        if (ganttColorMode === 'firma') { const seen = []; vs.forEach(v => { const f = v.firma || 'nicht vergeben'; if (!seen.includes(f)) seen.push(f); }); return seen.map(f => `<span><i style="background:${softHex(firmaColHex(f === 'nicht vergeben' ? '' : f))}"></i>${esc(f)}</span>`).join(''); }
+        // Legende mit denselben Farben wie die Balken – sonst zeigt sie ins Leere
+        if (ganttColorMode === 'firma') { const seen = new Map(); vs.forEach(v => { const f = v.firma || 'nicht vergeben'; if (!seen.has(f)) seen.set(f, ganttColHex(v)); }); return [...seen].map(([f, col]) => `<span><i style="background:${softHex(col)}"></i>${esc(f)}</span>`).join(''); }
         if (ganttColorMode === 'phase') { const used = new Set(vs.map(v => phaseOf(v))); return BAU_PHASEN.filter(ph => used.has(ph.key)).map(ph => `<span><i style="background:${softHex(ph.col)}"></i>${esc(ph.label)}</span>`).join(''); }
         return GANTT_LEGEND.map(([k, l]) => `<span><i style="background:${softHex(GANTT_COLS[k])}"></i>${l}</span>`).join('');
       })()}
     </div>
-    <p class="muted" style="font-size:12.5px;margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Rechtsklick → <b>Nachfolger verketten</b> hängt ein Gewerk direkt an · bei <b>🔗 Verkettung an</b> folgen verkettete Nachfolger automatisch · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie · <b>Strg + Mausrad</b> zoomt an der Cursor-Position · mit <b>Info</b> (Gewerk/Firma/Person/Natel) blendest du die Seitenspalte ein – die BKP-Nr. bleibt immer.</p>
+    <p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:10px">Balken <b>ziehen</b> = verschieben · <b>Ränder</b> = Dauer · vom <b>Punkt am Balkenende</b> auf einen anderen Balken ziehen = <b>Verbindung</b> · Rechtsklick → <b>Nachfolger verketten</b> hängt ein Gewerk direkt an · bei <b>🔗 Verkettung an</b> folgen verkettete Nachfolger automatisch · Knick der Linie <b>seitlich ziehen</b> zum Entzerren · Klick auf die Linie löscht sie · <b>Strg + Mausrad</b> zoomt an der Cursor-Position · mit <b>Info</b> (Gewerk/Firma/Person/Natel) blendest du die Seitenspalte ein – die BKP-Nr. bleibt immer.</p>
     ${bestellListeHtml(p)}
   `);
 
@@ -3919,9 +4297,9 @@ function actUnterbruch(pid, vid) {
   const list = v.unterbrueche || [];
   const rows = list.length ? list.map(u => `<div class="ub-item"><span>${u.von ? fmtDate(u.von) : '?'} – ${u.bis ? fmtDate(u.bis) : '?'}${u.label ? ' · ' + esc(u.label) : ''}</span><button class="btn sm danger" data-act="ub-del" data-pid="${pid}" data-vid="${vid}" data-itemid="${u.id}">✕</button></div>`).join('') : '<p class="muted" style="margin:0">Noch kein Unterbruch.</p>';
   openModal('Unterbruch – ' + esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk), `
-    <p class="muted" style="font-size:12.5px;margin-top:0">Ausgegrauter Abschnitt auf derselben Zeile – die Arbeit pausiert (z.B. Winterpause). Mehrere möglich.</p>
+    <p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:0">Ausgegrauter Abschnitt auf derselben Zeile – die Arbeit pausiert (z.B. Winterpause). Mehrere möglich.</p>
     <div id="ubList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">${rows}</div>
-    <div class="section-head" style="margin:0 0 6px"><h2 style="font-size:14px">Neuer Unterbruch</h2></div>
+    <div class="section-head" style="margin:0 0 6px"><h2 style="font-size:var(--t-m, 14px)">Neuer Unterbruch</h2></div>
     <div class="form-row">
       <label class="field">Von <input type="date" class="input" id="ub_von" value="${esc(v.bauStart || '')}"></label>
       <label class="field">Bis <input type="date" class="input" id="ub_bis" value="${esc(v.bauEnde || '')}"></label>
@@ -4006,13 +4384,13 @@ function actVerschiebungen(pid) {
   if (!base) { toast('Keine Vergleichsversion vorhanden – zuerst eine Version abgeben/sperren', 'info'); return; }
   const rows = verschiebungenRows(p, base);
   openModal('Verschiebungen seit „' + esc(base.name) + '"',
-    `<p class="muted" style="font-size:12.5px;margin-top:0"><b>${rows.length}</b> Balken bewegt/geändert gegenüber Version „<b>${esc(base.name)}</b>"${base.datum ? ' vom ' + fmtDate(base.datum) : ''}. <span style="color:#b91c1c">+Tage = später</span>, <span style="color:#15803d">−Tage = früher</span>.</p><div style="max-height:56vh;overflow:auto">${verschiebTableHtml(rows, base)}</div>`,
+    `<p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:0"><b>${rows.length}</b> Balken bewegt/geändert gegenüber Version „<b>${esc(base.name)}</b>"${base.datum ? ' vom ' + fmtDate(base.datum) : ''}. <span style="color:#b91c1c">+Tage = später</span>, <span style="color:#15803d">−Tage = früher</span>.</p><div style="max-height:56vh;overflow:auto">${verschiebTableHtml(rows, base)}</div>`,
     `<button class="btn ghost" data-close="1">Schliessen</button><button class="btn" data-act="verschieb-print" data-pid="${pid}">🖨 Drucken</button>`);
 }
 function pdfVerschiebungen(pid) {
   const p = findProjekt(pid); if (!p) return; const base = ganttBaselineVer(p); if (!base) return;
   const rows = verschiebungenRows(p, base);
-  openPrintDoc('Verschiebungen seit „' + esc(base.name) + '"', esc(p.name) + (p.ort ? ' · ' + esc(p.ort) : ''), `<p style="font-size:12px;color:#555">${rows.length} Balken bewegt/geändert gegenüber Version „${esc(base.name)}"${base.datum ? ' vom ' + fmtDate(base.datum) : ''}.</p>${verschiebTableHtml(rows, base)}`, {});
+  openPrintDoc('Verschiebungen seit „' + esc(base.name) + '"', esc(p.name) + (p.ort ? ' · ' + esc(p.ort) : ''), `<p style="font-size:var(--t-xs, 12px);color:#555">${rows.length} Balken bewegt/geändert gegenüber Version „${esc(base.name)}"${base.datum ? ' vom ' + fmtDate(base.datum) : ''}.</p>${verschiebTableHtml(rows, base)}`, {});
 }
 // Eckdaten: Baustart/Bauende automatisch aus den Gewerken (frühester Start / spätestes Ende), Bezug = Bauende; manuell überschreibbar
 function eckDaten(p) {
@@ -4023,13 +4401,13 @@ function eckDaten(p) {
 }
 function actEckdaten(pid) {
   const p = findProjekt(pid); if (!p) return; const ek = eckDaten(p);
-  const hint = (auto, calc, alt) => auto ? `<span class="muted" style="font-size:11px;font-weight:400">automatisch: ${calc ? fmtDate(calc) : (alt || '–')}</span>` : `<span class="muted" style="font-size:11px;font-weight:400">manuell gesetzt</span>`;
+  const hint = (auto, calc, alt) => auto ? `<span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400">automatisch: ${calc ? fmtDate(calc) : (alt || '–')}</span>` : `<span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400">manuell gesetzt</span>`;
   openModal('Eckdaten / Meilensteine', `
-    <p class="muted" style="font-size:12.5px;margin-top:0"><b>Baustart</b> &amp; <b>Bauende</b> werden automatisch aus den Gewerken berechnet (frühester Start / spätestes Ende), <b>Bezug</b> = Bauende. Feld leer lassen = automatisch; ein Datum eintragen = fixe Vorgabe.</p>
+    <p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:0"><b>Baustart</b> &amp; <b>Bauende</b> werden automatisch aus den Gewerken berechnet (frühester Start / spätestes Ende), <b>Bezug</b> = Bauende. Feld leer lassen = automatisch; ein Datum eintragen = fixe Vorgabe.</p>
     <label class="field">📍 Baustart ${hint(ek.autoS, ek.calcS)} <input class="input" type="date" id="ek_baustart" value="${esc(p.baustart || '')}"></label>
     <label class="field" style="margin-top:8px">🏁 Bauende ${hint(ek.autoE, ek.calcE)} <input class="input" type="date" id="ek_bauende" value="${esc(p.bauende || '')}"></label>
     <label class="field" style="margin-top:8px">🔑 Bezug / Übergabe ${hint(ek.autoB, ek.bauende, 'wie Bauende')} <input class="input" type="date" id="ek_bezug" value="${esc(p.bezug || '')}"></label>
-    <p class="muted" style="font-size:11px;margin-top:8px">Tipp: einzelnes Feld leeren stellt es wieder auf automatisch.</p>
+    <p class="muted" style="font-size:var(--t-2xs, 11px);margin-top:8px">Tipp: einzelnes Feld leeren stellt es wieder auf automatisch.</p>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="eckdaten-save" data-pid="${pid}">💾 Speichern</button>`);
 }
 function saveEckdaten(pid) {
@@ -4051,15 +4429,15 @@ function actFeiertage(pid) {
   const liste = feiertageJahr(y).slice().sort((a, b) => a.d - b.d);
   feierCtx.aus = prevAus;
   const ktnOpts = ['<option value="">— kein Kanton (nur national) —</option>'].concat(KANTONE.map(k => `<option value="${k}"${p.kanton === k ? ' selected' : ''}>${k}</option>`)).join('');
-  const holRows = liste.map(f => `<label class="regel-row" style="cursor:pointer"><span>${esc(f.n)} <span class="muted">· ${fmtDate(isoOf(f.d))}</span></span><span style="font-size:11.5px;color:${aus.has(f.n) ? 'var(--s-red)' : 'var(--s-green)'}"><input type="checkbox" class="fei-aus" data-n="${esc(f.n)}"${aus.has(f.n) ? '' : ' checked'}> frei</span></label>`).join('');
-  const extraRows = (p.feiertageExtra || []).length ? (p.feiertageExtra || []).map(x => `<div class="regel-row"><span>${esc(x.n || 'Frei')} <span class="muted">· ${fmtDate(x.datum)}</span></span><button class="x-btn" data-act="fei-extra-del" data-pid="${pid}" data-datum="${esc(x.datum)}" title="entfernen">×</button></div>`).join('') : '<span class="muted" style="font-size:12.5px">Keine eigenen freien Tage.</span>';
+  const holRows = liste.map(f => `<label class="regel-row" style="cursor:pointer"><span>${esc(f.n)} <span class="muted">· ${fmtDate(isoOf(f.d))}</span></span><span style="font-size:var(--t-xs, 11.5px);color:${aus.has(f.n) ? 'var(--s-red)' : 'var(--s-green)'}"><input type="checkbox" class="fei-aus" data-n="${esc(f.n)}"${aus.has(f.n) ? '' : ' checked'}> frei</span></label>`).join('');
+  const extraRows = (p.feiertageExtra || []).length ? (p.feiertageExtra || []).map(x => `<div class="regel-row"><span>${esc(x.n || 'Frei')} <span class="muted">· ${fmtDate(x.datum)}</span></span><button class="x-btn" data-act="fei-extra-del" data-pid="${pid}" data-datum="${esc(x.datum)}" title="entfernen">×</button></div>`).join('') : '<span class="muted" style="font-size:var(--t-s, 12.5px)">Keine eigenen freien Tage.</span>';
   openModal('Feiertage / Arbeitstage', `
-    <p class="muted" style="font-size:12.5px;margin-top:0">Gilt für dieses Projekt (wirkt bei „Arbeitstage an": Wochenende + Feiertage werden übersprungen).</p>
+    <p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:0">Gilt für dieses Projekt (wirkt bei „Arbeitstage an": Wochenende + Feiertage werden übersprungen).</p>
     <label class="field">Kanton (ergänzt kantonale Feiertage) <select class="select" id="fei_kanton">${ktnOpts}</select></label>
     <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px"><input type="checkbox" id="fei_brueckeAuffahrt"${p.brueckenAuffahrt ? ' checked' : ''}> Freitag nach Auffahrt frei (Brückentag, jedes Jahr)</label>
-    <div class="section-head" style="margin-top:14px"><h2 style="font-size:14px">Feiertage ${y} (Häkchen = frei)</h2></div>
+    <div class="section-head" style="margin-top:14px"><h2 style="font-size:var(--t-m, 14px)">Feiertage ${y} (Häkchen = frei)</h2></div>
     <div style="display:flex;flex-direction:column;gap:5px;max-height:34vh;overflow:auto">${holRows}</div>
-    <div class="section-head" style="margin-top:14px"><h2 style="font-size:14px">Eigene freie Tage / Betriebsferien</h2></div>
+    <div class="section-head" style="margin-top:14px"><h2 style="font-size:var(--t-m, 14px)">Eigene freie Tage / Betriebsferien</h2></div>
     <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px">${extraRows}</div>
     <div class="card card-pad" style="background:var(--surface-2)">
       <div class="form-row" style="align-items:end">
@@ -4148,9 +4526,9 @@ function tvSwitch(pid, vid) {
   const d = terminVersDiff(p, target.snapshot);
   const li = arr => arr.slice(0, 25).map(x => { const v = x.v || x; return `<li>${esc((v.bkp ? v.bkp + ' ' : '') + (v.gewerk || ''))}${x.s ? ` <span class="muted">${v.bauStart ? fmtDate(v.bauStart) + '–' + fmtDate(v.bauEnde) : 'kein Datum'} → ${x.s.bauStart ? fmtDate(x.s.bauStart) + '–' + fmtDate(x.s.bauEnde) : 'kein Datum'}</span>` : ''}</li>`; }).join('') + (arr.length > 25 ? `<li class="muted">… +${arr.length - 25} weitere</li>` : '');
   const warnN = d.lostDate.length + d.notInVersion.length;
-  const block = (title, arr, cls) => arr.length ? `<div style="margin-top:10px"><div style="font-weight:600;font-size:12.5px;color:${cls}">${title} (${arr.length})</div><ul style="margin:4px 0 0;padding-left:18px;font-size:12px;line-height:1.5">${li(arr)}</ul></div>` : '';
+  const block = (title, arr, cls) => arr.length ? `<div style="margin-top:10px"><div style="font-weight:600;font-size:var(--t-s, 12.5px);color:${cls}">${title} (${arr.length})</div><ul style="margin:4px 0 0;padding-left:18px;font-size:var(--t-xs, 12px);line-height:1.5">${li(arr)}</ul></div>` : '';
   openModal('Version übernehmen: ' + esc(target.name || ''), `
-    <div class="card card-pad" style="background:${warnN ? '#fff7ed' : '#ecfdf5'};border:1px solid ${warnN ? '#fdba74' : '#a7f3d0'};margin-bottom:6px;font-size:13px">
+    <div class="card card-pad" style="background:${warnN ? '#fff7ed' : '#ecfdf5'};border:1px solid ${warnN ? '#fdba74' : '#a7f3d0'};margin-bottom:6px;font-size:var(--t-s, 13px)">
       ${warnN
       ? `⚠ <b>Achtung – Auswirkungen:</b> ${d.lostDate.length ? `<b>${d.lostDate.length}</b> Gewerk(e) verlieren ihr Datum` : ''}${d.lostDate.length && d.notInVersion.length ? ' · ' : ''}${d.notInVersion.length ? `<b>${d.notInVersion.length}</b> Gewerk(e) sind in dieser Version <b>nicht enthalten</b> (bleiben ohne Termin)` : ''}.`
       : '✓ <b>Keine kritischen Auswirkungen.</b> Es gehen keine Termine verloren.'}
@@ -4159,8 +4537,8 @@ function tvSwitch(pid, vid) {
     ${block('🟠 Nicht in dieser Version (bleiben ohne Termin)', d.notInVersion, '#c2410c')}
     ${block('🔵 Termin ändert sich', d.changed, '#1d4ed8')}
     ${block('🟢 Bekommen (wieder) ein Datum', d.gainDate, '#15803d')}
-    ${d.ghost.length ? `<p class="muted" style="font-size:11.5px;margin-top:10px">Hinweis: ${d.ghost.length} Position(en) der Version existieren nicht mehr als Gewerk – werden ignoriert.</p>` : ''}
-    <p class="muted" style="font-size:11.5px;margin-top:12px">Verknüpfungen: ${d.liveLinks} (aktuell) → ${d.snapLinks} (Version). <b>Baukosten bleiben unverändert</b> – Versionen betreffen nur den Zeitplan.</p>
+    ${d.ghost.length ? `<p class="muted" style="font-size:var(--t-xs, 11.5px);margin-top:10px">Hinweis: ${d.ghost.length} Position(en) der Version existieren nicht mehr als Gewerk – werden ignoriert.</p>` : ''}
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin-top:12px">Verknüpfungen: ${d.liveLinks} (aktuell) → ${d.snapLinks} (Version). <b>Baukosten bleiben unverändert</b> – Versionen betreffen nur den Zeitplan.</p>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn${warnN ? ' danger' : ''}" data-act="tv-switch-do" data-pid="${pid}" data-vid="${vid}">Version übernehmen</button>`);
 }
 function tvSwitchDo(pid, vid) {
@@ -4197,11 +4575,11 @@ function tvDelete(pid) {
 function actRessConfig(pid) {
   const p = findProjekt(pid); if (!p) return; const rc = p.ressCheck || { aktiv: true, minGap: 0 };
   openModal('Ressourcen-Hinweis', `
-    <p class="muted" style="font-size:12.5px;margin-top:0">Warnt, wenn <b>dieselbe Firma</b> in zwei Gewerken eingeplant ist, die sich zeitlich zu nah sind – sie müsste dann gleichzeitig an zwei Orten sein.</p>
+    <p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:0">Warnt, wenn <b>dieselbe Firma</b> in zwei Gewerken eingeplant ist, die sich zeitlich zu nah sind – sie müsste dann gleichzeitig an zwei Orten sein.</p>
     <label class="field" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="rc_aktiv"${rc.aktiv !== false ? ' checked' : ''}> Hinweis anzeigen</label>
     <label class="field" style="margin-top:10px">Mindest-Abstand zwischen Gewerken derselben Firma (Tage)
       <input class="input" type="number" id="rc_gap" min="0" value="${rc.minGap || 0}">
-      <span class="muted" style="font-size:11.5px;font-weight:400;display:block;margin-top:3px">0 = nur bei echter Überschneidung warnen. Z.B. 2 = warnt auch, wenn weniger als 2 Tage Pause zwischen den Einsätzen liegen.</span></label>
+      <span class="muted" style="font-size:var(--t-xs, 11.5px);font-weight:400;display:block;margin-top:3px">0 = nur bei echter Überschneidung warnen. Z.B. 2 = warnt auch, wenn weniger als 2 Tage Pause zwischen den Einsätzen liegen.</span></label>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="ress-save" data-pid="${pid}">💾 Speichern</button>`);
 }
 function saveRessConfig(pid) {
@@ -4225,24 +4603,211 @@ function regelVerletzt(a, b, rel) {
   return null;
 }
 function regelText(p, r) { const a = findVergabe(p, r.aVid), b = findVergabe(p, r.bVid); return `<b>${a ? esc(a.gewerk) : '?'}</b> ${REGEL_REL[r.rel] || r.rel} <b>${b ? esc(b.gewerk) : '?'}</b>`; }
+
+/* ---------------------------------------------------------------------
+   Regelprüfung
+   ---------------------------------------------------------------------
+   Bisher zeigte das Bauprogramm nur die Verstösse, in einer Zeile
+   zusammengedrängt. Man sah nie, welche Regeln geprüft wurden und
+   eingehalten sind — und schon gar nicht, warum eine verletzte Regel
+   vielleicht trotzdem in Ordnung ist.
+
+   Beispiel aus dem Alltag: Der Sonnenschutz beginnt nach dem
+   Gerüstabbau. Sieht nach einem Fehler aus, ist aber keiner — der
+   Storenbauer montiert von innen. Genau das muss man festhalten
+   können, sonst prüft man denselben Punkt in jeder Sitzung neu.
+
+   Fünf Zustände:
+     ok        eingehalten
+     verletzt  gebrochen, ungeklärt        → rot
+     erklaert  gebrochen, aber abgenommen  → gelb, mit Begründung
+     offen     nicht prüfbar (Termin fehlt) → grau
+     aus       vom Benutzer stillgelegt     → grau
+   --------------------------------------------------------------------- */
+/** Der Zeitraum als Text – für Kopfzeilen im Druck. */
+function spanTxtOf(range, min, max) {
+  return range ? `${fmtDate(range.from)} – ${fmtDate(range.to)}` : `${fmtDate(min)} – ${fmtDate(max)}`;
+}
+
+const REGEL_STAND = {
+  ok:       { label: 'eingehalten',   farbe: 'var(--s-green)', zeichen: '✓' },
+  verletzt: { label: 'verletzt',      farbe: 'var(--s-red)',   zeichen: '✕' },
+  erklaert: { label: 'abgenommen',    farbe: '#b45309',        zeichen: '!' },
+  offen:    { label: 'nicht prüfbar', farbe: 'var(--text-faint)', zeichen: '–' },
+  aus:      { label: 'ausgeschaltet', farbe: 'var(--text-faint)', zeichen: '○' }
+};
+
+function regelStatus(p, r) {
+  const a = findVergabe(p, r.aVid), b = findVergabe(p, r.bVid);
+  if (!a || !b) return { stand: 'offen', grund: 'Ein Gewerk der Regel gibt es nicht mehr.' };
+  if (r.aktiv === false) return { stand: 'aus', grund: 'Diese Regel wird nicht geprüft.' };
+  if (!a.bauStart || !a.bauEnde || !b.bauStart || !b.bauEnde) {
+    const fehlt = [!a.bauStart || !a.bauEnde ? a.gewerk : null, !b.bauStart || !b.bauEnde ? b.gewerk : null].filter(Boolean);
+    return { stand: 'offen', grund: 'Noch kein Termin bei ' + fehlt.map(x => '„' + x + '"').join(' und ') + '.' };
+  }
+  const verstoss = regelVerletzt(a, b, r.rel);
+  if (!verstoss) return { stand: 'ok', grund: belegOk(a, b, r.rel) };
+  if (r.ausnahme && r.ausnahme.grund) return { stand: 'erklaert', grund: verstoss, ausnahme: r.ausnahme };
+  return { stand: 'verletzt', grund: verstoss };
+}
+
+/** Warum die Regel aufgeht — die Zahlen, nicht nur ein Häkchen. */
+function belegOk(a, b, rel) {
+  if (rel === 'davor')      return `endet ${fmtDate(a.bauEnde)}, „${esc(b.gewerk)}" beginnt ${fmtDate(b.bauStart)}`;
+  if (rel === 'beginntvor') return `beginnt ${fmtDate(a.bauStart)}, „${esc(b.gewerk)}" erst ${fmtDate(b.bauStart)}`;
+  if (rel === 'danach')     return `beginnt ${fmtDate(a.bauStart)}, „${esc(b.gewerk)}" ist ${fmtDate(b.bauEnde)} fertig`;
+  if (rel === 'parallel')   return `läuft ${fmtDate(a.bauStart)}–${fmtDate(a.bauEnde)} zusammen mit „${esc(b.gewerk)}"`;
+  return 'eingehalten';
+}
+
+/** Zählt die Zustände — für den Banner und die Kopfzeile der Liste. */
+function regelBilanz(p) {
+  const z = { ok: 0, verletzt: 0, erklaert: 0, offen: 0, aus: 0 };
+  (p.regeln || []).forEach(r => { z[regelStatus(p, r).stand]++; });
+  z.total = (p.regeln || []).length;
+  return z;
+}
 function actRegeln(pid) {
   const p = findProjekt(pid); if (!p) return;
   const list = gewerkeSorted(p);
   const opts = list.map(v => `<option value="${v.id}">${esc((v.bkp ? v.bkp + ' ' : '') + v.gewerk)}</option>`).join('');
   const relOpts = Object.entries(REGEL_REL).map(([k, l]) => `<option value="${k}">${l.replace(' …', ' B').replace('…', 'B')}</option>`).join('');
-  const rows = (p.regeln || []).length ? (p.regeln || []).map(r => { const a = findVergabe(p, r.aVid), b = findVergabe(p, r.bVid); const bad = a && b && regelVerletzt(a, b, r.rel); return `<div class="regel-row${bad ? ' bad' : ''}"><span>${regelText(p, r)}${bad ? ` <span class="regel-bad">⚠ ${bad}</span>` : ''}</span><button class="x-btn" data-act="regel-del" data-pid="${pid}" data-rid="${r.id}" title="Regel löschen">×</button></div>`; }).join('') : '<p class="muted" style="font-size:12.5px">Noch keine Regeln. Lege z.B. fest: „Gerüst" <i>muss beginnen bevor</i> „Wände EG".</p>';
-  openModal('Regeln / Logik-Hinweise', `
-    <p class="muted" style="font-size:12.5px;margin-top:0">Feste Abhängigkeiten, die normalerweise gelten. Beim Verschieben im Terminprogramm <b>warnt</b> dich das Programm, wenn du dagegen verstösst (es ändert nichts automatisch).</p>
-    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">${rows}</div>
-    <div class="card card-pad" style="background:var(--surface-2)">
+  const bil = regelBilanz(p);
+
+  /* Reihenfolge: was Arbeit macht, steht oben. Verletzte Regeln zuerst,
+     dann Abgenommene, dann Ungeprüftes, dann was aufgeht. */
+  const rang = { verletzt: 0, erklaert: 1, offen: 2, aus: 3, ok: 4 };
+  const sortiert = (p.regeln || []).map(r => ({ r, s: regelStatus(p, r) }))
+    .sort((x, y) => rang[x.s.stand] - rang[y.s.stand]);
+
+  const zeile = ({ r, s }) => {
+    const st = REGEL_STAND[s.stand];
+    const aus = r.aktiv === false;
+    return `<div class="regel-row ${s.stand}">
+      <span class="regel-zeichen" style="color:${st.farbe}" title="${st.label}">${st.zeichen}</span>
+      <div class="regel-mitte">
+        <div class="regel-satz">${regelText(p, r)}</div>
+        <div class="regel-grund" style="${s.stand === 'verletzt' ? 'color:var(--s-red)' : ''}">${esc(s.grund || '')}</div>
+        ${s.ausnahme ? `<div class="regel-abn">Abgenommen: ${esc(s.ausnahme.grund)}<span class="regel-abn-d">${s.ausnahme.datum ? ' · ' + fmtDate(s.ausnahme.datum) : ''}</span>
+          <button class="btn xs ghost" data-act="regel-ausnahme-weg" data-pid="${pid}" data-rid="${r.id}" title="Abnahme zurücknehmen – die Regel gilt wieder als verletzt">zurücknehmen</button></div>` : ''}
+        ${s.stand === 'verletzt' ? `<div class="regel-erkl">
+          <input class="input xs" id="rgx_${r.id}" placeholder="Ist trotzdem in Ordnung, weil …" data-rid="${r.id}">
+          <button class="btn xs" data-act="regel-ausnahme" data-pid="${pid}" data-rid="${r.id}">Abnehmen</button>
+        </div>` : ''}
+      </div>
+      <div class="regel-aktionen">
+        <button class="btn xs ghost" data-act="regel-aktiv" data-pid="${pid}" data-rid="${r.id}" title="${aus ? 'Regel wieder prüfen' : 'Regel vorübergehend nicht prüfen'}">${aus ? 'einschalten' : 'ausschalten'}</button>
+        <button class="x-btn" data-act="regel-del" data-pid="${pid}" data-rid="${r.id}" title="Regel löschen">×</button>
+      </div>
+    </div>`;
+  };
+
+  const rows = sortiert.length ? sortiert.map(zeile).join('')
+    : '<p class="muted" style="font-size:var(--t-s, 12.5px)">Noch keine Regeln. Lege z.B. fest: „Gerüst" <i>muss beginnen bevor</i> „Wände EG" — oder lass dir unten Vorschläge machen.</p>';
+
+  const zaehler = [
+    bil.verletzt ? `<span style="color:var(--s-red);font-weight:700">${bil.verletzt} verletzt</span>` : '',
+    bil.erklaert ? `<span style="color:#b45309">${bil.erklaert} abgenommen</span>` : '',
+    bil.ok ? `<span style="color:var(--s-green)">${bil.ok} eingehalten</span>` : '',
+    bil.offen ? `<span class="muted">${bil.offen} nicht prüfbar</span>` : '',
+    bil.aus ? `<span class="muted">${bil.aus} aus</span>` : ''
+  ].filter(Boolean).join(' · ');
+
+  const vorschlaege = regelVorschlaege(p);
+
+  openModal('Regeln prüfen', `
+    <p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:0">Alle Regeln dieses Bauvorhabens mit ihrem Stand. Verletzte stehen oben und rot. Ist ein Verstoss trotzdem in Ordnung, schreib den Grund dazu — er bleibt am Plan und du prüfst ihn nicht in jeder Sitzung neu.</p>
+    ${bil.total ? `<div class="regel-bilanz">${zaehler}</div>` : ''}
+    <div class="regel-liste">${rows}</div>
+    <div class="card card-pad" style="background:var(--surface-2);margin-top:14px">
       <div class="form-row" style="align-items:end">
         <label class="field">Gewerk A <select class="select" id="rg_a">${opts}</select></label>
         <label class="field">Regel <select class="select" id="rg_rel">${relOpts}</select></label>
         <label class="field">Gewerk B <select class="select" id="rg_b">${opts}</select></label>
       </div>
-      <button class="btn sm" data-act="regel-add" data-pid="${pid}" style="margin-top:8px">+ Regel hinzufügen</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center">
+        <button class="btn sm" data-act="regel-add" data-pid="${pid}">+ Regel hinzufügen</button>
+        ${vorschlaege.length ? `<button class="btn sm ghost" data-act="regel-vorschlag" data-pid="${pid}" title="${esc(vorschlaege.map(v => v.text).join(' · '))}">${vorschlaege.length} Standardregel${vorschlaege.length === 1 ? '' : 'n'} übernehmen</button>` : '<span class="muted" style="font-size:var(--t-xs, 12px)">Alle üblichen Bauregeln sind bereits erfasst.</span>'}
+      </div>
     </div>
   `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
+}
+
+/* ---------------------------------------------------------------------
+   Standardregeln
+   ---------------------------------------------------------------------
+   Was auf jeder Baustelle gilt, muss man nicht von Hand eintippen. Diese
+   Regeln greifen auf die Handwerksfamilien zurück, nicht auf einzelne
+   BKP-Nummern — so gelten sie auch dort, wo jemand anders nummeriert.
+   Vorgeschlagen wird nur, was zum Projekt passt und noch fehlt.
+   --------------------------------------------------------------------- */
+const REGEL_STANDARD = [
+  // Hülle
+  ['geruest',  'beginntvor', 'huelle',    'Das Gerüst muss stehen, bevor an der Fassade gearbeitet wird'],
+  ['geruest',  'beginntvor', 'spengler',  'Der Spengler braucht das Gerüst'],
+  ['dach',     'davor',      'huelle',    'Das Dach ist dicht, bevor die Fassade zugeht'],
+  ['fenster',  'beginntvor', 'huelle',    'Die Fenster sitzen, bevor die Dämmung anschliesst'],
+  /* Installationen: „beginnt vor", nicht „ist fertig vor". Elektro und
+     Sanitär laufen bis zur Inbetriebnahme im letzten Monat weiter — nur
+     das Einlegen gehört vor den Gipser. Mit „davor" meldete die Regel
+     jedes Mal einen Verstoss, den es gar nicht gibt. */
+  ['elektro',  'beginntvor', 'gipser',    'Die Leitungen liegen, bevor zugemacht wird'],
+  ['sanitaer', 'beginntvor', 'gipser',    'Die Rohre liegen, bevor zugemacht wird'],
+  ['heizung',  'beginntvor', 'gipser',    'Die Heizungsrohre liegen, bevor zugemacht wird'],
+  // Ausbau
+  ['gipser',   'beginntvor', 'boden',     'Der Grundputz kommt vor dem Unterlagsboden'],
+  ['boden',    'davor',      'schreiner', 'Der Unterlagsboden trägt Parkett und Küche'],
+  ['schreiner', 'davor',     'reinigung', 'Zuletzt wird gereinigt'],
+  ['gipser',   'davor',      'reinigung', 'Zuletzt wird gereinigt']
+];
+
+function regelVorschlaege(p) {
+  const vs = (p.vergaben || []).filter(v => v.bauStart || v.bauEnde);
+  const ersteVon = key => vs.find(v => { const f = familieVon(v); return f && f.key === key; });
+  const schon = new Set((p.regeln || []).map(r => r.aVid + '|' + r.rel + '|' + r.bVid));
+  const raus = [];
+  for (const [ka, rel, kb, warum] of REGEL_STANDARD) {
+    const a = ersteVon(ka), b = ersteVon(kb);
+    if (!a || !b || a.id === b.id) continue;
+    if (schon.has(a.id + '|' + rel + '|' + b.id)) continue;
+    raus.push({ aVid: a.id, rel, bVid: b.id, warum, text: `${a.gewerk} → ${b.gewerk}` });
+  }
+  return raus;
+}
+
+function regelVorschlaegeUebernehmen(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const neu = regelVorschlaege(p);
+  if (!neu.length) { toast('Alle üblichen Regeln sind bereits erfasst', 'info'); return; }
+  p.regeln = p.regeln || [];
+  neu.forEach(v => p.regeln.push({ id: uid('rg'), aVid: v.aVid, rel: v.rel, bVid: v.bVid, aktiv: true, warum: v.warum }));
+  save(); rerenderGantt(pid); actRegeln(pid);
+  toast(neu.length + ' Standardregel' + (neu.length === 1 ? '' : 'n') + ' übernommen');
+}
+
+function setRegelAusnahme(pid, rid) {
+  const p = findProjekt(pid); if (!p) return;
+  const r = (p.regeln || []).find(x => x.id === rid); if (!r) return;
+  const inp = $('#rgx_' + rid);
+  const grund = inp ? inp.value.trim() : '';
+  if (!grund) { toast('Bitte kurz begründen, warum es trotzdem stimmt', 'info'); if (inp) inp.focus(); return; }
+  r.ausnahme = { grund, datum: todayIso(), von: (state.buero || BUERO).name || '' };
+  save(); rerenderGantt(pid); actRegeln(pid);
+  toast('Abgenommen – der Grund steht am Plan');
+}
+
+function loescheRegelAusnahme(pid, rid) {
+  const p = findProjekt(pid); if (!p) return;
+  const r = (p.regeln || []).find(x => x.id === rid); if (!r) return;
+  delete r.ausnahme;
+  save(); rerenderGantt(pid); actRegeln(pid);
+}
+
+function toggleRegelAktiv(pid, rid) {
+  const p = findProjekt(pid); if (!p) return;
+  const r = (p.regeln || []).find(x => x.id === rid); if (!r) return;
+  if (r.aktiv === false) delete r.aktiv; else r.aktiv = false;
+  save(); rerenderGantt(pid); actRegeln(pid);
 }
 function addRegel(pid) {
   const p = findProjekt(pid); if (!p) return;
@@ -4428,6 +4993,30 @@ function selectGanttLink(lid) {
 }
 function deselectGanttLink() { document.querySelectorAll('.g-link.g-sel').forEach(x => x.classList.remove('g-sel')); ganttLinkSel = null; }
 function onGanttBarDbl(e) { const b = e.currentTarget; if (b.dataset.oid) actFeinVorgang(b.dataset.pid, b.dataset.vid, b.dataset.oid); else actEditTermin(b.dataset.pid, b.dataset.vid); }
+/* Strg+P im Bauprogramm: nicht der rohe Browserdruck, sondern der Dialog
+   mit Blattformat. Der Browserdruck würde den Bildschirmausschnitt auf A4
+   quetschen — und genau davon will man beim Bauprogramm weg. */
+/* Strg+P holt das Blatt zur Ansicht, nicht den Bildschirm.
+   ---------------------------------------------------------------------
+   Vorher wirkte die Taste nur im Terminprogramm; überall sonst druckte
+   der Browser die Bildschirmseite mit Navigation und Knöpfen. Das ist
+   nie gemeint. Jetzt kennt jede Ansicht ihren Ausdruck — und wo es
+   keinen gibt, sagt es das, statt ein unbrauchbares Blatt zu erzeugen. */
+function druckKeydown(e) {
+  if (e.key !== 'p' && e.key !== 'P') return;
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+  if (document.querySelector('.modal')) return;                 // im Dialog nicht dazwischenfunken
+  /* In einem Textfeld gehört Strg+P dem Feld, nicht uns. */
+  if (e.target && /^(input|textarea)$/i.test(e.target.tagName)) return;
+
+  e.preventDefault();
+
+  /* Das Terminprogramm zuerst: Dort zählt, was gerade offen ist, nicht
+     der Pfad in der Adresszeile. */
+  if (document.querySelector('.gantt') && ganttPid) { actGanttPrint(ganttPid); return; }
+  druckAnsicht(e);
+}
+
 function ganttKeydown(e) {
   if (!ganttSel && !ganttLinkSel) return;
   if (e.target && /^(input|textarea|select)$/i.test(e.target.tagName)) return;
@@ -4569,9 +5158,9 @@ function actBauablauf(pid) {
   if (term < 2) { toast('Mindestens zwei terminierte Gewerke nötig', 'info'); return; }
   const startIso = p.baustart || '';
   openModal('Bauablauf erstellen', `
-    <p style="font-size:13px;margin-top:0">Die <b>${term} terminierten Gewerke</b> werden nach <b>BKP-Reihenfolge</b> verkettet und ab <b>${startIso ? fmtDate(startIso) : 'dem frühesten Termin'}</b> nacheinander datiert (Dauer je Gewerk bleibt erhalten).</p>
-    <p class="muted" style="font-size:12.5px">Bestehende Verbindungen werden durch die neue Kette ersetzt. Danach kannst du einzelne Balken verschieben – die Nachfolger laufen automatisch mit. Du kannst alles anschliessend frei anpassen.</p>
-    <label class="field" style="font-size:13px">Abstand zwischen den Gewerken
+    <p style="font-size:var(--t-s, 13px);margin-top:0">Die <b>${term} terminierten Gewerke</b> werden nach <b>BKP-Reihenfolge</b> verkettet und ab <b>${startIso ? fmtDate(startIso) : 'dem frühesten Termin'}</b> nacheinander datiert (Dauer je Gewerk bleibt erhalten).</p>
+    <p class="muted" style="font-size:var(--t-s, 12.5px)">Bestehende Verbindungen werden durch die neue Kette ersetzt. Danach kannst du einzelne Balken verschieben – die Nachfolger laufen automatisch mit. Du kannst alles anschliessend frei anpassen.</p>
+    <label class="field" style="font-size:var(--t-s, 13px)">Abstand zwischen den Gewerken
       <select class="input" id="ba_lag">
         <option value="1" selected>direkt anschliessend (nächster Tag)</option>
         <option value="3">+3 Tage</option>
@@ -4620,7 +5209,7 @@ function actLinkSuccessor(pid, vid) {
   const others = gewerkeSorted(p).filter(x => x.id !== vid && x.bauStart && x.bauEnde && !(p.ganttLinks || []).some(l => l.from === vid && l.to === x.id));
   if (!others.length) { toast('Keine weiteren terminierten Gewerke vorhanden', 'info'); return; }
   openModal('Nachfolger verketten', `
-    <p class="muted" style="font-size:13px;margin-top:0">Welches Gewerk soll direkt nach <b>${esc(v.gewerk)}</b> starten? Es wird ans Ende angehängt und folgt künftig automatisch, wenn du <b>${esc(v.gewerk)}</b> verschiebst.</p>
+    <p class="muted" style="font-size:var(--t-s, 13px);margin-top:0">Welches Gewerk soll direkt nach <b>${esc(v.gewerk)}</b> starten? Es wird ans Ende angehängt und folgt künftig automatisch, wenn du <b>${esc(v.gewerk)}</b> verschiebst.</p>
     <div style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto">
       ${others.map(x => `<button class="btn secondary" style="justify-content:flex-start" data-act="link-succ-pick" data-pid="${pid}" data-vid="${vid}" data-tvid="${x.id}"><span class="bkp-code">${esc(x.bkp || '')}</span>&nbsp;${esc(x.gewerk)}</button>`).join('')}
     </div>
@@ -4673,12 +5262,12 @@ function vertragsFirmen(p) {
 function pendFirmenHtml(p, selected) {
   selected = selected || [];
   const fs = p ? vertragsFirmen(p) : [];
-  if (!fs.length) return '<p class="muted" style="font-size:12px;margin:0">Keine Firmen mit Vertrag in diesem Projekt.</p>';
-  return fs.map(f => `<label class="pd-firma"><input type="checkbox" class="pd-firma-cb" value="${esc(f.firma)}"${selected.includes(f.firma) ? ' checked' : ''}> <span>${esc(f.firma)}</span><span class="muted" style="font-size:11px">${esc((f.bkp ? f.bkp + ' ' : '') + (f.gewerk || ''))}${f.email ? '' : ' · ⚠ keine Mail'}</span></label>`).join('');
+  if (!fs.length) return '<p class="muted" style="font-size:var(--t-xs, 12px);margin:0">Keine Firmen mit Vertrag in diesem Projekt.</p>';
+  return fs.map(f => `<label class="pd-firma"><input type="checkbox" class="pd-firma-cb" value="${esc(f.firma)}"${selected.includes(f.firma) ? ' checked' : ''}> <span>${esc(f.firma)}</span><span class="muted" style="font-size:var(--t-2xs, 11px)">${esc((f.bkp ? f.bkp + ' ' : '') + (f.gewerk || ''))}${f.email ? '' : ' · ⚠ keine Mail'}</span></label>`).join('');
 }
 function pendFirmenChips(it) {
   const fs = (it && it.firmen) || [];
-  return fs.length ? ' ' + fs.map(f => `<span class="tag" style="font-size:10px;padding:1px 6px">${esc(f)}</span>`).join(' ') : '';
+  return fs.length ? ' ' + fs.map(f => `<span class="tag" style="font-size:var(--t-2xs, 10px);padding:1px 6px">${esc(f)}</span>`).join(' ') : '';
 }
 
 // Alle offenen Pendenzen eines Projekts (Protokolle + direkt erfasste), nach Termin sortiert
@@ -4694,7 +5283,7 @@ function offenePendenzen(p) {
 
 function eintragBadge(it) {
   return it.art === 'pendenz'
-    ? `<span class="st amber" style="padding:2px 8px;font-size:10.5px">Pendenz</span>`
+    ? `<span class="st amber" style="padding:2px 8px;font-size:var(--t-2xs, 10.5px)">Pendenz</span>`
     : `<span class="tag">Info</span>`;
 }
 
@@ -4717,7 +5306,7 @@ function viewPendenzen(pid) {
   const ueberfaellig = offen.filter(x => x.it.termin && daysUntil(x.it.termin) < 0).length;
   setStatusExtra(offen.length + ' offen' + (ueberfaellig ? ' · ' + ueberfaellig + ' überfällig' : '') + ' · ' + erledigt.length + ' erledigt');
 
-  const kpi = (l, v, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:21px${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div></div>`;
+  const kpi = (l, v, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:var(--t-xl, 21px)${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div></div>`;
   const herkunft = x => x.pr
     ? `<a href="#/projekt/${p.id}/protokoll/${x.pr.id}">${esc(protokollTitel(x.pr))} · ${fmtDate(x.pr.datum)}</a>`
     : '<span class="muted">direkt erfasst</span>';
@@ -4761,7 +5350,7 @@ function viewPendenzen(pid) {
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Pendenzen · projektweit aus allen Protokollen</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Pendenzen · projektweit aus allen Protokollen</div></div>
     </div>
     ${projektTabs(p, 'pendenzen')}
     ${demoBanner('pendenzen')}
@@ -4795,7 +5384,7 @@ function actPendenz(pid, itemid) {
       <label class="field">Verantwortlich <input class="input" id="pd_verant" value="${it ? esc(it.verantwortlich || '') : ''}" placeholder="optional"></label>
       <label class="field">Termin <input class="input" type="date" id="pd_termin" value="${it ? esc(it.termin || '') : ''}"></label>
     </div>
-    <label class="field" style="margin-bottom:4px">Firmen mit Vertrag <span class="muted" style="font-weight:400;font-size:11.5px">– zuweisen für Mail</span></label>
+    <label class="field" style="margin-bottom:4px">Firmen mit Vertrag <span class="muted" style="font-weight:400;font-size:var(--t-xs, 11.5px)">– zuweisen für Mail</span></label>
     <div id="pd_firmen" class="pd-firmen">${pendFirmenHtml(firmProj, it && it.firmen)}</div>
   `, `${it ? `<button class="btn danger" data-act="pend-del" data-pid="${pid}" data-itemid="${itemid}">🗑 Löschen</button>` : '<button class="btn ghost" data-close="1">Abbrechen</button>'}<button class="btn" data-act="pend-save" data-pid="${pid || ''}"${it ? ` data-itemid="${itemid}"` : ''}>${it ? '💾 Speichern' : '+ Hinzufügen'}</button>`);
   const ps = $('#pd_pid'); if (ps) ps.addEventListener('change', () => { const cont = $('#pd_firmen'); if (cont) cont.innerHTML = pendFirmenHtml(findProjekt(ps.value), []); });
@@ -4825,8 +5414,8 @@ function mailCompose(opts) {
     <label class="field">An <input class="input" id="pm_to" value="${esc(to)}" placeholder="empfaenger@firma.ch"></label>
     <label class="field">Betreff <input class="input" id="pm_subj" value="${esc(opts.subject || '')}"></label>
     <label class="field">Nachricht <textarea class="input" id="pm_body" rows="11">${esc(opts.body || '')}</textarea></label>
-    <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;margin-top:2px"><input type="checkbox" id="pm_sig" ${sigOn ? 'checked' : ''}> Signatur anhängen <span class="muted" style="font-size:11.5px">(aus → du fügst sie selbst im Mail ein)</span></label>
-    ${opts.hint ? `<p class="muted" style="font-size:11.5px;margin:8px 0 0">${opts.hint}</p>` : ''}
+    <label style="display:flex;gap:8px;align-items:center;font-size:var(--t-s, 13px);cursor:pointer;margin-top:2px"><input type="checkbox" id="pm_sig" ${sigOn ? 'checked' : ''}> Signatur anhängen <span class="muted" style="font-size:var(--t-xs, 11.5px)">(aus → du fügst sie selbst im Mail ein)</span></label>
+    ${opts.hint ? `<p class="muted" style="font-size:var(--t-xs, 11.5px);margin:8px 0 0">${opts.hint}</p>` : ''}
   `, `<button class="btn ghost" data-act="pend-mail-copy">Text kopieren</button><button class="btn" data-act="pend-mail-open">Im Mail-Programm öffnen</button>`);
   const sigBlock = '\n\n' + sigText;
   const applySig = on => { const ta = $('#pm_body'); if (!ta) return; let v = ta.value; if (v.endsWith(sigBlock)) v = v.slice(0, -sigBlock.length); if (on) v += sigBlock; ta.value = v; };
@@ -4948,12 +5537,12 @@ let submCols = { frist: true, versendet: true, status: true, offerte: true, abge
 const SUBM_COLS = [['frist', 'Eingabefrist', 0], ['versendet', 'Versendet', 0], ['status', 'Status', 0], ['offerte', 'Offerte', 1], ['abgebot', 'Abgebot', 1], ['werkvertrag', 'Werkvertrag', 1], ['kontakt', 'Kontakt', 0]];
 function submCell(p, v, e, key, edit) {
   const wv = isVergeben(v) && v.firma && e.firma === v.firma;
-  const dd = (field, val, ph) => `<input type="date" class="subm-in" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}" data-field="${field}" value="${esc(val || '')}" style="height:25px;font-size:11.5px;padding:1px 4px"${ph ? ` title="${esc(ph)}"` : ''}>`;
+  const dd = (field, val, ph) => `<input type="date" class="subm-in" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}" data-field="${field}" value="${esc(val || '')}" style="height:25px;font-size:var(--t-xs, 11.5px);padding:1px 4px"${ph ? ` title="${esc(ph)}"` : ''}>`;
   if (key === 'frist') { const f = e.frist || v.frist; return edit ? dd('frist', e.frist, v.frist ? 'Gewerk-Frist: ' + fmtDate(v.frist) : 'Eingabefrist') : (f ? fmtDate(f) : '–'); }
   if (key === 'versendet') return edit ? dd('datumMail', e.datumMail, 'Versendet am – setzen = Status „angefragt"') : (e.datumMail ? fmtDate(e.datumMail) : (e.status === 'eingeladen' ? '<span class="muted">noch nicht</span>' : '–'));
   if (key === 'status') return edit
-    ? `<select class="subm-st" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}" style="height:25px;font-size:11.5px;padding:0 2px">${Object.entries(INV_STATUS).map(([k, s]) => `<option value="${k}"${e.status === k ? ' selected' : ''}>${s.label}</option>`).join('')}</select>`
-    : `<span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:1px 7px;font-size:10px">${INV_STATUS[e.status]?.label || esc(e.status)}</span>`;
+    ? `<select class="subm-st" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}" style="height:25px;font-size:var(--t-xs, 11.5px);padding:0 2px">${Object.entries(INV_STATUS).map(([k, s]) => `<option value="${k}"${e.status === k ? ' selected' : ''}>${s.label}</option>`).join('')}</select>`
+    : `<span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:1px 7px;font-size:var(--t-2xs, 10px)">${INV_STATUS[e.status]?.label || esc(e.status)}</span>`;
   if (key === 'offerte') return eOff(e) != null ? chf(eOff(e)) : '–';
   if (key === 'abgebot') return eAbg(e) != null ? chf(eAbg(e)) : '–';
   if (key === 'werkvertrag') return wv ? `<strong>✓ ${eVer(e) != null ? chf(eVer(e)) : (v.betrag ? chf(v.betrag) : 'WV')}</strong>` : '<span class="muted">–</span>';
@@ -4967,9 +5556,9 @@ function submTableHtml(p, cols, compact, edit) {
   const body = gw.map(v => {
     const eing = (v.eingeladene || []);
     const rows = eing.length ? eing.map(e => `<tr><td>${esc(e.firma)}</td>${heads.map(([k, , num]) => `<td${num ? ' class="num"' : ''}>${submCell(p, v, e, k, edit)}</td>`).join('')}</tr>`).join('')
-      : `<tr><td colspan="${ncol}" class="muted" style="font-size:11.5px">noch niemand eingeladen</td></tr>`;
+      : `<tr><td colspan="${ncol}" class="muted" style="font-size:var(--t-xs, 11.5px)">noch niemand eingeladen</td></tr>`;
     const addBtn = edit ? ` <button class="btn xs" data-act="invite" data-pid="${p.id}" data-vid="${v.id}" style="float:right;margin-top:-2px">+ einladen</button>` : '';
-    return `<tr><td colspan="${ncol}" style="background:#f4f6f9;font-weight:700;font-size:11.5px;padding:4px 10px"><span class="bkp-code">${esc(v.bkp)}</span> ${esc(v.gewerk)}${addBtn}</td></tr>${rows}`;
+    return `<tr><td colspan="${ncol}" style="background:#f4f6f9;font-weight:700;font-size:var(--t-xs, 11.5px);padding:4px 10px"><span class="bkp-code">${esc(v.bkp)}</span> ${esc(v.gewerk)}${addBtn}</td></tr>${rows}`;
   }).join('');
   return `<table class="${compact ? 'grid t-compact' : 't'}"><thead><tr><th>Firma</th>${heads.map(([, l, num]) => `<th${num ? ' class="num"' : ''}>${l}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`;
 }
@@ -4991,7 +5580,7 @@ function viewListen(pid) {
 
   const submActive = SUBM_COLS.filter(c => submCols[c[0]]).map(c => c[0]);
   const submBlocks = gw.length ? submTableHtml(p, submActive, true, true) : emptyState('◫', 'Keine Gewerke angelegt.');
-  const submColChips = `<div class="chips" style="margin:-2px 0 10px"><span class="muted" style="font-size:11px;align-self:center;margin-right:2px">Spalten:</span>${SUBM_COLS.map(([k, l]) => `<span class="chip ${submCols[k] ? 'active' : ''}" data-act="subm-col" data-kind="${k}" data-pid="${p.id}">${l}</span>`).join('')}</div>`;
+  const submColChips = `<div class="chips" style="margin:-2px 0 10px"><span class="muted" style="font-size:var(--t-2xs, 11px);align-self:center;margin-right:2px">Spalten:</span>${SUBM_COLS.map(([k, l]) => `<span class="chip ${submCols[k] ? 'active' : ''}" data-act="subm-col" data-kind="${k}" data-pid="${p.id}">${l}</span>`).join('')}</div>`;
 
   const untRows = gw.map(v => {
     const vergeben = isVergeben(v) && v.firma;
@@ -5008,10 +5597,10 @@ function viewListen(pid) {
   const einh = alleEinheiten(p);
   const eigBudget = uid => (p.vergaben || []).reduce((a, v) => a + (v.budgetposten || []).filter(b => b.wohnung === uid).reduce((s, b) => s + (hatIst(b) ? (Number(b.ist) || 0) : (Number(b.betrag) || 0)), 0), 0);
   const eigBody = einh.map(({ u, g }) => `<tr>
-      <td class="muted" style="font-size:12px">${esc(g.name || '')}</td>
+      <td class="muted" style="font-size:var(--t-xs, 12px)">${esc(g.name || '')}</td>
       <td><strong>${esc(u.name || 'Einheit')}</strong>${u.zimmer ? ` <span class="muted">${u.zimmer} Zi</span>` : ''}${u.m2 ? ` <span class="muted">· ${Number(u.m2)} m²</span>` : ''}</td>
-      <td><input class="input eig-in" data-pid="${p.id}" data-uid="${u.id}" data-feld="eigentuemer" value="${esc(u.eigentuemer || '')}" placeholder="Eigentümer / Käufer" style="height:28px;font-size:12.5px"></td>
-      <td><input class="input eig-in" data-pid="${p.id}" data-uid="${u.id}" data-feld="eigKontakt" value="${esc(u.eigKontakt || '')}" placeholder="Tel. / E-Mail" style="height:28px;font-size:12.5px"></td>
+      <td><input class="input eig-in" data-pid="${p.id}" data-uid="${u.id}" data-feld="eigentuemer" value="${esc(u.eigentuemer || '')}" placeholder="Eigentümer / Käufer" style="height:28px;font-size:var(--t-s, 12.5px)"></td>
+      <td><input class="input eig-in" data-pid="${p.id}" data-uid="${u.id}" data-feld="eigKontakt" value="${esc(u.eigKontakt || '')}" placeholder="Tel. / E-Mail" style="height:28px;font-size:var(--t-s, 12.5px)"></td>
       <td class="num">${eigBudget(u.id) ? chf(eigBudget(u.id)) : '<span class="muted">–</span>'}</td>
     </tr>`).join('');
   // Bemusterung (allgemeine Liste: Auswahlpunkt → Unternehmer → Ausstellung; OHNE Wohnung, dedupliziert)
@@ -5032,21 +5621,21 @@ function viewListen(pid) {
   if (listenTab === 'unt') {
     bodyHtml = `<div class="section-head"><h2>Unternehmerliste <span class="tag">für Baustelle</span></h2>
       <button class="btn sm" data-act="pdf-unternehmer" data-pid="${p.id}">🖨 Drucken</button></div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Alle Gewerke mit vergebenem Unternehmer; offene zeigen „noch nicht vergeben".</p>
+    <p class="muted" style="font-size:var(--t-s, 12.5px);margin:-4px 0 10px">Alle Gewerke mit vergebenem Unternehmer; offene zeigen „noch nicht vergeben".</p>
     <div class="card">${gw.length ? `<table class="grid t-compact"><thead><tr><th style="width:60px">BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Kontakt</th></tr></thead><tbody>${untRows}</tbody></table>` : emptyState('◫', 'Keine Gewerke angelegt.')}</div>`;
   } else if (listenTab === 'eig') {
     bodyHtml = `<div class="section-head"><h2>Eigentümerliste</h2></div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Einheiten mit Eigentümer/Käufer &amp; Kontakt – direkt hier ausfüllen (wird automatisch gespeichert).</p>
+    <p class="muted" style="font-size:var(--t-s, 12.5px);margin:-4px 0 10px">Einheiten mit Eigentümer/Käufer &amp; Kontakt – direkt hier ausfüllen (wird automatisch gespeichert).</p>
     <div class="card">${einh.length ? `<table class="grid t-compact"><thead><tr><th style="width:120px">Geschoss</th><th>Einheit</th><th style="width:30%">Eigentümer / Käufer</th><th style="width:22%">Kontakt</th><th class="num" style="width:130px">Budget Sonderwünsche</th></tr></thead><tbody>${eigBody}</tbody></table>` : emptyState('🏠', 'Noch keine Einheiten – unter „Eigentümerwünsche / Geschosse" anlegen.')}</div>`;
   } else if (listenTab === 'bem') {
-    bodyHtml = `<div class="section-head"><h2>Bemusterung <span class="muted" style="font-size:12px;font-weight:400">· bei wem aussuchen</span></h2>
+    bodyHtml = `<div class="section-head"><h2>Bemusterung <span class="muted" style="font-size:var(--t-xs, 12px);font-weight:400">· bei wem aussuchen</span></h2>
       <a class="btn sm secondary" href="#/projekt/${p.id}/bauherr">Eigentümerwünsche-Reiter ↗</a></div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Allgemeine Liste: Auswahlpunkt → ausführender Unternehmer und (falls separat) die Ausstellung für die Materialauswahl. Ohne Wohnung – die Entscheide je Eigentümer stehen unter „Eigentümerwünsche".</p>
+    <p class="muted" style="font-size:var(--t-s, 12.5px);margin:-4px 0 10px">Allgemeine Liste: Auswahlpunkt → ausführender Unternehmer und (falls separat) die Ausstellung für die Materialauswahl. Ohne Wohnung – die Entscheide je Eigentümer stehen unter „Eigentümerwünsche".</p>
     <div class="card">${bemUnique.length ? `<table class="grid t-compact"><thead><tr><th style="width:52px">BKP</th><th>Auswahlpunkt</th><th>Unternehmer</th><th>Ausstellung / Materialauswahl</th></tr></thead><tbody>${bemBody}</tbody></table>` : `<div class="card-pad" style="text-align:center">${emptyState('🎨', 'Noch keine Auswahlpunkte.')}<a class="btn" href="#/projekt/${p.id}/bauherr">zu Eigentümerwünsche</a></div>`}</div>`;
   } else {
-    bodyHtml = `<div class="section-head"><h2>Submittentenliste <span class="st red" style="font-size:10.5px;padding:2px 8px;vertical-align:middle">vertraulich</span></h2>
+    bodyHtml = `<div class="section-head"><h2>Submittentenliste <span class="st red" style="font-size:var(--t-2xs, 10.5px);padding:2px 8px;vertical-align:middle">vertraulich</span></h2>
       <span style="display:inline-flex;gap:6px"><button class="btn sm" data-act="pdf-submittenten" data-pid="${p.id}" title="Druckt die aktuell sichtbaren Spalten">🖨 Drucken</button><button class="btn sm secondary" data-act="pdf-submittenten-ob" data-pid="${p.id}" title="Ohne Betrags-Spalten">🖨 ohne Beträge</button></span></div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Arbeitsliste je Gewerk: an wen versendet, Status, Offerte/Abgebot, mit wem der Werkvertrag … – Spalten ein-/ausblenden. Nur intern, <strong>nicht</strong> an die Baustelle.</p>
+    <p class="muted" style="font-size:var(--t-s, 12.5px);margin:-4px 0 10px">Arbeitsliste je Gewerk: an wen versendet, Status, Offerte/Abgebot, mit wem der Werkvertrag … – Spalten ein-/ausblenden. Nur intern, <strong>nicht</strong> an die Baustelle.</p>
     ${submColChips}
     <div class="card card-pad">${submBlocks}</div>`;
   }
@@ -5054,7 +5643,7 @@ function viewListen(pid) {
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Listen · zum Drucken / als PDF</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Listen · zum Drucken / als PDF</div></div>
     </div>
     ${projektTabs(p, 'listen')}
 
@@ -5117,6 +5706,274 @@ const DRUCK_LEISTE_HTML = `<div class="scrbar">
     <button onclick="try{ (window.__toPaper||window.opener.druckDokNachPaper)(); }catch(e){ alert('Submit Paper konnte nicht geoeffnet werden.'); }">In Submit Paper oeffnen</button>
     <span class="sp">In Paper landet die Liste als rechenbares Gitter.</span>
   </div>`;
+
+/* =====================================================================
+   Seitenumbruch durch Messen
+   ---------------------------------------------------------------------
+   Läuft IM Druckfenster, nachdem der Browser gesetzt hat, und vor dem
+   Drucken. Er misst, was wirklich dasteht, und schiebt weiter, was nicht
+   mehr aufs Blatt passt.
+
+   Warum das nötig war
+   -------------------
+   Vorher wurde die Höhe geschätzt: «13 mm Kopf plus 4,6 mm je Zeile».
+   Diese Rechnung stimmt genau so lange, wie kein Firmenname umbricht,
+   keine Schrift nachlädt und kein Monat eine Zeile mehr hat als gedacht.
+   Trifft sie nicht, läuft der Inhalt unter die Fusszeile — das Blatt geht
+   nicht auf, und zwar jedes Mal an einer anderen Stelle.
+
+   Gemessen wird nach dem Setzen, deshalb kann es nicht danebenliegen.
+   Eine Schätzung sagt voraus, eine Messung stellt fest.
+
+   Zwei Blattarten, eine Rechnung: `.blatt` (Zahlungsplan, Kopf/Inhalt/Fuss
+   als Flexspalte) und `.sheet` (openSheetDoc, Kopf und Fuss absolut
+   gesetzt). Beide haben feste Höhe und `overflow:hidden` — genau deshalb
+   verschwand der Überhang lautlos, statt sich zu zeigen.
+   ===================================================================== */
+const DRUCK_UMBRUCH_JS = `
+(function(){
+  'use strict';
+  var LUFT = 4;            // Pixel Sicherheitsabstand über der Fusszeile
+  var SCHUTZ = 500;        // Notbremse gegen eine Endlosschleife
+
+  function px(el, feld){ return parseFloat(getComputedStyle(el)[feld]) || 0; }
+
+  /* Wie viel Platz der Inhalt hat und wie hoch er wirklich ist. */
+  function messen(blatt){
+    if (blatt.classList.contains('blatt')){
+      var zi = blatt.querySelector('.zi');
+      if (!zi) return null;
+      /* clientHeight enthält die Innenabstände — der Inhalt beginnt aber
+         erst darunter. Wer das übersieht, hält vier Millimeter für frei,
+         die es nicht sind, und die letzte Zeile rutscht unter den Fuss.
+         Kopf, Fuss und die beiden Übertragszeilen sind hier bereits
+         abgezogen: Sie sind Geschwister von .zi in einer Flexspalte und
+         nehmen ihren Platz weg, bevor gemessen wird. */
+      return {
+        feld: zi,
+        frei: zi.clientHeight - px(zi, 'paddingTop') - px(zi, 'paddingBottom'),
+        teile: [].slice.call(zi.children)
+      };
+    }
+    var hd = blatt.querySelector('.sh-hd'), ft = blatt.querySelector('.sh-ft');
+    var frei = blatt.clientHeight - px(blatt,'paddingTop') - px(blatt,'paddingBottom')
+             - (ft ? ft.offsetHeight : 0);
+    var teile = [].slice.call(blatt.children).filter(function(k){ return k !== hd && k !== ft; });
+    return { feld: blatt, frei: frei, teile: teile };
+  }
+
+  /* Das erste Stück, das nicht mehr ganz aufs Blatt passt. */
+  function bruchstelle(m){
+    if (!m.teile.length) return -1;
+    var oben = m.teile[0].getBoundingClientRect().top;
+    for (var i = 0; i < m.teile.length; i++){
+      var r = m.teile[i].getBoundingClientRect();
+      if (r.height <= 0) continue;                       // unsichtbar, zählt nicht
+      if (r.bottom - oben > m.frei - LUFT) return i;
+    }
+    return -1;
+  }
+
+  function nachfolger(blatt){
+    var neu = document.createElement('div');
+    neu.className = blatt.className + ' fortsetzung';
+    if (blatt.classList.contains('blatt')){
+      /* Der ganze Rahmen wandert mit: Kopf, beide Übertragszeilen, Fuss.
+         Nur so hat die Folgeseite denselben Platz für den Inhalt. */
+      var zk = blatt.querySelector('.zk'), zf = blatt.querySelector('.zf');
+      var zuO = blatt.querySelector('.zu-oben'), zuU = blatt.querySelector('.zu-unten');
+      if (zk) neu.appendChild(zk.cloneNode(true));
+      if (zuO) { var o = zuO.cloneNode(false); o.className = zuO.className; neu.appendChild(o); }
+      var zi = document.createElement('div'); zi.className = 'zi';
+      neu.appendChild(zi);
+      if (zuU) { var u = zuU.cloneNode(false); u.className = zuU.className; neu.appendChild(u); }
+      if (zf) neu.appendChild(zf.cloneNode(true));
+    } else {
+      var hd = blatt.querySelector('.sh-hd'), ft = blatt.querySelector('.sh-ft');
+      if (hd) neu.appendChild(hd.cloneNode(true));
+      if (ft) neu.appendChild(ft.cloneNode(true));
+    }
+    return neu;
+  }
+
+  function zielFeld(blatt){
+    return blatt.classList.contains('blatt') ? blatt.querySelector('.zi') : blatt;
+  }
+
+  /* Einen zu hohen Block an einer Zeilengrenze auftrennen.
+     Der erste Teil behält, was aufs Blatt geht; der Rest wandert in eine
+     Kopie darunter, die im nächsten Durchgang aufs Folgeblatt geschoben
+     wird. Gibt true zurück, wenn geteilt wurde. */
+  function teilen(blatt, m, idx){
+    var stueck = m.teile[idx || 0];
+    if (!stueck) return false;
+    var koerper = stueck.querySelector('tbody');
+    if (!koerper) return false;
+    var zeilen = [].slice.call(koerper.children);
+    if (zeilen.length < 4) return false;                 // zu wenig zum Teilen
+
+    /* Wie viel Platz DIESER Block auf der Seite noch hat: die freie
+       Höhe des Feldes, abzüglich dessen, was über ihm schon steht.
+       Bis zum 14.08.2026 wurde nur der oberste Block geteilt — ein
+       Monat weiter unten wanderte ganz auf die nächste Seite, und
+       nach zwei langen Monaten blieb ein Drittel des Blattes leer. */
+    var inhaltOben = m.teile[0].getBoundingClientRect().top;
+    var oben = stueck.getBoundingClientRect().top;
+    var verfuegbar = m.frei - LUFT - (oben - inhaltOben);
+    var k = 0;
+    for (; k < zeilen.length; k++){
+      if (zeilen[k].getBoundingClientRect().bottom - oben > verfuegbar) break;
+    }
+    /* Mindestens zwei Zeilen bleiben, mindestens zwei gehen mit — sonst
+       entsteht eine Kopfzeile mit einer einzigen Zeile darunter.
+
+       Diese Bedingung ist zugleich der Schutz gegen die Endlosschleife:
+       Jede Teilung nimmt mindestens zwei Zeilen heraus, der Block wird
+       also kleiner, und irgendwann greift die Untergrenze von vier
+       Zeilen. Eine Fortsetzung darf sich deshalb ruhig nochmals teilen —
+       ein Monat mit fünfzig Positionen braucht das. */
+    if (k < 2 || zeilen.length - k < 2) return false;
+
+    var kopie = stueck.cloneNode(true);
+    kopie.className += ' fortsetzung';
+    /* Der Betrag bleibt beim ersten Teil. Das Klonen nahm ihn mit, und
+       der Übertrag zählte denselben Monat doppelt — das Total stimmte
+       genau dann nicht mehr, wenn ein Monat über die Seite bricht. */
+    if (kopie.removeAttribute) kopie.removeAttribute('data-betrag');
+    var kKoerper = kopie.querySelector('tbody');
+    var kZeilen = [].slice.call(kKoerper.children);
+    for (var a = 0; a < k; a++) if (kZeilen[a]) kKoerper.removeChild(kZeilen[a]);
+    for (var b = zeilen.length - 1; b >= k; b--) koerper.removeChild(zeilen[b]);
+
+    stueck.parentNode.insertBefore(kopie, stueck.nextSibling);
+    return true;
+  }
+
+  function umbrechen(){
+    var wache = 0, i = 0, blaetter;
+    while (true){
+      blaetter = document.querySelectorAll('.blatt, .sheet');
+      if (i >= blaetter.length || wache++ > SCHUTZ) break;
+      var blatt = blaetter[i];
+      if (blatt.classList.contains('cover')) { i++; continue; }
+
+      var m = messen(blatt);
+      if (!m) { i++; continue; }
+      var ab = bruchstelle(m);
+
+      /* ab === 0: Schon das erste Stück allein ist zu hoch. Lässt es sich
+         teilen — ein Monatsblock mit vielen Positionszeilen etwa —, dann
+         wird geteilt. Sonst bliebe eine halbe Seite leer, nur weil der
+         Block als Ganzes nicht mehr passt, und aus zehn Seiten würden
+         zwanzig. Ist es nicht teilbar, bleibt es stehen: Verschieben
+         hülfe nicht, es wäre auf dem nächsten Blatt genauso zu hoch, und
+         die Schleife liefe ewig. */
+      if (ab === 0) {
+        if (teilen(blatt, m)) continue;          // dasselbe Blatt nochmal ansehen
+        i++; continue;
+      }
+      if (ab < 0) { i++; continue; }
+
+      /* Das Stück an der Bruchstelle zuerst teilen — das Blatt soll voll
+         werden. Nur wenn es sich nicht teilen lässt (keine Tabelle, zu
+         kurz, oder es bliebe eine Überschrift mit weniger als zwei
+         Zeilen), wandert es als Ganzes. So bricht nie ein Titel allein,
+         aber auch keine halbe Seite bleibt mehr leer. */
+      if (teilen(blatt, m, ab)) continue;
+
+      var neu = nachfolger(blatt);
+      var ziel = zielFeld(neu);
+      var ft = blatt.classList.contains('sheet') ? blatt.querySelector('.sh-ft') : null;
+      while (m.teile.length > ab) ziel.appendChild(m.teile.splice(ab, 1)[0]);
+      if (ft) neu.appendChild(ft);                       // Fuss bleibt zuunterst
+      blatt.parentNode.insertBefore(neu, blatt.nextSibling);
+      i++;                                               // das neue Blatt ist als Nächstes dran
+    }
+    nummerieren();
+    uebertraege();
+  }
+
+  /* Der Übertrag lässt sich erst ausrechnen, wenn feststeht, welcher
+     Monat auf welcher Seite liegt — vorher ist es geraten. Deshalb hier,
+     ganz zum Schluss: Jede Seite zählt zusammen, was auf ihr steht, und
+     schreibt oben herein, was sie mitbringt, und unten, was sie
+     weitergibt. Die letzte Seite schliesst mit dem Total ab. */
+  function uebertraege(){
+    var alle = [].slice.call(document.querySelectorAll('.blatt'));
+    var mitBetrag = alle.filter(function(b){ return b.querySelector('[data-betrag]'); });
+    if (mitBetrag.length < 1) return;
+
+    var laufend = 0;
+    mitBetrag.forEach(function(bl, i){
+      var vorher = laufend;
+      [].slice.call(bl.querySelectorAll('[data-betrag]')).forEach(function(el){
+        laufend += Number(el.getAttribute('data-betrag')) || 0;
+      });
+      var oben = bl.querySelector('.zu-oben'), unten = bl.querySelector('.zu-unten');
+      var seiteNr = alle.indexOf(bl) + 1;
+      if (oben){
+        oben.innerHTML = i > 0
+          ? 'Übertrag von Seite ' + (alle.indexOf(mitBetrag[i-1]) + 1) + '<b>' + geld(vorher) + '</b>'
+          : '';
+      }
+      if (unten){
+        var letzte = i === mitBetrag.length - 1;
+        unten.className = 'zu zu-unten' + (letzte ? ' tot' : '');
+        unten.innerHTML = (letzte ? 'Total Zahlungen' : 'Übertrag auf Seite ' + (seiteNr + 1))
+          + '<b>' + geld(laufend) + '</b>';
+      }
+    });
+  }
+
+  /* Beträge so setzen wie im übrigen Dokument — Apostroph als Tausender,
+     zwei Stellen. Bewusst ohne regulären Ausdruck: Dieser Text steht in
+     app.js in einer Vorlage-Zeichenkette, dort müsste jeder Backslash
+     verdoppelt werden — und ein Test, der die Datei liest, führte dann
+     anderen Code aus als der Browser. Eine Schleife hat das Problem nicht. */
+  function geld(n){
+    var s = (Math.round((Number(n) || 0) * 100) / 100).toFixed(2);
+    var t = s.split('.'), ganz = t[0], neg = ganz.charAt(0) === '-';
+    if (neg) ganz = ganz.slice(1);
+    var aus = '';
+    for (var i = 0; i < ganz.length; i++){
+      if (i > 0 && (ganz.length - i) % 3 === 0) aus += "'";
+      aus += ganz.charAt(i);
+    }
+    return (neg ? '-' : '') + aus + '.' + t[1];
+  }
+
+  /* Seitenzahlen und Inhaltsverzeichnis stimmen nach dem Umbruch nicht
+     mehr — sie werden aus dem gesetzten Dokument neu geschrieben. */
+  function nummerieren(){
+    var alle = [].slice.call(document.querySelectorAll('.blatt, .sheet'));
+    var n = alle.length;
+    alle.forEach(function(bl, i){
+      var zf = bl.querySelector('.zf > div:last-child');
+      if (zf) { zf.textContent = 'Seite ' + (i+1) + ' von ' + n; return; }
+      var sf = bl.querySelector('.sh-ft span:last-child');
+      if (sf) sf.textContent = 'Seite ' + (i+1) + ' / ' + n;
+    });
+    var tocSeite = document.querySelector('ul.toc') ?
+      document.querySelector('ul.toc').closest('.sheet') : null;
+    var eintraege = [].slice.call(document.querySelectorAll('ul.toc .toc-pg'));
+    if (!eintraege.length) return;
+    var mitTitel = [];
+    alle.forEach(function(bl, i){
+      if (bl === tocSeite || bl.classList.contains('fortsetzung')) return;
+      if (bl.querySelector('.sec-h')) mitTitel.push(i+1);
+    });
+    eintraege.forEach(function(e, k){ if (mitTitel[k]) e.textContent = mitTitel[k]; });
+  }
+
+  /* Erst messen, wenn die Schriften stehen — sonst misst man die
+     Ersatzschrift, und nach dem Nachladen passt es wieder nicht. */
+  function los(){
+    try { umbrechen(); } catch(e) { /* lieber ungebrochen drucken als gar nicht */ }
+    setTimeout(function(){ try{ window.focus(); }catch(e){} window.print(); }, 120);
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(los).catch(los);
+  else setTimeout(los, 260);
+})();`;
 
 function openPrintDoc(title, subtitleHtml, inner, opts) {
   opts = opts || {};
@@ -5182,7 +6039,7 @@ function openPrintDoc(title, subtitleHtml, inner, opts) {
     ${inner}
     ${footer}
   </div>
-  <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>
+  <script>window.onload=function(){ ${DRUCK_UMBRUCH_JS} };<\/script>
   </body></html>`;
   letztesDruckDok = { title: title || '', objekt: opts.objekt || '', modul: opts.modul || '', sheets: [{ html: inner || '' }] };
   const w = window.open('', '_blank');
@@ -5202,7 +6059,7 @@ function openSheetDoc(opts) {
   const land = !!opts.landscape;
   const logo = b.logo
     ? `<img src="${b.logo}" style="max-height:62px;max-width:250px">`
-    : `<div style="font-family:Georgia,'Times New Roman',serif;font-size:27px;letter-spacing:1px;color:#1b2230">${esc(b.firma || 'submit one')}</div>`;
+    : `<div style="font-family:Georgia,'Times New Roman',serif;font-size:var(--t-2xl, 27px);letter-spacing:1px;color:#1b2230">${esc(b.firma || 'submit one')}</div>`;
   const addr = [b.firma, b.strasse, b.plzort, b.tel ? 'Tel. ' + b.tel : '', b.email].filter(Boolean).map(esc).join(' &nbsp;·&nbsp; ');
   const datum = opts.datum || fmtDate(todayIso());
   const sheets = opts.sheets || [];
@@ -5256,8 +6113,9 @@ function openSheetDoc(opts) {
     .muted{ color:#9aa4b1; } .conf{ display:inline-block; background:#fbe9ea; color:#a01b2b; border:1px solid #e7b3ba; border-radius: 0; padding:2px 8px; font-size:10px; font-weight:700; }
     ${opts.extraCss || ''}
     ${DRUCK_LEISTE_CSS}
+    .sheet.fortsetzung .sec-h{ display:none; }
   </style></head><body>${DRUCK_LEISTE_HTML}${pages}
-  <script>window.onload=function(){ setTimeout(function(){ try{window.focus();}catch(e){} window.print(); }, 250); };<\/script>
+  <script>window.onload=function(){ ${DRUCK_UMBRUCH_JS} };<\/script>
   </body></html>`;
   letztesDruckDok = { title: opts.title || '', objekt: opts.objekt || '', modul: opts.modul || '', sheets: sheets };
   const w = window.open('', '_blank');
@@ -5318,14 +6176,14 @@ function loadHonorar() {
     const p = findProjekt(honorarPid);
     if (p) { if (!p.honorar) { p.honorar = honorarDefaults(); p.honorar.projekt = p.name; } if (!p.honorar.pct) p.honorar.pct = honorarDefaults().pct; return p.honorar; }
   }
-  if (!honorarData) { try { honorarData = JSON.parse(localStorage.getItem('so_honorar') || 'null'); } catch (_) {} }
+  if (!honorarData && state.honorar) honorarData = state.honorar;   // seit 13.08.2026 in state, damit es im Backup ist
   if (!honorarData) honorarData = honorarDefaults();
   if (!honorarData.pct) honorarData.pct = honorarDefaults().pct;
   return honorarData;
 }
 function saveHonorarData() {
   if (honorarPid) { save(); return; }
-  try { localStorage.setItem('so_honorar', JSON.stringify(honorarData)); } catch (_) {}
+  state.honorar = honorarData; db.commit();
 }
 
 function computeHonorar(d) {
@@ -5348,7 +6206,7 @@ function viewHonorar() {
   const d = loadHonorar();
   const fld = (id, label, val, hint = '') => `<label class="field">${label}
     <input class="input hon-in" id="${id}" value="${esc(String(val))}" inputmode="decimal">
-    ${hint ? `<span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px;line-height:1.4">${hint}</span>` : ''}</label>`;
+    ${hint ? `<span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px;line-height:1.4">${hint}</span>` : ''}</label>`;
   const phaseRows = HONORAR_PHASEN.map(ph => `
     <tr>
       <td>${esc(ph.label)}</td>
@@ -5360,7 +6218,7 @@ function viewHonorar() {
   const pj = honorarPid ? findProjekt(honorarPid) : null;
   const head = pj
     ? `<div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(pj.name)}</div>
-       <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(pj.name)}</h1><div class="sub" style="margin-top:5px">Honorar-Rechner · SIA 102 (2003)</div></div>
+       <div class="detail-head"><div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(pj.name)}</h1><div class="sub" style="margin-top:5px">Honorar-Rechner · SIA 102 (2003)</div></div>
          <button class="btn" data-act="pdf-honorar">🖨 Drucken</button></div>
        ${projektTabs(pj, 'honorar')}`
     : `<div class="page-head"><div><h1>Honorar-Rechner</h1><div class="sub">Architektenhonorar nach Baukosten · SIA 102 (2003)</div></div>
@@ -5370,18 +6228,18 @@ function viewHonorar() {
     ${demoBanner('honorar')}
 
     <div class="card card-pad" style="max-width:780px;margin-bottom:16px;background:var(--brand-soft);border-color:transparent">
-      <h2 style="margin-top:0;font-size:15px">In 3 Schritten zum Honorar</h2>
-      <ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.8">
+      <h2 style="margin-top:0;font-size:var(--t-l, 15px)">In 3 Schritten zum Honorar</h2>
+      <ol style="margin:0;padding-left:18px;font-size:var(--t-s, 13px);line-height:1.8">
         <li>Ungefähre <strong>Baukosten</strong> eingeben.</li>
         <li><strong>Schwierigkeit</strong> wählen (meistens „normal").</li>
         <li><strong>Stundenansatz</strong> deines Büros eingeben (z.B. 140 CHF/h).</li>
       </ol>
-      <p style="margin:10px 0 0;font-size:13px">→ Das Honorar erscheint sofort unten. Mehr musst du nicht tun. Alles andere ist bereits sinnvoll voreingestellt.</p>
+      <p style="margin:10px 0 0;font-size:var(--t-s, 13px)">→ Das Honorar erscheint sofort unten. Mehr musst du nicht tun. Alles andere ist bereits sinnvoll voreingestellt.</p>
     </div>
 
     <details style="max-width:780px;margin-bottom:16px">
-      <summary style="cursor:pointer;font-weight:600;font-size:13.5px;padding:6px 0">❓ Was bedeuten diese Fachbegriffe? (kurz erklärt)</summary>
-      <div class="card card-pad" style="font-size:13px;line-height:1.6;margin-top:8px">
+      <summary style="cursor:pointer;font-weight:600;font-size:var(--t-m, 13.5px);padding:6px 0">❓ Was bedeuten diese Fachbegriffe? (kurz erklärt)</summary>
+      <div class="card card-pad" style="font-size:var(--t-s, 13px);line-height:1.6;margin-top:8px">
         <p style="margin:0 0 10px"><strong>Baukosten:</strong> Wie viel der Bau ungefähr kostet (ohne MwSt). Das Honorar wird als Anteil davon berechnet – grössere Bauten = mehr Arbeit = höheres Honorar.</p>
         <p style="margin:0 0 10px"><strong>Schwierigkeit (Schwierigkeitsgrad):</strong> Wie aufwändig der Bau ist. Eine einfache Lagerhalle macht weniger Arbeit als eine anspruchsvolle Villa. Für die meisten Wohn- und Geschäftshäuser passt <strong>„normal"</strong>.</p>
         <p style="margin:0 0 10px"><strong>SIA-Koeffizienten (Z1/Z2):</strong> Zwei feste Zahlen, die der Schweizer Architektenverband (SIA) jedes Jahr herausgibt. Sie sorgen dafür, dass das Honorar zur Teuerung passt. <strong>Für eine Schätzung lässt du die Standardwerte einfach stehen.</strong> Für eine exakte Abrechnung trägst du (unter „Detaileinstellungen") die aktuellen Werte des Jahres ein – die bekommst du beim SIA bzw. der KBOB.</p>
@@ -5391,13 +6249,13 @@ function viewHonorar() {
     </details>
 
     <div class="card card-pad" style="max-width:780px;margin-bottom:16px">
-      <h2 style="margin-top:0;font-size:15px">Deine Eingaben</h2>
+      <h2 style="margin-top:0;font-size:var(--t-l, 15px)">Deine Eingaben</h2>
       <label class="field">Projekt / Bezeichnung
         <input class="input hon-in" id="h_projekt" value="${esc(d.projekt)}" placeholder="z.B. Neubau MFH Bärenmätteli">
       </label>
       <label class="field">1. Baukosten (CHF)
         <input class="input hon-in" id="h_B" value="${esc(String(d.B))}" inputmode="decimal" placeholder="z.B. 3350000">
-        <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px;line-height:1.4">Wie viel kostet der Bau ungefähr? (ohne MwSt)</span>
+        <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px;line-height:1.4">Wie viel kostet der Bau ungefähr? (ohne MwSt)</span>
       </label>
       <label class="field">2. Schwierigkeit
         <select class="select hon-in" id="h_n">
@@ -5405,11 +6263,11 @@ function viewHonorar() {
           <option value="1"${n2(d.n) !== 0.85 && n2(d.n) !== 1.15 ? ' selected' : ''}>normal – z.B. Wohn-/Geschäftshaus</option>
           <option value="1.15"${n2(d.n) === 1.15 ? ' selected' : ''}>anspruchsvoll – z.B. aufwändiger Umbau / Villa</option>
         </select>
-        <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px;line-height:1.4">Im Zweifel „normal" wählen.</span>
+        <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px;line-height:1.4">Im Zweifel „normal" wählen.</span>
       </label>
       <label class="field">3. Stundenansatz (CHF pro Stunde)
         <input class="input hon-in" id="h_h" value="${esc(String(d.h))}" inputmode="decimal" placeholder="z.B. 140">
-        <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px;line-height:1.4">Was dein Büro pro Arbeitsstunde verrechnet (oft 130–160).</span>
+        <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px;line-height:1.4">Was dein Büro pro Arbeitsstunde verrechnet (oft 130–160).</span>
       </label>
     </div>
 
@@ -5419,12 +6277,12 @@ function viewHonorar() {
 
     ${honorarDetail ? `
     <div class="card card-pad" style="max-width:780px;margin-bottom:16px">
-      <h2 style="margin-top:0;font-size:15px">Detaileinstellungen <span class="muted" style="font-size:12px;font-weight:400">– nur für genaue Abrechnung, sonst so lassen</span></h2>
+      <h2 style="margin-top:0;font-size:var(--t-l, 15px)">Detaileinstellungen <span class="muted" style="font-size:var(--t-xs, 12px);font-weight:400">– nur für genaue Abrechnung, sonst so lassen</span></h2>
       <div class="form-row">
         ${fld('h_Z1', 'SIA-Koeffizient Z1', d.Z1, 'Jährlicher SIA-/KBOB-Wert.')}
         ${fld('h_Z2', 'SIA-Koeffizient Z2', d.Z2, 'Jährlicher SIA-/KBOB-Wert.')}
       </div>
-      <p class="muted" style="font-size:11.5px;margin:-2px 0 12px">Grundfaktor <strong>p = Z1 + Z2 / ∛B</strong>. Aktuelle Werte des Jahres beim SIA/KBOB nachschlagen.</p>
+      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:-2px 0 12px">Grundfaktor <strong>p = Z1 + Z2 / ∛B</strong>. Aktuelle Werte des Jahres beim SIA/KBOB nachschlagen.</p>
       <div class="form-row">
         ${fld('h_r', 'Anpassungsfaktor r', d.r, 'Besondere Umstände. Standard 1.0.')}
         ${fld('h_i', 'Teamfaktor i', d.i, 'Büro-/Teamgrösse. Standard 1.0.')}
@@ -5433,12 +6291,12 @@ function viewHonorar() {
         ${fld('h_s', 'Sonderleistungen s', d.s, 'Zuschlag Sonderleistungen. Standard 1.0.')}
         ${fld('h_mwst', 'MwSt %', d.mwst, 'CH zurzeit 8.1 %.')}
       </div>
-      <h3 style="font-size:13.5px;margin:18px 0 6px">Leistungsphasen · Anteile</h3>
+      <h3 style="font-size:var(--t-m, 13.5px);margin:18px 0 6px">Leistungsphasen · Anteile</h3>
       <table class="grid">
         <thead><tr><th>Phase</th><th class="num" style="width:90px">Anteil %</th><th class="num" style="width:120px">Stunden</th><th class="num" style="width:150px">Honorar</th></tr></thead>
         <tbody>${phaseRows}</tbody>
       </table>
-      <p class="muted" style="font-size:11.5px;margin:8px 0 0">Standard = volle Grundleistungen (100 %). Anteile reduzieren, falls Phasen entfallen (z.B. Vorprojekt durch anderes Büro).</p>
+      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:8px 0 0">Standard = volle Grundleistungen (100 %). Anteile reduzieren, falls Phasen entfallen (z.B. Vorprojekt durch anderes Büro).</p>
     </div>` : ''}
 
     <div class="card card-pad" style="max-width:780px" id="hon_out"></div>
@@ -5472,29 +6330,29 @@ function honorarRenderResult() {
   const B = n2(d.B), cb = B > 0 ? Math.cbrt(B) : 0;
 
   if (B <= 0 || n2(d.h) <= 0) {
-    out.innerHTML = `<h2 style="margin-top:0;font-size:15px">Dein Honorar</h2>
+    out.innerHTML = `<h2 style="margin-top:0;font-size:var(--t-l, 15px)">Dein Honorar</h2>
       <p class="muted" style="margin:0">Gib oben die <strong>Baukosten</strong> und den <strong>Stundenansatz</strong> ein – das Honorar erscheint dann automatisch hier.</p>`;
     return;
   }
   const pctOfB = c.H / B * 100;
   out.innerHTML = `
-    <h2 style="margin-top:0;font-size:15px">Dein Honorar</h2>
+    <h2 style="margin-top:0;font-size:var(--t-l, 15px)">Dein Honorar</h2>
     <div class="kpi-row" style="grid-template-columns:repeat(4,1fr)">
-      <div class="kpi"><div class="k-label">Honorar inkl. MwSt</div><div class="k-value" style="font-size:21px">${chf(c.Hmwst)}</div></div>
-      <div class="kpi"><div class="k-label">Honorar exkl. MwSt</div><div class="k-value" style="font-size:20px">${chf(c.H)}</div></div>
-      <div class="kpi"><div class="k-label">Geschätzte Stunden</div><div class="k-value" style="font-size:20px">${fmt(c.Tp)} h</div></div>
-      <div class="kpi"><div class="k-label">≈ Anteil der Baukosten</div><div class="k-value" style="font-size:20px">${pctOfB.toFixed(1)} %</div></div>
+      <div class="kpi"><div class="k-label">Honorar inkl. MwSt</div><div class="k-value" style="font-size:var(--t-xl, 21px)">${chf(c.Hmwst)}</div></div>
+      <div class="kpi"><div class="k-label">Honorar exkl. MwSt</div><div class="k-value" style="font-size:var(--t-xl, 20px)">${chf(c.H)}</div></div>
+      <div class="kpi"><div class="k-label">Geschätzte Stunden</div><div class="k-value" style="font-size:var(--t-xl, 20px)">${fmt(c.Tp)} h</div></div>
+      <div class="kpi"><div class="k-label">≈ Anteil der Baukosten</div><div class="k-value" style="font-size:var(--t-xl, 20px)">${pctOfB.toFixed(1)} %</div></div>
     </div>
     <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
-      <h3 style="font-size:13.5px;margin:0 0 8px">So kommt diese Zahl zustande</h3>
-      <div style="font-size:13px;line-height:1.85">
+      <h3 style="font-size:var(--t-m, 13.5px);margin:0 0 8px">So kommt diese Zahl zustande</h3>
+      <div style="font-size:var(--t-s, 13px);line-height:1.85">
         <div><strong>1.</strong> Aus Baukosten und Schwierigkeit ergeben sich die geschätzten <strong>Arbeitsstunden: ≈ ${fmt(c.Tp)} h</strong>.</div>
         <div><strong>2.</strong> Stunden × Stundenansatz: ${fmt(c.Tp)} h × ${esc(String(d.h))} CHF = <strong>${chf(c.H)}</strong> (ohne MwSt).</div>
         <div><strong>3.</strong> + MwSt ${c.mwst} % = <strong>${chf(c.Hmwst)}</strong> &nbsp;← Endbetrag.</div>
       </div>
       <details style="margin-top:10px">
-        <summary style="cursor:pointer;font-size:12px;color:var(--text-soft)">Genaue SIA-Formel anzeigen</summary>
-        <div style="font-size:12px;line-height:1.9;font-variant-numeric:tabular-nums;margin-top:6px">
+        <summary style="cursor:pointer;font-size:var(--t-xs, 12px);color:var(--text-soft)">Genaue SIA-Formel anzeigen</summary>
+        <div style="font-size:var(--t-xs, 12px);line-height:1.9;font-variant-numeric:tabular-nums;margin-top:6px">
           Grundfaktor p = Z1 + Z2 ∕ ∛B = ${esc(String(d.Z1))} + ${esc(String(d.Z2))} ∕ ${fmt(cb)} = ${c.p.toFixed(4)}<br>
           Stunden = Baukosten · p∕100 · Schwierigkeit · Leistungsanteil(${c.q}%)∕100 · r · i = ${fmt(c.Tp)} h<br>
           Honorar = Stunden · Stundenansatz · s = ${chf(c.H)}
@@ -5524,7 +6382,7 @@ function pdfHonorar() {
       <tr><td>MwSt ${esc(String(d.mwst))} %</td><td class="num">${chf(c.Hmwst - c.H)}</td></tr>
       <tr><td><b>Total inkl. MwSt</b></td><td class="num"><b>${chf(c.Hmwst)}</b></td></tr>
     </table>
-    <p class="muted" style="margin-top:14px;font-size:10.5px">Berechnung nach Baukosten gemäss Ordnung SIA 102 (2003). Z1/Z2 = SIA-Koeffizienten des gewählten Jahres. Ohne Gewähr.</p>`;
+    <p class="muted" style="margin-top:14px;font-size:var(--t-2xs, 10.5px)">Berechnung nach Baukosten gemäss Ordnung SIA 102 (2003). Z1/Z2 = SIA-Koeffizienten des gewählten Jahres. Ohne Gewähr.</p>`;
   const sub = `${d.projekt ? esc(d.projekt) + ' · ' : ''}Architektenhonorar nach Baukosten · SIA 102 (2003) · Stand ${fmtDate(todayIso())}`;
   openPrintDoc('Honorarberechnung', sub, inner);
 }
@@ -5621,11 +6479,11 @@ function bkpCatRows(filter) {
     if (/^\d{2}$/.test(b.code)) return `<div class="bkp-cat-grp">${esc(b.code)} · ${esc(b.label)}</div>`;
     return `<button type="button" class="bkp-cat-item" data-code="${esc(b.code)}" data-label="${esc(b.label)}"><span class="bkp-code">${esc(b.code)}</span> ${esc(b.label)}</button>`;
   }).join('');
-  return rows || '<div class="muted" style="padding:8px;font-size:12.5px">Kein Treffer.</div>';
+  return rows || '<div class="muted" style="padding:8px;font-size:var(--t-s, 12.5px)">Kein Treffer.</div>';
 }
 function bkpKatalogPanel() {
   return `<details id="bkpCat" style="margin-top:6px">
-    <summary style="cursor:pointer;font-weight:600;font-size:13px;padding:4px 0">📖 Kompletten BKP-Katalog durchsuchen &amp; auswählen</summary>
+    <summary style="cursor:pointer;font-weight:600;font-size:var(--t-s, 13px);padding:4px 0">📖 Kompletten BKP-Katalog durchsuchen &amp; auswählen</summary>
     <input class="input" id="bkpCatSearch" placeholder="Code oder Gewerk filtern… (z.B. „Maler" oder „28")" style="margin:6px 0 4px" autocomplete="off">
     <div id="bkpCatList" class="bkp-cat-list">${bkpCatRows('')}</div>
   </details>`;
@@ -5724,13 +6582,13 @@ function erinnerungenCard(p) {
         <input type="checkbox" data-act="erinnerung-done" data-pid="${p.id}" data-rid="${r.id}"${r.erledigt ? ' checked' : ''} title="erledigt">
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;${r.erledigt ? 'text-decoration:line-through' : ''}">${ERIN_ART[r.art]?.icon || '🔔'} ${esc(r.titel || 'Erinnerung')}</div>
-          <div class="muted" style="font-size:12px">${r.datum ? esc(fmtDate(r.datum)) : ''}${r.firma ? ' · ' + esc(r.firma) : ''}${r.notiz ? ' · ' + esc(r.notiz) : ''}</div>
+          <div class="muted" style="font-size:var(--t-xs, 12px)">${r.datum ? esc(fmtDate(r.datum)) : ''}${r.firma ? ' · ' + esc(r.firma) : ''}${r.notiz ? ' · ' + esc(r.notiz) : ''}</div>
         </div>
-        ${ueber ? '<span class="st amber" style="font-size:9px;padding:1px 6px">überfällig</span>' : (bald ? '<span class="st blue" style="font-size:9px;padding:1px 6px">bald</span>' : '')}
+        ${ueber ? '<span class="st amber" style="font-size:var(--t-2xs, 9px);padding:1px 6px">überfällig</span>' : (bald ? '<span class="st blue" style="font-size:var(--t-2xs, 9px);padding:1px 6px">bald</span>' : '')}
         <button class="x-btn" data-act="erinnerung-edit" data-pid="${p.id}" data-rid="${r.id}" title="Bearbeiten">✏</button>
         <button class="x-btn" data-act="erinnerung-rm" data-pid="${p.id}" data-rid="${r.id}">×</button>
       </div>`;
-    }).join('')}</div>` : `<p class="muted" style="font-size:12.5px;margin:6px 0 0">Noch keine Erinnerungen – z.B. „Maler 2 Wochen vor Start anrufen" oder „Fenster rechtzeitig abrufen".</p>`}
+    }).join('')}</div>` : `<p class="muted" style="font-size:var(--t-s, 12.5px);margin:6px 0 0">Noch keine Erinnerungen – z.B. „Maler 2 Wochen vor Start anrufen" oder „Fenster rechtzeitig abrufen".</p>`}
   </div>`;
 }
 function actErinnerung(pid, rid) {
@@ -5858,7 +6716,7 @@ function vergabeLabel(v) { return `${v.bkp ? 'BKP ' + v.bkp + ' ' : ''}${v.gewer
 
 // Generische Live-Suche in Kontakten (für mehrere Dialoge)
 function kontaktPickButton(k) {
-  return `<button type="button" data-id="${k.id}" class="ks-hit" style="display:block;width:100%;text-align:left;padding:7px 9px;border:1px solid var(--border);border-radius: 0;margin-bottom:5px;background:var(--surface);cursor:pointer;font-size:13px"><strong>${esc(k.firma)}</strong>${k.kategorie ? ` <span class="muted">· ${esc(k.kategorie)}</span>` : ''}${k.ort ? ` <span class="muted">· ${esc(k.ort)}</span>` : ''}</button>`;
+  return `<button type="button" data-id="${k.id}" class="ks-hit" style="display:block;width:100%;text-align:left;padding:7px 9px;border:1px solid var(--border);border-radius: 0;margin-bottom:5px;background:var(--surface);cursor:pointer;font-size:var(--t-s, 13px)"><strong>${esc(k.firma)}</strong>${k.kategorie ? ` <span class="muted">· ${esc(k.kategorie)}</span>` : ''}${k.ort ? ` <span class="muted">· ${esc(k.ort)}</span>` : ''}</button>`;
 }
 function attachKontaktSuche(searchId, resultsId, onPick) {
   const sr = $('#' + searchId); if (!sr) return;
@@ -5866,7 +6724,7 @@ function attachKontaktSuche(searchId, resultsId, onPick) {
     const q = sr.value.trim().toLowerCase(); const box = $('#' + resultsId); if (!box) return;
     if (!q) { box.innerHTML = ''; return; }
     const hits = (state.kontakte || []).filter(k => (k.firma || '').toLowerCase().includes(q) || (k.kategorie || '').toLowerCase().includes(q) || (k.ort || '').toLowerCase().includes(q)).slice(0, 8);
-    box.innerHTML = hits.length ? hits.map(kontaktPickButton).join('') : '<div class="muted" style="font-size:12px;padding:2px 4px">Keine Treffer in den Kontakten.</div>';
+    box.innerHTML = hits.length ? hits.map(kontaktPickButton).join('') : '<div class="muted" style="font-size:var(--t-xs, 12px);padding:2px 4px">Keine Treffer in den Kontakten.</div>';
     box.querySelectorAll('.ks-hit').forEach(b => b.addEventListener('click', () => { const k = (state.kontakte || []).find(x => x.id === b.dataset.id); if (k) onPick(k, box); }));
   });
 }
@@ -5917,7 +6775,7 @@ function viewBauherr(pid) {
     ${segB('alle', 'Alle', selW === 'alle')}
     ${einheiten.map(x => segB(x.u.id, `${esc(x.u.name || 'Einheit')}${x.u.eigentuemer ? ' · ' + esc(x.u.eigentuemer) : ''}`, selW === x.u.id)).join('')}
     ${segB('', 'Zusätze', selW === '')}
-  </div>${selEig || selKontakt ? `<div class="card card-pad" style="padding:8px 12px;margin:0 0 14px;background:var(--brand-soft);border-color:transparent;font-size:13px">👤 Eigentümer: <b>${esc(selEig || '—')}</b>${selKontakt ? ` · ${esc(selKontakt)}` : ''} <span class="muted">· <a href="#/projekt/${p.id}/listen">in Eigentümerliste bearbeiten</a></span></div>` : ''}` : '';
+  </div>${selEig || selKontakt ? `<div class="card card-pad" style="padding:8px 12px;margin:0 0 14px;background:var(--brand-soft);border-color:transparent;font-size:var(--t-s, 13px)">👤 Eigentümer: <b>${esc(selEig || '—')}</b>${selKontakt ? ` · ${esc(selKontakt)}` : ''} <span class="muted">· <a href="#/projekt/${p.id}/listen">in Eigentümerliste bearbeiten</a></span></div>` : ''}` : '';
   const firms = (p.bezugsfirmen || []);
   const byKat = {};
   firms.forEach(f => { const k = f.kategorie || 'Übrige'; (byKat[k] = byKat[k] || []).push(f); });
@@ -5933,16 +6791,16 @@ function viewBauherr(pid) {
   const showWhgCol = (selW === '');                                   // Wohnungen nur in „Zusätze" zeigen
   const sumNetto = ents.reduce((a, e) => a + entNetto(e), 0);
   const sumDelta = ents.reduce((a, e) => a + (entHasIst(e) ? (entNetto(e) - (Number(e.budget) || 0)) : 0), 0);
-  const thSub = (t, s) => `${t}<div style="font-weight:400;font-size:8.5px;color:var(--text-faint)">${s}</div>`;
+  const thSub = (t, s) => `${t}<div style="font-weight:400;font-size:var(--t-2xs, 8.5px);color:var(--text-faint)">${s}</div>`;
   const entsTable = ents.length ? `
     <table class="grid t-compact">
       <thead><tr><th style="width:46px">BKP</th>${showWhgCol ? '<th style="width:90px">Wohnungen</th>' : ''}<th style="width:96px">Status</th><th>Auswahlpunkt</th><th class="num" style="width:84px">${thSub('Budget WV', 'im Vertrag')}</th><th class="num" style="width:80px">${thSub('Offerte', 'Brutto')}</th><th class="num" style="width:52px">${thSub('Rab.', '%')}</th><th class="num" style="width:52px">${thSub('Skt.', '%')}</th><th class="num" style="width:88px">${thSub('Nach Auswahl', 'netto')}</th><th class="num" style="width:80px">${thSub('Δ', 'Mehr/Minder')}</th><th style="width:44px"></th></tr></thead>
-      <tbody>${ents.map(e => { const v = vergOf(e); const num = (feld, val, ph, w) => `<input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="${feld}" type="number" value="${val != null && val !== '' ? val : ''}" placeholder="${ph}" style="width:${w}px;height:26px;font-size:12px;text-align:right">`; const dd = entHasIst(e) ? (entNetto(e) - (Number(e.budget) || 0)) : null; return `
+      <tbody>${ents.map(e => { const v = vergOf(e); const num = (feld, val, ph, w) => `<input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="${feld}" type="number" value="${val != null && val !== '' ? val : ''}" placeholder="${ph}" style="width:${w}px;height:26px;font-size:var(--t-xs, 12px);text-align:right">`; const dd = entHasIst(e) ? (entNetto(e) - (Number(e.budget) || 0)) : null; return `
         <tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
           <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
-          ${showWhgCol ? `<td class="muted" style="font-size:11.5px">${esc(entUnitLabel(e))}</td>` : ''}
-          <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></td>
-          <td><strong>${esc(e.thema || '')}</strong>${(e.wohnungen && e.wohnungen.length) ? ` <span class="st blue" style="font-size:9px;padding:1px 6px">Zusatz · ${e.wohnungen.length}</span>` : ''}${e.entscheid ? `<div class="muted" style="font-size:12px;margin-top:2px">${entStatus(e) === 'entfaellt' ? 'Grund: ' : ''}${esc(e.entscheid)}</div>` : ''}</td>
+          ${showWhgCol ? `<td class="muted" style="font-size:var(--t-xs, 11.5px)">${esc(entUnitLabel(e))}</td>` : ''}
+          <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:var(--t-xs, 12px)">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></td>
+          <td><strong>${esc(e.thema || '')}</strong>${(e.wohnungen && e.wohnungen.length) ? ` <span class="st blue" style="font-size:var(--t-2xs, 9px);padding:1px 6px">Zusatz · ${e.wohnungen.length}</span>` : ''}${e.entscheid ? `<div class="muted" style="font-size:var(--t-xs, 12px);margin-top:2px">${entStatus(e) === 'entfaellt' ? 'Grund: ' : ''}${esc(e.entscheid)}</div>` : ''}</td>
           <td class="num">${num('budget', e.budget, '–', 80)}</td>
           <td class="num">${num('brutto', e.brutto, '–', 76)}</td>
           <td class="num">${num('rabatt', e.rabatt, '0', 44)}</td>
@@ -5966,18 +6824,18 @@ function viewBauherr(pid) {
     const f = entFaellig(p, e); if (!f) return '<span class="muted">—</span>';
     if (entStatus(e) !== 'offen') return `<span class="muted">${fmtDate(f)}</span>`;
     const ueber = f < t0; const tage = Math.round((dISO(f) - today()) / 86400000);
-    const badge = ueber ? '<span class="st amber" style="font-size:9px;padding:1px 6px">überfällig</span>' : (tage <= 21 ? `<span class="st blue" style="font-size:9px;padding:1px 6px">in ${tage} T</span>` : '<span class="st green" style="font-size:9px;padding:1px 6px">ok</span>');
+    const badge = ueber ? '<span class="st amber" style="font-size:var(--t-2xs, 9px);padding:1px 6px">überfällig</span>' : (tage <= 21 ? `<span class="st blue" style="font-size:var(--t-2xs, 9px);padding:1px 6px">in ${tage} T</span>` : '<span class="st green" style="font-size:var(--t-2xs, 9px);padding:1px 6px">ok</span>');
     return `<b>${fmtDate(f)}</b> ${badge}`;
   };
   const alleTable = allEnts.length ? `<table class="grid t-compact">
     <thead><tr><th style="width:132px">entscheiden bis</th><th style="width:44px">BKP</th><th style="width:118px">Einheit</th><th style="width:100px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:90px">Budget</th><th class="num" style="width:96px">Netto</th><th style="width:52px"></th></tr></thead>
     <tbody>${alleSorted.map(e => { const v = vergOf(e); const bp = v ? (v.budgetposten || []).find(x => (x.text || '').toLowerCase() === (e.thema || '').toLowerCase()) : null; return `<tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
-      <td style="font-size:12px">${faelligCell(e)}</td>
+      <td style="font-size:var(--t-xs, 12px)">${faelligCell(e)}</td>
       <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
-      <td class="muted" style="font-size:12px">${esc(entUnitLabel(e))}${(e.wohnungen && e.wohnungen.length) ? ' <span class="st blue" style="font-size:8.5px;padding:0 5px">Zusatz</span>' : ''}</td>
-      <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></td>
-      <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${e.entscheid ? `<div class="muted" style="font-size:12.5px;margin-top:2px">${esc(e.entscheid)}</div>` : ''}</td>
-      <td class="num"><input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="budget" type="number" value="${e.budget != null && e.budget !== '' ? e.budget : ''}" placeholder="–" style="width:82px;height:24px;font-size:11.5px;text-align:right"></td>
+      <td class="muted" style="font-size:var(--t-xs, 12px)">${esc(entUnitLabel(e))}${(e.wohnungen && e.wohnungen.length) ? ' <span class="st blue" style="font-size:var(--t-2xs, 8.5px);padding:0 5px">Zusatz</span>' : ''}</td>
+      <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:var(--t-xs, 12px)">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></td>
+      <td>${e.bereich ? `<span class="tag">${esc(e.bereich)}</span> ` : ''}<strong>${esc(e.thema || '')}</strong>${e.entscheid ? `<div class="muted" style="font-size:var(--t-s, 12.5px);margin-top:2px">${esc(e.entscheid)}</div>` : ''}</td>
+      <td class="num"><input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="budget" type="number" value="${e.budget != null && e.budget !== '' ? e.budget : ''}" placeholder="–" style="width:82px;height:24px;font-size:var(--t-xs, 11.5px);text-align:right"></td>
       <td class="num"><b>${entHasIst(e) ? chf(entNetto(e)) : '<span class="muted">–</span>'}</b></td>
       <td><button class="x-btn" data-act="edit-entscheidung" data-pid="${p.id}" data-eid="${e.id}" title="Bearbeiten">✏</button><button class="x-btn" data-act="rm-entscheidung" data-pid="${p.id}" data-eid="${e.id}">×</button></td>
     </tr>`; }).join('')}
@@ -5990,7 +6848,7 @@ function viewBauherr(pid) {
       <table class="grid"><thead><tr><th>Firma</th><th style="width:120px">Ort</th><th style="width:180px">Kontakt</th><th style="width:170px">Web / Adresse</th><th style="width:40px"></th></tr></thead>
         <tbody>${byKat[k].map(f => `
           <tr>
-            <td><strong>${esc(f.firma)}</strong>${f.notiz ? `<div class="muted" style="font-size:12px">${esc(f.notiz)}</div>` : ''}</td>
+            <td><strong>${esc(f.firma)}</strong>${f.notiz ? `<div class="muted" style="font-size:var(--t-xs, 12px)">${esc(f.notiz)}</div>` : ''}</td>
             <td>${esc(f.ort || '')}</td>
             <td>${esc([f.kontakt, f.telefon].filter(Boolean).join(' · '))}</td>
             <td class="muted">${esc(f.web || '')}</td>
@@ -6003,23 +6861,23 @@ function viewBauherr(pid) {
     const v = vergabeForEnt(p, e);
     const k = v && v.firma ? kontaktByFirma(v.firma) : null;
     const untTxt = v
-      ? `${esc(v.gewerk || '')}${v.firma ? `: <strong>${esc(v.firma)}</strong>` : ' <span class="muted">(noch nicht vergeben)</span>'}${k && (k.person || k.telefon) ? `<div class="muted" style="font-size:12px">${esc([k.person, k.telefon].filter(Boolean).join(' · '))}</div>` : ''}`
+      ? `${esc(v.gewerk || '')}${v.firma ? `: <strong>${esc(v.firma)}</strong>` : ' <span class="muted">(noch nicht vergeben)</span>'}${k && (k.person || k.telefon) ? `<div class="muted" style="font-size:var(--t-xs, 12px)">${esc([k.person, k.telefon].filter(Boolean).join(' · '))}</div>` : ''}`
       : '<span class="muted">–</span>';
     const a = e.ausstellung;
     const ausTxt = a && a.firma
-      ? `<strong>${esc(a.firma)}</strong>${a.ort ? ` · ${esc(a.ort)}` : ''}${a.telefon ? `<div class="muted" style="font-size:12px">${esc(a.telefon)}</div>` : ''}`
+      ? `<strong>${esc(a.firma)}</strong>${a.ort ? ` · ${esc(a.ort)}` : ''}${a.telefon ? `<div class="muted" style="font-size:var(--t-xs, 12px)">${esc(a.telefon)}</div>` : ''}`
       : '<span class="muted">–</span>';
-    return `<tr><td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>${hasWhg ? `<td class="muted" style="font-size:12px">${esc(whgLabel(e.wohnung || ''))}</td>` : ''}<td><strong>${esc(e.thema || '')}</strong></td><td>${untTxt}</td><td>${ausTxt}</td><td><span class="st ${ENT_STATUS[entStatus(e)].color}" style="font-size:10.5px;padding:2px 8px">${ENT_STATUS[entStatus(e)].label}</span></td></tr>`;
+    return `<tr><td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>${hasWhg ? `<td class="muted" style="font-size:var(--t-xs, 12px)">${esc(whgLabel(e.wohnung || ''))}</td>` : ''}<td><strong>${esc(e.thema || '')}</strong></td><td>${untTxt}</td><td>${ausTxt}</td><td><span class="st ${ENT_STATUS[entStatus(e)].color}" style="font-size:var(--t-2xs, 10.5px);padding:2px 8px">${ENT_STATUS[entStatus(e)].label}</span></td></tr>`;
   }).join('');
 
   // Kompaktes Eigentümer-Accordion: je Einheit eine Zeile, aufklappbar mit Detail + Kostenaufbau
   const entRowFull = e => {
     const v = vergOf(e); const istSet = (e.ist != null && e.ist !== ''); const d = istSet ? (Number(e.ist) || 0) - (Number(e.budget) || 0) : null;
-    const bdgIn = (feld, val, ph) => `<input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="${feld}" type="number" value="${val != null && val !== '' ? val : ''}" placeholder="${ph}" style="width:86px;height:26px;font-size:12px;text-align:right">`;
+    const bdgIn = (feld, val, ph) => `<input class="input ent-bdg" data-pid="${p.id}" data-eid="${e.id}" data-feld="${feld}" type="number" value="${val != null && val !== '' ? val : ''}" placeholder="${ph}" style="width:86px;height:26px;font-size:var(--t-xs, 12px);text-align:right">`;
     return `<tr class="${entStatus(e) !== 'offen' ? 'done-row' : ''}">
       <td class="muted">${e.bkp ? esc(e.bkp) : (v && v.bkp ? esc(v.bkp) : '–')}</td>
-      <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:12px">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></td>
-      <td><strong>${esc(e.thema || '')}</strong>${(e.wohnungen && e.wohnungen.length) ? ` <span class="st blue" style="font-size:9px;padding:1px 6px">Zusatz</span>` : ''}${e.entscheid ? `<div class="muted" style="font-size:12px;margin-top:2px">${entStatus(e) === 'entfaellt' ? 'Grund: ' : ''}${esc(e.entscheid)}</div>` : ''}</td>
+      <td><select class="select ent-status" data-pid="${p.id}" data-eid="${e.id}" style="padding:3px 6px;font-size:var(--t-xs, 12px)">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${entStatus(e) === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></td>
+      <td><strong>${esc(e.thema || '')}</strong>${(e.wohnungen && e.wohnungen.length) ? ` <span class="st blue" style="font-size:var(--t-2xs, 9px);padding:1px 6px">Zusatz</span>` : ''}${e.entscheid ? `<div class="muted" style="font-size:var(--t-xs, 12px);margin-top:2px">${entStatus(e) === 'entfaellt' ? 'Grund: ' : ''}${esc(e.entscheid)}</div>` : ''}</td>
       <td class="num">${bdgIn('budget', e.budget, '–')}</td>
       <td class="num">${bdgIn('ist', e.ist, 'offen')}</td>
       <td class="num ${dC(d || 0)}">${d != null && Math.abs(d) > 0.5 ? (d > 0 ? '+' : '') + chf(d) : '–'}</td>
@@ -6027,7 +6885,7 @@ function viewBauherr(pid) {
     </tr>`;
   };
   const detailTable = list => `<table class="grid t-compact"><thead><tr><th style="width:50px">BKP</th><th style="width:104px">Status</th><th>Auswahlpunkt / Entscheid</th><th class="num" style="width:92px">Budget</th><th class="num" style="width:92px">Tatsächlich</th><th class="num" style="width:78px">Δ</th><th style="width:50px"></th></tr></thead><tbody>${list.map(entRowFull).join('')}</tbody></table>`;
-  const kostenBox = k => { const dcol = k.delta > 0.5 ? 'var(--s-red)' : (k.delta < -0.5 ? 'var(--s-green)' : 'inherit'); return `<div style="margin-top:8px;padding:9px 12px;background:var(--surface-2);border-radius: 0;font-size:12.5px;line-height:1.85;max-width:440px;margin-left:auto">
+  const kostenBox = k => { const dcol = k.delta > 0.5 ? 'var(--s-red)' : (k.delta < -0.5 ? 'var(--s-green)' : 'inherit'); return `<div style="margin-top:8px;padding:9px 12px;background:var(--surface-2);border-radius: 0;font-size:var(--t-s, 12.5px);line-height:1.85;max-width:440px;margin-left:auto">
     <div style="display:flex;justify-content:space-between"><span class="muted">Budget (im Werkvertrag)</span>${chf(k.budgetWV)}</div>
     <div style="display:flex;justify-content:space-between"><span class="muted">Nach Auswahl (netto)</span><b>${chf(k.nachAuswahl)}</b></div>
     <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid var(--border);margin-top:3px;padding-top:3px;color:${dcol}"><span>= Mehr-/Minderkosten</span>${(k.delta > 0 ? '+' : '') + chf(k.delta)}</div>
@@ -6038,10 +6896,10 @@ function viewBauherr(pid) {
     const k = eigKosten(list); const offenN = list.filter(e => entStatus(e) === 'offen').length; const open = bauherrOpen.has(key);
     return `<div class="card" style="margin-bottom:10px">
       <div data-act="bauherr-acc" data-pid="${p.id}" data-uid="${key}" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 14px;cursor:pointer">
-        <div style="min-width:0"><span style="color:var(--text-faint);margin-right:6px">${open ? '▾' : '▸'}</span><b>${esc(titel)}</b>${owner ? ` · 👤 ${esc(owner)}` : ''}${kontakt ? ` <span class="muted" style="font-size:12px">· ${esc(kontakt)}</span>` : ''}</div>
-        <div style="display:flex;align-items:center;gap:14px;white-space:nowrap;font-size:12.5px"><span class="muted">${offenN ? `<span class="st amber" style="font-size:9px;padding:1px 6px">${offenN} offen</span> ` : ''}${list.length} Pkt.</span><span class="muted">netto ${chf(k.netto)}</span><span><b>Brutto ${chf(k.brutto)}</b></span></div>
+        <div style="min-width:0"><span style="color:var(--text-faint);margin-right:6px">${open ? '▾' : '▸'}</span><b>${esc(titel)}</b>${owner ? ` · 👤 ${esc(owner)}` : ''}${kontakt ? ` <span class="muted" style="font-size:var(--t-xs, 12px)">· ${esc(kontakt)}</span>` : ''}</div>
+        <div style="display:flex;align-items:center;gap:14px;white-space:nowrap;font-size:var(--t-s, 12.5px)"><span class="muted">${offenN ? `<span class="st amber" style="font-size:var(--t-2xs, 9px);padding:1px 6px">${offenN} offen</span> ` : ''}${list.length} Pkt.</span><span class="muted">netto ${chf(k.netto)}</span><span><b>Brutto ${chf(k.brutto)}</b></span></div>
       </div>
-      ${open ? `<div style="padding:0 8px 10px">${list.length ? detailTable(list) : '<p class="muted" style="padding:4px 8px;font-size:12.5px">Noch keine Einträge.</p>'}${list.length ? kostenBox(k) : ''}
+      ${open ? `<div style="padding:0 8px 10px">${list.length ? detailTable(list) : '<p class="muted" style="padding:4px 8px;font-size:var(--t-s, 12.5px)">Noch keine Einträge.</p>'}${list.length ? kostenBox(k) : ''}
         <div style="display:flex;gap:6px;padding:8px 8px 2px"><button class="btn xs" data-act="bauherr-add" data-pid="${p.id}" data-w="${key}" type="button">+ Eintrag</button><button class="btn xs ghost" data-act="bauherr-std" data-pid="${p.id}" data-w="${key}" type="button">+ Standardliste</button></div>
       </div>` : ''}</div>`;
   };
@@ -6051,7 +6909,7 @@ function viewBauherr(pid) {
 
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Eigentümerwünsche · Auswahlentscheide je Eigentümer/Einheit${hasWhg ? ` · ${einheiten.length} Einheiten` : ''}</div></div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Eigentümerwünsche · Auswahlentscheide je Eigentümer/Einheit${hasWhg ? ` · ${einheiten.length} Einheiten` : ''}</div></div></div>
     ${projektTabs(p, 'bauherr')}
     ${demoBanner('bauherr')}
     ${whgChips}
@@ -6062,7 +6920,7 @@ function viewBauherr(pid) {
         <button class="btn sm ghost" data-act="standard-bemusterung" data-pid="${p.id}" title="Übliche Auswahlpunkte für die gewählte Einheit ergänzen">+ Standardliste</button>
         <button class="btn sm" data-act="new-entscheidung" data-pid="${p.id}">+ Eintrag</button>
       </div></div>
-    <p class="muted" style="font-size:12px;margin:-2px 0 12px">${hasWhg && selW === 'alle' ? '„Alle" = Entscheide nach <b>Fälligkeit</b> aus dem Terminprogramm (entscheiden bis = Einbau − Bestellfrist).' : (hasWhg ? 'Oben den Eigentümer wählen – „+ Eintrag"/„Standardliste" erfassen für diese Einheit.' : 'Auswahlpunkte führen: offen → gewählt / entfällt.')} Beträge <b>netto</b> (exkl. MwSt, n. Rabatt/Skonto). Architektenzuschlag: <input class="input arch-z" type="number" value="${archZuschlagP()}" style="width:50px;height:24px;font-size:12px;text-align:right"> % auf netto vor MwSt ${mwstSatz()} %.</p>
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin:-2px 0 12px">${hasWhg && selW === 'alle' ? '„Alle" = Entscheide nach <b>Fälligkeit</b> aus dem Terminprogramm (entscheiden bis = Einbau − Bestellfrist).' : (hasWhg ? 'Oben den Eigentümer wählen – „+ Eintrag"/„Standardliste" erfassen für diese Einheit.' : 'Auswahlpunkte führen: offen → gewählt / entfällt.')} Beträge <b>netto</b> (exkl. MwSt, n. Rabatt/Skonto). Architektenzuschlag: <input class="input arch-z" type="number" value="${archZuschlagP()}" style="width:50px;height:24px;font-size:var(--t-xs, 12px);text-align:right"> % auf netto vor MwSt ${mwstSatz()} %.</p>
     ${hasWhg && selW === 'alle'
       ? `<div class="card">${alleTable}</div>${allEnts.length ? kostenBox(eigKosten(allEnts)) : ''}`
       : `<div class="card">${entsTable}</div>${ents.length ? kostenBox(eigKosten(ents)) : ''}`}
@@ -6072,7 +6930,7 @@ function viewBauherr(pid) {
         <button class="btn sm secondary" data-act="pdf-bezugsfirmen" data-pid="${p.id}">🖨 Drucken</button>
         <button class="btn sm" data-act="new-bezugsfirma" data-pid="${p.id}">+ Firma</button>
       </div></div>
-    <p class="muted" style="font-size:12.5px;margin:-4px 0 10px">Firmen / Ausstellungen, bei denen die Bauherrschaft auswählen kann (Küche, Bad, Fliesen, Parkett …) – zum Mitgeben.</p>
+    <p class="muted" style="font-size:var(--t-s, 12.5px);margin:-4px 0 10px">Firmen / Ausstellungen, bei denen die Bauherrschaft auswählen kann (Küche, Bad, Fliesen, Parkett …) – zum Mitgeben.</p>
     <div class="card card-pad">${firmsHtml}</div>
   `);
   $$('.ent-status').forEach(sel => sel.addEventListener('change', () => setEntscheidungStatus(sel.dataset.pid, sel.dataset.eid, sel.value)));
@@ -6101,14 +6959,14 @@ function actNewEntscheidung(pid, eid) {
       <label class="field">Status <select class="select" id="en_status">${Object.keys(ENT_STATUS).map(k => `<option value="${k}"${(e ? entStatus(e) : 'offen') === k ? ' selected' : ''}>${ENT_STATUS[k].label}</option>`).join('')}</select></label>
       ${wohnungSelect || '<label class="field">&nbsp;</label>'}
     </div>
-    ${einhListe.length ? `<label class="field" style="margin-top:2px">Zusatz – gilt für mehrere Eigentümer <span class="muted" style="font-weight:400;font-size:11px">(Mehrfachauswahl; erscheint dann bei jedem)</span>
-      <div style="display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:5px;padding:8px 10px;border:1px solid var(--border);border-radius: 0">${einhListe.map(x => `<label style="display:flex;gap:5px;align-items:center;font-size:12.5px;font-weight:400;cursor:pointer"><input type="checkbox" class="en-multi" value="${x.u.id}"${(e && (e.wohnungen || []).includes(x.u.id)) ? ' checked' : ''}> ${esc(x.u.name || 'Einheit')}${x.u.eigentuemer ? ' · ' + esc(x.u.eigentuemer) : ''}</label>`).join('')}</div>
-      <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Angekreuzt = der Punkt erscheint bei jedem dieser Eigentümer (überschreibt die einzelne Wohnung oben).</span>
+    ${einhListe.length ? `<label class="field" style="margin-top:2px">Zusatz – gilt für mehrere Eigentümer <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(Mehrfachauswahl; erscheint dann bei jedem)</span>
+      <div style="display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:5px;padding:8px 10px;border:1px solid var(--border);border-radius: 0">${einhListe.map(x => `<label style="display:flex;gap:5px;align-items:center;font-size:var(--t-s, 12.5px);font-weight:400;cursor:pointer"><input type="checkbox" class="en-multi" value="${x.u.id}"${(e && (e.wohnungen || []).includes(x.u.id)) ? ' checked' : ''}> ${esc(x.u.name || 'Einheit')}${x.u.eigentuemer ? ' · ' + esc(x.u.eigentuemer) : ''}</label>`).join('')}</div>
+      <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px">Angekreuzt = der Punkt erscheint bei jedem dieser Eigentümer (überschreibt die einzelne Wohnung oben).</span>
     </label>` : ''}
     <hr style="border:none;border-top:1px solid var(--border);margin:14px 0 10px">
     <label class="field">Unternehmer aus Projekt (Werkvertrag)
       <select class="select" id="en_vid">${vopts}</select>
-      <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Wer dieses Gewerk ausführt – erscheint im Spiegelbild „Bei wem melden".</span>
+      <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px">Wer dieses Gewerk ausführt – erscheint im Spiegelbild „Bei wem melden".</span>
     </label>
     <label class="field">Ausstellung / Materialauswahl bei (optional) <input class="input" id="en_aussearch" placeholder="🔎 in Kontakten suchen…" autocomplete="off"></label>
     <div id="en_ausresults" style="margin:-4px 0 8px"></div>
@@ -6121,7 +6979,7 @@ function actNewEntscheidung(pid, eid) {
   attachKontaktSuche('en_aussearch', 'en_ausresults', (k, box) => {
     const set = (fid, val) => { const el = $('#' + fid); if (el && val != null) el.value = val; };
     set('en_ausfirma', k.firma); set('en_ausort', k.ort); set('en_austel', k.telefon);
-    box.innerHTML = '<div class="muted" style="font-size:12px;padding:2px 4px">✓ aus Kontakt übernommen.</div>';
+    box.innerHTML = '<div class="muted" style="font-size:var(--t-xs, 12px);padding:2px 4px">✓ aus Kontakt übernommen.</div>';
   });
   // BKP gewählt → Thema vorschlagen, falls noch leer
   const bkpEl = $('#en_bkp');
@@ -6157,9 +7015,41 @@ function updateEntscheidung(pid, eid) {
   const p = findProjekt(pid); const e = (p.entscheidungen || []).find(x => x.id === eid); if (!e) return;
   Object.assign(e, readEntscheidung()); syncEntBudgetposten(p, e); save(); closeModal(); router(); toast('Gespeichert');
 }
+/* Konditionen des Werkvertrags eines Gewerks.
+   ---------------------------------------------------------------------
+   Wird nach der Bemusterung eine Offerte für die gewählte Variante erfasst,
+   sind Rabatt und Skonto NICHT neu zu verhandeln — sie stehen seit dem
+   Werkvertrag fest. Deshalb werden sie von dort übernommen.
+
+   Übernommen werden nur die PROZENTE. Absolute Abzüge (…Btr) gehören zum
+   Brutto des Werkvertrags und wären auf einen anderen Betrag sinnlos. */
+function wvKonditionen(v) {
+  if (!v) return null;
+  const eing = v.eingeladene || [];
+  const traeger = eing.find(x => x.vergabe && x.vergabe.brutto != null)
+               || (v.firma && eing.find(x => x.firma === v.firma))
+               || eing[0];
+  const c = traeger && (traeger.vergabe || traeger.abgebot || traeger.offerte);
+  if (!c) return null;
+  const hat = ['rabatt', 'skonto', 'weitereAbz'].some(k => c[k] != null && c[k] !== '');
+  if (!hat) return null;
+  return { rabatt: c.rabatt, skonto: c.skonto, weitereAbz: c.weitereAbz, firma: traeger.firma || v.firma || '' };
+}
+
 function setEntBudget(pid, eid, feld, val) {
   const p = findProjekt(pid); const e = (p.entscheidungen || []).find(x => x.id === eid); if (!e) return;
   e[feld] = (val === '' || val == null) ? '' : (Number(val) || 0);
+
+  // Erste Offerte nach der Auswahl: Konditionen aus dem Werkvertrag holen,
+  // statt sie abzutippen. Eigene Werte bleiben unangetastet.
+  if (feld === 'brutto' && e.brutto !== '' && !['rabatt', 'skonto', 'weitereAbz'].some(k => e[k] != null && e[k] !== '')) {
+    const k = wvKonditionen(vergabeForEnt(p, e));
+    if (k) {
+      e.rabatt = k.rabatt; e.skonto = k.skonto; e.weitereAbz = k.weitereAbz;
+      toast('Konditionen aus dem Werkvertrag übernommen' + (k.firma ? ' (' + k.firma + ')' : ''));
+    }
+  }
+
   syncEntBudgetposten(p, e);   // Budget WV + Auswahl ins verknüpfte Gewerk (Baukosten)
   save(); viewBauherr(pid);    // Δ + Summen aktualisieren
 }
@@ -6188,7 +7078,7 @@ function setEntscheidungStatus(pid, eid, status) {
 }
 
 // Übliche Bemusterungspunkte ergänzen (nur fehlende, anhand des Themas)
-// Eigentümerwünsche je Einheit als BKP-299.x-Position in den Baukosten anlegen/aktualisieren (wie Hefti-Praxis)
+// Eigentümerwünsche je Einheit als BKP-299.x-Position in den Baukosten anlegen/aktualisieren (wie in der Baupraxis üblich)
 function bauherrToBaukosten(pid) {
   const p = findProjekt(pid); if (!p) return;
   const einh = alleEinheiten(p);
@@ -6252,7 +7142,7 @@ function actNewBezugsfirma(pid) {
     set('bz_firma', k.firma); set('bz_ort', k.ort); set('bz_kontakt', k.person); set('bz_tel', k.telefon);
     if (k.email) set('bz_web', k.email);
     if (k.kategorie && $('#bz_kat') && !$('#bz_kat').value) set('bz_kat', k.kategorie);
-    box.innerHTML = '<div class="muted" style="font-size:12px;padding:2px 4px">✓ aus Kontakt übernommen – unten prüfen &amp; speichern.</div>';
+    box.innerHTML = '<div class="muted" style="font-size:var(--t-xs, 12px);padding:2px 4px">✓ aus Kontakt übernommen – unten prüfen &amp; speichern.</div>';
   });
 }
 function saveBezugsfirma(pid) {
@@ -6314,7 +7204,7 @@ function viewProtokolle(pid) {
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Protokolle &amp; Aktennotizen</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Protokolle &amp; Aktennotizen</div></div>
     </div>
     ${projektTabs(p, 'protokolle', `
       <button class="btn sm secondary" data-act="sr-config" data-pid="${p.id}" title="Wiederkehrende Sitzungen einrichten">🗓 Sitzungsraster</button>
@@ -6327,7 +7217,7 @@ function viewProtokolle(pid) {
       const protBy = {}; (p.protokolle || []).forEach(pr => { if (pr.datum) protBy[pr.datum] = pr; });
       return `<div class="card card-pad" style="margin-bottom:14px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;flex-wrap:wrap"><b>🗓 ${esc(r.label || 'Sitzung')} · alle ${r.intervallWochen || 1} Wo</b><button class="btn sm ghost" data-act="sr-config" data-pid="${p.id}">✎ Raster bearbeiten</button></div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px">${next.length ? next.map(d => { const pr = protBy[d]; return pr ? `<a class="chip active" href="#/projekt/${p.id}/protokoll/${pr.id}" title="Protokoll öffnen">${fmtDate(d)} ✓</a>` : `<button class="chip" data-act="new-protokoll" data-pid="${p.id}" data-kind="sitzung" data-datum="${d}" title="Protokoll für diesen Termin anlegen">${fmtDate(d)} +</button>`; }).join('') : '<span class="muted" style="font-size:12.5px">Keine kommenden Termine.</span>'}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${next.length ? next.map(d => { const pr = protBy[d]; return pr ? `<a class="chip active" href="#/projekt/${p.id}/protokoll/${pr.id}" title="Protokoll öffnen">${fmtDate(d)} ✓</a>` : `<button class="chip" data-act="new-protokoll" data-pid="${p.id}" data-kind="sitzung" data-datum="${d}" title="Protokoll für diesen Termin anlegen">${fmtDate(d)} +</button>`; }).join('') : '<span class="muted" style="font-size:var(--t-s, 12.5px)">Keine kommenden Termine.</span>'}</div>
       </div>`;
     })()}
     <div class="toolbar">
@@ -6364,7 +7254,7 @@ function personCard(label, kind, items, pid, prid) {
   return `<div class="dstat">
     <div class="l">${label} (${(items || []).length})</div>
     <div class="pchips">
-      ${(items || []).map((nm, i) => `<span class="pchip">${esc(nm)}<button class="x-btn" data-act="rm-person" data-pid="${pid}" data-prid="${prid}" data-kind="${kind}" data-idx="${i}">×</button></span>`).join('') || '<span class="muted" style="font-size:12px">—</span>'}
+      ${(items || []).map((nm, i) => `<span class="pchip">${esc(nm)}<button class="x-btn" data-act="rm-person" data-pid="${pid}" data-prid="${prid}" data-kind="${kind}" data-idx="${i}">×</button></span>`).join('') || '<span class="muted" style="font-size:var(--t-xs, 12px)">—</span>'}
     </div>
     <div class="chip-add">
       <input class="input" id="add_${kind}" placeholder="Name + Enter…" autocomplete="off">
@@ -6377,7 +7267,7 @@ function personCard(label, kind, items, pid, prid) {
 function traktandumCard(tr, pid, prid) {
   return `<div class="card" style="margin-bottom:14px">
     <div class="card-pad" style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px">
-      <h3 style="margin:0;font-size:15px">${esc(tr.nr)}. ${esc(tr.titel)}</h3>
+      <h3 style="margin:0;font-size:var(--t-l, 15px)">${esc(tr.nr)}. ${esc(tr.titel)}</h3>
       <div style="display:flex;gap:6px;align-items:center">
         <button class="btn sm ghost" data-act="new-eintrag" data-pid="${pid}" data-prid="${prid}" data-tid="${tr.id}">+ Eintrag</button>
         <button class="x-btn" data-act="rm-traktandum" data-pid="${pid}" data-prid="${prid}" data-tid="${tr.id}">×</button>
@@ -6419,7 +7309,7 @@ function viewProtokollDetail(pid, prid) {
     </div>
     <div class="detail-head">
       <div>
-        <h1 style="margin:0;font-size:22px">${esc(protokollTitel(pr))} <span class="st ${t.color}" style="vertical-align:middle">${t.kurz}</span></h1>
+        <h1 style="margin:0;font-size:var(--t-xl, 22px)">${esc(protokollTitel(pr))} <span class="st ${t.color}" style="vertical-align:middle">${t.kurz}</span></h1>
         <div class="sub" style="margin-top:5px">${fmtDate(pr.datum)}${pr.zeit ? ' · ' + esc(pr.zeit) : ''}${pr.ort ? ' · ' + esc(pr.ort) : ''}${pr.leitung ? ' · Leitung: ' + esc(pr.leitung) : ''}</div>
       </div>
       <div style="display:flex;gap:10px">
@@ -6486,7 +7376,7 @@ function rasterDaten(p, fromIso, toIso, max) {
 function actSitzungsraster(pid) {
   const p = findProjekt(pid); if (!p) return; const r = p.sitzungsraster || { aktiv: true, startIso: '', intervallWochen: 1, label: 'Bausitzung' };
   openModal('Sitzungsraster', `
-    <p class="muted" style="font-size:12.5px;margin-top:0">Wiederkehrende Sitzungen (z.B. wöchentliche Bausitzung). Erscheinen als Linien im Terminprogramm, als Liste hier und im Kalender – pro Termin kannst du direkt ein Protokoll anlegen.</p>
+    <p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:0">Wiederkehrende Sitzungen (z.B. wöchentliche Bausitzung). Erscheinen als Linien im Terminprogramm, als Liste hier und im Kalender – pro Termin kannst du direkt ein Protokoll anlegen.</p>
     <label class="field" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="sr_aktiv"${r.aktiv !== false ? ' checked' : ''}> Sitzungsraster aktiv (ein-/ausblenden)</label>
     <label class="field" style="margin-top:10px">Bezeichnung <input class="input" id="sr_label" value="${esc(r.label || 'Bausitzung')}" placeholder="z.B. Bausitzung"></label>
     <div class="form-row" style="margin-top:8px">
@@ -6572,17 +7462,17 @@ function delProtokoll(pid, prid) {
 function actCopyProtokoll(pid, prid) {
   const p = findProjekt(pid); const src = findProtokoll(p, prid);
   const t = PROT_TYP[src.typ];
-  const cb = (id, label, checked) => `<label style="display:flex;align-items:center;gap:9px;font-size:13px;cursor:pointer">
+  const cb = (id, label, checked) => `<label style="display:flex;align-items:center;gap:9px;font-size:var(--t-s, 13px);cursor:pointer">
     <input type="checkbox" id="${id}" ${checked ? 'checked' : ''} style="width:17px;height:17px;accent-color:var(--brand)"> ${label}</label>`;
   openModal('Protokoll kopieren', `
-    <p style="margin:0;font-size:13px">Neue Kopie von <strong>${esc(protokollTitel(src))}</strong> als ${t.label} <strong>Nr. ${nextProtNr(p, src.typ)}</strong> (Datum: heute).</p>
+    <p style="margin:0;font-size:var(--t-s, 13px)">Neue Kopie von <strong>${esc(protokollTitel(src))}</strong> als ${t.label} <strong>Nr. ${nextProtNr(p, src.typ)}</strong> (Datum: heute).</p>
     <div style="display:flex;flex-direction:column;gap:11px;margin-top:4px">
       ${cb('cp_personen', 'Teilnehmer / Abwesende / Verteiler übernehmen', true)}
       ${cb('cp_traktanden', 'Traktanden übernehmen (Titel)', true)}
       ${cb('cp_eintraege', 'Alle Einträge mitkopieren', false)}
       ${cb('cp_pendenzen', 'Offene Pendenzen übertragen (als Traktandum „Pendenzen aus letzter Sitzung")', true)}
     </div>
-    <p class="muted" style="font-size:12px;margin:0">Tipp: Für die nächste Sitzung Teilnehmer + Traktanden übernehmen und offene Pendenzen übertragen — die Originale gelten dann als weitergezogen.</p>
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin:0">Tipp: Für die nächste Sitzung Teilnehmer + Traktanden übernehmen und offene Pendenzen übertragen — die Originale gelten dann als weitergezogen.</p>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-copy" data-pid="${pid}" data-prid="${prid}">Kopie erstellen</button>`);
 }
 
@@ -6659,7 +7549,7 @@ function actPickPersonen(pid, prid, kind) {
         const dis = vorhanden.has(label);
         return `<label class="inv-pick" data-search="${esc((k.firma + ' ' + (k.person || '') + ' ' + k.kategorie + ' ' + (k.ort || '')).toLowerCase())}" style="${dis ? 'opacity:.45' : ''}">
           <input type="checkbox" data-val="${esc(label)}" ${dis ? 'disabled' : ''}>
-          <div><div style="font-weight:600">${esc(label)}</div><div class="muted" style="font-size:12px">${esc(k.kategorie)}${k.ort ? ' · ' + esc(k.ort) : ''}</div></div>
+          <div><div style="font-weight:600">${esc(label)}</div><div class="muted" style="font-size:var(--t-xs, 12px)">${esc(k.kategorie)}${k.ort ? ' · ' + esc(k.ort) : ''}</div></div>
         </label>`;
       }).join('') : '<p class="muted" style="padding:8px">Keine Kontakte vorhanden.</p>'}
     </div>
@@ -6848,18 +7738,27 @@ function viewVergabeDetail(pid, vid) {
   gwList.forEach(g => { const k = String(g.bkp || '0').trim()[0] || '0'; (gwGroups[k] = gwGroups[k] || []).push(g); });
   const gwSide = `<aside class="gw-side">
     <div class="gw-side-head">Gewerke · ${gwList.length}</div>
-    <div class="gw-side-list">${Object.keys(gwGroups).sort().map(k => `<div class="gw-side-grp">${esc(k)} · ${esc(BKP_GRUPPEN[k] || 'Übrige')}</div>${gwGroups[k].map(g => { const stt = STATUS_BY_KEY[g.status] || {}; return `<a class="gw-side-item${g.id === v.id ? ' active' : ''}" href="#/projekt/${p.id}/vergabe/${g.id}" title="${esc(stt.label || g.status || '')}"><span class="st-dot ${stt.color || 'grey'}"></span><span class="gw-side-bkp">${esc(g.bkp || '')}</span><span class="gw-side-name">${esc(g.gewerk || '')}</span></a>`; }).join('')}`).join('')}</div>
+    <div class="gw-side-list">${Object.keys(gwGroups).sort().map(k => `<div class="gw-side-grp">${esc(k)} · ${esc(BKP_GRUPPEN[k] || 'Übrige')}</div>${gwGroups[k].map(g => {
+      /* Der Punkt zeigt den Status, der WIRKLICH gilt: Bei einer Sammelvergabe
+         ist das der Status der Hauptposition. 112 Abbrüche als «Ausschreibung»
+         zu zeigen, während 211 längst einen Werkvertrag hat, wäre falsch —
+         die beiden werden ja in einem Zug vergeben. */
+      const leit = statusLeit(p, g);
+      const stt = STATUS_BY_KEY[leit.status] || {};
+      const folgt = leit.id !== g.id ? leit : null;
+      return `<a class="gw-side-item${g.id === v.id ? ' active' : ''}${folgt ? ' folgt' : ''}" href="#/projekt/${p.id}/vergabe/${g.id}" title="${esc(stt.label || leit.status || '')}${folgt ? ' · vergeben mit ' + esc(folgt.bkp || '') + ' ' + esc(folgt.gewerk || '') : ''}"><span class="st-dot ${stt.color || 'grey'}"></span><span class="gw-side-bkp">${esc(g.bkp || '')}</span><span class="gw-side-name">${esc(g.gewerk || '')}${folgt ? `<span class="gw-side-zu">mit ${esc(folgt.bkp || '')}</span>` : ''}</span></a>`;
+    }).join('')}`).join('')}</div>
   </aside>`;
 
   const gwToolbar = `
     ${vergabeMarken(v)}
-    <select class="select vergabe-status-sel" data-pid="${p.id}" data-vid="${v.id}" title="Status setzen" style="padding:6px 9px;font-size:13px">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select>
+    <select class="select vergabe-status-sel" data-pid="${p.id}" data-vid="${v.id}" title="Status setzen" style="padding:6px 9px;font-size:var(--t-s, 13px)">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select>
     <button class="btn sm secondary" data-act="vergabe-art" data-pid="${p.id}" data-vid="${v.id}" title="Einzelvergabe / ARGE / Teilvergabe an mehrere Firmen">👥 Vergabe-Art</button>
     <button class="btn sm secondary" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}" title="Stammdaten bearbeiten (BKP, Gewerk, Frist, Schätzung)">✎ Bearbeiten</button>`;
   const header = `
     <div class="detail-head">
       <div>
-        <h1 style="margin:0;font-size:22px"><span class="bkp-code" style="font-size:16px">${esc(v.bkp)}</span> ${esc(v.gewerk)}</h1>
+        <h1 style="margin:0;font-size:var(--t-xl, 22px)"><span class="bkp-code" style="font-size:var(--t-l, 16px)">${esc(v.bkp)}</span> ${esc(v.gewerk)}</h1>
         <div class="sub" style="margin-top:5px">${vergabeFirmaLabel(v)}${grobLabel(v) ? ' · Ausführung ' + esc(grobLabel(v)) : ''}${posTagChips(p, v)}</div>
       </div>
     </div>
@@ -6868,16 +7767,20 @@ function viewVergabeDetail(pid, vid) {
   const html = `
     ${rechnungRueckbehalt(v) ? `<div class="detail-stats"><div class="dstat"><div class="l">Rückbehalt einbehalten</div><div class="v">${chf(rechnungRueckbehalt(v))}</div></div></div>` : ''}
 
-    ${vergabeArtCard(v)}
+    ${beschaffungCard(p, v)}
+
+    ${istBudgetposition(v) ? '' : vergabeArtCard(v)}
+
+    ${istBudgetposition(v) ? '' : sammelvergabeCard(p, v)}
 
     <div class="card card-pad" style="margin-bottom:18px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-        <h2 style="margin:0;font-size:15px">Beschrieb &amp; Kostenschätzung</h2>
+        <h2 style="margin:0;font-size:var(--t-l, 15px)">Beschrieb &amp; Kostenschätzung</h2>
         <button class="btn sm" data-act="ks-edit" data-pid="${p.id}" data-vid="${v.id}">✎ Kostenschätzung</button>
       </div>
-      ${v.beschrieb ? `<p style="margin:8px 0 0;font-size:13.5px;white-space:pre-wrap">${esc(v.beschrieb)}</p>` : '<p class="muted" style="margin:8px 0 0;font-size:13px">Noch kein Beschrieb. Mit „✎ Kostenschätzung" erfassen (Beschrieb + Positionen).</p>'}
+      ${v.beschrieb ? `<p style="margin:8px 0 0;font-size:var(--t-m, 13.5px);white-space:pre-wrap">${esc(v.beschrieb)}</p>` : '<p class="muted" style="margin:8px 0 0;font-size:var(--t-s, 13px)">Noch kein Beschrieb. Mit „✎ Kostenschätzung" erfassen (Beschrieb + Positionen).</p>'}
       ${(v.ksPositionen && v.ksPositionen.length) ? `<table class="grid" style="margin-top:10px"><thead><tr><th>Position</th><th class="num" style="width:140px">Kosten</th></tr></thead><tbody>
-        ${v.ksPositionen.map(pos => { const info = kalkInfo(pos.kalk); return `<tr><td>${esc(pos.text || 'Position')}${posTagChips(p, pos)}${info ? `<div class="muted" style="font-size:11.5px">${info}</div>` : ''}</td><td class="num">${chf(pos.betrag)}</td></tr>`; }).join('')}
+        ${v.ksPositionen.map(pos => { const info = kalkInfo(pos.kalk); return `<tr><td>${esc(pos.text || 'Position')}${posTagChips(p, pos)}${info ? `<div class="muted" style="font-size:var(--t-xs, 11.5px)">${info}</div>` : ''}</td><td class="num">${chf(pos.betrag)}</td></tr>`; }).join('')}
         <tr><td><b>Total Kostenschätzung</b></td><td class="num"><b>${chf(v.schaetzung)}</b></td></tr></tbody></table>` : ''}
     </div>
 
@@ -6929,7 +7832,7 @@ function viewVergabeDetail(pid, vid) {
             <button class="btn sm" data-act="invite" data-pid="${p.id}" data-vid="${v.id}">+ Einladen</button>
           </div>
         </div>
-        <div class="muted" style="font-size:12.5px;margin-bottom:12px">
+        <div class="muted" style="font-size:var(--t-s, 12.5px);margin-bottom:12px">
           ${eingeladene.length} eingeladen · ${offs.length} Offerte${offs.length === 1 ? '' : 'n'} erhalten
         </div>
         ${ungesendet.length ? `<button class="btn secondary sm" style="width:100%;margin-bottom:10px" data-act="sendmail" data-pid="${p.id}" data-vid="${v.id}">✉ Einladung an ${ungesendet.length} Unternehmer versenden</button>` : ''}
@@ -6942,7 +7845,7 @@ function viewVergabeDetail(pid, vid) {
             <div class="inv-info">
               <div class="inv-firma">
                 ${esc(e.firma)}
-                <span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:2px 8px;font-size:10.5px">${INV_STATUS[e.status]?.label || e.status}</span>
+                <span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:2px 8px;font-size:var(--t-2xs, 10.5px)">${INV_STATUS[e.status]?.label || e.status}</span>
                 ${eOff(e) != null && eOff(e) === best && offs.length > 1 ? '<span class="off-best">★ günstigste</span>' : ''}
               </div>
               ${e.email ? `<div class="inv-mail muted">${esc(e.email)}</div>` : ''}
@@ -6950,7 +7853,7 @@ function viewVergabeDetail(pid, vid) {
             </div>
             <div class="inv-action">
               ${e.status === 'abgesagt'
-                ? `<span class="muted" style="font-size:12.5px">abgesagt</span>`
+                ? `<span class="muted" style="font-size:var(--t-s, 12.5px)">abgesagt</span>`
                 : `<div class="inv-conds">${eOff(e) != null ? `<span title="Offerte (Netto)">O ${chfShort(eOff(e))}</span>` : ''}${eAbg(e) != null ? `<span title="Abgebot (Netto)">A ${chfShort(eAbg(e))}</span>` : ''}${eVer(e) != null ? `<span title="Vergabe (Netto)">V ${chfShort(eVer(e))}</span>` : ''}</div>
                    ${(eOff(e) != null || eAbg(e) != null || eVer(e) != null) && !(isVergeben(v) && v.firma === e.firma) ? `<button class="btn sm" data-act="zuschlag-an" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}" title="Dieser Firma direkt den Zuschlag erteilen (Offerte → Vergabe)">✓ Zuschlag</button>` : ''}${isVergeben(v) && v.firma === e.firma ? '<span class="off-best" title="Zuschlag erteilt">✓ Zuschlag</span>' : ''}`}
               <button class="x-btn" title="Deckblatt: Submissionseinladung" data-act="deckblatt" data-pid="${p.id}" data-vid="${v.id}" data-eid="${e.id}">📄</button>
@@ -6972,7 +7875,7 @@ function viewVergabeDetail(pid, vid) {
     </div>
     <div class="card">
       <div class="card-pad" style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0">
-        <h2 style="margin:0;font-size:15px">${(v.budgetposten || []).length} Position${(v.budgetposten || []).length === 1 ? '' : 'en'}</h2>
+        <h2 style="margin:0;font-size:var(--t-l, 15px)">${(v.budgetposten || []).length} Position${(v.budgetposten || []).length === 1 ? '' : 'en'}</h2>
         <button class="btn sm secondary" data-act="new-budget" data-pid="${p.id}" data-vid="${v.id}">+ Budgetposition</button>
       </div>
       ${(v.budgetposten || []).length ? `
@@ -6981,8 +7884,8 @@ function viewVergabeDetail(pid, vid) {
         <tbody>
           ${v.budgetposten.map(b => { const ist = hatIst(b); const d = ist ? (Number(b.ist) || 0) - (b.betrag || 0) : 0; const cols = alleEinheiten(p).length ? 6 : 5; const open = budgetOpen.has(b.id); return `
             <tr>
-              <td><button class="x-btn" data-act="budget-detail" data-pid="${p.id}" data-vid="${v.id}" data-bid="${b.id}" title="Aufstellung anzeigen" style="margin-right:2px">${open ? '▾' : '▸'}</button><strong>${esc(b.text || 'Budgetposition')}</strong>${b.eig ? ' <span class="st blue" style="font-size:8.5px;padding:0 5px">Eigentümerwunsch</span>' : ''}</td>
-              ${alleEinheiten(p).length ? `<td class="muted" style="font-size:12.5px">${b.wohnung ? esc(einheitName(p, b.wohnung)) + (eigOfP(p, b.wohnung) ? ' · ' + esc(eigOfP(p, b.wohnung)) : '') : '<span class="muted">Allgemein</span>'}</td>` : ''}
+              <td><button class="x-btn" data-act="budget-detail" data-pid="${p.id}" data-vid="${v.id}" data-bid="${b.id}" title="Aufstellung anzeigen" style="margin-right:2px">${open ? '▾' : '▸'}</button><strong>${esc(b.text || 'Budgetposition')}</strong>${b.eig ? ' <span class="st blue" style="font-size:var(--t-2xs, 8.5px);padding:0 5px">Eigentümerwunsch</span>' : ''}</td>
+              ${alleEinheiten(p).length ? `<td class="muted" style="font-size:var(--t-s, 12.5px)">${b.wohnung ? esc(einheitName(p, b.wohnung)) + (eigOfP(p, b.wohnung) ? ' · ' + esc(eigOfP(p, b.wohnung)) : '') : '<span class="muted">Allgemein</span>'}</td>` : ''}
               <td class="num">${chf(b.betrag)}</td>
               <td class="num">${ist ? chf(Number(b.ist) || 0) : '<span class="muted">offen</span>'}</td>
               <td class="num" style="${d > 0 ? 'color:var(--s-red)' : (d < 0 ? 'color:var(--s-green)' : '')}">${ist ? (d > 0 ? '+' : '') + chf(d) : '–'}</td>
@@ -7005,7 +7908,7 @@ function viewVergabeDetail(pid, vid) {
       <!-- Nachträge -->
       <div class="card">
         <div class="card-pad" style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0">
-          <h2 style="margin:0;font-size:15px">Nachträge / Bestellungsänderungen</h2>
+          <h2 style="margin:0;font-size:var(--t-l, 15px)">Nachträge / Bestellungsänderungen</h2>
           <button class="btn sm secondary" data-act="new-nachtrag" data-pid="${p.id}" data-vid="${v.id}">+ Nachtrag</button>
         </div>
         ${(v.nachtraege || []).length ? `
@@ -7017,7 +7920,7 @@ function viewVergabeDetail(pid, vid) {
                 <td><strong>${esc(n.titel)}</strong>${n.nr ? ` <span class="muted">${esc(n.nr)}</span>` : ''}</td>
                 <td class="muted">${fmtDate(n.datum)}</td>
                 <td>
-                  <select class="select sm-select" data-act="nachtrag-status" data-pid="${p.id}" data-vid="${v.id}" data-nid="${n.id}" style="padding:4px 8px;font-size:12px">
+                  <select class="select sm-select" data-act="nachtrag-status" data-pid="${p.id}" data-vid="${v.id}" data-nid="${n.id}" style="padding:4px 8px;font-size:var(--t-xs, 12px)">
                     <option value="offen" ${n.status === 'offen' ? 'selected' : ''}>Offen</option>
                     <option value="genehmigt" ${n.status === 'genehmigt' ? 'selected' : ''}>Genehmigt</option>
                     <option value="abgelehnt" ${n.status === 'abgelehnt' ? 'selected' : ''}>Abgelehnt</option>
@@ -7037,7 +7940,7 @@ function viewVergabeDetail(pid, vid) {
       <!-- Rapporte -->
       <div class="card">
         <div class="card-pad" style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0">
-          <h2 style="margin:0;font-size:15px">Rapporte / Regiearbeiten</h2>
+          <h2 style="margin:0;font-size:var(--t-l, 15px)">Rapporte / Regiearbeiten</h2>
           <button class="btn sm secondary" data-act="new-rapport" data-pid="${p.id}" data-vid="${v.id}">+ Rapport</button>
         </div>
         ${(v.rapporte || []).length ? `
@@ -7068,7 +7971,7 @@ function viewVergabeDetail(pid, vid) {
     </div>
     <div class="card">
       <div class="card-pad" style="display:flex;justify-content:space-between;align-items:center;padding-bottom:0">
-        <h2 style="margin:0;font-size:15px">${(v.rechnungen || []).length} Rechnung${(v.rechnungen || []).length === 1 ? '' : 'en'}</h2>
+        <h2 style="margin:0;font-size:var(--t-l, 15px)">${(v.rechnungen || []).length} Rechnung${(v.rechnungen || []).length === 1 ? '' : 'en'}</h2>
         <div style="display:flex;gap:6px">
           <button class="btn sm secondary" data-act="scan-qr" data-pid="${p.id}" data-vid="${v.id}" title="Swiss-QR-Code aus Bild/PDF einlesen">🔎 QR scannen</button>
           <button class="btn sm secondary" data-act="new-rechnung" data-pid="${p.id}" data-vid="${v.id}">+ Rechnung</button>
@@ -7146,8 +8049,8 @@ function actKonditionen(pid, vid, eid) {
   stages.forEach(([key]) => { const c = e[key] || (key === 'offerte' && e.betrag != null ? { brutto: e.betrag } : {}); _kondM.st[key] = { brutto: (c.brutto != null ? c.brutto : ''), abz: kondAbzFromC(c) }; });
   openModal(`Konditionen – ${esc(e.firma)}`, `
     <label class="field" style="margin-bottom:10px">Eingabefrist (für diesen Unternehmer) <input class="input" type="date" id="kond_frist" value="${esc(e.frist || '')}">
-      <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Eigene Frist je Unternehmer (überschreibt die Gewerk-Frist ${v.frist ? '· Gewerk: ' + fmtDate(v.frist) : ''}).</span></label>
-    <p class="muted" style="font-size:11.5px;margin:0 0 8px">Jeder Abzug wahlweise <b>%</b> oder <b>CHF</b> (Knopf rechts). „Allg. Abzüge" umbenennbar, weitere mit „+ Abzug". <b>Netto-Zielwert</b> eingeben &amp; genau einen Abzug leer lassen → fehlender Betrag wird berechnet.</p>
+      <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px">Eigene Frist je Unternehmer (überschreibt die Gewerk-Frist ${v.frist ? '· Gewerk: ' + fmtDate(v.frist) : ''}).</span></label>
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:0 0 8px">Jeder Abzug wahlweise <b>%</b> oder <b>CHF</b> (Knopf rechts). „Allg. Abzüge" umbenennbar, weitere mit „+ Abzug". <b>Netto-Zielwert</b> eingeben &amp; genau einen Abzug leer lassen → fehlender Betrag wird berechnet.</p>
     <div class="kond-wrap" id="kond_body"></div>`,
     `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="konditionen-save" data-pid="${pid}" data-vid="${vid}" data-eid="${eid}">💾 Speichern</button>`);
   kondRenderBody();
@@ -7247,6 +8150,58 @@ function vAbzDefs(v) {
   base[2].key = 'allg'; base[2].rename = true; base[2].name = base[2].name || 'Allg. Abzüge';
   return base;
 }
+/* Bringt eine Stufe auf einen Zielbetrag, indem der unerklärte Rest als
+   Pauschalabzug in Franken festgehalten wird.
+
+   Wozu das gut ist: Yanick nennt Brutto 44'520.75 und Netto 43'424.25.
+   Die Differenz von 1'096.50 sind 2.4629 % — kein Satz, den je jemand
+   vereinbart hat. Rückwärts gerechnet bräuchte es bei 2 % Skonto und
+   1 % allgemeinen Abzügen einen Rabatt von minus 0.53 %. Da steckt kein
+   Prozentsatz dahinter, sondern ein Betrag: eine Gutschrift, ein
+   Rückbehalt, eine herausgelöste Position. Genau so wird er erfasst. */
+function pauschalAusgleich(p, v, eid, stage, ziel) {
+  const e = (v.eingeladene || []).find(x => x.id === eid); if (!e) return;
+  const c = e[stage] || (e[stage] = {});
+  if (c.brutto == null || c.brutto === '') { toast('Zuerst den Bruttobetrag erfassen.', 'info'); return; }
+
+  const defs = vAbzDefs(v);
+  const PAUSCHAL = 'Pauschalabzug';
+  let idx = defs.findIndex(d => d.name === PAUSCHAL && d.exIdx != null);
+
+  // Noch keine Pauschalspalte? Dann eine anlegen – für alle Firmen des Gewerks.
+  if (idx < 0) {
+    const neu = defs.map(x => ({ name: x.name }));
+    neu.push({ name: PAUSCHAL });
+    v.abzDefs = neu;
+    idx = neu.length - 1;
+  }
+  const exIdx = idx - 3;
+
+  const mitRest = rest => {
+    const probe = JSON.parse(JSON.stringify(c));
+    probe.extraAbz = probe.extraAbz || [];
+    while (probe.extraAbz.length <= exIdx) probe.extraAbz.push({ name: PAUSCHAL, art: 'chf', wert: 0 });
+    probe.extraAbz[exIdx] = { name: PAUSCHAL, art: 'chf', wert: rest };
+    return condNetto(probe);
+  };
+  const n0 = mitRest(0), n1 = mitRest(1);
+  if (n0 == null || n1 == null) return;
+  const steigung = n1 - n0;
+  if (Math.abs(steigung) < 1e-9) return;
+  const rest = Math.round(((ziel - n0) / steigung) * 100) / 100;
+
+  if (Math.abs(rest) < 0.005) { toast('Die Rechnung geht bereits auf – kein Pauschalabzug nötig.', 'info'); return; }
+  if (rest < 0) { toast('Der Zielbetrag liegt über dem Brutto – das wäre ein Zuschlag, kein Abzug.', 'info'); return; }
+
+  c.extraAbz = c.extraAbz || [];
+  while (c.extraAbz.length <= exIdx) c.extraAbz.push({ name: PAUSCHAL, art: 'chf', wert: 0 });
+  c.extraAbz[exIdx] = { name: PAUSCHAL, art: 'chf', wert: rest };
+
+  if (v.firma && e.firma === v.firma) { const ver = eVer(e); if (ver != null) v.betrag = ver; }
+  save(); rerenderVA(p, v);
+  toast('Pauschalabzug ' + chf(rest) + ' erfasst – die Rechnung geht auf.', 'success');
+}
+
 function condCellVal(c, def) {
   if (!c) return { art: 'pct', wert: '' };
   if (def.exIdx == null) {
@@ -7336,20 +8291,34 @@ function bindVergabeAntrag(p, v) {
     if (v.firma && e.firma === v.firma) { const ver = eVer(e); const fall = ver != null ? ver : (eAbg(e) != null ? eAbg(e) : eOff(e)); if (fall != null) v.betrag = fall; }
     save();
   };
+  /* Rückrechnung auf einen Zielbetrag.
+     Ist genau ein Abzug leer, wird dieser gefüllt — das ist der Normalfall
+     («Rabatt und Skonto kenne ich, den Rest nicht»).
+
+     Geht die Rechnung mit Prozentsätzen aber gar nicht auf — weil eine
+     Gutschrift, ein Rückbehalt oder eine herausgelöste Position drinsteckt —
+     bleibt ein Rest, den kein Prozentsatz erklärt. Dann bekommt er einen
+     eigenen Namen: Pauschalabzug. Lieber ein ehrlicher Frankenbetrag als
+     ein krummer Prozentsatz, der etwas vortäuscht. */
   const backCalc = (eid, stage, target) => {
     target = (target === '' || target == null) ? null : Number(target);
     const gb = document.querySelector(`[data-va="${eid}|${stage}|brutto"]`); if (target == null || !gb || gb.value === '') return;
     const empties = defs.map((d, i) => i).filter(i => { const inp = document.querySelector(`.va-dedin[data-va="${eid}|${stage}|${defs[i].key}"]`); return inp && (inp.value === '' || inp.value == null); });
-    if (empties.length !== 1) { toast('Für die Netto-Rückrechnung genau EINEN Abzug leer lassen.', 'info'); return; }
-    const di = empties[0], def = defs[di];
-    const nettoAt = X => { const c = readC(eid, stage); if (def.exIdx == null) { const m = { rabatt: ['rabatt', 'rabattBtr'], skonto: ['skonto', 'skontoBtr'], allg: ['weitereAbz', 'weitereAbzBtr'] }[def.key]; c[m[1]] = X; c[m[0]] = null; } else { c.extraAbz[def.exIdx] = { name: def.name, art: 'chf', wert: X }; } const r = condParts(c); return r ? r.zsumme2 : null; };
-    const n0 = nettoAt(0), n1 = nettoAt(1); if (n0 == null || n1 == null) return; const slope = n1 - n0; if (Math.abs(slope) < 1e-9) return;
-    const X = Math.round(((target - n0) / slope) * 100) / 100;
-    const inp = document.querySelector(`.va-dedin[data-va="${eid}|${stage}|${def.key}"]`); inp.value = X; inp.dataset.art = 'chf';
-    const tog = document.querySelector(`.va-arttog[data-va="${eid}|${stage}|${def.key}"]`); if (tog) tog.textContent = 'CHF';
-    const nin = document.querySelector(`.va-nettoin[data-va="${eid}|${stage}|netto"]`); if (nin) nin.value = '';
-    recalcRow(eid, stage); recalcDiff(stage); commit(eid, stage);
-    toast('Fehlender Abzug „' + def.name + '" = ' + chf(X) + ' berechnet.', 'success');
+
+    if (empties.length === 1) {
+      const di = empties[0], def = defs[di];
+      const nettoAt = X => { const c = readC(eid, stage); if (def.exIdx == null) { const m = { rabatt: ['rabatt', 'rabattBtr'], skonto: ['skonto', 'skontoBtr'], allg: ['weitereAbz', 'weitereAbzBtr'] }[def.key]; c[m[1]] = X; c[m[0]] = null; } else { c.extraAbz[def.exIdx] = { name: def.name, art: 'chf', wert: X }; } return condNetto(c); };
+      const n0 = nettoAt(0), n1 = nettoAt(1); if (n0 == null || n1 == null) return; const slope = n1 - n0; if (Math.abs(slope) < 1e-9) return;
+      const X = Math.round(((target - n0) / slope) * 100) / 100;
+      const inp = document.querySelector(`.va-dedin[data-va="${eid}|${stage}|${def.key}"]`); inp.value = X; inp.dataset.art = 'chf';
+      const tog = document.querySelector(`.va-arttog[data-va="${eid}|${stage}|${def.key}"]`); if (tog) tog.textContent = 'CHF';
+      const nin = document.querySelector(`.va-nettoin[data-va="${eid}|${stage}|netto"]`); if (nin) nin.value = '';
+      recalcRow(eid, stage); recalcDiff(stage); commit(eid, stage);
+      toast('Fehlender Abzug „' + def.name + '" = ' + chf(X) + ' berechnet.', 'success');
+      return;
+    }
+
+    pauschalAusgleich(p, v, eid, stage, target);
   };
   firms.forEach(e => stages.forEach(s => recalcRow(e.id, s)));
   stages.forEach(s => recalcDiff(s));
@@ -7448,7 +8417,7 @@ function viewKontakte() {
             <tr class="clickable" data-goto="#/kontakt/${k.id}" data-ctx="kontakt" data-kid="${k.id}">
               <td><div class="row-firma"><strong>${esc(k.firma)}</strong>${k.uid_nr ? `<span class="sub">${esc(k.uid_nr)}${k.rechtsform ? ' · ' + esc(k.rechtsform) : ''}</span>` : ''}</div></td>
               <td>${k.kategorie && k.kategorie !== '–' ? `<span class="tag">${esc(k.kategorie)}</span>` : '<span class="muted">–</span>'}</td>
-              <td>${esc(k.person || '–')}${k.funktion ? `<div class="muted" style="font-size:11.5px">${esc(k.funktion)}</div>` : ''}</td>
+              <td>${esc(k.person || '–')}${k.funktion ? `<div class="muted" style="font-size:var(--t-xs, 11.5px)">${esc(k.funktion)}</div>` : ''}</td>
               <td>${k.plz ? esc(k.plz) + ' ' : ''}${esc(k.ort || '–')}</td>
               <td class="muted">${esc(k.email || k.telefon || '–')}</td>
               <td class="num">${n ? `<span class="tag">${n}</span>` : '<span class="muted">–</span>'}</td>
@@ -7468,7 +8437,7 @@ function viewKontaktDetail(kid) {
   const offerten = bet.filter(x => eOff(x.e) != null);
   const zuschlaege = bet.filter(x => x.won);
   const volumen = zuschlaege.reduce((a, x) => a + (isVergeben(x.v) ? schlussSumme(x.v) : (x.v.betrag || 0)), 0);
-  const kpi = (l, v) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:21px">${v}</div></div>`;
+  const kpi = (l, v) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:var(--t-xl, 21px)">${v}</div></div>`;
   const adresse = [k.strasse, [k.plz, k.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   const stamm = [
     ['Adresse', adresse || '–'],
@@ -7485,7 +8454,7 @@ function viewKontaktDetail(kid) {
       <tr class="clickable" data-goto="#/projekt/${x.p.id}/vergabe/${x.v.id}">
         <td>${esc(x.p.name)}</td>
         <td><span class="bkp-code">${esc(x.v.bkp || '')}</span> ${esc(x.v.gewerk || '')}</td>
-        <td>${x.won ? '<span class="st green" style="font-size:10.5px;padding:2px 8px">★ Zuschlag</span>' : `<span class="st ${INV_STATUS[x.e.status]?.color || 'grey'}" style="font-size:10.5px;padding:2px 8px">${INV_STATUS[x.e.status]?.label || esc(x.e.status)}</span>`}</td>
+        <td>${x.won ? '<span class="st green" style="font-size:var(--t-2xs, 10.5px);padding:2px 8px">★ Zuschlag</span>' : `<span class="st ${INV_STATUS[x.e.status]?.color || 'grey'}" style="font-size:var(--t-2xs, 10.5px);padding:2px 8px">${INV_STATUS[x.e.status]?.label || esc(x.e.status)}</span>`}</td>
         <td class="num">${eOff(x.e) != null ? chf(eOff(x.e)) : '–'}</td>
         <td class="muted">›</td>
       </tr>`).join('')}</tbody></table>` : emptyState('▤', 'Diese Firma ist noch keinem Gewerk zugeordnet.');
@@ -7493,7 +8462,7 @@ function viewKontaktDetail(kid) {
   render(`
     <div class="breadcrumb"><a href="#/kontakte">Kontakte</a> › ${esc(k.firma)}</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">${esc(k.firma)}</h1><div class="sub" style="margin-top:5px">${k.kategorie && k.kategorie !== '–' ? esc(k.kategorie) : 'Kontakt'}${k.ort ? ' · ' + (k.plz ? esc(k.plz) + ' ' : '') + esc(k.ort) : ''}</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(k.firma)}</h1><div class="sub" style="margin-top:5px">${k.kategorie && k.kategorie !== '–' ? esc(k.kategorie) : 'Kontakt'}${k.ort ? ' · ' + (k.plz ? esc(k.plz) + ' ' : '') + esc(k.ort) : ''}</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
         ${k.email ? `<a class="btn secondary" href="mailto:${esc(k.email)}">✉ Mail</a>` : ''}
         ${k.telefon ? `<a class="btn secondary" href="tel:${esc(k.telefon.replace(/\s/g, ''))}">☎ Anrufen</a>` : ''}
@@ -7513,7 +8482,7 @@ function viewKontaktDetail(kid) {
       </div>
       <div>
         <div class="section-head"><h2>Stammdaten</h2></div>
-        <div class="card card-pad">${stamm.map(([l, v]) => `<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span class="muted" style="min-width:110px">${l}</span><span style="flex:1">${v}</span></div>`).join('')}${k.notiz ? `<div style="padding:10px 0 0;font-size:13px"><span class="muted">Notiz</span><div style="margin-top:3px;white-space:pre-wrap">${esc(k.notiz)}</div></div>` : ''}</div>
+        <div class="card card-pad">${stamm.map(([l, v]) => `<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:var(--t-s, 13px)"><span class="muted" style="min-width:110px">${l}</span><span style="flex:1">${v}</span></div>`).join('')}${k.notiz ? `<div style="padding:10px 0 0;font-size:var(--t-s, 13px)"><span class="muted">Notiz</span><div style="margin-top:3px;white-space:pre-wrap">${esc(k.notiz)}</div></div>` : ''}</div>
       </div>
     </div>
   `);
@@ -7662,13 +8631,13 @@ function dossierPct(p) { const s = dossierStats(p); const tot = s.ok + s.teil + 
 function dosBadge(bucket, label) {
   const cls = bucket === 'ok' ? 'green' : bucket === 'teil' ? 'amber' : bucket === 'entf' ? 'grey' : 'red';
   const ico = bucket === 'ok' ? '✓' : bucket === 'teil' ? '◐' : bucket === 'entf' ? '–' : '○';
-  return `<span class="st ${cls}" style="font-size:10.5px;padding:2px 8px">${ico} ${label}</span>`;
+  return `<span class="st ${cls}" style="font-size:var(--t-2xs, 10.5px);padding:2px 8px">${ico} ${label}</span>`;
 }
 function viewDossier(pid) {
   const p = findProjekt(pid);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const s = dossierStats(p);
-  const kpi = (l, v, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:21px${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div></div>`;
+  const kpi = (l, v, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:var(--t-xl, 21px)${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div></div>`;
 
   const phasenHtml = DOSSIER_VORLAGE.map(ph => {
     let ok = 0, tot = 0;
@@ -7703,7 +8672,7 @@ function viewDossier(pid) {
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Dossier · vollständige Projektunterlagen über alle Phasen</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Dossier · vollständige Projektunterlagen über alle Phasen</div></div>
       <button class="btn secondary" data-act="pdf-dossier" data-pid="${p.id}" title="Statusbericht als PDF">🖨 Drucken</button>
     </div>
     ${projektTabs(p, 'dossier')}
@@ -7714,7 +8683,7 @@ function viewDossier(pid) {
       ${kpi('Offen / fehlt', s.fehlt, s.fehlt ? 's-red' : '')}
       ${kpi('Entfällt', s.entf)}
     </div>
-    <p class="muted" style="font-size:12px;margin:0 0 16px"><span class="dos-auto">auto</span> = wird von der App automatisch erkannt (öffnen zum Bearbeiten) · übrige Positionen erfasst du extern (Status, Datei-Name/Link, Notiz).</p>
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin:0 0 16px"><span class="dos-auto">auto</span> = wird von der App automatisch erkannt (öffnen zum Bearbeiten) · übrige Positionen erfasst du extern (Status, Datei-Name/Link, Notiz).</p>
     ${dossierZahlungsplanCard(p)}
     ${dossierSolarCard(p)}
     ${phasenHtml}
@@ -7725,22 +8694,22 @@ function dossierSolarCard(p) {
   const st = p.solar; if (!st || !Array.isArray(st.varianten)) return '';
   const gv = st.varianten.find(v => v.id === st.gewaehlt);
   const status = st.gesperrt
-    ? `Variante „${esc((gv || st.varianten[0]).name || '')}" <span class="st green" style="font-size:9px;padding:1px 6px">freigegeben</span> ${fmtDate(st.freigabeDatum)}`
-    : (gv ? `Variante „${esc(gv.name || '')}" gewählt <span class="st amber" style="font-size:9px;padding:1px 6px">noch nicht freigegeben</span>`
-      : `${st.varianten.length} Variante${st.varianten.length > 1 ? 'n' : ''} <span class="st grey" style="font-size:9px;padding:1px 6px">noch nicht entschieden</span>`);
+    ? `Variante „${esc((gv || st.varianten[0]).name || '')}" <span class="st green" style="font-size:var(--t-2xs, 9px);padding:1px 6px">freigegeben</span> ${fmtDate(st.freigabeDatum)}`
+    : (gv ? `Variante „${esc(gv.name || '')}" gewählt <span class="st amber" style="font-size:var(--t-2xs, 9px);padding:1px 6px">noch nicht freigegeben</span>`
+      : `${st.varianten.length} Variante${st.varianten.length > 1 ? 'n' : ''} <span class="st grey" style="font-size:var(--t-2xs, 9px);padding:1px 6px">noch nicht entschieden</span>`);
   return `<div class="card card-pad" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-      <div><strong>☀ Solaranlage</strong><div class="muted" style="font-size:12px;margin-top:3px">${status}</div></div>
+      <div><strong>☀ Solaranlage</strong><div class="muted" style="font-size:var(--t-xs, 12px);margin-top:3px">${status}</div></div>
       <a class="btn sm secondary" href="#/projekt/${p.id}/solar">öffnen ↗</a>
     </div>`;
 }
 function dossierZahlungsplanCard(p) {
   const zpL = Array.isArray(p.zahlungsplaene) ? p.zahlungsplaene : (p.zahlungsplan ? [Object.assign({ name: 'Version 1' }, p.zahlungsplan)] : []);
   const aktivIdx = zpL.findIndex(z => z.id === p.zpAktiv);
-  const status = !zpL.length ? '<span class="st grey" style="font-size:9.5px;padding:1px 7px">noch nicht erstellt</span>'
-    : zpL.map((z, i) => `${esc(z.name || ('Version ' + (i + 1)))} ${z.gesperrt ? '<span class="st green" style="font-size:9px;padding:1px 6px">abgeschlossen</span>' : '<span class="st amber" style="font-size:9px;padding:1px 6px">in Arbeit</span>'}`).join(' &nbsp;·&nbsp; ');
+  const status = !zpL.length ? '<span class="st grey" style="font-size:var(--t-2xs, 9.5px);padding:1px 7px">noch nicht erstellt</span>'
+    : zpL.map((z, i) => `${esc(z.name || ('Version ' + (i + 1)))} ${z.gesperrt ? '<span class="st green" style="font-size:var(--t-2xs, 9px);padding:1px 6px">abgeschlossen</span>' : '<span class="st amber" style="font-size:var(--t-2xs, 9px);padding:1px 6px">in Arbeit</span>'}`).join(' &nbsp;·&nbsp; ');
   const head = zpL.length > 1 ? `Zahlungsplan – aktuell <b>Version ${aktivIdx >= 0 ? aktivIdx + 1 : zpL.length}</b> von ${zpL.length}` : 'Zahlungsplan';
   return `<div class="card card-pad" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-      <div><strong>💰 ${head}</strong><div class="muted" style="font-size:12px;margin-top:3px">${status}</div></div>
+      <div><strong>💰 ${head}</strong><div class="muted" style="font-size:var(--t-xs, 12px);margin-top:3px">${status}</div></div>
       <a class="btn sm secondary" href="#/projekt/${p.id}/zahlungsplan">öffnen ↗</a>
     </div>`;
 }
@@ -7775,7 +8744,7 @@ function pdfDossier(pid) {
 function actDossierAdd(pid, phase) {
   openModal('Eigene Position', `
     <label class="field">Bezeichnung <input class="input" id="dc_label" placeholder="z.B. Baugrundgutachten / Vermessung"></label>
-    <p class="muted" style="font-size:12px;margin:0">Wird der gewählten Phase hinzugefügt und wie die übrigen Positionen erfasst (Status, Link, Notiz).</p>
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin:0">Wird der gewählten Phase hinzugefügt und wie die übrigen Positionen erfasst (Status, Link, Notiz).</p>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="dossier-add-save" data-pid="${pid}" data-kind="${phase}">Hinzufügen</button>`);
 }
 function saveDossierAdd(pid, phase) {
@@ -7821,15 +8790,15 @@ function viewEinstellungen() {
   const html = `
     <div class="page-head"><div><h1>Einstellungen</h1><div class="sub">Prototyp-Konfiguration</div></div></div>
     <div class="card card-pad" style="max-width:560px;margin-bottom:18px">
-      <h2 style="margin-top:0;font-size:15px">Büro / Absender</h2>
-      <p class="muted" style="font-size:13px">Erscheint als Briefkopf und Eingabeadresse auf dem Deckblatt (Ausschreibung).</p>
+      <h2 style="margin-top:0;font-size:var(--t-l, 15px)">Büro / Absender</h2>
+      <p class="muted" style="font-size:var(--t-s, 13px)">Erscheint als Briefkopf und Eingabeadresse auf dem Deckblatt (Ausschreibung).</p>
       <label class="field">Logo
         <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
           ${b.logo
             ? `<img src="${b.logo}" alt="Logo" style="max-height:54px;max-width:180px;border:1px solid var(--border);border-radius: 0;padding:4px;background:#fff">
                <button class="btn sm ghost" data-act="rm-logo">Logo entfernen</button>`
-            : `<span class="muted" style="font-size:13px">Kein Logo</span>`}
-          <input type="file" id="b_logo" accept="image/*" style="font-size:13px">
+            : `<span class="muted" style="font-size:var(--t-s, 13px)">Kein Logo</span>`}
+          <input type="file" id="b_logo" accept="image/*" style="font-size:var(--t-s, 13px)">
         </div>
       </label>
       <label class="field">Firma <input class="input" id="b_firma" value="${esc(b.firma)}" placeholder="Muster Bauadministration GmbH"></label>
@@ -7839,20 +8808,20 @@ function viewEinstellungen() {
         <label class="field">Telefon <input class="input" id="b_tel" value="${esc(b.tel)}" placeholder="041 000 00 00"></label>
         <label class="field">E-Mail <input class="input" id="b_email" value="${esc(b.email)}" placeholder="info@…"></label>
       </div>
-      <label class="field">E-Mail-Signatur <span class="muted" style="font-weight:400;font-size:11.5px">– wird unter Pendenz-Mails angehängt</span> · <button type="button" class="btn-ghost-sm" data-act="sig-from-buero" style="font-size:11px;text-decoration:underline">↻ aus Büro-Daten erzeugen</button>
-        <textarea class="input" id="b_signatur" rows="4" placeholder="Freundliche Grüsse&#10;P. Hefti Bauberatung GmbH&#10;Bernstrasse 40, 3076 Worb · 031 839 00 77">${esc(b.signatur || '')}</textarea>
+      <label class="field">E-Mail-Signatur <span class="muted" style="font-weight:400;font-size:var(--t-xs, 11.5px)">– wird unter Pendenz-Mails angehängt</span> · <button type="button" class="btn-ghost-sm" data-act="sig-from-buero" style="font-size:var(--t-2xs, 11px);text-decoration:underline">↻ aus Büro-Daten erzeugen</button>
+        <textarea class="input" id="b_signatur" rows="4" placeholder="Freundliche Grüsse&#10;Ihre Firma GmbH&#10;Strasse 1, 3000 Ort · 000 000 00 00">${esc(b.signatur || '')}</textarea>
       </label>
-      <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;margin-top:6px"><input type="checkbox" id="b_sig_auto" ${b.signaturAuto === false ? '' : 'checked'}> Signatur standardmässig an Mails anhängen</label>
+      <label style="display:flex;gap:8px;align-items:center;font-size:var(--t-s, 13px);cursor:pointer;margin-top:6px"><input type="checkbox" id="b_sig_auto" ${b.signaturAuto === false ? '' : 'checked'}> Signatur standardmässig an Mails anhängen</label>
       <div class="form-row" style="margin-top:12px">
-        <label class="field">MwSt-Satz <span class="muted" style="font-weight:400;font-size:11.5px">(%)</span><input class="input" type="number" step="0.1" id="b_mwst" value="${b.mwst != null ? b.mwst : 8.1}"></label>
-        <label class="field">Beträge sind <span class="muted" style="font-weight:400;font-size:11.5px">– gilt überall (App + PDFs)</span>
+        <label class="field">MwSt-Satz <span class="muted" style="font-weight:400;font-size:var(--t-xs, 11.5px)">(%)</span><input class="input" type="number" step="0.1" id="b_mwst" value="${b.mwst != null ? b.mwst : 8.1}"></label>
+        <label class="field">Beträge sind <span class="muted" style="font-weight:400;font-size:var(--t-xs, 11.5px)">– gilt überall (App + PDFs)</span>
           <select class="select" id="b_preise">
             <option value="exkl"${b.preiseInkl ? '' : ' selected'}>exkl. MwSt (netto)</option>
             <option value="inkl"${b.preiseInkl ? ' selected' : ''}>inkl. MwSt (brutto)</option>
           </select>
         </label>
       </div>
-      <label class="field" style="margin-top:12px">Druck-Design <span class="muted" style="font-weight:400;font-size:11.5px">– Layout aller PDFs / Drucke</span>
+      <label class="field" style="margin-top:12px">Druck-Design <span class="muted" style="font-weight:400;font-size:var(--t-xs, 11.5px)">– Layout aller PDFs / Drucke</span>
         <select class="select" id="b_design">
           <option value="standard"${(b.druckDesign === 'modern') ? '' : ' selected'}>Standard (klassisch)</option>
           <option value="modern"${(b.druckDesign === 'modern') ? ' selected' : ''}>Modern – eleganter Akzent-Kopf (Premium)</option>
@@ -7861,21 +8830,31 @@ function viewEinstellungen() {
       <div style="margin-top:12px"><button class="btn" data-act="save-buero">💾 Büro speichern</button></div>
     </div>
     <div class="card card-pad" style="max-width:560px">
-      <h2 style="margin-top:0;font-size:15px">Daten</h2>
-      <p class="muted" style="font-size:13px">${cloudEnabled
+      <h2 style="margin-top:0;font-size:var(--t-l, 15px)">Daten</h2>
+      <p class="muted" style="font-size:var(--t-s, 13px)">${cloudEnabled
         ? '☁ <strong>Cloud-Modus (Supabase)</strong> – gemeinsamer Arbeitsbereich, auf allen Geräten synchron.'
-        : '💾 <strong>Lokaler Modus</strong> – Daten nur in diesem Browser. Cloud aktivierst du in <code>config.js</code>.'}</p>
+        : ordnerAktiv()
+          ? '📂 <strong>Ordner-Modus</strong> – je Bauvorhaben eine Datei in <code>' + esc(ordnerName) + '</code>. Nur Geändertes wird geschrieben; hat jemand anders eine Datei angefasst, wird sie nicht überschrieben.'
+          : '💾 <strong>Lokaler Modus</strong> – Daten nur in diesem Browser, mit rund 5 MB Platz.'}</p>
+      ${cloudEnabled ? '' : `<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+        ${ordnerAktiv()
+          ? '<button class="btn secondary" data-act="ordner-waehlen">📂 Anderen Arbeitsordner wählen</button><button class="btn secondary" data-act="ordner-verlassen">↩ Zurück in den Browser-Speicher</button>'
+          : ordnerMoeglich()
+            ? '<button class="btn" data-act="ordner-waehlen">📂 Arbeitsordner wählen (NAS oder OneDrive)</button>'
+            : '<span class="muted" style="font-size:var(--t-xs, 12px)">Der Ordner-Modus braucht Chrome oder Edge am Rechner.</span>'}
+      </div>
+      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin-top:8px">Im Ordner-Modus liegt je Bauvorhaben ein Ordner mit einer <code>.submit</code>-Datei — daneben die Pläne, wie Submit PDF sie ablegt. Der bisherige Stand im Browser bleibt erhalten; du kannst jederzeit zurück.</p>`}
       <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
         <button class="btn secondary" data-act="export">⬇ Voll-Backup speichern (JSON)</button>
         <button class="btn secondary" data-act="import-data">📥 Backup einlesen (JSON)</button>
         <button class="btn secondary" data-act="gerber-import">📂 Projekt aus .gerber öffnen</button>
-        <button class="btn secondary" data-act="reset">↻ Demodaten laden (3 Projekte + Submittenten)</button>
+        <button class="btn secondary" data-act="reset">↻ Diesen Browser leeren</button>
         ${cloudEnabled ? '<button class="btn secondary" data-act="logout">⎋ Abmelden</button>' : ''}
       </div>
-      <p class="muted" style="font-size:11.5px;margin-top:8px"><b>Voll-Backup (JSON):</b> sichert ALLE Projekte + Kontakte in eine Datei – „Backup einlesen" stellt diesen Stand wieder her (ersetzt alles). <b>Einzelnes Projekt (.gerber):</b> Rechtsklick auf ein Projekt → „Als .gerber speichern" zum Sichern/Teilen; „Projekt aus .gerber öffnen" liest es als zusätzliches Projekt ein (ideal zum Weitergeben/Weiterbearbeiten).</p>
+      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin-top:8px"><b>Voll-Backup (JSON):</b> sichert ALLE Projekte + Kontakte in eine Datei – „Backup einlesen" stellt diesen Stand wieder her (ersetzt alles). <b>Einzelnes Projekt (.gerber):</b> Rechtsklick auf ein Projekt → „Als .gerber speichern" zum Sichern/Teilen; „Projekt aus .gerber öffnen" liest es als zusätzliches Projekt ein (ideal zum Weitergeben/Weiterbearbeiten).</p>
       <hr style="border:none;border-top:1px solid var(--border);margin:22px 0">
-      <h2 style="font-size:15px">Über</h2>
-      <p class="muted" style="font-size:13px">
+      <h2 style="font-size:var(--t-l, 15px)">Über</h2>
+      <p class="muted" style="font-size:var(--t-s, 13px)">
         SubmitOne Prototyp · v0.1<br>
         Workflow-Test für die spätere Integration ins bkptool.<br>
         Status-Modell: ${VERGABE_STATUS.map(s => s.kurz).join(' → ')}
@@ -7997,7 +8976,63 @@ function calTimeGrid(events, dates, todayI, add) {
     <div class="cal-tg-headrow"><div class="cal-tg-gutter"></div><div class="cal-tg-cols" style="${cstyle}">${colHead}</div></div>
     <div class="cal-tg-adrow"><div class="cal-tg-gutter ad">ganztägig</div><div class="cal-tg-cols" style="${cstyle}">${adRow}</div></div>
     <div class="cal-tg-body"><div class="cal-hours">${hours}</div><div class="cal-tg-cols" style="${cstyle}">${cols}</div></div>
+    ${add === 'plan' ? aufgabenBandHtml(dates, cstyle) : ''}
   </div>`;
+}
+
+/* Das Aufgabenband unter dem Raster.
+
+   Aus SubZeit kommt der Inhalt: je Tag die Aufgaben und darunter, wie viel
+   an dem Tag tatsächlich gearbeitet wurde. Aus SubmitOne kommt die
+   Bedienung: dieselben Spalten, dieselbe Breite, anklickbar wie der Rest.
+
+   Beides steht in `state.zeit` — die Aufgaben, die Stunden und das
+   Wochenziel. Wer in SubZeit hinüberwechselt, findet dieselben Einträge. */
+function aufgabenBandHtml(dates, cstyle) {
+  const z = zeitDoc();
+  const heute = todayIso();
+  const zellen = dates.map(iso => {
+    const auf = z.aufgaben.filter(a => a.geplant === iso);
+    const ist = z.eintraege.filter(e => e.datum === iso).reduce((a, e) => a + zDauer(e), 0);
+    const soll = zSoll(iso);
+    return `<div class="cal-auf-cell${iso === heute ? ' heute' : ''}" data-iso="${iso}">
+      ${auf.map(a => `<div class="cal-auf${a.erledigt ? ' fertig' : ''}" data-act="aufgabe-menu" data-kind="${a.id}" title="${esc(a.titel || '')}">
+          <button class="cal-auf-hk" data-act="aufgabe-fertig" data-kind="${a.id}" title="${a.erledigt ? 'wieder offen' : 'erledigt'}">${a.erledigt ? '✓' : ''}</button>
+          <span>${esc(a.titel || 'Aufgabe')}</span>
+        </div>`).join('')}
+      <button class="cal-auf-plus" data-act="aufgabe-neu" data-kind="${iso}">+ Aufgabe</button>
+      ${ist || soll ? `<div class="cal-auf-h${soll && Math.abs(ist - soll) > 1 ? (ist > soll ? ' plus' : ' minus') : ''}">${ist ? zStd(ist) : '–'}${soll ? ` <span>von ${zStd(soll)}</span>` : ''}</div>` : ''}
+    </div>`;
+  }).join('');
+  return `<div class="cal-tg-aufrow"><div class="cal-tg-gutter auf">Aufgaben<span>&amp; Stunden</span></div>
+    <div class="cal-tg-cols" style="${cstyle}">${zellen}</div></div>`;
+}
+
+function aufgabeNeu(iso) {
+  const titel = window.prompt('Aufgabe für ' + fmtDate(iso) + ':', '');
+  if (titel == null) return;
+  const t = titel.trim(); if (!t) return;
+  zeitDoc().aufgaben.push({ id: uid('au'), titel: t, geplant: iso, erledigt: false, projektId: null, notiz: '' });
+  save(); viewPlanung(); toast('Aufgabe eingeplant');
+}
+
+function aufgabeFertig(id) {
+  const a = zeitDoc().aufgaben.find(x => x.id === id); if (!a) return;
+  a.erledigt = !a.erledigt; save(); viewPlanung();
+}
+
+function aufgabeMenu(e, id) {
+  const z = zeitDoc();
+  const a = z.aufgaben.find(x => x.id === id); if (!a) return;
+  openContextMenu(e, [
+    { icon: a.erledigt ? '○' : '✓', label: a.erledigt ? 'Wieder offen' : 'Erledigt', act: () => aufgabeFertig(id) },
+    { icon: '✎', label: 'Umbenennen …', act: () => {
+        const t = window.prompt('Aufgabe:', a.titel || ''); if (t == null) return;
+        a.titel = t.trim() || a.titel; save(); viewPlanung(); } },
+    { icon: '→', label: 'Auf morgen schieben', act: () => { a.geplant = addDays(a.geplant, 1); save(); viewPlanung(); toast('Verschoben'); } },
+    { icon: '🗑', label: 'Löschen', danger: true, act: () => {
+        z.aufgaben = z.aufgaben.filter(x => x.id !== id); save(); viewPlanung(); toast('Aufgabe gelöscht'); } }
+  ]);
 }
 // Klick auf Spalte/Stunde → Termin mit Startzeit; auf ganztägig-Zelle → ohne Zeit
 function bindCalCols() {
@@ -8134,18 +9169,18 @@ function viewKalender(pid) {
   const fut = events.filter(e => e.datum >= todayI).sort(byDT);
   const past = events.filter(e => e.datum < todayI && e.datum >= cut).sort((a, b) => byDT(b, a));
   const agRow = e => `<div class="ag-row${e.manual ? ' clickable' : ''}"${e.manual ? ` data-act="kal-edit" data-ctx="termin" data-pid="${p.id}" data-tid="${e.id}"` : ''} style="display:flex;gap:10px;align-items:baseline;padding:6px 2px;border-bottom:1px solid var(--border)">
-      <span class="muted" style="min-width:60px;text-align:right;font-size:12px">${e.zeit ? esc(e.zeit) : 'ganzt.'}</span>
+      <span class="muted" style="min-width:60px;text-align:right;font-size:var(--t-xs, 12px)">${e.zeit ? esc(e.zeit) : 'ganzt.'}</span>
       <i class="cal-dot ${e.color}" style="position:relative;top:3px"></i>
-      <span style="flex:1;font-size:13px">${esc(e.titel)}</span>${e.quelle ? `<span class="tag" style="font-size:9.5px;flex:none">${esc(e.quelle)}</span>` : ''}</div>`;
+      <span style="flex:1;font-size:var(--t-s, 13px)">${esc(e.titel)}</span>${e.quelle ? `<span class="tag" style="font-size:var(--t-2xs, 9.5px);flex:none">${esc(e.quelle)}</span>` : ''}</div>`;
   const dayHead = iso => { const tage = Math.round((dISO(iso) - today()) / 86400000); const wd = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][dISO(iso).getDay()]; const rel = iso === todayI ? 'heute' : (tage === 1 ? 'morgen' : (tage > 1 ? `in ${tage} Tagen` : '')); return `${wd} · ${fmtDate(iso)}${rel ? ` <span style="color:var(--brand);font-weight:600">${rel}</span>` : ''}`; };
   const groups = [];
   fut.forEach(e => { let g = groups[groups.length - 1]; if (!g || g.iso !== e.datum) { g = { iso: e.datum, items: [] }; groups.push(g); } g.items.push(e); });
-  const futHtml = groups.length ? groups.map(g => `<div style="margin-bottom:14px"><div style="font-weight:700;font-size:12.5px;color:var(--text-soft);border-bottom:2px solid var(--border);padding-bottom:4px;margin-bottom:2px">${dayHead(g.iso)} <span class="muted" style="font-weight:400">· ${g.items.length}</span></div>${g.items.map(agRow).join('')}</div>`).join('') : '<p class="muted" style="margin:0">Keine kommenden Termine.</p>';
-  const pastHtml = past.length ? `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12.5px;color:var(--s-red);font-weight:600">⚠ ${past.length} vergangene / überfällige (letzte 30 Tage)</summary><div style="margin-top:8px;opacity:.8">${past.map(agRow).join('')}</div></details>` : '';
+  const futHtml = groups.length ? groups.map(g => `<div style="margin-bottom:14px"><div style="font-weight:700;font-size:var(--t-s, 12.5px);color:var(--text-soft);border-bottom:2px solid var(--border);padding-bottom:4px;margin-bottom:2px">${dayHead(g.iso)} <span class="muted" style="font-weight:400">· ${g.items.length}</span></div>${g.items.map(agRow).join('')}</div>`).join('') : '<p class="muted" style="margin:0">Keine kommenden Termine.</p>';
+  const pastHtml = past.length ? `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:var(--t-s, 12.5px);color:var(--s-red);font-weight:600">⚠ ${past.length} vergangene / überfällige (letzte 30 Tage)</summary><div style="margin-top:8px;opacity:.8">${past.map(agRow).join('')}</div></details>` : '';
 
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Kalender · alle Termine, Fristen &amp; Bauprogramm</div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Kalender · alle Termine, Fristen &amp; Bauprogramm</div></div>
       <button class="btn" data-act="kal-add" data-pid="${p.id}" data-kind="${addDate}">+ Termin</button></div>
     ${projektTabs(p, 'kalender')}
 
@@ -8160,12 +9195,12 @@ function viewKalender(pid) {
         <button class="btn sm secondary" data-act="kal-prev" data-pid="${p.id}" title="zurück">‹</button>
         <button class="btn sm secondary" data-act="kal-today" data-pid="${p.id}">Heute</button>
         <button class="btn sm secondary" data-act="kal-next" data-pid="${p.id}" title="vor">›</button>
-        <h2 style="margin:0 0 0 8px;font-size:16px">${label}</h2>
+        <h2 style="margin:0 0 0 8px;font-size:var(--t-l, 16px)">${label}</h2>
       </div>
       <div style="display:flex;gap:5px">${vb('tag', 'Tag')}${vb('woche', 'Woche')}${vb('monat', 'Monat')}</div>
     </div>
     ${body}
-    <p class="muted" style="font-size:12px;margin:8px 0 0">Klick auf Tag/Spalte = Termin erfassen · farbige Termine anklicken = bearbeiten.</p>
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin:8px 0 0">Klick auf Tag/Spalte = Termin erfassen · farbige Termine anklicken = bearbeiten.</p>
     ` : `
     <div class="section-head"><h2>Agenda</h2><span class="hint">${fut.length} kommende Termine · nach Tag gruppiert</span></div>
     <div class="card card-pad">${futHtml}${pastHtml}</div>
@@ -8269,8 +9304,8 @@ function viewPendenzenGlobal() {
   offen.sort((a, b) => (a.x.it.termin || '9999-99-99').localeCompare(b.x.it.termin || '9999-99-99'));
   const ueber = offen.filter(o => o.x.it.termin && daysUntil(o.x.it.termin) < 0).length;
 
-  const kpi = (l, v, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:21px${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div></div>`;
-  const chips = projekte.length ? projekte.map((p, idx) => `<span class="chip ${pendHidden.has(p.id) ? '' : 'active'}" data-act="pend-proj-toggle" data-pid="${p.id}"><button type="button" class="cal-dot-btn" data-act="proj-farbe" data-pid="${p.id}" title="Farbe ändern"><i class="cal-dot ${projColor(idx, p)}"></i></button>${esc(p.name)}</span>`).join('') : '<span class="muted" style="font-size:12.5px">Noch keine Projekte.</span>';
+  const kpi = (l, v, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:var(--t-xl, 21px)${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div></div>`;
+  const chips = projekte.length ? projekte.map((p, idx) => `<span class="chip ${pendHidden.has(p.id) ? '' : 'active'}" data-act="pend-proj-toggle" data-pid="${p.id}"><button type="button" class="cal-dot-btn" data-act="proj-farbe" data-pid="${p.id}" title="Farbe ändern"><i class="cal-dot ${projColor(idx, p)}"></i></button>${esc(p.name)}</span>`).join('') : '<span class="muted" style="font-size:var(--t-s, 12.5px)">Noch keine Projekte.</span>';
 
   const projZelle = p => `<i class="cal-dot ${projColor(idxOf(p), p)}" style="margin-right:6px;vertical-align:middle"></i><a href="#/projekt/${p.id}/pendenzen">${esc(p.name)}</a>`;
   const herk = (p, x) => x.pr ? `<a href="#/projekt/${p.id}/protokoll/${x.pr.id}">${esc(protokollTitel(x.pr))}</a>` : '<span class="muted">direkt erfasst</span>';
@@ -8384,17 +9419,17 @@ function viewKalenderGlobal() {
   const gvb = (v, t2) => `<button class="btn sm ${calView === v ? '' : 'secondary'}" data-act="gcal-view" data-kind="${v}">${t2}</button>`;
   const gAddDate = calView === 'monat' ? todayI : calRefIso;
 
-  const toggles = projects.length ? projects.map((p, idx) => `<span class="chip ${calHidden.has(p.id) ? '' : 'active'}" data-act="gcal-toggle" data-pid="${p.id}"><button type="button" class="cal-dot-btn" data-act="proj-farbe" data-pid="${p.id}" title="Farbe ändern"><i class="cal-dot ${projColor(idx, p)}"></i></button>${esc(p.name)}</span>`).join('') : '<span class="muted" style="font-size:12.5px">Keine Projekte.</span>';
+  const toggles = projects.length ? projects.map((p, idx) => `<span class="chip ${calHidden.has(p.id) ? '' : 'active'}" data-act="gcal-toggle" data-pid="${p.id}"><button type="button" class="cal-dot-btn" data-act="proj-farbe" data-pid="${p.id}" title="Farbe ändern"><i class="cal-dot ${projColor(idx, p)}"></i></button>${esc(p.name)}</span>`).join('') : '<span class="muted" style="font-size:var(--t-s, 12.5px)">Keine Projekte.</span>';
 
   const upcoming = events.filter(e => e.datum >= todayI).sort((a, b) => a.datum.localeCompare(b.datum) || (a.zeit || '').localeCompare(b.zeit || '')).slice(0, 15);
   const agenda = upcoming.length ? upcoming.map(e => `<div style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
     <i class="cal-dot ${e.color}"></i>
-    <span class="muted" style="min-width:118px;font-size:12.5px">${fmtDate(e.datum)}${e.zeit ? ' · ' + esc(e.zeit) : ''}</span>
-    <span style="font-size:13px">${esc(e.titel)}</span><span class="muted" style="font-size:11.5px;margin-left:auto">${esc(e.projekt)}</span></div>`).join('') : '<p class="muted" style="margin:0">Keine kommenden Termine.</p>';
+    <span class="muted" style="min-width:118px;font-size:var(--t-s, 12.5px)">${fmtDate(e.datum)}${e.zeit ? ' · ' + esc(e.zeit) : ''}</span>
+    <span style="font-size:var(--t-s, 13px)">${esc(e.titel)}</span><span class="muted" style="font-size:var(--t-xs, 11.5px);margin-left:auto">${esc(e.projekt)}</span></div>`).join('') : '<p class="muted" style="margin:0">Keine kommenden Termine.</p>';
 
   const mini = miniMonths(calRefIso || todayI);
   const calItem = (pid, label, idx, p) => `<label class="cal-listitem"><input type="checkbox" data-act="gcal-toggle" data-pid="${pid}"${calHidden.has(pid) ? '' : ' checked'}><button type="button" class="cal-dot-btn" data-act="proj-farbe" data-pid="${pid}" title="Farbe ändern"><i class="cal-dot ${p ? projColor(idx, p) : 'brand'}"></i></button><span>${esc(label)}</span></label>`;
-  const calList = `<div class="cal-listcard">${calItem('__global__', 'Allgemein', 0, null)}${projects.map((p, idx) => calItem(p.id, p.name, idx, p)).join('') || '<span class="muted" style="font-size:12px">Keine Projekte.</span>'}</div>`;
+  const calList = `<div class="cal-listcard">${calItem('__global__', 'Allgemein', 0, null)}${projects.map((p, idx) => calItem(p.id, p.name, idx, p)).join('') || '<span class="muted" style="font-size:var(--t-xs, 12px)">Keine Projekte.</span>'}</div>`;
 
   render(`
     <div class="page-head"><div><h1>Kalender</h1><div class="sub">Alle Projekte · Termine, Fristen &amp; Bauprogramm</div></div>
@@ -8405,7 +9440,7 @@ function viewKalenderGlobal() {
         <button class="btn sm secondary" data-act="gcal-prev" title="zurück">‹</button>
         <button class="btn sm secondary" data-act="gcal-today">Heute</button>
         <button class="btn sm secondary" data-act="gcal-next" title="vor">›</button>
-        <h2 style="margin:0 0 0 8px;font-size:16px">${gLabel}</h2>
+        <h2 style="margin:0 0 0 8px;font-size:var(--t-l, 16px)">${gLabel}</h2>
         ${relBadge(calView, calView === 'monat' ? [calGY, calGM] : calRefIso)}
       </div>
       <div style="display:flex;gap:5px">${gvb('tag', 'Tag')}${gvb('woche', 'Woche')}${gvb('monat', 'Monat')}</div>
@@ -8419,7 +9454,7 @@ function viewKalenderGlobal() {
           ${gBody}
           ${calView !== 'monat' ? `<button class="cal-side-nav right" data-act="gcal-next" title="nächste ${calView === 'tag' ? 'Tag' : 'Woche'}">›</button>` : ''}
         </div>
-        <p class="muted" style="font-size:12px;margin:8px 0 0">${calView === 'monat' ? 'Tag anklicken = öffnen · Tag/Woche-Ansicht zum Einteilen' : 'Ziehen = Zeit markieren · Doppelklick oder Rechtsklick = Termin erstellen · seitlich ‹ › = Woche blättern'}.</p>
+        <p class="muted" style="font-size:var(--t-xs, 12px);margin:8px 0 0">${calView === 'monat' ? 'Tag anklicken = öffnen · Tag/Woche-Ansicht zum Einteilen' : 'Ziehen = Zeit markieren · Doppelklick oder Rechtsklick = Termin erstellen · seitlich ‹ › = Woche blättern'}.</p>
         <div class="section-head" style="margin-top:20px"><h2>Agenda</h2><span class="hint">nächste Termine</span></div>
         <div class="card card-pad">${agenda}</div>
       </div>
@@ -8476,14 +9511,391 @@ const PLAN_TEMPLATES = [
 ];
 const PLAN_FARBEN = [['blue', 'Blau'], ['teal', 'Petrol'], ['green', 'Grün'], ['amber', 'Gelb'], ['purple', 'Lila'], ['grey', 'Grau'], ['red', 'Rot']];
 let planView = 'woche', planRefIso = null, planArmed = null, planungData = null, planSel = null, planClip = null, planPend = [];
-function loadPlanung() { if (planungData) return planungData; try { planungData = JSON.parse(localStorage.getItem('so_planung') || '[]'); } catch (_) { planungData = []; } return planungData; }
-function savePlanung() { try { localStorage.setItem('so_planung', JSON.stringify(planungData)); } catch (_) {} }
+/* Die Arbeitsplanung lag bis 13.08.2026 nur in localStorage – damit war sie
+   NICHT im Voll-Backup, NICHT in der Projektdatei und beim Browserwechsel weg.
+   Jetzt steht sie in `state` und geht damit überall mit. `migrate()` holt einen
+   noch vorhandenen alten Stand einmalig herüber. */
+function loadPlanung() { if (!Array.isArray(state.planung)) state.planung = []; planungData = state.planung; return planungData; }
+function savePlanung() { state.planung = planungData || []; db.commit(); }
 // Vordefinierte Zeitfenster-Dauern (per +/- in 30-Min-Schritten anpassbar, gespeichert)
-function loadPlanTplDur() { try { const a = JSON.parse(localStorage.getItem('so_plan_tpldur') || 'null'); if (Array.isArray(a)) a.forEach((d, i) => { if (PLAN_TEMPLATES[i] && d >= 30) PLAN_TEMPLATES[i].dauer = Math.max(30, Math.floor(d / 30) * 30); }); } catch (_) {} }
-function savePlanTplDur() { try { localStorage.setItem('so_plan_tpldur', JSON.stringify(PLAN_TEMPLATES.map(t => t.dauer))); } catch (_) {} }
+function loadPlanTplDur() { const a = state.planBausteine; if (Array.isArray(a)) a.forEach((d, i) => { if (PLAN_TEMPLATES[i] && d >= 30) PLAN_TEMPLATES[i].dauer = Math.max(30, Math.floor(d / 30) * 30); }); }
+function savePlanTplDur() { state.planBausteine = PLAN_TEMPLATES.map(t => t.dauer); db.commit(); }
 function planDurStep(i, delta) { const tp = PLAN_TEMPLATES[i]; if (!tp) return; tp.dauer = Math.max(30, Math.min(720, tp.dauer + delta * 30)); savePlanTplDur(); viewPlanung(); }
 function planDurTxt(d) { if (d < 60) return d + 'min'; const h = Math.floor(d / 60), m = d % 60; return h + 'h' + (m ? m : ''); }
 function min2hhmm(m) { m = Math.max(0, Math.min(24 * 60, Math.round(m))); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+
+/* =============================================================
+   Stunden — dieselben Einträge wie in SubZeit
+   -------------------------------------------------------------
+   SubZeit ist kein zweites Programm mit eigenen Daten, sondern
+   dieselbe Sache in anderer Aufmachung. Beide lesen `state.zeit`
+   aus Allgemein.subone — Format, Felder und Kennungen sind die
+   von SubZeit (submit/kern/kern.js), damit nichts übersetzt
+   werden muss und nichts auseinanderlaufen kann.
+
+   Hier wird erfasst und gezeigt; für Auswertung, Wochenbahn und
+   Soll-Ist geht man nach SubZeit hinüber. Die Daten sind dieselben.
+   ============================================================= */
+const ZEIT_FORMAT = 'submit.zeit';
+
+/** Das Zeitdokument — wird beim ersten Zugriff angelegt. */
+function zeitDoc() {
+  const z = state.zeit && typeof state.zeit === 'object' ? state.zeit : (state.zeit = {});
+  if (z.format !== ZEIT_FORMAT) z.format = ZEIT_FORMAT;
+  if (!z.fassung) z.fassung = 1;
+  if (!z.person || typeof z.person !== 'object') z.person = { name: '', kuerzel: '' };
+  if (!z.einstellungen || typeof z.einstellungen !== 'object') z.einstellungen = {};
+  const e = z.einstellungen;
+  if (!e.raster) e.raster = 15;
+  if (!e.kanton) e.kanton = 'BE';
+  if (!e.sollProTag) e.sollProTag = { 1: 510, 2: 510, 3: 510, 4: 510, 5: 480, 6: 0, 0: 0 };
+  if (e.pauseAbMinuten == null) e.pauseAbMinuten = 330;
+  if (e.pauseMinuten == null) e.pauseMinuten = 30;
+  ['eintraege', 'aufgaben', 'wochenziele', 'absenzen', 'absenztypen', 'taetigkeiten', 'kunden',
+   'eigeneFeiertage', 'abgewaehlteFeiertage', 'rechnungen'].forEach(k => { if (!Array.isArray(z[k])) z[k] = []; });
+  if (!z.taetigkeiten.length) {
+    z.taetigkeiten = [
+      { id: uid('ta'), name: 'Arbeit', verrechenbar: true },
+      { id: uid('ta'), name: 'Beratung', verrechenbar: true },
+      { id: uid('ta'), name: 'Reisezeit', verrechenbar: true },
+      { id: uid('ta'), name: 'Interne Arbeit', verrechenbar: false },
+      { id: uid('ta'), name: 'Sitzung', verrechenbar: false }
+    ];
+  }
+  return z;
+}
+
+/* Gerechnet wird im gemeinsamen Kern — submit/kern/zeitrechnung.js, aus
+   dem auch SubZeit rechnet. Meine erste Fassung rechnete hier selber und
+   kannte weder Feiertage noch Absenzen noch das Viertelstundenraster:
+   Der 1. August zeigte in SubmitOne 8,50 Stunden Soll und in SubZeit 0.
+   Jetzt gibt es die Regeln einmal. */
+const zMin  = s => Zeitrechnung.ausUhr(s);
+const zHhmm = m => Zeitrechnung.alsUhr(m);
+const zStd  = m => Zeitrechnung.alsStunden(m);
+const zDauer = e => Zeitrechnung.dauer(e);
+const zSoll = iso => Zeitrechnung.soll(zeitDoc(), iso);
+/** Die ganze Tageszeile: Ist, Soll, Feiertag, Absenz. */
+const zTag = iso => Zeitrechnung.tag(zeitDoc(), iso, todayIso());
+function zTaetigkeit(id) { return (zeitDoc().taetigkeiten.find(t => t.id === id) || {}).name || ''; }
+function zProjektName(id) { const p = findProjekt(id); return p ? p.name : ''; }
+
+let stundenRefIso = null;      // Montag der gezeigten Woche
+let stundenTag = null;         // gewählter Tag im Erfassungsstreifen
+
+/* Der Stundenrapport der angezeigten Woche.
+   ---------------------------------------------------------------------
+   Dieselbe Zusammenstellung wie der Rapport in SubZeit, hier für die
+   Woche, die gerade auf dem Schirm steht — damit Strg+P auch in dieser
+   Ansicht das Erwartete tut. Es ist ausdrücklich keine Rechnung: keine
+   Ansätze, keine Beträge, nur Stunden. */
+function pdfStunden() {
+  const z = zeitDoc();
+  const tage = weekDates(stundenRefIso || weekDates(todayIso())[0]);
+  const amTag = iso => (z.eintraege || []).filter(e => e.datum === iso).sort((a, b) => a.von - b.von);
+
+  const zeilen = tage.map(iso => {
+    const eintr = amTag(iso);
+    if (!eintr.length) return '';
+    const ist = eintr.reduce((a, e) => a + zDauer(e), 0);
+    const d = dISO(iso);
+    return `<tr class="st-kopf"><td colspan="2"><b>${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][d.getDay()]}, ${fmtDate(iso)}</b></td>
+        <td class="num"><b>${zStd(ist)}</b></td></tr>`
+      + eintr.map(e => `<tr>
+        <td class="num muted" style="white-space:nowrap">${zHhmm(e.von)}–${Number.isFinite(e.bis) ? zHhmm(e.bis) : '…'}</td>
+        <td>${esc(zProjektName(e.projektId) || 'Ohne Projekt')}${
+          (zTaetigkeit(e.taetigkeitId) || e.notiz)
+            ? `<span class="st-u">${esc([zTaetigkeit(e.taetigkeitId), e.notiz].filter(Boolean).join(' · '))}</span>` : ''}</td>
+        <td class="num">${zStd(zDauer(e))}</td></tr>`).join('');
+  }).join('');
+
+  const ist = tage.reduce((a, t) => a + amTag(t).reduce((b, e) => b + zDauer(e), 0), 0);
+  const soll = tage.reduce((a, t) => a + zSoll(t), 0);
+  const b = state.buero || BUERO;
+
+  if (!ist) { toast('In dieser Woche ist nichts erfasst', 'info'); return; }
+
+  openPrintDoc('Stundenrapport',
+    `KW ${isoWeek(dISO(tage[0]))} · ${fmtDate(tage[0])} – ${fmtDate(tage[6])}${b.person ? ' · ' + esc(b.person) : ''}`,
+    `<table class="t" style="max-width:620px"><tbody>${zeilen}
+       <tr class="st-tot"><td colspan="2"><b>Total erfasst</b></td><td class="num"><b>${zStd(ist)}</b></td></tr>
+       ${soll ? `<tr><td colspan="2" class="muted">Soll nach Pensum</td><td class="num muted">${zStd(soll)}</td></tr>
+       <tr><td colspan="2" class="muted">Differenz</td><td class="num muted">${ist - soll >= 0 ? '+' : '−'}${zStd(Math.abs(ist - soll))}</td></tr>` : ''}
+     </tbody></table>
+     <p class="muted" style="font-size:var(--t-2xs, 11px);margin-top:14px">Stundenrapport — keine Rechnung.</p>`,
+    { modul: 'stunden', extraCss:
+      `.st-kopf td{border-top:1.5px solid #46505e;padding-top:9px;}
+       .st-u{display:block;font-size:var(--t-2xs, 9.5px);color:#8a929d;}
+       .st-tot td{border-top:1.5px solid #46505e;background:#f3f5f9;}` });
+}
+
+function viewStunden() {
+  const z = zeitDoc();
+  const heute = todayIso();
+  if (!stundenRefIso) stundenRefIso = weekDates(heute)[0];
+  const tage = weekDates(stundenRefIso);
+  if (!stundenTag || !tage.includes(stundenTag)) stundenTag = tage.includes(heute) ? heute : tage[0];
+
+  const amTag = iso => z.eintraege.filter(e => e.datum === iso).sort((a, b) => a.von - b.von);
+  const istWoche = tage.reduce((a, t) => a + amTag(t).reduce((b, e) => b + zDauer(e), 0), 0);
+  const sollWoche = tage.reduce((a, t) => a + zSoll(t), 0);
+  const saldo = istWoche - sollWoche;
+
+  const kw = isoWeek(dISO(tage[0]));
+  const t = zeitDoc().taetigkeiten;
+  const projekte = sichtbareProjekte();
+
+  render(`
+    <div class="page-head"><div><h1>Stunden</h1>
+      <div class="sub">Dieselben Einträge wie in SubZeit — eine Datei, zwei Ansichten</div></div></div>
+
+    <div class="cal-head">
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn sm secondary" data-act="stunden-nav" data-kind="-1" title="Woche zurück">‹</button>
+        <button class="btn sm secondary" data-act="stunden-nav" data-kind="0">Diese Woche</button>
+        <button class="btn sm secondary" data-act="stunden-nav" data-kind="1" title="Woche vor">›</button>
+        <h2 style="margin:0 0 0 8px;font-size:var(--t-l, 16px)">KW ${kw} · ${fmtDate(tage[0])} – ${fmtDate(tage[6])}</h2>
+      </div>
+      <div class="st-bilanz">
+        <span><b>${zStd(istWoche)}</b> erfasst</span>
+        <span class="muted">von ${zStd(sollWoche)} Soll</span>
+        <span class="${Math.abs(saldo) < 1 ? 'muted' : (saldo > 0 ? 'st-plus' : 'st-minus')}">
+          ${saldo >= 0 ? '+' : '−'}${zStd(Math.abs(saldo))}</span>
+      </div>
+    </div>
+
+    <div class="card" style="padding:0;overflow:auto;max-height:clamp(340px,calc(100vh - 24rem),820px)">
+      <div id="stundenRaster"></div>
+    </div>
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:8px 0 0">
+      Mit gedrückter Maustaste über die Fläche ziehen legt einen Eintrag an; Blöcke lassen sich
+      verschieben und an den Rändern in der Länge ändern. Escape bricht ab.</p>
+
+    <div class="card card-pad" style="margin-top:16px;max-width:840px">
+      <h2 style="margin:0 0 10px;font-size:var(--t-l, 15px)">Zeit erfassen — ${fmtDate(stundenTag)}</h2>
+      <div class="form-row" style="align-items:end;gap:10px;flex-wrap:wrap">
+        <label class="field" style="max-width:110px">Von <input class="input" id="st_von" placeholder="07:30" value="${esc(zHhmm(naechsteFreieZeit(stundenTag)))}"></label>
+        <label class="field" style="max-width:110px">Bis <input class="input" id="st_bis" placeholder="12:00"></label>
+        <label class="field" style="max-width:100px">Pause Min. <input class="input" id="st_pause" type="number" min="0" step="5" value="0"></label>
+        <label class="field" style="min-width:200px">Projekt
+          <select class="select" id="st_proj"><option value="">— ohne Projekt —</option>
+            ${projekte.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
+        <label class="field" style="min-width:150px">Tätigkeit
+          <select class="select" id="st_taet">${t.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label>
+      </div>
+      <label class="field" style="margin-top:8px">Notiz
+        <input class="input" id="st_notiz" placeholder="Woran hast du gearbeitet?"></label>
+      <button class="btn" data-act="stunden-neu" style="margin-top:10px">+ Eintrag erfassen</button>
+      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:10px 0 0;border-top:1px solid var(--border);padding-top:9px">
+        Gespeichert wird in <b>Allgemein.subone</b> — derselben Datei, die SubZeit liest.
+        Für Wochenbahn, Auswertung und Rechnungen dort weiterarbeiten.
+      </p>
+    </div>`);
+
+  stundenRasterZeichnen(tage);
+}
+
+/* Das Stundenraster — dasselbe Modul wie SubZeits Zeitbahn.
+   ---------------------------------------------------------------------
+   Bis zum 14.08.2026 war das hier eine Liste von sieben Kästen mit
+   Textzeilen darin: Man sah, DASS etwas erfasst ist, aber nicht, wann
+   und wie lange. Ein Vormittag und ein ganzer Tag sahen gleich aus.
+
+   Jetzt zeichnet submit/kern/wochenraster.js — dieselbe Datei, die auch
+   SubZeit benutzt. Damit ist es nicht nur ähnlich, sondern identisch:
+   gleiche Geometrie, gleiches Ziehen, gleiche Farben. */
+function stundenRasterZeichnen(tage) {
+  const ziel = $('#stundenRaster');
+  if (!ziel || typeof Wochenraster === 'undefined') return;
+
+  const z = zeitDoc();
+  const heute = todayIso();
+  const jetzt = new Date();
+
+  /* Jeder Eintrag ein Block, in der Farbe seines Bauvorhabens. Die Farbe
+     hängt an der Kennung, nicht an der Reihenfolge — sonst verrutschte
+     sie, sobald ein Projekt dazukommt. */
+  const bloecke = z.eintraege
+    .filter(e => tage.includes(e.datum))
+    .map(e => {
+      const laeuft = !Number.isFinite(e.bis);
+      const p = e.projektId ? findProjekt(e.projektId) : null;
+      const taet = zTaetigkeit(e.taetigkeitId);
+      return {
+        id: String(e.id), datum: e.datum, von: e.von,
+        bis: laeuft ? undefined : e.bis,
+        farbe: e.projektId ? gewerkFarbeAusId(e.projektId) : '#94a3b8',
+        titelVoll: [p ? p.name : 'Ohne Projekt', zHhmm(e.von) + '–' + (laeuft ? '…' : zHhmm(e.bis)),
+                    taet || '', e.notiz || ''].filter(Boolean).join(' · '),
+        eintrag: e, projekt: p, taet
+      };
+    });
+
+  Wochenraster.zeichne(ziel, {
+    tage, achse: 'linear', vonStunde: 7, bisStunde: 19, hoeheProStunde: 44,
+    raster: Zeitrechnung.raster(z), heute,
+    jetzt: jetzt.getHours() * 60 + jetzt.getMinutes(),
+    bloecke,
+
+    /* Projekt, Zeit und Beschrieb sofort sichtbar — ohne Klick. */
+    blockInhalt: b => {
+      const e = b.eintrag, laeuft = !Number.isFinite(e.bis);
+      const unten = [b.taet || '', e.notiz || '', e.pause ? e.pause + '′ Pause' : '']
+        .filter(Boolean).join(' · ');
+      const el = document.createElement('div');
+      el.className = 'wr-block-inhalt';
+      el.innerHTML = `<span class="wr-block-titel">${esc(b.projekt ? b.projekt.name : 'Projekt zuweisen')}</span>
+        <span class="wr-block-zeit">${zHhmm(e.von)}–${laeuft ? '…' : zHhmm(e.bis)} · ${zStd(zDauer(e))}</span>
+        ${unten ? `<span class="wr-block-unter">${esc(unten)}</span>` : ''}`;
+      return el;
+    },
+
+    /* Der Tageskopf zeigt, was zusammenkam — und wie es zum Soll steht. */
+    kopf: iso => {
+      const d = dISO(iso);
+      const ist = z.eintraege.filter(e => e.datum === iso).reduce((a, e) => a + zDauer(e), 0);
+      const soll = zSoll(iso);
+      return {
+        titel: ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][d.getDay()] + ' ' + iso.slice(8) + '.' + iso.slice(5, 7) + '.',
+        unter: (ist ? zStd(ist) : '–') + (soll ? ' von ' + zStd(soll) : ''),
+        klasse: (d.getDay() === 0 || d.getDay() === 6) ? 'wochenende' : ''
+      };
+    },
+
+    leer: () => {
+      const el = document.createElement('div');
+      el.innerHTML = '<b>Zeit aufziehen</b><br>Mit gedrückter Maustaste über die Fläche ziehen';
+      return el;
+    },
+
+    /* Ziehen legt an, verschieben und Ränder ändern — über dieselben
+       Prüfungen wie SubZeit, sonst entstünde eine Datei, die dort nicht
+       mehr aufgeht. */
+    beiNeu: (datum, von, bis) => stundenAusRaster(datum, von, bis),
+    beiGeaendert: (id, datum, von, bis) => stundenVerschieben(id, datum, von, bis),
+    beiKlick: id => stundenBearbeiten(id),
+    beiTagKlick: datum => { stundenTag = datum; viewStunden(); },
+    beiKopfKlick: datum => { stundenTag = datum; viewStunden(); }
+  });
+
+  /* Das Wochenende ruhiger — SubmitOne kennt die Schweizer Arbeitswoche,
+     das Raster soll sie nicht kennen müssen. */
+  tage.forEach((iso, i) => {
+    const d = dISO(iso);
+    if (d.getDay() !== 0 && d.getDay() !== 6) return;
+    const sp = ziel.querySelectorAll('.wr-spalte')[i];
+    if (sp) sp.classList.add('wochenende');
+  });
+}
+
+/** Eine feste Farbe je Kennung — dieselbe Regel wie in SubZeits fach.js. */
+function gewerkFarbeAusId(id) {
+  const FARBEN = ['#7132e3', '#0ea5e9', '#0f7a4a', '#c8871f', '#c02626',
+                  '#8455f0', '#1d5fbf', '#0d9488', '#a16207', '#9333ea'];
+  const s = String(id || '');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return FARBEN[h % FARBEN.length];
+}
+
+/** Aufgezogen im Raster — mit denselben Prüfungen wie beim Formular. */
+function stundenAusRaster(datum, von, bis) {
+  const z = zeitDoc();
+  const [a, b] = Zeitrechnung.rundeSpanne(z, von, bis);
+  if (Zeitrechnung.ueberschneidung(z, datum, a, b)) { toast('Dort steht schon ein Eintrag', 'info'); return; }
+  z.eintraege.push({ id: uid('ze'), datum, von: a, bis: b, pause: 0, projektId: null, taetigkeitId: null, notiz: '' });
+  save(); stundenTag = datum; viewStunden();
+  toast(zStd(b - a) + ' erfasst — Projekt und Notiz unten ergänzen');
+}
+
+/** Verschoben oder in der Länge geändert. */
+function stundenVerschieben(id, datum, von, bis) {
+  const z = zeitDoc();
+  const e = z.eintraege.find(x => String(x.id) === String(id));
+  if (!e) return;
+  const [a, b] = Zeitrechnung.rundeSpanne(z, von, bis);
+  if (Zeitrechnung.ueberschneidung(z, datum, a, b, e.id)) { toast('Dort steht schon ein Eintrag', 'info'); return; }
+  e.datum = datum; e.von = a; e.bis = b;
+  save(); viewStunden();
+}
+
+/** Wo der Tag noch frei ist — als Vorschlag für die nächste Erfassung. */
+function naechsteFreieZeit(iso) {
+  const e = zeitDoc().eintraege.filter(x => x.datum === iso && Number.isFinite(x.bis));
+  if (!e.length) return 7 * 60 + 30;
+  return Math.max(...e.map(x => x.bis));
+}
+
+function stundenNav(kind) {
+  const n = Number(kind);
+  stundenRefIso = n === 0 ? weekDates(todayIso())[0] : addDays(stundenRefIso, n * 7);
+  stundenTag = null; viewStunden();
+}
+
+function stundenNeu() {
+  const z = zeitDoc();
+  const von = zMin($('#st_von').value), bis = zMin($('#st_bis').value);
+  if (von == null || bis == null) { toast('Von und Bis eintragen, z.B. 07:30 und 12:00', 'info'); return; }
+  if (bis <= von) { toast('Bis liegt vor Von', 'info'); return; }
+  /* Aufs Raster runden und auf Überschneidung prüfen — beides mit
+     denselben Funktionen wie SubZeit, sonst entstünde eine Datei, die
+     dort nicht mehr aufgeht. */
+  const [a, b] = Zeitrechnung.rundeSpanne(z, von, bis);
+  if (Zeitrechnung.ueberschneidung(z, stundenTag, a, b)) {
+    toast('Dort steht schon ein Eintrag', 'info'); return;
+  }
+
+  z.eintraege.push({
+    id: uid('ze'), datum: stundenTag, von: a, bis: b,
+    pause: Math.max(0, Number($('#st_pause').value) || 0),
+    projektId: $('#st_proj').value || null,
+    taetigkeitId: $('#st_taet').value || null,
+    aufgabeId: null,
+    notiz: $('#st_notiz').value.trim(),
+    status: 'entwurf'
+  });
+  save(); viewStunden(); toast('Erfasst');
+}
+
+function stundenBearbeiten(id) {
+  const z = zeitDoc();
+  const e = z.eintraege.find(x => x.id === id); if (!e) return;
+  const projekte = sichtbareProjekte();
+  openModal('Eintrag — ' + fmtDate(e.datum), `
+    <div class="form-row" style="align-items:end;gap:10px">
+      <label class="field" style="max-width:110px">Von <input class="input" id="se_von" value="${zHhmm(e.von)}"></label>
+      <label class="field" style="max-width:110px">Bis <input class="input" id="se_bis" value="${zHhmm(e.bis)}"></label>
+      <label class="field" style="max-width:110px">Pause Min. <input class="input" id="se_pause" type="number" min="0" step="5" value="${Number(e.pause) || 0}"></label>
+    </div>
+    <div class="form-row" style="margin-top:8px">
+      <label class="field">Projekt <select class="select" id="se_proj"><option value="">— ohne Projekt —</option>
+        ${projekte.map(p => `<option value="${p.id}"${p.id === e.projektId ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
+      <label class="field">Tätigkeit <select class="select" id="se_taet">
+        ${z.taetigkeiten.map(x => `<option value="${x.id}"${x.id === e.taetigkeitId ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+    </div>
+    <label class="field" style="margin-top:8px">Notiz <input class="input" id="se_notiz" value="${esc(e.notiz || '')}"></label>
+  `, `<button class="btn ghost danger" data-act="stunden-loeschen" data-kind="${id}">Löschen</button>
+      <button class="btn ghost" data-close="1">Abbrechen</button>
+      <button class="btn" data-act="stunden-speichern" data-kind="${id}">💾 Speichern</button>`);
+}
+
+function stundenSpeichern(id) {
+  const z = zeitDoc(); const e = z.eintraege.find(x => x.id === id); if (!e) return;
+  const von = zMin($('#se_von').value), bis = zMin($('#se_bis').value);
+  if (von == null || bis == null || bis <= von) { toast('Zeiten prüfen', 'info'); return; }
+  e.von = von; e.bis = bis;
+  e.pause = Math.max(0, Number($('#se_pause').value) || 0);
+  e.projektId = $('#se_proj').value || null;
+  e.taetigkeitId = $('#se_taet').value || null;
+  e.notiz = $('#se_notiz').value.trim();
+  save(); closeModal(); viewStunden(); toast('Gespeichert');
+}
+
+function stundenLoeschen(id) {
+  const z = zeitDoc();
+  z.eintraege = z.eintraege.filter(x => x.id !== id);
+  save(); closeModal(); viewStunden(); toast('Eintrag gelöscht');
+}
 
 function viewPlanung() {
   const t = today(); const todayI = todayIso();
@@ -8511,7 +9923,7 @@ function viewPlanung() {
   const pend = [];
   projects.forEach((p, idx) => { if (calHidden.has(p.id)) return; offenePendenzen(p).forEach(x => pend.push({ p, idx, it: x.it })); });
   planPend = pend.map(x => ({ titel: x.it.text || 'Pendenz', color: projColor(x.idx, x.p) }));
-  const pendHtml = pend.length ? pend.map((x, i) => `<div class="plan-pend-item" draggable="true" data-pend="${i}" title="In den Kalender ziehen"><i class="cal-dot ${projColor(x.idx, x.p)}"></i><span style="flex:1">${esc(x.it.text || '')}</span><span class="muted" style="font-size:11px">${x.it.termin ? fmtDate(x.it.termin) : ''}</span></div>`).join('') : '<p class="muted" style="margin:0;font-size:12.5px">Keine offenen Pendenzen.</p>';
+  const pendHtml = pend.length ? pend.map((x, i) => `<div class="plan-pend-item" draggable="true" data-pend="${i}" title="In den Kalender ziehen"><i class="cal-dot ${projColor(x.idx, x.p)}"></i><span style="flex:1">${esc(x.it.text || '')}</span><span class="muted" style="font-size:var(--t-2xs, 11px)">${x.it.termin ? fmtDate(x.it.termin) : ''}</span></div>`).join('') : '<p class="muted" style="margin:0;font-size:var(--t-s, 12.5px)">Keine offenen Pendenzen.</p>';
 
   render(`
     <div class="page-head"><div><h1>Arbeitsplanung</h1><div class="sub">Tag &amp; Woche · Termine der gewählten Projekte + eigene Zeitfenster</div></div></div>
@@ -8522,7 +9934,7 @@ function viewPlanung() {
         <button class="btn sm secondary" data-act="plan-prev" title="zurück">‹</button>
         <button class="btn sm secondary" data-act="plan-today">Heute</button>
         <button class="btn sm secondary" data-act="plan-next" title="vor">›</button>
-        <h2 style="margin:0 0 0 8px;font-size:16px">${label}</h2>
+        <h2 style="margin:0 0 0 8px;font-size:var(--t-l, 16px)">${label}</h2>
         ${relBadge(planView, planRefIso)}
       </div>
       <div style="display:flex;gap:5px">${pvb('tag', 'Tag')}${pvb('woche', 'Woche')}</div>
@@ -8766,7 +10178,7 @@ function viewDrucken() {
   const projects = sichtbareProjekte();
   if (druckPid == null || !findProjekt(druckPid)) druckPid = projects.length ? projects[0].id : '';
   const p = findProjekt(druckPid);
-  const card = (act, label, desc) => `<button class="btn secondary" data-act="${act}" data-pid="${druckPid}" style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;height:auto;padding:13px 15px;white-space:normal"><span style="font-weight:700;font-size:13.5px">🖨 ${label}</span><span class="muted" style="font-size:11.5px;font-weight:400">${desc}</span></button>`;
+  const card = (act, label, desc) => `<button class="btn secondary" data-act="${act}" data-pid="${druckPid}" style="display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;height:auto;padding:13px 15px;white-space:normal"><span style="font-weight:700;font-size:var(--t-m, 13.5px)">🖨 ${label}</span><span class="muted" style="font-size:var(--t-xs, 11.5px);font-weight:400">${desc}</span></button>`;
   render(`
     <div class="page-head"><div><h1>Drucken</h1><div class="sub">Alle Dokumente – ein Klick, direkt als PDF</div></div></div>
     ${projects.length ? `
@@ -8789,7 +10201,7 @@ function viewDrucken() {
       ${card('pdf-melden', 'Bei wem melden', 'Bemusterung · Unternehmer + Ausstellung')}
       ${card('pdf-bezugsfirmen', 'Auswahl-Firmen', 'Bemusterungs-/Bezugsfirmen je Kategorie')}
     </div>
-    <p class="muted" style="font-size:12px;margin-top:14px">Deckblätter (pro Firma) und Protokoll-PDFs erstellst du direkt beim jeweiligen Gewerk bzw. Protokoll.</p>
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin-top:14px">Deckblätter (pro Firma) und Protokoll-PDFs erstellst du direkt beim jeweiligen Gewerk bzw. Protokoll.</p>
     ` : '<p class="muted" style="margin-top:14px">Noch kein Projekt vorhanden.</p>'}
   `);
   const sel = $('#druck_pid'); if (sel) sel.addEventListener('change', () => { druckPid = sel.value; viewDrucken(); });
@@ -8806,14 +10218,14 @@ function viewErfassen() {
     kontakt:   ['👤', 'Kontakt', 'Firma / Person zur Adressliste'],
     projekt:   ['➕', 'Neues Projekt', 'Bauprojekt anlegen'],
   };
-  const card = (kind, rec) => { const m = M[kind]; return `<button class="btn secondary erfassen-card${rec ? ' recommended' : ''}" data-act="erfassen" data-kind="${kind}" style="position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;height:auto;padding:13px 15px;white-space:normal">${rec ? '<span class="ef-rec">Für dich</span>' : ''}<span style="font-weight:700;font-size:13.5px">${m[0]} ${m[1]}</span><span class="muted" style="font-size:11.5px;font-weight:400">${m[2]}</span></button>`; };
+  const card = (kind, rec) => { const m = M[kind]; return `<button class="btn secondary erfassen-card${rec ? ' recommended' : ''}" data-act="erfassen" data-kind="${kind}" style="position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;height:auto;padding:13px 15px;white-space:normal">${rec ? '<span class="ef-rec">Für dich</span>' : ''}<span style="font-weight:700;font-size:var(--t-m, 13.5px)">${m[0]} ${m[1]}</span><span class="muted" style="font-size:var(--t-xs, 11.5px);font-weight:400">${m[2]}</span></button>`; };
   const order = ERFASSEN_ORDER;
   render(`
     <div class="page-head"><div><h1>Erfassen</h1><div class="sub">Schnell festhalten – Art wählen, Projekt angeben, fertig</div></div></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-top:6px">
       ${order.map(k => card(k, false)).join('')}
     </div>
-    <p class="muted" style="font-size:12px;margin-top:14px">„Pendenz", „Termin" &amp; „Rechnung" fragen zuerst nach dem Projekt – so landet alles am richtigen Ort.</p>
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin-top:14px">„Pendenz", „Termin" &amp; „Rechnung" fragen zuerst nach dem Projekt – so landet alles am richtigen Ort.</p>
   `);
 }
 function vergabeOpts(p) {
@@ -8840,7 +10252,7 @@ function erfassenPick(kind) {
   const typSel = kind === 'protokoll' ? `<label class="field">Art <select class="select" id="ef_typ"><option value="sitzung">Sitzungsprotokoll</option><option value="aktennotiz">Aktennotiz</option></select></label>` : '';
   const gewSel = kind === 'rechnung' ? `<label class="field">Gewerk / Arbeitsbeschrieb <select class="select" id="ef_vid">${vergabeOpts(first)}</select></label>` : '';
   openModal(titel, `
-    <p class="muted" style="margin:0 0 10px;font-size:12.5px">Für welches Projekt?</p>
+    <p class="muted" style="margin:0 0 10px;font-size:var(--t-s, 12.5px)">Für welches Projekt?</p>
     <label class="field">Projekt <select class="select" id="ef_pid">${projekte.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
     ${typSel}${gewSel}
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="erfassen-go" data-kind="${kind}">Weiter</button>`);
@@ -8893,7 +10305,7 @@ function viewFinanz(pid) {
   const bruttoRendite = anlage > 0 ? jahresMiete / anlage * 100 : 0;
   const gewinn = verkaufTotal - anlage;
   const margeKost = anlage > 0 ? gewinn / anlage * 100 : 0;
-  const kpiF = (l, v) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:20px">${v}</div></div>`;
+  const kpiF = (l, v) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:var(--t-xl, 20px)">${v}</div></div>`;
 
   const strukturHtml = (p.geschosseListe || []).length ? (p.geschosseListe).map(g => `
     <div class="card card-pad" style="margin-bottom:12px">
@@ -8913,7 +10325,7 @@ function viewFinanz(pid) {
           <td class="num">${u.miete ? chf(u.miete) : '–'}</td>
           <td class="num">${u.verkauf ? chf(u.verkauf) : '–'}</td>
           <td><button class="x-btn" data-act="edit-einheit" data-pid="${p.id}" data-gid="${g.id}" data-eid="${u.id}">✏</button><button class="x-btn" data-act="rm-einheit" data-pid="${p.id}" data-gid="${g.id}" data-eid="${u.id}">×</button></td>
-        </tr>`).join('')}</tbody></table>` : `<div class="muted" style="font-size:12.5px">Noch keine Einheiten – „+ Einheit".</div>`}
+        </tr>`).join('')}</tbody></table>` : `<div class="muted" style="font-size:var(--t-s, 12.5px)">Noch keine Einheiten – „+ Einheit".</div>`}
     </div>`).join('') : emptyState('🏢', 'Noch keine Geschosse – oben „+ Geschoss".');
 
   const unitRows = einh.map(x => {
@@ -8921,7 +10333,7 @@ function viewFinanz(pid) {
     const anteil = flTot > 0 ? anlage * (m2 / flTot) : 0;
     const rend = anteil > 0 ? (Number(u.miete) || 0) * 12 / anteil * 100 : 0;
     const gew = (Number(u.verkauf) || 0) - anteil;
-    return `<tr><td><strong>${esc(u.name || '')}</strong><div class="muted" style="font-size:11.5px">${esc(x.g.name || '')}</div></td>
+    return `<tr><td><strong>${esc(u.name || '')}</strong><div class="muted" style="font-size:var(--t-xs, 11.5px)">${esc(x.g.name || '')}</div></td>
       <td class="num">${m2 ? m2.toLocaleString('de-CH') : '–'}</td>
       <td class="num">${chf(anteil)}</td>
       <td class="num">${u.miete ? chf(u.miete) : '–'}</td>
@@ -8934,7 +10346,7 @@ function viewFinanz(pid) {
 
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › ${esc(p.name)}</div>
-    <div class="detail-head"><div><h1 style="margin:0;font-size:23px">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Finanzierung &amp; Rentabilität</div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Finanzierung &amp; Rentabilität</div></div>
       <button class="btn" data-act="new-geschoss" data-pid="${p.id}">+ Geschoss</button></div>
     ${projektTabs(p, 'finanz')}
     ${demoBanner('finanz')}
@@ -8952,7 +10364,7 @@ function viewFinanz(pid) {
     <div class="section-head" style="margin-top:26px"><h2>Anlagekosten (vollumfänglich)</h2></div>
     <div class="card card-pad" style="max-width:560px">
       ${fin('fz_land', 'Landkosten / Grundstück (CHF)', f.land)}
-      <label class="field">Baukosten <span class="muted" style="font-weight:400;font-size:11px">(automatisch aus Kosten-Tab)</span> <input class="input" value="${chf(bauk)}" disabled></label>
+      <label class="field">Baukosten <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(automatisch aus Kosten-Tab)</span> <input class="input" value="${chf(bauk)}" disabled></label>
       ${fin('fz_honorare', 'Honorare / Baunebenkosten (CHF)', f.honorare)}
       ${fin('fz_finanzierung', 'Finanzierung / Reserve (CHF)', f.finanzierung)}
       <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:10px;margin-top:8px"><strong>Anlagekosten total</strong><strong>${chf(anlage)}</strong></div>
@@ -8961,14 +10373,14 @@ function viewFinanz(pid) {
     <div class="section-head" style="margin-top:26px"><h2>Rentabilität – Vergleich</h2></div>
     <div class="two-col">
       <div class="card card-pad">
-        <h3 style="margin:0 0 8px;font-size:14px">📈 Vermietung</h3>
-        <div style="display:flex;justify-content:space-between;font-size:13.5px;line-height:2.1"><span>Jahresmiete (Soll)</span><strong>${chf(jahresMiete)}</strong></div>
-        <div style="display:flex;justify-content:space-between;font-size:13.5px;line-height:2.1"><span>Bruttorendite</span><strong>${anlage > 0 ? bruttoRendite.toFixed(2) + ' %' : '–'}</strong></div>
+        <h3 style="margin:0 0 8px;font-size:var(--t-m, 14px)">📈 Vermietung</h3>
+        <div style="display:flex;justify-content:space-between;font-size:var(--t-m, 13.5px);line-height:2.1"><span>Jahresmiete (Soll)</span><strong>${chf(jahresMiete)}</strong></div>
+        <div style="display:flex;justify-content:space-between;font-size:var(--t-m, 13.5px);line-height:2.1"><span>Bruttorendite</span><strong>${anlage > 0 ? bruttoRendite.toFixed(2) + ' %' : '–'}</strong></div>
       </div>
       <div class="card card-pad">
-        <h3 style="margin:0 0 8px;font-size:14px">🏷 Verkauf (Eigentum)</h3>
-        <div style="display:flex;justify-content:space-between;font-size:13.5px;line-height:2.1"><span>Verkaufstotal</span><strong>${chf(verkaufTotal)}</strong></div>
-        <div style="display:flex;justify-content:space-between;font-size:13.5px;line-height:2.1"><span>Gewinn / Marge</span><strong style="${gewinn >= 0 ? 'color:var(--s-green)' : 'color:var(--s-red)'}">${verkaufTotal > 0 ? chf(gewinn) + ' (' + margeKost.toFixed(1) + '%)' : '–'}</strong></div>
+        <h3 style="margin:0 0 8px;font-size:var(--t-m, 14px)">🏷 Verkauf (Eigentum)</h3>
+        <div style="display:flex;justify-content:space-between;font-size:var(--t-m, 13.5px);line-height:2.1"><span>Verkaufstotal</span><strong>${chf(verkaufTotal)}</strong></div>
+        <div style="display:flex;justify-content:space-between;font-size:var(--t-m, 13.5px);line-height:2.1"><span>Gewinn / Marge</span><strong style="${gewinn >= 0 ? 'color:var(--s-green)' : 'color:var(--s-red)'}">${verkaufTotal > 0 ? chf(gewinn) + ' (' + margeKost.toFixed(1) + '%)' : '–'}</strong></div>
       </div>
     </div>
 
@@ -9074,7 +10486,7 @@ function actNewProjekt() {
     </div>
     <label class="field" style="margin-bottom:2px">Projektfarbe (Kalender &amp; Planung)</label>
     ${farbePickerHtml(projColor(state.projekte.length))}
-    <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 4px"><div class="muted" style="font-size:12px;margin-bottom:6px">Gebäudedaten (optional)</div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 4px"><div class="muted" style="font-size:var(--t-xs, 12px);margin-bottom:6px">Gebäudedaten (optional)</div>
     ${gebaeudeFelder(null)}
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-projekt">Projekt anlegen</button>`);
 }
@@ -9105,7 +10517,10 @@ function saveProjekt() {
 function actEditProjekt(pid) {
   const p = findProjekt(pid); if (!p) return;
   openModal('Projekt bearbeiten', `
-    <label class="field">Projektname <input class="input" id="f_name" value="${esc(p.name)}"></label>
+    <div class="form-row">
+      <label class="field" style="flex:3">Projektname <input class="input" id="f_name" value="${esc(p.name)}"></label>
+      <label class="field" style="flex:1">Objekt-Nr. <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(auf Bauprogramm &amp; Ausschreibung)</span> <input class="input" id="f_nummer" value="${esc(p.nummer || '')}" placeholder="z.B. 2510"></label>
+    </div>
     <div class="form-row">
       <label class="field">Ort <input class="input" id="f_ort" value="${esc(p.ort || '')}"></label>
       <label class="field">Bauherr <input class="input" id="f_bauherr" value="${esc(p.bauherr || '')}"></label>
@@ -9119,12 +10534,12 @@ function actEditProjekt(pid) {
       <label class="field">Ende <input class="input" type="date" id="f_ende" value="${esc(p.ende || '')}"></label>
     </div>
     <div class="form-row">
-      <label class="field">Baustart <span class="muted" style="font-weight:400;font-size:11px">(Meilenstein im Gantt)</span> <input class="input" type="date" id="f_baustart" value="${esc(p.baustart || '')}"></label>
-      <label class="field">Bezugstermin <span class="muted" style="font-weight:400;font-size:11px">(Meilenstein im Gantt)</span> <input class="input" type="date" id="f_bezug" value="${esc(p.bezug || '')}"></label>
+      <label class="field">Baustart <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(Meilenstein im Gantt)</span> <input class="input" type="date" id="f_baustart" value="${esc(p.baustart || '')}"></label>
+      <label class="field">Bezugstermin <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(Meilenstein im Gantt)</span> <input class="input" type="date" id="f_bezug" value="${esc(p.bezug || '')}"></label>
     </div>
     <label class="field" style="margin-bottom:2px">Projektfarbe (Kalender &amp; Planung)</label>
     ${farbePickerHtml(p.farbe || projColor(state.projekte.indexOf(p)))}
-    <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 4px"><div class="muted" style="font-size:12px;margin-bottom:6px">Gebäudedaten</div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 4px"><div class="muted" style="font-size:var(--t-xs, 12px);margin-bottom:6px">Gebäudedaten</div>
     ${gebaeudeFelder(p)}
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-projekt-edit" data-pid="${pid}">💾 Speichern</button>`);
 }
@@ -9132,6 +10547,7 @@ function saveProjektEdit(pid) {
   const p = findProjekt(pid); if (!p) return;
   const name = $('#f_name').value.trim(); if (!name) { toast('Bitte einen Projektnamen eingeben', 'info'); return; }
   p.name = name;
+  p.nummer = $('#f_nummer') ? $('#f_nummer').value.trim() : (p.nummer || '');
   p.ort = $('#f_ort').value.trim() || '–';
   p.bauherr = $('#f_bauherr').value.trim() || '–';
   p.projektleiter = $('#f_pl').value.trim() || '–';
@@ -9179,7 +10595,7 @@ function actNewVergabe(pid) {
     <label class="field" style="margin-bottom:2px">Grober Baubeginn</label>
     ${saisonSel('f_grobvon')}
     <details style="margin-top:12px">
-      <summary style="cursor:pointer;font-weight:600;font-size:13px;padding:4px 0">+ Details &amp; Submittenten (optional, Power-User)</summary>
+      <summary style="cursor:pointer;font-weight:600;font-size:var(--t-s, 13px);padding:4px 0">+ Details &amp; Submittenten (optional, Power-User)</summary>
       <div style="margin-top:8px">
         <div class="form-row">
           <label class="field">Status <select class="select" id="f_status">${VERGABE_STATUS.map(s => `<option value="${s.key}">${esc(s.label)}</option>`).join('')}</select></label>
@@ -9189,12 +10605,12 @@ function actNewVergabe(pid) {
           <label class="field">Ausführung von (exakt) <input class="input" type="date" id="f_baustart"></label>
           <label class="field">bis (exakt) <input class="input" type="date" id="f_bauende"></label>
         </div>
-        <p class="muted" style="font-size:11.5px;margin:0 0 10px">Exakte Daten überschreiben die grobe Saison-Angabe.</p>
+        <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:0 0 10px">Exakte Daten überschreiben die grobe Saison-Angabe.</p>
         <div class="form-row">
           <label class="field">Direktvergabe an (fixer Unternehmer) <input class="input" id="f_fix" placeholder="leer = Ausschreibung"></label>
           <label class="field">Vergabesumme (CHF) <input class="input" type="number" id="f_fixbetrag"></label>
         </div>
-        <label class="field">Submittenten einladen <span class="muted" style="font-weight:400;font-size:11px">(eine Firma pro Zeile)</span>
+        <label class="field">Submittenten einladen <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(eine Firma pro Zeile)</span>
           <textarea class="input" id="f_subs" rows="3" placeholder="Hugentobler Bau AG&#10;Steiner & Co.&#10;BauKern AG"></textarea>
         </label>
       </div>
@@ -9293,7 +10709,7 @@ function ksRender() {
   const p = findProjekt(c.pid);
   const v = findVergabe(p, c.vid);
   const k = c.calc || {};
-  const tagSel = (pos, f, label, list, newLabel) => `<select class="select ks-tag" id="ks_${f === 'bauteil' ? 'bt' : 'op'}_${pos.id}" data-pos="${pos.id}" data-f="${f}" style="font-size:12px;padding:5px 8px;flex:1">
+  const tagSel = (pos, f, label, list, newLabel) => `<select class="select ks-tag" id="ks_${f === 'bauteil' ? 'bt' : 'op'}_${pos.id}" data-pos="${pos.id}" data-f="${f}" style="font-size:var(--t-xs, 12px);padding:5px 8px;flex:1">
       <option value="">${label} –</option>
       ${(list || []).map(o => `<option value="${o.id}"${pos[f] === o.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}
       <option value="__new">${newLabel}</option>
@@ -9311,24 +10727,24 @@ function ksRender() {
   </div>`).join('');
   openModal('Kostenschätzung – ' + esc(v && v.gewerk || ''), `
     <label class="field">Beschrieb (gesamtes Gewerk) <textarea class="input" id="ks_beschrieb" rows="2" placeholder="Was umfasst dieses Gewerk? – erscheint im Kostenschätzungs-PDF">${esc(c.beschrieb)}</textarea></label>
-    <div class="muted" style="font-size:12px;margin:10px 0 5px"><strong>Positionen</strong> – mehrere möglich (z.B. Baumeister: Aushub, Fundamente, Mauerwerk …)</div>
+    <div class="muted" style="font-size:var(--t-xs, 12px);margin:10px 0 5px"><strong>Positionen</strong> – mehrere möglich (z.B. Baumeister: Aushub, Fundamente, Mauerwerk …)</div>
     <div id="ks_pos">${rows}</div>
     <button class="btn sm secondary" data-act="ks-pos-add" type="button" style="margin-top:2px">+ Position</button>
-    <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:9px;margin-top:11px;font-size:15px"><strong>Total Kostenschätzung (KV)</strong><strong id="ks_postotal">${chf(ksTotal())}</strong></div>
-    <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;font-size:13px;padding:4px 0">🧮 Kalkulationshilfe → als Position übernehmen</summary>
+    <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:9px;margin-top:11px;font-size:var(--t-l, 15px)"><strong>Total Kostenschätzung (KV)</strong><strong id="ks_postotal">${chf(ksTotal())}</strong></div>
+    <details style="margin-top:12px"><summary style="cursor:pointer;font-weight:600;font-size:var(--t-s, 13px);padding:4px 0">🧮 Kalkulationshilfe → als Position übernehmen</summary>
       <div style="margin-top:8px">
         <label class="field">Bezeichnung <input class="input" id="ks_cname" placeholder="z.B. Beton Fundament / Aushub"></label>
-        <div class="muted" style="font-size:11.5px;margin:9px 0 3px"><strong>Ausmass</strong> – Menge × Einheitspreis (z.B. 120 m³ × 210.–)</div>
+        <div class="muted" style="font-size:var(--t-xs, 11.5px);margin:9px 0 3px"><strong>Ausmass</strong> – Menge × Einheitspreis (z.B. 120 m³ × 210.–)</div>
         <div class="form-row">
           <label class="field">Menge <input class="input ks-calc" type="number" id="ks_menge" value="${k.menge ?? ''}"></label>
           <label class="field">Einheit <select class="select ks-calc" id="ks_einheit">${KALK_EINHEITEN.map(u => `<option value="${u}"${(k.einheit || '') === u ? ' selected' : ''}>${u || '–'}</option>`).join('')}</select></label>
           <label class="field">Einheitspreis (CHF) <input class="input ks-calc" type="number" id="ks_ep" value="${k.einheitspreis ?? ''}"></label>
         </div>
-        <div class="muted" style="font-size:11.5px;margin:10px 0 3px"><strong>Arbeit</strong> – Stundenkalkulation (optional, wird addiert)</div>
+        <div class="muted" style="font-size:var(--t-xs, 11.5px);margin:10px 0 3px"><strong>Arbeit</strong> – Stundenkalkulation (optional, wird addiert)</div>
         <div class="form-row"><label class="field">Anzahl Mann <input class="input ks-calc" type="number" id="ks_mann" value="${k.mann ?? ''}"></label><label class="field">Dauer (Tage) <input class="input ks-calc" type="number" id="ks_tage" value="${k.tage ?? ''}"></label></div>
         <div class="form-row"><label class="field">Stunden/Tag <input class="input ks-calc" type="number" id="ks_stdtag" value="${k.stdTag ?? 8}"></label><label class="field">Stundenansatz (CHF) <input class="input ks-calc" type="number" id="ks_ansatz" value="${k.ansatz ?? ''}"></label></div>
         <div class="form-row"><label class="field">Material (CHF, zusätzl.) <input class="input ks-calc" type="number" id="ks_material" value="${k.material ?? ''}"></label><label class="field">Zuschlag % <input class="input ks-calc" type="number" id="ks_zuschlag" value="${k.zuschlag ?? ''}"></label></div>
-        <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px;margin-top:8px;font-size:14px"><strong>Berechnet</strong><strong id="ks_calctotal">–</strong></div>
+        <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px;margin-top:8px;font-size:var(--t-m, 14px)"><strong>Berechnet</strong><strong id="ks_calctotal">–</strong></div>
         <button class="btn sm" data-act="ks-calc-add" type="button" style="margin-top:9px">→ als Position übernehmen</button>
       </div>
     </details>
@@ -9375,8 +10791,8 @@ function posTagChips(p, pos) {
   const bt = pos.bauteil && (p.bauteile || []).find(b => b.id === pos.bauteil);
   const op = pos.option && (p.optionen || []).find(o => o.id === pos.option);
   let out = '';
-  if (bt) out += `<span class="st grey" style="font-size:10px;padding:1px 6px;margin-left:6px">${esc(bt.name)}</span>`;
-  if (op) out += `<span class="st amber" style="font-size:10px;padding:1px 6px;margin-left:6px">opt: ${esc(op.name)}</span>`;
+  if (bt) out += `<span class="st grey" style="font-size:var(--t-2xs, 10px);padding:1px 6px;margin-left:6px">${esc(bt.name)}</span>`;
+  if (op) out += `<span class="st amber" style="font-size:var(--t-2xs, 10px);padding:1px 6px;margin-left:6px">opt: ${esc(op.name)}</span>`;
   return out;
 }
 // Kurzbeschrieb der Ausmass-/Arbeitskalkulation einer Position (für die Anzeige)
@@ -9451,10 +10867,10 @@ function teilprojektCard(p, prognoseTotal) {
   if (!(p.bauteile || []).length) return '';
   const mapP = teilprojektSummary(p), mapB = teilprojektBezahlt(p);
   const list = [{ id: '', name: 'Hauptgebäude', std: true }].concat((p.bauteile || []).map(b => ({ id: b.id, name: b.name })));
-  const rows = list.map(t => `<tr><td>${esc(t.name)}${t.std ? ' <span class="muted" style="font-size:11px">(Standard)</span>' : ''}</td><td class="num">${money(mapP[t.id] || 0)}</td><td class="num">${money(mapB[t.id] || 0)}</td></tr>`).join('');
+  const rows = list.map(t => `<tr><td>${esc(t.name)}${t.std ? ' <span class="muted" style="font-size:var(--t-2xs, 11px)">(Standard)</span>' : ''}</td><td class="num">${money(mapP[t.id] || 0)}</td><td class="num">${money(mapB[t.id] || 0)}</td></tr>`).join('');
   const totB = Object.values(mapB).reduce((a, b) => a + b, 0);
   return `<div class="card card-pad" style="margin-top:18px;max-width:620px">
-    <h2 style="margin:0 0 8px;font-size:16px">Kosten je Teilprojekt</h2>
+    <h2 style="margin:0 0 8px;font-size:var(--t-l, 16px)">Kosten je Teilprojekt</h2>
     <table class="grid"><thead><tr><th>Teilprojekt</th><th class="num">Prognose</th><th class="num">Bezahlt</th></tr></thead><tbody>
       ${rows}
       <tr class="ksub"><td><b>Total</b></td><td class="num"><b>${money(prognoseTotal)}</b></td><td class="num"><b>${money(totB)}</b></td></tr>
@@ -9502,48 +10918,48 @@ function optionenCard(p, kvTotal, prognoseTotal) {
   const indep = (p.optionen || []).filter(o => !o.gruppe);
   const gruppen = optGruppenListe(p);
   // Vertrags-Abzug-Hinweis je Option, wenn er vom Schätzwert abweicht
-  const vNote = o => { const est = optionSumme(p, o.id); const v = optAbzugVertrag(p, o); return (o.vertragsAbzug != null && o.vertragsAbzug !== '' && v !== est) ? ` <span class="muted" style="font-size:10.5px">Vertrag ${money(v)}</span>` : ''; };
+  const vNote = o => { const est = optionSumme(p, o.id); const v = optAbzugVertrag(p, o); return (o.vertragsAbzug != null && o.vertragsAbzug !== '' && v !== est) ? ` <span class="muted" style="font-size:var(--t-2xs, 10.5px)">Vertrag ${money(v)}</span>` : ''; };
   let rows = '';
   if (indep.length) {
-    rows += `<div class="muted" style="font-size:12px;margin:4px 0 2px"><strong>Optionen</strong> – Häkchen = eingerechnet, Klick blendet aus</div>`;
+    rows += `<div class="muted" style="font-size:var(--t-xs, 12px);margin:4px 0 2px"><strong>Optionen</strong> – Häkchen = eingerechnet, Klick blendet aus</div>`;
     rows += indep.map(o => {
       const on = !optSel.aus.has(o.id), sum = optionSumme(p, o.id);
       return `<div class="opt-row" data-act="opt-toggle" data-pid="${p.id}" data-optid="${o.id}">
-        <span style="font-size:16px">${on ? '☑' : '☐'}</span>
-        <span style="flex:1">${esc(o.name)}${o.bauteilId ? ` <span class="st grey" style="font-size:10px;padding:1px 6px">${esc(btName(o.bauteilId))}</span>` : ''}${vNote(o)}</span>
+        <span style="font-size:var(--t-l, 16px)">${on ? '☑' : '☐'}</span>
+        <span style="flex:1">${esc(o.name)}${o.bauteilId ? ` <span class="st grey" style="font-size:var(--t-2xs, 10px);padding:1px 6px">${esc(btName(o.bauteilId))}</span>` : ''}${vNote(o)}</span>
         <span class="num" style="${on ? '' : 'opacity:.4;text-decoration:line-through'}">${money(sum)}</span>
       </div>`;
     }).join('');
   }
   gruppen.forEach(g => {
     const active = optAktivVariante(p, g.gruppe);
-    rows += `<div class="muted" style="font-size:12px;margin:12px 0 2px"><strong>Variante: ${esc(g.gruppe)}</strong> – genau eine wählen</div>`;
+    rows += `<div class="muted" style="font-size:var(--t-xs, 12px);margin:12px 0 2px"><strong>Variante: ${esc(g.gruppe)}</strong> – genau eine wählen</div>`;
     rows += g.optionen.map(o => {
       const on = o.id === active, sum = optionSumme(p, o.id);
       return `<div class="opt-row" data-act="opt-variante" data-pid="${p.id}" data-grp="${esc(g.gruppe)}" data-optid="${o.id}">
-        <span style="font-size:15px">${on ? '◉' : '○'}</span><span style="flex:1">${esc(o.name)}${vNote(o)}</span>
+        <span style="font-size:var(--t-l, 15px)">${on ? '◉' : '○'}</span><span style="flex:1">${esc(o.name)}${vNote(o)}</span>
         <span class="num" style="${on ? '' : 'opacity:.4'}">${money(sum)}</span></div>`;
     }).join('');
     rows += `<div class="opt-row" data-act="opt-variante" data-pid="${p.id}" data-grp="${esc(g.gruppe)}" data-optid="" style="color:var(--text-soft)">
-      <span style="font-size:15px">${active === '' ? '◉' : '○'}</span><span style="flex:1">keine</span><span class="num">–</span></div>`;
+      <span style="font-size:var(--t-l, 15px)">${active === '' ? '◉' : '○'}</span><span style="flex:1">keine</span><span class="num">–</span></div>`;
   });
   const delta = optDelta(p), bereinigt = kvTotal + delta;
   const deltaV = optDeltaVertrag(p), bereinigtV = (prognoseTotal || 0) + deltaV;
   const zeigeVertrag = (prognoseTotal != null) && (deltaV !== 0 || prognoseTotal !== kvTotal);
   return `<div class="card card-pad" style="margin-top:18px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px">
-      <h2 style="margin:0;font-size:16px">Optionen &amp; Varianten</h2>
+      <h2 style="margin:0;font-size:var(--t-l, 16px)">Optionen &amp; Varianten</h2>
       <button class="btn sm secondary" data-act="opt-manage" data-pid="${p.id}">⚙ Verwalten</button>
     </div>
     ${rows}
     <div style="border-top:2px solid var(--border);margin-top:10px;padding-top:10px">
       <div class="opt-sum"><span>Kostenschätzung inkl. aller Optionen</span><span class="num">${money(kvTotal)}</span></div>
       <div class="opt-sum"><span>Optionen-Auswahl (Schätzung)</span><span class="num">${delta ? money(delta) : '–'}</span></div>
-      <div class="opt-sum" style="font-size:16px;font-weight:700;margin-top:4px"><span>Bereinigte Kostenschätzung</span><span class="num">${money(bereinigt)}</span></div>
+      <div class="opt-sum" style="font-size:var(--t-l, 16px);font-weight:700;margin-top:4px"><span>Bereinigte Kostenschätzung</span><span class="num">${money(bereinigt)}</span></div>
       ${zeigeVertrag ? `<div style="border-top:1px dashed var(--border);margin-top:10px;padding-top:10px">
         <div class="opt-sum"><span>Abrechnungsprognose inkl. aller Optionen</span><span class="num">${money(prognoseTotal)}</span></div>
         <div class="opt-sum"><span>Optionen-Auswahl (Vertrag/Offerte)</span><span class="num">${deltaV ? money(deltaV) : '–'}</span></div>
-        <div class="opt-sum" style="font-size:16px;font-weight:700;margin-top:4px;color:var(--brand)"><span>Bereinigte Prognose</span><span class="num">${money(bereinigtV)}</span></div>
+        <div class="opt-sum" style="font-size:var(--t-l, 16px);font-weight:700;margin-top:4px;color:var(--brand)"><span>Bereinigte Prognose</span><span class="num">${money(bereinigtV)}</span></div>
       </div>` : ''}
     </div>
   </div>`;
@@ -9555,9 +10971,9 @@ function bauteilCard(p, kvTotal) {
   const rows = (p.bauteile || []).map(b => { const s = bauteilSumme(p, b.id); zugeordnet += s; return `<tr><td>${esc(b.name)}</td><td class="num">${money(s)}</td></tr>`; }).join('');
   const rest = kvTotal - zugeordnet;
   return `<div class="card card-pad" style="margin-top:18px">
-    <h2 style="margin:0 0 8px;font-size:16px">Kosten je Bauteil / Teilprojekt</h2>
+    <h2 style="margin:0 0 8px;font-size:var(--t-l, 16px)">Kosten je Bauteil / Teilprojekt</h2>
     <table class="grid"><thead><tr><th>Bauteil</th><th class="num" style="width:170px">Kostenschätzung</th></tr></thead><tbody>
-      <tr><td>Hauptgebäude <span class="muted" style="font-size:11px">(Standard)</span></td><td class="num">${money(rest)}</td></tr>
+      <tr><td>Hauptgebäude <span class="muted" style="font-size:var(--t-2xs, 11px)">(Standard)</span></td><td class="num">${money(rest)}</td></tr>
       ${rows}
       <tr class="ksub"><td><b>Total</b></td><td class="num"><b>${money(kvTotal)}</b></td></tr>
     </tbody></table>
@@ -9596,7 +11012,7 @@ function viewAuflagen(pid) {
   const offen = list.filter(a => a.status !== 'erledigt').length;
   const stOpt = s => Object.keys(AUFLAGE_STATUS).map(k => `<option value="${k}"${s === k ? ' selected' : ''}>${AUFLAGE_STATUS[k].label}</option>`).join('');
   const row = a => `<tr>
-      <td><strong>${esc(a.titel)}</strong>${a.bemerkung ? `<div class="muted" style="font-size:11px">${esc(a.bemerkung)}</div>` : ''}</td>
+      <td><strong>${esc(a.titel)}</strong>${a.bemerkung ? `<div class="muted" style="font-size:var(--t-2xs, 11px)">${esc(a.bemerkung)}</div>` : ''}</td>
       <td>${a.kat ? `<span class="tag">${esc(a.kat)}</span>` : '–'}</td>
       <td class="muted">${a.termin ? fmtDate(a.termin) : '–'}</td>
       <td class="muted">${esc(a.zustaendig || '–')}</td>
@@ -9612,13 +11028,13 @@ function viewAuflagen(pid) {
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Auflagen</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">Baubewilligungsauflagen</h1><div class="sub" style="margin-top:5px">Auflagen aus der Baubewilligung tracken${list.length ? ` · ${offen} offen` : ''}</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">Baubewilligungsauflagen</h1><div class="sub" style="margin-top:5px">Auflagen aus der Baubewilligung tracken${list.length ? ` · ${offen} offen` : ''}</div></div>
       <div style="display:flex;gap:8px">${list.length ? '' : `<button class="btn secondary" data-act="auflage-standard" data-pid="${p.id}">★ Standard-Auflagen einfügen</button>`}<button class="btn" data-act="new-auflage" data-pid="${p.id}">+ Auflage</button></div>
     </div>
     ${projektTabs(p, 'auflagen')}
     ${list.length ? sections + `<div style="margin-top:16px"><button class="btn sm secondary" data-act="auflage-standard" data-pid="${p.id}">★ Standard-Auflagen ergänzen</button></div>`
       : emptyState('📋', 'Noch keine Auflagen. „★ Standard-Auflagen einfügen" legt die üblichen an (Baustartmeldung, Abnahmen, Energienachweis …) – Spezielles wie Schadstoffe ergänzt du mit „+ Auflage".')}
-    <p class="muted" style="font-size:11.5px;margin-top:12px">Tipp: Frist setzen + „Zuständig" eintragen; Status von „offen" über „eingereicht" bis „erledigt" führen. Offene Auflagen erscheinen oben in der Zählung.</p>
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin-top:12px">Tipp: Frist setzen + „Zuständig" eintragen; Status von „offen" über „eingereicht" bis „erledigt" führen. Offene Auflagen erscheinen oben in der Zählung.</p>
   `);
   $$('.au-status').forEach(sel => sel.addEventListener('change', () => setAuflageStatus(sel.dataset.pid, sel.dataset.aid, sel.value)));
 }
@@ -9680,7 +11096,7 @@ function viewRechnungen(pid) {
         : (z.fakturiert > 0 ? '<span class="st blue">in Abrechnung</span>' : '<span class="st grey">offen</span>'));
     const mainRow = `<tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}">
       <td><span class="bkp-code">${esc(v.bkp || '')}</span></td>
-      <td>${esc(v.gewerk)}<div class="muted" style="font-size:11px">${esc(v.firma || '—')}${offenRg ? ` · ${offenRg} offen` : ''}</div></td>
+      <td>${esc(v.gewerk)}<div class="muted" style="font-size:var(--t-2xs, 11px)">${esc(v.firma || '—')}${offenRg ? ` · ${offenRg} offen` : ''}</div></td>
       <td class="num">${chf(z.prognose)}</td>
       <td class="num">${chf(z.fakturiert)}</td>
       <td class="num">${chf(z.bezahlt)}</td>
@@ -9694,14 +11110,14 @@ function viewRechnungen(pid) {
       <td class="num">${chf(rgSigned(r))}</td>
       <td class="num">${r.bezahlt ? chf(rgAuszahlung(r)) : '–'}</td>
       <td></td>
-      <td>${r.bezahlt ? '<span class="st green" style="font-size:9px;padding:1px 6px">bezahlt</span>' : '<span class="st amber" style="font-size:9px;padding:1px 6px">offen</span>'}</td>
+      <td>${r.bezahlt ? '<span class="st green" style="font-size:var(--t-2xs, 9px);padding:1px 6px">bezahlt</span>' : '<span class="st amber" style="font-size:var(--t-2xs, 9px);padding:1px 6px">offen</span>'}</td>
     </tr>`).join('');
     return mainRow + rgSub;
   }).join('') || '<tr><td colspan="7" class="muted" style="padding:12px">Noch keine vergebenen Gewerke / Rechnungen.</td></tr>';
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Rechnungskontrolle</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">Rechnungskontrolle</h1><div class="sub" style="margin-top:5px">Pro BKP: vergeben · verrechnet · bezahlt · noch „Platz"</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">Rechnungskontrolle</h1><div class="sub" style="margin-top:5px">Pro BKP: vergeben · verrechnet · bezahlt · noch „Platz"</div></div>
       <div style="display:flex;gap:8px"><button class="btn secondary" data-act="pdf-rechnungen" data-pid="${p.id}">🖨 Drucken</button><button class="btn" data-act="sammelrg" data-pid="${p.id}">+ Sammelrechnung (mehrere BKP)</button></div>
     </div>
     ${projektTabs(p, 'rechnungen')}
@@ -9711,7 +11127,7 @@ function viewRechnungen(pid) {
         <tfoot><tr style="border-top:2px solid var(--border)"><td colspan="2"><b>Total</b></td><td class="num"><b>${chf(tSoll)}</b></td><td class="num"><b>${chf(tFak)}</b></td><td class="num"><b>${chf(tBez)}</b></td><td class="num"><b style="color:${tPlatz < -0.5 ? 'var(--s-red)' : 'inherit'}">${chf(tPlatz)}</b></td><td></td></tr></tfoot>
       </table>
     </div>
-    <p class="muted" style="font-size:11.5px;margin-top:10px"><b>Platz</b> = Vergabe-Soll (WV + genehmigte Nachträge) − bereits verrechnet. Negativ/rot = Überschreitung (Rechnung hat keinen Platz mehr). Zeile anklicken → Gewerk mit allen Rechnungen. „Sammelrechnung" verteilt eine Rechnung (z.B. Maler = auch Gipser) auf mehrere BKP.</p>
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin-top:10px"><b>Platz</b> = Vergabe-Soll (WV + genehmigte Nachträge) − bereits verrechnet. Negativ/rot = Überschreitung (Rechnung hat keinen Platz mehr). Zeile anklicken → Gewerk mit allen Rechnungen. „Sammelrechnung" verteilt eine Rechnung (z.B. Maler = auch Gipser) auf mehrere BKP.</p>
   `);
 }
 // Eine Rechnung auf mehrere BKP/Gewerke aufteilen (z.B. Maler/Gipser)
@@ -9728,10 +11144,10 @@ function actSammelrechnung(pid) {
       <label class="field">Bezeichnung <input class="input" id="sr_text" placeholder="z.B. Maler & Gipser SR1"></label>
       <label class="field">Datum <input class="input" type="date" id="sr_datum" value="${todayIso()}"></label>
     </div>
-    <div class="muted" style="font-size:12px;margin:8px 0 4px">Betrag je BKP eintragen – nur Beträge &gt; 0 werden verbucht. „Platz" = noch nicht verrechnet.</div>
+    <div class="muted" style="font-size:var(--t-xs, 12px);margin:8px 0 4px">Betrag je BKP eintragen – nur Beträge &gt; 0 werden verbucht. „Platz" = noch nicht verrechnet.</div>
     <div style="max-height:300px;overflow:auto">
       ${gw.map(v => { const z = kostenZeile(v); const platz = z.prognose - z.fakturiert; return `<div class="form-row" style="align-items:center;gap:8px;margin-bottom:4px">
-        <span style="flex:1;font-size:13px;min-width:0"><span class="bkp-code">${esc(v.bkp || '')}</span> ${esc(v.gewerk)} <span class="muted">· Platz ${chf(platz)}</span></span>
+        <span style="flex:1;font-size:var(--t-s, 13px);min-width:0"><span class="bkp-code">${esc(v.bkp || '')}</span> ${esc(v.gewerk)} <span class="muted">· Platz ${chf(platz)}</span></span>
         <input class="input sr-betrag" data-vid="${v.id}" type="number" placeholder="0" style="max-width:120px">
       </div>`; }).join('')}
     </div>
@@ -9768,7 +11184,7 @@ function viewOptionen(pid) {
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Optionen</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">Optionen &amp; Bauteile</h1><div class="sub" style="margin-top:5px">Optionale Bauteile (ein-/ausblenden) &amp; Teilprojekte (Trakt 1–3, Provisorium …)</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">Optionen &amp; Bauteile</h1><div class="sub" style="margin-top:5px">Optionale Bauteile (ein-/ausblenden) &amp; Teilprojekte (Trakt 1–3, Provisorium …)</div></div>
       <div><button class="btn" data-act="opt-manage" data-pid="${p.id}">⚙ Verwalten</button></div>
     </div>
     ${projektTabs(p, 'optionen')}
@@ -9776,7 +11192,7 @@ function viewOptionen(pid) {
     ${leer ? emptyState('🧩', 'Noch keine Optionen oder Bauteile angelegt. Mit „⚙ Verwalten" beginnen – danach im jeweiligen Gewerk (Reiter „Kosten" → Gewerk → „✎ Kostenschätzung") die Positionen mit Bauteil/Option etikettieren.') : ''}
     ${optionenCard(p, kv, prog)}
     ${bauteilCard(p, kv)}
-    ${leer ? '' : '<p class="muted" style="font-size:12px;margin-top:14px">Positionen etikettierst du im Gewerk („✎ Kostenschätzung"); hier siehst du die Auswertung und kannst Optionen ein-/ausblenden.</p>'}
+    ${leer ? '' : '<p class="muted" style="font-size:var(--t-xs, 12px);margin-top:14px">Positionen etikettierst du im Gewerk („✎ Kostenschätzung"); hier siehst du die Auswertung und kannst Optionen ein-/ausblenden.</p>'}
   `);
 }
 
@@ -9813,7 +11229,7 @@ function viewNachtraege(pid) {
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Nachträge</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">Nachträge &amp; Rapporte</h1><div class="sub" style="margin-top:5px">Projektweite Übersicht über alle Gewerke</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">Nachträge &amp; Rapporte</h1><div class="sub" style="margin-top:5px">Projektweite Übersicht über alle Gewerke</div></div>
       <div style="display:flex;gap:8px">
         <button class="btn secondary" data-act="nt-pick" data-pid="${p.id}" data-kind="rapport">+ Rapport</button>
         <button class="btn" data-act="nt-pick" data-pid="${p.id}" data-kind="nachtrag">+ Nachtrag</button>
@@ -9870,10 +11286,10 @@ function oopRow(p, o) {
 function actBauteileOptionen(pid) {
   const p = findProjekt(pid); if (!p) return;
   openModal('Bauteile &amp; Optionen verwalten', `
-    <div class="muted" style="font-size:12px;margin-bottom:6px"><strong>Bauteile / Teilprojekte</strong> – z.B. Trakt 1–3, Provisorium</div>
+    <div class="muted" style="font-size:var(--t-xs, 12px);margin-bottom:6px"><strong>Bauteile / Teilprojekte</strong> – z.B. Trakt 1–3, Provisorium</div>
     <div id="bt_rows">${(p.bauteile || []).map(obtRow).join('')}</div>
     <button class="btn sm secondary" data-act="bt-add" data-pid="${pid}" type="button" style="margin-bottom:16px">+ Bauteil</button>
-    <div class="muted" style="font-size:12px;margin-bottom:6px"><strong>Optionen</strong> – z.B. Erker, Lift. „Variante" füllen = sich ausschliessende Gruppe.</div>
+    <div class="muted" style="font-size:var(--t-xs, 12px);margin-bottom:6px"><strong>Optionen</strong> – z.B. Erker, Lift. „Variante" füllen = sich ausschliessende Gruppe.</div>
     <div id="op_rows">${(p.optionen || []).map(o => oopRow(p, o)).join('')}</div>
     <button class="btn sm secondary" data-act="op-add" data-pid="${pid}" type="button">+ Option</button>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-bt-opt" data-pid="${pid}">💾 Speichern</button>`);
@@ -10079,8 +11495,8 @@ function pdfSolarVergleich(pid) {
   }).join('');
   const gv = st.varianten.find(v => v.id === st.gewaehlt);
   const inner = `<table class="t"><thead><tr><th>Variante</th><th class="num">Leistung</th><th class="num">Dachfläche</th><th class="num">Investition</th><th class="num">Förderung</th><th class="num">Netto</th><th class="num">Amortisation</th><th class="num">ohne Förderung</th><th class="num">Rendite</th></tr></thead><tbody>${rows}</tbody></table>
-    ${gv ? `<p style="margin-top:14px;font-size:12.5px"><b>Empfehlung / gewählt:</b> ${esc(gv.name || '')}${st.gesperrt ? ` — vom Bauherrn freigegeben am ${fmtDate(st.freigabeDatum)}` : ''}.</p>` : ''}
-    <p class="muted" style="margin-top:8px;font-size:10px">Überschlagsrechnung (Richtwerte). Investition/Förderung über Dachfläche; Amortisation = Netto ÷ Jahresertrag, „ohne Förderung" über die Bruttoinvestition.</p>`;
+    ${gv ? `<p style="margin-top:14px;font-size:var(--t-s, 12.5px)"><b>Empfehlung / gewählt:</b> ${esc(gv.name || '')}${st.gesperrt ? ` — vom Bauherrn freigegeben am ${fmtDate(st.freigabeDatum)}` : ''}.</p>` : ''}
+    <p class="muted" style="margin-top:8px;font-size:var(--t-2xs, 10px)">Überschlagsrechnung (Richtwerte). Investition/Förderung über Dachfläche; Amortisation = Netto ÷ Jahresertrag, „ohne Förderung" über die Bruttoinvestition.</p>`;
   openPrintDoc('Solar – Variantenvergleich', `${esc(p.name)}${p.ort ? ' · ' + esc(p.ort) : ''} · Stand ${fmtDate(todayIso())}`, inner, { landscape: true });
 }
 function solarFreigabe(pid) {
@@ -10097,14 +11513,14 @@ function solarCompareHtml(p) {
   const rows = st.varianten.map(v => {
     const r = solarCalc(solarMigrateVar(v)); const gew = st.gewaehlt === v.id; const akt = st.aktiv === v.id;
     return `<tr${gew ? ' style="background:#eaf6ee"' : ''}>
-      <td><b>${esc(v.name || 'Variante')}</b>${gew ? ' <span class="st green" style="font-size:9px;padding:1px 6px">★ gewählt</span>' : ''}${akt && !gew ? ' <span class="muted" style="font-size:10px">(in Bearbeitung)</span>' : ''}<div class="muted" style="font-size:10.5px">${f1(r.kwp)} kWp · ${f1(r.flaeche)} m²</div></td>
+      <td><b>${esc(v.name || 'Variante')}</b>${gew ? ' <span class="st green" style="font-size:var(--t-2xs, 9px);padding:1px 6px">★ gewählt</span>' : ''}${akt && !gew ? ' <span class="muted" style="font-size:var(--t-2xs, 10px)">(in Bearbeitung)</span>' : ''}<div class="muted" style="font-size:var(--t-2xs, 10.5px)">${f1(r.kwp)} kWp · ${f1(r.flaeche)} m²</div></td>
       <td class="num">${fr(r.invest)}</td><td class="num">− ${fr(r.eiv)}</td><td class="num"><b>${fr(r.netto)}</b></td>
       <td class="num">${r.amort != null ? f1(r.amort) + ' J.' : '–'}</td><td class="num">${r.amortBrutto != null ? f1(r.amortBrutto) + ' J.' : '–'}</td>
       <td class="num">${r.rendite != null ? f1(r.rendite) + ' %' : '–'}</td>
       <td style="white-space:nowrap">${gew ? '' : `<button class="btn xs secondary" data-act="solar-pickvar" data-pid="${p.id}" data-id="${v.id}" type="button">öffnen</button> <button class="btn xs" data-act="solar-choose-id" data-pid="${p.id}" data-id="${v.id}" type="button">★ wählen</button>`}</td>
     </tr>`;
   }).join('');
-  return `<table class="grid" style="font-size:13px"><thead><tr><th>Variante</th><th class="num">Investition</th><th class="num">Förderung</th><th class="num">netto</th><th class="num">Amort.</th><th class="num">ohne Förd.</th><th class="num">Rendite</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="grid" style="font-size:var(--t-s, 13px)"><thead><tr><th>Variante</th><th class="num">Investition</th><th class="num">Förderung</th><th class="num">netto</th><th class="num">Amort.</th><th class="num">ohne Förd.</th><th class="num">Rendite</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 // Live-Box „Investition & Förderung" unter den Eingaben
 function solarInvestHtml(r) {
@@ -10113,21 +11529,21 @@ function solarInvestHtml(r) {
   return `<div class="opt-sum"><span>Anlagenleistung</span><span class="num">${f1(r.kwp)} kWp</span></div>
     <div class="opt-sum"><span>Investition total${r.anlageAuto ? ' (geschätzt)' : ''}</span><span class="num">${fr(r.invest)}</span></div>
     <div class="opt-sum"><span>− Förderung EIV${r.eivAuto ? ' (geschätzt)' : ''}</span><span class="num">− ${fr(r.eiv)}</span></div>
-    <div class="opt-sum" style="font-size:15px;font-weight:700;color:var(--brand)"><span>Netto-Investition</span><span class="num">${fr(r.netto)}</span></div>
+    <div class="opt-sum" style="font-size:var(--t-l, 15px);font-weight:700;color:var(--brand)"><span>Netto-Investition</span><span class="num">${fr(r.netto)}</span></div>
     <div class="opt-sum"><span>Amortisation (mit Förderung)</span><span class="num">${r.amort != null ? f1(r.amort) + ' Jahre' : '–'}</span></div>
     <div class="opt-sum" style="color:var(--text-faint)"><span>Amortisation ohne Förderung</span><span class="num">${r.amortBrutto != null ? f1(r.amortBrutto) + ' Jahre' : '–'}</span></div>`;
 }
 function solarOutHtml(r, s) {
   const kwh = x => Math.round(x).toLocaleString('de-CH');
   const f1 = x => (Math.round(x * 10) / 10).toLocaleString('de-CH');
-  const kpi = (l, v, sub, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:20px${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div>${sub ? `<div class="muted" style="font-size:11.5px;margin-top:2px">${sub}</div>` : ''}</div>`;
+  const kpi = (l, v, sub, cls) => `<div class="kpi"><div class="k-label">${l}</div><div class="k-value" style="font-size:var(--t-xl, 20px)${cls ? ';color:var(--' + cls + ')' : ''}">${v}</div>${sub ? `<div class="muted" style="font-size:var(--t-xs, 11.5px);margin-top:2px">${sub}</div>` : ''}</div>`;
   return `
     <div class="solar-hl">
       <div class="solar-hl-item"><div class="k-label">Erwarteter Ertrag</div><div class="solar-hl-v">${kwh(r.produktion)} kWh<span class="solar-hl-u">/Jahr</span></div></div>
       <div class="solar-hl-item"><div class="k-label">Stromkosten heute</div><div class="solar-hl-v">CHF ${kwh(r.stromkostenJetzt)}<span class="solar-hl-u">/Jahr</span></div></div>
       <div class="solar-hl-item"><div class="k-label">Stromkosten mit PV</div><div class="solar-hl-v" style="color:var(--s-green)">CHF ${kwh(r.stromkostenNeu)}<span class="solar-hl-u">/Jahr</span></div></div>
     </div>
-    <p class="muted" style="font-size:12px;margin:8px 0 14px">Ersparnis <b>CHF ${kwh(r.ertragJahr)}/Jahr</b> = Stromkosten heute ${kwh(r.stromkostenJetzt)} − mit PV ${kwh(r.stromkostenNeu)} (Eigenverbrauch gespart + Überschuss vergütet).</p>
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin:8px 0 14px">Ersparnis <b>CHF ${kwh(r.ertragJahr)}/Jahr</b> = Stromkosten heute ${kwh(r.stromkostenJetzt)} − mit PV ${kwh(r.stromkostenNeu)} (Eigenverbrauch gespart + Überschuss vergütet).</p>
     <div class="kpi-row">
       ${kpi('Anlagenleistung', f1(r.kwp) + ' kWp', f1(r.flaeche) + ' m² Dach')}
       ${kpi('Eigenverbrauchsanteil', Math.round(r.anteil * 100) + ' %', kwh(r.eigenverbrauch) + ' kWh' + (r.autarkie != null ? ' · Autarkie ' + r.autarkie + '%' : ''))}
@@ -10149,7 +11565,7 @@ function solarRechenweg(r, s) {
   const oL = (SOLAR_ORIENT[s.orient] || SOLAR_ORIENT.sued);
   const row = (f, e) => `<div class="rw-row"><span class="rw-f">${f}</span><span class="rw-e">${e}</span></div>`;
   return `<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
-    <div style="font-weight:600;font-size:13px;margin-bottom:8px">Rechenweg – Schritt für Schritt</div>
+    <div style="font-weight:600;font-size:var(--t-s, 13px);margin-bottom:8px">Rechenweg – Schritt für Schritt</div>
     ${row(`Dachfläche ${f1(r.flaeche)} m² × ${Math.round(r.belegung)} % belegt = ${f1(r.modulflaeche)} m² × ${kwh(r.wpm2)} Wp/m²`, '<b>' + f1(r.kwp) + ' kWp</b>')}
     ${row(`${f1(r.kwp)} kWp × ${kwh(s.ertrag)} kWh/kWp × ${oL[0]} (${r.of.toFixed(2)}) × ${f1(r.tilt)}° Neigung (${r.nf.toFixed(2)})`, '<b>' + kwh(r.produktion) + ' kWh/a</b>')}
     ${r.zusatz ? row(`Verbrauch: Haushalt ${kwh(r.verbrauchBasis)} + Zusatz ${kwh(r.zusatz)}`, '<b>' + kwh(r.verbrauch) + ' kWh</b>') : ''}
@@ -10187,9 +11603,9 @@ function viewSolar(pid) {
   const r0 = solarCalc(s);   // für live vorausgefüllte Auto-Kostenfelder
   const sel = (id, map, cur) => `<select class="select" id="${id}">${Object.entries(map).map(([k, v]) => `<option value="${k}"${cur === k ? ' selected' : ''}>${esc(v[0])}</option>`).join('')}</select>`;
   // Feld mit Erklär-Zeile (wie Honorarrechner)
-  const fld = (id, label, val, unit, hint, ph) => `<label class="field">${label}${unit ? ` <span class="muted" style="font-weight:400;font-size:11px">(${unit})</span>` : ''}
+  const fld = (id, label, val, unit, hint, ph) => `<label class="field">${label}${unit ? ` <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(${unit})</span>` : ''}
     <input class="input" type="number" id="${id}" value="${val !== '' && val != null ? val : ''}"${ph ? ` placeholder="${ph}"` : ''}>
-    ${hint ? `<span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px;line-height:1.4">${hint}</span>` : ''}</label>`;
+    ${hint ? `<span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px;line-height:1.4">${hint}</span>` : ''}</label>`;
   const gesamtVerbrauch = (Number(s.verbrauch) || 0) + solarZusatz(s);
   const loadBtns = SOLAR_LOADS.map(l => `<button class="btn xs ${s[l.key] ? '' : 'secondary'}" data-act="solar-load" data-pid="${p.id}" data-load="${l.key}" type="button">${s[l.key] ? '✓ ' : '+ '}${esc(l.label)} ${l.kwh.toLocaleString('de-CH')}</button>`).join('');
   const regBtns = SOLAR_REGIONS.map(rg => `<button class="btn xs ${Number(s.ertrag) === rg.v ? '' : 'secondary'}" data-act="solar-region" data-pid="${p.id}" data-v="${rg.v}" type="button">${esc(rg.label)} ${rg.v}</button>`).join('');
@@ -10203,7 +11619,7 @@ function viewSolar(pid) {
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Solar</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">☀ Solarrechner</h1><div class="sub" style="margin-top:5px">Photovoltaik-Ertrag, Eigenverbrauch &amp; Wirtschaftlichkeit · ${esc(p.name)}</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">☀ Solarrechner</h1><div class="sub" style="margin-top:5px">Photovoltaik-Ertrag, Eigenverbrauch &amp; Wirtschaftlichkeit · ${esc(p.name)}</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn ${st.gesperrt ? 'secondary' : ''}" data-act="solar-freigabe" data-pid="${p.id}" title="Gewählte Variante für den Bauherrn freigeben/sperren">${st.gesperrt ? '🔓 Freigabe aufheben' : '🔒 Bauherr-Freigabe'}</button>
         <button class="btn secondary" data-act="solar-baukosten" data-pid="${p.id}" title="Investition als Gewerk in die Baukostenübersicht übernehmen">➕ in Baukosten</button>
@@ -10212,30 +11628,30 @@ function viewSolar(pid) {
     </div>
     ${projektTabs(p, 'solar')}
     ${demoBanner('solar')}
-    ${st.gesperrt ? `<div class="card card-pad" style="background:#eaf6ee;border-color:#bfe6cb;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px"><div style="font-size:13.5px">✓ <b>Vom Bauherrn freigegeben</b> – Variante „${esc((gewVar || aktVar).name || 'Variante')}" am ${fmtDate(st.freigabeDatum)}. Eingaben gesperrt (zum Ändern Freigabe aufheben).</div></div>` : ''}
+    ${st.gesperrt ? `<div class="card card-pad" style="background:#eaf6ee;border-color:#bfe6cb;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px"><div style="font-size:var(--t-m, 13.5px)">✓ <b>Vom Bauherrn freigegeben</b> – Variante „${esc((gewVar || aktVar).name || 'Variante')}" am ${fmtDate(st.freigabeDatum)}. Eingaben gesperrt (zum Ändern Freigabe aufheben).</div></div>` : ''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
-      <span class="muted" style="font-size:12px;font-weight:600;margin-right:2px">Varianten:</span>
+      <span class="muted" style="font-size:var(--t-xs, 12px);font-weight:600;margin-right:2px">Varianten:</span>
       ${st.varianten.map(v => `<button class="btn xs ${v.id === st.aktiv ? '' : 'secondary'}" data-act="solar-pickvar" data-pid="${p.id}" data-id="${v.id}" type="button">${st.gewaehlt === v.id ? '★ ' : ''}${esc(v.name || 'Variante')}</button>`).join('')}
       <button class="btn xs secondary" data-act="solar-addvar" data-pid="${p.id}" type="button" title="leere Variante">+ neu</button>
       <button class="btn xs secondary" data-act="solar-dupvar" data-pid="${p.id}" type="button" title="aktive Variante duplizieren">⎘ duplizieren</button>
-      ${st.gesperrt ? '' : `<input class="input" id="s_varname" value="${esc(aktVar.name || '')}" title="Name der aktiven Variante" style="max-width:190px;height:30px;font-size:12px;margin-left:auto">
+      ${st.gesperrt ? '' : `<input class="input" id="s_varname" value="${esc(aktVar.name || '')}" title="Name der aktiven Variante" style="max-width:190px;height:30px;font-size:var(--t-xs, 12px);margin-left:auto">
       <button class="btn xs ${st.gewaehlt === st.aktiv ? '' : 'secondary'}" data-act="solar-choose" data-pid="${p.id}" type="button" title="diese Variante als gewählt markieren">★ als gewählt</button>
       <button class="btn xs secondary danger" data-act="solar-delvar" data-pid="${p.id}" type="button">löschen</button>`}
     </div>
 
     <div class="card card-pad" style="margin-bottom:16px;background:var(--brand-soft);border-color:transparent">
-      <h2 style="margin-top:0;font-size:15px">So funktioniert's</h2>
-      <ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.8">
+      <h2 style="margin-top:0;font-size:var(--t-l, 15px)">So funktioniert's</h2>
+      <ol style="margin:0;padding-left:18px;font-size:var(--t-s, 13px);line-height:1.8">
         <li><strong>Dachfläche</strong> (m²) und ungefähren Belegungs-Anteil eingeben.</li>
         <li><strong>Ausrichtung &amp; Neigung</strong> des Daches wählen.</li>
         <li><strong>Stromverbrauch</strong> erfassen – Wärmepumpe/E-Auto per Knopf dazu.</li>
       </ol>
-      <p style="margin:10px 0 0;font-size:13px">→ <strong>Ertrag, Investition und Förderung rechnet der Rechner automatisch aus.</strong> Kosten-Felder leer lassen = geschätzt; eigene Zahlen (z.B. aus einer Offerte) überschreiben die Schätzung.</p>
+      <p style="margin:10px 0 0;font-size:var(--t-s, 13px)">→ <strong>Ertrag, Investition und Förderung rechnet der Rechner automatisch aus.</strong> Kosten-Felder leer lassen = geschätzt; eigene Zahlen (z.B. aus einer Offerte) überschreiben die Schätzung.</p>
     </div>
 
     <details style="margin-bottom:16px">
-      <summary style="cursor:pointer;font-weight:600;font-size:13.5px;padding:6px 0">❓ Was bedeuten diese Begriffe? (kurz erklärt)</summary>
-      <div class="card card-pad" style="font-size:13px;line-height:1.6;margin-top:8px">
+      <summary style="cursor:pointer;font-weight:600;font-size:var(--t-m, 13.5px);padding:6px 0">❓ Was bedeuten diese Begriffe? (kurz erklärt)</summary>
+      <div class="card card-pad" style="font-size:var(--t-s, 13px);line-height:1.6;margin-top:8px">
         <p style="margin:0 0 9px"><strong>Belegbare Fläche (%):</strong> Nicht das ganze Dach wird mit Modulen voll – Kamine, Fenster, Ränder bleiben frei. Üblich werden <strong>70–85 %</strong> der Fläche belegt.</p>
         <p style="margin:0 0 9px"><strong>Modulleistung (Wp/m²):</strong> Wie viel Leistung ein Quadratmeter Modul liefert. Standardmodule ~<strong>200</strong>, moderne Premium-Module (z.B. AIKO) ~<strong>235</strong>. Mehr = effizienter = mehr Strom auf gleicher Fläche.</p>
         <p style="margin:0 0 9px"><strong>Spezifischer Ertrag (kWh/kWp):</strong> Wie viel Strom <strong>1 kWp Anlage pro Jahr</strong> liefert. „kWp" ist die Anlagengrösse, „kWh" der tatsächlich erzeugte Strom – der spez. Ertrag verbindet beides. Beispiel: 14 kWp × 1000 = <strong>14’000 kWh/Jahr</strong>. Der Wert hängt von der Lage ab: viel Sonne (Berge, Tessin) → höher (~1100), oft Nebel oder schattige/städtische Lage → tiefer (~850–900). Schweizer Mittelland ~<strong>1000</strong>. Tipp: einfach die passende <strong>Lage anklicken</strong>, dann stimmt der Wert.</p>
@@ -10247,13 +11663,13 @@ function viewSolar(pid) {
 
     <div class="two-col">
       <div class="card card-pad" id="solarInputs"${st.gesperrt ? ' style="pointer-events:none;opacity:.6"' : ''}>
-        <h2 style="margin:0 0 10px;font-size:15px">1 · Dach &amp; Anlage</h2>
+        <h2 style="margin:0 0 10px;font-size:var(--t-l, 15px)">1 · Dach &amp; Anlage</h2>
         <div class="form-row">
           ${fld('s_flaeche', 'Dachfläche', s.flaeche, 'm²', 'Geeignete Dachfläche gesamt.')}
           ${fld('s_belegung', 'davon belegbar', s.belegung, '%', 'Wirklich mit Modulen belegt. Typ. 70–85 %.')}
         </div>
         <div class="form-row">
-          <label class="field">Ausrichtung ${sel('s_orient', SOLAR_ORIENT, s.orient)}<span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Süd = bester Ertrag.</span></label>
+          <label class="field">Ausrichtung ${sel('s_orient', SOLAR_ORIENT, s.orient)}<span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px">Süd = bester Ertrag.</span></label>
           ${fld('s_neigung', 'Dachneigung', s.neigung, '°', '~30° ideal, Flachdach ~5–10°.')}
         </div>
         <div class="form-row">
@@ -10261,32 +11677,32 @@ function viewSolar(pid) {
           ${fld('s_ertrag', 'Spez. Ertrag', s.ertrag, 'kWh/kWp', 'Sonnenertrag je nach Lage – unten Lage wählen.')}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 0">${regBtns}</div>
-        <span class="muted" style="font-size:11px;display:block;margin-top:5px;line-height:1.4">Der <b>spezifische Ertrag</b> sagt, wie viele kWh Strom <b>1 kWp Anlage pro Jahr</b> liefert – abhängig von Sonne/Lage. Beispiel: 14 kWp × 1000 = 14’000 kWh/Jahr. Lage wählen oder Zahl eintragen.</span>
+        <span class="muted" style="font-size:var(--t-2xs, 11px);display:block;margin-top:5px;line-height:1.4">Der <b>spezifische Ertrag</b> sagt, wie viele kWh Strom <b>1 kWp Anlage pro Jahr</b> liefert – abhängig von Sonne/Lage. Beispiel: 14 kWp × 1000 = 14’000 kWh/Jahr. Lage wählen oder Zahl eintragen.</span>
 
-        <h2 style="margin:16px 0 10px;font-size:15px">2 · Verbrauch &amp; Tarife</h2>
-        <div style="font-size:12.5px;margin:0 0 4px">Personen im Haushalt – schätzt den Grundverbrauch:</div>
+        <h2 style="margin:16px 0 10px;font-size:var(--t-l, 15px)">2 · Verbrauch &amp; Tarife</h2>
+        <div style="font-size:var(--t-s, 12.5px);margin:0 0 4px">Personen im Haushalt – schätzt den Grundverbrauch:</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px">${persBtns}</div>
         ${fld('s_verbrauch', 'Haushalt-Stromverbrauch', s.verbrauch, 'kWh/Jahr', '<b>Ohne</b> Wärmepumpe/E-Auto – die kommen per Knopf dazu:')}
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px">${loadBtns}</div>
-        <div class="muted" style="font-size:12.5px;margin:0 0 10px">Gesamtverbrauch: <b style="color:var(--text)">${gesamtVerbrauch.toLocaleString('de-CH')} kWh/Jahr</b></div>
+        <div class="muted" style="font-size:var(--t-s, 12.5px);margin:0 0 10px">Gesamtverbrauch: <b style="color:var(--text)">${gesamtVerbrauch.toLocaleString('de-CH')} kWh/Jahr</b></div>
         ${fld('s_eigen', 'Eigenverbrauchsanteil', s.eigenanteil, '%', 'Leer = <b>automatisch berechnet</b> (aus Verbrauch, Produktion &amp; Speicher). Nur ausfüllen, wenn du einen eigenen Wert kennst.')}
         <div class="form-row">
           ${fld('s_preis', 'Strompreis Bezug', s.strompreis, 'Rp/kWh', 'Was du heute pro kWh zahlst (~25–35).')}
           ${fld('s_einsp', 'Rückliefertarif', s.einspeise, 'Rp/kWh', 'Vergütung für eingespeisten Strom (~6–14).')}
         </div>
 
-        <h2 style="margin:16px 0 10px;font-size:15px">3 · Investition &amp; Förderung <span class="muted" style="font-size:12px;font-weight:400">– leer = automatisch</span></h2>
+        <h2 style="margin:16px 0 10px;font-size:var(--t-l, 15px)">3 · Investition &amp; Förderung <span class="muted" style="font-size:var(--t-xs, 12px);font-weight:400">– leer = automatisch</span></h2>
         ${fld('s_anlage', 'PV-Anlagekosten', r0.anlageAuto ? r0.anlage : s.anlagekosten, 'CHF', 'Auto = ~' + Math.round(SOLAR_CHF_M2) + ' CHF/m² Dachfläche (60 m² ≈ 34\'000) – passt sich live an. Eigenen Offertpreis eintragen; Feld leeren = wieder automatisch.')}
         <div style="margin-top:12px">
-          <div style="font-size:13px;font-weight:600;margin-bottom:5px">Batteriespeicher – Grösse wählen</div>
+          <div style="font-size:var(--t-s, 13px);font-weight:600;margin-bottom:5px">Batteriespeicher – Grösse wählen</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">${battBtns}</div>
-          <span class="muted" style="font-size:11px;display:block;margin-top:5px;line-height:1.4">Grösserer Speicher = <b>mehr Eigenverbrauch</b> (Nutzen, spart mehr) bei <b>mehr Kosten</b> (~${SOLAR_CHF_KWH} CHF/kWh). Beides wird automatisch eingerechnet. Für exakte Werte (z.B. Offerte) unten anpassen:</span>
+          <span class="muted" style="font-size:var(--t-2xs, 11px);display:block;margin-top:5px;line-height:1.4">Grösserer Speicher = <b>mehr Eigenverbrauch</b> (Nutzen, spart mehr) bei <b>mehr Kosten</b> (~${SOLAR_CHF_KWH} CHF/kWh). Beides wird automatisch eingerechnet. Für exakte Werte (z.B. Offerte) unten anpassen:</span>
           <div class="form-row" style="margin-top:6px">
             ${fld('s_speicher', 'Speicher genau', s.speicher, 'kWh', 'aus Auswahl, überschreibbar')}
             ${fld('s_speicherk', 'Speicherkosten', r0.speicherAuto ? r0.speicherKosten : s.speicherKosten, 'CHF', 'Auto = kWh × ' + SOLAR_CHF_KWH + '; Feld leeren = wieder automatisch')}
           </div>
         </div>
-        <div class="muted" style="font-size:12px;margin:14px 0 4px"><strong>Bauseitige Zusatzkosten</strong> – was die Offerte <em>nicht</em> enthält. Anklicken = dazu/weg:</div>
+        <div class="muted" style="font-size:var(--t-xs, 12px);margin:14px 0 4px"><strong>Bauseitige Zusatzkosten</strong> – was die Offerte <em>nicht</em> enthält. Anklicken = dazu/weg:</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px">${bauBtns}</div>
         <div id="s_bauseite">${(s.bauseite || []).map(b => bsRow(p.id, b.text, b.betrag)).join('')}</div>
         <button class="btn sm secondary" data-act="solar-bs-add" data-pid="${p.id}" type="button">+ eigene Position</button>
@@ -10295,20 +11711,20 @@ function viewSolar(pid) {
         </div>
 
         <div style="background:var(--brand-soft);border-radius: 0;padding:12px 14px;margin-top:16px">
-          <div style="font-weight:700;font-size:13px;margin-bottom:6px">Investition &amp; Förderung – live</div>
+          <div style="font-weight:700;font-size:var(--t-s, 13px);margin-bottom:6px">Investition &amp; Förderung – live</div>
           <div id="solarInvestBox">${solarInvestHtml(solarCalc(s))}</div>
         </div>
       </div>
 
       <div class="card card-pad">
-        <h2 style="margin:0 0 12px;font-size:15px">Ergebnis</h2>
+        <h2 style="margin:0 0 12px;font-size:var(--t-l, 15px)">Ergebnis</h2>
         <div id="solarOut">${solarOutHtml(solarCalc(s), s)}</div>
-        <p class="muted" style="font-size:11.5px;margin:14px 0 0">Überschlagsrechnung ohne Degradation/Teuerung. Förder-/Tarifwerte sind Richtwerte. Für eine verbindliche Auslegung Fachplaner beiziehen.</p>
+        <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:14px 0 0">Überschlagsrechnung ohne Degradation/Teuerung. Förder-/Tarifwerte sind Richtwerte. Für eine verbindliche Auslegung Fachplaner beiziehen.</p>
       </div>
     </div>
     <div class="card card-pad" style="margin-top:18px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-        <h2 style="margin:0;font-size:15px">Gegenüberstellung der Varianten <span class="muted" style="font-size:12px;font-weight:400">– Entscheidungsgrundlage Bauherr</span></h2>
+        <h2 style="margin:0;font-size:var(--t-l, 15px)">Gegenüberstellung der Varianten <span class="muted" style="font-size:var(--t-xs, 12px);font-weight:400">– Entscheidungsgrundlage Bauherr</span></h2>
         <button class="btn secondary sm" data-act="pdf-solar-vergleich" data-pid="${p.id}" type="button">🖨 Vergleich-PDF</button>
       </div>
       <div id="solarCompare" style="overflow-x:auto">${solarCompareHtml(p)}</div>
@@ -10377,7 +11793,7 @@ function pdfSolar(pid) {
   const bsTable = bsRows ? `<div class="gw">Bauseitige Zusatzkosten</div><table class="t"><tbody>${bsRows}</tbody></table>` : '';
 
   const sub = `${esc(p.name)}${p.ort ? ' · ' + esc(p.ort) : ''} · Stand ${fmtDate(todayIso())}`;
-  const note = `<p class="muted" style="margin-top:14px;font-size:10px">Überschlagsrechnung ohne Degradation/Teuerung. Förder- und Tarifwerte sind Richtwerte (Pronovo / lokales EW prüfen). Für eine verbindliche Auslegung Fachplaner beiziehen.</p>`;
+  const note = `<p class="muted" style="margin-top:14px;font-size:var(--t-2xs, 10px)">Überschlagsrechnung ohne Degradation/Teuerung. Förder- und Tarifwerte sind Richtwerte (Pronovo / lokales EW prüfen). Für eine verbindliche Auslegung Fachplaner beiziehen.</p>`;
   openPrintDoc('Solarrechner – Photovoltaik', sub, anlage + ertrag + wirt + bsTable + note);
 }
 
@@ -10508,16 +11924,16 @@ function uwertOutHtml(bt) {
   return `
     <div class="uw-cut">
       <div class="uw-end">aussen</div>
-      <div class="uw-bars">${segs || '<div class="muted" style="padding:14px;font-size:12px">Schichten links hinzufügen …</div>'}</div>
+      <div class="uw-bars">${segs || '<div class="muted" style="padding:14px;font-size:var(--t-xs, 12px)">Schichten links hinzufügen …</div>'}</div>
       <div class="uw-end">innen</div>
     </div>
     <div class="kpi-row" style="margin-top:14px">
-      <div class="kpi"><div class="k-label">U-Wert</div><div class="k-value" style="color:var(--${r.pass ? 's-green' : 's-red'})">${f3(r.U)}</div><div class="muted" style="font-size:11px">W/(m²·K)</div></div>
-      <div class="kpi"><div class="k-label">R total</div><div class="k-value" style="font-size:20px">${f2(r.Rtot)}</div><div class="muted" style="font-size:11px">m²·K/W</div></div>
-      <div class="kpi"><div class="k-label">Bauteildicke</div><div class="k-value" style="font-size:20px">${r.dicke} mm</div></div>
-      <div class="kpi"><div class="k-label">Richtwert (CH)</div><div class="k-value" style="font-size:20px">≤ ${f2(r.ref)}</div><div class="muted" style="font-size:11px;color:var(--${r.pass ? 's-green' : 's-red'})">${r.pass ? '✓ erfüllt' : '✗ überschritten'}</div></div>
+      <div class="kpi"><div class="k-label">U-Wert</div><div class="k-value" style="color:var(--${r.pass ? 's-green' : 's-red'})">${f3(r.U)}</div><div class="muted" style="font-size:var(--t-2xs, 11px)">W/(m²·K)</div></div>
+      <div class="kpi"><div class="k-label">R total</div><div class="k-value" style="font-size:var(--t-xl, 20px)">${f2(r.Rtot)}</div><div class="muted" style="font-size:var(--t-2xs, 11px)">m²·K/W</div></div>
+      <div class="kpi"><div class="k-label">Bauteildicke</div><div class="k-value" style="font-size:var(--t-xl, 20px)">${r.dicke} mm</div></div>
+      <div class="kpi"><div class="k-label">Richtwert (CH)</div><div class="k-value" style="font-size:var(--t-xl, 20px)">≤ ${f2(r.ref)}</div><div class="muted" style="font-size:var(--t-2xs, 11px);color:var(--${r.pass ? 's-green' : 's-red'})">${r.pass ? '✓ erfüllt' : '✗ überschritten'}</div></div>
     </div>
-    <p class="muted" style="font-size:11.5px;margin:12px 0 0">R = Dicke ÷ λ je Schicht; + Rsi ${r.typ.rsi} (innen) + Rse ${r.typ.rse} (aussen). U = 1 ÷ R total. Richtwerte: Wand/Dach 0.17, Boden 0.25 W/(m²·K).</p>`;
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:12px 0 0">R = Dicke ÷ λ je Schicht; + Rsi ${r.typ.rsi} (innen) + Rse ${r.typ.rse} (aussen). U = 1 ÷ R total. Richtwerte: Wand/Dach 0.17, Boden 0.25 W/(m²·K).</p>`;
 }
 function uwertRead(pid) {
   const p = findProjekt(pid); const bt = uwertActive(p); if (!bt) return;
@@ -10571,7 +11987,7 @@ function viewUwert(pid) {
   render(`
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › U-Wert</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">U-Wert-Rechner</h1><div class="sub" style="margin-top:5px">Wärmedämmung von Bauteilen – Schichten, U-Wert &amp; Querschnitt</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">U-Wert-Rechner</h1><div class="sub" style="margin-top:5px">Wärmedämmung von Bauteilen – Schichten, U-Wert &amp; Querschnitt</div></div>
     </div>
     ${projektTabs(p, 'uwert')}
     ${demoBanner('uwert')}
@@ -10584,13 +12000,13 @@ function viewUwert(pid) {
           <label class="field">Bezeichnung <input class="input" id="uw_name" value="${esc(bt.name || '')}"></label>
           <label class="field">Bauteil-Typ <select class="select" id="uw_typ">${Object.entries(UWERT_TYP).map(([k, v]) => `<option value="${k}"${bt.typ === k ? ' selected' : ''}>${esc(v.label)}</option>`).join('')}</select></label>
         </div>
-        <div class="muted" style="font-size:12px;margin:10px 0 6px"><strong>Schichten</strong> – von <b>aussen</b> (oben) nach <b>innen</b> (unten): Material · λ · Dicke (mm)</div>
-        ${rows || '<p class="muted" style="font-size:12.5px;padding:4px 0">Noch keine Schichten.</p>'}
+        <div class="muted" style="font-size:var(--t-xs, 12px);margin:10px 0 6px"><strong>Schichten</strong> – von <b>aussen</b> (oben) nach <b>innen</b> (unten): Material · λ · Dicke (mm)</div>
+        ${rows || '<p class="muted" style="font-size:var(--t-s, 12.5px);padding:4px 0">Noch keine Schichten.</p>'}
         <button class="btn sm secondary" data-act="uw-add" data-pid="${p.id}" type="button" style="margin-top:4px">+ Schicht</button>
         <div style="margin-top:14px"><button class="btn ghost sm danger" data-act="uw-delbt" data-pid="${p.id}" type="button">🗑 Bauteil löschen</button></div>
       </div>
       <div class="card card-pad">
-        <h2 style="margin:0 0 12px;font-size:15px">Querschnitt &amp; Ergebnis</h2>
+        <h2 style="margin:0 0 12px;font-size:var(--t-l, 15px)">Querschnitt &amp; Ergebnis</h2>
         <div id="uwertOut">${uwertOutHtml(bt)}</div>
       </div>
     </div>
@@ -10648,6 +12064,12 @@ function zahlungsplanOf(p) {
   if (!z.bis) z.bis = zr.bis;
   if (!z.overrides) z.overrides = {};   // manuell angepasste Monatsbeträge {YYYY-MM: betrag}
   if (z.gesperrt === undefined) z.gesperrt = false;
+  // Bauherren-Plan: Grundlage und Zahlungsraster
+  if (z.bhGrundlage === undefined) z.bhGrundlage = 'alle';   // 'alle' | 'vergeben'
+  if (z.bhSchritt === undefined) z.bhSchritt = 0;            // 0 = haargenau, sonst z.B. 25000
+  // Unternehmer-Pläne: ab welcher Auftragssumme, und auf welches Raster
+  if (z.untSchwelle === undefined) z.untSchwelle = 10000;
+  if (z.untSchritt === undefined) z.untSchritt = 0;
   return z;
 }
 // Versions-/Sperr-/Override-Aktionen
@@ -10666,51 +12088,2239 @@ function setMonatOverride(pid, key, val) {
   save(); viewZahlungsplan(pid);
 }
 function zpMonReset(pid) { const p = findProjekt(pid); const z = zahlungsplanOf(p); if (z.gesperrt) return; z.overrides = {}; save(); viewZahlungsplan(pid); toast('Monatsbeträge auf Auto zurückgesetzt'); }
-// Bauherren-Zahlungsplan: jeder vergebene Werkvertrag über seine Bauzeit (Unternehmer-Termine) verteilt
-function bauherrPlan(p) {
-  const gw = gewerkeSorted(p).filter(isVergeben);
+// Bauherren-Plan: Grundlage und Zahlungsraster umstellen
+function zpBhGrundlage(pid, wert) { const p = findProjekt(pid); const z = zahlungsplanOf(p); if (z.gesperrt) return; z.bhGrundlage = (wert === 'vergeben') ? 'vergeben' : 'alle'; save(); viewZahlungsplan(pid); }
+function zpBhSchritt(pid, wert) { const p = findProjekt(pid); const z = zahlungsplanOf(p); if (z.gesperrt) return; z.bhSchritt = Math.max(0, Number(wert) || 0); save(); viewZahlungsplan(pid); toast(z.bhSchritt ? 'Zahlungen auf ' + chf(z.bhSchritt) + ' gerundet' : 'Zahlungen haargenau'); }
+/* Rechnungslauf: Wie viele Monate nach der Ausführung die Rechnung kommt
+   und wie lange die Zahlungsfrist läuft. Beides steht auf dem Bankblatt.
+   Ein Ort für die Standardwerte — sonst steht die 30 an sechs Stellen. */
+function zpVersatz(z) { const n = Number(z && z.rechnungVersatz); return (z && z.rechnungVersatz !== undefined && z.rechnungVersatz !== '' && isFinite(n)) ? Math.max(0, Math.min(6, n)) : 1; }
+function zpFrist(z)   { const n = Number(z && z.zahlungsfrist);   return (z && z.zahlungsfrist   !== undefined && z.zahlungsfrist   !== '' && isFinite(n)) ? Math.max(0, Math.min(180, n)) : 30; }
+
+/* Der Garantierückbehalt — üblich sind 10 %, einbehalten bis zur
+   Schlussrechnung. Er ist eine Planungsgrösse und nicht dasselbe wie
+   `rueckbehaltP` auf einer einzelnen Rechnung: Dort steht, was bei einer
+   bereits gestellten Rechnung tatsächlich einbehalten wurde, hier, womit
+   im Plan gerechnet wird. */
+function zpRueckbehalt(z) {
+  const n = Number(z && z.rueckbehalt);
+  return (z && z.rueckbehalt !== undefined && z.rueckbehalt !== '' && isFinite(n))
+    ? Math.max(0, Math.min(50, n)) / 100 : 0.10;
+}
+
+/* Der Rechnungsversatz dieser Position — eigener schlägt den
+   allgemeinen. Jeder Unternehmer stellt anders: Horibe rechnet die
+   August-Arbeiten erst im September ab, der Elektriker sofort. Ein
+   einziger Wert fürs ganze Projekt kann das nicht abbilden. Der Versatz
+   verschiebt nur die DATEN (Rechnung bis, zahlbar bis) — die Grenze
+   «geplant ab» bleibt davon unberührt. */
+function versatzVon(v, standard) {
+  const e = v && v.rechnungVersatz;
+  if (e === undefined || e === '' || !isFinite(Number(e))) return standard;
+  return Math.max(0, Math.min(6, Number(e)));
+}
+
+/** Der Rückbehalt dieser Position — eigener Satz schlägt den allgemeinen. */
+function rueckbehaltVon(v, standard) {
+  const e = v && v.planRueckbehalt;
+  if (e === undefined || e === '' || !isFinite(Number(e))) return standard;
+  return Math.max(0, Math.min(50, Number(e))) / 100;
+}
+const ZP_RUECKBEHALTE = [0, 5, 10];
+/* Von der Zahlung zur Rechnung.
+   ---------------------------------------------------------------------
+   Im Zahlungsplan steht eine Summe für einen vergangenen Monat. Die
+   Frage dazu ist immer dieselbe: «Welche Rechnung war das — und stimmt
+   sie?» Bisher hiess die Antwort: Reiter wechseln, Gewerk suchen,
+   aufklappen, Datum vergleichen. Jetzt genügt ein Klick: Die
+   Baukostenübersicht öffnet sich mit aufgeklapptem Gewerk, und die
+   Rechnung ist hervorgehoben. */
+/** Die Rechnung dieser Position in diesem Monat — für den Sprung dorthin. */
+function zpRechnungIm(v, monat) {
+  const r = (v.rechnungen || []).find(x => x.datum && x.datum.slice(0, 7) === monat);
+  return r ? r.id : '';
+}
+
+function zpZurRechnung(pid, vid, rgid) {
+  if (vid) kostOpen.add(vid);
+  go('#/projekt/' + pid + '/kosten');
+  if (!rgid) return;
+  /* Erst nach dem Zeichnen — vorher gibt es die Zeile noch nicht. */
+  setTimeout(() => {
+    const zeile = document.getElementById('rg-' + rgid);
+    if (!zeile) return;
+    zeile.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    zeile.classList.add('rg-blitz');
+    setTimeout(() => zeile.classList.remove('rg-blitz'), 2200);
+  }, 90);
+}
+
+function zpBhIst(pid, wert) { const p = findProjekt(pid); const z = zahlungsplanOf(p); if (!z || z.gesperrt) return; z.bhIst = String(wert) === '1'; save(); viewZahlungsplan(pid); toast(z.bhIst ? 'Stand heute – verrechnete Beträge stehen fest' : 'Plan – reine Vorschau'); }
+function zpSetVersatz(pid, wert) { const p = findProjekt(pid); const z = zahlungsplanOf(p); if (!z || z.gesperrt) return; z.rechnungVersatz = Math.max(0, Math.min(6, Number(wert) || 0)); save(); viewZahlungsplan(pid); }
+function zpSetFrist(pid, wert)   { const p = findProjekt(pid); const z = zahlungsplanOf(p); if (!z || z.gesperrt) return; z.zahlungsfrist   = Math.max(0, Math.min(180, Number(wert) || 0)); save(); viewZahlungsplan(pid); }
+function zpSetRueckbehalt(pid, wert) { const p = findProjekt(pid); const z = zahlungsplanOf(p); if (!z || z.gesperrt) return; z.rueckbehalt = Math.max(0, Math.min(50, Number(wert) || 0)); save(); viewZahlungsplan(pid); }
+
+/* «Stand heute» ist die Vorgabe, nicht die Ausnahme.
+   ---------------------------------------------------------------------
+   Bis zum 14.08.2026 stand der Schalter auf «Plan», und der verteilte
+   über die GANZE Bauzeit — auch rückwärts in gelaufene Monate. Im Juni
+   standen dann zehn geplante Anteile, die sich wie Rechnungen lasen,
+   während wirklich zwei erfasst waren. Ein vergangener Monat ist aber
+   gelaufen: Dort stehen die Rechnungen, die kamen, und sonst nichts.
+   Der reine Plan bleibt als Vorschau wählbar — er ist die Ausnahme. */
+function zpIstModus(z) { return !z || z.bhIst !== false; }
+
+/** Letzter Tag eines Monats, um `n` Monate verschoben — der Rechnungslauf. */
+function zpMonatEnde(key, n) {
+  const [y, m] = String(key).split('-').map(Number);
+  const d = new Date(y, (m - 1) + (Number(n) || 0) + 1, 0);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+/** Ab welchem Monat geplant wird. Vorgabe: der Monat, in dem die
+    Übersicht entsteht. Alles davor sind die tatsächlichen Rechnungen. */
+function zpPlanAb(z) {
+  const v = z && z.planAb;
+  return (typeof v === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(v)) ? v : todayIso().slice(0, 7);
+}
+function zpSetPlanAb(pid, wert) {
+  const p = findProjekt(pid); const z = zahlungsplanOf(p); if (!z || z.gesperrt) return;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(wert || ''))) return;
+  z.planAb = wert; save(); viewZahlungsplan(pid);
+  toast('Geplant wird ab ' + zpMonLabel(wert) + ' — davor zählen nur erfasste Rechnungen');
+}
+
+// Unternehmer-Pläne: Schwelle und Raster
+function zpUntSchwelle(pid, wert) { const p = findProjekt(pid); const z = zahlungsplanOf(p); if (z.gesperrt) return; z.untSchwelle = Math.max(0, Number(wert) || 0); save(); viewZahlungsplan(pid); }
+function zpUntSchritt(pid, wert) { const p = findProjekt(pid); const z = zahlungsplanOf(p); if (z.gesperrt) return; z.untSchritt = Math.max(0, Number(wert) || 0); save(); viewZahlungsplan(pid); }
+
+/** Rechnungsversatz je Auftragseinheit — leer heisst: dem Standard folgen. */
+function zpSetUntVersatz(pid, key, wert) {
+  const p = findProjekt(pid); if (!p) return;
+  const z = zahlungsplanOf(p); if (z.gesperrt) return;
+  const g = auftragsEinheiten(p).find(x => x.key === key); if (!g) return;
+  g.positionen.forEach(v => {
+    if (wert === '' || wert === undefined) delete v.rechnungVersatz;
+    else v.rechnungVersatz = Math.max(0, Math.min(6, Number(wert) || 0));
+  });
+  save(); viewZahlungsplan(pid);
+  toast(wert === '' ? 'Folgt wieder dem Projektstandard'
+    : (g.firma || g.name) + ': Rechnung ' + (Number(wert) === 0 ? 'im selben Monat' : 'nach ' + wert + ' Monat' + (Number(wert) > 1 ? 'en' : '')));
+}
+/* ============================================================
+   Bauherren-Zahlungsplan
+   ------------------------------------------------------------
+   Jedes Gewerk wird über seine Bauzeit (Unternehmer-Termine) auf Monate
+   verteilt. Zwei Einstellungen, die der Bauherr wirklich braucht:
+
+   GRUNDLAGE  'alle'     jedes Gewerk mit Betrag — vergeben zählt mit der
+                         Vertragssumme, offene mit dem revidierten KV.
+                         Vorgabe: Ein Bauherr will FRÜH wissen, was kommt,
+                         nicht erst wenn alles vergeben ist.
+              'vergeben' nur unterschriebene Werkverträge (harte Zahlen)
+
+   SCHRITT    0          haargenau
+              25000      Zahlungen in 25'000er-Schritten
+
+   Wie gerundet wird: NICHT jeder Monat für sich — das würde kleine Monate
+   auf null drücken und die Summe verfälschen. Stattdessen wird die
+   KUMULIERTE Linie aufs Raster gelegt; die Zahlung ist die Differenz zur
+   vorigen. Damit ist jede Zahlung ein Vielfaches des Schritts, die Summe
+   bleibt exakt, und nichts läuft weg. Die letzte Zahlung gleicht den Rest
+   aus — die Schlusszahlung ist immer krumm, das ist in der Praxis richtig.
+   ============================================================ */
+/* ---------------------------------------------------------------------
+   Zeitlage — für Positionen ohne festen Termin
+   ---------------------------------------------------------------------
+   Nicht jede Kostenposition hat eine Bauzeit. Das Architektenhonorar
+   läuft über das ganze Vorhaben, Bewilligungsgebühren fallen am Anfang
+   an, die Reserve wird zuhinterst aufgerechnet. Ihnen ein erfundenes
+   Von-bis zu geben wäre falsch: Auf dem Balkenplan stünde ein Balken,
+   den es nicht gibt.
+
+   Ohne diese Angabe fielen solche Positionen bisher ganz aus dem
+   Zahlungsplan — sie landeten unter «Termine fehlen» und zählten
+   schlicht nicht mit. Bei Honorar, Reserve und Gebühren zusammen sind
+   das schnell hunderttausend Franken, die der Bank nicht gezeigt werden.
+
+   Eine Zeitlage sagt daher, WANN das Geld fliesst, ohne einen Termin zu
+   behaupten. Im Terminprogramm erscheinen diese Positionen nicht.
+   --------------------------------------------------------------------- */
+const ZEITLAGEN = {
+  anfang:   { label: 'am Anfang',            kurz: 'Anfang',   hinweis: 'Fällt zu Beginn an – z.B. Bewilligungen und Gebühren' },
+  ende:     { label: 'am Ende',              kurz: 'Ende',     hinweis: 'Wird zuhinterst aufgerechnet – z.B. Reserve, Schlussgebühren' },
+  verteilt: { label: 'über die ganze Bauzeit', kurz: 'verteilt', hinweis: 'Läuft durchgehend mit – z.B. Architektenhonorar' }
+};
+
+/** Die Zeitlage eines Gewerks, oder null wenn es feste Termine hat. */
+function zeitlageOf(v) {
+  if (!v) return null;
+  if (v.bauStart && v.bauEnde) return null;          // echte Termine schlagen alles
+  const z = v.zeitlage;
+  return ZEITLAGEN[z] ? z : null;
+}
+
+/** Die Monate eines Projekts, aus den echten Bauterminen. */
+function projektMonate(p) {
+  let min = null, max = null;
+  (p.vergaben || []).forEach(v => {
+    if (!v.bauStart || !v.bauEnde) return;
+    if (!min || v.bauStart < min) min = v.bauStart;
+    if (!max || v.bauEnde > max) max = v.bauEnde;
+  });
+  if (!min || !max) return [];
+  const monate = [];
+  let y = +min.slice(0, 4), m = +min.slice(5, 7) - 1;
+  const ey = +max.slice(0, 4), em = +max.slice(5, 7) - 1;
+  while (y < ey || (y === ey && m <= em)) {
+    monate.push(y + '-' + String(m + 1).padStart(2, '0'));
+    m++; if (m > 11) { m = 0; y++; }
+  }
+  return monate;
+}
+
+/* =====================================================================
+   Wie sich ein Gewerk über seine Bauzeit verteilt
+   ---------------------------------------------------------------------
+   Bis zum 14.08.2026 bekam jeder Monat gleich viel. Für eine
+   Liquiditätsplanung reicht das — für eine Zahlungsvereinbarung mit dem
+   Unternehmer nicht: Der Baumeister ist im ersten Monat bei zwanzig
+   Prozent und im zweiten bei sechzig, und wer ihm dreimal denselben
+   Betrag zusagt, verspricht im ersten Monat zu viel und im zweiten zu
+   wenig.
+
+   Deshalb trägt jede Position einen Verlauf. `glocke` bildet Yanicks
+   Beispiel genau ab: über drei Monate ergibt sie 20 / 60 / 20.
+
+   Der Verlauf verschiebt nur — die Summe bleibt in jedem Fall dieselbe.
+
+   Noch nicht in Betrieb
+   ---------------------
+   Yanicks Entscheid vom 14.08.2026: bereitstellen, aber nicht anwenden.
+   Die Pläne rechnen weiterhin gleichmässig. Wer den Verlauf einschalten
+   will, ruft `verlaufVerteilen()` statt `betrag / monate.length` — an
+   drei Stellen: bauherrPlan, bauherrPlanIst und unternehmerPlaene. Die
+   Rechnung selbst ist geprüft (test/verlauf-node.js), damit sie an dem
+   Tag nicht erst noch bewiesen werden muss.
+   ===================================================================== */
+const VERLAEUFE = {
+  gleich: { label: 'gleichmässig',        kurz: '≡',
+            hinweis: 'Jeder Monat gleich viel — für Honorare und alles, was durchgehend läuft.',
+            w: () => 1 },
+  glocke: { label: 'Anlauf und Auslauf',  kurz: '∩',
+            hinweis: 'Langsam an, in der Mitte am meisten, gegen Ende wieder weniger. Über drei Monate: 20 / 60 / 20.',
+            w: t => Math.pow(Math.sin(Math.PI * t), 1.6) },
+  vorne:  { label: 'Schwerpunkt vorne',   kurz: '◤',
+            hinweis: 'Der grosse Teil fällt früh an — Aushub, Rohbau, Anlieferung.',
+            w: t => 1.6 - 1.2 * t },
+  hinten: { label: 'Schwerpunkt hinten',  kurz: '◥',
+            hinweis: 'Der grosse Teil fällt spät an — Ausbau, Feinarbeiten, Montage.',
+            w: t => 0.4 + 1.2 * t }
+};
+
+/** Der Verlauf dieser Position — eigener schlägt den allgemeinen. */
+function verlaufVon(v, standard) {
+  const e = v && v.verlauf;
+  if (VERLAEUFE[e]) return e;
+  return VERLAEUFE[standard] ? standard : 'gleich';
+}
+
+/** Die Gewichte für `n` Monate, aufsummiert auf 1. */
+function verlaufGewichte(n, art) {
+  if (n <= 0) return [];
+  const w = (VERLAEUFE[art] || VERLAEUFE.gleich).w;
+  const roh = [];
+  for (let i = 0; i < n; i++) roh.push(Math.max(0, w((i + 0.5) / n)));
+  const summe = roh.reduce((a, x) => a + x, 0) || 1;
+  return roh.map(x => x / summe);
+}
+
+/**
+ * Verteilt einen Betrag über Monate nach dem Verlauf der Position.
+ *
+ * @param nurAb  Nur Monate ab diesem Schlüssel nehmen und das Gewicht
+ *               darauf neu aufteilen — der «Stand heute» plant nur noch
+ *               das, was vor ihm liegt, soll aber die Form behalten.
+ */
+function verlaufVerteilen(betrag, monate, art, nurAb) {
+  if (!monate.length) return [];
+  const g = verlaufGewichte(monate.length, art);
+  const teil = monate.map((mk, i) => ({ mk, g: g[i] })).filter(x => !nurAb || x.mk >= nurAb);
+  const summe = teil.reduce((a, x) => a + x.g, 0);
+  if (!teil.length || summe <= 0) return [];
+  return teil.map(x => ({ mk: x.mk, betrag: betrag * x.g / summe }));
+}
+
+/** Auf welche Monate eine Position fällt – aus Terminen oder Zeitlage. */
+function monateVon(v, projMonate, opt) {
+  if (v.bauStart && v.bauEnde) {
+    const s = new Date(v.bauStart), e = new Date(v.bauEnde);
+    if (isNaN(+s) || isNaN(+e) || +e < +s) return [];
+    const out = [];
+    let y = s.getFullYear(), m = s.getMonth();
+    const ey = e.getFullYear(), em = e.getMonth();
+    while (y < ey || (y === ey && m <= em)) { out.push(y + '-' + String(m + 1).padStart(2, '0')); m++; if (m > 11) { m = 0; y++; } }
+    return out;
+  }
+  if (!projMonate.length) return [];
+  const z = zeitlageOf(v);
+  if (z === 'anfang')   return [projMonate[0]];
+  if (z === 'ende')     return [projMonate[projMonate.length - 1]];
+  if (z === 'verteilt') return projMonate.slice();
+
+  /* Weder Termin noch Zeitlage — trotzdem in den Plan, ans Ende gestellt.
+     Bis zum 14.08.2026 fiel so eine Position stillschweigend heraus: Der
+     Zahlungsplan endete bei 739'558.70, während die Baukosten höher
+     lagen, und nichts wies darauf hin, was fehlte. Ein Plan, der einen
+     Teil der Kosten verschweigt, ist für eine Bank wertlos.
+     Wer es genau wissen will, fragt mit `streng` nach. */
+  return (opt && opt.streng) ? [] : [projMonate[projMonate.length - 1]];
+}
+
+/**
+ * In welchem Monat die Schlussrechnung dieser Position gestellt wird.
+ *
+ * Normalerweise im letzten Ausführungsmonat. Liegt das Steuerjahr später,
+ * wandert sie in den JANUAR dieses Jahres — so ist es in der Praxis: Die
+ * Arbeiten enden im November, über den Jahreswechsel wird abgerechnet,
+ * die Rechnung trägt ein Januardatum, der Abzug fällt ins neue Jahr.
+ *
+ * Beide Zahlungspläne — der geplante und der «Stand heute» — fragen das
+ * hier. Vorher rechnete es nur der geplante aus; im Ist-Plan fehlte der
+ * Januar 2027 deshalb ganz, und wer ihn druckte, sah den Rückbehalt
+ * nirgends.
+ */
+/* Die steuerliche Zuteilung als Druckblatt — je Steuerjahr die
+   Positionen, ihre Einstufung, der abziehbare Anteil und die Summe.
+
+   Warum je Jahr und nicht je Einstufung: Die Frage, die sich stellt,
+   lautet «was kann ich wann abziehen» — nicht «wie viel ist Unterhalt».
+   Die Einstufung steht als Zeichen daneben. */
+function steuerBlaetter(p) {
+  const sp = steuerPlan(p);
+  const prop = steuerProportional(p);
+  const proJahr = new Map();
+  sp.rows.forEach(r => {
+    const j = r.jahr || 0;
+    if (!proJahr.has(j)) proJahr.set(j, []);
+    proJahr.get(j).push(r);
+  });
+
+  const kurz = { unterhalt: '1:1', anteilig: 'Anteil', energie: 'E',
+                 wertvermehrend: '–', offen: 'offen' };
+
+  const abschnitte = [...proJahr.entries()].sort((a, b) => (a[0] || 9999) - (b[0] || 9999)).map(([jahr, rows]) => {
+    const betrag = rows.reduce((a, r) => a + r.betrag, 0);
+    const abz = rows.reduce((a, r) => a + r.abziehbar, 0);
+    const zeilen = rows.slice().sort((a, b) => b.betrag - a.betrag).map(r => `<tr class="zp-pos">
+        <td class="num zp-nr">${esc(r.v.bkp || '')}</td>
+        <td>${esc(r.v.gewerk || '')}${r.v.firma ? `<span class="zp-fi">${esc(r.v.firma)}</span>` : ''}</td>
+        <td class="zp-zt">${esc(kurz[r.art] || r.art)}${r.mb ? ' <span class="zp-nr">MB ' + esc(r.mb) + '</span>' : ''}</td>
+        <td class="num">${moneyA(r.betrag)}</td>
+        <td class="num zp-nr">${Math.round((r.quote || 0) * 1000) / 10} %</td>
+        <td class="num">${r.abziehbar > 0.05 ? moneyA(r.abziehbar) : '–'}</td>
+      </tr>`).join('');
+    return `<div class="zp-mon">
+      <div class="zp-mon-k">
+        <span class="zp-mon-t">${jahr ? 'Steuerjahr ' + jahr : 'Ohne Jahr'}</span>
+        <span class="zp-mon-p">${rows.length} Position${rows.length === 1 ? '' : 'en'}</span>
+        <span class="zp-mon-b">abziehbar ${moneyA(abz)}</span>
+      </div>
+      <table class="t zp-t zp-detail"><thead><tr>
+        <th class="num">BKP</th><th>Position</th><th>Einstufung</th>
+        <th class="num">Betrag</th><th class="num">Anteil</th><th class="num">abziehbar</th>
+      </tr></thead><tbody>${zeilen}
+        <tr class="tot"><td></td><td><b>Total ${jahr || ''}</b></td><td></td>
+          <td class="num"><b>${moneyA(betrag)}</b></td><td></td>
+          <td class="num"><b>${moneyA(abz)}</b></td></tr>
+      </tbody></table>
+    </div>`;
+  }).join('');
+
+  const erklaerung = `<p class="zp-p">
+    Abziehbar ist der <b>Unterhalt</b> — was ersetzt, was schon da war (1:1).
+    <b>Energiemassnahmen (E)</b> sind ebenfalls abziehbar. <b>Wertvermehrendes</b>
+    ist es nicht; es erhöht die Anlagekosten und wirkt erst beim Verkauf.
+    Bei <b>anteiligen</b> Positionen wird der Anteil nach Merkblatt 11.3 a
+    proportional zu den übrigen Kosten berechnet${prop.quote != null
+      ? ` — hier ${Math.round(prop.quote * 1000) / 10} % (${moneyA(prop.unterhalt)} Unterhalt zu ${moneyA(prop.anlage)} Anlagekosten)` : ''}.<br>
+    Massgebend ist das Jahr, in dem die <b>Schlussrechnung</b> gestellt wird —
+    Akontozahlungen sind steuerlich neutral. Grundlage: Merkblatt 5 der
+    Steuerverwaltung des Kantons Bern, Ziffer 3.</p>`;
+
+  return [`<div class="gw">Steuerliche Zuteilung</div>${erklaerung}${abschnitte}
+    <p class="zp-fuss">Diese Zuteilung ist ein Vorschlag der Bauleitung und ersetzt
+      keine Steuerberatung. Beträge ${ansichtNote()}.</p>`];
+}
+
+function schlussMonatVon(v, projMonate) {
+  const months = monateVon(v, projMonate);
+  const letzter = months.length ? months[months.length - 1] : null;
+  const st = steuerOf(v);
+  return (st.jahr && letzter && st.jahr > +letzter.slice(0, 4)) ? st.jahr + '-01' : letzter;
+}
+
+function bauherrPlan(p, opt) {
+  const o = opt || {};
+  const grundlage = o.grundlage || 'alle';
+  const schritt = Math.max(0, Number(o.schritt) || 0);
+
+  const gw = gewerkeSorted(p).filter(v =>
+    grundlage === 'vergeben' ? isVergeben(v) : (kostenZeile(v).prognose > 0));
+
   const map = new Map(); const rows = [];
+  /* Wer in welchem Monat wie viel bekommt — nicht nur die Monatssumme.
+     Die Bank will sehen, woraus sich eine Zahlung zusammensetzt, und der
+     Bauherr will wissen, welchem Unternehmer sein Geld zufliesst. */
+  const detail = new Map();
+  const projMonate = projektMonate(p);
+  const rbStd = zpRueckbehalt(zahlungsplanOf(p));
+
   gw.forEach(v => {
     const betrag = kostenZeile(v).prognose;
-    const s = v.bauStart ? new Date(v.bauStart) : null, e = v.bauEnde ? new Date(v.bauEnde) : null;
-    const months = [];
-    if (s && e && !isNaN(+s) && !isNaN(+e) && +e >= +s) { let y = s.getFullYear(), m = s.getMonth(); const ey = e.getFullYear(), em = e.getMonth(); while (y < ey || (y === ey && m <= em)) { months.push(y + '-' + String(m + 1).padStart(2, '0')); m++; if (m > 11) { m = 0; y++; } } }
-    const per = months.length ? betrag / months.length : 0;
-    months.forEach(mk => map.set(mk, (map.get(mk) || 0) + per));
-    rows.push({ v, betrag, von: v.bauStart, bis: v.bauEnde, ohneTermin: !months.length });
+    const months = monateVon(v, projMonate);
+
+    /* Der Garantierückbehalt läuft nicht mit dem Baufortschritt mit: Er
+       wird einbehalten und erst mit der Schlussrechnung frei. Wer ihn
+       über die Bauzeit verteilt, stellt der Bauherrschaft Geld in
+       Aussicht, das sie noch gar nicht schuldet — und lässt am Ende
+       einen Betrag auftauchen, den der Plan nie gezeigt hat. */
+    const rbP = rueckbehaltVon(v, rbStd);
+    const rbBetrag = rp5(betrag * rbP);
+    const laufend = betrag - rbBetrag;
+    const per = months.length ? laufend / months.length : 0;
+
+    /* In welchem Monat die Schlussrechnung gestellt wird. Normalerweise im
+       letzten Ausführungsmonat; ist ein Steuerjahr gesetzt und liegt es
+       später, wandert sie dorthin — das ist ja der Sinn der Übung. Alles
+       davor ist Akontozahlung und steuerlich neutral. */
+    const letzter = months.length ? months[months.length - 1] : null;
+    const st = steuerOf(v);
+    const schlussMonat = schlussMonatVon(v, projMonate);
+    const spaeter = schlussMonat && letzter && schlussMonat > letzter;
+
+    months.forEach(mk => {
+      map.set(mk, (map.get(mk) || 0) + per);
+      if (!detail.has(mk)) detail.set(mk, []);
+      detail.get(mk).push({
+        v, anteil: per, teil: months.length > 1,
+        schluss: !spaeter && !rbBetrag && mk === schlussMonat,
+        schlussMonat, steuerJahr: st.jahr || (letzter ? +letzter.slice(0, 4) : 0),
+        steuerArt: st.art
+      });
+    });
+
+    /* Der einbehaltene Teil erscheint im Monat der Schlussrechnung —
+       auch wenn dort sonst nicht gebaut wird. Das ist der Monat, in dem
+       er zahlbar wird. */
+    if (rbBetrag > 0.005 && schlussMonat) {
+      map.set(schlussMonat, (map.get(schlussMonat) || 0) + rbBetrag);
+      if (!detail.has(schlussMonat)) detail.set(schlussMonat, []);
+      detail.get(schlussMonat).push({
+        v, anteil: rbBetrag, teil: false, schluss: true, rueckbehalt: rbP,
+        schlussMonat, steuerJahr: st.jahr || (letzter ? +letzter.slice(0, 4) : 0),
+        steuerArt: st.art
+      });
+    }
+    rows.push({ v, betrag, von: v.bauStart, bis: v.bauEnde, ohneTermin: !months.length,
+                /* Steht im Plan, aber ohne dass jemand es dorthin gestellt
+                   hätte — das gehört sichtbar gemacht, nicht versteckt. */
+                ohneLage: !v.bauStart && !zeitlageOf(v) && months.length > 0,
+                zeitlage: zeitlageOf(v), geschaetzt: !isVergeben(v),
+                schlussMonat, steuerJahr: st.jahr || (letzter ? +letzter.slice(0, 4) : 0) });
   });
+
   const sorted = [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  let cum = 0; const monate = sorted.map(([k, b]) => { const betrag = rp5(b); cum += betrag; return { key: k, betrag, cum }; });
   const total = rows.filter(r => !r.ohneTermin).reduce((a, r) => a + r.betrag, 0);
-  return { rows, monate, total, fehlend: rows.filter(r => r.ohneTermin) };
+  const monate = verteileAufSchritt(sorted, total, schritt);
+
+  /* Was in diesem Monat wirklich geflossen ist, je Rechnung. Ein Plan,
+     der nur zeigt, was vorgesehen war, lässt die Frage offen, die als
+     Erstes gestellt wird: «und was ist tatsächlich gegangen?» */
+  const istMon = new Map();
+  (p.vergaben || []).forEach(v => (v.rechnungen || []).forEach(r => {
+    if (!r.bezahlt || !r.datum) return;
+    const b = rgAuszahlung(r); if (!b) return;
+    const mk = r.datum.slice(0, 7);
+    if (!istMon.has(mk)) istMon.set(mk, { summe: 0, posten: [] });
+    const e = istMon.get(mk);
+    e.summe = rp5(e.summe + b);
+    e.posten.push({ v, r, betrag: b });
+  }));
+  monate.forEach(m => {
+    const e = istMon.get(m.key);
+    m.ist = e ? e.summe : 0;
+    m.istPosten = e ? e.posten : [];
+  });
+
+  /* Jedem Monat seine Positionen anhängen, nach Betrag absteigend — das
+     Grösste zuerst, weil danach gefragt wird. Die Rundungsdifferenz zur
+     Planzahl wird ausgewiesen statt stillschweigend verteilt. */
+  monate.forEach(m => {
+    const teile = (detail.get(m.key) || []).slice().sort((a, b) => b.anteil - a.anteil);
+    m.teile = teile;
+    m.exakt = teile.reduce((a, t) => a + t.anteil, 0);
+    m.rundung = rp5(m.betrag - m.exakt);
+    m.anteilPct = total > 0 ? (m.betrag / total * 100) : 0;
+  });
+
+  return {
+    rows, monate, total, schritt, grundlage,
+    fehlend: rows.filter(r => r.ohneTermin),
+    geschaetzt: rows.filter(r => !r.ohneTermin && r.geschaetzt)
+  };
 }
-function zpBauherrHtml(p) {
-  const r = bauherrPlan(p); const z = zahlungsplanOf(p);
-  if (!r.rows.length) return `<div class="card card-pad">${emptyState('🧾', 'Noch keine vergebenen Werkverträge. Sobald Gewerke vergeben + im Reiter „Termine" terminiert sind, erscheint hier der Bauherren-Zahlungsplan.')}</div>`;
-  const wvRows = r.rows.map(x => `<tr>
-      <td><span class="bkp-code">${esc(x.v.bkp || '')}</span> ${esc(x.v.gewerk)}<div class="muted" style="font-size:11px">${esc(x.v.firma || '—')}</div></td>
-      <td class="num">${chf(x.betrag)}</td>
-      <td>${x.ohneTermin ? '<span class="st amber">Termine fehlen</span>' : fmtDate(x.von) + ' – ' + fmtDate(x.bis)}</td>
-    </tr>`).join('');
-  return `
-    <div class="card card-pad" style="max-width:840px">
-      <h2 style="margin:0 0 8px;font-size:15px">Werkverträge (Grundlage)</h2>
-      <div class="card" style="overflow-x:auto"><table class="grid"><thead><tr><th>Gewerk / Firma</th><th class="num">Summe (WV + gen. NT)</th><th>Bauzeitraum (Unternehmer)</th></tr></thead>
-        <tbody>${wvRows}</tbody>
-        <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b>${chf(r.total)}</b></td><td></td></tr></tfoot></table></div>
-      ${r.fehlend.length ? `<p class="muted" style="font-size:11.5px;margin:8px 0 0">⚠ ${r.fehlend.length} Gewerk(e) ohne Bautermine – im Reiter „Termine" Start/Ende setzen, dann zählen sie mit.</p>` : ''}
-    </div>
-    <div class="card card-pad" style="max-width:840px;margin-top:16px">
-      <h2 style="margin:0 0 10px;font-size:15px">Zahlungen Bauherr – pro Monat</h2>
-      <div id="zpMonate">${zpMonateTabelleHtml(r.monate, z, p.id, 'Noch keine Bautermine gesetzt.')}</div>
+
+/* =============================================================
+   Steuerliche Verteilung der Schlussrechnungen
+   -------------------------------------------------------------
+   Bei einem Umbau am selbstbewohnten Haus sind Unterhaltskosten
+   von der Einkommenssteuer abziehbar, wertvermehrende nicht.
+   Massgebend ist nach Merkblatt 5 der Steuerverwaltung des
+   Kantons Bern (Ziffer 3) das Jahr, in dem die RECHNUNG GESTELLT
+   wurde — nicht das Jahr der Ausführung und nicht das der
+   Zahlung. Akontozahlungen zählen ausdrücklich nicht.
+
+   Daraus folgt etwas, das den Bauherrn viel Geld kosten oder
+   sparen kann: Fallen alle Schlussrechnungen ins selbe Jahr,
+   trifft der Abzug einmal auf ein Einkommen. Verteilt man sie
+   auf zwei Jahre, wirkt er zweimal — bei progressivem Tarif
+   deutlich stärker.
+
+   Genau das will Cosima Bader (Mail vom 26.03.2026): rund
+   200'000 Franken 1:1-Ersatz im Jahr 2026 abrechnen, die
+   Energiemassnahmen (im Merkblatt mit «E» bezeichnet) und alles
+   darüber hinaus erst 2027.
+
+   Was dieses Programm dabei tut und was nicht
+   -------------------------------------------
+   Es rechnet und es zeigt an. Die Einstufung einer Position —
+   Unterhalt, anteilig, wertvermehrend — ist eine steuerliche
+   Beurteilung und bleibt beim Bauherrn und seinem Steuerberater.
+   Das Programm schlägt anhand des Merkblatts etwas vor und
+   markiert alles, was noch niemand beurteilt hat.
+   ============================================================= */
+const STEUER_ARTEN = {
+  offen:          { label: 'noch nicht beurteilt', kurz: 'offen',  quote: 0, farbe: 'var(--text-faint)' },
+  unterhalt:      { label: 'Unterhalt, 1:1-Ersatz', kurz: '1/1',   quote: 1, farbe: 'var(--s-green)' },
+  anteilig:       { label: 'anteilig abziehbar',    kurz: 'Anteil', quote: null, farbe: '#b45309' },
+  energie:        { label: 'Energie und Umwelt (E)', kurz: 'E',    quote: 1, farbe: '#0d9488' },
+  wertvermehrend: { label: 'wertvermehrend',        kurz: '–',     quote: 0, farbe: 'var(--s-red)' }
+};
+
+/** Die Steuerangaben eines Gewerks, mit Vorgabewerten. */
+function steuerOf(v) {
+  const s = (v && v.steuer) || {};
+  const art = STEUER_ARTEN[s.art] ? s.art : 'offen';
+  const q = (s.quote != null && s.quote !== '') ? Math.max(0, Math.min(1, Number(s.quote))) : STEUER_ARTEN[art].quote;
+  return { art, quote: (q == null ? 0 : q), jahr: Number(s.jahr) || 0, mb: s.mb || '', notiz: s.notiz || '' };
+}
+
+/* Welche Rechnung steuerlich zählt: die Schlussrechnung.
+
+   Merkblatt 5, Ziffer 3: massgebend ist das Jahr, in dem die Rechnung
+   gestellt wurde; Akontozahlungen sind nicht abziehbar. Das Merkblatt
+   kennt daneben die detaillierte Teilrechnung für abgeschlossene, klar
+   abgrenzbare Arbeiten — die würde im Jahr ihrer Ausstellung wirken.
+
+   In dieser Bauleitung sind Teilrechnungen der Sache nach Akonto-
+   zahlungen ohne den geforderten Detaillierungsgrad. Yanicks Entscheid
+   vom 14.08.2026: gleich behandeln, nur die Schlussrechnung zählt.
+   Sollte je eine echte, detaillierte Teilrechnung eintreffen, gehört sie
+   hier hinein — dann ist diese Funktion die einzige Stelle, die es zu
+   ändern gibt. */
+function steuerWirksam(r) { return !!r && r.art === 'schluss'; }
+
+/**
+ * Verteilung der steuerwirksamen Rechnungen über die Steuerjahre.
+ * @param p    Projekt
+ * @param opt  { ziel: { 2026: 200000 } }
+ */
+/* Der proportionale Anteil, den das Merkblatt vorschreibt.
+
+   Ziffer 11.3 a: «Soweit sie Arbeiten an Gebäuden betreffen, sind
+   Architekten-, Ingenieur- und übrige Honorare proportional nach den
+   Kostenanteilen Unterhalts-/Anlagekosten aufzuteilen.» Dasselbe gilt für
+   Gerüstkosten (1.5, 2.4) und für Abbruch bei einem Umbau (11.1.2).
+
+   Diese Quote lässt sich nicht schätzen, sie ergibt sich: aus dem
+   Verhältnis der Positionen, die klar zugeordnet sind. Ein fester Wert
+   von 50 % wäre eine Behauptung; das hier ist eine Rechnung. */
+function steuerProportional(p) {
+  let unterhalt = 0, anlage = 0;
+  gewerkeSorted(p).forEach(v => {
+    const betrag = kostenZeile(v).prognose;
+    if (betrag <= 0) return;
+    const st = steuerOf(v);
+    if (st.art === 'unterhalt' || st.art === 'energie') unterhalt += betrag;
+    else if (st.art === 'wertvermehrend') anlage += betrag;
+    // 'anteilig' und 'offen' bleiben draussen – sie sind ja das, was
+    // bestimmt werden soll, beziehungsweise noch niemand beurteilt hat.
+  });
+  const basis = unterhalt + anlage;
+  return { unterhalt: rp5(unterhalt), anlage: rp5(anlage), basis: rp5(basis),
+           quote: basis > 0 ? unterhalt / basis : null };
+}
+
+/**
+ * Der WIRKSAME abziehbare Anteil einer Position.
+ *
+ * Bei «anteilig» ohne eigenen Satz ist das nicht null, sondern die nach
+ * Merkblatt 11.3 a berechnete Quote. Genau daran ging es am 14.08.2026
+ * auseinander: Die Tabelle zeigte diese berechnete Quote, die Verteilung
+ * rechnete mit null — sie füllte das Ziel 2026 bis 185'014, und die
+ * Tabelle wies 274'329 aus. «CHF 89'315 darüber», und kein noch so
+ * häufiges Drücken auf «Jetzt verteilen» konnte das auflösen: Die beiden
+ * rechneten schlicht nicht dasselbe.
+ *
+ * Seither fragen beide hier.
+ */
+function steuerQuote(p, v, prop) {
+  const st = steuerOf(v);
+  const eigene = v.steuer && v.steuer.quote != null && v.steuer.quote !== '';
+  if (st.art === 'anteilig' && !eigene) {
+    const q = (prop || steuerProportional(p)).quote;
+    return q == null ? 0 : q;
+  }
+  return st.quote;
+}
+
+function steuerPlan(p, opt) {
+  const o = opt || {};
+  const ziel = o.ziel || (p.steuerZiel || {});
+  const prop = steuerProportional(p);
+  const rows = [];
+  const proJahr = new Map();
+  const jahrRaum = (jahr) => {
+    if (!proJahr.has(jahr)) proJahr.set(jahr, { jahr, total: 0, abziehbar: 0, gestellt: 0, geplant: 0, anzahl: 0 });
+    return proJahr.get(jahr);
+  };
+
+  gewerkeSorted(p).forEach(v => {
+    const betrag = kostenZeile(v).prognose;
+    if (betrag <= 0) return;
+    const st = steuerOf(v);
+    /* Anteilige Position ohne eigene Quote: die berechnete nehmen. Wer
+       eine eigene setzt, behält sie — der Steuerberater hat das letzte Wort. */
+    /* Dieselbe Quelle wie die Verteilung — steuerQuote(). Vorher stand
+       die Rechnung hier ein zweites Mal, und die beiden liefen
+       auseinander. */
+    const eigeneQuote = v.steuer && v.steuer.quote != null && v.steuer.quote !== '';
+    const wirksam = steuerQuote(p, v, prop);
+    if (wirksam !== st.quote) { st.quote = wirksam; st.berechnet = true; }
+
+    /* Was bereits steuerwirksam gestellt wurde, mit seinem echten Jahr. */
+    let gestellt = 0;
+    const bereits = new Map();
+    (v.rechnungen || []).forEach(r => {
+      if (!steuerWirksam(r) || !r.datum) return;
+      const b = rgSigned(r); if (!b) return;
+      const j = Number(r.datum.slice(0, 4));
+      gestellt += b;
+      bereits.set(j, (bereits.get(j) || 0) + b);
+    });
+
+    /* Der Rest kommt mit der Schlussrechnung — im gewählten Jahr, sonst
+       im Jahr, in dem die Arbeiten enden. */
+    const rest = rp5(betrag - gestellt);
+    const zieljahr = st.jahr || (v.bauEnde ? Number(v.bauEnde.slice(0, 4)) : 0);
+
+    rows.push({
+      v, betrag, art: st.art, quote: st.quote, mb: st.mb, notiz: st.notiz,
+      gestellt: rp5(gestellt), rest, jahr: zieljahr,
+      abziehbar: rp5(betrag * st.quote),
+      abziehbarRest: rp5(rest * st.quote),
+      frueh: [...bereits.keys()].filter(j => zieljahr && j < zieljahr).sort()
+    });
+
+    bereits.forEach((b, j) => { const y = jahrRaum(j); y.gestellt = rp5(y.gestellt + b); y.abziehbar = rp5(y.abziehbar + b * st.quote); y.total = rp5(y.total + b); });
+    if (zieljahr && rest > 0.05) {
+      const y = jahrRaum(zieljahr);
+      y.geplant = rp5(y.geplant + rest); y.abziehbar = rp5(y.abziehbar + rest * st.quote);
+      y.total = rp5(y.total + rest); y.anzahl++;
+    }
+  });
+
+  const jahre = [...proJahr.values()].sort((a, b) => a.jahr - b.jahr);
+  jahre.forEach(j => {
+    const z = Number(ziel[j.jahr]) || 0;
+    j.ziel = z;
+    j.rest = z ? rp5(z - j.abziehbar) : null;      // positiv = es fehlt noch, negativ = darüber
+  });
+
+  return {
+    rows, jahre, ziel,
+    offen: rows.filter(x => x.art === 'offen'),
+    ohneJahr: rows.filter(x => !x.jahr),
+    /* Positionen, bei denen schon vor dem Zieljahr steuerwirksam
+       fakturiert wurde — der Abzug ist dort bereits angefallen. */
+    verfrueht: rows.filter(x => x.frueh.length),
+    abziehbarTotal: rp5(rows.reduce((a, x) => a + x.abziehbar, 0)),
+    gesamt: rp5(rows.reduce((a, x) => a + x.betrag, 0))
+  };
+}
+
+/* Was das Merkblatt zu einem Handwerk sagt — als Ausgangspunkt.
+   Der Vorschlag gilt für den Regelfall «Ersatz von Bestehendem».
+   Wird etwas erstmals eingebaut oder das Haus vergrössert, ist es
+   wertvermehrend, und dann stimmt der Vorschlag nicht mehr. Deshalb
+   steht bei jedem die Ziffer des Merkblatts dabei: nachlesen, dann
+   entscheiden. */
+const STEUER_VORSCHLAG = {
+  geruest:   { art: 'anteilig', quote: 0.5, mb: '1.5 / 2.4', hinweis: 'Gerüstkosten anteilig nach Unterhalt und Anlage aufteilen' },
+  huelle:    { art: 'energie',   mb: '1.1.2 d', hinweis: 'Fassadenisolation inkl. Verkleidung gilt als Energiemassnahme' },
+  fenster:   { art: 'energie',   mb: '1.1.4 b', hinweis: 'Nur bei energetisch besseren Fenstern als vorher' },
+  storen:    { art: 'unterhalt', mb: '1.1.6 a', hinweis: 'Reparatur oder gleichwertiger Ersatz; Neueinbau ist nicht abziehbar' },
+  dach:      { art: 'unterhalt', mb: '2.1.1 a', hinweis: 'Gleichwertiger Ersatz; mit zusätzlicher Isolation wird es eine E-Massnahme' },
+  spengler:  { art: 'unterhalt', mb: '2.1.3 a', hinweis: 'Gleichwertiger Ersatz; Neueinbau bei Anbau nicht abziehbar' },
+  gipser:    { art: 'unterhalt', mb: '3.1.1 a', hinweis: 'Auffrischen und gleichwertiger Ersatz; im Zusammenhang mit Umbau nicht abziehbar' },
+  boden:     { art: 'unterhalt', mb: '4.1 a',   hinweis: 'Gleichwertiger Ersatz; bei Komfortverbesserung nur 2/3' },
+  schreiner: { art: 'unterhalt', mb: '3.1.5 a / 5.1.2 a', hinweis: 'Türen und Küche als gleichwertiger Ersatz; Ersteinbau nicht abziehbar' },
+  heizung:   { art: 'energie',   mb: '6.2.3',   hinweis: 'Wärmepumpe und Anlagen für erneuerbare Energien' },
+  pv:        { art: 'energie',   mb: '6.2.3',   hinweis: 'Photovoltaik inkl. Speicher, soweit für den Eigengebrauch' },
+  sanitaer:  { art: 'unterhalt', mb: '5.3 a / 7.1.1 a', hinweis: 'Gleichwertiger Ersatz; zusätzliche Einrichtungen nicht abziehbar' },
+  elektro:   { art: 'unterhalt', mb: '7.3 a',   hinweis: 'Gleichwertiger Ersatz ohne Erweiterung' },
+  holzbau:   { art: 'anteilig', quote: 0.5, mb: '2.1.4', hinweis: 'Teils Ersatz, teils Anlage – Anteil festlegen' },
+  abbruch:   { art: 'anteilig', quote: 0.5, mb: '11.1.2', hinweis: 'Abbruch bei Umbau anteilig nach Unterhalt und Anlage' },
+  honorar:   { art: 'anteilig', quote: 0.5, mb: '11.3 a', hinweis: 'Honorare proportional nach den Kostenanteilen aufteilen' },
+  umgebung:  { art: 'wertvermehrend', mb: '9.1.1', hinweis: 'Neuanlagen im Garten sind nicht abziehbar; Reparatur schon' },
+  reinigung: { art: 'unterhalt', mb: '10',      hinweis: 'Servicearbeiten dienen dem Unterhalt' },
+  baustelle: { art: 'anteilig', quote: 0.5, mb: '11.3 a', hinweis: 'Wie die Honorare anteilig aufteilen' },
+  metall:    { art: 'unterhalt', mb: '3.2 a',   hinweis: 'Geländer: gleichwertiger Ersatz' },
+  transport: { art: 'unterhalt', mb: '3.3 a',   hinweis: 'Aufzug: Reparatur oder gleichwertiger Ersatz' },
+  bau:       { art: 'anteilig', quote: 0.5, mb: '11.1.2', hinweis: 'Baumeisterarbeiten je nach Eingriff aufteilen' }
+};
+
+/** Vorschlag für ein Gewerk – oder null, wenn das Handwerk unbekannt ist. */
+function steuerVorschlag(v) {
+  const f = familieVon(v);
+  if (!f) return null;
+  const s = STEUER_VORSCHLAG[f.key];
+  if (!s) return null;
+  const quote = s.quote != null ? s.quote : STEUER_ARTEN[s.art].quote;
+  return { art: s.art, quote, mb: s.mb, hinweis: s.hinweis, handwerk: f.label };
+}
+
+/* =============================================================
+   Zahlungsplan mit Ist-Abgleich
+   -------------------------------------------------------------
+   Ein Zahlungsplan ist am Tag seiner Erstellung richtig und danach
+   jeden Monat ein bisschen falscher. Im August stellt man fest,
+   dass der Baumeister erst einen Bruchteil verrechnet hat — der
+   Plan sagt aber, sein Geld sei längst geflossen.
+
+   Dafür muss man nicht schätzen. Die verrechneten Beträge stehen
+   mit Datum in der Baukostenübersicht. Also:
+
+     · Vergangene Monate  →  was TATSÄCHLICH verrechnet wurde
+     · Ab dem Stichtag    →  der Rest, neu verteilt
+
+   Der Rest eines Gewerks, dessen Bauzeit schon vorbei ist, fällt
+   in den ersten Monat nach dem Stichtag: Die Leistung ist erbracht,
+   die Rechnung steht aus. Ihn über künftige Monate zu strecken,
+   würde die Zahlen schönen.
+   ============================================================= */
+function bauherrPlanIst(p, opt) {
+  const o = opt || {};
+  const grundlage = o.grundlage || 'alle';
+  const schritt = Math.max(0, Number(o.schritt) || 0);
+  const stichtag = o.stichtag || todayIso();
+  const stichMon = stichtag.slice(0, 7);
+
+  const gw = gewerkeSorted(p).filter(v =>
+    grundlage === 'vergeben' ? isVergeben(v) : (kostenZeile(v).prognose > 0));
+
+  const istMap = new Map();      // Monat -> verrechnet
+  const planMap = new Map();     // Monat -> noch zu verrechnen
+  const detail = new Map();      // Monat -> [{v, anteil, ist}]
+  const projMonate = projektMonate(p);
+  const rows = [];
+  let sollTotal = 0, istTotal = 0;
+
+  const rbStd = zpRueckbehalt(zahlungsplanOf(p));
+
+  const merke = (mk, v, anteil, ist, rueckbehalt) => {
+    const ziel = ist ? istMap : planMap;
+    ziel.set(mk, (ziel.get(mk) || 0) + anteil);
+    if (!detail.has(mk)) detail.set(mk, []);
+    detail.get(mk).push({ v, anteil, ist, rueckbehalt,
+      schluss: !!rueckbehalt, steuerJahr: steuerOf(v).jahr || 0 });
+  };
+
+  gw.forEach(v => {
+    const k = kostenZeile(v);
+    const soll = k.prognose;
+    if (soll <= 0) return;
+    sollTotal += soll;
+
+    /* ---- Was schon verrechnet ist, mit seinem echten Monat ---- */
+    let verrechnet = 0;
+    (v.rechnungen || []).forEach(r => {
+      const betrag = rgSigned(r);
+      if (!betrag) return;
+      const d = r.datum || '';
+      if (!d) return;                                  // ohne Datum nicht einordbar
+      const mon = d.slice(0, 7);
+      if (mon > stichMon) return;                      // nach dem Stichtag: gehört in den Plan
+      verrechnet += betrag;
+
+      /* Die Grenze liegt am Monatsanfang, nicht am Tag.
+         -------------------------------------------------------------
+         Ein abgeschlossener Monat ist abgeschlossen — dort stehen die
+         Rechnungen, die eingegangen sind, und sonst nichts. Der LAUFENDE
+         Monat gehört dagegen ganz auf die Planseite: Er ist noch nicht
+         vorbei, und was in ihm schon fakturiert wurde, ist ein Teil
+         dessen, was für ihn vorgesehen war — keine abgeschlossene
+         Tatsache neben dem Plan.
+
+         Vorher lag der August auf beiden Seiten: Eine Rechnung vom
+         5. August galt als verrechnet, und derselbe August wurde
+         zusätzlich beplant. Zwei Bedeutungen in einer Zeile. */
+      merke(mon, v, betrag, mon < stichMon);
+    });
+    istTotal += verrechnet;
+
+    /* ---- Und was noch aussteht ---- */
+    const rest = soll - verrechnet;
+    rows.push({ v, soll, verrechnet, rest, quote: soll > 0 ? verrechnet / soll : 0 });
+    if (rest <= 0.05) return;
+
+    /* Der Garantierückbehalt läuft auch hier nicht mit dem Baufortschritt
+       mit, sondern wird mit der Schlussrechnung frei. Ohne diese Zeilen
+       fehlte im «Stand heute»-Plan der Januar 2027 vollständig — und mit
+       ihm der ganze Rückbehalt. */
+    const rbP = rueckbehaltVon(v, rbStd);
+    const rbBetrag = rp5(rest * rbP);
+    const laufend = rest - rbBetrag;
+    const sm = schlussMonatVon(v, projMonate);
+    const rbMonat = (sm && sm >= stichMon) ? sm : naechsterMonat(stichMon);
+    if (rbBetrag > 0.005) merke(rbMonat, v, rbBetrag, false, rbP);
+
+    // Verbleibende Monate ab dem Stichtag – aus Terminen oder Zeitlage
+    const monate = monateVon(v, projMonate).filter(mk => mk >= stichMon);
+    if (monate.length) {
+      const per = laufend / monate.length;
+      monate.forEach(mk => merke(mk, v, per, false));
+    } else {
+      // Bauzeit vorbei (oder gar nie gesetzt): die Rechnung steht aus.
+      merke(naechsterMonat(stichMon), v, laufend, false);
+    }
+  });
+
+  const alle = [...new Set([...istMap.keys(), ...planMap.keys()])].sort();
+  const sorted = alle.map(mk => [mk, (istMap.get(mk) || 0) + (planMap.get(mk) || 0)]);
+
+  /* Nur der Plananteil wird gerundet — die Ist-Monate stehen fest, die
+     darf kein Raster verschieben. */
+  const monate = sorted.map(([mk, betrag]) => ({
+    key: mk, betrag: rp5(betrag), ist: mk <= stichMon && istMap.has(mk) && !planMap.has(mk)
+  }));
+  let kum = 0;
+  monate.forEach(m => {
+    kum = rp5(kum + m.betrag); m.cum = kum;
+    const teile = (detail.get(m.key) || []).slice().sort((a, b) => b.anteil - a.anteil);
+    m.teile = teile;
+    m.exakt = teile.reduce((a, t) => a + t.anteil, 0);
+    m.rundung = rp5(m.betrag - m.exakt);
+    m.istAnteil = teile.filter(t => t.ist).reduce((a, t) => a + t.anteil, 0);
+    m.anteilPct = sollTotal > 0 ? (m.betrag / sollTotal * 100) : 0;
+  });
+
+  return {
+    monate, rows, schritt, grundlage, stichtag,
+    soll: rp5(sollTotal), ist: rp5(istTotal), rest: rp5(sollTotal - istTotal),
+    hinterher: rows.filter(x => x.rest > 0.05 && x.v.bauEnde && x.v.bauEnde < stichtag)
+                   .sort((a, b) => b.rest - a.rest)
+  };
+}
+
+/** Monatsschlüssel eins weiter. */
+function naechsterMonat(mk) {
+  const [y, m] = mk.split('-').map(Number);
+  return m >= 12 ? (y + 1) + '-01' : y + '-' + String(m + 1).padStart(2, '0');
+}
+
+/**
+ * Monatsbeträge auf ein Zahlungsraster legen.
+ * @param sorted  [[monatsschluessel, exakterBetrag], …] chronologisch
+ * @param total   exakte Gesamtsumme
+ * @param schritt 0 = haargenau, sonst z.B. 25000
+ */
+function verteileAufSchritt(sorted, total, schritt) {
+  // Gerundet wird IMMER die auflaufende Summe, auch ohne Raster: Rundet man
+  // jeden Monat für sich, summieren sich die Rappen. Bei sieben Monaten waren
+  // das in der Praxis 10 Rappen Abweichung – und ein Zahlungsplan, dessen
+  // Summe nicht aufgeht, ist gegenüber dem Bauherrn nicht zu vertreten.
+  let exaktKum = 0, vorher = 0;
+  return sorted.map(([k, b], i) => {
+    exaktKum += b;
+    // Die letzte Zahlung schliesst genau ab, davor aufs Raster (bzw. auf Rappen).
+    const kum = (i === sorted.length - 1)
+      ? rp5(total)
+      : (schritt ? Math.round(exaktKum / schritt) * schritt : rp5(exaktKum));
+    const betrag = rp5(kum - vorher);
+    vorher = kum;
+    return { key: k, betrag, cum: rp5(kum) };
+  });
+}
+/* ============================================================
+   Sammelvergaben — ein Auftrag über mehrere BKP-Positionen
+   ------------------------------------------------------------
+   Der Umkehrfall zur Teilvergabe: Dort wird EINE Position auf mehrere
+   Firmen aufgeteilt; hier deckt EINE Offerte mehrere Positionen ab.
+
+   Aus der Baukostenübersicht Römerstrasse 31:
+     211 Baumeisterarbeiten   «Teil in 121 und 289»    103'397.75
+     121 Sicherung Anlagen    «Teil aus 211»             4'000.00
+     289 Baubetriebskosten    «Teil aus 211»             5'000.00
+                                                       ───────────
+     ein Werkvertrag Fuhrer Masciadri                   112'397.75
+
+   Der Betrag bleibt je Position — die Kostenübersicht nach BKP stimmt
+   unverändert. Die Sammelvergabe sagt nur: das ist EIN Auftrag. Erst
+   dadurch wird der Werkvertrag einmal gedruckt statt dreimal, und der
+   Unternehmer bekommt einen Zahlungsplan statt drei.
+   ============================================================ */
+/* ============================================================
+   Beschaffungsart je Gewerk
+   ------------------------------------------------------------
+   Nicht jede Position wird ausgeschrieben. Drei Wege:
+
+     ausschreibung  Einladen · Offerten · Abgebot · Zuschlag · Werkvertrag
+     direkt         ohne Wettbewerb direkt an einen Unternehmer
+     budget         gar kein Unternehmer. Ein Betrag steht bereit, und
+                    irgendwann kommen Rechnungen, die darauf gebucht werden.
+                    Für «199 Übriges» oder «299.1 Reserve».
+
+   Ohne Angabe gilt weiterhin «ausschreibung» — alte Projekte ändern sich nicht.
+   ============================================================ */
+const BESCHAFFUNG = {
+  ausschreibung: { label: 'Ausschreibung', satz: 'Unternehmer einladen, Offerten vergleichen, Zuschlag erteilen.' },
+  direkt:        { label: 'Direktvergabe', satz: 'Ohne Wettbewerb direkt an einen Unternehmer.' },
+  budget:        { label: 'Reserve / Budget', satz: 'Kein Unternehmer. Ein Betrag steht bereit; Rechnungen werden später darauf gebucht.' }
+};
+function beschaffungOf(v) { return (v && BESCHAFFUNG[v.art]) ? v.art : 'ausschreibung'; }
+function istBudgetposition(v) { return beschaffungOf(v) === 'budget'; }
+
+/* ============================================================
+   Entfallene Positionen
+   ------------------------------------------------------------
+   Eine Position kann im Kostenvoranschlag stehen und später wegfallen —
+   215 Ing. Holzbau war mit 9'000 budgetiert und entfällt im revidierten KV.
+
+   Der KV bleibt stehen: Nur so zeigt die Über-/Unterschreitung, dass hier
+   9'000 eingespart wurden. Ab der gewählten Stufe zählt die Position aber
+   mit null.
+
+     kv-rev   schon im revidierten Kostenvoranschlag weg
+     wv       erst beim Werkvertrag weggefallen
+   ============================================================ */
+const ENTFAELLT_AB = {
+  'kv-rev': { label: 'ab revidiertem KV', satz: 'Im ersten Kostenvoranschlag noch drin, im revidierten nicht mehr.' },
+  'wv':     { label: 'ab Werkvertrag',    satz: 'Noch im revidierten KV, aber nicht mehr beauftragt.' }
+};
+function istEntfallen(v) { return !!(v && v.entfaellt); }
+function entfaelltAbOf(v) { return (v && ENTFAELLT_AB[v.entfaelltAb]) ? v.entfaelltAb : 'kv-rev'; }
+
+/* ============================================================
+   Eigene Prognose
+   ------------------------------------------------------------
+   Manchmal weiss man, dass es anders kommt als offeriert — aber noch nicht
+   genau wie. 224.0 Steildach: Offerte 24'812.40, aber so wird es nicht
+   ausgeführt; gerechnet wird mit 15'000, vielleicht entfällt es ganz.
+
+   Die eigene Prognose ersetzt die Grundlage (KV, revidierter KV oder
+   Werkvertrag). Nachträge, Rapporte und Auswahl-Differenzen kommen weiterhin
+   obendrauf — das sind echte Zusatzverpflichtungen.
+
+   Die Offerte bleibt stehen: Nur so bleibt nachvollziehbar, wovon abgewichen
+   wird. ============================================================ */
+function hatEigenePrognose(v) { return !!(v && v.prognoseEigen != null && v.prognoseEigen !== ''); }
+
+function setEigenePrognose(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const jetzt = hatEigenePrognose(v) ? v.prognoseEigen : '';
+  const ein = window.prompt('Eigene Prognose in CHF (leer = wieder automatisch rechnen):', jetzt);
+  if (ein === null) return;
+  if (ein.trim() === '') { delete v.prognoseEigen; delete v.prognoseNotiz; toast('Prognose wieder automatisch'); }
+  else {
+    v.prognoseEigen = Number(ein.replace(/[^\d.,-]/g, '').replace(',', '.')) || 0;
+    const grund = window.prompt('Warum weicht die Prognose ab?', v.prognoseNotiz || '');
+    if (grund !== null) v.prognoseNotiz = grund.trim();
+    toast('Prognose auf ' + chf(v.prognoseEigen) + ' gesetzt');
+  }
+  save(); viewVergabeDetail(pid, vid);
+}
+
+function setEntfaellt(pid, vid, wert) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  if (wert === 'nein') { delete v.entfaellt; delete v.entfaelltAb; }
+  else { v.entfaellt = true; v.entfaelltAb = ENTFAELLT_AB[wert] ? wert : 'kv-rev'; }
+  save(); viewVergabeDetail(pid, vid);
+  toast(istEntfallen(v) ? 'Entfällt ' + ENTFAELLT_AB[entfaelltAbOf(v)].label : 'Wieder aktiv');
+}
+
+function beschaffungCard(p, v) {
+  const art = beschaffungOf(v);
+  const btn = k => `<button class="btn xs ${art === k ? '' : 'secondary'}" data-act="gewerk-art" data-pid="${p.id}" data-vid="${v.id}" data-wert="${k}" type="button" title="${esc(BESCHAFFUNG[k].satz)}">${BESCHAFFUNG[k].label}</button>`;
+  return `<div class="card card-pad" style="margin-bottom:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <h2 style="margin:0;font-size:var(--t-l, 15px)">Beschaffung</h2>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${Object.keys(BESCHAFFUNG).map(btn).join('')}</div>
+      </div>
+      <p class="muted" style="font-size:var(--t-xs, 12px);margin:10px 0 0">${esc(BESCHAFFUNG[art].satz)}${
+        art === 'budget' ? ' Der Betrag zählt in der Prognose mit, auch ohne Werkvertrag.' : ''}</p>
+
+      <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div>
+          <b style="font-size:var(--t-m, 13.5px)">Entfällt</b>
+          <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-top:2px">${istEntfallen(v)
+            ? esc(ENTFAELLT_AB[entfaelltAbOf(v)].satz) + ' Zählt mit null; der KV von ' + chf(v.schaetzung || 0) + ' bleibt als Vergleich stehen.'
+            : 'Position wird ausgeführt.'}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn xs ${istEntfallen(v) ? 'secondary' : ''}" data-act="gewerk-entfaellt" data-pid="${p.id}" data-vid="${v.id}" data-wert="nein" type="button">wird ausgeführt</button>
+          ${Object.keys(ENTFAELLT_AB).map(k => `<button class="btn xs ${istEntfallen(v) && entfaelltAbOf(v) === k ? '' : 'secondary'}" data-act="gewerk-entfaellt" data-pid="${p.id}" data-vid="${v.id}" data-wert="${k}" type="button" title="${esc(ENTFAELLT_AB[k].satz)}">entfällt ${ENTFAELLT_AB[k].label}</button>`).join('')}
+        </div>
+      </div>
+
+      <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div>
+          <b style="font-size:var(--t-m, 13.5px)">${art === 'budget' ? 'Budgetbetrag' : 'Eigene Prognose'}</b>
+          <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-top:2px">${hatEigenePrognose(v)
+            ? '<b>' + chf(v.prognoseEigen) + '</b>'
+              + (art === 'budget' ? '' : ' statt ' + chf(isVergeben(v) ? (v.betrag || 0) : (kvRev(v) != null ? kvRev(v) : (v.schaetzung || 0))))
+              + (v.prognoseNotiz ? ' — ' + esc(v.prognoseNotiz) : '')
+            : art === 'budget'
+              ? 'Noch kein Betrag. Eine Budgetposition trägt eine Prognose, keine Offerte und keinen Werkvertrag.'
+              : 'Es wird mit Werkvertrag beziehungsweise Kostenvoranschlag gerechnet. Weicht die Ausführung ab, hier eine eigene Zahl setzen.'}</div>
+        </div>
+        <button class="btn xs ${hatEigenePrognose(v) ? '' : 'secondary'}" data-act="gewerk-prognose" data-pid="${p.id}" data-vid="${v.id}" type="button">${hatEigenePrognose(v) ? 'Prognose ändern' : 'Prognose setzen'}</button>
+      </div>
+
+      <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+        <b style="font-size:var(--t-m, 13.5px)">Wo erscheint diese Position?</b>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px">
+          <div>
+            <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:4px">Baukostenübersicht</div>
+            <button class="btn xs ${weistAus(v) ? '' : 'secondary'}" data-act="sammel-ausweisen" data-pid="${p.id}" data-vid="${v.id}" type="button">${weistAus(v) ? 'eigene Zeile' : 'nicht ausweisen'}</button>
+          </div>
+          <div>
+            <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:4px">Terminprogramm</div>
+            <button class="btn xs ${zeigtImTermin(v) ? '' : 'secondary'}" data-act="gewerk-termin-sicht" data-pid="${p.id}" data-vid="${v.id}" type="button">${zeigtImTermin(v) ? 'erscheint' : 'nicht im Terminprogramm'}</button>
+          </div>
+        </div>
+        <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:8px 0 0">
+          Beides unabhängig: 121 Sicherung vorhandener Anlagen gehört in die Kosten, aber nicht auf den Balkenplan.
+          Im Terminprogramm holt der Knopf <b>Auch ausgeblendete</b> sie zur Übersicht zurück — im Druck bleiben sie weg.
+        </p>
+      </div>
+      ${steuerCard(p, v)}
+      ${mwstWechselHtml(p, v)}
     </div>`;
 }
+
+/* Steuerliche Einstufung eines Gewerks.
+
+   Das Programm rechnet und schlägt vor; beurteilen muss der Bauherr mit
+   seinem Steuerberater. Deshalb steht bei jedem Vorschlag die Ziffer des
+   Merkblatts und der Vorbehalt, unter dem er gilt — nachlesen, dann
+   entscheiden. Eine Zahl ohne Herkunft wäre hier gefährlich. */
+function steuerCard(p, v) {
+  const st = steuerOf(v);
+  const vor = steuerVorschlag(v);
+  const betrag = kostenZeile(v).prognose;
+  const prop = steuerProportional(p);
+  const eigene = v.steuer && v.steuer.quote != null && v.steuer.quote !== '';
+  const quote = (st.art === 'anteilig' && !eigene && prop.quote != null) ? prop.quote : st.quote;
+  const abz = rp5(betrag * quote);
+  const jahrJetzt = st.jahr || (v.bauEnde ? Number(v.bauEnde.slice(0, 4)) : 0);
+  const jahre = [];
+  { const b = jahrJetzt || new Date().getFullYear(); for (let y = b - 1; y <= b + 2; y++) jahre.push(y); }
+
+  const aBtn = k => `<button class="btn xs ${st.art === k ? '' : 'secondary'}" data-act="steuer-art" data-pid="${p.id}" data-vid="${v.id}" data-wert="${k}" type="button" title="${esc(STEUER_ARTEN[k].label)}">${STEUER_ARTEN[k].kurz}</button>`;
+  const jBtn = y => `<button class="btn xs ${st.jahr === y ? '' : 'secondary'}" data-act="steuer-jahr" data-pid="${p.id}" data-vid="${v.id}" data-wert="${y}" type="button">${y}</button>`;
+
+  return `<div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+    <b style="font-size:var(--t-m, 13.5px)">Steuern — Liegenschaftsunterhalt</b>
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:4px 0 9px">
+      Abziehbar ist Unterhalt, nicht Wertvermehrung. Massgebend ist das Jahr, in dem die
+      <b>Schlussrechnung</b> gestellt wird — Akontozahlungen sind steuerlich neutral
+      (Merkblatt 5 der Steuerverwaltung des Kantons Bern, Ziffer 3).
+    </p>
+
+    ${vor ? `<div class="zp-hint" style="margin-bottom:10px">
+      <div><b>Vorschlag für ${esc(vor.handwerk)}:</b> ${esc(STEUER_ARTEN[vor.art].label)}
+        <span class="muted">· Merkblatt ${esc(vor.mb)}</span></div>
+      <div class="muted" style="margin-top:2px">${esc(vor.hinweis)}</div>
+      ${st.art === 'offen' ? `<div class="zp-hint-btns"><button class="btn xs" data-act="steuer-vorschlag" data-pid="${p.id}" data-vid="${v.id}" type="button">Vorschlag übernehmen</button></div>` : ''}
+    </div>` : ''}
+
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">
+      <div>
+        <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:4px">Einstufung</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">${Object.keys(STEUER_ARTEN).map(aBtn).join('')}</div>
+      </div>
+      <div>
+        <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:4px">Schlussrechnung im Steuerjahr</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">${jahre.map(jBtn).join('')}
+          ${st.jahr ? `<button class="btn xs ghost" data-act="steuer-jahr" data-pid="${p.id}" data-vid="${v.id}" data-wert="0" type="button" title="Wieder dem Bauende folgen">auto</button>` : ''}</div>
+        ${!st.jahr && jahrJetzt ? `<div class="muted" style="font-size:var(--t-2xs, 11px);margin-top:3px">automatisch ${jahrJetzt} (Bauende)</div>` : ''}
+      </div>
+    </div>
+
+    <table class="t" style="max-width:420px;margin-top:11px;font-size:var(--t-xs, 12px)"><tbody>
+      <tr><td>Betrag (${ansichtNote()})</td><td class="num">${chf(inAnsicht(betrag))}</td></tr>
+      <tr><td>abziehbarer Anteil</td><td class="num">${Math.round(quote * 1000) / 10} %${st.art === 'anteilig' && !eigene && prop.quote != null ? ' <span class="muted" style="font-size:var(--t-2xs, 10.5px)">berechnet</span>' : ''}</td></tr>
+      <tr style="border-top:1px solid var(--border)"><td><b>abziehbar</b></td><td class="num"><b>${chf(inAnsicht(abz))}</b></td></tr>
+    </tbody></table>
+
+    ${st.art === 'anteilig' ? `<p class="muted" style="font-size:var(--t-2xs, 11px);margin:7px 0 0;max-width:600px">
+      ${eigene
+        ? 'Eigene Quote gesetzt — sie bleibt stehen.'
+        : prop.quote != null
+          ? `Berechnet nach Merkblatt 11.3 a («proportional nach den Kostenanteilen»): ${chf(prop.unterhalt)} Unterhalt zu ${chf(prop.anlage)} Anlagekosten ergibt ${Math.round(prop.quote * 1000) / 10} %. Sie verschiebt sich, sobald weitere Positionen eingestuft werden.`
+          : 'Noch keine Grundlage für die Berechnung — zuerst die übrigen Positionen einstufen.'}
+    </p>` : ''}
+  </div>`;
+}
+
+/* Ein kleines Menü statt eines weiteren Dialogs: Termin setzen — oder
+   sagen, dass es keinen gibt. Beides an derselben Stelle, weil man an
+   derselben Stelle darüber stolpert. */
+function zeitlageMenu(e, pid, vid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  const jetzt = zeitlageOf(v);
+  const items = [
+    { icon: '🗓', label: 'Bauzeitraum festlegen …', act: () => actEditTermin(pid, vid) },
+    ...Object.entries(ZEITLAGEN).map(([k, z]) => ({
+      icon: jetzt === k ? '●' : '○',
+      label: 'Kein fester Termin · ' + z.label,
+      hint: z.hinweis,
+      act: () => setZeitlage(pid, vid, k)
+    }))
+  ];
+  if (jetzt) items.push({ icon: '×', label: 'Zeitlage entfernen', act: () => setZeitlage(pid, vid, '') });
+  openContextMenu(e, items);
+}
+
+function setZeitlage(pid, vid, z) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  if (z && ZEITLAGEN[z]) {
+    v.zeitlage = z;
+    v.bauStart = ''; v.bauEnde = '';        // eine Zeitlage schliesst Termine aus
+  } else {
+    delete v.zeitlage;
+  }
+  save();
+  if (document.querySelector('.gantt')) rerenderGantt(pid); else router();
+  toast(z && ZEITLAGEN[z] ? 'Kein fester Termin – ' + ZEITLAGEN[z].label : 'Zeitlage entfernt');
+}
+
+function setSteuerArt(pid, vid, art) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v || !STEUER_ARTEN[art]) return;
+  v.steuer = Object.assign({}, v.steuer, { art });
+  if (art !== 'anteilig') delete v.steuer.quote;      // feste Arten haben ihre Quote selbst
+  save(); viewVergabeDetail(pid, vid);
+}
+function setSteuerJahr(pid, vid, jahr) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  const j = Number(jahr) || 0;
+  v.steuer = Object.assign({}, v.steuer, { jahr: j });
+  if (!j) delete v.steuer.jahr;
+  save(); viewVergabeDetail(pid, vid);
+  toast(j ? 'Schlussrechnung im Steuerjahr ' + j : 'Steuerjahr folgt wieder dem Bauende');
+}
+/** Alle noch unbeurteilten Positionen auf einmal mit dem Vorschlag füllen. */
+function steuerAlleVorschlagen(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  let n = 0;
+  gewerkeSorted(p).forEach(v => {
+    if (steuerOf(v).art !== 'offen') return;          // Beurteiltes nie überschreiben
+    const s = steuerVorschlag(v); if (!s) return;
+    v.steuer = Object.assign({}, v.steuer, { art: s.art, mb: s.mb });
+    if (s.art === 'anteilig') delete v.steuer.quote;
+    n++;
+  });
+  if (!n) { toast('Nichts mehr offen – alle Positionen sind eingestuft', 'info'); return; }
+  save(); viewZahlungsplan(pid);
+  toast(n + ' Position' + (n === 1 ? '' : 'en') + ' nach Merkblatt vorbeurteilt – bitte durchgehen');
+}
+
+/* ---------------------------------------------------------------------
+   Die Schlussrechnungen auf die Steuerjahre verteilen
+   ---------------------------------------------------------------------
+   Cosima Baders Vorgabe (Mail vom 26.03.2026) in Regeln übersetzt:
+
+     · Alles mit «E» — Energiesparen und Umweltschutz — wird erst im
+       Folgejahr schlussgerechnet.
+     · Vom 1:1-Ersatz sollen 200'000 im ersten Jahr abgerechnet werden.
+       Was darüber hinausgeht, wandert ebenfalls ins Folgejahr.
+     · Wertvermehrendes ist gar nicht abziehbar; sein Rechnungsdatum ist
+       steuerlich gleichgültig und wird nicht angerührt.
+
+   Die Reihenfolge beim Füllen ist chronologisch nach Bauende: Was zuerst
+   fertig wird, wird zuerst schlussgerechnet. Alles andere wäre gegenüber
+   dem Unternehmer nicht zu begründen — man kann eine Schlussrechnung
+   nicht zurückhalten, weil eine Zahl noch Platz hat, wohl aber vorziehen,
+   was ohnehin fertig ist.
+
+   Jede Zuweisung merkt sich ihren Grund. Ohne den ist eine solche Tabelle
+   nicht nachvollziehbar, und was man nicht nachvollziehen kann, kann man
+   dem Steuerberater nicht vorlegen.
+   --------------------------------------------------------------------- */
+/** Die Steuerjahre eines Projekts, aufsteigend — gesetzte Ziele und
+    tatsächlich belegte Jahre zusammen. */
+function steuerJahre(p) {
+  const aus = new Set(Object.keys(p.steuerZiel || {}).map(Number).filter(Boolean));
+  /* Ein selbst gewähltes Auffang- oder Energiejahr IST ein Steuerjahr —
+     auch wenn dort noch keine Position liegt und kein Ziel steht. Sonst
+     wählt man «E ins 2027», und 2027 ist der Verteilung unbekannt. */
+  [p.steuerAuffang, p.steuerEJahr].forEach(j => { if (Number(j)) aus.add(Number(j)); });
+
+  /* Jahre, in denen tatsächlich etwas geschah, gehören in die Tabelle —
+     auch wenn dort nichts mehr zu planen ist. Sonst verschwand 2025,
+     sobald alle Schlussrechnungen weiter nach hinten geschoben waren,
+     und man sah nicht mehr, dass dort schon Geld geflossen ist. Ein
+     abgeschlossenes Jahr ist keine leere Zeile, sondern eine Auskunft. */
+  gewerkeSorted(p).forEach(v => (v.rechnungen || []).forEach(r => {
+    if (r.datum) aus.add(Number(r.datum.slice(0, 4)));
+  }));
+
+  /* Und die Jahre, über die sich der Zahlungsplan erstreckt — das ist
+     der Zeitraum, in dem geplant wird. */
+  const pm = projektMonate(p);
+  if (pm.length) {
+    const a = Number(pm[0].slice(0, 4)), b = Number(pm[pm.length - 1].slice(0, 4));
+    for (let j = a; j <= b; j++) aus.add(j);
+  }
+
+  gewerkeSorted(p).forEach(v => {
+    const st = steuerOf(v);
+    const j = st.jahr || (v.bauEnde ? Number(v.bauEnde.slice(0, 4)) : 0);
+    if (j) aus.add(j);
+  });
+  return [...aus].sort((a, b) => a - b);
+}
+
+/**
+ * Verteilt die Schlussrechnungen über beliebig viele Steuerjahre.
+ * @param p    Projekt
+ * @param opt  { jahre: [2025, 2026, 2027], ziele: {2025: 50000, 2026: 200000} }
+ *
+ * Jahre ohne Zielbetrag nehmen auf, was übrig bleibt — üblicherweise das
+ * letzte. Ist überall ein Ziel gesetzt, dient trotzdem das letzte als
+ * Auffangjahr; sonst bliebe ein Rest ohne Zuhause.
+ */
+/**
+ * Welches Jahr den Rest aufnimmt. Gewählt wird es selbst; ohne Wahl das
+ * letzte. Vor dem 14.08.2026 war es das erste Jahr OHNE Zielbetrag —
+ * und weil dieses Jahr in der Tabelle kein Eingabefeld bekam, liess es
+ * sich nicht ändern: Wer 2025 ein Ziel gab, bekam 2026 als Auffangjahr
+ * aufgezwungen und konnte nie etwas ins 2027 legen.
+ */
+function auffangJahr(p, jahre) {
+  const js = (jahre || steuerJahre(p)).map(Number).filter(Boolean).sort((a, b) => a - b);
+  const gewuenscht = Number(p && p.steuerAuffang) || 0;
+  return js.includes(gewuenscht) ? gewuenscht : js[js.length - 1];
+}
+
+function steuerZuweisen(p, opt) {
+  const o = opt || {};
+  const jahre = (o.jahre || []).map(Number).filter(Boolean).sort((a, b) => a - b);
+  if (jahre.length < 2) return { zugewiesen: 0, rows: [], stand: [] };
+  const ziele = o.ziele || {};
+  const restJahr = auffangJahr(p, jahre);
+  /* Die Energiemassnahmen (E) bekommen ihr eigenes Jahr. Sie folgen einer
+     anderen Überlegung als der 1:1-Ersatz — nicht «wie viel passt noch in
+     dieses Jahr», sondern «alle E-Schlussrechnungen gehören ins gleiche
+     Jahr». Bis zum 14.08.2026 landeten sie im Auffangjahr und liessen
+     sich nicht davon trennen. */
+  const eJahr = jahre.includes(Number(p && p.steuerEJahr)) ? Number(p.steuerEJahr) : restJahr;
+
+  /* Chronologisch: das zuerst Fertige zuerst. Ohne Bauende ganz nach
+     hinten — was keinen Termin hat, ist auch nicht abzurechnen. */
+  /* Gerechnet wird mit dem ABZIEHBAREN Teil, nicht mit dem Bruttobetrag:
+     Das Ziel eines Steuerjahrs ist eine Abzugssumme, und die Tabelle
+     misst es auch daran («Ziel» gegen «davon abziehbar»). Vorher füllte
+     die Verteilung es mit Bruttobeträgen — zwei Massstäbe für dieselbe
+     Zahl, und das Ziel war erreicht, bevor ein Franken Unterhalt darin
+     stand. */
+  const prop = steuerProportional(p);
+  const reihe = gewerkeSorted(p)
+    .map(v => {
+      const st = steuerOf(v);
+      const betrag = kostenZeile(v).prognose;
+      return { v, betrag, st, abz: rp5(betrag * steuerQuote(p, v, prop)) };
+    })
+    .filter(x => x.betrag > 0.05)
+    .sort((a, b) => String(a.v.bauEnde || '9999').localeCompare(String(b.v.bauEnde || '9999')));
+
+  const stand = {};                       // Jahr -> bereits zugewiesen
+  jahre.forEach(j => { stand[j] = 0; });
+
+  /* -----------------------------------------------------------------
+     Was gelaufen ist, ist gelaufen
+     -----------------------------------------------------------------
+     Eine Schlussrechnung lässt sich nicht rückwirkend stellen. Zwei
+     Schranken folgen daraus, und beide fehlten bis zum 14.08.2026:
+
+       · nicht in ein vergangenes Jahr — der Kalender ist weiter
+       · nicht bevor die Arbeiten fertig sind — man kann nicht
+         schlussrechnen, was noch gebaut wird
+
+     Ohne sie schob «Jetzt verteilen» sämtliche 35 Positionen der
+     Römerstrasse ins Jahr 2025, obwohl dort nur das Baugespann für 638
+     Franken endete und alles Übrige erst im Herbst 2026 fertig wird.
+     Das Blatt sah aufgeräumt aus und war frei erfunden.
+
+     Eine bereits GESTELLTE Schlussrechnung ist ohnehin unverrückbar —
+     ihr Datum steht auf dem Papier beim Unternehmer. */
+  const heuteJahr = Number(todayIso().slice(0, 4));
+
+  /** Frühestens in welchem Jahr darf für diese Position schlussgerechnet werden? */
+  const fruehestens = v => {
+    const fertig = v.bauEnde ? Number(v.bauEnde.slice(0, 4)) : 0;
+    return Math.max(heuteJahr, fertig || 0);
+  };
+
+  /** Das Jahr einer bereits gestellten Schlussrechnung — oder 0. */
+  const bereitsGestellt = v => {
+    const sr = (v.rechnungen || []).filter(r => steuerWirksam(r) && r.datum);
+    if (!sr.length) return 0;
+    return Number(sr.map(r => r.datum).sort().pop().slice(0, 4)) || 0;
+  };
+
+  /** Den Wunsch auf das erste zulässige Jahr heben. */
+  const nichtVor = (wunsch, ab) =>
+    wunsch >= ab ? wunsch : (jahre.find(j => j >= ab) || jahre[jahre.length - 1]);
+
+  /** Das erste Jahr ab `ab`, in das dieser Betrag noch passt. */
+  const platzFuer = (betrag, ab) => {
+    for (const j of jahre) {
+      if (j < ab || j === restJahr) continue;
+      const ziel = Number(ziele[j]) || 0;
+      if (ziel > 0 && stand[j] + betrag <= ziel + 0.05) return j;
+    }
+    return nichtVor(restJahr, ab);
+  };
+
+  let n = 0;
+  const rows = [];
+  reihe.forEach(x => {
+    let jahr = null, grund = '';
+    const gestellt = bereitsGestellt(x.v);
+    const ab = fruehestens(x.v);
+    const spaeter = j => j > ab ? '' : (ab > heuteJahr
+      ? ' (frühestens ' + ab + ', vorher sind die Arbeiten nicht fertig)'
+      : ' (frühestens ' + ab + ', früher lässt sich nicht mehr abrechnen)');
+
+    if (gestellt) {
+      /* Steht die Schlussrechnung, entscheidet ihr Datum — nicht der Plan. */
+      jahr = gestellt;
+      grund = 'Schlussrechnung bereits ' + gestellt + ' gestellt — daran ist nichts mehr zu verschieben';
+    } else if (x.st.art === 'energie') {
+      jahr = nichtVor(eJahr, ab);
+      grund = 'Energiemassnahme (E) — Schlussrechnung im ' + jahr + spaeter(jahr);
+    } else if (x.st.art === 'wertvermehrend') {
+      grund = 'wertvermehrend, nicht abziehbar — das Rechnungsdatum wirkt steuerlich nicht';
+    } else if (x.st.art === 'offen') {
+      grund = 'noch nicht eingestuft — erst beurteilen, dann zuweisen';
+    } else if (x.abz <= 0.05) {
+      /* Nichts abziehbar — dann gibt es auch nichts zu steuern. Solche
+         Positionen dürfen das Ziel nicht auffüllen: Sonst füllten
+         Baugespann, Ingenieur und Bauleitung die 200'000 des Jahres,
+         und für den Unterhalt, um den es geht, bliebe nichts übrig.
+         Genau so geschah es am 14.08.2026 bei der Römerstrasse. */
+      jahr = nichtVor(x.st.jahr || ab, ab);
+      grund = 'nichts abziehbar — das Jahr folgt dem Bauende';
+    } else {
+      jahr = platzFuer(x.abz, ab);
+      const ziel = Number(ziele[jahr]) || 0;
+      stand[jahr] = rp5(stand[jahr] + x.abz);
+      grund = (ziel
+        ? 'füllt ' + jahr + ' — danach ' + money(stand[jahr]) + ' von ' + money(ziel)
+        : 'kein Ziel mehr frei — geht ins Auffangjahr ' + jahr) + spaeter(jahr);
+    }
+    if (jahr) { x.v.steuer = Object.assign({}, x.v.steuer, { jahr, grund }); n++; }
+    else if (grund) { x.v.steuer = Object.assign({}, x.v.steuer, { grund }); }
+    /* Der Prozentsatz und der abziehbare Teil gehören mit an die Zeile:
+       Wer wissen will, weshalb ein Jahr voll ist, muss sehen, womit
+       gerechnet wurde — und nicht dieselbe Rechnung ein zweites Mal
+       anstellen müssen. Genau daraus entstand der Fehler, bei dem
+       Tabelle und Verteilung auseinanderliefen. */
+    rows.push({ v: x.v, betrag: x.betrag, art: x.st.art, jahr, grund,
+                quote: x.betrag > 0 ? x.abz / x.betrag : 0, abziehbar: x.abz });
+  });
+
+  return { zugewiesen: n, restJahr, eJahr, rows, stand: jahre.map(j => ({ jahr: j, ist: stand[j], ziel: Number(ziele[j]) || 0 })) };
+}
+
+function actSteuerZuweisen(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const jahre = steuerJahre(p);
+  if (jahre.length < 2) { toast('Mindestens zwei Steuerjahre nötig — unten ein Jahr hinzufügen', 'info'); return; }
+  const e = steuerZuweisen(p, { jahre, ziele: p.steuerZiel || {} });
+  save(); viewZahlungsplan(pid);
+  toast(e.zugewiesen + ' Positionen verteilt — Rest im ' + e.restJahr);
+}
+
+function addSteuerJahr(pid, richtung) {
+  const p = findProjekt(pid); if (!p) return;
+  const jahre = steuerJahre(p);
+  const neu = Number(richtung) < 0
+    ? (jahre.length ? jahre[0] - 1 : new Date().getFullYear() - 1)
+    : (jahre.length ? jahre[jahre.length - 1] + 1 : new Date().getFullYear() + 1);
+  p.steuerZiel = p.steuerZiel || {};
+  if (p.steuerZiel[neu] === undefined) p.steuerZiel[neu] = 0;   // 0 = Auffangjahr
+  save(); viewZahlungsplan(pid);
+  toast('Steuerjahr ' + neu + ' hinzugefügt');
+}
+
+function setSteuerQuote(pid, vid, prozent) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const q = Math.max(0, Math.min(100, Number(prozent) || 0)) / 100;
+  v.steuer = Object.assign({}, v.steuer, { quote: q });
+  /* Ein von Hand gesetzter Anteil, der weder ganz noch gar nichts ist,
+     IST die anteilige Einstufung — sonst stünde ein Prozentsatz neben
+     einer Einstufung, die ihn ausschliesst. */
+  const art = steuerOf(v).art;
+  if (q > 0 && q < 1 && art !== 'energie') v.steuer.art = 'anteilig';
+  if (q === 1 && art === 'offen') v.steuer.art = 'unterhalt';
+  if (q === 0 && (art === 'anteilig' || art === 'offen')) v.steuer.art = 'wertvermehrend';
+  save(); viewZahlungsplan(pid);
+}
+
+function setSteuerEJahr(pid, jahr) {
+  const p = findProjekt(pid); if (!p) return;
+  const j = Number(jahr) || 0; if (!j) return;
+  p.steuerEJahr = j;
+  save(); viewZahlungsplan(pid);
+  toast('Energiemassnahmen (E) werden im ' + j + ' schlussgerechnet');
+}
+
+function setSteuerAuffang(pid, jahr) {
+  const p = findProjekt(pid); if (!p) return;
+  const j = Number(jahr) || 0; if (!j) return;
+  p.steuerAuffang = j;
+  save(); viewZahlungsplan(pid);
+  toast('Der Rest geht neu ins ' + j);
+}
+
+function setSteuerZiel(pid, jahr, betrag) {
+  const p = findProjekt(pid); if (!p) return;
+  p.steuerZiel = p.steuerZiel || {};
+  const j = Number(jahr) || 0, b = Math.max(0, Number(betrag) || 0);
+  if (!j) return;
+  if (b) p.steuerZiel[j] = b; else delete p.steuerZiel[j];
+  save(); viewZahlungsplan(pid);
+}
+
+/** Die Steuerübersicht für den Zahlungsplan. */
+function steuerUebersichtHtml(p) {
+  const sp = steuerPlan(p);
+  if (!sp.rows.length) return '';
+  const prop = steuerProportional(p);
+
+  /* Alle Steuerjahre — auch die, in denen noch keine Position liegt.
+     Sonst könnte man für 2025 oder 2027 gar kein Ziel setzen, bevor
+     irgendetwas dort steht, und die Verteilung liesse sich nie planen. */
+  const alleJahre = steuerJahre(p);
+  const ziele = p.steuerZiel || {};
+  const restJahr = auffangJahr(p, alleJahre);
+  const proJahr = new Map(sp.jahre.map(j => [j.jahr, j]));
+
+  /* Ein abgelaufenes Jahr nimmt nichts mehr auf. Es steht weiter da —
+     man muss sehen, was dort angefallen ist —, aber ohne Zielfeld und
+     ohne Auffang-Knopf: Dorthin lässt sich nichts mehr steuern. */
+  const heuteJahr = Number(todayIso().slice(0, 4));
+
+  const jahrZeilen = alleJahre.map(jahr => {
+    const j = proJahr.get(jahr) || { jahr, total: 0, abziehbar: 0 };
+    const ziel = Number(ziele[jahr]) || 0;
+    const rest = ziel ? rp5(ziel - j.abziehbar) : null;
+    const vorbei = jahr < heuteJahr;
+    const auffang = jahr === restJahr && !vorbei;
+    /* JEDES Jahr bekommt sein Feld — auch das Auffangjahr. Bis zum
+       14.08.2026 war ausgerechnet dort keines: Das Auffangjahr war das
+       erste Jahr ohne Ziel, und weil es kein Feld hatte, liess sich ihm
+       auch keines geben. Damit war es nicht mehr wegzubekommen, und
+       alles nach ihm blieb leer. */
+    return `<tr class="${auffang ? 'st-auffang' : ''}${vorbei ? ' st-vorbei' : ''}">
+      <td><b>${jahr}</b>
+        ${vorbei
+          ? ' <span class="st-zu" title="Dieses Jahr ist abgelaufen — eine Schlussrechnung lässt sich nicht rückwirkend stellen.">abgeschlossen</span>'
+          : auffang
+            ? ' <span class="st-rest" title="Was in keinem Zieljahr Platz findet, landet hier.">Auffangjahr</span>'
+            : ` <button class="btn xs secondary st-auffang-set" data-act="steuer-auffang" data-pid="${p.id}" data-jahr="${jahr}" type="button" title="Den Rest in dieses Jahr legen">Rest hierhin</button>`}</td>
+      <td class="num">${chf(inAnsicht(j.total))}</td>
+      <td class="num"><b>${chf(inAnsicht(j.abziehbar))}</b></td>
+      <td class="num">${vorbei
+        ? '<span class="muted" style="font-size:var(--t-2xs, 11px)">nicht mehr steuerbar</span>'
+        : `<input class="input xs st-ziel" type="number" step="1000" min="0" value="${ziel || ''}"
+             placeholder="${auffang ? 'der Rest' : 'kein Ziel'}" data-pid="${p.id}" data-jahr="${jahr}" style="width:110px;text-align:right">`}</td>
+      <td class="num">${rest == null ? '<span class="muted">–</span>'
+        : `<span style="color:${Math.abs(rest) < 0.05 ? 'var(--s-green)' : (rest > 0 ? 'var(--text-soft)' : 'var(--s-red)')}">${rest > 0 ? 'noch ' + chf(inAnsicht(rest)) : (rest < 0 ? chf(inAnsicht(-rest)) + ' darüber' : 'erreicht')}</span>`}</td>
+    </tr>`;
+  }).join('');
+
+  const mitZiel = alleJahre.filter(j => Number(ziele[j]) > 0);
+  const eJahr = alleJahre.includes(Number(p.steuerEJahr)) ? Number(p.steuerEJahr) : restJahr;
+  const eSumme = sp.rows.filter(x => x.art === 'energie').reduce((a, x) => a + x.betrag, 0);
+  /* Die Energiemassnahmen folgen einer eigenen Überlegung: nicht «wie viel
+     passt noch in dieses Jahr», sondern «alle E-Schlussrechnungen ins
+     gleiche Jahr». Deshalb eine eigene Wahl statt einer Ausnahme im Text. */
+  const eWahl = eSumme > 0.05 ? `
+    <div class="zp-hint" style="margin-top:8px">
+      <div><b>Energie und Umwelt (E)</b> — ${chf(inAnsicht(eSumme))} in
+        ${sp.rows.filter(x => x.art === 'energie').length} Position(en).
+        Schlussrechnung im Jahr:</div>
+      <div class="zp-hint-btns">${alleJahre.map(j =>
+        `<button class="btn xs ${j === eJahr ? '' : 'secondary'}" data-act="steuer-ejahr" data-pid="${p.id}" data-jahr="${j}" type="button">${j}</button>`).join('')}</div>
+    </div>` : '';
+
+  const zuweisen = `
+    <div class="zp-hint-btns" style="margin-top:8px">
+      <button class="btn xs secondary" data-act="steuer-jahr-plus" data-pid="${p.id}" data-wert="-1" type="button" title="Ein Jahr davor einfügen">+ früheres Jahr</button>
+      <button class="btn xs secondary" data-act="steuer-jahr-plus" data-pid="${p.id}" data-wert="1" type="button" title="Ein Jahr danach anhängen">+ späteres Jahr</button>
+    </div>
+    ${eWahl}
+    ${alleJahre.length < 2 ? `<p class="muted" style="font-size:var(--t-xs, 11.5px);margin:8px 0 0">Für eine Verteilung braucht es mindestens zwei Jahre.</p>` : `
+    <div class="zp-hint" style="margin-top:10px">
+      <div><b>Schlussrechnungen automatisch verteilen.</b>
+        ${mitZiel.length
+          ? `Der 1:1-Ersatz füllt chronologisch ${mitZiel.map(j => `<b>${j}</b> bis ${chf(inAnsicht(Number(ziele[j])))}`).join(', dann ')} — was zuerst fertig wird, wird zuerst schlussgerechnet.
+             Was dann noch bleibt, geht ins Auffangjahr <b>${restJahr}</b>${eSumme > 0.05 ? `, die Energiemassnahmen (E) ins <b>${eJahr}</b>` : ''}.`
+          : `Ohne Zielbeträge landet alles im Auffangjahr <b>${restJahr}</b>. Trag oben ein, wie viel in den früheren Jahren abgerechnet werden soll.`}
+        Wertvermehrendes bleibt unberührt — es ist ohnehin nicht abziehbar.</div>
+      <div class="zp-hint-btns">
+        <button class="btn xs" data-act="steuer-zuweisen" data-pid="${p.id}" type="button">Jetzt verteilen</button>
+        <span class="muted" style="font-size:var(--t-2xs, 11px);align-self:center">Eigene Einstufungen bleiben, nur das Jahr wird gesetzt.</span>
+      </div>
+    </div>`}`;
+
+  /* Je Einstufung nicht nur die Summe, sondern die Positionen darunter —
+     mit ihrem Jahr und dem Grund, warum sie dort gelandet sind. Eine
+     Kategoriesumme ohne ihre Bestandteile ist eine Behauptung. */
+  const kat = new Map();
+  sp.rows.forEach(x => {
+    if (!kat.has(x.art)) kat.set(x.art, { betrag: 0, abz: 0, n: 0, pos: [] });
+    const k = kat.get(x.art); k.betrag += x.betrag; k.abz += x.abziehbar; k.n++; k.pos.push(x);
+  });
+  const katZeilen = [...kat.entries()].sort((a, b) => b[1].abz - a[1].abz).map(([art, k]) => {
+    const A = STEUER_ARTEN[art];
+    /* Einstufen, wo man es sieht. Vorher musste man für jede Korrektur
+       die Vergabe öffnen, unten den Steuerblock suchen und wieder zurück
+       — bei dreissig Positionen macht das niemand zweimal. Und der
+       Prozentsatz war überhaupt nicht änderbar: Der Baumeister, bei dem
+       die Hälfte 1:1-Ersatz ist und der Rest wertvermehrend, liess sich
+       nicht erfassen. */
+    const pos = k.pos.slice().sort((a, b) => b.betrag - a.betrag).map(x => {
+      const gr = (x.v.steuer && x.v.steuer.grund) || '';
+      const kBtn = a => `<button class="btn xs stk-art ${x.art === a ? '' : 'secondary'}" data-act="steuer-art"
+          data-pid="${p.id}" data-vid="${x.v.id}" data-wert="${a}" type="button"
+          title="${esc(STEUER_ARTEN[a].label)}">${STEUER_ARTEN[a].kurz}</button>`;
+      /* Der Rückbehalt gehört hierher, weil er dieselbe Frage beantwortet
+         wie das Steuerjahr: WANN wird schlussgerechnet — und wie viel
+         bleibt bis dahin liegen. */
+      const rbP = rueckbehaltVon(x.v, zpRueckbehalt(zahlungsplanOf(p)));
+      const rbBetrag = rp5(x.betrag * rbP);
+      return `<tr class="stk-pos">
+        <td><span class="bkp-code">${esc(x.v.bkp || '')}</span> ${esc(x.v.gewerk || '')}
+          ${gr ? `<span class="stk-grund">${esc(gr)}</span>` : ''}
+          <span class="stk-arten">${['unterhalt', 'anteilig', 'energie', 'wertvermehrend'].map(kBtn).join('')}</span></td>
+        <td class="num">${x.jahr ? `<b>${x.jahr}</b>` : '<span class="muted">–</span>'}
+          ${rbBetrag > 0.05 ? `<span class="stk-rb" title="Garantierückbehalt ${Math.round(rbP * 100)} % — einbehalten bis zur Schlussrechnung${x.jahr ? ' im ' + x.jahr : ''}">RB ${chf(inAnsicht(rbBetrag))}</span>` : ''}</td>
+        <td class="num">${chf(inAnsicht(x.betrag))}</td>
+        <td class="num">
+          <input class="input xs stk-quote" type="number" min="0" max="100" step="1"
+            value="${Math.round(x.quote * 1000) / 10}" data-pid="${p.id}" data-vid="${x.v.id}"
+            title="Abziehbarer Anteil dieser Position in Prozent"><span class="stk-proz">%</span>
+          <span class="stk-abz">${chf(inAnsicht(x.abziehbar))}</span></td>
+      </tr>`;
+    }).join('');
+    return `<tr class="stk-kopf">
+      <td><span style="color:${A.farbe};font-weight:700">${A.kurz}</span> <b>${esc(A.label)}</b>
+        <span class="muted" style="font-size:var(--t-2xs, 11px)">· ${k.n} Position${k.n === 1 ? '' : 'en'}</span></td>
+      <td></td>
+      <td class="num"><b>${chf(inAnsicht(k.betrag))}</b></td>
+      <td class="num"><b>${chf(inAnsicht(k.abz))}</b></td>
+    </tr>${pos}`;
+  }).join('');
+
+  return `<div class="card card-pad" style="max-width:840px;margin-top:16px">
+    <h2 style="margin:0 0 4px;font-size:var(--t-l, 15px)">Steuern — wann welche Schlussrechnung</h2>
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:0 0 12px">
+      Abziehbar ist der Unterhalt im Jahr, in dem die <b>Schlussrechnung</b> gestellt wird.
+      Akontozahlungen sind neutral — es darf beliebig früh angezahlt werden.
+      Grundlage: Merkblatt 5 der Steuerverwaltung des Kantons Bern, Ziffer 3.
+      Alle Beträge ${ansichtNote()}.
+    </p>
+
+    ${sp.offen.length ? `<div class="zp-hint warn">
+      <div><b>${sp.offen.length} Position${sp.offen.length === 1 ? '' : 'en'} noch nicht eingestuft</b>
+        (${chf(inAnsicht(sp.offen.reduce((a, x) => a + x.betrag, 0)))}) — sie zählen vorsichtshalber mit null.</div>
+      <div class="zp-hint-btns">
+        <button class="btn xs" data-act="steuer-alle" data-pid="${p.id}" type="button">Alle nach Merkblatt vorbeurteilen</button>
+        ${sp.offen.slice(0, 6).map(x => `<a class="btn xs secondary" href="#/projekt/${p.id}/vergabe/${x.v.id}">${esc(x.v.bkp || '')} ${esc(x.v.gewerk)}</a>`).join('')}
+        ${sp.offen.length > 6 ? `<span class="muted" style="font-size:var(--t-2xs, 11px);align-self:center">und ${sp.offen.length - 6} weitere</span>` : ''}
+      </div>
+    </div>` : ''}
+
+    ${sp.verfrueht.length ? `<div class="zp-hint warn">
+      <div><b>Abzug im falschen Jahr:</b> Bei ${sp.verfrueht.length} Position${sp.verfrueht.length === 1 ? '' : 'en'} wurde die Schlussrechnung
+        bereits vor dem gewählten Steuerjahr gestellt — der Abzug ist dort angefallen und lässt sich nicht verschieben.</div>
+      <div class="zp-hint-btns">${sp.verfrueht.map(x => `<a class="btn xs secondary" href="#/projekt/${p.id}/vergabe/${x.v.id}">${esc(x.v.bkp || '')} ${esc(x.v.gewerk)} (${x.frueh.join(', ')})</a>`).join('')}</div>
+    </div>` : ''}
+
+    <h3 style="font-size:var(--t-s, 13px);margin:14px 0 6px">Nach Steuerjahr</h3>
+    <div class="card" style="overflow-x:auto"><table class="grid"><thead><tr>
+      <th style="width:70px">Jahr</th><th class="num">Schlussrechnungen</th><th class="num">davon abziehbar</th>
+      <th class="num" style="width:130px">Ziel</th><th class="num">Abweichung</th></tr></thead>
+      <tbody>${jahrZeilen}</tbody></table></div>
+    ${zuweisen}
+    ${sp.ohneJahr.length ? `<p class="muted" style="font-size:var(--t-2xs, 11px);margin:6px 0 0">${sp.ohneJahr.length} Position${sp.ohneJahr.length === 1 ? '' : 'en'} ohne Bauende und ohne gesetztes Steuerjahr — noch keinem Jahr zugeordnet.</p>` : ''}
+
+    <h3 style="font-size:var(--t-s, 13px);margin:16px 0 6px">Nach Einstufung</h3>
+    <div class="card" style="overflow-x:auto"><table class="grid"><thead><tr>
+      <th>Einstufung</th><th class="num">Pos.</th><th class="num">Betrag</th><th class="num">abziehbar</th></tr></thead>
+      <tbody>${katZeilen}</tbody>
+      <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num">${sp.rows.length}</td>
+        <td class="num"><b>${chf(inAnsicht(sp.gesamt))}</b></td><td class="num"><b>${chf(inAnsicht(sp.abziehbarTotal))}</b></td></tr></tfoot></table></div>
+
+    ${prop.quote != null ? `<p class="muted" style="font-size:var(--t-2xs, 11px);margin:8px 0 0;max-width:640px">
+      Anteilige Positionen — Honorare, Gerüst, Abbruch — werden nach Merkblatt 11.3 a
+      <b>proportional</b> aufgeteilt: ${chf(inAnsicht(prop.unterhalt))} Unterhalt zu ${chf(inAnsicht(prop.anlage))} Anlagekosten
+      ergibt ${Math.round(prop.quote * 1000) / 10} %. Das ist gerechnet, nicht geschätzt — und verschiebt sich, sobald weitere Positionen eingestuft werden.
+    </p>` : ''}
+
+    <p class="muted" style="font-size:var(--t-2xs, 11px);margin:10px 0 0;border-top:1px solid var(--border);padding-top:9px">
+      <b>Vorbehalt.</b> Die Einstufung einer Position ist eine steuerliche Beurteilung und bleibt bei der
+      Bauherrschaft und ihrem Steuerberater. Dieses Programm rechnet und schlägt vor; es entscheidet nicht.
+    </p>
+  </div>`;
+}
+
+function setSteuerVorschlag(pid, vid) {
+  const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v) return;
+  const s = steuerVorschlag(v); if (!s) return;
+  v.steuer = Object.assign({}, v.steuer, { art: s.art, mb: s.mb });
+  if (s.art === 'anteilig') delete v.steuer.quote;    // lieber berechnen als raten
+  save(); viewVergabeDetail(pid, vid);
+  toast('Vorschlag übernommen — Merkblatt ' + s.mb);
+}
+
+/* Zeigt sich nur, wenn die Bauzeit über einen MwSt-Stichtag läuft.
+   Sonst wäre es Lärm — im Normalfall gilt ein Satz und fertig. */
+function mwstWechselHtml(p, v) {
+  if (!v.bauStart || !v.bauEnde) return '';
+  const stich = mwstStichtage(v.bauStart, v.bauEnde);
+  if (!stich.length) return '';
+
+  const betrag = kostenZeile(v).prognose;
+  const zu = v.mwstZuordnung || 'auto';
+  const teile = mwstAufteilung(betrag, v.bauStart, v.bauEnde, zu === 'auto' ? null : zu);
+  const btn = (k, label) => `<button class="btn xs ${zu === k ? '' : 'secondary'}" data-act="gewerk-mwst" data-pid="${p.id}" data-vid="${v.id}" data-wert="${k}" type="button">${label}</button>`;
+
+  return `<div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div><b style="font-size:var(--t-m, 13.5px)">Mehrwertsteuer-Wechsel</b>
+          <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-top:2px">Die Bauzeit läuft über den ${fmtDate(stich[0])} — den Stichtag des Satzwechsels.</div></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${btn('auto', 'nach Bauzeit teilen')}${btn('alt', 'ganz alter Satz')}${btn('neu', 'ganz neuer Satz')}
+        </div>
+      </div>
+      <table class="grid" style="margin-top:10px"><thead><tr><th>Leistung</th><th class="num">Tage</th><th class="num">Satz</th><th class="num">Betrag</th><th class="num">davon MwSt</th></tr></thead>
+        <tbody>${teile.map(t => `<tr>
+          <td>${t.von ? fmtDate(t.von) + ' – ' + fmtDate(t.bis) : fmtDate(v.bauStart) + ' – ' + fmtDate(v.bauEnde)}</td>
+          <td class="num muted">${t.tage}</td><td class="num">${t.satz} %</td>
+          <td class="num">${chf(t.betrag)}</td><td class="num muted">${chf(t.mwst)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr style="border-top:2px solid var(--border)"><td colspan="3"><b>Total</b></td>
+          <td class="num"><b>${chf(teile.reduce((a, t) => a + t.betrag, 0))}</b></td>
+          <td class="num"><b>${chf(teile.reduce((a, t) => a + t.mwst, 0))}</b></td></tr></tfoot></table>
+      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:8px 0 0">
+        Massgebend ist das Datum der <b>Leistung</b>, nicht der Rechnung. Aufgeteilt wird nach Kalendertagen der Bauzeit —
+        ist im Werkvertrag etwas anderes vereinbart, hier ganz zuordnen.
+      </p>
+    </div>`;
+}
+
+function setGewerkArt(pid, vid, wert) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  v.art = BESCHAFFUNG[wert] ? wert : 'ausschreibung';
+  if (v.art === 'budget') {
+    /* Eine Reserveposition hat keinen Unternehmer und keinen Vergabeweg.
+       Ihr Betrag ist eine PROGNOSE, nicht eine Offerte und schon gar kein
+       Werkvertrag. Bisher musste man dafür einen Schein-Unternehmer anlegen,
+       nur damit die Zahl irgendwo stehen kann — das war falsch und zog sich
+       durch das ganze Dokument. Beim Umstellen wird der Betrag deshalb
+       übernommen und die Scheinofferte entfernt. */
+    if (!hatEigenePrognose(v)) {
+      const rev = kvRev(v);
+      const wert = isVergeben(v) ? (Number(v.betrag) || 0) : (rev != null ? rev : (Number(v.schaetzung) || 0));
+      if (wert) { v.prognoseEigen = wert; if (!v.prognoseNotiz) v.prognoseNotiz = 'Budgetbetrag, noch keiner Firma zugeteilt.'; }
+    }
+    v.firma = ''; v.status = 'ausschreibung'; v.betrag = 0; v.eingeladene = [];
+  }
+  save(); viewVergabeDetail(pid, vid);
+  toast(BESCHAFFUNG[v.art].label + ' gesetzt');
+}
+
+/** Die Karte im Gewerk-Detail: zu welchem Auftrag gehört diese Position? */
+function sammelvergabeCard(p, v) {
+  const liste = sammelvergabenOf(p);
+  const s = sammelvergabeVon(p, v);
+
+  const auswahl = `<select class="select" data-act-change="sammel-zuweisen" data-pid="${p.id}" data-vid="${v.id}" style="max-width:340px">
+      <option value="">— einzeln vergeben —</option>
+      ${liste.map(x => `<option value="${x.id}"${s && s.id === x.id ? ' selected' : ''}>${esc(x.firma || 'ohne Firma')} · ${esc(x.name)}</option>`).join('')}
+      <option value="__neu">+ neue Sammelvergabe …</option>
+    </select>`;
+
+  let inhalt;
+  if (s) {
+    const teile = sammelPositionen(p, s.id);
+    const summe = sammelSumme(p, s.id);
+    const haupt = sammelHauptposition(p, s.id);
+    inhalt = `
+      <table class="grid" style="margin-top:12px">
+        <thead><tr><th>Position</th><th class="num">Betrag</th><th style="width:150px">in der Kostenübersicht</th></tr></thead>
+        <tbody>
+        ${teile.map(t => {
+          const zeigt = weistAus(t);
+          return `<tr${t.id === v.id ? ' style="background:var(--brand-tint)"' : ''}>
+          <td><span class="bkp-code">${esc(t.bkp || '')}</span> ${esc(t.gewerk || '')}${t.id === v.id ? ' <span class="muted" style="font-size:var(--t-2xs, 11px)">← diese Position</span>' : ''}</td>
+          <td class="num">${zeigt ? chf(kostenZeile(t).prognose) : `<span class="muted" style="font-size:var(--t-xs, 11.5px)">in ${esc(haupt ? (haupt.bkp || '') : '')} erfasst</span>`}</td>
+          <td><button class="btn xs ${zeigt ? '' : 'secondary'}" data-act="sammel-ausweisen" data-pid="${p.id}" data-vid="${t.id}" type="button" title="${zeigt ? 'Eigene Zeile mit Betrag' : 'Keine eigene Zeile — der Betrag steckt im Hauptvertrag'}">${zeigt ? 'eigene Zeile' : 'nicht ausweisen'}</button></td>
+        </tr>`; }).join('')}
+      </tbody>
+      <tfoot><tr style="border-top:2px solid var(--border)">
+        <td><b>ein Auftrag · ${esc(s.firma || 'ohne Firma')}</b></td><td class="num"><b>${chf(summe)}</b></td><td></td>
+      </tr></tfoot></table>
+      ${s.notiz ? `<p class="muted" style="font-size:var(--t-xs, 11.5px);margin:8px 0 0">${esc(s.notiz)}</p>` : ''}
+      ${(() => {
+        /* Der Vergabestatus gehört dem Päckli, nicht der einzelnen Position.
+           Wer 112 Abbrüche öffnet, muss sehen, dass für 211 längst ein
+           Werkvertrag besteht — sonst schreibt er eine Ausschreibung für
+           etwas, das vergeben ist. */
+        const folgt = folgtSammel(p, v);
+        if (!folgt) return '';
+        const stt = STATUS_BY_KEY[folgt.status] || {};
+        return `<div class="zp-hint" style="margin-top:10px">
+          <div><span class="st-dot ${stt.color || 'grey'}"></span>
+            <b>Vergabe läuft über ${esc(folgt.bkp || '')} ${esc(folgt.gewerk || '')}</b> — Stand: ${esc(stt.label || folgt.status || '')}.
+            Alle ${teile.length} Positionen dieses Päcklis werden in einem Zug vergeben und in einem Vertrag geregelt.</div>
+          <div class="zp-hint-btns">
+            <a class="btn xs" href="#/projekt/${p.id}/vergabe/${folgt.id}">Zur führenden Position</a>
+            <button class="btn xs secondary" data-act="sammel-eigenstatus" data-pid="${p.id}" data-vid="${v.id}" type="button"
+              title="Diese Position während der Vergabe herauslösen – sie führt dann ihren eigenen Status">Aus dem Päckli herauslösen</button>
+          </div>
+        </div>`;
+      })()}
+      ${v.eigenStatus && s ? `<div class="zp-hint warn" style="margin-top:10px">
+        <div><b>Herausgelöst.</b> Diese Position führt ihren eigenen Vergabestatus, obwohl sie zum Päckli gehört.</div>
+        <div class="zp-hint-btns"><button class="btn xs" data-act="sammel-eigenstatus" data-pid="${p.id}" data-vid="${v.id}" type="button">Wieder dem Päckli folgen</button></div>
+      </div>` : ''}
+      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:8px 0 0">
+        Werkvertrag und Offerte gelten für alle ${teile.length} Positionen zusammen; der Unternehmer bekommt
+        <b>einen</b> Zahlungsplan über ${chf(summe)}.
+        Positionen auf <b>nicht ausweisen</b> tragen nur Termine — sie erscheinen in der Kostenübersicht
+        nicht als eigene Zeile, weil ihr Geld schon im Hauptvertrag steckt.
+      </p>`;
+  } else {
+    inhalt = `<p class="muted" style="font-size:var(--t-xs, 12px);margin:10px 0 0">
+      Diese Position wird für sich vergeben. Deckt <b>eine</b> Offerte mehrere BKP-Positionen ab —
+      etwa Baumeisterarbeiten mit Anteilen in 121 und 289 — dann hier eine Sammelvergabe wählen oder anlegen.</p>`;
+  }
+
+  return `<div class="card card-pad" style="margin-bottom:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <h2 style="margin:0;font-size:var(--t-l, 15px)">Sammelvergabe</h2>
+        ${auswahl}
+      </div>
+      ${inhalt}
+    </div>`;
+}
+
+function sammelZuweisen(pid, vid, sid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  if (sid === '__neu') {
+    const name = window.prompt('Name des Auftrags (z. B. „Baumeisterarbeiten“):', v.gewerk || '');
+    if (name == null) { viewVergabeDetail(pid, vid); return; }
+    const firma = window.prompt('Unternehmer:', v.firma || '') || '';
+    const neu = { id: uid('sv'), name: name.trim() || 'Auftrag', firma: firma.trim(), art: 'werkvertrag', notiz: '' };
+    sammelvergabenOf(p).push(neu);
+    v.sammelId = neu.id;
+    if (!v.firma && neu.firma) v.firma = neu.firma;
+    save(); toast('Sammelvergabe „' + neu.name + '" angelegt');
+  } else if (sid) {
+    const s = sammelvergabenOf(p).find(x => x.id === sid);
+    v.sammelId = sid;
+    if (s && !v.firma && s.firma) v.firma = s.firma;
+    save(); toast('Zur Sammelvergabe hinzugefügt');
+  } else {
+    delete v.sammelId;
+    // Eine Sammelvergabe ohne Positionen hat keinen Zweck mehr.
+    p.sammelvergaben = sammelvergabenOf(p).filter(x => sammelPositionen(p, x.id).length > 0);
+    save(); toast('Wieder einzeln vergeben');
+  }
+  viewVergabeDetail(pid, vid);
+}
+
+/* Wird die Position in der Kostenübersicht als eigene Zeile geführt?
+   ---------------------------------------------------------------------
+   Bei einem Sammelauftrag gibt es Positionen, die nur Termine tragen —
+   211.3 Baumeisteraushub, 211.4 Kanalisationen, 211.5 Beton. Ihr Geld steckt
+   im Hauptvertrag 211. In der Kostenübersicht wären sie eine Zeile mit 0.00,
+   also besser gar keine. Vorgabe ist «ausweisen», damit sich nichts ändert,
+   was heute steht. */
+function weistAus(v) { return !(v && v.ausweisen === false); }
+
+/** Die Position eines Sammelauftrags, die das Geld trägt (die grösste). */
+function sammelHauptposition(p, sid) {
+  const teile = sammelPositionen(p, sid).filter(weistAus);
+  if (!teile.length) return null;
+  return teile.reduce((a, b) => kostenZeile(b).prognose > kostenZeile(a).prognose ? b : a);
+}
+
+function setSammelAusweisen(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  if (weistAus(v)) v.ausweisen = false; else delete v.ausweisen;
+  save(); viewVergabeDetail(pid, vid);
+  toast(weistAus(v) ? 'Wird als eigene Zeile geführt' : 'Erscheint nicht mehr als eigene Kostenzeile');
+}
+
+function sammelvergabenOf(p) { if (!Array.isArray(p.sammelvergaben)) p.sammelvergaben = []; return p.sammelvergaben; }
+function sammelvergabeVon(p, v) { return (v && v.sammelId) ? (sammelvergabenOf(p).find(s => s.id === v.sammelId) || null) : null; }
+function sammelPositionen(p, sid) { return (p.vergaben || []).filter(v => v.sammelId === sid); }
+function sammelSumme(p, sid) { return sammelPositionen(p, sid).reduce((a, v) => a + kostenZeile(v).prognose, 0); }
+
+/* ---------------------------------------------------------------------
+   Ein Päckli, ein Vertrag
+   ---------------------------------------------------------------------
+   Yanick, 14.08.2026: «wenn ich 112 Abbrüche anschaue, ist das Teil von
+   211 — dieser ist in Ausführung, Werkvertrag erstellt.»
+
+   Alle Positionen einer Sammelvergabe werden im gleichen Schritt vergeben
+   und in einem Vertrag geregelt. Ihren Vergabestatus einzeln zu führen
+   wäre eine Fiktion: Es gibt für sie keine eigene Ausschreibung, kein
+   eigenes Abgebot und keinen eigenen Werkvertrag.
+
+   Massgebend ist die Hauptposition — die, die das Geld trägt. Sie kennt
+   sammelHauptposition() bereits, weil sie in der Kostenübersicht die
+   Zeile stellt. Wird eine Position während der Vergabe bewusst heraus-
+   gelöst (`v.eigenStatus = true`), führt sie wieder ihren eigenen.
+   --------------------------------------------------------------------- */
+
+/** Die Position, die für dieses Gewerk den Vergabestatus vorgibt. */
+function statusLeit(p, v) {
+  if (!p || !v || !v.sammelId || v.eigenStatus) return v;
+  const haupt = sammelHauptposition(p, v.sammelId);
+  return (haupt && haupt.id !== v.id) ? haupt : v;
+}
+
+/** Der Vergabestatus, wie er gilt — nicht wie er zufällig gespeichert ist. */
+function statusVon(p, v) { return statusLeit(p, v).status; }
+
+/** Folgt diese Position einer anderen? Dann gehört ein Hinweis daneben. */
+function folgtSammel(p, v) {
+  const l = statusLeit(p, v);
+  return (l && l.id !== v.id) ? l : null;
+}
+
+/**
+ * Die Auftragseinheiten eines Projekts: eine Sammelvergabe zählt als eine,
+ * jede übrige Position für sich. Das ist die Sicht des Unternehmers.
+ */
+function auftragsEinheiten(p) {
+  const map = new Map();
+  gewerkeSorted(p).forEach(v => {
+    const betrag = kostenZeile(v).prognose;
+    if (betrag <= 0) return;
+    const s = sammelvergabeVon(p, v);
+    const key = s ? ('s:' + s.id) : ('e:' + v.id);
+    if (!map.has(key)) {
+      map.set(key, {
+        key, sammel: s,
+        name: s ? s.name : (v.gewerk || ''),
+        firma: (s && s.firma) || v.firma || '',
+        positionen: [], betrag: 0
+      });
+    }
+    const g = map.get(key);
+    g.positionen.push(v);
+    g.betrag += betrag;
+  });
+  return [...map.values()].sort((a, b) => b.betrag - a.betrag);
+}
+
+/**
+ * Zahlungsplan je Unternehmer. Nur ab einer Schwelle — bei kleinen
+ * Aufträgen ist ein Plan mehr Papier als Nutzen.
+ */
+function unternehmerPlaene(p, opt) {
+  const o = opt || {};
+  const min = Math.max(0, Number(o.min) || 0);
+  const schritt = Math.max(0, Number(o.schritt) || 0);
+
+  /* Dieselbe Monatsrechnung wie beim Bauherrn — über `monateVon`, nicht
+     über eine eigene. Bis zum 14.08.2026 stand hier eine zweite, ältere
+     Fassung, die nur `bauStart`/`bauEnde` kannte: Das Architektenhonorar
+     mit der Zeitlage «über die ganze Bauzeit» fiel deshalb hier heraus
+     und stand als «ohne Termine» daneben, während es im Bauherrnplan
+     korrekt verteilt war. Zwei Wege, dieselbe Frage, zwei Antworten. */
+  const projMonate = projektMonate(p);
+
+  return auftragsEinheiten(p).map(g => {
+    const map = new Map();
+    let mitTermin = 0;
+    g.positionen.forEach(v => {
+      const betrag = kostenZeile(v).prognose;
+      const monate = monateVon(v, projMonate);
+      if (!monate.length) return;
+      mitTermin += betrag;
+      const per = betrag / monate.length;
+      monate.forEach(mk => map.set(mk, (map.get(mk) || 0) + per));
+    });
+
+    /* Was tatsächlich schon geflossen ist. Ein Zahlungsplan, der die
+       geleisteten Zahlungen nicht kennt, plant an der Wirklichkeit
+       vorbei — und der Unternehmer merkt es zuerst. */
+    const ist = new Map();
+    const zahlungen = [];
+    g.positionen.forEach(v => (v.rechnungen || []).forEach(r => {
+      if (!r.bezahlt || !r.datum) return;
+      const b = rgAuszahlung(r);
+      if (!b) return;
+      const mk = r.datum.slice(0, 7);
+      ist.set(mk, rp5((ist.get(mk) || 0) + b));
+      zahlungen.push({ v, r, betrag: b, monat: mk });
+    }));
+    zahlungen.sort((a, b) => String(a.r.datum || '').localeCompare(String(b.r.datum || '')));
+
+    const sorted = [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    return Object.assign({}, g, {
+      monate: verteileAufSchritt(sorted, mitTermin, schritt),
+      ist, zahlungen,
+      bezahlt: rp5(zahlungen.reduce((a, x) => a + x.betrag, 0)),
+      terminiert: mitTermin,
+      ohneTermin: g.betrag - mitTermin,
+      klein: g.betrag < min
+    });
+  });
+}
+
+const ZP_SCHRITTE = [0, 5000, 10000, 25000, 50000, 100000];
+const ZP_SCHWELLEN = [0, 5000, 10000, 25000, 50000];
+
+function zpBauherrHtml(p) {
+  const z = zahlungsplanOf(p);
+  const istModus = zpIstModus(z);
+  /* Die Aufstellung der Positionen (Bausumme, ohne Termin, geschätzt)
+     beschreibt das Bauvorhaben — sie ist in beiden Sichten dieselbe und
+     kommt deshalb immer aus dem Grundplan. */
+  const r = bauherrPlan(p, { grundlage: z.bhGrundlage, schritt: z.bhSchritt });
+  /* Die MONATE dagegen folgen dem Modus. Bis zum 14.08.2026 zeigte der
+     Schirm hier IMMER den reinen Plan — der Schalter «Stand heute»
+     wechselte nur die Beschriftung, nicht die Rechnung. Im Juni standen
+     dadurch geplante Anteile, die sich wie Rechnungen lasen, während
+     wirklich zwei erfasst waren. Nur der Druck rechnete richtig. */
+  const monate = istModus
+    ? bauherrPlanIst(p, { grundlage: z.bhGrundlage, schritt: z.bhSchritt, stichtag: zpPlanAb(z) + '-15' }).monate
+    : r.monate;
+
+  // Die Einstellungen stehen ÜBER der Tabelle: Sie bestimmen, was man sieht.
+  const gBtn = (wert, label, titel) => `<button class="btn xs ${z.bhGrundlage === wert ? '' : 'secondary'}" data-act="zp-bh-grundlage" data-pid="${p.id}" data-wert="${wert}" type="button" title="${esc(titel)}">${label}</button>`;
+  const sBtn = s => `<button class="btn xs ${Number(z.bhSchritt) === s ? '' : 'secondary'}" data-act="zp-bh-schritt" data-pid="${p.id}" data-wert="${s}" type="button">${s ? chfShort(s) : 'haargenau'}</button>`;
+
+  const steuerung = `
+    <div class="card card-pad" style="max-width:840px">
+      <div class="form-row" style="gap:22px;flex-wrap:wrap">
+        <div>
+          <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:5px">Grundlage</div>
+          <div style="display:flex;gap:6px">
+            ${gBtn('alle', 'alle Gewerke', 'Vergebene mit der Vertragssumme, offene mit dem revidierten Kostenvoranschlag')}
+            ${gBtn('vergeben', 'nur vergebene', 'Nur unterschriebene Werkverträge – harte Zahlen')}
+          </div>
+        </div>
+        <div>
+          <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:5px">Zahlungen runden auf</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">${ZP_SCHRITTE.map(sBtn).join('')}</div>
+        </div>
+        <div>
+          <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:5px">Anzeige</div>
+          <button class="btn xs ${kostenBrutto ? '' : 'secondary'}" data-act="zp-brutto" data-pid="${p.id}" type="button"
+            title="Reine Anzeige – ändert die gespeicherten Zahlen nicht. Gespeichert sind sie ${preiseInkl() ? 'inkl.' : 'exkl.'} MwSt.">
+            ${kostenBrutto ? 'inkl. ' + mwstSatz() + ' % MwSt' : 'exkl. MwSt'}
+          </button>
+        </div>
+        <div>
+          <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:5px" title="«Stand heute» setzt die bereits eingegangenen Rechnungen mit ihrem echten Betrag ein und verteilt nur noch den Rest.">Sicht</div>
+          <div style="display:flex;gap:6px">
+            <button class="btn xs ${istModus ? 'secondary' : ''}" data-act="zp-bh-ist" data-pid="${p.id}" data-wert="0" type="button" title="Wie ursprünglich gedacht – reine Vorschau, verteilt auch über gelaufene Monate">Plan (Vorschau)</button>
+            <button class="btn xs ${istModus ? '' : 'secondary'}" data-act="zp-bh-ist" data-pid="${p.id}" data-wert="1" type="button" title="Gelaufene Monate zeigen die erfassten Rechnungen; geplant wird erst ab dem gewählten Monat">Stand heute</button>
+            ${istModus ? `<label class="muted" style="display:inline-flex;align-items:center;gap:5px;font-size:var(--t-2xs, 11px);margin-left:8px">geplant ab
+              <input type="month" class="input xs zp-planab" data-pid="${p.id}" value="${zpPlanAb(z)}"
+                title="Ab diesem Monat wird geplant. Alles davor zeigt ausschliesslich die tatsächlich erfassten Rechnungen."
+                style="height:24px;font-size:var(--t-2xs, 11px);width:130px"></label>` : ''}
+          </div>
+        </div>
+        <div>
+          <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:5px" title="Ausgeführt wird im Monat X, die Rechnung kommt später, dann läuft die Zahlungsfrist. Alle drei Daten stehen auf dem Bankblatt.">Rechnung kommt</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${[[0, 'im selben Monat'], [1, 'nach 1 Monat'], [2, 'nach 2 Monaten']].map(([n, l]) =>
+              `<button class="btn xs ${zpVersatz(z) === n ? '' : 'secondary'}" data-act="zp-versatz" data-pid="${p.id}" data-wert="${n}" type="button">${l}</button>`).join('')}
+          </div>
+        </div>
+        <div>
+          <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:5px">Zahlungsfrist</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${[10, 30, 45, 60].map(n =>
+              `<button class="btn xs ${zpFrist(z) === n ? '' : 'secondary'}" data-act="zp-frist" data-pid="${p.id}" data-wert="${n}" type="button">${n} Tage</button>`).join('')}
+          </div>
+        </div>
+        <div>
+          <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:5px"
+               title="Wird einbehalten und erst mit der Schlussrechnung zahlbar — er läuft nicht mit dem Baufortschritt mit.">Garantierückbehalt</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${ZP_RUECKBEHALTE.map(n =>
+              `<button class="btn xs ${Math.round(zpRueckbehalt(z) * 100) === n ? '' : 'secondary'}" data-act="zp-rueckbehalt" data-pid="${p.id}" data-wert="${n}" type="button">${n ? n + ' %' : 'keiner'}</button>`).join('')}
+          </div>
+        </div>
+      </div>
+      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:12px 0 0">
+        ${Number(z.bhSchritt)
+          ? `Jede Zahlung ist ein Vielfaches von ${chf(z.bhSchritt)}; gerundet wird die auflaufende Summe, damit nichts wegläuft. Die <b>Schlusszahlung gleicht den Rest aus</b> und ist deshalb krumm.`
+          : 'Die Monatsbeträge stehen auf den Rappen genau, wie sie aus der Bauzeit hervorgehen.'}
+      </p>
+    </div>`;
+
+  if (!r.rows.length) {
+    return steuerung + `<div class="card card-pad" style="max-width:840px;margin-top:16px">${emptyState('🧾',
+      z.bhGrundlage === 'vergeben'
+        ? 'Noch keine vergebenen Werkverträge. Wechsle oben auf „alle Gewerke", dann rechnet der Plan mit dem Kostenvoranschlag.'
+        : 'Noch keine Gewerke mit Betrag. Kostenvoranschlag im Reiter „Kosten" erfassen.')}</div>`;
+  }
+
+  /* Jede Zeile führt dorthin, wo man sie ändert. Ein Plan, der meldet
+     «Termine fehlen», aber nicht sagt wo — oder einen zwingt, den Weg
+     über einen anderen Reiter zu suchen — ist ein Bericht, kein Werkzeug.
+     Der fehlende Termin ist deshalb ein Knopf, der den Termindialog
+     gleich hier öffnet. */
+  const wvRows = r.rows.map(x => `<tr class="zp-row">
+      <td><a class="zp-gw" href="#/projekt/${p.id}/vergabe/${x.v.id}" title="Gewerk öffnen – Offerten, Werkvertrag, Rechnungen"><span class="bkp-code">${esc(x.v.bkp || '')}</span> ${esc(x.v.gewerk)}</a><div class="muted" style="font-size:var(--t-2xs, 11px)">${esc(x.v.firma || '—')}</div></td>
+      <td class="num">${chf(inAnsicht(x.betrag))}${x.geschaetzt ? ` <a class="zp-mini" href="#/projekt/${p.id}/vergabe/${x.v.id}" title="Noch nicht vergeben – Wert aus dem Kostenvoranschlag. Klicken, um Offerten und Vergabe zu erfassen.">gesch.</a>` : ''}</td>
+      <td>${x.von && x.bis
+        ? `<button class="zp-datum" data-act="edit-termin" data-pid="${p.id}" data-vid="${x.v.id}" title="Bauzeitraum ändern">${fmtDate(x.von)} – ${fmtDate(x.bis)}</button>`
+        : x.zeitlage
+          ? `<button class="zp-datum" data-act="zeitlage-menu" data-pid="${p.id}" data-vid="${x.v.id}" title="${esc(ZEITLAGEN[x.zeitlage].hinweis)}"><span class="zp-zl">${ZEITLAGEN[x.zeitlage].kurz}</span> kein fester Termin</button>`
+          : `<button class="btn xs warn" data-act="zeitlage-menu" data-pid="${p.id}" data-vid="${x.v.id}" title="Bauzeitraum festlegen – oder sagen, dass es keinen gibt">⚠ Termin fehlt</button>`}</td>
+    </tr>`).join('');
+
+  /* Sind Rechnungen erfasst, aber die Sicht steht auf «Plan», sieht man
+     eine reine Vorschau — und wundert sich, wo das bereits Bezahlte
+     geblieben ist. Der Plan ignoriert es zu Recht; er soll ja zeigen, wie
+     es gedacht war. Aber ungesagt darf das nicht bleiben. */
+  const rgAnzahl = (p.vergaben || []).reduce((a, v) => a + (v.rechnungen || []).length, 0);
+  const rgSumme = (p.vergaben || []).reduce((a, v) => a + (v.rechnungen || []).reduce((b, x) => b + rgSigned(x), 0), 0);
+  const istHinweis = (!istModus && rgAnzahl) ? `
+    <div class="zp-hint">
+      <div><b>${rgAnzahl} Rechnungen über ${chf(inAnsicht(rgSumme))} sind erfasst</b> — in dieser Sicht («Plan») zählen sie nicht mit.
+        Der Plan zeigt, wie es gedacht war. Die Sicht <b>Stand heute</b> setzt die bereits verrechneten Beträge
+        mit ihrem echten Datum ein und verteilt nur noch den Rest.</div>
+      <div class="zp-hint-btns"><button class="btn xs" data-act="zp-bh-ist" data-pid="${p.id}" data-wert="1" type="button">Auf „Stand heute" wechseln</button></div>
+    </div>` : '';
+
+  const fehlListe = r.fehlend.length ? `
+    <div class="zp-hint warn">
+      <div><b>${r.fehlend.length} Position${r.fehlend.length === 1 ? '' : 'en'} ohne Bautermin</b> — sie zählen im Zahlungsplan nicht mit
+        (${chf(inAnsicht(r.fehlend.reduce((a, x) => a + x.betrag, 0)))}). Entweder einen Termin setzen — oder sagen, dass es keinen gibt:</div>
+      <div class="zp-hint-btns">${r.fehlend.map(x =>
+        `<button class="btn xs" data-act="zeitlage-menu" data-pid="${p.id}" data-vid="${x.v.id}">${esc(x.v.bkp || '')} ${esc(x.v.gewerk)}</button>`).join('')}</div>
+    </div>` : '';
+
+  const geschListe = r.geschaetzt.length ? `
+    <div class="zp-hint">
+      <div><b>${r.geschaetzt.length} Position${r.geschaetzt.length === 1 ? '' : 'en'}</b> ${r.geschaetzt.length === 1 ? 'beruht' : 'beruhen'} auf dem Kostenvoranschlag, nicht auf einem Werkvertrag
+        (${chf(r.geschaetzt.reduce((a, x) => a + x.betrag, 0))}). Für die Bank sind das noch keine harten Zahlen:</div>
+      <div class="zp-hint-btns">${r.geschaetzt.map(x =>
+        `<a class="btn xs secondary" href="#/projekt/${p.id}/vergabe/${x.v.id}">${esc(x.v.bkp || '')} ${esc(x.v.gewerk)}</a>`).join('')}</div>
+    </div>` : '';
+
+  return steuerung + `
+    <div class="card card-pad" style="max-width:840px;margin-top:16px">
+      <h2 style="margin:0 0 8px;font-size:var(--t-l, 15px)">Grundlage der Rechnung</h2>
+      <div class="card" style="overflow-x:auto"><table class="grid"><thead><tr><th>Gewerk / Firma</th><th class="num">Betrag</th><th>Bauzeitraum (Unternehmer)</th></tr></thead>
+        <tbody>${wvRows}</tbody>
+        <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b>${chf(inAnsicht(r.total))}</b></td><td></td></tr></tfoot></table></div>
+      <p class="muted" style="font-size:var(--t-2xs, 11px);margin:6px 0 0">Alle Beträge <b>${ansichtNote()}</b> · gespeichert ${preiseInkl() ? 'inkl.' : 'exkl.'} MwSt</p>
+      ${istHinweis}${fehlListe}${geschListe}
+    </div>
+    ${steuerUebersichtHtml(p)}
+    <div class="card card-pad" style="max-width:840px;margin-top:16px">
+      <h2 style="margin:0 0 10px;font-size:var(--t-l, 15px)">Zahlungen Bauherr – pro Monat</h2>
+      <div id="zpMonate">${zpMonateTabelleHtml(monate, z, p.id, 'Noch keine Bautermine gesetzt.')}</div>
+      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px">
+        <b>Vorbehalt.</b> Dieser Plan ist eine <b>Prognose</b> nach dem heutigen Stand der Termine und Kosten
+        (${fmtDate(todayIso())}). Verschieben sich Bautermine, ändern sich Nachträge oder wird eine Rechnung
+        später eingereicht, verschieben sich die Zahlungen entsprechend. Massgebend bleibt die geprüfte
+        Rechnung nach Baufortschritt.
+      </p>
+    </div>`;
+}
+function zpUnternehmerHtml(p) {
+  const z = zahlungsplanOf(p);
+  const min = Number(z.untSchwelle);
+  const schritt = Number(z.untSchritt) || 0;
+  const alle = unternehmerPlaene(p, { min, schritt });
+  const gross = alle.filter(g => !g.klein);
+  const klein = alle.filter(g => g.klein);
+
+  const btn = (act, wert, aktiv, label) =>
+    `<button class="btn xs ${aktiv ? '' : 'secondary'}" data-act="${act}" data-pid="${p.id}" data-wert="${wert}" type="button">${label}</button>`;
+
+  const steuerung = `
+    <div class="card card-pad" style="max-width:900px">
+      <div class="form-row" style="gap:22px;flex-wrap:wrap">
+        <div>
+          <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:5px">Plan erstellen ab</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">${ZP_SCHWELLEN.map(s => btn('zp-unt-schwelle', s, min === s, s ? chfShort(s) : 'alle')).join('')}</div>
+        </div>
+        <div>
+          <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:5px">Zahlungen runden auf</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">${ZP_SCHRITTE.map(s => btn('zp-unt-schritt', s, schritt === s, s ? chfShort(s) : 'haargenau')).join('')}</div>
+        </div>
+      </div>
+      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:12px 0 0">
+        Eine <b>Sammelvergabe</b> gilt als ein Auftrag: Deckt eine Offerte mehrere BKP-Positionen ab,
+        bekommt der Unternehmer <b>einen</b> Plan über die ganze Summe. Zuordnen im Reiter „Gewerke“.
+      </p>
+    </div>`;
+
+  if (!gross.length) {
+    return steuerung + `<div class="card card-pad" style="max-width:900px;margin-top:16px">${emptyState('🧾',
+      alle.length ? 'Kein Auftrag erreicht die Schwelle. Setze sie tiefer.' : 'Noch keine Gewerke mit Betrag und Terminen.')}</div>`;
+  }
+
+  const plaene = gross.map(g => {
+    const posten = g.positionen.map(v => {
+      const lage = zeitlageOf(v);
+      const zeit = (v.bauStart && v.bauEnde)
+        ? fmtDate(v.bauStart) + ' – ' + fmtDate(v.bauEnde)
+        : lage
+          ? `<span class="st purple" title="${esc(ZEITLAGEN[lage].hinweis)}">${ZEITLAGEN[lage].label}</span>`
+          : '<span class="st amber">ohne Termine</span>';
+      return `<tr>
+        <td><span class="bkp-code">${esc(v.bkp || '')}</span> ${esc(v.gewerk || '')}</td>
+        <td class="num">${chf(kostenZeile(v).prognose)}</td>
+        <td class="muted">${zeit}</td>
+      </tr>`;
+    }).join('');
+
+    /* Geplant und bezahlt in EINER Tabelle. Zwei Tabellen nebeneinander
+       zwingen zum Vergleichen von Hand — und genau dort entsteht der
+       Satz «eigentlich 7'000, gezahlt 20'000», den niemand sehen will. */
+    const alleMon = [...new Set([...g.monate.map(m => m.key), ...g.ist.keys()])].sort();
+    let kum = 0;
+    const zeilen = alleMon.map(mk => {
+      const plan = (g.monate.find(m => m.key === mk) || {}).betrag || 0;
+      const bez  = g.ist.get(mk) || 0;
+      kum = rp5(kum + plan);
+      const vergangen = mk < todayIso().slice(0, 7);
+      return `<tr${bez ? ' class="zp-bezahlt"' : ''}>
+        <td>${zpMonLabel(mk)}${vergangen && !bez && plan ? ' <span class="st amber" style="font-size:var(--t-2xs, 9px)">offen</span>' : ''}</td>
+        <td class="num">${bez ? '<b>' + chf(bez) + '</b>' : '<span class="muted">–</span>'}</td>
+        <td class="num${bez ? ' muted' : ''}">${plan ? chf(plan) : '<span class="muted">–</span>'}</td>
+        <td class="num muted">${chf(kum)}</td>
+      </tr>`;
+    }).join('');
+
+    const monate = alleMon.length
+      ? `<table class="grid" style="margin-top:10px"><thead><tr>
+           <th>Monat</th><th class="num">bezahlt</th><th class="num">geplant</th><th class="num">kumuliert</th>
+         </tr></thead>
+         <tbody>${zeilen}</tbody>
+         <tfoot><tr style="border-top:2px solid var(--border)">
+           <td><b>Total</b></td>
+           <td class="num"><b>${g.bezahlt ? chf(g.bezahlt) : '–'}</b></td>
+           <td class="num"><b>${chf(g.terminiert)}</b></td>
+           <td class="num muted">${chf(g.betrag)}</td>
+         </tr></tfoot></table>`
+      : '<p class="muted" style="font-size:var(--t-xs, 12px);margin:10px 0 0">Keine Bautermine und keine Zeitlage gesetzt – ohne beides lässt sich nichts verteilen.</p>';
+
+    /* Jede geleistete Zahlung einzeln — nachvollziehbar bis zur Rechnung. */
+    const bezahlt = g.zahlungen.length ? `
+      <div style="margin-top:12px">
+        <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:5px">Bereits geleistete Zahlungen</div>
+        <table class="grid"><thead><tr>
+          <th>Datum</th><th>Rechnung</th><th>Position</th><th class="num">Betrag</th>
+        </tr></thead><tbody>${g.zahlungen.map(x => `<tr>
+          <td>${fmtDate(x.r.datum)}</td>
+          <td>${esc(x.r.nr || x.r.text || (x.r.art === 'schluss' ? 'Schlussrechnung' : 'Akonto'))}
+            ${x.r.art === 'schluss' ? '<span class="st purple" style="font-size:var(--t-2xs, 9px);margin-left:4px">Schluss</span>' : ''}</td>
+          <td class="muted">${esc(x.v.gewerk || '')}</td>
+          <td class="num">${chf(x.betrag)}</td>
+        </tr>`).join('')}</tbody>
+        <tfoot><tr style="border-top:2px solid var(--border)">
+          <td colspan="3"><b>bezahlt</b></td><td class="num"><b>${chf(g.bezahlt)}</b></td>
+        </tr>
+        <tr><td colspan="3" class="muted">noch offen bis zur Vertragssumme</td>
+            <td class="num muted">${chf(rp5(g.betrag - g.bezahlt))}</td></tr></tfoot></table>
+      </div>` : '';
+
+    return `<div class="card card-pad" style="max-width:900px;margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
+        <h2 style="margin:0;font-size:var(--t-l, 15px)">${esc(g.firma || 'Ohne Firma')}
+          ${g.sammel ? '<span class="st purple" style="font-size:var(--t-2xs, 9px);margin-left:6px">Sammelvergabe</span>' : ''}</h2>
+        <div class="num" style="font-size:var(--t-l, 17px);font-weight:700">${chf(g.betrag)}</div>
+      </div>
+      <div class="muted" style="font-size:var(--t-xs, 12px);margin-top:2px">${esc(g.name)}${g.positionen.length > 1 ? ` · ${g.positionen.length} Positionen` : ''}</div>
+      ${(() => {
+        /* Wann DIESER Unternehmer seine Rechnung stellt — eigener Takt
+           schlägt den Projektstandard. Horibe rechnet erst im Folgemonat
+           ab; das muss sich hier einstellen lassen, nicht global. */
+        const eigen = g.positionen[0] ? g.positionen[0].rechnungVersatz : undefined;
+        const hatEigen = eigen !== undefined && eigen !== '' && isFinite(Number(eigen));
+        const knopf = (n, l) => `<button class="btn xs ${hatEigen && Number(eigen) === n ? '' : 'secondary'}"
+            data-act="zp-unt-versatz" data-pid="${p.id}" data-kind="${g.key}" data-wert="${n}" type="button">${l}</button>`;
+        return `<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:7px">
+          <span class="muted" style="font-size:var(--t-2xs, 11px)">Rechnung kommt:</span>
+          ${knopf(0, 'im selben Monat')}${knopf(1, 'nach 1 Monat')}${knopf(2, 'nach 2 Monaten')}
+          <button class="btn xs ${hatEigen ? 'secondary' : ''}" data-act="zp-unt-versatz" data-pid="${p.id}"
+            data-kind="${g.key}" data-wert="" type="button"
+            title="Dem Projektstandard folgen (zurzeit ${zpVersatz(z) === 0 ? 'im selben Monat' : 'nach ' + zpVersatz(z) + ' Monat' + (zpVersatz(z) > 1 ? 'en' : '')})">Standard</button>
+        </div>`;
+      })()}
+      <table class="grid" style="margin-top:12px"><thead><tr><th>Position</th><th class="num">Betrag</th><th>Bauzeit</th></tr></thead><tbody>${posten}</tbody></table>
+      ${g.ohneTermin > 0.005 ? `<p class="muted" style="font-size:var(--t-xs, 11.5px);margin:8px 0 0">⚠ ${chf(g.ohneTermin)} ohne Termine – nicht im Plan.</p>` : ''}
+      ${monate}
+    </div>`;
+  }).join('');
+
+  const kleinHinweis = klein.length ? `
+    <div class="card card-pad" style="max-width:900px;margin-top:16px">
+      <h2 style="margin:0 0 8px;font-size:var(--t-l, 15px)">Ohne eigenen Plan</h2>
+      <p class="muted" style="font-size:var(--t-xs, 12px);margin:0 0 10px">${klein.length} Auftrag/Aufträge unter ${chf(min)} – Rechnung nach Baufortschritt genügt.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${klein.map(g =>
+        `<span class="chip">${esc(g.firma || g.name)} · ${chf(g.betrag)}</span>`).join('')}</div>
+    </div>` : '';
+
+  return steuerung + plaene + kleinHinweis + `
+    <div class="card card-pad" style="max-width:900px;margin-top:16px">
+      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:0">
+        <b>Vorbehalt.</b> Der Plan zeigt, wann mit welcher Zahlung gerechnet wird — Stand ${fmtDate(todayIso())}.
+        Er ersetzt keine Zahlungsvereinbarung im Werkvertrag. Verschieben sich Bautermine, verschieben sich
+        die Zahlungen. Gezahlt wird nach geprüfter Rechnung und ausgewiesenem Baufortschritt.
+      </p>
+    </div>`;
+}
+
 function zpHonorarHtml(p, z) {
   const c = zahlungsplanCalc(z);
   const flat = z.honMode === 'flat';
   const honT = p.honorar ? Math.round(computeHonorar(p.honorar).H) : 0;
   const offerte = Math.round(Number(finanzData(p).honorare) || 0);
-  const lnk = (act, label) => `<button type="button" data-act="${act}" data-pid="${p.id}" style="background:none;border:none;color:var(--brand);cursor:pointer;padding:0;font-size:11px;text-decoration:underline">${label}</button>`;
+  const lnk = (act, label) => `<button type="button" data-act="${act}" data-pid="${p.id}" style="background:none;border:none;color:var(--brand);cursor:pointer;padding:0;font-size:var(--t-2xs, 11px);text-decoration:underline">${label}</button>`;
   const quellen = [offerte ? lnk('zp-honofferte', `aus Schätzung/Offerte (${chf(offerte)})`) : '', honT ? lnk('zp-honorar', `aus Honorarrechner (${chf(honT)})`) : ''].filter(Boolean).join(' · ');
   const subToggle = `<div style="display:flex;gap:6px;margin-bottom:12px">
     <button class="btn xs ${flat ? 'secondary' : ''}" data-act="zp-honmode" data-pid="${p.id}" data-mode="phasen" type="button">nach SIA-Phasen</button>
@@ -10720,7 +14330,7 @@ function zpHonorarHtml(p, z) {
       <div class="form-row">
         <label class="field">Honorar-Betrag (CHF)
           <input class="input zp-in" id="zp_betrag" type="number" value="${z.betrag}">
-          <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Unser Honorar${quellen ? ' · ' + quellen : ' · (bei der Schätzung abgeben oder im Honorarrechner berechnen)'}</span></label>
+          <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px">Unser Honorar${quellen ? ' · ' + quellen : ' · (bei der Schätzung abgeben oder im Honorarrechner berechnen)'}</span></label>
       </div>
       <div class="form-row" style="margin-top:6px">
         <label class="field">Zeitraum von <input class="input zp-in" id="zp_von" type="date" value="${esc(z.von || '')}"></label>
@@ -10731,11 +14341,11 @@ function zpHonorarHtml(p, z) {
   if (flat) {
     const mo = zahlungsplanMonate(z);
     detail = `<div class="kpi-row" style="margin-top:14px">
-        <div class="kpi"><div class="k-label">Honorar total</div><div class="k-value" style="font-size:20px">${chf(c.total)}</div></div>
-        <div class="kpi"><div class="k-label">Laufzeit</div><div class="k-value" style="font-size:20px">${mo.ok ? mo.monate.length + ' Mt' : '–'}</div></div>
-        <div class="kpi"><div class="k-label">pro Monat</div><div class="k-value" style="font-size:20px">${mo.ok ? chf(c.total / (mo.monate.length || 1)) : '–'}</div></div>
+        <div class="kpi"><div class="k-label">Honorar total</div><div class="k-value" style="font-size:var(--t-xl, 20px)">${chf(c.total)}</div></div>
+        <div class="kpi"><div class="k-label">Laufzeit</div><div class="k-value" style="font-size:var(--t-xl, 20px)">${mo.ok ? mo.monate.length + ' Mt' : '–'}</div></div>
+        <div class="kpi"><div class="k-label">pro Monat</div><div class="k-value" style="font-size:var(--t-xl, 20px)">${mo.ok ? chf(c.total / (mo.monate.length || 1)) : '–'}</div></div>
       </div>
-      <p class="muted" style="font-size:11.5px;margin:12px 0 0">Das Honorar wird gleichmässig auf jeden Monat der Laufzeit (von–bis) verteilt – ohne Phasengewichtung.</p>`;
+      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:12px 0 0">Das Honorar wird gleichmässig auf jeden Monat der Laufzeit (von–bis) verteilt – ohne Phasengewichtung.</p>`;
   } else {
     const rows = c.rows.map((r, i) => {
       const dauer = (r.beginn && r.ende) ? zpMonthsBetween(new Date(r.beginn), new Date(r.ende)).length : 0;
@@ -10752,7 +14362,7 @@ function zpHonorarHtml(p, z) {
         <tbody>${rows}</tbody>
         <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b id="zp_pctsum" style="color:${Math.abs(c.pctSum - 100) < 0.05 ? 'var(--s-green)' : 'var(--s-red)'}">${Math.round(c.pctSum * 10) / 10}%</b></td><td class="num"><b id="zp_total">${chf(c.total)}</b></td><td colspan="3"></td></tr></tfoot>
       </table>
-      <p class="muted" style="font-size:11.5px;margin:12px 0 0">Jede Phase hat <b>Beginn &amp; Ende</b> – sie dürfen sich <b>überschneiden</b> (z.B. Ausschreibung &amp; Ausführung parallel): einfach die Daten anpassen. „Phasen verteilen" legt sie sequenziell als Startpunkt; unten siehst du die Monatsrechnungen (Überschneidungen summieren sich).</p>`;
+      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:12px 0 0">Jede Phase hat <b>Beginn &amp; Ende</b> – sie dürfen sich <b>überschneiden</b> (z.B. Ausschreibung &amp; Ausführung parallel): einfach die Daten anpassen. „Phasen verteilen" legt sie sequenziell als Startpunkt; unten siehst du die Monatsrechnungen (Überschneidungen summieren sich).</p>`;
   }
   return `
     <div class="card card-pad" style="max-width:900px">
@@ -10761,7 +14371,7 @@ function zpHonorarHtml(p, z) {
       ${detail}
     </div>
     <div class="card card-pad" style="max-width:900px;margin-top:16px">
-      <h2 style="margin:0 0 10px;font-size:15px">Monatsrechnungen</h2>
+      <h2 style="margin:0 0 10px;font-size:var(--t-l, 15px)">Monatsrechnungen</h2>
       <div id="zpMonate">${zahlungsplanMonateHtml(z, p.id)}</div>
     </div>`;
 }
@@ -10825,26 +14435,89 @@ function zahlungsplanMonate(z) {
 function zpApplyOverrides(baseMonate, z) {
   const ov = z.overrides || {};
   let cum = 0;
-  const monate = baseMonate.map(m => { const has = ov[m.key] !== undefined && ov[m.key] !== '' && ov[m.key] !== null; const betrag = has ? Number(ov[m.key]) : m.betrag; cum += betrag; return { key: m.key, betrag, auto: m.betrag, ueber: has, cum }; });
+  // teile/anteilPct mitnehmen – sie tragen die Aufschlüsselung des Monats
+  const monate = baseMonate.map(m => { const has = ov[m.key] !== undefined && ov[m.key] !== '' && ov[m.key] !== null; const betrag = has ? Number(ov[m.key]) : m.betrag; cum += betrag; return { key: m.key, betrag, auto: m.betrag, ueber: has, cum, teile: m.teile || null, ist: m.ist }; });
   return { monate, total: cum, hatOverrides: Object.keys(ov).length > 0 };
 }
 // Gemeinsame Monats-Tabelle (editierbar, ausser gesperrt) für Honorar- UND Bauherr-Modus
 function zpMonateTabelleHtml(baseMonate, z, pid, hinweis) {
-  if (!baseMonate || !baseMonate.length) return `<p class="muted" style="font-size:12.5px;margin:0">${hinweis || 'Noch keine Monatsrechnungen.'}</p>`;
+  if (!baseMonate || !baseMonate.length) return `<p class="muted" style="font-size:var(--t-s, 12.5px);margin:0">${hinweis || 'Noch keine Monatsrechnungen.'}</p>`;
   const r = zpApplyOverrides(baseMonate, z); const locked = z.gesperrt;
-  const rows = r.monate.map(m => `<tr>
-      <td>${zpMonLabel(m.key)}</td>
-      <td class="num">${locked ? chf(m.betrag) : `<input class="input zp-mon" data-key="${m.key}" data-pid="${pid}" type="number" step="0.05" value="${m.betrag}" style="width:118px;text-align:right;padding:3px 6px${m.ueber ? ';border-color:var(--s-amber);font-weight:700' : ''}">`}</td>
-      <td class="num muted">${chf(m.cum)}</td>
-      <td>${m.ueber ? '<span class="st amber" style="font-size:9px;padding:1px 6px">manuell</span>' : ''}</td>
-    </tr>`).join('');
-  return `<table class="grid"><thead><tr><th>Monat</th><th class="num">Rechnung</th><th class="num">kumuliert</th><th></th></tr></thead><tbody>${rows}</tbody>
-    <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b>${chf(r.total)}</b></td><td colspan="2"></td></tr></tfoot></table>
-    <p class="muted" style="font-size:11.5px;margin:8px 0 0">${r.monate.length} Monatsrechnungen.${locked ? ' 🔒 gesperrt – zum Ändern entsperren.' : ' Beträge einzeln überschreibbar.'}${r.hatOverrides && !locked ? ` <button type="button" data-act="zp-mon-reset" data-pid="${pid}" style="background:none;border:none;color:var(--brand);cursor:pointer;text-decoration:underline;font-size:11px">↺ alle auf Auto</button>` : ''}</p>`;
+  const gesamt = r.total || 1;
+
+  /* Woraus sich ein Monat zusammensetzt. Eine Zahl wie «Juni 2026:
+     69'417.95» ist für sich genommen nicht überprüfbar — erst mit den
+     Positionen darunter sieht man, dass gut drei Viertel davon der
+     Baumeister ist, und kann es gegen den Bauablauf halten. */
+  const teilZeilen = m => {
+    if (!m.teile || !m.teile.length) return '';
+    const summe = m.teile.reduce((a, t) => a + t.anteil, 0) || 1;
+    return m.teile.map(t => `<tr class="zp-t-pos${t.schluss ? ' schluss' : ''}">
+        <td><span class="bkp-code">${esc(t.v.bkp || '')}</span> ${esc(t.v.gewerk || '')}
+          <span class="zp-t-fi">${esc(t.v.firma || '—')}</span>
+          ${t.schluss
+            ? `<span class="zp-t-sr" title="Steuerlich massgebend: Der Abzug fällt in dieses Jahr an.">Schlussrechnung ${t.steuerJahr}</span>`
+            /* Die Beschriftung hängt an der ZEILE, nicht am Modus: Was
+               aus einer erfassten Rechnung stammt, heisst «verrechnet»;
+               alles andere ist vorgesehen und heisst «geplant». Vorher
+               stand «Akonto» auf geplanten Anteilen — und ein Juni mit
+               zehn solchen Zeilen las sich wie zehn Rechnungen, während
+               wirklich zwei erfasst waren. */
+            : t.ist
+              ? `<span class="zp-t-e">verrechnet</span>`
+              : `<span class="zp-t-ak" title="Vorgesehene Akontozahlung – noch keine gestellte Rechnung.${t.schlussMonat && t.schlussMonat !== m.key ? ' Schlussrechnung geplant: ' + zpMonLabel(t.schlussMonat) : ''}">geplant</span>`}
+          ${t.teil ? '<span class="zp-t-anteil" title="Diese Position läuft über mehrere Monate – hier ihr Anteil an diesem Monat">Teilbetrag</span>' : ''}
+          ${/* Ein vergangener Monat beruht auf echten Rechnungen. Wer
+                wissen will, welche das waren, kommt mit einem Klick
+                dorthin, statt den Reiter zu wechseln und zu suchen. */
+            (m.ist && zpRechnungIm(t.v, m.key)) ? `<button class="zp-t-zur" data-act="zp-zur-rechnung" data-pid="${pid}"
+                data-vid="${t.v.id}" data-rgid="${zpRechnungIm(t.v, m.key)}" type="button"
+                title="Zur Rechnung in der Baukostenübersicht">→ Rechnung ansehen</button>` : ''}</td>
+        <td class="num">${chf(inAnsicht(t.anteil))}</td>
+        <td class="num zp-t-pct">${(t.anteil / summe * 100).toFixed(0)} %</td>
+        <td></td>
+      </tr>`).join('');
+  };
+
+  const rows = r.monate.map(m => {
+    const sr = (m.teile || []).filter(t => t.schluss).reduce((a, t) => a + t.anteil, 0);
+    return `<tr class="zp-t-mon${m.ist ? ' ist' : ''}">
+      <td><b>${zpMonLabel(m.key)}</b>${
+        /* «verrechnet» darf nur im Modus «Stand heute» stehen. Dort SIND
+           die Beträge die tatsächlichen Rechnungen. Im Plan-Modus sind
+           es geplante Anteile aus der Vergabesumme — dann behauptete die
+           Marke etwas, das die Zahl daneben nicht hält: Im November 2025
+           stand «verrechnet» über 5'000 geplant, während wirklich 809.75
+           fakturiert waren. Im Plan wird der Ist-Stand deshalb daneben
+           gestellt, nicht daraufgeschrieben. */
+        zpIstModus(z)
+          ? (m.ist ? ' <span class="zp-t-e">verrechnet</span>' : '')
+          : (m.ist ? ` <span class="zp-t-bez" title="Tatsächlich bezahlte Rechnungen in diesem Monat. Der Betrag rechts ist der geplante Anteil.">davon bezahlt ${chf(inAnsicht(m.ist))}</span>` : '')}
+        <span class="zp-t-pct" title="Anteil an der Gesamtsumme">${(m.betrag / gesamt * 100).toFixed(1)} % vom Total</span>
+        ${/* Der Rechnungslauf, sichtbar am Monat selbst: ausgeführt wird
+              hier, die Rechnung kommt um den eingestellten Versatz
+              später, dann läuft die Zahlungsfrist. Vorher wirkten die
+              Knöpfe «Rechnung kommt» nur auf dem Druck — am Bildschirm
+              sah man ihre Wirkung nirgends. Nur für geplante Monate:
+              Bei verrechneten ist die Rechnung ja schon da. */
+          (!m.ist && m.teile && m.teile.length)
+            ? `<span class="zp-t-lauf" title="Ausführung in diesem Monat · Rechnung ${zpVersatz(z) === 0 ? 'im selben Monat' : 'nach ' + zpVersatz(z) + ' Monat' + (zpVersatz(z) > 1 ? 'en' : '')} · zahlbar innert ${zpFrist(z)} Tagen">Rechnung bis ${fmtDate(zpMonatEnde(m.key, zpVersatz(z)))} · zahlbar bis ${fmtDate(addDays(zpMonatEnde(m.key, zpVersatz(z)), zpFrist(z)))}</span>`
+            : ''}
+        ${sr > 0.05 ? `<span class="zp-t-srm" title="Nur Schlussrechnungen sind steuerlich abziehbar – Akontozahlungen nicht.">davon Schlussrechnungen ${chf(inAnsicht(sr))}</span>` : ''}</td>
+      <td class="num">${locked ? chf(inAnsicht(m.betrag)) : `<input class="input zp-mon" data-key="${m.key}" data-pid="${pid}" type="number" step="0.05" value="${m.betrag}" style="width:118px;text-align:right;padding:3px 6px${m.ueber ? ';border-color:var(--s-amber);font-weight:700' : ''}">`}</td>
+      <td class="num muted">${chf(inAnsicht(m.cum))}</td>
+      <td>${m.ueber ? '<span class="st amber" style="font-size:var(--t-2xs, 9px);padding:1px 6px">manuell</span>' : ''}</td>
+    </tr>${teilZeilen(m)}`;
+  }).join('');
+
+  const mitDetail = r.monate.some(m => m.teile && m.teile.length);
+  return `<table class="grid zp-tab"><thead><tr><th>Monat / Position</th><th class="num">Betrag</th><th class="num">kumuliert</th><th></th></tr></thead><tbody>${rows}</tbody>
+    <tfoot><tr style="border-top:2px solid var(--border)"><td><b>Total</b></td><td class="num"><b>${chf(inAnsicht(r.total))}</b></td><td colspan="2"></td></tr></tfoot></table>
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:8px 0 0">${r.monate.length} Monatsrechnungen${mitDetail ? ', je Monat aufgeschlüsselt nach Position und Unternehmer' : ''}. Beträge ${ansichtNote()}.${locked ? ' 🔒 gesperrt – zum Ändern entsperren.' : ' Monatsbeträge einzeln überschreibbar.'}${r.hatOverrides && !locked ? ` <button type="button" data-act="zp-mon-reset" data-pid="${pid}" style="background:none;border:none;color:var(--brand);cursor:pointer;text-decoration:underline;font-size:var(--t-2xs, 11px)">↺ alle auf Auto</button>` : ''}</p>`;
 }
 function zahlungsplanMonateHtml(z, pid) {
   const base = zahlungsplanMonate(z);
-  if (!base.ok || !base.monate.length) return `<p class="muted" style="font-size:12.5px;margin:0">${z.honMode === 'flat' ? 'Zeitraum (von/bis) setzen – dann wird das Honorar gleichmässig über die Laufzeit verteilt.' : 'Zuerst Zeitraum setzen und „Phasen verteilen" klicken (oder Beginn/Ende je Phase eintragen) – dann erscheinen hier die Monatsrechnungen.'}</p>`;
+  if (!base.ok || !base.monate.length) return `<p class="muted" style="font-size:var(--t-s, 12.5px);margin:0">${z.honMode === 'flat' ? 'Zeitraum (von/bis) setzen – dann wird das Honorar gleichmässig über die Laufzeit verteilt.' : 'Zuerst Zeitraum setzen und „Phasen verteilen" klicken (oder Beginn/Ende je Phase eintragen) – dann erscheinen hier die Monatsrechnungen.'}</p>`;
   return zpMonateTabelleHtml(base.monate, z, pid);
 }
 function zahlungsplanVerteilen(pid) {
@@ -10864,7 +14537,9 @@ function viewZahlungsplan(pid) {
   const p = findProjekt(pid); if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
   const z = zahlungsplanOf(p); const modus = z.modus || 'bauherr';
   const list = zahlungsplaeneOf(p);
-  const sub = modus === 'bauherr' ? 'Bauherr – Fälligkeiten aus Werkverträgen + Unternehmer-Terminen' : 'Unser Honorar – SIA-Leistungsprozente, Betrag aus Honorarrechner/Baukosten';
+  const sub = modus === 'bauherr' ? 'Bauherr – Fälligkeiten aus Werkverträgen + Unternehmer-Terminen'
+            : modus === 'unternehmer' ? 'Je Unternehmer – was er wann in Rechnung stellen kann'
+            : 'Unser Honorar – SIA-Leistungsprozente, Betrag aus Honorarrechner/Baukosten';
   const versionsBar = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
       ${list.map(v => `<button class="btn xs ${v.id === p.zpAktiv ? '' : 'secondary'}" data-act="zp-version" data-pid="${p.id}" data-vid="${v.id}" type="button">${esc(v.name || 'Version')}${v.gesperrt ? ' 🔒' : ''}</button>`).join('')}
       <button class="btn xs secondary" data-act="zp-version-neu" data-pid="${p.id}" type="button">+ Neue Version</button>
@@ -10876,7 +14551,7 @@ function viewZahlungsplan(pid) {
   const head = `
     <div class="breadcrumb"><a href="#/projekte">Projekte</a> › <a href="#/projekt/${p.id}">${esc(p.name)}</a> › Zahlungsplan</div>
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:23px">Zahlungsplan</h1><div class="sub" style="margin-top:5px">${sub}</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">Zahlungsplan</h1><div class="sub" style="margin-top:5px">${sub}</div></div>
       <div><button class="btn" data-act="pdf-zahlungsplan" data-pid="${p.id}">🖨 Drucken</button></div>
     </div>
     ${projektTabs(p, 'zahlungsplan')}
@@ -10885,32 +14560,74 @@ function viewZahlungsplan(pid) {
     ${lockBanner}
     <div style="display:flex;gap:6px;margin-bottom:14px">
       <button class="btn xs ${modus === 'bauherr' ? '' : 'secondary'}" data-act="zp-modus" data-pid="${p.id}" data-modus="bauherr" type="button">Bauherr (Werkverträge)</button>
+      <button class="btn xs ${modus === 'unternehmer' ? '' : 'secondary'}" data-act="zp-modus" data-pid="${p.id}" data-modus="unternehmer" type="button">Unternehmer</button>
       <button class="btn xs ${modus === 'honorar' ? '' : 'secondary'}" data-act="zp-modus" data-pid="${p.id}" data-modus="honorar" type="button">Unser Honorar (SIA)</button>
     </div>`;
-  render(head + (modus === 'bauherr' ? zpBauherrHtml(p) : zpHonorarHtml(p, z)));
+  render(head + (modus === 'bauherr' ? zpBauherrHtml(p)
+              : modus === 'unternehmer' ? zpUnternehmerHtml(p)
+              : zpHonorarHtml(p, z)));
   if (modus === 'honorar' && !z.gesperrt) $$('.zp-in').forEach(el => el.addEventListener('input', () => zahlungsplanUpdate(pid)));
   if (z.gesperrt) {
     $$('.zp-in').forEach(el => el.disabled = true);
     $$('[data-act^="zp-"]').forEach(b => { if (!['zp-version', 'zp-version-neu', 'zp-lock', 'zp-rename'].includes(b.dataset.act)) b.disabled = true; });
   }
 }
-function pdfZahlungsplan(pid) {
+/* ---------------------------------------------------------------------
+   Tabelle über mehrere Seiten, mit Übertrag
+   ---------------------------------------------------------------------
+   Ein Zahlungsplan, der zur Bank geht, wird geblättert und geprüft. Am
+   Fuss jeder Seite steht deshalb, wie viel bis hierher aufgelaufen ist,
+   und die nächste Seite nimmt den Betrag oben wieder auf. So lässt sich
+   jede Seite für sich nachrechnen, ohne zurückzublättern.
+
+   Wo die Seite bricht, verrät das Blatt nicht von selbst — CSS kennt
+   keine Seitenzahlen. Also wird von Hand umbrochen: feste Zeilenzahl je
+   Seite, danach ein erzwungener Umbruch.
+   --------------------------------------------------------------------- */
+/* Wer bekommt welches Blatt?
+   ---------------------------------------------------------------------
+   Der Bauherr braucht die Unternehmerblätter nicht — sie gehen ihn
+   nichts an, und sie machen aus vier Seiten neunundzwanzig. Der einzelne
+   Unternehmer wiederum darf den Gesamtplan nicht sehen: Darin stehen die
+   Preise seiner Mitbewerber.
+
+   Deshalb wird vor dem Drucken gefragt, statt immer alles auszugeben. */
+function pdfZahlungsplanMenu(e, pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const z = zahlungsplanOf(p);
+  const gross = unternehmerPlaene(p, { min: Number(z.untSchwelle) || 0, schritt: Number(z.untSchritt) || 0 })
+    .filter(g => !g.klein);
+
+  const items = [
+    { icon: '🏦', label: 'Für die Bauherrschaft — ohne Unternehmerblätter',
+      act: () => pdfZahlungsplanBauherr(p, z, { umfang: 'bauherr' }) },
+    { icon: '🧮', label: 'Nur die steuerliche Zuteilung',
+      act: () => pdfZahlungsplanBauherr(p, z, { umfang: 'steuern' }) }
+  ];
+
+  if (gross.length) {
+    items.push({ icon: '🧾', label: 'Alle Unternehmer (' + gross.length + ' Blätter)',
+      act: () => pdfZahlungsplanBauherr(p, z, { umfang: 'unternehmer' }) });
+    items.push({ icon: '📑', label: 'Gesamtdokument',
+      act: () => pdfZahlungsplanBauherr(p, z, { umfang: 'alle' }) });
+    items.push({ sep: true });
+    gross.forEach(g => items.push({
+      icon: '·', label: (g.firma || g.name) + ' — ' + moneyA(g.betrag),
+      act: () => pdfZahlungsplanBauherr(p, z, { umfang: 'einer', key: g.key })
+    }));
+  } else {
+    items.push({ icon: '📑', label: 'Gesamtdokument',
+      act: () => pdfZahlungsplanBauherr(p, z, { umfang: 'alle' }) });
+  }
+  openContextMenu(e, items);
+}
+
+function pdfZahlungsplan(pid, opt) {
   const p = findProjekt(pid); if (!p) return;
   const z = zahlungsplanOf(p); const modus = z.modus || 'bauherr';
   let inner, title;
-  if (modus === 'bauherr') {
-    title = 'Zahlungsplan Bauherr';
-    const r = bauherrPlan(p);
-    const wvRows = r.rows.map(x => `<tr><td>${esc(x.v.bkp || '')} ${esc(x.v.gewerk)}<br><span class="muted">${esc(x.v.firma || '')}</span></td><td class="num">${money(x.betrag)}</td><td>${x.ohneTermin ? 'Termine fehlen' : fmtDate(x.von) + ' – ' + fmtDate(x.bis)}</td></tr>`).join('');
-    inner = `<div class="gw">Werkverträge (Grundlage)</div>
-      <table class="t"><thead><tr><th>Gewerk / Firma</th><th class="num">Summe (WV + gen. NT)</th><th>Bauzeitraum</th></tr></thead>
-        <tbody>${wvRows || '<tr><td colspan="3" class="muted">Keine vergebenen Werkverträge</td></tr>'}</tbody>
-        <tfoot><tr><td><b>Total</b></td><td class="num"><b>${money(r.total)}</b></td><td></td></tr></tfoot></table>
-      ${r.monate.length ? `<div class="gw">Zahlungen Bauherr – pro Monat</div>
-      <table class="t"><thead><tr><th>Monat</th><th class="num">fällig</th><th class="num">kumuliert</th></tr></thead>
-        <tbody>${r.monate.map(m => `<tr><td>${zpMonLabel(m.key)}</td><td class="num">${money(m.betrag)}</td><td class="num muted">${money(m.cum)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td><b>Total</b></td><td class="num"><b>${money(r.total)}</b></td><td></td></tr></tfoot></table>` : ''}`;
-  } else {
+  if (modus === 'bauherr') return pdfZahlungsplanBauherr(p, z, opt);
+  {
     const flat = z.honMode === 'flat';
     title = 'Zahlungsplan Honorar';
     const c = zahlungsplanCalc(z); const mo = zahlungsplanMonate(z);
@@ -10932,6 +14649,580 @@ function pdfZahlungsplan(pid) {
   }
   openPrintDoc(title, `${esc(p.name)}${p.ort ? ' · ' + esc(p.ort) : ''}`, inner);
 }
+/* ---------------------------------------------------------------------
+   Zahlungsplan Bauherr — die Fassung für die Bank
+   ---------------------------------------------------------------------
+   Dieses Blatt geht an ein Kreditinstitut. Es entscheidet über die
+   Auszahlung einer Hypothek und wird von jemandem gelesen, der das
+   Bauvorhaben nicht kennt. Es muss deshalb dreierlei leisten:
+
+     · auf einen Blick zeigen, worum es geht        → Eckwerte
+     · erklären, wie die Zahlen zustande kommen     → Herleitung
+     · seitenweise nachrechenbar sein               → Übertrag
+
+   Die Zahlen selbst rechnet bauherrPlan(); hier wird nur gesetzt.
+   --------------------------------------------------------------------- */
+function pdfZahlungsplanBauherr(p, z, opt) {
+  /* 'bauherr' = ohne Unternehmerblätter, 'unternehmer' = nur diese,
+     'einer' = ein einzelnes, 'alle' = das Gesamtdokument. */
+  const umfang = (opt && opt.umfang) || 'alle';
+  const nurEiner = (opt && opt.key) || '';
+  /* Dieselben Einstellungen wie am Bildschirm. Vorher rief der Druck
+     bauherrPlan(p) ohne Optionen — er zeigte also immer «alle Gewerke,
+     haargenau», auch wenn auf dem Schirm «nur vergebene, 25'000er-Schritte»
+     stand. Zwei Blätter mit demselben Titel und verschiedenen Zahlen. */
+  const basis = { grundlage: z.bhGrundlage || 'alle', schritt: Number(z.bhSchritt) || 0 };
+  /* «Stand heute» rechnet die bereits verrechneten Beträge ein und verteilt
+     nur noch den Rest. Ohne das zeigt ein Plan vom Frühling im August
+     Zahlungen, die längst hätten fliessen sollen — und verschweigt die,
+     die noch kommen. */
+  const istModus = zpIstModus(z);
+  /* Die Aufstellung der Kostenpositionen (Ziffer 4/5) ist in beiden Modi
+     dieselbe — sie beschreibt das Bauvorhaben, nicht den Zahlungsstand.
+     Deshalb kommt sie immer aus dem Grundplan. */
+  const grund = bauherrPlan(p, basis);
+  const r = istModus
+    ? bauherrPlanIst(p, Object.assign({}, basis, { stichtag: zpPlanAb(z) + '-15' }))
+    : grund;
+  const ek = eckDaten(p);
+  const mw = mwstSatz();
+
+  if (!r.monate.length && !r.rows.length) { toast('Noch keine Grundlage für einen Zahlungsplan', 'info'); return; }
+
+  const von = r.monate.length ? r.monate[0].key : '';
+  const bis = r.monate.length ? r.monate[r.monate.length - 1].key : '';
+  const vergebene = grund.rows.filter(x => !x.geschaetzt).length;
+  const gesamt = istModus ? r.soll : r.total;
+
+  /* ---- Der Dokumentkopf ----
+     Kein Formular mit Beschriftung links und Wert rechts, sondern ein
+     gesetzter Block: kleine Schlagworte über ihren Angaben, und rechts
+     die eine Zahl, um die es geht. Wer das Blatt aufschlägt, sieht
+     zuerst den Gesamtbetrag — alles andere ordnet sich darum. */
+  const feld = (k, w) => w ? `<div class="ek-f"><span class="ek-k">${k}</span><span class="ek-w">${w}</span></div>` : '';
+  const eckwerte = `<div class="ek">
+    <div class="ek-links">
+      ${feld('Objekt', esc(p.name) + (p.ort ? `<span class="ek-sub">${esc(p.ort)}</span>` : '') + (p.nummer ? `<span class="ek-sub">Objekt-Nr. ${esc(p.nummer)}</span>` : ''))}
+      <div class="ek-reihe">
+        ${feld('Bauherrschaft', esc(p.bauherr || '–'))}
+        ${feld('Bauleitung', esc(p.projektleiter || '–'))}
+      </div>
+      <div class="ek-reihe">
+        ${ek.baustart ? feld('Baubeginn', fmtDate(ek.baustart)) : ''}
+        ${ek.bezug ? feld('Bezugsbereit', fmtDate(ek.bezug)) : ''}
+        ${feld('Zahlungen', r.monate.length + (von ? `<span class="ek-sub">${zpMonLabel(von)} – ${zpMonLabel(bis)}</span>` : ''))}
+      </div>
+    </div>
+    <div class="ek-rechts">
+      <div class="ek-k">Gesamtbetrag ${ansichtNote()}</div>
+      <div class="ek-gross">${moneyA(gesamt)}</div>
+      ${kostenBrutto ? '' : `<div class="ek-z"><span>inkl. ${mw} % MwSt</span><span>${money(alsBrutto(gesamt))}</span></div>`}
+      ${istModus ? `
+        <div class="ek-z"><span>davon verrechnet</span><span>${moneyA(r.ist)}</span></div>
+        <div class="ek-z stark"><span>noch zu zahlen</span><span>${moneyA(r.rest)}</span></div>` : ''}
+    </div>
+  </div>`;
+
+  /* ---- Der Weg des Geldes ----
+     Er hat drei Stationen, und sie fallen nicht zusammen: Im Monat X wird
+     gearbeitet, im Monat X+1 kommt die Rechnung, dreissig Tage später ist
+     sie zahlbar. Wer nur den Ausführungsmonat kennt, stellt der Bank die
+     Liquidität zwei Monate zu früh in Aussicht. */
+  const versatz = zpVersatz(z), frist = zpFrist(z);
+
+  /** Letzter Tag eines Monats, um `n` Monate verschoben. */
+  const monatEnde = (key, n) => {
+    const [y, m] = key.split('-').map(Number);
+    return isoOf(new Date(y, (m - 1) + n + 1, 0));
+  };
+
+  /* Was für diesen Monat und diese Position ursprünglich geplant war —
+     Grundlage für den Abweichungsvermerk. */
+  /* (Die frühere Abweichungsrechnung gegenüber dem Ursprungsplan ist
+     entfallen — siehe die Begründung bei den Positionszeilen.) */
+
+  /* Unter jedem Monat: was in ihm wirklich bezahlt wurde, Rechnung für
+     Rechnung, und wie es zum Plan steht. Ein Monatsblock ohne diese
+     Zeilen beantwortet nur die halbe Frage — die Bank und die
+     Bauherrschaft fragen als Nächstes «und was ist tatsächlich
+     gegangen?». */
+  const istZeilen = m => {
+    if (!m.istPosten || !m.istPosten.length) return '';
+    const abw = rp5(m.ist - m.betrag);
+    return `<table class="t zp-t zp-detail zp-istblock"><tbody>
+      <tr class="zp-istkopf"><td colspan="2"><b>tatsächlich bezahlt</b> in ${zpMonLabel(m.key)}</td>
+        <td class="num"><b>${moneyA(m.ist)}</b></td></tr>
+      ${m.istPosten.map(x => `<tr class="zp-pos zp-ist">
+        <td class="num zp-nr">${esc(x.v.bkp || '')}</td>
+        <td>${esc(x.v.gewerk || '')}${x.v.firma ? `<span class="zp-fi">${esc(x.v.firma)}</span>` : ''}
+          <span class="zp-mk ist">${esc(x.r.nr || (x.r.art === 'schluss' ? 'Schlussrechnung' : 'Akontozahlung'))}
+            · ${fmtDate(x.r.datum)}</span></td>
+        <td class="num">${moneyA(x.betrag)}</td></tr>`).join('')}
+      <tr class="zp-pos zp-istdiff"><td></td>
+        <td>geplant ${moneyA(m.betrag)} · bezahlt ${moneyA(m.ist)}</td>
+        <td class="num">${Math.abs(abw) < 0.05 ? 'wie geplant' : (abw > 0 ? '+' : '') + moneyA(abw)}</td></tr>
+    </tbody></table>`;
+  };
+
+  const monatBloecke = r.monate.map((m, i) => {
+    const rechnung = monatEnde(m.key, versatz);
+    const faellig = addDays(rechnung, frist);
+
+    /* Ist eine Rechnung bereits gestellt und weicht sie vom Plan ab, muss
+       das dastehen. «Eigentlich 7'000, bezahlt 20'000» ohne Vermerk wäre
+       eine stille Korrektur — und die fällt spätestens der Bank auf. */
+    /* Ein abgeschlossener Monat ist abgeschlossen.
+       -----------------------------------------------------------------
+       Hier stand bis zum 14.08.2026 bei jeder verrechneten Position, was
+       ursprünglich für sie geplant war und um wie viel es abweicht —
+       «geplant 10'339.80, verrechnet 35'000.00 — +24'660.20».
+
+       Das war doppelt falsch. Erstens ist die Abweichung schon
+       ausgeglichen: Der «Stand heute» verteilt den RESTBETRAG auf die
+       verbleibenden Monate, wer im Juli mehr bekommen hat, bekommt
+       nachher entsprechend weniger. Zweitens wird nicht rückwärts
+       geplant. Geplant wird ab heute — auf der Grundlage dessen, was
+       tatsächlich geflossen ist. Eine Abweichung gegenüber einem Plan,
+       den es so nicht mehr gibt, ist keine Auskunft, sondern Lärm. */
+    const zeilen = m.teile.map(t => `<tr class="zp-pos${t.schluss ? ' zp-sr' : ''}">
+        <td class="num zp-nr">${esc(t.v.bkp || '')}</td>
+        <td>${esc(t.v.gewerk || '')}${t.v.firma ? `<span class="zp-fi">${esc(t.v.firma)}</span>` : ''}
+          ${/* Nur die Ausnahme wird bezeichnet — der Normalfall «Akonto»
+                stand vorher auf fast jeder Zeile und sagte nichts. */
+            t.ist ? ''
+                  : t.rueckbehalt ? `<span class="zp-mk sr">Rückbehalt ${Math.round(t.rueckbehalt * 100)} % · frei ${t.steuerJahr}</span>`
+                  : t.schluss ? `<span class="zp-mk sr">Schlussrechnung ${t.steuerJahr}</span>`
+                              : ''}</td>
+        <td class="num">${moneyA(t.anteil)}</td></tr>`).join('');
+
+    const rund = Math.abs(m.rundung) >= 0.05
+      ? `<tr class="zp-pos zp-rund"><td></td><td>Rundung ${r.schritt ? 'auf ' + moneyA(r.schritt) : 'der auflaufenden Summe'}</td><td class="num">${(m.rundung > 0 ? '+' : '') + moneyA(m.rundung)}</td></tr>` : '';
+    const srSumme = m.teile.filter(t => t.schluss).reduce((a, t) => a + t.anteil, 0);
+    /* Positionen ohne Bautermin tragen keinen Ausführungsmonat – bei ihnen
+       wäre «Ausführung Juni 2026» eine Behauptung. */
+    const nurLage = m.teile.length && m.teile.every(t => zeitlageOf(t.v));
+    const erledigt = !!m.ist;
+
+    /* Der Betrag am Block: Erst wenn die Seiten stehen, lässt sich der
+       Übertrag ausrechnen — dann wird er hier abgelesen. */
+    return `<div class="zp-mon${erledigt ? ' zp-mon-ist' : ''}" data-betrag="${m.betrag}">
+      <div class="zp-mon-k">
+        <span class="zp-mon-n">${i + 1}</span>
+        <span class="zp-mon-t">${zpMonLabel(m.key)}</span>
+        ${erledigt ? '<span class="zp-mon-e">verrechnet</span>' : ''}
+        <span class="zp-mon-p">${m.anteilPct.toFixed(1)} %</span>
+        <span class="zp-mon-b">${moneyA(m.betrag)}</span>
+      </div>
+      <div class="zp-mon-w">
+        ${erledigt
+          ? `<span><b>Rechnungen eingegangen</b> im ${zpMonLabel(m.key)}</span>`
+          : `${nurLage ? '' : `<span><b>Ausführung</b> ${zpMonLabel(m.key)}</span>`}
+             <span><b>Rechnung</b> bis ${fmtDate(rechnung)}</span>
+             <span><b>Zahlbar bis</b> ${fmtDate(faellig)}</span>`}
+        ${srSumme > 0.05 ? `<span class="zp-mon-sr"><b>Schlussrechnungen</b> ${moneyA(srSumme)}</span>` : ''}
+        <span class="zp-mon-c">kumuliert ${moneyA(m.cum)}</span>
+      </div>
+      <table class="t zp-t zp-detail"><tbody>${zeilen}${rund}</tbody></table>
+      ${/* Im «Stand heute» IST der Monat bereits das Tatsächliche — dann
+           wäre eine zweite Tabelle mit denselben Zahlen daneben. Die
+           Gegenüberstellung gehört in den geplanten Modus, wo sie sagt,
+           was aus dem Plan geworden ist. */
+        istModus ? '' : istZeilen(m)}
+    </div>`;
+  });
+
+  /* Seitenweise umbrechen und den Übertrag setzen. Ein Monatsblock ist
+     unterschiedlich hoch, also wird nach Höhe geschätzt statt nach Anzahl.
+
+     Diese Schätzung ist seit dem 14.08.2026 nur noch die Vorverteilung:
+     Im Druckfenster misst DRUCK_UMBRUCH_JS nach und schiebt weiter, was
+     wirklich nicht passt. Deshalb darf hier grosszügiger gefüllt werden —
+     zu volle Blätter werden gerettet, zu leere blieben leer. */
+  /* ---- Ein einziger Fluss, keine Vorabteilung ----
+     Bis zum 14.08.2026 wurde hier nach Millimetern geschätzt, welcher
+     Monat auf welche Seite kommt — und im Druckfenster hat die Messung
+     das Ergebnis noch einmal korrigiert. Zwei Systeme, die dasselbe
+     entscheiden: Die Schätzung liess Seiten fast leer, die Messung schob
+     nach, und dazwischen entstanden die Lücken.
+
+     Jetzt entscheidet nur noch die Messung. Sie kennt Kopf- und
+     Fusszeile und teilt den Inhalt in das, was wirklich dazwischen
+     passt. Der Übertrag lässt sich vorher gar nicht ausrechnen — er
+     hängt davon ab, wo getrennt wird — und wird deshalb dort gesetzt,
+     wo die Seiten feststehen: im Druckfenster, nach dem Umbruch. */
+  const zahlTabelle = [monatBloecke.join('')];
+
+  /* ---- Seite 1: die Zahlungen, ohne Aufschlüsselung ----
+     Wer den Plan bekommt, will zuerst wissen, wann wie viel fällig wird.
+     Die Herleitung interessiert an dieser Stelle niemanden — sie steht
+     nicht mehr im Dokument. Die Aufschlüsselung folgt ab Seite zwei. */
+  const uebersicht = `
+    <table class="t zp-t zp-ueb"><thead><tr>
+      <th class="num" style="width:30px">Nr.</th>
+      <th style="width:110px">Ausführung</th>
+      <th style="width:104px">Rechnung bis</th>
+      <th style="width:104px">Zahlbar bis</th>
+      <th class="num" style="width:60px">Anteil</th>
+      <th class="num" style="width:120px">Betrag CHF</th>
+      <th class="num" style="width:130px">Kumuliert CHF</th>
+    </tr></thead><tbody>
+      ${r.monate.map((m, i) => {
+        const re = monatEnde(m.key, versatz), fa = addDays(re, frist);
+        return `<tr${m.ist ? ' class="zp-ist"' : ''}>
+          <td class="num zp-nr">${i + 1}</td>
+          <td><b>${zpMonLabel(m.key)}</b>${m.ist ? ' <span class="zp-mk ist">verrechnet</span>' : ''}</td>
+          <td class="zp-zt">${m.ist ? '–' : fmtDate(re)}</td>
+          <td class="zp-zt">${m.ist ? '–' : fmtDate(fa)}</td>
+          <td class="num zp-zt">${m.anteilPct.toFixed(1)} %</td>
+          <td class="num"><b>${moneyA(m.betrag)}</b></td>
+          <td class="num zp-zt">${moneyA(m.cum)}</td>
+        </tr>`;
+      }).join('')}
+      <tr class="tot"><td></td><td colspan="4"><b>Total ${r.monate.length} Zahlungen</b></td>
+        <td class="num"><b>${moneyA(istModus ? r.soll : r.total)}</b></td><td></td></tr>
+    </tbody></table>
+    <p class="zp-fuss">Alle Beträge ${ansichtNote()}${r.schritt ? ` · gerundet auf ${moneyA(r.schritt)}` : ''}${istModus ? ` · Stand ${fmtDate(r.stichtag)}, bereits verrechnete Monate mit den tatsächlichen Beträgen` : ''}</p>`;
+
+  /* Kopf- und Fusszeile auf jeder Seite — mit echten Seiten.
+
+     Der naheliegende Weg wäre `position: fixed`; Chrome soll solche
+     Elemente auf jedem Druckblatt wiederholen. In der Praxis tut er es
+     unzuverlässig: Am 14.08.2026 landete die Kopfzeile am Fuss der ersten
+     Seite und die Fusszeile erschien gar nicht.
+
+     Deshalb hier derselbe Weg wie beim Bauprogramm: Jede Seite ist ein
+     eigener Kasten fester Höhe mit Kopf, Inhalt und Fuss. Nichts wird dem
+     Umbruch überlassen, und die Seitenzahl stimmt, weil wir sie selber
+     zählen. */
+  const bu = state.buero || BUERO;
+  /* Die Akzentfarbe. Vorgabe ist das Bordeaux aus dem Signet von
+     P. Hefti Bauberatung; über Einstellungen → Büro lässt sie sich auf
+     jedes andere Hausfarbe stellen. */
+  const AK = /^#[0-9a-f]{6}$/i.test(String(bu.akzent || '')) ? bu.akzent : '#8d2a55';
+  const kopfLogo = bu.logo
+    ? `<img src="${bu.logo}" class="zk-logo">`
+    : `<span class="zk-name">${esc(bu.firma || 'Gerber-Soft')}</span>`;
+  const buZeile = [bu.firma || 'Gerber-Soft', bu.strasse, bu.plzort, bu.tel, bu.email].filter(Boolean).map(esc).join(' · ');
+
+  const blaetter = [];
+  const blatt = (inhalt, unter) => blaetter.push({ inhalt, unter: unter || 'Bauherrschaft' });
+
+  /* Was keinen Platz im Plan gefunden hat, gehört auf das Blatt — nicht
+     nur auf den Bildschirm. Sonst reicht man einer Bank einen Plan über
+     null Franken, während daneben 126'000 ohne Termin liegen, und das
+     Blatt sagt kein Wort davon. Beim Bauvorhaben Kunoweg 20 war genau
+     das der Fall: kein einziges Gewerk mit Bauterminen. */
+  /* Aus dem GRUNDplan — der «Stand heute» kennt kein `fehlend`, und die
+     Frage, was gar keinen Termin hat, hängt ohnehin nicht am Stichtag. */
+  const fehlt = grund.fehlend || [];
+  const fehltImPlan = fehlt.reduce((a, x) => a + x.betrag, 0);
+  const warnung = fehltImPlan > 0.05 ? `
+    <div class="zp-warn" style="margin-bottom:6mm">
+      <b>${fehlt.length} Position${fehlt.length === 1 ? '' : 'en'} über ${moneyA(fehltImPlan)}
+      ${fehlt.length === 1 ? 'ist' : 'sind'} in diesem Plan nicht enthalten</b> —
+      ${fehlt.length === 1 ? 'ihr fehlt' : 'ihnen fehlen'} Bautermine und eine Zeitlage.
+      Die Aufstellung der Baukosten weist ${moneyA(grund.total + fehltImPlan)} aus.
+    </div>` : '';
+
+  const zeigeBauherr = umfang === 'bauherr' || umfang === 'alle';
+  if (zeigeBauherr) {
+    blatt(`${eckwerte}${warnung}${uebersicht}`);
+    zahlTabelle.forEach((seitenHtml, i) => blatt(
+      `<div class="gw">Aufschlüsselung je Monat${i ? ' <span class="gw-f">(Fortsetzung)</span>' : ''}</div>${seitenHtml}`));
+  }
+
+  /* ---- Die steuerliche Zuteilung ----
+     Sie gehört der Bauherrschaft, nicht der Bank: Hier steht, welche
+     Position als Unterhalt gilt, welche als Energiemassnahme, was
+     wertvermehrend und damit nicht abziehbar ist — und in welchem Jahr
+     die Schlussrechnung deshalb gestellt wird. Das ist die Grundlage,
+     auf der jemand widersprechen kann, und dafür muss es auf Papier. */
+  if (umfang === 'bauherr' || umfang === 'alle' || umfang === 'steuern') {
+    steuerBlaetter(p).forEach(html => blatt(html, 'Steuerliche Zuteilung'));
+  }
+
+  /* Die Unterschrift gehört unter den Plan für die Bauherrschaft, nicht
+     unter das letzte Unternehmerblatt — das geht an einen Dritten. */
+  const letzteBauherr = blaetter.length - 1;
+
+  /* ---- Hinten je Unternehmer ein eigenes Blatt ----
+     Damit ist es abtrennbar und geht so, wie es ist, an ihn hinaus. Es
+     beantwortet die drei Fragen, die ein Unternehmer an einen Zahlungsplan
+     hat: Was habe ich bekommen, was steht noch aus, und wann kommt es. */
+  const heuteMon = todayIso().slice(0, 7);
+  const zeigeUnternehmer = umfang !== 'bauherr';
+  (zeigeUnternehmer
+      ? unternehmerPlaene(p, { min: Number(z.untSchwelle) || 0, schritt: Number(z.untSchritt) || 0 })
+      : [])
+    .filter(g => !g.klein)
+    .filter(g => !nurEiner || g.key === nurEiner)
+    .forEach(g => {
+      const posten = g.positionen.map(v => {
+        const lage = zeitlageOf(v);
+        return `<tr>
+          <td><span class="zp-nr">${esc(v.bkp || '')}</span> ${esc(v.gewerk || '')}</td>
+          <td class="zp-zt">${(v.bauStart && v.bauEnde) ? fmtDate(v.bauStart) + ' – ' + fmtDate(v.bauEnde)
+              : lage ? esc(ZEITLAGEN[lage].label) : '–'}</td>
+          <td class="num">${moneyA(kostenZeile(v).prognose)}</td>
+        </tr>`;
+      }).join('');
+
+      const bez = g.zahlungen.length
+        ? `<table class="t zp-t"><thead><tr><th>Datum</th><th>Rechnung</th><th class="num">Betrag</th></tr></thead>
+           <tbody>${g.zahlungen.map(x => `<tr>
+             <td>${fmtDate(x.r.datum)}</td>
+             <td>${esc(x.r.nr || x.r.text || (x.r.art === 'schluss' ? 'Schlussrechnung' : 'Akontozahlung'))}</td>
+             <td class="num">${moneyA(x.betrag)}</td></tr>`).join('')}
+           <tr class="tot"><td colspan="2"><b>Summe bereits geleistet</b></td><td class="num"><b>${moneyA(g.bezahlt)}</b></td></tr>
+           </tbody></table>`
+        : '<p class="zp-p">Bisher wurde keine Zahlung geleistet.</p>';
+
+      /* Ab jetzt heisst: ab dem laufenden Monat. Was davor liegt, ist
+         Geschichte und steht oben bei den geleisteten Zahlungen. */
+      const offen = g.monate.filter(m => m.key >= heuteMon);
+      /* Der Takt DIESES Unternehmers — nicht der des Projekts. */
+      const vg = versatzVon(g.positionen[0], versatz);
+      let kum = 0;
+      const kommt = offen.length
+        ? `<table class="t zp-t"><thead><tr>
+             <th>Ausführung</th><th>Rechnung bis</th><th>Zahlbar bis</th><th class="num">Betrag</th><th class="num">kumuliert</th>
+           </tr></thead><tbody>${offen.map(m => {
+             kum = rp5(kum + m.betrag);
+             const rg = monatEnde(m.key, vg);
+             return `<tr><td><b>${zpMonLabel(m.key)}</b></td><td class="zp-zt">${fmtDate(rg)}</td>
+               <td class="zp-zt">${fmtDate(addDays(rg, frist))}</td>
+               <td class="num">${moneyA(m.betrag)}</td><td class="num zp-nr">${moneyA(kum)}</td></tr>`;
+           }).join('')}
+           <tr class="tot"><td colspan="3"><b>Summe geplant</b></td><td class="num"><b>${moneyA(kum)}</b></td><td></td></tr>
+           </tbody></table>`
+        : '<p class="zp-p">Für die kommenden Monate ist keine Zahlung mehr vorgesehen.</p>';
+
+      blatt(`
+        <div class="ek" style="margin-bottom:7mm">
+          <div class="ek-links">
+            <div class="ek-f"><span class="ek-k">Unternehmer</span><span class="ek-w">${esc(g.firma || g.name)}
+              ${g.sammel ? '<span class="ek-sub">Sammelvergabe · ein Werkvertrag über alle Positionen</span>' : ''}</span></div>
+          </div>
+          <div class="ek-rechts">
+            <div class="ek-k">Auftragssumme ${ansichtNote()}</div>
+            <div class="ek-gross">${moneyA(g.betrag)}</div>
+            <div class="ek-z"><span>bereits geleistet</span><span>${moneyA(g.bezahlt)}</span></div>
+            <div class="ek-z stark"><span>noch offen</span><span>${moneyA(rp5(g.betrag - g.bezahlt))}</span></div>
+          </div>
+        </div>
+        <div class="gw">Auftrag</div>
+        <table class="t zp-t"><thead><tr><th>Position</th><th>Bauzeit</th><th class="num">Betrag</th></tr></thead>
+          <tbody>${posten}</tbody></table>
+        <div class="gw">Bereits geleistete Zahlungen</div>${bez}
+        <div class="gw">Ab jetzt geplante Zahlungen</div>${kommt}
+        <p class="zp-fuss">Rechnungstellung ${vg === 0 ? 'jeweils nach Monatsende' : 'jeweils ' + vg + ' Monat' + (vg > 1 ? 'e' : '') + ' nach Ausführung'}, zahlbar innert ${frist} Tagen.
+          Massgebend ist der Werkvertrag; dieser Plan ist die Grundlage für die Liquiditätsplanung.</p>`,
+        esc(g.firma || g.name));
+    });
+
+  if (!blaetter.length) { toast('Für diese Auswahl gibt es kein Blatt', 'info'); return; }
+
+  const anzahl = blaetter.length;
+  const inner = blaetter.map((b, i) => `
+    <div class="blatt">
+      <div class="zk">
+        <div class="zk-l">${kopfLogo}</div>
+        <div class="zk-m"><b>Zahlungsplan</b><span>${b.unter}</span></div>
+        <div class="zk-r">${esc([p.name, p.ort].filter(Boolean).join(', '))}<span>${fmtDate(todayIso())}${istModus ? ' · Stand heute' : ''}</span></div>
+      </div>
+      <div class="zu zu-oben"></div>
+      <div class="zi">${b.inhalt}${i === letzteBauherr ? `
+        <div class="zp-sig">
+          <div><div class="zp-line"></div>Ort und Datum</div>
+          <div><div class="zp-line"></div>Bauleitung</div>
+        </div>` : ''}</div>
+      <div class="zu zu-unten"></div>
+      <div class="zf">
+        <div>${buZeile}</div>
+        <div>Seite ${i + 1} von ${anzahl}</div>
+      </div>
+    </div>`).join('');
+
+  const css = `
+    /* Jede Seite ein eigener Kasten: Kopf oben, Inhalt dazwischen, Fuss
+       unten. Feste Höhe, damit der Fuss immer am Blattrand sitzt und nicht
+       dort, wo der Text zufällig endet. Der Briefkopf von openPrintDoc
+       bleibt weg — er wäre doppelt. */
+    @page{size:A4;margin:11mm 14mm;}
+    .page{padding:0;}
+    .lh,h1,.sub,.ft{display:none;}
+    .blatt{height:271mm;display:flex;flex-direction:column;box-sizing:border-box;
+      break-after:page;page-break-after:always;overflow:hidden;}
+    .blatt:last-child{break-after:auto;page-break-after:auto;}
+    .zi{flex:1 1 auto;min-height:0;padding-top:4mm;}
+    /* Der Übertrag gehört zum Blattrahmen, nicht zum Inhalt: Er steht
+       auf jeder Seite an derselben Stelle und ist immer gleich hoch —
+       auch leer. Nur so kennt die Messung den Platz für den Inhalt
+       schon, bevor die Beträge feststehen. Stünde er im Fluss, änderte
+       sein Text die Höhe, und der Umbruch müsste von vorn beginnen. */
+    .zu{flex:none;height:6.5mm;display:flex;align-items:center;justify-content:space-between;
+      gap:20px;font-size:11px;font-style:italic;color:#4a5462;}
+    .zu:empty{visibility:hidden;}
+    .zu-oben{border-bottom:.6px solid #e3e8ef;}
+    .zu-unten{border-top:.6px solid #e3e8ef;}
+    .zu b{font-style:normal;font-variant-numeric:tabular-nums;}
+    .zu.tot{color:#1b2533;font-weight:700;font-style:normal;border-top:1.2px solid #46505e;}
+
+    /* Ein Architekturbüro setzt Dokumente, es füllt keine Formulare aus:
+       viel Weissraum, klare Hierarchie, eine Akzentfarbe aus dem Logo,
+       Haarlinien statt Kästen, Zahlen tabellarisch rechtsbündig. */
+    .blatt{color:#2b3441;}
+    .zk{flex:none;display:flex;align-items:flex-end;gap:7mm;
+      padding-bottom:2.6mm;border-bottom:.8px solid ${AK};}
+    .zk-l{flex:none;padding-right:7mm;border-right:.6px solid #d8dee8;}
+    .zk-logo{max-height:15mm;max-width:54mm;display:block;}
+    .zk-name{font-weight:700;font-size:14px;letter-spacing:.2px;color:#1b2533;}
+    .zk-m{flex:1;min-width:0;}
+    .zk-m b{display:block;font-size:15px;font-weight:700;color:${AK};letter-spacing:1.4px;
+      text-transform:uppercase;line-height:1.15;}
+    .zk-m span{display:block;font-size:9px;color:#8a929d;letter-spacing:1.2px;text-transform:uppercase;margin-top:.6mm;}
+    .zk-r{flex:none;text-align:right;font-size:9.5px;color:#46505e;line-height:1.45;white-space:nowrap;}
+    .zk-r span{display:block;color:#8a929d;font-size:8.5px;}
+
+    .zf{flex:none;display:flex;justify-content:space-between;align-items:baseline;gap:8mm;
+      padding-top:1.8mm;border-top:.6px solid #dfe4ea;font-size:7.5px;color:#8a929d;letter-spacing:.2px;}
+    .zf div:last-child{white-space:nowrap;font-variant-numeric:tabular-nums;}
+
+    /* Dokumentkopf */
+    .ek{display:flex;gap:12mm;align-items:flex-start;margin:0 0 9mm;}
+    .ek-links{flex:1;min-width:0;display:flex;flex-direction:column;gap:5.5mm;}
+    .ek-reihe{display:flex;gap:10mm;}
+    .ek-f{min-width:0;}
+    .ek-k{display:block;font-size:7.5px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;
+      color:#9aa2ad;margin-bottom:1mm;}
+    .ek-w{display:block;font-size:11px;line-height:1.35;color:#1b2533;}
+    .ek-sub{display:block;font-size:9.5px;color:#6b7480;font-weight:400;}
+    .ek-rechts{flex:none;width:62mm;text-align:right;border-left:.6px solid #dfe4ea;padding-left:10mm;}
+    .ek-gross{font-size:23px;font-weight:300;letter-spacing:-.3px;color:${AK};
+      font-variant-numeric:tabular-nums;line-height:1.1;margin:.6mm 0 3mm;}
+    .ek-z{display:flex;justify-content:space-between;gap:6mm;font-size:9.5px;color:#6b7480;line-height:1.75;}
+    .ek-z span:last-child{font-variant-numeric:tabular-nums;color:#2b3441;}
+    .ek-z.stark{font-weight:700;color:#1b2533;border-top:.6px solid #dfe4ea;margin-top:1mm;padding-top:1mm;}
+    .ek-z.stark span:last-child{color:#1b2533;}
+
+    /* Tabellen */
+    .zp-t{width:100%;border-collapse:collapse;}
+    .zp-t th{font-size:7.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#9aa2ad;
+      text-align:left;padding:0 8px 1.6mm;border-bottom:.8px solid ${AK};}
+    .zp-t th.num{text-align:right;}
+    .zp-t td{border-bottom:.4px solid #eceff3;font-variant-numeric:tabular-nums;}
+    .zp-ueb{margin-top:0;}
+    .zp-ueb td{padding:2.1mm 8px;font-size:10.5px;}
+    .zp-ueb tr.tot td{border-bottom:none;border-top:.8px solid #46505e;padding-top:2.4mm;font-size:11.5px;background:none;}
+    .zp-ueb tr.zp-ist td{background:#f4f6f9;color:#4a5462;}
+    .zp-fuss{font-size:9.5px;color:#6b7480;margin:6px 0 0;}
+    .zp-detailteil{break-before:page;}
+    .zp-abw{display:block;font-size:9px;color:#b45309;font-weight:600;margin-top:1px;}
+    .zp-mk.ist{color:#4a5462;background:#eef1f5;border:.4px solid #c9d2de;}
+    .zp-eck{max-width:460px;}
+    .zp-eck td{padding:4px 8px;}
+    .zp-her{margin:6px 0 18px;padding-left:20px;font-size:11px;line-height:1.65;}
+    .zp-her li{margin-bottom:7px;}
+    .zp-p{font-size:10.5px;color:#4a5462;line-height:1.6;margin:2px 0 9px;max-width:600px;}
+    .zp-t td,.zp-t th{padding:3.5px 8px;font-size:10.5px;}
+    .zp-nr{color:#6b7480;font-variant-numeric:tabular-nums;}
+    /* Eine Position, eine Zeile. Vorher stand die Firma auf einer eigenen
+       und das Merkzeichen auf einer dritten — sechzehn Positionen füllten
+       damit ein ganzes Blatt, und ein Zahlungsplan über 29 Seiten liest
+       niemand. Alles auf eine Zeile, getrennt durch einen Mittelpunkt. */
+    .zp-fi{color:#6b7480;font-size:9.5px;}
+    .zp-fi::before{content:"·";margin:0 5px;color:#c9d2de;}
+    .zp-pr{display:block;color:#a16207;font-size:9.5px;}
+    .zp-zt{font-size:10px;color:#4a5462;white-space:nowrap;}
+    .zp-t tr.ue td{background:#f4f6f9;font-style:italic;color:#4a5462;border-top:1px solid #c9d2de;}
+    .zp-t tr.tot td{background:#eef1f5;border-top:1.5px solid #46505e;font-size:11.5px;}
+    .zp-blatt.brk{break-before:page;}
+    /* --- Monatsblock: Kopfzeile, Rechnungslauf, Positionen --- */
+    /* Ein Monatsblock darf über die Seite hinweg brechen — sonst bliebe
+       eine halbe Seite leer, nur weil er als Ganzes nicht mehr passt.
+       Den Umbruch setzt DRUCK_UMBRUCH_JS an einer Zeilengrenze. */
+    .zp-mon{margin-bottom:9px;}
+    .zp-mon.fortsetzung .zp-mon-t::after{content:" (Fortsetzung)";font-weight:400;
+      font-size:9.5px;color:#6b7480;}
+    .zp-mon.fortsetzung .zp-mon-w{display:none;}
+    .zp-mon-k{display:flex;align-items:baseline;gap:9px;background:#eef1f5;border-left:3px solid #46505e;padding:3.5px 9px;}
+    .zp-mon-n{flex:none;width:15px;font-size:9.5px;color:#6b7480;font-weight:700;}
+    .zp-mon-t{font-weight:800;font-size:11.5px;color:#1b2533;}
+    .zp-mon-p{font-size:10px;color:#4a5462;background:#fff;border:1px solid #c9d2de;padding:0 5px;border-radius:0;}
+    .zp-mon-b{margin-left:auto;font-weight:800;font-size:11.5px;font-variant-numeric:tabular-nums;}
+    .zp-mon-w{display:flex;gap:14px;flex-wrap:wrap;font-size:9.5px;color:#4a5462;padding:2.5px 9px 2.5px 27px;border-bottom:1px solid #e3e8ef;}
+    .zp-mon-w b{color:#1b2533;font-weight:700;}
+    .zp-mon-c{margin-left:auto;color:#6b7480;}
+    .zp-mon-ist .zp-mon-k{background:#e6e9ee;border-left-color:#9aa4b1;color:#4a5462;}
+    .zp-mon-ist .zp-mon-t{color:#4a5462;}
+    .zp-mon-e{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#5b6573;background:#fff;border:1px solid #c9d2de;padding:0 5px;}
+    .zp-warn{border-left:3px solid #b45309;background:#fffbeb;padding:6px 10px;}
+    .zp-quote{display:inline-block;width:38px;height:5px;background:#e3e8ef;margin-right:5px;vertical-align:middle;}
+    .zp-quote-b{display:block;height:100%;background:#7d8286;}
+    .zp-detail{margin:0;}
+    /* Was wirklich bezahlt wurde — abgesetzt vom Plan darüber, damit man
+       die beiden nie verwechselt. */
+    .zp-istblock{margin-top:1.6mm;border-top:.6px dashed #c9d2de;}
+    .zp-istkopf td{background:#f4f6f9;color:#2b3441;padding-top:1.4mm;}
+    .zp-istdiff td{color:#4a5462;font-style:italic;border-bottom:none;}
+    .zp-detail td{border-bottom:1px solid #f2f4f8;padding:1.4px 9px;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .zp-detail tr.zp-pos td:first-child{width:52px;padding-left:27px;}
+    .zp-detail tr.zp-pos td:nth-child(2){max-width:0;}
+    .zp-detail tr.zp-pos td:last-child{width:120px;}
+    .zp-rund td{color:#6b7480;font-style:italic;}
+    /* Akonto oder Schlussrechnung – der steuerliche Unterschied auf einen Blick */
+    .zp-mk{display:inline-block;font-size:5.6px;font-weight:700;line-height:1.5;padding:0 3px;margin-left:4px;vertical-align:middle;}
+    .zp-mk.sr{color:#0b6b52;background:rgba(13,148,136,.13);border:.4px solid rgba(13,148,136,.45);}
+    .zp-mk.ak{color:#6b7480;border:.4px solid #d8dee8;}
+    .zp-detail tr.zp-sr td{background:rgba(13,148,136,.05);}
+    .zp-mon-sr{color:#0b6b52;font-weight:600;}
+    .zp-ue{display:flex;justify-content:space-between;gap:20px;font-size:11px;font-style:italic;color:#4a5462;
+      background:#f4f6f9;border-top:1px solid #c9d2de;padding:4px 9px;margin-bottom:10px;}
+    .zp-ue span{font-variant-numeric:tabular-nums;}
+    .zp-ue-tot{font-style:normal;font-weight:800;font-size:12px;color:#1b2533;background:#eef1f5;border-top:1.5px solid #46505e;}
+    .gw.brk-vor{break-before:page;}
+    .zp-schluss{margin-top:22px;}
+    .zp-sig{display:flex;gap:40px;margin-top:26px;font-size:10px;color:#6b7480;}
+    .zp-sig>div{flex:1;max-width:240px;}
+    .zp-line{border-top:1px solid #46505e;margin-bottom:4px;}`;
+
+  openPrintDoc('Zahlungsplan Bauherrschaft',
+    `${esc(p.name)}${p.ort ? ' · ' + esc(p.ort) : ''} · Stand ${fmtDate(todayIso())}`,
+    inner, { extraCss: css });
+}
+
+/** Wie uebertragTabelle, aber die Beträge stehen in der DRITTEN Spalte
+    (davor Nummer und Bezeichnung). Der Übertrag muss dorthin, wo die
+    Zahlen stehen — sonst steht er in der Nummernspalte. */
+function uebertragTabelleNr(o) {
+  const zeilen = o.zeilen || [];
+  const proSeite = Math.max(4, o.proSeite || 30);
+  const spalten = o.spalten || [];
+  const nach = spalten.length - 3;                 // Spalten rechts vom Betrag
+  const seiten = [];
+  for (let i = 0; i < zeilen.length; i += proSeite) seiten.push(zeilen.slice(i, i + proSeite));
+  if (!seiten.length) seiten.push([]);
+
+  const kopf = `<thead><tr>${spalten.map(s => `<th${s.num ? ' class="num"' : ''}${s.breite ? ` style="width:${s.breite}"` : ''}>${s.titel}</th>`).join('')}</tr></thead>`;
+  let gelaufen = 0;
+
+  return seiten.map((teil, si) => {
+    const vorher = gelaufen;
+    const zeilenHtml = teil.map(z => { gelaufen += (Number(z.betrag) || 0); return `<tr>${z.zellen.join('')}</tr>`; }).join('');
+    const letzte = si === seiten.length - 1;
+    const merk = (klasse, text, wert) =>
+      `<tr class="${klasse}"><td></td><td>${klasse === 'tot' ? '<b>' + esc(text) + '</b>' : esc(text)}</td><td class="num">${klasse === 'tot' ? '<b>' + money(wert) + '</b>' : money(wert)}</td>${'<td></td>'.repeat(Math.max(0, nach))}</tr>`;
+    const oben = si > 0 ? merk('ue', 'Übertrag von Seite ' + si, vorher) : '';
+    const unten = letzte ? merk('tot', o.totalLabel || 'Total', gelaufen)
+                         : merk('ue', 'Übertrag auf Seite ' + (si + 2), gelaufen);
+    return `<div class="zp-blatt${si > 0 ? ' brk' : ''}">
+      ${si > 0 && o.titel ? `<div class="gw">${esc(o.titel)} <span class="gw-f">(Fortsetzung)</span></div>` : ''}
+      <table class="t zp-t">${kopf}<tbody>${oben}${zeilenHtml || `<tr><td colspan="${spalten.length}" class="muted">Keine Positionen.</td></tr>`}${unten}</tbody></table>
+    </div>`;
+  }).join('');
+}
+
 function pdfRechnungskontrolle(pid) {
   const p = findProjekt(pid); if (!p) return;
   const gw = gewerkeSorted(p).filter(v => isVergeben(v) || (v.rechnungen || []).length);
@@ -10944,7 +15235,7 @@ function pdfRechnungskontrolle(pid) {
   const inner = `<table class="t"><thead><tr><th>BKP</th><th>Gewerk / Firma</th><th class="num">Vergabe (Soll)</th><th class="num">Verrechnet</th><th class="num">Bezahlt</th><th class="num">Platz</th></tr></thead>
     <tbody>${rows || '<tr><td colspan="6" class="muted">Keine Daten</td></tr>'}</tbody>
     <tfoot><tr><td colspan="2"><b>Total</b></td><td class="num"><b>${money(tSoll)}</b></td><td class="num"><b>${money(tFak)}</b></td><td class="num"><b>${money(tBez)}</b></td><td class="num"><b>${money(tPlatz)}</b></td></tr></tfoot></table>
-    <p class="muted" style="font-size:10.5px;margin-top:8px">Platz = Vergabe-Soll (WV + genehmigte Nachträge) − bereits verrechnet. Rot = Überschreitung (keine Platz mehr).</p>`;
+    <p class="muted" style="font-size:var(--t-2xs, 10.5px);margin-top:8px">Platz = Vergabe-Soll (WV + genehmigte Nachträge) − bereits verrechnet. Rot = Überschreitung (keine Platz mehr).</p>`;
   openPrintDoc('Rechnungskontrolle', `${esc(p.name)} · Stand ${fmtDate(todayIso())}`, inner);
 }
 
@@ -10956,22 +15247,22 @@ function pdfKostenschaetzung(pid) {
     const pos = v.ksPositionen || [];
     let r = `<tr><td>${esc(v.bkp || '')}</td><td><b>${esc(v.gewerk || '')}</b>${v.beschrieb ? '<br><span style="color:#555">' + esc(v.beschrieb) + '</span>' : ''}</td><td class="num">${pos.length ? '' : chf(kv)}</td></tr>`;
     pos.forEach(po => r += `<tr><td></td><td style="padding-left:20px;color:#333">${esc(po.text || 'Position')}</td><td class="num">${chf(po.betrag)}</td></tr>`);
-    if (pos.length) r += `<tr><td></td><td style="text-align:right;color:#777;font-size:10.5px">Zwischensumme ${esc(v.gewerk || '')}</td><td class="num"><b>${chf(kv)}</b></td></tr>`;
+    if (pos.length) r += `<tr><td></td><td style="text-align:right;color:#777;font-size:var(--t-2xs, 10.5px)">Zwischensumme ${esc(v.gewerk || '')}</td><td class="num"><b>${chf(kv)}</b></td></tr>`;
     return r;
   }).join('') : '<tr><td colspan="3" class="muted">Keine Positionen erfasst.</td></tr>';
   const inner = `<table class="t"><thead><tr><th style="width:70px">BKP</th><th>Beschrieb / Arbeitsgattung</th><th class="num" style="width:150px">Kosten</th></tr></thead>
     <tbody>${rows}<tr><td></td><td><b>Gesamtkosten (Kostenschätzung)</b></td><td class="num"><b>${chf(tot)}</b></td></tr></tbody></table>
-    <p class="muted" style="margin-top:12px;font-size:10.5px">Kostenschätzung – Genauigkeit gemäss Projektstand (Richtwert ± 15–25 %). Alle Beträge exkl. MwSt, sofern nicht anders vermerkt.</p>`;
+    <p class="muted" style="margin-top:12px;font-size:var(--t-2xs, 10.5px)">Kostenschätzung – Genauigkeit gemäss Projektstand (Richtwert ± 15–25 %). Alle Beträge exkl. MwSt, sofern nicht anders vermerkt.</p>`;
   openPrintDoc('Kostenschätzung', `${esc(p.name)} · ${esc(p.ort)} · Bauherr: ${esc(p.bauherr)} · Stand ${fmtDate(todayIso())}`, inner);
 }
 
 function actPdfBaukosten(pid) {
   const p = findProjekt(pid);
   openModal('Baukostenübersicht drucken', `
-    <label class="field" style="margin-top:0">Deckblatt-Einleitung <span class="muted" style="font-weight:400;font-size:11.5px">– optionaler Begleittext aufs Deckblatt</span>
+    <label class="field" style="margin-top:0">Deckblatt-Einleitung <span class="muted" style="font-weight:400;font-size:var(--t-xs, 11.5px)">– optionaler Begleittext aufs Deckblatt</span>
       <textarea class="input" id="bk_einleitung" rows="3" placeholder="z. B. Kostenstand per … · Bemerkungen zur aktuellen Prognose …">${esc((p && p.deckblatt) || '')}</textarea>
     </label>
-    <p class="muted" style="font-size:13px;margin:14px 0 6px">Welche Variante?</p>
+    <p class="muted" style="font-size:var(--t-s, 13px);margin:14px 0 6px">Welche Variante?</p>
     <div style="display:flex;flex-direction:column;gap:8px">
       <button class="btn secondary" data-act="pdf-baukosten-mode" data-pid="${pid}" data-mode="einfach" type="button" style="justify-content:flex-start;text-align:left;height:auto;padding:11px 13px;white-space:normal"><b>Einfach</b> – eine Zeile je Gewerk · Zwischentotale · Zusammenzug</button>
       <button class="btn secondary" data-act="pdf-baukosten-mode" data-pid="${pid}" data-mode="detail" type="button" style="justify-content:flex-start;text-align:left;height:auto;padding:11px 13px;white-space:normal"><b>Detailliert</b> – zusätzlich Nachträge, Rechnungen (mit Datum) und Teilprojekt je Gewerk · Zusammenzug</button>
@@ -10994,16 +15285,16 @@ function pdfBaukosten(pid, mode) {
   const gtot = {};
 
   if (detail) {
-    // ===== Detailliert (Hefti-Stil) – Nachträge & Rechnungen als eigene Zeilen, wie in der App =====
-    const th = (name, sub, num) => `<th${num ? ' class="num"' : ''}>${name}${sub ? `<div style="color:#9aa4b1;font-weight:400;font-size:7.5px;text-transform:none;letter-spacing:0;margin-top:1px">${sub}</div>` : ''}</th>`;
+    // ===== Detailliert – Nachträge & Rechnungen als eigene Zeilen, wie in der App =====
+    const th = (name, sub, num) => `<th${num ? ' class="num"' : ''}>${name}${sub ? `<div style="color:#9aa4b1;font-weight:400;font-size:var(--t-2xs, 7.5px);text-transform:none;letter-spacing:0;margin-top:1px">${sub}</div>` : ''}</th>`;
     const THEAD = `<tr>${th('BKP')}${th('Arbeitsgattung')}${th('Unternehmer')}${th('KV', '(Schätzung)', 1)}${th('KV rev.', '(Offerte/Stand)', 1)}${th('KV +/−', '(Schätzung/Offerte)', 1)}${th('WV', '(verhandelt)', 1)}${th('Prognose', '(WV+NT / Schluss)', 1)}${th('Rechnung', '(bisher bezahlt)', 1)}${th('offen', '(noch nicht bez.)', 1)}${th('+/−', '(WV → Endsumme)', 1)}</tr>`;
     const sumRow = (label, S, italic, total) => {
       const w = s => italic ? `<i>${s}</i>` : s;
       return `<tr${total ? ' class="uev-total"' : ''} style="${total ? 'border-top:2px solid #7c1d2c' : 'background:' + (italic ? '#f3eedd' : '#f1eef0')}"><td></td><td>${w('<b>' + esc(label) + '</b>')}</td><td></td><td class="num">${w(f2(S.kv))}</td><td class="num">${w(f2(S.rev))}</td>${diffTd(S.rev - S.kv)}<td class="num">${w(f2(S.wv))}</td><td class="num">${w('<b>' + f2(S.prognose) + '</b>')}</td><td class="num">${w(f2(S.rechnung))}</td><td class="num">${w(f2(S.offen))}</td>${diffTd(S.dWvEnd)}</tr>`;
     };
     const uevTpl = (cls, label) => `<tr class="${cls}"><td></td><td><b>${label}</b></td><td></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td></tr>`;
-    const subNT = (label, betrag) => `<tr><td></td><td colspan="6" style="font-size:8.5px;color:#5a6472;padding:3px 11px">${label}</td><td class="num" style="font-size:8.5px;color:#5a6472">${f2(betrag)}</td><td></td><td></td><td></td></tr>`;
-    const subRG = (label, betrag) => `<tr><td></td><td colspan="7" style="font-size:8.5px;color:#5a6472;padding:3px 11px">${label}</td><td class="num" style="font-size:8.5px;color:#5a6472">${f2(betrag)}</td><td></td><td></td></tr>`;
+    const subNT = (label, betrag) => `<tr><td></td><td colspan="6" style="font-size:var(--t-2xs, 8.5px);color:#5a6472;padding:3px 11px">${label}</td><td class="num" style="font-size:var(--t-2xs, 8.5px);color:#5a6472">${f2(betrag)}</td><td></td><td></td><td></td></tr>`;
+    const subRG = (label, betrag) => `<tr><td></td><td colspan="7" style="font-size:var(--t-2xs, 8.5px);color:#5a6472;padding:3px 11px">${label}</td><td class="num" style="font-size:var(--t-2xs, 8.5px);color:#5a6472">${f2(betrag)}</td><td></td><td></td></tr>`;
     tot.rechnung = 0; tot.offen = 0; tot.dWvEnd = 0;   // Fix: diese Summen initialisieren (sonst NaN/falsch im Total)
     const lines = [];
     keys.forEach(g => {
@@ -11016,9 +15307,9 @@ function pdfBaukosten(pid, mode) {
         const dWv = wv != null ? endsumme - wv : 0;       // +/− nur bei vergebenen Gewerken
         sub.kv += kv; sub.rev += revEff; sub.wv += (wv || 0); sub.prognose += endsumme; sub.rechnung += fak; sub.offen += off; sub.dWvEnd += dWv;
         tot.kv += kv; tot.rev += revEff; tot.wv += (wv || 0); tot.prognose += endsumme; tot.rechnung += fak; tot.offen += off; tot.dWvEnd += dWv;
-        const note = v.notiz ? `<div style="color:#7c1d2c;font-size:8.5px;font-weight:700;line-height:1.3">${esc(v.notiz)}</div>` : '';
-        const btTag = hatBt && v.bauteil ? ` <span style="color:#9aa4b1;font-size:8px">[${esc(bauteilName(p, v.bauteil))}]</span>` : '';
-        lines.push({ u: 1, vals: [kv, revEff, wv || 0, endsumme, fak, off, dWv], html: `<tr><td>${esc(v.bkp || '')}</td><td>${esc(v.gewerk || '')}${btTag}${note}</td><td style="font-size:9px">${v.firma ? esc(v.firma) : '<span style="color:#aab2bd">nicht vergeben</span>'}</td><td class="num">${f2(kv)}</td><td class="num">${rev != null ? f2(rev) : `<span style="color:#aab2bd">${f2(kv)}</span>`}</td>${diffTd(rev != null ? rev - kv : null)}<td class="num">${wv != null ? f2(wv) : '–'}</td><td class="num"><b>${f2(endsumme)}</b>${hatSchluss ? ' <span style="color:#7c1d2c;font-size:7px">SR</span>' : ''}</td><td class="num">${fak ? f2(fak) : '–'}</td><td class="num">${f2(off)}</td>${diffTd(wv != null ? endsumme - wv : null)}</tr>` });
+        const note = v.notiz ? `<div style="color:#7c1d2c;font-size:var(--t-2xs, 8.5px);font-weight:700;line-height:1.3">${esc(v.notiz)}</div>` : '';
+        const btTag = hatBt && v.bauteil ? ` <span style="color:#9aa4b1;font-size:var(--t-2xs, 8px)">[${esc(bauteilName(p, v.bauteil))}]</span>` : '';
+        lines.push({ u: 1, vals: [kv, revEff, wv || 0, endsumme, fak, off, dWv], html: `<tr><td>${esc(v.bkp || '')}</td><td>${esc(v.gewerk || '')}${btTag}${note}</td><td style="font-size:var(--t-2xs, 9px)">${v.firma ? esc(v.firma) : '<span style="color:#aab2bd">nicht vergeben</span>'}</td><td class="num">${f2(kv)}</td><td class="num">${rev != null ? f2(rev) : `<span style="color:#aab2bd">${f2(kv)}</span>`}</td>${diffTd(rev != null ? rev - kv : null)}<td class="num">${wv != null ? f2(wv) : '–'}</td><td class="num"><b>${f2(endsumme)}</b>${hatSchluss ? ' <span style="color:#7c1d2c;font-size:var(--t-2xs, 7px)">SR</span>' : ''}</td><td class="num">${fak ? f2(fak) : '–'}</td><td class="num">${f2(off)}</td>${diffTd(wv != null ? endsumme - wv : null)}</tr>` });
         (v.nachtraege || []).forEach(n => lines.push({ u: 0.7, html: subNT(`↳ Nachtrag${n.nr ? ' ' + esc(n.nr) : ''}: ${esc(n.titel || '')} <span style="color:#9aa4b1">(${esc(n.status || 'offen')})</span>${hatBt && n.bauteil ? ' [' + esc(bauteilName(p, n.bauteil)) + ']' : ''}`, n.betrag) }));
         (v.rechnungen || []).slice().sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).forEach(r => lines.push({ u: 0.7, html: subRG(`↳ Rechnung ${r.datum ? fmtDate(r.datum) : '—'} · ${esc(r.text || '')}${r.nr ? ' ' + esc(r.nr) : ''}${hatBt ? ' [' + esc(bauteilName(p, r.bauteil !== undefined ? r.bauteil : v.bauteil)) + ']' : ''}`, rgSigned(r)) }));
         (v.budgetposten || []).forEach(b => { const src = !z.vergeben ? 'Schätzung' : (b.ist != null && b.ist !== '' ? 'nach Auswahl' : 'WV'); lines.push({ u: 0.7, html: subNT(`↳ Budget (${src})${b.eig ? ' · Eigentümerwunsch' : ''}: ${esc(b.text || 'Position')}${hatBt && b.wohnung ? ' [' + esc(einheitName(p, b.wohnung)) + ']' : ''}${b.ist != null && b.ist !== '' ? ' · nach Auswahl ' + f2(Number(b.ist) || 0) : ''}`, b.betrag) }); });
@@ -11041,14 +15332,14 @@ function pdfBaukosten(pid, mode) {
       chunk.forEach(ln => { rowsHtml += ln.html; if (ln.vals) for (let i = 0; i < 7; i++) carry[i] += ln.vals[i]; });
       const last = ci === chunks.length - 1;
       rowsHtml += last ? totalRow : uevFill('Übertrag', carry.slice());
-      sheets.push({ secTitle: ci === 0 ? 'Baukostenübersicht – detailliert' : null, html: `<table class="t" style="font-size:10px"><thead>${THEAD}</thead><tbody>${rowsHtml}</tbody></table>` });
+      sheets.push({ secTitle: ci === 0 ? 'Baukostenübersicht – detailliert' : null, html: `<table class="t" style="font-size:var(--t-2xs, 10px)"><thead>${THEAD}</thead><tbody>${rowsHtml}</tbody></table>` });
     });
     const zRow = (lbl, S) => `<tr><td>${esc(lbl)}</td><td class="num">${f2(S.kv)}</td><td class="num">${f2(S.rev)}</td>${diffTd(S.rev - S.kv)}<td class="num">${f2(S.wv)}</td><td class="num"><b>${f2(S.prognose)}</b></td><td class="num">${f2(S.rechnung)}</td><td class="num">${f2(S.offen)}</td>${diffTd(S.dWvEnd)}</tr>`;
     const kuRows = keys.map(g => zRow(g + ' ' + (BKP_GRUPPEN[g] || 'Übrige'), gtot[g])).join('');
-    const kuTable = `<table class="t" style="font-size:10.5px"><thead><tr>${th('BKP / Hauptgruppe')}${th('KV', '(Schätzung)', 1)}${th('KV rev.', '(Offerte/Stand)', 1)}${th('KV +/−', '(Schätzung/Offerte)', 1)}${th('WV', '(verhandelt)', 1)}${th('Prognose', '(WV+NT / Schluss)', 1)}${th('Rechnung', '(bisher bezahlt)', 1)}${th('offen', '(noch nicht bez.)', 1)}${th('+/−', '(WV → Endsumme)', 1)}</tr></thead>
+    const kuTable = `<table class="t" style="font-size:var(--t-2xs, 10.5px)"><thead><tr>${th('BKP / Hauptgruppe')}${th('KV', '(Schätzung)', 1)}${th('KV rev.', '(Offerte/Stand)', 1)}${th('KV +/−', '(Schätzung/Offerte)', 1)}${th('WV', '(verhandelt)', 1)}${th('Prognose', '(WV+NT / Schluss)', 1)}${th('Rechnung', '(bisher bezahlt)', 1)}${th('offen', '(noch nicht bez.)', 1)}${th('+/−', '(WV → Endsumme)', 1)}</tr></thead>
         <tbody>${kuRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total Baukosten</b></td><td class="num"><b>${f2(tot.kv)}</b></td><td class="num"><b>${f2(tot.rev)}</b></td>${diffTd(tot.rev - tot.kv)}<td class="num"><b>${f2(tot.wv)}</b></td><td class="num"><b>${f2(tot.prognose)}</b></td><td class="num"><b>${f2(tot.rechnung)}</b></td><td class="num"><b>${f2(tot.offen)}</b></td>${diffTd(tot.dWvEnd)}</tbody></table>`;
-    const legende = `<p class="muted" style="margin-top:10px;font-size:8.5px">KV (Schätzung) · KV rev. (Offerte, sonst Schätzung) · KV +/− (Schätzung gegen Offerte) · WV (verhandelte Vergabesumme) · Prognose (WV + Nachträge; <b>SR</b> = Schlussrechnung → Endsumme = effektive Rechnungssumme, offen = 0) · Rechnung (Summe eingetragener Rechnungen) · offen (Endsumme − Rechnungen) · +/− (WV gegen Endsumme). ↳ = Nachträge &amp; Rechnungen je eigene Zeile. Grün = Einsparung (tiefer), rot = Überschreitung (höher).</p>`;
-    const inklZeile = preiseInkl() ? '' : `<p style="text-align:right;margin:8px 0 0;font-size:12px"><b>Total inkl. ${mwstSatz()}% MwSt: ${f2(inklMwst(tot.prognose))}</b></p>`;
+    const legende = `<p class="muted" style="margin-top:10px;font-size:var(--t-2xs, 8.5px)">KV (Schätzung) · KV rev. (Offerte, sonst Schätzung) · KV +/− (Schätzung gegen Offerte) · WV (verhandelte Vergabesumme) · Prognose (WV + Nachträge; <b>SR</b> = Schlussrechnung → Endsumme = effektive Rechnungssumme, offen = 0) · Rechnung (Summe eingetragener Rechnungen) · offen (Endsumme − Rechnungen) · +/− (WV gegen Endsumme). ↳ = Nachträge &amp; Rechnungen je eigene Zeile. Grün = Einsparung (tiefer), rot = Überschreitung (höher).</p>`;
+    const inklZeile = preiseInkl() ? '' : `<p style="text-align:right;margin:8px 0 0;font-size:var(--t-xs, 12px)"><b>Total inkl. ${mwstSatz()}% MwSt: ${f2(inklMwst(tot.prognose))}</b></p>`;
     sheets.push({ secTitle: 'Kostenübersicht', html: kuTable + inklZeile + legende });
     openSheetDoc({ title: 'Baukostenübersicht', kicker: 'Kostenkontrolle', objekt: `${p.name}, ${p.ort}`, freitext: p.deckblatt || '', toc: true, landscape: true, sheets });
     return;
@@ -11085,13 +15376,13 @@ function pdfBaukosten(pid, mode) {
     const last = ci === chunks.length - 1;
     const cc = {}; cols.forEach(c => cc[c] = carry[c]);
     rowsHtml += last ? totalRow : uevFill('Übertrag', cc);
-    sheets.push({ secTitle: ci === 0 ? 'Baukostenübersicht' : null, html: `<table class="t" style="font-size:11px"><thead>${THEAD}</thead><tbody>${rowsHtml}</tbody></table>` });
+    sheets.push({ secTitle: ci === 0 ? 'Baukostenübersicht' : null, html: `<table class="t" style="font-size:var(--t-2xs, 11px)"><thead>${THEAD}</thead><tbody>${rowsHtml}</tbody></table>` });
   });
   const zRows = keys.map(g => `<tr><td>BKP ${esc(g)} – ${esc(BKP_GRUPPEN[g] || 'Übrige')}</td><td class="num">${chf(gtot[g].kv)}</td><td class="num">${chf(gtot[g].prognose)}</td><td class="num">${chf(gtot[g].bezahlt)}</td></tr>`).join('');
   const zusTable = `<table class="t"><thead><tr><th>Hauptgruppe</th><th class="num">Kostenschätzung</th><th class="num">Prognose</th><th class="num">Rechnung</th></tr></thead>
       <tbody>${zRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total</b></td><td class="num"><b>${chf(teil.kv)}</b></td><td class="num"><b>${chf(teil.prognose)}</b></td><td class="num"><b>${chf(teil.bezahlt)}</b></td></tr></tbody></table>`;
-  const legende = `<p class="muted" style="margin-top:10px;font-size:9.5px">KV = Kostenschätzung · KV rev. = günstigste Offerte (sonst Schätzung) · WV = Werkvertrag · NT = Nachträge · Prognose = Endsumme (WV+NT bzw. Schlussrechnung) · Bezahlt = eingetragene Rechnungen · Offen = Endsumme − Rechnungen. „Übertrag" = laufende Summe je Seite.</p>`;
-  const inklZeile = preiseInkl() ? '' : `<p style="text-align:right;margin:8px 0 0;font-size:12px"><b>Total inkl. ${mwstSatz()}% MwSt: ${chf(inklMwst(teil.prognose))}</b></p>`;
+  const legende = `<p class="muted" style="margin-top:10px;font-size:var(--t-2xs, 9.5px)">KV = Kostenschätzung · KV rev. = günstigste Offerte (sonst Schätzung) · WV = Werkvertrag · NT = Nachträge · Prognose = Endsumme (WV+NT bzw. Schlussrechnung) · Bezahlt = eingetragene Rechnungen · Offen = Endsumme − Rechnungen. „Übertrag" = laufende Summe je Seite.</p>`;
+  const inklZeile = preiseInkl() ? '' : `<p style="text-align:right;margin:8px 0 0;font-size:var(--t-xs, 12px)"><b>Total inkl. ${mwstSatz()}% MwSt: ${chf(inklMwst(teil.prognose))}</b></p>`;
   sheets.push({ secTitle: 'Kostenübersicht (Zusammenzug)', html: zusTable + inklZeile + legende });
   openSheetDoc({ title: 'Baukostenübersicht', kicker: 'Kostenkontrolle', objekt: `${p.name}, ${p.ort}`, freitext: p.deckblatt || '', toc: true, landscape: true, sheets });
 }
@@ -11109,7 +15400,7 @@ function bestellListeHtml(p) {
     const ueber = bis < t0;
     const tageBis = Math.round((dISO(bis) - today()) / 86400000);
     const stat = ueber ? '<span class="st amber">überfällig</span>' : (tageBis <= 21 ? `<span class="st blue">in ${tageBis} T</span>` : '<span class="st green">ok</span>');
-    return `<tr><td><span class="bkp-code">${esc(v.bkp || '')}</span> ${esc(v.gewerk)}<div class="muted" style="font-size:11px">${esc(v.firma || '—')}</div></td>
+    return `<tr><td><span class="bkp-code">${esc(v.bkp || '')}</span> ${esc(v.gewerk)}<div class="muted" style="font-size:var(--t-2xs, 11px)">${esc(v.firma || '—')}</div></td>
       <td><strong>${fmtDate(bis)}</strong></td>
       <td class="muted">${v.bestellfrist} T vor Einbau</td>
       <td class="muted">${fmtDate(v.bauStart)}</td>
@@ -11121,16 +15412,52 @@ function bestellListeHtml(p) {
 // Papierformate (Querformat, mm) – A2/A1/A0 sind keine CSS-Standardnamen → explizite Masse
 const PAPER = { A4: { w: 297, h: 210 }, A3: { w: 420, h: 297 }, A2: { w: 594, h: 420 }, A1: { w: 841, h: 594 }, A0: { w: 1189, h: 841 } };
 const PAPER_LADDER = ['A4', 'A3', 'A2', 'A1', 'A0'];
-// Automatisch das kleinste Format, das die ganze Zeitachse in der aktuellen Ansicht lesbar fasst
+
+/* Automatisch das kleinste Format, das die Zeitachse noch lesbar fasst.
+
+   Für die Tagesansicht reichen 1.6 mm je Spalte: Das Datum steht gedreht
+   in der Spalte, nicht quer. So passt ein halbes Baujahr tagesgenau auf
+   ein A3 — genau wie auf Yanicks Excel-Bauprogramm. Wochenenden behalten
+   dabei ihre zwei Spalten, sie werden nur farbig hinterlegt statt
+   beschriftet. */
 function autoPaperFor(zoom, totalDays, sideMm) {
   let needW;
-  if (zoom === 'tag') needW = sideMm + totalDays * 3.0;          // ~Tageszahlen lesbar (sonst KW + Tageslinien)
+  if (zoom === 'tag') needW = sideMm + totalDays * 1.6;
   else if (zoom === 'woche') needW = sideMm + Math.ceil(totalDays / 7) * 4;
   else needW = sideMm + (totalDays / 30.4) * 8;                   // Monate
   for (const k of PAPER_LADDER) { if (PAPER[k].w - 16 >= needW) return k; }
   return 'A0';
 }
 // Druck-Auswahl: ganzes Programm oder einzelne Jahre (Bauprogramm jahrweise ausdrucken)
+/* Gewähltes Blattformat im Druckdialog. Leer = die App sucht das kleinste,
+   das noch lesbar ist. Bleibt über den Dialog hinaus stehen, damit wer immer
+   auf A2 druckt, es nicht jedes Mal neu anklickt. */
+let ganttPrintPaper = (() => { try { return localStorage.getItem('so_gantt_paper') || ''; } catch (_) { return ''; } })();
+
+/* Wie die Etappen eines Gewerks aufs Blatt kommen:
+   'hintereinander' = alle auf der Gewerkzeile · 'untereinander' = je eine Zeile */
+let ganttEtappen = (() => { try { return localStorage.getItem('so_gantt_etappen') === 'untereinander' ? 'untereinander' : 'hintereinander'; } catch (_) { return 'hintereinander'; } })();
+
+/** Wie breit das Programm auf dem Papier würde — und ob es auf ein Blatt geht. */
+function ganttDruckBedarf(p, range) {
+  let vs = gewerkeSorted(p);
+  if (range) vs = vs.filter(v => v.bauStart && v.bauEnde && v.bauStart <= range.to && v.bauEnde >= range.from);
+  let min = null, max = null;
+  vs.forEach(v => { [v.bauStart, v.bauEnde].forEach(iso => { if (!iso) return; if (!min || iso < min) min = iso; if (!max || iso > max) max = iso; }); });
+  if (!min || !max) return null;
+  const ds = dISO(min), de = dISO(max);
+  const von = range ? dISO(range.from) : new Date(ds.getFullYear(), ds.getMonth() - ganttPad, 1);
+  const bis = range ? dISO(range.to) : new Date(de.getFullYear(), de.getMonth() + 1 + ganttPad, 0);
+  const tage = dayDiff(von, bis) + 1;
+  const sideMm = 56 + ((ganttSide.firma ? 1 : 0) + (ganttSide.person ? 1 : 0) + (ganttSide.natel ? 1 : 0)) * 22;
+  const zoom = ganttZoom;
+  const needW = zoom === 'tag'   ? sideMm + tage * 1.6
+              : zoom === 'woche' ? sideMm + Math.ceil(tage / 7) * 4
+              :                    sideMm + (tage / 30.4) * 8;
+  return { tage, needW, zeilen: vs.length, auto: autoPaperFor(zoom, tage, sideMm) };
+}
+
+// Druck-Auswahl: Umfang, Blattformat – und die Ansage, was wirklich draufgeht
 function actGanttPrint(pid) {
   const p = findProjekt(pid); if (!p) return;
   const vs = gewerkeSorted(p).filter(v => v.bauStart && v.bauEnde);
@@ -11138,14 +15465,50 @@ function actGanttPrint(pid) {
   let y0 = 9999, y1 = 0;
   vs.forEach(v => { y0 = Math.min(y0, +v.bauStart.slice(0, 4)); y1 = Math.max(y1, +v.bauEnde.slice(0, 4)); });
   const years = []; for (let y = y0; y <= y1; y++) years.push(y);
-  const yearBtns = years.map(y => `<button class="btn" data-act="pdf-gantt" data-pid="${pid}" data-year="${y}" style="min-width:90px">📄 Jahr ${y}</button>`).join('');
+
+  const bed = ganttDruckBedarf(p, null);
+  const gewaehlt = ganttPrintPaper || (bed ? bed.auto : 'A3');
+
+  /* Für jedes Format sagen, ob das Programm daraufpasst. Genau die Frage,
+     die man vor dem Ausdruck hat — und die man sonst erst am Drucker merkt. */
+  const formate = PAPER_LADDER.map(k => {
+    const passt = !bed || (PAPER[k].w - 16 >= bed.needW);
+    const ist = k === gewaehlt;
+    const emp = bed && k === bed.auto;
+    return `<button class="btn${ist ? '' : ' ghost'}" data-act="gantt-paper" data-pid="${pid}" data-kind="${k}"
+      style="min-width:104px;text-align:left;padding:8px 11px;line-height:1.35${ist ? ';outline:2px solid var(--accent);outline-offset:-2px' : ''}">
+      <span style="font-weight:700">${k}</span> <span style="font-size:var(--t-2xs, 10.5px);opacity:.75">${PAPER[k].w}×${PAPER[k].h}&nbsp;mm</span><br>
+      <span style="font-size:var(--t-2xs, 11px);${passt ? 'color:var(--s-green)' : 'opacity:.6'}">${passt ? 'passt auf 1 Blatt' : 'wird gestückelt'}${emp ? ' · empfohlen' : ''}</span>
+    </button>`;
+  }).join('');
+
+  const yearBtns = years.map(y => `<button class="btn ghost" data-act="pdf-gantt" data-pid="${pid}" data-kind="${gewaehlt}" data-year="${y}" style="min-width:90px">Jahr ${y}</button>`).join('');
+
   openModal('Bauprogramm drucken', `
-    <p class="muted" style="font-size:12.5px;margin:0 0 12px">Ganzes Programm – oder pro Jahr getrennt (praktisch z.B. „bis Jahresende" und Anfang Jahr neu anpassen).</p>
-    <div style="display:flex;flex-direction:column;gap:14px">
-      <div><div style="font-size:11px;font-weight:600;color:var(--text-soft);margin-bottom:5px">GANZES PROGRAMM</div>
-        <button class="btn" data-act="pdf-gantt" data-pid="${pid}">🖨 Ganzes Programm (${fmtDate(years[0] + '-01-01')} – ${y1})</button></div>
-      ${years.length > 1 ? `<div><div style="font-size:11px;font-weight:600;color:var(--text-soft);margin-bottom:5px">EINZELNE JAHRE</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">${yearBtns}</div></div>` : ''}
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div>
+        <div style="font-size:var(--t-2xs, 11px);font-weight:600;color:var(--text-soft);margin-bottom:6px">BLATTFORMAT</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${formate}</div>
+        ${bed ? `<p class="muted" style="font-size:var(--t-xs, 11.5px);margin:8px 0 0">${bed.zeilen} Zeilen über ${bed.tage} Tage – gezeichnet in der Ansicht „${ganttZoom === 'tag' ? 'Tag' : ganttZoom === 'woche' ? 'Woche' : 'Monat'}“. Eine gröbere Ansicht braucht weniger Breite.</p>` : ''}
+      </div>
+      <div>
+        <div style="font-size:var(--t-2xs, 11px);font-weight:600;color:var(--text-soft);margin-bottom:6px">ETAPPEN EINES GEWERKS</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${[['hintereinander', 'Hintereinander', 'Alle Etappen auf der Gewerkzeile – kompakt, wie ein gezeichnetes Bauprogramm'],
+             ['untereinander', 'Untereinander', 'Jede Etappe eine eigene Zeile – ausführlich, gut zum Abhaken']]
+            .map(([k, l, t]) => `<button class="btn${ganttEtappen === k ? '' : ' ghost'}" data-act="gantt-etappen" data-pid="${pid}" data-kind="${k}" title="${esc(t)}"
+              style="min-width:150px;text-align:left;padding:8px 11px;line-height:1.35${ganttEtappen === k ? ';outline:2px solid var(--accent);outline-offset:-2px' : ''}">
+              <span style="font-weight:700">${l}</span><br><span style="font-size:var(--t-2xs, 11px);opacity:.75">${k === 'hintereinander' ? 'weniger Zeilen' : 'eine Zeile je Etappe'}</span></button>`).join('')}
+        </div>
+      </div>
+      <div>
+        <div style="font-size:var(--t-2xs, 11px);font-weight:600;color:var(--text-soft);margin-bottom:6px">UMFANG</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn" data-act="pdf-gantt" data-pid="${pid}" data-kind="${gewaehlt}">🖨 Ganzes Programm (${years[0]}–${y1})</button>
+          ${years.length > 1 ? yearBtns : ''}
+        </div>
+        ${years.length > 1 ? `<p class="muted" style="font-size:var(--t-xs, 11.5px);margin:8px 0 0">Jahrweise ist praktisch, um bis Jahresende zu planen und Anfang Jahr neu anzusetzen.</p>` : ''}
+      </div>
     </div>
   `, `<button class="btn ghost" data-close="1">Schliessen</button>`);
 }
@@ -11155,14 +15518,32 @@ function pdfGantt(pid, paper, range) {
   setFeierCtx(p);
   if (ganttMode === 'grob') return pdfGrobGantt(p, paper);
   let vs = gewerkeSorted(p);
+  // Wie am Bildschirm: was auf „nicht im Terminprogramm" steht, gehört auch
+  // nicht aufs Blatt. Ohne diese Zeile druckte SubmitOne Zeilen mit, die der
+  // Plan bewusst ausblendet.
+  if (!ganttAlleZeigen) vs = vs.filter(zeigtImTermin);
   if (range) vs = vs.filter(v => v.bauStart && v.bauEnde && v.bauStart <= range.to && v.bauEnde >= range.from);   // Jahr: nur datierte, die im Jahr laufen
   else if (ganttHideUndated) vs = vs.filter(v => v.bauStart && v.bauEnde);                                        // sonst alles inkl. ohne Termin (ausser Toggle „Nur Termin")
   if (!vs.length) { toast(range ? 'Keine Gewerke in diesem Zeitraum' : 'Keine Gewerke vorhanden', 'info'); return; }
-  // Druckzeilen: jedes Gewerk + seine datierten Untertermine (eingerückt)
+  /* Druckzeilen — zwei Arten, das Blatt zu füllen:
+
+     «hintereinander»  Ein Gewerk = eine Zeile, seine Etappen liegen darauf.
+                       Elektro «Stromlos → Einlegen → Einziehen → IBN» steht
+                       auf EINER Linie. Kompakt, wie ein gezeichnetes
+                       Bauprogramm: aus 48 Zeilen werden 31.
+
+     «untereinander»   Jede Etappe bekommt ihre eigene Zeile, eingerückt.
+                       Ausführlicher, gut zum Abhaken auf der Baustelle.
+
+     Hat ein Gewerk Etappen, ersetzen sie im ersten Modus seinen eigenen
+     Balken — seine Spanne ergibt sich ohnehin aus ihnen. */
+  const inline = ganttEtappen === 'hintereinander';
   const items = [];
   vs.forEach(v => {
-    items.push({ v, sub: false });
-    (v.vorgaenge || []).filter(o => o.start && o.ende && (!range || (o.start <= range.to && o.ende >= range.from))).forEach(o => items.push({ v, o, sub: true }));
+    const subs = (v.vorgaenge || []).filter(o => o.start && o.ende && (!range || (o.start <= range.to && o.ende >= range.from)));
+    if (inline) { items.push({ v, subs }); return; }
+    items.push({ v, subs: [] });
+    subs.forEach(o => items.push({ v, o, sub: true, subs: [] }));
   });
   let min = null, max = null;
   const ext = iso => { if (!iso) return; if (!min || iso < min) min = iso; if (!max || iso > max) max = iso; };
@@ -11183,11 +15564,26 @@ function pdfGantt(pid, paper, range) {
   const PD = PAPER[PDkey] || PAPER.A4;
   const pct = iso => dayDiff(rangeStart, dISO(iso)) / totalDays * 100;
   const wpct = (s, e) => (dayDiff(dISO(s), dISO(e)) + 1) / totalDays * 100;
-  // Kopf-Bänder: Monat (immer) · KW (Woche/Tag) · Tageszahlen (Tag) – je eigenes Band
-  const bandsN = ganttZoom === 'tag' ? 3 : ganttZoom === 'woche' ? 2 : 1;
-  const HEAD_MM = bandsN === 3 ? 13.5 : bandsN === 2 ? 11 : 7;
-  const bh = HEAD_MM / bandsN, kwY = bh, dayY = 2 * bh;
-  const rowH = 6, barH = 4.4, fs = 8;
+  const spaltePct = 100 / totalDays;
+  /* Kopf-Bänder: Monat (immer) · KW (Woche/Tag) · Datum (Tag).
+     In der Tagesansicht steht das Datum GEDREHT in seiner Spalte — bei
+     1.6 mm Spaltenbreite ist das der einzige Weg, ein volles Datum
+     unterzubringen statt nur der nackten Tageszahl. Dafür braucht das
+     unterste Band Höhe; die beiden oberen bleiben flach. */
+  const tagView = ganttZoom === 'tag';
+  const moH = tagView ? 4.5 : ganttZoom === 'woche' ? 5.5 : 7;
+  const kwH = tagView ? 3.6 : 5.5;
+  const dayH = tagView ? 11 : 0;
+  const HEAD_MM = moH + (ganttZoom === 'monat' ? 0 : kwH) + dayH;
+  const bh = moH, kwY = moH, dayY = moH + kwH;
+  /* Zeilenhöhe: so, dass das Programm womöglich auf EIN Blatt geht. Ein
+     Bauprogramm, das man auf zwei Blätter nebeneinanderlegen muss, um die
+     Abhängigkeiten zu sehen, hat seinen Zweck verfehlt. Unter 3.6 mm wird
+     die Schrift zu klein — dann lieber ein zweites Blatt. */
+  const platzMm = (PD.h - 16) - 22 - HEAD_MM;
+  // abrunden, nicht runden – ein aufgerundeter Hundertstel kostet sonst ein ganzes Blatt
+  const rowH = Math.max(3.6, Math.min(6, Math.floor(platzMm / Math.max(1, items.length) * 100) / 100));
+  const barH = Math.max(2.4, rowH - 1.6), fs = rowH < 4.6 ? 6.4 : 8;
 
   // Monats-Band + Monats-Gridlines (oberstes Band)
   const months = []; let cur = new Date(rangeStart);
@@ -11197,24 +15593,45 @@ function pdfGantt(pid, paper, range) {
 
   let kwBand = '', dayBand = '', weBands = '';
   const mondayOfD = d => { const x = new Date(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
-  const kwCell = (w, topMm) => { const l = Math.max(0, pct(isoOf(w))); const we = new Date(w); we.setDate(w.getDate() + 6); const se = we > rangeEnd ? rangeEnd : we; const r = Math.min(100, pct(isoOf(se)) + 100 / totalDays); return `<div class="pg-sub" style="left:${l}%;width:${Math.max(0, r - l)}%;top:${topMm}mm;height:${bh}mm">KW&nbsp;${isoWeek(w)}</div>`; };
+  const kwCell = (w, topMm) => { const l = Math.max(0, pct(isoOf(w))); const we = new Date(w); we.setDate(w.getDate() + 6); const se = we > rangeEnd ? rangeEnd : we; const r = Math.min(100, pct(isoOf(se)) + spaltePct); return `<div class="pg-sub" style="left:${l}%;width:${Math.max(0, r - l)}%;top:${topMm}mm;height:${kwH}mm">${isoWeek(w)}</div>`; };
   if (ganttZoom === 'woche') {
     let w = mondayOfD(rangeStart);
     while (w <= rangeEnd) { gridV += `<div class="pg-grid wk" style="left:${Math.max(0, pct(isoOf(w)))}%"></div>`; kwBand += kwCell(w, kwY); w.setDate(w.getDate() + 7); }
-  } else if (ganttZoom === 'tag') {
-    // Gitterlinien: Wochen (Montag) + jeder Tag (bis 800), Wochenend-Bänder
+  } else if (tagView) {
+    // Wochenlinien (Montag) + KW-Nummern
     let wk = mondayOfD(rangeStart);
     while (wk <= rangeEnd) { gridV += `<div class="pg-grid wk" style="left:${Math.max(0, pct(isoOf(wk)))}%"></div>`; kwBand += kwCell(wk, kwY); wk.setDate(wk.getDate() + 7); }
     if (totalDays <= 800) { let d = new Date(rangeStart); while (d <= rangeEnd) { gridV += `<div class="pg-grid day" style="left:${pct(isoOf(d))}%"></div>`; d.setDate(d.getDate() + 1); } }
-    { let d = new Date(rangeStart); while (d <= rangeEnd) { if (d.getDay() === 0 || d.getDay() === 6) weBands += `<div class="pg-we" style="left:${pct(isoOf(d))}%;width:${100 / totalDays}%"></div>`; d.setDate(d.getDate() + 1); } }
-    // Tages-Band: Zahlen 1,2,3 … IMMER (unterstes Band)
+    /* Wochenenden: farbiges Band über die ganze Höhe, beide Tage. Sie
+       behalten ihre Spalten — man sieht auf einen Blick, wo die Woche
+       aufhört, ohne dass die Achse lügt. */
+    { let d = new Date(rangeStart); while (d <= rangeEnd) { if (d.getDay() === 6) weBands += `<div class="pg-we" style="left:${pct(isoOf(d))}%;width:${2 * spaltePct}%"></div>`; d.setDate(d.getDate() + 1); } }
+    /* Datumsband: gedreht, und nur an Arbeitstagen. Am Wochenende wird
+       nicht gearbeitet, also braucht es dort auch kein Datum — das spart
+       genau die Enge, die ein Tagesraster sonst unlesbar macht. */
     let d = new Date(rangeStart);
-    while (d <= rangeEnd) { const we = d.getDay() === 0 || d.getDay() === 6; dayBand += `<div class="pg-day${we ? ' we' : ''}" style="left:${pct(isoOf(d))}%;width:${100 / totalDays}%;top:${dayY}mm;height:${bh}mm">${d.getDate()}</div>`; d.setDate(d.getDate() + 1); }
+    while (d <= rangeEnd) {
+      const we = d.getDay() === 0 || d.getDay() === 6;
+      if (!we) dayBand += `<div class="pg-day" style="left:${pct(isoOf(d))}%;width:${spaltePct}%;top:${dayY}mm;height:${dayH}mm"><span>${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.</span></div>`;
+      d.setDate(d.getDate() + 1);
+    }
   }
   const headBands = moBand + kwBand + dayBand;
 
   const t = today();
   const todayLine = (t >= rangeStart && t <= rangeEnd) ? `<div class="pg-today" style="left:${pct(todayIso())}%"></div>` : '';
+  /* Bauunterbrüche: Sommer- und Weihnachtsferien stehen auf dem Blatt, nicht
+     nur auf dem Bildschirm. Wer den Plan liest, muss sehen, warum vier Wochen
+     nichts läuft — sonst fragt er nach. */
+  let untBands = '', untLabels = '';
+  (p.bauunterbrueche || []).forEach(u => {
+    if (!u.von || !u.bis || u.bis < isoOf(rangeStart) || u.von > isoOf(rangeEnd)) return;
+    const von = u.von < isoOf(rangeStart) ? isoOf(rangeStart) : u.von;
+    const bis = u.bis > isoOf(rangeEnd) ? isoOf(rangeEnd) : u.bis;
+    const x = pct(von), w = wpct(von, bis);
+    untBands  += `<div class="pg-unt" style="left:${x}%;width:${w}%"></div>`;
+    untLabels += `<div class="pg-unt-lbl" style="left:${x}%"><span>${esc(u.titel || 'Bauunterbruch')}</span></div>`;
+  });
   // Feiertage: Bänder (hinter Balken) + Labels (über Balken)
   const hols = feiertageInRange(rangeStart, rangeEnd);
   const holBands = hols.map(f => `<div class="pg-hol" style="left:${pct(isoOf(f.d))}%;width:${Math.max(100 / totalDays, 0.1)}%"></div>`).join('');
@@ -11231,33 +15648,68 @@ function pdfGantt(pid, paper, range) {
     `<div class="pg-mark" style="left:${pct(m.iso)}%;background:${m.c}"></div><div class="pg-mark-lbl" style="left:${pct(m.iso)}%"><span style="color:${m.c}">${esc(m.n)} ${fmtDate(m.iso)}</span></div>`).join('');
   // Pro Druckzeile: Seiten-Label (inkl. Firma/Person/Natel wie in der App) + Balken
   const kontaktByFirma = f => (state.kontakte || []).find(k => k.firma === f);
+  /* Die Gewerkspalte als echte Spalten: BKP · Arbeitsgattung · Unternehmer.
+     Vorher lief alles in einer Zeile zusammen und wurde am Rand
+     abgeschnitten — auf einem Bauprogramm, das herumgereicht wird, ist
+     die BKP-Nummer aber der Anker, über den man sich verständigt. */
+  const zeigtFirma = ganttSide.firma || ganttSide.person || ganttSide.natel;
+  const BKP_MM = 11, FIRMA_MM = zeigtFirma ? Math.min(34, SIDE_MM - BKP_MM - 20) : 0;
   const sideArr = items.map(it => {
-    if (it.sub) return `<div class="pg-srow sub" style="height:${rowH}mm">↳&nbsp;${esc(it.o.titel || '')}</div>`;
+    if (it.sub) return `<div class="pg-srow sub" style="height:${rowH}mm"><span class="pg-sbkp"></span><span class="pg-sgw">↳&nbsp;${esc(it.o.titel || '')}</span>${zeigtFirma ? '<span class="pg-sfi"></span>' : ''}</div>`;
     const v = it.v; const k = (ganttSide.person || ganttSide.natel) && v.firma ? kontaktByFirma(v.firma) : null;
     const ex = [];
     if (ganttSide.firma && v.firma) ex.push(esc(v.firma));
     if (ganttSide.person && k && k.person) ex.push(esc(k.person));
     if (ganttSide.natel && k && k.telefon) ex.push('☎ ' + esc(k.telefon));
-    return `<div class="pg-srow" style="height:${rowH}mm"><b>${esc(v.bkp || '')}</b>${ganttSide.gewerk ? '&nbsp;' + esc(v.gewerk || '') : ''}${ex.length ? ` <span class="pg-si">${ex.join(' · ')}</span>` : ''}</div>`;
+    return `<div class="pg-srow" style="height:${rowH}mm"><span class="pg-sbkp">${esc(v.bkp || '')}</span><span class="pg-sgw">${ganttSide.gewerk ? esc(v.gewerk || '') : ''}</span>${zeigtFirma ? `<span class="pg-sfi">${ex.join(' · ')}</span>` : ''}</div>`;
   });
+  const sideHead = `<div class="pg-shead"><span class="pg-sbkp">BKP</span><span class="pg-sgw">Arbeitsgattung</span>${zeigtFirma ? '<span class="pg-sfi">Unternehmer</span>' : ''}</div>`;
   // Balken inkl. Text + Geometrie (für Verbindungslinien) merken; Text aussen, wenn Balken zu kurz
   const mainWmm = Math.max(40, PD.w - 16 - SIDE_MM);
   const fitsBar = (text, wpc) => (wpc / 100 * mainWmm) >= String(text || '').length * 1.35 + 2;
   const geoByKey = {};
   const mainArr = items.map((it, ri) => {
-    const v = it.v;
+    const v = it.v, col = ganttColHex(v);
+
+    // Eigene Zeile je Etappe (Modus «untereinander»)
     if (it.sub) {
-      const o = it.o; const x0 = pct(o.start), w = wpct(o.start, o.ende); geoByKey[v.id + '/' + o.id] = { row: ri, x0, x1: x0 + w };
-      const fit = fitsBar(o.titel, w);
-      return `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar sub" style="left:${x0}%;width:${w}%;height:${barH - 1.2}mm;background:${ganttColHex(v)}">${fit ? `<span class="pgb-l">${esc(o.titel || '')}</span>` : ''}</div>${fit ? '' : `<span class="pgb-out sub" style="left:${x0 + w}%">${esc(o.titel || '')}</span>`}</div>`;
+      const o = it.o, x0 = pct(o.start), w = wpct(o.start, o.ende);
+      geoByKey[v.id + '/' + o.id] = { row: ri, x0, x1: x0 + w };
+      const drin = fitsBar(o.titel, w);
+      return `<div class="pg-row" style="height:${rowH}mm"><div class="pg-bar sub" style="left:${x0}%;width:${w}%;height:${barH - .8}mm;background:${col}">${drin ? `<span class="pgb-l">${esc(o.titel || '')}</span>` : ''}</div>${drin ? '' : `<span class="pgb-top" style="left:${x0}%">${esc(o.titel || '')}</span>`}</div>`;
     }
-    if (!v.bauStart || !v.bauEnde) return `<div class="pg-row" style="height:${rowH}mm"></div>`;   // ohne Termin: leere Zeile (Seiten-Label bleibt)
+
+    const hatTermin = v.bauStart && v.bauEnde;
+    if (!hatTermin && !it.subs.length) return `<div class="pg-row" style="height:${rowH}mm"></div>`;   // ohne Termin: leere Zeile (Seiten-Label bleibt)
+
     let pre = '';
-    if (Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); const bs = isoOf(d); pre += `<div class="pg-bestell" style="left:${Math.max(0, pct(bs))}%;width:${wpct(bs, v.bauStart)}%;height:${barH}mm"></div>`; }
-    if (Number(v.nachfrist) > 0) { const ne = addDays(v.bauEnde, Number(v.nachfrist)); pre += `<div class="pg-nach" style="left:${pct(addDays(v.bauEnde, 1))}%;width:${wpct(addDays(v.bauEnde, 1), ne)}%;height:${barH}mm"></div>`; }
-    const x0 = pct(v.bauStart), w = wpct(v.bauStart, v.bauEnde); geoByKey[v.id] = { row: ri, x0, x1: x0 + w };
-    const fit = fitsBar(v.gewerk, w);
-    return `<div class="pg-row" style="height:${rowH}mm">${pre}<div class="pg-bar" style="left:${x0}%;width:${w}%;height:${barH}mm;background:${ganttColHex(v)}">${fit ? `<span class="pgb-l">${esc(v.gewerk || '')}</span>` : ''}</div>${fit ? '' : `<span class="pgb-out" style="left:${x0 + w}%">${esc(v.gewerk || '')}</span>`}</div>`;
+    if (hatTermin && Number(v.bestellfrist) > 0) { const d = dISO(v.bauStart); d.setDate(d.getDate() - Number(v.bestellfrist)); const bs = isoOf(d); pre += `<div class="pg-bestell" style="left:${Math.max(0, pct(bs))}%;width:${wpct(bs, v.bauStart)}%;height:${barH}mm"></div>`; }
+    if (hatTermin && Number(v.nachfrist) > 0) { const ne = addDays(v.bauEnde, Number(v.nachfrist)); pre += `<div class="pg-nach" style="left:${pct(addDays(v.bauEnde, 1))}%;width:${wpct(addDays(v.bauEnde, 1), ne)}%;height:${barH}mm"></div>`; }
+
+    /* Ein Balken samt Beschriftung. Der Text steht ÜBER dem Balken, linksbündig
+       an seinem Anfang — genau wie auf einem gezeichneten Bauprogramm. Nur wenn
+       der Balken breit genug ist, wandert er hinein. */
+    const balken = (x0, w, text, sub) => {
+      const drin = fitsBar(text, w);
+      return `<div class="pg-bar${sub ? ' sub' : ''}" style="left:${x0}%;width:${w}%;height:${sub ? barH - .8 : barH}mm;background:${col}">${drin ? `<span class="pgb-l">${esc(text || '')}</span>` : ''}</div>`
+        + (drin ? '' : `<span class="pgb-top" style="left:${x0}%">${esc(text || '')}</span>`);
+    };
+
+    let inhalt = pre;
+    if (it.subs.length) {
+      // Etappen ersetzen den Gewerkbalken – seine Spanne steckt in ihnen
+      it.subs.forEach(o => {
+        const x0 = pct(o.start), w = wpct(o.start, o.ende);
+        geoByKey[v.id + '/' + o.id] = { row: ri, x0, x1: x0 + w };
+        inhalt += balken(x0, w, o.titel, true);
+      });
+      if (hatTermin) geoByKey[v.id] = { row: ri, x0: pct(v.bauStart), x1: pct(v.bauStart) + wpct(v.bauStart, v.bauEnde) };
+    } else {
+      const x0 = pct(v.bauStart), w = wpct(v.bauStart, v.bauEnde);
+      geoByKey[v.id] = { row: ri, x0, x1: x0 + w };
+      inhalt += balken(x0, w, v.gewerk, false);
+    }
+    return `<div class="pg-row" style="height:${rowH}mm">${inhalt}</div>`;
   });
   // Verbindungslinien (Abhängigkeiten) – nur innerhalb derselben Seite gezeichnet
   const links = (p.ganttLinks || []).map(l => { const f = geoByKey[l.from], t = geoByKey[l.to]; return (f && t) ? { f, t } : null; }).filter(Boolean);
@@ -11284,12 +15736,12 @@ function pdfGantt(pid, paper, range) {
   const rowsPn = Math.max(1, Math.floor((pageH - 6 - HEAD_MM) / rowH));
   const chunks = []; let idx = 0;
   while (idx < items.length) { const take = idx === 0 ? rowsP1 : rowsPn; chunks.push([idx, idx + take]); idx += take; }
-  const deco = `${weBands}${holBands}${gridV}${todayLine}${markLines}`;   // volle Höhe via top/bottom
+  const deco = `${weBands}${untBands}${holBands}${gridV}${todayLine}${markLines}`;   // volle Höhe via top/bottom
   const pagesHtml = chunks.map(([a, b], pi) => {
     const rows = Math.min(b, items.length) - a, hmm = rows * rowH;
     return `<div class="pg${pi > 0 ? ' brk' : ''}">
-      <div class="pg-side"><div class="pg-shead">BKP / Gewerk / Untertermin</div>${sideArr.slice(a, b).join('')}</div>
-      <div class="pg-main"><div class="pg-head">${headBands}</div><div class="pg-rows" style="height:${hmm}mm">${deco}${mainArr.slice(a, b).join('')}${linkLayer(a, b)}${holLabels}</div></div>
+      <div class="pg-side">${sideHead}${sideArr.slice(a, b).join('')}</div>
+      <div class="pg-main"><div class="pg-head">${headBands}</div><div class="pg-rows" style="height:${hmm}mm">${deco}${mainArr.slice(a, b).join('')}${linkLayer(a, b)}${untLabels}${holLabels}</div></div>
     </div>`;
   }).join('');
   const legend = GANTT_LEGEND.map(([k, l]) => `<span style="display:inline-block;margin-right:10px"><span style="display:inline-block;width:11px;height:8px;border-radius: 0;background:${GANTT_COLS[k]};vertical-align:middle;margin-right:3px"></span>${l}</span>`).join('');
@@ -11298,20 +15750,36 @@ function pdfGantt(pid, paper, range) {
     .lh{padding-bottom:5px;} h1{font-size:14px;margin:5px 0 0;} h1::after{display:none;} .sub{margin:2px 0 6px;font-size:9.5px;} .ft{display:none;}
     .pg{display:flex;border:1px solid #c9d2de;width:100%;box-sizing:border-box;}
     .pg-side{flex:none;width:${SIDE_MM}mm;border-right:1px solid #c9d2de;box-sizing:border-box;}
-    .pg-shead{height:${HEAD_MM}mm;display:flex;align-items:flex-end;padding:0 1.5mm 0.5mm;font-weight:700;font-size:8px;border-bottom:1px solid #c9d2de;box-sizing:border-box;}
-    .pg-srow{display:flex;align-items:center;padding:0 1.5mm;font-size:${fs}px;border-bottom:1px solid #eef1f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box;}
+    .pg-shead{height:${HEAD_MM}mm;display:flex;align-items:flex-end;gap:1.5mm;padding:0 1.5mm 0.8mm;font-weight:700;font-size:7px;color:#46505e;text-transform:uppercase;letter-spacing:.3px;border-bottom:1px solid #c9d2de;box-sizing:border-box;}
+    .pg-srow{display:flex;align-items:center;gap:1.5mm;padding:0 1.5mm;font-size:${fs}px;border-bottom:1px solid #eef1f5;box-sizing:border-box;}
+    .pg-sbkp{flex:none;width:${BKP_MM}mm;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;}
+    .pg-sgw{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .pg-sfi{flex:none;width:${FIRMA_MM}mm;color:#6b7480;font-size:${Math.max(5.6, fs - 1.4)}px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    /* Titelkopf – dieselben Angaben, die auf jedem Bauprogramm oben stehen */
+    .pk{display:flex;justify-content:space-between;align-items:flex-end;gap:8mm;margin:1mm 0 3mm;padding-bottom:2mm;border-bottom:1.2px solid #9aa4b1;}
+    .pk-z{display:flex;gap:7mm;flex-wrap:wrap;font-size:8.5px;line-height:1.5;}
+    .pk-z b{color:#46505e;font-weight:700;}
+    .pk-z span{color:#2b3441;}
+    .pk-r{text-align:right;font-size:8.5px;line-height:1.5;color:#46505e;white-space:nowrap;}
+    .pk-r .pk-bezug{font-size:10px;font-weight:800;color:#b3261e;}
     .pg-main{flex:1;position:relative;min-width:0;overflow:hidden;}
     .pg-head{position:relative;height:${HEAD_MM}mm;border-bottom:1px solid #c9d2de;box-sizing:border-box;}
     .pg-mo{position:absolute;text-align:center;font-size:8px;font-weight:700;border-left:1px solid #d8dee8;color:#46505e;overflow:hidden;white-space:nowrap;box-sizing:border-box;display:flex;align-items:center;justify-content:center;}
-    .pg-sub{position:absolute;text-align:center;font-size:6.5px;color:#6b7480;border-left:1px solid #e3e8ef;overflow:hidden;white-space:nowrap;line-height:1;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-top:1px solid #eef1f5;}
-    .pg-day{position:absolute;text-align:center;font-size:5px;color:#7b8492;border-left:1px solid #f1f4f8;overflow:hidden;white-space:nowrap;line-height:1;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-top:1px solid #eef1f5;}
-    .pg-day.we{background:#eef3f9;color:#9aa4b1;}
+    .pg-sub{position:absolute;text-align:center;font-size:6px;color:#5b6573;font-weight:600;border-left:1px solid #c9d2de;overflow:hidden;white-space:nowrap;line-height:1;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border-top:1px solid #eef1f5;}
+    /* Datum steht gedreht in seiner Spalte – so passt „18.05." in 1.6 mm */
+    .pg-day{position:absolute;border-left:1px solid #eef1f5;overflow:hidden;box-sizing:border-box;border-top:1px solid #eef1f5;}
+    .pg-day span{position:absolute;bottom:.4mm;left:50%;transform:translateX(-50%);font-size:5.2px;line-height:1;color:#68727f;writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;letter-spacing:-.1px;}
     .pg-rows{position:relative;}
     .pg-row{position:relative;border-bottom:1px solid #f2f4f8;box-sizing:border-box;}
     .pg-grid{position:absolute;top:0;bottom:0;width:1px;background:#eef1f5;}
     .pg-grid.mo{background:#cfd7e3;} .pg-grid.wk{background:#dde3ec;} .pg-grid.day{background:#eaeff6;}
-    .pg-we{position:absolute;top:0;bottom:0;background:#eaf0f7;}
+    /* Wochenende: warmes Band über die ganze Blatthöhe, wie im Bauprogramm gewohnt */
+    .pg-we{position:absolute;top:0;bottom:0;background:#fdf6d8;}
     .pg-sub.we{background:#e7edf5;color:#9aa4b1;}
+    /* Bauunterbrüche (Ferien) – durchgehendes Band mit stehender Beschriftung */
+    .pg-unt{position:absolute;top:0;bottom:0;background:rgba(150,170,110,.22);border-left:.5px solid rgba(120,140,80,.55);border-right:.5px solid rgba(120,140,80,.55);}
+    .pg-unt-lbl{position:absolute;top:0;bottom:0;z-index:3;}
+    .pg-unt-lbl span{position:absolute;top:.4mm;left:.4mm;font-size:5.4px;line-height:1;color:#5c6b33;font-weight:700;writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;}
     .pg-today{position:absolute;top:0;bottom:0;width:1.2px;background:#dc2626;z-index:2;}
     .pg-hol{position:absolute;top:0;bottom:0;background:rgba(220,38,38,.08);border-left:.5px solid rgba(220,38,38,.5);}
     .pg-hol-lbl{position:absolute;top:0;bottom:0;z-index:3;}
@@ -11319,9 +15787,12 @@ function pdfGantt(pid, paper, range) {
     .pg-mark{position:absolute;top:0;bottom:0;width:1.1px;z-index:2;}
     .pg-mark-lbl{position:absolute;top:0;bottom:0;z-index:4;}
     .pg-mark-lbl span{position:absolute;top:.3mm;left:.3px;font-size:5.5px;line-height:1;font-weight:700;writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap;}
-    .pg-bar{position:absolute;top:50%;transform:translateY(-50%);border-radius: 0;box-shadow:inset 0 0 0 .2px rgba(0,0,0,.08), 0 .2px .4px rgba(0,0,0,.12);display:flex;align-items:center;overflow:hidden;}
+    /* Balken sitzt unten in der Zeile, die Beschriftung darüber – so bleibt
+       der Text lesbar, auch wenn der Balken nur zwei Tage breit ist. */
+    .pg-bar{position:absolute;bottom:.5mm;border-radius: 0;box-shadow:inset 0 0 0 .2px rgba(0,0,0,.08);display:flex;align-items:center;overflow:hidden;}
     .pgb-l{color:#fff;font-size:6.6px;font-weight:600;line-height:1;padding:0 1.2mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .pgb-out{position:absolute;top:50%;transform:translateY(-50%);font-size:6.6px;font-weight:600;color:#222b36;white-space:nowrap;padding-left:1mm;}
+    .pgb-top{position:absolute;top:0;font-size:5.6px;font-weight:600;line-height:1;color:#222b36;white-space:nowrap;padding-left:.3mm;}
+    .pgb-out{position:absolute;bottom:.5mm;font-size:6.6px;font-weight:600;color:#222b36;white-space:nowrap;padding-left:1mm;}
     .pgb-out.sub{font-size:6px;font-weight:500;color:#5b6573;}
     .pg-si{color:#6b7480;font-weight:400;font-size:7px;}
     .pg-bar.sub{opacity:.9;border-radius: 0;} .pg-bar.sub .pgb-l{font-size:6px;}
@@ -11333,11 +15804,31 @@ function pdfGantt(pid, paper, range) {
     .pg-bestell{position:absolute;top:50%;transform:translateY(-50%);border-radius: 0;background:repeating-linear-gradient(45deg,rgba(120,140,170,.18),rgba(120,140,170,.18) 3px,rgba(120,140,170,.32) 3px,rgba(120,140,170,.32) 6px);border:.4px dashed rgba(110,130,160,.6);}
     .pg-nach{position:absolute;top:50%;transform:translateY(-50%);border-radius: 0;background:repeating-linear-gradient(-45deg,rgba(180,140,90,.18),rgba(180,140,90,.18) 3px,rgba(180,140,90,.34) 3px,rgba(180,140,90,.34) 6px);border:.4px dashed rgba(170,130,80,.6);}
     .pg{break-inside:avoid;margin-bottom:4mm;} .pg.brk{break-before:page;}`;
-  const inner = `${pagesHtml}
-  <div style="margin-top:3mm;font-size:8px;color:#6b7480">${legend} &nbsp;·&nbsp; <span style="opacity:.8">🟫 Bestellfrist · Nachlauf (schraffiert) · ↳ Untertermin</span></div>`;
-  const rasterTxt = ganttZoom === 'tag' ? 'Tage' : ganttZoom === 'woche' ? 'Wochen' : 'Monate';
-  const spanTxt = range ? `${fmtDate(range.from)} – ${fmtDate(range.to)}` : `${fmtDate(min)} – ${fmtDate(max)}`;
-  openPrintDoc('Bauprogramm / Terminprogramm' + (range && range.label ? ' · ' + range.label : ''), `${esc(p.name)} · ${esc(p.ort)} · ${spanTxt} · Raster ${rasterTxt} · ${items.length} Zeilen · ${PDkey} quer`, inner, { landscape: true, extraCss: css });
+  /* Titelkopf. Ein Bauprogramm wird verschickt, ausgedruckt und an die Wand
+     gehängt — wer es findet, muss ohne Rückfrage wissen, zu welchem Objekt
+     und welchem Stand es gehört. */
+  const kopfZ = [
+    p.nummer ? ['Objekt-Nr.', p.nummer] : null,
+    ['Objekt', [p.name, p.ort].filter(Boolean).join(', ')],
+    p.bauherr ? ['Bauherr', p.bauherr] : null,
+    ['Datum', fmtDate(todayIso())],
+    range && range.label ? ['Ausschnitt', range.label] : null
+  ].filter(Boolean).map(([k, w]) => `<div><b>${k}:</b> <span>${esc(w)}</span></div>`).join('');
+  const kopf = `<div class="pk">
+    <div class="pk-z">${kopfZ}</div>
+    <div class="pk-r">
+      ${ek.bezug ? `<div class="pk-bezug">Bezugsbereit ab ${fmtDate(ek.bezug)}</div>` : ''}
+      <div>${spanTxtOf(range, min, max)} · Raster ${ganttZoom === 'tag' ? 'Tage' : ganttZoom === 'woche' ? 'Wochen' : 'Monate'} · ${items.length} Zeilen · ${PDkey} quer</div>
+    </div>
+  </div>`;
+
+  const inner = `${kopf}${pagesHtml}
+  <div style="margin-top:3mm;font-size:8px;color:#6b7480;display:flex;gap:5mm;flex-wrap:wrap;align-items:center">
+    <span>${legend}</span>
+    <span style="opacity:.85">Bestellfrist · Nachlauf (schraffiert)${inline ? '' : ' · ↳ Untertermin'}</span>
+    <span style="margin-left:auto;opacity:.8">© ${new Date().getFullYear()} Gerber-Soft</span>
+  </div>`;
+  openPrintDoc('Bauprogramm' + (range && range.label ? ' · ' + range.label : ''), '', inner, { landscape: true, extraCss: css });
   toast('PDF im Format ' + PDkey + ' quer – im Druckdialog „' + PDkey + '" wählen', 'info');
 }
 // Grobplanung (Phasen) drucken – wenige Zeilen, eine Querseite
@@ -11430,16 +15921,16 @@ function actEditVergabe(pid, vid) {
       <label class="field">Eingabefrist <input class="input" type="date" id="fe_frist" value="${esc(v.frist || '')}"></label>
     </div>
     <label class="field">Ausführung (Text, falls kein Termin) <input class="input" id="fe_ausf" value="${esc(v.ausfuehrung || '')}" placeholder="z.B. ab Herbst 2026">
-      <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Erscheint auf dem Einladungs-Deckblatt unter „Ausführung". Leer = Terminprogramm bzw. „gem. Terminprogramm".</span></label>
+      <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px">Erscheint auf dem Einladungs-Deckblatt unter „Ausführung". Leer = Terminprogramm bzw. „gem. Terminprogramm".</span></label>
     <label class="field">Status <select class="select" id="fe_status">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select></label>
     ${((p.bauteile || []).length || (p.optionen || []).length) ? `
     <div class="form-row">
       <label class="field">Bauteil / Teilprojekt <select class="select" id="fe_bauteil">${bauteilOptionsHtml(p, v.bauteil)}</select></label>
       <label class="field">Option <select class="select" id="fe_option"><option value="">–</option>${(p.optionen || []).map(o => `<option value="${o.id}"${v.option === o.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
     </div>
-    <p class="muted" style="font-size:11.5px;margin:2px 0 0">Gilt für das ganze Gewerk (v.a. Pauschal-Gewerke ohne Einzelpositionen). Positionen mit eigenem Etikett haben Vorrang.</p>` : ''}
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:2px 0 0">Gilt für das ganze Gewerk (v.a. Pauschal-Gewerke ohne Einzelpositionen). Positionen mit eigenem Etikett haben Vorrang.</p>` : ''}
     ${bkpKatalogPanel()}
-    ${(v.ksPositionen && v.ksPositionen.length) ? '<p class="muted" style="font-size:11.5px;margin:8px 0 0">Hinweis: Die Kostenschätzung wird durch die Positionen im „✎ Kostenschätzung"-Editor überschrieben.</p>' : ''}
+    ${(v.ksPositionen && v.ksPositionen.length) ? '<p class="muted" style="font-size:var(--t-xs, 11.5px);margin:8px 0 0">Hinweis: Die Kostenschätzung wird durch die Positionen im „✎ Kostenschätzung"-Editor überschrieben.</p>' : ''}
   `, `<button class="btn danger" data-act="rm-vergabe" data-pid="${pid}" data-vid="${vid}">🗑 Löschen</button><div class="spacer"></div><button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-vergabe-edit" data-pid="${pid}" data-vid="${vid}">💾 Speichern</button>`);
   const bkpEl = $('#fe_bkp');
   if (bkpEl) bkpEl.addEventListener('change', () => { const { label } = parseBkp(bkpEl.value); const g = $('#fe_gewerk'); if (g && !g.value.trim() && label) g.value = label; });
@@ -11507,64 +15998,11 @@ function importSubmittenten(pid, list) {
   });
   save(); router(); toast(`${nK} Kontakte angelegt · ${nE} Submittenten eingetragen`, 'info');
 }
-// Submittentenliste Römerstrasse 31 (aus PDF P. Hefti Bauberatung) – BKP auf vorhandene Gewerke gemappt
-const RO31_SUBMITTENTEN = [
-  { bkp: '211', kat: 'Baumeisterarbeiten', firma: 'Merz Baulösungen', str: 'Ey 3', plz: '3063', ort: 'Ittigen', tel: '031 951 31 31', mail: 'office@bauloesungen.ch' },
-  { bkp: '211', firma: 'Fuhrer Bau AG', str: 'Waldhäusern 187A', plz: '3543', ort: 'Emmenmatt', mobil: '079 214 46 65', tel: '031 701 21 55', mail: 'm.liechti@fuhrerbauag.ch' },
-  { bkp: '211', firma: 'Stämpfli AG', str: 'Lindenackerweg 4', plz: '3506', ort: 'Grosshöchstetten', tel: '031 711 01 10', mail: 'grosshoechstetten@staempfliag.ch' },
-  { bkp: '211.1', kat: 'Gerüstungen', firma: 'Zaugg Theo', str: 'Wiggiswilweg 2', plz: '3303', ort: 'Jegenstorf', tel: '031 761 14 14', mail: 'theozaugg@bluewin.ch' },
-  { bkp: '211.1', firma: 'ELAG Gerüste AG', str: 'Libellenweg 8a', plz: '3006', ort: 'Bern', tel: '031 332 15 01', mail: 'info@elag-gerueste.ch' },
-  { bkp: '214', kat: 'Holzbau', firma: 'Ing. Holzbau Sieber', str: 'Radelfingenstrasse 126', plz: '3068', ort: 'Utzigen', tel: '031 839 06 27', mail: 'info@sieber-holzbau.ch' },
-  { bkp: '214', firma: 'Gfeller Holzbau', str: 'Bollstrasse 63', plz: '3076', ort: 'Worb', tel: '031 839 55 61', mail: 'info@gfeller-holzbau.ch' },
-  { bkp: '215', kat: 'Ing. Holzbau', firma: 'Ing. Holzbau Sieber', str: 'Radelfingenstrasse 126', plz: '3068', ort: 'Utzigen', tel: '031 839 06 27', mail: 'info@sieber-holzbau.ch' },
-  { bkp: '215', firma: 'Gfeller Holzbau', str: 'Bollstrasse 63', plz: '3076', ort: 'Worb', tel: '031 839 55 61', mail: 'info@gfeller-holzbau.ch' },
-  { bkp: '221.2', kat: 'Fenster (Holz-Metall)', firma: 'Sommer AG', str: 'Emmentalstrasse 55', plz: '3510', ort: 'Konolfingen', tel: '031 790 23 90', mail: 'info@sommer-fenster.ch' },
-  { bkp: '221.2', firma: 'Odermatt FensterBau AG', str: 'Gewerbestrasse 5', plz: '3423', ort: 'Ersigen', tel: '034 445 84 12', mail: 'info@odermatt-fensterbau.ch' },
-  { bkp: '221.2', firma: 'Fensterbaumeler AG', str: 'Hauptstrasse 36', plz: '6170', ort: 'Schüpfheim', tel: '041 485 01 70', mail: 'info@fensterbaumeler.ch' },
-  { bkp: '221.6', kat: 'Aussentüren', firma: 'Bauschlosserei Hermann', str: 'Schlossstalden 16', plz: '3076', ort: 'Worb', tel: '031 839 46 56', mail: 'info@bauschlossereihermann.ch' },
-  { bkp: '222.0', kat: 'Spenglerarbeiten', firma: 'Jau Bedachungen AG', str: 'Schermenwaldstrasse 12', plz: '3063', ort: 'Ittigen', tel: '031 921 80 88', mail: 'info@jauag.ch' },
-  { bkp: '222.0', firma: 'Peter Künzi AG', str: 'Ey 3', plz: '3063', ort: 'Ittigen', tel: '031 921 24 41', mail: 'info@spenglerei-kuenzi.ch' },
-  { bkp: '224.0', kat: 'Steildach', firma: 'Jau Bedachungen AG', str: 'Schermenwaldstrasse 12', plz: '3063', ort: 'Ittigen', tel: '031 921 80 88', mail: 'info@jauag.ch' },
-  { bkp: '224.0', firma: 'Peter Künzi AG', str: 'Ey 3', plz: '3063', ort: 'Ittigen', tel: '031 921 24 41', mail: 'info@spenglerei-kuenzi.ch' },
-  { bkp: '225', kat: 'Dichtungen / Dämmungen', firma: 'Hofmann Fugenabdichtungen GmbH', str: 'Seftigenstr. 310', plz: '3084', ort: 'Wabern', tel: '031 926 21 81', mail: 'info@die-fuge.ch' },
-  { bkp: '226.2', kat: 'Verputzte Aussenwärmedämmung', firma: 'Rothermann', str: 'Bernstrasse 32 A', plz: '3067', ort: 'Boll', tel: '034 402 81 81', mail: 'maler@rothermann.ch' },
-  { bkp: '226.2', firma: 'R & R Gipser & Malerei GmbH', str: 'Hühnerhubelstrasse 66', plz: '3123', ort: 'Belp', person: 'Michael Rahardt', mobil: '079 678 18 07', tel: '031 961 09 33', mail: 'mail@r-r-gipser.ch' },
-  { bkp: '226.2', firma: 'Merzgroup', str: 'Unterweg 29', plz: '3302', ort: 'Moosseedorf', tel: '031 301 00 50', mail: 'info@merzgroup.ch' },
-  { bkp: '228', kat: 'Sonnen-/Witterungsschutz', firma: 'Filtra', str: 'Erlenstrasse 4, Postfach', plz: '3665', ort: 'Wattenwil', tel: '033 356 28 74', mail: 'info@filtra.ch' },
-  { bkp: '228', firma: 'Schenker Storen AG', str: 'Bolligenstrasse 82', plz: '3006', ort: 'Bern', tel: '031 818 32 30', mail: 'schenker.bern@storen.ch' },
-  { bkp: '230', kat: 'Elektro Anlagen', firma: 'Baumann Elektro AG', str: 'Südstrasse 1', plz: '3110', ort: 'Münsingen', tel: '031 721 62 27', mail: 'info@baumannelektro.ch' },
-  { bkp: '230', firma: 'Grunder + Riesen AG', str: 'Vechigenstrasse 28', plz: '3076', ort: 'Worb', tel: '031 839 15 75', mail: 'info@egrag.ch' },
-  { bkp: '237', kat: 'PV-Anlage', firma: 'Baumann Elektro AG', str: 'Südstrasse 1', plz: '3110', ort: 'Münsingen', tel: '031 721 62 27', mail: 'info@baumannelektro.ch' },
-  { bkp: '237', firma: 'Grunder + Riesen AG', str: 'Vechigenstrasse 28', plz: '3076', ort: 'Worb', tel: '031 839 15 75', mail: 'info@egrag.ch' },
-  { bkp: '240', kat: 'Heizungsinstallationen', firma: 'Eichenberger Beat', str: 'Mühlestrasse 10', plz: '3507', ort: 'Biglen', tel: '031 701 05 77', mail: 'be.eichenbergersanitaer@bluewin.ch' },
-  { bkp: '240', firma: 'Heiztechnik Widmer AG', str: 'Bäraugrundstrasse 37a', plz: '3550', ort: 'Langnau', tel: '034 402 55 22', mail: 'info@heiztechnik-langnau.ch' },
-  { bkp: '250', kat: 'Sanitäre Anlagen', firma: 'Eichenberger Beat', str: 'Mühlestrasse 10', plz: '3507', ort: 'Biglen', tel: '031 701 05 77', mail: 'be.eichenbergersanitaer@bluewin.ch' },
-  { bkp: '250', firma: 'Leu Haustechnik AG', str: 'Laupenackerstrasse 56', plz: '3302', ort: 'Moosseedorf', tel: '031 850 15 50', mail: 'mail@leu-haustech.ch' },
-  { bkp: '252', kat: 'Wasch-/Trockenapparate', firma: 'Schulthess Maschinen AG', str: 'Ey 5', plz: '3063', ort: 'Ittigen', tel: '031 335 05 70', mail: 'niederlassungbern@schulthess.ch' },
-  { bkp: '258', kat: 'Kücheneinrichtungen', firma: 'Stucki Küchen AG', str: 'Worbstrasse 85', plz: '3075', ort: 'Rüfenacht', tel: '031 839 33 66', mail: 'info.stucki@stucki-mueller.ch' },
-  { bkp: '258', firma: 'B+S Gerber Küchen AG', str: 'Murifeldweg 2 + 4', plz: '3006', ort: 'Bern', tel: '031 351 02 21', mail: 'info@gerberskuechen.ch' },
-  { bkp: '271', kat: 'Gipserarbeiten', firma: 'Rothermann', str: 'Bernstrasse 32 A', plz: '3067', ort: 'Boll', tel: '034 402 81 81', mail: 'maler@rothermann.ch' },
-  { bkp: '271', firma: 'R & R Gipser & Malerei GmbH', str: 'Hühnerhubelstrasse 66', plz: '3123', ort: 'Belp', person: 'Michael Rahardt', mobil: '079 678 18 07', tel: '031 961 09 33', mail: 'mail@r-r-gipser.ch' },
-  { bkp: '271', firma: 'Merzgroup', str: 'Unterweg 29', plz: '3302', ort: 'Moosseedorf', tel: '031 301 00 50', mail: 'info@merzgroup.ch' },
-  { bkp: '272', kat: 'Schlosserarbeiten', firma: 'Bauschlosserei Hermann', str: 'Schlossstalden 16', plz: '3076', ort: 'Worb', tel: '031 839 46 56', mail: 'info@bauschlossereihermann.ch' },
-  { bkp: '272', firma: 'Iseli Schlosserei AG', str: 'Gutshofweg 609', plz: '3077', ort: 'Enggistein', tel: '031 839 47 07', mail: 'info@iseli-enggistein.ch' },
-  { bkp: '273', kat: 'Schreinerarbeiten', firma: 'Gfeller Holzbau GmbH', str: 'Bollstrasse 63', plz: '3076', ort: 'Worb', tel: '031 839 55 61', mail: 'info@gfeller-holzbau.ch' },
-  { bkp: '273', firma: 'E. Wenger Schreinerei AG', str: 'Dammweg 21', plz: '3053', ort: 'Münchenbuchsee', tel: '031 868 40 80', mail: 'office@e.wenger.ch' },
-  { bkp: '275', kat: 'Schliessanlagen', firma: 'ACS', str: 'Gartenstrasse 1', plz: '3110', ort: 'Münsingen', tel: '031 721 38 35', mail: 'info@acs-schliesstechnik.ch' },
-  { bkp: '275', firma: 'Hänni Sicherheitstechnik AG', str: 'Lehnweg 1', plz: '3123', ort: 'Belp', tel: '031 819 05 75', mail: 'info@haenni-sicherheit.ch' },
-  { bkp: '281', kat: 'Unterlagsböden', firma: 'Kummer Bodentechnik AG', str: 'Zikadenweg 43a', plz: '3006', ort: 'Bern', mobil: '079 439 22 23', mail: 'kummer-bodentechnik@bluewin.ch' },
-  { bkp: '281.6', kat: 'Keram. Plattenbeläge', firma: 'Keramik Böhme', str: 'Gohlhausweg 14', plz: '3432', ort: 'Lützelflüh-Goldbach', mobil: '078 604 42 33', tel: '034 411 16 67', mail: 'keramik.boehme@bluewin.ch' },
-  { bkp: '281.6', firma: 'Merz Baulösungen', str: 'Bernstrasse 1', plz: '3066', ort: 'Stettlen', tel: '031 951 31 31', mail: 'office@bauloesungen.ch' },
-  { bkp: '281.6', kat: 'Bodenbeläge in Holz', firma: 'Bruno Tschanz AG', str: 'Heidmoosweg 15', plz: '3049', ort: 'Säriswil', tel: '031 300 30 30', mail: 'info@bt-tschanz.ch' },
-  { bkp: '285.1', kat: 'Innere Malerarbeiten', firma: 'Probst Roland', str: 'Ahornweg 2', plz: '3076', ort: 'Worb', tel: '031 839 00 64', mail: 'info@farbig.ch' },
-  { bkp: '285.1', firma: 'Witschi AG', str: 'Bürglenstrasse 66', plz: '3006', ort: 'Bern', tel: '031 352 00 22', mail: 'info@witschi-ag-bern.ch' },
-  { bkp: '285.1', firma: 'Rothermann', str: 'Bernstrasse 32 A', plz: '3067', ort: 'Boll', tel: '034 402 81 81', mail: 'maler@rothermann.ch' },
-  { bkp: '287', kat: 'Baureinigungen', firma: 'HK Reinigungen AG', str: 'Bollstrasse 43', plz: '3076', ort: 'Worb', person: 'Hans Kissling', mobil: '079 667 71 71', tel: '031 839 98 91', mail: 'info@hkag.ch' },
-  { bkp: '291', kat: 'Architekt', firma: 'Hefti GmbH', str: 'Bernstrasse 40', plz: '3076', ort: 'Worb', tel: '031 839 00 77', mail: 'info@heftibb.ch' },
-  { bkp: '292', kat: 'Statiker', firma: 'Reto Studer Bauingenieur', str: 'Schnurrenmühle 127', plz: '3204', ort: 'Rosshäusern', person: 'Reto Studer', mobil: '078 824 93 34', mail: 'reto@studer-bauingenieur.ch' },
-  { bkp: '296.6', kat: 'Energieberatung', firma: 'Infrablow', str: 'Eggweg 13a', plz: '3065', ort: 'Bolligen', person: 'Harald Siegrist', tel: '031 918 07 73', mail: 'harald.siegrist@infrablow.ch' },
-  { bkp: '421', kat: 'Gärtnerarbeiten', firma: 'R. Nyffenegger Gartenbau AG', str: 'Bindenhausstrasse 46', plz: '3098', ort: 'Köniz', tel: '031 849 15 25', mail: 'info@nyffenegger-gartenbau.ch' },
-];
+// Submittenten der Demo - bewusst LEER.
+// Hier standen echte Firmen mit Adressen, Telefonnummern und Personen.
+// app.js ist oeffentlich einsehbar; echte Kontakte gehoeren nie in den
+// Quelltext, sondern in eine Projektdatei. Siehe docs/SPEICHERN.md.
+const RO31_SUBMITTENTEN = [];
 /* --- Vergabe-Art: Einzelvergabe / ARGE / Teilvergabe --- */
 function actVergabeArt(pid, vid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
@@ -11580,19 +16018,19 @@ function actVergabeArt(pid, vid) {
     </label>
     <div id="va_einzel" class="va-sec">
       <div class="form-row">
-        <label class="field">Unternehmer <input class="input" id="va_firma" list="dl_vafirma" value="${esc(v.firma || '')}" placeholder="aus Kontakten wählen oder neu eintippen">${kontakteFirmaDatalist('dl_vafirma')}<span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Aus deinen Kontakten wählen; neue Firma wird beim Speichern als Kontakt angelegt.</span></label>
+        <label class="field">Unternehmer <input class="input" id="va_firma" list="dl_vafirma" value="${esc(v.firma || '')}" placeholder="aus Kontakten wählen oder neu eintippen">${kontakteFirmaDatalist('dl_vafirma')}<span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px">Aus deinen Kontakten wählen; neue Firma wird beim Speichern als Kontakt angelegt.</span></label>
         <label class="field">Vergabesumme (CHF) <input class="input" type="number" id="va_betrag" value="${v.betrag || ''}"></label>
       </div>
     </div>
     <div id="va_arge" class="va-sec">
       <label class="field">Federführende Firma (Konsortialführer) <input class="input" id="va_argename" value="${esc((v.argePartner && v.argePartner.length) ? (v.firma || '') : '')}" placeholder="z.B. Hugentobler Bau AG"></label>
-      <label class="field" style="margin-top:8px">Partnerfirmen <span class="muted" style="font-weight:400;font-size:11px">(eine pro Zeile, inkl. Federführer)</span>
+      <label class="field" style="margin-top:8px">Partnerfirmen <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(eine pro Zeile, inkl. Federführer)</span>
         <textarea class="input" id="va_partner" rows="4" placeholder="Hugentobler Bau AG&#10;Steiner & Co.">${esc((v.argePartner || []).join('\n'))}</textarea>
       </label>
       <label class="field" style="margin-top:8px">Vergabesumme gesamt (CHF) <input class="input" type="number" id="va_argebetrag" value="${v.betrag || ''}"></label>
     </div>
     <div id="va_teil" class="va-sec">
-      <p class="muted" style="font-size:12px;margin:0 0 8px">Je Firma einen Teilbetrag. Die Summe wird zur Vergabesumme des Gewerks.</p>
+      <p class="muted" style="font-size:var(--t-xs, 12px);margin:0 0 8px">Je Firma einen Teilbetrag. Die Summe wird zur Vergabesumme des Gewerks.</p>
       <div id="va_teil_rows">
         ${tvRows.map(t => tvRowHtml(t.firma, t.betrag)).join('')}
       </div>
@@ -11677,18 +16115,18 @@ function actInvite(pid, vid) {
   const anyMatch = available.some(x => x.bm);
 
   openModal('Unternehmer einladen – ' + v.gewerk, `
-    <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;margin-bottom:8px"><input type="checkbox" id="invAll"${anyMatch ? '' : ' checked'}> Alle Unternehmer anzeigen <span class="muted">– Standard: nur passend zu BKP ${esc(v.bkp || '–')}</span></label>
+    <label style="display:flex;align-items:center;gap:7px;font-size:var(--t-s, 12.5px);margin-bottom:8px"><input type="checkbox" id="invAll"${anyMatch ? '' : ' checked'}> Alle Unternehmer anzeigen <span class="muted">– Standard: nur passend zu BKP ${esc(v.bkp || '–')}</span></label>
     <input class="input" id="invSearch" placeholder="Kontakte filtern…">
     <div id="invList" style="max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:2px;margin:-2px 0">
       ${available.length ? available.map(({ k, bm }) => `
         <label class="inv-pick" data-search="${esc((k.firma + ' ' + k.kategorie + ' ' + (k.bkps || []).join(' ') + ' ' + k.ort).toLowerCase())}" data-bkpmatch="${bm ? 1 : 0}">
           <input type="checkbox" data-firma="${esc(k.firma)}" data-email="${esc(k.email)}">
-          <div><div style="font-weight:600">${esc(k.firma)}${(k.bkps || []).length ? ` <span class="tag" style="font-size:9.5px;padding:0 5px">BKP ${esc(k.bkps.join(', '))}</span>` : ''}</div><div class="muted" style="font-size:12px">${esc(k.kategorie)} · ${esc(k.ort)}</div></div>
+          <div><div style="font-weight:600">${esc(k.firma)}${(k.bkps || []).length ? ` <span class="tag" style="font-size:var(--t-2xs, 9.5px);padding:0 5px">BKP ${esc(k.bkps.join(', '))}</span>` : ''}</div><div class="muted" style="font-size:var(--t-xs, 12px)">${esc(k.kategorie)} · ${esc(k.ort)}</div></div>
         </label>`).join('') : '<p class="muted" style="padding:8px">Alle Kontakte bereits eingeladen.</p>'}
     </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:6px 0">
-    <strong style="font-size:13px">Weitere Firma (nicht in Kontakten)</strong>
-    <span class="muted" style="font-size:11.5px"> – im Handelsregister suchen</span>
+    <strong style="font-size:var(--t-s, 13px)">Weitere Firma (nicht in Kontakten)</strong>
+    <span class="muted" style="font-size:var(--t-xs, 11.5px)"> – im Handelsregister suchen</span>
     <label class="field" style="margin-top:6px">Firma
       <div style="display:flex;gap:6px"><input class="input" id="cust_firma" style="flex:1" placeholder="Firmenname, Ort oder Branche…" autocomplete="off"><button class="btn secondary sm" type="button" id="cust_firma_btn">🔎 Suchen</button></div>
     </label>
@@ -11767,8 +16205,8 @@ function rueckleseRender() {
 
   openModal(`Rücklese – ${c.idx + 1} / ${c.ids.length}`, `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-      <strong style="font-size:15px">${esc(e.firma)}</strong>
-      <span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:2px 8px;font-size:10.5px">${INV_STATUS[e.status]?.label || e.status}</span>
+      <strong style="font-size:var(--t-l, 15px)">${esc(e.firma)}</strong>
+      <span class="st ${INV_STATUS[e.status]?.color || 'grey'}" style="padding:2px 8px;font-size:var(--t-2xs, 10.5px)">${INV_STATUS[e.status]?.label || e.status}</span>
     </div>
     <div class="form-row">
       <label class="field">Offertbetrag (CHF) <input class="input" type="number" id="rl_betrag" value="${e.betrag ?? ''}" placeholder="z.B. 198000"></label>
@@ -11778,7 +16216,7 @@ function rueckleseRender() {
       <input type="file" id="rl_file" accept="image/*,application/pdf" style="display:none">
       <button class="btn sm secondary" type="button" id="rl_scanbtn">📷 Betrag aus Offerte scannen</button>
     </div>
-    <div id="rl_scanbox" class="muted" style="font-size:12.5px;min-height:18px;margin-top:6px"></div>
+    <div id="rl_scanbox" class="muted" style="font-size:var(--t-s, 12.5px);min-height:18px;margin-top:6px"></div>
   `, `
     <button class="btn ghost" type="button" id="rl_prev" ${c.idx === 0 ? 'disabled' : ''}>‹ Zurück</button>
     <button class="btn ghost" type="button" id="rl_skip">Überspringen</button>
@@ -11906,7 +16344,7 @@ function actNewBudget(pid, vid, bid, prefillText) {
   const p = findProjekt(pid); const v = findVergabe(p, vid);
   const b = bid ? (v.budgetposten || []).find(x => x.id === bid) : null;
   const einhListe = alleEinheiten(p);
-  const whgSel = einhListe.length ? `<label class="field">Wohnung / Eigentümer <span class="muted" style="font-weight:400;font-size:11px">– Budget dieser Position zuordnen</span>
+  const whgSel = einhListe.length ? `<label class="field">Wohnung / Eigentümer <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">– Budget dieser Position zuordnen</span>
       <select class="select" id="bp_wohnung"><option value=""${!(b && b.wohnung) ? ' selected' : ''}>Allgemein (ganzes Gewerk)</option>${einhListe.map(x => `<option value="${x.u.id}"${b && b.wohnung === x.u.id ? ' selected' : ''}>${esc(x.u.name || 'Wohnung')}${x.u.eigentuemer ? ' · ' + esc(x.u.eigentuemer) : ''}</option>`).join('')}</select>
     </label>` : '';
   openModal(b ? 'Budgetposition bearbeiten' : 'Budgetposition', `
@@ -11914,10 +16352,10 @@ function actNewBudget(pid, vid, bid, prefillText) {
     ${whgSel}
     <div class="form-row">
       <label class="field">Budget im WV (CHF) <input class="input" type="number" id="bp_betrag" value="${b ? (b.betrag ?? '') : ''}" placeholder="z.B. 25000"></label>
-      <label class="field">Tatsächlich gewählt (CHF) <span class="muted" style="font-weight:400;font-size:11px">netto</span> <input class="input" type="number" id="bp_ist" value="${b && b.ist != null ? b.ist : ''}" placeholder="leer = noch offen"></label>
+      <label class="field">Tatsächlich gewählt (CHF) <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">netto</span> <input class="input" type="number" id="bp_ist" value="${b && b.ist != null ? b.ist : ''}" placeholder="leer = noch offen"></label>
     </div>
     <hr style="border:none;border-top:1px solid var(--border);margin:12px 0 8px">
-    <div class="muted" style="font-size:11.5px;margin-bottom:6px">Optionale Offerte-Aufstellung – wenn „Brutto" gesetzt ist, wird „tatsächlich gewählt" automatisch als <b>Netto</b> (nach Rabatt/Skonto/Abzügen) berechnet:</div>
+    <div class="muted" style="font-size:var(--t-xs, 11.5px);margin-bottom:6px">Optionale Offerte-Aufstellung – wenn „Brutto" gesetzt ist, wird „tatsächlich gewählt" automatisch als <b>Netto</b> (nach Rabatt/Skonto/Abzügen) berechnet:</div>
     <div class="form-row">
       <label class="field">Offerte Brutto (CHF) <input class="input" type="number" id="bp_brutto" value="${b && b.brutto != null ? b.brutto : ''}" placeholder="optional"></label>
       <label class="field">Rabatt % <input class="input" type="number" id="bp_rabatt" value="${b && b.rabatt != null ? b.rabatt : ''}" placeholder="0"></label>
@@ -11926,7 +16364,7 @@ function actNewBudget(pid, vid, bid, prefillText) {
       <label class="field">Skonto % <input class="input" type="number" id="bp_skonto" value="${b && b.skonto != null ? b.skonto : ''}" placeholder="0"></label>
       <label class="field">Allg. Abzüge % <input class="input" type="number" id="bp_abz" value="${b && b.weitereAbz != null ? b.weitereAbz : ''}" placeholder="0"></label>
     </div>
-    <p class="muted" style="font-size:11.5px;margin:2px 0 0">Das Budget steckt im Werkvertrag (wird nicht zusätzlich aufgerechnet). Die <strong>Differenz</strong> (Netto − Budget) fliesst in die Baukosten; in der Aufstellung kommen +${archZuschlagP()}% Architekt und MwSt dazu.</p>
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:2px 0 0">Das Budget steckt im Werkvertrag (wird nicht zusätzlich aufgerechnet). Die <strong>Differenz</strong> (Netto − Budget) fliesst in die Baukosten; in der Aufstellung kommen +${archZuschlagP()}% Architekt und MwSt dazu.</p>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-budget" data-pid="${pid}" data-vid="${vid}"${b ? ` data-bid="${bid}"` : ''}>${b ? '💾 Speichern' : '+ Hinzufügen'}</button>`);
 }
 function saveBudget(pid, vid, bid) {
@@ -12047,7 +16485,7 @@ function actNewRechnung(pid, vid) {
     <label class="field">Bezeichnung <input class="input" id="rg_text" placeholder="z.B. Akontorechnung 1 / Schlussrechnung"></label>
     <div class="form-row">
       <label class="field">Art
-        <select class="select" id="rg_art"><option value="akonto">Akonto-/Teilrechnung</option><option value="schluss">Schlussrechnung</option><option value="gutschrift">Gutschrift</option></select>
+        <select class="select" id="rg_art" title="Steuerlich zählt die Schlussrechnung – Akonto- und Teilrechnungen sind neutral."><option value="akonto">Akonto-/Teilrechnung</option><option value="schluss">Schlussrechnung</option><option value="gutschrift">Gutschrift</option></select>
       </label>
       <label class="field">Rechnungs-Nr. <input class="input" id="rg_nr" placeholder="optional"></label>
     </div>
@@ -12062,7 +16500,7 @@ function actNewRechnung(pid, vid) {
     <label class="field">Status
       <select class="select" id="rg_bezahlt"><option value="0">offen</option><option value="1">bezahlt</option></select>
     </label>
-    <p class="muted" style="font-size:11.5px;margin:6px 0 0">Rückbehalt = einbehaltene Garantiesumme (wird erst nach der Garantiefrist ausbezahlt). Skonto mindert die Auszahlung.</p>
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:6px 0 0">Rückbehalt = einbehaltene Garantiesumme (wird erst nach der Garantiefrist ausbezahlt). Skonto mindert die Auszahlung.</p>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="save-rechnung" data-pid="${pid}" data-vid="${vid}">💾 Speichern</button>`);
 }
 
@@ -12210,11 +16648,11 @@ function fmtQrRef(ref, typ) {
 function actScanQrRechnung(pid, vid) {
   pendingQr = null;
   openModal('QR-Rechnung scannen', `
-    <p class="muted" style="font-size:13px;margin-top:0">Foto oder PDF der Rechnung mit Swiss-QR-Code wählen. Betrag, Kreditor und Referenz werden automatisch ausgelesen – du kannst sie danach prüfen.</p>
+    <p class="muted" style="font-size:var(--t-s, 13px);margin-top:0">Foto oder PDF der Rechnung mit Swiss-QR-Code wählen. Betrag, Kreditor und Referenz werden automatisch ausgelesen – du kannst sie danach prüfen.</p>
     <label class="field">Bild oder PDF
       <input class="input" type="file" id="qr_file" accept="image/*,application/pdf">
     </label>
-    <div id="qr_status" class="muted" style="font-size:13px;min-height:20px"></div>
+    <div id="qr_status" class="muted" style="font-size:var(--t-s, 13px);min-height:20px"></div>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button>`);
   $('#qr_file')?.addEventListener('change', e => handleQrFile(e.target.files && e.target.files[0], pid, vid));
 }
@@ -12242,7 +16680,7 @@ function openQrRechnungForm(pid, vid, qr) {
   const refDisp = fmtQrRef(qr.referenz, qr.referenzTyp);
   const fremdWaehrung = qr.waehrung && qr.waehrung !== 'CHF';
   openModal('Rechnung aus QR übernehmen', `
-    <div style="background:var(--brand-soft);border-radius: 0;padding:10px 12px;margin-bottom:14px;font-size:12.5px;line-height:1.6">
+    <div style="background:var(--brand-soft);border-radius: 0;padding:10px 12px;margin-bottom:14px;font-size:var(--t-s, 12.5px);line-height:1.6">
       <strong>✓ Aus QR-Code gelesen</strong><br>
       Kreditor: <strong>${esc(qr.kreditor || '–')}</strong><br>
       IBAN: ${esc(qr.iban || '–')}<br>
@@ -12257,7 +16695,7 @@ function openQrRechnungForm(pid, vid, qr) {
     </div>
     <div class="form-row">
       <label class="field">Art
-        <select class="select" id="rg_art"><option value="akonto">Akonto-/Teilrechnung</option><option value="schluss">Schlussrechnung</option><option value="gutschrift">Gutschrift</option></select>
+        <select class="select" id="rg_art" title="Steuerlich zählt die Schlussrechnung – Akonto- und Teilrechnungen sind neutral."><option value="akonto">Akonto-/Teilrechnung</option><option value="schluss">Schlussrechnung</option><option value="gutschrift">Gutschrift</option></select>
       </label>
       <label class="field">Datum <input class="input" type="date" id="rg_datum" value="${todayIso()}"></label>
     </div>
@@ -12275,17 +16713,102 @@ function openQrRechnungForm(pid, vid, qr) {
 
 // Absender/Büro (Eingabeadresse) – Default/Fallback; editierbar via Einstellungen → state.buero
 const BUERO = {
-  firma: 'P. Hefti Bauberatung GmbH',
-  strasse: 'Bernstrasse 40',
-  plzort: '3076 Worb',
-  tel: '031 839 00 77',
-  email: 'info@heftibb.ch',
+  // Leer: die Angaben des eigenen Buero kommen aus Einstellungen -> Buero.
+  // Hier standen echte Firmendaten; app.js ist oeffentlich einsehbar.
+  firma: '',
+  strasse: '',
+  plzort: '',
+  tel: '',
+  email: '',
   mwst: 8.1,            // MwSt-Satz in %
   preiseInkl: false,    // false = Beträge netto (exkl. MwSt), true = inkl.
   archZuschlag: 15,     // üblicher Architekten-/Bauleitungszuschlag in % auf den Nettobetrag vor MwSt
 };
 // MwSt-Konvention (global, aus den Büro-Einstellungen)
 function mwstSatz() { const v = Number((state.buero || BUERO).mwst); return (isFinite(v) && v >= 0) ? v : 8.1; }
+
+/* ============================================================
+   Mehrwertsteuer über einen Satzwechsel hinweg
+   ------------------------------------------------------------
+   Massgebend ist das Datum der LEISTUNG, nicht der Rechnung. Wechselt der
+   Satz mitten in der Bauzeit, muss ein laufender Werkvertrag aufgeteilt
+   werden: Was vor dem Stichtag geleistet wurde, zum alten Satz, danach zum
+   neuen. (So geschehen am 1.1.2024, als 7.7 % zu 8.1 % wurden.)
+
+   Als Leistungszeitraum dient die Bauzeit des Gewerks — bauStart bis bauEnde.
+   Aufgeteilt wird nach Kalendertagen; das ist die Regel, auf die sich Bauherr
+   und Unternehmer in der Praxis einigen, wenn nichts anderes vereinbart ist.
+
+   Je Position lässt sich das übersteuern:
+     auto      nach Bauzeit aufteilen (Vorgabe)
+     alt/neu   ganz dem einen oder anderen Satz zuordnen
+   ============================================================ */
+const MWST_STANDARD = [{ ab: '2018-01-01', satz: 7.7 }, { ab: '2024-01-01', satz: 8.1 }];
+
+function mwstSaetze() {
+  const b = state.buero || BUERO;
+  const l = (Array.isArray(b.mwstSaetze) && b.mwstSaetze.length) ? b.mwstSaetze : MWST_STANDARD;
+  return l.slice().filter(e => e && e.ab).sort((a, b2) => String(a.ab).localeCompare(String(b2.ab)));
+}
+
+/** Der Satz, der an einem Tag gilt. */
+function mwstFuerDatum(iso) {
+  const l = mwstSaetze();
+  if (!l.length) return mwstSatz();
+  let satz = l[0].satz;
+  for (const e of l) { if (String(iso || '') >= String(e.ab)) satz = e.satz; }
+  return Number(satz) || 0;
+}
+
+/** Alle Stichtage, die in einen Zeitraum fallen. */
+function mwstStichtage(von, bis) {
+  return mwstSaetze().map(e => e.ab).filter(d => d > von && d <= bis);
+}
+
+/**
+ * Teilt einen Betrag über die Bauzeit auf die geltenden Sätze auf.
+ * @returns [{ satz, tage, anteil, betrag, mwst }]
+ */
+function mwstAufteilung(betrag, von, bis, zuordnung) {
+  const b = Number(betrag) || 0;
+  if (!von || !bis || bis < von) {
+    const s = mwstFuerDatum(von || bis || todayIso());
+    return [{ satz: s, tage: 0, anteil: 1, betrag: b, mwst: b - b / (1 + s / 100) }];
+  }
+  const stich = mwstStichtage(von, bis);
+
+  // Ganz zuordnen, wenn gewünscht oder wenn kein Wechsel im Zeitraum liegt.
+  if (zuordnung === 'alt' || zuordnung === 'neu' || !stich.length) {
+    const tag = zuordnung === 'alt' ? von : (zuordnung === 'neu' ? bis : von);
+    const s = mwstFuerDatum(tag);
+    return [{ satz: s, tage: tageZwischen(von, bis), anteil: 1, betrag: b, mwst: b - b / (1 + s / 100) }];
+  }
+
+  const grenzen = [von].concat(stich);
+  const gesamt = tageZwischen(von, bis);
+  const teile = grenzen.map((start, i) => {
+    const ende = (i + 1 < grenzen.length) ? tagDavor(grenzen[i + 1]) : bis;
+    const tage = tageZwischen(start, ende);
+    return { satz: mwstFuerDatum(start), tage, von: start, bis: ende };
+  }).filter(t => t.tage > 0);
+
+  let rest = b;
+  return teile.map((t, i) => {
+    const anteil = t.tage / gesamt;
+    const betragTeil = (i === teile.length - 1) ? rest : Math.round(b * anteil * 100) / 100;
+    rest = Math.round((rest - betragTeil) * 100) / 100;
+    return Object.assign({}, t, { anteil, betrag: betragTeil, mwst: betragTeil - betragTeil / (1 + t.satz / 100) });
+  });
+}
+
+function tageZwischen(vonIso, bisIso) {
+  const a = new Date(vonIso + 'T12:00:00'), b = new Date(bisIso + 'T12:00:00');
+  return Math.round((b - a) / 86400000) + 1;
+}
+function tagDavor(iso) {
+  const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
 function archZuschlagP() { const v = Number((state.buero || BUERO).archZuschlag); return (isFinite(v) && v >= 0) ? v : 15; }
 // Netto eines Auswahlentscheids: aus Offerte-Brutto − Rabatt − Skonto, sonst altes Ist-Feld
 function entHasIst(e) { return (e.brutto != null && e.brutto !== '') || (e.ist != null && e.ist !== ''); }
@@ -12398,16 +16921,16 @@ function actEditTermin(pid, vid, defStart) {
     </div>
     <div class="form-row" style="margin-top:8px">
       <label class="field">Bestellfrist / Vorlauf (Tage <b>vor</b> Start) <input class="input" type="number" id="t_bestell" value="${v.bestellfrist ?? ''}" placeholder="z.B. 30" min="0">
-        <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">Material bestellen, Lieferfrist – heller Balken <b>vor</b> dem Hauptbalken.</span></label>
+        <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px">Material bestellen, Lieferfrist – heller Balken <b>vor</b> dem Hauptbalken.</span></label>
       <label class="field">Nachlauf / Austrocknung (Tage <b>nach</b> Ende) <input class="input" type="number" id="t_nach" value="${v.nachfrist ?? ''}" placeholder="z.B. 21" min="0">
-        <span class="muted" style="font-size:11px;font-weight:400;display:block;margin-top:3px">z.B. Unterlagsboden trocknen – Balken <b>nach</b> dem Hauptbalken (Fläche erst danach frei).</span></label>
+        <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px">z.B. Unterlagsboden trocknen – Balken <b>nach</b> dem Hauptbalken (Fläche erst danach frei).</span></label>
     </div>
     <label class="field" style="margin-top:4px">Bezeichnung Nachlauf <input class="input" id="t_nachlbl" value="${esc(v.nachfristLabel || '')}" placeholder="z.B. Austrocknung"></label>
     <div class="form-row" style="margin-top:12px">
       <label class="field">Vorab-Termin mit Unternehmer <input class="input" id="t_vlabel" value="${esc((v.vorab && v.vorab.label) || '')}" placeholder="z.B. Begehung / Startsitzung"></label>
       <label class="field">Tage vor Start <input class="input" type="number" id="t_vtage" value="${(v.vorab && v.vorab.tageVor != null) ? v.vorab.tageVor : ''}" placeholder="z.B. 7" min="0"></label>
     </div>
-    <span class="muted" style="font-size:11px;display:block;margin-top:2px">Markiert im Gantt einen 📌 Vorab-Termin (Begehung/Kickoff) und erscheint im Kalender. Leer = kein Vorab-Termin.</span>
+    <span class="muted" style="font-size:var(--t-2xs, 11px);display:block;margin-top:2px">Markiert im Gantt einen 📌 Vorab-Termin (Begehung/Kickoff) und erscheint im Kalender. Leer = kein Vorab-Termin.</span>
     ${(v.vorgaenge || []).length ? `<label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px"><input type="checkbox" id="t_auto"${v.autoBalken ? ' checked' : ''}> Dauer <b>automatisch aus den Unterterminen</b> (Oberbalken umspannt sie)</label>` : ''}
     <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px"><input type="checkbox" id="t_erf"${v.erfuellt ? ' checked' : ''}> <b>Erfüllt / erledigt</b> (Häkchen im Balken)</label>
     <label class="field" style="margin-top:6px">Notiz / Terminänderung <input class="input" id="t_notiz" value="${esc(v.notiz || '')}" placeholder="z.B. Ausführung KW24 verschoben auf KW26 · geht wahrscheinlich bis KW24+2"></label>
@@ -12430,7 +16953,11 @@ function saveTermin(pid, vid) {
   const nl = $('#t_nachlbl'); if (nl) v.nachfristLabel = nl.value.trim();
   const vl = $('#t_vlabel'), vt = $('#t_vtage');
   if (vl && vt) { const tage = vt.value.trim(); if (tage !== '' && !isNaN(+tage)) v.vorab = { label: vl.value.trim() || 'Vorab-Termin', tageVor: Math.max(0, Math.round(+tage)) }; else v.vorab = null; }
-  save(); closeModal(); rerenderGantt(pid);
+  save(); closeModal();
+  /* Zurück dorthin, wo der Dialog geöffnet wurde. Vorher stand hier immer
+     rerenderGantt() — wer den Termin aus dem Zahlungsplan setzte, landete
+     danach im Terminprogramm und musste sich neu zurechtfinden. */
+  if (document.querySelector('.gantt')) rerenderGantt(pid); else router();
   toast('Termine aktualisiert');
 }
 
@@ -12561,7 +17088,7 @@ function actKontakt(kid) {
   const k = kid ? (state.kontakte || []).find(x => x.id === kid) : null;
   const val = f => k && k[f] != null ? esc(k[f]) : '';
   openModal(k ? 'Kontakt bearbeiten' : 'Neuer Kontakt', `
-    <label class="field">Firma ${k ? '' : '<span class="muted" style="font-weight:400;font-size:11.5px">– im Handelsregister suchen</span>'}
+    <label class="field">Firma ${k ? '' : '<span class="muted" style="font-weight:400;font-size:var(--t-xs, 11.5px)">– im Handelsregister suchen</span>'}
       <div style="display:flex;gap:6px"><input class="input" id="f_firma" style="flex:1" value="${val('firma')}" placeholder="Firmenname, Ort oder Branche…" autocomplete="off"><button class="btn secondary sm" type="button" id="f_firma_btn">🔎 Suchen</button></div>
     </label>
     <div id="firmaResults" class="ac-list" style="display:none"></div>
@@ -12571,7 +17098,7 @@ function actKontakt(kid) {
     </div>
     <div class="form-row">
       <label class="field">Kategorie / Gewerk <input class="input" id="f_kat" list="dl_kkat" value="${k && k.kategorie !== '–' ? val('kategorie') : ''}" placeholder="z.B. Baumeister">${kategorieDatalist('dl_kkat')}</label>
-      <label class="field">BKP(s) <span class="muted" style="font-weight:400;font-size:11px">– kommagetrennt</span> <input class="input" id="f_bkps" value="${esc(((k && k.bkps) || []).join(', '))}" list="dl_kbkp" placeholder="z.B. 211, 271">${bkpDatalist('dl_kbkp')}</label>
+      <label class="field">BKP(s) <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">– kommagetrennt</span> <input class="input" id="f_bkps" value="${esc(((k && k.bkps) || []).join(', '))}" list="dl_kbkp" placeholder="z.B. 211, 271">${bkpDatalist('dl_kbkp')}</label>
     </div>
     <label class="field">Strasse <input class="input" id="f_str" value="${val('strasse')}"></label>
     <div class="form-row">
@@ -12611,7 +17138,7 @@ function attachFirmaRegisterSuche(inputId, boxId, onPick, btnId) {
     box.innerHTML = matches.map((f, i) => `
       <div class="ac-item" data-i="${i}">
         <div><strong>${esc(f.name)}</strong>${f.rechtsform ? ` <span class="tag">${esc(f.rechtsform)}</span>` : ''}</div>
-        <div class="muted" style="font-size:12px">${esc(f.uid)}${f.ort ? ' · ' + (f.plz ? esc(f.plz) + ' ' : '') + esc(f.ort) : ''}${f.branche ? ' · ' + esc(f.branche) : ''}</div>
+        <div class="muted" style="font-size:var(--t-xs, 12px)">${esc(f.uid)}${f.ort ? ' · ' + (f.plz ? esc(f.plz) + ' ' : '') + esc(f.ort) : ''}${f.branche ? ' · ' + esc(f.branche) : ''}</div>
       </div>`).join('');
   };
   const runSearch = async () => {
@@ -12774,13 +17301,13 @@ function initGerberLaunch() {
 
 function resetDemo() {
   const warn = cloudEnabled
-    ? `<div style="background:#fdecec;border:1px solid var(--s-red);border-radius: 0;padding:10px 12px;font-size:13px;color:#7a1d1d">
+    ? `<div style="background:#fdecec;border:1px solid var(--s-red);border-radius: 0;padding:10px 12px;font-size:var(--t-s, 13px);color:#7a1d1d">
          <strong>⚠ Cloud-Modus:</strong> Dies überschreibt den <strong>gemeinsamen Arbeitsbereich für alle</strong> mit den Demodaten. Alle bestehenden Projekte, Vergaben, Protokolle usw. gehen verloren und werden auf allen Geräten synchronisiert.
        </div>`
-    : `<p class="muted" style="font-size:13px;margin-top:0">Dies ersetzt alle aktuellen Daten in diesem Browser durch die <strong>Demodaten</strong>: Römerstrasse 31, Kunoweg 20, Kinderheim Heimelig – inkl. <strong>Submittentenliste &amp; Kontakte</strong> (Römerstrasse).</p>`;
+    : `<p class="muted" style="font-size:var(--t-s, 13px);margin-top:0">Setzt diesen Browser auf einen <strong>leeren Stand</strong> zurück – alle Projekte, Vergaben und Protokolle darin gehen verloren. Es werden <strong>keine Beispieldaten</strong> geladen; eigene Projekte holst du über <em>Arbeitsordner wählen</em> oder <em>Backup einlesen</em>.</p>`;
   openModal('Demodaten laden?', `
     ${warn}
-    <p style="font-size:13px;margin-bottom:0">Tipp: vorher <button class="btn sm secondary" type="button" id="reset_export">⬇ Daten exportieren</button> zur Sicherung.</p>
+    <p style="font-size:var(--t-s, 13px);margin-bottom:0">Tipp: vorher <button class="btn sm secondary" type="button" id="reset_export">⬇ Daten exportieren</button> zur Sicherung.</p>
   `, `<button class="btn ghost" data-close="1">Abbrechen</button>
       <button class="btn danger" data-act="confirm-reset">Ja, zurücksetzen</button>`);
   $('#reset_export')?.addEventListener('click', exportData);
@@ -12919,7 +17446,9 @@ document.addEventListener('click', e => {
     case 'pdf-baukosten-mode': { const pp = findProjekt(pid); const ta = $('#bk_einleitung'); if (pp && ta) { pp.deckblatt = ta.value; save(); } closeModal(); pdfBaukosten(pid, act.dataset.mode); break; }
     case 'pdf-gantt':            pdfGantt(pid, kind, act.dataset.year ? { from: act.dataset.year + '-01-01', to: act.dataset.year + '-12-31', label: 'Jahr ' + act.dataset.year } : null); break;
     case 'gantt-print':          actGanttPrint(pid); break;
-    case 'pdf-zahlungsplan':     pdfZahlungsplan(pid); break;
+    case 'gantt-paper': { ganttPrintPaper = kind; try { localStorage.setItem('so_gantt_paper', kind); } catch (_) {} closeModal(); actGanttPrint(pid); break; }
+    case 'gantt-etappen': { ganttEtappen = kind; try { localStorage.setItem('so_gantt_etappen', kind); } catch (_) {} closeModal(); actGanttPrint(pid); break; }
+    case 'pdf-zahlungsplan':     pdfZahlungsplanMenu(e, pid); break;
     case 'pdf-rechnungen':       pdfRechnungskontrolle(pid); break;
     case 'advance':      advanceVergabe(pid, vid); break;
     case 'edit-vergabe':      actEditVergabe(pid, vid); break;
@@ -13069,6 +17598,10 @@ document.addEventListener('click', e => {
     case 'ress-config':  actRessConfig(pid); break;
     case 'ress-save':    saveRessConfig(pid); break;
     case 'regeln-open':  actRegeln(pid); break;
+    case 'regel-aktiv':          toggleRegelAktiv(pid, act.dataset.rid); break;
+    case 'regel-ausnahme':       setRegelAusnahme(pid, act.dataset.rid); break;
+    case 'regel-ausnahme-weg':   loescheRegelAusnahme(pid, act.dataset.rid); break;
+    case 'regel-vorschlag':      regelVorschlaegeUebernehmen(pid); break;
     case 'regel-add':    addRegel(pid); break;
     case 'regel-del':    delRegel(pid, act.dataset.rid); break;
     case 'termin-clear':      closeModal(); clearTermin(pid, vid); break;
@@ -13102,7 +17635,7 @@ document.addEventListener('click', e => {
     case 'sr-config':       actSitzungsraster(pid); break;
     case 'sr-save':         saveSitzungsraster(pid); break;
     case 'gantt-raster':    ganttRaster = !ganttRaster; rerenderGantt(pid); break;
-    case 'gantt-rowh':      { ganttRowH = kind === 'reset' ? 38 : Math.max(26, Math.min(60, ganttRowH + (kind === 'in' ? 6 : -6))); rerenderGantt(pid); } break;
+    case 'gantt-rowh':      { ganttRowH = kind === 'reset' ? ROWH_STD : Math.max(ROWH_MIN, Math.min(ROWH_MAX, ganttRowH + (kind === 'in' ? 4 : -4))); try { localStorage.setItem('so_gantt_rowh', ganttRowH); } catch (_) {} rerenderGantt(pid); } break;
     case 'gantt-font':      { ganttFont = kind === 'reset' ? 11 : Math.max(8, Math.min(16, ganttFont + (kind === 'in' ? 1 : -1))); rerenderGantt(pid); } break;
     case 'gantt-sidefont':  { ganttSideFont = kind === 'reset' ? 12 : Math.max(8, Math.min(18, ganttSideFont + (kind === 'in' ? 1 : -1))); rerenderGantt(pid); } break;
     case 'gantt-pad':       { ganttPad = kind === 'reset' ? 1 : (kind === 'cycle' ? (ganttPad + 1) % 7 : Math.max(0, Math.min(12, ganttPad + (kind === 'in' ? 1 : -1)))); rerenderGantt(pid); } break;
@@ -13120,7 +17653,7 @@ document.addEventListener('click', e => {
     case 'verschieb-print': pdfVerschiebungen(pid); break;
     case 'focus-add':       actFocusAdd(e, pid); break;
     case 'gantt-colors-open': actGanttColors(pid); break;
-    case 'gantt-colors-reset': { if (state.ganttColors) delete state.ganttColors[act.dataset.kind]; save(); rerenderGantt(pid); closeModal(); actGanttColors(pid); } break;
+    case 'gantt-colors-reset': { if (state.ganttColors) { delete state.ganttColors[act.dataset.kind]; if (act.dataset.kind === 'firma') delete state.ganttColors.gewerk; } save(); rerenderGantt(pid); closeModal(); actGanttColors(pid); } break;
     case 'eckdaten':        actEckdaten(pid); break;
     case 'eckdaten-save':   saveEckdaten(pid); break;
     case 'feiertage':       actFeiertage(pid); break;
@@ -13162,6 +17695,45 @@ document.addEventListener('click', e => {
     case 'rm-logo':      state.buero = { ...(state.buero || {}), logo: '' }; save(); viewEinstellungen(); break;
     case 'export':       exportData(); break;
     case 'import-data':  importData(); break;
+    case 'ordner-waehlen':  ordnerWaehlen(); break;
+    case 'ordner-verlassen': ordnerVerlassen(); break;
+    case 'zp-bh-grundlage': zpBhGrundlage(pid, act.dataset.wert); break;
+    case 'zp-bh-schritt':   zpBhSchritt(pid, act.dataset.wert); break;
+    case 'zp-bh-ist':       zpBhIst(pid, act.dataset.wert); break;
+    case 'zp-brutto':       kostenBrutto = !kostenBrutto; viewZahlungsplan(pid); break;
+    case 'aufgabe-neu':        aufgabeNeu(kind); break;
+    case 'aufgabe-fertig':     aufgabeFertig(kind); break;
+    case 'aufgabe-menu':       aufgabeMenu(e, kind); break;
+    case 'stunden-nav':        stundenNav(kind); break;
+    case 'stunden-tag':        stundenTag = kind; viewStunden(); break;
+    case 'stunden-neu':        stundenNeu(); break;
+    case 'stunden-bearbeiten': stundenBearbeiten(kind); break;
+    case 'stunden-speichern':  stundenSpeichern(kind); break;
+    case 'stunden-loeschen':   stundenLoeschen(kind); break;
+    case 'zeitlage-menu':   zeitlageMenu(e, pid, act.dataset.vid); break;
+    case 'steuer-art':      setSteuerArt(pid, act.dataset.vid, act.dataset.wert); break;
+    case 'steuer-jahr':     setSteuerJahr(pid, act.dataset.vid, act.dataset.wert); break;
+    case 'steuer-vorschlag': setSteuerVorschlag(pid, act.dataset.vid); break;
+    case 'steuer-alle':     steuerAlleVorschlagen(pid); break;
+    case 'steuer-zuweisen':   actSteuerZuweisen(pid); break;
+    case 'steuer-jahr-plus':  addSteuerJahr(pid, act.dataset.wert); break;
+    case 'steuer-auffang':    setSteuerAuffang(pid, act.dataset.jahr); break;
+    case 'steuer-ejahr':      setSteuerEJahr(pid, act.dataset.jahr); break;
+    case 'zp-versatz':      zpSetVersatz(pid, act.dataset.wert); break;
+    case 'zp-rueckbehalt':  zpSetRueckbehalt(pid, act.dataset.wert); break;
+    case 'zp-zur-rechnung': zpZurRechnung(pid, act.dataset.vid, act.dataset.rgid); break;
+    case 'zp-unt-versatz':  zpSetUntVersatz(pid, act.dataset.kind, act.dataset.wert !== undefined ? act.dataset.wert : ''); break;
+    case 'zp-frist':        zpSetFrist(pid, act.dataset.wert); break;
+    case 'gewerk-art':      setGewerkArt(pid, act.dataset.vid, act.dataset.wert); break;
+    case 'sammel-ausweisen': setSammelAusweisen(pid, act.dataset.vid); break;
+    case 'sammel-eigenstatus': { const vv = findVergabe(findProjekt(pid), act.dataset.vid); if (vv) { if (vv.eigenStatus) delete vv.eigenStatus; else vv.eigenStatus = true; save(); viewVergabeDetail(pid, act.dataset.vid); toast(vv.eigenStatus ? 'Herausgelöst – führt jetzt einen eigenen Vergabestatus' : 'Folgt wieder dem Päckli'); } break; }
+    case 'gewerk-entfaellt': setEntfaellt(pid, act.dataset.vid, act.dataset.wert); break;
+    case 'gewerk-prognose':  setEigenePrognose(pid, act.dataset.vid); break;
+    case 'gewerk-termin-sicht': { const v = findVergabe(findProjekt(pid), act.dataset.vid); if (v) { if (zeigtImTermin(v)) v.imTermin = false; else delete v.imTermin; save(); viewVergabeDetail(pid, act.dataset.vid); toast(zeigtImTermin(v) ? 'Erscheint im Terminprogramm' : 'Nicht mehr im Terminprogramm'); } break; }
+    case 'gantt-alle':       ganttAlleZeigen = !ganttAlleZeigen; rerenderGantt(pid); break;
+    case 'gewerk-mwst': { const v = findVergabe(findProjekt(pid), act.dataset.vid); if (v) { const w = act.dataset.wert; if (w === 'auto') delete v.mwstZuordnung; else v.mwstZuordnung = w; save(); viewVergabeDetail(pid, act.dataset.vid); } break; }
+    case 'zp-unt-schwelle': zpUntSchwelle(pid, act.dataset.wert); break;
+    case 'zp-unt-schritt':  zpUntSchritt(pid, act.dataset.wert); break;
     case 'gerber-import': importProjektGerber(); break;
     case 'gerber-export': exportProjektGerber(pid); break;
     case 'gerber-termin': exportTerminGerber(pid); break;
@@ -13179,7 +17751,11 @@ document.addEventListener('contextmenu', onGlobalContext);
 // Delegierte change-Handler: Monatsbeträge + Teilprojekt-Zuordnung in der Baukostenübersicht
 document.addEventListener('change', e => {
   const t = e.target; if (!t.closest) return;
+  const sv = t.closest('[data-act-change="sammel-zuweisen"]'); if (sv) { sammelZuweisen(sv.dataset.pid, sv.dataset.vid, t.value); return; }
   const mon = t.closest('.zp-mon'); if (mon) { setMonatOverride(mon.dataset.pid, mon.dataset.key, mon.value); return; }
+  const zl = t.closest('.st-ziel'); if (zl) { setSteuerZiel(zl.dataset.pid, zl.dataset.jahr, zl.value); return; }
+  const sq = t.closest('.stk-quote'); if (sq) { setSteuerQuote(sq.dataset.pid, sq.dataset.vid, sq.value); return; }
+  const pa = t.closest('.zp-planab'); if (pa) { zpSetPlanAb(pa.dataset.pid, pa.value); return; }
   const gw = t.closest('.bt-gw'); if (gw) { setGewerkBauteil(gw.dataset.pid, gw.dataset.vid, gw.value); return; }
   const nt = t.closest('.bt-nt'); if (nt) { setNachtragBauteil(nt.dataset.pid, nt.dataset.vid, nt.dataset.nid, nt.value); return; }
   const rg = t.closest('.bt-rg'); if (rg) { setRechnungBauteil(rg.dataset.pid, rg.dataset.vid, rg.dataset.rgid, rg.value); return; }
@@ -13193,154 +17769,17 @@ window.addEventListener('DOMContentLoaded', boot);
    --------------------------------------------------------------- */
 
 function demoData() {
-  // R = Kostenposition Römerstrasse: schaetzung = Erst-KV; rev (angepasste Offerte) = revidierter KV; paid = geleistete Zahlung
-  const R = (bkp, gewerk, kv, rev, firma, s, e, paid) => ({
-    id: uid('v'), bkp, gewerk, status: 'ausschreibung', firma: firma || '', betrag: 0, schaetzung: kv || 0, frist: '', bauStart: s || '', bauEnde: e || '',
-    eingeladene: (rev != null ? [{ id: uid('eo'), firma: firma || 'angepasste Offerte', email: '', betrag: rev, status: 'offeriert', datumMail: '' }] : []),
-    nachtraege: [], rapporte: [],
-    rechnungen: (paid ? [{ id: uid('rg'), gruppe: '', firma: firma || '', text: 'geleistete Zahlung (Stand 20.04.2026)', nr: '', art: 'akonto', betrag: paid, datum: '', bezahlt: true }] : []),
-    vorgaenge: [], budgetposten: [],
-  });
-  const K = (bkp, gewerk, schaetzung) => ({ id: uid('v'), bkp, gewerk, status: 'ausschreibung', firma: '', betrag: 0, schaetzung, frist: '', bauStart: '', bauEnde: '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
-  const vergaben = [
-    R('104', 'Baugespann', 0, 500, '', '', '', 486.45),
-    R('112', 'Abbruch', 0, null, '', '2026-06-08', '2026-07-03'),
-    R('121', 'Sicherung vorhandener Anlagen', 3000, 4000, '', '', ''),
-    R('191', 'Architekt (Vorbereitung)', 3520, 3794.90, 'P. Hefti Bauberatung', '', '', 3794.90),
-    R('199', 'Übriges', 500, 0, '', '', ''),
-    R('211', 'Baumeisterarbeiten', 75000, 94397.75, 'Kilchherr', '2026-06-08', '2026-07-17', 1179.90),
-    R('211.3', 'Baumeisteraushub', 0, null, '', '2026-06-08', '2026-06-26'),
-    R('211.4', 'Kanalisationen im Gebäude', 0, null, '', '2026-06-08', '2026-06-09'),
-    R('211.5', 'Beton- und Stahlbetonarbeiten', 0, null, '', '2026-06-22', '2026-07-17'),
-    { ...R('211.1', 'Gerüstungen', 6000, 6771.35, '', '', ''), autoBalken: true, vorgaenge: [
-      { id: uid('o'), titel: 'Aufrichten', start: '2026-07-13', ende: '2026-07-14' },
-      { id: uid('o'), titel: 'Abrüsten', start: '2026-11-16', ende: '2026-11-20' },
-    ] },
-    R('214', 'Holzbau', 11000, 64322.30, '', '2026-08-03', '2026-08-28'),
-    R('215', 'Ing. Holzbau', 9000, 0, '', '', ''),
-    { ...R('221.2', 'Fenster (Kunststoff-Metall)', 35000, 44220.75, '', '', ''), beschrieb: 'Variantenänderung: in der Kostenschätzung als Holz-Metall-Fenster geschätzt (KV 35\'000, BKP 221.1). Auf Wunsch der Bauherrschaft auf Kunststoff-Metall geändert – revidierter KV 44\'220.75 (BKP 221.2). Mehrkosten +9\'221 (in der Über-/Unterschreitung sichtbar).' },
-    R('221.6', 'Türen + Tore', 8500, 13900.00, '', '', ''),
-    R('222.0', 'Spenglerarbeiten', 12000, 13230.60, '', '2026-08-24', '2026-09-04'),
-    R('224.0', 'Steildach', 8000, 24812.40, '', '2026-07-13', '2026-07-17'),
-    R('225', 'Dichtungen / Dämmungen', 5000, 5000.00, '', '2026-10-26', '2026-11-06'),
-    R('226.2', 'Fassadendämmung verputzt', 28500, 52281.20, '', '2026-10-05', '2026-10-23'),
-    R('228', 'Sonnen- und Wetterschutz', 8500, 12258.40, '', '2026-10-26', '2026-11-13'),
-    R('230', 'Elektroanlagen', 22000, 29314.55, '', '', ''),
-    R('237', 'PV-Anlage', 30000, 32608.35, '', '2026-08-31', '2026-09-11'),
-    R('240', 'Heizungsanlagen', 20000, 47986.00, '', '', ''),
-    R('250', 'Sanitäranlagen', 49000, 35303.50, '', '', ''),
-    R('258', 'Kücheneinrichtung', 30000, 44300.00, '', '2026-11-09', '2026-11-13'),
-    R('271', 'Gipserarbeiten', 8000, 13253.65, '', '2026-09-21', '2026-10-23'),
-    R('272', 'Metallbauarbeiten', 5500, 16855.50, '', '2026-10-05', '2026-11-27'),
-    R('273', 'Schreinerarbeiten', 5500, 15000.00, '', '2026-11-09', '2026-11-27'),
-    R('281', 'Unterlagsböden', 3500, 5000.00, '', '2026-09-28', '2026-10-09'),
-    R('281.6', 'Wand- und Bodenbeläge / Parkett EG', 23000, 30000.00, '', '2026-10-19', '2026-11-06'),
-    R('285.1', 'Malerarbeiten', 8000, 16440.75, '', '2026-11-02', '2026-11-27'),
-    R('287', 'Baureinigung', 2000, 3210.55, '', '2026-11-30', '2026-12-04'),
-    R('289', 'Baubetriebskosten', 5000, 5000.00, '', '', ''),
-    R('291', 'Honorar Architekt', 78000, 78000.00, 'P. Hefti Bauberatung', '', '', 25403.50),
-    R('292', 'Ingenieur', 4000, 3200.00, '', '', ''),
-    R('296', 'Schadstoff-Untersuchung', 0, 1856.60, 'Bautox', '', '', 1856.60),
-    R('299', 'Reserve', 50000, 20000.00, '', '', ''),
-    R('421', 'Gärtnerarbeiten / Umgebung', 25000, 10000.00, '', '2026-11-23', '2026-12-11'),
-    R('511.0', 'Bewilligungen, Gebühren', 0, 3546.75, 'BBP Geomatik', '', '', 3546.75),
-    R('52', 'Baunebenkosten (Budget)', 40000, 10000.00, '', '', ''),
-    R('275', 'Schliessanlage', 0, null, '', '2026-11-16', '2026-11-27'),
-    R('', 'Mängelbehebung', 0, null, '', '2026-11-23', '2026-12-11'),
-    R('', 'Bezug & Inbetriebnahme', 0, null, '', '2026-12-14', '2026-12-14'),
-  ];
-  const kunoweg = [
-    K('112', 'Abbrüche / Demontagen', 8000),
-    K('113', 'Schadstoffuntersuchung + Altlastensanierung', 8500),
-    K('211', 'Baumeisterarbeiten', 5000),
-    K('221.0', 'Fenster aus Holz', 2000),
-    K('230', 'Elektroinstallationen', 7000),
-    K('240', 'Heizung', 2500),
-    K('250', 'Sanitäranlagen', 18000),
-    K('258', 'Kücheneinrichtung', 22000),
-    K('271', 'Gipserarbeiten', 10000),
-    K('273', 'Innentüren', 2500),
-    K('273.3', 'Allg. Schreinerarbeiten', 3000),
-    K('281.2', 'Bodenbeläge', 3000),
-    K('282.4', 'Keramische Wandbeläge', 5600),
-    K('283.4', 'Deckenbekleidung aus Holz', 3500),
-    K('285.1', 'Malerarbeiten', 4000),
-    K('286', 'Baureinigung', 1200),
-    K('291.0', 'Honorar Architekt', 10000),
-    K('299', 'Übriges / Diverses (Reserve)', 10200),
-  ];
-  // G = Kinderheim-Gewerk mit geschätzten Terminen (aus Bauprogramm-Logik – vom Bauherrn/PL anzupassen)
-  const G = (bkp, gewerk, s, e) => ({ id: uid('v'), bkp, gewerk, status: 'ausschreibung', firma: '', betrag: 0, schaetzung: 0, frist: '', bauStart: s || '', bauEnde: e || '', eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [] });
-  const kinderheim = [
-    G('172', 'Baugrubenabschlüsse', '2026-04-20', '2026-05-01'),
-    G('201', 'Aushub', '2026-04-27', '2026-05-15'),
-    G('211.1', 'Baustelleneinrichtung', '2026-04-20', '2026-04-30'),
-    G('211.3', 'Baumeisteraushub', '2026-05-04', '2026-05-22'),
-    G('211.4', 'Kanalisationen im Gebäude', '2026-05-18', '2026-05-29'),
-    G('211.5', 'Beton- und Stahlbeton', '2026-05-25', '2026-10-30'),
-    G('211.6', 'Maurerarbeiten', '2026-07-06', '2026-11-13'),
-    G('211.1', 'Gerüstungen', '2026-06-29', '2027-05-07'),
-    G('212', 'Betonelemente', '2026-05-25', '2026-06-12'),
-    G('214', 'Montagebau in Holz', '2026-10-26', '2026-11-27'),
-    G('221', 'Fenster', '2026-11-02', '2026-12-18'),
-    G('221.6', 'Aussentüren', '2026-11-16', '2026-12-11'),
-    G('222', 'Spenglerarbeiten', '2026-11-09', '2026-12-18'),
-    G('224.1', 'Flachdach', '2026-11-09', '2026-12-11'),
-    G('225.1', 'Fugendichtungen', '2027-01-12', '2027-01-23'),
-    G('226', 'Fassadenputz', '2027-03-02', '2027-04-30'),
-    G('227', 'Äussere Malerarbeiten', '2027-05-03', '2027-05-21'),
-    G('228', 'Sonnen- & Wetterschutz', '2027-05-24', '2027-06-11'),
-    G('230', 'Elektroinstallationen', '2026-12-01', '2027-09-30'),
-    G('230', 'PV-Anlage', '2027-06-01', '2027-06-18'),
-    G('242.1', 'Erdsondenbohrung', '2026-06-01', '2026-06-19'),
-    G('242', 'Heizung', '2027-01-05', '2027-06-30'),
-    G('244', 'Lüftungsanlagen', '2027-02-02', '2027-07-30'),
-    G('250', 'Sanitäranlagen', '2026-12-01', '2027-08-31'),
-    G('258', 'Küchen', '2027-08-02', '2027-08-27'),
-    G('261', 'Liftanlagen', '2027-07-05', '2027-08-13'),
-    G('271', 'Gipserarbeiten', '2027-02-01', '2027-05-28'),
-    G('271.1', 'Spez. Gipserarbeiten', '2027-02-15', '2027-04-30'),
-    G('272.2', 'Allg. Metallbauarbeiten', '2027-04-01', '2027-06-30'),
-    G('273', 'Innentüren', '2027-06-01', '2027-07-16'),
-    G('273.1', 'Allg. Schreinerarbeiten / Inneneinrichtung', '2027-07-05', '2027-09-30'),
-    G('275', 'Schliessanlage', '2027-09-01', '2027-09-30'),
-    G('281', 'Unterlagsböden', '2027-05-03', '2027-06-18'),
-    G('281.2', 'Bodenbeläge', '2027-07-05', '2027-08-20'),
-    G('282.4', 'Keramische Wand- und Bodenbeläge', '2027-06-01', '2027-07-30'),
-    G('283', 'Deckenbekleidungen', '2027-07-01', '2027-08-31'),
-    G('285', 'Innere Malerarbeiten', '2027-08-02', '2027-09-30'),
-    G('287', 'Baureinigung', '2027-10-18', '2027-10-29'),
-    G('299', 'Mängelbehebung & Fertigstellung', '2027-11-01', '2027-11-26'),
-    G('421', 'Umgebungsgestaltung', '2027-08-02', '2027-10-15'),
-    G('', 'Bezug & Inbetriebnahme', '2027-11-30', '2027-11-30'),
-  ];
-  const projekte = [{
-    id: uid('p'), name: 'Umbau EFH Römerstrasse 31', ort: 'Bremgarten', bauherr: 'Cosima Bader & Ursula Bader', projektleiter: 'P. Hefti Bauberatung GmbH',
-    phase: 'ausfuehrung', start: '2026-06-08', ende: '2026-12-14', baustart: '2026-06-08', bezug: '2026-12-14',
-    vergaben,
-  }, {
-    id: uid('p'), name: 'Umbau EFH Kunoweg 20', ort: 'Bremgarten', bauherr: 'Spori-Tritten', projektleiter: 'P. Hefti Bauberatung GmbH',
-    phase: 'planung', start: '', ende: '', baustart: '', bezug: '',
-    vergaben: kunoweg,
-  }, {
-    id: uid('p'), name: 'Neubau Kinderheim Heimelig', ort: 'Kerzers', bauherr: 'Stiftung Heimelig (Erich Hirt, Stiftungsratspräsident)', projektleiter: '',
-    phase: 'ausfuehrung', start: '2026-02-03', ende: '2027-11-30', baustart: '2026-02-03', bezug: '2027-11-30',
-    vergaben: kinderheim,
-  }];
-  // Kontakte + Submittenten fest einpflegen (Kette Kontakt → Einladung → Zuschlag → Unternehmer)
-  const kontakte = []; const seenK = new Map();
-  const addFull = (d, bkp) => { const firma = (d.firma || '').trim(); if (!firma) return; const key = firma.toLowerCase();
-    if (seenK.has(key)) { const k = seenK.get(key); ['strasse', 'plz', 'ort', 'person', 'telefon', 'email'].forEach(f => { if (d[f] && !k[f]) k[f] = d[f]; }); if ((!k.kategorie || k.kategorie === '–') && d.kategorie) k.kategorie = d.kategorie; if (bkp && !k.bkps.includes(bkp)) k.bkps.push(bkp); return; }
-    const k = { id: uid('k'), firma, strasse: d.strasse || '', plz: d.plz || '', ort: d.ort || '', person: d.person || '', telefon: d.telefon || '', email: d.email || '', kategorie: d.kategorie || '–', bkps: bkp ? [bkp] : [], funktion: '', website: '', notiz: '', uid_nr: '', rechtsform: '' }; kontakte.push(k); seenK.set(key, k); };
-  // 1) Submittentenliste Römerstrasse: volle Kontakte + als eingeladene Submittenten beim BKP-Gewerk
-  const roe = projekte.find(p => /römerstrasse|rö\s?31/i.test(p.name || ''));
-  RO31_SUBMITTENTEN.forEach(s => {
-    addFull({ firma: s.firma, strasse: s.str, plz: s.plz, ort: s.ort, person: s.person, telefon: [s.mobil, s.tel].filter(Boolean).join(' / '), email: s.mail, kategorie: s.kat }, s.bkp);
-    if (roe) { const v = (roe.vergaben || []).find(x => (x.bkp || '') === s.bkp); if (v) { v.eingeladene = v.eingeladene || []; if (!v.eingeladene.some(e => (e.firma || '').toLowerCase() === s.firma.toLowerCase())) v.eingeladene.push({ id: uid('e'), firma: s.firma, email: s.mail || '', betrag: null, status: 'eingeladen', datumMail: '' }); } }
-  });
-  // 2) übrige Projekt-Firmen (Unternehmer/eingeladene aller Projekte) ergänzen
-  projekte.forEach(p => (p.vergaben || []).forEach(v => { (v.eingeladene || []).forEach(e => addFull({ firma: e.firma, email: e.email })); if (v.firma) v.firma.split(',').forEach(f => addFull({ firma: f.trim() })); }));
-  return { projekte, kontakte, dokumente: [], buero: { ...BUERO } };
+  // Bewusst leer. Hier standen drei echte Bauvorhaben mit Namen, Adressen,
+  // Offertsummen, Honoraren und geleisteten Zahlungen - in einer Datei, die
+  // oeffentlich einsehbar ist.
+  //
+  // Ausgeleitet am 12.08.2026 mit  node test/demo-ausleiten.js  nach
+  // privat/Projekte/ - dieser Ordner steht in .gitignore.
+  //
+  // Mit eigenen Daten anfangen:
+  //   Einstellungen -> Daten -> Arbeitsordner waehlen
+  // Siehe docs/SPEICHERN.md.
+  return { projekte: [], kontakte: [], dokumente: [] };
 }
 
 /* ============================================================
@@ -13422,6 +17861,70 @@ function selfTest() {
   eq('zahlungsplan total', zp.total, 100000);
   eq('zahlungsplan kumuliert', zp.rows[2].cum, 100);
 
+  /* Bauherren-Zahlungsplan: Zahlungen aufs Raster legen.
+     Der heikle Punkt ist, dass die Summe stimmen MUSS – gerundet wird
+     deshalb die auflaufende Summe, nicht jeder Monat für sich. */
+  const roh = [['2026-06', 30000], ['2026-07', 45000], ['2026-08', 12000], ['2026-09', 33000]];
+  const rohTotal = roh.reduce((a, x) => a + x[1], 0);   // 120'000
+
+  const genau = verteileAufSchritt(roh, rohTotal, 0);
+  eq('ZP genau: Beträge unverändert', genau.map(m => m.betrag), [30000, 45000, 12000, 33000]);
+  eq('ZP genau: Summe stimmt', genau[genau.length - 1].cum, rohTotal);
+
+  // Krumme Beträge: die Rappen dürfen sich NICHT aufsummieren.
+  const krumm = [['2026-06', 47198.883], ['2026-07', 72011.317], ['2026-08', 87241.777],
+                 ['2026-09', 32046.291], ['2026-10', 93464.944], ['2026-11', 114403.004], ['2026-12', 6605.234]];
+  const krummTotal = krumm.reduce((a, x) => a + x[1], 0);
+  const rg = verteileAufSchritt(krumm, krummTotal, 0);
+  eq('ZP genau: kein Rappen-Wegdriften', Math.abs(rg.reduce((a, m) => a + m.betrag, 0) - rp5(krummTotal)) < 0.001, true);
+
+  const r25 = verteileAufSchritt(roh, rohTotal, 25000);
+  eq('ZP 25k: jede Zahlung ist ein Vielfaches (ausser der letzten)',
+    r25.slice(0, -1).every(m => m.betrag % 25000 === 0), true);
+  eq('ZP 25k: Summe bleibt exakt', r25.reduce((a, m) => a + m.betrag, 0), rohTotal);
+  eq('ZP 25k: Schlusszahlung gleicht aus', r25[r25.length - 1].cum, rohTotal);
+
+  /* Mehrwertsteuer über einen Satzwechsel.
+     Massgebend ist die Leistung, nicht die Rechnung — bei einer Bauzeit über
+     den Stichtag hinweg muss aufgeteilt werden. Die Summe der Teile MUSS den
+     Ausgangsbetrag ergeben, sonst stimmt die Schlussabrechnung nicht. */
+  eq('MwSt Satz vor dem Wechsel', mwstFuerDatum('2023-12-31'), 7.7);
+  eq('MwSt Satz am Stichtag', mwstFuerDatum('2024-01-01'), 8.1);
+  eq('MwSt Satz danach', mwstFuerDatum('2026-08-14'), 8.1);
+
+  // Ganz im neuen Satz: keine Aufteilung.
+  const mA = mwstAufteilung(108100, '2026-06-01', '2026-07-31');
+  eq('MwSt ohne Wechsel: ein Teil', mA.length, 1);
+  eq('MwSt ohne Wechsel: Satz', mA[0].satz, 8.1);
+  eq('MwSt ohne Wechsel: Betrag', mA[0].betrag, 108100);
+
+  // Bauzeit über den Stichtag: 2 Teile, Summe muss stimmen.
+  const mB2 = mwstAufteilung(100000, '2023-12-02', '2024-01-30');
+  eq('MwSt mit Wechsel: zwei Teile', mB2.length, 2);
+  eq('MwSt mit Wechsel: erster Satz', mB2[0].satz, 7.7);
+  eq('MwSt mit Wechsel: zweiter Satz', mB2[1].satz, 8.1);
+  eq('MwSt mit Wechsel: Summe bleibt', Math.round(mB2.reduce((a, t) => a + t.betrag, 0) * 100) / 100, 100000);
+  eq('MwSt mit Wechsel: Tage vollständig', mB2.reduce((a, t) => a + t.tage, 0), 60);
+
+  // Ganz zuordnen, obwohl die Bauzeit den Stichtag überspannt.
+  const mC = mwstAufteilung(100000, '2023-12-02', '2024-01-30', 'alt');
+  eq('MwSt ganz alt: ein Teil zu 7.7', mC.length === 1 && mC[0].satz === 7.7, true);
+  const mD = mwstAufteilung(100000, '2023-12-02', '2024-01-30', 'neu');
+  eq('MwSt ganz neu: ein Teil zu 8.1', mD.length === 1 && mD[0].satz === 8.1, true);
+
+  // Enthaltene MwSt aus einem Bruttobetrag: 108.10 enthält 8.10 bei 8.1 %.
+  eq('MwSt aus Brutto herausgerechnet', Math.round(mwstAufteilung(108.10, '2026-01-01', '2026-01-31')[0].mwst * 100) / 100, 8.10);
+
+  // Kleine Monate dürfen nicht verschluckt werden: die Summe zählt, nicht der Monat.
+  const klein = [['2026-06', 3000], ['2026-07', 3000], ['2026-08', 3000], ['2026-09', 3000]];
+  const rk = verteileAufSchritt(klein, 12000, 10000);
+  eq('ZP Raster > Monatsbetrag: Summe bleibt', rk.reduce((a, m) => a + m.betrag, 0), 12000);
+  eq('ZP Raster > Monatsbetrag: keine negative Zahlung', rk.every(m => m.betrag >= 0), true);
+
+  // Ein einzelner Monat: die Zahlung ist die ganze Summe, ungerundet.
+  const eins = verteileAufSchritt([['2026-06', 47321.55]], 47321.55, 25000);
+  eq('ZP ein Monat: exakt', eins[0].betrag, 47321.55);
+
   // Kosten-Versions-Diff (Vergleich zweier Stände)
   const dA = { positionen: [{ id: 1, prognose: 1000, bezahlt: 0, gewerk: 'A', bkp: '211' }] };
   const dB = { positionen: [{ id: 1, prognose: 1200, bezahlt: 0, gewerk: 'A', bkp: '211' }, { id: 2, prognose: 500, bezahlt: 0, gewerk: 'B', bkp: '212' }] };
@@ -13441,10 +17944,28 @@ function selfTest() {
   ] };
   const bp = bauherrPlan(bpProj);
   eq('bauherrPlan Monatskeys', bp.monate.map(m => m.key), ['2026-01', '2026-02', '2026-03']);
-  eq('bauherrPlan Monatsbeträge', bp.monate.map(m => m.betrag), [4000, 10000, 4000]);   // Feb: 4000 (A) + 6000 (B)
-  eq('bauherrPlan kumuliert Ende', bp.monate[2].cum, 18000);
-  eq('bauherrPlan Total (nur terminiert)', bp.total, 18000);
-  eq('bauherrPlan fehlend (ohne Termin)', bp.fehlend.length, 1);
+  /* C hat weder Termin noch Zeitlage und wird ans Ende gestellt, statt
+     aus dem Plan zu fallen. Bis zum 14.08.2026 stand hier [4000, 10000,
+     4000] und ein `fehlend` — der gedruckte Zahlungsplan wies dadurch
+     weniger aus, als das Bauvorhaben kostet, ohne es zu sagen.
+
+     Seither greift ausserdem der Garantierückbehalt von 10 %: Er läuft
+     nicht mit dem Baufortschritt mit, sondern wird mit der Schlussrechnung
+     frei. A verteilt also 10'800 auf drei Monate und legt 1'200 auf den
+     März; B zahlt 5'400 im Februar und 600 dazu; C 4'500 plus 500. */
+  eq('bauherrPlan Monatsbeträge', bp.monate.map(m => m.betrag), [3600, 9600, 9800]);
+  /* Jeder Rückbehalt landet im Schlussmonat SEINER Position, nicht im
+     letzten Monat des Bauvorhabens: B läuft nur im Februar, also wird
+     sein Rückbehalt dort frei. A und C enden im März. */
+  eq('bauherrPlan Rückbehalt im Februar', bp.monate[1].teile.filter(t => t.rueckbehalt).length, 1);
+  eq('bauherrPlan Rückbehalt im März',    bp.monate[2].teile.filter(t => t.rueckbehalt).length, 2);
+  eq('bauherrPlan kumuliert Ende', bp.monate[2].cum, 23000);
+  eq('bauherrPlan Total = alle Baukosten', bp.total, 23000);
+  eq('bauherrPlan nichts fällt heraus', bp.fehlend.length, 0);
+  ok('bauherrPlan Total deckt die Summe der Positionen',
+     Math.abs(bp.total - bpProj.vergaben.reduce((a, v) => a + v.betrag, 0)) < 0.05);
+  ok('ohne Lage ans Ende gestellt und als solches vermerkt',
+     (bp.rows.find(r => r.v.id === 3) || {}).ohneLage === true);
 
   // Ausschreibung/Nachkontrolle (S1.2-Kern): Fristen-Ampel + nächste offene Frist (relativ zu heute)
   eq('fristClass überfällig', fristClass(addDays(todayIso(), -1), false), 'over');

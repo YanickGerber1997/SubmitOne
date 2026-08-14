@@ -108,6 +108,30 @@ if (R) {  // CSS-Integritaet: unausgeglichene Klammern zerstoeren stumm ganze Re
          'doppelt: ' + doppelt.join(', '));
   }
 
+  /* Schriftskala: acht Stufen, nicht fuenfundzwanzig.
+     styles.css wird nur vom Programm geladen, nie von den Druckfenstern -
+     dort darf deshalb keine feste Pixelgroesse mehr stehen. In app.js
+     bleiben die Druckvorlagen bei Pixeln, die pruefen wir hier nicht. */
+  const ohneKommentar = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const festeGroessen = (ohneKommentar.match(/font-size:\s*[0-9.]+px/g) || []);
+  push('SKALA: styles.css ohne feste Schriftgroessen', !festeGroessen.length,
+       festeGroessen.length + ' uebrig, z.B. ' + festeGroessen.slice(0, 3).join(' / '));
+
+  const STUFEN = ['--t-2xs', '--t-xs', '--t-s', '--t-m', '--t-l', '--t-xl', '--t-2xl', '--t-3xl'];
+  const benutzt = [...new Set((ohneKommentar.match(/var\(\s*(--t-[a-z0-9]+)/g) || [])
+                    .map(s => s.replace(/var\(\s*/, '')))];
+  const fremd = benutzt.filter(n => STUFEN.indexOf(n) < 0);
+  push('SKALA: nur die acht gemeinsamen Stufen in Gebrauch', !fremd.length, 'unbekannt: ' + fremd.join(', '));
+
+  /* Die rem-Basis gehoert dem Browser. Eine Schriftgroesse auf html
+     verstellt sie und macht jedes .875rem der Skala zu etwas anderem als
+     in SubZeit - genau der Fehler, der beim Umstellen fast passiert waere. */
+  const htmlRegel = /(^|\})\s*html\s*(,[^{]*)?\{([^}]*)\}/g;
+  let hm, htmlSchrift = false;
+  while ((hm = htmlRegel.exec(ohneKommentar))) if (/font-size/.test(hm[3])) htmlSchrift = true;
+  push('SKALA: html behaelt die rem-Basis des Browsers', !htmlSchrift,
+       'eine html-Regel setzt font-size - dann bedeutet --t-m nicht mehr 14px');
+
   // Der Dunkelmodus ist ein Schalter. Wer ihn setzt, ohne bereit zu sein,
   // bekommt weisse Schrift auf Weiss - deshalb steht hier, wer ihn hat.
   if (bau) {

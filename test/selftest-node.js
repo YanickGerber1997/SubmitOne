@@ -164,6 +164,30 @@ if (R) {  // CSS-Integritaet: unausgeglichene Klammern zerstoeren stumm ganze Re
        /function\s+initNavMehr\b/.test(jsq) && /(^|[^.\w])initNavMehr\(\)\s*;/m.test(jsq),
        'initNavMehr fehlt oder wird nicht aufgerufen');
 
+  /* Projektnavigation: jedes Kapitel braucht sein eigenes Zeichen.
+
+     Eingeklappt ist das Zeichen das Einzige, was bleibt. Fehlt eines, faellt
+     das Kapitel auf das Zeichen der Uebersicht zurueck und ist von ihr nicht
+     mehr zu unterscheiden; sind zwei gleich, ebenso. Beides sieht man erst,
+     wenn man die Leiste zuklappt - also pruefen wir es hier. */
+  const kapitel = [];
+  const grp = /const PROJ_GRUPPEN = \[([\s\S]*?)\n\];/.exec(jsq);
+  if (grp) { const re = /tabs:\s*\[([^\]]*)\]/g; let m;
+    while ((m = re.exec(grp[1]))) m[1].split(',').forEach(s => { s = s.trim().replace(/['"]/g, ''); if (s) kapitel.push(s); }); }
+  const ikon = /const P_ICO = \(\(\) => \{[\s\S]*?\n\}\)\(\);/.exec(jsq);
+  const habenIcon = ikon ? kapitel.filter(k => new RegExp('\\n\\s*' + k + ':\\s').test(ikon[0])) : [];
+  push('PROJEKT: jedes Kapitel hat ein eigenes Zeichen',
+       kapitel.length > 0 && habenIcon.length === kapitel.length,
+       'ohne Zeichen: ' + kapitel.filter(k => habenIcon.indexOf(k) < 0).join(', '));
+  if (ikon) {
+    const koerper = (ikon[0].match(/s\('([^']*)'\)/g) || []);
+    const doppelt = koerper.length - new Set(koerper).size;
+    push('PROJEKT: kein Zeichen kommt zweimal vor', doppelt === 0, doppelt + ' Zeichen doppelt vergeben');
+  }
+  push('PROJEKT: keine Reiterbaender mehr ueber dem Inhalt',
+       jsq.indexOf('class="ribbon-tabs"') < 0 && jsq.indexOf('class="ribbon-tools"') < 0,
+       'ribbon-tabs/-tools werden wieder gebaut - die Navigation stuende doppelt da');
+
   /* Die Umschaltpille darf nicht auf den Knoepfen sitzen. appswitch.js
      hebt sie um --so-sw-abstand an; die App muss den Wert setzen. */
   const swjs = lies('appswitch.js') || '';

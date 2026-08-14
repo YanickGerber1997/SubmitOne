@@ -890,17 +890,36 @@ function initNavMehr() {
   if (!knopf || !nav) return;
 
   knopf.addEventListener('click', () => {
-    const punkte = [...nav.querySelectorAll('a[data-nav]')];
     const jetzt = (location.hash || '#/dashboard').split('?')[0];
-    const zeilen = punkte.map(a => {
-      const name = (a.querySelector('.nav-txt') || {}).textContent || a.dataset.nav;
+    const zeile = a => {
+      const name = (a.querySelector('.nav-txt') || {}).textContent || a.dataset.nav || a.textContent;
       const ico = (a.querySelector('.nav-ico') || {}).innerHTML || '';
       const hier = a.getAttribute('href') === jetzt;
       return `<a class="navblatt-punkt${hier ? ' aktiv' : ''}" href="${esc(a.getAttribute('href'))}" data-close="1">
-                <span class="navblatt-ico">${ico}</span><span>${esc(name)}</span>
+                <span class="navblatt-ico">${ico}</span><span>${esc(String(name).trim())}</span>
               </a>`;
-    }).join('');
-    openModal('Bereiche', `<div class="navblatt">${zeilen}</div>`, '');
+    };
+
+    /* Im Projekt zeigt das Blatt zuerst die Kapitel — dort arbeitet man
+       gerade. Die Hauptbereiche stehen darunter, damit der Weg hinaus
+       nicht verloren geht. Auf dem Handy bleibt die Reiterleiste bei den
+       Hauptbereichen (siehe styles.css), also ist dieses Blatt der einzige
+       Zugang zu den Kapiteln. */
+    const imProjekt = nav.classList.contains('im-projekt');
+    let inhalt = '', titel = 'Bereiche';
+    if (imProjekt) {
+      const name = ($('#projSubnav .subnav-title') || {}).textContent || 'Projekt';
+      titel = name;
+      const teile = [...$('#projSubnav').children];
+      inhalt += '<div class="navblatt">';
+      teile.forEach(el => {
+        if (el.classList.contains('subnav-grp')) inhalt += `<div class="navblatt-grp">${esc(el.textContent)}</div>`;
+        else if (el.classList.contains('subnav-link') || el.classList.contains('subnav-zurueck')) inhalt += zeile(el);
+      });
+      inhalt += '</div><div class="navblatt-grp">Bereiche</div>';
+    }
+    inhalt += `<div class="navblatt">${[...nav.querySelectorAll('a[data-nav]')].map(zeile).join('')}</div>`;
+    openModal(titel, inhalt, '');
     // Ein Tipp auf einen Bereich wechselt und schliesst — ohne diesen
     // Schritt bliebe das Blatt über der Seite stehen, die es geöffnet hat.
     const wurzel = $('#modal-root');
@@ -1564,6 +1583,46 @@ const PROJ_GRUPPEN = [
 ];
 function projGruppeVon(tabKey) { return PROJ_GRUPPEN.find(g => g.tabs.includes(tabKey)) || PROJ_GRUPPEN[0]; }
 
+/* Ein eigenes Zeichen je Kapitel.
+
+   Nicht Schmuck: Ist die Seitenleiste eingeklappt, ist das Zeichen das
+   Einzige, was bleibt — dann muss man an ihm erkennen, wo man hinkommt.
+   Deshalb hat jedes Kapitel ein anderes, und keines wiederholt ein Zeichen
+   aus der Hauptnavigation. Beim Darüberfahren erklärt der Hinweistext.
+
+   Gleiche Bauweise wie die Hauptnavigation: 24×24, nur Striche, Farbe vom
+   Text geerbt — so passen sie zusammen, ohne zweimal gepflegt zu werden. */
+const P_ICO = (() => {
+  const s = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  return {
+    // ---- Projekt ----
+    overview:   s('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 13h9M8 16.5h6"/>'),
+    dossier:    s('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+    auflagen:   s('<path d="M12 3l7 3v5.5c0 4.3-2.9 7.7-7 8.5-4.1-.8-7-4.2-7-8.5V6z"/><path d="M9 12l2 2 4-4"/>'),
+    bauherr:    s('<path d="M4 11l8-6 8 6"/><path d="M6 10.5V20h12v-9.5"/><circle cx="12" cy="14" r="1.9"/><path d="M8.8 19c.5-1.7 1.7-2.6 3.2-2.6s2.7.9 3.2 2.6"/>'),
+    // ---- Vergabe ----
+    gewerke:    s('<path d="M15.5 3.5a4.5 4.5 0 0 0-5.9 5.6L3.6 15a2 2 0 1 0 2.8 2.8l5.9-5.9a4.5 4.5 0 0 0 5.6-5.9l-2.7 2.7-2.3-.6-.6-2.3z"/>'),
+    optionen:   s('<circle cx="6" cy="5.5" r="2.2"/><circle cx="18" cy="12" r="2.2"/><circle cx="6" cy="18.5" r="2.2"/><path d="M6 7.7v8.6M8.2 6.6l7.7 4.3M8.2 17.4l7.7-4.3"/>'),
+    // ---- Kosten ----
+    kosten:     s('<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.7"/><path d="M6 9.5v5M18 9.5v5"/>'),
+    rechnungen: s('<path d="M6 3h12v18l-2.4-1.6L13.2 21l-2.4-1.6L8.4 21 6 19.4z"/><path d="M9.2 8h5.6M9.2 12h5.6"/>'),
+    nachtraege: s('<path d="M6 2.8h7l5 5V21H6z"/><path d="M13 2.8v5h5"/><path d="M12 11.5v5M9.5 14h5"/>'),
+    zahlungsplan: s('<ellipse cx="12" cy="6" rx="7" ry="2.6"/><path d="M5 6v5.5c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6"/><path d="M5 11.5V17c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6v-5.5"/>'),
+    finanz:     s('<path d="M3 9.5L12 4l9 5.5"/><path d="M5 10.5v8M9.7 10.5v8M14.3 10.5v8M19 10.5v8"/><path d="M3 20.5h18"/>'),
+    honorar:    s('<circle cx="12" cy="12" r="9"/><path d="M8.6 8.6l6.8 6.8"/><circle cx="9.4" cy="9.4" r="1.4"/><circle cx="14.6" cy="14.6" r="1.4"/>'),
+    // ---- Termine ----
+    termine:    s('<path d="M4 5.5h11M4 12h15M4 18.5h8"/><circle cx="17.5" cy="5.5" r="1.7"/><circle cx="6.5" cy="12" r="1.7"/><circle cx="12.5" cy="18.5" r="1.7"/>'),
+    kalender:   s('<rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/><rect x="7" y="12.5" width="3.4" height="3.2" rx=".6"/>'),
+    pendenzen:  s('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M8.6 11.5l1.8 1.8 3.6-3.6"/><path d="M8.6 17h6.8"/>'),
+    protokolle: s('<path d="M4 5.5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z"/><path d="M8 8h8M8 11.5h5"/>'),
+    // ---- Kontakte ----
+    listen:     s('<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M3 7.5h3M3 12h3M3 16.5h3"/><circle cx="12.5" cy="10" r="2.3"/><path d="M9 17c.4-2 1.8-3 3.5-3s3.1 1 3.5 3"/>'),
+    // ---- Werkzeuge ----
+    solar:      s('<circle cx="12" cy="12" r="4"/><path d="M12 2v2.6M12 19.4V22M2 12h2.6M19.4 12H22M4.9 4.9l1.9 1.9M17.2 17.2l1.9 1.9M19.1 4.9l-1.9 1.9M6.8 17.2l-1.9 1.9"/>'),
+    uwert:      s('<path d="M4 4v16M9 4v16M14 4v16"/><path d="M19 5v8.4a2.6 2.6 0 1 0 2 0V5a1 1 0 0 0-2 0z"/>')
+  };
+})();
+
 function projektTabs(p, active, toolbar) {
   const openP = offenePendenzen(p).length;
   const pendBadge = openP ? ` <span class="tab-badge">${openP}</span>` : '';
@@ -1592,22 +1651,35 @@ function projektTabs(p, active, toolbar) {
   const gruppen = PROJ_GRUPPEN.map(g => ({ ...g, items: g.tabs.map(k => byKey[k]).filter(Boolean) })).filter(g => g.items.length);
   const grp = gruppen.find(g => g.tabs.includes(active)) || gruppen[0];
 
-  // Seitenleiste: nach Gruppen gegliedert statt 19 Eintraege am Stueck
-  const sub = $('#projSubnav');
-  if (sub) sub.innerHTML = `<div class="subnav-title" title="${esc(p.name)}">${esc(p.name)}</div>` +
-    gruppen.map(g => `<div class="subnav-grp">${esc(g.label)}</div>` +
-      g.items.map(it => `<a class="subnav-link ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')).join('');
+  /* Die Seitenleiste rutscht eine Ebene tiefer.
 
-  // Ribbon: Zeile 1 = Gruppen (feste Plaetze), Zeile 2 = Werkzeuge der aktiven Gruppe
-  return `<div class="proj-sticky">
-    <div class="ribbon-tabs">
-      ${gruppen.map(g => `<a class="rib-tab ${g.key === grp.key ? 'active' : ''}" href="${g.items[0].href}">${esc(g.label)}</a>`).join('')}
-    </div>
-    <div class="ribbon-tools">
-      ${grp.items.map(it => `<a class="rib-tool ${active === it.key ? 'active' : ''}" href="${it.href}">${it.label}</a>`).join('')}
-    </div>
-    ${toolbar ? `<div class="page-toolbar">${toolbar}</div>` : ''}
-  </div>`;
+     Bis zum 14.08.2026 lagen dieselben 19 Kapitel doppelt vor: links
+     vollständig in der Seitenleiste UND oben in zwei Bändern (Gruppen,
+     Werkzeuge), jedes in einer eigenen Bildsprache. Zusammen rund 110px
+     Höhe — auf einem halben 15-Zöller begann der Inhalt erst nach einem
+     Drittel des Bildschirms.
+
+     Jetzt gibt es sie einmal. Wer in einem Projekt ist, braucht die
+     Hauptbereiche nicht: Die Seitenleiste zeigt das Projekt, mit einem
+     Weg zurück. Jedes Kapitel trägt sein eigenes Zeichen, damit die
+     eingeklappte Leiste bedienbar bleibt. */
+  const sub = $('#projSubnav');
+  const nav = $('#mainNav');
+  if (nav) nav.classList.add('im-projekt');
+  if (sub) sub.innerHTML =
+    `<a class="subnav-zurueck" href="#/projekte" title="Zurück zu allen Projekten">
+       <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg></span>
+       <span class="nav-txt">Alle Projekte</span>
+     </a>
+     <div class="subnav-title" title="${esc(p.name)}">${esc(p.name)}</div>` +
+    gruppen.map(g => `<div class="subnav-grp">${esc(g.label)}</div>` +
+      g.items.map(it => `<a class="subnav-link ${active === it.key ? 'active' : ''}" href="${it.href}" title="${esc(g.label)} · ${esc(it.label.replace(/<[^>]*>/g, '').trim())}">
+          <span class="nav-ico" aria-hidden="true">${P_ICO[it.key] || P_ICO.overview}</span>
+          <span class="nav-txt">${it.label}</span>
+        </a>`).join('')).join('');
+
+  // Oben bleibt nur, was zur Seite selbst gehört — die Navigation steht links.
+  return toolbar ? `<div class="proj-sticky"><div class="page-toolbar">${toolbar}</div></div>` : '';
 }
 
 function emptyState(ico, text, sub, action) {
@@ -1765,8 +1837,11 @@ function parseHash() {
 
 function setActiveNav(key) {
   $$('#mainNav a').forEach(a => a.classList.toggle('active', a.dataset.nav === key));
-  // Projekt-Unterreiter leeren – Projekt-Detailansichten füllen sie via projektTabs neu
+  // Projekt-Unterreiter leeren – Projekt-Detailansichten füllen sie via projektTabs neu.
+  // Und die Seitenleiste wieder auf die oberste Ebene holen: Wer das Projekt
+  // verlässt, soll die Hauptbereiche zurückbekommen.
   const sub = $('#projSubnav'); if (sub) sub.innerHTML = '';
+  const nav = $('#mainNav'); if (nav) nav.classList.remove('im-projekt');
 }
 
 let _lastRenderHash = null;

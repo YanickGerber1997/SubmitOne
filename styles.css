@@ -185,17 +185,39 @@ button { font-family: inherit; cursor: pointer; }
   display:grid; place-items:center; font-weight:700; font-size: var(--t-2xs); flex:none; }
 .user-chip .uc-name { font-weight:600; font-size: var(--t-s); color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-.sidebar-toggle {
-  width: 30px; height: 30px; margin: 0 0 8px auto;   /* rechtsbündig */
-  background: transparent; border: 1px solid var(--border);
-  color: var(--text-soft); border-radius: 50%; cursor: pointer;
-  font-size: var(--t-l); line-height: 1;
-  display: flex; align-items: center; justify-content: center;
-  transition: background .15s, color .15s, border-color .15s;
-}
-.sidebar-toggle:hover { background: rgba(0,0,0,.05); color: var(--text); border-color: var(--border-2); }
+/* Der Griff zum Ein- und Ausklappen.
 
-.nav { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+   Er sass bis zum 14.08.2026 oben rechts in der Leiste und nahm dort eine
+   ganze Zeile weg — Platz, der über der Navigation fehlt. Jetzt sitzt er
+   als kleiner violetter Griff mittig auf der Kante, dort wo die Leiste
+   endet und der Inhalt beginnt. Das ist die Stelle, an der man ihn sucht,
+   und sie kostet keine Höhe. */
+.sidebar-toggle {
+  position: absolute; top: 50%; right: -13px; transform: translateY(-50%);
+  width: 26px; height: 26px; margin: 0; padding: 0; z-index: 12;
+  background: var(--brand); border: 2px solid var(--surface);
+  color: #fff; border-radius: 50%; cursor: pointer;
+  font-size: 0; line-height: 0;                    /* das «« im Markup wird ersetzt */
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(113,50,227,.35);
+  opacity: .55;
+  transition: opacity .15s, background .15s, transform .15s;
+}
+/* Der Pfeil als Form, nicht als Zeichen: ein Winkel, der sich dreht. */
+.sidebar-toggle::before {
+  content: ''; width: 6px; height: 6px;
+  border-left: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(1px, -1px);
+}
+#app.collapsed .sidebar-toggle::before { transform: rotate(-135deg) translate(1px, -1px); }
+.sidebar:hover .sidebar-toggle,
+.sidebar-toggle:hover, .sidebar-toggle:focus-visible { opacity: 1; }
+.sidebar-toggle:hover { background: var(--brand-dark); }
+
+/* Im Projekt stehen hier 19 Kapitel plus sechs Gruppentitel — mehr, als
+   auf einen Bildschirm passt. Die Leiste selbst bleibt stehen (Marke oben,
+   Fusszeile unten), nur die Liste dazwischen rollt. */
+.nav { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
 /* «Mehr» gibt es nur auf dem Handy — in der Seitenleiste stehen ohnehin
    alle Punkte untereinander. Siehe den Block ganz unten. */
 .nav-mehr { display: none; }
@@ -213,14 +235,47 @@ button { font-family: inherit; cursor: pointer; }
 .nav-ico svg { width: 18px; height: 18px; display: block; }
 
 /* Projekt-Unterreiter in der Sidebar */
-.subnav { display: flex; flex-direction: column; gap: 0; margin: 1px 0 4px; }
-.subnav-title { font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: .6px; color: var(--text-faint);
-  padding: 4px 12px 2px 41px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.subnav-link { padding: 3px 12px 3px 41px; font-size: var(--t-s); color: var(--text-soft); border-radius: var(--radius);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.subnav-link:hover { background: rgba(0,0,0,.04); color: var(--text); }
-.subnav-link.active { color: var(--brand); background: var(--brand-soft); font-weight: 600; box-shadow: inset 3px 0 0 var(--brand); }
-#app.collapsed .subnav { display: none; }
+/* ---- Projektnavigation: die Seitenleiste eine Ebene tiefer -------------
+   Wer in einem Projekt ist, braucht die Hauptbereiche nicht. Die
+   Seitenleiste zeigt dann das Projekt und einen Weg zurück; die Kapitel
+   stehen genauso da wie die Hauptbereiche sonst — gleiche Höhe, gleicher
+   Abstand, gleiches Zeichen links. Ein Ortswechsel, kein Stilwechsel. */
+#mainNav.im-projekt > a { display: none; }
+
+.subnav { display: flex; flex-direction: column; gap: 1px; margin: 0; }
+.subnav-zurueck {
+  display: flex; align-items: center; gap: 11px;
+  padding: 6px 12px; margin-bottom: 2px;
+  border-radius: var(--radius); color: var(--text-soft); font-weight: 500;
+}
+.subnav-zurueck:hover { background: var(--surface-2); color: var(--brand); }
+.subnav-zurueck .nav-ico svg { width: 20px; height: 20px; }
+
+.subnav-title {
+  font-size: var(--t-s); font-weight: 700; color: var(--text);
+  padding: 2px 12px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.subnav-link {
+  display: flex; align-items: center; gap: 11px;
+  padding: 6px 12px; border-radius: var(--radius);
+  font-size: var(--t-s); color: var(--text-soft); font-weight: 500;
+  white-space: nowrap; overflow: hidden;
+  transition: background .12s, color .12s;
+}
+.subnav-link .nav-txt { overflow: hidden; text-overflow: ellipsis; }
+.subnav-link:hover { background: var(--surface-2); color: var(--text); }
+.subnav-link.active { color: #fff; background: var(--brand); font-weight: 600; }
+.subnav-link.active .tab-badge { background: rgba(255,255,255,.28); color: #fff; }
+
+/* Eingeklappt bleiben die Zeichen — und nur mit ihnen wird navigiert.
+   Bis zum 14.08.2026 stand hier «display: none»: Eingeklappt verschwand
+   die Projektnavigation ganz, man kam aus dem Kapitel nicht mehr heraus,
+   ohne erst wieder aufzuklappen. */
+#app.collapsed .subnav-title,
+#app.collapsed .subnav-grp { display: none; }
+#app.collapsed .subnav-link,
+#app.collapsed .subnav-zurueck { justify-content: center; gap: 0; padding: 8px 0; }
+#app.collapsed .subnav-zurueck { margin-bottom: 6px; border-bottom: 1px solid var(--border); border-radius: 0; }
 
 .sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px; }
 .btn-ghost-sm {
@@ -239,7 +294,16 @@ button { font-family: inherit; cursor: pointer; }
 #view { min-width: 0; }
 
 /* Modul-Fokus + Vollbild: kleine, immer erreichbare Schaltleiste */
-.focusbar { position: fixed; top: 8px; right: 12px; z-index: 70; display: flex; gap: 6px; opacity: .5; transition: opacity .15s; }
+/* Fokus und Vollbild sassen oben rechts — und damit GENAU auf den
+   Zurück-/Vor-Knöpfen der Kopfzeile. Gemessen: focusbar[1274,8 154x28]
+   über tb-undo[1362,13 64x30]. Die Kopfzeilenknöpfe waren nicht zu
+   treffen, und zwar auf jeder Breite, nicht nur auf dem Handy.
+
+   Jetzt unten, rechts neben der Seitenleiste: dort ist in jeder Ansicht
+   Platz, und die Statuszeile darunter bleibt frei. Auf dem Handy steht
+   die Ausnahme weiter unten in der Datei. */
+.focusbar { position: fixed; bottom: 30px; left: 220px; z-index: 70; display: flex; gap: 6px; opacity: .5; transition: opacity .15s; }
+#app.collapsed ~ .focusbar { left: 80px; }   /* passend zu #app.collapsed = 68px Leiste */
 .focusbar:hover { opacity: 1; }
 .fb-btn { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t-xs); font-weight: 600; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 9px; cursor: pointer; box-shadow: 0 2px 8px rgba(30,24,60,.18); }
 .fb-btn:hover { border-color: var(--brand); color: var(--brand); }
@@ -1899,11 +1963,10 @@ table.va input[type=number] { -moz-appearance: textfield; }
   #app .brand, #app .sidebar-toggle,
   #app .sidebar-foot, #app.collapsed .sidebar-foot { display: none; }
 
-  /* Die Fokusleiste sass oben rechts genau auf den Zurück-/Vor-Knöpfen der
-     Kopfzeile — beides Tippflächen, eine davon unerreichbar. Auf dem Handy
-     wandert sie nach unten links, der Umschaltpille gegenüber. */
+  /* Hier gibt es keine Seitenleiste zur Linken, sondern unten die
+     Reiterleiste — die Fokusleiste rückt an den linken Rand und darüber. */
   .focusbar {
-    top: auto; right: auto; left: 12px;
+    left: 12px;
     bottom: calc(68px + env(safe-area-inset-bottom, 0px));
     opacity: 1;
   }
@@ -1916,8 +1979,15 @@ table.va input[type=number] { -moz-appearance: textfield; }
      sechs waren zwar erreichbar, aber nichts zeigte, dass es sie gibt.
      Eine Funktion, von der man nicht weiss, dass sie da ist, ist keine. */
   .nav { flex-direction: row; flex: 1; gap: 0; margin: 0; overflow: visible; }
-  .subnav { display: none; }
   .nav a:not([data-mobil]) { display: none; }
+
+  /* Die Seitenleiste rutscht auf dem Handy NICHT eine Ebene tiefer.
+     Hier ist sie die Reiterleiste, und vier Zeichen sind zu wenig, um
+     einen Projektbaum zu tragen — ohne diese Ausnahme bliebe im Projekt
+     nur noch «Mehr» übrig. Die Hauptbereiche bleiben also stehen, und die
+     Kapitel des Projekts liegen hinter «Mehr». */
+  #mainNav.im-projekt > a[data-mobil] { display: flex; }
+  .subnav { display: none; }
   .nav a, .nav-mehr {
     flex: 1 1 0; min-width: 0; flex-direction: column; align-items: center; justify-content: center;
     gap: 3px; padding: 8px 2px; font-size: var(--t-2xs); font-weight: 600; border-radius: var(--radius); color: var(--text-soft);
@@ -1993,6 +2063,11 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .navblatt-punkt.aktiv { background: var(--brand); color: #fff; }
 .navblatt-ico { display: inline-flex; width: 22px; flex: none; }
 .navblatt-ico svg { width: 22px; height: 22px; }
+.navblatt-grp {
+  font-size: var(--t-2xs); text-transform: uppercase; letter-spacing: .7px;
+  color: var(--text-faint); font-weight: 700; padding: 12px 10px 4px;
+}
+.navblatt-grp:first-child { padding-top: 2px; }
 
 /* --- Vergabe-Art-Modal: Sektionen (Sichtbarkeit per JS) --- */
 .va-sec { margin-top: 10px; }

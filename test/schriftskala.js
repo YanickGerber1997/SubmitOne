@@ -166,8 +166,17 @@ function bearbeite(datei, setzen, mitRueckfall) {
 const setzen = process.argv.includes('--setzen');
 console.log('=== Schriftskala' + (setzen ? ' — SCHREIBEN' : ' — nur zeigen (--setzen schreibt)') + ' ===');
 let g = { summe: 0, uebersprungen: 0 };
-// app.js mit Rückfall, styles.css ohne — siehe Kopf.
-for (const [d, rueckfall] of [['styles.css', false], ['app.js', true]]) {
+/* app.js mit Rückfall, die Stylesheets ohne — siehe Kopf.
+
+   ui/wochenraster.css ist die geteilte Datei, aus der BEIDE Programme das
+   Raster lesen; submit/zeit/stil.css gehört SubZeit selbst. Auch die
+   Vorlage rechnete dort noch mit festen Grössen (9px, 9.5px, 10.5px …),
+   also mit Werten, die es in ihrer eigenen Skala nicht gibt. Beide
+   Dateien haben je einen Druckblock, aber keinen mit Schriftgrössen —
+   nachgesehen, nicht angenommen. */
+for (const [d, rueckfall] of [['styles.css', false], ['app.js', true],
+                              ['ui/wochenraster.css', false],
+                              ['submit/zeit/stil.css', false]]) {
     const r = bearbeite(d, setzen, rueckfall);
     g.summe += r.summe; g.uebersprungen += r.uebersprungen;
 }

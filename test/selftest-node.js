@@ -113,9 +113,19 @@ if (R) {  // CSS-Integritaet: unausgeglichene Klammern zerstoeren stumm ganze Re
      dort darf deshalb keine feste Pixelgroesse mehr stehen. In app.js
      bleiben die Druckvorlagen bei Pixeln, die pruefen wir hier nicht. */
   const ohneKommentar = css.replace(/\/\*[\s\S]*?\*\//g, '');
-  const festeGroessen = (ohneKommentar.match(/font-size:\s*[0-9.]+px/g) || []);
-  push('SKALA: styles.css ohne feste Schriftgroessen', !festeGroessen.length,
-       festeGroessen.length + ' uebrig, z.B. ' + festeGroessen.slice(0, 3).join(' / '));
+
+  /* Auch die geteilte Rasterdatei und SubZeits eigenes Stylesheet gehoeren
+     dazu. Beide rechneten bis zum 14.08.2026 noch mit 9px, 9.5px, 10.5px -
+     Werten, die es in der gemeinsamen Skala gar nicht gibt. Die Vorlage
+     hielt sich also selbst nicht daran. */
+  const NUR_SKALA = ['styles.css', 'ui/wochenraster.css', 'submit/zeit/stil.css'];
+  const mitFesten = [];
+  for (const d of NUR_SKALA) {
+    const t = (lies(d) || '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const treffer = t.match(/font-size:\s*[0-9.]+px/g) || [];
+    if (treffer.length) mitFesten.push(d + ' (' + treffer.length + 'x, z.B. ' + treffer[0] + ')');
+  }
+  push('SKALA: Stylesheets ohne feste Schriftgroessen', !mitFesten.length, mitFesten.join(', '));
 
   const STUFEN = ['--t-2xs', '--t-xs', '--t-s', '--t-m', '--t-l', '--t-xl', '--t-2xl', '--t-3xl'];
   const benutzt = [...new Set((ohneKommentar.match(/var\(\s*(--t-[a-z0-9]+)/g) || [])

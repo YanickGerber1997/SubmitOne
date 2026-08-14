@@ -367,10 +367,20 @@ p:last-child { margin-bottom: 0; }
 }
 .chip:hover { border-color: var(--v-600); color: var(--v-700); }
 
-/* ---------- 4) Dunkel ------------------------------------------------ */
+/* ---------- 4) Dunkel ------------------------------------------------
+   Der Dunkelmodus greift nur, wo <html data-dunkel="auto"> steht.
+
+   Nicht aus Vorsicht, sondern weil er sonst schadet: Er dreht --grund und
+   --flaeche ins Dunkle. Eine App, die daneben noch irgendwo ein festes
+   Weiss oder ein festes Schwarz stehen hat, bekommt dadurch keinen
+   Dunkelmodus, sondern weisse Schrift auf Weiss. Der Schalter ist die
+   Zusage einer App: «Ich habe keine festen Farben mehr.»
+
+   Gesetzt haben ihn: SubZeit, die Projektmappe.
+   Noch nicht: SubmitOne (kommt, sobald styles.css durchgesehen ist). */
 
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root[data-dunkel="auto"] {
         --grund:      #100f18;
         --flaeche:    #171621;
         --flaeche-2:  #1e1c2b;
@@ -393,8 +403,9 @@ p:last-child { margin-bottom: 0; }
         --schatten-m:  0 2px 4px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .4);
         --schatten-l:  0 4px 8px rgba(0, 0, 0, .35), 0 20px 48px rgba(0, 0, 0, .5);
     }
-    .meldung { background: var(--flaeche-3); color: var(--text); border: 1px solid var(--kante); }
-    .knopf-haupt, .knopf-gefahr { color: #fff; }
+    [data-dunkel="auto"] .meldung { background: var(--flaeche-3); color: var(--text); border: 1px solid var(--kante); }
+    [data-dunkel="auto"] .knopf-haupt,
+    [data-dunkel="auto"] .knopf-gefahr { color: #fff; }
 }
 
 @media (prefers-reduced-motion: reduce) {

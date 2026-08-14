@@ -2,6 +2,8 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
+  <meta name="author" content="Gerber-Soft" />
+  <meta name="copyright" content="© 2026 Gerber-Soft. Alle Rechte vorbehalten." />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>SubmitOne | Projektmanager</title>
   <meta name="theme-color" content="#faf9f5" />
@@ -13,6 +15,18 @@
   <meta name="apple-mobile-web-app-title" content="SubmitOne" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- Zuerst die gemeinsamen Tokens, dann was SubmitOne daraus macht.
+       Dieselbe Datei liest auch Submit Paper, Submit PDF, die Projektmappe
+       und SubZeit — eine Änderung dort wirkt in allen fünf. -->
+  <link rel="stylesheet" href="ui/tokens.css" />
+  <!-- Und daraus die Bausteine: Knopf, Karte, Eingabe, Tabelle, Fenster,
+       Menü, Meldung. Bis zum 14.08.2026 kamen SubZeit und die Projektmappe
+       an diese Datei, SubmitOne nicht — daher die kleinen Unterschiede in
+       Polsterung und Radien, die man beim Wechsel sah. -->
+  <link rel="stylesheet" href="ui/bausteine.css" />
+  <!-- Das Wochenraster sieht in SubmitOne und SubZeit gleich aus, weil
+       beide dieselbe Datei laden. -->
+  <link rel="stylesheet" href="ui/wochenraster.css" />
   <link rel="stylesheet" href="styles.css?v=395" />
 </head>
 <body>
@@ -40,7 +54,8 @@
         <div id="projSubnav" class="subnav"></div>
         <a href="#/kalender"  data-nav="kalender" title="Kalender"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg></span> <span class="nav-txt">Kalender</span></a>
         <a href="#/pendenzen" data-nav="pendenzen" title="Pendenzen"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M8.5 12l2 2 4-4"/></svg></span> <span class="nav-txt">Pendenzen</span></a>
-        <a href="#/planung"   data-nav="planung" title="Arbeitsplanung"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3.2 1.9"/></svg></span> <span class="nav-txt">Planung</span></a>
+        <a href="#/planung"   data-nav="planung" title="Wochenplanung"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M8 13.5h8M8 17h5"/></svg></span> <span class="nav-txt">Wochenplanung</span></a>
+        <a href="#/stunden"   data-nav="stunden" title="Stunden – dieselben Einträge wie in SubZeit"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3.2 1.9"/></svg></span> <span class="nav-txt">Stunden</span></a>
         <a href="#/erfassen"  data-nav="erfassen" title="Erfassen"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></span> <span class="nav-txt">Erfassen</span></a>
         <a href="#/drucken"   data-nav="drucken" title="Drucken"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="1.5"/><path d="M7 17h10v4H7z"/></svg></span> <span class="nav-txt">Drucken</span></a>
         <a href="#/kontakte"  data-nav="kontakte" title="Kontakte"><span class="nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg></span> <span class="nav-txt">Kontakte</span></a>
@@ -76,7 +91,13 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js?v=380"></script>
-  <script src="app.js?v=396"></script>
+  <!-- Ordner-Modus: Reihenfolge zaehlt, ordner.js greift beim Laden auf Uebersetzer zu -->
+  <script src="submit/kern/zeitrechnung.js?v=1"></script>
+  <script src="submit/kern/wochenraster.js?v=1"></script>
+  <script src="submit/kern/uebersetzer.js?v=1"></script>
+  <script src="submit/kern/ordner.js?v=1"></script>
+  <script src="submit/kern/ablage-browser.js?v=1"></script>
+  <script src="app.js?v=397"></script>
   <script src="bridge.js?v=1"></script>
   <script src="appswitch.js?v=3"></script>
 </body>

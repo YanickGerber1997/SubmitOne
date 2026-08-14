@@ -69,6 +69,54 @@ if (R) {  // CSS-Integritaet: unausgeglichene Klammern zerstoeren stumm ganze Re
   R.R.push({ name: 'styles.css: keine verwaiste schliessende Klammer', ok: !orphan, msg: orphan ? 'Zeile ' + orphan : '' });
   bal === 0 ? R.pass++ : R.fail++;
   orphan ? R.fail++ : R.pass++;
+
+  /* --- Ein Design, vier Apps -------------------------------------------
+     SubmitOne und SubZeit sollen gleich aussehen. Sie tun das nur, solange
+     beide dieselben Dateien laden und keine davon einen Wert ein zweites
+     Mal setzt. Genau so sind die Farben schon einmal auseinandergelaufen
+     (siehe Kopf von ui/tokens.css) — deshalb steht es jetzt im Test. */
+  const lies = p => { try { return fs.readFileSync(__dirname + '/../' + p, 'utf8'); } catch (_) { return null; } };
+  const push = (name, ok, msg) => { R.R.push({ name: name, ok: ok, msg: ok ? '' : (msg || '') }); ok ? R.pass++ : R.fail++; };
+
+  const bau = lies('ui/bausteine.css');
+  push('DESIGN: ui/bausteine.css vorhanden', !!bau, 'Datei fehlt');
+
+  // Reihenfolge zaehlt: tokens liefert die Werte, bausteine baut darauf,
+  // styles.css darf zuletzt das Letzte Wort haben.
+  const eins = lies('index.html') || '';
+  const platz = n => eins.indexOf(n);
+  const reihe = platz('ui/tokens.css') >= 0 && platz('ui/bausteine.css') > platz('ui/tokens.css')
+             && platz('styles.css') > platz('ui/bausteine.css');
+  push('DESIGN: index.html laedt tokens -> bausteine -> styles', reihe,
+       'Reihenfolge stimmt nicht oder ein Stylesheet fehlt');
+
+  // Dieselben gemeinsamen Dateien in beiden Apps.
+  const zeit = lies('submit/zeit/index.html') || '';
+  const gemeinsam = ['tokens.css', 'bausteine.css', 'wochenraster.css'];
+  const fehlt = gemeinsam.filter(d => eins.indexOf('ui/' + d) < 0 || zeit.indexOf('ui/' + d) < 0);
+  push('DESIGN: SubmitOne und SubZeit laden dieselben ui/-Dateien', !fehlt.length,
+       'nicht in beiden: ' + fehlt.join(', '));
+
+  // Kein Token zweimal. Der Vergleich nimmt nur die :root-Bloecke, weil
+  // ein Token in einem Dunkel- oder Medienblock absichtlich neu gesetzt wird.
+  if (bau) {
+    const wurzel = t => { const m = /:root\s*{([^}]*)}/.exec(t); return m ? m[1] : ''; };
+    const namen = t => { const s = new Set(), re = /(--[a-z0-9-]+)\s*:/gi; let m; while ((m = re.exec(t))) s.add(m[1]); return s; };
+    const ausBau = namen(wurzel(bau));
+    const doppelt = [...namen(wurzel(css))].filter(n => ausBau.has(n));
+    push('DESIGN: styles.css setzt kein Token aus bausteine.css neu', !doppelt.length,
+         'doppelt: ' + doppelt.join(', '));
+  }
+
+  // Der Dunkelmodus ist ein Schalter. Wer ihn setzt, ohne bereit zu sein,
+  // bekommt weisse Schrift auf Weiss - deshalb steht hier, wer ihn hat.
+  if (bau) {
+    const geschuetzt = bau.indexOf(':root[data-dunkel="auto"]') >= 0;
+    push('DESIGN: Dunkelmodus haengt am Schalter data-dunkel', geschuetzt,
+         'bausteine.css faerbt :root ohne Schalter dunkel');
+    push('DESIGN: SubZeit hat den Schalter gesetzt', zeit.indexOf('data-dunkel="auto"') >= 0,
+         'submit/zeit/index.html fehlt data-dunkel="auto"');
+  }
 }
 if (!R) { console.log('Kein Ergebnis – selfTest() nicht erreichbar.'); process.exit(1); }
 console.log('\n=== SUBMITONE · Suite-Kern · Selbsttest (headless) ===');

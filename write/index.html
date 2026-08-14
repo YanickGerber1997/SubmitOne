@@ -2,13 +2,20 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
+  <meta name="author" content="Gerber-Soft" />
+  <meta name="copyright" content="© 2026 Gerber-Soft. Alle Rechte vorbehalten." />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Submit Paper</title>
-  <meta name="theme-color" content="#ffffff" />
+  <!-- Familienwert, wie in SubmitOne, SubZeit, PDF und der Projektmappe. -->
+  <meta name="theme-color" content="#0b0a12" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet" />
+  <!-- Inter und Quicksand sind die Schriften der Oberfläche, überall in der
+       Familie gleich angefordert (300 fehlte hier). Inter Tight und Lora
+       kommen dazu, weil Paper sie als DOKUMENT-Schriften anbietet — das ist
+       kein Auseinanderlaufen, sondern der Zweck eines Textprogramms. -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Inter+Tight:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../ui/tokens.css?v=40" />
   <link rel="stylesheet" href="write.css?v=75" />
 </head>
@@ -45,6 +52,7 @@
           <span id="themeLbl">Dunkel</span>
         </button>
         <div class="ver">Submit Paper · <span id="verTag">v1</span></div>
+        <div class="ver" style="opacity:.72">© 2026 Gerber-Soft</div>
         <a class="ver" href="../pdf/index.html" title="Zum PDF-Editor der Submit-Suite" style="text-decoration:none;display:block;margin-top:2px">Submit PDF ↗</a>
       </div>
     </aside>

@@ -132,6 +132,29 @@ if (R) {  // CSS-Integritaet: unausgeglichene Klammern zerstoeren stumm ganze Re
   push('SKALA: html behaelt die rem-Basis des Browsers', !htmlSchrift,
        'eine html-Regel setzt font-size - dann bedeutet --t-m nicht mehr 14px');
 
+  /* Eine Familie, eine Anmutung: dieselbe Schriftanforderung und dieselbe
+     theme-color in allen fuenf Seiten. Die theme-color faerbt die Leiste
+     der installierten App - laeuft sie auseinander, sieht man den Bruch
+     schon vor dem ersten Klick. */
+  const SEITEN = ['index.html', 'submit/index.html', 'submit/zeit/index.html',
+                  'write/index.html', 'pdf/index.html'];
+  const holen = (t, re) => { const m = re.exec(t || ''); return m ? m[1] : null; };
+  const farben = SEITEN.map(s => [s, holen(lies(s), /name="theme-color"\s+content="([^"]+)"/)]);
+  const abweichend = farben.filter(f => f[1] !== '#0b0a12');
+  push('FAMILIE: dieselbe theme-color in allen Seiten', !abweichend.length,
+       abweichend.map(f => f[0] + '=' + f[1]).join(', '));
+
+  /* Die Oberflaechenschrift muss ueberall dieselbe sein. Zusaetzliche
+     Schriften sind erlaubt - Paper bietet Lora und Inter Tight als
+     DOKUMENT-Schriften an, das ist der Zweck eines Textprogramms und kein
+     Auseinanderlaufen. Geprueft wird deshalb auf Enthaltensein, nicht auf
+     Gleichheit. Submit PDF lud lange gar keine Schrift und lief still in
+     Segoe UI, obwohl es ueberall var(--font) benutzte. */
+  const GRUND = ['family=Inter:wght@300;400;500;600;700', 'family=Quicksand:wght@'];
+  const ohneGrund = SEITEN.filter(s => { const t = lies(s) || ''; return GRUND.some(g => t.indexOf(g) < 0); });
+  push('FAMILIE: ueberall dieselbe Oberflaechenschrift angefordert', !ohneGrund.length,
+       'fehlt in: ' + ohneGrund.join(', '));
+
   // Der Dunkelmodus ist ein Schalter. Wer ihn setzt, ohne bereit zu sein,
   // bekommt weisse Schrift auf Weiss - deshalb steht hier, wer ihn hat.
   if (bau) {

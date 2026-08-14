@@ -2,6 +2,8 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
+  <meta name="author" content="Gerber-Soft" />
+  <meta name="copyright" content="© 2026 Gerber-Soft. Alle Rechte vorbehalten." />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Submit PDF</title>
   <meta name="description" content="PDFs ansehen, anmerken, vermassen, unterschreiben – direkt im Browser. Deine Dateien bleiben auf deinem Gerät." />
@@ -10,7 +12,17 @@
   <link rel="icon" href="favicon.png?v=677" />
   <link rel="apple-touch-icon" href="favicon-192.png?v=677" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="theme-color" content="#1c242c" />
+  <!-- Familienwert, wie in SubmitOne, SubZeit, Paper und der Projektmappe.
+       Stand auf #1c242c aus der Palette vor Violett. -->
+  <meta name="theme-color" content="#0b0a12" />
+  <!-- Bis zum 14.08.2026 lud Submit PDF ueberhaupt keine Schrift, benutzte
+       aber ueberall var(--font) — also 'Inter', system-ui, … Inter war nie
+       da, deshalb lief die ganze Oberflaeche still in Segoe UI, waehrend
+       SubmitOne, SubZeit und Paper daneben in Inter standen. Man sieht es
+       erst, wenn man zwei Fenster nebeneinanderlegt. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Quicksand:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../ui/tokens.css?v=677" />
   <link rel="stylesheet" href="pdf.css?v=678" />
 </head>

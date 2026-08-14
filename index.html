@@ -6,7 +6,10 @@
   <meta name="copyright" content="© 2026 Gerber-Soft. Alle Rechte vorbehalten." />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>SubmitOne | Projektmanager</title>
-  <meta name="theme-color" content="#faf9f5" />
+  <!-- Derselbe Wert wie in SubZeit und der Projektmappe. Stand bis zum
+       14.08.2026 auf #faf9f5 — einem Creme aus der Palette vor Violett,
+       das es seit Monaten nicht mehr gibt. -->
+  <meta name="theme-color" content="#0b0a12" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
@@ -14,7 +17,11 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="SubmitOne" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- Genau dieselbe Anforderung wie in SubZeit und der Projektmappe.
+       SubmitOne holte bisher Quicksand in 400 und 500, benutzt die Schrift
+       aber nur im Schriftzug (600/700) — zwei Schnitte umsonst geladen.
+       Inter 300 fehlte dafür, obwohl die gemeinsamen Bausteine es kennen. -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Quicksand:wght@600;700&display=swap" rel="stylesheet" />
   <!-- Zuerst die gemeinsamen Tokens, dann was SubmitOne daraus macht.
        Dieselbe Datei liest auch Submit Paper, Submit PDF, die Projektmappe
        und SubZeit — eine Änderung dort wirkt in allen fünf. -->

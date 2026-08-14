@@ -132,6 +132,23 @@ if (R) {  // CSS-Integritaet: unausgeglichene Klammern zerstoeren stumm ganze Re
   push('SKALA: html behaelt die rem-Basis des Browsers', !htmlSchrift,
        'eine html-Regel setzt font-size - dann bedeutet --t-m nicht mehr 14px');
 
+  /* Die Palette vor Violett darf nicht zurueckkriechen. Diese Werte sind
+     nicht theoretisch: Sie standen am 14.08.2026 noch an 57 Stellen in
+     styles.css, teils DIREKT neben var(--brand) - .cal-day.today hatte
+     einen violetten Rahmen und eine gruene Fuellung, und der Grund der
+     Anmeldeseite war dunkelgruen. Man sieht so etwas nur, wenn man die
+     Seite oeffnet; ein Test findet es bei jedem Lauf. */
+  const ALTE_PALETTE = [
+    ['#4f7a3c', 'Marken-Gruen'], ['rgba(79,122,60', 'Marken-Gruen, durchscheinend'],
+    ['#34502b', 'Gruen dunkel'], ['#e9efde', 'Gruen weich'], ['#22331d', 'Gruen sehr dunkel'],
+    ['rgba(42,38,26', 'brauner Neutralton'], ['#1c242c', 'alte Tinte'],
+    ['#faf9f5', 'Creme'], ['#faf9f4', 'Creme'], ['#f7f6f1', 'Creme'], ['#f0eee6', 'warmes Grau'],
+    ['#dedcd2', 'warme Kante'], ['#f3f1ea', 'warme Flaeche']
+  ];
+  const reste = ALTE_PALETTE.filter(f => ohneKommentar.indexOf(f[0]) >= 0)
+                            .map(f => f[0] + ' (' + f[1] + ')');
+  push('PALETTE: keine Farbe aus der Zeit vor Violett in styles.css', !reste.length, reste.join(', '));
+
   /* Eine Familie, eine Anmutung: dieselbe Schriftanforderung und dieselbe
      theme-color in allen fuenf Seiten. Die theme-color faerbt die Leiste
      der installierten App - laeuft sie auseinander, sieht man den Bruch

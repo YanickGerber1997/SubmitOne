@@ -2933,10 +2933,10 @@ body {
     /* Randabdunklung: haelt das Bild zusammen und laesst die hellen
        Scheiben in der Mitte staerker leuchten. Nur an den Raendern, in der
        Mitte voellig neutral. */
-    radial-gradient(130% 120% at 50% 42%, transparent 58%, rgba(17, 24, 31, .07) 100%),
-    radial-gradient(58vw 46vw at 12% -6%,  rgba(85, 98, 110, .26), transparent 66%),
-    radial-gradient(52vw 42vw at 96% 12%,  rgba(60, 98, 128, .22),   transparent 64%),
-    radial-gradient(46vw 40vw at 74% 104%, rgba(77, 106, 61, .17),   transparent 66%);
+    radial-gradient(130% 120% at 50% 42%, transparent 58%, rgba(17, 24, 31, .05) 100%),
+    radial-gradient(58vw 46vw at 12% -6%,  rgba(85, 98, 110, .11), transparent 66%),
+    radial-gradient(52vw 42vw at 96% 12%,  rgba(60, 98, 128, .09),   transparent 64%),
+    radial-gradient(46vw 40vw at 74% 104%, rgba(77, 106, 61, .07),   transparent 66%);
   background-attachment: fixed;
   background-repeat: no-repeat;
 }
@@ -3397,3 +3397,86 @@ body {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
+
+/* ============================================================
+   Feinschliff: klare Scheiben, leichte Navigation, mutigere Titel
+   ------------------------------------------------------------
+   Der Befund am Bild, Stück für Stück:
+
+   NEBLIG.  Der graue Wasch über allem kam vom hochgedrehten Lichtfeld
+            (oben zurückgenommen) und von der grauen Scheibenfüllung.
+            Die Füllung geht auf fast Weiss — die Scheibe bleibt eine
+            Scheibe durch ihre verlaufende Kante, nicht durch Trübung.
+   SCHWER.  Die dunkle Aktiv-Pille in der Navigation war der schwerste
+            Fleck im Bild, ausgerechnet neben dem leichtesten Inhalt.
+            Aktiv ist jetzt: dunkler Text, feiner Balken links, hauchdünne
+            Tönung — Gewicht durch Klarheit, nicht durch Farbe.
+   ZAGHAFT. Die Begrüssung wächst auf echte Titelgrösse und wird LEICHTER
+            (500 statt 600) — gross und leicht ist die moderne Spannung,
+            klein und fett die alte. Abschnittstitel verlieren die
+            Grossbuchstaben: „Aktive Projekte" liest sich besser als
+            „AKTIVE PROJEKTE", die Auszeichnung übernimmt die Schrift.
+   BLASS.   Kleinbeschriftungen rücken eine Stufe dunkler und bekommen
+            mehr Lauf­weite — Mikro-Typo darf klein sein, aber nicht
+            verschwinden.
+   ============================================================ */
+.card, .kpi, .proj-card, .einst-block, .heute-block {
+  border-radius: 12px;
+  background-image:
+    linear-gradient(to bottom, rgba(255,255,255,.97), rgba(255,255,255,.90)),
+    linear-gradient(135deg, rgba(255,255,255,.95) 0%, rgba(188,199,209,.50) 55%, rgba(17,24,31,.16) 100%);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  box-shadow: 0 1px 2px rgba(17,24,31,.04),
+              0 12px 32px -20px rgba(17,24,31,.14),
+              inset 0 1px 0 rgba(255,255,255,1);
+}
+.card:hover, .proj-card:hover {
+  background-image:
+    linear-gradient(to bottom, rgba(255,255,255,1), rgba(255,255,255,.95)),
+    linear-gradient(135deg, rgba(255,255,255,1) 0%, rgba(188,199,209,.55) 55%, rgba(17,24,31,.20) 100%);
+}
+.dstat, .pc-stat, .sz-chip {
+  border-radius: 9px;
+  background-image:
+    linear-gradient(to bottom, rgba(255,255,255,.92), rgba(255,255,255,.82)),
+    linear-gradient(135deg, rgba(255,255,255,.9) 0%, rgba(188,199,209,.42) 60%, rgba(17,24,31,.12) 100%);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+}
+.btn, .btn.secondary, .knopf, .input, .select { border-radius: 9px; }
+.btn.secondary, .knopf, .input, .select, textarea.input { background-color: #fff; }
+
+/* Navigation: leicht statt schwer. Nur am Schreibtisch — auf dem Handy
+   gilt die Reiterleiste mit ihrem eigenen Aktiv-Zeichen. */
+@media (min-width: 761px) {
+  .nav a { border-radius: 9px; font-weight: 480; }
+  .nav a.active {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--bf-voll, var(--ink)) 12%, transparent), transparent 74%);
+    color: var(--text);
+    font-weight: 640;
+    box-shadow: inset 3px 0 0 var(--bf-voll, var(--ink));
+  }
+  .subnav-link.active[data-farbe] { border-radius: 9px; }
+}
+
+/* Titel: gross und leicht. */
+.start-kopf h1 { font-size: clamp(1.75rem, 2.6vw, 2.5rem); font-weight: 500; letter-spacing: -.03em; }
+.page-head h1, .detail-head h1 { font-weight: 500; letter-spacing: -.022em; }
+.section-head h2, .einst-kopf h2 {
+  text-transform: none; letter-spacing: -.01em;
+  font-size: var(--t-l); font-weight: 600; color: var(--text);
+}
+.heute-kopf h2 { font-weight: 600; }
+
+/* Mikro-Beschriftungen: klein, aber da. */
+.sz-title, .heute-kopf h3, .subnav-grp, .tt-art, .kachel-name {
+  letter-spacing: .09em; color: var(--text-soft);
+}
+.kpi .k-label { color: var(--text-soft); }
+.kpi .k-value, .dstat .v { font-weight: 560; }
+
+/* Der Schriftzug: grösser, gespannter. «Submit» leicht, «One» schwer —
+   der Kontrast INNERHALB des Wortes ist die Eigenart, nicht die Farbe. */
+.logo-word { font-size: 1.4rem; font-weight: 450; letter-spacing: -.025em; }
+.logo-word .lw-b { font-weight: 700; }

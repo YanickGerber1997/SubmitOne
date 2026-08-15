@@ -3102,37 +3102,24 @@ body {
               inset -1px -1px 0 rgba(17, 24, 31, .06);
 }
 
-/* ---- Die Scherbe an der Navigationsspalte ----
-   Sie läuft über die Kante der Leiste hinaus in den Inhalt. Genau das
-   macht den Unterschied zu einem Rahmen: Glas hört nicht an einer
-   Trennlinie auf, es liegt darüber.
-
-   ::after statt eines eigenen Elements, damit im Markup nichts steht,
-   was nur Bild ist. Der Überstand ist bewusst klein — 26px reichen,
-   damit man sieht, dass etwas hinausläuft. */
-.sidebar { overflow: visible; }
-.sidebar::after {
-  content: ''; position: absolute; pointer-events: none;
-  top: 16%; right: -26px; width: 74px; height: 34%;
-  background: linear-gradient(128deg, rgba(255,255,255,.72) 0%, rgba(255,255,255,.12) 46%, rgba(85,98,110,.06) 100%);
-  clip-path: polygon(0% 0%, 100% 18%, 62% 100%, 0% 74%);
-  border-left: 0;
-  opacity: .9;
-}
-/* Eingeklappt ist die Leiste 68px schmal — eine 74px breite Scherbe
-   daneben wäre dann breiter als ihre Leiste. */
-#app.collapsed .sidebar::after { width: 46px; right: -18px; top: 22%; height: 26%; }
 
 /* Auf dem Handy ist die Leiste unten und quer; eine Scherbe an ihrer
    rechten Kante ergäbe dort keinen Sinn. */
 @media (max-width: 760px) {
-  .sidebar::after { display: none; }
 }
 
 /* Ein Bild gehört nicht aufs Papier. */
 @media print {
-  .glasgrund, .sidebar::after { display: none !important; }
+  .glasgrund { display: none !important; }
 }
+
+/* Die Scherbe an der Seitenleiste ist am 15.08.2026 wieder entfallen.
+   Sie war als feiner Lichtbruch über der Kante gedacht und wurde ein
+   grosser grauer Keil quer über den Inhalt — an genau der Stelle, wo
+   das Auge beim Lesen der Navigation hinwandert. Ein Schmuckelement,
+   das dorthin zieht, wo gearbeitet wird, ist kein Schmuck.
+
+   Die Facetten bleiben da, wo sie hingehören: im Grund, hinter allem. */
 
 /* ============================================================
    Fokusleiste: im Fluss statt schwebend
@@ -3156,19 +3143,6 @@ body {
 #app.collapsed .focusbar { flex-direction: column; }
 #app.collapsed .focusbar .fb-t { display: none; }
 
-/* Die Scherbe an der Leiste sichtbar machen.
-   Weiss auf weisser Leiste sieht man nicht — sie braucht eine Kante.
-   Der helle Streifen ist die Lichtbrechung, die dünne Linie darunter
-   die Bruchkante. */
-.sidebar::after {
-  background: linear-gradient(126deg,
-      rgba(255,255,255,.92) 0%,
-      rgba(214,222,240,.55) 34%,
-      rgba(85,98,110,.14) 72%,
-      rgba(85,98,110,.04) 100%);
-  filter: drop-shadow(1px 2px 3px rgba(17,24,31,.10));
-  opacity: 1;
-}
 
 /* ============================================================
    Scheiben statt schwebender Karten

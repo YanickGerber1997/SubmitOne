@@ -3083,7 +3083,16 @@ body {
 /* Der Verlauf von vorher bleibt als Grundstimmung darunter — er gibt der
    Fläche Farbe, die Facetten geben ihr Form. Alles Bediente liegt
    darüber. */
-#app, .topbar, .statusbar, #modal-root, #toast-root, .focusbar, .so-sw { position: relative; z-index: 1; }
+/* Nur die Ebene heben, NICHT die Positionsart ändern.
+
+   Die erste Fassung setzte hier pauschal position:relative — und nahm
+   damit der Statuszeile ihr fixed (ihr left:208px schob sie um genau die
+   Seitenleistenbreite über den rechten Rand hinaus, sichtbar als
+   waagrechter Rollbalken) und der Kopfzeile ihr sticky (sie rollte beim
+   Blättern einfach mit). Wer schon positioniert ist, braucht nur den
+   z-index; position:relative bekommt allein #app, das keins hat. */
+#app { position: relative; }
+#app, .topbar, .statusbar, #modal-root, #toast-root, .so-sw { z-index: 1; }
 .sidebar { z-index: 2; }
 
 /* ---- Scharfe Kanten statt runder Ecken ----
@@ -3239,3 +3248,70 @@ body {
 }
 .btn.ghost { border-color: transparent; }
 .btn.secondary:hover:not(:disabled), .knopf:hover:not(:disabled) { border-color: var(--line-stark); }
+
+/* ============================================================
+   Was eine Fläche zur Glasscheibe macht
+   ------------------------------------------------------------
+   Drei Dinge, die bisher gefehlt haben:
+
+   1. EINE KANTE MIT VERLAUF. Eine Scheibe hat rundum keine gleichmässige
+      Linie — sie ist dort hell, wo das Licht herkommt, und dunkel auf der
+      Gegenseite. Eine durchgehend gleich helle Kante liest sich als
+      gezeichneter Rahmen, eine verlaufende als Materialkante.
+
+   2. EIN SPIEGELSTREIFEN. Der schmale, schräge Lichtbalken, den eine
+      Scheibe von einer Lichtquelle zurückwirft. Ein Verlauf von oben nach
+      unten ist ein Verlauf; ein schmales Band unter 25 Grad ist eine
+      Spiegelung. Das ist der Unterschied zwischen «getönt» und «Glas».
+
+   3. ETWAS ZUM BRECHEN. Unschärfe zeigt nur, was dahinter liegt. Über
+      einer leeren Fläche arbeitet sie ins Nichts — deshalb kommt hinten
+      eine zweite, feinere Facettenlage dazu.
+
+   Gemacht über gestapelte Hintergrundlagen statt über ein Pseudo-Element:
+   .card müsste dafür positioniert werden, und in styles.css hängen 82
+   absolut positionierte Regeln, von denen einige in Karten liegen. Ein
+   neuer Bezugsrahmen dort wäre eine stille Verschiebung an Stellen, die
+   mit Glas nichts zu tun haben.
+   ============================================================ */
+.card, .kpi, .proj-card, .einst-block, .heute-block {
+  border: 1px solid transparent;
+  background-color: transparent;
+  background-image:
+    /* 1) Spiegelstreifen, schräg und schmal */
+    linear-gradient(118deg,
+      transparent 14%,
+      rgba(255,255,255,.50) 23%,
+      rgba(255,255,255,.10) 30%,
+      transparent 38%),
+    /* 2) Füllung. Im Schnitt rund 70% Deckung — der Wert, bei dem die
+          leise Schriftstufe 4.6:1 hält. */
+    linear-gradient(to bottom, rgba(255,255,255,.74), rgba(255,255,255,.66)),
+    /* 3) Die Kante: hell oben links, dunkel unten rechts */
+    linear-gradient(135deg,
+      rgba(255,255,255,.98) 0%,
+      rgba(255,255,255,.60) 26%,
+      rgba(120,132,145,.42) 62%,
+      rgba(17,24,31,.20) 100%);
+  background-origin: border-box;
+  background-clip: padding-box, padding-box, border-box;
+  box-shadow: none;
+}
+.card:hover, .proj-card:hover {
+  background-image:
+    linear-gradient(118deg, transparent 14%, rgba(255,255,255,.62) 23%, rgba(255,255,255,.14) 30%, transparent 38%),
+    linear-gradient(to bottom, rgba(255,255,255,.86), rgba(255,255,255,.78)),
+    linear-gradient(135deg, rgba(255,255,255,1) 0%, rgba(255,255,255,.70) 26%, rgba(120,132,145,.46) 62%, rgba(17,24,31,.22) 100%);
+}
+
+/* Scheiben auf Scheiben: Was IN einer Karte liegt, bekommt seine eigene
+   Kante — sonst ist es ein Feld auf einer Scheibe, keine zweite Scheibe. */
+.dstat, .pc-stat, .sz-chip {
+  border: 1px solid transparent;
+  background-color: transparent;
+  background-image:
+    linear-gradient(to bottom, rgba(255,255,255,.66), rgba(255,255,255,.54)),
+    linear-gradient(135deg, rgba(255,255,255,.92) 0%, rgba(255,255,255,.45) 40%, rgba(17,24,31,.13) 100%);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+}

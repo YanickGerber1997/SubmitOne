@@ -99,6 +99,23 @@
         <path d="M74,100 L100,64"/>
         <path d="M100,42 L72,52"/>
       </g>
+
+      <!-- Feinere Lage, mitten im Bild. Sie ist fast unsichtbar, wenn man
+           direkt hinsieht — sie ist für die Flächen DARÜBER da: Unschärfe
+           zeigt nur, was hinter ihr liegt, und über einer leeren Fläche
+           arbeitet sie ins Nichts. Das hier gibt ihr etwas zu brechen. -->
+      <g opacity=".5">
+        <polygon points="26,34 52,28 44,58 22,52" fill="url(#gk2)" opacity=".5"/>
+        <polygon points="52,28 78,38 66,62 44,58" fill="url(#gk1)" opacity=".4"/>
+        <polygon points="22,52 44,58 36,84 14,74" fill="url(#gk3)" opacity=".5"/>
+        <polygon points="44,58 66,62 58,88 36,84" fill="url(#gk2)" opacity=".35"/>
+        <g fill="none" stroke="url(#gkante)" stroke-width=".7" vector-effect="non-scaling-stroke">
+          <path d="M26,34 L52,28 L78,38"/>
+          <path d="M22,52 L44,58 L66,62"/>
+          <path d="M52,28 L44,58 L36,84"/>
+          <path d="M14,74 L36,84 L58,88"/>
+        </g>
+      </g>
     </svg>
   </div>
   <div id="app">

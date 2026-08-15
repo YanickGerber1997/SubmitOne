@@ -2116,13 +2116,17 @@ table.va input[type=number] { -moz-appearance: textfield; }
   #app .brand, #app .sidebar-toggle,
   #app .sidebar-foot, #app.collapsed .sidebar-foot { display: none; }
 
-  /* Hier gibt es keine Seitenleiste zur Linken, sondern unten die
-     Reiterleiste — die Fokusleiste rückt an den linken Rand und darüber. */
-  .focusbar {
-    left: 12px;
-    bottom: calc(68px + env(safe-area-inset-bottom, 0px));
-    opacity: 1;
-  }
+  /* Auf dem Handy fällt sie weg. Nicht aus Platzmangel, sondern weil sie
+     hier nichts bedeutet: «Fokus» blendet Seitenleiste und Projektreiter
+     aus — beides gibt es auf dem Handy so nicht, die Navigation liegt
+     unten und ist keine Fläche, die man zurückgewinnen kann. «Vollbild»
+     kann der Browser selbst, und als installierte App läuft SubmitOne
+     ohnehin randlos.
+
+     Vorher schwebte sie über dem Inhalt und verdeckte je nach Seite
+     Knöpfe und Erklärungen. Ein Bedienelement ohne Wirkung, das echte
+     Bedienelemente verdeckt, ist schlechter als keines. */
+  .focusbar { display: none; }
 
   /* Vier feste Plätze und «Mehr».
 
@@ -2608,7 +2612,10 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 @media (max-width: 760px) {
   .einst-leib { padding: 12px 13px; gap: 11px; }
   .einst-kopf { padding: 11px 13px 9px; }
-  .einst-tatliste { grid-template-columns: 1fr; }
+  /* Zwei Spalten auch auf dem Handy: Die Knopfnamen passen bei 185px,
+     und einzeln untereinander kosten vier Knoepfe eine halbe Bildschirmhoehe. */
+  .einst-tatliste { grid-template-columns: 1fr 1fr; gap: 7px; }
+  .einst-tatliste .btn { padding-left: 10px; padding-right: 10px; font-size: var(--t-xs); }
   .einst-logo { flex-wrap: wrap; }
 }
 
@@ -2616,3 +2623,55 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
    sich eine Zeile. Die Strasse bekommt mehr davon, weil Strassennamen
    länger werden als eine Postleitzahl mit Ortsnamen. */
 .einst-adresse { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
+
+/* Lange Erklärungen hinter einem Aufklapper. Sie sind richtig und sollen
+   bleiben — aber sie beantworten eine Frage, die man einmal stellt, und
+   stehen danach für immer im Weg. Zugeklappt kosten sie eine Zeile
+   statt fünf; die Auskunft ist einen Tipp entfernt, nicht gestrichen. */
+.einst-mehr > summary {
+  cursor: pointer; list-style: none;
+  font-size: var(--t-xs); font-weight: 600; color: var(--text-soft);
+  display: flex; align-items: center; gap: 6px; padding: 3px 0;
+}
+.einst-mehr > summary::-webkit-details-marker { display: none; }
+.einst-mehr > summary::before {
+  content: ''; width: 5px; height: 5px; flex: none;
+  border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
+  transform: rotate(-45deg); transition: transform .14s;
+}
+.einst-mehr[open] > summary::before { transform: rotate(45deg); }
+.einst-mehr > summary:hover { color: var(--brand); }
+.einst-mehr > p { margin: 5px 0 0; }
+
+/* ---- Handy: brutal kompakt --------------------------------------------
+   Gemessen: 2476px auf einem 844px-Schirm, also drei Bildschirme für
+   Einstellungen. Die grössten Posten waren Büro (587px), Sichern (425px)
+   und 316px allein an Erklärtexten.
+
+   Drei Eingriffe, keiner davon nimmt etwas weg:
+   1. Feldpaare bleiben nebeneinander. Der Rest des Programms bricht
+      .form-row auf dem Handy in eine Spalte um — hier ist das falsch:
+      «6000 Luzern» und «041 000 00 00» brauchen keine 350px, und jedes
+      umgebrochene Paar kostet eine ganze Feldzeile.
+   2. Die Beschreibung unter dem Abschnittstitel entfällt. Auf einem
+      schmalen Schirm liest man den Titel und arbeitet; die Erklärung ist
+      für den ersten Besuch am grossen Bildschirm.
+   3. Das Logo legt sich quer statt zu stapeln. */
+@media (max-width: 760px) {
+  .einst-leib .form-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .einst-adresse { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+  .einst-kopf p { display: none; }
+  .einst-kopf { padding: 9px 12px; }
+  .einst-leib { padding: 10px 12px; gap: 9px; }
+  .einst-raster, .einst-spalte { gap: 10px; }
+
+  .einst-buero { grid-template-columns: 1fr; gap: 10px; }
+  .einst-buero-logo {
+    display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 8px 10px;
+    align-items: center;
+  }
+  .einst-buero-logo .einst-name { grid-column: 1 / -1; }
+  .einst-logo-bild { height: 62px; grid-row: span 2; }
+  .einst-buero-logo .einst-hinweis { grid-column: 2; align-self: start; }
+  .einst-feld textarea.input { min-height: 70px; }
+}

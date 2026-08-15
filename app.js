@@ -9042,7 +9042,9 @@ function viewEinstellungen() {
           ? '<button class="btn" data-act="ordner-waehlen">Arbeitsordner wählen</button>'
           : '<span class="einst-hinweis">Der Ordner-Modus braucht Chrome oder Edge am Rechner.</span>'}
     </div>
-    <p class="einst-hinweis">Je Bauvorhaben ein Ordner mit einer <code>.submit</code>-Datei — daneben die Pläne, wie Submit PDF sie ablegt. Der Stand im Browser bleibt erhalten; Sie können jederzeit zurück.</p>`}`);
+    <details class="einst-mehr"><summary>Wie der Arbeitsordner funktioniert</summary>
+      <p class="einst-hinweis">Je Bauvorhaben ein Ordner mit einer <code>.submit</code>-Datei — daneben die Pläne, wie Submit PDF sie ablegt. Der Stand im Browser bleibt erhalten; Sie können jederzeit zurück.</p>
+    </details>`}`);
 
   const sichern = einstAbschnitt('Sichern & Übertragen', '', `
     <div class="einst-tatliste">
@@ -9051,18 +9053,26 @@ function viewEinstellungen() {
       <button class="btn secondary" data-act="gerber-import">📂 Projekt aus .gerber öffnen</button>
       ${cloudEnabled ? '<button class="btn secondary" data-act="logout">⎋ Abmelden</button>' : ''}
     </div>
-    <p class="einst-hinweis"><b>Voll-Backup</b> sichert alle Projekte und Kontakte in eine Datei; „Backup einlesen" stellt genau diesen Stand wieder her und <b>ersetzt alles</b>. <b>.gerber</b> ist ein einzelnes Projekt zum Weitergeben — Rechtsklick auf ein Projekt, „Als .gerber speichern".</p>
+    <details class="einst-mehr"><summary>Unterschied Backup und .gerber</summary>
+      <p class="einst-hinweis"><b>Voll-Backup</b> sichert alle Projekte und Kontakte in eine Datei; „Backup einlesen" stellt genau diesen Stand wieder her und <b>ersetzt alles</b>. <b>.gerber</b> ist ein einzelnes Projekt zum Weitergeben — Rechtsklick auf ein Projekt, „Als .gerber speichern".</p>
+    </details>
     <div class="einst-gefahr">
       <button class="btn danger" data-act="reset">Diesen Browser leeren</button>
       <span class="einst-hinweis">Löscht alles, was nur hier liegt. Vorher ein Backup speichern.</span>
     </div>`);
 
+  /* Das Status-Modell sind zwölf Stationen; auf einem Handy bricht es auf
+     fünf Zeilen um und ist dort das Längste im ganzen Abschnitt — für
+     eine Angabe, die man einmal im Leben nachschlägt. Sie steht deshalb
+     hinter einem Aufklapper, die Fassung bleibt sichtbar. */
   const ueber = einstAbschnitt('Über', '', `
     <dl class="einst-daten">
       <dt>Fassung</dt><dd>${esc(APP_VERSION)}</dd>
-      <dt>Status-Modell</dt><dd>${VERGABE_STATUS.map(s => esc(s.kurz)).join(' → ')}</dd>
-      <dt>Herkunft</dt><dd>Gerber-Soft · Workflow-Test für die Integration ins bkptool</dd>
-    </dl>`);
+      <dt>Herkunft</dt><dd>Gerber-Soft</dd>
+    </dl>
+    <details class="einst-mehr"><summary>Status-Modell der Vergaben</summary>
+      <p class="einst-hinweis">${VERGABE_STATUS.map(s => esc(s.kurz)).join(' → ')}</p>
+    </details>`);
 
   const html = `
     <div class="page-head"><div><h1>Einstellungen</h1><div class="sub">Büro, Daten und Ausgabe</div></div>

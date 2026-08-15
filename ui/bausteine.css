@@ -554,3 +554,26 @@ p:last-child { margin-bottom: 0; }
     .meldung { background: var(--text); }
     .schleier { background: rgba(20, 26, 32, .55); }
 }
+
+/* ---------- 7) Drei Schriften, drei Aufgaben --------------------------
+   Überschriften bekommen die Anzeigeschrift, Zahlen die schmale mit
+   Tabellenziffern, alles andere bleibt bei der Oberflächenschrift.
+
+   Die Stärken sind dabei heruntergegangen: Die Oberfläche stand an
+   vielen Stellen auf 640 bis 700. Das ist der eigentliche Grund, warum
+   sie „zu dick" wirkte — nicht die Schrift, das Gewicht. Space Grotesk
+   trägt auf 600 mehr Präsenz als Inter auf 700, weil ihre Formen
+   eigenwilliger sind; sie braucht also weniger Fett, nicht mehr. */
+h1, h2, h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -.015em;
+}
+
+/* Zahlen: schmal, gleich breit, klar unterscheidbar. Gilt für die
+   Zahlenklasse und für alles, was Beträge in Spalten stellt. */
+.zahl, .kachel-wert, .tabelle .zahl {
+    font-family: var(--font-zahl);
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: .01em;
+}

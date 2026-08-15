@@ -245,7 +245,11 @@ if (R) {  // CSS-Integritaet: unausgeglichene Klammern zerstoeren stumm ganze Re
      Auseinanderlaufen. Geprueft wird deshalb auf Enthaltensein, nicht auf
      Gleichheit. Submit PDF lud lange gar keine Schrift und lief still in
      Segoe UI, obwohl es ueberall var(--font) benutzte. */
-  const GRUND = ['family=Inter:wght@300;400;500;600;700', 'family=Quicksand:wght@'];
+  /* Seit dem 15.08.2026 drei Schriften statt zwei: Inter fuer die
+     Oberflaeche, Space Grotesk fuer Ueberschriften und Schriftzug,
+     Roboto Condensed fuer Zahlen. Quicksand ist entfallen. */
+  const GRUND = ['family=Inter:wght@300;400;500;600;700',
+                 'family=Space+Grotesk:wght@', 'family=Roboto+Condensed:wght@'];
   const ohneGrund = SEITEN.filter(s => { const t = lies(s) || ''; return GRUND.some(g => t.indexOf(g) < 0); });
   push('FAMILIE: ueberall dieselbe Oberflaechenschrift angefordert', !ohneGrund.length,
        'fehlt in: ' + ohneGrund.join(', '));

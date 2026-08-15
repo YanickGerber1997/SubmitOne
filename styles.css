@@ -3024,3 +3024,44 @@ body {
     background-color: color-mix(in srgb, var(--surface) 93%, transparent);
   }
 }
+
+/* ============================================================
+   Schrift: Anzeige, Zahlen, Schriftzug
+   ------------------------------------------------------------
+   Der Schriftzug trug Quicksand — rund, gefällig und austauschbar.
+   Jetzt Space Grotesk: verkürzte Auslauflinien, kantige Rundungen, ein
+   einstöckiges g. Eine Schrift, an der ein Auge hängen bleibt, und
+   genau darum geht es bei einem Namen.
+   ============================================================ */
+.logo-word { font-family: var(--font-display); font-weight: 600; font-size: var(--t-xl); letter-spacing: -.02em; }
+.logo-mark-name { font-family: var(--font-display); font-weight: 600; font-size: var(--t-2xs); letter-spacing: .01em; line-height: 1; white-space: nowrap; }
+
+/* Überschriften der Seite und der Abschnitte. */
+.page-head h1, .detail-head h1, .start-kopf h1,
+.section-head h2, .einst-kopf h2, .heute-kopf h2, .heute-kopf h3,
+.modal-head h3, .sz-title, .subnav-grp, .tt-art {
+  font-family: var(--font-display);
+}
+.start-kopf h1 { font-weight: 600; letter-spacing: -.025em; }
+.section-head h2, .einst-kopf h2, .heute-kopf h3, .subnav-grp, .tt-art { font-weight: 600; letter-spacing: .04em; }
+
+/* ---- Zahlen ----
+   Überall, wo Beträge, Prozente, Stunden oder Stückzahlen in Spalten
+   stehen. Tabellenziffern lassen Kolonnen fluchten; die schmale Schrift
+   spart in der Baukostenübersicht rund 12 Prozent Spaltenbreite. */
+.num, .k-value, .pc-stat .v, .dstat .v, .heute-zahl, .hz-rechts,
+.progress-label b, .kpi .k-value, table.grid td.num, .tabelle .zahl,
+.frist, .einst-daten dd {
+  font-family: var(--font-zahl);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* ---- Weniger Fett ----
+   Die Beschwerde war „etwas zu dick". Ursache waren die Gewichte, nicht
+   die Schrift: 700 auf kleinen Grossbuchstaben wirkt gedrängt, weil die
+   Buchstaben dort ohnehin dicht stehen. */
+.section-head h2, .einst-kopf h2, .heute-kopf h3, .sz-title { font-weight: 600; }
+.kpi .k-value, .dstat .v, .pc-stat .v { font-weight: 600; }
+.tb-konto, .tb-wo { font-weight: 500; }
+.nav a, .subnav-link { font-weight: 450; }
+.nav a.active, .subnav-link.active { font-weight: 600; }

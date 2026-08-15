@@ -89,9 +89,33 @@
   --b-grau-voll:#6b6357;    --b-grau-text:#514b42;    --b-grau-weich:#f2f0ed;    --b-grau-rand:#dcd7cf;
 
   /* ---- Schrift (beide Namen zeigen auf dieselbe Familie) ---- */
+  /* ---- Drei Schriften, drei Aufgaben ---------------------------------
+     Bis zum 15.08.2026 trug Inter alles und Quicksand den Schriftzug.
+     Inter ist eine gute Oberflächenschrift und eine mittelmässige
+     Überschriftenschrift: Sie hat keine Eigenheiten, an denen ein Auge
+     hängen bleibt. Und sie ist breit — in einer Kostenspalte kostet das
+     Platz, den es dort nicht gibt.
+
+     --font        Oberfläche. Inter, weil sie im Kleinen ruhig bleibt
+                   und keine Aufmerksamkeit fordert.
+     --font-display Überschriften und Schriftzug. Space Grotesk: verkürzte
+                   Auslauflinien, einstöckiges g, leicht kantige
+                   Rundungen — technisch, mit Eigenart, ohne verspielt zu
+                   sein. Variabel, also jede Stärke fein einstellbar.
+     --font-zahl   Zahlen. Roboto Condensed mit Tabellenziffern: rund 12%
+                   schmaler als Inter, und jede Ziffer gleich breit,
+                   damit Beträge in Kolonnen untereinander fluchten.
+                   Bei Bausummen ist das kein Geschmack, sondern
+                   Lesbarkeit — 1 und 7, 6 und 8 müssen sich auf einen
+                   Blick unterscheiden.
+
+     --font-brand zeigt weiter auf die Anzeigeschrift, damit die
+     Verkaufsseite und die Projektmappe nichts ändern müssen. */
   --font:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
   --font-ui:var(--font);
-  --font-brand:'Quicksand',var(--font);
+  --font-display:'Space Grotesk',var(--font);
+  --font-zahl:'Roboto Condensed',var(--font);
+  --font-brand:var(--font-display);
 
   /* ---- Fokus-Ring ---- */
   --ring:0 0 0 3px rgba(113,50,227,.30);

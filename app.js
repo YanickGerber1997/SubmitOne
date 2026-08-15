@@ -2134,13 +2134,10 @@ function viewDashboard() {
   allPend.sort((a, b) => (a.x.it.termin || '9999-99-99').localeCompare(b.x.it.termin || '9999-99-99'));
   const pendUeber = allPend.filter(o => o.x.it.termin && daysUntil(o.x.it.termin) < 0).length;
 
-  const kpi = (ico, cls, label, value, foot, footCls) => `<div class="kpi"><div class="k-label"><span class="k-ico ${cls}">${ico}</span>${label}</div><div class="k-value">${value}</div><div class="k-foot"${footCls ? ` style="color:var(--${footCls})"` : ''}>${foot}</div></div>`;
-  const kpis = [
-    kpi('▤', 'blue', 'Aktive Projekte', aktive.length, projekte.length + ' total'),
-    kpi('◷', 'amber', 'Offene Vergaben', offeneVergaben.length, alleVergaben.length + ' gesamt · ' + chfShort(volumen)),
-    kpi('☑', 'green', 'Offene Pendenzen', allPend.length, pendUeber ? pendUeber + ' überfällig' : 'alle im Plan', pendUeber ? 's-red' : ''),
-    kpi('⚑', 'purple', 'Fristen ≤ 7 Tage', fristig.length, fristig.length ? 'bald fällig' : 'nichts dringend', fristig.length ? 's-red' : ''),
-  ].join('');
+  /* Die Kennzahlenreihe, die Pendenzen-Liste und die Projektliste sind am
+     15.08.2026 in die Tagesspalte bzw. in die Projektkacheln gewandert.
+     Vier grosse Kacheln quer ueber die Seite waren viel Platz fuer vier
+     Zahlen, die man im Vorbeigehen liest. */
 
   const sect = (title, hint) => `<div class="section-head" style="margin:2px 0 12px"><h2>${title}</h2>${hint ? (hint.startsWith('<') ? hint : `<span class="hint">${hint}</span>`) : ''}</div>`;
 
@@ -2165,25 +2162,9 @@ function viewDashboard() {
       <span class="dr-main">${esc(e.titel)}<div class="dr-sub">${esc(e.p.name)}</div></span>
     </div>`).join('')}</div>` : '<p class="muted" style="margin:0;font-size:var(--t-s, 13px)">Keine anstehenden Termine.</p>'}</div>`;
 
-  // Panel: Offene Pendenzen
-  const pendPanel = sect('Offene Pendenzen', allPend.length ? `${allPend.length}${pendUeber ? ` · ${pendUeber} überfällig` : ''}` : '') + `<div class="card card-pad" style="margin-bottom:18px">${allPend.length ? `<div class="dash-list">${allPend.slice(0, 8).map(({ p, idx, x }) => `
-    <div class="dash-row">
-      <input type="checkbox" class="pend-check" data-pid="${p.id}" data-prid="${x.pr ? x.pr.id : ''}" data-tid="${x.tr ? x.tr.id : ''}" data-itemid="${x.it.id}" title="erledigt">
-      <span class="dr-main">${esc(x.it.text)}${pendFirmenChips(x.it)}<div class="dr-sub"><i class="cal-dot ${projColor(idx, p)}" style="width:7px;height:7px"></i> <a href="#/projekt/${p.id}/pendenzen">${esc(p.name)}</a></div></span>
-      <span class="frist ${fristClass(x.it.termin, false)}" style="font-size:var(--t-xs, 11.5px);white-space:nowrap">${x.it.termin ? fristText(x.it.termin, false) : '–'}</span>
-    </div>`).join('')}</div>${allPend.length > 8 ? `<a class="hint" href="#/pendenzen" style="display:inline-block;margin-top:10px">Alle ${allPend.length} anzeigen →</a>` : ''}` : emptyState('✓', 'Keine offenen Pendenzen.')}</div>`;
 
   // Panel: Projekte (kompakt) + Dossier-Vollständigkeit
   const projList = (aktive.length ? aktive : projekte);
-  const avgDoc = projList.length ? Math.round(projList.reduce((a, p) => a + dossierPct(p), 0) / projList.length) : 0;
-  const docCls = d => d >= 80 ? 's-green' : d >= 40 ? 's-amber' : 's-red';
-  const projPanel = sect('Projekte', projList.length ? `Ø Unterlagen ${avgDoc}% · <a class="hint" href="#/projekte" style="color:inherit">alle →</a>` : `<a class="hint" href="#/projekte">alle →</a>`) + `<div class="card card-pad">${projList.length ? `<div class="dash-list">${projList.map(p => { const dp = dossierPct(p); return `
-    <div class="dash-row clickable" data-goto="#/projekt/${p.id}" data-ctx="projekt" data-pid="${p.id}">
-      <i class="cal-dot ${projColor(projekte.indexOf(p), p)}"></i>
-      <span class="dr-main">${esc(p.name)}<div class="dr-sub">${esc(p.ort || '')} · <a href="#/projekt/${p.id}/dossier" onclick="event.stopPropagation()">Unterlagen <span style="color:var(--${docCls(dp)});font-weight:600">${dp}%</span></a></div></span>
-      ${phaseBadge(dominantPhase(p))}
-      <span class="dash-muted" style="font-size:var(--t-xs, 12px);min-width:32px;text-align:right" title="Bau-Fortschritt">${projektFortschritt(p)}%</span>
-    </div>`; }).join('')}</div>` : emptyState('▤', 'Noch keine Projekte', 'Lege dein erstes Projekt an – Termine, Kosten und Ausschreibung an einem Ort.', { label: '+ Erstes Projekt anlegen', act: 'new-projekt' })}</div>`;
 
   const szChips = SCHNELLZUGRIFF.map(a => a.act
     ? `<button class="sz-chip" data-act="${a.act}"><span class="sz-i">${a.ico}</span>${esc(a.label)}</button>`
@@ -2193,13 +2174,90 @@ function viewDashboard() {
       <div class="sz-chips">${szChips}</div>
     </div>`;
 
+  /* ---- Die Startseite, nach dem Entwurf vom 15.08.2026 ----------------
+     Drei Zonen: Begrüssung, Arbeitsfläche, Tagesspalte. Die Tagesspalte
+     steht NUR hier — in Projekten, Kosten und Terminen zählt die volle
+     Breite, dort wird an Rastern und Tabellen gearbeitet.
+
+     Die Kennzahlen sind aus der Reihe oben in die Tagesspalte gewandert.
+     Vier grosse Kacheln quer über die Seite waren viel Platz für vier
+     Zahlen, die man im Vorbeigehen liest. */
+  const gruss = (() => {
+    const h = new Date().getHours();
+    return h < 5 ? 'Gute Nacht' : h < 11 ? 'Guten Morgen' : h < 18 ? 'Guten Tag' : 'Guten Abend';
+  })();
+
+  // Erfasste Stunden: heute und diese Woche. Beides steht in state.zeit.
+  const zz = (state.zeit && typeof state.zeit === 'object') ? state.zeit : {};
+  const eintr = zz.eintraege || [];
+  const stdHeute = eintr.filter(e => e.datum === todayI).reduce((a, e) => a + zDauer(e), 0);
+  const montag = mondayOf(todayI);
+  const stdWoche = eintr.filter(e => e.datum >= montag && e.datum <= todayI).reduce((a, e) => a + zDauer(e), 0);
+  const alsStd = m => (m / 60).toFixed(2).replace('.', ',') + ' h';
+
+  const heuteTermine = events.filter(e => e.datum === todayI);
+  const zeile = (haupt, unter, rechts, farbe) => `<div class="hz-zeile">
+      ${farbe ? `<i class="hz-punkt ${farbe}"></i>` : ''}
+      <span class="hz-haupt">${haupt}${unter ? `<span class="hz-unter">${unter}</span>` : ''}</span>
+      ${rechts ? `<span class="hz-rechts">${rechts}</span>` : ''}
+    </div>`;
+
+  const heuteSpalte = `<aside class="heute">
+    <div class="heute-block">
+      <div class="heute-kopf"><h2>Heute</h2><span class="heute-datum">${fmtDate(todayI)}</span></div>
+    </div>
+
+    <div class="heute-block">
+      <div class="heute-kopf"><h3>Fällige Termine</h3><span class="heute-zahl">${heuteTermine.length}</span></div>
+      ${heuteTermine.length
+        ? heuteTermine.slice(0, 5).map(e => zeile(esc(e.titel), esc(e.p.name), '', 'cal-dot ' + projColor(projekte.indexOf(e.p), e.p))).join('')
+        : `<p class="heute-leer">Nichts angesetzt.</p>`}
+    </div>
+
+    <div class="heute-block">
+      <div class="heute-kopf"><h3>Offene Aufgaben</h3><span class="heute-zahl${pendUeber ? ' warn' : ''}">${allPend.length}</span></div>
+      ${allPend.length
+        ? allPend.slice(0, 5).map(({ p, x }) => zeile(esc(x.it.text), esc(p.name),
+            x.it.termin ? `<span class="frist ${fristClass(x.it.termin, false)}">${fristText(x.it.termin, false)}</span>` : '')).join('')
+          + (allPend.length > 5 ? `<a class="heute-mehr" href="#/pendenzen">Alle ${allPend.length} anzeigen →</a>` : '')
+        : `<p class="heute-leer">Alles erledigt.</p>`}
+    </div>
+
+    <div class="heute-block">
+      <div class="heute-kopf"><h3>Erfasste Stunden</h3><span class="heute-zahl still">${alsStd(stdHeute)}</span></div>
+      ${zeile('Heute', '', alsStd(stdHeute))}
+      ${zeile('Diese Woche', '', alsStd(stdWoche))}
+      <a class="heute-mehr" href="#/stunden">Zeiterfassung öffnen →</a>
+    </div>
+
+    <div class="heute-block">
+      <div class="heute-kopf"><h3>Im Blick</h3></div>
+      ${zeile('Aktive Projekte', '', String(aktive.length))}
+      ${zeile('Offene Vergaben', '', String(offeneVergaben.length))}
+      ${zeile('Fristen ≤ 7 Tage', '', fristig.length
+          ? `<span style="color:var(--s-red);font-weight:700">${fristig.length}</span>` : '0')}
+      ${zeile('Volumen', '', chfShort(volumen))}
+    </div>
+  </aside>`;
+
+  const projKarten = projList.length
+    ? `<div class="proj-kacheln">${projList.slice(0, 6).map(projektCard).join('')}</div>`
+    : emptyState('▤', 'Noch keine Projekte', 'Lege dein erstes Projekt an – Termine, Kosten und Ausschreibung an einem Ort.', { label: '+ Erstes Projekt anlegen', act: 'new-projekt' });
+
   render(`
-    <div class="page-head"><div><h1>Dashboard</h1><div class="sub">Überblick · Fristen, Termine &amp; Pendenzen aller Projekte</div></div><button class="btn" data-act="new-projekt">+ Neues Projekt</button></div>
-    ${topCard}
-    <div class="kpi-row">${kpis}</div>
-    <div class="two-col">
-      <div>${fristPanel}${terminePanel}</div>
-      <div>${pendPanel}${projPanel}</div>
+    <div class="page-head start-kopf"><div>
+        <h1>${gruss}</h1>
+        <div class="sub">Alles, was heute wichtig ist.</div>
+      </div><button class="btn" data-act="new-projekt">+ Neues Projekt</button></div>
+    <div class="start-raster">
+      <div class="start-haupt">
+        ${topCard}
+        ${sect('Aktive Projekte', `<a class="hint" href="#/projekte">Alle Projekte anzeigen →</a>`)}
+        ${projKarten}
+        ${fristPanel}
+        ${terminePanel}
+      </div>
+      ${heuteSpalte}
     </div>
   `);
   $$('.pend-check').forEach(cb => cb.addEventListener('change', () => togglePendenz(cb.dataset.pid, cb.dataset.prid, cb.dataset.tid, cb.dataset.itemid)));

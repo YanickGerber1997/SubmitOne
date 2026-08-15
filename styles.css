@@ -2834,3 +2834,77 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
   .tb-suche { flex: 1 1 auto; max-width: none; }
   .tb-suche .input { height: 38px; }
 }
+
+/* ============================================================
+   Startseite: Arbeitsfläche + Tagesspalte
+   ------------------------------------------------------------
+   Nach dem Entwurf vom 15.08.2026. Die Tagesspalte steht NUR hier —
+   in Projekten, Kosten und Terminen zählt die volle Breite, dort wird
+   an Rastern und Tabellen gearbeitet.
+
+   Sie verschwindet unter 1180px. Das ist kein willkürlicher Wert: Bei
+   1440px Fenster hat der Inhalt 1198px; zieht die Spalte 300 davon ab,
+   bleiben 880. Darunter wird die Arbeitsfläche schmaler als die Spalte
+   wert ist, und die Karten brechen auf eine Reihe zusammen.
+   ============================================================ */
+.start-raster { display: grid; grid-template-columns: minmax(0, 1fr) 306px; gap: 16px; align-items: start; }
+.start-haupt { min-width: 0; display: flex; flex-direction: column; }
+.start-kopf h1 { font-size: var(--t-2xl); letter-spacing: -.02em; }
+
+/* Die Projektkacheln. Sie tragen alles, was man im Vorbeigehen wissen
+   will: Phase, Fortschritt, Zuschlag, Volumen, nächste Frist. */
+.proj-kacheln { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: 12px; margin-bottom: 18px; }
+
+/* ---- Tagesspalte ---- */
+.heute { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 62px; }
+.heute-block {
+  background: var(--surface); border: 1px solid var(--line-soft);
+  border-radius: var(--radius); box-shadow: var(--schatten-s);
+  padding: 12px 14px;
+}
+.heute-block:first-child { padding: 10px 14px; }
+.heute-kopf { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.heute-kopf:last-child { margin-bottom: 0; }
+.heute-kopf h2 { margin: 0; font-size: var(--t-l); font-weight: 700; }
+.heute-kopf h3 { margin: 0; font-size: var(--t-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--text-soft); }
+.heute-datum { font-size: var(--t-xs); color: var(--text-faint); }
+.heute-zahl {
+  min-width: 22px; text-align: center; flex: none;
+  padding: 1px 7px; border-radius: var(--radius-pill, 999px);
+  background: var(--surface-2); border: 1px solid var(--line-soft);
+  font-size: var(--t-xs); font-weight: 700; color: var(--text-soft);
+}
+.heute-zahl.warn { background: #fdeaea; border-color: #f3c9c9; color: var(--s-red); }
+.heute-zahl.still { background: transparent; border-color: transparent; color: var(--text); }
+
+.hz-zeile { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; border-top: 1px solid var(--line-soft); }
+.hz-zeile:first-of-type { border-top: 0; }
+.hz-punkt { width: 8px; height: 8px; border-radius: 50%; flex: none; margin-top: 5px; }
+.hz-haupt { flex: 1; min-width: 0; font-size: var(--t-s); line-height: 1.35; }
+.hz-unter { display: block; font-size: var(--t-xs); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hz-rechts { flex: none; font-size: var(--t-xs); color: var(--text-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.heute-leer { margin: 0; font-size: var(--t-xs); color: var(--text-faint); }
+.heute-mehr { display: inline-block; margin-top: 7px; font-size: var(--t-xs); color: var(--brand); font-weight: 600; }
+
+@media (max-width: 1180px) {
+  .start-raster { grid-template-columns: 1fr; }
+  /* Unten angehängt statt daneben — und dann nicht mehr haftend, sonst
+     klebt sie mitten im Rollweg fest. */
+  .heute { position: static; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+}
+@media (max-width: 760px) {
+  .heute { grid-template-columns: 1fr; }
+  .proj-kacheln { grid-template-columns: 1fr; gap: 10px; }
+  .start-kopf h1 { font-size: var(--t-xl); }
+}
+
+/* Die Begrüssung steht über ihrem Satz, nicht daneben. .page-head setzt
+   Titel und Unterzeile sonst in eine Zeile — das ist für «Dashboard ·
+   Überblick …» richtig, für eine Anrede nicht. */
+.start-kopf > div { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.start-kopf .sub { font-size: var(--t-s); }
+
+/* 300px statt 268: Bei 268 brach «Sonnhalde Bremgarten» auf zwei Zeilen
+   und die Zeile darunter gleich mit. Eine Kachel, deren Titel umbricht,
+   liest man nicht mehr im Vorbeigehen. */
+.proj-kacheln { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }

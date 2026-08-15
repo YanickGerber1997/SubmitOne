@@ -3065,3 +3065,107 @@ body {
 .tb-konto, .tb-wo { font-weight: 500; }
 .nav a, .subnav-link { font-weight: 450; }
 .nav a.active, .subnav-link.active { font-weight: 600; }
+
+/* ============================================================
+   Glas, dritte Stufe: Facetten, scharfe Kanten, eine Scherbe
+   ------------------------------------------------------------
+   Der Verlauf war ein getönter Grund, kein Glas. Was gefehlt hat, sind
+   KANTEN: Glas erkennt man daran, wo zwei Flächen aneinanderstossen und
+   das Licht bricht — nicht an weichen Übergängen.
+   ============================================================ */
+.glasgrund {
+  position: fixed; inset: 0; z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.glasgrund svg { width: 100%; height: 100%; display: block; }
+
+/* Der Verlauf von vorher bleibt als Grundstimmung darunter — er gibt der
+   Fläche Farbe, die Facetten geben ihr Form. Alles Bediente liegt
+   darüber. */
+#app, .topbar, .statusbar, #modal-root, #toast-root, .focusbar, .so-sw { position: relative; z-index: 1; }
+.sidebar { z-index: 2; }
+
+/* ---- Scharfe Kanten statt runder Ecken ----
+   Eine Scheibe hat keine abgerundeten Ecken. Radius 3px statt 8: gerade
+   so viel, dass die Ecke nicht ausfranst, aber nicht mehr weich wirkt. */
+.card, .kpi, .proj-card, .einst-block, .heute-block, .modal {
+  border-radius: 3px;
+}
+
+/* Die Lichtkante läuft jetzt über zwei Seiten statt nur oben — so
+   entsteht der Eindruck einer geneigten Scheibe, die von links oben
+   angeleuchtet wird. */
+.card, .kpi, .proj-card, .einst-block, .heute-block {
+  box-shadow: var(--schatten-s),
+              inset 1px 1px 0 rgba(255, 255, 255, 1),
+              inset -1px -1px 0 rgba(17, 24, 31, .06);
+}
+
+/* ---- Die Scherbe an der Navigationsspalte ----
+   Sie läuft über die Kante der Leiste hinaus in den Inhalt. Genau das
+   macht den Unterschied zu einem Rahmen: Glas hört nicht an einer
+   Trennlinie auf, es liegt darüber.
+
+   ::after statt eines eigenen Elements, damit im Markup nichts steht,
+   was nur Bild ist. Der Überstand ist bewusst klein — 26px reichen,
+   damit man sieht, dass etwas hinausläuft. */
+.sidebar { overflow: visible; }
+.sidebar::after {
+  content: ''; position: absolute; pointer-events: none;
+  top: 16%; right: -26px; width: 74px; height: 34%;
+  background: linear-gradient(128deg, rgba(255,255,255,.72) 0%, rgba(255,255,255,.12) 46%, rgba(113,50,227,.06) 100%);
+  clip-path: polygon(0% 0%, 100% 18%, 62% 100%, 0% 74%);
+  border-left: 0;
+  opacity: .9;
+}
+/* Eingeklappt ist die Leiste 68px schmal — eine 74px breite Scherbe
+   daneben wäre dann breiter als ihre Leiste. */
+#app.collapsed .sidebar::after { width: 46px; right: -18px; top: 22%; height: 26%; }
+
+/* Auf dem Handy ist die Leiste unten und quer; eine Scherbe an ihrer
+   rechten Kante ergäbe dort keinen Sinn. */
+@media (max-width: 760px) {
+  .sidebar::after { display: none; }
+}
+
+/* Ein Bild gehört nicht aufs Papier. */
+@media print {
+  .glasgrund, .sidebar::after { display: none !important; }
+}
+
+/* ============================================================
+   Fokusleiste: im Fluss statt schwebend
+   ------------------------------------------------------------
+   Als schwebende Leiste lag sie erst auf den Kopfzeilenknöpfen, dann
+   auf den Karten, dann auf dem Zurück-Knopf. Dreimal derselbe Fehler an
+   anderer Stelle: Ein fester Abstand vom unteren Rand passt nie zu einer
+   Fusszeile, deren Höhe sich mit ihrem Inhalt ändert.
+
+   Jetzt steht sie IN der Fusszeile. Damit kann sie nichts mehr
+   überlagern — und auf dem Handy verschwindet sie automatisch mit der
+   Fusszeile, was ohnehin richtig ist.
+   ============================================================ */
+.focusbar {
+  position: static; display: flex; gap: 6px; opacity: .75;
+  bottom: auto; left: auto; top: auto; right: auto;
+}
+.focusbar:hover { opacity: 1; }
+.focusbar .fb-btn { flex: 1; justify-content: center; }
+#app.collapsed ~ .focusbar { left: auto; }
+#app.collapsed .focusbar { flex-direction: column; }
+#app.collapsed .focusbar .fb-t { display: none; }
+
+/* Die Scherbe an der Leiste sichtbar machen.
+   Weiss auf weisser Leiste sieht man nicht — sie braucht eine Kante.
+   Der helle Streifen ist die Lichtbrechung, die dünne Linie darunter
+   die Bruchkante. */
+.sidebar::after {
+  background: linear-gradient(126deg,
+      rgba(255,255,255,.92) 0%,
+      rgba(214,222,240,.55) 34%,
+      rgba(113,50,227,.14) 72%,
+      rgba(113,50,227,.04) 100%);
+  filter: drop-shadow(1px 2px 3px rgba(17,24,31,.10));
+  opacity: 1;
+}

@@ -58,15 +58,15 @@
     <svg viewBox="0 0 100 100" preserveAspectRatio="none">
       <defs>
         <linearGradient id="gk1" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0"   stop-color="#55626e" stop-opacity=".22"/>
+          <stop offset="0"   stop-color="#55626e" stop-opacity=".30"/>
           <stop offset="1"   stop-color="#55626e" stop-opacity="0"/>
         </linearGradient>
         <linearGradient id="gk2" x1="1" y1="0" x2="0" y2="1">
-          <stop offset="0"   stop-color="#3c6280" stop-opacity=".20"/>
+          <stop offset="0"   stop-color="#3c6280" stop-opacity=".27"/>
           <stop offset="1"   stop-color="#3c6280" stop-opacity="0"/>
         </linearGradient>
         <linearGradient id="gk3" x1="0" y1="1" x2="1" y2="0">
-          <stop offset="0"   stop-color="#4d6a3d" stop-opacity=".16"/>
+          <stop offset="0"   stop-color="#4d6a3d" stop-opacity=".22"/>
           <stop offset="1"   stop-color="#4d6a3d" stop-opacity="0"/>
         </linearGradient>
         <linearGradient id="gkante" x1="0" y1="0" x2="1" y2="1">
@@ -74,7 +74,16 @@
           <stop offset=".55" stop-color="#ffffff" stop-opacity=".25"/>
           <stop offset="1"   stop-color="#ffffff" stop-opacity="0"/>
         </linearGradient>
+        <linearGradient id="gband" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0"  stop-color="#ffffff" stop-opacity="0"/>
+          <stop offset=".5" stop-color="#ffffff" stop-opacity=".14"/>
+          <stop offset="1"  stop-color="#ffffff" stop-opacity="0"/>
+        </linearGradient>
       </defs>
+
+      <!-- Ein breites Lichtband quer durchs Bild: die eine grosse
+           Reflexion, die alles andere ordnet. -->
+      <polygon points="0,62 100,18 100,34 0,80" fill="url(#gband)"/>
 
       <!-- Grosse Scherben. Jede eine Fläche plus ihre Lichtkante. -->
       <polygon points="0,0 34,0 14,26 0,17"      fill="url(#gk1)"/>

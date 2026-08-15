@@ -2930,6 +2930,10 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 body {
   background-color: var(--bg);
   background-image:
+    /* Randabdunklung: haelt das Bild zusammen und laesst die hellen
+       Scheiben in der Mitte staerker leuchten. Nur an den Raendern, in der
+       Mitte voellig neutral. */
+    radial-gradient(130% 120% at 50% 42%, transparent 58%, rgba(17, 24, 31, .07) 100%),
     radial-gradient(58vw 46vw at 12% -6%,  rgba(85, 98, 110, .26), transparent 66%),
     radial-gradient(52vw 42vw at 96% 12%,  rgba(60, 98, 128, .22),   transparent 64%),
     radial-gradient(46vw 40vw at 74% 104%, rgba(77, 106, 61, .17),   transparent 66%);
@@ -3314,4 +3318,65 @@ body {
     linear-gradient(135deg, rgba(255,255,255,.92) 0%, rgba(255,255,255,.45) 40%, rgba(17,24,31,.13) 100%);
   background-origin: border-box;
   background-clip: padding-box, border-box;
+}
+
+/* ============================================================
+   Echtes Glas — vierte Stufe
+   ------------------------------------------------------------
+   Was jetzt dazukommt, sind die Eigenschaften von MATERIAL:
+
+   DICKE.   Glas hat zwei Kanten — die vordere und die hintere Fläche.
+            Ein innerer, schwächerer Ring 1px hinter der Aussenkante
+            macht aus einer Folie eine Scheibe mit Stärke.
+   FROST.   Eine Spur Rauschen in der Füllung. Eine mathematisch glatte
+            Fläche liest das Auge als Bildschirmfarbe; ein Hauch
+            Unregelmässigkeit als Material. 4 Prozent Deckung, mehr ist
+            Schmutz.
+   SAUM.    Der Lichtsaum oben ist leicht kühl (blaustichig), der untere
+            Rand leicht warm — die Farbzerlegung an einer Glaskante.
+            Bewusst knapp unter der Wahrnehmungsschwelle.
+   TIEFE.   Die Unschärfe geht von 16 auf 30px, die Sättigung auf 185.
+            Ein dickes Glas verwischt stark; ein dünnes ist nur Folie.
+   ============================================================ */
+.card, .kpi, .proj-card, .einst-block, .heute-block {
+  -webkit-backdrop-filter: blur(30px) saturate(185%);
+  backdrop-filter: blur(30px) saturate(185%);
+  background-image:
+    /* Frost: winziges SVG-Rauschen, Deckung im Bild eingebacken */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"),
+    /* Glanzpunkt in der Ecke, wo der Spiegelstreifen beginnt */
+    radial-gradient(220px 140px at 12% -8%, rgba(255,255,255,.55), transparent 70%),
+    /* Spiegelstreifen */
+    linear-gradient(118deg,
+      transparent 14%,
+      rgba(255,255,255,.60) 23%,
+      rgba(255,255,255,.10) 30%,
+      transparent 38%),
+    /* Füllung — unverändert 70%, der Wert, bei dem die Schrift hält */
+    linear-gradient(to bottom, rgba(255,255,255,.82), rgba(255,255,255,.70)),
+    /* Aussenkante mit Verlauf */
+    linear-gradient(135deg,
+      rgba(255,255,255,.98) 0%,
+      rgba(255,255,255,.60) 26%,
+      rgba(120,132,145,.42) 62%,
+      rgba(17,24,31,.32) 100%);
+  background-origin: border-box;
+  background-clip: padding-box, padding-box, padding-box, padding-box, border-box;
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+  /* Dicke und Farbsaum: kühler Saum oben, innerer Ring, warme Unterkante */
+  box-shadow:
+    inset 0 1px 0 rgba(214, 233, 252, .70),
+    inset 0 0 0 1px rgba(255, 255, 255, .30),
+    inset 0 -1px 0 rgba(252, 244, 232, .35),
+    0 14px 34px -18px rgba(17, 24, 31, .28);
+}
+
+/* Knöpfe und Felder: dünneres Glas, gleiche Familie. */
+.btn.secondary, .knopf, .input, .select, textarea.input {
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  backdrop-filter: blur(16px) saturate(170%);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card, .kpi, .proj-card, .einst-block, .heute-block { box-shadow: inset 0 0 0 1px rgba(255,255,255,.4); }
 }

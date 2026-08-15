@@ -1020,11 +1020,6 @@ tr.done-row { background: #fbfdfb; }
 .tb-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid var(--border-2); border-radius: var(--radius); background: var(--surface); color: var(--text-soft); font-size: var(--t-l); font-weight: 700; cursor: pointer; line-height: 1; }
 .tb-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
 .tb-btn:disabled { opacity: .32; cursor: default; }
-.tb-crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: var(--t-s); overflow: hidden; white-space: nowrap; }
-.tb-crumbs a { color: var(--text-soft); text-decoration: none; flex: none; }
-.tb-crumbs a:hover { color: var(--brand); text-decoration: underline; }
-.tb-cur { font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
-.tb-sep { color: var(--text-faint); flex: none; }
 .tb-actions { display: flex; gap: 6px; flex: none; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .view .breadcrumb, #view > .breadcrumb, .breadcrumb { display: none; }
 /* Gewerk-Detail: vertikale Gewerk-Liste (BKP-Katalog) neben dem Inhalt */
@@ -2081,7 +2076,6 @@ table.va input[type=number] { -moz-appearance: textfield; }
   .sz-chip { min-height: 44px; }
   .fb-btn { min-height: 44px; }
   /* Brotkrumen sind Navigation, kein Fliesstext — sie werden angetippt. */
-  .tb-crumbs a { min-height: 44px; display: inline-flex; align-items: center; }
   /* Ebenso die kleinen Verweise neben den Sektionstiteln («alle →»,
      «Submissionen»). Sie tauchen erst auf, wenn Daten da sind — deshalb
      fielen sie in der leeren Demo fast durch die Messung. */
@@ -2770,4 +2764,73 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
   .statusbar { background: var(--surface-2); }
   .datepop, .ctx-menu { background: var(--surface); }
   @media (max-width: 760px) { .sidebar { background: var(--surface); } }
+}
+
+/* ============================================================
+   Kopfleiste: suchen · wo gespeichert wird · wer
+   ------------------------------------------------------------
+   An die Stelle der Brotkrume getreten. Sie sagte dasselbe dreimal —
+   Seitenleiste, Krume, Seitentitel — und nahm die Zeile weg, in der auf
+   jeder Seite etwas Nützliches stehen kann.
+   ============================================================ */
+.tb-suche { position: relative; flex: 1 1 320px; min-width: 0; max-width: 560px; display: flex; align-items: center; }
+.tb-lupe {
+  position: absolute; left: 10px; width: 16px; height: 16px;
+  color: var(--text-faint); pointer-events: none; display: grid; place-items: center;
+}
+.tb-lupe svg { width: 16px; height: 16px; }
+.tb-suche .input {
+  width: 100%; padding-left: 32px; height: 34px;
+  border-radius: var(--radius-pill, 999px);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  -webkit-backdrop-filter: var(--glas-blur); backdrop-filter: var(--glas-blur);
+  border-color: var(--line-soft);
+}
+.tb-suche .input:focus { background: var(--surface); }
+/* Das Kreuzchen, das «type=search» mitbringt, ist in jedem Browser anders
+   gross und sitzt woanders. Weg damit — geleert wird über Escape. */
+.tb-suche .input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+
+/* Wo gespeichert wird. Der Punkt trägt die Farbe: grün im Arbeitsordner,
+   gelb wenn nur im Browser, blau in der Cloud — dieselben Bereichsfarben
+   wie in den Einstellungen, damit man es einmal lernt. */
+.tb-wo {
+  display: inline-flex; align-items: center; gap: 7px; flex: none;
+  padding: 5px 11px; border-radius: var(--radius-pill, 999px);
+  background: var(--bf-weich); border: 1px solid var(--bf-rand);
+  font-size: var(--t-xs); font-weight: 600; color: var(--bf-text);
+  max-width: 210px;
+}
+.tb-wo-punkt { width: 8px; height: 8px; border-radius: 50%; background: var(--bf-voll); flex: none; }
+.tb-wo-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.tb-konto {
+  display: inline-flex; align-items: center; gap: 8px; flex: none;
+  padding: 4px 12px 4px 4px; border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--line-soft); background: var(--surface);
+  font-size: var(--t-xs); font-weight: 600; color: var(--text);
+  max-width: 220px;
+}
+.tb-konto:hover { border-color: var(--line); box-shadow: var(--schatten-xs); }
+.tb-konto-zeichen {
+  width: 26px; height: 26px; flex: none; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--brand); color: #fff; font-size: var(--t-xs); font-weight: 700;
+}
+.tb-konto-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Schmal: Die Suche behält den Platz, Beschriftungen treten zurück. Die
+   Angabe, wo gespeichert wird, schrumpft auf ihren Punkt — die Farbe
+   allein sagt es, und der Hinweistext bleibt beim Antippen. */
+@media (max-width: 1100px) {
+  .tb-konto-txt { display: none; }
+  .tb-konto { padding: 4px; }
+}
+@media (max-width: 860px) {
+  .tb-wo-txt { display: none; }
+  .tb-wo { padding: 5px 8px; }
+}
+@media (max-width: 760px) {
+  .tb-suche { flex: 1 1 auto; max-width: none; }
+  .tb-suche .input { height: 38px; }
 }

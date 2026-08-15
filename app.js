@@ -1889,40 +1889,84 @@ function setActiveNav(key) {
 }
 
 let _lastRenderHash = null;
-const SUB_LABELS = { gewerke: 'Gewerke', kosten: 'Kosten', termine: 'Termine', kalender: 'Kalender', rechnungen: 'Rechnungen', auflagen: 'Auflagen', optionen: 'Optionen', nachtraege: 'Nachträge', solar: 'Solar', uwert: 'U-Wert', zahlungsplan: 'Zahlungsplan', protokolle: 'Protokolle', protokoll: 'Protokoll', pendenzen: 'Pendenzen', dossier: 'Dossier', listen: 'Kontakte', bauherr: 'Eigentümerwünsche', finanz: 'Finanzen', honorar: 'Honorar', vergabe: 'Gewerk' };
-const ROOT_LABELS = { dashboard: 'Dashboard', projekte: 'Projekte', kalender: 'Kalender', pendenzen: 'Pendenzen', planung: 'Arbeitsplanung', erfassen: 'Erfassen', drucken: 'Drucken', honorar: 'Honorar', kontakte: 'Kontakte', kontakt: 'Kontakt', dokumente: 'Dokumente', einstellungen: 'Einstellungen' };
+/* SUB_LABELS und ROOT_LABELS sind am 15.08.2026 entfallen: Sie speisten
+   allein die Brotkrume in der Kopfzeile. Die Beschriftungen der Seiten
+   stehen ohnehin in der Navigation und in MODUL_LABEL (Statuszeile). */
 // Globaler Kopf: links Vor/Zurück, Kontext-Breadcrumb (Projekt · Kapitel), rechts seitenspezifische Buttons + Undo/Redo
 function topbar(actions) {
-  const [root, a, sub, b] = parseHash();
-  const cr = [];
-  if (root === 'projekt') {
-    const pr = findProjekt(a);
-    cr.push({ t: 'Projekte', h: '#/projekte' });
-    cr.push({ t: pr ? pr.name : 'Projekt', h: '#/projekt/' + a });
-    if (sub === 'vergabe' && b) { const vv = pr && findVergabe(pr, b); cr.push({ t: 'Gewerke', h: '#/projekt/' + a + '/gewerke' }); cr.push({ t: vv ? ((vv.bkp ? vv.bkp + ' ' : '') + vv.gewerk) : 'Gewerk' }); }
-    else if (sub === 'protokoll' && b) { cr.push({ t: 'Protokolle', h: '#/projekt/' + a + '/protokolle' }); cr.push({ t: 'Protokoll' }); }
-    else if (sub) cr.push({ t: SUB_LABELS[sub] || sub });
-  } else if (root === 'kontakt') {
-    cr.push({ t: 'Kontakte', h: '#/kontakte' }); cr.push({ t: 'Kontakt' });
-  } else {
-    cr.push({ t: ROOT_LABELS[root] || 'Start' });
-  }
-  const crumbs = cr.map((c, i) => `${i ? '<span class="tb-sep">›</span>' : ''}${c.h ? `<a href="${c.h}">${esc(c.t)}</a>` : `<span class="tb-cur">${esc(c.t)}</span>`}`).join('');
+  const [root] = parseHash();
+  /* Die Brotkrume ist am 15.08.2026 entfallen.
+
+     Sie sagte dasselbe dreimal: Die Seitenleiste zeigt seit dem Umbau das
+     offene Projekt samt Kapitel, der Seitentitel wiederholt es, und die
+     Krume stand dazwischen. Der Weg zurück ist nicht verloren — er steht
+     als «‹ Alle Projekte» oben in der Seitenleiste, wo man ihn beim
+     Navigieren ohnehin sucht.
+
+     An ihrer Stelle steht jetzt, was auf jeder Seite nützt: suchen, sehen
+     wo gespeichert wird, und wer angemeldet ist. */
+  const wo = cloudEnabled
+    ? { k: 'blau', t: 'Cloud' }
+    : ordnerAktiv()
+      ? { k: 'gruen', t: esc(ordnerName || 'Arbeitsordner') }
+      : { k: 'gelb', t: 'Nur dieser Browser' };
+  const konto = esc(((state.buero || {}).firma || '').trim() || 'Mein Büro');
+
   return `<div class="topbar">
     <div class="tb-nav">
       <button class="tb-btn" data-act="hist-back" title="Zurück">‹</button>
       <button class="tb-btn" data-act="hist-fwd" title="Vorwärts">›</button>
     </div>
-    <div class="tb-crumbs">${crumbs}</div>
+    <div class="tb-suche">
+      <span class="tb-lupe" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg></span>
+      <input class="input" id="tbSuche" type="search" autocomplete="off"
+             placeholder="Projekt suchen — Name, Ort oder Bauherrschaft"
+             value="${esc(root === 'projekte' ? (projektFilter.q || '') : '')}">
+    </div>
     <div class="tb-actions">${actions || ''}</div>
+    <div class="tb-wo" data-farbe="${wo.k}" title="Wo die Daten liegen — ändern unter Einstellungen">
+      <span class="tb-wo-punkt"></span><span class="tb-wo-txt">${wo.t}</span>
+    </div>
+    <a class="tb-konto" href="#/einstellungen" title="Büro-Angaben und Einstellungen">
+      <span class="tb-konto-zeichen" aria-hidden="true">${esc(konto.slice(0, 1).toUpperCase())}</span>
+      <span class="tb-konto-txt">${konto}</span>
+    </a>
     <div class="tb-undo">
       <button class="tb-btn" data-act="g-undo" title="Rückgängig (Strg+Z)"${undoStack.length ? '' : ' disabled'}>↶</button>
       <button class="tb-btn" data-act="g-redo" title="Wiederholen (Strg+Y)"${redoStack.length ? '' : ' disabled'}>↷</button>
     </div>
   </div>`;
 }
+/* Das Suchfeld der Kopfleiste.
+
+   Es sucht heute Projekte — nach Name, Ort und Bauherrschaft, also nach
+   dem, wonach man ein Bauvorhaben im Kopf hat. Der Platzhalter sagt das
+   auch; ein Feld, das «alles» verspricht und Projekte liefert, wäre
+   schlechter als eines, das sein Gebiet nennt.
+
+   Kontakte und Dokumente kommen dazu, wenn es die Trefferliste dafür
+   gibt (eigene Etappe). Bis dahin führt es dorthin, wo die Antwort steht:
+   in die gefilterte Projektliste. */
+function verdrahteSuche() {
+  const feld = $('#tbSuche');
+  if (!feld) return;
+  const los = () => {
+    projektFilter.q = feld.value.trim();
+    if ((location.hash || '').indexOf('#/projekte') !== 0) { location.hash = '#/projekte'; return; }
+    router();
+    // Nach dem Neuzeichnen steht ein neues Feld da — den Fokus mitnehmen,
+    // sonst tippt man ins Leere.
+    const wieder = $('#tbSuche');
+    if (wieder) { wieder.focus(); wieder.setSelectionRange(wieder.value.length, wieder.value.length); }
+  };
+  let warte = null;
+  feld.addEventListener('input', () => { clearTimeout(warte); warte = setTimeout(los, 260); });
+  feld.addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(warte); los(); } });
+}
+
 function render(html, actions) {
   $('#view').innerHTML = topbar(actions) + html;
+  verdrahteSuche();
   upgradeDateInputs($('#view'));
   // Nur bei echtem Seitenwechsel nach oben scrollen; In-Place-Updates (z.B. Block verschieben) behalten die Position
   if (location.hash !== _lastRenderHash) { window.scrollTo(0, 0); _lastRenderHash = location.hash; }

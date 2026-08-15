@@ -8933,82 +8933,134 @@ function saveDossier(pid, did) {
    14) View: Einstellungen
    --------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------
+   Einstellungen
+
+   Bis zum 15.08.2026 standen hier zwei Karten von 560px Breite
+   untereinander in einer 1198px breiten Fläche — 638px blieben rechts
+   leer, und die Seite wurde 1360px hoch. Die Karte «Büro» trug dabei
+   drei verschiedene Dinge: wer die Firma ist, wie mit MwSt gerechnet
+   wird und wie Ausdrucke aussehen. «Über» steckte unten in «Daten».
+
+   Jetzt nach Sachgebieten, zweispaltig: links, was das Büro AUSMACHT
+   (Identität, Korrespondenz, Rechnen & Drucken), rechts, wo die Daten
+   LIEGEN und wie man sie sichert. Beides sind eigenständige Fragen; sie
+   nebeneinanderzustellen nutzt nicht nur den Platz, es trennt sie auch
+   sauber.
+   --------------------------------------------------------------- */
+function einstAbschnitt(titel, unterzeile, inhalt, fuss) {
+  return `<section class="einst-block">
+    <header class="einst-kopf">
+      <h2>${esc(titel)}</h2>
+      ${unterzeile ? `<p>${unterzeile}</p>` : ''}
+    </header>
+    <div class="einst-leib">${inhalt}</div>
+    ${fuss ? `<footer class="einst-fuss">${fuss}</footer>` : ''}
+  </section>`;
+}
+
+/* Ein Feld mit Beschriftung und Erklärung. Die Erklärung steht UNTER dem
+   Feld, nicht hinter der Beschriftung: Dort brach sie auf eine eigene
+   Zeile um und schob die Beschriftung von ihrem Feld weg. */
+function einstFeld(name, hinweis, steuerung) {
+  return `<label class="einst-feld">
+    <span class="einst-name">${esc(name)}</span>
+    ${steuerung}
+    ${hinweis ? `<span class="einst-hinweis">${hinweis}</span>` : ''}
+  </label>`;
+}
+
 function viewEinstellungen() {
   const b = state.buero || BUERO;
+
+  const lage = cloudEnabled
+    ? { farbe: 'blau', wo: 'Cloud', text: 'Gemeinsamer Arbeitsbereich, auf allen Geräten synchron.' }
+    : ordnerAktiv()
+      ? { farbe: 'gruen', wo: 'Arbeitsordner', text: 'Je Bauvorhaben eine Datei in <code>' + esc(ordnerName) + '</code>. Nur Geändertes wird geschrieben; hat jemand anders eine Datei angefasst, wird sie nicht überschrieben.' }
+      : { farbe: 'gelb', wo: 'Nur dieser Browser', text: 'Rund 5 MB Platz — und weg, wenn der Browserspeicher geleert wird. Ein Arbeitsordner ist der sichere Weg.' };
+
+  const buero = einstAbschnitt('Büro', 'Erscheint als Briefkopf und als Eingabeadresse auf dem Deckblatt.', `
+    <div class="einst-logo">
+      <div class="einst-logo-bild">
+        ${b.logo ? `<img src="${b.logo}" alt="Logo">` : `<span class="einst-leer">Kein Logo</span>`}
+      </div>
+      <div class="einst-logo-tat">
+        <label class="btn secondary einst-datei">Bild wählen<input type="file" id="b_logo" accept="image/*"></label>
+        ${b.logo ? `<button class="btn ghost sm" data-act="rm-logo">Entfernen</button>` : ''}
+        <span class="einst-hinweis">PNG oder JPG, quer. Erscheint oben links auf jedem Ausdruck.</span>
+      </div>
+    </div>
+    ${einstFeld('Firma', '', `<input class="input" id="b_firma" value="${esc(b.firma)}" placeholder="Muster Bauadministration GmbH">`)}
+    ${einstFeld('Strasse', '', `<input class="input" id="b_strasse" value="${esc(b.strasse)}" placeholder="Musterstrasse 1">`)}
+    ${einstFeld('PLZ / Ort', '', `<input class="input" id="b_plzort" value="${esc(b.plzort)}" placeholder="6000 Luzern">`)}
+    <div class="form-row">
+      ${einstFeld('Telefon', '', `<input class="input" id="b_tel" value="${esc(b.tel)}" placeholder="041 000 00 00">`)}
+      ${einstFeld('E-Mail', '', `<input class="input" id="b_email" value="${esc(b.email)}" placeholder="info@…">`)}
+    </div>`);
+
+  const korrespondenz = einstAbschnitt('Korrespondenz', 'Was unter Ihren Mails aus dem Programm steht.', `
+    ${einstFeld('E-Mail-Signatur', 'Wird unter Pendenz-Mails angehängt.',
+      `<textarea class="input" id="b_signatur" rows="4" placeholder="Freundliche Grüsse&#10;Ihre Firma GmbH&#10;Strasse 1, 3000 Ort · 000 000 00 00">${esc(b.signatur || '')}</textarea>`)}
+    <button type="button" class="btn secondary sm" data-act="sig-from-buero">↻ Aus den Büro-Daten erzeugen</button>
+    <label class="einst-schalter">
+      <input type="checkbox" id="b_sig_auto" ${b.signaturAuto === false ? '' : 'checked'}>
+      <span>Signatur standardmässig anhängen</span>
+    </label>`);
+
+  const rechnen = einstAbschnitt('Rechnen & Drucken', 'Gilt überall — in der Anwendung wie in jedem Ausdruck.', `
+    <div class="form-row">
+      ${einstFeld('MwSt-Satz', 'In Prozent.', `<input class="input" type="number" step="0.1" id="b_mwst" value="${b.mwst != null ? b.mwst : 8.1}">`)}
+      ${einstFeld('Beträge sind', '', `<select class="select" id="b_preise">
+          <option value="exkl"${b.preiseInkl ? '' : ' selected'}>exkl. MwSt (netto)</option>
+          <option value="inkl"${b.preiseInkl ? ' selected' : ''}>inkl. MwSt (brutto)</option>
+        </select>`)}
+    </div>
+    ${einstFeld('Druck-Design', 'Layout aller PDFs und Ausdrucke.', `<select class="select" id="b_design">
+        <option value="standard"${(b.druckDesign === 'modern') ? '' : ' selected'}>Standard (klassisch)</option>
+        <option value="modern"${(b.druckDesign === 'modern') ? ' selected' : ''}>Modern – eleganter Akzent-Kopf</option>
+      </select>`)}`);
+
+  const speicher = einstAbschnitt('Wo die Daten liegen', '', `
+    <div class="einst-lage" data-farbe="${lage.farbe}">
+      <span class="einst-lage-punkt"></span>
+      <div><strong>${esc(lage.wo)}</strong><p>${lage.text}</p></div>
+    </div>
+    ${cloudEnabled ? '' : `<div class="einst-tatreihe">
+      ${ordnerAktiv()
+        ? '<button class="btn secondary" data-act="ordner-waehlen">Anderen Ordner wählen</button><button class="btn ghost" data-act="ordner-verlassen">Zurück in den Browser</button>'
+        : ordnerMoeglich()
+          ? '<button class="btn" data-act="ordner-waehlen">Arbeitsordner wählen</button>'
+          : '<span class="einst-hinweis">Der Ordner-Modus braucht Chrome oder Edge am Rechner.</span>'}
+    </div>
+    <p class="einst-hinweis">Je Bauvorhaben ein Ordner mit einer <code>.submit</code>-Datei — daneben die Pläne, wie Submit PDF sie ablegt. Der Stand im Browser bleibt erhalten; Sie können jederzeit zurück.</p>`}`);
+
+  const sichern = einstAbschnitt('Sichern & Übertragen', '', `
+    <div class="einst-tatliste">
+      <button class="btn secondary" data-act="export">⬇ Voll-Backup speichern</button>
+      <button class="btn secondary" data-act="import-data">📥 Backup einlesen</button>
+      <button class="btn secondary" data-act="gerber-import">📂 Projekt aus .gerber öffnen</button>
+      ${cloudEnabled ? '<button class="btn secondary" data-act="logout">⎋ Abmelden</button>' : ''}
+    </div>
+    <p class="einst-hinweis"><b>Voll-Backup</b> sichert alle Projekte und Kontakte in eine Datei; „Backup einlesen" stellt genau diesen Stand wieder her und <b>ersetzt alles</b>. <b>.gerber</b> ist ein einzelnes Projekt zum Weitergeben — Rechtsklick auf ein Projekt, „Als .gerber speichern".</p>
+    <div class="einst-gefahr">
+      <button class="btn danger" data-act="reset">Diesen Browser leeren</button>
+      <span class="einst-hinweis">Löscht alles, was nur hier liegt. Vorher ein Backup speichern.</span>
+    </div>`);
+
+  const ueber = einstAbschnitt('Über', '', `
+    <dl class="einst-daten">
+      <dt>Fassung</dt><dd>${esc(APP_VERSION)}</dd>
+      <dt>Status-Modell</dt><dd>${VERGABE_STATUS.map(s => esc(s.kurz)).join(' → ')}</dd>
+      <dt>Herkunft</dt><dd>Gerber-Soft · Workflow-Test für die Integration ins bkptool</dd>
+    </dl>`);
+
   const html = `
-    <div class="page-head"><div><h1>Einstellungen</h1><div class="sub">Prototyp-Konfiguration</div></div></div>
-    <div class="card card-pad" style="max-width:560px;margin-bottom:18px">
-      <h2 style="margin-top:0;font-size:var(--t-l, 15px)">Büro / Absender</h2>
-      <p class="muted" style="font-size:var(--t-s, 13px)">Erscheint als Briefkopf und Eingabeadresse auf dem Deckblatt (Ausschreibung).</p>
-      <label class="field">Logo
-        <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
-          ${b.logo
-            ? `<img src="${b.logo}" alt="Logo" style="max-height:54px;max-width:180px;border:1px solid var(--border);border-radius: 0;padding:4px;background:#fff">
-               <button class="btn sm ghost" data-act="rm-logo">Logo entfernen</button>`
-            : `<span class="muted" style="font-size:var(--t-s, 13px)">Kein Logo</span>`}
-          <input type="file" id="b_logo" accept="image/*" style="font-size:var(--t-s, 13px)">
-        </div>
-      </label>
-      <label class="field">Firma <input class="input" id="b_firma" value="${esc(b.firma)}" placeholder="Muster Bauadministration GmbH"></label>
-      <label class="field">Strasse <input class="input" id="b_strasse" value="${esc(b.strasse)}" placeholder="Musterstrasse 1"></label>
-      <label class="field">PLZ / Ort <input class="input" id="b_plzort" value="${esc(b.plzort)}" placeholder="6000 Luzern"></label>
-      <div class="form-row">
-        <label class="field">Telefon <input class="input" id="b_tel" value="${esc(b.tel)}" placeholder="041 000 00 00"></label>
-        <label class="field">E-Mail <input class="input" id="b_email" value="${esc(b.email)}" placeholder="info@…"></label>
-      </div>
-      <label class="field">E-Mail-Signatur <span class="muted" style="font-weight:400;font-size:var(--t-xs, 11.5px)">– wird unter Pendenz-Mails angehängt</span> · <button type="button" class="btn-ghost-sm" data-act="sig-from-buero" style="font-size:var(--t-2xs, 11px);text-decoration:underline">↻ aus Büro-Daten erzeugen</button>
-        <textarea class="input" id="b_signatur" rows="4" placeholder="Freundliche Grüsse&#10;Ihre Firma GmbH&#10;Strasse 1, 3000 Ort · 000 000 00 00">${esc(b.signatur || '')}</textarea>
-      </label>
-      <label style="display:flex;gap:8px;align-items:center;font-size:var(--t-s, 13px);cursor:pointer;margin-top:6px"><input type="checkbox" id="b_sig_auto" ${b.signaturAuto === false ? '' : 'checked'}> Signatur standardmässig an Mails anhängen</label>
-      <div class="form-row" style="margin-top:12px">
-        <label class="field">MwSt-Satz <span class="muted" style="font-weight:400;font-size:var(--t-xs, 11.5px)">(%)</span><input class="input" type="number" step="0.1" id="b_mwst" value="${b.mwst != null ? b.mwst : 8.1}"></label>
-        <label class="field">Beträge sind <span class="muted" style="font-weight:400;font-size:var(--t-xs, 11.5px)">– gilt überall (App + PDFs)</span>
-          <select class="select" id="b_preise">
-            <option value="exkl"${b.preiseInkl ? '' : ' selected'}>exkl. MwSt (netto)</option>
-            <option value="inkl"${b.preiseInkl ? ' selected' : ''}>inkl. MwSt (brutto)</option>
-          </select>
-        </label>
-      </div>
-      <label class="field" style="margin-top:12px">Druck-Design <span class="muted" style="font-weight:400;font-size:var(--t-xs, 11.5px)">– Layout aller PDFs / Drucke</span>
-        <select class="select" id="b_design">
-          <option value="standard"${(b.druckDesign === 'modern') ? '' : ' selected'}>Standard (klassisch)</option>
-          <option value="modern"${(b.druckDesign === 'modern') ? ' selected' : ''}>Modern – eleganter Akzent-Kopf (Premium)</option>
-        </select>
-      </label>
-      <div style="margin-top:12px"><button class="btn" data-act="save-buero">💾 Büro speichern</button></div>
-    </div>
-    <div class="card card-pad" style="max-width:560px">
-      <h2 style="margin-top:0;font-size:var(--t-l, 15px)">Daten</h2>
-      <p class="muted" style="font-size:var(--t-s, 13px)">${cloudEnabled
-        ? '☁ <strong>Cloud-Modus (Supabase)</strong> – gemeinsamer Arbeitsbereich, auf allen Geräten synchron.'
-        : ordnerAktiv()
-          ? '📂 <strong>Ordner-Modus</strong> – je Bauvorhaben eine Datei in <code>' + esc(ordnerName) + '</code>. Nur Geändertes wird geschrieben; hat jemand anders eine Datei angefasst, wird sie nicht überschrieben.'
-          : '💾 <strong>Lokaler Modus</strong> – Daten nur in diesem Browser, mit rund 5 MB Platz.'}</p>
-      ${cloudEnabled ? '' : `<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
-        ${ordnerAktiv()
-          ? '<button class="btn secondary" data-act="ordner-waehlen">📂 Anderen Arbeitsordner wählen</button><button class="btn secondary" data-act="ordner-verlassen">↩ Zurück in den Browser-Speicher</button>'
-          : ordnerMoeglich()
-            ? '<button class="btn" data-act="ordner-waehlen">📂 Arbeitsordner wählen (NAS oder OneDrive)</button>'
-            : '<span class="muted" style="font-size:var(--t-xs, 12px)">Der Ordner-Modus braucht Chrome oder Edge am Rechner.</span>'}
-      </div>
-      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin-top:8px">Im Ordner-Modus liegt je Bauvorhaben ein Ordner mit einer <code>.submit</code>-Datei — daneben die Pläne, wie Submit PDF sie ablegt. Der bisherige Stand im Browser bleibt erhalten; du kannst jederzeit zurück.</p>`}
-      <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
-        <button class="btn secondary" data-act="export">⬇ Voll-Backup speichern (JSON)</button>
-        <button class="btn secondary" data-act="import-data">📥 Backup einlesen (JSON)</button>
-        <button class="btn secondary" data-act="gerber-import">📂 Projekt aus .gerber öffnen</button>
-        <button class="btn secondary" data-act="reset">↻ Diesen Browser leeren</button>
-        ${cloudEnabled ? '<button class="btn secondary" data-act="logout">⎋ Abmelden</button>' : ''}
-      </div>
-      <p class="muted" style="font-size:var(--t-xs, 11.5px);margin-top:8px"><b>Voll-Backup (JSON):</b> sichert ALLE Projekte + Kontakte in eine Datei – „Backup einlesen" stellt diesen Stand wieder her (ersetzt alles). <b>Einzelnes Projekt (.gerber):</b> Rechtsklick auf ein Projekt → „Als .gerber speichern" zum Sichern/Teilen; „Projekt aus .gerber öffnen" liest es als zusätzliches Projekt ein (ideal zum Weitergeben/Weiterbearbeiten).</p>
-      <hr style="border:none;border-top:1px solid var(--border);margin:22px 0">
-      <h2 style="font-size:var(--t-l, 15px)">Über</h2>
-      <p class="muted" style="font-size:var(--t-s, 13px)">
-        SubmitOne Prototyp · v0.1<br>
-        Workflow-Test für die spätere Integration ins bkptool.<br>
-        Status-Modell: ${VERGABE_STATUS.map(s => s.kurz).join(' → ')}
-      </p>
-    </div>
-  `;
+    <div class="page-head"><div><h1>Einstellungen</h1><div class="sub">Büro, Daten und Ausgabe</div></div>
+      <button class="btn" data-act="save-buero">Speichern</button></div>
+    <div class="einst-raster">
+      <div class="einst-spalte">${buero}${korrespondenz}${rechnen}</div>
+      <div class="einst-spalte">${speicher}${sichern}${ueber}</div>
+    </div>`;
   render(html);
   $('#b_logo')?.addEventListener('change', e => onLogoPick(e.target));
 }

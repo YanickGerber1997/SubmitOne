@@ -386,8 +386,18 @@ button { font-family: inherit; cursor: pointer; }
    Jetzt unten, rechts neben der Seitenleiste: dort ist in jeder Ansicht
    Platz, und die Statuszeile darunter bleibt frei. Auf dem Handy steht
    die Ausnahme weiter unten in der Datei. */
-.focusbar { position: fixed; bottom: 30px; left: 220px; z-index: 70; display: flex; gap: 6px; opacity: .5; transition: opacity .15s; }
-#app.collapsed ~ .focusbar { left: 80px; }   /* passend zu #app.collapsed = 68px Leiste */
+/* Sie steht IN der Seitenleiste, über deren Fusszeile — nicht über dem
+   Inhalt. Der erste Versuch schob sie unten links neben die Leiste; dort
+   lag sie dann auf den Karten, statt auf Knöpfen der Kopfzeile. Beides
+   war überlagert, nur an verschiedenen Stellen.
+
+   In der Seitenleiste ist zwischen Navigation und Fusszeile ohnehin
+   Platz frei. 178px halten Abstand zu Fusszeile (139px plus Polsterung). */
+.focusbar { position: fixed; bottom: 178px; left: 22px; z-index: 70; display: flex; gap: 6px; opacity: .5; transition: opacity .15s; }
+.sidebar:hover ~ * .focusbar, .focusbar:hover { opacity: 1; }
+/* Eingeklappt sind 68px zu schmal für zwei beschriftete Knöpfe. */
+#app.collapsed ~ .focusbar { left: 14px; flex-direction: column; }
+#app.collapsed ~ .focusbar .fb-t { display: none; }
 .focusbar:hover { opacity: 1; }
 .fb-btn { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t-xs); font-weight: 600; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 9px; cursor: pointer; box-shadow: 0 2px 8px rgba(30,24,60,.18); }
 .fb-btn:hover { border-color: var(--brand); color: var(--brand); }
@@ -2489,4 +2499,89 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
     text-align: center; min-height: 58px; justify-content: center;
   }
   .sz-chip .sz-i { font-size: var(--t-l); }
+}
+
+/* ============================================================
+   Einstellungen
+   ------------------------------------------------------------
+   Zweispaltig statt einer 560px-Säule in 1198px Fläche. Links, was das
+   Büro AUSMACHT, rechts, wo die Daten LIEGEN — das ist nicht nur eine
+   Platzfrage, es trennt zwei Themen, die vorher in einer Karte steckten.
+
+   Die Beschriftung steht über dem Feld, die Erklärung darunter. Vorher
+   hing die Erklärung hinter der Beschriftung, brach dort auf eine eigene
+   Zeile um und schob die Beschriftung von ihrem Feld weg.
+   ============================================================ */
+.einst-raster {
+  display: grid; gap: 16px; align-items: start;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+}
+.einst-spalte { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+.einst-block {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+}
+.einst-kopf { padding: 13px 16px 11px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.einst-kopf h2 { margin: 0; font-size: var(--t-s); font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--text); }
+.einst-kopf p { margin: 3px 0 0; font-size: var(--t-xs); color: var(--text-faint); }
+.einst-leib { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.einst-fuss { padding: 11px 16px; border-top: 1px solid var(--border); background: var(--surface-2); }
+
+.einst-feld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.einst-name { font-size: var(--t-xs); font-weight: 600; color: var(--text-soft); }
+.einst-hinweis { font-size: var(--t-xs); color: var(--text-faint); line-height: 1.45; }
+.einst-feld .input, .einst-feld .select { width: 100%; }
+.einst-feld textarea.input { resize: vertical; min-height: 84px; line-height: 1.5; }
+
+/* Der Dateiwähler war ein nacktes <input type=file> — in jedem Browser
+   anders und in keinem schön. Jetzt ein Knopf, der eines versteckt. */
+.einst-datei { position: relative; overflow: hidden; cursor: pointer; }
+.einst-datei input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+.einst-logo { display: flex; gap: 14px; align-items: flex-start; }
+.einst-logo-bild {
+  width: 132px; height: 68px; flex: none;
+  border: 1px dashed var(--border-2); border-radius: var(--radius);
+  display: grid; place-items: center; background: #fff; overflow: hidden;
+}
+.einst-logo-bild img { max-width: 118px; max-height: 56px; object-fit: contain; }
+.einst-leer { font-size: var(--t-xs); color: var(--text-faint); }
+.einst-logo-tat { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+.einst-logo-tat .einst-hinweis { flex-basis: 100%; }
+
+.einst-schalter { display: flex; align-items: center; gap: 9px; font-size: var(--t-s); cursor: pointer; }
+/* Knöpfe im Abschnitt sind so breit wie ihr Text. Ohne das zieht die
+   Flex-Spalte sie über die ganze Breite — ein Knopf von Rand zu Rand
+   sieht aus wie eine Hauptaktion, ist aber eine Nebensache. */
+.einst-leib > .btn { align-self: flex-start; }
+
+/* Wo die Daten liegen: eine Zustandsanzeige, kein Fliesstext. Der Punkt
+   trägt die Bereichsfarbe — grün wenn im Ordner, gelb wenn nur im
+   Browser, blau in der Cloud. */
+.einst-lage { display: flex; gap: 11px; align-items: flex-start; padding: 11px 12px;
+  border: 1px solid var(--bf-rand); border-radius: var(--radius); background: var(--bf-weich); }
+.einst-lage-punkt { width: 10px; height: 10px; border-radius: 50%; background: var(--bf-voll); flex: none; margin-top: 5px; }
+.einst-lage strong { font-size: var(--t-s); color: var(--bf-text); }
+.einst-lage p { margin: 2px 0 0; font-size: var(--t-xs); color: var(--text-soft); line-height: 1.45; }
+
+.einst-tatreihe { display: flex; gap: 8px; flex-wrap: wrap; }
+.einst-tatliste { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.einst-tatliste .btn { justify-content: flex-start; }
+.einst-gefahr { display: flex; flex-direction: column; gap: 6px; padding-top: 11px; border-top: 1px solid var(--border); }
+.einst-gefahr .btn { align-self: flex-start; }
+
+.einst-daten { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin: 0; font-size: var(--t-xs); }
+.einst-daten dt { color: var(--text-faint); }
+.einst-daten dd { margin: 0; color: var(--text); }
+
+/* Schmal: eine Spalte, und die Aktionen untereinander statt zu zweit. */
+@media (max-width: 1000px) {
+  .einst-raster { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .einst-leib { padding: 12px 13px; gap: 11px; }
+  .einst-kopf { padding: 11px 13px 9px; }
+  .einst-tatliste { grid-template-columns: 1fr; }
+  .einst-logo { flex-wrap: wrap; }
 }

@@ -325,28 +325,61 @@ const App = (function () {
     function seitenleiste() {
         const s = stufe();
 
+        /* Vierter Wert: der Kurzname für die untere Leiste auf dem Handy.
+           Fünfter: ob die Seite dort einen festen Platz bekommt.
+
+           Auf 390px passen vier Plätze plus «Mehr». «Zeiterfassung» hat
+           dreizehn Zeichen — in einer 78px breiten Spalte wird daraus ein
+           Umbruch oder ein abgeschnittenes Wort. Deshalb ein eigener,
+           kurzer Name statt einer abgeschnittenen Langfassung. */
         const seiten = [
-            ['zeit', 'Zeiterfassung', true],
-            ['woche', 'Wochenplanung', true],
-            ['projekte', s === 'schule' ? 'Fächer & Projekte' : 'Projekte & Kunden', true],
-            ['rapport', 'Rapport', true],
-            ['absenzen', 'Absenzen & Ferien', s !== 'schule'],
-            ['rechnungen', 'Rechnungen', s !== 'schule'],
-            ['freigaben', 'Freigaben', s === 'firma'],
-            ['auswertung', 'Auswertung', true],
-            ['einstellungen', 'Einstellungen', true]
+            ['zeit', 'Zeiterfassung', true, 'Zeit', true],
+            ['woche', 'Wochenplanung', true, 'Woche', true],
+            ['projekte', s === 'schule' ? 'Fächer & Projekte' : 'Projekte & Kunden', true, 'Projekte', true],
+            ['rapport', 'Rapport', true, 'Rapport', true],
+            ['absenzen', 'Absenzen & Ferien', s !== 'schule', 'Absenzen', false],
+            ['rechnungen', 'Rechnungen', s !== 'schule', 'Rechnung', false],
+            ['freigaben', 'Freigaben', s === 'firma', 'Freigaben', false],
+            ['auswertung', 'Auswertung', true, 'Auswertung', false],
+            ['einstellungen', 'Einstellungen', true, 'Einstell.', false]
         ];
 
         const offen = Fach.eingereichte().length;
 
-        return Ui.el('nav.seitenleiste', {},
-            seiten.filter(([, , zeigen]) => zeigen).map(([schluessel, name]) =>
-                Ui.el('button.nav' + (zustand.seite === schluessel ? '.aktiv' : ''), {
-                    onclick: () => { zustand.seite = schluessel; zeichne(); }
-                }, name,
-                    schluessel === 'freigaben' && offen
-                        ? Ui.el('span.nav-zahl', {}, String(offen)) : null)),
+        const sichtbar = seiten.filter(([, , zeigen]) => zeigen);
+        const geh = schluessel => { zustand.seite = schluessel; zeichne(); };
 
+        const knopf = ([schluessel, name, , kurz, fest]) =>
+            Ui.el('button.nav' + (zustand.seite === schluessel ? '.aktiv' : '') + (fest ? '.fest' : ''), {
+                onclick: () => geh(schluessel)
+            },
+                Ui.el('span.nav-lang', {}, name),
+                Ui.el('span.nav-kurz', {}, kurz),
+                schluessel === 'freigaben' && offen
+                    ? Ui.el('span.nav-zahl', {}, String(offen)) : null);
+
+        /* «Mehr» erscheint nur in der unteren Leiste (CSS). Ohne diesen
+           Knopf wären auf dem Handy vier von acht Seiten unerreichbar —
+           derselbe Fehler, den SubmitOne dort hatte. Das Blatt liest die
+           Liste aus derselben Aufstellung, damit sie nicht auseinanderläuft. */
+        const mehr = Ui.el('button.nav.nav-mehr', {
+            onclick: () => {
+                const f = Ui.fenster({
+                    titel: 'Bereiche',
+                    inhalt: Ui.el('div.navblatt', {},
+                        sichtbar.map(([schluessel, name]) =>
+                            Ui.el('button.navblatt-punkt' + (zustand.seite === schluessel ? '.aktiv' : ''), {
+                                onclick: () => { f.schliesse(); geh(schluessel); }
+                            }, name))),
+                    knoepfe: [Ui.el('span.abstand'),
+                              Ui.el('button.knopf.knopf-still', { onclick: () => f.schliesse() }, 'Schliessen')]
+                });
+            }
+        }, Ui.el('span.nav-kurz', {}, '⋯ Mehr'));
+
+        return Ui.el('nav.seitenleiste', {},
+            sichtbar.map(knopf),
+            mehr,
             Ui.el('div.abstand'),
             Ui.el('div.stufe-marke', {},
                 { schule: 'Schule', selbstaendig: 'Selbständig', firma: 'Firma' }[s]));

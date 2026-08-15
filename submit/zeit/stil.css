@@ -763,3 +763,80 @@
     .rp-kopf { border-bottom-color: #000; }
     .rp-tabelle td { border-bottom-color: #ddd; }
 }
+
+/* ---------- Schmale Geräte ---------------------------------------------
+   Bis zum 15.08.2026 hatte SubZeit für schmale Geräte zwei Gitter-Umbrüche
+   und sonst nichts. Gemessen auf 390×844: Die Seite lief 58px über, das
+   Wochenraster ragte 304px hinaus, und die 178px breite Seitenleiste nahm
+   46% der Bildschirmbreite — für ein Menü, das man selten braucht.
+
+   Aufbau wie in SubmitOne, damit der Wechsel zwischen beiden nichts Neues
+   verlangt: Die Seitenleiste wird zur unteren Reiterleiste mit vier festen
+   Plätzen und «Mehr». Die Kurznamen stehen in app.js. */
+
+/* Das Wochenraster ist breiter als ein Handy und soll das auch sein — eine
+   Woche hat sieben Tage. Es rollt jetzt IN seinem Kasten, statt die ganze
+   Seite hinauszuschieben. Der Rollbalken bleibt sichtbar: ein verstecktes
+   Rollen ist eine versteckte Funktion. */
+.bahn-feld, .karte:has(> .wr) { overflow-x: auto; }
+.wr { min-width: 640px; }
+
+@media (max-width: 760px) {
+    #app { height: auto; min-height: 100vh; }
+    .rumpf { display: block; }
+
+    .seitenleiste {
+        position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+        width: 100%; height: 60px; z-index: 50;
+        flex-direction: row; gap: 0; padding: 0;
+        border-right: 0; border-top: 1px solid var(--kante);
+        box-shadow: 0 -2px 12px rgba(30, 24, 60, .12);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .seitenleiste .abstand, .stufe-marke { display: none; }
+    .nav:not(.fest):not(.nav-mehr) { display: none; }
+    .nav, .nav-mehr {
+        flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 2px;
+        padding: 6px 2px; font-size: var(--t-2xs); font-weight: 620;
+        border-radius: var(--rund); text-align: center;
+    }
+    .nav-lang { display: none; }
+    .nav-kurz { display: block; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    .nav.aktiv { background: transparent; color: var(--v-600); box-shadow: inset 0 2px 0 var(--v-600); }
+
+    /* Platz für die Leiste am unteren Rand, sonst liegt sie auf dem Inhalt. */
+    .inhalt { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+
+    /* Die Kopfleiste trägt Marke, Dateizustand und vier Knöpfe — auf 390px
+       zu viel für eine Zeile. Der Dateizustand tritt zurück; gespeichert
+       wird ohnehin über den Knopf, nicht über die Anzeige. */
+    .kopfleiste { gap: .375rem; padding: 0 .5rem; }
+    .datei { display: none; }
+
+    .dreispalt, .zweispalt, .zweispalt-breit { grid-template-columns: 1fr; }
+    .projektleiste { width: 100%; border-right: 0; border-bottom: 1px solid var(--kante); }
+    .bahn-karte { flex-direction: column; }
+    .schnell-feld { min-width: 0; }
+}
+
+/* Auf grossen Bildschirmen zeigt die Leiste den langen Namen und kein
+   «Mehr» — dort stehen ohnehin alle Seiten untereinander. */
+.nav-kurz { display: none; }
+.nav-mehr { display: none; }
+
+/* Berührung: was nur SubZeit kennt. Die gemeinsamen Bausteine (.knopf,
+   .eingabe, Menüpunkte) sind in ../../ui/bausteine.css versorgt.
+
+   Die Kalenderzellen sind der grosse Posten: Ein Monatsraster hat gegen
+   200 davon, und jede einzelne wird angetippt, um einen Tag zu wählen.
+   Das Raster wird dadurch höher — bei sieben Spalten auf 390px bleibt die
+   Breite mit rund 55px ohnehin über dem Mass. */
+@media (pointer: coarse) {
+    .kal-tag, .kal-kw { min-height: 44px; }
+    .kalender-ab { min-height: 44px; }
+    .nav { min-height: 44px; }
+    .projektknopf { min-height: 44px; }
+    .bahn-kopf { height: 48px; }
+    .schnell-feld { min-height: 44px; }
+}

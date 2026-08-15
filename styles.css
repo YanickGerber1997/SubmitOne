@@ -3077,12 +3077,6 @@ body {
    KANTEN: Glas erkennt man daran, wo zwei Flächen aneinanderstossen und
    das Licht bricht — nicht an weichen Übergängen.
    ============================================================ */
-.glasgrund {
-  position: fixed; inset: 0; z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-.glasgrund svg { width: 100%; height: 100%; display: block; }
 
 /* Der Verlauf von vorher bleibt als Grundstimmung darunter — er gibt der
    Fläche Farbe, die Facetten geben ihr Form. Alles Bediente liegt
@@ -3123,7 +3117,6 @@ body {
 
 /* Ein Bild gehört nicht aufs Papier. */
 @media print {
-  .glasgrund { display: none !important; }
 }
 
 /* Die Scherbe an der Seitenleiste ist am 15.08.2026 wieder entfallen.
@@ -3379,4 +3372,28 @@ body {
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .card, .kpi, .proj-card, .einst-block, .heute-block { box-shadow: inset 0 0 0 1px rgba(255,255,255,.4); }
+}
+
+/* ============================================================
+   Zurückgerudert: keine Unschärfe auf Scheiben, keine Scherben
+   ------------------------------------------------------------
+   Entscheid des Nutzers: keine Leistungseinbussen wegen Effekten, und
+   die Scherbenoptik im Hintergrund gefiel nicht.
+
+   Was ging: der SVG-Facettengrund und die backdrop-Unschärfe auf den
+   Scheiben und Knöpfen. Unschärfe ist der teuerste Effekt im Blatt —
+   auf Dutzenden Karten in einer Kostenansicht zahlt man sie bei jedem
+   Rollen. `none` steht hier ausdrücklich, weil sonst die Deklarationen
+   der früheren Stufen weiter oben wieder gelten würden.
+
+   Was bleibt, kostet praktisch nichts, weil es reine Verläufe sind:
+   die Scheibenoptik selbst (Kante mit Verlauf, Spiegelstreifen, Frost,
+   Dicke-Ring, Farbsaum), das weiche Lichtfeld im Grund samt Vignette.
+   Unschärfe behalten nur die wenigen schwebenden Schichten: Kopfzeile,
+   Statuszeile, Fenster, Menüs, Seitenleiste.
+   ============================================================ */
+.card, .kpi, .proj-card, .einst-block, .heute-block,
+.btn.secondary, .knopf, .input, .select, textarea.input {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }

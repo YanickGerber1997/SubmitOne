@@ -975,6 +975,10 @@ tr.done-row { background: #fbfdfb; }
 .page-toolbar .tb-right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 /* Dashboard-Unterreiter (zweite Ebene: Generell / Ausschreibung / Termin / Kosten / Pendenzen) */
 .dash-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 16px; }
+/* Lang- und Kurzname stehen beide im Markup; welcher gilt, entscheidet die
+   Breite. Reiter tragen keinen abgeschnittenen Langnamen — «Terminprogr…»
+   liest sich schlechter als «Termine». */
+.dash-tab .kurz { display: none; }
 .dash-tab { padding: 6px 13px; font-size: var(--t-s); font-weight: 600; color: var(--text-soft); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; font-family: inherit; }
 .dash-tab:hover { color: var(--text); border-color: var(--border-2); }
 /* Der aktive Seitenreiter trägt dieselbe Farbe wie das Kapitel links —
@@ -2126,11 +2130,59 @@ table.va input[type=number] { -moz-appearance: textfield; }
   .statusbar { display: none; }   /* unten liegt hier die Reiterleiste */
   .content { padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important; }
 
-  /* Kopfzeilen & Aktionsgruppen umbrechen */
+  /* ---- Kompakter Kopf ----------------------------------------------
+     Gemessen auf 390×844, bevor es diese Regeln gab: Die Projektansicht
+     verbrauchte 342px Kopf, der Inhalt begann bei 390 von 844 — 46% des
+     Schirms waren Rahmen, bevor eine einzige Zahl zu sehen war.
+
+     Drei Ursachen, drei Antworten: die Unterzeile brach auf drei Zeilen
+     (jetzt eine, mit Auslassung), die Aktionen auf zwei (jetzt eine, weil
+     Nebenaktionen nur ihr Zeichen zeigen), die Seitenreiter auf zwei
+     (jetzt eine, dank Kurznamen in app.js). */
   .page-head { align-items: flex-start; }
   .page-head h1 { font-size: var(--t-xl); }
   .detail-head > div { flex-wrap: wrap; }
   .detail-head h1 { font-size: var(--t-xl) !important; }
+
+  /* Eine Zeile genügt: Ort, Bauherrschaft und Leitung stehen vollständig
+     unter «Bearbeiten» — hier zählt, WELCHES Projekt offen ist.
+
+     Das min-width:0 ist der eigentliche Schalter: Ein Flex-Kind ist von
+     sich aus so breit wie sein Inhalt und lässt sich ohne diese Angabe
+     nicht kürzen. Ohne sie schneidet der Text am Rand einfach ab, ganz
+     ohne Auslassungszeichen — man sieht nicht, dass etwas fehlt. */
+  .detail-head > div:first-child, .page-head > div:first-child { min-width: 0; flex: 1; }
+  .detail-head .sub, .page-head .sub, .detail-head h1, .page-head h1 {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+  }
+  /* Titel und Hauptaktion in eine Zeile statt zwei. */
+  .page-head { flex-wrap: nowrap; align-items: center; }
+  .page-head > .btn { flex: none; }
+
+  /* Erklärtexte neben Sektionstiteln quetschen sich auf 390px in eine
+     vier Wörter hohe Spalte. Auf dem Handy weg — der Titel trägt. */
+  .section-head .hint { display: none; }
+
+  /* Die Werkzeugleiste rollt in EINER Zeile, statt auf drei umzubrechen
+     (gemessen: 145px). Anders als bei der Navigation ist das hier
+     vertretbar: Das sind Aktionen, nicht die Karte des Programms — und
+     der Rollbalken bleibt sichtbar, damit man es merkt. */
+  .page-toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  .page-toolbar > * { flex: none; }
+
+  /* Nebenaktionen zeigen nur ihr Zeichen. Der Hinweistext bleibt, die
+     Hauptaktion behält ihren Namen — sie ist der Grund, herzukommen. */
+  .detail-head .btn.secondary .btn-txt { display: none; }
+  .detail-head .btn.secondary { padding-left: 12px; padding-right: 12px; }
+
+  /* Die Brotkrume über dem Titel sagt dasselbe wie die Kopfzeile darüber
+     und der Titel darunter. Dreimal dieselbe Angabe ist zweimal zu viel. */
+  .breadcrumb { display: none; }
+
+  .dash-tabs { flex-wrap: nowrap; gap: 4px; margin-bottom: 10px; }
+  .dash-tab { flex: 1 1 0; min-width: 0; padding: 6px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dash-tab .lang { display: none; }
+  .dash-tab .kurz { display: inline; }
 
   /* Tabs horizontal scrollbar */
   .ribbon-tabs, .ribbon-tools { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
@@ -2162,6 +2214,7 @@ table.va input[type=number] { -moz-appearance: textfield; }
   /* grössere Tap-Ziele */
   .btn { padding: 8px 11px; }
   .btn.sm { padding: 8px 12px; }
+
 }
 @keyframes sheet { from { transform: translateY(100%); } }
 
@@ -2393,4 +2446,47 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
   font-size: var(--t-2xs); line-height: 1; font-weight: 700; letter-spacing: .02em;
   color: #5f22c4; white-space: nowrap;
   background: rgba(255,255,255,.82); padding: 2px 5px; border-radius: 3px;
+}
+
+/* ============================================================
+   Dichte auf dem Handy — gilt für ALLE Register
+   ------------------------------------------------------------
+   Steht bewusst am ENDE der Datei. Ein erster Versuch stand weiter oben,
+   zwischen den anderen Handy-Regeln, und blieb wirkungslos: Die
+   Grundregeln für .sz-chips und .kpi kommen später in der Datei, und bei
+   gleicher Spezifität gewinnt die spätere. Gesehen habe ich es erst am
+   Bildschirm — der Schnellzugriff stand weiter in drei Reihen statt zwei.
+
+   Nicht Ansicht für Ansicht geflickt, sondern einmal für das ganze
+   Programm. Ein Handy hat 844px Höhe; jeder Abstand, der am Schreibtisch
+   grosszügig wirkt, kostet hier einen Anteil, den man sofort merkt.
+
+   Die Unterscheidung, auf die es ankommt: Die TIPPFLÄCHE bleibt bei 44px —
+   daran wird nicht gespart, sonst trifft man daneben. Enger wird nur, was
+   nichts zum Treffen ist: Ränder, Abstände zwischen Karten, Polsterung
+   um Text.
+   ============================================================ */
+@media (max-width: 760px) {
+  #view > * + * { margin-top: 10px; }
+  .card-pad { padding: 10px 11px; }
+  .kpi-row { gap: 8px; margin-bottom: 10px; }
+  .kpi { padding: 8px 10px; }
+  .kpi .k-ico { width: 22px; height: 22px; }
+  .kpi .k-value { font-size: var(--t-l); }
+  .detail-stats { gap: 8px; }
+  .dstat { padding: 7px 9px; }
+  .section-head { margin-bottom: 6px; padding-bottom: 4px; }
+  .two-col { gap: 10px; }
+
+  /* Der Schnellzugriff liess sieben Knöpfe umbrechen: vier Reihen, rund
+     230px — ein Viertel des Bildschirms für Abkürzungen. Als Raster mit
+     dem Zeichen über dem Wort sind es zwei. Die Fläche je Knopf bleibt
+     über 44px hoch, es wird also nichts schwerer zu treffen. */
+  .sz-chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .sz-chip {
+    flex-direction: column; gap: 3px; padding: 7px 3px;
+    font-size: var(--t-2xs); font-weight: 600; line-height: 1.15;
+    text-align: center; min-height: 58px; justify-content: center;
+  }
+  .sz-chip .sz-i { font-size: var(--t-l); }
 }

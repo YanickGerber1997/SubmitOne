@@ -2237,9 +2237,15 @@ function viewProjekte() {
 
 // Dashboard-Unterreiter: Generell + je eigener Überblick für Ausschreibung / Termin / Kosten / Pendenzen
 let dashTab = 'generell';
-const DASH_TABS = [['generell', 'Generell'], ['ausschreibung', 'Ausschreibung'], ['termin', 'Terminprogramm'], ['kosten', 'Kosten'], ['pendenzen', 'Pendenzen']];
+/* Dritter Wert: der Kurzname fuer schmale Schirme. Fuenf Reiter mit den
+   langen Namen brauchen auf 390px zwei Zeilen (gemessen: 94px). Mit den
+   kurzen passen sie in eine (47px) — und ein Reiter, der umbricht, sieht
+   nicht nur schlechter aus, er kostet die Haelfte des sichtbaren Inhalts. */
+const DASH_TABS = [['generell', 'Generell', 'Generell'], ['ausschreibung', 'Ausschreibung', 'Ausschr.'],
+                   ['termin', 'Terminprogramm', 'Termine'], ['kosten', 'Kosten', 'Kosten'],
+                   ['pendenzen', 'Pendenzen', 'Pendenz.']];
 function dashTabBar(p) {
-  return `<div class="dash-tabs">${DASH_TABS.map(([k, l]) => `<button class="dash-tab${dashTab === k ? ' active' : ''}" data-act="dash-tab" data-pid="${p.id}" data-kind="${k}" type="button">${l}</button>`).join('')}</div>`;
+  return `<div class="dash-tabs">${DASH_TABS.map(([k, l, kurz]) => `<button class="dash-tab${dashTab === k ? ' active' : ''}" data-act="dash-tab" data-pid="${p.id}" data-kind="${k}" type="button"><span class="lang">${l}</span><span class="kurz">${kurz || l}</span></button>`).join('')}</div>`;
 }
 function dashOther(p) {
   if (dashTab === 'ausschreibung') return dashAusschreibung(p);
@@ -2328,8 +2334,8 @@ function viewProjektDetail(id) {
       </div>
       <div style="display:flex;gap:10px;align-items:center">
         ${phaseBadge(dominantPhase(p))}
-        ${istInhaber(p) ? `<button class="btn secondary" data-act="team" data-pid="${p.id}" title="Mitglieder &amp; Rollen">👥 Team</button>` : ''}
-        ${darfStammdaten(p) ? `<button class="btn secondary" data-act="edit-projekt" data-pid="${p.id}" title="Projekt &amp; Gebäudedaten bearbeiten">✎ Bearbeiten</button>` : ''}
+        ${istInhaber(p) ? `<button class="btn secondary" data-act="team" data-pid="${p.id}" title="Mitglieder &amp; Rollen">👥<span class="btn-txt"> Team</span></button>` : ''}
+        ${darfStammdaten(p) ? `<button class="btn secondary" data-act="edit-projekt" data-pid="${p.id}" title="Projekt &amp; Gebäudedaten bearbeiten">✎<span class="btn-txt"> Bearbeiten</span></button>` : ''}
         ${darfVergeben(p) ? `<button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>` : ''}
       </div>
     </div>

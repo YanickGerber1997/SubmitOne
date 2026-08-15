@@ -1920,7 +1920,7 @@ function topbar(actions) {
     <div class="tb-suche">
       <span class="tb-lupe" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg></span>
       <input class="input" id="tbSuche" type="search" autocomplete="off"
-             placeholder="Projekt suchen — Name, Ort oder Bauherrschaft"
+             placeholder="Suchen — Projekte, Kontakte, Dokumente"
              value="${esc(root === 'projekte' ? (projektFilter.q || '') : '')}">
     </div>
     <div class="tb-actions">${actions || ''}</div>
@@ -1947,25 +1947,139 @@ function topbar(actions) {
    Kontakte und Dokumente kommen dazu, wenn es die Trefferliste dafür
    gibt (eigene Etappe). Bis dahin führt es dorthin, wo die Antwort steht:
    in die gefilterte Projektliste. */
+/* Was die Suche durchsucht, und in welcher Reihenfolge sie zeigt.
+
+   Projekte zuerst: Danach sucht man am häufigsten, und ein Projekt ist
+   der Ort, von dem aus alles andere erreichbar ist. Dann Kontakte, dann
+   Dokumente.
+
+   Gesucht wird über mehrere Felder je Eintrag — ein Bauvorhaben hat man
+   als Name, Ort ODER Bauherrschaft im Kopf, und welches davon einem
+   gerade einfällt, weiss man vorher nicht. */
+function sucheTreffer(q) {
+  const n = q.trim().toLowerCase();
+  if (n.length < 2) return [];
+  const passt = (...felder) => felder.some(f => String(f || '').toLowerCase().includes(n));
+  const treffer = [];
+
+  (state.projekte || []).forEach(p => {
+    if (passt(p.name, p.ort, p.bauherr, p.projektleiter))
+      treffer.push({ art: 'Projekt', titel: p.name, unter: [p.ort, p.bauherr].filter(Boolean).join(' · '),
+                     href: '#/projekt/' + p.id, farbe: 'gruen' });
+  });
+  (state.kontakte || []).forEach(k => {
+    if (passt(k.firma, k.person, k.ort, k.kategorie))
+      treffer.push({ art: 'Kontakt', titel: k.firma || k.person || 'Kontakt',
+                     unter: [k.person, k.kategorie, k.ort].filter(Boolean).join(' · '),
+                     href: '#/kontakt/' + (k.uid || ''), farbe: 'tuerkis' });
+  });
+  (state.dokumente || []).forEach(d => {
+    if (passt(d.name, d.typ)) {
+      const p = d.projektId && findProjekt(d.projektId);
+      treffer.push({ art: 'Dokument', titel: d.name,
+                     unter: [d.typ, p && p.name, d.datum && fmtDate(d.datum)].filter(Boolean).join(' · '),
+                     href: p ? '#/projekt/' + p.id + '/dossier' : '#/dokumente', farbe: 'blau' });
+    }
+  });
+  return treffer;
+}
+
+/* Das Suchfeld der Kopfleiste.
+
+   Es zeigt die Treffer direkt darunter, statt nur die Projektliste zu
+   filtern: Wer einen Kontakt sucht, will nicht erst auf einer
+   Projektseite landen. Mit den Pfeiltasten geht man durch, Enter öffnet,
+   Escape schliesst.
+
+   Die Liste hängt an document.body, nicht am Feld: #view wird bei jedem
+   Seitenwechsel neu geschrieben, und eine Trefferliste, die dabei
+   verschwindet, während man noch tippt, wäre unbrauchbar. */
+let _suchWahl = -1;
+
+function schliesseTreffer() {
+  const l = $('#tbTreffer'); if (l) l.remove();
+  _suchWahl = -1;
+}
+
+function zeigeTreffer(feld, liste) {
+  schliesseTreffer();
+  if (!liste.length && feld.value.trim().length < 2) return;
+  const r = feld.getBoundingClientRect();
+  const kasten = document.createElement('div');
+  kasten.id = 'tbTreffer';
+  kasten.className = 'tb-treffer';
+  kasten.style.left = Math.round(r.left) + 'px';
+  kasten.style.top = Math.round(r.bottom + 6) + 'px';
+  kasten.style.width = Math.round(r.width) + 'px';
+
+  if (!liste.length) {
+    kasten.innerHTML = `<div class="tt-leer">Nichts gefunden zu „${esc(feld.value.trim())}“.</div>`;
+  } else {
+    let letzteArt = '';
+    kasten.innerHTML = liste.slice(0, 12).map((t, i) => {
+      const kopf = t.art !== letzteArt ? `<div class="tt-art">${esc(t.art)}</div>` : '';
+      letzteArt = t.art;
+      return kopf + `<a class="tt-zeile" href="${esc(t.href)}" data-i="${i}" data-farbe="${t.farbe}">
+          <span class="tt-punkt"></span>
+          <span class="tt-txt">${esc(t.titel)}${t.unter ? `<span class="tt-unter">${esc(t.unter)}</span>` : ''}</span>
+        </a>`;
+    }).join('') + (liste.length > 12 ? `<div class="tt-mehr">${liste.length - 12} weitere Treffer — Suchbegriff verfeinern</div>` : '');
+  }
+  document.body.appendChild(kasten);
+  kasten.querySelectorAll('.tt-zeile').forEach(a =>
+    a.addEventListener('mousedown', e => { e.preventDefault(); location.hash = a.getAttribute('href'); schliesseTreffer(); feld.blur(); }));
+}
+
+window.addEventListener('scroll', () => { if (document.getElementById('tbTreffer')) schliesseTreffer(); }, true);
+window.addEventListener('resize', () => { if (document.getElementById('tbTreffer')) schliesseTreffer(); });
+
 function verdrahteSuche() {
   const feld = $('#tbSuche');
   if (!feld) return;
-  const los = () => {
-    projektFilter.q = feld.value.trim();
-    if ((location.hash || '').indexOf('#/projekte') !== 0) { location.hash = '#/projekte'; return; }
-    router();
-    // Nach dem Neuzeichnen steht ein neues Feld da — den Fokus mitnehmen,
-    // sonst tippt man ins Leere.
-    const wieder = $('#tbSuche');
-    if (wieder) { wieder.focus(); wieder.setSelectionRange(wieder.value.length, wieder.value.length); }
-  };
   let warte = null;
-  feld.addEventListener('input', () => { clearTimeout(warte); warte = setTimeout(los, 260); });
-  feld.addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(warte); los(); } });
+
+  const zeichne = () => {
+    const q = feld.value;
+    zeigeTreffer(feld, sucheTreffer(q));
+  };
+  feld.addEventListener('input', () => { clearTimeout(warte); warte = setTimeout(zeichne, 180); });
+  feld.addEventListener('focus', () => { if (feld.value.trim().length >= 2) zeichne(); });
+  feld.addEventListener('blur', () => setTimeout(schliesseTreffer, 140));
+
+  feld.addEventListener('keydown', e => {
+    const kasten = $('#tbTreffer');
+    const zeilen = kasten ? [...kasten.querySelectorAll('.tt-zeile')] : [];
+    if (e.key === 'Escape') { feld.value = ''; schliesseTreffer(); feld.blur(); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!zeilen.length) return;
+      e.preventDefault();
+      _suchWahl += (e.key === 'ArrowDown' ? 1 : -1);
+      if (_suchWahl < 0) _suchWahl = zeilen.length - 1;
+      if (_suchWahl >= zeilen.length) _suchWahl = 0;
+      zeilen.forEach((z, i) => z.classList.toggle('gewaehlt', i === _suchWahl));
+      zeilen[_suchWahl].scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (e.key === 'Enter') {
+      clearTimeout(warte);
+      if (_suchWahl >= 0 && zeilen[_suchWahl]) {
+        location.hash = zeilen[_suchWahl].getAttribute('href');
+        schliesseTreffer(); feld.blur(); return;
+      }
+      // Ohne Auswahl: in die gefilterte Projektliste, wie bisher.
+      projektFilter.q = feld.value.trim();
+      schliesseTreffer();
+      location.hash = '#/projekte';
+      if ((location.hash || '') === '#/projekte') router();
+    }
+  });
 }
 
 function render(html, actions) {
   $('#view').innerHTML = topbar(actions) + html;
+  // Eine Trefferliste, die einen Seitenwechsel ueberlebt, zeigt Treffer
+  // zu einer Seite, die man schon verlassen hat.
+  schliesseTreffer();
   verdrahteSuche();
   upgradeDateInputs($('#view'));
   // Nur bei echtem Seitenwechsel nach oben scrollen; In-Place-Updates (z.B. Block verschieben) behalten die Position

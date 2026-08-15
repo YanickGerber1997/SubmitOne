@@ -55,7 +55,7 @@
     '.so-sw a:hover{background:rgba(255,255,255,.12)}',
     // Stand bis zum 15.08.2026 auf #4f7a3c - dem Marken-Gruen aus der Zeit
     // vor Violett. Es war der letzte Ort, an dem es noch vorkam.
-    '.so-sw a.cur{background:#7132e3;color:#fff;cursor:default}',
+    '.so-sw a.cur{background:#55626e;color:#fff;cursor:default}',
     '.so-sw .so-ico{font-size:14px;line-height:1}',
     '.so-sw .so-grip{cursor:grab;padding:7px 6px;color:#9aa6b8;font-size:13px;opacity:.8}',
     '.so-sw .so-min{padding:7px 9px;color:#9aa6b8;cursor:pointer;font-size:13px}',

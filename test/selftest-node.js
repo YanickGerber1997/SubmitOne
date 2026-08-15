@@ -221,7 +221,12 @@ if (R) {  // CSS-Integritaet: unausgeglichene Klammern zerstoeren stumm ganze Re
     ['#34502b', 'Gruen dunkel'], ['#e9efde', 'Gruen weich'], ['#22331d', 'Gruen sehr dunkel'],
     ['rgba(42,38,26', 'brauner Neutralton'], ['#1c242c', 'alte Tinte'],
     ['#faf9f5', 'Creme'], ['#faf9f4', 'Creme'], ['#f7f6f1', 'Creme'], ['#f0eee6', 'warmes Grau'],
-    ['#dedcd2', 'warme Kante'], ['#f3f1ea', 'warme Flaeche']
+    ['#dedcd2', 'warme Kante'], ['#f3f1ea', 'warme Flaeche'],
+    // Und das Violett, das bis zum 15.08.2026 der Akzent war. Die
+    // Projektfarbe --pc-violett ist etwas anderes und bleibt: Sie ist
+    // eine Farbe zur Auswahl, keine Marke.
+    ['#7132e3', 'Marken-Violett'], ['rgba(113,50,227', 'Violett durchscheinend'],
+    ['rgba(113, 50, 227', 'Violett durchscheinend']
   ];
   const reste = ALTE_PALETTE.filter(f => ohneKommentar.indexOf(f[0]) >= 0)
                             .map(f => f[0] + ' (' + f[1] + ')');

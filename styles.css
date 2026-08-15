@@ -160,12 +160,12 @@ button { font-family: inherit; cursor: pointer; }
 .brand-text span { font-size: var(--t-2xs); color: var(--text-faint); }
 
 /* ===== Logo „submitone" (gezeichnet; hell = Default, on-dark = Sidebar) ===== */
-.logo { --lg-ink:var(--ink); --lg-accent:#7132e3; display:inline-flex; align-items:center; gap:7px; line-height:1; }   /* „One" in Marken-Violett */
+.logo { --lg-ink:var(--ink); --lg-accent:#55626e; display:inline-flex; align-items:center; gap:7px; line-height:1; }   /* „One" in Marken-Violett */
 .logo.on-dark { --lg-ink:#ffffff; --lg-accent:#d9b862; }   /* echte dunkle Flächen (z. B. Login) */
 /* Helle Leiste: dunkler Schriftzug, „One" in Marken-Violett — und im
    Projekt in der Farbe des Bereichs, in dem man steht. Das Zeichen oben
    sagt dann dasselbe wie die Leiste darunter. */
-.sidebar .logo.on-dark { --lg-ink:var(--ink); --lg-accent:var(--bf-voll, #7132e3); }
+.sidebar .logo.on-dark { --lg-ink:var(--ink); --lg-accent:var(--bf-voll, #55626e); }
 .logo-word { font-family:'Quicksand', system-ui, sans-serif; font-weight:600; font-size: var(--t-xl); letter-spacing:.2px; }
 .logo .lw-a { color:var(--lg-ink); }
 .logo .lw-b { color:var(--lg-accent); }
@@ -422,7 +422,7 @@ body.modul-fokus .proj-sticky { top: 0; }
 .cal-day:hover { background: var(--surface-2); }
 .cal-day.other { background: var(--surface-2); }
 .cal-day.other .d { color: var(--text-faint); }
-.cal-day.today { box-shadow: inset 0 0 0 2px var(--brand); background: rgba(113,50,227,.05); }
+.cal-day.today { box-shadow: inset 0 0 0 2px var(--brand); background: rgba(85,98,110,.05); }
 .cal-day.today .d { background: var(--brand); color: #fff !important; border-radius: var(--radius); padding: 1px 6px; display: inline-block; }
 .cal-day .d { font-size: var(--t-xs); font-weight: 600; color: var(--text); margin-bottom: 2px; }
 .cal-day.today .d { color: var(--brand); }
@@ -466,7 +466,7 @@ body.modul-fokus .proj-sticky { top: 0; }
 .cal-colhead.today { color: #fff; background: var(--brand); border-radius: var(--radius); font-weight: 700; }
 .cal-colhead:hover { background: var(--surface-2); }
 .cal-colhead.today:hover { background: var(--brand-dark); }
-.cal-col.today { background: rgba(113,50,227,.05); box-shadow: inset 2px 0 0 var(--brand), inset -2px 0 0 var(--brand); }
+.cal-col.today { background: rgba(85,98,110,.05); box-shadow: inset 2px 0 0 var(--brand), inset -2px 0 0 var(--brand); }
 .cal-rel { font-size: var(--t-xs); font-weight: 600; color: var(--brand); background: var(--brand-soft); border-radius: var(--radius); padding: 3px 11px; margin-left: 6px; white-space: nowrap; }
 .cal-rel.now { color: var(--s-green); background: #e3f7ea; }
 .cal-ad-cell { border-left: 1px solid var(--border); padding: 3px; min-height: 24px; min-width: 0; cursor: pointer; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
@@ -502,7 +502,7 @@ body.modul-fokus .proj-sticky { top: 0; }
 .cal-tev.gterm .cal-tev-lbl.gedit:empty::before { content: attr(data-ph); color: rgba(255,255,255,.65); }
 .cal-tev.gterm .cal-tev-x { margin-left: auto; flex: none; background: none; border: none; color: #fff; opacity: .65; cursor: pointer; font-size: var(--t-s); line-height: 1; padding: 0 1px; }
 .cal-tev.gterm .cal-tev-x:hover { opacity: 1; }
-.cal-sel { position: absolute; left: 2px; right: 2px; background: rgba(113,50,227,.22); border: 1px solid var(--brand); border-radius: var(--radius); z-index: 4; pointer-events: none; }
+.cal-sel { position: absolute; left: 2px; right: 2px; background: rgba(85,98,110,.22); border: 1px solid var(--brand); border-radius: var(--radius); z-index: 4; pointer-events: none; }
 /* Kalender-Seitenleiste (Mini-Monat + Kalenderliste, Outlook-Stil) */
 .cal-layout { display: grid; grid-template-columns: 212px minmax(0, 1fr); gap: 16px; align-items: start; }
 .cal-rail { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 12px; }
@@ -711,7 +711,7 @@ body.modul-fokus .proj-sticky { top: 0; }
   cursor: pointer; transition: border-color .12s, box-shadow .12s, transform .08s;
   display: flex; flex-direction: column; gap: 14px;
 }
-.proj-card:hover { border-color: var(--brand); box-shadow: 0 6px 22px rgba(113,50,227,.12); transform: translateY(-2px); }
+.proj-card:hover { border-color: var(--brand); box-shadow: 0 6px 22px rgba(85,98,110,.12); transform: translateY(-2px); }
 
 .pc-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .pc-title { font-size: var(--t-l); font-weight: 700; line-height: 1.3; }
@@ -1596,7 +1596,7 @@ tr.done-row { background: #fbfdfb; }
 .grob-arrow { color: var(--text-faint); }
 .grob-track { position: relative; height: 40px; flex: none; }
 .grob-cell { position: absolute; top: 0; height: 100%; box-sizing: border-box; border-left: 1px solid var(--border); }
-.grob-cell.wi { background: rgba(113,50,227,.05); }
+.grob-cell.wi { background: rgba(85,98,110,.05); }
 .grob-headrow .grob-col { display: inline-flex; align-items: center; justify-content: center; height: 40px; box-sizing: border-box; border-left: 1px solid var(--border); }
 .grob-bar { position: absolute; top: 50%; transform: translateY(-50%); height: 24px; border-radius: var(--radius); color: #fff; font-size: var(--t-xs); font-weight: 600; display: flex; align-items: center; padding: 0 9px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; box-shadow: 0 1px 3px rgba(0,0,0,.18); cursor: grab; }
 .grob-bar.drag { cursor: grabbing; opacity: .9; z-index: 5; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
@@ -1657,8 +1657,8 @@ tr.done-row { background: #fbfdfb; }
 .ft-cell { flex: none; min-height: 38px; border-left: 1px solid var(--border); padding: 2px; display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
 .ft-cell.wk { border-left: 2px solid var(--border-2); }
 .ft-cell.we { background: rgba(30,24,60,.035); }
-.ft-cell.on { background: rgba(113,50,227,.10); }
-.ft-cell.on.we { background: rgba(113,50,227,.14); }
+.ft-cell.on { background: rgba(85,98,110,.10); }
+.ft-cell.on.we { background: rgba(85,98,110,.14); }
 .ft-cell.today { box-shadow: inset 0 0 0 2px var(--brand); }
 .ft-cell:hover { background: var(--brand-soft); }
 .ft-step { background: var(--surface); border: 1px solid var(--border-2); border-radius: var(--radius); padding: 2px 5px; font-size: var(--t-2xs); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
@@ -1702,7 +1702,7 @@ tr.done-row { background: #fbfdfb; }
 .qv-blane.empty { cursor: crosshair; }
 .qv-draw-hint { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: var(--t-2xs); color: var(--text-faint); opacity: 0; pointer-events: none; transition: opacity .12s; }
 .qv-blane.empty:hover .qv-draw-hint { opacity: 1; }
-.qv-row:hover { background: rgba(113,50,227,.03); }
+.qv-row:hover { background: rgba(85,98,110,.03); }
 .qv-insert { height: 7px; margin: -3px 0; display: flex; align-items: center; justify-content: flex-start; cursor: pointer; position: relative; z-index: 4; }
 .qv-insert span { position: absolute; left: 10px; font-size: var(--t-2xs); font-weight: 700; color: #fff; background: var(--brand); border-radius: var(--radius); padding: 1px 8px; opacity: 0; transform: translateY(0); transition: opacity .1s; box-shadow: 0 1px 4px rgba(0,0,0,.25); white-space: nowrap; }
 .qv-insert::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: var(--brand); opacity: 0; }
@@ -1801,7 +1801,7 @@ tr.done-row { background: #fbfdfb; }
 /* Ausgewählt: klar hervorgehoben + löschbar mit Entf */
 .g-link.g-sel .g-link-line { stroke: var(--brand); stroke-width: 2.2; }
 .g-link.g-sel .g-link-arrow { fill: var(--brand); }
-.g-link.g-sel .g-link-line { filter: drop-shadow(0 0 1.2px rgba(113,50,227,.6)); }
+.g-link.g-sel .g-link-line { filter: drop-shadow(0 0 1.2px rgba(85,98,110,.6)); }
 /* Zieh-Griff zum Verschieben der Biegung – unsichtbar, erscheint beim Hover/Auswahl */
 .g-link-grip { fill: transparent; pointer-events: all; cursor: ew-resize; }
 .g-link:hover .g-link-grip { fill: #fff; stroke: var(--brand); stroke-width: 1.6; }
@@ -1994,7 +1994,7 @@ table.va input[type=number] { -moz-appearance: textfield; }
 .bkp-cat-item .bkp-code { margin-right: 6px; }
 
 /* Geister-Zeilen: Katalog-Positionen, noch nicht erfasst */
-.bkp-ghost { cursor: pointer; opacity: .5; background: repeating-linear-gradient(45deg, transparent, transparent 7px, rgba(113,50,227,.03) 7px, rgba(113,50,227,.03) 14px); }
+.bkp-ghost { cursor: pointer; opacity: .5; background: repeating-linear-gradient(45deg, transparent, transparent 7px, rgba(85,98,110,.03) 7px, rgba(85,98,110,.03) 14px); }
 .bkp-ghost:hover { opacity: 1; background: var(--surface-2); }
 .bkp-ghost td { color: var(--text-soft); font-style: italic; }
 .bkp-ghost .bkp-code { font-style: normal; }
@@ -2462,9 +2462,9 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 .g-unterbruch {
   position: absolute; top: 0; bottom: 0;
   background: repeating-linear-gradient(135deg,
-    rgba(113,50,227,.10) 0 6px, rgba(113,50,227,.04) 6px 12px);
-  border-left: 1px solid rgba(113,50,227,.45);
-  border-right: 1px solid rgba(113,50,227,.45);
+    rgba(85,98,110,.10) 0 6px, rgba(85,98,110,.04) 6px 12px);
+  border-left: 1px solid rgba(85,98,110,.45);
+  border-right: 1px solid rgba(85,98,110,.45);
   z-index: 1; pointer-events: none;
 }
 .g-unterbruch span {
@@ -2930,7 +2930,7 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 body {
   background-color: var(--bg);
   background-image:
-    radial-gradient(58vw 46vw at 12% -6%,  rgba(113, 50, 227, .26), transparent 66%),
+    radial-gradient(58vw 46vw at 12% -6%,  rgba(85, 98, 110, .26), transparent 66%),
     radial-gradient(52vw 42vw at 96% 12%,  rgba(60, 98, 128, .22),   transparent 64%),
     radial-gradient(46vw 40vw at 74% 104%, rgba(77, 106, 61, .17),   transparent 66%);
   background-attachment: fixed;
@@ -3114,7 +3114,7 @@ body {
 .sidebar::after {
   content: ''; position: absolute; pointer-events: none;
   top: 16%; right: -26px; width: 74px; height: 34%;
-  background: linear-gradient(128deg, rgba(255,255,255,.72) 0%, rgba(255,255,255,.12) 46%, rgba(113,50,227,.06) 100%);
+  background: linear-gradient(128deg, rgba(255,255,255,.72) 0%, rgba(255,255,255,.12) 46%, rgba(85,98,110,.06) 100%);
   clip-path: polygon(0% 0%, 100% 18%, 62% 100%, 0% 74%);
   border-left: 0;
   opacity: .9;
@@ -3164,8 +3164,71 @@ body {
   background: linear-gradient(126deg,
       rgba(255,255,255,.92) 0%,
       rgba(214,222,240,.55) 34%,
-      rgba(113,50,227,.14) 72%,
-      rgba(113,50,227,.04) 100%);
+      rgba(85,98,110,.14) 72%,
+      rgba(85,98,110,.04) 100%);
   filter: drop-shadow(1px 2px 3px rgba(17,24,31,.10));
   opacity: 1;
+}
+
+/* ============================================================
+   Scheiben statt schwebender Karten
+   ------------------------------------------------------------
+   „Die Buttons und Inhaltsboxen sollten Glasscheiben sein, transparent,
+   und liegen auf einer Glasplatte. Schweben müssen sie nicht."
+
+   Der Unterschied ist der Schatten. Ein Schatten sagt: das Ding liegt
+   ÜBER der Fläche, mit Luft dazwischen. Eine Scheibe, die AUF einer
+   Platte liegt, wirft fast keinen — sie zeigt nur ihre Kante. Deshalb
+   fällt der Schatten weg und die Kante wird das Tragende.
+   ============================================================ */
+.card, .kpi, .proj-card, .einst-block, .heute-block {
+  /* 68 statt 62 Prozent: Bei 62 lag die leise Schriftstufe auf 4.48:1 und
+     damit knapp unter der Norm von 4.5. Zwei Prozentpunkte Deckung mehr
+     kosten optisch nichts und bringen sie auf 4.60:1. Nachgerechnet, nicht
+     nach Augenmass verschoben. */
+  background-color: color-mix(in srgb, var(--surface) 68%, transparent);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,.55), rgba(255,255,255,.04) 58%);
+  border: 1px solid rgba(255, 255, 255, .85);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .95),
+              inset -1px -1px 0 rgba(17, 24, 31, .05),
+              0 1px 2px rgba(17, 24, 31, .04);
+}
+.card:hover, .proj-card:hover {
+  background-color: color-mix(in srgb, var(--surface) 80%, transparent);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 1),
+              inset -1px -1px 0 rgba(17, 24, 31, .06),
+              0 2px 6px rgba(17, 24, 31, .06);
+}
+
+/* Knöpfe ebenso: Der Umrissknopf wird eine kleine Scheibe. Der gefüllte
+   bleibt deckend — er ist die Hauptaktion, und eine Hauptaktion, durch
+   die man hindurchsieht, ist keine mehr. Er bekommt nur die Lichtkante
+   dazu, damit er zur selben Familie gehört. */
+.btn.secondary, .knopf, .btn.ghost, .input, .select, textarea.input {
+  background-color: color-mix(in srgb, var(--surface) 70%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(140%);
+  border-color: rgba(255, 255, 255, .8);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .9);
+}
+.btn.secondary:hover:not(:disabled), .knopf:hover:not(:disabled), .btn.ghost:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+.input:focus, .select:focus, textarea.input:focus {
+  background-color: color-mix(in srgb, var(--surface) 94%, transparent);
+}
+.knopf-haupt, .btn:not(.secondary):not(.ghost) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28);
+}
+
+/* Ruhiger: Die Tagesspalte und die Abschnittsblöcke tragen dieselbe
+   Scheibe, brauchen aber keinen eigenen Schimmer — sonst schimmert
+   alles und nichts hebt sich mehr ab. */
+.heute-block, .einst-block { background-image: none; }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card, .kpi, .proj-card, .einst-block, .heute-block,
+  .btn.secondary, .knopf, .btn.ghost, .input, .select, textarea.input {
+    background-color: color-mix(in srgb, var(--surface) 94%, transparent);
+  }
 }

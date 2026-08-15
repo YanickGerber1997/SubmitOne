@@ -98,7 +98,10 @@ body.has-planbar.has-tabs .list-panel,body.has-planbar.has-tabs .side-rail{top:c
 .ws-mat{font-size:11px;color:var(--ink-soft)}
 :root{
   /* Palette + Schrift → ../ui/tokens.css (gemeinsames Design-System) */
-  --bg:#f0efe9;   /* App-Hintergrund (Chrome), PDF-spezifisch */
+  /* Bis zum 14.08.2026 warmes Beige aus der alten Palette — der Akzent war
+     violett, der Untergrund nicht. Jetzt derselbe Grundton wie SubmitOne
+     und Submit Paper. */
+  --bg:var(--grund);   /* App-Hintergrund um den Plan herum */
   --bar:74px; --tools:94px; --tabs:36px; --planh:46px;
   --railw:54px; --listw:340px; --quickh:38px; --planrailw:50px;
 }
@@ -154,7 +157,7 @@ svg.i{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 /* Projekt-Ordner im Datei-Browser hervorheben */
 .fp-row.fp-proj .fp-nm{font-weight:700;color:#3c5a2f}
 @keyframes lgReveal{from{opacity:0;transform:scale(.93) translateY(10px);clip-path:inset(0 0 100% 0)}to{opacity:1;transform:scale(1) translateY(0);clip-path:inset(0 0 0 0)}}
-.brand .bw-a{color:#1c242c} .brand .bw-b{color:#4f7a3c;margin-left:5px}
+.brand .bw-a{color:#1c242c} .brand .bw-b{color:#55626e;margin-left:5px}
 .brand .brand-word{height:25px;width:auto;display:block;object-fit:contain}
 .btn{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 16px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:0;font:inherit;font-size:15px;font-weight:600;cursor:pointer;transition:.12s;white-space:nowrap;flex:none}
 .topbar{flex-wrap:nowrap}

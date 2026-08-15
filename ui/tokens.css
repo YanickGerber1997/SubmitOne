@@ -19,11 +19,27 @@
    bleiben in der jeweiligen App-CSS. Dark-Theme überschreibt dort.
    ============================================================ */
 :root{
-  /* ---- Violett in zehn Stufen ----
-     --v-700 erreicht auf
-     Weiss 7.6:1, Weiss auf --v-600 5.4:1 — beide deutlich über der Norm. */
-  --v-50:#f6f4ff; --v-100:#ece7fe; --v-200:#dbd2fd; --v-300:#c0affb; --v-400:#a184f7;
-  --v-500:#8455f0; --v-600:#7132e3; --v-700:#5f22c4; --v-800:#4d1c9c; --v-900:#2f1160;
+  /* ---- Der Akzent in zehn Stufen: Anthrazit -------------------------
+     Bis zum 15.08.2026 war das Violett. Entscheid des Nutzers: „nur was
+     heute violett ist wird helles Anthrazit" — der Akzent also, nicht
+     der Grund.
+
+     Dieselbe Helligkeitstreppe wie vorher, damit kein Verhältnis kippt.
+     Nachgerechnet ist die tragende Stufe fast deckungsgleich mit ihrer
+     Vorgängerin: Weiss auf --a-600 erreicht 6.25:1, auf dem alten
+     Violett waren es 6.43:1. Auf --a-700 8.24:1 gegen 8.36:1. Wer
+     vorher genug Kontrast hatte, hat ihn auch jetzt.
+
+     --v-* bleiben als Zweitnamen bestehen. Sie stehen an rund vierzig
+     Stellen in bausteine.css, styles.css, pdf.css und write.css; sie
+     alle umzubenennen wäre viel Bewegung für nichts. Wer neu schreibt,
+     nimmt --a-*. */
+  --a-50:#f4f6f8; --a-100:#e8ecf0; --a-200:#d4dae1; --a-300:#b3bdc7; --a-400:#8d99a5;
+  --a-500:#6d7a87; --a-600:#55626e; --a-700:#45505a; --a-800:#374049; --a-900:#232a31;
+
+  --v-50:var(--a-50);   --v-100:var(--a-100); --v-200:var(--a-200);
+  --v-300:var(--a-300); --v-400:var(--a-400); --v-500:var(--a-500);
+  --v-600:var(--a-600); --v-700:var(--a-700); --v-800:var(--a-800); --v-900:var(--a-900);
 
   /* ---- Formen ---- */
   --rund-s:5px; --rund:8px; --rund-l:11px; --rund-xl:15px;

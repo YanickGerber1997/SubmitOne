@@ -2908,3 +2908,68 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
    und die Zeile darunter gleich mit. Eine Kachel, deren Titel umbricht,
    liest man nicht mehr im Vorbeigehen. */
 .proj-kacheln { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+
+/* ============================================================
+   Glas, zweite Stufe: Tiefe im Grund, Licht auf den Flächen
+   ------------------------------------------------------------
+   Der Kern, der beim ersten Anlauf gefehlt hat: Glas braucht etwas
+   dahinter. Über einer einfarbigen Fläche zeigt Unschärfe nichts — man
+   sieht nur einen blasseren Ton und fragt sich, wozu.
+
+   Deshalb bekommt der Arbeitsgrund ein sehr leises Feld aus zwei weiten
+   Lichtern. Keine Facetten, keine Kanten, keine Scherben: zwei radiale
+   Verläufe über die halbe Bildschirmbreite, mit 4 bis 6 Prozent Deckung.
+   Einzeln betrachtet sieht man sie kaum. Unter einer durchscheinenden
+   Fläche ergeben sie das, was Glas ausmacht — dass sich dahinter etwas
+   bewegt.
+
+   Das Feld ist `fixed`: Es liegt still, während der Inhalt darüber
+   läuft. Ein mitscrollender Verlauf wirkt wie eine Tapete, ein
+   stehender wie Licht im Raum.
+   ============================================================ */
+body {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(58vw 46vw at 12% -6%,  rgba(113, 50, 227, .17), transparent 64%),
+    radial-gradient(52vw 42vw at 96% 12%,  rgba(60, 98, 128, .15),   transparent 62%),
+    radial-gradient(46vw 40vw at 74% 104%, rgba(77, 106, 61, .11),   transparent 64%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+/* ---- Die Flächen werden durchscheinend ----
+   88 Prozent Deckung: genug, dass der Grund darunter durchschimmert,
+   und wenig genug, dass die Schrift nichts verliert. Nachgerechnet
+   liegt die wirksame Fläche bei #f8f9fa oder heller — der Text steht
+   damit weiter über 15:1.
+
+   Die Lichtkante oben ist das, woran das Auge Glas erkennt: eine Fläche,
+   die oben eine Spur heller ist als unten, liest sich als geneigte
+   Scheibe. Das kostet nichts und wirkt mehr als jede Unschärfe. */
+.card, .kpi, .proj-card, .einst-block, .heute-block {
+  background-color: color-mix(in srgb, var(--surface) 82%, transparent);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,.62), rgba(255,255,255,0) 46%);
+  box-shadow: var(--schatten-s), inset 0 1px 0 rgba(255, 255, 255, .95);
+}
+.card:hover, .proj-card:hover { background: color-mix(in srgb, var(--surface) 95%, transparent); }
+
+/* Die Seitenleiste liegt jetzt AUF dem Lichtfeld statt daneben — damit
+   trägt Glas auch hier. Sie bleibt die ruhigste Fläche im Bild, deshalb
+   nur wenig Durchsicht und eine kräftigere Kante zum Inhalt. */
+.sidebar {
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  -webkit-backdrop-filter: var(--glas-blur);
+  backdrop-filter: var(--glas-blur);
+  border-right-color: var(--line-soft);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, .6);
+}
+
+/* Unschärfe bleibt den schwebenden Schichten vorbehalten — Kopfzeile,
+   Statuszeile, Fenster, Menüs, Seitenleiste. Sie auf jede Karte zu legen
+   wäre schön und teuer: In einer Kostentabelle stehen Dutzende Karten,
+   und jede eigene Unschärfe kostet beim Rollen. Die Karten leben von
+   Durchsicht und Lichtkante, nicht von Unschärfe. */
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar { background: var(--surface); }
+}

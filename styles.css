@@ -3206,3 +3206,36 @@ body {
     background-color: color-mix(in srgb, var(--surface) 94%, transparent);
   }
 }
+
+/* ============================================================
+   Die Boxen als Scheiben — nach dem Referenzbild
+   ------------------------------------------------------------
+   Was die Kästen im Entwurf als Scheiben lesbar macht, ist nicht die
+   Transparenz. Es ist die KANTE: eine durchgehende, klar sichtbare Linie
+   ringsum, dazu eine moderate Rundung und eine flache Füllung ohne
+   Schlagschatten.
+
+   Ich hatte zuvor auf 3px Radius und einen weissen Rand gesetzt. Beides
+   war falsch herum: 3px liest sich als abgeschnittene Ecke statt als
+   Scheibe, und ein weisser Rand ist auf hellem Grund unsichtbar — die
+   Box hatte damit gar keine Kante mehr, nur noch einen Helligkeits-
+   unterschied.
+   ============================================================ */
+.card, .kpi, .proj-card, .einst-block, .heute-block, .modal, .tb-treffer {
+  border-radius: 10px;
+}
+.card, .kpi, .proj-card, .einst-block, .heute-block {
+  border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9);
+}
+.card:hover, .proj-card:hover {
+  border-color: var(--line-stark);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 1);
+}
+
+/* Knöpfe und Felder ebenso: sichtbare Kante statt weisser. */
+.btn.secondary, .knopf, .input, .select, textarea.input {
+  border-color: var(--line);
+}
+.btn.ghost { border-color: transparent; }
+.btn.secondary:hover:not(:disabled), .knopf:hover:not(:disabled) { border-color: var(--line-stark); }

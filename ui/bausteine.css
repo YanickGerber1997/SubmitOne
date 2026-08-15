@@ -577,3 +577,24 @@ h1, h2, h3 {
     font-variant-numeric: tabular-nums lining-nums;
     letter-spacing: .01em;
 }
+
+/* Dieselben dunklen Bausteinwerte auch fuer die bewusste Wahl. Der Block
+   oben gilt nur mit [data-dunkel="auto"] UND dunklem System; wer in
+   SubmitOne umschaltet, hat weder das eine noch das andere. */
+:root[data-dunkel="an"] {
+    --gut:     #55c98e;  --gut-weich:     #10301f;
+    --warnung: #e0ab54;  --warnung-weich: #322311;
+    --gefahr:  #f0837d;  --gefahr-weich:  #3a1a1c;
+    --info:    #7fb0f0;  --info-weich:    #15233a;
+
+    --ring: 0 0 0 3px rgba(179, 189, 199, .40);
+    --schatten-xs: 0 1px 2px rgba(0, 0, 0, .35);
+    --schatten-s:  0 1px 2px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .3);
+    --schatten-m:  0 2px 4px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .4);
+    --schatten-l:  0 4px 8px rgba(0, 0, 0, .35), 0 20px 48px rgba(0, 0, 0, .5);
+    /* Auf Dunkel ist die Lichtkante schwaecher — sonst wirkt sie wie ein
+       gezeichneter weisser Strich statt wie Licht. */
+    --glas-kante: inset 0 1px 0 rgba(255, 255, 255, .10);
+}
+[data-dunkel="an"] .meldung { background: var(--flaeche-3); color: var(--text); border: 1px solid var(--kante); }
+[data-dunkel="an"] .knopf-haupt, [data-dunkel="an"] .knopf-gefahr { color: #171a1d; }

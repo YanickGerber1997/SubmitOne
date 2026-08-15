@@ -136,3 +136,48 @@
   /* ---- Fokus-Ring ---- */
   --ring:0 0 0 3px rgba(113,50,227,.30);
 }
+
+/* ============================================================
+   Dunkel
+   ------------------------------------------------------------
+   Zwei Wege hinein, absichtlich getrennt:
+
+     [data-dunkel="auto"]  folgt dem System (SubZeit, Projektmappe)
+     [data-dunkel="an"]    ist die Wahl des Anwenders (SubmitOne)
+
+   Getrennt, weil beides verschiedene Fragen beantwortet: „Wie hat der
+   Rechner es gerne" und „Wie will ich arbeiten". Wer umschaltet, will
+   nicht, dass der Sonnenuntergang ihm hineinredet.
+
+   Die Werte sind durchgerechnet, nicht gespiegelt. Eine hell gedachte
+   Palette umzudrehen ergibt auf Dunkel fast immer zu wenig Kontrast in
+   der leisen Stufe — das war hier auch so: Das gespiegelte #7d8791 kam
+   auf 3.95:1 und musste auf #8c96a0 (4.80:1).
+   ============================================================ */
+:root[data-dunkel="an"] {
+  --surface:#1f2328;  --surface-2:#262b31;
+  --line:#3c444d;     --line-soft:#2f363d;  --line-stark:#525c66;
+  --grund:#171a1d;
+
+  --ink:#e8ecef;      --ink-soft:#a8b2bb;   --ink-faint:#8c96a0;
+
+  /* Der Akzent dreht sich um: Auf Hell ist er dunkel und traegt weisse
+     Schrift, auf Dunkel ist er hell und traegt dunkle. Ein mittleres
+     Anthrazit haette sich vom dunklen Grund kaum abgehoben (2.31:1). */
+  --a-600:#d4dae1;  --a-700:#e2e7eb;  --a-800:#eef1f4;
+  --a-500:#b3bdc7;  --a-400:#8d99a5;
+  --a-100:#2b3138;  --a-50:#22272c;  --a-200:#333a42;  --a-300:#48525c;
+  --a-900:#f4f6f8;
+
+  --danger:#f0837d;
+
+  /* Bereichsfarben aufgehellt: Die hellen Toene der Tagseite verschwinden
+     auf Dunkel, die dunklen werden unlesbar. Jede Familie rueckt eine
+     Stufe heller, die weichen Flaechen werden zu dunklen Schleiern. */
+  --b-gruen-voll:#8fb37c;   --b-gruen-text:#a9c79a;   --b-gruen-weich:#222a1f;   --b-gruen-rand:#39472f;
+  --b-gelb-voll:#d3ad5e;    --b-gelb-text:#e0c184;    --b-gelb-weich:#2c2517;    --b-gelb-rand:#4a3d20;
+  --b-rot-voll:#e0836a;     --b-rot-text:#eda289;     --b-rot-weich:#2d1e19;     --b-rot-rand:#4c3126;
+  --b-blau-voll:#7ba6c8;    --b-blau-text:#9cc0dc;    --b-blau-weich:#1a242c;    --b-blau-rand:#2c3f4e;
+  --b-tuerkis-voll:#79b3aa; --b-tuerkis-text:#9bcbc2; --b-tuerkis-weich:#182624; --b-tuerkis-rand:#28403c;
+  --b-grau-voll:#a49a8c;    --b-grau-text:#bcb2a4;    --b-grau-weich:#24221f;    --b-grau-rand:#3c3833;
+}

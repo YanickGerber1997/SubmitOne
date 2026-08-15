@@ -2930,9 +2930,9 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 body {
   background-color: var(--bg);
   background-image:
-    radial-gradient(58vw 46vw at 12% -6%,  rgba(113, 50, 227, .17), transparent 64%),
-    radial-gradient(52vw 42vw at 96% 12%,  rgba(60, 98, 128, .15),   transparent 62%),
-    radial-gradient(46vw 40vw at 74% 104%, rgba(77, 106, 61, .11),   transparent 64%);
+    radial-gradient(58vw 46vw at 12% -6%,  rgba(113, 50, 227, .26), transparent 66%),
+    radial-gradient(52vw 42vw at 96% 12%,  rgba(60, 98, 128, .22),   transparent 64%),
+    radial-gradient(46vw 40vw at 74% 104%, rgba(77, 106, 61, .17),   transparent 66%);
   background-attachment: fixed;
   background-repeat: no-repeat;
 }
@@ -2947,11 +2947,16 @@ body {
    die oben eine Spur heller ist als unten, liest sich als geneigte
    Scheibe. Das kostet nichts und wirkt mehr als jede Unschärfe. */
 .card, .kpi, .proj-card, .einst-block, .heute-block {
-  background-color: color-mix(in srgb, var(--surface) 82%, transparent);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,.62), rgba(255,255,255,0) 46%);
-  box-shadow: var(--schatten-s), inset 0 1px 0 rgba(255, 255, 255, .95);
+  background-color: color-mix(in srgb, var(--surface) 72%, transparent);
+  background-image: linear-gradient(to bottom, rgba(255,255,255,.70), rgba(255,255,255,.06) 52%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  border-color: rgba(255, 255, 255, .72);
+  box-shadow: var(--schatten-s),
+              inset 0 1px 0 rgba(255, 255, 255, 1),
+              inset 0 -1px 0 rgba(17, 24, 31, .05);
 }
-.card:hover, .proj-card:hover { background: color-mix(in srgb, var(--surface) 95%, transparent); }
+.card:hover, .proj-card:hover { background-color: color-mix(in srgb, var(--surface) 86%, transparent); }
 
 /* Die Seitenleiste liegt jetzt AUF dem Lichtfeld statt daneben — damit
    trägt Glas auch hier. Sie bleibt die ruhigste Fläche im Bild, deshalb
@@ -3009,4 +3014,13 @@ body {
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .tb-treffer { background: var(--surface); }
+}
+
+/* Ohne Unterstuetzung fuer Unschaerfe muessen die Flaechen deckender
+   sein — 72 Prozent ueber einem farbigen Feld ohne Weichzeichner
+   ergaeben eine fleckige Karte statt einer Scheibe. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card, .kpi, .proj-card, .einst-block, .heute-block {
+    background-color: color-mix(in srgb, var(--surface) 93%, transparent);
+  }
 }

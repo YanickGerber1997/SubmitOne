@@ -454,6 +454,32 @@ p:last-child { margin-bottom: 0; }
     * { transition: none !important; animation: none !important; }
 }
 
+/* ---------- 4b) Berührung --------------------------------------------
+   Mit einem Zeigegerät trifft man auf den Pixel genau, mit dem Daumen
+   nicht. Unter etwa 44px fangen Fehlgriffe an — das ist keine Vorliebe,
+   das ist die Breite einer Fingerkuppe.
+
+   Gemessen auf einem 390px-Schirm, bevor es diese Regel gab: Knöpfe 38px,
+   kleine Knöpfe 36px, Eingabefelder 26px, Ankreuzfelder 13px. Auf dem
+   Schreibtisch ändert sich nichts — die Abfrage greift nur, wo wirklich
+   mit dem Finger gearbeitet wird, unabhängig von der Fensterbreite. Ein
+   Tablet im Querformat ist breit UND wird berührt; nach Breite zu fragen
+   hätte es übersehen. */
+@media (pointer: coarse) {
+    .knopf, .btn { min-height: 44px; }
+    /* Auch die kleinen. Ein «kleiner Knopf für Finger» ist ein Widerspruch:
+       Die Fingerkuppe wird nicht schmaler, nur weil der Knopf es ist.
+       Dichte Tabellenzeilen werden dadurch auf Berührungsgeräten höher —
+       das ist richtig so, nicht ein Nebenschaden. */
+    .knopf-winzig, .btn.sm, .btn.xs { min-height: 44px; padding: .4375rem .6875rem; }
+    .eingabe { min-height: 44px; }
+    input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; }
+    .menue-punkt { min-height: 48px; display: flex; align-items: center; }
+    .wahl button { min-height: 40px; }
+    .fenster-zu { width: 44px; height: 44px; font-size: 1.5rem; }
+    .chip { min-height: 34px; display: inline-flex; align-items: center; }
+}
+
 /* ---------- 5) Druck ------------------------------------------------- */
 
 @media print {

@@ -2031,6 +2031,38 @@ table.va input[type=number] { -moz-appearance: textfield; }
   .content { padding: 14px 14px 30px; }
 }
 
+/* ---- Berührung: was nur SubmitOne kennt --------------------------------
+   Die gemeinsamen Bausteine (.btn, .eingabe, Menüpunkte …) sind in
+   ui/bausteine.css schon versorgt. Hier stehen die Namen, die es nur hier
+   gibt. Gemessen auf 390px vor dieser Regel: Kopfzeilenknöpfe 30px,
+   Seitenreiter 30px, Eingabefelder 26px, Fokusleiste 28px.
+
+   Die Abfrage lautet «pointer: coarse», nicht «max-width». Ein Tablet im
+   Querformat ist breit und wird trotzdem berührt; nach der Breite zu
+   fragen hätte genau die Geräte übersehen, um die es geht. */
+@media (pointer: coarse) {
+  .tb-btn { width: 44px; height: 44px; }
+  .dash-tab { min-height: 44px; }
+  .input, .select, textarea.input { min-height: 44px; }
+  .input.search { min-height: 44px; }
+  .btn-ghost-sm { min-height: 44px; }
+  .sz-chip { min-height: 44px; }
+  .fb-btn { min-height: 44px; }
+  /* Brotkrumen sind Navigation, kein Fliesstext — sie werden angetippt. */
+  .tb-crumbs a { min-height: 44px; display: inline-flex; align-items: center; }
+  /* Ebenso die kleinen Verweise neben den Sektionstiteln («alle →»,
+     «Submissionen»). Sie tauchen erst auf, wenn Daten da sind — deshalb
+     fielen sie in der leeren Demo fast durch die Messung. */
+  .section-head a, a.hint { min-height: 44px; display: inline-flex; align-items: center; }
+  .x-btn { width: 44px; height: 44px; }
+  .subnav-link, .subnav-grp, .subnav-zurueck { min-height: 44px; }
+  .nav a { min-height: 44px; }
+  .ctx-item, .bkp-cat-item { min-height: 44px; }
+  /* Die Datums-Eingabe ist ein Feld MIT Knopf – beide müssen greifbar sein. */
+  .date-field { min-height: 44px; }
+  .date-field .date-cal { min-width: 40px; }
+}
+
 /* ============================ Mobile (Handy) ============================ */
 @media (max-width: 760px) {
   #app { display: block; }

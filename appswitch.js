@@ -53,11 +53,16 @@
     '.so-sw a,.so-sw button{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:6px;',
     'padding:7px 12px;border-radius:999px;color:#e8edf6;cursor:pointer;white-space:nowrap;transition:background .12s}',
     '.so-sw a:hover{background:rgba(255,255,255,.12)}',
-    '.so-sw a.cur{background:#4f7a3c;color:#fff;cursor:default}',
+    // Stand bis zum 15.08.2026 auf #4f7a3c - dem Marken-Gruen aus der Zeit
+    // vor Violett. Es war der letzte Ort, an dem es noch vorkam.
+    '.so-sw a.cur{background:#7132e3;color:#fff;cursor:default}',
     '.so-sw .so-ico{font-size:14px;line-height:1}',
     '.so-sw .so-grip{cursor:grab;padding:7px 6px;color:#9aa6b8;font-size:13px;opacity:.8}',
     '.so-sw .so-min{padding:7px 9px;color:#9aa6b8;cursor:pointer;font-size:13px}',
     '.so-sw .so-min:hover{background:rgba(255,255,255,.12);color:#fff}',
+    // Mit dem Daumen getroffen wird nicht auf 28px. Gilt fuer alle vier Apps.
+    '@media (pointer: coarse){.so-sw a,.so-sw button{min-height:44px}',
+    '.so-sw .so-grip,.so-sw .so-min{min-height:44px;align-items:center;display:flex}}',
     '.so-sw.mini a.other,.so-sw.mini .so-lbl{display:none}',
     '.so-sw.mini a.cur{background:transparent;color:#e8edf6;cursor:pointer}',
     '@media(max-width:640px){.so-sw .so-lbl{display:none}}',

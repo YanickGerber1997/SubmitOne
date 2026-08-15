@@ -8979,23 +8979,31 @@ function viewEinstellungen() {
       ? { farbe: 'gruen', wo: 'Arbeitsordner', text: 'Je Bauvorhaben eine Datei in <code>' + esc(ordnerName) + '</code>. Nur Geändertes wird geschrieben; hat jemand anders eine Datei angefasst, wird sie nicht überschrieben.' }
       : { farbe: 'gelb', wo: 'Nur dieser Browser', text: 'Rund 5 MB Platz — und weg, wenn der Browserspeicher geleert wird. Ein Arbeitsordner ist der sichere Weg.' };
 
+  /* Zwei Spalten: links das Eintragen, rechts das Logo mit seinem Knopf
+     darunter. Vorher lag das Logo als breite Zeile ÜBER den Feldern und
+     schob sie nach unten, obwohl es das ist, was man am seltensten
+     ändert. Nebeneinander gestellt füllt es den Platz, den die kurzen
+     Adresszeilen rechts ohnehin frei lassen. */
   const buero = einstAbschnitt('Büro', 'Erscheint als Briefkopf und als Eingabeadresse auf dem Deckblatt.', `
-    <div class="einst-logo">
-      <div class="einst-logo-bild">
-        ${b.logo ? `<img src="${b.logo}" alt="Logo">` : `<span class="einst-leer">Kein Logo</span>`}
+    <div class="einst-buero">
+      <div class="einst-buero-felder">
+        ${einstFeld('Firma', '', `<input class="input" id="b_firma" value="${esc(b.firma)}" placeholder="Muster Bauadministration GmbH">`)}
+        ${einstFeld('Strasse', '', `<input class="input" id="b_strasse" value="${esc(b.strasse)}" placeholder="Musterstrasse 1">`)}
+        ${einstFeld('PLZ / Ort', '', `<input class="input" id="b_plzort" value="${esc(b.plzort)}" placeholder="6000 Luzern">`)}
+        <div class="form-row">
+          ${einstFeld('Telefon', '', `<input class="input" id="b_tel" value="${esc(b.tel)}" placeholder="041 000 00 00">`)}
+          ${einstFeld('E-Mail', '', `<input class="input" id="b_email" value="${esc(b.email)}" placeholder="info@…">`)}
+        </div>
       </div>
-      <div class="einst-logo-tat">
+      <div class="einst-buero-logo">
+        <span class="einst-name">Logo</span>
+        <div class="einst-logo-bild">
+          ${b.logo ? `<img src="${b.logo}" alt="Logo">` : `<span class="einst-leer">Kein Logo</span>`}
+        </div>
         <label class="btn secondary einst-datei">Bild wählen<input type="file" id="b_logo" accept="image/*"></label>
         ${b.logo ? `<button class="btn ghost sm" data-act="rm-logo">Entfernen</button>` : ''}
-        <span class="einst-hinweis">PNG oder JPG, quer. Erscheint oben links auf jedem Ausdruck.</span>
+        <span class="einst-hinweis">PNG oder JPG, quer. Oben links auf jedem Ausdruck.</span>
       </div>
-    </div>
-    ${einstFeld('Firma', '', `<input class="input" id="b_firma" value="${esc(b.firma)}" placeholder="Muster Bauadministration GmbH">`)}
-    ${einstFeld('Strasse', '', `<input class="input" id="b_strasse" value="${esc(b.strasse)}" placeholder="Musterstrasse 1">`)}
-    ${einstFeld('PLZ / Ort', '', `<input class="input" id="b_plzort" value="${esc(b.plzort)}" placeholder="6000 Luzern">`)}
-    <div class="form-row">
-      ${einstFeld('Telefon', '', `<input class="input" id="b_tel" value="${esc(b.tel)}" placeholder="041 000 00 00">`)}
-      ${einstFeld('E-Mail', '', `<input class="input" id="b_email" value="${esc(b.email)}" placeholder="info@…">`)}
     </div>`);
 
   const korrespondenz = einstAbschnitt('Korrespondenz', 'Was unter Ihren Mails aus dem Programm steht.', `

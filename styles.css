@@ -640,8 +640,9 @@ body.modul-fokus .proj-sticky { top: 0; }
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
 }
 .kpi {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 10px 12px; box-shadow: none; border-top: 2px solid var(--brand);
+  background: var(--surface); border: 1px solid var(--line-soft);
+  border-radius: var(--radius); padding: 10px 12px; box-shadow: var(--schatten-xs);
+  border-top: 2px solid var(--brand);
 }
 .kpi .k-label { color: var(--text-soft); font-size: var(--t-s); font-weight: 500; display: flex; align-items: center; gap: 7px; }
 .kpi .k-ico { width: 26px; height: 26px; border-radius: var(--radius); display: grid; place-items: center; font-size: var(--t-m); }
@@ -775,8 +776,8 @@ body.modul-fokus .proj-sticky { top: 0; }
 /* ============================ Tabellen ============================ */
 
 .card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); box-shadow: none; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--line-soft);
+  border-radius: var(--radius); box-shadow: var(--schatten-s); overflow: hidden;
 }
 .card-pad { padding: 10px 12px; }
 
@@ -2540,8 +2541,8 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 .einst-spalte { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 
 .einst-block {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); overflow: hidden;
+  background: var(--surface); border: 1px solid var(--line-soft);
+  border-radius: var(--radius); box-shadow: var(--schatten-s); overflow: hidden;
 }
 .einst-kopf { padding: 10px 14px 9px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
 .einst-kopf h2 { margin: 0; font-size: var(--t-s); font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--text); }
@@ -2674,4 +2675,99 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
   .einst-logo-bild { height: 62px; grid-row: span 2; }
   .einst-buero-logo .einst-hinweis { grid-column: 2; align-self: start; }
   .einst-feld textarea.input { min-height: 70px; }
+}
+
+/* ============================================================
+   Handy: die ganze Skala eine Stufe kleiner
+   ------------------------------------------------------------
+   Nicht Schrift und Kästen einzeln kleiner setzen, sondern die Wurzel:
+   Die gemeinsame Skala (--t-2xs … --t-3xl) und alle Polsterungen in
+   ui/bausteine.css rechnen in rem. Eine kleinere rem-Basis verkleinert
+   deshalb Schrift UND Kasten im selben Verhältnis — genau das, was von
+   Hand gesetzte Pixelwerte nie sauber hinbekommen.
+
+   15px statt 16 sind gut 6 Prozent. Aus --t-m werden 13.1px statt 14,
+   aus --t-xs 11.3 statt 12.
+
+   WICHTIG, und der Grund für den Wächter in test/selftest-node.js:
+   Eine Schriftgrösse auf html ist normalerweise ein Fehler — sie
+   verstellt die Bedeutung der ganzen Skala unbemerkt (siehe der Fall
+   «html, body { font-size: 12.5px }» im Kopf dieser Datei). Hier ist es
+   Absicht, sie steht in einer Medienabfrage, und sie ist genau der
+   Zweck: alles zusammen eine Stufe kleiner.
+
+   Die Tippflächen bleiben davon unberührt — sie stehen in Pixeln
+   (44px) und schrumpfen deshalb NICHT mit. Genau richtig: Der Daumen
+   wird auf einem kleineren Bildschirm nicht kleiner.
+   ============================================================ */
+@media (max-width: 760px) {
+  html { font-size: 15px; }
+}
+
+/* ============================================================
+   Glas auf den haftenden Schichten
+   ------------------------------------------------------------
+   Nur dort, wo Inhalt wirklich darunter durchläuft: Kopfzeile,
+   Statuszeile, Werkzeugleiste, die Reiterleiste auf dem Handy und die
+   mitlaufenden Tabellenköpfe. Auf einer Fläche, hinter der nichts liegt,
+   ist Glas kein Effekt, sondern nur ein blasserer Farbton — die
+   Seitenleiste bleibt deshalb deckend.
+
+   Die Sättigung gehört zur Unschärfe: ohne sie wirkt das Verwaschene
+   grau und schmutzig. Die helle Innenkante oben ist das, woran das Auge
+   Glas erkennt.
+   ============================================================ */
+.topbar {
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+  -webkit-backdrop-filter: var(--glas-blur);
+  backdrop-filter: var(--glas-blur);
+  border-bottom: 1px solid var(--line-soft);
+  box-shadow: var(--glas-kante);
+}
+.statusbar {
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  -webkit-backdrop-filter: var(--glas-blur);
+  backdrop-filter: var(--glas-blur);
+  border-top: 1px solid var(--line-soft);
+}
+.proj-sticky, .page-toolbar {
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  -webkit-backdrop-filter: var(--glas-blur);
+  backdrop-filter: var(--glas-blur);
+}
+.page-toolbar { border-color: var(--line-soft); }
+.kost-stickyhead, .gantt-stickyhead {
+  -webkit-backdrop-filter: var(--glas-blur);
+  backdrop-filter: var(--glas-blur);
+}
+.datepop, .ctx-menu {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  -webkit-backdrop-filter: var(--glas-blur);
+  backdrop-filter: var(--glas-blur);
+  border-color: var(--line-soft);
+  box-shadow: var(--schatten-l), var(--glas-kante);
+}
+.toast {
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
+}
+
+@media (max-width: 760px) {
+  /* Hier läuft der ganze Inhalt unter der Reiterleiste durch — die
+     sichtbarste Stelle für Glas im ganzen Programm. */
+  .sidebar {
+    background: color-mix(in srgb, var(--surface) 72%, transparent);
+    -webkit-backdrop-filter: var(--glas-blur);
+    backdrop-filter: var(--glas-blur);
+    border-top: 1px solid var(--line-soft);
+    box-shadow: var(--glas-kante), 0 -2px 16px rgba(17, 24, 31, .10);
+  }
+}
+
+/* Ohne Unterstützung deckend — lesbar geht vor hübsch. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .topbar, .proj-sticky, .page-toolbar { background: var(--bg); }
+  .statusbar { background: var(--surface-2); }
+  .datepop, .ctx-menu { background: var(--surface); }
+  @media (max-width: 760px) { .sidebar { background: var(--surface); } }
 }

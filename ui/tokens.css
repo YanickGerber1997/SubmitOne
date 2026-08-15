@@ -28,21 +28,27 @@
   /* ---- Formen ---- */
   --rund-s:5px; --rund:8px; --rund-l:11px; --rund-xl:15px;
 
-  /* ---- Flächen & Linien ----
-     --line trug bis zum 14.08.2026 den Wert #e0e0ea. SubmitOne hatte davon
-     abweichend #d3d3e0, und zwar aus gemessenem Grund: Die Kante trägt dort
-     die Abgrenzung der Karten (Kontrast 1.81 statt 1.37). Statt SubmitOne
-     auf den schwächeren Wert zu ziehen, gilt der stärkere nun für alle —
-     eine Kante, die man sieht, ist in jedem Programm die bessere. */
-  --surface:#ffffff; --surface-2:#f7f7fb;
-  --line:#d3d3e0; --line-soft:#e6e6ef; --line-stark:#b6b6c8;
-  /* Der Seitengrund, auf dem die Karten liegen. Bewusst dunkler als die
-     hellste Violettstufe: Weiss auf #f6f4ff hebt sich mit 1.03 kaum ab,
-     auf #eeeef5 mit 1.29 — sichtbar, ohne laut zu werden. */
-  --grund:#eeeef5;
+  /* ---- Flächen & Linien — Anthrazit statt Violett-Grau ----------------
+     Bis zum 15.08.2026 waren die Neutraltöne violettstichig: Sie trugen
+     den Farbton der Marke bis in jede Kante und jede Fläche. Das ist
+     einer der Gründe, warum die Oberfläche als «überall violett» empfunden
+     wurde — nicht die Akzente, der Grundton.
+
+     Jetzt ein kühles Anthrazit: minimal blaustichig, ohne Farbstimmung.
+     Violett bleibt, wo es hingehört — Marke und Akzent. Die Neutralen
+     halten sich heraus, und die Bereichsfarben treten dadurch klarer
+     hervor.
+
+     Gerechnet, nicht geschätzt: Text auf Weiss 16.3:1, leise 7.5:1,
+     still 5.35:1 (und 4.98:1 auf --surface-2, 4.63:1 auf --grund — der
+     schwierigste Fall bestimmt den Wert). Weiss auf --grund 1.15, die
+     Karte hebt sich also ab, ohne dass es eine Kante braucht. */
+  --surface:#ffffff; --surface-2:#f5f7f8;
+  --line:#dbe0e4; --line-soft:#eaedf0; --line-stark:#bcc4cb;
+  --grund:#eceff1;
 
   /* ---- Text ---- */
-  --ink:#16161f; --ink-soft:#4d4d62; --ink-faint:#71718c;
+  --ink:#1b2126; --ink-soft:#4c565f; --ink-faint:#626c76;
 
   /* ---- Akzent — jetzt violett statt grün ---- */
   --accent:var(--v-600); --accent-soft:var(--v-100);

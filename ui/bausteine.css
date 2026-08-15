@@ -42,10 +42,19 @@
     --gefahr:  var(--danger);  --gefahr-weich:  #fdeaea;
     --info:    #1d5fbf;  --info-weich:    #e7effc;
 
-    --schatten-xs: 0 1px 2px rgba(30, 24, 60, .05);
-    --schatten-s:  0 1px 2px rgba(30, 24, 60, .05), 0 2px 8px rgba(30, 24, 60, .06);
-    --schatten-m:  0 2px 4px rgba(30, 24, 60, .05), 0 8px 24px rgba(30, 24, 60, .09);
-    --schatten-l:  0 4px 8px rgba(30, 24, 60, .06), 0 20px 48px rgba(30, 24, 60, .16);
+    /* Anthrazit statt Violett getönt — und geschichtet statt einfach.
+
+       Ein Schatten aus zwei Lagen wirkt ruhiger als einer aus einer: die
+       enge Lage setzt die Kante, die weite gibt die Tiefe. Deshalb tragen
+       die Karten jetzt Schatten statt Striche; die Abgrenzung entsteht
+       aus Licht, nicht aus einer gezeichneten Linie.
+
+       Die Deckungen sind niedrig gehalten. Ein Schatten, den man als
+       Schatten bemerkt, ist schon zu stark. */
+    --schatten-xs: 0 1px 1px rgba(17, 24, 31, .04), 0 1px 3px rgba(17, 24, 31, .05);
+    --schatten-s:  0 1px 2px rgba(17, 24, 31, .05), 0 3px 8px rgba(17, 24, 31, .06);
+    --schatten-m:  0 2px 4px rgba(17, 24, 31, .06), 0 10px 26px rgba(17, 24, 31, .09);
+    --schatten-l:  0 4px 10px rgba(17, 24, 31, .08), 0 24px 56px rgba(17, 24, 31, .17);
 
     --ring: 0 0 0 3px rgba(113, 50, 227, .30);
 
@@ -65,6 +74,18 @@
     --schrift-marke: var(--font-brand);
 
     --weich: cubic-bezier(.32, .72, 0, 1);
+
+    /* ---- Glas ----
+       Für Schichten, unter denen wirklich etwas durchläuft: die haftende
+       Kopfzeile, die Statuszeile, die Reiterleiste auf dem Handy, Fenster
+       und Menüs. Nur dort ergibt Glas ein Bild — auf einer Fläche, hinter
+       der nichts liegt, ist es bloss ein blasserer Farbton.
+
+       Zwei Zutaten, die zusammengehören: Die Sättigung hebt die Farben
+       hinter dem Glas an, sonst wirkt das Unscharfe grau und schmutzig.
+       Die Haarlinie oben setzt die Lichtkante, an der man Glas erkennt. */
+    --glas-blur: blur(14px) saturate(160%);
+    --glas-kante: inset 0 1px 0 rgba(255, 255, 255, .55);
 }
 
 /* ---------- 2) Grundlagen -------------------------------------------- */
@@ -206,11 +227,15 @@ p:last-child { margin-bottom: 0; }
 }
 .wahl button.aktiv { background: var(--flaeche); color: var(--text); box-shadow: var(--schatten-xs); }
 
+/* Die Karte trägt eine Haarlinie statt einer Kante — sichtbar genug, dass
+   sie an einer Blattkante nicht verschwimmt, leise genug, dass nicht
+   jedes Element von einem Strich umzogen wird. Die eigentliche Abgrenzung
+   macht der Schatten. */
 .karte {
-    border: 1px solid var(--kante);
+    border: 1px solid var(--line-soft);
     border-radius: var(--rund-l);
     background: var(--flaeche);
-    box-shadow: var(--schatten-xs);
+    box-shadow: var(--schatten-s);
     overflow: hidden;
 }
 .karte-kopf {
@@ -487,4 +512,45 @@ p:last-child { margin-bottom: 0; }
     body { background: #fff; }
     .karte { border: 1px solid #ccc; box-shadow: none; break-inside: avoid; }
     @page { margin: 15mm; }
+}
+
+/* ---------- 6) Glas ---------------------------------------------------
+   Fenster, Schleier und Menü liegen über dem Inhalt — genau dort trägt
+   Glas. Der Schleier bekommt mehr Unschärfe, das Fenster bleibt fast
+   deckend: Ein Formular, das man ausfüllt, darf nicht durchscheinen.
+   Glas gehört auf die Hülle, nicht auf den Text. */
+.schleier {
+    background: rgba(20, 26, 32, .38);
+    -webkit-backdrop-filter: blur(10px) saturate(140%);
+    backdrop-filter: blur(10px) saturate(140%);
+}
+.fenster {
+    background: color-mix(in srgb, var(--flaeche) 94%, transparent);
+    -webkit-backdrop-filter: var(--glas-blur);
+    backdrop-filter: var(--glas-blur);
+    box-shadow: var(--schatten-l), var(--glas-kante);
+    border: 1px solid var(--line-soft);
+}
+.fenster-kopf, .fenster-fuss { background: transparent; }
+.fenster-fuss { background: color-mix(in srgb, var(--flaeche-2) 70%, transparent); }
+
+.menue {
+    background: color-mix(in srgb, var(--flaeche) 88%, transparent);
+    -webkit-backdrop-filter: var(--glas-blur);
+    backdrop-filter: var(--glas-blur);
+    box-shadow: var(--schatten-l), var(--glas-kante);
+    border-color: var(--line-soft);
+}
+
+.meldung {
+    background: color-mix(in srgb, var(--text) 88%, transparent);
+    -webkit-backdrop-filter: blur(10px) saturate(150%);
+    backdrop-filter: blur(10px) saturate(150%);
+}
+
+/* Wo es kein Glas gibt, muss es trotzdem lesbar sein: dann deckend. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .fenster, .menue { background: var(--flaeche); }
+    .meldung { background: var(--text); }
+    .schleier { background: rgba(20, 26, 32, .55); }
 }

@@ -121,7 +121,14 @@ if (R) {  // CSS-Integritaet: unausgeglichene Klammern zerstoeren stumm ganze Re
   const NUR_SKALA = ['styles.css', 'ui/wochenraster.css', 'submit/zeit/stil.css'];
   const mitFesten = [];
   for (const d of NUR_SKALA) {
-    const t = (lies(d) || '').replace(/\/\*[\s\S]*?\*\//g, '');
+    let t = (lies(d) || '').replace(/\/\*[\s\S]*?\*\//g, '');
+    /* Eine Ausnahme, und nur diese: die bewusste Verkleinerung der ganzen
+       Skala auf dem Handy (html { font-size: Npx } in einer Medienabfrage).
+       Sie IST eine feste Pixelgroesse - aber sie setzt die rem-Basis, aus
+       der die Skala dann wieder rechnet, statt eine einzelne Groesse an
+       der Skala vorbei zu setzen. Genau das unterscheidet sie von dem,
+       was diese Pruefung verhindern soll. */
+    t = t.replace(/html\s*\{\s*font-size:\s*[0-9.]+px;?\s*\}/g, '');
     const treffer = t.match(/font-size:\s*[0-9.]+px/g) || [];
     if (treffer.length) mitFesten.push(d + ' (' + treffer.length + 'x, z.B. ' + treffer[0] + ')');
   }
@@ -133,14 +140,22 @@ if (R) {  // CSS-Integritaet: unausgeglichene Klammern zerstoeren stumm ganze Re
   const fremd = benutzt.filter(n => STUFEN.indexOf(n) < 0);
   push('SKALA: nur die acht gemeinsamen Stufen in Gebrauch', !fremd.length, 'unbekannt: ' + fremd.join(', '));
 
-  /* Die rem-Basis gehoert dem Browser. Eine Schriftgroesse auf html
-     verstellt sie und macht jedes .875rem der Skala zu etwas anderem als
-     in SubZeit - genau der Fehler, der beim Umstellen fast passiert waere. */
+  /* Die rem-Basis gehoert dem Browser - UNBEDINGT jedenfalls.
+
+     Eine Schriftgroesse auf html verstellt die Bedeutung der ganzen Skala:
+     Mit "html, body { font-size: 12.5px }" wurde --t-m (.875rem) zu 10.9px
+     statt 14px, und die Oberflaeche waere beim Umstellen geschrumpft statt
+     gewachsen - gleichmaessig genug, um plausibel auszusehen.
+
+     Innerhalb einer Medienabfrage ist es dagegen erlaubt und beabsichtigt:
+     Dort ist genau das der Zweck (Handy, alles eine Stufe kleiner). Diese
+     Pruefung sieht deshalb nur die Regeln AUSSERHALB von @media an. */
+  const ohneMedien = ohneKommentar.replace(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '');
   const htmlRegel = /(^|\})\s*html\s*(,[^{]*)?\{([^}]*)\}/g;
   let hm, htmlSchrift = false;
-  while ((hm = htmlRegel.exec(ohneKommentar))) if (/font-size/.test(hm[3])) htmlSchrift = true;
-  push('SKALA: html behaelt die rem-Basis des Browsers', !htmlSchrift,
-       'eine html-Regel setzt font-size - dann bedeutet --t-m nicht mehr 14px');
+  while ((hm = htmlRegel.exec(ohneMedien))) if (/font-size/.test(hm[3])) htmlSchrift = true;
+  push('SKALA: html behaelt die rem-Basis (ausserhalb von @media)', !htmlSchrift,
+       'eine unbedingte html-Regel setzt font-size - dann bedeutet --t-m nicht mehr 14px');
 
   /* Handy: kein Bereich darf unerreichbar werden.
 

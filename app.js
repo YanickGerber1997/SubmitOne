@@ -8988,8 +8988,10 @@ function viewEinstellungen() {
     <div class="einst-buero">
       <div class="einst-buero-felder">
         ${einstFeld('Firma', '', `<input class="input" id="b_firma" value="${esc(b.firma)}" placeholder="Muster Bauadministration GmbH">`)}
-        ${einstFeld('Strasse', '', `<input class="input" id="b_strasse" value="${esc(b.strasse)}" placeholder="Musterstrasse 1">`)}
-        ${einstFeld('PLZ / Ort', '', `<input class="input" id="b_plzort" value="${esc(b.plzort)}" placeholder="6000 Luzern">`)}
+        <div class="form-row einst-adresse">
+          ${einstFeld('Strasse', '', `<input class="input" id="b_strasse" value="${esc(b.strasse)}" placeholder="Musterstrasse 1">`)}
+          ${einstFeld('PLZ / Ort', '', `<input class="input" id="b_plzort" value="${esc(b.plzort)}" placeholder="6000 Luzern">`)}
+        </div>
         <div class="form-row">
           ${einstFeld('Telefon', '', `<input class="input" id="b_tel" value="${esc(b.tel)}" placeholder="041 000 00 00">`)}
           ${einstFeld('E-Mail', '', `<input class="input" id="b_email" value="${esc(b.email)}" placeholder="info@…">`)}

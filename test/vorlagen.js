@@ -91,6 +91,21 @@ src += `
 ;globalThis.__dkKacheln = function () { return dashKonfigCtx ? dashKonfigCtx.kacheln : []; };
 ;globalThis.__alleVorlagen = function () { return VORLAGEN.map(v => v.key); };
 ;globalThis.__istArt = function (k) { return DASH_ARTEN.some(a => a.key === k); };
+;globalThis.__hatAusschreibung = function (k) { const v = VORLAGEN.find(x => x.key === k); return v.ausschreibung !== false; };
+;globalThis.__stueckBlatt = function (pid, vid) { viewStueck(pid, vid); return globalThis.__blatt; };
+;globalThis.__sammlungStueck = function () {
+  const p = { id: 'p_st', name: 'Sammlung', vorlage: 'sammlung', vergaben: [],
+    protokolle: [], entscheidungen: [], bezugsfirmen: [], geschosseListe: [], auflagen: [],
+    mitglieder: [], bauteile: [], optionen: [], termine: [], finanz: {} };
+  state.projekte.push(p); setVorlageCtx(p);
+  csvPostenAnlegen('p_st', [{
+    bkp: 'CORI-EN001', gewerk: 'Black Chaos', satz: 'Chaos Origins', seltenheit: 'Secret Rare',
+    schaetzung: 5, marktwert: 52.57, betrag: 0, firma: '', erhalten: 0, status: 'ausschreibung',
+    bild: 'https://images.ygoprodeck.com/images/cards_small/1.jpg',
+    beschrieb: 'Secret Rare\\nCORI-EN001 - Chaos Origins\\nPasscode 1',
+  }]);
+  return p;
+};
 ;globalThis.__depotMitChargen2 = function () {
   kursSetzen({ rates: { CHF: 0.9333, USD: 1.16 }, date: '2026-08-20' });
   const p = { id: 'p_dash', name: 'Depot', vorlage: 'depot', vergaben: [],
@@ -396,7 +411,32 @@ ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(ein
 {
   eq('Depot zeigt den Handel', sandbox.handelArt({ vorlage: 'depot' }), 'chargen');
   eq('ein Bauvorhaben die Vergabe', sandbox.handelArt({ vorlage: 'bau' }), '');
-  eq('eine Sammlung vorerst auch', sandbox.handelArt({ vorlage: 'sammlung' }), '');
+  eq('die Sammlung zeigt das einzelne Stueck', sandbox.handelArt({ vorlage: 'sammlung' }), 'stueck');
+  ok('jede Vorlage ohne Ausschreibung hat eine eigene Ansicht',
+    sandbox.__alleVorlagen().every(k => sandbox.__hatAusschreibung(k) || !!sandbox.handelArt({ vorlage: k })));
+
+  /* Eine Karte hat keine eingeladenen Unternehmer, keinen
+     Offertvergleich und keinen Werkvertrag. Genau das stand dort. */
+  {
+    const ps = sandbox.__sammlungStueck();
+    const blatt = sandbox.__stueckBlatt(ps.id, ps.vergaben[0].id);
+    ok('Stueck: die Karte im Titel', /Black Chaos/.test(blatt));
+    ok('Stueck: Seltenheit und Satz in der Unterzeile',
+      /Secret Rare/.test(blatt) && /Chaos Origins/.test(blatt));
+    ok('Stueck: Einstand, Marktwert, Angebot als Zahlen',
+      /Einstand/.test(blatt) && /Marktwert/.test(blatt) && /Angebot/.test(blatt));
+    ok('Stueck: das Bild der Karte', /st-bild/.test(blatt));
+    ok('Stueck: der Vermerk steht da', /Vermerk/.test(blatt));
+    ok('Stueck: kein Wort von Vergabe oder Submittenten',
+      !/Submittent|Werkvertrag|Zuschlag|Offertvergleich|eingeladen/.test(blatt),
+      (blatt.match(/.{0,20}(Submittent|Werkvertrag|Zuschlag|Offertvergleich|eingeladen).{0,20}/) || [''])[0]);
+    ok('Stueck: Verkauf buchen, solange nicht verkauft', /handel-verkauf/.test(blatt));
+
+    ps.vergaben[0].pruefen = true;
+    const mitFahne = sandbox.__stueckBlatt(ps.id, ps.vergaben[0].id);
+    ok('Stueck: offene Auflage wird gesagt, nicht verschwiegen',
+      /Auflage nicht bestimmt/.test(mitFahne) && /offen-pruefen/.test(mitFahne));
+  }
 
   const pd = sandbox.__depotMitChargen();
   const gold = pd.vergaben.filter(v => v.symbol === 'XAU');

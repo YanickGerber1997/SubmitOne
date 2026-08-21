@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v393';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v394';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -2143,7 +2143,12 @@ function router() {
     case 'projekte':  setActiveNav('projekte');  return viewProjekte();
     case 'projekt':
       setActiveNav('projekte');
-      if (sub === 'vergabe' && b) return (handelArt(findProjekt(a)) === 'chargen') ? viewHandel(a, b) : viewVergabeDetail(a, b);
+      if (sub === 'vergabe' && b) {
+        const art = handelArt(findProjekt(a));
+        if (art === 'chargen') return viewHandel(a, b);
+        if (art === 'stueck') return viewStueck(a, b);
+        return viewVergabeDetail(a, b);
+      }
       if (sub === 'termine') return viewTermine(a);
       if (sub === 'kalender') return viewKalender(a);
       if (sub === 'gewerke') return viewGewerke(a);
@@ -2733,8 +2738,46 @@ const DASH_INHALTE = [
       };
     },
   },
+  {
+    key: 'termine', name: 'Nächste Termine', reihe: true,
+    hilfe: 'Was als Nächstes ansteht — aus dem Terminprogramm, den Sitzungen und den Fristen dieses Projekts.',
+    daten(p) {
+      const heute = todayIso();
+      const zeilen = sammleTermine(p).filter(e => e.datum >= heute)
+        .sort((a, b) => a.datum.localeCompare(b.datum) || (a.zeit || '').localeCompare(b.zeit || ''))
+        .slice(0, 8)
+        .map(e => ({ links: fmtDate(e.datum) + (e.zeit ? ' · ' + e.zeit : ''), text: e.titel,
+                     rechts: fristText(e.datum, false), klasse: fristClass(e.datum, false) }));
+      return { titel: 'Nächste Termine', zeilen, leer: 'Nichts angesetzt.' };
+    },
+  },
+  {
+    key: 'pendenzen', name: 'Offene Pendenzen', reihe: true,
+    hilfe: 'Was noch zu tun ist, nach Termin geordnet — Überfälliges zuoberst.',
+    daten(p) {
+      const zeilen = offenePendenzen(p).slice(0, 8).map(({ it }) => ({
+        links: it.termin ? fmtDate(it.termin) : '—', text: it.text || '',
+        rechts: it.verantwortlich || '', klasse: it.termin ? fristClass(it.termin, false) : '',
+      }));
+      return { titel: 'Offene Pendenzen', zeilen, leer: 'Alles erledigt.' };
+    },
+  },
+  {
+    key: 'fristen', name: 'Nächste Fristen der Posten', reihe: true,
+    hilfe: 'Die Posten mit einer Frist, die nächste zuerst.',
+    daten(p) {
+      const zeilen = (p.vergaben || []).filter(v => v.frist && !isDone(v))
+        .sort((a, b) => (a.frist || '').localeCompare(b.frist || ''))
+        .slice(0, 8)
+        .map(v => ({ links: fmtDate(v.frist), text: (v.bkp ? v.bkp + ' ' : '') + (v.gewerk || ''),
+                     rechts: fristText(v.frist, false), klasse: fristClass(v.frist, false) }));
+      return { titel: 'Nächste Fristen', zeilen, leer: 'Keine offenen Fristen.' };
+    },
+  },
 ];
 function dashInhalt(key) { return DASH_INHALTE.find(i => i.key === key) || DASH_INHALTE[0]; }
+/** Ist dieser Inhalt eine Reihe (Datum + Text) statt einer Verteilung? */
+function istReihe(key) { return !!dashInhalt(key).reihe; }
 
 /* --- Die Darstellungen --------------------------------------------- */
 const DASH_ARTEN = [
@@ -2836,7 +2879,20 @@ function dvListe(d, p) {
   </tbody></table>`;
 }
 
+/* Eine Reihe: Datum links, Sache in der Mitte, Einordnung rechts.
+   Dieselbe Form wie die Tagesspalte der Startseite — wer beides
+   sieht, soll nicht zweimal lesen lernen. */
+function dvReihe(d) {
+  if (!d.zeilen || !d.zeilen.length) return `<p class="dv-leer">${esc(d.leer || 'Nichts zu zeigen.')}</p>`;
+  return `<div class="dv-reihe">${d.zeilen.map(z => `<div class="dv-reihe-zeile">
+    <span class="dv-reihe-links">${esc(z.links || '')}</span>
+    <span class="dv-reihe-text" title="${esc(z.text || '')}">${esc(z.text || '')}</span>
+    <span class="dv-reihe-rechts frist ${esc(z.klasse || '')}">${esc(z.rechts || '')}</span>
+  </div>`).join('')}</div>`;
+}
+
 function dvZeichnen(d, art, p) {
+  if (d.zeilen) return dvReihe(d);   // eine Reihe kennt nur eine Form
   if (art === 'ring') return dvKreis(d, p, false);
   if (art === 'kuchen') return dvKreis(d, p, true);
   if (art === 'balken') return dvBalken(d, p);
@@ -2851,6 +2907,7 @@ function standardKacheln(p) {
     { inhalt: 'verteilung', art: 'ring' },
     { inhalt: 'stand', art: 'balken' },
     { inhalt: 'top', art: 'liste' },
+    { inhalt: 'termine', art: 'liste' },
   ];
 }
 function kachelnVon(p) {
@@ -2899,7 +2956,8 @@ function dashKonfigZeichnen() {
     <div class="dk-liste">
       ${dashKonfigCtx.kacheln.map((k, i) => {
         const inh = dashInhalt(k.inhalt);
-        const art = DASH_ARTEN.find(a => a.key === k.art) || DASH_ARTEN[0];
+        const art = inh.reihe ? { name: 'Liste', hilfe: 'Datum, Sache und Einordnung — die einzige Form, die für eine Reihe taugt.' }
+                        : (DASH_ARTEN.find(a => a.key === k.art) || DASH_ARTEN[0]);
         return `<div class="dk-zeile">
           <span class="dk-nr">${i + 1}</span>
           <label class="field"><span class="einst-name">Inhalt</span>
@@ -2907,8 +2965,8 @@ function dashKonfigZeichnen() {
               ${DASH_INHALTE.map(x => `<option value="${x.key}"${x.key === k.inhalt ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}
             </select></label>
           <label class="field"><span class="einst-name">Darstellung</span>
-            <select class="select dk-art" data-i="${i}">
-              ${DASH_ARTEN.map(x => `<option value="${x.key}"${x.key === k.art ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}
+            <select class="select dk-art" data-i="${i}"${inh.reihe ? ' disabled' : ''}>
+              ${(inh.reihe ? [{ key: 'liste', name: 'Liste' }] : DASH_ARTEN).map(x => `<option value="${x.key}"${x.key === k.art ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}
             </select></label>
           <span class="dk-pfeile">
             <button type="button" class="x-btn" data-act="dk-hoch" data-kind="${i}" title="Nach oben"${i === 0 ? ' disabled' : ''}>↑</button>
@@ -2924,8 +2982,11 @@ function dashKonfigZeichnen() {
       <span class="einst-hinweis">${dashKonfigCtx.kacheln.length} Kachel${dashKonfigCtx.kacheln.length === 1 ? '' : 'n'}</span>
     </div>`;
   $$('.dk-inhalt').forEach(el => el.addEventListener('change', () => {
-    dashKonfigCtx.kacheln[Number(el.dataset.i)].inhalt = el.value;
-    delete dashKonfigCtx.kacheln[Number(el.dataset.i)].titel;
+    const k = dashKonfigCtx.kacheln[Number(el.dataset.i)];
+    k.inhalt = el.value;
+    delete k.titel;
+    // Eine Reihe kann nur Liste — sonst bliebe «Ring» stehen und täte nichts.
+    if (istReihe(k.inhalt)) k.art = 'liste';
     dashKonfigZeichnen();
   }));
   $$('.dk-art').forEach(el => el.addEventListener('change', () => {
@@ -3243,6 +3304,106 @@ function viewHandel(pid, vid) {
           Jeder Kauf ist eine eigene Charge mit eigenem Datum und eigenem Einstand — nur so lässt sich je Kauf
           sagen, ob er im Plus liegt. <b>je Einheit</b> ist der Einstand geteilt durch die Menge${s.istMetall ? ' in Feinunzen' : ''};
           das ist die Zahl, die mit dem heutigen Kurs vergleichbar ist.
+        </p>
+      </div>
+    </div>`);
+}
+
+
+/* --- Ein einzelnes Stück ---------------------------------------------
+   Beim Depot zeigt der Handel die ANLAGE mit ihren Chargen — dort ist
+   die Charge nie für sich allein interessant. Bei einer Sammlung ist
+   es umgekehrt: Diese eine Karte ist der Gegenstand. Sie hat einen
+   Zustand, einen Marktwert, einen Platz, an dem sie liegt, und
+   irgendwann einen Käufer.
+
+   Was sie nicht hat: eingeladene Unternehmer, Offertvergleich,
+   Werkvertrag, Nachträge, Rapporte. Genau das stand hier bis jetzt. */
+function viewStueck(pid, vid) {
+  const p = findProjekt(pid);
+  const v = p && findVergabe(p, vid);
+  if (!v) { render(emptyState('⚠', W('posten', p) + ' nicht gefunden.')); return; }
+
+  const z = kostenZeile(v);
+  const markt = bestBetrag(v);
+  const gewinn = (v.betrag || 0) && v.schaetzung ? (v.betrag - v.schaetzung) : null;
+  setStatusExtra(esc(v.gewerk) + ' · ' + chf(z.prognose));
+
+  /* Die Seitenliste wie beim Handel — nach der Gruppe der Vorlage,
+     bei Karten also nach Satz. */
+  const alle = gewerkeSorted(p);
+  const gruppen = new Map();
+  alle.forEach(x => {
+    const k = gruppeVon(x, p);
+    if (!gruppen.has(k)) gruppen.set(k, []);
+    gruppen.get(k).push(x);
+  });
+  const seite = `<aside class="gw-side">
+    <div class="gw-side-head">${esc(W('posten_pl', p))} · ${alle.length}</div>
+    <div class="gw-side-list">${Array.from(gruppen.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([k, liste]) =>
+      `<div class="gw-side-grp">${esc(k === '?' ? '' : k)} ${esc(gruppeTitel(k, liste, p))}</div>` + liste.map(g => {
+        const st = stInfo(g.status, p);
+        return `<a class="gw-side-item${g.id === v.id ? ' active' : ''}" href="#/projekt/${p.id}/vergabe/${g.id}" title="${esc(st.label)}">
+          <span class="st-dot ${st.color || 'grey'}"></span>
+          <span class="gw-side-bkp">${esc(g.bkp || '')}</span>
+          <span class="gw-side-name">${esc(g.gewerk || '')}${g.pruefen ? '<span class="gw-side-zu">⚑ prüfen</span>' : ''}</span></a>`;
+      }).join('')).join('')}</div>
+  </aside>`;
+
+  const toolbar = `
+    <select class="select vergabe-status-sel" data-pid="${p.id}" data-vid="${v.id}" title="Stand setzen" style="padding:6px 9px;font-size:var(--t-s, 13px)">
+      ${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(stInfo(s.key, p).label)}</option>`).join('')}
+    </select>
+    ${v.pruefen ? `<button class="btn sm" data-act="offen-pruefen" data-pid="${p.id}">⚑ Auflage wählen</button>` : ''}
+    <button class="btn sm secondary" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}">✎ Bearbeiten</button>
+    ${isVergeben(v) ? '' : `<button class="btn sm" data-act="handel-verkauf" data-pid="${p.id}" data-vid="${v.id}">Verkauf buchen</button>`}`;
+
+  const zahl = (l, w, cls) => `<div class="hd-zahl${cls ? ' ' + cls : ''}"><span>${esc(l)}</span><b>${w}</b></div>`;
+
+  render(`
+    <div class="detail-head">
+      <div>
+        <h1 style="margin:0;font-size:var(--t-xl, 22px)"><span class="bkp-code" style="font-size:var(--t-l, 16px)">${esc(v.bkp || '')}</span> ${esc(v.gewerk || '')}</h1>
+        <div class="sub" style="margin-top:5px">${[esc(v.seltenheit || ''), esc(v.satz || ''), v.firma ? esc(W('partner', p)) + ': ' + esc(v.firma) : esc(W('partnerLeer', p))].filter(Boolean).join(' · ')}</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">${statusPill(v)}</div>
+    </div>
+    ${projektTabs(p, 'gewerke', toolbar)}
+    <div class="gw-layout">
+      ${seite}
+      <div class="gw-main">
+        ${v.pruefen ? `<div class="scan-warnung" style="margin-bottom:12px">Bei diesem ${esc(W('posten', p))} ist die Auflage nicht bestimmt — Seltenheit und Wert sind darum nur ein Anhaltspunkt.</div>` : ''}
+        <div class="st-kopf">
+          ${v.bild ? `<img class="st-bild" src="${esc(v.bild)}" alt="" loading="lazy">` : ''}
+          <div class="hd-band st-band">
+            ${zahl(W('kv', p), chf(v.schaetzung))}
+            ${zahl(W('rev', p), markt != null ? chf(markt) : '–', 'hl')}
+            ${zahl(W('wv', p), v.betrag ? chf(v.betrag) : '–')}
+            ${zahl(W('fakt', p), chf(z.fakturiert))}
+            ${gewinn != null ? zahl('+/−', (gewinn > 0 ? '+' : '') + chf(gewinn), gewinn >= 0 ? 'gut' : 'schlecht') : ''}
+          </div>
+        </div>
+
+        <div class="card card-pad" style="margin-top:14px">
+          <div class="section-head" style="margin-top:0"><h2>Vermerk</h2></div>
+          <div class="st-notiz">${v.beschrieb ? esc(v.beschrieb) : '<span class="muted">Noch keine Angaben.</span>'}</div>
+        </div>
+
+        ${(v.rechnungen || []).length ? `<div class="card" style="margin-top:14px">
+          <div class="section-head" style="margin:10px 14px 8px"><h2>${esc(R('rechnungen', 'Zahlungen', p))}</h2></div>
+          <table class="grid"><tbody>${(v.rechnungen || []).slice()
+            .sort((a, b) => (a.datum || '').localeCompare(b.datum || '')).map(r => `<tr>
+              <td>${r.datum ? fmtDate(r.datum) : '—'}</td>
+              <td>${esc(r.text || '')}</td>
+              <td class="num">${money(rgSigned(r))}</td>
+              <td>${r.bezahlt ? '<span class="st green">eingegangen</span>' : '<span class="st amber">offen</span>'}</td>
+            </tr>`).join('')}</tbody></table>
+        </div>` : ''}
+
+        <p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:12px">
+          ${esc(W('rev', p))} kommt aus dem Nachschlagen und ist ein Anhaltspunkt, kein Preis —
+          Zustand und Auflage kann keine Datenbank wissen. Was du verlangst, trägst du unter
+          <b>${esc(W('wv', p))}</b> ein; was eingegangen ist, steht unter ${esc(W('fakt', p))}.
         </p>
       </div>
     </div>`);
@@ -7616,7 +7777,11 @@ const VORLAGEN = [
       { inhalt: 'verteilung', art: 'ring' },
       { inhalt: 'stand', art: 'balken' },
       { inhalt: 'bezahlt', art: 'balken' },
+      /* Die Phasen-Verteilung war vorher eine eigene Leiste an dieser
+         Stelle - sie bleibt, sonst faellt dem Bauleiter etwas weg,
+         das er gewohnt ist. */
       { inhalt: 'phasen', art: 'liste' },
+      { inhalt: 'termine', art: 'liste' },
     ],
     woerter: {
       posten: 'Gewerk', posten_pl: 'Gewerke', postenSpalte: 'Arbeitsgattung',
@@ -7645,6 +7810,9 @@ const VORLAGEN = [
     geld: true, einheit: 'CHF', mehrIstGut: true,
     // Keine Ausschreibung: Man verkauft eine Karte, man vergibt sie nicht.
     ausschreibung: false,
+    // Ein Stueck ist fuer sich der Gegenstand - anders als eine Charge,
+    // die nur neben ihren Geschwistern etwas bedeutet.
+    handel: 'stueck',
     katalog: SAMMLUNG_KATALOG,
     /* Diese Vorlage kann eine Nummer nachschlagen: Passcode oder
        Set-Code einer Sammelkarte → Name, Art, Set, Seltenheit, Bild,
@@ -7726,6 +7894,7 @@ const VORLAGEN = [
       { inhalt: 'verteilung', art: 'ring' },
       { inhalt: 'einstandWert', art: 'balken' },
       { inhalt: 'top', art: 'liste' },
+      { inhalt: 'termine', art: 'liste' },
     ],
     nachschlag: 'kurse',
     katalog: DEPOT_KATALOG,

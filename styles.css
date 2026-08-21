@@ -2682,6 +2682,15 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 .dv-spur { height: 10px; background: var(--surface-2); border-radius: 5px; overflow: hidden; }
 .dv-fuell { display: block; height: 100%; border-radius: 5px; }
 
+/* Eine Reihe: Datum, Sache, Einordnung — dieselbe Form wie die
+   Tagesspalte der Startseite, damit man nicht zweimal lesen lernt. */
+.dv-reihe { display: flex; flex-direction: column; gap: 5px; }
+.dv-reihe-zeile { display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px; align-items: baseline; font-size: var(--t-xs); }
+.dv-reihe-links { font-family: var(--font-zahl); color: var(--text-faint); white-space: nowrap; }
+.dv-reihe-text { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv-reihe-rechts { font-size: var(--t-2xs); white-space: nowrap; }
+
 .dv-tabelle td { font-size: var(--t-xs); }
 .dv-summe td { font-weight: 700; border-top: 1px solid var(--border); }
 
@@ -2712,6 +2721,13 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 .hd-zahl.hl { border-color: var(--brand); }
 .hd-zahl.gut b { color: var(--b-gruen-text); }
 .hd-zahl.schlecht b { color: var(--b-rot-text); }
+/* Ein einzelnes Stueck: das Bild neben den Zahlen. Bei einer Karte
+   ist das Bild die schnellste Wiedererkennung, die es gibt. */
+.st-kopf { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.st-bild { width: 116px; border-radius: var(--rund-s); flex: none; display: block; }
+.st-band { flex: 1; min-width: 240px; }
+.st-notiz { font-size: var(--t-s); white-space: pre-wrap; line-height: 1.55; }
+
 .charge-verkauft { opacity: .6; }
 .charge-verkauft td:first-child { position: relative; }
 .charge-tat { white-space: nowrap; text-align: right; }

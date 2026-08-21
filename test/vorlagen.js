@@ -84,6 +84,41 @@ src += `
 ;globalThis.__kursSetzen = function (a) { return kursSetzen(a); };
 ;globalThis.__kurse = function () { return kurse; };
 ;globalThis.__katalogCodes = function (k) { return (VORLAGEN.find(v => v.key === k).katalog || []).map(b => b.code); };
+;globalThis.__pruefGruppen = function () { return pruefCtx ? pruefCtx.gruppen : []; };
+;globalThis.__sammlungMitOffenen = function () {
+  /* Ein zweites Projekt, damit die Prüfungen oben unberührt bleiben.
+     Vier Posten: dreimal dieselbe Nummer mit zwei Möglichkeiten,
+     einmal eine Nummer mit drei. */
+  kursSetzen({ rates: { CHF: 0.9333, USD: 1.16 }, date: '2026-08-20' });
+  const zwei = [
+    { code: 'CORI-EN003', name: 'Chaos Origins', seltenheit: 'Starlight Rare', preisUsd: 0 },
+    { code: 'CORI-EN003', name: 'Chaos Origins', seltenheit: 'Super Rare', preisUsd: 0.4 },
+  ];
+  const drei = [
+    { code: 'CORI-EN028', name: 'Chaos Origins', seltenheit: 'Secret Rare', preisUsd: 3.8 },
+    { code: 'CORI-EN028', name: 'Chaos Origins', seltenheit: 'Starlight Rare', preisUsd: 0 },
+    { code: 'CORI-EN028', name: 'Chaos Origins', seltenheit: 'Ultra Rare', preisUsd: 1.2 },
+  ];
+  const mach = (bkp, name, auflagen) => ({
+    bkp, gewerk: name, satz: 'Chaos Origins', seltenheit: '', passcode: '111',
+    schaetzung: 0, marktwert: 0.5, betrag: 0, firma: '', erhalten: 0, status: 'ausschreibung',
+    beschrieb: '⚑ Auflage nicht bestimmt — ' + auflagen.length + ' mögliche.\\nRitual Monster\\nPasscode 111',
+    frist: '', bild: '', pruefen: true, kategorie: '101', auflagenOffen: auflagen,
+  });
+  const p = {
+    id: 'p_offen', name: 'Offene Auflagen', vorlage: 'sammlung', vergaben: [],
+    protokolle: [], entscheidungen: [], bezugsfirmen: [], geschosseListe: [], auflagen: [],
+    mitglieder: [], bauteile: [], optionen: [], termine: [], finanz: {},
+  };
+  state.projekte.push(p); setVorlageCtx(p);
+  csvPostenAnlegen('p_offen', [
+    mach('CORI-EN003', 'Celtic Mystic', zwei),
+    mach('CORI-EN003', 'Celtic Mystic', zwei),
+    mach('CORI-EN003', 'Celtic Mystic', zwei),
+    mach('CORI-EN028', 'Black Luster Soldier', drei),
+  ]);
+  return p;
+};
 ;globalThis.__scanBlatt = function (pid, antwort) {
   /* Das Fenster ohne Netz füllen: Treffer direkt setzen und zeichnen
      lassen. Geprüft wird, was der Mensch zu sehen bekommt. */
@@ -174,6 +209,43 @@ ok('Einstellungen: alle vier Vorlagen erscheinen',
   sandbox.__vorlagen().every(k => einst.indexOf(String.fromCharCode(34) + k + String.fromCharCode(34)) >= 0));
 ok('Einstellungen: das Projekt lässt sich umstellen', /vorl-proj/.test(einst));
 ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(einst));
+
+/* ---- 2c) Offene Auflagen bestimmen ----
+   Der Weg, der bis v385 fehlte: eine Merkfahne schliessen, ohne die
+   Karte neu zu erfassen. Gruppiert nach Nummer, weil man bei drei
+   gleichen Karten einmal entscheidet und nicht dreimal. */
+{
+  const p3 = sandbox.__sammlungMitOffenen();
+  eq('Vorbereitung: vier offene Posten', p3.vergaben.filter(v => v.pruefen).length, 4);
+
+  sandbox.actOffenePruefen(p3.id);
+  eq('gruppiert nach Nummer, nicht nach Zeile', sandbox.__pruefGruppen().length, 2);
+  eq('drei Exemplare derselben Nummer in einer Gruppe',
+    sandbox.__pruefGruppen()[0].vs.length, 3);
+
+  /* Wer keine Starlight Rare besitzt, sagt das einmal — und alles,
+     was danach nur noch eine Möglichkeit hat, ist bestimmt. */
+  sandbox.pruefAus('Starlight Rare');
+  const drei = p3.vergaben.filter(v => v.bkp === 'CORI-EN003');
+  ok('Ausschluss bestimmt die eindeutig gewordene Nummer', drei.every(v => !v.pruefen),
+    JSON.stringify(drei.map(v => v.pruefen)));
+  eq('… mit der übrig gebliebenen Seltenheit', drei[0].seltenheit, 'Super Rare');
+  ok('… die Fahnen-Zeile ist aus der Notiz verschwunden', drei[0].beschrieb.indexOf('⚑') < 0);
+  ok('… und die Seltenheit steht jetzt darin', /Seltenheit: Super Rare/.test(drei[0].beschrieb));
+  ok('… alle drei Exemplare, nicht nur eines', drei.length === 3 && drei.every(v => v.seltenheit === 'Super Rare'));
+
+  /* Die dreifache Wahl bleibt offen — da hilft kein Ausschluss. */
+  const acht = p3.vergaben.filter(v => v.bkp === 'CORI-EN028');
+  ok('was mehrdeutig bleibt, bleibt offen', acht[0].pruefen);
+
+  sandbox.pruefWaehlen(1, 2);
+  eq('von Hand gewählt: Seltenheit gesetzt', acht[0].seltenheit, 'Ultra Rare');
+  eq('von Hand gewählt: Fahne weg', acht[0].pruefen, false);
+  eq('von Hand gewählt: der Preis DIESER Auflage gilt',
+    sandbox.bestBetrag(acht[0]), Math.round(1.2 * sandbox.__kurse().usd * 100) / 100);
+  ok('von Hand gewählt: Herkunft im Vermerk', /TCGPlayer USD 1\.20 für CORI-EN028/.test(acht[0].beschrieb));
+  ok('nichts bleibt offen', p3.vergaben.every(v => !v.pruefen));
+}
 
 /* ---- 3) Der Bau-Fall bleibt, wie er war ---- */
 const bauP = sandbox.__bauProjekt(p);

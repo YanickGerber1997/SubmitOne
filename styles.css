@@ -2636,6 +2636,25 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 .scan-auflage-preis { font-family: var(--font-zahl); white-space: nowrap; }
 
 /* Die Merkfahne: etwas ist noch nicht belegt. */
+/* Offene Auflagen bestimmen: eine Zeile je NUMMER, nicht je Karte.
+   Wer dieselbe Karte dreimal hat, entscheidet einmal. */
+.pruef-aus { padding: 9px 10px; margin-bottom: 12px; background: var(--surface-2);
+  border: 1px solid var(--line-soft); border-radius: var(--radius); }
+.pruef-aus-kopf { font-size: var(--t-xs); color: var(--text-soft); margin-bottom: 6px; }
+.pruef-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.pruef-chip { padding: 3px 9px; font-size: var(--t-xs); cursor: pointer;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 999px; }
+.pruef-chip:hover { border-color: var(--brand); }
+.pruef-chip.aus { text-decoration: line-through; opacity: .5; background: var(--surface-2); }
+.pruef-liste { display: flex; flex-direction: column; gap: 10px; max-height: 46vh; overflow: auto; }
+.pruef-gruppe { padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.pruef-kopf { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  font-size: var(--t-s); margin-bottom: 7px; }
+.pruef-wahl { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pruef-fertig { padding: 14px; text-align: center; font-size: var(--t-l); color: var(--b-gruen-text); }
+.pruef-knopf { background: var(--b-gelb-voll); border-color: var(--b-gelb-voll); }
+
 .pruef-badge {
   display: inline-block; padding: 1px 6px; border-radius: var(--rund-s);
   font-size: var(--t-2xs); font-weight: 600; white-space: nowrap;

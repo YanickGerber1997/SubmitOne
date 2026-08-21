@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v385';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v386';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -2728,6 +2728,7 @@ function viewKosten(id) {
   const toolbar = `
     <button class="btn sm secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">🖨 ${esc(W('schaetzung', p))}</button>
     <button class="btn sm secondary" data-act="pdf-baukosten" data-pid="${p.id}">🖨 ${esc(R('kosten', 'Baukosten', p))}</button>
+    ${zuPruefen ? `<button class="btn sm pruef-knopf" data-act="offen-pruefen" data-pid="${p.id}" title="Bei diesen ist noch nicht bestimmt, welche Auflage es ist">⚑ ${zuPruefen} offen</button>` : ''}
     ${nachschlagDienst(p) ? `<button class="btn sm" data-act="karte-scan" data-pid="${p.id}" title="Nummer eintippen, alles Übrige holt das Programm">🔎 ${esc(W('posten', p))} nachschlagen</button>` : ''}
     <button class="btn sm secondary" data-act="liste-einlesen" data-pid="${p.id}" title="Eine fertige Liste einlesen (CSV aus Excel, einem Export oder ChatGPT)">📋 Liste einlesen</button>
     ${mwstAnsichtBtn(p)}
@@ -2816,7 +2817,7 @@ function viewKosten(id) {
               <div style="font-size:var(--t-s, 13px);margin-bottom:6px">${statusPill(v)}</div>
               <div class="muted" style="font-size:var(--t-s, 12.5px)">${esc(gewerkSteps(v).hint)}</div>
               <div style="font-size:var(--t-s, 12.5px);margin-top:6px">${(ein && zeigtEingeladene(p)) ? `${ein} ${esc(W('partner_pl', p))} eingeladen${off ? `, ${off} Offerte${off === 1 ? '' : 'n'} erhalten` : ''}` : esc(W('partnerLeer', p))}${v.firma ? ` · <b>${esc(v.firma)}</b>` : ''}</div>
-              <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><a class="btn sm" href="#/projekt/${p.id}/vergabe/${v.id}">Detail / Ausschreibung ↗</a><button class="btn sm secondary" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}">✎ Bearbeiten</button><button class="btn sm secondary" data-act="ks-edit" data-pid="${p.id}" data-vid="${v.id}">✎ ${esc(W('schaetzung', p))}</button>${v.pruefen ? `<button class="btn sm" data-act="pruef-ok" data-pid="${p.id}" data-vid="${v.id}" title="Merkfahne entfernen">✓ geprüft</button>` : ''}</div>
+              <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><a class="btn sm" href="#/projekt/${p.id}/vergabe/${v.id}">Detail / Ausschreibung ↗</a><button class="btn sm secondary" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}">✎ Bearbeiten</button><button class="btn sm secondary" data-act="ks-edit" data-pid="${p.id}" data-vid="${v.id}">✎ ${esc(W('schaetzung', p))}</button>${v.pruefen ? `<button class="btn sm" data-act="offen-pruefen" data-pid="${p.id}" title="Auflage bestimmen">⚑ Auflage wählen</button><button class="btn sm secondary" data-act="pruef-ok" data-pid="${p.id}" data-vid="${v.id}" title="Ohne Bestimmung als erledigt abhaken">✓ geprüft</button>` : ''}</div>
             </div>
           </div>
         </td></tr>`;
@@ -7453,6 +7454,9 @@ function csvPostenAnlegen(pid, posten) {
       bild: x.bild || '',
       // Der Satz, zu dem die Nummer gehört — er trägt die Gruppenüberschrift.
       satz: x.satz || '',
+      seltenheit: x.seltenheit || '',
+      passcode: x.passcode || '',
+      auflagenOffen: x.auflagenOffen || null,
       // Die Art (Monster, Zauber, Falle, Extra Deck) als eigene Angabe,
       // seit die Nummernspalte den Set-Code führt.
       kategorie: x.kategorie || '',
@@ -7842,6 +7846,11 @@ function ygoZuPosten(t, k) {
        offen», wo sie hingehört, bis man sie bestimmt. */
     bkp: t.setCode || t.passcode || '',
     satz: t.setName || '',
+    seltenheit: t.seltenheit || '',
+    passcode: t.passcode || '',
+    /* Was zur Wahl stand, bleibt am Posten. Sonst müsste man beim
+       Bestimmen jede Nummer noch einmal nachschlagen — für nichts. */
+    auflagenOffen: offen ? (t.auflagenListe || []) : null,
     kategorie: t.kategorie || '901',
     gewerk: t.name || ('Karte ' + t.passcode),
     schaetzung: 0, marktwert: ygoMarktwert(t, k), betrag: 0, firma: '', erhalten: 0,
@@ -7926,6 +7935,191 @@ function pruefErledigt(pid, vid) {
   v.beschrieb = String(v.beschrieb || '').split('\n').filter(z => z.indexOf('⚑') !== 0).join('\n').trim();
   save(); router();
   toast(v.gewerk + ': geprüft', 'ok');
+}
+
+
+/* --- Offene Auflagen bestimmen ---------------------------------------
+   Die Merkfahne sagt, dass etwas offen ist. Bisher gab es keinen Weg,
+   es an der bestehenden Zeile zu schliessen — man hätte die Karte neu
+   nachschlagen und die alte löschen müssen. Das ist der Weg dorthin.
+
+   Drei Dinge machen ihn kurz:
+
+   1. Gruppiert nach NUMMER, nicht nach Zeile. Wer dieselbe Karte
+      dreimal hat, entscheidet einmal.
+   2. Was man gar nicht besitzt, schliesst man aus. Eine Starlight Rare
+      ist unverwechselbar; wer keine hat, sagt das einmal — und jede
+      Nummer, bei der danach nur noch eine Möglichkeit übrig ist, ist
+      damit bestimmt. Aus 18 Entscheidungen werden so oft drei.
+   3. Die Möglichkeiten stehen schon am Posten (`auflagenOffen`). Nur
+      wenn sie fehlen — bei Dateien aus einer früheren Fassung —, wird
+      nachgeschlagen.
+*/
+let pruefCtx = null;
+
+/** Die Möglichkeiten eines Postens: gespeichert, sonst noch unbekannt. */
+function auflagenVon(v) { return Array.isArray(v.auflagenOffen) ? v.auflagenOffen : null; }
+
+/** Eine Auflage auf einen Posten anwenden — Seltenheit, Wert, Fahne weg. */
+function auflageAnwenden(v, opt, p) {
+  v.seltenheit = opt.seltenheit || '';
+  v.pruefen = false;
+  delete v.auflagenOffen;
+
+  /* Die Notiz ist Fliesstext fürs Auge; die Wahrheit steht in den
+     Feldern. Damit sie nicht auseinanderlaufen, werden die beiden
+     Zeilen, die diese Sache betreffen, ersetzt statt ergänzt. */
+  const rest = String(v.beschrieb || '').split('\n')
+    .filter(z => z.indexOf('⚑') !== 0 && z.indexOf('Seltenheit: ') !== 0);
+  v.beschrieb = ['Seltenheit: ' + (opt.seltenheit || '—')].concat(rest).join('\n');
+
+  /* Der Wert dieser Auflage, wenn die Datenbank einen führt. Hat sie
+     keinen (bei ganz neuen Sätzen oft), bleibt der bisherige stehen —
+     eine 0 wäre schlechter als ein grober Anhaltspunkt. */
+  if (opt.preisUsd) {
+    const chf = Math.round(opt.preisUsd * (kurse.usd || KURS_NOTFALL.usd) * 100) / 100;
+    const markt = (v.eingeladene || []).find(e => e.firma === 'Marktpreis') || (v.eingeladene || [])[0];
+    if (markt) markt.betrag = chf;
+    else (v.eingeladene = v.eingeladene || []).push({ id: uid('e'), firma: 'Marktpreis', email: '', betrag: chf, status: 'offeriert', datumMail: '' });
+    v.beschrieb += '\nMarktwert: TCGPlayer USD ' + opt.preisUsd.toFixed(2) + ' für ' + (opt.code || v.bkp)
+      + ', Kurs ' + (kurse.usd || KURS_NOTFALL.usd).toFixed(4) + ', Stand ' + (kurse.datum || todayIso());
+  }
+}
+
+function actOffenePruefen(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const offen = (p.vergaben || []).filter(v => v.pruefen);
+  if (!offen.length) { toast('Nichts offen — alles bestimmt', 'ok'); return; }
+
+  const nachNummer = new Map();
+  offen.forEach(v => {
+    const k = v.bkp || '(ohne Nummer)';
+    if (!nachNummer.has(k)) nachNummer.set(k, []);
+    nachNummer.get(k).push(v);
+  });
+  pruefCtx = {
+    pid, aus: [],
+    gruppen: Array.from(nachNummer.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([nummer, vs]) => ({ nummer, vs, name: vs[0].gewerk || '', optionen: auflagenVon(vs[0]), laedt: false })),
+  };
+
+  openModal('Offene Auflagen bestimmen', `<div id="pruef_leib"></div>`,
+    `<button class="btn ghost" data-close="1">Schliessen</button>
+     <button class="btn secondary" data-act="pruef-nachladen" data-pid="${pid}">Möglichkeiten nachschlagen</button>`);
+  pruefZeichnen();
+  if (pruefCtx.gruppen.some(g => !g.optionen)) pruefNachladen(pid);
+}
+
+/** Was in dieser Sammlung an Seltenheiten überhaupt in Frage kommt. */
+function pruefSeltenheiten() {
+  const z = {};
+  (pruefCtx ? pruefCtx.gruppen : []).forEach(g => (g.optionen || []).forEach(o => {
+    if (!o.seltenheit) return;
+    z[o.seltenheit] = (z[o.seltenheit] || 0) + 1;
+  }));
+  return Object.entries(z).sort((a, b) => b[1] - a[1]);
+}
+
+/** Die Möglichkeiten einer Gruppe, ohne die ausgeschlossenen. */
+function pruefUebrig(g) {
+  return (g.optionen || []).filter(o => pruefCtx.aus.indexOf(o.seltenheit) < 0);
+}
+
+function pruefZeichnen() {
+  const ziel = $('#pruef_leib'); if (!ziel || !pruefCtx) return;
+  const p = findProjekt(pruefCtx.pid);
+  const offen = pruefCtx.gruppen.filter(g => g.vs.some(v => v.pruefen));
+  if (!offen.length) {
+    ziel.innerHTML = `<p class="pruef-fertig">Alle Auflagen bestimmt. ✓</p>`;
+    return;
+  }
+  const selt = pruefSeltenheiten();
+  const stueck = offen.reduce((a, g) => a + g.vs.length, 0);
+
+  ziel.innerHTML = `
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin:0 0 10px">
+      <b>${offen.length}</b> Nummer${offen.length === 1 ? '' : 'n'} offen (${stueck} ${esc(stueck === 1 ? W('posten', p) : W('posten_pl', p))}).
+      Dieselbe Nummer gibt es in mehreren Seltenheiten — welche es ist, steht auf der Karte.
+      Eine Wahl gilt für <b>alle Exemplare dieser Nummer</b>.</p>
+
+    ${selt.length > 1 ? `<div class="pruef-aus">
+      <div class="pruef-aus-kopf">Besitzt du gar nicht? Hier abwählen — was danach eindeutig ist, wird sofort bestimmt.</div>
+      <div class="pruef-chips">${selt.map(([s, n]) => `
+        <button type="button" class="pruef-chip${pruefCtx.aus.indexOf(s) >= 0 ? ' aus' : ''}" data-act="pruef-aus" data-kind="${esc(s)}">
+          ${esc(s)} <span class="muted">${n}</span></button>`).join('')}</div>
+    </div>` : ''}
+
+    <div class="pruef-liste">${offen.map((g, i) => {
+      const uebrig = pruefUebrig(g);
+      return `<div class="pruef-gruppe">
+        <div class="pruef-kopf">
+          <span class="bkp-code">${esc(g.nummer)}</span>
+          <b>${esc(g.name)}</b>
+          <span class="muted">${g.vs.length}×</span>
+        </div>
+        ${g.laedt ? '<div class="muted" style="font-size:var(--t-xs, 12px)">wird nachgeschlagen …</div>'
+          : (!g.optionen ? '<div class="muted" style="font-size:var(--t-xs, 12px)">Möglichkeiten unbekannt — „Möglichkeiten nachschlagen" drücken.</div>'
+          : `<div class="pruef-wahl">${uebrig.map((o, k) => `
+              <button type="button" class="btn sm secondary" data-act="pruef-waehlen" data-kind="${i}" data-idx="${(g.optionen || []).indexOf(o)}">
+                ${esc(o.seltenheit || '—')}${o.preisUsd ? ` <span class="muted">USD ${o.preisUsd.toFixed(2)}</span>` : ''}
+              </button>`).join('')}
+              ${uebrig.length !== (g.optionen || []).length ? `<span class="muted" style="font-size:var(--t-2xs, 11px)">${(g.optionen || []).length - uebrig.length} abgewählt</span>` : ''}
+            </div>`)}
+      </div>`;
+    }).join('')}</div>`;
+}
+
+/** Eine Seltenheit ein-/ausschliessen und alles bestimmen, was dadurch eindeutig wird. */
+function pruefAus(seltenheit) {
+  if (!pruefCtx) return;
+  const i = pruefCtx.aus.indexOf(seltenheit);
+  if (i >= 0) pruefCtx.aus.splice(i, 1); else pruefCtx.aus.push(seltenheit);
+  const p = findProjekt(pruefCtx.pid);
+  let bestimmt = 0;
+  pruefCtx.gruppen.forEach(g => {
+    if (!g.optionen || !g.vs.some(v => v.pruefen)) return;
+    const uebrig = pruefUebrig(g);
+    if (uebrig.length !== 1) return;
+    g.vs.forEach(v => { if (v.pruefen) { auflageAnwenden(v, uebrig[0], p); bestimmt++; } });
+  });
+  if (bestimmt) { save(); toast(bestimmt + ' ' + (bestimmt === 1 ? W('posten', p) : W('posten_pl', p)) + ' dadurch bestimmt', 'ok'); }
+  pruefZeichnen();
+}
+
+/** Eine Auflage für alle Exemplare dieser Nummer festlegen. */
+function pruefWaehlen(gi, oi) {
+  if (!pruefCtx) return;
+  const g = pruefCtx.gruppen[Number(gi)]; if (!g) return;
+  const opt = (g.optionen || [])[Number(oi)]; if (!opt) return;
+  const p = findProjekt(pruefCtx.pid);
+  g.vs.forEach(v => auflageAnwenden(v, opt, p));
+  save();
+  toast(g.nummer + ' → ' + (opt.seltenheit || '—') + ' (' + g.vs.length + '×)', 'ok');
+  pruefZeichnen();
+  if (!pruefCtx.gruppen.some(x => x.vs.some(v => v.pruefen))) { closeModal(); router(); }
+}
+
+/** Fehlende Möglichkeiten aus der Datenbank holen — eine Nummer nach der anderen. */
+async function pruefNachladen(pid) {
+  if (!pruefCtx) return;
+  const fehlend = pruefCtx.gruppen.filter(g => !g.optionen && g.vs.some(v => v.pruefen));
+  if (!fehlend.length) { toast('Alle Möglichkeiten sind bekannt', 'info'); return; }
+  for (const g of fehlend) {
+    g.laedt = true; pruefZeichnen();
+    const erg = await kartenSuche(g.nummer);
+    g.laedt = false;
+    const t = (erg.treffer || [])[0];
+    if (t && (t.auflagenListe || []).length) g.optionen = t.auflagenListe;
+    else if (t && t.setSicher) {
+      /* Die Datenbank ist sich inzwischen sicher — dann ist hier nichts
+         mehr zu wählen, und die Fahne kann weg. */
+      const p = findProjekt(pruefCtx.pid);
+      g.vs.forEach(v => auflageAnwenden(v, { seltenheit: t.seltenheit, preisUsd: t.preisUsd, code: t.setCode }, p));
+      save();
+    }
+    pruefZeichnen();
+  }
+  pruefZeichnen();
 }
 
 /* --- Das Fenster zum Erfassen --------------------------------------
@@ -19458,6 +19652,10 @@ document.addEventListener('click', e => {
     case 'scan-waehlen':     scanWaehlen(kind); break;
     case 'scan-auflage':     scanAuflage(kind); break;
     case 'pruef-ok':         pruefErledigt(pid, vid); break;
+    case 'offen-pruefen':    actOffenePruefen(pid); break;
+    case 'pruef-waehlen':    pruefWaehlen(kind, act.dataset.idx); break;
+    case 'pruef-aus':        pruefAus(kind); break;
+    case 'pruef-nachladen':  pruefNachladen(pid); break;
     case 'scan-uebernehmen': scanUebernehmen(); break;
     case 'csv-pruefen':      csvPruefen(pid); break;
     case 'csv-uebernehmen':  csvUebernehmen(pid); break;

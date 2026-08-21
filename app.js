@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v415';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v416';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -3625,7 +3625,7 @@ function viewKosten(id) {
           <div class="kost-info-grid">
             <div class="kost-info-main">
               <div class="kost-info-h">Beschrieb / ${esc(W('kv', p))}</div>
-              ${v.bild ? `<img class="posten-bild" src="${esc(v.bild)}" alt="" loading="lazy" onerror="this.onerror=null;this.style.display='none'">` : ''}
+              ${hauptBild(v) ? `<img class="posten-bild" src="${hauptBild(v)}" alt="" loading="lazy" title="${istEigenesBild(v) ? 'Dein Foto' : 'Bild aus dem Katalog — kein Bild dieser Karte'}" onerror="this.onerror=null;this.style.display='none'">` : ''}
               <div style="font-size:var(--t-s, 13px);white-space:pre-wrap">${v.beschrieb ? esc(v.beschrieb) : '<span class="muted">– kein Beschrieb. Mit „✎ Kostenschätzung" erfassen (Beschrieb + Positionen).</span>'}</div>
               ${(v.ksPositionen && v.ksPositionen.length) ? `<table class="grid" style="margin-top:8px"><tbody>${v.ksPositionen.map(pos => `<tr><td>${esc(pos.text || 'Position')}</td><td class="num">${mB(pos.betrag)}</td></tr>`).join('')}<tr><td><b>Total KV</b></td><td class="num"><b>${mB(v.schaetzung)}</b></td></tr></tbody></table>` : ''}
             </div>
@@ -3736,6 +3736,17 @@ function viewKosten(id) {
       : `<p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:10px">${esc(W('kv', p))} = ${esc(W('kvSub', p))} · ${esc(W('rev', p))} = ${esc(W('revSub', p))} · ${esc(W('wv', p))} = ${esc(W('wvSub', p))} · ${esc(W('prognose', p))} = ${esc(W('wv', p))} + ${esc(W('nt', p))} · ${esc(W('fakt', p))} = ${esc(W('faktSub', p))} · ${esc(W('offen', p))} = ${esc(W('prognose', p))} − ${esc(W('fakt', p))}. <b>Zeile anklicken = aufklappen.</b></p>`}
   `);
   requestAnimationFrame(setupKostStickyHead);
+  setupFotoFelder();
+}
+
+/** Die Dateifelder horchen lassen. Ein Klick-Verteiler genügt hier
+    nicht — ein Dateifeld meldet sich mit «change», nicht mit «click». */
+function setupFotoFelder() {
+  $$('.fo-in').forEach(feld => {
+    if (feld.dataset.bereit) return;
+    feld.dataset.bereit = '1';
+    feld.addEventListener('change', () => fotosAufnehmen(feld));
+  });
 }
 
 /* ---------------------------------------------------------------
@@ -10060,6 +10071,101 @@ async function karteSpracheUmstellen(v, sprache) {
   return { geaendert: true, name: k.name, satz: v.satz, seltenheit: v.seltenheit };
 }
 
+/* --- Eigene Fotos ---------------------------------------------------
+   Die Katalogbilder aus den Datenbanken zeigen, wie die Karte AUSSIEHT.
+   Ein Käufer will sehen, wie DIESE Karte aussieht — die Ecken, die
+   Kanten, den Glanz. Und rechtlich gehören die Katalogbilder nicht
+   dem Verkäufer; auf einer öffentlichen Verkaufsseite haben sie nichts
+   verloren. */
+const FOTO_KANTE = 1000;   // längste Seite in Punkten
+const FOTO_GUETE = 0.75;   // JPEG-Güte
+/* Ab hier wird die Datei spürbar träge — dann wird gewarnt, nicht
+   verboten. Es ist seine Datei. */
+const FOTO_MAHNUNG = 6 * 1024 * 1024;
+
+function fotosVon(v) { return (v && Array.isArray(v.fotos)) ? v.fotos : []; }
+
+/** Das Bild, das die Sache zeigt: das eigene, wenn es eines gibt —
+    sonst das aus dem Katalog. */
+function hauptBild(v) {
+  const f = fotosVon(v)[0];
+  return f ? f.daten : ((v && v.bild) || '');
+}
+function istEigenesBild(v) { return fotosVon(v).length > 0; }
+
+function fotoHinzu(v, foto) {
+  if (!v || !foto || !foto.daten) return v;
+  v.fotos = fotosVon(v).concat([foto]);
+  return v;
+}
+function fotoWeg(v, id) {
+  v.fotos = fotosVon(v).filter(f => f.id !== id);
+  if (!v.fotos.length) delete v.fotos;
+  return v;
+}
+/** Ein Bild nach vorne holen — das erste ist das Hauptbild. */
+function fotoHaupt(v, id) {
+  const alle = fotosVon(v);
+  const f = alle.find(x => x.id === id);
+  if (!f) return v;
+  v.fotos = [f].concat(alle.filter(x => x !== f));
+  return v;
+}
+
+function fotoGroesse(v) { return fotosVon(v).reduce((a, f) => a + (f.groesse || 0), 0); }
+function fotoGroesseProjekt(p) {
+  return ((p && p.vergaben) || []).reduce((a, v) => a + fotoGroesse(v), 0);
+}
+/** Bytes als Mensch. */
+function kb(n) {
+  const z = Number(n) || 0;
+  if (z < 1024) return z + ' B';
+  if (z < 1024 * 1024) return Math.round(z / 1024) + ' KB';
+  return (z / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+/** Ein Handyfoto auf Verkaufsgrösse bringen.
+
+    Zuerst `createImageBitmap` mit `from-image`: Nur dieser Weg dreht
+    das Bild so, wie die Kamera es gemeint hat. Handyfotos liegen in
+    den Bildpunkten fast immer quer und tragen ihre Lage bloss in den
+    EXIF-Daten. */
+async function fotoVerkleinern(datei) {
+  let quelle = null;
+  if (typeof createImageBitmap === 'function') {
+    try { quelle = await createImageBitmap(datei, { imageOrientation: 'from-image' }); }
+    catch (e) { quelle = null; }
+  }
+  if (!quelle) quelle = await bildAusDatei(datei);
+
+  const breit = quelle.width || 1, hoch = quelle.height || 1;
+  const f = Math.min(1, FOTO_KANTE / Math.max(breit, hoch));
+  const w = Math.max(1, Math.round(breit * f)), h = Math.max(1, Math.round(hoch * f));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(quelle, 0, 0, w, h);
+  if (quelle.close) quelle.close();
+  const daten = c.toDataURL('image/jpeg', FOTO_GUETE);
+  /* Ein Base64-Zeichen trägt sechs Bit — die Datei ist rund drei
+     Viertel so gross wie der Text. */
+  return { id: uid('f'), daten, breite: w, hoehe: h,
+    groesse: Math.round(daten.length * 0.75), zeit: todayIso() };
+}
+
+function bildAusDatei(datei) {
+  return new Promise((ok, fehl) => {
+    const leser = new FileReader();
+    leser.onerror = () => fehl(new Error('Datei nicht lesbar'));
+    leser.onload = () => {
+      const b = new Image();
+      b.onerror = () => fehl(new Error('Das ist kein Bild, das der Browser kennt'));
+      b.onload = () => ok(b);
+      b.src = leser.result;
+    };
+    leser.readAsDataURL(datei);
+  });
+}
+
 /* Zustandsskalen. Sammelkarten sprechen die Sprache von Cardmarket —
    wer dort «NM» schreibt, wird verstanden, und wer «gut» schreibt,
    nicht. Alles andere bekommt eine Skala, die jeder versteht.
@@ -10171,6 +10277,29 @@ function angebotText(v, p) {
 
 /** Die Marktplätze, die diese Vorlage vorschlägt. Ohne Liste kein
     Angebotsfeld — beim Bau hat «Anbieten» keinen Sinn. */
+/** Die Fotoreihe. `capture` sagt dem Handy, dass es die Kamera nach
+    hinten öffnen soll — auf dem Rechner bleibt es ein Dateiwähler,
+    dasselbe Feld tut beides. */
+function fotoBlock(p, v) {
+  const fotos = fotosVon(v);
+  const gesamt = fotoGroesseProjekt(p);
+  return `<div class="fo">
+    <div class="fo-kopf">
+      <strong>Fotos</strong>
+      ${fotos.length ? `<span class="muted">${fotos.length} · ${esc(kb(fotoGroesse(v)))}</span>` : '<span class="muted">noch keine — eigene Bilder zeigen den Zustand, Katalogbilder nicht</span>'}
+      <label class="btn sm secondary fo-knopf">Foto aufnehmen
+        <input type="file" accept="image/*" capture="environment" multiple
+          class="fo-in" data-pid="${p.id}" data-vid="${v.id}" hidden></label>
+      ${gesamt ? `<span class="muted fo-ges${gesamt > FOTO_MAHNUNG ? ' viel' : ''}">Projekt gesamt ${esc(kb(gesamt))}${gesamt > FOTO_MAHNUNG ? ' — die Datei wird träge' : ''}</span>` : ''}
+    </div>
+    ${fotos.length ? `<div class="fo-reihe">${fotos.map((f, i) => `<figure class="fo-bild${i === 0 ? ' haupt' : ''}">
+      <img src="${f.daten}" alt="" loading="lazy">
+      <figcaption>${i === 0 ? 'Hauptbild' : `<button class="lnk" data-act="foto-haupt" data-pid="${p.id}" data-vid="${v.id}" data-fid="${f.id}">nach vorn</button>`}
+        <button class="x-btn" data-act="foto-weg" data-pid="${p.id}" data-vid="${v.id}" data-fid="${f.id}" title="Bild löschen">×</button></figcaption>
+    </figure>`).join('')}</div>` : ''}
+  </div>`;
+}
+
 /** Das Verkaufsblatt: der fertige Text, den man irgendwo hinstellt.
 
     Er wird erzeugt, nicht getippt — aus dem, was schon belegt
@@ -10185,6 +10314,7 @@ function verkaufsblatt(p, v) {
   const eng = t.length > TITEL_MAX;
   return `<div class="vb">
     <div class="vb-h">Verkaufsblatt <span class="muted">— fertig zum Einstellen, überall</span></div>
+    ${fotoBlock(p, v)}
     <div class="vb-zeile">
       <div class="vb-lab">Titel <span class="vb-zahl ${eng ? 'eng' : ''}">${t.length}/${TITEL_MAX}</span></div>
       <div class="vb-wert" id="vb_titel_${v.id}">${esc(t)}</div>
@@ -10310,6 +10440,42 @@ function actAnbieten(pid, vid) {
   angebotSetzen(v, preis, orte, porto);
   save(); viewKosten(pid);
   toast(v.gewerk + ': angeboten für ' + chf(v.angebot.preis) + ' auf ' + orte.join(', '), 'ok');
+}
+
+/* Beim Aufnehmen kann viel schiefgehen: ein Bild, das der Browser
+   nicht kennt, ein Speicher, der nicht reicht. Was gelingt, wird
+   behalten; was nicht, wird GESAGT — nicht still übergangen. */
+async function fotosAufnehmen(feld) {
+  const p = findProjekt(feld.dataset.pid);
+  const v = p && findVergabe(p, feld.dataset.vid);
+  const dateien = Array.from(feld.files || []);
+  feld.value = '';
+  if (!v || !dateien.length) return;
+
+  toast(dateien.length === 1 ? 'Bild wird verkleinert …'
+    : dateien.length + ' Bilder werden verkleinert …', 'info');
+  let gut = 0; const schlecht = [];
+  for (const d of dateien) {
+    try { fotoHinzu(v, await fotoVerkleinern(d)); gut++; }
+    catch (e) { schlecht.push((d.name || 'Bild') + ': ' + ((e && e.message) || 'unbekannt')); }
+  }
+  if (gut) {
+    save(); viewKosten(p.id);
+    toast(gut + (gut === 1 ? ' Foto' : ' Fotos') + ' · ' + kb(fotoGroesse(v))
+      + ' · Projekt ' + kb(fotoGroesseProjekt(p)), 'ok');
+  }
+  if (schlecht.length) toast(schlecht.length + ' nicht aufgenommen — ' + schlecht[0], 'info');
+}
+
+function actFotoWeg(pid, vid, fid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  fotoWeg(v, fid); save(); viewKosten(pid);
+  toast('Bild gelöscht · Projekt ' + kb(fotoGroesseProjekt(p)), 'ok');
+}
+function actFotoHaupt(pid, vid, fid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  fotoHaupt(v, fid); save(); viewKosten(pid);
+  toast('Neues Hauptbild', 'ok');
 }
 
 function actVerkaufsblattKopie(pid, vid, was) {
@@ -22182,6 +22348,8 @@ document.addEventListener('click', e => {
     case 'scan-sprache':     scanSprache(kind); break;
     case 'anbieten':         actAnbieten(pid, vid); break;
     case 'vb-kopie':         actVerkaufsblattKopie(pid, vid, act.dataset.kind); break;
+    case 'foto-weg':         actFotoWeg(pid, vid, act.dataset.fid); break;
+    case 'foto-haupt':       actFotoHaupt(pid, vid, act.dataset.fid); break;
     case 'angebot-weg':      actAngebotWeg(pid, vid); break;
     case 'pruef-ok':         pruefErledigt(pid, vid); break;
     case 'offen-pruefen':    actOffenePruefen(pid); break;

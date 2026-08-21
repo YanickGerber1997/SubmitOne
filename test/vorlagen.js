@@ -1400,6 +1400,50 @@ ok('… und die Bedeutung steht dabei, weil «Excellent» nicht «ausgezeichnet�
     sandbox.angebotText({ ...v, angebotText: 'Mein Text' }, S), 'Mein Text');
 }
 
+/* Eigene Fotos. Das Verkleinern selbst braucht einen Browser (Leinwand,
+   Bildbitmap) — geprüft wird hier, was ohne ihn gilt: die Verwaltung,
+   die Grössenrechnung und die Frage, welches Bild gezeigt wird. */
+{
+  const bild = (id, gr) => ({ id, daten: 'data:image/jpeg;base64,xxx', groesse: gr, zeit: '2026-08-21' });
+  const v = { id: 'v_f', gewerk: 'Gengar', bild: 'https://katalog/gengar.webp' };
+
+  /* Ohne eigenes Foto zeigt das Katalogbild — aber es weiss, dass es
+     eines ist. Ein Katalogbild zeigt die KARTE, nicht DIESE Karte. */
+  eq('ohne eigenes Foto gilt das Katalogbild', sandbox.hauptBild(v), 'https://katalog/gengar.webp');
+  eq('… und es gibt sich als fremdes zu erkennen', sandbox.istEigenesBild(v), false);
+
+  sandbox.fotoHinzu(v, bild('f_1', 90000));
+  sandbox.fotoHinzu(v, bild('f_2', 80000));
+  eq('zwei Fotos abgelegt', sandbox.fotosVon(v).length, 2);
+  eq('das eigene schlägt den Katalog', sandbox.hauptBild(v), 'data:image/jpeg;base64,xxx');
+  eq('… und sagt es', sandbox.istEigenesBild(v), true);
+  eq('die Grösse wird geführt', sandbox.fotoGroesse(v), 170000);
+
+  /* Das erste ist das Hauptbild — man muss ein anderes nach vorn holen
+     können, ohne die übrigen zu verlieren. */
+  sandbox.fotoHaupt(v, 'f_2');
+  eq('nach vorn geholt', sandbox.fotosVon(v).map(f => f.id), ['f_2', 'f_1']);
+  eq('… und keines ging verloren', sandbox.fotosVon(v).length, 2);
+  sandbox.fotoHaupt(v, 'gibtsnicht');
+  eq('eine unbekannte Kennung ändert nichts', sandbox.fotosVon(v).map(f => f.id), ['f_2', 'f_1']);
+
+  sandbox.fotoWeg(v, 'f_2');
+  eq('gelöscht', sandbox.fotosVon(v).map(f => f.id), ['f_1']);
+  sandbox.fotoWeg(v, 'f_1');
+  eq('das letzte weg heisst: kein Feld mehr', v.fotos, undefined);
+  eq('… und wieder gilt der Katalog', sandbox.hauptBild(v), 'https://katalog/gengar.webp');
+
+  /* Die Grösse fürs ganze Projekt — daran sieht man, wann die Datei
+     träge wird, BEVOR sie es ist. */
+  const pr = { id: 'p_f', vorlage: 'sammlung', vergaben: [
+    { id: 'a', fotos: [bild('x', 100000)] },
+    { id: 'b', fotos: [bild('y', 250000), bild('z', 150000)] },
+    { id: 'c' } ] };
+  eq('Projektgrösse zählt alle zusammen', sandbox.fotoGroesseProjekt(pr), 500000);
+  eq('Bytes werden lesbar', [sandbox.kb(512), sandbox.kb(90000), sandbox.kb(5 * 1024 * 1024)],
+    ['512 B', '88 KB', '5.0 MB']);
+}
+
 // Treffer → Posten
 const posten = sandbox.ygoZuPosten(a1.treffer[0], k);
 /* Die Nummer ist die, die auf der Karte steht — nicht die Kategorie.

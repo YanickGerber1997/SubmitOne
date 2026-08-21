@@ -2832,6 +2832,29 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
   color: var(--text-soft); min-width: 165px; }
 .ang-zerkl { margin-top: 6px; font-size: var(--t-xs); color: var(--text-soft); }
 
+/* Fotos, die der Besitzer selbst macht. Auf dem Handy oeffnet das
+   Feld die Kamera, auf dem Rechner den Dateiwaehler - dasselbe Feld. */
+.fo { margin-bottom: 11px; }
+.fo-kopf { display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  font-size: var(--t-s); margin-bottom: 7px; }
+.fo-knopf { cursor: pointer; }
+.fo-ges { font-size: var(--t-2xs); }
+.fo-ges.viel { color: var(--b-gelb-text); font-weight: 600; }
+.fo-reihe { display: flex; gap: 9px; flex-wrap: wrap; }
+.fo-bild { margin: 0; width: 96px; }
+.fo-bild img { width: 96px; height: 128px; object-fit: cover; display: block;
+  border: 1px solid var(--rand); border-radius: var(--rund-s); background: var(--flaeche-2); }
+/* Das Hauptbild ist das, was ueberall zuerst erscheint - es darf man sehen. */
+.fo-bild.haupt img { border-color: var(--brand); border-width: 2px; }
+.fo-bild figcaption { display: flex; align-items: center; justify-content: space-between;
+  gap: 4px; font-size: var(--t-2xs); color: var(--text-soft); margin-top: 3px; }
+.fo-bild .lnk { background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--brand); font-size: var(--t-2xs); text-decoration: underline; }
+@media (max-width: 560px) {
+  .fo-bild, .fo-bild img { width: 78px; }
+  .fo-bild img { height: 104px; }
+}
+
 /* Das Verkaufsblatt: fertiger Text zum Mitnehmen. */
 .vb { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--rand); }
 .vb-h { font-size: var(--t-s); font-weight: 600; margin-bottom: 7px; }

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v395';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v396';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -7865,8 +7865,12 @@ const VORLAGEN = [
        selbst vergebene Nummer (101) nach ihrer ersten Ziffer, ein
        blosser Passcode gar nicht — der wartet auf seine Auflage. */
     gruppeVon: v => {
+      /* Steht die Kennung des Satzes da, gruppiert sie — «4/102» sagt
+         für sich nichts, «base1» sehr wohl. */
+      if (v && v.satzId) return String(v.satzId).toUpperCase();
       const c = String((v && v.bkp) || '').trim().toUpperCase();
       if (!c) return '?';
+      if (/^\d+\s*\/\s*\d+$/.test(c)) return '?';   // eine Nummer ohne Satz wartet auf ihn
       if (c.indexOf('-') > 0) return c.split('-')[0];
       if (/^\d{6,8}$/.test(c)) return '?';
       return c[0];
@@ -8133,7 +8137,7 @@ function actOrdnung(pid) {
   const p = findProjekt(pid); if (!p) return;
   ordnungCtx = {
     pid,
-    zeilen: (ordnungVon(p) || katalogAktiv(p)).map(e => ({ code: e.code, label: e.label })),
+    zeilen: (ordnungVon(p) || vorschlagKatalog(p)).map(e => ({ code: e.code, label: e.label })),
     eigen: !!ordnungVon(p),
   };
   openModal('Ordnung — ' + esc(p.name), `<div id="ord_leib"></div>`,
@@ -8195,13 +8199,21 @@ function ordnungSortieren() {
   });
   ordnungZeichnen();
 }
+/* Der Vorschlag kommt vom DIENST, wenn er einen hat — sonst von der
+   Vorlage. Wer Pokémon nachschlägt, will «Trainerkarten» und nicht
+   «Zauberkarten» in seiner Ordnung stehen haben. */
+function vorschlagKatalog(p) {
+  const d = dienstInfo(nachschlagDienst(p));
+  if (d.katalog === 'POKEMON_KATALOG') return POKEMON_KATALOG;
+  const v = vorlage(p);
+  return (v && v.katalog) || BKP_KATALOG;
+}
 function ordnungVorlage(pid) {
   if (!ordnungCtx) return;
   const p = findProjekt(pid);
-  const v = vorlage(p);
-  ordnungCtx.zeilen = ((v && v.katalog) || BKP_KATALOG).map(e => ({ code: e.code, label: e.label }));
+  ordnungCtx.zeilen = vorschlagKatalog(p).map(e => ({ code: e.code, label: e.label }));
   ordnungZeichnen();
-  toast('Vorschlag der Vorlage geladen — noch nicht gespeichert', 'info');
+  toast('Vorschlag geladen — noch nicht gespeichert', 'info');
 }
 function ordnungSpeichern(pid) {
   const p = findProjekt(pid); if (!p || !ordnungCtx) return;
@@ -8744,6 +8756,9 @@ function csvPostenAnlegen(pid, posten) {
       bild: x.bild || '',
       // Der Satz, zu dem die Nummer gehört — er trägt die Gruppenüberschrift.
       satz: x.satz || '',
+      // Die Kennung des Satzes — bei Pokémon gruppiert sie, weil die
+      // Kartennummer nur innerhalb ihres Satzes eindeutig ist.
+      satzId: x.satzId || '',
       // Menge und Einheit: 0.35 BTC, 12 g Gold. Die BETRÄGE bleiben
       // Summen — so rechnet die Kostenübersicht unverändert weiter.
       // Das Datum dieser Charge — «am xx kaufte ich so und so viel».
@@ -9246,16 +9261,237 @@ function pruefErledigt(pid, vid) {
 
 
 
+
+/* ===== 🔴 POKÉMON — nachgeschlagen über TCGdex ========================
+
+   «Haben Pokémonkarten keine Nummern?» Doch — aber andere als
+   Yu-Gi-Oh, und das ist der Grund, warum es sich anders anfühlt:
+
+       Yu-Gi-Oh    CORI-EN030   Satz UND Nummer stehen auf der Karte
+       Pokémon     4/102        nur die Nummer im Satz; der Satz ist
+                                ein SYMBOL, kein Text
+
+   `4/102` ist also nicht eindeutig — dieselbe Zahl gibt es in jedem
+   Satz mit 102 Karten. Nur sind das wenige: zu «/102» gibt es genau
+   zwei (Grundset und Triumph). Das reicht, um zu FRAGEN statt zu
+   raten, und dafür ist die Auflagen-Wahl schon da.
+
+   Drei Wege hinein:
+
+       base1-4     die Kennung, wenn man sie kennt  → eindeutig
+       4/102       Nummer und Satzgrösse            → Auswahl
+       Glurak      der Name, auf Deutsch            → Auswahl
+
+   Geprüft am 21.08.2026: TCGdex antwortet mit CORS-Freigabe, führt
+   deutsche Namen, deutsche Seltenheiten und Cardmarket-Preise in Euro.
+   (api.pokemontcg.io tut das nicht — keine CORS-Freigabe.)
+   ===================================================================== */
+
+const TCGDEX = 'https://api.tcgdex.net/v2/de/';
+
+/* Die Kartenart der Karte auf eine Katalognummer. Die Namen im Katalog
+   darf jeder selbst setzen — die Nummern sind der Anker. */
+const POKEMON_KATEGORIE = { pokemon: '101', trainer: '102', energy: '103', energie: '103' };
+
+/* Was auf einer Pokémonkarte an Varianten stehen kann — und wie die
+   Preisfelder von Cardmarket dazu heissen. «normal» hat keinen
+   Zusatz, die übrigen einen. */
+const POKEMON_VARIANTEN = [
+  ['normal', 'Normal', ''],
+  ['reverse', 'Reverse Holo', '-reverse'],
+  ['holo', 'Holo', '-holo'],
+  ['firstEdition', '1. Auflage', '-1st'],
+];
+
+function pokemonErkenne(text) {
+  const t = String(text == null ? '' : text).trim();
+  if (!t) return { art: '', wert: '' };
+  const bruch = t.match(/^(\d+[a-zA-Z]?)\s*\/\s*(\d+)$/);
+  if (bruch) return { art: 'bruch', nummer: bruch[1], gesamt: Number(bruch[2]) };
+  if (/^[a-z0-9][a-z0-9.]*-\d+[a-zA-Z]?$/i.test(t)) return { art: 'kennung', wert: t.toLowerCase() };
+  return { art: 'name', wert: t };
+}
+
+async function pokemonHolen(pfad) {
+  const a = await fetch(TCGDEX + pfad, { headers: { Accept: 'application/json' } });
+  if (a.status === 404) return null;
+  if (a.status === 429) throw new Error('Die Kartendatenbank bremst gerade. In einer Minute nochmals versuchen.');
+  if (!a.ok) throw new Error('Die Kartendatenbank antwortet nicht (' + a.status + ').');
+  return a.json();
+}
+
+/* Sätze werden je Sitzung einmal geholt: Für das Bild braucht es die
+   Reihe, zu der ein Satz gehört, und die steht nicht an der Karte. */
+const pokemonSaetze = new Map();
+async function pokemonSatz(id) {
+  if (pokemonSaetze.has(id)) return pokemonSaetze.get(id);
+  let s = null;
+  try { s = await pokemonHolen('sets/' + encodeURIComponent(id)); } catch (e) { s = null; }
+  pokemonSaetze.set(id, s);
+  return s;
+}
+let pokemonSatzListe = null;
+async function pokemonAlleSaetze() {
+  if (!pokemonSatzListe) pokemonSatzListe = (await pokemonHolen('sets')) || [];
+  return pokemonSatzListe;
+}
+
+/** Der Preis einer Variante — Cardmarkets Preis-Trend, sonst der Schnitt. */
+function pokemonPreis(cm, zusatz) {
+  if (!cm) return 0;
+  const nimm = k => { const w = Number(cm[k + (zusatz || '')]); return isFinite(w) && w > 0 ? w : 0; };
+  return nimm('trend') || nimm('avg30') || nimm('avg7') || nimm('avg') || nimm('low');
+}
+function pokemonPreisName(cm, zusatz) {
+  if (!cm) return '';
+  const z = zusatz || '';
+  if (Number(cm['trend' + z]) > 0) return 'Preis-Trend';
+  if (Number(cm['avg30' + z]) > 0) return 'Schnitt 30 Tage';
+  if (Number(cm['avg7' + z]) > 0) return 'Schnitt 7 Tage';
+  if (Number(cm['avg' + z]) > 0) return 'Schnitt';
+  return 'tiefster Preis';
+}
+
+/** Eine Karte von TCGdex in die Form bringen, die das Fenster kennt. */
+async function pokemonTreffer(k, kurse2) {
+  const cm = (k.pricing || {}).cardmarket || null;
+  const satzId = (k.set && k.set.id) || String(k.id || '').split('-')[0];
+  const satz = await pokemonSatz(satzId);
+  const reihe = satz && satz.serie && satz.serie.id;
+  const bild = reihe ? 'https://assets.tcgdex.net/en/' + reihe + '/' + satzId + '/' + k.localId + '/low.webp' : '';
+
+  /* Varianten sind dasselbe Problem eine Ebene tiefer: Normal, Reverse
+     und Holo sind dieselbe Nummer zu ganz verschiedenen Preisen. Gibt
+     es mehr als eine, wird gefragt — mit derselben Wahl wie bei
+     Yu-Gi-Oh. */
+  const da = POKEMON_VARIANTEN.filter(([schl]) => (k.variants || {})[schl]);
+  const liste = da.map(([schl, name, zusatz]) => ({
+    code: k.id, name: (k.set && k.set.name) || satzId,
+    seltenheit: (k.rarity || '') + (name === 'Normal' ? '' : ' · ' + name),
+    preisEur: pokemonPreis(cm, zusatz), preisUsd: 0, variante: schl,
+  }));
+  const sicher = liste.length === 1;
+  const gewaehlt = sicher ? liste[0] : null;
+
+  return {
+    passcode: '', name: k.name || '',
+    art: (k.category || '') + (k.types ? ' ' + k.types.join('/') : ''),
+    frameType: '', kategorie: POKEMON_KATEGORIE[String(k.category || '').toLowerCase()] || '901',
+    /* Der Satz steht mit der Kennung IMMER fest — offen ist nur die
+       Variante. Zwei Fragen, zwei Antworten. */
+    setCode: k.id, setName: (k.set && k.set.name) || '', satzId: satzId,
+    seltenheit: gewaehlt ? gewaehlt.seltenheit : '',
+    preisEur: gewaehlt ? gewaehlt.preisEur : pokemonPreis(cm, ''),
+    preisUsd: 0, bild, setSicher: sicher, auflagen: liste.length || 1,
+    auflagenListe: liste.length > 1 ? liste : [],
+    nachladen: false,
+    /* Die Nummer, die auf der Karte steht — sie ist das, was der
+       Mensch sieht, und sie gehört in die Nummernspalte. */
+    kartenNummer: k.localId + '/' + ((k.set && k.set.cardCount && k.set.cardCount.official) || '?'),
+    quelleName: 'TCGdex/Cardmarket', preisArt: pokemonPreisName(cm, gewaehlt ? '' : ''),
+    stand: cm && cm.updated ? String(cm.updated).slice(0, 10) : todayIso(),
+  };
+}
+
+async function pokemonSuche(text) {
+  const erk = pokemonErkenne(text);
+  if (!erk.art) return { treffer: [], fehler: 'Bitte eine Nummer (4/102), eine Kennung (base1-4) oder einen Namen eingeben.' };
+  try {
+    if (erk.art === 'kennung') {
+      const k = await pokemonHolen('cards/' + encodeURIComponent(erk.wert));
+      if (!k) return { treffer: [], fehler: 'Zu «' + text + '» ist keine Karte verzeichnet.' };
+      return { treffer: [await pokemonTreffer(k)], fehler: '' };
+    }
+
+    if (erk.art === 'bruch') {
+      /* Die Nummer allein sagt nichts — erst mit der Satzgrösse wird
+         daraus eine kurze Liste. Zu «/102» gibt es zwei Sätze. */
+      const saetze = (await pokemonAlleSaetze())
+        .filter(s => s.cardCount && s.cardCount.official === erk.gesamt);
+      if (!saetze.length) return { treffer: [], fehler: 'Kein Satz mit ' + erk.gesamt + ' Karten verzeichnet — Zahl vertippt?' };
+      const treffer = [];
+      for (const s of saetze.slice(0, 12)) {
+        const k = await pokemonHolen('cards/' + encodeURIComponent(s.id + '-' + erk.nummer));
+        if (k) treffer.push(await pokemonTreffer(k));
+      }
+      if (!treffer.length) return { treffer: [], fehler: 'In keinem Satz mit ' + erk.gesamt + ' Karten gibt es die Nummer ' + erk.nummer + '.' };
+      return { treffer, fehler: '' };
+    }
+
+    let liste = await pokemonHolen('cards?name=eq:' + encodeURIComponent(erk.wert));
+    if (!Array.isArray(liste) || !liste.length) liste = await pokemonHolen('cards?name=like:' + encodeURIComponent(erk.wert));
+    if (!Array.isArray(liste) || !liste.length) return { treffer: [], fehler: 'Zu «' + text + '» ist keine Karte verzeichnet.' };
+    const treffer = [];
+    for (const kurz of liste.slice(0, 12)) {
+      const k = await pokemonHolen('cards/' + encodeURIComponent(kurz.id));
+      if (k) treffer.push(await pokemonTreffer(k));
+    }
+    return { treffer, fehler: treffer.length ? '' : 'Zu «' + text + '» kam nichts Vollständiges zurück.' };
+  } catch (e) {
+    return { treffer: [], fehler: (e && e.message) || 'Kein Zugriff auf die Kartendatenbank.' };
+  }
+}
+
+/** Ein Pokémon-Treffer als Posten. */
+function pokemonZuPosten(t) {
+  const kurs = kurse.eur || KURS_NOTFALL.eur;
+  const wert = t.preisEur ? Math.round(t.preisEur * kurs * 100) / 100 : 0;
+  const offen = !t.setSicher && t.auflagen > 1;
+  return {
+    bkp: t.kartenNummer || t.setCode || '',
+    satz: t.setName || '', satzId: t.satzId || '',
+    seltenheit: t.seltenheit || '', passcode: t.setCode || '',
+    kategorie: t.kategorie || '901',
+    gewerk: t.name || 'Karte',
+    schaetzung: 0, marktwert: wert, betrag: 0, firma: '', erhalten: 0,
+    status: 'ausschreibung', frist: '', bild: t.bild || '',
+    pruefen: offen, auflagenOffen: offen ? t.auflagenListe : null,
+    beschrieb: [
+      offen ? '⚑ Variante nicht bestimmt — ' + t.auflagen + ' mögliche (Normal, Reverse, Holo …).' : '',
+      [t.art, t.seltenheit].filter(Boolean).join(' · '),
+      [t.setCode, t.setName].filter(Boolean).join(' · '),
+      t.preisEur ? 'Marktwert: Cardmarket ' + t.preisArt + ' EUR ' + t.preisEur.toFixed(2)
+        + ', Kurs ' + kurs.toFixed(4) + ', Stand ' + t.stand
+        : 'Marktwert: kein Cardmarket-Preis hinterlegt',
+    ].filter(Boolean).join('\n'),
+  };
+}
+
+/* Was ein Pokémon-Projekt als Ordnung vorgeschlagen bekommt. Die
+   Nummern sind dieselben wie beim Nachschlagen; nur die Namen ändern
+   sich, weil «Zauberkarte» hier «Trainerkarte» heisst. */
+const POKEMON_KATALOG = [
+  ['1', 'Einzelkarten'],
+  ['101', 'Pokémon-Karten'], ['102', 'Trainerkarten'], ['103', 'Energiekarten'],
+  ['104', 'Spezialkarten (EX, GX, V, ex)'], ['105', 'Promo-Karten'],
+  ['106', 'Bewertet / eingeschweisst (PSA, BGS)'], ['107', 'Doubletten'],
+  ['2', 'Geschlossene Produkte'],
+  ['201', 'Booster-Päckchen'], ['202', 'Displays'], ['203', 'Themendecks'],
+  ['204', 'Tins und Boxen'], ['205', 'Sammler-Editionen'],
+  ['3', 'Zubehör'],
+  ['301', 'Hüllen und Sleeves'], ['302', 'Ordner und Boxen'], ['303', 'Spielmatten'],
+  ['304', 'Versandmaterial'],
+  ['9', 'Übriges'],
+  ['901', 'Neuzugang, noch nicht eingeordnet'], ['902', 'Geschenke und Tauschware'],
+  ['903', 'Verlust, Beschädigung'],
+].map(([code, label]) => ({ code, label }));
+
 /* --- Ein Nachschlagedienst je Vorlage, ein Fenster für alle ---------
    Das Fenster «nachschlagen» weiss nicht, ob es eine Karte oder einen
    Kurs holt. Es fragt die Vorlage, wer zuständig ist. Käme morgen eine
    Vorlage für Bücher, brächte sie ihren ISBN-Dienst mit und das
    Fenster bliebe, wie es ist. */
 async function nachschlagSuche(text, p) {
-  return (nachschlagDienst(p) === 'kurse') ? kursSuche(text) : kartenSuche(text);
+  const d = nachschlagDienst(p);
+  if (d === 'kurse') return kursSuche(text);
+  if (d === 'pokemon') { await kurseHolen(); return pokemonSuche(text); }
+  return kartenSuche(text);
 }
 function nachschlagZuPosten(t, p, menge, einheit, datum) {
-  return (nachschlagDienst(p) === 'kurse') ? kursZuPosten(t, menge, einheit, datum) : ygoZuPosten(t);
+  const d = nachschlagDienst(p);
+  if (d === 'kurse') return kursZuPosten(t, menge, einheit, datum);
+  if (d === 'pokemon') return pokemonZuPosten(t);
+  return ygoZuPosten(t);
 }
 /** Welche Ansicht steht hinter «Gewerke»? 'chargen' = Handel, sonst die Vergabe. */
 function handelArt(p) { const v = vorlage(p); return (v && v.handel) || ''; }
@@ -9527,8 +9763,27 @@ async function pruefNachladen(pid) {
    angekommen ist. */
 let scanCtx = null;
 
-/** Bringt die Vorlage einen Nachschlagedienst mit? */
-function nachschlagDienst(p) { const v = vorlage(p); return (v && v.nachschlag) || null; }
+/* Die Dienste, die es gibt. Ein Projekt darf einen davon wählen —
+   die Vorlage schlägt nur vor. Eine Sammlung kann Yu-Gi-Oh sein oder
+   Pokémon; das weiss die Vorlage nicht, sondern der Mensch. */
+const NACHSCHLAG_DIENSTE = [
+  { key: '', name: 'keines — von Hand erfassen' },
+  { key: 'ygo', name: 'Yu-Gi-Oh (YGOPRODeck)', fuer: 'sammlung',
+    hinweis: 'Passcode (8 Ziffern) oder Set-Code wie CORI-EN030.' },
+  { key: 'pokemon', name: 'Pokémon (TCGdex, deutsch)', fuer: 'sammlung',
+    hinweis: 'Nummer wie 4/102, Kennung wie base1-4 oder der Name.', katalog: 'POKEMON_KATALOG' },
+  { key: 'kurse', name: 'Kurse (Krypto, Edelmetalle, Währungen)', fuer: 'depot',
+    hinweis: 'Kürzel wie BTC, XAU oder USD.' },
+];
+function dienstInfo(key) { return NACHSCHLAG_DIENSTE.find(d => d.key === (key || '')) || NACHSCHLAG_DIENSTE[0]; }
+
+/** Welcher Dienst gilt: der des Projekts, sonst der Vorschlag der Vorlage. */
+function nachschlagDienst(p) {
+  const q = p || vorlageCtx;
+  if (q && q.nachschlag !== undefined) return q.nachschlag || null;
+  const v = vorlage(p);
+  return (v && v.nachschlag) || null;
+}
 
 function actKartenScan(pid) {
   const p = findProjekt(pid); if (!p) return;
@@ -9537,10 +9792,11 @@ function actKartenScan(pid) {
     <label class="field"><span>Nummer der Karte</span>
       <input class="input scan-nr" id="scan_nr" inputmode="numeric" autocomplete="off"
              spellcheck="false" placeholder="z.B. 43989315"></label>
-    <span class="einst-hinweis">Am genauesten der <b>Set-Code unten rechts</b> (<code>CORI-EN030</code>): Er bestimmt
-      die Auflage und damit Seltenheit und Wert. Deutsche und französische Codes werden auf die englische
-      Auflage umgeschrieben. Der <b>Passcode unten links</b> (acht Ziffern) geht auch — dann folgt eine
-      Rückfrage, falls es die Karte mehrfach gibt. Ein Name notfalls ebenso.</span>
+    <span class="einst-hinweis">${nachschlagDienst(p) === 'ygo'
+      ? 'Am genauesten der <b>Set-Code unten rechts</b> (<code>CORI-EN030</code>): Er bestimmt die Auflage und damit Seltenheit und Wert. Deutsche und französische Codes werden auf die englische Auflage umgeschrieben. Der <b>Passcode unten links</b> (acht Ziffern) geht auch — dann folgt eine Rückfrage, falls es die Karte mehrfach gibt.'
+      : (nachschlagDienst(p) === 'pokemon'
+        ? 'Die <b>Nummer unten auf der Karte</b> (<code>4/102</code>) — dazu wird gefragt, welcher Satz gemeint ist, denn die Nummer allein gibt es in jedem gleich grossen Satz. Eindeutig ist die Kennung (<code>base1-4</code>). Der <b>deutsche Name</b> geht auch.'
+        : esc(dienstInfo(nachschlagDienst(p)).hinweis || ''))}</span>
     <div id="scan_ergebnis"></div>
     <div id="scan_liste"></div>
   `, `<button class="btn ghost" data-close="1">Schliessen</button>
@@ -13899,6 +14155,12 @@ function actEditProjekt(pid) {
       <label class="field">Bezugstermin <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(Meilenstein im Gantt)</span> <input class="input" type="date" id="f_bezug" value="${esc(p.bezug || '')}"></label>
     </div>
     ${vorlageWahlHtml(vorlageKey(p))}
+    ${(vorlage(p) || {}).nachschlag ? `<label class="field">Nachschlagen
+      <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">— woher Name, Art und Marktwert kommen, wenn du eine Nummer eintippst</span>
+      <select class="select" id="f_nachschlag">${NACHSCHLAG_DIENSTE
+        .filter(d => !d.fuer || d.fuer === vorlageKey(p))
+        .map(d => `<option value="${d.key}"${(nachschlagDienst(p) || '') === d.key ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}</select>
+      <span class="einst-hinweis">${esc(dienstInfo(nachschlagDienst(p)).hinweis || '')}</span></label>` : ''}
     <label class="field" style="margin-bottom:2px">Projektfarbe (Kalender &amp; Planung)</label>
     ${farbePickerHtml(p.farbe || projColor(state.projekte.indexOf(p)))}
     <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 4px"><div class="muted" style="font-size:var(--t-xs, 12px);margin-bottom:6px">Gebäudedaten</div>
@@ -13919,6 +14181,7 @@ function saveProjektEdit(pid) {
   p.bezug = $('#f_bezug').value || '';
   if ($('#f_farbe')) p.farbe = $('#f_farbe').value || '';
   { const vw = $('#f_vorlage'); if (vw && vw.value) p.vorlage = vw.value; }
+  { const nw = $('#f_nachschlag'); if (nw) p.nachschlag = nw.value; }
   readGebaeude(p);
   save(); closeModal(); router(); toast('Projekt gespeichert');
 }

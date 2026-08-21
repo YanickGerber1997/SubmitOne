@@ -91,6 +91,8 @@ src += `
 ;globalThis.__dkKacheln = function () { return dashKonfigCtx ? dashKonfigCtx.kacheln : []; };
 ;globalThis.__alleVorlagen = function () { return VORLAGEN.map(v => v.key); };
 ;globalThis.__istArt = function (k) { return DASH_ARTEN.some(a => a.key === k); };
+;globalThis.__dienste = function () { return NACHSCHLAG_DIENSTE; };
+;globalThis.__vorschlagKatalog = function (p) { return vorschlagKatalog(p); };
 ;globalThis.__kostenBlatt = function (pid) { viewKosten(pid); return globalThis.__blatt; };
 ;globalThis.__ebenenSummen = function (p) {
   const w = liste => liste.reduce((a, v) => a + kostenZeile(v).prognose, 0);
@@ -670,6 +672,64 @@ ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(ein
   const bauBlatt = sandbox.__kostenBlatt(sandbox.__bauEinstufig().id);
   ok('der Bau bekommt keine zweite Ebene', !/kgroup-1/.test(bauBlatt));
   ok('… und behaelt sein Zwischentotal', /Zwischentotal/.test(bauBlatt));
+}
+
+/* ---- 2i) Pokemon: dieselbe Frage, andere Nummern ----
+   Yu-Gi-Oh traegt Satz UND Nummer auf der Karte (CORI-EN030), Pokemon
+   nur die Nummer im Satz (4/102) - der Satz ist ein Symbol. Also ist
+   4/102 nicht eindeutig, aber es sind wenige Kandidaten. */
+{
+  eq('erkennt die Kennung', sandbox.pokemonErkenne('base1-4'), { art: 'kennung', wert: 'base1-4' });
+  eq('erkennt die Nummer auf der Karte', sandbox.pokemonErkenne('4/102'), { art: 'bruch', nummer: '4', gesamt: 102 });
+  eq('… auch mit Leerzeichen', sandbox.pokemonErkenne(' 25 / 198 ').gesamt, 198);
+  eq('sonst ist es ein Name', sandbox.pokemonErkenne('Glurak'), { art: 'name', wert: 'Glurak' });
+  eq('leer bleibt leer', sandbox.pokemonErkenne('  ').art, '');
+
+  /* Cardmarkets Preis-Trend ist die Zahl, mit der dort gehandelt wird
+     - der Schnitt nur, wenn kein Trend da ist. */
+  const cm = { trend: 477.45, avg30: 399.62, avg: 402.79, low: 100, 'trend-holo': 123.63 };
+  eq('nimmt den Preis-Trend', sandbox.pokemonPreis(cm, ''), 477.45);
+  eq('… je Variante den ihren', sandbox.pokemonPreis(cm, '-holo'), 123.63);
+  eq('ohne Trend den Schnitt', sandbox.pokemonPreis({ avg30: 12 }, ''), 12);
+  eq('ohne alles null', sandbox.pokemonPreis(null, ''), 0);
+  eq('und sagt, welche Zahl es war', sandbox.pokemonPreisName(cm, ''), 'Preis-Trend');
+
+  // Ein Treffer wird zum Posten
+  const t = {
+    name: 'Glurak', art: 'Pokémon Feuer', kategorie: '101',
+    setCode: 'base1-4', setName: 'Grundset', satzId: 'base1', kartenNummer: '4/102',
+    seltenheit: '', preisEur: 477.45, setSicher: false, auflagen: 2,
+    auflagenListe: [{ code: 'base1-4', seltenheit: 'Selten · Holo', preisEur: 123.63 },
+                    { code: 'base1-4', seltenheit: 'Selten · 1. Auflage', preisEur: 477.45 }],
+    bild: 'x.webp', preisArt: 'Preis-Trend', stand: '2026-08-21',
+  };
+  const po = sandbox.pokemonZuPosten(t);
+  eq('die Nummer ist die von der Karte', po.bkp, '4/102');
+  eq('der Satz steht fest, auch wenn die Variante offen ist', po.satz, 'Grundset');
+  eq('… und seine Kennung dazu', po.satzId, 'base1');
+  eq('Pokemonkarte wird zu 101', po.kategorie, '101');
+  eq('offene Variante traegt die Merkfahne', po.pruefen, true);
+  ok('… mit den Varianten zur Wahl', (po.auflagenOffen || []).length === 2);
+  ok('… und dem Grund in der ersten Zeile', /Variante nicht bestimmt/.test(po.beschrieb.split(String.fromCharCode(10))[0]));
+
+  /* «4/102» sagt fuer sich nichts - der Satz gruppiert, sonst laege
+     die Karte unter «4 Briefmarken». */
+  const S = { vorlage: 'sammlung' };
+  eq('gruppiert nach dem Satz', sandbox.gruppeVon({ satzId: 'base1', bkp: '4/102' }, S), 'BASE1');
+  eq('ohne Satz wartet die Nummer', sandbox.gruppeVon({ bkp: '4/102' }, S), '?');
+  eq('ein Yu-Gi-Oh-Code gruppiert weiter nach seinem Kuerzel',
+    sandbox.gruppeVon({ bkp: 'CORI-EN030' }, S), 'CORI');
+
+  // Der Dienst gehoert dem Projekt, nicht der Vorlage
+  eq('die Vorlage schlaegt vor', sandbox.nachschlagDienst({ vorlage: 'sammlung' }), 'ygo');
+  eq('das Projekt entscheidet', sandbox.nachschlagDienst({ vorlage: 'sammlung', nachschlag: 'pokemon' }), 'pokemon');
+  eq('und darf auch keinen wollen', sandbox.nachschlagDienst({ vorlage: 'sammlung', nachschlag: '' }), null);
+  ok('jeder Dienst hat einen Namen und einen Hinweis',
+    sandbox.__dienste().every(d => d.name && (d.key === '' || d.hinweis)));
+  ok('Pokemon bringt eine eigene Ordnung mit',
+    /Trainerkarten/.test(JSON.stringify(sandbox.__vorschlagKatalog({ vorlage: 'sammlung', nachschlag: 'pokemon' }))));
+  ok('Yu-Gi-Oh die der Vorlage',
+    /Monsterkarten/.test(JSON.stringify(sandbox.__vorschlagKatalog({ vorlage: 'sammlung', nachschlag: 'ygo' }))));
 }
 
 /* ---- 3) Der Bau-Fall bleibt, wie er war ---- */

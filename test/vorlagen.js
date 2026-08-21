@@ -1245,10 +1245,18 @@ eq('Cosmos bekommt ein Kürzel', sandbox.seltenheitKuerzel('Selten · Cosmos Hol
   /* Die wichtigste Zusage: Kein Nachschlagen wischt die Arbeit weg.
      Die Seltenheit wird dabei trotzdem gesetzt — das sind zwei Fragen. */
   sandbox.auflageAnwenden(v, { seltenheit: 'Selten · Holo', preisEur: 1.05, preisUsd: 0 }, S);
+  /* Nicht nur die ZAHL muss überleben, sondern der SATZ. Der erste
+     Test prüfte den Betrag - und liess durch, dass die Zeile mit der
+     Herkunft weggeräumt wurde. Eine Zahl ohne Herkunft ist schlimmer
+     als keine. (Fund vom 21.08.2026) */
   ok('ein Nachschlagen überschreibt den Wert von Hand NICHT',
     Math.abs(v.eingeladene[0].betrag - Math.round(7 * k.eur * 100) / 100) < 0.001,
     String(v.eingeladene[0].betrag));
   eq('… aber die Seltenheit wird gesetzt', v.seltenheit, 'Selten · Holo');
+  ok('… und die Herkunft des Werts steht weiterhin da',
+    /Marktwert: Pokécardex EUR 7.00.*von Hand eingetragen/.test(v.beschrieb), v.beschrieb);
+  eq('… genau einmal',
+    v.beschrieb.split('\n').filter(z => z.indexOf('Marktwert: ') === 0).length, 1);
 
   /* Franken brauchen keinen Kurs. */
   sandbox.wertVonHand(v, 12.5, 'CHF', 'Verkauf an der Börse');

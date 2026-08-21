@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v411';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v412';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -9881,7 +9881,10 @@ function auflageAnwenden(v, opt, p) {
      welche gilt, weiss dann niemand mehr. */
   const rest = String(v.beschrieb || '').split('\n')
     .filter(z => z.indexOf('⚑') !== 0 && z.indexOf('Seltenheit: ') !== 0
-      && z.indexOf('Marktwert: ') !== 0);
+      /* Ein Wert von Hand behält auch seine Zeile. Sonst wird der
+         Betrag zwar verschont, aber die Herkunft weggeräumt — und
+         eine Zahl ohne Herkunft ist schlimmer als keine. */
+      && (v.wertEigen || z.indexOf('Marktwert: ') !== 0));
   v.beschrieb = ['Seltenheit: ' + (opt.seltenheit || '—')].concat(rest).join('\n');
 
   /* Der Wert dieser Auflage, wenn die Datenbank einen führt. Hat sie
@@ -9975,6 +9978,60 @@ function wertVonHand(v, betrag, waehrung, quelle, k) {
     + (w === 'CHF' ? '' : ', Kurs ' + kurs.toFixed(4))
     + ', Stand ' + datum + ' — von Hand eingetragen']).join('\n');
   return v;
+}
+
+/** Die Karte in einer anderen Sprache benennen.
+
+    Gibt zurück, was geschehen ist — die Oberfläche soll sagen können,
+    ob sich etwas geändert hat. Bei Yu-Gi-Oh ändert sich nichts als das
+    Feld: Die Datenbank führt dort nur englische Namen. Auch das ist
+    eine Auskunft und keine Panne. */
+async function karteSpracheUmstellen(v, sprache) {
+  const neu = String(sprache || '');
+  const alt = String(v.sprache || '');
+  v.sprache = neu;
+  if (v.quelleName !== 'TCGdex' || !v.passcode || !neu || neu === alt) {
+    return { geaendert: false, grund: v.quelleName === 'YGOPRODeck'
+      ? 'Yu-Gi-Oh führt nur englische Namen — nur die Angabe wurde gesetzt' : '' };
+  }
+  const a = await fetch(TCGDEX + neu + '/cards/' + encodeURIComponent(v.passcode));
+  if (!a.ok) return { geaendert: false, grund: 'Diese Karte gibt es dort nicht in ' + spracheInfo(neu).name };
+  const k = await a.json();
+  if (!k || !k.name) return { geaendert: false, grund: 'Keine Angaben in ' + spracheInfo(neu).name };
+
+  const altSatz = String(v.satz || '');
+  const altSprName = alt ? spracheInfo(alt).name : '';
+  const neuSprName = spracheInfo(neu).name;
+  const art = (k.category || '') + (k.types ? ' ' + k.types.join('/') : '');
+
+  /* Die Stufe wechselt, die Variante bleibt: «Häufig · Reverse Holo»
+     wird zu «Common · Reverse Holo». Auch eine eigene Angabe behält
+     ihren Zusatz — «Cosmos Holo» heisst überall so. */
+  const teile = String(v.seltenheit || '').split('·').map(x => x.trim()).filter(Boolean);
+  if (k.rarity) { if (teile.length) teile[0] = k.rarity; else teile.push(k.rarity); }
+  v.seltenheit = teile.join(' · ');
+
+  v.gewerk = k.name;
+  v.satz = (k.set && k.set.name) || v.satz;
+  v.quelleUrl = TCGDEX + neu + '/cards/' + v.passcode;
+  if (v.bild) v.bild = String(v.bild).replace('/' + (alt || 'de') + '/', '/' + neu + '/');
+
+  /* Im Vermerk dieselben drei Handgriffe — Zeile für Zeile, damit
+     nichts anderes verlorengeht. Was von Hand kam, wird nur in der
+     Stufe berührt, nie in seiner Kennzeichnung. */
+  v.beschrieb = String(v.beschrieb || '').split('\n').map(z => {
+    if (z.indexOf('Seltenheit: ') === 0) {
+      const zusatz = z.indexOf('(') > 0 ? ' ' + z.slice(z.indexOf('(')) : '';
+      return 'Seltenheit: ' + v.seltenheit + zusatz;
+    }
+    if (altSprName && z.indexOf(altSprName) >= 0) {
+      return [art, v.seltenheit, neuSprName].filter(Boolean).join(' · ');
+    }
+    if (altSatz && z.indexOf(altSatz) >= 0) return z.split(altSatz).join(v.satz);
+    return z;
+  }).join('\n');
+
+  return { geaendert: true, name: k.name, satz: v.satz, seltenheit: v.seltenheit };
 }
 
 function actOffenePruefen(pid) {
@@ -20034,6 +20091,7 @@ function saveVergabeEdit(pid, vid) {
     if (we) wertVonHand(v, we.value, ($('#fe_waehrung') || {}).value, ($('#fe_quelle') || {}).value);
   }
   { const sa = $('#fe_satz'); if (sa) v.satz = sa.value.trim(); }
+  const altSprache = String(v.sprache || '');
   { const sp = $('#fe_sprache'); if (sp) v.sprache = sp.value; }
   { const me = $('#fe_menge'); if (me) v.menge = me.value === '' ? null : (Number(me.value) || 0); }
   { const ei = $('#fe_einheit'); if (ei) v.einheit = ei.value.trim(); }
@@ -20046,6 +20104,16 @@ function saveVergabeEdit(pid, vid) {
   const bte = $('#fe_bauteil'); if (bte) v.bauteil = bte.value;
   const ope = $('#fe_option'); if (ope) v.option = ope.value;
   save(); closeModal(); router(); toast('Arbeitsbeschrieb gespeichert');
+
+  /* Die Sprache ist die einzige Angabe hier, für die nachgeschlagen
+     werden muss — sie geschieht darum nach dem Speichern und meldet
+     sich selbst. */
+  if (String(v.sprache || '') !== altSprache) {
+    karteSpracheUmstellen(v, v.sprache).then(erg => {
+      if (erg.geaendert) { save(); router(); toast('Jetzt ' + spracheInfo(v.sprache).name + ': ' + erg.name, 'ok'); }
+      else if (erg.grund) toast(erg.grund, 'info');
+    }).catch(e => toast('Sprache: ' + ((e && e.message) || 'kein Zugriff'), 'info'));
+  }
 }
 // Unternehmer ↔ Kontakte: Firma sicher in die Kontakte aufnehmen (falls neu), Datalist + Projekt-Übernahme
 function ensureKontakt(firma, email) {

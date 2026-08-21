@@ -108,6 +108,11 @@ if (R) {  // CSS-Waechter: im JS verwendete Klassen muessen im Stylesheet existi
    ["Dokumentmodus: Blocksatz fuer den Fliesstext",
     "td.textcell:not(.h1):not(.h2):not(.h3){text-align:justify"],
    ["Dokumentmodus: Silbentrennung mit Mindestlaenge", "hyphenate-limit-chars:633"],
+   ["Blocksatz und Silbentrennung sind SCHALTBAR, nicht fest verdrahtet",
+    ".app.block-on.cgridtd.textcell"],
+   ["Silbentrennung erreicht das Raster, nicht nur den Editor",
+    ".app.hyph-on.cgridtd.textcell"],
+   ["Vorschau folgt dem Blocksatz-Schalter", ".preview-scroll.bs.pv-c"],
    ["Vorschau: Ueberschriften bleiben linksbuendig und ungetrennt",
     ".pv-ctd.h3{text-align:left;hyphens:manual}"]
   ].forEach(([nm, txt]) => { const ok = eng.indexOf(txt) >= 0; R.R.push({ name: nm, ok: ok, msg: "" }); ok ? R.pass++ : R.fail++; });
@@ -126,7 +131,10 @@ if (R) {  // CSS-Waechter: im JS verwendete Klassen muessen im Stylesheet existi
    ["Umbruch: sie wird beim Ueberlauf gerufen", "teileBlock(stueck, platz, zeilenH)"],
    ["Umbruch: Ueberschriften und Tabellen werden nicht geteilt", "!el.querySelector('table, img')"],
    ["Verzeichnis: die Seiten werden beim Umbrechen gemerkt", "seiteVon[stueck.id] = pages.length"],
-   ["Verzeichnis: nach dem Eintragen wird EINMAL neu umbrochen", "printPreview(true)"]
+   ["Verzeichnis: nach dem Eintragen wird EINMAL neu umbrochen", "printPreview(true)"],
+   ["Schalter: die Klassen sitzen an der App, nicht am Editor", "classList.toggle('hyph-on'"],
+   ["Schalter: Blocksatz wird mitgespeichert", "doc.einstellungen.blocksatz = on"],
+   ["Neue Dokumente haben beides an", "blocksatz: true, silben: true"]
   ].forEach(([nm, txt]) => { const ok = jsTxt.indexOf(txt) >= 0; R.R.push({ name: nm, ok: ok, msg: "" }); ok ? R.pass++ : R.fail++; });
 }
 

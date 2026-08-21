@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v39';
+const WRITE_VERSION = 'v40';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -137,7 +137,10 @@ function newDocObject(partial = {}) {
     id: uid(), titel: 'Unbenanntes Dokument', kopf: '', fuss: '',
     seiten: [{ id: uid(), typ: 'calc', html: '' }], aktiv: 0,   // Standard = Calc-Raster (Zeilen/Spalten als Leinwand)
     rasterCols: 6,
-    einstellungen: { schriftart: SCHRIFT_STD, schriftgroesse: 14, zeilenabstand: 1.45, ausrichtung: 'hoch', format: 'A4', margins: { top: 18, right: 22, bottom: 18, left: 22 }, kopfH: 14, fussH: 14, tabs: [] },
+    einstellungen: { schriftart: SCHRIFT_STD, schriftgroesse: 14, zeilenabstand: 1.45, ausrichtung: 'hoch', format: 'A4',
+      /* Blocksatz und Silbentrennung gehoeren zusammen: Blocksatz allein
+         reisst Loecher in die Zeilen — der Setzer nennt sie Giessbaeche. */
+      blocksatz: true, silben: true, margins: { top: 18, right: 22, bottom: 18, left: 22 }, kopfH: 14, fussH: 14, tabs: [] },
     meta: { erstellt: t, geaendert: t, autor: 'Yanick Gerber', version: 1 },
     folder: 'dokumente', fav: false, trashed: false
   }, partial);
@@ -361,8 +364,14 @@ function applySettings() {
   editor.style.columnCount = cols > 1 ? cols : '';
   editor.style.columnGap = cols > 1 ? '12mm' : '';
   const selC2 = $('#selCols'); if (selC2) selC2.value = String(cols);
+  /* Die Klassen gehoeren an die App, nicht an den Editor: Das Blatt
+     liegt im Raster, und nur ueber die App erreichen die Regeln beide. */
   const hy = !!s.silben; editor.classList.toggle('hyphenate', hy);
+  const bs = s.blocksatz !== false;   // Voreinstellung: an
+  const appEl2 = $('#app');
+  if (appEl2) { appEl2.classList.toggle('hyph-on', hy); appEl2.classList.toggle('block-on', bs); }
   const bh = $('#btnHyphen'); if (bh) bh.classList.toggle('on', hy);
+  const bb = $('#btnBlock'); if (bb) bb.classList.toggle('on', bs);
   applyFormat();        // Format/Ausrichtung pro Seite (setzt .quer + Knopf-Status)
   applyPageSetup();
   applyZoom();
@@ -2707,7 +2716,23 @@ function wire() {
   document.addEventListener('click', () => symMenu.hidden = true);
   // Layout
   $('#selCols').addEventListener('change', e => setColumns(+e.target.value));
-  $('#btnHyphen').addEventListener('click', () => { if (!doc) return; const on = !doc.einstellungen.silben; doc.einstellungen.silben = on; editor.classList.toggle('hyphenate', on); $('#btnHyphen').classList.toggle('on', on); scheduleSave(); });
+  $('#btnHyphen').addEventListener('click', () => {
+    if (!doc) return;
+    const on = !doc.einstellungen.silben; doc.einstellungen.silben = on;
+    editor.classList.toggle('hyphenate', on);
+    const a = $('#app'); if (a) a.classList.toggle('hyph-on', on);
+    $('#btnHyphen').classList.toggle('on', on);
+    scheduleSave(); toast(on ? 'Silbentrennung an' : 'Silbentrennung aus');
+  });
+  const bbEl = $('#btnBlock');
+  if (bbEl) bbEl.addEventListener('click', () => {
+    if (!doc) return;
+    const on = doc.einstellungen.blocksatz === false;   // war aus -> jetzt an
+    doc.einstellungen.blocksatz = on;
+    const a = $('#app'); if (a) a.classList.toggle('block-on', on);
+    bbEl.classList.toggle('on', on);
+    scheduleSave(); toast(on ? 'Blocksatz an' : 'Flattersatz (linksbündig)');
+  });
   $('#btnMarginsOpen').addEventListener('click', () => { appEl.classList.add('insp-open'); applyZoom(); const s = $('#mTop'); if (s) setTimeout(() => s.scrollIntoView({ block: 'center' }), 60); });
   // Ansicht-Reiter
   $$('[data-vact]').forEach(b => b.addEventListener('click', () => {
@@ -3905,6 +3930,7 @@ function printPreview(nochmal) {
   const quer = pageOrient() === 'quer';
   const ov = $('#previewOverlay'), scroll = $('#previewScroll');
   scroll.classList.toggle('hy', !!doc.einstellungen.silben);   // Silbentrennung auch in der Vorschau
+  scroll.classList.toggle('bs', doc.einstellungen.blocksatz !== false);   // und der Blocksatz
   scroll.innerHTML = ''; ov.hidden = false;          // erst sichtbar → dann messbar
   const headHTML = $('#zoneH').innerHTML, footHTML = $('#zoneF').innerHTML;
   const pageHpx = (quer ? 210 : 297) * MM;

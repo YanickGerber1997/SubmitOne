@@ -677,9 +677,15 @@ body[data-theme="dark"] .editor .sp-err{text-decoration-color:#ff7a70}
    bleiben linksbuendig - ein gesperrter Titel sieht aus wie ein Fehler.
    Eine eigene Ausrichtung an der Zelle (Symbolleiste) gewinnt, weil sie
    als Stilattribut direkt am Element steht. */
-.app.lines-off .cgrid td.textcell:not(.h1):not(.h2):not(.h3){
-  text-align:justify;text-justify:inter-word;
+/* Blocksatz und Silbentrennung sind Einstellungen des Dokuments, keine
+   festen Regeln - die Klassen kommen aus syncSettings(). Ueberschriften
+   bleiben aussen vor: ein gesperrter Titel sieht aus wie ein Fehler. */
+.app.block-on .cgrid td.textcell:not(.h1):not(.h2):not(.h3){text-align:justify;text-justify:inter-word}
+.app.hyph-on .cgrid td.textcell:not(.h1):not(.h2):not(.h3){
   hyphens:auto;-webkit-hyphens:auto;-ms-hyphens:auto;hyphenate-limit-chars:6 3 3}
+/* Blocksatz ohne Silbentrennung reisst Loecher. Ist die Trennung aus,
+   duerfen die Wortabstaende wenigstens nicht beliebig weit werden. */
+.app.block-on:not(.hyph-on) .cgrid td.textcell{word-spacing:-.01em}
 
 .app.lines-off /* Ausfuellkaestchen an der Ecke der Markierung (Geste aus Excel) */
 .cgrid td.active{position:relative}
@@ -743,9 +749,10 @@ body[data-theme="dark"] .editor .sp-err{text-decoration-color:#ff7a70}
 .pv-page .toc a{display:block;color:#1a1e27;text-decoration:none;padding:2px 0}
 /* Blocksatz und Silbentrennung auch in der Vorschau und im Druck -
    sonst sieht das PDF anders aus als das Blatt auf dem Bildschirm. */
-.pv-c td.textcell:not(.h1):not(.h2):not(.h3),
-.pv-c p,.pv-c li{text-align:justify;text-justify:inter-word;
-  hyphens:auto;-webkit-hyphens:auto;hyphenate-limit-chars:6 3 3}
+.preview-scroll.bs .pv-c td.textcell:not(.h1):not(.h2):not(.h3),
+.preview-scroll.bs .pv-c p,.preview-scroll.bs .pv-c li{text-align:justify;text-justify:inter-word}
+.preview-scroll.hy .pv-c td.textcell:not(.h1):not(.h2):not(.h3),
+.preview-scroll.hy .pv-c p,.preview-scroll.hy .pv-c li{hyphens:auto;-webkit-hyphens:auto;hyphenate-limit-chars:6 3 3}
 .pv-c h1,.pv-c h2,.pv-c h3,.pv-c td.h1,.pv-c td.h2,.pv-c td.h3{text-align:left;hyphens:manual}
 .pv-grid{border-collapse:collapse;width:auto;max-width:100%;font-size:11pt;line-height:1.7}
 .pv-grid td{border:none;padding:0 1.4em .5em 0;vertical-align:top;color:#1a1e27}

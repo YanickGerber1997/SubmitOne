@@ -91,6 +91,45 @@ src += `
 ;globalThis.__dkKacheln = function () { return dashKonfigCtx ? dashKonfigCtx.kacheln : []; };
 ;globalThis.__alleVorlagen = function () { return VORLAGEN.map(v => v.key); };
 ;globalThis.__istArt = function (k) { return DASH_ARTEN.some(a => a.key === k); };
+;globalThis.__kostenBlatt = function (pid) { viewKosten(pid); return globalThis.__blatt; };
+;globalThis.__ebenenSummen = function (p) {
+  const w = liste => liste.reduce((a, v) => a + kostenZeile(v).prognose, 0);
+  const vs = (p.vergaben || []).filter(weistAus);
+  return {
+    gold: w(vs.filter(v => v.symbol === 'XAU')),
+    silber: w(vs.filter(v => v.symbol === 'XAG')),
+    edel: w(vs.filter(v => String(v.kategorie)[0] === '2')),
+    krypto: w(vs.filter(v => String(v.kategorie)[0] === '1')),
+    total: w(vs),
+  };
+};
+;globalThis.__depotZweiKlassen = function () {
+  kursSetzen({ rates: { CHF: 0.9333, USD: 1.16 }, date: '2026-08-20' });
+  const p = { id: 'p_zwei', name: 'Depot', vorlage: 'depot', vergaben: [],
+    protokolle: [], entscheidungen: [], bezugsfirmen: [], geschosseListe: [], auflagen: [],
+    mitglieder: [], bauteile: [], optionen: [], termine: [], finanz: {} };
+  state.projekte.push(p); setVorlageCtx(p);
+  const t = (nr, name, kat, preis) => ({ nummer: nr, name, art: 'x', kategorie: kat, preisChf: preis, einheit: 'oz', herkunft: 'q' });
+  const mach = (tr, m, e, d, k) => { const po = kursZuPosten(tr, m, e, d); po.schaetzung = k; return po; };
+  csvPostenAnlegen('p_zwei', [
+    mach(t('XAU', 'Gold', '201', 3677.91), 1, 'oz', '2025-11-20', 3400),
+    mach(t('XAU', 'Gold', '201', 3677.91), 20, 'g', '2026-07-04', 2600),
+    mach(t('XAG', 'Silber', '201', 55.83), 500, 'g', '2026-01-15', 700),
+    mach(t('BTC', 'Bitcoin', '101', 61681), 0.35, 'BTC', '2025-09-08', 18000),
+  ]);
+  return p;
+};
+;globalThis.__bauEinstufig = function () {
+  const p = { id: 'p_bau1', name: 'Bau', vorlage: 'bau', vergaben: [],
+    protokolle: [], entscheidungen: [], bezugsfirmen: [], geschosseListe: [], auflagen: [],
+    mitglieder: [], bauteile: [], optionen: [], termine: [], finanz: {} };
+  state.projekte.push(p); setVorlageCtx(p);
+  csvPostenAnlegen('p_bau1', [
+    { bkp: '211', gewerk: 'Baumeister', schaetzung: 250000, betrag: 232000, firma: 'Bau AG', status: 'vergeben' },
+    { bkp: '281', gewerk: 'Boden', schaetzung: 48000, betrag: 0, firma: '', status: 'ausschreibung' },
+  ]);
+  return p;
+};
 ;globalThis.__hatAusschreibung = function (k) { const v = VORLAGEN.find(x => x.key === k); return v.ausschreibung !== false; };
 ;globalThis.__stueckBlatt = function (pid, vid) { viewStueck(pid, vid); return globalThis.__blatt; };
 ;globalThis.__sammlungStueck = function () {
@@ -593,6 +632,44 @@ ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(ein
   ok('Übersicht: so viele Kacheln wie eingestellt',
     (blatt.match(/dv-kachel/g) || []).length === pd.dashboard.length);
   ok('Übersicht: keine Phasen-Leiste mehr im Depot', !/Phasen-Verteilung/.test(blatt));
+}
+
+/* ---- 2h) Zwei Gruppenebenen ----
+   Anlageklasse ueber Anlage ueber Chargen — beides zugleich, weil die
+   Chargen einer Anlage beieinanderstehen muessen UND die Klassen
+   sichtbar sein sollen. */
+{
+  eq('Depot fuehrt zwei Ebenen', sandbox.zweiEbenen({ vorlage: 'depot' }), true);
+  eq('die Sammlung auch', sandbox.zweiEbenen({ vorlage: 'sammlung' }), true);
+  eq('der Bau bleibt einstufig', sandbox.zweiEbenen({ vorlage: 'bau' }), false);
+  eq('die obere Ebene kommt aus der Kategorie', sandbox.oberGruppeVon({ kategorie: '201' }), '2');
+  eq('ohne Kategorie keine obere Ebene', sandbox.oberGruppeVon({ kategorie: '' }), '?');
+
+  const pz = sandbox.__depotZweiKlassen();
+  const blatt = sandbox.__kostenBlatt(pz.id);
+  ok('obere Ebene: zwei Klassen', (blatt.match(/kgroup-1/g) || []).length === 2,
+    String((blatt.match(/kgroup-1/g) || []).length));
+  ok('untere Ebene: drei Anlagen', (blatt.match(/kgroup-2/g) || []).length === 3,
+    String((blatt.match(/kgroup-2/g) || []).length));
+  ok('die Klassen heissen wie in der Ordnung',
+    /Kryptowährungen/.test(blatt) && /Edelmetalle/.test(blatt));
+  ok('jede Anlage hat ihren Bestand', (blatt.match(/Bestand /g) || []).length === 3);
+  ok('jede Klasse hat ihr Total', (blatt.match(/Total Edelmetalle|Total Kryptow/g) || []).length === 2);
+
+  /* Die Rechnung muss aufgehen: Klassen-Total = Summe ihrer Anlagen,
+     Gesamttotal = Summe der Klassen. Sonst sieht die Tabelle nur
+     ordentlich aus. */
+  const zahlen = sandbox.__ebenenSummen(pz);
+  ok('Klasse = Summe ihrer Anlagen',
+    Math.abs(zahlen.edel - (zahlen.gold + zahlen.silber)) < 0.01,
+    zahlen.edel + ' vs ' + (zahlen.gold + zahlen.silber));
+  ok('Gesamt = Summe der Klassen',
+    Math.abs(zahlen.total - (zahlen.edel + zahlen.krypto)) < 0.01,
+    zahlen.total + ' vs ' + (zahlen.edel + zahlen.krypto));
+
+  const bauBlatt = sandbox.__kostenBlatt(sandbox.__bauEinstufig().id);
+  ok('der Bau bekommt keine zweite Ebene', !/kgroup-1/.test(bauBlatt));
+  ok('… und behaelt sein Zwischentotal', /Zwischentotal/.test(bauBlatt));
 }
 
 /* ---- 3) Der Bau-Fall bleibt, wie er war ---- */

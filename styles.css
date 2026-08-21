@@ -2723,6 +2723,15 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 .hd-zahl.schlecht b { color: var(--b-rot-text); }
 /* Ein einzelnes Stueck: das Bild neben den Zahlen. Bei einer Karte
    ist das Bild die schnellste Wiedererkennung, die es gibt. */
+/* Zwei Gruppenebenen: die obere traegt, die untere gliedert. Der
+   Unterschied muss auf einen Blick lesbar sein, sonst sind es zwei
+   gleich aussehende Zeilen, die Verschiedenes bedeuten. */
+.ktable .kgroup-1 td { font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+.ktable .kgroup-2 td { font-weight: 600; padding-left: 22px; background: none; }
+.ktable .kgroup-2 td:first-child { padding-left: 14px; }
+.ktable .ksub-1 td { font-weight: 700; border-top: 1px solid var(--border); }
+.ktable .ksub-1 td:nth-child(2) { text-transform: none; }
+
 .st-kopf { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
 .st-bild { width: 116px; border-radius: var(--rund-s); flex: none; display: block; }
 .st-band { flex: 1; min-width: 240px; }

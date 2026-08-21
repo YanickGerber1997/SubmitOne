@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v394';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v395';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -3505,12 +3505,26 @@ function viewKosten(id) {
   `;
   if (!vs.length) { render(head + emptyState('◫', 'Noch keine ' + W('posten_pl', p) + '. Mit ' + W('neu', p) + ' erfassen.') + `<div style="text-align:center;margin-top:-10px"><button class="btn" data-act="new-vergabe" data-pid="${p.id}">${esc(W('neu', p))}</button></div>`); return; }
 
-  const groups = {};
-  vs.forEach(v => { const g = gruppeVon(v, p); (groups[g] = groups[g] || []).push(v); });
-  const gKeys = Object.keys(groups).sort();
+  /* Eine oder zwei Ebenen — je nachdem, was die Vorlage sagt. Der
+     einstufige Fall ist der zweistufige mit genau einer oberen
+     Gruppe namens ''; so gibt es nur einen Weg durch die Schleife. */
+  const zwei = zweiEbenen(p);
+  const baum = new Map();
+  vs.forEach(v => {
+    const o = zwei ? oberGruppeVon(v, p) : '';
+    if (!baum.has(o)) baum.set(o, new Map());
+    const m = baum.get(o);
+    const g = gruppeVon(v, p);
+    if (!m.has(g)) m.set(g, []);
+    m.get(g).push(v);
+  });
+  const oKeys = Array.from(baum.keys()).sort();
 
   const blank = () => ({ kv: 0, rev: 0, wv: 0, nt: 0, prognose: 0, endsumme: 0, bezahlt: 0, fakturiert: 0, offen: 0, offenRg: 0, dWvEnd: 0 });
-  const add = (acc, z) => { acc.kv += z.kv; acc.rev += (z.rev != null ? z.rev : z.kv); acc.wv += z.wv; acc.nt += z.nt; acc.prognose += z.prognose; acc.endsumme += z.endsumme; acc.bezahlt += z.bezahlt; acc.fakturiert += z.fakturiert; acc.offen += z.offen; acc.offenRg += z.offenRg; acc.dWvEnd += (z.vergeben ? z.endsumme - z.wv : 0); };
+  /* Nimmt eine Kostenzeile ODER eine fertige Zwischensumme. Der
+     Unterschied ist `vergeben`: Nur die Zeile weiss, ob sie zählt;
+     eine Zwischensumme bringt ihr `dWvEnd` schon mit. */
+  const add = (acc, z) => { acc.kv += z.kv; acc.rev += (z.rev != null ? z.rev : z.kv); acc.wv += z.wv; acc.nt += z.nt; acc.prognose += z.prognose; acc.endsumme += z.endsumme; acc.bezahlt += z.bezahlt; acc.fakturiert += z.fakturiert; acc.offen += z.offen; acc.offenRg += z.offenRg; acc.dWvEnd += (z.vergeben !== undefined ? (z.vergeben ? z.endsumme - z.wv : 0) : z.dWvEnd); };
   /* Rot heisst «schlechter als geplant» — was das ist, sagt die Vorlage.
      Beim Bau ist mehr Geld eine Überschreitung, beim Verkauf mehr Erlös. */
   const gutIstMehr = mehrIstGut(p);
@@ -3537,7 +3551,12 @@ function viewKosten(id) {
   const tot = blank();
 
   let body = '';
+  oKeys.forEach(o => {
+  const ober = blank();
+  let oberBody = '';
+  const gKeys = Array.from(baum.get(o).keys()).sort();
   gKeys.forEach(g => {
+    const groups = { [g]: baum.get(o).get(g) };
     const sub = blank();
     let rows = '';
     groups[g].forEach(v => {
@@ -3610,16 +3629,30 @@ function viewKosten(id) {
         }).join('');
       }
     });
+    add(ober, sub);
     const dSub = sub.dWvEnd;
-    body += `<tr class="kgroup"><td>${esc(g === '?' ? '' : g)}</td><td colspan="10">${esc(gruppeTitel(g, groups[g], p))}</td></tr>
+    oberBody += `<tr class="kgroup${zwei ? ' kgroup-2' : ''}"><td>${esc(g === '?' ? '' : g)}</td><td colspan="10">${esc(gruppeTitel(g, baum.get(o).get(g), p))}</td></tr>
       ${rows}
-      ${g.length === 1 ? bkpGhostRows(p, 11, g) : ''}
+      ${(!zwei && g.length === 1) ? bkpGhostRows(p, 11, g) : ''}
       <tr class="ksub">
-        <td></td><td colspan="2">Zwischentotal</td>
+        <td></td><td colspan="2">${zwei ? 'Bestand ' + esc(gruppeTitel(g, baum.get(o).get(g), p)) : 'Zwischentotal'}</td>
         <td class="num">${mB(sub.kv)}</td><td class="num">${mB(sub.rev)}</td><td class="num">${mB(sub.wv)}</td>
         <td class="num">${mB(sub.nt)}</td><td class="num">${mB(sub.endsumme)}</td><td class="num">${mB(sub.fakturiert)}</td>
         <td class="num">${mB(sub.offenRg)}</td><td class="num ${dCls(dSub)}">${mB(dSub)}</td>
       </tr>`;
+  });
+  /* Die obere Ebene rahmt ihre Gruppen ein: Überschrift davor,
+     Zwischentotal danach. Ohne zweite Ebene entfällt beides. */
+  body += zwei
+    ? `<tr class="kgroup kgroup-1"><td>${esc(o === '?' ? '' : o)}</td><td colspan="10">${esc(gruppenAktiv(p)[o] || 'Übrige')}</td></tr>
+       ${oberBody}
+       <tr class="ksub ksub-1">
+         <td></td><td colspan="2">Total ${esc(gruppenAktiv(p)[o] || 'Übrige')}</td>
+         <td class="num">${mB(ober.kv)}</td><td class="num">${mB(ober.rev)}</td><td class="num">${mB(ober.wv)}</td>
+         <td class="num">${mB(ober.nt)}</td><td class="num">${mB(ober.endsumme)}</td><td class="num">${mB(ober.fakturiert)}</td>
+         <td class="num">${mB(ober.offenRg)}</td><td class="num ${dCls(ober.dWvEnd)}">${mB(ober.dWvEnd)}</td>
+       </tr>`
+    : oberBody;
   });
   const dTot = tot.dWvEnd;
 
@@ -7812,7 +7845,7 @@ const VORLAGEN = [
     ausschreibung: false,
     // Ein Stueck ist fuer sich der Gegenstand - anders als eine Charge,
     // die nur neben ihren Geschwistern etwas bedeutet.
-    handel: 'stueck',
+    handel: 'stueck', ebenen: 2,
     katalog: SAMMLUNG_KATALOG,
     /* Diese Vorlage kann eine Nummer nachschlagen: Passcode oder
        Set-Code einer Sammelkarte → Name, Art, Set, Seltenheit, Bild,
@@ -7889,7 +7922,7 @@ const VORLAGEN = [
     ausschreibung: false, mengen: true,
     // Hinter «Gewerke» steht der Handel: die Anlage mit ihren Chargen,
     // nicht eine Vergabe mit eingeladenen Unternehmern.
-    handel: 'chargen',
+    handel: 'chargen', ebenen: 2,
     kacheln: [
       { inhalt: 'verteilung', art: 'ring' },
       { inhalt: 'einstandWert', art: 'balken' },
@@ -8245,6 +8278,19 @@ function gruppeVon(v, p) {
   const vl = vorlage(p);
   if (vl && typeof vl.gruppeVon === 'function') return vl.gruppeVon(v);
   return String((v && v.bkp) || '0').trim()[0] || '0';
+}
+
+/* Die obere Ebene — die Klasse, zu der eine Gruppe gehört.
+
+   Sie kommt aus `v.kategorie` (101 Krypto, 201 Edelmetall, 101
+   Monsterkarte, 201 Booster …) und heisst so, wie die Ordnung des
+   Projekts ihre erste Ziffer nennt. Wo keine Kategorie steht — beim
+   Bau, oder bei einem von Hand getippten Posten —, gibt es keine
+   obere Ebene; dann bleibt die Tabelle einstufig wie bisher. */
+function zweiEbenen(p) { const v = vorlage(p); return !!(v && v.ebenen === 2); }
+function oberGruppeVon(v, p) {
+  const k = String((v && v.kategorie) || '').trim();
+  return k ? k[0] : '?';
 }
 
 /* Die Überschrift einer Gruppe. Erst was die Vorlage fest hinterlegt

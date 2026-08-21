@@ -2616,6 +2616,8 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 .scan-wert .muted { display: block; font-size: var(--t-2xs); }
 .scan-auswahl { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .scan-eigen { margin-top: 10px; }
+.scan-hinweis { margin-top: 8px; padding: 7px 9px; font-size: var(--t-xs); line-height: 1.45;
+  color: var(--b-blau-text); background: var(--b-blau-weich); border: 1px solid var(--b-blau-rand); border-radius: var(--radius); }
 /* Die Auflagen zur Wahl. Vier Spalten, weil man genau vier Dinge
    vergleicht: Kennung, Seltenheit, Sammlung, Preis. */
 .scan-auflagen { margin-top: 10px; }

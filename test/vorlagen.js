@@ -401,6 +401,52 @@ async function netzPruefungen() {
     eq('… zwei Anfragen an die Datenbank', gerufen.filter(u => /ygoprodeck/.test(u)).length, 2);
   });
 
+  /* Dieselbe Karte liegt in der Datenbank unter mehreren Passcodes
+     (Alternativbilder) mit VERSCHIEDENEN Auflagenlisten. Die Liste,
+     die beim Nachladen kommt, kennt das gesuchte Set darum manchmal
+     nicht — die Gewissheit aus der ersten Auskunft muss trotzdem
+     stehenbleiben. Sonst kostet es die richtige Bewertung: LOB-001
+     Ultra Rare fiel so von CHF 49.66 auf CHF 0.02. */
+  const OHNE_DAS_SET = {
+    data: [{
+      id: 89631146, name: 'Blue-Eyes White Dragon', humanReadableCardType: 'Normal Monster',
+      frameType: 'normal',
+      card_sets: [{ set_name: 'Ganz andere Sammlung', set_code: 'ZZZ-EN999', set_rarity: 'Common', set_price: '0.10' }],
+      card_prices: [{ cardmarket_price: '0.02' }],
+      card_images: [{ image_url_small: 'x.jpg' }],
+    }],
+  };
+  const ERST_LOB = { id: 89631146, name: 'Blue-Eyes White Dragon',
+    set_name: 'Legend of Blue Eyes White Dragon', set_code: 'LOB-001',
+    set_rarity: 'Ultra Rare', set_price: '62.15' };
+  await mitNetz([ERST_LOB, OHNE_DAS_SET, kursAntwort], async () => {
+    const erg = await sandbox.kartenSuche('LOB-001');
+    const tr = erg.treffer[0];
+    eq('Nachladen: die Auflage bleibt bestimmt', tr.setSicher, true);
+    eq('Nachladen: Set und Seltenheit der ersten Auskunft gelten', [tr.setCode, tr.seltenheit], ['LOB-001', 'Ultra Rare']);
+    eq('Nachladen: und ihr Preis, nicht der Sammelpreis', tr.preisUsd, 62.15);
+    ok('Nachladen: keine Merkfahne, es ist ja bestimmt', sandbox.ygoZuPosten(tr, k).pruefen === false);
+    ok('Nachladen: der Wert liegt in der richtigen Grössenordnung',
+      sandbox.ygoMarktwert(tr, k) > 40, String(sandbox.ygoMarktwert(tr, k)));
+  });
+
+  /* Set-Codes anderer Sprachen: die Datenbank führt nur englische. */
+  eq('deutscher Code wird englisch', sandbox.ygoAufEnglisch('CORI-DE030'), 'CORI-EN030');
+  eq('französischer auch', sandbox.ygoAufEnglisch('MP22-FR266'), 'MP22-EN266');
+  eq('alte Sätze trugen einen Buchstaben', sandbox.ygoAufEnglisch('LOB-G001'), 'LOB-001');
+  eq('englischer Code bleibt, wie er ist', sandbox.ygoAufEnglisch('CORI-EN030'), '');
+  eq('Code ohne Sprache bleibt auch', sandbox.ygoAufEnglisch('SDK-001'), '');
+  eq('japanisch lässt sich nicht umschreiben', sandbox.ygoAufEnglisch('CORI-JP030'), '');
+  await mitNetz([{ error: 'No card matching your query was found in the database' }, ANTWORT_PASSCODE, kursAntwort], async gerufen => {
+    const erg = await sandbox.kartenSuche('CORI-DE030');
+    ok('deutscher Set-Code findet über den englischen Zwilling', erg.treffer.length === 1, erg.fehler);
+    ok('… die zweite Anfrage ging auf den englischen Code', /CORI-EN030/.test(gerufen[1] || ''), gerufen.join(' '));
+    eq('… und es wird gesagt, was ersetzt wurde',
+      [erg.treffer[0].spracheVon, erg.treffer[0].spracheNach], ['CORI-DE030', 'CORI-EN030']);
+    ok('… mit dem Vorbehalt zum Preis im Vermerk',
+      /Preis = englische Auflage/.test(sandbox.ygoZuPosten(erg.treffer[0], k).beschrieb));
+  });
+
   await mitNetz([new Error('Netz weg')], async () => {
     const erg = await sandbox.kartenSuche('43989315');
     ok('ohne Netz eine Meldung statt eines Absturzes', !erg.treffer.length && !!erg.fehler, erg.fehler);

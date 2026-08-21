@@ -78,15 +78,22 @@ Ein Auftrag, der zu dieser Datei passt:
 
 *Kosten → 🔎 Objekt nachschlagen.* Erkannt wird dreierlei:
 
-| Eingabe | Beispiel | Ergebnis |
-|---|---|---|
-| **Passcode** (8 Ziffern, unten links auf der Karte) | `43989315` | genau diese Karte |
-| **Set-Code**, englisch | `CORI-EN030` | genau diese Auflage, mit ihrem Preis |
-| **Name**, englisch | `Dark Magician` | eine Auswahl zum Antippen |
+**Am besten den Set-Code unten rechts** — er bestimmt die Auflage und damit
+Seltenheit und Wert, ohne Rückfrage.
 
-Der Passcode steht auf der **deutschen Karte genauso** wie auf der englischen —
-er ist der zuverlässigste Weg. Deutsche Set-Codes (`CORI-DE030`) kennt die
-Datenbank dagegen nicht; der Name kommt dann englisch zurück und lässt sich
+| Eingabe | Beispiel | wo auf der Karte | Ergebnis |
+|---|---|---|---|
+| **Set-Code** ⭐ | `CORI-EN030` | unten **rechts**, unter dem Bild | genau diese Auflage, mit ihrem Preis |
+| **Passcode** | `43989315` | unten **links**, acht Ziffern | die Karte — Auflage wird nachgefragt |
+| **Name**, englisch | `Dark Magician` | — | eine Auswahl zum Antippen |
+
+**Deutsche und französische Karten:** Die Datenbank führt nur die englischen
+Set-Codes. `CORI-DE030` wird deshalb automatisch als `CORI-EN030`
+nachgeschlagen, `LOB-G001` als `LOB-001` — Sammlung, Nummer und Seltenheit sind
+dieselben. Das Fenster sagt es dazu, und im Vermerk steht es auch: **der Preis
+ist der der englischen Auflage** und kann für deine abweichen. Japanische Codes
+(`-JP`) lassen sich nicht umschreiben; dort hilft der Passcode, der auf jeder
+Sprachfassung derselbe ist. Der Name kommt immer englisch zurück und lässt sich
 überschreiben.
 
 ### Die Seltenheit: warum die Nummer allein nicht reicht

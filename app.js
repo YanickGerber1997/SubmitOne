@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v382';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v383';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -7591,6 +7591,20 @@ function ygoErkenne(text) {
   return { art: 'name', wert: String(text).trim() };
 }
 
+/* Der englische Zwilling eines Set-Codes — oder leer, wenn es keinen
+   gibt (weil er schon englisch ist oder japanisch). */
+const YGO_SPRACHEN = ['DE', 'FR', 'IT', 'SP', 'PT', 'KR'];
+const YGO_SPRACHEN_ALT = { G: 'deutsch', F: 'französisch', I: 'italienisch', S: 'spanisch', P: 'portugiesisch' };
+function ygoAufEnglisch(code) {
+  const c = String(code == null ? '' : code).toUpperCase().trim();
+  let m = c.match(/^([A-Z0-9]+)-([A-Z]{2})(\d+)$/);
+  if (m && YGO_SPRACHEN.indexOf(m[2]) >= 0) return m[1] + '-EN' + m[3];
+  // Alte Sätze führten einen einzelnen Buchstaben: LOB-G001 ist deutsch.
+  m = c.match(/^([A-Z0-9]+)-([GFISP])(\d+)$/);
+  if (m && YGO_SPRACHEN_ALT[m[2]]) return m[1] + '-' + m[3];
+  return '';
+}
+
 function ygoUrl(erk) {
   if (!erk || !erk.art) return '';
   if (erk.art === 'passcode') return YGO_BASIS + 'cardinfo.php?id=' + encodeURIComponent(erk.wert);
@@ -7751,6 +7765,7 @@ function ygoZuPosten(t, k) {
     /* Diese Zeile steht zuoberst, weil sie das Wichtigste sagt: Was
        hier steht, ist noch nicht belegt. */
     offen ? '⚑ Auflage nicht bestimmt — ' + t.auflagen + ' mögliche. Seltenheit und Wert prüfen.' : '',
+    t.spracheNach ? 'Eingegeben ' + t.spracheVon + ', nachgeschlagen als ' + t.spracheNach + ' (Preis = englische Auflage)' : '',
     [t.art, t.seltenheit].filter(Boolean).join(' · '),
     [t.setCode, t.setName].filter(Boolean).join(' · '),
     t.passcode ? 'Passcode ' + t.passcode : '',
@@ -7794,6 +7809,20 @@ async function kartenSuche(text) {
   let erg;
   try { erg = ygoAuswerten(await ygoHolen(ygoUrl(erk)), erk); }
   catch (e) { return { treffer: [], fehler: (e && e.message) || 'Kein Zugriff auf die Datenbank.' }; }
+
+  /* Nichts gefunden und der Code ist nicht englisch? Dann war es das
+     Sprachkürzel — nochmal mit dem englischen Zwilling. */
+  let ersetzt = '';
+  if (!erg.treffer.length && erk.art === 'setcode') {
+    const en = ygoAufEnglisch(erk.wert);
+    if (en) {
+      const zweit = { art: 'setcode', wert: en };
+      try {
+        const nochmal = ygoAuswerten(await ygoHolen(ygoUrl(zweit)), zweit);
+        if (nochmal.treffer.length) { erg = nochmal; ersetzt = en; erk = zweit; }
+      } catch (e) { /* dann bleibt die erste Meldung stehen */ }
+    }
+  }
   // Set-Code-Auskunft trägt die Kartenart nicht — die holen wir über den Passcode nach.
   if (erg.treffer.length === 1 && erg.treffer[0].nachladen && erg.treffer[0].passcode) {
     const erst = erg.treffer[0];
@@ -7801,12 +7830,21 @@ async function kartenSuche(text) {
       const zwei = ygoAuswerten(await ygoHolen(ygoUrl({ art: 'passcode', wert: erst.passcode })), erk);
       if (zwei.treffer.length) {
         const voll = zwei.treffer[0];
-        erg = { treffer: [{ ...voll, setCode: erst.setCode || voll.setCode, setName: erst.setName || voll.setName,
-                            seltenheit: erst.seltenheit || voll.seltenheit,
-                            preisUsd: erst.preisUsd || voll.preisUsd }], fehler: '' };
+        erg = { treffer: [{ ...voll,
+          setCode: erst.setCode || voll.setCode,
+          setName: erst.setName || voll.setName,
+          seltenheit: erst.seltenheit || voll.seltenheit,
+          preisUsd: erst.preisUsd || voll.preisUsd,
+          /* Die erste Auskunft kam auf einen Set-Code — die Auflage
+             steht damit fest, auch wenn die Auflagenliste des
+             Passcodes sie nicht führt (dieselbe Karte liegt unter
+             mehreren Passcodes mit verschiedenen Listen). */
+          setSicher: erst.setSicher || voll.setSicher,
+        }], fehler: '' };
       }
     } catch (e) { /* die Teilauskunft ist besser als nichts */ }
   }
+  if (ersetzt) erg.treffer = erg.treffer.map(t => ({ ...t, spracheVon: text.trim().toUpperCase(), spracheNach: ersetzt }));
   await kurseHolen();
   return erg;
 }
@@ -7840,9 +7878,10 @@ function actKartenScan(pid) {
     <label class="field"><span>Nummer der Karte</span>
       <input class="input scan-nr" id="scan_nr" inputmode="numeric" autocomplete="off"
              spellcheck="false" placeholder="z.B. 43989315"></label>
-    <span class="einst-hinweis">Der <b>Passcode</b> steht unten links auf der Karte — acht Ziffern, auf der
-      deutschen Karte dieselben wie auf der englischen. Ein englischer Set-Code wie <code>CORI-EN030</code>
-      geht auch, ein Name notfalls ebenso.</span>
+    <span class="einst-hinweis">Am genauesten der <b>Set-Code unten rechts</b> (<code>CORI-EN030</code>): Er bestimmt
+      die Auflage und damit Seltenheit und Wert. Deutsche und französische Codes werden auf die englische
+      Auflage umgeschrieben. Der <b>Passcode unten links</b> (acht Ziffern) geht auch — dann folgt eine
+      Rückfrage, falls es die Karte mehrfach gibt. Ein Name notfalls ebenso.</span>
     <div id="scan_ergebnis"></div>
     <div id="scan_liste"></div>
   `, `<button class="btn ghost" data-close="1">Schliessen</button>
@@ -7872,6 +7911,7 @@ function scanKarteHtml(t, p) {
       <div class="muted">${esc([t.setCode, t.setName].filter(Boolean).join(' · '))}</div>
       <div class="scan-wert">${esc(W('rev', p))}: <b>${wert ? chf(wert) : '–'}</b>
         <span class="muted">${esc(ygoHerkunft(t))}</span></div>
+      ${t.spracheNach ? `<div class="scan-hinweis">${esc(t.spracheVon)} kennt die Datenbank nicht — nachgeschlagen als <b>${esc(t.spracheNach)}</b>. Sammlung, Nummer und Seltenheit stimmen überein; der <b>Preis ist der der englischen Auflage</b> und kann für deine abweichen.</div>` : ''}
       ${(!t.setSicher && t.auflagen > 1) ? `<div class="scan-warnung"><b>Welche Auflage ist es?</b> Diese Nummer gibt es in ${t.auflagen} Auflagen mit verschiedenen Seltenheiten. Solange keine gewählt ist, steht hier keine Seltenheit, und der Wert ist der der günstigsten. Ohne Wahl wird die Karte mit der Merkfahne ⚑ übernommen.</div>` : ''}
       <div class="muted">${esc(W('nummer', p))} ${esc(t.kategorie)}${kat ? ' · ' + esc(kat) : ''}</div>
     </div>

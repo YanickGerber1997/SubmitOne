@@ -2618,6 +2618,20 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 .scan-eigen { margin-top: 10px; }
 /* Die Charge im Erfassen-Fenster: eigener Kasten, weil sie eine
    eigene Sache ist — nicht die Anlage, sondern dieser eine Kauf. */
+/* Handel: das Kennzahlenband über den Chargen. Vier Zahlen, die
+   zusammen die Frage beantworten «wie steht diese Anlage da». */
+.hd-band { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.hd-zahl { padding: 9px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.hd-zahl span { display: block; font-size: var(--t-2xs); color: var(--text-faint); }
+.hd-zahl b { font-size: var(--t-l); font-family: var(--font-zahl); }
+.hd-zahl.hl { border-color: var(--brand); }
+.hd-zahl.gut b { color: var(--b-gruen-text); }
+.hd-zahl.schlecht b { color: var(--b-rot-text); }
+.charge-verkauft { opacity: .6; }
+.charge-verkauft td:first-child { position: relative; }
+.charge-tat { white-space: nowrap; text-align: right; }
+.charge-tat .btn { margin-right: 4px; }
+
 .scan-charge { margin-top: 10px; padding: 9px 10px; background: var(--surface-2);
   border: 1px solid var(--line-soft); border-radius: var(--radius); }
 .scan-charge-kopf { font-size: var(--t-xs); font-weight: 600; color: var(--text-soft); margin-bottom: 6px; }

@@ -86,6 +86,27 @@ src += `
 ;globalThis.__katalogCodes = function (k) { return (VORLAGEN.find(v => v.key === k).katalog || []).map(b => b.code); };
 ;globalThis.__pruefGruppen = function () { return pruefCtx ? pruefCtx.gruppen : []; };
 ;globalThis.__ordZeilen = function () { return ordnungCtx ? ordnungCtx.zeilen : []; };
+;globalThis.__handelBlatt = function (pid, vid) { viewHandel(pid, vid); return globalThis.__blatt; };
+;globalThis.__depotMitChargen = function () {
+  kursSetzen({ rates: { CHF: 0.9333, USD: 1.16 }, date: '2026-08-20' });
+  const p = { id: 'p_dep', name: 'Depot', vorlage: 'depot', vergaben: [],
+    protokolle: [], entscheidungen: [], bezugsfirmen: [], geschosseListe: [], auflagen: [],
+    mitglieder: [], bauteile: [], optionen: [], termine: [], finanz: {} };
+  state.projekte.push(p); setVorlageCtx(p);
+  const gold = { nummer: 'XAU', name: 'Gold', art: 'Edelmetall', kategorie: '201',
+    preisChf: 3677.91, einheit: 'oz', herkunft: 'gold-api' };
+  const silber = { nummer: 'XAG', name: 'Silber', art: 'Edelmetall', kategorie: '201',
+    preisChf: 55.83, einheit: 'oz', herkunft: 'gold-api' };
+  const mach = (t, m, e, d, k) => { const po = kursZuPosten(t, m, e, d); po.schaetzung = k; return po; };
+  csvPostenAnlegen('p_dep', [
+    mach(gold, 1, 'oz', '2025-11-20', 3400),
+    mach(gold, 12, 'g', '2026-03-12', 1450),
+    mach(gold, 20, 'g', '2026-07-04', 2600),
+    mach(silber, 500, 'g', '2026-01-15', 700),
+    mach(silber, 250, 'g', '2026-06-02', 420),
+  ]);
+  return p;
+};
 ;globalThis.__kursNetz = function (antworten) {
   /* Netz-Attrappe für den Kursweg: je Aufruf die nächste Antwort. */
   let i = 0;
@@ -316,6 +337,47 @@ ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(ein
   sandbox.__ordSetzen([{ code: '', label: 'Ohne Nummer' }]);
   sandbox.ordnungSpeichern(pOrd.id);
   eq('Zeile ohne Nummer wird nicht gespeichert', pOrd.katalog.length, 2);
+}
+
+/* ---- 2e) Handel statt Vergabe ----
+   Hinter «Gewerke» steht beim Depot nicht eine Vergabe mit eingeladenen
+   Unternehmern, sondern die Anlage mit ihren Käufen. */
+{
+  eq('Depot zeigt den Handel', sandbox.handelArt({ vorlage: 'depot' }), 'chargen');
+  eq('ein Bauvorhaben die Vergabe', sandbox.handelArt({ vorlage: 'bau' }), '');
+  eq('eine Sammlung vorerst auch', sandbox.handelArt({ vorlage: 'sammlung' }), '');
+
+  const pd = sandbox.__depotMitChargen();
+  const gold = pd.vergaben.filter(v => v.symbol === 'XAU');
+  eq('drei Chargen Gold, zwei Silber', [gold.length, pd.vergaben.length - gold.length], [3, 2]);
+  eq('die Gruppe sammelt die Chargen einer Anlage',
+    sandbox.handelGruppe(pd, gold[0]).length, 3);
+  ok('… und nicht die der anderen',
+    sandbox.handelGruppe(pd, gold[0]).every(c => c.symbol === 'XAU'));
+
+  const sum = sandbox.handelSummen(pd, gold);
+  eq('Einstand ist die Summe der Chargen', sum.einstand, 7450);
+  ok('Bestand in Unzen: 1 oz + 32 g', Math.abs(sum.unzen - 2.0288) < 0.001, String(sum.unzen));
+  ok('Wert kommt aus den Kursen', sum.wert > 7000 && sum.wert < 8000, String(sum.wert));
+
+  /* Verkauftes zählt nicht mehr zum Bestand — der Erlös aber sehr wohl
+     zum Wert, sonst verschwände er aus der Rechnung. */
+  gold[0].status = 'vergeben'; gold[0].betrag = 4000;
+  const nachher = sandbox.handelSummen(pd, gold);
+  ok('verkaufte Charge fällt aus dem Bestand', nachher.unzen < sum.unzen, String(nachher.unzen));
+  eq('… bleibt aber im Einstand', nachher.einstand, 7450);
+  gold[0].status = 'ausschreibung'; gold[0].betrag = 0;
+
+  // Und gezeichnet
+  const blatt = sandbox.__handelBlatt(pd.id, gold[0].id);
+  ok('Handel: die Anlage im Titel', /Gold/.test(blatt));
+  ok('Handel: alle drei Kaufdaten', /20.11.2025/.test(blatt) && /12.03.2026/.test(blatt) && /04.07.2026/.test(blatt));
+  ok('Handel: der Einstand je Einheit als eigene Spalte', /je Einheit/.test(blatt));
+  ok('Handel: kein Wort von Vergabe oder Submittenten',
+    !/Submittent|Werkvertrag|Zuschlag|eingeladen/.test(blatt),
+    (blatt.match(/.{0,20}(Submittent|Werkvertrag|Zuschlag|eingeladen).{0,20}/) || [''])[0]);
+  ok('Handel: die Seitenliste zeigt Anlagen, nicht Käufe',
+    (blatt.match(/gw-side-item/g) || []).length === 2);
 }
 
 /* ---- 3) Der Bau-Fall bleibt, wie er war ---- */

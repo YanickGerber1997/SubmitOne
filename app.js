@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v390';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v391';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -2143,7 +2143,7 @@ function router() {
     case 'projekte':  setActiveNav('projekte');  return viewProjekte();
     case 'projekt':
       setActiveNav('projekte');
-      if (sub === 'vergabe' && b) return viewVergabeDetail(a, b);
+      if (sub === 'vergabe' && b) return (handelArt(findProjekt(a)) === 'chargen') ? viewHandel(a, b) : viewVergabeDetail(a, b);
       if (sub === 'termine') return viewTermine(a);
       if (sub === 'kalender') return viewKalender(a);
       if (sub === 'gewerke') return viewGewerke(a);
@@ -2696,6 +2696,193 @@ function setupKostStickyHead() {
   if (!window._kshBound) { window._kshBound = true; const run = () => { if (_kshUpdate) _kshUpdate(); }; window.addEventListener('scroll', run, { passive: true }); window.addEventListener('resize', run); }
   _kshUpdate();
 }
+
+/* ===== 🤝 HANDEL — wo es keine Vergabe gibt ==========================
+
+   Der Reiter «Gewerke» zeigt beim Bau eine Vergabe: eingeladene
+   Unternehmer, eingegangene Offerten, Zuschlag, Werkvertrag. Für ein
+   Depot ist davon nichts richtig. Dort gibt es keinen, den man
+   einlädt — es gibt Käufe zum jeweils geltenden Kurs.
+
+   Also je Vorlage eine andere Ansicht hinter demselben Reiter:
+
+       vorlage.handel === 'chargen'   die Anlage mit ihren Käufen
+       sonst                          die Vergabe wie bisher
+
+   Und weil beim Depot nach Kürzel gruppiert wird, zeigt die Ansicht
+   nicht EINE Charge, sondern die ANLAGE mit allen ihren Chargen —
+   das ist die Einheit, in der man denkt: «mein Gold», nicht «mein
+   Goldkauf vom 12. März».
+   ===================================================================== */
+
+/** Alle Posten derselben Gruppe — beim Depot: alle Chargen einer Anlage. */
+function handelGruppe(p, v) {
+  const schluessel = gruppeVon(v, p);
+  return (p.vergaben || []).filter(x => gruppeVon(x, p) === schluessel);
+}
+
+/** Bestand, Einstand und Wert einer Anlage. Verkauftes zählt nicht zum Bestand. */
+function handelSummen(p, chargen) {
+  const istMetall = chargen.some(c => String(c.kategorie) === KURS_KATEGORIE.metall);
+  const offen = chargen.filter(c => !isVergeben(c));
+  const menge = offen.reduce((a, c) => a + (Number(c.menge) || 0), 0);
+  const unzen = offen.reduce((a, c) => a + inUnzen(c.menge, c.einheit), 0);
+  const einstand = chargen.reduce((a, c) => a + (Number(c.schaetzung) || 0), 0);
+  const wert = chargen.reduce((a, c) => a + kostenZeile(c).prognose, 0);
+  const einheiten = Array.from(new Set(offen.map(c => c.einheit).filter(Boolean)));
+  return { istMetall, offen, menge, unzen, einstand, wert, einheiten, delta: wert - einstand };
+}
+
+function viewHandel(pid, vid) {
+  const p = findProjekt(pid);
+  const v = p && findVergabe(p, vid);
+  if (!v) { render(emptyState('⚠', W('posten', p) + ' nicht gefunden.')); return; }
+
+  const chargen = handelGruppe(p, v).slice()
+    .sort((a, b) => (a.datum || '9999').localeCompare(b.datum || '9999'));
+  const s = handelSummen(p, chargen);
+  const titel = gruppeTitel(gruppeVon(v, p), chargen, p);
+  const kurs = chargen.map(c => c.kursChf).find(Boolean) || 0;
+  setStatusExtra(chargen.length + ' Charge' + (chargen.length === 1 ? '' : 'n') + ' · Wert ' + chf(s.wert));
+
+  /* Die Seitenliste zeigt die ANLAGEN, nicht die einzelnen Käufe —
+     sonst stünde dieselbe Anlage siebenmal untereinander. */
+  const gruppen = new Map();
+  (p.vergaben || []).forEach(x => {
+    const k = gruppeVon(x, p);
+    if (!gruppen.has(k)) gruppen.set(k, []);
+    gruppen.get(k).push(x);
+  });
+  const seite = `<aside class="gw-side">
+    <div class="gw-side-head">${esc(W('posten_pl', p))} · ${gruppen.size}</div>
+    <div class="gw-side-list">${Array.from(gruppen.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([k, liste]) => {
+      const sm = handelSummen(p, liste);
+      const erste = liste[0];
+      return `<a class="gw-side-item${k === gruppeVon(v, p) ? ' active' : ''}" href="#/projekt/${p.id}/vergabe/${erste.id}"
+        title="${esc(gruppeTitel(k, liste, p))} · ${liste.length} Charge${liste.length === 1 ? '' : 'n'}">
+        <span class="st-dot ${sm.delta >= 0 ? 'green' : 'red'}"></span>
+        <span class="gw-side-bkp">${esc(k)}</span>
+        <span class="gw-side-name">${esc(gruppeTitel(k, liste, p))}<span class="gw-side-zu">${liste.length}× · ${chf(sm.wert)}</span></span></a>`;
+    }).join('')}</div>
+  </aside>`;
+
+  const toolbar = `
+    <button class="btn sm" data-act="handel-kauf" data-pid="${p.id}" data-kind="${esc(v.symbol || v.bkp || '')}">+ Kauf erfassen</button>
+    ${nachschlagDienst(p) === 'kurse' ? `<button class="btn sm secondary" data-act="kurse-auffrischen" data-pid="${p.id}">↻ Kurse auffrischen</button>` : ''}`;
+
+  const kopfZahl = (l, w, cls) => `<div class="hd-zahl${cls ? ' ' + cls : ''}"><span>${l}</span><b>${w}</b></div>`;
+  const bestand = s.einheiten.length === 1
+    ? (Math.round(s.menge * 10000) / 10000) + ' ' + s.einheiten[0]
+      + (s.istMetall && s.einheiten[0] !== 'oz' ? ' = ' + (Math.round(s.unzen * 10000) / 10000) + ' oz' : '')
+    : (s.istMetall ? (Math.round(s.unzen * 10000) / 10000) + ' oz' : s.offen.length + ' Posten');
+
+  const zeilen = chargen.map(c => {
+    const z = kostenZeile(c);
+    const menge = String(c.kategorie) === KURS_KATEGORIE.metall ? inUnzen(c.menge, c.einheit) : (Number(c.menge) || 0);
+    const je = (c.schaetzung && menge) ? c.schaetzung / menge : null;
+    const d = z.prognose - (c.schaetzung || 0);
+    const verkauft = isVergeben(c);
+    return `<tr${verkauft ? ' class="charge-verkauft"' : ''}>
+      <td>${c.datum ? fmtDate(c.datum) : '<span class="muted">ohne Datum</span>'}</td>
+      <td>${c.menge != null ? esc(String(c.menge) + ' ' + (c.einheit || '')) : '<span class="muted">–</span>'}</td>
+      <td class="num">${c.schaetzung ? money(c.schaetzung) : '–'}</td>
+      <td class="num">${je ? money(je) : '–'}</td>
+      <td class="num">${kurs ? money(kurs) : '–'}</td>
+      <td class="num"><strong>${money(z.prognose)}</strong></td>
+      <td class="num ${d > 0.005 ? 'under' : (d < -0.005 ? 'over' : '')}">${(d > 0 ? '+' : '') + money(d)}</td>
+      <td>${statusPill(c)}</td>
+      <td class="charge-tat">
+        ${verkauft ? '' : `<button class="btn sm secondary" data-act="handel-verkauf" data-pid="${p.id}" data-vid="${c.id}" title="Diese Charge verkaufen">Verkauf</button>`}
+        <button class="x-btn" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${c.id}" title="Charge bearbeiten">✎</button>
+        <button class="x-btn" data-act="rm-vergabe" data-pid="${p.id}" data-vid="${c.id}" title="Charge löschen">×</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  render(`
+    <div class="detail-head">
+      <div>
+        <h1 style="margin:0;font-size:var(--t-xl, 22px)"><span class="bkp-code" style="font-size:var(--t-l, 16px)">${esc(gruppeVon(v, p))}</span> ${esc(titel)}</h1>
+        <div class="sub" style="margin-top:5px">${chargen.length} Charge${chargen.length === 1 ? '' : 'n'}${kurs ? ' · Kurs ' + chf(kurs) + (s.istMetall ? ' je Feinunze' : ' je ' + esc(s.einheiten[0] || 'Stück')) : ''}</div>
+      </div>
+    </div>
+    ${projektTabs(p, 'gewerke', toolbar)}
+    <div class="gw-layout">
+      ${seite}
+      <div class="gw-main">
+        <div class="hd-band">
+          ${kopfZahl('Bestand', esc(bestand))}
+          ${kopfZahl(esc(W('kv', p)), chf(s.einstand))}
+          ${kopfZahl(esc(W('rev', p)), chf(s.wert), 'hl')}
+          ${kopfZahl('+/−', (s.delta > 0 ? '+' : '') + chf(s.delta), s.delta >= 0 ? 'gut' : 'schlecht')}
+        </div>
+        <div class="card ktable-wrap" style="margin-top:14px">
+          <table class="grid">
+            <thead><tr>
+              <th>Gekauft am</th><th>Menge</th><th class="num">${esc(W('kv', p))}</th>
+              <th class="num">je Einheit</th><th class="num">Kurs heute</th>
+              <th class="num">${esc(W('rev', p))}</th><th class="num">+/−</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody>${zeilen || `<tr><td colspan="9" class="muted" style="padding:14px">Noch keine Charge.</td></tr>`}</tbody>
+          </table>
+        </div>
+        <p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:10px">
+          Jeder Kauf ist eine eigene Charge mit eigenem Datum und eigenem Einstand — nur so lässt sich je Kauf
+          sagen, ob er im Plus liegt. <b>je Einheit</b> ist der Einstand geteilt durch die Menge${s.istMetall ? ' in Feinunzen' : ''};
+          das ist die Zahl, die mit dem heutigen Kurs vergleichbar ist.
+        </p>
+      </div>
+    </div>`);
+}
+
+/** Kauf erfassen: dasselbe Fenster wie das Nachschlagen, mit gesetztem Kürzel. */
+function handelKauf(pid, symbol) {
+  actKartenScan(pid);
+  const feld = $('#scan_nr');
+  if (feld && symbol) { feld.value = symbol; scanSuchen(); }
+}
+
+/** Eine Charge verkaufen. */
+function actHandelVerkauf(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const z = kostenZeile(v);
+  openModal('Verkauf — ' + esc(v.gewerk), `
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin:0 0 10px">
+      Charge vom ${v.datum ? fmtDate(v.datum) : '—'}${v.menge != null ? ' · ' + esc(String(v.menge) + ' ' + (v.einheit || '')) : ''}
+      · Einstand ${chf(v.schaetzung)} · heutiger Wert ${chf(z.prognose)}</p>
+    <div class="form-row">
+      <label class="field">Erlös (CHF) <input class="input" type="number" step="0.05" id="vk_betrag" value="${Math.round(z.prognose * 100) / 100}"></label>
+      <label class="field">Verkauft am <input class="input" type="date" id="vk_datum" value="${todayIso()}"></label>
+    </div>
+    <label class="field">${esc(W('partner', p))} <input class="input" id="vk_wo" value="${esc(v.firma || '')}" placeholder="Börse, Händler, Käufer …"></label>
+    <label class="einst-schalter"><input type="checkbox" id="vk_bezahlt" checked>
+      <span>Geld ist eingegangen (wird als Zahlung verbucht)</span></label>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button><button class="btn" data-act="vk-speichern" data-pid="${pid}" data-vid="${vid}">Verkauf buchen</button>`);
+}
+
+function handelVerkaufSpeichern(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const betrag = Number(($('#vk_betrag') || {}).value) || 0;
+  if (!betrag) { toast('Bitte einen Erlös eingeben', 'info'); return; }
+  const datum = ($('#vk_datum') || {}).value || todayIso();
+  v.firma = (($('#vk_wo') || {}).value || '').trim();
+  v.betrag = betrag;
+  v.status = 'vergeben';
+  v.verkauftAm = datum;
+  if (($('#vk_bezahlt') || {}).checked) {
+    (v.rechnungen = v.rechnungen || []).push({
+      id: uid('rg'), text: 'Erlös aus Verkauf', nr: '', art: 'schluss',
+      rueckbehaltP: 0, skontoP: 0, rbFrei: false,
+      betrag, datum, bezahlt: true,
+    });
+  }
+  const rest = String(v.beschrieb || '').split('\n').filter(z => z.indexOf('Verkauft ') !== 0);
+  v.beschrieb = rest.concat(['Verkauft ' + fmtDate(datum) + ' für ' + chf(betrag)
+    + (v.schaetzung ? ' · Einstand ' + chf(v.schaetzung) + ' · ' + (betrag >= v.schaetzung ? '+' : '') + chf(betrag - v.schaetzung) : '')]).join('\n');
+  save(); closeModal(); router();
+  toast('Verkauf gebucht: ' + chf(betrag), 'ok');
+}
+
 /* ===== 🟩 MODUL: KOSTEN (SubKosten) — Baukostenübersicht, Rechnungen, Nachträge, Zahlungsplan ===== */
 
 /* Der Umschalter netto/brutto.
@@ -7106,6 +7293,9 @@ const VORLAGEN = [
     geld: true, einheit: 'CHF', mehrIstGut: true,
     // Kein Zuschlagsverfahren, dafür Mengen: 0.35 BTC sind keine 0.35 Stück Arbeit.
     ausschreibung: false, mengen: true,
+    // Hinter «Gewerke» steht der Handel: die Anlage mit ihren Chargen,
+    // nicht eine Vergabe mit eingeladenen Unternehmern.
+    handel: 'chargen',
     nachschlag: 'kurse',
     katalog: DEPOT_KATALOG,
     tabs: ['overview', 'gewerke', 'kosten', 'rechnungen', 'nachtraege', 'listen', 'termine', 'kalender', 'pendenzen', 'finanz'],
@@ -8416,6 +8606,9 @@ async function nachschlagSuche(text, p) {
 function nachschlagZuPosten(t, p, menge, einheit, datum) {
   return (nachschlagDienst(p) === 'kurse') ? kursZuPosten(t, menge, einheit, datum) : ygoZuPosten(t);
 }
+/** Welche Ansicht steht hinter «Gewerke»? 'chargen' = Handel, sonst die Vergabe. */
+function handelArt(p) { const v = vorlage(p); return (v && v.handel) || ''; }
+
 /** Führt diese Vorlage Mengen? Karten nicht (ein Stück je Zeile), ein Depot schon. */
 function hatMengen(p) { const v = vorlage(p); return !!(v && v.mengen); }
 
@@ -10131,16 +10324,16 @@ function viewVergabeDetail(pid, vid) {
   // Gewerk-Navigation: vertikale Liste (BKP-Katalog) neben dem Inhalt, gruppiert nach BKP-Hauptgruppe
   const gwList = gewerkeSorted(p);
   const gwGroups = {};
-  gwList.forEach(g => { const k = String(g.bkp || '0').trim()[0] || '0'; (gwGroups[k] = gwGroups[k] || []).push(g); });
+  gwList.forEach(g => { const k = gruppeVon(g, p); (gwGroups[k] = gwGroups[k] || []).push(g); });
   const gwSide = `<aside class="gw-side">
-    <div class="gw-side-head">Gewerke · ${gwList.length}</div>
-    <div class="gw-side-list">${Object.keys(gwGroups).sort().map(k => `<div class="gw-side-grp">${esc(k)} · ${esc(gruppenAktiv(p)[k] || 'Übrige')}</div>${gwGroups[k].map(g => {
+    <div class="gw-side-head">${esc(W('posten_pl', p))} · ${gwList.length}</div>
+    <div class="gw-side-list">${Object.keys(gwGroups).sort().map(k => `<div class="gw-side-grp">${esc(k === '?' ? '' : k)} ${esc(gruppeTitel(k, gwGroups[k], p))}</div>${gwGroups[k].map(g => {
       /* Der Punkt zeigt den Status, der WIRKLICH gilt: Bei einer Sammelvergabe
          ist das der Status der Hauptposition. 112 Abbrüche als «Ausschreibung»
          zu zeigen, während 211 längst einen Werkvertrag hat, wäre falsch —
          die beiden werden ja in einem Zug vergeben. */
       const leit = statusLeit(p, g);
-      const stt = STATUS_BY_KEY[leit.status] || {};
+      const stt = stInfo(leit.status, p) || {};
       const folgt = leit.id !== g.id ? leit : null;
       return `<a class="gw-side-item${g.id === v.id ? ' active' : ''}${folgt ? ' folgt' : ''}" href="#/projekt/${p.id}/vergabe/${g.id}" title="${esc(stt.label || leit.status || '')}${folgt ? ' · vergeben mit ' + esc(folgt.bkp || '') + ' ' + esc(folgt.gewerk || '') : ''}"><span class="st-dot ${stt.color || 'grey'}"></span><span class="gw-side-bkp">${esc(g.bkp || '')}</span><span class="gw-side-name">${esc(g.gewerk || '')}${folgt ? `<span class="gw-side-zu">mit ${esc(folgt.bkp || '')}</span>` : ''}</span></a>`;
     }).join('')}`).join('')}</div>
@@ -20246,6 +20439,9 @@ document.addEventListener('click', e => {
     case 'pruef-aus':        pruefAus(kind); break;
     case 'pruef-nachladen':  pruefNachladen(pid); break;
     case 'kurse-auffrischen': actKurseAktualisieren(pid); break;
+    case 'handel-kauf':      handelKauf(pid, kind); break;
+    case 'handel-verkauf':   actHandelVerkauf(pid, vid); break;
+    case 'vk-speichern':     handelVerkaufSpeichern(pid, vid); break;
     case 'ordnung':          actOrdnung(pid); break;
     case 'ord-neu':          ordnungNeu(); break;
     case 'ord-weg':          ordnungWeg(kind); break;

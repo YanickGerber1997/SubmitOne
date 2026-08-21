@@ -715,6 +715,21 @@ ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(ein
   eq('… je Variante den ihren', sandbox.pokemonPreis(cm, '-holo'), 123.63);
   eq('ohne Trend den Schnitt', sandbox.pokemonPreis({ avg30: 12 }, ''), 12);
   eq('ohne alles null', sandbox.pokemonPreis(null, ''), 0);
+  /* Der Fund vom 21.08.2026: Mega-Stalobor-ex gibt es NUR als Holo,
+     darum fuehrt Cardmarket keinen getrennten Holo-Preis - der Preis
+     steht im Grundfeld. Ohne Rueckfall stand die wertvollste Karte
+     der Sammlung auf null, und eine Null sieht aus wie eine Auskunft,
+     ohne eine zu sein. */
+  const nurGrund = { trend: 5.86, avg30: 6.12, 'trend-holo': 0, 'avg30-holo': 0 };
+  eq('Variante ohne eigenen Preis nimmt den der Karte',
+    sandbox.pokemonPreis(nurGrund, '-holo'), 5.86);
+  ok('… und sagt es auch',
+    /der Karte/.test(sandbox.pokemonPreisName(nurGrund, '-holo')),
+    sandbox.pokemonPreisName(nurGrund, '-holo'));
+  eq('wo die Variante einen eigenen hat, gilt der ihre',
+    sandbox.pokemonPreis({ trend: 477.45, 'trend-holo': 123.63 }, '-holo'), 123.63);
+  eq('… und dann ohne den Zusatz',
+    sandbox.pokemonPreisName({ trend: 477.45, 'trend-holo': 123.63 }, '-holo'), 'Preis-Trend');
   eq('und sagt, welche Zahl es war', sandbox.pokemonPreisName(cm, ''), 'Preis-Trend');
 
   // Ein Treffer wird zum Posten

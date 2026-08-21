@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v400';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v401';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -9441,20 +9441,38 @@ async function pokemonAlleSaetze(sprache) {
   return pokemonSatzListen.get(schl);
 }
 
-/** Der Preis einer Variante — Cardmarkets Preis-Trend, sonst der Schnitt. */
+/* Der Preis einer Variante — Cardmarkets Preis-Trend, sonst der
+   Schnitt, sonst der tiefste.
+
+   Und wenn die Variante gar keinen eigenen Preis traegt, der Preis
+   der KARTE: Gibt es ein Stueck nur als Holo, fuehrt Cardmarket
+   keinen getrennten Holo-Preis, sondern nur den einen. Ohne diesen
+   Rueckfall stand die wertvollste Karte der Sammlung auf null — und
+   eine Null sieht aus wie eine Auskunft, ohne eine zu sein. */
 function pokemonPreis(cm, zusatz) {
   if (!cm) return 0;
-  const nimm = k => { const w = Number(cm[k + (zusatz || '')]); return isFinite(w) && w > 0 ? w : 0; };
-  return nimm('trend') || nimm('avg30') || nimm('avg7') || nimm('avg') || nimm('low');
+  const ausFeld = z => {
+    const nimm = k => { const w = Number(cm[k + z]); return isFinite(w) && w > 0 ? w : 0; };
+    return nimm('trend') || nimm('avg30') || nimm('avg7') || nimm('avg') || nimm('low');
+  };
+  return ausFeld(zusatz || '') || ausFeld('');
 }
 function pokemonPreisName(cm, zusatz) {
   if (!cm) return '';
-  const z = zusatz || '';
-  if (Number(cm['trend' + z]) > 0) return 'Preis-Trend';
-  if (Number(cm['avg30' + z]) > 0) return 'Schnitt 30 Tage';
-  if (Number(cm['avg7' + z]) > 0) return 'Schnitt 7 Tage';
-  if (Number(cm['avg' + z]) > 0) return 'Schnitt';
-  return 'tiefster Preis';
+  const benenne = z => {
+    if (Number(cm['trend' + z]) > 0) return 'Preis-Trend';
+    if (Number(cm['avg30' + z]) > 0) return 'Schnitt 30 Tage';
+    if (Number(cm['avg7' + z]) > 0) return 'Schnitt 7 Tage';
+    if (Number(cm['avg' + z]) > 0) return 'Schnitt';
+    if (Number(cm['low' + z]) > 0) return 'tiefster Preis';
+    return '';
+  };
+  const eigen = benenne(zusatz || '');
+  if (eigen) return eigen;
+  const grund = benenne('');
+  /* Gesagt, dass der Preis der Karte gilt und nicht der der
+     Variante — sonst hielte man ihn fuer den genaueren. */
+  return grund ? grund + ' der Karte' : '';
 }
 
 /** Eine Karte von TCGdex in die Form bringen, die das Fenster kennt. */

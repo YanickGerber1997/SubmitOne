@@ -212,3 +212,66 @@ sie sich einzeln vor — die Wörter dafür stehen schon bereit.
 
     node test/selftest-node.js    Logik der Vorlagen (Vollständigkeit, Rückfall, CSV-Rundgang)
     node test/vorlagen.js         das Ganze im Gebrauch: Liste einlesen, nachschlagen, Ansichten zeichnen
+
+---
+
+# Zweiter Tag: wo die Wörter nicht reichen
+
+Nach dem Wörterbuch kam heraus, dass zwei Ansichten nicht bloss falsch
+*beschriftet* waren, sondern das Falsche *taten*.
+
+## Der Reiter «Gewerke»
+
+Er zeigt eine Vergabe: eingeladene Unternehmer, eingegangene Offerten,
+Zuschlag, Werkvertrag. Für ein Depot ist davon nichts richtig — dort gibt es
+keinen, den man einlädt, sondern Käufe zum jeweils geltenden Kurs.
+
+Also entscheidet die Vorlage, welche Ansicht dahintersteht (`vorlage.handel`).
+Beim Depot die **Anlage mit ihren Chargen**, denn das ist die Einheit, in der
+man denkt: «mein Gold», nicht «mein Goldkauf vom 12. März».
+
+Dass jeder Kauf eine eigene Zeile ist, war die Bedingung dafür, dass es
+aufgeht — mit einer Zeile je Anlage wäre der Einstand ein Durchschnitt, der
+nirgends herkommt, und ein Teilverkauf hätte keinen Bezug. Dieselbe
+Entscheidung wie bei den doppelten Karten, aus demselben Grund.
+
+## Die Startseite
+
+Sie zählte alle Projekte zusammen. Solange alles Franken sind, fällt das nicht
+auf. Sobald eine Unterschriftensammlung danebensteht, addiert sie 3'600
+Unterschriften zu 375'000 Franken.
+
+Der Entscheid: **je Projekt eine Kachel in seiner Sprache**, und quer gezählt
+wird nur, was sich vergleichen lässt — mit dem Vermerk, wenn nicht alles drin
+ist («3 von 4 Projekten»). Die Fristen-Tafel zeichnet jede Zeile im
+Zusammenhang *ihres* Projekts, sonst stünde bei einer Karte «Ausschreibung
+erstellt» statt «Im Bestand».
+
+## Was das über den Aufbau sagt
+
+Der Zusammenhang (`vorlageCtx`) ist bis hierher immer ganzseitig gewesen: eine
+Seite, ein Projekt. Startseite und Fristen-Tafel sind die ersten Stellen, an
+denen mehrere Projekte auf **einem** Blatt stehen. Dort muss er je Zeile
+gesetzt und danach zurückgestellt werden:
+
+```js
+const merk = vorlageCtx; setVorlageCtx(pr);
+const h = projektCard(pr);
+setVorlageCtx(merk);
+```
+
+Wer künftig etwas baut, das mehrere Projekte zugleich zeigt, muss dasselbe tun
+— sonst färbt das letzte Projekt auf die ganze Seite ab. Eine Prüfung wacht
+darüber («nach der Startseite gilt wieder der Standard»).
+
+## Was noch aussteht
+
+Die **Detailansicht der Sammlung**: Eine Karte hat keine Submittenten, aber sie
+zeigt sie noch. `handel: 'stueck'` wäre der Platz dafür.
+
+Die **zweite Gruppenebene** — Anlageklasse, darunter Anlage, darunter Chargen.
+Heute kennt die Tabelle eine Ebene; beim Depot ist sie an die Anlage vergeben,
+damit die Chargen zusammenfinden.
+
+**Einzelaktien**: Weder Yahoo noch Stooq lassen den Browser an ihre Kurse.
+Es bräuchte einen Schlüssel (Finnhub) — oder der Kurs bleibt von Hand.

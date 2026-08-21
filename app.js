@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v386';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v387';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -17867,7 +17867,11 @@ function actEditVergabe(pid, vid) {
     </div>
     <label class="field">Ausführung (Text, falls kein Termin) <input class="input" id="fe_ausf" value="${esc(v.ausfuehrung || '')}" placeholder="z.B. ab Herbst 2026">
       <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px">Erscheint auf dem Einladungs-Deckblatt unter „Ausführung". Leer = Terminprogramm bzw. „gem. Terminprogramm".</span></label>
-    <label class="field">Notiz <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">— Seltenheit, Auflage, Zustand; alles frei überschreibbar</span>
+    ${nachschlagDienst(p) ? `<div class="form-row">
+      <label class="field">Seltenheit / Auflage <input class="input" id="fe_seltenheit" value="${esc(v.seltenheit || '')}" placeholder="z.B. Ultra Rare"></label>
+      <label class="field">Satz <input class="input" id="fe_satz" value="${esc(v.satz || '')}" placeholder="z.B. Chaos Origins"></label>
+    </div>` : ''}
+    <label class="field">Notiz <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">— Zustand, Auflage, Bemerkungen; alles frei überschreibbar</span>
       <textarea class="input" id="fe_beschrieb" rows="4">${esc(v.beschrieb || '')}</textarea></label>
     <label class="einst-schalter"><input type="checkbox" id="fe_pruefen" ${v.pruefen ? 'checked' : ''}>
       <span>⚑ Noch prüfen — erscheint als Fahne in der Übersicht</span></label>
@@ -17893,6 +17897,8 @@ function saveVergabeEdit(pid, vid) {
   v.bkp = bkpParsed.code || v.bkp || '000';
   v.gewerk = gewerk;
   { const b = $('#fe_beschrieb'); if (b) v.beschrieb = b.value; }
+  { const se = $('#fe_seltenheit'); if (se) v.seltenheit = se.value.trim(); }
+  { const sa = $('#fe_satz'); if (sa) v.satz = sa.value.trim(); }
   { const pf = $('#fe_pruefen'); if (pf) v.pruefen = pf.checked; }
   v.schaetzung = Number($('#fe_schaetzung').value) || 0;
   v.frist = $('#fe_frist').value || '';

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v414';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v415';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -7911,6 +7911,7 @@ const VORLAGEN = [
        Vorschlag, kein Gesetz — jeder eigene Name lässt sich daneben
        tippen. */
     plattformen: ['eBay', 'Ricardo', 'Cardmarket', 'Tutti'],
+    zustaende: 'karten',
     katalog: KARTEN_KATALOG,
     /* Diese Vorlage kann eine Nummer nachschlagen: Passcode oder
        Set-Code einer Sammelkarte → Name, Art, Set, Seltenheit, Bild,
@@ -10059,8 +10060,144 @@ async function karteSpracheUmstellen(v, sprache) {
   return { geaendert: true, name: k.name, satz: v.satz, seltenheit: v.seltenheit };
 }
 
+/* Zustandsskalen. Sammelkarten sprechen die Sprache von Cardmarket —
+   wer dort «NM» schreibt, wird verstanden, und wer «gut» schreibt,
+   nicht. Alles andere bekommt eine Skala, die jeder versteht.
+
+   Kürzel, Name, und was er bedeutet. Das Dritte ist kein Schmuck:
+   «Excellent» heisst bei Karten «leichte Spuren», nicht
+   «ausgezeichnet» — wer das nicht weiss, stuft falsch ein und
+   bekommt die Karte zurück. */
+const ZUSTAND_SKALEN = {
+  karten: [
+    ['M',  'Mint',         'fabrikneu, ohne jeden Makel'],
+    ['NM', 'Near Mint',    'fast neu, höchstens kaum sichtbare Spuren'],
+    ['EX', 'Excellent',    'leichte Spuren an Kanten oder Ecken'],
+    ['GD', 'Good',         'sichtbare Spuren, Karte flach und sauber'],
+    ['LP', 'Light Played', 'deutliche Spuren, kleine Knicke möglich'],
+    ['PL', 'Played',       'stark gebraucht'],
+    ['PO', 'Poor',         'beschädigt — Knick, Riss, Wasserschaden'],
+  ],
+  allgemein: [
+    ['neu',       'Neu',        'ungebraucht, originalverpackt'],
+    ['wieneu',    'Wie neu',    'gebraucht, ohne sichtbare Spuren'],
+    ['gut',       'Gut',        'normale Gebrauchsspuren'],
+    ['gebraucht', 'Gebraucht',  'deutliche Spuren, voll gebrauchsfähig'],
+    ['defekt',    'Defekt',     'nicht gebrauchsfähig, für Ersatzteile'],
+  ],
+};
+
+/** Die Skala dieser Vorlage. Wer Marktplätze kennt, verkauft Dinge —
+    und Dinge haben einen Zustand. Ein Gewerk hat keinen. */
+function zustandSkala(p) {
+  const vl = vorlage(p);
+  if (!vl || !Array.isArray(vl.plattformen) || !vl.plattformen.length) return [];
+  return ZUSTAND_SKALEN[vl.zustaende] || ZUSTAND_SKALEN.allgemein;
+}
+
+/** Ein Zustandskürzel → sein Eintrag in der Skala. */
+function zustandInfo(p, code) {
+  const c = String(code || '').trim();
+  if (!c) return null;
+  const z = zustandSkala(p).find(x => x[0] === c);
+  return z ? { code: z[0], name: z[1], erklaerung: z[2] } : { code: c, name: c, erklaerung: '' };
+}
+
+/** Welches Spiel — für den Titel. Steht nicht als Feld da, aber die
+    Quelle verrät es eindeutig. */
+function spielVon(v) {
+  if (!v) return '';
+  if (v.quelleName === 'YGOPRODeck') return 'Yu-Gi-Oh';
+  if (v.quelleName === 'TCGdex') return 'Pokémon';
+  return '';
+}
+
+/* Die harte Grenze eines eBay-Titels. Ricardo und Tutti sind
+   grosszügiger; wer für die engste Grenze baut, passt überall. */
+const TITEL_MAX = 80;
+
+/** Der Angebotstitel — aus dem, was belegt dasteht.
+
+    Gebaut wird von wichtig nach unwichtig, und abgeschnitten wird von
+    hinten: Der Name muss stehen bleiben, der Satzname darf fallen.
+    Wer nach einer Karte sucht, tippt Name und Nummer — danach kommt
+    lange nichts. */
+function angebotTitel(v, p) {
+  if (v && v.angebotTitel) return String(v.angebotTitel);
+  const z = zustandInfo(p, v && v.zustand);
+  const teile = [
+    spielVon(v),
+    String((v && v.gewerk) || '').trim(),
+    String((v && v.bkp) || '').trim(),
+    String((v && v.seltenheit) || '').replace(/ · /g, ' '),
+    String((v && v.satz) || '').trim(),
+    v && v.sprache ? spracheInfo(v.sprache).name : '',
+    z ? z.code : '',
+  ].filter(Boolean);
+
+  /* Von hinten kürzen, bis es passt — aber die ersten zwei Stücke
+     (Spiel und Name) nie antasten. */
+  while (teile.length > 2 && teile.join(' ').length > TITEL_MAX) teile.pop();
+  let t = teile.join(' ');
+  if (t.length > TITEL_MAX) t = t.slice(0, TITEL_MAX - 1).trim() + '…';
+  return t;
+}
+
+/** Der Angebotstext. Was der Vermerk weiss, in Sätzen, die ein Käufer
+    lesen will — ohne die inneren Vorbehalte über Preisquellen, die
+    ihn nichts angehen und die im Angebot wie Unsicherheit klingen. */
+function angebotText(v, p) {
+  if (v && v.angebotText) return String(v.angebotText);
+  const z = zustandInfo(p, v && v.zustand);
+  const kopf = [String((v && v.gewerk) || '').trim(), spielVon(v) ? '(' + spielVon(v) + ')' : ''].filter(Boolean).join(' ');
+  const merkmale = [v && v.bkp, v && v.satz, v && v.seltenheit,
+    v && v.sprache ? spracheInfo(v.sprache).name : ''].filter(Boolean).join(' · ');
+
+  const zeilen = [kopf];
+  if (merkmale) zeilen.push(merkmale);
+  zeilen.push('');
+  zeilen.push(z ? 'Zustand: ' + z.name + (z.erklaerung ? ' — ' + z.erklaerung : '')
+                : 'Zustand: noch nicht angegeben');
+  if (v && v.angebot) {
+    zeilen.push('Versand: ' + (v.angebot.portoKaeufer
+      ? 'Porto trägt der Käufer.' : 'Porto ist im Preis inbegriffen.'));
+  }
+  /* Der Schlusssatz gehört dem Verkäufer, nicht dem Programm. Was
+     rechtlich gilt, kann ihm niemand in den Mund legen. */
+  const fuss = String((p && p.angebotFuss) || '').trim();
+  if (fuss) { zeilen.push(''); zeilen.push(fuss); }
+  return zeilen.join('\n');
+}
+
 /** Die Marktplätze, die diese Vorlage vorschlägt. Ohne Liste kein
     Angebotsfeld — beim Bau hat «Anbieten» keinen Sinn. */
+/** Das Verkaufsblatt: der fertige Text, den man irgendwo hinstellt.
+
+    Er wird erzeugt, nicht getippt — aus dem, was schon belegt
+    dasteht. Wer ihn ändern will, ändert ihn; aber niemand tippt
+    hundertdreissig Mal dasselbe.
+
+    Die Zeichenzahl steht dabei, weil eBay bei 80 hart abschneidet.
+    Ein Titel, der dort verstümmelt ankommt, kostet Käufer. */
+function verkaufsblatt(p, v) {
+  const t = angebotTitel(v, p);
+  const txt = angebotText(v, p);
+  const eng = t.length > TITEL_MAX;
+  return `<div class="vb">
+    <div class="vb-h">Verkaufsblatt <span class="muted">— fertig zum Einstellen, überall</span></div>
+    <div class="vb-zeile">
+      <div class="vb-lab">Titel <span class="vb-zahl ${eng ? 'eng' : ''}">${t.length}/${TITEL_MAX}</span></div>
+      <div class="vb-wert" id="vb_titel_${v.id}">${esc(t)}</div>
+      <button class="btn sm secondary" data-act="vb-kopie" data-pid="${p.id}" data-vid="${v.id}" data-kind="titel">Kopieren</button>
+    </div>
+    <div class="vb-zeile">
+      <div class="vb-lab">Text</div>
+      <div class="vb-wert vb-text" id="vb_text_${v.id}">${esc(txt)}</div>
+      <button class="btn sm secondary" data-act="vb-kopie" data-pid="${p.id}" data-vid="${v.id}" data-kind="text">Kopieren</button>
+    </div>
+  </div>`;
+}
+
 /** Der Angebotsblock in der aufgeklappten Zeile.
 
     Alles, was zu einem Angebot gehört, auf einmal sichtbar: der Preis,
@@ -10076,6 +10213,8 @@ function angebotBlock(p, v) {
   const markt = kostenZeile(v).prognose || 0;
   const vorschlag = a ? a.preis : (markt ? Math.ceil(markt * 2) / 2 : '');
   const gewaehlt = a ? (a.plattformen || []) : [];
+  const skala = zustandSkala(p);
+  const zst = zustandInfo(p, v.zustand);
   const eigene = gewaehlt.filter(x => orte.indexOf(x) < 0);
   const d = a && markt ? a.preis - markt : null;
 
@@ -10088,9 +10227,15 @@ function angebotBlock(p, v) {
     <div class="ang-reihe">
       <label class="ang-preis">${esc(W('angebot', p))}
         <input class="input" type="number" step="0.05" min="0" id="ang_preis_${v.id}" value="${vorschlag}"></label>
+      ${skala.length ? `<label class="ang-zustand">Zustand
+        <select class="select" id="ang_zustand_${v.id}">
+          <option value="">— noch nicht angegeben</option>
+          ${skala.map(([kz, nm, was]) => `<option value="${esc(kz)}"${v.zustand === kz ? ' selected' : ''} title="${esc(was)}">${esc(kz)} · ${esc(nm)}</option>`).join('')}
+        </select></label>` : ''}
       <label class="ang-porto"><input type="checkbox" id="ang_porto_${v.id}"${!a || a.portoKaeufer ? ' checked' : ''}>
         Porto zahlt der Käufer</label>
     </div>
+    ${zst ? `<div class="ang-zerkl">${esc(zst.name)} — ${esc(zst.erklaerung)}</div>` : ''}
     <div class="ang-orte">${orte.map(o => `<label class="ang-ort"><input type="checkbox" class="ang-ort-${v.id}" value="${esc(o)}"${gewaehlt.indexOf(o) >= 0 ? ' checked' : ''}> ${esc(o)}</label>`).join('')}
       <input class="input ang-eigen" id="ang_eigen_${v.id}" value="${esc(eigene.join(', '))}" placeholder="weitere, mit Komma">
     </div>
@@ -10099,6 +10244,7 @@ function angebotBlock(p, v) {
       ${a ? `<button class="btn sm ghost" data-act="angebot-weg" data-pid="${p.id}" data-vid="${v.id}">Zurückziehen</button>` : ''}
       ${a ? `<span class="muted">seit ${esc(fmtDate(a.seit))}</span>` : ''}
     </div>
+    ${verkaufsblatt(p, v)}
   </div>`;
 }
 function plattformenVon(p) {
@@ -10151,6 +10297,9 @@ function actAnbieten(pid, vid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
   const preis = ($('#ang_preis_' + vid) || {}).value;
   const porto = !!(($('#ang_porto_' + vid) || {}).checked);
+  /* Der Zustand hängt an der Sache, nicht am Angebot — er bleibt auch
+     stehen, wenn das Angebot zurückgezogen wird. */
+  { const zs = $('#ang_zustand_' + vid); if (zs) v.zustand = zs.value; }
   const orte = Array.from(document.querySelectorAll('.ang-ort-' + vid))
     .filter(x => x.checked).map(x => x.value);
   const eigen = (($('#ang_eigen_' + vid) || {}).value || '').trim();
@@ -10161,6 +10310,16 @@ function actAnbieten(pid, vid) {
   angebotSetzen(v, preis, orte, porto);
   save(); viewKosten(pid);
   toast(v.gewerk + ': angeboten für ' + chf(v.angebot.preis) + ' auf ' + orte.join(', '), 'ok');
+}
+
+function actVerkaufsblattKopie(pid, vid, was) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const t = was === 'titel' ? angebotTitel(v, p) : angebotText(v, p);
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(t).then(
+      () => toast((was === 'titel' ? 'Titel' : 'Text') + ' kopiert', 'ok'),
+      () => toast('Kopieren nicht möglich — Text von Hand markieren', 'info'));
+  } else toast('Kopieren nicht möglich — Text von Hand markieren', 'info');
 }
 
 function actAngebotWeg(pid, vid) {
@@ -22022,6 +22181,7 @@ document.addEventListener('click', e => {
     case 'scan-auflage':     scanAuflage(kind); break;
     case 'scan-sprache':     scanSprache(kind); break;
     case 'anbieten':         actAnbieten(pid, vid); break;
+    case 'vb-kopie':         actVerkaufsblattKopie(pid, vid, act.dataset.kind); break;
     case 'angebot-weg':      actAngebotWeg(pid, vid); break;
     case 'pruef-ok':         pruefErledigt(pid, vid); break;
     case 'offen-pruefen':    actOffenePruefen(pid); break;

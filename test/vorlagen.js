@@ -1339,6 +1339,67 @@ eq('der Bau kennt keine',
     !/günstigste/.test(v.beschrieb), v.beschrieb);
 }
 
+/* Zustand und Angebotstext — der Kern, der jeden Verkauf speist.
+
+   Der Zustand kommt aus der Vorlage: Sammelkarten sprechen die Skala
+   von Cardmarket, weil man dort mit «NM» verstanden wird und mit
+   «gut» nicht. Ein Gewerk hat keinen Zustand — dort darf gar nichts
+   erscheinen. */
+eq('die Sammlung kennt die Kartenskala',
+  sandbox.zustandSkala(S).map(x => x[0]).join(' '), 'M NM EX GD LP PL PO');
+eq('der Bau kennt keinen Zustand',
+  sandbox.zustandSkala({ id: 'p_b', vorlage: 'bau', vergaben: [] }).length, 0);
+eq('das Kürzel führt zu Name und Bedeutung',
+  sandbox.zustandInfo(S, 'NM').name, 'Near Mint');
+ok('… und die Bedeutung steht dabei, weil «Excellent» nicht «ausgezeichnet» heisst',
+  /leichte Spuren/.test(sandbox.zustandInfo(S, 'EX').erklaerung),
+  sandbox.zustandInfo(S, 'EX').erklaerung);
+
+{
+  const v = { gewerk: 'Gengar', bkp: '050/088', satz: 'Perfect Order',
+    seltenheit: 'Rare · Cosmos Holo', sprache: 'en', quelleName: 'TCGdex',
+    zustand: 'NM', angebot: { preis: 12, plattformen: ['eBay'], portoKaeufer: true, seit: '2026-08-21' } };
+
+  const t = sandbox.angebotTitel(v, S);
+  ok('der Titel nennt Spiel, Name und Nummer',
+    /Pokémon/.test(t) && /Gengar/.test(t) && /050\/088/.test(t), t);
+  ok('… und bleibt in eBays Grenze von 80 Zeichen', t.length <= 80, t.length + ': ' + t);
+
+  /* Die harte Zusage: Ein zu langer Name darf nie den NAMEN kosten —
+     abgeschnitten wird von hinten, wo der Satzname steht. */
+  const lang = { ...v, gewerk: 'Black Luster Soldier - Soldier of Light and Darkness',
+    satz: 'Chaos Origins', seltenheit: 'Secret Rare', bkp: 'CORI-EN028', quelleName: 'YGOPRODeck' };
+  const tl = sandbox.angebotTitel(lang, S);
+  ok('ein langer Name sprengt die Grenze nicht', tl.length <= 80, tl.length + ': ' + tl);
+  ok('… und der Name steht trotzdem drin', /Black Luster Soldier/.test(tl), tl);
+
+  const txt = sandbox.angebotText(v, S);
+  ok('der Text nennt den Zustand im Klartext',
+    /Zustand: Near Mint — fast neu/.test(txt), txt);
+  ok('… und wer das Porto zahlt', /Porto trägt der Käufer/.test(txt), txt);
+  /* Die inneren Vorbehalte über Preisquellen gehen den Käufer nichts
+     an und klängen im Angebot wie Unsicherheit. */
+  ok('… aber nichts über Preisquellen', !/Cardmarket|günstigste|von Hand/.test(txt), txt);
+
+  /* Der Schlusssatz gehört dem Verkäufer. Das Programm legt ihm nichts
+     Rechtliches in den Mund. */
+  ok('ohne eigenen Schlusssatz steht keiner da',
+    !/Privatverkauf|Garantie|Rücknahme/.test(txt), txt);
+  const mitFuss = sandbox.angebotText(v, { ...S, angebotFuss: 'Privatverkauf, keine Rücknahme.' });
+  ok('… mit eigenem steht er unten', /Privatverkauf, keine Rücknahme\.$/.test(mitFuss), mitFuss);
+
+  /* Ohne Zustand wird nichts behauptet — er fehlt sichtbar. */
+  const ohne = sandbox.angebotText({ ...v, zustand: '' }, S);
+  ok('ohne Zustand sagt der Text, dass er fehlt',
+    /Zustand: noch nicht angegeben/.test(ohne), ohne);
+
+  /* Von Hand geschrieben schlägt erzeugt — sonst wäre jede Mühe weg. */
+  eq('ein eigener Titel gilt',
+    sandbox.angebotTitel({ ...v, angebotTitel: 'Mein Titel' }, S), 'Mein Titel');
+  eq('ein eigener Text auch',
+    sandbox.angebotText({ ...v, angebotText: 'Mein Text' }, S), 'Mein Text');
+}
+
 // Treffer → Posten
 const posten = sandbox.ygoZuPosten(a1.treffer[0], k);
 /* Die Nummer ist die, die auf der Karte steht — nicht die Kategorie.

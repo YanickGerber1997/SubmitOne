@@ -2825,6 +2825,28 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 /* Der Angebotsblock in der aufgeklappten Zeile: Preis, Orte, Porto.
    Ruhig gehalten - er sitzt schon in einem geoeffneten Bereich und
    soll nicht mit ihm um Aufmerksamkeit streiten. */
+/* Zustand: das Kuerzel waehlen, die Bedeutung darunter lesen.
+   "Excellent" heisst bei Karten "leichte Spuren", nicht "ausgezeichnet" -
+   wer das nicht weiss, stuft falsch ein. */
+.ang-zustand { display: flex; flex-direction: column; gap: 3px; font-size: var(--t-xs);
+  color: var(--text-soft); min-width: 165px; }
+.ang-zerkl { margin-top: 6px; font-size: var(--t-xs); color: var(--text-soft); }
+
+/* Das Verkaufsblatt: fertiger Text zum Mitnehmen. */
+.vb { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--rand); }
+.vb-h { font-size: var(--t-s); font-weight: 600; margin-bottom: 7px; }
+.vb-zeile { display: grid; grid-template-columns: 78px 1fr auto; gap: 9px;
+  align-items: start; margin-bottom: 7px; }
+.vb-lab { font-size: var(--t-xs); color: var(--text-soft); padding-top: 3px; }
+.vb-zahl { font-variant-numeric: tabular-nums; }
+.vb-zahl.eng { color: var(--b-rot-text, #b91c1c); font-weight: 700; }
+.vb-wert { font-size: var(--t-s); background: var(--surface); border: 1px solid var(--rand);
+  border-radius: var(--rund-s); padding: 5px 8px; user-select: all; overflow-wrap: anywhere; }
+.vb-text { white-space: pre-wrap; line-height: 1.5; }
+@media (max-width: 560px) {
+  .vb-zeile { grid-template-columns: 1fr; }
+}
+
 /* Kein Preis bekannt. Ein Strich, keine Null - die Null hiesse
    wertlos und summierte sich still mit. */
 .unbek { color: var(--text-soft); opacity: .7; cursor: help; }

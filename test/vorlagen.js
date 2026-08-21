@@ -1273,6 +1273,53 @@ eq('Cosmos bekommt ein Kürzel', sandbox.seltenheitKuerzel('Selten · Cosmos Hol
     String(v.eingeladene[0].betrag));
 }
 
+/* Anbieten: ein Preis, mehrere Marktplätze, eine Handlung.
+
+   Die wichtigste Zusage ist die unsichtbare: Der Wunschpreis rührt
+   den Marktwert NICHT an. Sonst wäre eine Sammlung wertvoll, weil man
+   viel verlangt — und man merkte es erst beim Verkaufen. */
+{
+  const v = { id: 'v_x', gewerk: 'Gengar', status: 'ausschreibung',
+    eingeladene: [{ id: 'e_1', firma: 'Marktpreis', betrag: 11.43, status: 'offeriert' }] };
+  const marktVorher = sandbox.kostenZeile(v).prognose;
+
+  sandbox.angebotSetzen(v, 12, ['eBay', 'Ricardo'], true);
+  eq('der Angebotspreis steht fest', v.angebot.preis, 12);
+  eq('… auf beiden Marktplätzen', v.angebot.plattformen, ['eBay', 'Ricardo']);
+  eq('… und das Porto zahlt der Käufer', v.angebot.portoKaeufer, true);
+  ok('… die Marktplätze stehen bei den Angefragten',
+    ['eBay', 'Ricardo'].every(o => v.eingeladene.some(e => e.firma === o)),
+    JSON.stringify(v.eingeladene.map(e => e.firma)));
+  ok('… aber OHNE Betrag — sonst wäre ein Wunsch ein Gebot',
+    v.eingeladene.filter(e => e.firma !== 'Marktpreis').every(e => e.betrag == null),
+    JSON.stringify(v.eingeladene));
+  eq('… und der Marktwert bleibt, was er war',
+    sandbox.kostenZeile(v).prognose, marktVorher);
+
+  /* Die Gegenprobe: Unter Wert anbieten darf den Wert nicht drücken. */
+  sandbox.angebotSetzen(v, 3, ['eBay'], true);
+  eq('auch ein Angebot weit unter Wert drückt den Marktwert nicht',
+    sandbox.kostenZeile(v).prognose, marktVorher);
+  eq('… und der abgewählte Marktplatz ist weg',
+    v.eingeladene.filter(e => e.firma === 'Ricardo').length, 0);
+
+  ok('die Zeile sagt Preis, Ort und Porto in einem Atemzug',
+    /auf eBay · Porto zahlt der Käufer/.test(sandbox.angebotZeile(v)), sandbox.angebotZeile(v));
+
+  /* Zurückziehen räumt das Angebot weg — aber nie den Marktpreis. */
+  sandbox.angebotSetzen(v, 0, []);
+  ok('zurückgezogen: kein Angebot mehr', !v.angebot, JSON.stringify(v.angebot));
+  ok('… der Marktpreis bleibt', v.eingeladene.some(e => e.firma === 'Marktpreis'));
+  eq('… und der Wert steht unverändert da', sandbox.kostenZeile(v).prognose, marktVorher);
+  eq('… ohne Angebot auch keine Zeile', sandbox.angebotZeile(v), '');
+}
+/* Die Marktplätze kommen aus der Vorlage. Beim Bau gibt es keine —
+   dort bietet man kein Gewerk an, dort schreibt man es aus. */
+ok('die Sammlung kennt Marktplätze',
+  sandbox.plattformenVon(S).indexOf('Ricardo') >= 0, JSON.stringify(sandbox.plattformenVon(S)));
+eq('der Bau kennt keine',
+  sandbox.plattformenVon({ id: 'p_b', vorlage: 'bau', vergaben: [] }).length, 0);
+
 // Treffer → Posten
 const posten = sandbox.ygoZuPosten(a1.treffer[0], k);
 /* Die Nummer ist die, die auf der Karte steht — nicht die Kategorie.

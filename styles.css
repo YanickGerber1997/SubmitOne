@@ -2822,6 +2822,31 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 /* Eine Seltenheit, die der Besitzer selbst eingetragen hat. Sie ist
    nicht falsch - sie ist nur nicht belegt. Darum ruhiger als die gelbe
    Fahne: kein Alarm, aber auch keine Tarnung als Datenbankwert. */
+/* Der Angebotsblock in der aufgeklappten Zeile: Preis, Orte, Porto.
+   Ruhig gehalten - er sitzt schon in einem geoeffneten Bereich und
+   soll nicht mit ihm um Aufmerksamkeit streiten. */
+.ang-block { margin-top: 10px; padding: 9px 10px; border: 1px solid var(--rand);
+  border-radius: var(--radius); background: var(--flaeche-2); }
+.ang-kopf { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-size: var(--t-s); margin-bottom: 7px; }
+.ang-delta { font-weight: 700; font-size: var(--t-xs); }
+.ang-delta.up { color: var(--b-gruen-text, #15803d); }
+.ang-delta.dn { color: var(--b-rot-text, #b91c1c); }
+.ang-reihe { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.ang-preis { display: flex; flex-direction: column; gap: 3px; font-size: var(--t-xs);
+  color: var(--text-soft); width: 130px; }
+.ang-porto { display: flex; align-items: center; gap: 5px; font-size: var(--t-s);
+  padding-bottom: 6px; white-space: nowrap; }
+.ang-orte { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 8px;
+  font-size: var(--t-s); }
+.ang-ort { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.ang-eigen { width: 170px; font-size: var(--t-xs); }
+.ang-tat { display: flex; gap: 8px; align-items: center; margin-top: 9px; flex-wrap: wrap; }
+/* In der Zeile selbst: was angeboten ist, in einem Atemzug lesbar. */
+.ang-badge { display: inline-block; padding: 1px 6px; border-radius: var(--rund-s);
+  font-size: var(--t-2xs); font-weight: 600; white-space: nowrap;
+  color: var(--text-soft); background: var(--flaeche-2); border: 1px solid var(--rand); }
+
 .eigen-badge {
   display: inline-block; padding: 1px 6px; border-radius: var(--rund-s);
   font-size: var(--t-2xs); font-weight: 600; white-space: nowrap;

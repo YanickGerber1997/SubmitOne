@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v412';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v413';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -3599,7 +3599,7 @@ function viewKosten(id) {
             : `<span class="muted">${esc(W('partnerLeer', p))}</span>`);
       rows += `<tr class="clickable kost-row${open ? ' open' : ''}" data-act="kost-toggle" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
         <td class="bkp-code"><span class="gw-chev">${open ? '▾' : '▸'}</span> ${esc(v.bkp)}</td>
-        <td><strong>${esc(postenName(v))}</strong>${v.menge != null && v.kursChf ? `<div class="posten-menge">${esc(mengenZeile(v.menge, v.einheit, v.kursChf, String(v.kategorie) === KURS_KATEGORIE.metall))}</div>` : ''}${chargenZeile(v) ? `<div class="posten-menge">${esc(chargenZeile(v))}</div>` : ''}${v.pruefen ? ` <span class="pruef-badge" title="Etwas ist noch nicht belegt — Zeile aufklappen">⚑ prüfen</span>` : ''}${eigenMarke(v)}${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
+        <td><strong>${esc(postenName(v))}</strong>${v.menge != null && v.kursChf ? `<div class="posten-menge">${esc(mengenZeile(v.menge, v.einheit, v.kursChf, String(v.kategorie) === KURS_KATEGORIE.metall))}</div>` : ''}${chargenZeile(v) ? `<div class="posten-menge">${esc(chargenZeile(v))}</div>` : ''}${v.pruefen ? ` <span class="pruef-badge" title="Etwas ist noch nicht belegt — Zeile aufklappen">⚑ prüfen</span>` : ''}${angebotZeile(v) ? ` <span class="ang-badge" title="Angebot">${esc(angebotZeile(v))}</span>` : ''}${eigenMarke(v)}${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
         <td>${untCell}</td>
         <td class="num">${mB(z.kv)}</td>
         <td class="num">${z.rev != null && Math.abs(z.rev - z.kv) > 0.5 ? `${mB(z.rev)} <span class="chg-delta ${z.rev > z.kv ? 'up' : 'dn'}" title="Änderung gegenüber Erst-KV">${z.rev > z.kv ? '▲' : '▼'}</span>` : (z.rev != null ? mB(z.rev) : `<span class="muted">${mB(z.kv)}</span>`)}</td>
@@ -3624,6 +3624,7 @@ function viewKosten(id) {
               <div style="font-size:var(--t-s, 13px);margin-bottom:6px">${statusPill(v)}</div>
               <div class="muted" style="font-size:var(--t-s, 12.5px)">${esc(gewerkSteps(v).hint)}</div>
               <div style="font-size:var(--t-s, 12.5px);margin-top:6px">${(ein && zeigtEingeladene(p)) ? `${ein} ${esc(W('partner_pl', p))} eingeladen${off ? `, ${off} Offerte${off === 1 ? '' : 'n'} erhalten` : ''}` : esc(W('partnerLeer', p))}${v.firma ? ` · <b>${esc(v.firma)}</b>` : ''}</div>
+              ${angebotBlock(p, v)}
               <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><a class="btn sm" href="#/projekt/${p.id}/vergabe/${v.id}">Detail / Ausschreibung ↗</a><button class="btn sm secondary" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}">✎ Bearbeiten</button><button class="btn sm secondary" data-act="ks-edit" data-pid="${p.id}" data-vid="${v.id}">✎ ${esc(W('schaetzung', p))}</button>${v.pruefen ? `<button class="btn sm" data-act="offen-pruefen" data-pid="${p.id}" title="Auflage bestimmen">⚑ Auflage wählen</button><button class="btn sm secondary" data-act="pruef-ok" data-pid="${p.id}" data-vid="${v.id}" title="Ohne Bestimmung als erledigt abhaken">✓ geprüft</button>` : ''}</div>
             </div>
           </div>
@@ -7895,6 +7896,10 @@ const VORLAGEN = [
     // Ein Stueck ist fuer sich der Gegenstand - anders als eine Charge,
     // die nur neben ihren Geschwistern etwas bedeutet.
     handel: 'stueck', ebenen: 2,
+    /* Wo man in der Schweiz eine Karte anbietet. Die Liste ist ein
+       Vorschlag, kein Gesetz — jeder eigene Name lässt sich daneben
+       tippen. */
+    plattformen: ['eBay', 'Ricardo', 'Cardmarket', 'Tutti'],
     katalog: KARTEN_KATALOG,
     /* Diese Vorlage kann eine Nummer nachschlagen: Passcode oder
        Set-Code einer Sammelkarte → Name, Art, Set, Seltenheit, Bild,
@@ -7931,6 +7936,7 @@ const VORLAGEN = [
       neu: '+ Objekt', neuTitel: 'Objekt erfassen',
       postenName: 'Bezeichnung', postenBeispiel: 'z.B. Blauäugiger weisser Drache, 1. Auflage',
       schaetzung: 'Einstand',
+      anbieten: 'Anbieten', angebot: 'Angebotspreis',
       kostenTitel: 'Bestand, Wert und Erlös', kostenTotal: 'Total Sammlung',
       vergabenTitel: 'Bestand',
       kv: 'Einstand', kvSub: 'bezahlt',
@@ -10032,6 +10038,117 @@ async function karteSpracheUmstellen(v, sprache) {
   }).join('\n');
 
   return { geaendert: true, name: k.name, satz: v.satz, seltenheit: v.seltenheit };
+}
+
+/** Die Marktplätze, die diese Vorlage vorschlägt. Ohne Liste kein
+    Angebotsfeld — beim Bau hat «Anbieten» keinen Sinn. */
+/** Der Angebotsblock in der aufgeklappten Zeile.
+
+    Alles, was zu einem Angebot gehört, auf einmal sichtbar: der Preis,
+    die Orte, das Porto. Vorbelegt ist der Marktwert, aufgerundet auf
+    fünfzig Rappen — man will fast nie weniger verlangen, als die Karte
+    gilt, und eine leere Zeile hilft niemandem.
+
+    Daneben steht der Marktwert selbst, damit man sieht, was man tut. */
+function angebotBlock(p, v) {
+  const orte = plattformenVon(p);
+  if (!orte.length) return '';
+  const a = v.angebot || null;
+  const markt = kostenZeile(v).prognose || 0;
+  const vorschlag = a ? a.preis : (markt ? Math.ceil(markt * 2) / 2 : '');
+  const gewaehlt = a ? (a.plattformen || []) : [];
+  const eigene = gewaehlt.filter(x => orte.indexOf(x) < 0);
+  const d = a && markt ? a.preis - markt : null;
+
+  return `<div class="ang-block">
+    <div class="ang-kopf">
+      <strong>${esc(W('anbieten', p))}</strong>
+      ${markt ? `<span class="muted">Marktwert ${chf(markt)}</span>` : ''}
+      ${d != null ? `<span class="ang-delta ${d >= 0 ? 'up' : 'dn'}">${d >= 0 ? '+' : ''}${chf(d)}</span>` : ''}
+    </div>
+    <div class="ang-reihe">
+      <label class="ang-preis">${esc(W('angebot', p))}
+        <input class="input" type="number" step="0.05" min="0" id="ang_preis_${v.id}" value="${vorschlag}"></label>
+      <label class="ang-porto"><input type="checkbox" id="ang_porto_${v.id}"${!a || a.portoKaeufer ? ' checked' : ''}>
+        Porto zahlt der Käufer</label>
+    </div>
+    <div class="ang-orte">${orte.map(o => `<label class="ang-ort"><input type="checkbox" class="ang-ort-${v.id}" value="${esc(o)}"${gewaehlt.indexOf(o) >= 0 ? ' checked' : ''}> ${esc(o)}</label>`).join('')}
+      <input class="input ang-eigen" id="ang_eigen_${v.id}" value="${esc(eigene.join(', '))}" placeholder="weitere, mit Komma">
+    </div>
+    <div class="ang-tat">
+      <button class="btn sm" data-act="anbieten" data-pid="${p.id}" data-vid="${v.id}">${esc(W('anbieten', p))}</button>
+      ${a ? `<button class="btn sm ghost" data-act="angebot-weg" data-pid="${p.id}" data-vid="${v.id}">Zurückziehen</button>` : ''}
+      ${a ? `<span class="muted">seit ${esc(fmtDate(a.seit))}</span>` : ''}
+    </div>
+  </div>`;
+}
+function plattformenVon(p) {
+  const vl = vorlage(p);
+  return (vl && Array.isArray(vl.plattformen)) ? vl.plattformen : [];
+}
+
+/** Eine Karte anbieten: ein Preis, mehrere Marktplätze, eine Handlung.
+
+    Der Angebotspreis rührt den Marktwert nicht an. Die Marktplätze
+    kommen als Einladungen OHNE Betrag in die Liste — sonst rechnete
+    sich der Wunschpreis in den Bestandswert hinein, und die Sammlung
+    wäre wertvoll, weil man viel verlangt. */
+function angebotSetzen(v, preis, plattformen, portoKaeufer) {
+  const zahl = Number(preis);
+  const orte = (plattformen || []).map(x => String(x).trim()).filter(Boolean);
+  if (!isFinite(zahl) || zahl <= 0 || !orte.length) {
+    delete v.angebot;
+    v.eingeladene = (v.eingeladene || []).filter(e => e.firma === 'Marktpreis' || eOff(e) != null);
+    return v;
+  }
+  v.angebot = { preis: Math.round(zahl * 100) / 100, plattformen: orte,
+    portoKaeufer: !!portoKaeufer, seit: todayIso() };
+
+  /* Die Marktplätze in die Liste der Angefragten spiegeln — dort
+     stehen sie schon in den Wörtern der Vorlage («Angebot bei»). Was
+     abgewählt wurde, verschwindet; was einen Betrag trägt (ein
+     wirkliches Gebot, der Marktpreis) bleibt in jedem Fall. */
+  const behalten = (v.eingeladene || []).filter(e => e.firma === 'Marktpreis'
+    || eOff(e) != null || orte.indexOf(e.firma) >= 0);
+  orte.forEach(ort => {
+    if (!behalten.some(e => e.firma === ort)) {
+      behalten.push({ id: uid('e'), firma: ort, email: '', status: 'eingeladen', datumMail: '' });
+    }
+  });
+  v.eingeladene = behalten;
+  if (statusIdx(v) < STATUS_BY_KEY['ausschreibung'].index) v.status = 'ausschreibung';
+  return v;
+}
+
+/** Eine Zeile, die sagt, was angeboten ist — für Liste und Karte. */
+function angebotZeile(v) {
+  const a = v && v.angebot;
+  if (!a || !a.preis) return '';
+  return chf(a.preis) + ' auf ' + (a.plattformen || []).join(', ')
+    + ' · Porto ' + (a.portoKaeufer ? 'zahlt der Käufer' : 'inbegriffen');
+}
+
+function actAnbieten(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const preis = ($('#ang_preis_' + vid) || {}).value;
+  const porto = !!(($('#ang_porto_' + vid) || {}).checked);
+  const orte = Array.from(document.querySelectorAll('.ang-ort-' + vid))
+    .filter(x => x.checked).map(x => x.value);
+  const eigen = (($('#ang_eigen_' + vid) || {}).value || '').trim();
+  if (eigen) eigen.split(',').forEach(x => { const t = x.trim(); if (t && orte.indexOf(t) < 0) orte.push(t); });
+
+  if (!Number(preis)) { toast('Bitte einen Preis eingeben', 'info'); return; }
+  if (!orte.length) { toast('Bitte mindestens einen Marktplatz wählen', 'info'); return; }
+  angebotSetzen(v, preis, orte, porto);
+  save(); viewKosten(pid);
+  toast(v.gewerk + ': angeboten für ' + chf(v.angebot.preis) + ' auf ' + orte.join(', '), 'ok');
+}
+
+function actAngebotWeg(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  angebotSetzen(v, 0, []);
+  save(); viewKosten(pid);
+  toast(v.gewerk + ': Angebot zurückgezogen', 'ok');
 }
 
 function actOffenePruefen(pid) {
@@ -21865,6 +21982,8 @@ document.addEventListener('click', e => {
     case 'scan-waehlen':     scanWaehlen(kind); break;
     case 'scan-auflage':     scanAuflage(kind); break;
     case 'scan-sprache':     scanSprache(kind); break;
+    case 'anbieten':         actAnbieten(pid, vid); break;
+    case 'angebot-weg':      actAngebotWeg(pid, vid); break;
     case 'pruef-ok':         pruefErledigt(pid, vid); break;
     case 'offen-pruefen':    actOffenePruefen(pid); break;
     case 'pruef-waehlen':    pruefWaehlen(kind, act.dataset.idx); break;

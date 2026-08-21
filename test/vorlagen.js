@@ -92,6 +92,7 @@ src += `
 ;globalThis.__alleVorlagen = function () { return VORLAGEN.map(v => v.key); };
 ;globalThis.__istArt = function (k) { return DASH_ARTEN.some(a => a.key === k); };
 ;globalThis.__dienste = function () { return NACHSCHLAG_DIENSTE; };
+;globalThis.__dienstListe = function (p) { return dienstListe(p); };
 ;globalThis.__sprachen = function () { return KARTEN_SPRACHEN; };
 ;globalThis.__ygoMitSprache = function (sp) {
   /* Was nachschlagSuche mit einem Yu-Gi-Oh-Treffer macht, wenn eine
@@ -807,6 +808,55 @@ ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(ein
     sandbox.__ygoMitSprache('de').sprache, 'de');
 }
 
+/* ---- 2k) Zwei Spiele in EINEM Projekt ----
+   Eine Sammlung ist eine Sammlung. Der Dienst gehoert an die ABFRAGE,
+   nicht ans Projekt - die Form der Eingabe sagt, wer zustaendig ist. */
+{
+  const D = sandbox.eingabeDienste;
+  eq('acht Ziffern sind ein Passcode', D('43989315'), ['ygo']);
+  eq('Satz-Sprache-Nummer auch', D('CORI-EN030'), ['ygo']);
+  eq('alte Satz-Codes ebenso', D('SDK-001'), ['ygo']);
+  eq('Nummer durch Gesamtzahl ist Pokemon', D('050/088'), ['pokemon']);
+  eq('… auch ohne Nullen', D('50/88'), ['pokemon']);
+  eq('kleingeschriebene Kennung ist Pokemon', D('me03-050'), ['pokemon']);
+  eq('die Pokedex-Nummer auch', D('0094'), ['pokemon']);
+  eq('… und ausdruecklich', D('dex 94'), ['pokemon']);
+  /* Nur ein Name ist wirklich mehrdeutig - dann beide, und die
+     Treffer stehen nebeneinander zur Wahl. */
+  eq('ein Name geht an beide', D('Gengar'), ['ygo', 'pokemon']);
+  eq('leer an keinen', D('  '), []);
+
+  ok('dienstPasst benutzt denselben Erkenner',
+    sandbox.dienstPasst('ygo', '43989315') && !sandbox.dienstPasst('pokemon', '43989315')
+    && sandbox.dienstPasst('pokemon', '050/088') && !sandbox.dienstPasst('ygo', '050/088'));
+
+  // Ein Projekt mit beiden Diensten
+  const pz = { vorlage: 'sammlung', dienste: ['ygo', 'pokemon'] };
+  eq('beide Dienste am Projekt', sandbox.__dienstListe(pz), ['ygo', 'pokemon']);
+  eq('der erste fuehrt die Woerter', sandbox.nachschlagDienst(pz), 'ygo');
+  eq('ein Projekt darf auch keinen haben', sandbox.__dienstListe({ vorlage: 'sammlung', dienste: [] }), []);
+  eq('ohne Angabe gilt der Vorschlag der Vorlage',
+    sandbox.__dienstListe({ vorlage: 'sammlung' }), ['ygo']);
+  eq('Unsinn wird aussortiert',
+    sandbox.__dienstListe({ vorlage: 'sammlung', dienste: ['ygo', 'gibtsnicht'] }), ['ygo']);
+
+  /* Der Treffer weiss selbst, woher er kommt - nur so kann eine
+     Trefferliste Karten aus zwei Datenbanken enthalten. */
+  const pkm = { dienst: 'pokemon', name: 'Gengar', kartenNummer: '050/088', kategorie: '1',
+    setCode: 'me03-050', setName: 'Optimale Ordnung', satzId: 'me03', seltenheit: 'Selten',
+    preisEur: 0.34, setSicher: true, auflagen: 1, auflagenListe: [], bild: '', preisArt: 'Preis-Trend', stand: '2026-08-21' };
+  const ygo = { dienst: 'ygo', name: 'Invoked Sorath', kategorie: '1', setCode: 'CORI-EN030',
+    setName: 'Chaos Origins', seltenheit: 'Super Rare', preisEur: 0.27, preisUsd: 0,
+    setSicher: true, auflagen: 1, auflagenListe: [], passcode: '43989315', art: 'Fusionsmonster' };
+  eq('ein Pokemon-Treffer wird ueber Pokemon uebersetzt',
+    sandbox.nachschlagZuPosten(pkm, pz).bkp, '050/088');
+  eq('ein Yu-Gi-Oh-Treffer ueber Yu-Gi-Oh',
+    sandbox.nachschlagZuPosten(ygo, pz).bkp, 'CORI-EN030');
+  ok('… obwohl beide im selben Projekt liegen',
+    sandbox.nachschlagZuPosten(pkm, pz).satz === 'Optimale Ordnung'
+    && sandbox.nachschlagZuPosten(ygo, pz).satz === 'Chaos Origins');
+}
+
 /* ---- 3) Der Bau-Fall bleibt, wie er war ---- */
 const bauP = sandbox.__bauProjekt(p);
 const bauKosten = zeichne('Baukostenübersicht', () => sandbox.viewKosten(bauP.id));
@@ -919,6 +969,17 @@ const mS = sandbox.ygoAuswerten(MEHRERE_SELTENHEITEN, { art: 'setcode', wert: 'C
 eq('eine Nummer mit drei Seltenheiten steht NICHT fest', mS.treffer[0].setSicher, false);
 eq('… keine davon wird behauptet', mS.treffer[0].seltenheit, '');
 eq('… zur Wahl stehen genau die drei dieser Nummer', mS.treffer[0].auflagen, 3);
+/* Der Satz steht fest, sobald nach einem Satz-Code gesucht wurde -
+   alle Treffer teilen ihn ja. Ohne das landeten 27 Karten unter
+   "Auflage noch offen", obwohl der Nutzer den Satz selbst genannt
+   hatte. Dieselbe Stelle wie bei Pokemon (Teil 50). */
+eq('… der Satz bleibt trotzdem stehen', mS.treffer[0].setCode, 'CORI-EN028');
+eq('… und sein Name', mS.treffer[0].setName, 'Chaos Origins');
+ok('… gruppiert wird darum nach dem Satz, nicht unter "offen"',
+  sandbox.gruppeVon(sandbox.ygoZuPosten(mS.treffer[0], { eur: 0.93, usd: 0.8, datum: 'x' }),
+    { vorlage: 'sammlung' }) === 'CORI');
+eq('… der Preis gilt aber erst, wenn die Seltenheit feststeht',
+  mS.treffer[0].preisUsd, 0);
 ok('… und nicht die Auflage aus einem anderen Satz',
   mS.treffer[0].auflagenListe.every(a => a.code === 'CORI-EN028'),
   JSON.stringify(mS.treffer[0].auflagenListe.map(a => a.code)));

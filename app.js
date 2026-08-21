@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v401';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v402';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -9130,6 +9130,11 @@ function ygoAuswerten(antwort, erk) {
 
        Sonst bleiben Set und Seltenheit LEER und die Frage offen. */
     const setSicher = treffende.length === 1 || (!gesucht && sets.length === 1);
+    /* Der SATZ steht fest, sobald nach einem Satz-Code gesucht wurde -
+       alle Treffer teilen ihn ja. Offen ist dann nur die Seltenheit.
+       Zwei Fragen, zwei Antworten: Sonst landet eine Karte, deren Satz
+       der Nutzer selbst genannt hat, unter "Auflage noch offen". */
+    const satzSicher = treffende[0] || (setSicher ? (sets[0] || {}) : {});
     const s = setSicher ? (treffende[0] || sets[0] || {}) : {};
 
     /* Zur Wahl steht, was zur Nummer passt — sonst alle Auflagen der
@@ -9142,12 +9147,13 @@ function ygoAuswerten(antwort, erk) {
       passcode: String(k.id || ''), name: k.name || '',
       art: ygoArtDeutsch(k.humanReadableCardType || k.type || ''), frameType: k.frameType || '',
       kategorie: ygoKategorie(k.frameType),
-      setCode: s.set_code || '', setName: s.set_name || '', seltenheit: s.set_rarity || '',
-      preisUsd: ygoZahl(s.set_price), preisEur: ygoZahl(pr.cardmarket_price),
+      setCode: satzSicher.set_code || '', setName: satzSicher.set_name || '',
+      seltenheit: s.set_rarity || '',
+      preisUsd: setSicher ? ygoZahl(s.set_price) : 0, preisEur: ygoZahl(pr.cardmarket_price),
       bild: (bilder && (bilder.image_url_small || bilder.image_url)) || '',
       // Die Seite, auf der ein Mensch dasselbe nachlesen kann.
       quelleUrl: k.ygoprodeck_url || (k.id ? YGO_BASIS + 'cardinfo.php?id=' + k.id : ''),
-      quelleName: 'YGOPRODeck',
+      quelleName: 'YGOPRODeck', dienst: 'ygo', spiel: 'Yu-Gi-Oh',
       setSicher, auflagen: auswahl.length, nachladen: false,
       auflagenListe: auswahl.map(x => ({
         code: x.set_code || '', name: x.set_name || '',
@@ -9517,6 +9523,7 @@ async function pokemonTreffer(k, sprache) {
     quelleName: 'TCGdex', preisArt: pokemonPreisName(cm, gewaehlt ? '' : ''),
     sprache: sprache || 'de',
     quelleUrl: TCGDEX + (sprache || 'de') + '/cards/' + k.id,
+    dienst: 'pokemon', spiel: 'Pokémon',
     stand: cm && cm.updated ? String(cm.updated).slice(0, 10) : todayIso(),
   };
 }
@@ -9639,18 +9646,35 @@ const POKEMON_KATALOG = [
    Vorlage für Bücher, brächte sie ihren ISBN-Dienst mit und das
    Fenster bliebe, wie es ist. */
 async function nachschlagSuche(text, p, sprache) {
-  const d = nachschlagDienst(p);
-  if (d === 'kurse') return kursSuche(text);
-  if (d === 'pokemon') { await kurseHolen(); return pokemonSuche(text, sprache); }
-  const erg = await kartenSuche(text);
-  /* Yu-Gi-Oh führt nur englische Namen. Die Sprache der eigenen
-     Karte ist trotzdem eine Angabe, die man beim Verkaufen braucht —
-     also wird sie festgehalten, auch wenn sie den Namen nicht ändert. */
-  if (sprache) erg.treffer = (erg.treffer || []).map(t => ({ ...t, sprache }));
-  return erg;
+  const dienste = dienstListe(p);
+  if (dienste.indexOf('kurse') >= 0) return kursSuche(text);
+
+  /* Nur die Dienste fragen, zu denen die Eingabe passen KANN. Bei
+     einem Namen sind das beide — dann stehen die Treffer aus zwei
+     Datenbanken nebeneinander zur Wahl. */
+  const passend = dienste.filter(d => dienstPasst(d, text));
+  if (!passend.length) return { treffer: [], fehler: 'Diese Eingabe passt zu keinem der eingestellten Nachschlagedienste.' };
+
+  await kurseHolen();
+  const treffer = []; const fehler = []; let gelesenAls = '';
+  for (const d of passend) {
+    const erg = d === 'pokemon' ? await pokemonSuche(text, sprache) : await kartenSuche(text);
+    if (erg.gelesenAls) gelesenAls = erg.gelesenAls;
+    if (erg.fehler) { fehler.push(dienstInfo(d).name + ': ' + erg.fehler); continue; }
+    /* Yu-Gi-Oh führt nur englische Namen. Die Sprache der eigenen
+       Karte ist trotzdem eine Angabe, die man beim Verkaufen braucht —
+       also wird sie festgehalten, auch wenn sie den Namen nicht ändert. */
+    (erg.treffer || []).forEach(t => treffer.push(sprache && !t.sprache ? { ...t, sprache } : t));
+  }
+  /* Hat ein Dienst geliefert, ist der andere kein Fehler, sondern
+     bloss unzuständig — sonst stünde neben zehn Treffern eine rote
+     Meldung. */
+  return { treffer, fehler: treffer.length ? '' : (fehler.join(' · ') || 'Nichts gefunden.'), gelesenAls };
 }
 function nachschlagZuPosten(t, p, menge, einheit, datum) {
-  const d = nachschlagDienst(p);
+  /* Der Treffer weiss selbst, woher er kommt — nur so kann eine
+     Trefferliste Karten aus zwei Datenbanken enthalten. */
+  const d = (t && t.dienst) || nachschlagDienst(p);
   if (d === 'kurse') return kursZuPosten(t, menge, einheit, datum);
   if (d === 'pokemon') return pokemonZuPosten(t);
   return ygoZuPosten(t);
@@ -9941,19 +9965,61 @@ const NACHSCHLAG_DIENSTE = [
 ];
 function dienstInfo(key) { return NACHSCHLAG_DIENSTE.find(d => d.key === (key || '')) || NACHSCHLAG_DIENSTE[0]; }
 
-/** Welcher Dienst gilt: der des Projekts, sonst der Vorschlag der Vorlage. */
-function nachschlagDienst(p) {
+/** Welche Dienste dieses Projekt benutzt — eine Sammlung darf mehrere. */
+function dienstListe(p) {
   const q = p || vorlageCtx;
-  if (q && q.nachschlag !== undefined) return q.nachschlag || null;
+  if (q && Array.isArray(q.dienste)) return q.dienste.filter(k => k && dienstInfo(k).key === k);
+  if (q && q.nachschlag !== undefined) return q.nachschlag ? [q.nachschlag] : [];
   const v = vorlage(p);
-  return (v && v.nachschlag) || null;
+  return (v && v.nachschlag) ? [v.nachschlag] : [];
 }
+
+/** Der führende Dienst — er setzt Wörter, Reiter und Ordnungs-Vorschlag. */
+function nachschlagDienst(p) { return dienstListe(p)[0] || null; }
+
+/* Wer ist für diese Eingabe zuständig?
+
+   EIN Erkenner statt zweier Meinungen: Die Form der Eingabe sagt, aus
+   welchem Spiel sie kommen kann. Nur ein NAME ist wirklich
+   mehrdeutig — dann werden beide gefragt und die Treffer stehen
+   nebeneinander zur Wahl.
+
+       43989315      acht Ziffern               Yu-Gi-Oh
+       CORI-EN030    Satz-SPRACHE-Nummer        Yu-Gi-Oh
+       SDK-001       alter Satz-Code            Yu-Gi-Oh
+       050/088       Nummer durch Gesamtzahl    Pokémon
+       me03-050      kleingeschriebene Kennung  Pokémon
+       0094, dex 94  Pokédex-Nummer             Pokémon
+       Gengar        ein Name                   beide
+
+   Der erste Wurf fragte bei «43989315» beide Dienste, weil das für
+   Pokémon «wie ein Name» aussah. Das kostet nicht nur eine Abfrage —
+   es kann im falschen Spiel etwas Ähnliches finden. */
+function eingabeDienste(text) {
+  const t = String(text || '').trim();
+  if (!t) return [];
+  if (/^\d+\s*\/\s*\d+$/.test(t)) return ['pokemon'];               // 050/088
+  if (/^(?:dex\s*|#)\d{1,4}$/i.test(t)) return ['pokemon'];         // dex 94
+  if (/^0\d{1,3}$/.test(t) || /^\d{4}$/.test(t)) return ['pokemon']; // 0094
+  if (/^\d{5,8}$/.test(t)) return ['ygo'];                          // Passcode
+  if (/^[A-Z0-9]{2,6}-[A-Z]{2,3}\d{1,4}$/.test(t)) return ['ygo'];  // CORI-EN030
+  if (/^[A-Z]{2,4}-\d{1,3}$/.test(t)) return ['ygo'];               // SDK-001
+  if (/^[a-z0-9][a-z0-9.]*-\d+[a-zA-Z]?$/.test(t)) return ['pokemon']; // me03-050
+  if (/^\d{1,3}$/.test(t)) return ['pokemon'];   // nackte Zahl — dort steht die Erklärung
+  return ['ygo', 'pokemon'];                     // ein Name
+}
+function dienstPasst(dienst, text) {
+  if (dienst === 'kurse') return true;
+  return eingabeDienste(text).indexOf(dienst) >= 0;
+}
+
 
 function actKartenScan(pid) {
   const p = findProjekt(pid); if (!p) return;
   const p0 = findProjekt(pid);
   scanCtx = { pid, treffer: [], gewaehlt: 0, erfasst: [], meldung: '', sucht: false, filter: '',
-              sprache: (p0 && p0.sprache) || 'de' };
+              sprache: (p0 && p0.sprache) || 'de',
+              spiele: dienstListe(p0).filter(d => d !== 'kurse').length };
   openModal(W('posten', p) + ' erfassen — Nummer nachschlagen', `
     <label class="field"><span>Nummer der Karte</span>
       <input class="input scan-nr" id="scan_nr" inputmode="numeric" autocomplete="off"
@@ -10000,7 +10066,7 @@ function scanKarteHtml(t, p) {
         ${t.quelleUrl ? `<a class="quelle-link" href="${esc(t.quelleUrl)}" target="_blank" rel="noopener">↗ Datensatz bei ${esc(t.quelleName || 'der Quelle')} ansehen</a>` : ''}</div>
       ${t.spracheNach ? `<div class="scan-hinweis">${esc(t.spracheVon)} kennt die Datenbank nicht — nachgeschlagen als <b>${esc(t.spracheNach)}</b>. Sammlung, Nummer und Seltenheit stimmen überein; der <b>Preis ist der der englischen Auflage</b> und kann für deine abweichen.</div>` : ''}
       ${(!t.setSicher && t.auflagen > 1) ? `<div class="scan-warnung"><b>Welche Auflage ist es?</b> Diese Nummer gibt es in ${t.auflagen} Auflagen mit verschiedenen Seltenheiten. Solange keine gewählt ist, steht hier keine Seltenheit, und der Wert ist der der günstigsten. Ohne Wahl wird die Karte mit der Merkfahne ⚑ übernommen.</div>` : ''}
-      <div class="muted">${esc(W('nummer', p))} <b>${esc(t.setCode || t.passcode || '—')}</b>${kat ? ' · ' + esc(kat) : ''}${t.sprache ? ' · ' + esc(spracheInfo(t.sprache).name) : ''}</div>
+      <div class="muted">${t.spiel ? '<b>' + esc(t.spiel) + '</b> · ' : ''}${esc(W('nummer', p))} <b>${esc(t.setCode || t.passcode || '—')}</b>${kat ? ' · ' + esc(kat) : ''}${t.sprache ? ' · ' + esc(spracheInfo(t.sprache).name) : ''}</div>
     </div>
   </div>`;
 }
@@ -10018,7 +10084,7 @@ function scanZeichnen() {
        sein könnte, und korrigiert erst, wenn es nicht stimmt. */
     const auswahl = scanCtx.treffer.length > 1
       ? `<div class="scan-auswahl">${scanCtx.treffer.map((x, i) =>
-          `<button type="button" class="btn sm ${i === scanCtx.gewaehlt ? '' : 'ghost'}" data-act="scan-waehlen" data-kind="${i}">${esc(x.name)}</button>`).join('')}</div>`
+          `<button type="button" class="btn sm ${i === scanCtx.gewaehlt ? '' : 'ghost'}" data-act="scan-waehlen" data-kind="${i}" title="${esc([x.spiel, x.setName].filter(Boolean).join(' · '))}">${esc(x.name)}${x.spiel && scanCtx.spiele > 1 ? ` <span class="muted">${esc(x.spiel)}</span>` : ''}</button>`).join('')}</div>`
       : '';
     ziel.innerHTML = (scanCtx.gelesen ? `<div class="scan-hinweis">Gelesen als <b>${esc(scanCtx.gelesen)}</b>.</div>` : '')
       + scanKarteHtml(t, p) + auswahl + scanAuflagenHtml(t) + `
@@ -14343,12 +14409,11 @@ function actEditProjekt(pid) {
       <label class="field">Bezugstermin <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(Meilenstein im Gantt)</span> <input class="input" type="date" id="f_bezug" value="${esc(p.bezug || '')}"></label>
     </div>
     ${vorlageWahlHtml(vorlageKey(p))}
-    ${(vorlage(p) || {}).nachschlag ? `<label class="field">Nachschlagen
-      <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">— woher Name, Art und Marktwert kommen, wenn du eine Nummer eintippst</span>
-      <select class="select" id="f_nachschlag">${NACHSCHLAG_DIENSTE
-        .filter(d => !d.fuer || d.fuer === vorlageKey(p))
-        .map(d => `<option value="${d.key}"${(nachschlagDienst(p) || '') === d.key ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}</select>
-      <span class="einst-hinweis">${esc(dienstInfo(nachschlagDienst(p)).hinweis || '')}</span></label>` : ''}
+    ${(vorlage(p) || {}).nachschlag ? `<label class="field"><span>Nachschlagen</span>
+      <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">— woher Name, Art und Marktwert kommen. Mehrere möglich: Eine Sammlung darf Pokémon UND Yu-Gi-Oh enthalten; das Programm erkennt am Eingabeformat, wen es fragen muss.</span>
+      <span class="dienst-wahl">${NACHSCHLAG_DIENSTE.filter(d => d.key && (!d.fuer || d.fuer === vorlageKey(p)))
+        .map(d => `<label class="einst-schalter"><input type="checkbox" class="f_dienst" value="${d.key}"${dienstListe(p).indexOf(d.key) >= 0 ? ' checked' : ''}>
+          <span>${esc(d.name)}<span class="muted" style="display:block;font-size:var(--t-2xs, 11px)">${esc(d.hinweis || '')}</span></span></label>`).join('')}</span></label>` : ''}
     <label class="field" style="margin-bottom:2px">Projektfarbe (Kalender &amp; Planung)</label>
     ${farbePickerHtml(p.farbe || projColor(state.projekte.indexOf(p)))}
     <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 4px"><div class="muted" style="font-size:var(--t-xs, 12px);margin-bottom:6px">Gebäudedaten</div>
@@ -14369,7 +14434,8 @@ function saveProjektEdit(pid) {
   p.bezug = $('#f_bezug').value || '';
   if ($('#f_farbe')) p.farbe = $('#f_farbe').value || '';
   { const vw = $('#f_vorlage'); if (vw && vw.value) p.vorlage = vw.value; }
-  { const nw = $('#f_nachschlag'); if (nw) p.nachschlag = nw.value; }
+  { const kk = $$('.f_dienst');
+    if (kk.length) { p.dienste = kk.filter(x => x.checked).map(x => x.value); delete p.nachschlag; } }
   readGebaeude(p);
   save(); closeModal(); router(); toast('Projekt gespeichert');
 }

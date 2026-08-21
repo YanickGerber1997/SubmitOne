@@ -2755,6 +2755,8 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 /* Der Sprachschalter: klein, weil man ihn selten anfasst, aber
    sichtbar, weil eine deutsche und eine englische Karte zwei
    verschiedene Waren sind. */
+.dienst-wahl { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+
 .scan-sprache { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 .scan-sprache > span { font-size: var(--t-xs); color: var(--text-soft); margin-right: 2px; }
 

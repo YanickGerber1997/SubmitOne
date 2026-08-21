@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v418';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v419';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -9374,7 +9374,12 @@ function ygoZuPosten(t, k) {
        Auflage unbekannt ist, tritt der Passcode an ihre Stelle —
        dann fehlt der Satz, und die Karte landet unter «Auflage noch
        offen», wo sie hingehört, bis man sie bestimmt. */
-    bkp: t.setCode || t.passcode || '',
+    /* Bei einer deutschen Karte steht DRLG-DE023 auf dem Karton, nicht
+       DRLG-EN023. Der englische Code ist der Schluessel zum Nachschlagen,
+       nicht die Kennung der Sache in der Hand - und danach sucht auch
+       ein Kaeufer. Die englische Auflage bleibt im Vermerk und in der
+       Quelle nachlesbar. */
+    bkp: (t.spracheVon && t.spracheNach === t.setCode) ? t.spracheVon : (t.setCode || t.passcode || ''),
     quelleUrl: t.quelleUrl || '', quelleName: t.quelleName || '',
     // Deutsch oder englisch - beim Verkaufen zwei verschiedene Waren.
     // Fehlte hier: Die deutschen Karten kamen ohne ihre Sprache herein.

@@ -1498,6 +1498,26 @@ eq('ohne Variante keine Besonderheit', sandbox.besonderheitAus('Secret Rare'), '
   eq('ohne Merkmale kein Text', sandbox.merkmalText({}), '');
 }
 
+/* Auf einer deutschen Karte steht DRLG-DE023, nicht DRLG-EN023. Der
+   englische Code ist der SCHLUESSEL zum Nachschlagen, nicht die Kennung
+   der Sache in der Hand - und danach sucht auch ein Kaeufer. Die
+   Nummernspalte zeigte trotzdem den englischen, obwohl der Kommentar
+   daneben "die Nummer, die auf der Karte steht" versprach.
+   (Fund vom 22.08.2026, 67 Karten waren betroffen.) */
+{
+  const de = { setCode: "DRLG-EN023", spracheVon: "DRLG-DE023", spracheNach: "DRLG-EN023",
+    name: "Mathematician", seltenheit: "Secret Rare", setName: "Dragons of Legend",
+    passcode: "41386308", sprache: "de", setSicher: true, auflagen: 1, preisUsd: 4.72, preisEur: 0 };
+  const po = sandbox.ygoZuPosten(de, { usd: 0.8, eur: 0.93, datum: "2026-08-22" });
+  eq("die Nummer ist die von der Karte, nicht die vom Nachschlagen", po.bkp, "DRLG-DE023");
+  eq("die Sprache reist mit", po.sprache, "de");
+  ok("der Vermerk sagt beides", /Eingegeben DRLG-DE023, nachgeschlagen als DRLG-EN023/.test(po.beschrieb), po.beschrieb);
+  /* Eine englische Karte behaelt ihren Code - dort gibt es keine
+     Umschreibung, also auch keinen abweichenden Ursprung. */
+  const en = { ...de, spracheVon: "", spracheNach: "", sprache: "en" };
+  eq("englisch bleibt englisch", sandbox.ygoZuPosten(en, { usd: 0.8, eur: 0.93 }).bkp, "DRLG-EN023");
+}
+
 // Treffer → Posten
 const posten = sandbox.ygoZuPosten(a1.treffer[0], k);
 /* Die Nummer ist die, die auf der Karte steht — nicht die Kategorie.

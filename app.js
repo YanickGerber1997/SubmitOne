@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v391';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v392';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -2245,6 +2245,7 @@ const SCHNELLZUGRIFF = [
 const ERFASSEN_ORDER = ['pendenz', 'termin', 'rechnung', 'protokoll', 'vergabe', 'kontakt', 'projekt'];
 
 function viewDashboard() {
+  setVorlageCtx(null);   // die Startseite gehört keinem Projekt
   const projekte = sichtbareProjekte();
   const todayI = todayIso();
   const aktive = projekte.filter(p => p.phase !== 'abschluss');
@@ -2252,7 +2253,11 @@ function viewDashboard() {
   const offeneVergaben = alleVergaben.filter(x => !isDone(x.v));
   const fristTasks = offeneVergaben.filter(x => x.v.frist).sort((a, b) => a.v.frist.localeCompare(b.v.frist));
   const fristig = fristTasks.filter(x => { const d = daysUntil(x.v.frist); return d != null && d >= 0 && d <= 7; });
-  const volumen = projekte.reduce((a, p) => a + projektVolumen(p), 0);
+  /* Nur Projekte, die in Geld rechnen. Eine Unterschriftensammlung
+     zählt Unterschriften — sie in dieselbe Summe zu werfen ergäbe
+     eine Zahl, die nichts bedeutet. */
+  const geldProjekte = projekte.filter(p => istGeld(p));
+  const volumen = geldProjekte.reduce((a, p) => a + projektVolumen(p), 0);
 
   // Anstehende Termine (projektübergreifend, ab heute)
   const events = [];
@@ -2274,17 +2279,24 @@ function viewDashboard() {
   const sect = (title, hint) => `<div class="section-head" style="margin:2px 0 12px"><h2>${title}</h2>${hint ? (hint.startsWith('<') ? hint : `<span class="hint">${hint}</span>`) : ''}</div>`;
 
   // Panel: Nächste Eingabefristen
-  const fristPanel = sect('Nächste Eingabefristen', 'Submissionen') + `<div class="card" style="margin-bottom:18px">${fristTasks.length ? `
+  /* Eine Tafel, viele Sprachen: Jede Zeile gehört einem Projekt und
+     wird in dessen Zusammenhang gezeichnet — sonst stünde bei einer
+     Karte «Ausschreibung erstellt» statt «Im Bestand». */
+  const fristZeile = ({ v, p: pr }) => {
+    const merk = vorlageCtx; setVorlageCtx(pr);
+    const h = `<tr class="clickable" data-goto="#/projekt/${pr.id}/vergabe/${v.id}" data-ctx="vergabe" data-pid="${pr.id}" data-vid="${v.id}">
+        <td>${esc(pr.name)}</td>
+        <td><span class="bkp-code">${esc(v.bkp || '')}</span> ${esc(v.gewerk || '')}</td>
+        <td>${statusPill(v)}</td>
+        <td class="frist ${fristClass(v.frist, false)}">${fristText(v.frist, false)}</td>
+      </tr>`;
+    setVorlageCtx(merk); return h;
+  };
+  const fristPanel = sect('Nächste Fristen', 'alle Projekte') + `<div class="card" style="margin-bottom:18px">${fristTasks.length ? `
     <table class="grid">
-      <thead><tr><th>Projekt</th><th>Gewerk</th><th>Status</th><th>Frist</th></tr></thead>
-      <tbody>${fristTasks.slice(0, 6).map(({ v, p }) => `
-        <tr class="clickable" data-goto="#/projekt/${p.id}/vergabe/${v.id}" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
-          <td>${esc(p.name)}</td>
-          <td><span class="bkp-code">${esc(v.bkp || '')}</span> ${esc(v.gewerk || '')}</td>
-          <td>${statusPill(v)}</td>
-          <td class="frist ${fristClass(v.frist, false)}">${fristText(v.frist, false)}</td>
-        </tr>`).join('')}</tbody>
-    </table>` : emptyState('✓', 'Keine offenen Eingabefristen.')}</div>`;
+      <thead><tr><th>Projekt</th><th>Posten</th><th>Status</th><th>Frist</th></tr></thead>
+      <tbody>${fristTasks.slice(0, 6).map(fristZeile).join('')}</tbody>
+    </table>` : emptyState('✓', 'Keine offenen Fristen.')}</div>`;
 
   // Panel: Anstehende Termine
   const terminePanel = sect('Anstehende Termine', 'alle Projekte') + `<div class="card card-pad" style="margin-bottom:18px">${termine.length ? `<div class="dash-list">${termine.map(e => `
@@ -2365,15 +2377,22 @@ function viewDashboard() {
     <div class="heute-block">
       <div class="heute-kopf"><h3>Im Blick</h3></div>
       ${zeile('Aktive Projekte', '', String(aktive.length))}
-      ${zeile('Offene Vergaben', '', String(offeneVergaben.length))}
+      ${zeile('Offene Posten', '', String(offeneVergaben.length))}
       ${zeile('Fristen ≤ 7 Tage', '', fristig.length
           ? `<span style="color:var(--s-red);font-weight:700">${fristig.length}</span>` : '0')}
-      ${zeile('Volumen', '', chfShort(volumen))}
+      ${zeile('Volumen', geldProjekte.length < projekte.length
+        ? esc(geldProjekte.length + ' von ' + projekte.length + ' Projekten') : '', chfShort(volumen))}
     </div>
   </aside>`;
 
   const projKarten = projList.length
-    ? `<div class="proj-kacheln">${projList.slice(0, 6).map(projektCard).join('')}</div>`
+    ? `<div class="proj-kacheln">${projList.slice(0, 6).map(pr => {
+        /* Jede Kachel spricht ihre eigene Sprache — dafür muss der
+           Zusammenhang je Kachel gesetzt und danach zurückgestellt
+           werden, sonst färbt die letzte auf die Seite ab. */
+        const merk = vorlageCtx; setVorlageCtx(pr);
+        const h = projektCard(pr); setVorlageCtx(merk); return h;
+      }).join('')}</div>`
     : emptyState('▤', 'Noch keine Projekte', 'Lege dein erstes Projekt an – Termine, Kosten und Ausschreibung an einem Ort.', { label: '+ Erstes Projekt anlegen', act: 'new-projekt' });
 
   render(`
@@ -2395,19 +2414,53 @@ function viewDashboard() {
   $$('.pend-check').forEach(cb => cb.addEventListener('change', () => togglePendenz(cb.dataset.pid, cb.dataset.prid, cb.dataset.tid, cb.dataset.itemid)));
 }
 
+/** Kurzform eines Betrags — oder einer Stückzahl, wenn die Vorlage nicht in Geld rechnet. */
+function kurzWert(n, p) {
+  if (istGeld(p)) return chfShort(n);
+  const v = vorlage(p);
+  return (Math.round(Number(n) || 0)).toLocaleString('de-CH') + (v && v.einheitKurz ? ' ' + v.einheitKurz : '');
+}
+
+/* Die drei Zahlen auf der Kachel.
+
+   Beim Bau bleiben es die gewohnten. Sonst dieselben drei Spalten,
+   die auch die Kostenübersicht führt — mit den Wörtern der Vorlage,
+   damit auf der Kachel steht, was der Nutzer erwartet: «Einstand»
+   und «Kurswert» beim Depot, nicht «Volumen». */
+function projektKennzahlen(p) {
+  if (istBau(p)) {
+    const frist = naechsteFrist(p);
+    return [
+      { v: projektVergebenAnzahl(p) + '/' + (p.vergaben || []).length, l: 'Zuschlag' },
+      { v: chfShort(projektVolumen(p)), l: 'Volumen' },
+      { v: frist ? fmtDate(frist).slice(0, 6) + '…' : '–', l: 'nächste Frist' },
+    ];
+  }
+  const vs = (p.vergaben || []).filter(weistAus);
+  const summe = f => vs.reduce((a, v) => a + f(kostenZeile(v)), 0);
+  return [
+    { v: String(vs.length), l: W('posten_pl', p) },
+    { v: kurzWert(summe(z => z.kv), p), l: W('kv', p) },
+    { v: kurzWert(summe(z => z.prognose), p), l: W('prognose', p) },
+  ];
+}
+
 function projektCard(p) {
   const pct = projektFortschritt(p);
-  const total = (p.vergaben || []).length;
-  const vergeben = projektVergebenAnzahl(p);
-  const frist = naechsteFrist(p);
+  const vl = vorlage(p);
   return `
     <div class="proj-card" data-goto="#/projekt/${p.id}" data-ctx="projekt" data-pid="${p.id}">
       <div class="pc-top">
         <div>
           <div class="pc-title">${esc(p.name)}</div>
-          <div class="pc-meta">📍 ${esc(p.ort)} · ${esc(p.bauherr)}</div>
+          <div class="pc-meta">${[p.ort && p.ort !== '–' ? '📍 ' + esc(p.ort) : '',
+              p.bauherr && p.bauherr !== '–' ? esc(p.bauherr) : ''].filter(Boolean).join(' · ')
+              || esc((vl && vl.unterzeile) || '')}</div>
         </div>
-        ${phaseBadge(dominantPhase(p))}
+        ${/* Beim Bau die Phase, sonst die Vorlage: In einem Depot sagt
+             «Ausschreibung» nichts, «📈 Depot» sagt auf einen Blick,
+             was für eine Kachel man vor sich hat. */''}
+        ${istBau(p) ? phaseBadge(dominantPhase(p)) : `<span class="pc-vorlage" title="${esc((vl && vl.unterzeile) || '')}">${(vl && vl.zeichen) || ''} ${esc((vl && vl.name) || '')}</span>`}
       </div>
       <div class="pc-bars">
         <div class="progress-wrap">
@@ -2416,9 +2469,7 @@ function projektCard(p) {
         </div>
       </div>
       <div class="pc-stats">
-        <div class="pc-stat"><span class="v">${vergeben}/${total}</span><span class="l">Zuschlag</span></div>
-        <div class="pc-stat"><span class="v">${chfShort(projektVolumen(p))}</span><span class="l">Volumen</span></div>
-        <div class="pc-stat"><span class="v">${frist ? fmtDate(frist).slice(0, 6) + '…' : '–'}</span><span class="l">nächste Frist</span></div>
+        ${projektKennzahlen(p).map(k => `<div class="pc-stat"><span class="v">${esc(k.v)}</span><span class="l">${esc(k.l)}</span></div>`).join('')}
       </div>
     </div>`;
 }

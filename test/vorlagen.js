@@ -87,6 +87,35 @@ src += `
 ;globalThis.__pruefGruppen = function () { return pruefCtx ? pruefCtx.gruppen : []; };
 ;globalThis.__ordZeilen = function () { return ordnungCtx ? ordnungCtx.zeilen : []; };
 ;globalThis.__handelBlatt = function (pid, vid) { viewHandel(pid, vid); return globalThis.__blatt; };
+;globalThis.__startseite = function () {
+  /* Vier Projekte, vier Vorlagen — dieselbe Lage wie beim Nutzer.
+     Der bisherige Zustand wird gemerkt und am Ende zurückgegeben:
+     Eine Prüfung darf denen nach ihr nicht den Boden wegziehen. */
+  const merkState = state, merkCtx = vorlageCtx;
+  state = { projekte: [], kontakte: [], dokumente: [], vorlage: 'bau', woerter: {} };
+  const leer = () => ({ protokolle: [], entscheidungen: [], bezugsfirmen: [], geschosseListe: [],
+    auflagen: [], mitglieder: [], bauteile: [], optionen: [], termine: [], finanz: {} });
+  const mach = (id, name, vorlage) => {
+    const p = Object.assign({ id, name, vorlage, vergaben: [], ort: '–', bauherr: '–', projektleiter: '–' }, leer());
+    state.projekte.push(p); setVorlageCtx(p); return p;
+  };
+  mach('d1', 'Umbau EFH', 'bau');
+  csvPostenAnlegen('d1', [{ bkp: '211', gewerk: 'Baumeister', schaetzung: 250000, betrag: 232000, firma: 'Bau AG', status: 'vergeben' }]);
+  mach('d2', 'Sammlung', 'sammlung');
+  csvPostenAnlegen('d2', [{ bkp: 'CORI-EN001', gewerk: 'Black Chaos', satz: 'Chaos Origins', schaetzung: 5, marktwert: 52.57 }]);
+  mach('d3', 'Depot', 'depot');
+  csvPostenAnlegen('d3', [{ bkp: 'XAU', symbol: 'XAU', satz: 'Gold', kategorie: '201', menge: 12, einheit: 'g', kursChf: 3677.91, datum: '2026-03-12', schaetzung: 1450, marktwert: 1418.97 }]);
+  mach('d4', 'Initiative', 'unterschriften');
+  csvPostenAnlegen('d4', [{ bkp: '101', gewerk: 'Zürich', schaetzung: 4000, marktwert: 3600, betrag: 3200, firma: 'Team', status: 'vergeben' }]);
+  setVorlageCtx(null);
+  viewDashboard();
+  const html = globalThis.__blatt;
+  const geld = state.projekte.filter(x => istGeld(x));
+  const volumen = { projekte: geld.length, summe: geld.reduce((a, x) => a + projektVolumen(x), 0) };
+  const stand = vorlageKey(null);
+  state = merkState; setVorlageCtx(merkCtx);
+  return { html, volumen, stand };
+};
 ;globalThis.__depotMitChargen = function () {
   kursSetzen({ rates: { CHF: 0.9333, USD: 1.16 }, date: '2026-08-20' });
   const p = { id: 'p_dep', name: 'Depot', vorlage: 'depot', vergaben: [],
@@ -378,6 +407,40 @@ ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(ein
     (blatt.match(/.{0,20}(Submittent|Werkvertrag|Zuschlag|eingeladen).{0,20}/) || [''])[0]);
   ok('Handel: die Seitenliste zeigt Anlagen, nicht Käufe',
     (blatt.match(/gw-side-item/g) || []).length === 2);
+}
+
+/* ---- 2f) Die Startseite, wenn Vorlagen nebeneinanderliegen ----
+   Sie war ganz in Bau-Begriffen und zählte ausserdem falsch: Eine
+   Unterschriftensammlung zählt Unterschriften, und die wanderten in
+   dieselbe Franken-Summe wie alles andere. */
+{
+  const start = sandbox.__startseite();
+  const dash = start.html;
+
+  ok('Kachel Bau: die gewohnten Zahlen', /Zuschlag/.test(dash) && /Volumen/.test(dash));
+  ok('Kachel Sammlung: ihre eigenen', /Objekte/.test(dash) && /Einstand/.test(dash) && /Erlös/.test(dash));
+  ok('Kachel Depot: ihre eigenen', /Positionen/.test(dash) && /Kurswert|Wert/.test(dash));
+  ok('Kachel Unterschriften: zählt Stück, nicht Franken',
+    /Sammelgebiete/.test(dash) && /Unt\./.test(dash), (dash.match(/.{0,30}Sammelgebiete.{0,60}/) || [''])[0]);
+  ok('… und keine dieser Kacheln sagt «Zuschlag»',
+    (dash.match(/Zuschlag/g) || []).length === 1, String((dash.match(/Zuschlag/g) || []).length));
+
+  ok('Vorlagen-Marke statt Bauphase, wo es kein Bauvorhaben ist',
+    (dash.match(/pc-vorlage/g) || []).length === 3, String((dash.match(/pc-vorlage/g) || []).length));
+
+  /* Der eigentliche Rechenfehler: Stück und Franken in einer Summe. */
+  const volumen = start.volumen;
+  eq('quer gezählt wird nur, was in Franken rechnet', volumen.projekte, 3);
+  ok('… die Unterschriften sind draussen', volumen.summe < 1000000 && volumen.summe > 0, String(volumen.summe));
+  ok('… und es steht dabei, dass nicht alle gezählt sind',
+    /von 4 Projekten/.test(dash), (dash.match(/.{0,20}von 4 Projekten.{0,20}/) || [''])[0]);
+
+  ok('die Fristen-Tafel heisst nicht mehr «Submissionen»',
+    /Nächste Fristen/.test(dash) && !/Submissionen/.test(dash));
+
+  /* Und der Zusammenhang darf nicht kleben bleiben: Nach dem Zeichnen
+     der letzten Kachel steht die Seite wieder in keinem Projekt. */
+  eq('nach der Startseite gilt wieder der Standard', start.stand, 'bau');
 }
 
 /* ---- 3) Der Bau-Fall bleibt, wie er war ---- */

@@ -2620,6 +2620,14 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
    eigene Sache ist — nicht die Anlage, sondern dieser eine Kauf. */
 /* Handel: das Kennzahlenband über den Chargen. Vier Zahlen, die
    zusammen die Frage beantworten «wie steht diese Anlage da». */
+/* Die Vorlage auf der Projektkachel — dort, wo beim Bau die Phase
+   steht. Ein Blick genügt, um zu wissen, was für eine Kachel das ist. */
+.pc-vorlage {
+  flex: none; padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  font-size: var(--t-2xs); font-weight: 600;
+  color: var(--text-soft); background: var(--surface-2); border: 1px solid var(--border);
+}
+
 .hd-band { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
 .hd-zahl { padding: 9px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .hd-zahl span { display: block; font-size: var(--t-2xs); color: var(--text-faint); }

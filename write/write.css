@@ -3,12 +3,17 @@
    ============================================================ */
 :root{
   /* Palette + Schrift → ../ui/tokens.css (gemeinsames Design-System). Hier nur Paper-spezifische Tokens. */
-  --bg:#dcd8cd;          /* Canvas hinter dem Blatt (dunkler → Blatt „schwebt") */
-  --side:#f5f4ee;        /* Seitenleiste (warm) */
+  /* Grundton: bis zum 14.08.2026 warmes Beige aus der alten Palette. Der
+     Akzent war längst violett, der Untergrund nicht — nebeneinander sahen
+     SubmitOne und Submit Paper aus wie zwei Programme. Jetzt dieselbe
+     Familie: der Tisch violettgrau, das Blatt weiss. Dunkler als --grund,
+     damit das Blatt weiterhin darüber schwebt. */
+  --bg:#d8d8e4;          /* Tisch hinter dem Blatt */
+  --side:var(--surface-2); /* Seitenleiste */
   --paper:#ffffff;       /* Das Blatt */
   --paper-ink:#1a1e27;   /* Text auf dem Blatt */
   --shadow:0 0 0 1px rgba(20,24,40,.055), 0 2px 5px rgba(20,24,40,.09), 0 16px 40px -6px rgba(20,24,40,.20);
-  --radius:12px;
+  --radius:var(--rund-l);   /* 11px aus ui/tokens.css statt eigener 12px */
   --radius-sm:8px;
   --side-w:248px;
   --insp-w:268px;
@@ -569,6 +574,16 @@ body[data-theme="dark"] .editor mark{background:#7a6a1e;color:#fff}
 .editor .toc-btn{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-soft);font-size:13px;cursor:pointer;line-height:1}
 .editor .toc-btn:hover{border-color:var(--accent);color:var(--accent)}
 .editor .toc-list{display:flex;flex-direction:column;gap:1px}
+/* Seitenzahl mit Fuehrungspunkten. Der Punktlauf entsteht aus einem
+   ueberlangen Punktband, das der Ueberlauf abschneidet - so bleibt die
+   Zahl rechtsbuendig, egal wie lang der Titel ist. */
+.editor .toc a[data-seite],.pv-page .toc a[data-seite]{display:flex;align-items:baseline;gap:6px}
+.editor .toc a[data-seite]::before,.pv-page .toc a[data-seite]::before{
+  content:"";flex:1 1 auto;order:1;align-self:flex-end;height:1px;margin-bottom:4px;
+  background-image:radial-gradient(circle,currentColor 1px,transparent 1px);
+  background-size:5px 1px;background-repeat:repeat-x;opacity:.35}
+.editor .toc a[data-seite]::after,.pv-page .toc a[data-seite]::after{
+  content:attr(data-seite);order:2;flex:0 0 auto;font-variant-numeric:tabular-nums;opacity:.8}
 .editor .toc a{display:block;color:var(--paper-ink);text-decoration:none;padding:3px 6px;cursor:pointer;font-size:14px;font-family:var(--font-ui);border-radius:5px;border-left:2px solid transparent}
 .editor .toc a:hover{color:var(--accent);background:var(--accent-soft);border-left-color:var(--accent)}
 .editor .toc .toc-l2{padding-left:20px;font-size:13.5px}
@@ -790,6 +805,18 @@ body[data-theme="dark"] .tip{background:#2a3140;border:1px solid #3a4150}
 
 /* ---------- Druck ---------- */
 @media print{
+  /* Schusterjungen und Hurenkinder: keine einzelne Zeile allein auf
+     einer Seite. Drei ist die uebliche Untergrenze im Satz. */
+  p,li,blockquote{orphans:3;widows:3}
+  /* Eine Ueberschrift gehoert zu ihrem Abschnitt - sie darf nicht als
+     letzte Zeile einer Seite stehen und der Text auf der naechsten. */
+  h1,h2,h3,h4{break-after:avoid;page-break-after:avoid;break-inside:avoid;page-break-inside:avoid}
+  /* Eine Tabelle wird nicht mitten in einer Zeile zerschnitten, und
+     die Kopfzeile wiederholt sich auf der Folgeseite. */
+  table{break-inside:auto}
+  tr,td,th{break-inside:avoid;page-break-inside:avoid}
+  thead{display:table-header-group}
+  figure,img{break-inside:avoid;page-break-inside:avoid}
   body{background:#fff}
   .side,.inspector,.navpane,.topbar,.ribtabs,.formatbar,.calcbar,.slidenotes,.pagetabs,.findbar,.ruler-wrap,.calc-colruler,.calc-rowruler,.statusbar,.focus-exit,.bubble,.tabletools,.ctxmenu,.guides,.page-format,.preview-overlay,.present-overlay,.pdf-overlay,.pdf-viewer,.tip,#toast-root{display:none !important}
   /* PDF-Annotation als PDF speichern: nur die geflachten Seiten drucken */

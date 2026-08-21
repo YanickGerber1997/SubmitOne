@@ -3,7 +3,7 @@
    "Schreiben ohne Ablenkung."
    ============================================================ */
 'use strict';
-const WRITE_VERSION = 'v37';
+const WRITE_VERSION = 'v38';
 const FORMAT_VERSION = 1;
 const MM = 3.7795;                       // mm -> px @96dpi
 const PAGE_INNER_PX = (297 - 56) * MM;   // A4-Höhe minus 2×28mm Rand
@@ -3815,6 +3815,23 @@ function seitenzahlenEinsetzen(html, nr, gesamt, titel, datum) {
     .replace(/\{\s*datum\s*\}/gi, esc(datum || ''));
 }
 /* Platzhalter auf allen aufgebauten Vorschauseiten ersetzen */
+/** Die Seitenzahlen ins Inhaltsverzeichnis schreiben.
+
+    Gibt zurück, ob sich etwas geändert hat — nur dann lohnt der zweite
+    Umbruch. Steht schon alles richtig da, bleibt es bei einem Durchgang. */
+function tocSeitenSetzen(seiteVon) {
+  const toc = $('.toc', editor); if (!toc) return false;
+  let geaendert = false;
+  $$('.toc-list a', toc).forEach(a => {
+    const nr = seiteVon[a.dataset.go];
+    const alt = a.dataset.seite || '';
+    const neu = nr ? String(nr) : '';
+    if (alt !== neu) { geaendert = true; }
+    if (neu) a.dataset.seite = neu; else delete a.dataset.seite;
+  });
+  return geaendert;
+}
+
 function seitenzahlenAufSeiten(seiten) {
   let datum = ''; try { datum = new Date().toLocaleDateString('de-CH'); } catch (_) {}
   const titel = (doc && doc.titel) || '';
@@ -3881,7 +3898,7 @@ function previewCalc() {
   $('#pvInfo').textContent = 'Tabelle · ' + (maxR + 1) + ' × ' + (maxC + 1) + ' · ' + seiten.length + (seiten.length === 1 ? ' Seite' : ' Seiten') + (quer ? ' · Querformat' : ' · Hochformat');
   scroll.scrollTop = 0;
 }
-function printPreview() {
+function printPreview(nochmal) {
   if (!doc) return;
   captureDoc();
   if (activePage().typ === 'calc') { previewCalc(); return; }
@@ -3896,6 +3913,54 @@ function printPreview() {
     p.innerHTML = `<div class="pv-h">${headHTML}</div><div class="pv-c"></div><div class="pv-f"><span>${footHTML}</span><span class="pv-num"></span></div>`;
     scroll.appendChild(p); return p;
   };
+  /* Ein Absatz, der nicht mehr ganz auf die Seite passt, wird geteilt.
+     Zurueck kommt der Rest, der auf die naechste Seite gehoert — oder
+     null, wenn sich das Teilen nicht lohnt.
+
+     Gesucht wird die letzte WORTGRENZE, die noch passt. Das geschieht
+     durch Halbieren statt Wort fuer Wort: bei 400 Woertern sind das
+     neun Messungen statt vierhundert. */
+  const teilbar = el => el.nodeType === 1
+    && /^(P|DIV|LI|BLOCKQUOTE)$/.test(el.tagName)
+    && !el.classList.contains('toc')
+    && !el.querySelector('table, img');
+
+  function teileBlock(el, platz, zeilenH) {
+    /* Unter drei Zeilen sieht ein Rest schlimmer aus als ein Sprung. */
+    if (platz < zeilenH * 3) return null;
+    const worte = el.textContent.split(/(\s+)/);
+    if (worte.length < 12) return null;
+    const voll = el.innerHTML;
+    const nurText = el.textContent;
+
+    let lo = 0, hi = worte.length, gut = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      el.textContent = worte.slice(0, mid).join('');
+      if (el.getBoundingClientRect().height <= platz) { gut = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    /* Nichts passt, oder alles — dann war die Teilung unnoetig. */
+    if (gut < 3 || gut >= worte.length) { el.innerHTML = voll; return null; }
+
+    const ersterTeil = worte.slice(0, gut).join('').replace(/\s+$/, '');
+    const rest = worte.slice(gut).join('').replace(/^\s+/, '');
+    if (!rest) { el.innerHTML = voll; return null; }
+    /* Nur bei reinem Text teilen. Traegt der Absatz Auszeichnungen,
+       wuerde das Zerschneiden sie verlieren — dann lieber springen. */
+    if (voll.replace(/\s+/g, ' ').trim() !== nurText.replace(/\s+/g, ' ').trim()) {
+      el.innerHTML = voll; return null;
+    }
+    el.textContent = ersterTeil;
+    const weiter = el.cloneNode(false);
+    weiter.textContent = rest;
+    return weiter;
+  }
+
+  /* Welche Überschrift auf welcher Seite landet — für das
+     Inhaltsverzeichnis. Der Schlüssel ist die id, die refreshTOC()
+     jeder Überschrift gibt. */
+  const seiteVon = {};
   let p = newPage(), c = p.querySelector('.pv-c'); const pages = [p];
   // verfügbare Höhe pro Seite (Kopf/Fuss + Innenabstand abziehen) – einmal messen, gilt für alle Seiten
   const headH = p.querySelector('.pv-h').offsetHeight, footH = p.querySelector('.pv-f').offsetHeight;
@@ -3910,12 +3975,38 @@ function printPreview() {
     if (node.classList && node.classList.contains('pagebreak')) { if (c.children.length) { nextPage(); used = 0; } return; }
     const clone = node.cloneNode(true);
     clone.querySelectorAll && clone.querySelectorAll('.sp-err').forEach(s => s.replaceWith(document.createTextNode(s.textContent)));
-    c.appendChild(clone);
-    const h = outerH(clone);
-    if (used + h > avail && c.children.length > 1) {     // passt nicht mehr → ganzer Block auf neue Seite
-      c.removeChild(clone); nextPage(); c.appendChild(clone); used = outerH(clone);
-    } else used += h;
+    let stueck = clone;
+    /* Solange etwas uebrig bleibt, weitermachen — ein sehr langer Absatz
+       kann sich ueber mehrere Seiten ziehen. */
+    let schutz = 0;
+    while (stueck && schutz++ < 200) {
+      c.appendChild(stueck);
+      const h = outerH(stueck);
+      if (used + h <= avail) {
+        if (stueck.id && /^h\d+t$/.test(stueck.id)) seiteVon[stueck.id] = pages.length;
+        used += h; break;
+      }
+
+      /* Passt nicht mehr. Erst versuchen zu teilen — aber nur, wenn auf
+         dieser Seite ueberhaupt noch Platz ist. */
+      const platz = avail - used;
+      const zeilenH = parseFloat(getComputedStyle(stueck).lineHeight) || 18;
+      const rest = (teilbar(stueck) && c.children.length >= 1 && platz > 0)
+        ? teileBlock(stueck, platz, zeilenH) : null;
+      if (rest) { nextPage(); used = 0; stueck = rest; continue; }
+
+      /* Nicht teilbar → wie bisher als Ganzes auf die naechste Seite. */
+      if (c.children.length > 1) { c.removeChild(stueck); nextPage(); c.appendChild(stueck); used = outerH(stueck); }
+      else used += h;
+      if (stueck.id && /^h\d+t$/.test(stueck.id)) seiteVon[stueck.id] = pages.length;
+      break;
+    }
   });
+  /* Die Seitenzahlen ins Verzeichnis — und einmal neu umbrechen, weil
+     das Verzeichnis dadurch anders hoch sein kann. Der zweite Durchgang
+     bekommt kein drittes Mal: zwei genügen, mehr würde schwingen. */
+  if (!nochmal && tocSeitenSetzen(seiteVon)) { printPreview(true); return; }
+
   pages.forEach(pg => pg.querySelector('.pv-num').textContent = '');   // Seitenzahl kommt ueber den Platzhalter {Seite}, nicht automatisch
   seitenzahlenAufSeiten(pages);
   if (doc.einstellungen.erstSeiteOhne && pages[0]) { pages[0].querySelector('.pv-h').innerHTML = ''; pages[0].querySelector('.pv-f span:first-child').innerHTML = ''; }

@@ -88,6 +88,31 @@ if (R) {  // CSS-Waechter: im JS verwendete Klassen muessen im Stylesheet existi
   R.R.push({ name: 'CSS: jede im JS gesetzte Klasse hat eine Regel (' + gefunden.size + ' geprueft)',
              ok: fehlend.length === 0, msg: fehlend.join(', ') });
   fehlend.length ? R.fail++ : R.pass++;
+
+  /* Der Bericht-Test vom 21.08.2026 hat drei Loecher gezeigt. Zwei davon
+     sitzen im Druck-CSS und lassen sich hier pruefen: dass eine einzelne
+     Zeile nicht allein auf einer Seite bleibt, dass eine Ueberschrift bei
+     ihrem Abschnitt bleibt, und dass das Inhaltsverzeichnis eine
+     Seitenzahl tragen kann. */
+  // Leerraum weg, damit die Suche nicht an der Formatierung des Stylesheets haengt.
+  const eng = cssTxt.replace(/\s+/g, "");
+  [["Druck: keine einzelne Zeile allein (orphans/widows)", "orphans:3;widows:3"],
+   ["Druck: Ueberschrift bleibt bei ihrem Abschnitt", "h1,h2,h3,h4{break-after:avoid"],
+   ["Druck: Tabellenzeilen werden nicht zerschnitten", "tr,td,th{break-inside:avoid"],
+   ["Druck: Tabellenkopf wiederholt sich", "thead{display:table-header-group"],
+   ["Verzeichnis: Seitenzahl erscheint aus data-seite", "content:attr(data-seite)"],
+   ["Verzeichnis: Fuehrungspunkte zur Zahl", "background-size:5px1px"]
+  ].forEach(([nm, txt]) => { const ok = eng.indexOf(txt) >= 0; R.R.push({ name: nm, ok: ok, msg: "" }); ok ? R.pass++ : R.fail++; });
+
+  /* Und der dritte: der Umbruch muss Absaetze TEILEN koennen, nicht nur
+     schieben. Am Verhalten des Quelltextes geprueft, weil die Messung
+     selbst ein Browserfenster braucht. */
+  [["Umbruch: es gibt eine Teilfunktion fuer Absaetze", "function teileBlock("],
+   ["Umbruch: sie wird beim Ueberlauf gerufen", "teileBlock(stueck, platz, zeilenH)"],
+   ["Umbruch: Ueberschriften und Tabellen werden nicht geteilt", "!el.querySelector('table, img')"],
+   ["Verzeichnis: die Seiten werden beim Umbrechen gemerkt", "seiteVon[stueck.id] = pages.length"],
+   ["Verzeichnis: nach dem Eintragen wird EINMAL neu umbrochen", "printPreview(true)"]
+  ].forEach(([nm, txt]) => { const ok = jsTxt.indexOf(txt) >= 0; R.R.push({ name: nm, ok: ok, msg: "" }); ok ? R.pass++ : R.fail++; });
 }
 
 if (R) {  // Quelltext-Waechter: Aufrufe, die zur Laufzeit sicher fehlschlagen wuerden

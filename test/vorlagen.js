@@ -1444,6 +1444,47 @@ ok('… und die Bedeutung steht dabei, weil «Excellent» nicht «ausgezeichnet�
     ['512 B', '88 KB', '5.0 MB']);
 }
 
+/* Artikelmerkmale. Das Holen braucht das Netz; geprueft wird hier,
+   was ohne es gilt: die Ableitungen und die Darstellung.
+
+   Der Charakter ist das Feld mit der zweithoechsten Suchhaeufigkeit
+   bei eBay (990'000). Er ist die Art selbst, ohne die Zutaten des
+   Drucks - wer nach «Excadrill» sucht, will auch «Mega Excadrill ex»
+   finden. */
+eq('Mega und ex fallen weg', sandbox.charakterAus('Mega Excadrill ex'), 'Excadrill');
+eq('ein blosser Name bleibt', sandbox.charakterAus('Gengar'), 'Gengar');
+eq('V faellt weg', sandbox.charakterAus('Charizard V'), 'Charizard');
+eq('VSTAR und die Regionalform auch',
+  sandbox.charakterAus('Hisuian Zoroark VSTAR'), 'Zoroark');
+/* Aber ein «ex» MITTEN im Namen ist keins - da faellt nichts. */
+eq('nur am Ende wird geschnitten', sandbox.charakterAus('Exeggutor'), 'Exeggutor');
+
+eq('die Besonderheit steckt in der Variante',
+  sandbox.besonderheitAus('Rare · Cosmos Holo'), 'Cosmos Holo');
+eq('ohne Variante keine Besonderheit', sandbox.besonderheitAus('Secret Rare'), '');
+
+{
+  /* Die Reihenfolge ist die von eBay, nach Suchhaeufigkeit: Wer oben
+     anfaengt und in der Mitte aufhoert, hat trotzdem das Richtige
+     getan. Darum steht sie fest und wird geprueft. */
+  const v = { merkmale: { spiel: 'Pokémon TCG', kartenname: 'Mega Excadrill ex',
+    charakter: 'Excadrill', seltenheit: 'Ultra Rare', illustrator: '' } };
+  const z = sandbox.merkmalZeilen(v);
+  eq('Spiel steht zuoberst und ist Pflicht', [z[0].key, z[0].pflicht], ['spiel', true]);
+  eq('danach der Kartenname', z[1].key, 'kartenname');
+  eq('danach der Charakter', z[2].key, 'charakter');
+  /* Ein leeres Feld verschwindet NICHT - es ist die Auskunft, dass
+     man es selbst wissen muss. */
+  eq('jedes Feld erscheint, auch das leere', z.length, 15);
+  ok('das leere traegt keinen Wert',
+    z.filter(x => x.key === 'illustrator')[0].wert === '', 'illustrator');
+  /* Zum Mitnehmen aber nur, was wirklich dasteht. */
+  ok('der Text nennt nur Bekanntes',
+    /Charakter: Excadrill/.test(sandbox.merkmalText(v))
+    && !/Illustrator/.test(sandbox.merkmalText(v)), sandbox.merkmalText(v));
+  eq('ohne Merkmale kein Text', sandbox.merkmalText({}), '');
+}
+
 // Treffer → Posten
 const posten = sandbox.ygoZuPosten(a1.treffer[0], k);
 /* Die Nummer ist die, die auf der Karte steht — nicht die Kategorie.

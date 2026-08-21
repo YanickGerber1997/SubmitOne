@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v416';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v417';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -10071,6 +10071,111 @@ async function karteSpracheUmstellen(v, sprache) {
   return { geaendert: true, name: k.name, satz: v.satz, seltenheit: v.seltenheit };
 }
 
+/* --- Artikelmerkmale --------------------------------------------------
+   Die Felder, die ein Marktplatz je Karte abfragt. Reihenfolge nach
+   Suchhäufigkeit, wie eBay sie selbst neben die Felder schreibt. */
+const MERKMAL_FELDER = [
+  ['spiel',        'Spiel',              true],
+  ['kartenname',   'Kartenname',         false],
+  ['charakter',    'Charakter',          false],
+  ['kartentyp',    'Kartentyp',          false],
+  ['spezialkarte', 'Spezialkarte',       false],
+  ['seltenheit',   'Seltenheit',         false],
+  ['hersteller',   'Hersteller',         false],
+  ['besonderheit', 'Besonderheiten',     false],
+  ['stufe',        'Entwicklungsstufe',  false],
+  ['set',          'Set',                false],
+  ['nummer',       'Kartennummer',       false],
+  ['sprache',      'Sprache',            false],
+  ['illustrator',  'Illustrator',        false],
+  ['kp',           'KP / ATK-DEF',       false],
+  ['typ',          'Typ / Attribut',     false],
+];
+
+/* Die Entwicklungsstufe heisst auf Deutsch anders als in der
+   Datenbank — und genau so steht sie in eBays Auswahlliste. */
+const PKM_STUFEN = { Basic: 'Basis', Stage1: 'Phase 1', Stage2: 'Phase 2',
+  VMAX: 'VMAX', VSTAR: 'VSTAR', MEGA: 'MEGA', RESTORED: 'Wiederbelebt' };
+
+/** Der Charakter ist die Art selbst, ohne die Zutaten des Drucks:
+    «Mega Excadrill ex» → «Excadrill». Danach suchen 990'000 Leute im
+    Monat — mehr als nach jedem anderen Merkmal ausser dem Kartennamen. */
+function charakterAus(name) {
+  return String(name || '')
+    .replace(/^(Mega|M|Dark|Shining|Radiant|Origin Forme|Hisuian|Galarian|Alolan|Paldean)\s+/i, '')
+    .replace(/\s+(ex|EX|GX|V|VMAX|VSTAR|BREAK|LV\.X|δ|Prime)$/,'')
+    .replace(/\s+(V-UNION|Tag Team)$/i, '')
+    .trim();
+}
+
+/** Die Besonderheit steht in der Variante, nicht in der Stufe:
+    «Rare · Cosmos Holo» → «Cosmos Holo». */
+function besonderheitAus(seltenheit) {
+  const t = String(seltenheit || '').split('·').map(x => x.trim()).filter(Boolean);
+  return t.length > 1 ? t.slice(1).join(', ') : '';
+}
+
+/** Die Merkmale einer Karte aus den Datenbanken holen.
+
+    Was die Datenbank nicht führt, bleibt leer. Ein falsches Merkmal
+    ist bei eBay schlimmer als ein fehlendes: Danach sucht jemand,
+    findet die Karte, und sie ist es nicht. */
+async function merkmaleHolen(v, p) {
+  if (!v) return null;
+  const m = {
+    kartenname: v.gewerk || '', seltenheit: v.seltenheit || '',
+    set: v.satz || '', nummer: v.bkp || '',
+    sprache: v.sprache ? spracheInfo(v.sprache).name : '',
+    besonderheit: besonderheitAus(v.seltenheit),
+    charakter: '', kartentyp: '', spezialkarte: '', stufe: '',
+    illustrator: '', kp: '', typ: '', spiel: '', hersteller: '',
+  };
+
+  if (v.quelleName === 'TCGdex' && v.passcode) {
+    const a = await fetch(TCGDEX + (v.sprache || 'en') + '/cards/' + encodeURIComponent(v.passcode));
+    if (!a.ok) throw new Error('TCGdex antwortet nicht (' + a.status + ')');
+    const k = await a.json();
+    m.spiel = 'Pokémon TCG'; m.hersteller = 'Nintendo';
+    m.charakter = charakterAus(k.name);
+    m.kartentyp = k.category === 'Pokemon' ? 'Pokémon' : (k.category || '');
+    m.spezialkarte = k.suffix || '';
+    m.stufe = PKM_STUFEN[k.stage] || k.stage || '';
+    m.illustrator = k.illustrator || '';
+    m.kp = k.hp ? k.hp + ' KP' : '';
+    m.typ = (k.types || []).join('/');
+  } else if (v.quelleName === 'YGOPRODeck' && v.passcode) {
+    const j = await ygoHolen(YGO_BASIS + 'cardinfo.php?id=' + encodeURIComponent(v.passcode));
+    const k = ((j && j.data) || [])[0];
+    if (!k) throw new Error('Diese Nummer kennt die Datenbank nicht mehr');
+    m.spiel = 'Yu-Gi-Oh! TCG'; m.hersteller = 'Konami';
+    m.charakter = k.archetype || '';
+    m.kartentyp = k.humanReadableCardType || k.type || '';
+    m.spezialkarte = k.frameType && k.frameType !== 'normal' && k.frameType !== 'effect'
+      ? ygoArtDeutsch(k.frameType) : '';
+    m.stufe = k.level ? 'Stufe ' + k.level : '';
+    m.kp = (k.atk != null && k.def != null) ? k.atk + ' / ' + k.def : '';
+    m.typ = [k.attribute, k.race].filter(Boolean).join(' · ');
+  } else {
+    throw new Error('Diese Sache hat keine Datenbank hinter sich');
+  }
+
+  v.merkmale = m;
+  return m;
+}
+
+/** Die Merkmale als Zeilen — auch die leeren, denn ein leeres Feld
+    ist eine Auskunft: «das musst du selbst wissen». */
+function merkmalZeilen(v) {
+  const m = (v && v.merkmale) || {};
+  return MERKMAL_FELDER.map(([k, name, pflicht]) =>
+    ({ key: k, name, pflicht, wert: String(m[k] || '').trim() }));
+}
+/** Alles auf einmal, zum Mitnehmen. */
+function merkmalText(v) {
+  return merkmalZeilen(v).filter(z => z.wert)
+    .map(z => z.name + ': ' + z.wert).join('\n');
+}
+
 /* --- Eigene Fotos ---------------------------------------------------
    Die Katalogbilder aus den Datenbanken zeigen, wie die Karte AUSSIEHT.
    Ein Käufer will sehen, wie DIESE Karte aussieht — die Ecken, die
@@ -10325,6 +10430,28 @@ function verkaufsblatt(p, v) {
       <div class="vb-wert vb-text" id="vb_text_${v.id}">${esc(txt)}</div>
       <button class="btn sm secondary" data-act="vb-kopie" data-pid="${p.id}" data-vid="${v.id}" data-kind="text">Kopieren</button>
     </div>
+    ${merkmalBlock(p, v)}
+  </div>`;
+}
+
+/** Die Artikelmerkmale, wie ein Marktplatz sie abfragt.
+
+    Die Reihenfolge ist die von eBay, nach Suchhäufigkeit. Wer oben
+    anfängt und in der Mitte aufhört, hat trotzdem das Richtige getan.
+    Ein leeres Feld bleibt leer und sichtbar — geraten wird nicht. */
+function merkmalBlock(p, v) {
+  const zeilen = merkmalZeilen(v);
+  const hat = zeilen.some(z => z.wert);
+  return `<div class="mk">
+    <div class="mk-kopf">
+      <strong>Artikelmerkmale</strong>
+      <span class="muted">${hat ? zeilen.filter(z => z.wert).length + ' von ' + zeilen.length + ' bekannt'
+        : '— eBay fragt sie einzeln ab; die meisten stehen in der Datenbank'}</span>
+      <button class="btn sm secondary" data-act="mk-holen" data-pid="${p.id}" data-vid="${v.id}">${hat ? 'Neu holen' : 'Merkmale holen'}</button>
+      ${hat ? `<button class="btn sm secondary" data-act="mk-kopie" data-pid="${p.id}" data-vid="${v.id}">Alle kopieren</button>` : ''}
+    </div>
+    ${hat ? `<div class="mk-gitter">${zeilen.map(z => `<div class="mk-lab${z.pflicht ? ' pflicht' : ''}">${esc(z.name)}${z.pflicht ? ' *' : ''}</div>
+      <div class="mk-wert${z.wert ? '' : ' leer'}">${z.wert ? esc(z.wert) : 'weiss die Datenbank nicht'}</div>`).join('')}</div>` : ''}
   </div>`;
 }
 
@@ -10465,6 +10592,26 @@ async function fotosAufnehmen(feld) {
       + ' · Projekt ' + kb(fotoGroesseProjekt(p)), 'ok');
   }
   if (schlecht.length) toast(schlecht.length + ' nicht aufgenommen — ' + schlecht[0], 'info');
+}
+
+async function actMerkmaleHolen(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  toast('Merkmale werden geholt …', 'info');
+  try {
+    const m = await merkmaleHolen(v, p);
+    const da = Object.keys(m).filter(k => String(m[k] || '').trim()).length;
+    save(); viewKosten(pid);
+    toast(da + ' Merkmale gefunden', 'ok');
+  } catch (e) { toast('Merkmale: ' + ((e && e.message) || 'kein Zugriff'), 'info'); }
+}
+function actMerkmaleKopie(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  const t = merkmalText(v);
+  if (!t) { toast('Noch keine Merkmale geholt', 'info'); return; }
+  if (navigator.clipboard) navigator.clipboard.writeText(t).then(
+    () => toast('Merkmale kopiert', 'ok'),
+    () => toast('Kopieren nicht möglich', 'info'));
+  else toast('Kopieren nicht möglich', 'info');
 }
 
 function actFotoWeg(pid, vid, fid) {
@@ -22348,6 +22495,8 @@ document.addEventListener('click', e => {
     case 'scan-sprache':     scanSprache(kind); break;
     case 'anbieten':         actAnbieten(pid, vid); break;
     case 'vb-kopie':         actVerkaufsblattKopie(pid, vid, act.dataset.kind); break;
+    case 'mk-holen':         actMerkmaleHolen(pid, vid); break;
+    case 'mk-kopie':         actMerkmaleKopie(pid, vid); break;
     case 'foto-weg':         actFotoWeg(pid, vid, act.dataset.fid); break;
     case 'foto-haupt':       actFotoHaupt(pid, vid, act.dataset.fid); break;
     case 'angebot-weg':      actAngebotWeg(pid, vid); break;

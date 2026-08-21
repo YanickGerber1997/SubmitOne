@@ -2832,6 +2832,22 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
   color: var(--text-soft); min-width: 165px; }
 .ang-zerkl { margin-top: 6px; font-size: var(--t-xs); color: var(--text-soft); }
 
+/* Artikelmerkmale: was ein Marktplatz je Karte abfragt.
+   Zwei Spalten, weil man sie beim Abtippen nebeneinander liest. */
+.mk { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--rand); }
+.mk-kopf { display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  font-size: var(--t-s); margin-bottom: 8px; }
+.mk-gitter { display: grid; grid-template-columns: 150px 1fr; gap: 3px 10px;
+  font-size: var(--t-s); }
+.mk-lab { color: var(--text-soft); font-size: var(--t-xs); padding-top: 2px; }
+.mk-lab.pflicht { font-weight: 700; color: var(--text); }
+.mk-wert { user-select: all; overflow-wrap: anywhere; }
+/* Ein leeres Feld ist eine Auskunft, keine Luecke - es bleibt lesbar. */
+.mk-wert.leer { color: var(--text-soft); opacity: .6; font-style: italic; user-select: none; }
+@media (max-width: 560px) {
+  .mk-gitter { grid-template-columns: 118px 1fr; }
+}
+
 /* Fotos, die der Besitzer selbst macht. Auf dem Handy oeffnet das
    Feld die Kamera, auf dem Rechner den Dateiwaehler - dasselbe Feld. */
 .fo { margin-bottom: 11px; }

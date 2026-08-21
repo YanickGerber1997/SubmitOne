@@ -2735,6 +2735,16 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 .st-kopf { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
 .st-bild { width: 116px; border-radius: var(--rund-s); flex: none; display: block; }
 .st-band { flex: 1; min-width: 240px; }
+/* Selbst nachpruefen: Eine Quelle, die man nicht nachschlagen kann,
+   ist eine Behauptung. Die Verweise stehen deshalb da, wo die Angabe
+   steht - nicht in einer Hilfe. */
+.quelle-reihe { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline;
+  margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line-soft); font-size: var(--t-xs); }
+.quelle-reihe > span { color: var(--text-faint); }
+.quelle-reihe a, .quelle-link { color: var(--brand); text-decoration: none; }
+.quelle-reihe a:hover, .quelle-link:hover { text-decoration: underline; }
+.quelle-link { display: block; font-size: var(--t-2xs); margin-top: 3px; }
+
 .st-notiz { font-size: var(--t-s); white-space: pre-wrap; line-height: 1.55; }
 
 .charge-verkauft { opacity: .6; }

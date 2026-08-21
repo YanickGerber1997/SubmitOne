@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v399';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v400';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -3320,6 +3320,25 @@ function viewHandel(pid, vid) {
 
    Was sie nicht hat: eingeladene Unternehmer, Offertvergleich,
    Werkvertrag, Nachträge, Rapporte. Genau das stand hier bis jetzt. */
+/* Die Verweise, mit denen man eine Angabe selbst nachprüft.
+
+   Cardmarket ist absichtlich nur eine SUCHE: Der Marktplatz sperrt
+   fremde Aufrufe, und ein Verweis, der ins Leere führt, wäre
+   schlechter als keiner. Die Suche mit dem Namen hält immer. */
+function quelleLinks(v, p) {
+  const links = [];
+  if (v.quelleUrl) links.push({ url: v.quelleUrl, text: '↗ Datensatz bei ' + (v.quelleName || 'der Quelle') });
+  if (v.bild) links.push({ url: v.bild, text: '↗ Kartenbild' });
+  if (v.gewerk && nachschlagDienst(p) && nachschlagDienst(p) !== 'kurse') {
+    const spiel = nachschlagDienst(p) === 'pokemon' ? 'Pokemon' : 'YuGiOh';
+    links.push({
+      url: 'https://www.cardmarket.com/de/' + spiel + '/Products/Search?searchString=' + encodeURIComponent(v.gewerk),
+      text: '↗ bei Cardmarket suchen',
+    });
+  }
+  return links;
+}
+
 function viewStueck(pid, vid) {
   const p = findProjekt(pid);
   const v = p && findVergabe(p, vid);
@@ -3390,6 +3409,10 @@ function viewStueck(pid, vid) {
         <div class="card card-pad" style="margin-top:14px">
           <div class="section-head" style="margin-top:0"><h2>Vermerk</h2></div>
           <div class="st-notiz">${v.beschrieb ? esc(v.beschrieb) : '<span class="muted">Noch keine Angaben.</span>'}</div>
+          ${(() => { const l = quelleLinks(v, p); return l.length ? `<div class="quelle-reihe">
+            <span>Selbst nachprüfen:</span>
+            ${l.map(x => `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.text)}</a>`).join('')}
+          </div>` : ''; })()}
         </div>
 
         ${(v.rechnungen || []).length ? `<div class="card" style="margin-top:14px">
@@ -8794,6 +8817,10 @@ function csvPostenAnlegen(pid, posten) {
       satzId: x.satzId || '',
       // Deutsch oder Englisch — beim Verkaufen zwei verschiedene Waren.
       sprache: x.sprache || '',
+      // Der Weg zum Datensatz, aus dem die Angaben stammen. Eine
+      // Quelle, die man nicht nachschlagen kann, ist eine Behauptung.
+      quelleUrl: x.quelleUrl || '',
+      quelleName: x.quelleName || '',
       // Menge und Einheit: 0.35 BTC, 12 g Gold. Die BETRÄGE bleiben
       // Summen — so rechnet die Kostenübersicht unverändert weiter.
       // Das Datum dieser Charge — «am xx kaufte ich so und so viel».
@@ -9118,6 +9145,9 @@ function ygoAuswerten(antwort, erk) {
       setCode: s.set_code || '', setName: s.set_name || '', seltenheit: s.set_rarity || '',
       preisUsd: ygoZahl(s.set_price), preisEur: ygoZahl(pr.cardmarket_price),
       bild: (bilder && (bilder.image_url_small || bilder.image_url)) || '',
+      // Die Seite, auf der ein Mensch dasselbe nachlesen kann.
+      quelleUrl: k.ygoprodeck_url || (k.id ? YGO_BASIS + 'cardinfo.php?id=' + k.id : ''),
+      quelleName: 'YGOPRODeck',
       setSicher, auflagen: auswahl.length, nachladen: false,
       auflagenListe: auswahl.map(x => ({
         code: x.set_code || '', name: x.set_name || '',
@@ -9209,6 +9239,7 @@ function ygoZuPosten(t, k) {
        dann fehlt der Satz, und die Karte landet unter «Auflage noch
        offen», wo sie hingehört, bis man sie bestimmt. */
     bkp: t.setCode || t.passcode || '',
+    quelleUrl: t.quelleUrl || '', quelleName: t.quelleName || '',
     satz: t.setName || '',
     seltenheit: t.seltenheit || '',
     passcode: t.passcode || '',
@@ -9465,8 +9496,9 @@ async function pokemonTreffer(k, sprache) {
     /* Die Nummer, die auf der Karte steht — sie ist das, was der
        Mensch sieht, und sie gehört in die Nummernspalte. */
     kartenNummer: k.localId + '/' + ((k.set && k.set.cardCount && k.set.cardCount.official) || '?'),
-    quelleName: 'TCGdex/Cardmarket', preisArt: pokemonPreisName(cm, gewaehlt ? '' : ''),
+    quelleName: 'TCGdex', preisArt: pokemonPreisName(cm, gewaehlt ? '' : ''),
     sprache: sprache || 'de',
+    quelleUrl: TCGDEX + (sprache || 'de') + '/cards/' + k.id,
     stand: cm && cm.updated ? String(cm.updated).slice(0, 10) : todayIso(),
   };
 }
@@ -9544,6 +9576,7 @@ function pokemonZuPosten(t) {
   const offen = !t.setSicher && t.auflagen > 1;
   return {
     bkp: t.kartenNummer || t.setCode || '',
+    quelleUrl: t.quelleUrl || '', quelleName: t.quelleName || '',
     satz: t.setName || '', satzId: t.satzId || '', sprache: t.sprache || '',
     seltenheit: t.seltenheit || '', passcode: t.setCode || '',
     kategorie: t.kategorie || '901',
@@ -9945,7 +9978,8 @@ function scanKarteHtml(t, p) {
       <div>${esc([t.art, t.seltenheit].filter(Boolean).join(' · ')) || '<span class="muted">Art unbekannt</span>'}</div>
       <div class="muted">${esc([t.setCode, t.setName].filter(Boolean).join(' · '))}</div>
       <div class="scan-wert">${esc(W('rev', p))}: <b>${wert ? chf(wert) : '–'}</b>${hatMengen(p) ? ' <span class="muted">je ' + esc(t.einheit || 'Stück') + '</span>' : ''}
-        <span class="muted">${esc(trefferHerkunft(t))}</span></div>
+        <span class="muted">${esc(trefferHerkunft(t))}</span>
+        ${t.quelleUrl ? `<a class="quelle-link" href="${esc(t.quelleUrl)}" target="_blank" rel="noopener">↗ Datensatz bei ${esc(t.quelleName || 'der Quelle')} ansehen</a>` : ''}</div>
       ${t.spracheNach ? `<div class="scan-hinweis">${esc(t.spracheVon)} kennt die Datenbank nicht — nachgeschlagen als <b>${esc(t.spracheNach)}</b>. Sammlung, Nummer und Seltenheit stimmen überein; der <b>Preis ist der der englischen Auflage</b> und kann für deine abweichen.</div>` : ''}
       ${(!t.setSicher && t.auflagen > 1) ? `<div class="scan-warnung"><b>Welche Auflage ist es?</b> Diese Nummer gibt es in ${t.auflagen} Auflagen mit verschiedenen Seltenheiten. Solange keine gewählt ist, steht hier keine Seltenheit, und der Wert ist der der günstigsten. Ohne Wahl wird die Karte mit der Merkfahne ⚑ übernommen.</div>` : ''}
       <div class="muted">${esc(W('nummer', p))} <b>${esc(t.setCode || t.passcode || '—')}</b>${kat ? ' · ' + esc(kat) : ''}${t.sprache ? ' · ' + esc(spracheInfo(t.sprache).name) : ''}</div>

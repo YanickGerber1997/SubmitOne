@@ -2819,6 +2819,15 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
   color: var(--b-gelb-text); background: var(--b-gelb-weich); border: 1px solid var(--b-gelb-rand);
 }
 
+/* Eine Seltenheit, die der Besitzer selbst eingetragen hat. Sie ist
+   nicht falsch - sie ist nur nicht belegt. Darum ruhiger als die gelbe
+   Fahne: kein Alarm, aber auch keine Tarnung als Datenbankwert. */
+.eigen-badge {
+  display: inline-block; padding: 1px 6px; border-radius: var(--rund-s);
+  font-size: var(--t-2xs); font-weight: 600; white-space: nowrap;
+  color: var(--text-soft); background: var(--flaeche-2); border: 1px dashed var(--rand);
+}
+
 @media (max-width: 560px) {
   .scan-auflage { grid-template-columns: 92px 1fr auto; }
   .scan-auflage-name { display: none; }

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v409';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v410';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -3386,7 +3386,7 @@ function viewStueck(pid, vid) {
     <div class="detail-head">
       <div>
         <h1 style="margin:0;font-size:var(--t-xl, 22px)"><span class="bkp-code" style="font-size:var(--t-l, 16px)">${esc(v.bkp || '')}</span> ${esc(postenName(v))}</h1>
-        <div class="sub" style="margin-top:5px">${[esc(v.seltenheit || ''), esc(v.satz || ''), v.sprache ? esc(spracheInfo(v.sprache).name) : '', v.firma ? esc(W('partner', p)) + ': ' + esc(v.firma) : esc(W('partnerLeer', p))].filter(Boolean).join(' · ')}</div>
+        <div class="sub" style="margin-top:5px">${[esc(v.seltenheit || '') + (v.eigen ? ' <span class="eigen-badge">eigene Angabe</span>' : ''), esc(v.satz || ''), v.sprache ? esc(spracheInfo(v.sprache).name) : '', v.firma ? esc(W('partner', p)) + ': ' + esc(v.firma) : esc(W('partnerLeer', p))].filter(Boolean).join(' · ')}</div>
       </div>
       <div style="display:flex;gap:10px;align-items:center">${statusPill(v)}</div>
     </div>
@@ -3599,7 +3599,7 @@ function viewKosten(id) {
             : `<span class="muted">${esc(W('partnerLeer', p))}</span>`);
       rows += `<tr class="clickable kost-row${open ? ' open' : ''}" data-act="kost-toggle" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
         <td class="bkp-code"><span class="gw-chev">${open ? '▾' : '▸'}</span> ${esc(v.bkp)}</td>
-        <td><strong>${esc(postenName(v))}</strong>${v.menge != null && v.kursChf ? `<div class="posten-menge">${esc(mengenZeile(v.menge, v.einheit, v.kursChf, String(v.kategorie) === KURS_KATEGORIE.metall))}</div>` : ''}${chargenZeile(v) ? `<div class="posten-menge">${esc(chargenZeile(v))}</div>` : ''}${v.pruefen ? ` <span class="pruef-badge" title="Etwas ist noch nicht belegt — Zeile aufklappen">⚑ prüfen</span>` : ''}${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
+        <td><strong>${esc(postenName(v))}</strong>${v.menge != null && v.kursChf ? `<div class="posten-menge">${esc(mengenZeile(v.menge, v.einheit, v.kursChf, String(v.kategorie) === KURS_KATEGORIE.metall))}</div>` : ''}${chargenZeile(v) ? `<div class="posten-menge">${esc(chargenZeile(v))}</div>` : ''}${v.pruefen ? ` <span class="pruef-badge" title="Etwas ist noch nicht belegt — Zeile aufklappen">⚑ prüfen</span>` : ''}${v.eigen ? ` <span class="eigen-badge" title="Die Seltenheit stammt von dir, nicht aus der Datenbank — der Marktwert kann sie nicht abbilden">eigene Angabe</span>` : ''}${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
         <td>${untCell}</td>
         <td class="num">${mB(z.kv)}</td>
         <td class="num">${z.rev != null && Math.abs(z.rev - z.kv) > 0.5 ? `${mB(z.rev)} <span class="chg-delta ${z.rev > z.kv ? 'up' : 'dn'}" title="Änderung gegenüber Erst-KV">${z.rev > z.kv ? '▲' : '▼'}</span>` : (z.rev != null ? mB(z.rev) : `<span class="muted">${mB(z.kv)}</span>`)}</td>
@@ -8368,6 +8368,7 @@ const SELTENHEIT_KUERZEL = [
   ['secret rare', 'SCR'],
   ['ultra rare', 'UR'], ['ultra selten', 'UR'],
   ['super rare', 'SR'], ['super selten', 'SR'],
+  ['cosmos holo', 'CO'], ['cosmos rare', 'CO'], ['cosmos', 'CO'],
   ['reverse holo', 'RH'],
   ['1. auflage', '1ST'], ['first edition', '1ST'],
   ['ungewöhnlich', 'U'], ['uncommon', 'U'],
@@ -9869,6 +9870,8 @@ function auflageAnwenden(v, opt, p) {
   v.seltenheit = opt.seltenheit || '';
   v.pruefen = false;
   delete v.auflagenOffen;
+  /* Was aus der Datenbank kommt, ist keine eigene Angabe mehr. */
+  delete v.eigen;
 
   /* Die Notiz ist Fliesstext fürs Auge; die Wahrheit steht in den
      Feldern. Damit sie nicht auseinanderlaufen, werden die beiden
@@ -9901,6 +9904,25 @@ function auflageAnwenden(v, opt, p) {
         : 'Cardmarket EUR ' + roh.toFixed(2) + ' für ' + (opt.seltenheit || opt.code || v.bkp))
       + ', Kurs ' + kurs.toFixed(4) + ', Stand ' + (kurse.datum || todayIso());
   }
+}
+
+/** Die Seltenheit von Hand setzen — ausdrücklich als eigene Angabe.
+    Sie steht dann da, aber sie gibt sich nicht als belegt aus.
+
+    Gebraucht wird das, sobald die Quelle etwas nicht kennt: Cosmos
+    Holo führt weder TCGdex noch Cardmarket. Die Karte liegt trotzdem
+    auf dem Tisch. Sie zu verschweigen wäre so falsch wie sie zu
+    belegen — also steht sie da, mit ihrer Herkunft. */
+function seltenheitEigen(v, seltenheit, grund) {
+  v.seltenheit = String(seltenheit || '').trim();
+  v.eigen = !!v.seltenheit;
+  if (!v.eigen) delete v.eigen;
+  const rest = String(v.beschrieb || '').split('\n')
+    .filter(z => z.indexOf('Seltenheit: ') !== 0);
+  v.beschrieb = ['Seltenheit: ' + (v.seltenheit || '—')
+    + (v.eigen ? ' (eigene Angabe' + (grund ? ' — ' + grund : '') + ')' : '')]
+    .concat(rest).join('\n');
+  return v;
 }
 
 function actOffenePruefen(pid) {
@@ -19944,7 +19966,12 @@ function saveVergabeEdit(pid, vid) {
   v.bkp = bkpParsed.code || v.bkp || '000';
   v.gewerk = gewerk;
   { const b = $('#fe_beschrieb'); if (b) v.beschrieb = b.value; }
-  { const se = $('#fe_seltenheit'); if (se) v.seltenheit = se.value.trim(); }
+  /* Nur wer die Seltenheit WIRKLICH ändert, macht daraus eine eigene
+     Angabe. Das Feld bloss stehenzulassen, während man den Namen
+     tippt, darf eine belegte Auflage nicht entwerten. */
+  { const se = $('#fe_seltenheit');
+    if (se && se.value.trim() !== String(v.seltenheit || '')) seltenheitEigen(v, se.value.trim());
+  }
   { const sa = $('#fe_satz'); if (sa) v.satz = sa.value.trim(); }
   { const sp = $('#fe_sprache'); if (sp) v.sprache = sp.value; }
   { const me = $('#fe_menge'); if (me) v.menge = me.value === '' ? null : (Number(me.value) || 0); }

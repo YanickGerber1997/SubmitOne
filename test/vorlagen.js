@@ -1187,6 +1187,38 @@ ok('ein genäherter Kurs wird als solcher benannt',
   ok('… mit der neuen Zahl', /Cardmarket EUR 0\.34/.test(v.beschrieb), v.beschrieb);
 }
 
+/* Was der Besitzer weiss und die Datenbank nicht.
+
+   Cosmos Holo führt weder TCGdex (38 Stufen, keine heisst so) noch
+   Cardmarket (drei Preisfelder: Normal, Holo, Reverse). Die Karte
+   liegt trotzdem auf dem Tisch. Sie zu verschweigen wäre so falsch
+   wie sie zu belegen — also steht sie da, mit ihrer Herkunft.
+   (Fund vom 21.08.2026) */
+eq('Cosmos bekommt ein Kürzel', sandbox.seltenheitKuerzel('Selten · Cosmos Holo'), 'R·CO');
+{
+  const v = { gewerk: 'Gengar', seltenheit: 'Selten · Holo', beschrieb: 'Seltenheit: Selten · Holo\nPokémon Unlicht' };
+  sandbox.seltenheitEigen(v, 'Selten · Cosmos Holo', 'Cardmarket führt diese Auflage nicht getrennt');
+  eq('von Hand gesetzt: die Seltenheit steht da', v.seltenheit, 'Selten · Cosmos Holo');
+  eq('… und ist als eigene Angabe gekennzeichnet', v.eigen, true);
+  ok('… der Vermerk sagt es mit Grund',
+    /Seltenheit: Selten · Cosmos Holo \(eigene Angabe — Cardmarket/.test(v.beschrieb), v.beschrieb);
+  eq('… und es steht nur EINE Seltenheit-Zeile da',
+    v.beschrieb.split('\n').filter(z => z.indexOf('Seltenheit: ') === 0).length, 1);
+  ok('… der übrige Vermerk bleibt', /Pokémon Unlicht/.test(v.beschrieb));
+
+  /* Wählt man danach doch eine belegte Auflage, ist es keine eigene
+     Angabe mehr — sonst bliebe die Kennzeichnung ewig kleben. */
+  sandbox.__kursSetzen({ rates: { CHF: 0.9333, USD: 1.16 }, date: '2026-08-20' });
+  sandbox.auflageAnwenden(v, { seltenheit: 'Selten · Holo', preisEur: 1.05, preisUsd: 0 }, S);
+  ok('eine Wahl aus der Datenbank hebt die Kennzeichnung auf', !v.eigen, String(v.eigen));
+  ok('… und der Vermerk behauptet nichts mehr über eine eigene Angabe',
+    !/eigene Angabe/.test(v.beschrieb), v.beschrieb);
+
+  /* Ein leeres Feld ist keine Angabe. */
+  sandbox.seltenheitEigen(v, '');
+  ok('leer gesetzt heisst: keine eigene Angabe', !v.eigen, String(v.eigen));
+}
+
 // Treffer → Posten
 const posten = sandbox.ygoZuPosten(a1.treffer[0], k);
 /* Die Nummer ist die, die auf der Karte steht — nicht die Kategorie.

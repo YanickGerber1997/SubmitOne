@@ -2684,6 +2684,10 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
   font-size: var(--t-xs); color: var(--text-soft); }
 
 /* Das Bild des Objekts in der aufgeklappten Zeile der Übersicht. */
+/* Menge × Kurs unter der Bezeichnung — bei einem Depot ist das
+   die Zeile, die den Betrag daneben erklärt. */
+.posten-menge { font-size: var(--t-2xs); color: var(--text-faint); font-family: var(--font-zahl); margin-top: 1px; }
+
 .posten-bild { width: 96px; border-radius: var(--rund-s); margin: 6px 0; display: block; }
 
 @media (max-width: 560px) {

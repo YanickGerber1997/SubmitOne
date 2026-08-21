@@ -86,6 +86,15 @@ src += `
 ;globalThis.__katalogCodes = function (k) { return (VORLAGEN.find(v => v.key === k).katalog || []).map(b => b.code); };
 ;globalThis.__pruefGruppen = function () { return pruefCtx ? pruefCtx.gruppen : []; };
 ;globalThis.__ordZeilen = function () { return ordnungCtx ? ordnungCtx.zeilen : []; };
+;globalThis.__kursNetz = function (antworten) {
+  /* Netz-Attrappe für den Kursweg: je Aufruf die nächste Antwort. */
+  let i = 0;
+  globalThis.fetch = () => {
+    const a = antworten[i++];
+    if (a instanceof Error) return Promise.reject(a);
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(a) });
+  };
+};
 ;globalThis.__ordSetzen = function (zeilen) { if (ordnungCtx) ordnungCtx.zeilen = zeilen; };
 ;globalThis.__projektMitOrdnung = function () {
   const p = { id: 'p_ord', name: 'Ordnung', vorlage: 'sammlung', vergaben: [],
@@ -547,6 +556,67 @@ sandbox.pruefErledigt(p.id, mitFahne.id);
 eq('«geprüft» nimmt die Fahne weg', mitFahne.pruefen, false);
 ok('… und die Fahnen-Zeile aus der Notiz', mitFahne.beschrieb.indexOf('⚑') < 0, mitFahne.beschrieb);
 ok('… der Rest der Notiz bleibt stehen', /Passcode 89631146/.test(mitFahne.beschrieb), mitFahne.beschrieb);
+
+/* ---- 4b) Kurse: Rohstoffe, Krypto, Währungen ----
+   Geprüft wird die Übersetzung, nicht die Laune fremder Server. Die
+   Antworten sind abgeschrieben von echten vom 21.08.2026. */
+eq('erkennt ein Edelmetall', sandbox.kursArt('XAU'), { art: 'metall', symbol: 'XAU', name: 'Gold' });
+eq('… auch auf Deutsch geschrieben', sandbox.kursArt('gold').symbol, 'XAU');
+eq('erkennt ein bekanntes Krypto-Kürzel', sandbox.kursArt('btc'), { art: 'krypto', symbol: 'BTC', id: 'bitcoin' });
+eq('erkennt eine Währung', sandbox.kursArt('usd').art, 'waehrung');
+eq('Unbekanntes geht in die Suche', sandbox.kursArt('PEPE').art, 'krypto-suche');
+eq('leer bleibt leer', sandbox.kursArt('  ').art, '');
+
+/* Die Feinunze ist die Falle: Zwölf Gramm Gold sind nicht zwölf
+   Unzen, sondern 0.386 — ein Faktor 31. */
+ok('Gramm werden in Unzen umgerechnet',
+  Math.abs(sandbox.inUnzen(31.1034768, 'g') - 1) < 1e-9, String(sandbox.inUnzen(31.1034768, 'g')));
+eq('Unzen bleiben Unzen', sandbox.inUnzen(2, 'oz'), 2);
+ok('ein Kilo sind gut 32 Unzen', Math.abs(sandbox.inUnzen(1, 'kg') - 32.1507) < 0.001);
+eq('unbekannte Einheit zählt als Stück', sandbox.inUnzen(5, 'Stk'), 5);
+
+/* Die Rechenzeile muss aufgehen, wenn man sie nachrechnet. */
+ok('Rechenzeile bei Stück: schlicht Menge × Kurs',
+  sandbox.mengenZeile(4, 'ETH', 1910.44, false) === '4 ETH × CHF 1\'910.44',
+  sandbox.mengenZeile(4, 'ETH', 1910.44, false));
+ok('Rechenzeile bei Gramm zeigt die Umrechnung',
+  /500 g = 16\.0754 oz × CHF 55\.56 je Feinunze/.test(sandbox.mengenZeile(500, 'g', 55.56, true)),
+  sandbox.mengenZeile(500, 'g', 55.56, true));
+ok('… und rechnet sich nach', (() => {
+  const z = sandbox.mengenZeile(500, 'g', 55.56, true);
+  const m = z.match(/= ([\d.]+) oz × CHF ([\d'.]+)/);
+  const wert = Number(m[1]) * Number(m[2].replace(/'/g, ''));
+  return Math.abs(wert - 893.15) < 0.5;
+})());
+
+// Ein Treffer wird zum Posten — mit Menge, Kürzel und Herkunft
+{
+  const t = { nummer: 'XAU', name: 'Gold', art: 'Edelmetall', kategorie: '201',
+    preisChf: 3663.85, einheit: 'oz', quelle: 'gold-api', herkunft: 'gold-api, USD 4585.60 je Feinunze' };
+  const po = sandbox.kursZuPosten(t, 12, 'g');
+  eq('Kürzel wird zur Nummer', po.bkp, 'XAU');
+  eq('Anlageklasse aus der Quelle', po.kategorie, '201');
+  eq('Menge und Einheit stehen am Posten', [po.menge, po.einheit], [12, 'g']);
+  ok('Wert = Menge in Unzen × Kurs', Math.abs(po.marktwert - 1413.55) < 0.1, String(po.marktwert));
+  ok('die Herkunft steht im Vermerk', /gold-api/.test(po.beschrieb) && /je Feinunze/.test(po.beschrieb));
+  ok('und die Rechenzeile dazu', /12 g = 0\.3858 oz × CHF/.test(po.beschrieb), po.beschrieb);
+
+  const krypto = sandbox.kursZuPosten({ nummer: 'BTC', name: 'Bitcoin', art: 'Kryptowährung',
+    kategorie: '101', preisChf: 61827, einheit: 'BTC', kursId: 'bitcoin', herkunft: 'CoinGecko' }, 0.35, 'BTC');
+  ok('Krypto rechnet ohne Unzen', Math.abs(krypto.marktwert - 21639.45) < 0.01, String(krypto.marktwert));
+  eq('die Kennung der Quelle bleibt am Posten', krypto.kursId, 'bitcoin');
+}
+
+// Die Vorlage selbst
+eq('Depot führt Mengen', sandbox.hatMengen({ vorlage: 'depot' }), true);
+eq('eine Kartensammlung nicht — ein Stück je Zeile', sandbox.hatMengen({ vorlage: 'sammlung' }), false);
+eq('Depot bringt den Kursdienst mit', sandbox.nachschlagDienst({ vorlage: 'depot' }), 'kurse');
+eq('die Sammlung ihren eigenen', sandbox.nachschlagDienst({ vorlage: 'sammlung' }), 'ygo');
+eq('ein Bauvorhaben keinen', sandbox.nachschlagDienst({ vorlage: 'bau' }), null);
+ok('die Anlageklassen des Nachschlagens stehen im Katalog', (() => {
+  const codes = new Set(sandbox.__katalogCodes('depot'));
+  return ['101', '201', '301', '401'].every(c => codes.has(c));
+})());
 
 /* ---- 5) Der ganze Weg, mit einer Netz-Attrappe ---- */
 function mitNetz(antworten, fn) {

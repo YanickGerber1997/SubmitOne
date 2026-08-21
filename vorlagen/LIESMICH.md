@@ -152,3 +152,58 @@ stehen und die Karte lässt sich von Hand benennen.
 Der Einleser **ergänzt**, er ersetzt nicht. Zweimal dieselbe Datei einlesen
 legt alles zweimal an — in dem Fall die doppelten Zeilen im Projekt löschen
 oder vorher mit *Rückgängig* (Strg+Z) zurück.
+
+---
+
+# Depot & Anlagen
+
+Krypto, Edelmetalle und Währungen holt das Programm selbst — geprüft am
+21.08.2026, welche Quellen der Browser überhaupt erreicht:
+
+| Quelle | | was |
+|---|---|---|
+| **CoinGecko** | ✓ | Krypto, direkt in Franken |
+| **gold-api** | ✓ | Gold, Silber, Platin, Palladium (USD je Feinunze) |
+| **Frankfurter** | ✓ | Währungskurse |
+| Yahoo Finance | ✗ | keine CORS-Freigabe |
+| Stooq | ✗ | CSV-Endpunkt geschlossen |
+
+**Einzelaktien gehen deshalb nicht automatisch.** Entweder du trägst den Kurs
+von Hand ein, oder wir hinterlegen einen kostenlosen Schlüssel (Finnhub). Lieber
+keine Aktienkurse als heimlich falsche.
+
+## Erfassen
+
+*Kosten → 🔎 Position nachschlagen* → Kürzel eintippen:
+
+| Eingabe | ergibt |
+|---|---|
+| `BTC`, `ETH`, `SOL` … | Kurs von CoinGecko, in Franken |
+| `XAU` / `Gold`, `XAG`, `XPT`, `XPD` | Kurs je Feinunze, in Franken umgerechnet |
+| `USD`, `EUR`, `GBP` … | Währungskurs |
+| unbekanntes Kürzel | CoinGecko-Suche, bestplatzierter Treffer |
+
+Dann **Menge und Einheit** eintragen — `0.35 BTC`, `12 g`, `40 Stk`. Der Wert ist
+Kurs × Menge, und bei Edelmetallen wird auf Feinunzen umgerechnet:
+
+```
+500 g = 16.0754 oz × CHF 55.56 je Feinunze   →   CHF 893.15
+```
+
+Diese Zeile steht so unter der Position, damit man sie **nachrechnen** kann.
+Eine Zeile, die zum falschen Ergebnis führt, wäre schlechter als keine.
+
+## Auffrischen
+
+*Kosten → ↻ Kurse auffrischen* bewertet alle Positionen mit Kürzel neu. Krypto
+geht dabei in **einer** Anfrage — sonst läuft man in die Mengenbegrenzung der
+freien Quellen. Kommt trotzdem einmal «Die Kursquelle bremst gerade», eine
+Minute warten.
+
+Jede Position trägt danach im Vermerk, woher ihr Wert kommt:
+
+```
+CoinGecko, BTC/CHF 61827, Stand 21.08.2026 15:56
+gold-api, USD 4585.60 je Feinunze, Kurs 0.7990, Stand 21.08.2026 15:58
+Frankfurter, 1 USD = 0.79899 CHF, Stand 20.08.2026
+```

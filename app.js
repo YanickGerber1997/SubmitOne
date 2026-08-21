@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v407';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v408';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -9811,20 +9811,33 @@ function auflageAnwenden(v, opt, p) {
   /* Die Notiz ist Fliesstext fürs Auge; die Wahrheit steht in den
      Feldern. Damit sie nicht auseinanderlaufen, werden die beiden
      Zeilen, die diese Sache betreffen, ersetzt statt ergänzt. */
+  /* Auch die alte Marktwert-Zeile muss weg. Sonst stehen nach der
+     zweiten Wahl zwei verschiedene Zahlen im selben Vermerk — und
+     welche gilt, weiss dann niemand mehr. */
   const rest = String(v.beschrieb || '').split('\n')
-    .filter(z => z.indexOf('⚑') !== 0 && z.indexOf('Seltenheit: ') !== 0);
+    .filter(z => z.indexOf('⚑') !== 0 && z.indexOf('Seltenheit: ') !== 0
+      && z.indexOf('Marktwert: ') !== 0);
   v.beschrieb = ['Seltenheit: ' + (opt.seltenheit || '—')].concat(rest).join('\n');
 
   /* Der Wert dieser Auflage, wenn die Datenbank einen führt. Hat sie
      keinen (bei ganz neuen Sätzen oft), bleibt der bisherige stehen —
      eine 0 wäre schlechter als ein grober Anhaltspunkt. */
-  if (opt.preisUsd) {
-    const chf = Math.round(opt.preisUsd * (kurse.usd || KURS_NOTFALL.usd) * 100) / 100;
+  /* Yu-Gi-Oh führt den Preis je Auflage in Dollar (TCGPlayer),
+     Pokémon je Variante in Euro (Cardmarket). Beide zählen — wer nur
+     den Dollar kannte, liess bei Pokémon die alte Zahl stehen und
+     nahm ihr zugleich die Fahne. */
+  if (opt.preisUsd || opt.preisEur) {
+    const perUsd = !!opt.preisUsd;
+    const kurs = perUsd ? (kurse.usd || KURS_NOTFALL.usd) : (kurse.eur || KURS_NOTFALL.eur);
+    const roh = perUsd ? opt.preisUsd : opt.preisEur;
+    const chf = Math.round(roh * kurs * 100) / 100;
     const markt = (v.eingeladene || []).find(e => e.firma === 'Marktpreis') || (v.eingeladene || [])[0];
     if (markt) markt.betrag = chf;
     else (v.eingeladene = v.eingeladene || []).push({ id: uid('e'), firma: 'Marktpreis', email: '', betrag: chf, status: 'offeriert', datumMail: '' });
-    v.beschrieb += '\nMarktwert: TCGPlayer USD ' + opt.preisUsd.toFixed(2) + ' für ' + (opt.code || v.bkp)
-      + ', Kurs ' + (kurse.usd || KURS_NOTFALL.usd).toFixed(4) + ', Stand ' + (kurse.datum || todayIso());
+    v.beschrieb += '\nMarktwert: ' + (perUsd
+        ? 'TCGPlayer USD ' + roh.toFixed(2) + ' für ' + (opt.code || v.bkp)
+        : 'Cardmarket EUR ' + roh.toFixed(2) + ' für ' + (opt.seltenheit || opt.code || v.bkp))
+      + ', Kurs ' + kurs.toFixed(4) + ', Stand ' + (kurse.datum || todayIso());
   }
 }
 
@@ -9956,7 +9969,8 @@ async function pruefNachladen(pid) {
       /* Die Datenbank ist sich inzwischen sicher — dann ist hier nichts
          mehr zu wählen, und die Fahne kann weg. */
       const p = findProjekt(pruefCtx.pid);
-      g.vs.forEach(v => auflageAnwenden(v, { seltenheit: t.seltenheit, preisUsd: t.preisUsd, code: t.setCode }, p));
+      g.vs.forEach(v => auflageAnwenden(v, { seltenheit: t.seltenheit, preisUsd: t.preisUsd,
+        preisEur: t.preisEur, code: t.setCode }, p));
       save();
     }
     pruefZeichnen();

@@ -1129,6 +1129,35 @@ ok('die Herkunft des Werts steht dabei',
 ok('ein genäherter Kurs wird als solcher benannt',
   /genähert/.test(sandbox.ygoHerkunft(a1.treffer[0], { eur: 0.93, usd: 0.8, datum: '2026-08-21', geschaetzt: true })));
 
+/* Eine gewählte Auflage muss den PREIS mitziehen. Yu-Gi-Oh führt ihn
+   in Dollar, Pokémon in Euro — `auflageAnwenden` kannte zuerst nur
+   den Dollar. Wer bei einer Pokémonkarte «Holo» wählte, bekam die
+   richtige Seltenheit, die alte Zahl und keine Fahne mehr: Es sah
+   geprüft aus und war es nicht. Bei Gengar (Selten) machte das
+   CHF 0.32 statt CHF 0.98. (Fund vom 21.08.2026) */
+{
+  sandbox.__kursSetzen({ rates: { CHF: 0.9333, USD: 1.16 }, date: '2026-08-20' });
+  const v = {
+    bkp: 'me03-050', pruefen: true, seltenheit: '',
+    beschrieb: '⚑ Variante nicht bestimmt — 3 mögliche.\nPokémon\nMarktwert: Cardmarket EUR 0.34, Stand 2026-08-21',
+    eingeladene: [{ id: 'e_1', firma: 'Marktpreis', betrag: 0.32, status: 'offeriert' }],
+  };
+  sandbox.auflageAnwenden(v, { seltenheit: 'Selten · Holo', preisEur: 1.05, preisUsd: 0, code: 'me03-050' }, S);
+  eq('gewählte Variante: die Seltenheit steht fest', v.seltenheit, 'Selten · Holo');
+  eq('… die Fahne ist weg', v.pruefen, false);
+  ok('… und der Euro-Preis ist mitgezogen',
+    Math.abs(v.eingeladene[0].betrag - Math.round(1.05 * (0.9333) * 100) / 100) < 0.001,
+    String(v.eingeladene[0].betrag));
+  ok('… die Herkunft nennt Cardmarket und die Variante',
+    /Cardmarket EUR 1\.05 für Selten · Holo/.test(v.beschrieb), v.beschrieb);
+  /* Zweimal wählen darf nicht zwei Marktwert-Zeilen hinterlassen —
+     zwei Zahlen im selben Vermerk sind zwei Wahrheiten. */
+  sandbox.auflageAnwenden(v, { seltenheit: 'Selten', preisEur: 0.34, preisUsd: 0, code: 'me03-050' }, S);
+  eq('… und ein zweiter Griff hinterlässt nur EINE Marktwert-Zeile',
+    v.beschrieb.split('\n').filter(z => z.indexOf('Marktwert: ') === 0).length, 1);
+  ok('… mit der neuen Zahl', /Cardmarket EUR 0\.34/.test(v.beschrieb), v.beschrieb);
+}
+
 // Treffer → Posten
 const posten = sandbox.ygoZuPosten(a1.treffer[0], k);
 /* Die Nummer ist die, die auf der Karte steht — nicht die Kategorie.

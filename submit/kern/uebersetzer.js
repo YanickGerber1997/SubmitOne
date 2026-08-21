@@ -49,7 +49,8 @@
         nummer:        'nummer',        // Objekt-Nr. – steht auf jedem Bauprogramm
         bauherr:       'bauherr',
         ort:           'ort',
-        projektleiter: 'bauleitung'
+        projektleiter: 'bauleitung',
+        vorlage:       'vorlage'       // Bau · Sammlung · Unterschriften · IT (siehe app.js, MODUL VORLAGEN)
     };
 
     /* Die Felder der Vergabe, die in den Stamm gehören: Links wie es in

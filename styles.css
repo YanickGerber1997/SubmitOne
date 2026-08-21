@@ -2569,6 +2569,40 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 }
 .einst-logo-bild img { max-width: 92%; max-height: 78px; object-fit: contain; }
 .einst-leer { font-size: var(--t-xs); color: var(--text-faint); }
+
+/* ---- Vorlage wählen (Einstellungen) --------------------------------
+   Vier Karten statt eines Auswahlfelds: Was das Programm sein soll, ist
+   keine Nebeneinstellung wie ein Mehrwertsteuersatz — es ändert jede
+   Beschriftung und jedes Kapitel. Also darf man es auch sehen, samt
+   dem Satz, wofür jede Vorlage gedacht ist. */
+.vorl-wahl { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.vorl-karte {
+  display: flex; flex-direction: column; gap: 3px; text-align: left;
+  padding: 10px 12px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text);
+  transition: border-color .12s, background .12s;
+}
+.vorl-karte:hover { border-color: var(--brand); background: var(--surface-2); }
+.vorl-karte.an { border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); }
+.vorl-zeichen { font-size: var(--t-xl); line-height: 1; }
+.vorl-name { font-weight: 700; font-size: var(--t-s); }
+.vorl-sub { font-size: var(--t-2xs); color: var(--text-faint); line-height: 1.4; }
+
+.einst-woerter { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin: 6px 0; }
+.einst-projvorl { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; max-height: 260px; overflow: auto; }
+.einst-projzeile { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 8px; align-items: center; }
+.einst-projname { font-size: var(--t-xs); color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Vorschau des Einlesens: erst zeigen, dann übernehmen. */
+.csv-vorschau { margin-top: 10px; }
+.csv-vorschau table { width: 100%; }
+.csv-kopf { font-size: var(--t-xs); color: var(--text-soft); margin-bottom: 6px; }
+
+@media (max-width: 700px) {
+  .einst-projzeile { grid-template-columns: 1fr; }
+}
+
 .einst-buero-logo .btn { justify-content: center; }
 
 @media (max-width: 620px) {

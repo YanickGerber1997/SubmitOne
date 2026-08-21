@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v379';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v380';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -1064,6 +1064,9 @@ function migrate() {
     }
   }
   if (!state.buero) { state.buero = { ...BUERO }; changed = true; }
+  // Vorlage: wofür das Programm gebraucht wird (siehe MODUL VORLAGEN).
+  if (!state.vorlage) { state.vorlage = 'bau'; changed = true; }
+  if (!state.woerter || typeof state.woerter !== 'object') { state.woerter = {}; changed = true; }
   if (changed) save();
 }
 
@@ -1082,9 +1085,18 @@ function esc(s) {
   ));
 }
 
+/* Ein Betrag — oder eine Stückzahl.
+
+   Nicht jede Vorlage rechnet in Franken: Eine Unterschriftensammlung
+   zählt Unterschriften. Die Einheit steht deshalb in der Vorlage und
+   nicht fest im Code. Solange keine Vorlage geladen ist, bleibt es bei
+   CHF — genau wie vorher. */
 function chf(n) {
   if (n == null || n === '') return '–';
-  return "CHF " + Number(n).toLocaleString('de-CH', { maximumFractionDigits: 0 });
+  const z = Number(n).toLocaleString('de-CH', { maximumFractionDigits: 0 });
+  const v = vorlage();
+  if (v && v.geld === false) return z + (v.einheitKurz ? ' ' + v.einheitKurz : '');
+  return 'CHF ' + z;
 }
 
 function chfShort(n) {
@@ -1526,7 +1538,7 @@ function phaseBadge(phaseKey) {
 }
 
 function statusPill(v) {
-  const s = STATUS_BY_KEY[v.status] || VERGABE_STATUS[0];
+  const s = stInfo(v.status);
   return `<span class="st ${s.color}">${esc(s.label)}</span>`;
 }
 
@@ -1638,25 +1650,27 @@ function projektTabs(p, active, toolbar) {
   const pendBadge = openP ? ` <span class="tab-badge">${openP}</span>` : '';
   const items = [
     { key: 'overview', href: `#/projekt/${p.id}`, label: 'Übersicht' },
-    { key: 'gewerke', href: `#/projekt/${p.id}/gewerke`, label: 'Gewerke' },
+    { key: 'gewerke', href: `#/projekt/${p.id}/gewerke`, label: esc(R('gewerke', 'Gewerke', p)) },
     { key: 'kalender', href: `#/projekt/${p.id}/kalender`, label: 'Kalender' },
-    { key: 'listen', href: `#/projekt/${p.id}/listen`, label: 'Kontakte' },
-    { key: 'kosten', href: `#/projekt/${p.id}/kosten`, label: 'Kosten' },
-    { key: 'rechnungen', href: `#/projekt/${p.id}/rechnungen`, label: 'Rechnungskontrolle' },
-    { key: 'termine', href: `#/projekt/${p.id}/termine`, label: 'Termine' },
+    { key: 'listen', href: `#/projekt/${p.id}/listen`, label: esc(R('listen', 'Kontakte', p)) },
+    { key: 'kosten', href: `#/projekt/${p.id}/kosten`, label: esc(R('kosten', 'Kosten', p)) },
+    { key: 'rechnungen', href: `#/projekt/${p.id}/rechnungen`, label: esc(R('rechnungen', 'Rechnungskontrolle', p)) },
+    { key: 'termine', href: `#/projekt/${p.id}/termine`, label: esc(R('termine', 'Termine', p)) },
     { key: 'pendenzen', href: `#/projekt/${p.id}/pendenzen`, label: 'Pendenzen' + pendBadge },
     { key: 'dossier', href: `#/projekt/${p.id}/dossier`, label: 'Dossier' + (dossierFehltCount(p) ? ` <span class="tab-badge">${dossierFehltCount(p)}</span>` : '') },
     { key: 'auflagen', href: `#/projekt/${p.id}/auflagen`, label: 'Auflagen' + ((p.auflagen || []).filter(a => a.status !== 'erledigt').length ? ` <span class="tab-badge">${(p.auflagen || []).filter(a => a.status !== 'erledigt').length}</span>` : '') },
     { key: 'protokolle', href: `#/projekt/${p.id}/protokolle`, label: 'Protokolle' },
-    { key: 'nachtraege', href: `#/projekt/${p.id}/nachtraege`, label: 'Nachträge' },
+    { key: 'nachtraege', href: `#/projekt/${p.id}/nachtraege`, label: esc(R('nachtraege', 'Nachträge', p)) },
     { key: 'optionen', href: `#/projekt/${p.id}/optionen`, label: 'Optionen' },
     { key: 'finanz', href: `#/projekt/${p.id}/finanz`, label: 'Finanzierung' },
     { key: 'zahlungsplan', href: `#/projekt/${p.id}/zahlungsplan`, label: 'Zahlungsplan' },
-    { key: 'bauherr', href: `#/projekt/${p.id}/bauherr`, label: 'Eigentümerwünsche' },
+    { key: 'bauherr', href: `#/projekt/${p.id}/bauherr`, label: esc(R('bauherr', 'Eigentümerwünsche', p)) },
     { key: 'solar', href: `#/projekt/${p.id}/solar`, label: 'Solar' },
     { key: 'uwert', href: `#/projekt/${p.id}/uwert`, label: 'U-Wert' },
     { key: 'honorar', href: `#/projekt/${p.id}/honorar`, label: 'Honorar' },
-  ].filter(it => !versteckteTabs(p).includes(it.key));   // Rollen-Matrix: ausgeblendete Reiter weglassen
+  ]
+    .filter(it => !versteckteTabs(p).includes(it.key))   // Rollen-Matrix: ausgeblendete Reiter weglassen
+    .filter(it => tabErlaubt(it.key, p));                // und was die Vorlage gar nicht kennt (U-Wert in einer Sammlung)
   const byKey = {}; items.forEach(it => byKey[it.key] = it);
   const gruppen = PROJ_GRUPPEN.map(g => ({ ...g, items: g.tabs.map(k => byKey[k]).filter(Boolean) })).filter(g => g.items.length);
   const grp = gruppen.find(g => g.tabs.includes(active)) || gruppen[0];
@@ -2120,6 +2134,10 @@ function router() {
   const parts = parseHash();
   const [root, a, sub, b] = parts;
 
+  /* Welche Vorlage gilt, hängt am Projekt — nicht am Programm.
+     Steht man in keinem, gilt der Standard aus den Einstellungen. */
+  setVorlageCtx((root === 'projekt' && a) ? findProjekt(a) : null);
+
   switch (root) {
     case 'dashboard': setActiveNav('dashboard'); return viewDashboard();
     case 'projekte':  setActiveNav('projekte');  return viewProjekte();
@@ -2552,7 +2570,7 @@ function viewProjektDetail(id) {
         ${phaseBadge(dominantPhase(p))}
         ${istInhaber(p) ? `<button class="btn secondary" data-act="team" data-pid="${p.id}" title="Mitglieder &amp; Rollen">👥<span class="btn-txt"> Team</span></button>` : ''}
         ${darfStammdaten(p) ? `<button class="btn secondary" data-act="edit-projekt" data-pid="${p.id}" title="Projekt &amp; Gebäudedaten bearbeiten">✎<span class="btn-txt"> Bearbeiten</span></button>` : ''}
-        ${darfVergeben(p) ? `<button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>` : ''}
+        ${darfVergeben(p) ? `<button class="btn" data-act="new-vergabe" data-pid="${p.id}">${esc(W('neu', p))}</button>` : ''}
       </div>
     </div>
 
@@ -2564,7 +2582,7 @@ function viewProjektDetail(id) {
     <!-- Kennzahlen -->
     <div class="detail-stats">
       <div class="dstat"><div class="l">Fortschritt</div><div class="v">${pct}%</div>${progressBar(pct)}</div>
-      <div class="dstat"><div class="l">Zuschlag erteilt</div><div class="v">${projektVergebenAnzahl(p)} / ${vergaben.length}</div></div>
+      <div class="dstat"><div class="l">${esc(stInfo('vergeben', p).label)}</div><div class="v">${projektVergebenAnzahl(p)} / ${vergaben.length}</div></div>
       <div class="dstat"><div class="l">Volumen (Kosten)</div><div class="v">${chf(projektVolumen(p))}</div></div>
       ${p.wohnungen ? `<div class="dstat"><div class="l">Wohnungen</div><div class="v">${p.wohnungen}</div></div>` : ''}
       ${p.geschosse ? `<div class="dstat"><div class="l">Geschosse</div><div class="v">${p.geschosse}</div></div>` : ''}
@@ -2576,12 +2594,12 @@ function viewProjektDetail(id) {
     ${erinnerungenCard(p)}
 
     <!-- Vergaben-Tabelle -->
-    <div class="section-head"><h2>Vergaben &amp; Gewerke</h2><div style="display:flex;gap:10px;align-items:center"><span class="hint">Klick = aufklappen mit nächsten Schritten</span>${katToggleBtn()}</div></div>
+    <div class="section-head"><h2>${esc(W('vergabenTitel', p))}</h2><div style="display:flex;gap:10px;align-items:center"><span class="hint">Klick = aufklappen mit nächsten Schritten</span>${katToggleBtn()}</div></div>
     <div class="card">
       ${vergaben.length || katOpen ? `
       <table class="grid">
         <thead>
-          <tr><th>BKP</th><th>Gewerk</th><th>Unternehmer</th><th>Status</th><th>Fortschritt</th><th class="num">Betrag</th><th>Frist</th></tr>
+          <tr><th>${esc(W('nummer', p))}</th><th>${esc(W('posten', p))}</th><th>${esc(W('partner', p))}</th><th>Status</th><th>Fortschritt</th><th class="num">${esc(W('wv', p))}</th><th>Frist</th></tr>
         </thead>
         <tbody>
           ${vergaben.map(v => `
@@ -2596,7 +2614,7 @@ function viewProjektDetail(id) {
             </tr>${gwOpen.has(v.id) ? `<tr class="gw-detail-row"><td colspan="7">${gewerkPanel(p, v)}</td></tr>` : ''}`).join('')}
           ${bkpGhostRows(p, 7)}
         </tbody>
-      </table>` : emptyState('▤', 'Noch keine Vergaben angelegt.')}
+      </table>` : emptyState('▤', 'Noch keine ' + W('posten_pl', p) + ' angelegt.')}
     </div>`}
   `;
   render(html);
@@ -2616,11 +2634,11 @@ function viewGewerke(pid) {
     if (location.hash !== h) history.replaceState(null, '', h);   // URL aufs erste Gewerk, ohne Extra-Verlaufseintrag
     return viewVergabeDetail(pid, vs[0].id);
   }
-  const toolbar = `<button class="btn sm" data-act="new-vergabe" data-pid="${p.id}" style="margin-left:auto">+ Arbeitsbeschrieb</button>`;
+  const toolbar = `<button class="btn sm" data-act="new-vergabe" data-pid="${p.id}" style="margin-left:auto">${esc(W('neu', p))}</button>`;
   render(`
-    <div class="detail-head"><div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Gewerke · BKP-Detailansichten</div></div></div>
+    <div class="detail-head"><div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">${esc(W('posten_pl', p))} · Einzelansichten</div></div></div>
     ${projektTabs(p, 'gewerke', toolbar)}
-    ${emptyState('◫', 'Noch keine Gewerke. Mit „+ Arbeitsbeschrieb" anlegen.')}`);
+    ${emptyState('◫', 'Noch keine ' + W('posten_pl', p) + '. Mit ' + W('neu', p) + ' anlegen.')}`);
 }
 /* Welche ANSICHT gerade gewünscht ist: false = netto (exkl. MwSt), true = brutto.
    Gilt für alle Auswertungen — Baukostenübersicht, Zahlungsplan, Steuern —,
@@ -2679,6 +2697,23 @@ function setupKostStickyHead() {
   _kshUpdate();
 }
 /* ===== 🟩 MODUL: KOSTEN (SubKosten) — Baukostenübersicht, Rechnungen, Nachträge, Zahlungsplan ===== */
+
+/* Der Umschalter netto/brutto.
+
+   Ohne die Wörter «brutto» und «netto»: Sie bedeuten im Bauwesen etwas
+   anderes als in der Mehrwertsteuer. In einer Offerte ist die
+   Bruttosumme die Summe VOR Rabatt und Skonto, die Nettosumme die
+   danach — beide ohne MwSt. Bei der Steuer heisst netto «ohne MwSt»
+   und brutto «mit MwSt». Dieselben zwei Wörter, zwei Bedeutungen, ein
+   Programm. Hier zählt nur die Steuer, also steht sie da.
+
+   Und: Eine Vorlage, die keine Beträge führt, sondern Stück zählt,
+   bekommt den Knopf gar nicht erst. */
+function mwstAnsichtBtn(p) {
+  if (!istGeld(p)) return '';
+  return `<button class="btn sm ${kostenBrutto ? '' : 'secondary'}" data-act="kosten-brutto" data-pid="${p.id}" title="Reine Anzeige – ändert die gespeicherten Zahlen nicht. Gespeichert sind sie ${preiseInkl() ? 'inkl.' : 'exkl.'} MwSt.">Anzeige: ${kostenBrutto ? `inkl. ${mwstSatz()} % MwSt` : 'exkl. MwSt'}</button>`;
+}
+
 function viewKosten(id) {
   const p = findProjekt(id);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
@@ -2686,28 +2721,23 @@ function viewKosten(id) {
   // im Hauptvertrag des Sammelauftrags (211.3/.4/.5 in 211). Eine Zeile mit
   // 0.00 wäre irreführend. Umschaltbar im Gewerk unter «Sammelvergabe».
   const vs = (p.vergaben || []).filter(weistAus).slice().sort((a, b) => (a.bkp || '').localeCompare(b.bkp || ''));
-  setStatusExtra(vs.length + ' Gewerk' + (vs.length === 1 ? '' : 'e') + ' · Prognose ' + chf(vs.reduce((t, v) => t + kostenZeile(v).prognose, 0)));
+  setStatusExtra(vs.length + ' ' + (vs.length === 1 ? W('posten', p) : W('posten_pl', p)) + ' · ' + W('prognose', p) + ' ' + chf(vs.reduce((t, v) => t + kostenZeile(v).prognose, 0)));
 
   const toolbar = `
-    <button class="btn sm secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">🖨 Kostenschätzung</button>
-    <button class="btn sm secondary" data-act="pdf-baukosten" data-pid="${p.id}">🖨 Baukostenübersicht</button>
-    ${/* Ohne die Wörter «brutto» und «netto». Sie bedeuten im Bauwesen etwas
-          anderes als in der Mehrwertsteuer: In einer Offerte ist die
-          Bruttosumme die Summe VOR Rabatt und Skonto, die Nettosumme die
-          danach — beide ohne MwSt. Bei der Steuer heisst netto «ohne MwSt»
-          und brutto «mit MwSt». Dieselben zwei Wörter, zwei Bedeutungen,
-          ein Programm. Hier zählt nur die Steuer, also steht sie da. */''}
-    <button class="btn sm ${kostenBrutto ? '' : 'secondary'}" data-act="kosten-brutto" data-pid="${p.id}" title="Reine Anzeige – ändert die gespeicherten Zahlen nicht. Gespeichert sind sie ${preiseInkl() ? 'inkl.' : 'exkl.'} MwSt.">Anzeige: ${kostenBrutto ? `inkl. ${mwstSatz()} % MwSt` : 'exkl. MwSt'}</button>
+    <button class="btn sm secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">🖨 ${esc(W('schaetzung', p))}</button>
+    <button class="btn sm secondary" data-act="pdf-baukosten" data-pid="${p.id}">🖨 ${esc(R('kosten', 'Baukosten', p))}</button>
+    <button class="btn sm secondary" data-act="liste-einlesen" data-pid="${p.id}" title="Eine fertige Liste einlesen (CSV aus Excel, einem Export oder ChatGPT)">📋 Liste einlesen</button>
+    ${mwstAnsichtBtn(p)}
     ${katToggleBtn()}
     <button class="btn sm secondary" data-act="kosten-versionen" data-pid="${p.id}" title="Kostenstände sichern & vergleichen (z.B. monatliche Abgaben)" style="margin-left:auto">📊 Versionen${(p.kostenVersionen || []).length ? ' (' + p.kostenVersionen.length + ')' : ''}</button>
-    <button class="btn sm" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb</button>`;
+    <button class="btn sm" data-act="new-vergabe" data-pid="${p.id}">${esc(W('neu', p))}</button>`;
   const head = `
     <div class="detail-head">
-      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">Baukostenübersicht nach BKP · Stand ${fmtDate(todayIso())}</div></div>
+      <div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">${esc(W('kostenTitel', p))} · Stand ${fmtDate(todayIso())}</div></div>
     </div>
     ${projektTabs(p, 'kosten', toolbar)}
   `;
-  if (!vs.length) { render(head + emptyState('◫', 'Noch keine Arbeitsbeschriebe / Kostenschätzungen. Mit „+ Arbeitsbeschrieb" erfassen.') + `<div style="text-align:center;margin-top:-10px"><button class="btn" data-act="new-vergabe" data-pid="${p.id}">+ Arbeitsbeschrieb erfassen</button></div>`); return; }
+  if (!vs.length) { render(head + emptyState('◫', 'Noch keine ' + W('posten_pl', p) + '. Mit ' + W('neu', p) + ' erfassen.') + `<div style="text-align:center;margin-top:-10px"><button class="btn" data-act="new-vergabe" data-pid="${p.id}">${esc(W('neu', p))}</button></div>`); return; }
 
   const groups = {};
   vs.forEach(v => { const g = String(v.bkp || '0').trim()[0] || '0'; (groups[g] = groups[g] || []).push(v); });
@@ -2715,7 +2745,10 @@ function viewKosten(id) {
 
   const blank = () => ({ kv: 0, rev: 0, wv: 0, nt: 0, prognose: 0, endsumme: 0, bezahlt: 0, fakturiert: 0, offen: 0, offenRg: 0, dWvEnd: 0 });
   const add = (acc, z) => { acc.kv += z.kv; acc.rev += (z.rev != null ? z.rev : z.kv); acc.wv += z.wv; acc.nt += z.nt; acc.prognose += z.prognose; acc.endsumme += z.endsumme; acc.bezahlt += z.bezahlt; acc.fakturiert += z.fakturiert; acc.offen += z.offen; acc.offenRg += z.offenRg; acc.dWvEnd += (z.vergeben ? z.endsumme - z.wv : 0); };
-  const dCls = d => d > 0.5 ? 'over' : (d < -0.5 ? 'under' : '');
+  /* Rot heisst «schlechter als geplant» — was das ist, sagt die Vorlage.
+     Beim Bau ist mehr Geld eine Überschreitung, beim Verkauf mehr Erlös. */
+  const gutIstMehr = mehrIstGut(p);
+  const dCls = d => (d > 0.5) ? (gutIstMehr ? 'under' : 'over') : ((d < -0.5) ? (gutIstMehr ? 'over' : 'under') : '');
   const sh = t => `<div style="font-weight:400;font-size:var(--t-2xs, 9px);color:#9aa4b1;margin-top:1px">${t}</div>`;
   const mw = mwstSatz();
   /* Zwei verschiedene Dinge, die man nicht verwechseln darf:
@@ -2748,7 +2781,7 @@ function viewKosten(id) {
       const btSel = hatBt ? `<div style="margin-top:3px"><select class="bt-gw" data-pid="${p.id}" data-vid="${v.id}" onclick="event.stopPropagation()" title="Teilprojekt" style="font-size:var(--t-2xs, 11px);padding:1px 5px;border:1px solid var(--border);border-radius: 0;max-width:200px">${bauteilOptionsHtml(p, v.bauteil)}</select></div>` : '';
       const open = kostOpen.has(v.id);
       const ein = (v.eingeladene || []).length, off = offertenOf(v).length;
-      const untCell = v.firma ? `<span title="vergeben an ${esc(v.firma)}">${esc(v.firma)}</span>` : (ein ? `<span class="muted">${ein} eingeladen${off ? ` · ${off} Offerte${off === 1 ? '' : 'n'}` : ''}</span>` : '<span class="muted">nicht ausgeschrieben</span>');
+      const untCell = v.firma ? `<span title="vergeben an ${esc(v.firma)}">${esc(v.firma)}</span>` : (ein ? `<span class="muted">${ein} eingeladen${off ? ` · ${off} Offerte${off === 1 ? '' : 'n'}` : ''}</span>` : `<span class="muted">${esc(W('partnerLeer', p))}</span>`);
       rows += `<tr class="clickable kost-row${open ? ' open' : ''}" data-act="kost-toggle" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
         <td class="bkp-code"><span class="gw-chev">${open ? '▾' : '▸'}</span> ${esc(v.bkp)}</td>
         <td><strong>${esc(v.gewerk)}</strong>${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
@@ -2766,12 +2799,12 @@ function viewKosten(id) {
         rows += `<tr class="kost-info"><td></td><td colspan="10">
           <div class="kost-info-grid">
             <div class="kost-info-main">
-              <div class="kost-info-h">Baubeschrieb / Schätzung</div>
+              <div class="kost-info-h">Beschrieb / ${esc(W('kv', p))}</div>
               <div style="font-size:var(--t-s, 13px);white-space:pre-wrap">${v.beschrieb ? esc(v.beschrieb) : '<span class="muted">– kein Beschrieb. Mit „✎ Kostenschätzung" erfassen (Beschrieb + Positionen).</span>'}</div>
               ${(v.ksPositionen && v.ksPositionen.length) ? `<table class="grid" style="margin-top:8px"><tbody>${v.ksPositionen.map(pos => `<tr><td>${esc(pos.text || 'Position')}</td><td class="num">${mB(pos.betrag)}</td></tr>`).join('')}<tr><td><b>Total KV</b></td><td class="num"><b>${mB(v.schaetzung)}</b></td></tr></tbody></table>` : ''}
             </div>
             <div class="kost-info-side">
-              <div class="kost-info-h">Stand &amp; Unternehmer</div>
+              <div class="kost-info-h">Stand &amp; ${esc(W('partner', p))}</div>
               <div style="font-size:var(--t-s, 13px);margin-bottom:6px">${statusPill(v)}</div>
               <div class="muted" style="font-size:var(--t-s, 12.5px)">${esc(gewerkSteps(v).hint)}</div>
               <div style="font-size:var(--t-s, 12.5px);margin-top:6px">${ein ? `${ein} Unternehmer eingeladen${off ? `, ${off} Offerte${off === 1 ? '' : 'n'} erhalten` : ''}` : 'noch nicht ausgeschrieben'}${v.firma ? ` · vergeben an <b>${esc(v.firma)}</b>` : ''}</div>
@@ -2807,7 +2840,7 @@ function viewKosten(id) {
       }
     });
     const dSub = sub.dWvEnd;
-    body += `<tr class="kgroup"><td>${esc(g)}</td><td colspan="10">${esc(BKP_GRUPPEN[g] || 'Übrige')}</td></tr>
+    body += `<tr class="kgroup"><td>${esc(g)}</td><td colspan="10">${esc(gruppenAktiv(p)[g] || 'Übrige')}</td></tr>
       ${rows}
       ${bkpGhostRows(p, 11, g)}
       <tr class="ksub">
@@ -2823,30 +2856,30 @@ function viewKosten(id) {
 
   render(head + `
     <div class="k-strip">
-      ${ks('KV / Schätzung', tot.kv)}
-      ${ks('Revision', tot.rev)}
-      ${ks('Werkvertrag', tot.wv)}
-      ${ks('Nachträge', tot.nt)}
-      ${ks('Prognose', tot.endsumme, 'hl')}
-      ${ks('Bezahlt', tot.fakturiert)}
-      ${ks('Offen', tot.offenRg)}
-      ${preiseInkl()
+      ${ks(W('kv', p), tot.kv)}
+      ${ks(W('rev', p), tot.rev)}
+      ${ks(W('wv', p), tot.wv)}
+      ${ks(W('nt', p), tot.nt)}
+      ${ks(W('prognose', p), tot.endsumme, 'hl')}
+      ${ks(W('fakt', p), tot.fakturiert)}
+      ${ks(W('offen', p), tot.offenRg)}
+      ${!istGeld(p) ? '' : (preiseInkl()
         ? ks('exkl. ' + mwstSatz() + '% MwSt', alsNetto(tot.endsumme), 'mwst')
-        : ks('inkl. ' + mwstSatz() + '% MwSt', alsBrutto(tot.endsumme), 'mwst')}
+        : ks('inkl. ' + mwstSatz() + '% MwSt', alsBrutto(tot.endsumme), 'mwst'))}
     </div>
-    <p class="muted" style="font-size:var(--t-xs, 12px);margin:-2px 0 10px">Alle Beträge <b>${preiseInkl() ? 'inkl. ' + mwstSatz() + ' % MwSt' : 'netto (exkl. MwSt)'}</b> — Einstellung unter <em>Einstellungen → Büro</em>. Rabatt &amp; Skonto werden <b>je Gewerk in den Konditionen</b> gerechnet. Der Anzeige-Knopf rechnet nur um, er verändert die Daten nicht.</p>
+    ${!istGeld(p) ? '' : `<p class="muted" style="font-size:var(--t-xs, 12px);margin:-2px 0 10px">Alle Beträge <b>${preiseInkl() ? 'inkl. ' + mwstSatz() + ' % MwSt' : 'netto (exkl. MwSt)'}</b> — Einstellung unter <em>Einstellungen → Büro</em>. Rabatt &amp; Skonto werden <b>je ${esc(W('posten', p))} in den Konditionen</b> gerechnet. Der Anzeige-Knopf rechnet nur um, er verändert die Daten nicht.</p>`}
     ${(p.volumen || p.flaeche) ? `<p class="muted" style="font-size:var(--t-xs, 12px);margin:-6px 0 12px">Kubische Kennzahlen für die Kostenschätzungs-Gegenüberstellung${p.volumen ? ` · GV ${p.volumen.toLocaleString('de-CH')} m³` : ''}${p.flaeche ? ` · BGF ${p.flaeche.toLocaleString('de-CH')} m²` : ''}. Gebäudedaten unter „Übersicht → ✎ Bearbeiten".</p>` : ''}
     <div class="card ktable-wrap">
       <table class="grid ktable">
         <thead><tr>
-          <th>BKP</th><th>Arbeitsgattung</th><th>Unternehmer</th>
-          <th class="num">KV${sh('Schätzung')}</th><th class="num">KV rev.${sh('Offerte/Stand')}</th><th class="num">WV${sh('verhandelt')}</th>
-          <th class="num">Nachträge${sh('genehmigt')}</th><th class="num">Prognose${sh('WV+NT / Schluss')}</th><th class="num">Rechnung${sh('bisher bezahlt')}</th><th class="num">Offen${sh('noch nicht bez.')}</th><th class="num">+/−${sh('WV→Endsumme')}</th>
+          <th>${esc(W('nummer', p))}</th><th>${esc(W('postenSpalte', p))}</th><th>${esc(W('partner', p))}</th>
+          <th class="num">${esc(W('kv', p))}${sh(esc(W('kvSub', p)))}</th><th class="num">${esc(W('rev', p))}${sh(esc(W('revSub', p)))}</th><th class="num">${esc(W('wv', p))}${sh(esc(W('wvSub', p)))}</th>
+          <th class="num">${esc(W('nt', p))}${sh(esc(W('ntSub', p)))}</th><th class="num">${esc(W('prognose', p))}${sh(esc(W('prognoseSub', p)))}</th><th class="num">${esc(W('fakt', p))}${sh(esc(W('faktSub', p)))}</th><th class="num">${esc(W('offen', p))}${sh(esc(W('offenSub', p)))}</th><th class="num">${esc(W('delta', p))}${sh(esc(W('deltaSub', p)))}</th>
         </tr></thead>
         <tbody>
           ${body}
           <tr class="ktotal">
-            <td></td><td colspan="2">Total Baukosten</td>
+            <td></td><td colspan="2">${esc(W('kostenTotal', p))}</td>
             <td class="num">${mB(tot.kv)}</td><td class="num">${mB(tot.rev)}</td><td class="num">${mB(tot.wv)}</td>
             <td class="num">${mB(tot.nt)}</td><td class="num">${mB(tot.endsumme)}</td><td class="num">${mB(tot.fakturiert)}</td>
             <td class="num">${mB(tot.offenRg)}</td><td class="num ${dCls(dTot)}">${mB(dTot)}</td>
@@ -2856,7 +2889,9 @@ function viewKosten(id) {
     </div>
     ${optionenCard(p, tot.kv, tot.prognose)}
     ${teilprojektCard(p, tot.prognose)}
-    <p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = verhandelte Vergabesumme · Prognose = WV + Nachträge (bei Schlussrechnung „SR" = effektive Endsumme) · Rechnung = Summe eingetragener Rechnungen · Offen = Endsumme − Rechnungen (nie negativ) · +/− = WV gegen Endsumme (rot = Überschreitung). Unter jedem Gewerk: Nachträge (mit Status) &amp; Rechnungen; Teilprojekt-Dropdown je Gewerk/Nachtrag. <b>Zeile anklicken = aufklappen</b> (Baubeschrieb, Nachträge, Rechnungen); „Detail / Ausschreibung ↗" öffnet das Gewerk.</p>
+    ${istBau(p)
+      ? `<p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:10px">KV = Grobkostenschätzung · KV rev. = günstigste Offerte · WV = verhandelte Vergabesumme · Prognose = WV + Nachträge (bei Schlussrechnung „SR" = effektive Endsumme) · Rechnung = Summe eingetragener Rechnungen · Offen = Endsumme − Rechnungen (nie negativ) · +/− = WV gegen Endsumme (rot = Überschreitung). Unter jedem Gewerk: Nachträge (mit Status) &amp; Rechnungen; Teilprojekt-Dropdown je Gewerk/Nachtrag. <b>Zeile anklicken = aufklappen</b> (Baubeschrieb, Nachträge, Rechnungen); „Detail / Ausschreibung ↗" öffnet das Gewerk.</p>`
+      : `<p class="muted" style="font-size:var(--t-s, 12.5px);margin-top:10px">${esc(W('kv', p))} = ${esc(W('kvSub', p))} · ${esc(W('rev', p))} = ${esc(W('revSub', p))} · ${esc(W('wv', p))} = ${esc(W('wvSub', p))} · ${esc(W('prognose', p))} = ${esc(W('wv', p))} + ${esc(W('nt', p))} · ${esc(W('fakt', p))} = ${esc(W('faktSub', p))} · ${esc(W('offen', p))} = ${esc(W('prognose', p))} − ${esc(W('fakt', p))}. <b>Zeile anklicken = aufklappen.</b></p>`}
   `);
   requestAnimationFrame(setupKostStickyHead);
 }
@@ -3796,8 +3831,8 @@ function setNewGewerk(pid, vid, text) {   // leeres Gewerk benennen: freier Text
   text = (text || '').trim();
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v || !text) return;
   const cm = text.match(/^(\d[\d.]*)/);
-  let b = cm ? BKP_KATALOG.find(x => x.code === cm[1]) : null;
-  if (!b) b = BKP_KATALOG.find(x => (x.code + ' ' + x.label).toLowerCase() === text.toLowerCase());
+  let b = cm ? katalogAktiv(p).find(x => x.code === cm[1]) : null;
+  if (!b) b = katalogAktiv(p).find(x => (x.code + ' ' + x.label).toLowerCase() === text.toLowerCase());
   if (b) { v.bkp = b.code; v.gewerk = b.label; } else { v.gewerk = text; }   // sonst: freier Balken ohne BKP
   save(); rerenderGantt(pid);
 }
@@ -3806,8 +3841,8 @@ function setGewerkBkp(pid, vid, text) {   // einem (freien) Balken nachträglich
   text = (text || '').trim();
   const p = findProjekt(pid); const v = findVergabe(p, vid); if (!v || !text) return;
   const cm = text.match(/^(\d[\d.]*)/);
-  let b = cm ? BKP_KATALOG.find(x => x.code === cm[1]) : null;
-  if (!b) b = BKP_KATALOG.find(x => (x.code + ' ' + x.label).toLowerCase() === text.toLowerCase());
+  let b = cm ? katalogAktiv(p).find(x => x.code === cm[1]) : null;
+  if (!b) b = katalogAktiv(p).find(x => (x.code + ' ' + x.label).toLowerCase() === text.toLowerCase());
   v.bkp = b ? b.code : text;
   if (b && !v.gewerk) v.gewerk = b.label;
   save(); rerenderGantt(pid);
@@ -6833,13 +6868,688 @@ const BKP_KATALOG = [
   ['6', 'Vermietung, Verkauf'], ['61', 'Verkauf'], ['612', 'Verkaufsprovision'], ['613', 'Inserate, Dokumentationen'],
 ].map(([code, label]) => ({ code, label }));
 
-function bkpDatalist(id) { return `<datalist id="${id}">${BKP_KATALOG.map(b => `<option value="${esc(b.code + ' ' + b.label)}">`).join('')}</datalist>`; }
+/* ===== 🟪 MODUL: VORLAGEN — wofür das Programm gerade gebraucht wird =====
+
+   Notiert am 21.08.2026, gebaut nach docs/BRANCHEN.md.
+
+   Bis heute war SubmitOne ein Bauprogramm: Gewerke mit BKP-Nummern,
+   Unternehmer, Werkverträge. Der Aufbau darunter ist aber gar nicht
+   baulich. Er ist:
+
+       Ein Vorhaben hat Posten.
+       Jeder Posten hat eine Nummer, einen Namen und einen Gegenüber.
+       Um den Posten herum laufen Geld, Termine und ein Lebenslauf
+       von «erfasst» bis «abgeschlossen».
+
+   Das gilt für ein Bauvorhaben genauso wie für eine Kartensammlung,
+   eine Unterschriftensammlung oder ein IT-Projekt. Was sich ändert,
+   sind die WÖRTER, die NUMMERN und welche Kapitel man braucht — nicht
+   die Struktur. Genau das steht hier: je Vorlage ein Wörterbuch, ein
+   Nummernkatalog, eine Reiter-Auswahl.
+
+   Warum keine zweite Datenhaltung
+   -------------------------------
+   Eine Karte ist ein Vergabe-Datensatz wie ein Gewerk: `bkp` ist ihre
+   Katalognummer, `gewerk` ihr Name, `firma` der Marktplatz, auf dem sie
+   liegt, `schaetzung` der Einstand, `betrag` der Angebotspreis, die
+   Rechnungen sind die Zahlungseingänge. Nichts davon musste erfunden
+   werden — es hiess bloss anders. Deshalb kostet eine neue Vorlage
+   keinen Umbau, und ein Bauprojekt neben einer Sammlung im selben
+   Programm ist kein Sonderfall.
+
+   Die Vorlage hängt am PROJEKT (`p.vorlage`), nicht am Programm. Wer
+   ein Bauvorhaben und eine Sammlung führt, wechselt nicht um — er
+   öffnet das andere Projekt. Unter Einstellungen steht nur, was ein
+   NEUES Projekt erbt, und dort lässt sich jedes bestehende umstellen.
+   ===================================================================== */
+
+/* Sammlung & Verkauf: Startkatalog. Zweistellige Nummern sind
+   Überschriften, dreistellige die Positionen — dieselbe Ordnung wie
+   beim BKP, damit Gruppierung, Geisterzeilen und Katalogsuche ohne
+   Sonderfall funktionieren. Gedacht als Startpunkt: eigene Nummern
+   lassen sich jederzeit frei tippen. */
+const SAMMLUNG_KATALOG = [
+  ['10', 'Sammelkarten'],
+  ['101', 'Monsterkarten'], ['102', 'Zauberkarten'], ['103', 'Fallenkarten'],
+  ['104', 'Extra Deck (Fusion, Synchro, XYZ, Link)'], ['105', 'Pendelkarten'],
+  ['106', 'Promo- und Turnierkarten'], ['107', 'Fremdsprachige Karten'],
+  ['108', 'Bewertet / eingeschweisst (PSA, BGS)'], ['109', 'Doubletten'],
+  ['20', 'Versiegelte Ware'],
+  ['201', 'Booster-Päckchen'], ['202', 'Displays'], ['203', 'Structure Decks'],
+  ['204', 'Tins und Boxen'], ['205', 'Sammler-Editionen'],
+  ['30', 'Münzen, Medaillen, Edelmetall'],
+  ['301', 'Umlaufmünzen'], ['302', 'Gedenkmünzen'], ['303', 'Barren und Edelmetall'],
+  ['40', 'Briefmarken und Belege'],
+  ['401', 'Einzelmarken'], ['402', 'Bogen und Blocks'], ['403', 'Briefe und Belege'],
+  ['50', 'Figuren, Modelle, Spielzeug'],
+  ['501', 'Sammelfiguren'], ['502', 'Modellbau'], ['503', 'Spielzeug'],
+  ['60', 'Bücher, Comics, Medien'],
+  ['601', 'Comics'], ['602', 'Bücher'], ['603', 'Schallplatten und CD'], ['604', 'Spiele'],
+  ['70', 'Zubehör'],
+  ['701', 'Hüllen und Sleeves'], ['702', 'Ordner und Boxen'], ['703', 'Spielmatten'],
+  ['704', 'Versandmaterial'],
+  ['90', 'Übriges'],
+  ['901', 'Neuzugang, noch nicht eingeordnet'], ['902', 'Geschenke und Tauschware'],
+  ['903', 'Verlust, Beschädigung'],
+].map(([code, label]) => ({ code, label }));
+
+/* Unterschriftensammlung: gegliedert nach Sprachregion, weil die
+   Sammelarbeit sich daran ausrichtet — nicht nach BFS-Kantonsnummer,
+   die alle 26 in dieselbe Gruppe legen würde. */
+const UNTERSCHRIFTEN_KATALOG = [
+  ['10', 'Deutschschweiz'],
+  ['101', 'Zürich'], ['102', 'Bern'], ['103', 'Luzern'], ['104', 'Uri'], ['105', 'Schwyz'],
+  ['106', 'Obwalden'], ['107', 'Nidwalden'], ['108', 'Glarus'], ['109', 'Zug'],
+  ['110', 'Solothurn'], ['111', 'Basel-Stadt'], ['112', 'Basel-Landschaft'],
+  ['113', 'Schaffhausen'], ['114', 'Appenzell Ausserrhoden'], ['115', 'Appenzell Innerrhoden'],
+  ['116', 'St. Gallen'], ['117', 'Graubünden'], ['118', 'Aargau'], ['119', 'Thurgau'],
+  ['20', 'Romandie'],
+  ['201', 'Freiburg'], ['202', 'Waadt'], ['203', 'Wallis'], ['204', 'Neuenburg'],
+  ['205', 'Genf'], ['206', 'Jura'],
+  ['30', 'Tessin'], ['301', 'Tessin'],
+  ['40', 'Ausserhalb der Kantone'], ['401', 'Auslandschweizerinnen und -schweizer'],
+  ['90', 'Sammelwege'],
+  ['901', 'Standaktionen'], ['902', 'Versand'], ['903', 'Online-Bestellung'],
+  ['904', 'Verbände und Partner'],
+].map(([code, label]) => ({ code, label }));
+
+/* IT-Projekt: Projektstrukturplan in der Reihenfolge, in der ein
+   Vorhaben tatsächlich durchläuft. */
+const IT_KATALOG = [
+  ['10', 'Analyse und Konzept'],
+  ['101', 'Anforderungsaufnahme'], ['102', 'Ist-Analyse'], ['103', 'Fachkonzept'],
+  ['104', 'Technisches Konzept'], ['105', 'Evaluation / Ausschreibung'],
+  ['20', 'Umsetzung'],
+  ['201', 'Datenbank und Datenmodell'], ['202', 'Schnittstellen'], ['203', 'Backend'],
+  ['204', 'Oberfläche'], ['205', 'Datenmigration'], ['206', 'Dokumentation'],
+  ['30', 'Test und Abnahme'],
+  ['301', 'Testkonzept'], ['302', 'Systemtest'], ['303', 'Abnahmetest'],
+  ['304', 'Sicherheitsprüfung'], ['305', 'Lasttest'],
+  ['40', 'Einführung'],
+  ['401', 'Schulung'], ['402', 'Rollout'], ['403', 'Datenübernahme'], ['404', 'Startbegleitung'],
+  ['50', 'Betrieb'],
+  ['501', 'Wartung'], ['502', 'Support'], ['503', 'Lizenzen'], ['504', 'Betrieb und Hosting'],
+  ['60', 'Beschaffung'],
+  ['601', 'Hardware'], ['602', 'Software'], ['603', 'Dienstleistungen'],
+  ['90', 'Führung'],
+  ['901', 'Projektleitung'], ['902', 'Qualitätssicherung'], ['903', 'Reserve'],
+].map(([code, label]) => ({ code, label }));
+
+/* Die Wörter des Bau-Falls stehen vollständig da, obwohl sie im Code
+   ohnehin die Voreinstellung wären. Grund: Sie sind die Liste, an der
+   man ablesen kann, was eine Vorlage überhaupt benennen kann — und
+   jede neue Vorlage füllt genau dieselben Felder aus. Fehlt eines,
+   greift automatisch das Bau-Wort. */
+const VORLAGEN = [
+  {
+    key: 'bau', name: 'Bau', zeichen: '🏗',
+    unterzeile: 'Bauleitung und Architektur — Gewerke nach BKP, Vergabe, Werkvertrag.',
+    geld: true, einheit: 'CHF', mehrIstGut: false,
+    katalog: BKP_KATALOG, gruppen: BKP_GRUPPEN, tabs: null,
+    woerter: {
+      posten: 'Gewerk', posten_pl: 'Gewerke', postenSpalte: 'Arbeitsgattung',
+      nummer: 'BKP', nummerLang: 'BKP-Nr.', katalogName: 'BKP-Katalog',
+      partner: 'Unternehmer', partner_pl: 'Unternehmer', partnerLeer: 'nicht ausgeschrieben',
+      neu: '+ Arbeitsbeschrieb', neuTitel: 'Arbeitsbeschrieb / Kostenschätzung',
+      postenName: 'Gewerk / Arbeitsbeschrieb', postenBeispiel: 'z.B. Baumeisterarbeiten',
+      schaetzung: 'Kostenschätzung',
+      kostenTitel: 'Baukostenübersicht nach BKP', kostenTotal: 'Total Baukosten',
+      vergabenTitel: 'Vergaben & Gewerke',
+      kv: 'KV', kvSub: 'Schätzung',
+      rev: 'KV rev.', revSub: 'Offerte/Stand',
+      wv: 'WV', wvSub: 'verhandelt',
+      nt: 'Nachträge', ntSub: 'genehmigt',
+      prognose: 'Prognose', prognoseSub: 'WV+NT / Schluss',
+      fakt: 'Rechnung', faktSub: 'bisher bezahlt',
+      offen: 'Offen', offenSub: 'noch nicht bez.',
+      delta: '+/−', deltaSub: 'WV→Endsumme',
+    },
+    reiter: {},
+    status: {},
+  },
+  {
+    key: 'sammlung', name: 'Sammlung & Verkauf', zeichen: '🃏',
+    unterzeile: 'Karten, Münzen, Figuren — Bestand, Wert, Angebot und Erlös je Stück.',
+    geld: true, einheit: 'CHF', mehrIstGut: true,
+    katalog: SAMMLUNG_KATALOG,
+    tabs: ['overview', 'gewerke', 'kosten', 'rechnungen', 'nachtraege', 'listen', 'termine', 'kalender', 'pendenzen'],
+    gruppen: {
+      '1': 'Sammelkarten', '2': 'Versiegelte Ware', '3': 'Münzen und Edelmetall',
+      '4': 'Briefmarken', '5': 'Figuren und Modelle', '6': 'Bücher, Comics, Medien',
+      '7': 'Zubehör', '9': 'Übriges',
+    },
+    woerter: {
+      posten: 'Objekt', posten_pl: 'Objekte', postenSpalte: 'Objekt',
+      nummer: 'Nr.', nummerLang: 'Katalog-Nr.', katalogName: 'Kategorien',
+      partner: 'Angebot bei', partner_pl: 'Marktplätze', partnerLeer: 'nicht angeboten',
+      neu: '+ Objekt', neuTitel: 'Objekt erfassen',
+      postenName: 'Bezeichnung', postenBeispiel: 'z.B. Blauäugiger weisser Drache, 1. Auflage',
+      schaetzung: 'Einstand',
+      kostenTitel: 'Bestand, Wert und Erlös', kostenTotal: 'Total Sammlung',
+      vergabenTitel: 'Bestand',
+      kv: 'Einstand', kvSub: 'bezahlt',
+      rev: 'Marktwert', revSub: 'aktuell',
+      wv: 'Angebot', wvSub: 'eingestellt für',
+      nt: 'Gebühren', ntSub: 'Versand, Provision',
+      prognose: 'Erlös', prognoseSub: 'erwartet',
+      fakt: 'Erhalten', faktSub: 'gutgeschrieben',
+      offen: 'Ausstehend', offenSub: 'noch nicht da',
+      delta: '+/−', deltaSub: 'Angebot→Erlös',
+    },
+    reiter: {
+      gewerke: 'Objekte', kosten: 'Wert & Erlös', rechnungen: 'Zahlungseingänge',
+      nachtraege: 'Gebühren', listen: 'Marktplätze', termine: 'Fristen',
+    },
+    /* Derselbe Lebenslauf, andere Wörter: «Ausschreibung» ist der
+       Bestand, «Zuschlag» der Verkauf, «Schlussrechnung» das Warten
+       auf die Gutschrift. Die Reihenfolge stimmt, weil ein Verkauf
+       dieselben Stationen hat wie eine Vergabe. */
+    status: {
+      ausschreibung: ['Im Bestand', 'Bestand'],
+      versendet: ['Angeboten', 'Angeboten'],
+      offerten: ['Anfragen erhalten', 'Anfragen'],
+      angebot_vers: ['Gegenangebot gestellt', 'Gegenangebot'],
+      angebot_erh: ['Gegenangebot erhalten', 'Gegenangebot erh.'],
+      bewertung: ['Angebote verglichen', 'Verglichen'],
+      verhandlung: ['In Verhandlung', 'Verhandlung'],
+      vergeben: ['Verkauft', 'Verkauft'],
+      werkvertrag: ['Rechnung gestellt', 'Rechnung'],
+      unterzeichnet: ['Zahlung vereinbart', 'Zahlung fix'],
+      ausfuehrung: ['Versand unterwegs', 'Versand'],
+      schlussrechnung: ['Zahlung ausstehend', 'Zahlung offen'],
+      maengel: ['Reklamation erledigt', 'Reklamation'],
+      abgeschlossen: ['Abgeschlossen', 'Abgeschlossen'],
+    },
+  },
+  {
+    key: 'unterschriften', name: 'Unterschriftensammlung', zeichen: '✍',
+    unterzeile: 'Initiative oder Referendum — Ziel, Stand und Beglaubigung je Region.',
+    geld: false, einheit: 'Unterschriften', einheitKurz: 'Unt.', mehrIstGut: true,
+    katalog: UNTERSCHRIFTEN_KATALOG,
+    tabs: ['overview', 'gewerke', 'kosten', 'listen', 'termine', 'kalender', 'pendenzen', 'protokolle'],
+    gruppen: { '1': 'Deutschschweiz', '2': 'Romandie', '3': 'Tessin', '4': 'Ausserhalb der Kantone', '9': 'Sammelwege' },
+    woerter: {
+      posten: 'Sammelgebiet', posten_pl: 'Sammelgebiete', postenSpalte: 'Sammelgebiet',
+      nummer: 'Nr.', nummerLang: 'Gebiets-Nr.', katalogName: 'Kantone und Sammelwege',
+      partner: 'Verantwortlich', partner_pl: 'Sammelteams', partnerLeer: 'niemand zugeteilt',
+      neu: '+ Sammelgebiet', neuTitel: 'Sammelgebiet erfassen',
+      postenName: 'Gebiet / Aktion', postenBeispiel: 'z.B. Zürich Stadt',
+      schaetzung: 'Ziel',
+      kostenTitel: 'Stand der Sammlung', kostenTotal: 'Total Unterschriften',
+      vergabenTitel: 'Sammelgebiete',
+      kv: 'Ziel', kvSub: 'geplant',
+      rev: 'Erwartet', revSub: 'nach Lage',
+      wv: 'Zugesagt', wvSub: 'von Teams',
+      nt: 'Nachmeldungen', ntSub: 'später gemeldet',
+      prognose: 'Gesammelt', prognoseSub: 'Zugesagt+Nachmeldung',
+      fakt: 'Beglaubigt', faktSub: 'Gemeinde bestätigt',
+      offen: 'Ausstehend', offenSub: 'noch nicht beglaubigt',
+      delta: '+/−', deltaSub: 'Zugesagt→Gesammelt',
+    },
+    reiter: {
+      gewerke: 'Gebiete', kosten: 'Stand', rechnungen: 'Beglaubigungen',
+      listen: 'Sammelteams', termine: 'Fristen',
+    },
+    status: {
+      ausschreibung: ['Gebiet erfasst', 'Erfasst'],
+      versendet: ['Bogen versendet', 'Versendet'],
+      offerten: ['Team gemeldet', 'Gemeldet'],
+      angebot_vers: ['Nachfrage gestellt', 'Nachgefragt'],
+      angebot_erh: ['Rückmeldung erhalten', 'Rückmeldung'],
+      bewertung: ['Stand geprüft', 'Geprüft'],
+      verhandlung: ['Aufstockung besprochen', 'Aufstockung'],
+      vergeben: ['Team zugeteilt', 'Zugeteilt'],
+      werkvertrag: ['Sammlung läuft', 'Läuft'],
+      unterzeichnet: ['Bogen zurück', 'Zurück'],
+      ausfuehrung: ['Bei der Gemeinde', 'Gemeinde'],
+      schlussrechnung: ['Beglaubigung ausstehend', 'Beglaubigung'],
+      maengel: ['Ungültige nachgeliefert', 'Nachgeliefert'],
+      abgeschlossen: ['Abgeschlossen', 'Abgeschlossen'],
+    },
+  },
+  {
+    key: 'it', name: 'IT- und Softwareprojekt', zeichen: '💻',
+    unterzeile: 'Arbeitspakete statt Gewerke — Budget, Auftrag, Change Requests, Abnahme.',
+    geld: true, einheit: 'CHF', mehrIstGut: false,
+    katalog: IT_KATALOG,
+    tabs: ['overview', 'gewerke', 'kosten', 'rechnungen', 'nachtraege', 'listen', 'termine', 'kalender', 'pendenzen', 'protokolle', 'dossier', 'finanz'],
+    gruppen: {
+      '1': 'Analyse und Konzept', '2': 'Umsetzung', '3': 'Test und Abnahme',
+      '4': 'Einführung', '5': 'Betrieb', '6': 'Beschaffung', '9': 'Führung',
+    },
+    woerter: {
+      posten: 'Arbeitspaket', posten_pl: 'Arbeitspakete', postenSpalte: 'Arbeitspaket',
+      nummer: 'PSP', nummerLang: 'PSP-Nr.', katalogName: 'Projektstrukturplan',
+      partner: 'Dienstleister', partner_pl: 'Dienstleister', partnerLeer: 'noch nicht beauftragt',
+      neu: '+ Arbeitspaket', neuTitel: 'Arbeitspaket erfassen',
+      postenName: 'Arbeitspaket', postenBeispiel: 'z.B. Schnittstelle zur Buchhaltung',
+      schaetzung: 'Budget',
+      kostenTitel: 'Kostenübersicht nach Projektstrukturplan', kostenTotal: 'Total Projektkosten',
+      vergabenTitel: 'Arbeitspakete',
+      kv: 'Budget', kvSub: 'geplant',
+      rev: 'Offerte', revSub: 'eingeholt',
+      wv: 'Auftrag', wvSub: 'beauftragt',
+      nt: 'Change Requests', ntSub: 'genehmigt',
+      prognose: 'Prognose', prognoseSub: 'Auftrag+CR',
+      fakt: 'Verrechnet', faktSub: 'bisher bezahlt',
+      offen: 'Offen', offenSub: 'noch nicht bez.',
+      delta: '+/−', deltaSub: 'Auftrag→Endsumme',
+    },
+    reiter: {
+      gewerke: 'Arbeitspakete', kosten: 'Kosten', nachtraege: 'Change Requests',
+      listen: 'Anbieter', bauherr: 'Auftraggeberwünsche',
+    },
+    status: {
+      ausschreibung: ['Beschrieben', 'Beschrieben'],
+      versendet: ['Anfrage versendet', 'Angefragt'],
+      offerten: ['Offerten eingegangen', 'Offerten'],
+      angebot_vers: ['Rückfrage gestellt', 'Rückfrage'],
+      angebot_erh: ['Rückfrage beantwortet', 'Beantwortet'],
+      bewertung: ['Evaluation', 'Evaluation'],
+      verhandlung: ['In Verhandlung', 'Verhandlung'],
+      vergeben: ['Beauftragt', 'Beauftragt'],
+      werkvertrag: ['Vertrag erstellt', 'Vertrag'],
+      unterzeichnet: ['Vertrag unterzeichnet', 'Unterzeichnet'],
+      ausfuehrung: ['In Umsetzung', 'Umsetzung'],
+      schlussrechnung: ['Abnahme läuft', 'Abnahme'],
+      maengel: ['Mängel behoben', 'Mängel'],
+      abgeschlossen: ['Abgeschlossen', 'Abgeschlossen'],
+    },
+  },
+];
+
+/* Welche Vorlage gerade gilt.
+
+   `vorlageCtx` setzt der Router, sobald man ein Projekt öffnet. Ohne
+   diesen Umweg müsste jede der rund vierzig Anzeigefunktionen das
+   Projekt bis in die letzte Beschriftung durchreichen — dieselbe
+   Verkabelung, die docs/BRANCHEN.md als das eigentliche Hindernis
+   benennt. Wer ein Projekt zur Hand hat, gibt es trotzdem mit. */
+let vorlageCtx = null;
+function setVorlageCtx(p) { vorlageCtx = p || null; }
+
+// Die Liste selbst — abgesichert, falls sie beim Erststart noch nicht ausgewertet ist.
+function vorlagenListe() { try { return VORLAGEN; } catch (e) { return []; } }
+
+function vorlageKey(p) {
+  const q = p || vorlageCtx;
+  const k = (q && q.vorlage) || (typeof state !== 'undefined' && state && state.vorlage) || 'bau';
+  return vorlagenListe().some(v => v.key === k) ? k : 'bau';
+}
+function vorlage(p) {
+  const liste = vorlagenListe();
+  if (!liste.length) return null;
+  return liste.find(v => v.key === vorlageKey(p)) || liste[0];
+}
+function vorlageName(key) { const v = vorlagenListe().find(x => x.key === key); return v ? v.name : 'Bau'; }
+function istBau(p) { return vorlageKey(p) === 'bau'; }
+
+/* Ein Wort. Reihenfolge: was der Nutzer selbst eingetragen hat, sonst
+   die Vorlage, sonst der Bau-Fall — so kann eine Vorlage nie eine
+   Lücke reissen. Eigene Wörter stehen je Vorlage in state.woerter. */
+function W(schluessel, p) {
+  const v = vorlage(p);
+  if (!v) return schluessel;
+  const eigen = ((typeof state !== 'undefined' && state && state.woerter) || {})[v.key] || {};
+  const bau = vorlagenListe()[0];
+  return eigen[schluessel] || v.woerter[schluessel] || (bau && bau.woerter[schluessel]) || schluessel;
+}
+/** Beschriftung eines Projektreiters — die Vorlage darf sie umbenennen. */
+function R(key, standard, p) {
+  const v = vorlage(p);
+  return (v && v.reiter && v.reiter[key]) || standard;
+}
+function katalogAktiv(p) { const v = vorlage(p); return (v && v.katalog) || BKP_KATALOG; }
+function gruppenAktiv(p) { const v = vorlage(p); return (v && v.gruppen) || BKP_GRUPPEN; }
+/** Rechnet die Vorlage in Geld? Sonst zählt sie Stück (Unterschriften). */
+function istGeld(p) { const v = vorlage(p); return !v || v.geld !== false; }
+/** Ist «mehr» in dieser Vorlage gut? Beim Bau ist eine Überschreitung rot, beim Verkauf grün. */
+function mehrIstGut(p) { const v = vorlage(p); return !!(v && v.mehrIstGut); }
+
+/* Der Lebenslauf eines Postens heisst je Vorlage anders — die
+   Stationen und ihre Reihenfolge bleiben dieselben, damit Fortschritt,
+   Filter und Auswertungen unverändert rechnen. */
+function stInfo(key, p) {
+  const s = STATUS_BY_KEY[key] || VERGABE_STATUS[0];
+  const v = vorlage(p);
+  const eig = v && v.status && v.status[s.key];
+  return eig ? { ...s, label: eig[0], kurz: eig[1] || eig[0] } : s;
+}
+
+/* Welche Reiter diese Vorlage überhaupt kennt. Eine Kartensammlung
+   braucht weder U-Wert-Rechner noch Eigentümerwünsche; sie stehen
+   deshalb nicht bloss leer da, sondern gar nicht. */
+function vorlageTabs(p) { const v = vorlage(p); return (v && v.tabs) || null; }
+function tabErlaubt(key, p) { const t = vorlageTabs(p); return !t || t.indexOf(key) >= 0; }
+
+/* Wörter, die man je Vorlage selbst setzen kann. Bewusst wenige: Es
+   sind die vier, die auf jeder Seite stehen. Wer «Objekt» lieber
+   «Karte» nennt, trägt es einmal ein und liest es überall. */
+const WORT_FELDER = [
+  ['posten', 'Ein Posten (Einzahl)'],
+  ['posten_pl', 'Mehrere Posten'],
+  ['nummer', 'Nummernart (Spaltenkopf)'],
+  ['partner', 'Der Gegenüber'],
+];
+function eigenWort(key, schluessel) {
+  return (((state && state.woerter) || {})[key] || {})[schluessel] || '';
+}
+function setEigenWort(key, schluessel, wert) {
+  if (!state.woerter) state.woerter = {};
+  if (!state.woerter[key]) state.woerter[key] = {};
+  const w = String(wert || '').trim();
+  if (w) state.woerter[key][schluessel] = w; else delete state.woerter[key][schluessel];
+}
+/** Vorlage eines Projekts umstellen (leer = Standard aus den Einstellungen). */
+function setProjektVorlage(pid, key) {
+  const p = findProjekt(pid); if (!p) return;
+  if (key) p.vorlage = key; else delete p.vorlage;
+  save();
+  toast(p.name + ': Vorlage ' + (key ? vorlageName(key) : 'Standard'), 'ok');
+  viewEinstellungen();
+}
+
+/* =====================================================================
+   Liste einlesen (CSV)
+   ---------------------------------------------------------------------
+   Wer 400 Karten hat, tippt sie nicht ab. Er hat eine Liste — aus
+   einer Tabelle, aus einem Export, aus ChatGPT — und die soll in
+   einem Zug hereinkommen.
+
+   Die Spalten sind bewusst die WÖRTER der Vorlage, nicht die
+   Feldnamen des Programms: In einer Sammlung heisst die Spalte
+   «Einstand», nicht «schaetzung». Erkannt wird beides, dazu die
+   üblichen englischen Namen — eine Liste, die anders beschriftet ist,
+   soll nicht am Spaltenkopf scheitern.
+
+   Trennzeichen wird geraten (Strichpunkt, Komma, Tabulator), weil
+   Excel je nach Land verschieden exportiert.
+   ===================================================================== */
+const CSV_SPALTEN = {
+  bkp:       ['nr', 'nr.', 'nummer', 'bkp', 'psp', 'katalog-nr', 'katalog-nr.', 'kategorie', 'code', 'gebiets-nr', 'gebiets-nr.'],
+  gewerk:    ['bezeichnung', 'name', 'gewerk', 'objekt', 'karte', 'titel', 'arbeitspaket', 'gebiet', 'beschreibung'],
+  schaetzung:['einstand', 'kv', 'budget', 'schätzung', 'schaetzung', 'kaufpreis', 'bezahlt', 'ziel', 'einkauf'],
+  marktwert: ['marktwert', 'wert', 'kv rev.', 'kv rev', 'offerte', 'erwartet', 'preis'],
+  betrag:    ['angebot', 'angebotspreis', 'wv', 'auftrag', 'zugesagt', 'verkaufspreis', 'vergabesumme'],
+  firma:     ['angebot bei', 'marktplatz', 'plattform', 'unternehmer', 'dienstleister', 'verantwortlich', 'firma', 'wo', 'anbieter', 'käufer', 'kaeufer'],
+  erhalten:  ['erhalten', 'erlös', 'erloes', 'gutgeschrieben', 'bezahlt erhalten', 'eingegangen', 'beglaubigt', 'verrechnet'],
+  status:    ['status', 'zustand', 'stand'],
+  beschrieb: ['notiz', 'notizen', 'bemerkung', 'bemerkungen', 'beschrieb', 'zustand karte', 'kommentar'],
+  frist:     ['frist', 'termin', 'datum', 'eingabefrist'],
+};
+
+/** Trennzeichen raten: das häufigste der drei in der Kopfzeile. */
+function csvTrenner(kopf) {
+  const zaehl = z => (kopf.split(z).length - 1);
+  const kandidaten = [[';', zaehl(';')], ['\t', zaehl('\t')], [',', zaehl(',')]];
+  kandidaten.sort((a, b) => b[1] - a[1]);
+  return kandidaten[0][1] > 0 ? kandidaten[0][0] : ';';
+}
+
+/** Eine CSV-Zeile in Felder zerlegen — mit Anführungszeichen und doppelten darin. */
+function csvZeile(zeile, trenner) {
+  const felder = []; let cur = '', inQ = false;
+  for (let i = 0; i < zeile.length; i++) {
+    const c = zeile[i];
+    if (inQ) {
+      if (c === '"' && zeile[i + 1] === '"') { cur += '"'; i++; }
+      else if (c === '"') inQ = false;
+      else cur += c;
+    } else if (c === '"') inQ = true;
+    else if (c === trenner) { felder.push(cur); cur = ''; }
+    else cur += c;
+  }
+  felder.push(cur);
+  return felder.map(f => f.trim());
+}
+
+/** Zahl aus einer Tabellenzelle: 1'250.50 · 1.250,50 · CHF 30.– · leer. */
+function csvZahl(s) {
+  let t = String(s == null ? '' : s).replace(/[^0-9,.\-]/g, '');
+  if (!t) return 0;
+  if (t.indexOf(',') >= 0 && t.indexOf('.') >= 0) {
+    t = (t.lastIndexOf(',') > t.lastIndexOf('.')) ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');
+  } else if (t.indexOf(',') >= 0) t = t.replace(',', '.');
+  const n = Number(t);
+  return isFinite(n) ? n : 0;
+}
+
+/* Zusätzlich zu den festen Namen zählt, wie die aktuelle Vorlage die
+   Spalte NENNT. Dadurch passt die heruntergeladene Vorlagendatei
+   immer zu sich selbst — auch wenn jemand eigene Wörter gesetzt hat. */
+const CSV_AUS_VORLAGE = {
+  bkp: ['nummer', 'nummerLang'], gewerk: ['posten', 'postenName'],
+  schaetzung: ['kv'], marktwert: ['rev'], betrag: ['wv'],
+  firma: ['partner'], erhalten: ['fakt'],
+};
+
+/** Kopfzeile auf die Programmfelder abbilden: {feld: spaltenIndex}. */
+function csvKopfZuordnen(kopfFelder, p) {
+  const zu = {};
+  const ausVorlage = {};
+  Object.keys(CSV_AUS_VORLAGE).forEach(feld => {
+    ausVorlage[feld] = CSV_AUS_VORLAGE[feld].map(s => String(W(s, p)).toLowerCase().replace(/\(.*?\)/g, '').trim());
+  });
+  kopfFelder.forEach((h, i) => {
+    const k = h.toLowerCase().replace(/\s+/g, ' ').replace(/\(.*?\)/g, '').trim();
+    if (!k) return;
+    Object.keys(CSV_SPALTEN).forEach(feld => {
+      if (zu[feld] !== undefined) return;
+      if (CSV_SPALTEN[feld].indexOf(k) >= 0) { zu[feld] = i; return; }
+      if ((ausVorlage[feld] || []).indexOf(k) >= 0) zu[feld] = i;
+    });
+  });
+  return zu;
+}
+
+/** Eine Statusangabe aus der Liste auf einen Lebenslauf-Schlüssel bringen. */
+function csvStatus(text, p) {
+  const t = String(text || '').toLowerCase().trim();
+  if (!t) return '';
+  const treffer = VERGABE_STATUS.find(s => {
+    const i = stInfo(s.key, p);
+    return s.key === t || i.label.toLowerCase() === t || String(i.kurz).toLowerCase() === t;
+  });
+  return treffer ? treffer.key : '';
+}
+
+/**
+ * CSV-Text in Posten verwandeln — ohne etwas zu speichern.
+ * Gibt { posten, uebersprungen, spalten, fehler } zurück, damit die
+ * Vorschau zeigen kann, was hereinkäme, BEVOR es hereinkommt.
+ */
+function csvZuPosten(text, p) {
+  const roh = String(text || '').replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const zeilen = roh.split('\n').filter(z => z.trim() !== '');
+  if (zeilen.length < 2) return { posten: [], uebersprungen: 0, spalten: {}, fehler: 'Die Datei hat keine Datenzeilen.' };
+  const trenner = csvTrenner(zeilen[0]);
+  const zu = csvKopfZuordnen(csvZeile(zeilen[0], trenner), p);
+  if (zu.gewerk === undefined && zu.bkp === undefined) {
+    return { posten: [], uebersprungen: 0, spalten: zu, fehler: 'Keine Spalte für Nummer oder Bezeichnung gefunden. Die erste Zeile muss die Spaltennamen tragen.' };
+  }
+  const posten = []; let uebersprungen = 0;
+  for (let i = 1; i < zeilen.length; i++) {
+    const f = csvZeile(zeilen[i], trenner);
+    const hol = feld => (zu[feld] === undefined ? '' : (f[zu[feld]] || ''));
+    const name = hol('gewerk').trim();
+    const nummer = hol('bkp').trim();
+    if (!name && !nummer) { uebersprungen++; continue; }
+    const marktwert = csvZahl(hol('marktwert'));
+    const betrag = csvZahl(hol('betrag'));
+    const firma = hol('firma').trim();
+    const erhalten = csvZahl(hol('erhalten'));
+    let status = csvStatus(hol('status'), p);
+    if (!status) status = betrag > 0 && firma ? 'versendet' : 'ausschreibung';
+    posten.push({
+      bkp: nummer, gewerk: name || nummer, schaetzung: csvZahl(hol('schaetzung')),
+      marktwert, betrag, firma, erhalten, status,
+      beschrieb: hol('beschrieb').trim(), frist: hol('frist').trim(),
+    });
+  }
+  return { posten, uebersprungen, spalten: zu, fehler: '' };
+}
+
+/** Die geprüften Zeilen wirklich anlegen. Gibt die Anzahl zurück. */
+function csvPostenAnlegen(pid, posten) {
+  const p = findProjekt(pid); if (!p) return 0;
+  p.vergaben = p.vergaben || [];
+  posten.forEach(x => {
+    const v = {
+      id: uid('v'), bkp: x.bkp || '', gewerk: x.gewerk, status: x.status || 'ausschreibung',
+      firma: x.firma || '', betrag: x.betrag || 0, schaetzung: x.schaetzung || 0,
+      beschrieb: x.beschrieb || '', frist: x.frist || '', bauStart: '', bauEnde: '',
+      eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [],
+    };
+    /* Der Marktwert kommt als ANGEBOT herein, nicht als eigenes Feld.
+
+       Beim Bau steht in der Spalte «KV rev.» die günstigste Offerte —
+       der Preis, den der Markt nennt. Für eine Karte ist der Marktwert
+       genau das: was der Markt dafür zahlt. Als Angebot eingetragen
+       rechnet die ganze Übersicht ohne einen einzigen Sonderfall, und
+       ein späterer Verkauf überschreibt ihn richtig. */
+    if (x.marktwert) {
+      v.eingeladene.push({ id: uid('e'), firma: x.firma || 'Marktpreis', email: '', betrag: x.marktwert, status: 'offeriert', datumMail: '' });
+    }
+    if (x.erhalten) {
+      v.rechnungen.push({
+        id: uid('rg'), text: 'Eingang aus Liste', nr: '', art: 'akonto',
+        rueckbehaltP: 0, skontoP: 0, rbFrei: false,
+        betrag: x.erhalten, datum: todayIso(), bezahlt: true,
+      });
+    }
+    p.vergaben.push(v);
+  });
+  save();
+  return posten.length;
+}
+
+/* --- Die Vorlagendatei ---------------------------------------------
+   Eine leere Liste mit genau den Spalten, die der Einleser versteht,
+   und drei Beispielzeilen. Wer 400 Karten hat, füllt sie in einer
+   Tabelle aus (oder lässt sie ausfüllen) und liest sie in einem Zug
+   ein — das ist der Weg, den «abtippen» nie sein kann. */
+function csvVorlageSpalten(p) {
+  return [W('nummer', p), W('posten', p), W('kv', p), W('rev', p), W('wv', p),
+          W('partner', p), W('fakt', p), 'Status', 'Notiz'];
+}
+const CSV_BEISPIELE = {
+  bau: [
+    ['211', 'Baumeisterarbeiten', '250000', '238000', '232000', 'Hugentobler Bau AG', '120000', 'Vergeben', 'Aushub inbegriffen'],
+    ['221', 'Fenster, Aussentüren', '95000', '91500', '', '', '', 'Offerten', ''],
+  ],
+  sammlung: [
+    ['101', 'Blauäugiger weisser Drache, 1. Auflage', '40', '320', '295', 'Cardmarket', '', 'Angeboten', 'Near Mint, deutsch'],
+    ['104', 'Stardust Dragon, Ghost Rare', '15', '180', '', '', '', 'Im Bestand', 'leichte Kantenabnutzung'],
+    ['202', 'Display Legend of Blue Eyes', '120', '900', '850', 'Ricardo', '850', 'Verkauft', 'versiegelt'],
+  ],
+  unterschriften: [
+    ['101', 'Zürich Stadt', '4000', '3600', '3200', 'Team Kreis 4', '2850', 'Team zugeteilt', 'Standaktionen samstags'],
+    ['202', 'Waadt', '2500', '2000', '', '', '', 'Gebiet erfasst', ''],
+  ],
+  it: [
+    ['203', 'Backend Rechnungsmodul', '80000', '76000', '74000', 'Muster Informatik AG', '30000', 'Beauftragt', 'Festpreis'],
+    ['302', 'Systemtest', '12000', '', '', '', '', 'Beschrieben', ''],
+  ],
+};
+function csvVorlageText(key) {
+  const p = { vorlage: key };
+  const zeile = f => f.map(x => (/[;"\n]/.test(x) ? '"' + String(x).replace(/"/g, '""') + '"' : x)).join(';');
+  const zeilen = [zeile(csvVorlageSpalten(p))];
+  (CSV_BEISPIELE[key] || []).forEach(b => zeilen.push(zeile(b)));
+  return zeilen.join('\r\n') + '\r\n';
+}
+function csvVorlageSpeichern(key) {
+  key = key || vorlageKey(null);
+  // Byte-Marke voran, sonst zeigt Excel aus Umlauten Kauderwelsch.
+  const blob = new Blob(['\ufeff' + csvVorlageText(key)], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'vorlage-' + key + '.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('Vorlagendatei gespeichert: vorlage-' + key + '.csv');
+}
+
+/* --- Liste einlesen ------------------------------------------------
+   Erst zeigen, was hereinkäme, dann übernehmen. Ein Import, der
+   ungefragt 400 Zeilen anlegt, ist schwerer rückgängig zu machen als
+   ein Blick auf die Vorschau kostet. */
+function actListeEinlesen(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  openModal('Liste einlesen — ' + W('posten_pl', p), `
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin:0 0 10px">
+      Erste Zeile = Spaltennamen. Erkannt werden unter anderem
+      <b>${esc(csvVorlageSpalten(p).join(' · '))}</b>. Trennzeichen darf Strichpunkt,
+      Komma oder Tabulator sein.</p>
+    <div class="einst-tatreihe">
+      <label class="btn secondary einst-datei">📄 Datei wählen (.csv)<input type="file" id="csv_datei" accept=".csv,.txt,text/csv"></label>
+      <button type="button" class="btn ghost" data-act="csv-vorlage" data-kind="${vorlageKey(p)}">⬇ Leere Vorlagendatei</button>
+    </div>
+    <label class="field" style="margin-top:10px">… oder die Liste hier einfügen
+      <textarea class="input" id="csv_text" rows="7" spellcheck="false" placeholder="${esc(csvVorlageSpalten(p).join(';'))}"></textarea></label>
+    <div id="csv_vorschau" class="csv-vorschau"></div>
+  `, `<button class="btn ghost" data-close="1">Abbrechen</button>
+      <button class="btn secondary" data-act="csv-pruefen" data-pid="${pid}">Prüfen</button>
+      <button class="btn" data-act="csv-uebernehmen" data-pid="${pid}">Übernehmen</button>`);
+  const datei = $('#csv_datei');
+  if (datei) datei.addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    lesArtGerecht(f, text => { const t = $('#csv_text'); if (t) t.value = text; csvPruefen(pid); });
+  });
+}
+
+/* Excel schreibt je nach Einstellung UTF-8 oder die alte Windows-Tabelle.
+   Wir lesen erst UTF-8; kommen Ersatzzeichen zurück, war es die alte. */
+function lesArtGerecht(f, dann) {
+  const r = new FileReader();
+  r.onload = () => {
+    const t = String(r.result || '');
+    if (t.indexOf('\uFFFD') < 0) { dann(t); return; }
+    const r2 = new FileReader();
+    r2.onload = () => dann(String(r2.result || ''));
+    r2.readAsText(f, 'windows-1252');
+  };
+  r.readAsText(f, 'utf-8');
+}
+
+let csvEntwurf = null;   // was die Vorschau zuletzt gezeigt hat
+
+function csvPruefen(pid) {
+  const p = findProjekt(pid); if (!p) return null;
+  const el = $('#csv_text'); const ziel = $('#csv_vorschau');
+  const erg = csvZuPosten(el ? el.value : '', p);
+  csvEntwurf = erg.fehler ? null : erg.posten;
+  if (!ziel) return erg;
+  if (erg.fehler) { ziel.innerHTML = `<p class="muted" style="color:var(--danger)">${esc(erg.fehler)}</p>`; return erg; }
+  const zeig = erg.posten.slice(0, 12);
+  ziel.innerHTML = `
+    <div class="csv-kopf"><b>${erg.posten.length}</b> ${esc(erg.posten.length === 1 ? W('posten', p) : W('posten_pl', p))} bereit${erg.uebersprungen ? `, ${erg.uebersprungen} leere Zeile${erg.uebersprungen === 1 ? '' : 'n'} übersprungen` : ''}.</div>
+    <table class="grid" style="font-size:var(--t-xs, 12px)">
+      <thead><tr><th>${esc(W('nummer', p))}</th><th>${esc(W('posten', p))}</th><th class="num">${esc(W('kv', p))}</th><th class="num">${esc(W('rev', p))}</th><th class="num">${esc(W('wv', p))}</th><th>${esc(W('partner', p))}</th><th>Status</th></tr></thead>
+      <tbody>${zeig.map(x => `<tr><td><span class="bkp-code">${esc(x.bkp)}</span></td><td>${esc(x.gewerk)}</td><td class="num">${x.schaetzung ? money(x.schaetzung) : '–'}</td><td class="num">${x.marktwert ? money(x.marktwert) : '–'}</td><td class="num">${x.betrag ? money(x.betrag) : '–'}</td><td>${esc(x.firma || '–')}</td><td>${esc(stInfo(x.status, p).kurz)}</td></tr>`).join('')}</tbody>
+    </table>
+    ${erg.posten.length > zeig.length ? `<p class="muted" style="font-size:var(--t-xs, 11.5px);margin:6px 0 0">… und ${erg.posten.length - zeig.length} weitere.</p>` : ''}`;
+  return erg;
+}
+
+function csvUebernehmen(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const erg = csvPruefen(pid);
+  if (!erg || erg.fehler) { toast(erg && erg.fehler ? erg.fehler : 'Nichts zu übernehmen', 'info'); return; }
+  if (!erg.posten.length) { toast('Keine Zeilen gefunden', 'info'); return; }
+  const anz = csvPostenAnlegen(pid, erg.posten);
+  csvEntwurf = null;
+  closeModal(); router();
+  toast(anz + ' ' + (anz === 1 ? W('posten', p) : W('posten_pl', p)) + ' eingelesen', 'ok');
+}
+
+function bkpDatalist(id) { return `<datalist id="${id}">${katalogAktiv().map(b => `<option value="${esc(b.code + ' ' + b.label)}">`).join('')}</datalist>`; }
 // Dropdown zum Wählen eines BKP (für ein neu eingefügtes, leeres Gewerk im Gantt). Nur Positionen (keine reinen Hauptgruppen).
-function bkpSelectHtml(pid, vid) { return `<select class="g-bkp-pick" data-pid="${pid}" data-vid="${vid}"><option value="">BKP wählen …</option>${BKP_KATALOG.filter(b => !/^\d{1,2}$/.test(b.code)).map(b => `<option value="${esc(b.code)}">${esc(b.code + ' ' + b.label)}</option>`).join('')}</select>`; }
+function bkpSelectHtml(pid, vid) { return `<select class="g-bkp-pick" data-pid="${pid}" data-vid="${vid}"><option value="">${esc(W('nummer'))} wählen …</option>${katalogAktiv().filter(b => !/^\d{1,2}$/.test(b.code)).map(b => `<option value="${esc(b.code)}">${esc(b.code + ' ' + b.label)}</option>`).join('')}</select>`; }
 // Durchsuchbarer Katalog zum Anklicken (Hauptgruppen als Überschrift, Positionen als Buttons)
 function bkpCatRows(filter) {
   const q = (filter || '').trim().toLowerCase();
-  const rows = BKP_KATALOG.filter(b => !q || (b.code + ' ' + b.label).toLowerCase().includes(q)).map(b => {
+  const rows = katalogAktiv().filter(b => !q || (b.code + ' ' + b.label).toLowerCase().includes(q)).map(b => {
     if (/^\d{2}$/.test(b.code)) return `<div class="bkp-cat-grp">${esc(b.code)} · ${esc(b.label)}</div>`;
     return `<button type="button" class="bkp-cat-item" data-code="${esc(b.code)}" data-label="${esc(b.label)}"><span class="bkp-code">${esc(b.code)}</span> ${esc(b.label)}</button>`;
   }).join('');
@@ -6847,8 +7557,8 @@ function bkpCatRows(filter) {
 }
 function bkpKatalogPanel() {
   return `<details id="bkpCat" style="margin-top:6px">
-    <summary style="cursor:pointer;font-weight:600;font-size:var(--t-s, 13px);padding:4px 0">📖 Kompletten BKP-Katalog durchsuchen &amp; auswählen</summary>
-    <input class="input" id="bkpCatSearch" placeholder="Code oder Gewerk filtern… (z.B. „Maler" oder „28")" style="margin:6px 0 4px" autocomplete="off">
+    <summary style="cursor:pointer;font-weight:600;font-size:var(--t-s, 13px);padding:4px 0">📖 Kompletten ${esc(W('katalogName'))} durchsuchen &amp; auswählen</summary>
+    <input class="input" id="bkpCatSearch" placeholder="Code oder ${esc(W('posten'))} filtern… (z.B. „Maler" oder „28")" style="margin:6px 0 4px" autocomplete="off">
     <div id="bkpCatList" class="bkp-cat-list">${bkpCatRows('')}</div>
   </details>`;
 }
@@ -6873,12 +7583,12 @@ function parseBkp(val) {
 
 let katOpen = false;  // BKP-Katalog als Geister-Zeilen in der Liste ausgefahren
 // Schalter für die Liste
-function katToggleBtn() { return `<button class="btn sm ${katOpen ? '' : 'secondary'}" data-act="kat-toggle">📖 BKP-Katalog ${katOpen ? 'ausblenden' : 'einblenden'}</button>`; }
+function katToggleBtn() { return `<button class="btn sm ${katOpen ? '' : 'secondary'}" data-act="kat-toggle">📖 ${esc(W('katalogName'))} ${katOpen ? 'ausblenden' : 'einblenden'}</button>`; }
 // Geister-Zeilen: alle noch nicht erfassten BKP-Positionen (aufgehellt, klickbar = erfassen)
 function bkpGhostRows(p, totalCols, prefix) {
   if (!katOpen) return '';
   const have = new Set((p.vergaben || []).map(v => String(v.bkp)));
-  return BKP_KATALOG.filter(b => !/^\d{2}$/.test(b.code) && !have.has(b.code) && (!prefix || b.code.startsWith(prefix))).map(b =>
+  return katalogAktiv(p).filter(b => !/^\d{2}$/.test(b.code) && !have.has(b.code) && (!prefix || b.code.startsWith(prefix))).map(b =>
     `<tr class="bkp-ghost" data-act="quickadd-bkp" data-pid="${p.id}" data-code="${esc(b.code)}" data-label="${esc(b.label)}" title="Klick = erfassen">
       <td><span class="bkp-code">${esc(b.code)}</span></td>
       <td>${esc(b.label)}</td>
@@ -8102,7 +8812,7 @@ function viewVergabeDetail(pid, vid) {
   gwList.forEach(g => { const k = String(g.bkp || '0').trim()[0] || '0'; (gwGroups[k] = gwGroups[k] || []).push(g); });
   const gwSide = `<aside class="gw-side">
     <div class="gw-side-head">Gewerke · ${gwList.length}</div>
-    <div class="gw-side-list">${Object.keys(gwGroups).sort().map(k => `<div class="gw-side-grp">${esc(k)} · ${esc(BKP_GRUPPEN[k] || 'Übrige')}</div>${gwGroups[k].map(g => {
+    <div class="gw-side-list">${Object.keys(gwGroups).sort().map(k => `<div class="gw-side-grp">${esc(k)} · ${esc(gruppenAktiv(p)[k] || 'Übrige')}</div>${gwGroups[k].map(g => {
       /* Der Punkt zeigt den Status, der WIRKLICH gilt: Bei einer Sammelvergabe
          ist das der Status der Hauptposition. 112 Abbrüche als «Ausschreibung»
          zu zeigen, während 211 längst einen Werkvertrag hat, wäre falsch —
@@ -9189,6 +9899,38 @@ function einstFeld(name, hinweis, steuerung) {
 function viewEinstellungen() {
   const b = state.buero || BUERO;
 
+  /* Die Vorlage steht zuoberst, weil sie über allem anderen liegt: Sie
+     bestimmt, wie die Posten heissen, welche Nummern gelten und welche
+     Kapitel ein Projekt überhaupt zeigt. */
+  const vStd = vorlageKey({});
+  const projekte = (state.projekte || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const vorlagen = einstAbschnitt('Vorlage', 'Wofür das Programm gebraucht wird — Wörter, Nummern und Kapitel richten sich danach.', `
+    <div class="vorl-wahl">
+      ${VORLAGEN.map(v => `<button type="button" class="vorl-karte${v.key === vStd ? ' an' : ''}" data-act="vorlage-standard" data-kind="${v.key}">
+        <span class="vorl-zeichen" aria-hidden="true">${v.zeichen}</span>
+        <span class="vorl-name">${esc(v.name)}</span>
+        <span class="vorl-sub">${esc(v.unterzeile)}</span>
+      </button>`).join('')}
+    </div>
+    <span class="einst-hinweis">Das gilt für <b>neue</b> Projekte. Bestehende behalten ihre eigene — unten je Projekt umstellbar.</span>
+    <details class="einst-mehr"><summary>Eigene Wörter für «${esc(vorlageName(vStd))}»</summary>
+      <div class="einst-woerter">
+        ${WORT_FELDER.map(([k, lbl]) => `<label class="einst-feld"><span class="einst-name">${esc(lbl)}</span>
+          <input class="input wort-feld" data-wort="${k}" value="${esc(eigenWort(vStd, k))}" placeholder="${esc(W(k, { vorlage: vStd }))}"></label>`).join('')}
+      </div>
+      <span class="einst-hinweis">Leer = das Wort der Vorlage. Wirkt sofort in allen Projekten dieser Vorlage.</span>
+    </details>
+    <details class="einst-mehr"><summary>Vorlage je Projekt (${projekte.length})</summary>
+      ${projekte.length ? `<div class="einst-projvorl">${projekte.map(pr => `<label class="einst-projzeile">
+        <span class="einst-projname" title="${esc(pr.name)}">${esc(pr.name)}</span>
+        <select class="select vorl-proj" data-pid="${pr.id}">
+          <option value="">Standard (${esc(vorlageName(vStd))})</option>
+          ${VORLAGEN.map(v => `<option value="${v.key}"${pr.vorlage === v.key ? ' selected' : ''}>${esc(v.name)}</option>`).join('')}
+        </select></label>`).join('')}</div>` : '<span class="einst-hinweis">Noch keine Projekte.</span>'}
+    </details>
+    <div class="einst-tatreihe"><button class="btn secondary" data-act="vorlage-csv" data-kind="${vStd}">⬇ Vorlagendatei (CSV) speichern</button></div>
+    <span class="einst-hinweis">Die CSV trägt genau die Spalten, die «📋 Liste einlesen» in den Kosten erwartet — ausfüllen (oder ausfüllen lassen) und einlesen.</span>`);
+
   const lage = cloudEnabled
     ? { farbe: 'blau', wo: 'Cloud', text: 'Gemeinsamer Arbeitsbereich, auf allen Geräten synchron.' }
     : ordnerAktiv()
@@ -9294,11 +10036,17 @@ function viewEinstellungen() {
     <div class="page-head"><div><h1>Einstellungen</h1><div class="sub">Büro, Daten und Ausgabe</div></div>
       <button class="btn" data-act="save-buero">Speichern</button></div>
     <div class="einst-raster">
-      <div class="einst-spalte">${buero}${korrespondenz}${rechnen}</div>
+      <div class="einst-spalte">${vorlagen}${buero}${korrespondenz}${rechnen}</div>
       <div class="einst-spalte">${speicher}${sichern}${ueber}</div>
     </div>`;
   render(html);
   $('#b_logo')?.addEventListener('change', e => onLogoPick(e.target));
+  // Vorlage je Projekt: greift sofort, ohne Umweg über «Speichern».
+  $$('.vorl-proj').forEach(s => s.addEventListener('change', () => setProjektVorlage(s.dataset.pid, s.value)));
+  $$('.wort-feld').forEach(i => i.addEventListener('change', () => {
+    setEigenWort(vStd, i.dataset.wort, i.value); save();
+    toast('Wort übernommen'); viewEinstellungen();
+  }));
 }
 
 function saveBuero() {
@@ -11017,24 +11765,25 @@ function grobLabel(v) {
 }
 
 function actNewVergabe(pid) {
+  const p = findProjekt(pid);
   const yr = today().getFullYear();
   const saisonSel = id => `<div style="display:flex;gap:6px">
     <select class="select" id="${id}_s"><option value="">–</option>${SAISONEN.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
     <select class="select" id="${id}_j">${[0, 1, 2, 3].map(o => `<option value="${yr + o}">${yr + o}</option>`).join('')}</select></div>`;
-  openModal('Arbeitsbeschrieb / Kostenschätzung', `
+  openModal(W('neuTitel', p), `
     <div class="form-row">
-      <label class="field">BKP-Nr. <input class="input" id="f_bkp" list="dl_fbkp" placeholder="tippen: 211 oder Gewerk…">${bkpDatalist('dl_fbkp')}</label>
-      <label class="field">Gewerk / Arbeitsbeschrieb <input class="input" id="f_gewerk" placeholder="z.B. Baumeisterarbeiten"></label>
+      <label class="field">${esc(W('nummerLang', p))} <input class="input" id="f_bkp" list="dl_fbkp" placeholder="Nummer oder Name tippen…">${bkpDatalist('dl_fbkp')}</label>
+      <label class="field">${esc(W('postenName', p))} <input class="input" id="f_gewerk" placeholder="${esc(W('postenBeispiel', p))}"></label>
     </div>
     ${bkpKatalogPanel()}
-    <label class="field" style="margin-top:8px">Kostenschätzung (CHF) <input class="input" type="number" id="f_schaetzung" placeholder="250000"></label>
+    <label class="field" style="margin-top:8px">${esc(W('schaetzung', p))}${istGeld(p) ? ' (CHF)' : ''} <input class="input" type="number" id="f_schaetzung"></label>
     <label class="field" style="margin-bottom:2px">Grober Baubeginn</label>
     ${saisonSel('f_grobvon')}
     <details style="margin-top:12px">
       <summary style="cursor:pointer;font-weight:600;font-size:var(--t-s, 13px);padding:4px 0">+ Details &amp; Submittenten (optional, Power-User)</summary>
       <div style="margin-top:8px">
         <div class="form-row">
-          <label class="field">Status <select class="select" id="f_status">${VERGABE_STATUS.map(s => `<option value="${s.key}">${esc(s.label)}</option>`).join('')}</select></label>
+          <label class="field">Status <select class="select" id="f_status">${VERGABE_STATUS.map(s => `<option value="${s.key}">${esc(stInfo(s.key, p).label)}</option>`).join('')}</select></label>
           <label class="field">Eingabefrist <input class="input" type="date" id="f_frist"></label>
         </div>
         <div class="form-row">
@@ -11043,8 +11792,8 @@ function actNewVergabe(pid) {
         </div>
         <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:0 0 10px">Exakte Daten überschreiben die grobe Saison-Angabe.</p>
         <div class="form-row">
-          <label class="field">Direktvergabe an (fixer Unternehmer) <input class="input" id="f_fix" placeholder="leer = Ausschreibung"></label>
-          <label class="field">Vergabesumme (CHF) <input class="input" type="number" id="f_fixbetrag"></label>
+          <label class="field">${esc(W('partner', p))} (direkt) <input class="input" id="f_fix" placeholder="leer = noch offen"></label>
+          <label class="field">${esc(W('wv', p))}${istGeld(p) ? ' (CHF)' : ''} <input class="input" type="number" id="f_fixbetrag"></label>
         </div>
         <label class="field">Submittenten einladen <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(eine Firma pro Zeile)</span>
           <textarea class="input" id="f_subs" rows="3" placeholder="Hugentobler Bau AG&#10;Steiner & Co.&#10;BauKern AG"></textarea>
@@ -11067,7 +11816,7 @@ function saveVergabe(pid) {
   const val = id => { const el = $('#' + id); return el ? el.value : ''; };
   const bkpParsed = parseBkp(val('f_bkp'));
   const gewerk = $('#f_gewerk').value.trim() || bkpParsed.label;
-  if (!gewerk) { toast('Bitte ein Gewerk / einen Arbeitsbeschrieb eingeben', 'info'); return; }
+  if (!gewerk) { toast('Bitte ' + W('postenName', p) + ' eingeben', 'info'); return; }
 
   // Grober Baubeginn (Saison) → Datum (exakte Daten haben Vorrang)
   const gvS = val('f_grobvon_s'), gvJ = val('f_grobvon_j');
@@ -11092,7 +11841,7 @@ function saveVergabe(pid) {
   };
   p.vergaben.push(v);
   save(); closeModal(); go('#/projekt/' + p.id + '/vergabe/' + v.id);
-  toast('Arbeitsbeschrieb erfasst');
+  toast(W('posten', p) + ' erfasst');
 }
 
 /* --- Kostenschätzungs-Tool (Beschrieb + interne Kalkulation) --- */
@@ -15735,7 +16484,7 @@ function pdfBaukosten(pid, mode) {
     const lines = [];
     keys.forEach(g => {
       const sub = { kv: 0, rev: 0, wv: 0, prognose: 0, rechnung: 0, offen: 0, dWvEnd: 0 };
-      lines.push({ u: 1, html: `<tr style="background:#f7eff0"><td style="color:#7c1d2c"><b>${esc(g)}</b></td><td colspan="10" style="color:#7c1d2c"><b>${esc(BKP_GRUPPEN[g] || 'Übrige')}</b></td></tr>` });
+      lines.push({ u: 1, html: `<tr style="background:#f7eff0"><td style="color:#7c1d2c"><b>${esc(g)}</b></td><td colspan="10" style="color:#7c1d2c"><b>${esc(gruppenAktiv(p)[g] || 'Übrige')}</b></td></tr>` });
       groups[g].forEach(v => {
         const z = kostenZeile(v); const kv = z.kv, rev = z.rev, wv = z.vergeben ? z.wv : null, fak = z.fakturiert;
         const endsumme = z.endsumme, off = z.offenRg, hatSchluss = z.hatSchluss;   // zentral aus kostenZeile
@@ -15751,7 +16500,7 @@ function pdfBaukosten(pid, mode) {
         (v.budgetposten || []).forEach(b => { const src = !z.vergeben ? 'Schätzung' : (b.ist != null && b.ist !== '' ? 'nach Auswahl' : 'WV'); lines.push({ u: 0.7, html: subNT(`↳ Budget (${src})${b.eig ? ' · Eigentümerwunsch' : ''}: ${esc(b.text || 'Position')}${hatBt && b.wohnung ? ' [' + esc(einheitName(p, b.wohnung)) + ']' : ''}${b.ist != null && b.ist !== '' ? ' · nach Auswahl ' + f2(Number(b.ist) || 0) : ''}`, b.betrag) }); });
       });
       gtot[g] = sub;
-      lines.push({ u: 1.1, html: sumRow('Total ' + (BKP_GRUPPEN[g] || g), sub) });
+      lines.push({ u: 1.1, html: sumRow('Total ' + (gruppenAktiv(p)[g] || g), sub) });
     });
     // Übertragszeile mit konkreten Werten (c = [kv,revEff,wv,endsumme,rechnung,offen,dWv])
     const uevFill = (label, c) => `<tr style="background:#f3eedd"><td></td><td><i><b>${label}</b></i></td><td></td><td class="num"><i>${f2(c[0])}</i></td><td class="num"><i>${f2(c[1])}</i></td>${diffTd(c[1] - c[0])}<td class="num"><i>${f2(c[2])}</i></td><td class="num"><i>${f2(c[3])}</i></td><td class="num"><i>${f2(c[4])}</i></td><td class="num"><i>${f2(c[5])}</i></td>${diffTd(c[6])}</tr>`;
@@ -15771,7 +16520,7 @@ function pdfBaukosten(pid, mode) {
       sheets.push({ secTitle: ci === 0 ? 'Baukostenübersicht – detailliert' : null, html: `<table class="t" style="font-size:var(--t-2xs, 10px)"><thead>${THEAD}</thead><tbody>${rowsHtml}</tbody></table>` });
     });
     const zRow = (lbl, S) => `<tr><td>${esc(lbl)}</td><td class="num">${f2(S.kv)}</td><td class="num">${f2(S.rev)}</td>${diffTd(S.rev - S.kv)}<td class="num">${f2(S.wv)}</td><td class="num"><b>${f2(S.prognose)}</b></td><td class="num">${f2(S.rechnung)}</td><td class="num">${f2(S.offen)}</td>${diffTd(S.dWvEnd)}</tr>`;
-    const kuRows = keys.map(g => zRow(g + ' ' + (BKP_GRUPPEN[g] || 'Übrige'), gtot[g])).join('');
+    const kuRows = keys.map(g => zRow(g + ' ' + (gruppenAktiv(p)[g] || 'Übrige'), gtot[g])).join('');
     const kuTable = `<table class="t" style="font-size:var(--t-2xs, 10.5px)"><thead><tr>${th('BKP / Hauptgruppe')}${th('KV', '(Schätzung)', 1)}${th('KV rev.', '(Offerte/Stand)', 1)}${th('KV +/−', '(Schätzung/Offerte)', 1)}${th('WV', '(verhandelt)', 1)}${th('Prognose', '(WV+NT / Schluss)', 1)}${th('Rechnung', '(bisher bezahlt)', 1)}${th('offen', '(noch nicht bez.)', 1)}${th('+/−', '(WV → Endsumme)', 1)}</tr></thead>
         <tbody>${kuRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total Baukosten</b></td><td class="num"><b>${f2(tot.kv)}</b></td><td class="num"><b>${f2(tot.rev)}</b></td>${diffTd(tot.rev - tot.kv)}<td class="num"><b>${f2(tot.wv)}</b></td><td class="num"><b>${f2(tot.prognose)}</b></td><td class="num"><b>${f2(tot.rechnung)}</b></td><td class="num"><b>${f2(tot.offen)}</b></td>${diffTd(tot.dWvEnd)}</tbody></table>`;
     const legende = `<p class="muted" style="margin-top:10px;font-size:var(--t-2xs, 8.5px)">KV (Schätzung) · KV rev. (Offerte, sonst Schätzung) · KV +/− (Schätzung gegen Offerte) · WV (verhandelte Vergabesumme) · Prognose (WV + Nachträge; <b>SR</b> = Schlussrechnung → Endsumme = effektive Rechnungssumme, offen = 0) · Rechnung (Summe eingetragener Rechnungen) · offen (Endsumme − Rechnungen) · +/− (WV gegen Endsumme). ↳ = Nachträge &amp; Rechnungen je eigene Zeile. Grün = Einsparung (tiefer), rot = Überschreitung (höher).</p>`;
@@ -15788,7 +16537,7 @@ function pdfBaukosten(pid, mode) {
   const lines = [];
   keys.forEach(g => {
     const sub = {}; cols.forEach(c => sub[c] = 0);
-    lines.push({ u: 1, html: `<tr style="background:#f4f6f9"><td><b>${esc(g)}</b></td><td colspan="8"><b>${esc(BKP_GRUPPEN[g] || 'Übrige')}</b></td></tr>` });
+    lines.push({ u: 1, html: `<tr style="background:#f4f6f9"><td><b>${esc(g)}</b></td><td colspan="8"><b>${esc(gruppenAktiv(p)[g] || 'Übrige')}</b></td></tr>` });
     groups[g].forEach(v => {
       const z = kostenZeile(v);
       const vals = { kv: z.kv, rev: (z.rev != null ? z.rev : z.kv), wv: z.vergeben ? z.wv : 0, nt: z.nt, prognose: z.endsumme, bezahlt: z.fakturiert, offen: z.offenRg };
@@ -15796,7 +16545,7 @@ function pdfBaukosten(pid, mode) {
       lines.push({ u: 1, vals, html: `<tr><td>${esc(v.bkp || '')}</td><td>${esc(v.gewerk || '')}</td><td class="num">${chf(z.kv)}</td><td class="num">${z.rev != null ? chf(z.rev) : `<span class="muted">${chf(z.kv)}</span>`}</td><td class="num">${z.vergeben ? chf(z.wv) : '–'}</td><td class="num">${z.nt ? chf(z.nt) : '–'}</td><td class="num"><b>${chf(z.endsumme)}</b></td><td class="num">${z.fakturiert ? chf(z.fakturiert) : '–'}</td><td class="num">${z.offenRg ? chf(z.offenRg) : '–'}</td></tr>` });
     });
     gtot[g] = sub;
-    lines.push({ u: 1.1, html: `<tr style="background:#eef1f5"><td></td><td><b>Zwischentotal ${esc(BKP_GRUPPEN[g] || g)}</b></td>${cols.map(c => `<td class="num">${c === 'prognose' ? '<b>' + chf(sub[c]) + '</b>' : chf(sub[c])}</td>`).join('')}</tr>` });
+    lines.push({ u: 1.1, html: `<tr style="background:#eef1f5"><td></td><td><b>Zwischentotal ${esc(gruppenAktiv(p)[g] || g)}</b></td>${cols.map(c => `<td class="num">${c === 'prognose' ? '<b>' + chf(sub[c]) + '</b>' : chf(sub[c])}</td>`).join('')}</tr>` });
   });
   const totalRow = `<tr style="border-top:2px solid #7c1d2c"><td></td><td><b>Total Baukosten</b></td>${cols.map(c => `<td class="num"><b>${chf(teil[c])}</b></td>`).join('')}</tr>`;
   const uevFill = (label, c) => `<tr style="background:#f3eedd"><td></td><td><i><b>${label}</b></i></td>${cols.map(k => `<td class="num"><i>${chf(c[k])}</i></td>`).join('')}</tr>`;
@@ -15814,7 +16563,7 @@ function pdfBaukosten(pid, mode) {
     rowsHtml += last ? totalRow : uevFill('Übertrag', cc);
     sheets.push({ secTitle: ci === 0 ? 'Baukostenübersicht' : null, html: `<table class="t" style="font-size:var(--t-2xs, 11px)"><thead>${THEAD}</thead><tbody>${rowsHtml}</tbody></table>` });
   });
-  const zRows = keys.map(g => `<tr><td>BKP ${esc(g)} – ${esc(BKP_GRUPPEN[g] || 'Übrige')}</td><td class="num">${chf(gtot[g].kv)}</td><td class="num">${chf(gtot[g].prognose)}</td><td class="num">${chf(gtot[g].bezahlt)}</td></tr>`).join('');
+  const zRows = keys.map(g => `<tr><td>BKP ${esc(g)} – ${esc(gruppenAktiv(p)[g] || 'Übrige')}</td><td class="num">${chf(gtot[g].kv)}</td><td class="num">${chf(gtot[g].prognose)}</td><td class="num">${chf(gtot[g].bezahlt)}</td></tr>`).join('');
   const zusTable = `<table class="t"><thead><tr><th>Hauptgruppe</th><th class="num">Kostenschätzung</th><th class="num">Prognose</th><th class="num">Rechnung</th></tr></thead>
       <tbody>${zRows}<tr style="border-top:2px solid #7c1d2c"><td><b>Total</b></td><td class="num"><b>${chf(teil.kv)}</b></td><td class="num"><b>${chf(teil.prognose)}</b></td><td class="num"><b>${chf(teil.bezahlt)}</b></td></tr></tbody></table>`;
   const legende = `<p class="muted" style="margin-top:10px;font-size:var(--t-2xs, 9.5px)">KV = Kostenschätzung · KV rev. = günstigste Offerte (sonst Schätzung) · WV = Werkvertrag · NT = Nachträge · Prognose = Endsumme (WV+NT bzw. Schlussrechnung) · Bezahlt = eingetragene Rechnungen · Offen = Endsumme − Rechnungen. „Übertrag" = laufende Summe je Seite.</p>`;
@@ -16342,23 +17091,23 @@ function setVergabeStatus(pid, vid, status) {
     if (offs.length) { v.firma = offs[0].firma; v.betrag = eOff(offs[0]); }
   }
   if (v.firma) ensureKontakt(v.firma, firmaEmailOf(p, v.firma));
-  save(); router(); toast('Status → ' + STATUS_BY_KEY[status].label);
+  save(); router(); toast('Status → ' + stInfo(status, p).label);
 }
 // Stammdaten bearbeiten / löschen
 function actEditVergabe(pid, vid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
-  openModal('Arbeitsbeschrieb bearbeiten', `
+  openModal(W('posten', p) + ' bearbeiten', `
     <div class="form-row">
-      <label class="field">BKP-Nr. <input class="input" id="fe_bkp" list="dl_febkp" value="${esc(v.bkp || '')}">${bkpDatalist('dl_febkp')}</label>
-      <label class="field">Gewerk / Arbeitsbeschrieb <input class="input" id="fe_gewerk" value="${esc(v.gewerk || '')}"></label>
+      <label class="field">${esc(W('nummerLang', p))} <input class="input" id="fe_bkp" list="dl_febkp" value="${esc(v.bkp || '')}">${bkpDatalist('dl_febkp')}</label>
+      <label class="field">${esc(W('postenName', p))} <input class="input" id="fe_gewerk" value="${esc(v.gewerk || '')}"></label>
     </div>
     <div class="form-row">
-      <label class="field">Kostenschätzung (CHF) <input class="input" type="number" id="fe_schaetzung" value="${v.schaetzung || ''}"></label>
+      <label class="field">${esc(W('schaetzung', p))}${istGeld(p) ? ' (CHF)' : ''} <input class="input" type="number" id="fe_schaetzung" value="${v.schaetzung || ''}"></label>
       <label class="field">Eingabefrist <input class="input" type="date" id="fe_frist" value="${esc(v.frist || '')}"></label>
     </div>
     <label class="field">Ausführung (Text, falls kein Termin) <input class="input" id="fe_ausf" value="${esc(v.ausfuehrung || '')}" placeholder="z.B. ab Herbst 2026">
       <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px">Erscheint auf dem Einladungs-Deckblatt unter „Ausführung". Leer = Terminprogramm bzw. „gem. Terminprogramm".</span></label>
-    <label class="field">Status <select class="select" id="fe_status">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select></label>
+    <label class="field">Status <select class="select" id="fe_status">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(stInfo(s.key, p).label)}</option>`).join('')}</select></label>
     ${((p.bauteile || []).length || (p.optionen || []).length) ? `
     <div class="form-row">
       <label class="field">Bauteil / Teilprojekt <select class="select" id="fe_bauteil">${bauteilOptionsHtml(p, v.bauteil)}</select></label>
@@ -16376,7 +17125,7 @@ function saveVergabeEdit(pid, vid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
   const bkpParsed = parseBkp($('#fe_bkp').value);
   const gewerk = $('#fe_gewerk').value.trim() || bkpParsed.label;
-  if (!gewerk) { toast('Bitte ein Gewerk / einen Arbeitsbeschrieb eingeben', 'info'); return; }
+  if (!gewerk) { toast('Bitte ' + W('postenName', p) + ' eingeben', 'info'); return; }
   v.bkp = bkpParsed.code || v.bkp || '000';
   v.gewerk = gewerk;
   v.schaetzung = Number($('#fe_schaetzung').value) || 0;
@@ -18129,6 +18878,11 @@ document.addEventListener('click', e => {
     case 'sig-from-buero': { const f = $('#b_firma').value.trim(), s = $('#b_strasse').value.trim(), pz = $('#b_plzort').value.trim(), t = $('#b_tel').value.trim(); const sig = 'Freundliche Grüsse\n' + [f, [s, pz].filter(Boolean).join(', '), t ? 'Tel. ' + t : ''].filter(Boolean).join('\n'); const el = $('#b_signatur'); if (el) el.value = sig; toast('Signatur erzeugt – „Büro speichern" nicht vergessen'); break; }
     case 'save-buero':   saveBuero(); break;
     case 'rm-logo':      state.buero = { ...(state.buero || {}), logo: '' }; save(); viewEinstellungen(); break;
+    case 'vorlage-standard': state.vorlage = kind; save(); viewEinstellungen(); toast('Neue Projekte: ' + vorlageName(kind)); break;
+    case 'vorlage-csv':      csvVorlageSpeichern(kind); break;
+    case 'liste-einlesen':   actListeEinlesen(pid); break;
+    case 'csv-pruefen':      csvPruefen(pid); break;
+    case 'csv-uebernehmen':  csvUebernehmen(pid); break;
     case 'export':       exportData(); break;
     case 'import-data':  importData(); break;
     case 'ordner-waehlen':  ordnerWaehlen(); break;
@@ -18531,6 +19285,132 @@ function selfTest() {
   // Leerzustand: erweiterter emptyState (Sub-Text + Aktions-Knopf) rückwärtskompatibel
   ok('emptyState schlicht (nur Icon+Text)', /class="empty"/.test(emptyState('x', 'Leer')) && !/e-cta/.test(emptyState('x', 'Leer')) && !/e-sub/.test(emptyState('x', 'Leer')));
   ok('emptyState mit Sub + CTA', (() => { const h = emptyState('x', 'Leer', 'Hinweis', { label: '+ Neu', act: 'new-projekt' }); return /e-sub/.test(h) && /data-act="new-projekt"/.test(h) && /\+ Neu/.test(h); })());
+
+
+  /* ---- VORLAGEN: wofür das Programm gebraucht wird ----
+     Der wichtigste Test ist die Vollständigkeit: Jede Vorlage muss
+     dieselben Wortfelder ausfüllen wie der Bau-Fall. Fehlt eines, fällt
+     es zwar auf das Bau-Wort zurück und stürzt nicht ab — aber dann
+     steht in einer Kartensammlung «Werkvertrag», und genau das soll
+     hier auffallen, bevor es jemand sieht. */
+  { const _st = state, _ctx = vorlageCtx;
+    try {
+      state = { projekte: [], vorlage: 'bau', woerter: {} };
+      setVorlageCtx(null);
+      const bau = VORLAGEN[0];
+
+      ok('VORLAGEN: mindestens vier Vorlagen', VORLAGEN.length >= 4);
+      eq('VORLAGEN: Bau steht zuoberst (Rückfall-Ebene)', bau.key, 'bau');
+      ok('VORLAGEN: jede hat Schlüssel, Namen und Zeichen',
+        VORLAGEN.every(v => v.key && v.name && v.zeichen && v.unterzeile));
+      ok('VORLAGEN: keine Vorlage zweimal', new Set(VORLAGEN.map(v => v.key)).size === VORLAGEN.length);
+
+      const fehlend = [];
+      VORLAGEN.forEach(v => Object.keys(bau.woerter).forEach(k => {
+        if (!v.woerter[k]) fehlend.push(v.key + '.' + k);
+      }));
+      ok('VORLAGEN: jede Vorlage füllt alle Wortfelder des Bau-Falls', !fehlend.length, fehlend.join(', '));
+
+      const ohneStatus = VORLAGEN.filter(v => v.key !== 'bau')
+        .filter(v => VERGABE_STATUS.some(s => !v.status || !v.status[s.key]));
+      ok('VORLAGEN: jede Vorlage benennt alle 14 Stationen', !ohneStatus.length, ohneStatus.map(v => v.key).join(', '));
+
+      /* Jede Katalognummer muss unter einer Gruppenüberschrift landen —
+         sonst steht die Kostenübersicht voller «Übrige». */
+      const verwaist = [];
+      VORLAGEN.forEach(v => (v.katalog || []).forEach(b => {
+        const g = String(b.code || '0').trim()[0];
+        if (!(v.gruppen || {})[g]) verwaist.push(v.key + ':' + b.code);
+      }));
+      ok('VORLAGEN: jede Katalognummer hat eine Gruppe', !verwaist.length, verwaist.slice(0, 5).join(', '));
+
+      // Auflösung: Projekt schlägt Standard, Unbekanntes fällt auf Bau
+      eq('vorlageKey: ohne alles = bau', vorlageKey(null), 'bau');
+      eq('vorlageKey: Projekt schlägt Standard', vorlageKey({ vorlage: 'sammlung' }), 'sammlung');
+      eq('vorlageKey: unbekannte Vorlage fällt auf bau', vorlageKey({ vorlage: 'gibtsnicht' }), 'bau');
+      state.vorlage = 'it';
+      eq('vorlageKey: Standard aus den Einstellungen', vorlageKey(null), 'it');
+      state.vorlage = 'bau';
+
+      // Wörter
+      eq('W: Bau sagt Gewerk', W('posten', { vorlage: 'bau' }), 'Gewerk');
+      eq('W: Sammlung sagt Objekt', W('posten', { vorlage: 'sammlung' }), 'Objekt');
+      eq('W: unbekannter Schlüssel gibt sich selbst zurück', W('gibtsnicht', {}), 'gibtsnicht');
+      state.woerter = { sammlung: { posten: 'Karte' } };
+      eq('W: eigenes Wort schlägt die Vorlage', W('posten', { vorlage: 'sammlung' }), 'Karte');
+      eq('W: eigenes Wort wirkt nicht in anderen Vorlagen', W('posten', { vorlage: 'bau' }), 'Gewerk');
+      state.woerter = {};
+
+      // Kataloge, Kapitel, Rechnen
+      ok('katalogAktiv: Sammlung bringt eigene Nummern',
+        katalogAktiv({ vorlage: 'sammlung' })[0].code === '10' && katalogAktiv({ vorlage: 'bau' }) === BKP_KATALOG);
+      ok('tabErlaubt: U-Wert gehört nicht in eine Sammlung',
+        tabErlaubt('uwert', { vorlage: 'bau' }) && !tabErlaubt('uwert', { vorlage: 'sammlung' }));
+      ok('tabErlaubt: Kosten gibt es in jeder Vorlage', VORLAGEN.every(v => tabErlaubt('kosten', { vorlage: v.key })));
+      ok('istGeld: Unterschriften zählt Stück', istGeld({ vorlage: 'bau' }) && !istGeld({ vorlage: 'unterschriften' }));
+      ok('mehrIstGut: beim Verkauf ist mehr gut, am Bau nicht',
+        mehrIstGut({ vorlage: 'sammlung' }) && !mehrIstGut({ vorlage: 'bau' }));
+
+      // Stationen
+      eq('stInfo: Bau bleibt beim Zuschlag', stInfo('vergeben', { vorlage: 'bau' }).label, 'Zuschlag erteilt');
+      eq('stInfo: in der Sammlung heisst das verkauft', stInfo('vergeben', { vorlage: 'sammlung' }).label, 'Verkauft');
+      eq('stInfo: Farbe und Reihenfolge bleiben',
+        stInfo('vergeben', { vorlage: 'sammlung' }).color, STATUS_BY_KEY['vergeben'].color);
+
+      // Beträge: chf() folgt der Vorlage
+      setVorlageCtx({ vorlage: 'unterschriften' });
+      eq('chf: Unterschriften ohne Franken', chf(1200), "1'200 Unt.");
+      setVorlageCtx({ vorlage: 'sammlung' });
+      eq('chf: Sammlung rechnet in Franken', chf(1200), "CHF 1'200");
+      setVorlageCtx(null);
+    } catch (e) { ok('VORLAGEN ohne Fehler', false, (e && e.message) || 'Fehler'); }
+    finally { state = _st; setVorlageCtx(_ctx); }
+  }
+
+  /* ---- Liste einlesen: der Rundgang ----
+     Die Vorlagendatei muss von ihrem eigenen Einleser wieder verstanden
+     werden. Geht das nicht, ist die Datei, die wir zum Ausfüllen
+     hergeben, für nichts zu gebrauchen. */
+  { const _st = state;
+    try {
+      state = { projekte: [], vorlage: 'bau', woerter: {} };
+      eq('csvZahl: Schweizer Schreibweise', csvZahl("1'250.50"), 1250.5);
+      eq('csvZahl: deutsche Schreibweise', csvZahl('1.250,50'), 1250.5);
+      eq('csvZahl: mit Währung und Strich', csvZahl('CHF 30.–'), 30);
+      eq('csvZahl: leer = 0', csvZahl(''), 0);
+      eq('csvZeile: Anführungszeichen und Trenner darin',
+        csvZeile('a;"b;c";"d""e"', ';'), ['a', 'b;c', 'd"e']);
+      eq('csvTrenner: Tabulator erkannt', csvTrenner('a\tb\tc'), '\t');
+
+      VORLAGEN.forEach(v => {
+        const p = { vorlage: v.key };
+        const erg = csvZuPosten(csvVorlageText(v.key), p);
+        ok('CSV-Rundgang ' + v.key + ': eigene Vorlagendatei wird verstanden',
+          !erg.fehler && erg.posten.length === (CSV_BEISPIELE[v.key] || []).length,
+          erg.fehler || ('nur ' + erg.posten.length + ' Zeilen'));
+      });
+
+      const s = csvZuPosten(csvVorlageText('sammlung'), { vorlage: 'sammlung' });
+      const erste = s.posten[0] || {};
+      eq('CSV: Nummer übernommen', erste.bkp, '101');
+      eq('CSV: Einstand übernommen', erste.schaetzung, 40);
+      eq('CSV: Marktwert übernommen', erste.marktwert, 320);
+      eq('CSV: Angebotspreis übernommen', erste.betrag, 295);
+      eq('CSV: Marktplatz übernommen', erste.firma, 'Cardmarket');
+      eq('CSV: Status aus der Sprache der Vorlage', erste.status, 'versendet');
+      eq('CSV: verkauftes Stück erkannt', (s.posten[2] || {}).status, 'vergeben');
+
+      // Komma statt Strichpunkt, andere Spaltenreihenfolge, leere Zeile
+      const fremd = 'Bezeichnung,Nr.,Wert,Wo\nRoter Drache,102,50,eBay\n,,,\n';
+      const f = csvZuPosten(fremd, { vorlage: 'sammlung' });
+      eq('CSV: Komma-Datei, freie Spaltenfolge', (f.posten[0] || {}).gewerk, 'Roter Drache');
+      eq('CSV: Leerzeile wird gezählt, nicht angelegt', [f.posten.length, f.uebersprungen], [1, 1]);
+      ok('CSV: ohne erkennbare Spalten eine Meldung statt Unsinn',
+        !!csvZuPosten('Hallo;Welt\n1;2\n', { vorlage: 'bau' }).fehler);
+      ok('CSV: leere Datei stürzt nicht ab', !!csvZuPosten('', { vorlage: 'bau' }).fehler);
+    } catch (e) { ok('Liste einlesen ohne Fehler', false, (e && e.message) || 'Fehler'); }
+    finally { state = _st; }
+  }
 
   return { R, pass, fail };
 }

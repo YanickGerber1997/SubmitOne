@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v398';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v399';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -9363,7 +9363,25 @@ function pokemonErkenne(text) {
   const bruch = t.match(/^(\d+[a-zA-Z]?)\s*\/\s*(\d+)$/);
   if (bruch) return { art: 'bruch', nummer: bruch[1], gesamt: Number(bruch[2]) };
   if (/^[a-z0-9][a-z0-9.]*-\d+[a-zA-Z]?$/i.test(t)) return { art: 'kennung', wert: t.toLowerCase() };
+  /* Ausdrücklich als Pokédex-Nummer gemeint: «dex 94» oder «#94». */
+  const dex = t.match(/^(?:dex\s*|#)(\d{1,4})$/i);
+  if (dex) return { art: 'dex', wert: String(Number(dex[1])) };
+  /* Eine nackte Zahl mit führender Null oder vierstellig ist auf der
+     Karte die Pokédex-Nummer — «0094» steht bei der Art, nicht bei
+     der Kartennummer. Eine Kartennummer trägt ihre Satzgrösse mit. */
+  if (/^0\d{1,3}$/.test(t) || /^\d{4}$/.test(t)) return { art: 'dex', wert: String(Number(t)) };
+  if (/^\d{1,3}$/.test(t)) return { art: 'nurzahl', wert: t };
   return { art: 'name', wert: t };
+}
+
+/* Die Kennung einer Karte kann mit oder ohne führende Nullen
+   geschrieben sein — `me03-050` gibt es, `me03-50` nicht; bei
+   `base1-50` ist es umgekehrt. Also beide versuchen. */
+function pokemonKennungen(satzId, nummer) {
+  const roh = String(nummer);
+  const ohne = roh.replace(/^0+(?=\d)/, '');
+  const drei = ohne.padStart(3, '0');
+  return Array.from(new Set([roh, drei, ohne])).map(x => satzId + '-' + x);
 }
 
 async function pokemonHolen(pfad, sprache) {
@@ -9458,24 +9476,51 @@ async function pokemonSuche(text, sprache) {
   if (!erk.art) return { treffer: [], fehler: 'Bitte eine Nummer (4/102), eine Kennung (base1-4) oder einen Namen eingeben.' };
   try {
     if (erk.art === 'kennung') {
-      const k = await pokemonHolen('cards/' + encodeURIComponent(erk.wert), sprache);
-      if (!k) return { treffer: [], fehler: 'Zu «' + text + '» ist keine Karte verzeichnet.' };
-      return { treffer: [await pokemonTreffer(k, sprache)], fehler: '' };
+      const teile = erk.wert.split('-');
+      const satzId = teile.slice(0, -1).join('-'), nummer = teile[teile.length - 1];
+      for (const kennung of pokemonKennungen(satzId, nummer)) {
+        const k = await pokemonHolen('cards/' + encodeURIComponent(kennung), sprache);
+        if (k) return { treffer: [await pokemonTreffer(k, sprache)], fehler: '' };
+      }
+      return { treffer: [], fehler: 'Zu «' + text + '» ist keine Karte verzeichnet.' };
     }
 
     if (erk.art === 'bruch') {
       /* Die Nummer allein sagt nichts — erst mit der Satzgrösse wird
          daraus eine kurze Liste. Zu «/102» gibt es zwei Sätze. */
-      const saetze = (await pokemonAlleSaetze(sprache))
-        .filter(s => s.cardCount && s.cardCount.official === erk.gesamt);
+      /* Die gedruckte Satzgrösse ist mal die offizielle, mal die
+         gesamte mit den Geheimkarten — also in beiden suchen. */
+      const saetze = (await pokemonAlleSaetze(sprache)).filter(s => s.cardCount
+        && (s.cardCount.official === erk.gesamt || s.cardCount.total === erk.gesamt));
       if (!saetze.length) return { treffer: [], fehler: 'Kein Satz mit ' + erk.gesamt + ' Karten verzeichnet — Zahl vertippt?' };
       const treffer = [];
       for (const s of saetze.slice(0, 12)) {
-        const k = await pokemonHolen('cards/' + encodeURIComponent(s.id + '-' + erk.nummer), sprache);
-        if (k) treffer.push(await pokemonTreffer(k, sprache));
+        for (const kennung of pokemonKennungen(s.id, erk.nummer)) {
+          const k = await pokemonHolen('cards/' + encodeURIComponent(kennung), sprache);
+          if (k) { treffer.push(await pokemonTreffer(k, sprache)); break; }
+        }
       }
       if (!treffer.length) return { treffer: [], fehler: 'In keinem Satz mit ' + erk.gesamt + ' Karten gibt es die Nummer ' + erk.nummer + '.' };
       return { treffer, fehler: '' };
+    }
+
+    if (erk.art === 'nurzahl') {
+      return { treffer: [], fehler: 'Eine Zahl allein genügt nicht: Die Kartennummer trägt ihre Satzgrösse mit (z.B. ' + erk.wert + '/088). '
+        + 'Ist ' + erk.wert + ' die Pokédex-Nummer, dann «dex ' + erk.wert + '» eingeben.' };
+    }
+
+    if (erk.art === 'dex') {
+      /* Die Pokédex-Nummer steht auf der Karte bei der Art und wird
+         leicht für die Kartennummer gehalten. Sie sagt, WELCHES
+         Pokémon — nicht welche Karte; darum eine Auswahl. */
+      const roh = await pokemonHolen('cards?dexId=' + encodeURIComponent(erk.wert), sprache);
+      if (!Array.isArray(roh) || !roh.length) return { treffer: [], fehler: 'Zur Pokédex-Nummer ' + erk.wert + ' ist nichts verzeichnet.' };
+      const treffer = [];
+      for (const kurz of roh.slice(0, 12)) {
+        const k = await pokemonHolen('cards/' + encodeURIComponent(kurz.id), sprache);
+        if (k) treffer.push(await pokemonTreffer(k, sprache));
+      }
+      return { treffer, fehler: '', gelesenAls: 'Pokédex-Nummer ' + erk.wert + ' — ' + roh.length + ' Karten dieses Pokémon' };
     }
 
     let liste = await pokemonHolen('cards?name=eq:' + encodeURIComponent(erk.wert), sprache);
@@ -9923,7 +9968,8 @@ function scanZeichnen() {
       ? `<div class="scan-auswahl">${scanCtx.treffer.map((x, i) =>
           `<button type="button" class="btn sm ${i === scanCtx.gewaehlt ? '' : 'ghost'}" data-act="scan-waehlen" data-kind="${i}">${esc(x.name)}</button>`).join('')}</div>`
       : '';
-    ziel.innerHTML = scanKarteHtml(t, p) + auswahl + scanAuflagenHtml(t) + `
+    ziel.innerHTML = (scanCtx.gelesen ? `<div class="scan-hinweis">Gelesen als <b>${esc(scanCtx.gelesen)}</b>.</div>` : '')
+      + scanKarteHtml(t, p) + auswahl + scanAuflagenHtml(t) + `
       ${hatMengen(p) ? `<div class="scan-charge">
         <div class="scan-charge-kopf">Diese Charge — jeder Kauf eine eigene Zeile</div>
         <div class="form-row">
@@ -10008,6 +10054,9 @@ async function scanSuchen() {
   scanCtx.treffer = erg.treffer || [];
   scanCtx.gewaehlt = 0; scanCtx.filter = '';
   scanCtx.meldung = erg.fehler || '';
+  /* Wurde die Eingabe anders verstanden, als man sie tippte, gehört
+     das gesagt — sonst wundert man sich über zwölf fremde Karten. */
+  scanCtx.gelesen = erg.gelesenAls || '';
   scanZeichnen();
 }
 

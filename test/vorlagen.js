@@ -689,6 +689,23 @@ ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(ein
   eq('erkennt die Nummer auf der Karte', sandbox.pokemonErkenne('4/102'), { art: 'bruch', nummer: '4', gesamt: 102 });
   eq('… auch mit Leerzeichen', sandbox.pokemonErkenne(' 25 / 198 ').gesamt, 198);
   eq('sonst ist es ein Name', sandbox.pokemonErkenne('Glurak'), { art: 'name', wert: 'Glurak' });
+  /* "0094" ist keine Kartennummer, sondern die POKEDEX-Nummer - sie
+     steht auf der Karte bei der Art und wird leicht verwechselt.
+     94 ist Gengar. */
+  eq('vierstellig mit Null ist die Pokedex-Nummer', sandbox.pokemonErkenne('0094'), { art: 'dex', wert: '94' });
+  eq('ausdruecklich geht auch', sandbox.pokemonErkenne('dex 94'), { art: 'dex', wert: '94' });
+  eq('… und mit Gatter', sandbox.pokemonErkenne('#94'), { art: 'dex', wert: '94' });
+  eq('eine nackte Zahl bleibt mehrdeutig', sandbox.pokemonErkenne('94').art, 'nurzahl');
+
+  /* Die Kennungen sind in neueren Saetzen mit Nullen aufgefuellt
+     (me03-050), in alten nicht (base1-50). Wer "50/88" tippt, fand
+     vorher nichts, obwohl die Karte da ist. */
+  eq('beide Schreibweisen werden versucht',
+    sandbox.pokemonKennungen('me03', '50'), ['me03-50', 'me03-050']);
+  eq('… auch von der aufgefuellten aus',
+    sandbox.pokemonKennungen('me03', '050'), ['me03-050', 'me03-50']);
+  eq('dreistellige bleiben, wie sie sind',
+    sandbox.pokemonKennungen('sv03', '125'), ['sv03-125']);
   eq('leer bleibt leer', sandbox.pokemonErkenne('  ').art, '');
 
   /* Cardmarkets Preis-Trend ist die Zahl, mit der dort gehandelt wird

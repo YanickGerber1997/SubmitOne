@@ -1003,7 +1003,19 @@ ok('… eine davon wählen macht sie fest',
 
 // Die richtige Auflage — daran ist die erste Fassung aufgelaufen
 eq('Set-Code-Suche: die Auflage steht fest', a3.treffer[0].setSicher, true);
-eq('… und die Anzahl Auflagen ist bekannt', a3.treffer[0].auflagen, 2);
+/* Zwei Zahlen, zwei Aussagen. Passt genau eine Auflage zur gesuchten
+   Nummer, steht NICHTS zur Wahl — gedruckt wurde die Karte trotzdem
+   zweimal, und daran hängt der Vorbehalt zum Cardmarket-Preis. */
+eq('… und es steht nichts mehr zur Wahl', a3.treffer[0].auflagen, 1);
+eq('… die Karte wurde aber zweimal gedruckt', a3.treffer[0].auflagenGesamt, 2);
+/* Der Fund vom 21.08.2026: LCJW-DE182 wurde als RA02-EN075
+   eingetragen. Passte genau eine Auflage zur Nummer, bot die Liste
+   trotzdem alle Auflagen der Karte an — quer durch fremde Sätze. Wer
+   daraus wählte, verschob die Karte in einen Satz, den er nie
+   gesucht hatte. */
+ok('zur Wahl steht nur, was zur gesuchten Nummer gehört',
+  a3.treffer[0].auflagenListe.every(x => x.code === 'SDK-001'),
+  JSON.stringify(a3.treffer[0].auflagenListe.map(x => x.code)));
 ok('bei EINER Auflage steht sie ebenfalls fest', a1.treffer[0].setSicher === true && a1.treffer[0].auflagen === 1);
 const a4 = sandbox.ygoAuswerten(ANTWORT_SDK_VOLL, { art: 'name', wert: 'Blue-Eyes' });
 eq('Namenssuche: die Auflage steht NICHT fest', a4.treffer[0].setSicher, false);

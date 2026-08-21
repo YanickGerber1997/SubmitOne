@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v405';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v406';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -9137,10 +9137,16 @@ function ygoAuswerten(antwort, erk) {
     const satzSicher = treffende[0] || (setSicher ? (sets[0] || {}) : {});
     const s = setSicher ? (treffende[0] || sets[0] || {}) : {};
 
-    /* Zur Wahl steht, was zur Nummer passt — sonst alle Auflagen der
-       Karte. Wer CORI-EN028 sucht, will die drei Seltenheiten DIESER
-       Nummer sehen, nicht 78 Auflagen aus zwanzig Sammlungen. */
-    const auswahl = treffende.length > 1 ? treffende : sets;
+    /* Zur Wahl steht, was zur gesuchten NUMMER passt — sonst alle
+       Auflagen der Karte. Wer CORI-EN028 sucht, will die drei
+       Seltenheiten DIESER Nummer sehen, nicht 78 Auflagen aus zwanzig
+       Sammlungen.
+
+       Das galt zuerst nur, wenn MEHRERE Auflagen passten. Passte genau
+       eine, fiel die Liste auf alle zurück — und wer daraus wählte,
+       landete in einem fremden Satz: LCJW-DE182 wurde so zu
+       RA02-EN075. Passt eine, gibt es nichts zu wählen. */
+    const auswahl = (gesucht && treffende.length) ? treffende : sets;
     const pr = (Array.isArray(k.card_prices) ? k.card_prices[0] : k.card_prices) || {};
     const bilder = Array.isArray(k.card_images) ? k.card_images[0] : null;
     return {
@@ -9155,6 +9161,11 @@ function ygoAuswerten(antwort, erk) {
       quelleUrl: k.ygoprodeck_url || (k.id ? YGO_BASIS + 'cardinfo.php?id=' + k.id : ''),
       quelleName: 'YGOPRODeck', dienst: 'ygo', spiel: 'Yu-Gi-Oh',
       setSicher, auflagen: auswahl.length, nachladen: false,
+      /* Wie oft die KARTE gedruckt wurde — eine andere Frage als die,
+         wie viele Auflagen zur Wahl stehen. Der Cardmarket-Preis ist
+         der günstigste über alle Drucke, auch wenn die Nummer
+         eindeutig ist. */
+      auflagenGesamt: sets.length,
       auflagenListe: auswahl.map(x => ({
         code: x.set_code || '', name: x.set_name || '',
         seltenheit: x.set_rarity || '', preisUsd: ygoZahl(x.set_price),
@@ -9227,7 +9238,8 @@ function ygoHerkunft(t, k) {
      Preis, also greift auch bei bestimmter Auflage der günstigste.
      Hing der Vorbehalt an `setSicher`, verschwand er genau dann,
      wenn man die Frage für beantwortet hielt. */
-  if (!perUsd && t.preisEur && t.auflagen > 1) teile.push('günstigste über alle ' + t.auflagen + ' Auflagen');
+  const gedruckt = t.auflagenGesamt || t.auflagen || 0;
+  if (!perUsd && t.preisEur && gedruckt > 1) teile.push('günstigste über alle ' + gedruckt + ' Auflagen');
   if (!t.setSicher && t.auflagen > 1) teile.push('Auflage nicht bestimmt');
   teile.push('Stand ' + (k.datum || todayIso()));
   return teile.join(', ');

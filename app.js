@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v383';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v384';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -2743,7 +2743,7 @@ function viewKosten(id) {
   if (!vs.length) { render(head + emptyState('◫', 'Noch keine ' + W('posten_pl', p) + '. Mit ' + W('neu', p) + ' erfassen.') + `<div style="text-align:center;margin-top:-10px"><button class="btn" data-act="new-vergabe" data-pid="${p.id}">${esc(W('neu', p))}</button></div>`); return; }
 
   const groups = {};
-  vs.forEach(v => { const g = String(v.bkp || '0').trim()[0] || '0'; (groups[g] = groups[g] || []).push(v); });
+  vs.forEach(v => { const g = gruppeVon(v, p); (groups[g] = groups[g] || []).push(v); });
   const gKeys = Object.keys(groups).sort();
 
   const blank = () => ({ kv: 0, rev: 0, wv: 0, nt: 0, prognose: 0, endsumme: 0, bezahlt: 0, fakturiert: 0, offen: 0, offenRg: 0, dWvEnd: 0 });
@@ -2784,7 +2784,11 @@ function viewKosten(id) {
       const btSel = hatBt ? `<div style="margin-top:3px"><select class="bt-gw" data-pid="${p.id}" data-vid="${v.id}" onclick="event.stopPropagation()" title="Teilprojekt" style="font-size:var(--t-2xs, 11px);padding:1px 5px;border:1px solid var(--border);border-radius: 0;max-width:200px">${bauteilOptionsHtml(p, v.bauteil)}</select></div>` : '';
       const open = kostOpen.has(v.id);
       const ein = (v.eingeladene || []).length, off = offertenOf(v).length;
-      const untCell = v.firma ? `<span title="vergeben an ${esc(v.firma)}">${esc(v.firma)}</span>` : (ein ? `<span class="muted">${ein} eingeladen${off ? ` · ${off} Offerte${off === 1 ? '' : 'n'}` : ''}</span>` : `<span class="muted">${esc(W('partnerLeer', p))}</span>`);
+      const untCell = v.firma
+        ? `<span title="${esc(stInfo('vergeben', p).label)}: ${esc(v.firma)}">${esc(v.firma)}</span>`
+        : ((ein && zeigtEingeladene(p))
+            ? `<span class="muted">${ein} eingeladen${off ? ` · ${off} Offerte${off === 1 ? '' : 'n'}` : ''}</span>`
+            : `<span class="muted">${esc(W('partnerLeer', p))}</span>`);
       rows += `<tr class="clickable kost-row${open ? ' open' : ''}" data-act="kost-toggle" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
         <td class="bkp-code"><span class="gw-chev">${open ? '▾' : '▸'}</span> ${esc(v.bkp)}</td>
         <td><strong>${esc(v.gewerk)}</strong>${v.pruefen ? ` <span class="pruef-badge" title="Etwas ist noch nicht belegt — Zeile aufklappen">⚑ prüfen</span>` : ''}${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
@@ -2811,7 +2815,7 @@ function viewKosten(id) {
               <div class="kost-info-h">Stand &amp; ${esc(W('partner', p))}</div>
               <div style="font-size:var(--t-s, 13px);margin-bottom:6px">${statusPill(v)}</div>
               <div class="muted" style="font-size:var(--t-s, 12.5px)">${esc(gewerkSteps(v).hint)}</div>
-              <div style="font-size:var(--t-s, 12.5px);margin-top:6px">${ein ? `${ein} Unternehmer eingeladen${off ? `, ${off} Offerte${off === 1 ? '' : 'n'} erhalten` : ''}` : 'noch nicht ausgeschrieben'}${v.firma ? ` · vergeben an <b>${esc(v.firma)}</b>` : ''}</div>
+              <div style="font-size:var(--t-s, 12.5px);margin-top:6px">${(ein && zeigtEingeladene(p)) ? `${ein} ${esc(W('partner_pl', p))} eingeladen${off ? `, ${off} Offerte${off === 1 ? '' : 'n'} erhalten` : ''}` : esc(W('partnerLeer', p))}${v.firma ? ` · <b>${esc(v.firma)}</b>` : ''}</div>
               <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><a class="btn sm" href="#/projekt/${p.id}/vergabe/${v.id}">Detail / Ausschreibung ↗</a><button class="btn sm secondary" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}">✎ Bearbeiten</button><button class="btn sm secondary" data-act="ks-edit" data-pid="${p.id}" data-vid="${v.id}">✎ ${esc(W('schaetzung', p))}</button>${v.pruefen ? `<button class="btn sm" data-act="pruef-ok" data-pid="${p.id}" data-vid="${v.id}" title="Merkfahne entfernen">✓ geprüft</button>` : ''}</div>
             </div>
           </div>
@@ -2844,9 +2848,9 @@ function viewKosten(id) {
       }
     });
     const dSub = sub.dWvEnd;
-    body += `<tr class="kgroup"><td>${esc(g)}</td><td colspan="10">${esc(gruppenAktiv(p)[g] || 'Übrige')}</td></tr>
+    body += `<tr class="kgroup"><td>${esc(g === '?' ? '' : g)}</td><td colspan="10">${esc(gruppeTitel(g, groups[g], p))}</td></tr>
       ${rows}
-      ${bkpGhostRows(p, 11, g)}
+      ${g.length === 1 ? bkpGhostRows(p, 11, g) : ''}
       <tr class="ksub">
         <td></td><td colspan="2">Zwischentotal</td>
         <td class="num">${mB(sub.kv)}</td><td class="num">${mB(sub.rev)}</td><td class="num">${mB(sub.wv)}</td>
@@ -7015,6 +7019,8 @@ const VORLAGEN = [
     key: 'sammlung', name: 'Sammlung & Verkauf', zeichen: '🃏',
     unterzeile: 'Karten, Münzen, Figuren — Bestand, Wert, Angebot und Erlös je Stück.',
     geld: true, einheit: 'CHF', mehrIstGut: true,
+    // Keine Ausschreibung: Man verkauft eine Karte, man vergibt sie nicht.
+    ausschreibung: false,
     katalog: SAMMLUNG_KATALOG,
     /* Diese Vorlage kann eine Nummer nachschlagen: Passcode oder
        Set-Code einer Sammelkarte → Name, Art, Set, Seltenheit, Bild,
@@ -7025,6 +7031,17 @@ const VORLAGEN = [
       '1': 'Sammelkarten', '2': 'Versiegelte Ware', '3': 'Münzen und Edelmetall',
       '4': 'Briefmarken', '5': 'Figuren und Modelle', '6': 'Bücher, Comics, Medien',
       '7': 'Zubehör', '9': 'Übriges',
+      '?': 'Auflage noch offen',
+    },
+    /* Ein Set-Code (CORI-EN030) gruppiert nach seinem Satz, eine
+       selbst vergebene Nummer (101) nach ihrer ersten Ziffer, ein
+       blosser Passcode gar nicht — der wartet auf seine Auflage. */
+    gruppeVon: v => {
+      const c = String((v && v.bkp) || '').trim().toUpperCase();
+      if (!c) return '?';
+      if (c.indexOf('-') > 0) return c.split('-')[0];
+      if (/^\d{6,8}$/.test(c)) return '?';
+      return c[0];
     },
     woerter: {
       posten: 'Objekt', posten_pl: 'Objekte', postenSpalte: 'Objekt',
@@ -7208,7 +7225,34 @@ function R(key, standard, p) {
   return (v && v.reiter && v.reiter[key]) || standard;
 }
 function katalogAktiv(p) { const v = vorlage(p); return (v && v.katalog) || BKP_KATALOG; }
+
+/* Wonach wird gruppiert?
+
+   Beim Bau die erste Ziffer der BKP-Nummer (2 = Gebäude). Bei einer
+   Sammlung der Satz, weil ein Ordner nach Sätzen geordnet ist und
+   nicht nach Anfangsziffern. Die Vorlage darf es also selbst sagen;
+   ohne Angabe bleibt es bei der ersten Ziffer wie bisher. */
+function gruppeVon(v, p) {
+  const vl = vorlage(p);
+  if (vl && typeof vl.gruppeVon === 'function') return vl.gruppeVon(v);
+  return String((v && v.bkp) || '0').trim()[0] || '0';
+}
+
+/* Die Überschrift einer Gruppe. Erst was die Vorlage fest hinterlegt
+   hat, sonst der Name, den die Posten selbst mitbringen (der Satz),
+   sonst der Schlüssel. */
+function gruppeTitel(schluessel, posten, p) {
+  const fest = gruppenAktiv(p)[schluessel];
+  if (fest) return fest;
+  const mit = (posten || []).find(v => v && v.satz);
+  return mit ? mit.satz : (schluessel === '?' ? 'Ohne Nummer' : 'Übrige');
+}
 function gruppenAktiv(p) { const v = vorlage(p); return (v && v.gruppen) || BKP_GRUPPEN; }
+/* Kennt diese Vorlage eine Ausschreibung — also mehrere, die anbieten,
+   bevor einer den Zuschlag bekommt? Beim Bau ja, beim Verkauf einer
+   Karte nein: Dort ist der einzige «Offerent» der Marktpreis. */
+function zeigtEingeladene(p) { const v = vorlage(p); return !v || v.ausschreibung !== false; }
+
 /** Rechnet die Vorlage in Geld? Sonst zählt sie Stück (Unterschriften). */
 function istGeld(p) { const v = vorlage(p); return !v || v.geld !== false; }
 /** Ist «mehr» in dieser Vorlage gut? Beim Bau ist eine Überschreitung rot, beim Verkauf grün. */
@@ -7407,6 +7451,11 @@ function csvPostenAnlegen(pid, posten) {
       firma: x.firma || '', betrag: x.betrag || 0, schaetzung: x.schaetzung || 0,
       beschrieb: x.beschrieb || '', frist: x.frist || '', bauStart: '', bauEnde: '',
       bild: x.bild || '',
+      // Der Satz, zu dem die Nummer gehört — er trägt die Gruppenüberschrift.
+      satz: x.satz || '',
+      // Die Art (Monster, Zauber, Falle, Extra Deck) als eigene Angabe,
+      // seit die Nummernspalte den Set-Code führt.
+      kategorie: x.kategorie || '',
       // Merkfahne: etwas ist noch nicht belegt (z.B. welche Auflage).
       pruefen: !!x.pruefen,
       eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [],
@@ -7448,9 +7497,13 @@ const CSV_BEISPIELE = {
     ['211', 'Baumeisterarbeiten', '250000', '238000', '232000', 'Hugentobler Bau AG', '120000', 'Vergeben', 'Aushub inbegriffen'],
     ['221', 'Fenster, Aussentüren', '95000', '91500', '', '', '', 'Offerten', ''],
   ],
+  /* Erste zwei Zeilen: der Set-Code von der Karte — so wird die Auflage
+     bestimmt und der Wert genau. Dritte Zeile: eine eigene Nummer aus
+     dem Katalog, für alles ohne Set-Code (versiegelte Ware, Zubehör).
+     Beides geht nebeneinander. */
   sammlung: [
-    ['101', 'Blauäugiger weisser Drache, 1. Auflage', '40', '320', '295', 'Cardmarket', '', 'Angeboten', 'Near Mint, deutsch'],
-    ['104', 'Stardust Dragon, Ghost Rare', '15', '180', '', '', '', 'Im Bestand', 'leichte Kantenabnutzung'],
+    ['LOB-001', 'Blue-Eyes White Dragon', '40', '320', '295', 'Cardmarket', '', 'Angeboten', 'Near Mint, 1. Auflage'],
+    ['CORI-EN079', 'Annihilate Retroglight', '2', '0.75', '', '', '', 'Im Bestand', 'Ultra Rare'],
     ['202', 'Display Legend of Blue Eyes', '120', '900', '850', 'Ricardo', '850', 'Verkauft', 'versiegelt'],
   ],
   unterschriften: [
@@ -7772,7 +7825,13 @@ function ygoZuPosten(t, k) {
     'Marktwert: ' + ygoHerkunft(t, k),
   ].filter(Boolean);
   return {
-    bkp: t.kategorie || '901',
+    /* Die Nummer ist die, die auf der Karte steht. Nur wenn die
+       Auflage unbekannt ist, tritt der Passcode an ihre Stelle —
+       dann fehlt der Satz, und die Karte landet unter «Auflage noch
+       offen», wo sie hingehört, bis man sie bestimmt. */
+    bkp: t.setCode || t.passcode || '',
+    satz: t.setName || '',
+    kategorie: t.kategorie || '901',
     gewerk: t.name || ('Karte ' + t.passcode),
     schaetzung: 0, marktwert: ygoMarktwert(t, k), betrag: 0, firma: '', erhalten: 0,
     status: 'ausschreibung', beschrieb: zeilen.join('\n'), frist: '', bild: t.bild || '',
@@ -7913,7 +7972,7 @@ function scanKarteHtml(t, p) {
         <span class="muted">${esc(ygoHerkunft(t))}</span></div>
       ${t.spracheNach ? `<div class="scan-hinweis">${esc(t.spracheVon)} kennt die Datenbank nicht — nachgeschlagen als <b>${esc(t.spracheNach)}</b>. Sammlung, Nummer und Seltenheit stimmen überein; der <b>Preis ist der der englischen Auflage</b> und kann für deine abweichen.</div>` : ''}
       ${(!t.setSicher && t.auflagen > 1) ? `<div class="scan-warnung"><b>Welche Auflage ist es?</b> Diese Nummer gibt es in ${t.auflagen} Auflagen mit verschiedenen Seltenheiten. Solange keine gewählt ist, steht hier keine Seltenheit, und der Wert ist der der günstigsten. Ohne Wahl wird die Karte mit der Merkfahne ⚑ übernommen.</div>` : ''}
-      <div class="muted">${esc(W('nummer', p))} ${esc(t.kategorie)}${kat ? ' · ' + esc(kat) : ''}</div>
+      <div class="muted">${esc(W('nummer', p))} <b>${esc(t.setCode || t.passcode || '—')}</b>${kat ? ' · ' + esc(kat) : ''}</div>
     </div>
   </div>`;
 }
@@ -19900,9 +19959,10 @@ function selfTest() {
 
       const s = csvZuPosten(csvVorlageText('sammlung'), { vorlage: 'sammlung' });
       const erste = s.posten[0] || {};
-      eq('CSV: Nummer übernommen', erste.bkp, '101');
+      eq('CSV: Nummer übernommen — der Set-Code von der Karte', erste.bkp, 'LOB-001');
       eq('CSV: Einstand übernommen', erste.schaetzung, 40);
       eq('CSV: Marktwert übernommen', erste.marktwert, 320);
+      eq('CSV: eigene Nummern gehen daneben weiter', (s.posten[2] || {}).bkp, '202');
       eq('CSV: Angebotspreis übernommen', erste.betrag, 295);
       eq('CSV: Marktplatz übernommen', erste.firma, 'Cardmarket');
       eq('CSV: Status aus der Sprache der Vorlage', erste.status, 'versendet');

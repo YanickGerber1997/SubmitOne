@@ -35,7 +35,7 @@ zweite Klick legt an.
 
 | Spalte | was hineingehört | wo es landet |
 |---|---|---|
-| **Nr.** | Kategorie aus dem Katalog, z.B. `101` für Monsterkarten | die Nummer des Postens |
+| **Nr.** | der **Set-Code von der Karte**, z.B. `CORI-EN030` — oder eine eigene Nummer aus dem Katalog (`202` für ein Display) | die Nummer des Postens |
 | **Objekt** | die Bezeichnung, z.B. „Blauäugiger weisser Drache, 1. Auflage" | der Name |
 | **Einstand** | was du dafür bezahlt hast | Spalte *Einstand* |
 | **Marktwert** | was es heute wert ist | Spalte *Marktwert* (zählt als Angebot vom Markt) |
@@ -48,6 +48,12 @@ zweite Klick legt an.
 Leere Zellen sind in Ordnung. Fehlt der Status, wird er geraten: Steht ein
 Angebotspreis und ein Marktplatz da, gilt das Stück als *angeboten*, sonst als
 *im Bestand*.
+
+**Wie gruppiert wird:** nach dem Satz — `CORI-EN030` und `CORI-EN079` stehen
+unter «CORI · Chaos Origins», wie ein Ordner im Regal. Eigene Nummern (`202`)
+gruppieren nach ihrer ersten Ziffer («Versiegelte Ware»), und was nur einen
+Passcode trägt, sammelt sich unter «Auflage noch offen». Beides geht
+nebeneinander in derselben Liste.
 
 **Trennzeichen** darf Strichpunkt, Komma oder Tabulator sein. **Spaltenfolge**
 ist egal — erkannt wird über die Kopfzeile. **Zahlen** dürfen `1'250.50`,

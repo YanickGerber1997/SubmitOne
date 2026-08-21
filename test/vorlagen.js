@@ -154,10 +154,14 @@ ok('Kostenübersicht: Marktwert und Erlös stehen im Kopf', /Marktwert/.test(kos
 ok('Kostenübersicht: kein Wort vom Bau mehr',
   !/Arbeitsgattung|Werkvertrag|Baukosten|Unternehmer/.test(kosten),
   (kosten.match(/Arbeitsgattung|Werkvertrag|Baukosten|Unternehmer/g) || []).join(', '));
-ok('Kostenübersicht: Gruppen aus dem Sammlungs-Katalog',
-  /Sammelkarten/.test(kosten) && !/Rohbau/.test(kosten));
+ok('Kostenübersicht: kein Bau-Wort in den Gruppen', !/Rohbau|Ausbau 1/.test(kosten));
 ok('Kostenübersicht: Knopf zum Einlesen ist da', /liste-einlesen/.test(kosten));
 ok('Kostenübersicht: die Marktplätze stehen in der Zeile', /Cardmarket/.test(kosten) && /Ricardo/.test(kosten));
+/* Der Marktpreis ist kein Bieter: Eine Karte, die nirgends liegt,
+   ist «nicht angeboten» und nicht «1 eingeladen · 1 Offerte». */
+ok('Kostenübersicht: keine Ausschreibungs-Sprache in der Sammlung',
+  !/eingeladen|Offerte/.test(kosten), (kosten.match(/.{0,25}(eingeladen|Offerte).{0,25}/) || [''])[0]);
+ok('Kostenübersicht: was nirgends liegt, heisst «nicht angeboten»', /nicht angeboten/.test(kosten));
 ok('Kostenübersicht: kein U-Wert-Reiter in einer Sammlung', !/\/uwert/.test(kosten));
 
 const detail = zeichne('Projektübersicht', () => sandbox.viewProjektDetail(p.id));
@@ -300,6 +304,22 @@ eq('unsinnige Wahl ändert nichts', sandbox.ygoAuflageWaehlen(a4.treffer[0], 99)
 }
 
 
+/* Gruppiert wird, wie es die Vorlage sagt: beim Bau nach der ersten
+   Ziffer, bei einer Sammlung nach dem Satz — wie ein Ordner im Regal. */
+const S = { vorlage: 'sammlung' }, B = { vorlage: 'bau' };
+eq('Bau gruppiert nach der ersten Ziffer', sandbox.gruppeVon({ bkp: '281.6' }, B), '2');
+eq('Sammlung gruppiert einen Set-Code nach seinem Satz', sandbox.gruppeVon({ bkp: 'CORI-EN030' }, S), 'CORI');
+eq('… klein geschrieben genauso', sandbox.gruppeVon({ bkp: 'lob-001' }, S), 'LOB');
+eq('… eine eigene Nummer nach ihrer ersten Ziffer', sandbox.gruppeVon({ bkp: '101' }, S), '1');
+eq('… ein blosser Passcode wartet auf seine Auflage', sandbox.gruppeVon({ bkp: '89631139' }, S), '?');
+eq('… und ohne Nummer ebenso', sandbox.gruppeVon({ bkp: '' }, S), '?');
+eq('Überschrift aus der Vorlage', sandbox.gruppeTitel('1', [], S), 'Sammelkarten');
+eq('Überschrift aus den Posten, wenn die Vorlage keine kennt',
+  sandbox.gruppeTitel('CORI', [{ bkp: 'CORI-EN030' }, { bkp: 'CORI-EN040', satz: 'Chaos Origins' }], S),
+  'Chaos Origins');
+eq('Überschrift für das, was noch keine Auflage hat', sandbox.gruppeTitel('?', [], S), 'Auflage noch offen');
+eq('und sonst schlicht «Übrige»', sandbox.gruppeTitel('ZZZ', [], S), 'Übrige');
+
 // Kurs und Marktwert
 ok('Kurs wird übernommen', sandbox.__kursSetzen({ rates: { CHF: 0.9333, USD: 1.16 }, date: '2026-08-20' }));
 const k = sandbox.__kurse();
@@ -330,7 +350,13 @@ ok('ein genäherter Kurs wird als solcher benannt',
 
 // Treffer → Posten
 const posten = sandbox.ygoZuPosten(a1.treffer[0], k);
-eq('Posten trägt die Katalognummer', posten.bkp, '104');
+/* Die Nummer ist die, die auf der Karte steht — nicht die Kategorie.
+   Danach sucht man, damit vergleicht man, die steht im Angebot. */
+eq('Posten trägt die Nummer von der Karte', posten.bkp, 'CORI-EN030');
+eq('… und den Satz für die Gruppenüberschrift', posten.satz, 'Chaos Origins');
+eq('… die Kartenart bleibt als eigene Angabe erhalten', posten.kategorie, '104');
+eq('ohne bestimmte Auflage tritt der Passcode an die Stelle der Nummer',
+  sandbox.ygoZuPosten(a4.treffer[0], k).bkp, '89631146');
 eq('Posten heisst wie die Karte', posten.gewerk, 'Invoked Sorath');
 eq('Marktwert steht im Posten', posten.marktwert, 0.25);
 ok('der Vermerk hält Set, Passcode und Herkunft fest',
@@ -476,7 +502,9 @@ async function netzPruefungen() {
   eq('nachgeschlagene Karte ist im Projekt', p.vergaben.length, vorher + 1);
   eq('sie trägt ihr Bild', !!neu.bild, true);
   eq('der Marktwert steht als Angebot vom Markt', sandbox.bestBetrag(neu), 0.25);
-  eq('sie liegt in der richtigen Kategorie', neu.bkp, '104');
+  eq('sie trägt die Nummer von der Karte', neu.bkp, 'CORI-EN030');
+  eq('die Kartenart ist mitgekommen', neu.kategorie, '104');
+  eq('der Satz ist mitgekommen', neu.satz, 'Chaos Origins');
 }
 
 netzPruefungen().then(bilanz, e => {

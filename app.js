@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v380';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v381';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -2726,6 +2726,7 @@ function viewKosten(id) {
   const toolbar = `
     <button class="btn sm secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">🖨 ${esc(W('schaetzung', p))}</button>
     <button class="btn sm secondary" data-act="pdf-baukosten" data-pid="${p.id}">🖨 ${esc(R('kosten', 'Baukosten', p))}</button>
+    ${nachschlagDienst(p) ? `<button class="btn sm" data-act="karte-scan" data-pid="${p.id}" title="Nummer eintippen, alles Übrige holt das Programm">🔎 ${esc(W('posten', p))} nachschlagen</button>` : ''}
     <button class="btn sm secondary" data-act="liste-einlesen" data-pid="${p.id}" title="Eine fertige Liste einlesen (CSV aus Excel, einem Export oder ChatGPT)">📋 Liste einlesen</button>
     ${mwstAnsichtBtn(p)}
     ${katToggleBtn()}
@@ -2800,6 +2801,7 @@ function viewKosten(id) {
           <div class="kost-info-grid">
             <div class="kost-info-main">
               <div class="kost-info-h">Beschrieb / ${esc(W('kv', p))}</div>
+              ${v.bild ? `<img class="posten-bild" src="${esc(v.bild)}" alt="" loading="lazy">` : ''}
               <div style="font-size:var(--t-s, 13px);white-space:pre-wrap">${v.beschrieb ? esc(v.beschrieb) : '<span class="muted">– kein Beschrieb. Mit „✎ Kostenschätzung" erfassen (Beschrieb + Positionen).</span>'}</div>
               ${(v.ksPositionen && v.ksPositionen.length) ? `<table class="grid" style="margin-top:8px"><tbody>${v.ksPositionen.map(pos => `<tr><td>${esc(pos.text || 'Position')}</td><td class="num">${mB(pos.betrag)}</td></tr>`).join('')}<tr><td><b>Total KV</b></td><td class="num"><b>${mB(v.schaetzung)}</b></td></tr></tbody></table>` : ''}
             </div>
@@ -7012,6 +7014,10 @@ const VORLAGEN = [
     unterzeile: 'Karten, Münzen, Figuren — Bestand, Wert, Angebot und Erlös je Stück.',
     geld: true, einheit: 'CHF', mehrIstGut: true,
     katalog: SAMMLUNG_KATALOG,
+    /* Diese Vorlage kann eine Nummer nachschlagen: Passcode oder
+       Set-Code einer Sammelkarte → Name, Art, Set, Seltenheit, Bild,
+       Marktpreis. Vorlagen ohne Eintrag zeigen den Knopf nicht. */
+    nachschlag: 'ygo',
     tabs: ['overview', 'gewerke', 'kosten', 'rechnungen', 'nachtraege', 'listen', 'termine', 'kalender', 'pendenzen'],
     gruppen: {
       '1': 'Sammelkarten', '2': 'Versiegelte Ware', '3': 'Münzen und Edelmetall',
@@ -7398,6 +7404,7 @@ function csvPostenAnlegen(pid, posten) {
       id: uid('v'), bkp: x.bkp || '', gewerk: x.gewerk, status: x.status || 'ausschreibung',
       firma: x.firma || '', betrag: x.betrag || 0, schaetzung: x.schaetzung || 0,
       beschrieb: x.beschrieb || '', frist: x.frist || '', bauStart: '', bauEnde: '',
+      bild: x.bild || '',
       eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [],
     };
     /* Der Marktwert kommt als ANGEBOT herein, nicht als eigenes Feld.
@@ -7530,6 +7537,378 @@ function csvPruefen(pid) {
     </table>
     ${erg.posten.length > zeig.length ? `<p class="muted" style="font-size:var(--t-xs, 11.5px);margin:6px 0 0">… und ${erg.posten.length - zeig.length} weitere.</p>` : ''}`;
   return erg;
+}
+
+
+/* ===== 🔎 NACHSCHLAGEN — was eine Nummer über ein Objekt verrät =========
+
+   Eine Sammelkarte trägt unten links eine achtstellige Nummer, den
+   Passcode. Sie steht auf jeder Karte, in jeder Sprache, seit 2002 —
+   und über sie ist alles andere zu holen: Name, Kartenart, Set,
+   Seltenheit, Bild und der Marktpreis.
+
+   Damit wird aus «400 Karten erfassen» ein Vorgang, der pro Karte aus
+   acht Ziffern und einem Enter besteht.
+
+   Warum das an der Vorlage hängt
+   ------------------------------
+   Nicht das Programm kennt Yu-Gi-Oh, sondern die Vorlage «Sammlung»
+   bringt einen Nachschlagedienst mit. Der Knopf erscheint nur, wo es
+   einen gibt; ein Bauvorhaben sieht ihn nie. Kommt später eine Vorlage
+   für Bücher, bringt sie ihren ISBN-Dienst mit und alles andere hier
+   bleibt, wie es ist.
+
+   Warum ohne eigenen Server
+   -------------------------
+   Geprüft am 21.08.2026: Die Datenbank antwortet mit
+   `access-control-allow-origin: *`. Der Browser darf also direkt
+   fragen — kein Backend, kein Schlüssel, nichts, was ausfallen kann
+   ausser dem Netz. Und fällt das Netz aus, bleibt die Nummer stehen
+   und die Karte lässt sich von Hand benennen.
+
+   Was NICHT geht
+   --------------
+   Deutsche Set-Codes (`CORI-DE030`) kennt die Datenbank nicht, nur die
+   englischen. Der Passcode ist davon unberührt: Er ist auf der
+   deutschen Karte derselbe. Der Name kommt dann englisch zurück und
+   lässt sich überschreiben.
+   ===================================================================== */
+
+const YGO_BASIS = 'https://db.ygoprodeck.com/api/v7/';
+
+/* Was hat der Mensch da eingetippt? Drei Fälle, in dieser Reihenfolge
+   geprüft, weil ein Passcode eindeutiger ist als ein Set-Code und der
+   eindeutiger als ein Name. */
+function ygoErkenne(text) {
+  const t = String(text == null ? '' : text).trim().toUpperCase().replace(/\s+/g, '');
+  if (!t) return { art: '', wert: '' };
+  if (/^\d{6,8}$/.test(t)) return { art: 'passcode', wert: t };
+  if (/^[A-Z0-9]{2,6}-[A-Z]{0,3}\d{1,4}$/.test(t)) return { art: 'setcode', wert: t };
+  return { art: 'name', wert: String(text).trim() };
+}
+
+function ygoUrl(erk) {
+  if (!erk || !erk.art) return '';
+  if (erk.art === 'passcode') return YGO_BASIS + 'cardinfo.php?id=' + encodeURIComponent(erk.wert);
+  if (erk.art === 'setcode') return YGO_BASIS + 'cardsetsinfo.php?setcode=' + encodeURIComponent(erk.wert);
+  return YGO_BASIS + 'cardinfo.php?fname=' + encodeURIComponent(erk.wert);
+}
+
+/* Kartenart → Nummer aus dem Sammlungs-Katalog. Die Pendel-Prüfung
+   steht zuerst: Eine Pendel-Fusionskarte ist beides, und als Pendel
+   ist sie im Ordner einsortiert. */
+const YGO_KATEGORIE = [
+  [/pendulum/, '105'],
+  [/fusion|synchro|xyz|link/, '104'],
+  [/spell/, '102'],
+  [/trap/, '103'],
+  [/normal|effect|ritual/, '101'],
+];
+function ygoKategorie(frameType) {
+  const f = String(frameType == null ? '' : frameType).toLowerCase();
+  const hit = YGO_KATEGORIE.find(([re]) => re.test(f));
+  return hit ? hit[1] : '901';   // 901 = Neuzugang, noch nicht eingeordnet
+}
+
+/* Die Datenbank antwortet englisch. Was sie sagt, wenn nichts passt,
+   ist der häufigste Fall überhaupt — der gehört übersetzt. */
+function ygoMeldung(text) {
+  const t = String(text == null ? '' : text);
+  if (/no card matching/i.test(t)) return 'Zu dieser Angabe ist keine Karte verzeichnet. Tippfehler in der Nummer?';
+  return t;
+}
+
+function ygoZahl(x) { const n = Number(x); return isFinite(n) && n > 0 ? n : 0; }
+
+/* Die Antwort der Datenbank in das übersetzen, was das Programm kennt.
+   Zwei Antwortformen: `cardinfo` liefert {data:[…]} mit allem,
+   `cardsetsinfo` nur Name und Kennung — dann fehlt die Kartenart und
+   es braucht einen zweiten Griff (siehe `nachladen`). */
+function ygoAuswerten(antwort, erk) {
+  if (!antwort || typeof antwort !== 'object') return { treffer: [], fehler: 'Keine Antwort erhalten.' };
+  if (antwort.error) return { treffer: [], fehler: ygoMeldung(antwort.error) };
+
+  // Form 2: eine einzelne Auskunft zu einem Set-Code
+  if (!antwort.data && antwort.set_code) {
+    return {
+      treffer: [{
+        passcode: String(antwort.id || ''), name: antwort.name || '',
+        setCode: antwort.set_code || '', setName: antwort.set_name || '',
+        seltenheit: antwort.set_rarity || '', preisUsd: ygoZahl(antwort.set_price),
+        preisEur: 0, frameType: '', art: '', kategorie: '', bild: '',
+        setSicher: true, auflagen: 1, nachladen: true,
+      }],
+      fehler: '',
+    };
+  }
+
+  const daten = Array.isArray(antwort.data) ? antwort.data : [];
+  if (!daten.length) return { treffer: [], fehler: 'Keine Karte zu dieser Angabe gefunden.' };
+
+  const gesucht = (erk && erk.art === 'setcode') ? String(erk.wert).toUpperCase() : '';
+  const treffer = daten.slice(0, 25).map(k => {
+    const sets = Array.isArray(k.card_sets) ? k.card_sets : [];
+    // Wurde nach einem Set-Code gesucht, gilt genau dieses Set — sonst das erste.
+    const treffend = gesucht ? sets.find(x => String(x.set_code).toUpperCase() === gesucht) : null;
+    const s = treffend || sets[0] || {};
+    /* «Sicher» heisst: Wir wissen, WELCHE Auflage gemeint ist — weil
+       danach gesucht wurde oder weil es nur eine gibt. Nur dann darf
+       ihr Set-Preis gelten. */
+    const setSicher = !!treffend || sets.length === 1;
+    const pr = (Array.isArray(k.card_prices) ? k.card_prices[0] : k.card_prices) || {};
+    const bilder = Array.isArray(k.card_images) ? k.card_images[0] : null;
+    return {
+      passcode: String(k.id || ''), name: k.name || '',
+      art: k.humanReadableCardType || k.type || '', frameType: k.frameType || '',
+      kategorie: ygoKategorie(k.frameType),
+      setCode: s.set_code || '', setName: s.set_name || '', seltenheit: s.set_rarity || '',
+      preisUsd: ygoZahl(s.set_price), preisEur: ygoZahl(pr.cardmarket_price),
+      bild: (bilder && (bilder.image_url_small || bilder.image_url)) || '',
+      setSicher, auflagen: sets.length, nachladen: false,
+    };
+  });
+  return { treffer, fehler: '' };
+}
+
+/* --- Der Kurs -------------------------------------------------------
+   Die Datenbank rechnet in Euro (Cardmarket) und Dollar (TCGPlayer),
+   das Programm in Franken. Ein Abruf am Tag genügt; fällt er aus,
+   wird mit einem festen Näherungskurs weitergerechnet und das im
+   Vermerk gesagt — lieber eine gekennzeichnete Näherung als eine
+   leere Spalte. */
+const KURS_NOTFALL = { eur: 0.93, usd: 0.80 };
+let kurse = { eur: 0, usd: 0, datum: '', geschaetzt: true };
+
+function kursSetzen(antwort) {
+  const r = (antwort && antwort.rates) || {};
+  const eur = Number(r.CHF) || 0;                       // 1 EUR = x CHF
+  const proUsd = Number(r.USD) || 0;                    // 1 EUR = y USD
+  if (!eur) return false;
+  kurse = {
+    eur, usd: proUsd ? eur / proUsd : KURS_NOTFALL.usd,
+    datum: (antwort && antwort.date) || todayIso(), geschaetzt: false,
+  };
+  return true;
+}
+async function kurseHolen() {
+  if (kurse.eur && !kurse.geschaetzt) return kurse;
+  try {
+    const a = await fetch('https://api.frankfurter.dev/v1/latest?base=EUR&symbols=CHF,USD');
+    if (a.ok && kursSetzen(await a.json())) return kurse;
+  } catch (e) { /* offline: unten der Näherungskurs */ }
+  kurse = { eur: KURS_NOTFALL.eur, usd: KURS_NOTFALL.usd, datum: todayIso(), geschaetzt: true };
+  return kurse;
+}
+
+/** Marktwert in Franken.
+
+    Steht die Auflage fest, gilt ihr Set-Preis (TCGPlayer, USD) — er
+    meint genau diese Karte. Sonst der Cardmarket-Preis (EUR); der ist
+    der günstigste über ALLE Auflagen und damit für eine alte Rarität
+    viel zu tief. Genau daran ist die erste Fassung aufgelaufen. */
+function ygoMarktwert(t, k) {
+  k = k || kurse;
+  const usd = () => Math.round(t.preisUsd * (k.usd || KURS_NOTFALL.usd) * 100) / 100;
+  const eur = () => Math.round(t.preisEur * (k.eur || KURS_NOTFALL.eur) * 100) / 100;
+  if (t.setSicher && t.preisUsd) return usd();
+  if (t.preisEur) return eur();
+  if (t.preisUsd) return usd();
+  return 0;
+}
+/** Woher der Wert kommt — gehört in den Vermerk, sonst ist er eine Zahl ohne Herkunft. */
+function ygoHerkunft(t, k) {
+  k = k || kurse;
+  const teile = [];
+  const perUsd = (t.setSicher && t.preisUsd) || (!t.preisEur && t.preisUsd);
+  if (perUsd) teile.push('TCGPlayer USD ' + t.preisUsd.toFixed(2) + (t.setCode ? ' für ' + t.setCode : ''));
+  else if (t.preisEur) teile.push('Cardmarket EUR ' + t.preisEur.toFixed(2));
+  else teile.push('kein Marktpreis hinterlegt');
+  if (perUsd || t.preisEur) teile.push('Kurs ' + (perUsd ? (k.usd || 0) : (k.eur || 0)).toFixed(4) + (k.geschaetzt ? ' (genähert)' : ''));
+  /* Der wichtigste Satz im ganzen Vermerk: Weiss man die Auflage
+     nicht, ist die Zahl die GÜNSTIGSTE — und damit für eine alte
+     Rarität oft um ein Vielfaches zu tief. Das muss dastehen. */
+  if (!t.setSicher && t.auflagen > 1) teile.push('günstigste von ' + t.auflagen + ' Auflagen — Auflage prüfen');
+  teile.push('Stand ' + (k.datum || todayIso()));
+  return teile.join(', ');
+}
+
+/** Ein Treffer als Posten, so wie ihn auch der CSV-Einleser baut. */
+function ygoZuPosten(t, k) {
+  const zeilen = [
+    [t.art, t.seltenheit].filter(Boolean).join(' · '),
+    [t.setCode, t.setName].filter(Boolean).join(' · '),
+    t.passcode ? 'Passcode ' + t.passcode : '',
+    'Marktwert: ' + ygoHerkunft(t, k),
+  ].filter(Boolean);
+  return {
+    bkp: t.kategorie || '901',
+    gewerk: t.name || ('Karte ' + t.passcode),
+    schaetzung: 0, marktwert: ygoMarktwert(t, k), betrag: 0, firma: '', erhalten: 0,
+    status: 'ausschreibung', beschrieb: zeilen.join('\n'), frist: '', bild: t.bild || '',
+  };
+}
+
+/* --- Der Griff ins Netz --------------------------------------------
+   Getrennt von allem oben, damit sich die Übersetzung ohne Netz
+   prüfen lässt. Hier passiert nur: fragen, notfalls zweimal. */
+async function ygoHolen(url) {
+  const a = await fetch(url, { headers: { 'Accept': 'application/json' } });
+  /* Bei einer unbekannten Nummer antwortet die Datenbank mit 400 UND
+     einer Begründung im Körper. Die ist brauchbar, die Statusnummer
+     nicht — also zuerst hineinschauen. */
+  let inhalt = null;
+  try { inhalt = await a.json(); } catch (e) { inhalt = null; }
+  if (inhalt && inhalt.error) return inhalt;
+  if (!a.ok) throw new Error('Die Datenbank antwortet nicht (' + a.status + ').');
+  return inhalt;
+}
+async function kartenSuche(text) {
+  const erk = ygoErkenne(text);
+  if (!erk.art) return { treffer: [], fehler: 'Bitte eine Nummer oder einen Namen eingeben.' };
+  let erg;
+  try { erg = ygoAuswerten(await ygoHolen(ygoUrl(erk)), erk); }
+  catch (e) { return { treffer: [], fehler: (e && e.message) || 'Kein Zugriff auf die Datenbank.' }; }
+  // Set-Code-Auskunft trägt die Kartenart nicht — die holen wir über den Passcode nach.
+  if (erg.treffer.length === 1 && erg.treffer[0].nachladen && erg.treffer[0].passcode) {
+    const erst = erg.treffer[0];
+    try {
+      const zwei = ygoAuswerten(await ygoHolen(ygoUrl({ art: 'passcode', wert: erst.passcode })), erk);
+      if (zwei.treffer.length) {
+        const voll = zwei.treffer[0];
+        erg = { treffer: [{ ...voll, setCode: erst.setCode || voll.setCode, setName: erst.setName || voll.setName,
+                            seltenheit: erst.seltenheit || voll.seltenheit,
+                            preisUsd: erst.preisUsd || voll.preisUsd }], fehler: '' };
+      }
+    } catch (e) { /* die Teilauskunft ist besser als nichts */ }
+  }
+  await kurseHolen();
+  return erg;
+}
+
+/* --- Das Fenster zum Erfassen --------------------------------------
+   Gebaut für den Daumen, nicht für die Maus: ein grosses Zahlenfeld,
+   Enter sucht, Enter übernimmt, das Feld ist danach wieder leer und
+   scharf. Eine Karte kostet acht Ziffern und zweimal Enter.
+
+   Die Liste unten zeigt, was in dieser Sitzung schon hereinkam — sonst
+   weiss man nach der vierzigsten Karte nicht mehr, ob die letzte
+   angekommen ist. */
+let scanCtx = null;
+
+/** Bringt die Vorlage einen Nachschlagedienst mit? */
+function nachschlagDienst(p) { const v = vorlage(p); return (v && v.nachschlag) || null; }
+
+function actKartenScan(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  scanCtx = { pid, treffer: [], gewaehlt: 0, erfasst: [], meldung: '', sucht: false };
+  openModal(W('posten', p) + ' erfassen — Nummer nachschlagen', `
+    <label class="field"><span>Nummer der Karte</span>
+      <input class="input scan-nr" id="scan_nr" inputmode="numeric" autocomplete="off"
+             spellcheck="false" placeholder="z.B. 43989315"></label>
+    <span class="einst-hinweis">Der <b>Passcode</b> steht unten links auf der Karte — acht Ziffern, auf der
+      deutschen Karte dieselben wie auf der englischen. Ein englischer Set-Code wie <code>CORI-EN030</code>
+      geht auch, ein Name notfalls ebenso.</span>
+    <div id="scan_ergebnis"></div>
+    <div id="scan_liste"></div>
+  `, `<button class="btn ghost" data-close="1">Schliessen</button>
+      <button class="btn secondary" data-act="scan-suchen">Nachschlagen</button>
+      <button class="btn" data-act="scan-uebernehmen">Übernehmen &amp; weiter</button>`);
+  const feld = $('#scan_nr');
+  if (feld) {
+    feld.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      // Erstes Enter sucht, zweites übernimmt — ohne die Hand vom Feld zu nehmen.
+      if (scanCtx && scanCtx.treffer.length) scanUebernehmen(); else scanSuchen();
+    });
+    feld.focus();
+  }
+  scanZeichnen();
+}
+
+function scanKarteHtml(t, p) {
+  const wert = ygoMarktwert(t);
+  const kat = (katalogAktiv(p).find(x => x.code === t.kategorie) || {}).label || '';
+  return `<div class="scan-karte">
+    ${t.bild ? `<img src="${esc(t.bild)}" alt="" loading="lazy">` : '<div class="scan-kein-bild">kein Bild</div>'}
+    <div class="scan-text">
+      <b>${esc(t.name)}</b>
+      <div>${esc([t.art, t.seltenheit].filter(Boolean).join(' · ')) || '<span class="muted">Art unbekannt</span>'}</div>
+      <div class="muted">${esc([t.setCode, t.setName].filter(Boolean).join(' · '))}</div>
+      <div class="scan-wert">${esc(W('rev', p))}: <b>${wert ? chf(wert) : '–'}</b>
+        <span class="muted">${esc(ygoHerkunft(t))}</span></div>
+      ${(!t.setSicher && t.auflagen > 1) ? `<div class="scan-warnung">Diese Karte gibt es in ${t.auflagen} Auflagen — der Wert ist der der günstigsten. Mit dem Set-Code der eigenen Karte (steht auf ihr) wird er genau.</div>` : ''}
+      <div class="muted">${esc(W('nummer', p))} ${esc(t.kategorie)}${kat ? ' · ' + esc(kat) : ''}</div>
+    </div>
+  </div>`;
+}
+
+function scanZeichnen() {
+  const ziel = $('#scan_ergebnis'); if (!ziel || !scanCtx) return;
+  const p = findProjekt(scanCtx.pid);
+  if (scanCtx.sucht) { ziel.innerHTML = '<p class="muted">Wird nachgeschlagen …</p>'; }
+  else if (scanCtx.meldung) { ziel.innerHTML = `<p class="scan-meldung">${esc(scanCtx.meldung)}</p>`; }
+  else if (!scanCtx.treffer.length) { ziel.innerHTML = ''; }
+  else {
+    const t = scanCtx.treffer[scanCtx.gewaehlt] || scanCtx.treffer[0];
+    /* Mehrere Treffer gibt es nur bei der Namenssuche. Dann steht die
+       Auswahl UNTER der gezeigten Karte: Man sieht zuerst, was gemeint
+       sein könnte, und korrigiert erst, wenn es nicht stimmt. */
+    const auswahl = scanCtx.treffer.length > 1
+      ? `<div class="scan-auswahl">${scanCtx.treffer.map((x, i) =>
+          `<button type="button" class="btn sm ${i === scanCtx.gewaehlt ? '' : 'ghost'}" data-act="scan-waehlen" data-kind="${i}">${esc(x.name)}</button>`).join('')}</div>`
+      : '';
+    ziel.innerHTML = scanKarteHtml(t, p) + auswahl + `
+      <div class="form-row scan-eigen">
+        <label class="field">${esc(W('kv', p))} (CHF) <input class="input" type="number" step="0.05" id="scan_einstand" placeholder="was du bezahlt hast"></label>
+        <label class="field">${esc(W('wv', p))} (CHF) <input class="input" type="number" step="0.05" id="scan_angebot"></label>
+        <label class="field">${esc(W('partner', p))} <input class="input" id="scan_wo" placeholder="Cardmarket, Ricardo …"></label>
+      </div>`;
+  }
+  const liste = $('#scan_liste');
+  if (liste) liste.innerHTML = scanCtx.erfasst.length
+    ? `<div class="scan-erfasst"><b>${scanCtx.erfasst.length}</b> in dieser Sitzung erfasst: ${esc(scanCtx.erfasst.slice(-8).join(' · '))}${scanCtx.erfasst.length > 8 ? ' …' : ''}</div>`
+    : '';
+}
+
+async function scanSuchen() {
+  if (!scanCtx) return;
+  const feld = $('#scan_nr'); const text = feld ? feld.value.trim() : '';
+  if (!text) { toast('Bitte eine Nummer eingeben', 'info'); return; }
+  scanCtx.sucht = true; scanCtx.meldung = ''; scanCtx.treffer = []; scanZeichnen();
+  const erg = await kartenSuche(text);
+  scanCtx.sucht = false;
+  scanCtx.treffer = erg.treffer || [];
+  scanCtx.gewaehlt = 0;
+  scanCtx.meldung = erg.fehler || '';
+  scanZeichnen();
+}
+
+function scanWaehlen(idx) {
+  if (!scanCtx) return;
+  scanCtx.gewaehlt = Number(idx) || 0;
+  scanZeichnen();
+}
+
+function scanUebernehmen() {
+  if (!scanCtx) return;
+  const p = findProjekt(scanCtx.pid); if (!p) return;
+  const t = scanCtx.treffer[scanCtx.gewaehlt];
+  if (!t) { scanSuchen(); return; }
+  const posten = ygoZuPosten(t);
+  const zahl = id => { const el = $('#' + id); return el ? (Number(el.value) || 0) : 0; };
+  const txt = id => { const el = $('#' + id); return el ? el.value.trim() : ''; };
+  posten.schaetzung = zahl('scan_einstand');
+  posten.betrag = zahl('scan_angebot');
+  posten.firma = txt('scan_wo');
+  if (posten.betrag && posten.firma) posten.status = 'versendet';   // eingestellt = angeboten
+  csvPostenAnlegen(scanCtx.pid, [posten]);
+  scanCtx.erfasst.push(posten.gewerk);
+  scanCtx.treffer = []; scanCtx.gewaehlt = 0; scanCtx.meldung = '';
+  const feld = $('#scan_nr');
+  if (feld) { feld.value = ''; feld.focus(); }
+  scanZeichnen();
+  toast(posten.gewerk + ' erfasst', 'ok');
 }
 
 function csvUebernehmen(pid) {
@@ -18881,6 +19260,10 @@ document.addEventListener('click', e => {
     case 'vorlage-standard': state.vorlage = kind; save(); viewEinstellungen(); toast('Neue Projekte: ' + vorlageName(kind)); break;
     case 'vorlage-csv':      csvVorlageSpeichern(kind); break;
     case 'liste-einlesen':   actListeEinlesen(pid); break;
+    case 'karte-scan':       actKartenScan(pid); break;
+    case 'scan-suchen':      scanSuchen(); break;
+    case 'scan-waehlen':     scanWaehlen(kind); break;
+    case 'scan-uebernehmen': scanUebernehmen(); break;
     case 'csv-pruefen':      csvPruefen(pid); break;
     case 'csv-uebernehmen':  csvUebernehmen(pid); break;
     case 'export':       exportData(); break;

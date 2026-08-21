@@ -3,6 +3,12 @@
 Wer 400 Karten hat, tippt sie nicht ab. Er füllt eine Tabelle aus (oder lässt
 sie ausfüllen) und liest sie in einem Zug ein.
 
+> **Für Sammelkarten geht es noch kürzer:** *Kosten → 🔎 Objekt nachschlagen*.
+> Dort die achtstellige Nummer von der Karte eintippen, Enter — Name, Kartenart,
+> Set, Seltenheit, Bild und Marktwert holt das Programm selbst. Enter nochmals
+> übernimmt und das Feld ist wieder leer für die nächste Karte. Siehe unten,
+> [Nummer nachschlagen](#nummer-nachschlagen-nur-sammelkarten).
+
 ## Der Weg
 
 1. **Projekt anlegen** und ihm unter *Einstellungen → Vorlage* die passende
@@ -67,6 +73,38 @@ Ein Auftrag, der zu dieser Datei passt:
 > Unbekannte Werte lässt du leer — erfinde nichts.
 >
 > Hier meine Karten: …
+
+## Nummer nachschlagen (nur Sammelkarten)
+
+*Kosten → 🔎 Objekt nachschlagen.* Erkannt wird dreierlei:
+
+| Eingabe | Beispiel | Ergebnis |
+|---|---|---|
+| **Passcode** (8 Ziffern, unten links auf der Karte) | `43989315` | genau diese Karte |
+| **Set-Code**, englisch | `CORI-EN030` | genau diese Auflage, mit ihrem Preis |
+| **Name**, englisch | `Dark Magician` | eine Auswahl zum Antippen |
+
+Der Passcode steht auf der **deutschen Karte genauso** wie auf der englischen —
+er ist der zuverlässigste Weg. Deutsche Set-Codes (`CORI-DE030`) kennt die
+Datenbank dagegen nicht; der Name kommt dann englisch zurück und lässt sich
+überschreiben.
+
+**Zum Wert — bitte einmal lesen:**
+
+- Steht die **Auflage fest** (Set-Code eingegeben oder es gibt nur eine), gilt
+  der Preis genau dieser Auflage. Das ist die brauchbare Zahl.
+- Steht sie **nicht** fest, ist der Wert der **günstigste über alle Auflagen** —
+  bei einer alten Rarität um ein Vielfaches zu tief. Das Fenster sagt es dann in
+  Gelb dazu, und im Vermerk der Karte steht es auch. Wer es genau will, tippt
+  den Set-Code seiner Karte ein.
+- Umgerechnet wird mit dem Tageskurs; Kurs, Quelle und Datum stehen im Vermerk.
+  Ohne Netz wird mit einem Näherungskurs gerechnet und das ebenfalls vermerkt.
+- **Zustand und Auflage kann keine Datenbank wissen.** Der Wert landet deshalb
+  in *Marktwert* — was du verlangst, trägst du unter *Angebot* selbst ein.
+
+Quelle ist die offene Datenbank **YGOPRODeck**; das Programm fragt sie direkt
+aus dem Browser, ohne Server dazwischen. Fällt sie aus, bleibt die Nummer
+stehen und die Karte lässt sich von Hand benennen.
 
 ## Nichts geht verloren
 

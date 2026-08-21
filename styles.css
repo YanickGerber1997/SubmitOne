@@ -2599,6 +2599,40 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 .csv-vorschau table { width: 100%; }
 .csv-kopf { font-size: var(--t-xs); color: var(--text-soft); margin-bottom: 6px; }
 
+/* ---- Karte nachschlagen ---------------------------------------------
+   Für den Daumen gebaut: Das Zahlenfeld ist gross genug, dass man auf
+   dem Handy nicht danebentippt, und die gefundene Karte steht mit
+   ihrem Bild daneben — man sieht auf einen Blick, ob es die richtige
+   ist, bevor man sie übernimmt. */
+.scan-nr { font-size: var(--t-xl); font-family: var(--font-zahl); letter-spacing: 2px; }
+.scan-karte { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; align-items: start;
+  margin-top: 12px; padding: 10px; background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: var(--radius); }
+.scan-karte img { width: 84px; border-radius: var(--rund-s); display: block; }
+.scan-kein-bild { width: 84px; height: 122px; display: grid; place-items: center; text-align: center;
+  font-size: var(--t-2xs); color: var(--text-faint); border: 1px dashed var(--border-2); border-radius: var(--rund-s); }
+.scan-text { display: flex; flex-direction: column; gap: 3px; font-size: var(--t-s); min-width: 0; }
+.scan-text b { font-size: var(--t-l); line-height: 1.2; }
+.scan-wert { margin-top: 3px; }
+.scan-wert .muted { display: block; font-size: var(--t-2xs); }
+.scan-auswahl { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.scan-eigen { margin-top: 10px; }
+.scan-warnung { margin-top: 8px; padding: 7px 9px; font-size: var(--t-xs); line-height: 1.45;
+  color: var(--b-gelb-text); background: var(--b-gelb-weich); border: 1px solid var(--b-gelb-rand); border-radius: var(--radius); }
+.scan-meldung { margin: 12px 0 0; padding: 8px 10px; font-size: var(--t-s);
+  color: var(--danger); background: var(--b-rot-weich); border: 1px solid var(--b-rot-rand); border-radius: var(--radius); }
+.scan-erfasst { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border);
+  font-size: var(--t-xs); color: var(--text-soft); }
+
+/* Das Bild des Objekts in der aufgeklappten Zeile der Übersicht. */
+.posten-bild { width: 96px; border-radius: var(--rund-s); margin: 6px 0; display: block; }
+
+@media (max-width: 560px) {
+  .scan-karte { grid-template-columns: 64px minmax(0, 1fr); }
+  .scan-karte img, .scan-kein-bild { width: 64px; }
+  .scan-kein-bild { height: 93px; }
+}
+
+
 @media (max-width: 700px) {
   .einst-projzeile { grid-template-columns: 1fr; }
 }

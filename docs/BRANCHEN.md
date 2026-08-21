@@ -128,6 +128,32 @@ Die passende Vorlagendatei erzeugt derselbe Code, der sie wieder einliest —
 und der Selbsttest liest jede der vier wieder ein. Siehe
 [../vorlagen/LIESMICH.md](../vorlagen/LIESMICH.md).
 
+## Eine Nummer nachschlagen
+
+Eine Vorlage darf einen **Nachschlagedienst** mitbringen (`nachschlag: 'ygo'`).
+Nicht das Programm kennt Yu-Gi-Oh — die Vorlage «Sammlung» tut es. Der Knopf
+erscheint nur, wo ein Dienst hinterlegt ist; ein Bauvorhaben sieht ihn nie.
+Kommt später eine Vorlage für Bücher, bringt sie ihren ISBN-Dienst mit, und
+alles andere bleibt, wie es ist.
+
+Acht Ziffern von der Karte, Enter — Name, Kartenart (daraus die Katalognummer),
+Set, Seltenheit, Bild und Marktwert stehen da. Enter nochmals übernimmt, das
+Feld ist wieder leer. **Ohne eigenen Server:** die Datenbank antwortet mit
+`access-control-allow-origin: *`, der Browser darf also direkt fragen (geprüft
+am 21.08.2026, ebenso der Kursdienst).
+
+**Der Fehler, den erst der echte Durchlauf zeigte.** `SDK-001` (Blue-Eyes White
+Dragon, Ultra Rare von 2002) kam mit CHF 0.02 zurück. Grund: Der
+Cardmarket-Preis der Datenbank ist der **günstigste über alle Auflagen** — und
+Blue-Eyes gibt es 59-fach nachgedruckt. Der Preis der gesuchten Auflage stand
+daneben: USD 25.60.
+
+Seither gilt: Steht die Auflage fest (Set-Code gesucht oder nur eine
+vorhanden), zählt **ihr** Preis. Sonst der Sammelpreis — mit dem Satz «günstigste
+von N Auflagen» im Vermerk und einer gelben Zeile im Fenster. Eine falsche Zahl
+ohne Warnung wäre schlimmer als gar keine. Der Fall steht als Regressionstest in
+`test/vorlagen.js`.
+
 ## Was noch Bau spricht
 
 Die **Druckblätter** (Baukostenübersicht, Deckblatt, Submittentenliste)
@@ -141,4 +167,4 @@ sie sich einzeln vor — die Wörter dafür stehen schon bereit.
 ## Prüfen
 
     node test/selftest-node.js    Logik der Vorlagen (Vollständigkeit, Rückfall, CSV-Rundgang)
-    node test/vorlagen.js         das Ganze im Gebrauch: Liste einlesen, Ansichten zeichnen
+    node test/vorlagen.js         das Ganze im Gebrauch: Liste einlesen, nachschlagen, Ansichten zeichnen

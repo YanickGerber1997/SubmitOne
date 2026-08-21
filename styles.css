@@ -2742,6 +2742,12 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 .charge-tat { white-space: nowrap; text-align: right; }
 .charge-tat .btn { margin-right: 4px; }
 
+/* Der Sprachschalter: klein, weil man ihn selten anfasst, aber
+   sichtbar, weil eine deutsche und eine englische Karte zwei
+   verschiedene Waren sind. */
+.scan-sprache { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.scan-sprache > span { font-size: var(--t-xs); color: var(--text-soft); margin-right: 2px; }
+
 .scan-charge { margin-top: 10px; padding: 9px 10px; background: var(--surface-2);
   border: 1px solid var(--line-soft); border-radius: var(--radius); }
 .scan-charge-kopf { font-size: var(--t-xs); font-weight: 600; color: var(--text-soft); margin-bottom: 6px; }

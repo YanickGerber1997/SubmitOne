@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v396';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v397';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -3364,7 +3364,7 @@ function viewStueck(pid, vid) {
     <div class="detail-head">
       <div>
         <h1 style="margin:0;font-size:var(--t-xl, 22px)"><span class="bkp-code" style="font-size:var(--t-l, 16px)">${esc(v.bkp || '')}</span> ${esc(v.gewerk || '')}</h1>
-        <div class="sub" style="margin-top:5px">${[esc(v.seltenheit || ''), esc(v.satz || ''), v.firma ? esc(W('partner', p)) + ': ' + esc(v.firma) : esc(W('partnerLeer', p))].filter(Boolean).join(' · ')}</div>
+        <div class="sub" style="margin-top:5px">${[esc(v.seltenheit || ''), esc(v.satz || ''), v.sprache ? esc(spracheInfo(v.sprache).name) : '', v.firma ? esc(W('partner', p)) + ': ' + esc(v.firma) : esc(W('partnerLeer', p))].filter(Boolean).join(' · ')}</div>
       </div>
       <div style="display:flex;gap:10px;align-items:center">${statusPill(v)}</div>
     </div>
@@ -3374,7 +3374,7 @@ function viewStueck(pid, vid) {
       <div class="gw-main">
         ${v.pruefen ? `<div class="scan-warnung" style="margin-bottom:12px">Bei diesem ${esc(W('posten', p))} ist die Auflage nicht bestimmt — Seltenheit und Wert sind darum nur ein Anhaltspunkt.</div>` : ''}
         <div class="st-kopf">
-          ${v.bild ? `<img class="st-bild" src="${esc(v.bild)}" alt="" loading="lazy">` : ''}
+          ${v.bild ? `<img class="st-bild" src="${esc(v.bild)}" alt="" loading="lazy" onerror="this.onerror=null;this.src=this.src.replace('/assets.tcgdex.net/de/','/assets.tcgdex.net/en/')">` : ''}
           <div class="hd-band st-band">
             ${zahl(W('kv', p), chf(v.schaetzung))}
             ${zahl(W('rev', p), markt != null ? chf(markt) : '–', 'hl')}
@@ -3589,7 +3589,7 @@ function viewKosten(id) {
           <div class="kost-info-grid">
             <div class="kost-info-main">
               <div class="kost-info-h">Beschrieb / ${esc(W('kv', p))}</div>
-              ${v.bild ? `<img class="posten-bild" src="${esc(v.bild)}" alt="" loading="lazy">` : ''}
+              ${v.bild ? `<img class="posten-bild" src="${esc(v.bild)}" alt="" loading="lazy" onerror="this.onerror=null;this.style.display='none'">` : ''}
               <div style="font-size:var(--t-s, 13px);white-space:pre-wrap">${v.beschrieb ? esc(v.beschrieb) : '<span class="muted">– kein Beschrieb. Mit „✎ Kostenschätzung" erfassen (Beschrieb + Positionen).</span>'}</div>
               ${(v.ksPositionen && v.ksPositionen.length) ? `<table class="grid" style="margin-top:8px"><tbody>${v.ksPositionen.map(pos => `<tr><td>${esc(pos.text || 'Position')}</td><td class="num">${mB(pos.betrag)}</td></tr>`).join('')}<tr><td><b>Total KV</b></td><td class="num"><b>${mB(v.schaetzung)}</b></td></tr></tbody></table>` : ''}
             </div>
@@ -7732,6 +7732,29 @@ const SAMMLUNG_KATALOG = [
   ['903', 'Verlust, Beschädigung'],
 ].map(([code, label]) => ({ code, label }));
 
+/* Wörter, die zu Karten passen. «Objekt» ist richtig und blass;
+   wer eine Sammlung führt, sagt «Karte». */
+const KARTEN_WOERTER = {
+  posten: 'Karte', posten_pl: 'Karten', postenSpalte: 'Karte',
+  neu: '+ Karte', neuTitel: 'Karte erfassen',
+  postenName: 'Kartenname', postenBeispiel: 'z.B. Glurak',
+  vergabenTitel: 'Sammlung',
+};
+
+/* Die Ordnung eines SAMMLERS: Einzelkarte oder ungeöffnet. Die
+   Kartenart (Monster, Zauber, Trainer, Energie) gliedert nichts —
+   sie steht als Eigenschaft im Vermerk. */
+const KARTEN_KATALOG = [
+  ['1', 'Einzelkarten'],
+  ['2', 'Ungeöffnete Produkte'],
+  ['201', 'Booster-Päckchen'], ['202', 'Displays'], ['203', 'Decks und Tins'],
+  ['204', 'Sammler-Editionen'],
+  ['3', 'Zubehör'],
+  ['301', 'Hüllen und Ordner'], ['302', 'Spielmatten'], ['303', 'Versandmaterial'],
+  ['9', 'Übriges'],
+  ['901', 'Neuzugang, noch nicht eingeordnet'], ['902', 'Verlust, Beschädigung'],
+].map(([code, label]) => ({ code, label }));
+
 /* Unterschriftensammlung: gegliedert nach Sprachregion, weil die
    Sammelarbeit sich daran ausrichtet — nicht nach BFS-Kantonsnummer,
    die alle 26 in dieselbe Gruppe legen würde. */
@@ -7846,7 +7869,7 @@ const VORLAGEN = [
     // Ein Stueck ist fuer sich der Gegenstand - anders als eine Charge,
     // die nur neben ihren Geschwistern etwas bedeutet.
     handel: 'stueck', ebenen: 2,
-    katalog: SAMMLUNG_KATALOG,
+    katalog: KARTEN_KATALOG,
     /* Diese Vorlage kann eine Nummer nachschlagen: Passcode oder
        Set-Code einer Sammelkarte → Name, Art, Set, Seltenheit, Bild,
        Marktpreis. Vorlagen ohne Eintrag zeigen den Knopf nicht. */
@@ -8204,7 +8227,7 @@ function ordnungSortieren() {
    «Zauberkarten» in seiner Ordnung stehen haben. */
 function vorschlagKatalog(p) {
   const d = dienstInfo(nachschlagDienst(p));
-  if (d.katalog === 'POKEMON_KATALOG') return POKEMON_KATALOG;
+  if (d.katalog === 'KARTEN_KATALOG') return KARTEN_KATALOG;
   const v = vorlage(p);
   return (v && v.katalog) || BKP_KATALOG;
 }
@@ -8262,11 +8285,18 @@ function W(schluessel, p) {
   const v = vorlage(p);
   if (!v) return schluessel;
   const eigen = ((typeof state !== 'undefined' && state && state.woerter) || {})[v.key] || {};
+  /* Der Dienst weiss genauer als die Vorlage, worum es geht: Eine
+     Sammlung führt «Objekte», eine Kartensammlung «Karten». Das
+     eigene Wort des Nutzers schlägt beide. */
+  const dienst = (dienstInfo(nachschlagDienst(p)).woerter) || {};
   const bau = vorlagenListe()[0];
-  return eigen[schluessel] || v.woerter[schluessel] || (bau && bau.woerter[schluessel]) || schluessel;
+  return eigen[schluessel] || dienst[schluessel] || v.woerter[schluessel]
+      || (bau && bau.woerter[schluessel]) || schluessel;
 }
 /** Beschriftung eines Projektreiters — die Vorlage darf sie umbenennen. */
 function R(key, standard, p) {
+  const d = dienstInfo(nachschlagDienst(p));
+  if (d.reiter && d.reiter[key]) return d.reiter[key];
   const v = vorlage(p);
   return (v && v.reiter && v.reiter[key]) || standard;
 }
@@ -8759,6 +8789,8 @@ function csvPostenAnlegen(pid, posten) {
       // Die Kennung des Satzes — bei Pokémon gruppiert sie, weil die
       // Kartennummer nur innerhalb ihres Satzes eindeutig ist.
       satzId: x.satzId || '',
+      // Deutsch oder Englisch — beim Verkaufen zwei verschiedene Waren.
+      sprache: x.sprache || '',
       // Menge und Einheit: 0.35 BTC, 12 g Gold. Die BETRÄGE bleiben
       // Summen — so rechnet die Kostenübersicht unverändert weiter.
       // Das Datum dieser Charge — «am xx kaufte ich so und so viel».
@@ -8994,18 +9026,25 @@ function ygoUrl(erk) {
 /* Kartenart → Nummer aus dem Sammlungs-Katalog. Die Pendel-Prüfung
    steht zuerst: Eine Pendel-Fusionskarte ist beides, und als Pendel
    ist sie im Ordner einsortiert. */
-const YGO_KATEGORIE = [
-  [/pendulum/, '105'],
-  [/fusion|synchro|xyz|link/, '104'],
-  [/spell/, '102'],
-  [/trap/, '103'],
-  [/normal|effect|ritual/, '101'],
+/* Die Kartenart auf Deutsch — fürs Auge, nicht zum Gliedern. Die
+   Datenbank antwortet englisch; wer «Counter Trap» in seiner
+   Sammlung liest, hat eine fremde Sprache im eigenen Ordner. */
+const YGO_ARTNAMEN = [
+  [/pendulum/, 'Pendelkarte'], [/fusion/, 'Fusionsmonster'], [/synchro/, 'Synchromonster'],
+  [/xyz/, 'XYZ-Monster'], [/link/, 'Linkmonster'], [/ritual/, 'Ritualkarte'],
+  [/counter trap/, 'Konterfalle'], [/continuous trap/, 'permanente Falle'], [/trap/, 'Fallenkarte'],
+  [/quick-play spell/, 'Schnellzauber'], [/continuous spell/, 'permanenter Zauber'],
+  [/equip spell/, 'Ausrüstungszauber'], [/field spell/, 'Spielfeldzauber'], [/spell/, 'Zauberkarte'],
+  [/effect/, 'Effektmonster'], [/normal monster/, 'normales Monster'], [/monster/, 'Monsterkarte'],
 ];
-function ygoKategorie(frameType) {
-  const f = String(frameType == null ? '' : frameType).toLowerCase();
-  const hit = YGO_KATEGORIE.find(([re]) => re.test(f));
-  return hit ? hit[1] : '901';   // 901 = Neuzugang, noch nicht eingeordnet
+function ygoArtDeutsch(text) {
+  const t = String(text == null ? '' : text).toLowerCase();
+  const hit = YGO_ARTNAMEN.find(([re]) => re.test(t));
+  return hit ? hit[1] : String(text || '');
 }
+/* Eine einzelne Karte ist eine Einzelkarte — mehr Gliederung braucht
+   ein Sammler nicht, und ein Spieler sortiert ohnehin anders. */
+function ygoKategorie() { return KARTE_EINZELN; }
 
 /* Die Datenbank antwortet englisch. Was sie sagt, wenn nichts passt,
    ist der häufigste Fall überhaupt — der gehört übersetzt. */
@@ -9071,7 +9110,7 @@ function ygoAuswerten(antwort, erk) {
     const bilder = Array.isArray(k.card_images) ? k.card_images[0] : null;
     return {
       passcode: String(k.id || ''), name: k.name || '',
-      art: k.humanReadableCardType || k.type || '', frameType: k.frameType || '',
+      art: ygoArtDeutsch(k.humanReadableCardType || k.type || ''), frameType: k.frameType || '',
       kategorie: ygoKategorie(k.frameType),
       setCode: s.set_code || '', setName: s.set_name || '', seltenheit: s.set_rarity || '',
       preisUsd: ygoZahl(s.set_price), preisEur: ygoZahl(pr.cardmarket_price),
@@ -9287,11 +9326,23 @@ function pruefErledigt(pid, vid) {
    (api.pokemontcg.io tut das nicht — keine CORS-Freigabe.)
    ===================================================================== */
 
-const TCGDEX = 'https://api.tcgdex.net/v2/de/';
+/* Die Sprachen, die TCGdex führt und die hier vorkommen. Mehr
+   brauchte es bisher nicht; die Liste ist der einzige Ort, an dem
+   eine weitere dazukäme. */
+const KARTEN_SPRACHEN = [
+  { key: 'de', name: 'Deutsch', kurz: 'DE' },
+  { key: 'en', name: 'Englisch', kurz: 'EN' },
+  { key: 'fr', name: 'Französisch', kurz: 'FR' },
+  { key: 'it', name: 'Italienisch', kurz: 'IT' },
+];
+function spracheInfo(k) { return KARTEN_SPRACHEN.find(x => x.key === (k || 'de')) || KARTEN_SPRACHEN[0]; }
+const TCGDEX = 'https://api.tcgdex.net/v2/';
 
 /* Die Kartenart der Karte auf eine Katalognummer. Die Namen im Katalog
    darf jeder selbst setzen — die Nummern sind der Anker. */
-const POKEMON_KATEGORIE = { pokemon: '101', trainer: '102', energy: '103', energie: '103' };
+/* Jede einzelne Karte gehört unter «1 Einzelkarten» — die Art
+   (Pokémon, Trainer, Energie) ist eine Eigenschaft, keine Schublade. */
+const KARTE_EINZELN = '1';
 
 /* Was auf einer Pokémonkarte an Varianten stehen kann — und wie die
    Preisfelder von Cardmarket dazu heissen. «normal» hat keinen
@@ -9312,8 +9363,8 @@ function pokemonErkenne(text) {
   return { art: 'name', wert: t };
 }
 
-async function pokemonHolen(pfad) {
-  const a = await fetch(TCGDEX + pfad, { headers: { Accept: 'application/json' } });
+async function pokemonHolen(pfad, sprache) {
+  const a = await fetch(TCGDEX + (sprache || 'de') + '/' + pfad, { headers: { Accept: 'application/json' } });
   if (a.status === 404) return null;
   if (a.status === 429) throw new Error('Die Kartendatenbank bremst gerade. In einer Minute nochmals versuchen.');
   if (!a.ok) throw new Error('Die Kartendatenbank antwortet nicht (' + a.status + ').');
@@ -9323,17 +9374,19 @@ async function pokemonHolen(pfad) {
 /* Sätze werden je Sitzung einmal geholt: Für das Bild braucht es die
    Reihe, zu der ein Satz gehört, und die steht nicht an der Karte. */
 const pokemonSaetze = new Map();
-async function pokemonSatz(id) {
-  if (pokemonSaetze.has(id)) return pokemonSaetze.get(id);
+async function pokemonSatz(id, sprache) {
+  const schl = (sprache || 'de') + '/' + id;
+  if (pokemonSaetze.has(schl)) return pokemonSaetze.get(schl);
   let s = null;
-  try { s = await pokemonHolen('sets/' + encodeURIComponent(id)); } catch (e) { s = null; }
-  pokemonSaetze.set(id, s);
+  try { s = await pokemonHolen('sets/' + encodeURIComponent(id), sprache); } catch (e) { s = null; }
+  pokemonSaetze.set(schl, s);
   return s;
 }
-let pokemonSatzListe = null;
-async function pokemonAlleSaetze() {
-  if (!pokemonSatzListe) pokemonSatzListe = (await pokemonHolen('sets')) || [];
-  return pokemonSatzListe;
+const pokemonSatzListen = new Map();
+async function pokemonAlleSaetze(sprache) {
+  const schl = sprache || 'de';
+  if (!pokemonSatzListen.has(schl)) pokemonSatzListen.set(schl, (await pokemonHolen('sets', sprache)) || []);
+  return pokemonSatzListen.get(schl);
 }
 
 /** Der Preis einer Variante — Cardmarkets Preis-Trend, sonst der Schnitt. */
@@ -9353,12 +9406,15 @@ function pokemonPreisName(cm, zusatz) {
 }
 
 /** Eine Karte von TCGdex in die Form bringen, die das Fenster kennt. */
-async function pokemonTreffer(k, kurse2) {
+async function pokemonTreffer(k, sprache) {
   const cm = (k.pricing || {}).cardmarket || null;
   const satzId = (k.set && k.set.id) || String(k.id || '').split('-')[0];
-  const satz = await pokemonSatz(satzId);
+  const satz = await pokemonSatz(satzId, sprache);
   const reihe = satz && satz.serie && satz.serie.id;
-  const bild = reihe ? 'https://assets.tcgdex.net/en/' + reihe + '/' + satzId + '/' + k.localId + '/low.webp' : '';
+  /* Das Bild in der Sprache der Karte — gibt es keines, greift der
+     Browser ins Leere und zeigt nichts; das ist besser als das Bild
+     einer fremden Fassung. */
+  const bild = reihe ? 'https://assets.tcgdex.net/' + (sprache || 'de') + '/' + reihe + '/' + satzId + '/' + k.localId + '/low.webp' : '';
 
   /* Varianten sind dasselbe Problem eine Ebene tiefer: Normal, Reverse
      und Holo sind dieselbe Nummer zu ganz verschiedenen Preisen. Gibt
@@ -9376,7 +9432,7 @@ async function pokemonTreffer(k, kurse2) {
   return {
     passcode: '', name: k.name || '',
     art: (k.category || '') + (k.types ? ' ' + k.types.join('/') : ''),
-    frameType: '', kategorie: POKEMON_KATEGORIE[String(k.category || '').toLowerCase()] || '901',
+    frameType: '', kategorie: KARTE_EINZELN,
     /* Der Satz steht mit der Kennung IMMER fest — offen ist nur die
        Variante. Zwei Fragen, zwei Antworten. */
     setCode: k.id, setName: (k.set && k.set.name) || '', satzId: satzId,
@@ -9389,42 +9445,43 @@ async function pokemonTreffer(k, kurse2) {
        Mensch sieht, und sie gehört in die Nummernspalte. */
     kartenNummer: k.localId + '/' + ((k.set && k.set.cardCount && k.set.cardCount.official) || '?'),
     quelleName: 'TCGdex/Cardmarket', preisArt: pokemonPreisName(cm, gewaehlt ? '' : ''),
+    sprache: sprache || 'de',
     stand: cm && cm.updated ? String(cm.updated).slice(0, 10) : todayIso(),
   };
 }
 
-async function pokemonSuche(text) {
+async function pokemonSuche(text, sprache) {
   const erk = pokemonErkenne(text);
   if (!erk.art) return { treffer: [], fehler: 'Bitte eine Nummer (4/102), eine Kennung (base1-4) oder einen Namen eingeben.' };
   try {
     if (erk.art === 'kennung') {
-      const k = await pokemonHolen('cards/' + encodeURIComponent(erk.wert));
+      const k = await pokemonHolen('cards/' + encodeURIComponent(erk.wert), sprache);
       if (!k) return { treffer: [], fehler: 'Zu «' + text + '» ist keine Karte verzeichnet.' };
-      return { treffer: [await pokemonTreffer(k)], fehler: '' };
+      return { treffer: [await pokemonTreffer(k, sprache)], fehler: '' };
     }
 
     if (erk.art === 'bruch') {
       /* Die Nummer allein sagt nichts — erst mit der Satzgrösse wird
          daraus eine kurze Liste. Zu «/102» gibt es zwei Sätze. */
-      const saetze = (await pokemonAlleSaetze())
+      const saetze = (await pokemonAlleSaetze(sprache))
         .filter(s => s.cardCount && s.cardCount.official === erk.gesamt);
       if (!saetze.length) return { treffer: [], fehler: 'Kein Satz mit ' + erk.gesamt + ' Karten verzeichnet — Zahl vertippt?' };
       const treffer = [];
       for (const s of saetze.slice(0, 12)) {
-        const k = await pokemonHolen('cards/' + encodeURIComponent(s.id + '-' + erk.nummer));
-        if (k) treffer.push(await pokemonTreffer(k));
+        const k = await pokemonHolen('cards/' + encodeURIComponent(s.id + '-' + erk.nummer), sprache);
+        if (k) treffer.push(await pokemonTreffer(k, sprache));
       }
       if (!treffer.length) return { treffer: [], fehler: 'In keinem Satz mit ' + erk.gesamt + ' Karten gibt es die Nummer ' + erk.nummer + '.' };
       return { treffer, fehler: '' };
     }
 
-    let liste = await pokemonHolen('cards?name=eq:' + encodeURIComponent(erk.wert));
-    if (!Array.isArray(liste) || !liste.length) liste = await pokemonHolen('cards?name=like:' + encodeURIComponent(erk.wert));
+    let liste = await pokemonHolen('cards?name=eq:' + encodeURIComponent(erk.wert), sprache);
+    if (!Array.isArray(liste) || !liste.length) liste = await pokemonHolen('cards?name=like:' + encodeURIComponent(erk.wert), sprache);
     if (!Array.isArray(liste) || !liste.length) return { treffer: [], fehler: 'Zu «' + text + '» ist keine Karte verzeichnet.' };
     const treffer = [];
     for (const kurz of liste.slice(0, 12)) {
-      const k = await pokemonHolen('cards/' + encodeURIComponent(kurz.id));
-      if (k) treffer.push(await pokemonTreffer(k));
+      const k = await pokemonHolen('cards/' + encodeURIComponent(kurz.id), sprache);
+      if (k) treffer.push(await pokemonTreffer(k, sprache));
     }
     return { treffer, fehler: treffer.length ? '' : 'Zu «' + text + '» kam nichts Vollständiges zurück.' };
   } catch (e) {
@@ -9439,7 +9496,7 @@ function pokemonZuPosten(t) {
   const offen = !t.setSicher && t.auflagen > 1;
   return {
     bkp: t.kartenNummer || t.setCode || '',
-    satz: t.setName || '', satzId: t.satzId || '',
+    satz: t.setName || '', satzId: t.satzId || '', sprache: t.sprache || '',
     seltenheit: t.seltenheit || '', passcode: t.setCode || '',
     kategorie: t.kategorie || '901',
     gewerk: t.name || 'Karte',
@@ -9448,10 +9505,11 @@ function pokemonZuPosten(t) {
     pruefen: offen, auflagenOffen: offen ? t.auflagenListe : null,
     beschrieb: [
       offen ? '⚑ Variante nicht bestimmt — ' + t.auflagen + ' mögliche (Normal, Reverse, Holo …).' : '',
-      [t.art, t.seltenheit].filter(Boolean).join(' · '),
+      [t.art, t.seltenheit, t.sprache ? spracheInfo(t.sprache).name : ''].filter(Boolean).join(' · '),
       [t.setCode, t.setName].filter(Boolean).join(' · '),
       t.preisEur ? 'Marktwert: Cardmarket ' + t.preisArt + ' EUR ' + t.preisEur.toFixed(2)
         + ', Kurs ' + kurs.toFixed(4) + ', Stand ' + t.stand
+        + ' — nicht nach Sprache getrennt'
         : 'Marktwert: kein Cardmarket-Preis hinterlegt',
     ].filter(Boolean).join('\n'),
   };
@@ -9481,11 +9539,16 @@ const POKEMON_KATALOG = [
    Kurs holt. Es fragt die Vorlage, wer zuständig ist. Käme morgen eine
    Vorlage für Bücher, brächte sie ihren ISBN-Dienst mit und das
    Fenster bliebe, wie es ist. */
-async function nachschlagSuche(text, p) {
+async function nachschlagSuche(text, p, sprache) {
   const d = nachschlagDienst(p);
   if (d === 'kurse') return kursSuche(text);
-  if (d === 'pokemon') { await kurseHolen(); return pokemonSuche(text); }
-  return kartenSuche(text);
+  if (d === 'pokemon') { await kurseHolen(); return pokemonSuche(text, sprache); }
+  const erg = await kartenSuche(text);
+  /* Yu-Gi-Oh führt nur englische Namen. Die Sprache der eigenen
+     Karte ist trotzdem eine Angabe, die man beim Verkaufen braucht —
+     also wird sie festgehalten, auch wenn sie den Namen nicht ändert. */
+  if (sprache) erg.treffer = (erg.treffer || []).map(t => ({ ...t, sprache }));
+  return erg;
 }
 function nachschlagZuPosten(t, p, menge, einheit, datum) {
   const d = nachschlagDienst(p);
@@ -9769,11 +9832,13 @@ let scanCtx = null;
 const NACHSCHLAG_DIENSTE = [
   { key: '', name: 'keines — von Hand erfassen' },
   { key: 'ygo', name: 'Yu-Gi-Oh (YGOPRODeck)', fuer: 'sammlung',
-    hinweis: 'Passcode (8 Ziffern) oder Set-Code wie CORI-EN030.' },
+    hinweis: 'Passcode (8 Ziffern) oder Set-Code wie CORI-EN030.',
+    katalog: 'KARTEN_KATALOG', woerter: KARTEN_WOERTER, reiter: { gewerke: 'Karten' } },
   { key: 'pokemon', name: 'Pokémon (TCGdex, deutsch)', fuer: 'sammlung',
-    hinweis: 'Nummer wie 4/102, Kennung wie base1-4 oder der Name.', katalog: 'POKEMON_KATALOG' },
+    hinweis: 'Nummer wie 4/102, Kennung wie base1-4 oder der Name.',
+    katalog: 'KARTEN_KATALOG', woerter: KARTEN_WOERTER, reiter: { gewerke: 'Karten' } },
   { key: 'kurse', name: 'Kurse (Krypto, Edelmetalle, Währungen)', fuer: 'depot',
-    hinweis: 'Kürzel wie BTC, XAU oder USD.' },
+    hinweis: 'Kürzel wie BTC, XAU oder USD.', reiter: { gewerke: 'Anlagen' } },
 ];
 function dienstInfo(key) { return NACHSCHLAG_DIENSTE.find(d => d.key === (key || '')) || NACHSCHLAG_DIENSTE[0]; }
 
@@ -9787,7 +9852,9 @@ function nachschlagDienst(p) {
 
 function actKartenScan(pid) {
   const p = findProjekt(pid); if (!p) return;
-  scanCtx = { pid, treffer: [], gewaehlt: 0, erfasst: [], meldung: '', sucht: false, filter: '' };
+  const p0 = findProjekt(pid);
+  scanCtx = { pid, treffer: [], gewaehlt: 0, erfasst: [], meldung: '', sucht: false, filter: '',
+              sprache: (p0 && p0.sprache) || 'de' };
   openModal(W('posten', p) + ' erfassen — Nummer nachschlagen', `
     <label class="field"><span>Nummer der Karte</span>
       <input class="input scan-nr" id="scan_nr" inputmode="numeric" autocomplete="off"
@@ -9797,6 +9864,11 @@ function actKartenScan(pid) {
       : (nachschlagDienst(p) === 'pokemon'
         ? 'Die <b>Nummer unten auf der Karte</b> (<code>4/102</code>) — dazu wird gefragt, welcher Satz gemeint ist, denn die Nummer allein gibt es in jedem gleich grossen Satz. Eindeutig ist die Kennung (<code>base1-4</code>). Der <b>deutsche Name</b> geht auch.'
         : esc(dienstInfo(nachschlagDienst(p)).hinweis || ''))}</span>
+    ${nachschlagDienst(p) && nachschlagDienst(p) !== 'kurse' ? `<div class="scan-sprache">
+      <span>Sprache dieser ${esc(W('posten', p))}</span>
+      ${KARTEN_SPRACHEN.map(sp => `<button type="button" class="pruef-chip${(p.sprache || 'de') === sp.key ? '' : ' aus'}"
+        data-act="scan-sprache" data-kind="${sp.key}">${esc(sp.kurz)}</button>`).join('')}
+    </div>` : ''}
     <div id="scan_ergebnis"></div>
     <div id="scan_liste"></div>
   `, `<button class="btn ghost" data-close="1">Schliessen</button>
@@ -9819,7 +9891,7 @@ function scanKarteHtml(t, p) {
   const wert = trefferWert(t);
   const kat = (katalogAktiv(p).find(x => x.code === t.kategorie) || {}).label || '';
   return `<div class="scan-karte">
-    ${t.bild ? `<img src="${esc(t.bild)}" alt="" loading="lazy">` : '<div class="scan-kein-bild">kein Bild</div>'}
+    ${t.bild ? `<img src="${esc(t.bild)}" alt="" loading="lazy" onerror="this.onerror=null;this.src=this.src.replace('/assets.tcgdex.net/de/','/assets.tcgdex.net/en/')">` : '<div class="scan-kein-bild">kein Bild</div>'}
     <div class="scan-text">
       <b>${esc(t.name)}</b>
       <div>${esc([t.art, t.seltenheit].filter(Boolean).join(' · ')) || '<span class="muted">Art unbekannt</span>'}</div>
@@ -9828,7 +9900,7 @@ function scanKarteHtml(t, p) {
         <span class="muted">${esc(trefferHerkunft(t))}</span></div>
       ${t.spracheNach ? `<div class="scan-hinweis">${esc(t.spracheVon)} kennt die Datenbank nicht — nachgeschlagen als <b>${esc(t.spracheNach)}</b>. Sammlung, Nummer und Seltenheit stimmen überein; der <b>Preis ist der der englischen Auflage</b> und kann für deine abweichen.</div>` : ''}
       ${(!t.setSicher && t.auflagen > 1) ? `<div class="scan-warnung"><b>Welche Auflage ist es?</b> Diese Nummer gibt es in ${t.auflagen} Auflagen mit verschiedenen Seltenheiten. Solange keine gewählt ist, steht hier keine Seltenheit, und der Wert ist der der günstigsten. Ohne Wahl wird die Karte mit der Merkfahne ⚑ übernommen.</div>` : ''}
-      <div class="muted">${esc(W('nummer', p))} <b>${esc(t.setCode || t.passcode || '—')}</b>${kat ? ' · ' + esc(kat) : ''}</div>
+      <div class="muted">${esc(W('nummer', p))} <b>${esc(t.setCode || t.passcode || '—')}</b>${kat ? ' · ' + esc(kat) : ''}${t.sprache ? ' · ' + esc(spracheInfo(t.sprache).name) : ''}</div>
     </div>
   </div>`;
 }
@@ -9902,6 +9974,18 @@ function scanAuflagenHtml(t) {
   </div>`;
 }
 
+/** Die Sprache umstellen. Sie bleibt am Projekt, damit man bei
+    zwanzig deutschen Karten nicht zwanzigmal umschaltet. */
+function scanSprache(key) {
+  if (!scanCtx) return;
+  scanCtx.sprache = key || 'de';
+  const p = findProjekt(scanCtx.pid);
+  if (p) { p.sprache = scanCtx.sprache; save(); }
+  $$('.scan-sprache .pruef-chip').forEach(el => el.classList.toggle('aus', el.dataset.kind !== scanCtx.sprache));
+  const feld = $('#scan_nr');
+  if (feld && feld.value.trim() && scanCtx.treffer.length) scanSuchen();   // dieselbe Karte, andere Fassung
+}
+
 /** Eine Auflage festlegen — Seltenheit und Wert gehören danach wirklich zu dieser Karte. */
 function scanAuflage(idx) {
   if (!scanCtx) return;
@@ -9916,7 +10000,7 @@ async function scanSuchen() {
   const feld = $('#scan_nr'); const text = feld ? feld.value.trim() : '';
   if (!text) { toast('Bitte eine Nummer eingeben', 'info'); return; }
   scanCtx.sucht = true; scanCtx.meldung = ''; scanCtx.treffer = []; scanZeichnen();
-  const erg = await nachschlagSuche(text, findProjekt(scanCtx.pid));
+  const erg = await nachschlagSuche(text, findProjekt(scanCtx.pid), scanCtx.sprache);
   scanCtx.sucht = false;
   scanCtx.treffer = erg.treffer || [];
   scanCtx.gewaehlt = 0; scanCtx.filter = '';
@@ -19557,6 +19641,7 @@ function actEditVergabe(pid, vid) {
     ${(nachschlagDienst(p) && !hatMengen(p)) ? `<div class="form-row">
       <label class="field">Seltenheit / Auflage <input class="input" id="fe_seltenheit" value="${esc(v.seltenheit || '')}" placeholder="z.B. Ultra Rare"></label>
       <label class="field">Satz <input class="input" id="fe_satz" value="${esc(v.satz || '')}" placeholder="z.B. Chaos Origins"></label>
+      <label class="field">Sprache <select class="select" id="fe_sprache"><option value="">—</option>${KARTEN_SPRACHEN.map(sp => `<option value="${sp.key}"${v.sprache === sp.key ? ' selected' : ''}>${esc(sp.name)}</option>`).join('')}</select></label>
     </div>` : ''}
     <label class="field">Notiz <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">— Zustand, Auflage, Bemerkungen; alles frei überschreibbar</span>
       <textarea class="input" id="fe_beschrieb" rows="4">${esc(v.beschrieb || '')}</textarea></label>
@@ -19586,6 +19671,7 @@ function saveVergabeEdit(pid, vid) {
   { const b = $('#fe_beschrieb'); if (b) v.beschrieb = b.value; }
   { const se = $('#fe_seltenheit'); if (se) v.seltenheit = se.value.trim(); }
   { const sa = $('#fe_satz'); if (sa) v.satz = sa.value.trim(); }
+  { const sp = $('#fe_sprache'); if (sp) v.sprache = sp.value; }
   { const me = $('#fe_menge'); if (me) v.menge = me.value === '' ? null : (Number(me.value) || 0); }
   { const ei = $('#fe_einheit'); if (ei) v.einheit = ei.value.trim(); }
   { const da = $('#fe_datum'); if (da) v.datum = da.value || ''; }
@@ -21347,6 +21433,7 @@ document.addEventListener('click', e => {
     case 'scan-suchen':      scanSuchen(); break;
     case 'scan-waehlen':     scanWaehlen(kind); break;
     case 'scan-auflage':     scanAuflage(kind); break;
+    case 'scan-sprache':     scanSprache(kind); break;
     case 'pruef-ok':         pruefErledigt(pid, vid); break;
     case 'offen-pruefen':    actOffenePruefen(pid); break;
     case 'pruef-waehlen':    pruefWaehlen(kind, act.dataset.idx); break;
@@ -21826,7 +21913,11 @@ function selfTest() {
 
       // Wörter
       eq('W: Bau sagt Gewerk', W('posten', { vorlage: 'bau' }), 'Gewerk');
-      eq('W: Sammlung sagt Objekt', W('posten', { vorlage: 'sammlung' }), 'Objekt');
+      /* Die Vorlage sagt «Objekt», der Kartendienst «Karte» - und der
+         Dienst weiss genauer, worum es geht. */
+      eq('W: Sammlung ohne Dienst sagt Objekt', W('posten', { vorlage: 'sammlung', nachschlag: '' }), 'Objekt');
+      eq('W: mit Kartendienst sagt sie Karte', W('posten', { vorlage: 'sammlung' }), 'Karte');
+      eq('W: das Depot bleibt bei Position', W('posten', { vorlage: 'depot' }), 'Position');
       eq('W: unbekannter Schlüssel gibt sich selbst zurück', W('gibtsnicht', {}), 'gibtsnicht');
       state.woerter = { sammlung: { posten: 'Karte' } };
       eq('W: eigenes Wort schlägt die Vorlage', W('posten', { vorlage: 'sammlung' }), 'Karte');

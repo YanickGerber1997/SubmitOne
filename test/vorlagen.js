@@ -92,6 +92,12 @@ src += `
 ;globalThis.__alleVorlagen = function () { return VORLAGEN.map(v => v.key); };
 ;globalThis.__istArt = function (k) { return DASH_ARTEN.some(a => a.key === k); };
 ;globalThis.__dienste = function () { return NACHSCHLAG_DIENSTE; };
+;globalThis.__sprachen = function () { return KARTEN_SPRACHEN; };
+;globalThis.__ygoMitSprache = function (sp) {
+  /* Was nachschlagSuche mit einem Yu-Gi-Oh-Treffer macht, wenn eine
+     Sprache gesetzt ist - ohne Netz nachgestellt. */
+  return { name: 'Invoked Sorath', sprache: sp };
+};
 ;globalThis.__vorschlagKatalog = function (p) { return vorschlagKatalog(p); };
 ;globalThis.__kostenBlatt = function (pid) { viewKosten(pid); return globalThis.__blatt; };
 ;globalThis.__ebenenSummen = function (p) {
@@ -521,7 +527,7 @@ ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(ein
   const dash = start.html;
 
   ok('Kachel Bau: die gewohnten Zahlen', /Zuschlag/.test(dash) && /Volumen/.test(dash));
-  ok('Kachel Sammlung: ihre eigenen', /Objekte/.test(dash) && /Einstand/.test(dash) && /Erlös/.test(dash));
+  ok('Kachel Sammlung: ihre eigenen', /Karten/.test(dash) && /Einstand/.test(dash) && /Erlös/.test(dash));
   ok('Kachel Depot: ihre eigenen', /Positionen/.test(dash) && /Kurswert|Wert/.test(dash));
   ok('Kachel Unterschriften: zählt Stück, nicht Franken',
     /Sammelgebiete/.test(dash) && /Unt\./.test(dash), (dash.match(/.{0,30}Sammelgebiete.{0,60}/) || [''])[0]);
@@ -726,10 +732,47 @@ ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(ein
   eq('und darf auch keinen wollen', sandbox.nachschlagDienst({ vorlage: 'sammlung', nachschlag: '' }), null);
   ok('jeder Dienst hat einen Namen und einen Hinweis',
     sandbox.__dienste().every(d => d.name && (d.key === '' || d.hinweis)));
-  ok('Pokemon bringt eine eigene Ordnung mit',
-    /Trainerkarten/.test(JSON.stringify(sandbox.__vorschlagKatalog({ vorlage: 'sammlung', nachschlag: 'pokemon' }))));
-  ok('Yu-Gi-Oh die der Vorlage',
-    /Monsterkarten/.test(JSON.stringify(sandbox.__vorschlagKatalog({ vorlage: 'sammlung', nachschlag: 'ygo' }))));
+  /* Beide Kartendienste teilen dieselbe Ordnung - ein Sammler ordnet
+     nach «einzeln oder ungeoeffnet», nicht nach Kartenart. */
+  ['ygo', 'pokemon'].forEach(d => ok('Ordnung fuer ' + d + ': Einzelkarten und Ungeoeffnetes', (() => {
+    const k = JSON.stringify(sandbox.__vorschlagKatalog({ vorlage: 'sammlung', nachschlag: d }));
+    return /Einzelkarten/.test(k) && /Ungeöffnete Produkte/.test(k)
+        && !/Zauberkarten/.test(k) && !/Trainerkarten/.test(k);
+  })()));
+  ok('der Dienst setzt auch die Woerter',
+    sandbox.W('posten', { vorlage: 'sammlung', nachschlag: 'pokemon' }) === 'Karte'
+    && sandbox.R('gewerke', 'Gewerke', { vorlage: 'depot' }) === 'Anlagen');
+}
+
+/* ---- 2j) Die Sprache gehoert an die Karte ----
+   "Deutsch und englisch - ich habe beides." Damit ist die Sprache
+   keine Einstellung des Programms, sondern eine Eigenschaft des
+   Stuecks: zwei verschiedene Waren mit verschiedenen Preisen. */
+{
+  eq('vier Sprachen zur Wahl', sandbox.__sprachen().length, 4);
+  eq('Deutsch ist die erste', sandbox.spracheInfo('de').name, 'Deutsch');
+  eq('Unbekanntes faellt auf Deutsch', sandbox.spracheInfo('xx').key, 'de');
+  eq('ohne Angabe ebenso', sandbox.spracheInfo('').kurz, 'DE');
+
+  const t = {
+    name: 'Charizard', art: 'Pokemon Fire', kategorie: '1',
+    setCode: 'base1-4', setName: 'Base Set', satzId: 'base1', kartenNummer: '4/102',
+    seltenheit: 'Rare · Holo', preisEur: 477.45, setSicher: true, auflagen: 1, auflagenListe: [],
+    bild: 'x.webp', preisArt: 'Preis-Trend', stand: '2026-08-21', sprache: 'en',
+  };
+  const po = sandbox.pokemonZuPosten(t);
+  eq('die Sprache steht am Posten', po.sprache, 'en');
+  ok('… und im Vermerk', /Englisch/.test(po.beschrieb), po.beschrieb);
+  /* Cardmarket fuehrt EINEN Preis je Karte, nicht je Sprachfassung.
+     Eine deutsche Erstauflage kann ein Vielfaches wert sein - wer das
+     nicht weiss, haelt eine fremde Zahl fuer seine. */
+  ok('der Preis sagt, dass er nicht nach Sprache getrennt ist',
+    /nicht nach Sprache getrennt/.test(po.beschrieb), po.beschrieb);
+
+  /* Yu-Gi-Oh fuehrt nur englische Namen - die Sprache der eigenen
+     Karte bleibt trotzdem eine Angabe, die man beim Verkaufen braucht. */
+  eq('auch ohne uebersetzten Namen wird die Sprache festgehalten',
+    sandbox.__ygoMitSprache('de').sprache, 'de');
 }
 
 /* ---- 3) Der Bau-Fall bleibt, wie er war ---- */
@@ -785,13 +828,16 @@ ok('baut die richtige Anfrage',
   && /fname=Blue-Eyes/.test(sandbox.ygoUrl({ art: 'name', wert: 'Blue-Eyes' })));
 
 // Kartenart → Katalognummer
-eq('Fusion gehört ins Extra Deck', sandbox.ygoKategorie('fusion'), '104');
-eq('Link auch', sandbox.ygoKategorie('link'), '104');
-eq('Pendel schlägt Fusion', sandbox.ygoKategorie('fusion_pendulum'), '105');
-eq('Zauber', sandbox.ygoKategorie('spell'), '102');
-eq('Falle', sandbox.ygoKategorie('trap'), '103');
-eq('Effektmonster', sandbox.ygoKategorie('effect'), '101');
-eq('Unbekanntes wird Neuzugang, nicht falsch einsortiert', sandbox.ygoKategorie('waswohl'), '901');
+/* Die Kartenart gliedert nicht mehr: Ein Sammler trennt Einzelkarte
+   von ungeoeffnetem Produkt, nicht Zauber von Falle. Die Art bleibt
+   als Eigenschaft im Vermerk - auf Deutsch. */
+ok('jede einzelne Karte ist eine Einzelkarte',
+  ['fusion', 'link', 'spell', 'trap', 'effect', 'waswohl'].every(f => sandbox.ygoKategorie(f) === '1'));
+eq('die Art kommt auf Deutsch', sandbox.ygoArtDeutsch('Counter Trap'), 'Konterfalle');
+eq('… auch bei Fusionsmonstern', sandbox.ygoArtDeutsch('Fusion Effect Monster'), 'Fusionsmonster');
+eq('… und beim Schnellzauber', sandbox.ygoArtDeutsch('Quick-Play Spell'), 'Schnellzauber');
+eq('Unbekanntes bleibt stehen, statt falsch uebersetzt zu werden',
+  sandbox.ygoArtDeutsch('Skill Card'), 'Skill Card');
 ok('jede vergebene Kategorie steht auch im Katalog der Vorlage', (() => {
   const codes = new Set(sandbox.__katalogCodes('sammlung'));
   return ['normal','effect','ritual','spell','trap','fusion','synchro','xyz','link','normal_pendulum','waswohl']
@@ -802,7 +848,8 @@ ok('jede vergebene Kategorie steht auch im Katalog der Vorlage', (() => {
 const a1 = sandbox.ygoAuswerten(ANTWORT_PASSCODE, { art: 'passcode', wert: '43989315' });
 eq('Passcode-Antwort: ein Treffer', a1.treffer.length, 1);
 eq('Name übernommen', a1.treffer[0].name, 'Invoked Sorath');
-eq('Kategorie aus der Kartenart', a1.treffer[0].kategorie, '104');
+eq('jede Karte ist eine Einzelkarte', a1.treffer[0].kategorie, '1');
+eq('die Art steht auf Deutsch dabei', a1.treffer[0].art, 'Fusionsmonster');
 eq('Set und Seltenheit übernommen', [a1.treffer[0].setCode, a1.treffer[0].seltenheit], ['CORI-EN030', 'Super Rare']);
 eq('Cardmarket-Preis übernommen', a1.treffer[0].preisEur, 0.27);
 ok('Bild übernommen', /43989315/.test(a1.treffer[0].bild));
@@ -900,8 +947,8 @@ eq('… eine eigene Nummer nach ihrer ersten Ziffer', sandbox.gruppeVon({ bkp: '
 eq('… ein blosser Passcode wartet auf seine Auflage', sandbox.gruppeVon({ bkp: '89631139' }, S), '?');
 eq('… und ohne Nummer ebenso', sandbox.gruppeVon({ bkp: '' }, S), '?');
 eq('Überschrift aus dem Katalog der Vorlage', sandbox.gruppeTitel('1', [], S), 'Einzelkarten');
-eq('… und die zweite Gruppe sind die geschlossenen Produkte',
-  sandbox.gruppeTitel('2', [], S), 'Geschlossene Produkte');
+eq('… und die zweite Gruppe sind die ungeoeffneten Produkte',
+  sandbox.gruppeTitel('2', [], S), 'Ungeöffnete Produkte');
 eq('Überschrift aus den Posten, wenn die Vorlage keine kennt',
   sandbox.gruppeTitel('CORI', [{ bkp: 'CORI-EN030' }, { bkp: 'CORI-EN040', satz: 'Chaos Origins' }], S),
   'Chaos Origins');
@@ -942,7 +989,7 @@ const posten = sandbox.ygoZuPosten(a1.treffer[0], k);
    Danach sucht man, damit vergleicht man, die steht im Angebot. */
 eq('Posten trägt die Nummer von der Karte', posten.bkp, 'CORI-EN030');
 eq('… und den Satz für die Gruppenüberschrift', posten.satz, 'Chaos Origins');
-eq('… die Kartenart bleibt als eigene Angabe erhalten', posten.kategorie, '104');
+eq('… und der Posten liegt unter Einzelkarten', posten.kategorie, '1');
 eq('ohne bestimmte Auflage tritt der Passcode an die Stelle der Nummer',
   sandbox.ygoZuPosten(a4.treffer[0], k).bkp, '89631146');
 eq('Posten heisst wie die Karte', posten.gewerk, 'Invoked Sorath');
@@ -1114,7 +1161,7 @@ async function netzPruefungen() {
 
   await mitNetz([ANTWORT_SETCODE, ANTWORT_SDK_VOLL, kursAntwort], async gerufen => {
     const erg = await sandbox.kartenSuche('SDK-001');
-    eq('Weg über den Set-Code: Kartenart nachgeladen', erg.treffer[0].kategorie, '101');
+    eq('Weg über den Set-Code: Kartenart nachgeladen', erg.treffer[0].kategorie, '1');
     eq('… und das gesuchte Set bleibt stehen', erg.treffer[0].setCode, 'SDK-001');
     eq('… die Seltenheit der Erstauskunft ebenfalls', erg.treffer[0].seltenheit, 'Ultra Rare');
     eq('… zwei Anfragen an die Datenbank', gerufen.filter(u => /ygoprodeck/.test(u)).length, 2);
@@ -1196,7 +1243,7 @@ async function netzPruefungen() {
   eq('sie trägt ihr Bild', !!neu.bild, true);
   eq('der Marktwert steht als Angebot vom Markt', sandbox.bestBetrag(neu), 0.25);
   eq('sie trägt die Nummer von der Karte', neu.bkp, 'CORI-EN030');
-  eq('die Kartenart ist mitgekommen', neu.kategorie, '104');
+  eq('die Kartenart ist mitgekommen', neu.kategorie, '1');
   eq('der Satz ist mitgekommen', neu.satz, 'Chaos Origins');
 }
 

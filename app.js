@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v397';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v398';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -3108,7 +3108,7 @@ function viewGewerke(pid) {
     if (location.hash !== h) history.replaceState(null, '', h);   // URL aufs erste Gewerk, ohne Extra-Verlaufseintrag
     return viewVergabeDetail(pid, vs[0].id);
   }
-  const toolbar = `<button class="btn sm" data-act="new-vergabe" data-pid="${p.id}" style="margin-left:auto">${esc(W('neu', p))}</button>`;
+  const toolbar = `${nachschlagDienst(p) ? `<button class="btn sm" data-act="karte-scan" data-pid="${p.id}" style="margin-left:auto">🔎 ${esc(W('neu', p))}</button>` : ''}<button class="btn sm secondary" data-act="new-vergabe" data-pid="${p.id}"${nachschlagDienst(p) ? '' : ' style="margin-left:auto"'}>✎ von Hand</button>`;
   render(`
     <div class="detail-head"><div><h1 style="margin:0;font-size:var(--t-xl, 23px)">${esc(p.name)}</h1><div class="sub" style="margin-top:5px">${esc(W('posten_pl', p))} · Einzelansichten</div></div></div>
     ${projektTabs(p, 'gewerke', toolbar)}
@@ -3241,7 +3241,8 @@ function viewHandel(pid, vid) {
   </aside>`;
 
   const toolbar = `
-    <button class="btn sm" data-act="handel-kauf" data-pid="${p.id}" data-kind="${esc(v.symbol || v.bkp || '')}">+ Kauf erfassen</button>
+    <button class="btn sm" data-act="handel-kauf" data-pid="${p.id}" data-kind="${esc(v.symbol || v.bkp || '')}">+ Kauf ${esc(titel)}</button>
+    <button class="btn sm secondary" data-act="karte-scan" data-pid="${p.id}" title="Eine andere Anlage erfassen">${esc(W('neu', p))}</button>
     ${nachschlagDienst(p) === 'kurse' ? `<button class="btn sm secondary" data-act="kurse-auffrischen" data-pid="${p.id}">↻ Kurse auffrischen</button>` : ''}`;
 
   const kopfZahl = (l, w, cls) => `<div class="hd-zahl${cls ? ' ' + cls : ''}"><span>${l}</span><b>${w}</b></div>`;
@@ -3351,6 +3352,8 @@ function viewStueck(pid, vid) {
   </aside>`;
 
   const toolbar = `
+    ${nachschlagDienst(p) ? `<button class="btn sm" data-act="karte-scan" data-pid="${p.id}" title="Nummer eintippen, alles Übrige holt das Programm">${esc(W('neu', p))}</button>` : ''}
+    <button class="btn sm secondary" data-act="new-vergabe" data-pid="${p.id}" title="Von Hand erfassen — für alles ohne Nummer">✎ von Hand</button>
     <select class="select vergabe-status-sel" data-pid="${p.id}" data-vid="${v.id}" title="Stand setzen" style="padding:6px 9px;font-size:var(--t-s, 13px)">
       ${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(stInfo(s.key, p).label)}</option>`).join('')}
     </select>

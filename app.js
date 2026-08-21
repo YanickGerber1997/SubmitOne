@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v410';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v411';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -3599,7 +3599,7 @@ function viewKosten(id) {
             : `<span class="muted">${esc(W('partnerLeer', p))}</span>`);
       rows += `<tr class="clickable kost-row${open ? ' open' : ''}" data-act="kost-toggle" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
         <td class="bkp-code"><span class="gw-chev">${open ? '▾' : '▸'}</span> ${esc(v.bkp)}</td>
-        <td><strong>${esc(postenName(v))}</strong>${v.menge != null && v.kursChf ? `<div class="posten-menge">${esc(mengenZeile(v.menge, v.einheit, v.kursChf, String(v.kategorie) === KURS_KATEGORIE.metall))}</div>` : ''}${chargenZeile(v) ? `<div class="posten-menge">${esc(chargenZeile(v))}</div>` : ''}${v.pruefen ? ` <span class="pruef-badge" title="Etwas ist noch nicht belegt — Zeile aufklappen">⚑ prüfen</span>` : ''}${v.eigen ? ` <span class="eigen-badge" title="Die Seltenheit stammt von dir, nicht aus der Datenbank — der Marktwert kann sie nicht abbilden">eigene Angabe</span>` : ''}${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
+        <td><strong>${esc(postenName(v))}</strong>${v.menge != null && v.kursChf ? `<div class="posten-menge">${esc(mengenZeile(v.menge, v.einheit, v.kursChf, String(v.kategorie) === KURS_KATEGORIE.metall))}</div>` : ''}${chargenZeile(v) ? `<div class="posten-menge">${esc(chargenZeile(v))}</div>` : ''}${v.pruefen ? ` <span class="pruef-badge" title="Etwas ist noch nicht belegt — Zeile aufklappen">⚑ prüfen</span>` : ''}${eigenMarke(v)}${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
         <td>${untCell}</td>
         <td class="num">${mB(z.kv)}</td>
         <td class="num">${z.rev != null && Math.abs(z.rev - z.kv) > 0.5 ? `${mB(z.rev)} <span class="chg-delta ${z.rev > z.kv ? 'up' : 'dn'}" title="Änderung gegenüber Erst-KV">${z.rev > z.kv ? '▲' : '▼'}</span>` : (z.rev != null ? mB(z.rev) : `<span class="muted">${mB(z.kv)}</span>`)}</td>
@@ -9891,6 +9891,11 @@ function auflageAnwenden(v, opt, p) {
      Pokémon je Variante in Euro (Cardmarket). Beide zählen — wer nur
      den Dollar kannte, liess bei Pokémon die alte Zahl stehen und
      nahm ihr zugleich die Fahne. */
+  /* Ein von Hand eingetragener Wert hat Vorrang. Wer ihn erfasst hat,
+     wusste mehr als die Datenbank — ein Nachschlagen darf das nicht
+     still wegwischen. Die Seltenheit oben wird trotzdem gesetzt: Das
+     sind zwei Fragen. */
+  if (v.wertEigen) return;
   if (opt.preisUsd || opt.preisEur) {
     const perUsd = !!opt.preisUsd;
     const kurs = perUsd ? (kurse.usd || KURS_NOTFALL.usd) : (kurse.eur || KURS_NOTFALL.eur);
@@ -9904,6 +9909,18 @@ function auflageAnwenden(v, opt, p) {
         : 'Cardmarket EUR ' + roh.toFixed(2) + ' für ' + (opt.seltenheit || opt.code || v.bkp))
       + ', Kurs ' + kurs.toFixed(4) + ', Stand ' + (kurse.datum || todayIso());
   }
+}
+
+/** Die Marke für alles, was von Hand kommt — eine statt zweier, damit
+    die Zeile nicht zugepflastert wird. Der Hinweistext sagt, WAS von
+    Hand ist; das ist die Auskunft, auf die es ankommt. */
+function eigenMarke(v) {
+  const teile = [];
+  if (v && v.eigen) teile.push('die Seltenheit');
+  if (v && v.wertEigen) teile.push('der Marktwert' + (v.wertEigen.quelle ? ' (' + v.wertEigen.quelle + ')' : ''));
+  if (!teile.length) return '';
+  return ' <span class="eigen-badge" title="Von Hand eingetragen: ' + esc(teile.join(' und '))
+    + '. Nicht aus der Datenbank belegt.">eigene Angabe</span>';
 }
 
 /** Die Seltenheit von Hand setzen — ausdrücklich als eigene Angabe.
@@ -9922,6 +9939,41 @@ function seltenheitEigen(v, seltenheit, grund) {
   v.beschrieb = ['Seltenheit: ' + (v.seltenheit || '—')
     + (v.eigen ? ' (eigene Angabe' + (grund ? ' — ' + grund : '') + ')' : '')]
     .concat(rest).join('\n');
+  return v;
+}
+
+/* Währungen, in denen ein Wert von Hand eingetragen werden kann.
+   Mehr braucht es nicht: Cardmarket rechnet in Euro, TCGPlayer in
+   Dollar, und der Franken ist die Sprache des Programms. */
+const WERT_WAEHRUNGEN = [['CHF', 'CHF'], ['EUR', 'EUR'], ['USD', 'USD']];
+
+/** Einen Marktwert von Hand setzen — mit Quelle und Datum.
+
+    Gebraucht, sobald die Quelle die Auflage nicht kennt. Pokécardex
+    führt Cosmos Holo, sendet aber keinen CORS-Kopf — die App kann
+    dort nie selbst nachsehen. Dann trägt der Besitzer die Zahl ein,
+    und sie steht so belegt da wie eine geholte: mit Quelle, Kurs und
+    Datum. */
+function wertVonHand(v, betrag, waehrung, quelle, k) {
+  k = k || kurse;
+  const zahl = Number(betrag);
+  if (!isFinite(zahl) || zahl <= 0) { delete v.wertEigen; return v; }
+  const w = String(waehrung || 'CHF').toUpperCase();
+  const kurs = w === 'EUR' ? (k.eur || KURS_NOTFALL.eur)
+    : w === 'USD' ? (k.usd || KURS_NOTFALL.usd) : 1;
+  const chf = Math.round(zahl * kurs * 100) / 100;
+  const datum = k.datum || todayIso();
+  v.wertEigen = { betrag: zahl, waehrung: w, quelle: String(quelle || '').trim(), datum: datum };
+
+  const markt = (v.eingeladene || []).find(e => e.firma === 'Marktpreis') || (v.eingeladene || [])[0];
+  if (markt) markt.betrag = chf;
+  else (v.eingeladene = v.eingeladene || []).push({ id: uid('e'), firma: 'Marktpreis', email: '', betrag: chf, status: 'offeriert', datumMail: '' });
+
+  const rest = String(v.beschrieb || '').split('\n').filter(z => z.indexOf('Marktwert: ') !== 0);
+  v.beschrieb = rest.concat(['Marktwert: ' + (v.wertEigen.quelle || 'eigene Erhebung')
+    + ' ' + w + ' ' + zahl.toFixed(2)
+    + (w === 'CHF' ? '' : ', Kurs ' + kurs.toFixed(4))
+    + ', Stand ' + datum + ' — von Hand eingetragen']).join('\n');
   return v;
 }
 
@@ -19939,7 +19991,13 @@ function actEditVergabe(pid, vid) {
       <label class="field">Seltenheit / Auflage <input class="input" id="fe_seltenheit" value="${esc(v.seltenheit || '')}" placeholder="z.B. Ultra Rare"></label>
       <label class="field">Satz <input class="input" id="fe_satz" value="${esc(v.satz || '')}" placeholder="z.B. Chaos Origins"></label>
       <label class="field">Sprache <select class="select" id="fe_sprache"><option value="">—</option>${KARTEN_SPRACHEN.map(sp => `<option value="${sp.key}"${v.sprache === sp.key ? ' selected' : ''}>${esc(sp.name)}</option>`).join('')}</select></label>
-    </div>` : ''}
+    </div>
+    <div class="form-row">
+      <label class="field">Marktwert von Hand <input class="input" type="number" step="any" id="fe_wert" value="${v.wertEigen ? v.wertEigen.betrag : ''}" placeholder="leer = automatisch"></label>
+      <label class="field">Währung <select class="select" id="fe_waehrung">${WERT_WAEHRUNGEN.map(([kz, nm]) => `<option value="${kz}"${(v.wertEigen && v.wertEigen.waehrung) === kz ? ' selected' : ''}>${esc(nm)}</option>`).join('')}</select></label>
+      <label class="field">Quelle <input class="input" id="fe_quelle" value="${esc((v.wertEigen && v.wertEigen.quelle) || '')}" placeholder="z.B. Pokécardex"></label>
+    </div>
+    <p class="muted" style="font-size:var(--t-xs, 11.5px);margin:2px 0 0">Für Auflagen, die keine Datenbank führt. Ein Wert von Hand hat Vorrang — Nachschlagen überschreibt ihn nicht.</p>` : ''}
     <label class="field">Notiz <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">— Zustand, Auflage, Bemerkungen; alles frei überschreibbar</span>
       <textarea class="input" id="fe_beschrieb" rows="4">${esc(v.beschrieb || '')}</textarea></label>
     <label class="einst-schalter"><input type="checkbox" id="fe_pruefen" ${v.pruefen ? 'checked' : ''}>
@@ -19971,6 +20029,9 @@ function saveVergabeEdit(pid, vid) {
      tippt, darf eine belegte Auflage nicht entwerten. */
   { const se = $('#fe_seltenheit');
     if (se && se.value.trim() !== String(v.seltenheit || '')) seltenheitEigen(v, se.value.trim());
+  }
+  { const we = $('#fe_wert');
+    if (we) wertVonHand(v, we.value, ($('#fe_waehrung') || {}).value, ($('#fe_quelle') || {}).value);
   }
   { const sa = $('#fe_satz'); if (sa) v.satz = sa.value.trim(); }
   { const sp = $('#fe_sprache'); if (sp) v.sprache = sp.value; }

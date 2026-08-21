@@ -1219,6 +1219,52 @@ eq('Cosmos bekommt ein Kürzel', sandbox.seltenheitKuerzel('Selten · Cosmos Hol
   ok('leer gesetzt heisst: keine eigene Angabe', !v.eigen, String(v.eigen));
 }
 
+/* Ein Marktwert von Hand — für Auflagen, die keine erreichbare
+   Datenbank führt. Pokécardex kennt Cosmos Holo und ruft 7 Euro auf,
+   sendet aber keinen CORS-Kopf: Die App kann dort nie selbst
+   nachsehen. Also trägt der Besitzer die Zahl ein — mit Quelle, Kurs
+   und Datum, so belegt wie eine geholte. (21.08.2026) */
+{
+  sandbox.__kursSetzen({ rates: { CHF: 0.9333, USD: 1.16 }, date: '2026-08-20' });
+  const k = sandbox.__kurse();
+  const v = { gewerk: 'Gengar', bkp: '050/088',
+    beschrieb: 'Seltenheit: Selten · Cosmos Holo\nMarktwert: Cardmarket EUR 1.05, Stand 2026-08-21',
+    eingeladene: [{ id: 'e_1', firma: 'Marktpreis', betrag: 0.98, status: 'offeriert' }] };
+
+  sandbox.wertVonHand(v, 7, 'EUR', 'Pokécardex');
+  ok('von Hand: der Betrag steht in Franken',
+    Math.abs(v.eingeladene[0].betrag - Math.round(7 * k.eur * 100) / 100) < 0.001,
+    String(v.eingeladene[0].betrag));
+  ok('… die Quelle steht im Vermerk',
+    /Marktwert: Pokécardex EUR 7\.00, Kurs [\d.]+, Stand .* — von Hand eingetragen/.test(v.beschrieb), v.beschrieb);
+  eq('… und es steht nur EINE Marktwert-Zeile da',
+    v.beschrieb.split('\n').filter(z => z.indexOf('Marktwert: ') === 0).length, 1);
+  eq('… die Angabe selbst bleibt nachlesbar',
+    [v.wertEigen.betrag, v.wertEigen.waehrung, v.wertEigen.quelle], [7, 'EUR', 'Pokécardex']);
+
+  /* Die wichtigste Zusage: Kein Nachschlagen wischt die Arbeit weg.
+     Die Seltenheit wird dabei trotzdem gesetzt — das sind zwei Fragen. */
+  sandbox.auflageAnwenden(v, { seltenheit: 'Selten · Holo', preisEur: 1.05, preisUsd: 0 }, S);
+  ok('ein Nachschlagen überschreibt den Wert von Hand NICHT',
+    Math.abs(v.eingeladene[0].betrag - Math.round(7 * k.eur * 100) / 100) < 0.001,
+    String(v.eingeladene[0].betrag));
+  eq('… aber die Seltenheit wird gesetzt', v.seltenheit, 'Selten · Holo');
+
+  /* Franken brauchen keinen Kurs. */
+  sandbox.wertVonHand(v, 12.5, 'CHF', 'Verkauf an der Börse');
+  ok('in Franken steht kein Kurs dabei',
+    /Marktwert: Verkauf an der Börse CHF 12\.50, Stand/.test(v.beschrieb), v.beschrieb);
+  eq('… und der Betrag gilt unverändert', v.eingeladene[0].betrag, 12.5);
+
+  /* Leeren gibt den Automaten wieder frei. */
+  sandbox.wertVonHand(v, '', 'EUR', '');
+  ok('leer heisst: kein Wert von Hand mehr', !v.wertEigen, JSON.stringify(v.wertEigen));
+  sandbox.auflageAnwenden(v, { seltenheit: 'Selten · Holo', preisEur: 1.05, preisUsd: 0 }, S);
+  ok('… und dann greift das Nachschlagen wieder',
+    Math.abs(v.eingeladene[0].betrag - Math.round(1.05 * k.eur * 100) / 100) < 0.001,
+    String(v.eingeladene[0].betrag));
+}
+
 // Treffer → Posten
 const posten = sandbox.ygoZuPosten(a1.treffer[0], k);
 /* Die Nummer ist die, die auf der Karte steht — nicht die Kategorie.

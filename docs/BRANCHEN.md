@@ -154,6 +154,29 @@ von N Auflagen» im Vermerk und einer gelben Zeile im Fenster. Eine falsche Zahl
 ohne Warnung wäre schlimmer als gar keine. Der Fall steht als Regressionstest in
 `test/vorlagen.js`.
 
+## Was nicht feststeht, wird nicht behauptet
+
+Die Frage, die den Rest nach sich zog: *Stimmt die Seltenheit immer?* Nein —
+und zwar grundsätzlich nicht. Der Passcode bezeichnet die **Karte**, nicht den
+**Druck**. `89631139` (Blue-Eyes White Dragon) hat **78 Auflagen** mit **20
+Seltenheiten**, von Common bis Ghost Rare, USD 2 bis 2999.
+
+Die erste Fassung nahm in diesem Fall `sets[0]` — die alphabetisch erste
+Sammlung, also reiner Zufall — und schrieb deren Seltenheit hin. Eine erfundene
+Angabe, die wie eine belegte aussah.
+
+Drei Regeln daraus, die über das Nachschlagen hinaus gelten sollten:
+
+1. **Nicht raten.** Steht die Auflage nicht fest, bleiben Set und Seltenheit
+   leer statt plausibel gefüllt.
+2. **Fragen, nicht blockieren.** Die Auflagen liegen zur Wahl (nach Wert
+   sortiert, mit Filter). Wer nicht wählt, bekommt den Posten trotzdem — mit der
+   Merkfahne `pruefen`, sichtbar als ⚑ in der Liste, gezählt in der Statuszeile,
+   erklärt in der ersten Zeile der Notiz, weg mit einem Klick. So lassen sich
+   400 Karten am Stück erfassen und die unklaren danach abarbeiten.
+3. **Alles bleibt von Hand änderbar.** Das Bearbeiten-Fenster trägt jetzt die
+   Notiz und die Merkfahne — keine Angabe aus dem Netz ist festgeschraubt.
+
 ## Was noch Bau spricht
 
 Die **Druckblätter** (Baukostenübersicht, Deckblatt, Submittentenliste)

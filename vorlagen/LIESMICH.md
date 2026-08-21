@@ -89,18 +89,46 @@ er ist der zuverlässigste Weg. Deutsche Set-Codes (`CORI-DE030`) kennt die
 Datenbank dagegen nicht; der Name kommt dann englisch zurück und lässt sich
 überschreiben.
 
-**Zum Wert — bitte einmal lesen:**
+### Die Seltenheit: warum die Nummer allein nicht reicht
 
-- Steht die **Auflage fest** (Set-Code eingegeben oder es gibt nur eine), gilt
-  der Preis genau dieser Auflage. Das ist die brauchbare Zahl.
-- Steht sie **nicht** fest, ist der Wert der **günstigste über alle Auflagen** —
-  bei einer alten Rarität um ein Vielfaches zu tief. Das Fenster sagt es dann in
-  Gelb dazu, und im Vermerk der Karte steht es auch. Wer es genau will, tippt
-  den Set-Code seiner Karte ein.
+Der Passcode bezeichnet die **Karte**, nicht den **Druck**. Blue-Eyes White
+Dragon (`89631139`) gibt es in **78 Auflagen** mit **20 verschiedenen
+Seltenheiten** — von Common bis Ghost Rare — und Preisen von USD 2 bis 2999.
+
+Deshalb behauptet das Programm in so einem Fall **gar keine Seltenheit**.
+Stattdessen legt es die Auflagen zur Wahl vor, nach Wert sortiert, mit
+Set-Code, Seltenheit und Preis. Du tippst die an, die auf deiner Karte steht.
+
+| Eingabe | Ergebnis |
+|---|---|
+| `LOB-001` (Set-Code) | Ultra Rare, CHF 49.66 — **exakt** |
+| `89631139` (Passcode) | keine Seltenheit, Wahl aus 78 Auflagen, ⚑ Merkfahne |
+| `43989315` (nur eine Auflage) | Super Rare, CHF 0.25 — **exakt**, keine Rückfrage |
+
+**Wer nicht wählt, wird nicht blockiert:** Die Karte kommt trotzdem herein,
+aber mit der Fahne **⚑ prüfen** — sichtbar in der Liste, gezählt in der
+Statuszeile („⚑ 12 zu prüfen"), und die Notiz sagt in der ersten Zeile, was
+offen ist. So kannst du 400 Karten in einem Rutsch erfassen und die
+unklaren nachher in Ruhe durchgehen. Ein Klick auf **✓ geprüft** in der
+aufgeklappten Zeile nimmt die Fahne weg.
+
+**Zum Wert:**
+
+- Steht die Auflage fest, gilt der Preis **genau dieser Auflage**.
+- Sonst der günstigste über alle Auflagen — bei einer alten Rarität um ein
+  Vielfaches zu tief. Steht so im Vermerk und in Gelb im Fenster.
 - Umgerechnet wird mit dem Tageskurs; Kurs, Quelle und Datum stehen im Vermerk.
   Ohne Netz wird mit einem Näherungskurs gerechnet und das ebenfalls vermerkt.
-- **Zustand und Auflage kann keine Datenbank wissen.** Der Wert landet deshalb
-  in *Marktwert* — was du verlangst, trägst du unter *Angebot* selbst ein.
+- **Zustand kann keine Datenbank wissen.** Der Wert landet deshalb in
+  *Marktwert* — was du verlangst, trägst du unter *Angebot* selbst ein.
+
+### Alles von Hand nachbessern
+
+Nichts, was das Nachschlagen einträgt, ist festgeschraubt. In der
+Kostenübersicht die Zeile aufklappen → **✎ Bearbeiten**: dort stehen Nummer,
+Name, Einstand, Status, die **Notiz** (Seltenheit, Auflage, Zustand — freier
+Text) und die Merkfahne als Schalter. Marktwert, Angebot und Marktplatz
+ändern sich über die üblichen Felder.
 
 Quelle ist die offene Datenbank **YGOPRODeck**; das Programm fragt sie direkt
 aus dem Browser, ohne Server dazwischen. Fällt sie aus, bleibt die Nummer

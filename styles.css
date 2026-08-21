@@ -2616,6 +2616,34 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 .scan-wert .muted { display: block; font-size: var(--t-2xs); }
 .scan-auswahl { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .scan-eigen { margin-top: 10px; }
+/* Die Auflagen zur Wahl. Vier Spalten, weil man genau vier Dinge
+   vergleicht: Kennung, Seltenheit, Sammlung, Preis. */
+.scan-auflagen { margin-top: 10px; }
+.scan-auflagen-kopf { font-size: var(--t-xs); font-weight: 600; color: var(--text-soft); margin-bottom: 5px; }
+.scan-auflagen-liste { max-height: 240px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.scan-auflagen-liste .input { margin-bottom: 6px; }
+.scan-auflage {
+  display: grid; grid-template-columns: 104px 1fr 1.4fr auto; gap: 8px; align-items: baseline;
+  width: 100%; text-align: left; padding: 6px 9px; cursor: pointer;
+  background: none; border: 0; border-bottom: 1px solid var(--line-soft); font-size: var(--t-xs);
+}
+.scan-auflage:last-child { border-bottom: 0; }
+.scan-auflage:hover { background: var(--accent-soft); }
+.scan-auflage-selt { font-weight: 600; }
+.scan-auflage-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scan-auflage-preis { font-family: var(--font-zahl); white-space: nowrap; }
+
+/* Die Merkfahne: etwas ist noch nicht belegt. */
+.pruef-badge {
+  display: inline-block; padding: 1px 6px; border-radius: var(--rund-s);
+  font-size: var(--t-2xs); font-weight: 600; white-space: nowrap;
+  color: var(--b-gelb-text); background: var(--b-gelb-weich); border: 1px solid var(--b-gelb-rand);
+}
+
+@media (max-width: 560px) {
+  .scan-auflage { grid-template-columns: 92px 1fr auto; }
+  .scan-auflage-name { display: none; }
+}
 .scan-warnung { margin-top: 8px; padding: 7px 9px; font-size: var(--t-xs); line-height: 1.45;
   color: var(--b-gelb-text); background: var(--b-gelb-weich); border: 1px solid var(--b-gelb-rand); border-radius: var(--radius); }
 .scan-meldung { margin: 12px 0 0; padding: 8px 10px; font-size: var(--t-s);

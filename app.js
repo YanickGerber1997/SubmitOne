@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v381';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v382';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -2721,7 +2721,9 @@ function viewKosten(id) {
   // im Hauptvertrag des Sammelauftrags (211.3/.4/.5 in 211). Eine Zeile mit
   // 0.00 wäre irreführend. Umschaltbar im Gewerk unter «Sammelvergabe».
   const vs = (p.vergaben || []).filter(weistAus).slice().sort((a, b) => (a.bkp || '').localeCompare(b.bkp || ''));
-  setStatusExtra(vs.length + ' ' + (vs.length === 1 ? W('posten', p) : W('posten_pl', p)) + ' · ' + W('prognose', p) + ' ' + chf(vs.reduce((t, v) => t + kostenZeile(v).prognose, 0)));
+  const zuPruefen = vs.filter(v => v.pruefen).length;
+  setStatusExtra(vs.length + ' ' + (vs.length === 1 ? W('posten', p) : W('posten_pl', p)) + ' · ' + W('prognose', p) + ' ' + chf(vs.reduce((t, v) => t + kostenZeile(v).prognose, 0))
+    + (zuPruefen ? ' · ⚑ ' + zuPruefen + ' zu prüfen' : ''));
 
   const toolbar = `
     <button class="btn sm secondary" data-act="pdf-kostenschaetzung" data-pid="${p.id}">🖨 ${esc(W('schaetzung', p))}</button>
@@ -2785,7 +2787,7 @@ function viewKosten(id) {
       const untCell = v.firma ? `<span title="vergeben an ${esc(v.firma)}">${esc(v.firma)}</span>` : (ein ? `<span class="muted">${ein} eingeladen${off ? ` · ${off} Offerte${off === 1 ? '' : 'n'}` : ''}</span>` : `<span class="muted">${esc(W('partnerLeer', p))}</span>`);
       rows += `<tr class="clickable kost-row${open ? ' open' : ''}" data-act="kost-toggle" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
         <td class="bkp-code"><span class="gw-chev">${open ? '▾' : '▸'}</span> ${esc(v.bkp)}</td>
-        <td><strong>${esc(v.gewerk)}</strong>${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
+        <td><strong>${esc(v.gewerk)}</strong>${v.pruefen ? ` <span class="pruef-badge" title="Etwas ist noch nicht belegt — Zeile aufklappen">⚑ prüfen</span>` : ''}${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
         <td>${untCell}</td>
         <td class="num">${mB(z.kv)}</td>
         <td class="num">${z.rev != null && Math.abs(z.rev - z.kv) > 0.5 ? `${mB(z.rev)} <span class="chg-delta ${z.rev > z.kv ? 'up' : 'dn'}" title="Änderung gegenüber Erst-KV">${z.rev > z.kv ? '▲' : '▼'}</span>` : (z.rev != null ? mB(z.rev) : `<span class="muted">${mB(z.kv)}</span>`)}</td>
@@ -2810,7 +2812,7 @@ function viewKosten(id) {
               <div style="font-size:var(--t-s, 13px);margin-bottom:6px">${statusPill(v)}</div>
               <div class="muted" style="font-size:var(--t-s, 12.5px)">${esc(gewerkSteps(v).hint)}</div>
               <div style="font-size:var(--t-s, 12.5px);margin-top:6px">${ein ? `${ein} Unternehmer eingeladen${off ? `, ${off} Offerte${off === 1 ? '' : 'n'} erhalten` : ''}` : 'noch nicht ausgeschrieben'}${v.firma ? ` · vergeben an <b>${esc(v.firma)}</b>` : ''}</div>
-              <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><a class="btn sm" href="#/projekt/${p.id}/vergabe/${v.id}">Detail / Ausschreibung ↗</a><button class="btn sm secondary" data-act="ks-edit" data-pid="${p.id}" data-vid="${v.id}">✎ Kostenschätzung</button></div>
+              <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"><a class="btn sm" href="#/projekt/${p.id}/vergabe/${v.id}">Detail / Ausschreibung ↗</a><button class="btn sm secondary" data-act="edit-vergabe" data-pid="${p.id}" data-vid="${v.id}">✎ Bearbeiten</button><button class="btn sm secondary" data-act="ks-edit" data-pid="${p.id}" data-vid="${v.id}">✎ ${esc(W('schaetzung', p))}</button>${v.pruefen ? `<button class="btn sm" data-act="pruef-ok" data-pid="${p.id}" data-vid="${v.id}" title="Merkfahne entfernen">✓ geprüft</button>` : ''}</div>
             </div>
           </div>
         </td></tr>`;
@@ -7405,6 +7407,8 @@ function csvPostenAnlegen(pid, posten) {
       firma: x.firma || '', betrag: x.betrag || 0, schaetzung: x.schaetzung || 0,
       beschrieb: x.beschrieb || '', frist: x.frist || '', bauStart: '', bauEnde: '',
       bild: x.bild || '',
+      // Merkfahne: etwas ist noch nicht belegt (z.B. welche Auflage).
+      pruefen: !!x.pruefen,
       eingeladene: [], nachtraege: [], rapporte: [], vorgaenge: [], rechnungen: [], budgetposten: [],
     };
     /* Der Marktwert kommt als ANGEBOT herein, nicht als eigenes Feld.
@@ -7636,7 +7640,7 @@ function ygoAuswerten(antwort, erk) {
         setCode: antwort.set_code || '', setName: antwort.set_name || '',
         seltenheit: antwort.set_rarity || '', preisUsd: ygoZahl(antwort.set_price),
         preisEur: 0, frameType: '', art: '', kategorie: '', bild: '',
-        setSicher: true, auflagen: 1, nachladen: true,
+        setSicher: true, auflagen: 1, auflagenListe: [], nachladen: true,
       }],
       fehler: '',
     };
@@ -7650,11 +7654,15 @@ function ygoAuswerten(antwort, erk) {
     const sets = Array.isArray(k.card_sets) ? k.card_sets : [];
     // Wurde nach einem Set-Code gesucht, gilt genau dieses Set — sonst das erste.
     const treffend = gesucht ? sets.find(x => String(x.set_code).toUpperCase() === gesucht) : null;
-    const s = treffend || sets[0] || {};
     /* «Sicher» heisst: Wir wissen, WELCHE Auflage gemeint ist — weil
-       danach gesucht wurde oder weil es nur eine gibt. Nur dann darf
-       ihr Set-Preis gelten. */
+       danach gesucht wurde oder weil es nur eine gibt.
+
+       Sonst bleibt Set und Seltenheit LEER. Die Datenbank liefert die
+       Auflagen alphabetisch nach Sammlungsname; die erste zu nehmen
+       hiesse, eine Seltenheit zu erfinden. Die Liste steht stattdessen
+       zur Wahl. */
     const setSicher = !!treffend || sets.length === 1;
+    const s = setSicher ? (treffend || sets[0] || {}) : {};
     const pr = (Array.isArray(k.card_prices) ? k.card_prices[0] : k.card_prices) || {};
     const bilder = Array.isArray(k.card_images) ? k.card_images[0] : null;
     return {
@@ -7665,6 +7673,10 @@ function ygoAuswerten(antwort, erk) {
       preisUsd: ygoZahl(s.set_price), preisEur: ygoZahl(pr.cardmarket_price),
       bild: (bilder && (bilder.image_url_small || bilder.image_url)) || '',
       setSicher, auflagen: sets.length, nachladen: false,
+      auflagenListe: sets.map(x => ({
+        code: x.set_code || '', name: x.set_name || '',
+        seltenheit: x.set_rarity || '', preisUsd: ygoZahl(x.set_price),
+      })),
     };
   });
   return { treffer, fehler: '' };
@@ -7727,14 +7739,18 @@ function ygoHerkunft(t, k) {
   /* Der wichtigste Satz im ganzen Vermerk: Weiss man die Auflage
      nicht, ist die Zahl die GÜNSTIGSTE — und damit für eine alte
      Rarität oft um ein Vielfaches zu tief. Das muss dastehen. */
-  if (!t.setSicher && t.auflagen > 1) teile.push('günstigste von ' + t.auflagen + ' Auflagen — Auflage prüfen');
+  if (!t.setSicher && t.auflagen > 1) teile.push('günstigste von ' + t.auflagen + ' Auflagen — Auflage nicht bestimmt');
   teile.push('Stand ' + (k.datum || todayIso()));
   return teile.join(', ');
 }
 
 /** Ein Treffer als Posten, so wie ihn auch der CSV-Einleser baut. */
 function ygoZuPosten(t, k) {
+  const offen = !t.setSicher && t.auflagen > 1;
   const zeilen = [
+    /* Diese Zeile steht zuoberst, weil sie das Wichtigste sagt: Was
+       hier steht, ist noch nicht belegt. */
+    offen ? '⚑ Auflage nicht bestimmt — ' + t.auflagen + ' mögliche. Seltenheit und Wert prüfen.' : '',
     [t.art, t.seltenheit].filter(Boolean).join(' · '),
     [t.setCode, t.setName].filter(Boolean).join(' · '),
     t.passcode ? 'Passcode ' + t.passcode : '',
@@ -7745,7 +7761,17 @@ function ygoZuPosten(t, k) {
     gewerk: t.name || ('Karte ' + t.passcode),
     schaetzung: 0, marktwert: ygoMarktwert(t, k), betrag: 0, firma: '', erhalten: 0,
     status: 'ausschreibung', beschrieb: zeilen.join('\n'), frist: '', bild: t.bild || '',
+    pruefen: offen,
   };
+}
+
+/** Eine Auflage aus der Liste festlegen. Danach steht sie fest, und
+    Seltenheit wie Preis gehören wirklich zu dieser Karte. */
+function ygoAuflageWaehlen(t, i) {
+  const a = (t.auflagenListe || [])[i];
+  if (!a) return t;
+  return { ...t, setCode: a.code, setName: a.name, seltenheit: a.seltenheit,
+           preisUsd: a.preisUsd, setSicher: true };
 }
 
 /* --- Der Griff ins Netz --------------------------------------------
@@ -7785,6 +7811,15 @@ async function kartenSuche(text) {
   return erg;
 }
 
+/** Die Merkfahne wegnehmen — und die Zeile, die sie erklärt hat, gleich mit. */
+function pruefErledigt(pid, vid) {
+  const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
+  v.pruefen = false;
+  v.beschrieb = String(v.beschrieb || '').split('\n').filter(z => z.indexOf('⚑') !== 0).join('\n').trim();
+  save(); router();
+  toast(v.gewerk + ': geprüft', 'ok');
+}
+
 /* --- Das Fenster zum Erfassen --------------------------------------
    Gebaut für den Daumen, nicht für die Maus: ein grosses Zahlenfeld,
    Enter sucht, Enter übernimmt, das Feld ist danach wieder leer und
@@ -7800,7 +7835,7 @@ function nachschlagDienst(p) { const v = vorlage(p); return (v && v.nachschlag) 
 
 function actKartenScan(pid) {
   const p = findProjekt(pid); if (!p) return;
-  scanCtx = { pid, treffer: [], gewaehlt: 0, erfasst: [], meldung: '', sucht: false };
+  scanCtx = { pid, treffer: [], gewaehlt: 0, erfasst: [], meldung: '', sucht: false, filter: '' };
   openModal(W('posten', p) + ' erfassen — Nummer nachschlagen', `
     <label class="field"><span>Nummer der Karte</span>
       <input class="input scan-nr" id="scan_nr" inputmode="numeric" autocomplete="off"
@@ -7837,7 +7872,7 @@ function scanKarteHtml(t, p) {
       <div class="muted">${esc([t.setCode, t.setName].filter(Boolean).join(' · '))}</div>
       <div class="scan-wert">${esc(W('rev', p))}: <b>${wert ? chf(wert) : '–'}</b>
         <span class="muted">${esc(ygoHerkunft(t))}</span></div>
-      ${(!t.setSicher && t.auflagen > 1) ? `<div class="scan-warnung">Diese Karte gibt es in ${t.auflagen} Auflagen — der Wert ist der der günstigsten. Mit dem Set-Code der eigenen Karte (steht auf ihr) wird er genau.</div>` : ''}
+      ${(!t.setSicher && t.auflagen > 1) ? `<div class="scan-warnung"><b>Welche Auflage ist es?</b> Diese Nummer gibt es in ${t.auflagen} Auflagen mit verschiedenen Seltenheiten. Solange keine gewählt ist, steht hier keine Seltenheit, und der Wert ist der der günstigsten. Ohne Wahl wird die Karte mit der Merkfahne ⚑ übernommen.</div>` : ''}
       <div class="muted">${esc(W('nummer', p))} ${esc(t.kategorie)}${kat ? ' · ' + esc(kat) : ''}</div>
     </div>
   </div>`;
@@ -7858,17 +7893,59 @@ function scanZeichnen() {
       ? `<div class="scan-auswahl">${scanCtx.treffer.map((x, i) =>
           `<button type="button" class="btn sm ${i === scanCtx.gewaehlt ? '' : 'ghost'}" data-act="scan-waehlen" data-kind="${i}">${esc(x.name)}</button>`).join('')}</div>`
       : '';
-    ziel.innerHTML = scanKarteHtml(t, p) + auswahl + `
+    ziel.innerHTML = scanKarteHtml(t, p) + auswahl + scanAuflagenHtml(t) + `
       <div class="form-row scan-eigen">
         <label class="field">${esc(W('kv', p))} (CHF) <input class="input" type="number" step="0.05" id="scan_einstand" placeholder="was du bezahlt hast"></label>
         <label class="field">${esc(W('wv', p))} (CHF) <input class="input" type="number" step="0.05" id="scan_angebot"></label>
         <label class="field">${esc(W('partner', p))} <input class="input" id="scan_wo" placeholder="Cardmarket, Ricardo …"></label>
       </div>`;
   }
+  const f = $('#scan_filter');
+  if (f) f.addEventListener('input', () => {
+    scanCtx.filter = f.value;
+    scanZeichnen();
+    const neu = $('#scan_filter');
+    if (neu) { neu.focus(); neu.setSelectionRange(neu.value.length, neu.value.length); }
+  });
   const liste = $('#scan_liste');
   if (liste) liste.innerHTML = scanCtx.erfasst.length
     ? `<div class="scan-erfasst"><b>${scanCtx.erfasst.length}</b> in dieser Sitzung erfasst: ${esc(scanCtx.erfasst.slice(-8).join(' · '))}${scanCtx.erfasst.length > 8 ? ' …' : ''}</div>`
     : '';
+}
+
+/* Die Auflagen zur Wahl.
+
+   Nach Wert sortiert, weil die Frage «ist das die teure?» die ist,
+   die man stellt. Die Kennung bleibt der ursprüngliche Platz in der
+   Liste, damit das Sortieren nicht die falsche Auflage auswählt. */
+function scanAuflagenHtml(t) {
+  if (t.setSicher || !(t.auflagenListe || []).length) return '';
+  const filter = (scanCtx && scanCtx.filter || '').toLowerCase();
+  const alle = t.auflagenListe.map((a, i) => ({ ...a, i }))
+    .sort((a, b) => (b.preisUsd - a.preisUsd) || a.code.localeCompare(b.code));
+  const zeigen = filter
+    ? alle.filter(a => (a.code + ' ' + a.name + ' ' + a.seltenheit).toLowerCase().includes(filter))
+    : alle;
+  return `<div class="scan-auflagen">
+    <div class="scan-auflagen-kopf">Auflage wählen <span class="muted">— der Set-Code steht auf der Karte selbst</span></div>
+    ${t.auflagenListe.length > 8 ? `<input class="input" id="scan_filter" placeholder="Set-Code, Sammlung oder Seltenheit filtern…" value="${esc(scanCtx.filter || '')}" autocomplete="off">` : ''}
+    <div class="scan-auflagen-liste">${zeigen.length ? zeigen.map(a => `
+      <button type="button" class="scan-auflage" data-act="scan-auflage" data-kind="${a.i}">
+        <span class="bkp-code">${esc(a.code)}</span>
+        <span class="scan-auflage-selt">${esc(a.seltenheit || '—')}</span>
+        <span class="scan-auflage-name muted">${esc(a.name)}</span>
+        <span class="scan-auflage-preis">${a.preisUsd ? 'USD ' + a.preisUsd.toFixed(2) : '<span class="muted">kein Preis</span>'}</span>
+      </button>`).join('') : '<div class="muted" style="padding:6px">Kein Treffer.</div>'}</div>
+  </div>`;
+}
+
+/** Eine Auflage festlegen — Seltenheit und Wert gehören danach wirklich zu dieser Karte. */
+function scanAuflage(idx) {
+  if (!scanCtx) return;
+  const t = scanCtx.treffer[scanCtx.gewaehlt]; if (!t) return;
+  scanCtx.treffer[scanCtx.gewaehlt] = ygoAuflageWaehlen(t, Number(idx));
+  scanCtx.filter = '';
+  scanZeichnen();
 }
 
 async function scanSuchen() {
@@ -7879,7 +7956,7 @@ async function scanSuchen() {
   const erg = await kartenSuche(text);
   scanCtx.sucht = false;
   scanCtx.treffer = erg.treffer || [];
-  scanCtx.gewaehlt = 0;
+  scanCtx.gewaehlt = 0; scanCtx.filter = '';
   scanCtx.meldung = erg.fehler || '';
   scanZeichnen();
 }
@@ -7904,7 +7981,7 @@ function scanUebernehmen() {
   if (posten.betrag && posten.firma) posten.status = 'versendet';   // eingestellt = angeboten
   csvPostenAnlegen(scanCtx.pid, [posten]);
   scanCtx.erfasst.push(posten.gewerk);
-  scanCtx.treffer = []; scanCtx.gewaehlt = 0; scanCtx.meldung = '';
+  scanCtx.treffer = []; scanCtx.gewaehlt = 0; scanCtx.meldung = ''; scanCtx.filter = '';
   const feld = $('#scan_nr');
   if (feld) { feld.value = ''; feld.focus(); }
   scanZeichnen();
@@ -17486,6 +17563,10 @@ function actEditVergabe(pid, vid) {
     </div>
     <label class="field">Ausführung (Text, falls kein Termin) <input class="input" id="fe_ausf" value="${esc(v.ausfuehrung || '')}" placeholder="z.B. ab Herbst 2026">
       <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px">Erscheint auf dem Einladungs-Deckblatt unter „Ausführung". Leer = Terminprogramm bzw. „gem. Terminprogramm".</span></label>
+    <label class="field">Notiz <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">— Seltenheit, Auflage, Zustand; alles frei überschreibbar</span>
+      <textarea class="input" id="fe_beschrieb" rows="4">${esc(v.beschrieb || '')}</textarea></label>
+    <label class="einst-schalter"><input type="checkbox" id="fe_pruefen" ${v.pruefen ? 'checked' : ''}>
+      <span>⚑ Noch prüfen — erscheint als Fahne in der Übersicht</span></label>
     <label class="field">Status <select class="select" id="fe_status">${VERGABE_STATUS.map(s => `<option value="${s.key}"${v.status === s.key ? ' selected' : ''}>${esc(stInfo(s.key, p).label)}</option>`).join('')}</select></label>
     ${((p.bauteile || []).length || (p.optionen || []).length) ? `
     <div class="form-row">
@@ -17507,6 +17588,8 @@ function saveVergabeEdit(pid, vid) {
   if (!gewerk) { toast('Bitte ' + W('postenName', p) + ' eingeben', 'info'); return; }
   v.bkp = bkpParsed.code || v.bkp || '000';
   v.gewerk = gewerk;
+  { const b = $('#fe_beschrieb'); if (b) v.beschrieb = b.value; }
+  { const pf = $('#fe_pruefen'); if (pf) v.pruefen = pf.checked; }
   v.schaetzung = Number($('#fe_schaetzung').value) || 0;
   v.frist = $('#fe_frist').value || '';
   { const a = $('#fe_ausf'); if (a) v.ausfuehrung = a.value.trim(); }
@@ -19263,6 +19346,8 @@ document.addEventListener('click', e => {
     case 'karte-scan':       actKartenScan(pid); break;
     case 'scan-suchen':      scanSuchen(); break;
     case 'scan-waehlen':     scanWaehlen(kind); break;
+    case 'scan-auflage':     scanAuflage(kind); break;
+    case 'pruef-ok':         pruefErledigt(pid, vid); break;
     case 'scan-uebernehmen': scanUebernehmen(); break;
     case 'csv-pruefen':      csvPruefen(pid); break;
     case 'csv-uebernehmen':  csvUebernehmen(pid); break;

@@ -84,6 +84,18 @@ src += `
 ;globalThis.__kursSetzen = function (a) { return kursSetzen(a); };
 ;globalThis.__kurse = function () { return kurse; };
 ;globalThis.__katalogCodes = function (k) { return (VORLAGEN.find(v => v.key === k).katalog || []).map(b => b.code); };
+;globalThis.__scanBlatt = function (pid, antwort) {
+  /* Das Fenster ohne Netz füllen: Treffer direkt setzen und zeichnen
+     lassen. Geprüft wird, was der Mensch zu sehen bekommt. */
+  const erg = ygoAuswerten(antwort, { art: 'passcode', wert: '0' });
+  let inhalt = '';
+  const altModal = openModal, altZiel = $;
+  scanCtx = { pid, treffer: erg.treffer, gewaehlt: 0, erfasst: [], meldung: '', sucht: false, filter: '' };
+  const t = scanCtx.treffer[0];
+  const p = findProjekt(pid);
+  inhalt = scanKarteHtml(t, p) + scanAuflagenHtml(t);
+  return inhalt;
+};
 ;globalThis.__bauProjekt = function (muster) {
   const b = Object.assign({}, muster, { id: 'p_bau', name: 'Umbau Musterstrasse', vorlage: 'bau' });
   state.projekte.push(b); setVorlageCtx(b); return b;
@@ -254,6 +266,40 @@ ok('bei EINER Auflage steht sie ebenfalls fest', a1.treffer[0].setSicher === tru
 const a4 = sandbox.ygoAuswerten(ANTWORT_SDK_VOLL, { art: 'name', wert: 'Blue-Eyes' });
 eq('Namenssuche: die Auflage steht NICHT fest', a4.treffer[0].setSicher, false);
 
+/* Der Kern der Sache: Ein Passcode bezeichnet die KARTE, nicht den
+   DRUCK. Blue-Eyes gibt es in 78 Auflagen mit 20 Seltenheiten von
+   Common bis Ghost Rare. Eine davon hinzuschreiben, weil sie in der
+   Liste zuoberst steht, wäre eine erfundene Angabe. */
+eq('unklare Auflage: KEINE Seltenheit behauptet', a4.treffer[0].seltenheit, '');
+eq('unklare Auflage: KEIN Set behauptet', [a4.treffer[0].setCode, a4.treffer[0].setName], ['', '']);
+eq('… aber alle Auflagen liegen zur Wahl bereit', a4.treffer[0].auflagenListe.length, 2);
+ok('… mit Kennung, Seltenheit und Preis je Auflage', (() => {
+  const a = a4.treffer[0].auflagenListe[0];
+  return !!a.code && !!a.name && !!a.seltenheit && typeof a.preisUsd === 'number';
+})());
+ok('bei sicherer Auflage steht die Seltenheit sehr wohl da', !!a3.treffer[0].seltenheit);
+
+// Eine Auflage wählen macht sie fest
+const gewaehlt = sandbox.ygoAuflageWaehlen(a4.treffer[0], 0);
+eq('gewählte Auflage: Set übernommen', gewaehlt.setCode, 'LOB-001');
+eq('gewählte Auflage: Seltenheit übernommen', gewaehlt.seltenheit, 'Ultra Rare');
+eq('gewählte Auflage: gilt jetzt als sicher', gewaehlt.setSicher, true);
+eq('gewählte Auflage: ihr Preis gilt', gewaehlt.preisUsd, 90);
+eq('unsinnige Wahl ändert nichts', sandbox.ygoAuflageWaehlen(a4.treffer[0], 99).setSicher, false);
+
+/* ---- 2b) Das Nachschlage-Fenster fragt nach der Auflage ---- */
+{
+  const blatt = sandbox.__scanBlatt(p.id, ANTWORT_SDK_VOLL);
+  ok('Fenster: die Auflagen stehen zur Wahl', /scan-auflage/.test(blatt));
+  ok('Fenster: beide Auflagen mit Seltenheit', /LOB-001/.test(blatt) && /SDK-001/.test(blatt) && /Ultra Rare/.test(blatt));
+  ok('Fenster: die Frage steht als Warnung da', /Welche Auflage ist es/.test(blatt));
+  ok('Fenster: und es wird gesagt, was ohne Wahl passiert', /Merkfahne/.test(blatt));
+  const sicher = sandbox.__scanBlatt(p.id, ANTWORT_PASSCODE);
+  ok('Fenster: bei EINER Auflage keine Rückfrage', !/scan-auflage/.test(sicher) && !/Welche Auflage/.test(sicher));
+  ok('Fenster: dann steht die Seltenheit da', /Super Rare/.test(sicher));
+}
+
+
 // Kurs und Marktwert
 ok('Kurs wird übernommen', sandbox.__kursSetzen({ rates: { CHF: 0.9333, USD: 1.16 }, date: '2026-08-20' }));
 const k = sandbox.__kurse();
@@ -290,6 +336,26 @@ eq('Marktwert steht im Posten', posten.marktwert, 0.25);
 ok('der Vermerk hält Set, Passcode und Herkunft fest',
   /CORI-EN030/.test(posten.beschrieb) && /Passcode 43989315/.test(posten.beschrieb) && /Cardmarket/.test(posten.beschrieb));
 ok('das Bild kommt mit', !!posten.bild);
+eq('bei sicherer Auflage keine Merkfahne', posten.pruefen, false);
+
+/* Wer nicht wählt, bekommt die Karte trotzdem — aber mit der Fahne.
+   Nichts wird verschwiegen und nichts blockiert. */
+const postenOffen = sandbox.ygoZuPosten(a4.treffer[0], k);
+eq('unklare Auflage: Merkfahne gesetzt', postenOffen.pruefen, true);
+ok('… und die erste Zeile der Notiz sagt warum',
+  postenOffen.beschrieb.split('\n')[0].indexOf('⚑') === 0
+  && /Auflage nicht bestimmt/.test(postenOffen.beschrieb), postenOffen.beschrieb.split('\n')[0]);
+ok('… und es steht keine erfundene Seltenheit drin',
+  !/Ultra Rare/.test(postenOffen.beschrieb), postenOffen.beschrieb);
+
+// Die Fahne überlebt das Anlegen und lässt sich von Hand wegnehmen
+sandbox.csvPostenAnlegen(p.id, [postenOffen]);
+const mitFahne = p.vergaben[p.vergaben.length - 1];
+eq('die Fahne steht am angelegten Posten', mitFahne.pruefen, true);
+sandbox.pruefErledigt(p.id, mitFahne.id);
+eq('«geprüft» nimmt die Fahne weg', mitFahne.pruefen, false);
+ok('… und die Fahnen-Zeile aus der Notiz', mitFahne.beschrieb.indexOf('⚑') < 0, mitFahne.beschrieb);
+ok('… der Rest der Notiz bleibt stehen', /Passcode 89631146/.test(mitFahne.beschrieb), mitFahne.beschrieb);
 
 /* ---- 5) Der ganze Weg, mit einer Netz-Attrappe ---- */
 function mitNetz(antworten, fn) {

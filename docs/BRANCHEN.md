@@ -177,6 +177,27 @@ Drei Regeln daraus, die über das Nachschlagen hinaus gelten sollten:
 3. **Alles bleibt von Hand änderbar.** Das Bearbeiten-Fenster trägt jetzt die
    Notiz und die Merkfahne — keine Angabe aus dem Netz ist festgeschraubt.
 
+### Und derselbe Fehler noch eine Ebene tiefer
+
+Die erste Korrektur nahm an, ein **Set-Code** bestimme die Auflage. Beim
+Einlesen von 72 echten Karten meldete der Bericht dann **21× Starlight Rare** —
+die seltenste Stufe überhaupt, in 72 Karten praktisch unmöglich.
+
+Nachgemessen am Satz «Chaos Origins»: **25 der 100 Set-Codes** gibt es in
+mehreren Seltenheiten. `CORI-EN028` existiert als Ultra Rare, als Secret Rare
+und als Starlight Rare — dieselbe Nummer, dieselbe Sammlung. Moderne Sätze
+machen das regelmässig. `ygoAuswerten` nahm den ersten passenden Eintrag und
+hielt die Auflage für bestimmt.
+
+Jetzt zählt, **wie viele** Einträge auf die Nummer passen: genau einer heisst
+bestimmt, mehrere heissen offen — und zur Wahl stehen dann die Seltenheiten
+*dieser* Nummer statt aller Auflagen der Karte. Von den 72 Karten sind seither
+45 bestimmt und 27 tragen die Fahne.
+
+Die Lehre ist dieselbe wie oben, und sie gilt über das Nachschlagen hinaus:
+**Eine Kennung, die eindeutig aussieht, ist noch keine.** Ob sie es ist, sagt
+nur die Anzahl der Treffer — nie der erste davon.
+
 ## Was noch Bau spricht
 
 Die **Druckblätter** (Baukostenübersicht, Deckblatt, Submittentenliste)

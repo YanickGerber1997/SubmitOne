@@ -263,6 +263,35 @@ eq('unbekannte Meldungen bleiben im Wortlaut',
 ok('leere Antwort stürzt nicht ab', !!sandbox.ygoAuswerten(null, {}).fehler);
 ok('Antwort ohne Daten meldet es', !!sandbox.ygoAuswerten({ data: [] }, {}).fehler);
 
+/* Dieselbe Nummer in mehreren Seltenheiten — im Satz «Chaos Origins»
+   betrifft das 25 von 100 Nummern. Wer den ersten Eintrag nimmt,
+   erfindet eine Seltenheit. */
+const MEHRERE_SELTENHEITEN = {
+  data: [{
+    id: 1, name: 'Black Luster Soldier', humanReadableCardType: 'Ritual Monster', frameType: 'ritual',
+    card_sets: [
+      { set_name: 'Chaos Origins', set_code: 'CORI-EN028', set_rarity: 'Secret Rare', set_price: '3.80' },
+      { set_name: 'Chaos Origins', set_code: 'CORI-EN028', set_rarity: 'Starlight Rare', set_price: '0' },
+      { set_name: 'Chaos Origins', set_code: 'CORI-EN028', set_rarity: 'Ultra Rare', set_price: '1.20' },
+      { set_name: 'Anderer Satz', set_code: 'XYZ-EN001', set_rarity: 'Common', set_price: '0.05' },
+    ],
+    card_prices: [{ cardmarket_price: '0.90' }],
+    card_images: [{ image_url_small: 'x.jpg' }],
+  }],
+};
+const mS = sandbox.ygoAuswerten(MEHRERE_SELTENHEITEN, { art: 'setcode', wert: 'CORI-EN028' });
+eq('eine Nummer mit drei Seltenheiten steht NICHT fest', mS.treffer[0].setSicher, false);
+eq('… keine davon wird behauptet', mS.treffer[0].seltenheit, '');
+eq('… zur Wahl stehen genau die drei dieser Nummer', mS.treffer[0].auflagen, 3);
+ok('… und nicht die Auflage aus einem anderen Satz',
+  mS.treffer[0].auflagenListe.every(a => a.code === 'CORI-EN028'),
+  JSON.stringify(mS.treffer[0].auflagenListe.map(a => a.code)));
+eq('… der Posten trägt die Merkfahne',
+  sandbox.ygoZuPosten(mS.treffer[0], { eur: 0.93, usd: 0.8, datum: '2026-08-21' }).pruefen, true);
+ok('… eine davon wählen macht sie fest',
+  sandbox.ygoAuflageWaehlen(mS.treffer[0], 2).seltenheit === 'Ultra Rare'
+  && sandbox.ygoAuflageWaehlen(mS.treffer[0], 2).setSicher === true);
+
 // Die richtige Auflage — daran ist die erste Fassung aufgelaufen
 eq('Set-Code-Suche: die Auflage steht fest', a3.treffer[0].setSicher, true);
 eq('… und die Anzahl Auflagen ist bekannt', a3.treffer[0].auflagen, 2);

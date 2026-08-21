@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v384';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v385';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -7720,16 +7720,27 @@ function ygoAuswerten(antwort, erk) {
   const treffer = daten.slice(0, 25).map(k => {
     const sets = Array.isArray(k.card_sets) ? k.card_sets : [];
     // Wurde nach einem Set-Code gesucht, gilt genau dieses Set — sonst das erste.
-    const treffend = gesucht ? sets.find(x => String(x.set_code).toUpperCase() === gesucht) : null;
-    /* «Sicher» heisst: Wir wissen, WELCHE Auflage gemeint ist — weil
-       danach gesucht wurde oder weil es nur eine gibt.
+    /* ALLE Einträge zur gesuchten Nummer, nicht nur der erste.
 
-       Sonst bleibt Set und Seltenheit LEER. Die Datenbank liefert die
-       Auflagen alphabetisch nach Sammlungsname; die erste zu nehmen
-       hiesse, eine Seltenheit zu erfinden. Die Liste steht stattdessen
-       zur Wahl. */
-    const setSicher = !!treffend || sets.length === 1;
-    const s = setSicher ? (treffend || sets[0] || {}) : {};
+       Moderne Sätze drucken dieselbe Nummer in mehreren Seltenheiten:
+       CORI-EN028 gibt es als Ultra Rare, als Secret Rare und als
+       Starlight Rare. Im Satz «Chaos Origins» betrifft das 25 von 100
+       Nummern. Wer den ersten Eintrag nimmt, erfindet eine Seltenheit —
+       und 72 eingelesene Karten meldeten prompt 21× Starlight Rare. */
+    const treffende = gesucht ? sets.filter(x => String(x.set_code).toUpperCase() === gesucht) : [];
+
+    /* «Sicher» heisst: Wir wissen, WELCHE Auflage gemeint ist — weil
+       genau eine auf die gesuchte Nummer passt, oder weil es zur
+       Karte überhaupt nur eine gibt.
+
+       Sonst bleiben Set und Seltenheit LEER und die Frage offen. */
+    const setSicher = treffende.length === 1 || (!gesucht && sets.length === 1);
+    const s = setSicher ? (treffende[0] || sets[0] || {}) : {};
+
+    /* Zur Wahl steht, was zur Nummer passt — sonst alle Auflagen der
+       Karte. Wer CORI-EN028 sucht, will die drei Seltenheiten DIESER
+       Nummer sehen, nicht 78 Auflagen aus zwanzig Sammlungen. */
+    const auswahl = treffende.length > 1 ? treffende : sets;
     const pr = (Array.isArray(k.card_prices) ? k.card_prices[0] : k.card_prices) || {};
     const bilder = Array.isArray(k.card_images) ? k.card_images[0] : null;
     return {
@@ -7739,8 +7750,8 @@ function ygoAuswerten(antwort, erk) {
       setCode: s.set_code || '', setName: s.set_name || '', seltenheit: s.set_rarity || '',
       preisUsd: ygoZahl(s.set_price), preisEur: ygoZahl(pr.cardmarket_price),
       bild: (bilder && (bilder.image_url_small || bilder.image_url)) || '',
-      setSicher, auflagen: sets.length, nachladen: false,
-      auflagenListe: sets.map(x => ({
+      setSicher, auflagen: auswahl.length, nachladen: false,
+      auflagenListe: auswahl.map(x => ({
         code: x.set_code || '', name: x.set_name || '',
         seltenheit: x.set_rarity || '', preisUsd: ygoZahl(x.set_price),
       })),

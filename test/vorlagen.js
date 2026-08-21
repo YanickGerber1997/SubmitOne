@@ -607,6 +607,50 @@ ok('… und rechnet sich nach', (() => {
   eq('die Kennung der Quelle bleibt am Posten', krypto.kursId, 'bitcoin');
 }
 
+/* Chargen: jeder Kauf eine Zeile.
+
+   Ein Depot, das je Anlage nur eine Zeile führt, kann «am xx kaufte
+   ich so und so viel» nicht abbilden — der Einstand wäre ein
+   Durchschnitt, der nirgends herkommt. */
+{
+  const gold = { nummer: 'XAU', name: 'Gold', art: 'Edelmetall', kategorie: '201',
+    preisChf: 3668.48, einheit: 'oz', herkunft: 'gold-api' };
+  const a = sandbox.kursZuPosten(gold, 12, 'g', '2026-03-12');
+  const b = sandbox.kursZuPosten(gold, 20, 'g', '2026-07-04');
+  eq('die Charge trägt ihr Kaufdatum', a.datum, '2026-03-12');
+  eq('der Name der Anlage trägt die Gruppenüberschrift', a.satz, 'Gold');
+  eq('beide Chargen dieselbe Nummer', [a.bkp, b.bkp], ['XAU', 'XAU']);
+  ok('… aber verschiedene Werte', Math.abs(a.marktwert - 1415.33) < 0.5 && Math.abs(b.marktwert - 2358.89) < 0.5,
+    a.marktwert + ' / ' + b.marktwert);
+
+  /* Gruppiert wird beim Depot nach dem Kürzel — sonst stünden die
+     Chargen einer Anlage nicht beieinander und das Zwischentotal wäre
+     nicht ihr Bestand. */
+  const D = { vorlage: 'depot' };
+  eq('Depot gruppiert nach Kürzel', sandbox.gruppeVon({ symbol: 'XAU', bkp: 'XAU' }, D), 'XAU');
+  eq('… auch klein geschrieben', sandbox.gruppeVon({ symbol: 'btc' }, D), 'BTC');
+  eq('… ohne Kürzel bleibt es offen', sandbox.gruppeVon({ bkp: '' }, D), '?');
+  eq('die Überschrift ist der Name der Anlage',
+    sandbox.gruppeTitel('XAU', [{ satz: 'Gold' }], D), 'Gold');
+
+  /* Die Zeile unter der Bezeichnung: Kaufdatum und Einstand JE
+     EINHEIT — die Zahl, mit der man den heutigen Kurs vergleicht. */
+  const mitEinstand = { ...a, schaetzung: 1450 };
+  const z = sandbox.chargenZeile(mitEinstand);
+  ok('Kaufdatum steht in der Zeile', /gekauft 12\.03\.2026/.test(z), z);
+  ok('Einstand je Feinunze, nicht als Summe', /Einstand CHF 3'758\.\d\d je Feinunze/.test(z), z);
+  ok('… und das rechnet sich nach', (() => {
+    const m = z.match(/CHF ([\d'.]+) je/);
+    const je = Number(m[1].replace(/'/g, ''));
+    return Math.abs(je * sandbox.inUnzen(12, 'g') - 1450) < 0.5;
+  })());
+  eq('ohne Datum und Einstand bleibt die Zeile leer', sandbox.chargenZeile({ menge: 12, einheit: 'g' }), '');
+  ok('bei Stückgut ohne Unzen-Umrechnung',
+    /Einstand CHF 49'000\.00 je BTC/.test(sandbox.chargenZeile(
+      { datum: '', menge: 0.2, einheit: 'BTC', kategorie: '101', schaetzung: 9800 })),
+    sandbox.chargenZeile({ menge: 0.2, einheit: 'BTC', kategorie: '101', schaetzung: 9800 }));
+}
+
 // Die Vorlage selbst
 eq('Depot führt Mengen', sandbox.hatMengen({ vorlage: 'depot' }), true);
 eq('eine Kartensammlung nicht — ein Stück je Zeile', sandbox.hatMengen({ vorlage: 'sammlung' }), false);

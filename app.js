@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v389';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v390';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -2793,7 +2793,7 @@ function viewKosten(id) {
             : `<span class="muted">${esc(W('partnerLeer', p))}</span>`);
       rows += `<tr class="clickable kost-row${open ? ' open' : ''}" data-act="kost-toggle" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
         <td class="bkp-code"><span class="gw-chev">${open ? '▾' : '▸'}</span> ${esc(v.bkp)}</td>
-        <td><strong>${esc(v.gewerk)}</strong>${v.menge != null && v.kursChf ? `<div class="posten-menge">${esc(mengenZeile(v.menge, v.einheit, v.kursChf, String(v.kategorie) === KURS_KATEGORIE.metall))}</div>` : ''}${v.pruefen ? ` <span class="pruef-badge" title="Etwas ist noch nicht belegt — Zeile aufklappen">⚑ prüfen</span>` : ''}${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
+        <td><strong>${esc(v.gewerk)}</strong>${v.menge != null && v.kursChf ? `<div class="posten-menge">${esc(mengenZeile(v.menge, v.einheit, v.kursChf, String(v.kategorie) === KURS_KATEGORIE.metall))}</div>` : ''}${chargenZeile(v) ? `<div class="posten-menge">${esc(chargenZeile(v))}</div>` : ''}${v.pruefen ? ` <span class="pruef-badge" title="Etwas ist noch nicht belegt — Zeile aufklappen">⚑ prüfen</span>` : ''}${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
         <td>${untCell}</td>
         <td class="num">${mB(z.kv)}</td>
         <td class="num">${z.rev != null && Math.abs(z.rev - z.kv) > 0.5 ? `${mB(z.rev)} <span class="chg-delta ${z.rev > z.kv ? 'up' : 'dn'}" title="Änderung gegenüber Erst-KV">${z.rev > z.kv ? '▲' : '▼'}</span>` : (z.rev != null ? mB(z.rev) : `<span class="muted">${mB(z.kv)}</span>`)}</td>
@@ -7110,6 +7110,10 @@ const VORLAGEN = [
     katalog: DEPOT_KATALOG,
     tabs: ['overview', 'gewerke', 'kosten', 'rechnungen', 'nachtraege', 'listen', 'termine', 'kalender', 'pendenzen', 'finanz'],
     gruppen: { '?': 'Ohne Kürzel' },
+    /* Nach dem Kürzel, nicht nach der Anlageklasse: So stehen die
+       Chargen einer Anlage beieinander und das Zwischentotal ist ihr
+       Bestand. Die Klasse steckt weiter in der Kategorie des Postens. */
+    gruppeVon: v => String((v && (v.symbol || v.bkp)) || '').trim().toUpperCase() || '?',
     woerter: {
       posten: 'Position', posten_pl: 'Positionen', postenSpalte: 'Position',
       nummer: 'Kürzel', nummerLang: 'Kürzel (BTC, XAU, USD …)', katalogName: 'Anlageklassen',
@@ -7588,6 +7592,24 @@ function mengenZeile(menge, einheit, kursChf, istMetall) {
   return links + umgerechnet + ' × CHF ' + money(kursChf) + (istMetall ? ' je Feinunze' : '');
 }
 
+/* Die zweite Zeile: woher die Charge kommt und was sie gekostet hat.
+
+   Der Einstand JE EINHEIT ist die Zahl, mit der man den heutigen Kurs
+   vergleicht — «gekauft zu 3'758, heute 3'664». Als blosse Summe
+   liesse sie sich zwischen zwei verschieden grossen Chargen nicht
+   vergleichen. */
+function chargenZeile(v) {
+  const teile = [];
+  if (v.datum) teile.push('gekauft ' + fmtDate(v.datum));
+  const menge = (String(v.kategorie) === KURS_KATEGORIE.metall) ? inUnzen(v.menge, v.einheit) : (Number(v.menge) || 0);
+  if (v.schaetzung && menge) {
+    const je = v.schaetzung / menge;
+    teile.push('Einstand CHF ' + money(je) + ' je '
+      + (String(v.kategorie) === KURS_KATEGORIE.metall ? 'Feinunze' : (v.einheit || 'Stück')));
+  }
+  return teile.join(' · ');
+}
+
 /** Was für ein Papier ist das? */
 function kursArt(text) {
   const t = String(text == null ? '' : text).trim().toUpperCase();
@@ -7679,15 +7701,21 @@ async function kursSuche(text) {
       if (!wahl) return { treffer: [], fehler: 'Zu «' + text + '» ist nichts verzeichnet — Tippfehler im Kürzel?' };
       id = wahl.id; name = wahl.name;
     }
-    const j = await kursHolen('https://api.coingecko.com/api/v3/simple/price?ids=' + encodeURIComponent(id)
-      + '&vs_currencies=chf&include_last_updated_at=true');
-    const eintrag = j[id];
-    if (!eintrag || !eintrag.chf) return { treffer: [], fehler: 'Zu ' + erk.symbol + ' kam kein Kurs zurück.' };
+    /* `coins/markets` statt `simple/price`: dieselbe eine Anfrage,
+       aber mit dem Namen. Sonst hiesse die Anlage «BTC» und die
+       Gruppenüberschrift läse sich «BTC · BTC». */
+    const j = await kursHolen('https://api.coingecko.com/api/v3/coins/markets?vs_currency=chf&ids='
+      + encodeURIComponent(id));
+    const eintrag = Array.isArray(j) ? j.find(x => x.id === id) : null;
+    if (!eintrag || !eintrag.current_price) return { treffer: [], fehler: 'Zu ' + erk.symbol + ' kam kein Kurs zurück.' };
     return {
       treffer: [{
-        nummer: erk.symbol, name: name || erk.symbol, art: KURS_ARTNAME.krypto, kategorie: KURS_KATEGORIE.krypto,
-        preisChf: eintrag.chf, einheit: erk.symbol, quelle: 'CoinGecko', kursId: id,
-        herkunft: 'CoinGecko, ' + erk.symbol + '/CHF ' + eintrag.chf + ', Stand ' + kursZeit(eintrag.last_updated_at),
+        nummer: String(eintrag.symbol || erk.symbol).toUpperCase(), name: eintrag.name || name || erk.symbol,
+        art: KURS_ARTNAME.krypto, kategorie: KURS_KATEGORIE.krypto,
+        preisChf: eintrag.current_price, einheit: String(eintrag.symbol || erk.symbol).toUpperCase(),
+        quelle: 'CoinGecko', kursId: id,
+        herkunft: 'CoinGecko, ' + String(eintrag.symbol || erk.symbol).toUpperCase() + '/CHF '
+          + eintrag.current_price + ', Stand ' + kursZeitIso(eintrag.last_updated),
       }], fehler: '',
     };
   } catch (e) {
@@ -7696,14 +7724,16 @@ async function kursSuche(text) {
 }
 
 /** Ein Kurs-Treffer als Posten. Die Menge kommt aus dem Fenster. */
-function kursZuPosten(t, menge, einheit) {
+function kursZuPosten(t, menge, einheit, datum) {
   const m = Number(menge) || 0;
   const gerechnet = (t.kategorie === KURS_KATEGORIE.metall) ? inUnzen(m, einheit) : m;
   const wert = Math.round(gerechnet * (t.preisChf || 0) * 100) / 100;
   return {
-    bkp: t.nummer, satz: '', seltenheit: '', passcode: '', auflagenOffen: null,
+    /* `satz` trägt beim Depot den Namen der Anlage — daraus wird die
+       Gruppenüberschrift «XAU · Gold», unter der ihre Chargen stehen. */
+    bkp: t.nummer, satz: t.name || '', seltenheit: '', passcode: '', auflagenOffen: null,
     kategorie: t.kategorie, gewerk: t.name,
-    menge: m, einheit: einheit || t.einheit || 'Stk',
+    menge: m, einheit: einheit || t.einheit || 'Stk', datum: datum || '',
     symbol: t.nummer, kursId: t.kursId || '', quelle: t.quelle || '',
     kursChf: t.preisChf || 0,
     schaetzung: 0, marktwert: wert, betrag: 0, firma: '', erhalten: 0,
@@ -7875,6 +7905,8 @@ function csvPostenAnlegen(pid, posten) {
       satz: x.satz || '',
       // Menge und Einheit: 0.35 BTC, 12 g Gold. Die BETRÄGE bleiben
       // Summen — so rechnet die Kostenübersicht unverändert weiter.
+      // Das Datum dieser Charge — «am xx kaufte ich so und so viel».
+      datum: x.datum || '',
       menge: x.menge != null ? Number(x.menge) : null,
       einheit: x.einheit || '',
       symbol: x.symbol || '',
@@ -8381,8 +8413,8 @@ function pruefErledigt(pid, vid) {
 async function nachschlagSuche(text, p) {
   return (nachschlagDienst(p) === 'kurse') ? kursSuche(text) : kartenSuche(text);
 }
-function nachschlagZuPosten(t, p, menge, einheit) {
-  return (nachschlagDienst(p) === 'kurse') ? kursZuPosten(t, menge, einheit) : ygoZuPosten(t);
+function nachschlagZuPosten(t, p, menge, einheit, datum) {
+  return (nachschlagDienst(p) === 'kurse') ? kursZuPosten(t, menge, einheit, datum) : ygoZuPosten(t);
 }
 /** Führt diese Vorlage Mengen? Karten nicht (ein Stück je Zeile), ein Depot schon. */
 function hatMengen(p) { const v = vorlage(p); return !!(v && v.mengen); }
@@ -8411,13 +8443,15 @@ async function actKurseAktualisieren(pid) {
   try {
     if (krypto.length) {
       const ids = Array.from(new Set(krypto.map(v => v.kursId || KRYPTO_KUERZEL[String(v.symbol).toUpperCase()])));
-      const j = await kursHolen('https://api.coingecko.com/api/v3/simple/price?ids='
-        + encodeURIComponent(ids.join(',')) + '&vs_currencies=chf&include_last_updated_at=true');
+      const j = await kursHolen('https://api.coingecko.com/api/v3/coins/markets?vs_currency=chf&ids='
+        + encodeURIComponent(ids.join(',')));
+      const nachId = {};
+      (Array.isArray(j) ? j : []).forEach(x => { nachId[x.id] = x; });
       krypto.forEach(v => {
         const id = v.kursId || KRYPTO_KUERZEL[String(v.symbol).toUpperCase()];
-        const e = j[id];
-        if (e && e.chf) kurse2[v.symbol] = { preisChf: e.chf,
-          herkunft: 'CoinGecko, ' + v.symbol + '/CHF ' + e.chf + ', Stand ' + kursZeit(e.last_updated_at) };
+        const e = nachId[id];
+        if (e && e.current_price) kurse2[v.symbol] = { name: e.name, preisChf: e.current_price,
+          herkunft: 'CoinGecko, ' + v.symbol + '/CHF ' + e.current_price + ', Stand ' + kursZeitIso(e.last_updated) };
       });
     }
   } catch (e) { toast('Krypto-Kurse: ' + ((e && e.message) || 'kein Zugriff'), 'info'); }
@@ -8426,7 +8460,7 @@ async function actKurseAktualisieren(pid) {
     if (kurse2[v.symbol]) continue;
     const erg = await kursSuche(v.symbol);
     const t = (erg.treffer || [])[0];
-    if (t) kurse2[v.symbol] = { preisChf: t.preisChf, herkunft: t.herkunft };
+    if (t) kurse2[v.symbol] = { name: t.name, preisChf: t.preisChf, herkunft: t.herkunft };
   }
 
   let n = 0, ohne = [];
@@ -8434,6 +8468,9 @@ async function actKurseAktualisieren(pid) {
     const k = kurse2[v.symbol];
     if (!k) { ohne.push(v.symbol); return; }
     v.kursChf = k.preisChf;
+    // Frühere Chargen trugen als «Satz» nur das Kürzel — beim
+    // Auffrischen kommt der richtige Name mit und wird nachgetragen.
+    if (k.name && (!v.satz || v.satz === v.symbol)) v.satz = k.name;
     const menge = (String(v.kategorie) === KURS_KATEGORIE.metall) ? inUnzen(v.menge, v.einheit) : (Number(v.menge) || 0);
     const wert = Math.round(menge * k.preisChf * 100) / 100;
     const markt = (v.eingeladene || []).find(e => e.firma === 'Marktpreis') || (v.eingeladene || [])[0];
@@ -8712,9 +8749,13 @@ function scanZeichnen() {
           `<button type="button" class="btn sm ${i === scanCtx.gewaehlt ? '' : 'ghost'}" data-act="scan-waehlen" data-kind="${i}">${esc(x.name)}</button>`).join('')}</div>`
       : '';
     ziel.innerHTML = scanKarteHtml(t, p) + auswahl + scanAuflagenHtml(t) + `
-      ${hatMengen(p) ? `<div class="form-row scan-eigen">
-        <label class="field">Menge <input class="input" type="number" step="any" id="scan_menge" value="1"></label>
-        <label class="field">Einheit <input class="input" id="scan_einheit" value="${esc(t.einheit || 'Stk')}" placeholder="Stk, g, oz"></label>
+      ${hatMengen(p) ? `<div class="scan-charge">
+        <div class="scan-charge-kopf">Diese Charge — jeder Kauf eine eigene Zeile</div>
+        <div class="form-row">
+          <label class="field">Menge <input class="input" type="number" step="any" id="scan_menge" value="1"></label>
+          <label class="field">Einheit <input class="input" id="scan_einheit" value="${esc(t.einheit || 'Stk')}" placeholder="Stk, g, oz"></label>
+          <label class="field">Gekauft am <input class="input" type="date" id="scan_datum"></label>
+        </div>
       </div>` : ''}
       <div class="form-row scan-eigen">
         <label class="field">${esc(W('kv', p))} (CHF) <input class="input" type="number" step="0.05" id="scan_einstand" placeholder="was du bezahlt hast"></label>
@@ -8796,7 +8837,7 @@ function scanUebernehmen() {
   if (!t) { scanSuchen(); return; }
   const zahl = id => { const el = $('#' + id); return el ? (Number(el.value) || 0) : 0; };
   const txt = id => { const el = $('#' + id); return el ? el.value.trim() : ''; };
-  const posten = nachschlagZuPosten(t, p, zahl('scan_menge') || 1, txt('scan_einheit') || t.einheit || 'Stk');
+  const posten = nachschlagZuPosten(t, p, zahl('scan_menge') || 1, txt('scan_einheit') || t.einheit || 'Stk', txt('scan_datum'));
   posten.schaetzung = zahl('scan_einstand');
   posten.betrag = zahl('scan_angebot');
   posten.firma = txt('scan_wo');
@@ -18401,7 +18442,12 @@ function actEditVergabe(pid, vid) {
     </div>
     <label class="field">Ausführung (Text, falls kein Termin) <input class="input" id="fe_ausf" value="${esc(v.ausfuehrung || '')}" placeholder="z.B. ab Herbst 2026">
       <span class="muted" style="font-size:var(--t-2xs, 11px);font-weight:400;display:block;margin-top:3px">Erscheint auf dem Einladungs-Deckblatt unter „Ausführung". Leer = Terminprogramm bzw. „gem. Terminprogramm".</span></label>
-    ${nachschlagDienst(p) ? `<div class="form-row">
+    ${hatMengen(p) ? `<div class="form-row">
+      <label class="field">Menge <input class="input" type="number" step="any" id="fe_menge" value="${v.menge != null ? v.menge : ''}"></label>
+      <label class="field">Einheit <input class="input" id="fe_einheit" value="${esc(v.einheit || '')}" placeholder="Stk, g, oz"></label>
+      <label class="field">Gekauft am <input class="input" type="date" id="fe_datum" value="${esc(v.datum || '')}"></label>
+    </div>` : ''}
+    ${(nachschlagDienst(p) && !hatMengen(p)) ? `<div class="form-row">
       <label class="field">Seltenheit / Auflage <input class="input" id="fe_seltenheit" value="${esc(v.seltenheit || '')}" placeholder="z.B. Ultra Rare"></label>
       <label class="field">Satz <input class="input" id="fe_satz" value="${esc(v.satz || '')}" placeholder="z.B. Chaos Origins"></label>
     </div>` : ''}
@@ -18433,6 +18479,9 @@ function saveVergabeEdit(pid, vid) {
   { const b = $('#fe_beschrieb'); if (b) v.beschrieb = b.value; }
   { const se = $('#fe_seltenheit'); if (se) v.seltenheit = se.value.trim(); }
   { const sa = $('#fe_satz'); if (sa) v.satz = sa.value.trim(); }
+  { const me = $('#fe_menge'); if (me) v.menge = me.value === '' ? null : (Number(me.value) || 0); }
+  { const ei = $('#fe_einheit'); if (ei) v.einheit = ei.value.trim(); }
+  { const da = $('#fe_datum'); if (da) v.datum = da.value || ''; }
   { const pf = $('#fe_pruefen'); if (pf) v.pruefen = pf.checked; }
   v.schaetzung = Number($('#fe_schaetzung').value) || 0;
   v.frist = $('#fe_frist').value || '';

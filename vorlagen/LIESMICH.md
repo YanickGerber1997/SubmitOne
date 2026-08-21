@@ -208,3 +208,33 @@ CoinGecko, BTC/CHF 61827, Stand 21.08.2026 15:56
 gold-api, USD 4585.60 je Feinunze, Kurs 0.7990, Stand 21.08.2026 15:58
 Frankfurter, 1 USD = 0.79899 CHF, Stand 20.08.2026
 ```
+
+## Chargen — jeder Kauf eine Zeile
+
+Eine Anlage ist kein Bestand, sondern viele Käufe: *am 12.03. zwölf Gramm zu
+3'758, am 04.07. zwanzig Gramm zu 4'044.* Ein Depot, das je Anlage nur eine
+Zeile führt, kann das nicht abbilden — der Einstand wäre ein Durchschnitt, der
+nirgends herkommt, und ein Teilverkauf hätte keinen Bezug.
+
+Deshalb: **eine Zeile je Kauf.** Jede Charge trägt ihr Datum, ihre Menge und
+ihren eigenen Einstand. Gruppiert wird nach dem Kürzel, das Zwischentotal ist
+der Bestand:
+
+```
+▸ XAU · Gold
+   XAU   12 g = 0.3858 oz × CHF 3'668.48 je Feinunze
+         gekauft 12.03.2026 · Einstand CHF 3'758.09 je Feinunze     1'450.00   1'415.33  ▼
+   XAU   20 g = 0.643 oz × CHF 3'668.48 je Feinunze
+         gekauft 04.07.2026 · Einstand CHF 4'043.72 je Feinunze     2'600.00   2'358.89  ▼
+   XAU   1 oz × CHF 3'668.48 je Feinunze
+         gekauft 20.11.2025 · Einstand CHF 3'400.00 je Feinunze     3'400.00   3'668.48  ▲
+         Zwischentotal (Bestand)                                    7'450.00   7'442.70
+```
+
+Der **Einstand je Einheit** steht dabei, nicht bloss die Summe — nur er lässt
+sich mit dem heutigen Kurs vergleichen, und nur so sieht man je Charge, ob sie
+im Plus oder im Minus liegt (die Spalte `+/−`).
+
+Beim Erfassen: Kürzel eintippen, dann im Kasten **Diese Charge** Menge, Einheit
+und Kaufdatum, daneben den Einstand. Für den nächsten Kauf derselben Anlage
+dasselbe nochmals — sie stellen sich von selbst untereinander.

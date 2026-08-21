@@ -2825,6 +2825,12 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 /* Der Angebotsblock in der aufgeklappten Zeile: Preis, Orte, Porto.
    Ruhig gehalten - er sitzt schon in einem geoeffneten Bereich und
    soll nicht mit ihm um Aufmerksamkeit streiten. */
+/* Kein Preis bekannt. Ein Strich, keine Null - die Null hiesse
+   wertlos und summierte sich still mit. */
+.unbek { color: var(--text-soft); opacity: .7; cursor: help; }
+.kunbek td { padding: 6px 10px; font-size: var(--t-xs); color: var(--text-soft);
+  background: var(--flaeche-2); border-top: 1px solid var(--rand); }
+
 .ang-block { margin-top: 10px; padding: 9px 10px; border: 1px solid var(--rand);
   border-radius: var(--radius); background: var(--flaeche-2); }
 .ang-kopf { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v413';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v414';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -1360,7 +1360,8 @@ function kostenZeile(v) {
   const hatSchluss = (v.rechnungen || []).some(r => r.art === 'schluss');
   const endsumme = hatSchluss ? fakturiert : Math.max(prognose, fakturiert);
   const offenRg = endsumme - fakturiert;   // nie negativ; bei Schlussrechnung / über-fakturiert = 0
-  return { kv, rev, wv, nt, rap, budget, prognose, endsumme, bezahlt, fakturiert, offen, offenRg, hatSchluss, vergeben: isVergeben(v) };
+  return { kv, rev, wv, nt, rap, budget, prognose, endsumme, bezahlt, fakturiert, offen, offenRg, hatSchluss,
+    vergeben: isVergeben(v), unbekannt: wertUnbekannt(v) };
 }
 
 /* --- Baukosten-Versionen: Stände sichern & vergleichen (z.B. monatliche Abgaben) --- */
@@ -3574,6 +3575,14 @@ function viewKosten(id) {
     return kostenBrutto ? zweitzeile(alsBrutto(n), n, 'netto')
                         : zweitzeile(alsNetto(n), n, 'inkl. MwSt');
   };
+  /* Ein Strich statt einer Null, wo nichts bekannt ist. Der
+     Hinweistext sagt warum — sonst rät man, ob die Karte gratis ist
+     oder ungeprüft. */
+  const mU = (z, wert) => z.unbekannt
+    ? `<span class="unbek" title="Kein Preis bekannt — keine der Datenbanken führt einen. Das ist nicht dasselbe wie null; im Vermerk steht es auch.">—</span>`
+    : mB(wert);
+  let unbekannt = 0;
+
   const tot = blank();
 
   let body = '';
@@ -3597,15 +3606,16 @@ function viewKosten(id) {
         : ((ein && zeigtEingeladene(p))
             ? `<span class="muted">${ein} eingeladen${off ? ` · ${off} Offerte${off === 1 ? '' : 'n'}` : ''}</span>`
             : `<span class="muted">${esc(W('partnerLeer', p))}</span>`);
+      if (z.unbekannt) unbekannt++;
       rows += `<tr class="clickable kost-row${open ? ' open' : ''}" data-act="kost-toggle" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
         <td class="bkp-code"><span class="gw-chev">${open ? '▾' : '▸'}</span> ${esc(v.bkp)}</td>
         <td><strong>${esc(postenName(v))}</strong>${v.menge != null && v.kursChf ? `<div class="posten-menge">${esc(mengenZeile(v.menge, v.einheit, v.kursChf, String(v.kategorie) === KURS_KATEGORIE.metall))}</div>` : ''}${chargenZeile(v) ? `<div class="posten-menge">${esc(chargenZeile(v))}</div>` : ''}${v.pruefen ? ` <span class="pruef-badge" title="Etwas ist noch nicht belegt — Zeile aufklappen">⚑ prüfen</span>` : ''}${angebotZeile(v) ? ` <span class="ang-badge" title="Angebot">${esc(angebotZeile(v))}</span>` : ''}${eigenMarke(v)}${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
         <td>${untCell}</td>
-        <td class="num">${mB(z.kv)}</td>
-        <td class="num">${z.rev != null && Math.abs(z.rev - z.kv) > 0.5 ? `${mB(z.rev)} <span class="chg-delta ${z.rev > z.kv ? 'up' : 'dn'}" title="Änderung gegenüber Erst-KV">${z.rev > z.kv ? '▲' : '▼'}</span>` : (z.rev != null ? mB(z.rev) : `<span class="muted">${mB(z.kv)}</span>`)}</td>
+        <td class="num">${mU(z, z.kv)}</td>
+        <td class="num">${z.rev != null && Math.abs(z.rev - z.kv) > 0.5 ? `${mB(z.rev)} <span class="chg-delta ${z.rev > z.kv ? 'up' : 'dn'}" title="Änderung gegenüber Erst-KV">${z.rev > z.kv ? '▲' : '▼'}</span>` : (z.rev != null ? mB(z.rev) : `<span class="muted">${mU(z, z.kv)}</span>`)}</td>
         <td class="num">${z.vergeben ? mB(z.wv) : '–'}</td>
         <td class="num">${z.nt ? mB(z.nt) : '–'}</td>
-        <td class="num"><strong>${mB(z.endsumme)}</strong>${z.hatSchluss ? ' <span class="muted" style="font-size:var(--t-2xs, 9px)">SR</span>' : ''}</td>
+        <td class="num"><strong>${mU(z, z.endsumme)}</strong>${z.hatSchluss ? ' <span class="muted" style="font-size:var(--t-2xs, 9px)">SR</span>' : ''}</td>
         <td class="num">${z.fakturiert ? mB(z.fakturiert) : '–'}</td>
         <td class="num">${z.offenRg ? mB(z.offenRg) : '–'}</td>
         <td class="num ${dCls(d || 0)}">${d != null && Math.abs(d) > 0.5 ? mB(d) : '–'}</td>
@@ -3715,6 +3725,7 @@ function viewKosten(id) {
             <td class="num">${mB(tot.nt)}</td><td class="num">${mB(tot.endsumme)}</td><td class="num">${mB(tot.fakturiert)}</td>
             <td class="num">${mB(tot.offenRg)}</td><td class="num ${dCls(dTot)}">${mB(dTot)}</td>
           </tr>
+          ${unbekannt ? `<tr class="kunbek"><td></td><td colspan="10">${unbekannt} ${esc(unbekannt === 1 ? W('posten', p) : W('posten_pl', p))} ohne bekannten Preis — in dieser Summe nicht enthalten. Zeile aufklappen und den Wert von Hand eintragen, wenn du einen findest.</td></tr>` : ''}
         </tbody>
       </table>
     </div>
@@ -9913,10 +9924,18 @@ function auflageAnwenden(v, opt, p) {
     const markt = (v.eingeladene || []).find(e => e.firma === 'Marktpreis') || (v.eingeladene || [])[0];
     if (markt) markt.betrag = chf;
     else (v.eingeladene = v.eingeladene || []).push({ id: uid('e'), firma: 'Marktpreis', email: '', betrag: chf, status: 'offeriert', datumMail: '' });
+    /* Der Cardmarket-Preis ist der günstigste über alle Drucke der
+       Karte. Das gilt auch dann noch, wenn die Auflage bestimmt ist —
+       sonst behauptete die Zeile, die Zahl gehöre zur gewählten
+       Auflage. Beim Einlesen steht der Satz schon (Teil 73); hier
+       fehlte er. */
+    const gedruckt = Number(opt.auflagenGesamt) || 0;
     v.beschrieb += '\nMarktwert: ' + (perUsd
         ? 'TCGPlayer USD ' + roh.toFixed(2) + ' für ' + (opt.code || v.bkp)
         : 'Cardmarket EUR ' + roh.toFixed(2) + ' für ' + (opt.seltenheit || opt.code || v.bkp))
-      + ', Kurs ' + kurs.toFixed(4) + ', Stand ' + (kurse.datum || todayIso());
+      + ', Kurs ' + kurs.toFixed(4)
+      + (!perUsd && gedruckt > 1 ? ', günstigste über alle ' + gedruckt + ' Auflagen' : '')
+      + ', Stand ' + (kurse.datum || todayIso());
   }
 }
 
@@ -10257,7 +10276,10 @@ function pruefWaehlen(gi, oi) {
   const g = pruefCtx.gruppen[Number(gi)]; if (!g) return;
   const opt = (g.optionen || [])[Number(oi)]; if (!opt) return;
   const p = findProjekt(pruefCtx.pid);
-  g.vs.forEach(v => auflageAnwenden(v, opt, p));
+  /* Wie oft die Karte insgesamt gedruckt wurde, hängt an der Gruppe,
+     nicht an der einzelnen Auflage — sie muss mitgereicht werden. */
+  const mitGesamt = { ...opt, auflagenGesamt: opt.auflagenGesamt || (g.optionen || []).length };
+  g.vs.forEach(v => auflageAnwenden(v, mitGesamt, p));
   save();
   toast(g.nummer + ' → ' + (opt.seltenheit || '—') + ' (' + g.vs.length + '×)', 'ok');
   pruefZeichnen();
@@ -17270,6 +17292,23 @@ function entfaelltAbOf(v) { return (v && ENTFAELLT_AB[v.entfaelltAb]) ? v.entfae
    Die Offerte bleibt stehen: Nur so bleibt nachvollziehbar, wovon abgewichen
    wird. ============================================================ */
 function hatEigenePrognose(v) { return !!(v && v.prognoseEigen != null && v.prognoseEigen !== ''); }
+
+/** Ist über den Wert dieser Zeile ÜBERHAUPT nichts bekannt?
+
+    Der Unterschied zwischen «null» und «weiss ich nicht» ist der
+    wichtigste, den ein Bewertungsprogramm machen muss. Eine Null sagt
+    «wertlos» und summiert sich still mit. Für drei Nummern aus Chaos
+    Origins führt keine Datenbank einen Preis — sie sind nicht wertlos,
+    sie sind unbepreist. */
+function wertUnbekannt(v) {
+  if (!v || istEntfallen(v)) return false;
+  if (hatEigenePrognose(v)) return false;
+  if (v.schaetzung || kvRev(v) || isVergeben(v)) return false;
+  if (bestBetrag(v) != null || bestAbgebot(v) != null) return false;
+  if (nachtragSumme(v) || rapportSumme(v) || budgetSumme(v)) return false;
+  if ((v.rechnungen || []).length) return false;
+  return true;
+}
 
 function setEigenePrognose(pid, vid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;

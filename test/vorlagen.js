@@ -1320,6 +1320,25 @@ ok('die Sammlung kennt Marktplätze',
 eq('der Bau kennt keine',
   sandbox.plattformenVon({ id: 'p_b', vorlage: 'bau', vergaben: [] }).length, 0);
 
+/* Zwei Wege zu derselben Zeile muessen dasselbe sagen. Beim Einlesen
+   steht der Vorbehalt "guenstigste ueber alle N Auflagen"; waehlte man
+   die Auflage spaeter von Hand, fehlte er - und die Zeile behauptete,
+   die Zahl gehoere zur gewaehlten Auflage. (Fund vom 21.08.2026:
+   CORI-EN028, drei Auflagen, keine mit eigenem Preis.) */
+{
+  sandbox.__kursSetzen({ rates: { CHF: 0.9333, USD: 1.16 }, date: '2026-08-20' });
+  const v = { bkp: 'CORI-EN028', beschrieb: 'Rituakarte', eingeladene: [] };
+  sandbox.auflageAnwenden(v, { seltenheit: 'Secret Rare', preisUsd: 0, preisEur: 4.07,
+    code: 'CORI-EN028', auflagenGesamt: 3 }, S);
+  ok('von Hand gewaehlt: der Vorbehalt steht auch hier',
+    /Cardmarket EUR 4.07 für Secret Rare.*günstigste über alle 3 Auflagen/.test(v.beschrieb), v.beschrieb);
+  /* Hat die Auflage einen EIGENEN Preis, ist der Vorbehalt falsch. */
+  sandbox.auflageAnwenden(v, { seltenheit: 'Ultra Rare', preisUsd: 25.6, preisEur: 4.5,
+    code: 'SDK-001', auflagenGesamt: 2 }, S);
+  ok('… bei eigenem Preis fehlt er zu Recht',
+    !/günstigste/.test(v.beschrieb), v.beschrieb);
+}
+
 // Treffer → Posten
 const posten = sandbox.ygoZuPosten(a1.treffer[0], k);
 /* Die Nummer ist die, die auf der Karte steht — nicht die Kategorie.

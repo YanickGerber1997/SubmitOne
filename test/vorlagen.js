@@ -1303,6 +1303,19 @@ eq('Cosmos bekommt ein Kürzel', sandbox.seltenheitKuerzel('Selten · Cosmos Hol
   eq('… und der abgewählte Marktplatz ist weg',
     v.eingeladene.filter(e => e.firma === 'Ricardo').length, 0);
 
+  /* Ein Einzelpreis braucht seine Rappen. chf() rundet auf ganze
+     Franken - richtig bei einer Bausumme, falsch bei einer Karte fuer
+     14.50: dort verschwaende die Haelfte des Unterschieds zum Markt.
+     (Fund vom 22.08.2026 beim Eintragen der eBay-Angebote.) */
+  /* Der Zusammenhang bestimmt die Waehrung: die Vorlage Unterschriften
+     zaehlt Stueck, nicht Franken. Also erst setzen, dann pruefen. */
+  sandbox.setVorlageCtx(S);
+  eq("ein Einzelpreis behaelt die Rappen", sandbox.chfGenau(14.5), "CHF 14.50");
+  eq("… auch bei glatten Betraegen", sandbox.chfGenau(9), "CHF 9.00");
+  /* Das Tausendertrennzeichen haengt an der Landessprache des Systems -
+     geprueft wird darum nur, dass gerundet und nicht gespalten wird. */
+  ok("eine Bausumme rundet weiterhin",
+    /^CHF 1.250.000$/.test(sandbox.chf(1250000)), sandbox.chf(1250000));
   ok('die Zeile sagt Preis, Ort und Porto in einem Atemzug',
     /auf eBay · Porto zahlt der Käufer/.test(sandbox.angebotZeile(v)), sandbox.angebotZeile(v));
 

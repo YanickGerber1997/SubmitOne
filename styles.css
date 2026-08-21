@@ -2908,6 +2908,13 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
   font-size: var(--t-s); }
 .ang-ort { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 .ang-eigen { width: 170px; font-size: var(--t-xs); }
+/* Artikelnummern je Marktplatz - mit Sprung zum Angebot. */
+.ang-nrn { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.ang-nr { display: flex; align-items: center; gap: 5px; font-size: var(--t-xs);
+  color: var(--text-soft); }
+.ang-nr .input { width: 130px; font-size: var(--t-xs); }
+.ang-nr a { text-decoration: none; color: var(--brand); font-size: var(--t-s); }
+
 .ang-tat { display: flex; gap: 8px; align-items: center; margin-top: 9px; flex-wrap: wrap; }
 /* In der Zeile selbst: was angeboten ist, in einem Atemzug lesbar. */
 .ang-badge { display: inline-block; padding: 1px 6px; border-radius: var(--rund-s);

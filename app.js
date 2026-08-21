@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v417';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v418';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -1095,6 +1095,18 @@ function chf(n) {
   if (n == null || n === '') return '–';
   const z = Number(n).toLocaleString('de-CH', { maximumFractionDigits: 0 });
   const v = vorlage();
+  if (v && v.geld === false) return z + (v.einheitKurz ? ' ' + v.einheitKurz : '');
+  return 'CHF ' + z;
+}
+
+/** Ein Preis mit Rappen. chf() rundet auf ganze Franken - das ist bei
+    einer Bausumme von 1.25 Millionen richtig und bei einer Karte fuer
+    14.50 falsch: Dort verschwindet die Haelfte des Unterschieds zum
+    Marktwert. Wo ein Einzelpreis steht, gehoeren die Rappen hin. */
+function chfGenau(n) {
+  if (n == null || n === '') return '–';
+  const v = vorlage();
+  const z = money(n);
   if (v && v.geld === false) return z + (v.einheitKurz ? ' ' + v.einheitKurz : '');
   return 'CHF ' + z;
 }
@@ -3406,6 +3418,10 @@ function viewStueck(pid, vid) {
             ${gewinn != null ? zahl('+/−', (gewinn > 0 ? '+' : '') + chf(gewinn), gewinn >= 0 ? 'gut' : 'schlecht') : ''}
           </div>
         </div>
+
+        ${plattformenVon(p).length ? `<div class="card card-pad" style="margin-top:14px">
+          ${angebotBlock(p, v)}
+        </div>` : ''}
 
         <div class="card card-pad" style="margin-top:14px">
           <div class="section-head" style="margin-top:0"><h2>Vermerk</h2></div>
@@ -10478,8 +10494,8 @@ function angebotBlock(p, v) {
   return `<div class="ang-block">
     <div class="ang-kopf">
       <strong>${esc(W('anbieten', p))}</strong>
-      ${markt ? `<span class="muted">Marktwert ${chf(markt)}</span>` : ''}
-      ${d != null ? `<span class="ang-delta ${d >= 0 ? 'up' : 'dn'}">${d >= 0 ? '+' : ''}${chf(d)}</span>` : ''}
+      ${markt ? `<span class="muted">Marktwert ${chfGenau(markt)}</span>` : ''}
+      ${d != null ? `<span class="ang-delta ${d >= 0 ? 'up' : 'dn'}">${d >= 0 ? '+' : ''}${chfGenau(d)}</span>` : ''}
     </div>
     <div class="ang-reihe">
       <label class="ang-preis">${esc(W('angebot', p))}
@@ -10496,6 +10512,13 @@ function angebotBlock(p, v) {
     <div class="ang-orte">${orte.map(o => `<label class="ang-ort"><input type="checkbox" class="ang-ort-${v.id}" value="${esc(o)}"${gewaehlt.indexOf(o) >= 0 ? ' checked' : ''}> ${esc(o)}</label>`).join('')}
       <input class="input ang-eigen" id="ang_eigen_${v.id}" value="${esc(eigene.join(', '))}" placeholder="weitere, mit Komma">
     </div>
+    ${a && (a.plattformen || []).length ? `<div class="ang-nrn">${a.plattformen.map(o => {
+      const nr = (a.kennungen || {})[o] || '';
+      const url = marktLink(o, nr);
+      return `<label class="ang-nr">${esc(o)}
+        <input class="input" id="ang_nr_${v.id}_${esc(o.replace(/W/g, ''))}" value="${esc(nr)}" placeholder="Artikelnummer">
+        ${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" title="Angebot öffnen">↗</a>` : ''}</label>`;
+    }).join('')}</div>` : ''}
     <div class="ang-tat">
       <button class="btn sm" data-act="anbieten" data-pid="${p.id}" data-vid="${v.id}">${esc(W('anbieten', p))}</button>
       ${a ? `<button class="btn sm ghost" data-act="angebot-weg" data-pid="${p.id}" data-vid="${v.id}">Zurückziehen</button>` : ''}
@@ -10515,7 +10538,18 @@ function plattformenVon(p) {
     kommen als Einladungen OHNE Betrag in die Liste — sonst rechnete
     sich der Wunschpreis in den Bestandswert hinein, und die Sammlung
     wäre wertvoll, weil man viel verlangt. */
-function angebotSetzen(v, preis, plattformen, portoKaeufer) {
+/* Wohin eine Artikelnummer führt. Mehr Marktplätze kommen dazu, sobald
+   jemand dort verkauft — was fehlt, zeigt die Nummer ohne Verweis. */
+const MARKT_LINK = {
+  'eBay': nr => 'https://www.ebay.ch/itm/' + encodeURIComponent(nr),
+  'Ricardo': nr => 'https://www.ricardo.ch/de/a/' + encodeURIComponent(nr),
+};
+function marktLink(ort, nr) {
+  const f = MARKT_LINK[ort];
+  return (f && nr) ? f(nr) : '';
+}
+
+function angebotSetzen(v, preis, plattformen, portoKaeufer, kennungen) {
   const zahl = Number(preis);
   const orte = (plattformen || []).map(x => String(x).trim()).filter(Boolean);
   if (!isFinite(zahl) || zahl <= 0 || !orte.length) {
@@ -10523,8 +10557,17 @@ function angebotSetzen(v, preis, plattformen, portoKaeufer) {
     v.eingeladene = (v.eingeladene || []).filter(e => e.firma === 'Marktpreis' || eOff(e) != null);
     return v;
   }
+  /* Die Artikelnummern bleiben erhalten, wenn beim Speichern keine
+     mitkommen — sonst waeren sie bei jedem Preiswechsel weg. */
+  const alteK = (v.angebot && v.angebot.kennungen) || {};
+  const k = {};
+  orte.forEach(o => {
+    const wert = String((kennungen && kennungen[o] != null) ? kennungen[o] : (alteK[o] || '')).trim();
+    if (wert) k[wert && o] = wert;
+  });
   v.angebot = { preis: Math.round(zahl * 100) / 100, plattformen: orte,
     portoKaeufer: !!portoKaeufer, seit: todayIso() };
+  if (Object.keys(k).length) v.angebot.kennungen = k;
 
   /* Die Marktplätze in die Liste der Angefragten spiegeln — dort
      stehen sie schon in den Wörtern der Vorlage («Angebot bei»). Was
@@ -10546,7 +10589,7 @@ function angebotSetzen(v, preis, plattformen, portoKaeufer) {
 function angebotZeile(v) {
   const a = v && v.angebot;
   if (!a || !a.preis) return '';
-  return chf(a.preis) + ' auf ' + (a.plattformen || []).join(', ')
+  return chfGenau(a.preis) + ' auf ' + (a.plattformen || []).join(', ')
     + ' · Porto ' + (a.portoKaeufer ? 'zahlt der Käufer' : 'inbegriffen');
 }
 
@@ -10564,9 +10607,13 @@ function actAnbieten(pid, vid) {
 
   if (!Number(preis)) { toast('Bitte einen Preis eingeben', 'info'); return; }
   if (!orte.length) { toast('Bitte mindestens einen Marktplatz wählen', 'info'); return; }
-  angebotSetzen(v, preis, orte, porto);
-  save(); viewKosten(pid);
-  toast(v.gewerk + ': angeboten für ' + chf(v.angebot.preis) + ' auf ' + orte.join(', '), 'ok');
+  /* Die Artikelnummer je Marktplatz - ohne sie ist die Verbindung
+     zwischen eigener Liste und Auktion nur eine Behauptung. */
+  const kennungen = {};
+  orte.forEach(o => { const f = $("#ang_nr_" + vid + "_" + o.replace(/W/g, "")); if (f) kennungen[o] = f.value; });
+  angebotSetzen(v, preis, orte, porto, kennungen);
+  save(); router();
+  toast(v.gewerk + ': angeboten für ' + chfGenau(v.angebot.preis) + ' auf ' + orte.join(', '), 'ok');
 }
 
 /* Beim Aufnehmen kann viel schiefgehen: ein Bild, das der Browser
@@ -10600,7 +10647,7 @@ async function actMerkmaleHolen(pid, vid) {
   try {
     const m = await merkmaleHolen(v, p);
     const da = Object.keys(m).filter(k => String(m[k] || '').trim()).length;
-    save(); viewKosten(pid);
+    save(); router();
     toast(da + ' Merkmale gefunden', 'ok');
   } catch (e) { toast('Merkmale: ' + ((e && e.message) || 'kein Zugriff'), 'info'); }
 }
@@ -10616,12 +10663,12 @@ function actMerkmaleKopie(pid, vid) {
 
 function actFotoWeg(pid, vid, fid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
-  fotoWeg(v, fid); save(); viewKosten(pid);
+  fotoWeg(v, fid); save(); router();
   toast('Bild gelöscht · Projekt ' + kb(fotoGroesseProjekt(p)), 'ok');
 }
 function actFotoHaupt(pid, vid, fid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
-  fotoHaupt(v, fid); save(); viewKosten(pid);
+  fotoHaupt(v, fid); save(); router();
   toast('Neues Hauptbild', 'ok');
 }
 
@@ -10638,7 +10685,7 @@ function actVerkaufsblattKopie(pid, vid, was) {
 function actAngebotWeg(pid, vid) {
   const p = findProjekt(pid); const v = p && findVergabe(p, vid); if (!v) return;
   angebotSetzen(v, 0, []);
-  save(); viewKosten(pid);
+  save(); router();
   toast(v.gewerk + ': Angebot zurückgezogen', 'ok');
 }
 

@@ -28,6 +28,7 @@ zweite Klick legt an.
 |---|---|
 | `vorlage-bau.csv` | Bauvorhaben, Gewerke nach BKP |
 | `vorlage-sammlung.csv` | Sammlung & Verkauf — Karten, Münzen, Figuren |
+| `vorlage-depot.csv` | Depot — Krypto, Edelmetalle, Währungen, Aktien |
 | `vorlage-unterschriften.csv` | Unterschriftensammlung nach Region |
 | `vorlage-it.csv` | IT-Projekt, Arbeitspakete nach Projektstrukturplan |
 

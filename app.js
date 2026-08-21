@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v404';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v405';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -9218,10 +9218,17 @@ function ygoHerkunft(t, k) {
   else if (t.preisEur) teile.push('Cardmarket EUR ' + t.preisEur.toFixed(2));
   else teile.push('kein Marktpreis hinterlegt');
   if (perUsd || t.preisEur) teile.push('Kurs ' + (perUsd ? (k.usd || 0) : (k.eur || 0)).toFixed(4) + (k.geschaetzt ? ' (genähert)' : ''));
-  /* Der wichtigste Satz im ganzen Vermerk: Weiss man die Auflage
-     nicht, ist die Zahl die GÜNSTIGSTE — und damit für eine alte
-     Rarität oft um ein Vielfaches zu tief. Das muss dastehen. */
-  if (!t.setSicher && t.auflagen > 1) teile.push('günstigste von ' + t.auflagen + ' Auflagen — Auflage nicht bestimmt');
+  /* Der wichtigste Satz im ganzen Vermerk: Der Cardmarket-Preis ist
+     der GÜNSTIGSTE über alle Auflagen — und damit für eine seltene
+     Auflage oft um ein Vielfaches zu tief.
+
+     Er hängt am PREIS, nicht an der Auflage. Battle Pack 3 hat das
+     gezeigt: Dort führt TCGPlayer für keine der zwei Auflagen einen
+     Preis, also greift auch bei bestimmter Auflage der günstigste.
+     Hing der Vorbehalt an `setSicher`, verschwand er genau dann,
+     wenn man die Frage für beantwortet hielt. */
+  if (!perUsd && t.preisEur && t.auflagen > 1) teile.push('günstigste über alle ' + t.auflagen + ' Auflagen');
+  if (!t.setSicher && t.auflagen > 1) teile.push('Auflage nicht bestimmt');
   teile.push('Stand ' + (k.datum || todayIso()));
   return teile.join(', ');
 }

@@ -1078,11 +1078,23 @@ ok('… und das sind Grössenordnungen, nicht Rappen',
 eq('unklare Auflage nimmt den Cardmarket-Preis',
   sandbox.ygoMarktwert(a4.treffer[0], k), Math.round(4.5 * k.eur * 100) / 100);
 ok('… und sagt im Vermerk, dass es die günstigste von mehreren ist',
-  /günstigste von 2 Auflagen/.test(sandbox.ygoHerkunft(a4.treffer[0], k)));
+  /günstigste über alle 2 Auflagen/.test(sandbox.ygoHerkunft(a4.treffer[0], k)));
+ok('… und dass die Auflage offen ist',
+  /Auflage nicht bestimmt/.test(sandbox.ygoHerkunft(a4.treffer[0], k)));
 ok('bei bekannter Auflage steht deren Set-Code beim Preis',
   /TCGPlayer USD 25\.60 für SDK-001/.test(sandbox.ygoHerkunft(a3.treffer[0], k)));
 ok('… und dann fehlt die Warnung zu Recht',
-  !/günstigste von/.test(sandbox.ygoHerkunft(a3.treffer[0], k)));
+  !/günstigste/.test(sandbox.ygoHerkunft(a3.treffer[0], k)));
+/* Der Fund vom 21.08.2026 an Battle Pack 3: Dort führt TCGPlayer für
+   KEINE der zwei Auflagen einen Preis, also greift auch bei gewählter
+   Auflage der Cardmarket-Preis — der günstigste über alles. Hing der
+   Vorbehalt an `setSicher`, verschwand er genau dann, wenn man die
+   Frage für beantwortet hielt. Er hängt am Preis, nicht an der Auflage. */
+const bp = { setSicher: true, auflagen: 2, preisUsd: 0, preisEur: 0.12, setCode: 'BP03-EN223', seltenheit: 'Shatterfoil Rare' };
+ok('gewählte Auflage ohne eigenen Preis: der Vorbehalt bleibt stehen',
+  /günstigste über alle 2 Auflagen/.test(sandbox.ygoHerkunft(bp, k)), sandbox.ygoHerkunft(bp, k));
+ok('… sagt aber nicht mehr, die Auflage sei offen',
+  !/Auflage nicht bestimmt/.test(sandbox.ygoHerkunft(bp, k)), sandbox.ygoHerkunft(bp, k));
 ok('die Herkunft des Werts steht dabei',
   /Cardmarket EUR 0\.27/.test(sandbox.ygoHerkunft(a1.treffer[0], k)) && /Stand 2026-08-20/.test(sandbox.ygoHerkunft(a1.treffer[0], k)));
 ok('ein genäherter Kurs wird als solcher benannt',

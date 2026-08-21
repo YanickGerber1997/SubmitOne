@@ -806,6 +806,18 @@ ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(ein
      Karte bleibt trotzdem eine Angabe, die man beim Verkaufen braucht. */
   eq('auch ohne uebersetzten Namen wird die Sprache festgehalten',
     sandbox.__ygoMitSprache('de').sprache, 'de');
+
+  /* Gefunden beim Einlesen von 18 deutschen Karten: Der Treffer trug
+     die Sprache, der POSTEN nicht - ygoZuPosten reichte sie nicht
+     weiter. Damit war beim Verkaufen nicht mehr zu sehen, ob eine
+     Karte deutsch oder englisch ist. */
+  eq('der Yu-Gi-Oh-Posten traegt die Sprache des Treffers',
+    sandbox.ygoZuPosten({ name: 'Erebus', setCode: 'SR01-EN001', setName: 'Emperor of Darkness',
+      seltenheit: 'Ultra Rare', setSicher: true, auflagen: 1, preisEur: 1, preisUsd: 0,
+      passcode: '1', sprache: 'de' }, { eur: 0.93, usd: 0.8, datum: 'x' }).sprache, 'de');
+  eq('ohne Angabe bleibt sie leer statt geraten',
+    sandbox.ygoZuPosten({ name: 'x', setSicher: true, auflagen: 1, preisEur: 0, preisUsd: 0 },
+      { eur: 0.93, usd: 0.8, datum: 'x' }).sprache, '');
 }
 
 /* ---- 2k) Zwei Spiele in EINEM Projekt ----

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v402';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v403';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -9246,6 +9246,9 @@ function ygoZuPosten(t, k) {
        offen», wo sie hingehört, bis man sie bestimmt. */
     bkp: t.setCode || t.passcode || '',
     quelleUrl: t.quelleUrl || '', quelleName: t.quelleName || '',
+    // Deutsch oder englisch - beim Verkaufen zwei verschiedene Waren.
+    // Fehlte hier: Die deutschen Karten kamen ohne ihre Sprache herein.
+    sprache: t.sprache || '',
     satz: t.setName || '',
     seltenheit: t.seltenheit || '',
     passcode: t.passcode || '',
@@ -10002,8 +10005,12 @@ function eingabeDienste(text) {
   if (/^(?:dex\s*|#)\d{1,4}$/i.test(t)) return ['pokemon'];         // dex 94
   if (/^0\d{1,3}$/.test(t) || /^\d{4}$/.test(t)) return ['pokemon']; // 0094
   if (/^\d{5,8}$/.test(t)) return ['ygo'];                          // Passcode
-  if (/^[A-Z0-9]{2,6}-[A-Z]{2,3}\d{1,4}$/.test(t)) return ['ygo'];  // CORI-EN030
-  if (/^[A-Z]{2,4}-\d{1,3}$/.test(t)) return ['ygo'];               // SDK-001
+  /* Gross oder klein geschrieben ist dieselbe Karte: «pgl3-de061»
+     tippt sich schneller als «PGL3-DE061». Die Pokémon-Kennung unten
+     bleibt kleingeschrieben — daran unterscheiden sich die beiden. */
+  const G = t.toUpperCase();
+  if (/^[A-Z0-9]{2,6}-[A-Z]{2,3}\d{1,4}$/.test(G)) return ['ygo'];  // CORI-EN030
+  if (/^[A-Z]{2,4}-\d{1,3}$/.test(G)) return ['ygo'];               // SDK-001
   if (/^[a-z0-9][a-z0-9.]*-\d+[a-zA-Z]?$/.test(t)) return ['pokemon']; // me03-050
   if (/^\d{1,3}$/.test(t)) return ['pokemon'];   // nackte Zahl — dort steht die Erklärung
   return ['ygo', 'pokemon'];                     // ein Name

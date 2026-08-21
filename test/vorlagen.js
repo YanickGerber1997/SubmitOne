@@ -955,6 +955,35 @@ ok('… und der Erkenner lässt die Form zu Yu-Gi-Oh durch',
   sandbox.eingabeDienste('YGLD-DEC01').join() === 'ygo'
   && sandbox.eingabeDienste('ygld-dec01').join() === 'ygo');
 
+/* Das Kürzel der Seltenheit vor dem Namen: (UR), (SR), (ScR). Es wird
+   berechnet, nie ins Feld geschrieben — sonst bliebe es stehen, wenn
+   sich die Seltenheit ändert, und der Name sagte etwas anderes als
+   die Karte. */
+eq('Ultra Rare wird zu UR', sandbox.seltenheitKuerzel('Ultra Rare'), 'UR');
+eq('Super Rare wird zu SR', sandbox.seltenheitKuerzel('Super Rare'), 'SR');
+eq('Secret Rare wird zu SCR', sandbox.seltenheitKuerzel('Secret Rare'), 'SCR');
+/* Das Längere muss zuerst geprüft werden, sonst gewinnt «Secret Rare»
+   und aus Gold Secret wird Secret. */
+eq('Gold Secret Rare bleibt unterscheidbar',
+  sandbox.seltenheitKuerzel('Gold Secret Rare'), 'GSCR');
+eq('… und Gold Rare auch', sandbox.seltenheitKuerzel('Gold Rare'), 'GR');
+/* Pokémon trägt Stufe UND Variante — beides gehört ins Kürzel. */
+eq('Pokémon: Stufe und Variante zusammen',
+  sandbox.seltenheitKuerzel('Selten · Holo'), 'R·HO');
+eq('… auch bei Reverse Holo',
+  sandbox.seltenheitKuerzel('Häufig · Reverse Holo'), 'C·RH');
+/* Unbekanntes wird abgekürzt, nicht verschwiegen — und nicht auf eine
+   Stufe verkürzt, die es nicht meint. */
+eq('Unbekanntes behält, was es unterscheidet',
+  sandbox.seltenheitKuerzel('Duel Terminal Rare Parallel'), 'DTRP');
+eq('ohne Seltenheit kein Kürzel', sandbox.seltenheitKuerzel(''), '');
+eq('Der Name trägt das Kürzel davor',
+  sandbox.postenName({ seltenheit: 'Ultra Rare', gewerk: 'Erebus' }), '(UR) Erebus');
+/* Die Vorlage Bau kennt keine Seltenheit — dort darf sich nichts
+   ändern. Ein Kürzel vor «Baumeisterarbeiten» wäre Unsinn. */
+eq('… und ohne Seltenheit bleibt der Name, wie er war',
+  sandbox.postenName({ gewerk: 'Baumeisterarbeiten' }), 'Baumeisterarbeiten');
+
 // Antwort übersetzen
 const a1 = sandbox.ygoAuswerten(ANTWORT_PASSCODE, { art: 'passcode', wert: '43989315' });
 eq('Passcode-Antwort: ein Treffer', a1.treffer.length, 1);

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v408';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v409';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -3347,7 +3347,7 @@ function viewStueck(pid, vid) {
   const z = kostenZeile(v);
   const markt = bestBetrag(v);
   const gewinn = (v.betrag || 0) && v.schaetzung ? (v.betrag - v.schaetzung) : null;
-  setStatusExtra(esc(v.gewerk) + ' · ' + chf(z.prognose));
+  setStatusExtra(esc(postenName(v)) + ' · ' + chf(z.prognose));
 
   /* Die Seitenliste wie beim Handel — nach der Gruppe der Vorlage,
      bei Karten also nach Satz. */
@@ -3366,7 +3366,7 @@ function viewStueck(pid, vid) {
         return `<a class="gw-side-item${g.id === v.id ? ' active' : ''}" href="#/projekt/${p.id}/vergabe/${g.id}" title="${esc(st.label)}">
           <span class="st-dot ${st.color || 'grey'}"></span>
           <span class="gw-side-bkp">${esc(g.bkp || '')}</span>
-          <span class="gw-side-name">${esc(g.gewerk || '')}${g.pruefen ? '<span class="gw-side-zu">⚑ prüfen</span>' : ''}</span></a>`;
+          <span class="gw-side-name">${esc(postenName(g))}${g.pruefen ? '<span class="gw-side-zu">⚑ prüfen</span>' : ''}</span></a>`;
       }).join('')).join('')}</div>
   </aside>`;
 
@@ -3385,7 +3385,7 @@ function viewStueck(pid, vid) {
   render(`
     <div class="detail-head">
       <div>
-        <h1 style="margin:0;font-size:var(--t-xl, 22px)"><span class="bkp-code" style="font-size:var(--t-l, 16px)">${esc(v.bkp || '')}</span> ${esc(v.gewerk || '')}</h1>
+        <h1 style="margin:0;font-size:var(--t-xl, 22px)"><span class="bkp-code" style="font-size:var(--t-l, 16px)">${esc(v.bkp || '')}</span> ${esc(postenName(v))}</h1>
         <div class="sub" style="margin-top:5px">${[esc(v.seltenheit || ''), esc(v.satz || ''), v.sprache ? esc(spracheInfo(v.sprache).name) : '', v.firma ? esc(W('partner', p)) + ': ' + esc(v.firma) : esc(W('partnerLeer', p))].filter(Boolean).join(' · ')}</div>
       </div>
       <div style="display:flex;gap:10px;align-items:center">${statusPill(v)}</div>
@@ -3599,7 +3599,7 @@ function viewKosten(id) {
             : `<span class="muted">${esc(W('partnerLeer', p))}</span>`);
       rows += `<tr class="clickable kost-row${open ? ' open' : ''}" data-act="kost-toggle" data-ctx="vergabe" data-pid="${p.id}" data-vid="${v.id}">
         <td class="bkp-code"><span class="gw-chev">${open ? '▾' : '▸'}</span> ${esc(v.bkp)}</td>
-        <td><strong>${esc(v.gewerk)}</strong>${v.menge != null && v.kursChf ? `<div class="posten-menge">${esc(mengenZeile(v.menge, v.einheit, v.kursChf, String(v.kategorie) === KURS_KATEGORIE.metall))}</div>` : ''}${chargenZeile(v) ? `<div class="posten-menge">${esc(chargenZeile(v))}</div>` : ''}${v.pruefen ? ` <span class="pruef-badge" title="Etwas ist noch nicht belegt — Zeile aufklappen">⚑ prüfen</span>` : ''}${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
+        <td><strong>${esc(postenName(v))}</strong>${v.menge != null && v.kursChf ? `<div class="posten-menge">${esc(mengenZeile(v.menge, v.einheit, v.kursChf, String(v.kategorie) === KURS_KATEGORIE.metall))}</div>` : ''}${chargenZeile(v) ? `<div class="posten-menge">${esc(chargenZeile(v))}</div>` : ''}${v.pruefen ? ` <span class="pruef-badge" title="Etwas ist noch nicht belegt — Zeile aufklappen">⚑ prüfen</span>` : ''}${btSel}${v.beschrieb ? ` <span class="chg-badge" title="${esc(v.beschrieb)}">ⓘ Notiz</span>` : ''}</td>
         <td>${untCell}</td>
         <td class="num">${mB(z.kv)}</td>
         <td class="num">${z.rev != null && Math.abs(z.rev - z.kv) > 0.5 ? `${mB(z.rev)} <span class="chg-delta ${z.rev > z.kv ? 'up' : 'dn'}" title="Änderung gegenüber Erst-KV">${z.rev > z.kv ? '▲' : '▼'}</span>` : (z.rev != null ? mB(z.rev) : `<span class="muted">${mB(z.kv)}</span>`)}</td>
@@ -8342,6 +8342,68 @@ function katalogAktiv(p) {
    Sammlung der Satz, weil ein Ordner nach Sätzen geordnet ist und
    nicht nach Anfangsziffern. Die Vorlage darf es also selbst sagen;
    ohne Angabe bleibt es bei der ersten Ziffer wie bisher. */
+/* --- Das Kürzel der Seltenheit --------------------------------------
+   Sammler lesen Listen in Kürzeln: UR, SR, ScR. Das gehört vor den
+   Namen, sonst muss man jede Zeile aufklappen, um zu sehen, was man
+   vor sich hat.
+
+   Die Tabelle steht von LANG nach KURZ: «Gold Secret Rare» muss vor
+   «Secret Rare» geprüft werden, sonst gewinnt das kürzere und aus
+   Gold Secret wird Secret. */
+const SELTENHEIT_KUERZEL = [
+  ['quarter century secret rare', 'QCSCR'],
+  ['prismatic secret rare', 'PSCR'],
+  ['platinum secret rare', 'PLSCR'],
+  ['gold secret rare', 'GSCR'],
+  ['extra secret rare', 'ESCR'],
+  ['starlight rare', 'STR'],
+  ['shatterfoil rare', 'SHR'],
+  ['starfoil rare', 'SFR'],
+  ['collector\u2019s rare', 'COR'], ['collectors rare', 'COR'], ["collector's rare", 'COR'],
+  ['ultimate rare', 'ULR'],
+  ['ghost rare', 'GHR'],
+  ['mosaic rare', 'MOR'],
+  ['premium gold rare', 'PGR'],
+  ['gold rare', 'GR'],
+  ['secret rare', 'SCR'],
+  ['ultra rare', 'UR'], ['ultra selten', 'UR'],
+  ['super rare', 'SR'], ['super selten', 'SR'],
+  ['reverse holo', 'RH'],
+  ['1. auflage', '1ST'], ['first edition', '1ST'],
+  ['ungewöhnlich', 'U'], ['uncommon', 'U'],
+  ['häufig', 'C'], ['common', 'C'],
+  ['selten', 'R'], ['rare', 'R'],
+  ['holo', 'HO'],
+  ['normal', ''],
+];
+
+/** Ein Teil einer Seltenheit → Kürzel. Unbekanntes wird abgekürzt,
+    nicht verschwiegen: die Anfangsbuchstaben, höchstens vier. */
+function kuerzelTeil(teil) {
+  const t = String(teil || '').trim().toLowerCase();
+  if (!t) return '';
+  for (const [lang, kurz] of SELTENHEIT_KUERZEL) if (t === lang) return kurz;
+  /* Nur am ENDE suchen: Seltenheitsnamen laufen auf die Stufe hinaus
+     («Gold Secret Rare»). Würde irgendwo im Text gesucht, würde aus
+     «Duel Terminal Rare Parallel» ein blosses «R» - und das
+     Unterscheidende ginge verloren. */
+  for (const [lang, kurz] of SELTENHEIT_KUERZEL) if (lang && t.slice(-lang.length) === lang) return kurz;
+  return t.split(/[\s\-]+/).filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 4);
+}
+
+/** «Selten · Holo» → «R·HO», «Ultra Rare» → «UR». */
+function seltenheitKuerzel(seltenheit) {
+  const roh = String(seltenheit || '').trim();
+  if (!roh) return '';
+  return roh.split('·').map(kuerzelTeil).filter(Boolean).join('·');
+}
+
+/** Der Name, wie er in einer Liste stehen soll — mit dem Kürzel davor,
+    wenn es eines gibt. Ohne Seltenheit bleibt alles, wie es war. */
+function postenName(v) {
+  const k = seltenheitKuerzel(v && v.seltenheit);
+  return (k ? '(' + k + ') ' : '') + String((v && v.gewerk) || '');
+}
 function gruppeVon(v, p) {
   const vl = vorlage(p);
   if (vl && typeof vl.gruppeVon === 'function') return vl.gruppeVon(v);

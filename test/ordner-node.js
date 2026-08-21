@@ -298,6 +298,29 @@ async function lauf() {
       submits.length === 1, submits.join(' · '));
   }
 
+  /* ---- Zwei Ordner mit derselben Kennung ---- */
+
+  {
+    /* Der naheliegendste Weg, ein ähnliches Vorhaben zu beginnen:
+       den Projektordner kopieren. Dann tragen zwei Dateien dieselbe
+       Kennung — und `#/projekt/p1` trifft immer nur die erste. Was
+       man in der zweiten ändert, landet beim Speichern in der ersten. */
+    const a = fakeAblage({});
+    await Ordner.erstelle(a).save(state([projekt('p1', 'Sanierung Müller')]));
+    const text = a.dateien.get('Sanierung Müller/Sanierung Müller.submit').text;
+    a.fremdAendern('Sanierung Müller Kopie', 'Sanierung Müller.submit', text);
+
+    const gemeldet = [];
+    const geladen = await Ordner.erstelle(a, { beiFehler: f => gemeldet.push(...f) }).load();
+    const ids = (geladen.projekte || []).map(p => p.id);
+
+    pruefe('Beide Ordner werden geladen', ids.length === 2, ids.join(' · '));
+    pruefe('Zwei Ordner mit derselben Kennung bekommen verschiedene Kennungen',
+      ids.length === 2 && ids[0] !== ids[1], ids.join(' · '));
+    pruefe('Die neue Kennung wird gemeldet, statt still zu geschehen',
+      gemeldet.some(f => /Kennung/i.test(f.grund || '')), JSON.stringify(gemeldet));
+  }
+
   /* ---- Ausgabe ---- */
 
   let pass = 0, fail = 0;

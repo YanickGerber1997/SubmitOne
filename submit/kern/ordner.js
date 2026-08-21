@@ -92,6 +92,10 @@
             const ordner = await ablage.ordnerListe();
             const projekte = [];
             const fehler = [];
+            /* Kennungen, die schon vergeben sind — zwei Ordner dürfen
+               nicht auf dasselbe Projekt zeigen. */
+            const gesehen = new Set();
+            const doppelte = [];
 
             for (const name of ordner) {
                 const gefunden = await mappeImOrdner(name);
@@ -99,6 +103,17 @@
 
                 try {
                     const projekt = Uebersetzer.ausMappe(JSON.parse(gefunden.text));
+                    /* Zwei Ordner dürfen nicht auf dasselbe Projekt zeigen.
+                       Wer einen Projektordner kopiert, um ein ähnliches
+                       Vorhaben zu beginnen — der naheliegendste Weg —, hätte
+                       sonst zwei Dateien mit derselben Kennung: Was er im
+                       einen ändert, landet beim Speichern im anderen. */
+                    if (gesehen.has(projekt.id)) {
+                        const alt = projekt.id;
+                        projekt.id = 'p_' + Math.random().toString(36).slice(2, 9);
+                        doppelte.push({ ordner: name, alt: alt, neu: projekt.id });
+                    }
+                    gesehen.add(projekt.id);
                     projekte.push(projekt);
                     merke(projekt, name, gefunden.datei, gefunden.text, gefunden.zeit);
                 } catch (e) {
@@ -108,6 +123,13 @@
                 }
             }
 
+            /* Eine neue Kennung ist kein Fehler, aber eine Änderung an
+               der Datei — sie gehört gesagt, sonst rätselt man beim
+               nächsten Speichern. */
+            if (doppelte.length && typeof opt.beiFehler === 'function') {
+                opt.beiFehler(doppelte.map(d => ({ ordner: d.ordner,
+                    grund: 'trug dieselbe Kennung wie ein anderes Projekt (' + d.alt + ') und hat eine neue bekommen' })));
+            }
             if (fehler.length && typeof opt.beiFehler === 'function') opt.beiFehler(fehler);
 
             const allgemein = await lesenStill(null, ALLGEMEIN);

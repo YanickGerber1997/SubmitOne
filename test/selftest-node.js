@@ -259,6 +259,25 @@ if (R) {  // CSS-Integritaet: unausgeglichene Klammern zerstoeren stumm ganze Re
   push('FAMILIE: ueberall dieselbe Oberflaechenschrift angefordert', !ohneGrund.length,
        'fehlt in: ' + ohneGrund.join(', '));
 
+  // Die Diagrammfarben: sechs Reihen, hell und dunkel getrennt gesetzt.
+  {
+    /* Ohne Kommentare pruefen: Ein Wort ueber einen Waehler zu
+       schreiben ist nicht dasselbe wie ihn zu benutzen - die erste
+       Fassung dieser Pruefung fiel ueber ihren eigenen Kommentar. */
+    const css = (lies('styles.css') || '').replace(/\/\*[\s\S]*?\*\//g, ' ');
+    push('DIAGRAMM: sechs Reihenfarben gesetzt',
+         [1, 2, 3, 4, 5, 6].every(n => css.indexOf('--dv-' + n + ':') >= 0),
+         'in styles.css fehlt eine --dv-Farbe');
+    const ab = css.indexOf(':root[data-dunkel="an"] {', css.indexOf('--dv-1:'));
+    const block = ab >= 0 ? css.slice(ab, css.indexOf('}', ab)) : '';
+    push('DIAGRAMM: eigene Reihe fuer Dunkel, keine Umkehr',
+         [1, 2, 3, 4, 5, 6].every(n => block.indexOf('--dv-' + n + ':') >= 0),
+         'die dunkle Reihe fehlt oder ist unvollstaendig');
+    push('DIAGRAMM: haengt am Schalter von tokens.css, nicht an der Systemwahl',
+         css.indexOf('--dv-1') >= 0 && css.indexOf('[data-dunkel="auto"]') < 0,
+         'styles.css faerbt auf [data-dunkel="auto"] - das ist der Schalter von bausteine.css');
+  }
+
   // Der Dunkelmodus ist ein Schalter. Wer ihn setzt, ohne bereit zu sein,
   // bekommt weisse Schrift auf Weiss - deshalb steht hier, wer ihn hat.
   if (bau) {

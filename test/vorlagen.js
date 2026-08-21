@@ -87,6 +87,28 @@ src += `
 ;globalThis.__pruefGruppen = function () { return pruefCtx ? pruefCtx.gruppen : []; };
 ;globalThis.__ordZeilen = function () { return ordnungCtx ? ordnungCtx.zeilen : []; };
 ;globalThis.__handelBlatt = function (pid, vid) { viewHandel(pid, vid); return globalThis.__blatt; };
+;globalThis.__uebersicht = function (pid) { viewProjektDetail(pid); return globalThis.__blatt; };
+;globalThis.__dkKacheln = function () { return dashKonfigCtx ? dashKonfigCtx.kacheln : []; };
+;globalThis.__alleVorlagen = function () { return VORLAGEN.map(v => v.key); };
+;globalThis.__istArt = function (k) { return DASH_ARTEN.some(a => a.key === k); };
+;globalThis.__depotMitChargen2 = function () {
+  kursSetzen({ rates: { CHF: 0.9333, USD: 1.16 }, date: '2026-08-20' });
+  const p = { id: 'p_dash', name: 'Depot', vorlage: 'depot', vergaben: [],
+    protokolle: [], entscheidungen: [], bezugsfirmen: [], geschosseListe: [], auflagen: [],
+    mitglieder: [], bauteile: [], optionen: [], termine: [], finanz: {} };
+  state.projekte.push(p); setVorlageCtx(p);
+  const gold = { nummer: 'XAU', name: 'Gold', art: 'Edelmetall', kategorie: '201',
+    preisChf: 3677.91, einheit: 'oz', herkunft: 'gold-api' };
+  const silber = { nummer: 'XAG', name: 'Silber', art: 'Edelmetall', kategorie: '201',
+    preisChf: 55.83, einheit: 'oz', herkunft: 'gold-api' };
+  const mach = (t, m, e, d, k) => { const po = kursZuPosten(t, m, e, d); po.schaetzung = k; return po; };
+  csvPostenAnlegen('p_dash', [
+    mach(gold, 1, 'oz', '2025-11-20', 3400),
+    mach(gold, 20, 'g', '2026-07-04', 2600),
+    mach(silber, 500, 'g', '2026-01-15', 700),
+  ]);
+  return p;
+};
 ;globalThis.__startseite = function () {
   /* Vier Projekte, vier Vorlagen — dieselbe Lage wie beim Nutzer.
      Der bisherige Zustand wird gemerkt und am Ende zurückgegeben:
@@ -441,6 +463,96 @@ ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(ein
   /* Und der Zusammenhang darf nicht kleben bleiben: Nach dem Zeichnen
      der letzten Kachel steht die Seite wieder in keinem Projekt. */
   eq('nach der Startseite gilt wieder der Standard', start.stand, 'bau');
+}
+
+/* ---- 2g) Das Projekt-Dashboard ----
+   Inhalt und Darstellung sind getrennt: Jede Kachel ist ein Paar aus
+   beidem, und beides ist je Projekt frei wählbar. */
+{
+  const pd = sandbox.__depotMitChargen2();
+
+  // Der Inhalt rechnet, ohne zu wissen, wie er aussieht
+  const vert = sandbox.dashInhalt('verteilung').daten(pd);
+  eq('Verteilung: eine Gruppe je Anlage', vert.teile.length, 2);
+  eq('… die grösste zuerst', vert.teile[0].label, 'Gold');
+  ok('… und die Summe stimmt mit der Kostenübersicht überein',
+    Math.abs(vert.teile.reduce((a, t) => a + t.wert, 0)
+      - pd.vergaben.reduce((a, v) => a + sandbox.kostenZeile(v).prognose, 0)) < 0.01);
+
+  const ew = sandbox.dashInhalt('einstandWert').daten(pd);
+  eq('Einstand gegen Wert: zwei Balken', ew.teile.length, 2);
+  eq('… und kein Anteil, denn es ist kein Ganzes', ew.anteil, false);
+
+  /* Ein Ring trägt höchstens sechs Teile — darüber verschwimmen
+     benachbarte Farben. Der Rest wird zusammengefasst, nicht
+     weggelassen. */
+  const viele = Array.from({ length: 11 }, (_, i) => ({ label: 'T' + i, wert: 11 - i }));
+  const kurz = sandbox.dvGekuerzt(viele);
+  eq('Ring: höchstens sechs Teile', kurz.length, 6);
+  ok('… der letzte ist «Übrige»', /^Übrige/.test(kurz[5].label) && kurz[5].rest === true, kurz[5].label);
+  eq('… und nichts geht verloren',
+    kurz.reduce((a, t) => a + t.wert, 0), viele.reduce((a, t) => a + t.wert, 0));
+  eq('bei sechs oder weniger wird nichts zusammengefasst',
+    sandbox.dvGekuerzt(viele.slice(0, 6)).length, 6);
+  eq('Teile ohne Wert fallen weg',
+    sandbox.dvGekuerzt([{ label: 'a', wert: 5 }, { label: 'b', wert: 0 }]).length, 1);
+
+  // Gezeichnet
+  const ring = sandbox.dvZeichnen(vert, 'ring', pd);
+  ok('Ring: ein Segment je Teil', (ring.match(/stroke-dasharray/g) || []).length === 2);
+  ok('Ring: die Farben in fester Reihenfolge, nie im Kreis',
+    /var\(--dv-1\)/.test(ring) && /var\(--dv-2\)/.test(ring) && !/var\(--dv-7\)/.test(ring));
+  /* Drei der sechs Farben liegen im Hellen unter 3:1 Kontrast. Farbe
+     allein darf die Aussage darum nicht tragen — die Zahl steht dabei. */
+  ok('Ring: die Legende trägt Wert und Anteil, nicht nur Farbe',
+    /dv-zahl/.test(ring) && /dv-anteil/.test(ring) && /Gold/.test(ring));
+  ok('Ring: jedes Segment sagt beim Darüberfahren, was es ist', /<title>/.test(ring));
+
+  const balken = sandbox.dvZeichnen(ew, 'balken', pd);
+  ok('Balken: zwei Zeilen', (balken.match(/dv-balken-zeile/g) || []).length === 2);
+  ok('Balken: der grössere ist voll', /width:100%/.test(balken), (balken.match(/width:[\d.]+%/g) || []).join(' '));
+
+  const liste = sandbox.dvZeichnen(vert, 'liste', pd);
+  ok('Liste: eine Zeile je Teil plus Total',
+    (liste.match(/<tr/g) || []).length === 3 && /Total/.test(liste));
+
+  ok('ohne Daten eine Meldung statt eines leeren Rings',
+    /dv-leer/.test(sandbox.dvZeichnen({ titel: 'x', teile: [] }, 'ring', pd)));
+
+  // Was die Vorlagen vorschlagen — und was das Projekt daraus macht
+  const stdBau = sandbox.standardKacheln({ vorlage: 'bau' });
+  const stdDepot = sandbox.standardKacheln({ vorlage: 'depot' });
+  ok('jede Vorlage schlägt eigene Kacheln vor',
+    JSON.stringify(stdBau) !== JSON.stringify(stdDepot));
+  ok('beim Bau sind die Phasen dabei', stdBau.some(k => k.inhalt === 'phasen'));
+  ok('beim Depot Einstand gegen Wert', stdDepot.some(k => k.inhalt === 'einstandWert'));
+  ok('jede vorgeschlagene Kachel ist gültig',
+    sandbox.__alleVorlagen().every(v => (sandbox.standardKacheln({ vorlage: v }) || []).every(k =>
+      sandbox.dashInhalt(k.inhalt).key === k.inhalt && sandbox.__istArt(k.art))));
+
+  pd.dashboard = [{ inhalt: 'top', art: 'balken' }];
+  eq('das Projekt schlägt die Vorlage', sandbox.kachelnVon(pd)[0].inhalt, 'top');
+  delete pd.dashboard;
+  eq('ohne eigene Wahl gilt der Vorschlag', sandbox.kachelnVon(pd).length, stdDepot.length);
+
+  // Der Einsteller
+  sandbox.actDashKonfig(pd.id);
+  eq('Einsteller startet beim Vorschlag', sandbox.__dkKacheln().length, stdDepot.length);
+  sandbox.dashKonfigNeu();
+  eq('Kachel angehängt', sandbox.__dkKacheln().length, stdDepot.length + 1);
+  sandbox.dashKonfigSchieben(0, 1);
+  eq('getauscht', sandbox.__dkKacheln()[0].inhalt, stdDepot[1].inhalt);
+  sandbox.dashKonfigWeg(0);
+  sandbox.dashKonfigSpeichern(pd.id);
+  eq('gespeichert am Projekt', (pd.dashboard || []).length, stdDepot.length);
+  ok('… und nur Inhalt und Darstellung, kein Ballast',
+    pd.dashboard.every(k => Object.keys(k).sort().join(',') === 'art,inhalt'));
+
+  const blatt = sandbox.__uebersicht(pd.id);
+  ok('Übersicht: der Knopf zum Einstellen', /data-act="dash-konfig"/.test(blatt));
+  ok('Übersicht: so viele Kacheln wie eingestellt',
+    (blatt.match(/dv-kachel/g) || []).length === pd.dashboard.length);
+  ok('Übersicht: keine Phasen-Leiste mehr im Depot', !/Phasen-Verteilung/.test(blatt));
 }
 
 /* ---- 3) Der Bau-Fall bleibt, wie er war ---- */

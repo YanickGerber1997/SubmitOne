@@ -2622,6 +2622,83 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
    zusammen die Frage beantworten «wie steht diese Anlage da». */
 /* Die Vorlage auf der Projektkachel — dort, wo beim Bau die Phase
    steht. Ein Blick genügt, um zu wissen, was für eine Kachel das ist. */
+/* ---- Diagramme -----------------------------------------------------
+   Die sechs Reihenfarben sind eine geprüfte Folge (Prüfskript der
+   dataviz-Vorgaben: Helligkeitsband, Buntheit, Trennschärfe bei
+   Farbsinnstörung, Kontrast). Hell und dunkel sind zwei GEWÄHLTE
+   Reihen derselben Töne, keine automatische Umkehr — deshalb stehen
+   sie zweimal da.
+
+   Feste Reihenfolge, nie im Kreis vergeben: Dieselbe Gruppe trägt
+   immer dieselbe Farbe, auch wenn eine andere wegfällt.
+
+   Im Hellen liegen drei der sechs unter 3:1 Kontrast zur Fläche. Farbe
+   allein darf die Aussage darum nicht tragen — jede Legende und jeder
+   Balken führt seinen Wert mit. */
+:root {
+  --dv-1: #2a78d6;  --dv-2: #eb6834;  --dv-3: #1baf7a;
+  --dv-4: #eda100;  --dv-5: #e87ba4;  --dv-6: #008300;
+  --dv-rest: #8d99a5;
+}
+/* SubmitOne kennt nur den Schalter, nicht die Systemwahl — in
+   tokens.css gibt es kein [data-dunkel="auto"] und keine
+   prefers-color-scheme-Regel. Wer hier eine hinschriebe, bekäme
+   dunkle Diagrammfarben auf heller Fläche. */
+:root[data-dunkel="an"] {
+  --dv-1: #3987e5;  --dv-2: #d95926;  --dv-3: #199e70;
+  --dv-4: #c98500;  --dv-5: #d55181;  --dv-6: #008300;
+  --dv-rest: #6d7a87;
+}
+
+.dv-raster { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.dv-kachel {
+  background: var(--surface); border: 1px solid var(--line-soft);
+  border-radius: var(--radius); box-shadow: var(--schatten-s); padding: 12px 14px; min-width: 0;
+}
+.dv-kopf h3 { margin: 0 0 10px; font-size: var(--t-s); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .5px; color: var(--text-soft); }
+.dv-leer { margin: 0; font-size: var(--t-s); color: var(--text-faint); }
+
+.dv-kreis-reihe { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.dv-kreis { width: 132px; height: 132px; flex: none; }
+/* Ein Ring aus dicken Strichen: der 2px-Spalt zwischen den Segmenten
+   entsteht aus der Strichfolge, nicht aus einem zweiten Pfad. */
+.dv-seg { transition: opacity .12s; }
+.dv-kreis:hover .dv-seg { opacity: .55; }
+.dv-kreis .dv-seg:hover { opacity: 1; }
+
+.dv-legende { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 130px;
+  display: flex; flex-direction: column; gap: 3px; }
+.dv-legende li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  gap: 6px; align-items: baseline; font-size: var(--t-xs); }
+.dv-punkt { width: 9px; height: 9px; border-radius: 2px; display: inline-block; flex: none; }
+.dv-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv-zahl { font-family: var(--font-zahl); color: var(--text); white-space: nowrap; }
+.dv-anteil { font-family: var(--font-zahl); color: var(--text-faint); min-width: 32px; text-align: right; }
+
+.dv-balken { display: flex; flex-direction: column; gap: 6px; }
+.dv-balken-zeile { display: grid; grid-template-columns: minmax(60px, 1fr) minmax(60px, 1.6fr) auto auto;
+  gap: 8px; align-items: center; font-size: var(--t-xs); }
+.dv-spur { height: 10px; background: var(--surface-2); border-radius: 5px; overflow: hidden; }
+.dv-fuell { display: block; height: 100%; border-radius: 5px; }
+
+.dv-tabelle td { font-size: var(--t-xs); }
+.dv-summe td { font-weight: 700; border-top: 1px solid var(--border); }
+
+.dk-liste { display: flex; flex-direction: column; gap: 10px; max-height: 46vh; overflow: auto; }
+.dk-zeile { display: grid; grid-template-columns: 22px minmax(0, 1.3fr) minmax(0, 1fr) auto;
+  gap: 8px; align-items: end; padding: 9px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.dk-nr { font-family: var(--font-zahl); color: var(--text-faint); font-size: var(--t-xs); padding-bottom: 6px; }
+.dk-pfeile { display: flex; gap: 2px; padding-bottom: 2px; }
+.dk-hilfe { grid-column: 1 / -1; margin: 6px 0 0; font-size: var(--t-2xs);
+  color: var(--text-faint); line-height: 1.45; }
+
+@media (max-width: 640px) {
+  .dk-zeile { grid-template-columns: 1fr; }
+  .dv-balken-zeile { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .dv-balken-zeile .dv-spur { grid-column: 1 / -1; }
+}
+
 .pc-vorlage {
   flex: none; padding: 2px 8px; border-radius: 999px; white-space: nowrap;
   font-size: var(--t-2xs); font-weight: 600;

@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v392';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v393';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -2603,6 +2603,368 @@ function dashPendenzen(p) {
     </tbody></table></div>` : '<p class="muted" style="margin-top:14px">Keine offenen Pendenzen. ✓</p>'}
     <div style="margin-top:12px"><a class="btn secondary" href="#/projekt/${p.id}/pendenzen">Zu den Pendenzen →</a></div>`;
 }
+
+/* ===== 📊 PROJEKT-DASHBOARD — Inhalt und Darstellung getrennt ========
+
+   Die Übersicht eines Projekts zeigte bisher, was das Bauwesen sehen
+   will: Phasen-Verteilung, Zuschlagsquote, Baukosten. In einem Depot
+   ist keine dieser drei Zahlen richtig.
+
+   Statt sie je Vorlage neu zu erfinden, sind hier zwei Dinge getrennt:
+
+       INHALT        was gerechnet wird  (Verteilung, Stand, Grösste …)
+       DARSTELLUNG   wie es aussieht     (Ring, Kuchen, Balken, Liste)
+
+   Jede Kachel ist ein Paar aus beidem. Was die Vorlage vorschlägt,
+   steht in `standardKacheln`; was das Projekt daraus macht, in
+   `p.dashboard`. Man kann also jede Kachel umstellen, wegnehmen oder
+   eine zweite desselben Inhalts in anderer Darstellung danebenstellen.
+
+   Zu den Diagrammen
+   -----------------
+   Ohne Bibliothek, als SVG im Blatt. Die Farben sind eine geprüfte
+   Reihe (Prüfskript der dataviz-Vorgaben, hell wie dunkel bestanden):
+   feste Reihenfolge, nie im Kreis vergeben, damit dieselbe Gruppe
+   immer dieselbe Farbe trägt.
+
+   Ein Ring zeigt höchstens SECHS Teile — darüber verschwimmen
+   benachbarte Farben, und der Rest wandert nach «Übrige». Wer mehr
+   sehen will, stellt die Kachel auf Liste; die trägt ohnehin die
+   Zahlen, was die hellen Farbtöne verlangen (drei davon liegen unter
+   3:1 Kontrast, also nie Farbe allein).
+   ===================================================================== */
+
+const DIAGRAMM_FARBEN = 6;   // mehr Klassen als das trägt kein Auge auseinander
+
+/** Zahl in der Einheit der Vorlage — Franken oder Stück. */
+function dvWert(n, p) { return istGeld(p) ? chf(n) : (Math.round(Number(n) || 0)).toLocaleString('de-CH'); }
+
+/* --- Die Inhalte ---------------------------------------------------
+   Jeder liefert dieselbe Form: Titel, Teile, Summe. Was daraus wird,
+   entscheidet die Darstellung — kein Inhalt weiss, wie er aussieht. */
+const DASH_INHALTE = [
+  {
+    key: 'verteilung', name: 'Verteilung nach Gruppe',
+    hilfe: 'Woraus sich der Wert zusammensetzt — beim Bau nach BKP-Hauptgruppe, im Depot je Anlage, in einer Sammlung je Satz.',
+    daten(p) {
+      const vs = (p.vergaben || []).filter(weistAus);
+      const nach = new Map();
+      vs.forEach(v => {
+        const k = gruppeVon(v, p);
+        if (!nach.has(k)) nach.set(k, { liste: [], wert: 0 });
+        const e = nach.get(k);
+        e.liste.push(v); e.wert += kostenZeile(v).prognose;
+      });
+      const teile = Array.from(nach.entries())
+        .map(([k, e]) => ({ label: gruppeTitel(k, e.liste, p), wert: e.wert, kuerzel: k }))
+        .sort((a, b) => b.wert - a.wert);
+      return { titel: 'Verteilung nach Gruppe', teile, anteil: true };
+    },
+  },
+  {
+    key: 'stand', name: 'Stand: erledigt gegen offen',
+    hilfe: 'Wie viel des Werts schon vergeben bzw. verkauft ist und wie viel noch aussteht.',
+    daten(p) {
+      const vs = (p.vergaben || []).filter(weistAus);
+      let fest = 0, offen = 0;
+      vs.forEach(v => { const z = kostenZeile(v); (isVergeben(v) ? (fest += z.prognose) : (offen += z.prognose)); });
+      return {
+        titel: stInfo('vergeben', p).kurz + ' gegen offen', anteil: true,
+        teile: [{ label: stInfo('vergeben', p).kurz, wert: fest }, { label: 'noch offen', wert: offen }],
+      };
+    },
+  },
+  {
+    key: 'bezahlt', name: 'Bezahlt gegen ausstehend',
+    hilfe: 'Wie viel Geld schon geflossen ist und wie viel noch aussteht.',
+    daten(p) {
+      const vs = (p.vergaben || []).filter(weistAus);
+      const fakt = vs.reduce((a, v) => a + kostenZeile(v).fakturiert, 0);
+      const offen = vs.reduce((a, v) => a + kostenZeile(v).offenRg, 0);
+      return {
+        titel: W('fakt', p) + ' gegen ' + W('offen', p), anteil: true,
+        teile: [{ label: W('fakt', p), wert: fakt }, { label: W('offen', p), wert: offen }],
+      };
+    },
+  },
+  {
+    key: 'einstandWert', name: 'Einstand gegen heutigen Wert',
+    hilfe: 'Was bezahlt wurde, neben dem, was es heute wert ist. Der Unterschied ist der Gewinn oder Verlust.',
+    daten(p) {
+      const vs = (p.vergaben || []).filter(weistAus);
+      const kv = vs.reduce((a, v) => a + kostenZeile(v).kv, 0);
+      const wert = vs.reduce((a, v) => a + kostenZeile(v).prognose, 0);
+      return {
+        titel: W('kv', p) + ' gegen ' + W('prognose', p), anteil: false,
+        teile: [{ label: W('kv', p), wert: kv }, { label: W('prognose', p), wert }],
+      };
+    },
+  },
+  {
+    key: 'top', name: 'Die grössten Posten',
+    hilfe: 'Welche einzelnen Posten den Wert ausmachen — die grössten zuerst.',
+    daten(p) {
+      const teile = (p.vergaben || []).filter(weistAus)
+        .map(v => ({ label: (v.bkp ? v.bkp + ' ' : '') + (v.gewerk || ''), wert: kostenZeile(v).prognose, kuerzel: v.bkp || '' }))
+        .sort((a, b) => b.wert - a.wert);
+      return { titel: 'Die grössten ' + W('posten_pl', p), teile, anteil: true };
+    },
+  },
+  {
+    key: 'status', name: 'Posten je Station',
+    hilfe: 'Wie viele Posten in welchem Zustand sind — gezählt, nicht gerechnet.',
+    daten(p) {
+      const vs = (p.vergaben || []).filter(weistAus);
+      const nach = new Map();
+      vs.forEach(v => { const k = v.status || 'ausschreibung'; nach.set(k, (nach.get(k) || 0) + 1); });
+      const teile = VERGABE_STATUS.filter(s => nach.has(s.key))
+        .map(s => ({ label: stInfo(s.key, p).kurz, wert: nach.get(s.key) }));
+      return { titel: W('posten_pl', p) + ' je Station', teile, anteil: true, zaehlt: true };
+    },
+  },
+  {
+    key: 'phasen', name: 'Phasen-Verteilung',
+    hilfe: 'Nur beim Bau: wie viele Vergaben in welcher Projektphase stehen.',
+    daten(p) {
+      const { counts } = phasenVerteilung(p);
+      return {
+        titel: 'Phasen-Verteilung', anteil: true, zaehlt: true,
+        teile: PHASEN.filter(ph => counts[ph.key] > 0).map(ph => ({ label: ph.label, wert: counts[ph.key] })),
+      };
+    },
+  },
+];
+function dashInhalt(key) { return DASH_INHALTE.find(i => i.key === key) || DASH_INHALTE[0]; }
+
+/* --- Die Darstellungen --------------------------------------------- */
+const DASH_ARTEN = [
+  { key: 'ring', name: 'Ring', hilfe: 'Anteile auf einen Blick. Höchstens sechs Teile, der Rest wird zusammengefasst.' },
+  { key: 'kuchen', name: 'Kuchen', hilfe: 'Wie der Ring, gefüllt.' },
+  { key: 'balken', name: 'Balken', hilfe: 'Zum Vergleichen. Auch bei vielen Teilen lesbar und bei nahen Werten genauer als ein Ring.' },
+  { key: 'liste', name: 'Liste', hilfe: 'Die Zahlen selbst, mit Anteil. Trägt beliebig viele Zeilen.' },
+];
+
+/* Teile auf sechs kürzen — der Rest wird «Übrige». Nur fürs Auge:
+   Die Liste zeigt weiterhin alles. */
+function dvGekuerzt(teile, max) {
+  const n = max || DIAGRAMM_FARBEN;
+  const echt = teile.filter(t => (Number(t.wert) || 0) > 0);
+  if (echt.length <= n) return echt;
+  const vorn = echt.slice(0, n - 1);
+  const rest = echt.slice(n - 1).reduce((a, t) => a + t.wert, 0);
+  return vorn.concat([{ label: 'Übrige (' + (echt.length - n + 1) + ')', wert: rest, rest: true }]);
+}
+
+/** Ein Kreisbogen als SVG-Pfad. */
+function dvBogen(cx, cy, r, von, bis) {
+  const rad = g => (g - 90) * Math.PI / 180;
+  const x1 = cx + r * Math.cos(rad(von)), y1 = cy + r * Math.sin(rad(von));
+  const x2 = cx + r * Math.cos(rad(bis)), y2 = cy + r * Math.sin(rad(bis));
+  return { x1, y1, x2, y2, gross: (bis - von) > 180 ? 1 : 0 };
+}
+
+/* Ring und Kuchen teilen sich alles bis auf das Loch. Die Segmente
+   stehen als dicke Striche auf einem Kreis — so lässt sich der 2px
+   breite Spalt zwischen ihnen ohne Pfadrechnerei setzen, und der Spalt
+   ist es, der benachbarte Farben auseinanderhält. */
+function dvKreis(d, p, gefuellt) {
+  const teile = dvGekuerzt(d.teile);
+  const summe = teile.reduce((a, t) => a + t.wert, 0);
+  if (!summe) return `<p class="dv-leer">Noch nichts zu zeigen.</p>`;
+  const gr = 132, cx = gr / 2, cy = gr / 2;
+  const dicke = gefuellt ? gr / 2 : 20;
+  const r = gr / 2 - dicke / 2;
+  const umfang = 2 * Math.PI * r;
+  const spalt = teile.length > 1 ? 2 : 0;
+  let stand = 0;
+  const segmente = teile.map((t, i) => {
+    const anteil = t.wert / summe;
+    const laenge = Math.max(umfang * anteil - spalt, 0.6);
+    const seg = `<circle class="dv-seg" cx="${cx}" cy="${cy}" r="${r}" fill="none"
+      stroke="var(--dv-${t.rest ? 'rest' : (i + 1)})" stroke-width="${dicke}"
+      stroke-dasharray="${laenge.toFixed(2)} ${(umfang - laenge).toFixed(2)}"
+      stroke-dashoffset="${(-umfang * stand).toFixed(2)}"><title>${esc(t.label)}: ${esc(dvWert(t.wert, p))}</title></circle>`;
+    stand += anteil;
+    return seg;
+  }).join('');
+  return `<div class="dv-kreis-reihe">
+    <svg class="dv-kreis" viewBox="0 0 ${gr} ${gr}" role="img" aria-label="${esc(d.titel)}">
+      <g transform="rotate(-90 ${cx} ${cy})">${segmente}</g>
+    </svg>
+    ${dvLegende(teile, summe, p, d)}
+  </div>`;
+}
+
+/* Die Legende trägt Wert UND Anteil — nicht bloss den Namen.
+
+   Nicht aus Gründlichkeit: Drei der sechs Farben liegen im Hellen unter
+   3:1 Kontrast zur Fläche. Farbe allein dürfte die Aussage darum nicht
+   tragen; die Zahl daneben trägt sie. */
+function dvLegende(teile, summe, p, d) {
+  return `<ul class="dv-legende">${teile.map((t, i) => `<li>
+    <i class="dv-punkt" style="background:var(--dv-${t.rest ? 'rest' : (i + 1)})"></i>
+    <span class="dv-name">${esc(t.label)}</span>
+    <span class="dv-zahl">${d.zaehlt ? t.wert : dvWert(t.wert, p)}</span>
+    ${d.anteil && summe ? `<span class="dv-anteil">${Math.round(t.wert / summe * 100)}%</span>` : ''}
+  </li>`).join('')}</ul>`;
+}
+
+function dvBalken(d, p) {
+  const teile = d.teile.filter(t => (Number(t.wert) || 0) !== 0);
+  if (!teile.length) return `<p class="dv-leer">Noch nichts zu zeigen.</p>`;
+  const summe = teile.reduce((a, t) => a + t.wert, 0);
+  const max = Math.max(...teile.map(t => Math.abs(t.wert)));
+  return `<div class="dv-balken">${teile.map((t, i) => `<div class="dv-balken-zeile">
+    <span class="dv-name" title="${esc(t.label)}">${esc(t.label)}</span>
+    <span class="dv-spur"><span class="dv-fuell" style="width:${max ? Math.max(Math.abs(t.wert) / max * 100, 1) : 0}%;background:var(--dv-${(i % DIAGRAMM_FARBEN) + 1})"></span></span>
+    <span class="dv-zahl">${d.zaehlt ? t.wert : dvWert(t.wert, p)}</span>
+    ${d.anteil && summe ? `<span class="dv-anteil">${Math.round(t.wert / summe * 100)}%</span>` : ''}
+  </div>`).join('')}</div>`;
+}
+
+function dvListe(d, p) {
+  const teile = d.teile.filter(t => (Number(t.wert) || 0) !== 0);
+  if (!teile.length) return `<p class="dv-leer">Noch nichts zu zeigen.</p>`;
+  const summe = teile.reduce((a, t) => a + t.wert, 0);
+  return `<table class="grid dv-tabelle"><tbody>
+    ${teile.map((t, i) => `<tr>
+      <td><i class="dv-punkt" style="background:var(--dv-${(i % DIAGRAMM_FARBEN) + 1})"></i> ${esc(t.label)}</td>
+      <td class="num">${d.zaehlt ? t.wert : dvWert(t.wert, p)}</td>
+      <td class="num dv-anteil">${d.anteil && summe ? Math.round(t.wert / summe * 100) + '%' : ''}</td>
+    </tr>`).join('')}
+    <tr class="dv-summe"><td>Total</td><td class="num">${d.zaehlt ? summe : dvWert(summe, p)}</td><td></td></tr>
+  </tbody></table>`;
+}
+
+function dvZeichnen(d, art, p) {
+  if (art === 'ring') return dvKreis(d, p, false);
+  if (art === 'kuchen') return dvKreis(d, p, true);
+  if (art === 'balken') return dvBalken(d, p);
+  return dvListe(d, p);
+}
+
+/* --- Welche Kacheln ------------------------------------------------- */
+function standardKacheln(p) {
+  const v = vorlage(p);
+  if (v && v.kacheln) return v.kacheln.map(k => ({ ...k }));
+  return [
+    { inhalt: 'verteilung', art: 'ring' },
+    { inhalt: 'stand', art: 'balken' },
+    { inhalt: 'top', art: 'liste' },
+  ];
+}
+function kachelnVon(p) {
+  return (p && Array.isArray(p.dashboard) && p.dashboard.length) ? p.dashboard : standardKacheln(p);
+}
+
+function projektDashboard(p) {
+  const kacheln = kachelnVon(p);
+  return `<div class="section-head" style="margin-top:0">
+      <h2>Übersicht</h2>
+      <button class="btn secondary sm" data-act="dash-konfig" data-pid="${p.id}" title="Inhalt und Darstellung der Kacheln bestimmen">⚙ Ansicht</button>
+    </div>
+    <div class="dv-raster">${kacheln.map((k, i) => {
+      const inh = dashInhalt(k.inhalt);
+      const d = inh.daten(p);
+      return `<div class="dv-kachel">
+        <div class="dv-kopf"><h3>${esc(k.titel || d.titel)}</h3></div>
+        ${dvZeichnen(d, k.art, p)}
+      </div>`;
+    }).join('')}</div>`;
+}
+
+/* --- Ansicht bestimmen ----------------------------------------------
+   Zwei Spalten je Zeile: was gerechnet wird und wie es aussieht. Mehr
+   braucht es nicht — und genau deshalb lässt sich jede Lage abbilden,
+   auch die, an die hier niemand gedacht hat. */
+let dashKonfigCtx = null;
+
+function actDashKonfig(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  dashKonfigCtx = { pid, kacheln: kachelnVon(p).map(k => ({ ...k })) };
+  openModal('Ansicht — ' + esc(p.name), `<div id="dk_leib"></div>`,
+    `<button class="btn ghost" data-close="1">Abbrechen</button>
+     <button class="btn secondary" data-act="dk-vorschlag" data-pid="${pid}" title="Den Vorschlag der Vorlage wieder übernehmen">↺ Vorschlag der Vorlage</button>
+     <button class="btn" data-act="dk-speichern" data-pid="${pid}">💾 Speichern</button>`);
+  dashKonfigZeichnen();
+}
+
+function dashKonfigZeichnen() {
+  const ziel = $('#dk_leib'); if (!ziel || !dashKonfigCtx) return;
+  const p = findProjekt(dashKonfigCtx.pid);
+  ziel.innerHTML = `
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin:0 0 10px">
+      Jede Kachel ist ein Paar: <b>was</b> gerechnet wird und <b>wie</b> es aussieht.
+      Derselbe Inhalt darf zweimal vorkommen — einmal als Ring zum Überblicken, einmal als Liste zum Nachlesen.</p>
+    <div class="dk-liste">
+      ${dashKonfigCtx.kacheln.map((k, i) => {
+        const inh = dashInhalt(k.inhalt);
+        const art = DASH_ARTEN.find(a => a.key === k.art) || DASH_ARTEN[0];
+        return `<div class="dk-zeile">
+          <span class="dk-nr">${i + 1}</span>
+          <label class="field"><span class="einst-name">Inhalt</span>
+            <select class="select dk-inhalt" data-i="${i}">
+              ${DASH_INHALTE.map(x => `<option value="${x.key}"${x.key === k.inhalt ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}
+            </select></label>
+          <label class="field"><span class="einst-name">Darstellung</span>
+            <select class="select dk-art" data-i="${i}">
+              ${DASH_ARTEN.map(x => `<option value="${x.key}"${x.key === k.art ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}
+            </select></label>
+          <span class="dk-pfeile">
+            <button type="button" class="x-btn" data-act="dk-hoch" data-kind="${i}" title="Nach oben"${i === 0 ? ' disabled' : ''}>↑</button>
+            <button type="button" class="x-btn" data-act="dk-runter" data-kind="${i}" title="Nach unten"${i === dashKonfigCtx.kacheln.length - 1 ? ' disabled' : ''}>↓</button>
+            <button type="button" class="x-btn" data-act="dk-weg" data-kind="${i}" title="Kachel entfernen">×</button>
+          </span>
+          <p class="dk-hilfe">${esc(inh.hilfe)} — <b>${esc(art.name)}:</b> ${esc(art.hilfe)}</p>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="einst-tatreihe" style="margin-top:10px">
+      <button type="button" class="btn secondary sm" data-act="dk-neu">+ Kachel</button>
+      <span class="einst-hinweis">${dashKonfigCtx.kacheln.length} Kachel${dashKonfigCtx.kacheln.length === 1 ? '' : 'n'}</span>
+    </div>`;
+  $$('.dk-inhalt').forEach(el => el.addEventListener('change', () => {
+    dashKonfigCtx.kacheln[Number(el.dataset.i)].inhalt = el.value;
+    delete dashKonfigCtx.kacheln[Number(el.dataset.i)].titel;
+    dashKonfigZeichnen();
+  }));
+  $$('.dk-art').forEach(el => el.addEventListener('change', () => {
+    dashKonfigCtx.kacheln[Number(el.dataset.i)].art = el.value;
+    dashKonfigZeichnen();
+  }));
+}
+
+function dashKonfigNeu() {
+  if (!dashKonfigCtx) return;
+  dashKonfigCtx.kacheln.push({ inhalt: DASH_INHALTE[0].key, art: 'ring' });
+  dashKonfigZeichnen();
+}
+function dashKonfigWeg(i) {
+  if (!dashKonfigCtx) return;
+  dashKonfigCtx.kacheln.splice(Number(i), 1);
+  dashKonfigZeichnen();
+}
+function dashKonfigSchieben(i, richtung) {
+  if (!dashKonfigCtx) return;
+  const a = Number(i), b = a + richtung;
+  const k = dashKonfigCtx.kacheln;
+  if (b < 0 || b >= k.length) return;
+  const merk = k[a]; k[a] = k[b]; k[b] = merk;
+  dashKonfigZeichnen();
+}
+function dashKonfigVorschlag(pid) {
+  if (!dashKonfigCtx) return;
+  dashKonfigCtx.kacheln = standardKacheln(findProjekt(pid));
+  dashKonfigZeichnen();
+  toast('Vorschlag der Vorlage geladen — noch nicht gespeichert', 'info');
+}
+function dashKonfigSpeichern(pid) {
+  const p = findProjekt(pid); if (!p || !dashKonfigCtx) return;
+  p.dashboard = dashKonfigCtx.kacheln.map(k => ({ inhalt: k.inhalt, art: k.art }));
+  save(); closeModal(); router();
+  toast('Ansicht gespeichert (' + p.dashboard.length + ' Kacheln)');
+}
+
 function viewProjektDetail(id) {
   const p = findProjekt(id);
   if (!p) { render(emptyState('⚠', 'Projekt nicht gefunden.')); return; }
@@ -2628,7 +2990,7 @@ function viewProjektDetail(id) {
     ${projektTabs(p, 'overview')}
     ${dashTabBar(p)}
     ${dashTab !== 'generell' ? dashOther(p) : `
-    ${phasenBar(p)}
+    ${projektDashboard(p)}
 
     <!-- Kennzahlen -->
     <div class="detail-stats">
@@ -7248,6 +7610,14 @@ const VORLAGEN = [
     unterzeile: 'Bauleitung und Architektur — Gewerke nach BKP, Vergabe, Werkvertrag.',
     geld: true, einheit: 'CHF', mehrIstGut: false,
     katalog: BKP_KATALOG, gruppen: BKP_GRUPPEN, tabs: null,
+    /* Beim Bau die drei Fragen des Bauleiters: Woraus bestehen die
+       Kosten, wie viel ist vergeben, wie viel ist bezahlt. */
+    kacheln: [
+      { inhalt: 'verteilung', art: 'ring' },
+      { inhalt: 'stand', art: 'balken' },
+      { inhalt: 'bezahlt', art: 'balken' },
+      { inhalt: 'phasen', art: 'liste' },
+    ],
     woerter: {
       posten: 'Gewerk', posten_pl: 'Gewerke', postenSpalte: 'Arbeitsgattung',
       nummer: 'BKP', nummerLang: 'BKP-Nr.', katalogName: 'BKP-Katalog',
@@ -7279,6 +7649,11 @@ const VORLAGEN = [
     /* Diese Vorlage kann eine Nummer nachschlagen: Passcode oder
        Set-Code einer Sammelkarte → Name, Art, Set, Seltenheit, Bild,
        Marktpreis. Vorlagen ohne Eintrag zeigen den Knopf nicht. */
+    kacheln: [
+      { inhalt: 'verteilung', art: 'ring' },
+      { inhalt: 'status', art: 'balken' },
+      { inhalt: 'top', art: 'liste' },
+    ],
     nachschlag: 'ygo',
     tabs: ['overview', 'gewerke', 'kosten', 'rechnungen', 'nachtraege', 'listen', 'termine', 'kalender', 'pendenzen'],
     /* Nur der Rückfall: Die Überschriften stehen jetzt als
@@ -7347,6 +7722,11 @@ const VORLAGEN = [
     // Hinter «Gewerke» steht der Handel: die Anlage mit ihren Chargen,
     // nicht eine Vergabe mit eingeladenen Unternehmern.
     handel: 'chargen',
+    kacheln: [
+      { inhalt: 'verteilung', art: 'ring' },
+      { inhalt: 'einstandWert', art: 'balken' },
+      { inhalt: 'top', art: 'liste' },
+    ],
     nachschlag: 'kurse',
     katalog: DEPOT_KATALOG,
     tabs: ['overview', 'gewerke', 'kosten', 'rechnungen', 'nachtraege', 'listen', 'termine', 'kalender', 'pendenzen', 'finanz'],
@@ -7401,6 +7781,11 @@ const VORLAGEN = [
     katalog: UNTERSCHRIFTEN_KATALOG,
     tabs: ['overview', 'gewerke', 'kosten', 'listen', 'termine', 'kalender', 'pendenzen', 'protokolle'],
     gruppen: { '1': 'Deutschschweiz', '2': 'Romandie', '3': 'Tessin', '4': 'Ausserhalb der Kantone', '9': 'Sammelwege' },
+    kacheln: [
+      { inhalt: 'verteilung', art: 'balken' },
+      { inhalt: 'stand', art: 'balken' },
+      { inhalt: 'top', art: 'liste' },
+    ],
     woerter: {
       posten: 'Sammelgebiet', posten_pl: 'Sammelgebiete', postenSpalte: 'Sammelgebiet',
       nummer: 'Nr.', nummerLang: 'Gebiets-Nr.', katalogName: 'Kantone und Sammelwege',
@@ -20494,6 +20879,13 @@ document.addEventListener('click', e => {
     case 'handel-verkauf':   actHandelVerkauf(pid, vid); break;
     case 'vk-speichern':     handelVerkaufSpeichern(pid, vid); break;
     case 'ordnung':          actOrdnung(pid); break;
+    case 'dash-konfig':      actDashKonfig(pid); break;
+    case 'dk-neu':           dashKonfigNeu(); break;
+    case 'dk-weg':           dashKonfigWeg(kind); break;
+    case 'dk-hoch':          dashKonfigSchieben(kind, -1); break;
+    case 'dk-runter':        dashKonfigSchieben(kind, 1); break;
+    case 'dk-vorschlag':     dashKonfigVorschlag(pid); break;
+    case 'dk-speichern':     dashKonfigSpeichern(pid); break;
     case 'ord-neu':          ordnungNeu(); break;
     case 'ord-weg':          ordnungWeg(kind); break;
     case 'ord-sortieren':    ordnungSortieren(); break;

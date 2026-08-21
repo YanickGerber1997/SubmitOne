@@ -938,6 +938,23 @@ ok('jede vergebene Kategorie steht auch im Katalog der Vorlage', (() => {
     .every(f => codes.has(sandbox.ygoKategorie(f)));
 })());
 
+/* Sätze aus mehreren Decks setzen einen Buchstaben vor die Nummer:
+   YGLD-DEC01 ist Deck C von Yugi's Legendary Decks. Die Umschreibung
+   Deutsch → Englisch verlangte dort nur Ziffern und gab leer zurück —
+   die Karte war schlicht nicht auffindbar. (Fund vom 21.08.2026) */
+eq('Deck-Buchstabe überlebt die Umschreibung ins Englische',
+  sandbox.ygoAufEnglisch('YGLD-DEC01'), 'YGLD-ENC01');
+eq('… auch bei Deck A', sandbox.ygoAufEnglisch('YGLD-DEA01'), 'YGLD-ENA01');
+eq('… und die gewöhnliche Form bleibt, wie sie war',
+  sandbox.ygoAufEnglisch('SDMY-DE004'), 'SDMY-EN004');
+/* Ein englischer Code braucht keine Umschreibung — dann kommt leer
+   zurueck, und der Aufrufer nimmt die Nummer, wie sie ist. */
+eq('… Englisches braucht keine Umschreibung',
+  sandbox.ygoAufEnglisch('CORI-EN030'), '');
+ok('… und der Erkenner lässt die Form zu Yu-Gi-Oh durch',
+  sandbox.eingabeDienste('YGLD-DEC01').join() === 'ygo'
+  && sandbox.eingabeDienste('ygld-dec01').join() === 'ygo');
+
 // Antwort übersetzen
 const a1 = sandbox.ygoAuswerten(ANTWORT_PASSCODE, { art: 'passcode', wert: '43989315' });
 eq('Passcode-Antwort: ein Treffer', a1.treffer.length, 1);

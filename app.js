@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v406';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v407';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -9038,7 +9038,10 @@ const YGO_SPRACHEN = ['DE', 'FR', 'IT', 'SP', 'PT', 'KR'];
 const YGO_SPRACHEN_ALT = { G: 'deutsch', F: 'französisch', I: 'italienisch', S: 'spanisch', P: 'portugiesisch' };
 function ygoAufEnglisch(code) {
   const c = String(code == null ? '' : code).toUpperCase().trim();
-  let m = c.match(/^([A-Z0-9]+)-([A-Z]{2})(\d+)$/);
+  /* Der Buchstabe vor der Nummer gehört zum Deck, nicht zur Sprache:
+     YGLD-DEC01 ist Deck C von Yugi's Legendary Decks. Er wandert
+     unverändert mit, nur DE wird zu EN. */
+  let m = c.match(/^([A-Z0-9]+)-([A-Z]{2})([A-Z]?\d+)$/);
   if (m && YGO_SPRACHEN.indexOf(m[2]) >= 0) return m[1] + '-EN' + m[3];
   // Alte Sätze führten einen einzelnen Buchstaben: LOB-G001 ist deutsch.
   m = c.match(/^([A-Z0-9]+)-([GFISP])(\d+)$/);

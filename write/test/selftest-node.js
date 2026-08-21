@@ -96,6 +96,21 @@ if (R) {  // CSS-Waechter: im JS verwendete Klassen muessen im Stylesheet existi
      Seitenzahl tragen kann. */
   // Leerraum weg, damit die Suche nicht an der Formatierung des Stylesheets haengt.
   const eng = cssTxt.replace(/\s+/g, "");
+
+  /* Dokumentmodus (22.08.2026): Im Blatt ohne Linien darf beim Klicken
+     nichts aufleuchten. Der Nutzer sah die Zeile aufblitzen und nannte
+     es "ich will mich fuehlen wie in einem Word". */
+  [["Dokumentmodus: die Zeilenkoepfe leuchten nicht mit",
+    ".app.lines-off.cgrid.cg-row.rowsel{background:var(--surface-2)"],
+   ["Dokumentmodus: kein Ausfuellkaestchen", ".app.lines-off.cgrid.fillgrip{display:none}"],
+   ["Dokumentmodus: ruhend und in Bearbeitung gleiche Polsterung",
+    ".app.lines-off.cgridtd.celledit{padding:2px7px"],
+   ["Dokumentmodus: Blocksatz fuer den Fliesstext",
+    "td.textcell:not(.h1):not(.h2):not(.h3){text-align:justify"],
+   ["Dokumentmodus: Silbentrennung mit Mindestlaenge", "hyphenate-limit-chars:633"],
+   ["Vorschau: Ueberschriften bleiben linksbuendig und ungetrennt",
+    ".pv-ctd.h3{text-align:left;hyphens:manual}"]
+  ].forEach(([nm, txt]) => { const ok = eng.indexOf(txt) >= 0; R.R.push({ name: nm, ok: ok, msg: "" }); ok ? R.pass++ : R.fail++; });
   [["Druck: keine einzelne Zeile allein (orphans/widows)", "orphans:3;widows:3"],
    ["Druck: Ueberschrift bleibt bei ihrem Abschnitt", "h1,h2,h3,h4{break-after:avoid"],
    ["Druck: Tabellenzeilen werden nicht zerschnitten", "tr,td,th{break-inside:avoid"],

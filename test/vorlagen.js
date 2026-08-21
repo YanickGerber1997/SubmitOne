@@ -85,6 +85,14 @@ src += `
 ;globalThis.__kurse = function () { return kurse; };
 ;globalThis.__katalogCodes = function (k) { return (VORLAGEN.find(v => v.key === k).katalog || []).map(b => b.code); };
 ;globalThis.__pruefGruppen = function () { return pruefCtx ? pruefCtx.gruppen : []; };
+;globalThis.__ordZeilen = function () { return ordnungCtx ? ordnungCtx.zeilen : []; };
+;globalThis.__ordSetzen = function (zeilen) { if (ordnungCtx) ordnungCtx.zeilen = zeilen; };
+;globalThis.__projektMitOrdnung = function () {
+  const p = { id: 'p_ord', name: 'Ordnung', vorlage: 'sammlung', vergaben: [],
+    protokolle: [], entscheidungen: [], bezugsfirmen: [], geschosseListe: [], auflagen: [],
+    mitglieder: [], bauteile: [], optionen: [], termine: [], finanz: {} };
+  state.projekte.push(p); return p;
+};
 ;globalThis.__sammlungMitOffenen = function () {
   /* Ein zweites Projekt, damit die Prüfungen oben unberührt bleiben.
      Vier Posten: dreimal dieselbe Nummer mit zwei Möglichkeiten,
@@ -245,6 +253,60 @@ ok('Einstellungen: die Vorlagendatei ist herunterladbar', /vorlage-csv/.test(ein
     sandbox.bestBetrag(acht[0]), Math.round(1.2 * sandbox.__kurse().usd * 100) / 100);
   ok('von Hand gewählt: Herkunft im Vermerk', /TCGPlayer USD 1\.20 für CORI-EN028/.test(acht[0].beschrieb));
   ok('nichts bleibt offen', p3.vergaben.every(v => !v.pruefen));
+}
+
+/* ---- 2d) Die Ordnung gehört dem Projekt ----
+   Beim BKP ändert das nichts: Eine Norm schreibt niemand für sich um.
+   Bei einer Sammlung ist es der ganze Punkt — wie jemand seine Sammlung
+   ordnet, weiss nur er selbst. */
+{
+  const eigen = { vorlage: 'sammlung', katalog: [
+    { code: '1', label: 'Zum Verkauf' },
+    { code: '101', label: 'Gute Karten' },
+    { code: '2', label: 'Behalte ich' },
+  ] };
+
+  eq('ohne eigene Ordnung gilt die der Vorlage',
+    sandbox.katalogAktiv({ vorlage: 'sammlung' })[0].label, 'Einzelkarten');
+  eq('mit eigener Ordnung gilt die eigene',
+    sandbox.katalogAktiv(eigen)[0].label, 'Zum Verkauf');
+  eq('… auch für die Überschriften', sandbox.gruppeTitel('1', [], eigen), 'Zum Verkauf');
+  eq('… und die zweite', sandbox.gruppeTitel('2', [], eigen), 'Behalte ich');
+  ok('… «Auflage noch offen» überlebt trotzdem',
+    sandbox.gruppeTitel('?', [], eigen) === 'Auflage noch offen');
+  eq('ein anderes Projekt bleibt unberührt',
+    sandbox.gruppeTitel('1', [], { vorlage: 'sammlung' }), 'Einzelkarten');
+  eq('und der Bau erst recht', sandbox.gruppeTitel('2', [], { vorlage: 'bau' }), 'Gebäude');
+
+  /* Die einstellige Nummer ist die Überschrift — sonst müsste man zwei
+     Listen pflegen, die auseinanderlaufen können. */
+  const nurPositionen = { vorlage: 'sammlung', katalog: [{ code: '101', label: 'Gute Karten' }] };
+  eq('ohne einstellige Nummer keine eigene Überschrift',
+    sandbox.gruppeTitel('1', [], nurPositionen), 'Übrige');
+
+  // Der Editor
+  const pOrd = sandbox.__projektMitOrdnung();
+  sandbox.actOrdnung(pOrd.id);
+  eq('Editor startet mit dem Vorschlag der Vorlage',
+    sandbox.__ordZeilen()[0].label, 'Einzelkarten');
+  sandbox.ordnungNeu();
+  ok('neue Zeile angehängt', sandbox.__ordZeilen().slice(-1)[0].code === '');
+  sandbox.ordnungWeg(sandbox.__ordZeilen().length - 1);
+  sandbox.__ordSetzen([{ code: '2', label: 'Behalte ich' }, { code: '1', label: 'Zum Verkauf' }]);
+  sandbox.ordnungSortieren();
+  eq('sortiert nach Nummer', sandbox.__ordZeilen().map(z => z.code), ['1', '2']);
+  sandbox.ordnungSpeichern(pOrd.id);
+  eq('gespeichert am Projekt', (pOrd.katalog || []).length, 2);
+  eq('… und wirkt sofort', sandbox.gruppeTitel('1', [], pOrd), 'Zum Verkauf');
+
+  // Was nicht durchgehen darf
+  sandbox.actOrdnung(pOrd.id);
+  sandbox.__ordSetzen([{ code: '1', label: 'A' }, { code: '1', label: 'B' }]);
+  sandbox.ordnungSpeichern(pOrd.id);
+  eq('doppelte Nummer wird nicht gespeichert', pOrd.katalog.length, 2);
+  sandbox.__ordSetzen([{ code: '', label: 'Ohne Nummer' }]);
+  sandbox.ordnungSpeichern(pOrd.id);
+  eq('Zeile ohne Nummer wird nicht gespeichert', pOrd.katalog.length, 2);
 }
 
 /* ---- 3) Der Bau-Fall bleibt, wie er war ---- */
@@ -414,7 +476,9 @@ eq('… klein geschrieben genauso', sandbox.gruppeVon({ bkp: 'lob-001' }, S), 'L
 eq('… eine eigene Nummer nach ihrer ersten Ziffer', sandbox.gruppeVon({ bkp: '101' }, S), '1');
 eq('… ein blosser Passcode wartet auf seine Auflage', sandbox.gruppeVon({ bkp: '89631139' }, S), '?');
 eq('… und ohne Nummer ebenso', sandbox.gruppeVon({ bkp: '' }, S), '?');
-eq('Überschrift aus der Vorlage', sandbox.gruppeTitel('1', [], S), 'Sammelkarten');
+eq('Überschrift aus dem Katalog der Vorlage', sandbox.gruppeTitel('1', [], S), 'Einzelkarten');
+eq('… und die zweite Gruppe sind die geschlossenen Produkte',
+  sandbox.gruppeTitel('2', [], S), 'Geschlossene Produkte');
 eq('Überschrift aus den Posten, wenn die Vorlage keine kennt',
   sandbox.gruppeTitel('CORI', [{ bkp: 'CORI-EN030' }, { bkp: 'CORI-EN040', satz: 'Chaos Origins' }], S),
   'Chaos Origins');

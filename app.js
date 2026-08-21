@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v387';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v388';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -2594,7 +2594,7 @@ function viewProjektDetail(id) {
     ${erinnerungenCard(p)}
 
     <!-- Vergaben-Tabelle -->
-    <div class="section-head"><h2>${esc(W('vergabenTitel', p))}</h2><div style="display:flex;gap:10px;align-items:center"><span class="hint">Klick = aufklappen mit nächsten Schritten</span>${katToggleBtn()}</div></div>
+    <div class="section-head"><h2>${esc(W('vergabenTitel', p))}</h2><div style="display:flex;gap:10px;align-items:center"><span class="hint">Klick = aufklappen mit nächsten Schritten</span>${katToggleBtn(p)}</div></div>
     <div class="card">
       ${vergaben.length || katOpen ? `
       <table class="grid">
@@ -2732,7 +2732,7 @@ function viewKosten(id) {
     ${nachschlagDienst(p) ? `<button class="btn sm" data-act="karte-scan" data-pid="${p.id}" title="Nummer eintippen, alles Übrige holt das Programm">🔎 ${esc(W('posten', p))} nachschlagen</button>` : ''}
     <button class="btn sm secondary" data-act="liste-einlesen" data-pid="${p.id}" title="Eine fertige Liste einlesen (CSV aus Excel, einem Export oder ChatGPT)">📋 Liste einlesen</button>
     ${mwstAnsichtBtn(p)}
-    ${katToggleBtn()}
+    ${katToggleBtn(p)}
     <button class="btn sm secondary" data-act="kosten-versionen" data-pid="${p.id}" title="Kostenstände sichern & vergleichen (z.B. monatliche Abgaben)" style="margin-left:auto">📊 Versionen${(p.kostenVersionen || []).length ? ' (' + p.kostenVersionen.length + ')' : ''}</button>
     <button class="btn sm" data-act="new-vergabe" data-pid="${p.id}">${esc(W('neu', p))}</button>`;
   const head = `
@@ -6918,26 +6918,21 @@ const BKP_KATALOG = [
    Sonderfall funktionieren. Gedacht als Startpunkt: eigene Nummern
    lassen sich jederzeit frei tippen. */
 const SAMMLUNG_KATALOG = [
-  ['10', 'Sammelkarten'],
+  ['1', 'Einzelkarten'],
   ['101', 'Monsterkarten'], ['102', 'Zauberkarten'], ['103', 'Fallenkarten'],
   ['104', 'Extra Deck (Fusion, Synchro, XYZ, Link)'], ['105', 'Pendelkarten'],
-  ['106', 'Promo- und Turnierkarten'], ['107', 'Fremdsprachige Karten'],
-  ['108', 'Bewertet / eingeschweisst (PSA, BGS)'], ['109', 'Doubletten'],
-  ['20', 'Versiegelte Ware'],
+  ['106', 'Promo- und Turnierkarten'], ['107', 'Bewertet / eingeschweisst (PSA, BGS)'],
+  ['108', 'Doubletten'],
+  ['2', 'Geschlossene Produkte'],
   ['201', 'Booster-Päckchen'], ['202', 'Displays'], ['203', 'Structure Decks'],
   ['204', 'Tins und Boxen'], ['205', 'Sammler-Editionen'],
-  ['30', 'Münzen, Medaillen, Edelmetall'],
-  ['301', 'Umlaufmünzen'], ['302', 'Gedenkmünzen'], ['303', 'Barren und Edelmetall'],
-  ['40', 'Briefmarken und Belege'],
-  ['401', 'Einzelmarken'], ['402', 'Bogen und Blocks'], ['403', 'Briefe und Belege'],
-  ['50', 'Figuren, Modelle, Spielzeug'],
-  ['501', 'Sammelfiguren'], ['502', 'Modellbau'], ['503', 'Spielzeug'],
-  ['60', 'Bücher, Comics, Medien'],
-  ['601', 'Comics'], ['602', 'Bücher'], ['603', 'Schallplatten und CD'], ['604', 'Spiele'],
-  ['70', 'Zubehör'],
-  ['701', 'Hüllen und Sleeves'], ['702', 'Ordner und Boxen'], ['703', 'Spielmatten'],
-  ['704', 'Versandmaterial'],
-  ['90', 'Übriges'],
+  ['3', 'Zubehör'],
+  ['301', 'Hüllen und Sleeves'], ['302', 'Ordner und Boxen'], ['303', 'Spielmatten'],
+  ['304', 'Versandmaterial'],
+  ['4', 'Andere Sammelgebiete'],
+  ['401', 'Münzen und Edelmetall'], ['402', 'Briefmarken'], ['403', 'Figuren und Modelle'],
+  ['404', 'Bücher, Comics, Medien'], ['405', 'Schallplatten und CD'],
+  ['9', 'Übriges'],
   ['901', 'Neuzugang, noch nicht eingeordnet'], ['902', 'Geschenke und Tauschware'],
   ['903', 'Verlust, Beschädigung'],
 ].map(([code, label]) => ({ code, label }));
@@ -7028,12 +7023,10 @@ const VORLAGEN = [
        Marktpreis. Vorlagen ohne Eintrag zeigen den Knopf nicht. */
     nachschlag: 'ygo',
     tabs: ['overview', 'gewerke', 'kosten', 'rechnungen', 'nachtraege', 'listen', 'termine', 'kalender', 'pendenzen'],
-    gruppen: {
-      '1': 'Sammelkarten', '2': 'Versiegelte Ware', '3': 'Münzen und Edelmetall',
-      '4': 'Briefmarken', '5': 'Figuren und Modelle', '6': 'Bücher, Comics, Medien',
-      '7': 'Zubehör', '9': 'Übriges',
-      '?': 'Auflage noch offen',
-    },
+    /* Nur der Rückfall: Die Überschriften stehen jetzt als
+       einstellige Nummern im Katalog und lassen sich dort ändern.
+       «?» bleibt hier, weil es keine Nummer ist, die man tippt. */
+    gruppen: { '?': 'Auflage noch offen' },
     /* Ein Set-Code (CORI-EN030) gruppiert nach seinem Satz, eine
        selbst vergebene Nummer (101) nach ihrer ersten Ziffer, ein
        blosser Passcode gar nicht — der wartet auf seine Auflage. */
@@ -7184,6 +7177,145 @@ const VORLAGEN = [
   },
 ];
 
+
+/* ===== Die Ordnung eines Projekts ====================================
+
+   Bis v387 kam der Nummernkatalog aus der Vorlage und war damit für
+   alle Projekte derselbe. Das ist beim BKP richtig — er ist eine Norm,
+   die niemand für sich umschreibt. Bei einer Sammlung ist es falsch:
+   Wie jemand seine Sammlung ordnet, weiss nur er selbst. Der eine
+   trennt Einzelkarten von geschlossenen Produkten, der nächste nach
+   Sätzen, der übernächste nach Deckfarbe.
+
+   Also: Die Vorlage schlägt eine Ordnung vor, das Projekt darf sie
+   überschreiben. `p.katalog` schlägt den Katalog der Vorlage.
+
+   EINE Liste, zwei Aufgaben
+   -------------------------
+   Damit man nicht zwei Dinge pflegen muss, ergibt sich die
+   Gruppenüberschrift aus derselben Liste: Ein Eintrag mit einstelliger
+   Nummer ist eine Überschrift, längere sind Einträge darunter.
+
+       1    Einzelkarten            ← Überschrift der Gruppe «1»
+       101  Monsterkarten
+       2    Geschlossene Produkte   ← Überschrift der Gruppe «2»
+       201  Booster-Päckchen
+
+   Was eine Nummer wie CORI-EN030 trägt, gruppiert weiter nach seinem
+   Satz — die eigene Ordnung greift dort, wo man selbst nummeriert.
+   ===================================================================== */
+
+/** Die Ordnung, die für dieses Projekt gilt. */
+function ordnungVon(p) {
+  const q = p || vorlageCtx;
+  if (q && Array.isArray(q.katalog) && q.katalog.length) return q.katalog;
+  return null;
+}
+
+/** Gruppenüberschriften aus dem geltenden Katalog: einstellige Nummern. */
+function ordnungGruppen(p) {
+  const g = {};
+  (katalogAktiv(p) || []).forEach(e => {
+    const c = String(e.code || '').trim();
+    if (/^\d$/.test(c)) g[c] = e.label;
+  });
+  return g;
+}
+
+/* --- Der Editor -----------------------------------------------------
+   Bewusst eine schlichte Liste statt eines Baums: Nummer, Bezeichnung,
+   fertig. Die Verschachtelung steckt schon in der Nummer, und eine
+   Liste kann man tippen, einfügen und überfliegen — einen Baum nicht. */
+let ordnungCtx = null;
+
+function actOrdnung(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  ordnungCtx = {
+    pid,
+    zeilen: (ordnungVon(p) || katalogAktiv(p)).map(e => ({ code: e.code, label: e.label })),
+    eigen: !!ordnungVon(p),
+  };
+  openModal('Ordnung — ' + esc(p.name), `<div id="ord_leib"></div>`,
+    `<button class="btn ghost" data-close="1">Abbrechen</button>
+     <button class="btn secondary" data-act="ord-vorlage" data-pid="${pid}" title="Die Ordnung der Vorlage wieder übernehmen">↺ Vorschlag der Vorlage</button>
+     <button class="btn" data-act="ord-speichern" data-pid="${pid}">💾 Speichern</button>`);
+  ordnungZeichnen();
+}
+
+function ordnungZeichnen() {
+  const ziel = $('#ord_leib'); if (!ziel || !ordnungCtx) return;
+  const p = findProjekt(ordnungCtx.pid);
+  ziel.innerHTML = `
+    <p class="muted" style="font-size:var(--t-xs, 12px);margin:0 0 10px">
+      Wie <b>dieses</b> Projekt geordnet ist. Eine <b>einstellige</b> Nummer ist eine Überschrift,
+      längere sind Einträge darunter. Gilt nur hier — andere Projekte behalten ihre eigene Ordnung.
+      ${ordnungCtx.eigen ? '' : '<br>Im Moment gilt der Vorschlag der Vorlage «' + esc(vorlageName(vorlageKey(p))) + '». Sobald du speicherst, gehört die Ordnung dem Projekt.'}
+    </p>
+    <div class="ord-kopf"><span>Nr.</span><span>Bezeichnung</span><span></span></div>
+    <div class="ord-liste">
+      ${ordnungCtx.zeilen.map((z, i) => `<div class="ord-zeile${/^\d$/.test(String(z.code).trim()) ? ' ueberschrift' : ''}">
+        <input class="input ord-code" data-i="${i}" value="${esc(z.code)}" placeholder="1 / 101" autocomplete="off">
+        <input class="input ord-label" data-i="${i}" value="${esc(z.label)}" placeholder="Bezeichnung" autocomplete="off">
+        <button type="button" class="x-btn" data-act="ord-weg" data-kind="${i}" title="Zeile entfernen">×</button>
+      </div>`).join('')}
+    </div>
+    <div class="einst-tatreihe" style="margin-top:8px">
+      <button type="button" class="btn secondary sm" data-act="ord-neu">+ Zeile</button>
+      <button type="button" class="btn ghost sm" data-act="ord-sortieren" title="Nach Nummer ordnen">↕ Nach Nummer sortieren</button>
+      <span class="einst-hinweis">${ordnungCtx.zeilen.length} Zeilen</span>
+    </div>`;
+  // Tippen wird sofort übernommen, damit Sortieren und Speichern den aktuellen Stand sehen.
+  $$('.ord-code').forEach(el => el.addEventListener('input', () => { ordnungCtx.zeilen[Number(el.dataset.i)].code = el.value; }));
+  $$('.ord-label').forEach(el => el.addEventListener('input', () => { ordnungCtx.zeilen[Number(el.dataset.i)].label = el.value; }));
+}
+
+function ordnungNeu() {
+  if (!ordnungCtx) return;
+  ordnungCtx.zeilen.push({ code: '', label: '' });
+  ordnungZeichnen();
+  const felder = $$('.ord-code');
+  if (felder.length) felder[felder.length - 1].focus();
+}
+function ordnungWeg(i) {
+  if (!ordnungCtx) return;
+  ordnungCtx.zeilen.splice(Number(i), 1);
+  ordnungZeichnen();
+}
+function ordnungSortieren() {
+  if (!ordnungCtx) return;
+  /* Nach Nummer, aber so, dass die Überschrift vor ihren Einträgen
+     steht: «1» vor «101». Ein reiner Textvergleich täte das auch, aber
+     nicht bei «2» und «10» — deshalb ziffernweise. */
+  ordnungCtx.zeilen.sort((a, b) => {
+    const A = String(a.code || '').trim(), B = String(b.code || '').trim();
+    if (A === B) return 0;
+    if (!A) return 1; if (!B) return -1;
+    return A.localeCompare(B, 'de', { numeric: false });
+  });
+  ordnungZeichnen();
+}
+function ordnungVorlage(pid) {
+  if (!ordnungCtx) return;
+  const p = findProjekt(pid);
+  const v = vorlage(p);
+  ordnungCtx.zeilen = ((v && v.katalog) || BKP_KATALOG).map(e => ({ code: e.code, label: e.label }));
+  ordnungZeichnen();
+  toast('Vorschlag der Vorlage geladen — noch nicht gespeichert', 'info');
+}
+function ordnungSpeichern(pid) {
+  const p = findProjekt(pid); if (!p || !ordnungCtx) return;
+  const sauber = ordnungCtx.zeilen
+    .map(z => ({ code: String(z.code || '').trim(), label: String(z.label || '').trim() }))
+    .filter(z => z.code || z.label);
+  const ohneNummer = sauber.find(z => !z.code);
+  if (ohneNummer) { toast('«' + ohneNummer.label + '» hat keine Nummer', 'info'); return; }
+  const doppelt = sauber.map(z => z.code).find((c, i, a) => a.indexOf(c) !== i);
+  if (doppelt) { toast('Die Nummer ' + doppelt + ' kommt zweimal vor', 'info'); return; }
+  p.katalog = sauber;
+  save(); closeModal(); router();
+  toast('Ordnung gespeichert (' + sauber.length + ' Zeilen)');
+}
+
 /* Welche Vorlage gerade gilt.
 
    `vorlageCtx` setzt der Router, sobald man ein Projekt öffnet. Ohne
@@ -7225,7 +7357,15 @@ function R(key, standard, p) {
   const v = vorlage(p);
   return (v && v.reiter && v.reiter[key]) || standard;
 }
-function katalogAktiv(p) { const v = vorlage(p); return (v && v.katalog) || BKP_KATALOG; }
+/* Zuerst die Ordnung des Projekts, dann die der Vorlage. Beim BKP
+   ändert das nichts — eine Norm schreibt niemand für sich um; bei
+   einer Sammlung ist es der ganze Punkt. */
+function katalogAktiv(p) {
+  const eigen = ordnungVon(p);
+  if (eigen) return eigen;
+  const v = vorlage(p);
+  return (v && v.katalog) || BKP_KATALOG;
+}
 
 /* Wonach wird gruppiert?
 
@@ -7248,7 +7388,18 @@ function gruppeTitel(schluessel, posten, p) {
   const mit = (posten || []).find(v => v && v.satz);
   return mit ? mit.satz : (schluessel === '?' ? 'Ohne Nummer' : 'Übrige');
 }
-function gruppenAktiv(p) { const v = vorlage(p); return (v && v.gruppen) || BKP_GRUPPEN; }
+function gruppenAktiv(p) {
+  const v = vorlage(p);
+  const fest = (v && v.gruppen) || BKP_GRUPPEN;
+  const ausKatalog = ordnungGruppen(p);
+  /* Hat das Projekt eine eigene Ordnung, gewinnt sie — dafür ist sie
+     da. Sonst füllt der Katalog bloss Lücken: Der BKP-Katalog führt
+     «1 Vorbereitungsarbeiten» als Position und dürfte die
+     BKP-Hauptgruppen nicht umschreiben.
+     Und «?» (Auflage noch offen) steht in keinem Katalog — es ist
+     keine Nummer, die man tippt, sondern das Fehlen einer. */
+  return ordnungVon(p) ? { ...fest, ...ausKatalog } : { ...ausKatalog, ...fest };
+}
 /* Kennt diese Vorlage eine Ausschreibung — also mehrere, die anbieten,
    bevor einer den Zuschlag bekommt? Beim Bau ja, beim Verkauf einer
    Karte nein: Dort ist der einzige «Offerent» der Marktpreis. */
@@ -7508,7 +7659,7 @@ const CSV_BEISPIELE = {
   sammlung: [
     ['LOB-001', 'Blue-Eyes White Dragon', '40', '320', '295', 'Cardmarket', '', 'Angeboten', 'Near Mint, 1. Auflage'],
     ['CORI-EN079', 'Annihilate Retroglight', '2', '0.75', '', '', '', 'Im Bestand', 'Ultra Rare'],
-    ['202', 'Display Legend of Blue Eyes', '120', '900', '850', 'Ricardo', '850', 'Verkauft', 'versiegelt'],
+    ['202', 'Display Legend of Blue Eyes', '120', '900', '850', 'Ricardo', '850', 'Verkauft', 'versiegelt (Geschlossene Produkte)'],
   ],
   unterschriften: [
     ['101', 'Zürich Stadt', '4000', '3600', '3200', 'Team Kreis 4', '2850', 'Team zugeteilt', 'Standaktionen samstags'],
@@ -8343,7 +8494,10 @@ function parseBkp(val) {
 
 let katOpen = false;  // BKP-Katalog als Geister-Zeilen in der Liste ausgefahren
 // Schalter für die Liste
-function katToggleBtn() { return `<button class="btn sm ${katOpen ? '' : 'secondary'}" data-act="kat-toggle">📖 ${esc(W('katalogName'))} ${katOpen ? 'ausblenden' : 'einblenden'}</button>`; }
+function katToggleBtn(p) {
+  return `<button class="btn sm ${katOpen ? '' : 'secondary'}" data-act="kat-toggle">📖 ${esc(W('katalogName', p))} ${katOpen ? 'ausblenden' : 'einblenden'}</button>`
+    + (p ? `<button class="btn sm ghost" data-act="ordnung" data-pid="${p.id}" title="Nummern und Überschriften dieses Projekts frei bestimmen">⚙ Ordnung</button>` : '');
+}
 // Geister-Zeilen: alle noch nicht erfassten BKP-Positionen (aufgehellt, klickbar = erfassen)
 function bkpGhostRows(p, totalCols, prefix) {
   if (!katOpen) return '';
@@ -12411,6 +12565,15 @@ function readGebaeude(p) {
   p.volumen = Number($('#f_volumen').value) || 0;
 }
 
+/* Beim Anlegen die Vorlage gleich mitwählen: Wer eine Sammlung
+   beginnt, soll nicht erst ein Bauvorhaben anlegen und es danach
+   umstellen müssen. */
+function vorlageWahlHtml(gewaehlt) {
+  return `<label class="field">Vorlage
+    <select class="select" id="f_vorlage">${VORLAGEN.map(v =>
+      `<option value="${v.key}"${(gewaehlt || 'bau') === v.key ? ' selected' : ''}>${v.zeichen} ${esc(v.name)}</option>`).join('')}</select></label>`;
+}
+
 function actNewProjekt() {
   openModal('Neues Projekt', `
     <label class="field">Projektname <input class="input" id="f_name" placeholder="z.B. Neubau MFH Sonnenhof"></label>
@@ -12428,6 +12591,7 @@ function actNewProjekt() {
       <label class="field">Start <input class="input" type="date" id="f_start"></label>
       <label class="field">Ende <input class="input" type="date" id="f_ende"></label>
     </div>
+    ${vorlageWahlHtml(state.vorlage)}
     <label class="field" style="margin-bottom:2px">Projektfarbe (Kalender &amp; Planung)</label>
     ${farbePickerHtml(projColor(state.projekte.length))}
     <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 4px"><div class="muted" style="font-size:var(--t-xs, 12px);margin-bottom:6px">Gebäudedaten (optional)</div>
@@ -12448,6 +12612,7 @@ function saveProjekt() {
     start: $('#f_start').value || '',
     ende: $('#f_ende').value || '',
     farbe: ($('#f_farbe') && $('#f_farbe').value) || '',
+    vorlage: ($('#f_vorlage') && $('#f_vorlage').value) || state.vorlage || 'bau',
     vergaben: [],
     protokolle: [],
     mitglieder: currentUserEmail ? [{ email: currentUserEmail, vorname: currentUserVor, nachname: currentUserNach, slug: currentUserSlug, rolle: 'inhaber' }] : [],
@@ -12481,6 +12646,7 @@ function actEditProjekt(pid) {
       <label class="field">Baustart <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(Meilenstein im Gantt)</span> <input class="input" type="date" id="f_baustart" value="${esc(p.baustart || '')}"></label>
       <label class="field">Bezugstermin <span class="muted" style="font-weight:400;font-size:var(--t-2xs, 11px)">(Meilenstein im Gantt)</span> <input class="input" type="date" id="f_bezug" value="${esc(p.bezug || '')}"></label>
     </div>
+    ${vorlageWahlHtml(vorlageKey(p))}
     <label class="field" style="margin-bottom:2px">Projektfarbe (Kalender &amp; Planung)</label>
     ${farbePickerHtml(p.farbe || projColor(state.projekte.indexOf(p)))}
     <hr style="border:none;border-top:1px solid var(--border);margin:8px 0 4px"><div class="muted" style="font-size:var(--t-xs, 12px);margin-bottom:6px">Gebäudedaten</div>
@@ -12500,6 +12666,7 @@ function saveProjektEdit(pid) {
   p.baustart = $('#f_baustart').value || '';
   p.bezug = $('#f_bezug').value || '';
   if ($('#f_farbe')) p.farbe = $('#f_farbe').value || '';
+  { const vw = $('#f_vorlage'); if (vw && vw.value) p.vorlage = vw.value; }
   readGebaeude(p);
   save(); closeModal(); router(); toast('Projekt gespeichert');
 }
@@ -19662,6 +19829,12 @@ document.addEventListener('click', e => {
     case 'pruef-waehlen':    pruefWaehlen(kind, act.dataset.idx); break;
     case 'pruef-aus':        pruefAus(kind); break;
     case 'pruef-nachladen':  pruefNachladen(pid); break;
+    case 'ordnung':          actOrdnung(pid); break;
+    case 'ord-neu':          ordnungNeu(); break;
+    case 'ord-weg':          ordnungWeg(kind); break;
+    case 'ord-sortieren':    ordnungSortieren(); break;
+    case 'ord-vorlage':      ordnungVorlage(pid); break;
+    case 'ord-speichern':    ordnungSpeichern(pid); break;
     case 'scan-uebernehmen': scanUebernehmen(); break;
     case 'csv-pruefen':      csvPruefen(pid); break;
     case 'csv-uebernehmen':  csvUebernehmen(pid); break;
@@ -20100,10 +20273,13 @@ function selfTest() {
       /* Jede Katalognummer muss unter einer Gruppenüberschrift landen —
          sonst steht die Kostenübersicht voller «Übrige». */
       const verwaist = [];
-      VORLAGEN.forEach(v => (v.katalog || []).forEach(b => {
-        const g = String(b.code || '0').trim()[0];
-        if (!(v.gruppen || {})[g]) verwaist.push(v.key + ':' + b.code);
-      }));
+      VORLAGEN.forEach(v => {
+        const gr = gruppenAktiv({ vorlage: v.key });
+        (v.katalog || []).forEach(b => {
+          const g = String(b.code || '0').trim()[0];
+          if (!gr[g]) verwaist.push(v.key + ':' + b.code);
+        });
+      });
       ok('VORLAGEN: jede Katalognummer hat eine Gruppe', !verwaist.length, verwaist.slice(0, 5).join(', '));
 
       // Auflösung: Projekt schlägt Standard, Unbekanntes fällt auf Bau
@@ -20125,7 +20301,7 @@ function selfTest() {
 
       // Kataloge, Kapitel, Rechnen
       ok('katalogAktiv: Sammlung bringt eigene Nummern',
-        katalogAktiv({ vorlage: 'sammlung' })[0].code === '10' && katalogAktiv({ vorlage: 'bau' }) === BKP_KATALOG);
+        katalogAktiv({ vorlage: 'sammlung' })[0].code === '1' && katalogAktiv({ vorlage: 'bau' }) === BKP_KATALOG);
       ok('tabErlaubt: U-Wert gehört nicht in eine Sammlung',
         tabErlaubt('uwert', { vorlage: 'bau' }) && !tabErlaubt('uwert', { vorlage: 'sammlung' }));
       ok('tabErlaubt: Kosten gibt es in jeder Vorlage', VORLAGEN.every(v => tabErlaubt('kosten', { vorlage: v.key })));

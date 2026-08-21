@@ -2638,6 +2638,17 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 /* Die Merkfahne: etwas ist noch nicht belegt. */
 /* Offene Auflagen bestimmen: eine Zeile je NUMMER, nicht je Karte.
    Wer dieselbe Karte dreimal hat, entscheidet einmal. */
+/* Die Ordnung eines Projekts: eine schlichte Liste. Die
+   Verschachtelung steckt in der Nummer, nicht im Aufbau — eine
+   einstellige Nummer ist eine Überschrift und wird auch so gesetzt. */
+.ord-kopf, .ord-zeile { display: grid; grid-template-columns: 96px minmax(0, 1fr) 30px; gap: 6px; align-items: center; }
+.ord-kopf { font-size: var(--t-2xs); color: var(--text-faint); padding: 0 2px 4px; }
+.ord-liste { display: flex; flex-direction: column; gap: 4px; max-height: 46vh; overflow: auto; padding-right: 2px; }
+.ord-zeile .input { padding: 3px 7px; font-size: var(--t-xs); }
+.ord-zeile .ord-code { font-family: var(--font-zahl); }
+.ord-zeile.ueberschrift .ord-label { font-weight: 700; background: var(--surface-2); }
+.ord-zeile.ueberschrift .ord-code { font-weight: 700; }
+
 .pruef-aus { padding: 9px 10px; margin-bottom: 12px; background: var(--surface-2);
   border: 1px solid var(--line-soft); border-radius: var(--radius); }
 .pruef-aus-kopf { font-size: var(--t-xs); color: var(--text-soft); margin-bottom: 6px; }

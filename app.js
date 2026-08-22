@@ -3555,7 +3555,7 @@ function viewKosten(id) {
     <button class="btn sm secondary" data-act="liste-einlesen" data-pid="${p.id}" title="Eine fertige Liste einlesen (CSV aus Excel, einem Export oder ChatGPT)">📋 Liste einlesen</button>
     ${plattformenVon(p).length ? `<button class="btn sm secondary" data-act="verkauf-ein" data-pid="${p.id}" title="Standort, Versand, Rücknahme, Gebühren — einmal für alle Angebote">⚙ Verkauf</button>
     <button class="btn sm" data-act="lose-planen" data-pid="${p.id}" title="Teure Karten einzeln, der Rest in Lose — gerechnet, nicht geraten">🎁 Lose planen${loseVon(p).length ? ' (' + loseVon(p).length + ')' : ''}</button>
-    <button class="btn sm secondary" data-act="ebay-csv" data-pid="${p.id}" data-kind="VerifyAdd" title="Tabelle für den eBay-CSV-Manager — VerifyAdd, eBay prüft nur">⬇ eBay-Datei</button>` : ''}
+    <button class="btn sm secondary" data-act="ebay-csv" data-pid="${p.id}" data-kind="VerifyAdd" title="Tabelle für Seller Hub → Berichte — VerifyAdd, eBay prüft nur">⬇ eBay-Datei</button>` : ''}
     ${mwstAnsichtBtn(p)}
     ${katToggleBtn(p)}
     <button class="btn sm secondary" data-act="kosten-versionen" data-pid="${p.id}" title="Kostenstände sichern & vergleichen (z.B. monatliche Abgaben)" style="margin-left:auto">📊 Versionen${(p.kostenVersionen || []).length ? ' (' + p.kostenVersionen.length + ')' : ''}</button>
@@ -10916,14 +10916,18 @@ function ebayBlock(p, ding) {
       <span class="muted${fehlt ? ' eb-fehlt' : ''}">${fehlt ? fehlt + (fehlt === 1 ? ' Feld ist' : ' Felder sind') + ' noch offen' : 'vollständig'}</span>
       <button class="btn sm secondary" data-act="eb-kopie" data-pid="${p.id}" data-vid="${esc(String(id))}">Alle kopieren</button>
       <button class="btn sm secondary" data-act="verkauf-ein" data-pid="${p.id}">Einstellungen</button>
+      ${istLos(ding) ? '' : `<span class="muted eb-hin">Fotos kommen im Seller Hub dazu — die Tabelle kann keine mitschicken</span>`}
     </div>
     <div class="eb-gitter">${zeilen.map(z => `<div class="eb-lab">${esc(z[0])}<span class="eb-en">${esc(z[1])}</span></div>
       <div class="eb-wert${z[2] ? '' : ' leer'}">${z[2] ? esc(z[2]) : '—'}</div>`).join('')}</div>
   </div>`;
 }
 
-/* --- Die CSV-Datei für den eBay-CSV-Manager --------------------------
+/* --- Die CSV-Datei für eBay ------------------------------------------
    eBay nimmt eine Tabelle entgegen und stellt daraus Angebote ein.
+   Hochgeladen wird sie im Seller Hub unter «Berichte» — das ist der
+   frühere «CSV-Manager» beziehungsweise «File Exchange», er ist bloss
+   umgezogen. Die Vorlage und ihre Feldnamen sind dieselben geblieben.
    Das ist der einzige Weg, zweihundert Karten einzustellen, ohne
    zweihundertmal dasselbe Formular auszufüllen — und er ist von eBay
    selbst vorgesehen, nicht erschlichen.

@@ -2900,6 +2900,7 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
 .eb-en { font-size: var(--t-2xs); opacity: .65; font-family: var(--mono, monospace); }
 .eb-wert { user-select: all; overflow-wrap: anywhere; }
 .eb-wert.leer { color: var(--text-soft); opacity: .6; user-select: none; }
+.eb-hin { font-size: var(--t-2xs); flex-basis: 100%; }
 
 /* Die Verkaufseinstellungen: ein Formular, das fuer alle Angebote gilt. */
 .ve-gitter { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 14px; }

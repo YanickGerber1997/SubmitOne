@@ -1296,6 +1296,18 @@ eq('Cosmos bekommt ein Kürzel', sandbox.seltenheitKuerzel('Selten · Cosmos Hol
   eq('… und der Marktwert bleibt, was er war',
     sandbox.kostenZeile(v).prognose, marktVorher);
 
+  /* Die Spalte heisst in der Sammlung woertlich "Angebot / eingestellt
+     fuer" - sie muss den Angebotspreis zeigen, sobald einer da ist.
+     Beim Bau entsteht die Vergabesumme erst mit dem Zuschlag; beim
+     Verkauf steht der Preis am Anfang. (22.08.2026) */
+  eq("die Spalte Angebot zeigt den Angebotspreis", sandbox.kostenZeile(v).wv, 12);
+  /* Aber sie faerbt nicht auf den Wert ab - das war die Zusage aus v413. */
+  eq("… und der Marktwert bleibt davon unberuehrt",
+    sandbox.kostenZeile(v).prognose, marktVorher);
+  /* Eine Bau-Position ohne Angebot merkt nichts davon. */
+  eq("ohne Angebot bleibt die Spalte leer",
+    sandbox.kostenZeile({ id: "v_b", eingeladene: [] }).wv, 0);
+
   /* Die Gegenprobe: Unter Wert anbieten darf den Wert nicht drücken. */
   sandbox.angebotSetzen(v, 3, ['eBay'], true);
   eq('auch ein Angebot weit unter Wert drückt den Marktwert nicht',

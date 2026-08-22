@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v419';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v420';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -1352,7 +1352,12 @@ function kvRev(v) {
 function kostenZeile(v) {
   const kv = v.schaetzung || 0;
   const rev = kvRev(v);                                              // kann null sein
-  const wv = isVergeben(v) ? (v.betrag || 0) : 0;
+  /* Beim Bau entsteht die Vergabesumme mit dem Zuschlag — vorher gibt
+     es keine. Beim Verkauf ist es umgekehrt: Der Preis steht am
+     Anfang. Solange nicht verkauft, gilt darum der Angebotspreis;
+     danach der erzielte. Vorlagen ohne Angebot (Bau) merken nichts
+     davon, dort ist `angebot` nie gesetzt. */
+  const wv = isVergeben(v) ? (v.betrag || 0) : ((v.angebot && v.angebot.preis) || 0);
   const nt = nachtragSumme(v);
   const rap = rapportSumme(v);
   const budget = budgetSumme(v);   // Info – steckt im WV
@@ -3629,7 +3634,7 @@ function viewKosten(id) {
         <td>${untCell}</td>
         <td class="num">${mU(z, z.kv)}</td>
         <td class="num">${z.rev != null && Math.abs(z.rev - z.kv) > 0.5 ? `${mB(z.rev)} <span class="chg-delta ${z.rev > z.kv ? 'up' : 'dn'}" title="Änderung gegenüber Erst-KV">${z.rev > z.kv ? '▲' : '▼'}</span>` : (z.rev != null ? mB(z.rev) : `<span class="muted">${mU(z, z.kv)}</span>`)}</td>
-        <td class="num">${z.vergeben ? mB(z.wv) : '–'}</td>
+        <td class="num">${z.wv ? mB(z.wv) : '–'}</td>
         <td class="num">${z.nt ? mB(z.nt) : '–'}</td>
         <td class="num"><strong>${mU(z, z.endsumme)}</strong>${z.hatSchluss ? ' <span class="muted" style="font-size:var(--t-2xs, 9px)">SR</span>' : ''}</td>
         <td class="num">${z.fakturiert ? mB(z.fakturiert) : '–'}</td>

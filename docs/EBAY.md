@@ -12,8 +12,11 @@ bliebe nach Provision, fester Gebühr und Porto:
 
 | Weg | Angebote | bleibt |
 |---|---:|---:|
-| jede Karte einzeln | 201 | **CHF 180** — davon **102 Karten im Minus** |
-| 7 einzeln + 11 Lose | 18 | **CHF 283** |
+| jede Karte einzeln | 201 | **CHF 170** — davon **103 Karten im Minus** |
+| 9 einzeln + 15 Lose | 24 | **CHF 276** |
+
+(Gerechnet mit dem Satz für **private** Verkäufer auf eBay.ch, siehe
+unten. Die eingestellte Losgrösse ist «einzeln ab CHF 5, Losziel 12».)
 
 Der Grund ist keine Meinung, sondern eine Subtraktion. Bei einer Karte
 für 40 Rappen:
@@ -22,10 +25,10 @@ für 40 Rappen:
 Ware                 0.40
 + Porto              2.00
 = Gesamtbetrag       2.40
-− Provision 10 %     0.24
+− Provision 11.4 %   0.27
 − feste Gebühr       0.35
 − Porto              2.00
-= bleibt            −0.19      ← der Verkauf kostet Geld
+= bleibt            −0.22      ← der Verkauf kostet Geld
 ```
 
 Ein Los dreht das um: **ein** Porto, **eine** Gebühr, **ein** Käufer.
@@ -33,11 +36,23 @@ Die günstigen Karten sind darin nicht Ballast — sie sind der Grund,
 warum jemand für das Los mehr zahlt als für die teure Karte allein.
 Wer ein Deck baut, will die Umgebung, nicht das Einzelstück.
 
-> Provision (10 %) und feste Gebühr (CHF 0.35) sind **Vorbelegungen**.
-> Was eBay in der Schweiz für Sammelkarten wirklich nimmt, steht in der
-> Gebührenübersicht des eigenen Kontos und unterscheidet sich für
-> private und gewerbliche Verkäufer. Beide Zahlen sind im Programm
-> unter **Verkaufseinstellungen** änderbar; die Rechnung folgt sofort.
+### Der grösste Hebel: wo das Konto geführt wird
+
+Auf **eBay.de** zahlen private Verkäufer seit 2023 **gar keine**
+Verkaufsgebühren. Die **Schweiz hat das ausdrücklich nicht
+übernommen** — auf eBay.ch zahlt ein privater Verkäufer weiter rund
+**11.4 % plus 10 bis 55 Rappen** je nach Preisstufe.
+
+Auf 349 Franken Marktwert sind das grob 40 Franken Unterschied, ohne
+dass sich an den Karten irgendetwas ändert. Das ist mehr, als jede
+Feinjustierung der Lose bringt. Ob und wie sich das nutzen lässt,
+hängt am Wohnsitz und an der Kontoführung — es gehört geprüft, bevor
+200 Karten eingestellt werden.
+
+> Beide Zahlen sind Vorbelegungen und im Programm unter
+> **Verkaufseinstellungen** änderbar; die Rechnung folgt sofort. Was
+> für dieses Konto gilt, steht in seiner Gebührenübersicht — dort
+> nachschauen, nicht hier.
 
 ---
 
@@ -58,12 +73,20 @@ eigenen Konto zu prüfen, sie ändern sich):
 - mindestens **50 Angebote** in drei Monaten
 - als **gewerblicher Verkäufer** registriert
 
-**Das letzte ist der Haken.** Wer privat aus der eigenen Sammlung
-verkauft, erfüllt es nicht. Dann bleibt der Weg über das normale
-Formular — und dafür gibt es im Programm das **eBay-Einstellblatt**:
-jedes Feld mit dem Wert, der hineingehört, zum Abschreiben. Das ist
-kein Ersatz für den Massenweg, aber es macht aus «zehn Minuten pro
-Karte» zwei.
+**Das letzte ist der Haken, und er trifft uns.** Verkauft wird privat
+aus der eigenen Sammlung — der Massenweg steht damit vermutlich nicht
+offen.
+
+Dann bleibt das normale Formular, und dafür ist das
+**eBay-Einstellblatt** gebaut: jedes Feld mit dem Wert, der
+hineingehört, in der Reihenfolge, in der eBay fragt. **Ein Klick auf
+einen Wert kopiert ihn** — man springt von Feld zu Feld und klickt.
+Das ist kein Ersatz für den Massenweg, aber es macht aus zehn Minuten
+je Angebot zwei. Bei 24 Angeboten ist das der Unterschied zwischen
+einem Abend und vier.
+
+Die Datei lässt sich trotzdem ziehen: Falls der Upload doch offensteht,
+kostet der Versuch nichts — `VerifyAdd` stellt nichts ein.
 
 ### b) eBay Sell APIs (Inventory API, Feed API) — **erlaubt, aber nicht für heute**
 
@@ -96,6 +119,8 @@ machen das nicht.
    die Rechnung mitlesen, übernehmen.
 3. **Fotos machen** — je Karte oder je Los. Katalogbilder gehören uns
    nicht und haben auf einer Verkaufsseite nichts verloren.
+   *Als privater Verkäufer geht es ab hier über das normale Formular:
+   Einstellblatt öffnen, Wert anklicken, einfügen, nächstes Feld.*
 4. **eBay-Datei ziehen** (Bestand → ⬇ eBay-Datei). Sie kommt mit der
    Aktion **`VerifyAdd`**: eBay **prüft** die Datei und stellt nichts
    ein. Fehler zeigen sich, bevor 200 Angebote online sind.
@@ -156,8 +181,9 @@ Vorbelegung im Programm und in einem Feld änderbar:
 | Kategorie Einzelkarte | `183454` | eBay-Kategoriecode-Suche |
 | Kategorie Los | `183455` | dieselbe |
 | ConditionID | 1000 neu / 3000 gebraucht | Artikelmerkmale-Vorlage **der Kategorie** |
-| Verkaufsprovision | 10 % | Gebührenübersicht des Kontos |
-| feste Gebühr | CHF 0.35 | dieselbe |
+| Verkäuferart | privat | eigenes Konto |
+| Verkaufsprovision | 11.4 % (ch, privat) | Gebührenübersicht des Kontos |
+| feste Gebühr | CHF 0.35 (Spanne 0.10–0.55) | dieselbe |
 | Porto Brief | CHF 2.00 | Preise der Post |
 | Porto Paket | CHF 8.50 | dieselbe |
 | `Version=` in der Kopfzeile | 745 | die aktuelle Vorlage von eBay |
@@ -173,6 +199,8 @@ wird: Ein Los zwischen den Einzelkarten findet niemand.
 - **eBay-Einstellblatt** je Karte und je Los — 18 Felder mit dem
   englischen Feldnamen daneben, weil eBays Fehlermeldungen ihn nennen
 - **CSV für Seller Hub → Berichte** — Schweizer Fassung, `VerifyAdd`
+- **Verkäuferart privat/gewerblich** — sie entscheidet über Rücknahme
+  und über den Gebührensatz
 - **Losplaner** — teure Karten einzeln, der Rest in Lose; getrennt
   nach Spiel, gefüllt nach Satz, mit der Deckungsrechnung daneben.
   Ein Los, das nach Gebühren nichts übrig lässt, entsteht gar nicht

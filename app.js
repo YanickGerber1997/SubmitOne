@@ -10792,7 +10792,11 @@ const VERKAUF_STANDARD = {
   dauer: 'GTC',                // GTC = bis auf Widerruf; sonst 1/3/5/7/10/30
   menge: 1,
   bearbeitung: 3,              // DispatchTimeMax, Werktage
-  ruecknahme: true,
+  /* Privat verkauft man aus der eigenen Sammlung: kein Widerrufsrecht,
+     keine Gewaehrleistung, also auch keine zugesagte Ruecknahme. Wer
+     gewerblich verkauft, muss sie anbieten — dann stellt man hier um. */
+  verkaeuferart: 'privat',     // privat oder gewerblich
+  ruecknahme: false,
   ruecknahmeTage: 30,          // 14, 30, 60
   ruecknahmeZahlt: 'Buyer',
   versand: 'CH_Writing',
@@ -10805,10 +10809,16 @@ const VERKAUF_STANDARD = {
   kategorieEinzel: 183454,
   kategorieLos: 183455,
   zustandLos: 3000,
-  provision: 10,               // Prozent vom Gesamtbetrag inkl. Versand
+  /* eBay.ch nimmt privaten Verkaeufern rund 11.4 % ab, dazu einen
+     Fixbetrag zwischen 10 und 55 Rappen je nach Preisstufe — 35 ist
+     die Mitte. Auf eBay.DE zahlen Private seit 2023 gar nichts; die
+     Schweiz hat das ausdruecklich NICHT uebernommen. Wer also die
+     Wahl hat, wo sein Konto gefuehrt wird, hat hier den groessten
+     Hebel des ganzen Verkaufs. */
+  provision: 11.4,             // Prozent vom Gesamtbetrag inkl. Versand
   fixgebuehr: 0.35,            // je Bestellung
-  einzelAb: 8,                 // ab diesem Marktwert lohnt die Einzelkarte
-  losZiel: 15,                 // dieser Loswert soll erreicht werden
+  einzelAb: 5,                 // ab diesem Marktwert lohnt die Einzelkarte
+  losZiel: 12,                 // dieser Loswert soll erreicht werden
   losFaktor: 1.0,              // Aufschlag/Abschlag auf die Summe der Marktwerte
   losMax: 30,                  // so viele Karten passen in einen Umschlag
 };
@@ -10916,10 +10926,13 @@ function ebayBlock(p, ding) {
       <span class="muted${fehlt ? ' eb-fehlt' : ''}">${fehlt ? fehlt + (fehlt === 1 ? ' Feld ist' : ' Felder sind') + ' noch offen' : 'vollständig'}</span>
       <button class="btn sm secondary" data-act="eb-kopie" data-pid="${p.id}" data-vid="${esc(String(id))}">Alle kopieren</button>
       <button class="btn sm secondary" data-act="verkauf-ein" data-pid="${p.id}">Einstellungen</button>
-      ${istLos(ding) ? '' : `<span class="muted eb-hin">Fotos kommen im Seller Hub dazu — die Tabelle kann keine mitschicken</span>`}
+      <span class="muted eb-hin">Ein Klick auf einen Wert kopiert ihn — Feld für Feld ins eBay-Formular.
+        Fotos kommen dort von Hand dazu; keine Tabelle kann sie mitschicken.</span>
     </div>
-    <div class="eb-gitter">${zeilen.map(z => `<div class="eb-lab">${esc(z[0])}<span class="eb-en">${esc(z[1])}</span></div>
-      <div class="eb-wert${z[2] ? '' : ' leer'}">${z[2] ? esc(z[2]) : '—'}</div>`).join('')}</div>
+    <div class="eb-gitter">${zeilen.map((z, i) => `<div class="eb-lab">${esc(z[0])}<span class="eb-en">${esc(z[1])}</span></div>
+      ${z[2] ? `<button class="eb-wert" data-act="eb-feld" data-pid="${p.id}" data-vid="${esc(String(id))}" data-kind="${i}"
+        title="kopieren">${esc(z[2])}</button>`
+        : `<div class="eb-wert leer">—</div>`}`).join('')}</div>
   </div>`;
 }
 
@@ -11296,6 +11309,7 @@ function actVerkaufEin(pid) {
       Die Versandpreise sind Vorschläge — was die Post heute nimmt, gehört einmal nachgeschaut.</p>
     <div class="ve-gitter">
       ${zeile('Artikelstandort', 'Location', `<input class="input" id="ve_ort" value="${esc(e.ort)}" placeholder="z.B. 5620 Bremgarten">`)}
+      ${zeile('Verkäuferart', 'privat / gewerblich', `<select class="select" id="ve_art">${opt([['privat', 'privat — eigene Sammlung'], ['gewerblich', 'gewerblich']], e.verkaeuferart)}</select>`)}
       ${zeile('Angebotsformat', 'Format', `<select class="select" id="ve_format">${opt([['FixedPrice', 'Festpreis'], ['Auction', 'Auktion']], e.format)}</select>`)}
       ${zeile('Dauer', 'Duration', `<select class="select" id="ve_dauer">${opt([['GTC', 'bis auf Widerruf'], ['3', '3 Tage'], ['5', '5 Tage'], ['7', '7 Tage'], ['10', '10 Tage'], ['30', '30 Tage']], e.dauer)}</select>`)}
       ${zeile('Bearbeitungszeit', 'DispatchTimeMax', `<select class="select" id="ve_bearb">${opt([['1', '1 Werktag'], ['2', '2 Werktage'], ['3', '3 Werktage'], ['5', '5 Werktage']], e.bearbeitung)}</select>`)}
@@ -11318,9 +11332,14 @@ function actVerkaufEin(pid) {
       ${zeile('Verkaufsprovision %', 'vom Gesamtbetrag', `<input class="input" type="number" step="0.5" min="0" id="ve_prov" value="${e.provision}">`)}
       ${zeile('feste Gebühr', 'je Bestellung', `<input class="input" type="number" step="0.05" min="0" id="ve_fix" value="${e.fixgebuehr}">`)}
     </div>
-    <p class="muted" style="margin:10px 0 0">Provision und Gebühr sind Vorbelegungen. Was eBay in der Schweiz für
-      Sammelkarten wirklich nimmt, steht in der Gebührenübersicht des Kontos — und unterscheidet sich für private
-      und gewerbliche Verkäufer.</p>`,
+    <p class="muted" style="margin:10px 0 0">Vorbelegt ist, was eBay.ch privaten Verkäufern nimmt: rund 11.4 %
+      plus 10 bis 55 Rappen je nach Preisstufe. Auf eBay.<strong>de</strong> zahlen private Verkäufer seit 2023
+      gar nichts — die Schweiz hat das ausdrücklich nicht übernommen. Was für dieses Konto gilt, steht in der
+      Gebührenübersicht; hier gehört die Zahl hin, die dort steht.</p>
+    ${e.verkaeuferart === 'privat' ? `<p class="muted" style="margin:8px 0 0">Als <strong>privater</strong>
+      Verkäufer steht der Massen-Upload (Seller Hub → Berichte) vermutlich nicht offen — eBay verlangt dafür
+      gewerbliche Registrierung. Die Datei lässt sich trotzdem ziehen; führt der Weg nicht, tut es das
+      Einstellblatt an jeder Karte: ein Klick auf einen Wert kopiert ihn.</p>` : ''}`,
     `<button class="btn ghost" data-close="1">Abbrechen</button>
      <button class="btn" data-act="verkauf-speichern" data-pid="${p.id}">Speichern</button>`);
 }
@@ -11336,6 +11355,7 @@ function verkaufSpeichern(pid) {
     versand2: z('ve_vers2'), versand2Kosten: n('ve_vers2kost'),
     versandAusland: z('ve_versa'), versandAuslandKosten: n('ve_versakost'),
     ruecknahme: !!z('ve_ruecknahme'), ruecknahmeTage: n('ve_rtage'), ruecknahmeZahlt: z('ve_rzahlt'),
+    verkaeuferart: z('ve_art'),
     kategorieEinzel: n('ve_katE'), kategorieLos: n('ve_katL'), zustandLos: n('ve_zlos'),
     provision: n('ve_prov'), fixgebuehr: n('ve_fix'),
   });
@@ -11517,6 +11537,19 @@ function actEbayCsv(pid, aktion) {
 
 /** Ein Ding aus seiner Kennung: erst die Karten, dann die Lose. */
 function ebayDing(p, id) { return findVergabe(p, id) || findLos(p, id); }
+
+/** Ein einzelnes Feld kopieren. Wer ein Formular ausfuellt, springt
+    von Feld zu Feld — und will genau den einen Wert im Zwischenspeicher,
+    nicht achtzehn Zeilen, aus denen er ihn heraussuchen muss. */
+function actEbayFeld(pid, id, nr) {
+  const p = findProjekt(pid); const d = p && ebayDing(p, id); if (!d) return;
+  const z = ebayZeilen(p, d)[Number(nr)];
+  if (!z || !z[2]) return;
+  if (navigator.clipboard) navigator.clipboard.writeText(z[2]).then(
+    () => toast(z[0] + ' kopiert', 'ok'),
+    () => toast('Kopieren nicht möglich', 'info'));
+  else toast('Kopieren nicht möglich', 'info');
+}
 
 function actEbayKopie(pid, id) {
   const p = findProjekt(pid); const d = p && ebayDing(p, id); if (!d) return;
@@ -23389,6 +23422,7 @@ document.addEventListener('click', e => {
     case 'ebay-datei':       actEbayDatei(pid); break;
     case 'ebay-csv':         actEbayCsv(pid, act.dataset.kind); break;
     case 'eb-kopie':         actEbayKopie(pid, vid); break;
+    case 'eb-feld':          actEbayFeld(pid, vid, act.dataset.kind); break;
     case 'mk-kopie':         actMerkmaleKopie(pid, vid); break;
     case 'foto-weg':         actFotoWeg(pid, vid, act.dataset.fid); break;
     case 'foto-haupt':       actFotoHaupt(pid, vid, act.dataset.fid); break;
@@ -23968,7 +24002,10 @@ function selfTest() {
         status: 'ausschreibung', schaetzung: wert, eingeladene: [], nachtraege: [],
         rapporte: [], rechnungen: [], budgetposten: [],
       });
-      const P = { id: 'p1', vorlage: 'sammlung', verkauf: {}, vergaben: [] };
+      /* Die Zahlen stehen HIER, nicht in der Vorbelegung: Der Test soll
+         die Rechnung pruefen, nicht den Gebuehrensatz von heute. */
+      const P = { id: 'p1', vorlage: 'sammlung', vergaben: [],
+        verkauf: { provision: 10, fixgebuehr: 0.35, versandKosten: 2 } };
 
       // --- Was bleibt ---------------------------------------------------
       const d = deckung(P, 0.40, true);
@@ -23995,7 +24032,7 @@ function selfTest() {
       ok('LOSE: kein Los, das nach Gebuehren ins Minus laeuft',
         V.lose.every(l => deckung(P, losPreis(P, l), true).netto > 0));
       // Ein Haeufchen, das sich nicht traegt, wird als "uebrig" gemeldet - nicht still verschluckt.
-      const klein = { id: 'p2', vorlage: 'sammlung', verkauf: {},
+      const klein = { id: 'p2', vorlage: 'sammlung', verkauf: P.verkauf,
         vergaben: [karte(90, 0.1, 'Gamma', 'Common'), karte(91, 0.1, 'Gamma', 'Common')] };
       const K = loseVorschlagen(klein, { einzelAb: 8, losZiel: 15, losMax: 30, losFaktor: 1 });
       eq('LOSE: was sich nicht traegt, kommt als "uebrig" zurueck',

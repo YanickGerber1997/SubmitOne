@@ -5,7 +5,7 @@
 
 'use strict';
 
-const APP_VERSION = 'v420';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
+const APP_VERSION = 'v421';   // sichtbarer Build-Indikator (Sidebar-Fuss) – mit sw.js-Cache synchron halten
 
 /* ============================================================
    MODUL-INDEX (Navigation · S0.4) — app.js ist EINE Datei; das hier ist die Landkarte.
@@ -3135,7 +3135,19 @@ function viewGewerke(pid) {
 /* Welche ANSICHT gerade gewünscht ist: false = netto (exkl. MwSt), true = brutto.
    Gilt für alle Auswertungen — Baukostenübersicht, Zahlungsplan, Steuern —,
    damit nicht zwei Blätter nebeneinanderliegen, die verschieden rechnen. */
-let kostenBrutto = false;
+/* Voreinstellung: MIT Mehrwertsteuer. Netto ist die Sicht des
+   Baubüros beim Offertenvergleich; alle anderen wollen den Betrag
+   sehen, der wirklich fliesst.
+
+   Und die Wahl bleibt erhalten — vorher sprang sie bei jedem Neuladen
+   zurück, was heisst: Man stellt sie zehnmal am Tag um. */
+let kostenBrutto = true;
+try { const g = localStorage.getItem('so_kosten_brutto'); if (g !== null) kostenBrutto = (g === '1'); }
+catch (_) { /* privates Fenster: dann eben die Voreinstellung */ }
+function kostenBruttoSetzen(an) {
+  kostenBrutto = !!an;
+  try { localStorage.setItem('so_kosten_brutto', kostenBrutto ? '1' : '0'); } catch (_) {}
+}
 
 /* Umrechnung in die gewünschte Richtung.
 
@@ -22257,7 +22269,7 @@ document.addEventListener('click', e => {
     case 'rm-einheit':    removeEinheit(pid, gid, eid); break;
     case 'new-vergabe':  actNewVergabe(pid); break;
     case 'kat-toggle':   katOpen = !katOpen; router(); break;
-    case 'kosten-brutto': kostenBrutto = !kostenBrutto; viewKosten(pid); break;
+    case 'kosten-brutto': kostenBruttoSetzen(!kostenBrutto); viewKosten(pid); break;
     case 'kost-toggle':  { if (kostOpen.has(vid)) kostOpen.delete(vid); else kostOpen.add(vid); viewKosten(pid); } break;
     case 'kosten-versionen': actKostenVersionen(pid); break;
     case 'kosten-vers-neu': kostenVersNeu(pid); break;
@@ -22589,7 +22601,7 @@ document.addEventListener('click', e => {
     case 'zp-bh-grundlage': zpBhGrundlage(pid, act.dataset.wert); break;
     case 'zp-bh-schritt':   zpBhSchritt(pid, act.dataset.wert); break;
     case 'zp-bh-ist':       zpBhIst(pid, act.dataset.wert); break;
-    case 'zp-brutto':       kostenBrutto = !kostenBrutto; viewZahlungsplan(pid); break;
+    case 'zp-brutto':       kostenBruttoSetzen(!kostenBrutto); viewZahlungsplan(pid); break;
     case 'aufgabe-neu':        aufgabeNeu(kind); break;
     case 'aufgabe-fertig':     aufgabeFertig(kind); break;
     case 'aufgabe-menu':       aufgabeMenu(e, kind); break;

@@ -290,6 +290,9 @@ src += `
 
 src += "\n;try{ globalThis.__ERG = globalThis.__lauf(); }catch(e){ globalThis.__ERR = (e&&e.stack)||String(e); }";
 
+/* Der Quelltext selbst - fuer Waechter an Stellen, die mit let
+   erklaert sind und den Pruefstand darum nicht erreichen. */
+sandbox.__quelle = fs.readFileSync(file, 'utf8');
 try { vm.createContext(sandbox); vm.runInContext(src, sandbox, { filename: 'app.js', timeout: 20000 }); }
 catch (e) { console.log('LADEFEHLER:\n', (e && e.stack) || e); process.exit(1); }
 if (sandbox.__ERR) { console.log('FEHLER beim Vorbereiten:\n' + sandbox.__ERR); process.exit(2); }
@@ -1529,6 +1532,28 @@ eq('ohne Variante keine Besonderheit', sandbox.besonderheitAus('Secret Rare'), '
   const en = { ...de, spracheVon: "", spracheNach: "", sprache: "en" };
   eq("englisch bleibt englisch", sandbox.ygoZuPosten(en, { usd: 0.8, eur: 0.93 }).bkp, "DRLG-EN023");
 }
+
+/* Die Ansicht steht standardmaessig auf INKLUSIVE Mehrwertsteuer.
+   Netto ist die Sicht des Baubueros beim Offertenvergleich; alle
+   anderen wollen den Betrag sehen, der wirklich fliesst. Und die Wahl
+   bleibt erhalten - vorher sprang sie bei jedem Neuladen zurueck.
+   (22.08.2026) */
+/* kostenBrutto ist mit let erklaert und erreicht den Pruefstand nicht -
+   geprueft wird darum am Quelltext, wie bei den anderen Waechtern auch. */
+ok("die Ansicht startet mit Mehrwertsteuer",
+  sandbox.__quelle.indexOf("let kostenBrutto = true;") >= 0);
+ok("die Wahl wird im Browser gemerkt",
+  sandbox.__quelle.indexOf("localStorage.setItem('so_kosten_brutto'") >= 0);
+ok("und beide Schalter gehen ueber dieselbe Stelle",
+  sandbox.__quelle.split("kostenBruttoSetzen(!kostenBrutto)").length === 3);
+eq("der Satz ist der schweizerische", sandbox.mwstSatz(), 8.1);
+/* alsBrutto und alsNetto sind KEINE Umkehrfunktionen: Jede rechnet nur
+   dann, wenn die Speicherung es verlangt. Liegen die Preise netto vor,
+   schlaegt alsBrutto die Steuer drauf und alsNetto laesst sie in Ruhe. */
+ok("netto gespeichert: alsBrutto schlaegt die Steuer drauf",
+  Math.abs(sandbox.alsBrutto(100) - 108.1) < 0.0001, String(sandbox.alsBrutto(100)));
+ok("… und alsNetto laesst den Betrag, wie er ist",
+  Math.abs(sandbox.alsNetto(100) - 100) < 0.0001, String(sandbox.alsNetto(100)));
 
 // Treffer → Posten
 const posten = sandbox.ygoZuPosten(a1.treffer[0], k);

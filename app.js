@@ -3555,7 +3555,7 @@ function viewKosten(id) {
     <button class="btn sm secondary" data-act="liste-einlesen" data-pid="${p.id}" title="Eine fertige Liste einlesen (CSV aus Excel, einem Export oder ChatGPT)">📋 Liste einlesen</button>
     ${plattformenVon(p).length ? `<button class="btn sm secondary" data-act="verkauf-ein" data-pid="${p.id}" title="Standort, Versand, Rücknahme, Gebühren — einmal für alle Angebote">⚙ Verkauf</button>
     <button class="btn sm" data-act="lose-planen" data-pid="${p.id}" title="Teure Karten einzeln, der Rest in Lose — gerechnet, nicht geraten">🎁 Lose planen${loseVon(p).length ? ' (' + loseVon(p).length + ')' : ''}</button>
-    <button class="btn sm secondary" data-act="ebay-csv" data-pid="${p.id}" data-kind="VerifyAdd" title="Tabelle für Seller Hub → Berichte — VerifyAdd, eBay prüft nur">⬇ eBay-Datei</button>` : ''}
+    <button class="btn sm secondary" data-act="ebay-datei" data-pid="${p.id}" title="Tabelle für Seller Hub → Berichte">⬇ eBay-Datei</button>` : ''}
     ${mwstAnsichtBtn(p)}
     ${katToggleBtn(p)}
     <button class="btn sm secondary" data-act="kosten-versionen" data-pid="${p.id}" title="Kostenstände sichern & vergleichen (z.B. monatliche Abgaben)" style="margin-left:auto">📊 Versionen${(p.kostenVersionen || []).length ? ' (' + p.kostenVersionen.length + ')' : ''}</button>
@@ -11467,6 +11467,38 @@ function ebayDinge(p) {
   return karten.concat(loseVon(p));
 }
 
+/** Zwei Dateien, ein Unterschied: ein Wort in der ersten Spalte.
+
+    «VerifyAdd» laesst eBay pruefen und nichts einstellen, «Add»
+    stellt beim Hochladen wirklich ein. Der Unterschied ist zu gross,
+    um ihn an einem Knopf haengen zu lassen, den man im Vorbeigehen
+    trifft — also wird gefragt. */
+function actEbayDatei(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const dinge = ebayDinge(p);
+  const e = verkaufEin(p);
+  const karten = dinge.filter(d => !istLos(d)).length;
+  const lose = dinge.filter(istLos).length;
+  if (!dinge.length) {
+    toast('Nichts einzustellen — noch kein Angebotspreis gesetzt und keine Lose angelegt', 'info');
+    return;
+  }
+  const summe = dinge.reduce((t, d) => t + angebotRechnung(p, d).netto, 0);
+  openModal('Datei für eBay', `
+    <p style="margin:0 0 10px">${dinge.length} Zeilen: <strong>${karten}</strong> Einzelkarten
+      und <strong>${lose}</strong> Lose. Nach Provision, Gebühr und Porto blieben
+      <strong>${chf(summe)}</strong>.</p>
+    ${e.ort ? '' : `<div class="scan-warnung" style="margin-bottom:10px">Der Artikelstandort fehlt.
+      eBay weist die Datei ohne ihn zurück — er steht in den Verkaufseinstellungen.</div>`}
+    <p class="muted" style="margin:0 0 6px">Hochladen im <strong>Seller Hub unter «Berichte»</strong>
+      (früher «CSV-Manager»). Fotos kann die Datei nicht mitschicken; die kommen dort von Hand dazu.</p>
+    <p class="muted" style="margin:0">Beim ersten Mal <strong>prüfen</strong>. eBay meldet dann jeden Fehler,
+      ohne dass ein einziges Angebot online geht.</p>`,
+    `<button class="btn ghost" data-close="1">Abbrechen</button>
+     <button class="btn secondary" data-act="ebay-csv" data-pid="${p.id}" data-kind="Add">Wirklich einstellen (Add)</button>
+     <button class="btn" data-act="ebay-csv" data-pid="${p.id}" data-kind="VerifyAdd">Nur prüfen (VerifyAdd)</button>`);
+}
+
 function actEbayCsv(pid, aktion) {
   const p = findProjekt(pid); if (!p) return;
   const dinge = ebayDinge(p);
@@ -11478,6 +11510,7 @@ function actEbayCsv(pid, aktion) {
   a.href = URL.createObjectURL(blob);
   a.download = 'ebay-' + (aktion === 'Add' ? 'einstellen' : 'pruefen') + '-' + todayIso() + '.csv';
   a.click(); URL.revokeObjectURL(a.href);
+  closeModal();
   toast(fehlt + dinge.length + ' Zeilen · ' + (aktion === 'Add' ? 'stellt beim Hochladen wirklich ein' : 'VerifyAdd — eBay prüft nur'),
     fehlt ? 'warn' : 'ok');
 }
@@ -23353,6 +23386,7 @@ document.addEventListener('click', e => {
     case 'lose-planen':      actLosePlanen(pid); break;
     case 'lose-rechnen':     loseRechnen(pid); break;
     case 'lose-uebernehmen': loseUebernehmen(pid); break;
+    case 'ebay-datei':       actEbayDatei(pid); break;
     case 'ebay-csv':         actEbayCsv(pid, act.dataset.kind); break;
     case 'eb-kopie':         actEbayKopie(pid, vid); break;
     case 'mk-kopie':         actMerkmaleKopie(pid, vid); break;

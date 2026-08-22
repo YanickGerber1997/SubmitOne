@@ -165,8 +165,8 @@ aus der Datenbank hätte eine, aber es gehört nicht uns.
 
 Darum bleibt die Spalte **leer**, und das ist ehrlicher als ein
 Verweis, der später Ärger macht. Fotos kommen nach dem Hochladen im
-Seller Hub dazu — je Angebot, von Hand. Bei 18 Angeboten ist das
-Arbeit von einer halben Stunde; bei 201 wäre es der halbe Tag. Noch
+Seller Hub dazu — je Angebot, von Hand. Bei 24 Angeboten ist das
+Arbeit von einer knappen Stunde; bei 201 wäre es der halbe Tag. Noch
 ein Grund für Lose.
 
 ---

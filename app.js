@@ -3553,6 +3553,9 @@ function viewKosten(id) {
     ${nachschlagDienst(p) === 'kurse' ? `<button class="btn sm secondary" data-act="kurse-auffrischen" data-pid="${p.id}" title="Alle Positionen mit Kürzel neu bewerten">↻ Kurse auffrischen</button>` : ''}
     ${nachschlagDienst(p) ? `<button class="btn sm" data-act="karte-scan" data-pid="${p.id}" title="Nummer eintippen, alles Übrige holt das Programm">🔎 ${esc(W('posten', p))} nachschlagen</button>` : ''}
     <button class="btn sm secondary" data-act="liste-einlesen" data-pid="${p.id}" title="Eine fertige Liste einlesen (CSV aus Excel, einem Export oder ChatGPT)">📋 Liste einlesen</button>
+    ${plattformenVon(p).length ? `<button class="btn sm secondary" data-act="verkauf-ein" data-pid="${p.id}" title="Standort, Versand, Rücknahme, Gebühren — einmal für alle Angebote">⚙ Verkauf</button>
+    <button class="btn sm" data-act="lose-planen" data-pid="${p.id}" title="Teure Karten einzeln, der Rest in Lose — gerechnet, nicht geraten">🎁 Lose planen${loseVon(p).length ? ' (' + loseVon(p).length + ')' : ''}</button>
+    <button class="btn sm secondary" data-act="ebay-csv" data-pid="${p.id}" data-kind="VerifyAdd" title="Tabelle für den eBay-CSV-Manager — VerifyAdd, eBay prüft nur">⬇ eBay-Datei</button>` : ''}
     ${mwstAnsichtBtn(p)}
     ${katToggleBtn(p)}
     <button class="btn sm secondary" data-act="kosten-versionen" data-pid="${p.id}" title="Kostenstände sichern & vergleichen (z.B. monatliche Abgaben)" style="margin-left:auto">📊 Versionen${(p.kostenVersionen || []).length ? ' (' + p.kostenVersionen.length + ')' : ''}</button>
@@ -10469,6 +10472,7 @@ function verkaufsblatt(p, v) {
       <button class="btn sm secondary" data-act="vb-kopie" data-pid="${p.id}" data-vid="${v.id}" data-kind="text">Kopieren</button>
     </div>
     ${merkmalBlock(p, v)}
+    ${ebayBlock(p, v)}
   </div>`;
 }
 
@@ -10709,6 +10713,781 @@ function actAngebotWeg(pid, vid) {
   angebotSetzen(v, 0, []);
   save(); router();
   toast(v.gewerk + ': Angebot zurückgezogen', 'ok');
+}
+
+
+/* ====================================================================
+   VERKAUFSEINSTELLUNGEN — was auf JEDEM Angebot gleich ist
+   ====================================================================
+
+   Ein Angebot besteht aus zwei Sorten Angaben. Die eine gehört der
+   Sache: Titel, Bild, Zustand, Preis. Die andere gehört dem
+   Verkäufer und ist bei allen zweihundert Karten dieselbe — von wo
+   verschickt wird, womit, wie lange die Rücknahme läuft, wie schnell
+   verpackt wird.
+
+   Die zweite Sorte steht darum EINMAL beim Projekt und nicht
+   zweihundertmal bei der Karte. Wer sie ändert, ändert alle Angebote
+   auf einmal; wer ein Angebot einstellt, muss sie nie wieder
+   eintippen. Genau das ist der Unterschied zwischen zwei Karten
+   verkaufen und zweihundert. */
+
+/* Die Inlandsversandservices der Schweiz, wie eBay sie im Feld
+   ShippingService-1:Option verlangt. Die Codes sind nicht frei
+   wählbar — sie stehen so in der Vorlagenbeschreibung des
+   eBay-CSV-Managers für die Schweiz. Der dritte Eintrag ist der
+   Preis, den die Post dafür nimmt; er ist ein VORSCHLAG und gehört
+   nachgeschaut, bevor zweihundert Angebote damit laufen. */
+const VERSAND_CH = [
+  ['CH_Writing',                'Brief (bis 100 g)',        2.00],
+  ['CH_StandardDispatchBPost',  'Paket B-Post',             8.50],
+  ['CH_StandardDispatchAPost',  'Paket A-Post',            10.50],
+  ['CH_InsuredDispatch',        'Eingeschrieben',           6.50],
+  ['CH_SpecialDispatch',        'Sonderversand',            0.00],
+  ['CH_ExpressOrCourier',       'Express / Kurier',        20.00],
+  ['CH_Pickup',                 'Abholung',                 0.00],
+  ['CH_Sonstige',               'Sonstige',                 0.00],
+];
+const VERSAND_AUSLAND_CH = [
+  ['',                                  '— kein Auslandversand',    0],
+  ['CH_EconomySendungenInternational',  'Economy international',    9.00],
+  ['CH_PrioritySendungenInternational', 'Priority international',  12.00],
+  ['CH_SonstigerVersandInternational',  'Sonstiger Auslandversand', 0.00],
+];
+
+/* Die Artikelzustands-Nummern von eBay. Es sind Zahlen, keine Wörter,
+   und welche eine Kategorie zulässt, entscheidet die Kategorie. Für
+   Sammelkarten sind es in aller Regel die beiden ersten. */
+const EBAY_ZUSTAND = [
+  [1000, 'Neu'],
+  [3000, 'Gebraucht'],
+  [1500, 'Neu, sonstige'],
+  [2750, 'Wie neu'],
+  [4000, 'Sehr gut'],
+  [5000, 'Gut'],
+  [6000, 'Akzeptabel'],
+];
+
+/* Von der Kartenskala auf die eBay-Nummer. Eine Karte frisch aus der
+   Packung ist «Neu»; alles ab sichtbaren Spuren ist «Gebraucht». Die
+   Grenze liegt hier bei EX, weil eine Karte mit Kantenspuren kein
+   Käufer als neu durchgehen lässt — und ein Rückläufer kostet mehr,
+   als die halbe Stufe einbringt. */
+const ZUSTAND_ZU_EBAY = { M: 1000, NM: 1000, EX: 3000, GD: 3000, LP: 3000, PL: 3000, PO: 3000 };
+
+/* Wer das Rückporto trägt — die zwei Wörter, die eBay dafür kennt. */
+const RUECKPORTO = [['Buyer', 'Käufer'], ['Seller', 'Verkäufer']];
+
+/* 183454 ist bei eBay die Kategorie für EINZELNE Sammelkarten, 183455
+   die für Sammlungen und Lots. Diese Zweiteilung ist der Grund, warum
+   sich Bündeln überhaupt lohnt: Ein Los gehört dorthin, wo Käufer
+   nach Losen suchen, nicht zwischen die Einzelkarten.
+
+   Beide Nummern sind Vorbelegungen und im Formular änderbar. eBay
+   ordnet seine Kategorien um; wer einstellt, prüft die Nummer einmal
+   und trägt sie hier ein. */
+const VERKAUF_STANDARD = {
+  ort: '', land: 'CH',
+  format: 'FixedPrice',        // FixedPrice oder Auction
+  dauer: 'GTC',                // GTC = bis auf Widerruf; sonst 1/3/5/7/10/30
+  menge: 1,
+  bearbeitung: 3,              // DispatchTimeMax, Werktage
+  ruecknahme: true,
+  ruecknahmeTage: 30,          // 14, 30, 60
+  ruecknahmeZahlt: 'Buyer',
+  versand: 'CH_Writing',
+  versandKosten: 2.00,
+  versandWeitere: 0.50,        // jede weitere Karte im selben Umschlag
+  versand2: 'CH_StandardDispatchBPost',
+  versand2Kosten: 8.50,
+  versandAusland: '',
+  versandAuslandKosten: 0,
+  kategorieEinzel: 183454,
+  kategorieLos: 183455,
+  zustandLos: 3000,
+  provision: 10,               // Prozent vom Gesamtbetrag inkl. Versand
+  fixgebuehr: 0.35,            // je Bestellung
+  einzelAb: 8,                 // ab diesem Marktwert lohnt die Einzelkarte
+  losZiel: 15,                 // dieser Loswert soll erreicht werden
+  losFaktor: 1.0,              // Aufschlag/Abschlag auf die Summe der Marktwerte
+  losMax: 30,                  // so viele Karten passen in einen Umschlag
+};
+
+/** Die Verkaufseinstellungen dieses Projekts, immer vollständig. Was
+    nicht gesetzt ist, kommt aus der Vorbelegung — so muss keine
+    Stelle im Programm auf ein fehlendes Feld gefasst sein. */
+function verkaufEin(p) {
+  return Object.assign({}, VERKAUF_STANDARD, (p && p.verkauf) || {});
+}
+
+/** Der Name eines Versandservice, wie ein Mensch ihn liest. */
+function versandName(code) {
+  const z = VERSAND_CH.concat(VERSAND_AUSLAND_CH).find(x => x[0] === code);
+  return z ? z[1] : String(code || '');
+}
+
+/** Der Marktwert einer Karte — die Zahl, an der alles Weitere hängt. */
+function marktwert(v) { return (v && kostenZeile(v).prognose) || 0; }
+
+/* --- Was bleibt? ----------------------------------------------------
+   Die einzige Zahl, die beim Verkaufen wirklich zählt.
+
+   eBay nimmt seine Provision vom GESAMTBETRAG — Ware plus Versand,
+   nicht nur von der Ware. Dazu eine feste Gebühr je Bestellung. Was
+   danach übrig bleibt, muss noch das Porto tragen.
+
+   Bei einer Karte für neunzig Rappen bleibt davon nichts. Das ist
+   keine Meinung, das ist eine Subtraktion — und sie ist der ganze
+   Grund für Lose. */
+function deckung(p, preis, portoKaeufer, portoKosten) {
+  const e = verkaufEin(p);
+  const porto = portoKosten != null ? Number(portoKosten) : (Number(e.versandKosten) || 0);
+  const ware = Number(preis) || 0;
+  /* Trägt der Käufer das Porto, zahlt er Ware + Porto und eBay rechnet
+     die Provision auf beides. Trägt es der Verkäufer, zahlt der Käufer
+     nur die Ware — das Porto geht trotzdem ab. */
+  const gesamt = portoKaeufer ? ware + porto : ware;
+  const provision = gesamt * (Number(e.provision) || 0) / 100;
+  const fix = Number(e.fixgebuehr) || 0;
+  return { ware, porto, gesamt, provision, fix, netto: gesamt - provision - fix - porto };
+}
+
+/* --- Das eBay-Einstellblatt -----------------------------------------
+   Jedes Feld, das eBay beim Einstellen abfragt, mit dem Wert, der
+   hineingehört. Nicht als Erklärung, sondern zum Abschreiben: Wer das
+   Formular offen hat, geht die Liste von oben nach unten durch und
+   ist fertig.
+
+   Der englische Feldname steht dabei, weil er in der CSV-Datei steht
+   und weil eBays eigene Hilfe ihn verwendet. */
+function ebayZeilen(p, ding) {
+  const e = verkaufEin(p);
+  const los = istLos(ding);
+  const v = los ? null : ding;
+  const zst = los ? null : zustandInfo(p, v.zustand);
+  const zid = los ? (e.zustandLos || 3000) : (ZUSTAND_ZU_EBAY[(v && v.zustand) || ''] || '');
+  const zn = EBAY_ZUSTAND.find(x => x[0] === zid);
+  const preis = los ? losPreis(p, ding) : ((v.angebot && v.angebot.preis) || 0);
+  const rp = RUECKPORTO.find(x => x[0] === e.ruecknahmeZahlt);
+
+  return [
+    ['Kategorie',         'Category',                 String(los ? e.kategorieLos : e.kategorieEinzel)],
+    ['Titel',             'Title',                    los ? losTitel(p, ding) : angebotTitel(v, p)],
+    ['Artikelzustand',    'ConditionID',              zid ? zid + (zn ? ' · ' + zn[1] : '') : ''],
+    ['Zustandsbeschrieb', 'ConditionDescription',     los ? losZustandText(p, ding) : (zst ? zst.name + ' — ' + zst.erklaerung : '')],
+    ['Angebotsformat',    'Format',                   e.format === 'Auction' ? 'Auction · Auktion' : 'FixedPrice · Festpreis'],
+    ['Dauer',             'Duration',                 String(e.dauer) + (String(e.dauer) === 'GTC' ? ' · bis auf Widerruf' : ' Tage')],
+    ['Preis',             'StartPrice',               preis ? chfGenau(preis) : ''],
+    ['Menge',             'Quantity',                 String(e.menge || 1)],
+    ['Karten im Los',     'LotSize',                  los ? String(losTeile(p, ding).length) : ''],
+    ['Artikelstandort',   'Location',                 e.ort || ''],
+    ['Bearbeitungszeit',  'DispatchTimeMax',          String(e.bearbeitung) + ' Werktage'],
+    ['Versand',           'ShippingService-1:Option', versandName(e.versand) + ' · ' + chfGenau(e.versandKosten)],
+    ['jede weitere',      'ShippingService-1:AdditionalCost', chfGenau(e.versandWeitere)],
+    ['Versand 2',         'ShippingService-2:Option', e.versand2 ? versandName(e.versand2) + ' · ' + chfGenau(e.versand2Kosten) : ''],
+    ['Auslandversand',    'ShippingService-3:Option', e.versandAusland ? versandName(e.versandAusland) + ' · ' + chfGenau(e.versandAuslandKosten) : ''],
+    ['Rücknahme',         'ReturnsAcceptedOption',    e.ruecknahme ? 'ReturnsAccepted · ' + e.ruecknahmeTage + ' Tage' : 'ReturnsNotAccepted'],
+    ['Rückporto zahlt',   'ShippingCostPaidByOption', e.ruecknahme ? (rp ? rp[1] : e.ruecknahmeZahlt) : ''],
+    ['Lagernummer',       'CustomLabel',              los ? ding.id : (v.bkp || v.passcode || v.id)],
+  ];
+}
+
+/** Das Einstellblatt als Text zum Mitnehmen — eine Zeile je Feld. */
+function ebayText(p, ding) {
+  return ebayZeilen(p, ding).filter(z => z[2]).map(z => z[0] + ': ' + z[2]).join('\n');
+}
+
+/* Welche Felder leer sein DÜRFEN. Alles andere fehlt wirklich, wenn
+   es leer ist — und das soll man sehen, bevor eBay es sagt. */
+const EBAY_DARF_LEER = ['LotSize', 'ConditionDescription', 'ShippingService-2:Option',
+  'ShippingService-3:Option', 'ShippingCostPaidByOption'];
+
+/** Das Einstellblatt als Block in der Karte. Leere Felder bleiben
+    sichtbar und leer: Ein Feld, das niemand ausgefüllt hat, ist eine
+    Auskunft. Beim Einstellen fällt es sonst erst auf, wenn eBay
+    zurückweist. */
+function ebayBlock(p, ding) {
+  const zeilen = ebayZeilen(p, ding);
+  const fehlt = zeilen.filter(z => !z[2] && EBAY_DARF_LEER.indexOf(z[1]) < 0).length;
+  const id = (ding && ding.id) || '';
+  return `<div class="eb">
+    <div class="eb-kopf">
+      <strong>eBay-Einstellblatt</strong>
+      <span class="muted${fehlt ? ' eb-fehlt' : ''}">${fehlt ? fehlt + (fehlt === 1 ? ' Feld ist' : ' Felder sind') + ' noch offen' : 'vollständig'}</span>
+      <button class="btn sm secondary" data-act="eb-kopie" data-pid="${p.id}" data-vid="${esc(String(id))}">Alle kopieren</button>
+      <button class="btn sm secondary" data-act="verkauf-ein" data-pid="${p.id}">Einstellungen</button>
+    </div>
+    <div class="eb-gitter">${zeilen.map(z => `<div class="eb-lab">${esc(z[0])}<span class="eb-en">${esc(z[1])}</span></div>
+      <div class="eb-wert${z[2] ? '' : ' leer'}">${z[2] ? esc(z[2]) : '—'}</div>`).join('')}</div>
+  </div>`;
+}
+
+/* --- Die CSV-Datei für den eBay-CSV-Manager --------------------------
+   eBay nimmt eine Tabelle entgegen und stellt daraus Angebote ein.
+   Das ist der einzige Weg, zweihundert Karten einzustellen, ohne
+   zweihundertmal dasselbe Formular auszufüllen — und er ist von eBay
+   selbst vorgesehen, nicht erschlichen.
+
+   Drei Dinge sind an der Schweizer Datei besonders und darum hier
+   festgehalten, statt sie beim ersten Fehlversuch zu lernen:
+
+     · Trennzeichen ist das SEMIKOLON, nicht das Komma.
+     · Die Kopfzeile trägt Land, Währung und Fassung im Feldnamen.
+     · Zeilenumbrüche im Beschreibungstext verweigert eBay. Wer
+       mehrere Zeilen will, schreibt <br> — darum wird der Text hier
+       übersetzt und nicht bloss durchgereicht.
+
+   Die Aktion ist «VerifyAdd»: eBay PRÜFT die Datei und stellt nichts
+   ein. Der erste Durchgang soll die Fehler zeigen, nicht zweihundert
+   Angebote. Wer wirklich einstellen will, wählt «Add» — an einer
+   Stelle, im Formular. */
+const EBAY_FASSUNG = 745;
+
+function ebayCsvKopf(p) {
+  return ['*Action(SiteID=Switzerland|Country=CH|Currency=CHF|Version=' + EBAY_FASSUNG + '|CC=UTF-8)',
+    'CustomLabel', '*Category', '*Title', '*Description', 'PicURL', '*ConditionID',
+    'ConditionDescription', '*Format', '*Duration', '*StartPrice', '*Quantity', 'LotSize',
+    '*Location', '*DispatchTimeMax', '*ReturnsAcceptedOption', 'ReturnsWithinOption',
+    'ShippingCostPaidByOption',
+    'ShippingService-1:Option', 'ShippingService-1:Cost', 'ShippingService-1:AdditionalCost',
+    'ShippingService-2:Option', 'ShippingService-2:Cost',
+    'ShippingService-3:Option', 'ShippingService-3:Cost']
+    .concat(MERKMAL_FELDER.map(m => 'C:' + m[1]));
+}
+
+/** Ein Feld für die CSV-Datei. Zeilenumbrüche werden zu <br>,
+    Semikolon und Anführungszeichen werden eingepackt. */
+function ebayFeld(wert) {
+  let t = String(wert == null ? '' : wert).replace(/\r/g, '').replace(/\n/g, '<br>');
+  if (/[;"]/.test(t)) t = '"' + t.replace(/"/g, '""') + '"';
+  return t;
+}
+
+/** Eine Zeile: eine Karte oder ein Los. */
+function ebayCsvZeile(p, ding, aktion) {
+  const e = verkaufEin(p);
+  const los = istLos(ding);
+  const v = los ? null : ding;
+  const zst = los ? null : zustandInfo(p, v.zustand);
+  const preis = los ? losPreis(p, ding) : ((v.angebot && v.angebot.preis) || 0);
+  const m = (!los && v.merkmale) || {};
+
+  const felder = [
+    aktion || 'VerifyAdd',
+    los ? ding.id : (v.bkp || v.passcode || v.id),
+    los ? e.kategorieLos : e.kategorieEinzel,
+    los ? losTitel(p, ding) : angebotTitel(v, p),
+    los ? losText(p, ding) : angebotText(v, p),
+    /* Das Bild bleibt leer, und das ist ehrlicher als ein Verweis, der
+       später Ärger macht: Eigene Fotos liegen als Daten IM Projekt und
+       haben keine Adresse im Netz, die eBay abholen könnte. Das
+       Katalogbild hätte eine — aber es gehört nicht uns. Fotos gehören
+       darum beim Einstellen von Hand hinzu. */
+    '',
+    los ? (e.zustandLos || 3000) : (ZUSTAND_ZU_EBAY[v.zustand || ''] || ''),
+    los ? losZustandText(p, ding) : (zst ? zst.name + ' — ' + zst.erklaerung : ''),
+    e.format, e.dauer, preis ? Number(preis).toFixed(2) : '', e.menge || 1,
+    los ? losTeile(p, ding).length : '',
+    e.ort, e.bearbeitung,
+    e.ruecknahme ? 'ReturnsAccepted' : 'ReturnsNotAccepted',
+    e.ruecknahme ? 'Days_' + e.ruecknahmeTage : '',
+    e.ruecknahme ? e.ruecknahmeZahlt : '',
+    e.versand, Number(e.versandKosten).toFixed(2), Number(e.versandWeitere).toFixed(2),
+    e.versand2 || '', e.versand2 ? Number(e.versand2Kosten).toFixed(2) : '',
+    e.versandAusland || '', e.versandAusland ? Number(e.versandAuslandKosten).toFixed(2) : '',
+  ].concat(MERKMAL_FELDER.map(f => {
+    if (!los) return m[f[0]] || '';
+    /* Ein Los hat keinen Kartennamen und keine Seltenheit — es hat
+       viele. Nur was für ALLE gilt, darf ins Merkmal; alles andere
+       wäre eine Behauptung, nach der jemand sucht und enttäuscht wird. */
+    if (f[0] === 'spiel') return losSpiel(p, ding);
+    if (f[0] === 'hersteller') return losHersteller(p, ding);
+    return '';
+  }));
+
+  return felder.map(ebayFeld).join(';');
+}
+
+/** Die ganze Datei. */
+function ebayCsvText(p, dinge, aktion) {
+  const zeilen = [ebayCsvKopf(p).join(';')];
+  (dinge || []).forEach(d => zeilen.push(ebayCsvZeile(p, d, aktion)));
+  return zeilen.join('\r\n') + '\r\n';
+}
+
+/* ====================================================================
+   LOSE — wenn Einzelverkauf sich nicht lohnt
+   ====================================================================
+
+   Zweihundert Karten einzeln einzustellen ist nicht bloss Arbeit, es
+   ist ein Verlustgeschäft. Eine Karte für vierzig Rappen kostet in
+   Provision, fester Gebühr und Porto ein Vielfaches ihres Wertes; sie
+   verkauft sich, und der Verkäufer zahlt drauf.
+
+   Ein Los dreht das um. Es hat EIN Porto, EINE Gebühr und EINEN
+   Käufer — und es trägt eine teure Karte, die den Sucher anzieht, mit
+   günstigen, die zu ihr passen. Die günstigen sind nicht Ballast: Sie
+   sind der Grund, warum jemand für das Los mehr zahlt als für die
+   teure Karte allein. Wer ein Deck baut, will die Umgebung, nicht das
+   Einzelstück.
+
+   Zwei Regeln entscheiden alles:
+
+     · Wer teuer genug ist, geht einzeln. Sonst verschenkt man ihn im
+       Los, wo er gegen zwanzig andere untergeht.
+     · Alle übrigen werden auf so viele Lose verteilt, dass jedes den
+       Zielwert erreicht — nach Satz sortiert, damit ein Los einen
+       Namen hat, den man in den Titel schreiben kann. */
+
+/** Welches Spiel — notfalls über den Satz.
+
+    `spielVon` liest die Quelle, und wer eine Karte von Hand erfasst
+    hat, hat keine. Die drei ägyptischen Götter aus «Yugi's Legendary
+    Decks» sind darum spiellos — obwohl neunzig Karten daneben aus
+    demselben Satz kommen und ihr Spiel kennen. Also fragt man den
+    Satz: Was seine Geschwister spielen, spielt auch diese Karte. */
+function spielSicher(p, v) {
+  const s = spielVon(v);
+  if (s) return s;
+  const satz = String((v && v.satz) || '').trim();
+  if (!satz) return '';
+  const bruder = ((p && p.vergaben) || []).find(x => x !== v
+    && String(x.satz || '').trim() === satz && spielVon(x));
+  return bruder ? spielVon(bruder) : '';
+}
+
+function istLos(x) { return !!(x && Array.isArray(x.teile)); }
+function loseVon(p) { return (p && Array.isArray(p.lose)) ? p.lose : []; }
+function findLos(p, id) { return loseVon(p).find(l => l.id === id) || null; }
+
+/** Die Karten eines Loses. Was inzwischen gelöscht wurde, fällt still
+    heraus — ein Los ist eine Zusammenstellung, keine Buchhaltung. */
+function losTeile(p, los) {
+  return (los && los.teile || []).map(id => findVergabe(p, id)).filter(Boolean);
+}
+function losWert(p, los) {
+  return losTeile(p, los).reduce((t, v) => t + marktwert(v), 0);
+}
+/** Die stärkste Karte im Los — sie steht im Titel und zieht den Sucher an. */
+function losZugpferd(p, los) {
+  return losTeile(p, los).slice().sort((a, b) => marktwert(b) - marktwert(a))[0] || null;
+}
+/** Der Preis: der gesetzte, sonst die Summe der Marktwerte mal dem
+    Faktor, aufgerundet auf fünfzig Rappen. */
+function losPreis(p, los) {
+  if (los && los.preis) return Number(los.preis);
+  const f = Number(verkaufEin(p).losFaktor) || 1;
+  return Math.ceil(losWert(p, los) * f * 2) / 2;
+}
+/** Welches Spiel — nur wenn ALLE Karten dasselbe spielen. */
+function losSpiel(p, los) {
+  const s = new Set(losTeile(p, los).map(v => spielSicher(p, v)).filter(Boolean));
+  return s.size === 1 ? Array.from(s)[0] : '';
+}
+function losHersteller(p, los) {
+  const sp = losSpiel(p, los);
+  return sp === 'Yu-Gi-Oh' ? 'Konami' : (sp === 'Pokémon' ? 'Nintendo' : '');
+}
+/** Die Sätze im Los, die häufigsten zuerst. */
+function losSaetze(p, los) {
+  const z = new Map();
+  losTeile(p, los).forEach(v => { const s = (v.satz || '').trim(); if (s) z.set(s, (z.get(s) || 0) + 1); });
+  return Array.from(z.entries()).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+}
+
+/** Der Titel eines Loses.
+
+    Ein Käufer sucht nach dem Spiel, nach der Zahl («20 Karten»), nach
+    dem Namen der besten Karte und nach dem Satz. In dieser
+    Reihenfolge wird gebaut und von hinten gekürzt — dieselbe Regel
+    wie bei der Einzelkarte, aus demselben Grund. */
+function losTitel(p, los) {
+  if (los && los.titel) return String(los.titel);
+  const teile = losTeile(p, los);
+  const zug = losZugpferd(p, los);
+  const saetze = losSaetze(p, los);
+  /* Die Reihenfolge ist die Reihenfolge des Suchens: das Spiel, dass
+     es ein Los ist, der Name der besten Karte. Diese drei werden nie
+     gekürzt — ein Los ohne den Namen seines Zugpferds ist im Regal
+     unsichtbar. Gekürzt wird von hinten, und was dann noch übersteht,
+     bekommt drei Punkte. */
+  const stuecke = [
+    losSpiel(p, los) || 'Sammelkarten',
+    'Sammlung ' + teile.length + ' Karten',
+    zug ? postenName(zug) : '',
+    zug && zug.seltenheit ? String(zug.seltenheit).replace(/ · /g, ' ') : '',
+    saetze[0] || '',
+    teile.some(v => marktwert(v) >= 2) ? 'Rares' : '',
+  ].filter(Boolean);
+  const fest = Math.min(3, stuecke.length);
+  while (stuecke.length > fest && stuecke.join(' ').length > TITEL_MAX) stuecke.pop();
+  let t = stuecke.join(' ');
+  if (t.length > TITEL_MAX) t = t.slice(0, TITEL_MAX - 1).trim() + '…';
+  return t;
+}
+
+/** Der Angebotstext eines Loses: die vollständige Liste.
+
+    Bei einem Los ist die Liste das Angebot. Wer ein Los kauft, will
+    wissen, was drin ist — jede Karte mit Nummer, Name, Satz und
+    Seltenheit. Ohne sie ist ein Los eine Wundertüte, und Wundertüten
+    bringen den halben Preis. */
+function losText(p, los) {
+  if (los && los.text) return String(los.text);
+  const teile = losTeile(p, los).slice().sort((a, b) => marktwert(b) - marktwert(a));
+  const zeilen = [losTitel(p, los), ''];
+  zeilen.push(teile.length + ' Karten, einzeln aufgeführt:');
+  teile.forEach(v => {
+    zeilen.push('· ' + [v.bkp, postenName(v), v.satz, v.seltenheit,
+      v.sprache ? spracheInfo(v.sprache).name : ''].filter(Boolean).join(' · '));
+  });
+  zeilen.push('');
+  zeilen.push(losZustandText(p, los));
+  const fuss = String((p && p.angebotFuss) || '').trim();
+  if (fuss) { zeilen.push(''); zeilen.push(fuss); }
+  return zeilen.join('\n');
+}
+
+/** Der Zustand eines Loses. Ein Los hat viele Zustände; angegeben
+    wird der SCHLECHTESTE, den es enthält. Alles andere ist eine
+    Zusage, die eine einzige Karte bricht. */
+function losZustandText(p, los) {
+  const skala = zustandSkala(p);
+  const teile = losTeile(p, los);
+  const gesetzt = teile.map(v => v.zustand).filter(Boolean);
+  if (!gesetzt.length) return 'Zustand: gebraucht, gespielt — Bilder sind Teil der Beschreibung.';
+  let schlechtester = gesetzt[0], rang = -1;
+  gesetzt.forEach(c => { const i = skala.findIndex(x => x[0] === c); if (i > rang) { rang = i; schlechtester = c; } });
+  const z = zustandInfo(p, schlechtester);
+  const alle = gesetzt.length === teile.length;
+  return 'Zustand: mindestens ' + z.name + ' — ' + z.erklaerung
+    + (alle ? '' : ' (bei ' + (teile.length - gesetzt.length) + ' Karten nicht einzeln erfasst)');
+}
+
+/* --- Der Vorschlag ---------------------------------------------------
+   Aus einem Haufen Karten werden Einzelangebote und Lose.
+
+   Der Weg in vier Schritten, und jeder Schritt hat einen Grund:
+
+     1. Wer teuer genug ist, geht einzeln heraus.
+     2. Aus dem Restwert und dem Zielwert folgt die ANZAHL Lose. Nicht
+        umgekehrt — sonst entstehen entweder drei Riesenlose oder
+        vierzig Kleinstlose.
+     3. Die teuersten Verbliebenen werden Zugpferde, eines je Los.
+     4. Alles Übrige wird verteilt: bevorzugt dorthin, wo sein Satz
+        schon liegt, und unter diesen ins ärmste Los. So bleiben Sätze
+        beisammen UND die Lose gleich schwer.
+
+   Der vierte Schritt ist der eigentliche Trick. Wer nur nach Satz
+   verteilt, bekommt ein Los mit siebzig Karten und eines mit dreien;
+   wer nur nach Wert verteilt, bekommt Lose ohne Thema, die niemand
+   sucht. Beides zusammen ergibt Lose, die einen Titel haben und
+   trotzdem etwa gleich viel wert sind. */
+function loseVorschlagen(p, opt) {
+  const e = Object.assign({}, verkaufEin(p), opt || {});
+  const einzelAb = Number(e.einzelAb) || 0;
+  const losZiel = Math.max(1, Number(e.losZiel) || 15);
+  const losMax = Math.max(2, Number(e.losMax) || 30);
+
+  /* Was schon angeboten oder verkauft ist, rührt der Vorschlag nicht
+     an. Man plant mit dem, was noch dasteht. */
+  const frei = (p.vergaben || [])
+    .filter(v => !v.angebot && !isVergeben(v))
+    .slice().sort((a, b) => marktwert(b) - marktwert(a));
+
+  const einzeln = frei.filter(v => marktwert(v) >= einzelAb && einzelAb > 0);
+  const rest = frei.filter(v => einzeln.indexOf(v) < 0);
+  if (!rest.length) return { einzeln, lose: [], rest: [] };
+
+  /* Erst nach SPIEL trennen, dann erst bündeln. Wer ein Yu-Gi-Oh-Los
+     sucht, sucht kein Los mit drei Pokémon darin — er sieht sie als
+     Beigabe, die er nicht wollte, und bietet weniger. Ein gemischtes
+     Los verkauft sich schlechter als zwei saubere. */
+  const haufen = new Map();
+  rest.forEach(v => {
+    const k = spielSicher(p, v) || '—';
+    if (!haufen.has(k)) haufen.set(k, []);
+    haufen.get(k).push(v);
+  });
+
+  const koerbe = [];
+  Array.from(haufen.values()).forEach(gruppe => {
+    const gruppenwert = gruppe.reduce((t, v) => t + marktwert(v), 0);
+    /* Die Anzahl folgt aus dem Wert — aber nie mehr Lose als Zugpferde
+       da sind, und nie so wenige, dass ein Los platzt. */
+    let anzahl = Math.max(1, Math.round(gruppenwert / losZiel));
+    anzahl = Math.min(anzahl, gruppe.length, Math.max(1, Math.ceil(gruppe.length / 2)));
+    anzahl = Math.max(anzahl, Math.ceil(gruppe.length / losMax));
+
+    const meine = [];
+    for (let i = 0; i < anzahl; i++) {
+      const zug = gruppe[i];
+      meine.push({ teile: [zug], wert: marktwert(zug), saetze: new Set([zug.satz || '']) });
+    }
+    /* Von teuer nach billig verteilen: Die wertvollen Füller
+       entscheiden mit, wie schwer ein Los wird, und sollen darum
+       zuerst dorthin, wo noch Platz ist. Die Cent-Karten am Schluss
+       gleichen nur noch aus. */
+    gruppe.slice(anzahl).forEach(v => {
+      const satz = v.satz || '';
+      const offen = meine.filter(k => k.teile.length < losMax);
+      const ziel = offen.length ? offen : meine;
+      const passend = ziel.filter(k => k.saetze.has(satz));
+      const wahl = (passend.length ? passend : ziel)
+        .slice().sort((a, b) => (a.wert - b.wert) || (a.teile.length - b.teile.length))[0];
+      wahl.teile.push(v); wahl.wert += marktwert(v); wahl.saetze.add(satz);
+    });
+    meine.forEach(k => koerbe.push(k));
+  });
+
+  const roh = koerbe
+    .filter(k => k.teile.length)
+    .sort((a, b) => b.wert - a.wert)
+    .map(k => ({ id: '', nr: 0, teile: k.teile.map(v => v.id) }));
+
+  /* Der letzte Schnitt, und der ehrlichste: Ein Los, das nach
+     Provision, Gebühr und Porto nichts übrig lässt, ist kein Los. Es
+     entsteht, wo ein Spiel zu wenige Karten beisteuert — sieben
+     Pokémon-Karten für dreissig Rappen ergeben zusammen kein Angebot,
+     sondern eine Rechnung.
+
+     Diese Karten werden nicht heimlich weggelassen. Sie kommen als
+     «übrig» zurück und heissen, was sie sind: etwas, das man einem
+     Käufer beilegt oder behält — aber nicht einstellt. */
+  const lose = [], uebrig = [];
+  roh.forEach(l => {
+    if (deckung(p, losPreis(p, l), true).netto > 0) lose.push(l);
+    else losTeile(p, l).forEach(v => uebrig.push(v));
+  });
+  lose.forEach((l, i) => { l.nr = i + 1; l.id = 'los_' + (i + 1); });
+
+  return { einzeln, lose, uebrig, rest };
+}
+
+/** Eine Zeile Rechnung zu einem Los oder einer Einzelkarte: was es
+    kostet, was hängen bleibt. */
+function angebotRechnung(p, ding) {
+  const los = istLos(ding);
+  const preis = los ? losPreis(p, ding) : (((ding.angebot && ding.angebot.preis) || 0) || marktwert(ding));
+  const wert = los ? losWert(p, ding) : marktwert(ding);
+  const stueck = los ? losTeile(p, ding).length : 1;
+  const d = deckung(p, preis, true);
+  return { preis, wert, stueck, netto: d.netto, gebuehr: d.provision + d.fix, porto: d.porto };
+}
+
+/* --- Die Verkaufseinstellungen bearbeiten ---------------------------
+   Ein Formular, einmal ausgefüllt, gilt für alle Angebote des
+   Projekts. Neben jedem Feld steht sein englischer Name — nicht als
+   Zierde: Wer bei eBay eine Fehlermeldung bekommt, bekommt sie in
+   diesen Wörtern. */
+function actVerkaufEin(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const e = verkaufEin(p);
+  const opt = (liste, wert) => liste.map(x =>
+    `<option value="${esc(String(x[0]))}"${String(x[0]) === String(wert) ? ' selected' : ''}>${esc(x[1])}</option>`).join('');
+  const zeile = (lab, en, feld) => `<label class="ve-z"><span class="ve-l">${esc(lab)}<span class="eb-en">${esc(en)}</span></span>${feld}</label>`;
+
+  openModal('Verkaufseinstellungen — gelten für jedes Angebot', `
+    <p class="muted" style="margin:0 0 12px">Was hier steht, muss bei keiner einzelnen Karte mehr eingetippt werden.
+      Die Versandpreise sind Vorschläge — was die Post heute nimmt, gehört einmal nachgeschaut.</p>
+    <div class="ve-gitter">
+      ${zeile('Artikelstandort', 'Location', `<input class="input" id="ve_ort" value="${esc(e.ort)}" placeholder="z.B. 5620 Bremgarten">`)}
+      ${zeile('Angebotsformat', 'Format', `<select class="select" id="ve_format">${opt([['FixedPrice', 'Festpreis'], ['Auction', 'Auktion']], e.format)}</select>`)}
+      ${zeile('Dauer', 'Duration', `<select class="select" id="ve_dauer">${opt([['GTC', 'bis auf Widerruf'], ['3', '3 Tage'], ['5', '5 Tage'], ['7', '7 Tage'], ['10', '10 Tage'], ['30', '30 Tage']], e.dauer)}</select>`)}
+      ${zeile('Bearbeitungszeit', 'DispatchTimeMax', `<select class="select" id="ve_bearb">${opt([['1', '1 Werktag'], ['2', '2 Werktage'], ['3', '3 Werktage'], ['5', '5 Werktage']], e.bearbeitung)}</select>`)}
+      ${zeile('Versand', 'ShippingService-1', `<select class="select" id="ve_vers">${opt(VERSAND_CH, e.versand)}</select>`)}
+      ${zeile('Versandkosten', 'ShippingService-1:Cost', `<input class="input" type="number" step="0.05" min="0" id="ve_verskost" value="${e.versandKosten}">`)}
+      ${zeile('jede weitere Karte', ':AdditionalCost', `<input class="input" type="number" step="0.05" min="0" id="ve_versweit" value="${e.versandWeitere}">`)}
+      ${zeile('Versand 2', 'ShippingService-2', `<select class="select" id="ve_vers2">${opt([['', '— keiner']].concat(VERSAND_CH), e.versand2)}</select>`)}
+      ${zeile('Kosten Versand 2', 'ShippingService-2:Cost', `<input class="input" type="number" step="0.05" min="0" id="ve_vers2kost" value="${e.versand2Kosten}">`)}
+      ${zeile('Auslandversand', 'ShippingService-3', `<select class="select" id="ve_versa">${opt(VERSAND_AUSLAND_CH, e.versandAusland)}</select>`)}
+      ${zeile('Kosten Ausland', 'ShippingService-3:Cost', `<input class="input" type="number" step="0.05" min="0" id="ve_versakost" value="${e.versandAuslandKosten}">`)}
+      ${zeile('Rücknahme', 'ReturnsAcceptedOption', `<select class="select" id="ve_ruecknahme">${opt([['1', 'ja, Rücknahme'], ['', 'keine Rücknahme']], e.ruecknahme ? '1' : '')}</select>`)}
+      ${zeile('Rücknahmefrist', 'ReturnsWithinOption', `<select class="select" id="ve_rtage">${opt([['14', '14 Tage'], ['30', '30 Tage'], ['60', '60 Tage']], e.ruecknahmeTage)}</select>`)}
+      ${zeile('Rückporto zahlt', 'ShippingCostPaidByOption', `<select class="select" id="ve_rzahlt">${opt(RUECKPORTO, e.ruecknahmeZahlt)}</select>`)}
+      ${zeile('Kategorie Einzelkarte', 'Category', `<input class="input" id="ve_katE" value="${esc(String(e.kategorieEinzel))}">`)}
+      ${zeile('Kategorie Los', 'Category', `<input class="input" id="ve_katL" value="${esc(String(e.kategorieLos))}">`)}
+      ${zeile('Zustand eines Loses', 'ConditionID', `<select class="select" id="ve_zlos">${opt(EBAY_ZUSTAND, e.zustandLos)}</select>`)}
+    </div>
+    <div class="ve-h">Was eBay behält — für die Rechnung «lohnt sich das?»</div>
+    <div class="ve-gitter">
+      ${zeile('Verkaufsprovision %', 'vom Gesamtbetrag', `<input class="input" type="number" step="0.5" min="0" id="ve_prov" value="${e.provision}">`)}
+      ${zeile('feste Gebühr', 'je Bestellung', `<input class="input" type="number" step="0.05" min="0" id="ve_fix" value="${e.fixgebuehr}">`)}
+    </div>
+    <p class="muted" style="margin:10px 0 0">Provision und Gebühr sind Vorbelegungen. Was eBay in der Schweiz für
+      Sammelkarten wirklich nimmt, steht in der Gebührenübersicht des Kontos — und unterscheidet sich für private
+      und gewerbliche Verkäufer.</p>`,
+    `<button class="btn ghost" data-close="1">Abbrechen</button>
+     <button class="btn" data-act="verkauf-speichern" data-pid="${p.id}">Speichern</button>`);
+}
+
+function verkaufSpeichern(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const z = id => ($('#' + id) || {}).value;
+  const n = id => Number(z(id)) || 0;
+  p.verkauf = Object.assign(verkaufEin(p), {
+    ort: (z('ve_ort') || '').trim(),
+    format: z('ve_format'), dauer: z('ve_dauer'), bearbeitung: n('ve_bearb'),
+    versand: z('ve_vers'), versandKosten: n('ve_verskost'), versandWeitere: n('ve_versweit'),
+    versand2: z('ve_vers2'), versand2Kosten: n('ve_vers2kost'),
+    versandAusland: z('ve_versa'), versandAuslandKosten: n('ve_versakost'),
+    ruecknahme: !!z('ve_ruecknahme'), ruecknahmeTage: n('ve_rtage'), ruecknahmeZahlt: z('ve_rzahlt'),
+    kategorieEinzel: n('ve_katE'), kategorieLos: n('ve_katL'), zustandLos: n('ve_zlos'),
+    provision: n('ve_prov'), fixgebuehr: n('ve_fix'),
+  });
+  save(); closeModal(); router();
+  toast('Verkaufseinstellungen gespeichert — sie gelten ab jetzt für jedes Angebot', 'ok');
+}
+
+/* --- Der Losplaner --------------------------------------------------
+   Er rechnet, er entscheidet nicht. Man sieht den Vorschlag, dreht an
+   drei Zahlen, sieht ihn neu — und übernimmt ihn erst, wenn er
+   stimmt. */
+let loseCtx = null;
+
+function actLosePlanen(pid) {
+  const p = findProjekt(pid); if (!p) return;
+  const e = verkaufEin(p);
+  loseCtx = { pid, einzelAb: e.einzelAb, losZiel: e.losZiel, losFaktor: e.losFaktor, losMax: e.losMax, vorschlag: null };
+  openModal('Verkaufslose planen', `<div id="lose_leib"></div>`,
+    `<button class="btn ghost" data-close="1">Schliessen</button>
+     <button class="btn secondary" data-act="lose-rechnen" data-pid="${pid}">Neu rechnen</button>
+     <button class="btn" data-act="lose-uebernehmen" data-pid="${pid}">Vorschlag übernehmen</button>`);
+  loseRechnen(pid);
+}
+
+function loseRechnen(pid) {
+  const p = findProjekt(pid); if (!p || !loseCtx) return;
+  ['einzelAb', 'losZiel', 'losFaktor', 'losMax'].forEach(k => {
+    const el = $('#lp_' + k); if (el) loseCtx[k] = Number(el.value) || 0;
+  });
+  loseCtx.vorschlag = loseVorschlagen(p, loseCtx);
+  loseZeichnen();
+}
+
+function loseZeichnen() {
+  const leib = $('#lose_leib'); if (!leib || !loseCtx) return;
+  const p = findProjekt(loseCtx.pid); if (!p) return;
+  const v = loseCtx.vorschlag || { einzeln: [], lose: [] };
+  const merk = { losFaktor: loseCtx.losFaktor };
+
+  const einzelRechnung = loseCtx.vorschlag.einzeln.map(k => angebotRechnung(p, k));
+  const losRechnung = v.lose.map(l => angebotRechnung(p, Object.assign({}, l, { preis: 0 })));
+  const uebrig = v.uebrig || [];
+  const angebote = v.einzeln.length + v.lose.length;
+  const karten = v.einzeln.length + v.lose.reduce((t, l) => t + l.teile.length, 0);
+  const erloes = einzelRechnung.concat(losRechnung).reduce((t, r) => t + r.netto, 0);
+  const wert = einzelRechnung.concat(losRechnung).reduce((t, r) => t + r.wert, 0);
+
+  /* Die Gegenrechnung: was bliebe, wenn man wirklich jede Karte
+     einzeln einstellte. Sie ist die eigentliche Begründung für Lose —
+     und sie steht hier, weil man sie sehen muss, nicht glauben. */
+  const alleEinzeln = (p.vergaben || []).filter(x => !x.angebot && !isVergeben(x))
+    .reduce((t, x) => t + deckung(p, marktwert(x), true).netto, 0);
+
+  const zahl = (l, w, cls) => `<div class="lp-z${cls ? ' ' + cls : ''}"><span>${esc(l)}</span><b>${w}</b></div>`;
+
+  leib.innerHTML = `
+    <div class="lp-regler">
+      <label>Einzeln ab<input class="input" type="number" step="0.5" min="0" id="lp_einzelAb" value="${loseCtx.einzelAb}"></label>
+      <label>Loswert Ziel<input class="input" type="number" step="1" min="1" id="lp_losZiel" value="${loseCtx.losZiel}"></label>
+      <label>Preisfaktor<input class="input" type="number" step="0.05" min="0.1" id="lp_losFaktor" value="${loseCtx.losFaktor}"></label>
+      <label>max. Karten<input class="input" type="number" step="1" min="2" id="lp_losMax" value="${loseCtx.losMax}"></label>
+      <button class="btn sm secondary" data-act="lose-rechnen" data-pid="${p.id}">Rechnen</button>
+    </div>
+    <div class="lp-band">
+      ${zahl('Angebote statt ' + karten + ' Karten', String(angebote), 'hl')}
+      ${uebrig.length ? zahl('übrig, trägt sich nicht', String(uebrig.length) + ' Karten') : ''}
+      ${zahl('davon einzeln', String(v.einzeln.length))}
+      ${zahl('davon Lose', String(v.lose.length))}
+      ${zahl('Marktwert', chf(wert))}
+      ${zahl('bleibt nach Gebühren', chf(erloes), erloes > 0 ? 'gut' : 'schlecht')}
+      ${zahl('einzeln bliebe', chf(alleEinzeln), alleEinzeln > erloes ? 'gut' : 'schlecht')}
+    </div>
+    ${v.einzeln.length ? `<div class="lp-h">Einzeln — teuer genug, um allein zu stehen</div>
+    <table class="grid lp-tab"><thead><tr><th>Nr.</th><th>Karte</th><th>Seltenheit</th><th class="num">Marktwert</th><th class="num">bleibt</th></tr></thead>
+      <tbody>${v.einzeln.map((k, i) => {
+        const r = einzelRechnung[i];
+        return `<tr><td><span class="bkp-code">${esc(k.bkp || '')}</span></td><td><strong>${esc(postenName(k))}</strong></td>
+          <td>${esc(k.seltenheit || '')}</td><td class="num">${chfGenau(r.wert)}</td>
+          <td class="num ${r.netto > 0 ? 'gut' : 'schlecht'}">${chfGenau(r.netto)}</td></tr>`;
+      }).join('')}</tbody></table>` : ''}
+    ${v.lose.length ? `<div class="lp-h">Lose — jedes mit einem Zugpferd, gefüllt nach Satz</div>
+    <table class="grid lp-tab"><thead><tr><th>Los</th><th>Zugpferd</th><th>Sätze</th><th class="num">Karten</th><th class="num">Marktwert</th><th class="num">Preis</th><th class="num">bleibt</th></tr></thead>
+      <tbody>${v.lose.map((l, i) => {
+        const r = losRechnung[i];
+        const zug = losZugpferd(p, l);
+        const st = losSaetze(p, l);
+        return `<tr><td><strong>${l.nr}</strong></td>
+          <td>${zug ? esc(postenName(zug)) + ' <span class="muted">' + esc(zug.seltenheit || '') + '</span>' : ''}</td>
+          <td class="muted">${esc(st.slice(0, 2).join(', '))}${st.length > 2 ? ' +' + (st.length - 2) : ''}</td>
+          <td class="num">${l.teile.length}</td><td class="num">${chfGenau(r.wert)}</td>
+          <td class="num"><strong>${chfGenau(r.preis)}</strong></td>
+          <td class="num ${r.netto > 0 ? 'gut' : 'schlecht'}">${chfGenau(r.netto)}</td></tr>`;
+      }).join('')}</tbody></table>` : ''}
+    ${uebrig.length ? `<div class="lp-h">Übrig — trägt weder einzeln noch als Los</div>
+    <p class="muted" style="margin:0 0 6px">${uebrig.length} Karten für zusammen ${chfGenau(uebrig.reduce((t, x) => t + marktwert(x), 0))}.
+      Sie kämen als eigenes Los ins Minus — meist, weil ihr Spiel zu wenige Karten beisteuert.
+      Einem Käufer beilegen oder behalten; eingestellt werden sie nicht.</p>
+    <p class="muted" style="margin:0 0 12px">${esc(uebrig.slice(0, 12).map(x => postenName(x)).join(' · '))}${uebrig.length > 12 ? ' …' : ''}</p>` : ''}
+    <p class="muted" style="margin-top:12px">«bleibt» ist Preis minus Provision, fester Gebühr und Porto — bei
+      ${esc(String(verkaufEin(p).provision))}% und ${chfGenau(verkaufEin(p).fixgebuehr)} je Bestellung. Der Preisfaktor
+      hebt oder senkt den Verkaufspreis gegenüber der Summe der Marktwerte: ${merk.losFaktor} bedeutet «genau die Summe».</p>`;
+}
+
+function loseUebernehmen(pid) {
+  const p = findProjekt(pid); if (!p || !loseCtx || !loseCtx.vorschlag) return;
+  const v = loseCtx.vorschlag;
+  /* Die Parameter wandern in die Einstellungen: Wer den Vorschlag
+     annimmt, hat damit auch entschieden, wie gerechnet werden soll. */
+  p.verkauf = Object.assign(verkaufEin(p), {
+    einzelAb: loseCtx.einzelAb, losZiel: loseCtx.losZiel,
+    losFaktor: loseCtx.losFaktor, losMax: loseCtx.losMax,
+  });
+  /* Alte Zugehörigkeiten fallen weg — sonst hinge eine Karte an einem
+     Los, das es nicht mehr gibt. */
+  (p.vergaben || []).forEach(x => { delete x.losId; });
+  p.lose = v.lose.map(l => ({ id: uid('los'), nr: l.nr, teile: l.teile.slice(), angelegt: todayIso() }));
+  p.lose.forEach(l => l.teile.forEach(id => { const k = findVergabe(p, id); if (k) k.losId = l.id; }));
+  save(); closeModal(); router();
+  toast(p.lose.length + ' Lose angelegt · ' + v.einzeln.length + ' Karten bleiben einzeln', 'ok');
+}
+
+/* --- Die Datei für eBay ---------------------------------------------
+   Alles, was ein Angebot werden soll, in einer Tabelle: die Karten
+   mit gesetztem Preis und die Lose. Was keinen Preis hat, kommt nicht
+   mit — ein Angebot ohne Preis weist eBay ohnehin zurück, und es
+   nachher in zweihundert Zeilen zu suchen ist Arbeit für nichts. */
+function ebayDinge(p) {
+  const karten = (p.vergaben || []).filter(v => v.angebot && v.angebot.preis && !v.losId);
+  return karten.concat(loseVon(p));
+}
+
+function actEbayCsv(pid, aktion) {
+  const p = findProjekt(pid); if (!p) return;
+  const dinge = ebayDinge(p);
+  if (!dinge.length) { toast('Nichts einzustellen — noch kein Angebotspreis gesetzt und keine Lose angelegt', 'info'); return; }
+  const fehlt = verkaufEin(p).ort ? '' : 'Der Artikelstandort fehlt — eBay weist die Datei sonst zurück. ';
+  const text = ebayCsvText(p, dinge, aktion || 'VerifyAdd');
+  const blob = new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ebay-' + (aktion === 'Add' ? 'einstellen' : 'pruefen') + '-' + todayIso() + '.csv';
+  a.click(); URL.revokeObjectURL(a.href);
+  toast(fehlt + dinge.length + ' Zeilen · ' + (aktion === 'Add' ? 'stellt beim Hochladen wirklich ein' : 'VerifyAdd — eBay prüft nur'),
+    fehlt ? 'warn' : 'ok');
+}
+
+/** Ein Ding aus seiner Kennung: erst die Karten, dann die Lose. */
+function ebayDing(p, id) { return findVergabe(p, id) || findLos(p, id); }
+
+function actEbayKopie(pid, id) {
+  const p = findProjekt(pid); const d = p && ebayDing(p, id); if (!d) return;
+  const t = ebayText(p, d);
+  if (navigator.clipboard) navigator.clipboard.writeText(t).then(
+    () => toast('Einstellblatt kopiert — Feld für Feld', 'ok'),
+    () => toast('Kopieren nicht möglich', 'info'));
+  else toast('Kopieren nicht möglich', 'info');
 }
 
 function actOffenePruefen(pid) {
@@ -22565,6 +23344,13 @@ document.addEventListener('click', e => {
     case 'anbieten':         actAnbieten(pid, vid); break;
     case 'vb-kopie':         actVerkaufsblattKopie(pid, vid, act.dataset.kind); break;
     case 'mk-holen':         actMerkmaleHolen(pid, vid); break;
+    case 'verkauf-ein':      actVerkaufEin(pid); break;
+    case 'verkauf-speichern': verkaufSpeichern(pid); break;
+    case 'lose-planen':      actLosePlanen(pid); break;
+    case 'lose-rechnen':     loseRechnen(pid); break;
+    case 'lose-uebernehmen': loseUebernehmen(pid); break;
+    case 'ebay-csv':         actEbayCsv(pid, act.dataset.kind); break;
+    case 'eb-kopie':         actEbayKopie(pid, vid); break;
     case 'mk-kopie':         actMerkmaleKopie(pid, vid); break;
     case 'foto-weg':         actFotoWeg(pid, vid, act.dataset.fid); break;
     case 'foto-haupt':       actFotoHaupt(pid, vid, act.dataset.fid); break;
@@ -23128,6 +23914,97 @@ function selfTest() {
         !!csvZuPosten('Hallo;Welt\n1;2\n', { vorlage: 'bau' }).fehler);
       ok('CSV: leere Datei stürzt nicht ab', !!csvZuPosten('', { vorlage: 'bau' }).fehler);
     } catch (e) { ok('Liste einlesen ohne Fehler', false, (e && e.message) || 'Fehler'); }
+    finally { state = _st; }
+  }
+
+
+
+  /* Verkaufen: die Subtraktion, die ueber Einzelkarte oder Los entscheidet,
+     und der Planer, der daraus Lose macht. Alles rein gerechnet - kein
+     Bildschirm, kein Klick. */
+  { const _st = state;
+    try {
+      state = { projekte: [], vorlage: 'sammlung', woerter: {} };
+      const karte = (i, wert, satz, seltenheit) => ({
+        id: 'k' + i, bkp: 'SET-' + i, gewerk: 'Karte ' + i, satz, seltenheit,
+        status: 'ausschreibung', schaetzung: wert, eingeladene: [], nachtraege: [],
+        rapporte: [], rechnungen: [], budgetposten: [],
+      });
+      const P = { id: 'p1', vorlage: 'sammlung', verkauf: {}, vergaben: [] };
+
+      // --- Was bleibt ---------------------------------------------------
+      const d = deckung(P, 0.40, true);
+      ok('VERKAUF: eine Karte fuer 40 Rappen kostet Geld, statt welches zu bringen',
+        d.netto < 0, 'netto ' + d.netto.toFixed(2));
+      const d2 = deckung(P, 20, true);
+      ok('VERKAUF: ein Los fuer 20 Franken traegt sich', d2.netto > 12,
+        'netto ' + d2.netto.toFixed(2));
+      eq('VERKAUF: die Provision laeuft auch auf das Porto',
+        Math.round(deckung(P, 10, true).provision * 100) / 100, 1.20);
+
+      // --- Der Losplaner --------------------------------------------------
+      P.vergaben = [karte(1, 50, 'Alpha', 'Secret Rare'), karte(2, 12, 'Alpha', 'Ultra Rare')]
+        .concat(Array.from({ length: 30 }, (_, i) => karte(10 + i, 0.4 + (i % 5) * 0.3,
+          i % 2 ? 'Alpha' : 'Beta', 'Common')));
+      const V = loseVorschlagen(P, { einzelAb: 8, losZiel: 6, losMax: 30, losFaktor: 1 });
+      eq('LOSE: wer teuer genug ist, geht einzeln', V.einzeln.map(x => x.id), ['k1', 'k2']);
+      ok('LOSE: aus dem Rest werden mehrere Lose', V.lose.length >= 2, V.lose.length + ' Lose');
+      const drin = V.lose.reduce((a, l) => a.concat(l.teile), []);
+      eq('LOSE: jede uebrige Karte liegt in genau einem Los',
+        [drin.length, new Set(drin).size], [30, 30]);
+      ok('LOSE: kein Los ueberschreitet die Kartengrenze',
+        V.lose.every(l => l.teile.length <= 30));
+      ok('LOSE: kein Los, das nach Gebuehren ins Minus laeuft',
+        V.lose.every(l => deckung(P, losPreis(P, l), true).netto > 0));
+      // Ein Haeufchen, das sich nicht traegt, wird als "uebrig" gemeldet - nicht still verschluckt.
+      const klein = { id: 'p2', vorlage: 'sammlung', verkauf: {},
+        vergaben: [karte(90, 0.1, 'Gamma', 'Common'), karte(91, 0.1, 'Gamma', 'Common')] };
+      const K = loseVorschlagen(klein, { einzelAb: 8, losZiel: 15, losMax: 30, losFaktor: 1 });
+      eq('LOSE: was sich nicht traegt, kommt als "uebrig" zurueck',
+        [K.lose.length, (K.uebrig || []).length], [0, 2]);
+      /* Der eigentliche Zweck: Die Lose sollen aehnlich schwer sein.
+         Sonst haengt aller Wert in einem und der Rest bleibt liegen. */
+      const werte = V.lose.map(l => losWert(P, l));
+      ok('LOSE: die Lose sind aehnlich viel wert, nicht eines schwer und drei leer',
+        Math.max.apply(null, werte) <= Math.min.apply(null, werte) * 3,
+        werte.map(x => x.toFixed(2)).join(' / '));
+
+      const L = V.lose[0];
+      ok('LOSE: der Titel bleibt unter der eBay-Grenze', losTitel(P, L).length <= TITEL_MAX,
+        losTitel(P, L).length + ' Zeichen');
+      ok('LOSE: der Text zaehlt jede Karte einzeln auf',
+        losText(P, L).split('\n').filter(z => z.indexOf('· ') === 0).length === L.teile.length);
+      eq('LOSE: der Preis ist die Summe der Marktwerte, auf 50 Rappen gerundet',
+        losPreis(P, L), Math.ceil(losWert(P, L) * 2) / 2);
+
+      // Der schlechteste Zustand im Los ist der zugesagte.
+      P.vergaben.find(x => x.id === L.teile[0]).zustand = 'NM';
+      P.vergaben.find(x => x.id === L.teile[1]).zustand = 'LP';
+      ok('LOSE: zugesagt wird der SCHLECHTESTE Zustand im Los',
+        losZustandText(P, L).indexOf('Light Played') > 0, losZustandText(P, L));
+
+      // --- Die Datei fuer eBay --------------------------------------------
+      eq('EBAY: ein Zeilenumbruch wird zu <br> - eBay nimmt keine',
+        ebayFeld('a\nb'), 'a<br>b');
+      eq('EBAY: Semikolon und Anfuehrungszeichen werden eingepackt',
+        ebayFeld('a;"b"'), '"a;""b"""');
+      const kopf = ebayCsvKopf(P);
+      ok('EBAY: die Kopfzeile nennt Land, Waehrung und Fassung',
+        kopf[0].indexOf('SiteID=Switzerland') > 0 && kopf[0].indexOf('Currency=CHF') > 0);
+      eq('EBAY: jede Zeile hat so viele Felder wie die Kopfzeile',
+        csvZeile(ebayCsvZeile(P, L, 'VerifyAdd'), ';').length, kopf.length);
+      ok('EBAY: die erste Ausgabe prueft nur, sie stellt nicht ein',
+        ebayCsvZeile(P, L).indexOf('VerifyAdd') === 0);
+      ok('EBAY: ein Los kommt in die Los-Kategorie, nicht zu den Einzelkarten',
+        ebayCsvZeile(P, L).split(';')[2] === String(VERKAUF_STANDARD.kategorieLos));
+      const einzel = P.vergaben[0];
+      einzel.angebot = { preis: 50, plattformen: ['eBay'], portoKaeufer: true, seit: '2026-08-22' };
+      ok('EBAY: eine Einzelkarte kommt in die Einzelkarten-Kategorie',
+        ebayCsvZeile(P, einzel).split(';')[2] === String(VERKAUF_STANDARD.kategorieEinzel));
+      ok('EBAY: das Einstellblatt nennt jedes Pflichtfeld beim Namen',
+        ebayZeilen(P, einzel).some(z => z[1] === 'Location')
+        && ebayZeilen(P, einzel).some(z => z[1] === 'DispatchTimeMax'));
+    } catch (e) { ok('Verkaufen und Lose ohne Fehler', false, (e && e.stack) || 'Fehler'); }
     finally { state = _st; }
   }
 

@@ -2886,6 +2886,52 @@ html { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 22
   .vb-zeile { grid-template-columns: 1fr; }
 }
 
+/* Das eBay-Einstellblatt: jedes Feld, das eBay abfragt, mit dem Wert,
+   der hineingehoert. Der englische Feldname steht klein daneben -
+   nicht als Zierde, sondern weil eBays Fehlermeldungen ihn nennen. */
+.eb { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--rand); }
+.eb-kopf { display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  font-size: var(--t-s); margin-bottom: 8px; }
+.eb-fehlt { color: var(--b-gelb-text); font-weight: 600; }
+.eb-gitter { display: grid; grid-template-columns: 168px 1fr; gap: 3px 10px;
+  font-size: var(--t-s); }
+.eb-lab { color: var(--text-soft); font-size: var(--t-xs); padding-top: 2px;
+  display: flex; flex-direction: column; }
+.eb-en { font-size: var(--t-2xs); opacity: .65; font-family: var(--mono, monospace); }
+.eb-wert { user-select: all; overflow-wrap: anywhere; }
+.eb-wert.leer { color: var(--text-soft); opacity: .6; user-select: none; }
+
+/* Die Verkaufseinstellungen: ein Formular, das fuer alle Angebote gilt. */
+.ve-gitter { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 14px; }
+.ve-z { display: flex; flex-direction: column; gap: 3px; font-size: var(--t-s); }
+.ve-l { display: flex; align-items: baseline; gap: 6px; color: var(--text-soft);
+  font-size: var(--t-xs); }
+.ve-h { font-size: var(--t-s); font-weight: 600; margin: 16px 0 8px;
+  padding-top: 12px; border-top: 1px solid var(--rand); }
+
+/* Der Losplaner: drehen, rechnen, sehen. */
+.lp-regler { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;
+  margin-bottom: 12px; }
+.lp-regler label { display: flex; flex-direction: column; gap: 3px;
+  font-size: var(--t-xs); color: var(--text-soft); }
+.lp-regler .input { width: 96px; }
+.lp-band { display: flex; gap: 14px; flex-wrap: wrap; padding: 9px 12px;
+  background: var(--flaeche-2); border: 1px solid var(--rand);
+  border-radius: var(--rund-s); margin-bottom: 14px; }
+.lp-z { display: flex; flex-direction: column; gap: 2px; }
+.lp-z span { font-size: var(--t-2xs); color: var(--text-soft); }
+.lp-z b { font-size: var(--t-l); font-variant-numeric: tabular-nums; }
+.lp-z.hl b { color: var(--brand); }
+.lp-z.gut b { color: var(--b-gruen-text, #15803d); }
+.lp-z.schlecht b { color: var(--b-rot-text, #b91c1c); }
+.lp-h { font-size: var(--t-s); font-weight: 600; margin: 14px 0 7px; }
+.lp-tab td.gut { color: var(--b-gruen-text, #15803d); }
+.lp-tab td.schlecht { color: var(--b-rot-text, #b91c1c); }
+@media (max-width: 560px) {
+  .eb-gitter { grid-template-columns: 120px 1fr; }
+  .ve-gitter { grid-template-columns: 1fr; }
+}
+
 /* Kein Preis bekannt. Ein Strich, keine Null - die Null hiesse
    wertlos und summierte sich still mit. */
 .unbek { color: var(--text-soft); opacity: .7; cursor: help; }
